@@ -304,15 +304,20 @@ var agentDisabledOperations = map[string]string{
 }
 
 var agentTagAliasesZH = map[string][]string{
-	"Applications": {"应用", "应用服务"},
-	"Builds":       {"构建", "构建任务"},
-	"Deployments":  {"部署", "部署目标"},
-	"Gateway":      {"网关", "域名", "路由"},
-	"Projects":     {"项目空间", "项目"},
-	"Registries":   {"镜像仓库", "镜像"},
-	"Releases":     {"发布", "版本"},
-	"Runtime":      {"运行时", "集群"},
-	"Volumes":      {"项目数据卷", "数据卷", "持久卷", "存储卷"},
+	"Applications":  {"应用", "应用服务"},
+	"Billing":       {"账单", "费用", "额度"},
+	"Builds":        {"构建", "构建任务"},
+	"Dashboard":     {"仪表盘", "看板", "平台概览"},
+	"Deployments":   {"部署", "部署目标"},
+	"Gateway":       {"网关", "域名", "路由"},
+	"Notifications": {"通知", "通知渠道", "消息渠道"},
+	"Projects":      {"项目空间", "项目"},
+	"Registries":    {"镜像仓库", "镜像"},
+	"Releases":      {"发布", "版本"},
+	"Runtime":       {"运行时", "集群"},
+	"Users":         {"用户", "平台用户", "账号"},
+	"Volumes":       {"项目数据卷", "持久卷", "存储卷"},
+	"Web":           {"网络搜索", "互联网", "网页", "公开资料"},
 }
 
 func operationAliases(operationID string, tags []string, extension map[string]any) OperationAliases {
@@ -547,6 +552,8 @@ func fallbackAgentScope(category, method string) string {
 			return string(authz.ActionConfigRead)
 		}
 		return string(authz.ActionConfigWrite)
+	case "web":
+		return "web:read"
 	default:
 		return ""
 	}

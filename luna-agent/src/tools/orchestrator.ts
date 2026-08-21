@@ -230,10 +230,25 @@ export class ToolOrchestrator {
           })
         }
         catch (error) {
+          const errorCode = stableErrorCode(error)
           recordAIContent(span, "luna.gen_ai.tool.content.output", "gen_ai.tool.call.result", {
-            error: { type: error instanceof Error ? error.name : "UnknownError", code: stableErrorCode(error) },
+            error: { type: error instanceof Error ? error.name : "UnknownError", code: errorCode },
           }, { "gen_ai.tool.name": call.operationId, "luna.tool_call.id": call.id })
-          throw error
+          const failed = await this.fail(running, errorCode, {
+            code: errorCode,
+            retryable: false,
+          }, {
+            durationMs: Math.max(0, Math.round(performance.now() - startedAt)),
+            traceId: span.spanContext().traceId,
+          })
+          outcome = failed.status
+          telemetryLog("agent.tool.failed", "warn", {
+            "luna.run.id": call.runId,
+            "luna.tool_call.id": call.id,
+            "tool.name": call.operationId,
+            "error.code": errorCode,
+          })
+          return failed
         }
         span.setAttribute("http.response.status_code", result.status)
         recordAIContent(span, "luna.gen_ai.tool.content.output", "gen_ai.tool.call.result", genAIToolCallObject({

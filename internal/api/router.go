@@ -96,6 +96,8 @@ func NewRouterWithStaticFSAndMetrics(db *gorm.DB, staticFS fs.FS, httpMetrics *o
 		v1.POST("/telemetry/v1/traces", handlers.RelayBrowserTraces)
 		v1.GET("/ai/capabilities", handlers.GetAICapabilities)
 		v1.GET("/ai/models", handlers.ListAIModels)
+		v1.POST("/ai-tools/web-search", handlers.ExecuteAIWebSearch)
+		v1.POST("/ai-tools/fetch-web-page", handlers.ExecuteAIFetchWebPage)
 		v1.GET("/configs/ai/models", handlers.platformAdminMiddleware(), handlers.ListAIModelConfigs)
 		v1.POST("/configs/ai/models", handlers.platformAdminMiddleware(), handlers.CreateAIModel)
 		v1.PUT("/configs/ai/models/:id", handlers.platformAdminMiddleware(), handlers.UpdateAIModel)

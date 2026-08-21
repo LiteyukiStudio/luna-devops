@@ -177,6 +177,8 @@ func assertFreshMigrationState(t *testing.T, db *gorm.DB) {
 		"oauth_refresh_tokens",
 		"auth_registration_settings",
 		"email_registration_challenges",
+		"inbox_messages",
+		"inbox_action_requests",
 		"project_volume_quota_usage",
 		"project_volume_quota_reservations",
 		"ai.ui_actions",
@@ -198,10 +200,20 @@ func assertFreshMigrationState(t *testing.T, db *gorm.DB) {
 		{table: "access_tokens", column: "oauth_application_id"},
 		{table: "access_tokens", column: "oauth_grant_id"},
 		{table: "auth_registration_settings", column: "allow_oidc_registration"},
+		{table: "user_remember_tokens", column: "family_id"},
+		{table: "user_remember_tokens", column: "consumed_at"},
+		{table: "user_remember_tokens", column: "revoked_at"},
+		{table: "user_sessions", column: "remember_family_id"},
+		{table: "user_sessions", column: "primary_authenticated_at"},
 		{table: "projects", column: "identifier"},
 		{table: "projects", column: "kubernetes_namespace"},
+		{table: "projects", column: "web_console_enabled"},
 		{table: "applications", column: "identifier"},
 		{table: "deployment_targets", column: "kubernetes_name"},
+		{table: "deployment_targets", column: "web_console_enabled"},
+		{table: "inbox_messages", column: "recipient_user_id"},
+		{table: "inbox_messages", column: "params_json"},
+		{table: "inbox_action_requests", column: "row_version"},
 		{table: "volume_transfers", column: "logical_bytes"},
 		{table: "volume_transfers", column: "data_sha256"},
 		{table: "volume_transfers", column: "completion_reported_at"},
@@ -302,12 +314,28 @@ func assertFreshMigrationState(t *testing.T, db *gorm.DB) {
 			t.Fatalf("fresh database contains obsolete %s.slug", table)
 		}
 	}
-	var activeStageIndex string
-	if err := db.Raw(`SELECT indexdef FROM pg_indexes WHERE schemaname = current_schema() AND indexname = 'idx_deployment_targets_application_stage_active'`).Scan(&activeStageIndex).Error; err != nil {
-		t.Fatalf("read deployment target active stage index: %v", err)
-	}
-	if !strings.Contains(activeStageIndex, "UNIQUE INDEX") || !strings.Contains(activeStageIndex, "WHERE (deleted_at IS NULL)") {
-		t.Fatalf("deployment target active stage index is missing or invalid: %q", activeStageIndex)
+	for _, expected := range []struct {
+		name      string
+		fragments []string
+	}{
+		{
+			name:      "idx_deployment_targets_application_stage_active",
+			fragments: []string{"UNIQUE INDEX", "WHERE (deleted_at IS NULL)"},
+		},
+		{
+			name:      "idx_inbox_messages_dedup_key",
+			fragments: []string{"UNIQUE INDEX", "WHERE (dedup_key IS NOT NULL)"},
+		},
+	} {
+		var definition string
+		if err := db.Raw(`SELECT indexdef FROM pg_indexes WHERE schemaname = current_schema() AND indexname = ?`, expected.name).Scan(&definition).Error; err != nil {
+			t.Fatalf("read index %s: %v", expected.name, err)
+		}
+		for _, fragment := range expected.fragments {
+			if !strings.Contains(definition, fragment) {
+				t.Fatalf("index %s is missing %q: %q", expected.name, fragment, definition)
+			}
+		}
 	}
 
 	var defaultRuleCount int64

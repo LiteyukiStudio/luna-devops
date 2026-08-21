@@ -2,14 +2,11 @@ package database
 
 import (
 	"fmt"
-	"net/url"
-	"os"
 	"strings"
 	"testing"
-	"time"
 
+	"github.com/LiteyukiStudio/devops/internal/testdb"
 	sqlmigrations "github.com/LiteyukiStudio/devops/migrations"
-	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
 
@@ -36,42 +33,8 @@ func TestImmutableResourceIdentifierMigrationPreservesLegacyKubernetesNames(t *t
 	}
 }
 
-func TestIdentifierTemplateReferenceMigrationCoversPersistedTemplatesAndEvents(t *testing.T) {
-	data, err := sqlmigrations.FS.ReadFile("000050_identifier_template_references.up.sql")
-	if err != nil {
-		t.Fatalf("read identifier template reference migration: %v", err)
-	}
-	sql := string(data)
-
-	for _, fragment := range []string{
-		"UPDATE registry_credentials",
-		"repository_template",
-		"tag_template",
-		"{projectSlug}', '{projectIdentifier}",
-		"{appSlug}', '{appIdentifier}",
-		"{applicationSlug}', '{applicationIdentifier}",
-		"UPDATE notification_templates",
-		".Event.Project.Slug', '.Event.Project.Identifier",
-		".Event.Application.Slug', '.Event.Application.Identifier",
-		".Event.DeploymentTarget.Slug', '.Event.DeploymentTarget.Identifier",
-		"UPDATE notification_channels",
-		"UPDATE notification_deliveries",
-		"UPDATE platform_events",
-		"jsonb_build_object('identifier'",
-	} {
-		if !strings.Contains(sql, fragment) {
-			t.Fatalf("identifier template reference migration is missing %q", fragment)
-		}
-	}
-}
-
 func TestIdentifierTemplateReferenceMigrationUpgradesLegacyValuesInPostgres(t *testing.T) {
-	databaseURL := os.Getenv("AUTH_TEST_DATABASE_URL")
-	if databaseURL == "" {
-		t.Skip("AUTH_TEST_DATABASE_URL is not configured")
-	}
-
-	db := openIdentifierMigrationTestSchema(t, databaseURL)
+	db := testdb.Open(t, testdb.Options{SchemaPrefix: "identifier_template_migration_test"})
 	if err := db.Exec(`
 CREATE TABLE registry_credentials (
   id text PRIMARY KEY,
@@ -148,43 +111,6 @@ VALUES (
 	}
 
 	assertIdentifierTemplateReferences(t, db, "slug", "projectSlug", "appSlug", "applicationSlug", "target")
-}
-
-func openIdentifierMigrationTestSchema(t *testing.T, databaseURL string) *gorm.DB {
-	t.Helper()
-
-	adminDB, err := gorm.Open(postgres.Open(databaseURL), &gorm.Config{})
-	if err != nil {
-		t.Fatalf("open integration database: %v", err)
-	}
-	schema := fmt.Sprintf("identifier_template_migration_test_%d", time.Now().UnixNano())
-	if err := adminDB.Exec(`CREATE SCHEMA "` + schema + `"`).Error; err != nil {
-		t.Fatalf("create integration schema: %v", err)
-	}
-	t.Cleanup(func() {
-		_ = adminDB.Exec(`DROP SCHEMA IF EXISTS "` + schema + `" CASCADE`).Error
-		if sqlDB, dbErr := adminDB.DB(); dbErr == nil {
-			_ = sqlDB.Close()
-		}
-	})
-
-	parsedURL, err := url.Parse(databaseURL)
-	if err != nil {
-		t.Fatalf("parse integration database URL: %v", err)
-	}
-	query := parsedURL.Query()
-	query.Set("search_path", schema)
-	parsedURL.RawQuery = query.Encode()
-	db, err := gorm.Open(postgres.Open(parsedURL.String()), &gorm.Config{})
-	if err != nil {
-		t.Fatalf("open integration schema: %v", err)
-	}
-	t.Cleanup(func() {
-		if sqlDB, dbErr := db.DB(); dbErr == nil {
-			_ = sqlDB.Close()
-		}
-	})
-	return db
 }
 
 func assertIdentifierTemplateReferences(t *testing.T, db *gorm.DB, entityKey, projectPlaceholder, appPlaceholder, applicationPlaceholder, targetPlaceholder string) {

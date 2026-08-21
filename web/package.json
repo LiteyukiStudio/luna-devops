@@ -11,7 +11,7 @@
     "check:singletons": "node scripts/check-singleton-dependencies.mjs",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test": "pnpm check:singletons && vitest run"
+    "test": "vitest run"
   },
   "dependencies": {
     "@codemirror/lang-json": "^6.0.2",

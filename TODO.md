@@ -1,12 +1,27 @@
 # TODO
 
+## 2026-08-21 测试代码删除与瘦身
+
+- [x] 删除未被 CI 引用、接受宽泛状态码且缺少隔离与异步终态的 `tests/` smoke 套件，不以另一套宽松 smoke 替代。
+- [x] 将 DataList 与相邻前端测试收敛为键盘、点击、选择、分页、状态和移动端入口等用户可观察行为，删除 Tailwind 与包装层实现断言。
+- [x] 统一 PostgreSQL 随机 Schema、`search_path` 和清理 helper，保留并发、幂等、计费、权限和迁移数据转换测试。
+- [x] 删除重复 SQL 文本检查，将 inbox、部署阶段唯一索引与认证字段纳入空库最终 Schema 验收。
+
+## 2026-08-21 GitHub Actions 与 CI 反馈优化
+
+- [x] 将普通 PR / push 质量门禁拆为路径检测、Go、Web、Agent、Docs、Helm 和按需容器并行 Job，保留稳定 `quality` 聚合检查并正确接受路径无关的 skipped 结果。
+- [x] 将 PostgreSQL/迁移、Agent PostgreSQL、关键包 race、pnpm audit、govulncheck 和完整 Helm 检查移入 `main`、每日计划、手动全量与 Tag 发布前的 `full-quality` 工作流。
+- [x] API、Worker、Agent 与 Gateway Traffic Probe 按变更路径构建；PR 禁止推送，`main/dev` 保留 `nightly`，Tag 保留版本标签与稳定版本 `latest` 语义。
+- [x] 固定第三方 Action commit SHA，按 Go、pnpm 子项目和镜像隔离缓存，并保持 fork PR 只读、无 Registry Secret、无缓存写入。
+- [x] 使用仓库内 CI 脚本验证路径矩阵、聚合成功/失败语义、Go/Web/Agent/Docs/Helm、隔离 PostgreSQL、race、依赖审计、govulncheck 和四个 `linux/amd64` 镜像目标。
+
 ## 2026-08-21 认证功能清理与安全收敛
 
 - [x] 删除已废弃的第二因子认证、恢复凭据、敏感操作挑战断言及其 API、模型、迁移、配置和前端入口。
 - [x] 删除 AI 会话级自动批准与挑战恢复；高危 ToolCall 使用 `reject / approve / approve_always`，账号级 `userId + operationId` 豁免可查看和撤销，不再暴露参数哈希与行版本协议。
 - [x] 保留并回归登录 Session、OAuth、RBAC、Scope、审计、Secret 不回显，以及终端和数据卷下载的一次性票据绑定。
 - [x] 同步 OpenAPI、Agent、Web、五语言文案、中英文公开文档、内部方案与测试契约。
-- [ ] 完成开发数据库升级、全量门禁、临时 OTel 链路抽样、浏览器真实链路和仓库零残留验收。
+- [x] 完成开发数据库升级、全量门禁、临时 OTel 链路抽样、浏览器真实链路和仓库零残留验收。
 
 ## 2026-08-21 luna-agent 架构瘦身
 
@@ -21,6 +36,7 @@
 - [x] 上下文收敛为近期原始消息、原始工具交互和单份滚动摘要，无 deferred/catch-up、多级摘要或独立 next-step 调用；个人 AI 钱包预留/确认/释放与 Go 结算链保持不变。
 - [x] 同步 Agent、Go、OpenAPI、Web、五语言 i18n、中英文公开文档、内部规范、增量迁移与测试契约。
 - [x] 完成 fresh/upgrade 数据库历史不变性、全量 Go/Web/Agent/docs 门禁、真实 ProjectVolume 写入与权威回读、临时 OTel 成功/失败/跨服务 Trace 抽样，以及高危工具三路审批与账号级豁免撤销入口的浏览器验收。
+- [x] 使用真实浏览器对话分 26 页遍历 206/206 个平台工具，逐个完成 Top 8 精确命中与详情加载，并覆盖 7/7 个内部工具；`webSearch` / `fetchWebPage` 完成真实公网调用。
 
 ## 2026-08-20 Agent 工具成功率观测
 
@@ -146,7 +162,7 @@
 
 ## 2026-08-16 部署配置 JSON 导入导出
 
-- [x] 按 [部署配置 JSON 导入导出历史方案](docs-internal/legacy/18-部署配置JSON导入导出方案.md) 实现版本化配置包、严格解析、依赖预检/映射、Secret 重填和事务化导入。
+- [x] 实现版本化部署配置包、严格解析、依赖预检/映射、Secret 重填和事务化导入；现行契约以 OpenAPI、公开文档和测试为准。
 - [x] 同步 OpenAPI、Web API 类型和 Client、部署页导入导出交互、中英文公开文档，并覆盖跨项目、空应用、阶段冲突、权限撤销和零部分写入测试。
 - [x] 完成 Go、Web、Docs、CLI 契约和浏览器端到端验收；历史方案已归档，现行边界以 OpenAPI、公开文档和测试为准。
 
@@ -265,7 +281,7 @@
 
 - [x] 将首页主操作更新为“快速部署”和“使用项目”，并同步英文入口文案。
 - [x] 将 Luna CLI 的安装与使用入口并入“使用”导航，移除独立 CLI 顶级菜单并保留原有页面地址。
-- [x] 清理 `docs-internal/` 已完成方案、验收流水和旧导出产物，将代码健康、可观测和场景测试文档收敛为长期规范，仅保留仍在进行的部署面板重构方案。
+- [x] 收敛 `docs-internal/`：删除已完成方案、旧原型和重复规格，将 CI、运行计费与 Agent 工具规则并入长期文档；仅保留部署面板、数据卷 legacy Contract 清理和运行时明文审计等未完成事项。
 
 ## 2026-08-12 AI 助手流式滚动体验
 
@@ -1146,8 +1162,10 @@
 
 ### 8.4 项目空间数据卷中心
 
-实施契约以 [`docs-internal/17-项目空间数据卷中心与数据迁移方案.md`](docs-internal/17-项目空间数据卷中心与数据迁移方案.md) 为准。最终产品一次性收敛到
-`ProjectVolume + DeploymentVolumeMount + VolumeTransfer`，不保留旧保留卷/JSON 运行时兼容分支。
+现行行为以代码、OpenAPI、中英文公开文档和测试为准；
+[`docs-internal/17-项目空间数据卷中心与数据迁移方案.md`](docs-internal/17-项目空间数据卷中心与数据迁移方案.md)
+只跟踪 legacy Contract 物理清理。最终产品收敛到 `ProjectVolume + DeploymentVolumeMount + VolumeTransfer`，
+不保留旧保留卷/JSON 运行时兼容分支。
 
 - [x] 完成 `project_volumes`、`deployment_volume_mounts`、`volume_transfers`、`volume_transfer_parts` 迁移、约束、Repository 和真实 PostgreSQL 并发测试。
 - [x] 完成 ProjectVolume Service、Kubernetes PVC/Snapshot 实时观察、空白卷创建、已有 PVC 引用/纳管、扩容和异步删除。
@@ -1237,7 +1255,6 @@
 - [x] 继续瘦身 `internal/api`：Git 外部平台客户端迁入 `internal/provider/git`，Registry 连接检测和 SSRF 目标校验迁入 `internal/provider/registry`，密钥加密和 secret-id 存储迁入 `internal/secret`。
 - [x] 将 Git API 大文件拆分为 Provider、Account、RepositoryBinding/Webhook 和 Helpers 多文件，避免单文件承载多个业务块。
 - [x] 将 Registry API 拆分为镜像站、凭据、容器镜像、访问控制、连接测试和 DTO 多文件，`registries.go` 仅保留镜像站主 CRUD 与输入转换。
-- [x] 新增 `tests` 自动化验证：API smoke 覆盖主要后端资源域，Browser smoke 使用 Playwright 登录并访问核心前端页面，`tests/run-all.sh` 串联 Go 测试、前端构建/lint、API 和浏览器验证。
 - [ ] 后续按领域继续拆分后端：将 Git/Registry/Auth/Project handler 的复杂流程逐步沉入 service/repository/provider，handler 保持 HTTP 适配层。
 
 ### 11.1 超大文件拆分与可维护性收敛
@@ -1366,9 +1383,8 @@
 ## 16. Luna CLI
 
 CLI 已迁移到独立仓库 [`LiteyukiStudio/luna-cli`](https://github.com/LiteyukiStudio/luna-cli)。
-本仓库的 [`docs-internal/cli-spec.md`](docs-internal/cli-spec.md) 只保留迁移入口，完整规格由
-[`luna-cli/docs/cli-spec.md`](https://github.com/LiteyukiStudio/luna-cli/blob/main/docs/cli-spec.md)
-维护。
+完整规格由 [`luna-cli/docs/cli-spec.md`](https://github.com/LiteyukiStudio/luna-cli/blob/main/docs/cli-spec.md)
+维护，本仓库不复制 CLI 规格。
 
 - [x] 完成 CLI spec 与 AI Agent 可实施性审计：按 `method + normalizedPath` 建立平台路由覆盖基线；明确普通业务命令、协议适配、浏览器回调、Webhook 接收器和显式排除等边界，`api request` 不计入覆盖；实时路由和命令数量统一由覆盖脚本输出，不在 TODO 复制快照。
 - [x] 移除旧 MCP、旧内嵌 Assistant 设计及 `ai-supports` 目录；CLI 与配套 Skills 已迁移到独立仓库。

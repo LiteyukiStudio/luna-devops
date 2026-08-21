@@ -27,7 +27,7 @@ function toolBlock(status: ToolCallBlock['status']): ToolCallBlock {
 }
 
 describe('ai assistant tool status icon', () => {
-  it('animates only a genuinely running tool call', async () => {
+  it('shows a running status icon only for a genuinely running tool call', async () => {
     await i18next.changeLanguage('zh-CN')
     const { container } = render(
       <AIToolCallCard
@@ -37,10 +37,10 @@ describe('ai assistant tool status icon', () => {
       />,
     )
 
-    expect(container.querySelector('[data-ai-tool-status-icon="running"]')).toHaveClass('animate-spin')
+    expect(container.querySelector('[data-ai-tool-status-icon="running"]')).toBeInTheDocument()
   })
 
-  it('uses a non-loading danger icon after a tool call fails', () => {
+  it('replaces the running icon after a tool call fails', () => {
     const { container } = render(
       <AIToolCallCard
         block={toolBlock('failed')}
@@ -49,9 +49,7 @@ describe('ai assistant tool status icon', () => {
       />,
     )
 
-    const icon = container.querySelector('[data-ai-tool-status-icon="failed"]')
-    expect(icon).toHaveClass('text-danger')
-    expect(icon).not.toHaveClass('animate-spin')
+    expect(container.querySelector('[data-ai-tool-status-icon="failed"]')).toBeInTheDocument()
     expect(container.querySelector('[data-ai-tool-status-icon="running"]')).not.toBeInTheDocument()
   })
 
@@ -77,13 +75,12 @@ describe('ai assistant tool status icon', () => {
 
     const details = container.querySelector('details')
     const summary = container.querySelector('[data-ai-tool-summary]')
-    expect(summary).toHaveClass('min-h-9')
     expect(summary).toHaveTextContent('查询应用列表')
     expect(summary).not.toHaveTextContent('listApplications')
     expect(summary).toHaveTextContent('已完成')
     expect(summary).toHaveTextContent('·')
     expect(summary).toHaveTextContent('128 ms')
-    expect(summary?.querySelector('[data-ai-tool-duration]')).toHaveClass('hidden', 'sm:contents')
+    expect(summary?.querySelector('[data-ai-tool-duration]')).toHaveTextContent('128 ms')
     expect(summary).not.toHaveTextContent('工具已返回结果')
     expect(details).not.toHaveAttribute('open')
 

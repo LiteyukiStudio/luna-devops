@@ -193,6 +193,16 @@ PostgreSQL 并发和迁移测试必须使用可销毁数据库，覆盖历史 sc
 
 ## 7. 发布最低门禁
 
+CI 按“PR 快速反馈、主分支与发布完整验收”分层：
+
+- PR 只执行受影响技术栈的快速检查，各技术栈并行；共享契约、CI 公共文件和无法可靠分类的变更
+  按全量处理，不能因路径判断不确定而静默跳过。
+- `main`、计划任务、版本 Tag 和受控手动发布执行完整质量检查；版本镜像只能在完整门禁通过后发布。
+- fork PR 只读运行，不读取发布 Secret、不登录或推送 Registry、不写共享缓存；禁止用
+  `pull_request_target` 执行不可信 PR 代码。
+- 第三方 GitHub Action 固定到完整 commit SHA。具体触发器、路径矩阵和命令以 `.github/workflows/`、
+  `scripts/ci/` 与 `scripts/release-check.sh` 为唯一事实源，本规范不复制其易变细节。
+
 - 后端：格式检查、`go test ./...`、针对性 PostgreSQL/竞态/迁移测试，必要时 `go vet`、
   `go test -race` 和 `govulncheck`。
 - 前端：测试、lint、build 无新增错误或未解释 warning；关键路由做 production preview smoke。

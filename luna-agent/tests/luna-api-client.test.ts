@@ -76,7 +76,25 @@ describe("Luna API tool client", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
-  it("rejects catalog-defined headers so only the fixed execution identity crosses the boundary", () => {
+  it("unwraps the OpenAPI request body envelope before calling the platform route", () => {
+    const operation = toolOperation({ operationId: "webSearch", method: "POST", path: "/api/v1/ai-tools/web-search", requestBody: true })
+
+    const request = buildToolRequest(operation, { body: { query: "Luna DevOps", limit: 5 } }, "http://api:8080")
+
+    expect(request.url).toEqual(new URL("http://api:8080/api/v1/ai-tools/web-search"))
+    expect(request.body).toEqual({ query: "Luna DevOps", limit: 5 })
+  })
+
+  it("allows the version precondition header required by mutating platform routes", () => {
+    const operation = toolOperation({
+      parameters: [{ inputName: "revision", wireName: "If-Match", in: "header", required: true }],
+    })
+
+    expect(buildToolRequest(operation, { revision: 7 }, "http://api:8080"))
+      .toMatchObject({ headers: { "if-match": "7" } })
+  })
+
+  it("rejects arbitrary catalog-defined headers so identity cannot cross from model arguments", () => {
     const operation = toolOperation({
       parameters: [{ inputName: "tenant", wireName: "X-Tenant", in: "header", required: true }],
     })

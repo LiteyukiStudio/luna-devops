@@ -3,20 +3,16 @@ package billing
 import (
 	"context"
 	"errors"
-	"fmt"
-	"net/url"
-	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/LiteyukiStudio/devops/internal/database"
 	"github.com/LiteyukiStudio/devops/internal/model"
+	"github.com/LiteyukiStudio/devops/internal/testdb"
 	"github.com/shopspring/decimal"
-	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
-	"gorm.io/gorm/logger"
 )
 
 // These tests create and force-drop a luna_billing_budget_test_* database.
@@ -171,9 +167,9 @@ func seedBudgetUserRun(t *testing.T, db *gorm.DB, userID string, balance decimal
 		{`INSERT INTO ai.runs(id, owner_user_id, conversation_id, turn_id, run_index, status, prompt_version, tool_catalog_digest,
 model_id, model_name, input_credits_per_million, output_credits_per_million,
 cached_input_credits_per_million, cached_output_credits_per_million,
-max_context_tokens, max_output_tokens, total_token_budget, total_credit_budget)
+max_context_tokens, max_output_tokens, total_token_budget, total_credit_budget, actor_session_id)
 VALUES ('airun_budget_pg', ?, 'aicnv_budget_pg', 'aitrn_budget_pg', 0, 'running', 'test', 'test',
-'aimod_budget_pg', 'budget', 2000000, 4000000, 1000000, 3000000, 4096, 512, 10000, 1000)`, []any{userID}},
+'aimod_budget_pg', 'budget', 2000000, 4000000, 1000000, 3000000, 4096, 512, 10000, 1000, 'ses_budget_pg')`, []any{userID}},
 	}
 	for _, statement := range statements {
 		if err := db.Exec(statement.query, statement.args...).Error; err != nil {
@@ -203,50 +199,10 @@ func assertWalletBalance(t *testing.T, db *gorm.DB, userID, want string) {
 }
 
 func openIsolatedBillingBudgetDB(t *testing.T) *gorm.DB {
-	t.Helper()
-	databaseURL := os.Getenv("AUTH_TEST_DATABASE_URL")
-	if databaseURL == "" {
-		t.Skip("AUTH_TEST_DATABASE_URL is not configured")
-	}
-	adminDB, err := gorm.Open(postgres.Open(databaseURL), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
-	if err != nil {
-		t.Fatalf("open PostgreSQL admin database: %v", err)
-	}
-	databaseName := fmt.Sprintf("luna_billing_budget_test_%d", time.Now().UnixNano())
-	if !strings.HasPrefix(databaseName, "luna_billing_budget_test_") {
-		t.Fatalf("refuse unsafe database name %q", databaseName)
-	}
-	if err := adminDB.Exec(`CREATE DATABASE "` + databaseName + `"`).Error; err != nil {
-		t.Fatalf("create isolated database: %v", err)
-	}
-	t.Cleanup(func() {
-		if dropErr := adminDB.Exec(`DROP DATABASE IF EXISTS "` + databaseName + `" WITH (FORCE)`).Error; dropErr != nil {
-			t.Errorf("drop isolated database: %v", dropErr)
-		}
-		if sqlDB, dbErr := adminDB.DB(); dbErr == nil {
-			_ = sqlDB.Close()
-		}
+	return testdb.OpenDatabase(t, testdb.Options{
+		SchemaPrefix: "luna_billing_budget_test",
+		Migrate: func(db *gorm.DB) error {
+			return database.MigrateContext(context.Background(), db)
+		},
 	})
-	parsed, err := url.Parse(databaseURL)
-	if err != nil {
-		t.Fatalf("parse PostgreSQL URL: %v", err)
-	}
-	parsed.Path = "/" + databaseName
-	parsed.RawPath = ""
-	query := parsed.Query()
-	query.Del("search_path")
-	parsed.RawQuery = query.Encode()
-	db, err := gorm.Open(postgres.Open(parsed.String()), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
-	if err != nil {
-		t.Fatalf("open isolated database: %v", err)
-	}
-	if err := database.MigrateContext(context.Background(), db); err != nil {
-		t.Fatalf("migrate isolated database: %v", err)
-	}
-	t.Cleanup(func() {
-		if sqlDB, dbErr := db.DB(); dbErr == nil {
-			_ = sqlDB.Close()
-		}
-	})
-	return db
 }

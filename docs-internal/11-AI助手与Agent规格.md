@@ -13,7 +13,8 @@ AI 助手不是悬浮在控制台上的通用聊天机器人。它理解用户�
 - 汇总分散在多个页面中的状态、事件和日志。
 - 把用户带到正确页面、Tab 或资源详情。
 - 为表单预填安全的非密钥参数，由用户确认后保存。
-- 在用户对当前参数明确批准后执行受控的平台操作；参数变化时重新批准。
+- 在用户批准当前高风险 ToolCall 后才执行受控的平台操作；除非当前用户已对该
+  operationId 设置可撤销豁免，每个新 ToolCall 都单独决策。
 - 保留可恢复的会话和执行记录，刷新页面不丢失诊断进度。
 
 核心原则：**助手代表当前用户工作，不拥有超出当前用户的权限。**
@@ -58,6 +59,12 @@ AI 助手不是悬浮在控制台上的通用聊天机器人。它理解用户�
 - `get_tool_details` 每次接收 1–8 个精确 operationId，返回输入/输出 Schema 与路由细节；只有这些
   被选择的 Schema 才进入下一模型步。无 embedding、多向量、RRF、reranker、shadow/dynamic、
   sticky、Top 8 门禁、digest 持久化或专用大评测集。
+- Catalog 必须从真实 OpenAPI operation 归一化 operationId、用途、标签、别名、审批要求、幂等性、
+  HTTP 路由、Scope、输入/输出 Schema、敏感路径和传输参数。目录只负责发现，最终权限仍由 Luna API
+  权威回读用户、Session、会话、项目空间、ToolCall 与审批状态后进入原 Handler/Service/RBAC。
+- 普通 `/api/v1` JSON operation 自动纳入目录；OAuth/OIDC 回调、认证凭据、文件传输、SSE、
+  WebSocket 和其他特殊协议必须在集中 `operationId -> reason` deny map 中排除并测试。不得在 Agent
+  维护重复白名单、执行路由或权限 fallback。
 - 部署配置的 `clusterId` 为空表示平台默认集群：只有存在多个候选且必须由用户决定时才用
   `listRuntimeClusters` 的真实结果询问，禁止无候选凭空问“选择哪个集群”。
 - 模型未来只使用 `present_card`、`request_input`、`request_choice` 三个通用交互工具；回复完成后
@@ -142,7 +149,11 @@ Agent 通过 Skill 引导完成平台工作流。Skill 以公开使用文档、�
 Skill 已覆盖不代表对应写工具已在 Tool Catalog 开放；工具未注册时 Skill 必须阻止模型虚构执行，
 明确报告"尚未执行"。
 
-## 10. 参考与事实源
+变更工具目录、Schema、Scope 或审批要求时，至少验证完整目录分页、中文/英文检索、精确详情加载、
+未加载工具不可见、集中排除原因、普通与高危工具、拒绝/单次批准/始终批准/撤销、跨用户/Session/
+项目空间隔离，以及一条真实副作用和权威回读。检索词不得进入普通遥测属性或 Metric label。
+
+## 9. 参考与事实源
 
 - 交互卡片协议契约：[`12-AI声明式交互卡片Schema.md`](12-AI声明式交互卡片Schema.md)
 - 工具注册闭环与调用链约束：`AGENTS.md`

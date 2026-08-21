@@ -28,12 +28,27 @@ if [[ -n "${worktree_status}" ]]; then
   exit 1
 fi
 
-for command_name in go pnpm node helm zip unzip; do
+for command_name in go pnpm node helm psql rg zip unzip; do
   require_command "${command_name}"
 done
 
 if [[ -z "${AUTH_TEST_DATABASE_URL:-}" ]]; then
   printf 'AUTH_TEST_DATABASE_URL is required for PostgreSQL integration and migration tests\n' >&2
+  exit 1
+fi
+if [[ -z "${AGENT_TEST_DATABASE_URL:-}" ]]; then
+  printf 'AGENT_TEST_DATABASE_URL is required for Agent PostgreSQL integration tests\n' >&2
+  exit 1
+fi
+
+auth_test_database="$(psql "${AUTH_TEST_DATABASE_URL}" -Atqc 'select current_database()')"
+agent_test_database="$(psql "${AGENT_TEST_DATABASE_URL}" -Atqc 'select current_database()')"
+if [[ -z "${auth_test_database}" || -z "${agent_test_database}" ]]; then
+  printf 'unable to resolve the PostgreSQL test database names\n' >&2
+  exit 1
+fi
+if [[ "${auth_test_database}" == "${agent_test_database}" ]]; then
+  printf 'AUTH_TEST_DATABASE_URL and AGENT_TEST_DATABASE_URL must use isolated databases\n' >&2
   exit 1
 fi
 
@@ -61,31 +76,14 @@ if [[ "${installed_go_version}" != "go${expected_go_version}" ]]; then
   exit 1
 fi
 
-section "Checking Go formatting"
-unformatted_files=""
-while IFS= read -r go_file; do
-  if [[ -n "$(gofmt -l "${go_file}")" ]]; then
-    unformatted_files+="${go_file}"$'\n'
-  fi
-done < <(git ls-files -- '*.go')
-if [[ -n "${unformatted_files}" ]]; then
-  printf 'gofmt is required for:\n%s' "${unformatted_files}" >&2
-  exit 1
-fi
-
-section "Running Go tests"
-AUTH_TEST_DATABASE_URL="" go test ./...
+section "Checking Go formatting, tests, and vet"
+bash "${ROOT_DIR}/scripts/ci/check-go.sh"
 
 section "Running PostgreSQL integration and migration tests without cache"
-# Both packages exercise the same ephemeral PostgreSQL database and apply the
-# full migration chain. Keep package execution serial to avoid concurrent DDL.
-go test -p 1 -count=1 ./internal/api ./internal/database
-
-section "Running Go vet"
-go vet ./...
+bash "${ROOT_DIR}/scripts/ci/check-go-postgres.sh"
 
 section "Running race tests for critical packages"
-AUTH_TEST_DATABASE_URL="" go test -race ./internal/api ./internal/worker ./internal/provider/kubernetes ./internal/secret
+bash "${ROOT_DIR}/scripts/ci/check-go-race.sh"
 
 section "Installing locked frontend dependencies"
 pnpm --dir luna-agent install --frozen-lockfile
@@ -93,19 +91,15 @@ pnpm --dir web install --frozen-lockfile
 pnpm --dir docs install --frozen-lockfile
 
 section "Checking the AI Agent"
-pnpm --dir luna-agent lint
-pnpm --dir luna-agent typecheck
-pnpm --dir luna-agent test
-pnpm --dir luna-agent build
+bash "${ROOT_DIR}/scripts/ci/prepare-agent-test-database.sh"
+bash "${ROOT_DIR}/scripts/ci/check-agent.sh"
 
 section "Linting and building the frontend"
-pnpm --dir web test
-pnpm --dir web lint
-pnpm --dir web build
+bash "${ROOT_DIR}/scripts/ci/check-web.sh"
 
 section "Building the documentation site"
 "${ROOT_DIR}/scripts/generate-changelog.sh"
-pnpm --dir docs build
+bash "${ROOT_DIR}/scripts/ci/check-docs.sh"
 
 section "Auditing pnpm dependencies"
 # GHSA-qwww-vcr4-c8h2 only affects React Router's unstable RSC APIs, which
@@ -117,14 +111,7 @@ pnpm --dir luna-agent audit --prod --audit-level=high
 section "Scanning Go dependencies and reachable code"
 go run "golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}" ./...
 
-section "Linting and rendering the Helm chart"
-helm lint "${HELM_CHART_DIR}"
-rendered_chart="$(mktemp)"
-trap 'rm -f "${rendered_chart}"' EXIT
-helm template luna-devops "${HELM_CHART_DIR}" > "${rendered_chart}"
-if [[ ! -s "${rendered_chart}" ]]; then
-  printf 'Helm rendered an empty manifest\n' >&2
-  exit 1
-fi
+section "Linting, rendering, and testing the Helm chart"
+bash "${ROOT_DIR}/scripts/ci/check-helm.sh"
 
 section "Release checks passed"

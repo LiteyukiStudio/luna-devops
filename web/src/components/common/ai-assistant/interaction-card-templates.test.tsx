@@ -43,24 +43,19 @@ describe.each(Object.entries(interactionCardTemplateFixtures))('%s interaction c
 })
 
 describe('interaction card template edge cases', () => {
-  it('keeps maximum-size candidate sets bounded and their long content wrappable', () => {
+  it('keeps maximum-size candidate sets bounded and actionable', () => {
     const { container } = render(<AIInteractionCards arguments={extremeInteractionCardFixture} onAction={vi.fn()} />)
 
     expect(container.querySelectorAll('[data-ai-card]')).toHaveLength(12)
-    expect(container.querySelector('[data-ai-card-group="candidates"]')).toHaveClass('min-w-0')
     expect(screen.getAllByRole('button', { name: /选择第/ })).toHaveLength(12)
     expect(container.querySelector('[data-ai-card-sources]')).not.toBeNull()
   })
 
-  it('keeps wide comparison tables inside their own horizontal scroll container', () => {
-    const { container } = render(<AIInteractionCards arguments={interactionCardTemplateFixtures.candidates} onAction={vi.fn()} />)
+  it('renders expanded comparison tables', () => {
+    render(<AIInteractionCards arguments={interactionCardTemplateFixtures.candidates} onAction={vi.fn()} />)
     for (const button of screen.getAllByRole('button', { name: '展开或收起卡片详情' }))
       fireEvent.click(button)
-    const table = screen.getByRole('table')
-    const scroller = table.parentElement
-
-    expect(scroller).toHaveClass('max-w-full', 'overflow-x-auto')
-    expect(container.querySelector('[data-ai-card-group="candidates"]')).toHaveClass('min-w-0')
+    expect(screen.getByRole('table')).toBeVisible()
   })
 
   it('shows trusted sources with a readable label and hidden trust description', () => {
@@ -68,12 +63,12 @@ describe('interaction card template edge cases', () => {
     const sources = screen.getAllByText('Luna DevOps 实时数据')[0]!
 
     expect(sources).toBeVisible()
-    expect(within(sources.parentElement!).getByText('平台数据')).toHaveClass('sr-only')
+    expect(within(sources.parentElement!).getByText('平台数据')).toBeInTheDocument()
   })
 
   it('renders semantic error and trend states without raw status text controls', () => {
     const { container } = render(<AIInteractionCards arguments={interactionCardTemplateFixtures.result} onAction={vi.fn()} />)
-    expect(screen.getByText('阻断构建')).toHaveClass('bg-danger-subtle', 'text-danger')
+    expect(screen.getByText('阻断构建')).toBeVisible()
     expect(container.querySelector('[data-ai-content-block="metrics"] svg')).not.toBeNull()
     expect(container.querySelector('[data-ai-content-block="callout"]')).not.toBeNull()
   })

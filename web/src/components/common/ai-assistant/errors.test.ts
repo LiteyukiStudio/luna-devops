@@ -2,11 +2,6 @@ import { describe, expect, it } from 'vitest'
 import { runFailureTranslationKey } from './errors'
 
 describe('ai assistant error translations', () => {
-  it('maps approval argument conflicts to a specific recovery message', () => {
-    expect(runFailureTranslationKey('ai.approval_arguments_changed'))
-      .toBe('aiAssistant.runFailure.approval_arguments_changed')
-  })
-
   it.each([
     'ai.model_context_limit_invalid',
     'ai.model_context_insufficient',

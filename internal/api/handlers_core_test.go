@@ -514,6 +514,16 @@ func TestConfigValueToStringAcceptsStructuredValues(t *testing.T) {
 		t.Fatalf("bool value = %q, %v", text, err)
 	}
 
+	text, err = configValueToString(float64(2_000_000))
+	if err != nil || text != "2000000" {
+		t.Fatalf("large integer value = %q, %v", text, err)
+	}
+
+	text, err = configValueToString(0.9)
+	if err != nil || text != "0.9" {
+		t.Fatalf("decimal value = %q, %v", text, err)
+	}
+
 	text, err = configValueToString(map[string]any{"url": "/luna-devops-logo.svg"})
 	if err != nil || text != `{"url":"/luna-devops-logo.svg"}` {
 		t.Fatalf("object value = %q, %v", text, err)

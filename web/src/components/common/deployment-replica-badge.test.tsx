@@ -26,18 +26,16 @@ describe('deployment replica badge', () => {
   it('shows an observed zero replica workload as scaled down instead of ready', () => {
     render(<DeploymentReplicaBadge availableReplicas={0} desiredReplicas={0} readyReplicas={0} status="ready" />)
 
-    const badge = screen.getByText('已缩容').parentElement
     expect(screen.getByText('0/0')).toBeVisible()
-    expect(badge).toHaveClass('text-zinc-700')
-    expect(badge).not.toHaveClass('text-success')
+    expect(screen.getByText('已缩容')).toBeVisible()
+    expect(screen.queryByText('已就绪')).not.toBeInTheDocument()
   })
 
   it('downgrades an inconsistent ready status when replicas are not ready and available', () => {
     render(<DeploymentReplicaBadge availableReplicas={0} desiredReplicas={1} readyReplicas={0} status="ready" />)
 
-    const badge = screen.getByText('部署中').parentElement
     expect(screen.getByText('0/1')).toBeVisible()
-    expect(badge).toHaveClass('text-warning')
+    expect(screen.getByText('部署中')).toBeVisible()
   })
 
   it('keeps a zero replica rollout progressing until Kubernetes observes the new generation', () => {

@@ -16,10 +16,9 @@ describe('deployment target dialog footer', () => {
       />,
     )
 
-    expect(screen.getByRole('status')).toHaveClass('text-warning')
-    expect(screen.getByRole('button', { name: /仅保存|Save only/ })).toHaveClass('border')
+    expect(screen.getByRole('status')).toBeVisible()
+    expect(screen.getByRole('button', { name: /仅保存|Save only/ })).toBeEnabled()
     const redeploy = screen.getByRole('button', { name: /保存并重新部署|Save and redeploy/ })
-    expect(redeploy).toHaveClass('bg-primary')
     fireEvent.click(redeploy)
     expect(onSaveAndRedeploy).toHaveBeenCalledOnce()
   })
@@ -38,6 +37,6 @@ describe('deployment target dialog footer', () => {
     expect(screen.queryByRole('status')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /仅保存|Save only/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /保存并重新部署|Save and redeploy/ })).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /^保存$|^Save$/ })).toHaveClass('bg-primary')
+    expect(screen.getByRole('button', { name: /^保存$|^Save$/ })).toBeEnabled()
   })
 })

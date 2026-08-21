@@ -1,6 +1,5 @@
 import { z } from "zod"
 import type { InteractionCardGroup } from "@luna-devops/ai-interaction-card-contract"
-import type { ModelToolDefinition } from "../provider/provider.js"
 import {
   compileBusinessCardTemplate,
   createBusinessCardTemplateInput,
@@ -717,11 +716,9 @@ function normalizeCardSections(input: Record<string, unknown>): unknown {
   return input
 }
 
-export const createInteractionCardsTool: ModelToolDefinition = {
-  operationId: "create_interaction_cards",
-  description: "历史 create_interaction_cards 契约，仅用于兼容校验和恢复既有 InteractionCardGroup v1 payload。新模型不得调用此工具；新卡片分别使用 present_card、request_input 或 request_choice。",
-  inputSchema: cardInputJsonSchema(),
-}
+// 仅供历史 create_interaction_cards payload 校验与回放；它不是模型工具
+// 定义，避免旧 operationId 再次被加入未来模型的工具集合。
+export const legacyInteractionCardsInputSchema = cardInputJsonSchema()
 
 function messageTemplateFieldIds(message: string): string[] {
   return [...message.matchAll(/\{\{([a-zA-Z0-9_-]{1,64})\}\}/g)].map(match => match[1]!)

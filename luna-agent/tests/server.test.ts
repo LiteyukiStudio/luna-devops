@@ -60,6 +60,30 @@ describe("internal API", () => {
     expect(response.statusCode).toBe(401)
     await app.close()
   })
+  it("does not expose another user's conversation, timeline, Run, or events", async () => {
+    const { app, repository } = fixture()
+    const owner = "usr_isolation_owner"
+    const intruderHeaders = { "x-luna-dev-user": "usr_isolation_intruder" }
+    const conversation = await repository.createConversation(owner, "private conversation")
+    const created = await repository.createTurn(owner, {
+      conversationId: conversation.id,
+      input: "private input",
+      pageContext: {},
+      idempotencyKey: "isolation-owner-turn",
+    })
+
+    for (const url of [
+      `/internal/v1/conversations/${conversation.id}`,
+      `/internal/v1/conversations/${conversation.id}/timeline`,
+      `/internal/v1/runs/${created.run.id}`,
+      `/internal/v1/runs/${created.run.id}/events?after=0&stream=false`,
+    ]) {
+      const response = await app.inject({ method: "GET", url, headers: intruderHeaders })
+      expect(response.statusCode, url).toBe(404)
+      expect(JSON.stringify(response.json())).not.toContain("private input")
+    }
+    await app.close()
+  })
   it("lists and revokes approve-always exemptions only for the current user", async () => {
     const { app, repository } = fixture()
     const conversation = await repository.createConversation("usr_exemption_a", "approval")

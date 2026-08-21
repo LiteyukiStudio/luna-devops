@@ -380,10 +380,24 @@ export function buildServer(input: {
         await input.repository.updateRun(runId, "waiting_approval", "queued")
         return reply.code(202).send({ runId, state: "queued" })
       }
-	  const resolved = await input.tools.resolveApproval(toolCallId, body.decision)
-	  if (resolved.status === "awaiting_approval") return presentRun(run)
-	  await input.repository.updateRun(runId, "waiting_approval", "queued")
-	  return reply.code(202).send({ runId, state: "queued" })
+      // 批准后的平台调用必须在权威 Run 处于 running 时执行，Go 执行身份
+      // 中间件会据此拒绝过期、并发或跨 Run 的 ToolCall。running 不会被
+      // queued claim 领取，因此同步执行期间不存在第二个 Executor 竞争。
+      await input.repository.updateRun(runId, "waiting_approval", "running")
+      try {
+        const resolved = await input.tools.resolveApproval(toolCallId, body.decision)
+        if (resolved.status === "awaiting_approval") {
+          await input.repository.updateRun(runId, "running", "waiting_approval")
+          const waiting = await input.repository.getRun(request.actor.userId, runId)
+          return waiting ? presentRun(waiting) : reply.code(404).send(errorBody("ai.run_not_found", request.id))
+        }
+        await input.repository.updateRun(runId, "running", "queued")
+        return reply.code(202).send({ runId, state: "queued" })
+      }
+      catch (error) {
+        await input.repository.updateRun(runId, "running", "queued")
+        throw error
+      }
 	})
     secured.post("/internal/v1/runs/:runId/input", async (request, reply) => {
       const { runId } = z.object({ runId: id }).parse(request.params)

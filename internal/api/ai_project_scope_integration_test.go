@@ -14,9 +14,11 @@ import (
 	"time"
 
 	"github.com/LiteyukiStudio/devops/internal/aiagent"
+	"github.com/LiteyukiStudio/devops/internal/aitool"
 	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/database"
 	"github.com/LiteyukiStudio/devops/internal/model"
+	"github.com/LiteyukiStudio/devops/internal/security"
 	"github.com/LiteyukiStudio/devops/internal/volume"
 	"github.com/gin-gonic/gin"
 	"github.com/shopspring/decimal"
@@ -160,6 +162,86 @@ func TestAIProjectVolumeDirectExecutionAndAuthoritativeReadbackPostgres(t *testi
 	}
 	if getRecorder.Header().Get("Cache-Control") != "no-store" {
 		t.Fatalf("readback cache policy = %q", getRecorder.Header().Get("Cache-Control"))
+	}
+}
+
+func TestAIFetchWebPageDirectExecutionPostgres(t *testing.T) {
+	t.Setenv("APP_ENV", "production")
+	t.Setenv("REDIS_ADDR", "")
+	t.Setenv(aiagent.InternalSecretEnvironment, "ai-web-tool-integration-secret-0001")
+	db := aiProjectScopeIntegrationDB(t)
+
+	now := time.Now().UTC()
+	user := model.User{ID: "usr_ai_web_owner", Email: "ai-web-owner@example.test", Name: "AI Web Owner", Role: authz.PlatformRoleAdmin}
+	session := model.UserSession{ID: "ses_ai_web_owner", UserID: user.ID, TokenHash: "ai-web-session-token", ExpiresAt: now.Add(time.Hour)}
+	for _, value := range []any{&user, &session} {
+		if err := db.Create(value).Error; err != nil {
+			t.Fatalf("seed %T: %v", value, err)
+		}
+	}
+
+	target := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = writer.Write([]byte(`<html><head><title>Luna Tool Test</title></head><body><main>authoritative public page</main></body></html>`))
+	}))
+	defer target.Close()
+
+	handlers := NewHandlers(db)
+	handlers.aiTools = aitool.NewService(db, aitool.WithWebPolicyProvider(func(context.Context, string) (security.EgressPolicy, error) {
+		return security.AdminEgressPolicy(), nil
+	}))
+	router := gin.New()
+	router.Use(handlers.aiToolExecutionIdentityMiddleware())
+	router.POST("/api/v1/ai-tools/fetch-web-page", handlers.ExecuteAIFetchWebPage)
+
+	keys, err := aiagent.LoadInternalKeys()
+	if err != nil {
+		t.Fatal(err)
+	}
+	conversationID := "aicnv_ai_web"
+	turnID := "aitrn_ai_web"
+	runID := "airun_ai_web"
+	toolCallID := "aitool_ai_web_fetch"
+	if err := db.Exec(`INSERT INTO ai.conversations (id, owner_user_id, title, status) VALUES (?, ?, 'web test', 'active')`, conversationID, user.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`INSERT INTO ai.turns (id, conversation_id, turn_index, status, input, selected_run_id) VALUES (?, ?, 1, 'running', 'fetch web page', ?)`, turnID, conversationID, runID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`INSERT INTO ai.runs (id, owner_user_id, conversation_id, turn_id, run_index, status, prompt_version, tool_catalog_digest, actor_session_id) VALUES (?, ?, ?, ?, 1, 'running', 'system-v4', 'test', ?)`, runID, user.ID, conversationID, turnID, session.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`INSERT INTO ai.tool_calls (id, run_id, operation_id, status, arguments, input_mode) VALUES (?, ?, 'fetchWebPage', 'running', ?::jsonb, 'model')`, toolCallID, runID, `{"body":{"url":"`+target.URL+`"}}`).Error; err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Exec(`DELETE FROM ai.conversations WHERE id = ?`, conversationID).Error })
+
+	execute := httptest.NewRequest(http.MethodPost, "/api/v1/ai-tools/fetch-web-page", bytes.NewBufferString(`{"url":"`+target.URL+`","maxCharacters":2000}`))
+	execute.Header.Set("Authorization", "Bearer "+keys.CallbackServiceToken)
+	execute.Header.Set("Content-Type", "application/json")
+	execute.Header.Set(aiRunIDHeader, runID)
+	execute.Header.Set(aiToolCallIDHeader, toolCallID)
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, execute)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("fetch web page = %d %s", recorder.Code, recorder.Body.String())
+	}
+	var response struct {
+		Data map[string]any `json:"data"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Data["title"] != "Luna Tool Test" || !strings.Contains(fmt.Sprint(response.Data["content"]), "authoritative public page") {
+		t.Fatalf("web page response = %#v", response.Data)
+	}
+
+	unbound := httptest.NewRequest(http.MethodPost, "/api/v1/ai-tools/fetch-web-page", bytes.NewBufferString(`{"url":"`+target.URL+`"}`))
+	unbound.Header.Set("Content-Type", "application/json")
+	unboundRecorder := httptest.NewRecorder()
+	router.ServeHTTP(unboundRecorder, unbound)
+	if unboundRecorder.Code != http.StatusForbidden {
+		t.Fatalf("unbound web request = %d %s", unboundRecorder.Code, unboundRecorder.Body.String())
 	}
 }
 

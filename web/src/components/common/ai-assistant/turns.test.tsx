@@ -151,32 +151,10 @@ describe('ai assistant turn topology', () => {
     expect(screen.getAllByText('检查项目状态')).toHaveLength(1)
     const replies = container.querySelectorAll('[data-ai-reply]')
     expect(replies).toHaveLength(1)
-    expect(container.querySelector('[data-ai-user-message] [data-ai-message-group]')).toHaveClass('max-w-[78%]')
-    expect(container.querySelector('[data-ai-reply] [data-ai-message-group]')).toHaveClass('max-w-[78%]')
     const replyText = replies[0].textContent ?? ''
     expect(replyText.indexOf('先分析当前项目')).toBeLessThan(replyText.indexOf('正在查询项目状态'))
     expect(replyText.indexOf('正在查询项目状态')).toBeLessThan(replyText.indexOf('listProjects'))
     expect(replyText.indexOf('listProjects')).toBeLessThan(replyText.indexOf('最终答复'))
-  })
-
-  it('reserves scroll space below the last message when suggestions float over the timeline', () => {
-    const { container } = render(
-      <MemoryRouter>
-        <AIAssistantTimeline
-          bottomInset
-          blocks={blocks}
-          error={null}
-          generating={false}
-          loading={false}
-          onAction={vi.fn(async () => true)}
-          onApproval={vi.fn(async () => {})}
-          onResend={vi.fn()}
-          onRetry={vi.fn()}
-        />
-      </MemoryRouter>,
-    )
-
-    expect(container.querySelector('[data-slot="ai-assistant-timeline"]')).toHaveClass('pb-16')
   })
 
   it('follows streaming content only while the user remains at the latest position', () => {

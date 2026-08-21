@@ -781,7 +781,10 @@ func configValueToString(value any) (string, error) {
 	case bool:
 		return fmt.Sprintf("%t", typed), nil
 	case float64:
-		return fmt.Sprintf("%v", typed), nil
+		// JSON numbers are decoded as float64. Keep their decimal representation
+		// stable so large integer configuration values do not become scientific
+		// notation (for example 2000000 -> 2e+06) before integer validation.
+		return strconv.FormatFloat(typed, 'f', -1, 64), nil
 	default:
 		data, err := json.Marshal(typed)
 		if err != nil {

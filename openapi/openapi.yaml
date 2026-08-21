@@ -30,6 +30,7 @@ tags:
   - name: Topology
   - name: Releases
   - name: AppTemplates
+  - name: Web
 paths:
   /healthz:
     get:
@@ -697,6 +698,10 @@ paths:
       operationId: listUsers
       tags: [Users]
       summary: List users
+      x-luna-agent:
+        aliases:
+          zh: [列出平台用户, 查询平台用户, 用户列表]
+          en: [list platform users, platform user list]
       parameters:
         - $ref: "#/components/parameters/Page"
         - $ref: "#/components/parameters/PageSize"
@@ -1471,6 +1476,10 @@ paths:
       tags: [Dashboard]
       summary: Get the current user's dashboard overview
       description: Returns the task-oriented dashboard aggregation in one response. Future dashboard read models are added to this contract instead of being composed from multiple browser requests.
+      x-luna-agent:
+        aliases:
+          zh: [查看平台仪表盘概览, 平台仪表盘, 看板概览]
+          en: [platform dashboard overview, dashboard summary]
       x-luna-cli:
         command: dashboard.show
         classification: business-command
@@ -1830,6 +1839,10 @@ paths:
       tags: [Volumes]
       summary: List project-space volumes with current Kubernetes observations
       description: Returns only the requested page. Current state is observed from Kubernetes and is never served from a persisted status cache.
+      x-luna-agent:
+        aliases:
+          zh: [数据卷, 持久化存储]
+          en: [ProjectVolume, project volume, persistent storage]
       x-luna-cli:
         command: volume.list
         classification: business-command
@@ -3988,6 +4001,10 @@ paths:
       tags:
         - Notifications
       summary: List Notification Channels
+      x-luna-agent:
+        aliases:
+          zh: [列出通知渠道, 查询通知渠道, 通知渠道列表]
+          en: [list notification channels, notification channel list]
       parameters:
         - name: search
           in: query
@@ -6680,6 +6697,10 @@ paths:
       tags:
         - Billing
       summary: Get Billing Summary
+      x-luna-agent:
+        aliases:
+          zh: [查看平台账单概览, 平台账单, 费用概览]
+          en: [platform billing overview, billing summary]
       parameters:
         - name: accountScope
           in: query
@@ -7090,6 +7111,87 @@ paths:
       responses:
         "200": { description: Enabled model identifiers and names, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/AIModelOption" } } } } }
         "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/v1/ai-tools/web-search:
+    post:
+      operationId: webSearch
+      tags: [Web]
+      summary: Search the public web through the platform-controlled provider
+      description: Agent-only read operation. The API applies the current user's egress policy, validates every redirect, rotates the configured proxy pool, and treats returned content as untrusted external data.
+      security: [{ AIAgentServiceToken: [] }]
+      x-luna-agent:
+        aliases:
+          zh: [网络搜索, 搜索互联网, 查找公开网页, 搜索官网和公开仓库]
+          en: [web search, search the internet, find public webpages]
+      x-luna-cli:
+        idempotent: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [query]
+              properties:
+                query: { type: string, minLength: 1, maxLength: 300 }
+                limit: { type: integer, minimum: 1, maximum: 10, default: 5 }
+      responses:
+        "200":
+          description: Bounded public search results.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [data, truncated]
+                properties:
+                  data: { type: object, additionalProperties: true }
+                  truncated: { type: boolean }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "502": { description: The configured search provider is unavailable, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+  /api/v1/ai-tools/fetch-web-page:
+    post:
+      operationId: fetchWebPage
+      tags: [Web]
+      summary: Fetch a public web page through the platform-controlled egress boundary
+      description: Agent-only read operation. Private, reserved, credential-bearing and policy-blocked targets are rejected before the response is reduced to bounded untrusted text and links.
+      security: [{ AIAgentServiceToken: [] }]
+      x-luna-agent:
+        aliases:
+          zh: [读取网页, 获取网页正文, 打开公开链接, 读取官网和公开文档]
+          en: [fetch web page, read webpage, open public URL]
+      x-luna-cli:
+        idempotent: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [url]
+              properties:
+                url: { type: string, minLength: 1, maxLength: 2048 }
+                maxCharacters: { type: integer, minimum: 1, maximum: 50000, default: 20000 }
+      responses:
+        "200":
+          description: Bounded public page content and links.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [data, truncated]
+                properties:
+                  data: { type: object, additionalProperties: true }
+                  truncated: { type: boolean }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "415": { description: The target content type is not readable, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+        "502": { description: The target page is unavailable, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
   /api/v1/configs/ai/models:
     get:
       operationId: listAIModelConfigs

@@ -1,0 +1,239 @@
+name: Full Quality
+
+on:
+  workflow_call:
+    inputs:
+      release_mode:
+        description: Run the complete release-check script before publishing.
+        required: false
+        default: false
+        type: boolean
+  push:
+    branches: [main]
+  schedule:
+    - cron: "17 2 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: full-quality-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  release-quality:
+    name: Complete release checks
+    if: inputs.release_mode == true || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:17.2-alpine
+        env:
+          POSTGRES_USER: devops
+          POSTGRES_PASSWORD: devops
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U devops -d postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      AUTH_TEST_DATABASE_URL: postgres://devops:devops@127.0.0.1:5432/luna_auth_test?sslmode=disable
+      AGENT_TEST_DATABASE_URL: postgres://devops:devops@127.0.0.1:5432/luna_agent_test?sslmode=disable
+    steps:
+      - name: Check out complete history
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: .go-version
+          cache: true
+      - name: Set up pnpm
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: 11.1.0
+          run_install: false
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "24"
+          cache: pnpm
+          cache-dependency-path: |
+            web/pnpm-lock.yaml
+            docs/pnpm-lock.yaml
+            luna-agent/pnpm-lock.yaml
+      - name: Set up Helm
+        uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4
+      - name: Create isolated PostgreSQL test databases
+        env:
+          PGPASSWORD: devops
+        run: |
+          psql -h 127.0.0.1 -U devops -d postgres -v ON_ERROR_STOP=1 \
+            -c 'CREATE DATABASE luna_auth_test'
+          psql -h 127.0.0.1 -U devops -d postgres -v ON_ERROR_STOP=1 \
+            -c 'CREATE DATABASE luna_agent_test'
+      - name: Run complete release checks
+        run: bash scripts/release-check.sh
+
+  go-postgres-quality:
+    name: Go PostgreSQL and migration checks
+    if: inputs.release_mode != true && github.event_name != 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:17.2-alpine
+        env:
+          POSTGRES_USER: devops
+          POSTGRES_PASSWORD: devops
+          POSTGRES_DB: luna_auth_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U devops -d luna_auth_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      AUTH_TEST_DATABASE_URL: postgres://devops:devops@127.0.0.1:5432/luna_auth_test?sslmode=disable
+    steps:
+      - name: Check out code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: .go-version
+          cache: true
+      - name: Run PostgreSQL integration and fresh migration checks
+        run: bash scripts/ci/check-go-postgres.sh
+
+  agent-postgres-quality:
+    name: Agent PostgreSQL checks
+    if: inputs.release_mode != true && github.event_name != 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:17.2-alpine
+        env:
+          POSTGRES_USER: devops
+          POSTGRES_PASSWORD: devops
+          POSTGRES_DB: luna_agent_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U devops -d luna_agent_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      AGENT_TEST_DATABASE_URL: postgres://devops:devops@127.0.0.1:5432/luna_agent_test?sslmode=disable
+    steps:
+      - name: Check out code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Set up pnpm
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: 11.1.0
+          run_install: false
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "24"
+          cache: pnpm
+          cache-dependency-path: luna-agent/pnpm-lock.yaml
+      - name: Install locked Agent dependencies
+        run: pnpm --dir luna-agent install --frozen-lockfile
+      - name: Prepare isolated Agent schema
+        run: bash scripts/ci/prepare-agent-test-database.sh
+      - name: Run Agent PostgreSQL integration checks
+        run: bash scripts/ci/check-agent-postgres.sh
+
+  go-race-quality:
+    name: Go race checks
+    if: inputs.release_mode != true && github.event_name != 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: .go-version
+          cache: true
+      - name: Run race detector on critical packages
+        run: bash scripts/ci/check-go-race.sh
+
+  dependency-quality:
+    name: Dependency vulnerability checks
+    if: inputs.release_mode != true && github.event_name != 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: .go-version
+          cache: true
+      - name: Set up pnpm
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: 11.1.0
+          run_install: false
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "24"
+      - name: Audit production pnpm dependencies
+        run: |
+          pnpm --dir web audit --prod --audit-level=high --ignore=GHSA-qwww-vcr4-c8h2
+          pnpm --dir docs audit --prod --audit-level=high --ignore=GHSA-qwww-vcr4-c8h2
+          pnpm --dir luna-agent audit --prod --audit-level=high
+      - name: Scan reachable Go vulnerabilities
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...
+
+  helm-full-quality:
+    name: Full Helm checks
+    if: inputs.release_mode != true && github.event_name != 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Set up Helm
+        uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4
+      - name: Run complete Helm validation
+        run: bash scripts/ci/check-helm.sh
+
+  full-quality:
+    name: Full Quality Gate
+    needs:
+      - release-quality
+      - go-postgres-quality
+      - agent-postgres-quality
+      - go-race-quality
+      - dependency-quality
+      - helm-full-quality
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require every executed full check to succeed
+        env:
+          RELEASE_RESULT: ${{ needs.release-quality.result }}
+          POSTGRES_RESULT: ${{ needs.go-postgres-quality.result }}
+          AGENT_POSTGRES_RESULT: ${{ needs.agent-postgres-quality.result }}
+          RACE_RESULT: ${{ needs.go-race-quality.result }}
+          DEPENDENCY_RESULT: ${{ needs.dependency-quality.result }}
+          HELM_RESULT: ${{ needs.helm-full-quality.result }}
+        run: |
+          for result in \
+            "$RELEASE_RESULT" "$POSTGRES_RESULT" "$AGENT_POSTGRES_RESULT" \
+            "$RACE_RESULT" "$DEPENDENCY_RESULT" "$HELM_RESULT"; do
+            case "$result" in
+              success|skipped) ;;
+              *) echo "required full-quality job finished with result: $result" >&2; exit 1 ;;
+            esac
+          done

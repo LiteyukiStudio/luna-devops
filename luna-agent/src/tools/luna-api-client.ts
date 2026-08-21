@@ -34,6 +34,7 @@ export class HttpLunaApiToolClient implements LunaApiToolClient {
     const init: RequestInit = {
       method: request.operation.method,
       headers: {
+        ...transport.headers,
         authorization: `Bearer ${this.serviceToken}`,
         "x-luna-ai-run-id": request.runId, "x-luna-ai-tool-call-id": request.toolCallId,
         "idempotency-key": request.toolCallId,
@@ -104,9 +105,10 @@ type TransportOperation = ToolOperation & {
   requestType?: string
 }
 
-export function buildToolRequest(operation: ToolOperation, input: Record<string, unknown>, baseUrl: string): { url: URL, body?: Record<string, unknown> } {
+export function buildToolRequest(operation: ToolOperation, input: Record<string, unknown>, baseUrl: string): { url: URL, body?: Record<string, unknown>, headers?: Record<string, string> } {
   const transport = operation as TransportOperation
   const consumed = new Set<string>()
+  const headers: Record<string, string> = {}
   let pathname = transport.path
   const url = new URL(pathname, baseUrl)
   for (const parameter of transport.parameters ?? []) {
@@ -122,18 +124,36 @@ export function buildToolRequest(operation: ToolOperation, input: Record<string,
       pathname = pathname.replaceAll(marker, encodeURIComponent(pathParameterValue(value)))
       continue
     }
-    if (parameter.in === "header") throw new Error("ai.tool_catalog_invalid")
+    if (parameter.in === "header") {
+      const headerName = allowedToolHeader(parameter.wireName)
+      headers[headerName] = pathParameterValue(value)
+      continue
+    }
     appendQueryValue(url.searchParams, parameter.wireName, value)
   }
   if (/\{[^}]+\}/.test(pathname)) throw new Error("ai.tool_arguments_invalid")
   url.pathname = pathname
 
   const remaining = Object.fromEntries(Object.entries(input).filter(([key]) => !consumed.has(key)))
-  if (transport.requestBody === true) return { url, body: remaining }
+  if (transport.requestBody === true) {
+    const explicitBody = remaining.body
+    if (isRecord(explicitBody) && Object.keys(remaining).length === 1)
+      return { url, body: explicitBody, ...(Object.keys(headers).length ? { headers } : {}) }
+    return { url, body: remaining, ...(Object.keys(headers).length ? { headers } : {}) }
+  }
   if ((transport.parameters?.length ?? 0) === 0) {
     for (const [key, value] of Object.entries(input)) appendQueryValue(url.searchParams, key, value)
   }
-  return { url }
+  return { url, ...(Object.keys(headers).length ? { headers } : {}) }
+}
+
+function allowedToolHeader(name: string): string {
+  if (name.toLowerCase() === "if-match") return "if-match"
+  throw new Error("ai.tool_catalog_invalid")
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
 function pathParameterValue(value: unknown): string {

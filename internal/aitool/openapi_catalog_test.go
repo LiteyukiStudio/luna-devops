@@ -75,7 +75,9 @@ func TestProjectVolumeCatalogCarriesBilingualSearchTermsAndSchemas(t *testing.T)
 		t.Fatal("missing listProjectVolumes")
 	}
 	if !strings.Contains(strings.Join(operation.Aliases.ZH, " "), "项目数据卷") ||
-		!strings.Contains(strings.Join(operation.Aliases.EN, " "), "list project volumes") {
+		!strings.Contains(strings.Join(operation.Aliases.ZH, " "), "持久化存储") ||
+		!strings.Contains(strings.Join(operation.Aliases.EN, " "), "list project volumes") ||
+		!strings.Contains(strings.Join(operation.Aliases.EN, " "), "ProjectVolume") {
 		t.Fatalf("aliases are incomplete: %#v", operation.Aliases)
 	}
 	if len(mapValue(operation.InputSchema["properties"])) == 0 || len(operation.OutputSchema) == 0 {
@@ -83,6 +85,57 @@ func TestProjectVolumeCatalogCarriesBilingualSearchTermsAndSchemas(t *testing.T)
 	}
 	if operation.RequiresApproval {
 		t.Fatal("read-only volume list must not require approval")
+	}
+}
+
+func TestPlatformReadOperationsCarryGoalSpecificChineseAliases(t *testing.T) {
+	expected := map[string][]string{
+		"getDashboard":             {"平台仪表盘", "看板概览"},
+		"listUsers":                {"平台用户", "用户列表"},
+		"listNotificationChannels": {"通知渠道", "通知渠道列表"},
+		"getBillingSummary":        {"平台账单", "费用概览"},
+	}
+	for operationID, terms := range expected {
+		operation, ok := PlatformOperation(operationID)
+		if !ok {
+			t.Fatalf("missing %s", operationID)
+		}
+		aliases := strings.Join(operation.Aliases.ZH, " ")
+		for _, term := range terms {
+			if !strings.Contains(aliases, term) {
+				t.Errorf("%s aliases %q do not contain %q", operationID, aliases, term)
+			}
+		}
+	}
+}
+
+func TestWebToolsRemainDiscoverableAndServiceRouted(t *testing.T) {
+	expected := map[string]struct {
+		path  string
+		alias string
+	}{
+		"webSearch":    {path: "/api/v1/ai-tools/web-search", alias: "网络搜索"},
+		"fetchWebPage": {path: "/api/v1/ai-tools/fetch-web-page", alias: "读取网页"},
+	}
+	for operationID, want := range expected {
+		operation, ok := PlatformOperation(operationID)
+		if !ok {
+			t.Fatalf("missing %s", operationID)
+		}
+		if operation.Method != "POST" || operation.Path != want.path || !operation.Idempotent || operation.RequiresApproval {
+			t.Errorf("%s transport/policy = %#v", operationID, operation)
+		}
+		if !reflect.DeepEqual(operation.RequiredScopes, []string{"web:read"}) {
+			t.Errorf("%s scopes = %#v", operationID, operation.RequiredScopes)
+		}
+		if !strings.Contains(strings.Join(operation.Aliases.ZH, " "), want.alias) {
+			t.Errorf("%s aliases = %#v", operationID, operation.Aliases)
+		}
+		properties := mapValue(operation.InputSchema["properties"])
+		body := mapValue(properties["body"])
+		if len(body) == 0 || !operation.RequestBody || !operation.RequestRequired {
+			t.Errorf("%s request schema = %#v", operationID, operation)
+		}
 	}
 }
 

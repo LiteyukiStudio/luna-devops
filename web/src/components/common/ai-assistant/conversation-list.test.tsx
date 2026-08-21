@@ -104,7 +104,7 @@ describe('ai conversation list', () => {
       />,
     )
 
-    expect(screen.getAllByRole('button', { name: '操作' })[0]).toHaveClass('opacity-100')
+    expect(screen.getAllByRole('button', { name: '操作' })[0]).toBeVisible()
     await user.click(screen.getByRole('button', { name: /构建失败诊断/ }))
     expect(onSelect).toHaveBeenCalledWith('conversation-1')
     expect(screen.getByRole('heading', { name: '会话' })).toBeInTheDocument()

@@ -104,26 +104,22 @@ func TestAIBillingStageFailurePreservesParentAndDoesNotRecordReservationText(t *
 	}
 }
 
-func TestNewRunnerDefaultsBuildJobOptions(t *testing.T) {
-	runner := NewRunner(nil, Options{})
-	if runner.deployRolloutTimeoutSeconds != 600 {
-		t.Fatalf("deployRolloutTimeoutSeconds = %d", runner.deployRolloutTimeoutSeconds)
-	}
-	if runner.certManagerClusterIssuer != "letsencrypt-http01" {
-		t.Fatalf("certManagerClusterIssuer = %q", runner.certManagerClusterIssuer)
-	}
-}
-
-func TestNewRunnerUsesBuildJobOptions(t *testing.T) {
-	runner := NewRunner(nil, Options{
-		DeployRolloutTimeoutSeconds: 120,
-		CertManagerClusterIssuer:    "letsencrypt-staging",
-	})
-	if runner.deployRolloutTimeoutSeconds != 120 {
-		t.Fatalf("deployRolloutTimeoutSeconds = %d", runner.deployRolloutTimeoutSeconds)
-	}
-	if runner.certManagerClusterIssuer != "letsencrypt-staging" {
-		t.Fatalf("certManagerClusterIssuer = %q", runner.certManagerClusterIssuer)
+func TestNewRunnerBuildJobOptions(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		options Options
+		timeout int64
+		issuer  string
+	}{
+		{name: "defaults", timeout: 600, issuer: "letsencrypt-http01"},
+		{name: "custom", options: Options{DeployRolloutTimeoutSeconds: 120, CertManagerClusterIssuer: "letsencrypt-staging"}, timeout: 120, issuer: "letsencrypt-staging"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			runner := NewRunner(nil, test.options)
+			if runner.deployRolloutTimeoutSeconds != test.timeout || runner.certManagerClusterIssuer != test.issuer {
+				t.Fatalf("runner options = %d/%q, want %d/%q", runner.deployRolloutTimeoutSeconds, runner.certManagerClusterIssuer, test.timeout, test.issuer)
+			}
+		})
 	}
 }
 
@@ -308,35 +304,30 @@ func TestKubernetesNotFoundDetection(t *testing.T) {
 	}
 }
 
-func TestProjectNamespaceFallsBackToLegacyName(t *testing.T) {
-	got := projectNamespace(model.Project{ID: "prj_abcdef1234567890", Identifier: "Demo_App"})
-	if got != "ns-abcdef1234" {
-		t.Fatalf("namespace = %q", got)
-	}
-}
-
-func TestProjectNamespaceUsesPersistedReadableName(t *testing.T) {
-	got := projectNamespace(model.Project{
-		ID:                  "prj_payments",
-		Identifier:          "payments",
-		KubernetesNamespace: "luna-payments",
-	})
-	if got != "luna-payments" {
-		t.Fatalf("namespace = %q", got)
-	}
-}
-
-func TestProjectNamespaceCapsDNSLabelLength(t *testing.T) {
-	got := projectNamespace(model.Project{ID: "prj_" + strings.Repeat("a", 80)})
-	if len(got) > 63 {
-		t.Fatalf("namespace too long: %q", got)
-	}
-}
-
-func TestDeploymentNamespaceAlwaysUsesProjectNamespace(t *testing.T) {
-	got := deploymentNamespace(model.Project{ID: "prj_abcdef1234567890", Identifier: "demo"}, model.Environment{Namespace: " Prod_App "})
-	if got != "ns-abcdef1234" {
-		t.Fatalf("namespace = %q", got)
+func TestProjectNamespaceSelection(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		project model.Project
+		resolve func(model.Project) string
+		want    string
+		maxLen  int
+	}{
+		{name: "legacy fallback", project: model.Project{ID: "prj_abcdef1234567890", Identifier: "Demo_App"}, resolve: projectNamespace, want: "ns-abcdef1234"},
+		{name: "persisted name", project: model.Project{ID: "prj_payments", Identifier: "payments", KubernetesNamespace: "luna-payments"}, resolve: projectNamespace, want: "luna-payments"},
+		{name: "DNS limit", project: model.Project{ID: "prj_" + strings.Repeat("a", 80)}, resolve: projectNamespace, maxLen: 63},
+		{name: "deployment ignores environment namespace", project: model.Project{ID: "prj_abcdef1234567890", Identifier: "demo"}, resolve: func(project model.Project) string {
+			return deploymentNamespace(project, model.Environment{Namespace: " Prod_App "})
+		}, want: "ns-abcdef1234"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			got := test.resolve(test.project)
+			if test.want != "" && got != test.want {
+				t.Fatalf("namespace = %q, want %q", got, test.want)
+			}
+			if test.maxLen > 0 && len(got) > test.maxLen {
+				t.Fatalf("namespace too long: %q", got)
+			}
+		})
 	}
 }
 
@@ -357,27 +348,21 @@ func TestRuntimeClusterKubeconfigErrorExplainsLocalFileRefs(t *testing.T) {
 	}
 }
 
-func TestApplicationResourceNameFallsBackToLegacyTargetID(t *testing.T) {
-	got := applicationResourceName(model.DeploymentTarget{ID: "dplt_abcdef1234567890"})
-	if got != "dplt-abcdef1234" {
-		t.Fatalf("resource name = %q", got)
-	}
-}
-
-func TestApplicationResourceNameUsesPersistedReadableName(t *testing.T) {
-	got := applicationResourceName(model.DeploymentTarget{
-		ID:             "dplt_payments_api_prod",
-		KubernetesName: "luna-api-prod",
-	})
-	if got != "luna-api-prod" {
-		t.Fatalf("resource name = %q", got)
-	}
-}
-
-func TestApplicationResourceNameFallsBackWhenTargetIDMissing(t *testing.T) {
-	got := applicationResourceName(model.DeploymentTarget{})
-	if got != "dplt" {
-		t.Fatalf("resource name = %q", got)
+func TestApplicationResourceName(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		target model.DeploymentTarget
+		want   string
+	}{
+		{name: "legacy target ID", target: model.DeploymentTarget{ID: "dplt_abcdef1234567890"}, want: "dplt-abcdef1234"},
+		{name: "persisted name", target: model.DeploymentTarget{ID: "dplt_payments_api_prod", KubernetesName: "luna-api-prod"}, want: "luna-api-prod"},
+		{name: "missing target ID", target: model.DeploymentTarget{}, want: "dplt"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := applicationResourceName(test.target); got != test.want {
+				t.Fatalf("resource name = %q, want %q", got, test.want)
+			}
+		})
 	}
 }
 
@@ -880,33 +865,45 @@ func TestGatewayWildcardCertificateSpecUsesClusterDomain(t *testing.T) {
 	}
 }
 
-func TestGatewayDNSStatusVerifiesCNAME(t *testing.T) {
-	runner := NewRunner(nil, Options{})
-	runner.dnsResolver = fakeCNameResolver{cname: "gateway.example.com."}
-
-	status := runner.gatewayDNSStatus(context.Background(), model.GatewayRoute{Host: "app.example.com", CNAMETarget: "gateway.example.com"})
-	if status != "verified" {
-		t.Fatalf("status = %q", status)
+func TestGatewayDNSStatus(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		resolver fakeCNameResolver
+		want     string
+	}{
+		{name: "verified CNAME", resolver: fakeCNameResolver{cname: "gateway.example.com."}, want: "verified"},
+		{name: "lookup failure", resolver: fakeCNameResolver{err: fmt.Errorf("not found")}, want: "failed"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			runner := NewRunner(nil, Options{})
+			runner.dnsResolver = test.resolver
+			if got := runner.gatewayDNSStatus(context.Background(), model.GatewayRoute{Host: "app.example.com", CNAMETarget: "gateway.example.com"}); got != test.want {
+				t.Fatalf("status = %q, want %q", got, test.want)
+			}
+		})
 	}
 }
 
-func TestGatewayDNSStatusFailsOnMismatch(t *testing.T) {
-	runner := NewRunner(nil, Options{})
-	runner.dnsResolver = fakeCNameResolver{err: fmt.Errorf("not found")}
-
-	status := runner.gatewayDNSStatus(context.Background(), model.GatewayRoute{Host: "app.example.com", CNAMETarget: "gateway.example.com"})
-	if status != "failed" {
-		t.Fatalf("status = %q", status)
-	}
-}
-
-func TestParseKeyValueMapSupportsJSONObject(t *testing.T) {
-	got, err := parseKeyValueMap(`{"APP_ENV":"prod","REPLICAS":2}`)
-	if err != nil {
-		t.Fatalf("parseKeyValueMap returned error: %v", err)
-	}
-	if got["APP_ENV"] != "prod" || got["REPLICAS"] != "2" {
-		t.Fatalf("values = %#v", got)
+func TestParseKeyValueMap(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		input string
+		want  map[string]string
+	}{
+		{name: "JSON object", input: `{"APP_ENV":"prod","REPLICAS":2}`, want: map[string]string{"APP_ENV": "prod", "REPLICAS": "2"}},
+		{name: "environment lines", input: "APP_ENV=prod\n# comment\nLOG_LEVEL=info", want: map[string]string{"APP_ENV": "prod", "LOG_LEVEL": "info"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := parseKeyValueMap(test.input)
+			if err != nil {
+				t.Fatalf("parseKeyValueMap returned error: %v", err)
+			}
+			for key, want := range test.want {
+				if got[key] != want {
+					t.Fatalf("values = %#v", got)
+				}
+			}
+		})
 	}
 }
 
@@ -1181,16 +1178,6 @@ func TestDeleteManagedNamespaceIgnoresKubernetesNotFound(t *testing.T) {
 	}
 	if len(manager.deletions) != 1 {
 		t.Fatalf("deletions = %#v", manager.deletions)
-	}
-}
-
-func TestParseKeyValueMapSupportsEnvLines(t *testing.T) {
-	got, err := parseKeyValueMap("APP_ENV=prod\n# comment\nLOG_LEVEL=info")
-	if err != nil {
-		t.Fatalf("parseKeyValueMap returned error: %v", err)
-	}
-	if got["APP_ENV"] != "prod" || got["LOG_LEVEL"] != "info" {
-		t.Fatalf("values = %#v", got)
 	}
 }
 

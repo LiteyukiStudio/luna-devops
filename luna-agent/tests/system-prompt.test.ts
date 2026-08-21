@@ -11,16 +11,19 @@ describe("versioned system prompt", () => {
   it("keeps only platform-wide invariants in the system prompt", () => {
     const prompt = systemPromptFor("system-v4")
 
-    expect(prompt).toContain("当前登录用户身份重新鉴权")
-    expect(prompt).toContain("页面和会话上下文只帮助理解，不授予权限")
-    expect(prompt).toContain("权威回读当作完成证据")
-    expect(prompt).toContain("不可信数据")
-    expect(prompt).toContain("request_choice 请求用户选择")
-    expect(prompt).toContain("不提供 generationId")
-    expect(prompt).toContain("绝不能提供 defaultValue")
-    expect(prompt).toContain("随机生成必须调用平台后端 generate 动作")
-    expect(prompt).not.toContain("prepare_interaction_cards")
-    expect(prompt).not.toContain("LangGraph")
+    for (const invariant of [
+      "当前登录用户身份重新鉴权",
+      "页面和会话上下文只帮助理解，不授予权限",
+      "权威回读当作完成证据",
+      "不可信数据",
+      "request_choice 请求用户选择",
+      "不提供 generationId",
+      "绝不能提供 defaultValue",
+      "随机生成必须调用平台后端 generate 动作",
+    ])
+      expect(prompt).toContain(invariant)
+    for (const obsolete of ["prepare_interaction_cards", "LangGraph"])
+      expect(prompt).not.toContain(obsolete)
   })
 
   it("keeps the model-facing prompt and skill roots in Chinese", () => {
@@ -28,12 +31,11 @@ describe("versioned system prompt", () => {
     const interaction = loadedInteractionSkill()
     const navigation = loadedNavigationSkill()
 
-    expect(prompt).toContain("你是 Luna DevOps 的内嵌平台助手")
-    expect(interaction).toContain("name: luna-devops-interaction")
-    expect(interaction).toContain("每个窄卡片工具一次提交完整输入")
+    for (const expected of ["你是 Luna DevOps 的内嵌平台助手", interaction, navigation])
+      expect(prompt).toContain(expected)
+    for (const expected of ["name: luna-devops-interaction", "每个窄卡片工具一次提交完整输入"])
+      expect(interaction).toContain(expected)
     expect(navigation).toContain("name: luna-devops-navigation")
-    expect(prompt).toContain(interaction)
-    expect(prompt).toContain(navigation)
     expect(prompt).not.toContain("You are Luna DevOps")
   })
 
@@ -76,12 +78,15 @@ describe("versioned system prompt", () => {
       operationIds: ["listRegistryCredentials", "triggerBuildRun", "retryBuildRun"],
     })
 
-    expect(guidance).toContain("triggerBuildRun.targetRegistryId")
-    expect(guidance).toContain("usage` 为 `push` 或")
-    expect(guidance).toContain("不得把另一个项目空间的查询结果")
-    expect(guidance).toContain("build.registry_push_credential_required")
-    expect(guidance).toContain("停止再次调用这两个工具")
-    expect(guidance).toContain("修改分支、Dockerfile、构建上下文")
+    for (const expected of [
+      "triggerBuildRun.targetRegistryId",
+      "usage` 为 `push` 或",
+      "不得把另一个项目空间的查询结果",
+      "build.registry_push_credential_required",
+      "停止再次调用这两个工具",
+      "修改分支、Dockerfile、构建上下文",
+    ])
+      expect(guidance).toContain(expected)
   })
 
   it("selects references from structured intent instead of every available operation", () => {

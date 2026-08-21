@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import {
   createInteractionCardsInput,
-  createInteractionCardsTool,
+  legacyInteractionCardsInputSchema,
   normalizeInteractionCardsInput,
 } from "../src/tools/ui-cards.js"
 
@@ -299,10 +299,10 @@ describe("interaction card tool", () => {
     expect(createInteractionCardsInput.safeParse(publicKeyValueDefault).success).toBe(true)
   })
 
-  it("publishes the full generated JSON schema to the model", () => {
-    expect(createInteractionCardsTool.inputSchema.type).toBe("object")
-    expect(Array.isArray(createInteractionCardsTool.inputSchema.anyOf)).toBe(true)
-    const schema = JSON.stringify(createInteractionCardsTool.inputSchema)
+  it("retains the full historical payload schema without registering a legacy model tool", () => {
+    expect(legacyInteractionCardsInputSchema.type).toBe("object")
+    expect(Array.isArray(legacyInteractionCardsInputSchema.anyOf)).toBe(true)
+    const schema = JSON.stringify(legacyInteractionCardsInputSchema)
     expect(schema).toContain("businessTemplate")
     expect(schema).toContain("candidate_picker")
     expect(schema).toContain("resource_configuration")

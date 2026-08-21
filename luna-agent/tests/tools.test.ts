@@ -35,6 +35,23 @@ describe("tool catalog and orchestration", () => {
     expect(client.calls).toHaveLength(1)
   })
 
+  it("terminates the ToolCall when the transport rejects before returning an HTTP response", async () => {
+    const client = new DeterministicLunaApiClient(() => {
+      throw new Error("ai.tool_catalog_invalid")
+    })
+    const store = new MemoryToolCallStore()
+    const result = await new ToolOrchestrator(catalog, client, store).propose({
+      runId: "airun_test", operationId: "getBuildRun", arguments: { buildId: "build_a" },
+    })
+
+    expect(result).toMatchObject({
+      status: "failed",
+      errorCode: "ai.tool_catalog_invalid",
+      result: { code: "ai.tool_catalog_invalid", retryable: false },
+    })
+    expect(store.records.get(result.id)?.status).toBe("failed")
+  })
+
   it("persists one-call approval before execution", async () => {
     const client = new DeterministicLunaApiClient(() => ({ status: 200, body: { restarted: true } }))
     const store = new MemoryToolCallStore()

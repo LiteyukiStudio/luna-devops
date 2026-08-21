@@ -6,8 +6,6 @@ const publicRunFailureKeys: Readonly<Record<string, string>> = {
   'ai.provider_unavailable': 'provider_unavailable',
   'ai.provider_invalid_tool_arguments': 'provider_invalid_tool_arguments',
   'ai.authorization_changed': 'authorization_changed',
-  'ai.approval_arguments_changed': 'approval_arguments_changed',
-  'ai.run_actor_grant_invalid': 'run_actor_grant_invalid',
   'ai.model_context_limit_invalid': 'model_context_limit_invalid',
   'ai.model_context_insufficient': 'model_context_insufficient',
   'ai.model_output_limit_invalid': 'model_output_limit_invalid',

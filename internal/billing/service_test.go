@@ -4,15 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
-	"net/url"
-	"os"
 	"testing"
 	"time"
 
 	"github.com/LiteyukiStudio/devops/internal/model"
+	"github.com/LiteyukiStudio/devops/internal/testdb"
 	"github.com/shopspring/decimal"
-	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
 
@@ -225,40 +222,18 @@ func TestProjectVolumeStorageSettlementPropagatesCancellationToRateLookup(t *tes
 }
 
 func openBillingTestDB(t *testing.T) *gorm.DB {
-	t.Helper()
-	databaseURL := os.Getenv("AUTH_TEST_DATABASE_URL")
-	if databaseURL == "" {
-		t.Skip("AUTH_TEST_DATABASE_URL is not configured")
-	}
-	adminDB, err := gorm.Open(postgres.Open(databaseURL), &gorm.Config{})
-	if err != nil {
-		t.Fatalf("open integration database: %v", err)
-	}
-	schema := fmt.Sprintf("billing_test_%d", time.Now().UnixNano())
-	if err := adminDB.Exec(`CREATE SCHEMA "` + schema + `"`).Error; err != nil {
-		t.Fatalf("create integration schema: %v", err)
-	}
-	t.Cleanup(func() {
-		_ = adminDB.Exec(`DROP SCHEMA IF EXISTS "` + schema + `" CASCADE`).Error
-		if sqlDB, dbErr := adminDB.DB(); dbErr == nil {
-			_ = sqlDB.Close()
-		}
+	return testdb.OpenDatabase(t, testdb.Options{
+		SchemaPrefix: "billing_test",
+		Migrate: func(db *gorm.DB) error {
+			return db.Exec(`
+CREATE SCHEMA ai;
+CREATE TABLE ai.model_budget_reservations (
+    id text PRIMARY KEY,
+    owner_user_id text NOT NULL,
+    state text NOT NULL,
+    reserved_credits numeric NOT NULL DEFAULT 0,
+    confirmed_credits numeric
+)`).Error
+		},
 	})
-	parsedURL, err := url.Parse(databaseURL)
-	if err != nil {
-		t.Fatalf("parse integration database URL: %v", err)
-	}
-	query := parsedURL.Query()
-	query.Set("search_path", schema)
-	parsedURL.RawQuery = query.Encode()
-	db, err := gorm.Open(postgres.Open(parsedURL.String()), &gorm.Config{})
-	if err != nil {
-		t.Fatalf("open integration schema: %v", err)
-	}
-	t.Cleanup(func() {
-		if sqlDB, dbErr := db.DB(); dbErr == nil {
-			_ = sqlDB.Close()
-		}
-	})
-	return db
 }

@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/LiteyukiStudio/devops/internal/aiagent"
+	"github.com/LiteyukiStudio/devops/internal/aitool"
 	"github.com/LiteyukiStudio/devops/internal/config"
 	"github.com/LiteyukiStudio/devops/internal/inbox"
 	"github.com/LiteyukiStudio/devops/internal/model"
@@ -35,6 +36,7 @@ type Handlers struct {
 	aiAgent                aiagent.Client
 	aiDeploymentEnabled    bool
 	aiActorResolver        func(*gin.Context) (aiagent.ActorContext, string, bool)
+	aiTools                *aitool.Service
 	inbox                  inboxService
 	inboxDecision          inboxDecisionHandler
 	runtimeCommands        *runtimecommand.Broker
@@ -114,6 +116,11 @@ func NewHandlers(db *gorm.DB) *Handlers {
 			"error.message", aiClientErr.Error(),
 			"ai.enabled", aiConfig.Available)
 	}
+	handlers.aiTools = aitool.NewService(
+		db,
+		aitool.WithWebPolicyProvider(handlers.aiWebEgressPolicyForUser),
+		aitool.WithWebProxyProvider(handlers.aiWebProxyPoolForUser),
+	)
 	handlers.inbox = inbox.NewService(db)
 	handlers.inboxDecision = handlers.decideInboxAction
 	handlers.runtimeCommands = runtimecommand.NewBroker(runtimecommand.Options{InstanceID: os.Getenv("HOSTNAME")})

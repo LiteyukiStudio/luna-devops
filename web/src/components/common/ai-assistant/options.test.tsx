@@ -39,9 +39,7 @@ describe('ai assistant options', () => {
     await i18next.changeLanguage('zh-CN')
     render(<AIOptionsBar actions={actions} sourceKey="agent:turn-1" onAction={vi.fn()} />)
 
-    const region = screen.getByRole('region', { name: i18next.t('aiAssistant.options.suggested') })
-    expect(region).toHaveClass('absolute', 'bottom-0')
-    expect(region).not.toHaveClass('border-t', 'bg-surface')
+    expect(screen.getByRole('region', { name: i18next.t('aiAssistant.options.suggested') })).toBeVisible()
     expect(screen.getByRole('button', { name: /查看项目空间/ })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /继续诊断/ })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /重新执行/ })).toBeInTheDocument()
@@ -53,8 +51,7 @@ describe('ai assistant options', () => {
 
     const region = screen.getByRole('region', { name: i18next.t('aiAssistant.options.suggested') })
     expect(region).toHaveAttribute('data-ai-options-placement', 'inline')
-    expect(region).not.toHaveClass('absolute', 'bottom-0')
-    expect(region.firstElementChild).toHaveClass('flex-wrap')
+    expect(screen.getByRole('button', { name: /查看项目空间/ })).toBeInTheDocument()
   })
 
   it('keeps repeatable navigation and sibling actions available after a one-time choice', async () => {

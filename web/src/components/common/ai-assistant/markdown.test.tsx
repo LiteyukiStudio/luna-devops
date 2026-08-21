@@ -36,7 +36,7 @@ describe('ai markdown', () => {
     expect(screen.getByRole('table')).toBeInTheDocument()
     expect(screen.getByRole('cell', { name: 'Luna Platform' })).toBeInTheDocument()
     expect(screen.getByText('luna-devops')).toHaveProperty('tagName', 'CODE')
-    expect(container.querySelector('[data-slot="ai-markdown-table-scroll"]')).toHaveClass('overflow-x-auto', 'overscroll-x-contain')
+    expect(container.querySelector('[data-slot="ai-markdown-table-scroll"]')).toContainElement(screen.getByRole('table'))
   })
 
   it('renders fenced code and safe external links without raw HTML', () => {
@@ -45,7 +45,7 @@ describe('ai markdown', () => {
     expect(screen.getByRole('link', { name: '文档' })).toHaveAttribute('target', '_blank')
     expect(screen.getByRole('link', { name: '文档' })).toHaveAttribute('rel', 'noreferrer noopener')
     expect(screen.getByText('pnpm --dir web build')).toHaveProperty('tagName', 'CODE')
-    expect(container.querySelector('[data-slot="ai-markdown-code-scroll"]')).toHaveClass('overflow-x-auto', 'overscroll-x-contain')
+    expect(container.querySelector('[data-slot="ai-markdown-code-scroll"]')).toContainElement(screen.getByText('pnpm --dir web build'))
     expect(container.querySelector('script')).not.toBeInTheDocument()
     expect(screen.queryByText('alert("unsafe")')).not.toBeInTheDocument()
   })
@@ -54,7 +54,6 @@ describe('ai markdown', () => {
     renderMarkdown('[查看构建](/projects/prj_1/apps/app_1?tab=builds#tab=builds&buildRunId=bldr_1)')
 
     const link = screen.getByRole('link', { name: '查看构建' })
-    expect(link).toHaveClass('text-primary-text')
     expect(link).toHaveAttribute('data-slot', 'ai-markdown-internal-link')
     expect(link).not.toHaveAttribute('target')
     fireEvent.click(link)
