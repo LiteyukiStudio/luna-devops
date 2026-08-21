@@ -231,33 +231,33 @@ else
   done <<< "${changed_files}"
 fi
 
-exclude_entries=""
-append_exclude_entry() {
+image_entries=""
+append_image_entry() {
   local entry="$1"
-  if [[ -n "${exclude_entries}" ]]; then
-    exclude_entries+=","
+  if [[ -n "${image_entries}" ]]; then
+    image_entries+=","
   fi
-  exclude_entries+="${entry}"
+  image_entries+="${entry}"
 }
 
-if [[ "${api_image}" != true ]]; then
-  append_exclude_entry '{"image_key":"api"}'
+if [[ "${api_image}" == true ]]; then
+  append_image_entry '"api"'
 fi
-if [[ "${worker_image}" != true ]]; then
-  append_exclude_entry '{"image_key":"worker"}'
+if [[ "${worker_image}" == true ]]; then
+  append_image_entry '"worker"'
 fi
-if [[ "${agent_image}" != true ]]; then
-  append_exclude_entry '{"image_key":"agent"}'
+if [[ "${agent_image}" == true ]]; then
+  append_image_entry '"agent"'
 fi
-if [[ "${probe_image}" != true ]]; then
-  append_exclude_entry '{"image_key":"gateway-traffic-probe"}'
+if [[ "${probe_image}" == true ]]; then
+  append_image_entry '"gateway-traffic-probe"'
 fi
 
 container_changed=false
 if [[ "${api_image}" == true || "${worker_image}" == true || "${agent_image}" == true || "${probe_image}" == true ]]; then
   container_changed=true
 fi
-exclude_json="[${exclude_entries}]"
+container_images="[${image_entries}]"
 
 emit() {
   local key="$1"
@@ -275,4 +275,4 @@ emit agent "${agent_changed}"
 emit docs "${docs_changed}"
 emit helm "${helm_changed}"
 emit container "${container_changed}"
-emit container_exclude "${exclude_json}"
+emit container_images "${container_images}"

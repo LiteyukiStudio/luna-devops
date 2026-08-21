@@ -35,7 +35,7 @@ jobs:
       docs: ${{ steps.changes.outputs.docs }}
       helm: ${{ steps.changes.outputs.helm }}
       container: ${{ steps.changes.outputs.container }}
-      container_exclude: ${{ steps.changes.outputs.container_exclude }}
+      container_images: ${{ steps.changes.outputs.container_images }}
     steps:
       - name: Check out complete history
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -202,7 +202,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        image_key: [api, worker, agent, gateway-traffic-probe]
+        image_key: ${{ fromJSON(needs.changes.outputs.container_images) }}
         include:
           - image_key: api
             title: API
@@ -228,7 +228,6 @@ jobs:
             file: Dockerfile
             target: runtime-probe
             build_args: TARGET=gateway-traffic-probe
-        exclude: ${{ fromJSON(needs.changes.outputs.container_exclude) }}
     steps:
       - name: Check out code
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
