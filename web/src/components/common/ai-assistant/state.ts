@@ -4,9 +4,9 @@ import type { AIEvent, AIMessagePart, AITimeline, AITimelineItem, AIToolDisplayR
 export type AIBlock
   = | { id: string, turnId: string, index: number, type: 'thinking', status: string, display: 'summary' | 'progress', text: string }
     | { id: string, turnId: string, index: number, type: 'message', role: 'user' | 'assistant', status: string, text: string, createdAt: string }
-    | { id: string, turnId: string, runId: string, index: number, type: 'run_status', status: 'failed' | 'canceled', errorCode?: string }
+    | { id: string, turnId: string, runId: string, index: number, type: 'run_status', status: 'failed' | 'canceled' | 'interrupted', errorCode?: string }
     | { id: string, turnId: string, index: number, type: 'context_compacted', status: string }
-    | { id: string, turnId: string, runId: string, index: number, type: 'tool_call', toolCallId: string, operationId: string, visibility: AIToolVisibility, titleKey?: string, errorCode?: string, status: AIToolStatus, arguments: Record<string, unknown>, result?: AIToolDisplayResult, uiActions: AIUIAction[], durationMs?: number, traceId?: string, argumentsHash?: string, expectedVersion?: number, mfaPurpose?: string }
+    | { id: string, turnId: string, runId: string, index: number, type: 'tool_call', toolCallId: string, operationId: string, visibility: AIToolVisibility, titleKey?: string, errorCode?: string, status: AIToolStatus, arguments: Record<string, unknown>, result?: AIToolDisplayResult, uiActions: AIUIAction[], durationMs?: number, traceId?: string }
 
 export interface AIRunUsage {
   /** 最近一次主回答模型调用由 Provider 返回的输入 Token 数。 */
@@ -127,13 +127,10 @@ export function stateFromTimeline(timeline: AITimeline): AIAssistantState {
           uiActions: item.toolCall.uiActions ?? [],
           durationMs: item.toolCall.durationMs,
           traceId: item.toolCall.traceId,
-          argumentsHash: item.toolCall.argumentsHash,
-          expectedVersion: item.toolCall.expectedVersion ?? turn.selectedRun?.expectedVersion,
-          mfaPurpose: item.toolCall.mfaPurpose,
         })
       }
     }
-    if (turn.selectedRun?.status === 'failed' || turn.selectedRun?.status === 'canceled') {
+    if (turn.selectedRun?.status === 'failed' || turn.selectedRun?.status === 'canceled' || turn.selectedRun?.status === 'interrupted') {
       blocks.push({
         id: `${turn.selectedRun.id}:status`,
         turnId: turn.id,
@@ -231,7 +228,7 @@ export function mergeTimelineSnapshot(current: AIAssistantState | undefined, tim
 }
 
 function mergeRunStatuses(snapshot: Record<string, string>, current: Record<string, string>) {
-  const terminal = new Set(['completed', 'failed', 'canceled'])
+  const terminal = new Set(['completed', 'failed', 'canceled', 'interrupted'])
   return Object.fromEntries([...new Set([...Object.keys(snapshot), ...Object.keys(current)])].map((runId) => {
     const currentStatus = current[runId]
     const snapshotStatus = snapshot[runId]
@@ -281,8 +278,20 @@ function updateBlock(state: AIAssistantState, id: string, update: (block: AIBloc
   return state.blocks.map((block, index) => index === blockIndex ? update(block) : block).sort((a, b) => a.index - b.index)
 }
 
-function blockFromTimelineItem(item: AITimelineItem, turnId: string, runId: string, turnIndex: number, expectedVersion?: number): AIBlock | undefined {
+function blockFromTimelineItem(item: AITimelineItem, turnId: string, runId: string, turnIndex: number): AIBlock | undefined {
   const index = blockIndex(turnIndex, item.timelineIndex)
+  if (item.type === 'user_message') {
+    return {
+      id: item.id,
+      turnId,
+      index: blockIndex(turnIndex, -1),
+      type: 'message',
+      role: 'user',
+      status: item.status,
+      text: textFromParts(item.parts),
+      createdAt: item.createdAt,
+    }
+  }
   if (item.type === 'assistant_message') {
     return {
       id: item.id,
@@ -330,9 +339,6 @@ function blockFromTimelineItem(item: AITimelineItem, turnId: string, runId: stri
     uiActions: item.toolCall.uiActions ?? [],
     durationMs: item.toolCall.durationMs,
     traceId: item.toolCall.traceId,
-    argumentsHash: item.toolCall.argumentsHash,
-    expectedVersion: item.toolCall.expectedVersion ?? expectedVersion,
-    mfaPurpose: item.toolCall.mfaPurpose,
   }
 }
 
@@ -340,7 +346,7 @@ function applyAuthoritativeItem(state: AIAssistantState, event: AIEvent, turnInd
   const item = event.item
   if (!item || item.revision <= (state.itemRevisions[item.id] ?? 0))
     return state
-  const block = blockFromTimelineItem(item, event.turnId, event.runId, turnIndex, state.runExpectedVersions[event.runId])
+  const block = blockFromTimelineItem(item, event.turnId, event.runId, turnIndex)
   if (!block)
     return { ...state, itemRevisions: { ...state.itemRevisions, [item.id]: item.revision } }
   const existingIndex = state.blocks.findIndex(candidate => candidate.id === item.id)
@@ -379,10 +385,10 @@ export function reduceAIEvent(state: AIAssistantState, event: AIEvent): AIAssist
     turnIndexes: { ...state.turnIndexes, [event.turnId]: turnIndex },
   }, event, turnIndex)
 
-  if (event.type === 'run.started' || event.type === 'run.running' || event.type === 'run.queued' || event.type === 'run.waiting_approval' || event.type === 'run.waiting_mfa' || event.type === 'run.waiting_input' || event.type === 'run.completed' || event.type === 'run.failed' || event.type === 'run.canceled') {
+  if (event.type === 'run.started' || event.type === 'run.running' || event.type === 'run.queued' || event.type === 'run.waiting_approval' || event.type === 'run.waiting_input' || event.type === 'run.completed' || event.type === 'run.failed' || event.type === 'run.canceled' || event.type === 'run.interrupted') {
     const status = event.type === 'run.started' || event.type === 'run.running' ? 'running' : event.type.slice(4)
     const tokenBudget = budgetTotalTokens(event.payload)
-    const terminalBlock = status === 'failed' || status === 'canceled'
+    const terminalBlock = status === 'failed' || status === 'canceled' || status === 'interrupted'
       ? updateBlock(next, `${event.runId}:status`, block => block.type === 'run_status'
           ? { ...block, status, errorCode: stringPayload(event.payload, 'errorCode') || block.errorCode }
           : block, () => ({
@@ -436,17 +442,14 @@ export function reduceAIEvent(state: AIAssistantState, event: AIEvent): AIAssist
       },
     }
   }
-  if (event.type === 'approval.required' || event.type === 'approval.resolved' || event.type === 'mfa.required' || event.type === 'mfa.resolved') {
+  if (event.type === 'approval.required' || event.type === 'approval.resolved') {
     const required = event.type.endsWith('.required')
     return {
       ...next,
       runStatuses: {
         ...next.runStatuses,
-        [event.runId]: required ? (event.type.startsWith('approval') ? 'waiting_approval' : 'waiting_mfa') : 'running',
+        [event.runId]: required ? 'waiting_approval' : 'running',
       },
-      runExpectedVersions: typeof event.payload.expectedVersion === 'number'
-        ? { ...next.runExpectedVersions, [event.runId]: event.payload.expectedVersion }
-        : next.runExpectedVersions,
     }
   }
   return next

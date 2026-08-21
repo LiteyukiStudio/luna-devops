@@ -11,11 +11,6 @@ export const conversations = aiSchema.table("conversations", {
   // 数据库当前使用 text + check constraint，类型约束在 TypeScript 边界完成
   titleSource: text("title_source").notNull().$type<"default" | "assistant" | "user">().default("default"),
   status: text("status").notNull().$type<"active">().default("active"),
-  authorizationGrantCiphertext: text("authorization_grant_ciphertext"),
-  authorizationSessionId: text("authorization_session_id"),
-  authorizationCatalogDigest: text("authorization_catalog_digest"),
-  authorizationExpiresAt: timestamp("authorization_expires_at", { withTimezone: true, mode: "date" }),
-  authorizationUpdatedAt: timestamp("authorization_updated_at", { withTimezone: true, mode: "date" }),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
 }, table => [

@@ -141,6 +141,6 @@ describe('authentication form payloads', () => {
     const form = username.closest('form')
     expect(username).toHaveAttribute('type', 'email')
     expect(form?.querySelectorAll('input[autocomplete="new-password"]')).toHaveLength(2)
-    expect(form?.querySelector('input[autocomplete="one-time-code"]')).toHaveAttribute('name', 'one-time-code')
+    expect(form?.querySelector('input[autocomplete="one-time-code"]')).toHaveAttribute('name', 'verification-code')
   })
 })

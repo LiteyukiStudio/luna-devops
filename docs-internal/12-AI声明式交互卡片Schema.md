@@ -18,25 +18,30 @@ Template -> Content Block -> Field -> Action -> Platform Runtime
 - Content Block 只呈现白名单内的数据结构。
 - Field 收集受控输入。
 - Action 表达发送消息、站内导航或平台注册 Tool 的操作意图。
-- Runtime 负责校验、鉴权、确认、MFA、幂等、审计、执行、进度和终态。
+- Runtime 负责校验、鉴权、参数绑定确认、幂等、审计、执行、进度和终态。
 
 ## 2. 核心不变量
 
 - 根协议统一为 `InteractionCardGroup`，当前唯一版本是 `schemaVersion: 1`。
-- 项目尚未发布，不维护旧版本解析、迁移器或多版本渲染；未知版本直接拒绝。
+- 新卡片只写当前 `InteractionCardGroup` v1；已经持久化的旧卡片 operationId、payload、actions 与
+  Web 解析器保持只读兼容，禁止批量重写历史事件。未知 payload 版本直接拒绝。
 - 模型不能输出 HTML、JSX、CSS、脚本、DOM Selector、任意组件名、API URL 或可执行表达式。
 - 模型只能选择平台注册模板、内容块、字段和动作，不能控制任意颜色、尺寸、动画和布局。
 - 所有资源 ID、选项值和操作参数必须来自当前 Run 的可信 Tool Result，不允许模型猜测。
 - 模型生成卡片不等于执行操作；平台拥有最终执行权和终态解释权。
 - 展示模板不改变风险等级，同一 Tool 在任何模板下沿用相同权限与安全策略。
-- 审批、MFA、危险影响摘要、任务进度和最终结果只能由平台生成或权威回读，模型不能伪造。
+- 审批、危险影响摘要、任务进度和最终结果只能由平台生成或权威回读，模型不能伪造。
 
 ## 3. 工具与事实源
 
-Agent 使用：
+Agent 新生成卡片只使用：
 
-- `create_interaction_cards`：调用开始时由 Agent 分配 `generationId` 并创建占位，随后校验、编译并在同一 Timeline Item 原子持久化通用卡片定义。
-- 业务模板编译器：把高频业务输入编译成同一通用协议，不产生第二套运行时。
+- `present_card`：展示事实、计划、进度与结果。
+- `request_input`：收集结构化输入。
+- `request_choice`：请求用户选择。
+
+三者都编译为同一 `InteractionCardGroup` v1。旧 `create_interaction_cards` 和七个窄业务工具只保留
+历史事件解析，不再注册给模型。校验失败最多完整修复一次，仍失败时退化为普通文本。
 
 `placement` 默认 `inline`，按权威 Timeline 事件位置展示；只有当前回合唯一、
 阻塞后续流程且等待用户提交的单张交互表单才可使用 `turn_end`，将它投影到该回复末尾。一个回合
@@ -66,10 +71,9 @@ Agent 使用：
 | `result` | 资源详情、诊断、健康概览和权威执行结果 |
 | `live_task` | 绑定平台权威异步任务的实时进度 |
 
-审批是平台运行态，不允许模型通过普通卡片自行声明。简单的二至五个建议、追问或导航继续使用
-`create_options`，不为所有对话强制生成卡片。Agent 生成的选项由 Web 在对应 Timeline Item 的
-真实位置渲染到助手回复气泡内；只有尚未开始对话的页面预设入口显示在输入框上方，两者不得
-通过“取最新选项”再次合并或改写时间线顺序。
+审批是平台运行态，不允许模型通过普通卡片自行声明。需要用户选择时使用 `request_choice`，并由
+Web 在对应 Timeline Item 的真实位置渲染；只有尚未开始对话的页面预设入口显示在输入框上方，
+不得通过“取最新选项”再次合并或改写时间线顺序。
 
 展示式模板不得包含等待用户提交的表单；需要选择、填写或确认时必须使用交互式模板和真实可
 提交控件。多候选交互不得退化为不可点击的内容列表。
@@ -108,7 +112,7 @@ Agent 使用：
   卡片 ID或受控字面量。
 - JSON Pointer 绑定必须按后继段判定对象或数组容器，数组下标只接受规范非负整数并设置有界上限；
   `__proto__`、`prototype`、`constructor` 等原型链段在 Agent 与 Web 两端都必须拒绝。
-- 平台对绑定后的最终参数重新校验当前用户、Scope、RBAC、风险、确认、MFA 和参数摘要。
+- 平台对绑定后的最终参数重新校验当前用户、Session、Scope、RBAC、风险、确认和参数摘要。
 - Tool Action 必须沿用平台幂等和审计语义；模型不能通过卡片声明 `approved`、`force` 或成功终态。
 - Timeline 为兼容 Web 可以把窄卡片工具投影为稳定的内部卡片 operation，但必须同时保存真实模型
   operationId；恢复模型历史时还原真实窄工具，禁止让模型误判自己使用了已下线的大型通用工具。
@@ -138,7 +142,7 @@ create tool call starts -> Agent generationId + placeholder -> arguments complet
 - 卡片定义与运行态分离；运行态只能由平台补丁更新，模型不能修改已执行结果。
 - 长任务进度必须通过 `live_progress` 绑定平台任务 ID，并从 API/SSE 权威读取。
 - 上游断联显示 `unavailable`，不得保留最后成功进度冒充当前状态。
-- 成功、失败、取消、拒绝、等待审批和等待 MFA 使用稳定终态；刷新后从权威快照恢复。
+- 成功、失败、取消、拒绝和等待审批使用稳定终态；刷新后从权威快照恢复。
 - 卡片只是输入或呈现载体。创建、安装、发布和修复类目标必须继续执行、权威回读并给出终态
   结论，不能以卡片已展示或任务已提交作为完成。
 
@@ -160,7 +164,7 @@ create tool call starts -> Agent generationId + placeholder -> arguments complet
 
 - 卡片内容与网页来源按不可信输入处理，不能覆盖系统 Prompt、工具策略或平台规则。
 - 参数摘要、批准哈希和实际执行载荷使用同一规范化 JSON；批准后参数变化必须 fail closed。
-- 权限、确认、MFA、幂等和审计测试必须覆盖伪造资源 ID、跨用户/项目、重复提交和重放。
+- 权限、确认、会话、幂等和审计测试必须覆盖伪造资源 ID、跨用户/项目、重复提交和重放。
 - Trace 覆盖生成开始、校验、持久化、Action、Tool 和平台 API；Span 名和 Metric label 使用稳定低基数值。
 - 默认遥测不得包含卡片正文、用户输入、Prompt、Secret 和敏感工具参数；任何模式都不得记录凭据。
 
@@ -172,7 +176,7 @@ create tool call starts -> Agent generationId + placeholder -> arguments complet
 2. 业务模板编译结果通过同一通用 Schema，不存在旁路字段。
 3. Web 对每个模板、窄窗口、键盘、错误和极端内容正常渲染。
 4. Timeline 流式、刷新恢复、失败修复和跨 Run 隔离保持一致。
-5. Tool Action 经过真实用户权限、审批/MFA、幂等、审计和权威回读。
+5. Tool Action 经过真实用户权限、逐次参数绑定审批、幂等、审计和权威回读。
 6. Secret 和敏感输入不出现在 Timeline、日志、Trace、错误响应和浏览器持久化中。
 
 新增能力必须由至少一个真实业务场景驱动；不预先引入任意布局、脚本条件、任意远程数据源、

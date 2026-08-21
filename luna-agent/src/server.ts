@@ -1,15 +1,14 @@
 import Fastify, { type FastifyInstance } from "fastify"
 import { z } from "zod"
-import type { RequestAuthenticator } from "./auth.js"
+import type { RequestVerifier } from "./auth.js"
 import type { Config } from "./config.js"
 import type { AIModelSnapshot, ActorContext, Run } from "./domain.js"
-import type { PayloadCipher } from "./payload-cipher.js"
 import type { Repository } from "./persistence/repository.js"
 import type { ModelProvider } from "./provider/provider.js"
 import type { ProviderConfigClient } from "./provider/config-client.js"
 import { OpenAICompatibleProvider } from "./provider/openai-compatible.js"
 import { redact } from "./redaction.js"
-import type { ToolCallRecord, ToolOrchestrator } from "./tools/orchestrator.js"
+import type { ToolOrchestrator } from "./tools/orchestrator.js"
 import { presentEvent, presentTimeline } from "./timeline-presenter.js"
 import { defaultRuntimeSettings } from "./runtime-settings.js"
 import { captureTraceContext, internalSpanOptions, stableErrorCode as telemetryErrorCode, telemetryLog, withSpan } from "./telemetry.js"
@@ -48,9 +47,8 @@ const runBudgetSnapshot = z.object({
 export function buildServer(input: {
   config: Config
   repository: Repository
-  authenticator: RequestAuthenticator
+  requestVerifier: RequestVerifier
   provider: ModelProvider
-  grantCipher: PayloadCipher
   tools?: ToolOrchestrator
   providerConfigClient?: ProviderConfigClient
   cancelRun?: (runId: string) => void
@@ -104,23 +102,20 @@ export function buildServer(input: {
 
   app.register(async secured => {
     secured.addHook("preHandler", async request => {
-      request.actor = await input.authenticator.verify(request.headers)
+      request.actor = await input.requestVerifier.verify(request.headers)
     })
 
     secured.get("/internal/v1/capabilities", async () => {
       const runtime = input.providerConfigClient
-        ? await input.providerConfigClient.get().then(config => config.runtime).catch(() => defaultRuntimeSettings)
+        ? await input.providerConfigClient.get().then(config => config.runtime)
         : defaultRuntimeSettings
       return {
         mode: input.tools ? "controlled_tools" : "read_only",
         features: {
-          conversations: true, streaming: true, cancel: true, uiActions: true,
-          approvals: Boolean(input.tools),
-          stepUpMFA: Boolean(input.tools),
-          longTermMemory: false,
-          mfa: Boolean(input.tools),
-          toolCalling: Boolean(input.tools),
-          conversationApprovals: Boolean(input.tools),
+		  conversations: true, streaming: true, cancel: true, uiActions: true,
+		  approvals: Boolean(input.tools),
+		  longTermMemory: false,
+		  toolCalling: Boolean(input.tools),
         },
         limits: {
           maxInputBytes: runtime.maxInputBytes,
@@ -137,10 +132,11 @@ export function buildServer(input: {
       if (!input.providerConfigClient) return reply.code(503).send(errorBody("ai.provider_config_unavailable", _request.id))
       reply.header("cache-control", "no-store")
       const config = await input.providerConfigClient.get()
-      if (!config.provider.configured) return reply.code(409).send({ status: "not_configured", configVersion: config.version, capabilities: {} })
+      const selectedModel = config.provider.models[0]
+      if (!config.provider.configured || !selectedModel) return reply.code(409).send({ status: "not_configured", configVersion: config.version, capabilities: {} })
       const provider = new OpenAICompatibleProvider({
         baseUrl: config.provider.baseUrl, apiKey: config.provider.apiKey,
-        model: config.provider.model, timeoutMs: config.runtime.providerTimeoutMs,
+        model: selectedModel.name, timeoutMs: config.runtime.providerTimeoutMs,
         maxRetries: config.runtime.maxRequestRetries,
       })
       const health = await provider.health()
@@ -165,6 +161,16 @@ export function buildServer(input: {
         sortOrder: query.sortOrder,
       })
       return { ...result, page: query.page, pageSize: query.pageSize, sortBy: query.sortBy, sortOrder: query.sortOrder, totalPages: Math.ceil(result.total / query.pageSize) }
+    })
+    secured.get("/internal/v1/tool-approval-exemptions", async request => {
+      return { items: await input.repository.listToolApprovalExemptions(request.actor.userId) }
+    })
+    secured.delete("/internal/v1/tool-approval-exemptions/:operationId", async (request, reply) => {
+      const { operationId } = z.object({
+        operationId: z.string().regex(/^[a-zA-Z][a-zA-Z0-9_.-]{2,100}$/),
+      }).parse(request.params)
+      await input.repository.revokeToolApprovalExemption(request.actor.userId, operationId)
+      return reply.code(204).send()
     })
     secured.post("/internal/v1/conversations", async (request, reply) => {
       const body = z.object({
@@ -210,28 +216,6 @@ export function buildServer(input: {
       const deleted = await input.repository.deleteConversation(request.actor.userId, conversationId)
       return deleted ? reply.code(204).send() : reply.code(404).send(errorBody("ai.conversation_not_found", request.id))
     })
-    secured.get("/internal/v1/conversations/:conversationId/authorization", async (request, reply) => {
-      reply.header("cache-control", "no-store")
-      const { conversationId } = z.object({ conversationId: id }).parse(request.params)
-      const authorization = await input.repository.getConversationAuthorization(
-        request.actor.userId,
-        conversationId,
-        request.actor.sessionId,
-        input.toolCatalogDigest ?? "sha256:platform-tools-v1",
-      )
-      if (!await input.repository.getConversation(request.actor.userId, conversationId))
-        return reply.code(404).send(errorBody("ai.conversation_not_found", request.id))
-      return authorization
-        ? { active: true, expiresAt: authorization.expiresAt, updatedAt: authorization.updatedAt }
-        : { active: false }
-    })
-    secured.delete("/internal/v1/conversations/:conversationId/authorization", async (request, reply) => {
-      const { conversationId } = z.object({ conversationId: id }).parse(request.params)
-      const revoked = await input.repository.revokeConversationAuthorization(request.actor.userId, conversationId)
-      if (!revoked) return reply.code(404).send(errorBody("ai.conversation_not_found", request.id))
-      telemetryLog("agent.conversation_authorization.revoked", "info")
-      return reply.code(204).send()
-    })
     secured.get("/internal/v1/conversations/:conversationId/timeline", async (request, reply) => {
       reply.header("cache-control", "no-store")
       const { conversationId } = z.object({ conversationId: id }).parse(request.params)
@@ -257,7 +241,6 @@ export function buildServer(input: {
         pageContext: z.record(z.string(), z.unknown()).default({}),
         clientInstanceId,
         runId: id.optional(),
-        runActorGrant: z.string().min(16).max(8192).optional(),
       }).parse(request.body)
       const created = await withSpan("agent.turn.accept", internalSpanOptions({
         "luna.operation.name": "create_turn",
@@ -266,8 +249,8 @@ export function buildServer(input: {
         const value = await input.repository.createTurn(request.actor.userId, {
           conversationId, input: body.input.parts.map(part => part.text).join("\n"), pageContext: redact(body.pageContext),
           traceContext: captureTraceContext(request.headers),
+          actorSessionId: request.actor.sessionId,
           idempotencyKey: key, ...(body.runId ? { preallocatedRunId: body.runId } : {}),
-          ...(body.runActorGrant ? { runActorGrantCiphertext: input.grantCipher.encrypt(body.runActorGrant) } : {}),
           ...(input.toolCatalogDigest ? { toolCatalogDigest: input.toolCatalogDigest } : {}),
           clientInstanceId: body.clientInstanceId,
           modelId: body.modelId,
@@ -291,7 +274,6 @@ export function buildServer(input: {
         message: z.string().trim().min(1).max(2000),
         clientInstanceId,
         runId: id,
-        runActorGrant: z.string().min(16).max(8192),
       }).parse(request.body)
       if (body.runId !== request.actor.runId) return reply.code(409).send(errorBody("ai.run_state_conflict", request.id))
       const created = await withSpan("agent.tool_action.accept", internalSpanOptions({
@@ -303,9 +285,9 @@ export function buildServer(input: {
           input: body.message,
           pageContext: { __lunaDirectToolAction: true },
           traceContext: captureTraceContext(request.headers),
+          actorSessionId: request.actor.sessionId,
           idempotencyKey: key,
           preallocatedRunId: body.runId,
-          runActorGrantCiphertext: input.grantCipher.encrypt(body.runActorGrant),
           ...(input.toolCatalogDigest ? { toolCatalogDigest: input.toolCatalogDigest } : {}),
           clientInstanceId: body.clientInstanceId,
         })
@@ -315,11 +297,9 @@ export function buildServer(input: {
       })
       try {
         const call = await input.tools.propose({ runId: created.run.id, operationId: body.operationId, arguments: body.arguments, inputMode: "direct" })
-        if (call.status === "awaiting_approval")
-          await input.repository.updateRun(created.run.id, "queued", "waiting_approval")
-        else if (call.status === "awaiting_mfa")
-          await input.repository.updateRun(created.run.id, "queued", "waiting_mfa")
-        else
+		if (call.status === "awaiting_approval")
+		  await input.repository.updateRun(created.run.id, "queued", "waiting_approval")
+		else
           await input.repository.updateRun(created.run.id, "queued", call.status === "failed" ? "failed" : "completed", { completedAt: new Date().toISOString() })
         const run = await input.repository.getRun(request.actor.userId, created.run.id)
         return reply.code(202).send({ turnId: created.turn.id, turnIndex: created.turn.turnIndex, runId: created.run.id, state: run?.status ?? "completed", toolCallId: call.id, eventsUrl: `/api/v1/ai/runs/${created.run.id}/events` })
@@ -389,64 +369,22 @@ export function buildServer(input: {
       if (!input.tools) return reply.code(503).send(errorBody("ai.tool_not_available", request.id))
       const { runId, toolCallId } = z.object({ runId: id, toolCallId: id }).parse(request.params)
       const body = z.object({
-        decision: z.enum(["approve", "reject", "approve_conversation"]),
-        argumentsHash: z.string(),
-        expectedVersion: z.number().int(),
-        reason: z.string().max(500).optional(),
-        conversationId: id.optional(),
-        conversationAuthorizationGrant: z.string().min(16).max(8192).optional(),
-        conversationAuthorizationExpiresAt: z.string().datetime().optional(),
-      }).superRefine((value, context) => {
-        if (value.decision === "approve_conversation" && (!value.conversationId || !value.conversationAuthorizationGrant || !value.conversationAuthorizationExpiresAt))
-          context.addIssue({ code: "custom", path: ["conversationAuthorizationGrant"], message: "conversation authorization is required" })
-      }).parse(request.body)
+		decision: z.enum(["reject", "approve", "approve_always"]),
+	  }).parse(request.body)
       const run = await input.repository.getRun(request.actor.userId, runId)
       if (!run || run.status !== "waiting_approval") return reply.code(409).send(errorBody("ai.run_not_resumable", request.id))
       const selected = await input.tools.inspect(toolCallId)
       if (selected.runId !== runId) return reply.code(404).send(errorBody("ai.tool_call_not_found", request.id))
       if (body.decision === "reject") {
-        await input.tools.reject(toolCallId, body.argumentsHash, body.expectedVersion)
-        const canceled = await input.repository.cancelRun(request.actor.userId, runId)
-        return canceled ? presentRun(canceled) : canceled
+        await input.tools.resolveApproval(toolCallId, "reject")
+        await input.repository.updateRun(runId, "waiting_approval", "queued")
+        return reply.code(202).send({ runId, state: "queued" })
       }
-      let resolved: ToolCallRecord[]
-      if (body.decision === "approve_conversation") {
-        if (body.conversationId !== run.conversationId) throw new Error("ai.conversation_authorization_invalid")
-        const authorization = await input.repository.authorizeConversation(request.actor.userId, run.conversationId, {
-          sessionId: request.actor.sessionId,
-          catalogDigest: run.toolCatalogDigest,
-          grantCiphertext: input.grantCipher.encrypt(body.conversationAuthorizationGrant!),
-          expiresAt: body.conversationAuthorizationExpiresAt!,
-        })
-        if (!authorization) throw new Error("ai.conversation_not_found")
-        telemetryLog("agent.conversation_authorization.activated", "info")
-        const selectedCall = await input.tools.approveConversation(
-          toolCallId,
-          body.argumentsHash,
-          body.expectedVersion,
-          body.conversationAuthorizationGrant!,
-        )
-        const remaining = await input.tools.approvePendingWithConversationAuthorization(runId, body.conversationAuthorizationGrant!)
-        resolved = [selectedCall, ...remaining]
-      }
-      else {
-        resolved = [await input.tools.approve(toolCallId, body.argumentsHash, body.expectedVersion)]
-      }
-      if (resolved.some(call => call.status === "awaiting_mfa")) return presentRun(await input.repository.updateRun(runId, "waiting_approval", "waiting_mfa"))
-      if (resolved.some(call => call.status === "awaiting_approval")) return presentRun(run)
-      await input.repository.updateRun(runId, "waiting_approval", "queued")
-      return reply.code(202).send({ runId, state: "queued" })
-    })
-    secured.post("/internal/v1/runs/:runId/mfa/:toolCallId/resume", async (request, reply) => {
-      if (!input.tools) return reply.code(503).send(errorBody("ai.tool_not_available", request.id))
-      const { runId, toolCallId } = z.object({ runId: id, toolCallId: id }).parse(request.params)
-      const body = z.object({ purpose: z.string().min(1), expectedVersion: z.number().int(), stepUpAssertionId: z.string().min(1) }).parse(request.body)
-      const run = await input.repository.getRun(request.actor.userId, runId)
-      if (!run || run.status !== "waiting_mfa") return reply.code(409).send(errorBody("ai.run_not_resumable", request.id))
-      await input.tools.resumeMfa(toolCallId, body.purpose, body.expectedVersion, body.stepUpAssertionId)
-      await input.repository.updateRun(runId, "waiting_mfa", "queued")
-      return reply.code(202).send({ runId, state: "queued" })
-    })
+	  const resolved = await input.tools.resolveApproval(toolCallId, body.decision)
+	  if (resolved.status === "awaiting_approval") return presentRun(run)
+	  await input.repository.updateRun(runId, "waiting_approval", "queued")
+	  return reply.code(202).send({ runId, state: "queued" })
+	})
     secured.post("/internal/v1/runs/:runId/input", async (request, reply) => {
       const { runId } = z.object({ runId: id }).parse(request.params)
       const body = z.object({ text: z.string().trim().min(1).max(12000), expectedVersion: z.number().int() }).parse(request.body)

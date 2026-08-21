@@ -2,14 +2,12 @@ package api
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/LiteyukiStudio/devops/internal/aiagent"
 	"github.com/gin-gonic/gin"
@@ -84,14 +82,11 @@ func TestAIProxyUsesSessionActorAndForwardsIdempotencyKey(t *testing.T) {
 		t.Fatal(err)
 	}
 	runID, _ := forwarded["runId"].(string)
-	rawGrant, _ := forwarded["runActorGrant"].(string)
-	internalKeys, keyErr := aiagent.LoadInternalKeys()
-	if keyErr != nil {
-		t.Fatal(keyErr)
+	if runID == "" {
+		t.Fatal("API must preallocate a stable runId")
 	}
-	grant, err := aiagent.VerifyRunActorGrant(rawGrant, internalKeys.RunActorGrantSigningKey, time.Now())
-	if err != nil || runID == "" || grant.RunID != runID || grant.ConversationID != "aicnv_owned" || grant.UserID != "usr_session_owner" {
-		t.Fatalf("forwarded Run Actor Grant = %#v, error = %v", grant, err)
+	if _, leaked := forwarded["runActorGrant"]; leaked {
+		t.Fatalf("legacy Run Actor Grant leaked into Agent request: %#v", forwarded)
 	}
 	pageContext, _ := forwarded["pageContext"].(map[string]any)
 	serverContext, _ := pageContext["server"].(map[string]any)
@@ -293,22 +288,8 @@ func TestAIProxyTreatsPageProjectAsContextInsteadOfAuthorizationBoundary(t *test
 	if err := json.Unmarshal(fake.request.Body, &forwarded); err != nil {
 		t.Fatal(err)
 	}
-	rawGrant, _ := forwarded["runActorGrant"].(string)
-	internalKeys, err := aiagent.LoadInternalKeys()
-	if err != nil {
-		t.Fatal(err)
-	}
-	grant, err := aiagent.VerifyRunActorGrant(rawGrant, internalKeys.RunActorGrantSigningKey, time.Now())
-	if err != nil {
-		t.Fatalf("invalid authorization grant: %#v, error = %v", grant, err)
-	}
-	grantParts := strings.Split(rawGrant, ".")
-	if len(grantParts) != 3 {
-		t.Fatalf("invalid compact grant: %s", rawGrant)
-	}
-	payload, err := base64.RawURLEncoding.DecodeString(grantParts[1])
-	if err != nil || strings.Contains(string(payload), `"projectId"`) {
-		t.Fatalf("page project leaked into authorization grant: %s", payload)
+	if _, leaked := forwarded["runActorGrant"]; leaked {
+		t.Fatalf("page project must remain context, not a portable grant: %#v", forwarded)
 	}
 }
 
@@ -608,7 +589,7 @@ func TestAIProxyKeepsNonSuccessBodyInDevelopment(t *testing.T) {
 	}
 }
 
-func TestAIProviderConnectionResponseSanitizesUpstreamFailureInProduction(t *testing.T) {
+func TestAIProviderConnectionResponseSanitizesExternalErrorInProduction(t *testing.T) {
 	t.Setenv("APP_ENV", "production")
 	response := &aiagent.Response{
 		StatusCode: http.StatusServiceUnavailable,

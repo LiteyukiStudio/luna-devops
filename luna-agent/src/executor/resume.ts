@@ -3,17 +3,15 @@ import type { ModelMessage } from "../provider/provider.js"
 import { businessCardToolOperationIds } from "../tools/business-card-tools.js"
 
 export const internalToolOperationIds = new Set<string>([
-  "create_options",
-  "create_interaction_cards",
   "rename_conversation",
   "navigate_to_route",
-  "browse_tools",
+  "get_tool_details",
   "search_tools",
   ...businessCardToolOperationIds,
 ])
-export const cardToolOperationIds = new Set<string>(["create_interaction_cards", ...businessCardToolOperationIds])
+export const cardToolOperationIds = new Set<string>(businessCardToolOperationIds)
 
-// 审批/MFA 恢复后，把已完成的工具调用重建为 assistant + tool 消息对，
+// 审批恢复后，把已完成的工具调用重建为 assistant + tool 消息对，
 // 让模型在断点续跑时看到暂停前的工具结果。只重建有结果的调用。
 export function resumedToolMessages(interactions: ConversationToolInteraction[]): ModelMessage[] {
   const resultsByRelatedItem = new Map(interactions
@@ -39,14 +37,6 @@ export function resumedToolMessages(interactions: ConversationToolInteraction[])
         },
       ]
     })
-}
-
-// 恢复审批/MFA 后仍保留此前已经使用过的平台工具，避免动态工具集在断点续跑时漂移。
-export function resumedOperationIds(interactions: ConversationToolInteraction[]): string[] {
-  return [...new Set(interactions
-    .filter(interaction => interaction.type === "tool_call")
-    .map(interaction => interaction.content.operationId)
-    .filter((operationId): operationId is string => typeof operationId === "string" && !internalToolOperationIds.has(operationId)))]
 }
 
 export function normalizeToolSearchQuery(query: string): string {

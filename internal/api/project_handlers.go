@@ -49,6 +49,9 @@ func (h *Handlers) ListProjects(ctx *gin.Context) {
 		Joins("left join project_members on project_members.project_id = projects.id and project_members.user_id = ?", user.ID).
 		Joins("left join project_pins on project_pins.project_id = projects.id and project_pins.user_id = project_members.user_id").
 		Where("projects.deleted_at is null")
+	if projectID := aiConversationProjectID(ctx); projectID != "" {
+		baseQuery = baseQuery.Where("projects.id = ?", projectID)
+	}
 	if scope == projectservice.ListScopeRelated {
 		baseQuery = baseQuery.Where("project_members.user_id = ?", user.ID)
 	}

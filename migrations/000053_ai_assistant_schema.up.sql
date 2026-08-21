@@ -35,10 +35,7 @@ CREATE TABLE ai.runs (
     prompt_version text NOT NULL,
     tool_catalog_digest text NOT NULL,
     page_context jsonb NOT NULL DEFAULT '{}'::jsonb,
-    run_actor_grant_ciphertext text,
-    lease_owner text,
-    lease_expires_at timestamptz,
-    heartbeat_at timestamptz,
+    actor_session_id text NOT NULL,
     created_at timestamptz NOT NULL DEFAULT now(),
     started_at timestamptz,
     completed_at timestamptz,
@@ -47,7 +44,7 @@ CREATE TABLE ai.runs (
 );
 
 CREATE INDEX ai_runs_queue_idx
-    ON ai.runs (status, lease_expires_at)
+    ON ai.runs (status, created_at)
     WHERE status = 'queued';
 
 CREATE TABLE ai.items (
@@ -78,11 +75,10 @@ CREATE TABLE ai.tool_calls (
     operation_id text NOT NULL,
     status text NOT NULL,
     arguments jsonb NOT NULL,
-    arguments_hash text NOT NULL,
+    arguments_hash text NOT NULL DEFAULT '',
     attempt integer NOT NULL DEFAULT 1,
     row_version integer NOT NULL DEFAULT 1,
-    approval_expires_at timestamptz,
-    mfa_purpose text,
+    approval_decision text CHECK (approval_decision IN ('approve', 'approve_always')),
     result jsonb,
     error_code text,
     created_at timestamptz NOT NULL DEFAULT now(),
@@ -91,6 +87,15 @@ CREATE TABLE ai.tool_calls (
 
 CREATE INDEX ai_tool_calls_run_created_idx
     ON ai.tool_calls (run_id, created_at);
+
+CREATE TABLE ai.tool_approval_exemptions (
+    user_id text NOT NULL,
+    operation_id text NOT NULL,
+    source_tool_call_id text NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (user_id, operation_id)
+);
 
 CREATE TABLE ai.idempotency_keys (
     owner_user_id text NOT NULL,
@@ -101,70 +106,3 @@ CREATE TABLE ai.idempotency_keys (
     created_at timestamptz NOT NULL DEFAULT now(),
     PRIMARY KEY (owner_user_id, idempotency_key)
 );
-
-CREATE OR REPLACE FUNCTION ai.claim_next_run(instance_id text, lease_seconds integer)
-RETURNS TABLE(run_id text, owner_user_id text, lease_expires_at timestamptz)
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = pg_catalog, ai
-AS $$
-BEGIN
-    IF length(instance_id) < 1
-       OR length(instance_id) > 128
-       OR lease_seconds < 5
-       OR lease_seconds > 300 THEN
-        RAISE EXCEPTION 'invalid lease request';
-    END IF;
-
-    RETURN QUERY
-    WITH candidate AS (
-        SELECT id
-        FROM ai.runs
-        WHERE status = 'queued'
-          AND (ai.runs.lease_expires_at IS NULL OR ai.runs.lease_expires_at <= now())
-        ORDER BY created_at
-        FOR UPDATE SKIP LOCKED
-        LIMIT 1
-    )
-    UPDATE ai.runs AS run
-    SET lease_owner = instance_id,
-        lease_expires_at = now() + make_interval(secs => lease_seconds),
-        heartbeat_at = now()
-    FROM candidate
-    WHERE run.id = candidate.id
-    RETURNING run.id, run.owner_user_id, run.lease_expires_at;
-END;
-$$;
-
-CREATE OR REPLACE FUNCTION ai.renew_run_lease(
-    p_run_id text,
-    instance_id text,
-    lease_seconds integer
-)
-RETURNS boolean
-LANGUAGE sql
-SECURITY DEFINER
-SET search_path = pg_catalog, ai
-AS $$
-    UPDATE ai.runs
-    SET lease_expires_at = now() + make_interval(secs => lease_seconds),
-        heartbeat_at = now()
-    WHERE id = p_run_id
-      AND lease_owner = instance_id
-      AND status IN ('queued', 'running')
-    RETURNING true
-$$;
-
-CREATE OR REPLACE FUNCTION ai.release_run_lease(p_run_id text, instance_id text)
-RETURNS boolean
-LANGUAGE sql
-SECURITY DEFINER
-SET search_path = pg_catalog, ai
-AS $$
-    UPDATE ai.runs
-    SET lease_owner = NULL,
-        lease_expires_at = NULL
-    WHERE id = p_run_id
-      AND lease_owner = instance_id
-    RETURNING true
-$$;

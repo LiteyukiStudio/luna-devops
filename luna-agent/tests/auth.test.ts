@@ -1,6 +1,6 @@
 import { createHmac } from "node:crypto"
 import { describe, expect, it } from "vitest"
-import { BffHmacAuthenticator } from "../src/auth.js"
+import { BffHmacRequestVerifier } from "../src/auth.js"
 
 describe("BFF Actor Context authentication", () => {
   it("verifies independent service and actor materials", async () => {
@@ -12,7 +12,7 @@ describe("BFF Actor Context authentication", () => {
       issuedAt: now, expiresAt: now + 60, requestId: "req_a",
     })).toString("base64url")
     const signature = `sha256=${createHmac("sha256", signingKey).update(context).digest("hex")}`
-    const actor = await new BffHmacAuthenticator(serviceToken, signingKey).verify({
+    const actor = await new BffHmacRequestVerifier(serviceToken, signingKey).verify({
       authorization: `Bearer ${serviceToken}`,
       "x-luna-actor-context": context,
       "x-luna-actor-signature": signature,
@@ -20,8 +20,8 @@ describe("BFF Actor Context authentication", () => {
     expect(actor.userId).toBe("usr_a")
   })
   it("rejects a modified Actor Context", async () => {
-    const authenticator = new BffHmacAuthenticator("s".repeat(32), "k".repeat(32))
-    await expect(authenticator.verify({
+    const requestVerifier = new BffHmacRequestVerifier("s".repeat(32), "k".repeat(32))
+    await expect(requestVerifier.verify({
       authorization: `Bearer ${"s".repeat(32)}`,
       "x-luna-actor-context": "modified",
       "x-luna-actor-signature": `sha256=${"0".repeat(64)}`,

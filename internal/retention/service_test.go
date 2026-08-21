@@ -80,33 +80,16 @@ func TestStandardQueriesContainTerminalGuardsAndHalfOpenRange(t *testing.T) {
 	}
 }
 
-func TestExpiredAuthQueriesUseExpiryAndProtectSessionChildren(t *testing.T) {
+func TestExpiredAuthQueriesUseExpiry(t *testing.T) {
 	authPlan := plans[DatasetExpiredAuthData]
-	if len(authPlan.queries) != 4 {
-		t.Fatalf("expired auth query count = %d, want 4", len(authPlan.queries))
+	if len(authPlan.queries) != 3 {
+		t.Fatalf("expired auth query count = %d, want 3", len(authPlan.queries))
 	}
-	assertionCountSQL := authPlan.queries[0].countSQL
-	if strings.Count(assertionCountSQL, "LEAST(idle_expires_at, absolute_expires_at)") != 3 {
-		t.Fatalf("assertion query does not apply range and now to effective expiry:\n%s", assertionCountSQL)
-	}
-	if !strings.Contains(assertionCountSQL, "<= ?") {
-		t.Fatalf("assertion query does not treat expiry equal to now as expired:\n%s", assertionCountSQL)
-	}
-	sessionCountSQL := authPlan.queries[1].countSQL
-	sessionDeleteSQL := authPlan.queries[1].deleteSQL
-	if !strings.Contains(sessionCountSQL, "NOT EXISTS") || !strings.Contains(sessionCountSQL, "AND NOT (") {
-		t.Fatalf("session preview does not account for assertion eligibility:\n%s", sessionCountSQL)
-	}
-	if !strings.Contains(sessionDeleteSQL, "NOT EXISTS") || !strings.Contains(sessionDeleteSQL, "AND NOT (") {
-		t.Fatalf("session cleanup does not preserve assertions outside the requested range:\n%s", sessionDeleteSQL)
-	}
+	sessionDeleteSQL := authPlan.queries[0].deleteSQL
 	if !strings.Contains(sessionDeleteSQL, "session.expires_at <= ?") {
 		t.Fatalf("session cleanup does not treat expiry equal to now as expired:\n%s", sessionDeleteSQL)
 	}
-	if authPlan.queries[1].windowCount != 2 || len(authPlan.queries[1].rangeArgs(startOfTestRange, endOfTestRange, nowForTestRange)) != 6 {
-		t.Fatal("session relation guard must receive the same range for session and assertion predicates")
-	}
-	if !strings.Contains(authPlan.queries[3].countSQL, "email_registration_challenges") || !strings.Contains(authPlan.queries[3].deleteSQL, "expires_at <= ?") {
+	if !strings.Contains(authPlan.queries[2].countSQL, "email_registration_challenges") || !strings.Contains(authPlan.queries[2].deleteSQL, "expires_at <= ?") {
 		t.Fatal("expired email registration challenges must be included in authentication cleanup")
 	}
 }
@@ -137,7 +120,6 @@ func TestRetentionIndexMigrationCoversAllDatasets(t *testing.T) {
 		"idx_releases_retention_terminal",
 		"idx_hook_run_logs_retention_parent",
 		"idx_hook_runs_retention_terminal",
-		"idx_step_up_assertions_retention_expiry",
 		"idx_user_sessions_retention_expiry",
 		"idx_user_remember_tokens_retention_expiry",
 	} {
@@ -148,8 +130,7 @@ func TestRetentionIndexMigrationCoversAllDatasets(t *testing.T) {
 			t.Fatalf("down migration is missing %s", index)
 		}
 	}
-	if !strings.Contains(upSQL, "WHERE status IN ('succeeded', 'failed')") ||
-		!strings.Contains(upSQL, "LEAST(idle_expires_at, absolute_expires_at)") {
-		t.Fatal("migration is missing terminal notification or effective assertion expiry index")
+	if !strings.Contains(upSQL, "WHERE status IN ('succeeded', 'failed')") {
+		t.Fatal("migration is missing terminal notification index")
 	}
 }

@@ -185,7 +185,7 @@ func (h *Handlers) auditWithContext(userID, action, resource string, success boo
 func auditResourceType(action string) string {
 	prefix, _, _ := strings.Cut(strings.TrimSpace(action), ".")
 	switch prefix {
-	case "ai", "application", "artifact_registry", "auth", "billing", "build", "build_variable", "deployment", "deployment_bundle", "deployment_volume", "gateway", "git_account", "git_provider", "git_repository", "git_webhook", "mfa", "oidc", "project", "registry", "release", "runtime_cluster", "runtime_config", "secret", "user", "volume":
+	case "ai", "application", "artifact_registry", "auth", "billing", "build", "build_variable", "deployment", "deployment_bundle", "deployment_volume", "gateway", "git_account", "git_provider", "git_repository", "git_webhook", "oidc", "project", "registry", "release", "runtime_cluster", "runtime_config", "secret", "user", "volume":
 		return prefix
 	default:
 		return "unknown"

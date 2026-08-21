@@ -222,11 +222,6 @@ const settings = {
         ipBlockList: { label: '네트워크 접근 IP 블랙리스트', description: '줄당 하나의 IP 또는 CIDR. 도메인 해석 결과도 확인되고 기본적으로 프라이빗 네트워크, 루프백, 메타데이터 주소가 포함됩니다.' },
         allowedPorts: { label: 'SSRF 허용 포트', description: '비워 두면 제한 없음. 입력 후 줄당 하나의 허용 접근 포트.' },
       },
-      stepUpMfa: {
-        enabled: { label: '민감한 작업 2차 검증', description: '활성화하면 Web Console, 데이터 낚수, 시크릿, 레지스트리 자격 증명, kubeconfig, ID 공급자, 사용자 관리 등 민감한 작업에 단기 2차 검증이 필요합니다.' },
-        idleTimeoutMinutes: { label: '2차 검증 유휴 타임아웃', description: '2차 검증 완료 후 민감한 작업을 수행하지 않은 최장 분 수. 타임아웃 후에는 재검증이 필요합니다.' },
-        absoluteTimeoutMinutes: { label: '2차 검증 최장 유효 기간', description: '한 번의 2차 검증이 유효한 최장 분 수. 지속적으로 작업필요 이 시간을 초과하지 않습니다.' },
-      },
     },
     billing: {
       creditsDisplayName: { label: 'Credits 표시 이름', description: '콘솔이 플랫폼 남부 credits를 표시할 때 사용하는 이름. 기반은 계속 credits로 통일 저장 및 결산됩니다.' },

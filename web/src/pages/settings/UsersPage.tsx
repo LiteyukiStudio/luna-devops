@@ -2,16 +2,14 @@ import type { User } from '@/api'
 import type { DataListColumn } from '@/components/common/data-list'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Save, ShieldOff, UserPlus } from 'lucide-react'
+import { Save, UserPlus } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { z } from 'zod'
 import { api } from '@/api'
-import { useSession } from '@/app/session-context'
 import { CheckboxField } from '@/components/common/checkbox-field'
-import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { DataList } from '@/components/common/data-list'
 import { EditActionButton } from '@/components/common/edit-action-button'
 import { ErrorState } from '@/components/common/error-state'
@@ -52,7 +50,6 @@ const PAGE_SIZE_OPTIONS = [10, 20, 50, 100]
 export function UsersPage() {
   const { i18n, t } = useTranslation()
   const queryClient = useQueryClient()
-  const { user: currentUser } = useSession()
   const billingDisplay = useBillingAmountDisplay(i18n.language)
   const [editingUser, setEditingUser] = useState<User | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -101,15 +98,6 @@ export function UsersPage() {
     onError: error => toast.error(error.message),
   })
 
-  const resetMFA = useMutation({
-    mutationFn: api.resetUserMFA,
-    onSuccess: () => {
-      toast.success(t('usersPage.mfaResetSuccess'))
-      queryClient.invalidateQueries({ queryKey: ['users'] })
-    },
-    onError: error => toast.error(error.message),
-  })
-
   const userItems = users.data?.items ?? []
   const columns: DataListColumn<User>[] = [
     {
@@ -141,10 +129,6 @@ export function UsersPage() {
           <div className="flex items-center justify-between gap-2">
             <span>{t('usersPage.passwordLogin')}</span>
             <StatusBadge tone="neutral">{user.passwordSet ? t('common.enabled') : t('common.disabled')}</StatusBadge>
-          </div>
-          <div className="flex items-center justify-between gap-2">
-            <span>{t('usersPage.mfa')}</span>
-            <StatusBadge tone="neutral">{user.mfaEnabled ? t('common.enabled') : t('common.disabled')}</StatusBadge>
           </div>
         </div>
       ),
@@ -193,20 +177,6 @@ export function UsersPage() {
               setDialogOpen(true)
             }}
           />
-          {user.mfaEnabled && user.id !== currentUser?.id && (
-            <ConfirmDialog
-              confirmText={t('usersPage.resetMFA')}
-              description={t('usersPage.resetMFADescription', { name: user.name })}
-              pending={resetMFA.isPending && resetMFA.variables === user.id}
-              title={t('usersPage.resetMFATitle')}
-              onConfirm={() => resetMFA.mutateAsync(user.id)}
-            >
-              <Button className="text-danger hover:text-danger" variant="ghost">
-                <ShieldOff size={16} />
-                {t('usersPage.resetMFA')}
-              </Button>
-            </ConfirmDialog>
-          )}
         </div>
       ),
     },

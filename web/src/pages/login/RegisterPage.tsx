@@ -16,7 +16,7 @@ import { CheckboxField } from '@/components/common/checkbox-field'
 import { ErrorState } from '@/components/common/error-state'
 import { FormField as Field } from '@/components/common/form-field'
 import { PageMotion } from '@/components/common/motion'
-import { OneTimeCodeInput } from '@/components/common/one-time-code-input'
+import { VerificationCodeInput } from '@/components/common/verification-code-input'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -117,12 +117,13 @@ export function RegisterPage() {
                   control={form.control}
                   name="code"
                   render={({ field }) => (
-                    <OneTimeCodeInput
+                    <VerificationCodeInput
                       {...field}
                       ref={codeInputRef}
                       aria-label={t('loginPage.registration.code')}
                       invalid={Boolean(form.formState.errors.code)}
-                      name="one-time-code"
+                      name="verification-code"
+                      onValueChange={field.onChange}
                     />
                   )}
                 />

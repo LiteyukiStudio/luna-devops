@@ -7,9 +7,10 @@ export const AI_EVENT_TYPES = [
   'run.running',
   'run.queued',
   'run.waiting_approval',
-  'run.waiting_mfa',
   'run.waiting_input',
   'run.input_required',
+  'run.input_received',
+  'conversation.title.updated',
   'model.started',
   'content.delta',
   'message.completed',
@@ -23,17 +24,16 @@ export const AI_EVENT_TYPES = [
   'tool.failed',
   'approval.required',
   'approval.resolved',
-  'mfa.required',
-  'mfa.resolved',
   'ui.action',
   'model.completed',
   'context.compacted',
   'run.failed',
   'run.completed',
   'run.canceled',
+  'run.interrupted',
 ] as const
 
-const terminalRunEvents = new Set(['run.completed', 'run.failed', 'run.canceled'])
+const terminalRunEvents = new Set(['run.completed', 'run.failed', 'run.canceled', 'run.interrupted'])
 
 export interface AIRunStreamSubscription {
   conversationId: string

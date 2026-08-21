@@ -26,9 +26,6 @@ func (h *Handlers) runtimeClusterFromInput(ctx *gin.Context, user model.User, in
 	}
 	kubeconfigRef := ""
 	if strings.TrimSpace(input.Kubeconfig) != "" {
-		if !h.requireStepUp(ctx, user, stepUpPurposeKubeconfigUpdate) {
-			return model.RuntimeCluster{}, false
-		}
 		kubeconfig, err := flattenKubeconfig(input.Kubeconfig)
 		if err != nil {
 			writeError(ctx, http.StatusBadRequest, err.Error())

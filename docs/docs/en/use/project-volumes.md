@@ -4,8 +4,8 @@ A project volume is persistent data owned independently from an application. It 
 
 ## Prerequisites
 
-- Project Viewers can inspect volumes; Developers can create, reference, adopt, and expand them. Adopting an existing PVC requires MFA step-up.
-- Exporting requires project Owner/Admin `volume:export` permission and export-purpose MFA. Permanently deleting or detaching an external reference requires `volume:delete`; both use the `volume_delete` MFA step-up.
+- Project Viewers can inspect volumes; Developers can create, reference, adopt, and expand them. Adopting an existing PVC requires explicit confirmation that the platform will own its lifecycle.
+- Exporting requires project Owner/Admin `volume:export` permission. Permanently deleting or detaching an external reference requires `volume:delete`.
 - The runtime cluster must be reachable. Creating a blank volume also requires a StorageClass offered by that cluster.
 
 ## Create a volume
@@ -18,7 +18,7 @@ A project volume is persistent data owned independently from an application. It 
    - **VolumeSnapshot** restores an available snapshot from the same cluster.
 4. Submit and wait for the lifecycle state to become Ready. A `WaitForFirstConsumer` StorageClass may keep the PVC Pending until its first mount; this alone is not a creation failure.
 
-The AI assistant can list project volumes and StorageClasses for the target cluster, then create a blank volume, reference an existing PVC, or restore from a VolumeSnapshot after the parameters are confirmed. Adopting an existing PVC as a platform-managed volume requires conditional MFA and must currently be completed in the console or Luna CLI. The assistant never substitutes a placeholder ID or `emptyDir` for required persistent storage.
+The AI assistant can list project volumes and StorageClasses for the target cluster, then create a blank volume, reference an existing PVC, or restore from a VolumeSnapshot after the parameters are confirmed. High-risk actions such as adopting an existing PVC require approval bound to the current parameters. The assistant never substitutes a placeholder ID or `emptyDir` for required persistent storage.
 
 When the cluster is unreachable, the page reports the observation as unavailable instead of displaying stale PVC state. Restore connectivity, then refresh or retry the last operation.
 
@@ -45,6 +45,6 @@ When an app marketplace template declares persistent storage, its install form r
 
 - Capacity can only increase. To change StorageClass, access mode, or volume mode, create another volume and migrate the data.
 - Review the deletion impact first. Reserved or active mounts and running transfers block deletion.
-- Permanently deleting a managed volume deletes its PVC and cannot be undone. An externally referenced volume can only be detached; its PVC remains. Both actions require Owner/Admin permission and deletion-purpose MFA step-up.
+- Permanently deleting a managed volume deletes its PVC and cannot be undone. An externally referenced volume can only be detached; its PVC remains. Both actions require Owner/Admin permission and explicit confirmation.
 
 For migration and backup, see [Import and Export Volumes](./volume-transfer.md).

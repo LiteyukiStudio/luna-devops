@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest"
 import { SpanStatusCode, type Span } from "@opentelemetry/api"
-import { captureTraceContext, initializeTelemetry, internalSpanOptions, isDatabaseSpanCaptureEnabled, isExpectedCancellation, isHealthCheckPath, normalizeTraceContext, recordAvailableTools, recordSpanError, sanitizeTelemetryURL, stableErrorCode, telemetryLog, withSpan } from "../src/telemetry.js"
+import { captureTraceContext, initializeTelemetry, internalSpanOptions, isDatabaseSpanCaptureEnabled, isExpectedCancellation, isHealthCheckPath, normalizeTraceContext, recordAvailableTools, recordSpanError, sanitizeTelemetryURL, stableErrorCode, stableFastifyLifecycleSpanName, telemetryLog, withSpan } from "../src/telemetry.js"
 
 describe("agent telemetry", () => {
   it("keeps noisy database spans opt-in", () => {
@@ -77,6 +77,13 @@ describe("agent telemetry", () => {
     expect(isHealthCheckPath("/internal/health/live")).toBe(true)
     expect(isHealthCheckPath("/internal/v1/provider/health")).toBe(false)
     expect(isHealthCheckPath("/api/v1/registries/reg_1/test")).toBe(false)
+  })
+
+  it("keeps Fastify handler span names bounded to method and route templates", () => {
+    expect(stableFastifyLifecycleSpanName("handler", "POST", "/internal/v1/conversations/:conversationId/turns?ignored=true"))
+      .toBe("fastify.handler POST /internal/v1/conversations/:conversationId/turns")
+    expect(stableFastifyLifecycleSpanName("async request => userInput", "post", "/route"))
+      .toBe("fastify.handler UNKNOWN /route")
   })
 
   it("correlates nested logs with the active AI conversation, turn, and run", async () => {

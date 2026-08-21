@@ -100,23 +100,22 @@ func TestVolumeOperationDispatcherPreservesContextAndOperation(t *testing.T) {
 
 func TestProjectVolumeRetryAuthorizationPreservesOriginalRiskBoundary(t *testing.T) {
 	tests := []struct {
-		name        string
-		item        model.ProjectVolume
-		wantAction  authz.Action
-		wantPurpose string
-		wantOK      bool
+		name       string
+		item       model.ProjectVolume
+		wantAction authz.Action
+		wantOK     bool
 	}{
 		{name: "provision", item: model.ProjectVolume{PendingOperation: volume.OperationProvision}, wantAction: authz.ActionVolumeWrite, wantOK: true},
-		{name: "adopt", item: model.ProjectVolume{PendingOperation: volume.OperationProvision, SourceKind: model.ProjectVolumeSourceExistingClaim, OwnershipMode: model.ProjectVolumeOwnershipManaged}, wantAction: authz.ActionVolumeWrite, wantPurpose: stepUpPurposeVolumeAdopt, wantOK: true},
+		{name: "adopt", item: model.ProjectVolume{PendingOperation: volume.OperationProvision, SourceKind: model.ProjectVolumeSourceExistingClaim, OwnershipMode: model.ProjectVolumeOwnershipManaged}, wantAction: authz.ActionVolumeWrite, wantOK: true},
 		{name: "expand", item: model.ProjectVolume{PendingOperation: volume.OperationExpand}, wantAction: authz.ActionVolumeWrite, wantOK: true},
-		{name: "delete", item: model.ProjectVolume{PendingOperation: volume.OperationDelete}, wantAction: authz.ActionVolumeDelete, wantPurpose: stepUpPurposeVolumeDelete, wantOK: true},
+		{name: "delete", item: model.ProjectVolume{PendingOperation: volume.OperationDelete}, wantAction: authz.ActionVolumeDelete, wantOK: true},
 		{name: "import uses transfer retry", item: model.ProjectVolume{PendingOperation: volume.OperationImport}, wantOK: false},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			action, purpose, ok := projectVolumeRetryAuthorization(test.item)
-			if action != test.wantAction || purpose != test.wantPurpose || ok != test.wantOK {
-				t.Fatalf("authorization = (%q, %q, %t), want (%q, %q, %t)", action, purpose, ok, test.wantAction, test.wantPurpose, test.wantOK)
+			action, ok := projectVolumeRetryAuthorization(test.item)
+			if action != test.wantAction || ok != test.wantOK {
+				t.Fatalf("authorization = (%q, %t), want (%q, %t)", action, ok, test.wantAction, test.wantOK)
 			}
 		})
 	}

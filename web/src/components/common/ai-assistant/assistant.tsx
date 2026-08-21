@@ -21,7 +21,6 @@ import {
 import { executeAutomaticRouteDelivery } from './automatic-route-delivery'
 import { readAIClientInstanceId } from './client-instance'
 import { AIAssistantComposer } from './composer'
-import { AIConversationAuthorizationNotice } from './conversation-authorization'
 import { AIConversationList } from './conversation-list'
 import {
   aiConversationSessionReducer,
@@ -68,6 +67,7 @@ import {
   timelineQueryDataFromInfinite,
   timelineQueryDataFromSnapshot,
 } from './timeline-query'
+import { AIToolApprovalExemptionsDialog } from './tool-approval-exemptions'
 import { useAIToolDebugMode } from './tool-debug-mode'
 
 type AssistantView = 'chat' | 'conversations'
@@ -166,17 +166,6 @@ export function AiAssistant({ capabilities, initiallyOpen = false }: { capabilit
       incoming as AITimelineInfiniteData,
     ),
   })
-  const conversationAuthorization = useQuery({
-    queryKey: ['ai', 'conversation-authorization', selectedConversationId],
-    queryFn: () => api.getAIConversationAuthorization(selectedConversationId!),
-    enabled: open && Boolean(selectedConversationId),
-    staleTime: 0,
-    retry: false,
-  })
-  const revokeConversationAuthorization = useMutation({
-    mutationFn: (conversationId: string) => api.revokeAIConversationAuthorization(conversationId),
-    onSuccess: (_value, conversationId) => queryClient.invalidateQueries({ queryKey: ['ai', 'conversation-authorization', conversationId] }),
-  })
   const timelineData = useMemo(() => timelineQueryDataFromInfinite(timeline.data), [timeline.data])
   const selectedConversation = useMemo(
     () => conversationItems.find(conversation => conversation.id === selectedConversationId),
@@ -226,7 +215,11 @@ export function AiAssistant({ capabilities, initiallyOpen = false }: { capabilit
       void automaticDeliveryHandlerRef.current(automaticDelivery)
     if (desynced)
       void recoverTimeline(event.conversationId)
-    if (event.type === 'run.completed' || event.type === 'run.failed' || event.type === 'run.canceled') {
+    if (event.type === 'conversation.title.updated') {
+      void queryClient.invalidateQueries({ queryKey: ['ai', 'conversations'] })
+      void queryClient.invalidateQueries({ queryKey: aiTimelineQueryKey(event.conversationId) })
+    }
+    if (event.type === 'run.completed' || event.type === 'run.failed' || event.type === 'run.canceled' || event.type === 'run.interrupted') {
       void queryClient.invalidateQueries({ queryKey: ['ai', 'conversations'] })
       void queryClient.invalidateQueries({ queryKey: aiTimelineQueryKey(event.conversationId) })
     }
@@ -311,11 +304,11 @@ export function AiAssistant({ capabilities, initiallyOpen = false }: { capabilit
     onError: error => toast.error(error instanceof Error ? error.message : t('aiAssistant.errors.deleteConversation')),
   })
   const activeRunId = useMemo(() => {
-    const activeFromTimeline = Object.entries(streamState.runStatuses).find(([, status]) => ['queued', 'running', 'waiting_approval', 'waiting_mfa', 'waiting_input'].includes(status))?.[0]
+    const activeFromTimeline = Object.entries(streamState.runStatuses).find(([, status]) => ['queued', 'running', 'waiting_approval', 'waiting_input'].includes(status))?.[0]
     if (activeFromTimeline)
       return activeFromTimeline
     const liveSubscription = runSubscriptions.find(subscription => subscription.conversationId === selectedConversationId)
-    if (liveSubscription && !['completed', 'failed', 'canceled'].includes(streamState.runStatuses[liveSubscription.runId] ?? 'queued'))
+    if (liveSubscription && !['completed', 'failed', 'canceled', 'interrupted'].includes(streamState.runStatuses[liveSubscription.runId] ?? 'queued'))
       return liveSubscription.runId
     return undefined
   }, [runSubscriptions, selectedConversationId, streamState.runStatuses])
@@ -595,6 +588,7 @@ export function AiAssistant({ capabilities, initiallyOpen = false }: { capabilit
           <h2 className="truncate text-[13px] font-semibold leading-5">{timelineData?.snapshot?.conversation.title || t('aiAssistant.title')}</h2>
           <p className="truncate text-[10px] leading-4 text-muted-foreground">{t('aiAssistant.context', { path: location.pathname })}</p>
         </div>
+        <AIToolApprovalExemptionsDialog />
         {canDebugInternalTools && (
           <Button
             aria-label={t(toolDebugMode.enabled ? 'aiAssistant.toolDebug.disable' : 'aiAssistant.toolDebug.enable')}
@@ -636,43 +630,22 @@ export function AiAssistant({ capabilities, initiallyOpen = false }: { capabilit
           onApproval={async (block, decision, reason) => {
             await api.decideAIToolApproval(block.runId, block.toolCallId, {
               decision,
-              argumentsHash: block.argumentsHash!,
-              expectedVersion: block.expectedVersion!,
-              ...(decision === 'approve_conversation' && selectedConversationId ? { conversationId: selectedConversationId } : {}),
               reason,
             })
-            if (decision === 'approve_conversation' && selectedConversationId)
-              await queryClient.invalidateQueries({ queryKey: ['ai', 'conversation-authorization', selectedConversationId] })
           }}
-          onMFA={block => api.resumeAIToolMFA(block.runId, block.toolCallId, {
-            purpose: block.mfaPurpose!,
-            expectedVersion: block.expectedVersion!,
-          })}
           onResend={message => sendTurn.mutate({ conversationId: selectedConversationId, message })}
           onRetry={() => void timeline.refetch()}
           onLoadOlder={() => timeline.fetchPreviousPage().then(() => undefined)}
           resetKey={selectedConversationId}
           resendDisabled={Boolean(activeRunId || sendingSelected)}
           showInternalTools={toolDebugMode.enabled}
-          topContent={(conversationSession.refreshReturnExpiresAt && canReturnToPreviousConversation && !selectedConversationId && !conversationSearch)
-            || (conversationAuthorization.data?.active && conversationAuthorization.data.expiresAt)
+          topContent={conversationSession.refreshReturnExpiresAt && canReturnToPreviousConversation && !selectedConversationId && !conversationSearch
             ? (
-                <div className="grid gap-2">
-                  {conversationSession.refreshReturnExpiresAt && canReturnToPreviousConversation && !selectedConversationId && !conversationSearch && (
-                    <AIRefreshConversationReturn
-                      expiresAt={conversationSession.refreshReturnExpiresAt}
-                      onExpire={dismissRefreshReturn}
-                      onReturn={returnToPreviousConversation}
-                    />
-                  )}
-                  {selectedConversationId && conversationAuthorization.data?.active && conversationAuthorization.data.expiresAt && (
-                    <AIConversationAuthorizationNotice
-                      expiresAt={conversationAuthorization.data.expiresAt}
-                      revoking={revokeConversationAuthorization.isPending}
-                      onRevoke={() => revokeConversationAuthorization.mutate(selectedConversationId)}
-                    />
-                  )}
-                </div>
+                <AIRefreshConversationReturn
+                  expiresAt={conversationSession.refreshReturnExpiresAt}
+                  onExpire={dismissRefreshReturn}
+                  onReturn={returnToPreviousConversation}
+                />
               )
             : undefined}
         />

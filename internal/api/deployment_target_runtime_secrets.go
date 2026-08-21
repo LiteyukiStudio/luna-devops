@@ -25,7 +25,7 @@ func (h *Handlers) UpdateDeploymentTargetRuntimeSecrets(ctx *gin.Context) {
 		writeError(ctx, http.StatusNotFound, "deployment target not found")
 		return
 	}
-	if !h.ensureDeploymentTargetCanMutate(ctx, target) || !h.requireStepUp(ctx, user, stepUpPurposeSecretUpdate) {
+	if !h.ensureDeploymentTargetCanMutate(ctx, target) {
 		return
 	}
 	var input runtimeSecretMutationRequest

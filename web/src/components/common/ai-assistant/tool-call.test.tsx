@@ -34,7 +34,6 @@ describe('ai assistant tool status icon', () => {
         block={toolBlock('running')}
         onAction={vi.fn(async () => true)}
         onApproval={vi.fn(async () => {})}
-        onMFA={vi.fn(async () => {})}
       />,
     )
 
@@ -47,7 +46,6 @@ describe('ai assistant tool status icon', () => {
         block={toolBlock('failed')}
         onAction={vi.fn(async () => true)}
         onApproval={vi.fn(async () => {})}
-        onMFA={vi.fn(async () => {})}
       />,
     )
 
@@ -74,7 +72,6 @@ describe('ai assistant tool status icon', () => {
         }}
         onAction={vi.fn(async () => true)}
         onApproval={vi.fn(async () => {})}
-        onMFA={vi.fn(async () => {})}
       />,
     )
 
@@ -123,7 +120,6 @@ describe('ai assistant tool status icon', () => {
         block={toolBlock('running')}
         onAction={vi.fn(async () => true)}
         onApproval={vi.fn(async () => {})}
-        onMFA={vi.fn(async () => {})}
       />,
     )
 
@@ -147,7 +143,6 @@ describe('ai assistant tool status icon', () => {
         }}
         onAction={vi.fn(async () => true)}
         onApproval={vi.fn(async () => {})}
-        onMFA={vi.fn(async () => {})}
       />,
     )
 
@@ -179,7 +174,6 @@ describe('ai assistant tool status icon', () => {
         }}
         onAction={vi.fn(async () => true)}
         onApproval={vi.fn(async () => {})}
-        onMFA={vi.fn(async () => {})}
       />,
     )
 
@@ -190,56 +184,43 @@ describe('ai assistant tool status icon', () => {
     expect(screen.getByText(/"name": "PostgreSQL"/)).toBeInTheDocument()
   })
 
-  it('offers reject, approve, and conversation authorization decisions for a bound high-risk call', async () => {
+  it('offers reject, one-time approve, and always-allow decisions for a high-risk call', async () => {
     await i18next.changeLanguage('zh-CN')
     const onApproval = vi.fn(async () => {})
     const { container } = render(
       <AIToolCallCard
         block={{
           ...toolBlock('awaiting_approval'),
-          argumentsHash: `sha256:${'a'.repeat(64)}`,
-          expectedVersion: 2,
+          arguments: { applicationId: 'app-1' },
         }}
         onAction={vi.fn(async () => true)}
         onApproval={onApproval}
-        onMFA={vi.fn(async () => {})}
       />,
     )
 
     expect(container.querySelector('details')).not.toHaveAttribute('open')
     expect(container.querySelector('[data-ai-tool-intervention]')).toBeVisible()
+    expect(screen.getByRole('button', { name: '拒绝' })).toBeVisible()
     expect(screen.getByRole('button', { name: '批准执行' })).toBeVisible()
+    expect(screen.getByRole('button', { name: '始终允许' })).toBeVisible()
 
-    fireEvent.click(screen.getByRole('button', { name: '同意（本会话不再询问）' }))
+    fireEvent.click(screen.getByRole('button', { name: '始终允许' }))
     await waitFor(() => expect(onApproval).toHaveBeenCalledWith(
       expect.objectContaining({ runId: 'run-1', toolCallId: 'tool-call-1' }),
-      'approve_conversation',
+      'approve_always',
       undefined,
     ))
   })
 
-  it('delegates MFA input to the shared challenge dialog', async () => {
-    await i18next.changeLanguage('en-US')
-    const onMFA = vi.fn(async () => {})
+  it('does not show approval controls for an ordinary tool call', () => {
     const { container } = render(
       <AIToolCallCard
-        block={{
-          ...toolBlock('awaiting_mfa'),
-          expectedVersion: 2,
-          mfaPurpose: 'access_token_manage',
-        }}
+        block={toolBlock('running')}
         onAction={vi.fn(async () => true)}
         onApproval={vi.fn(async () => {})}
-        onMFA={onMFA}
       />,
     )
 
-    expect(container.querySelector('details')).not.toHaveAttribute('open')
-    expect(container.querySelector('[data-ai-tool-intervention]')).toBeVisible()
-    expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
-    const continueButton = screen.getByRole('button', { name: i18next.t('aiAssistant.mfa.continue') })
-    expect(continueButton).toHaveAttribute('type', 'button')
-    fireEvent.click(continueButton)
-    await waitFor(() => expect(onMFA).toHaveBeenCalledTimes(1))
+    expect(container.querySelector('[data-ai-tool-intervention]')).not.toBeInTheDocument()
   })
 })

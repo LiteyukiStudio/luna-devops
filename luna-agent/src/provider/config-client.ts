@@ -12,60 +12,50 @@ export type RemoteProviderConfig = {
   version: string
   provider: {
     baseUrl: string
-    model: string
     apiKey: string
     configured: boolean
-    models?: RemoteAIModel[]
+    models: RemoteAIModel[]
   }
   runtime: RuntimeSettings
-  toolCatalog?: unknown[]
-}
-
-function compatibleRuntimeNumber(schema: z.ZodNumber, fallback: number) {
-  return schema.catch(fallback)
+  toolCatalog: unknown[]
 }
 
 const runtimeSettingsSchema = z.object({
-  providerTimeoutMs: compatibleRuntimeNumber(z.number().int().min(1_000).max(900_000), defaultRuntimeSettings.providerTimeoutMs),
-  maxRequestRetries: compatibleRuntimeNumber(z.number().int().min(0).max(10), defaultRuntimeSettings.maxRequestRetries),
-  runTimeoutMs: compatibleRuntimeNumber(z.number().int().min(30_000).max(7_200_000), defaultRuntimeSettings.runTimeoutMs),
-  agentConcurrentRuns: compatibleRuntimeNumber(z.number().int().min(1).max(100), defaultRuntimeSettings.agentConcurrentRuns),
-  userConcurrentRuns: compatibleRuntimeNumber(z.number().int().min(1).max(100), defaultRuntimeSettings.userConcurrentRuns),
-  contextInputTokenBudget: compatibleRuntimeNumber(z.number().int().min(64 * 1024).max(2048 * 1024), defaultRuntimeSettings.contextInputTokenBudget),
-  assistantMaxOutputTokens: compatibleRuntimeNumber(z.number().int().min(256).max(128 * 1024), defaultRuntimeSettings.assistantMaxOutputTokens),
-  maxModelSteps: compatibleRuntimeNumber(z.number().int().min(1).max(1024), defaultRuntimeSettings.maxModelSteps),
-  runMaxToolCalls: compatibleRuntimeNumber(z.number().int().min(32).max(2048), defaultRuntimeSettings.runMaxToolCalls),
-  maxInputBytes: compatibleRuntimeNumber(z.number().int().min(8 * 1024).max(8 * 1024 * 1024), defaultRuntimeSettings.maxInputBytes),
-  navigateActionTtlSeconds: compatibleRuntimeNumber(z.number().int().min(10).max(600), defaultRuntimeSettings.navigateActionTtlSeconds),
-  toolResultPayloadBudget: compatibleRuntimeNumber(z.number().int().min(4 * 1024).max(4 * 1024 * 1024), defaultRuntimeSettings.toolResultPayloadBudget),
-  maxCardRepairAttempts: compatibleRuntimeNumber(z.number().int().min(1).max(10), defaultRuntimeSettings.maxCardRepairAttempts),
-  contextCompressionTriggerRatio: compatibleRuntimeNumber(z.number().min(0.5).max(0.95), defaultRuntimeSettings.contextCompressionTriggerRatio),
-  contextCompressionTargetRatio: compatibleRuntimeNumber(z.number().min(0.1).max(0.8), defaultRuntimeSettings.contextCompressionTargetRatio),
-  contextRecentTurnCount: compatibleRuntimeNumber(z.number().int().min(1).max(32), defaultRuntimeSettings.contextRecentTurnCount),
-  contextMaxRecentTurnCount: compatibleRuntimeNumber(z.number().int().min(2).max(64), defaultRuntimeSettings.contextMaxRecentTurnCount),
-  contextMaxUncompressedTurnCount: compatibleRuntimeNumber(z.number().int().min(4).max(128), defaultRuntimeSettings.contextMaxUncompressedTurnCount),
-  contextMaxCompressionTurnsPerCompile: compatibleRuntimeNumber(z.number().int().min(8).max(1024), defaultRuntimeSettings.contextMaxCompressionTurnsPerCompile),
-  contextSummaryInputTokenBudget: compatibleRuntimeNumber(z.number().int().min(4 * 1024).max(512 * 1024), defaultRuntimeSettings.contextSummaryInputTokenBudget),
-  contextSummaryMaxOutputTokens: compatibleRuntimeNumber(z.number().int().min(200).max(32 * 1024), defaultRuntimeSettings.contextSummaryMaxOutputTokens),
-  contextHistoricalToolTokenBudget: compatibleRuntimeNumber(z.number().int().min(1024).max(256 * 1024), defaultRuntimeSettings.contextHistoricalToolTokenBudget),
-}).transform((value) => {
-  const normalized = { ...value }
-  if (normalized.contextCompressionTriggerRatio <= normalized.contextCompressionTargetRatio) {
-    normalized.contextCompressionTriggerRatio = defaultRuntimeSettings.contextCompressionTriggerRatio
-    normalized.contextCompressionTargetRatio = defaultRuntimeSettings.contextCompressionTargetRatio
+  providerTimeoutMs: z.number().int().min(1_000).max(900_000),
+  maxRequestRetries: z.number().int().min(0).max(10),
+  runTimeoutMs: z.number().int().min(30_000).max(7_200_000),
+  agentConcurrentRuns: z.number().int().min(1).max(100),
+  userConcurrentRuns: z.number().int().min(1).max(100),
+  contextInputTokenBudget: z.number().int().min(64 * 1024).max(2048 * 1024),
+  assistantMaxOutputTokens: z.number().int().min(256).max(128 * 1024),
+  maxModelSteps: z.number().int().min(1).max(1024),
+  runMaxToolCalls: z.number().int().min(32).max(2048),
+  maxInputBytes: z.number().int().min(8 * 1024).max(8 * 1024 * 1024),
+  navigateActionTtlSeconds: z.number().int().min(10).max(600),
+  toolResultPayloadBudget: z.number().int().min(4 * 1024).max(4 * 1024 * 1024),
+  maxCardRepairAttempts: z.number().int().min(1).max(10),
+  contextCompressionTriggerRatio: z.number().min(0.5).max(0.95),
+  contextCompressionTargetRatio: z.number().min(0.1).max(0.8),
+  contextRecentTurnCount: z.number().int().min(1).max(32),
+  contextMaxRecentTurnCount: z.number().int().min(2).max(64),
+  contextMaxUncompressedTurnCount: z.number().int().min(4).max(128),
+  contextMaxCompressionTurnsPerCompile: z.number().int().min(8).max(1024),
+  contextSummaryInputTokenBudget: z.number().int().min(4 * 1024).max(512 * 1024),
+  contextSummaryMaxOutputTokens: z.number().int().min(200).max(32 * 1024),
+  contextHistoricalToolTokenBudget: z.number().int().min(1024).max(256 * 1024),
+}).superRefine((value, context) => {
+  if (value.contextCompressionTriggerRatio <= value.contextCompressionTargetRatio) {
+    context.addIssue({ code: "custom", path: ["contextCompressionTriggerRatio"], message: "must exceed contextCompressionTargetRatio" })
   }
-  if (normalized.contextRecentTurnCount > normalized.contextMaxRecentTurnCount) {
-    normalized.contextRecentTurnCount = defaultRuntimeSettings.contextRecentTurnCount
-    normalized.contextMaxRecentTurnCount = defaultRuntimeSettings.contextMaxRecentTurnCount
+  if (value.contextRecentTurnCount > value.contextMaxRecentTurnCount) {
+    context.addIssue({ code: "custom", path: ["contextRecentTurnCount"], message: "must not exceed contextMaxRecentTurnCount" })
   }
-  return normalized
 })
 
 const remoteProviderConfigSchema = z.object({
   version: z.string().min(1),
   provider: z.object({
     baseUrl: z.string(),
-    model: z.string(),
     apiKey: z.string(),
     configured: z.boolean(),
     models: z.array(z.object({
@@ -74,15 +64,14 @@ const remoteProviderConfigSchema = z.object({
       maxOutputTokens: z.number().int().min(256).max(262144),
       inputCreditsPerMillion: z.string(), outputCreditsPerMillion: z.string(),
       cachedInputCreditsPerMillion: z.string(), cachedOutputCreditsPerMillion: z.string(),
-    })).default([]),
+    })),
   }),
   runtime: runtimeSettingsSchema,
-  toolCatalog: z.array(z.record(z.string(), z.unknown())).default([]),
+  toolCatalog: z.array(z.record(z.string(), z.unknown())),
 })
 
 export class ProviderConfigClient {
   private currentConfig?: RemoteProviderConfig
-  private lastNormalizationFingerprint: string | undefined
   constructor(private readonly baseUrl: string, private readonly serviceToken: string) {}
   current(): RemoteProviderConfig | undefined {
     return this.currentConfig
@@ -123,20 +112,6 @@ export class ProviderConfigClient {
       throw new Error("ai.provider_config_invalid")
     }
     const config = parsed.data
-    const normalizedFields = normalizedRuntimeFields(payload, config.runtime)
-    if (normalizedFields.length > 0) {
-      const fingerprint = `${config.version}\u0000${normalizedFields.join("\u0000")}`
-      if (fingerprint !== this.lastNormalizationFingerprint) {
-        telemetryLog("agent.provider_config.normalized", "warn", {
-          "luna.provider_config.normalized_fields": normalizedFields,
-          "luna.provider_config.normalized_field_count": normalizedFields.length,
-        })
-      }
-      this.lastNormalizationFingerprint = fingerprint
-    }
-    else {
-      this.lastNormalizationFingerprint = undefined
-    }
     this.currentConfig = config
     span.setAttribute("luna.provider.config_version", config.version)
     return config
@@ -190,16 +165,4 @@ function logInvalidProviderConfig(paths: string[], issueCodes: string[]): void {
     "luna.provider_config.invalid_fields": [...new Set(paths)].slice(0, 20),
     "luna.provider_config.issue_codes": [...new Set(issueCodes)].slice(0, 20),
   })
-}
-
-function normalizedRuntimeFields(payload: unknown, runtime: RuntimeSettings): string[] {
-  if (!isRecord(payload) || !isRecord(payload.runtime)) return []
-  const rawRuntime = payload.runtime
-  return Object.entries(runtime)
-    .filter(([key, normalized]) => rawRuntime[key] !== normalized)
-    .map(([key]) => `runtime.${key}`)
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
 }

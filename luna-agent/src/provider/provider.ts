@@ -9,36 +9,24 @@ export type ModelToolDefinition = {
 }
 export type ModelToolSearchResult = {
   query: string
-  matches: Array<{ operationId: string, category: string, description: string }>
-  loadedOperationIds: string[]
-  totalMatches: number
-}
-export type ModelToolDirectoryRequest =
-  | { mode: "list", category?: string | undefined, page: number, pageSize: number }
-  | { mode: "details", operationIds: string[] }
-export type ModelToolDirectoryResult = {
-  mode: "list" | "details"
-  entries: Array<{
+  items: Array<{
     operationId: string
-    category: string
-    action: string
-    risk: string
+    name: string
     summary: string
+    category: string
+    tags: string[]
+    aliases: { zh: string[], en: string[] }
+    requiresApproval: boolean
   }>
-  details: Array<{ operationId: string, category: string, description: string }>
+  page: number
+  pageSize: number
+  total: number
+  totalPages: number
+}
+export type ModelToolDetailsResult = {
+  items: Array<object & { operationId: string }>
   loadedOperationIds: string[]
   missingOperationIds: string[]
-  total: number
-  page?: number
-  pageSize?: number
-  totalPages?: number
-}
-export type ModelToolRetrievalState = {
-  resourceContext: string[]
-  completedOperations: string[]
-  stableOutcomes: string[]
-  pendingState?: "user_input" | "approval" | "mfa" | "async_terminal_check"
-  stableErrorCodes: string[]
 }
 type Awaitable<T> = T | Promise<T>
 export type ModelToolRegistry = {
@@ -46,24 +34,20 @@ export type ModelToolRegistry = {
     pageContext: Record<string, unknown>,
     userInput: string,
     loadedOperationIds: string[],
-    retrievalState?: ModelToolRetrievalState,
     signal?: AbortSignal,
   ) => Awaitable<ModelToolDefinition[]>
   search: (
-    query: string,
+    input: { query?: string, page?: number, pageSize?: number },
     pageContext: Record<string, unknown>,
-    limit: number,
-    retrievalState?: ModelToolRetrievalState,
     signal?: AbortSignal,
   ) => Awaitable<ModelToolSearchResult>
-  browse?: (request: ModelToolDirectoryRequest) => Awaitable<ModelToolDirectoryResult>
+  details: (operationIds: string[]) => Awaitable<ModelToolDetailsResult>
 }
 export type ModelToolResolver = ModelToolDefinition[]
   | ((
     pageContext: Record<string, unknown>,
     userInput: string,
     loadedOperationIds: string[],
-    retrievalState?: ModelToolRetrievalState,
     signal?: AbortSignal,
   ) => Awaitable<ModelToolDefinition[]>)
   | ModelToolRegistry
@@ -78,7 +62,7 @@ export type ModelRequest = {
   modelId?: string
   modelName?: string
   modelPricing?: AIModelSnapshot
-  budget?: { runId: string, ownerUserId: string, operation: "assistant" | "summary" | "title" | "next_steps" }
+  budget?: { runId: string, ownerUserId: string, operation: "assistant" | "summary" | "title" }
   conversationId?: string
   conversationCompacted?: boolean
 }

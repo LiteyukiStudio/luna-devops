@@ -160,8 +160,7 @@ func (adapter *volumeTransferContentAdapter) actor(ctx context.Context, user mod
 
 func coreDownloadBinding(binding volumeDownloadBinding) volumetransferapi.DownloadBinding {
 	return volumetransferapi.DownloadBinding{
-		UserID: binding.UserID, SubjectID: binding.SubjectID, AssertionID: binding.AssertionID,
-		AssertionRequired: binding.AssertionRequired, Deadline: binding.Deadline,
+		UserID: binding.UserID, SubjectID: binding.SubjectID, Deadline: binding.Deadline,
 	}
 }
 
@@ -181,19 +180,19 @@ func apiVolumeDownload(download volumetransferapi.Download) volumeDownload {
 }
 
 func (h *Handlers) volumeTransferDownloadBinding(ctx *gin.Context, user model.User) (volumeDownloadBinding, bool) {
-	subject, ok := h.currentStepUpSubject(ctx, user)
+	subject, ok := h.currentInteractiveSubject(ctx, user)
 	if !ok {
-		writeErrorCode(ctx, http.StatusForbidden, "mfa.session_required", "a browser session or Luna CLI OAuth grant is required for volume downloads")
+		writeErrorCode(ctx, http.StatusForbidden, "volume.download_session_required", "a browser session or Luna CLI OAuth grant is required for volume downloads")
 		return volumeDownloadBinding{}, false
 	}
 	binding := volumeDownloadBinding{UserID: user.ID, SubjectID: subject}
 	if strings.HasPrefix(subject, "oauth:") {
 		token, tokenOK := currentAccessTokenFromContext(ctx)
 		if !tokenOK || token.UserID != user.ID || token.OAuthGrantID == "" {
-			writeErrorCode(ctx, http.StatusForbidden, "mfa.session_required", "Luna CLI OAuth grant is invalid")
+			writeErrorCode(ctx, http.StatusForbidden, "volume.download_session_required", "Luna CLI OAuth grant is invalid")
 			return volumeDownloadBinding{}, false
 		}
-		binding.Deadline = time.Now().Add(defaultStepUpAbsoluteTimeout)
+		binding.Deadline = time.Now().Add(time.Hour)
 		if token.ExpiresAt != nil && token.ExpiresAt.Before(binding.Deadline) {
 			binding.Deadline = *token.ExpiresAt
 		}
@@ -204,25 +203,6 @@ func (h *Handlers) volumeTransferDownloadBinding(ctx *gin.Context, user model.Us
 			return volumeDownloadBinding{}, false
 		}
 		binding.Deadline = session.ExpiresAt
-	}
-	if !h.stepUpMFAEnabled() {
-		return binding, true
-	}
-	now := time.Now()
-	var assertion model.StepUpAssertion
-	if err := h.dbFor(ctx).First(&assertion,
-		"user_id = ? and session_id = ? and purpose = ? and idle_expires_at > ? and absolute_expires_at > ?",
-		user.ID, subject, stepUpPurposeVolumeExport, now, now).Error; err != nil || !stepUpAssertionActive(assertion, now) {
-		writeMFARequired(ctx, stepUpPurposeVolumeExport)
-		return volumeDownloadBinding{}, false
-	}
-	binding.AssertionRequired = true
-	binding.AssertionID = assertion.ID
-	if assertion.IdleExpiresAt.Before(binding.Deadline) {
-		binding.Deadline = assertion.IdleExpiresAt
-	}
-	if assertion.AbsoluteExpiresAt.Before(binding.Deadline) {
-		binding.Deadline = assertion.AbsoluteExpiresAt
 	}
 	return binding, true
 }

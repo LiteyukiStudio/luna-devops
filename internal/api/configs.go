@@ -31,8 +31,6 @@ type configDefinition struct {
 	Options     []string `json:"options,omitempty"`
 }
 
-const stepUpPolicyMutationLockID int64 = 0x4c594d4641504f4c
-
 const (
 	aiRunMaxToolCallsMin     = 32
 	aiRunMaxToolCallsMax     = 2048
@@ -60,7 +58,6 @@ var configDefinitions = []configDefinition{
 	},
 	{Key: "ai.provider.base_url", Label: "AI API 地址", Type: "string", Default: ""},
 	{Key: "ai.provider.api_key", Label: "AI API Key", Type: "secret", Default: ""},
-	{Key: "ai.provider.default_model", Label: "AI 模型名称", Type: "string", Default: ""},
 	{Key: "ai.web.proxy_enabled", Label: "AI 外网工具代理池", Type: "boolean", Default: "false"},
 	{Key: "ai.web.proxy_pool", Label: "AI 外网工具代理地址", Type: "secret", Default: ""},
 	{Key: "ai.runtime.provider_timeout_seconds", Label: "模型请求超时", Type: "number", Default: "300"},
@@ -304,30 +301,6 @@ var configDefinitions = []configDefinition{
 		Default:     "",
 	},
 	{
-		Key:         "security.stepUpMfa.enabled",
-		Label:       "敏感操作二次验证",
-		Description: "开启后，Web Console、运行命令、数据导出、密钥、镜像凭据、kubeconfig、身份源和用户管理等敏感操作需要当前会话完成短时二次验证。",
-		Type:        "boolean",
-		Public:      false,
-		Default:     "false",
-	},
-	{
-		Key:         "security.stepUpMfa.idleTimeoutMinutes",
-		Label:       "二次验证空闲超时",
-		Description: "完成二次验证后没有执行敏感操作的最长分钟数，超时后需要重新验证。",
-		Type:        "number",
-		Public:      false,
-		Default:     "10",
-	},
-	{
-		Key:         "security.stepUpMfa.absoluteTimeoutMinutes",
-		Label:       "二次验证最长有效期",
-		Description: "一次二次验证可以持续生效的最长分钟数，即使持续操作也不能超过该时间。",
-		Type:        "number",
-		Public:      false,
-		Default:     "60",
-	},
-	{
 		Key:         "retention.platformEventsDays",
 		Label:       "平台事件保留天数",
 		Description: "平台事件明细的保留天数，0 表示不自动清理。",
@@ -512,12 +485,6 @@ func (c *configCache) get(keys []string) map[string]string {
 	}
 	c.mu.RUnlock()
 
-	securityKeys := stepUpSecurityConfigKeys(keys)
-	if len(securityKeys) > 0 && c.db != nil {
-		for key, value := range readStepUpSecurityConfigs(c.db, securityKeys) {
-			result[key] = value
-		}
-	}
 	return result
 }
 
@@ -664,139 +631,30 @@ func (h *Handlers) UpdateConfigs(ctx *gin.Context) {
 		}
 		values[key] = ref
 	}
-	stepUpConfigChanged := false
-	if containsStepUpConfig(values) {
-		currentStepUpValues := h.configs.get(stepUpSecurityConfigKeys(knownConfigKeys()))
-		stepUpConfigChanged = stepUpConfigValuesChanged(values, currentStepUpValues)
-	}
 	aiSecurityChanged := containsAIConfig(values)
-	targetStepUpEnabled := false
-	actorSessionID := ""
-	if stepUpConfigChanged {
-		targetEnabled, _, _, err := h.validateStepUpConfigUpdate(values)
-		if err != nil {
-			writeErrorCode(ctx, http.StatusBadRequest, "mfa.invalid_policy", err.Error())
-			return
-		}
-		targetStepUpEnabled = targetEnabled
-		if targetStepUpEnabled && !h.hasMFAEnabledPlatformAdmin(ctx.Request.Context()) {
-			writeErrorCode(ctx, http.StatusConflict, "mfa.admin_enrollment_required", "至少一名可用平台管理员绑定 MFA 后才能开启全局二次验证")
-			return
-		}
-		if (h.stepUpMFAEnabled() || targetEnabled) && !h.requireMFAAssertion(ctx, user, stepUpPurposeSecuritySettingsUpdate) {
-			return
-		}
-		actorSession, ok := h.currentSessionFromCookie(ctx)
-		if !ok || actorSession.UserID != user.ID {
-			writeMFARequired(ctx, stepUpPurposeSecuritySettingsUpdate)
-			return
-		}
-		actorSessionID = actorSession.ID
-	} else if aiSecurityChanged && h.stepUpMFAEnabled() {
-		if !h.requireMFAAssertion(ctx, user, stepUpPurposeSecuritySettingsUpdate) {
-			return
-		}
-	}
 
 	err = h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := lockStepUpPolicyMutation(tx); err != nil {
-			return err
-		}
-		if stepUpConfigChanged {
-			if _, err := lockStepUpActor(tx, user.ID, actorSessionID, stepUpPurposeSecuritySettingsUpdate, authz.PlatformRoleAdmin); err != nil {
-				return err
-			}
-			if targetStepUpEnabled {
-				enabledAdmins, err := lockMFAEnabledPlatformAdmins(tx)
-				if err != nil {
-					return err
-				}
-				if len(enabledAdmins) == 0 {
-					return errMFAAdminEnrollmentRequired
-				}
-			}
-		} else if _, err := lockActiveUserRole(tx, user.ID, authz.PlatformRoleAdmin); err != nil {
+		if _, err := lockActiveUserRole(tx, user.ID, authz.PlatformRoleAdmin); err != nil {
 			return err
 		}
 		if err := upsertConfigValuesInTransaction(tx, values); err != nil {
 			return err
 		}
-		if stepUpConfigChanged {
-			return createMFAAudit(tx, user.ID, "mfa.policy_update", "security.stepUpMfa", "step-up MFA policy updated")
-		}
 		if aiSecurityChanged {
-			return createMFAAudit(tx, user.ID, "ai.settings_update", "ai.settings", "AI security settings updated")
+			return tx.Create(&model.AuditLog{
+				UserID: user.ID, Action: "ai.settings_update", Resource: "ai.settings",
+				Success: true, Message: "AI security settings updated",
+			}).Error
 		}
 		return nil
 	})
 	if err != nil {
-		if err == errStepUpAuthorizationChanged {
-			writeErrorKey(ctx, http.StatusForbidden, user.Language, "config.admin.required")
-			return
-		}
-		if err == errMFAAdminEnrollmentRequired {
-			writeErrorCode(ctx, http.StatusConflict, "mfa.admin_enrollment_required", "至少一名可用平台管理员绑定 MFA 后才能开启全局二次验证")
-			return
-		}
 		writeErrorCode(ctx, http.StatusInternalServerError, "config.update_failed", "configuration update failed")
 		return
 	}
 	h.configs.reload(h.dbFor(ctx))
 
 	ctx.JSON(http.StatusOK, h.configs.get(knownConfigKeys()))
-}
-
-func containsStepUpConfig[T any](values map[string]T) bool {
-	for key := range values {
-		if strings.HasPrefix(key, "security.stepUpMfa.") {
-			return true
-		}
-	}
-	return false
-}
-
-func stepUpConfigValuesChanged(values, current map[string]string) bool {
-	for key, value := range values {
-		if strings.HasPrefix(key, "security.stepUpMfa.") && value != current[key] {
-			return true
-		}
-	}
-	return false
-}
-
-func (h *Handlers) validateStepUpConfigUpdate(values map[string]string) (bool, int, int, error) {
-	current := h.configs.get([]string{
-		"security.stepUpMfa.enabled",
-		"security.stepUpMfa.idleTimeoutMinutes",
-		"security.stepUpMfa.absoluteTimeoutMinutes",
-	})
-	enabledText, err := pendingConfigValue(values, "security.stepUpMfa.enabled", current["security.stepUpMfa.enabled"])
-	if err != nil {
-		return false, 0, 0, err
-	}
-	if !isBooleanConfigValue(enabledText) {
-		return false, 0, 0, fmt.Errorf("security.stepUpMfa.enabled must be a boolean")
-	}
-	idleText, err := pendingConfigValue(values, "security.stepUpMfa.idleTimeoutMinutes", current["security.stepUpMfa.idleTimeoutMinutes"])
-	if err != nil {
-		return false, 0, 0, err
-	}
-	absoluteText, err := pendingConfigValue(values, "security.stepUpMfa.absoluteTimeoutMinutes", current["security.stepUpMfa.absoluteTimeoutMinutes"])
-	if err != nil {
-		return false, 0, 0, err
-	}
-	idleMinutes, err := configMinuteValue(idleText, int(defaultStepUpIdleTimeout/time.Minute), 1, 120)
-	if err != nil {
-		return false, 0, 0, fmt.Errorf("invalid idle timeout: %w", err)
-	}
-	absoluteMinutes, err := configMinuteValue(absoluteText, int(defaultStepUpAbsoluteTimeout/time.Minute), 5, 1440)
-	if err != nil {
-		return false, 0, 0, fmt.Errorf("invalid absolute timeout: %w", err)
-	}
-	if idleMinutes > absoluteMinutes {
-		return false, 0, 0, fmt.Errorf("idle timeout cannot exceed absolute timeout")
-	}
-	return configBool(enabledText), idleMinutes, absoluteMinutes, nil
 }
 
 func pendingConfigValue(values map[string]string, key, current string) (string, error) {
@@ -856,60 +714,6 @@ func upsertConfigValuesInTransaction(tx *gorm.DB, values map[string]string) erro
 		}
 	}
 	return nil
-}
-
-func lockStepUpPolicyMutation(tx *gorm.DB) error {
-	return tx.Exec("SELECT pg_advisory_xact_lock(?)", stepUpPolicyMutationLockID).Error
-}
-
-func stepUpSecurityConfigKeys(keys []string) []string {
-	result := make([]string, 0, len(keys))
-	for _, key := range keys {
-		if strings.HasPrefix(key, "security.stepUpMfa.") {
-			result = append(result, key)
-		}
-	}
-	return result
-}
-
-func readStepUpSecurityConfigs(db *gorm.DB, keys []string) map[string]string {
-	values := make(map[string]string, len(keys))
-	for _, key := range keys {
-		if definition := configDefinitionByKey(key); definition != nil {
-			values[key] = definition.Default
-		}
-	}
-
-	var rows []model.AppConfig
-	if err := db.Where("key IN ?", keys).Find(&rows).Error; err != nil {
-		for _, key := range keys {
-			switch key {
-			case "security.stepUpMfa.enabled":
-				values[key] = "true"
-			case "security.stepUpMfa.idleTimeoutMinutes":
-				values[key] = "1"
-			case "security.stepUpMfa.absoluteTimeoutMinutes":
-				values[key] = "5"
-			}
-		}
-		return values
-	}
-	for _, row := range rows {
-		values[row.Key] = row.Value
-	}
-	return values
-}
-
-func configMinuteValue(value string, fallback, minimum, maximum int) (int, error) {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return fallback, nil
-	}
-	minutes, err := strconv.Atoi(value)
-	if err != nil || minutes < minimum || minutes > maximum {
-		return 0, fmt.Errorf("must be an integer from %d to %d", minimum, maximum)
-	}
-	return minutes, nil
 }
 
 func isBooleanConfigValue(value string) bool {

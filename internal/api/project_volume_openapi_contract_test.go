@@ -9,39 +9,32 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/aitool"
 )
 
-func TestProjectVolumeInstallPathHasExplicitAgentAdmission(t *testing.T) {
+func TestProjectVolumeOperationsAreDerivedFromOpenAPI(t *testing.T) {
 	tests := map[string]struct {
-		scope    string
-		risk     string
-		approval string
+		scope            string
+		requiresApproval bool
 	}{
-		"listProjectVolumes":              {scope: "volume:read", risk: "read", approval: "never"},
-		"getProjectVolume":                {scope: "volume:read", risk: "read", approval: "never"},
-		"listProjectVolumeStorageClasses": {scope: "volume:read", risk: "read", approval: "never"},
-		"createProjectVolume":             {scope: "volume:write", risk: "sensitive", approval: "always"},
+		"listProjectVolumes":              {scope: "volume:read"},
+		"getProjectVolume":                {scope: "volume:read"},
+		"listProjectVolumeStorageClasses": {scope: "volume:read"},
+		"createProjectVolume":             {scope: "volume:write", requiresApproval: true},
+		"updateProjectVolume":             {scope: "volume:write", requiresApproval: true},
+		"previewProjectVolumeDeletion":    {scope: "volume:delete", requiresApproval: true},
+		"deleteProjectVolume":             {scope: "volume:delete", requiresApproval: true},
+		"createVolumeExport":              {scope: "volume:export", requiresApproval: true},
 	}
 	for operationID, test := range tests {
 		operation, ok := aitool.PlatformOperation(operationID)
 		if !ok {
-			t.Fatalf("reviewed volume operation %s is missing from Agent catalog", operationID)
+			t.Fatalf("regular volume operation %s is missing from Agent catalog", operationID)
 		}
-		if !reflect.DeepEqual(operation.RequiredScopes, []string{test.scope}) || operation.Risk != test.risk || operation.Approval != test.approval {
+		if !reflect.DeepEqual(operation.RequiredScopes, []string{test.scope}) || operation.RequiresApproval != test.requiresApproval {
 			t.Fatalf("%s Agent policy = %#v", operationID, operation)
 		}
 	}
-
-	create, _ := aitool.PlatformOperation("createProjectVolume")
-	verification := create.Contract.Verification
-	if verification.Mode != "async-readback" || verification.OperationID != "getProjectVolume" || verification.Completion == nil || !slices.Contains(verification.Completion.SuccessStates, "ready") {
-		t.Fatalf("createProjectVolume verification = %#v", verification)
-	}
-
-	for _, operationID := range []string{
-		"updateProjectVolume", "previewProjectVolumeDeletion",
-		"deleteProjectVolume", "createVolumeExport",
-	} {
-		if operation, ok := aitool.PlatformOperation(operationID); ok {
-			t.Fatalf("out-of-scope volume operation %s entered Agent catalog: %#v", operationID, operation.Contract)
+	for _, operationID := range []string{"retryProjectVolumeOperation", "retryVolumeTransfer", "createVolumeImport"} {
+		if _, ok := aitool.PlatformOperation(operationID); ok {
+			t.Fatalf("explicitly disabled or protocol volume operation entered Agent catalog: %s", operationID)
 		}
 	}
 }
@@ -277,23 +270,6 @@ func TestVolumeManifestOpenAPIContract(t *testing.T) {
 	want := []string{"schemaVersion", "volumeMode", "format", "exportedAt", "logicalBytes", "fileCount", "dataSHA256", "consistencyMode"}
 	if !ok || !reflect.DeepEqual(required, want) {
 		t.Fatalf("VolumeTransferManifest.required = %v, want %v", required, want)
-	}
-}
-
-func TestVolumeMFAPurposesReplaceLegacyDeploymentExport(t *testing.T) {
-	document := readOpenAPIDocument(t, apiRepositoryRoot(t)+"/openapi/openapi.yaml")
-	schemas := document["components"].(map[string]any)["schemas"].(map[string]any)
-	purposes, ok := schemaStringList(schemas["MFAPurpose"].(map[string]any)["enum"])
-	if !ok {
-		t.Fatalf("MFAPurpose.enum = %#v", schemas["MFAPurpose"])
-	}
-	for _, required := range []string{"billing_owner_transfer", "volume_import", "volume_export", "volume_adopt", "volume_delete"} {
-		if !slices.Contains(purposes, required) {
-			t.Fatalf("MFAPurpose is missing %s: %#v", required, purposes)
-		}
-	}
-	if slices.Contains(purposes, "data_export") {
-		t.Fatalf("MFAPurpose still exposes legacy data_export: %#v", purposes)
 	}
 }
 

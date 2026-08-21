@@ -205,8 +205,6 @@ func TestDirectErrorMessagesAreLocalized(t *testing.T) {
 		key      string
 		want     string
 	}{
-		{language: "zh-CN", key: "mfa_required", want: "需要完成敏感操作二次验证"},
-		{language: "en-US", key: "mfa_required", want: "Additional verification is required for this sensitive action."},
 		{language: "zh-CN", key: "service_binding_in_use", want: "该应用或部署配置仍被服务关系引用，请先删除相关关系"},
 		{language: "en-US", key: "service_binding_in_use", want: "This application or deployment target is still referenced by a service relation. Remove the relation first."},
 	}

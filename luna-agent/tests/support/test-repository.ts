@@ -1,6 +1,5 @@
 import type {
   Conversation,
-  ConversationAuthorization,
   ConversationHistoryEntry,
   ConversationSummary,
   ConversationTitleSource,
@@ -12,8 +11,8 @@ import type {
   Turn,
   UIActionAcknowledgement,
   UIActionDelivery,
-} from "../domain.js"
-import { createId } from "../id.js"
+} from "../../src/domain.js"
+import { createId } from "../../src/id.js"
 import {
   RunStateConflictError,
   type ConversationListOptions,
@@ -21,12 +20,12 @@ import {
   type TimelinePageOptions,
   type ModelBudgetOperation,
   type ModelBudgetUsage,
-} from "./repository.js"
-import { createTurnRequestHash } from "./create-turn-hash.js"
+} from "../../src/persistence/repository.js"
+import { createTurnRequestHash } from "../../src/persistence/create-turn-hash.js"
 
-type StoredRun = Run & { ownerUserId: string, leaseOwner?: string, leaseExpiresAt?: number, runActorGrantCiphertext?: string }
+type StoredRun = Run & { ownerUserId: string }
 
-export class MemoryRepository implements Repository {
+export class TestRepository implements Repository {
   private readonly conversations = new Map<string, Conversation>()
   private readonly turns = new Map<string, Turn>()
   private readonly runs = new Map<string, StoredRun>()
@@ -34,7 +33,6 @@ export class MemoryRepository implements Repository {
   private readonly events: RunEvent[] = []
   private readonly uiActions = new Map<string, UIActionDelivery>()
   private readonly summaries = new Map<string, ConversationSummary>()
-  private readonly authorizations = new Map<string, ConversationAuthorization>()
   private readonly idempotency = new Map<string, { hash: string, created: CreatedTurn }>()
   private readonly modelReservations = new Map<string, {
     runId: string
@@ -44,6 +42,7 @@ export class MemoryRepository implements Repository {
     state: "reserved" | "confirmed" | "released"
     maxOutputTokens: number
   }>()
+  private readonly approvalExemptions = new Map<string, string>()
 
   async health(): Promise<boolean> { return true }
   async readiness() { return { database: true, schema: true } }
@@ -98,14 +97,34 @@ export class MemoryRepository implements Repository {
       updatedAt: new Date().toISOString(),
     }
     this.conversations.set(id, next)
+    if (input.title && (value.title !== input.title || value.titleSource !== "user")) {
+      const latestRun = [...this.runs.values()]
+        .filter(run => run.conversationId === id)
+        .sort((left, right) => right.createdAt.localeCompare(left.createdAt) || right.id.localeCompare(left.id))[0]
+      if (latestRun) {
+        await this.appendEvent(latestRun.id, "conversation.title.updated", {
+          title: input.title,
+          titleSource: "user",
+          locked: true,
+        })
+      }
+    }
     return next
   }
 
-  async renameConversationByAssistant(id: string, title: string) {
+  async renameConversationByAssistant(id: string, title: string, runId?: string) {
     const value = this.conversations.get(id)
     if (!value || value.titleSource === "user") return undefined
+    if (runId && this.runs.get(runId)?.conversationId !== id) throw new Error("ai.run_conversation_mismatch")
     const next: Conversation = { ...value, title, titleSource: "assistant", updatedAt: new Date().toISOString() }
     this.conversations.set(id, next)
+    if (runId) {
+      await this.appendEvent(runId, "conversation.title.updated", {
+        title,
+        titleSource: "assistant",
+        locked: false,
+      })
+    }
     return next
   }
 
@@ -113,42 +132,9 @@ export class MemoryRepository implements Repository {
     if (!await this.getConversation(ownerUserId, id)) return false
     this.conversations.delete(id)
     this.summaries.delete(id)
-    this.authorizations.delete(id)
     const turnIds = [...this.turns.values()].filter(t => t.conversationId === id).map(t => t.id)
     for (const turnId of turnIds) this.turns.delete(turnId)
     for (const [runId, run] of this.runs) if (run.conversationId === id) this.runs.delete(runId)
-    return true
-  }
-
-  async authorizeConversation(ownerUserId: string, conversationId: string, input: Omit<ConversationAuthorization, "conversationId" | "updatedAt">) {
-    if (!await this.getConversation(ownerUserId, conversationId)) return undefined
-    const value: ConversationAuthorization = {
-      conversationId,
-      ...input,
-      updatedAt: new Date().toISOString(),
-    }
-    this.authorizations.set(conversationId, value)
-    return value
-  }
-
-  async getConversationAuthorization(ownerUserId: string, conversationId: string, sessionId: string, catalogDigest: string) {
-    if (!await this.getConversation(ownerUserId, conversationId)) return undefined
-    const value = this.authorizations.get(conversationId)
-    if (!value || value.sessionId !== sessionId || value.catalogDigest !== catalogDigest || Date.parse(value.expiresAt) <= Date.now()) return undefined
-    return value
-  }
-
-  async getRunConversationAuthorization(runId: string) {
-    const run = this.runs.get(runId)
-    if (!run) return undefined
-    const value = this.authorizations.get(run.conversationId)
-    if (!value || value.catalogDigest !== run.toolCatalogDigest || Date.parse(value.expiresAt) <= Date.now()) return undefined
-    return value
-  }
-
-  async revokeConversationAuthorization(ownerUserId: string, conversationId: string) {
-    if (!await this.getConversation(ownerUserId, conversationId)) return false
-    this.authorizations.delete(conversationId)
     return true
   }
 
@@ -177,9 +163,9 @@ export class MemoryRepository implements Repository {
       id: runId, conversationId: input.conversationId, turnId: turn.id, runIndex: 0,
       status: "queued", rowVersion: 1, promptVersion: "system-v4",
       toolCatalogDigest: input.toolCatalogDigest ?? "sha256:platform-tools-v1", pageContext: input.pageContext,
+      actorSessionId: input.actorSessionId ?? `test:${ownerUserId}`,
       ...(input.traceContext ? { traceContext: input.traceContext } : {}),
       clientInstanceId: input.clientInstanceId ?? "memory-client-instance", createdAt: now, ownerUserId,
-      ...(input.runActorGrantCiphertext ? { runActorGrantCiphertext: input.runActorGrantCiphertext } : {}),
       ...(input.modelSnapshot ? { model: input.modelSnapshot } : {}),
       budget: input.runBudgetSnapshot ?? { totalTokens: 2_000_000, totalCredits: "10000" },
     }
@@ -187,7 +173,13 @@ export class MemoryRepository implements Repository {
     this.runs.set(run.id, run)
     const created = { turn, run }
     this.idempotency.set(key, { hash, created })
-    await this.appendItem({ runId, turnId: turn.id, type: "user_message", status: "completed", content: { parts: [{ type: "text", text: input.input }] } })
+    const userItem = await this.appendItem({ id: `${turn.id}:input`, runId, turnId: turn.id, type: "user_message", status: "completed", content: { parts: [{ type: "text", text: input.input }] } })
+    await this.appendEvent(runId, "run.input_received", {
+      initial: true,
+      item: structuredClone(userItem),
+      conversationTitle: this.conversations.get(input.conversationId)?.title,
+      conversationTitleSource: this.conversations.get(input.conversationId)?.titleSource,
+    })
     await this.appendEvent(runId, "run.queued", { state: "queued" })
     return created
   }
@@ -200,7 +192,7 @@ export class MemoryRepository implements Repository {
   async cancelRun(ownerUserId: string, id: string) {
     const run = this.runs.get(id)
     if (run?.ownerUserId !== ownerUserId) return undefined
-    if (!run || ["completed", "failed", "canceled", "expired"].includes(run.status)) return run
+    if (!run || ["completed", "failed", "canceled", "expired", "interrupted"].includes(run.status)) return run
     run.status = "canceled"
     run.completedAt = new Date().toISOString()
     run.rowVersion += 1
@@ -210,12 +202,15 @@ export class MemoryRepository implements Repository {
     return run
   }
 
-  async claimRun(instanceId: string, leaseSeconds: number) {
-    const now = Date.now()
-    const run = [...this.runs.values()].find(item => item.status === "queued" && (!item.leaseExpiresAt || item.leaseExpiresAt <= now))
+  async claimNextQueuedRun() {
+    const run = [...this.runs.values()].find(item => item.status === "queued")
     if (!run) return undefined
-    run.leaseOwner = instanceId
-    run.leaseExpiresAt = now + leaseSeconds * 1000
+    run.status = "running"
+    run.startedAt ??= new Date().toISOString()
+    run.rowVersion += 1
+    const turn = this.turns.get(run.turnId)
+    if (turn) turn.status = "running"
+    await this.appendEvent(run.id, "run.running", { state: "running", rowVersion: run.rowVersion })
     return run
   }
   async countActiveUserRuns(userId: string) {
@@ -343,27 +338,31 @@ export class MemoryRepository implements Repository {
     this.summaries.set(input.conversationId, value)
     return value
   }
-  async getRunActorGrantCiphertext(runId: string) { return this.runs.get(runId)?.runActorGrantCiphertext }
+  async hasToolApprovalExemption(runId: string, operationId: string) {
+    const run = this.runs.get(runId)
+    return Boolean(run && this.approvalExemptions.has(`${run.ownerUserId}\u0000${operationId}`))
+  }
+  async grantToolApprovalExemption(runId: string, operationId: string, sourceToolCallId: string) {
+    void sourceToolCallId
+    const run = this.runs.get(runId)
+    if (!run) throw new Error("ai.run_not_found")
+    this.approvalExemptions.set(`${run.ownerUserId}\u0000${operationId}`, new Date().toISOString())
+  }
+  async listToolApprovalExemptions(ownerUserId: string) {
+    const prefix = `${ownerUserId}\u0000`
+    return [...this.approvalExemptions.entries()]
+      .filter(([key]) => key.startsWith(prefix))
+      .map(([key, createdAt]) => ({ operationId: key.slice(prefix.length), createdAt }))
+      .sort((left, right) => left.operationId.localeCompare(right.operationId))
+  }
+  async revokeToolApprovalExemption(ownerUserId: string, operationId: string) {
+    return this.approvalExemptions.delete(`${ownerUserId}\u0000${operationId}`)
+  }
   async appendRunInput(runId: string, text: string) {
     const run = this.runs.get(runId)
     const turn = run ? this.turns.get(run.turnId) : undefined
     if (!turn) throw new Error("ai.run_not_found")
     turn.input = `${turn.input}\n${text}`
-  }
-
-  async renewLease(runId: string, instanceId: string, leaseSeconds: number) {
-    const run = this.runs.get(runId)
-    if (!run || run.leaseOwner !== instanceId || !["queued", "running"].includes(run.status)) return false
-    run.leaseExpiresAt = Date.now() + leaseSeconds * 1000
-    return true
-  }
-
-  async releaseLease(runId: string, instanceId: string) {
-    const run = this.runs.get(runId)
-    if (run?.leaseOwner === instanceId) {
-      delete run.leaseOwner
-      delete run.leaseExpiresAt
-    }
   }
 
   async updateRun(runId: string, from: Run["status"], to: Run["status"], fields: Partial<Run> = {}) {
@@ -422,6 +421,26 @@ export class MemoryRepository implements Repository {
     const item = await this.updateItem(itemId, status, content)
     const event = await this.appendEvent(item.runId, eventType, { ...eventData, item: structuredClone(item) })
     return { item, event }
+  }
+
+  async completeToolItemWithEvent(
+    itemId: string,
+    status: TimelineItem["status"],
+    content: Record<string, unknown>,
+    resultValue: Omit<TimelineItem, "id" | "timelineIndex" | "revision" | "createdAt"> & { id?: string },
+    eventType: string,
+    eventData: Record<string, unknown> = {},
+  ) {
+    const item = await this.updateItem(itemId, status, content)
+    const resultItem = await this.appendItem(resultValue)
+    if (resultItem.runId !== item.runId || resultItem.turnId !== item.turnId)
+      throw new Error("ai.tool_result_binding_mismatch")
+    const event = await this.appendEvent(item.runId, eventType, {
+      ...eventData,
+      item: structuredClone(item),
+      resultItem: structuredClone(resultItem),
+    })
+    return { item, resultItem, event }
   }
 
   async finalizeStreamingItems(runId: string, status: Exclude<TimelineItem["status"], "streaming">) {

@@ -4,8 +4,8 @@
 
 ## 前置条件
 
-- 项目 Viewer 可以查看数据卷；Developer 可以创建、引用、纳管和扩容。纳管已有 PVC 需要 MFA 二次验证。
-- 导出需要项目 Owner/Admin 的 `volume:export` 权限和导出用途 MFA；永久删除或移除外部引用需要 `volume:delete` 权限，并都要求 `volume_delete` MFA 二次验证。
+- 项目 Viewer 可以查看数据卷；Developer 可以创建、引用、纳管和扩容。纳管已有 PVC 需要明确确认其生命周期将交给平台。
+- 导出需要项目 Owner/Admin 的 `volume:export` 权限；永久删除或移除外部引用需要 `volume:delete` 权限。
 - 目标运行集群必须可用。创建空白卷前还需要选择集群提供的 StorageClass。
 
 ## 创建数据卷
@@ -18,7 +18,7 @@
    - **VolumeSnapshot**：从同集群可用快照恢复。
 4. 提交后等待状态变为“就绪”。`WaitForFirstConsumer` StorageClass 可能在首次挂载前保持 Pending，这不代表创建失败。
 
-AI 助手可以列出当前项目空间的数据卷和目标集群 StorageClass，并在确认参数后创建空白卷、引用已有 PVC 或从 VolumeSnapshot 恢复。把已有 PVC 纳管为平台托管卷需要条件 MFA，当前请使用控制台或 Luna CLI 完成；助手不会用占位 ID 或 `emptyDir` 代替持久卷。
+AI 助手可以列出当前项目空间的数据卷和目标集群 StorageClass，并在确认参数后创建空白卷、引用已有 PVC 或从 VolumeSnapshot 恢复。纳管已有 PVC 等高风险操作需要对当前参数逐次批准；助手不会用占位 ID 或 `emptyDir` 代替持久卷。
 
 集群暂时不可达时，页面会显示“观察不可用”，不会沿用旧的 PVC 状态。修复连接后刷新或重试最近操作。
 
@@ -45,6 +45,6 @@ AI 助手可以列出当前项目空间的数据卷和目标集群 StorageClass�
 
 - 容量只能增加。StorageClass、访问模式或卷模式不能就地修改；需要创建新卷并迁移数据。
 - 删除前先查看删除影响。存在预留/活动挂载或运行中传输时，平台会拒绝删除。
-- 托管卷的“永久删除”会删除底层 PVC，无法恢复；外部引用只能“移除引用”，不会删除 PVC。两种操作都需要 Owner/Admin 权限和删除用途的 MFA 二次验证。
+- 托管卷的“永久删除”会删除底层 PVC，无法恢复；外部引用只能“移除引用”，不会删除 PVC。两种操作都需要 Owner/Admin 权限和明确确认。
 
 需要迁移或备份数据时，参见[导入与导出数据卷](./volume-transfer.md)。

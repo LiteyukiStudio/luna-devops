@@ -222,11 +222,6 @@ const settings = {
         ipBlockList: { label: 'ネットワークアクセス IP ブラックリスト', description: '1 行に 1 つの IP または CIDR。ドメイン解決結果もチェックされ、デフォルトでプライベートネットワーク、ループバック、メタデータアドレスが含まれます。' },
         allowedPorts: { label: 'SSRF 許可ポート', description: '空欄の場合制限なし。入力後は 1 行に 1 つの許可アクセスポート。' },
       },
-      stepUpMfa: {
-        enabled: { label: '機密操作二次検証', description: '有効にすると、Web Console、データエクスポート、シークレット、レジストリクレデンシャル、kubeconfig、ID プロバイダー、ユーザー管理などの機密操作に短時間の二次検証が必要です。' },
-        idleTimeoutMinutes: { label: '二次検証アイドルタイムアウト', description: '二次検証完了後に機密操作を実行しなかった最長分数。タイムアウト後は再検証が必要です。' },
-        absoluteTimeoutMinutes: { label: '二次検証最長有効期間', description: '1 回の二次検証が有効な最長分数。継続的に操作してもこの時間を超えることはありません。' },
-      },
     },
     billing: {
       creditsDisplayName: { label: 'Credits 表示名', description: 'コンソールがプラットフォーム内部 credits を表示する際に使用する名前。基盤は引き続き credits で統一保存・決済されます。' },

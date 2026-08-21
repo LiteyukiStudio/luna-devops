@@ -59,7 +59,6 @@ func TestAIProviderModelsIncludeAgentRequiredTokenLimits(t *testing.T) {
 func TestAIProviderConfigVersionIncludesRuntimePolicy(t *testing.T) {
 	values := map[string]string{
 		"ai.provider.base_url":                "https://example.com/v1",
-		"ai.provider.default_model":           "example-model",
 		"ai.runtime.provider_timeout_seconds": "30",
 		"ai.runtime.max_request_retries":      "5",
 		"ai.runtime.run_timeout_seconds":      "300",

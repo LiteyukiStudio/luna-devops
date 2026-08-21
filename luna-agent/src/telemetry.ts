@@ -99,8 +99,8 @@ export const agentMetrics = {
   toolDuration: deferredHistogram("luna_devops_agent_tool_call_duration", "工具调用耗时", "s"),
   toolSearches: deferredCounter("luna_devops_agent_tool_searches", "工具目录检索次数"),
   toolSearchMatches: deferredHistogram("luna_devops_agent_tool_search_matches", "单次工具目录检索命中数量", "tool"),
-  toolDirectoryBrowses: deferredCounter("luna_devops_agent_tool_directory_browse_total", "工具目录确定性浏览次数"),
-  toolDirectoryItems: deferredHistogram("luna_devops_agent_tool_directory_items", "单次工具目录浏览返回数量", "tool"),
+  toolDetailLoads: deferredCounter("luna_devops_agent_tool_detail_loads", "工具详情加载次数"),
+  toolDetailItems: deferredHistogram("luna_devops_agent_tool_detail_items", "单次工具详情加载数量", "tool"),
   toolRetrievals: deferredCounter("luna_devops_agent_tool_retrieval_total", "自动工具检索次数"),
   toolRetrievalCandidates: deferredHistogram("luna_devops_agent_tool_retrieval_candidates", "单次自动工具检索候选数量", "tool"),
   toolRetrievalLoaded: deferredHistogram("luna_devops_agent_tool_retrieval_loaded", "单次自动工具检索最终加载数量", "tool"),
@@ -154,6 +154,16 @@ export function initializeTelemetry(endpoint = process.env.OTEL_EXPORTER_OTLP_EN
         instrumentHooks: false,
         ignorePaths: route => isHealthCheckPath(route.url),
         requestHook: (span, request) => sanitizeSpanURL(span, request.raw.url ?? request.url),
+        lifecycleHook: (span, { hookName, request }) => {
+          const route = request.routeOptions.url
+          const method = Array.isArray(request.routeOptions.method)
+            ? request.routeOptions.method.join("|")
+            : request.routeOptions.method ?? ""
+          const stableName = stableFastifyLifecycleSpanName(hookName ?? "", method, route ?? "")
+          span.updateName(stableName)
+          span.setAttribute("hook.name", stableName)
+          span.setAttribute("hook.callback.name", "fastify.route_handler")
+        },
       }),
       ...(isDatabaseSpanCaptureEnabled()
         ? [new PgInstrumentation({
@@ -197,6 +207,13 @@ export function isHealthCheckPath(value: string): boolean {
   catch {
     return false
   }
+}
+
+export function stableFastifyLifecycleSpanName(hookName: string, method: string, route: string): string {
+  const stableHook = /^[A-Za-z][A-Za-z0-9_-]{0,40}$/.test(hookName) ? hookName : "handler"
+  const stableMethod = /^[A-Z|]{3,48}$/.test(method) ? method : "UNKNOWN"
+  const stableRoute = (route.split(/[?#]/, 1)[0] || "/unknown").slice(0, 256)
+  return `fastify.${stableHook} ${stableMethod} ${stableRoute}`
 }
 
 export function sanitizeTelemetryURL(value: string): string {

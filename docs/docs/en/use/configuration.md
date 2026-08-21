@@ -14,13 +14,7 @@ Global settings place the save action for the current tab in the tab action area
 
 Production responses include baseline browser protections. Enable HSTS only when the site is always available over HTTPS, because browsers may otherwise refuse later HTTP access to the domain.
 
-The platform can require step-up MFA for sensitive operations after sign-in; it does not currently request a second factor at every sign-in. Before enabling it globally, ensure that at least one active platform administrator has enrolled an offline TOTP authenticator.
-
-When connecting an authenticator, scan the QR code with a password manager or authenticator that supports verification codes. On iPhone or iPad, use the Camera app to add it to Passwords. An enabled authenticator is never overwritten in place: to connect a new one, complete step-up verification, disable two-step verification, and then enable it again. Disabling invalidates the old authenticator, recovery codes, and existing step-up state.
-
-After setup, Luna DevOps generates 10 recovery codes formatted like `ABCD-EFGH-JKLM-NPQR`. They are shown only once and each can be used once; regenerating them invalidates every old code. Use an unused recovery code if the authenticator is unavailable. If both the authenticator and recovery codes are lost, contact another platform administrator to reset MFA.
-
-Sign-in and step-up verification fields support standard browser password and one-time-code autofill semantics. To use a TOTP stored in a password manager, make sure the matching login item includes the current site address, the extension is unlocked, and inline autofill is enabled. If no suggestion appears, focus the verification-code field and select the code from the password manager.
+Sensitive operations are always reauthorized by the backend against the current sign-in session, platform role, project role, and OAuth scopes. Password changes, account disablement, and role changes revoke affected sessions. Terminal and volume-download access use short-lived, single-use tickets bound to the user, session, and target resource.
 
 After creating an account, initializing an administrator, or changing a sign-in password, the browser can offer to save or update the matching credential. When an administrator sets or resets another user's password, the prompt is associated with the target user's email; verify the selected account before saving. Registry credentials, Git access tokens, OIDC client secrets, SMTP passwords, and AI API keys are marked as non-login credentials to avoid filling or overwriting the site password.
 

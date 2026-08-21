@@ -88,6 +88,24 @@ describe('run stream manager', () => {
     expect(onSubscriptionsChange).toHaveBeenLastCalledWith([])
   })
 
+  it('forwards input receipt and closes an interrupted run', () => {
+    const source = new MockEventSource()
+    const onEvent = vi.fn()
+    const manager = new AIRunStreamManager(
+      () => source as unknown as EventSource,
+      { onEvent },
+    )
+    manager.connect({ conversationId: 'conversation-1', eventsUrl: '/events/run-1', runId: 'run-1', after: 0 })
+
+    source.emit('run.input_received', runEvent('run.input_received'))
+    expect(onEvent).toHaveBeenLastCalledWith(runEvent('run.input_received'))
+    expect(source.close).not.toHaveBeenCalled()
+
+    source.emit('run.interrupted', runEvent('run.interrupted'))
+    expect(onEvent).toHaveBeenLastCalledWith(runEvent('run.interrupted'))
+    expect(source.close).toHaveBeenCalledOnce()
+  })
+
   it('reports a malformed event once and disconnects its run', async () => {
     const source = new MockEventSource()
     const onMalformedEvent = vi.fn()

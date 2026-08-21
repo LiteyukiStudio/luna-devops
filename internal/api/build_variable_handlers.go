@@ -55,9 +55,6 @@ func (h *Handlers) CreateBuildVariableSet(ctx *gin.Context) {
 	if !bindJSON(ctx, &input) {
 		return
 	}
-	if !h.requireStepUp(ctx, user, stepUpPurposeSecretUpdate) {
-		return
-	}
 	setID := id.New("bvs")
 	set, ok := h.buildVariableSetFromInput(ctx, user, input, setID, nil)
 	if !ok {
@@ -86,9 +83,6 @@ func (h *Handlers) UpdateBuildVariableSet(ctx *gin.Context) {
 	}
 	var input buildVariableSetInput
 	if !bindJSON(ctx, &input) {
-		return
-	}
-	if !h.requireStepUp(ctx, user, stepUpPurposeSecretUpdate) {
 		return
 	}
 	next, ok := h.buildVariableSetFromInput(ctx, user, input, existing.ID, decodeSecretRefs(existing.SecretRefs))

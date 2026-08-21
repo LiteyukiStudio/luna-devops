@@ -26,6 +26,7 @@ const (
 	authRegistrationSettingsID = "default"
 	emailRegistrationCodeTTL   = 10 * time.Minute
 	emailRegistrationMaxTries  = 5
+	passwordFreshLoginMaxAge   = 5 * time.Minute
 )
 
 type authRegistrationSettingsInput struct {
@@ -84,9 +85,6 @@ func (h *Handlers) UpdateAuthRegistrationSettings(ctx *gin.Context) {
 	}
 	if user.Role != authz.PlatformRoleAdmin {
 		writeErrorKey(ctx, http.StatusForbidden, user.Language, "config.admin.required")
-		return
-	}
-	if !h.requireStepUp(ctx, user, stepUpPurposeSecuritySettingsUpdate) {
 		return
 	}
 
@@ -294,13 +292,10 @@ func (h *Handlers) UpdateMyPassword(ctx *gin.Context) {
 			return
 		}
 		session, sessionOK := h.currentSessionFromCookie(ctx)
-		if !sessionOK || session.UserID != user.ID || session.ImpersonatorID != "" || session.PrimaryAuthenticatedAt == nil || time.Since(*session.PrimaryAuthenticatedAt) > mfaEnrollmentOIDCSessionMaxAge {
+		if !sessionOK || session.UserID != user.ID || session.ImpersonatorID != "" || session.PrimaryAuthenticatedAt == nil || time.Since(*session.PrimaryAuthenticatedAt) > passwordFreshLoginMaxAge {
 			writeErrorCode(ctx, http.StatusUnauthorized, "password.fresh_login_required", "sign in again before setting a password")
 			return
 		}
-	}
-	if !h.requireStepUp(ctx, user, stepUpPurposePasswordUpdate) {
-		return
 	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(input.NewPassword), bcrypt.DefaultCost)
 	if err != nil {

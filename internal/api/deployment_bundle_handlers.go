@@ -166,11 +166,6 @@ func (h *Handlers) ImportDeploymentTargetBundle(ctx *gin.Context) {
 		operationErr = errors.New("deployment bundle secret permission denied")
 		return
 	}
-	if (plan.Input.BuildVariables != nil || len(plan.SecretValues) > 0) && !h.requireStepUp(ctx, user, stepUpPurposeSecretUpdate) {
-		operationErr = errors.New("deployment bundle secret step-up required")
-		return
-	}
-
 	targetID := id.New("dplt")
 	secretEntries, buildEnvironment, runtimeSecretRefs, runtimeSecretFiles, ok := h.materializeDeploymentBundleSecrets(ctx, user, targetID, plan)
 	if !ok {

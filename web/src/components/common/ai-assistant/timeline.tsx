@@ -33,7 +33,6 @@ interface AIAssistantTimelineProps {
   olderError?: Error | null
   onAction: (action: AIUIAction) => Promise<boolean>
   onApproval: (block: ToolCallBlock, decision: AIApprovalDecision, reason?: string) => Promise<void>
-  onMFA: (block: ToolCallBlock) => Promise<void>
   onLoadOlder?: () => Promise<void>
   onResend: (message: string) => void
   onRetry: () => void
@@ -51,7 +50,7 @@ function isVisibleResponseBlock(block: AIBlock, showInternalTools: boolean): boo
   return block.type !== 'tool_call' || block.visibility !== 'internal' || showInternalTools
 }
 
-export function AIAssistantTimeline({ bottomInset = false, blocks, error, generating, hasOlder = false, loading, loadingOlder = false, olderError = null, onAction, onApproval, onLoadOlder = async () => {}, onMFA, onResend, onRetry, resetKey, resendDisabled, showInternalTools = false, topContent }: AIAssistantTimelineProps) {
+export function AIAssistantTimeline({ bottomInset = false, blocks, error, generating, hasOlder = false, loading, loadingOlder = false, olderError = null, onAction, onApproval, onLoadOlder = async () => {}, onResend, onRetry, resetKey, resendDisabled, showInternalTools = false, topContent }: AIAssistantTimelineProps) {
   const { t } = useTranslation()
   const viewportRef = useRef<HTMLDivElement>(null)
   const shouldFollowLatestRef = useRef(true)
@@ -192,26 +191,24 @@ export function AIAssistantTimeline({ bottomInset = false, blocks, error, genera
                   userMessage={turn.userMessage}
                   onAction={onAction}
                   onApproval={onApproval}
-                  onMFA={onMFA}
                   onResend={onResend}
                   resendDisabled={resendDisabled}
                   showInternalTools={showInternalTools}
                 />
               ))}
-              {turns.length === 0 && showTypingIndicator && <AssistantReply generating responseBlocks={[]} onAction={onAction} onApproval={onApproval} onMFA={onMFA} />}
+              {turns.length === 0 && showTypingIndicator && <AssistantReply generating responseBlocks={[]} onAction={onAction} onApproval={onApproval} />}
             </div>
           )}
     </div>
   )
 }
 
-function ConversationTurn({ generating, responseBlocks, userMessage, onAction, onApproval, onMFA, onResend, resendDisabled, showInternalTools }: {
+function ConversationTurn({ generating, responseBlocks, userMessage, onAction, onApproval, onResend, resendDisabled, showInternalTools }: {
   generating: boolean
   responseBlocks: AIBlock[]
   userMessage?: MessageBlock
   onAction: (action: AIUIAction) => Promise<boolean>
   onApproval: (block: ToolCallBlock, decision: AIApprovalDecision, reason?: string) => Promise<void>
-  onMFA: (block: ToolCallBlock) => Promise<void>
   onResend: (message: string) => void
   resendDisabled?: boolean
   showInternalTools?: boolean
@@ -242,19 +239,17 @@ function ConversationTurn({ generating, responseBlocks, userMessage, onAction, o
           responseBlocks={visibleResponseBlocks}
           onAction={onAction}
           onApproval={onApproval}
-          onMFA={onMFA}
         />
       )}
     </article>
   )
 }
 
-function AssistantReply({ generating, responseBlocks, onAction, onApproval, onMFA }: {
+function AssistantReply({ generating, responseBlocks, onAction, onApproval }: {
   generating: boolean
   responseBlocks: AIBlock[]
   onAction: (action: AIUIAction) => Promise<boolean>
   onApproval: (block: ToolCallBlock, decision: AIApprovalDecision, reason?: string) => Promise<void>
-  onMFA: (block: ToolCallBlock) => Promise<void>
 }) {
   const hasWideContent = responseBlocks.some(block =>
     block.type === 'tool_call'
@@ -273,7 +268,7 @@ function AssistantReply({ generating, responseBlocks, onAction, onApproval, onMF
         data-ai-message-group
       >
         <div className="grid min-w-0 max-w-full gap-2.5 rounded-container rounded-tl-sm bg-surface-subtle px-3 py-2.5" data-ai-assistant-bubble>
-          {responseBlocks.map(block => <ResponseBlock key={block.id} block={block} onAction={onAction} onApproval={onApproval} onMFA={onMFA} />)}
+          {responseBlocks.map(block => <ResponseBlock key={block.id} block={block} onAction={onAction} onApproval={onApproval} />)}
           {generating && <TypingIndicator />}
         </div>
         {createdAt && <AIMessageMeta align="start" copyText={copyText} createdAt={createdAt} />}
@@ -295,7 +290,7 @@ function TypingIndicator() {
   )
 }
 
-function ResponseBlock({ block, onAction, onApproval, onMFA }: { block: AIBlock, onAction: (action: AIUIAction) => Promise<boolean>, onApproval: (block: ToolCallBlock, decision: AIApprovalDecision, reason?: string) => Promise<void>, onMFA: (block: ToolCallBlock) => Promise<void> }) {
+function ResponseBlock({ block, onAction, onApproval }: { block: AIBlock, onAction: (action: AIUIAction) => Promise<boolean>, onApproval: (block: ToolCallBlock, decision: AIApprovalDecision, reason?: string) => Promise<void> }) {
   if (block.type === 'thinking')
     return <ThinkingBlock block={block} />
   if (block.type === 'tool_call' && block.operationId === 'create_interaction_cards' && block.status === 'running')
@@ -315,7 +310,7 @@ function ResponseBlock({ block, onAction, onApproval, onMFA }: { block: AIBlock,
   if (block.type === 'tool_call' && block.operationId === 'navigate_to_route')
     return <AINavigationEvent block={block} onAction={onAction} />
   if (block.type === 'tool_call')
-    return <AIToolCallCard block={block} onAction={onAction} onApproval={onApproval} onMFA={onMFA} />
+    return <AIToolCallCard block={block} onAction={onAction} onApproval={onApproval} />
   if (block.type === 'run_status')
     return <RunStatusBlock block={block} />
   if (block.type === 'context_compacted')
@@ -331,6 +326,9 @@ function ResponseBlock({ block, onAction, onApproval, onMFA }: { block: AIBlock,
 
 function RunStatusBlock({ block }: { block: Extract<AIBlock, { type: 'run_status' }> }) {
   const { t } = useTranslation()
+  const message = block.status === 'failed'
+    ? t(runFailureTranslationKey(block.errorCode))
+    : t(block.status === 'interrupted' ? 'aiAssistant.runInterrupted' : 'aiAssistant.runCanceled')
   return (
     <div className={cn(
       'flex items-start gap-2 rounded-control px-2.5 py-2 text-xs leading-5',
@@ -338,7 +336,7 @@ function RunStatusBlock({ block }: { block: Extract<AIBlock, { type: 'run_status
     )}
     >
       {block.status === 'failed' ? <AlertCircle className="mt-0.5 size-4 shrink-0" /> : <CircleStop className="mt-0.5 size-4 shrink-0" />}
-      <span>{block.status === 'failed' ? t(runFailureTranslationKey(block.errorCode)) : t('aiAssistant.runCanceled')}</span>
+      <span>{message}</span>
     </div>
   )
 }

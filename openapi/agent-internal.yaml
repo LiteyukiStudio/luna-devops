@@ -150,12 +150,19 @@ paths:
       parameters: [{ $ref: "#/components/parameters/ActorContext" }, { $ref: "#/components/parameters/ActorSignature" }, { $ref: "#/components/parameters/RunId" }, { $ref: "#/components/parameters/ToolCallId" }]
       requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } }
       responses: { "202": { description: Decision accepted, content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } }, "409": { $ref: "#/components/responses/AgentError" } }
-  /internal/v1/runs/{runId}/mfa/{toolCallId}/resume:
-    post:
-      operationId: resumeInternalAIRunAfterMFA
-      parameters: [{ $ref: "#/components/parameters/ActorContext" }, { $ref: "#/components/parameters/ActorSignature" }, { $ref: "#/components/parameters/RunId" }, { $ref: "#/components/parameters/ToolCallId" }]
-      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } }
-      responses: { "202": { description: Resume accepted, content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } }, "409": { $ref: "#/components/responses/AgentError" } }
+  /internal/v1/tool-approval-exemptions:
+    get:
+      operationId: listInternalAIToolApprovalExemptions
+      parameters: [{ $ref: "#/components/parameters/ActorContext" }, { $ref: "#/components/parameters/ActorSignature" }]
+      responses: { "200": { description: Current actor's user-and-operation scoped approval exemptions, content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } } }
+  /internal/v1/tool-approval-exemptions/{operationId}:
+    delete:
+      operationId: revokeInternalAIToolApprovalExemption
+      parameters:
+        - { $ref: "#/components/parameters/ActorContext" }
+        - { $ref: "#/components/parameters/ActorSignature" }
+        - { name: operationId, in: path, required: true, schema: { type: string } }
+      responses: { "204": { description: Exemption revoked or already absent. } }
 components:
   securitySchemes:
     APIServiceToken: { type: http, scheme: bearer, bearerFormat: short-lived EdDSA service JWT }
@@ -213,8 +220,9 @@ components:
     AgentCreateTurnInput:
       type: object
       additionalProperties: false
-      required: [modelId, input, pageContext, clientInstanceId]
+      required: [runId, modelId, input, pageContext, clientInstanceId]
       properties:
+        runId: { type: string, minLength: 1, maxLength: 128, description: Stable Run ID preallocated by the authenticated Luna API BFF. }
         modelId: { type: string, minLength: 1 }
         modelSnapshot:
           type: object

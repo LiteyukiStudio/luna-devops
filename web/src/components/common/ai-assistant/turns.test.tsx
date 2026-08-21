@@ -142,7 +142,6 @@ describe('ai assistant turn topology', () => {
           loading={false}
           onAction={vi.fn(async () => true)}
           onApproval={vi.fn(async () => {})}
-          onMFA={vi.fn(async () => {})}
           onResend={vi.fn()}
           onRetry={vi.fn()}
         />
@@ -171,7 +170,6 @@ describe('ai assistant turn topology', () => {
           loading={false}
           onAction={vi.fn(async () => true)}
           onApproval={vi.fn(async () => {})}
-          onMFA={vi.fn(async () => {})}
           onResend={vi.fn()}
           onRetry={vi.fn()}
         />
@@ -193,7 +191,6 @@ describe('ai assistant turn topology', () => {
       loading: false,
       onAction: vi.fn(async () => true),
       onApproval: vi.fn(async () => {}),
-      onMFA: vi.fn(async () => {}),
       onResend: vi.fn(),
       onRetry: vi.fn(),
       resetKey: 'conversation-1',
@@ -254,7 +251,6 @@ describe('ai assistant turn topology', () => {
       loading: false,
       onAction: vi.fn(async () => true),
       onApproval: vi.fn(async () => {}),
-      onMFA: vi.fn(async () => {}),
       onResend: vi.fn(),
       onRetry: vi.fn(),
     }
@@ -296,7 +292,6 @@ describe('ai assistant turn topology', () => {
           loading={false}
           onAction={vi.fn(async () => true)}
           onApproval={vi.fn(async () => {})}
-          onMFA={vi.fn(async () => {})}
           onResend={onResend}
           onRetry={vi.fn()}
         />
@@ -348,7 +343,6 @@ describe('ai assistant turn topology', () => {
           loading={false}
           onAction={vi.fn(async () => true)}
           onApproval={vi.fn(async () => {})}
-          onMFA={vi.fn(async () => {})}
           onResend={vi.fn()}
           onRetry={vi.fn()}
         />
@@ -421,7 +415,6 @@ describe('ai assistant turn topology', () => {
           loading={false}
           onAction={vi.fn(async () => true)}
           onApproval={vi.fn(async () => {})}
-          onMFA={vi.fn(async () => {})}
           onResend={vi.fn()}
           onRetry={vi.fn()}
         />
@@ -477,7 +470,6 @@ describe('ai assistant turn topology', () => {
           loading={false}
           onAction={vi.fn(async () => true)}
           onApproval={vi.fn(async () => {})}
-          onMFA={vi.fn(async () => {})}
           onResend={vi.fn()}
           onRetry={vi.fn()}
         />
@@ -513,7 +505,6 @@ describe('ai assistant turn topology', () => {
           loading={false}
           onAction={vi.fn(async () => true)}
           onApproval={vi.fn(async () => {})}
-          onMFA={vi.fn(async () => {})}
           onResend={vi.fn()}
           onRetry={vi.fn()}
         />
@@ -565,7 +556,6 @@ describe('ai assistant turn topology', () => {
           loading={false}
           onAction={onAction}
           onApproval={vi.fn(async () => {})}
-          onMFA={vi.fn(async () => {})}
           onResend={vi.fn()}
           onRetry={vi.fn()}
         />
@@ -595,7 +585,6 @@ describe('ai assistant turn topology', () => {
           onAction={vi.fn(async () => true)}
           onApproval={vi.fn(async () => {})}
           onLoadOlder={vi.fn(async () => {})}
-          onMFA={vi.fn(async () => {})}
           onResend={vi.fn()}
           onRetry={vi.fn()}
         />
@@ -641,7 +630,6 @@ describe('ai assistant turn topology', () => {
           onAction={vi.fn(async () => true)}
           onApproval={vi.fn(async () => {})}
           onLoadOlder={onLoadOlder}
-          onMFA={vi.fn(async () => {})}
           onResend={vi.fn()}
           onRetry={vi.fn()}
           resetKey="conversation-pagination"
@@ -673,7 +661,6 @@ describe('ai assistant turn topology', () => {
       onAction: vi.fn(async () => true),
       onApproval: vi.fn(async () => {}),
       onLoadOlder,
-      onMFA: vi.fn(async () => {}),
       onResend: vi.fn(),
       onRetry: vi.fn(),
       resetKey: 'conversation-anchor',

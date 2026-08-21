@@ -78,7 +78,7 @@ func TestDataRetentionAuditSummariesDoNotIncludeServiceErrors(t *testing.T) {
 }
 
 func TestDataRetentionEndpointsRequirePlatformAdmin(t *testing.T) {
-	db := newMFAIntegrationDB(t)
+	db := authIntegrationDB(t)
 	now := time.Now()
 	user := model.User{ID: "usr_retention_guard", Email: "retention-guard@example.com", Name: "Retention Guard", Role: authz.PlatformRoleUser, Language: "en-US"}
 	if err := db.Create(&user).Error; err != nil {
@@ -101,7 +101,7 @@ func TestDataRetentionEndpointsRequirePlatformAdmin(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.path, func(t *testing.T) {
-			recorder, ctx := newMFAIntegrationContext(test.method, test.path, nil, sessionToken)
+			recorder, ctx := newAPIIntegrationContext(test.method, test.path, nil, sessionToken)
 			test.handler(ctx)
 			if recorder.Code != http.StatusForbidden {
 				t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body.String())
@@ -111,7 +111,7 @@ func TestDataRetentionEndpointsRequirePlatformAdmin(t *testing.T) {
 }
 
 func TestDataRetentionRoutesAreRegistered(t *testing.T) {
-	db := newMFAIntegrationDB(t)
+	db := authIntegrationDB(t)
 	router := NewRouter(db)
 	routes := make(map[string]bool)
 	for _, route := range router.Routes() {

@@ -61,15 +61,15 @@ Runtime secrets are managed separately from ordinary configuration and secret fi
 
 Create or reference persistent data in the project [volume center](./project-volumes.md), then select its stable project volume from a deployment target. Fill each mount by identifier, source, path, and source details; these fields stack automatically on narrow screens and in narrow configuration dialogs. PVC storage properties are generally chosen at creation time; `emptyDir` data disappears with its Pod and is not included in exports.
 
-Deleting an application or deployment target only unbinds its project volumes. It does not change project ownership or automatically delete a PVC. A managed PVC is deleted only from the volume details after impact review, explicit permanent deletion, and step-up verification; [export an archive](./volume-transfer.md) first when the data may still be needed.
+Deleting an application or deployment target only unbinds its project volumes. It does not change project ownership or automatically delete a PVC. A managed PVC is deleted only from the volume details after impact review and explicit permanent-deletion confirmation; [export an archive](./volume-transfer.md) first when the data may still be needed.
 
 Shared configuration can follow the latest value or use a snapshot. Deployment hooks suit one-time tasks such as database migrations. A failed hook can stop a release, so scripts should be repeatable and have a rollback plan.
 
 ## Web Console and data export
 
-Web Console access depends on project settings, account permission, and MFA policy. Terminal use is audited; avoid printing or pasting unnecessary secrets.
+Web Console access depends on project settings, the current sign-in session, and account permission. These conditions are rechecked while connected. Terminal use is audited; avoid printing or pasting unnecessary secrets.
 
-A data export is an asynchronous transfer created from the volume details. It requires project Owner or Admin permission and any required step-up verification. The browser exchanges authorization for a short-lived download session and supports resuming. `emptyDir` is not included, and the transfer must reach Succeeded before the backup is complete. See [Import and Export Volumes](./volume-transfer.md).
+A data export is an asynchronous transfer created from the volume details. It requires project Owner or Admin permission. The browser exchanges authorization for a short-lived, single-use download ticket bound to the current user, sign-in session, and transfer, and supports resuming. `emptyDir` is not included, and the transfer must reach Succeeded before the backup is complete. See [Import and Export Volumes](./volume-transfer.md).
 
 ## Routes
 

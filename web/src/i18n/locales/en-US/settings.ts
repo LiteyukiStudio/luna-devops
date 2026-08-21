@@ -222,11 +222,6 @@ const settings = {
         ipBlockList: { label: 'Network IP blocklist', description: 'One IP address or CIDR per line. Resolved addresses are checked too; private, loopback, and metadata ranges are included by default.' },
         allowedPorts: { label: 'SSRF allowed ports', description: 'Leave empty for no port restriction, or enter one allowed port per line.' },
       },
-      stepUpMfa: {
-        enabled: { label: 'Step-up verification for sensitive operations', description: 'Require short-lived two-step verification for Web Console, data export, secrets, registry credentials, kubeconfig, identity providers, and user administration.' },
-        idleTimeoutMinutes: { label: 'Step-up idle timeout', description: 'Maximum idle time in minutes after verification before another verification is required.' },
-        absoluteTimeoutMinutes: { label: 'Step-up maximum lifetime', description: 'Maximum lifetime in minutes for one verification, even while sensitive operations remain active.' },
-      },
     },
     billing: {
       creditsDisplayName: { label: 'Credits display name', description: 'Name shown for platform credits in the console. Storage and settlement continue to use credits internally.' },

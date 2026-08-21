@@ -1,23 +1,12 @@
-import type { ToolLoopFingerprint, ToolLoopStop } from "./contracts.js"
-
 export const DEFAULT_RUN_MAX_TOOL_CALLS = 256
 export const MIN_RUN_MAX_TOOL_CALLS = 32
 export const MAX_RUN_MAX_TOOL_CALLS = 2048
+export const DEFAULT_SAME_CALL_LIMIT = 3
 
 export type ToolLoopCall = {
   runId: string
   operationId: string
   argumentsHash: string
-}
-
-export type ToolLoopFailure = ToolLoopCall & {
-  errorCode: string
-  stableResultHash?: string
-  deterministic: boolean
-}
-
-export type ToolLoopResult = ToolLoopCall & {
-  stableResultHash: string
 }
 
 export type ToolLoopSnapshot = {
@@ -30,26 +19,23 @@ export interface LoopGuard {
   setMaxToolCalls(limit: number): void
   beforePropose(call: ToolLoopCall): void
   beforeExecute(call: ToolLoopCall): void
-  recordFailure(failure: ToolLoopFailure): void
-  recordResult(result: ToolLoopResult): void
-  seedResult(result: ToolLoopResult): void
   snapshot(runId: string): ToolLoopSnapshot
   clearRun(runId: string): void
 }
 
-export class ToolLoopStoppedError extends Error implements ToolLoopStop {
+export class ToolLoopStoppedError extends Error {
   readonly retryable = false as const
 
   constructor(
-    readonly code: ToolLoopStop["code"],
-    readonly fingerprint: ToolLoopFingerprint,
+    readonly code: "ai.run_tool_call_budget_exceeded" | "ai.tool_repeated_in_run",
+    readonly operationId: string,
   ) {
     super(code)
     this.name = "ToolLoopStoppedError"
   }
 
-  toJSON(): ToolLoopStop {
-    return { code: this.code, retryable: this.retryable, fingerprint: this.fingerprint }
+  toJSON() {
+    return { code: this.code, retryable: this.retryable, operationId: this.operationId }
   }
 }
 
@@ -57,26 +43,22 @@ type RunLoopState = {
   proposed: number
   executed: number
   maxToolCalls: number
-  deterministicFailures: Map<string, ToolLoopFingerprint>
-  results: Map<string, { fingerprint: ToolLoopFingerprint, occurrences: number }>
+  occurrences: Map<string, number>
 }
 
+/**
+ * Run 内循环保护只依据 operationId 与规范化参数计数。
+ * 不读取历史 Run，也不对结果或错误做推断，避免把合法轮询误判为跨会话循环。
+ */
 export class InMemoryLoopGuard implements LoopGuard {
   private maxToolCalls: number
+  private readonly sameCallLimit: number
   private readonly runs = new Map<string, RunLoopState>()
 
-  constructor(options: {
-    maxToolCalls?: number
-    isAsyncReadbackOperation?: (operationId: string) => boolean
-    repeatedResultThreshold?: number
-  } = {}) {
+  constructor(options: { maxToolCalls?: number, sameCallLimit?: number } = {}) {
     this.maxToolCalls = validateMaxToolCalls(options.maxToolCalls ?? DEFAULT_RUN_MAX_TOOL_CALLS)
-    this.isAsyncReadbackOperation = options.isAsyncReadbackOperation ?? (() => false)
-    this.repeatedResultThreshold = Math.max(2, options.repeatedResultThreshold ?? 2)
+    this.sameCallLimit = Math.max(2, Math.floor(options.sameCallLimit ?? DEFAULT_SAME_CALL_LIMIT))
   }
-
-  private readonly isAsyncReadbackOperation: (operationId: string) => boolean
-  private readonly repeatedResultThreshold: number
 
   setMaxToolCalls(limit: number): void {
     this.maxToolCalls = validateMaxToolCalls(limit)
@@ -85,64 +67,18 @@ export class InMemoryLoopGuard implements LoopGuard {
   beforePropose(call: ToolLoopCall): void {
     const state = this.state(call.runId)
     state.proposed += 1
-    if (state.proposed > state.maxToolCalls)
-      throw stop("ai.run_tool_call_budget_exceeded", call)
+    if (state.proposed > state.maxToolCalls) throw stop("ai.run_tool_call_budget_exceeded", call)
 
     const key = callKey(call)
-    const deterministicFailure = state.deterministicFailures.get(key)
-    if (deterministicFailure)
-      throw new ToolLoopStoppedError("ai.tool_deterministic_failure_repeated", deterministicFailure)
-
-    const result = state.results.get(key)
-    if (!this.isAsyncReadbackOperation(call.operationId) && result && result.occurrences >= this.repeatedResultThreshold)
-      throw new ToolLoopStoppedError("ai.tool_no_new_information", result.fingerprint)
+    const occurrences = (state.occurrences.get(key) ?? 0) + 1
+    state.occurrences.set(key, occurrences)
+    if (occurrences > this.sameCallLimit) throw stop("ai.tool_repeated_in_run", call)
   }
 
   beforeExecute(call: ToolLoopCall): void {
     const state = this.state(call.runId)
     state.executed += 1
-    if (state.executed > state.maxToolCalls)
-      throw stop("ai.run_tool_call_budget_exceeded", call)
-  }
-
-  recordFailure(failure: ToolLoopFailure): void {
-    if (!failure.deterministic) return
-    const fingerprint: ToolLoopFingerprint = {
-      operationId: failure.operationId,
-      argumentsHash: failure.argumentsHash,
-      stableErrorCode: failure.errorCode,
-      ...(failure.stableResultHash ? { stableResultHash: failure.stableResultHash } : {}),
-    }
-    this.state(failure.runId).deterministicFailures.set(callKey(failure), fingerprint)
-  }
-
-  recordResult(result: ToolLoopResult): void {
-    if (this.isAsyncReadbackOperation(result.operationId)) return
-    const state = this.state(result.runId)
-    const key = callKey(result)
-    const previous = state.results.get(key)
-    const fingerprint: ToolLoopFingerprint = {
-      operationId: result.operationId,
-      argumentsHash: result.argumentsHash,
-      stableResultHash: result.stableResultHash,
-    }
-    state.results.set(key, {
-      fingerprint,
-      occurrences: previous?.fingerprint.stableResultHash === result.stableResultHash ? previous.occurrences + 1 : 1,
-    })
-  }
-
-  seedResult(result: ToolLoopResult): void {
-    if (this.isAsyncReadbackOperation(result.operationId)) return
-    const fingerprint: ToolLoopFingerprint = {
-      operationId: result.operationId,
-      argumentsHash: result.argumentsHash,
-      stableResultHash: result.stableResultHash,
-    }
-    this.state(result.runId).results.set(callKey(result), {
-      fingerprint,
-      occurrences: this.repeatedResultThreshold,
-    })
+    if (state.executed > state.maxToolCalls) throw stop("ai.run_tool_call_budget_exceeded", call)
   }
 
   snapshot(runId: string): ToolLoopSnapshot {
@@ -161,13 +97,7 @@ export class InMemoryLoopGuard implements LoopGuard {
   private state(runId: string): RunLoopState {
     let state = this.runs.get(runId)
     if (!state) {
-      state = {
-        proposed: 0,
-        executed: 0,
-        maxToolCalls: this.maxToolCalls,
-        deterministicFailures: new Map(),
-        results: new Map(),
-      }
+      state = { proposed: 0, executed: 0, maxToolCalls: this.maxToolCalls, occurrences: new Map() }
       this.runs.set(runId, state)
     }
     return state
@@ -184,6 +114,6 @@ function callKey(call: ToolLoopCall): string {
   return `${call.operationId}\u0000${call.argumentsHash}`
 }
 
-function stop(code: ToolLoopStop["code"], call: ToolLoopCall): ToolLoopStoppedError {
-  return new ToolLoopStoppedError(code, { operationId: call.operationId, argumentsHash: call.argumentsHash })
+function stop(code: ToolLoopStoppedError["code"], call: ToolLoopCall): ToolLoopStoppedError {
+  return new ToolLoopStoppedError(code, call.operationId)
 }

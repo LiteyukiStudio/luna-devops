@@ -80,7 +80,7 @@ func TestObserveProjectVolumeClaimsReturnsCurrentPageMap(t *testing.T) {
 	}
 }
 
-func TestAdoptExistingProjectVolumeClaimFailsClosedWhenInUse(t *testing.T) {
+func TestAdoptExistingProjectVolumeClaimIsRejectedWhenInUse(t *testing.T) {
 	storageClass := "standard"
 	volumeMode := corev1.PersistentVolumeFilesystem
 	claim := &corev1.PersistentVolumeClaim{

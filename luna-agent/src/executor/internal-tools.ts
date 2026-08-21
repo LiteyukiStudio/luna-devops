@@ -4,7 +4,6 @@ import type { Repository } from "../persistence/repository.js"
 import { redact } from "../redaction.js"
 import type { RuntimeSettings } from "../runtime-settings.js"
 import { renameConversationInput } from "../tools/conversation-title.js"
-import { createOptionsInput, optionUIActions } from "../tools/ui-options.js"
 import { automaticRouteUIAction, navigateToRouteInput } from "../tools/ui-route.js"
 
 // 内部工具的副作用处理：这些工具不调用平台 API，
@@ -52,22 +51,6 @@ export class InternalToolHandlers {
     })
   }
 
-  async createOptions(runId: string, turnId: string, raw: unknown) {
-    const input = createOptionsInput.parse(raw)
-    const itemId = createId("aiitm")
-    const toolCallId = createId("aitool")
-    const result = {
-      summaryKey: "ai.tool.result.options_created",
-      title: input.title,
-      description: input.description,
-      uiActions: optionUIActions(input),
-    }
-    await this.repository.appendItemWithEvent({
-      id: itemId, runId, turnId, type: "tool_call", status: "completed",
-      content: { toolCallId, operationId: "create_options", status: "succeeded", arguments: input, result },
-    }, "tool.completed", { itemId, toolCallId, operationId: "create_options", result, uiActions: result.uiActions })
-  }
-
   async navigateToRoute(runId: string, turnId: string, raw: unknown) {
     const input = navigateToRouteInput.parse(raw)
     const itemId = createId("aiitm")
@@ -110,7 +93,7 @@ export class InternalToolHandlers {
     const input = renameConversationInput.parse(raw)
     const itemId = createId("aiitm")
     const toolCallId = createId("aitool")
-    const renamed = await this.repository.renameConversationByAssistant(conversationId, input.title)
+    const renamed = await this.repository.renameConversationByAssistant(conversationId, input.title, runId)
     const status = renamed ? "succeeded" : "skipped"
     const result = {
       summaryKey: renamed

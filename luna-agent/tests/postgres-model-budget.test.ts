@@ -168,7 +168,7 @@ suite("Postgres model budget reservations", () => {
 
   it("persists every model operation in the same authoritative reservation source", async () => {
     const runId = await createBudgetRun(repository, ownerUserId, "operations", zeroPriceModel(), 1000, "100")
-    const operations: ModelBudgetOperation[] = ["assistant", "summary", "title", "next_steps"]
+    const operations: ModelBudgetOperation[] = ["assistant", "summary", "title"]
     for (const operation of operations) {
       await repository.reserveModelBudget({
         id: `aibgt_${operation}`, runId, ownerUserId, operation,
@@ -213,6 +213,7 @@ async function createBudgetRun(repository: PostgresRepository, ownerUserId: stri
     input: suffix,
     pageContext: {},
     idempotencyKey: `budget-${suffix}`,
+    actorSessionId: `session-${suffix}`,
     modelId: model.id,
     modelSnapshot: model,
     runBudgetSnapshot: { totalTokens, totalCredits },

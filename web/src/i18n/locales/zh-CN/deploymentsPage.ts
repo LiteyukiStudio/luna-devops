@@ -254,7 +254,7 @@ const deploymentsPage = {
   webConsoleConnected: '已连接。输入 shell 命令开始排查。',
   webConsoleDisconnected: '终端连接已断开。',
   webConsoleConnectionFailed: '终端连接失败，请检查发布状态和容器 shell。',
-  webConsoleAuthorizationFailed: '终端授权失败，请完成二次验证后重试。',
+  webConsoleAuthorizationFailed: '终端授权失败，请重新登录并确认你仍有该运行时的访问权限。',
   terminalStdout: '标准输出',
   terminalStderr: '标准错误',
   command: '命令',

@@ -222,11 +222,6 @@ const settings = {
         ipBlockList: { label: '网络访问 IP 黑名单', description: '每行一个 IP 或 CIDR；域名解析结果也会检查，默认包含私网、回环和元数据地址。' },
         allowedPorts: { label: 'SSRF 允许端口', description: '留空表示不限制；填写后每行一个允许访问的端口。' },
       },
-      stepUpMfa: {
-        enabled: { label: '敏感操作二次验证', description: '开启后，Web Console、数据导出、密钥、镜像凭据、kubeconfig、身份源和用户管理等敏感操作需要完成短时二次验证。' },
-        idleTimeoutMinutes: { label: '二次验证空闲超时', description: '完成二次验证后没有执行敏感操作的最长分钟数，超时后需要重新验证。' },
-        absoluteTimeoutMinutes: { label: '二次验证最长有效期', description: '一次二次验证持续生效的最长分钟数，即使持续操作也不会超过该时间。' },
-      },
     },
     billing: {
       creditsDisplayName: { label: 'Credits 展示名称', description: '控制台显示平台内部 credits 时使用的名称，底层仍统一按 credits 存储和结算。' },

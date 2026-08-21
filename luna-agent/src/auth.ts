@@ -13,11 +13,11 @@ const actorSchema = z.object({
   runId: z.string().optional(),
 })
 
-export interface RequestAuthenticator {
+export interface RequestVerifier {
   verify(headers: Record<string, string | string[] | undefined>): Promise<ActorContext>
 }
 
-export class DevelopmentAuthenticator implements RequestAuthenticator {
+export class DevelopmentRequestVerifier implements RequestVerifier {
   async verify(headers: Record<string, string | string[] | undefined>): Promise<ActorContext> {
     const userId = scalar(headers["x-luna-dev-user"])
     const sessionId = scalar(headers["x-luna-dev-session"]) ?? "dev-session"
@@ -27,7 +27,7 @@ export class DevelopmentAuthenticator implements RequestAuthenticator {
   }
 }
 
-export class BffHmacAuthenticator implements RequestAuthenticator {
+export class BffHmacRequestVerifier implements RequestVerifier {
   constructor(private readonly serviceToken: string, private readonly actorSigningKey: string) {}
   async verify(headers: Record<string, string | string[] | undefined>): Promise<ActorContext> {
     const bearer = scalar(headers.authorization)?.replace(/^Bearer\s+/i, "")

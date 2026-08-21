@@ -15,74 +15,36 @@ import (
 )
 
 type OpenAPIOperation struct {
-	OperationID    string            `json:"operationId"`
-	Method         string            `json:"method"`
-	Path           string            `json:"path"`
-	Category       string            `json:"category"`
-	Description    string            `json:"description"`
-	SearchHints    []string          `json:"searchHints,omitempty"`
-	Risk           string            `json:"risk"`
-	RequiredScopes []string          `json:"requiredScopes"`
-	Approval       string            `json:"approval"`
-	StepUpPurpose  string            `json:"stepUpPurpose,omitempty"`
-	Idempotent     bool              `json:"idempotent"`
-	TimeoutMS      int               `json:"timeoutMs"`
-	InputSchema    map[string]any    `json:"inputSchema"`
-	SensitivePaths []string          `json:"sensitivePaths,omitempty"`
-	MaxItems       int               `json:"maxItems,omitempty"`
-	Contract       AgentToolContract `json:"contract"`
-
-	Parameters      []OpenAPIParameter     `json:"-"`
-	RequestBody     bool                   `json:"-"`
-	RequestRequired bool                   `json:"-"`
-	RequestType     string                 `json:"-"`
-	ResponseSchemas map[int]map[string]any `json:"-"`
+	OperationID      string             `json:"operationId"`
+	Name             string             `json:"name"`
+	Summary          string             `json:"summary"`
+	Category         string             `json:"category"`
+	Tags             []string           `json:"tags"`
+	Aliases          OperationAliases   `json:"aliases"`
+	RequiresApproval bool               `json:"requiresApproval"`
+	Idempotent       bool               `json:"idempotent"`
+	Method           string             `json:"method"`
+	Path             string             `json:"path"`
+	RequiredScopes   []string           `json:"requiredScopes"`
+	InputSchema      map[string]any     `json:"inputSchema"`
+	OutputSchema     map[string]any     `json:"outputSchema"`
+	SensitivePaths   []string           `json:"sensitivePaths,omitempty"`
+	Parameters       []OpenAPIParameter `json:"parameters,omitempty"`
+	RequestBody      bool               `json:"requestBody"`
+	RequestRequired  bool               `json:"requestRequired"`
+	RequestType      string             `json:"requestType,omitempty"`
 }
 
-type AgentToolContract struct {
-	Allowed          bool                  `json:"allowed"`
-	ResourceTypes    []string              `json:"resourceTypes"`
-	Action           string                `json:"action"`
-	SideEffect       string                `json:"sideEffect"`
-	Idempotent       bool                  `json:"idempotent"`
-	ReplaySafe       bool                  `json:"replaySafe"`
-	Risk             string                `json:"risk"`
-	Approval         string                `json:"approval"`
-	MFAPurpose       string                `json:"mfaPurpose,omitempty"`
-	Intents          []string              `json:"intents"`
-	UseWhen          []string              `json:"useWhen"`
-	AvoidWhen        []string              `json:"avoidWhen"`
-	Prerequisites    []string              `json:"prerequisites"`
-	ParameterSummary []string              `json:"parameterSummary"`
-	SuccessEvidence  []string              `json:"successEvidence"`
-	CommonErrorCodes []string              `json:"commonErrorCodes"`
-	Predecessors     []string              `json:"predecessors"`
-	Followups        []string              `json:"followups"`
-	Verification     AgentToolVerification `json:"verification"`
-}
-
-type AgentToolVerification struct {
-	Mode             string               `json:"mode"`
-	SuccessCodes     []int                `json:"successCodes,omitempty"`
-	OperationID      string               `json:"operationId,omitempty"`
-	IDSource         string               `json:"idSource,omitempty"`
-	ArgumentBindings map[string]string    `json:"argumentBindings,omitempty"`
-	Completion       *AgentToolCompletion `json:"completion,omitempty"`
-}
-
-type AgentToolCompletion struct {
-	Mode          string   `json:"mode"`
-	Path          string   `json:"path,omitempty"`
-	PendingStates []string `json:"pendingStates,omitempty"`
-	SuccessStates []string `json:"successStates,omitempty"`
-	FailureStates []string `json:"failureStates,omitempty"`
+type OperationAliases struct {
+	ZH []string `json:"zh"`
+	EN []string `json:"en"`
 }
 
 type OpenAPIParameter struct {
-	InputName string
-	WireName  string
-	In        string
-	Required  bool
+	InputName string `json:"inputName"`
+	WireName  string `json:"wireName"`
+	In        string `json:"in"`
+	Required  bool   `json:"required"`
 }
 
 type openAPIDocument struct {
@@ -163,17 +125,10 @@ func buildPlatformCatalog(source []byte) ([]OpenAPIOperation, error) {
 	sort.Slice(operations, func(i, j int) bool {
 		return operations[i].OperationID < operations[j].OperationID
 	})
-	if err := validateAgentContractReferences(operations); err != nil {
-		return nil, err
-	}
 	return operations, nil
 }
 
 func catalogOperation(document openAPIDocument, path, method, operationID string, raw map[string]any) (OpenAPIOperation, error) {
-	contract, err := parseAgentToolContract(operationID, mapValue(raw["x-luna-agent"]))
-	if err != nil {
-		return OpenAPIOperation{}, err
-	}
 	parameters := make([]OpenAPIParameter, 0)
 	properties := map[string]any{}
 	required := make([]string, 0)
@@ -210,7 +165,6 @@ func catalogOperation(document openAPIDocument, path, method, operationID string
 	if len(tags) > 0 {
 		category = strings.ToLower(tags[0])
 	}
-	risk := agentPolicyRisk(contract)
 	scope := authz.RequiredAccessTokenScope(openAPIPathToGin(path), strings.ToUpper(method))
 	if scope == "" || scope == string(authz.ActionSystemUnmapped) {
 		scope = fallbackAgentScope(category, method)
@@ -226,63 +180,58 @@ func catalogOperation(document openAPIDocument, path, method, operationID string
 		"additionalProperties": false,
 	}
 	sensitivePaths := schemaSensitivePaths(inputSchema, "")
-	responseSchemas := operationResponseSchemas(document, raw)
-	description := "用途：" + strings.Join(contract.UseWhen, "；") + "。成功依据：" + strings.Join(contract.SuccessEvidence, "；") + "。"
-	searchHints := compactSearchHints(
-		strings.Join(contract.ResourceTypes, " "),
-		strings.Join(contract.Intents, " "),
-		strings.Join(contract.ParameterSummary, " "),
-		strings.Join(contract.CommonErrorCodes, " "),
-	)
+	summary := strings.Join(strings.Fields(stringValue(raw["summary"])), " ")
+	description := strings.Join(strings.Fields(stringValue(raw["description"])), " ")
+	if summary == "" {
+		summary = description
+	}
+	if summary == "" {
+		summary = operationID
+	}
+	extension := mapValue(raw["x-luna-agent"])
+	requiresApproval := operationRequiresApproval(method, mapValue(raw["x-luna-cli"]), extension)
+	aliases := operationAliases(operationID, tags, extension)
 	return OpenAPIOperation{
-		OperationID: operationID, Method: strings.ToUpper(method), Path: path,
-		Category: category, Description: description, SearchHints: searchHints, Risk: risk,
-		RequiredScopes: scopes, Approval: contract.Approval,
-		StepUpPurpose: contract.MFAPurpose,
-		Idempotent:    contract.Idempotent,
-		TimeoutMS:     30000, InputSchema: inputSchema, SensitivePaths: sensitivePaths,
-		MaxItems: 100, Contract: contract,
-		Parameters: parameters, RequestBody: len(requestSchema) > 0,
-		RequestRequired: requestRequired, RequestType: requestType,
-		ResponseSchemas: responseSchemas,
+		OperationID:      operationID,
+		Name:             operationID,
+		Summary:          summary,
+		Category:         category,
+		Tags:             tags,
+		Aliases:          aliases,
+		RequiresApproval: requiresApproval,
+		Idempotent:       strings.EqualFold(method, http.MethodGet) || boolValue(mapValue(raw["x-luna-cli"])["idempotent"]),
+		Method:           strings.ToUpper(method),
+		Path:             path,
+		RequiredScopes:   scopes,
+		InputSchema:      inputSchema,
+		OutputSchema:     preferredOutputSchema(document, raw),
+		SensitivePaths:   sensitivePaths,
+		Parameters:       parameters,
+		RequestBody:      len(requestSchema) > 0,
+		RequestRequired:  requestRequired,
+		RequestType:      requestType,
 	}, nil
 }
 
-func operationResponseSchemas(document openAPIDocument, operation map[string]any) map[int]map[string]any {
-	result := make(map[int]map[string]any)
-	for rawCode, rawResponse := range mapValue(operation["responses"]) {
+func preferredOutputSchema(document openAPIDocument, operation map[string]any) map[string]any {
+	responses := mapValue(operation["responses"])
+	codes := make([]int, 0, len(responses))
+	for rawCode := range responses {
 		code, err := strconv.Atoi(rawCode)
-		if err != nil || code < 100 || code > 599 {
-			continue
+		if err == nil && code >= 200 && code < 300 {
+			codes = append(codes, code)
 		}
-		response := resolveOpenAPIResponse(document, rawResponse)
+	}
+	sort.Ints(codes)
+	for _, code := range codes {
+		response := resolveOpenAPIResponse(document, responses[strconv.Itoa(code)])
 		content := mapValue(response["content"])
 		media := mapValue(content["application/json"])
 		if schema := mapValue(media["schema"]); len(schema) > 0 {
-			result[code] = normalizeOpenAPISchema(document, schema, 0)
-		} else {
-			result[code] = nil
+			return normalizeOpenAPISchema(document, schema, 0)
 		}
 	}
-	return result
-}
-
-// compactSearchHints keeps OpenAPI prose out of the model-visible description while
-// retaining concise semantic terms for the Agent-side tool retriever.
-func compactSearchHints(values ...string) []string {
-	result := make([]string, 0, len(values))
-	for _, value := range values {
-		value = strings.Join(strings.Fields(value), " ")
-		if value == "" {
-			continue
-		}
-		characters := []rune(value)
-		if len(characters) > 500 {
-			value = string(characters[:500])
-		}
-		result = append(result, value)
-	}
-	return result
+	return map[string]any{"type": "object"}
 }
 
 func agentEligibleOperation(path, method, operationID string, raw map[string]any) bool {
@@ -294,11 +243,6 @@ func agentEligibleOperation(path, method, operationID string, raw map[string]any
 		if tag == "Health" || tag == "AI Assistant" || tag == "AI Assistant Internal" {
 			return false
 		}
-	}
-	agentExtension := mapValue(raw["x-luna-agent"])
-	allowed, declared := agentExtension["allowed"].(bool)
-	if !declared || !allowed {
-		return false
 	}
 	extension := mapValue(raw["x-luna-cli"])
 	switch stringValue(extension["classification"]) {
@@ -321,24 +265,93 @@ func agentEligibleOperation(path, method, operationID string, raw map[string]any
 	if method == "get" && (strings.HasSuffix(path, "/start") || strings.Contains(path, "/callback")) {
 		return false
 	}
-	_, denied := agentDeniedOperationIDs[operationID]
+	_, denied := agentDisabledOperations[operationID]
 	return !denied
 }
 
-var agentDeniedOperationIDs = map[string]struct{}{
-	"getPublicConfigs": {}, "getBootstrapStatus": {}, "initializeAdmin": {},
-	"login": {}, "resumeLogin": {}, "logout": {},
-	"requestEmailRegistrationCode": {}, "completeEmailRegistration": {},
-	"enrollMFA": {}, "confirmMFA": {}, "verifyMFA": {},
-	"regenerateMFARecoveryCodes": {}, "disableMFA": {},
-	"startOIDC": {}, "completeOIDC": {},
-	"startGitOAuth": {}, "completeGitOAuth": {}, "receiveGitWebhook": {},
-	"startOAuthDeviceAuthorization": {}, "getOAuthDeviceVerification": {},
-	"decideOAuthDeviceVerification": {}, "exchangeOAuthToken": {}, "revokeOAuthToken": {},
-	"getOAuthAuthorizationRequest": {}, "decideOAuthAuthorization": {},
-	"createAccessToken": {}, "rotateOAuthApplicationSecret": {},
-	"updateMyPassword": {}, "createGatewayTrafficProbeHello": {},
-	"createGatewayTrafficUsage": {}, "createExternalBillingTransaction": {},
+// agentDisabledOperations is the one explicit deny list for otherwise regular
+// JSON platform operations. Every entry carries a reviewable reason; OpenAPI no
+// longer needs a second per-operation `allowed` admission flag.
+var agentDisabledOperations = map[string]string{
+	"getPublicConfigs":                 "public bootstrap protocol",
+	"getBootstrapStatus":               "public bootstrap protocol",
+	"initializeAdmin":                  "initial trust bootstrap",
+	"login":                            "interactive authentication protocol",
+	"resumeLogin":                      "interactive authentication protocol",
+	"logout":                           "interactive authentication protocol",
+	"requestEmailRegistrationCode":     "out-of-band authentication protocol",
+	"completeEmailRegistration":        "out-of-band authentication protocol",
+	"startOIDC":                        "browser redirect protocol",
+	"completeOIDC":                     "browser callback protocol",
+	"startGitOAuth":                    "browser redirect protocol",
+	"completeGitOAuth":                 "browser callback protocol",
+	"receiveGitWebhook":                "webhook receiver",
+	"startOAuthDeviceAuthorization":    "interactive OAuth protocol",
+	"getOAuthDeviceVerification":       "interactive OAuth protocol",
+	"decideOAuthDeviceVerification":    "interactive OAuth protocol",
+	"exchangeOAuthToken":               "token protocol",
+	"revokeOAuthToken":                 "token protocol",
+	"getOAuthAuthorizationRequest":     "interactive OAuth protocol",
+	"decideOAuthAuthorization":         "interactive OAuth protocol",
+	"createAccessToken":                "credential material must be created directly by the user",
+	"rotateOAuthApplicationSecret":     "credential material must be rotated directly by the user",
+	"updateMyPassword":                 "credential material must be changed directly by the user",
+	"createGatewayTrafficProbeHello":   "metering ingestion protocol",
+	"createGatewayTrafficUsage":        "metering ingestion protocol",
+	"createExternalBillingTransaction": "external billing ingestion protocol",
+	"retryProjectVolumeOperation":      "effective permission depends on the failed operation being retried",
+	"retryVolumeTransfer":              "effective permission depends on the original transfer direction",
+}
+
+var agentTagAliasesZH = map[string][]string{
+	"Applications": {"应用", "应用服务"},
+	"Builds":       {"构建", "构建任务"},
+	"Deployments":  {"部署", "部署目标"},
+	"Gateway":      {"网关", "域名", "路由"},
+	"Projects":     {"项目空间", "项目"},
+	"Registries":   {"镜像仓库", "镜像"},
+	"Releases":     {"发布", "版本"},
+	"Runtime":      {"运行时", "集群"},
+	"Volumes":      {"项目数据卷", "数据卷", "持久卷", "存储卷"},
+}
+
+func operationAliases(operationID string, tags []string, extension map[string]any) OperationAliases {
+	aliasesRaw := mapValue(extension["aliases"])
+	zh := append([]string(nil), stringArray(aliasesRaw["zh"])...)
+	en := append([]string(nil), stringArray(aliasesRaw["en"])...)
+	for _, tag := range tags {
+		en = append(en, tag)
+		zh = append(zh, agentTagAliasesZH[tag]...)
+	}
+	en = append(en, operationID, strings.Join(splitOperationID(operationID), " "))
+	return OperationAliases{ZH: uniqueStrings(zh), EN: uniqueStrings(en)}
+}
+
+func splitOperationID(value string) []string {
+	parts := make([]string, 0, 6)
+	start := 0
+	runes := []rune(value)
+	for index := 1; index < len(runes); index++ {
+		if runes[index] >= 'A' && runes[index] <= 'Z' {
+			parts = append(parts, strings.ToLower(string(runes[start:index])))
+			start = index
+		}
+	}
+	if start < len(runes) {
+		parts = append(parts, strings.ToLower(string(runes[start:])))
+	}
+	return parts
+}
+
+func operationRequiresApproval(method string, cli, agent map[string]any) bool {
+	if value, ok := agent["requiresApproval"].(bool); ok {
+		return value
+	}
+	switch strings.ToLower(stringValue(cli["risk"])) {
+	case "high", "critical", "destructive", "sensitive":
+		return true
+	}
+	return strings.EqualFold(method, http.MethodDelete)
 }
 
 func requestBodySchema(requestBody map[string]any) (map[string]any, string) {
@@ -458,19 +471,6 @@ func schemaSensitivePaths(schema map[string]any, prefix string) []string {
 		paths = append(paths, schemaSensitivePaths(items, path)...)
 	}
 	return uniqueStrings(paths)
-}
-
-func agentPolicyRisk(contract AgentToolContract) string {
-	switch contract.Risk {
-	case "critical":
-		return "destructive"
-	case "high":
-		return "sensitive"
-	}
-	if contract.SideEffect == "none" || contract.SideEffect == "external-read" {
-		return "read"
-	}
-	return "write"
 }
 
 func fallbackAgentScope(category, method string) string {

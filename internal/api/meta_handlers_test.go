@@ -49,7 +49,6 @@ func TestGetAPIMeta(t *testing.T) {
 	if !response.Features.AccessToken ||
 		!response.Features.OAuthAuthorization ||
 		!response.Features.DeviceCode ||
-		!response.Features.MFABearer ||
 		!response.Features.OpenAPIOperations {
 		t.Fatalf("expected stable CLI features to be enabled: %#v", response.Features)
 	}

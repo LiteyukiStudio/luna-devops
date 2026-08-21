@@ -297,35 +297,11 @@ func (h *Handlers) ListUsers(ctx *gin.Context) {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
-	mfaEnabled, err := h.userMFAEnabled(users, ctx.Request.Context())
-	if err != nil {
-		writeError(ctx, http.StatusInternalServerError, err.Error())
-		return
-	}
 	responses := make([]gin.H, 0, len(users))
 	for _, user := range users {
-		responses = append(responses, userListResponse(user, balances[user.ID], mfaEnabled[user.ID]))
+		responses = append(responses, userListResponse(user, balances[user.ID]))
 	}
 	ctx.JSON(http.StatusOK, paginatedResponse(responses, total, pagination))
-}
-
-func (h *Handlers) userMFAEnabled(users []model.User, ctx context.Context) (map[string]bool, error) {
-	enabled := make(map[string]bool, len(users))
-	if len(users) == 0 {
-		return enabled, nil
-	}
-	userIDs := make([]string, 0, len(users))
-	for _, user := range users {
-		userIDs = append(userIDs, user.ID)
-	}
-	var configs []model.UserMFAConfig
-	if err := h.dbWithContext(ctx).Select("user_id").Where("user_id in ? and enabled = ?", userIDs, true).Find(&configs).Error; err != nil {
-		return nil, err
-	}
-	for _, config := range configs {
-		enabled[config.UserID] = true
-	}
-	return enabled, nil
 }
 
 func (h *Handlers) userWalletBalances(users []model.User, ctx context.Context) (map[string]decimal.Decimal, error) {
@@ -352,19 +328,10 @@ func (h *Handlers) CreateUser(ctx *gin.Context) {
 	if !h.requirePlatformAdmin(ctx) {
 		return
 	}
-	currentUser, ok := h.currentUser(ctx)
-	if !ok {
-		return
-	}
-
 	var input userInput
 	if !bindJSON(ctx, &input) {
 		return
 	}
-	if !h.requireStepUp(ctx, currentUser, stepUpPurposeUserAdminUpdate) {
-		return
-	}
-
 	email := strings.ToLower(strings.TrimSpace(input.Email))
 	name := fallback(strings.TrimSpace(input.Name), email)
 	if email == "" || len(input.Password) < 8 {
@@ -409,14 +376,6 @@ func (h *Handlers) UpdateUser(ctx *gin.Context) {
 		writeErrorKey(ctx, http.StatusForbidden, currentUser.Language, "config.admin.required")
 		return
 	}
-	if !h.requireStepUp(ctx, currentUser, stepUpPurposeUserAdminUpdate) {
-		return
-	}
-	actorSessionID := ""
-	if actorSession, sessionOK := h.currentSessionFromCookie(ctx); sessionOK && actorSession.UserID == currentUser.ID {
-		actorSessionID = actorSession.ID
-	}
-
 	var user model.User
 	if err := h.dbFor(ctx).First(&user, "id = ?", ctx.Param("userId")).Error; err != nil {
 		writeError(ctx, http.StatusNotFound, "user not found")
@@ -460,32 +419,12 @@ func (h *Handlers) UpdateUser(ctx *gin.Context) {
 	}
 
 	if err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := lockStepUpPolicyMutation(tx); err != nil {
-			return err
-		}
-		policyEnabled, err := stepUpMFAEnabledInTransaction(tx)
-		if err != nil {
-			return err
-		}
-		if policyEnabled {
-			if _, err := lockStepUpActor(tx, currentUser.ID, actorSessionID, stepUpPurposeUserAdminUpdate, authz.PlatformRoleAdmin); err != nil {
-				return err
-			}
-		} else if _, err := lockActiveUserRole(tx, currentUser.ID, authz.PlatformRoleAdmin); err != nil {
+		if _, err := lockActiveUserRole(tx, currentUser.ID, authz.PlatformRoleAdmin); err != nil {
 			return err
 		}
 		var stored model.User
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&stored, "id = ?", user.ID).Error; err != nil {
 			return err
-		}
-		if policyEnabled && availablePlatformAdminRemoved(stored, user) {
-			enabledAdmins, err := lockMFAEnabledPlatformAdmins(tx)
-			if err != nil {
-				return err
-			}
-			if mfaEnabledForUser(enabledAdmins, stored.ID) && !hasOtherMFAEnabledPlatformAdmin(enabledAdmins, stored.ID) {
-				return errMFALastAdminRequired
-			}
 		}
 		revokeAuthentication := shouldRevokeUserAuthentication(stored.Role, user.Role, stored.Disabled, user.Disabled, passwordChanged)
 		stored.Email = user.Email
@@ -507,23 +446,11 @@ func (h *Handlers) UpdateUser(ctx *gin.Context) {
 		user = stored
 		return nil
 	}); err != nil {
-		if err == errStepUpAuthorizationChanged {
-			writeErrorKey(ctx, http.StatusForbidden, currentUser.Language, "config.admin.required")
-			return
-		}
-		if err == errMFALastAdminRequired {
-			writeErrorCode(ctx, http.StatusConflict, "mfa.last_admin_required", "全局二次验证开启时必须保留至少一名已绑定 MFA 的平台管理员")
-			return
-		}
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
 
 	ctx.JSON(http.StatusOK, user)
-}
-
-func availablePlatformAdminRemoved(stored, next model.User) bool {
-	return stored.Role == authz.PlatformRoleAdmin && !stored.Disabled && (next.Role != authz.PlatformRoleAdmin || next.Disabled)
 }
 
 type loginInput struct {
@@ -795,7 +722,7 @@ func currentUserResponse(user model.User) gin.H {
 	}
 }
 
-func userListResponse(user model.User, balanceCredits decimal.Decimal, mfaEnabled bool) gin.H {
+func userListResponse(user model.User, balanceCredits decimal.Decimal) gin.H {
 	return gin.H{
 		"id":             user.ID,
 		"email":          user.Email,
@@ -805,7 +732,6 @@ func userListResponse(user model.User, balanceCredits decimal.Decimal, mfaEnable
 		"role":           user.Role,
 		"language":       normalizeLanguage(user.Language),
 		"disabled":       user.Disabled,
-		"mfaEnabled":     mfaEnabled,
 		"balanceCredits": balanceCredits.String(),
 		"createdAt":      user.CreatedAt,
 	}

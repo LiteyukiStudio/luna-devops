@@ -1,6 +1,5 @@
 import type {
   Conversation,
-  ConversationAuthorization,
   ConversationHistoryEntry,
   ConversationSummary,
   ConversationToolInteraction,
@@ -40,7 +39,7 @@ export type TimelinePageOptions = {
   limit?: number
 }
 
-export type ModelBudgetOperation = "assistant" | "summary" | "title" | "next_steps"
+export type ModelBudgetOperation = "assistant" | "summary" | "title"
 export type ModelBudgetUsage = {
   inputTokens: number
   outputTokens: number
@@ -60,16 +59,12 @@ export interface Repository {
   getConversation(ownerUserId: string, conversationId: string): Promise<Conversation | undefined>
   updateConversation(ownerUserId: string, conversationId: string, input: { title?: string, modelId?: string }): Promise<Conversation | undefined>
   renameConversation(ownerUserId: string, conversationId: string, title: string): Promise<Conversation | undefined>
-  renameConversationByAssistant(conversationId: string, title: string): Promise<Conversation | undefined>
+  renameConversationByAssistant(conversationId: string, title: string, runId?: string): Promise<Conversation | undefined>
   deleteConversation(ownerUserId: string, conversationId: string): Promise<boolean>
-  authorizeConversation(ownerUserId: string, conversationId: string, authorization: Omit<ConversationAuthorization, "conversationId" | "updatedAt">): Promise<ConversationAuthorization | undefined>
-  getConversationAuthorization(ownerUserId: string, conversationId: string, sessionId: string, catalogDigest: string): Promise<ConversationAuthorization | undefined>
-  getRunConversationAuthorization(runId: string): Promise<ConversationAuthorization | undefined>
-  revokeConversationAuthorization(ownerUserId: string, conversationId: string): Promise<boolean>
   createTurn(ownerUserId: string, input: CreateTurn): Promise<CreatedTurn>
   getRun(ownerUserId: string, runId: string): Promise<Run | undefined>
   cancelRun(ownerUserId: string, runId: string): Promise<Run | undefined>
-  claimRun(instanceId: string, leaseSeconds: number): Promise<Run | undefined>
+  claimNextQueuedRun(): Promise<Run | undefined>
   countActiveUserRuns(userId: string): Promise<number>
   getExecutionInput(runId: string): Promise<{
     conversationId: string
@@ -96,15 +91,24 @@ export interface Repository {
   getConversationSummary(conversationId: string): Promise<ConversationSummary | undefined>
   saveConversationSummary(summary: Omit<ConversationSummary, "createdAt" | "updatedAt">): Promise<ConversationSummary>
   listConversationHistory(conversationId: string, afterTurnIndex: number, beforeTurnIndex: number, limit: number): Promise<ConversationHistoryEntry[]>
-  getRunActorGrantCiphertext(runId: string): Promise<string | undefined>
+  hasToolApprovalExemption(runId: string, operationId: string): Promise<boolean>
+  grantToolApprovalExemption(runId: string, operationId: string, sourceToolCallId: string): Promise<void>
+  listToolApprovalExemptions(ownerUserId: string): Promise<Array<{ operationId: string, createdAt: string }>>
+  revokeToolApprovalExemption(ownerUserId: string, operationId: string): Promise<boolean>
   appendRunInput(runId: string, text: string): Promise<void>
-  renewLease(runId: string, instanceId: string, leaseSeconds: number): Promise<boolean>
-  releaseLease(runId: string, instanceId: string): Promise<void>
   updateRun(runId: string, from: Run["status"], to: Run["status"], fields?: Partial<Run>): Promise<Run>
   appendItem(item: Omit<TimelineItem, "id" | "timelineIndex" | "revision" | "createdAt"> & { id?: string }): Promise<TimelineItem>
   updateItem(itemId: string, status: TimelineItem["status"], content: Record<string, unknown>): Promise<TimelineItem>
   appendItemWithEvent(item: Omit<TimelineItem, "id" | "timelineIndex" | "revision" | "createdAt"> & { id?: string }, eventType: string, eventData?: Record<string, unknown>): Promise<TimelineMutation>
   updateItemWithEvent(itemId: string, status: TimelineItem["status"], content: Record<string, unknown>, eventType: string, eventData?: Record<string, unknown>): Promise<TimelineMutation>
+  completeToolItemWithEvent(
+    itemId: string,
+    status: TimelineItem["status"],
+    content: Record<string, unknown>,
+    resultItem: Omit<TimelineItem, "id" | "timelineIndex" | "revision" | "createdAt"> & { id?: string },
+    eventType: string,
+    eventData?: Record<string, unknown>,
+  ): Promise<TimelineMutation & { resultItem: TimelineItem }>
   finalizeStreamingItems(runId: string, status: Exclude<TimelineItem["status"], "streaming">): Promise<void>
   appendEvent(runId: string, type: string, data: Record<string, unknown>): Promise<RunEvent>
   getEvents(ownerUserId: string, runId: string, after: number): Promise<RunEvent[]>

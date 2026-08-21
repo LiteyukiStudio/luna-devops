@@ -2,7 +2,7 @@ import type { ProviderConfigClient, RemoteAIModel, RemoteProviderConfig } from "
 import { OpenAICompatibleProvider } from "./openai-compatible.js"
 import type { ModelCapabilities, ModelEvent, ModelProvider, ModelRequest, ModelResponse } from "./provider.js"
 
-type ProviderFactory = (config: RemoteProviderConfig, modelName?: string) => ModelProvider
+type ProviderFactory = (config: RemoteProviderConfig, modelName: string) => ModelProvider
 type ResolvedProvider = { expiresAt: number, version: string, modelKey: string, provider: ModelProvider }
 
 export class ManagedProvider implements ModelProvider {
@@ -45,7 +45,7 @@ export class ManagedProvider implements ModelProvider {
   private async resolve(request: ModelRequest): Promise<ResolvedProvider> {
     const config = await this.getConfig(request.signal)
     const selected = resolveModel(config, request)
-    if (!config.provider.configured || !config.provider.apiKey || !config.provider.baseUrl || !selected.name) {
+    if (!config.provider.configured || !config.provider.apiKey || !config.provider.baseUrl) {
       throw new Error("ai.not_configured")
     }
     const modelKey = selected.id || selected.name
@@ -55,11 +55,10 @@ export class ManagedProvider implements ModelProvider {
     if (this.#loading?.version === config.version && this.#loading.modelKey === modelKey)
       return this.#loading.promise
     const promise: Promise<ResolvedProvider> = Promise.resolve().then(() => {
-      const selectedConfig: RemoteProviderConfig = { ...config, provider: { ...config.provider, model: selected.name } }
       const resolved: ResolvedProvider = {
         version: config.version,
         modelKey,
-        provider: this.factory(selectedConfig, selected.name),
+        provider: this.factory(config, selected.name),
         expiresAt: Date.now() + this.ttlMs,
       }
       this.#cached = resolved
@@ -84,29 +83,30 @@ export class ManagedProvider implements ModelProvider {
 }
 
 function resolveModel(config: RemoteProviderConfig, request: ModelRequest): RemoteAIModel {
-  const models = config.provider.models ?? []
+  const models = config.provider.models
   if (request.modelId) {
     const selected = models.find(model => model.id === request.modelId)
     if (selected) return selected
     // Existing Runs retain their immutable snapshot even after the model is disabled.
-    if (request.modelName && request.modelPricing) return request.modelPricing
+    if (request.modelPricing?.id === request.modelId && request.modelName === request.modelPricing.name) return request.modelPricing
     throw new Error("ai.model_not_available")
   }
   if (request.modelName) {
-    return models.find(model => model.name === request.modelName) ?? request.modelPricing ?? snapshotModel(request.modelName)
+    const selected = models.find(model => model.name === request.modelName)
+    if (selected) return selected
+    if (request.modelPricing?.name === request.modelName) return request.modelPricing
+    throw new Error("ai.model_not_available")
   }
-  return models[0] ?? (config.provider.model ? snapshotModel(config.provider.model) : snapshotModel(""))
+  const selected = models[0]
+  if (!selected) throw new Error("ai.model_not_available")
+  return selected
 }
 
-function snapshotModel(name: string): RemoteAIModel {
-  return { id: "legacy", name, maxContextTokens: 524_288, maxOutputTokens: 65_536, inputCreditsPerMillion: "0", outputCreditsPerMillion: "0", cachedInputCreditsPerMillion: "0", cachedOutputCreditsPerMillion: "0" }
-}
-
-function defaultFactory(config: RemoteProviderConfig): ModelProvider {
+function defaultFactory(config: RemoteProviderConfig, modelName: string): ModelProvider {
   return new OpenAICompatibleProvider({
     baseUrl: config.provider.baseUrl,
     apiKey: config.provider.apiKey,
-    model: config.provider.model,
+    model: modelName,
     timeoutMs: config.runtime.providerTimeoutMs,
     maxRetries: config.runtime.maxRequestRetries,
   })

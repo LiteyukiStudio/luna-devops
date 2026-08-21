@@ -8,24 +8,14 @@ afterEach(() => {
 })
 
 describe("ManagedProvider", () => {
-  it("uses a short-lived in-memory configuration and applies updates to real completions", async () => {
+  it("uses a short-lived authoritative configuration and applies updates", async () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date("2026-07-29T00:00:00Z"))
     let version = 1
-    const resolver = {
-      get: vi.fn(async () => ({
-        version: `cfg-${version}`,
-        provider: {
-          baseUrl: "https://provider.example/v1/",
-          model: `model-${version}`,
-          apiKey: `secret-${version}`,
-          configured: true,
-        },
-        runtime: { ...defaultRuntimeSettings, providerTimeoutMs: 30_000, runTimeoutMs: 300_000, agentConcurrentRuns: 2, userConcurrentRuns: 10, contextInputTokenBudget: 256 * 1024 },
-      })),
-    }
-    const provider = new ManagedProvider(resolver, 1000, config => fakeProvider(config.provider.model))
+    const resolver = { get: vi.fn(async () => configForVersion(version)) }
+    const provider = new ManagedProvider(resolver, 1000, (_config, modelName) => fakeProvider(modelName))
     const request = { messages: [{ role: "user" as const, content: "hello" }], maxOutputTokens: 10 }
+
     expect((await provider.complete(request)).text).toBe("model-1")
     version = 2
     expect((await provider.complete(request)).text).toBe("model-1")
@@ -37,27 +27,18 @@ describe("ManagedProvider", () => {
   })
 
   it("coalesces concurrent refreshes without persisting provider secrets", async () => {
-    const resolver = {
-      get: vi.fn(async () => ({
-        version: "cfg-1",
-        provider: {
-          baseUrl: "https://provider.example/v1/",
-          model: "model-a", apiKey: "secret-value", configured: true,
-        },
-        runtime: { ...defaultRuntimeSettings, providerTimeoutMs: 30_000, runTimeoutMs: 300_000, agentConcurrentRuns: 2, userConcurrentRuns: 10, contextInputTokenBudget: 256 * 1024 },
-      })),
-    }
-    const provider = new ManagedProvider(resolver, 1000, config => fakeProvider(config.provider.model))
+    const resolver = { get: vi.fn(async () => configForVersion(1)) }
+    const provider = new ManagedProvider(resolver, 1000, (_config, modelName) => fakeProvider(modelName))
     await Promise.all([provider.health(), provider.health(), provider.health()])
     expect(resolver.get).toHaveBeenCalledOnce()
     expect(JSON.stringify(provider)).not.toContain("secret-value")
   })
 
   it("keeps concurrent first requests on their selected models", async () => {
-    let resolveConfig!: (config: Awaited<ReturnType<typeof configForModels>>) => void
-    const configPromise = new Promise<Awaited<ReturnType<typeof configForModels>>>(resolve => { resolveConfig = resolve })
+    let resolveConfig!: (config: ReturnType<typeof configForModels>) => void
+    const configPromise = new Promise<ReturnType<typeof configForModels>>(resolve => { resolveConfig = resolve })
     const resolver = { get: vi.fn(() => configPromise) }
-    const provider = new ManagedProvider(resolver, 1000, config => fakeProvider(config.provider.model))
+    const provider = new ManagedProvider(resolver, 1000, (_config, modelName) => fakeProvider(modelName))
     const request = (modelId: string) => provider.complete({ modelId, messages: [], maxOutputTokens: 10 })
 
     const first = request("model-a-id")
@@ -67,22 +48,53 @@ describe("ManagedProvider", () => {
     expect((await first).text).toBe("model-a")
     expect((await second).text).toBe("model-b")
   })
+
+  it("rejects an unknown model instead of inventing a zero-price fallback", async () => {
+    const provider = new ManagedProvider({ get: vi.fn(async () => configForModels()) }, 1000)
+    await expect(provider.complete({ modelId: "missing", messages: [], maxOutputTokens: 10 }))
+      .rejects.toThrow("ai.model_not_available")
+  })
 })
+
+function configForVersion(version: number) {
+  return {
+    ...configForModels(),
+    version: `cfg-${version}`,
+    provider: {
+      ...configForModels().provider,
+      apiKey: `secret-${version}`,
+      models: [{ ...configForModels().provider.models[0]!, id: `model-${version}-id`, name: `model-${version}` }],
+    },
+  }
+}
 
 function configForModels() {
   return {
     version: "cfg-1",
     provider: {
       baseUrl: "https://provider.example/v1/",
-      model: "model-a",
       apiKey: "secret-value",
       configured: true,
       models: [
-        { id: "model-a-id", name: "model-a", maxContextTokens: 524_288, maxOutputTokens: 65_536, inputCreditsPerMillion: "1", outputCreditsPerMillion: "1", cachedInputCreditsPerMillion: "0", cachedOutputCreditsPerMillion: "0" },
-        { id: "model-b-id", name: "model-b", maxContextTokens: 524_288, maxOutputTokens: 65_536, inputCreditsPerMillion: "1", outputCreditsPerMillion: "1", cachedInputCreditsPerMillion: "0", cachedOutputCreditsPerMillion: "0" },
+        modelSnapshot("model-a-id", "model-a"),
+        modelSnapshot("model-b-id", "model-b"),
       ],
     },
-    runtime: { ...defaultRuntimeSettings, providerTimeoutMs: 30_000, runTimeoutMs: 300_000, agentConcurrentRuns: 2, userConcurrentRuns: 10, contextInputTokenBudget: 256 * 1024 },
+    runtime: { ...defaultRuntimeSettings },
+    toolCatalog: [{ operationId: "listProjects" }],
+  }
+}
+
+function modelSnapshot(id: string, name: string) {
+  return {
+    id,
+    name,
+    maxContextTokens: 524_288,
+    maxOutputTokens: 65_536,
+    inputCreditsPerMillion: "1",
+    outputCreditsPerMillion: "1",
+    cachedInputCreditsPerMillion: "0",
+    cachedOutputCreditsPerMillion: "0",
   }
 }
 

@@ -6,7 +6,7 @@ Volume imports and exports are resumable background operations. Filesystem volum
 
 1. On the project **Volumes** page, select **Import archive**.
 2. Choose the runtime cluster, capacity, StorageClass, access mode, and volume mode, then select the local file.
-3. Confirm the archive format and SHA-256 when known, complete MFA step-up, and start the upload.
+3. Confirm the archive format and SHA-256 when known, then start the upload.
 4. If the upload is interrupted, reopen the page and select the same file to continue from the server-confirmed offset.
 5. Wait until both the transfer and volume reach their successful/ready terminal states before mounting the volume.
 
@@ -22,7 +22,7 @@ The server selects a part size from the archive length, and the page automatical
    - **Snapshot** requires CSI VolumeSnapshot support. It is crash-consistent, not an application-consistent backup.
    - **Live read** can read an in-use Filesystem while data changes and is available only to Owners and Admins.
 3. Wait for the transfer to become Succeeded, then check its size, SHA-256, and expiration.
-4. Complete MFA and start the download. Browsers with the File System Access API can pause and resume in the page with HTTP Range. Other browsers use a native download that streams directly to disk instead of buffering the whole archive in page memory.
+4. Exchange authorization for a single-use ticket bound to the current user, sign-in session, and transfer, then start the download. Browsers with the File System Access API can pause and resume in the page with HTTP Range. Other browsers use a native download that streams directly to disk instead of buffering the whole archive in page memory.
 
 A successful Block export also offers a same-name `raw.zst.manifest.json` verification manifest in the details view. It contains only the fixed schema version, volume mode, format, export completion time, uncompressed logical byte count, `fileCount: 0`, the SHA-256 of the uncompressed raw data, and the consistency mode. Keep it beside the `raw.zst`; before restore or cross-platform transfer, decompress the archive, recompute SHA-256, and compare it with `dataSHA256`. Filesystem `tar.gz` exports do not have this separate manifest.
 
@@ -40,7 +40,7 @@ Queued or Running does not mean the backup is complete. Archives are retained fo
 | `volume_transfer.capacity_exceeded` | Expanded content exceeds the target capacity. Create a larger volume and retry. |
 | `volume_transfer.callback_unavailable` | The Transfer Job cannot reach the Luna API callback. Ask an administrator to check cluster egress and callback settings. |
 | `volume_transfer.callback_unauthorized` | The temporary callback credential is invalid or expired. Cancel the old transfer and retry. |
-| `volume_transfer.download_unauthorized` | The download ticket or Range session is invalid. Complete MFA and authorize the download again. |
+| `volume_transfer.download_unauthorized` | The download ticket or Range session is invalid. Confirm that you still have export permission and authorize the download again. |
 | `volume_transfer.format_unsupported` | The archive format does not match the volume mode. Use `tar.gz` for Filesystem and `raw.zst` for Block. |
 | `volume_transfer.job_failed` | The transfer job failed in the runtime cluster. Check the stable code and cluster events, then retry. |
 | `volume_transfer.completion_missing` | The Job ended, but the platform did not receive completion confirmation. Retry; if it repeats, ask an administrator to check Transfer Job-to-API callback connectivity and authentication. |

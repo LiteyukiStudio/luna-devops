@@ -15,7 +15,7 @@ func aiConfigDefaults() map[string]string {
 
 func TestAIConfigDefinitionsCoverSpecificationCatalog(t *testing.T) {
 	expected := []string{
-		"ai.assistant.enabled", "ai.provider.base_url", "ai.provider.api_key", "ai.provider.default_model",
+		"ai.assistant.enabled", "ai.provider.base_url", "ai.provider.api_key",
 		"ai.web.proxy_enabled", "ai.web.proxy_pool",
 		"ai.runtime.provider_timeout_seconds", "ai.runtime.run_timeout_seconds", "ai.runtime.agent_concurrent_runs",
 		"ai.runtime.context_input_k_tokens", "ai.runtime.max_request_retries",

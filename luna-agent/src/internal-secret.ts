@@ -16,9 +16,6 @@ export interface InternalKeys {
   serviceToken: string
   actorSigningKey: string
   callbackServiceToken: string
-  runActorGrantSigningKey: string
-  delegationTokenSigningKey: string
-  runGrantEncryptionKey: Buffer
   toolArgumentsEncryptionKey: Buffer
 }
 
@@ -31,9 +28,6 @@ export function deriveInternalKeys(secret: string): InternalKeys {
     serviceToken: deriveText("api-service-token"),
     actorSigningKey: deriveText("actor-context-signing-key"),
     callbackServiceToken: deriveText("agent-callback-service-token"),
-    runActorGrantSigningKey: deriveText("run-actor-grant-signing-key"),
-    delegationTokenSigningKey: deriveText("delegation-token-signing-key"),
-    runGrantEncryptionKey: derive(secret, "run-grant-encryption-key"),
     toolArgumentsEncryptionKey: derive(secret, "tool-arguments-encryption-key"),
   }
 }

@@ -1,28 +1,26 @@
 # TODO
 
-## 2026-08-21 Agent 会话批准与统一 MFA
+## 2026-08-21 认证功能清理与安全收敛
 
-- [x] 将高风险工具的第二批准操作改为“同意（本会话不再询问）”，签发并加密保存绑定用户、浏览器 Session、AI 会话和工具目录的最长 60 分钟授权。
-- [x] 将单次批准、会话批准和 MFA 恢复统一到 API 权威拦截：每次执行仍重新校验登录 Session、RBAC、工具 Scope、参数哈希、业务 Handler 和审计，授权失效时回到普通批准流程。
-- [x] 移除 Agent 工具卡片内自建验证码输入，复用全局 MFA Dialog；增加同用途断言复用、并发串行和动态验证码自动完成/提交竞态保护。
-- [x] 增加当前会话自动批准状态、最晚有效时间和显式撤销入口，并同步 OpenAPI、五语言 i18n、中英文使用文档与内部安全契约。
-- [ ] 完成 Go/Agent/Web 全量门禁、迁移验收和浏览器真实链路：Agent 安全表单收集密钥，定位 Kubernetes Pod，并通过 WebConsole 执行命令；确认后续需要批准/MFA 的工具不再重复询问且密钥不进入聊天、时间线和遥测。
+- [x] 删除已废弃的第二因子认证、恢复凭据、敏感操作挑战断言及其 API、模型、迁移、配置和前端入口。
+- [x] 删除 AI 会话级自动批准与挑战恢复；高危 ToolCall 使用 `reject / approve / approve_always`，账号级 `userId + operationId` 豁免可查看和撤销，不再暴露参数哈希与行版本协议。
+- [x] 保留并回归登录 Session、OAuth、RBAC、Scope、审计、Secret 不回显，以及终端和数据卷下载的一次性票据绑定。
+- [x] 同步 OpenAPI、Agent、Web、五语言文案、中英文公开文档、内部方案与测试契约。
+- [ ] 完成开发数据库升级、全量门禁、临时 OTel 链路抽样、浏览器真实链路和仓库零残留验收。
 
-## 2026-08-20 Agent 交互卡片与密钥链路回归
+## 2026-08-21 luna-agent 架构瘦身
 
-- [x] 修复交互卡片 JSON Pointer 将 `/body/items/0/...` 错组装为对象的问题；数组下标按有界数组写入，并在 Agent 与 Web 双边拒绝原型链污染路径。
-- [x] 修复 Direct Tool Action 提交后未接入运行时间线与 SSE 的问题，卡片操作可立即展示批准、MFA、执行终态和结构化失败。
-- [x] 修复非法工具参数的 `errorCode/result/issues` 在 PostgreSQL 首次写入和状态转换时丢失的问题，保留字段级自修复证据。
-- [x] 长候选单选改用可搜索选择器；Timeline 保持旧 Web operation 兼容，同时向模型历史恢复 7 个真实窄卡片 operationId。
-- [x] 使用真实浏览器串行覆盖资源短选/长选、密钥输入、变更核对、诊断、健康概览、执行进度和操作结果 8 个场景变体；完成密钥设置/清理、批准、TOTP Step-up、权威回读和明文泄露检查。
-
-## 2026-08-20 Agent Step-up MFA 恢复
-
-- [x] 修复 `/auth/mfa/verify` 已创建 Step-up assertion 却未返回 `stepUpAssertionId`，导致 AI 工具验证成功后无法恢复的问题。
-- [x] 对齐后端响应、OpenAPI 和前端类型，成功响应使用 `no-store`，并保持 assertion 继续绑定当前用户、登录会话和用途。
-- [x] 完成 TOTP / 恢复码验证、重复用途 upsert 和 AI resume 转发的 PostgreSQL 集成回归。
-- [x] 兼容部分思考模式 Provider 在工具恢复后要求回传 `reasoning_content` 的行为：仅在命中特定 400 响应且尚未产生可见输出时补齐兼容字段并重试一次，无关客户端错误不重试。
-- [x] 重启本地 API 后，在真实浏览器中完成高风险 Agent 工具的批准、TOTP Step-up、工具恢复与模型自动续答；数据库确认 Run/工具成功终态，Loki 确认思考模式兼容重试，最后使用一次性恢复码关闭测试账号 MFA 并清理临时凭据。
+- [x] 从 OpenAPI 普通 JSON operation 自动生成最小 Catalog，删除 `x-luna-agent.allowed`、Agent 手写平台 fallback、重复描述/白名单、工作流图与 verifier 契约；集中 deny map 为特殊协议保留稳定原因。
+- [x] 工具发现收敛为 `search_tools(query?, page?, pageSize?)` 分页摘要、Unicode/BM25 词法检索和 `get_tool_details(operationIds)` 精确 Schema 加载；删除 browse、embedding、RRF、reranker、shadow/dynamic、Top K 与 sticky 状态。
+- [x] Agent 只使用 Luna API 权威 Provider/runtime/Catalog 配置；删除本地 Provider、工具目录和零价格模型 fallback，缺失或非法配置 fail closed。
+- [x] 删除 Run Actor Grant、delegation exchange、internal tool execute 与二次 platform router；Agent 以固定服务身份直达真实业务路由，后端从 Run/ToolCall/会话/Session/项目空间权威回读后重新执行 RBAC 与审计。
+- [x] 审批策略收敛为 `requiresApproval`；拒绝只终结当前 ToolCall，单次批准与账号级始终批准分离，并提供豁免列表和撤销 API/UI。
+- [x] 删除 Run lease、owner、heartbeat、takeover 与完整生产 MemoryRepository；使用数据库原子 queued claim，中断形成 `interrupted/failed` 并保留事件。
+- [x] 删除跨 Run 空结果/确定性指纹、readback 特殊循环和下一步预测模型；保留单 Run 最大模型步骤、最大工具调用与相同 operationId+规范化参数次数保护。
+- [x] 新卡片只暴露 `present_card / request_input / request_choice`，统一编译为 InteractionCardGroup v1；历史 payload、parser、renderer 和一次修复后文本 fallback 保持可用。
+- [x] 上下文收敛为近期原始消息、原始工具交互和单份滚动摘要，无 deferred/catch-up、多级摘要或独立 next-step 调用；个人 AI 钱包预留/确认/释放与 Go 结算链保持不变。
+- [x] 同步 Agent、Go、OpenAPI、Web、五语言 i18n、中英文公开文档、内部规范、增量迁移与测试契约。
+- [x] 完成 fresh/upgrade 数据库历史不变性、全量 Go/Web/Agent/docs 门禁、真实 ProjectVolume 写入与权威回读、临时 OTel 成功/失败/跨服务 Trace 抽样，以及高危工具三路审批与账号级豁免撤销入口的浏览器验收。
 
 ## 2026-08-20 Agent 工具成功率观测
 
@@ -31,29 +29,6 @@
 - [x] 新增平台管理员只读、`no-store`、审计可追踪的工具汇总与调用明细 API；密文执行参数不进入响应，并同步 OpenAPI、前端类型/API Client、五语言 i18n 和中英文使用文档。
 - [x] 完成真实 PostgreSQL 只读查询、Go 测试、前端测试/lint/build、文档构建与差异格式检查。
 - [ ] 在具备已登录会话的浏览器中验收“对话轮 / 工具情况”切换、工具搜索分页、调用明细展开和 Trace 下钻；当前内嵌浏览器会话已过期且 Chrome 控制连接不可用。
-
-## 2026-08-20 Agent 工具语义检索与工具设计优化
-
-- [x] 完成 Agent 工具目录、描述、参数复杂度和交互卡片模型工具审计，并形成 `docs-internal/21-Agent工具语义检索与工具设计优化方案.md`。
-- [x] 合并补充工具审计：核准全量目录、显式准入缺失、通用输出、参数错误、死调用上限、虚假 verifier、运行时资源 kind、preview/test/log 与不可执行工具问题，并按依赖关系重排治理顺序。
-- [x] 将 Agent Catalog 改为显式准入；首批 47 个 OpenAPI 平台工具使用 `x-luna-agent.allowed: true`，`webSearch`、`fetchWebPage`、`getAppTemplate` 3 个手写工具使用同构契约，未审计工具保持不可见，并以构建期校验阻止缺字段、未知字段和悬空工作流引用。
-- [x] 接入 Ajv 2020-12 完整 JSON Schema 校验和字段级结构化错误；仅把真正缺失且需要用户决策的值转为 `waiting_input`，阻止同一非法参数原样重试。
-- [x] 接通默认 256、可配置 32～2048 的高位 Run 工具调用兜底上限，并增加确定性失败指纹和无新信息结果检测，删除“单 Run 无上限”的旧测试。
-- [x] 兼容读取全部 Agent 运行参数与 Run 预算的历史非法值：数据库原值保持不变，API 和 Agent 在读取时按单项回退平台默认值，跨字段约束成对回退；新提交仍按共享范围严格校验，日志只记录稳定字段路径而不记录配置值或密钥。
-- [ ] 将工具调用计数与异步轮询状态从进程内保护扩展为可恢复状态，并为合法 `async-readback` 增加有界退避/`Retry-After`，避免多实例接管后重置计数或高频轮询。
-- [x] 删除虚构 `<operationId>_accepted` verifier，并为 `triggerBuildRun → getBuildRun`、`createRelease → getRelease`、`createGatewayRoute → getGatewayRoute` 建立响应 ID 绑定、真实回读和 pending/success/failure 终态契约。
-- [ ] 为其余准入写操作逐项建立权威回读映射；不具备可回读终态的操作继续使用精确成功响应契约，不得把“请求已接受”描述为业务完成。
-- [x] 统一运行时资源工具为 `resourceCategory`/`resourceKind` 严格 enum、稳定字段级错误和读写权限；禁用旧 `execReleaseRuntimeCommand` 与 Agent 无法上传的 `createVolumeImport`。
-- [x] 为首批准入的 preview/test/check/log 代表工具声明风险、副作用、可重放、适用/禁用场景与结果边界。
-- [ ] 继续审计剩余 Secret/认证/Provider 工具的 MFA 与回读，并逐步替换准入工具中的通用 `BusinessObject/AIObject` 输出。
-- [ ] 建立不少于 300 条的中英文工具检索评测集和 hard-negative 用例，输出当前字符串检索、BM25、向量、混合召回及语义重排的可比较基线。
-- [x] 实现 Unicode/BM25、多向量内存索引、RRF、工作流邻居、run sticky tools、可插拔语义重排和安全降级；自动检索与 `search_tools` 复用同一管线且后者真实扩张后续集合。
-- [ ] 接入实际 Embedding/Rerank Provider，并按 Catalog digest 持久化工具向量、原子切换索引；查询向量不落库，Provider 失败继续使用当前 BM25 + 工作流降级路径。
-- [x] 增加 `shadow`/`dynamic` 检索模式，默认影子计算 Top 8；动态模式限制 Top 8、平台工具总量 12，并保留 sticky/predecessor/verifier。
-- [ ] 建立不少于 300 条评测集并通过 Recall@8、安全与端到端门禁后，再将生产默认从 `shadow` 灰度切换到 `dynamic`。
-- [ ] 为参数超限工具提供任务型 Agent façade 或正式评审例外，优先治理部署目标、运行集群、网关路由和构建触发工具。
-- [x] 按业务意图拆分 7 个交互卡片模型工具并复用现有 Card Contract；模型可见 Schema 最大缩小约 82.9%，大型通用卡片联合 Schema 仅保留为内部编译与历史恢复协议。
-- [ ] 将权威异步进度与终态结果从“窄工具受控呈现”继续收敛为工具契约驱动的自动投影，并补充线上首次通过率/修复率门禁。
 
 ## 2026-08-20 网关流量探针普通应用安装与 AI 预算修复
 
@@ -125,10 +100,7 @@
 - [x] 增加只读历史明文风险诊断命令，仅输出资源 ID、项目空间 ID 和疑似敏感键名；不输出值或引用，也不自动迁移无法可靠分类的历史数据。
 - [ ] 部署管理员按 `docs-internal/20-运行时环境明文审计.md` 审查并人工处置已有疑似明文记录；确认暴露的凭据必须完成轮换。
 - [x] 将部署目标和运行配置集的密钥变更收敛为带资源行锁的单事务操作：事务内重读引用、写入新密文、交换引用、清理旧密文并记录聚合审计；补充真实 PostgreSQL 回滚、清理和并发合并测试。
-- [x] 增加运行时密钥安全摘要与统一安全变更接口，强制项目写权限、Step-up、无缓存响应、审计和稳定错误边界；密钥摘要不进入 Agent 工具目录，API 永不返回明文。
 - [x] 将部署目标和运行配置集的普通保存与 SecretRefs 输入解耦，普通环境变量/ConfigMap 引用统一使用 JSON 对象契约，前端使用 K=V 编辑器，密钥变量和密钥文件分别通过安全编辑器管理，并同步中英文 i18n、OpenAPI 与用户文档。
-- [ ] 补充可销毁 PostgreSQL、MFA、Redis 限流和临时 OTel 栈的端到端成功/失败/跨服务验收，以及 Owner/Admin、Developer/Viewer 和 Bearer 请求的浏览器验收。
-
 ## 2026-08-17 AI 多模型与按模型 Token 计费
 
 - [x] 修复内部 Provider 配置遗漏模型上下文与输出 Token 上限，补充 API 序列化契约回归测试，确保 Agent 启动配置与模型目录一致。
@@ -249,7 +221,6 @@
 - [x] 将模型工具从聚焦子集（≤24）+ 检索补录改为全量下发全部已注册平台工具，消除 `listRuntimeClusters` 等检索盲区导致的“没有集群列表能力”误判与伪问题追问。
 - [x] 补齐 `listRuntimeClusters` 的中文操作说明与检索意图，加入核心工作流集合，并补充检索回归用例。
 - [x] 明确部署配置 `clusterId` 为空即平台默认集群：仅多候选且必须用户决定时才用真实候选询问，禁止无候选凭空问“选择哪个集群”；同步交付编排与资源解析 Skill。
-- [x] 收紧 `create_options`：仅在确有可独立点选的下一步时生成，等待表单/批准/MFA/无下一步时不硬造；同步系统 Prompt、选项工具描述、预测器与 Skill 参考。
 - [x] 已有镜像分支改为参数收齐后同一轮内连续创建应用 → 部署目标 → Release，减少轮次。
 - [x] 同步 Agent 规格文档，更新受全量下发影响的测试断言（p2-catalog、system-prompt、executor-tools）。
 
@@ -285,10 +256,6 @@
 - [x] 将保留 PVC 登记为独立资源，解除旧应用所有权并支持在同一运行集群的新部署配置或应用模板中重新认领。
 - [x] 同步 API、Worker、Kubernetes、OpenAPI、Web、Agent Skill、中英文文档和生命周期回归测试。
 
-## 2026-08-13 数据卷导出 MFA 体验
-
-- [x] 修复应用删除前导出数据卷的 MFA 交互：不再预开空白下载页，改为原页完成 Step-up 验证并取得一次性票据后再触发附件下载。
-
 ## 2026-08-13 Agent 瞬时故障重试
 
 - [x] 为模型请求、Provider 配置读取和幂等平台工具调用增加可取消的指数退避重试，默认 5 次并遵循 Retry-After；流式输出开始后和非幂等写操作不自动重放。
@@ -305,12 +272,7 @@
 - [x] 将消息时间线改为仅在用户停留于最新消息时跟随流式输出；用户向上查看历史内容时暂停自动滚动，并在返回底部或切换会话后安全恢复。
 - [x] 为容器化部署补充数据库选择路径：用户未指定时优先复用兼容网络数据库，其次部署新实例，最后才考虑 SQLite 等本地文件存储。
 
-## 2026-08-11 MFA 密码管理器兼容
-
-- [x] 为登录、MFA 启用确认、敏感操作挑战与 AI 高敏操作补齐标准凭据表单、用户名关联及 `one-time-code` 自动填充语义，并完成前端与文档验收。
 - [x] 完成登录、注册、管理员初始化、自助改密、管理员创建/重置用户与非登录业务密钥的密码管理器边界审计，补齐保存、更新和误填防护契约。
-- [x] 在 MFA 绑定二维码下补充跨平台密码管理器、身份验证器提示与中英文帮助文档入口，明确重新绑定与恢复码规则，并将六位验证码收敛为无分隔线的响应式输入组。
-
 ## 2026-08-10 Code Review 修复
 
 - [x] 以最小安全版本升级 Web、luna-agent 与 Docs 高危依赖，并更新各自 lockfile，High audit 已清零。
@@ -686,17 +648,6 @@
 - [x] 抽离统一分页组件，并将列表 API 改造为支持分页、排序、搜索和可选批量选择。
 - [x] 使用浏览器验收本地登录、退出和 Access Token 创建/撤销流程。
 - [x] 使用浏览器验收权限隐藏流程。
-- [x] 设计并实现敏感操作 Step-up MFA：管理员可在全局安全设置中开启/关闭敏感操作二次验证，并配置无操作重新验证时间和最大持续有效期。
-- [x] 用户账号安全页支持绑定离线 TOTP 身份验证器：后端生成加密存储的 TOTP secret，前端展示二维码和手动密钥，用户输入 OTP 校验成功后才正式启用。
-- [x] 为用户生成一次性恢复码：恢复码只展示一次、仅存 hash、单个恢复码只能使用一次，支持用户重新生成并作废旧码。
-- [ ] 补齐剩余敏感操作 API 的 MFA step-up 校验：Web Console、运行命令、Secret/Registry Credential 写入、kubeconfig/数据导出、OIDC Provider/站点安全设置和管理员账号变更已接入；删除资源和高风险部署操作仍需统一纳入策略。
-- [x] MFA challenge/assertion 状态后端化：按 user/session/purpose 记录验证状态并由数据库共享；敏感操作通过后刷新 last activity，超过无操作时间或绝对有效期后重新要求 OTP。
-- [x] Step-up MFA 后端第一阶段：新增 `security.stepUpMfa.enabled` 开关、`step_up_assertions` 共享表和 `requireStepUp` 统一检查点；已接入 runtime exec/terminal、数据导出、Secret/Registry Credential 写入、kubeconfig 更新、Auth Provider 更新和管理员用户变更，未通过时返回 `mfa_required`。
-- [x] 前端统一 MFA Dialog：敏感操作遇到 `mfa_required` 后弹出 OTP/恢复码输入框，验证通过后自动继续原操作，所有文案走 i18n。
-- [x] 邮箱注册和 MFA 的六位验证码输入统一为 shadcn Input OTP，支持分格输入、整串粘贴、移动端数字键盘和系统/密码管理器一次性验证码填充。
-- [x] MFA 安全控制：OTP 校验允许一个时间步漂移且拒绝同一/更早计数器重放，验证接口按用户和可信来源 IP 限流；连续验证额度按操作分级，验证成功后清空用户计数，共享出口 IP 使用独立高阈值，避免正常敏感操作或 NAT 用户被误限流；本地绑定前校验当前密码，OIDC 绑定要求 5 分钟内非模拟登录的主认证时间，remember 恢复不会刷新该时间；OTP/恢复码不写日志，密码变更、禁用账号、角色变化和 MFA 解绑/重新绑定后清理已有 assertion；策略修改、管理员 MFA 解绑/重置及管理员禁用/降级通过共享 PostgreSQL 事务锁串行化，并在事务内重读策略和复核 actor/session/assertion，保证并发后仍有可用管理员且旧请求不能越权继续。
-- [x] 补齐管理员重置用户 MFA：用户解绑、重新生成恢复码、使用恢复码、敏感操作 MFA 通过/失败已写入 AuditLog；平台管理员完成 `user_admin_update` 二次验证后可重置他人 MFA，但不能重置自己或移除全局策略下最后一名 MFA 管理员，也不能查看 TOTP secret 或恢复码明文。
-
 ## 4. 项目、应用与前端主工作区
 
 - [x] 实现 Project CRUD。
@@ -726,7 +677,6 @@
 - [x] 支持自定义站点 title、logo、favicon、登录页副标题。
 - [x] 修复站点设置保存结构化值时报 `cannot unmarshal object into string` 的兼容问题。
 - [x] 使用浏览器验收站点设置保存、公开配置刷新和语言切换流程。
-- [x] 修复站点设置全量提交未变化的 `security.stepUpMfa.*` 字段导致平台管理员被误判无权限：前端只提交 dirty values，后端按共享数据库当前值判断安全策略是否真实变化。
 - [x] 使用浏览器验收项目页、应用页和 sourceType 切换流程。
 - [x] 使用 PostgreSQL 集成环境验收项目创建和应用创建流程。
 
@@ -862,7 +812,6 @@
 - [x] SSRF/egress 组件接入管理员安全配置，支持域名黑名单、域名特许白名单、IP/CIDR 黑白名单和端口规则。
 - [x] 修复 egress CIDR 地址族匹配，避免 `::ffff:0:0/96` 误拦截 GitHub 等普通公网 IPv4。
 - [x] 修复 SSRF DNS 重绑定窗口：出站连接校验全部解析 IP 后直接拨号到同一 IP，不再在校验与连接之间二次解析域名。
-- [x] 收紧个人 Access Token：后端强制固定有效期白名单，创建与撤销接入 `access_token_manage` Step-up MFA。
 - [x] 为 OAuth token/revoke 客户端认证增加来源 IP 与散列 client ID 双维度 Redis 限流。
 - [x] 为通用 5xx 响应生成基于 HTTP 方法和 Gin 路由模板的稳定错误码，生产环境继续隐藏底层异常。
 - [x] 清理 Kubernetes 高级部署字段和通知适配器选项的用户可见硬编码枚举，统一通过中英文 i18n label 展示。
@@ -1004,7 +953,6 @@
 - [x] 禁止私有网段非 443 端口访问。
 - [x] 禁止元数据地址、Kubernetes API Server 和 Service CIDR 访问。
 - [x] 为构建网络拒绝事件记录审计日志。
-- [x] Web Console 增加项目/部署配置级开关：项目空间默认开启且作为硬上限，部署配置只能继承或进一步关闭；终端仅面向授权角色，连接期间持续复核会话、角色、资源、开关和 MFA assertion，只有真实 stdin 输入刷新空闲期限，resize/ping/轮询不续期，并在设置和文档中明确审计范围。
 - [ ] 细化 Access Token scope：将应用、部署配置、发布、构建和网关接口从粗粒度 `project:read/write` 拆到稳定业务 scope，避免自动化授权语义模糊。
 - [x] 构建日志和 Hook 日志统一脱敏验收：Git Token、Registry 密码/Token、构建密钥、常见 Authorization header 和 URL 内 token 不应落入 BuildLog/HookRunLog。
 - [x] Kubernetes 构建 Job 默认不使用 privileged，不挂载宿主机 Docker socket；rootless BuildKit executor 使用非 root UID/GID、`--oci-worker-no-process-sandbox`、允许 `newuidmap/newgidmap` 所需的 privilege escalation，并放开 seccomp/AppArmor 兼容 Kubernetes 用户命名空间限制。
@@ -1208,7 +1156,6 @@
 - [x] 完成 Transfer Asynq 任务、Kubernetes Job、CSI Snapshot、取消/重试/过期清理、Context/Trace 传播和权威回读。
 - [x] 将部署数据卷契约改为强类型挂载数组，实现同集群分页选择、RWO 独占/RWX 共享、Filesystem `volumeMounts` 和 Block `volumeDevices`。
 - [x] 新增项目空间“数据卷”页、详情 Sheet、创建/纳管/导入/导出 Dialog、Transfer 历史与中英 i18n。
-- [x] 同步 OpenAPI、稳定错误码、`volume:*` Action/OAuth Scope、Step-up、Audit、API Client/types、Luna CLI、Agent Tool/Skill/检索评测。
 - [x] 将存储计费改为覆盖 `available/reserved/in_use` 托管 ProjectVolume，补齐容量配额、Transfer 计量和余额不足稳定错误。
 - [x] 完成 expand/backfill/switch，运行时只读取新挂载关系，删除旧导出路由和临时双写，并提供可重入迁移工具。
 - [ ] 在备份校验、对账和不可逆迁移门禁满足后执行 Contract DROP，物理删除 `retained_volumes` 与部署目标旧存储字段。
@@ -1316,7 +1263,6 @@
 - [x] 拆分 Git provider client：已按错误映射、OAuth、类型、仓库/分支/文件/Webhook、构建选项发现等职责拆分 `internal/provider/git/*`；前端仍只调用平台后端 API。验收：`go test ./internal/provider/git` 和 `go test ./...` 通过。
 - [x] 拆分大测试文件：`internal/api/handlers_test.go` 已拆为 core/auth/tasks/git-security 等领域测试文件，原文件仅保留 package 声明。验收：`go test ./internal/api` 和 `go test ./...` 通过。
 - [x] 将项目成员输入/响应 DTO 与角色归一逻辑从 `project_handlers.go` 抽到 `project_member_types.go`，减少项目主 handler 的类型职责。
-- [ ] 继续拆分当前热点：`application-deployments-panel.tsx`（约 900 行）、`project_handlers.go`、`mfa_handlers.go` 与 `web/src/api/types.ts`；每项作为独立可验收目标推进，避免和安全修复混成一次高风险重写。
 
 ## 12. 可观测性
 
@@ -1414,7 +1360,6 @@
 
 - [x] 建立统一数据保留目录：平台事件、通知投递、Worker 任务事件、构建日志、发布日志、Hook 日志和过期认证数据分别配置保留天数，`0` 表示停用对应自动清理。
 - [x] 将自动清理拆为独立的每日 Worker 任务，按固定白名单和小批次执行，不再阻塞每分钟状态同步。
-- [x] 提供仅平台管理员可用的按时间段预览和手动清理入口；修改范围后必须重新预览，启用安全策略时要求 `data_retention_cleanup` Step-up MFA，执行结果只把汇总写入审计日志。
 - [x] 保护审计、计费账本、构建/发布/Hook 元数据、Secret 与 Kubernetes 运行数据，不允许通过数据保留入口删除。
 - [x] 在站点设置中提供渐进式数据保留配置和手动清理界面，并同步中英文文档与 OpenAPI。
 
@@ -1425,34 +1370,25 @@ CLI 已迁移到独立仓库 [`LiteyukiStudio/luna-cli`](https://github.com/Lite
 [`luna-cli/docs/cli-spec.md`](https://github.com/LiteyukiStudio/luna-cli/blob/main/docs/cli-spec.md)
 维护。
 
-- [x] 确定 CLI 技术栈、两级工具命令、`key=value` 与多行/复杂输入规范、参数校验、单活动实例与账号凭据、活动登录默认项目空间、版本化 JSON Envelope、OAuth、Device Code、Access Token、Step-up MFA、i18n、AI 输出契约、npm/pnpm 安装、独立仓库 `v*` 发版、npm Trusted Publishing 和 Bun 单二进制方案。
 - [x] 完成 CLI spec 与 AI Agent 可实施性审计：按 `method + normalizedPath` 建立平台路由覆盖基线；明确普通业务命令、协议适配、浏览器回调、Webhook 接收器和显式排除等边界，`api request` 不计入覆盖；实时路由和命令数量统一由覆盖脚本输出，不在 TODO 复制快照。
 - [x] 移除旧 MCP、旧内嵌 Assistant 设计及 `ai-supports` 目录；CLI 与配套 Skills 已迁移到独立仓库。
 - [x] 曾通过根 pnpm workspace 抽取环境无关契约与客户端；CLI 迁移到独立仓库后，共享包一并迁出，平台根 workspace 已移除。
 - [x] CLI 迁出后取消 Web 迁移到跨仓共享包的计划；Web 保持自有 API Client，浏览器 Session、CSRF 和页面状态继续只属于 Web。
 - [x] 建立并通过 `pnpm check:platform-cli-coverage` 门禁：从 Gin Router 提取完整路由，逐路由分类为普通业务命令、协议适配、浏览器回调、Webhook 接收器或显式排除；普通业务 HTTP API 以 OpenAPI 为唯一事实源并生成 CLI 规范命令，协议适配必须由 OpenAPI 隐藏操作和精确 `method + path` 分类共同审计；禁止路径前缀通配排除，要求普通业务命令覆盖率 100%。所有允许 Bearer 调用的业务与协议路由还必须具有稳定非 `system:unmapped` Scope，且 OpenAPI 与运行时鉴权映射一致。
-- [ ] 新增语言无关的 `openapi/errors.yaml` 错误目录，把业务、OAuth、MFA、SSE、WebSocket、下载和服务端入口收敛到稳定错误 Envelope；Go、OpenAPI、Web 和 CLI 均从同一目录生成或校验，运行时出现未登记错误码时契约测试失败。
 - [ ] 为 Agent 可调用 operation 补齐 JSON Schema Draft 2020-12 输入/输出契约和 `x-luna-cli` 风险、敏感字段、dry-run、并发、资源上限、批准元数据；实现 `agent=true`、`params=@file|@-`、按 query/category/risk/scope 受限发现和 Schema digest 漂移检测。
-- [ ] 新增 `openapi/workflows.yaml`，使用 Arazzo 1.1 描述 OAuth、Device Code、Git 授权、构建发布部署、MFA、数据导出和终端等关键旅程，并用于文档、Skills 和集成测试生成，不实现通用运行时工作流解释器。
 - [ ] 评估并实现短时单次服务端计划作为高风险操作的附加安全层；当前 CLI
   `high`/`critical` 操作采用交互逐次确认，非交互或 Agent 显式 `--yes`，且仍由
-  后端权限、Scope、Step-up MFA 和资源一致性策略最终裁决。若引入计划，需精确
   绑定 actor、认证上下文、项目、目标、规范化参数和资源版本。
 - [ ] 为中高风险更新补齐 ETag/version/resourceVersion 乐观并发控制；CLI 和 Skills 遇到冲突时必须重新读取、重新计划并再次确认，不允许盲覆盖或自动追加 `force`。
 - [ ] 定义版本化 JSONL 长任务事件协议：首帧版本、sequence/eventId/correlationId/operationId/resourceRef、恢复游标、资源上限和唯一终态摘要；缺少摘要时不得报告成功。
-- [x] 新增公开且不泄露部署信息的 `/api/v1/meta` 能力接口，返回 API/服务端版本、OpenAPI digest、功能开关和最低 CLI 版本；Device Code 与 Bearer MFA 按实际能力返回。
 - [x] 为人类交互提供 `luna login/logout/whoami/doctor` 顶层短命令，复用 canonical 两级命令处理器；严格 Agent 模式拒绝别名，避免机器契约和审计路径分叉。
 - [x] 新增 `luna health doctor` 显式诊断，检查活动登录配置、认证、服务端可达性、最低 CLI 版本、OpenAPI digest 和功能开关；Device Code 未启用时在进入登录流程前返回稳定能力错误。
 - [x] CLI 接入逐实例能力协商和版本兼容判断；OpenAPI 业务命令在首次请求前校验 API 代际、最低 CLI 版本和契约摘要，对缺少接口或不兼容实例 fail closed，不通过试探业务接口猜测能力。
 - [x] 实现 CLI 基础框架、`~/.luna/auth.json` 单活动登录、`project current/use/unset`、项目空间解析优先级、稳定输出、完整 Help、机器可读 Help 和 Shell Completion；重新登录其他实例或账号会覆盖旧凭据并清除默认项目空间，临时跨源 `server=` 不复用当前 Token。
 - [ ] 实现由平台固定初始化、无需动态注册的内置 OAuth 公共 CLI Client：Token Endpoint 支持 `token_endpoint_auth_method=none`，仅允许严格 loopback redirect，完成 Authorization Code + PKCE、刷新和吊销。
-- [x] 拆分 OAuth 与个人访问令牌 Scope 策略：普通用户可授权项目空间和账号级 OAuth Scope，平台管理 Scope 仅允许平台管理员；敏感 Scope 不进入默认推荐集合或个人访问令牌目录。CLI 会在已知命令发送前检查 Grant，缺少 Scope 时返回可执行的重新授权提示；项目数据卷导出统一使用 `volume:export`，且项目 RBAC 与 `volume_export` Step-up MFA 仍由后端最终判断。
 - [x] 实现 RFC 8628 Device Authorization Grant，包括设备授权端点、浏览器 GET/POST 确认接口、CSRF 防护、哈希状态、批准/拒绝、轮询限流、过期清理和一次性兑换；`luna login` 默认使用该流程。
-- [x] 改造 Step-up MFA 与交互认证上下文：OAuth Bearer 可验证 OTP/恢复码并按 OAuth Grant + purpose 读取 assertion；终端预授权、终端存活监控和数据导出票据支持绑定 Web Session 或 OAuth Grant；个人访问令牌仍不得绕过 MFA 保护。
 - [x] 将 OAuth Device Code、Token、Revoke 和 Discovery 协议端点纳入 OpenAPI 隐藏协议适配层，并增加 OpenAPI operation 到 Gin Router 的常驻契约测试，防止 CLI 已登记能力落入后端空路由。
-- [x] 按业务域覆盖全部公开控制面 API；普通业务命令必须由 OpenAPI 生成，SSE、WebSocket、下载等特殊传输使用显式协议适配器，浏览器回调和 Webhook receiver 不作为 CLI 业务命令，`api request` 仅供人类诊断且在 Agent 模式固定禁用。终端和数据导出要求 CLI OAuth + 对应 purpose 的 Step-up，个人访问令牌不得绕过；`high`/`critical` 在交互模式逐次确认，非交互或 Agent 必须显式 `--yes`。完成状态以 `pnpm check:platform-cli-coverage` 退出码及最终总验证为准，实时数量和业务域明细只读取脚本输出。
 - [ ] 为 Git Provider OAuth 增加短时授权事务创建/查询接口，回调写入事务终态；`luna git authorize` 打开浏览器并返回确定的 Git Account ID，不通过轮询账号列表猜测授权结果。
-- [ ] 建立干净测试实例的全 operation 场景矩阵：关键登录/CRUD/构建/发布/日志/终端/导出/MFA 旅程 100% 通过，完整可执行场景通过率不低于 95%。
 - [x] 将 CLI、API Client、契约副本、配套 Skill、测试和发布流程迁移到独立 `LiteyukiStudio/luna-cli` 仓库；平台仓库保留被忽略的 `/cli/` 本地克隆目录，不使用 submodule、subtree 或 subrepo 建立写入关联。
 - [x] 新增独立 CLI CI 与 Release 工作流；平台和 CLI 在各自仓库使用 `v*` tag，tag 分别作为对应产品的唯一发布版本源；CLI 工作流以只读方式拉取平台 OpenAPI 和源码，验证契约 drift、命令覆盖、CLI 类型/规范/测试、npm/pnpm 全局安装和受支持目标的 Bun 二进制 smoke。
 - [x] 建立 Luna DevOps、Luna CLI、Luna DevOps Skill 更新日志视图；CLI 与 Skill 由独立 CLI 仓库同一个 `v*` tag 配套发版，平台文档保留旧仓库历史版本链接并标明迁移边界。
@@ -1463,43 +1399,34 @@ CLI 已迁移到独立仓库 [`LiteyukiStudio/luna-cli`](https://github.com/Lite
 - [x] 使用固定 Bun 版本构建 Linux glibc x64/arm64 与 macOS arm64/x64 制品，生成 checksum、SBOM 和 provenance；Linux 制品完成无 Node.js smoke，macOS 未签名制品仅进入预发布；Windows 与 Alpine/musl 使用 npm/pnpm + Node.js 降级渠道。
 - [ ] 接入 Apple Developer ID 和公证；macOS 制品完成平台代码签名后才可进入稳定矩阵。
 - [x] 将 Luna CLI Skill 强制纳入独立仓库 `v*` 配套发版：使用单一 `luna-devops` 根 Skill 和领域 `references/` 渐进加载，完成结构与命令同步校验、可重复 `.skill` 打包、SHA-256、精确版本 manifest 和 OIDC provenance，并与 CLI 一起进入同一 GitHub Release；独立 Skill 工作流仅保留手动打包验证。
-- [ ] 在发布首个稳定版 Luna DevOps Skill 前，完成真实实例的只读、变更、失败、权限、MFA 与脱敏评估，再标记 Skill 稳定可用。
-- [ ] 建立 Agent 安全与可靠性评估集：覆盖提示注入、恶意日志/仓库内容、终端控制字符、越权工具选择、计划重放、目标集合漂移、无限分页/轮询、MFA 用户在场、执行后状态验证和审计关联；安全不变量要求 100% 通过。
-
 ## 17. 内嵌 AI 助手
 
-- [x] 建立 Agent 工具搜索专项测试方案：按当前 Catalog 的 48 个 OpenAPI 工具和 3 个手写工具形成 51/51 全目录覆盖矩阵，定义 204 条多语言正例、51 条 hard negative、24 条无能力/安全负例和 21 条工作流状态例，共 300 条离线评测；另定义 15 组真实串行对话验证命中到实际使用，并以词法基线门禁决定是否进入向量/重排影子 A/B。
-- [x] 执行工具搜索零成本中文探针：使用真实 Contract 和生产 BM25 + workflow 降级路径验证 51/51 工具进入 Top 8，Recall@8=100%、MRR=0.7925，Rank 1/2/3/4 分布为 33/10/5/3；确认 `getDashboard`、`listProjects`、`listAppTemplates`、`listRuntimeClusters`、`listGatewayRoutes`、`triggerBuildRun` 和 `updateDeploymentTarget` 等仍存在动作或工作流排序偏差，不能以 Top 8 全命中代替专项门禁。
-- [ ] 执行工具搜索专项基线：固定模型与 Catalog digest，跑完 300 条离线评测和 15 组串行对话，输出分语言 Recall@8、MRR、NDCG@8、forbidden Top 8、最终工具使用率、延迟与成本报告；未达到门禁前不得把 `TOOL_RETRIEVAL_MODE=dynamic` 设为生产默认值。
+- [x] 工具搜索专项方案已随 2026-08-21 架构瘦身更新：不再维护固定工具数量、Top K、向量/RRF/reranker 或 shadow/dynamic 门禁，改为自动 OpenAPI 全目录、分页摘要、精确详情和真实权限/执行闭环矩阵。
 - [x] 2026-08-20 使用浏览器按串行方式完成首批真实对话验收：覆盖 `RET-01`、`RET-03`、`RET-06`、`LOAD-01` 和适配真实测试项目空间的 `FLOW-01`，共 14 个对话轮、48 次可观测工具调用；读取工具消歧、`resourceCategory=workloads`、不可执行旧工具、破坏性运行命令拒绝和工具调用参数/返回详情通过。`agt-demo` 测试夹具缺失，实际使用「测试项目空间」继续验收；未执行并行 LLM Run，也未继续 60/300 轮压缩压测，避免在阻断缺陷未修复时放大 API 消耗。
 - [x] 修复真实写入链路的权威回读信封语义：Orchestrator 仅解包真实委托信封后再应用 `idSource`、`argumentBindings` 和完成态路径；契约测试覆盖 pending、成功和失败终态。真实复测中 `createRelease` 创建 `rel_b2851dab491d676147cf8ad2`，随后 `getRelease` 权威回读成功，不再出现 `ai.tool_verification_id_missing`。
 - [x] 收紧部署交付前置条件：`updateDeploymentTarget` 已显式准入，交付前必须读取并绑定真实 `clusterId`。真实复测复用既有目标 `dplt_5de4f1eab49d9f8222e198a8`，绑定就绪集群 `clu_7652dfce0ea0576372483a53`，未新建重复应用或部署目标。
-- [x] 修复 `search_tools` 对话闭环：目录检索在当前 Run 内真实执行并把 Top K 扩张到下一模型步，内部工具参数、结果、耗时和 Trace 均进入 Agent 观测；即使模型在工具调用前输出“现在检索”等过渡文本，也必须进入下一模型步生成检索结论。`RET-06`、`TRACE-01` 和修复后的 `TRACE-02` 串行复测均产生一次可见 `search_tools` 调用，`TRACE-02` 已输出确定正文结论，未再用快捷选项替代检索或提前结束。
-- [x] 将无新信息保护扩展到连续对话轮：会话级有界指纹复用近期成功空结果，默认窗口为 5 分钟；只有用户明确要求刷新实时状态时才绕过。`LOAD-01` 相同 `listProjectHookRuns` 参数在窗口内返回 `ai.tool_no_new_information`、`retryable=false`，工具观测中的真实 API 调用总数保持为 2。
+- [x] `search_tools` 只返回分页摘要，`get_tool_details` 才把精确 operationId 加入下一模型步骤；二者均记录内部工具事件、耗时和 Trace，检索过渡文本不能提前结束 Run。
+- [x] 删除连续对话轮空结果指纹与刷新特判；循环保护只保留当前 Run 内相同 operationId + 规范化参数次数、总 ToolCall 和模型步骤上限。
 - [x] 修复 Agent 观测周期聚合：1h 概览已从持久化 Run 台账聚合输入/输出 Token，P95 统一使用秒；真实页面显示输入 1,460,124、输出 26,498、P95 45.5 秒。内部 `search_tools` 可查看脱敏参数/结果，临时启用本地 OTLP 后同一 Trace 成功回读 API、模型、检索和工具 Span。
 - [x] 将模型偏好持久化到会话并隔离不同会话的切换状态；新会话记录初始模型，后续仅在用户主动切换当前会话时更新，同时把模型选择器移到输入框底部。
-- [x] 将 Agent 权限边界重构为当前登录用户的实时权限：页面与会话上下文只作模型指引，项目目标由哈希绑定的工具参数确定，执行期按 Session、目标项目和统一 RBAC Action 重新校验；平台工具拒绝项目参数，并恢复 viewer 的真实只读能力。
+- [x] 将 Agent 权限边界重构为当前登录用户的实时权限：页面上下文只作模型指引；执行期从 Run、ToolCall、会话与 Session 权威回读用户和项目绑定，再由原业务 Handler/Service 重新校验 RBAC。
 - [x] 将内置中文交互与导航 Skills 拆成精简入口和按领域加载的 references，覆盖项目、应用、源码、构建、镜像、发布、运行时、网关、诊断、安全、管理与账单等主要工作流。
 - [x] 修复 `listApplications` 读取已移除 `description` 字段导致的工具失败；为工具数据库异常增加稳定错误分类和请求编号透传，前端展示可追踪原因而不暴露 SQL 或堆栈，并明确 API 启动迁移的 fail-closed 行为。
-- [x] 将 API↔Agent 的服务身份、上下文签名、回调认证、Delegation 签名与 Run Grant 加密配置收敛为单个 `AI_INTERNAL_SECRET`，通过 HKDF-SHA256 按用途派生子密钥，并同步简化 Compose、Helm 与部署文档。
-- [x] 将模型请求超时、单次 Run 超时和 Agent 实例并发数迁移到 Web 高级设置，通过受认证内部配置动态下发；轮询、租约和刷新周期收敛为代码安全默认值，部署环境只保留连接与鉴权配置。
+- [x] API↔Agent 只保留由 `AI_INTERNAL_SECRET` 派生的 BFF 请求签名与固定回调服务身份；Delegation 与 Run Grant 已删除。
+- [x] 模型请求超时、单次 Run 超时和 Agent 实例并发数由权威 Provider config 动态下发；轮询与刷新周期使用代码安全默认值，Run 租约已删除。
 
 详细规格见 [`docs-internal/11-AI助手与Agent规格.md`](docs-internal/11-AI助手与Agent规格.md)。此前移除的
 旧 MCP 内嵌方案保持移除；新方案使用独立 `luna-agent`、显式模型运行时和平台 OpenAPI，
 不把 MCP 作为内部服务总线。
 
-- [x] 确定产品形态、独立运行架构、编排框架、OpenAPI 工具边界、会话模型、多用户隔离、批准与 MFA、安全不变量、可观测性和分阶段实施方案。
 - [x] 基于 Mock 数据实现首版前端交互壳：全局悬浮入口、桌面可拖动/调整尺寸窗口、移动端全屏布局、三行 Thinking、默认折叠 Tool Call、参数与结果详情、Mock 会话切换和声明式路由联动；暂不接入 AI API。
 - [x] P0：实现默认关闭的只读助手、私有会话、持久 Timeline/SSE 游标恢复、页面上下文、声明式 UI Action 和只读诊断工具。
-- [x] P1：以平台 OpenAPI 自动生成 Agent 适用的普通 JSON 业务工具目录，使用短时用户委托重新进入同一 Gin Router 与业务 Handler；读取和低风险写入按当前用户权限执行，危险操作继续使用参数绑定批准、Step-up MFA、幂等和审计。
 - [x] P2：实现构建、运行时事件、Gateway、证书、发布、Hook 和通知投递的固定列只读诊断工具，并接入统一诊断图。
-- [x] 完成正式前端与 BFF/Agent 接线：私有会话管理、Timeline Presenter、SSE 重连、三行 Thinking、默认折叠 Tool Call、批准/MFA/补充输入、桌面拖拽缩放、移动端全屏和 AI 管理设置。
 - [x] 使用 `react-rnd` 统一 AI 助手窗口拖拽与缩放，支持悬浮球拖拽、窗口与悬浮球位置/尺寸本地记忆、视口边界约束和移动端全屏退化。
 - [x] 修复真机触摸被悬浮球拖拽层吞掉点击的问题，短触摸直接打开助手，超过移动阈值时仍保持拖拽语义。
 - [x] 优化窄窗口消息层级与紧凑交互，完成态 Thinking 自动收起、Tool Call 默认折叠；空会话按项目空间复用，首轮由模型自动命名并保护手动标题。
 - [x] 为模型生成过程增加会话列表旋转状态与消息流三点输入指示器，并兼容减少动态效果偏好。
 - [x] 打通 Provider → Agent 持久事件 → Luna API 无缓冲 SSE → Web reducer 的真实流式输出，支持 reasoning、文本与分片工具参数归一化、游标恢复和终态主动断开。
-- [x] 将固定两次模型调用重构为统一有界 Agent Loop：按调用 ID 回灌 assistant tool_calls 与 tool result，支持任意轮次继续调用平台工具，并以批准、MFA、补充输入、取消、超时、调用上限或最终答复作为明确退出条件。
 - [x] 确定 AI 声明式交互内容与卡片 V1 Schema：固定场景模板、受控内容块、动态输入、可信来源、Tool 参数绑定、Secret 隔离、运行状态和安全提交链路。
 - [x] 实现 `create_interaction_cards`、卡片 Timeline/SSE、Web 固定内容块与动态输入渲染器；卡片动作复用 Agent Run 和用户绑定 Tool 委托链路，非法 Schema 与模型伪造审批卡 fail closed。
 - [x] 将交互卡片收敛为单次 `create_interaction_cards` 调用：Agent 在调用开始时签发生成标识并创建原位流光占位，校验成功后原子替换；卡片占满助手回复可用宽度，候选布局按容器自适应，宽表格与代码仅在内部滚动，展示文本使用禁用 HTML 的安全 Markdown。
@@ -1509,7 +1436,6 @@ CLI 已迁移到独立仓库 [`LiteyukiStudio/luna-cli`](https://github.com/Lite
 - [x] 将 Provider 连接中断、读取失败和畸形 SSE 统一映射为稳定错误码，避免卡片生成失败退化为无法诊断的通用 `ai.run_failed`。
 - [x] 将应用模板搜索接入 Agent Tool Catalog，支持按关键词和分类筛选，并在工具结果中剔除 Secret 默认值。
 - [x] 工具详情展示经过脱敏和有界裁剪的结构化返回数据、稳定错误码与请求编号；交互卡片生成失败保留最后一次 Schema 校验路径和原因，便于用户与管理员定位问题。
-- [x] 通过 OpenAPI 通用平台工具执行链注册 `installAppTemplate` 等业务操作，工具请求复用现有 Gin Router、Handler、Service、用户权限、确认、MFA、幂等和审计，不复制安装事务与 Secret 写入逻辑。
 - [x] 将 Agent 工具能力与平台业务 API 对齐：自动注册 183 个 Agent 适用的普通 JSON OpenAPI operation，按意图裁剪模型上下文并优先保留完整交付链；协议回调、Webhook、SSE/WebSocket、终端、上传下载和一次性 Secret 接口保持显式隔离。
 - [x] 补全部署配置的 OpenAPI/Agent 工具参数契约，覆盖 Handler 接收的全部字段并保留说明、范围、枚举和字典值约束；增加反射一致性测试，防止新增参数只进入后端而未进入 Agent Schema。
 - [x] 修复 `/swagger/` 在严格 CSP 下被拦截而显示空白：移除 Swagger UI 模板的内联脚本，改用同源初始化资源，并增加 CSP、静态资源和浏览器实际渲染回归验证。
@@ -1523,10 +1449,8 @@ CLI 已迁移到独立仓库 [`LiteyukiStudio/luna-cli`](https://github.com/Lite
 - [x] 修复 AI 助手输入法候选阶段 Enter 误发送，兼容标准 composition 状态与 keyCode 229，并保持 Enter 发送、Shift+Enter 换行。
 - [x] 隐藏会话自动命名等内部维护型 Tool Call，将普通工具折叠行压缩为名称与右侧状态 Badge，参数、结果和耗时仅在展开后展示。
 - [x] 将 Agent 工具权限收敛为当前用户权限：读取与低风险写入按当前 Session/RBAC 即时执行，高风险调用提供“同意 / 拒绝 / 全部同意”并绑定 Run、Tool Call、参数哈希和版本；“全部同意”仅覆盖当前 Run 已展示的待批准调用，同时修复跨 Run Tool Call 审批风险。
-- [x] 将 Tool Catalog 作为 OpenAI-compatible `tools` Schema 传给模型，新增结构化 `create_options` UI 工具，并修复参数哈希绑定的批准事件与平台验证后的 MFA 恢复。
 - [x] 修复交互卡片联合类型生成的顶层 Tool Schema 缺少 `type: object`，避免 OpenAI-compatible Provider 拒绝整轮模型请求；完成本地 API、Agent、SSE 与浏览器真实回复验收。
 - [x] 修复高风险工具确认后的参数误冲突：使用规范 JSON 统一审批哈希与执行载荷，加密保存可执行原始参数、仅向 Timeline 投影脱敏参数，并为 `ai.approval_arguments_changed` 提供明确恢复提示。
-- [x] 将 `create_options` 从折叠 Tool Call 升级为始终可见的下一步选项组件，覆盖站内无刷新跳转、消息回复和重新进入权限/批准/MFA 链路的受控操作请求。
 - [x] 会话目录增加显式批量选择、全选和批量删除确认；引入 `title_source` 与 `rename_conversation` 内建工具，首轮自动命名、话题漂移重命名，并在用户手动命名后由数据库永久锁定。
 - [x] 将 Agent 系统提示、模型任务提示、上下文标签、工具描述与内置 Skills 统一为中文 `system-v4`，仅保留当前 Prompt 版本；继续指导模型为平台注册页面和可信资源输出 Markdown 站内链接，前端按注册路径安全校验并以主色 React Router 链接无刷新跳转。
 - [x] 按职责拆分 AI 助手编排层、消息时间线、工具调用卡片、输入区、窗口偏好与流式会话状态模块，降低单文件复杂度并保持现有交互行为。
@@ -1534,18 +1458,16 @@ CLI 已迁移到独立仓库 [`LiteyukiStudio/luna-cli`](https://github.com/Lite
 - [x] 将用户与助手消息气泡限制为消息区最大 78% 宽度，分别为对方阵营保留稳定留白，并保持表格、代码与工具详情局部横向滚动。
 - [x] 为用户与助手消息增加常驻时间和整组稳定悬停操作区：双方支持复制，用户消息支持原文重发，触屏设备直接显示操作且不改写历史轮次。
 - [x] 整理 `components/common` 目录，将 AI 助手的组件、状态、工具与测试集中到 `common/ai-assistant/`，统一模块内相对导入与外部根路径导入。
-- [x] 修正 Tool Call 状态图标映射：仅运行态显示旋转加载图标，失败、成功、取消、跳过、等待批准与等待 MFA 使用明确语义图标。
 - [x] 扩展 AI 页面上下文信封与最近 6 轮角色化会话历史；每个正常完成的 Turn 强制生成 2-5 个意图预测选项，并为 Provider 格式偏差提供结构化重试和安全兜底。
 - [x] 为不熟悉平台且尚无明确任务的用户增加新手意图约束：询问助手能力、使用方法或起步方式时必须生成 2-5 个可点击具体目标，优先用消息选项继续对应工作流，不以功能介绍或页面入口代替选择。
 - [x] 收紧 Agent 结构化输入交互：创建、安装、配置、修改、诊断或执行需要用户补充参数时必须生成 `form` 卡片，字段依赖通过 section 与 `visibleWhen` 表达，禁止用快捷选项、纯文本追问或空白消息模板代替字段输入与校验。
 - [x] 将通用交互卡片模板从十套重复语义收敛为 `candidates`、`form`、`change_review`、`result`、`live_task` 五类稳定职责，业务模板、内容块、安全动作与动态进度能力保持不变。
 - [x] 为 AI 卡片建立展示式 / 交互式职责契约：等待用户选择、填写或确认时必须提供可提交控件，展示式卡片禁止包含表单，交互式多候选列表不得退化为不可点击的 `item_list`。
-- [x] 建立 Agent 目标完成契约与领域验收标准：卡片仅承担输入或呈现，展示卡片结果回灌模型继续工作；创建、安装、发布、修复等操作按“执行 → 权威回读 → 终态结论”闭环；平台工具调用次数不设上限，模型步骤与 Run 超时只作为防失控保护而非完成条件。
+- [x] 建立 Agent 目标完成契约与领域验收标准：卡片仅承担输入或呈现，展示卡片结果回灌模型继续工作；创建、安装、发布、修复等操作按“执行 → 权威回读 → 终态结论”闭环；单 Run 工具调用、相同操作参数次数、模型步骤与超时都有安全上限。
 - [x] 审计并扩展 Agent 常用工作流 Skill：覆盖模板、镜像、源码三条完整交付路径，以及项目与成员、Git/Registry、构建发布、运行时、网关、应用诊断、Hook、服务关系、通知、安全、账单、数据保留和系统组件等 28 条高频旅程；全部定义发现、交互、执行、回读、验收与阻塞终态，并保持 reference 按需加载。
 - [x] 完善 Agent 多服务部署与依赖复用 Skill：先建立业务服务、状态依赖、平台能力、一次性任务和外部服务拓扑，再按安全隔离、生命周期、兼容性、容量、故障域、网络与删除语义选择复用、解决方案私有、服务独占或外部绑定；覆盖数据库、缓存、队列、对象存储、搜索、向量库、可观测、网关、Provider 和 PVC 的差异化默认策略。
 - [x] 完善 Agent 应用故障诊断与修复 Skill：按首次交付失败、发布后失败、运行中异常、入口不可达、性能/间歇故障、依赖失败和共享平台故障分类入口；统一故障时间窗口，沿拓扑定位首个异常边界，区分症状、直接原因、根因和假设，并以最小可回滚变更及原路径持续验收闭环。
-- [x] 为 Agent 增加平台托管的短期有状态运行命令会话：按用户 Session、Agent Run、项目、Release、部署配置和容器绑定，逐命令重新执行权限、Web Console 开关、批准与 MFA 校验，支持空闲/绝对 TTL、输出上限、取消、审计、Trace 和显式关闭。
-- [x] 按来源呈现下一步候选：Agent 生成的 `create_options` 在助手回复气泡内按真实时间线位置换行展示，保留 primary/default/danger、单项幂等、统一视觉槽和 reduced-motion；仅新会话页面预设继续悬浮在输入框上方，方便快速开始常见任务。
+- [x] 删除完成回复后的 `create_options` 预测阶段；需要用户选择时由主模型调用 `request_choice`，仅新会话页面预设继续作为前端入口保留。
 - [x] 将工具详情重构为标识、参数、返回三段式诊断视图，直观展示 operation、Tool Call、Run、请求、Trace ID 与真实耗时；嵌套参数和返回保留 JSON 结构，平台工具诊断字段随权威 Timeline Item 持久化。
 - [x] 在 Agent 工具折叠状态徽标中追加真实耗时，以“状态 · 耗时”紧凑展示完成、失败或取消结果，并与展开详情复用同一格式化规则。
 - [x] 为平台管理员增加浏览器本地的 Agent 工具调试模式：服务端统一标记内部维护工具，普通用户继续隐藏；管理员可按真实时间线查看并识别内部工具，不改变工具权限或执行语义。

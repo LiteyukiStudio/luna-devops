@@ -10,22 +10,19 @@ import { SensitiveInputRejected, ToolInterruption, type ToolOrchestrator } from 
 import { ToolLoopStoppedError } from "../tools/loop-guard.js"
 import { businessCardToolInputs, compileBusinessCardToolInput, isBusinessCardToolOperationId } from "../tools/business-card-tools.js"
 import { searchToolsInput } from "../tools/tool-search.js"
-import { browseToolsInput } from "../tools/tool-directory.js"
-import { createOptionsInput } from "../tools/ui-options.js"
+import { getToolDetailsInput } from "../tools/tool-details.js"
 import { CardGenerationService, cardValidationFailure, providerArgumentFailure, setMaxCardRepairAttempts, validationIssues, type CardGeneration } from "./cards.js"
-import { recentEmptyReadResults, requestsExplicitLiveRefresh } from "./conversation-loop-state.js"
 import { InternalToolHandlers } from "./internal-tools.js"
-import { internalToolOperationIds, cardToolOperationIds, normalizeToolSearchQuery, resumedOperationIds, resumedToolMessages } from "./resume.js"
-import { ToolRetrievalStateTracker } from "./retrieval-state.js"
+import { internalToolOperationIds, cardToolOperationIds, normalizeToolSearchQuery, resumedToolMessages } from "./resume.js"
 import { streamModel } from "./streaming.js"
-import { platformToolFailureGuidance, platformToolVerificationGuidance, setToolResultPayloadBudget, stableError, toolResultMessage } from "./tool-results.js"
+import { setToolResultPayloadBudget, stableError, toolResultMessage } from "./tool-results.js"
 
 export class RunExecutor {
   private timer?: NodeJS.Timeout
   private stopping = false
   private readonly active = new Set<Promise<boolean>>()
   private readonly controllers = new Map<string, AbortController>()
-  private runtimeSettings: RuntimeSettings = defaultRuntimeSettings
+  private runtimeSettings: RuntimeSettings
   private runtimeRefreshTimer?: NodeJS.Timeout
   private readonly cards: CardGenerationService
   private readonly internalTools: InternalToolHandlers
@@ -36,7 +33,9 @@ export class RunExecutor {
     private readonly config: Config,
     private readonly tools?: ToolOrchestrator,
     private readonly runtimeConfig?: Pick<ProviderConfigClient, "get">,
+    initialRuntimeSettings: RuntimeSettings = defaultRuntimeSettings,
   ) {
+    this.runtimeSettings = initialRuntimeSettings
     this.cards = new CardGenerationService(repository)
     this.internalTools = new InternalToolHandlers(repository, () => this.runtimeSettings)
   }
@@ -79,7 +78,7 @@ export class RunExecutor {
   }
 
   private async claimAndExecute(): Promise<boolean> {
-    const run = await this.repository.claimRun(this.config.INSTANCE_ID, agentRuntimeInternals.runLeaseSeconds)
+    const run = await this.repository.claimNextQueuedRun()
     if (!run) return false
 
     const activeCount = await this.repository.countActiveUserRuns(run.ownerUserId)
@@ -90,7 +89,7 @@ export class RunExecutor {
         "luna.quota.user_concurrent_runs": this.runtimeSettings.userConcurrentRuns,
         "luna.quota.active_count": activeCount,
       })
-      try { await this.repository.updateRun(run.id, "queued", "failed", { completedAt: new Date().toISOString(), errorCode: "ai.quota.user_concurrent_runs_exceeded" }) } catch { /* state may have changed */ }
+      try { await this.repository.updateRun(run.id, "running", "failed", { completedAt: new Date().toISOString(), errorCode: "ai.quota.user_concurrent_runs_exceeded" }) } catch { /* state may have changed */ }
       return true
     }
     return withSpan(`invoke_agent ${genAIAgentName}`, internalSpanOptions({
@@ -104,20 +103,14 @@ export class RunExecutor {
       const abort = new AbortController()
       this.controllers.set(run.id, abort)
       const timeout = setTimeout(() => abort.abort(new Error("ai.run_timeout")), this.runtimeSettings.runTimeoutMs)
-      const heartbeat = setInterval(() => {
-        void this.repository.renewLease(run.id, this.config.INSTANCE_ID, agentRuntimeInternals.runLeaseSeconds)
-          .then(ok => { if (!ok) abort.abort(new Error("ai.run_lease_lost")) })
-      }, Math.max(1000, agentRuntimeInternals.runLeaseSeconds * 333))
       let cardGeneration: CardGeneration | undefined
       const providerArgumentRepairAttempts = new Map<string, number>()
       try {
         telemetryLog("agent.run.started", "info", {
           "luna.run.id": run.id,
         })
-        const running = await this.repository.updateRun(run.id, "queued", "running", { startedAt: new Date().toISOString() })
         await this.repository.appendEvent(run.id, "run.started", {
           state: "running",
-          expectedVersion: running.rowVersion,
           // 预算快照随事件下发，前端用它渲染单次 Run 的 token 预算占用。
           ...(run.budget ? { budget: { totalTokens: run.budget.totalTokens, totalCredits: run.budget.totalCredits } } : {}),
         })
@@ -127,7 +120,7 @@ export class RunExecutor {
           { role: "user", content: executionInput.input },
         ]))
         if (executionInput.pageContext.__lunaDirectToolAction === true) {
-          const directTool = executionInput.toolInteractions.find(item => item.type === "tool_call" && ["succeeded", "failed"].includes(String(item.content.status)))
+          const directTool = executionInput.toolInteractions.find(item => item.type === "tool_call" && ["succeeded", "failed", "rejected"].includes(String(item.content.status)))
           if (!directTool) throw new Error("ai.direct_tool_not_ready")
           const directStatus = directTool.content.status === "failed" ? "failed" : "completed"
           await this.repository.updateRun(run.id, "running", directStatus, { completedAt: new Date().toISOString() })
@@ -143,24 +136,17 @@ export class RunExecutor {
           turnIndex: executionInput.turnIndex,
         }
         let assistantRenamed = false
-        let pendingOptions: unknown
-        let interactionCardsCreated = false
         let cardRepairExhausted = false
         let finalAnswer = ""
         let completed = false
         let finalResponseMissing = false
         const continuationMessages = resumedToolMessages(executionInput.toolInteractions)
-        if (!requestsExplicitLiveRefresh(executionInput.input)) {
-          for (const historical of recentEmptyReadResults(executionInput.history)) {
-            this.tools?.seedRunStableResult({ runId: run.id, ...historical })
-          }
-        }
-        // 恢复审批/MFA 后仍保留此前已经使用过的工具，避免动态工具集在断点续跑时漂移。
-        const loadedOperationIds = new Set(resumedOperationIds(executionInput.toolInteractions))
-        const toolRetrievalState = new ToolRetrievalStateTracker(executionInput.pageContext, executionInput.toolInteractions)
+        const nextStepOperationIds = new Set<string>()
         const searchedToolQueries = new Set<string>()
-        const browsedToolRequests = new Set<string>()
+        const detailedToolRequests = new Set<string>()
         for (let step = 0; step < this.runtimeSettings.maxModelSteps; step += 1) {
+          const loadedOperationIds = [...nextStepOperationIds]
+          nextStepOperationIds.clear()
           const result = await this.streamModel(run.id, run.turnId, {
             runId: run.id,
             ownerUserId: run.ownerUserId,
@@ -174,8 +160,7 @@ export class RunExecutor {
             answer: "",
             toolCalls: [],
             continuationMessages,
-            loadedOperationIds: [...loadedOperationIds],
-            toolRetrievalState: toolRetrievalState.snapshot(),
+            loadedOperationIds,
             ...(executionInput.model ? { model: executionInput.model } : {}),
           }, abort.signal)
           finalAnswer = result.answer
@@ -204,8 +189,7 @@ export class RunExecutor {
           }))
           continuationMessages.push({ role: "assistant", content: result.answer, toolCalls })
           let platformToolCalled = false
-          let createOptionsCalled = false
-          let browseToolsCalled = false
+          let toolDetailsCalled = false
           let searchToolsCalled = false
           let createInteractionCardsCalled = false
           let createdInteractionCardMode: "presentation" | "interactive" | undefined
@@ -276,7 +260,6 @@ export class RunExecutor {
                 }
                 createInteractionCardsCalled = true
                 createdInteractionCardMode = creation.mode
-                interactionCardsCreated = true
                 cardGeneration = undefined
               }
               continuationMessages.push(toolResultMessage(toolCall, {
@@ -295,26 +278,18 @@ export class RunExecutor {
               }))
               continue
             }
-            if (toolCall.operationId === "create_options") {
-              createOptionsCalled = true
-              if (!hasPlatformTool) pendingOptions = toolCall.arguments
-              continuationMessages.push(toolResultMessage(toolCall, {
-                status: hasPlatformTool ? "deferred_until_final_response" : "accepted",
-              }))
-              continue
-            }
-            if (toolCall.operationId === "browse_tools") {
-              browseToolsCalled = true
-              const parsedInput = browseToolsInput.safeParse(toolCall.arguments)
+            if (toolCall.operationId === "get_tool_details") {
+              toolDetailsCalled = true
+              const parsedInput = getToolDetailsInput.safeParse(toolCall.arguments)
               if (!parsedInput.success) {
                 const errorCode = "ai.tool_arguments_invalid"
                 await this.internalTools.recordToolCall(
                   run.id,
                   run.turnId,
-                  "browse_tools",
+                  "get_tool_details",
                   toolCall.arguments,
                   "failed",
-                  { issues: parsedInput.error.issues.map(issue => ({ path: issue.path, code: issue.code })) },
+                  { issues: parsedInput.error.issues.map((issue: { path: PropertyKey[], code: string }) => ({ path: issue.path, code: issue.code })) },
                   errorCode,
                   toolCall.id,
                 )
@@ -323,40 +298,37 @@ export class RunExecutor {
                   status: "failed",
                   errorCode,
                   retryable: true,
-                  guidance: "请按 list 或 details 模式修正参数后，在当前 Run 内重试一次 browse_tools。",
+                  guidance: "请提供一到八个精确 operationId 后，在当前 Run 内重试一次 get_tool_details。",
                 }))
                 continue
               }
               const input = parsedInput.data
               const requestKey = JSON.stringify(input)
-              const alreadyBrowsed = browsedToolRequests.has(requestKey)
-              const browseStartedAt = performance.now()
-              let browseResult: Awaited<ReturnType<ModelRuntime["browseAvailableTools"]>>
+              const alreadyLoaded = detailedToolRequests.has(requestKey)
+              const detailsStartedAt = performance.now()
+              let detailsResult: Awaited<ReturnType<ModelRuntime["getAvailableToolDetails"]>>
               try {
-                browseResult = await this.traceInternalTool("browse_tools", run.id, input, async () => {
-                  if (alreadyBrowsed) {
+                detailsResult = await this.traceInternalTool("get_tool_details", run.id, input, async () => {
+                  if (alreadyLoaded) {
                     return {
-                      mode: input.mode,
-                      entries: [],
-                      details: [],
+                      items: [],
                       loadedOperationIds: [],
                       missingOperationIds: [],
-                      total: 0,
                     }
                   }
-                  browsedToolRequests.add(requestKey)
-                  return this.modelRuntime.browseAvailableTools(input)
+                  detailedToolRequests.add(requestKey)
+                  return this.modelRuntime.getAvailableToolDetails(input.operationIds)
                 }, toolCall.id)
                 await this.internalTools.recordToolCall(
                   run.id,
                   run.turnId,
-                  "browse_tools",
+                  "get_tool_details",
                   input,
                   "succeeded",
-                  browseResult,
+                  detailsResult,
                   undefined,
                   toolCall.id,
-                  performance.now() - browseStartedAt,
+                  performance.now() - detailsStartedAt,
                 )
               }
               catch (error) {
@@ -364,29 +336,27 @@ export class RunExecutor {
                 await this.internalTools.recordToolCall(
                   run.id,
                   run.turnId,
-                  "browse_tools",
+                  "get_tool_details",
                   input,
                   "failed",
                   undefined,
                   errorCode,
                   toolCall.id,
-                  performance.now() - browseStartedAt,
+                  performance.now() - detailsStartedAt,
                 )
                 throw error
               }
-              browseResult.loadedOperationIds.forEach(operationId => loadedOperationIds.add(operationId))
-              const itemCount = browseResult.entries.length + browseResult.details.length
-              const browseOutcome = alreadyBrowsed ? "duplicate" : itemCount ? "succeeded" : "empty"
-              agentMetrics.toolDirectoryBrowses.add(1, { mode: input.mode, outcome: browseOutcome })
-              agentMetrics.toolDirectoryItems.record(itemCount, { mode: input.mode, outcome: browseOutcome })
+              detailsResult.loadedOperationIds.forEach(operationId => nextStepOperationIds.add(operationId))
+              const itemCount = detailsResult.items.length
+              const detailsOutcome = alreadyLoaded ? "duplicate" : itemCount ? "succeeded" : "empty"
+              agentMetrics.toolDetailLoads.add(1, { outcome: detailsOutcome })
+              agentMetrics.toolDetailItems.record(itemCount, { outcome: detailsOutcome })
               continuationMessages.push(toolResultMessage(toolCall, {
                 status: itemCount ? "succeeded" : "empty",
-                ...browseResult,
-                guidance: input.mode === "list"
-                  ? "这是轻量能力目录，不代表任何工具已执行。请从中选择最多 8 个精确 operationId，用 details 模式加载完整契约；无法确定时再使用 search_tools。"
-                  : browseResult.loadedOperationIds.length
-                    ? "这些工具已加入本轮后续模型步骤。请继续调用最适合的具体工具；目录详情不代表业务执行结果。"
-                    : "没有加载到已准入工具。请核对 operationId，或先用 list 模式读取当前权威目录。",
+                ...detailsResult,
+                guidance: detailsResult.loadedOperationIds.length
+                  ? "这些工具已加入本轮后续模型步骤。请继续调用最适合的具体工具；目录详情不代表业务执行结果。"
+                  : "没有加载到已准入工具。请核对 operationId，或先用 search_tools 检索权威目录。",
               }))
               continue
             }
@@ -410,12 +380,12 @@ export class RunExecutor {
                   status: "failed",
                   errorCode,
                   retryable: true,
-                  guidance: "请修正 query 或 maxResults 后，在当前 Run 内重试一次 search_tools。",
+                  guidance: "请修正 query、page 或 pageSize 后，在当前 Run 内重试一次 search_tools。",
                 }))
                 continue
               }
               const input = parsedInput.data
-              const normalizedQuery = normalizeToolSearchQuery(input.query)
+              const normalizedQuery = `${normalizeToolSearchQuery(input.query)}\u0000${input.page}\u0000${input.pageSize}`
               const alreadySearched = searchedToolQueries.has(normalizedQuery)
               const searchStartedAt = performance.now()
               let searchResult: Awaited<ReturnType<ModelRuntime["searchAvailableTools"]>>
@@ -423,16 +393,16 @@ export class RunExecutor {
                 searchResult = await this.traceInternalTool("search_tools", run.id, input, async () => {
                   if (alreadySearched) return {
                     query: input.query,
-                    matches: [],
-                    loadedOperationIds: [] as string[],
-                    totalMatches: 0,
+                    items: [],
+                    page: input.page,
+                    pageSize: input.pageSize,
+                    total: 0,
+                    totalPages: 0,
                   }
                   searchedToolQueries.add(normalizedQuery)
                   return this.modelRuntime.searchAvailableTools(
-                    input.query,
+                    input,
                     executionInput.pageContext,
-                    input.maxResults,
-                    toolRetrievalState.snapshot(),
                     abort.signal,
                   )
                 }, toolCall.id)
@@ -463,17 +433,14 @@ export class RunExecutor {
                 )
                 throw error
               }
-              searchResult.loadedOperationIds.forEach(operationId => loadedOperationIds.add(operationId))
-              const searchOutcome = alreadySearched ? "duplicate" : searchResult.matches.length ? "succeeded" : "no_matches"
+              const searchOutcome = alreadySearched ? "duplicate" : searchResult.items.length ? "succeeded" : "no_matches"
               agentMetrics.toolSearches.add(1, { outcome: searchOutcome })
-              agentMetrics.toolSearchMatches.record(searchResult.matches.length, { outcome: searchOutcome })
+              agentMetrics.toolSearchMatches.record(searchResult.items.length, { outcome: searchOutcome })
               continuationMessages.push(toolResultMessage(toolCall, {
-                status: searchResult.matches.length ? "succeeded" : "no_matches",
-                matches: searchResult.matches,
-                loadedOperationIds: searchResult.loadedOperationIds,
-                totalMatches: searchResult.totalMatches,
-                guidance: searchResult.matches.length
-                  ? "这些工具已加入本轮后续模型步骤。请继续调用最适合的具体工具；不要把检索结果当成业务执行结果。"
+                status: searchResult.items.length ? "succeeded" : "no_matches",
+                ...searchResult,
+                guidance: searchResult.items.length
+                  ? "检索结果只是摘要。请选择一到八个精确 operationId 调用 get_tool_details，加载后再执行具体工具；不要把目录结果当成业务执行结果。"
                   : "没有新增匹配工具，或同一检索已经执行过。请改用更具体且不同的业务目标检索一次；仍无结果时再如实说明能力缺失。",
               }))
               continue
@@ -511,9 +478,7 @@ export class RunExecutor {
                 continuationMessages.push(toolResultMessage(toolCall, {
                   status: "failed",
                   ...error.toJSON(),
-                  guidance: error.code === "ai.tool_no_new_information"
-                    ? "相同参数的近期只读调用已经得到空结果；不要再次调用。请基于已有结果直接说明当前未发现资源，或改用能带来新信息的不同查询。"
-                    : "工具循环保护已停止这次调用；不要原样重试。请基于现有结果回答，或改用参数和信息来源都不同的下一步。",
+                  guidance: "工具循环保护已停止这次调用；不要原样重试。请基于现有结果回答，或改用参数和信息来源都不同的下一步。",
                 }))
                 continue
               }
@@ -526,16 +491,10 @@ export class RunExecutor {
               }))
               continue
             }
-            const failureGuidance = platformToolFailureGuidance(call.operationId, call.errorCode)
-            const verificationGuidance = platformToolVerificationGuidance(call.result)
-            loadedOperationIds.add(call.operationId)
-            toolRetrievalState.record(call.operationId, call.status, call.result, call.errorCode)
             continuationMessages.push(toolResultMessage(toolCall, {
               status: call.status,
               ...(call.result !== undefined ? { result: call.result } : {}),
               ...(call.errorCode ? { errorCode: call.errorCode } : {}),
-              ...(verificationGuidance ?? {}),
-              ...(failureGuidance ?? {}),
             }))
             if (call.status === "awaiting_approval") {
               outcome = "waiting_approval"
@@ -543,18 +502,11 @@ export class RunExecutor {
               await this.repository.updateRun(run.id, "running", "waiting_approval")
               return true
             }
-            if (call.status === "awaiting_mfa") {
-              outcome = "waiting_mfa"
-              telemetryLog("agent.run.waiting_mfa", "info", { "luna.run.id": run.id, "tool.name": call.operationId })
-              await this.repository.updateRun(run.id, "running", "waiting_mfa")
-              return true
-            }
           }
           if (recoverableToolError) continue
           if (cardRepairExhausted) continue
           // 目录浏览和语义检索都只完成能力发现；无论模型是否附带文本，都必须把结果送入下一模型步。
-          if (browseToolsCalled || searchToolsCalled) continue
-          if (platformToolCalled) pendingOptions = undefined
+          if (toolDetailsCalled || searchToolsCalled) continue
           if (!platformToolCalled && createInteractionCardsCalled) {
             if (createdInteractionCardMode === "presentation") continue
             completed = true
@@ -564,7 +516,6 @@ export class RunExecutor {
             completed = true
             break
           }
-          if (!platformToolCalled && createOptionsCalled) finalResponseMissing = true
         }
         if (!completed) throw new Error(finalResponseMissing ? "ai.final_response_missing" : "ai.limit_exceeded")
         if (executionInput.conversation.titleSource === "default" && !assistantRenamed) {
@@ -575,18 +526,6 @@ export class RunExecutor {
           catch {
             // Title generation is best-effort and must never fail a completed response.
           }
-        }
-        if (!interactionCardsCreated) {
-          await this.ensureOptions(run.id, run.turnId, {
-            runId: run.id,
-            ownerUserId: run.ownerUserId,
-            userInput: executionInput.input,
-            answer: finalAnswer,
-            pageContext: executionInput.pageContext,
-            conversation: conversationContext,
-            history: executionInput.history,
-            ...(executionInput.model ? { model: executionInput.model } : {}),
-          }, pendingOptions, abort.signal)
         }
         recordAIContent(span, "luna.gen_ai.content.output", "gen_ai.output.messages", genAIOutputMessages({
           text: finalAnswer,
@@ -614,6 +553,20 @@ export class RunExecutor {
             "luna.run.cancel_source": error instanceof RunStateConflictError ? "durable_state" : "abort_signal",
           })
           if (cardGeneration) await this.cards.fail(run.id, cardGeneration, "ai.run_canceled")
+          return true
+        }
+        if (errorCode === "ai.agent_stopping") {
+          outcome = "interrupted"
+          span.setAttribute("luna.run.outcome", outcome)
+          telemetryLog("agent.run.interrupted", "info", { "luna.run.id": run.id })
+          if (cardGeneration) await this.cards.fail(run.id, cardGeneration, "ai.agent_stopping")
+          try {
+            await this.repository.updateRun(run.id, "running", "interrupted", {
+              completedAt: new Date().toISOString(),
+              errorCode: "ai.agent_stopping",
+            })
+          }
+          catch { /* cancellation or completion won the state transition */ }
           return true
         }
         outcome = error instanceof ToolInterruption ? error.state : stableErrorCode(error)
@@ -651,11 +604,9 @@ export class RunExecutor {
       }
       finally {
         clearTimeout(timeout)
-        clearInterval(heartbeat)
         this.controllers.delete(run.id)
         await this.repository.finalizeStreamingItems(run.id, "completed")
-        await this.repository.releaseLease(run.id, this.config.INSTANCE_ID)
-        if (!["waiting_approval", "waiting_mfa", "waiting_input"].includes(outcome))
+		if (!["waiting_approval", "waiting_input"].includes(outcome))
           this.tools?.clearRunLoopState(run.id)
         const metricAttributes = { outcome }
         agentMetrics.activeRuns.add(-1)
@@ -692,35 +643,6 @@ export class RunExecutor {
     catch {
       // Keep the last validated settings when Luna API is temporarily unavailable.
     }
-  }
-
-  private async ensureOptions(
-    runId: string,
-    turnId: string,
-    context: Parameters<ModelRuntime["predictNextSteps"]>[0],
-    preferred: unknown,
-    signal: AbortSignal,
-  ) {
-    if (preferred !== undefined) {
-      const parsed = createOptionsInput.safeParse(preferred)
-      if (parsed.success) {
-        await this.traceInternalTool("create_options", runId, parsed.data, () => this.internalTools.createOptions(runId, turnId, parsed.data))
-        return
-      }
-    }
-    try {
-      const predicted = await this.modelRuntime.predictNextSteps(context, signal)
-      const parsed = createOptionsInput.safeParse(predicted)
-      if (parsed.success) {
-        await this.traceInternalTool("create_options", runId, parsed.data, () => this.internalTools.createOptions(runId, turnId, parsed.data))
-        return
-      }
-    }
-    catch {
-      if (signal.aborted) throw signal.reason
-      // Suggestions are optional. Omitting them is safer than presenting unrelated generic actions.
-    }
-    if (signal.aborted) throw signal.reason
   }
 
   private async streamModel(runId: string, turnId: string, input: AssistantModelInput, signal: AbortSignal): Promise<AssistantModelInput> {

@@ -110,7 +110,6 @@ const operationsDashboardPage = {
     queued: '排队中',
     running: '运行中',
     waiting_approval: '等待审批',
-    waiting_mfa: '等待验证',
     waiting_input: '等待输入',
     completed: '已完成',
     failed: '失败',

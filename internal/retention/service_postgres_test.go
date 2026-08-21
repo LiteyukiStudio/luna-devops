@@ -80,16 +80,10 @@ CREATE TABLE hook_run_logs (id text PRIMARY KEY, hook_run_id text NOT NULL, crea
 	assertRowCount(t, db, "hook_runs", 2)
 }
 
-func TestExpiredAuthCleanupPreservesFutureAndBlockedRelationsInPostgres(t *testing.T) {
+func TestExpiredAuthCleanupPreservesFutureRecordsInPostgres(t *testing.T) {
 	db := openRetentionTestDB(t)
 	if err := db.Exec(`
 CREATE TABLE user_sessions (id text PRIMARY KEY, expires_at timestamptz NOT NULL);
-CREATE TABLE step_up_assertions (
-    id text PRIMARY KEY,
-    session_id text NOT NULL REFERENCES user_sessions(id) ON DELETE CASCADE,
-    idle_expires_at timestamptz NOT NULL,
-    absolute_expires_at timestamptz NOT NULL
-);
 CREATE TABLE user_remember_tokens (id text PRIMARY KEY, expires_at timestamptz NOT NULL);
 CREATE TABLE email_registration_challenges (id text PRIMARY KEY, expires_at timestamptz NOT NULL);
 `).Error; err != nil {
@@ -99,12 +93,8 @@ CREATE TABLE email_registration_challenges (id text PRIMARY KEY, expires_at time
 	now := time.Date(2026, 7, 14, 12, 0, 0, 0, time.UTC)
 	old := now.AddDate(0, 0, -40)
 	future := now.Add(24 * time.Hour)
-	if err := db.Exec("INSERT INTO user_sessions(id, expires_at) VALUES (?, ?), (?, ?), (?, ?)",
-		"session_old", old, "session_blocked", old, "session_future", future).Error; err != nil {
-		t.Fatal(err)
-	}
-	if err := db.Exec("INSERT INTO step_up_assertions(id, session_id, idle_expires_at, absolute_expires_at) VALUES (?, ?, ?, ?), (?, ?, ?, ?)",
-		"assertion_old", "session_old", old, old, "assertion_future", "session_blocked", future, future).Error; err != nil {
+	if err := db.Exec("INSERT INTO user_sessions(id, expires_at) VALUES (?, ?), (?, ?)",
+		"session_old", old, "session_future", future).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Exec("INSERT INTO user_remember_tokens(id, expires_at) VALUES (?, ?), (?, ?)",
@@ -123,23 +113,20 @@ CREATE TABLE email_registration_challenges (id text PRIMARY KEY, expires_at time
 	if err != nil {
 		t.Fatalf("preview auth cleanup: %v", err)
 	}
-	if len(preview) != 1 || preview[0].Matched != 4 || preview[0].Deleted != 0 {
-		t.Fatalf("auth preview = %#v, want 4 matched", preview)
+	if len(preview) != 1 || preview[0].Matched != 3 || preview[0].Deleted != 0 {
+		t.Fatalf("auth preview = %#v, want 3 matched", preview)
 	}
 	results, err := service.Cleanup(t.Context(), []string{DatasetExpiredAuthData}, start, end, now)
 	if err != nil {
 		t.Fatalf("cleanup auth data: %v", err)
 	}
-	if len(results) != 1 || results[0].Matched != 4 || results[0].Deleted != 4 {
-		t.Fatalf("auth cleanup = %#v, want 4 matched/deleted", results)
+	if len(results) != 1 || results[0].Matched != 3 || results[0].Deleted != 3 {
+		t.Fatalf("auth cleanup = %#v, want 3 matched/deleted", results)
 	}
 
-	assertRowCount(t, db, "step_up_assertions", 1)
-	assertRowCount(t, db, "user_sessions", 2)
+	assertRowCount(t, db, "user_sessions", 1)
 	assertRowCount(t, db, "user_remember_tokens", 1)
 	assertRowCount(t, db, "email_registration_challenges", 1)
-	assertIDExists(t, db, "step_up_assertions", "assertion_future")
-	assertIDExists(t, db, "user_sessions", "session_blocked")
 	assertIDExists(t, db, "user_sessions", "session_future")
 	assertIDExists(t, db, "user_remember_tokens", "remember_future")
 	assertIDExists(t, db, "email_registration_challenges", "registration_future")

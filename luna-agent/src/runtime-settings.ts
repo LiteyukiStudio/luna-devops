@@ -55,5 +55,4 @@ export const defaultRuntimeSettings: RuntimeSettings = {
 export const agentRuntimeInternals = {
   configRefreshMs: 30_000,
   runPollMs: 500,
-  runLeaseSeconds: 30,
 } as const

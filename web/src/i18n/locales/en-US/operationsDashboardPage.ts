@@ -110,7 +110,6 @@ const operationsDashboardPage = {
     queued: 'Queued',
     running: 'Running',
     waiting_approval: 'Waiting for approval',
-    waiting_mfa: 'Waiting for verification',
     waiting_input: 'Waiting for input',
     completed: 'Completed',
     failed: 'Failed',

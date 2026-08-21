@@ -30,7 +30,7 @@ func (h *Handlers) CreateReleaseRuntimeCommandSession(ctx *gin.Context) {
 		writeErrorCode(ctx, http.StatusServiceUnavailable, "runtime.command_session_unavailable", "runtime command session broker is unavailable")
 		return
 	}
-	user, project, release, target, client, namespace, subjectID, runID, ok := h.releaseRuntimeCommandSessionContext(ctx, true, true)
+	user, project, release, target, client, namespace, subjectID, runID, ok := h.releaseRuntimeCommandSessionContext(ctx, true)
 	if !ok {
 		return
 	}
@@ -72,7 +72,7 @@ func (h *Handlers) ExecuteReleaseRuntimeCommandSession(ctx *gin.Context) {
 		writeErrorCode(ctx, http.StatusServiceUnavailable, "runtime.command_session_unavailable", "runtime command session broker is unavailable")
 		return
 	}
-	user, project, release, target, _, _, subjectID, runID, ok := h.releaseRuntimeCommandSessionContext(ctx, true, false)
+	user, project, release, target, _, _, subjectID, runID, ok := h.releaseRuntimeCommandSessionContext(ctx, false)
 	if !ok {
 		return
 	}
@@ -102,7 +102,7 @@ func (h *Handlers) CloseReleaseRuntimeCommandSession(ctx *gin.Context) {
 		writeErrorCode(ctx, http.StatusServiceUnavailable, "runtime.command_session_unavailable", "runtime command session broker is unavailable")
 		return
 	}
-	user, project, release, target, _, _, subjectID, runID, ok := h.releaseRuntimeCommandSessionContext(ctx, false, false)
+	user, project, release, target, _, _, subjectID, runID, ok := h.releaseRuntimeCommandSessionContext(ctx, false)
 	if !ok {
 		return
 	}
@@ -120,7 +120,7 @@ func (h *Handlers) CloseReleaseRuntimeCommandSession(ctx *gin.Context) {
 	ctx.Status(http.StatusNoContent)
 }
 
-func (h *Handlers) releaseRuntimeCommandSessionContext(ctx *gin.Context, stepUp, connect bool) (
+func (h *Handlers) releaseRuntimeCommandSessionContext(ctx *gin.Context, connect bool) (
 	user model.User, project model.Project, release model.Release, target model.DeploymentTarget,
 	client *kubeprovider.Client, namespace, subjectID, runID string, ok bool,
 ) {
@@ -134,10 +134,6 @@ func (h *Handlers) releaseRuntimeCommandSessionContext(ctx *gin.Context, stepUp,
 	}
 	target, ok = h.releaseRuntimeTarget(ctx, release)
 	if !ok || !ensureRuntimeWebConsoleEnabled(ctx, project, target) || !h.ensureDeploymentTargetCanMutate(ctx, target) {
-		ok = false
-		return
-	}
-	if stepUp && !h.requireStepUp(ctx, user, stepUpPurposeRuntimeExec) {
 		ok = false
 		return
 	}

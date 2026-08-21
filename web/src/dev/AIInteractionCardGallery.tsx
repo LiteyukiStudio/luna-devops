@@ -43,7 +43,6 @@ function MessageActionsFixture() {
           loading={false}
           onAction={async () => true}
           onApproval={async () => {}}
-          onMFA={async () => {}}
           onResend={() => {}}
           onRetry={() => {}}
         />

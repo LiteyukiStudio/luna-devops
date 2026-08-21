@@ -222,11 +222,6 @@ func (h *Handlers) CreateProjectVolume(ctx *gin.Context) {
 	if domainInput.OwnershipMode == model.ProjectVolumeOwnershipManaged && !h.ensureBillingAllowsManagedVolumeChange(ctx, project.ID) {
 		return
 	}
-	if domainInput.SourceKind == model.ProjectVolumeSourceExistingClaim && domainInput.OwnershipMode == model.ProjectVolumeOwnershipManaged {
-		if !h.requireStepUp(ctx, user, stepUpPurposeVolumeAdopt) {
-			return
-		}
-	}
 	result, err := h.volumes.CreateProjectVolume(ctx.Request.Context(), domainInput)
 	if err != nil {
 		h.auditWithContext(user.ID, projectVolumeCreateAuditAction(domainInput), project.ID, false, volumeAuditErrorCode(err), ctx.Request.Context())
@@ -296,9 +291,6 @@ func (h *Handlers) DeleteProjectVolume(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	if !h.requireStepUp(ctx, user, stepUpPurposeVolumeDelete) {
-		return
-	}
 	revision, ok := volumeRevisionHeader(ctx)
 	if !ok {
 		return
@@ -335,7 +327,7 @@ func (h *Handlers) RetryProjectVolumeOperation(ctx *gin.Context) {
 		writeVolumeError(ctx, err)
 		return
 	}
-	retryAction, stepUpPurpose, authorized := projectVolumeRetryAuthorization(current)
+	retryAction, authorized := projectVolumeRetryAuthorization(current)
 	if !authorized {
 		h.auditWithContext(user.ID, "project_volume.retry", current.ID, false, volume.CodeStateConflict, ctx.Request.Context())
 		writeErrorCode(ctx, http.StatusConflict, volume.CodeStateConflict, "project volume operation cannot be retried")
@@ -347,9 +339,6 @@ func (h *Handlers) RetryProjectVolumeOperation(ctx *gin.Context) {
 	}
 	if token, bearer := currentAccessTokenFromContext(ctx); bearer && !accessTokenAllows(token.Scope, string(retryAction)) {
 		writeErrorCode(ctx, http.StatusForbidden, "auth.token.scope_insufficient", "the original volume operation scope is required")
-		return
-	}
-	if stepUpPurpose != "" && !h.requireStepUp(ctx, user, stepUpPurpose) {
 		return
 	}
 	if current.OwnershipMode == model.ProjectVolumeOwnershipManaged &&
@@ -367,19 +356,16 @@ func (h *Handlers) RetryProjectVolumeOperation(ctx *gin.Context) {
 	ctx.JSON(http.StatusAccepted, projectVolumeResponseFor(item))
 }
 
-func projectVolumeRetryAuthorization(item model.ProjectVolume) (authz.Action, string, bool) {
+func projectVolumeRetryAuthorization(item model.ProjectVolume) (authz.Action, bool) {
 	switch item.PendingOperation {
 	case volume.OperationDelete:
-		return authz.ActionVolumeDelete, stepUpPurposeVolumeDelete, true
+		return authz.ActionVolumeDelete, true
 	case volume.OperationProvision:
-		if item.SourceKind == model.ProjectVolumeSourceExistingClaim && item.OwnershipMode == model.ProjectVolumeOwnershipManaged {
-			return authz.ActionVolumeWrite, stepUpPurposeVolumeAdopt, true
-		}
-		return authz.ActionVolumeWrite, "", true
+		return authz.ActionVolumeWrite, true
 	case volume.OperationExpand:
-		return authz.ActionVolumeWrite, "", true
+		return authz.ActionVolumeWrite, true
 	default:
-		return "", "", false
+		return "", false
 	}
 }
 

@@ -40,7 +40,6 @@ func TestVolumeTransferMutationsStopBeforeContentWhenBalanceIsInsufficient(t *te
 		t.Fatalf("create transfer: %v", err)
 	}
 	handlers := &Handlers{db: db, mode: "production", configs: &configCache{values: map[string]string{
-		"security.stepUpMfa.enabled":                 "false",
 		"billing.blockDeployChangesWhenInsufficient": "true",
 	}}, volumes: volume.NewGormService(db)}
 

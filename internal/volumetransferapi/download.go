@@ -344,14 +344,12 @@ func transferContentType(format string) string {
 func normalizeDownloadBinding(binding DownloadBinding) DownloadBinding {
 	binding.UserID = strings.TrimSpace(binding.UserID)
 	binding.SubjectID = strings.TrimSpace(binding.SubjectID)
-	binding.AssertionID = strings.TrimSpace(binding.AssertionID)
 	binding.Deadline = binding.Deadline.UTC()
 	return binding
 }
 
 func validateDownloadBinding(binding DownloadBinding, now time.Time) error {
-	if binding.UserID == "" || binding.SubjectID == "" || !binding.Deadline.After(now) ||
-		(binding.AssertionRequired && binding.AssertionID == "") || (!binding.AssertionRequired && binding.AssertionID != "") {
+	if binding.UserID == "" || binding.SubjectID == "" || !binding.Deadline.After(now) {
 		return domainError(volume.CodeTransferExpired, "volume transfer download identity is invalid or expired", nil)
 	}
 	return nil
@@ -363,10 +361,8 @@ func downloadBindingMatches(expected, current DownloadBinding, now time.Time) bo
 	if validateDownloadBinding(expected, now) != nil || validateDownloadBinding(current, now) != nil {
 		return false
 	}
-	return expected.AssertionRequired == current.AssertionRequired &&
-		constantTimeTextEqual(expected.UserID, current.UserID) &&
-		constantTimeTextEqual(expected.SubjectID, current.SubjectID) &&
-		constantTimeTextEqual(expected.AssertionID, current.AssertionID)
+	return constantTimeTextEqual(expected.UserID, current.UserID) &&
+		constantTimeTextEqual(expected.SubjectID, current.SubjectID)
 }
 
 func randomOpaqueToken(prefix string, bytes int) (string, error) {

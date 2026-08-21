@@ -274,7 +274,7 @@ export function activeRunStreamSubscriptions(
   const snapshotRunIds = new Set(data?.snapshot?.turns.flatMap(turn => turn.selectedRun ? [turn.selectedRun.id] : []) ?? [])
   const authoritative = data?.snapshot?.turns.flatMap((turn) => {
     const run = turn.selectedRun
-    if (!run || ['completed', 'failed', 'canceled'].includes(data.state.runStatuses[run.id] ?? run.status))
+    if (!run || ['completed', 'failed', 'canceled', 'interrupted'].includes(data.state.runStatuses[run.id] ?? run.status))
       return []
     return [{
       conversationId,
@@ -286,7 +286,7 @@ export function activeRunStreamSubscriptions(
   const optimistic = currentSubscriptions.filter(subscription =>
     subscription.conversationId === conversationId
     && !snapshotRunIds.has(subscription.runId)
-    && !['completed', 'failed', 'canceled'].includes(data?.state.runStatuses[subscription.runId] ?? 'queued'))
+    && !['completed', 'failed', 'canceled', 'interrupted'].includes(data?.state.runStatuses[subscription.runId] ?? 'queued'))
   return [...authoritative, ...optimistic]
 }
 

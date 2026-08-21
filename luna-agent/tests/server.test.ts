@@ -1,19 +1,18 @@
 import { describe, expect, it } from "vitest"
-import { DevelopmentAuthenticator } from "../src/auth.js"
+import { DevelopmentRequestVerifier } from "../src/auth.js"
 import { loadConfig } from "../src/config.js"
-import { MemoryRepository } from "../src/persistence/memory.js"
+import { TestRepository } from "./support/test-repository.js"
 import { DeterministicProvider } from "../src/provider/deterministic.js"
 import { ProviderConfigClient } from "../src/provider/config-client.js"
 import { defaultRuntimeSettings } from "../src/runtime-settings.js"
 import { buildServer } from "../src/server.js"
-import { PayloadCipher } from "../src/payload-cipher.js"
 import type { AIEvent, AITimeline, AITurnCreated } from "../../web/src/api/ai-types.js"
 import { presentTimeline } from "../src/timeline-presenter.js"
 
 function fixture() {
-  const repository = new MemoryRepository()
+  const repository = new TestRepository()
   const provider = new DeterministicProvider()
-  const app = buildServer({ config: loadConfig({ NODE_ENV: "test" }), repository, provider, authenticator: new DevelopmentAuthenticator(), grantCipher: new PayloadCipher(Buffer.alloc(32, 1)) })
+  const app = buildServer({ config: loadConfig({ NODE_ENV: "test" }), repository, provider, requestVerifier: new DevelopmentRequestVerifier() })
   return { app, repository }
 }
 
@@ -28,15 +27,14 @@ describe("internal API", () => {
     })
     await healthy.app.close()
 
-    class SchemaMismatchRepository extends MemoryRepository {
+    class SchemaMismatchRepository extends TestRepository {
       override async readiness() { return { database: true, schema: false } }
     }
     const schemaApp = buildServer({
       config: loadConfig({ NODE_ENV: "test" }),
       repository: new SchemaMismatchRepository(),
       provider: new DeterministicProvider(),
-      authenticator: new DevelopmentAuthenticator(),
-      grantCipher: new PayloadCipher(Buffer.alloc(32, 1)),
+      requestVerifier: new DevelopmentRequestVerifier(),
     })
     const schemaResponse = await schemaApp.inject({ method: "GET", url: "/internal/health/ready" })
     expect(schemaResponse.statusCode).toBe(503)
@@ -45,10 +43,9 @@ describe("internal API", () => {
 
     const configApp = buildServer({
       config: loadConfig({ NODE_ENV: "test" }),
-      repository: new MemoryRepository(),
+      repository: new TestRepository(),
       provider: new DeterministicProvider(),
-      authenticator: new DevelopmentAuthenticator(),
-      grantCipher: new PayloadCipher(Buffer.alloc(32, 1)),
+      requestVerifier: new DevelopmentRequestVerifier(),
       providerConfigClient: new ProviderConfigClient("https://luna-api.internal", "callback-token-value"),
     })
     const configResponse = await configApp.inject({ method: "GET", url: "/internal/health/ready" })
@@ -61,6 +58,35 @@ describe("internal API", () => {
     const { app } = fixture()
     const response = await app.inject({ method: "GET", url: "/internal/v1/conversations" })
     expect(response.statusCode).toBe(401)
+    await app.close()
+  })
+  it("lists and revokes approve-always exemptions only for the current user", async () => {
+    const { app, repository } = fixture()
+    const conversation = await repository.createConversation("usr_exemption_a", "approval")
+    const created = await repository.createTurn("usr_exemption_a", {
+      conversationId: conversation.id,
+      input: "restart",
+      pageContext: {},
+      idempotencyKey: "exemption-turn",
+    })
+    await repository.grantToolApprovalExemption(created.run.id, "restartRelease", "aitool_exemption")
+
+    const ownerHeaders = { "x-luna-dev-user": "usr_exemption_a" }
+    const otherHeaders = { "x-luna-dev-user": "usr_exemption_b" }
+    const ownerList = await app.inject({ method: "GET", url: "/internal/v1/tool-approval-exemptions", headers: ownerHeaders })
+    expect(ownerList.statusCode).toBe(200)
+    const ownerListBody = ownerList.json<{ items: Array<{ operationId: string, createdAt: string }> }>()
+    expect(ownerListBody.items).toHaveLength(1)
+    expect(ownerListBody.items[0]?.operationId).toBe("restartRelease")
+    expect(typeof ownerListBody.items[0]?.createdAt).toBe("string")
+
+    const otherList = await app.inject({ method: "GET", url: "/internal/v1/tool-approval-exemptions", headers: otherHeaders })
+    expect(otherList.json()).toEqual({ items: [] })
+    expect((await app.inject({ method: "DELETE", url: "/internal/v1/tool-approval-exemptions/restartRelease", headers: otherHeaders })).statusCode).toBe(204)
+    expect((await app.inject({ method: "GET", url: "/internal/v1/tool-approval-exemptions", headers: ownerHeaders })).json()).toMatchObject({ items: [{ operationId: "restartRelease" }] })
+
+    expect((await app.inject({ method: "DELETE", url: "/internal/v1/tool-approval-exemptions/restartRelease", headers: ownerHeaders })).statusCode).toBe(204)
+    expect((await app.inject({ method: "GET", url: "/internal/v1/tool-approval-exemptions", headers: ownerHeaders })).json()).toEqual({ items: [] })
     await app.close()
   })
   it("creates a conversation and a durable turn", async () => {
@@ -186,14 +212,13 @@ describe("internal API", () => {
     await app.close()
   })
   it("keeps a durable cancellation successful when the local abort hook fails", async () => {
-    const repository = new MemoryRepository()
+    const repository = new TestRepository()
     const provider = new DeterministicProvider()
     const app = buildServer({
       config: loadConfig({ NODE_ENV: "test" }),
       repository,
       provider,
-      authenticator: new DevelopmentAuthenticator(),
-      grantCipher: new PayloadCipher(Buffer.alloc(32, 1)),
+      requestVerifier: new DevelopmentRequestVerifier(),
       cancelRun: () => { throw new Error("local abort failed") },
     })
     const headers = { "x-luna-dev-user": "usr_cancel" }
@@ -226,7 +251,6 @@ describe("internal API", () => {
       features: {
         streaming: true,
         approvals: false,
-        stepUpMFA: false,
         uiActions: true,
         longTermMemory: false,
       },
@@ -281,7 +305,7 @@ describe("internal API", () => {
         input: { type: "user_message", parts: [{ partIndex: 0, type: "text", text: "检查构建状态" }] },
         selectedRun: { id: runId, runIndex: 0, status: "queued", expectedVersion: 1, items: [] },
       }],
-      eventCursors: [{ runId, after: 1 }],
+      eventCursors: [{ runId, after: 2 }],
       pageInfo: { hasOlder: false },
     })
     expect(Array.isArray(timeline.eventCursors)).toBe(true)
@@ -290,16 +314,28 @@ describe("internal API", () => {
     const eventsResponse = await app.inject({ method: "GET", url: `/internal/v1/runs/${runId}/events?after=0&stream=false`, headers })
     const events = eventsResponse.json<{ items: AIEvent[], cursor: number }>()
     expect(events).toMatchObject({
-      cursor: 1,
-      items: [{
-        version: 2,
-        eventSequence: 1,
-        type: "run.queued",
-        conversationId,
-        turnId: turnCreated.turnId,
-        runId,
-        payload: { state: "queued" },
-      }],
+      cursor: 2,
+      items: [
+        {
+          version: 2,
+          eventSequence: 1,
+          type: "run.input_received",
+          conversationId,
+          turnId: turnCreated.turnId,
+          runId,
+          item: { id: `${turnCreated.turnId}:input`, type: "user_message", parts: [{ text: "检查构建状态" }] },
+          payload: { initial: true, conversationTitle: "Timeline", conversationTitleSource: "user" },
+        },
+        {
+          version: 2,
+          eventSequence: 2,
+          type: "run.queued",
+          conversationId,
+          turnId: turnCreated.turnId,
+          runId,
+          payload: { state: "queued" },
+        },
+      ],
     })
     await app.close()
   })

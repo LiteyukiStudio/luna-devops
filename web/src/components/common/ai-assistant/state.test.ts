@@ -145,6 +145,20 @@ describe('aI assistant state', () => {
     })
   })
 
+  it('renders and preserves an interrupted terminal state', () => {
+    const state = reduceAIEvent(emptyAIAssistantState, event({
+      type: 'run.interrupted',
+      item: undefined,
+      payload: {},
+    }))
+    expect(state.runStatuses['run-1']).toBe('interrupted')
+    expect(state.blocks[0]).toMatchObject({
+      id: 'run-1:status',
+      type: 'run_status',
+      status: 'interrupted',
+    })
+  })
+
   it('restores a failed run notice from a timeline snapshot', () => {
     const timeline: AITimeline = {
       pageInfo: { hasOlder: false },
@@ -197,13 +211,13 @@ describe('aI assistant state', () => {
     expect(projected.blocks[1]).toMatchObject({ type: 'tool_call', result: { summaryKey: 'aiAssistant.resultAvailable' } })
   })
 
-  it('binds a dangerous tool confirmation to its arguments and row version', () => {
+  it('projects a dangerous tool confirmation without the removed hash and row-version protocol', () => {
     const started = reduceAIEvent(emptyAIAssistantState, event({
       type: 'tool.started',
       toolCallId: 'tool-1',
-      payload: { operationId: 'restartDeploymentTarget', arguments: { targetId: 'target-1' }, argumentsHash: 'sha256:abc', expectedVersion: 1 },
+      payload: { operationId: 'restartDeploymentTarget', arguments: { targetId: 'target-1' } },
       item: toolItem({
-        toolCall: { id: 'tool-1', operationId: 'restartDeploymentTarget', callIndex: 0, status: 'running', arguments: { targetId: 'target-1' }, argumentsHash: 'sha256:abc', expectedVersion: 1 },
+        toolCall: { id: 'tool-1', operationId: 'restartDeploymentTarget', callIndex: 0, status: 'running', arguments: { targetId: 'target-1' } },
       }),
     }))
     const approval = reduceAIEvent(started, event({
@@ -211,19 +225,19 @@ describe('aI assistant state', () => {
       eventSequence: 2,
       type: 'approval.required',
       toolCallId: 'tool-1',
-      payload: { argumentsHash: 'sha256:abc', expectedVersion: 2 },
+      payload: {},
       item: toolItem({
         revision: 2,
-        toolCall: { id: 'tool-1', operationId: 'restartDeploymentTarget', callIndex: 0, status: 'awaiting_approval', arguments: { targetId: 'target-1' }, argumentsHash: 'sha256:abc', expectedVersion: 2 },
+        toolCall: { id: 'tool-1', operationId: 'restartDeploymentTarget', callIndex: 0, status: 'awaiting_approval', arguments: { targetId: 'target-1' } },
       }),
     }))
     expect(approval.blocks[0]).toMatchObject({
       type: 'tool_call',
       status: 'awaiting_approval',
-      argumentsHash: 'sha256:abc',
-      expectedVersion: 2,
+      arguments: { targetId: 'target-1' },
     })
     expect(approval.runStatuses['run-1']).toBe('waiting_approval')
+    expect(approval.runExpectedVersions['run-1']).toBeUndefined()
   })
 
   it('replaces a running card creation block with the completed card in place', () => {

@@ -1974,7 +1974,6 @@ export interface User {
   role: PlatformRoleValue
   language: 'zh-CN' | 'zh-TW' | 'en-US' | 'ja-JP' | 'ko-KR'
   disabled: boolean
-  mfaEnabled: boolean
   balanceCredits: string
   createdAt: string
 }
@@ -2080,67 +2079,6 @@ export interface DataRetentionResult {
 
 export interface DataRetentionResultResponse {
   items: DataRetentionResult[]
-}
-
-export interface MFAStatus {
-  enabled: boolean
-  pending: boolean
-  policyEnabled: boolean
-  enrollmentReauthMode: 'password' | 'fresh_session'
-  confirmedAt?: string | null
-  recoveryCodesRemaining: number
-}
-
-export const mfaPurposes = [
-  'runtime_exec',
-  'runtime_terminal',
-  'secret_update',
-  'secret_view',
-  'ai_conversation_tools',
-  'registry_credential_update',
-  'kubeconfig_update',
-  'auth_provider_update',
-  'user_admin_update',
-  'mfa_manage',
-  'security_settings_update',
-  'data_retention_cleanup',
-  'password_update',
-  'access_token_manage',
-  'billing_owner_transfer',
-  'volume_import',
-  'volume_export',
-  'volume_adopt',
-  'volume_delete',
-] as const
-
-export type MFAPurpose = typeof mfaPurposes[number]
-
-export interface MFAChallenge {
-  purpose: string
-}
-
-export interface MFAEnrollmentRequest {
-  currentPassword?: string
-}
-
-export interface MFAEnrollment {
-  secret: string
-  otpauthUrl: string
-  qrCodeDataUrl?: string
-}
-
-export interface MFARecoveryCodes {
-  recoveryCodes: string[]
-}
-
-export type MFAVerifyPayload
-  = | { code: string, purpose: string }
-    | { recoveryCode: string, purpose: string }
-
-export interface MFAVerifyResponse {
-  verified: boolean
-  purpose: string
-  stepUpAssertionId: string
 }
 
 export interface BootstrapStatus {

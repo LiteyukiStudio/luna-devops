@@ -18,7 +18,7 @@ Set a value to `0` to disable automatic cleanup for that category. Changes affec
 
 ## Manual cleanup
 
-Only administrators can run manual cleanup. If step-up verification is enabled, MFA is also required.
+Only administrators can run manual cleanup. The platform rechecks the current sign-in session and platform role when cleanup starts.
 
 1. Select data categories and a time range.
 2. Preview the number of matching records.

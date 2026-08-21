@@ -22,7 +22,7 @@ func (h *Handlers) UpdateProjectRuntimeConfigSetRuntimeSecrets(ctx *gin.Context)
 		writeError(ctx, http.StatusNotFound, "运行配置集不存在")
 		return
 	}
-	if !h.ensureRuntimeConfigSetCanMutate(ctx, set) || !h.requireStepUp(ctx, user, stepUpPurposeSecretUpdate) {
+	if !h.ensureRuntimeConfigSetCanMutate(ctx, set) {
 		return
 	}
 	var input runtimeSecretMutationRequest

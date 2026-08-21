@@ -43,10 +43,7 @@ create table if not exists ai.runs (
   prompt_version text not null,
   tool_catalog_digest text not null,
   page_context jsonb not null default '{}',
-  run_actor_grant_ciphertext text,
-  lease_owner text,
-  lease_expires_at timestamptz,
-  heartbeat_at timestamptz,
+  actor_session_id text not null,
   created_at timestamptz not null default now(),
   started_at timestamptz,
   completed_at timestamptz,
@@ -68,7 +65,7 @@ create table if not exists ai.runs (
   next_event_sequence bigint not null default 1,
   unique(turn_id, run_index)
 );
-create index if not exists runs_queue on ai.runs(status, lease_expires_at) where status = 'queued';
+create index if not exists runs_queue on ai.runs(status, created_at) where status = 'queued';
 alter table ai.turns add column if not exists model_id text;
 update ai.conversations as conversation
 set model_id = latest_turn.model_id
@@ -95,7 +92,7 @@ create table if not exists ai.model_budget_reservations (
   id text primary key,
   run_id text not null references ai.runs(id) on delete cascade,
   owner_user_id text not null,
-  operation text not null check (operation in ('assistant', 'summary', 'title', 'next_steps')),
+  operation text not null check (operation in ('assistant', 'summary', 'title')),
   state text not null check (state in ('reserved', 'confirmed', 'released', 'settled')),
   model_id text not null,
   model_name text not null,
@@ -149,11 +146,10 @@ create table if not exists ai.tool_calls (
   input_mode text not null default 'model',
   arguments jsonb not null,
   arguments_ciphertext text,
-  arguments_hash text not null,
+  arguments_hash text not null default '',
   attempt integer not null default 1,
   row_version integer not null default 1,
-  approval_expires_at timestamptz,
-  mfa_purpose text,
+  approval_decision text check (approval_decision in ('approve', 'approve_always')),
   result jsonb,
   error_code text,
   created_at timestamptz not null default now(),
@@ -162,6 +158,15 @@ create table if not exists ai.tool_calls (
 
 alter table ai.tool_calls add column if not exists input_mode text not null default 'model';
 create index if not exists tool_calls_run_created on ai.tool_calls(run_id, created_at);
+
+create table if not exists ai.tool_approval_exemptions (
+  user_id text not null,
+  operation_id text not null,
+  source_tool_call_id text not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  primary key(user_id, operation_id)
+);
 
 create table if not exists ai.ui_actions (
   id text primary key,
@@ -200,35 +205,3 @@ create table if not exists ai.idempotency_keys (
   created_at timestamptz not null default now(),
   primary key(owner_user_id, idempotency_key)
 );
-
-create or replace function ai.claim_next_run(instance_id text, lease_seconds integer)
-returns table(run_id text, owner_user_id text, lease_expires_at timestamptz)
-language plpgsql security definer set search_path = pg_catalog, ai as $$
-begin
-  if length(instance_id) < 1 or length(instance_id) > 128 or lease_seconds < 5 or lease_seconds > 300 then
-    raise exception 'invalid lease request';
-  end if;
-  return query
-  with candidate as (
-    select id from ai.runs
-    where status='queued' and (ai.runs.lease_expires_at is null or ai.runs.lease_expires_at <= now())
-    order by created_at for update skip locked limit 1
-  )
-  update ai.runs r set lease_owner=instance_id,
-    lease_expires_at=now()+make_interval(secs=>lease_seconds), heartbeat_at=now()
-  from candidate where r.id=candidate.id
-  returning r.id,r.owner_user_id,r.lease_expires_at;
-end $$;
-
-create or replace function ai.renew_run_lease(p_run_id text, instance_id text, lease_seconds integer)
-returns boolean language sql security definer set search_path = pg_catalog, ai as $$
-  update ai.runs set lease_expires_at=now()+make_interval(secs=>lease_seconds), heartbeat_at=now()
-  where id=p_run_id and lease_owner=instance_id and status in ('queued','running')
-  returning true
-$$;
-
-create or replace function ai.release_run_lease(p_run_id text, instance_id text)
-returns boolean language sql security definer set search_path = pg_catalog, ai as $$
-  update ai.runs set lease_owner=null,lease_expires_at=null
-  where id=p_run_id and lease_owner=instance_id returning true
-$$;

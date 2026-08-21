@@ -33,12 +33,6 @@ export interface AIConversation {
   updatedAt: string
 }
 
-export interface AIConversationAuthorization {
-  active: boolean
-  expiresAt?: string
-  updatedAt?: string
-}
-
 export interface AIPaginatedResponse<T> {
   items: T[]
   page: number
@@ -57,8 +51,8 @@ export interface AIMessagePart {
   data?: Record<string, unknown>
 }
 
-export type AIRunStatus = 'queued' | 'running' | 'waiting_approval' | 'waiting_mfa' | 'waiting_input' | 'completed' | 'failed' | 'canceled'
-export type AIToolStatus = 'proposed' | 'awaiting_approval' | 'awaiting_mfa' | 'running' | 'succeeded' | 'failed' | 'canceled' | 'skipped'
+export type AIRunStatus = 'queued' | 'running' | 'waiting_approval' | 'waiting_input' | 'completed' | 'failed' | 'canceled' | 'interrupted'
+export type AIToolStatus = 'proposed' | 'awaiting_approval' | 'running' | 'succeeded' | 'failed' | 'canceled' | 'skipped'
 
 export interface AIToolDisplayResult {
   summaryKey: string
@@ -102,7 +96,7 @@ export interface AITimelineItem {
   timelineIndex: number
   revision: number
   createdAt: string
-  type: 'reasoning_summary' | 'progress' | 'assistant_message' | 'tool_call' | 'tool_result' | 'system_notice'
+  type: 'user_message' | 'reasoning_summary' | 'progress' | 'assistant_message' | 'tool_call' | 'tool_result' | 'system_notice'
   status: string
   relatedItemId?: string
   parts: AIMessagePart[]
@@ -121,10 +115,16 @@ export interface AITimelineItem {
     uiActions?: AIUIAction[]
     durationMs?: number
     traceId?: string
-    argumentsHash?: string
-    expectedVersion?: number
-    mfaPurpose?: string
   }
+}
+
+export interface AIToolApprovalExemption {
+  operationId: string
+  createdAt: string
+}
+
+export interface AIToolApprovalExemptions {
+  items: AIToolApprovalExemption[]
 }
 
 export interface AITimelineTurn {
@@ -209,9 +209,4 @@ export interface AIUIActionAcknowledgement {
   status: 'succeeded' | 'failed'
   actualPath?: string
   errorCode?: string
-}
-
-export interface AIMFAResumePayload {
-  purpose: string
-  expectedVersion: number
 }

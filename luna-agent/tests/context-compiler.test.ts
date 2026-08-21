@@ -1,12 +1,12 @@
 import { describe, expect, it, vi } from "vitest"
 import { ContextCompiler, type CompileContextInput } from "../src/context/compiler.js"
 import type { ConversationHistoryEntry } from "../src/domain.js"
-import { MemoryRepository } from "../src/persistence/memory.js"
+import { TestRepository } from "./support/test-repository.js"
 import type { ModelProvider } from "../src/provider/provider.js"
 
 describe("ContextCompiler", () => {
   it("persists an incremental structured summary and reuses its coverage cursor", async () => {
-    const repository = new MemoryRepository()
+    const repository = new TestRepository()
     const conversation = await repository.createConversation("usr_a", "长会话")
     for (let index = 0; index < 10; index += 1) {
       const created = await repository.createTurn("usr_a", {
@@ -61,7 +61,7 @@ describe("ContextCompiler", () => {
   })
 
   it("falls back to recent authoritative turns when summary generation fails", async () => {
-    const repository = new MemoryRepository()
+    const repository = new TestRepository()
     const conversation = await repository.createConversation("usr_a", "fallback")
     const history: ConversationHistoryEntry[] = Array.from({ length: 8 }, (_, turnIndex) => ({
       turnIndex,
@@ -91,7 +91,7 @@ describe("ContextCompiler", () => {
   })
 
   it("keeps current tool calls and results paired while compiling", async () => {
-    const repository = new MemoryRepository()
+    const repository = new TestRepository()
     const conversation = await repository.createConversation("usr_a", "tools")
     const compiler = new ContextCompiler(repository, summaryProvider(), {
       inputTokenBudget: 8_000,
@@ -116,8 +116,8 @@ describe("ContextCompiler", () => {
     expect(result.messages.slice(-2)).toEqual(input.continuationMessages)
   })
 
-  it("incrementally catches up a large pre-existing conversation without silently covering the gap", async () => {
-    const repository = new MemoryRepository()
+  it("keeps only one rolling summary and recent raw history while incrementally advancing", async () => {
+    const repository = new TestRepository()
     const conversation = await repository.createConversation("usr_a", "large-history")
     const history: ConversationHistoryEntry[] = Array.from({ length: 250 }, (_, turnIndex) => ({
       turnIndex,
@@ -140,18 +140,18 @@ describe("ContextCompiler", () => {
     })
 
     const first = await compiler.compile(compileInput(conversation.id, 250, history.slice(-8)))
-    expect(first.compressionOutcome).toBe("catching_up")
+    expect(first.compressionOutcome).toBe("compressed")
     expect(first.summarizedThroughTurnIndex).toBe(47)
-    expect(first.messages.some(message => message.content.includes("第 48 至 241 轮尚未进入摘要"))).toBe(true)
+    expect(first.messages.some(message => message.content.includes("尚未进入摘要"))).toBe(false)
 
     const second = await compiler.compile(compileInput(conversation.id, 250, history.slice(-8)))
-    expect(second.compressionOutcome).toBe("catching_up")
+    expect(second.compressionOutcome).toBe("compressed")
     expect(second.summarizedThroughTurnIndex).toBe(95)
     expect(await repository.getConversationSummary(conversation.id)).toMatchObject({ sourceTurnCount: 96 })
   })
 
   it("bounds oversized continuation payloads while retaining complete tool call and result pairs", async () => {
-    const repository = new MemoryRepository()
+    const repository = new TestRepository()
     const conversation = await repository.createConversation("usr_a", "large-tools")
     const compiler = new ContextCompiler(repository, summaryProvider(), {
       inputTokenBudget: 600,
@@ -192,7 +192,7 @@ describe("ContextCompiler", () => {
   })
 
   it("does not summarize a short conversation below the token high watermark", async () => {
-    const repository = new MemoryRepository()
+    const repository = new TestRepository()
     const conversation = await repository.createConversation("usr_a", "short-history")
     const history: ConversationHistoryEntry[] = Array.from({ length: 10 }, (_, turnIndex) => ({
       turnIndex,
@@ -222,7 +222,7 @@ describe("ContextCompiler", () => {
   })
 
   it("summarizes oversized recent turns by token pressure instead of dropping them silently", async () => {
-    const repository = new MemoryRepository()
+    const repository = new TestRepository()
     const conversation = await repository.createConversation("usr_a", "token-pressure")
     const history: ConversationHistoryEntry[] = Array.from({ length: 4 }, (_, turnIndex) => ({
       turnIndex,
@@ -254,7 +254,7 @@ describe("ContextCompiler", () => {
   })
 
   it("continues compressing a legacy backlog across runs until only recent verbatim turns remain", async () => {
-    const repository = new MemoryRepository()
+    const repository = new TestRepository()
     const conversation = await repository.createConversation("usr_a", "legacy-backlog")
     const history: ConversationHistoryEntry[] = Array.from({ length: 300 }, (_, turnIndex) => ({
       turnIndex,
@@ -289,7 +289,7 @@ describe("ContextCompiler", () => {
   })
 
   it("applies a validated context budget update without recreating the compiler", async () => {
-    const repository = new MemoryRepository()
+    const repository = new TestRepository()
     const conversation = await repository.createConversation("usr_a", "runtime-budget")
     const compiler = new ContextCompiler(repository, summaryProvider(), {
       inputTokenBudget: 1,

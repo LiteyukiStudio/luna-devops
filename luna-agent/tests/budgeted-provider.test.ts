@@ -104,7 +104,7 @@ describe("BudgetedModelProvider", () => {
     expect(confirmModelBudget).toHaveBeenNthCalledWith(2, "aibgt_bad_usage")
   })
 
-  it.each(["assistant", "summary", "title", "next_steps"] as const)("forwards the %s operation to the single reservation entry point", async (operation) => {
+  it.each(["assistant", "summary", "title"] as const)("forwards the %s operation to the single reservation entry point", async (operation) => {
     const reserveModelBudget = vi.fn(async () => ({ id: `aibgt_${operation}`, maxOutputTokens: 10 }))
     const provider = new BudgetedModelProvider(modelProvider({}), {
       reserveModelBudget,

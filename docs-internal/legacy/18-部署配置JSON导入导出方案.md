@@ -73,7 +73,7 @@ POST /api/v1/projects/{projectId}/applications/{applicationId}/deployment-target
 POST /api/v1/projects/{projectId}/applications/{applicationId}/deployment-target-imports
 ```
 
-导出要求 `deployment:read`。预检和确认导入要求 `deployment:update` 以及目标项目 Owner/Admin/Developer；涉及部署级构建变量或密钥时继续复用现有 Owner/Admin 与 `secret_update` Step-up 边界。三个接口都重新校验项目和应用归属。
+导出要求 `deployment:read`。预检和确认导入要求 `deployment:update` 以及目标项目 Owner/Admin/Developer；涉及部署级构建变量或密钥时继续复用现有 Owner/Admin 与实时 Session/RBAC 边界。三个接口都重新校验项目和应用归属。
 
 预检请求包含 `bundle`、`mappings` 和可选 `overrides`。响应包含：
 

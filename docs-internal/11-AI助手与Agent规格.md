@@ -13,7 +13,7 @@ AI 助手不是悬浮在控制台上的通用聊天机器人。它理解用户�
 - 汇总分散在多个页面中的状态、事件和日志。
 - 把用户带到正确页面、Tab 或资源详情。
 - 为表单预填安全的非密钥参数，由用户确认后保存。
-- 在用户明确批准后执行受控的平台操作；需要 Step-up MFA 时暂停任务，引导验证后继续。
+- 在用户对当前参数明确批准后执行受控的平台操作；参数变化时重新批准。
 - 保留可恢复的会话和执行记录，刷新页面不丢失诊断进度。
 
 核心原则：**助手代表当前用户工作，不拥有超出当前用户的权限。**
@@ -23,44 +23,45 @@ AI 助手不是悬浮在控制台上的通用聊天机器人。它理解用户�
 - 独立 `luna-agent` 服务承载模型编排，与 `cmd/api`、`cmd/worker` 分离；无状态可水平扩容。
 - 平台能力以 OpenAPI 和既有 API 为唯一业务入口；MCP 不作为内部服务总线，仅保留为未来
   连接外部工具的可选协议。
-- 编排采用显式 ModelRuntime + RunExecutor：ModelRuntime 只负责上下文编译、工具解析和 Provider 调用；RunExecutor 统一负责循环、工具执行、权限、审批、MFA、租约、幂等和审计，避免引入没有实际状态图语义的框架空壳。
+- 编排采用显式 ModelRuntime + RunExecutor：ModelRuntime 只负责上下文编译、工具解析和 Provider 调用；RunExecutor 负责单 Run 循环、工具执行、审批、取消和调用上限。
 - 数据落 PostgreSQL `ai` schema；事件按 Run 单调递增 sequence 持久化后再可读，SSE 支持断线续传。
+- `run_events` 是不可变事实源：初始用户消息以 `run.input_received` 携带完整 Item 修订；工具终态在
+  同一事务中保存 `tool_call` 修订、独立 `tool_result` 和事件；自动/手动标题事件记录来源与锁定状态。
+  `ai.items` 与会话标题只是可重建投影，不能替代原始事件。
 - Web 以服务端 Timeline 快照在 TanStack Query 中的投影作为唯一事实源；每个 Run 最多保留一条
   SSE 连接，事件直接合并到查询缓存，序号缺口通过权威快照恢复，不再维护独立 reducer 镜像状态。
-- Agent 不直接持有业务权限：Luna API 为每次工具调用签发短时用户委托令牌，与 API 服务 JWT、
-  Agent 服务 JWT、Actor Context、Run Actor Grant 的用途与验证路径完全分离。
+- Agent 只持有一个服务身份，不持有用户 Cookie、Token 或可转授权限。创建 Run 时保存 API 已验证的
+  `actor_session_id`；工具请求只携带服务凭据、`runId` 和 `toolCallId`。Luna API 从 PostgreSQL 回读
+  用户、会话、会话所有权、项目范围、ToolCall 与审批状态，再进入原有 Handler/Service/RBAC。
 
 ## 3. 执行与工具治理
 
-- Agent Loop：补充上下文 → 模型判断 → 工具调用（经权限/审批/MFA 校验）→ 结果回灌 → 直至
-  最终答复或明确终态（批准/MFA/补充输入/取消/超时/上限）。
-- 工具风险分级决定默认行为：`read`/`ui` 自动执行，`write` 展示摘要确认，`sensitive`/`destructive`
-  需确认并完成 Step-up MFA。平台以前端与参数绑定的确认门控高风险调用。
-- Run 状态转换采用数据库原子条件更新；取消与完成写回竞态按取消处理。租约支持崩溃后接管。
+- Agent Loop：补充上下文 → 模型判断 → 工具调用（经 Schema 与审批校验）→ 结果回灌 → 直至
+  最终答复或明确终态（批准/补充输入/取消/超时/上限）。
+- 工具只有 `requiresApproval` 一个审批字段。普通工具直接执行；高风险工具支持拒绝、批准本次和
+  始终允许。豁免只绑定 `user_id + operation_id`，可撤销；拒绝只终结当前 ToolCall，让模型继续。
+- queued Run 通过 `FOR UPDATE SKIP LOCKED` 原子更新为 running，不记录实例 owner、租约或心跳。
+  服务中断把运行中 Run 标记为 interrupted 并保留事件，不接管、不从调用栈中间恢复。
+- fresh schema 不再创建 Grant/lease 列或 lease 函数；升级库仅保留可能承载历史值的旧列，运行时不读写，
+  lease 函数和旧 claim 索引由非破坏迁移移除，避免为物理瘦身删除历史数据。
 - 卡片时间线保留真实事件顺序。`placement: turn_end` 只在渲染层把单张、阻塞后续流程的交互表单
   投影到本轮末尾；默认使用 `inline`。多卡片、展示卡、进度卡或一轮出现多个末尾卡片时保持事件原位。
 
 ### 3.1 工具目录下发与按需检索
 
-- OpenAPI 与手写工具组成完整权威目录。当前实现为消除旧字符串检索的召回盲区，每次模型请求
-  仍全量下发全部已注册平台工具；这是动态语义检索完成影子评测前的过渡安全策略，不是目标
-  架构。
-- 目标架构、工具语义契约、向量/BM25 混合召回、语义重排、工作流扩展、灰度回退和卡片工具
-  重构见进行中的
-  [`21-Agent工具语义检索与工具设计优化方案.md`](21-Agent工具语义检索与工具设计优化方案.md)。
-  在 Required Next Tool Recall@8、hard-negative、安全和端到端门禁通过前，不得直接裁剪目录。
-- 目标状态由 Agent 在主模型调用前自动检索当前阶段工具；`search_tools` 只负责运行中的二次
-  扩展，并必须真实改变后续 `loadedOperationIds`。相同检索不重复执行，审批/MFA 恢复后保留
-  已使用、待执行和权威回读所需工具定义。
-- `browse_tools` 提供不依赖语义召回的确定性目录路径：`list` 只返回准入工具的 operationId、分类、
-  风险和一句话用途，`details` 按最多 8 个精确 operationId 加载完整描述与 Schema。目录浏览不授予
-  权限、不执行工具，也不替代权威回读；无法从轻量目录确定候选时才回退 `search_tools`。
-- 新增或变更工具必须同步更新用途、禁用场景、前置条件、主要参数、成功证据、工作流关系和
-  hard-negative 评测；正确下一步工具必须进入前 8 个结果。
+- 后端 OpenAPI 注册操作是平台工具唯一事实源。满足普通 JSON 业务操作结构的路由自动进入目录；
+  协议适配器、认证回调、凭据与计量入口由 `operationId -> reason` 集中禁用表排除。
+- 不存在 `x-luna-agent.allowed`、Agent 手写平台 fallback、手工 base operation 白名单、重复描述、
+  predecessor/followup 图、JSON Pointer verifier 或 readback engine。
+- `search_tools` 的 query 可空；空查询分页返回完整轻量目录，非空查询仅用 operationId、名称、资源、
+  动作、标签、中英文别名和 BM25 排序。结果不含 Schema。
+- `get_tool_details` 每次接收 1–8 个精确 operationId，返回输入/输出 Schema 与路由细节；只有这些
+  被选择的 Schema 才进入下一模型步。无 embedding、多向量、RRF、reranker、shadow/dynamic、
+  sticky、Top 8 门禁、digest 持久化或专用大评测集。
 - 部署配置的 `clusterId` 为空表示平台默认集群：只有存在多个候选且必须由用户决定时才用
   `listRuntimeClusters` 的真实结果询问，禁止无候选凭空问“选择哪个集群”。
-- `create_options` 只用于确有清晰、可独立点选的下一步；等待表单提交、批准/MFA 阻塞或
-  无下一步时不生成。结构化参数必须用交互表单，不得用快捷选项收集。
+- 模型未来只使用 `present_card`、`request_input`、`request_choice` 三个通用交互工具；回复完成后
+  不再额外调用模型预测下一步。
 - 运行时密钥只能通过 `updateDeploymentTargetRuntimeSecrets` 或
   `updateProjectRuntimeConfigSetRuntimeSecrets` 处理：请求使用 `items[]`，每项必须声明
   `valueMode: secret` 和 `operation: set | generate | clear`。`set` 的非空 `value` 仅接受用户可见
@@ -76,8 +77,8 @@ AI 助手不是悬浮在控制台上的通用聊天机器人。它理解用户�
 ## 4. 记忆与上下文
 
 - 首版只提供会话内短期记忆，不自动建立跨会话长期记忆。
-- 上下文按 token 预算自动组装（系统提示、结构化摘要、近期完整轮次、当前工具结果），摘要按
-  覆盖水位增量持久化，压缩失败安全回退且不修改权威完整历史。
+- 上下文只组装系统提示、一个滚动摘要、近期完整原文和当前工具结果。没有 deferred/catch-up、
+  多级摘要复用或独立 compaction 状态；压缩失败安全回退且不修改权威完整事件。
 - 禁止进入上下文与记忆：Secret、Token、Cookie、Authorization、kubeconfig、Registry 密码、
   Git Access Token、完整终端历史、未脱敏的第三方响应与日志。
 
@@ -123,9 +124,8 @@ Agent 诊断容器时可创建短期、有状态的非 TTY Shell，多条命令�
 浏览器 Web Console 继续使用原有 WebSocket + TTY 协议，两者不复用传输层。
 
 - 命令会话固定绑定用户、登录 Session、Agent Run、项目空间、应用、Release、部署配置和容器，
-  任一边界变化即拒绝复用。创建与每条命令的工具策略都声明敏感操作批准与 `runtime_exec` MFA；
-  用户未开启 AI 会话自动批准时逐条呈现，开启后可由当前会话授权满足批准与 Step-up，但每次仍重新执行
-  当前账号、登录 Session、RBAC、项目开关、工具策略、参数 Schema 与审计检查。
+  任一边界变化即拒绝复用。创建与每条命令都需要对当前参数逐次批准，并重新执行当前账号、
+  登录 Session、RBAC、项目开关、工具策略、参数 Schema 与审计检查。
 - 审计只记录命令长度和 SHA-256，不保存命令正文；返回输出有大小上限。
 - SPDY 流和 Shell 进程只能由创建它的 API 实例持有，不落 PostgreSQL/Redis。`sessionId` 编码
   owner，非 owner 实例返回稳定的 `runtime.command_session.owner_mismatch`，绝不静默创建另一条
@@ -133,25 +133,11 @@ Agent 诊断容器时可创建短期、有状态的非 TTY Shell，多条命令�
 - 不用数据库持久化会话：进程内 Shell、管道和 SPDY 连接无法从数据库恢复，持久化元数据只会
   制造"记录存在但连接不存在"的伪可用状态。
 
-## 8. AI 会话自动批准
-
-- “同意（本会话不再询问）”由 API 在统一 `ai_conversation_tools` Step-up 后签发不超过 60 分钟的
-  不透明授权，精确绑定用户、浏览器登录 Session 和 AI 会话；Agent 仅加密保存授权正文，同时绑定
-  当前工具目录 digest。普通单次“同意”继续只绑定本次工具参数哈希与版本。
-- 后续需要批准或 MFA 的 Agent 工具可携带该授权换取一次 60 秒执行委托。API 每次都验证签名、
-  会话边界和授权有效期，并重新校验当前用户、Session、RBAC、工具准入/Scope、参数哈希和业务 Handler
-  权限；MFA 开启时还必须刷新与授权绑定的专用 Step-up assertion。
-- 注销、Session 变化、工具目录变化、专用 assertion 过期或被 MFA 重置删除、权限变化都会 fail closed，
-  工具回到普通批准流程。用户可从助手中的授权提示显式撤销；授权不扩展到普通 Web/API 请求，
-  不携带 OTP、恢复码、Cookie、Secret 或工具参数，也不得进入 Timeline、模型上下文或遥测。
-- Web 对所有 `mfa_required` 统一使用全局 MFA Dialog，按用途串行并发起挑战、成功后只重放原请求一次；
-  BFF 从当前浏览器 Session 权威解析有效 assertion，不再由业务卡片接收或转发 Step-up 凭据。
-
-## 9. 运行时与 Skill 覆盖
+## 8. 运行时与 Skill 覆盖
 
 Agent 通过 Skill 引导完成平台工作流。Skill 以公开使用文档、控制台主要页面和业务 API 的高频
 用户旅程为覆盖口径，一个工作流需同时具备"发现目标 → 收集参数 → 真实操作（缺工具时明确阻塞）→
-处理批准/MFA/冲突/异步 → 权威回读 → 给出终态结论"才计为已覆盖。
+处理逐次批准/冲突/异步 → 权威回读 → 给出终态结论"才计为已覆盖。
 
 Skill 已覆盖不代表对应写工具已在 Tool Catalog 开放；工具未注册时 Skill 必须阻止模型虚构执行，
 明确报告"尚未执行"。

@@ -66,9 +66,6 @@ func (h *Handlers) ExecReleaseRuntimeCommand(ctx *gin.Context) {
 	if !ok || !ensureRuntimeWebConsoleEnabled(ctx, project, target) {
 		return
 	}
-	if !h.requireStepUp(ctx, user, stepUpPurposeRuntimeExec) {
-		return
-	}
 	var input releaseRuntimeExecInput
 	if !bindJSON(ctx, &input) {
 		return

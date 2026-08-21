@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { MemoryRepository } from "../src/persistence/memory.js"
+import { TestRepository } from "./support/test-repository.js"
 
 describe("conversation repository", () => {
   afterEach(() => vi.useRealTimers())
 
   it("keeps the preferred model on the conversation and updates it with each explicit turn model", async () => {
-    const repository = new MemoryRepository()
+    const repository = new TestRepository()
     const conversation = await repository.createConversation("usr_models", "models", undefined, "user", "aimod_fast")
     expect(conversation.modelId).toBe("aimod_fast")
 
@@ -25,7 +25,7 @@ describe("conversation repository", () => {
   it("updates conversation activity when a user or assistant message is appended", async () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date("2026-08-03T10:00:00.000Z"))
-    const repository = new MemoryRepository()
+    const repository = new TestRepository()
     const conversation = await repository.createConversation("usr_a", "activity")
 
     vi.setSystemTime(new Date("2026-08-03T10:05:00.000Z"))
@@ -46,16 +46,19 @@ describe("conversation repository", () => {
   })
 
   it("persists a turn and returns the same run for an idempotent retry", async () => {
-    const repository = new MemoryRepository()
+    const repository = new TestRepository()
     const conversation = await repository.createConversation("usr_a", "诊断")
     const request = { conversationId: conversation.id, input: "检查构建", pageContext: {}, idempotencyKey: "request-123" }
     const first = await repository.createTurn("usr_a", request)
     const second = await repository.createTurn("usr_a", request)
     expect(second.run.id).toBe(first.run.id)
+    const events = await repository.getEvents("usr_a", first.run.id, 0)
+    expect(events.map(event => event.type)).toEqual(["run.input_received", "run.queued"])
+    expect(events[0]?.data.item).toMatchObject({ type: "user_message", content: { parts: [{ type: "text", text: "检查构建" }] } })
     expect((await repository.getTimeline("usr_a", conversation.id))?.turns).toHaveLength(1)
   })
   it("persists queue trace context without making telemetry part of idempotency", async () => {
-    const repository = new MemoryRepository()
+    const repository = new TestRepository()
     const conversation = await repository.createConversation("usr_a", "trace")
     const request = {
       conversationId: conversation.id,
@@ -71,16 +74,16 @@ describe("conversation repository", () => {
     })
 
     expect(second.run.id).toBe(first.run.id)
-    expect((await repository.claimRun("agent-a", 30))?.traceContext).toEqual(request.traceContext)
+    expect((await repository.claimNextQueuedRun())?.traceContext).toEqual(request.traceContext)
   })
   it("isolates conversations by owner", async () => {
-    const repository = new MemoryRepository()
+    const repository = new TestRepository()
     const conversation = await repository.createConversation("usr_a", "private")
     expect(await repository.getConversation("usr_b", conversation.id)).toBeUndefined()
   })
   it("filters the conversation directory and respects stable ascending or descending activity order", async () => {
     vi.useFakeTimers()
-    const repository = new MemoryRepository()
+    const repository = new TestRepository()
     vi.setSystemTime(new Date("2026-08-15T01:00:00.000Z"))
     const older = await repository.createConversation("usr_a", "Build failure")
     vi.setSystemTime(new Date("2026-08-15T02:00:00.000Z"))
@@ -96,7 +99,7 @@ describe("conversation repository", () => {
     expect(descending.items.map(item => item.id)).toEqual([newer.id, older.id])
   })
   it("returns recent complete turns and pages older turns with an exclusive stable boundary", async () => {
-    const repository = new MemoryRepository()
+    const repository = new TestRepository()
     const conversation = await repository.createConversation("usr_a", "long history")
     for (let turnIndex = 0; turnIndex < 35; turnIndex += 1) {
       await repository.createTurn("usr_a", {
@@ -123,27 +126,33 @@ describe("conversation repository", () => {
     expect(older?.pageInfo).toEqual({ hasOlder: false })
   })
   it("reuses only empty conversations and protects manually renamed titles", async () => {
-    const repository = new MemoryRepository()
+    const repository = new TestRepository()
     const empty = await repository.createConversation("usr_a", "新会话")
     expect(empty.titleSource).toBe("default")
     expect((await repository.findEmptyConversation("usr_a"))?.id).toBe(empty.id)
-    expect((await repository.renameConversationByAssistant(empty.id, "自动标题"))?.titleSource).toBe("assistant")
+    const created = await repository.createTurn("usr_a", { conversationId: empty.id, input: "hello", pageContext: {}, idempotencyKey: "occupied" })
+    expect((await repository.renameConversationByAssistant(empty.id, "自动标题", created.run.id))?.titleSource).toBe("assistant")
     await repository.renameConversation("usr_a", empty.id, "手动标题")
     expect((await repository.getConversation("usr_a", empty.id))?.titleSource).toBe("user")
     expect(await repository.renameConversationByAssistant(empty.id, "另一个自动标题")).toBeUndefined()
     expect((await repository.getConversation("usr_a", empty.id))?.title).toBe("手动标题")
-    await repository.createTurn("usr_a", { conversationId: empty.id, input: "hello", pageContext: {}, idempotencyKey: "occupied" })
+    const titleEvents = (await repository.getEvents("usr_a", created.run.id, 0))
+      .filter(event => event.type === "conversation.title.updated")
+    expect(titleEvents.map(event => event.data)).toEqual([
+      { title: "自动标题", titleSource: "assistant", locked: false },
+      { title: "手动标题", titleSource: "user", locked: true },
+    ])
     expect(await repository.findEmptyConversation("usr_a")).toBeUndefined()
   })
-  it("allows only one worker to claim a queued run", async () => {
-    const repository = new MemoryRepository()
+  it("atomically starts a queued Run only once", async () => {
+    const repository = new TestRepository()
     const conversation = await repository.createConversation("usr_a", "lease")
     await repository.createTurn("usr_a", { conversationId: conversation.id, input: "hello", pageContext: {}, idempotencyKey: "request-lease" })
-    const [a, b] = await Promise.all([repository.claimRun("worker-a", 30), repository.claimRun("worker-b", 30)])
+    const [a, b] = await Promise.all([repository.claimNextQueuedRun(), repository.claimNextQueuedRun()])
     expect([a, b].filter(Boolean)).toHaveLength(1)
   })
   it("returns a bounded recent user and assistant history for the next turn", async () => {
-    const repository = new MemoryRepository()
+    const repository = new TestRepository()
     const conversation = await repository.createConversation("usr_a", "history")
     const first = await repository.createTurn("usr_a", {
       conversationId: conversation.id, input: "先检查构建", pageContext: {}, idempotencyKey: "history-1",
@@ -167,7 +176,7 @@ describe("conversation repository", () => {
   })
 
   it("publishes an authoritative revision when a streaming item is finalized", async () => {
-    const repository = new MemoryRepository()
+    const repository = new TestRepository()
     const conversation = await repository.createConversation("usr_a", "finalize")
     const created = await repository.createTurn("usr_a", {
       conversationId: conversation.id, input: "hello", pageContext: {}, idempotencyKey: "finalize-stream",

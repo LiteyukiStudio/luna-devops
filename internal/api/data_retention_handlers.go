@@ -57,9 +57,6 @@ func (h *Handlers) CleanupDataRetention(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	if !h.requireStepUp(ctx, user, stepUpPurposeDataRetentionCleanup) {
-		return
-	}
 	input, ok := bindDataRetentionRange(ctx)
 	if !ok {
 		h.auditWithContext(user.ID, dataRetentionCleanupAction, "data_retention", false, "invalid cleanup request", ctx.Request.Context())

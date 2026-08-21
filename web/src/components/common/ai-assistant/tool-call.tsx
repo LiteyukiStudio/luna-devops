@@ -1,6 +1,6 @@
 import type { AIBlock } from './state'
 import type { AIToolStatus, AIUIAction } from '@/api'
-import { Check, ChevronRight, CircleAlert, CircleDashed, CircleStop, LoaderCircle, LockKeyhole, Minus, ShieldAlert } from 'lucide-react'
+import { Check, ChevronRight, CircleAlert, CircleDashed, CircleStop, LoaderCircle, Minus, ShieldAlert } from 'lucide-react'
 import { useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -15,12 +15,11 @@ import { AIToolCallDetails } from './tool-call-details'
 import { toolDisplayName } from './tool-display-name'
 
 export type ToolCallBlock = Extract<AIBlock, { type: 'tool_call' }>
-export type AIApprovalDecision = 'approve' | 'reject' | 'approve_conversation'
+export type AIApprovalDecision = 'reject' | 'approve' | 'approve_always'
 
 const statusTone: Record<AIToolStatus, string> = {
   proposed: 'bg-surface-inset text-muted-foreground',
   awaiting_approval: 'bg-warning-subtle text-warning',
-  awaiting_mfa: 'bg-warning-subtle text-warning',
   running: 'bg-info-subtle text-info',
   succeeded: 'bg-success-subtle text-success',
   failed: 'bg-danger-subtle text-danger',
@@ -28,7 +27,7 @@ const statusTone: Record<AIToolStatus, string> = {
   skipped: 'bg-surface-inset text-muted-foreground',
 }
 
-export function AIToolCallCard({ block, onAction, onApproval, onMFA }: { block: ToolCallBlock, onAction: (action: AIUIAction) => Promise<boolean>, onApproval: (block: ToolCallBlock, decision: AIApprovalDecision, reason?: string) => Promise<void>, onMFA: (block: ToolCallBlock) => Promise<void> }) {
+export function AIToolCallCard({ block, onAction, onApproval }: { block: ToolCallBlock, onAction: (action: AIUIAction) => Promise<boolean>, onApproval: (block: ToolCallBlock, decision: AIApprovalDecision, reason?: string) => Promise<void> }) {
   const { t, i18n } = useTranslation()
   const title = block.titleKey && i18n.exists(block.titleKey) ? t(block.titleKey) : toolDisplayName(t, block.operationId)
   const errorCode = block.errorCode ?? block.result?.errorCode
@@ -73,11 +72,6 @@ export function AIToolCallCard({ block, onAction, onApproval, onMFA }: { block: 
           <ApprovalControls block={block} onApproval={onApproval} />
         </div>
       )}
-      {block.status === 'awaiting_mfa' && (
-        <div className="bg-surface-subtle/40 px-3 pb-3" data-ai-tool-intervention>
-          <MFAControls block={block} onMFA={onMFA} />
-        </div>
-      )}
     </div>
   )
 }
@@ -96,8 +90,6 @@ function ToolStatusIcon({ status }: { status: AIToolStatus }) {
     return <Minus aria-hidden="true" className={className} data-ai-tool-status-icon={status} />
   if (status === 'awaiting_approval')
     return <ShieldAlert aria-hidden="true" className={`${className} text-warning`} data-ai-tool-status-icon={status} />
-  if (status === 'awaiting_mfa')
-    return <LockKeyhole aria-hidden="true" className={`${className} text-warning`} data-ai-tool-status-icon={status} />
   return <CircleDashed aria-hidden="true" className={className} data-ai-tool-status-icon={status} />
 }
 
@@ -138,10 +130,7 @@ function ApprovalControls({ block, onApproval }: { block: ToolCallBlock, onAppro
   const { t } = useTranslation()
   const [reason, setReason] = useState('')
   const [pending, setPending] = useState(false)
-  const validBinding = Boolean(block.argumentsHash && block.expectedVersion !== undefined)
   const decide = async (decision: AIApprovalDecision) => {
-    if (!validBinding)
-      return
     try {
       setPending(true)
       await onApproval(block, decision, reason.trim() || undefined)
@@ -158,46 +147,11 @@ function ApprovalControls({ block, onApproval }: { block: ToolCallBlock, onAppro
       <strong className="text-xs text-warning">{t('aiAssistant.approval.title')}</strong>
       <p className="text-xs text-muted-foreground">{t('aiAssistant.approval.bindingHint')}</p>
       <Input aria-label={t('aiAssistant.approval.reason')} disabled={pending} maxLength={500} placeholder={t('aiAssistant.approval.reasonPlaceholder')} value={reason} onChange={event => setReason(event.target.value)} />
-      {!validBinding && <p className="text-xs text-danger">{t('aiAssistant.approval.invalidBinding')}</p>}
       <div className="flex flex-wrap justify-end gap-2">
-        <Button className="h-7 px-2.5 !text-[11px]" disabled={pending || !validBinding} size="sm" variant="outline" onClick={() => void decide('reject')}>{t('aiAssistant.approval.reject')}</Button>
-        <Button className="h-7 px-2.5 !text-[11px]" disabled={pending || !validBinding} size="sm" variant="outline" onClick={() => void decide('approve_conversation')}>{t('aiAssistant.approval.approveConversation')}</Button>
-        <Button className="h-7 px-2.5 !text-[11px]" disabled={pending || !validBinding} size="sm" onClick={() => void decide('approve')}>{t('aiAssistant.approval.approve')}</Button>
+        <Button className="h-7 px-2.5 !text-[11px]" disabled={pending} size="sm" variant="outline" onClick={() => void decide('reject')}>{t('aiAssistant.approval.reject')}</Button>
+        <Button className="h-7 px-2.5 !text-[11px]" disabled={pending} size="sm" variant="outline" onClick={() => void decide('approve')}>{t('aiAssistant.approval.approve')}</Button>
+        <Button className="h-7 px-2.5 !text-[11px]" disabled={pending} size="sm" onClick={() => void decide('approve_always')}>{t('aiAssistant.approval.approveAlways')}</Button>
       </div>
-    </div>
-  )
-}
-
-function MFAControls({ block, onMFA }: { block: ToolCallBlock, onMFA: (block: ToolCallBlock) => Promise<void> }) {
-  const { t } = useTranslation()
-  const [pending, setPending] = useState(false)
-  const executingRef = useRef(false)
-  const validBinding = block.expectedVersion !== undefined && Boolean(block.mfaPurpose)
-  const verify = async () => {
-    if (!validBinding || executingRef.current)
-      return
-    try {
-      executingRef.current = true
-      setPending(true)
-      await onMFA(block)
-    }
-    catch (error) {
-      toast.error(error instanceof Error ? error.message : t('aiAssistant.errors.mfa'))
-    }
-    finally {
-      executingRef.current = false
-      setPending(false)
-    }
-  }
-  return (
-    <div className="mt-3 grid gap-3 rounded-control bg-primary-subtle p-3">
-      <div>
-        <strong className="text-xs text-primary-text">{t('aiAssistant.mfa.title')}</strong>
-        <p className="mt-1 text-xs text-muted-foreground">{t('aiAssistant.mfa.description')}</p>
-      </div>
-      <Button className="h-7 justify-self-end px-2.5 !text-[11px]" disabled={pending || !validBinding} size="sm" type="button" onClick={() => void verify()}>
-        {pending ? t('accountPage.mfa.verifying') : t('aiAssistant.mfa.continue')}
-      </Button>
     </div>
   )
 }

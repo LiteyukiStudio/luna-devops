@@ -110,7 +110,6 @@ const operationsDashboardPage = {
     queued: '대기열 중',
     running: '실행 중',
     waiting_approval: '승인 대기',
-    waiting_mfa: '검증 대기',
     waiting_input: '입력 대기',
     completed: '완료됨',
     failed: '실패',

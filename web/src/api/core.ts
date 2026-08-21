@@ -1,4 +1,4 @@
-import type { BillingListParams, BuildRunListParams, MFAChallenge, PaginationParams, RuntimeClusterResourceListParams } from './types'
+import type { BillingListParams, BuildRunListParams, PaginationParams, RuntimeClusterResourceListParams } from './types'
 import i18next from '@/i18n'
 import { startAPIRequestSpan } from '@/lib/telemetry'
 
@@ -8,67 +8,27 @@ interface ApiErrorBody {
   code?: unknown
   detail?: unknown
   error?: unknown
-  purpose?: unknown
   requestId?: unknown
 }
-
-type MFAChallengeHandler = (challenge: MFAChallenge) => Promise<void>
-
-let mfaChallengeHandler: MFAChallengeHandler | undefined
-let mfaChallengeQueue = Promise.resolve()
-const activeMfaChallenges = new Map<string, Promise<void>>()
 
 export class ApiError extends Error {
   code: string
   detail?: string
   path: string
-  purpose?: string
   requestId?: string
   retryAfterMs?: number
   status: number
 
-  constructor(message: string, options: { code?: string, detail?: string, path: string, purpose?: string, requestId?: string, retryAfterMs?: number, status: number }) {
+  constructor(message: string, options: { code?: string, detail?: string, path: string, requestId?: string, retryAfterMs?: number, status: number }) {
     super(message)
     this.name = 'ApiError'
     this.code = options.code || 'request.failed'
     this.detail = options.detail
     this.path = options.path
-    this.purpose = options.purpose
     this.requestId = options.requestId
     this.retryAfterMs = options.retryAfterMs
     this.status = options.status
   }
-}
-
-export function registerMFAChallengeHandler(handler: MFAChallengeHandler) {
-  mfaChallengeHandler = handler
-  return () => {
-    if (mfaChallengeHandler === handler)
-      mfaChallengeHandler = undefined
-  }
-}
-
-function resolveMFAChallenge(challenge: MFAChallenge) {
-  const key = challenge.purpose
-  const activeChallenge = activeMfaChallenges.get(key)
-  if (activeChallenge)
-    return activeChallenge
-
-  const handler = mfaChallengeHandler
-  if (!handler)
-    return Promise.reject(new Error('mfa_challenge_handler_unavailable'))
-
-  const queuedChallenge = mfaChallengeQueue
-    .catch(() => undefined)
-    .then(() => handler(challenge))
-    .then(() => undefined)
-  mfaChallengeQueue = queuedChallenge
-  activeMfaChallenges.set(key, queuedChallenge)
-  void queuedChallenge.then(
-    () => activeMfaChallenges.delete(key),
-    () => activeMfaChallenges.delete(key),
-  )
-  return queuedChallenge
 }
 
 export function optionalProjectQuery(projectId?: unknown) {
@@ -205,15 +165,11 @@ async function apiErrorFromResponse(response: Response, path: string) {
   const detail = typeof body.detail === 'string' && body.detail.trim() ? body.detail.trim() : ''
   const bodyError = typeof body.error === 'string' && body.error.trim() ? body.error.trim() : ''
   const requestId = typeof body.requestId === 'string' && body.requestId.trim() ? body.requestId.trim() : undefined
-  const purpose = typeof body.purpose === 'string' && /^[a-z][a-z0-9_]{0,63}$/.test(body.purpose.trim())
-    ? body.purpose.trim()
-    : undefined
   const message = translatedErrorMessage(code) || bodyError || fallbackMessageForStatus(response.status) || response.statusText
   return new ApiError(message, {
     code: code || `http.${response.status}`,
     detail: detail || undefined,
     path,
-    purpose,
     requestId,
     status: response.status,
   })
@@ -263,21 +219,4 @@ async function requestOnce<T>(path: string, options?: RequestInit): Promise<T> {
   return response.json()
 }
 
-export async function request<T>(path: string, options?: RequestInit): Promise<T> {
-  try {
-    return await requestOnce<T>(path, options)
-  }
-  catch (error) {
-    if (!(error instanceof ApiError) || error.code !== 'mfa_required' || !error.purpose || path === '/auth/mfa/verify' || !mfaChallengeHandler)
-      throw error
-
-    try {
-      await resolveMFAChallenge({ purpose: error.purpose })
-    }
-    catch {
-      throw error
-    }
-
-    return requestOnce<T>(path, options)
-  }
-}
+export const request = requestOnce

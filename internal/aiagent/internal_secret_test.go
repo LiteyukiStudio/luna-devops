@@ -1,9 +1,6 @@
 package aiagent
 
-import (
-	"encoding/hex"
-	"testing"
-)
+import "testing"
 
 func TestDeriveInternalKeysStableVector(t *testing.T) {
 	keys, err := DeriveInternalKeys("0123456789abcdef0123456789abcdef")
@@ -13,8 +10,8 @@ func TestDeriveInternalKeysStableVector(t *testing.T) {
 	if keys.ServiceToken != "rc9uB_qX7ORPNH5SB-_AhAPh3hgMj0qMkjfVkHqRDco" {
 		t.Fatalf("unexpected service token: %s", keys.ServiceToken)
 	}
-	if got := hex.EncodeToString(keys.RunGrantEncryptionKeyBytes); got != "68fb9e789fd931374447396477b8964d3ba519f0ca94564026d90262e2f1e7d0" {
-		t.Fatalf("unexpected run grant encryption key: %s", got)
+	if keys.CallbackServiceToken == "" || keys.ActorSigningKey == "" {
+		t.Fatalf("derived service identity keys are incomplete: %#v", keys)
 	}
 }
 

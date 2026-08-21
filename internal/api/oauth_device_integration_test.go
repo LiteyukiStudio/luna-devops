@@ -1,7 +1,6 @@
 package api
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -12,11 +11,10 @@ import (
 
 	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/model"
-	"github.com/pquerna/otp/totp"
 )
 
-func TestOAuthDeviceAuthorizationMFAAndRevocationFlow(t *testing.T) {
-	db := newMFAIntegrationDB(t)
+func TestOAuthDeviceAuthorizationAndRevocationFlow(t *testing.T) {
+	db := authIntegrationDB(t)
 	t.Setenv("APP_ENV", "development")
 	t.Setenv("PUBLIC_BASE_URL", "https://devops.example.com")
 	t.Setenv("SECRET_ENCRYPTION_KEY", "oauth-device-integration-key")
@@ -50,21 +48,6 @@ func TestOAuthDeviceAuthorizationMFAAndRevocationFlow(t *testing.T) {
 		RedirectURIs:            "",
 		AllowedScopes:           "*",
 		AccessTokenLifetimeDays: 30,
-	}).Error; err != nil {
-		t.Fatal(err)
-	}
-
-	setupHandlers := &Handlers{db: db, configs: newConfigCache(db), mode: "development", rateLimiter: newRateLimiter()}
-	setupHandlers.secrets = newContextAuditedTestSecretStore(db, setupHandlers)
-	totpSecret := "JBSWY3DPEHPK3PXP"
-	secretRef := setupHandlers.secrets.StoreContext(context.Background(), totpSecret, user.ID, mfaSecretResource(user.ID))
-	confirmedAt := time.Now()
-	if err := db.Create(&model.UserMFAConfig{
-		ID:            "mfa_device_" + suffix,
-		UserID:        user.ID,
-		TOTPSecretRef: secretRef,
-		Enabled:       true,
-		ConfirmedAt:   &confirmedAt,
 	}).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -145,32 +128,6 @@ func TestOAuthDeviceAuthorizationMFAAndRevocationFlow(t *testing.T) {
 		t.Fatalf("OAuth bearer current user = %d %s", currentUser.Code, currentUser.Body.String())
 	}
 
-	code, err := totp.GenerateCode(totpSecret, time.Now())
-	if err != nil {
-		t.Fatal(err)
-	}
-	stepUp := performBearerRequest(router, http.MethodPost, "/api/v1/auth/mfa/verify", tokens.AccessToken, `{
-		"purpose": "`+stepUpPurposeRuntimeExec+`",
-		"code": "`+code+`"
-	}`)
-	if stepUp.Code != http.StatusOK {
-		t.Fatalf("OAuth bearer MFA = %d %s", stepUp.Code, stepUp.Body.String())
-	}
-	var grant model.OAuthGrant
-	if err := db.First(&grant, "application_id = ? and user_id = ? and revoked_at is null", lunaCLIApplicationID, user.ID).Error; err != nil {
-		t.Fatal(err)
-	}
-	var assertion model.StepUpAssertion
-	if err := db.First(
-		&assertion,
-		"user_id = ? and session_id = ? and purpose = ?",
-		user.ID,
-		oauthAssertionSubject(grant.ID),
-		stepUpPurposeRuntimeExec,
-	).Error; err != nil {
-		t.Fatalf("OAuth MFA assertion was not persisted: %v", err)
-	}
-
 	revoke := performFormRequest(router, http.MethodPost, "/api/v1/oauth/revoke", url.Values{
 		"client_id": {lunaCLIClientID},
 		"token":     {tokens.RefreshToken},
@@ -181,12 +138,6 @@ func TestOAuthDeviceAuthorizationMFAAndRevocationFlow(t *testing.T) {
 	revokedUser := performBearerRequest(router, http.MethodGet, "/api/v1/users/me", tokens.AccessToken, "")
 	if revokedUser.Code != http.StatusUnauthorized {
 		t.Fatalf("revoked bearer remains usable = %d %s", revokedUser.Code, revokedUser.Body.String())
-	}
-	var assertionCount int64
-	if err := db.Model(&model.StepUpAssertion{}).
-		Where("session_id = ?", oauthAssertionSubject(grant.ID)).
-		Count(&assertionCount).Error; err != nil || assertionCount != 0 {
-		t.Fatalf("OAuth assertions remain after revocation: count=%d err=%v", assertionCount, err)
 	}
 }
 

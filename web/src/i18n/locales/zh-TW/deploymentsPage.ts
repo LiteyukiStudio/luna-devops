@@ -254,7 +254,7 @@ const deploymentsPage = {
   webConsoleConnected: '已連線。輸入 shell 命令開始排查。',
   webConsoleDisconnected: '終端連線已斷開。',
   webConsoleConnectionFailed: '終端連線失敗，請檢查釋出狀態和容器 shell。',
-  webConsoleAuthorizationFailed: '終端授權失敗，請完成二次驗證後重試。',
+  webConsoleAuthorizationFailed: '終端授權失敗，請重新登入並確認你仍有該執行環境的存取權限。',
   terminalStdout: '標準輸出',
   terminalStderr: '標準錯誤',
   command: '命令',

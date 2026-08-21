@@ -254,7 +254,7 @@ const deploymentsPage = {
   webConsoleConnected: '接続しました。shell コマンドを入力してトラブルシューティングを開始します。',
   webConsoleDisconnected: 'ターミナル接続が切断されました。',
   webConsoleConnectionFailed: 'ターミナル接続に失敗しました。リリース状態とコンテナ shell を確認してください。',
-  webConsoleAuthorizationFailed: 'ターミナル承認に失敗しました。二要素認証を完了してから再試行してください。',
+  webConsoleAuthorizationFailed: 'ターミナルの承認に失敗しました。再度ログインし、このランタイムへのアクセス権を確認してください。',
   terminalStdout: '標準出力',
   terminalStderr: '標準エラー',
   command: 'コマンド',

@@ -20,7 +20,7 @@ suite("PostgresRepository (Drizzle) integration", () => {
   beforeAll(async () => {
     repository = new PostgresRepository(databaseUrl!)
     await repository.pool.query(`
-      truncate ai.ui_actions, ai.tool_calls, ai.run_events, ai.items,
+      truncate ai.tool_approval_exemptions, ai.ui_actions, ai.tool_calls, ai.run_events, ai.items,
                ai.idempotency_keys, ai.conversation_summaries, ai.runs, ai.turns, ai.conversations
       cascade
     `)
@@ -52,7 +52,7 @@ suite("PostgresRepository (Drizzle) integration", () => {
 
   it("persists a turn with idempotency and rejects conflicting reuse atomically", async () => {
     const conversation = await repository.createConversation(owner, "幂等")
-    const request = { conversationId: conversation.id, input: "检查发布", pageContext: { pathname: "/x" }, idempotencyKey: key("idem") }
+    const request = { conversationId: conversation.id, input: "检查发布", pageContext: { pathname: "/x" }, idempotencyKey: key("idem"), actorSessionId: key("session") }
     const first = await repository.createTurn(owner, request)
     const second = await repository.createTurn(owner, request)
     expect(second.run.id).toBe(first.run.id)
@@ -62,43 +62,27 @@ suite("PostgresRepository (Drizzle) integration", () => {
     expect(timeline?.turns[0]?.items[0]?.type).toBe("user_message")
   })
 
-  it("claims the same run only once under concurrency and supports lease renew/release", async () => {
+  it("atomically transitions a queued Run to running only once under concurrency", async () => {
+    while (await repository.claimNextQueuedRun()) { /* drain earlier queued fixtures */ }
     const conversation = await repository.createConversation(owner, "租约")
-    const created = await repository.createTurn(owner, { conversationId: conversation.id, input: "竞争", pageContext: {}, idempotencyKey: key("lease") })
-    // 排空之前测试遗留的 queued run，直到本轮 run 成为唯一候选（排到自己则释放）
-    while (true) {
-      const drained = await repository.claimRun("drain", 5)
-      if (!drained) break
-      if (drained.id === created.run.id) {
-        await repository.releaseLease(drained.id, "drain")
-        break
-      }
-    }
+    const created = await repository.createTurn(owner, { conversationId: conversation.id, input: "竞争", pageContext: {}, idempotencyKey: key("lease"), actorSessionId: key("session") })
     const results = await Promise.all([
-      repository.claimRun("racer-a", 30),
-      repository.claimRun("racer-b", 30),
-      repository.claimRun("racer-c", 30),
+      repository.claimNextQueuedRun(),
+      repository.claimNextQueuedRun(),
+      repository.claimNextQueuedRun(),
     ])
     const claimed = results.filter(Boolean)
     expect(claimed).toHaveLength(1)
     expect(claimed[0]?.id).toBe(created.run.id)
-    const winner = results[0] ? "racer-a" : results[1] ? "racer-b" : "racer-c"
-    expect(await repository.renewLease(created.run.id, "other-worker", 60)).toBe(false)
-    expect(await repository.renewLease(created.run.id, winner, 60)).toBe(true)
-    await repository.releaseLease(created.run.id, winner)
-    // 重新领取时队列中只剩它
-    let reclaimed
-    while (true) {
-      reclaimed = await repository.claimRun("racer-a", 30)
-      if (!reclaimed || reclaimed.id === created.run.id) break
-    }
-    expect(reclaimed?.id).toBe(created.run.id)
+    expect(claimed[0]?.status).toBe("running")
   })
 
   it("transitions run state atomically and reports authoritative actualStatus on conflict", async () => {
     const conversation = await repository.createConversation(owner, "状态机")
-    const created = await repository.createTurn(owner, { conversationId: conversation.id, input: "状态", pageContext: {}, idempotencyKey: key("state") })
-    const running = await repository.updateRun(created.run.id, "queued", "running", { startedAt: new Date().toISOString() })
+    const created = await repository.createTurn(owner, { conversationId: conversation.id, input: "状态", pageContext: {}, idempotencyKey: key("state"), actorSessionId: key("session") })
+    const running = await repository.claimNextQueuedRun()
+    expect(running?.id).toBe(created.run.id)
+    if (!running) throw new Error("expected queued Run")
     expect(running.status).toBe("running")
     expect(running.rowVersion).toBe(2)
     const conflict = await repository.updateRun(created.run.id, "queued", "failed").catch((error: unknown) => error)
@@ -110,7 +94,7 @@ suite("PostgresRepository (Drizzle) integration", () => {
 
   it("keeps cancel authoritative when racing a completion write-back", async () => {
     const conversation = await repository.createConversation(owner, "取消竞态")
-    const created = await repository.createTurn(owner, { conversationId: conversation.id, input: "取消我", pageContext: {}, idempotencyKey: key("cancel") })
+    const created = await repository.createTurn(owner, { conversationId: conversation.id, input: "取消我", pageContext: {}, idempotencyKey: key("cancel"), actorSessionId: key("session") })
     await repository.updateRun(created.run.id, "queued", "running", { startedAt: new Date().toISOString() })
     const canceled = await repository.cancelRun(owner, created.run.id)
     expect(canceled?.status).toBe("canceled")
@@ -125,15 +109,15 @@ suite("PostgresRepository (Drizzle) integration", () => {
   it("rolls back the whole transaction when any step fails", async () => {
     const conversation = await repository.createConversation(owner, "回滚")
     const created = await repository.createTurn(owner, {
-      conversationId: conversation.id, input: "x", pageContext: {}, idempotencyKey: key("rollback"),
+      conversationId: conversation.id, input: "x", pageContext: {}, idempotencyKey: key("rollback"), actorSessionId: key("session"),
     })
     // createTurn 在不属于该用户的会话上整体回滚：不产生 turn/run/幂等键/事件
     await expect(repository.createTurn("other-user", {
-      conversationId: conversation.id, input: "x", pageContext: {}, idempotencyKey: key("rollback-2"),
+      conversationId: conversation.id, input: "x", pageContext: {}, idempotencyKey: key("rollback-2"), actorSessionId: key("session-other"),
     })).rejects.toThrow("ai.conversation_not_found")
     // 幂等冲突也在写入任何 turn/run 前抛出
     await expect(repository.createTurn(owner, {
-      conversationId: conversation.id, input: "changed", pageContext: {}, idempotencyKey: key("rollback"),
+      conversationId: conversation.id, input: "changed", pageContext: {}, idempotencyKey: key("rollback"), actorSessionId: key("session"),
     })).rejects.toThrow("idempotency_conflict")
     const timeline = await repository.getTimeline(owner, conversation.id)
     expect(timeline?.turns).toHaveLength(1)
@@ -143,7 +127,7 @@ suite("PostgresRepository (Drizzle) integration", () => {
   it("keeps timeline and event sequences stable and roundtrips jsonb", async () => {
     const conversation = await repository.createConversation(owner, "顺序")
     const created = await repository.createTurn(owner, {
-      conversationId: conversation.id, input: "顺序", pageContext: { nested: { a: [1, 2] } }, idempotencyKey: key("order"),
+      conversationId: conversation.id, input: "顺序", pageContext: { nested: { a: [1, 2] } }, idempotencyKey: key("order"), actorSessionId: key("session"),
     })
     const first = await repository.appendItem({
       runId: created.run.id, turnId: created.turn.id, type: "assistant_message", status: "streaming",
@@ -177,6 +161,7 @@ suite("PostgresRepository (Drizzle) integration", () => {
         input: `turn-${turnIndex}`,
         pageContext: {},
         idempotencyKey: key(`timeline-page-${turnIndex}`),
+        actorSessionId: key("session"),
       }))
     }
 
@@ -221,7 +206,7 @@ suite("PostgresRepository (Drizzle) integration", () => {
   it("delivers, expires and acknowledges UI actions idempotently", async () => {
     const conversation = await repository.createConversation(owner, "卡片")
     const created = await repository.createTurn(owner, {
-      conversationId: conversation.id, input: "卡片", pageContext: {}, idempotencyKey: key("ui"), clientInstanceId: "client-1",
+      conversationId: conversation.id, input: "卡片", pageContext: {}, idempotencyKey: key("ui"), clientInstanceId: "client-1", actorSessionId: key("session"),
     })
     const expiresAt = new Date(Date.now() + 60_000).toISOString()
     const action = await repository.createUIAction(created.run.id, `aitool_${suffix}`, { kind: "navigate" }, expiresAt)
@@ -238,9 +223,29 @@ suite("PostgresRepository (Drizzle) integration", () => {
 
   it("appends additional input to a queued run turn", async () => {
     const conversation = await repository.createConversation(owner, "补充输入")
-    const created = await repository.createTurn(owner, { conversationId: conversation.id, input: "原始", pageContext: {}, idempotencyKey: key("append") })
+    const created = await repository.createTurn(owner, { conversationId: conversation.id, input: "原始", pageContext: {}, idempotencyKey: key("append"), actorSessionId: key("session") })
     await repository.appendRunInput(created.run.id, "补充")
     expect((await repository.getExecutionInput(created.run.id))?.input).toBe("原始\n补充")
     await expect(repository.appendRunInput("airun_missing", "x")).rejects.toThrow("ai.run_not_found")
+  })
+
+  it("lists and revokes approval exemptions by owner and operation", async () => {
+    const conversation = await repository.createConversation(owner, "审批豁免")
+    const created = await repository.createTurn(owner, {
+      conversationId: conversation.id,
+      input: "restart",
+      pageContext: {},
+      idempotencyKey: key("approval-exemption"),
+      actorSessionId: key("session"),
+    })
+    await repository.grantToolApprovalExemption(created.run.id, "restartRelease", "aitool_approval_exemption")
+    const exemptions = await repository.listToolApprovalExemptions(owner)
+    expect(exemptions).toHaveLength(1)
+    expect(exemptions[0]?.operationId).toBe("restartRelease")
+    expect(typeof exemptions[0]?.createdAt).toBe("string")
+    expect(await repository.listToolApprovalExemptions("usr_other")).toEqual([])
+    expect(await repository.revokeToolApprovalExemption("usr_other", "restartRelease")).toBe(false)
+    expect(await repository.revokeToolApprovalExemption(owner, "restartRelease")).toBe(true)
+    expect(await repository.listToolApprovalExemptions(owner)).toEqual([])
   })
 })

@@ -19,7 +19,6 @@ const (
 type apiMetaFeatures struct {
 	AccessToken        bool `json:"accessToken"`
 	DeviceCode         bool `json:"deviceCode"`
-	MFABearer          bool `json:"mfaBearer"`
 	OAuthAuthorization bool `json:"oauthAuthorization"`
 	OpenAPIOperations  bool `json:"openapiOperations"`
 }
@@ -42,7 +41,6 @@ func (h *Handlers) GetAPIMeta(ctx *gin.Context) {
 		Features: apiMetaFeatures{
 			AccessToken:        true,
 			DeviceCode:         true,
-			MFABearer:          true,
 			OAuthAuthorization: true,
 			OpenAPIOperations:  true,
 		},

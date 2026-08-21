@@ -1,6 +1,6 @@
 export const runStatuses = [
-  "queued", "running", "waiting_approval", "waiting_mfa", "waiting_input",
-  "completed", "failed", "canceled", "expired",
+	"queued", "running", "waiting_approval", "waiting_input",
+  "completed", "failed", "canceled", "expired", "interrupted",
 ] as const
 export type RunStatus = typeof runStatuses[number]
 
@@ -40,15 +40,6 @@ export type Conversation = {
   titleSource: ConversationTitleSource
   status: "active"
   createdAt: string
-  updatedAt: string
-}
-
-export type ConversationAuthorization = {
-  conversationId: string
-  sessionId: string
-  catalogDigest: string
-  grantCiphertext: string
-  expiresAt: string
   updatedAt: string
 }
 
@@ -104,6 +95,7 @@ export type ConversationSummary = {
 export type Run = {
   id: string
   ownerUserId: string
+  actorSessionId?: string
   conversationId: string
   turnId: string
   runIndex: number
@@ -179,7 +171,7 @@ export type CreateTurn = {
   traceContext?: Record<string, string>
   idempotencyKey: string
   preallocatedRunId?: string
-  runActorGrantCiphertext?: string
+  actorSessionId?: string
   toolCatalogDigest?: string
   clientInstanceId?: string
   modelId?: string

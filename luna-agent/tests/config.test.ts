@@ -5,17 +5,9 @@ describe("configuration", () => {
   it("rejects unsafe production defaults", () => {
     expect(() => loadConfig({ NODE_ENV: "production" })).toThrow("DATABASE_URL")
   })
-  it("allows tests without a model configuration", () => {
+  it("allows unit tests to construct configuration without starting the managed runtime", () => {
     const config = loadConfig({ NODE_ENV: "test" })
-    expect(config.PROVIDER_BASE_URL).toBeUndefined()
-    expect(config.PROVIDER_API_KEY).toBeUndefined()
-    expect(config.PROVIDER_MODEL).toBeUndefined()
     expect(config.AI_OBSERVABILITY_CAPTURE_CONTENT).toBe(false)
-    expect(config.TOOL_RETRIEVAL_MODE).toBe("shadow")
-  })
-  it("only accepts explicit tool retrieval rollout modes", () => {
-    expect(loadConfig({ NODE_ENV: "test", TOOL_RETRIEVAL_MODE: "dynamic" }).TOOL_RETRIEVAL_MODE).toBe("dynamic")
-    expect(() => loadConfig({ NODE_ENV: "test", TOOL_RETRIEVAL_MODE: "all" })).toThrow()
   })
   it("enables sensitive AI content observability only when explicitly requested", () => {
     expect(loadConfig({ NODE_ENV: "test", AI_OBSERVABILITY_CAPTURE_CONTENT: "true" }).AI_OBSERVABILITY_CAPTURE_CONTENT).toBe(true)
@@ -24,24 +16,16 @@ describe("configuration", () => {
   it("treats empty optional compose values as unset", () => {
     const config = loadConfig({
       NODE_ENV: "test",
-      PROVIDER_BASE_URL: "",
-      PROVIDER_API_KEY: "   ",
-      PROVIDER_MODEL: "",
       LUNA_API_BASE_URL: "",
     })
-    expect(config.PROVIDER_BASE_URL).toBeUndefined()
-    expect(config.PROVIDER_API_KEY).toBeUndefined()
-    expect(config.PROVIDER_MODEL).toBeUndefined()
     expect(config.LUNA_API_BASE_URL).toBeUndefined()
   })
-  it("requires all three direct provider values together", () => {
-    expect(() => loadConfig({ NODE_ENV: "development", PROVIDER_BASE_URL: "https://api.example.com/v1" }))
-      .toThrow("base URL, API key, and model")
-    expect(loadConfig({
-      NODE_ENV: "development",
-      PROVIDER_BASE_URL: "https://api.example.com/v1",
-      PROVIDER_API_KEY: "secret",
-      PROVIDER_MODEL: "model-1",
-    }).PROVIDER_MODEL).toBe("model-1")
+  it("requires the Luna API configuration path in production", () => {
+    expect(() => loadConfig({
+      NODE_ENV: "production",
+      DATABASE_URL: "postgres://localhost/luna",
+      AUTH_MODE: "bff-hmac",
+      AI_INTERNAL_SECRET: "x".repeat(32),
+    })).toThrow("Luna API")
   })
 })

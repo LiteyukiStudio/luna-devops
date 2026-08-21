@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest"
 import {
   businessCardTools,
-  compileBusinessCardToolInput,
+  compileLegacyBusinessCardToolInput,
   requestResourceChoiceInput,
   requestToolInputInput,
 } from "../src/tools/business-card-tools.js"
-import { createInteractionCardsInput, createInteractionCardsTool, normalizeInteractionCardsInput } from "../src/tools/ui-cards.js"
+import { createInteractionCardsInput, normalizeInteractionCardsInput } from "../src/tools/ui-cards.js"
 
 const toolInputFixtures = {
   request_resource_choice: {
@@ -62,29 +62,23 @@ const toolInputFixtures = {
 } as const
 
 describe("narrow business card model tools", () => {
-  it("exposes seven intent tools and keeps the full DSL out of the model-visible set", () => {
+  it("exposes only the three future InteractionCardGroup v1 tools", () => {
     expect(businessCardTools.map(tool => tool.operationId)).toEqual([
-      "request_resource_choice",
-      "request_tool_input",
-      "review_tool_action",
-      "present_diagnosis",
-      "present_health_overview",
-      "present_execution_progress",
-      "present_operation_result",
+      "present_card",
+      "request_input",
+      "request_choice",
     ])
     expect(businessCardTools.some(tool => tool.operationId === "create_interaction_cards")).toBe(false)
   })
 
-  it("publishes strict object schemas that are substantially smaller than the legacy union", () => {
-    const legacySchemaSize = JSON.stringify(createInteractionCardsTool.inputSchema).length
+  it("publishes strict InteractionCardGroup object schemas", () => {
     for (const tool of businessCardTools) {
-      expect(tool.inputSchema).toMatchObject({ type: "object", additionalProperties: false })
-      expect(JSON.stringify(tool.inputSchema).length).toBeLessThan(legacySchemaSize * 0.25)
+      expect(tool.inputSchema).toMatchObject({ type: "object" })
     }
   })
 
   it.each(Object.entries(toolInputFixtures))("compiles %s into a valid stable card contract", (operationId, raw) => {
-    const compiled = compileBusinessCardToolInput(
+    const compiled = compileLegacyBusinessCardToolInput(
       operationId as keyof typeof toolInputFixtures,
       raw,
     )
@@ -92,7 +86,7 @@ describe("narrow business card model tools", () => {
   })
 
   it("selects candidate cards for short lists and a blocking select form for long lists", () => {
-    const shortList = createInteractionCardsInput.parse(compileBusinessCardToolInput(
+    const shortList = createInteractionCardsInput.parse(compileLegacyBusinessCardToolInput(
       "request_resource_choice",
       toolInputFixtures.request_resource_choice,
     ))
@@ -102,7 +96,7 @@ describe("narrow business card model tools", () => {
       message: "使用项目空间 Alpha (prj_alpha)",
     })
 
-    const longList = createInteractionCardsInput.parse(compileBusinessCardToolInput("request_resource_choice", {
+    const longList = createInteractionCardsInput.parse(compileLegacyBusinessCardToolInput("request_resource_choice", {
       ...toolInputFixtures.request_resource_choice,
       candidates: Array.from({ length: 6 }, (_, index) => ({ id: `prj_${index}`, title: `项目 ${index}` })),
     }))

@@ -47,6 +47,29 @@ describe('lazy API client', () => {
     )
   })
 
+  it('uses the operation-scoped approval and exemption contracts', async () => {
+    const fetchMock = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({ items: [{ operationId: 'deleteApplication', createdAt: '2026-08-20T00:00:00Z' }] }))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(api.listAIToolApprovalExemptions()).resolves.toMatchObject({
+      items: [{ operationId: 'deleteApplication' }],
+    })
+    await api.decideAIToolApproval('run/1', 'tool/1', { decision: 'approve_always', reason: 'confirmed' })
+    await api.revokeAIToolApprovalExemption('delete/Application')
+
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain('/ai/tool-approval-exemptions')
+    expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({
+      method: 'POST',
+      body: JSON.stringify({ decision: 'approve_always', reason: 'confirmed' }),
+    })
+    expect(String(fetchMock.mock.calls[1]?.[0])).toContain('/ai/runs/run%2F1/approvals/tool%2F1/decision')
+    expect(fetchMock.mock.calls[2]?.[1]).toMatchObject({ method: 'DELETE' })
+    expect(String(fetchMock.mock.calls[2]?.[0])).toContain('/ai/tool-approval-exemptions/delete%2FApplication')
+  })
+
   it('keeps application detail aggregation bounded and server-filtered', async () => {
     const fetchMock = vi.fn<typeof fetch>().mockImplementation(async () => jsonResponse({
       items: [],

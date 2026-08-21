@@ -196,9 +196,6 @@ func (h *Handlers) DecideInboxActionRequest(ctx *gin.Context) {
 		writeErrorCode(ctx, http.StatusBadRequest, "inbox.decision_invalid", "decision or expectedVersion is invalid")
 		return
 	}
-	if input.Decision == "accept" && h.configs != nil && !h.requireStepUp(ctx, user, stepUpPurposeBillingOwnerTransfer) {
-		return
-	}
 	if h.inboxDecision == nil {
 		writeErrorCode(ctx, http.StatusServiceUnavailable, "inbox.decision_unavailable", "inbox decision handler is unavailable")
 		return

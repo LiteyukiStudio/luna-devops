@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest"
 import { normalizeEventSequence } from "../src/event-sequence.js"
-import { MemoryRepository } from "../src/persistence/memory.js"
+import { TestRepository } from "./support/test-repository.js"
 import { presentEvent, presentTimeline } from "../src/timeline-presenter.js"
 
 describe("PostgreSQL bigint event sequence normalization", () => {
   it("converts a pg-shaped string sequence for Timeline cursors and AIEvent", async () => {
-    const repository = new MemoryRepository()
+    const repository = new TestRepository()
     const conversation = await repository.createConversation("usr_a", "cursor")
     const created = await repository.createTurn("usr_a", {
       conversationId: conversation.id, input: "hello", pageContext: {}, idempotencyKey: "cursor-request",
@@ -16,7 +16,7 @@ describe("PostgreSQL bigint event sequence normalization", () => {
       sequence: String(event.sequence) as unknown as number,
     }))
     const timeline = await presentTimeline(repository, "usr_a", conversation.id)
-    expect(timeline?.eventCursors).toEqual([{ runId: created.run.id, after: 1 }])
+    expect(timeline?.eventCursors).toEqual([{ runId: created.run.id, after: 2 }])
     const raw = (await repository.getEvents("usr_a", created.run.id, 0))[0]!
     const event = await presentEvent(repository, "usr_a", raw)
     expect(event?.eventSequence).toBe(1)
@@ -31,7 +31,7 @@ describe("PostgreSQL bigint event sequence normalization", () => {
   })
 
   it("projects authoritative Run and context token usage into timeline snapshots", async () => {
-    const repository = new MemoryRepository()
+    const repository = new TestRepository()
     const conversation = await repository.createConversation("usr_usage", "usage")
     const created = await repository.createTurn("usr_usage", {
       conversationId: conversation.id,
@@ -77,7 +77,7 @@ describe("PostgreSQL bigint event sequence normalization", () => {
   })
 
   it("projects bounded non-sensitive tool results consistently for snapshots and events", async () => {
-    const repository = new MemoryRepository()
+    const repository = new TestRepository()
     const conversation = await repository.createConversation("usr_a", "tool results")
     const created = await repository.createTurn("usr_a", {
       conversationId: conversation.id, input: "list applications", pageContext: {}, idempotencyKey: "tool-result",
@@ -134,7 +134,7 @@ describe("PostgreSQL bigint event sequence normalization", () => {
   })
 
   it("uses the same authoritative item revision and position for live events and snapshots", async () => {
-    const repository = new MemoryRepository()
+    const repository = new TestRepository()
     const conversation = await repository.createConversation("usr_a", "authoritative timeline")
     const created = await repository.createTurn("usr_a", {
       conversationId: conversation.id, input: "inspect the project", pageContext: {}, idempotencyKey: "authoritative-item",
@@ -160,12 +160,12 @@ describe("PostgreSQL bigint event sequence normalization", () => {
 
     expect(startedEvent).toMatchObject({
       version: 2,
-      eventSequence: 2,
+      eventSequence: 3,
       item: { id: started.item.id, timelineIndex: 1, revision: 1, status: "streaming" },
     })
     expect(completedEvent).toMatchObject({
       version: 2,
-      eventSequence: 3,
+      eventSequence: 4,
       item: { id: started.item.id, timelineIndex: 1, revision: 2, status: "completed" },
     })
     expect(snapshotItem).toMatchObject({
@@ -175,6 +175,6 @@ describe("PostgreSQL bigint event sequence normalization", () => {
       status: "completed",
       parts: [{ text: "检查完成" }],
     })
-    expect(timeline?.eventCursors).toEqual([{ runId: created.run.id, after: 3 }])
+    expect(timeline?.eventCursors).toEqual([{ runId: created.run.id, after: 4 }])
   })
 })

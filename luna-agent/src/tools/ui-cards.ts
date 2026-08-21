@@ -719,7 +719,7 @@ function normalizeCardSections(input: Record<string, unknown>): unknown {
 
 export const createInteractionCardsTool: ModelToolDefinition = {
   operationId: "create_interaction_cards",
-  description: "一次性创建受控的声明式内容或交互卡片。调用开始后客户端会自动显示准备占位，校验通过后原位替换，无需准备工具或 generationId。placement 默认 inline；仅当本轮恰好一张、包含提交表单且工作流必须等待用户后才能继续时使用 turn_end。优先使用业务模板：2～5 个丰富候选用 candidate_picker，6～50 个候选用 candidate_select，结构化参数用 resource_configuration，写操作前核对用 change_review，诊断结论用 diagnosis_report，权威异步任务用 execution_progress，终态回执用 operation_result，健康概览用 health_overview。需要用户选择、填写或确认时使用 interactive；只呈现可信事实或结果时使用 presentation。动态状态只能使用绑定权威任务的 execution_progress，不得猜测百分比或步骤。secret 字段和 valueMode 为 secret 的 key_value 字段只允许用户当次手动填写，模型绝不能提供 defaultValue 或其他预填值；留空不得修改已有密钥，生成随机密钥必须绑定平台后端的 generate 动作，清除必须使用独立明确的 clear 动作。Secret 只能绑定到卡片内 tool action，不得出现在 send_message、组级动作、卡片描述或普通上下文中。tool action 只能引用当前可用的真实 operationId，并继续接受平台鉴权、批准和 MFA。不得生成 HTML、CSS、脚本、任意 URL 或虚构事实；轻量建议使用 create_options。",
+  description: "历史 create_interaction_cards 契约，仅用于兼容校验和恢复既有 InteractionCardGroup v1 payload。新模型不得调用此工具；新卡片分别使用 present_card、request_input 或 request_choice。",
   inputSchema: cardInputJsonSchema(),
 }
 

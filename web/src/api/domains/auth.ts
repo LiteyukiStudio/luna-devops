@@ -1,4 +1,4 @@
-import type { AgentObservabilityConversation, AgentObservabilityConversationDetail, AgentObservabilityOverview, AgentObservabilityRange, AgentObservabilitySource, AgentObservabilityTestResult, AgentObservabilityToolCall, AgentObservabilityToolSummary, AgentObservabilityTraceDetail, AgentObservabilityTurn, AuthAdmissionPolicy, AuthProvider, AuthRegistrationSettings, AuthRegistrationStatus, BootstrapStatus, ConfigDefinition, CurrentUser, DataRetentionCatalogResponse, DataRetentionPayload, DataRetentionResultResponse, ExternalIdentity, MFAEnrollment, MFAEnrollmentRequest, MFARecoveryCodes, MFAStatus, MFAVerifyPayload, MFAVerifyResponse, OIDCCallbackConfig, PaginatedResponse, PaginationParams, User } from '../types'
+import type { AgentObservabilityConversation, AgentObservabilityConversationDetail, AgentObservabilityOverview, AgentObservabilityRange, AgentObservabilitySource, AgentObservabilityTestResult, AgentObservabilityToolCall, AgentObservabilityToolSummary, AgentObservabilityTraceDetail, AgentObservabilityTurn, AuthAdmissionPolicy, AuthProvider, AuthRegistrationSettings, AuthRegistrationStatus, BootstrapStatus, ConfigDefinition, CurrentUser, DataRetentionCatalogResponse, DataRetentionPayload, DataRetentionResultResponse, ExternalIdentity, OIDCCallbackConfig, PaginatedResponse, PaginationParams, User } from '../types'
 import type { PlatformRoleValue } from '@/lib/roles'
 import { paginationQuery, request } from '../core'
 
@@ -21,15 +21,6 @@ export const authApi = {
     request<{ challengeId: string, expiresAt: string }>('/auth/registration/email/code', { method: 'POST', body: JSON.stringify(payload) }),
   completeEmailRegistration: (payload: { challengeId: string, code: string, email: string, name: string, password: string, language: 'zh-CN' | 'zh-TW' | 'en-US' | 'ja-JP' | 'ko-KR', rememberMe: boolean }) =>
     request<{ user: CurrentUser }>('/auth/registration/email', { method: 'POST', body: JSON.stringify(payload) }),
-  getMFAStatus: () => request<MFAStatus>('/auth/mfa/status'),
-  enrollMFA: (payload: MFAEnrollmentRequest) => request<MFAEnrollment>('/auth/mfa/totp/enroll', { method: 'POST', body: JSON.stringify(payload) }),
-  confirmMFAEnrollment: (payload: { code: string }) =>
-    request<MFARecoveryCodes>('/auth/mfa/totp/confirm', { method: 'POST', body: JSON.stringify(payload) }),
-  verifyMFA: (payload: MFAVerifyPayload) =>
-    request<MFAVerifyResponse>('/auth/mfa/verify', { method: 'POST', body: JSON.stringify(payload) }),
-  regenerateMFARecoveryCodes: () =>
-    request<MFARecoveryCodes>('/auth/mfa/recovery-codes', { method: 'POST' }),
-  disableMFA: () => request<void>('/auth/mfa', { method: 'DELETE' }),
   getOIDCCallbackConfig: () => request<OIDCCallbackConfig>('/auth/oidc/callback-url'),
   listAuthProviders: (includeDisabled = false) =>
     request<AuthProvider[]>(`/auth/providers${includeDisabled ? '?includeDisabled=true' : ''}`),
@@ -54,7 +45,6 @@ export const authApi = {
     request<User>('/users', { method: 'POST', body: JSON.stringify(payload) }),
   updateUser: (userId: string, payload: { email: string, name: string, password?: string, role: PlatformRoleValue, language: 'zh-CN' | 'zh-TW' | 'en-US' | 'ja-JP' | 'ko-KR', disabled: boolean }) =>
     request<User>(`/users/${userId}`, { method: 'PUT', body: JSON.stringify(payload) }),
-  resetUserMFA: (userId: string) => request<void>(`/users/${userId}/mfa`, { method: 'DELETE' }),
   listConfigDefinitions: () => request<ConfigDefinition[]>('/configs/definitions'),
   getConfigs: () => request<Record<string, string>>('/configs'),
   updateConfigs: (values: Record<string, unknown>) =>

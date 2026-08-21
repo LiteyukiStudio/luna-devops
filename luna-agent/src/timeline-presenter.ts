@@ -65,7 +65,7 @@ export async function presentEvent(repository: Repository, ownerUserId: string, 
   const run = await repository.getRun(ownerUserId, event.runId)
   if (!run) return undefined
   const eventItem = timelineItemValue(event.data.item)
-  const payload = presentEventPayload(Object.fromEntries(Object.entries(event.data).filter(([key]) => key !== "item")))
+  const payload = presentEventPayload(Object.fromEntries(Object.entries(event.data).filter(([key]) => key !== "item" && key !== "resultItem")))
   return {
     version: 2 as const,
     eventId: event.id,
@@ -116,7 +116,6 @@ function presentItem(item: TimelineItem) {
   const errorCode = stringValue(item.content.errorCode)
   const titleKey = stringValue(item.content.titleKey)
   const argumentsHash = stringValue(item.content.argumentsHash)
-  const mfaPurpose = stringValue(item.content.mfaPurpose)
   const traceId = stringValue(item.content.traceId)
   const operationId = stringValue(item.content.operationId) ?? "unknown"
   return {
@@ -134,7 +133,6 @@ function presentItem(item: TimelineItem) {
         : {}),
       ...(argumentsHash ? { argumentsHash } : {}),
       ...(typeof item.content.expectedVersion === "number" ? { expectedVersion: item.content.expectedVersion } : {}),
-      ...(mfaPurpose ? { mfaPurpose } : {}),
       ...(typeof item.content.durationMs === "number" ? { durationMs: item.content.durationMs } : {}),
       ...(traceId ? { traceId } : {}),
       ...(titleKey ? { titleKey } : {}),
@@ -160,7 +158,6 @@ function timelineItemValue(value: unknown): TimelineItem | undefined {
 }
 
 function mapType(type: TimelineItem["type"]) {
-  if (type === "user_message") return "assistant_message" as const
   return type
 }
 function extractText(item: TimelineItem): string | undefined {
@@ -239,6 +236,6 @@ function stringValue(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined
 }
 function toolStatus(value: string | undefined, itemStatus: TimelineItem["status"]) {
-  const allowed = ["proposed", "awaiting_approval", "awaiting_mfa", "running", "succeeded", "failed", "canceled", "skipped"] as const
+	const allowed = ["proposed", "awaiting_approval", "running", "succeeded", "failed", "canceled", "skipped"] as const
   return allowed.find(status => status === value) ?? (itemStatus === "failed" ? "failed" as const : "succeeded" as const)
 }

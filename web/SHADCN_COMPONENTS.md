@@ -57,7 +57,7 @@
 | Hover Card | hover 详情 |
 | Input | 输入框 |
 | Input Group | 带图标/按钮/前后缀输入框 |
-| Input OTP | 一次性验证码输入 |
+| Verification Code Input | 邮箱验证码输入 |
 | Item | 行项目展示 |
 | Kbd | 快捷键展示 |
 | Label | 表单 Label |
@@ -100,7 +100,7 @@
 - `Empty`、`Alert`：空状态和错误状态已切到底层 shadcn 组件。
 - `Table`、`Pagination`：`DataList` 内部已改为组合 shadcn Table/Pagination。
 - `Sidebar`、`Separator`：`AppLayout` 侧边栏已改为组合 shadcn Sidebar/Separator。
-- `Input OTP`：邮箱注册、MFA 绑定和敏感操作验证统一使用 shadcn Input OTP，并保留系统一次性验证码自动填充语义。
+- `Input`：邮箱注册验证码使用普通数字输入框，并保留系统验证码自动填充语义。
 
 高优先级：
 

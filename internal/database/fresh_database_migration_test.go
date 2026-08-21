@@ -182,6 +182,7 @@ func assertFreshMigrationState(t *testing.T, db *gorm.DB) {
 		"ai.ui_actions",
 		"ai.conversation_summaries",
 		"ai.model_budget_reservations",
+		"ai.tool_approval_exemptions",
 	} {
 		if !db.Migrator().HasTable(table) {
 			t.Fatalf("fresh database is missing table %s", table)
@@ -217,7 +218,11 @@ func assertFreshMigrationState(t *testing.T, db *gorm.DB) {
 		{table: "ai.runs", column: "max_output_tokens"},
 		{table: "ai.runs", column: "total_token_budget"},
 		{table: "ai.runs", column: "total_credit_budget"},
+		{table: "ai.runs", column: "actor_session_id"},
+		{table: "ai.runs", column: "row_version"},
 		{table: "ai.tool_calls", column: "input_mode"},
+		{table: "ai.tool_calls", column: "approval_decision"},
+		{table: "ai.tool_calls", column: "row_version"},
 		{table: "ai_models", column: "max_context_tokens"},
 		{table: "ai_models", column: "max_output_tokens"},
 		{table: "ai.items", column: "revision"},
@@ -228,6 +233,22 @@ func assertFreshMigrationState(t *testing.T, db *gorm.DB) {
 	}
 	if db.Migrator().HasColumn("ai.runs", "graph_version") {
 		t.Fatal("fresh database contains obsolete ai.runs.graph_version")
+	}
+	for _, column := range []string{"run_actor_grant_ciphertext", "lease_owner", "lease_expires_at", "heartbeat_at"} {
+		if db.Migrator().HasColumn("ai.runs", column) {
+			t.Fatalf("fresh database contains obsolete ai.runs.%s", column)
+		}
+	}
+	var leaseFunctionCount int64
+	if err := db.Raw(`SELECT count(*)
+		FROM pg_proc AS procedure
+		JOIN pg_namespace AS namespace ON namespace.oid = procedure.pronamespace
+		WHERE namespace.nspname = 'ai'
+		  AND procedure.proname IN ('claim_next_run', 'renew_run_lease', 'release_run_lease')`).Scan(&leaseFunctionCount).Error; err != nil {
+		t.Fatalf("inspect retired AI lease functions: %v", err)
+	}
+	if leaseFunctionCount != 0 {
+		t.Fatalf("fresh database contains %d retired AI lease functions", leaseFunctionCount)
 	}
 	for _, table := range []string{
 		"o_auth_applications",
@@ -315,9 +336,6 @@ func assertStableModelMigrationCoverage(t *testing.T, db *gorm.DB) {
 	models := []any{
 		&model.User{},
 		&model.UserSession{},
-		&model.UserMFAConfig{},
-		&model.MFARecoveryCode{},
-		&model.StepUpAssertion{},
 		&model.UserRememberToken{},
 		&model.OAuthApplication{},
 		&model.OAuthGrant{},

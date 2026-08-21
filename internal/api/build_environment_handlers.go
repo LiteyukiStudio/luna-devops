@@ -54,9 +54,6 @@ func (h *Handlers) UpdateBuildEnvironmentConfig(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	if !h.requireStepUp(ctx, user, stepUpPurposeSecretUpdate) {
-		return
-	}
 	var input buildEnvironmentConfigInput
 	if !bindJSON(ctx, &input) {
 		return
@@ -166,9 +163,6 @@ func (h *Handlers) deploymentBuildEnvironmentFromInput(ctx *gin.Context, user mo
 		return nil, true
 	}
 	if !h.canManageBuildEnvironmentProject(ctx, user, projectID) {
-		return nil, false
-	}
-	if !h.requireStepUp(ctx, user, stepUpPurposeSecretUpdate) {
 		return nil, false
 	}
 	values := buildEnvironmentConfigInput{Variables: map[string]string{}, Secrets: map[string]string{}}

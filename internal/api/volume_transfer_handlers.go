@@ -108,11 +108,9 @@ type volumeDownloadSession struct {
 }
 
 type volumeDownloadBinding struct {
-	UserID            string
-	SubjectID         string
-	AssertionID       string
-	AssertionRequired bool
-	Deadline          time.Time
+	UserID    string
+	SubjectID string
+	Deadline  time.Time
 }
 
 type volumeDownload struct {
@@ -127,9 +125,6 @@ type volumeDownload struct {
 func (h *Handlers) CreateVolumeImport(ctx *gin.Context) {
 	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, volumeActionRoles(authz.ActionVolumeImport)...)
 	if !ok {
-		return
-	}
-	if !h.requireStepUp(ctx, user, stepUpPurposeVolumeImport) {
 		return
 	}
 	if !h.ensureBillingAllowsManagedVolumeChange(ctx, project.ID) {
@@ -239,9 +234,6 @@ func (h *Handlers) CompleteVolumeImportUpload(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	if !h.requireStepUp(ctx, user, stepUpPurposeVolumeImport) {
-		return
-	}
 	if h.volumeContent == nil {
 		writeTransferStoreUnavailable(ctx)
 		return
@@ -263,9 +255,6 @@ func (h *Handlers) CompleteVolumeImportUpload(ctx *gin.Context) {
 func (h *Handlers) CreateVolumeExport(ctx *gin.Context) {
 	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, volumeActionRoles(authz.ActionVolumeExport)...)
 	if !ok {
-		return
-	}
-	if !h.requireStepUp(ctx, user, stepUpPurposeVolumeExport) {
 		return
 	}
 	if !h.ensureBillingAllowsDeployChange(ctx, project.ID) {
@@ -346,9 +335,6 @@ func (h *Handlers) RetryVolumeTransfer(ctx *gin.Context) {
 	if !h.authorizeTransferDirection(ctx, user, project, transfer) {
 		return
 	}
-	if !h.requireStepUp(ctx, user, transferStepUpPurpose(transfer)) {
-		return
-	}
 	if transfer.Direction == model.VolumeTransferDirectionImport {
 		if !h.ensureBillingAllowsManagedVolumeChange(ctx, project.ID) {
 			return
@@ -405,9 +391,6 @@ func (h *Handlers) AuthorizeVolumeTransferDownload(ctx *gin.Context) {
 		return
 	}
 	if !h.authorizeTransferDirection(ctx, user, project, transfer) || transfer.Direction != model.VolumeTransferDirectionExport {
-		return
-	}
-	if !h.requireStepUp(ctx, user, stepUpPurposeVolumeExport) {
 		return
 	}
 	if h.volumeContent == nil {
@@ -604,13 +587,6 @@ func (h *Handlers) authorizeTransferDirection(ctx *gin.Context, user model.User,
 		return false
 	}
 	return true
-}
-
-func transferStepUpPurpose(transfer model.VolumeTransfer) string {
-	if transfer.Direction == model.VolumeTransferDirectionExport {
-		return stepUpPurposeVolumeExport
-	}
-	return stepUpPurposeVolumeImport
 }
 
 func volumeTransferResponseFor(item model.VolumeTransfer, includeFilename bool, configuredMaxBytes ...int64) volumeTransferResponse {

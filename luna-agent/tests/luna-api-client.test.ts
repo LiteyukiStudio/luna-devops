@@ -1,99 +1,103 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { hashCanonicalJSON } from "../src/canonical-json.js"
-import { HttpLunaApiToolClient } from "../src/tools/luna-api-client.js"
+import { ToolCatalog, type ToolOperation } from "../src/tools/catalog.js"
+import { buildToolRequest, HttpLunaApiToolClient } from "../src/tools/luna-api-client.js"
 
 afterEach(() => {
   vi.unstubAllGlobals()
 })
 
 describe("Luna API tool client", () => {
-  it("executes with the same canonical arguments that were bound to approval", async () => {
-    const fetchMock = vi.fn<typeof fetch>()
-      .mockResolvedValueOnce(new Response(JSON.stringify({ accessToken: "delegation" }), { status: 200 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ accepted: true }), { status: 201 }))
+  it("calls the real catalog route with path parameters, JSON body, and durable execution identity", async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValueOnce(new Response(JSON.stringify({ accepted: true }), { status: 201 }))
     vi.stubGlobal("fetch", fetchMock)
-    const argumentsValue = {
-      templateId: "postgresql",
-      body: { values: { username: "app", password: "generated" }, applicationName: "PostgreSQL" },
-      projectId: "prj_1",
-    }
-
+    const operation = toolOperation({
+      operationId: "installAppTemplate",
+      method: "POST",
+      path: "/api/v1/projects/{projectId}/app-templates/{templateId}/install",
+      parameters: [
+        { inputName: "projectId", wireName: "projectId", in: "path", required: true },
+        { inputName: "templateId", wireName: "templateId", in: "path", required: true },
+      ],
+      requestBody: true,
+      requiresApproval: true,
+    })
     const result = await new HttpLunaApiToolClient("http://api:8080", "service-token").execute({
       runId: "airun_1",
       toolCallId: "aitool_1",
-      operation: {
-        operationId: "installAppTemplate",
-        method: "POST",
-        path: "/api/v1/projects/{projectId}/app-templates/{templateId}/install",
-        category: "application",
-        risk: "sensitive",
-        requiredScopes: ["application:write"],
-        approval: "always",
-        idempotent: true,
-        timeoutMs: 15000,
-        inputSchema: {
-          type: "object",
-          properties: {
-            projectId: { type: "string" },
-            templateId: { type: "string" },
-            body: { type: "object", additionalProperties: true },
-          },
-          required: ["projectId", "templateId", "body"],
-          additionalProperties: false,
-        },
-      },
-      arguments: argumentsValue,
-      argumentsHash: hashCanonicalJSON(argumentsValue),
-      runActorGrant: "grant",
-      approvalGranted: true,
+      operation,
+      arguments: { projectId: "prj_1", templateId: "postgresql", values: { username: "app", password: "generated" } },
     })
 
     expect(result.status).toBe(201)
-    const rawExecutionBody = (fetchMock.mock.calls[1]?.[1] as RequestInit).body
-    expect(typeof rawExecutionBody).toBe("string")
-    if (typeof rawExecutionBody !== "string")
-      throw new TypeError("expected a string request body")
-    const executionBody = JSON.parse(rawExecutionBody) as { argumentsCanonical: string }
-    expect(hashCanonicalJSON(JSON.parse(executionBody.argumentsCanonical))).toBe(hashCanonicalJSON(argumentsValue))
-    expect(executionBody.argumentsCanonical).toContain("generated")
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const [url, init] = fetchMock.mock.calls[0]!
+    expect(url).toEqual(new URL("http://api:8080/api/v1/projects/prj_1/app-templates/postgresql/install"))
+    expect(init?.headers).toMatchObject({
+      authorization: "Bearer service-token",
+      "x-luna-ai-run-id": "airun_1",
+      "x-luna-ai-tool-call-id": "aitool_1",
+      "idempotency-key": "aitool_1",
+    })
+    if (typeof init?.body !== "string") throw new Error("expected JSON request body")
+    expect(JSON.parse(init.body)).toEqual({ values: { username: "app", password: "generated" } })
   })
 
-  it("retries transient failures only for idempotent tool execution", async () => {
+  it("maps query parameters and retries transient failures only for idempotent operations", async () => {
     const fetchMock = vi.fn<typeof fetch>()
-      .mockResolvedValueOnce(new Response(JSON.stringify({ accessToken: "delegation" }), { status: 200 }))
       .mockResolvedValueOnce(new Response("busy", { status: 503, headers: { "retry-after": "0" } }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ items: [] }), { status: 200 }))
     vi.stubGlobal("fetch", fetchMock)
     const result = await new HttpLunaApiToolClient("http://api:8080", "service-token", 5).execute({
       runId: "airun_1",
       toolCallId: "aitool_1",
-      operation: {
-        operationId: "listProjects", method: "GET", path: "/api/v1/projects", category: "project",
-        risk: "read", requiredScopes: ["project:read"], approval: "never", idempotent: true, timeoutMs: 15000,
-        inputSchema: { type: "object", properties: {}, required: [], additionalProperties: false },
-      },
-      arguments: {}, argumentsHash: hashCanonicalJSON({}), runActorGrant: "grant", approvalGranted: false,
+      operation: toolOperation({
+        operationId: "listProjects",
+        method: "GET",
+        path: "/api/v1/projects",
+        parameters: [{ inputName: "page", wireName: "page", in: "query", required: false }],
+      }),
+      arguments: { page: 2 },
     })
     expect(result.status).toBe(200)
-    expect(fetchMock).toHaveBeenCalledTimes(3)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(fetchMock.mock.calls[0]?.[0]).toEqual(new URL("http://api:8080/api/v1/projects?page=2"))
   })
 
   it("does not retry a non-idempotent write with an unknown outcome", async () => {
-    const fetchMock = vi.fn<typeof fetch>()
-      .mockResolvedValueOnce(new Response(JSON.stringify({ accessToken: "delegation" }), { status: 200 }))
-      .mockResolvedValueOnce(new Response("busy", { status: 503 }))
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValueOnce(new Response("busy", { status: 503 }))
     vi.stubGlobal("fetch", fetchMock)
     const result = await new HttpLunaApiToolClient("http://api:8080", "service-token", 5).execute({
       runId: "airun_1",
       toolCallId: "aitool_1",
-      operation: {
-        operationId: "createThing", method: "POST", path: "/api/v1/things", category: "application",
-        risk: "sensitive", requiredScopes: ["application:write"], approval: "always", idempotent: false, timeoutMs: 15000,
-        inputSchema: { type: "object", properties: {}, required: [], additionalProperties: false },
-      },
-      arguments: {}, argumentsHash: hashCanonicalJSON({}), runActorGrant: "grant", approvalGranted: true,
+      operation: toolOperation({ operationId: "createThing", method: "POST", path: "/api/v1/things", requestBody: true, idempotent: false }),
+      arguments: { name: "thing" },
     })
     expect(result.status).toBe(503)
-    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it("rejects catalog-defined headers so only the fixed execution identity crosses the boundary", () => {
+    const operation = toolOperation({
+      parameters: [{ inputName: "tenant", wireName: "X-Tenant", in: "header", required: true }],
+    })
+
+    expect(() => buildToolRequest(operation, { tenant: "untrusted" }, "http://api:8080"))
+      .toThrow("ai.tool_catalog_invalid")
   })
 })
+
+function toolOperation(overrides: Partial<ToolOperation>): ToolOperation {
+  return ToolCatalog.load([{
+    operationId: "getThing",
+    name: "测试工具",
+    summary: "测试真实平台路由调用。",
+    category: "test",
+    requiredScopes: [],
+    requiresApproval: false,
+    idempotent: true,
+    method: "GET",
+    path: "/api/v1/things",
+    inputSchema: { type: "object", properties: {}, required: [], additionalProperties: false },
+    ...overrides,
+  }]).all()[0]!
+}

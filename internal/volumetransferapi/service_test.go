@@ -630,7 +630,7 @@ func TestDownloadTicketIsBoundOneTimeAndSupportsRange(t *testing.T) {
 	store.objects[transfer.ObjectKey] = content
 	ticketStore := NewMemoryTicketStore()
 	service := NewService(domain, store, ticketStore, Options{MaxBytes: 1024, Now: func() time.Time { return now }})
-	binding := DownloadBinding{UserID: "usr_demo", SubjectID: "ses_demo", AssertionID: "mfa_demo", AssertionRequired: true, Deadline: now.Add(time.Hour)}
+	binding := DownloadBinding{UserID: "usr_demo", SubjectID: "ses_demo", Deadline: now.Add(time.Hour)}
 	authorization, err := service.AuthorizeDownload(context.Background(), Actor{UserID: "usr_demo"}, transfer, binding)
 	if err != nil || authorization.Ticket == "" {
 		t.Fatalf("authorize download=%#v err=%v", authorization, err)
@@ -678,9 +678,8 @@ func TestDownloadTicketIsBoundOneTimeAndSupportsRange(t *testing.T) {
 		t.Fatalf("second range body=%q range=%q", body, download.ContentRange)
 	}
 	for name, candidate := range map[string]DownloadBinding{
-		"user":      {UserID: "usr_other", SubjectID: binding.SubjectID, AssertionID: binding.AssertionID, AssertionRequired: true, Deadline: binding.Deadline},
-		"session":   {UserID: binding.UserID, SubjectID: "ses_other", AssertionID: binding.AssertionID, AssertionRequired: true, Deadline: binding.Deadline},
-		"assertion": {UserID: binding.UserID, SubjectID: binding.SubjectID, AssertionID: "mfa_other", AssertionRequired: true, Deadline: binding.Deadline},
+		"user":    {UserID: "usr_other", SubjectID: binding.SubjectID, Deadline: binding.Deadline},
+		"session": {UserID: binding.UserID, SubjectID: "ses_other", Deadline: binding.Deadline},
 	} {
 		if _, _, err := service.OpenDownload(context.Background(), Actor{UserID: "usr_demo"}, transfer, DownloadCredential{Session: session.Token}, "", candidate); volume.ErrorCode(err) != volume.CodeTransferDownloadUnauthorized {
 			t.Fatalf("%s session binding code=%q err=%v", name, volume.ErrorCode(err), err)
@@ -742,7 +741,7 @@ func TestBlockManifestUsesTheContentTicketSessionAndContainsOnlyPortableMetadata
 	store := newMemoryVolumeStore()
 	store.objects[transfer.ObjectKey] = archive
 	service := NewService(domain, store, NewMemoryTicketStore(), Options{MaxBytes: 1 << 20, Now: func() time.Time { return now }})
-	binding := DownloadBinding{UserID: transfer.ActorID, SubjectID: "ses_demo", AssertionID: "mfa_demo", AssertionRequired: true, Deadline: now.Add(time.Hour)}
+	binding := DownloadBinding{UserID: transfer.ActorID, SubjectID: "ses_demo", Deadline: now.Add(time.Hour)}
 	authorization, err := service.AuthorizeDownload(context.Background(), Actor{UserID: transfer.ActorID}, transfer, binding)
 	if err != nil {
 		t.Fatalf("authorize manifest download: %v", err)

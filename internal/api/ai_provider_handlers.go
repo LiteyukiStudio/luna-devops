@@ -3,6 +3,7 @@ package api
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"math"
 	"net/http"
 	"strconv"
@@ -19,7 +20,6 @@ import (
 
 var aiProviderConfigKeys = []string{
 	"ai.provider.base_url",
-	"ai.provider.default_model",
 	"ai.runtime.provider_timeout_seconds",
 	"ai.runtime.max_request_retries",
 	"ai.runtime.run_timeout_seconds",
@@ -60,6 +60,7 @@ func (h *Handlers) GetAIProviderConfigInternal(ctx *gin.Context) {
 	_ = h.dbFor(ctx).First(&secretConfig, "key = ?", "ai.provider.api_key").Error
 	apiKey := h.secrets.ResolveContext(ctx.Request.Context(), secretConfig.Value)
 	version := aiProviderConfigVersion(values, secretConfig.UpdatedAt.String())
+	version = aiProviderConfigVersionWithCatalog(version, toolCatalog)
 	baseURL := strings.TrimSpace(values["ai.provider.base_url"])
 	var configuredModels []model.AIModel
 	if err := h.dbFor(ctx).Where("enabled = ?", true).Order("name asc").Find(&configuredModels).Error; err != nil {
@@ -73,10 +74,7 @@ func (h *Handlers) GetAIProviderConfigInternal(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, gin.H{
 		"version": version,
 		"provider": gin.H{
-			"baseUrl": baseURL,
-			// model is retained as a compatibility hint for older Agents; new
-			// requests must select from models by id.
-			"model":      firstAIModelName(configuredModels),
+			"baseUrl":    baseURL,
 			"apiKey":     apiKey,
 			"configured": baseURL != "" && len(models) > 0 && strings.TrimSpace(apiKey) != "",
 			"models":     models,
@@ -84,6 +82,14 @@ func (h *Handlers) GetAIProviderConfigInternal(ctx *gin.Context) {
 		"runtime":     aiProviderRuntimeConfig(values),
 		"toolCatalog": toolCatalog,
 	})
+}
+
+func aiProviderConfigVersionWithCatalog(base string, operations []aitool.OpenAPIOperation) string {
+	hash := sha256.New()
+	_, _ = hash.Write([]byte(base))
+	encoded, _ := json.Marshal(operations)
+	_, _ = hash.Write(encoded)
+	return "aipcfg_" + hex.EncodeToString(hash.Sum(nil))[:16]
 }
 
 func aiProviderRuntimeConfig(values map[string]string) gin.H {
@@ -211,13 +217,6 @@ func aiProviderModels(configured []model.AIModel) []aiProviderModel {
 		})
 	}
 	return models
-}
-
-func firstAIModelName(models []model.AIModel) string {
-	if len(models) == 0 {
-		return ""
-	}
-	return models[0].Name
 }
 
 func aiProviderConfigVersionWithModels(base string, models []model.AIModel) string {

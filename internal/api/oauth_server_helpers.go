@@ -249,10 +249,6 @@ func userCanAuthorizeOAuthScope(user model.User, scopeText string) bool {
 	return authz.UserCanAuthorizeOAuthScope(user.Role, scopeText)
 }
 
-func oauthAssertionSubject(grantID string) string {
-	return "oauth:" + strings.TrimSpace(grantID)
-}
-
 func (h *Handlers) allowOAuthClientAttempt(ctx *gin.Context, clientID string) bool {
 	if h.rateLimiter == nil {
 		h.rateLimiter = newRateLimiter()
@@ -315,7 +311,7 @@ func revokeOAuthGrant(tx *gorm.DB, grantID string, now time.Time) error {
 	if err := tx.Model(&model.OAuthRefreshToken{}).Where("grant_id = ? and revoked_at is null", grantID).Update("revoked_at", now).Error; err != nil {
 		return err
 	}
-	return tx.Where("session_id = ?", oauthAssertionSubject(grantID)).Delete(&model.StepUpAssertion{}).Error
+	return nil
 }
 
 func revokeOAuthApplication(tx *gorm.DB, applicationID string, now time.Time) error {

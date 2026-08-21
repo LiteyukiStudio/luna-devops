@@ -8,12 +8,14 @@ import type { Repository } from "../persistence/repository.js"
 import type { ModelToolCall } from "../provider/provider.js"
 import { agentMetrics, telemetryLog } from "../telemetry.js"
 import { createInteractionCardsInput, normalizeInteractionCardsInput } from "../tools/ui-cards.js"
-import { defaultRuntimeSettings } from "../runtime-settings.js"
 
-let maxCardRepairAttempts = defaultRuntimeSettings.maxCardRepairAttempts
+const CARD_MAX_ATTEMPTS = 2
+let maxCardRepairAttempts = CARD_MAX_ATTEMPTS
 
 export function setMaxCardRepairAttempts(attempts: number): void {
-  maxCardRepairAttempts = attempts
+  // 初次失败后只允许一次定向修复；第二次失败立即转为文字 fallback。
+  void attempts
+  maxCardRepairAttempts = CARD_MAX_ATTEMPTS
 }
 
 export type CardGeneration = {

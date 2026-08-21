@@ -1,6 +1,5 @@
 import type { ToolOperation } from "./catalog.js"
 import { trace } from "@opentelemetry/api"
-import { canonicalJSONStringify } from "../canonical-json.js"
 import { agentMetrics, clientSpanOptions, telemetryLog, withSpan } from "../telemetry.js"
 import { isRetryableHTTPStatus, parseRetryAfter, waitForRetry } from "../retry.js"
 
@@ -9,13 +8,6 @@ export type ToolExecutionRequest = {
   toolCallId: string
   operation: ToolOperation
   arguments: Record<string, unknown>
-  argumentsHash: string
-  inputMode?: "model" | "direct"
-  runActorGrant: string
-  approvalGranted: boolean
-  mfaPurpose?: string
-  stepUpAssertionId?: string
-  conversationAuthorizationGrant?: string
   signal?: AbortSignal
 }
 export type ToolExecutionResult = { status: number, body: unknown, requestId?: string }
@@ -38,44 +30,19 @@ export class HttpLunaApiToolClient implements LunaApiToolClient {
       "luna.tool.name": request.operation.operationId,
       "luna.tool_call.id": request.toolCallId,
     }), async span => {
-    const exchange = await this.fetchWithRetry(new URL("/internal/v1/ai/delegations/exchange", this.baseUrl), {
-      method: "POST",
-      headers: { authorization: `Bearer ${this.serviceToken}`, "content-type": "application/json" },
-      body: JSON.stringify({
-        runActorGrant: request.runActorGrant, runId: request.runId, toolCallId: request.toolCallId,
-        operationId: request.operation.operationId, requestedScopes: request.operation.requiredScopes,
-        argumentsHash: request.argumentsHash,
-        inputMode: request.inputMode ?? "model",
-        approvalGranted: request.approvalGranted,
-        ...(request.mfaPurpose ? { mfaPurpose: request.mfaPurpose } : {}),
-        ...(request.stepUpAssertionId ? { stepUpAssertionId: request.stepUpAssertionId } : {}),
-        ...(request.conversationAuthorizationGrant ? { conversationAuthorizationGrant: request.conversationAuthorizationGrant } : {}),
-      }),
-      ...(request.signal ? { signal: request.signal } : {}),
-    }, "delegation_exchange", request.signal, true)
-    if (!exchange.ok) {
-      const requestId = exchange.headers.get("x-request-id")
-      span.setAttribute("http.response.status_code", exchange.status)
-      agentMetrics.externalRequests.add(1, { target: "luna_api", operation: "delegation_exchange", outcome: String(exchange.status) })
-      telemetryLog("agent.luna_api.delegation_failed", "warn", {
-        "tool.name": request.operation.operationId,
-        "http.response.status_code": exchange.status,
-      })
-      return { status: exchange.status, body: await safeJson(exchange), ...(requestId ? { requestId } : {}) }
-    }
-    const { accessToken } = await exchange.json() as { accessToken: string }
-    const url = new URL(`/internal/v1/ai/tools/${encodeURIComponent(request.operation.operationId)}/execute`, this.baseUrl)
+    const transport = buildToolRequest(request.operation, request.arguments, this.baseUrl)
     const init: RequestInit = {
-      method: "POST",
+      method: request.operation.method,
       headers: {
-        authorization: `Bearer ${accessToken}`, "content-type": "application/json",
+        authorization: `Bearer ${this.serviceToken}`,
         "x-luna-ai-run-id": request.runId, "x-luna-ai-tool-call-id": request.toolCallId,
-        "idempotency-key": `${request.toolCallId}:${request.argumentsHash}`,
+        "idempotency-key": request.toolCallId,
+        ...(transport.body === undefined ? {} : { "content-type": "application/json" }),
       },
       ...(request.signal ? { signal: request.signal } : {}),
+      ...(transport.body === undefined ? {} : { body: JSON.stringify(transport.body) }),
     }
-    init.body = JSON.stringify({ argumentsCanonical: canonicalJSONStringify(request.arguments) })
-    const response = await this.fetchWithRetry(url, init, "tool_execute", request.signal, request.operation.idempotent)
+    const response = await this.fetchWithRetry(transport.url, init, "tool_execute", request.signal, request.operation.idempotent)
     const requestId = response.headers.get("x-request-id")
     span.setAttribute("http.response.status_code", response.status)
     agentMetrics.externalRequests.add(1, {
@@ -121,6 +88,71 @@ export class HttpLunaApiToolClient implements LunaApiToolClient {
     })
     await waitForRetry(attempt, { maxRetries, ...(signal ? { signal } : {}), ...(retryAfterMs !== undefined ? { retryAfterMs } : {}) })
   }
+}
+
+type TransportParameter = {
+  inputName: string
+  wireName: string
+  in: "path" | "query" | "header"
+  required: boolean
+}
+
+type TransportOperation = ToolOperation & {
+  parameters?: TransportParameter[]
+  requestBody?: boolean
+  requestRequired?: boolean
+  requestType?: string
+}
+
+export function buildToolRequest(operation: ToolOperation, input: Record<string, unknown>, baseUrl: string): { url: URL, body?: Record<string, unknown> } {
+  const transport = operation as TransportOperation
+  const consumed = new Set<string>()
+  let pathname = transport.path
+  const url = new URL(pathname, baseUrl)
+  for (const parameter of transport.parameters ?? []) {
+    const value = input[parameter.inputName]
+    if (value === undefined || value === null) {
+      if (parameter.required) throw new Error("ai.tool_arguments_invalid")
+      continue
+    }
+    consumed.add(parameter.inputName)
+    if (parameter.in === "path") {
+      const marker = `{${parameter.wireName}}`
+      if (!pathname.includes(marker)) throw new Error("ai.tool_catalog_invalid")
+      pathname = pathname.replaceAll(marker, encodeURIComponent(pathParameterValue(value)))
+      continue
+    }
+    if (parameter.in === "header") throw new Error("ai.tool_catalog_invalid")
+    appendQueryValue(url.searchParams, parameter.wireName, value)
+  }
+  if (/\{[^}]+\}/.test(pathname)) throw new Error("ai.tool_arguments_invalid")
+  url.pathname = pathname
+
+  const remaining = Object.fromEntries(Object.entries(input).filter(([key]) => !consumed.has(key)))
+  if (transport.requestBody === true) return { url, body: remaining }
+  if ((transport.parameters?.length ?? 0) === 0) {
+    for (const [key, value] of Object.entries(input)) appendQueryValue(url.searchParams, key, value)
+  }
+  return { url }
+}
+
+function pathParameterValue(value: unknown): string {
+  if (typeof value === "string") return value
+  if (typeof value === "number" || typeof value === "bigint") return value.toString()
+  if (typeof value === "boolean") return value ? "true" : "false"
+  throw new Error("ai.tool_arguments_invalid")
+}
+
+function appendQueryValue(query: URLSearchParams, name: string, value: unknown): void {
+  if (Array.isArray(value)) {
+    for (const item of value) appendQueryValue(query, name, item)
+    return
+  }
+  if (typeof value === "object" && value !== null) {
+    query.append(name, JSON.stringify(value))
+    return
+  }
+  query.append(name, String(value))
 }
 
 async function safeJson(response: Response): Promise<unknown> {

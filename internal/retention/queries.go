@@ -129,53 +129,12 @@ WHERE target.id = victims.id`,
 			{
 				requireExpired: true,
 				countSQL: `SELECT COUNT(*) AS count
-FROM step_up_assertions
-WHERE LEAST(idle_expires_at, absolute_expires_at) >= ?
-  AND LEAST(idle_expires_at, absolute_expires_at) < ?
-  AND LEAST(idle_expires_at, absolute_expires_at) <= ?`,
-				deleteSQL: `WITH victims AS (
-    SELECT id
-    FROM step_up_assertions
-    WHERE LEAST(idle_expires_at, absolute_expires_at) >= ?
-      AND LEAST(idle_expires_at, absolute_expires_at) < ?
-      AND LEAST(idle_expires_at, absolute_expires_at) <= ?
-    ORDER BY LEAST(idle_expires_at, absolute_expires_at), id
-    LIMIT 1000
-)
-DELETE FROM step_up_assertions AS target
-USING victims
-WHERE target.id = victims.id`,
-			},
-			{
-				requireExpired: true,
-				windowCount:    2,
-				countSQL: `SELECT COUNT(*) AS count
 FROM user_sessions AS session
-WHERE session.expires_at >= ? AND session.expires_at < ? AND session.expires_at <= ?
-  AND NOT EXISTS (
-      SELECT 1
-      FROM step_up_assertions AS assertion
-      WHERE assertion.session_id = session.id
-        AND NOT (
-            LEAST(assertion.idle_expires_at, assertion.absolute_expires_at) >= ?
-            AND LEAST(assertion.idle_expires_at, assertion.absolute_expires_at) < ?
-            AND LEAST(assertion.idle_expires_at, assertion.absolute_expires_at) <= ?
-        )
-  )`,
+WHERE session.expires_at >= ? AND session.expires_at < ? AND session.expires_at <= ?`,
 				deleteSQL: `WITH victims AS (
     SELECT session.id
     FROM user_sessions AS session
     WHERE session.expires_at >= ? AND session.expires_at < ? AND session.expires_at <= ?
-      AND NOT EXISTS (
-          SELECT 1
-          FROM step_up_assertions AS assertion
-          WHERE assertion.session_id = session.id
-            AND NOT (
-                LEAST(assertion.idle_expires_at, assertion.absolute_expires_at) >= ?
-                AND LEAST(assertion.idle_expires_at, assertion.absolute_expires_at) < ?
-                AND LEAST(assertion.idle_expires_at, assertion.absolute_expires_at) <= ?
-            )
-      )
     ORDER BY session.expires_at, session.id
     LIMIT 1000
 )

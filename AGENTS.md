@@ -118,14 +118,9 @@ web/src/i18n
 - 构建/部署阶段的用户配置字符串默认允许使用 GitHub Actions 风格变量；最终执行前必须通过后端统一变量渲染组件处理，禁止在各业务里手写零散替换逻辑。
 - 权限由后端最终判断，前端隐藏按钮只做体验优化。
 - 危险操作必须写 AuditLog。
-- **MUST Agent 工具注册闭环**：新增或修改一个 `luna-agent` 可调用工具（`operationId`）时，必须在同一事项内逐项核对并同步全部注册点，禁止只加调用方不加执行方。手写工具（无独立 OpenAPI 路由，如 `webSearch`、`getAppTemplate`）的完整链路为：
-  1. Agent 侧 `src/tools/generated/platform.ts` 的 operation 定义（含 `inputSchema` 与 `requiredScopes`）；
-  2. 后端 `internal/aitool/service.go` `Execute` 的对应 `case`（真实执行）；
-  3. 后端 `internal/api/ai_internal_tool_handlers.go` `buildAIToolPolicies` 的策略白名单（缺失会导致 `ai.tool_not_allowed`），`Scopes` 必须与 Agent 侧 `requiredScopes` 完全一致；
-  4. Agent 侧 `src/tools/catalog.ts` 的 `baseOperations`/`essentialWorkflowOperations`（决定工具是否下发给模型）与 `operationDescriptions`（模型可见的工具描述）。
-  有独立 OpenAPI 路由的平台操作经 `PlatformCatalog()` 自动生成策略，只需确认 `agentEligibleOperation` 未将其排除。完成后必须用一条真实调用链验证工具可执行（通过 delegation 换取并成功返回），不能仅编译通过就交付。
-- 修改既有工具的 `requiredScopes`、参数 schema 或风险级别时，必须同步更新策略白名单与 Agent 侧定义，保持两端一致。
-- **MUST Agent 工具可检索性**：工具目录规模扩大时不得把全部定义无条件下发给模型。每个新增或变更工具必须提供可区分的用途、禁用场景、前置条件、主要参数和成功回读说明，并确保它能通过 Harness 的动态工具检索被对应用户目标命中；模型在声明缺少能力前必须先检索目录。检索工具只负责发现，不授予权限、不执行操作，也不得把用户检索词写入普通遥测属性或 Metric label。常用场景评测至少断言正确工具进入前 8 个结果，并覆盖相似读写工具的边界。
+- **MUST Agent 工具注册闭环**：普通平台工具以 OpenAPI operation 为唯一事实源。新增或修改 `operationId` 时，必须在同一事项内同步真实业务路由、请求/响应 Schema、`requiredScopes`、`requiresApproval`、敏感字段、别名和用途说明，并确认 `internal/aitool.PlatformCatalog()` 能自动生成完整契约；特殊协议只能在集中 deny map 中以稳定原因排除。Agent 不维护手写平台 fallback、重复白名单或二次执行 router。仅模型内部工具需要同步 `tool-presentation` 注册、Executor handler 与测试。
+- 修改既有工具的 Scope、参数 Schema 或审批要求时，必须验证远端 Provider Catalog、Agent 详情加载、固定服务身份直达原业务 Handler/Service、当前 Session/用户/项目空间权威回读、最终 RBAC 和审计保持一致。完成后必须用真实调用链验证副作用与权威回读，不能仅编译通过就交付。
+- **MUST Agent 工具可检索性**：工具目录不得把全部定义无条件下发给模型。每个新增或变更工具必须提供可区分的用途、禁用场景、前置条件、主要参数和成功回读说明，并确保它能通过 `search_tools` 的 Unicode/BM25 分页摘要检索命中，再通过 `get_tool_details` 精确加载完整 Schema；模型在声明缺少能力前必须先检索目录。检索只负责发现，不授予权限、不执行操作，也不得把用户检索词写入普通遥测属性或 Metric label。常用场景评测必须覆盖正确工具命中与相似读写工具边界，不设置固定 Top K 或向量召回门禁。
 
 ## 6. 前端准则
 

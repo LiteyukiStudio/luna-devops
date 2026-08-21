@@ -61,11 +61,9 @@ type ExportRequest struct {
 }
 
 type DownloadBinding struct {
-	UserID            string    `json:"userId"`
-	SubjectID         string    `json:"subjectId"`
-	AssertionID       string    `json:"assertionId,omitempty"`
-	AssertionRequired bool      `json:"assertionRequired"`
-	Deadline          time.Time `json:"deadline"`
+	UserID    string    `json:"userId"`
+	SubjectID string    `json:"subjectId"`
+	Deadline  time.Time `json:"deadline"`
 }
 
 type DownloadAuthorization struct {

@@ -28,7 +28,6 @@ describe("Postgres tool argument storage", () => {
             attempt: 1,
             row_version: 2,
             approval_expires_at: new Date(Date.now() + 60_000),
-            mfa_purpose: null,
             result: null,
             error_code: null,
           }],
@@ -60,8 +59,8 @@ describe("Postgres tool argument storage", () => {
     expect(calls[0]?.[5]).toContain("[REDACTED]")
     expect(calls[0]?.[5]).not.toContain("generated-secret")
     expect(calls[0]?.[6]).not.toContain("generated-secret")
-    expect(calls[0]?.[12]).toBe(JSON.stringify({ code: "ai.tool_arguments_invalid", retryable: true }))
-    expect(calls[0]?.[13]).toBe("ai.tool_arguments_invalid")
+	expect(calls[0]?.[11]).toBe(JSON.stringify({ code: "ai.tool_arguments_invalid", retryable: true }))
+	expect(calls[0]?.[12]).toBe("ai.tool_arguments_invalid")
     await expect(store.get("aitool_1")).resolves.toMatchObject({ arguments: executable })
   })
 
@@ -78,7 +77,6 @@ describe("Postgres tool argument storage", () => {
         attempt: 1,
         row_version: 3,
         approval_expires_at: null,
-        mfa_purpose: null,
         result: null,
         error_code: "ai.approval_arguments_changed",
       }],

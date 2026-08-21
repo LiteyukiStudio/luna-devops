@@ -179,7 +179,6 @@ const resourceAliases: Record<string, string> = {
   pendingAIUIActions: 'aiUIActions',
   aiUIAction: 'aiUIAction',
   aiRunActorGrant: 'aiRunActorGrant',
-  aiRunAfterMFA: 'aiRun',
   registeredAITool: 'registeredAITool',
   internalAIProviderConfig: 'aiProviderConfig',
   aiProviderConnection: 'aiProviderConnection',
@@ -217,7 +216,7 @@ export function toolDisplayName(t: TFunction, operationId: string): string {
 }
 
 function lowerFirst(value: string): string {
-  for (const acronym of ['OAuth', 'OIDC', 'MFA', 'API', 'AI']) {
+  for (const acronym of ['OAuth', 'OIDC', 'API', 'AI']) {
     if (value.startsWith(acronym))
       return `${acronym.toLowerCase()}${value.slice(acronym.length)}`
   }

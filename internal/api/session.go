@@ -462,9 +462,6 @@ func deleteRememberFamilySessionsExcept(tx *gorm.DB, userID, familyID, keepSessi
 	if len(sessionIDs) == 0 {
 		return nil
 	}
-	if err := tx.Where("session_id in ?", sessionIDs).Delete(&model.StepUpAssertion{}).Error; err != nil {
-		return err
-	}
 	return tx.Where("id in ?", sessionIDs).Delete(&model.UserSession{}).Error
 }
 
@@ -502,24 +499,10 @@ func revokeRememberFamily(tx *gorm.DB, userID, familyID string, revokedAt time.T
 		Update("revoked_at", revokedAt).Error; err != nil {
 		return err
 	}
-	var sessionIDs []string
-	if err := tx.Model(&model.UserSession{}).
-		Where("user_id = ? and remember_family_id = ?", userID, familyID).
-		Pluck("id", &sessionIDs).Error; err != nil {
-		return err
-	}
-	if len(sessionIDs) > 0 {
-		if err := tx.Where("session_id in ?", sessionIDs).Delete(&model.StepUpAssertion{}).Error; err != nil {
-			return err
-		}
-	}
 	return tx.Where("user_id = ? and remember_family_id = ?", userID, familyID).Delete(&model.UserSession{}).Error
 }
 
 func revokeUserAuthentication(tx *gorm.DB, userID string) error {
-	if err := tx.Where("user_id = ?", userID).Delete(&model.StepUpAssertion{}).Error; err != nil {
-		return err
-	}
 	if err := tx.Model(&model.UserRememberToken{}).
 		Where("user_id = ? and revoked_at is null", userID).
 		Update("revoked_at", time.Now()).Error; err != nil {
@@ -541,9 +524,6 @@ func (h *Handlers) revokeCurrentSessionAndRememberTokens(plainToken string, ctx 
 		userID = session.UserID
 		if strings.TrimSpace(session.RememberFamilyID) != "" {
 			return revokeRememberFamily(tx, session.UserID, session.RememberFamilyID, time.Now())
-		}
-		if err := tx.Where("session_id = ?", session.ID).Delete(&model.StepUpAssertion{}).Error; err != nil {
-			return err
 		}
 		return tx.Where("id = ?", session.ID).Delete(&model.UserSession{}).Error
 	})

@@ -1,7 +1,6 @@
 import { and, asc, count, desc, eq, gt, gte, ilike, inArray, isNull, lt, ne, sql } from "drizzle-orm"
 import type { Pool } from "pg"
 import type {
-  ConversationAuthorization,
   ConversationHistoryEntry,
   ConversationSummary,
   ConversationTitleSource,
@@ -41,26 +40,12 @@ import {
   runs,
   turns,
   uiActions,
-  type ConversationRow,
   type RunRow,
   type UIActionRow,
 } from "./schema/index.js"
 
 /** Drizzle 事务回调或共享 db 实例均可执行的最小查询接口 */
 type Querier = AgentDb | AgentTx
-
-function conversationAuthorization(row: ConversationRow): ConversationAuthorization | undefined {
-  if (!row.authorizationGrantCiphertext || !row.authorizationSessionId || !row.authorizationCatalogDigest
-    || !row.authorizationExpiresAt || !row.authorizationUpdatedAt) return undefined
-  return {
-    conversationId: row.id,
-    sessionId: row.authorizationSessionId,
-    catalogDigest: row.authorizationCatalogDigest,
-    grantCiphertext: row.authorizationGrantCiphertext,
-    expiresAt: row.authorizationExpiresAt.toISOString(),
-    updatedAt: row.authorizationUpdatedAt.toISOString(),
-  }
-}
 
 const historyTurnWindow = 8
 
@@ -328,23 +313,58 @@ export class PostgresRepository implements Repository {
   }
 
   async updateConversation(ownerUserId: string, id: string, input: { title?: string, modelId?: string }) {
-    const row = (await this.db.update(conversations)
-      .set({
-        ...(input.title ? { title: input.title, titleSource: "user" as const } : {}),
-        ...(input.modelId ? { modelId: input.modelId } : {}),
-        updatedAt: sql`now()`,
-      })
-      .where(and(eq(conversations.id, id), eq(conversations.ownerUserId, ownerUserId)))
-      .returning())[0]
-    return row ? mapConversation(row) : undefined
+    return this.db.transaction(async (tx) => {
+      const current = (await tx.select().from(conversations)
+        .where(and(eq(conversations.id, id), eq(conversations.ownerUserId, ownerUserId)))
+        .for("update"))[0]
+      if (!current) return undefined
+      const row = (await tx.update(conversations)
+        .set({
+          ...(input.title ? { title: input.title, titleSource: "user" as const } : {}),
+          ...(input.modelId ? { modelId: input.modelId } : {}),
+          updatedAt: sql`now()`,
+        })
+        .where(eq(conversations.id, id))
+        .returning())[0]
+      if (!row) return undefined
+      if (input.title && (current.title !== input.title || current.titleSource !== "user")) {
+        const latestRun = (await tx.select({ id: runs.id }).from(runs)
+          .where(eq(runs.conversationId, id))
+          .orderBy(desc(runs.createdAt), desc(runs.id))
+          .limit(1))[0]
+        if (latestRun) {
+          await this.appendEventWith(tx, latestRun.id, "conversation.title.updated", {
+            title: input.title,
+            titleSource: "user",
+            locked: true,
+          })
+        }
+      }
+      return mapConversation(row)
+    })
   }
 
-  async renameConversationByAssistant(id: string, title: string) {
-    const row = (await this.db.update(conversations)
-      .set({ title, titleSource: "assistant", updatedAt: sql`now()` })
-      .where(and(eq(conversations.id, id), ne(conversations.titleSource, "user")))
-      .returning())[0]
-    return row ? mapConversation(row) : undefined
+  async renameConversationByAssistant(id: string, title: string, runId?: string) {
+    return this.db.transaction(async (tx) => {
+      if (runId) {
+        const boundRun = (await tx.select({ id: runs.id }).from(runs)
+          .where(and(eq(runs.id, runId), eq(runs.conversationId, id))))[0]
+        if (!boundRun) throw new Error("ai.run_conversation_mismatch")
+      }
+      const row = (await tx.update(conversations)
+        .set({ title, titleSource: "assistant", updatedAt: sql`now()` })
+        .where(and(eq(conversations.id, id), ne(conversations.titleSource, "user")))
+        .returning())[0]
+      if (!row) return undefined
+      if (runId) {
+        await this.appendEventWith(tx, runId, "conversation.title.updated", {
+          title,
+          titleSource: "assistant",
+          locked: false,
+        })
+      }
+      return mapConversation(row)
+    })
   }
 
   async deleteConversation(ownerUserId: string, id: string) {
@@ -354,61 +374,9 @@ export class PostgresRepository implements Repository {
     return deleted.length === 1
   }
 
-  async authorizeConversation(ownerUserId: string, conversationId: string, input: Omit<ConversationAuthorization, "conversationId" | "updatedAt">) {
-    const row = (await this.db.update(conversations)
-      .set({
-        authorizationGrantCiphertext: input.grantCiphertext,
-        authorizationSessionId: input.sessionId,
-        authorizationCatalogDigest: input.catalogDigest,
-        authorizationExpiresAt: new Date(input.expiresAt),
-        authorizationUpdatedAt: sql`now()`,
-      })
-      .where(and(eq(conversations.id, conversationId), eq(conversations.ownerUserId, ownerUserId)))
-      .returning())[0]
-    return row ? conversationAuthorization(row) : undefined
-  }
-
-  async getConversationAuthorization(ownerUserId: string, conversationId: string, sessionId: string, catalogDigest: string) {
-    const now = new Date()
-    const row = (await this.db.select().from(conversations).where(and(
-      eq(conversations.id, conversationId),
-      eq(conversations.ownerUserId, ownerUserId),
-      eq(conversations.authorizationSessionId, sessionId),
-      eq(conversations.authorizationCatalogDigest, catalogDigest),
-      gt(conversations.authorizationExpiresAt, now),
-    )))[0]
-    return row ? conversationAuthorization(row) : undefined
-  }
-
-  async getRunConversationAuthorization(runId: string) {
-    const now = new Date()
-    const row = (await this.db.select({ conversation: conversations }).from(runs)
-      .innerJoin(conversations, and(
-        eq(conversations.id, runs.conversationId),
-        eq(conversations.authorizationCatalogDigest, runs.toolCatalogDigest),
-      ))
-      .where(and(
-        eq(runs.id, runId),
-        gt(conversations.authorizationExpiresAt, now),
-      )))[0]?.conversation
-    return row ? conversationAuthorization(row) : undefined
-  }
-
-  async revokeConversationAuthorization(ownerUserId: string, conversationId: string) {
-    const rows = await this.db.update(conversations)
-      .set({
-        authorizationGrantCiphertext: null,
-        authorizationSessionId: null,
-        authorizationCatalogDigest: null,
-        authorizationExpiresAt: null,
-        authorizationUpdatedAt: sql`now()`,
-      })
-      .where(and(eq(conversations.id, conversationId), eq(conversations.ownerUserId, ownerUserId)))
-      .returning({ id: conversations.id })
-    return rows.length === 1
-  }
-
   async createTurn(ownerUserId: string, input: CreateTurn): Promise<CreatedTurn> {
+    const actorSessionId = input.actorSessionId
+    if (!actorSessionId) throw new Error("ai.actor_session_required")
     return withSpan("agent.repository.turn.create", internalSpanOptions(), () => this.db.transaction(async (tx) => {
       const hash = createTurnRequestHash(input)
       const existing = (await tx.select().from(idempotencyKeys)
@@ -417,7 +385,11 @@ export class PostgresRepository implements Repository {
         if (existing.requestHash !== hash) throw new Error("idempotency_conflict")
         return this.loadCreated(tx, existing.turnId, existing.runId)
       }
-      const owned = (await tx.select({ id: conversations.id }).from(conversations)
+      const owned = (await tx.select({
+        id: conversations.id,
+        title: conversations.title,
+        titleSource: conversations.titleSource,
+      }).from(conversations)
         .where(and(eq(conversations.id, input.conversationId), eq(conversations.ownerUserId, ownerUserId)))
         .for("update"))[0]
       if (!owned) throw new Error("ai.conversation_not_found")
@@ -447,10 +419,10 @@ export class PostgresRepository implements Repository {
         runIndex: 0,
         status: "queued",
         promptVersion: "system-v4",
+        actorSessionId,
         toolCatalogDigest: input.toolCatalogDigest ?? "sha256:platform-tools-v1",
         pageContext: input.pageContext,
         traceContext: input.traceContext ?? {},
-        runActorGrantCiphertext: input.runActorGrantCiphertext ?? null,
         clientInstanceId: input.clientInstanceId ?? null,
         modelId: input.modelSnapshot?.id ?? input.modelId ?? null,
         modelName: input.modelSnapshot?.name ?? null,
@@ -470,7 +442,13 @@ export class PostgresRepository implements Repository {
         turnId,
         runId,
       })
-      await this.appendItemWith(tx, { runId, turnId, type: "user_message", status: "completed", content: { parts: [{ type: "text", text: input.input }] } })
+      const userItem = await this.appendItemWith(tx, { id: `${turnId}:input`, runId, turnId, type: "user_message", status: "completed", content: { parts: [{ type: "text", text: input.input }] } })
+      await this.appendEventWith(tx, runId, "run.input_received", {
+        initial: true,
+        item: userItem,
+        conversationTitle: owned.title,
+        conversationTitleSource: owned.titleSource,
+      })
       await this.appendEventWith(tx, runId, "run.queued", { state: "queued" })
       return this.loadCreated(tx, turnId, runId)
     }))
@@ -489,7 +467,7 @@ export class PostgresRepository implements Repository {
         .where(and(
           eq(runs.id, id),
           eq(runs.ownerUserId, ownerUserId),
-          sql`${runs.status} not in ('completed', 'failed', 'canceled', 'expired')`,
+          sql`${runs.status} not in ('completed', 'failed', 'canceled', 'expired', 'interrupted')`,
         ))
         .returning())[0]
       if (!row) return undefined
@@ -503,16 +481,30 @@ export class PostgresRepository implements Repository {
     })
   }
 
-  async claimRun(instanceId: string, leaseSeconds: number) {
-    return withSpan("agent.repository.run.claim", internalSpanOptions(), async () => {
-      // 原子领取依赖数据库函数 ai.claim_next_run（FOR UPDATE SKIP LOCKED），
-      // 由 golang-migrate 迁移维护，无法以 Drizzle 查询安全替代
-      const raw = (await this.db.execute<Record<string, unknown>>(sql`
-        select r.* from ai.claim_next_run(${instanceId}, ${leaseSeconds}) c
-        join ai.runs r on r.id = c.run_id
+  async claimNextQueuedRun() {
+    return withSpan("agent.repository.run.claim", internalSpanOptions(), async () => this.db.transaction(async (tx) => {
+      const raw = (await tx.execute<Record<string, unknown>>(sql`
+        with candidate as (
+          select id from ai.runs
+          where status = 'queued'
+          order by created_at, id
+          for update skip locked
+          limit 1
+        )
+        update ai.runs r
+        set status = 'running',
+            row_version = r.row_version + 1,
+            started_at = coalesce(r.started_at, now())
+        from candidate
+        where r.id = candidate.id
+        returning r.*
       `)).rows[0]
-      return raw ? mapRun(driverRow(runs, raw) as RunRow) : undefined
-    })
+      if (!raw) return undefined
+      const row = driverRow(runs, raw) as RunRow
+      await tx.update(turns).set({ status: "running" }).where(eq(turns.id, row.turnId))
+      await this.appendEventWith(tx, row.id, "run.running", { state: "running", rowVersion: row.rowVersion })
+      return mapRun(row)
+    }))
   }
 
   async countActiveUserRuns(userId: string) {
@@ -710,10 +702,50 @@ export class PostgresRepository implements Repository {
     return current
   }
 
-  async getRunActorGrantCiphertext(runId: string) {
-    const row = (await this.db.select({ value: runs.runActorGrantCiphertext }).from(runs)
-      .where(eq(runs.id, runId)))[0]
-    return row?.value ?? undefined
+  async hasToolApprovalExemption(runId: string, operationId: string) {
+    const row = (await this.db.execute<{ exists: boolean }>(sql`
+      select exists(
+        select 1
+        from ai.runs r
+        join ai.tool_approval_exemptions e on e.user_id = r.owner_user_id
+        where r.id = ${runId} and e.operation_id = ${operationId}
+      ) as exists
+    `)).rows[0]
+    return row?.exists === true
+  }
+
+  async grantToolApprovalExemption(runId: string, operationId: string, sourceToolCallId: string) {
+    const inserted = await this.db.execute(sql`
+      insert into ai.tool_approval_exemptions(user_id, operation_id, created_at, updated_at, source_tool_call_id)
+      select owner_user_id, ${operationId}, now(), now(), ${sourceToolCallId}
+      from ai.runs where id = ${runId}
+      on conflict (user_id, operation_id) do update
+      set updated_at = excluded.updated_at,
+          source_tool_call_id = excluded.source_tool_call_id
+      returning user_id
+    `)
+    if (inserted.rowCount !== 1) throw new Error("ai.run_not_found")
+  }
+
+  async listToolApprovalExemptions(ownerUserId: string) {
+    const result = await this.db.execute<{ operationId: string, createdAt: Date | string }>(sql`
+      select operation_id as "operationId", created_at as "createdAt"
+      from ai.tool_approval_exemptions
+      where user_id = ${ownerUserId}
+      order by operation_id
+    `)
+    return result.rows.map(row => ({
+      operationId: row.operationId,
+      createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : new Date(row.createdAt).toISOString(),
+    }))
+  }
+
+  async revokeToolApprovalExemption(ownerUserId: string, operationId: string) {
+    const deleted = await this.db.execute(sql`
+      delete from ai.tool_approval_exemptions
+      where user_id = ${ownerUserId} and operation_id = ${operationId}
+    `)
+    return (deleted.rowCount ?? 0) > 0
   }
 
   async appendRunInput(runId: string, text: string) {
@@ -723,18 +755,6 @@ export class PostgresRepository implements Repository {
       .where(and(eq(runs.id, runId), eq(turns.id, runs.turnId)))
       .returning({ id: turns.id })
     if (!updated.length) throw new Error("ai.run_not_found")
-  }
-
-  async renewLease(runId: string, instanceId: string, leaseSeconds: number) {
-    // 租约续期条件由数据库函数保证原子性
-    const row = (await this.db.execute<{ renewed: boolean | null }>(
-      sql`select ai.renew_run_lease(${runId}, ${instanceId}, ${leaseSeconds}) renewed`,
-    )).rows[0]
-    return Boolean(row?.renewed)
-  }
-
-  async releaseLease(runId: string, instanceId: string) {
-    await this.db.execute(sql`select ai.release_run_lease(${runId}, ${instanceId})`)
   }
 
   async updateRun(runId: string, from: Run["status"], to: Run["status"], fields: Partial<Run> = {}) {
@@ -803,6 +823,24 @@ export class PostgresRepository implements Repository {
       const item = await this.updateItemWith(tx, itemId, status, content)
       const event = await this.appendEventWith(tx, item.runId, eventType, { ...eventData, item })
       return { item, event }
+    })
+  }
+
+  async completeToolItemWithEvent(
+    itemId: string,
+    status: TimelineItem["status"],
+    content: Record<string, unknown>,
+    resultValue: Omit<TimelineItem, "id" | "timelineIndex" | "revision" | "createdAt"> & { id?: string },
+    eventType: string,
+    eventData: Record<string, unknown> = {},
+  ) {
+    return this.db.transaction(async (tx) => {
+      const item = await this.updateItemWith(tx, itemId, status, content)
+      const resultItem = await this.appendItemWith(tx, resultValue)
+      if (resultItem.runId !== item.runId || resultItem.turnId !== item.turnId)
+        throw new Error("ai.tool_result_binding_mismatch")
+      const event = await this.appendEventWith(tx, item.runId, eventType, { ...eventData, item, resultItem })
+      return { item, resultItem, event }
     })
   }
 

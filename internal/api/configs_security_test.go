@@ -10,9 +10,8 @@ import (
 	"gorm.io/gorm"
 )
 
-func TestFullConfigPayloadWithUnchangedStepUpValuesDoesNotRequireAssertion(t *testing.T) {
-	db := newMFAIntegrationDB(t)
-	limitMFAIntegrationConnections(t, db, 1)
+func TestFullConfigPayloadUpdatesKnownValues(t *testing.T) {
+	db := authIntegrationDB(t)
 	now := time.Now()
 	user := model.User{ID: "usr_config_admin", Email: "config-admin@example.com", Name: "Config Admin", Role: authz.PlatformRoleAdmin, Language: "en-US"}
 	if err := db.Create(&user).Error; err != nil {
@@ -23,11 +22,8 @@ func TestFullConfigPayloadWithUnchangedStepUpValuesDoesNotRequireAssertion(t *te
 		t.Fatal(err)
 	}
 	handlers := &Handlers{db: db, configs: newConfigCache(db), mode: "development"}
-	recorder, ctx := newMFAIntegrationContext(http.MethodPut, "/api/v1/configs", map[string]any{"values": map[string]any{
-		"site.title":                                "Updated Luna DevOps",
-		"security.stepUpMfa.enabled":                "false",
-		"security.stepUpMfa.idleTimeoutMinutes":     "10",
-		"security.stepUpMfa.absoluteTimeoutMinutes": "60",
+	recorder, ctx := newAPIIntegrationContext(http.MethodPut, "/api/v1/configs", map[string]any{"values": map[string]any{
+		"site.title": "Updated Luna DevOps",
 	}}, sessionToken)
 	handlers.UpdateConfigs(ctx)
 	if recorder.Code != http.StatusOK {
@@ -36,36 +32,8 @@ func TestFullConfigPayloadWithUnchangedStepUpValuesDoesNotRequireAssertion(t *te
 	assertAppConfigValue(t, db, "site.title", "Updated Luna DevOps")
 }
 
-func TestStepUpSecurityConfigReadsSharedDatabase(t *testing.T) {
-	db := newMFAIntegrationDB(t)
-	firstReplica := newConfigCache(db)
-	secondReplica := newConfigCache(db)
-	if configBool(firstReplica.get([]string{"security.stepUpMfa.enabled"})["security.stepUpMfa.enabled"]) {
-		t.Fatal("step-up MFA should use the disabled default before the external update")
-	}
-
-	if err := upsertConfigValues(db, map[string]string{
-		"security.stepUpMfa.enabled":                "true",
-		"security.stepUpMfa.idleTimeoutMinutes":     "7",
-		"security.stepUpMfa.absoluteTimeoutMinutes": "23",
-	}); err != nil {
-		t.Fatalf("update shared security config: %v", err)
-	}
-
-	values := secondReplica.get([]string{
-		"security.stepUpMfa.enabled",
-		"security.stepUpMfa.idleTimeoutMinutes",
-		"security.stepUpMfa.absoluteTimeoutMinutes",
-	})
-	if values["security.stepUpMfa.enabled"] != "true" ||
-		values["security.stepUpMfa.idleTimeoutMinutes"] != "7" ||
-		values["security.stepUpMfa.absoluteTimeoutMinutes"] != "23" {
-		t.Fatalf("second replica did not observe shared update without reload: %#v", values)
-	}
-}
-
 func TestConfigBatchValidationAndTransactionAreAtomic(t *testing.T) {
-	db := newMFAIntegrationDB(t)
+	db := authIntegrationDB(t)
 	if err := db.Create(&model.AppConfig{Key: "site.title", Value: "before"}).Error; err != nil {
 		t.Fatalf("seed config: %v", err)
 	}
