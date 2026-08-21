@@ -549,7 +549,8 @@
                 "type": "string"
               },
               "minItems": 1,
-              "type": "array"
+              "type": "array",
+              "uniqueItems": true
             },
             "endAt": {
               "format": "date-time",
@@ -1915,6 +1916,7 @@
                         "type": "boolean"
                       },
                       "sourceType": {
+                        "const": "projectVolume",
                         "type": "string"
                       }
                     },
@@ -1947,6 +1949,7 @@
                         "type": "boolean"
                       },
                       "sourceType": {
+                        "const": "projectVolume",
                         "type": "string"
                       }
                     },
@@ -1989,6 +1992,7 @@
                         "type": "string"
                       },
                       "sourceType": {
+                        "const": "emptyDir",
                         "type": "string"
                       }
                     },
@@ -4092,11 +4096,13 @@
     },
     "preconditions": {
       "zh": [
-        "已确认存储类型和容量",
-        "提供真实 projectId 与 clusterId"
+        "创建空白卷或快照恢复前先调用 listProjectVolumeStorageClasses 并从返回结果选择 storageClassName",
+        "提供真实 projectId 与 clusterId",
+        "明确容量、访问模式和卷模式"
       ],
       "en": [
-        "Confirm storage type and capacity",
+        "Before blank creation or snapshot restore call listProjectVolumeStorageClasses and choose storageClassName from its response",
+        "Confirm capacity access mode and volume mode",
         "Provide authoritative projectId and clusterId"
       ]
     },
@@ -4115,34 +4121,37 @@
       "additionalProperties": false,
       "properties": {
         "body": {
-          "additionalProperties": false,
-          "properties": {
-            "accessMode": {
-              "enum": [
-                "ReadWriteOnce",
-                "ReadWriteOncePod",
-                "ReadOnlyMany",
-                "ReadWriteMany"
-              ],
-              "type": "string"
-            },
-            "capacity": {
-              "type": "string"
-            },
-            "clusterId": {
-              "type": "string"
-            },
-            "displayName": {
-              "maxLength": 120,
-              "minLength": 1,
-              "type": "string"
-            },
-            "source": {
-              "oneOf": [
-                {
+          "oneOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "accessMode": {
+                  "enum": [
+                    "ReadWriteOnce",
+                    "ReadWriteOncePod",
+                    "ReadOnlyMany",
+                    "ReadWriteMany"
+                  ],
+                  "type": "string"
+                },
+                "capacity": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "clusterId": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "displayName": {
+                  "maxLength": 120,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "source": {
                   "additionalProperties": false,
                   "properties": {
                     "type": {
+                      "const": "blank",
                       "type": "string"
                     }
                   },
@@ -4151,7 +4160,43 @@
                   ],
                   "type": "object"
                 },
-                {
+                "storageClassName": {
+                  "description": "Must be selected from listProjectVolumeStorageClasses for the same projectId and clusterId.",
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "volumeMode": {
+                  "enum": [
+                    "Filesystem",
+                    "Block"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "displayName",
+                "clusterId",
+                "capacity",
+                "storageClassName",
+                "accessMode",
+                "volumeMode",
+                "source"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "clusterId": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "displayName": {
+                  "maxLength": 120,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "source": {
                   "additionalProperties": false,
                   "properties": {
                     "claimName": {
@@ -4167,6 +4212,7 @@
                       "type": "string"
                     },
                     "type": {
+                      "const": "existingClaim",
                       "type": "string"
                     }
                   },
@@ -4176,8 +4222,41 @@
                     "ownershipMode"
                   ],
                   "type": "object"
+                }
+              },
+              "required": [
+                "displayName",
+                "clusterId",
+                "source"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "accessMode": {
+                  "enum": [
+                    "ReadWriteOnce",
+                    "ReadWriteOncePod",
+                    "ReadOnlyMany",
+                    "ReadWriteMany"
+                  ],
+                  "type": "string"
                 },
-                {
+                "capacity": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "clusterId": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "displayName": {
+                  "maxLength": 120,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "source": {
                   "additionalProperties": false,
                   "properties": {
                     "snapshotName": {
@@ -4186,6 +4265,7 @@
                       "type": "string"
                     },
                     "type": {
+                      "const": "volumeSnapshot",
                       "type": "string"
                     }
                   },
@@ -4194,26 +4274,32 @@
                     "snapshotName"
                   ],
                   "type": "object"
+                },
+                "storageClassName": {
+                  "description": "Must be selected from listProjectVolumeStorageClasses for the same projectId and clusterId.",
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "volumeMode": {
+                  "enum": [
+                    "Filesystem",
+                    "Block"
+                  ],
+                  "type": "string"
                 }
-              ]
-            },
-            "storageClassName": {
-              "type": "string"
-            },
-            "volumeMode": {
-              "enum": [
-                "Filesystem",
-                "Block"
+              },
+              "required": [
+                "displayName",
+                "clusterId",
+                "capacity",
+                "storageClassName",
+                "accessMode",
+                "volumeMode",
+                "source"
               ],
-              "type": "string"
+              "type": "object"
             }
-          },
-          "required": [
-            "displayName",
-            "clusterId",
-            "source"
-          ],
-          "type": "object"
+          ]
         },
         "projectId": {
           "type": "string"
@@ -8315,6 +8401,7 @@
                     "type": "boolean"
                   },
                   "sourceType": {
+                    "const": "projectVolume",
                     "type": "string"
                   }
                 },
@@ -8352,6 +8439,7 @@
                     "type": "string"
                   },
                   "sourceType": {
+                    "const": "emptyDir",
                     "type": "string"
                   }
                 },
@@ -13436,6 +13524,7 @@
                       "type": "boolean"
                     },
                     "sourceType": {
+                      "const": "projectVolume",
                       "type": "string"
                     }
                   },
@@ -13473,6 +13562,7 @@
                       "type": "string"
                     },
                     "sourceType": {
+                      "const": "emptyDir",
                       "type": "string"
                     }
                   },
@@ -19629,31 +19719,43 @@
     ],
     "aliases": {
       "zh": [
+        "列出存储类",
+        "创建数据卷前选择存储类",
         "存储卷",
         "持久卷",
+        "数据卷存储类型",
+        "查询 StorageClass",
         "项目数据卷"
       ],
       "en": [
         "Volumes",
+        "choose storage class before volume creation",
         "list project volume storage classes",
-        "listProjectVolumeStorageClasses"
+        "list storage classes",
+        "listProjectVolumeStorageClasses",
+        "query StorageClass",
+        "volume storage type"
       ]
     },
     "purpose": {
-      "zh": "用于调用 listProjectVolumeStorageClasses 对应的平台能力。",
-      "en": "List storage classes and volume capabilities from a runtime cluster"
+      "zh": "列出目标运行集群可用于创建数据卷的真实 StorageClass 及卷能力。",
+      "en": "List authoritative StorageClasses and volume capabilities available for volume creation in a runtime cluster."
     },
     "avoidWhen": {
-      "zh": "",
-      "en": ""
+      "zh": "已有来自当前集群实时返回的准确 storageClassName 时无需重复调用。",
+      "en": "Do not repeat when an authoritative storageClassName from the current cluster response is already available."
     },
     "preconditions": {
-      "zh": [],
-      "en": []
+      "zh": [
+        "提供真实 projectId 与 clusterId"
+      ],
+      "en": [
+        "Provide authoritative projectId and clusterId"
+      ]
     },
     "successEvidence": {
-      "zh": "",
-      "en": ""
+      "zh": "返回目标集群实时 StorageClass 分页列表，创建卷时使用其中的 name。",
+      "en": "Returns the live paginated StorageClass list; use an item name for volume creation."
     },
     "requiresApproval": false,
     "idempotent": true,
@@ -23049,7 +23151,8 @@
                 "type": "string"
               },
               "minItems": 1,
-              "type": "array"
+              "type": "array",
+              "uniqueItems": true
             },
             "endAt": {
               "format": "date-time",
@@ -27055,6 +27158,7 @@
                         "type": "boolean"
                       },
                       "sourceType": {
+                        "const": "projectVolume",
                         "type": "string"
                       }
                     },
@@ -27087,6 +27191,7 @@
                         "type": "boolean"
                       },
                       "sourceType": {
+                        "const": "projectVolume",
                         "type": "string"
                       }
                     },
@@ -27129,6 +27234,7 @@
                         "type": "string"
                       },
                       "sourceType": {
+                        "const": "emptyDir",
                         "type": "string"
                       }
                     },
@@ -29781,6 +29887,7 @@
       "properties": {
         "body": {
           "additionalProperties": false,
+          "minProperties": 1,
           "properties": {
             "capacity": {
               "description": "Requested capacity must be greater than or equal to the current capacity.",

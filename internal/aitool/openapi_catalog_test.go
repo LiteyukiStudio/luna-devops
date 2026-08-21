@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"reflect"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -98,6 +99,88 @@ func TestPlatformCatalogJSONIsMinimalAndSelfContained(t *testing.T) {
 	}
 	if !operation.RequiresApproval {
 		t.Fatal("high-risk volume creation must require approval")
+	}
+}
+
+func TestProjectVolumeCreateCatalogRequiresSourceSpecificFields(t *testing.T) {
+	operation, ok := PlatformOperation("createProjectVolume")
+	if !ok {
+		t.Fatal("missing createProjectVolume")
+	}
+	body := mapValue(mapValue(operation.InputSchema["properties"])["body"])
+	variants := arrayValue(body["oneOf"])
+	if len(variants) != 3 {
+		t.Fatalf("createProjectVolume body variants = %d, want 3: %#v", len(variants), body)
+	}
+	wantRequired := map[string][]string{
+		"blank":          {"displayName", "clusterId", "capacity", "storageClassName", "accessMode", "volumeMode", "source"},
+		"existingClaim":  {"displayName", "clusterId", "source"},
+		"volumeSnapshot": {"displayName", "clusterId", "capacity", "storageClassName", "accessMode", "volumeMode", "source"},
+	}
+	seen := map[string]bool{}
+	for _, rawVariant := range variants {
+		variant := mapValue(rawVariant)
+		source := mapValue(mapValue(variant["properties"])["source"])
+		sourceType := stringValue(mapValue(mapValue(source["properties"])["type"])["const"])
+		if sourceType == "" {
+			t.Fatalf("source discriminator const is missing: %#v", variant)
+		}
+		want, exists := wantRequired[sourceType]
+		if !exists {
+			t.Fatalf("unexpected source discriminator %q", sourceType)
+		}
+		required, _ := variant["required"].([]string)
+		for _, field := range want {
+			if !slices.Contains(required, field) {
+				t.Errorf("%s variant does not require %s: %#v", sourceType, field, variant["required"])
+			}
+		}
+		seen[sourceType] = true
+	}
+	for sourceType := range wantRequired {
+		if !seen[sourceType] {
+			t.Errorf("missing %s create variant", sourceType)
+		}
+	}
+}
+
+func TestPlatformCatalogPreservesExecutionRelevantJSONSchemaConstraints(t *testing.T) {
+	update, ok := PlatformOperation("updateProjectVolume")
+	if !ok {
+		t.Fatal("missing updateProjectVolume")
+	}
+	updateBody := mapValue(mapValue(update.InputSchema["properties"])["body"])
+	if updateBody["minProperties"] != float64(1) {
+		t.Fatalf("updateProjectVolume minProperties was lost: %#v", updateBody)
+	}
+
+	deployment, ok := PlatformOperation("createDeploymentTarget")
+	if !ok {
+		t.Fatal("missing createDeploymentTarget")
+	}
+	deploymentBody := mapValue(mapValue(deployment.InputSchema["properties"])["body"])
+	dataVolumes := mapValue(mapValue(deploymentBody["properties"])["dataVolumes"])
+	volumeVariants := arrayValue(mapValue(dataVolumes["items"])["oneOf"])
+	constValues := map[string]bool{}
+	for _, rawVariant := range volumeVariants {
+		variant := mapValue(rawVariant)
+		sourceType := mapValue(mapValue(variant["properties"])["sourceType"])["const"]
+		if value, ok := sourceType.(string); ok {
+			constValues[value] = true
+		}
+	}
+	if !constValues["projectVolume"] || !constValues["emptyDir"] {
+		t.Fatalf("deployment volume discriminators were lost: %#v", volumeVariants)
+	}
+
+	retention, ok := PlatformOperation("previewDataRetention")
+	if !ok {
+		t.Fatal("missing previewDataRetention")
+	}
+	retentionBody := mapValue(mapValue(retention.InputSchema["properties"])["body"])
+	datasets := mapValue(mapValue(retentionBody["properties"])["datasets"])
+	if datasets["uniqueItems"] != true {
+		t.Fatalf("previewDataRetention uniqueItems was lost: %#v", datasets)
 	}
 }
 

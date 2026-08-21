@@ -464,8 +464,10 @@ func normalizeOpenAPISchema(document openAPIDocument, schema map[string]any, dep
 	}
 	result := map[string]any{}
 	for _, key := range []string{
-		"type", "format", "description", "pattern", "minimum", "maximum",
-		"minLength", "maxLength", "minItems", "maxItems", "default",
+		"type", "format", "description", "const", "pattern", "minimum", "maximum",
+		"exclusiveMinimum", "exclusiveMaximum", "multipleOf",
+		"minLength", "maxLength", "minItems", "maxItems", "uniqueItems",
+		"minProperties", "maxProperties", "default",
 		"writeOnly", "readOnly", "x-luna-sensitive",
 	} {
 		if value, ok := schema[key]; ok {

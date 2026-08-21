@@ -31,6 +31,7 @@ describe("real PlatformCatalog retrieval", () => {
     ["查看删除影响", "previewProjectVolumeDeletion"],
     ["在应用市场搜索 Dify 模板", "listAppTemplates"],
     ["读取已选应用模板的完整安装参数", "getAppTemplate"],
+    ["创建数据卷前选择存储类", "listProjectVolumeStorageClasses"],
   ])("ranks the intended real operation first for %s", (query, operationId) => {
     const result = platformCatalog.search({ query, pageSize: 20 })
     expect(result.items[0]?.operationId).toBe(operationId)
@@ -94,6 +95,56 @@ describe("real PlatformCatalog retrieval", () => {
           .toHaveProperty(placeholder[1]!)
       }
     }
+  })
+
+  it("rejects incomplete conditional volume requests before platform execution", () => {
+    const create = platformCatalog.get("createProjectVolume")
+    const incompleteBlank = {
+      projectId: "prj_1",
+      body: {
+        displayName: "postgresql-data",
+        clusterId: "clu_1",
+        capacity: "10Gi",
+        accessMode: "ReadWriteOnce",
+        volumeMode: "Filesystem",
+        source: { type: "blank" },
+      },
+    }
+    expect(() => validateArguments(create.inputSchema, incompleteBlank))
+      .toThrow("ai.tool_arguments_invalid")
+
+    const completeBlank = {
+      ...incompleteBlank,
+      body: { ...incompleteBlank.body, storageClassName: "standard" },
+    }
+    expect(validateArguments(create.inputSchema, completeBlank)).toEqual(completeBlank)
+
+    const existingClaim = {
+      projectId: "prj_1",
+      body: {
+        displayName: "existing-data",
+        clusterId: "clu_1",
+        source: { type: "existingClaim", claimName: "postgresql-data", ownershipMode: "referenced" },
+      },
+    }
+    expect(validateArguments(create.inputSchema, existingClaim)).toEqual(existingClaim)
+
+    const update = platformCatalog.get("updateProjectVolume")
+    expect(() => validateArguments(update.inputSchema, {
+      projectId: "prj_1",
+      volumeId: "pvol_1",
+      revision: 1,
+      body: {},
+    })).toThrow("ai.tool_arguments_invalid")
+  })
+
+  it("loads both storage-class discovery and creation for a managed-volume goal", () => {
+    const matches = platformCatalog.search({
+      query: "创建空白数据卷并选择目标集群 StorageClass",
+      pageSize: 8,
+    }).items.map(item => item.operationId)
+    expect(matches).toContain("listProjectVolumeStorageClasses")
+    expect(matches).toContain("createProjectVolume")
   })
 
   it("covers every real operation through search, semantic details, and model-tool loading", () => {

@@ -65,28 +65,29 @@ function createSchema(required: string, nameTooLong: string) {
 }
 
 function payloadFromValues(values: CreateVolumeValues): ProjectVolumeCreateInput {
-  const source = values.sourceMode === 'blank'
-    ? { type: 'blank' as const }
-    : values.sourceMode === 'snapshot'
-      ? { type: 'volumeSnapshot' as const, snapshotName: values.snapshotName.trim() }
-      : {
-          type: 'existingClaim' as const,
-          claimName: values.claimName.trim(),
-          ownershipMode: values.sourceMode === 'existingManaged' ? 'managed' as const : 'referenced' as const,
-        }
-  const needsSpec = values.sourceMode === 'blank' || values.sourceMode === 'snapshot'
-  return {
+  const base = {
     displayName: values.displayName.trim(),
     clusterId: values.clusterId,
-    ...(needsSpec
-      ? {
-          capacity: values.capacity.trim(),
-          storageClassName: values.storageClassName,
-          accessMode: values.accessMode,
-          volumeMode: values.volumeMode,
-        }
-      : {}),
-    source,
+  }
+  if (values.sourceMode === 'blank' || values.sourceMode === 'snapshot') {
+    const spec = {
+      ...base,
+      capacity: values.capacity.trim(),
+      storageClassName: values.storageClassName,
+      accessMode: values.accessMode,
+      volumeMode: values.volumeMode,
+    }
+    return values.sourceMode === 'blank'
+      ? { ...spec, source: { type: 'blank' } }
+      : { ...spec, source: { type: 'volumeSnapshot', snapshotName: values.snapshotName.trim() } }
+  }
+  return {
+    ...base,
+    source: {
+      type: 'existingClaim',
+      claimName: values.claimName.trim(),
+      ownershipMode: values.sourceMode === 'existingManaged' ? 'managed' : 'referenced',
+    },
   }
 }
 

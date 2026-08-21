@@ -18,7 +18,7 @@
    - **VolumeSnapshot**：从同集群可用快照恢复。
 4. 提交后等待状态变为“就绪”。`WaitForFirstConsumer` StorageClass 可能在首次挂载前保持 Pending，这不代表创建失败。
 
-AI 助手可以列出当前项目空间的数据卷和目标集群 StorageClass，并在确认参数后创建空白卷、引用已有 PVC 或从 VolumeSnapshot 恢复。纳管已有 PVC 等高风险操作需要对当前参数逐次批准；助手不会用占位 ID 或 `emptyDir` 代替持久卷。
+AI 助手可以列出当前项目空间的数据卷和目标集群 StorageClass，并在确认参数后创建空白卷、引用已有 PVC 或从 VolumeSnapshot 恢复。创建空白卷或从快照恢复时，助手必须先读取目标集群的 StorageClass，再把返回的真实名称连同容量、访问模式和卷模式提交；缺少任一项都不会发起创建。纳管已有 PVC 等高风险操作需要对当前参数逐次批准；助手不会用占位 ID 或 `emptyDir` 代替持久卷。
 
 集群暂时不可达时，页面会显示“观察不可用”，不会沿用旧的 PVC 状态。修复连接后刷新或重试最近操作。
 

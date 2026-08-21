@@ -18,7 +18,7 @@ A project volume is persistent data owned independently from an application. It 
    - **VolumeSnapshot** restores an available snapshot from the same cluster.
 4. Submit and wait for the lifecycle state to become Ready. A `WaitForFirstConsumer` StorageClass may keep the PVC Pending until its first mount; this alone is not a creation failure.
 
-The AI assistant can list project volumes and StorageClasses for the target cluster, then create a blank volume, reference an existing PVC, or restore from a VolumeSnapshot after the parameters are confirmed. High-risk actions such as adopting an existing PVC require approval bound to the current parameters. The assistant never substitutes a placeholder ID or `emptyDir` for required persistent storage.
+The AI assistant can list project volumes and StorageClasses for the target cluster, then create a blank volume, reference an existing PVC, or restore from a VolumeSnapshot after the parameters are confirmed. Before blank creation or snapshot restore, it must read the target cluster's StorageClasses and submit a returned name together with capacity, access mode, and volume mode; creation is not attempted when any value is missing. High-risk actions such as adopting an existing PVC require approval bound to the current parameters. The assistant never substitutes a placeholder ID or `emptyDir` for required persistent storage.
 
 When the cluster is unreachable, the page reports the observation as unavailable instead of displaying stale PVC state. Restore connectivity, then refresh or retry the last operation.
 

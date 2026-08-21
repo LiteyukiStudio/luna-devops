@@ -130,20 +130,22 @@ export interface ProjectVolumeStorageClass {
   snapshotSupported: boolean
 }
 
-export type ProjectVolumeCreateSource
-  = | { type: 'blank' }
-    | { claimName: string, ownershipMode: ProjectVolumeOwnershipMode, type: 'existingClaim' }
-    | { snapshotName: string, type: 'volumeSnapshot' }
-
-export interface ProjectVolumeCreateInput {
+interface ProjectVolumeCreateBase {
   displayName: string
   clusterId: string
-  capacity?: string
-  storageClassName?: string
-  accessMode?: ProjectVolumeAccessMode
-  volumeMode?: ProjectVolumeMode
-  source: ProjectVolumeCreateSource
 }
+
+interface ProjectVolumeManagedCreateSpec extends ProjectVolumeCreateBase {
+  capacity: string
+  storageClassName: string
+  accessMode: ProjectVolumeAccessMode
+  volumeMode: ProjectVolumeMode
+}
+
+export type ProjectVolumeCreateInput
+  = | (ProjectVolumeManagedCreateSpec & { source: { type: 'blank' } })
+    | (ProjectVolumeManagedCreateSpec & { source: { snapshotName: string, type: 'volumeSnapshot' } })
+    | (ProjectVolumeCreateBase & { source: { claimName: string, ownershipMode: ProjectVolumeOwnershipMode, type: 'existingClaim' } })
 
 export interface ProjectVolumeUpdateInput {
   displayName?: string

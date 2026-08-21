@@ -1981,7 +1981,7 @@ paths:
         purpose: { zh: 创建空白数据卷、引用或接管 PVC，或从快照恢复。, en: Create a blank volume, reference or adopt a claim, or restore a snapshot. }
         aliases: { zh: [创建数据卷, 新建持久化存储, 接管 PVC, 从快照恢复数据卷], en: [create project volume, create persistent storage, adopt PVC, restore volume snapshot] }
         avoidWhen: { zh: 扩容或重命名已有数据卷时应使用 updateProjectVolume。, en: Use updateProjectVolume to rename or expand an existing volume. }
-        preconditions: { zh: [提供真实 projectId 与 clusterId, 已确认存储类型和容量], en: [Provide authoritative projectId and clusterId, Confirm storage type and capacity] }
+        preconditions: { zh: [提供真实 projectId 与 clusterId, 创建空白卷或快照恢复前先调用 listProjectVolumeStorageClasses 并从返回结果选择 storageClassName, 明确容量、访问模式和卷模式], en: [Provide authoritative projectId and clusterId, Before blank creation or snapshot restore call listProjectVolumeStorageClasses and choose storageClassName from its response, Confirm capacity access mode and volume mode] }
         successEvidence: { zh: 返回已受理的数据卷；异步场景需用 getProjectVolume 回读终态。, en: Returns the accepted volume; asynchronous cases require getProjectVolume readback. }
       x-luna-cli:
         command: volume.create
@@ -2013,6 +2013,12 @@ paths:
       operationId: listProjectVolumeStorageClasses
       tags: [Volumes]
       summary: List storage classes and volume capabilities from a runtime cluster
+      x-luna-agent:
+        purpose: { zh: 列出目标运行集群可用于创建数据卷的真实 StorageClass 及卷能力。, en: List authoritative StorageClasses and volume capabilities available for volume creation in a runtime cluster. }
+        aliases: { zh: [列出存储类, 查询 StorageClass, 创建数据卷前选择存储类, 数据卷存储类型], en: [list storage classes, query StorageClass, choose storage class before volume creation, volume storage type] }
+        avoidWhen: { zh: 已有来自当前集群实时返回的准确 storageClassName 时无需重复调用。, en: Do not repeat when an authoritative storageClassName from the current cluster response is already available. }
+        preconditions: { zh: [提供真实 projectId 与 clusterId], en: [Provide authoritative projectId and clusterId] }
+        successEvidence: { zh: 返回目标集群实时 StorageClass 分页列表，创建卷时使用其中的 name。, en: Returns the live paginated StorageClass list; use an item name for volume creation. }
       x-luna-cli:
         command: volume.storage-classes
         classification: business-command
@@ -9847,24 +9853,43 @@ components:
       properties:
         type: { type: string, const: volumeSnapshot }
         snapshotName: { type: string, minLength: 1, maxLength: 253 }
-    ProjectVolumeCreateInput:
+    ProjectVolumeBlankCreateInput:
+      type: object
+      additionalProperties: false
+      required: [displayName, clusterId, capacity, storageClassName, accessMode, volumeMode, source]
+      properties:
+        displayName: { type: string, minLength: 1, maxLength: 120 }
+        clusterId: { type: string, minLength: 1 }
+        capacity: { type: string, minLength: 1 }
+        storageClassName: { type: string, minLength: 1, description: Must be selected from listProjectVolumeStorageClasses for the same projectId and clusterId. }
+        accessMode: { $ref: "#/components/schemas/ProjectVolumeAccessMode" }
+        volumeMode: { $ref: "#/components/schemas/ProjectVolumeMode" }
+        source: { $ref: "#/components/schemas/ProjectVolumeBlankSource" }
+    ProjectVolumeExistingClaimCreateInput:
       type: object
       additionalProperties: false
       required: [displayName, clusterId, source]
       properties:
         displayName: { type: string, minLength: 1, maxLength: 120 }
-        clusterId: { type: string }
-        capacity: { type: string }
-        storageClassName: { type: string }
+        clusterId: { type: string, minLength: 1 }
+        source: { $ref: "#/components/schemas/ProjectVolumeExistingClaimSource" }
+    ProjectVolumeSnapshotCreateInput:
+      type: object
+      additionalProperties: false
+      required: [displayName, clusterId, capacity, storageClassName, accessMode, volumeMode, source]
+      properties:
+        displayName: { type: string, minLength: 1, maxLength: 120 }
+        clusterId: { type: string, minLength: 1 }
+        capacity: { type: string, minLength: 1 }
+        storageClassName: { type: string, minLength: 1, description: Must be selected from listProjectVolumeStorageClasses for the same projectId and clusterId. }
         accessMode: { $ref: "#/components/schemas/ProjectVolumeAccessMode" }
         volumeMode: { $ref: "#/components/schemas/ProjectVolumeMode" }
-        source:
-          oneOf:
-            - $ref: "#/components/schemas/ProjectVolumeBlankSource"
-            - $ref: "#/components/schemas/ProjectVolumeExistingClaimSource"
-            - $ref: "#/components/schemas/ProjectVolumeSnapshotSource"
-          discriminator:
-            propertyName: type
+        source: { $ref: "#/components/schemas/ProjectVolumeSnapshotSource" }
+    ProjectVolumeCreateInput:
+      oneOf:
+        - $ref: "#/components/schemas/ProjectVolumeBlankCreateInput"
+        - $ref: "#/components/schemas/ProjectVolumeExistingClaimCreateInput"
+        - $ref: "#/components/schemas/ProjectVolumeSnapshotCreateInput"
     ProjectVolumeUpdateInput:
       type: object
       additionalProperties: false
