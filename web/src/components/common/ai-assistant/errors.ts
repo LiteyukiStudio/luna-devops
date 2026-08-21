@@ -9,8 +9,6 @@ const publicRunFailureKeys: Readonly<Record<string, string>> = {
   'ai.model_context_limit_invalid': 'model_context_limit_invalid',
   'ai.model_context_insufficient': 'model_context_insufficient',
   'ai.model_output_limit_invalid': 'model_output_limit_invalid',
-  'ai.run_token_budget_exhausted': 'run_token_budget_exhausted',
-  'ai.run_credit_budget_exhausted': 'run_credit_budget_exhausted',
   'ai.wallet_balance_insufficient': 'wallet_balance_insufficient',
   'ai.limit_exceeded': 'limit_exceeded',
   'ai.run_failed': 'run_failed',

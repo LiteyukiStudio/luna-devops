@@ -54,6 +54,7 @@ type agentObservabilitySummary struct {
 }
 
 func (h *Handlers) TestAgentObservabilitySource(ctx *gin.Context) {
+	ctx.Header("Cache-Control", "no-store")
 	user, ok := h.currentUser(ctx)
 	if !ok {
 		return
@@ -84,12 +85,12 @@ func (h *Handlers) TestAgentObservabilitySource(ctx *gin.Context) {
 	}
 	result, testErr := client.Test(ctx.Request.Context())
 	h.auditWithContext(user.ID, "ai.observability.test", string(input.Source), testErr == nil, "Agent observability source tested", ctx.Request.Context())
-	ctx.Header("Cache-Control", "no-store")
 	// A failed test is a diagnostic result, not a failed configuration mutation.
 	ctx.JSON(http.StatusOK, result)
 }
 
 func (h *Handlers) GetAgentObservabilityOverview(ctx *gin.Context) {
+	ctx.Header("Cache-Control", "no-store")
 	user, ok := h.currentUser(ctx)
 	if !ok {
 		return
@@ -100,7 +101,7 @@ func (h *Handlers) GetAgentObservabilityOverview(ctx *gin.Context) {
 	}
 	values := h.configs.get(knownConfigKeys())
 	if !configBool(values[agentObservabilityEnabledKey]) {
-		writeErrorCode(ctx, http.StatusServiceUnavailable, "ai.observability.disabled", "Agent observability is disabled")
+		writeAgentObservabilityUnavailable(ctx, "ai.observability.disabled", "Agent observability is disabled")
 		return
 	}
 	rangeText, duration := observabilityRange(ctx.Query("range"))
@@ -111,7 +112,7 @@ func (h *Handlers) GetAgentObservabilityOverview(ctx *gin.Context) {
 		BaseURL: values[keys.URL], Token: h.resolveAppConfigSecret(ctx, keys.Token), TenantID: values[keys.TenantID],
 	})
 	if err != nil {
-		writeErrorCode(ctx, http.StatusServiceUnavailable, "ai.observability.not_configured", "Prometheus is not configured")
+		writeAgentObservabilityUnavailable(ctx, "ai.observability.not_configured", "Prometheus is not configured")
 		return
 	}
 
@@ -170,7 +171,7 @@ func (h *Handlers) GetAgentObservabilityOverview(ctx *gin.Context) {
 	result.Summary.TurnSuccessRate = turnSummary.SuccessRate
 	result.Summary.ToolCalls = float64(toolSummary.Total)
 	result.Summary.ToolSuccessRate = toolSummary.SuccessRate
-	ctx.Header("Cache-Control", "no-store")
+	h.auditWithContext(user.ID, "ai.observability.overview.view", rangeText, true, "Agent observability overview viewed", ctx.Request.Context())
 	ctx.JSON(http.StatusOK, result)
 }
 
@@ -183,6 +184,7 @@ func agentObservabilitySummaryQueries(rangeText string) map[string]string {
 }
 
 func (h *Handlers) GetAgentObservabilityTrace(ctx *gin.Context) {
+	ctx.Header("Cache-Control", "no-store")
 	user, ok := h.currentUser(ctx)
 	if !ok {
 		return
@@ -193,7 +195,7 @@ func (h *Handlers) GetAgentObservabilityTrace(ctx *gin.Context) {
 	}
 	values := h.configs.get(knownConfigKeys())
 	if !configBool(values[agentObservabilityEnabledKey]) {
-		writeErrorCode(ctx, http.StatusServiceUnavailable, "ai.observability.disabled", "Agent observability is disabled")
+		writeAgentObservabilityUnavailable(ctx, "ai.observability.disabled", "Agent observability is disabled")
 		return
 	}
 	keys := observabilitySourceKeys[agentobservability.SourceTempo]
@@ -201,12 +203,12 @@ func (h *Handlers) GetAgentObservabilityTrace(ctx *gin.Context) {
 		BaseURL: values[keys.URL], Token: h.resolveAppConfigSecret(ctx, keys.Token), TenantID: values[keys.TenantID],
 	})
 	if err != nil {
-		writeErrorCode(ctx, http.StatusServiceUnavailable, "ai.observability.not_configured", "Tempo is not configured")
+		writeAgentObservabilityUnavailable(ctx, "ai.observability.not_configured", "Tempo is not configured")
 		return
 	}
 	detail, err := client.GetTrace(ctx.Request.Context(), ctx.Param("traceId"))
 	if err != nil {
-		writeErrorCode(ctx, http.StatusBadGateway, "ai.observability.trace_unavailable", "Trace detail is unavailable")
+		writeAgentObservabilityUnavailable(ctx, "ai.observability.trace_unavailable", "Trace detail is unavailable")
 		return
 	}
 	traceContext, contextErr := agentobservability.NewConversationStore(h.dbFor(ctx)).FindTraceContext(ctx.Request.Context(), detail.TraceID)
@@ -214,7 +216,6 @@ func (h *Handlers) GetAgentObservabilityTrace(ctx *gin.Context) {
 		detail.Context = traceContext
 	}
 	h.auditWithContext(user.ID, "ai.observability.trace.view", detail.TraceID, true, "Agent observability trace viewed", ctx.Request.Context())
-	ctx.Header("Cache-Control", "no-store")
 	ctx.JSON(http.StatusOK, detail)
 }
 
@@ -234,7 +235,6 @@ func (h *Handlers) ListAgentObservabilityConversations(ctx *gin.Context) {
 		return
 	}
 	h.auditWithContext(user.ID, "ai.observability.conversations.list", rangeText, true, "Agent observability conversations listed", ctx.Request.Context())
-	ctx.Header("Cache-Control", "no-store")
 	ctx.JSON(http.StatusOK, gin.H{
 		"items": result.Items, "page": result.Page, "pageSize": result.PageSize, "sortBy": result.SortBy,
 		"sortOrder": result.SortOrder, "total": result.Total, "totalPages": result.TotalPages,
@@ -257,7 +257,6 @@ func (h *Handlers) ListAgentObservabilityTurns(ctx *gin.Context) {
 		return
 	}
 	h.auditWithContext(user.ID, "ai.observability.turns.list", rangeText, true, "Agent observability turns listed", ctx.Request.Context())
-	ctx.Header("Cache-Control", "no-store")
 	ctx.JSON(http.StatusOK, gin.H{
 		"items": result.Items, "page": result.Page, "pageSize": result.PageSize, "sortBy": result.SortBy,
 		"sortOrder": result.SortOrder, "total": result.Total, "totalPages": result.TotalPages,
@@ -280,7 +279,6 @@ func (h *Handlers) ListAgentObservabilityTools(ctx *gin.Context) {
 		return
 	}
 	h.auditWithContext(user.ID, "ai.observability.tools.list", rangeText, true, "Agent observability tool summaries listed", ctx.Request.Context())
-	ctx.Header("Cache-Control", "no-store")
 	ctx.JSON(http.StatusOK, gin.H{
 		"items": result.Items, "page": result.Page, "pageSize": result.PageSize, "sortBy": result.SortBy,
 		"sortOrder": result.SortOrder, "total": result.Total, "totalPages": result.TotalPages,
@@ -308,7 +306,6 @@ func (h *Handlers) ListAgentObservabilityToolCalls(ctx *gin.Context) {
 		return
 	}
 	h.auditWithContext(user.ID, "ai.observability.tool_calls.list", operationID, true, "Agent observability tool calls listed for "+rangeText, ctx.Request.Context())
-	ctx.Header("Cache-Control", "no-store")
 	ctx.JSON(http.StatusOK, gin.H{
 		"items": result.Items, "page": result.Page, "pageSize": result.PageSize, "sortBy": result.SortBy,
 		"sortOrder": result.SortOrder, "total": result.Total, "totalPages": result.TotalPages,
@@ -332,11 +329,11 @@ func (h *Handlers) GetAgentObservabilityConversation(ctx *gin.Context) {
 		return
 	}
 	h.auditWithContext(user.ID, "ai.observability.conversation.view", conversationID, true, "Agent observability conversation viewed", ctx.Request.Context())
-	ctx.Header("Cache-Control", "no-store")
 	ctx.JSON(http.StatusOK, detail)
 }
 
 func (h *Handlers) requireAgentObservabilityAdmin(ctx *gin.Context) (model.User, bool) {
+	ctx.Header("Cache-Control", "no-store")
 	user, ok := h.currentUser(ctx)
 	if !ok {
 		return model.User{}, false
@@ -347,10 +344,23 @@ func (h *Handlers) requireAgentObservabilityAdmin(ctx *gin.Context) (model.User,
 	}
 	values := h.configs.get(knownConfigKeys())
 	if !configBool(values[agentObservabilityEnabledKey]) {
-		writeErrorCode(ctx, http.StatusServiceUnavailable, "ai.observability.disabled", "Agent observability is disabled")
+		writeAgentObservabilityUnavailable(ctx, "ai.observability.disabled", "Agent observability is disabled")
 		return model.User{}, false
 	}
 	return user, true
+}
+
+func writeAgentObservabilityUnavailable(ctx *gin.Context, code, detail string) {
+	ctx.Header("Cache-Control", "no-store")
+	response := gin.H{
+		"code":            code,
+		"error":           detail,
+		"requestId":       requestID(ctx),
+		"retryable":       true,
+		"status":          "unavailable",
+		"observationCode": code,
+	}
+	ctx.JSON(http.StatusServiceUnavailable, response)
 }
 
 func (h *Handlers) resolveAppConfigSecret(ctx *gin.Context, key string) string {

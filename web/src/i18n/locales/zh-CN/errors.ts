@@ -115,8 +115,6 @@ const errors = {
     model_context_limit_invalid: '模型目录的上下文上限无效，请联系平台管理员检查模型配置。',
     model_context_insufficient: '当前请求超过所选模型的上下文窗口，请缩短输入或清理会话历史。',
     model_output_limit_invalid: '模型目录的输出上限无效，请联系平台管理员检查模型配置。',
-    run_token_budget_exhausted: '本次 Run 的累计 Token 预算已耗尽。',
-    run_credit_budget_exhausted: '本次 Run 的累计费用预算已耗尽。',
     wallet_balance_insufficient: '个人钱包可用余额不足，模型调用未发送。',
   },
   bootstrap: {

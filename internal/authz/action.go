@@ -58,9 +58,10 @@ const (
 	ActionBillingAdjust Action = "billing:write"
 	ActionEventRead     Action = "event:read"
 
-	ActionDashboardRead       Action = "dashboard:read"
-	ActionDataRetentionRead   Action = "retention:read"
-	ActionDataRetentionManage Action = "retention:manage"
+	ActionDashboardRead          Action = "dashboard:read"
+	ActionAgentObservabilityRead Action = "agent-observability:read"
+	ActionDataRetentionRead      Action = "retention:read"
+	ActionDataRetentionManage    Action = "retention:manage"
 
 	ActionGitRead  Action = "git:read"
 	ActionGitWrite Action = "git:write"
@@ -175,6 +176,10 @@ func RequiredAccessTokenScope(path, method string) string {
 		return string(ActionUserManage)
 	case strings.HasPrefix(path, "/api/v1/auth"):
 		return string(ActionAuthManage)
+	case strings.HasPrefix(path, "/api/v1/ai/observability"):
+		return string(ActionAgentObservabilityRead)
+	case path == "/api/v1/configs/ai/observability/test":
+		return string(ActionAgentObservabilityRead)
 	case strings.HasPrefix(path, "/api/v1/configs") && method == http.MethodGet:
 		return string(ActionConfigRead)
 	case strings.HasPrefix(path, "/api/v1/configs") && method != http.MethodGet:

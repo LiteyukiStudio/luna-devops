@@ -11,10 +11,6 @@ export type AIBlock
 export interface AIRunUsage {
   /** 最近一次主回答模型调用由 Provider 返回的输入 Token 数。 */
   latestInputTokens?: number
-  /** 当前 Run 累计消耗的输入与输出 Token 数。 */
-  usedTokens?: number
-  /** 当前 Run 的累计 Token 预算上限。 */
-  tokenBudget?: number
 }
 
 export interface AIAssistantState {
@@ -27,7 +23,7 @@ export interface AIAssistantState {
   itemRevisions: Record<string, number>
   desyncedRunIds: Set<string>
   desyncRecoverySequences: Record<string, number>
-  /** 用量必须按 Run 隔离，避免新一轮继承上一轮的上下文或累计预算。 */
+  /** 上下文用量必须按 Run 隔离，避免新一轮继承上一轮的输入量。 */
   runUsage: Record<string, AIRunUsage>
 }
 
@@ -39,18 +35,6 @@ function blockIndex(turnIndex: number, itemIndex: number): number {
 
 function isOptionalTokenCount(value: unknown) {
   return value === undefined || (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0)
-}
-
-function isValidRunBudget(value: unknown) {
-  if (value === undefined)
-    return true
-  if (!value || typeof value !== 'object' || Array.isArray(value))
-    return false
-  const budget = value as Record<string, unknown>
-  return typeof budget.totalTokens === 'number'
-    && Number.isSafeInteger(budget.totalTokens)
-    && budget.totalTokens > 0
-    && typeof budget.totalCredits === 'string'
 }
 
 export function isValidAITimeline(value: unknown): value is AITimeline {
@@ -71,9 +55,7 @@ export function isValidAITimeline(value: unknown): value is AITimeline {
     && Array.isArray(turn.input.parts)
     && turn.input.parts.every(part => Boolean(part) && typeof part.id === 'string' && typeof part.partIndex === 'number')
     && (!turn.selectedRun || (typeof turn.selectedRun.id === 'string'
-      && isOptionalTokenCount(turn.selectedRun.usedTokens)
       && isOptionalTokenCount(turn.selectedRun.latestInputTokens)
-      && isValidRunBudget(turn.selectedRun.budget)
       && Array.isArray(turn.selectedRun.items)
       && turn.selectedRun.items.every(item => Boolean(item) && typeof item.id === 'string' && typeof item.timelineIndex === 'number' && typeof item.revision === 'number' && typeof item.createdAt === 'string' && Array.isArray(item.parts)))),
   ) && candidate.eventCursors.every(cursor => Boolean(cursor) && typeof cursor.runId === 'string' && typeof cursor.after === 'number')
@@ -158,8 +140,6 @@ export function stateFromTimeline(timeline: AITimeline): AIAssistantState {
         return []
       return [[run.id, {
         ...(run.latestInputTokens !== undefined ? { latestInputTokens: run.latestInputTokens } : {}),
-        ...(run.usedTokens !== undefined ? { usedTokens: run.usedTokens } : {}),
-        ...(run.budget ? { tokenBudget: run.budget.totalTokens } : {}),
       }]]
     })),
   }
@@ -177,15 +157,10 @@ function mergeRunUsage(
     const currentAhead = (currentSequences[runId] ?? 0) > (snapshotSequences[runId] ?? 0)
     const preferred = currentAhead ? currentUsage : snapshotUsage
     const fallback = currentAhead ? snapshotUsage : currentUsage
-    const usedTokens = Math.max(snapshotUsage.usedTokens ?? 0, currentUsage.usedTokens ?? 0)
     return [runId, {
       ...(preferred.latestInputTokens !== undefined
         ? { latestInputTokens: preferred.latestInputTokens }
         : fallback.latestInputTokens !== undefined ? { latestInputTokens: fallback.latestInputTokens } : {}),
-      ...(snapshotUsage.usedTokens !== undefined || currentUsage.usedTokens !== undefined ? { usedTokens } : {}),
-      ...(preferred.tokenBudget !== undefined
-        ? { tokenBudget: preferred.tokenBudget }
-        : fallback.tokenBudget !== undefined ? { tokenBudget: fallback.tokenBudget } : {}),
     }]
   }))
 }
@@ -252,7 +227,7 @@ export function addOptimisticTurn(state: AIAssistantState, input: { turnId: stri
       createdAt: new Date().toISOString(),
     }].sort((a, b) => a.index - b.index),
     runStatuses: { ...state.runStatuses, [input.runId]: 'queued' },
-    runUsage: { ...state.runUsage, [input.runId]: { usedTokens: 0 } },
+    runUsage: { ...state.runUsage, [input.runId]: {} },
     turnIndexes: { ...state.turnIndexes, [input.turnId]: input.turnIndex },
     itemRevisions: { ...state.itemRevisions, [`${input.turnId}:input`]: 0 },
   }
@@ -260,15 +235,6 @@ export function addOptimisticTurn(state: AIAssistantState, input: { turnId: stri
 
 function stringPayload(payload: Record<string, unknown>, key: string) {
   return typeof payload[key] === 'string' ? payload[key] : ''
-}
-
-// budgetTotalTokens extracts the total token budget from a run.started payload.
-function budgetTotalTokens(payload: Record<string, unknown>): number | undefined {
-  const budget = payload.budget
-  if (!budget || typeof budget !== 'object' || Array.isArray(budget))
-    return undefined
-  const total = (budget as Record<string, unknown>).totalTokens
-  return typeof total === 'number' && Number.isFinite(total) && total > 0 ? total : undefined
 }
 
 function updateBlock(state: AIAssistantState, id: string, update: (block: AIBlock) => AIBlock, create?: () => AIBlock) {
@@ -387,7 +353,6 @@ export function reduceAIEvent(state: AIAssistantState, event: AIEvent): AIAssist
 
   if (event.type === 'run.started' || event.type === 'run.running' || event.type === 'run.queued' || event.type === 'run.waiting_approval' || event.type === 'run.waiting_input' || event.type === 'run.completed' || event.type === 'run.failed' || event.type === 'run.canceled' || event.type === 'run.interrupted') {
     const status = event.type === 'run.started' || event.type === 'run.running' ? 'running' : event.type.slice(4)
-    const tokenBudget = budgetTotalTokens(event.payload)
     const terminalBlock = status === 'failed' || status === 'canceled' || status === 'interrupted'
       ? updateBlock(next, `${event.runId}:status`, block => block.type === 'run_status'
           ? { ...block, status, errorCode: stringPayload(event.payload, 'errorCode') || block.errorCode }
@@ -404,13 +369,6 @@ export function reduceAIEvent(state: AIAssistantState, event: AIEvent): AIAssist
     return {
       ...next,
       blocks: terminalBlock,
-      runUsage: {
-        ...next.runUsage,
-        [event.runId]: {
-          ...(next.runUsage[event.runId] ?? { usedTokens: 0 }),
-          ...(tokenBudget !== undefined ? { tokenBudget } : {}),
-        },
-      },
       runStatuses: { ...next.runStatuses, [event.runId]: status },
       runExpectedVersions: typeof event.payload.expectedVersion === 'number'
         ? { ...next.runExpectedVersions, [event.runId]: event.payload.expectedVersion }
@@ -423,12 +381,9 @@ export function reduceAIEvent(state: AIAssistantState, event: AIEvent): AIAssist
       ? (usage as Record<string, unknown>)
       : undefined
     const inputTokens = usageRecord?.inputTokens
-    const outputTokens = usageRecord?.outputTokens
     const hasInput = typeof inputTokens === 'number' && Number.isFinite(inputTokens)
-    const hasOutput = typeof outputTokens === 'number' && Number.isFinite(outputTokens)
-    if (!hasInput && !hasOutput)
+    if (!hasInput)
       return next
-    const delta = (hasInput ? inputTokens : 0) + (hasOutput ? outputTokens : 0)
     const currentUsage = next.runUsage[event.runId] ?? {}
     return {
       ...next,
@@ -436,8 +391,7 @@ export function reduceAIEvent(state: AIAssistantState, event: AIEvent): AIAssist
         ...next.runUsage,
         [event.runId]: {
           ...currentUsage,
-          ...(hasInput ? { latestInputTokens: inputTokens } : {}),
-          usedTokens: (currentUsage.usedTokens ?? 0) + delta,
+          latestInputTokens: inputTokens,
         },
       },
     }

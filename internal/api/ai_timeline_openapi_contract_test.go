@@ -78,7 +78,7 @@ func TestAITimelineOpenAPIContractDoesNotChangeProjectListErrors(t *testing.T) {
 	}
 }
 
-func TestAITimelineOpenAPIDocumentsRunUsageSnapshot(t *testing.T) {
+func TestAITimelineOpenAPIDocumentsLatestContextUsage(t *testing.T) {
 	t.Parallel()
 
 	document := readOpenAPIDocument(t, filepath.Join(apiRepositoryRoot(t), "openapi", "openapi.yaml"))
@@ -89,9 +89,12 @@ func TestAITimelineOpenAPIDocumentsRunUsageSnapshot(t *testing.T) {
 	selectedRun, _ := turnProperties["selectedRun"].(map[string]any)
 	runProperties, _ := selectedRun["properties"].(map[string]any)
 
-	for _, field := range []string{"usedTokens", "latestInputTokens", "budget"} {
-		if runProperties[field] == nil {
-			t.Fatalf("AITimelineTurn.selectedRun is missing %s", field)
+	if runProperties["latestInputTokens"] == nil {
+		t.Fatal("AITimelineTurn.selectedRun is missing latestInputTokens")
+	}
+	for _, removed := range []string{"usedTokens", "budget"} {
+		if runProperties[removed] != nil {
+			t.Fatalf("AITimelineTurn.selectedRun still exposes removed %s", removed)
 		}
 	}
 }

@@ -78,7 +78,6 @@ func TestAIProviderRuntimeConfigKeepsValidValues(t *testing.T) {
 	values["ai.runtime.provider_timeout_seconds"] = "45"
 	values["ai.runtime.context_input_k_tokens"] = "2048"
 	values["ai.quota.run_max_tool_calls"] = "2048"
-	values["ai.run.max_credits"] = "125.5"
 
 	runtime := aiProviderRuntimeConfig(values)
 	if got := runtime["providerTimeoutMs"]; got != 45_000 {
@@ -90,9 +89,6 @@ func TestAIProviderRuntimeConfigKeepsValidValues(t *testing.T) {
 	if got := runtime["runMaxToolCalls"]; got != 2048 {
 		t.Fatalf("runMaxToolCalls = %v, want 2048", got)
 	}
-	if got := runtime["runTotalCreditBudget"]; got != "125.5" {
-		t.Fatalf("runTotalCreditBudget = %v, want 125.5", got)
-	}
 }
 
 func TestAIProviderRuntimeConfigNormalizesLegacyValuesWithoutMutatingStorage(t *testing.T) {
@@ -101,27 +97,15 @@ func TestAIProviderRuntimeConfigNormalizesLegacyValuesWithoutMutatingStorage(t *
 	values["ai.runtime.max_request_retries"] = "not-a-number"
 	values["ai.runtime.context_input_k_tokens"] = "2049"
 	values["ai.quota.run_max_tool_calls"] = "20"
-	values["ai.run.max_total_tokens"] = "1"
-	values["ai.run.max_credits"] = "invalid"
 	values["ai.run.max_input_k_bytes"] = "9000"
-	values["ai.context.compression_trigger_ratio"] = "0.5"
-	values["ai.context.compression_target_ratio"] = "0.6"
-	values["ai.context.recent_turn_count"] = "32"
-	values["ai.context.max_recent_turn_count"] = "2"
 
 	runtime := aiProviderRuntimeConfig(values)
 	wants := map[string]any{
-		"providerTimeoutMs":              300_000,
-		"maxRequestRetries":              5,
-		"contextInputTokenBudget":        1024 * 1024,
-		"runMaxToolCalls":                256,
-		"runTotalTokenBudget":            2_000_000,
-		"runTotalCreditBudget":           "10000",
-		"maxInputBytes":                  1024 * 1024,
-		"contextCompressionTriggerRatio": 0.9,
-		"contextCompressionTargetRatio":  0.7,
-		"contextRecentTurnCount":         16,
-		"contextMaxRecentTurnCount":      32,
+		"providerTimeoutMs":       300_000,
+		"maxRequestRetries":       5,
+		"contextInputTokenBudget": 1024 * 1024,
+		"runMaxToolCalls":         256,
+		"maxInputBytes":           1024 * 1024,
 	}
 	for key, want := range wants {
 		if got := runtime[key]; got != want {
@@ -131,21 +115,22 @@ func TestAIProviderRuntimeConfigNormalizesLegacyValuesWithoutMutatingStorage(t *
 	if got := values["ai.quota.run_max_tool_calls"]; got != "20" {
 		t.Fatalf("stored legacy value was mutated to %q", got)
 	}
-	if got := values["ai.run.max_credits"]; got != "invalid" {
-		t.Fatalf("stored legacy credit value was mutated to %q", got)
-	}
 }
 
-func TestAIProviderRuntimeConfigNormalizesNonFiniteLegacyRatios(t *testing.T) {
+func TestAIProviderRuntimeConfigOmitsAgentLocalContextPolicy(t *testing.T) {
 	values := aiConfigDefaults()
-	values["ai.context.compression_trigger_ratio"] = "NaN"
-	values["ai.context.compression_target_ratio"] = "+Inf"
 	runtime := aiProviderRuntimeConfig(values)
-	if got := runtime["contextCompressionTriggerRatio"]; got != 0.9 {
-		t.Fatalf("contextCompressionTriggerRatio = %v, want 0.9", got)
-	}
-	if got := runtime["contextCompressionTargetRatio"]; got != 0.7 {
-		t.Fatalf("contextCompressionTargetRatio = %v, want 0.7", got)
+	for _, key := range []string{
+		"toolResultPayloadBudget",
+		"contextCompressionTriggerRatio",
+		"contextCompressionTargetRatio",
+		"contextRecentTurnCount",
+		"contextMaxRecentTurnCount",
+		"contextHistoricalToolTokenBudget",
+	} {
+		if _, ok := runtime[key]; ok {
+			t.Errorf("runtime must not publish Agent-local setting %q", key)
+		}
 	}
 }
 
@@ -153,7 +138,7 @@ func TestAIProviderRuntimeConfigDefaultsHaveValidationContracts(t *testing.T) {
 	// Calling the complete mapper proves every runtime key has a definition,
 	// a parseable default and a shared read/write range contract.
 	runtime := aiProviderRuntimeConfig(aiConfigDefaults())
-	if len(runtime) != 24 {
-		t.Fatalf("runtime field count = %d, want 24", len(runtime))
+	if len(runtime) != 16 {
+		t.Fatalf("runtime field count = %d, want 16", len(runtime))
 	}
 }

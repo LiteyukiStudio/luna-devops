@@ -183,11 +183,6 @@ func (h *Handlers) attachAIModelSnapshot(ctx *gin.Context, body []byte) ([]byte,
 		"cachedInputCreditsPerMillion":  selected.CachedInputCreditsPerMillion,
 		"cachedOutputCreditsPerMillion": selected.CachedOutputCreditsPerMillion,
 	}
-	values := h.configs.get([]string{"ai.run.max_total_tokens", "ai.run.max_credits"})
-	input["runBudgetSnapshot"] = gin.H{
-		"totalTokens":  aiBoundedIntegerConfig(values, "ai.run.max_total_tokens"),
-		"totalCredits": aiBoundedCreditConfig(values, "ai.run.max_credits"),
-	}
 	prepared, err := json.Marshal(input)
 	if err != nil {
 		writeErrorCode(ctx, http.StatusInternalServerError, "ai.run_create_failed", "cannot prepare AI model selection")

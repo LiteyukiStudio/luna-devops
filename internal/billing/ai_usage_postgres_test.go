@@ -167,9 +167,9 @@ func seedBudgetUserRun(t *testing.T, db *gorm.DB, userID string, balance decimal
 		{`INSERT INTO ai.runs(id, owner_user_id, conversation_id, turn_id, run_index, status, prompt_version, tool_catalog_digest,
 model_id, model_name, input_credits_per_million, output_credits_per_million,
 cached_input_credits_per_million, cached_output_credits_per_million,
-max_context_tokens, max_output_tokens, total_token_budget, total_credit_budget, actor_session_id)
+max_context_tokens, max_output_tokens, actor_session_id)
 VALUES ('airun_budget_pg', ?, 'aicnv_budget_pg', 'aitrn_budget_pg', 0, 'running', 'test', 'test',
-'aimod_budget_pg', 'budget', 2000000, 4000000, 1000000, 3000000, 4096, 512, 10000, 1000, 'ses_budget_pg')`, []any{userID}},
+'aimod_budget_pg', 'budget', 2000000, 4000000, 1000000, 3000000, 4096, 512, 'ses_budget_pg')`, []any{userID}},
 	}
 	for _, statement := range statements {
 		if err := db.Exec(statement.query, statement.args...).Error; err != nil {

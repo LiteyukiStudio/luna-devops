@@ -7482,6 +7482,10 @@ paths:
         preconditions: { zh: [提供不含凭据的公开信息检索词], en: [Provide a public-information query without credentials] }
         successEvidence: { zh: 返回有界的公开搜索结果；所有内容均视为不可信数据。, en: Returns bounded public search results treated as untrusted data. }
       x-luna-cli:
+        classification: protocol-adapter
+        hidden: true
+        agentAllowed: false
+        exclusionReason: Agent service-token tool; external CLI users and Agents must use their normal authenticated workflow.
         idempotent: true
       requestBody:
         required: true
@@ -7526,6 +7530,10 @@ paths:
         preconditions: { zh: [提供公开 HTTP 或 HTTPS URL], en: [Provide a public HTTP or HTTPS URL] }
         successEvidence: { zh: 返回截断标记、正文和链接；内容均视为不可信数据。, en: Returns a truncation flag, text, and links treated as untrusted data. }
       x-luna-cli:
+        classification: protocol-adapter
+        hidden: true
+        agentAllowed: false
+        exclusionReason: Agent service-token tool; external CLI users and Agents must use their normal authenticated workflow.
         idempotent: true
       requestBody:
         required: true
@@ -7858,7 +7866,16 @@ paths:
       operationId: testAgentObservabilitySource
       tags: [AI Assistant]
       summary: Test one unsaved or saved Agent observability query source without blocking configuration persistence
-      security: [{ SessionCookie: [] }]
+      description: Use this administrator-only command to verify one Prometheus, Loki, or Tempo source. Unsaved credentials are accepted as write-only input, so strict Agent mode is intentionally disabled.
+      x-luna-cli:
+        command: agent-observability.source-test
+        classification: business-command
+        risk: medium
+        requiredScopes: ["agent-observability:read"]
+        agentAllowed: false
+        examples:
+          - luna agent-observability source-test body=@source-test.json output=json interactive=false
+      security: [{ SessionCookie: [] }, { BearerToken: [] }]
       requestBody:
         required: true
         content:
@@ -7873,7 +7890,16 @@ paths:
       operationId: getAgentObservabilityOverview
       tags: [AI Assistant]
       summary: Return selected-period Agent token, tool, turn, success, and latency totals used by the operations overview
-      security: [{ SessionCookie: [] }]
+      description: Start Agent operations diagnosis here. The bounded snapshot defaults to one hour and reports source availability with a stable observation code before any detailed query is attempted.
+      x-luna-cli:
+        command: agent-observability.overview
+        classification: business-command
+        risk: low
+        requiredScopes: ["agent-observability:read"]
+        agentAllowed: true
+        examples:
+          - luna agent-observability overview range=1h output=json interactive=false agent=true
+      security: [{ SessionCookie: [] }, { BearerToken: [] }]
       parameters:
         - { name: range, in: query, schema: { type: string, enum: [1h, 6h, 24h, 7d, 30d, 1y], default: 1h } }
       responses:
@@ -7887,12 +7913,16 @@ paths:
       operationId: getAgentObservabilityTrace
       tags: [AI Assistant]
       summary: Get a normalized Agent turn Span timeline from Tempo
+      description: Load one known 32-character Trace ID after a turn or tool-call query identifies it. Luna CLI applies an additional output redaction boundary to raw spans and captured GenAI content.
       x-luna-cli:
-        classification: internal-observability
-        hidden: true
-        agentAllowed: false
-        exclusionReason: The operations UI reads this diagnostic endpoint; Agent self-inspection would create recursive telemetry and is not a business command.
-      security: [{ SessionCookie: [] }]
+        command: agent-observability.trace
+        classification: business-command
+        risk: low
+        requiredScopes: ["agent-observability:read"]
+        agentAllowed: true
+        examples:
+          - luna agent-observability trace traceId=0123456789abcdef0123456789abcdef output=json interactive=false agent=true
+      security: [{ SessionCookie: [] }, { BearerToken: [] }]
       parameters:
         - in: path
           name: traceId
@@ -7902,7 +7932,7 @@ paths:
         "200": { description: Non-cacheable normalized trace detail, content: { application/json: { schema: { $ref: "#/components/schemas/AgentObservabilityTraceDetail" } } } }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
-        "502": { description: Trace data is unavailable, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+        "503": { description: Trace data is unavailable, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
   /api/v1/ai/observability/conversations:
     get:
       operationId: listAgentObservabilityConversations
@@ -7912,8 +7942,9 @@ paths:
         classification: internal-observability
         hidden: true
         agentAllowed: false
+        requiredScopes: ["agent-observability:read"]
         exclusionReason: Legacy administrator conversation observability query; the current operations UI uses paginated turn queries instead of exposing this as a business CLI command.
-      security: [{ SessionCookie: [] }]
+      security: [{ SessionCookie: [] }, { BearerToken: [] }]
       parameters:
         - { name: range, in: query, schema: { type: string, enum: [1h, 6h, 24h, 7d, 30d, 1y], default: 1h } }
         - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
@@ -7935,8 +7966,9 @@ paths:
         classification: internal-observability
         hidden: true
         agentAllowed: false
+        requiredScopes: ["agent-observability:read"]
         exclusionReason: Legacy administrator conversation detail query; it is not a public business operation and Agent self-inspection is forbidden.
-      security: [{ SessionCookie: [] }]
+      security: [{ SessionCookie: [] }, { BearerToken: [] }]
       parameters:
         - { name: conversationId, in: path, required: true, schema: { type: string } }
         - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
@@ -7951,12 +7983,16 @@ paths:
       operationId: listAgentObservabilityTurns
       tags: [AI Assistant]
       summary: List Agent turns across all users for platform-admin observability
+      description: Narrow an abnormal overview to bounded cross-user turns. Defaults to the last hour, page 1, and 20 items; supports search, stable sorting, and at most 100 items per page.
       x-luna-cli:
-        classification: internal-observability
-        hidden: true
-        agentAllowed: false
-        exclusionReason: The administrator operations UI consumes this diagnostic turn list; it is intentionally excluded from the public business CLI catalog.
-      security: [{ SessionCookie: [] }]
+        command: agent-observability.turns
+        classification: business-command
+        risk: low
+        requiredScopes: ["agent-observability:read"]
+        agentAllowed: true
+        examples:
+          - luna agent-observability turns range=1h page=1 pageSize=20 sortBy=createdAt sortOrder=desc output=json interactive=false agent=true
+      security: [{ SessionCookie: [] }, { BearerToken: [] }]
       parameters:
         - { name: range, in: query, schema: { type: string, enum: [1h, 6h, 24h, 7d, 30d, 1y], default: 1h } }
         - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
@@ -7974,12 +8010,16 @@ paths:
       operationId: listAgentObservabilityTools
       tags: [AI Assistant]
       summary: List selected-period Agent tool success summaries for the platform-admin operations UI
+      description: Narrow an abnormal overview to bounded per-operation tool totals and success rates. Defaults to the last hour, page 1, and 20 items; search and sorting are server-side.
       x-luna-cli:
-        classification: internal-observability
-        hidden: true
-        agentAllowed: false
-        exclusionReason: The administrator operations UI consumes this sensitive diagnostic endpoint; Agent self-inspection would create recursive telemetry.
-      security: [{ SessionCookie: [] }]
+        command: agent-observability.tools
+        classification: business-command
+        risk: low
+        requiredScopes: ["agent-observability:read"]
+        agentAllowed: true
+        examples:
+          - luna agent-observability tools range=1h page=1 pageSize=20 sortBy=failedCalls sortOrder=desc output=json interactive=false agent=true
+      security: [{ SessionCookie: [] }, { BearerToken: [] }]
       parameters:
         - { name: range, in: query, schema: { type: string, enum: [1h, 6h, 24h, 7d, 30d, 1y], default: 1h } }
         - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
@@ -7997,12 +8037,16 @@ paths:
       operationId: listAgentObservabilityToolCalls
       tags: [AI Assistant]
       summary: List selected-period redacted calls for one Agent tool
+      description: Load bounded, already-redacted call evidence for one known operation ID after the tool summary identifies an anomaly. Encrypted executable arguments are never returned.
       x-luna-cli:
-        classification: internal-observability
-        hidden: true
-        agentAllowed: false
-        exclusionReason: The response contains sensitive diagnostic arguments and results for administrators and must never be callable by Agent itself.
-      security: [{ SessionCookie: [] }]
+        command: agent-observability.tool-calls
+        classification: business-command
+        risk: low
+        requiredScopes: ["agent-observability:read"]
+        agentAllowed: true
+        examples:
+          - luna agent-observability tool-calls operationId=listProjectVolumes range=1h page=1 pageSize=20 output=json interactive=false agent=true
+      security: [{ SessionCookie: [] }, { BearerToken: [] }]
       parameters:
         - { name: operationId, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 128, pattern: "^[A-Za-z][A-Za-z0-9_.-]{0,127}$" } }
         - { name: range, in: query, schema: { type: string, enum: [1h, 6h, 24h, 7d, 30d, 1y], default: 1h } }
@@ -8397,6 +8441,12 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/ErrorResponse"
+    PreconditionRequired:
+      description: The request must include the current resource revision precondition.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
     NotFound:
       description: The requested resource was not found.
       content:
@@ -8646,15 +8696,7 @@ components:
             status: { type: string, enum: [queued, running, waiting_approval, waiting_input, completed, failed, canceled, interrupted] }
             expectedVersion: { type: integer, format: int64, minimum: 0 }
             errorCode: { type: string }
-            usedTokens: { type: integer, format: int64, minimum: 0, description: Cumulative input and output tokens consumed by this Run, including active reservations. }
             latestInputTokens: { type: integer, format: int64, minimum: 0, description: Provider-reported input tokens for the latest completed assistant model call in this Run. }
-            budget:
-              type: object
-              additionalProperties: false
-              required: [totalTokens, totalCredits]
-              properties:
-                totalTokens: { type: integer, format: int64, minimum: 16384, maximum: 16000000 }
-                totalCredits: { type: string, pattern: '^\d+(\.\d{1,8})?$' }
             items: { type: array, items: { $ref: "#/components/schemas/AITimelineItem" } }
     AITimelineEventCursor:
       type: object
@@ -9088,6 +9130,13 @@ components:
         retryable:
           type: boolean
           description: Whether retrying the same operation without changing arguments may succeed.
+        status:
+          type: string
+          description: Stable resource observation status when an upstream source cannot provide a current fact.
+          enum: [unavailable]
+        observationCode:
+          type: string
+          description: Stable machine-readable observation reason when status is unavailable.
         path:
           type: string
           description: Stable argument path associated with a structured validation error.

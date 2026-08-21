@@ -72,6 +72,7 @@ var scopeCatalog = []scopeDefinition{
 	scopeDef(ActionEventRead, "event", true, true, true),
 
 	scopeDef(ActionDashboardRead, "dashboard", true, true, true),
+	scopeDef(ActionAgentObservabilityRead, "agent-observability", true, false, false),
 	scopeDef(ActionDataRetentionRead, "retention", false, false, false),
 	scopeDef(ActionDataRetentionManage, "retention", false, false, false),
 

@@ -29,6 +29,7 @@ const accessTokens = {
     billing: '청구',
     event: '이벤트',
     user: '사용자',
+    ...{ 'agent-observability': 'Agent 관측' },
     system: '시스템 관리',
   },
   scopeLabels: {
@@ -107,6 +108,9 @@ const accessTokens = {
     token: {
       manage: '개인 토큰 관리',
     },
+    ...{ 'agent-observability': {
+      read: 'Agent 관측 데이터 읽기',
+    } },
   },
   scopeDescriptions: {
     project: {
@@ -184,6 +188,9 @@ const accessTokens = {
     token: {
       manage: '개인 토큰을 생성, 조회, 취소합니다.',
     },
+    ...{ 'agent-observability': {
+      read: '사용자 간 Agent 개요, 턴, 도구 호출, Trace 진단 데이터를 읽습니다.',
+    } },
   },
   expiresInDays: '유효 기간 일수',
   expiresInDaysHint: '만료 후 Token은 자동으로 무효화됩니다. 0은 무기한을 의미합니다. 외부 API 호출에 사용하는 Token은 명확한 유효 기간을 설정하는 것을 권장합니다.',

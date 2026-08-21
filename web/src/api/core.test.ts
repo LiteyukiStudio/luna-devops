@@ -60,14 +60,12 @@ describe('api error boundary', () => {
     'ai.model_context_limit_invalid',
     'ai.model_context_insufficient',
     'ai.model_output_limit_invalid',
-    'ai.run_token_budget_exhausted',
-    'ai.run_credit_budget_exhausted',
     'ai.wallet_balance_insufficient',
-  ])('localizes the stable model budget code %s', async (code) => {
+  ])('localizes the stable model execution code %s', async (code) => {
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({ code, error: 'generic backend error' }, 422))
     vi.stubGlobal('fetch', fetchMock)
 
-    const error = await request('/ai/budget').catch((requestError: unknown) => requestError)
+    const error = await request('/ai/model').catch((requestError: unknown) => requestError)
 
     expect(error).toMatchObject({ code, message: i18next.t(`errors.${code}`) })
   })

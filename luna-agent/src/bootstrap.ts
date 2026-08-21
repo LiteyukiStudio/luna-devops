@@ -34,8 +34,8 @@ export async function startAgent(): Promise<void> {
   if (!config.LUNA_API_BASE_URL || !internalKeys) throw new Error("ai.provider_config_required")
   const repository = new PostgresRepository(config.DATABASE_URL)
   const providerConfigClient = new ProviderConfigClient(config.LUNA_API_BASE_URL, internalKeys.callbackServiceToken)
-  // Provider、运行参数和工具目录只接受 Luna API 的同一份权威配置。
-  // 首次拉取或契约校验失败时阻止启动，避免形成进程本地 fallback。
+  // Provider、平台运行参数和工具目录接受 Luna API 的同一份权威配置；
+  // 少量实例级上下文策略在下方由 Agent 环境变量覆盖。
   const initialRemoteConfig = await providerConfigClient.getCandidate()
   const rawProvider = createRuntimeProvider(config, providerConfigClient)
   const provider = new BudgetedModelProvider(rawProvider, repository)
@@ -51,7 +51,16 @@ export async function startAgent(): Promise<void> {
   const catalogRegistry = new ToolCatalogRegistry(catalog, initialRemoteConfig.version)
   providerConfigClient.commit(initialRemoteConfig)
   const toolStore = new PostgresToolCallStore(repository.pool, repository, toolArgumentsCipher)
-  const runtime = initialRemoteConfig.runtime
+  // 上下文收敛策略属于 Agent 进程内的无状态策略：默认无需配置，只有显式环境变量才覆盖。
+  const runtime = {
+    ...initialRemoteConfig.runtime,
+    contextCompressionTriggerRatio: config.AI_CONTEXT_COMPRESSION_TRIGGER_RATIO,
+    contextCompressionTargetRatio: config.AI_CONTEXT_COMPRESSION_TARGET_RATIO,
+    contextRecentTurnCount: config.AI_CONTEXT_RECENT_TURN_COUNT,
+    contextMaxRecentTurnCount: config.AI_CONTEXT_MAX_RECENT_TURN_COUNT,
+    contextHistoricalToolTokenBudget: config.AI_CONTEXT_HISTORICAL_TOOL_K_TOKENS * 1024,
+    toolResultPayloadBudget: config.AI_TOOLS_RESULT_PAYLOAD_K_BYTES * 1024,
+  }
   const tools = new ToolOrchestrator(async (runId) => {
     const state = await repository.getRunToolState(runId)
     if (!state) throw new Error("ai.run_not_found")

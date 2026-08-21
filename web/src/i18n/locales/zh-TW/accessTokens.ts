@@ -29,6 +29,7 @@ const accessTokens = {
     billing: '賬單',
     event: '事件',
     user: '使用者',
+    ...{ 'agent-observability': 'Agent 可觀測' },
     system: '系統管理',
   },
   scopeLabels: {
@@ -107,6 +108,9 @@ const accessTokens = {
     token: {
       manage: '管理個人令牌',
     },
+    ...{ 'agent-observability': {
+      read: '讀取 Agent 可觀測資料',
+    } },
   },
   scopeDescriptions: {
     project: {
@@ -184,6 +188,9 @@ const accessTokens = {
     token: {
       manage: '建立、檢視和撤銷個人令牌。',
     },
+    ...{ 'agent-observability': {
+      read: '讀取跨使用者 Agent 概覽、輪次、工具呼叫和 Trace 診斷資料。',
+    } },
   },
   expiresInDays: '有效期天數',
   expiresInDaysHint: '到期後 Token 自動失效。0 表示無限有效；用於外部 API 呼叫的 Token 建議設定明確有效期。',

@@ -86,5 +86,13 @@ Worker 指标通过 OTLP 上报，配置方式见[接入可观测平台](./obser
 | --- | --- | --- | --- |
 | 进阶 | `AI_OBSERVABILITY_CAPTURE_CONTENT` | `false` | 是否把脱敏后的模型输入输出、推理摘要、工具参数与结果写入 Trace 事件和结构化日志。仅在受控排障窗口临时开启；开启前应限制 Tempo/Loki 访问权限并确认保留周期。 |
 | 进阶 | `AI_OBSERVABILITY_CAPTURE_DATABASE_SPANS` | `false` | 是否记录 Agent 内部每一条 PostgreSQL 查询 Span。默认关闭以避免事件持久化产生大量低价值子 Span；仅在排查 SQL 耗时或事务问题时临时开启。 |
+| 可选 | `AI_CONTEXT_COMPRESSION_TRIGGER_RATIO` | `0.9` | 上下文占输入能力的比例达到该值时触发历史压缩；必须大于目标比例。 |
+| 可选 | `AI_CONTEXT_COMPRESSION_TARGET_RATIO` | `0.7` | 压缩后期望回落到的输入能力比例；必须小于触发比例。 |
+| 可选 | `AI_CONTEXT_RECENT_TURN_COUNT` | `16` | 压缩时优先保留原文的近期轮次数。 |
+| 可选 | `AI_CONTEXT_MAX_RECENT_TURN_COUNT` | `32` | 即使未达到 Token 触发线，也会在超过该轮次后推进压缩；不得小于近期轮次数。 |
+| 可选 | `AI_CONTEXT_HISTORICAL_TOOL_K_TOKENS` | `64` | 历史工具结果进入模型上下文的 Token 上限，单位为 K Token。 |
+| 可选 | `AI_TOOLS_RESULT_PAYLOAD_K_BYTES` | `512` | 单次工具结果进入模型上下文前的序列化大小上限，单位为 KiB。 |
 
-这两个开关只影响 Agent，修改后需要重启。内容观测可能包含敏感业务数据，只应在受控排障期间临时开启；详情见[接入可观测平台](./observability.md#agent-全内容观测高敏)。
+这些变量只影响 Agent，修改后需要重启。六项上下文策略都可以不配置，Agent 会使用表中的默认值；它们不写入平台数据库，也不通过控制台或动态配置 API 下发。默认 Docker Compose、Helm values、安装步骤和 `.env.example` 均不声明这些变量，只有确需调优时才按本参考显式注入。模型上下文、单次输出能力和四项价格仍在“AI 模型目录”中按模型配置。
+
+内容观测可能包含敏感业务数据，只应在受控排障期间临时开启；详情见[接入可观测平台](./observability.md#agent-全内容观测高敏)。

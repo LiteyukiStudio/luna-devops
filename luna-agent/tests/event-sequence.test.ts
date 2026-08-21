@@ -71,8 +71,6 @@ describe("PostgreSQL bigint event sequence normalization", () => {
     const timeline = await presentTimeline(repository, "usr_usage", conversation.id)
     expect(timeline?.turns[0]?.selectedRun).toMatchObject({
       latestInputTokens: 18_000,
-      usedTokens: 20_800,
-      budget: { totalTokens: 2_000_000, totalCredits: "10000" },
     })
   })
 

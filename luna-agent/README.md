@@ -6,7 +6,7 @@ Luna DevOps 的 AI 助手运行时。一个**自研的、以 PostgreSQL 为权�
 
 核心原因：这个 Agent 的计费、安全、可观测要求**穿透控制流的每一步**，框架在这些地方全部是负资产：
 
-- 每次模型调用前要经过五重预算闸（站点上限 / 模型能力 / 上下文剩余 / Run 剩余 / 个人钱包余额），调用后按四类 token 价格（输入 / 输出 / 缓存输入 / 缓存输出）结算到**用户个人钱包**——框架不知道你的计费模型。
+- 每次模型调用前都要按模型能力、上下文剩余和个人钱包余额完成单次用量预留与输出收紧，调用后再按四类 token 价格（输入 / 输出 / 缓存输入 / 缓存输出）结算到**用户个人钱包**；Run 不设置累计 Token/Credits 预算——框架不知道这种计费控制流。
 - 敏感输入（密钥、Token）必须走用户表单通道，**永不进入模型上下文**——这是定制到工具 schema 层的约束。
 - 高危 ToolCall 的逐次审批、账号级豁免、敏感表单与不可变事件续跑需要统一控制，通用框架的 interrupt/resume 语义无法直接覆盖这些约束。
 - 全链路 OTel GenAI 语义 + 零高基数 label，与 LangChain 的 callback/LangSmith 体系是两套。
@@ -59,7 +59,7 @@ src/
 ├── provider/                 模型 Provider 层
 │   ├── provider.ts           ModelProvider 接口与消息/事件类型
 │   ├── openai-compatible.ts  OpenAI 兼容客户端（SSE 流、usage 解析、重试）
-│   ├── budgeted.ts           ★ 预算装饰器：调用前 clamp、预留、调用后结算
+│   ├── budgeted.ts           ★ 用量装饰器：调用前 clamp、钱包预留、调用后结算
 │   ├── managed.ts / runtime.ts / config-client.ts
 │   │                         平台托管模型配置拉取与动态刷新
 │   └── deterministic.ts      测试用确定性 Provider

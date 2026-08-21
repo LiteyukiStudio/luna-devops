@@ -119,8 +119,6 @@ export class RunExecutor {
         })
         await this.repository.appendEvent(run.id, "run.started", {
           state: "running",
-          // 预算快照随事件下发，前端用它渲染单次 Run 的 token 预算占用。
-          ...(run.budget ? { budget: { totalTokens: run.budget.totalTokens, totalCredits: run.budget.totalCredits } } : {}),
         })
         const executionInput = await this.repository.getExecutionInput(run.id)
         if (!executionInput) throw new Error("ai.turn_not_found")
@@ -659,7 +657,16 @@ export class RunExecutor {
           this.catalogRegistry!.retain(await this.repository.listActiveToolCatalogDigests())
         })
       }
-      const runtimeSettings = candidate.runtime
+      const runtimeSettings = {
+        ...candidate.runtime,
+        // 这些策略只在进程启动时从环境变量读取，不随平台配置热更新。
+        contextCompressionTriggerRatio: this.runtimeSettings.contextCompressionTriggerRatio,
+        contextCompressionTargetRatio: this.runtimeSettings.contextCompressionTargetRatio,
+        contextRecentTurnCount: this.runtimeSettings.contextRecentTurnCount,
+        contextMaxRecentTurnCount: this.runtimeSettings.contextMaxRecentTurnCount,
+        contextHistoricalToolTokenBudget: this.runtimeSettings.contextHistoricalToolTokenBudget,
+        toolResultPayloadBudget: this.runtimeSettings.toolResultPayloadBudget,
+      }
       this.modelRuntime.setContextOptions({
         inputTokenBudget: runtimeSettings.contextInputTokenBudget,
         compressionTriggerRatio: runtimeSettings.contextCompressionTriggerRatio,

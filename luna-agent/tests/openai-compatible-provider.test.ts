@@ -91,6 +91,42 @@ describe("OpenAICompatibleProvider streaming", () => {
     })
   })
 
+  it("normalizes DeepSeek cache-hit usage from streaming responses", async () => {
+    const frames = `data: ${JSON.stringify({
+      choices: [{ delta: { content: "完成" } }],
+      usage: { prompt_tokens: 100, completion_tokens: 5, prompt_cache_hit_tokens: 80, prompt_cache_miss_tokens: 20 },
+    })}\n\ndata: [DONE]\n\n`
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(frames))
+        controller.close()
+      },
+    })
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(body, { status: 200, headers: { "content-type": "text/event-stream" } })))
+    const provider = new OpenAICompatibleProvider({ baseUrl: "https://api.deepseek.com/v1", apiKey: "secret", model: "deepseek-chat", timeoutMs: 5000 })
+    const events = []
+
+    for await (const event of provider.stream({ messages: [{ role: "user", content: "hello" }], maxOutputTokens: 100 }))
+      events.push(event)
+
+    expect(events.at(-1)).toEqual({
+      type: "completed",
+      usage: { inputTokens: 100, outputTokens: 5, cachedInputTokens: 80, reported: true },
+    })
+  })
+
+  it("normalizes DeepSeek cache-hit usage from non-streaming responses", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      choices: [{ message: { content: "完成" } }],
+      usage: { prompt_tokens: 120, completion_tokens: 6, prompt_cache_hit_tokens: 90, prompt_cache_miss_tokens: 30 },
+    }), { status: 200, headers: { "content-type": "application/json" } })))
+    const provider = new OpenAICompatibleProvider({ baseUrl: "https://api.deepseek.com/v1", apiKey: "secret", model: "deepseek-chat", timeoutMs: 5000 })
+
+    const result = await provider.complete({ messages: [{ role: "user", content: "hello" }], maxOutputTokens: 100 })
+
+    expect(result.usage).toEqual({ inputTokens: 120, outputTokens: 6, cachedInputTokens: 90, reported: true })
+  })
+
   it("maps upstream quota failures to a stable public error code", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response(
       JSON.stringify({ error: { message: "upstream detail must stay private" } }),

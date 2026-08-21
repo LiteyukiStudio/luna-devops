@@ -18,10 +18,6 @@ export interface AIAssistantComposerProps {
   selectedModelId?: string
   /** 最近一次模型调用 provider 实际返回的输入 token 数；undefined 表示暂无数据。 */
   contextUsedTokens?: number
-  /** 当前 Run 累计消耗的 token 数；undefined 表示暂无数据。 */
-  runUsedTokens?: number
-  /** 当前 Run 的 token 预算上限；undefined 表示暂无数据。 */
-  runTokenBudget?: number
   draft: string
   inputRef: RefObject<HTMLTextAreaElement | null>
   maxLength?: number
@@ -106,34 +102,20 @@ function ContextUsageRing({
   ratio,
   used,
   total,
-  runUsed,
-  runTotal,
 }: {
   ratio: number
   used: number
   total: number
-  runUsed?: number
-  runTotal?: number
 }) {
   const { t } = useTranslation()
   const percent = Math.round(Math.min(1, Math.max(0, ratio)) * 100)
   const contextTokens = formatTokenRatio(used, total)
   const contextLabel = t('aiAssistant.contextUsage', { ...contextTokens, percent })
-  const hasRunBudget = runUsed !== undefined && runTotal !== undefined && runTotal > 0
-  const runPercent = hasRunBudget ? Math.round(Math.min(1, Math.max(0, runUsed / runTotal)) * 100) : 0
-  const runTokens = hasRunBudget ? formatTokenRatio(runUsed, runTotal) : undefined
   return (
     <TokenRing
       ariaLabel={contextLabel}
       ratio={ratio}
-      tooltip={(
-        <span className="grid gap-0.5">
-          <span>{contextLabel}</span>
-          {runTokens && (
-            <span>{t('aiAssistant.budgetUsage', { ...runTokens, percent: runPercent })}</span>
-          )}
-        </span>
-      )}
+      tooltip={contextLabel}
     />
   )
 }
@@ -148,8 +130,6 @@ export function AIAssistantComposer({
   modelSelectionDisabled = false,
   selectedModelId,
   contextUsedTokens,
-  runUsedTokens,
-  runTokenBudget,
   draft,
   inputRef,
   maxLength,
@@ -219,8 +199,6 @@ export function AIAssistantComposer({
           {hasContext && (
             <ContextUsageRing
               ratio={contextRatio}
-              runTotal={runTokenBudget}
-              runUsed={runUsedTokens}
               total={contextTotal}
               used={contextUsed}
             />

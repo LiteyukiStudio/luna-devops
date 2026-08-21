@@ -25,8 +25,6 @@ export const runs = aiSchema.table("runs", {
   modelName: text("model_name"),
   maxContextTokens: bigint("max_context_tokens", { mode: "number" }),
   maxOutputTokens: bigint("max_output_tokens", { mode: "number" }),
-	 totalTokenBudget: bigint("total_token_budget", { mode: "number" }),
-  totalCreditBudget: text("total_credit_budget"),
   inputCreditsPerMillion: text("input_credits_per_million"),
   outputCreditsPerMillion: text("output_credits_per_million"),
   cachedInputCreditsPerMillion: text("cached_input_credits_per_million"),

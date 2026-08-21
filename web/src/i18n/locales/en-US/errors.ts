@@ -115,8 +115,6 @@ const errors = {
     model_context_limit_invalid: 'The model catalog context limit is invalid. Ask a platform administrator to check the model configuration.',
     model_context_insufficient: 'This request exceeds the selected model context window. Shorten the input or clear conversation history.',
     model_output_limit_invalid: 'The model catalog output limit is invalid. Ask a platform administrator to check the model configuration.',
-    run_token_budget_exhausted: 'This Run has exhausted its cumulative token budget.',
-    run_credit_budget_exhausted: 'This Run has exhausted its cumulative cost budget.',
     wallet_balance_insufficient: 'Your personal wallet has insufficient available credits. The model request was not sent.',
   },
   bootstrap: {

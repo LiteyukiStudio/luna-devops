@@ -1,5 +1,22 @@
 # TODO
 
+## 2026-08-22 Agent Run 预算与无状态上下文策略瘦身
+
+- [x] 删除单个 Run 的累计 Token/Credits 预算、创建快照、调用门禁、错误码和前端累计用量展示；长任务不再因站点累计阈值被迫新建任务。
+- [x] 保留按模型能力、上下文剩余和个人钱包余额执行的单次钱包预留、Provider 真实用量确认与 Worker 四价幂等结算。
+- [x] 将工具结果上下文上限、压缩触发/目标比例、近期/最多近期轮次和历史工具结果上限迁移为可选 Agent 环境变量，默认无需配置，平台数据库和动态配置 API 不再存储或下发。
+- [x] 保持 Docker Compose、Helm、安装主流程和 `.env.example` 最小化，不声明六项可选上下文策略；完整变量、默认值和约束只在中英文环境变量参考中维护。
+- [x] 兼容 DeepSeek `prompt_cache_hit_tokens` 用量格式，缓存命中 Token 按缓存输入价格归集。
+- [x] 完成增量/空库迁移、Go、Agent、Web、Docs 全量门禁与最终零残留检查；真实 PostgreSQL 验证覆盖删列后的模型用量预留并发与钱包结算。
+
+## 2026-08-22 Luna CLI Agent 可观测诊断
+
+- [x] 建立 `agent-observability` 稳定分类，覆盖概览、跨用户轮次、工具汇总、工具调用与 Trace；原始对话保持隐藏。
+- [x] 新增平台管理员专用 `agent-observability:read` Scope、Bearer 契约、`no-store`、稳定 `unavailable/observationCode` 错误，并保持 Luna 内部 Agent 排除该诊断域。
+- [x] 完成 CLI 分页/correlation Envelope、限长、Trace 与 GenAI 高敏内容脱敏、机器 Help 输入/输出/错误 Schema 以及人工数据源测试的 Agent 模式拒绝。
+- [x] 同步 CLI Skill、中英文 CLI 说明、中英文公开可观测文档、五语言 Scope 文案，通过 Go、CLI、Web 与 Docs 分层门禁。
+- [ ] 使用已登录且授予 `agent-observability:read` 的平台管理员实例完成 overview → turns/tools → tool-calls/trace 真实读取验收；当前本地 CLI 无有效登录，远端 OpenAPI digest 也尚未升级到本次契约。
+
 ## 2026-08-21 Agent 部署配置与数据卷首次消费者修复
 
 - [x] 移除 Agent 与 Luna API 基于 `inputMode` 的敏感参数强制表单门禁，模型工具调用按正常 Schema、审批和业务接口执行。
@@ -99,7 +116,7 @@
 - [x] 新增 AI 助手输入区上下文圆环：圆环显示最近一次主回答上下文占比，悬停时同时展示当前 Run 累计 token / 预算上限占比；预算快照随 `run.started` SSE 事件下发，前端逐次 `model.completed` 累加用量。
 - [x] 修复圆环用量经过无限时间线聚合后被丢弃：用量按 Run 隔离，Agent 权威时间线回传累计 Token、预算快照和最近一次主回答输入 Token，刷新与 SSE 缺口恢复后仍保持正确显示。
 - [x] 收敛 AI 助手用量展示与上下文预算：圆环比例使用 `74.6/524k` 同单位格式；上下文输入预算默认提高到 1024K、可配置范围扩大为 64–2048K，并继续按模型容量和输出预留自动收紧。
-- [ ] 在具备已登录会话的浏览器中发送一轮真实 AI 请求，验收上下文圆环在实时响应后更新、悬停展示 Run 预算，并在刷新会话后从权威时间线恢复。
+- [x] 原计划的 Run 累计预算悬停验收已随预算机制删除；上下文圆环只展示最近一次主回答的上下文占用并由权威时间线恢复。
 
 ## 2026-08-18 默认计费单价与 AI 模型建议价格
 

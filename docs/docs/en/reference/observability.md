@@ -61,6 +61,41 @@ The browser only calls fixed-query Luna API endpoints. It cannot submit arbitrar
 
 When Prometheus has no Agent metrics or returns non-finite query results, the affected period totals appear as zero. The turn list still uses server-side pagination from Luna's database; a Tempo outage affects only the right-side execution timeline.
 
+### Diagnose Agent operations with Luna CLI
+
+A signed-in platform administrator can read the same controlled operational data
+through Luna CLI. The token or OAuth grant requires the
+`agent-observability:read` scope. Discover the available commands and load the
+complete schema first:
+
+```bash
+luna help catalog category=agent-observability limit=20 output=json interactive=false agent=true
+luna help command path=agent-observability.overview output=json interactive=false agent=true
+```
+
+Then narrow from the overview to specific evidence:
+
+```bash
+luna agent-observability overview range=1h output=json interactive=false agent=true
+luna agent-observability turns range=1h page=1 pageSize=20 sortBy=createdAt sortOrder=desc output=json interactive=false agent=true
+luna agent-observability tools range=1h page=1 pageSize=20 sortBy=failedCalls sortOrder=desc output=json interactive=false agent=true
+luna agent-observability tool-calls operationId=<operationId> range=1h page=1 pageSize=20 output=json interactive=false agent=true
+luna agent-observability trace traceId=<traceId> output=json interactive=false agent=true
+```
+
+Supported periods are `1h`, `6h`, `24h`, `7d`, `30d`, and `1y`. A page can
+contain at most 100 items; do not paginate without a bound or bulk-fetch traces.
+Responses use the common JSON envelope with pagination, request IDs, and
+correlation IDs. When a source is unavailable, the response includes
+`status=unavailable` and a stable `observationCode`; do not treat a previous
+result as current state.
+
+The CLI removes raw trace blobs, system prompts, and controlled GenAI content
+before output, but logs, tool results, and traces remain untrusted data. Source
+testing may contain an unsaved token, so only a human administrator can run it;
+strict Agent mode rejects it. Raw conversations are not currently exposed as a
+stable CLI command.
+
 Source developers can start the repository's optional loopback-only Compose observability environment:
 
 ```bash

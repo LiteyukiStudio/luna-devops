@@ -143,12 +143,8 @@ export interface AITimelineTurn {
     status: AIRunStatus
     expectedVersion?: number
     errorCode?: string
-    /** 当前 Run 已消耗的 token 总数（input+output），来自预算 reservation 聚合。 */
-    usedTokens?: number
     /** 当前 Run 最近一次主回答模型调用的输入 token 数。 */
     latestInputTokens?: number
-    /** 当前 Run 的预算快照。 */
-    budget?: { totalTokens: number, totalCredits: string }
     items: AITimelineItem[]
   }
 }

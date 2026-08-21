@@ -406,7 +406,7 @@ describe('aI assistant state', () => {
     expect(withoutUsage.runUsage['run-1']?.latestInputTokens).toBe(25600)
   })
 
-  it('accumulates run token usage across model.completed events', () => {
+  it('keeps only the latest model input usage for context display', () => {
     const started = reduceAIEvent(emptyAIAssistantState, event({ eventId: 'event-1', eventSequence: 1, type: 'run.started', item: undefined, payload: {} }))
     const first = reduceAIEvent(started, event({
       eventId: 'event-2',
@@ -415,7 +415,7 @@ describe('aI assistant state', () => {
       item: undefined,
       payload: { usage: { inputTokens: 1000, outputTokens: 500 } },
     }))
-    expect(first.runUsage['run-1']?.usedTokens).toBe(1500)
+    expect(first.runUsage['run-1']?.latestInputTokens).toBe(1000)
     const second = reduceAIEvent(first, event({
       eventId: 'event-3',
       eventSequence: 3,
@@ -423,18 +423,7 @@ describe('aI assistant state', () => {
       item: undefined,
       payload: { usage: { inputTokens: 200, outputTokens: 300 } },
     }))
-    expect(second.runUsage['run-1']?.usedTokens).toBe(2000)
-  })
-
-  it('captures the token budget snapshot from run.started', () => {
-    const state = reduceAIEvent(emptyAIAssistantState, event({
-      eventId: 'event-1',
-      eventSequence: 1,
-      type: 'run.started',
-      item: undefined,
-      payload: { budget: { totalTokens: 2_000_000, totalCredits: '10000' } },
-    }))
-    expect(state.runUsage['run-1']?.tokenBudget).toBe(2_000_000)
+    expect(second.runUsage['run-1']?.latestInputTokens).toBe(200)
   })
 
   it('isolates token usage between runs', () => {
@@ -452,10 +441,10 @@ describe('aI assistant state', () => {
       turnId: 'turn-2',
       type: 'run.started',
       item: undefined,
-      payload: { budget: { totalTokens: 500_000, totalCredits: '1000' } },
+      payload: {},
     }))
 
-    expect(nextRun.runUsage['run-1']).toMatchObject({ latestInputTokens: 1000, usedTokens: 1200 })
-    expect(nextRun.runUsage['run-2']).toEqual({ usedTokens: 0, tokenBudget: 500_000 })
+    expect(nextRun.runUsage['run-1']).toEqual({ latestInputTokens: 1000 })
+    expect(nextRun.runUsage['run-2']).toBeUndefined()
   })
 })

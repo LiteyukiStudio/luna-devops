@@ -4,7 +4,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -12,10 +11,8 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/aiagent"
 	"github.com/LiteyukiStudio/devops/internal/aitool"
 	"github.com/LiteyukiStudio/devops/internal/authz"
-	"github.com/LiteyukiStudio/devops/internal/fixeddecimal"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/gin-gonic/gin"
-	"github.com/shopspring/decimal"
 )
 
 var aiProviderConfigKeys = []string{
@@ -29,21 +26,13 @@ var aiProviderConfigKeys = []string{
 	"ai.model.max_output_tokens",
 	"ai.run.max_model_steps",
 	"ai.quota.run_max_tool_calls",
-	"ai.run.max_total_tokens",
-	"ai.run.max_credits",
 	"ai.run.max_input_k_bytes",
 	"ai.run.navigate_action_ttl_seconds",
-	"ai.tools.result_payload_k_bytes",
 	"ai.tools.max_card_repair_attempts",
-	"ai.context.compression_trigger_ratio",
-	"ai.context.compression_target_ratio",
-	"ai.context.recent_turn_count",
-	"ai.context.max_recent_turn_count",
 	"ai.context.max_uncompressed_turn_count",
 	"ai.context.max_compression_turns_per_compile",
 	"ai.context.summary_input_k_tokens",
 	"ai.context.summary_max_output_tokens",
-	"ai.context.historical_tool_k_tokens",
 }
 
 func (h *Handlers) GetAIProviderConfigInternal(ctx *gin.Context) {
@@ -93,19 +82,6 @@ func aiProviderConfigVersionWithCatalog(base string, operations []aitool.OpenAPI
 }
 
 func aiProviderRuntimeConfig(values map[string]string) gin.H {
-	triggerRatio := aiBoundedRatioConfig(values, "ai.context.compression_trigger_ratio")
-	targetRatio := aiBoundedRatioConfig(values, "ai.context.compression_target_ratio")
-	if triggerRatio <= targetRatio {
-		triggerRatio = aiDefaultRatioConfig("ai.context.compression_trigger_ratio")
-		targetRatio = aiDefaultRatioConfig("ai.context.compression_target_ratio")
-	}
-	recentTurns := aiBoundedIntegerConfig(values, "ai.context.recent_turn_count")
-	maxRecentTurns := aiBoundedIntegerConfig(values, "ai.context.max_recent_turn_count")
-	if recentTurns > maxRecentTurns {
-		recentTurns = aiDefaultIntegerConfig("ai.context.recent_turn_count")
-		maxRecentTurns = aiDefaultIntegerConfig("ai.context.max_recent_turn_count")
-	}
-
 	return gin.H{
 		"providerTimeoutMs":                    aiBoundedIntegerConfig(values, "ai.runtime.provider_timeout_seconds") * 1000,
 		"maxRequestRetries":                    aiBoundedIntegerConfig(values, "ai.runtime.max_request_retries"),
@@ -116,21 +92,13 @@ func aiProviderRuntimeConfig(values map[string]string) gin.H {
 		"assistantMaxOutputTokens":             aiBoundedIntegerConfig(values, "ai.model.max_output_tokens"),
 		"maxModelSteps":                        aiBoundedIntegerConfig(values, "ai.run.max_model_steps"),
 		"runMaxToolCalls":                      aiBoundedIntegerConfig(values, "ai.quota.run_max_tool_calls"),
-		"runTotalTokenBudget":                  aiBoundedIntegerConfig(values, "ai.run.max_total_tokens"),
-		"runTotalCreditBudget":                 aiBoundedCreditConfig(values, "ai.run.max_credits"),
 		"maxInputBytes":                        aiBoundedIntegerConfig(values, "ai.run.max_input_k_bytes") * 1024,
 		"navigateActionTtlSeconds":             aiBoundedIntegerConfig(values, "ai.run.navigate_action_ttl_seconds"),
-		"toolResultPayloadBudget":              aiBoundedIntegerConfig(values, "ai.tools.result_payload_k_bytes") * 1024,
 		"maxCardRepairAttempts":                aiBoundedIntegerConfig(values, "ai.tools.max_card_repair_attempts"),
-		"contextCompressionTriggerRatio":       triggerRatio,
-		"contextCompressionTargetRatio":        targetRatio,
-		"contextRecentTurnCount":               recentTurns,
-		"contextMaxRecentTurnCount":            maxRecentTurns,
 		"contextMaxUncompressedTurnCount":      aiBoundedIntegerConfig(values, "ai.context.max_uncompressed_turn_count"),
 		"contextMaxCompressionTurnsPerCompile": aiBoundedIntegerConfig(values, "ai.context.max_compression_turns_per_compile"),
 		"contextSummaryInputTokenBudget":       aiBoundedIntegerConfig(values, "ai.context.summary_input_k_tokens") * 1024,
 		"contextSummaryMaxOutputTokens":        aiBoundedIntegerConfig(values, "ai.context.summary_max_output_tokens"),
-		"contextHistoricalToolTokenBudget":     aiBoundedIntegerConfig(values, "ai.context.historical_tool_k_tokens") * 1024,
 	}
 }
 
@@ -150,43 +118,6 @@ func aiDefaultIntegerConfig(key string) int {
 	value, err := strconv.Atoi(strings.TrimSpace(definition.Default))
 	if err != nil {
 		panic("invalid AI integer configuration default for " + key)
-	}
-	return value
-}
-
-func aiBoundedRatioConfig(values map[string]string, key string) float64 {
-	bounds, ok := aiRatioConfigBounds[key]
-	if !ok {
-		panic("missing AI ratio configuration bounds for " + key)
-	}
-	fallback := aiDefaultRatioConfig(key)
-	value, err := strconv.ParseFloat(strings.TrimSpace(values[key]), 64)
-	if err != nil || math.IsNaN(value) || math.IsInf(value, 0) || value < bounds[0] || value > bounds[1] {
-		return fallback
-	}
-	return value
-}
-
-func aiDefaultRatioConfig(key string) float64 {
-	definition := configDefinitionByKey(key)
-	if definition == nil {
-		panic("missing AI configuration definition for " + key)
-	}
-	value, err := strconv.ParseFloat(strings.TrimSpace(definition.Default), 64)
-	if err != nil {
-		panic("invalid AI ratio configuration default for " + key)
-	}
-	return value
-}
-
-func aiBoundedCreditConfig(values map[string]string, key string) string {
-	definition := configDefinitionByKey(key)
-	if definition == nil {
-		panic("missing AI configuration definition for " + key)
-	}
-	value := strings.TrimSpace(values[key])
-	if _, err := fixeddecimal.Parse(value, false, decimal.NewFromInt(100_000_000)); err != nil {
-		return definition.Default
 	}
 	return value
 }

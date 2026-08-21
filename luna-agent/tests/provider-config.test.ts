@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { ProviderConfigClient } from "../src/provider/config-client.js"
-import { defaultRuntimeSettings } from "../src/runtime-settings.js"
+import { defaultRuntimeSettings, type RemoteRuntimeSettings } from "../src/runtime-settings.js"
 
 afterEach(() => vi.unstubAllGlobals())
 
@@ -67,14 +67,6 @@ describe("ProviderConfigClient", () => {
     await expect(client().get()).rejects.toThrow("ai.provider_config_invalid")
   })
 
-  it("rejects inconsistent context settings instead of replacing the pair", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => response(authoritativePayload({
-      contextCompressionTriggerRatio: 0.5,
-      contextCompressionTargetRatio: 0.6,
-    }))))
-    await expect(client().get()).rejects.toThrow("ai.provider_config_invalid")
-  })
-
   it("retries transient configuration failures before parsing the authority payload", async () => {
     const fetchMock = vi.fn<typeof fetch>()
       .mockResolvedValueOnce(new Response("busy", { status: 503, headers: { "retry-after": "0" } }))
@@ -100,7 +92,25 @@ describe("ProviderConfigClient", () => {
   })
 })
 
-function authoritativePayload(runtimeOverrides: Partial<typeof defaultRuntimeSettings> = {}) {
+function authoritativePayload(runtimeOverrides: Partial<RemoteRuntimeSettings> = {}) {
+  const remoteRuntimeDefaults: RemoteRuntimeSettings = {
+    providerTimeoutMs: defaultRuntimeSettings.providerTimeoutMs,
+    maxRequestRetries: defaultRuntimeSettings.maxRequestRetries,
+    runTimeoutMs: defaultRuntimeSettings.runTimeoutMs,
+    agentConcurrentRuns: defaultRuntimeSettings.agentConcurrentRuns,
+    userConcurrentRuns: defaultRuntimeSettings.userConcurrentRuns,
+    contextInputTokenBudget: defaultRuntimeSettings.contextInputTokenBudget,
+    assistantMaxOutputTokens: defaultRuntimeSettings.assistantMaxOutputTokens,
+    maxModelSteps: defaultRuntimeSettings.maxModelSteps,
+    runMaxToolCalls: defaultRuntimeSettings.runMaxToolCalls,
+    maxInputBytes: defaultRuntimeSettings.maxInputBytes,
+    navigateActionTtlSeconds: defaultRuntimeSettings.navigateActionTtlSeconds,
+    maxCardRepairAttempts: defaultRuntimeSettings.maxCardRepairAttempts,
+    contextMaxUncompressedTurnCount: defaultRuntimeSettings.contextMaxUncompressedTurnCount,
+    contextMaxCompressionTurnsPerCompile: defaultRuntimeSettings.contextMaxCompressionTurnsPerCompile,
+    contextSummaryInputTokenBudget: defaultRuntimeSettings.contextSummaryInputTokenBudget,
+    contextSummaryMaxOutputTokens: defaultRuntimeSettings.contextSummaryMaxOutputTokens,
+  }
   return {
     version: "cfg-1",
     provider: {
@@ -118,7 +128,7 @@ function authoritativePayload(runtimeOverrides: Partial<typeof defaultRuntimeSet
         cachedOutputCreditsPerMillion: "0.75",
       }],
     },
-    runtime: { ...defaultRuntimeSettings, providerTimeoutMs: 45_000, ...runtimeOverrides },
+    runtime: { ...remoteRuntimeDefaults, providerTimeoutMs: 45_000, ...runtimeOverrides },
     toolCatalog: [{ operationId: "listProjects" }],
   }
 }

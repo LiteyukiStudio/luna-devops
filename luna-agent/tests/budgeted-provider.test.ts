@@ -70,7 +70,7 @@ describe("BudgetedModelProvider", () => {
   it("does not invoke the provider when the authoritative reservation rejects", async () => {
     const complete = vi.fn(async () => ({ text: "unexpected", usage: { inputTokens: 1, outputTokens: 1 } }))
     const provider = new BudgetedModelProvider(modelProvider({ complete }), {
-      reserveModelBudget: async () => { throw new Error("ai.run_token_budget_exhausted") },
+      reserveModelBudget: async () => { throw new Error("ai.wallet_balance_insufficient") },
       confirmModelBudget: vi.fn(async () => undefined),
       releaseModelBudget: vi.fn(async () => undefined),
     } as unknown as Repository)
@@ -78,7 +78,7 @@ describe("BudgetedModelProvider", () => {
     await expect(provider.complete({
       messages: [{ role: "user", content: "hello" }], maxOutputTokens: 10,
       budget: { runId: "airun_test", ownerUserId: "usr_test", operation: "assistant" },
-    })).rejects.toThrow("ai.run_token_budget_exhausted")
+    })).rejects.toThrow("ai.wallet_balance_insufficient")
     expect(complete).not.toHaveBeenCalled()
   })
 

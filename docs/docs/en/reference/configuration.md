@@ -86,5 +86,13 @@ For S3-compatible storage, callback URL, job image, and size limits used by volu
 | --- | --- | --- | --- |
 | Advanced | `AI_OBSERVABILITY_CAPTURE_CONTENT` | `false` | Writes redacted model input/output, reasoning summaries, tool arguments, and tool results to trace events and structured logs. Enable it only for a controlled diagnostic window after restricting Tempo/Loki access and retention. |
 | Advanced | `AI_OBSERVABILITY_CAPTURE_DATABASE_SPANS` | `false` | Records every PostgreSQL query span inside the Agent. It is disabled by default because event persistence otherwise creates many low-value child spans; enable it temporarily for SQL latency or transaction diagnostics. |
+| Optional | `AI_CONTEXT_COMPRESSION_TRIGGER_RATIO` | `0.9` | Compresses older history when context use reaches this fraction of input capacity; it must exceed the target ratio. |
+| Optional | `AI_CONTEXT_COMPRESSION_TARGET_RATIO` | `0.7` | Target input-capacity fraction after compression; it must remain below the trigger ratio. |
+| Optional | `AI_CONTEXT_RECENT_TURN_COUNT` | `16` | Number of recent turns preferentially kept as original text during compression. |
+| Optional | `AI_CONTEXT_MAX_RECENT_TURN_COUNT` | `32` | Advances compression after this many recent turns even before the token threshold; it cannot be below the recent-turn count. |
+| Optional | `AI_CONTEXT_HISTORICAL_TOOL_K_TOKENS` | `64` | Token limit for historical tool results included in model context, in K tokens. |
+| Optional | `AI_TOOLS_RESULT_PAYLOAD_K_BYTES` | `512` | Serialized size limit for one tool result before it enters model context, in KiB. |
 
-These switches affect only the Agent and require a restart after changes. Content capture may include sensitive business data, so enable it only during a controlled diagnostic window. See [Connect an Observability Backend](./observability.md#agent-full-content-observability-sensitive).
+These variables affect only the Agent and require a restart after changes. All six context-policy variables can remain unset; the Agent uses the defaults in the table. They are not stored in the platform database or delivered through the console or dynamic configuration API. Default Docker Compose, Helm values, installation steps, and `.env.example` do not declare them; inject an override explicitly only when tuning is necessary. Model context, per-call output capability, and all four prices remain model-specific settings in the model catalog.
+
+Content capture may include sensitive business data, so enable it only during a controlled diagnostic window. See [Connect an Observability Backend](./observability.md#agent-full-content-observability-sensitive).

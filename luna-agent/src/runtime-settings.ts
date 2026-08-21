@@ -26,6 +26,15 @@ export interface RuntimeSettings {
   contextHistoricalToolTokenBudget: number
 }
 
+export type RemoteRuntimeSettings = Omit<RuntimeSettings,
+  | "toolResultPayloadBudget"
+  | "contextCompressionTriggerRatio"
+  | "contextCompressionTargetRatio"
+  | "contextRecentTurnCount"
+  | "contextMaxRecentTurnCount"
+  | "contextHistoricalToolTokenBudget"
+>
+
 export const defaultRuntimeSettings: RuntimeSettings = {
   providerTimeoutMs: 300_000,
   maxRequestRetries: 5,

@@ -76,6 +76,28 @@ func TestPlatformAdminAccessTokenScopesAuthorizeDashboardAndDataRetention(t *tes
 		})
 	}
 
+	t.Run("full scope Agent observability reaches the availability boundary", func(t *testing.T) {
+		recorder := performBearerRequest(router, http.MethodGet, "/api/v1/ai/observability/overview", fullToken, "")
+		if recorder.Code != http.StatusServiceUnavailable {
+			t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body.String())
+		}
+		var response map[string]any
+		if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+			t.Fatal(err)
+		}
+		if response["status"] != "unavailable" || response["observationCode"] != "ai.observability.disabled" {
+			t.Fatalf("response = %#v", response)
+		}
+	})
+	t.Run("insufficient scope blocks Agent observability", func(t *testing.T) {
+		path := "/api/v1/ai/observability/overview"
+		recorder := performBearerRequest(router, http.MethodGet, path, insufficientToken, "")
+		if recorder.Code != http.StatusForbidden {
+			t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body.String())
+		}
+		assertRequiredScopeError(t, recorder, service.RequiredAccessTokenScope(path, http.MethodGet))
+	})
+
 	retentionBody := `{"datasets":["platform_events"],"startAt":"2026-01-01T00:00:00Z","endAt":"2026-01-02T00:00:00Z"}`
 	t.Run("full scope retention preview", func(t *testing.T) {
 		recorder := performBearerRequest(router, http.MethodPost, "/api/v1/data-retention/preview", fullToken, retentionBody)

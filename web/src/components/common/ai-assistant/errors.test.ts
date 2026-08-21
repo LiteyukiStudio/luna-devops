@@ -6,10 +6,8 @@ describe('ai assistant error translations', () => {
     'ai.model_context_limit_invalid',
     'ai.model_context_insufficient',
     'ai.model_output_limit_invalid',
-    'ai.run_token_budget_exhausted',
-    'ai.run_credit_budget_exhausted',
     'ai.wallet_balance_insufficient',
-  ])('maps the stable model budget code %s to a public message', (code) => {
+  ])('maps the stable model execution code %s to a public message', (code) => {
     expect(runFailureTranslationKey(code)).not.toBe('aiAssistant.runFailure.generic')
   })
 

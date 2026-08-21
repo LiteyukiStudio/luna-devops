@@ -115,8 +115,6 @@ const errors = {
     model_context_limit_invalid: '모델 카탈로그의 컨텍스트 상한이 유효하지 않습니다. 플랫폼 관리자에게 문의하여 모델 설정을 확인하세요.',
     model_context_insufficient: '현재 요청이 선택한 모델의 컨텍스트 윈도우를 초과합니다. 입력을 줄이거나 대화 기록을 정리하세요.',
     model_output_limit_invalid: '모델 카탈로그의 출력 상한이 유효하지 않습니다. 플랫폼 관리자에게 문의하여 모델 설정을 확인하세요.',
-    run_token_budget_exhausted: '이번 Run의 누적 Token 예산이 소진되었습니다.',
-    run_credit_budget_exhausted: '이번 Run의 누적 비용 예산이 소진되었습니다.',
     wallet_balance_insufficient: '개인 지갑의 사용 가능 잔액이 부족합니다. 모델 호출이 전송되지 않았습니다.',
   },
   bootstrap: {

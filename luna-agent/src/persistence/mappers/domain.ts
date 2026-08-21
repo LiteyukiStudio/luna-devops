@@ -63,10 +63,6 @@ export function mapRun(row: RunRow): Run {
     ...(row.startedAt ? { startedAt: row.startedAt.toISOString() } : {}),
     ...(row.completedAt ? { completedAt: row.completedAt.toISOString() } : {}),
     ...(row.errorCode ? { errorCode: row.errorCode } : {}),
-    budget: {
-      totalTokens: row.totalTokenBudget ?? 2_000_000,
-      totalCredits: row.totalCreditBudget ?? "10000",
-    },
     ...(row.modelId && row.modelName ? {
       model: {
         id: row.modelId,

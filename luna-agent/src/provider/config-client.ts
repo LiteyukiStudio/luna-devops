@@ -1,6 +1,6 @@
 import { z } from "zod"
 import { trace } from "@opentelemetry/api"
-import type { RuntimeSettings } from "../runtime-settings.js"
+import type { RemoteRuntimeSettings } from "../runtime-settings.js"
 import { agentMetrics, clientSpanOptions, telemetryLog, withSpan } from "../telemetry.js"
 import { isRetryableHTTPStatus, parseRetryAfter, waitForRetry } from "../retry.js"
 import { defaultRuntimeSettings } from "../runtime-settings.js"
@@ -16,7 +16,7 @@ export type RemoteProviderConfig = {
     configured: boolean
     models: RemoteAIModel[]
   }
-  runtime: RuntimeSettings
+  runtime: RemoteRuntimeSettings
   toolCatalog: unknown[]
 }
 
@@ -32,24 +32,11 @@ const runtimeSettingsSchema = z.object({
   runMaxToolCalls: z.number().int().min(32).max(2048),
   maxInputBytes: z.number().int().min(8 * 1024).max(8 * 1024 * 1024),
   navigateActionTtlSeconds: z.number().int().min(10).max(600),
-  toolResultPayloadBudget: z.number().int().min(4 * 1024).max(4 * 1024 * 1024),
   maxCardRepairAttempts: z.number().int().min(1).max(10),
-  contextCompressionTriggerRatio: z.number().min(0.5).max(0.95),
-  contextCompressionTargetRatio: z.number().min(0.1).max(0.8),
-  contextRecentTurnCount: z.number().int().min(1).max(32),
-  contextMaxRecentTurnCount: z.number().int().min(2).max(64),
   contextMaxUncompressedTurnCount: z.number().int().min(4).max(128),
   contextMaxCompressionTurnsPerCompile: z.number().int().min(8).max(1024),
   contextSummaryInputTokenBudget: z.number().int().min(4 * 1024).max(512 * 1024),
   contextSummaryMaxOutputTokens: z.number().int().min(200).max(32 * 1024),
-  contextHistoricalToolTokenBudget: z.number().int().min(1024).max(256 * 1024),
-}).superRefine((value, context) => {
-  if (value.contextCompressionTriggerRatio <= value.contextCompressionTargetRatio) {
-    context.addIssue({ code: "custom", path: ["contextCompressionTriggerRatio"], message: "must exceed contextCompressionTargetRatio" })
-  }
-  if (value.contextRecentTurnCount > value.contextMaxRecentTurnCount) {
-    context.addIssue({ code: "custom", path: ["contextRecentTurnCount"], message: "must not exceed contextMaxRecentTurnCount" })
-  }
 })
 
 const remoteProviderConfigSchema = z.object({

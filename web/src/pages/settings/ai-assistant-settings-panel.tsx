@@ -37,22 +37,14 @@ const defaults: FormValues = {
   runTimeoutSeconds: 3600,
   agentConcurrentRuns: 10,
   contextInputKTokens: 1024,
-  contextCompressionTriggerRatio: 0.9,
-  contextCompressionTargetRatio: 0.7,
-  contextRecentTurnCount: 16,
-  contextMaxRecentTurnCount: 32,
   contextMaxUncompressedTurnCount: 64,
   contextMaxCompressionTurnsPerCompile: 512,
   contextSummaryInputKTokens: 256,
   contextSummaryMaxOutputTokens: 16384,
-  contextHistoricalToolKTokens: 64,
   modelMaxOutputTokens: 65536,
   runMaxModelSteps: 256,
-  runMaxTotalTokens: 2000000,
-  runMaxCredits: '10000',
   runMaxInputKBytes: 1024,
   runNavigateActionTtlSeconds: 120,
-  toolsResultPayloadKBytes: 512,
   toolsMaxCardRepairAttempts: 5,
   observabilityEnabled: false,
   prometheusUrl: '',
@@ -74,41 +66,28 @@ const runtimeDefaultFields = [
   ['ai.runtime.run_timeout_seconds', 'runTimeoutSeconds'],
   ['ai.runtime.agent_concurrent_runs', 'agentConcurrentRuns'],
   ['ai.runtime.context_input_k_tokens', 'contextInputKTokens'],
-  ['ai.context.compression_trigger_ratio', 'contextCompressionTriggerRatio'],
-  ['ai.context.compression_target_ratio', 'contextCompressionTargetRatio'],
-  ['ai.context.recent_turn_count', 'contextRecentTurnCount'],
-  ['ai.context.max_recent_turn_count', 'contextMaxRecentTurnCount'],
   ['ai.context.max_uncompressed_turn_count', 'contextMaxUncompressedTurnCount'],
   ['ai.context.max_compression_turns_per_compile', 'contextMaxCompressionTurnsPerCompile'],
   ['ai.context.summary_input_k_tokens', 'contextSummaryInputKTokens'],
   ['ai.context.summary_max_output_tokens', 'contextSummaryMaxOutputTokens'],
-  ['ai.context.historical_tool_k_tokens', 'contextHistoricalToolKTokens'],
   ['ai.model.max_output_tokens', 'modelMaxOutputTokens'],
   ['ai.run.max_model_steps', 'runMaxModelSteps'],
   ['ai.run.max_input_k_bytes', 'runMaxInputKBytes'],
   ['ai.run.navigate_action_ttl_seconds', 'runNavigateActionTtlSeconds'],
-  ['ai.tools.result_payload_k_bytes', 'toolsResultPayloadKBytes'],
   ['ai.tools.max_card_repair_attempts', 'toolsMaxCardRepairAttempts'],
 ] as const
 
 // 高级设置字段：对应 Agent 运行时中原本写死、现已由平台下发的参数。
 // 每个字段提供平台默认值；普通部署保持默认即可。
 type AdvancedFieldName
-  = 'contextCompressionTriggerRatio'
-    | 'contextCompressionTargetRatio'
-    | 'contextRecentTurnCount'
-    | 'contextMaxRecentTurnCount'
-    | 'contextMaxUncompressedTurnCount'
+  = 'contextMaxUncompressedTurnCount'
     | 'contextMaxCompressionTurnsPerCompile'
     | 'contextSummaryInputKTokens'
     | 'contextSummaryMaxOutputTokens'
-    | 'contextHistoricalToolKTokens'
     | 'modelMaxOutputTokens'
     | 'runMaxModelSteps'
-    | 'runMaxTotalTokens'
     | 'runMaxInputKBytes'
     | 'runNavigateActionTtlSeconds'
-    | 'toolsResultPayloadKBytes'
     | 'toolsMaxCardRepairAttempts'
 
 interface AdvancedField {
@@ -131,15 +110,10 @@ const advancedGroups: AdvancedGroup[] = [
     titleKey: 'settings.ai.contextTitle',
     descriptionKey: 'settings.ai.contextDescription',
     fields: [
-      { name: 'contextCompressionTriggerRatio', labelKey: 'settings.ai.compressionTriggerRatio', hintKey: 'settings.ai.compressionTriggerRatioHint', min: 0.5, max: 0.95, step: 0.01 },
-      { name: 'contextCompressionTargetRatio', labelKey: 'settings.ai.compressionTargetRatio', hintKey: 'settings.ai.compressionTargetRatioHint', min: 0.1, max: 0.8, step: 0.01 },
-      { name: 'contextRecentTurnCount', labelKey: 'settings.ai.recentTurnCount', hintKey: 'settings.ai.recentTurnCountHint', min: 1, max: 32, step: 1 },
-      { name: 'contextMaxRecentTurnCount', labelKey: 'settings.ai.maxRecentTurnCount', hintKey: 'settings.ai.maxRecentTurnCountHint', min: 2, max: 64, step: 1 },
       { name: 'contextMaxUncompressedTurnCount', labelKey: 'settings.ai.maxUncompressedTurnCount', hintKey: 'settings.ai.maxUncompressedTurnCountHint', min: 4, max: 128, step: 1 },
       { name: 'contextMaxCompressionTurnsPerCompile', labelKey: 'settings.ai.maxCompressionTurnsPerCompile', hintKey: 'settings.ai.maxCompressionTurnsPerCompileHint', min: 8, max: 1024, step: 1 },
       { name: 'contextSummaryInputKTokens', labelKey: 'settings.ai.summaryInputKTokens', hintKey: 'settings.ai.summaryInputKTokensHint', min: 4, max: 512, step: 1 },
       { name: 'contextSummaryMaxOutputTokens', labelKey: 'settings.ai.summaryMaxOutputTokens', hintKey: 'settings.ai.summaryMaxOutputTokensHint', min: 200, max: 32768, step: 1 },
-      { name: 'contextHistoricalToolKTokens', labelKey: 'settings.ai.historicalToolKTokens', hintKey: 'settings.ai.historicalToolKTokensHint', min: 1, max: 256, step: 1 },
     ],
   },
   {
@@ -148,7 +122,6 @@ const advancedGroups: AdvancedGroup[] = [
     fields: [
       { name: 'modelMaxOutputTokens', labelKey: 'settings.ai.modelMaxOutputTokens', hintKey: 'settings.ai.modelMaxOutputTokensHint', min: 256, max: 131072, step: 1 },
       { name: 'runMaxModelSteps', labelKey: 'settings.ai.runMaxModelSteps', hintKey: 'settings.ai.runMaxModelStepsHint', min: 1, max: 1024, step: 1 },
-      { name: 'runMaxTotalTokens', labelKey: 'settings.ai.runMaxTotalTokens', hintKey: 'settings.ai.runMaxTotalTokensHint', min: 16384, max: 16000000, step: 1 },
       { name: 'runMaxInputKBytes', labelKey: 'settings.ai.runMaxInputKBytes', hintKey: 'settings.ai.runMaxInputKBytesHint', min: 8, max: 8192, step: 1 },
       { name: 'runNavigateActionTtlSeconds', labelKey: 'settings.ai.runNavigateActionTtlSeconds', hintKey: 'settings.ai.runNavigateActionTtlSecondsHint', min: 10, max: 600, step: 1 },
     ],
@@ -157,7 +130,6 @@ const advancedGroups: AdvancedGroup[] = [
     titleKey: 'settings.ai.toolsTitle',
     descriptionKey: 'settings.ai.toolsDescription',
     fields: [
-      { name: 'toolsResultPayloadKBytes', labelKey: 'settings.ai.toolsResultPayloadKBytes', hintKey: 'settings.ai.toolsResultPayloadKBytesHint', min: 4, max: 4096, step: 1 },
       { name: 'toolsMaxCardRepairAttempts', labelKey: 'settings.ai.toolsMaxCardRepairAttempts', hintKey: 'settings.ai.toolsMaxCardRepairAttemptsHint', min: 1, max: 10, step: 1 },
     ],
   },
@@ -197,8 +169,6 @@ export function AIAssistantSettingsPanel() {
     const restoredValues = { ...form.getValues() }
     for (const [configKey, fieldName] of runtimeDefaultFields)
       restoredValues[fieldName] = Number(runtimeDefaults[configKey])
-    restoredValues.runMaxTotalTokens = Number(runtimeDefaults['ai.run.max_total_tokens'] ?? 2000000)
-    restoredValues.runMaxCredits = String(runtimeDefaults['ai.run.max_credits'] ?? '10000')
     form.reset(restoredValues, { keepDefaultValues: true })
     void form.trigger()
     toast.info(t('settings.ai.defaultsRestored'))
@@ -279,9 +249,6 @@ export function AIAssistantSettingsPanel() {
               </Field>
             </div>
           </ProgressiveSection>
-          <Field error={errors.runMaxCredits?.message} hint={t('settings.ai.runMaxCreditsHint')} label={t('settings.ai.runMaxCredits')} required>
-            <Input inputMode="decimal" {...form.register('runMaxCredits')} />
-          </Field>
           <ProgressiveSection
             description={t('settings.ai.advancedDescription')}
             storageKey="luna-settings-ai-advanced-open"
@@ -357,22 +324,14 @@ function aiSettingsFormValues(values: Record<string, string>): FormValues {
     runTimeoutSeconds: Number(values['ai.runtime.run_timeout_seconds'] ?? 3600),
     agentConcurrentRuns: Number(values['ai.runtime.agent_concurrent_runs'] ?? 10),
     contextInputKTokens: Number(values['ai.runtime.context_input_k_tokens'] ?? 1024),
-    contextCompressionTriggerRatio: Number(values['ai.context.compression_trigger_ratio'] ?? 0.9),
-    contextCompressionTargetRatio: Number(values['ai.context.compression_target_ratio'] ?? 0.7),
-    contextRecentTurnCount: Number(values['ai.context.recent_turn_count'] ?? 16),
-    contextMaxRecentTurnCount: Number(values['ai.context.max_recent_turn_count'] ?? 32),
     contextMaxUncompressedTurnCount: Number(values['ai.context.max_uncompressed_turn_count'] ?? 64),
     contextMaxCompressionTurnsPerCompile: Number(values['ai.context.max_compression_turns_per_compile'] ?? 512),
     contextSummaryInputKTokens: Number(values['ai.context.summary_input_k_tokens'] ?? 256),
     contextSummaryMaxOutputTokens: Number(values['ai.context.summary_max_output_tokens'] ?? 16384),
-    contextHistoricalToolKTokens: Number(values['ai.context.historical_tool_k_tokens'] ?? 64),
     modelMaxOutputTokens: Number(values['ai.model.max_output_tokens'] ?? 65536),
     runMaxModelSteps: Number(values['ai.run.max_model_steps'] ?? 256),
-    runMaxTotalTokens: Number(values['ai.run.max_total_tokens'] ?? 2000000),
-    runMaxCredits: values['ai.run.max_credits'] ?? '10000',
     runMaxInputKBytes: Number(values['ai.run.max_input_k_bytes'] ?? 1024),
     runNavigateActionTtlSeconds: Number(values['ai.run.navigate_action_ttl_seconds'] ?? 120),
-    toolsResultPayloadKBytes: Number(values['ai.tools.result_payload_k_bytes'] ?? 512),
     toolsMaxCardRepairAttempts: Number(values['ai.tools.max_card_repair_attempts'] ?? 5),
     observabilityEnabled: values['ai.observability.enabled'] === 'true',
     prometheusUrl: values['ai.observability.prometheus_url'] ?? '',

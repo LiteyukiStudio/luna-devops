@@ -8,7 +8,7 @@ const reservationLeaseSeconds = 10_800
 /**
  * 所有归属 Run 的模型调用必须经过此包装器。它只把数据库批准后的
  * maxOutputTokens 交给真实 Provider，并在 usage 缺失或调用结果未知时
- * 保守确认完整预留，防止重试、摘要或进程重启绕过累计预算。
+ * 保守确认完整钱包预留，防止用量缺失、重试或进程重启造成少计费。
  */
 export class BudgetedModelProvider implements ModelProvider {
   constructor(private readonly inner: ModelProvider, private readonly repository: Repository) {}

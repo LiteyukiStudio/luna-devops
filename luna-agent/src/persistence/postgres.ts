@@ -105,8 +105,6 @@ export class PostgresRepository implements Repository {
         select id, owner_user_id,
                coalesce(max_context_tokens, 524288)::bigint as max_context_tokens,
                coalesce(max_output_tokens, 65536)::bigint as max_output_tokens,
-               coalesce(total_token_budget, 2000000)::bigint as total_token_budget,
-               coalesce(total_credit_budget, 10000)::numeric as total_credit_budget,
                coalesce(model_id, 'legacy') as model_id,
                coalesce(model_name, 'legacy') as model_name,
                coalesce(input_credits_per_million, 0)::numeric as input_price,
@@ -133,41 +131,28 @@ export class PostgresRepository implements Repository {
           and state = 'reserved' and expires_at <= now()
       `)
       const limits = (await tx.execute<Record<string, unknown>>(sql`
-        with run_usage as (
-          select coalesce(sum(coalesce(confirmed_tokens, reserved_tokens)), 0)::bigint as tokens,
-                 coalesce(sum(coalesce(confirmed_credits, reserved_credits)), 0)::numeric as credits
-          from ai.model_budget_reservations
-          where run_id = ${input.runId} and state in ('reserved', 'confirmed', 'settled')
-        ), owner_holds as (
+        with owner_holds as (
           select coalesce(sum(coalesce(confirmed_credits, reserved_credits)), 0)::numeric as credits
           from ai.model_budget_reservations
           where owner_user_id = ${input.ownerUserId} and state in ('reserved', 'confirmed')
-        ), budget_limits as (
+        ), limits as (
           select ${String(run.max_context_tokens)}::bigint as context_limit,
                  ${String(run.max_output_tokens)}::bigint as output_limit,
-                 ${String(run.total_token_budget)}::bigint - run_usage.tokens - ${input.estimatedInputTokens}::bigint as token_output_capacity,
-                 ${String(run.total_credit_budget)}::numeric - run_usage.credits as run_credit_available,
                  ${String(wallet.balance_credits)}::numeric - owner_holds.credits as wallet_credit_available,
                  greatest(${String(run.input_price)}::numeric, ${String(run.cached_input_price)}::numeric) as input_rate,
                  greatest(${String(run.output_price)}::numeric, ${String(run.cached_output_price)}::numeric) as output_rate
-          from run_usage, owner_holds
+          from owner_holds
         ), capacities as (
           select *,
           (${input.estimatedInputTokens}::numeric * input_rate / 1000000)::numeric as input_cost,
           case when output_rate = 0 then ${input.requestedOutputTokens}::bigint
                else least(${input.requestedOutputTokens}::numeric,
-                 floor(greatest(run_credit_available - (${input.estimatedInputTokens}::numeric * input_rate / 1000000), 0) * 1000000 / output_rate))::bigint end as run_credit_output_capacity,
-          case when output_rate = 0 then ${input.requestedOutputTokens}::bigint
-               else least(${input.requestedOutputTokens}::numeric,
                  floor(greatest(wallet_credit_available - (${input.estimatedInputTokens}::numeric * input_rate / 1000000), 0) * 1000000 / output_rate))::bigint end as wallet_output_capacity
-          from budget_limits
+          from limits
         )
         select case
           when context_limit - ${input.estimatedInputTokens}::bigint < 1 then 'ai.model_context_insufficient'
-          when token_output_capacity < 1 then 'ai.run_token_budget_exhausted'
-          when input_cost > run_credit_available then 'ai.run_credit_budget_exhausted'
           when input_cost > wallet_credit_available then 'ai.wallet_balance_insufficient'
-          when run_credit_output_capacity < 1 then 'ai.run_credit_budget_exhausted'
           when wallet_output_capacity < 1 then 'ai.wallet_balance_insufficient'
           else null
         end as denial_code,
@@ -175,8 +160,6 @@ export class PostgresRepository implements Repository {
           ${input.requestedOutputTokens}::bigint,
           output_limit,
           context_limit - ${input.estimatedInputTokens}::bigint,
-          token_output_capacity,
-          run_credit_output_capacity,
           wallet_output_capacity
         )::bigint as clamped_output_tokens
         from capacities
@@ -429,8 +412,6 @@ export class PostgresRepository implements Repository {
         modelName: input.modelSnapshot?.name ?? null,
         maxContextTokens: input.modelSnapshot?.maxContextTokens ?? null,
         maxOutputTokens: input.modelSnapshot?.maxOutputTokens ?? null,
-        totalTokenBudget: input.runBudgetSnapshot?.totalTokens ?? 2_000_000,
-        totalCreditBudget: input.runBudgetSnapshot?.totalCredits ?? "10000",
         inputCreditsPerMillion: input.modelSnapshot?.inputCreditsPerMillion ?? null,
         outputCreditsPerMillion: input.modelSnapshot?.outputCreditsPerMillion ?? null,
         cachedInputCreditsPerMillion: input.modelSnapshot?.cachedInputCreditsPerMillion ?? null,
@@ -1011,34 +992,22 @@ export class PostgresRepository implements Repository {
       const runRows = await tx.select().from(runs)
         .where(and(inArray(runs.id, runIds), eq(runs.ownerUserId, ownerUserId)))
       const authorizedRunIds = runRows.map(run => run.id)
-      // 聚合每个 run 的累计 token 用量，供前端展示预算占用。
+      // 最近一次主回答的实际输入量用于展示单次上下文占用；不再维护 Run 累计预算。
       const usageRows = authorizedRunIds.length === 0
-        ? { rows: [] as { runId: string, usedTokens: string, latestInputTokens: string | null }[] }
-        : await tx.execute<{ runId: string, usedTokens: string, latestInputTokens: string | null }>(sql`
-            with run_usage as (
-              select run_id,
-                     coalesce(sum(coalesce(confirmed_tokens, reserved_tokens)), 0)::bigint as used_tokens
-              from ai.model_budget_reservations
-              where run_id in ${authorizedRunIds} and state in ('reserved', 'confirmed', 'settled')
-              group by run_id
-            ), latest_assistant as (
-              select distinct on (run_id) run_id, input_tokens
-              from ai.model_budget_reservations
-              where run_id in ${authorizedRunIds}
-                and operation = 'assistant'
-                and state in ('confirmed', 'settled')
-                and input_tokens is not null
-              order by run_id, created_at desc, id desc
-            )
-            select run_usage.run_id as "runId",
-                   run_usage.used_tokens as "usedTokens",
-                   latest_assistant.input_tokens as "latestInputTokens"
-            from run_usage
-            left join latest_assistant using (run_id)
+        ? { rows: [] as { runId: string, latestInputTokens: string }[] }
+        : await tx.execute<{ runId: string, latestInputTokens: string }>(sql`
+            select distinct on (run_id)
+                   run_id as "runId",
+                   input_tokens as "latestInputTokens"
+            from ai.model_budget_reservations
+            where run_id in ${authorizedRunIds}
+              and operation = 'assistant'
+              and state in ('confirmed', 'settled')
+              and input_tokens is not null
+            order by run_id, created_at desc, id desc
           `)
       const usageByRun = new Map(usageRows.rows.map(row => [row.runId, {
-        usedTokens: Number(row.usedTokens),
-        ...(row.latestInputTokens !== null ? { latestInputTokens: Number(row.latestInputTokens) } : {}),
+        latestInputTokens: Number(row.latestInputTokens),
       }]))
       const itemRows = authorizedRunIds.length === 0
         ? []
@@ -1061,7 +1030,7 @@ export class PostgresRepository implements Repository {
           status: turn.status,
           input: turn.input,
           createdAt: turn.createdAt.toISOString(),
-          ...(mappedRun ? { run: { ...mappedRun, usedTokens: 0, ...usageByRun.get(mappedRun.id) } } : {}),
+          ...(mappedRun ? { run: { ...mappedRun, ...usageByRun.get(mappedRun.id) } } : {}),
           items: itemsByRun.get(turn.selectedRunId) ?? [],
         }
       })

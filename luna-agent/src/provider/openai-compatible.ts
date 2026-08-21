@@ -199,10 +199,11 @@ export class OpenAICompatibleProvider implements ModelProvider {
         }
         if (payload.usage) {
           usageReported = true
+          const cachedInputTokens = cachedPromptTokens(payload.usage)
           usage = {
             inputTokens: payload.usage.prompt_tokens ?? usage.inputTokens,
             outputTokens: payload.usage.completion_tokens ?? usage.outputTokens,
-            ...(payload.usage.prompt_tokens_details?.cached_tokens !== undefined ? { cachedInputTokens: payload.usage.prompt_tokens_details.cached_tokens } : usage.cachedInputTokens !== undefined ? { cachedInputTokens: usage.cachedInputTokens } : {}),
+            ...(cachedInputTokens !== undefined ? { cachedInputTokens } : usage.cachedInputTokens !== undefined ? { cachedInputTokens: usage.cachedInputTokens } : {}),
             ...(payload.usage.completion_tokens_details?.cached_tokens !== undefined ? { cachedOutputTokens: payload.usage.completion_tokens_details.cached_tokens } : usage.cachedOutputTokens !== undefined ? { cachedOutputTokens: usage.cachedOutputTokens } : {}),
             ...(payload.usage.completion_tokens_details?.reasoning_tokens !== undefined ? { reasoningOutputTokens: payload.usage.completion_tokens_details.reasoning_tokens } : usage.reasoningOutputTokens !== undefined ? { reasoningOutputTokens: usage.reasoningOutputTokens } : {}),
           }
@@ -236,6 +237,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
     if (body.model) activeSpan?.setAttribute("gen_ai.response.model", body.model)
     const message = body.choices?.[0]?.message
     const finishReason = body.choices?.[0]?.finish_reason
+    const cachedInputTokens = cachedPromptTokens(body.usage)
     const result = {
       text: contentText(message?.content),
       reasoningSummary: extractReasoningText(message),
@@ -251,7 +253,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
         inputTokens: body.usage?.prompt_tokens ?? 0,
         outputTokens: body.usage?.completion_tokens ?? 0,
         reported: body.usage !== undefined,
-        ...(body.usage?.prompt_tokens_details?.cached_tokens !== undefined ? { cachedInputTokens: body.usage.prompt_tokens_details.cached_tokens } : {}),
+        ...(cachedInputTokens !== undefined ? { cachedInputTokens } : {}),
         ...(body.usage?.completion_tokens_details?.cached_tokens !== undefined ? { cachedOutputTokens: body.usage.completion_tokens_details.cached_tokens } : {}),
         ...(body.usage?.completion_tokens_details?.reasoning_tokens !== undefined ? { reasoningOutputTokens: body.usage.completion_tokens_details.reasoning_tokens } : {}),
       },
@@ -533,6 +535,8 @@ type CompletionUsage = {
   prompt_tokens?: number
   completion_tokens?: number
   prompt_tokens_details?: { cached_tokens?: number }
+  prompt_cache_hit_tokens?: number
+  prompt_cache_miss_tokens?: number
   completion_tokens_details?: { cached_tokens?: number, reasoning_tokens?: number }
 }
 type CompletionBody = { id?: string, model?: string, service_tier?: string, system_fingerprint?: string, choices?: Array<{ message?: MessageShape, finish_reason?: string }>, usage?: CompletionUsage }
@@ -544,6 +548,10 @@ type StreamChunk = {
   choices?: Array<{ delta?: ReasoningShape & { content?: unknown, tool_calls?: ToolCallShape[] }, finish_reason?: string }>
   usage?: CompletionUsage
   error?: unknown
+}
+
+function cachedPromptTokens(usage?: CompletionUsage): number | undefined {
+  return usage?.prompt_tokens_details?.cached_tokens ?? usage?.prompt_cache_hit_tokens
 }
 
 function requestSpanIdentityAttributes(request: RequestIdentity): Record<string, string | boolean> {

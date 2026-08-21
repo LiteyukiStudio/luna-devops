@@ -291,15 +291,23 @@ func agentEligibleOperation(path, method, operationID string, raw map[string]any
 		}
 	}
 	extension := mapValue(raw["x-luna-cli"])
-	switch stringValue(extension["classification"]) {
-	case "protocol-adapter", "browser-callback", "webhook-receiver":
-		return false
+	// CLI exposure and the platform-internal Agent catalog are independent
+	// boundaries. An operation with explicit Agent semantics can remain hidden
+	// from external CLI users while still being discoverable by luna-agent.
+	if len(mapValue(raw["x-luna-agent"])) == 0 {
+		switch stringValue(extension["classification"]) {
+		case "protocol-adapter", "browser-callback", "webhook-receiver":
+			return false
+		}
+		if boolValue(extension["hidden"]) {
+			return false
+		}
 	}
 	switch stringValue(extension["transport"]) {
 	case "sse", "websocket", "download", "upload":
 		return false
 	}
-	if boolValue(extension["streaming"]) || boolValue(extension["hidden"]) {
+	if boolValue(extension["streaming"]) {
 		return false
 	}
 	if strings.Contains(path, "/stream") || strings.Contains(path, "/terminal") {

@@ -53,8 +53,6 @@ create table if not exists ai.runs (
   model_name text,
   max_context_tokens bigint,
   max_output_tokens bigint,
-  total_token_budget bigint,
-  total_credit_budget numeric(24,8),
   input_credits_per_million numeric(24,8),
   output_credits_per_million numeric(24,8),
   cached_input_credits_per_million numeric(24,8),
@@ -82,8 +80,6 @@ alter table ai.runs add column if not exists model_id text;
 alter table ai.runs add column if not exists model_name text;
 alter table ai.runs add column if not exists max_context_tokens bigint;
 alter table ai.runs add column if not exists max_output_tokens bigint;
-alter table ai.runs add column if not exists total_token_budget bigint;
-alter table ai.runs add column if not exists total_credit_budget numeric(24,8);
 alter table ai.runs add column if not exists input_credits_per_million numeric(24,8);
 alter table ai.runs add column if not exists output_credits_per_million numeric(24,8);
 alter table ai.runs add column if not exists cached_input_credits_per_million numeric(24,8);

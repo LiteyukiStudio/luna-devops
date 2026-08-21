@@ -7,7 +7,7 @@ import { PostgresRepository } from "../src/persistence/postgres.js"
 import type { ModelBudgetOperation } from "../src/persistence/repository.js"
 
 /**
- * 真 PostgreSQL 预算并发测试。测试会从 AGENT_TEST_DATABASE_URL 连接管理库，
+ * 真 PostgreSQL 模型用量预留并发测试。测试会从 AGENT_TEST_DATABASE_URL 连接管理库，
  * 创建 luna_agent_budget_test_* 独立数据库、应用全部 migration，并在结束时
  * 关闭全部连接后删除该数据库；没有显式环境变量时不会接触任何数据库。
  */
@@ -32,18 +32,19 @@ suite("Postgres model budget reservations", () => {
       const migrationDirectory = resolve(process.cwd(), "../migrations")
       const files = (await readdir(migrationDirectory)).filter(name => /^\d+_.+\.up\.sql$/.test(name)).sort()
       for (const file of files) await migrationPool.query(await readFile(resolve(migrationDirectory, file), "utf8"))
-      const budgetUp = await readFile(resolve(migrationDirectory, "000077_ai_model_run_budgets.up.sql"), "utf8")
-      const budgetDown = await readFile(resolve(migrationDirectory, "000077_ai_model_run_budgets.down.sql"), "utf8")
-      await migrationPool.query(budgetDown)
-      const rolledBack = await migrationPool.query<{ reservation: string | null, model_cap: boolean }>(`
-        SELECT to_regclass('ai.model_budget_reservations')::text AS reservation,
-               EXISTS (
-                 SELECT 1 FROM information_schema.columns
-                 WHERE table_schema = 'public' AND table_name = 'ai_models' AND column_name = 'max_context_tokens'
-               ) AS model_cap
+      const currentSchema = await migrationPool.query<{ reservation: string | null, token_budget: boolean, credit_budget: boolean, model_constraint: boolean }>(`
+        SELECT
+          to_regclass('ai.model_budget_reservations')::text AS reservation,
+          EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'ai' AND table_name = 'runs' AND column_name = 'total_token_budget') AS token_budget,
+          EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'ai' AND table_name = 'runs' AND column_name = 'total_credit_budget') AS credit_budget,
+          EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ai_runs_model_snapshot_valid') AS model_constraint
       `)
-      expect(rolledBack.rows[0]).toEqual({ reservation: null, model_cap: false })
-      await migrationPool.query(budgetUp)
+      expect(currentSchema.rows[0]).toEqual({
+        reservation: "ai.model_budget_reservations",
+        token_budget: false,
+        credit_budget: false,
+        model_constraint: true,
+      })
       await migrationPool.query(
         "INSERT INTO users(id, email, name) VALUES ($1, $2, 'Budget Test')",
         [ownerUserId, `${ownerUserId}@example.test`],
@@ -81,11 +82,11 @@ suite("Postgres model budget reservations", () => {
   })
 
   it("allows zero-priced calls with an empty wallet and honors the exact paid boundary", async () => {
-    const freeRun = await createBudgetRun(repository, ownerUserId, "free", zeroPriceModel(), 100, "100")
+    const freeRun = await createBudgetRun(repository, ownerUserId, "free", zeroPriceModel())
     await expect(reserve(repository, ownerUserId, freeRun, "free", 5, 5)).resolves.toMatchObject({ maxOutputTokens: 5 })
 
     const paid = { ...zeroPriceModel(), id: "aimod_paid", name: "paid", inputCreditsPerMillion: "1000000", outputCreditsPerMillion: "1000000" }
-    const paidRun = await createBudgetRun(repository, ownerUserId, "paid", paid, 100, "10")
+    const paidRun = await createBudgetRun(repository, ownerUserId, "paid", paid)
     await expect(reserve(repository, ownerUserId, paidRun, "paid-empty", 5, 5)).rejects.toThrow("ai.wallet_balance_insufficient")
     await repository.pool.query("UPDATE user_wallets SET balance_credits = 10 WHERE user_id = $1", [ownerUserId])
     await expect(reserve(repository, ownerUserId, paidRun, "paid-exact", 5, 5)).resolves.toMatchObject({ maxOutputTokens: 5 })
@@ -93,7 +94,7 @@ suite("Postgres model budget reservations", () => {
 
   it("serializes concurrent AI reservations so they cannot spend the same wallet balance", async () => {
     const paid = { ...zeroPriceModel(), id: "aimod_race", name: "race", inputCreditsPerMillion: "1000000", outputCreditsPerMillion: "1000000" }
-    const runId = await createBudgetRun(repository, ownerUserId, "race", paid, 100, "100")
+    const runId = await createBudgetRun(repository, ownerUserId, "race", paid)
     await repository.pool.query("UPDATE user_wallets SET balance_credits = 10 WHERE user_id = $1", [ownerUserId])
 
     const results = await Promise.allSettled([
@@ -106,8 +107,8 @@ suite("Postgres model budget reservations", () => {
     expect(String(rejected.reason)).toContain("ai.wallet_balance_insufficient")
   })
 
-  it("recovers expired reservations conservatively and settled usage remains in the Run budget", async () => {
-    const runId = await createBudgetRun(repository, ownerUserId, "stale", zeroPriceModel(), 20, "100")
+  it("recovers expired reservations conservatively without imposing a cumulative Run budget", async () => {
+    const runId = await createBudgetRun(repository, ownerUserId, "stale", zeroPriceModel())
     await reserve(repository, ownerUserId, runId, "stale-old", 5, 5)
     await repository.pool.query(
       "UPDATE ai.model_budget_reservations SET expires_at = now() - interval '1 second' WHERE id = $1",
@@ -115,7 +116,7 @@ suite("Postgres model budget reservations", () => {
     )
 
     const next = await reserve(repository, ownerUserId, runId, "stale-next", 5, 10)
-    expect(next.maxOutputTokens).toBe(5)
+    expect(next.maxOutputTokens).toBe(10)
     const recovered = await repository.pool.query(
       "SELECT state, confirmed_tokens, input_tokens, output_tokens FROM ai.model_budget_reservations WHERE id = $1",
       ["aibgt_stale-old"],
@@ -124,12 +125,11 @@ suite("Postgres model budget reservations", () => {
 
     await repository.releaseModelBudget("aibgt_stale-next")
     await repository.pool.query("UPDATE ai.model_budget_reservations SET state = 'settled' WHERE id = $1", ["aibgt_stale-old"])
-    await repository.pool.query("UPDATE ai.runs SET total_token_budget = 10 WHERE id = $1", [runId])
-    await expect(reserve(repository, ownerUserId, runId, "after-settlement", 1, 1)).rejects.toThrow("ai.run_token_budget_exhausted")
+    await expect(reserve(repository, ownerUserId, runId, "after-settlement", 1, 1)).resolves.toMatchObject({ maxOutputTokens: 1 })
   })
 
   it("does not deadlock expired recovery against the wallet-first settlement lock path", async () => {
-    const runId = await createBudgetRun(repository, ownerUserId, "lock-order", zeroPriceModel(), 100, "100")
+    const runId = await createBudgetRun(repository, ownerUserId, "lock-order", zeroPriceModel())
     await reserve(repository, ownerUserId, runId, "expired-race", 5, 5)
     await repository.pool.query(
       "UPDATE ai.model_budget_reservations SET expires_at = now() - interval '1 second' WHERE id = $1",
@@ -167,7 +167,7 @@ suite("Postgres model budget reservations", () => {
   })
 
   it("persists every model operation in the same authoritative reservation source", async () => {
-    const runId = await createBudgetRun(repository, ownerUserId, "operations", zeroPriceModel(), 1000, "100")
+    const runId = await createBudgetRun(repository, ownerUserId, "operations", zeroPriceModel())
     const operations: ModelBudgetOperation[] = ["assistant", "summary", "title"]
     for (const operation of operations) {
       await repository.reserveModelBudget({
@@ -181,7 +181,7 @@ suite("Postgres model budget reservations", () => {
   })
 
   it("rejects reported usage above the hold and can conservatively confirm the reservation", async () => {
-    const runId = await createBudgetRun(repository, ownerUserId, "usage-over-hold", zeroPriceModel(), 100, "100")
+    const runId = await createBudgetRun(repository, ownerUserId, "usage-over-hold", zeroPriceModel())
     await reserve(repository, ownerUserId, runId, "usage-over-hold", 5, 5)
     await expect(repository.confirmModelBudget("aibgt_usage-over-hold", {
       inputTokens: 6, outputTokens: 5, reported: true,
@@ -206,7 +206,7 @@ function zeroPriceModel(): AIModelSnapshot {
   }
 }
 
-async function createBudgetRun(repository: PostgresRepository, ownerUserId: string, suffix: string, model: AIModelSnapshot, totalTokens: number, totalCredits: string) {
+async function createBudgetRun(repository: PostgresRepository, ownerUserId: string, suffix: string, model: AIModelSnapshot) {
   const conversation = await repository.createConversation(ownerUserId, suffix)
   const created = await repository.createTurn(ownerUserId, {
     conversationId: conversation.id,
@@ -216,7 +216,6 @@ async function createBudgetRun(repository: PostgresRepository, ownerUserId: stri
     actorSessionId: `session-${suffix}`,
     modelId: model.id,
     modelSnapshot: model,
-    runBudgetSnapshot: { totalTokens, totalCredits },
   })
   return created.run.id
 }

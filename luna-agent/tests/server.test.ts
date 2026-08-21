@@ -137,33 +137,21 @@ describe("internal API", () => {
     })
     await app.close()
   })
-  it.each([
-    {
-      modelSnapshot: {
-        id: "aimod_test", name: "test", maxContextTokens: 4096, maxOutputTokens: 4096,
-        inputCreditsPerMillion: "0", outputCreditsPerMillion: "0",
-        cachedInputCreditsPerMillion: "0", cachedOutputCreditsPerMillion: "0",
-      },
-      runBudgetSnapshot: { totalTokens: 2000000, totalCredits: "10000" },
-    },
-    {
-      modelSnapshot: {
-        id: "aimod_test", name: "test", maxContextTokens: 4096, maxOutputTokens: 256,
-        inputCreditsPerMillion: "0", outputCreditsPerMillion: "0",
-        cachedInputCreditsPerMillion: "0", cachedOutputCreditsPerMillion: "0",
-      },
-      runBudgetSnapshot: { totalTokens: 2000000, totalCredits: "100000000.00000001" },
-    },
-  ])("rejects an invalid immutable model or Run budget snapshot", async (snapshots) => {
+  it("rejects an invalid immutable model snapshot", async () => {
     const { app } = fixture()
     const headers = { "x-luna-dev-user": "usr_snapshot_contract" }
     const conversation = await app.inject({ method: "POST", url: "/internal/v1/conversations", headers, payload: { modelId: "aimod_test" } })
     const id = conversation.json<{ id: string }>().id
     const response = await app.inject({
       method: "POST", url: `/internal/v1/conversations/${id}/turns`,
-      headers: { ...headers, "idempotency-key": `snapshot-${snapshots.runBudgetSnapshot.totalCredits}` },
+      headers: { ...headers, "idempotency-key": "invalid-model-snapshot" },
       payload: {
-        modelId: "aimod_test", ...snapshots,
+        modelId: "aimod_test",
+        modelSnapshot: {
+          id: "aimod_test", name: "test", maxContextTokens: 4096, maxOutputTokens: 4096,
+          inputCreditsPerMillion: "0", outputCreditsPerMillion: "0",
+          cachedInputCreditsPerMillion: "0", cachedOutputCreditsPerMillion: "0",
+        },
         input: { parts: [{ type: "text", text: "test" }] }, pageContext: {}, clientInstanceId: "browser-client-snapshot-1",
       },
     })

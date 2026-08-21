@@ -29,6 +29,7 @@ const accessTokens = {
     billing: '請求',
     event: 'イベント',
     user: 'ユーザー',
+    ...{ 'agent-observability': 'Agent オブザーバビリティ' },
     system: 'システム管理',
   },
   scopeLabels: {
@@ -107,6 +108,9 @@ const accessTokens = {
     token: {
       manage: '個人トークンを管理',
     },
+    ...{ 'agent-observability': {
+      read: 'Agent オブザーバビリティを読み取る',
+    } },
   },
   scopeDescriptions: {
     project: {
@@ -184,6 +188,9 @@ const accessTokens = {
     token: {
       manage: '個人トークンを作成、表示、取り消します。',
     },
+    ...{ 'agent-observability': {
+      read: 'ユーザー横断の Agent 概要、ターン、ツール呼び出し、Trace 診断を読み取ります。',
+    } },
   },
   expiresInDays: '有効期間日数',
   expiresInDaysHint: '期限切れ後、Token は自動的に無効になります。0 は無期限を意味します。外部 API 呼び出しに使用する Token には明確な有効期間を設定することを推奨します。',

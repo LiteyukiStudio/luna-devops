@@ -34,16 +34,6 @@ const aiModelSnapshot = z.object({
   cachedInputCreditsPerMillion: z.string(),
   cachedOutputCreditsPerMillion: z.string(),
 }).refine(snapshot => snapshot.maxOutputTokens < snapshot.maxContextTokens, { path: ["maxOutputTokens"] }) satisfies z.ZodType<AIModelSnapshot>
-const positiveBudgetCredits = z.string().regex(/^(?=.*[1-9])\d+(?:\.\d{1,8})?$/).refine((value) => {
-  const [whole, fraction = ""] = value.split(".")
-  const normalizedWhole = BigInt(whole!)
-  return normalizedWhole < 100_000_000n || (normalizedWhole === 100_000_000n && !/[1-9]/.test(fraction))
-})
-const runBudgetSnapshot = z.object({
-  totalTokens: z.number().int().min(16384).max(16000000),
-  totalCredits: positiveBudgetCredits,
-}).default({ totalTokens: 2_000_000, totalCredits: "10000" })
-
 export function buildServer(input: {
   config: Config
   repository: Repository
@@ -238,7 +228,6 @@ export function buildServer(input: {
         input: z.object({ parts: z.array(z.object({ type: z.literal("text"), text: z.string().trim().min(1).max(12000) })).min(1).max(10) }),
         modelId: id,
         modelSnapshot: aiModelSnapshot.optional(),
-        runBudgetSnapshot,
         pageContext: z.record(z.string(), z.unknown()).default({}),
         clientInstanceId,
         runId: id.optional(),
@@ -257,7 +246,6 @@ export function buildServer(input: {
           clientInstanceId: body.clientInstanceId,
           modelId: body.modelId,
           ...(body.modelSnapshot ? { modelSnapshot: body.modelSnapshot } : {}),
-          runBudgetSnapshot: body.runBudgetSnapshot,
         })
         span.setAttribute("luna.turn.id", value.turn.id)
         span.setAttribute("luna.run.id", value.run.id)

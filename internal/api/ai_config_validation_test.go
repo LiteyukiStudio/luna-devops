@@ -26,14 +26,11 @@ func TestAIConfigDefinitionsCoverSpecificationCatalog(t *testing.T) {
 		"ai.quota.user_concurrent_runs", "ai.quota.user_daily_tokens", "ai.quota.project_concurrent_runs",
 		"ai.quota.run_max_tool_calls", "ai.quota.platform_daily_cost_soft", "ai.quota.platform_daily_cost_hard",
 		"ai.retention.conversation_days", "ai.retention.run_event_days", "ai.retention.checkpoint_days",
-		"ai.context.compression_trigger_ratio", "ai.context.compression_target_ratio",
-		"ai.context.recent_turn_count", "ai.context.max_recent_turn_count",
 		"ai.context.max_uncompressed_turn_count", "ai.context.max_compression_turns_per_compile",
 		"ai.context.summary_input_k_tokens", "ai.context.summary_max_output_tokens",
-		"ai.context.historical_tool_k_tokens",
 		"ai.model.max_output_tokens",
 		"ai.run.max_model_steps", "ai.run.max_input_k_bytes", "ai.run.navigate_action_ttl_seconds",
-		"ai.tools.result_payload_k_bytes", "ai.tools.max_card_repair_attempts",
+		"ai.tools.max_card_repair_attempts",
 	}
 	for _, key := range expected {
 		if definition := configDefinitionByKey(key); definition == nil {
@@ -54,9 +51,8 @@ func TestAINumericConfigDefinitionsHaveStrictWriteBounds(t *testing.T) {
 			continue
 		}
 		_, integerBounded := aiIntegerConfigBounds[definition.Key]
-		_, ratioBounded := aiRatioConfigBounds[definition.Key]
 		costBounded := definition.Key == "ai.quota.platform_daily_cost_soft" || definition.Key == "ai.quota.platform_daily_cost_hard"
-		if !integerBounded && !ratioBounded && !costBounded {
+		if !integerBounded && !costBounded {
 			t.Errorf("AI numeric config %s has no strict write contract", definition.Key)
 		}
 	}
@@ -90,7 +86,7 @@ func TestAIConfigInputTypesAreStrictOnlyForSubmittedValues(t *testing.T) {
 		"invalid boolean string": {"ai.web.proxy_enabled": "sometimes"},
 		"null secret":            {"ai.provider.api_key": nil},
 		"numeric tenant":         {"ai.observability.loki_tenant_id": 123},
-		"numeric credit string":  {"ai.run.max_credits": 100},
+		"numeric text setting":   {"ai.observability.loki_tenant_id": 100},
 	} {
 		if err := validateAIConfigInputTypes(values); err == nil {
 			t.Errorf("invalid submitted AI config type accepted: %s", name)
@@ -100,7 +96,7 @@ func TestAIConfigInputTypesAreStrictOnlyForSubmittedValues(t *testing.T) {
 		"native boolean":           {"ai.assistant.enabled": true},
 		"canonical boolean string": {"ai.observability.enabled": "false"},
 		"secret string":            {"ai.provider.api_key": "secret"},
-		"credit decimal string":    {"ai.run.max_credits": "100"},
+		"text setting":             {"ai.observability.loki_tenant_id": "tenant-a"},
 	} {
 		if err := validateAIConfigInputTypes(values); err != nil {
 			t.Errorf("valid submitted AI config type rejected for %s: %v", name, err)
@@ -123,20 +119,14 @@ func TestAIConfigRejectsUnsafeRuntimeBounds(t *testing.T) {
 		"ai.runtime.agent_concurrent_runs":             "0",
 		"ai.runtime.context_input_k_tokens":            "32",
 		"ai.quota.run_max_tool_calls":                  "31",
-		"ai.context.recent_turn_count":                 "0",
-		"ai.context.max_recent_turn_count":             "1",
 		"ai.context.max_uncompressed_turn_count":       "3",
 		"ai.context.max_compression_turns_per_compile": "7",
 		"ai.context.summary_input_k_tokens":            "3",
 		"ai.context.summary_max_output_tokens":         "199",
-		"ai.context.historical_tool_k_tokens":          "0",
-		"ai.context.compression_trigger_ratio":         "0.99",
-		"ai.context.compression_target_ratio":          "0.05",
 		"ai.model.max_output_tokens":                   "131073",
 		"ai.run.max_model_steps":                       "1025",
 		"ai.run.max_input_k_bytes":                     "7",
 		"ai.run.navigate_action_ttl_seconds":           "601",
-		"ai.tools.result_payload_k_bytes":              "4097",
 		"ai.tools.max_card_repair_attempts":            "11",
 	} {
 		h := &Handlers{configs: &configCache{values: aiConfigDefaults()}}
@@ -149,10 +139,8 @@ func TestAIConfigRejectsUnsafeRuntimeBounds(t *testing.T) {
 func TestAIConfigRejectsNonFiniteNumbers(t *testing.T) {
 	h := &Handlers{configs: &configCache{values: aiConfigDefaults()}}
 	for key, value := range map[string]string{
-		"ai.context.compression_trigger_ratio": "NaN",
-		"ai.context.compression_target_ratio":  "+Inf",
-		"ai.quota.platform_daily_cost_soft":    "NaN",
-		"ai.quota.platform_daily_cost_hard":    "+Inf",
+		"ai.quota.platform_daily_cost_soft": "NaN",
+		"ai.quota.platform_daily_cost_hard": "+Inf",
 	} {
 		if err := h.validateAIConfigValues(map[string]string{key: value}); err == nil {
 			t.Errorf("non-finite value accepted for %s", key)
@@ -180,84 +168,16 @@ func TestAIConfigAcceptsExpandedContextBudget(t *testing.T) {
 	}
 }
 
-func TestAIConfigRejectsInconsistentAdvancedContextSettings(t *testing.T) {
-	for name, values := range map[string]map[string]string{
-		"trigger not greater than target": {
-			"ai.context.compression_trigger_ratio": "0.5",
-			"ai.context.compression_target_ratio":  "0.5",
-		},
-		"recent exceeds max recent": {
-			"ai.context.recent_turn_count":     "8",
-			"ai.context.max_recent_turn_count": "4",
-		},
-	} {
-		h := &Handlers{configs: &configCache{values: aiConfigDefaults()}}
-		if err := h.validateAIConfigValues(values); err == nil {
-			t.Errorf("inconsistent advanced context settings accepted: %s", name)
-		}
-	}
-}
-
-func TestAIConfigAcceptsAdvancedContextSettingsWithinBounds(t *testing.T) {
-	h := &Handlers{configs: &configCache{values: aiConfigDefaults()}}
-	if err := h.validateAIConfigValues(map[string]string{
-		"ai.context.compression_trigger_ratio": "0.9",
-		"ai.context.compression_target_ratio":  "0.4",
-		"ai.context.recent_turn_count":         "6",
-		"ai.context.max_recent_turn_count":     "10",
-	}); err != nil {
-		t.Fatalf("valid advanced context settings rejected: %v", err)
-	}
-}
-
-func TestAIConfigValidatesSubmittedCrossFieldAgainstSafeLegacyFallback(t *testing.T) {
-	defaults := aiConfigDefaults()
-	defaults["ai.context.compression_target_ratio"] = "legacy-invalid"
-	defaults["ai.context.max_recent_turn_count"] = "legacy-invalid"
-	h := &Handlers{configs: &configCache{values: defaults}}
-
-	if err := h.validateAIConfigValues(map[string]string{
-		"ai.context.compression_trigger_ratio": "0.8",
-		"ai.context.recent_turn_count":         "20",
-	}); err != nil {
-		t.Fatalf("valid submitted values were blocked by legacy counterparts: %v", err)
-	}
-	if err := h.validateAIConfigValues(map[string]string{
-		"ai.context.compression_trigger_ratio": "0.6",
-	}); err == nil {
-		t.Fatal("submitted trigger below the safe target fallback was accepted")
-	}
-	if err := h.validateAIConfigValues(map[string]string{
-		"ai.context.recent_turn_count": "33",
-	}); err == nil {
-		t.Fatal("submitted recent-turn count above the current range was accepted")
-	}
-}
-
-func TestAIConfigValidatesRunCreditFixedDecimalBoundaries(t *testing.T) {
-	h := &Handlers{configs: &configCache{values: aiConfigDefaults()}}
-	for _, value := range []string{"0.00000001", "100000000", "100000000.00000000"} {
-		if err := h.validateAIConfigValues(map[string]string{"ai.run.max_credits": value}); err != nil {
-			t.Errorf("valid Run credit budget %q rejected: %v", value, err)
-		}
-	}
-	for _, value := range []string{"100000000.00000001", "1e3", "0.000000001", "+1", " 1"} {
-		if err := h.validateAIConfigValues(map[string]string{"ai.run.max_credits": value}); err == nil {
-			t.Errorf("invalid Run credit budget %q accepted", value)
-		}
-	}
-}
-
 func TestAIConfigEditingUnrelatedFieldDoesNotRevalidateStoredBaseURL(t *testing.T) {
 	// Regression: previously validateAIConfigValues merged the submission into the
 	// full stored config and re-ran the egress/DNS check on ai.provider.base_url,
-	// so editing an unrelated field (e.g. the Run credit budget) failed whenever the
+	// so editing an unrelated field failed whenever the
 	// stored base_url no longer resolved to a public address.
 	defaults := aiConfigDefaults()
 	defaults["ai.provider.base_url"] = "https://api.internal-only.example/v1"
 	h := &Handlers{configs: &configCache{values: defaults}}
-	if err := h.validateAIConfigValues(map[string]string{"ai.run.max_credits": "5000"}); err != nil {
-		t.Fatalf("editing Run credit budget revalidated stored base_url: %v", err)
+	if err := h.validateAIConfigValues(map[string]string{"ai.runtime.max_request_retries": "4"}); err != nil {
+		t.Fatalf("editing unrelated setting revalidated stored base_url: %v", err)
 	}
 }
 

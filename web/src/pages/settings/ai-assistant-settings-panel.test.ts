@@ -15,22 +15,14 @@ const validValues = {
   runTimeoutSeconds: 300,
   agentConcurrentRuns: 2,
   contextInputKTokens: 256,
-  contextCompressionTriggerRatio: 0.8,
-  contextCompressionTargetRatio: 0.5,
-  contextRecentTurnCount: 6,
-  contextMaxRecentTurnCount: 12,
   contextMaxUncompressedTurnCount: 32,
   contextMaxCompressionTurnsPerCompile: 128,
   contextSummaryInputKTokens: 32,
   contextSummaryMaxOutputTokens: 3000,
-  contextHistoricalToolKTokens: 8,
   modelMaxOutputTokens: 8192,
   runMaxModelSteps: 64,
-  runMaxTotalTokens: 2000000,
-  runMaxCredits: '10000',
   runMaxInputKBytes: 64,
   runNavigateActionTtlSeconds: 120,
-  toolsResultPayloadKBytes: 48,
   toolsMaxCardRepairAttempts: 5,
   observabilityEnabled: false,
   prometheusUrl: '',
@@ -64,22 +56,14 @@ describe('aI assistant admin settings', () => {
       'ai.runtime.run_timeout_seconds': 300,
       'ai.runtime.agent_concurrent_runs': 2,
       'ai.runtime.context_input_k_tokens': 256,
-      'ai.context.compression_trigger_ratio': 0.8,
-      'ai.context.compression_target_ratio': 0.5,
-      'ai.context.recent_turn_count': 6,
-      'ai.context.max_recent_turn_count': 12,
       'ai.context.max_uncompressed_turn_count': 32,
       'ai.context.max_compression_turns_per_compile': 128,
       'ai.context.summary_input_k_tokens': 32,
       'ai.context.summary_max_output_tokens': 3000,
-      'ai.context.historical_tool_k_tokens': 8,
       'ai.model.max_output_tokens': 8192,
       'ai.run.max_model_steps': 64,
-      'ai.run.max_total_tokens': 2000000,
-      'ai.run.max_credits': '10000',
       'ai.run.max_input_k_bytes': 64,
       'ai.run.navigate_action_ttl_seconds': 120,
-      'ai.tools.result_payload_k_bytes': 48,
       'ai.tools.max_card_repair_attempts': 5,
       'ai.observability.enabled': false,
       'ai.observability.prometheus_url': '',
@@ -120,47 +104,29 @@ describe('aI assistant admin settings', () => {
   })
 
   it('rejects unsafe advanced settings', () => {
-    expect(aiSettingsSchema.safeParse({ ...validValues, contextCompressionTriggerRatio: 0.99 }).success).toBe(false)
-    expect(aiSettingsSchema.safeParse({ ...validValues, contextMaxRecentTurnCount: 1 }).success).toBe(false)
     expect(aiSettingsSchema.safeParse({ ...validValues, modelMaxOutputTokens: 100 }).success).toBe(false)
     expect(aiSettingsSchema.safeParse({ ...validValues, runMaxModelSteps: 0 }).success).toBe(false)
     expect(aiSettingsSchema.safeParse({ ...validValues, runMaxInputKBytes: 8193 }).success).toBe(false)
     expect(aiSettingsSchema.safeParse({ ...validValues, runNavigateActionTtlSeconds: 5 }).success).toBe(false)
-    expect(aiSettingsSchema.safeParse({ ...validValues, toolsResultPayloadKBytes: 4097 }).success).toBe(false)
     expect(aiSettingsSchema.safeParse({ ...validValues, toolsMaxCardRepairAttempts: 0 }).success).toBe(false)
-    expect(aiSettingsSchema.safeParse({ ...validValues, runMaxCredits: '100000000' }).success).toBe(true)
-    expect(aiSettingsSchema.safeParse({ ...validValues, runMaxCredits: '100000000.00000001' }).success).toBe(false)
-    expect(aiSettingsSchema.safeParse({ ...validValues, runMaxCredits: '99999999.99999999' }).success).toBe(true)
-  })
-
-  it('rejects inconsistent advanced context settings', () => {
-    expect(aiSettingsSchema.safeParse({ ...validValues, contextCompressionTriggerRatio: 0.4, contextCompressionTargetRatio: 0.6 }).success).toBe(false)
-    expect(aiSettingsSchema.safeParse({ ...validValues, contextRecentTurnCount: 12, contextMaxRecentTurnCount: 4 }).success).toBe(false)
   })
 
   it('accepts tuned advanced settings within the platform contract', () => {
     const tuned = {
       ...validValues,
-      contextCompressionTriggerRatio: 0.9,
-      contextCompressionTargetRatio: 0.4,
-      contextRecentTurnCount: 8,
-      contextMaxRecentTurnCount: 14,
       contextMaxUncompressedTurnCount: 48,
       contextMaxCompressionTurnsPerCompile: 160,
       contextSummaryInputKTokens: 48,
       contextSummaryMaxOutputTokens: 4000,
-      contextHistoricalToolKTokens: 16,
       modelMaxOutputTokens: 12000,
       runMaxModelSteps: 96,
       runMaxInputKBytes: 96,
       runNavigateActionTtlSeconds: 240,
-      toolsResultPayloadKBytes: 96,
       toolsMaxCardRepairAttempts: 8,
     }
     const parsed = aiSettingsSchema.safeParse(tuned)
     expect(parsed.success).toBe(true)
     if (parsed.success) {
-      expect(aiSettingsPayload(parsed.data)['ai.context.compression_trigger_ratio']).toBe(0.9)
       expect(aiSettingsPayload(parsed.data)['ai.model.max_output_tokens']).toBe(12000)
       expect(aiSettingsPayload(parsed.data)['ai.tools.max_card_repair_attempts']).toBe(8)
     }

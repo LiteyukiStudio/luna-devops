@@ -1,9 +1,14 @@
 package api
 
 import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/gin-gonic/gin"
 )
 
 func TestAgentObservabilitySummaryQueriesUseSelectedRange(t *testing.T) {
@@ -20,6 +25,29 @@ func TestAgentObservabilitySummaryQueriesUseSelectedRange(t *testing.T) {
 		if queries[key] == "" {
 			t.Fatalf("missing summary query %s", key)
 		}
+	}
+}
+
+func TestAgentObservabilityUnavailableResponseIsStableAndNonCacheable(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	writeAgentObservabilityUnavailable(ctx, "ai.observability.trace_unavailable", "Trace detail is unavailable")
+
+	if recorder.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d", recorder.Code)
+	}
+	if recorder.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("Cache-Control = %q", recorder.Header().Get("Cache-Control"))
+	}
+	var response map[string]any
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response["status"] != "unavailable" || response["observationCode"] != "ai.observability.trace_unavailable" || response["code"] != "ai.observability.trace_unavailable" {
+		t.Fatalf("response = %#v", response)
+	}
+	if response["requestId"] == "" || response["retryable"] != true {
+		t.Fatalf("response metadata = %#v", response)
 	}
 }
 

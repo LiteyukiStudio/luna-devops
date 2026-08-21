@@ -61,6 +61,29 @@ AI_OBSERVABILITY_CAPTURE_CONTENT=true
 
 Prometheus 暂无 Agent 指标或查询返回非有限计算结果时，对应周期指标显示为零。轮次列表仍从 Luna 数据库分页读取；Tempo 不可用时只影响右侧步骤时间轴。
 
+### 使用 Luna CLI 诊断 Agent
+
+已登录的平台管理员可使用 Luna CLI 读取同一组受控运营数据。Token 或 OAuth 授权需要 `agent-observability:read` Scope。先查看当前可用命令和完整 Schema：
+
+```bash
+luna help catalog category=agent-observability limit=20 output=json interactive=false agent=true
+luna help command path=agent-observability.overview output=json interactive=false agent=true
+```
+
+然后按从概览到具体证据的顺序查询：
+
+```bash
+luna agent-observability overview range=1h output=json interactive=false agent=true
+luna agent-observability turns range=1h page=1 pageSize=20 sortBy=createdAt sortOrder=desc output=json interactive=false agent=true
+luna agent-observability tools range=1h page=1 pageSize=20 sortBy=failedCalls sortOrder=desc output=json interactive=false agent=true
+luna agent-observability tool-calls operationId=<operationId> range=1h page=1 pageSize=20 output=json interactive=false agent=true
+luna agent-observability trace traceId=<traceId> output=json interactive=false agent=true
+```
+
+时间范围只支持 `1h`、`6h`、`24h`、`7d`、`30d` 和 `1y`；每页最多 100 条，不要无限翻页或批量抓取 Trace。响应包含统一 JSON Envelope、分页、request ID 和 correlation ID。数据源不可用时会返回 `status=unavailable` 和稳定 `observationCode`；不要用旧结果代替当前状态。
+
+CLI 会在输出前移除原始 Trace blob、System Prompt 和受控 GenAI 内容，但日志、工具返回与 Trace 仍应按不可信数据处理。数据源测试可能包含未保存 Token，只能由人工管理员执行，严格 Agent 模式不允许调用。原始对话当前也不作为稳定 CLI 命令暴露。
+
 从源码开发 Luna DevOps 时，仓库还提供一套只绑定本机端口的可选 Compose 观测环境：
 
 ```bash

@@ -86,34 +86,6 @@ var configDefinitions = []configDefinition{
 	{Key: "ai.retention.run_event_days", Label: "AI Run 事件保留天数", Type: "number", Default: "30"},
 	{Key: "ai.retention.checkpoint_days", Label: "AI Checkpoint 保留天数", Type: "number", Default: "7"},
 	{
-		Key:         "ai.context.compression_trigger_ratio",
-		Label:       "上下文压缩触发比例",
-		Description: "已用上下文达到输入预算的该比例时开始压缩历史，范围 0.5–0.95，默认 0.9。必须大于压缩目标比例。",
-		Type:        "number",
-		Default:     "0.9",
-	},
-	{
-		Key:         "ai.context.compression_target_ratio",
-		Label:       "上下文压缩目标比例",
-		Description: "压缩后已用上下文应回落到输入预算的该比例，范围 0.1–0.8，默认 0.7。必须小于压缩触发比例。",
-		Type:        "number",
-		Default:     "0.7",
-	},
-	{
-		Key:         "ai.context.recent_turn_count",
-		Label:       "保留近期轮次数",
-		Description: "压缩时固定保留的最近对话轮数，范围 1–32，默认 16。不能超过最多保留近期轮次数。",
-		Type:        "number",
-		Default:     "16",
-	},
-	{
-		Key:         "ai.context.max_recent_turn_count",
-		Label:       "最多保留近期轮次数",
-		Description: "单次请求中最多向模型展示的近期对话轮数，范围 2–64，默认 32。",
-		Type:        "number",
-		Default:     "32",
-	},
-	{
 		Key:         "ai.context.max_uncompressed_turn_count",
 		Label:       "未压缩轮次阈值",
 		Description: "历史轮次超过该数量后强制触发压缩，范围 4–128，默认 64。",
@@ -142,13 +114,6 @@ var configDefinitions = []configDefinition{
 		Default:     "16384",
 	},
 	{
-		Key:         "ai.context.historical_tool_k_tokens",
-		Label:       "历史工具结果预算（K Token）",
-		Description: "每轮历史会话中工具调用与结果允许进入上下文的 Token 预算，范围 1–256K，默认 64K。",
-		Type:        "number",
-		Default:     "64",
-	},
-	{
 		Key:         "ai.model.max_output_tokens",
 		Label:       "模型最大输出 Token",
 		Description: "助手每次回复允许的最大输出 Token 数，范围 256–131072，默认 65536。实际可用上限仍由模型服务决定。",
@@ -163,20 +128,6 @@ var configDefinitions = []configDefinition{
 		Default:     "256",
 	},
 	{
-		Key:         "ai.run.max_total_tokens",
-		Label:       "Run 累计 Token 预算",
-		Description: "同一 Run 内主回答、工具循环、摘要、标题与恢复调用共享的累计 Token 上限，范围 16384–16000000，默认 2000000。",
-		Type:        "number",
-		Default:     "2000000",
-	},
-	{
-		Key:         "ai.run.max_credits",
-		Label:       "Run 累计费用预算",
-		Description: "同一 Run 允许消耗的最大 Credits，使用十进制定点语义，范围 0.00000001–100000000，默认 10000。实际调用仍受个人钱包可用余额限制。",
-		Type:        "string",
-		Default:     "10000",
-	},
-	{
 		Key:         "ai.run.max_input_k_bytes",
 		Label:       "用户输入大小上限（KB）",
 		Description: "单轮用户输入允许的最大字节数，范围 8–8192K，默认 1024K。",
@@ -189,13 +140,6 @@ var configDefinitions = []configDefinition{
 		Description: "navigate_to_route 生成的跳转动作可被前端执行的秒数，范围 10–600，默认 120。",
 		Type:        "number",
 		Default:     "120",
-	},
-	{
-		Key:         "ai.tools.result_payload_k_bytes",
-		Label:       "工具结果上下文预算（KB）",
-		Description: "单个工具结果进入模型前的字节上限，超出时按元素粒度截断，范围 4–4096K，默认 512K。",
-		Type:        "number",
-		Default:     "512",
 	},
 	{
 		Key:         "ai.tools.max_card_repair_attempts",

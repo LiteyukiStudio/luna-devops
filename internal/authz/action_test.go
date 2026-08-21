@@ -80,7 +80,7 @@ func TestAccessTokenScopeRules(t *testing.T) {
 	if UserCanCreateAccessTokenScope(PlatformRoleUser, string(ActionDataRetentionRead)) {
 		t.Fatal("expected regular user to be blocked from creating retention scopes")
 	}
-	for _, action := range []Action{ActionDashboardRead, ActionDataRetentionRead, ActionDataRetentionManage} {
+	for _, action := range []Action{ActionDashboardRead, ActionAgentObservabilityRead, ActionDataRetentionRead, ActionDataRetentionManage} {
 		if !AccessTokenAllows("*", string(action)) {
 			t.Fatalf("expected full scope token to allow %s", action)
 		}
@@ -111,7 +111,7 @@ func TestAccessTokenScopeCatalogMarksAdminOnlyScopes(t *testing.T) {
 	if catalogScopeRequiresAdmin(userCatalog, string(ActionDashboardRead)) {
 		t.Fatal("expected dashboard read to be creatable by regular users")
 	}
-	for _, scope := range []Action{ActionDataRetentionRead, ActionDataRetentionManage} {
+	for _, scope := range []Action{ActionAgentObservabilityRead, ActionDataRetentionRead, ActionDataRetentionManage} {
 		if !catalogScopeRequiresAdmin(userCatalog, string(scope)) {
 			t.Fatalf("expected %s to require a platform administrator", scope)
 		}
@@ -144,6 +144,7 @@ func TestOAuthScopeRules(t *testing.T) {
 	for _, scope := range []string{
 		string(ActionConfigWrite),
 		string(ActionUserManage),
+		string(ActionAgentObservabilityRead),
 		string(ActionDataRetentionManage),
 	} {
 		if UserCanAuthorizeOAuthScope(PlatformRoleUser, scope) {
@@ -165,6 +166,12 @@ func TestRecommendedOAuthScopesExcludeHighRiskOperations(t *testing.T) {
 		if !contains(scopes, string(scope)) {
 			t.Fatalf("expected recommended OAuth scopes to include %q", scope)
 		}
+	}
+	if contains(scopes, string(ActionAgentObservabilityRead)) {
+		t.Fatal("regular users must not receive the cross-user Agent observability scope")
+	}
+	if !contains(RecommendedOAuthScopes(PlatformRoleAdmin), string(ActionAgentObservabilityRead)) {
+		t.Fatal("platform administrators need Agent observability in the default CLI OAuth grant")
 	}
 	for _, scope := range []Action{
 		ActionDeploymentExec,
@@ -238,6 +245,9 @@ func TestRequiredAccessTokenScopeUsesFineGrainedProjectRoutes(t *testing.T) {
 		{"/api/v1/events", "GET", string(ActionEventRead)},
 		{"/api/v1/events/:eventId", "GET", string(ActionEventRead)},
 		{"/api/v1/dashboard", "GET", string(ActionDashboardRead)},
+		{"/api/v1/ai/observability/overview", "GET", string(ActionAgentObservabilityRead)},
+		{"/api/v1/ai/observability/tools/listProjectVolumes/calls", "GET", string(ActionAgentObservabilityRead)},
+		{"/api/v1/configs/ai/observability/test", "POST", string(ActionAgentObservabilityRead)},
 		{"/api/v1/data-retention/catalog", "GET", string(ActionDataRetentionRead)},
 		{"/api/v1/data-retention/preview", "POST", string(ActionDataRetentionRead)},
 		{"/api/v1/data-retention/cleanup", "POST", string(ActionDataRetentionManage)},

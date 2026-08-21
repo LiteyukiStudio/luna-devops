@@ -168,7 +168,6 @@ export class TestRepository implements Repository {
       ...(input.traceContext ? { traceContext: input.traceContext } : {}),
       clientInstanceId: input.clientInstanceId ?? "memory-client-instance", createdAt: now, ownerUserId,
       ...(input.modelSnapshot ? { model: input.modelSnapshot } : {}),
-      budget: input.runBudgetSnapshot ?? { totalTokens: 2_000_000, totalCredits: "10000" },
     }
     this.turns.set(turn.id, turn)
     this.runs.set(run.id, run)
@@ -255,14 +254,9 @@ export class TestRepository implements Repository {
   }) {
     const run = this.runs.get(input.runId)
     if (!run || run.ownerUserId !== input.ownerUserId) throw new Error("ai.run_not_found")
-    const used = [...this.modelReservations.values()]
-      .filter(item => item.runId === input.runId && item.state !== "released")
-      .reduce((total, item) => total + item.tokens, 0)
     const contextCapacity = (run.model?.maxContextTokens ?? 524_288) - input.estimatedInputTokens
     if (contextCapacity < 1) throw new Error("ai.model_context_insufficient")
-    const tokenCapacity = (run.budget?.totalTokens ?? 2_000_000) - used - input.estimatedInputTokens
-    if (tokenCapacity < 1) throw new Error("ai.run_token_budget_exhausted")
-    const maxOutputTokens = Math.min(input.requestedOutputTokens, run.model?.maxOutputTokens ?? 65_536, contextCapacity, tokenCapacity)
+    const maxOutputTokens = Math.min(input.requestedOutputTokens, run.model?.maxOutputTokens ?? 65_536, contextCapacity)
     this.modelReservations.set(input.id, {
       runId: input.runId,
       operation: input.operation,
@@ -551,7 +545,6 @@ export class TestRepository implements Repository {
       const run = storedRun
         ? {
             ...storedRun,
-            usedTokens: reservations.reduce((total, item) => total + item.tokens, 0),
             ...(latestAssistant ? { latestInputTokens: latestAssistant.inputTokens } : {}),
           }
         : undefined

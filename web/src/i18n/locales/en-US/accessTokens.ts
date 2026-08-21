@@ -35,6 +35,7 @@ const accessTokens = {
     billing: 'Billing',
     event: 'Events',
     user: 'Users',
+    ...{ 'agent-observability': 'Agent observability' },
     system: 'System',
   },
   scopeLabels: {
@@ -113,6 +114,9 @@ const accessTokens = {
     token: {
       manage: 'Manage personal tokens',
     },
+    ...{ 'agent-observability': {
+      read: 'Read Agent observability',
+    } },
   },
   scopeDescriptions: {
     project: {
@@ -190,6 +194,9 @@ const accessTokens = {
     token: {
       manage: 'Create, view, and revoke personal tokens.',
     },
+    ...{ 'agent-observability': {
+      read: 'Read cross-user Agent overview, turns, tool calls, and trace diagnostics.',
+    } },
   },
   expiresInDays: 'Validity',
   expiresInDaysHint: 'Choose a fixed validity period. Unlimited tokens should only be used for trusted automation.',

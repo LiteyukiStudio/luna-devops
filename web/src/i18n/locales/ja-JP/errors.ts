@@ -115,8 +115,6 @@ const errors = {
     model_context_limit_invalid: 'モデルカタログのコンテキスト上限が無効です。プラットフォーム管理者に連絡してモデル設定を確認してください。',
     model_context_insufficient: '現在のリクエストが選択したモデルのコンテキストウィンドウを超えています。入力を短くするか、会話履歴をクリアしてください。',
     model_output_limit_invalid: 'モデルカタログの出力上限が無効です。プラットフォーム管理者に連絡してモデル設定を確認してください。',
-    run_token_budget_exhausted: '今回の Run の累計 Token 予算が枯渇しました。',
-    run_credit_budget_exhausted: '今回の Run の累計費用予算が枯渇しました。',
     wallet_balance_insufficient: '個人ウォレットの利用可能残高が不足しています。モデル呼び出しは送信されませんでした。',
   },
   bootstrap: {

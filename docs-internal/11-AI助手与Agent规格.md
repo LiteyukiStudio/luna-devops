@@ -107,20 +107,24 @@ AI 助手不是悬浮在控制台上的通用聊天机器人。它理解用户�
 - 禁止进入上下文与记忆：Secret、Token、Cookie、Authorization、kubeconfig、Registry 密码、
   Git Access Token、完整终端历史、未脱敏的第三方响应与日志。
 
-### 4.1 模型能力与 Run 预算
+### 4.1 模型能力、用量预留与结算
 
 - 模型目录的最大上下文、最大单次输出和四类价格由 `internal/aimodel`
-  统一校验；Run 创建时连同站点累计 Token/Credits 上限快照，后续管理变更不影响历史 Run。
-- 所有归属 Run 的 Provider 调用经过 `BudgetedModelProvider`，且在调用前由 PostgreSQL
-  原子 reservation 批准。输出上限是 Agent/站点上限、模型输出、上下文剩余、Run
-  剩余 Token/Credits 与个人钱包可负担额度的最小值。
+  统一校验；Run 创建时保存模型身份、能力与价格快照，后续管理变更不影响历史 Run。
+- Run 不设置累计 Token 或 Credits 预算，也不因对话累计用量要求用户新建任务。所有归属 Run 的
+  Provider 调用仍在调用前由 PostgreSQL 原子 reservation 预留个人钱包额度；输出上限取 Agent
+  单次上限、模型输出、上下文剩余与个人钱包可负担额度的最小值。
 - 过期的 `reserved` 不可直接释放，因为 Provider 可能已收到请求；恢复时按全额
   保守确认。只有明确在外部请求前失败或 Provider 调用前取消才可释放。
 - Worker 以 reservation ID 作为计费资源与幂等键，从 `confirmed` reservation
   生成四类 usage/ledger 并与 `settled` 转换同事务完成。AI 费用只属于发起用户个人钱包，
   `project_id` 始终为空。钱包普通 debit 和负 adjustment 都要扣除未结束 hold。
 - 全链路锁序为 wallet → Run → reservation（无 Run 的结算/普通扣费为 wallet →
-  reservation）；结算可用余额检查排除当前 reservation，但不排除其他活跃 hold。
+  reservation）；Run 锁只用于归属与模型快照一致性，不承载累计预算。结算可用余额检查排除当前
+  reservation，但不排除其他活跃 hold。
+- 工具结果上下文上限、压缩触发/目标比例、近期轮次与最多近期轮次、历史工具结果上限是 Agent
+  进程内无状态策略，只允许通过可选环境变量覆盖，平台数据库与动态配置 API 不存储或下发。
+  未配置时分别使用 `512 KiB`、`0.9`、`0.7`、`16`、`32`、`64K Token`。
 
 ## 5. 安全与 Prompt Injection 防护
 

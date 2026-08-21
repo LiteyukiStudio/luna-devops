@@ -136,7 +136,7 @@ describe('timeline query cache', () => {
     expect(applyTimelineQueryEvent(streamed, event(1))).toBe(streamed)
   })
 
-  it('preserves live token usage through infinite timeline aggregation', () => {
+  it('preserves the latest context usage through infinite timeline aggregation', () => {
     const initial = {
       pageParams: [null],
       pages: [timelineQueryDataFromSnapshot(snapshot())],
@@ -145,7 +145,7 @@ describe('timeline query cache', () => {
       ...event(1),
       type: 'run.started',
       item: undefined,
-      payload: { budget: { totalTokens: 2_000_000, totalCredits: '10000' } },
+      payload: {},
     })
     const completed = applyTimelineInfiniteEvent(started, {
       ...event(2),
@@ -157,18 +157,14 @@ describe('timeline query cache', () => {
 
     expect(aggregate?.state.runUsage['run-1']).toEqual({
       latestInputTokens: 25_600,
-      usedTokens: 26_112,
-      tokenBudget: 2_000_000,
     })
   })
 
-  it('restores token usage from a durable timeline snapshot', () => {
+  it('restores context usage from a durable timeline snapshot', () => {
     const durable = snapshot(8)
     durable.turns[0]!.selectedRun = {
       ...durable.turns[0]!.selectedRun!,
       latestInputTokens: 32_000,
-      usedTokens: 40_000,
-      budget: { totalTokens: 2_000_000, totalCredits: '10000' },
     }
     const aggregate = timelineQueryDataFromInfinite({
       pageParams: [null],
@@ -177,8 +173,6 @@ describe('timeline query cache', () => {
 
     expect(aggregate?.state.runUsage['run-1']).toEqual({
       latestInputTokens: 32_000,
-      usedTokens: 40_000,
-      tokenBudget: 2_000_000,
     })
   })
 

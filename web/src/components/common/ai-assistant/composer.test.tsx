@@ -124,7 +124,7 @@ describe('ai assistant composer keyboard submission', () => {
     expect(ring?.getAttribute('aria-label')).toContain('14%')
   })
 
-  it('shows the run token budget in the context ring tooltip instead of a second ring', async () => {
+  it('shows only the current context usage in the ring tooltip', async () => {
     const user = userEvent.setup()
     render(
       <AIAssistantComposer
@@ -135,8 +135,6 @@ describe('ai assistant composer keyboard submission', () => {
         draft="测试消息"
         inputRef={createRef<HTMLTextAreaElement>()}
         models={[{ id: 'aimod_test', name: 'Test model', maxContextTokens: 128_000, maxOutputTokens: 16_000 }]}
-        runTokenBudget={2_000_000}
-        runUsedTokens={400_000}
         selectedModelId="aimod_test"
         sending={false}
         submitting={false}
@@ -149,10 +147,8 @@ describe('ai assistant composer keyboard submission', () => {
     )
     const contextRing = document.querySelector('[aria-label*="/128k"]')
     expect(contextRing).not.toBeNull()
-    expect(document.querySelector('[aria-label*="/2000k"]')).toBeNull()
-
     await user.hover(contextRing!)
-    expect(await screen.findByRole('tooltip')).toHaveTextContent(i18next.t('aiAssistant.budgetUsage', { used: '400', total: '2000k', percent: 20 }))
+    expect(await screen.findByRole('tooltip')).toHaveTextContent(i18next.t('aiAssistant.contextUsage', { used: '25.6', total: '128k', percent: 20 }))
   })
 
   it('keeps the draft editable but blocks submission while the current run is active', () => {
