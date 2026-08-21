@@ -5,7 +5,7 @@
 - [x] 将数据卷创建 Schema 收敛为按来源区分的三种严格请求；空白卷和快照恢复必须包含 StorageClass、容量、访问模式和卷模式。
 - [x] 保留 OpenAPI `const`、`minProperties`、`uniqueItems` 等 JSON Schema 约束到 Agent Catalog，覆盖其他判别联合与非空更新请求。
 - [x] 强化 StorageClass 前置检索元数据、Agent 参数验证、Web 类型、中英文公开文档和场景测试。
-- [ ] 完成 Go/Agent/Web/Docs 验证、提交推送与 GitHub Actions 验收。
+- [x] 完成 Go/Agent/Web/Docs 验证、提交推送与 GitHub Actions 验收。
 
 ## 2026-08-21 Agent 工具检索与运行时目录优化
 
