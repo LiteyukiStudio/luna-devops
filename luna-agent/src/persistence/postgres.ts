@@ -421,6 +421,7 @@ export class PostgresRepository implements Repository {
         promptVersion: "system-v4",
         actorSessionId,
         toolCatalogDigest: input.toolCatalogDigest ?? "sha256:platform-tools-v1",
+        selectedOperationIds: [],
         pageContext: input.pageContext,
         traceContext: input.traceContext ?? {},
         clientInstanceId: input.clientInstanceId ?? null,
@@ -458,6 +459,39 @@ export class PostgresRepository implements Repository {
     const row = (await this.db.select().from(runs)
       .where(and(eq(runs.id, id), eq(runs.ownerUserId, ownerUserId))))[0]
     return row ? mapRun(row) : undefined
+  }
+
+  async getRunToolState(runId: string) {
+    const row = (await this.db.select({
+      toolCatalogDigest: runs.toolCatalogDigest,
+      selectedOperationIds: runs.selectedOperationIds,
+    }).from(runs).where(eq(runs.id, runId)))[0]
+    return row
+  }
+
+  async touchRunSelectedOperations(runId: string, operationIds: string[], limit: number) {
+    const boundedLimit = Math.max(1, Math.min(64, Math.floor(limit)))
+    const requested = [...new Set(operationIds)].filter(operationId => /^[A-Za-z][A-Za-z0-9._-]{2,100}$/.test(operationId))
+    return this.db.transaction(async (tx) => {
+      const row = (await tx.select({ selectedOperationIds: runs.selectedOperationIds })
+        .from(runs).where(eq(runs.id, runId)).for("update"))[0]
+      if (!row) throw new Error("ai.run_not_found")
+      const alreadySelectedOperationIds = requested.filter(operationId => row.selectedOperationIds.includes(operationId))
+      const touched = new Set(requested)
+      const reordered = [...row.selectedOperationIds.filter(operationId => !touched.has(operationId)), ...requested]
+      const evictedOperationIds = reordered.slice(0, Math.max(0, reordered.length - boundedLimit))
+      const selectedOperationIds = reordered.slice(-boundedLimit)
+      if (requested.length || evictedOperationIds.length) {
+        await tx.update(runs).set({ selectedOperationIds }).where(eq(runs.id, runId))
+      }
+      return { selectedOperationIds, alreadySelectedOperationIds, evictedOperationIds }
+    })
+  }
+
+  async listActiveToolCatalogDigests() {
+    const rows = await this.db.selectDistinct({ digest: runs.toolCatalogDigest }).from(runs)
+      .where(inArray(runs.status, ["queued", "running", "waiting_approval", "waiting_input"]))
+    return rows.map(row => row.digest)
   }
 
   async cancelRun(ownerUserId: string, id: string) {
@@ -524,6 +558,8 @@ export class PostgresRepository implements Repository {
       turnIndex: turns.turnIndex,
       conversationId: runs.conversationId,
       pageContext: runs.pageContext,
+      toolCatalogDigest: runs.toolCatalogDigest,
+      selectedOperationIds: runs.selectedOperationIds,
       title: conversations.title,
       titleSource: conversations.titleSource,
       modelId: runs.modelId,
@@ -593,6 +629,8 @@ export class PostgresRepository implements Repository {
       conversationId: row.conversationId,
       input: row.input,
       pageContext: row.pageContext,
+      toolCatalogDigest: row.toolCatalogDigest,
+      selectedOperationIds: row.selectedOperationIds,
       ...(row.modelId && row.modelName ? {
         model: {
           id: row.modelId,

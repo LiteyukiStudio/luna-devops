@@ -702,6 +702,10 @@ paths:
         aliases:
           zh: [列出平台用户, 查询平台用户, 用户列表]
           en: [list platform users, platform user list]
+        purpose: { zh: 分页列出平台用户账号。, en: List platform user accounts. }
+        avoidWhen: { zh: 查看当前登录用户自身信息时应使用 getCurrentUser。, en: Use getCurrentUser for the signed-in user's own profile. }
+        preconditions: { zh: [当前用户具有平台用户读取权限], en: [The current user can read platform users] }
+        successEvidence: { zh: 返回分页用户列表。, en: Returns a paginated user list. }
       parameters:
         - $ref: "#/components/parameters/Page"
         - $ref: "#/components/parameters/PageSize"
@@ -954,6 +958,12 @@ paths:
       tags: [Runtime]
       summary: List runtime clusters
       description: Pagination is always applied; omitted parameters use page 1 and pageSize 20.
+      x-luna-agent:
+        purpose: { zh: 列出当前用户可见的运行时集群，用于选择真实 clusterId。, en: List visible runtime clusters to resolve a real clusterId. }
+        aliases: { zh: [列出运行时集群, 查询集群, 选择集群], en: [list runtime clusters, find cluster, select cluster] }
+        avoidWhen: { zh: 已有资源已经绑定明确 clusterId 时不要重新选择。, en: Do not reselect when the resource already has an explicit clusterId. }
+        preconditions: { zh: [当前用户具有集群读取权限], en: [The current user can read runtime clusters] }
+        successEvidence: { zh: 返回分页集群列表及真实集群标识。, en: Returns a paginated cluster list with authoritative identifiers. }
       parameters:
         - name: projectId
           in: query
@@ -1480,6 +1490,10 @@ paths:
         aliases:
           zh: [查看平台仪表盘概览, 平台仪表盘, 看板概览]
           en: [platform dashboard overview, dashboard summary]
+        purpose: { zh: 读取当前用户可见资源的任务型仪表盘聚合。, en: Read the task-oriented dashboard aggregation visible to the current user. }
+        avoidWhen: { zh: 需要单个资源的完整详情时应使用对应详情工具。, en: Use the resource-specific detail tool for one resource's full details. }
+        preconditions: { zh: [当前用户已登录], en: [The current user is signed in] }
+        successEvidence: { zh: 返回当前可见范围的仪表盘概览。, en: Returns the dashboard overview for the current visible scope. }
       x-luna-cli:
         command: dashboard.show
         classification: business-command
@@ -1509,6 +1523,12 @@ paths:
       tags: [Projects]
       summary: List projects
       description: Pagination is always applied; omitted parameters use page 1 and pageSize 20. Project discovery defaults to project spaces related to the caller. Platform administrators may explicitly request all project spaces.
+      x-luna-agent:
+        purpose: { zh: 分页列出当前用户可见的项目空间。, en: List project spaces visible to the current user. }
+        aliases: { zh: [列出项目空间, 查询项目空间, 项目空间列表], en: [list projects, list project spaces, project list] }
+        avoidWhen: { zh: 已知唯一 projectId 且只需读取该项目空间详情时应使用 getProject。, en: Use getProject when a single authoritative projectId is already known. }
+        preconditions: { zh: [当前用户具有项目空间读取权限], en: [The current user can read projects] }
+        successEvidence: { zh: 返回带分页信息的项目空间列表。, en: Returns a paginated project list. }
       parameters:
         - $ref: "#/components/parameters/Page"
         - $ref: "#/components/parameters/PageSize"
@@ -1538,6 +1558,12 @@ paths:
       operationId: createProject
       tags: [Projects]
       summary: Create project
+      x-luna-agent:
+        purpose: { zh: 创建新的项目空间。, en: Create a new project space. }
+        aliases: { zh: [创建项目空间, 新建项目空间], en: [create project, create project space] }
+        avoidWhen: { zh: 查询或更新已有项目空间时不要使用。, en: Do not use to read or update an existing project. }
+        preconditions: { zh: [当前用户具有项目空间创建权限, 名称与标识符满足平台约束], en: [The current user can create projects, Name and identifier satisfy platform constraints] }
+        successEvidence: { zh: 返回已创建项目空间，或可通过 getProject 权威回读。, en: Returns the created project or it can be read back with getProject. }
       requestBody:
         required: true
         content:
@@ -1574,6 +1600,12 @@ paths:
       operationId: getProject
       tags: [Projects]
       summary: Get project
+      x-luna-agent:
+        purpose: { zh: 按 projectId 读取单个项目空间详情。, en: Get one project by projectId. }
+        aliases: { zh: [查看项目空间详情, 读取项目空间], en: [get project, project details] }
+        avoidWhen: { zh: 不知道 projectId 或需要列表时应使用 listProjects。, en: Use listProjects when projectId is unknown or a list is needed. }
+        preconditions: { zh: [提供真实 projectId], en: [Provide an authoritative projectId] }
+        successEvidence: { zh: 返回对应项目空间详情。, en: Returns the requested project details. }
       parameters:
         - $ref: "#/components/parameters/ProjectId"
       responses:
@@ -1583,6 +1615,12 @@ paths:
       operationId: updateProject
       tags: [Projects]
       summary: Update project
+      x-luna-agent:
+        purpose: { zh: 更新已有项目空间配置。, en: Update an existing project. }
+        aliases: { zh: [更新项目空间, 修改项目空间], en: [update project, edit project] }
+        avoidWhen: { zh: 创建新项目空间或只读查询时不要使用。, en: Do not use for creation or read-only lookup. }
+        preconditions: { zh: [提供真实 projectId 和完整更新输入], en: [Provide an authoritative projectId and update input] }
+        successEvidence: { zh: 返回更新后的项目空间。, en: Returns the updated project. }
       parameters:
         - $ref: "#/components/parameters/ProjectId"
       requestBody:
@@ -1598,6 +1636,12 @@ paths:
       operationId: deleteProject
       tags: [Projects]
       summary: Delete project
+      x-luna-agent:
+        purpose: { zh: 删除指定项目空间。, en: Delete a project space. }
+        aliases: { zh: [删除项目空间, 移除项目空间], en: [delete project, remove project] }
+        avoidWhen: { zh: 只需停用、查看或修改项目空间时不要使用。, en: Do not use for viewing or editing a project. }
+        preconditions: { zh: [提供真实 projectId, 用户已确认删除影响], en: [Provide an authoritative projectId, The user confirmed deletion impact] }
+        successEvidence: { zh: 返回 204，后续读取不再找到该项目空间。, en: Returns 204 and subsequent reads no longer find the project. }
       parameters:
         - $ref: "#/components/parameters/ProjectId"
       responses:
@@ -1738,6 +1782,12 @@ paths:
       operationId: listApplications
       tags: [Applications]
       summary: List applications
+      x-luna-agent:
+        purpose: { zh: 分页列出项目空间中的应用。, en: List applications in a project. }
+        aliases: { zh: [列出应用, 应用列表], en: [list applications, application list] }
+        avoidWhen: { zh: 已知 applicationId 且需要详情时使用 getApplication。, en: Use getApplication for one known applicationId. }
+        preconditions: { zh: [提供真实 projectId], en: [Provide an authoritative projectId] }
+        successEvidence: { zh: 返回分页应用列表。, en: Returns a paginated application list. }
       parameters:
         - $ref: "#/components/parameters/ProjectId"
         - $ref: "#/components/parameters/Page"
@@ -1766,6 +1816,12 @@ paths:
       operationId: createApplication
       tags: [Applications]
       summary: Create application
+      x-luna-agent:
+        purpose: { zh: 在项目空间中创建应用。, en: Create an application in a project. }
+        aliases: { zh: [创建应用, 新建应用], en: [create application, create app] }
+        avoidWhen: { zh: 更新已有应用时使用 updateApplication。, en: Use updateApplication for an existing app. }
+        preconditions: { zh: [提供真实 projectId 和应用输入], en: [Provide projectId and application input] }
+        successEvidence: { zh: 返回已创建应用。, en: Returns the created application. }
       parameters:
         - $ref: "#/components/parameters/ProjectId"
       requestBody:
@@ -1785,6 +1841,12 @@ paths:
       operationId: getApplication
       tags: [Applications]
       summary: Get application
+      x-luna-agent:
+        purpose: { zh: 读取单个应用详情。, en: Get one application. }
+        aliases: { zh: [查看应用详情, 读取应用], en: [get application, application details] }
+        avoidWhen: { zh: 不知道 applicationId 时使用 listApplications。, en: Use listApplications when applicationId is unknown. }
+        preconditions: { zh: [提供真实 projectId 和 applicationId], en: [Provide projectId and applicationId] }
+        successEvidence: { zh: 返回对应应用详情。, en: Returns the application details. }
       parameters:
         - $ref: "#/components/parameters/ProjectId"
         - $ref: "#/components/parameters/ApplicationId"
@@ -1795,6 +1857,12 @@ paths:
       operationId: updateApplication
       tags: [Applications]
       summary: Update application
+      x-luna-agent:
+        purpose: { zh: 更新已有应用配置。, en: Update an existing application. }
+        aliases: { zh: [更新应用, 修改应用], en: [update application, edit app] }
+        avoidWhen: { zh: 创建或只读查看应用时不要使用。, en: Do not use for creation or read-only lookup. }
+        preconditions: { zh: [提供真实项目和应用标识], en: [Provide authoritative project and application identifiers] }
+        successEvidence: { zh: 返回更新后的应用。, en: Returns the updated application. }
       parameters:
         - $ref: "#/components/parameters/ProjectId"
         - $ref: "#/components/parameters/ApplicationId"
@@ -1811,6 +1879,12 @@ paths:
       operationId: deleteApplication
       tags: [Applications]
       summary: Delete application
+      x-luna-agent:
+        purpose: { zh: 删除指定应用。, en: Delete an application. }
+        aliases: { zh: [删除应用, 移除应用], en: [delete application, remove app] }
+        avoidWhen: { zh: 尚未预览持久化数据影响时不要执行。, en: Do not execute before reviewing persistent-data impact. }
+        preconditions: { zh: [先调用 previewApplicationDeletion, 用户确认删除影响], en: [Call previewApplicationDeletion first, User confirmed deletion impact] }
+        successEvidence: { zh: 返回已受理删除，后续需权威回读。, en: Returns accepted deletion and requires authoritative readback. }
       parameters:
         - $ref: "#/components/parameters/ProjectId"
         - $ref: "#/components/parameters/ApplicationId"
@@ -1841,8 +1915,12 @@ paths:
       description: Returns only the requested page. Current state is observed from Kubernetes and is never served from a persisted status cache.
       x-luna-agent:
         aliases:
-          zh: [数据卷, 持久化存储]
-          en: [ProjectVolume, project volume, persistent storage]
+          zh: [数据卷, 持久化存储, 列出项目空间数据卷, 数据卷列表]
+          en: [ProjectVolume, project volume, persistent storage, list project volumes]
+        purpose: { zh: 分页列出项目空间数据卷及 Kubernetes 实时观察状态。, en: List project-space volumes with live Kubernetes observations. }
+        avoidWhen: { zh: 已知 volumeId 且需要单卷详情时应使用 getProjectVolume。, en: Use getProjectVolume when a specific volumeId is known. }
+        preconditions: { zh: [提供真实 projectId], en: [Provide an authoritative projectId] }
+        successEvidence: { zh: 返回不可缓存的分页数据卷列表。, en: Returns a non-cacheable paginated volume list. }
       x-luna-cli:
         command: volume.list
         classification: business-command
@@ -1877,6 +1955,12 @@ paths:
       tags: [Volumes]
       summary: Create a blank volume, reference or adopt a claim, or restore a snapshot
       description: Existing-claim adoption is checked against live Pod references and existing Luna ownership. The endpoint never supports a force bypass.
+      x-luna-agent:
+        purpose: { zh: 创建空白数据卷、引用或接管 PVC，或从快照恢复。, en: Create a blank volume, reference or adopt a claim, or restore a snapshot. }
+        aliases: { zh: [创建数据卷, 新建持久化存储, 接管 PVC, 从快照恢复数据卷], en: [create project volume, create persistent storage, adopt PVC, restore volume snapshot] }
+        avoidWhen: { zh: 扩容或重命名已有数据卷时应使用 updateProjectVolume。, en: Use updateProjectVolume to rename or expand an existing volume. }
+        preconditions: { zh: [提供真实 projectId 与 clusterId, 已确认存储类型和容量], en: [Provide authoritative projectId and clusterId, Confirm storage type and capacity] }
+        successEvidence: { zh: 返回已受理的数据卷；异步场景需用 getProjectVolume 回读终态。, en: Returns the accepted volume; asynchronous cases require getProjectVolume readback. }
       x-luna-cli:
         command: volume.create
         classification: business-command
@@ -1938,6 +2022,12 @@ paths:
       operationId: getProjectVolume
       tags: [Volumes]
       summary: Get a project volume, bindings, recent transfers, and current observation
+      x-luna-agent:
+        purpose: { zh: 按 volumeId 读取数据卷规格、绑定、传输记录和实时状态。, en: Get one volume with bindings, transfers, and live observation. }
+        aliases: { zh: [查看数据卷详情, 读取数据卷, PVC 详情], en: [get project volume, volume details, PVC details] }
+        avoidWhen: { zh: 不知道 volumeId 或需要列表时应使用 listProjectVolumes。, en: Use listProjectVolumes when volumeId is unknown or a list is needed. }
+        preconditions: { zh: [提供真实 projectId 和 volumeId], en: [Provide authoritative projectId and volumeId] }
+        successEvidence: { zh: 返回不可缓存的单个数据卷详情和实时观察。, en: Returns non-cacheable volume details and live observation. }
       x-luna-cli:
         command: volume.get
         classification: business-command
@@ -1963,6 +2053,12 @@ paths:
       operationId: updateProjectVolume
       tags: [Volumes]
       summary: Rename or expand a project volume
+      x-luna-agent:
+        purpose: { zh: 重命名数据卷或扩容持久化存储。, en: Rename or expand a project volume. }
+        aliases: { zh: [扩容数据卷, 扩大 PVC, 更新数据卷, 重命名数据卷], en: [expand project volume, resize persistent storage, update volume, rename volume] }
+        avoidWhen: { zh: 创建新数据卷或只读查看时不要使用。, en: Do not use to create or only inspect a volume. }
+        preconditions: { zh: [提供真实 projectId、volumeId 和当前 revision, 新容量不得小于当前容量], en: [Provide authoritative projectId, volumeId, and current revision, New capacity cannot be smaller] }
+        successEvidence: { zh: 返回更新后的数据卷；扩容后用 getProjectVolume 回读实时容量。, en: Returns the updated volume; read back live capacity with getProjectVolume. }
       x-luna-cli:
         command: volume.update
         classification: business-command
@@ -1995,6 +2091,12 @@ paths:
       operationId: deleteProjectVolume
       tags: [Volumes]
       summary: Queue managed claim deletion or detach a referenced claim
+      x-luna-agent:
+        purpose: { zh: 删除托管数据卷或解除外部 PVC 引用。, en: Delete a managed claim or detach an external claim reference. }
+        aliases: { zh: [删除数据卷, 删除 PVC, 解除数据卷引用], en: [delete project volume, delete PVC, detach volume] }
+        avoidWhen: { zh: 尚未预览挂载、传输和底层存储影响时不要执行。, en: Do not execute before previewing bindings, transfers, and storage impact. }
+        preconditions: { zh: [先调用 previewProjectVolumeDeletion, 提供当前 revision 和明确 dataAction], en: [Call previewProjectVolumeDeletion first, Provide current revision and explicit dataAction] }
+        successEvidence: { zh: 返回已受理状态；需用 getProjectVolume 或列表回读删除终态。, en: Returns accepted status; read back terminal deletion state. }
       x-luna-cli:
         command: volume.delete
         classification: business-command
@@ -2028,13 +2130,17 @@ paths:
       operationId: retryProjectVolumeOperation
       tags: [Volumes]
       summary: Retry the most recent failed project volume operation
+      x-luna-agent:
+        purpose: { zh: 在平台重新校验原操作权限后重试最近一次失败的数据卷操作。, en: Retry the latest failed volume operation after reauthorizing the original action. }
+        aliases: { zh: [重试数据卷操作, 重试失败的数据卷任务], en: [retry project volume operation, retry failed volume task] }
+        avoidWhen: { zh: 最近操作未失败或应修正输入后发起新操作时不要使用。, en: Do not use when the latest operation did not fail or a corrected new operation is required. }
+        preconditions: { zh: [先用 getProjectVolume 确认最近失败操作, 提供当前 revision], en: [Confirm the latest failure with getProjectVolume, Provide current revision] }
+        successEvidence: { zh: 返回已受理重试；需用 getProjectVolume 回读终态。, en: Returns an accepted retry; read back terminal state with getProjectVolume. }
       x-luna-cli:
         command: volume.retry
         classification: business-command
         risk: high
         requiredScopes: ["volume:read"]
-        agentAllowed: false
-        exclusionReason: Retrying must first read the failed operation and dynamically re-authorize its original action; generic direct tool execution cannot express that policy safely.
       parameters:
         - $ref: "#/components/parameters/ProjectId"
         - $ref: "#/components/parameters/VolumeId"
@@ -2058,6 +2164,12 @@ paths:
       operationId: previewProjectVolumeDeletion
       tags: [Volumes]
       summary: Preview active bindings, transfers, and underlying storage deletion impact
+      x-luna-agent:
+        purpose: { zh: 预览删除数据卷对挂载、传输任务和底层存储的影响。, en: Preview active bindings, transfers, and storage deletion impact. }
+        aliases: { zh: [预览删除数据卷的影响, 数据卷删除预检, 检查 PVC 删除影响], en: [preview project volume deletion, preview volume deletion impact] }
+        avoidWhen: { zh: 仅查看普通数据卷详情时应使用 getProjectVolume。, en: Use getProjectVolume for ordinary volume details. }
+        preconditions: { zh: [提供真实 projectId 和 volumeId], en: [Provide authoritative projectId and volumeId] }
+        successEvidence: { zh: 返回不可缓存的当前删除影响预览，不会执行删除。, en: Returns a non-cacheable current impact preview without deleting. }
       x-luna-cli:
         command: volume.delete-preview
         classification: business-command
@@ -2539,6 +2651,12 @@ paths:
       tags: [Deployments]
       summary: List deployment targets for an application
       description: Returns a no-store point-in-time Kubernetes observation for each target. Replica fields and status belong to the same observation; scaled-to-zero means the workload was observed with desiredReplicas=0 and is not serving a runtime instance.
+      x-luna-agent:
+        purpose: { zh: 列出应用部署目标及实时 Kubernetes 状态。, en: List deployment targets with live Kubernetes observations. }
+        aliases: { zh: [列出部署目标, 查看应用部署], en: [list deployment targets, list application deployments] }
+        avoidWhen: { zh: 需要创建或修改部署目标时不要当作写操作使用。, en: Do not use as a write operation. }
+        preconditions: { zh: [提供真实 projectId 和 applicationId], en: [Provide projectId and applicationId] }
+        successEvidence: { zh: 返回不可缓存的部署目标列表和实时状态。, en: Returns non-cacheable targets and live status. }
       parameters:
         - $ref: "#/components/parameters/ProjectId"
         - $ref: "#/components/parameters/ApplicationId"
@@ -2558,6 +2676,12 @@ paths:
       operationId: createDeploymentTarget
       tags: [Deployments]
       summary: Create a deployment target
+      x-luna-agent:
+        purpose: { zh: 为应用创建部署目标。, en: Create a deployment target for an application. }
+        aliases: { zh: [创建部署目标, 新建部署环境], en: [create deployment target, create deployment] }
+        avoidWhen: { zh: 已有目标配置错误时应更新而不是重复创建。, en: Update an existing incorrect target instead of duplicating it. }
+        preconditions: { zh: [先用 listRuntimeClusters 解析真实 clusterId], en: [Resolve a real clusterId with listRuntimeClusters first] }
+        successEvidence: { zh: 返回已创建部署目标，随后权威回读实时状态。, en: Returns the created target followed by authoritative status readback. }
       parameters:
         - $ref: "#/components/parameters/ProjectId"
         - $ref: "#/components/parameters/ApplicationId"
@@ -2580,6 +2704,12 @@ paths:
       operationId: updateDeploymentTarget
       tags: [Deployments]
       summary: Update a deployment target
+      x-luna-agent:
+        purpose: { zh: 更新应用部署目标配置。, en: Update a deployment target. }
+        aliases: { zh: [更新部署目标, 修改部署配置], en: [update deployment target, edit deployment] }
+        avoidWhen: { zh: 运行时密钥必须使用专用密钥工具，不能放入普通环境变量。, en: Runtime secrets require the dedicated secret tool. }
+        preconditions: { zh: [提供真实项目、应用和部署目标标识], en: [Provide project, application, and target identifiers] }
+        successEvidence: { zh: 返回更新后的目标并可回读实时状态。, en: Returns the updated target with live status readback. }
       parameters:
         - $ref: "#/components/parameters/ProjectId"
         - $ref: "#/components/parameters/ApplicationId"
@@ -2599,6 +2729,12 @@ paths:
       operationId: deleteDeploymentTarget
       tags: [Deployments]
       summary: Delete a deployment target
+      x-luna-agent:
+        purpose: { zh: 删除指定部署目标。, en: Delete a deployment target. }
+        aliases: { zh: [删除部署目标, 移除部署环境], en: [delete deployment target, remove deployment] }
+        avoidWhen: { zh: 只需停用或修改目标时不要使用。, en: Do not use when the target only needs an update. }
+        preconditions: { zh: [用户确认运行实例和网关影响], en: [User confirmed runtime and gateway impact] }
+        successEvidence: { zh: 返回删除结果并通过列表回读目标消失。, en: Returns deletion and list readback confirms absence. }
       parameters:
         - $ref: "#/components/parameters/ProjectId"
         - $ref: "#/components/parameters/ApplicationId"
@@ -3660,6 +3796,12 @@ paths:
       tags:
         - Runtime
       summary: List Runtime Cluster Resources
+      x-luna-agent:
+        purpose: { zh: 按资源类别分页读取指定集群的实时资源。, en: List live resources in a runtime cluster by category. }
+        aliases: { zh: [列出集群资源, 查看运行时资源, 查询工作负载和服务], en: [list runtime cluster resources, list cluster workloads, inspect cluster resources] }
+        avoidWhen: { zh: 不知道 clusterId 时先使用 listRuntimeClusters。, en: Use listRuntimeClusters first when clusterId is unknown. }
+        preconditions: { zh: [提供真实 clusterId 和 resourceCategory], en: [Provide an authoritative clusterId and resourceCategory] }
+        successEvidence: { zh: 返回实时分页资源列表；上游不可达时返回 unavailable 语义。, en: Returns live paginated resources or an unavailable observation when upstream is unreachable. }
       parameters:
         - name: clusterId
           in: path
@@ -4005,6 +4147,10 @@ paths:
         aliases:
           zh: [列出通知渠道, 查询通知渠道, 通知渠道列表]
           en: [list notification channels, notification channel list]
+        purpose: { zh: 分页列出已配置的通知渠道。, en: List configured notification channels. }
+        avoidWhen: { zh: 需要通知发送历史或事件时不要使用。, en: Do not use for notification delivery history or events. }
+        preconditions: { zh: [当前用户具有通知配置读取权限], en: [The current user can read notification configuration] }
+        successEvidence: { zh: 返回分页通知渠道列表。, en: Returns a paginated notification channel list. }
       parameters:
         - name: search
           in: query
@@ -5734,6 +5880,12 @@ paths:
       tags:
         - Builds
       summary: List Build Runs
+      x-luna-agent:
+        purpose: { zh: 分页列出构建运行及其状态。, en: List build runs and their states. }
+        aliases: { zh: [列出构建任务, 构建历史], en: [list build runs, build history] }
+        avoidWhen: { zh: 已知 buildRunId 时使用 getBuildRun。, en: Use getBuildRun for one known buildRunId. }
+        preconditions: { zh: [提供可见项目范围], en: [Provide a visible project scope] }
+        successEvidence: { zh: 返回分页构建运行列表。, en: Returns a paginated build-run list. }
       parameters:
         - name: projectId
           in: path
@@ -5795,6 +5947,12 @@ paths:
       tags:
         - Builds
       summary: Trigger Build Run
+      x-luna-agent:
+        purpose: { zh: 触发一次新的源码构建运行。, en: Trigger a new source build run. }
+        aliases: { zh: [触发构建, 开始构建], en: [trigger build, start build run] }
+        avoidWhen: { zh: 重试已有失败构建时使用 retryBuildRun。, en: Use retryBuildRun to retry an existing failed build. }
+        preconditions: { zh: [已解析代码源、构建模板和可推送镜像凭据], en: [Resolve source, template, and push-capable registry credential] }
+        successEvidence: { zh: 返回已排队构建；需用 getBuildRun 回读终态。, en: Returns a queued run; getBuildRun must read back terminal state. }
       parameters:
         - name: projectId
           in: path
@@ -5836,6 +5994,12 @@ paths:
       tags:
         - Builds
       summary: Get Build Run
+      x-luna-agent:
+        purpose: { zh: 读取单个构建运行的权威状态。, en: Get the authoritative state of one build run. }
+        aliases: { zh: [查看构建状态, 构建任务详情], en: [get build run, build run status] }
+        avoidWhen: { zh: 需要构建列表时使用 listBuildRuns。, en: Use listBuildRuns for a list. }
+        preconditions: { zh: [提供真实 buildRunId], en: [Provide an authoritative buildRunId] }
+        successEvidence: { zh: 返回构建阶段、结果和稳定错误码。, en: Returns build stages, result, and stable error codes. }
       parameters:
         - name: projectId
           in: path
@@ -5891,6 +6055,12 @@ paths:
       tags:
         - Builds
       summary: Retry Build Run
+      x-luna-agent:
+        purpose: { zh: 重试一个已有失败构建运行。, en: Retry an existing failed build run. }
+        aliases: { zh: [重试构建, 重新构建失败任务], en: [retry build run, retry failed build] }
+        avoidWhen: { zh: 输入、分支或构建配置需要修改时应触发新构建。, en: Trigger a new build when source or configuration must change. }
+        preconditions: { zh: [先用 getBuildRun 确认失败原因], en: [Confirm the failure with getBuildRun first] }
+        successEvidence: { zh: 返回新重试运行并用 getBuildRun 回读终态。, en: Returns a retry run and requires getBuildRun terminal readback. }
       parameters:
         - name: projectId
           in: path
@@ -6090,6 +6260,12 @@ paths:
       tags:
         - Releases
       summary: List Releases
+      x-luna-agent:
+        purpose: { zh: 分页列出发布工作流及状态。, en: List release workflows and states. }
+        aliases: { zh: [列出发布, 发布历史], en: [list releases, release history] }
+        avoidWhen: { zh: 已知 releaseId 时使用 getRelease。, en: Use getRelease for one known releaseId. }
+        preconditions: { zh: [提供可见项目范围], en: [Provide a visible project scope] }
+        successEvidence: { zh: 返回分页发布列表。, en: Returns a paginated release list. }
       parameters:
         - name: projectId
           in: path
@@ -6135,6 +6311,12 @@ paths:
       tags:
         - Releases
       summary: Create Release
+      x-luna-agent:
+        purpose: { zh: 创建并启动一次发布工作流。, en: Create and start a release workflow. }
+        aliases: { zh: [创建发布, 开始发布, 部署版本], en: [create release, start release, deploy release] }
+        avoidWhen: { zh: 只需查询已有发布状态时使用 getRelease。, en: Use getRelease to inspect an existing release. }
+        preconditions: { zh: [构建制品和部署目标已确认], en: [Build artifact and deployment target are confirmed] }
+        successEvidence: { zh: 返回已创建发布；必须用 getRelease 回读终态。, en: Returns the created release; getRelease must read back terminal state. }
       parameters:
         - name: projectId
           in: path
@@ -6166,6 +6348,12 @@ paths:
       tags: [Releases]
       summary: Get Release
       description: Returns the authoritative persisted workflow state for one release. The response is not cached.
+      x-luna-agent:
+        purpose: { zh: 读取单个发布的权威工作流状态。, en: Get the authoritative workflow state of one release. }
+        aliases: { zh: [查看发布状态, 发布详情], en: [get release, release status, release details] }
+        avoidWhen: { zh: 需要发布列表时使用 listReleases。, en: Use listReleases for a list. }
+        preconditions: { zh: [提供真实 releaseId], en: [Provide an authoritative releaseId] }
+        successEvidence: { zh: 返回不可缓存的发布终态、阶段或稳定错误码。, en: Returns non-cacheable release state, stages, or stable error codes. }
       parameters:
         - name: projectId
           in: path
@@ -6478,6 +6666,12 @@ paths:
       tags:
         - Gateway
       summary: List Gateway Routes
+      x-luna-agent:
+        purpose: { zh: 分页列出项目网关路由及状态。, en: List project gateway routes and status. }
+        aliases: { zh: [列出网关路由, 域名路由列表], en: [list gateway routes, list domain routes] }
+        avoidWhen: { zh: 已知 routeId 时使用 getGatewayRoute。, en: Use getGatewayRoute for one known routeId. }
+        preconditions: { zh: [提供真实 projectId], en: [Provide an authoritative projectId] }
+        successEvidence: { zh: 返回分页网关路由列表。, en: Returns a paginated gateway-route list. }
       parameters:
         - name: projectId
           in: path
@@ -6513,6 +6707,12 @@ paths:
       tags:
         - Gateway
       summary: Create Gateway Route
+      x-luna-agent:
+        purpose: { zh: 创建应用或服务的网关路由。, en: Create a gateway route for an application or service. }
+        aliases: { zh: [创建网关路由, 配置域名访问], en: [create gateway route, configure domain route] }
+        avoidWhen: { zh: 修改已有路由时使用 updateGatewayRoute。, en: Use updateGatewayRoute for an existing route. }
+        preconditions: { zh: [目标服务、域名和 TLS 需求已确认], en: [Target service, domain, and TLS requirements are confirmed] }
+        successEvidence: { zh: 返回创建路由并通过 getGatewayRoute 回读实时观察。, en: Returns the route and getGatewayRoute reads back live observation. }
       parameters:
         - name: projectId
           in: path
@@ -6544,6 +6744,12 @@ paths:
       tags: [Gateway]
       summary: Get Gateway Route
       description: Returns one gateway route with a no-store point-in-time Gateway API observation.
+      x-luna-agent:
+        purpose: { zh: 读取单个网关路由及实时 Gateway API 观察。, en: Get one gateway route with live Gateway API observation. }
+        aliases: { zh: [查看网关路由详情, 域名状态], en: [get gateway route, gateway route details, domain status] }
+        avoidWhen: { zh: 不知道 routeId 时使用 listGatewayRoutes。, en: Use listGatewayRoutes when routeId is unknown. }
+        preconditions: { zh: [提供真实 projectId 和 routeId], en: [Provide projectId and routeId] }
+        successEvidence: { zh: 返回不可缓存的路由配置和实时状态。, en: Returns non-cacheable route configuration and live status. }
       parameters:
         - name: projectId
           in: path
@@ -6566,6 +6772,12 @@ paths:
       tags:
         - Gateway
       summary: Update Gateway Route
+      x-luna-agent:
+        purpose: { zh: 更新已有网关路由配置。, en: Update an existing gateway route. }
+        aliases: { zh: [更新网关路由, 修改域名路由], en: [update gateway route, edit domain route] }
+        avoidWhen: { zh: 创建新路由或只读查询时不要使用。, en: Do not use for creation or read-only lookup. }
+        preconditions: { zh: [提供真实路由标识和更新输入], en: [Provide authoritative route identifier and update input] }
+        successEvidence: { zh: 返回更新路由并可权威回读。, en: Returns the updated route for authoritative readback. }
       parameters:
         - name: projectId
           in: path
@@ -6601,6 +6813,12 @@ paths:
       tags:
         - Gateway
       summary: Delete Gateway Route
+      x-luna-agent:
+        purpose: { zh: 删除指定网关路由。, en: Delete a gateway route. }
+        aliases: { zh: [删除网关路由, 移除域名访问], en: [delete gateway route, remove domain route] }
+        avoidWhen: { zh: 只需更新域名、后端或 TLS 时不要使用。, en: Do not use when domain, backend, or TLS only needs updating. }
+        preconditions: { zh: [用户确认外部访问中断影响], en: [User confirmed external-access impact] }
+        successEvidence: { zh: 返回删除结果并通过列表确认路由消失。, en: Returns deletion and list readback confirms absence. }
       parameters:
         - name: projectId
           in: path
@@ -6627,6 +6845,12 @@ paths:
       tags:
         - Gateway
       summary: Check Gateway Domain
+      x-luna-agent:
+        purpose: { zh: 检查域名是否可用于项目空间网关路由，并读取当前占用与证书适配状态。, en: Check whether a domain can be used by a project gateway route and read its current occupancy and certificate compatibility. }
+        aliases: { zh: [检查网关域名, 校验域名可用性, 检查 TLS 证书域名], en: [check gateway domain, validate domain availability, check TLS certificate domain] }
+        avoidWhen: { zh: 已有路由详情或需要实际创建、更新路由时不要使用。, en: Do not use when route details are already known or a route must actually be created or updated. }
+        preconditions: { zh: [提供真实 projectId 和 host, 需要时提供 domainSuffix 或排除的 routeId], en: [Provide authoritative projectId and host, Provide domainSuffix or an excluded routeId when needed] }
+        successEvidence: { zh: 返回当前域名可用性、冲突与证书相关事实；不会修改网关路由。, en: Returns current availability, conflicts, and certificate-related facts without changing a gateway route. }
       parameters:
         - name: projectId
           in: path
@@ -6701,6 +6925,10 @@ paths:
         aliases:
           zh: [查看平台账单概览, 平台账单, 费用概览]
           en: [platform billing overview, billing summary]
+        purpose: { zh: 读取指定账号范围和期间的平台账单概览。, en: Read a billing summary for an account scope and period. }
+        avoidWhen: { zh: 查询单条账单流水或执行余额调整时不要使用。, en: Do not use for individual ledger entries or balance adjustments. }
+        preconditions: { zh: [当前用户具有对应账单范围读取权限], en: [The current user can read the requested billing scope] }
+        successEvidence: { zh: 返回账单汇总、用量和余额概览。, en: Returns billing totals, usage, and balance overview. }
       parameters:
         - name: accountScope
           in: query
@@ -7122,6 +7350,10 @@ paths:
         aliases:
           zh: [网络搜索, 搜索互联网, 查找公开网页, 搜索官网和公开仓库]
           en: [web search, search the internet, find public webpages]
+        purpose: { zh: 通过平台受控出口搜索公开互联网。, en: Search the public web through the platform-controlled egress boundary. }
+        avoidWhen: { zh: 已知需要读取的准确公开 URL 时应使用 fetchWebPage。, en: Use fetchWebPage when the exact public URL is already known. }
+        preconditions: { zh: [提供不含凭据的公开信息检索词], en: [Provide a public-information query without credentials] }
+        successEvidence: { zh: 返回有界的公开搜索结果；所有内容均视为不可信数据。, en: Returns bounded public search results treated as untrusted data. }
       x-luna-cli:
         idempotent: true
       requestBody:
@@ -7162,6 +7394,10 @@ paths:
         aliases:
           zh: [读取网页, 获取网页正文, 打开公开链接, 读取官网和公开文档]
           en: [fetch web page, read webpage, open public URL]
+        purpose: { zh: 通过平台受控出口读取一个公开网页的有界正文和链接。, en: Fetch bounded text and links from one public webpage. }
+        avoidWhen: { zh: 不知道目标 URL 时先使用 webSearch；私网、凭据 URL 和非网页内容不可用。, en: Use webSearch when URL is unknown; private, credential-bearing, or non-web targets are not supported. }
+        preconditions: { zh: [提供公开 HTTP 或 HTTPS URL], en: [Provide a public HTTP or HTTPS URL] }
+        successEvidence: { zh: 返回截断标记、正文和链接；内容均视为不可信数据。, en: Returns a truncation flag, text, and links treated as untrusted data. }
       x-luna-cli:
         idempotent: true
       requestBody:
@@ -8375,7 +8611,7 @@ components:
     AIPlatformToolCatalogOperation:
       type: object
       additionalProperties: false
-      required: [operationId, name, summary, category, tags, aliases, requiresApproval, idempotent, method, path, requiredScopes, inputSchema, outputSchema, parameters, requestBody, requestRequired]
+      required: [operationId, name, summary, category, tags, aliases, purpose, avoidWhen, preconditions, successEvidence, requiresApproval, idempotent, method, path, requiredScopes, inputSchema, outputSchema, parameters, requestBody, requestRequired]
       properties:
         operationId: { type: string }
         name: { type: string }
@@ -8389,6 +8625,10 @@ components:
           properties:
             zh: { type: array, items: { type: string } }
             en: { type: array, items: { type: string } }
+        purpose: { $ref: "#/components/schemas/AIAgentLocalizedText" }
+        avoidWhen: { $ref: "#/components/schemas/AIAgentLocalizedText" }
+        preconditions: { $ref: "#/components/schemas/AIAgentLocalizedList" }
+        successEvidence: { $ref: "#/components/schemas/AIAgentLocalizedText" }
         requiresApproval: { type: boolean }
         idempotent: { type: boolean }
         method: { type: string, enum: [GET, POST, PUT, PATCH, DELETE] }
@@ -8411,6 +8651,20 @@ components:
         requestBody: { type: boolean }
         requestRequired: { type: boolean }
         requestType: { type: string }
+    AIAgentLocalizedText:
+      type: object
+      additionalProperties: false
+      required: [zh, en]
+      properties:
+        zh: { type: string }
+        en: { type: string }
+    AIAgentLocalizedList:
+      type: object
+      additionalProperties: false
+      required: [zh, en]
+      properties:
+        zh: { type: array, items: { type: string } }
+        en: { type: array, items: { type: string } }
     AgentObservabilitySource:
       type: string
       enum: [prometheus, loki, tempo]

@@ -163,6 +163,7 @@ export class TestRepository implements Repository {
       id: runId, conversationId: input.conversationId, turnId: turn.id, runIndex: 0,
       status: "queued", rowVersion: 1, promptVersion: "system-v4",
       toolCatalogDigest: input.toolCatalogDigest ?? "sha256:platform-tools-v1", pageContext: input.pageContext,
+      selectedOperationIds: [],
       actorSessionId: input.actorSessionId ?? `test:${ownerUserId}`,
       ...(input.traceContext ? { traceContext: input.traceContext } : {}),
       clientInstanceId: input.clientInstanceId ?? "memory-client-instance", createdAt: now, ownerUserId,
@@ -187,6 +188,26 @@ export class TestRepository implements Repository {
   async getRun(ownerUserId: string, id: string) {
     const value = this.runs.get(id)
     return value?.ownerUserId === ownerUserId ? value : undefined
+  }
+  async getRunToolState(runId: string) {
+    const run = this.runs.get(runId)
+    return run ? { toolCatalogDigest: run.toolCatalogDigest, selectedOperationIds: [...run.selectedOperationIds] } : undefined
+  }
+  async touchRunSelectedOperations(runId: string, operationIds: string[], limit: number) {
+    const run = this.runs.get(runId)
+    if (!run) throw new Error("ai.run_not_found")
+    const requested = [...new Set(operationIds)]
+    const alreadySelectedOperationIds = requested.filter(operationId => run.selectedOperationIds.includes(operationId))
+    const touched = new Set(requested)
+    const reordered = [...run.selectedOperationIds.filter(operationId => !touched.has(operationId)), ...requested]
+    const evictedOperationIds = reordered.slice(0, Math.max(0, reordered.length - limit))
+    run.selectedOperationIds = reordered.slice(-limit)
+    return { selectedOperationIds: [...run.selectedOperationIds], alreadySelectedOperationIds, evictedOperationIds }
+  }
+  async listActiveToolCatalogDigests() {
+    return [...new Set([...this.runs.values()]
+      .filter(run => ["queued", "running", "waiting_approval", "waiting_input"].includes(run.status))
+      .map(run => run.toolCatalogDigest))]
   }
 
   async cancelRun(ownerUserId: string, id: string) {
@@ -281,6 +302,8 @@ export class TestRepository implements Repository {
           turnIndex: turn.turnIndex,
           input: turn.input,
           pageContext: run.pageContext,
+          toolCatalogDigest: run.toolCatalogDigest,
+          selectedOperationIds: [...run.selectedOperationIds],
           ...(run.model ? { model: run.model } : {}),
           toolInteractions: this.items
             .filter(item => item.runId === runId && (item.type === "tool_call" || item.type === "tool_result"))

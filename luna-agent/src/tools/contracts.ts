@@ -7,6 +7,19 @@ export const toolAliasesSchema = z.object({
 
 export type ToolAliases = z.infer<typeof toolAliasesSchema>
 
+export const toolLocalizedTextSchema = z.object({
+  zh: z.string().trim().max(1000).default(""),
+  en: z.string().trim().max(1000).default(""),
+}).strict()
+
+export const toolLocalizedListSchema = z.object({
+  zh: z.array(z.string().trim().min(1).max(500)).max(20).default([]),
+  en: z.array(z.string().trim().min(1).max(500)).max(20).default([]),
+}).strict()
+
+export type ToolLocalizedText = z.infer<typeof toolLocalizedTextSchema>
+export type ToolLocalizedList = z.infer<typeof toolLocalizedListSchema>
+
 export const toolRouteParameterSchema = z.object({
   inputName: z.string().trim().min(1).max(120),
   wireName: z.string().trim().min(1).max(120),
@@ -23,6 +36,10 @@ export type ToolCatalogSummary = {
   category: string
   tags: string[]
   aliases: ToolAliases
+  purpose: ToolLocalizedText
+  avoidWhen: ToolLocalizedText
+  preconditions: ToolLocalizedList
+  successEvidence: ToolLocalizedText
   requiresApproval: boolean
 }
 
@@ -38,6 +55,14 @@ export type ToolCatalogPage = {
 export type ToolCatalogDetails<T> = {
   items: T[]
   missingOperationIds: string[]
+}
+
+export type ToolSemanticDetails = ToolCatalogSummary & {
+  idempotent: boolean
+  requiredScopes: string[]
+  majorParameters: Array<{ name: string, required: boolean, description?: string }>
+  outputFields: Array<{ name: string, description?: string }>
+  errorBehavior: string
 }
 
 export type ToolArgumentIssue = {

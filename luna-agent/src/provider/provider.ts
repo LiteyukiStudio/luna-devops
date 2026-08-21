@@ -16,17 +16,30 @@ export type ModelToolSearchResult = {
     category: string
     tags: string[]
     aliases: { zh: string[], en: string[] }
+    purpose: { zh: string, en: string }
+    avoidWhen: { zh: string, en: string }
+    preconditions: { zh: string[], en: string[] }
+    successEvidence: { zh: string, en: string }
     requiresApproval: boolean
   }>
   page: number
   pageSize: number
   total: number
   totalPages: number
+  loadedOperationIds: string[]
+  missingOperationIds: string[]
+  catalogDigest: string
+  duplicate: boolean
+  cacheHit: boolean
 }
 export type ModelToolDetailsResult = {
   items: Array<object & { operationId: string }>
   loadedOperationIds: string[]
+  alreadySelectedOperationIds: string[]
   missingOperationIds: string[]
+  catalogDigest: string
+  duplicate: boolean
+  cacheHit: boolean
 }
 type Awaitable<T> = T | Promise<T>
 export type ModelToolRegistry = {
@@ -35,13 +48,15 @@ export type ModelToolRegistry = {
     userInput: string,
     loadedOperationIds: string[],
     signal?: AbortSignal,
+    toolCatalogDigest?: string,
   ) => Awaitable<ModelToolDefinition[]>
   search: (
     input: { query?: string, page?: number, pageSize?: number },
     pageContext: Record<string, unknown>,
     signal?: AbortSignal,
+    toolCatalogDigest?: string,
   ) => Awaitable<ModelToolSearchResult>
-  details: (operationIds: string[]) => Awaitable<ModelToolDetailsResult>
+  details: (operationIds: string[], toolCatalogDigest?: string) => Awaitable<ModelToolDetailsResult>
 }
 export type ModelToolResolver = ModelToolDefinition[]
   | ((
@@ -49,6 +64,7 @@ export type ModelToolResolver = ModelToolDefinition[]
     userInput: string,
     loadedOperationIds: string[],
     signal?: AbortSignal,
+    toolCatalogDigest?: string,
   ) => Awaitable<ModelToolDefinition[]>)
   | ModelToolRegistry
 export type ModelToolChoice = "auto" | "required" | { operationId: string }

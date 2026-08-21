@@ -103,6 +103,8 @@ export type Run = {
   rowVersion: number
   promptVersion: PromptVersion
   toolCatalogDigest: string
+  /** Run 内已选平台工具的 LRU 顺序（最旧在前）；不包含 Schema。 */
+  selectedOperationIds: string[]
   pageContext: Record<string, unknown>
   traceContext?: Record<string, string>
   clientInstanceId?: string

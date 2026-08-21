@@ -23,6 +23,9 @@ func TestPlatformCatalogDefaultsToRegularOpenAPIOperations(t *testing.T) {
 		if len(operation.RequiredScopes) == 0 {
 			t.Fatalf("operation %s has no stable scope", operation.OperationID)
 		}
+		if strings.TrimSpace(operation.Purpose.ZH) == "" {
+			t.Fatalf("operation %s has no Chinese-first purpose", operation.OperationID)
+		}
 		if operation.InputSchema["type"] != "object" || operation.InputSchema["additionalProperties"] != false {
 			t.Fatalf("operation %s has unsafe input schema: %#v", operation.OperationID, operation.InputSchema)
 		}
@@ -32,6 +35,7 @@ func TestPlatformCatalogDefaultsToRegularOpenAPIOperations(t *testing.T) {
 		"getDashboard", "listProjects", "getProject", "createProject", "updateProject", "deleteProject",
 		"listProjectVolumes", "getProjectVolume", "createProjectVolume", "updateProjectVolume",
 		"previewProjectVolumeDeletion", "deleteProjectVolume",
+		"retryProjectVolumeOperation", "webSearch", "fetchWebPage",
 	} {
 		if _, ok := byID[operationID]; !ok {
 			t.Errorf("regular platform operation is missing: %s", operationID)
@@ -59,13 +63,40 @@ func TestPlatformCatalogJSONIsMinimalAndSelfContained(t *testing.T) {
 			t.Fatalf("legacy catalog field %s leaked: %s", removed, text)
 		}
 	}
-	for _, required := range []string{"operationId", "summary", "tags", "aliases", "requiresApproval", "inputSchema", "outputSchema", "parameters"} {
+	for _, required := range []string{"operationId", "summary", "tags", "aliases", "purpose", "avoidWhen", "preconditions", "successEvidence", "requiresApproval", "inputSchema", "outputSchema", "parameters"} {
 		if !strings.Contains(text, `"`+required+`"`) {
 			t.Fatalf("catalog JSON is missing %s: %s", required, text)
 		}
 	}
 	if !operation.RequiresApproval {
 		t.Fatal("high-risk volume creation must require approval")
+	}
+}
+
+func TestHighFrequencyOperationsCarryExplicitSemanticMetadata(t *testing.T) {
+	for _, operationID := range []string{
+		"listProjects", "createProject", "getProject", "updateProject", "deleteProject",
+		"listProjectVolumes", "createProjectVolume", "getProjectVolume", "updateProjectVolume",
+		"deleteProjectVolume", "retryProjectVolumeOperation", "previewProjectVolumeDeletion",
+		"listRuntimeClusters", "listRuntimeClusterResources", "getDashboard", "listUsers",
+		"getBillingSummary", "listNotificationChannels", "webSearch", "fetchWebPage",
+		"listApplications", "createApplication", "getApplication", "updateApplication", "deleteApplication",
+		"listDeploymentTargets", "createDeploymentTarget", "updateDeploymentTarget", "deleteDeploymentTarget",
+		"listBuildRuns", "triggerBuildRun", "getBuildRun", "retryBuildRun",
+		"listReleases", "createRelease", "getRelease",
+		"listGatewayRoutes", "createGatewayRoute", "getGatewayRoute", "updateGatewayRoute", "deleteGatewayRoute",
+		"checkGatewayDomain",
+	} {
+		operation, ok := PlatformOperation(operationID)
+		if !ok {
+			t.Fatalf("missing %s", operationID)
+		}
+		if strings.TrimSpace(operation.Purpose.ZH) == "" || strings.TrimSpace(operation.Purpose.EN) == "" ||
+			len(operation.Aliases.ZH) == 0 || len(operation.Aliases.EN) == 0 ||
+			strings.TrimSpace(operation.AvoidWhen.ZH) == "" || len(operation.Preconditions.ZH) == 0 ||
+			strings.TrimSpace(operation.SuccessEvidence.ZH) == "" {
+			t.Errorf("%s semantic metadata is incomplete: %#v", operationID, operation)
+		}
 	}
 }
 

@@ -50,13 +50,14 @@ export class SensitiveInputRejected extends Error {
 }
 
 type ApprovalRepository = Pick<Repository, "hasToolApprovalExemption" | "grantToolApprovalExemption">
+type ToolCatalogResolver = ToolCatalog | ((runId: string) => ToolCatalog | Promise<ToolCatalog>)
 
 export class ToolOrchestrator {
   private readonly approvalRepository: ApprovalRepository | undefined
   private readonly loopGuard: LoopGuard
 
   constructor(
-    private readonly catalog: ToolCatalog,
+    private readonly catalogResolver: ToolCatalogResolver,
     private readonly client: LunaApiToolClient,
     private readonly store: ToolCallStore,
     private readonly policy = new ToolPolicy(),
@@ -68,7 +69,7 @@ export class ToolOrchestrator {
   }
 
   async propose(input: { runId: string, operationId: string, arguments: unknown, inputMode?: "model" | "direct" }): Promise<ToolCallRecord> {
-    const operation = this.catalog.get(input.operationId)
+    const operation = (await this.catalogForRun(input.runId)).get(input.operationId)
     const argumentsHash = safeArgumentsHash(input.arguments)
     this.loopGuard.beforePropose({ runId: input.runId, operationId: input.operationId, argumentsHash })
     let args: Record<string, unknown>
@@ -183,7 +184,7 @@ export class ToolOrchestrator {
   }
 
   private async advance(call: ToolCallRecord, state: { approved: boolean, exempt: boolean }): Promise<ToolCallRecord> {
-    const operation = this.catalog.get(call.operationId)
+    const operation = (await this.catalogForRun(call.runId)).get(call.operationId)
     const decision = this.policy.evaluate(operation, state)
     if (decision.action === "wait_approval")
       return this.transition(call, "awaiting_approval", {}, "approval.required", {
@@ -202,7 +203,7 @@ export class ToolOrchestrator {
   private async execute(call: ToolCallRecord, approvalGranted: boolean): Promise<ToolCallRecord> {
     const startedAt = performance.now()
     let outcome = "succeeded"
-    const operation = this.catalog.get(call.operationId)
+    const operation = (await this.catalogForRun(call.runId)).get(call.operationId)
     this.loopGuard.beforeExecute({ runId: call.runId, operationId: call.operationId, argumentsHash: call.argumentsHash })
     try {
       return await withSpan(`execute_tool ${call.operationId}`, internalSpanOptions({
@@ -358,6 +359,10 @@ export class ToolOrchestrator {
     const call = await this.require(id)
     if (call.status !== "awaiting_approval") throw new Error("ai.approval_not_pending")
     return call
+  }
+
+  private catalogForRun(runId: string): ToolCatalog | Promise<ToolCatalog> {
+    return typeof this.catalogResolver === "function" ? this.catalogResolver(runId) : this.catalogResolver
   }
 }
 

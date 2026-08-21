@@ -52,8 +52,9 @@ export function buildServer(input: {
   tools?: ToolOrchestrator
   providerConfigClient?: ProviderConfigClient
   cancelRun?: (runId: string) => void
-  toolCatalogDigest?: string
+  toolCatalogDigest?: string | (() => string)
 }): FastifyInstance {
+  const toolCatalogDigest = () => typeof input.toolCatalogDigest === "function" ? input.toolCatalogDigest() : input.toolCatalogDigest
   const app = Fastify({
     logger: input.config.NODE_ENV === "test" ? false : {
       level: "info",
@@ -97,7 +98,7 @@ export function buildServer(input: {
   app.get("/internal/v1/health/compatibility", async () => ({
     component: "luna-agent", version: "0.1.0", internalApiVersions: ["v1"],
     aiSchemaMin: 1, aiSchemaMax: 1,
-    toolCatalogDigest: input.toolCatalogDigest ?? "sha256:platform-tools-v1", promptVersions: ["system-v4"],
+    toolCatalogDigest: toolCatalogDigest() ?? "sha256:platform-tools-v1", promptVersions: ["system-v4"],
   }))
 
   app.register(async secured => {
@@ -242,6 +243,7 @@ export function buildServer(input: {
         clientInstanceId,
         runId: id.optional(),
       }).parse(request.body)
+      const catalogDigest = toolCatalogDigest()
       const created = await withSpan("agent.turn.accept", internalSpanOptions({
         "luna.operation.name": "create_turn",
         "gen_ai.conversation.id": conversationId,
@@ -251,7 +253,7 @@ export function buildServer(input: {
           traceContext: captureTraceContext(request.headers),
           actorSessionId: request.actor.sessionId,
           idempotencyKey: key, ...(body.runId ? { preallocatedRunId: body.runId } : {}),
-          ...(input.toolCatalogDigest ? { toolCatalogDigest: input.toolCatalogDigest } : {}),
+          ...(catalogDigest ? { toolCatalogDigest: catalogDigest } : {}),
           clientInstanceId: body.clientInstanceId,
           modelId: body.modelId,
           ...(body.modelSnapshot ? { modelSnapshot: body.modelSnapshot } : {}),
@@ -276,6 +278,7 @@ export function buildServer(input: {
         runId: id,
       }).parse(request.body)
       if (body.runId !== request.actor.runId) return reply.code(409).send(errorBody("ai.run_state_conflict", request.id))
+      const catalogDigest = toolCatalogDigest()
       const created = await withSpan("agent.tool_action.accept", internalSpanOptions({
         "luna.operation.name": "create_tool_action",
         "gen_ai.conversation.id": conversationId,
@@ -288,7 +291,7 @@ export function buildServer(input: {
           actorSessionId: request.actor.sessionId,
           idempotencyKey: key,
           preallocatedRunId: body.runId,
-          ...(input.toolCatalogDigest ? { toolCatalogDigest: input.toolCatalogDigest } : {}),
+          ...(catalogDigest ? { toolCatalogDigest: catalogDigest } : {}),
           clientInstanceId: body.clientInstanceId,
         })
         span.setAttribute("luna.turn.id", value.turn.id)
@@ -296,6 +299,7 @@ export function buildServer(input: {
         return value
       })
       try {
+        await input.repository.touchRunSelectedOperations(created.run.id, [body.operationId], 16)
         const call = await input.tools.propose({ runId: created.run.id, operationId: body.operationId, arguments: body.arguments, inputMode: "direct" })
 		if (call.status === "awaiting_approval")
 		  await input.repository.updateRun(created.run.id, "queued", "waiting_approval")

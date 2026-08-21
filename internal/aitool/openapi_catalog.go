@@ -21,6 +21,10 @@ type OpenAPIOperation struct {
 	Category         string             `json:"category"`
 	Tags             []string           `json:"tags"`
 	Aliases          OperationAliases   `json:"aliases"`
+	Purpose          LocalizedText      `json:"purpose"`
+	AvoidWhen        LocalizedText      `json:"avoidWhen"`
+	Preconditions    LocalizedList      `json:"preconditions"`
+	SuccessEvidence  LocalizedText      `json:"successEvidence"`
 	RequiresApproval bool               `json:"requiresApproval"`
 	Idempotent       bool               `json:"idempotent"`
 	Method           string             `json:"method"`
@@ -36,6 +40,16 @@ type OpenAPIOperation struct {
 }
 
 type OperationAliases struct {
+	ZH []string `json:"zh"`
+	EN []string `json:"en"`
+}
+
+type LocalizedText struct {
+	ZH string `json:"zh"`
+	EN string `json:"en"`
+}
+
+type LocalizedList struct {
 	ZH []string `json:"zh"`
 	EN []string `json:"en"`
 }
@@ -191,6 +205,13 @@ func catalogOperation(document openAPIDocument, path, method, operationID string
 	extension := mapValue(raw["x-luna-agent"])
 	requiresApproval := operationRequiresApproval(method, mapValue(raw["x-luna-cli"]), extension)
 	aliases := operationAliases(operationID, tags, extension)
+	purpose := localizedText(extension["purpose"])
+	if purpose.ZH == "" {
+		purpose.ZH = fmt.Sprintf("用于调用 %s 对应的平台能力。", operationID)
+	}
+	if purpose.EN == "" {
+		purpose.EN = summary
+	}
 	return OpenAPIOperation{
 		OperationID:      operationID,
 		Name:             operationID,
@@ -198,6 +219,10 @@ func catalogOperation(document openAPIDocument, path, method, operationID string
 		Category:         category,
 		Tags:             tags,
 		Aliases:          aliases,
+		Purpose:          purpose,
+		AvoidWhen:        localizedText(extension["avoidWhen"]),
+		Preconditions:    localizedList(extension["preconditions"]),
+		SuccessEvidence:  localizedText(extension["successEvidence"]),
 		RequiresApproval: requiresApproval,
 		Idempotent:       strings.EqualFold(method, http.MethodGet) || boolValue(mapValue(raw["x-luna-cli"])["idempotent"]),
 		Method:           strings.ToUpper(method),
@@ -299,7 +324,6 @@ var agentDisabledOperations = map[string]string{
 	"createGatewayTrafficProbeHello":   "metering ingestion protocol",
 	"createGatewayTrafficUsage":        "metering ingestion protocol",
 	"createExternalBillingTransaction": "external billing ingestion protocol",
-	"retryProjectVolumeOperation":      "effective permission depends on the failed operation being retried",
 	"retryVolumeTransfer":              "effective permission depends on the original transfer direction",
 }
 
@@ -330,6 +354,19 @@ func operationAliases(operationID string, tags []string, extension map[string]an
 	}
 	en = append(en, operationID, strings.Join(splitOperationID(operationID), " "))
 	return OperationAliases{ZH: uniqueStrings(zh), EN: uniqueStrings(en)}
+}
+
+func localizedText(value any) LocalizedText {
+	raw := mapValue(value)
+	return LocalizedText{
+		ZH: strings.Join(strings.Fields(stringValue(raw["zh"])), " "),
+		EN: strings.Join(strings.Fields(stringValue(raw["en"])), " "),
+	}
+}
+
+func localizedList(value any) LocalizedList {
+	raw := mapValue(value)
+	return LocalizedList{ZH: uniqueStrings(stringArray(raw["zh"])), EN: uniqueStrings(stringArray(raw["en"]))}
 }
 
 func splitOperationID(value string) []string {

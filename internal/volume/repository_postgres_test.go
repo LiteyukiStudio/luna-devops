@@ -21,13 +21,15 @@ func TestGormRepositoryProjectVolumeContract(t *testing.T) {
 	service := NewService(repository)
 
 	if err := db.Exec(`
-INSERT INTO projects(id) VALUES ('prj_volume_test');
-INSERT INTO runtime_clusters(id) VALUES ('rclu_volume_test');
-INSERT INTO applications(id) VALUES ('app_volume_a'), ('app_volume_b');
-INSERT INTO deployment_targets(id, project_id, application_id, cluster_id, namespace)
+INSERT INTO projects(id, identifier, name) VALUES ('prj_volume_test', 'volume-test', 'Volume Test');
+INSERT INTO runtime_clusters(id, name) VALUES ('rclu_volume_test', 'Volume Test');
+INSERT INTO applications(id, project_id, identifier, name) VALUES
+  ('app_volume_a', 'prj_volume_test', 'volume-a', 'Volume A'),
+  ('app_volume_b', 'prj_volume_test', 'volume-b', 'Volume B');
+INSERT INTO deployment_targets(id, project_id, application_id, name, cluster_id, namespace)
 VALUES
-  ('dtgt_volume_a', 'prj_volume_test', 'app_volume_a', 'rclu_volume_test', 'project-volume-test'),
-  ('dtgt_volume_b', 'prj_volume_test', 'app_volume_b', 'rclu_volume_test', 'project-volume-test');`).Error; err != nil {
+  ('dtgt_volume_a', 'prj_volume_test', 'app_volume_a', 'Volume A', 'rclu_volume_test', 'project-volume-test'),
+  ('dtgt_volume_b', 'prj_volume_test', 'app_volume_b', 'Volume B', 'rclu_volume_test', 'project-volume-test');`).Error; err != nil {
 		t.Fatalf("seed project volume parents: %v", err)
 	}
 
@@ -705,20 +707,7 @@ func postgresTestProjectVolume(index int) model.ProjectVolume {
 
 func installProjectVolumeTestSchema(t *testing.T, db *gorm.DB) {
 	t.Helper()
-	parents := `
-CREATE TABLE projects (id text PRIMARY KEY);
-CREATE TABLE runtime_clusters (id text PRIMARY KEY);
-CREATE TABLE applications (id text PRIMARY KEY);
-CREATE TABLE deployment_targets (
-  id text PRIMARY KEY,
-  project_id text NOT NULL,
-  application_id text NOT NULL,
-  cluster_id text NOT NULL,
-  namespace text NOT NULL,
-  deleted_at timestamptz
-);`
-	schemaSQL := parents +
-		readVolumeMigration(t, "000066_project_volume_center.up.sql") +
+	schemaSQL := readVolumeMigration(t, "000067_baseline.up.sql") +
 		readVolumeMigration(t, "000069_volume_transfer_block_manifest.up.sql") +
 		readVolumeMigration(t, "000070_volume_transfer_completion_state.up.sql") +
 		readVolumeMigration(t, "000071_volume_transfer_part_leases.up.sql") +
@@ -784,5 +773,5 @@ func splitVolumeMigrationStatements(sql string) []string {
 }
 
 func openVolumeTestDB(t *testing.T) *gorm.DB {
-	return testdb.Open(t, testdb.Options{SchemaPrefix: "volume_test"})
+	return testdb.OpenDatabase(t, testdb.Options{SchemaPrefix: "volume_test"})
 }

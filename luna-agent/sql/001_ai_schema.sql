@@ -42,6 +42,7 @@ create table if not exists ai.runs (
   row_version integer not null default 1,
   prompt_version text not null,
   tool_catalog_digest text not null,
+  selected_operation_ids text[] not null default '{}',
   page_context jsonb not null default '{}',
   actor_session_id text not null,
   created_at timestamptz not null default now(),
@@ -87,6 +88,7 @@ alter table ai.runs add column if not exists input_credits_per_million numeric(2
 alter table ai.runs add column if not exists output_credits_per_million numeric(24,8);
 alter table ai.runs add column if not exists cached_input_credits_per_million numeric(24,8);
 alter table ai.runs add column if not exists cached_output_credits_per_million numeric(24,8);
+alter table ai.runs add column if not exists selected_operation_ids text[] not null default '{}';
 
 create table if not exists ai.model_budget_reservations (
   id text primary key,

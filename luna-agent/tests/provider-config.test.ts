@@ -20,6 +20,20 @@ describe("ProviderConfigClient", () => {
     expect(fetchMock).toHaveBeenCalledOnce()
   })
 
+  it("does not publish a refresh candidate until the caller commits it", async () => {
+    const fetchMock = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(response(authoritativePayload()))
+      .mockResolvedValueOnce(response({ ...authoritativePayload(), version: "cfg-2" }))
+    vi.stubGlobal("fetch", fetchMock)
+    const configClient = client()
+    expect((await configClient.get()).version).toBe("cfg-1")
+    const candidate = await configClient.getCandidate()
+    expect(candidate.version).toBe("cfg-2")
+    expect(configClient.current()?.version).toBe("cfg-1")
+    configClient.commit(candidate)
+    expect(configClient.current()?.version).toBe("cfg-2")
+  })
+
   it("accepts the configured upper context and tool-call limits", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => response(authoritativePayload({
       contextInputTokenBudget: 2048 * 1024,

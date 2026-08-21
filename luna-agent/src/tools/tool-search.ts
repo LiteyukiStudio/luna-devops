@@ -11,7 +11,7 @@ export type SearchToolsInput = z.infer<typeof searchToolsInput>
 
 export const searchToolsTool: ModelToolDefinition = {
   operationId: "search_tools",
-  description: "浏览或检索 Luna DevOps 的完整工具摘要目录。query 可以留空以按页浏览；也可以描述资源、动作、工具名或 operationId。结果只包含名称、用途、标签、别名和是否高危，不包含参数 Schema，也不会执行平台操作。确定候选后必须调用 get_tool_details 加载一到八个精确 operationId。",
+  description: "浏览或检索 Luna DevOps 的完整工具摘要目录。query 留空时只分页浏览；query 非空时会返回摘要，并自动把最相关的少量候选加载为当前 Run 后续步骤可直接调用的平台工具。结果不执行平台操作，也不授予权限。只有需要精确参数语义、消歧或确认风险时才调用 get_tool_details。",
   inputSchema: jsonSchema(searchToolsInput),
 }
 

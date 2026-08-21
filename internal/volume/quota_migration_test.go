@@ -62,8 +62,10 @@ func TestProjectVolumeQuotaPostgresLifecycleConcurrencyAndCancellation(t *testin
 	installProjectVolumeTestSchema(t, db)
 	installProjectVolumeQuotaTestSchema(t, db)
 	if err := db.Exec(`
-INSERT INTO projects(id) VALUES ('prj_quota'), ('prj_quota_other');
-INSERT INTO runtime_clusters(id) VALUES ('rclu_quota');
+INSERT INTO projects(id, identifier, name) VALUES
+  ('prj_quota', 'quota', 'Quota'),
+  ('prj_quota_other', 'quota-other', 'Quota Other');
+INSERT INTO runtime_clusters(id, name) VALUES ('rclu_quota', 'Quota');
 INSERT INTO app_configs(key, value) VALUES ('storage.projectManagedCapacityLimitGiB', '10');`).Error; err != nil {
 		t.Fatalf("seed quota parents and config: %v", err)
 	}
@@ -250,24 +252,6 @@ func quotaReferencedVolume(volumeID, projectID string) model.ProjectVolume {
 
 func installProjectVolumeQuotaTestSchema(t *testing.T, db *gorm.DB) {
 	t.Helper()
-	if err := db.Exec(`
-CREATE TABLE app_configs (
-    key text PRIMARY KEY,
-    value text NOT NULL DEFAULT '',
-    updated_at timestamptz NOT NULL DEFAULT now()
-);
-CREATE TABLE billing_rate_rules (
-    id text PRIMARY KEY,
-    meter text NOT NULL UNIQUE,
-    unit text NOT NULL,
-    credits_per_unit numeric(24,8) NOT NULL DEFAULT 0,
-    enabled boolean NOT NULL DEFAULT true,
-    description text NOT NULL DEFAULT '',
-    created_at timestamptz NOT NULL DEFAULT now(),
-    updated_at timestamptz NOT NULL DEFAULT now()
-);`).Error; err != nil {
-		t.Fatalf("install quota parent schema: %v", err)
-	}
 	if err := db.Exec(readVolumeMigration(t, "000068_project_volume_quota_billing.up.sql")).Error; err != nil {
 		t.Fatalf("install project volume quota schema: %v", err)
 	}

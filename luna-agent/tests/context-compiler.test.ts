@@ -311,6 +311,36 @@ describe("ContextCompiler", () => {
     const result = await compiler.compile(compileInput(conversation.id, 0, []))
     expect(result.estimatedInputTokens).toBeLessThanOrEqual(8_000)
   })
+
+  it("counts and preserves stable plus dynamic system messages before user context", async () => {
+    const repository = new TestRepository()
+    const conversation = await repository.createConversation("usr_a", "system-messages")
+    const compiler = new ContextCompiler(repository, summaryProvider(), {
+      inputTokenBudget: 8_000, compressionTriggerRatio: 0.8, compressionTargetRatio: 0.5,
+      recentTurnCount: 4, maxRecentTurnCount: 8, maxUncompressedTurnCount: 24,
+      maxCompressionTurnsPerCompile: 96, summaryInputTokenBudget: 4_000,
+      summaryMaxOutputTokens: 500, historicalToolTokenBudget: 1_000,
+    })
+    const one = await compiler.compile(compileInput(conversation.id, 0, []))
+    const multiple = await compiler.compile({
+      conversationId: conversation.id,
+      beforeTurnIndex: 0,
+      systemMessages: [
+        { role: "system", content: "稳定平台前缀" },
+        { role: "system", content: "按本轮目标加载的动态参考" },
+      ],
+      currentUserMessage: { role: "user", content: "当前问题" },
+      history: [],
+      continuationMessages: [],
+      tools: [],
+    })
+
+    expect(multiple.messages.slice(0, 2)).toEqual([
+      { role: "system", content: "稳定平台前缀" },
+      { role: "system", content: "按本轮目标加载的动态参考" },
+    ])
+    expect(multiple.estimatedInputTokens).toBeGreaterThan(one.estimatedInputTokens)
+  })
 })
 
 function compileInput(conversationId: string, beforeTurnIndex: number, history: ConversationHistoryEntry[]): CompileContextInput {

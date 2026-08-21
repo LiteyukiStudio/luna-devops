@@ -9,7 +9,7 @@ export type GetToolDetailsInput = z.infer<typeof getToolDetailsInput>
 
 export const getToolDetailsTool: ModelToolDefinition = {
   operationId: "get_tool_details",
-  description: "按精确 operationId 加载一到八个 Luna DevOps 工具的完整调用详情，包括输入 Schema、返回 Schema、权限范围、路由参数和高危审批标记。只加载当前任务真正选择的工具；详情本身不执行平台操作。",
+  description: "按精确 operationId 加载一到八个 Luna DevOps 工具的紧凑语义详情，用于参数含义、相似能力消歧、风险、前置条件与成功证据确认。被选工具会在当前 Run 后续所有模型步骤持续可用；调用 Schema 由运行时单独注入，详情不暴露执行路由，也不执行或授权平台操作。",
   inputSchema: jsonSchema(getToolDetailsInput),
 }
 

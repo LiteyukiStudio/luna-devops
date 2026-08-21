@@ -1,8 +1,11 @@
 import type { Config } from "../config.js"
 import type { InteractionCardValidationIssue } from "@luna-devops/ai-interaction-card-contract"
 import type { AssistantModelInput, ModelRuntime } from "../model-runtime.js"
+import type { ConversationToolInteraction } from "../domain.js"
+import type { ModelToolDetailsResult, ModelToolSearchResult } from "../provider/provider.js"
 import { RunStateConflictError, type Repository } from "../persistence/repository.js"
 import type { ProviderConfigClient } from "../provider/config-client.js"
+import type { ToolCatalogRegistry } from "../tools/catalog-registry.js"
 import { genAIAgentName, genAIAgentSpanAttributes, genAIInputMessages, genAIOutputMessages, genAIToolCallObject, genAIToolSpanAttributes } from "../genai-semconv.js"
 import { agentRuntimeInternals, defaultRuntimeSettings, type RuntimeSettings } from "../runtime-settings.js"
 import { agentMetrics, extractTraceContext, internalSpanOptions, recordAIContent, recordSpanError, stableErrorCode, telemetryLog, withSpan } from "../telemetry.js"
@@ -16,6 +19,10 @@ import { InternalToolHandlers } from "./internal-tools.js"
 import { internalToolOperationIds, cardToolOperationIds, normalizeToolSearchQuery, resumedToolMessages } from "./resume.js"
 import { streamModel } from "./streaming.js"
 import { setToolResultPayloadBudget, stableError, toolResultMessage } from "./tool-results.js"
+
+const selectedOperationLimit = 16
+const searchAutoLoadLimit = 5
+type RuntimeConfigSource = Pick<ProviderConfigClient, "get"> & Partial<Pick<ProviderConfigClient, "getCandidate" | "commit">>
 
 export class RunExecutor {
   private timer?: NodeJS.Timeout
@@ -32,8 +39,9 @@ export class RunExecutor {
     private readonly modelRuntime: ModelRuntime,
     private readonly config: Config,
     private readonly tools?: ToolOrchestrator,
-    private readonly runtimeConfig?: Pick<ProviderConfigClient, "get">,
+    private readonly runtimeConfig?: RuntimeConfigSource,
     initialRuntimeSettings: RuntimeSettings = defaultRuntimeSettings,
+    private readonly catalogRegistry?: ToolCatalogRegistry,
   ) {
     this.runtimeSettings = initialRuntimeSettings
     this.cards = new CardGenerationService(repository)
@@ -116,6 +124,11 @@ export class RunExecutor {
         })
         const executionInput = await this.repository.getExecutionInput(run.id)
         if (!executionInput) throw new Error("ai.turn_not_found")
+        let selectedOperationIds = (await this.repository.touchRunSelectedOperations(
+          run.id,
+          reconstructSelectedOperationIds(executionInput.toolInteractions),
+          selectedOperationLimit,
+        )).selectedOperationIds
         recordAIContent(span, "luna.gen_ai.content.input", "gen_ai.input.messages", genAIInputMessages([
           { role: "user", content: executionInput.input },
         ]))
@@ -141,12 +154,10 @@ export class RunExecutor {
         let completed = false
         let finalResponseMissing = false
         const continuationMessages = resumedToolMessages(executionInput.toolInteractions)
-        const nextStepOperationIds = new Set<string>()
-        const searchedToolQueries = new Set<string>()
-        const detailedToolRequests = new Set<string>()
+        const searchedToolQueries = restoredInternalToolResults(executionInput.toolInteractions, "search_tools")
+        const detailedToolRequests = restoredInternalToolResults(executionInput.toolInteractions, "get_tool_details")
         for (let step = 0; step < this.runtimeSettings.maxModelSteps; step += 1) {
-          const loadedOperationIds = [...nextStepOperationIds]
-          nextStepOperationIds.clear()
+          const loadedOperationIds = [...selectedOperationIds]
           const result = await this.streamModel(run.id, run.turnId, {
             runId: run.id,
             ownerUserId: run.ownerUserId,
@@ -161,6 +172,7 @@ export class RunExecutor {
             toolCalls: [],
             continuationMessages,
             loadedOperationIds,
+            toolCatalogDigest: run.toolCatalogDigest,
             ...(executionInput.model ? { model: executionInput.model } : {}),
           }, abort.signal)
           finalAnswer = result.answer
@@ -303,21 +315,24 @@ export class RunExecutor {
                 continue
               }
               const input = parsedInput.data
-              const requestKey = JSON.stringify(input)
-              const alreadyLoaded = detailedToolRequests.has(requestKey)
+              const requestKey = normalizedDetailRequest(input.operationIds)
+              const cached = detailedToolRequests.get(requestKey)
+              const alreadyLoaded = cached !== undefined
               const detailsStartedAt = performance.now()
               let detailsResult: Awaited<ReturnType<ModelRuntime["getAvailableToolDetails"]>>
               try {
                 detailsResult = await this.traceInternalTool("get_tool_details", run.id, input, async () => {
-                  if (alreadyLoaded) {
-                    return {
-                      items: [],
-                      loadedOperationIds: [],
-                      missingOperationIds: [],
-                    }
+                  const base = cached ?? await this.modelRuntime.getAvailableToolDetails(input.operationIds, run.toolCatalogDigest)
+                  if (!cached) detailedToolRequests.set(requestKey, base)
+                  const selection = await this.repository.touchRunSelectedOperations(run.id, base.loadedOperationIds, selectedOperationLimit)
+                  selectedOperationIds = selection.selectedOperationIds
+                  return {
+                    ...base,
+                    alreadySelectedOperationIds: selection.alreadySelectedOperationIds,
+                    catalogDigest: run.toolCatalogDigest,
+                    duplicate: alreadyLoaded,
+                    cacheHit: alreadyLoaded,
                   }
-                  detailedToolRequests.add(requestKey)
-                  return this.modelRuntime.getAvailableToolDetails(input.operationIds)
                 }, toolCall.id)
                 await this.internalTools.recordToolCall(
                   run.id,
@@ -346,7 +361,6 @@ export class RunExecutor {
                 )
                 throw error
               }
-              detailsResult.loadedOperationIds.forEach(operationId => nextStepOperationIds.add(operationId))
               const itemCount = detailsResult.items.length
               const detailsOutcome = alreadyLoaded ? "duplicate" : itemCount ? "succeeded" : "empty"
               agentMetrics.toolDetailLoads.add(1, { outcome: detailsOutcome })
@@ -386,26 +400,36 @@ export class RunExecutor {
               }
               const input = parsedInput.data
               const normalizedQuery = `${normalizeToolSearchQuery(input.query)}\u0000${input.page}\u0000${input.pageSize}`
-              const alreadySearched = searchedToolQueries.has(normalizedQuery)
+              const cached = searchedToolQueries.get(normalizedQuery)
+              const alreadySearched = cached !== undefined
               const searchStartedAt = performance.now()
               let searchResult: Awaited<ReturnType<ModelRuntime["searchAvailableTools"]>>
               try {
-                searchResult = await this.traceInternalTool("search_tools", run.id, input, async () => {
-                  if (alreadySearched) return {
-                    query: input.query,
-                    items: [],
-                    page: input.page,
-                    pageSize: input.pageSize,
-                    total: 0,
-                    totalPages: 0,
-                  }
-                  searchedToolQueries.add(normalizedQuery)
-                  return this.modelRuntime.searchAvailableTools(
+                searchResult = await this.traceInternalTool("search_tools", run.id, {
+                  queryPresent: input.query.length > 0,
+                  page: input.page,
+                  pageSize: input.pageSize,
+                }, async () => {
+                  const base = cached ?? await this.modelRuntime.searchAvailableTools(
                     input,
                     executionInput.pageContext,
                     abort.signal,
+                    run.toolCatalogDigest,
                   )
-                }, toolCall.id)
+                  const candidates = input.query ? base.items.slice(0, Math.min(searchAutoLoadLimit, 8)).map(item => item.operationId) : []
+                  const selection = await this.repository.touchRunSelectedOperations(run.id, candidates, selectedOperationLimit)
+                  selectedOperationIds = selection.selectedOperationIds
+                  const value = {
+                    ...base,
+                    loadedOperationIds: candidates,
+                    missingOperationIds: base.missingOperationIds ?? [],
+                    catalogDigest: run.toolCatalogDigest,
+                    duplicate: alreadySearched,
+                    cacheHit: alreadySearched,
+                  }
+                  if (!cached) searchedToolQueries.set(normalizedQuery, { ...value, duplicate: false, cacheHit: false })
+                  return value
+                }, toolCall.id, false)
                 await this.internalTools.recordToolCall(
                   run.id,
                   run.turnId,
@@ -439,9 +463,11 @@ export class RunExecutor {
               continuationMessages.push(toolResultMessage(toolCall, {
                 status: searchResult.items.length ? "succeeded" : "no_matches",
                 ...searchResult,
-                guidance: searchResult.items.length
-                  ? "检索结果只是摘要。请选择一到八个精确 operationId 调用 get_tool_details，加载后再执行具体工具；不要把目录结果当成业务执行结果。"
-                  : "没有新增匹配工具，或同一检索已经执行过。请改用更具体且不同的业务目标检索一次；仍无结果时再如实说明能力缺失。",
+                guidance: searchResult.loadedOperationIds.length
+                  ? "最相关候选已经加入当前 Run，下一步请直接调用最适合的具体工具。只有需要参数语义、相似能力消歧或风险确认时才调用 get_tool_details；目录结果不代表业务已执行。"
+                  : searchResult.items.length
+                    ? "这是只浏览不自动加载的目录页；需要执行时请用非空 query 精确检索，或调用 get_tool_details 选择精确 operationId。"
+                    : "没有匹配工具。请改用更具体的业务目标检索一次；仍无结果时再如实说明能力缺失。",
               }))
               continue
             }
@@ -468,6 +494,7 @@ export class RunExecutor {
             }
             if (!this.tools) throw new Error("ai.tool_not_available")
             platformToolCalled = true
+            selectedOperationIds = (await this.repository.touchRunSelectedOperations(run.id, [toolCall.operationId], selectedOperationLimit)).selectedOperationIds
             let call: Awaited<ReturnType<ToolOrchestrator["propose"]>>
             try {
               call = await this.tools.propose({ runId: run.id, operationId: toolCall.operationId, arguments: toolCall.arguments, inputMode: "model" })
@@ -621,7 +648,27 @@ export class RunExecutor {
     if (!this.runtimeConfig)
       return
     try {
-      const runtimeSettings = (await this.runtimeConfig.get()).runtime
+      const candidate = this.catalogRegistry && this.runtimeConfig.getCandidate
+        ? await this.runtimeConfig.getCandidate()
+        : await this.runtimeConfig.get()
+      if (this.catalogRegistry && this.runtimeConfig.commit) {
+        await withSpan("agent.tool_catalog.refresh", internalSpanOptions(), async (span) => {
+          const refresh = this.catalogRegistry!.refresh(candidate.toolCatalog, candidate.version)
+          this.runtimeConfig!.commit!(candidate)
+          const outcome = refresh.changed ? "updated" : "unchanged"
+          span.setAttributes({
+            "luna.tool_catalog.refresh.outcome": outcome,
+            "luna.tool_catalog.operation_count": this.catalogRegistry!.current().all().length,
+          })
+          agentMetrics.toolCatalogRefreshes.add(1, { outcome })
+          telemetryLog("agent.tool_catalog.refreshed", "info", {
+            "luna.tool_catalog.refresh.outcome": outcome,
+            "luna.tool_catalog.operation_count": this.catalogRegistry!.current().all().length,
+          })
+          this.catalogRegistry!.retain(await this.repository.listActiveToolCatalogDigests())
+        })
+      }
+      const runtimeSettings = candidate.runtime
       this.modelRuntime.setContextOptions({
         inputTokenBudget: runtimeSettings.contextInputTokenBudget,
         compressionTriggerRatio: runtimeSettings.contextCompressionTriggerRatio,
@@ -640,7 +687,9 @@ export class RunExecutor {
       this.tools?.setRunMaxToolCalls(runtimeSettings.runMaxToolCalls)
       this.runtimeSettings = runtimeSettings
     }
-    catch {
+    catch (error) {
+      agentMetrics.toolCatalogRefreshes.add(1, { outcome: "failed" })
+      telemetryLog("agent.tool_catalog.refresh_failed", "warn", { "error.code": stableErrorCode(error) })
       // Keep the last validated settings when Luna API is temporarily unavailable.
     }
   }
@@ -649,7 +698,7 @@ export class RunExecutor {
     return streamModel(this.repository, this.modelRuntime, runId, turnId, input, signal)
   }
 
-  private async traceInternalTool<T>(operationId: string, runId: string, input: unknown, operation: () => Promise<T>, callId?: string): Promise<T> {
+  private async traceInternalTool<T>(operationId: string, runId: string, input: unknown, operation: () => Promise<T>, callId?: string, captureContent = true): Promise<T> {
     const startedAt = performance.now()
     let outcome = "succeeded"
     try {
@@ -657,27 +706,33 @@ export class RunExecutor {
         ...genAIToolSpanAttributes({ name: operationId, ...(callId ? { callId } : {}) }),
         "luna.run.id": runId,
       }), async span => {
-        recordAIContent(span, "luna.gen_ai.tool.content.input", "gen_ai.tool.call.arguments", genAIToolCallObject(input), {
-          "gen_ai.tool.name": operationId,
-        })
+        if (captureContent) {
+          recordAIContent(span, "luna.gen_ai.tool.content.input", "gen_ai.tool.call.arguments", genAIToolCallObject(input), {
+            "gen_ai.tool.name": operationId,
+          })
+        }
         let result: T
         try {
           result = await operation()
         }
         catch (error) {
-          recordAIContent(span, "luna.gen_ai.tool.content.output", "gen_ai.tool.call.result", {
-            error: {
-              type: error instanceof Error ? error.name : "UnknownError",
-              code: stableErrorCode(error),
-            },
-          }, {
-            "gen_ai.tool.name": operationId,
-          })
+          if (captureContent) {
+            recordAIContent(span, "luna.gen_ai.tool.content.output", "gen_ai.tool.call.result", {
+              error: {
+                type: error instanceof Error ? error.name : "UnknownError",
+                code: stableErrorCode(error),
+              },
+            }, {
+              "gen_ai.tool.name": operationId,
+            })
+          }
           throw error
         }
-        recordAIContent(span, "luna.gen_ai.tool.content.output", "gen_ai.tool.call.result", genAIToolCallObject(result), {
-          "gen_ai.tool.name": operationId,
-        })
+        if (captureContent) {
+          recordAIContent(span, "luna.gen_ai.tool.content.output", "gen_ai.tool.call.result", genAIToolCallObject(result), {
+            "gen_ai.tool.name": operationId,
+          })
+        }
         return result
       })
     }
@@ -691,4 +746,51 @@ export class RunExecutor {
       agentMetrics.toolDuration.record((performance.now() - startedAt) / 1000, attributes)
     }
   }
+}
+
+function reconstructSelectedOperationIds(interactions: ConversationToolInteraction[]): string[] {
+  const selected: string[] = []
+  for (const interaction of interactions) {
+    if (interaction.type !== "tool_call") continue
+    const operationId = typeof interaction.content.operationId === "string" ? interaction.content.operationId : ""
+    if (operationId && !internalToolOperationIds.has(operationId)) selected.push(operationId)
+    const result = recordValue(interaction.content.result)
+    const loaded = Array.isArray(result?.loadedOperationIds)
+      ? result.loadedOperationIds.filter((item): item is string => typeof item === "string")
+      : []
+    selected.push(...loaded)
+  }
+  return [...new Set(selected)]
+}
+
+function restoredInternalToolResults(interactions: ConversationToolInteraction[], operationId: "search_tools"): Map<string, ModelToolSearchResult>
+function restoredInternalToolResults(interactions: ConversationToolInteraction[], operationId: "get_tool_details"): Map<string, ModelToolDetailsResult>
+function restoredInternalToolResults(interactions: ConversationToolInteraction[], operationId: "search_tools" | "get_tool_details") {
+  const output = new Map<string, ModelToolSearchResult | ModelToolDetailsResult>()
+  for (const interaction of interactions) {
+    if (interaction.type !== "tool_call" || interaction.content.operationId !== operationId) continue
+    const args = recordValue(interaction.content.arguments)
+    const result = recordValue(interaction.content.result)
+    if (!args || !result) continue
+    if (operationId === "search_tools") {
+      const parsed = searchToolsInput.safeParse(args)
+      if (parsed.success && Array.isArray(result.items)) {
+        const key = `${normalizeToolSearchQuery(parsed.data.query)}\u0000${parsed.data.page}\u0000${parsed.data.pageSize}`
+        output.set(key, result as unknown as ModelToolSearchResult)
+      }
+    }
+    else {
+      const parsed = getToolDetailsInput.safeParse(args)
+      if (parsed.success && Array.isArray(result.items)) output.set(normalizedDetailRequest(parsed.data.operationIds), result as unknown as ModelToolDetailsResult)
+    }
+  }
+  return output
+}
+
+function normalizedDetailRequest(operationIds: string[]): string {
+  return JSON.stringify([...new Set(operationIds)].sort())
+}
+
+function recordValue(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined
 }

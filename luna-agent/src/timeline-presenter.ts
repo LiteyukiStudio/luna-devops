@@ -236,6 +236,6 @@ function stringValue(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined
 }
 function toolStatus(value: string | undefined, itemStatus: TimelineItem["status"]) {
-	const allowed = ["proposed", "awaiting_approval", "running", "succeeded", "failed", "canceled", "skipped"] as const
+	const allowed = ["proposed", "awaiting_approval", "running", "succeeded", "failed", "rejected", "canceled", "skipped"] as const
   return allowed.find(status => status === value) ?? (itemStatus === "failed" ? "failed" as const : "succeeded" as const)
 }

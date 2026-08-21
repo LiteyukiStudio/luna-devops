@@ -105,6 +105,7 @@ export const agentMetrics = {
   toolRetrievalCandidates: deferredHistogram("luna_devops_agent_tool_retrieval_candidates", "单次自动工具检索候选数量", "tool"),
   toolRetrievalLoaded: deferredHistogram("luna_devops_agent_tool_retrieval_loaded", "单次自动工具检索最终加载数量", "tool"),
   toolRetrievalDuration: deferredHistogram("luna_devops_agent_tool_retrieval_duration", "自动工具检索耗时", "s"),
+  toolCatalogRefreshes: deferredCounter("luna_devops_agent_tool_catalog_refreshes", "工具目录热刷新次数"),
   approvals: deferredCounter("luna_devops_agent_approval_decisions", "工具审批决策次数"),
   cards: deferredCounter("luna_devops_agent_interaction_cards", "交互卡片生成次数"),
   externalRequests: deferredCounter("luna_devops_agent_external_requests", "外部请求次数"),

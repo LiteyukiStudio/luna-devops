@@ -15,6 +15,7 @@ export const runs = aiSchema.table("runs", {
   rowVersion: integer("row_version").notNull().default(1),
   promptVersion: text("prompt_version").notNull().$type<PromptVersion>(),
   toolCatalogDigest: text("tool_catalog_digest").notNull(),
+  selectedOperationIds: text("selected_operation_ids").array().notNull().default(sql`'{}'::text[]`),
   pageContext: jsonb("page_context").notNull().$type<Record<string, unknown>>().default({}),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
   startedAt: timestamp("started_at", { withTimezone: true, mode: "date" }),

@@ -49,6 +49,11 @@ export type ModelBudgetUsage = {
 }
 export type ModelBudgetReservation = { id: string, maxOutputTokens: number }
 export type RepositoryReadiness = { database: boolean, schema: boolean }
+export type RunToolSelection = {
+  selectedOperationIds: string[]
+  alreadySelectedOperationIds: string[]
+  evictedOperationIds: string[]
+}
 
 export interface Repository {
   health(): Promise<boolean>
@@ -63,6 +68,9 @@ export interface Repository {
   deleteConversation(ownerUserId: string, conversationId: string): Promise<boolean>
   createTurn(ownerUserId: string, input: CreateTurn): Promise<CreatedTurn>
   getRun(ownerUserId: string, runId: string): Promise<Run | undefined>
+  getRunToolState(runId: string): Promise<Pick<Run, "toolCatalogDigest" | "selectedOperationIds"> | undefined>
+  touchRunSelectedOperations(runId: string, operationIds: string[], limit: number): Promise<RunToolSelection>
+  listActiveToolCatalogDigests(): Promise<string[]>
   cancelRun(ownerUserId: string, runId: string): Promise<Run | undefined>
   claimNextQueuedRun(): Promise<Run | undefined>
   countActiveUserRuns(userId: string): Promise<number>
@@ -72,6 +80,8 @@ export interface Repository {
     turnIndex: number
     input: string
     pageContext: Record<string, unknown>
+    toolCatalogDigest: string
+    selectedOperationIds: string[]
     toolInteractions: ConversationToolInteraction[]
     history: ConversationHistoryEntry[]
     conversation: Pick<Conversation, "title" | "titleSource">

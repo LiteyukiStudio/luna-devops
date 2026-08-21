@@ -32,6 +32,37 @@ func TestFullConfigPayloadUpdatesKnownValues(t *testing.T) {
 	assertAppConfigValue(t, db, "site.title", "Updated Luna DevOps")
 }
 
+func TestAIConfigUpdatePersistsTransactionAudit(t *testing.T) {
+	db := authIntegrationDB(t)
+	now := time.Now()
+	user := model.User{ID: "usr_ai_config_admin", Email: "ai-config-admin@example.com", Name: "AI Config Admin", Role: authz.PlatformRoleAdmin, Language: "en-US"}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatal(err)
+	}
+	sessionToken := "sess_ai_config_admin"
+	if err := db.Create(&model.UserSession{ID: "ses_ai_config_admin", UserID: user.ID, TokenHash: hashToken(sessionToken), ExpiresAt: now.Add(time.Hour)}).Error; err != nil {
+		t.Fatal(err)
+	}
+	handlers := &Handlers{db: db, configs: newConfigCache(db), mode: "development"}
+	recorder, ctx := newAPIIntegrationContext(http.MethodPut, "/api/v1/configs", map[string]any{"values": map[string]any{
+		"ai.assistant.enabled": true,
+	}}, sessionToken)
+
+	handlers.UpdateConfigs(ctx)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("AI config update = %d %s", recorder.Code, recorder.Body.String())
+	}
+	assertAppConfigValue(t, db, "ai.assistant.enabled", "true")
+	var audit model.AuditLog
+	if err := db.First(&audit, "action = ?", "ai.settings_update").Error; err != nil {
+		t.Fatalf("load AI settings audit: %v", err)
+	}
+	if audit.ID == "" || audit.UserID != user.ID || audit.Resource != "ai.settings" || !audit.Success {
+		t.Fatalf("unexpected AI settings audit: %+v", audit)
+	}
+}
+
 func TestConfigBatchValidationAndTransactionAreAtomic(t *testing.T) {
 	db := authIntegrationDB(t)
 	if err := db.Create(&model.AppConfig{Key: "site.title", Value: "before"}).Error; err != nil {

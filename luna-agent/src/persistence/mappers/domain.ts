@@ -55,6 +55,7 @@ export function mapRun(row: RunRow): Run {
     rowVersion: row.rowVersion,
     promptVersion: row.promptVersion,
     toolCatalogDigest: row.toolCatalogDigest,
+    selectedOperationIds: row.selectedOperationIds,
     pageContext: row.pageContext,
     ...(Object.keys(row.traceContext ?? {}).length ? { traceContext: row.traceContext } : {}),
     createdAt: row.createdAt.toISOString(),

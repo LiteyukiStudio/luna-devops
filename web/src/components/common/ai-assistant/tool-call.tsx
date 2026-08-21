@@ -23,6 +23,7 @@ const statusTone: Record<AIToolStatus, string> = {
   running: 'bg-info-subtle text-info',
   succeeded: 'bg-success-subtle text-success',
   failed: 'bg-danger-subtle text-danger',
+  rejected: 'bg-surface-inset text-muted-foreground',
   canceled: 'bg-surface-inset text-muted-foreground',
   skipped: 'bg-surface-inset text-muted-foreground',
 }
@@ -84,6 +85,8 @@ function ToolStatusIcon({ status }: { status: AIToolStatus }) {
     return <Check aria-hidden="true" className={`${className} text-success`} data-ai-tool-status-icon={status} />
   if (status === 'failed')
     return <CircleAlert aria-hidden="true" className={`${className} text-danger`} data-ai-tool-status-icon={status} />
+  if (status === 'rejected')
+    return <Minus aria-hidden="true" className={className} data-ai-tool-status-icon={status} />
   if (status === 'canceled')
     return <CircleStop aria-hidden="true" className={className} data-ai-tool-status-icon={status} />
   if (status === 'skipped')

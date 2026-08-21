@@ -94,6 +94,7 @@ const aiAssistant = {
       running: 'Running',
       succeeded: 'Completed',
       failed: 'Failed',
+      rejected: 'Rejected',
       canceled: 'Canceled',
       skipped: 'Skipped',
     },

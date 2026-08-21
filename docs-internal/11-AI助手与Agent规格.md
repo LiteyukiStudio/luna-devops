@@ -54,11 +54,20 @@ AI 助手不是悬浮在控制台上的通用聊天机器人。它理解用户�
   协议适配器、认证回调、凭据与计量入口由 `operationId -> reason` 集中禁用表排除。
 - 不存在 `x-luna-agent.allowed`、Agent 手写平台 fallback、手工 base operation 白名单、重复描述、
   predecessor/followup 图、JSON Pointer verifier 或 readback engine。
-- `search_tools` 的 query 可空；空查询分页返回完整轻量目录，非空查询仅用 operationId、名称、资源、
-  动作、标签、中英文别名和 BM25 排序。结果不含 Schema。
-- `get_tool_details` 每次接收 1–8 个精确 operationId，返回输入/输出 Schema 与路由细节；只有这些
-  被选择的 Schema 才进入下一模型步。无 embedding、多向量、RRF、reranker、shadow/dynamic、
-  sticky、Top 8 门禁、digest 持久化或专用大评测集。
+- `search_tools` 的 query 可空；空查询只分页浏览完整轻量目录，非空查询使用带字段权重的 BM25F
+  对 operationId、动作、资源、名称、用途、标签、中英文别名、参数、输入输出字段、禁用场景、
+  前置条件和成功回读排序。每次非空检索自动把前 5 个候选加入当前 Run，单次最多 8 个；结果不含
+  Schema，模型可直接调用已经加入的操作，不必机械地再查详情。
+- `get_tool_details` 每次接收 1–8 个精确 operationId，只返回用途、禁用场景、前置条件、成功回读、
+  Scope、审批要求和参数语义等紧凑消歧信息；HTTP 方法、路由和完整输入/输出 Schema 只在执行器与
+  实际模型工具定义中使用，不进入详情结果。没有 embedding、多向量、RRF、reranker 或影子检索。
+- 每个 Run 持久化按最近使用排序的 `selectedOperationIds`，最多保留 16 个平台操作；检索、详情、
+  实际调用、审批和输入恢复都会沿用同一集合，内部工具不计入。重复的相同检索或详情请求返回首次
+  命中的缓存结果并明确 `cacheHit/duplicate`，不得伪装成空结果。淘汰只影响后续模型工具定义，
+  不删除历史 ToolCall 或事件。
+- Run 创建时快照当前 Catalog digest；配置刷新先完整构建和校验新目录，再原子切换当前版本，并同时
+  保留仍被活动 Run 引用的旧快照。新 Run 使用新 digest，旧 Run 始终使用原 digest；刷新失败继续
+  使用上一份有效目录。
 - Catalog 必须从真实 OpenAPI operation 归一化 operationId、用途、标签、别名、审批要求、幂等性、
   HTTP 路由、Scope、输入/输出 Schema、敏感路径和传输参数。目录只负责发现，最终权限仍由 Luna API
   权威回读用户、Session、会话、项目空间、ToolCall 与审批状态后进入原 Handler/Service/RBAC。
@@ -84,8 +93,10 @@ AI 助手不是悬浮在控制台上的通用聊天机器人。它理解用户�
 ## 4. 记忆与上下文
 
 - 首版只提供会话内短期记忆，不自动建立跨会话长期记忆。
-- 上下文只组装系统提示、一个滚动摘要、近期完整原文和当前工具结果。没有 deferred/catch-up、
-  多级摘要复用或独立 compaction 状态；压缩失败安全回退且不修改权威完整事件。
+- 上下文先放稳定的核心系统提示，再把本轮目标命中的 Skill/参考以独立、较后的 system message
+  加入，然后组装一个滚动摘要、近期完整原文和当前工具结果。`ContextCompiler` 必须把所有 system
+  message 一并计入 Token 预算并保持顺序。没有 deferred/catch-up、多级摘要复用或独立 compaction
+  状态；压缩失败安全回退且不修改权威完整事件。
 - 禁止进入上下文与记忆：Secret、Token、Cookie、Authorization、kubeconfig、Registry 密码、
   Git Access Token、完整终端历史、未脱敏的第三方响应与日志。
 
@@ -149,9 +160,10 @@ Agent 通过 Skill 引导完成平台工作流。Skill 以公开使用文档、�
 Skill 已覆盖不代表对应写工具已在 Tool Catalog 开放；工具未注册时 Skill 必须阻止模型虚构执行，
 明确报告"尚未执行"。
 
-变更工具目录、Schema、Scope 或审批要求时，至少验证完整目录分页、中文/英文检索、精确详情加载、
-未加载工具不可见、集中排除原因、普通与高危工具、拒绝/单次批准/始终批准/撤销、跨用户/Session/
-项目空间隔离，以及一条真实副作用和权威回读。检索词不得进入普通遥测属性或 Metric label。
+变更工具目录、Schema、Scope 或审批要求时，至少验证完整目录分页、覆盖全部可用 operation 的中英文
+检索矩阵、相似读写操作边界、Run 内自动加载与 16 项 LRU、精确详情缓存、目录热更新隔离、未加载
+工具不可见、集中排除原因、普通与高危工具、拒绝/单次批准/始终批准/撤销、跨用户/Session/项目空间
+隔离，以及一条真实副作用和权威回读。检索词不得进入普通遥测属性、日志字段或 Metric label。
 
 ## 9. 参考与事实源
 

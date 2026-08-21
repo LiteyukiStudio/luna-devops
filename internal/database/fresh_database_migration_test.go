@@ -15,10 +15,54 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/model"
 	sqlmigrations "github.com/LiteyukiStudio/devops/migrations"
 	"github.com/golang-migrate/migrate/v4"
-	"gorm.io/driver/postgres"
+	migratepostgres "github.com/golang-migrate/migrate/v4/database/postgres"
+	"github.com/golang-migrate/migrate/v4/source/iofs"
+	gormpostgres "gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/schema"
 )
+
+const preReleaseBaselineVersion = 67
+
+func TestEmbeddedMigrationsStartAtPreReleaseBaseline(t *testing.T) {
+	entries, err := sqlmigrations.FS.ReadDir(".")
+	if err != nil {
+		t.Fatalf("read embedded migrations: %v", err)
+	}
+	var firstVersion uint64
+	baselineFiles := map[string]bool{
+		"000067_baseline.up.sql":   false,
+		"000067_baseline.down.sql": false,
+	}
+	for _, entry := range entries {
+		name := entry.Name()
+		if _, ok := baselineFiles[name]; ok {
+			baselineFiles[name] = true
+		}
+		if entry.IsDir() || (!strings.HasSuffix(name, ".up.sql") && !strings.HasSuffix(name, ".down.sql")) {
+			continue
+		}
+		prefix, _, found := strings.Cut(name, "_")
+		if !found {
+			t.Fatalf("invalid migration filename %q", name)
+		}
+		version, parseErr := strconv.ParseUint(prefix, 10, 64)
+		if parseErr != nil {
+			t.Fatalf("parse migration version from %q: %v", name, parseErr)
+		}
+		if firstVersion == 0 || version < firstVersion {
+			firstVersion = version
+		}
+	}
+	if firstVersion != preReleaseBaselineVersion {
+		t.Fatalf("first embedded migration version = %d, want %d", firstVersion, preReleaseBaselineVersion)
+	}
+	for name, found := range baselineFiles {
+		if !found {
+			t.Fatalf("pre-release baseline is missing %s", name)
+		}
+	}
+}
 
 func TestMigrateBootstrapsFreshPostgresSchema(t *testing.T) {
 	databaseURL := os.Getenv("AUTH_TEST_DATABASE_URL")
@@ -26,7 +70,7 @@ func TestMigrateBootstrapsFreshPostgresSchema(t *testing.T) {
 		t.Skip("AUTH_TEST_DATABASE_URL is not configured")
 	}
 
-	adminDB, err := gorm.Open(postgres.Open(databaseURL), &gorm.Config{})
+	adminDB, err := gorm.Open(gormpostgres.Open(databaseURL), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open integration database: %v", err)
 	}
@@ -78,7 +122,7 @@ func TestMigrateBootstrapsFreshPostgresSchema(t *testing.T) {
 	query := parsedURL.Query()
 	query.Del("search_path")
 	parsedURL.RawQuery = query.Encode()
-	testDB, err := gorm.Open(postgres.Open(parsedURL.String()), &gorm.Config{})
+	testDB, err := gorm.Open(gormpostgres.Open(parsedURL.String()), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open isolated migration test database: %v", err)
 	}
@@ -88,6 +132,27 @@ func TestMigrateBootstrapsFreshPostgresSchema(t *testing.T) {
 		}
 	}()
 
+	runner := openTestMigrationRunner(t, testDB)
+	if err := runner.Migrate(preReleaseBaselineVersion); err != nil {
+		t.Fatalf("migrate database to pre-release baseline: %v", err)
+	}
+	assertRunnerMigrationVersion(t, runner, preReleaseBaselineVersion)
+	if err := runner.Steps(-1); err != nil {
+		t.Fatalf("roll back pre-release baseline: %v", err)
+	}
+	if testDB.Migrator().HasTable("users") {
+		t.Fatal("baseline rollback retained owned public tables")
+	}
+	var hasAISchema bool
+	if err := testDB.Raw(`SELECT to_regnamespace('ai') IS NOT NULL`).Scan(&hasAISchema).Error; err != nil {
+		t.Fatalf("inspect AI schema after baseline rollback: %v", err)
+	}
+	if hasAISchema {
+		t.Fatal("baseline rollback retained the owned AI schema")
+	}
+	if err := runner.Migrate(preReleaseBaselineVersion); err != nil {
+		t.Fatalf("reapply pre-release baseline: %v", err)
+	}
 	if err := MigrateContext(context.Background(), testDB); err != nil {
 		t.Fatalf("migrate fresh database: %v", err)
 	}
@@ -107,7 +172,7 @@ func TestMigrateRejectsUnversionedNonEmptySchema(t *testing.T) {
 		t.Skip("AUTH_TEST_DATABASE_URL is not configured")
 	}
 
-	adminDB, err := gorm.Open(postgres.Open(databaseURL), &gorm.Config{})
+	adminDB, err := gorm.Open(gormpostgres.Open(databaseURL), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open integration database: %v", err)
 	}
@@ -129,7 +194,7 @@ func TestMigrateRejectsUnversionedNonEmptySchema(t *testing.T) {
 	query := parsedURL.Query()
 	query.Set("search_path", schemaName)
 	parsedURL.RawQuery = query.Encode()
-	db, err := gorm.Open(postgres.Open(parsedURL.String()), &gorm.Config{})
+	db, err := gorm.Open(gormpostgres.Open(parsedURL.String()), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open unversioned integration schema: %v", err)
 	}
@@ -246,6 +311,21 @@ func assertFreshMigrationState(t *testing.T, db *gorm.DB) {
 	if db.Migrator().HasColumn("ai.runs", "graph_version") {
 		t.Fatal("fresh database contains obsolete ai.runs.graph_version")
 	}
+	for _, obsolete := range []struct {
+		table  string
+		column string
+	}{
+		{table: "applications", column: "source_type"},
+		{table: "applications", column: "repository_url"},
+		{table: "applications", column: "image_reference"},
+		{table: "applications", column: "git_account_id"},
+		{table: "applications", column: "service_port"},
+		{table: "deployment_targets", column: "build_config_id"},
+	} {
+		if db.Migrator().HasColumn(obsolete.table, obsolete.column) {
+			t.Fatalf("fresh database contains obsolete %s.%s", obsolete.table, obsolete.column)
+		}
+	}
 	for _, column := range []string{"run_actor_grant_ciphertext", "lease_owner", "lease_expires_at", "heartbeat_at"} {
 		if db.Migrator().HasColumn("ai.runs", column) {
 			t.Fatalf("fresh database contains obsolete ai.runs.%s", column)
@@ -326,10 +406,23 @@ func assertFreshMigrationState(t *testing.T, db *gorm.DB) {
 			name:      "idx_inbox_messages_dedup_key",
 			fragments: []string{"UNIQUE INDEX", "WHERE (dedup_key IS NOT NULL)"},
 		},
+		{name: "idx_platform_events_retention"},
+		{name: "idx_notification_deliveries_retention_terminal", fragments: []string{"WHERE (status = ANY"}},
+		{name: "idx_worker_task_events_retention"},
+		{name: "idx_build_runs_retention_terminal"},
+		{name: "idx_release_logs_retention_parent"},
+		{name: "idx_releases_retention_terminal"},
+		{name: "idx_hook_run_logs_retention_parent"},
+		{name: "idx_hook_runs_retention_terminal"},
+		{name: "idx_user_sessions_retention_expiry"},
+		{name: "idx_user_remember_tokens_retention_expiry"},
 	} {
 		var definition string
 		if err := db.Raw(`SELECT indexdef FROM pg_indexes WHERE schemaname = current_schema() AND indexname = ?`, expected.name).Scan(&definition).Error; err != nil {
 			t.Fatalf("read index %s: %v", expected.name, err)
+		}
+		if definition == "" {
+			t.Fatalf("fresh database is missing index %s", expected.name)
 		}
 		for _, fragment := range expected.fragments {
 			if !strings.Contains(definition, fragment) {
@@ -489,6 +582,38 @@ func latestEmbeddedMigrationVersion(t *testing.T) uint {
 		t.Fatal("no embedded up migrations found")
 	}
 	return uint(latest)
+}
+
+func openTestMigrationRunner(t *testing.T, db *gorm.DB) *migrate.Migrate {
+	t.Helper()
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("open migration test SQL database: %v", err)
+	}
+	sourceDriver, err := iofs.New(sqlmigrations.FS, ".")
+	if err != nil {
+		t.Fatalf("open embedded migrations: %v", err)
+	}
+	databaseDriver, err := migratepostgres.WithInstance(sqlDB, &migratepostgres.Config{})
+	if err != nil {
+		t.Fatalf("open migration test database driver: %v", err)
+	}
+	runner, err := migrate.NewWithInstance("iofs", sourceDriver, "postgres", databaseDriver)
+	if err != nil {
+		t.Fatalf("create migration test runner: %v", err)
+	}
+	return runner
+}
+
+func assertRunnerMigrationVersion(t *testing.T, runner *migrate.Migrate, expected uint) {
+	t.Helper()
+	version, dirty, err := runner.Version()
+	if err != nil {
+		t.Fatalf("read migration version: %v", err)
+	}
+	if version != expected || dirty {
+		t.Fatalf("migration version = %d dirty=%t, want %d clean", version, dirty, expected)
+	}
 }
 
 func assertActiveDeploymentStageUniqueness(t *testing.T, db *gorm.DB) {

@@ -52,7 +52,7 @@ export interface AIMessagePart {
 }
 
 export type AIRunStatus = 'queued' | 'running' | 'waiting_approval' | 'waiting_input' | 'completed' | 'failed' | 'canceled' | 'interrupted'
-export type AIToolStatus = 'proposed' | 'awaiting_approval' | 'running' | 'succeeded' | 'failed' | 'canceled' | 'skipped'
+export type AIToolStatus = 'proposed' | 'awaiting_approval' | 'running' | 'succeeded' | 'failed' | 'rejected' | 'canceled' | 'skipped'
 
 export interface AIToolDisplayResult {
   summaryKey: string

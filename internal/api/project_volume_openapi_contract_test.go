@@ -21,6 +21,7 @@ func TestProjectVolumeOperationsAreDerivedFromOpenAPI(t *testing.T) {
 		"updateProjectVolume":             {scope: "volume:write", requiresApproval: true},
 		"previewProjectVolumeDeletion":    {scope: "volume:delete", requiresApproval: true},
 		"deleteProjectVolume":             {scope: "volume:delete", requiresApproval: true},
+		"retryProjectVolumeOperation":     {scope: "volume:read", requiresApproval: true},
 		"createVolumeExport":              {scope: "volume:export", requiresApproval: true},
 	}
 	for operationID, test := range tests {
@@ -32,7 +33,7 @@ func TestProjectVolumeOperationsAreDerivedFromOpenAPI(t *testing.T) {
 			t.Fatalf("%s Agent policy = %#v", operationID, operation)
 		}
 	}
-	for _, operationID := range []string{"retryProjectVolumeOperation", "retryVolumeTransfer", "createVolumeImport"} {
+	for _, operationID := range []string{"retryVolumeTransfer", "createVolumeImport"} {
 		if _, ok := aitool.PlatformOperation(operationID); ok {
 			t.Fatalf("explicitly disabled or protocol volume operation entered Agent catalog: %s", operationID)
 		}
@@ -89,7 +90,7 @@ func TestProjectVolumeOpenAPICLIMetadata(t *testing.T) {
 			t.Fatalf("%s CLI metadata = %#v", operationID, metadata)
 		}
 	}
-	for _, operationID := range []string{"retryProjectVolumeOperation", "retryVolumeTransfer"} {
+	for _, operationID := range []string{"retryVolumeTransfer"} {
 		metadata := operations[operationID]["x-luna-cli"].(map[string]any)
 		if metadata["agentAllowed"] != false || metadata["exclusionReason"] == "" {
 			t.Fatalf("%s must stay out of the Agent catalog because its effective authorization depends on the original operation", operationID)
@@ -181,7 +182,6 @@ func TestVolumeByteTransferProtocolIsNotExposedToAgent(t *testing.T) {
 		"failInternalVolumeTransfer",
 		"headVolumeTransferManifest",
 		"downloadVolumeTransferManifest",
-		"retryProjectVolumeOperation",
 	} {
 		if operation, ok := aitool.PlatformOperation(operationID); ok {
 			t.Fatalf("protocol operation %s leaked into Agent catalog: %#v", operationID, operation)

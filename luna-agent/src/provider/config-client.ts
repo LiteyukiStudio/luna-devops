@@ -77,6 +77,16 @@ export class ProviderConfigClient {
     return this.currentConfig
   }
   async get(signal?: AbortSignal): Promise<RemoteProviderConfig> {
+    const config = await this.getCandidate(signal)
+    this.commit(config)
+    return config
+  }
+
+  commit(config: RemoteProviderConfig): void {
+    this.currentConfig = config
+  }
+
+  async getCandidate(signal?: AbortSignal): Promise<RemoteProviderConfig> {
     return withSpan("luna_api.provider_config.get", clientSpanOptions({
       "server.address": new URL(this.baseUrl).hostname,
     }), async span => {
@@ -112,7 +122,6 @@ export class ProviderConfigClient {
       throw new Error("ai.provider_config_invalid")
     }
     const config = parsed.data
-    this.currentConfig = config
     span.setAttribute("luna.provider.config_version", config.version)
     return config
     })

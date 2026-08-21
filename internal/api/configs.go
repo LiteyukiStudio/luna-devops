@@ -11,6 +11,7 @@ import (
 
 	"github.com/LiteyukiStudio/devops/internal/aitool"
 	"github.com/LiteyukiStudio/devops/internal/authz"
+	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/retention"
 	"github.com/LiteyukiStudio/devops/internal/secret"
@@ -642,8 +643,8 @@ func (h *Handlers) UpdateConfigs(ctx *gin.Context) {
 		}
 		if aiSecurityChanged {
 			return tx.Create(&model.AuditLog{
-				UserID: user.ID, Action: "ai.settings_update", Resource: "ai.settings",
-				Success: true, Message: "AI security settings updated",
+				ID: id.New("aud"), UserID: user.ID, Action: "ai.settings_update", Resource: "ai.settings",
+				Success: true, Message: "AI security settings updated", CreatedAt: time.Now(),
 			}).Error
 		}
 		return nil

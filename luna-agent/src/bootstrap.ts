@@ -12,6 +12,7 @@ import { BudgetedModelProvider } from "./provider/budgeted.js"
 import { buildServer } from "./server.js"
 import { agentMetrics, configureAIContentCapture, internalSpanOptions, shutdownTelemetry, telemetryLog, withSpan } from "./telemetry.js"
 import { ToolCatalog } from "./tools/catalog.js"
+import { ToolCatalogRegistry } from "./tools/catalog-registry.js"
 import { HttpLunaApiToolClient } from "./tools/luna-api-client.js"
 import { ToolOrchestrator } from "./tools/orchestrator.js"
 import { PostgresToolCallStore } from "./tools/postgres-store.js"
@@ -35,7 +36,7 @@ export async function startAgent(): Promise<void> {
   const providerConfigClient = new ProviderConfigClient(config.LUNA_API_BASE_URL, internalKeys.callbackServiceToken)
   // Provider、运行参数和工具目录只接受 Luna API 的同一份权威配置。
   // 首次拉取或契约校验失败时阻止启动，避免形成进程本地 fallback。
-  const initialRemoteConfig = await providerConfigClient.get()
+  const initialRemoteConfig = await providerConfigClient.getCandidate()
   const rawProvider = createRuntimeProvider(config, providerConfigClient)
   const provider = new BudgetedModelProvider(rawProvider, repository)
   const requestVerifier = config.AUTH_MODE === "bff-hmac"
@@ -47,9 +48,15 @@ export async function startAgent(): Promise<void> {
     "ai.tool_arguments_key_unavailable",
   )
   const catalog = ToolCatalog.load(initialRemoteConfig.toolCatalog)
+  const catalogRegistry = new ToolCatalogRegistry(catalog, initialRemoteConfig.version)
+  providerConfigClient.commit(initialRemoteConfig)
   const toolStore = new PostgresToolCallStore(repository.pool, repository, toolArgumentsCipher)
   const runtime = initialRemoteConfig.runtime
-  const tools = new ToolOrchestrator(catalog, new HttpLunaApiToolClient(
+  const tools = new ToolOrchestrator(async (runId) => {
+    const state = await repository.getRunToolState(runId)
+    if (!state) throw new Error("ai.run_not_found")
+    return catalogRegistry.get(state.toolCatalogDigest)
+  }, new HttpLunaApiToolClient(
     config.LUNA_API_BASE_URL,
     internalKeys.callbackServiceToken,
     () => providerConfigClient.current()?.runtime.maxRequestRetries ?? runtime.maxRequestRetries,
@@ -68,7 +75,7 @@ export async function startAgent(): Promise<void> {
     historicalToolTokenBudget: runtime.contextHistoricalToolTokenBudget,
   })
   const modelRuntime = new ModelRuntime(provider, {
-    resolve: async (_pageContext, _userInput, loadedOperationIds) => {
+    resolve: async (_pageContext, _userInput, loadedOperationIds, _signal, toolCatalogDigest) => {
       const startedAt = performance.now()
       let outcome = "succeeded"
       let strategy = "base_only"
@@ -78,7 +85,8 @@ export async function startAgent(): Promise<void> {
         return await withSpan("agent.tools.retrieve", internalSpanOptions({
           "luna.agent.tool_retrieval.trigger": "automatic",
         }), async span => {
-          const retrievedTools = catalog.modelTools(loadedOperationIds)
+          const selectedCatalog = toolCatalogDigest ? catalogRegistry.get(toolCatalogDigest) : catalogRegistry.current()
+          const retrievedTools = selectedCatalog.modelTools(loadedOperationIds)
           strategy = "explicit_details"
           candidateCount = loadedOperationIds.length
           matchCount = retrievedTools.length
@@ -106,23 +114,33 @@ export async function startAgent(): Promise<void> {
         agentMetrics.toolRetrievalDuration.record((performance.now() - startedAt) / 1000, attributes)
       }
     },
-    search: (input) => {
-      return catalog.search(input)
+    search: (input, _pageContext, _signal, toolCatalogDigest) => {
+      const selectedCatalog = toolCatalogDigest ? catalogRegistry.get(toolCatalogDigest) : catalogRegistry.current()
+      return {
+        ...selectedCatalog.search(input),
+        loadedOperationIds: [], missingOperationIds: [], catalogDigest: selectedCatalog.digest,
+        duplicate: false, cacheHit: false,
+      }
     },
-    details: operationIds => {
-      const result = catalog.getDetails(operationIds)
+    details: (operationIds, toolCatalogDigest) => {
+      const selectedCatalog = toolCatalogDigest ? catalogRegistry.get(toolCatalogDigest) : catalogRegistry.current()
+      const result = selectedCatalog.semanticDetails(operationIds)
       return {
         items: result.items,
         loadedOperationIds: result.items.map(item => item.operationId),
+        alreadySelectedOperationIds: [],
         missingOperationIds: result.missingOperationIds,
+        catalogDigest: selectedCatalog.digest,
+        duplicate: false,
+        cacheHit: false,
       }
     },
   }, contextCompiler)
-  const executor = new RunExecutor(repository, modelRuntime, config, tools, providerConfigClient, runtime)
+  const executor = new RunExecutor(repository, modelRuntime, config, tools, providerConfigClient, runtime, catalogRegistry)
   const server = buildServer({
     config, repository, requestVerifier, provider,
     cancelRun: runId => { executor.cancel(runId) },
-    toolCatalogDigest: catalog.digest,
+    toolCatalogDigest: () => catalogRegistry.digest(),
     tools,
     providerConfigClient,
   })

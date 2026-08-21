@@ -48,7 +48,8 @@ export type ContextCompilerOptions = {
 export type CompileContextInput = {
   conversationId: string
   beforeTurnIndex: number
-  systemMessage: ModelMessage
+  systemMessage?: ModelMessage
+  systemMessages?: ModelMessage[]
   currentUserMessage: ModelMessage
   history: ConversationHistoryEntry[]
   continuationMessages: ModelMessage[]
@@ -114,7 +115,9 @@ export class ContextCompiler {
         : this.options.inputTokenBudget
       const inputTokenBudget = Math.min(this.options.inputTokenBudget, modelContextBudget)
       if (inputTokenBudget < 1) throw new Error("ai.model_context_insufficient")
-      const baseTokens = estimateModelTokens([input.systemMessage, input.currentUserMessage]) + estimateTokens(JSON.stringify(input.tools))
+      const systemMessages = input.systemMessages ?? (input.systemMessage ? [input.systemMessage] : [])
+      if (!systemMessages.length) throw new Error("ai.system_prompt_required")
+      const baseTokens = estimateModelTokens([...systemMessages, input.currentUserMessage]) + estimateTokens(JSON.stringify(input.tools))
       if (baseTokens >= inputTokenBudget) throw new Error("ai.context_base_budget_exhausted")
       // 为结构化摘要和缺口说明保留空间，避免本轮工具结果恰好吃满预算后，
       // 仅因附加长期记忆而让整次模型调用失败。
@@ -187,7 +190,7 @@ export class ContextCompiler {
         this.options.historicalToolTokenBudget,
       )
       const messages = [
-        input.systemMessage,
+        ...systemMessages,
         ...retainedFactMessages,
         ...historyMessages,
         input.currentUserMessage,

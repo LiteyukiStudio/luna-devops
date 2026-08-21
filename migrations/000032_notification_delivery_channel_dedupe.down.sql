@@ -1,1 +1,0 @@
-DROP INDEX IF EXISTS idx_notification_deliveries_event_channel;

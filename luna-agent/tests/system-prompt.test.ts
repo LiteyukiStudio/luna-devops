@@ -3,6 +3,7 @@ import {
   loadedInteractionSkill,
   loadedNavigationSkill,
   loadedSkillReferences,
+  dynamicSkillGuidanceFor,
   skillGuidanceFor,
   systemPromptFor,
 } from "../src/prompt/system.js"
@@ -59,7 +60,7 @@ describe("versioned system prompt", () => {
   it("recognizes an ordinary GitHub URL as both a repository and delivery intent", () => {
     const context = { userInput: "帮我部署 https://github.com/example/demo" }
     const references = loadedSkillReferences(context)
-    const prompt = systemPromptFor("system-v4", context)
+    const prompt = dynamicSkillGuidanceFor(context)!
 
     expect(references.map(item => item.name)).toEqual([
       "delivery-orchestration",
@@ -70,6 +71,7 @@ describe("versioned system prompt", () => {
     expect(prompt).not.toContain('<LUNA_DEVOPS_REFERENCE name="application-diagnostics">')
     expect(prompt).not.toContain('<LUNA_DEVOPS_REFERENCE name="source-build-release">')
     expect(prompt.length).toBeLessThan(50_000)
+    expect(systemPromptFor("system-v4", context)).toBe(systemPromptFor("system-v4", { userInput: "你好" }))
   })
 
   it("loads the registry push-credential preflight for source builds", () => {

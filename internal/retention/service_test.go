@@ -5,8 +5,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	sqlmigrations "github.com/LiteyukiStudio/devops/migrations"
 )
 
 func TestValidateManualInput(t *testing.T) {
@@ -99,38 +97,3 @@ var (
 	endOfTestRange   = time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
 	nowForTestRange  = time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)
 )
-
-func TestRetentionIndexMigrationCoversAllDatasets(t *testing.T) {
-	up, err := sqlmigrations.FS.ReadFile("000037_data_retention_indexes.up.sql")
-	if err != nil {
-		t.Fatal(err)
-	}
-	down, err := sqlmigrations.FS.ReadFile("000037_data_retention_indexes.down.sql")
-	if err != nil {
-		t.Fatal(err)
-	}
-	upSQL := string(up)
-	downSQL := string(down)
-	for _, index := range []string{
-		"idx_platform_events_retention",
-		"idx_notification_deliveries_retention_terminal",
-		"idx_worker_task_events_retention",
-		"idx_build_runs_retention_terminal",
-		"idx_release_logs_retention_parent",
-		"idx_releases_retention_terminal",
-		"idx_hook_run_logs_retention_parent",
-		"idx_hook_runs_retention_terminal",
-		"idx_user_sessions_retention_expiry",
-		"idx_user_remember_tokens_retention_expiry",
-	} {
-		if !strings.Contains(upSQL, "CREATE INDEX IF NOT EXISTS "+index) {
-			t.Fatalf("up migration is missing %s", index)
-		}
-		if !strings.Contains(downSQL, "DROP INDEX IF EXISTS "+index) {
-			t.Fatalf("down migration is missing %s", index)
-		}
-	}
-	if !strings.Contains(upSQL, "WHERE status IN ('succeeded', 'failed')") {
-		t.Fatal("migration is missing terminal notification index")
-	}
-}

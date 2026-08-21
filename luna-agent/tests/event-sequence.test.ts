@@ -133,6 +133,33 @@ describe("PostgreSQL bigint event sequence normalization", () => {
     expect(JSON.stringify(event?.payload.result)).not.toContain("must-not-leak")
   })
 
+  it("preserves a rejected approval decision in the public timeline", async () => {
+    const repository = new TestRepository()
+    const conversation = await repository.createConversation("usr_rejected", "approval")
+    const created = await repository.createTurn("usr_rejected", {
+      conversationId: conversation.id, input: "do not delete", pageContext: {}, idempotencyKey: "rejected-tool",
+    })
+    await repository.appendItem({
+      runId: created.run.id,
+      turnId: created.turn.id,
+      type: "tool_call",
+      status: "completed",
+      content: {
+        toolCallId: "tool-rejected",
+        operationId: "deleteProject",
+        status: "rejected",
+        arguments: { projectId: "prj_test" },
+        errorCode: "ai.tool_rejected",
+        result: { code: "ai.tool_rejected", retryable: false },
+      },
+    })
+
+    const timeline = await presentTimeline(repository, "usr_rejected", conversation.id)
+    const toolItem = timeline?.turns[0]?.selectedRun?.items.find(item => "toolCall" in item && item.toolCall.id === "tool-rejected")
+    if (!toolItem || !("toolCall" in toolItem)) throw new Error("expected rejected tool call")
+    expect(toolItem.toolCall.status).toBe("rejected")
+  })
+
   it("uses the same authoritative item revision and position for live events and snapshots", async () => {
     const repository = new TestRepository()
     const conversation = await repository.createConversation("usr_a", "authoritative timeline")

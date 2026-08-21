@@ -94,6 +94,7 @@ const aiAssistant = {
       running: '進行中',
       succeeded: '已完成',
       failed: '失敗',
+      rejected: '已拒絕',
       canceled: '已取消',
       skipped: '已跳過',
     },

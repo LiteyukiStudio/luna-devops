@@ -53,6 +53,22 @@ describe('ai assistant tool status icon', () => {
     expect(container.querySelector('[data-ai-tool-status-icon="running"]')).not.toBeInTheDocument()
   })
 
+  it('shows a rejected approval as rejected instead of completed', async () => {
+    await i18next.changeLanguage('zh-CN')
+    const { container } = render(
+      <AIToolCallCard
+        block={toolBlock('rejected')}
+        onAction={vi.fn(async () => true)}
+        onApproval={vi.fn(async () => {})}
+      />,
+    )
+
+    const summary = container.querySelector('[data-ai-tool-summary]')
+    expect(summary).toHaveTextContent('已拒绝')
+    expect(summary).not.toHaveTextContent('已完成')
+    expect(container.querySelector('[data-ai-tool-status-icon="rejected"]')).toBeInTheDocument()
+  })
+
   it('keeps the collapsed row compact and exposes copy controls in expanded details', async () => {
     const writeText = vi.fn(async () => {})
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
