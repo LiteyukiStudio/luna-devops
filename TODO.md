@@ -58,7 +58,7 @@
 - [x] 合并 OpenAPI path-level 参数到 Agent Catalog，修复 AI 模型更新/删除等路径参数缺失，并为全部 Agent Handler 建立“消费的查询参数必须进入 Schema”门禁。
 - [x] 同步 Web 应用市场摘要/详情两阶段加载、OpenAPI 契约、Agent 检索夹具、Skill 引用门禁与中英文公开文档；独立 CLI 工作区由其并行任务同步，本仓库不覆盖其未提交修改。
 - [x] 完成全量 Go/Web/Agent/Docs 门禁与真实浏览器对话：`listAppTemplates({query:"Dify"})` 成功返回空列表，`getAppTemplate({templateId:"postgresql"})` 成功返回脱敏详情；208/208 个平台工具按 operationId 精确 Top 1、按人类可读意图进入 Top 8，并逐项完成详情与模型工具加载。独立 CLI 0.0.18 的 `doctor` 已确认本地/远端 OpenAPI digest 不一致，其忽略工作区正在并行同步，本事项未覆盖其未提交修改。
-- [ ] 推送 `main` 并确认 GitHub Actions 全部通过。
+- [x] 推送 `main` 并确认 GitHub Actions 全部通过。
 
 ## 2026-08-20 Agent 工具成功率观测
 
