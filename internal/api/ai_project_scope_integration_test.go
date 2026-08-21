@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/LiteyukiStudio/devops/internal/aiagent"
 	"github.com/LiteyukiStudio/devops/internal/authz"
+	"github.com/LiteyukiStudio/devops/internal/database"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/volume"
 	"github.com/gin-gonic/gin"
@@ -23,10 +25,10 @@ import (
 )
 
 func TestAIProjectListScopeDirectExecutionPostgres(t *testing.T) {
-	db := aiProjectScopeIntegrationDB(t)
 	t.Setenv("APP_ENV", "production")
 	t.Setenv("REDIS_ADDR", "")
 	t.Setenv(aiagent.InternalSecretEnvironment, "ai-project-scope-integration-secret-0001")
+	db := aiProjectScopeIntegrationDB(t)
 
 	now := time.Now().UTC()
 	admin := model.User{ID: "usr_ai_scope_admin", Email: "ai-scope-admin@example.test", Name: "AI Scope Admin", Role: authz.PlatformRoleAdmin}
@@ -62,10 +64,10 @@ func TestAIProjectListScopeDirectExecutionPostgres(t *testing.T) {
 }
 
 func TestAIProjectVolumeDirectExecutionAndAuthoritativeReadbackPostgres(t *testing.T) {
-	db := aiProjectScopeIntegrationDB(t)
 	t.Setenv("APP_ENV", "production")
 	t.Setenv("REDIS_ADDR", "")
 	t.Setenv(aiagent.InternalSecretEnvironment, "ai-project-volume-integration-secret-01")
+	db := aiProjectScopeIntegrationDB(t)
 
 	now := time.Now().UTC()
 	user := model.User{ID: "usr_ai_volume_owner", Email: "ai-volume-owner@example.test", Name: "AI Volume Owner", Role: authz.PlatformRoleAdmin}
@@ -229,38 +231,42 @@ func aiProjectScopeIntegrationDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open integration database: %v", err)
 	}
-	schemaName := fmt.Sprintf("ai_project_scope_test_%d", time.Now().UnixNano())
-	if err := adminDB.Exec(`CREATE SCHEMA "` + schemaName + `"`).Error; err != nil {
-		t.Fatalf("create integration schema: %v", err)
-	}
 	parsedURL, err := url.Parse(databaseURL)
 	if err != nil {
 		t.Fatalf("parse integration database URL: %v", err)
 	}
-	query := parsedURL.Query()
-	query.Set("search_path", schemaName)
-	parsedURL.RawQuery = query.Encode()
-	db, err := gorm.Open(postgres.Open(parsedURL.String()), &gorm.Config{})
-	if err != nil {
-		t.Fatalf("open integration schema: %v", err)
+	databaseName := fmt.Sprintf("luna_ai_tool_test_%d", time.Now().UnixNano())
+	if !strings.HasPrefix(databaseName, "luna_ai_tool_test_") {
+		t.Fatalf("refuse unsafe integration database name %q", databaseName)
 	}
-	if err := db.AutoMigrate(
-		&model.User{}, &model.UserSession{}, &model.Project{}, &model.ProjectMember{},
-		&model.ProjectPin{}, &model.AuditLog{}, &model.AppConfig{}, &model.RuntimeCluster{},
-		&model.ScopedResourceProjectBinding{}, &model.UserWallet{}, &model.ProjectVolume{},
-		&model.ProjectVolumeQuotaUsage{}, &model.ProjectVolumeQuotaReservation{},
-		&model.DeploymentVolumeMount{}, &model.VolumeTransfer{},
-	); err != nil {
-		t.Fatalf("migrate integration schema: %v", err)
+	if err := adminDB.Exec(`CREATE DATABASE "` + databaseName + `"`).Error; err != nil {
+		t.Fatalf("create isolated integration database: %v", err)
 	}
+	var db *gorm.DB
 	t.Cleanup(func() {
-		if sqlDB, dbErr := db.DB(); dbErr == nil {
-			_ = sqlDB.Close()
+		if db != nil {
+			if sqlDB, dbErr := db.DB(); dbErr == nil {
+				_ = sqlDB.Close()
+			}
 		}
-		_ = adminDB.Exec(`DROP SCHEMA IF EXISTS "` + schemaName + `" CASCADE`).Error
+		if dropErr := adminDB.Exec(`DROP DATABASE IF EXISTS "` + databaseName + `" WITH (FORCE)`).Error; dropErr != nil {
+			t.Errorf("drop isolated integration database: %v", dropErr)
+		}
 		if sqlDB, dbErr := adminDB.DB(); dbErr == nil {
 			_ = sqlDB.Close()
 		}
 	})
+	parsedURL.Path = "/" + databaseName
+	parsedURL.RawPath = ""
+	query := parsedURL.Query()
+	query.Del("search_path")
+	parsedURL.RawQuery = query.Encode()
+	db, err = gorm.Open(postgres.Open(parsedURL.String()), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open isolated integration database: %v", err)
+	}
+	if err := database.MigrateContext(context.Background(), db); err != nil {
+		t.Fatalf("migrate isolated integration database: %v", err)
+	}
 	return db
 }
