@@ -8,15 +8,12 @@ import (
 )
 
 const (
-	CodeArchiveUnsafe        = "volume_transfer.archive_unsafe"
-	CodeCapacityExceeded     = "volume_transfer.capacity_exceeded"
-	CodeChecksumMismatch     = "volume_transfer.checksum_mismatch"
-	CodeStateConflict        = "volume_transfer.state_conflict"
-	CodeStoreUnavailable     = "volume_transfer.store_unavailable"
-	CodeCallbackUnavailable  = "volume_transfer.callback_unavailable"
-	CodeCallbackUnauthorized = "volume_transfer.callback_unauthorized"
-	CodeFormatUnsupported    = "volume_transfer.format_unsupported"
-	CodeJobFailed            = "volume_transfer.job_failed"
+	CodeArchiveUnsafe     = "volume_transfer.archive_unsafe"
+	CodeCapacityExceeded  = "volume_transfer.capacity_exceeded"
+	CodeChecksumMismatch  = "volume_transfer.checksum_mismatch"
+	CodeStateConflict     = "volume_transfer.state_conflict"
+	CodeFormatUnsupported = "volume_transfer.format_unsupported"
+	CodeJobFailed         = "volume_transfer.job_failed"
 )
 
 var stableErrorCodePattern = regexp.MustCompile(`^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+$`)
@@ -54,17 +51,6 @@ func ErrorCode(err error) string {
 	var coded *Error
 	if errors.As(err, &coded) && stableErrorCodePattern.MatchString(coded.Code) {
 		return coded.Code
-	}
-	var remote *RemoteError
-	if errors.As(err, &remote) && stableErrorCodePattern.MatchString(remote.Code) {
-		return remote.Code
-	}
-	return CodeJobFailed
-}
-
-func sanitizeStableCode(code string) string {
-	if stableTransferErrorCode(code) {
-		return code
 	}
 	return CodeJobFailed
 }

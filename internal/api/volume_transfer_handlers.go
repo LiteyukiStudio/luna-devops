@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"io"
 	"mime"
 	"net/http"
@@ -11,31 +12,19 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/volume"
-	"github.com/LiteyukiStudio/devops/internal/volumetransferapi"
 	"github.com/gin-gonic/gin"
 )
 
-// volumeTransferContentService owns object-store streaming, upload offsets,
-// one-time download tickets, and transfer-bound callback authentication. The
-// HTTP layer deliberately cannot reach the backing object store directly.
+// volumeTransferContentService owns direct runtime streaming and one-time
+// download authorization. The HTTP layer never buffers a complete archive.
 type volumeTransferContentService interface {
 	CreateImport(context.Context, model.User, model.Project, volumeImportCreateInput, string) (model.ProjectVolume, model.VolumeTransfer, error)
-	HeadImport(context.Context, string, string, model.User) (int64, int64, int64, error)
-	WriteImportPart(context.Context, string, string, model.User, int64, string, io.Reader, int64) (int64, int64, error)
-	CompleteImport(context.Context, string, string, model.User, int64, string) (model.VolumeTransfer, error)
+	StreamImport(context.Context, string, string, model.User, io.Reader, int64, string) (model.VolumeTransfer, error)
 	CreateExport(context.Context, model.User, model.Project, string, volumeExportCreateInput, string) (model.VolumeTransfer, error)
 	RetryTransfer(context.Context, model.User, model.Project, model.VolumeTransfer, string) (model.VolumeTransfer, error)
 	AuthorizeDownload(context.Context, model.User, model.Project, model.VolumeTransfer, volumeDownloadBinding) (volumeDownloadAuthorizationResponse, error)
-	HeadDownload(context.Context, model.User, model.Project, model.VolumeTransfer, volumeDownloadCredential, volumeDownloadBinding) (volumeDownloadInfo, volumeDownloadSession, error)
-	OpenDownload(context.Context, model.User, model.Project, model.VolumeTransfer, volumeDownloadCredential, string, volumeDownloadBinding) (volumeDownload, volumeDownloadSession, error)
-	HeadManifest(context.Context, model.User, model.Project, model.VolumeTransfer, volumeDownloadCredential, volumeDownloadBinding) (volumeDownloadInfo, volumeDownloadSession, error)
-	OpenManifest(context.Context, model.User, model.Project, model.VolumeTransfer, volumeDownloadCredential, volumeDownloadBinding) (volumeDownload, volumeDownloadSession, error)
-	InternalHead(context.Context, string, string) (volumeInternalContentInfo, error)
-	InternalWritePart(context.Context, string, string, int64, string, io.Reader, int64) (int64, int64, error)
-	InternalOpen(context.Context, string, string, string) (volumeDownload, error)
-	InternalProgress(context.Context, string, string, volumeTransferProgressInput) error
-	InternalComplete(context.Context, string, string, volumeTransferCompleteInput) (model.VolumeTransfer, error)
-	InternalFail(context.Context, string, string, volumeTransferFailInput) (model.VolumeTransfer, error)
+	OpenDownload(context.Context, model.User, model.Project, model.VolumeTransfer, string, volumeDownloadBinding) (volumeDownload, error)
+	OpenManifest(context.Context, model.User, model.Project, model.VolumeTransfer, string, volumeDownloadBinding) (volumeDownload, error)
 }
 
 type volumeImportCreateInput struct {
@@ -54,11 +43,6 @@ type volumeImportCreateInput struct {
 type volumeExportCreateInput struct {
 	Format      string `json:"format" binding:"required"`
 	Consistency string `json:"consistency" binding:"required"`
-}
-
-type volumeImportCompleteInput struct {
-	ContentLength int64  `json:"contentLength" binding:"required"`
-	SHA256        string `json:"sha256" binding:"required"`
 }
 
 type volumeTransferResponse struct {
@@ -84,27 +68,11 @@ type volumeTransferResponse struct {
 	LastErrorCode    string     `json:"lastErrorCode"`
 	CreatedAt        time.Time  `json:"createdAt"`
 	UpdatedAt        time.Time  `json:"updatedAt"`
-	ChunkSize        int64      `json:"chunkSize"`
 }
 
 type volumeDownloadAuthorizationResponse struct {
 	Ticket    string    `json:"ticket"`
 	ExpiresAt time.Time `json:"expiresAt"`
-}
-
-type volumeDownloadInfo struct {
-	Size int64
-	ETag string
-}
-
-type volumeDownloadCredential struct {
-	Ticket  string
-	Session string
-}
-
-type volumeDownloadSession struct {
-	Token     string
-	ExpiresAt time.Time
 }
 
 type volumeDownloadBinding struct {
@@ -114,12 +82,8 @@ type volumeDownloadBinding struct {
 }
 
 type volumeDownload struct {
-	Body         io.ReadCloser
-	Status       int
-	ContentType  string
-	Size         int64
-	ETag         string
-	ContentRange string
+	Body        io.ReadCloser
+	ContentType string
 }
 
 func (h *Handlers) CreateVolumeImport(ctx *gin.Context) {
@@ -130,8 +94,11 @@ func (h *Handlers) CreateVolumeImport(ctx *gin.Context) {
 	if !h.ensureBillingAllowsManagedVolumeChange(ctx, project.ID) {
 		return
 	}
+	if !h.ensureVolumeTransferConfigured(ctx) {
+		return
+	}
 	if h.volumeContent == nil {
-		writeTransferStoreUnavailable(ctx)
+		writeTransferUnavailable(ctx)
 		return
 	}
 	var input volumeImportCreateInput
@@ -162,94 +129,33 @@ func (h *Handlers) CreateVolumeImport(ctx *gin.Context) {
 	})
 }
 
-func (h *Handlers) GetVolumeImportUploadOffset(ctx *gin.Context) {
-	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, volumeActionRoles(authz.ActionVolumeImport)...)
-	if !ok {
-		return
-	}
-	if h.volumeContent == nil {
-		writeTransferStoreUnavailable(ctx)
-		return
-	}
-	if ctx.GetHeader("Tus-Resumable") != "1.0.0" {
-		writeErrorCode(ctx, http.StatusBadRequest, volume.CodeInvalidInput, "invalid TUS upload headers")
-		return
-	}
-	offset, length, chunkSize, err := h.volumeContent.HeadImport(ctx.Request.Context(), project.ID, ctx.Param("transferId"), user)
-	if err != nil {
-		writeVolumeError(ctx, err)
-		return
-	}
-	ctx.Header("Tus-Resumable", "1.0.0")
-	ctx.Header("Upload-Offset", formatInt64(offset))
-	ctx.Header("Upload-Length", formatInt64(length))
-	ctx.Header("Upload-Chunk-Size", formatInt64(chunkSize))
-	ctx.Status(http.StatusOK)
-}
-
 func (h *Handlers) UploadVolumeImportContent(ctx *gin.Context) {
 	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, volumeActionRoles(authz.ActionVolumeImport)...)
 	if !ok {
 		return
 	}
 	if h.volumeContent == nil {
-		writeTransferStoreUnavailable(ctx)
+		writeTransferUnavailable(ctx)
 		return
 	}
-	offset, valid := parseNonNegativeInt64Header(ctx, "Upload-Offset")
-	if !valid {
+	checksum := strings.TrimSpace(ctx.GetHeader("X-Content-SHA256"))
+	if ctx.ContentType() != "application/octet-stream" || ctx.Request.ContentLength < 1 || checksum == "" {
+		writeErrorCode(ctx, http.StatusBadRequest, volume.CodeInvalidInput, "Content-Length, X-Content-SHA256, and application/octet-stream are required")
 		return
 	}
-	checksum := strings.TrimSpace(ctx.GetHeader("Upload-Checksum"))
-	if ctx.GetHeader("Tus-Resumable") != "1.0.0" || !strings.HasPrefix(checksum, "sha256 ") || ctx.ContentType() != "application/offset+octet-stream" {
-		writeErrorCode(ctx, http.StatusBadRequest, volume.CodeInvalidInput, "invalid TUS upload headers")
-		return
+	deadlineController := http.NewResponseController(ctx.Writer)
+	defer func() { _ = deadlineController.SetReadDeadline(time.Time{}) }()
+	source := &volumeTransferDeadlineReader{
+		reader: ctx.Request.Body, controller: deadlineController, timeout: volumeTransferHTTPIdleTimeout,
 	}
-	if ctx.Request.ContentLength < 1 || ctx.Request.ContentLength > volumetransferapi.MaximumChunkSize {
-		writeErrorCode(ctx, http.StatusRequestEntityTooLarge, volume.CodeInvalidInput, "volume upload chunk exceeds the allowed size")
-		return
-	}
-	nextOffset, chunkSize, err := h.volumeContent.WriteImportPart(
-		ctx.Request.Context(), project.ID, ctx.Param("transferId"), user, offset,
-		strings.TrimPrefix(checksum, "sha256 "), ctx.Request.Body, ctx.Request.ContentLength,
-	)
+	transfer, err := h.volumeContent.StreamImport(ctx.Request.Context(), project.ID, ctx.Param("transferId"), user, source, ctx.Request.ContentLength, checksum)
 	if err != nil {
-		if code := volume.ErrorCode(err); code == volume.CodeTransferOffsetMismatch || code == volume.CodeTransferPartInProgress {
-			if current, _, currentChunkSize, headErr := h.volumeContent.HeadImport(ctx.Request.Context(), project.ID, ctx.Param("transferId"), user); headErr == nil {
-				ctx.Header("Upload-Offset", formatInt64(current))
-				ctx.Header("Upload-Chunk-Size", formatInt64(currentChunkSize))
-			}
-		}
+		h.auditVolumeTransferStreamOutcome(ctx.Request.Context(), user.ID, "volume_transfer.import_stream", ctx.Param("transferId"), false, volumeAuditErrorCode(err))
 		writeVolumeError(ctx, err)
 		return
 	}
-	ctx.Header("Tus-Resumable", "1.0.0")
-	ctx.Header("Upload-Offset", formatInt64(nextOffset))
-	ctx.Header("Upload-Chunk-Size", formatInt64(chunkSize))
-	ctx.Status(http.StatusNoContent)
-}
-
-func (h *Handlers) CompleteVolumeImportUpload(ctx *gin.Context) {
-	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, volumeActionRoles(authz.ActionVolumeImport)...)
-	if !ok {
-		return
-	}
-	if h.volumeContent == nil {
-		writeTransferStoreUnavailable(ctx)
-		return
-	}
-	var input volumeImportCompleteInput
-	if !bindJSON(ctx, &input) {
-		return
-	}
-	transfer, err := h.volumeContent.CompleteImport(ctx.Request.Context(), project.ID, ctx.Param("transferId"), user, input.ContentLength, input.SHA256)
-	if err != nil {
-		h.auditWithContext(user.ID, "volume_transfer.import_complete", ctx.Param("transferId"), false, volumeAuditErrorCode(err), ctx.Request.Context())
-		writeVolumeError(ctx, err)
-		return
-	}
-	h.auditWithContext(user.ID, "volume_transfer.import_complete", transfer.ID, true, transfer.Format, ctx.Request.Context())
-	ctx.JSON(http.StatusAccepted, volumeTransferResponseFor(transfer, true, h.volumeTransferMaxBytes))
+	h.auditVolumeTransferStreamOutcome(ctx.Request.Context(), user.ID, "volume_transfer.import_stream", transfer.ID, true, transfer.Format)
+	ctx.JSON(http.StatusOK, volumeTransferResponseFor(transfer, true))
 }
 
 func (h *Handlers) CreateVolumeExport(ctx *gin.Context) {
@@ -260,8 +166,11 @@ func (h *Handlers) CreateVolumeExport(ctx *gin.Context) {
 	if !h.ensureBillingAllowsDeployChange(ctx, project.ID) {
 		return
 	}
+	if !h.ensureVolumeTransferConfigured(ctx) {
+		return
+	}
 	if h.volumeContent == nil {
-		writeTransferStoreUnavailable(ctx)
+		writeTransferUnavailable(ctx)
 		return
 	}
 	var input volumeExportCreateInput
@@ -342,8 +251,11 @@ func (h *Handlers) RetryVolumeTransfer(ctx *gin.Context) {
 	} else if !h.ensureBillingAllowsDeployChange(ctx, project.ID) {
 		return
 	}
+	if !h.ensureVolumeTransferConfigured(ctx) {
+		return
+	}
 	if h.volumeContent == nil {
-		writeTransferStoreUnavailable(ctx)
+		writeTransferUnavailable(ctx)
 		return
 	}
 	idempotencyKey, ok := volumeIdempotencyKey(ctx)
@@ -394,7 +306,7 @@ func (h *Handlers) AuthorizeVolumeTransferDownload(ctx *gin.Context) {
 		return
 	}
 	if h.volumeContent == nil {
-		writeTransferStoreUnavailable(ctx)
+		writeTransferUnavailable(ctx)
 		return
 	}
 	binding, ok := h.volumeTransferDownloadBinding(ctx, user)
@@ -403,77 +315,12 @@ func (h *Handlers) AuthorizeVolumeTransferDownload(ctx *gin.Context) {
 	}
 	authorization, err := h.volumeContent.AuthorizeDownload(ctx.Request.Context(), user, project, transfer, binding)
 	if err != nil {
-		h.auditWithContext(user.ID, "volume_transfer.export_download", transfer.ID, false, volumeAuditErrorCode(err), ctx.Request.Context())
+		h.auditWithContext(user.ID, "volume_transfer.export_authorize", transfer.ID, false, volumeAuditErrorCode(err), ctx.Request.Context())
 		writeVolumeError(ctx, err)
 		return
 	}
-	h.auditWithContext(user.ID, "volume_transfer.export_download", transfer.ID, true, transfer.Format, ctx.Request.Context())
+	h.auditWithContext(user.ID, "volume_transfer.export_authorize", transfer.ID, true, transfer.Format, ctx.Request.Context())
 	ctx.JSON(http.StatusCreated, authorization)
-}
-
-func (h *Handlers) HeadVolumeTransferContent(ctx *gin.Context) {
-	h.serveVolumeTransferContent(ctx, true)
-}
-
-func (h *Handlers) DownloadVolumeTransferContent(ctx *gin.Context) {
-	h.serveVolumeTransferContent(ctx, false)
-}
-
-func (h *Handlers) HeadVolumeTransferManifest(ctx *gin.Context) {
-	h.serveVolumeTransferManifest(ctx, true)
-}
-
-func (h *Handlers) DownloadVolumeTransferManifest(ctx *gin.Context) {
-	h.serveVolumeTransferManifest(ctx, false)
-}
-
-func (h *Handlers) serveVolumeTransferContent(ctx *gin.Context, head bool) {
-	user, project, transfer, ok := h.volumeTransferForRead(ctx)
-	if !ok {
-		return
-	}
-	if transfer.Direction != model.VolumeTransferDirectionExport || !h.authorizeTransferDirection(ctx, user, project, transfer) {
-		return
-	}
-	if h.volumeContent == nil {
-		writeTransferStoreUnavailable(ctx)
-		return
-	}
-	binding, ok := h.volumeTransferDownloadBinding(ctx, user)
-	if !ok {
-		return
-	}
-	credential := volumeDownloadCredential{Ticket: strings.TrimSpace(ctx.Query("ticket"))}
-	credential.Session, _ = ctx.Cookie(volumeDownloadSessionCookieName)
-	disposition := mime.FormatMediaType("attachment", map[string]string{"filename": volumeTransferArchiveFilename(transfer)})
-	if head {
-		info, session, err := h.volumeContent.HeadDownload(ctx.Request.Context(), user, project, transfer, credential, binding)
-		if err != nil {
-			writeVolumeError(ctx, err)
-			return
-		}
-		h.setVolumeDownloadSessionCookie(ctx, session)
-		ctx.Header("Accept-Ranges", "bytes")
-		ctx.Header("Content-Disposition", disposition)
-		ctx.Header("Content-Length", formatInt64(info.Size))
-		ctx.Header("ETag", info.ETag)
-		ctx.Status(http.StatusOK)
-		return
-	}
-	download, session, err := h.volumeContent.OpenDownload(ctx.Request.Context(), user, project, transfer, credential, ctx.GetHeader("Range"), binding)
-	if err != nil {
-		writeVolumeError(ctx, err)
-		return
-	}
-	defer download.Body.Close()
-	h.setVolumeDownloadSessionCookie(ctx, session)
-	ctx.Header("Accept-Ranges", "bytes")
-	ctx.Header("Content-Disposition", disposition)
-	ctx.Header("ETag", download.ETag)
-	if download.ContentRange != "" {
-		ctx.Header("Content-Range", download.ContentRange)
-	}
-	ctx.DataFromReader(download.Status, download.Size, download.ContentType, download.Body, nil)
 }
 
 func volumeTransferArchiveFilename(transfer model.VolumeTransfer) string {
@@ -484,80 +331,68 @@ func volumeTransferArchiveFilename(transfer model.VolumeTransfer) string {
 	return transfer.ID + suffix
 }
 
-func (h *Handlers) serveVolumeTransferManifest(ctx *gin.Context, head bool) {
+func (h *Handlers) DownloadVolumeTransferContent(ctx *gin.Context) {
+	h.serveDirectVolumeTransferDownload(ctx, false)
+}
+
+func (h *Handlers) DownloadVolumeTransferManifest(ctx *gin.Context) {
+	h.serveDirectVolumeTransferDownload(ctx, true)
+}
+
+func (h *Handlers) serveDirectVolumeTransferDownload(ctx *gin.Context, manifest bool) {
 	user, project, transfer, ok := h.volumeTransferForRead(ctx)
-	if !ok {
-		return
-	}
-	if transfer.Direction != model.VolumeTransferDirectionExport || !h.authorizeTransferDirection(ctx, user, project, transfer) {
+	if !ok || transfer.Direction != model.VolumeTransferDirectionExport || !h.authorizeTransferDirection(ctx, user, project, transfer) {
 		return
 	}
 	if h.volumeContent == nil {
-		writeTransferStoreUnavailable(ctx)
+		writeTransferUnavailable(ctx)
 		return
 	}
 	binding, ok := h.volumeTransferDownloadBinding(ctx, user)
 	if !ok {
 		return
 	}
-	credential := volumeDownloadCredential{Ticket: strings.TrimSpace(ctx.Query("ticket"))}
-	credential.Session, _ = ctx.Cookie(volumeDownloadSessionCookieName)
-	disposition := mime.FormatMediaType("attachment", map[string]string{"filename": transfer.ID + ".raw.zst.manifest.json"})
-	if head {
-		info, session, err := h.volumeContent.HeadManifest(ctx.Request.Context(), user, project, transfer, credential, binding)
-		if err != nil {
-			writeVolumeError(ctx, err)
-			return
-		}
-		h.setVolumeDownloadSessionCookie(ctx, session)
-		ctx.Header("Content-Length", formatInt64(info.Size))
-		ctx.Header("Content-Type", "application/json; charset=utf-8")
-		ctx.Header("Content-Disposition", disposition)
-		ctx.Header("ETag", info.ETag)
-		ctx.Status(http.StatusOK)
-		return
+	ticket := strings.TrimSpace(ctx.Query("ticket"))
+	var download volumeDownload
+	var err error
+	filename := volumeTransferArchiveFilename(transfer)
+	if manifest {
+		download, err = h.volumeContent.OpenManifest(ctx.Request.Context(), user, project, transfer, ticket, binding)
+		filename += ".manifest.json"
+	} else {
+		download, err = h.volumeContent.OpenDownload(ctx.Request.Context(), user, project, transfer, ticket, binding)
 	}
-	download, session, err := h.volumeContent.OpenManifest(ctx.Request.Context(), user, project, transfer, credential, binding)
 	if err != nil {
 		writeVolumeError(ctx, err)
 		return
 	}
-	defer download.Body.Close()
-	h.setVolumeDownloadSessionCookie(ctx, session)
-	ctx.Header("Content-Disposition", disposition)
-	ctx.Header("ETag", download.ETag)
-	ctx.DataFromReader(download.Status, download.Size, download.ContentType, download.Body, nil)
-}
-
-const volumeDownloadSessionCookieName = "luna_volume_download_session"
-
-func (h *Handlers) setVolumeDownloadSessionCookie(ctx *gin.Context, session volumeDownloadSession) {
-	remaining := time.Until(session.ExpiresAt)
-	if strings.TrimSpace(session.Token) == "" || remaining < time.Second {
+	ctx.Header("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": filename}))
+	ctx.Header("Content-Type", download.ContentType)
+	ctx.Header("Cache-Control", "no-store")
+	ctx.Status(http.StatusOK)
+	deadlineController := http.NewResponseController(ctx.Writer)
+	defer func() { _ = deadlineController.SetWriteDeadline(time.Time{}) }()
+	destination := &volumeTransferDeadlineWriter{
+		writer: ctx.Writer, controller: deadlineController, timeout: volumeTransferHTTPIdleTimeout,
+	}
+	_, copyErr := io.Copy(destination, download.Body)
+	closeErr := download.Body.Close()
+	streamErr := errors.Join(copyErr, closeErr)
+	action := "volume_transfer.export_stream"
+	if manifest {
+		action = "volume_transfer.export_manifest"
+	}
+	if streamErr != nil {
+		h.auditVolumeTransferStreamOutcome(ctx.Request.Context(), user.ID, action, transfer.ID, false, volumeAuditErrorCode(streamErr))
 		return
 	}
-	maxAge := int(remaining.Seconds())
-	secure := h == nil || h.mode != "development"
-	http.SetCookie(ctx.Writer, &http.Cookie{
-		Name: volumeDownloadSessionCookieName, Value: session.Token,
-		Path: volumeDownloadSessionCookiePath(ctx.Request.URL.Path), Expires: session.ExpiresAt, MaxAge: maxAge,
-		HttpOnly: true, Secure: secure, SameSite: http.SameSiteStrictMode,
-	})
+	h.auditVolumeTransferStreamOutcome(ctx.Request.Context(), user.ID, action, transfer.ID, true, transfer.Format)
 }
 
-func volumeDownloadSessionCookiePath(requestPath string) string {
-	const marker = "/volume-transfers/"
-	index := strings.Index(requestPath, marker)
-	if index < 0 {
-		return requestPath
-	}
-	transferStart := index + len(marker)
-	remainder := requestPath[transferStart:]
-	slash := strings.IndexByte(remainder, '/')
-	if slash < 1 {
-		return requestPath
-	}
-	return requestPath[:transferStart+slash+1]
+func (h *Handlers) auditVolumeTransferStreamOutcome(ctx context.Context, userID, action, transferID string, success bool, message string) {
+	auditCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	h.auditWithContext(userID, action, transferID, success, message, auditCtx)
 }
 
 func (h *Handlers) volumeTransferForRead(ctx *gin.Context) (model.User, model.Project, model.VolumeTransfer, bool) {
@@ -571,6 +406,14 @@ func (h *Handlers) volumeTransferForRead(ctx *gin.Context) (model.User, model.Pr
 		return model.User{}, model.Project{}, model.VolumeTransfer{}, false
 	}
 	return user, project, transfer, true
+}
+
+func (h *Handlers) ensureVolumeTransferConfigured(ctx *gin.Context) bool {
+	if h != nil && h.volumeTransferEnabled {
+		return true
+	}
+	writeVolumeError(ctx, &volume.DomainError{Code: volume.CodeTransferUnavailable, Message: "direct volume transfer is not configured"})
+	return false
 }
 
 func (h *Handlers) authorizeTransferDirection(ctx *gin.Context, user model.User, project model.Project, transfer model.VolumeTransfer) bool {
@@ -589,14 +432,10 @@ func (h *Handlers) authorizeTransferDirection(ctx *gin.Context, user model.User,
 	return true
 }
 
-func volumeTransferResponseFor(item model.VolumeTransfer, includeFilename bool, configuredMaxBytes ...int64) volumeTransferResponse {
+func volumeTransferResponseFor(item model.VolumeTransfer, includeFilename bool, _ ...int64) volumeTransferResponse {
 	filename := ""
 	if includeFilename {
 		filename = item.SourceFilename
-	}
-	expectedForChunk := item.ExpectedBytes
-	if item.Direction == model.VolumeTransferDirectionExport && len(configuredMaxBytes) > 0 && configuredMaxBytes[0] > 0 {
-		expectedForChunk = configuredMaxBytes[0]
 	}
 	return volumeTransferResponse{
 		ID: item.ID, ProjectID: item.ProjectID, ProjectVolumeID: item.ProjectVolumeID,
@@ -607,20 +446,9 @@ func volumeTransferResponseFor(item model.VolumeTransfer, includeFilename bool, 
 		ActorID: item.ActorID, ExpiresAt: item.ExpiresAt,
 		StartedAt: item.StartedAt, FinishedAt: item.FinishedAt, LastErrorCode: item.LastErrorCode,
 		CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt,
-		ChunkSize: volumetransferapi.RequiredChunkSize(expectedForChunk),
 	}
 }
 
-func writeTransferStoreUnavailable(ctx *gin.Context) {
-	writeErrorCode(ctx, http.StatusServiceUnavailable, volume.CodeTransferStoreUnavailable, "volume transfer store is unavailable")
-}
-
-func parseNonNegativeInt64Header(ctx *gin.Context, name string) (int64, bool) {
-	raw := strings.TrimSpace(ctx.GetHeader(name))
-	value, err := parseInt64(raw)
-	if err != nil || value < 0 {
-		writeErrorCode(ctx, http.StatusBadRequest, volume.CodeInvalidInput, name+" must be a non-negative integer")
-		return 0, false
-	}
-	return value, true
+func writeTransferUnavailable(ctx *gin.Context) {
+	writeErrorCode(ctx, http.StatusServiceUnavailable, volume.CodeClusterUnavailable, "direct volume transfer is unavailable")
 }

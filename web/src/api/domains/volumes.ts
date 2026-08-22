@@ -12,7 +12,6 @@ import type {
   VolumeExportCreateInput,
   VolumeImportCreateInput,
   VolumeImportCreateResponse,
-  VolumeImportUploadOffset,
   VolumeTransfer,
   VolumeTransferDownloadAuthorization,
   VolumeTransferListParams,
@@ -67,71 +66,76 @@ function volumeTransferResourceURL(projectId: string, transferId: string, resour
   return `${API_BASE_URL}${volumeTransferResourcePath(projectId, transferId, resource)}`
 }
 
-function volumeTransferTicketSuffix(ticket?: string) {
-  if (!ticket)
-    return ''
+function volumeTransferResourceURLWithTicket(projectId: string, transferId: string, resource: 'content' | 'manifest', ticket: string) {
   const query = new URLSearchParams({ ticket })
-  return `?${query.toString()}`
+  return `${volumeTransferResourceURL(projectId, transferId, resource)}?${query.toString()}`
 }
 
-function requiredUploadHeader(response: Response, name: 'Upload-Chunk-Size' | 'Upload-Length' | 'Upload-Offset', minimum: number) {
-  const value = Number(response.headers.get(name))
-  if (!Number.isSafeInteger(value) || value < minimum) {
-    throw new ApiError(i18next.t('errors.request.failed'), {
-      code: 'volume_transfer.response_invalid',
-      path: response.url,
-      status: 502,
-    })
-  }
-  return value
-}
-
-function retryAfterMilliseconds(value: string | null) {
-  const seconds = Number(value)
-  if (!Number.isSafeInteger(seconds) || seconds < 0)
-    return undefined
-  return Math.min(5_000, Math.max(250, seconds * 1_000))
-}
-
-async function rawVolumeRequest(path: string, options: RequestInit) {
-  const telemetry = startAPIRequestSpan(options.method ?? 'GET', path)
-  let response: Response
-  try {
-    response = await fetch(`${API_BASE_URL}${path}`, {
-      ...options,
-      credentials: 'include',
-      headers: {
-        'Accept-Language': i18next.language,
-        ...telemetry.headers,
-        ...options.headers,
-      },
-    })
-  }
-  catch (error) {
-    telemetry.fail(error)
-    throw new ApiError(i18next.t('errors.network.failed'), {
-      code: 'network.failed',
-      detail: error instanceof Error ? error.message : String(error),
-      path,
-      status: 0,
-    })
-  }
-  telemetry.finish(response)
-  if (!response.ok) {
-    const body = await response.clone().json().catch(() => ({})) as { code?: unknown, error?: unknown, requestId?: unknown }
-    const code = typeof body.code === 'string' ? body.code : `http.${response.status}`
-    const safeMessage = typeof body.error === 'string' && body.error.trim()
-      ? body.error
-      : i18next.t(response.status >= 500 ? 'errors.internal_error' : 'errors.request.failed')
-    throw new ApiError(safeMessage, {
-      code,
-      path,
-      requestId: typeof body.requestId === 'string' ? body.requestId : undefined,
-      retryAfterMs: retryAfterMilliseconds(response.headers.get('Retry-After')),
-      status: response.status,
-    })
-  }
-  return response
+function uploadVolumeImportContent(
+  projectId: string,
+  transferId: string,
+  file: File,
+  sha256: string,
+  signal?: AbortSignal,
+  onProgress?: (transferredBytes: number, totalBytes: number) => void,
+): Promise<VolumeTransfer> {
+  const path = `/projects/${encodeURIComponent(projectId)}/volume-imports/${encodeURIComponent(transferId)}/content`
+  const telemetry = startAPIRequestSpan('PUT', path)
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    let settled = false
+    const abort = () => xhr.abort()
+    const cleanup = () => signal?.removeEventListener('abort', abort)
+    const finish = (action: () => void) => {
+      if (settled)
+        return
+      settled = true
+      cleanup()
+      action()
+    }
+    xhr.open('PUT', `${API_BASE_URL}${path}`)
+    xhr.withCredentials = true
+    xhr.responseType = 'json'
+    xhr.setRequestHeader('Accept-Language', i18next.language)
+    xhr.setRequestHeader('Content-Type', 'application/octet-stream')
+    xhr.setRequestHeader('X-Content-SHA256', sha256)
+    for (const [name, value] of Object.entries(telemetry.headers))
+      xhr.setRequestHeader(name, value)
+    xhr.upload.addEventListener('progress', event => onProgress?.(event.loaded, file.size))
+    xhr.addEventListener('load', () => finish(() => {
+      const response = new Response(null, { status: xhr.status, statusText: xhr.statusText })
+      telemetry.finish(response)
+      const body = (xhr.response && typeof xhr.response === 'object' ? xhr.response : {}) as Partial<VolumeTransfer> & { code?: unknown, error?: unknown, requestId?: unknown }
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve(body as VolumeTransfer)
+        return
+      }
+      const code = typeof body.code === 'string' ? body.code : `http.${xhr.status}`
+      const translated = i18next.exists(`errors.${code}`) ? i18next.t(`errors.${code}`) : ''
+      reject(new ApiError(translated || (typeof body.error === 'string' ? body.error : i18next.t(xhr.status >= 500 ? 'errors.internal_error' : 'errors.request.failed')), {
+        code,
+        path,
+        requestId: typeof body.requestId === 'string' ? body.requestId : undefined,
+        status: xhr.status,
+      }))
+    }))
+    xhr.addEventListener('error', () => finish(() => {
+      const error = new ApiError(i18next.t('errors.network.failed'), { code: 'network.failed', path, status: 0 })
+      telemetry.fail(error)
+      reject(error)
+    }))
+    xhr.addEventListener('abort', () => finish(() => {
+      const error = signal?.reason ?? new DOMException('The operation was aborted.', 'AbortError')
+      telemetry.fail(error)
+      reject(error)
+    }))
+    signal?.addEventListener('abort', abort, { once: true })
+    if (signal?.aborted) {
+      abort()
+      return
+    }
+    xhr.send(file)
+  })
 }
 
 export const volumesApi = {
@@ -185,40 +189,7 @@ export const volumesApi = {
       headers: { 'Idempotency-Key': idempotencyKey() },
       body: JSON.stringify(payload),
     }),
-  getVolumeImportUploadOffset: async (projectId: string, transferId: string, signal?: AbortSignal): Promise<VolumeImportUploadOffset> => {
-    const response = await rawVolumeRequest(`/projects/${encodeURIComponent(projectId)}/volume-imports/${encodeURIComponent(transferId)}/content`, {
-      method: 'HEAD',
-      signal,
-      headers: { 'Tus-Resumable': '1.0.0' },
-    })
-    return {
-      chunkSize: requiredUploadHeader(response, 'Upload-Chunk-Size', 64 * 1024 * 1024),
-      length: requiredUploadHeader(response, 'Upload-Length', 1),
-      offset: requiredUploadHeader(response, 'Upload-Offset', 0),
-    }
-  },
-  uploadVolumeImportChunk: async (projectId: string, transferId: string, chunk: Blob, offset: number, checksum: string, signal?: AbortSignal) => {
-    const response = await rawVolumeRequest(`/projects/${encodeURIComponent(projectId)}/volume-imports/${encodeURIComponent(transferId)}/content`, {
-      method: 'PATCH',
-      body: chunk,
-      signal,
-      headers: {
-        'Content-Type': 'application/offset+octet-stream',
-        'Tus-Resumable': '1.0.0',
-        'Upload-Checksum': `sha256 ${checksum}`,
-        'Upload-Offset': String(offset),
-      },
-    })
-    return {
-      chunkSize: requiredUploadHeader(response, 'Upload-Chunk-Size', 64 * 1024 * 1024),
-      offset: requiredUploadHeader(response, 'Upload-Offset', 0),
-    }
-  },
-  completeVolumeImportUpload: (projectId: string, transferId: string, contentLength: number, sha256: string) =>
-    request<VolumeTransfer>(`/projects/${encodeURIComponent(projectId)}/volume-imports/${encodeURIComponent(transferId)}/complete`, {
-      method: 'POST',
-      body: JSON.stringify({ contentLength, sha256 }),
-    }),
+  uploadVolumeImportContent,
   createVolumeExport: (projectId: string, volumeId: string, payload: VolumeExportCreateInput) =>
     request<VolumeTransfer>(`${volumePath(projectId, volumeId)}/exports`, {
       method: 'POST',
@@ -227,8 +198,8 @@ export const volumesApi = {
     }),
   listVolumeTransfers: (projectId: string, params: VolumeTransferListParams) =>
     request<PaginatedVolumeTransfers>(`/projects/${encodeURIComponent(projectId)}/volume-transfers?${transferListQuery(params)}`),
-  getVolumeTransfer: (projectId: string, transferId: string) =>
-    request<VolumeTransfer>(`/projects/${encodeURIComponent(projectId)}/volume-transfers/${encodeURIComponent(transferId)}`),
+  getVolumeTransfer: (projectId: string, transferId: string, signal?: AbortSignal) =>
+    request<VolumeTransfer>(`/projects/${encodeURIComponent(projectId)}/volume-transfers/${encodeURIComponent(transferId)}`, { signal }),
   retryVolumeTransfer: (projectId: string, transferId: string) =>
     request<VolumeTransfer>(`/projects/${encodeURIComponent(projectId)}/volume-transfers/${encodeURIComponent(transferId)}/retry`, {
       method: 'POST',
@@ -238,32 +209,10 @@ export const volumesApi = {
     request<VolumeTransfer>(`/projects/${encodeURIComponent(projectId)}/volume-transfers/${encodeURIComponent(transferId)}/cancel`, { method: 'POST' }),
   authorizeVolumeTransferDownload: (projectId: string, transferId: string) =>
     request<VolumeTransferDownloadAuthorization>(`/projects/${encodeURIComponent(projectId)}/volume-transfers/${encodeURIComponent(transferId)}/download-authorizations`, { method: 'POST' }),
-  volumeTransferContentURL: (projectId: string, transferId: string) =>
-    volumeTransferResourceURL(projectId, transferId, 'content'),
-  volumeTransferManifestURL: (projectId: string, transferId: string) =>
-    volumeTransferResourceURL(projectId, transferId, 'manifest'),
-  headVolumeTransferContent: (projectId: string, transferId: string, ticket?: string, signal?: AbortSignal) =>
-    rawVolumeRequest(`${volumeTransferResourcePath(projectId, transferId, 'content')}${volumeTransferTicketSuffix(ticket)}`, {
-      method: 'HEAD',
-      signal,
-    }),
-  headVolumeTransferManifest: (projectId: string, transferId: string, ticket?: string, signal?: AbortSignal) =>
-    rawVolumeRequest(`${volumeTransferResourcePath(projectId, transferId, 'manifest')}${volumeTransferTicketSuffix(ticket)}`, {
-      method: 'HEAD',
-      signal,
-    }),
-  downloadVolumeTransferManifest: (projectId: string, transferId: string, ticket?: string, signal?: AbortSignal) =>
-    rawVolumeRequest(`${volumeTransferResourcePath(projectId, transferId, 'manifest')}${volumeTransferTicketSuffix(ticket)}`, {
-      method: 'GET',
-      signal,
-    }),
-  downloadVolumeTransferContent: (projectId: string, transferId: string, ticket?: string, offset = 0, signal?: AbortSignal) => {
-    return rawVolumeRequest(`${volumeTransferResourcePath(projectId, transferId, 'content')}${volumeTransferTicketSuffix(ticket)}`, {
-      method: 'GET',
-      signal,
-      headers: offset > 0 ? { Range: `bytes=${offset}-` } : {},
-    })
-  },
+  volumeTransferContentURL: (projectId: string, transferId: string, ticket: string) =>
+    volumeTransferResourceURLWithTicket(projectId, transferId, 'content', ticket),
+  volumeTransferManifestURL: (projectId: string, transferId: string, ticket: string) =>
+    volumeTransferResourceURLWithTicket(projectId, transferId, 'manifest', ticket),
 }
 
 export type ProjectVolumeStorageClassPage = PaginatedProjectVolumeStorageClasses

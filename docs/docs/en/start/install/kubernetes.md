@@ -1,6 +1,8 @@
 # Kubernetes (Helm) Deployment
 
-For a long-running Luna DevOps installation on Kubernetes or K3s, use Helm. The chart deploys API, Worker, PostgreSQL, and Redis together, and it can also connect to existing external database services.
+For a long-running Luna DevOps installation on Kubernetes, use Helm. The chart deploys API, Worker, PostgreSQL, and Redis together, and it can also connect to existing external database services.
+
+These commands target standard Kubernetes. K3s and other distributions are supported when they meet the [compatibility requirements](/en/reference/compatibility); distribution-specific storage, Ingress, and security policies remain the cluster administrator's responsibility.
 
 ## Before You Start
 
@@ -95,16 +97,13 @@ helm upgrade --install luna-devops ./charts/luna-devops \
 
 | Value | Default | Notes |
 | --- | --- | --- |
-| `app.publicBaseUrl` | `http://localhost:8088` | Public console URL. Required when Ingress is enabled. |
-| `app.secretEncryptionKey` | Generated on first install | Encrypts Git, registry, and OIDC secrets. Keep it stable in production. |
-| `api.image.tag` / `worker.image.tag` | `nightly` | API and worker image tag. |
-| `ai.enabled` | `false` | Deploy the independent AI Agent. `ai.existingSecret` must contain `ai-internal-secret`. |
-| `ai.internalSecretKey` | `ai-internal-secret` | Key name holding the AI internal root in `ai.existingSecret`. |
-| `ai.agent.image.tag` | Chart `appVersion` | Agent image tag. Releases use the same tag as API and Worker. |
-| `postgresql.enabled` | `true` | Install built-in PostgreSQL. |
-| `redis.enabled` | `true` | Install built-in Redis. |
-| `externalRedis.url` | Empty | Complete external Redis URI, used when built-in Redis is disabled. |
-| `worker.buildEgressMode` | `restricted` | Build Job egress mode. Cluster-internal access is restricted by default; use `permissive` only when you explicitly accept the risk. |
+| `app.publicBaseUrl` | `http://localhost:8088` | Sets the user-facing platform root; use an HTTP(S) URL. |
+| `app.secretEncryptionKey` | Generated | Encrypts credentials stored by the platform; use a stable non-empty key. |
+| `api.image.tag` / `worker.image.tag` | `nightly` | Selects the API and Worker image versions; use image tags. |
+| `ai.enabled` / `ai.existingSecret` | `false` / empty | Enables Agent and selects its internal secret; use a boolean and a Kubernetes Secret name. |
+| `postgresql.enabled` / `externalDatabase.url` | `true` / empty | Selects bundled or external PostgreSQL; use a boolean and a PostgreSQL connection URI. |
+| `redis.enabled` / `externalRedis.url` | `true` / empty | Selects bundled or external Redis; use a boolean and a `redis://` or `rediss://` URI. |
+| `worker.buildEgressMode` | `restricted` | Sets the build-network egress policy; use `restricted` or `permissive`. |
 
 ## Uninstall
 

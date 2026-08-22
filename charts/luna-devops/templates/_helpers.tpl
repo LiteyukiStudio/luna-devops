@@ -173,18 +173,6 @@ redis-url
       key: {{ .Values.observability.headersKey }}
 {{- end }}
 {{- end }}
-{{- if .Values.volumeTransfer.enabled }}
-- name: VOLUME_TRANSFER_S3_ACCESS_KEY_ID
-  valueFrom:
-    secretKeyRef:
-      name: {{ .Values.volumeTransfer.s3.existingSecret }}
-      key: {{ .Values.volumeTransfer.s3.accessKeyIdKey }}
-- name: VOLUME_TRANSFER_S3_SECRET_ACCESS_KEY
-  valueFrom:
-    secretKeyRef:
-      name: {{ .Values.volumeTransfer.s3.existingSecret }}
-      key: {{ .Values.volumeTransfer.s3.secretAccessKeyKey }}
-{{- end }}
 {{- range $name, $value := .Values.app.extraEnv }}
 - name: {{ $name }}
   value: {{ $value | quote }}

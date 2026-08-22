@@ -119,7 +119,7 @@ luna login
 luna project get-projects
 ```
 
-- [CLI 使用文档](https://luna-devops.liteyuki.org/download/installation)
+- [CLI 使用文档](https://luna-devops.liteyuki.org/use/cli/installation)
 - [CLI GitHub 仓库](https://github.com/LiteyukiStudio/luna-cli)
 - [配套 Agent Skill](https://github.com/LiteyukiStudio/luna-cli/tree/main/skills/luna-devops)
 
@@ -168,7 +168,7 @@ helm install luna-devops ./charts/luna-devops \
 - [Kubernetes / Helm](docs/docs/zh/start/install/kubernetes.md)
 - [Docker Compose](docs/docs/zh/start/install/docker-compose.md)
 - [二进制部署](docs/docs/zh/start/install/binary.md)
-- [配置参考](docs/docs/zh/reference/configuration.md)
+- [配置项](docs/docs/zh/start/configuration.md)
 
 ## 配置说明
 
@@ -178,7 +178,7 @@ helm install luna-devops ./charts/luna-devops \
 - Luna DevOps 位于反向代理之后时，`TRUSTED_PROXY_CIDRS` 应包含可信反向代理或 CDN 的出口网段。
 - Worker 的构建网络可以单独配置。构建需要访问私有镜像站或镜像源时，建议使用受限出口并显式配置白名单。
 
-完整的 API 与 Worker 配置请查看[配置参考](docs/docs/zh/reference/configuration.md)。
+完整的 API 与 Worker 配置请查看[配置项](docs/docs/zh/start/configuration.md)。
 
 ## 仓库结构
 

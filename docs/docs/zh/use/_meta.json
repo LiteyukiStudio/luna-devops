@@ -1,77 +1,9 @@
 [
-  {
-    "type": "file",
-    "name": "workflow",
-    "label": "日常交付"
-  },
-  {
-    "type": "file",
-    "name": "ai-assistant",
-    "label": "AI 助手"
-  },
-  {
-    "type": "file",
-    "name": "app-marketplace",
-    "label": "应用市场"
-  },
-  {
-    "type": "file",
-    "name": "configuration",
-    "label": "配置与密钥"
-  },
-  {
-    "type": "file",
-    "name": "deployment-config-transfer",
-    "label": "部署配置导入与导出"
-  },
-  {
-    "type": "file",
-    "name": "project-volumes",
-    "label": "项目数据卷"
-  },
-  {
-    "type": "file",
-    "name": "volume-transfer",
-    "label": "数据卷导入与导出"
-  },
-  {
-    "type": "file",
-    "name": "notifications",
-    "label": "通知"
-  },
-  {
-    "type": "file",
-    "name": "inbox",
-    "label": "消息盒子"
-  },
-  {
-    "type": "file",
-    "name": "billing",
-    "label": "账单与费用"
-  },
-  {
-    "type": "file",
-    "name": "default-pricing",
-    "label": "默认定价与建议价格"
-  },
-  {
-    "type": "file",
-    "name": "data-retention",
-    "label": "数据保留与清理"
-  },
-  {
-    "type": "file",
-    "name": "diagnostics",
-    "label": "状态与排障"
-  },
-  {
-    "type": "custom-link",
-    "label": "安装 Luna CLI",
-    "link": "/download/installation"
-  },
-  {
-    "type": "custom-link",
-    "label": "使用 Luna CLI",
-    "link": "/download/cli"
-  }
+  { "type": "dir", "name": "workflow", "label": "日常交付" },
+  { "type": "file", "name": "ai-assistant", "label": "AI 助手" },
+  { "type": "file", "name": "app-marketplace", "label": "应用市场" },
+  { "type": "file", "name": "notifications", "label": "通知" },
+  { "type": "file", "name": "billing", "label": "账单与费用" },
+  { "type": "file", "name": "diagnostics", "label": "状态与排障" },
+  { "type": "dir", "name": "cli", "label": "Luna CLI" }
 ]

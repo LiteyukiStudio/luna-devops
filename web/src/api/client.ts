@@ -356,9 +356,7 @@ const domainOperations = {
     'deleteProjectVolume',
     'retryProjectVolumeOperation',
     'createVolumeImport',
-    'getVolumeImportUploadOffset',
-    'uploadVolumeImportChunk',
-    'completeVolumeImportUpload',
+    'uploadVolumeImportContent',
     'createVolumeExport',
     'listVolumeTransfers',
     'getVolumeTransfer',
@@ -367,10 +365,6 @@ const domainOperations = {
     'authorizeVolumeTransferDownload',
     'volumeTransferContentURL',
     'volumeTransferManifestURL',
-    'headVolumeTransferContent',
-    'headVolumeTransferManifest',
-    'downloadVolumeTransferManifest',
-    'downloadVolumeTransferContent',
   ],
 } satisfies Record<DomainName, readonly (keyof ApiClient)[]>
 

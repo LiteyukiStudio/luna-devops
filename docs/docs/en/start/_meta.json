@@ -7,26 +7,21 @@
   {
     "type": "file",
     "name": "first-login",
-    "label": "First Login"
+    "label": "Initialize"
   },
   {
     "type": "file",
     "name": "connect-resources",
-    "label": "Connect a Cluster and Registry"
+    "label": "Add Base Resources"
   },
   {
     "type": "file",
-    "name": "first-project",
-    "label": "Ship Your First Project"
+    "name": "pricing",
+    "label": "Set Prices"
   },
   {
-    "type": "file",
-    "name": "startup-troubleshooting",
-    "label": "Startup Troubleshooting"
-  },
-  {
-    "type": "file",
-    "name": "faq",
-    "label": "FAQ"
+    "type": "dir",
+    "name": "configuration",
+    "label": "Configuration"
   }
 ]

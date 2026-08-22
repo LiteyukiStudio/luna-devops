@@ -2006,7 +2006,7 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "409": { $ref: "#/components/responses/Conflict" }
         "422": { description: Snapshot or volume specification is unsupported, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
-        "503": { description: Runtime cluster is unavailable, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+        "503": { description: Direct transfer is not configured or the runtime cluster is unavailable, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
 
   /api/v1/projects/{projectId}/volume-storage-classes:
     get:
@@ -2221,14 +2221,14 @@ paths:
     post:
       operationId: createVolumeImport
       tags: [Volumes]
-      summary: Create a resumable archive import session and provisioning volume
+      summary: Prepare a direct archive import and provisioning volume
       x-luna-cli:
         classification: protocol-adapter
         hidden: true
         agentAllowed: false
         transport: upload
         risk: high
-        exclusionReason: Local archive selection and resumable byte upload are handled by Web or Luna CLI protocol adapters.
+        exclusionReason: Local archive selection and the single direct byte stream are handled by Web or Luna CLI protocol adapters.
       parameters:
         - $ref: "#/components/parameters/ProjectId"
         - $ref: "#/components/parameters/IdempotencyKey"
@@ -2239,43 +2239,21 @@ paths:
             schema: { $ref: "#/components/schemas/VolumeImportCreateInput" }
       responses:
         "202":
-          description: Import upload session created.
+          description: Import preparation queued. Poll the returned transfer until it is ready before opening the content stream.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/VolumeImportCreateResponse" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "409": { $ref: "#/components/responses/Conflict" }
-        "503": { description: Transfer store or runtime cluster is unavailable, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+        "503": { description: Runtime cluster is unavailable, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
 
   /api/v1/projects/{projectId}/volume-imports/{transferId}/content:
-    head:
-      operationId: getVolumeImportUploadOffset
-      tags: [Volumes]
-      summary: Read the authoritative resumable upload offset
-      x-luna-cli:
-        classification: protocol-adapter
-        hidden: true
-        agentAllowed: false
-        transport: upload
-      parameters:
-        - $ref: "#/components/parameters/ProjectId"
-        - $ref: "#/components/parameters/TransferId"
-        - $ref: "#/components/parameters/TusResumable"
-      responses:
-        "200":
-          description: Current upload offset.
-          headers:
-            Tus-Resumable: { schema: { type: string, const: 1.0.0 } }
-            Upload-Offset: { schema: { type: integer, format: int64, minimum: 0 } }
-            Upload-Length: { schema: { type: integer, format: int64, minimum: 0 } }
-            Upload-Chunk-Size: { schema: { type: integer, format: int64, minimum: 67108864, maximum: 5368709120 } }
-        "404": { $ref: "#/components/responses/NotFound" }
-        "410": { description: Transfer expired, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
-    patch:
+    put:
       operationId: uploadVolumeImportContent
       tags: [Volumes]
-      summary: Stream one checksum-protected TUS upload chunk
+      summary: Stream one complete archive directly into the prepared runtime Pod
+      description: This request is not resumable. Content-Length and X-Content-SHA256 must match the transfer created earlier.
       x-luna-cli:
         classification: protocol-adapter
         hidden: true
@@ -2285,69 +2263,29 @@ paths:
       parameters:
         - $ref: "#/components/parameters/ProjectId"
         - $ref: "#/components/parameters/TransferId"
-        - $ref: "#/components/parameters/TusResumable"
-        - name: Upload-Offset
+        - name: Content-Length
           in: header
           required: true
-          schema: { type: integer, format: int64, minimum: 0 }
-        - name: Upload-Checksum
+          schema: { type: integer, format: int64, minimum: 1 }
+        - name: X-Content-SHA256
           in: header
           required: true
-          schema: { type: string, pattern: '^sha256 [A-Za-z0-9+/]+={0,2}$' }
+          schema: { type: string, pattern: '^[a-fA-F0-9]{64}$' }
       requestBody:
         required: true
         content:
-          application/offset+octet-stream:
-            schema: { type: string, format: binary, maxLength: 5368709120 }
+          application/octet-stream:
+            schema: { type: string, format: binary }
       responses:
-        "204":
-          description: Chunk persisted and offset advanced.
-          headers:
-            Tus-Resumable: { schema: { type: string, const: 1.0.0 } }
-            Upload-Offset: { schema: { type: integer, format: int64, minimum: 0 } }
-            Upload-Chunk-Size: { schema: { type: integer, format: int64, minimum: 67108864, maximum: 5368709120 } }
-        "409":
-          description: Upload offset mismatch, content conflict, or an identical part is still being persisted. `volume_transfer.part_in_progress` includes a bounded Retry-After value.
-          headers:
-            Upload-Offset: { schema: { type: integer, format: int64, minimum: 0 } }
-            Upload-Chunk-Size: { schema: { type: integer, format: int64, minimum: 67108864, maximum: 5368709120 } }
-            Retry-After: { schema: { type: integer, minimum: 1, maximum: 5 }, description: Present for `volume_transfer.part_in_progress`; clients wait, then HEAD the authoritative offset before a bounded retry. }
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ErrorResponse" }
-        "410": { description: Transfer expired, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
-        "413": { description: Chunk exceeds the S3 multipart part-size limit, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
-        "429": { description: API spool byte budget is busy, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
-        "460": { description: Chunk checksum mismatch, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
-        "503": { description: API spool directory or capacity observation is unavailable, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
-        "507": { description: API spool disk has insufficient free space, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
-
-  /api/v1/projects/{projectId}/volume-imports/{transferId}/complete:
-    post:
-      operationId: completeVolumeImportUpload
-      tags: [Volumes]
-      summary: Verify the complete archive and queue an import job
-      x-luna-cli:
-        classification: protocol-adapter
-        hidden: true
-        agentAllowed: false
-        risk: high
-      parameters:
-        - $ref: "#/components/parameters/ProjectId"
-        - $ref: "#/components/parameters/TransferId"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: "#/components/schemas/VolumeImportCompleteInput" }
-      responses:
-        "202":
-          description: Import job queued.
+        "200":
+          description: Direct import completed and verified.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/VolumeTransfer" }
+        "400": { $ref: "#/components/responses/BadRequest" }
         "409": { $ref: "#/components/responses/Conflict" }
-        "422": { description: Full archive checksum or length mismatch, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+        "422": { description: Full-stream checksum, size, archive safety, or capacity validation failed, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+        "503": { description: Runtime cluster or transfer Pod is unavailable, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
 
   /api/v1/projects/{projectId}/volumes/{volumeId}/exports:
     post:
@@ -2376,7 +2314,7 @@ paths:
               schema: { $ref: "#/components/schemas/VolumeTransfer" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "409": { $ref: "#/components/responses/Conflict" }
-        "503": { description: Transfer store, snapshot support, or runtime cluster is unavailable, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+        "503": { description: Direct transfer is not configured, snapshot support is unavailable, or the runtime cluster is unavailable, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
 
   /api/v1/projects/{projectId}/volume-transfers:
     get:
@@ -2431,7 +2369,8 @@ paths:
     post:
       operationId: retryVolumeTransfer
       tags: [Volumes]
-      summary: Create a new transfer from a failed transfer after rechecking the original permission
+      summary: Create a new export from a failed export after rechecking the original permission
+      description: Direct imports cannot be retried in place because an interrupted stream may have partially changed the destination volume. Start a new import instead.
       x-luna-cli:
         command: volume-transfer.retry
         classification: business-command
@@ -2451,7 +2390,7 @@ paths:
               schema: { $ref: "#/components/schemas/VolumeTransfer" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/Conflict" }
-        "410": { description: Source archive expired, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+        "410": { description: Transfer preparation expired, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
 
   /api/v1/projects/{projectId}/volume-transfers/{transferId}/cancel:
     post:
@@ -2497,47 +2436,14 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/VolumeTransferDownloadAuthorization" }
         "403": { $ref: "#/components/responses/Forbidden" }
-        "410": { description: Export archive expired, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+        "410": { description: Prepared export session expired, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
 
   /api/v1/projects/{projectId}/volume-transfers/{transferId}/content:
-    head:
-      operationId: headVolumeTransferContent
-      tags: [Volumes]
-      summary: Inspect an authorized export archive and Range capability
-      description: Exchange an optional single-use ticket for a transfer-bound HttpOnly download session, or reuse the existing download session cookie. A supplied ticket takes precedence and rotates any old cookie.
-      x-luna-cli:
-        classification: protocol-adapter
-        hidden: true
-        agentAllowed: false
-        transport: download
-      parameters:
-        - $ref: "#/components/parameters/ProjectId"
-        - $ref: "#/components/parameters/TransferId"
-        - $ref: "#/components/parameters/DownloadTicket"
-        - $ref: "#/components/parameters/DownloadSessionCookie"
-      responses:
-        "200":
-          description: Archive metadata.
-          headers:
-            Accept-Ranges: { schema: { type: string, const: bytes } }
-            Content-Length: { schema: { type: integer, format: int64, minimum: 0 } }
-            ETag: { schema: { type: string } }
-            Set-Cookie:
-              description: Present when a ticket is exchanged. Sets a transfer-path-bound `luna_volume_download_session` HttpOnly, SameSite=Strict cookie for at most 30 minutes; production responses also set Secure.
-              schema: { type: string }
-        "403": { $ref: "#/components/responses/Forbidden" }
-        "401":
-          description: Download credential is missing, malformed, or bound to another project or transfer.
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ErrorResponse" }
-              example: { code: volume_transfer.download_unauthorized, error: Download authorization is invalid, requestId: req_example }
-        "410": { description: Ticket, download session, or export archive expired, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
     get:
       operationId: downloadVolumeTransferContent
       tags: [Volumes]
-      summary: Download an authorized export archive with HTTP Range support
-      description: Use a single-use ticket on the first request to establish a transfer-bound HttpOnly download session. Subsequent Range requests omit the ticket and reuse the cookie; a new valid ticket rotates an existing session.
+      summary: Stream one authorized export directly from the prepared runtime Pod
+      description: The one-time ticket is consumed when the single direct stream opens.
       x-luna-cli:
         classification: protocol-adapter
         hidden: true
@@ -2548,114 +2454,36 @@ paths:
         - $ref: "#/components/parameters/ProjectId"
         - $ref: "#/components/parameters/TransferId"
         - $ref: "#/components/parameters/DownloadTicket"
-        - $ref: "#/components/parameters/DownloadSessionCookie"
-        - name: Range
-          in: header
-          schema: { type: string, pattern: '^bytes=[0-9]+-[0-9]*$' }
       responses:
         "200":
-          description: Complete archive.
-          headers:
-            Accept-Ranges: { schema: { type: string, const: bytes } }
-            ETag: { schema: { type: string } }
-            Set-Cookie:
-              description: Present when a ticket is exchanged. Sets a transfer-path-bound `luna_volume_download_session` HttpOnly, SameSite=Strict cookie for at most 30 minutes; production responses also set Secure.
-              schema: { type: string }
+          description: Chunked direct export stream from the prepared runtime Pod.
           content:
             application/gzip: { schema: { type: string, format: binary } }
             application/zstd: { schema: { type: string, format: binary } }
-        "206":
-          description: Requested archive byte range.
-          headers:
-            Content-Range: { schema: { type: string } }
-            Accept-Ranges: { schema: { type: string, const: bytes } }
-            ETag: { schema: { type: string } }
-            Set-Cookie:
-              description: Present when a ticket is exchanged. Sets a transfer-path-bound `luna_volume_download_session` HttpOnly, SameSite=Strict cookie for at most 30 minutes; production responses also set Secure.
-              schema: { type: string }
-          content:
-            application/octet-stream: { schema: { type: string, format: binary } }
-        "403": { $ref: "#/components/responses/Forbidden" }
-        "401":
-          description: Download credential is missing, malformed, or bound to another project or transfer.
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ErrorResponse" }
-              example: { code: volume_transfer.download_unauthorized, error: Download authorization is invalid, requestId: req_example }
-        "410": { description: Ticket, download session, or export archive expired, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
-
-  /api/v1/projects/{projectId}/volume-transfers/{transferId}/manifest:
-    head:
-      operationId: headVolumeTransferManifest
-      tags: [Volumes]
-      summary: Inspect an authorized Block raw.zst export manifest
-      description: Available only for a succeeded `raw_zst` export of a Block volume. A supplied single-use ticket takes precedence over the transfer-bound `luna_volume_download_session` cookie and rotates the cookie. The session cookie Path is `/api/v1/projects/{projectId}/volume-transfers/{transferId}/`, so the same session authorizes both content and manifest reads. Authorization requires `volume:export`.
-      x-luna-cli:
-        classification: protocol-adapter
-        hidden: true
-        agentAllowed: false
-        transport: download
-        requiredScopes: ["volume:export"]
-        exclusionReason: Manifest authentication and attachment download are consumed by Web or Luna CLI protocol adapters.
-      parameters:
-        - $ref: "#/components/parameters/ProjectId"
-        - $ref: "#/components/parameters/TransferId"
-        - $ref: "#/components/parameters/DownloadTicket"
-        - $ref: "#/components/parameters/DownloadSessionCookie"
-      responses:
-        "200":
-          description: Manifest attachment metadata.
-          headers:
-            Content-Length: { schema: { type: integer, format: int64, minimum: 0 } }
-            ETag: { schema: { type: string } }
-            Content-Type: { schema: { type: string, const: "application/json; charset=utf-8" } }
-            Content-Disposition: { schema: { type: string } }
-            Set-Cookie:
-              description: Present when a ticket is exchanged. The HttpOnly, SameSite=Strict cookie is scoped to the transfer path for at most 30 minutes; production responses also set Secure.
-              schema: { type: string }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
-        "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/Conflict" }
-        "410": { description: Ticket, download session, or export manifest expired, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
-        "422": { description: The completed raw.zst export does not contain a valid manifest digest or metadata, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+        "503": { description: Runtime cluster or transfer Pod is unavailable, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+
+  /api/v1/projects/{projectId}/volume-transfers/{transferId}/manifest:
     get:
       operationId: downloadVolumeTransferManifest
       tags: [Volumes]
-      summary: Download an authorized Block raw.zst export manifest
-      description: Returns the dynamic JSON manifest only for a succeeded `raw_zst` export of a Block volume. A supplied single-use ticket takes precedence over the transfer-bound cookie. Authorization requires `volume:export`.
+      summary: Download a completed Block export manifest with a one-time ticket
       x-luna-cli:
         classification: protocol-adapter
         hidden: true
         agentAllowed: false
         transport: download
-        requiredScopes: ["volume:export"]
-        exclusionReason: Manifest authentication and attachment download are consumed by Web or Luna CLI protocol adapters.
       parameters:
         - $ref: "#/components/parameters/ProjectId"
         - $ref: "#/components/parameters/TransferId"
         - $ref: "#/components/parameters/DownloadTicket"
-        - $ref: "#/components/parameters/DownloadSessionCookie"
       responses:
-        "200":
-          description: JSON manifest attachment.
-          headers:
-            Content-Length: { schema: { type: integer, format: int64, minimum: 0 } }
-            ETag: { schema: { type: string } }
-            Content-Type: { schema: { type: string, const: "application/json; charset=utf-8" } }
-            Content-Disposition: { schema: { type: string } }
-            Set-Cookie:
-              description: Present when a ticket is exchanged. The HttpOnly, SameSite=Strict cookie is scoped to the transfer path for at most 30 minutes; production responses also set Secure.
-              schema: { type: string }
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/VolumeTransferManifest" }
+        "200": { description: Portable Block export manifest, content: { application/json: { schema: { $ref: "#/components/schemas/VolumeTransferManifest" } } } }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
-        "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/Conflict" }
-        "410": { description: Ticket, download session, or export manifest expired, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
-        "422": { description: The completed raw.zst export does not contain a valid manifest digest or metadata, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
 
   /api/v1/projects/{projectId}/applications/{applicationId}/topology:
     get:
@@ -8059,175 +7887,6 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "503": { description: Agent observability is disabled, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
-  /internal/v1/volume-transfers/{transferId}/content:
-    head:
-      operationId: headInternalVolumeTransferContent
-      tags: [Volumes]
-      summary: Read the authoritative internal transfer content offset or size
-      x-luna-cli:
-        classification: protocol-adapter
-        hidden: true
-        agentAllowed: false
-        exclusionReason: Private transfer-job token protocol; it is not a user or Agent business command.
-      security: [{ VolumeTransferJobToken: [] }]
-      parameters:
-        - $ref: "#/components/parameters/TransferId"
-      responses:
-        "200":
-          description: Internal content metadata bound to this transfer.
-          headers:
-            Upload-Offset: { schema: { type: integer, format: int64, minimum: 0 } }
-            Upload-Length: { schema: { type: integer, format: int64, minimum: 0 } }
-            Upload-Chunk-Size: { schema: { type: integer, format: int64, minimum: 67108864, maximum: 5368709120 } }
-        "401": { $ref: "#/components/responses/Unauthorized" }
-        "409": { $ref: "#/components/responses/Conflict" }
-    patch:
-      operationId: uploadInternalVolumeTransferContent
-      tags: [Volumes]
-      summary: Stream an export-job archive chunk to the private transfer store
-      x-luna-cli:
-        classification: protocol-adapter
-        hidden: true
-        agentAllowed: false
-        transport: upload
-        streaming: true
-        exclusionReason: Private transfer-job token byte protocol; it is not a user or Agent business command.
-      security: [{ VolumeTransferJobToken: [] }]
-      parameters:
-        - $ref: "#/components/parameters/TransferId"
-        - name: Upload-Offset
-          in: header
-          required: true
-          schema: { type: integer, format: int64, minimum: 0 }
-        - name: Upload-Checksum
-          in: header
-          required: true
-          schema: { type: string, pattern: '^sha256 [A-Za-z0-9+/]+={0,2}$' }
-      requestBody:
-        required: true
-        content:
-          application/offset+octet-stream:
-            schema: { type: string, format: binary, maxLength: 5368709120 }
-      responses:
-        "204":
-          description: Chunk persisted.
-          headers:
-            Upload-Offset: { schema: { type: integer, format: int64, minimum: 0 } }
-            Upload-Chunk-Size: { schema: { type: integer, format: int64, minimum: 67108864, maximum: 5368709120 } }
-        "401": { $ref: "#/components/responses/Unauthorized" }
-        "409":
-          description: Upload offset mismatch, content conflict, or an identical part is still being persisted. `volume_transfer.part_in_progress` includes a bounded Retry-After value.
-          headers:
-            Upload-Offset: { schema: { type: integer, format: int64, minimum: 0 } }
-            Upload-Chunk-Size: { schema: { type: integer, format: int64, minimum: 67108864, maximum: 5368709120 } }
-            Retry-After: { schema: { type: integer, minimum: 1, maximum: 5 }, description: Present for `volume_transfer.part_in_progress`; clients wait, then HEAD the authoritative offset before a bounded retry. }
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ErrorResponse" }
-        "413": { description: Chunk exceeds the S3 multipart part-size limit, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
-        "429": { description: API spool byte budget is busy, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
-        "460": { description: Chunk checksum mismatch, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
-        "503": { description: API spool directory or capacity observation is unavailable, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
-        "507": { description: API spool disk has insufficient free space, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
-    get:
-      operationId: downloadInternalVolumeTransferContent
-      tags: [Volumes]
-      summary: Stream an import archive range to the transfer job
-      x-luna-cli:
-        classification: protocol-adapter
-        hidden: true
-        agentAllowed: false
-        transport: download
-        streaming: true
-        exclusionReason: Private transfer-job token byte protocol; it is not a user or Agent business command.
-      security: [{ VolumeTransferJobToken: [] }]
-      parameters:
-        - $ref: "#/components/parameters/TransferId"
-        - name: Range
-          in: header
-          schema: { type: string, pattern: '^bytes=[0-9]+-[0-9]*$' }
-      responses:
-        "200": { description: Complete archive, content: { application/octet-stream: { schema: { type: string, format: binary } } } }
-        "206":
-          description: Requested archive range.
-          headers:
-            Content-Range: { schema: { type: string } }
-          content:
-            application/octet-stream: { schema: { type: string, format: binary } }
-        "401": { $ref: "#/components/responses/Unauthorized" }
-        "409": { $ref: "#/components/responses/Conflict" }
-
-  /internal/v1/volume-transfers/{transferId}/progress:
-    post:
-      operationId: reportInternalVolumeTransferProgress
-      tags: [Volumes]
-      summary: Report bounded transfer progress using a state CAS
-      x-luna-cli:
-        classification: protocol-adapter
-        hidden: true
-        agentAllowed: false
-        exclusionReason: Private transfer-job token callback; it is not a user or Agent business command.
-      security: [{ VolumeTransferJobToken: [] }]
-      parameters:
-        - $ref: "#/components/parameters/TransferId"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: "#/components/schemas/VolumeTransferProgressInput" }
-      responses:
-        "204": { description: Progress accepted idempotently. }
-        "401": { $ref: "#/components/responses/Unauthorized" }
-        "409": { $ref: "#/components/responses/Conflict" }
-
-  /internal/v1/volume-transfers/{transferId}/complete:
-    post:
-      operationId: completeInternalVolumeTransfer
-      tags: [Volumes]
-      summary: Commit a successful transfer terminal state idempotently
-      x-luna-cli:
-        classification: protocol-adapter
-        hidden: true
-        agentAllowed: false
-        exclusionReason: Private transfer-job token callback; it is not a user or Agent business command.
-      security: [{ VolumeTransferJobToken: [] }]
-      parameters:
-        - $ref: "#/components/parameters/TransferId"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: "#/components/schemas/VolumeTransferCompleteInput" }
-      responses:
-        "200": { description: Terminal state committed, content: { application/json: { schema: { $ref: "#/components/schemas/VolumeTransfer" } } } }
-        "401": { $ref: "#/components/responses/Unauthorized" }
-        "409": { $ref: "#/components/responses/Conflict" }
-        "422": { description: Final checksum or size mismatch, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
-
-  /internal/v1/volume-transfers/{transferId}/fail:
-    post:
-      operationId: failInternalVolumeTransfer
-      tags: [Volumes]
-      summary: Commit a failed transfer terminal state using a stable error code
-      x-luna-cli:
-        classification: protocol-adapter
-        hidden: true
-        agentAllowed: false
-        exclusionReason: Private transfer-job token callback; it is not a user or Agent business command.
-      description: Raw stderr is accepted only as bounded internal diagnostics and is never returned in production API responses.
-      security: [{ VolumeTransferJobToken: [] }]
-      parameters:
-        - $ref: "#/components/parameters/TransferId"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: "#/components/schemas/VolumeTransferFailInput" }
-      responses:
-        "200": { description: Failed terminal state committed, content: { application/json: { schema: { $ref: "#/components/schemas/VolumeTransfer" } } } }
-        "401": { $ref: "#/components/responses/Unauthorized" }
-        "409": { $ref: "#/components/responses/Conflict" }
-
 components:
   securitySchemes:
     SessionCookie:
@@ -8244,11 +7903,6 @@ components:
       type: http
       scheme: bearer
       bearerFormat: independent Agent callback service credential
-    VolumeTransferJobToken:
-      type: http
-      scheme: bearer
-      bearerFormat: short-lived transfer-bound worker token
-      description: Random token bound to exactly one Transfer and valid only for the internal transfer-job callback API.
 
   parameters:
     BuildEnvironmentScope:
@@ -8390,22 +8044,11 @@ components:
       in: path
       required: true
       schema: { type: string, pattern: '^vtx_' }
-    TusResumable:
-      name: Tus-Resumable
-      in: header
-      required: true
-      schema: { type: string, const: 1.0.0 }
     DownloadTicket:
       name: ticket
       in: query
-      required: false
-      description: Optional single-use 60-second ticket exchanged for a transfer-bound Range download session. It is required only for the initial exchange or reauthorization and takes precedence over an existing download session cookie.
-      schema: { type: string, minLength: 16, maxLength: 512 }
-    DownloadSessionCookie:
-      name: luna_volume_download_session
-      in: cookie
-      required: false
-      description: Opaque HttpOnly download session established by a prior successful ticket exchange. It is bound to the actor, project, transfer, archive identity, and exact content path, and expires within 30 minutes.
+      required: true
+      description: Single-use 60-second ticket bound to the actor, project, and transfer. It is consumed when one direct content or manifest stream opens.
       schema: { type: string, minLength: 16, maxLength: 512 }
     UserId:
       name: userId
@@ -10002,11 +9645,11 @@ components:
       enum: [snapshot, live, unmounted]
     VolumeTransferState:
       type: string
-      enum: [created, uploading, queued, running, succeeded, failed, cancelled, expired]
+      enum: [created, preparing, ready, streaming, succeeded, failed, cancelled, expired]
     VolumeTransfer:
       type: object
       additionalProperties: false
-      required: [id, projectId, projectVolumeId, direction, format, consistencyMode, state, expectedBytes, transferredBytes, logicalBytes, processedFiles, chunkSize, sha256, dataSHA256, actorId, expiresAt, lastErrorCode, createdAt, updatedAt]
+      required: [id, projectId, projectVolumeId, direction, format, consistencyMode, state, expectedBytes, transferredBytes, logicalBytes, processedFiles, sha256, dataSHA256, actorId, expiresAt, lastErrorCode, createdAt, updatedAt]
       properties:
         id: { type: string, pattern: '^vtx_' }
         projectId: { type: string }
@@ -10021,13 +9664,6 @@ components:
         logicalBytes: { type: integer, format: int64, minimum: 0 }
         processedFiles: { type: integer, format: int64, minimum: 0 }
         phase: { type: string }
-        uploadOffset: { type: integer, format: int64, minimum: 0 }
-        chunkSize:
-          type: integer
-          format: int64
-          minimum: 67108864
-          maximum: 5368709120
-          description: Server-selected required multipart size. It is at least 64 MiB and grows in MiB steps so a transfer needs no more than 10,000 S3 parts; only the final import part may be smaller.
         sha256: { type: string, pattern: '^[a-f0-9]{64}$|^$' }
         dataSHA256: { type: string, pattern: '^[a-f0-9]{64}$|^$' }
         actorId: { type: string }
@@ -10036,7 +9672,7 @@ components:
         finishedAt: { type: string, format: date-time }
         lastErrorCode:
           type: string
-          description: Stable public transfer error code. `volume_transfer.completion_missing` is produced only by server-side reconciliation when a transfer Job ended without a confirmed callback; Jobs cannot submit that code through VolumeTransferFailInput.
+          description: Stable public transfer error code. Raw runtime diagnostics are never returned.
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
     PaginatedVolumeTransfers:
@@ -10056,7 +9692,7 @@ components:
     VolumeImportCreateInput:
       type: object
       additionalProperties: false
-      required: [displayName, clusterId, capacity, storageClassName, accessMode, volumeMode, format, filename, contentLength]
+      required: [displayName, clusterId, capacity, storageClassName, accessMode, volumeMode, format, filename, contentLength, sha256]
       properties:
         displayName: { type: string, minLength: 1, maxLength: 120 }
         clusterId: { type: string }
@@ -10075,13 +9711,6 @@ components:
       properties:
         volume: { $ref: "#/components/schemas/ProjectVolume" }
         transfer: { $ref: "#/components/schemas/VolumeTransfer" }
-    VolumeImportCompleteInput:
-      type: object
-      additionalProperties: false
-      required: [contentLength, sha256]
-      properties:
-        contentLength: { type: integer, format: int64, minimum: 1 }
-        sha256: { type: string, pattern: '^[a-fA-F0-9]{64}$' }
     VolumeExportCreateInput:
       type: object
       additionalProperties: false
@@ -10109,42 +9738,6 @@ components:
         fileCount: { type: integer, const: 0 }
         dataSHA256: { type: string, pattern: '^[0-9a-f]{64}$' }
         consistencyMode: { type: string, enum: [snapshot, live, unmounted] }
-    VolumeTransferProgressInput:
-      type: object
-      additionalProperties: false
-      required: [expectedState, transferredBytes, processedFiles, stage]
-      properties:
-        expectedState: { type: string, const: running }
-        transferredBytes: { type: integer, format: int64, minimum: 0 }
-        processedFiles: { type: integer, format: int64, minimum: 0 }
-        stage: { type: string, enum: [starting, downloading, extracting, reading_device, archiving, uploading, verifying, completed] }
-    VolumeTransferCompleteInput:
-      type: object
-      additionalProperties: false
-      required: [expectedState, transferredBytes, sha256]
-      properties:
-        expectedState: { type: string, const: running }
-        transferredBytes: { type: integer, format: int64, minimum: 0 }
-        sha256: { type: string, pattern: '^[a-fA-F0-9]{64}$' }
-        logicalBytes:
-          type: integer
-          format: int64
-          minimum: 0
-          description: Required and greater than zero for raw_zst; tar_gz sends zero.
-        dataSHA256:
-          type: string
-          pattern: '^[a-f0-9]{64}$|^$'
-          description: Required for raw_zst; tar_gz sends an empty string.
-    VolumeTransferFailInput:
-      type: object
-      additionalProperties: false
-      required: [expectedState, errorCode]
-      properties:
-        expectedState: { type: string, const: running }
-        errorCode:
-          type: string
-          enum: [volume_transfer.archive_unsafe, volume_transfer.capacity_exceeded, volume_transfer.checksum_mismatch, volume_transfer.store_unavailable, volume_transfer.callback_unavailable, volume_transfer.callback_unauthorized, volume_transfer.format_unsupported, volume.cluster_unavailable, volume_transfer.job_failed]
-        diagnostic: { type: string, maxLength: 4096, description: Bounded internal diagnostics; never returned by production APIs. }
     ArtifactRegistryInput:
       type: object
       properties:

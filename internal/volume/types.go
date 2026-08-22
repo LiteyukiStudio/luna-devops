@@ -16,6 +16,7 @@ const (
 	OperationDelete    = "delete"
 	OperationImport    = "import"
 	OperationExport    = "export"
+	OperationCleanup   = "cleanup"
 )
 
 type ProjectVolumeListOptions struct {
@@ -143,26 +144,19 @@ type VolumeTransferListResult struct {
 }
 
 type CreateVolumeTransferInput struct {
-	ProjectID         string
-	ProjectVolumeID   string
-	Direction         string
-	Format            string
-	ConsistencyMode   string
-	ObjectKey         string
-	MultipartUploadID string
-	SourceFilename    string
-	ExpectedBytes     int64
-	SHA256            string
-	ActorID           string
-	ExpiresAt         time.Time
-	StartUploading    bool
+	ProjectID       string
+	ProjectVolumeID string
+	Direction       string
+	Format          string
+	ConsistencyMode string
+	SourceFilename  string
+	ExpectedBytes   int64
+	SHA256          string
+	ActorID         string
+	ExpiresAt       time.Time
 	// IdempotencyKey is hashed into an internal transfer identity and is never
-	// persisted or exposed. It is used by retry flows that reuse one object key.
+	// persisted or exposed. It is used to make one transfer request idempotent.
 	IdempotencyKey string
-	// VerifiedObject is an internal-only signal. Callers may set it only after
-	// server-side Head and full-object SHA-256 verification; it is never bound
-	// from an API request.
-	VerifiedObject bool
 }
 
 type TransferProgress struct {
@@ -177,6 +171,7 @@ type TransferProgress struct {
 type TransferCompletion struct {
 	ExpectedState    string
 	TransferredBytes int64
+	ProcessedFiles   int64
 	SHA256           string
 	LogicalBytes     int64
 	DataSHA256       string

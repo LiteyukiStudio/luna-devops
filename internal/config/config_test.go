@@ -49,63 +49,39 @@ func TestLoadRedisAuthentication(t *testing.T) {
 
 func TestLoadVolumeTransferConfig(t *testing.T) {
 	resetEnvLoader(t)
-	t.Setenv("VOLUME_TRANSFER_STORE", "s3")
-	t.Setenv("VOLUME_TRANSFER_S3_ENDPOINT", "https://objects.example.com/")
-	t.Setenv("VOLUME_TRANSFER_S3_BUCKET", "volume-transfers")
-	t.Setenv("VOLUME_TRANSFER_S3_ACCESS_KEY_ID", "access")
-	t.Setenv("VOLUME_TRANSFER_S3_SECRET_ACCESS_KEY", "secret")
-	t.Setenv("VOLUME_TRANSFER_CALLBACK_BASE_URL", "https://api.example.com/")
 	t.Setenv("VOLUME_TRANSFER_JOB_IMAGE", "registry.example.com/luna-worker:test")
 	t.Setenv("VOLUME_TRANSFER_MAX_BYTES", "12Gi")
-	t.Setenv("VOLUME_TRANSFER_OBJECT_TTL", "36h")
-	t.Setenv("VOLUME_TRANSFER_SPOOL_DIR", "/var/tmp/luna-volume-spool")
-	t.Setenv("VOLUME_TRANSFER_SPOOL_MAX_BYTES", "3Gi")
-	t.Setenv("VOLUME_TRANSFER_SPOOL_MIN_FREE_BYTES", "2Gi")
-	t.Setenv("VOLUME_TRANSFER_SPOOL_ORPHAN_AGE", "2h")
 
 	cfg := Load()
 	if !cfg.VolumeTransferEnabled() {
 		t.Fatal("volume transfer should be enabled")
 	}
-	if cfg.VolumeTransferS3Endpoint != "https://objects.example.com" || cfg.VolumeTransferCallbackURL != "https://api.example.com" {
-		t.Fatalf("normalized endpoints = %q, %q", cfg.VolumeTransferS3Endpoint, cfg.VolumeTransferCallbackURL)
-	}
-	if cfg.VolumeTransferMaxBytes != 12*1024*1024*1024 || cfg.VolumeTransferObjectTTL != 36*time.Hour {
-		t.Fatalf("limits = %d, %s", cfg.VolumeTransferMaxBytes, cfg.VolumeTransferObjectTTL)
-	}
-	if cfg.VolumeTransferSpoolDir != "/var/tmp/luna-volume-spool" || cfg.VolumeTransferSpoolMaxBytes != 3*1024*1024*1024 || cfg.VolumeTransferSpoolMinFreeBytes != 2*1024*1024*1024 || cfg.VolumeTransferSpoolOrphanAge != 2*time.Hour {
-		t.Fatalf("spool config = dir %q max %d minFree %d orphan %s", cfg.VolumeTransferSpoolDir, cfg.VolumeTransferSpoolMaxBytes, cfg.VolumeTransferSpoolMinFreeBytes, cfg.VolumeTransferSpoolOrphanAge)
+	if cfg.VolumeTransferMaxBytes != 12*1024*1024*1024 || cfg.VolumeTransferJobImage != "registry.example.com/luna-worker:test" {
+		t.Fatalf("direct transfer config = bytes %d image %q", cfg.VolumeTransferMaxBytes, cfg.VolumeTransferJobImage)
 	}
 	if err := cfg.ValidateVolumeTransfer(); err != nil {
 		t.Fatalf("ValidateVolumeTransfer returned error: %v", err)
 	}
 }
 
-func TestValidateVolumeTransferRejectsIncompleteOrUnsafeConfig(t *testing.T) {
-	t.Setenv("APP_ENV", "production")
+func TestVolumeTransferIsDisabledWithoutJobImage(t *testing.T) {
+	if (Config{VolumeTransferMaxBytes: 10 * 1024 * 1024 * 1024}).VolumeTransferEnabled() {
+		t.Fatal("volume transfer must stay disabled without VOLUME_TRANSFER_JOB_IMAGE")
+	}
+}
+
+func TestValidateVolumeTransferRejectsInvalidSize(t *testing.T) {
 	base := Config{
-		VolumeTransferStore:         "s3",
-		VolumeTransferS3Endpoint:    "https://objects.example.com",
-		VolumeTransferS3Bucket:      "volume-transfers",
-		VolumeTransferS3AccessKeyID: "access",
-		VolumeTransferS3SecretKey:   "secret",
-		VolumeTransferObjectTTL:     time.Hour,
-		VolumeTransferMaxBytes:      10 * 1024 * 1024 * 1024,
-		VolumeTransferCallbackURL:   "https://api.example.com",
-		VolumeTransferJobImage:      "registry.example.com/luna-worker:test",
+		VolumeTransferMaxBytes: 10 * 1024 * 1024 * 1024,
+		VolumeTransferJobImage: "registry.example.com/luna-worker:test",
 	}
 
 	tests := []struct {
 		name   string
 		mutate func(*Config)
 	}{
-		{name: "missing bucket", mutate: func(cfg *Config) { cfg.VolumeTransferS3Bucket = "" }},
-		{name: "callback requires https", mutate: func(cfg *Config) { cfg.VolumeTransferCallbackURL = "http://api.example.com" }},
-		{name: "endpoint rejects credentials", mutate: func(cfg *Config) { cfg.VolumeTransferS3Endpoint = "https://user:pass@objects.example.com" }},
 		{name: "size below minimum", mutate: func(cfg *Config) { cfg.VolumeTransferMaxBytes = minimumVolumeTransferBytes - 1 }},
 		{name: "size above maximum", mutate: func(cfg *Config) { cfg.VolumeTransferMaxBytes = maximumVolumeTransferBytes + 1 }},
-		{name: "relative spool directory", mutate: func(cfg *Config) { cfg.VolumeTransferSpoolDir = "relative/spool" }},
-		{name: "spool cannot fit one chunk", mutate: func(cfg *Config) { cfg.VolumeTransferSpoolMaxBytes = 32 * 1024 * 1024 }},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

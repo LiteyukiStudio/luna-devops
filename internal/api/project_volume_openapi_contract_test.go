@@ -2,8 +2,6 @@ package api
 
 import (
 	"reflect"
-	"slices"
-	"strings"
 	"testing"
 
 	"github.com/LiteyukiStudio/devops/internal/aitool"
@@ -98,23 +96,25 @@ func TestProjectVolumeOpenAPICLIMetadata(t *testing.T) {
 	}
 }
 
-func TestVolumeUploadOpenAPIUsesServerSelectedMultipartContract(t *testing.T) {
+func TestVolumeUploadOpenAPIUsesSingleDirectStreamContract(t *testing.T) {
 	document := readOpenAPIDocument(t, apiRepositoryRoot(t)+"/openapi/openapi.yaml")
 	components := document["components"].(map[string]any)
 	schemas := components["schemas"].(map[string]any)
 	transfer := schemas["VolumeTransfer"].(map[string]any)
-	required, ok := schemaStringList(transfer["required"])
-	if !ok || !slices.Contains(required, "chunkSize") {
+	_, ok := schemaStringList(transfer["required"])
+	if !ok {
 		t.Fatalf("VolumeTransfer.required = %#v", transfer["required"])
 	}
-	chunkSize := transfer["properties"].(map[string]any)["chunkSize"].(map[string]any)
-	if chunkSize["minimum"] != float64(64*1024*1024) || chunkSize["maximum"] != float64(5*1024*1024*1024) {
-		t.Fatalf("VolumeTransfer.chunkSize = %#v", chunkSize)
+	transferProperties := transfer["properties"].(map[string]any)
+	for _, removed := range []string{"chunkSize", "uploadOffset", "objectKey", "multipartUploadId"} {
+		if _, exists := transferProperties[removed]; exists {
+			t.Fatalf("VolumeTransfer retains legacy property %s", removed)
+		}
 	}
 
 	projectVolume := schemas["ProjectVolume"].(map[string]any)
 	pendingOperations, ok := schemaStringList(projectVolume["properties"].(map[string]any)["pendingOperation"].(map[string]any)["enum"])
-	if !ok || !slices.Contains(pendingOperations, "import") {
+	if !ok || !containsSchemaString(pendingOperations, "import") {
 		t.Fatalf("ProjectVolume.pendingOperation = %#v", pendingOperations)
 	}
 	createResponse := schemas["VolumeImportCreateResponse"].(map[string]any)
@@ -123,64 +123,42 @@ func TestVolumeUploadOpenAPIUsesServerSelectedMultipartContract(t *testing.T) {
 	}
 
 	paths := document["paths"].(map[string]any)
-	for _, path := range []string{
-		"/api/v1/projects/{projectId}/volume-imports/{transferId}/content",
-		"/internal/v1/volume-transfers/{transferId}/content",
-	} {
-		content := paths[path].(map[string]any)
-		headHeaders := content["head"].(map[string]any)["responses"].(map[string]any)["200"].(map[string]any)["headers"].(map[string]any)
-		if _, exists := headHeaders["Upload-Chunk-Size"]; !exists {
-			t.Fatalf("%s HEAD is missing Upload-Chunk-Size", path)
+	contentPath := paths["/api/v1/projects/{projectId}/volume-imports/{transferId}/content"].(map[string]any)
+	if len(contentPath) != 1 || contentPath["put"] == nil {
+		t.Fatalf("direct import methods = %#v", contentPath)
+	}
+	put := contentPath["put"].(map[string]any)
+	requestContent := put["requestBody"].(map[string]any)["content"].(map[string]any)
+	if _, exists := requestContent["application/octet-stream"]; !exists {
+		t.Fatalf("direct import content types = %#v", requestContent)
+	}
+	parameters := put["parameters"].([]any)
+	foundChecksum, foundLength := false, false
+	for _, raw := range parameters {
+		parameter := raw.(map[string]any)
+		if parameter["name"] == "X-Content-SHA256" && parameter["in"] == "header" && parameter["required"] == true {
+			foundChecksum = true
 		}
-		patch := content["patch"].(map[string]any)
-		patchHeaders := patch["responses"].(map[string]any)["204"].(map[string]any)["headers"].(map[string]any)
-		if _, exists := patchHeaders["Upload-Chunk-Size"]; !exists {
-			t.Fatalf("%s PATCH is missing Upload-Chunk-Size", path)
-		}
-		binary := patch["requestBody"].(map[string]any)["content"].(map[string]any)["application/offset+octet-stream"].(map[string]any)["schema"].(map[string]any)
-		if binary["maxLength"] != float64(5*1024*1024*1024) {
-			t.Fatalf("%s PATCH maxLength = %#v", path, binary["maxLength"])
-		}
-		for _, status := range []string{"413", "429", "503", "507"} {
-			if _, exists := patch["responses"].(map[string]any)[status]; !exists {
-				t.Fatalf("%s PATCH is missing %s", path, status)
-			}
-		}
-		conflictHeaders := patch["responses"].(map[string]any)["409"].(map[string]any)["headers"].(map[string]any)
-		if _, exists := conflictHeaders["Retry-After"]; !exists {
-			t.Fatalf("%s PATCH 409 is missing Retry-After", path)
-		}
-		if _, exists := conflictHeaders["Upload-Offset"]; !exists {
-			t.Fatalf("%s PATCH 409 is missing Upload-Offset", path)
+		if parameter["name"] == "Content-Length" && parameter["in"] == "header" && parameter["required"] == true {
+			foundLength = true
 		}
 	}
-
-	lastError := transfer["properties"].(map[string]any)["lastErrorCode"].(map[string]any)
-	if !strings.Contains(lastError["description"].(string), "volume_transfer.completion_missing") {
-		t.Fatalf("VolumeTransfer.lastErrorCode description = %#v", lastError)
+	if !foundChecksum || !foundLength {
+		t.Fatalf("direct import parameters = %#v", parameters)
 	}
-	failCodes, ok := schemaStringList(schemas["VolumeTransferFailInput"].(map[string]any)["properties"].(map[string]any)["errorCode"].(map[string]any)["enum"])
-	if !ok || slices.Contains(failCodes, "volume_transfer.completion_missing") {
-		t.Fatalf("VolumeTransferFailInput.errorCode must not accept completion_missing: %#v", failCodes)
+	for path := range paths {
+		if len(path) >= len("/internal/v1/volume-transfers") && path[:len("/internal/v1/volume-transfers")] == "/internal/v1/volume-transfers" {
+			t.Fatalf("legacy internal transfer path remains: %s", path)
+		}
 	}
 }
 
 func TestVolumeByteTransferProtocolIsNotExposedToAgent(t *testing.T) {
 	for _, operationID := range []string{
 		"createVolumeImport",
-		"getVolumeImportUploadOffset",
 		"uploadVolumeImportContent",
-		"completeVolumeImportUpload",
 		"authorizeVolumeTransferDownload",
-		"headVolumeTransferContent",
 		"downloadVolumeTransferContent",
-		"headInternalVolumeTransferContent",
-		"uploadInternalVolumeTransferContent",
-		"downloadInternalVolumeTransferContent",
-		"reportInternalVolumeTransferProgress",
-		"completeInternalVolumeTransfer",
-		"failInternalVolumeTransfer",
-		"headVolumeTransferManifest",
 		"downloadVolumeTransferManifest",
 	} {
 		if operation, ok := aitool.PlatformOperation(operationID); ok {
@@ -248,20 +226,13 @@ func TestVolumeManifestOpenAPIContract(t *testing.T) {
 	document := readOpenAPIDocument(t, apiRepositoryRoot(t)+"/openapi/openapi.yaml")
 	paths := document["paths"].(map[string]any)
 	manifestPath := paths["/api/v1/projects/{projectId}/volume-transfers/{transferId}/manifest"].(map[string]any)
-	for _, method := range []string{"head", "get"} {
-		operation := manifestPath[method].(map[string]any)
-		extension := operation["x-luna-cli"].(map[string]any)
-		if extension["classification"] != "protocol-adapter" || extension["hidden"] != true || extension["agentAllowed"] != false {
-			t.Fatalf("manifest %s CLI metadata = %#v", method, extension)
-		}
-		headers := operation["responses"].(map[string]any)["200"].(map[string]any)["headers"].(map[string]any)
-		contentType := headers["Content-Type"].(map[string]any)["schema"].(map[string]any)
-		if contentType["const"] != "application/json; charset=utf-8" {
-			t.Fatalf("manifest %s Content-Type = %#v", method, contentType)
-		}
-		if _, exists := operation["responses"].(map[string]any)["422"]; !exists {
-			t.Fatalf("manifest %s is missing checksum_invalid response", method)
-		}
+	if _, exists := manifestPath["head"]; exists {
+		t.Fatal("manifest retains legacy HEAD operation")
+	}
+	operation := manifestPath["get"].(map[string]any)
+	extension := operation["x-luna-cli"].(map[string]any)
+	if extension["classification"] != "protocol-adapter" || extension["hidden"] != true || extension["agentAllowed"] != false {
+		t.Fatalf("manifest GET CLI metadata = %#v", extension)
 	}
 	components := document["components"].(map[string]any)
 	schemas := components["schemas"].(map[string]any)
@@ -295,39 +266,45 @@ func TestProjectVolumeOpenAPIPaginationContract(t *testing.T) {
 	}
 }
 
-func TestVolumeDownloadOpenAPIUsesTransferBoundSessionCookie(t *testing.T) {
+func TestVolumeDownloadOpenAPIUsesRequiredOneTimeTicket(t *testing.T) {
 	document := readOpenAPIDocument(t, apiRepositoryRoot(t)+"/openapi/openapi.yaml")
 	components := document["components"].(map[string]any)
 	parameters := components["parameters"].(map[string]any)
 	ticket := parameters["DownloadTicket"].(map[string]any)
-	if required, _ := ticket["required"].(bool); required {
-		t.Fatal("DownloadTicket must be optional after the initial download session exchange")
+	if required, _ := ticket["required"].(bool); !required {
+		t.Fatal("DownloadTicket must be required for the one-time stream")
 	}
-	cookie := parameters["DownloadSessionCookie"].(map[string]any)
-	if cookie["in"] != "cookie" || cookie["name"] != "luna_volume_download_session" {
-		t.Fatalf("download session cookie contract = %#v", cookie)
+	if _, exists := parameters["DownloadSessionCookie"]; exists {
+		t.Fatal("legacy download session cookie remains in OpenAPI")
 	}
 
 	paths := document["paths"].(map[string]any)
 	contentPath := paths["/api/v1/projects/{projectId}/volume-transfers/{transferId}/content"].(map[string]any)
-	for _, method := range []string{"head", "get"} {
-		operation := contentPath[method].(map[string]any)
-		operationParameters := operation["parameters"].([]any)
-		refs := make(map[string]bool, len(operationParameters))
-		for _, raw := range operationParameters {
-			parameter := raw.(map[string]any)
-			if ref, ok := parameter["$ref"].(string); ok {
-				refs[ref] = true
-			}
-		}
-		for _, ref := range []string{"#/components/parameters/DownloadTicket", "#/components/parameters/DownloadSessionCookie"} {
-			if !refs[ref] {
-				t.Fatalf("%s download contract is missing %s", method, ref)
-			}
-		}
-		responses := operation["responses"].(map[string]any)
-		if _, ok := responses["401"]; !ok {
-			t.Fatalf("%s download contract is missing the stable unauthorized response", method)
+	if _, exists := contentPath["head"]; exists {
+		t.Fatal("content retains legacy HEAD operation")
+	}
+	operation := contentPath["get"].(map[string]any)
+	operationParameters := operation["parameters"].([]any)
+	foundTicket := false
+	for _, raw := range operationParameters {
+		parameter := raw.(map[string]any)
+		if parameter["$ref"] == "#/components/parameters/DownloadTicket" {
+			foundTicket = true
 		}
 	}
+	if !foundTicket {
+		t.Fatal("download GET is missing the one-time ticket")
+	}
+	if _, ok := operation["responses"].(map[string]any)["401"]; !ok {
+		t.Fatal("download GET is missing the stable unauthorized response")
+	}
+}
+
+func containsSchemaString(values []string, value string) bool {
+	for _, candidate := range values {
+		if candidate == value {
+			return true
+		}
+	}
+	return false
 }

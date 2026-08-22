@@ -11,20 +11,20 @@ hero:
       text: Quick Deploy
       link: /start/install/kubernetes
     - theme: alt
-      text: Use a Project
-      link: /start/first-project
+      text: Daily Delivery
+      link: /use/workflow
   image:
     src: /brand/mascot-luna-catgirl-alpha.webp
     alt: Luna DevOps mascot
 features:
   - title: Install the platform
-    details: Choose Kubernetes, K3s, or Docker Compose for your environment and start the complete platform.
+    details: Choose Kubernetes (Helm), Docker Compose, or binaries for your environment.
     link: /start/install/kubernetes
-  - title: Deploy a web project
-    details: Follow one complete example from project space and image build to release and public domain.
-    link: /start/first-project
-  - title: Connect a cluster and registry
-    details: Connect a runtime cluster and registry to prepare for builds and releases.
+  - title: Daily delivery
+    details: Start with a project space, application, and deployment, then build, release, and expose it as needed.
+    link: /use/workflow
+  - title: Add base resources
+    details: Prepare runtime clusters, registries, and Git Provider OAuth for the team.
     link: /start/connect-resources
   - title: Troubleshoot failed states
     details: Work through build, release, cluster, and route checks to find where a failure started.

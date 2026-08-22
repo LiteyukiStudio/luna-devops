@@ -1,7 +1,7 @@
-import type { ProjectVolumeAccessMode, ProjectVolumeMode, VolumeImportResumeRecord, VolumeTransferFormat } from '@/api'
+import type { ProjectVolumeAccessMode, ProjectVolumeMode, VolumeTransferFormat } from '@/api'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Pause, Play, Upload } from 'lucide-react'
+import { useQueryClient } from '@tanstack/react-query'
+import { Upload } from 'lucide-react'
 import { useRef, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
@@ -15,14 +15,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from '@/components/ui/input'
 import { NativeSelect } from '@/components/ui/native-select'
 import { ProjectVolumeClusterSelect, ProjectVolumeStorageClassSelect } from './volume-resource-selectors'
-import {
-  clearVolumeImportResumeRecord,
-  fileMatchesResumeRecord,
-  readVolumeImportResumeRecord,
-  sha256File,
-  uploadVolumeImport,
-  writeVolumeImportResumeRecord,
-} from './volume-transfer-upload'
+import { sha256File, uploadVolumeImport, waitForVolumeTransferReady } from './volume-transfer-upload'
 
 interface ImportValues {
   accessMode: ProjectVolumeAccessMode
@@ -34,7 +27,7 @@ interface ImportValues {
   volumeMode: ProjectVolumeMode
 }
 
-type ImportStage = 'hashing' | 'idle' | 'paused' | 'processing' | 'uploading'
+type ImportStage = 'cancelling' | 'hashing' | 'idle' | 'preparing' | 'uploading' | 'verifying'
 
 const defaults: ImportValues = {
   accessMode: 'ReadWriteOnce',
@@ -77,67 +70,13 @@ export function ProjectVolumeImportDialog({ onOpenChange, open, projectId }: { o
   const [file, setFile] = useState<File | null>(null)
   const [progress, setProgress] = useState(0)
   const [stage, setStage] = useState<ImportStage>('idle')
-  const [resumeRecord, setResumeRecord] = useState<VolumeImportResumeRecord | null>(() => readVolumeImportResumeRecord(projectId))
+  const [activeTransferId, setActiveTransferId] = useState<string | null>(null)
   const abortRef = useRef<AbortController | null>(null)
+  const cancelIssuedForRef = useRef<string | null>(null)
   const form = useForm<ImportValues>({ defaultValues: defaults, mode: 'onChange', resolver: zodResolver(importSchema(t('common.required'), t('projectVolumes.nameTooLong'))) })
   const clusterId = form.watch('clusterId')
   const volumeMode = form.watch('volumeMode')
   const importFormat: VolumeTransferFormat = volumeMode === 'Block' ? 'raw_zst' : 'tar_gz'
-
-  const cancelTransfer = useMutation({
-    mutationFn: (record: VolumeImportResumeRecord) => api.cancelVolumeTransfer(projectId, record.transferId),
-    onSuccess: () => {
-      clearVolumeImportResumeRecord(projectId)
-      setResumeRecord(null)
-      setFile(null)
-      setStage('idle')
-      toast.success(t('projectVolumes.importCancelled'))
-      queryClient.invalidateQueries({ queryKey: ['project-volumes', projectId] })
-    },
-    onError: error => toast.error(error.message),
-  })
-
-  async function finishUpload(selectedFile: File, record: VolumeImportResumeRecord) {
-    const controller = new AbortController()
-    abortRef.current = controller
-    setStage('uploading')
-    try {
-      const transfer = await api.getVolumeTransfer(projectId, record.transferId)
-      await uploadVolumeImport({
-        file: selectedFile,
-        projectId,
-        sha256: record.sha256,
-        signal: controller.signal,
-        transfer,
-        onProgress: current => setProgress(current.percent),
-      })
-      setStage('processing')
-      clearVolumeImportResumeRecord(projectId, record.transferId)
-      setResumeRecord(null)
-      toast.success(t('projectVolumes.importQueued'))
-      queryClient.invalidateQueries({ queryKey: ['project-volumes', projectId] })
-      queryClient.invalidateQueries({ queryKey: ['project-volume-transfers', projectId] })
-      onOpenChange(false)
-      form.reset(defaults)
-      setFile(null)
-      setProgress(0)
-      setStage('idle')
-    }
-    catch (error) {
-      if (controller.signal.aborted) {
-        setStage('paused')
-        toast.message(t('projectVolumes.paused'))
-      }
-      else {
-        setStage('idle')
-        toast.error(error instanceof Error ? error.message : t('errors.request.failed'))
-      }
-    }
-    finally {
-      if (abortRef.current === controller)
-        abortRef.current = null
-    }
-  }
 
   async function startImport(values: ImportValues) {
     if (!file) {
@@ -148,10 +87,14 @@ export function ProjectVolumeImportDialog({ onOpenChange, open, projectId }: { o
       toast.error(t('projectVolumes.fileEmpty'))
       return
     }
+    const controller = new AbortController()
+    abortRef.current = controller
+    cancelIssuedForRef.current = null
+    let transferId: string | null = null
     try {
       setStage('hashing')
       setProgress(0)
-      const sha256 = await sha256File(file, (processed, total) => setProgress(total > 0 ? (processed / total) * 100 : 100))
+      const sha256 = await sha256File(file, (processed, total) => setProgress(total > 0 ? (processed / total) * 100 : 100), controller.signal)
       const result = await api.createVolumeImport(projectId, {
         ...values,
         displayName: values.displayName.trim(),
@@ -160,49 +103,82 @@ export function ProjectVolumeImportDialog({ onOpenChange, open, projectId }: { o
         contentLength: file.size,
         sha256,
       })
-      const record: VolumeImportResumeRecord = {
+      transferId = result.transfer.id
+      setActiveTransferId(transferId)
+      setStage('preparing')
+      setProgress(0)
+      await waitForVolumeTransferReady({ projectId, transferId, signal: controller.signal })
+      setStage('uploading')
+      await uploadVolumeImport({
+        file,
         projectId,
-        transferId: result.transfer.id,
-        volumeId: result.volume.id,
-        filename: file.name,
-        size: file.size,
-        lastModified: file.lastModified,
         sha256,
-        format: values.format,
-        createdAt: new Date().toISOString(),
-      }
-      writeVolumeImportResumeRecord(record)
-      setResumeRecord(record)
-      await finishUpload(file, record)
+        signal: controller.signal,
+        transferId,
+        onProgress: (current) => {
+          setProgress(current.percent)
+          if (current.transferredBytes >= current.total)
+            setStage('verifying')
+        },
+      })
+      toast.success(t('projectVolumes.importSucceeded'))
+      queryClient.invalidateQueries({ queryKey: ['project-volumes', projectId] })
+      queryClient.invalidateQueries({ queryKey: ['project-volume-transfers', projectId] })
+      onOpenChange(false)
+      form.reset(defaults)
+      setFile(null)
+      setProgress(0)
+      setStage('idle')
     }
     catch (error) {
+      if (controller.signal.aborted && transferId && cancelIssuedForRef.current !== transferId)
+        await api.cancelVolumeTransfer(projectId, transferId).catch(() => undefined)
+      if (!controller.signal.aborted)
+        toast.error(t('projectVolumes.importInterrupted'), { description: error instanceof Error ? error.message : t('errors.request.failed') })
       setStage('idle')
+    }
+    finally {
+      setActiveTransferId(null)
+      if (abortRef.current === controller)
+        abortRef.current = null
+    }
+  }
+
+  async function cancelCurrentImport() {
+    const transferId = activeTransferId
+    setStage('cancelling')
+    abortRef.current?.abort()
+    try {
+      if (transferId) {
+        cancelIssuedForRef.current = transferId
+        await api.cancelVolumeTransfer(projectId, transferId)
+      }
+      toast.success(t('projectVolumes.importCancelled'))
+      queryClient.invalidateQueries({ queryKey: ['project-volumes', projectId] })
+      queryClient.invalidateQueries({ queryKey: ['project-volume-transfers', projectId] })
+    }
+    catch (error) {
       toast.error(error instanceof Error ? error.message : t('errors.request.failed'))
     }
+    finally {
+      setActiveTransferId(null)
+      setStage('idle')
+      setProgress(0)
+    }
   }
 
-  async function resumeImport() {
-    if (!resumeRecord || !file) {
-      toast.error(t('projectVolumes.fileRequired'))
-      return
-    }
-    if (!fileMatchesResumeRecord(file, resumeRecord)) {
-      toast.error(t('projectVolumes.resumeFileMismatch'))
-      return
-    }
-    await finishUpload(file, resumeRecord)
-  }
-
-  const busy = stage === 'hashing' || stage === 'uploading' || stage === 'processing'
+  const busy = stage !== 'idle'
   const statusText = stage === 'hashing'
     ? t('projectVolumes.hashing', { percent: Math.round(progress) })
-    : stage === 'uploading'
-      ? t('projectVolumes.uploading', { percent: Math.round(progress) })
-      : stage === 'processing'
-        ? t('projectVolumes.processing')
-        : stage === 'paused'
-          ? t('projectVolumes.paused')
-          : ''
+    : stage === 'preparing'
+      ? t('projectVolumes.preparingTransfer')
+      : stage === 'uploading'
+        ? t('projectVolumes.uploading', { percent: Math.round(progress) })
+        : stage === 'verifying'
+          ? t('projectVolumes.verifyingImport')
+          : stage === 'cancelling'
+            ? t('projectVolumes.cancellingTransfer')
+            : ''
 
   return (
     <Dialog open={open} onOpenChange={next => !busy && onOpenChange(next)}>
@@ -211,72 +187,68 @@ export function ProjectVolumeImportDialog({ onOpenChange, open, projectId }: { o
           <DialogTitle>{t('projectVolumes.import')}</DialogTitle>
           <DialogDescription>{t('projectVolumes.importDescription')}</DialogDescription>
         </DialogHeader>
-        {resumeRecord && (
-          <Alert>
-            <Upload />
-            <AlertTitle>{t('projectVolumes.resumeAvailable', { filename: resumeRecord.filename })}</AlertTitle>
-            <AlertDescription>{t('projectVolumes.resumeChooseSameFile')}</AlertDescription>
-          </Alert>
-        )}
+        <Alert>
+          <Upload />
+          <AlertTitle>{t('projectVolumes.directTransfer')}</AlertTitle>
+          <AlertDescription>{t('projectVolumes.importNoResume')}</AlertDescription>
+        </Alert>
         <form className="grid gap-4" onSubmit={form.handleSubmit(startImport)}>
-          {!resumeRecord && (
-            <div className="grid gap-4 md:grid-cols-2">
-              <Field error={form.formState.errors.displayName?.message} label={t('projectVolumes.name')} required>
-                <Input {...form.register('displayName')} placeholder={t('projectVolumes.displayNamePlaceholder')} />
-              </Field>
-              <Field label={t('projectVolumes.archiveFormat')} required>
-                <input type="hidden" {...form.register('format')} />
-                <NativeSelect disabled value={importFormat}>
-                  {importFormat === 'tar_gz'
-                    ? <option value="tar_gz">{t('projectVolumes.formatTarGz')}</option>
-                    : <option value="raw_zst">{t('projectVolumes.formatRawZst')}</option>}
-                </NativeSelect>
-              </Field>
-              <Field error={form.formState.errors.clusterId?.message} label={t('projectVolumes.cluster')} required>
-                <ProjectVolumeClusterSelect
-                  projectId={projectId}
-                  value={clusterId}
-                  onChange={(value) => {
-                    form.setValue('clusterId', value, { shouldDirty: true, shouldValidate: true })
-                    form.setValue('storageClassName', '')
-                  }}
-                />
-              </Field>
-              <Field error={form.formState.errors.storageClassName?.message} label={t('projectVolumes.storageClass')} required>
-                <ProjectVolumeStorageClassSelect
-                  clusterId={clusterId}
-                  projectId={projectId}
-                  value={form.watch('storageClassName')}
-                  onChange={value => form.setValue('storageClassName', value, { shouldDirty: true, shouldValidate: true })}
-                />
-              </Field>
-              <Field error={form.formState.errors.capacity?.message} label={t('projectVolumes.capacity')} required>
-                <Input {...form.register('capacity')} placeholder={t('projectVolumes.capacityPlaceholder')} />
-              </Field>
-              <Field label={t('projectVolumes.accessMode')} required>
-                <NativeSelect {...form.register('accessMode')}>
-                  <option value="ReadWriteOnce">ReadWriteOnce</option>
-                  <option value="ReadWriteOncePod">ReadWriteOncePod</option>
-                  <option value="ReadOnlyMany">ReadOnlyMany</option>
-                  <option value="ReadWriteMany">ReadWriteMany</option>
-                </NativeSelect>
-              </Field>
-              <Field label={t('projectVolumes.volumeMode')} required>
-                <input type="hidden" {...form.register('volumeMode')} />
-                <NativeSelect
-                  value={volumeMode}
-                  onChange={(event) => {
-                    const nextMode = event.target.value as ProjectVolumeMode
-                    form.setValue('volumeMode', nextMode, { shouldDirty: true, shouldValidate: true })
-                    form.setValue('format', nextMode === 'Block' ? 'raw_zst' : 'tar_gz', { shouldDirty: true, shouldValidate: true })
-                  }}
-                >
-                  <option value="Filesystem">Filesystem</option>
-                  <option value="Block">Block</option>
-                </NativeSelect>
-              </Field>
-            </div>
-          )}
+          <div className="grid gap-4 md:grid-cols-2">
+            <Field error={form.formState.errors.displayName?.message} label={t('projectVolumes.name')} required>
+              <Input {...form.register('displayName')} placeholder={t('projectVolumes.displayNamePlaceholder')} />
+            </Field>
+            <Field label={t('projectVolumes.archiveFormat')} required>
+              <input type="hidden" {...form.register('format')} />
+              <NativeSelect disabled value={importFormat}>
+                {importFormat === 'tar_gz'
+                  ? <option value="tar_gz">{t('projectVolumes.formatTarGz')}</option>
+                  : <option value="raw_zst">{t('projectVolumes.formatRawZst')}</option>}
+              </NativeSelect>
+            </Field>
+            <Field error={form.formState.errors.clusterId?.message} label={t('projectVolumes.cluster')} required>
+              <ProjectVolumeClusterSelect
+                projectId={projectId}
+                value={clusterId}
+                onChange={(value) => {
+                  form.setValue('clusterId', value, { shouldDirty: true, shouldValidate: true })
+                  form.setValue('storageClassName', '')
+                }}
+              />
+            </Field>
+            <Field error={form.formState.errors.storageClassName?.message} label={t('projectVolumes.storageClass')} required>
+              <ProjectVolumeStorageClassSelect
+                clusterId={clusterId}
+                projectId={projectId}
+                value={form.watch('storageClassName')}
+                onChange={value => form.setValue('storageClassName', value, { shouldDirty: true, shouldValidate: true })}
+              />
+            </Field>
+            <Field error={form.formState.errors.capacity?.message} label={t('projectVolumes.capacity')} required>
+              <Input {...form.register('capacity')} placeholder={t('projectVolumes.capacityPlaceholder')} />
+            </Field>
+            <Field label={t('projectVolumes.accessMode')} required>
+              <NativeSelect {...form.register('accessMode')}>
+                <option value="ReadWriteOnce">ReadWriteOnce</option>
+                <option value="ReadWriteOncePod">ReadWriteOncePod</option>
+                <option value="ReadOnlyMany">ReadOnlyMany</option>
+                <option value="ReadWriteMany">ReadWriteMany</option>
+              </NativeSelect>
+            </Field>
+            <Field label={t('projectVolumes.volumeMode')} required>
+              <input type="hidden" {...form.register('volumeMode')} />
+              <NativeSelect
+                value={volumeMode}
+                onChange={(event) => {
+                  const nextMode = event.target.value as ProjectVolumeMode
+                  form.setValue('volumeMode', nextMode, { shouldDirty: true, shouldValidate: true })
+                  form.setValue('format', nextMode === 'Block' ? 'raw_zst' : 'tar_gz', { shouldDirty: true, shouldValidate: true })
+                }}
+              >
+                <option value="Filesystem">Filesystem</option>
+                <option value="Block">Block</option>
+              </NativeSelect>
+            </Field>
+          </div>
           <Field label={t('projectVolumes.chooseFile')} required>
             <Input
               accept=".tar.gz,.tgz,.raw.zst,.zst,application/gzip,application/zstd"
@@ -295,39 +267,14 @@ export function ProjectVolumeImportDialog({ onOpenChange, open, projectId }: { o
             </div>
           )}
           <DialogFooter>
-            {resumeRecord && !busy && (
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={() => {
-                  clearVolumeImportResumeRecord(projectId, resumeRecord.transferId)
-                  setResumeRecord(null)
-                  setFile(null)
-                }}
-              >
-                {t('projectVolumes.discardResume')}
-              </Button>
-            )}
-            {resumeRecord && !busy && (
-              <Button disabled={!file} type="button" onClick={resumeImport}>
-                <Play className="size-4" />
-                {t('projectVolumes.resume')}
-              </Button>
-            )}
-            {!resumeRecord && !busy && (
+            {!busy && (
               <Button disabled={!file || !form.formState.isValid} type="submit">
                 <Upload className="size-4" />
                 {t('projectVolumes.importArchive')}
               </Button>
             )}
-            {stage === 'uploading' && (
-              <Button type="button" variant="outline" onClick={() => abortRef.current?.abort()}>
-                <Pause className="size-4" />
-                {t('projectVolumes.pause')}
-              </Button>
-            )}
-            {resumeRecord && !busy && (
-              <Button disabled={cancelTransfer.isPending} type="button" variant="destructive" onClick={() => cancelTransfer.mutate(resumeRecord)}>
+            {busy && (
+              <Button disabled={stage === 'cancelling'} type="button" variant="destructive" onClick={cancelCurrentImport}>
                 {t('projectVolumes.cancelTransfer')}
               </Button>
             )}

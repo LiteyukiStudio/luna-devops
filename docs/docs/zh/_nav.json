@@ -1,17 +1,17 @@
 [
   {
-    "text": "开始",
+    "text": "安装",
     "link": "/start/install/kubernetes",
     "activeMatch": "/start/"
   },
   {
     "text": "使用",
     "link": "/use/workflow",
-    "activeMatch": "^/(use|download)/"
+    "activeMatch": "/use/"
   },
   {
     "text": "参考",
-    "link": "/reference/configuration",
+    "link": "/reference/compatibility",
     "activeMatch": "/reference/"
   }
 ]

@@ -8,7 +8,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-func buildJobSecret(name string, task builder.Task, npmRegistry string, cacheEnabled bool, cacheTag string) *corev1.Secret {
+func buildJobSecret(name string, task builder.Task, cacheEnabled bool, cacheTag string) *corev1.Secret {
 	env := map[string]string{
 		"GIT_CLONE_URL":                 task.Repository.CloneURL,
 		"GIT_ACCESS_TOKEN":              task.Repository.AccessToken,
@@ -26,7 +26,6 @@ func buildJobSecret(name string, task builder.Task, npmRegistry string, cacheEna
 		"BUILD_DIRECTORY":               task.Build.BuildDirectory,
 		"CACHE_ENABLED":                 builder.BoolEnvValue(cacheEnabled),
 		"CACHE_TAG":                     builder.StringDefault(strings.TrimSpace(cacheTag), "buildcache"),
-		"NPM_REGISTRY":                  strings.TrimSpace(npmRegistry),
 		"REGISTRY_ENDPOINT":             task.Registry.Endpoint,
 		"REGISTRY_USERNAME":             task.Registry.Username,
 		"REGISTRY_PASSWORD":             task.Registry.Password,
@@ -42,14 +41,6 @@ func buildJobSecret(name string, task builder.Task, npmRegistry string, cacheEna
 	env["PRE_PUSH_HOOK_IDS"] = strings.Join(hookIDsByPhase["prePush"], ",")
 	env["POST_PUSH_HOOK_IDS"] = strings.Join(hookIDsByPhase["postPush"], ",")
 	buildEnv := builder.NormalizedBuildEnv(task.Build.Env)
-	if strings.TrimSpace(npmRegistry) != "" {
-		if _, ok := buildEnv["NPM_REGISTRY"]; !ok {
-			buildEnv["NPM_REGISTRY"] = strings.TrimSpace(npmRegistry)
-		}
-		if _, ok := buildEnv["npm_config_registry"]; !ok {
-			buildEnv["npm_config_registry"] = strings.TrimSpace(npmRegistry)
-		}
-	}
 	buildEnvKeys := make([]string, 0, len(buildEnv))
 	buildArgs := builder.NormalizedBuildEnv(task.Build.BuildArgs)
 	for key, value := range buildEnv {

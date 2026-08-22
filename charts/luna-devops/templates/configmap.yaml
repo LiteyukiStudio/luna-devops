@@ -1,17 +1,3 @@
-{{- if .Values.volumeTransfer.enabled }}
-{{- if not .Values.volumeTransfer.s3.existingSecret }}
-{{- fail "volumeTransfer.s3.existingSecret is required when volumeTransfer.enabled=true" }}
-{{- end }}
-{{- if not (regexMatch "^https://[^[:space:]]+$" .Values.volumeTransfer.s3.endpoint) }}
-{{- fail "volumeTransfer.s3.endpoint must be an absolute HTTPS URL when volumeTransfer.enabled=true" }}
-{{- end }}
-{{- if not .Values.volumeTransfer.s3.bucket }}
-{{- fail "volumeTransfer.s3.bucket is required when volumeTransfer.enabled=true" }}
-{{- end }}
-{{- if not (regexMatch "^https://[^[:space:]]+$" .Values.volumeTransfer.callbackBaseUrl) }}
-{{- fail "volumeTransfer.callbackBaseUrl must be an absolute HTTPS URL when volumeTransfer.enabled=true" }}
-{{- end }}
-{{- end }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -31,25 +17,11 @@ data:
   BUILD_JOB_TTL_SECONDS: {{ .Values.worker.buildJobTtlSeconds | quote }}
   BUILD_CACHE_ENABLED: {{ .Values.worker.buildCacheEnabled | quote }}
   BUILD_CACHE_TAG: {{ .Values.worker.buildCacheTag | quote }}
-  BUILD_NPM_REGISTRY: {{ .Values.worker.buildNpmRegistry | quote }}
   BUILD_PRIVATE_EGRESS_CIDRS: {{ .Values.worker.buildPrivateEgressCidrs | quote }}
   BUILD_PRIVATE_EGRESS_PORTS: {{ .Values.worker.buildPrivateEgressPorts | quote }}
   BUILD_BLOCKED_EGRESS_CIDRS: {{ .Values.worker.buildBlockedEgressCidrs | quote }}
   AI_ASSISTANT_AVAILABLE: {{ .Values.ai.enabled | quote }}
   AI_AGENT_ADDR: {{ default (printf "http://%s:%v" (include "luna-devops.agentName" .) .Values.ai.agent.service.port) .Values.ai.agentAddress | quote }}
   AI_AGENT_TIMEOUT: {{ .Values.ai.agentTimeout | quote }}
-  {{- if .Values.volumeTransfer.enabled }}
-  VOLUME_TRANSFER_STORE: "s3"
-  VOLUME_TRANSFER_S3_ENDPOINT: {{ .Values.volumeTransfer.s3.endpoint | quote }}
-  VOLUME_TRANSFER_S3_REGION: {{ .Values.volumeTransfer.s3.region | quote }}
-  VOLUME_TRANSFER_S3_BUCKET: {{ .Values.volumeTransfer.s3.bucket | quote }}
-  VOLUME_TRANSFER_S3_PATH_STYLE: {{ .Values.volumeTransfer.s3.pathStyle | quote }}
-  VOLUME_TRANSFER_OBJECT_TTL: {{ .Values.volumeTransfer.objectTtl | quote }}
   VOLUME_TRANSFER_MAX_BYTES: {{ .Values.volumeTransfer.maxBytes | quote }}
-  VOLUME_TRANSFER_SPOOL_DIR: {{ .Values.volumeTransfer.spool.dir | quote }}
-  VOLUME_TRANSFER_SPOOL_MAX_BYTES: {{ .Values.volumeTransfer.spool.maxBytes | quote }}
-  VOLUME_TRANSFER_SPOOL_MIN_FREE_BYTES: {{ .Values.volumeTransfer.spool.minFreeBytes | quote }}
-  VOLUME_TRANSFER_SPOOL_ORPHAN_AGE: {{ .Values.volumeTransfer.spool.orphanAge | quote }}
-  VOLUME_TRANSFER_CALLBACK_BASE_URL: {{ .Values.volumeTransfer.callbackBaseUrl | quote }}
   VOLUME_TRANSFER_JOB_IMAGE: {{ include "luna-devops.volumeTransferJobImage" . | quote }}
-  {{- end }}

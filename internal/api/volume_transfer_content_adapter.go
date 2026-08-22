@@ -3,7 +3,6 @@ package api
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -12,7 +11,7 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/config"
 	"github.com/LiteyukiStudio/devops/internal/model"
-	"github.com/LiteyukiStudio/devops/internal/provider/volumestore"
+	kubeprovider "github.com/LiteyukiStudio/devops/internal/provider/kubernetes"
 	"github.com/LiteyukiStudio/devops/internal/volume"
 	"github.com/LiteyukiStudio/devops/internal/volumetransferapi"
 	"github.com/gin-gonic/gin"
@@ -27,27 +26,72 @@ func newVolumeTransferContentAdapter(handlers *Handlers, cfg config.Config) (*vo
 	if handlers == nil || handlers.volumes == nil || handlers.rateLimiter == nil || handlers.rateLimiter.redis == nil {
 		return nil, errors.New("volume transfer dependencies are unavailable")
 	}
-	store, err := volumestore.NewS3Store(volumestore.S3Config{
-		Endpoint: cfg.VolumeTransferS3Endpoint, Region: cfg.VolumeTransferS3Region,
-		Bucket: cfg.VolumeTransferS3Bucket, AccessKeyID: cfg.VolumeTransferS3AccessKeyID,
-		SecretAccessKey: cfg.VolumeTransferS3SecretKey, PathStyle: cfg.VolumeTransferS3PathStyle,
-		AllowInsecureEndpoint: handlers.mode == "development",
-	})
-	if err != nil {
-		return nil, fmt.Errorf("initialize volume transfer store: %w", err)
+	clusterAdapter, ok := handlers.volumeClusters.(*projectVolumeClusterAdapter)
+	if !ok || clusterAdapter == nil {
+		return nil, errors.New("volume transfer runtime streaming is unavailable")
 	}
-	tickets := volumetransferapi.NewRedisTicketStore(handlers.rateLimiter.redis)
+	runtime := &volumeTransferRuntimeAdapter{clusters: clusterAdapter}
 	return &volumeTransferContentAdapter{
 		handlers: handlers,
-		service: volumetransferapi.NewService(handlers.volumes, store, tickets, volumetransferapi.Options{
-			ObjectTTL:         cfg.VolumeTransferObjectTTL,
-			MaxBytes:          cfg.VolumeTransferMaxBytes,
-			TempDir:           cfg.VolumeTransferSpoolDir,
-			SpoolMaxBytes:     cfg.VolumeTransferSpoolMaxBytes,
-			SpoolMinFreeBytes: cfg.VolumeTransferSpoolMinFreeBytes,
-			SpoolOrphanAge:    cfg.VolumeTransferSpoolOrphanAge,
-		}),
+		service: volumetransferapi.NewService(handlers.volumes, runtime,
+			volumetransferapi.NewRedisTicketStore(handlers.rateLimiter.redis),
+			volumetransferapi.Options{MaxBytes: cfg.VolumeTransferMaxBytes}),
 	}, nil
+}
+
+type volumeTransferRuntimeAdapter struct {
+	clusters *projectVolumeClusterAdapter
+}
+
+func (adapter *volumeTransferRuntimeAdapter) OpenVolumeTransferImport(ctx context.Context, projectVolume model.ProjectVolume, transfer model.VolumeTransfer, source io.Reader) (volumetransferapi.StreamResult, error) {
+	client, err := adapter.clusters.clientForCluster(ctx, projectVolume.ClusterID)
+	if err != nil {
+		return volumetransferapi.StreamResult{}, err
+	}
+	result, err := client.OpenVolumeTransferImport(ctx, kubeprovider.VolumeTransferStreamTarget{
+		Namespace: projectVolume.Namespace, TransferID: transfer.ID,
+		ProjectID: projectVolume.ProjectID, ProjectVolumeID: projectVolume.ID,
+	}, source)
+	return apiVolumeTransferStreamResult(result), err
+}
+
+func (adapter *volumeTransferRuntimeAdapter) OpenVolumeTransferExport(ctx context.Context, projectVolume model.ProjectVolume, transfer model.VolumeTransfer) (volumetransferapi.ExportStream, error) {
+	client, err := adapter.clusters.clientForCluster(ctx, projectVolume.ClusterID)
+	if err != nil {
+		return nil, err
+	}
+	stream, err := client.OpenVolumeTransferExport(ctx, kubeprovider.VolumeTransferStreamTarget{
+		Namespace: projectVolume.Namespace, TransferID: transfer.ID,
+		ProjectID: projectVolume.ProjectID, ProjectVolumeID: projectVolume.ID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &apiVolumeTransferExportStream{stream: stream}, nil
+}
+
+type apiVolumeTransferExportStream struct {
+	stream *kubeprovider.VolumeTransferExportStream
+}
+
+func (stream *apiVolumeTransferExportStream) Read(buffer []byte) (int, error) {
+	return stream.stream.Reader.Read(buffer)
+}
+
+func (stream *apiVolumeTransferExportStream) Close() error {
+	return stream.stream.Close()
+}
+
+func (stream *apiVolumeTransferExportStream) Wait() (volumetransferapi.StreamResult, error) {
+	result, err := stream.stream.Wait()
+	return apiVolumeTransferStreamResult(result), err
+}
+
+func apiVolumeTransferStreamResult(result kubeprovider.VolumeTransferStreamResult) volumetransferapi.StreamResult {
+	return volumetransferapi.StreamResult{
+		TransferredBytes: result.TransferredBytes, ProcessedFiles: result.ProcessedFiles,
+		SHA256: result.SHA256, LogicalBytes: result.LogicalBytes, DataSHA256: result.DataSHA256,
+	}
 }
 
 func (adapter *volumeTransferContentAdapter) CreateImport(ctx context.Context, user model.User, project model.Project, input volumeImportCreateInput, idempotencyKey string) (model.ProjectVolume, model.VolumeTransfer, error) {
@@ -65,16 +109,8 @@ func (adapter *volumeTransferContentAdapter) CreateImport(ctx context.Context, u
 	return result.Volume, result.Transfer, err
 }
 
-func (adapter *volumeTransferContentAdapter) HeadImport(ctx context.Context, projectID, transferID string, user model.User) (int64, int64, int64, error) {
-	return adapter.service.HeadImport(ctx, projectID, transferID, adapter.actor(ctx, user, projectID))
-}
-
-func (adapter *volumeTransferContentAdapter) WriteImportPart(ctx context.Context, projectID, transferID string, user model.User, offset int64, checksum string, body io.Reader, size int64) (int64, int64, error) {
-	return adapter.service.WriteImportPart(ctx, projectID, transferID, adapter.actor(ctx, user, projectID), offset, checksum, body, size)
-}
-
-func (adapter *volumeTransferContentAdapter) CompleteImport(ctx context.Context, projectID, transferID string, user model.User, length int64, checksum string) (model.VolumeTransfer, error) {
-	return adapter.service.CompleteImport(ctx, projectID, transferID, adapter.actor(ctx, user, projectID), length, checksum)
+func (adapter *volumeTransferContentAdapter) StreamImport(ctx context.Context, projectID, transferID string, user model.User, body io.Reader, length int64, checksum string) (model.VolumeTransfer, error) {
+	return adapter.service.StreamImport(ctx, projectID, transferID, adapter.actor(ctx, user, projectID), body, length, checksum)
 }
 
 func (adapter *volumeTransferContentAdapter) CreateExport(ctx context.Context, user model.User, project model.Project, volumeID string, input volumeExportCreateInput, idempotencyKey string) (model.VolumeTransfer, error) {
@@ -93,58 +129,14 @@ func (adapter *volumeTransferContentAdapter) AuthorizeDownload(ctx context.Conte
 	return volumeDownloadAuthorizationResponse{Ticket: result.Ticket, ExpiresAt: result.ExpiresAt}, err
 }
 
-func (adapter *volumeTransferContentAdapter) HeadDownload(ctx context.Context, user model.User, project model.Project, transfer model.VolumeTransfer, credential volumeDownloadCredential, binding volumeDownloadBinding) (volumeDownloadInfo, volumeDownloadSession, error) {
-	result, session, err := adapter.service.HeadDownload(ctx, adapter.actor(ctx, user, project.ID), transfer, coreDownloadCredential(credential), coreDownloadBinding(binding))
-	return volumeDownloadInfo{Size: result.Size, ETag: result.ETag}, apiDownloadSession(session), err
+func (adapter *volumeTransferContentAdapter) OpenDownload(ctx context.Context, user model.User, project model.Project, transfer model.VolumeTransfer, ticket string, binding volumeDownloadBinding) (volumeDownload, error) {
+	result, err := adapter.service.OpenDownload(ctx, adapter.actor(ctx, user, project.ID), transfer, ticket, coreDownloadBinding(binding))
+	return volumeDownload{Body: result.Body, ContentType: result.ContentType}, err
 }
 
-func (adapter *volumeTransferContentAdapter) OpenDownload(ctx context.Context, user model.User, project model.Project, transfer model.VolumeTransfer, credential volumeDownloadCredential, rangeHeader string, binding volumeDownloadBinding) (volumeDownload, volumeDownloadSession, error) {
-	result, session, err := adapter.service.OpenDownload(ctx, adapter.actor(ctx, user, project.ID), transfer, coreDownloadCredential(credential), rangeHeader, coreDownloadBinding(binding))
-	return apiVolumeDownload(result), apiDownloadSession(session), err
-}
-
-func (adapter *volumeTransferContentAdapter) HeadManifest(ctx context.Context, user model.User, project model.Project, transfer model.VolumeTransfer, credential volumeDownloadCredential, binding volumeDownloadBinding) (volumeDownloadInfo, volumeDownloadSession, error) {
-	result, session, err := adapter.service.HeadManifest(ctx, adapter.actor(ctx, user, project.ID), transfer, coreDownloadCredential(credential), coreDownloadBinding(binding))
-	return volumeDownloadInfo{Size: result.Size, ETag: result.ETag}, apiDownloadSession(session), err
-}
-
-func (adapter *volumeTransferContentAdapter) OpenManifest(ctx context.Context, user model.User, project model.Project, transfer model.VolumeTransfer, credential volumeDownloadCredential, binding volumeDownloadBinding) (volumeDownload, volumeDownloadSession, error) {
-	result, session, err := adapter.service.OpenManifest(ctx, adapter.actor(ctx, user, project.ID), transfer, coreDownloadCredential(credential), coreDownloadBinding(binding))
-	return apiVolumeDownload(result), apiDownloadSession(session), err
-}
-
-func (adapter *volumeTransferContentAdapter) InternalHead(ctx context.Context, transferID, token string) (volumeInternalContentInfo, error) {
-	result, err := adapter.service.InternalHead(ctx, transferID, token)
-	return volumeInternalContentInfo{Offset: result.Offset, Size: result.Size, ChunkSize: result.ChunkSize, ETag: result.ETag}, err
-}
-
-func (adapter *volumeTransferContentAdapter) InternalWritePart(ctx context.Context, transferID, token string, offset int64, checksum string, body io.Reader, size int64) (int64, int64, error) {
-	return adapter.service.InternalWritePart(ctx, transferID, token, offset, checksum, body, size)
-}
-
-func (adapter *volumeTransferContentAdapter) InternalOpen(ctx context.Context, transferID, token, rangeHeader string) (volumeDownload, error) {
-	result, err := adapter.service.InternalOpen(ctx, transferID, token, rangeHeader)
-	return apiVolumeDownload(result), err
-}
-
-func (adapter *volumeTransferContentAdapter) InternalProgress(ctx context.Context, transferID, token string, input volumeTransferProgressInput) error {
-	return adapter.service.InternalProgress(ctx, transferID, token, volumetransferapi.Progress{
-		ExpectedState: input.ExpectedState, TransferredBytes: input.TransferredBytes,
-		ProcessedFiles: input.ProcessedFiles, Stage: input.Stage,
-	})
-}
-
-func (adapter *volumeTransferContentAdapter) InternalComplete(ctx context.Context, transferID, token string, input volumeTransferCompleteInput) (model.VolumeTransfer, error) {
-	return adapter.service.InternalComplete(ctx, transferID, token, volumetransferapi.Completion{
-		ExpectedState: input.ExpectedState, TransferredBytes: input.TransferredBytes, SHA256: input.SHA256,
-		LogicalBytes: input.LogicalBytes, DataSHA256: input.DataSHA256,
-	})
-}
-
-func (adapter *volumeTransferContentAdapter) InternalFail(ctx context.Context, transferID, token string, input volumeTransferFailInput) (model.VolumeTransfer, error) {
-	return adapter.service.InternalFail(ctx, transferID, token, volumetransferapi.Failure{
-		ExpectedState: input.ExpectedState, ErrorCode: input.ErrorCode, Diagnostic: input.Diagnostic,
-	})
+func (adapter *volumeTransferContentAdapter) OpenManifest(ctx context.Context, user model.User, project model.Project, transfer model.VolumeTransfer, ticket string, binding volumeDownloadBinding) (volumeDownload, error) {
+	result, err := adapter.service.OpenManifest(ctx, adapter.actor(ctx, user, project.ID), transfer, ticket, coreDownloadBinding(binding))
+	return volumeDownload{Body: result.Body, ContentType: result.ContentType}, err
 }
 
 func (adapter *volumeTransferContentAdapter) actor(ctx context.Context, user model.User, projectID string) volumetransferapi.Actor {
@@ -159,24 +151,7 @@ func (adapter *volumeTransferContentAdapter) actor(ctx context.Context, user mod
 }
 
 func coreDownloadBinding(binding volumeDownloadBinding) volumetransferapi.DownloadBinding {
-	return volumetransferapi.DownloadBinding{
-		UserID: binding.UserID, SubjectID: binding.SubjectID, Deadline: binding.Deadline,
-	}
-}
-
-func coreDownloadCredential(credential volumeDownloadCredential) volumetransferapi.DownloadCredential {
-	return volumetransferapi.DownloadCredential{Ticket: credential.Ticket, Session: credential.Session}
-}
-
-func apiDownloadSession(session volumetransferapi.DownloadSession) volumeDownloadSession {
-	return volumeDownloadSession{Token: session.Token, ExpiresAt: session.ExpiresAt}
-}
-
-func apiVolumeDownload(download volumetransferapi.Download) volumeDownload {
-	return volumeDownload{
-		Body: download.Body, Status: download.Status, ContentType: download.ContentType,
-		Size: download.Size, ETag: download.ETag, ContentRange: download.ContentRange,
-	}
+	return volumetransferapi.DownloadBinding{UserID: binding.UserID, SubjectID: binding.SubjectID, Deadline: binding.Deadline}
 }
 
 func (h *Handlers) volumeTransferDownloadBinding(ctx *gin.Context, user model.User) (volumeDownloadBinding, bool) {

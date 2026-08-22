@@ -7,26 +7,21 @@
   {
     "type": "file",
     "name": "first-login",
-    "label": "第一次登录"
+    "label": "初始化"
   },
   {
     "type": "file",
     "name": "connect-resources",
-    "label": "连接集群和镜像站"
+    "label": "添加基础资源"
   },
   {
     "type": "file",
-    "name": "first-project",
-    "label": "上线第一个项目"
+    "name": "pricing",
+    "label": "设置价格"
   },
   {
-    "type": "file",
-    "name": "startup-troubleshooting",
-    "label": "启动排障"
-  },
-  {
-    "type": "file",
-    "name": "faq",
-    "label": "常见问题"
+    "type": "dir",
+    "name": "configuration",
+    "label": "配置项"
   }
 ]

@@ -731,7 +731,7 @@ func (service *Service) GetVolumeTransfer(ctx context.Context, projectID, transf
 
 // GetVolumeTransferForMaintenance resolves a transfer without accepting a
 // caller-supplied project identifier. It is intentionally reserved for
-// internal callback-token verification and bounded maintenance paths.
+// bounded Worker and maintenance paths.
 func (service *Service) GetVolumeTransferForMaintenance(ctx context.Context, transferID string) (result model.VolumeTransfer, err error) {
 	ctx, end := telemetry.StartOperation(ctx, "volume", "transfer.get_internal")
 	defer func() { end(err) }()
@@ -796,30 +796,19 @@ func (service *Service) CreateVolumeTransfer(ctx context.Context, input CreateVo
 				return findErr
 			}
 		}
-		state := model.VolumeTransferStateQueued
-		if input.StartUploading {
-			state = model.VolumeTransferStateUploading
-		}
-		objectKey := input.ObjectKey
-		if objectKey == "" {
-			objectKey = "transfers/" + transferID
-		}
 		transfer := model.VolumeTransfer{
-			ID:                transferID,
-			ProjectID:         input.ProjectID,
-			ProjectVolumeID:   input.ProjectVolumeID,
-			Direction:         input.Direction,
-			Format:            input.Format,
-			ConsistencyMode:   input.ConsistencyMode,
-			State:             state,
-			ObjectKey:         objectKey,
-			ObjectOwned:       true,
-			MultipartUploadID: input.MultipartUploadID,
-			SourceFilename:    input.SourceFilename,
-			ExpectedBytes:     input.ExpectedBytes,
-			SHA256:            input.SHA256,
-			ActorID:           input.ActorID,
-			ExpiresAt:         input.ExpiresAt,
+			ID:              transferID,
+			ProjectID:       input.ProjectID,
+			ProjectVolumeID: input.ProjectVolumeID,
+			Direction:       input.Direction,
+			Format:          input.Format,
+			ConsistencyMode: input.ConsistencyMode,
+			State:           model.VolumeTransferStatePreparing,
+			SourceFilename:  input.SourceFilename,
+			ExpectedBytes:   input.ExpectedBytes,
+			SHA256:          input.SHA256,
+			ActorID:         input.ActorID,
+			ExpiresAt:       input.ExpiresAt,
 		}
 		if createErr := repository.CreateVolumeTransfer(ctx, &transfer); createErr != nil {
 			return normalizeRepositoryError(createErr)
@@ -836,108 +825,11 @@ func (service *Service) CreateVolumeTransfer(ctx context.Context, input CreateVo
 			created = false
 		}
 	}
-	if err != nil || !created || result.State != model.VolumeTransferStateQueued {
+	if err != nil || !created || result.State != model.VolumeTransferStatePreparing {
 		return result, err
 	}
 	if err = service.dispatch(ctx, VolumeOperation{
 		Kind: result.Direction, ProjectID: result.ProjectID, VolumeID: result.ProjectVolumeID, TransferID: result.ID, ActorID: result.ActorID,
-	}); err != nil {
-		_, _ = service.FailVolumeTransferExecution(ctx, result.ProjectID, result.ID, CodeTaskEnqueueFailed, err.Error())
-		return result, err
-	}
-	return result, nil
-}
-
-// RetryVolumeImportTransfer atomically hands the verified object reference to
-// one new import transfer. A cleanup lease and the ownership update are fenced
-// by the same row lock, so an expired history row can never delete content that
-// a successful retry already owns.
-func (service *Service) RetryVolumeImportTransfer(ctx context.Context, originalTransferID string, input CreateVolumeTransferInput) (result model.VolumeTransfer, err error) {
-	input = normalizeCreateVolumeTransferInput(input)
-	ctx, end := telemetry.StartOperation(ctx, "volume", "transfer.retry_import")
-	defer func() { end(err) }()
-	if err = service.validate(); err != nil {
-		return model.VolumeTransfer{}, err
-	}
-	originalTransferID = strings.TrimSpace(originalTransferID)
-	if originalTransferID == "" || input.Direction != model.VolumeTransferDirectionImport || !input.VerifiedObject || input.IdempotencyKey == "" {
-		return model.VolumeTransfer{}, newDomainError(CodeInvalidInput, "verified import retry metadata is invalid")
-	}
-	if err = validateCreateVolumeTransferInput(input); err != nil {
-		return model.VolumeTransfer{}, err
-	}
-	now := timeNowUTC()
-	created := false
-	err = service.repository.Transaction(ctx, func(repository Repository) error {
-		original, lockErr := repository.LockVolumeTransfer(ctx, input.ProjectID, originalTransferID)
-		if lockErr != nil {
-			return normalizeRepositoryError(lockErr)
-		}
-		transferID := idempotentVolumeTransferID(input)
-		existing, findErr := repository.GetVolumeTransfer(ctx, input.ProjectID, transferID)
-		if findErr == nil {
-			if !sameRetryTransferRequest(existing, input) || existing.ObjectKey != original.ObjectKey {
-				return newDomainError(CodeIdempotencyConflict, "volume transfer idempotency key was used for a different request")
-			}
-			result = existing
-			return nil
-		}
-		if !errors.Is(findErr, gorm.ErrRecordNotFound) {
-			return findErr
-		}
-		if !IsVolumeTransferTerminal(original.State) || original.Direction != model.VolumeTransferDirectionImport {
-			return newDomainError(CodeTransferStateConflict, "only terminal imports can transfer object ownership")
-		}
-		if !sameRetryObject(original, input) {
-			return newDomainError(CodeTransferStateConflict, "verified import retry content changed")
-		}
-		if !original.ExpiresAt.After(now) || original.ObjectDeletedAt != nil || !original.ObjectOwned {
-			return newDomainError(CodeTransferExpired, "verified import content is no longer owned by this transfer")
-		}
-		if original.ObjectCleanupStartedAt != nil {
-			return newDomainError(CodeTransferExpired, "verified import content cleanup has already started")
-		}
-
-		projectVolume, lockErr := repository.LockProjectVolume(ctx, input.ProjectID, input.ProjectVolumeID)
-		if lockErr != nil {
-			return normalizeRepositoryError(lockErr)
-		}
-		if projectVolume.LifecycleState == model.ProjectVolumeLifecycleError && projectVolume.PendingOperation == OperationImport {
-			projectVolume, lockErr = repository.TransitionProjectVolume(ctx, input.ProjectID, input.ProjectVolumeID,
-				[]string{model.ProjectVolumeLifecycleError}, model.ProjectVolumeLifecycleProvisioning, "", "")
-			if lockErr != nil {
-				return lockErr
-			}
-		}
-		if transferErr := validateVolumeForTransfer(projectVolume, input); transferErr != nil {
-			return transferErr
-		}
-		released, releaseErr := repository.TransferVolumeTransferObjectOwnership(ctx, input.ProjectID, originalTransferID, now)
-		if releaseErr != nil {
-			return releaseErr
-		}
-		if !released {
-			return newDomainError(CodeTransferStateConflict, "volume transfer object ownership changed")
-		}
-		transfer := model.VolumeTransfer{
-			ID: transferID, ProjectID: input.ProjectID, ProjectVolumeID: input.ProjectVolumeID,
-			Direction: input.Direction, Format: input.Format, ConsistencyMode: input.ConsistencyMode,
-			State: model.VolumeTransferStateQueued, ObjectKey: input.ObjectKey, ObjectOwned: true,
-			SourceFilename: input.SourceFilename, ExpectedBytes: input.ExpectedBytes, SHA256: input.SHA256,
-			ActorID: input.ActorID, ExpiresAt: input.ExpiresAt,
-		}
-		if createErr := repository.CreateVolumeTransfer(ctx, &transfer); createErr != nil {
-			return normalizeRepositoryError(createErr)
-		}
-		created = true
-		result = transfer
-		return nil
-	})
-	if err != nil || !created {
-		return result, err
-	}
-	if err = service.dispatch(ctx, VolumeOperation{
-		Kind: OperationImport, ProjectID: result.ProjectID, VolumeID: result.ProjectVolumeID, TransferID: result.ID, ActorID: result.ActorID,
 	}); err != nil {
 		_, _ = service.FailVolumeTransferExecution(ctx, result.ProjectID, result.ID, CodeTaskEnqueueFailed, err.Error())
 		return result, err
@@ -970,7 +862,7 @@ func (service *Service) TransitionVolumeTransfer(ctx context.Context, projectID,
 			return newDomainError(CodeTransferStateConflict, "volume transfer state transition is not allowed")
 		}
 		result, lockErr = repository.TransitionVolumeTransfer(ctx, projectID, transferID, transfer.State, to, strings.TrimSpace(errorCode), internalMessage)
-		shouldDispatch = to == model.VolumeTransferStateQueued || to == model.VolumeTransferStateCancelled
+		shouldDispatch = to == model.VolumeTransferStatePreparing || to == model.VolumeTransferStateCancelled
 		return lockErr
 	})
 	if err != nil || !shouldDispatch {
@@ -987,98 +879,24 @@ func (service *Service) TransitionVolumeTransfer(ctx context.Context, projectID,
 	return result, nil
 }
 
-// CompleteVolumeTransferUpload records the server-verified object checksum and
-// atomically queues an external import. The multipart object must already have
-// been completed and read back by the caller.
-func (service *Service) CompleteVolumeTransferUpload(ctx context.Context, projectID, transferID string, contentLength int64, sha256 string) (result model.VolumeTransfer, err error) {
-	ctx, end := telemetry.StartOperation(ctx, "volume", "transfer.upload_complete")
-	defer func() { end(err) }()
-	if err = service.validate(); err != nil {
-		return model.VolumeTransfer{}, err
-	}
-	projectID = strings.TrimSpace(projectID)
-	transferID = strings.TrimSpace(transferID)
-	sha256 = strings.ToLower(strings.TrimSpace(sha256))
-	if projectID == "" || transferID == "" || contentLength < 1 || !validSHA256(sha256) {
-		return model.VolumeTransfer{}, newDomainError(CodeTransferChecksumInvalid, "volume transfer completion metadata is invalid")
-	}
-	err = service.repository.Transaction(ctx, func(repository Repository) error {
-		transfer, lockErr := repository.LockVolumeTransfer(ctx, projectID, transferID)
-		if lockErr != nil {
-			if errors.Is(lockErr, gorm.ErrRecordNotFound) {
-				return newDomainError(CodeTransferNotFound, "volume transfer was not found")
-			}
-			return lockErr
-		}
-		if transfer.Direction != model.VolumeTransferDirectionImport || transfer.State != model.VolumeTransferStateUploading {
-			return newDomainError(CodeTransferStateConflict, "volume transfer does not accept upload completion")
-		}
-		if transfer.ExpectedBytes != contentLength {
-			return newDomainError(CodeTransferProgressInvalid, "volume transfer content length does not match the expected length")
-		}
-		if transfer.SHA256 != "" && transfer.SHA256 != sha256 {
-			return newDomainError(CodeTransferChecksumMismatch, "volume transfer checksum does not match the expected checksum")
-		}
-		result, lockErr = repository.CompleteVolumeTransferUpload(ctx, projectID, transferID, transfer.State, contentLength, sha256)
-		return lockErr
-	})
-	if err != nil {
-		return model.VolumeTransfer{}, err
-	}
-	if err = service.dispatch(ctx, VolumeOperation{
-		Kind: OperationImport, ProjectID: result.ProjectID, VolumeID: result.ProjectVolumeID, TransferID: result.ID, ActorID: result.ActorID,
-	}); err != nil {
-		_, _ = service.FailVolumeTransferExecution(ctx, result.ProjectID, result.ID, CodeTaskEnqueueFailed, err.Error())
-		return result, err
-	}
-	return result, nil
-}
-
-// PrepareVolumeTransferExecution atomically binds a short-lived callback
-// credential to an execution. Rotating a token while already running is only
-// permitted after the Worker has observed the previous Job as absent and
-// completed cleanup; this method intentionally cannot make that Kubernetes
-// observation on the Worker's behalf.
 func (service *Service) ClaimVolumeTransferExecution(ctx context.Context, projectID, transferID, expectedState, leaseOwner string, leaseExpiresAt time.Time) (result model.VolumeTransfer, err error) {
-	ctx, end := telemetry.StartOperation(ctx, "volume", "transfer.claim_execution")
+	ctx, end := telemetry.StartOperation(ctx, "volume", "transfer.claim_preparation")
 	defer func() { end(err) }()
 	if err = service.validate(); err != nil {
 		return model.VolumeTransfer{}, err
 	}
 	projectID = strings.TrimSpace(projectID)
 	transferID = strings.TrimSpace(transferID)
-	expectedState = strings.TrimSpace(expectedState)
 	leaseOwner = strings.TrimSpace(leaseOwner)
 	now := timeNowUTC()
-	if projectID == "" || transferID == "" || !oneOf(expectedState, model.VolumeTransferStateQueued, model.VolumeTransferStateRunning) ||
-		len(leaseOwner) < 8 || len(leaseOwner) > 128 || !leaseExpiresAt.After(now) {
-		return model.VolumeTransfer{}, newDomainError(CodeInvalidInput, "volume transfer execution lease is invalid")
+	if projectID == "" || transferID == "" || expectedState != model.VolumeTransferStatePreparing || len(leaseOwner) < 8 || len(leaseOwner) > 128 || !leaseExpiresAt.After(now) {
+		return model.VolumeTransfer{}, newDomainError(CodeInvalidInput, "volume transfer preparation lease is invalid")
 	}
-	err = service.repository.Transaction(ctx, func(repository Repository) error {
-		transfer, lockErr := repository.LockVolumeTransfer(ctx, projectID, transferID)
-		if lockErr != nil {
-			if errors.Is(lockErr, gorm.ErrRecordNotFound) {
-				return newDomainError(CodeTransferNotFound, "volume transfer was not found")
-			}
-			return lockErr
-		}
-		if transfer.State != expectedState {
-			return newDomainError(CodeTransferStateConflict, "volume transfer execution state changed")
-		}
-		if transfer.CreationLeaseExpiresAt != nil && transfer.CreationLeaseExpiresAt.After(now) {
-			return newDomainError(CodeTransferStateConflict, "volume transfer execution lease is held")
-		}
-		result, lockErr = repository.ClaimVolumeTransferExecution(ctx, projectID, transferID, expectedState, leaseOwner, now, leaseExpiresAt)
-		return lockErr
-	})
-	return result, err
+	return service.repository.ClaimVolumeTransferExecution(ctx, projectID, transferID, expectedState, leaseOwner, now, leaseExpiresAt)
 }
 
-// RenewVolumeTransferExecutionLease keeps a single fenced Worker attempt
-// authoritative while provider preparation is still in progress. An expired
-// or replaced lease cannot be revived by its former owner.
 func (service *Service) RenewVolumeTransferExecutionLease(ctx context.Context, projectID, transferID, leaseOwner string, generation int64, leaseExpiresAt time.Time) (result model.VolumeTransfer, err error) {
-	ctx, end := telemetry.StartOperation(ctx, "volume", "transfer.renew_execution_lease")
+	ctx, end := telemetry.StartOperation(ctx, "volume", "transfer.renew_preparation_lease")
 	defer func() { end(err) }()
 	if err = service.validate(); err != nil {
 		return model.VolumeTransfer{}, err
@@ -1088,267 +906,111 @@ func (service *Service) RenewVolumeTransferExecutionLease(ctx context.Context, p
 	leaseOwner = strings.TrimSpace(leaseOwner)
 	now := timeNowUTC()
 	if projectID == "" || transferID == "" || len(leaseOwner) < 8 || len(leaseOwner) > 128 || generation < 1 || !leaseExpiresAt.After(now) {
-		return model.VolumeTransfer{}, newDomainError(CodeInvalidInput, "volume transfer execution lease is invalid")
+		return model.VolumeTransfer{}, newDomainError(CodeInvalidInput, "volume transfer preparation lease is invalid")
 	}
-	err = service.repository.Transaction(ctx, func(repository Repository) error {
-		transfer, lockErr := repository.LockVolumeTransfer(ctx, projectID, transferID)
-		if lockErr != nil {
-			if errors.Is(lockErr, gorm.ErrRecordNotFound) {
-				return newDomainError(CodeTransferNotFound, "volume transfer was not found")
-			}
-			return lockErr
-		}
-		if !oneOf(transfer.State, model.VolumeTransferStateQueued, model.VolumeTransferStateRunning) ||
-			transfer.ExecutionGeneration != generation || transfer.CreationLeaseOwner != leaseOwner ||
-			transfer.CreationLeaseExpiresAt == nil || !transfer.CreationLeaseExpiresAt.After(now) {
-			return newDomainError(CodeTransferStateConflict, "volume transfer execution lease changed")
-		}
-		result, lockErr = repository.RenewVolumeTransferExecutionLease(ctx, projectID, transferID,
-			leaseOwner, generation, now, leaseExpiresAt)
-		return lockErr
-	})
-	return result, err
-}
-
-func (service *Service) PrepareVolumeTransferExecution(ctx context.Context, projectID, transferID, expectedState, leaseOwner string, generation int64, tokenHash string, expiresAt time.Time) (result model.VolumeTransfer, err error) {
-	ctx, end := telemetry.StartOperation(ctx, "volume", "transfer.prepare_execution")
-	defer func() { end(err) }()
-	if err = service.validate(); err != nil {
-		return model.VolumeTransfer{}, err
-	}
-	projectID = strings.TrimSpace(projectID)
-	transferID = strings.TrimSpace(transferID)
-	expectedState = strings.TrimSpace(expectedState)
-	leaseOwner = strings.TrimSpace(leaseOwner)
-	tokenHash = strings.ToLower(strings.TrimSpace(tokenHash))
-	if projectID == "" || transferID == "" || !oneOf(expectedState, model.VolumeTransferStateQueued, model.VolumeTransferStateRunning) ||
-		len(leaseOwner) < 8 || len(leaseOwner) > 128 || generation < 1 || !validSHA256(tokenHash) || !expiresAt.After(timeNowUTC()) {
-		return model.VolumeTransfer{}, newDomainError(CodeInvalidInput, "volume transfer execution credential is invalid")
-	}
-	err = service.repository.Transaction(ctx, func(repository Repository) error {
-		transfer, lockErr := repository.LockVolumeTransfer(ctx, projectID, transferID)
-		if lockErr != nil {
-			if errors.Is(lockErr, gorm.ErrRecordNotFound) {
-				return newDomainError(CodeTransferNotFound, "volume transfer was not found")
-			}
-			return lockErr
-		}
-		if transfer.State != expectedState || transfer.ExecutionGeneration != generation || transfer.CreationLeaseOwner != leaseOwner ||
-			transfer.CreationLeaseExpiresAt == nil || !transfer.CreationLeaseExpiresAt.After(timeNowUTC()) {
-			return newDomainError(CodeTransferStateConflict, "volume transfer execution state changed")
-		}
-		result, lockErr = repository.PrepareVolumeTransferExecution(ctx, projectID, transferID, expectedState, leaseOwner, generation, tokenHash, expiresAt)
-		return lockErr
-	})
-	return result, err
+	return service.repository.RenewVolumeTransferExecutionLease(ctx, projectID, transferID, leaseOwner, generation, now, leaseExpiresAt)
 }
 
 func (service *Service) ConfirmVolumeTransferJobCreated(ctx context.Context, projectID, transferID string, generation int64) (result model.VolumeTransfer, err error) {
-	ctx, end := telemetry.StartOperation(ctx, "volume", "transfer.confirm_job_created")
+	ctx, end := telemetry.StartOperation(ctx, "volume", "transfer.confirm_runtime")
 	defer func() { end(err) }()
 	if err = service.validate(); err != nil {
 		return model.VolumeTransfer{}, err
 	}
-	projectID = strings.TrimSpace(projectID)
-	transferID = strings.TrimSpace(transferID)
-	if projectID == "" || transferID == "" || generation < 0 {
-		return model.VolumeTransfer{}, newDomainError(CodeInvalidInput, "volume transfer Job identity is invalid")
+	if strings.TrimSpace(projectID) == "" || strings.TrimSpace(transferID) == "" || generation < 1 {
+		return model.VolumeTransfer{}, newDomainError(CodeInvalidInput, "volume transfer runtime identity is invalid")
 	}
-	err = service.repository.Transaction(ctx, func(repository Repository) error {
-		transfer, lockErr := repository.LockVolumeTransfer(ctx, projectID, transferID)
-		if lockErr != nil {
-			if errors.Is(lockErr, gorm.ErrRecordNotFound) {
-				return newDomainError(CodeTransferNotFound, "volume transfer was not found")
-			}
-			return lockErr
-		}
-		if transfer.State != model.VolumeTransferStateRunning || transfer.ExecutionGeneration != generation {
-			return newDomainError(CodeTransferStateConflict, "volume transfer Job generation changed")
-		}
-		if transfer.JobCreatedAt != nil {
-			result = transfer
-			return nil
-		}
-		result, lockErr = repository.ConfirmVolumeTransferJobCreated(ctx, projectID, transferID, generation)
-		return lockErr
-	})
-	return result, err
+	return service.repository.ConfirmVolumeTransferJobCreated(ctx, strings.TrimSpace(projectID), strings.TrimSpace(transferID), generation)
 }
 
-// ReportVolumeTransferCompletion persists authenticated completion metadata
-// without making the workflow observable as successful. Kubernetes Job and
-// import PVC authority are checked later by the Worker before finalization.
-func (service *Service) ReportVolumeTransferCompletion(ctx context.Context, projectID, transferID string, completion TransferCompletion) (result model.VolumeTransfer, err error) {
-	ctx, end := telemetry.StartOperation(ctx, "volume", "transfer.report_completion")
+func (service *Service) MarkVolumeTransferReady(ctx context.Context, projectID, transferID string, generation int64) (result model.VolumeTransfer, err error) {
+	ctx, end := telemetry.StartOperation(ctx, "volume", "transfer.ready")
+	defer func() { end(err) }()
+	if err = service.validate(); err != nil {
+		return model.VolumeTransfer{}, err
+	}
+	if strings.TrimSpace(projectID) == "" || strings.TrimSpace(transferID) == "" || generation < 1 {
+		return model.VolumeTransfer{}, newDomainError(CodeInvalidInput, "volume transfer ready identity is invalid")
+	}
+	return service.repository.MarkVolumeTransferReady(ctx, strings.TrimSpace(projectID), strings.TrimSpace(transferID), generation)
+}
+
+func (service *Service) ClaimVolumeTransferStream(ctx context.Context, projectID, transferID, direction string) (result model.VolumeTransfer, err error) {
+	ctx, end := telemetry.StartOperation(ctx, "volume", "transfer.claim_stream")
 	defer func() { end(err) }()
 	if err = service.validate(); err != nil {
 		return model.VolumeTransfer{}, err
 	}
 	projectID = strings.TrimSpace(projectID)
 	transferID = strings.TrimSpace(transferID)
-	completion.ExpectedState = strings.TrimSpace(completion.ExpectedState)
+	direction = strings.TrimSpace(direction)
+	if projectID == "" || transferID == "" || !validTransferDirection(direction) {
+		return model.VolumeTransfer{}, newDomainError(CodeInvalidInput, "volume transfer stream identity is invalid")
+	}
+	return service.repository.ClaimVolumeTransferStream(ctx, projectID, transferID, direction)
+}
+
+func (service *Service) CompleteVolumeTransferStream(ctx context.Context, projectID, transferID string, completion TransferCompletion) (result model.VolumeTransfer, err error) {
+	ctx, end := telemetry.StartOperation(ctx, "volume", "transfer.complete_stream")
+	defer func() { end(err) }()
+	if err = service.validate(); err != nil {
+		return model.VolumeTransfer{}, err
+	}
+	projectID = strings.TrimSpace(projectID)
+	transferID = strings.TrimSpace(transferID)
 	completion.SHA256 = strings.ToLower(strings.TrimSpace(completion.SHA256))
 	completion.DataSHA256 = strings.ToLower(strings.TrimSpace(completion.DataSHA256))
-	if projectID == "" || transferID == "" || completion.ExpectedState != model.VolumeTransferStateRunning ||
-		completion.TransferredBytes < 1 || !validSHA256(completion.SHA256) || completion.LogicalBytes < 0 ||
-		(completion.LogicalBytes == 0) != (completion.DataSHA256 == "") ||
-		(completion.DataSHA256 != "" && !validSHA256(completion.DataSHA256)) {
-		return model.VolumeTransfer{}, newDomainError(CodeTransferChecksumInvalid, "volume transfer completion metadata is invalid")
+	if projectID == "" || transferID == "" || completion.ExpectedState != model.VolumeTransferStateStreaming || completion.TransferredBytes < 1 || completion.ProcessedFiles < 0 || !validSHA256(completion.SHA256) {
+		return model.VolumeTransfer{}, newDomainError(CodeTransferChecksumInvalid, "volume transfer completion is invalid")
 	}
 	err = service.repository.Transaction(ctx, func(repository Repository) error {
 		transfer, lockErr := repository.LockVolumeTransfer(ctx, projectID, transferID)
 		if lockErr != nil {
-			if errors.Is(lockErr, gorm.ErrRecordNotFound) {
-				return newDomainError(CodeTransferNotFound, "volume transfer was not found")
-			}
-			return lockErr
+			return normalizeRepositoryError(lockErr)
 		}
-		if transfer.State != completion.ExpectedState {
-			if transfer.State == model.VolumeTransferStateSucceeded && transfer.CompletionReportedAt != nil &&
-				transfer.TransferredBytes == completion.TransferredBytes && transfer.SHA256 == completion.SHA256 &&
-				transfer.LogicalBytes == completion.LogicalBytes && transfer.DataSHA256 == completion.DataSHA256 {
-				result = transfer
-				return nil
-			}
-			return newDomainError(CodeTransferStateConflict, "volume transfer execution state changed")
+		if transfer.State != model.VolumeTransferStateStreaming {
+			return newDomainError(CodeTransferStateConflict, "volume transfer is not streaming")
 		}
-		if transfer.CompletionReportedAt != nil {
-			if transfer.TransferredBytes == completion.TransferredBytes && transfer.SHA256 == completion.SHA256 &&
-				transfer.LogicalBytes == completion.LogicalBytes && transfer.DataSHA256 == completion.DataSHA256 {
-				result = transfer
-				return nil
-			}
-			return newDomainError(CodeTransferStateConflict, "volume transfer completion differs from the reported result")
+		if transfer.Direction == model.VolumeTransferDirectionImport && (transfer.ExpectedBytes != completion.TransferredBytes || !strings.EqualFold(transfer.SHA256, completion.SHA256)) {
+			return newDomainError(CodeTransferChecksumMismatch, "volume import content does not match its declared checksum")
 		}
 		if transfer.Format == model.VolumeTransferFormatRawZST {
 			if completion.LogicalBytes < 1 || !validSHA256(completion.DataSHA256) {
-				return newDomainError(CodeTransferChecksumInvalid, "raw volume transfer data digest is required")
+				return newDomainError(CodeTransferChecksumInvalid, "block transfer data digest is required")
 			}
 			projectVolume, volumeErr := repository.LockProjectVolume(ctx, projectID, transfer.ProjectVolumeID)
 			if volumeErr != nil {
 				return normalizeRepositoryError(volumeErr)
 			}
 			if projectVolume.VolumeMode != model.ProjectVolumeModeBlock || completion.LogicalBytes > projectVolume.CapacityBytes {
-				return newDomainError(CodeTransferCapacityExceeded, "raw volume transfer data exceeds the target capacity")
+				return newDomainError(CodeTransferCapacityExceeded, "block transfer exceeds volume capacity")
 			}
 		} else if completion.LogicalBytes != 0 || completion.DataSHA256 != "" {
-			return newDomainError(CodeTransferChecksumInvalid, "filesystem transfer cannot commit a raw data digest")
+			return newDomainError(CodeTransferChecksumInvalid, "filesystem transfer cannot report a block digest")
 		}
-		if transfer.Direction == model.VolumeTransferDirectionImport {
-			if transfer.ExpectedBytes != completion.TransferredBytes || transfer.SHA256 == "" || transfer.SHA256 != completion.SHA256 {
-				return newDomainError(CodeTransferChecksumMismatch, "volume transfer result does not match the verified import object")
-			}
-		} else if transfer.SHA256 != "" && transfer.SHA256 != completion.SHA256 {
-			return newDomainError(CodeTransferChecksumMismatch, "volume transfer result checksum changed")
-		}
-		result, lockErr = repository.ReportVolumeTransferCompletion(ctx, projectID, transferID, completion)
-		return lockErr
-	})
-	return result, err
-}
-
-// MarkVolumeTransferJobSucceeded records the Worker's authoritative
-// Kubernetes Job observation. The marker lets a retry continue finalization
-// after the Job TTL controller removes the completed Job.
-func (service *Service) MarkVolumeTransferJobSucceeded(ctx context.Context, projectID, transferID string) (result model.VolumeTransfer, err error) {
-	ctx, end := telemetry.StartOperation(ctx, "volume", "transfer.mark_job_succeeded")
-	defer func() { end(err) }()
-	if err = service.validate(); err != nil {
-		return model.VolumeTransfer{}, err
-	}
-	projectID = strings.TrimSpace(projectID)
-	transferID = strings.TrimSpace(transferID)
-	if projectID == "" || transferID == "" {
-		return model.VolumeTransfer{}, newDomainError(CodeInvalidInput, "project id and volume transfer id are required")
-	}
-	err = service.repository.Transaction(ctx, func(repository Repository) error {
-		transfer, lockErr := repository.LockVolumeTransfer(ctx, projectID, transferID)
+		result, lockErr = repository.CompleteVolumeTransferStream(ctx, projectID, transferID, completion)
 		if lockErr != nil {
-			if errors.Is(lockErr, gorm.ErrRecordNotFound) {
-				return newDomainError(CodeTransferNotFound, "volume transfer was not found")
-			}
 			return lockErr
-		}
-		if transfer.JobSucceededAt != nil &&
-			(transfer.State == model.VolumeTransferStateRunning || transfer.State == model.VolumeTransferStateSucceeded) {
-			result = transfer
-			return nil
-		}
-		if transfer.State != model.VolumeTransferStateRunning {
-			return newDomainError(CodeTransferStateConflict, "volume transfer execution state changed")
-		}
-		result, lockErr = repository.MarkVolumeTransferJobSucceeded(ctx, projectID, transferID)
-		return lockErr
-	})
-	return result, err
-}
-
-// FinalizeVolumeTransferExecution is the only successful terminal transition.
-// Imports atomically promote the ProjectVolume in the same PostgreSQL
-// transaction; exports only finalize the transfer history.
-func (service *Service) FinalizeVolumeTransferExecution(ctx context.Context, projectID, transferID string) (result model.VolumeTransfer, err error) {
-	ctx, end := telemetry.StartOperation(ctx, "volume", "transfer.finalize_execution")
-	defer func() { end(err) }()
-	if err = service.validate(); err != nil {
-		return model.VolumeTransfer{}, err
-	}
-	projectID = strings.TrimSpace(projectID)
-	transferID = strings.TrimSpace(transferID)
-	if projectID == "" || transferID == "" {
-		return model.VolumeTransfer{}, newDomainError(CodeInvalidInput, "project id and volume transfer id are required")
-	}
-	err = service.repository.Transaction(ctx, func(repository Repository) error {
-		transfer, lockErr := repository.LockVolumeTransfer(ctx, projectID, transferID)
-		if lockErr != nil {
-			if errors.Is(lockErr, gorm.ErrRecordNotFound) {
-				return newDomainError(CodeTransferNotFound, "volume transfer was not found")
-			}
-			return lockErr
-		}
-		if transfer.State == model.VolumeTransferStateSucceeded {
-			if transfer.CompletionReportedAt == nil || transfer.JobSucceededAt == nil {
-				return newDomainError(CodeTransferStateConflict, "volume transfer success evidence is incomplete")
-			}
-			if transfer.Direction == model.VolumeTransferDirectionImport {
-				projectVolume, volumeErr := repository.LockProjectVolume(ctx, projectID, transfer.ProjectVolumeID)
-				if volumeErr != nil {
-					return normalizeRepositoryError(volumeErr)
-				}
-				if projectVolume.LifecycleState != model.ProjectVolumeLifecycleReady || projectVolume.PendingOperation != "" {
-					return newDomainError(CodeStateConflict, "import project volume was not finalized atomically")
-				}
-			}
-			result = transfer
-			return nil
-		}
-		if transfer.State != model.VolumeTransferStateRunning || transfer.CompletionReportedAt == nil || transfer.JobSucceededAt == nil {
-			return newDomainError(CodeTransferStateConflict, "volume transfer is not ready to finalize")
 		}
 		if transfer.Direction == model.VolumeTransferDirectionImport {
 			projectVolume, volumeErr := repository.LockProjectVolume(ctx, projectID, transfer.ProjectVolumeID)
 			if volumeErr != nil {
 				return normalizeRepositoryError(volumeErr)
 			}
-			if projectVolume.SourceKind != model.ProjectVolumeSourceArchiveImport ||
-				projectVolume.LifecycleState != model.ProjectVolumeLifecycleProvisioning || projectVolume.PendingOperation != OperationImport {
-				return newDomainError(CodeStateConflict, "import project volume is not ready to finalize")
+			if projectVolume.LifecycleState != model.ProjectVolumeLifecycleProvisioning || projectVolume.PendingOperation != OperationImport {
+				return newDomainError(CodeStateConflict, "import project volume is not awaiting completion")
 			}
-			if _, volumeErr = repository.TransitionProjectVolume(ctx, projectID, projectVolume.ID,
-				[]string{model.ProjectVolumeLifecycleProvisioning}, model.ProjectVolumeLifecycleReady, "", ""); volumeErr != nil {
-				return volumeErr
-			}
+			_, volumeErr = repository.TransitionProjectVolume(ctx, projectID, projectVolume.ID, []string{model.ProjectVolumeLifecycleProvisioning}, model.ProjectVolumeLifecycleReady, "", "")
+			return volumeErr
 		}
-		result, lockErr = repository.FinalizeVolumeTransferExecution(ctx, projectID, transferID)
-		return lockErr
+		return nil
 	})
+	if err == nil {
+		service.dispatchTerminalCleanup(ctx, result)
+	}
 	return result, err
 }
 
-// FailVolumeTransferExecution is the only failed terminal transition used by
-// transfer Jobs and Workers. Import failures move the transfer and its
-// provisional ProjectVolume to their error states in one transaction, so a
-// retry cannot observe a terminal transfer with a permanently provisioning
-// volume.
 func (service *Service) FailVolumeTransferExecution(ctx context.Context, projectID, transferID, errorCode, internalMessage string) (result model.VolumeTransfer, err error) {
 	ctx, end := telemetry.StartOperation(ctx, "volume", "transfer.fail_execution")
 	defer func() { end(err) }()
@@ -1420,12 +1082,52 @@ func (service *Service) FailVolumeTransferExecution(ctx context.Context, project
 		}
 		return nil
 	})
+	if err == nil {
+		service.dispatchTerminalCleanup(ctx, result)
+	}
+	return result, err
+}
+
+// FailStaleVolumeTransfer atomically lets the stream heartbeat or the stale
+// recovery worker win. A zero-row compare-and-swap is returned as a stable
+// state conflict so the worker must not clean a live transfer Pod.
+func (service *Service) FailStaleVolumeTransfer(ctx context.Context, projectID, transferID string, cutoff time.Time, errorCode, internalMessage string) (result model.VolumeTransfer, err error) {
+	ctx, end := telemetry.StartOperation(ctx, "volume", "transfer.fail_stale")
+	defer func() { end(err) }()
+	if err = service.validate(); err != nil {
+		return model.VolumeTransfer{}, err
+	}
+	projectID = strings.TrimSpace(projectID)
+	transferID = strings.TrimSpace(transferID)
+	errorCode = strings.TrimSpace(errorCode)
+	internalMessage = strings.TrimSpace(internalMessage)
+	if projectID == "" || transferID == "" || cutoff.IsZero() || errorCode == "" || len(errorCode) > 128 {
+		return model.VolumeTransfer{}, newDomainError(CodeInvalidInput, "stale volume transfer failure is invalid")
+	}
+	err = service.repository.Transaction(ctx, func(repository Repository) error {
+		var failErr error
+		result, failErr = repository.FailStaleVolumeTransfer(ctx, projectID, transferID, cutoff, errorCode, internalMessage)
+		if failErr != nil {
+			return failErr
+		}
+		if result.Direction != model.VolumeTransferDirectionImport {
+			return nil
+		}
+		projectVolume, volumeErr := repository.LockProjectVolume(ctx, projectID, result.ProjectVolumeID)
+		if volumeErr != nil {
+			return normalizeRepositoryError(volumeErr)
+		}
+		if projectVolume.LifecycleState == model.ProjectVolumeLifecycleProvisioning && projectVolume.PendingOperation == OperationImport {
+			_, volumeErr = repository.TransitionProjectVolume(ctx, projectID, projectVolume.ID,
+				[]string{model.ProjectVolumeLifecycleProvisioning}, model.ProjectVolumeLifecycleError, errorCode, internalMessage)
+		}
+		return volumeErr
+	})
 	return result, err
 }
 
 // MarkVolumeTransferExecutionCleanupCompleted persists proof that all
-// execution-scoped Kubernetes resources were removed. ProjectVolume deletion
-// and object-retention cleanup remain blocked until this marker exists.
+// execution-scoped Kubernetes resources were removed.
 func (service *Service) MarkVolumeTransferExecutionCleanupCompleted(ctx context.Context, projectID, transferID string) (result model.VolumeTransfer, err error) {
 	ctx, end := telemetry.StartOperation(ctx, "volume", "transfer.mark_execution_cleanup")
 	defer func() { end(err) }()
@@ -1535,256 +1237,6 @@ func (service *Service) UpdateVolumeTransferProgress(ctx context.Context, projec
 	return result, normalizeRepositoryError(err)
 }
 
-const volumeTransferPartLeaseDuration = 15 * time.Minute
-
-// TransferPartWriter streams one multipart object part after a short database
-// transaction has reserved its stable S3 part number. The lease row prevents
-// different payloads from sharing an offset without holding a database
-// connection or row lock across object-store network I/O.
-type TransferPartWriter func(context.Context, int) (etag string, err error)
-
-// PreflightVolumeTransferPart rejects an already-active or conflicting
-// reservation before the HTTP layer reads and spools a potentially large
-// request body. It is advisory: WriteVolumeTransferPart repeats every check in
-// a transaction to remain correct when another replica wins after preflight.
-func (service *Service) PreflightVolumeTransferPart(ctx context.Context, projectID, transferID string, part model.VolumeTransferPart) (err error) {
-	ctx, end := telemetry.StartOperation(ctx, "volume", "transfer.part_preflight")
-	defer func() { end(err) }()
-	if err = service.validate(); err != nil {
-		return err
-	}
-	projectID = strings.TrimSpace(projectID)
-	transferID = strings.TrimSpace(transferID)
-	part.SHA256 = strings.ToLower(strings.TrimSpace(part.SHA256))
-	if projectID == "" || transferID == "" || part.Offset < 0 || part.Size < 1 || !validSHA256(part.SHA256) {
-		return newDomainError(CodeInvalidInput, "volume transfer part is invalid")
-	}
-	transfer, err := service.repository.GetVolumeTransfer(ctx, projectID, transferID)
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return newDomainError(CodeTransferNotFound, "volume transfer was not found")
-		}
-		return normalizeRepositoryError(err)
-	}
-	if transfer.State != model.VolumeTransferStateUploading && transfer.State != model.VolumeTransferStateRunning {
-		return newDomainError(CodeTransferStateConflict, "volume transfer does not accept content in its current state")
-	}
-	partEnd, validRange := safeTransferPartEnd(part.Offset, part.Size)
-	if !validRange || (transfer.ExpectedBytes > 0 && partEnd > transfer.ExpectedBytes) {
-		return newDomainError(CodeTransferProgressInvalid, "volume transfer part exceeds the expected content length")
-	}
-	offset, err := service.repository.VolumeTransferUploadOffset(ctx, transferID)
-	if err != nil {
-		return normalizeRepositoryError(err)
-	}
-	if part.Offset > offset {
-		return newDomainError(CodeTransferOffsetMismatch, "volume transfer part offset does not match the server offset")
-	}
-	existing, existingErr := service.repository.GetVolumeTransferPartByOffset(ctx, transferID, part.Offset)
-	if existingErr != nil {
-		if errors.Is(existingErr, gorm.ErrRecordNotFound) {
-			if part.Offset < offset {
-				return newDomainError(CodeTransferOffsetMismatch, "volume transfer part offset does not match the server offset")
-			}
-			return nil
-		}
-		return normalizeRepositoryError(existingErr)
-	}
-	if existing.Size != part.Size || existing.SHA256 != part.SHA256 {
-		return newDomainError(CodeTransferPartConflict, "volume transfer offset is reserved for different content")
-	}
-	if existing.State == model.VolumeTransferPartStateCompleted {
-		return nil
-	}
-	if existing.State != model.VolumeTransferPartStateReserved {
-		return newDomainError(CodeTransferPartConflict, "volume transfer part reservation is invalid")
-	}
-	if existing.LeaseExpiresAt != nil && existing.LeaseExpiresAt.After(timeNowUTC()) {
-		return newDomainError(CodeTransferPartInProgress, "volume transfer part is already being uploaded")
-	}
-	return nil
-}
-
-func (service *Service) WriteVolumeTransferPart(ctx context.Context, projectID, transferID string, part model.VolumeTransferPart, writer TransferPartWriter) (result model.VolumeTransferPart, nextOffset int64, err error) {
-	ctx, end := telemetry.StartOperation(ctx, "volume", "transfer.part")
-	defer func() { end(err) }()
-	if err = service.validate(); err != nil {
-		return model.VolumeTransferPart{}, 0, err
-	}
-	projectID = strings.TrimSpace(projectID)
-	transferID = strings.TrimSpace(transferID)
-	part.TransferID = transferID
-	part.SHA256 = strings.ToLower(strings.TrimSpace(part.SHA256))
-	if projectID == "" || transferID == "" || part.Offset < 0 || part.Size < 1 || !validSHA256(part.SHA256) || writer == nil {
-		return model.VolumeTransferPart{}, 0, newDomainError(CodeInvalidInput, "volume transfer part is invalid")
-	}
-	leaseToken := id.New("vtpl")
-	part, nextOffset, completed, err := service.reserveVolumeTransferPart(ctx, projectID, transferID, part, leaseToken)
-	if err != nil || completed {
-		return part, nextOffset, err
-	}
-	etag, writeErr := writer(ctx, part.PartNumber)
-	etag = strings.TrimSpace(etag)
-	if writeErr != nil || etag == "" {
-		service.expireVolumeTransferPartLease(ctx, transferID, part.PartNumber, leaseToken)
-		if writeErr != nil {
-			return model.VolumeTransferPart{}, nextOffset, writeErr
-		}
-		return model.VolumeTransferPart{}, nextOffset, newDomainError(CodeTransferStoreUnavailable, "volume transfer store returned an invalid part")
-	}
-	result, nextOffset, err = service.completeVolumeTransferPart(ctx, projectID, transferID, part, leaseToken, etag)
-	if err != nil {
-		// The CAS may have committed even when the response was lost. Expiry is
-		// safe because it only changes this still-reserved lease token.
-		service.expireVolumeTransferPartLease(ctx, transferID, part.PartNumber, leaseToken)
-	}
-	return result, nextOffset, err
-}
-
-func (service *Service) expireVolumeTransferPartLease(ctx context.Context, transferID string, partNumber int, leaseToken string) {
-	// Lease release is a bounded cleanup that must survive request
-	// cancellation; WithoutCancel retains trace values while preventing a
-	// cancelled upload from forcing every retry to wait for lease expiry.
-	releaseCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
-	_, _ = service.repository.ExpireVolumeTransferPartLease(releaseCtx, transferID, partNumber, leaseToken, timeNowUTC())
-	cancel()
-}
-
-func (service *Service) reserveVolumeTransferPart(ctx context.Context, projectID, transferID string, part model.VolumeTransferPart, leaseToken string) (result model.VolumeTransferPart, nextOffset int64, completed bool, err error) {
-	leaseExpiresAt := timeNowUTC().Add(volumeTransferPartLeaseDuration)
-	err = service.repository.Transaction(ctx, func(repository Repository) error {
-		transfer, lockErr := repository.LockVolumeTransfer(ctx, projectID, transferID)
-		if lockErr != nil {
-			if errors.Is(lockErr, gorm.ErrRecordNotFound) {
-				return newDomainError(CodeTransferNotFound, "volume transfer was not found")
-			}
-			return lockErr
-		}
-		if transfer.State != model.VolumeTransferStateUploading && transfer.State != model.VolumeTransferStateRunning {
-			return newDomainError(CodeTransferStateConflict, "volume transfer does not accept content in its current state")
-		}
-		partEnd, validRange := safeTransferPartEnd(part.Offset, part.Size)
-		if !validRange {
-			return newDomainError(CodeTransferProgressInvalid, "volume transfer part range overflows")
-		}
-		offset, offsetErr := repository.VolumeTransferUploadOffset(ctx, transferID)
-		if offsetErr != nil {
-			return offsetErr
-		}
-		nextOffset = offset
-		if part.Offset > offset {
-			return newDomainError(CodeTransferOffsetMismatch, "volume transfer part offset does not match the server offset")
-		}
-		if transfer.ExpectedBytes > 0 && partEnd > transfer.ExpectedBytes {
-			return newDomainError(CodeTransferProgressInvalid, "volume transfer part exceeds the expected content length")
-		}
-		if part.Offset < offset {
-			existing, existingErr := repository.GetVolumeTransferPartByOffset(ctx, transferID, part.Offset)
-			if existingErr != nil {
-				if errors.Is(existingErr, gorm.ErrRecordNotFound) {
-					return newDomainError(CodeTransferOffsetMismatch, "volume transfer part offset does not match the server offset")
-				}
-				return existingErr
-			}
-			if existing.State != model.VolumeTransferPartStateCompleted || existing.Size != part.Size || existing.SHA256 != part.SHA256 {
-				return newDomainError(CodeTransferOffsetMismatch, "volume transfer part offset does not match the server offset")
-			}
-			result = existing
-			completed = true
-			return nil
-		}
-		existing, existingErr := repository.GetVolumeTransferPartByOffset(ctx, transferID, part.Offset)
-		if existingErr == nil {
-			if existing.Size != part.Size || existing.SHA256 != part.SHA256 {
-				return newDomainError(CodeTransferPartConflict, "volume transfer offset is reserved for different content")
-			}
-			if existing.State == model.VolumeTransferPartStateCompleted {
-				result = existing
-				nextOffset = partEnd
-				completed = true
-				return nil
-			}
-			if existing.State != model.VolumeTransferPartStateReserved {
-				return newDomainError(CodeTransferPartConflict, "volume transfer part reservation is invalid")
-			}
-			if existing.LeaseExpiresAt != nil && existing.LeaseExpiresAt.After(timeNowUTC()) {
-				return newDomainError(CodeTransferPartInProgress, "volume transfer part is already being uploaded")
-			}
-			taken, stored, takeErr := repository.TakeOverVolumeTransferPart(ctx, transferID, existing.PartNumber, existing.LeaseToken, leaseToken, leaseExpiresAt)
-			if takeErr != nil {
-				return takeErr
-			}
-			if !taken {
-				return newDomainError(CodeTransferPartInProgress, "volume transfer part reservation changed")
-			}
-			result = stored
-			return nil
-		}
-		if !errors.Is(existingErr, gorm.ErrRecordNotFound) {
-			return existingErr
-		}
-		part.PartNumber, offsetErr = repository.NextVolumeTransferPartNumber(ctx, transferID)
-		if offsetErr != nil {
-			return offsetErr
-		}
-		if part.PartNumber < 1 || part.PartNumber > 10_000 {
-			return newDomainError(CodeTransferProgressInvalid, "volume transfer contains too many parts")
-		}
-		part.ETag = ""
-		part.State = model.VolumeTransferPartStateReserved
-		part.LeaseToken = leaseToken
-		part.LeaseExpiresAt = &leaseExpiresAt
-		created, stored, offsetErr := repository.CreateVolumeTransferPart(ctx, &part)
-		if offsetErr != nil {
-			return normalizeRepositoryError(offsetErr)
-		}
-		if !created {
-			return newDomainError(CodeTransferPartInProgress, "volume transfer part reservation changed")
-		}
-		result = stored
-		return nil
-	})
-	return result, nextOffset, completed, normalizeRepositoryError(err)
-}
-
-func (service *Service) completeVolumeTransferPart(ctx context.Context, projectID, transferID string, part model.VolumeTransferPart, leaseToken, etag string) (result model.VolumeTransferPart, nextOffset int64, err error) {
-	err = service.repository.Transaction(ctx, func(repository Repository) error {
-		transfer, lockErr := repository.LockVolumeTransfer(ctx, projectID, transferID)
-		if lockErr != nil {
-			if errors.Is(lockErr, gorm.ErrRecordNotFound) {
-				return newDomainError(CodeTransferNotFound, "volume transfer was not found")
-			}
-			return lockErr
-		}
-		if transfer.State != model.VolumeTransferStateUploading && transfer.State != model.VolumeTransferStateRunning {
-			return newDomainError(CodeTransferStateConflict, "volume transfer does not accept content in its current state")
-		}
-		committed, stored, commitErr := repository.CompleteVolumeTransferPart(ctx, transferID, part.PartNumber, leaseToken, etag)
-		if commitErr != nil {
-			return commitErr
-		}
-		if !committed {
-			if stored.State == model.VolumeTransferPartStateCompleted && stored.Offset == part.Offset && stored.Size == part.Size && stored.SHA256 == part.SHA256 {
-				result = stored
-				nextOffset = stored.Offset + stored.Size
-				return nil
-			}
-			return newDomainError(CodeTransferPartInProgress, "volume transfer part reservation changed")
-		}
-		result = stored
-		nextOffset = stored.Offset + stored.Size
-		return nil
-	})
-	return result, nextOffset, normalizeRepositoryError(err)
-}
-
-func (service *Service) ListVolumeTransferParts(ctx context.Context, transferID string, page, pageSize int) ([]model.VolumeTransferPart, int64, error) {
-	if err := service.validate(); err != nil {
-		return nil, 0, err
-	}
-	return service.repository.ListVolumeTransferParts(ctx, strings.TrimSpace(transferID), page, pageSize)
-}
-
 func (service *Service) ListStaleProjectVolumeOperations(ctx context.Context, options MaintenanceScanOptions) ([]model.ProjectVolume, error) {
 	if err := service.validate(); err != nil {
 		return nil, err
@@ -1805,18 +1257,18 @@ func (service *Service) ListStaleVolumeTransferOperations(ctx context.Context, o
 	return service.repository.ListStaleVolumeTransfers(ctx, options.Cutoff, normalizeMaintenanceLimit(options.Limit))
 }
 
-func (service *Service) ListExpiredVolumeTransferObjects(ctx context.Context, now time.Time, limit int) ([]model.VolumeTransfer, error) {
+func (service *Service) ListExpiredVolumeTransfers(ctx context.Context, now time.Time, limit int) ([]model.VolumeTransfer, error) {
 	if err := service.validate(); err != nil {
 		return nil, err
 	}
 	if now.IsZero() {
-		return nil, newDomainError(CodeInvalidInput, "maintenance time is required")
+		return nil, newDomainError(CodeInvalidInput, "volume transfer expiry time is required")
 	}
-	return service.repository.ListExpiredVolumeTransferObjects(ctx, now, normalizeMaintenanceLimit(limit))
+	return service.repository.ListExpiredVolumeTransfers(ctx, now, normalizeMaintenanceLimit(limit))
 }
 
 func (service *Service) ExpireVolumeTransfer(ctx context.Context, projectID, transferID string, now time.Time) (result model.VolumeTransfer, err error) {
-	ctx, end := telemetry.StartOperation(ctx, "volume", "transfer.cleanup")
+	ctx, end := telemetry.StartOperation(ctx, "volume", "transfer.expire")
 	defer func() { end(err) }()
 	if err = service.validate(); err != nil {
 		return model.VolumeTransfer{}, err
@@ -1824,178 +1276,23 @@ func (service *Service) ExpireVolumeTransfer(ctx context.Context, projectID, tra
 	projectID = strings.TrimSpace(projectID)
 	transferID = strings.TrimSpace(transferID)
 	if projectID == "" || transferID == "" || now.IsZero() {
-		return model.VolumeTransfer{}, newDomainError(CodeInvalidInput, "project id, transfer id, and cleanup time are required")
-	}
-	err = service.repository.Transaction(ctx, func(repository Repository) error {
-		transfer, lockErr := repository.LockVolumeTransfer(ctx, projectID, transferID)
-		if lockErr != nil {
-			if errors.Is(lockErr, gorm.ErrRecordNotFound) {
-				return newDomainError(CodeTransferNotFound, "volume transfer was not found")
-			}
-			return lockErr
-		}
-		if transfer.ExpiresAt.After(now) {
-			return newDomainError(CodeTransferStateConflict, "volume transfer has not expired")
-		}
-		if transfer.State == model.VolumeTransferStateExpired {
-			result = transfer
-			return nil
-		}
-		if transfer.State != model.VolumeTransferStateCreated && transfer.State != model.VolumeTransferStateUploading {
-			return newDomainError(CodeTransferStateConflict, "only incomplete uploads can enter expired state")
-		}
-		result, lockErr = repository.TransitionVolumeTransfer(ctx, projectID, transferID, transfer.State,
-			model.VolumeTransferStateExpired, CodeTransferExpired, "volume transfer upload expired")
-		return lockErr
-	})
-	return result, err
-}
-
-func (service *Service) ClaimVolumeTransferObjectCleanup(ctx context.Context, projectID, transferID, leaseToken string, leaseExpiresAt time.Time) (result model.VolumeTransfer, err error) {
-	ctx, end := telemetry.StartOperation(ctx, "volume", "transfer.claim_object_cleanup")
-	defer func() { end(err) }()
-	if err = service.validate(); err != nil {
-		return model.VolumeTransfer{}, err
-	}
-	projectID = strings.TrimSpace(projectID)
-	transferID = strings.TrimSpace(transferID)
-	leaseToken = strings.TrimSpace(leaseToken)
-	now := timeNowUTC()
-	if projectID == "" || transferID == "" || len(leaseToken) < 8 || len(leaseToken) > 128 || !leaseExpiresAt.After(now) {
-		return model.VolumeTransfer{}, newDomainError(CodeInvalidInput, "volume transfer object cleanup lease is invalid")
+		return model.VolumeTransfer{}, newDomainError(CodeInvalidInput, "volume transfer expiry identity is invalid")
 	}
 	err = service.repository.Transaction(ctx, func(repository Repository) error {
 		transfer, lockErr := repository.LockVolumeTransfer(ctx, projectID, transferID)
 		if lockErr != nil {
 			return normalizeRepositoryError(lockErr)
 		}
-		if transfer.ObjectDeletedAt != nil || !transfer.ObjectOwned {
+		if transfer.State == model.VolumeTransferStateExpired {
 			result = transfer
 			return nil
 		}
-		if !IsVolumeTransferTerminal(transfer.State) {
-			return newDomainError(CodeTransferStateConflict, "volume transfer object cleanup requires a terminal state")
+		if transfer.ExpiresAt.After(now) || !oneOf(transfer.State, model.VolumeTransferStateCreated, model.VolumeTransferStatePreparing, model.VolumeTransferStateReady) {
+			return newDomainError(CodeTransferStateConflict, "volume transfer is not eligible for expiry")
 		}
-		if transfer.ExecutionCleanupCompletedAt == nil {
-			return newDomainError(CodeDeletionPending, "volume transfer execution cleanup is pending")
-		}
-		if transfer.ObjectCleanupLeaseExpiresAt != nil && transfer.ObjectCleanupLeaseExpiresAt.After(now) {
-			return newDomainError(CodeDeletionPending, "volume transfer object cleanup is already in progress")
-		}
-		claimed, stored, claimErr := repository.ClaimVolumeTransferObjectCleanup(ctx, projectID, transferID, leaseToken, now, leaseExpiresAt)
-		if claimErr != nil {
-			return claimErr
-		}
-		if !claimed {
-			return newDomainError(CodeTransferStateConflict, "volume transfer object cleanup ownership changed")
-		}
-		result = stored
-		return nil
-	})
-	return result, err
-}
-
-func (service *Service) RenewVolumeTransferObjectCleanup(ctx context.Context, projectID, transferID, leaseToken string, leaseExpiresAt time.Time) (result model.VolumeTransfer, err error) {
-	ctx, end := telemetry.StartOperation(ctx, "volume", "transfer.renew_object_cleanup")
-	defer func() { end(err) }()
-	if err = service.validate(); err != nil {
-		return model.VolumeTransfer{}, err
-	}
-	projectID = strings.TrimSpace(projectID)
-	transferID = strings.TrimSpace(transferID)
-	leaseToken = strings.TrimSpace(leaseToken)
-	now := timeNowUTC()
-	if projectID == "" || transferID == "" || len(leaseToken) < 8 || len(leaseToken) > 128 || !leaseExpiresAt.After(now) {
-		return model.VolumeTransfer{}, newDomainError(CodeInvalidInput, "volume transfer object cleanup lease renewal is invalid")
-	}
-	renewed, result, err := service.repository.RenewVolumeTransferObjectCleanup(ctx, projectID, transferID, leaseToken, now, leaseExpiresAt)
-	if err != nil {
-		return model.VolumeTransfer{}, err
-	}
-	if !renewed {
-		return model.VolumeTransfer{}, newDomainError(CodeTransferStateConflict, "volume transfer object cleanup lease was lost")
-	}
-	return result, nil
-}
-
-func (service *Service) CompleteVolumeTransferObjectCleanup(ctx context.Context, projectID, transferID, leaseToken string, deletedAt time.Time) (result model.VolumeTransfer, err error) {
-	ctx, end := telemetry.StartOperation(ctx, "volume", "transfer.complete_object_cleanup")
-	defer func() { end(err) }()
-	if err = service.validate(); err != nil {
-		return model.VolumeTransfer{}, err
-	}
-	projectID = strings.TrimSpace(projectID)
-	transferID = strings.TrimSpace(transferID)
-	leaseToken = strings.TrimSpace(leaseToken)
-	if projectID == "" || transferID == "" || len(leaseToken) < 8 || len(leaseToken) > 128 || deletedAt.IsZero() {
-		return model.VolumeTransfer{}, newDomainError(CodeInvalidInput, "volume transfer object cleanup completion is invalid")
-	}
-	completed, result, err := service.repository.CompleteVolumeTransferObjectCleanup(ctx, projectID, transferID, leaseToken, deletedAt)
-	if err != nil {
-		return model.VolumeTransfer{}, err
-	}
-	if !completed {
-		return model.VolumeTransfer{}, newDomainError(CodeTransferStateConflict, "volume transfer object cleanup lease was lost")
-	}
-	return result, nil
-}
-
-func (service *Service) ReleaseVolumeTransferObjectCleanup(ctx context.Context, projectID, transferID, leaseToken string) (err error) {
-	ctx, end := telemetry.StartOperation(ctx, "volume", "transfer.release_object_cleanup")
-	defer func() { end(err) }()
-	if err = service.validate(); err != nil {
-		return err
-	}
-	projectID = strings.TrimSpace(projectID)
-	transferID = strings.TrimSpace(transferID)
-	leaseToken = strings.TrimSpace(leaseToken)
-	if projectID == "" || transferID == "" || len(leaseToken) < 8 || len(leaseToken) > 128 {
-		return newDomainError(CodeInvalidInput, "volume transfer object cleanup release is invalid")
-	}
-	_, err = service.repository.ReleaseVolumeTransferObjectCleanup(ctx, projectID, transferID, leaseToken, timeNowUTC())
-	return err
-}
-
-func (service *Service) MarkVolumeTransferObjectDeleted(ctx context.Context, projectID, transferID string, deletedAt time.Time) (result model.VolumeTransfer, err error) {
-	ctx, end := telemetry.StartOperation(ctx, "volume", "transfer.cleanup")
-	defer func() { end(err) }()
-	if err = service.validate(); err != nil {
-		return model.VolumeTransfer{}, err
-	}
-	projectID = strings.TrimSpace(projectID)
-	transferID = strings.TrimSpace(transferID)
-	if projectID == "" || transferID == "" || deletedAt.IsZero() {
-		return model.VolumeTransfer{}, newDomainError(CodeInvalidInput, "project id, transfer id, and deletion time are required")
-	}
-	err = service.repository.Transaction(ctx, func(repository Repository) error {
-		transfer, lockErr := repository.LockVolumeTransfer(ctx, projectID, transferID)
-		if lockErr != nil {
-			if errors.Is(lockErr, gorm.ErrRecordNotFound) {
-				return newDomainError(CodeTransferNotFound, "volume transfer was not found")
-			}
-			return lockErr
-		}
-		if transfer.ObjectDeletedAt != nil {
-			result = transfer
-			return nil
-		}
-		if !IsVolumeTransferTerminal(transfer.State) {
-			return newDomainError(CodeTransferStateConflict, "volume transfer object can only be deleted after a terminal state")
-		}
-		if transfer.ExecutionCleanupCompletedAt == nil {
-			return newDomainError(CodeDeletionPending, "volume transfer execution cleanup is pending")
-		}
-		marked, markErr := repository.MarkVolumeTransferObjectDeleted(ctx, projectID, transferID, deletedAt)
-		if markErr != nil {
-			return markErr
-		}
-		if !marked {
-			return newDomainError(CodeTransferStateConflict, "volume transfer object cleanup state changed")
-		}
-		deletedAt = deletedAt.UTC()
-		transfer.ObjectDeletedAt = &deletedAt
-		result = transfer
-		return nil
+		result, lockErr = repository.TransitionVolumeTransfer(ctx, projectID, transferID, transfer.State,
+			model.VolumeTransferStateExpired, CodeTransferExpired, "direct transfer session expired before streaming")
+		return lockErr
 	})
 	return result, err
 }
@@ -2008,6 +1305,22 @@ func (service *Service) dispatch(ctx context.Context, operation VolumeOperation)
 		return newDomainError(CodeTaskEnqueueFailed, "volume operation could not be queued", err)
 	}
 	return nil
+}
+
+func (service *Service) dispatchTerminalCleanup(ctx context.Context, transfer model.VolumeTransfer) {
+	if service == nil || service.dispatcher == nil || transfer.ID == "" || !IsVolumeTransferTerminal(transfer.State) {
+		return
+	}
+	dispatchCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	if err := service.dispatcher.DispatchVolumeOperation(dispatchCtx, VolumeOperation{
+		Kind: OperationCleanup, ProjectID: transfer.ProjectID, VolumeID: transfer.ProjectVolumeID,
+		TransferID: transfer.ID, ActorID: transfer.ActorID,
+	}); err != nil {
+		telemetry.Logger().Error("Volume transfer targeted cleanup enqueue failed",
+			"event.name", "volume_transfer.cleanup.enqueue_failed",
+			"error.type", telemetry.ErrorType(err))
+	}
 }
 
 func (service *Service) validate() error {
@@ -2030,45 +1343,16 @@ func idempotentVolumeTransferID(input CreateVolumeTransferInput) string {
 }
 
 func sameVolumeTransferRequest(existing model.VolumeTransfer, input CreateVolumeTransferInput) bool {
-	objectKey := input.ObjectKey
-	if objectKey == "" {
-		objectKey = "transfers/" + existing.ID
-	}
 	return existing.ProjectID == input.ProjectID &&
 		existing.ProjectVolumeID == input.ProjectVolumeID &&
 		existing.Direction == input.Direction &&
 		existing.Format == input.Format &&
 		existing.ConsistencyMode == input.ConsistencyMode &&
-		existing.ObjectKey == objectKey &&
 		existing.SourceFilename == input.SourceFilename &&
 		existing.ExpectedBytes == input.ExpectedBytes &&
 		existing.SHA256 == input.SHA256 &&
 		existing.ActorID == input.ActorID &&
 		existing.ExpiresAt.UTC().Truncate(time.Microsecond).Equal(input.ExpiresAt.UTC().Truncate(time.Microsecond))
-}
-
-func sameRetryObject(original model.VolumeTransfer, input CreateVolumeTransferInput) bool {
-	return original.ProjectID == input.ProjectID &&
-		original.ProjectVolumeID == input.ProjectVolumeID &&
-		original.ObjectKey == input.ObjectKey &&
-		original.Format == input.Format &&
-		original.ConsistencyMode == input.ConsistencyMode &&
-		original.SourceFilename == input.SourceFilename &&
-		original.ExpectedBytes == input.ExpectedBytes &&
-		original.SHA256 == input.SHA256
-}
-
-func sameRetryTransferRequest(existing model.VolumeTransfer, input CreateVolumeTransferInput) bool {
-	return existing.ProjectID == input.ProjectID &&
-		existing.ProjectVolumeID == input.ProjectVolumeID &&
-		existing.Direction == input.Direction &&
-		existing.Format == input.Format &&
-		existing.ConsistencyMode == input.ConsistencyMode &&
-		existing.ObjectKey == input.ObjectKey &&
-		existing.SourceFilename == input.SourceFilename &&
-		existing.ExpectedBytes == input.ExpectedBytes &&
-		existing.SHA256 == input.SHA256 &&
-		existing.ActorID == input.ActorID
 }
 
 func hashCreateProjectVolumeRequest(input CreateProjectVolumeInput) (string, error) {

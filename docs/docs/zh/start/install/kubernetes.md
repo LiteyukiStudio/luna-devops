@@ -1,6 +1,8 @@
 # Kubernetes (Helm) 部署
 
-如果准备把 Luna DevOps 长期运行在 Kubernetes 或 K3s 中，推荐使用 Helm。Chart 会一起部署 API、Worker、PostgreSQL 和 Redis，也可以改为连接已有的外部数据库与 Redis。
+如果准备把 Luna DevOps 长期运行在 Kubernetes 中，推荐使用 Helm。Chart 会一起部署 API、Worker、PostgreSQL 和 Redis，也可以改为连接已有的外部数据库与 Redis。
+
+本文命令以标准 Kubernetes 为基准，也兼容满足[兼容范围](/reference/compatibility)的 K3s 和其他 Kubernetes 发行版；发行版特有的存储、Ingress 或安全策略需要由集群管理员适配。
 
 ## 开始前准备
 
@@ -95,16 +97,13 @@ helm upgrade --install luna-devops ./charts/luna-devops \
 
 | 配置项 | 默认值 | 说明 |
 | --- | --- | --- |
-| `app.publicBaseUrl` | `http://localhost:8088` | 控制台对外访问地址。启用 Ingress 后必须改成公网地址。 |
-| `app.secretEncryptionKey` | 首次安装自动生成 | 用于加密 Git、镜像站和 OIDC 密钥。生产环境要保持稳定。 |
-| `api.image.tag` / `worker.image.tag` | `nightly` | API 和 worker 镜像版本。 |
-| `ai.enabled` | `false` | 是否部署独立 AI Agent。启用时必须设置含 `ai-internal-secret` 的 `ai.existingSecret`。 |
-| `ai.internalSecretKey` | `ai-internal-secret` | `ai.existingSecret` 中保存 AI 内部根密钥的 key 名称。 |
-| `ai.agent.image.tag` | 与 Chart `appVersion` 一致 | Agent 镜像版本。正式发版与 API、Worker 使用同一 tag。 |
-| `postgresql.enabled` | `true` | 是否安装内置 PostgreSQL。 |
-| `redis.enabled` | `true` | 是否安装内置 Redis。 |
-| `externalRedis.url` | 空 | 外部 Redis 完整连接 URI；关闭内置 Redis 时配置。 |
-| `worker.buildEgressMode` | `restricted` | 构建 Job 出站网络模式。默认限制对集群内服务的访问；只有明确接受风险时才改为 `permissive`。 |
+| `app.publicBaseUrl` | `http://localhost:8088` | 设置用户访问平台的根地址；填写 HTTP(S) URL。 |
+| `app.secretEncryptionKey` | 自动生成 | 加密平台保存的凭据；填写稳定的非空密钥。 |
+| `api.image.tag` / `worker.image.tag` | `nightly` | 选择 API 与 Worker 镜像版本；填写镜像标签。 |
+| `ai.enabled` / `ai.existingSecret` | `false` / 空 | 启用 Agent 并指定内部密钥；分别填写布尔值和 Kubernetes Secret 名称。 |
+| `postgresql.enabled` / `externalDatabase.url` | `true` / 空 | 选择内置或外部 PostgreSQL；分别填写布尔值和 PostgreSQL 连接 URI。 |
+| `redis.enabled` / `externalRedis.url` | `true` / 空 | 选择内置或外部 Redis；分别填写布尔值和 `redis://` 或 `rediss://` URI。 |
+| `worker.buildEgressMode` | `restricted` | 设置构建网络出口策略；可填 `restricted` 或 `permissive`。 |
 
 ## 卸载
 

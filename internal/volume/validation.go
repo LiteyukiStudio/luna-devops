@@ -1,7 +1,6 @@
 package volume
 
 import (
-	"math"
 	"path"
 	"regexp"
 	"strings"
@@ -257,8 +256,6 @@ func normalizeCreateVolumeTransferInput(input CreateVolumeTransferInput) CreateV
 	input.Direction = strings.TrimSpace(input.Direction)
 	input.Format = strings.TrimSpace(input.Format)
 	input.ConsistencyMode = strings.TrimSpace(input.ConsistencyMode)
-	input.ObjectKey = strings.TrimSpace(input.ObjectKey)
-	input.MultipartUploadID = strings.TrimSpace(input.MultipartUploadID)
 	input.SourceFilename = strings.TrimSpace(input.SourceFilename)
 	input.SHA256 = strings.ToLower(strings.TrimSpace(input.SHA256))
 	input.ActorID = strings.TrimSpace(input.ActorID)
@@ -276,31 +273,19 @@ func validateCreateVolumeTransferInput(input CreateVolumeTransferInput) error {
 	if !oneOf(input.ConsistencyMode, model.VolumeTransferConsistencySnapshot, model.VolumeTransferConsistencyLive, model.VolumeTransferConsistencyUnmounted) {
 		return newDomainError(CodeInvalidInput, "volume transfer consistency mode is invalid")
 	}
-	if input.Direction == model.VolumeTransferDirectionImport && !input.StartUploading && !input.VerifiedObject {
-		return newDomainError(CodeInvalidInput, "external volume imports must begin in uploading state")
-	}
-	if input.Direction == model.VolumeTransferDirectionExport && (input.StartUploading || input.VerifiedObject) {
-		return newDomainError(CodeInvalidInput, "volume exports cannot begin in uploading state")
-	}
 	if input.Direction == model.VolumeTransferDirectionImport && input.ExpectedBytes <= 0 {
 		return newDomainError(CodeInvalidInput, "volume import content length must be positive")
 	}
 	if input.ExpectedBytes < 0 || !input.ExpiresAt.After(timeNowUTC()) {
 		return newDomainError(CodeInvalidInput, "volume transfer size or expiry is invalid")
 	}
-	if input.StartUploading && input.MultipartUploadID == "" {
-		return newDomainError(CodeInvalidInput, "uploading volume transfers require a multipart upload")
-	}
-	if input.VerifiedObject && (input.ObjectKey == "" || input.SHA256 == "" || !validSHA256(input.SHA256)) {
-		return newDomainError(CodeInvalidInput, "verified volume transfer objects require a valid object reference and checksum")
-	}
-	if input.SHA256 != "" && !validSHA256(input.SHA256) {
+	if input.Direction == model.VolumeTransferDirectionImport && !validSHA256(input.SHA256) {
 		return newDomainError(CodeTransferChecksumInvalid, "volume transfer checksum is invalid")
 	}
 	if input.IdempotencyKey != "" && (len(input.IdempotencyKey) < 8 || len(input.IdempotencyKey) > 160) {
 		return newDomainError(CodeInvalidInput, "volume transfer idempotency key must contain 8 to 160 characters")
 	}
-	if len(input.SourceFilename) > 255 || len(input.ObjectKey) > 1024 || len(input.MultipartUploadID) > 1024 {
+	if len(input.SourceFilename) > 255 {
 		return newDomainError(CodeInvalidInput, "volume transfer metadata is too long")
 	}
 	return nil
@@ -356,8 +341,8 @@ func validTransferDirection(value string) bool {
 }
 
 func validTransferState(value string) bool {
-	return oneOf(value, model.VolumeTransferStateCreated, model.VolumeTransferStateUploading, model.VolumeTransferStateQueued,
-		model.VolumeTransferStateRunning, model.VolumeTransferStateSucceeded, model.VolumeTransferStateFailed,
+	return oneOf(value, model.VolumeTransferStateCreated, model.VolumeTransferStatePreparing, model.VolumeTransferStateReady,
+		model.VolumeTransferStateStreaming, model.VolumeTransferStateSucceeded, model.VolumeTransferStateFailed,
 		model.VolumeTransferStateCancelled, model.VolumeTransferStateExpired)
 }
 
@@ -381,13 +366,6 @@ func pathsOverlap(left, right string) bool {
 	left = path.Clean(left)
 	right = path.Clean(right)
 	return left == right || strings.HasPrefix(left, right+"/") || strings.HasPrefix(right, left+"/")
-}
-
-func safeTransferPartEnd(offset, size int64) (int64, bool) {
-	if offset < 0 || size <= 0 || offset > math.MaxInt64-size {
-		return 0, false
-	}
-	return offset + size, true
 }
 
 func oneOf(value string, allowed ...string) bool {

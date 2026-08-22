@@ -36,5 +36,7 @@ export function canCancelVolumeTransfer(capabilities: ProjectVolumeCapabilities,
 }
 
 export function canRetryVolumeTransfer(capabilities: ProjectVolumeCapabilities, transfer: VolumeTransfer): boolean {
-  return transfer.direction === 'import' ? capabilities.canImport : capabilities.canExport
+  // A failed direct import may have partially changed its destination PVC.
+  // Retrying it in place would mix old and new data; users must start a fresh import.
+  return transfer.direction === 'export' && capabilities.canExport
 }

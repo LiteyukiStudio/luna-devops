@@ -85,40 +85,23 @@ Secret, then set `observability.existingSecret` and
 `observability.headersKey`. See the public observability reference for local
 verification and production Collector guidance.
 
-## Enable project-volume transfers
+## Configure project-volume transfers
 
-Volume import and export are disabled by default. Create a private
-S3-compatible bucket and a Kubernetes Secret containing the access key before
-enabling the feature:
+Project-volume import and export stream directly between the client and a
+temporary workload in the runtime cluster. They do not require an object store
+or a transfer credential Secret. The chart uses the Worker image and release
+tag by default because that image also contains
+`/usr/local/bin/luna-volume-transfer`.
 
-```bash
-kubectl -n luna-devops create secret generic volume-transfer-s3 \
-  --from-literal=access-key-id='<access-key-id>' \
-  --from-literal=secret-access-key='<secret-access-key>'
-```
-
-Then supply non-sensitive settings through values:
+Override the transfer size limit or helper image only when needed:
 
 ```yaml
 volumeTransfer:
-  enabled: true
-  s3:
-    endpoint: https://objects.example.com
-    region: us-east-1
-    bucket: luna-volume-transfers
-    existingSecret: volume-transfer-s3
-  spool:
-    dir: /tmp/luna-devops-volume-transfer-spool
-    maxBytes: 2Gi
-    minFreeBytes: 1Gi
-  callbackBaseUrl: https://devops.example.com
+  maxBytes: 100Gi
+  jobImage: ""
 ```
 
-Both endpoints must use HTTPS. The callback URL must be reachable from runtime
-clusters. `volumeTransfer.jobImage` defaults to the Worker image and release
-tag, which contains both the Worker and `/usr/local/bin/luna-volume-transfer`.
-Override it only when the replacement image uses the same application version.
-The spool path is local to each API replica. Size its writable filesystem for
-at least `maxBytes + minFreeBytes`; the API enforces that budget before reading
-an upload part and removes stale owned files after `spool.orphanAge`.
-The chart never stores S3 credentials in a ConfigMap or rendered values.
+Only override `jobImage` with an image from the same application version.
+Direct transfers require a stable client connection and an ingress that does
+not buffer request or response bodies. An interrupted import or export must be
+started again.

@@ -34,7 +34,7 @@ func (r *Runner) projectVolumeProvider(ctx context.Context, clusterID string) (k
 	return provider, nil
 }
 
-func (r *Runner) volumeTransferJobProvider(ctx context.Context, clusterID string) (kubeprovider.VolumeTransferJobProvider, error) {
+func (r *Runner) volumeTransferProvider(ctx context.Context, clusterID string) (kubeprovider.VolumeTransferProvider, error) {
 	if ctx == nil {
 		panic("volume transfer job provider context is required")
 	}
@@ -45,7 +45,7 @@ func (r *Runner) volumeTransferJobProvider(ctx context.Context, clusterID string
 	if err != nil {
 		return nil, err
 	}
-	jobProvider, ok := provider.(kubeprovider.VolumeTransferJobProvider)
+	jobProvider, ok := provider.(kubeprovider.VolumeTransferProvider)
 	if !ok {
 		return nil, errors.New("runtime cluster provider does not support volume transfer jobs")
 	}

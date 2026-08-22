@@ -1,0 +1,37 @@
+[
+  {
+    "type": "file",
+    "name": "project-space-and-apps",
+    "label": "项目空间与应用"
+  },
+  {
+    "type": "file",
+    "name": "deployment",
+    "label": "部署配置"
+  },
+  {
+    "type": "file",
+    "name": "build-and-release",
+    "label": "构建与发布"
+  },
+  {
+    "type": "file",
+    "name": "routes",
+    "label": "访问入口"
+  },
+  {
+    "type": "file",
+    "name": "configuration-and-secrets",
+    "label": "配置与密钥"
+  },
+  {
+    "type": "file",
+    "name": "deployment-config-transfer",
+    "label": "部署配置导入与导出"
+  },
+  {
+    "type": "file",
+    "name": "runtime-data-persistence",
+    "label": "运行数据持久化"
+  }
+]

@@ -2,7 +2,7 @@
   {
     "type": "file",
     "name": "kubernetes",
-    "label": "Kubernetes / K3s"
+    "label": "Kubernetes (Helm)"
   },
   {
     "type": "file",
@@ -12,6 +12,6 @@
   {
     "type": "file",
     "name": "binary",
-    "label": "Run the Binaries"
+    "label": "Binaries"
   }
 ]

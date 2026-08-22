@@ -1,143 +1,56 @@
-# Connect an Observability Backend
+# Observability
 
-Luna DevOps exports traces, metrics, and structured logs through OpenTelemetry. It does not require a specific backend; prepare an OpenTelemetry Collector with OTLP HTTP support.
+Luna DevOps exports traces, metrics, and structured logs through OpenTelemetry. Prepare an OpenTelemetry Collector with OTLP HTTP support and, when required, Prometheus, Loki, and Tempo.
 
-## Minimal configuration
+## Export telemetry
 
-Configure the same endpoint for API, Worker, and Agent:
+Configure the same Collector endpoint for API, Worker, and Agent:
 
 ```bash
 OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
-```
-
-After restart, the services report as `luna-devops-api`, `luna-worker`, and `luna-agent`. Leaving the variable empty disables export. A temporary Collector outage does not block business requests.
-
-To identify an environment or cluster, add:
-
-```bash
 OTEL_RESOURCE_ATTRIBUTES=deployment.environment.name=production,k8s.cluster.name=main
 ```
 
-If the Collector requires authentication, inject `OTEL_EXPORTER_OTLP_HEADERS` from a Secret instead of storing credentials in public configuration.
+Leaving the endpoint empty disables export. If the Collector requires authentication, inject `OTEL_EXPORTER_OTLP_HEADERS` from a Secret instead of storing credentials in public configuration.
 
-Luna API relays traces produced by the web console to the same Collector using OTLP/HTTP protobuf. The browser telemetry runtime loads asynchronously when an authenticated session needs it; loading or export failures do not block pages or business requests. Upgrade Web and API together; repeated `415 Unsupported Media Type` responses for browser telemetry usually indicate that their deployed versions do not match.
+After restart, confirm that the Collector receives:
 
-## Agent full-content observability (sensitive)
+- `luna-devops-api`
+- `luna-worker`
+- `luna-agent` when AI Assistant is enabled
 
-Content capture is disabled by default. Enable it temporarily only when required in a controlled development, test, or security-audit environment:
+## Configure the Agent observability page
 
-```bash
-AI_OBSERVABILITY_CAPTURE_CONTENT=true
-```
+Open **Global Settings → AI Assistant → Advanced AI Settings** and enter:
 
-After restarting Agent, traces and logs may record model input messages, model output messages, tool-call arguments, tool execution results, and model or tool error responses. Even after redaction, this data may contain user input, resource names, configuration content, or diagnostic information. This feature is not a data-isolation boundary.
+- Prometheus query URL, such as `http://prometheus:9090`
+- Loki query URL, such as `http://loki:3100`
+- Tempo query URL, such as `http://tempo:3200`
+- Optional Tenant IDs and bearer tokens
 
-Keep content capture disabled in production. Enable it temporarily only after an administrator has assessed data access, retention, and sensitive-information risks. Set the switch back to `false` and restart Agent when the task is complete. Do not use sensitive content capture as a permanent audit log.
+Enable **Agent Observability** after all three URLs are present and test each connection. Only Luna API receives these query URLs and tokens; they are not sent to browsers. Use **Operations → Agent Observability** to view model usage, tool calls, turns, and traces.
 
-## Configure Luna's embedded Agent observability
+## Prometheus scraping
 
-To view Agent data in Luna DevOps Operations, open **Global Settings → AI Assistant → Advanced AI settings**, enter the Prometheus, Loki, and Tempo query root URLs, and enable **Agent observability**. These query URLs are separate from the `OTEL_EXPORTER_OTLP_ENDPOINT` used for export.
-
-- Prometheus: Agent metrics query URL, for example `http://prometheus:9090`.
-- Loki: structured log query URL, for example `http://loki:3100`.
-- Tempo: trace query URL, for example `http://tempo:3200`.
-- When multi-tenancy or bearer authentication is enabled, enter the matching tenant IDs and tokens.
-
-All three query URLs are required. Tokens are encrypted and are not displayed again. Keep these data sources reachable from Luna API and do not expose them directly to browsers.
-
-Each source has its own **Test connection** button. The test uses the URL, tenant ID, and newly entered token currently in the form; a blank token reuses the saved value. Results distinguish between a working connection with data and a working connection with no data in the last hour. A failed test does not block saving, which allows operators to save deployment configuration before networking is ready. When a source queried by the page is unreachable, the corresponding metrics or details are shown as unavailable.
-
-Open **Operations → Agent observability**. Select a 1-hour, 6-hour, 24-hour, 7-day, 30-day, or 1-year period. The browser remembers the current user's last selection and restores it after a refresh or when the page is reopened. The compact header summarizes input tokens, output tokens, tool calls, conversation turns, terminal-turn success, and execution P95 for that period. Switch the lower workspace between **Turns** and **Tools**. Turns treat one user input through the end of the Agent response as one unit and support cross-user search with server-side pagination. Tools aggregate total, succeeded, failed, other-state calls, and success by operation. Tool success is succeeded calls divided by succeeded plus failed calls; waiting, canceled, and skipped calls are excluded from the denominator.
-
-Select a turn to open its Span timeline. Select a tool to inspect every call in the period, including redacted and size-limited arguments, results, stable error codes, the related turn, and a Trace entry point. Encrypted executable arguments are never returned to the browser. The database call list does not depend on Tempo; model-side full tool content is only available in traces created after content capture was enabled.
-
-Turn details render real spans by start time as a vertical execution-step timeline, with filters for all, model, tool, or error steps. Before every model request, `agent.tools.available` records the exact tool subset supplied to that request; the page renders it as a capsule list so administrators can explain why the model could or could not call a capability. By default, the timeline retains only user-message, Agent, model, and tool steps. Agent, model, and tool steps follow the OpenTelemetry GenAI semantic conventions: `invoke_agent {agent.name}`, `chat {model}`, and `execute_tool {tool.name}`, classified by `gen_ai.operation.name`. The `luna_api.tool.execute` network-transport child is not shown as a duplicate. Enable **Show external services** to include infrastructure spans such as external HTTP and database operations. Model input and output are parsed using the official message and part JSON schemas; tool definitions, arguments, and results use formatted JSON; and common span attributes use localized business labels. Expand **Raw span JSON** to inspect the complete data returned by Tempo. Use **Copy diagnostic JSON** or **Download diagnostic JSON** in the header to export the turn metadata and every span in start-time order. The export is independent of the timeline filter and **Show external services** switch, and retains normalized fields, content attributes, compatible legacy events, and the raw Tempo span for offline Agent Harness diagnosis.
-
-Paginated browsing and BM25 catalog lookup emit an `execute_tool search_tools` span. Results contain summaries only and do not automatically add matched tools to the model. Exact detail loading emits an `execute_tool get_tool_details` span; successfully loaded operations should appear in the following `agent.tools.available` span. `luna_devops_agent_tool_searches` and `luna_devops_agent_tool_search_matches` record summary searches and returned items, while `luna_devops_agent_tool_detail_loads` and `luna_devops_agent_tool_detail_items` record exact detail loads and item counts. Catalog requests and search text are not placed in ordinary span attributes or metric labels; they are visible in controlled content attributes only when sensitive content capture is explicitly enabled.
-
-After `AI_OBSERVABILITY_CAPTURE_CONTENT` is enabled, newly created model steps expose the system prompt, user messages, model output, and tool definitions, while tool steps expose execution status, call arguments, and results. The content is encoded according to the official OpenTelemetry JSON schemas in the `gen_ai.input.messages`, `gen_ai.output.messages`, `gen_ai.tool.definitions`, `gen_ai.tool.call.arguments`, and `gen_ai.tool.call.result` span attributes. Because the current Node OTel span API cannot carry nested AnyValue attributes, the values are valid JSON strings. Over-limit content is omitted as a whole and marked with `luna.ai.content.truncated=true`, so invalid truncated JSON is never emitted. With content capture disabled, the panel still shows step metadata and raw JSON, but content that was not captured previously cannot be reconstructed. The authoritative user message and final Agent reply are also read from Luna's conversation store. Cross-user turns and content are restricted to platform administrators, and trace-detail reads are audited.
-
-The browser only calls fixed-query Luna API endpoints. It cannot submit arbitrary PromQL, LogQL, or TraceQL, and it never receives source URLs or credentials. Luna API reads and normalizes trace details through the Tempo 2.x query API while retaining compatibility with the legacy proxied OTLP JSON shape, so details are no longer available after the Tempo retention window expires.
-
-When Prometheus has no Agent metrics or returns non-finite query results, the affected period totals appear as zero. The turn list still uses server-side pagination from Luna's database; a Tempo outage affects only the right-side execution timeline.
-
-### Diagnose Agent operations with Luna CLI
-
-A signed-in platform administrator can read the same controlled operational data
-through Luna CLI. The token or OAuth grant requires the
-`agent-observability:read` scope. Discover the available commands and load the
-complete schema first:
+To scrape API metrics directly, configure:
 
 ```bash
-luna help catalog category=agent-observability limit=20 output=json interactive=false agent=true
-luna help command path=agent-observability.overview output=json interactive=false agent=true
+METRICS_ENABLED=true
+METRICS_ADDR=:9090
+METRICS_PATH=/metrics
 ```
 
-Then narrow from the overview to specific evidence:
+Expose this listener only to a controlled monitoring network. Worker and Agent metrics continue to use OTLP.
 
-```bash
-luna agent-observability overview range=1h output=json interactive=false agent=true
-luna agent-observability turns range=1h page=1 pageSize=20 sortBy=createdAt sortOrder=desc output=json interactive=false agent=true
-luna agent-observability tools range=1h page=1 pageSize=20 sortBy=failedCalls sortOrder=desc output=json interactive=false agent=true
-luna agent-observability tool-calls operationId=<operationId> range=1h page=1 pageSize=20 output=json interactive=false agent=true
-luna agent-observability trace traceId=<traceId> output=json interactive=false agent=true
-```
+## Sensitive content capture
 
-Supported periods are `1h`, `6h`, `24h`, `7d`, `30d`, and `1y`. A page can
-contain at most 100 items; do not paginate without a bound or bulk-fetch traces.
-Responses use the common JSON envelope with pagination, request IDs, and
-correlation IDs. When a source is unavailable, the response includes
-`status=unavailable` and a stable `observationCode`; do not treat a previous
-result as current state.
+`AI_OBSERVABILITY_CAPTURE_CONTENT=true` may write redacted model inputs, outputs, tool arguments, and results to traces and logs. Keep it disabled in production. Enable it only during a controlled diagnostic window after restricting Tempo/Loki access and retention, then restore `false` and restart Agent.
 
-The CLI removes raw trace blobs, system prompts, and controlled GenAI content
-before output, but logs, tool results, and traces remain untrusted data. Source
-testing may contain an unsaved token, so only a human administrator can run it;
-strict Agent mode rejects it. Raw conversations are not currently exposed as a
-stable CLI command.
+## Verify
 
-Source developers can start the repository's optional loopback-only Compose observability environment:
+1. Make one successful API request and start one build or Release task.
+2. Confirm that traces, logs, and metrics for the same operation can be correlated.
+3. Stop the Collector temporarily and confirm that business requests continue and export resumes later.
+4. Check that telemetry contains no tokens, cookies, Secrets, request bodies, or model prompts.
 
-```bash
-docker compose -f docker-compose-dev-observability.yaml up -d
-```
-
-Host processes use `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318`. The Agent observability query roots are `http://localhost:9090`, `http://localhost:3100`, and `http://localhost:3200`. This environment has no production-grade authentication and must be used only for local development. See the repository's `observability/README.md` for container-specific addresses and cleanup instructions.
-
-## Import Grafana dashboards
-
-The repository provides two dashboards:
-
-- `grafana/dashboards/luna-devops-overview.json`: platform, API, Worker, delivery, Agent, and database overview.
-- `grafana/dashboards/luna-agent-llm-observability.json`: Agent Runs, model latency, tokens, tools, logs, and traces.
-
-Select existing Prometheus, Tempo, and Loki data sources during import. Start with success rate, error rate, and latency, then locate a trace by conversation, turn, or Run ID. Enable sensitive content capture only when raw model behavior is required.
-
-## Query traces
-
-One user message normally corresponds to one trace. Common correlation fields are:
-
-| Scope | Attribute |
-| --- | --- |
-| AI conversation | `gen_ai.conversation.id` |
-| Conversation turn | `luna.turn.id` |
-| Agent execution | `luna.run.id` |
-| Tool call | `gen_ai.tool.call.id` (historical traces also support `luna.tool_call.id`) |
-
-For example, query one Run in Tempo:
-
-```text
-{ span.luna.run.id = "airun_xxx" }
-```
-
-Refer to the documentation for your Tempo and Grafana versions for additional query syntax.
-
-## Production recommendations
-
-- Keep the Collector and observability backends on controlled networks. Use TLS and authentication across networks.
-- Configure batching, memory limits, and sampling centrally in the Collector. Prioritize errors and slow traces.
-- Apply least-privilege access and suitable retention to logs, traces, and sensitive Agent content.
-- API can expose a Prometheus-compatible scrape endpoint; export complete platform metrics through OTLP.
-- Successful health probes may not generate traces. User-initiated Provider, cluster, and registry tests remain observable.
-
-See the [OpenTelemetry Collector documentation](https://opentelemetry.io/docs/collector/deploy/) for deployment and exporter configuration.
+Production environments should enable TLS, authentication, least-privilege access, sampling, and retention policies for the Collector and backends.

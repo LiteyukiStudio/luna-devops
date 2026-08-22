@@ -203,11 +203,6 @@ if [ -n "${IMAGE_NAME_PREFIX:-}" ]; then
 fi
 export_luna_devops_build_context
 
-if [ -n "${NPM_REGISTRY:-}" ]; then
-  mkdir -p "$PWD/$BUILD_CONTEXT"
-  printf "registry=%s\n" "$NPM_REGISTRY" > "$PWD/$BUILD_CONTEXT/.npmrc"
-fi
-
 run_hooks "preBuild" "${PRE_BUILD_HOOK_IDS:-}"
 
 set --

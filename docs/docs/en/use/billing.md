@@ -12,7 +12,7 @@ Settlement uses Credits. Administrators may configure a display currency and con
 
 ## Price table
 
-The **Price table** tab lists platform resource meters, including build CPU and memory, runtime resources, persistent storage, and gateway traffic. AI Token prices are managed per model in **Global Settings → AI Assistant**, rather than in the generic price table. For default rates, the conversion baseline, and their reference basis, see [Default and Suggested Pricing](./default-pricing.md).
+The **Price table** tab lists platform resource meters, including build CPU and memory, runtime resources, persistent storage, and gateway traffic. AI Token prices are managed per model in **Global Settings → AI Assistant**, rather than in the generic price table. See [Set Prices](/en/start/pricing) for setup.
 
 Disabled resource meters remain visible but do not currently generate charges. Resource price and state changes only affect future usage; settled bills are not recalculated.
 

@@ -1,0 +1,9 @@
+[
+  { "type": "file", "name": "project-space-and-apps", "label": "Project Spaces and Apps" },
+  { "type": "file", "name": "deployment", "label": "Deployment Configuration" },
+  { "type": "file", "name": "build-and-release", "label": "Build and Release" },
+  { "type": "file", "name": "routes", "label": "Routes" },
+  { "type": "file", "name": "configuration-and-secrets", "label": "Configuration and Secrets" },
+  { "type": "file", "name": "deployment-config-transfer", "label": "Import and Export Deployment Config" },
+  { "type": "file", "name": "runtime-data-persistence", "label": "Runtime Data Persistence" }
+]

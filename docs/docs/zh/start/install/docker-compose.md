@@ -11,7 +11,6 @@ Docker Compose 是最快的体验方式，适合个人服务器、测试环境�
 - 一台能运行 Docker 的机器。
 - Docker Compose。
 - 能拉取 DockerHub 镜像的网络。
-- 宿主机 `8088` 端口空闲。
 
 ## 选择版本
 
@@ -59,15 +58,15 @@ AI_ASSISTANT_AVAILABLE=true docker compose --profile ai up -d
 
 登录后在“全局设置 → AI 助手”配置 Provider、模型目录、访问范围和配额。Provider API Key 由平台 Secret Store 保存，不写入 `.env`。排障时可查看 `docker compose --profile ai logs -f agent`。
 
-## 打开控制台
+## 按需暴露控制台
 
-浏览器访问：
+部署完成后，再根据实际访问范围配置端口、反向代理、域名和 TLS。默认本机验证地址为：
 
 ```text
 http://localhost:8088
 ```
 
-默认 Compose 只把 API 暴露到宿主机 `8088`。PostgreSQL 和 Redis 留在容器网络里，不占用宿主机 `5432` 和 `6379`。
+使用其他访问地址时，同步修改 `PUBLIC_BASE_URL` 和 `APP_CORS_ORIGINS`。PostgreSQL 和 Redis 保留在容器网络中，不需要对外暴露。
 
 ## 检查状态
 
@@ -81,9 +80,9 @@ API 正常后就能打开控制台；Worker 正常后，构建、部署和状态
 
 ## 下一步
 
-1. 进入 [首次登录](/start/first-login)，创建管理员或登录。
-2. 进入 [连接集群和镜像站](/start/connect-resources)，准备运行集群和镜像站。
-3. 按 [部署上线一个 Web 项目](/start/first-project) 跑通第一条应用交付链路。
+1. 进入[初始化](/start/first-login)，创建首个管理员。
+2. 进入[添加基础资源](/start/connect-resources)，准备运行集群、镜像站和 Git Provider OAuth。
+3. 按[日常交付](/use/workflow)创建并部署应用。
 
 ## 停止
 

@@ -9,7 +9,7 @@ export type ProjectVolumeMode = 'Block' | 'Filesystem'
 export type VolumeTransferDirection = 'export' | 'import'
 export type VolumeTransferFormat = 'raw_zst' | 'tar_gz'
 export type VolumeTransferConsistencyMode = 'live' | 'snapshot' | 'unmounted'
-export type VolumeTransferState = 'cancelled' | 'created' | 'expired' | 'failed' | 'queued' | 'running' | 'succeeded' | 'uploading'
+export type VolumeTransferState = 'cancelled' | 'created' | 'expired' | 'failed' | 'preparing' | 'ready' | 'streaming' | 'succeeded'
 
 export interface ProjectVolumeObservation {
   status: ProjectVolumeAvailability
@@ -81,8 +81,6 @@ export interface VolumeTransfer {
   transferredBytes: number
   processedFiles: number
   phase?: string
-  uploadOffset?: number
-  chunkSize: number
   sha256: string
   logicalBytes: number
   dataSHA256: string
@@ -180,7 +178,7 @@ export interface VolumeImportCreateInput {
   format: VolumeTransferFormat
   filename: string
   contentLength: number
-  sha256?: string
+  sha256: string
 }
 
 export interface VolumeImportCreateResponse {
@@ -196,24 +194,6 @@ export interface VolumeExportCreateInput {
 export interface VolumeTransferDownloadAuthorization {
   ticket: string
   expiresAt: string
-}
-
-export interface VolumeImportUploadOffset {
-  chunkSize: number
-  length: number
-  offset: number
-}
-
-export interface VolumeImportResumeRecord {
-  projectId: string
-  transferId: string
-  volumeId: string
-  filename: string
-  size: number
-  lastModified: number
-  sha256: string
-  format: VolumeTransferFormat
-  createdAt: string
 }
 
 export type PaginatedProjectVolumes = PaginatedResponse<ProjectVolume>
