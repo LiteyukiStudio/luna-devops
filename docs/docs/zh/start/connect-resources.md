@@ -14,6 +14,10 @@
 - 平台运行在容器中时，不要使用仅宿主机可访问的 `127.0.0.1`。
 - 按需配置默认 Gateway、域名后缀和 TLS；平台不会替你创建 ACME 账号或 DNS Provider 凭据。
 
+在“资源分配策略”中设置 CPU request、内存 request、CPU limit、内存 limit 占应用配额的百分比。默认值依次为 `10% / 25% / 100% / 100%`，范围均为 0–100；`0%` 表示不向 Kubernetes 写入对应字段。启用 limit 时，request 百分比不能大于同类 limit 百分比；request-only 和 limit-only 都允许。策略修改只影响之后重新部署的工作负载，不会主动改写正在运行的资源。
+
+Kubernetes 调度器仍按 requests 预留和调度容量。limits 是容器运行上限：CPU 超限通常触发节流，内存超限可能导致 OOMKill。
+
 删除集群前，先迁移或删除引用它的部署配置。
 
 ## 2. 添加镜像站

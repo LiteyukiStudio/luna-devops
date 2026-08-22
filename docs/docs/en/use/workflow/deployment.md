@@ -7,7 +7,7 @@ A deployment defines **where the application comes from, where it runs, and how 
 - Stage: `dev`, `test`, `staging`, or `prod`. It cannot be changed after creation.
 - Target runtime cluster.
 - Source: existing image or source repository.
-- Container port, CPU, memory, and replicas.
+- Container port, per-replica CPU quota, per-replica memory quota, and replicas.
 - Image pull policy and required health checks.
 
 ## Choose a source
@@ -19,3 +19,5 @@ A deployment defines **where the application comes from, where it runs, and how 
 Open advanced settings only when the application needs custom commands, autoscaling, StatefulSet, scheduling, security contexts, sidecars, or deployment hooks.
 
 Changes to the image, resources, Service, volumes, or advanced runtime settings require a new Release to affect running instances. When the page offers **Save and redeploy**, review the impact before using it.
+
+CPU and memory inputs are quotas, not Kubernetes requests or limits. Luna DevOps derives the actual fields from the selected runtime cluster policy; a `0%` policy value omits the corresponding field. A deployment cannot override its CPU or memory limit separately.

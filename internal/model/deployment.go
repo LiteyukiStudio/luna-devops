@@ -21,6 +21,10 @@ type RuntimeCluster struct {
 	Kubeconfig                    string         `gorm:"-" json:"kubeconfig,omitempty"`
 	IsDefault                     bool           `gorm:"not null;default:false" json:"isDefault"`
 	MaxConcurrentBuilds           int            `gorm:"not null;default:4" json:"maxConcurrentBuilds"`
+	CPURequestPercent             int            `gorm:"not null" json:"cpuRequestPercent"`
+	MemoryRequestPercent          int            `gorm:"not null" json:"memoryRequestPercent"`
+	CPULimitPercent               int            `gorm:"not null" json:"cpuLimitPercent"`
+	MemoryLimitPercent            int            `gorm:"not null" json:"memoryLimitPercent"`
 	GatewayProvider               string         `gorm:"not null;default:gateway-api" json:"gatewayProvider"`
 	GatewayRootDomain             string         `gorm:"not null;default:apps.local" json:"gatewayRootDomain"`
 	GatewayDomainSuffixesRaw      string         `gorm:"column:gateway_domain_suffixes;type:text;not null;default:''" json:"-"`

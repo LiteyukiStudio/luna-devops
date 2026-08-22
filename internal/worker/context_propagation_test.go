@@ -4,8 +4,10 @@ import (
 	"context"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/LiteyukiStudio/devops/internal/model"
+	kubeprovider "github.com/LiteyukiStudio/devops/internal/provider/kubernetes"
 	"go.opentelemetry.io/otel/trace"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -94,5 +96,41 @@ func TestAIBillingDatabaseOperationsPreserveStageTraceContext(t *testing.T) {
 	}
 	if got := trace.SpanContextFromContext(observed).TraceID(); got != traceID {
 		t.Fatalf("AI billing database trace ID = %s, want %s", got, traceID)
+	}
+}
+
+func TestRuntimeObservationWritePreservesTraceContext(t *testing.T) {
+	db, err := gorm.Open(postgres.New(postgres.Config{
+		DSN: "host=127.0.0.1 port=1 user=context_test dbname=context_test sslmode=disable",
+	}), &gorm.Config{DryRun: true, DisableAutomaticPing: true, SkipDefaultTransaction: true})
+	if err != nil {
+		t.Fatalf("open dry-run database: %v", err)
+	}
+	var observed context.Context
+	if err := db.Callback().Create().Before("gorm:create").Register("test:capture_runtime_observation_context", func(tx *gorm.DB) {
+		observed = tx.Statement.Context
+	}); err != nil {
+		t.Fatalf("register create callback: %v", err)
+	}
+	traceID := trace.TraceID{2, 4, 6, 8, 10, 12, 14, 16, 1, 3, 5, 7, 9, 11, 13, 15}
+	parent := trace.ContextWithRemoteSpanContext(context.Background(), trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID: traceID, SpanID: trace.SpanID{2, 4, 6, 8, 1, 3, 5, 7}, Remote: true,
+	}))
+	now := time.Now().UTC()
+	err = (&Runner{db: db}).recordRuntimeObservation(
+		parent,
+		model.DeploymentTarget{ID: "dplt_context", ProjectID: "prj_context", CPURequest: "1", MemoryRequest: "1Gi"},
+		model.RuntimeCluster{ID: "clu_context", CPURequestPercent: 10, MemoryRequestPercent: 25, CPULimitPercent: 100, MemoryLimitPercent: 100},
+		kubeprovider.DeploymentSnapshot{DesiredReplicas: 1, CreatedAt: now.Add(-time.Hour), ObservedAt: now, Phase: "running"},
+		kubeprovider.RuntimeMetricsSnapshot{Available: true, PodCount: 1, ContainerCount: 1, CPUUsageMilli: 25, MemoryUsageBytes: 64 * 1024 * 1024},
+	)
+	if err != nil {
+		t.Fatalf("record runtime observation: %v", err)
+	}
+	if observed == nil {
+		t.Fatal("runtime observation did not execute a database create")
+	}
+	if got := trace.SpanContextFromContext(observed).TraceID(); got != traceID {
+		t.Fatalf("runtime observation database trace ID = %s, want %s", got, traceID)
 	}
 }

@@ -104,9 +104,7 @@ export function DeploymentTargetDetailSheet({ applicationId, item, onOpenChange,
                   )}
                 />
                 <DetailValue label={t('deploymentsPage.cpuRequest')} value={target.cpuRequest || '-'} />
-                <DetailValue label={t('deploymentsPage.cpuLimit')} value={target.cpuLimit || t('common.notConfigured')} />
                 <DetailValue label={t('deploymentsPage.memoryRequest')} value={target.memoryRequest || '-'} />
-                <DetailValue label={t('deploymentsPage.memoryLimit')} value={target.memoryLimit || t('common.notConfigured')} />
                 <DetailValue label={t('deploymentsPage.replicas')} value={target.status === 'unavailable' ? '-' : `${target.readyReplicas} / ${target.desiredReplicas}`} />
                 <DetailValue label={t('deploymentsPage.workloadType')} value={target.workloadType || '-'} />
                 <DetailValue label={t('deploymentsPage.autoScalingEnabled')} value={<StatusValueBadge value={target.autoScalingEnabled ? 'enabled' : 'disabled'} />} />

@@ -14,13 +14,16 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/provider/networkpolicy"
 	"github.com/LiteyukiStudio/devops/internal/tasks"
 	"github.com/LiteyukiStudio/devops/internal/telemetry"
+	"github.com/LiteyukiStudio/devops/internal/testdb"
 	"github.com/hibiken/asynq"
+	"github.com/shopspring/decimal"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/propagation"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.opentelemetry.io/otel/trace"
+	"gorm.io/gorm"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -147,7 +150,7 @@ func TestPeriodicTaskSpecsIncludeGitRefresh(t *testing.T) {
 			foundGitRefresh = spec.Cron == "@every 5m" && spec.Queue == tasks.QueueLight
 		}
 		if spec.Task.Type() == tasks.TypeBillingRuntime {
-			foundRuntimeBilling = spec.Cron == "@every 10m" && spec.Queue == tasks.QueueLight
+			foundRuntimeBilling = spec.Cron == "@every 1m" && spec.Queue == tasks.QueueLight
 		}
 		if spec.Task.Type() == tasks.TypeBillingAI {
 			foundAIBilling = spec.Cron == "@every 1m" && spec.Queue == tasks.QueueLight
@@ -236,14 +239,165 @@ func TestRuntimeBillingEffectivePeriodProratesWindowStart(t *testing.T) {
 	}
 }
 
-func TestRuntimeObservationWindowOnlyAcceptsCurrentHour(t *testing.T) {
+func TestRuntimeObservationWindowOnlyAcceptsCurrentMinute(t *testing.T) {
 	now := time.Date(2026, 8, 16, 12, 10, 0, 0, time.UTC)
-	start, end, ok := runtimeObservationWindow(now.Add(-10*time.Minute), now)
-	if !ok || !start.Equal(time.Date(2026, 8, 16, 12, 0, 0, 0, time.UTC)) || !end.Equal(time.Date(2026, 8, 16, 13, 0, 0, 0, time.UTC)) {
+	start, end, ok := runtimeObservationWindow(now.Add(30*time.Second), now.Add(45*time.Second))
+	if !ok || !start.Equal(now) || !end.Equal(now.Add(time.Minute)) {
 		t.Fatalf("current observation window = %s %s %v", start, end, ok)
 	}
-	if _, _, ok := runtimeObservationWindow(now.Add(-time.Hour), now); ok {
-		t.Fatal("closed historical hour must not be overwritten by a new observation")
+	if _, _, ok := runtimeObservationWindow(now.Add(-time.Minute), now); ok {
+		t.Fatal("closed historical minute must not be overwritten by a new observation")
+	}
+}
+
+func TestApplyRuntimeClusterResourcePolicy(t *testing.T) {
+	spec := kubeprovider.ApplicationResourcesSpec{DeploymentTargetID: "dplt_1", CPURequest: "1", MemoryRequest: "1Gi"}
+	cluster := model.RuntimeCluster{ID: "clu_1", CPURequestPercent: 10, MemoryRequestPercent: 25, CPULimitPercent: 100, MemoryLimitPercent: 100}
+	if err := applyRuntimeClusterResourcePolicy(&spec, cluster); err != nil {
+		t.Fatalf("applyRuntimeClusterResourcePolicy() error = %v", err)
+	}
+	if spec.CPURequest != "100m" || spec.MemoryRequest != "256Mi" || spec.CPULimit != "1" || spec.MemoryLimit != "1Gi" {
+		t.Fatalf("resources = %#v", spec)
+	}
+	cluster.CPURequestPercent, cluster.MemoryRequestPercent, cluster.CPULimitPercent, cluster.MemoryLimitPercent = 0, 0, 0, 0
+	if err := applyRuntimeClusterResourcePolicy(&spec, cluster); err != nil {
+		t.Fatalf("zero policy error = %v", err)
+	}
+	if spec.CPURequest != "" || spec.MemoryRequest != "" || spec.CPULimit != "" || spec.MemoryLimit != "" {
+		t.Fatalf("zero policy resources = %#v", spec)
+	}
+}
+
+func TestApplicationResourcesSpecIgnoresLegacyTargetLimitsAndAppliesCustomPolicy(t *testing.T) {
+	spec, err := applicationResourcesSpec(
+		model.Release{ID: "rel_policy", ImageRef: "example.invalid/app:test"},
+		model.Project{ID: "prj_policy"},
+		model.Application{ID: "app_policy"},
+		model.Environment{ID: "env_policy", Replicas: 1, CPURequest: "2", MemoryRequest: "2Gi"},
+		model.DeploymentTarget{ID: "dplt_policy", WorkloadType: "Deployment", CPULimit: "9", MemoryLimit: "9Gi"},
+		nil, nil, "policy-test", 60,
+	)
+	if err != nil {
+		t.Fatalf("applicationResourcesSpec() error = %v", err)
+	}
+	if spec.CPULimit != "" || spec.MemoryLimit != "" {
+		t.Fatalf("legacy target limits leaked into spec: %#v", spec)
+	}
+	cluster := model.RuntimeCluster{
+		ID: "clu_policy", CPURequestPercent: 25, MemoryRequestPercent: 50,
+		CPULimitPercent: 75, MemoryLimitPercent: 80,
+	}
+	if err := applyRuntimeClusterResourcePolicy(&spec, cluster); err != nil {
+		t.Fatalf("applyRuntimeClusterResourcePolicy() error = %v", err)
+	}
+	if spec.CPURequest != "500m" || spec.MemoryRequest != "1Gi" || spec.CPULimit != "1500m" || spec.MemoryLimit != "1717986919" {
+		t.Fatalf("custom policy resources = %#v", spec)
+	}
+}
+
+func TestRecordRuntimeObservationIsMinuteIdempotentAndPersistsMetrics(t *testing.T) {
+	db := testdb.Open(t, testdb.Options{
+		SchemaPrefix: "runtime_observation_test",
+		Migrate: func(db *gorm.DB) error {
+			return db.AutoMigrate(&model.RuntimeObservation{})
+		},
+	})
+	runner := &Runner{db: db}
+	observedAt := time.Now().UTC()
+	target := model.DeploymentTarget{
+		ID: "dplt_observation", ProjectID: "prj_observation", CPURequest: "1", MemoryRequest: "1Gi",
+	}
+	cluster := model.RuntimeCluster{
+		ID: "clu_observation", CPURequestPercent: 10, MemoryRequestPercent: 25,
+		CPULimitPercent: 100, MemoryLimitPercent: 100,
+	}
+	snapshot := kubeprovider.DeploymentSnapshot{
+		DesiredReplicas: 2, UpdatedReplicas: 2, ReadyReplicas: 2, AvailableReplicas: 2,
+		CreatedAt: observedAt.Add(-time.Hour), ObservedAt: observedAt, Phase: "running",
+	}
+	metrics := kubeprovider.RuntimeMetricsSnapshot{
+		Available: true, PodCount: 2, ContainerCount: 4, CPUUsageMilli: 375,
+		MemoryUsageBytes: 640 * 1024 * 1024, UpdatedAt: observedAt,
+	}
+	for attempt := 0; attempt < 2; attempt++ {
+		if err := runner.recordRuntimeObservation(t.Context(), target, cluster, snapshot, metrics); err != nil {
+			t.Fatalf("recordRuntimeObservation() attempt %d error = %v", attempt+1, err)
+		}
+	}
+	var observations []model.RuntimeObservation
+	if err := db.Find(&observations).Error; err != nil {
+		t.Fatalf("load runtime observations: %v", err)
+	}
+	if len(observations) != 1 {
+		t.Fatalf("runtime observation count = %d, want 1", len(observations))
+	}
+	got := observations[0]
+	if !got.MetricsAvailable || got.CPUUsageMilli != 375 || got.MemoryUsageBytes != 640*1024*1024 ||
+		got.PodCount != 2 || got.ContainerCount != 4 || got.EffectiveCPURequest != "100m" || got.EffectiveMemoryRequest != "256Mi" {
+		t.Fatalf("persisted runtime observation = %#v", got)
+	}
+}
+
+func TestAggregateRuntimeObservationsUsesPerSampleMaximumAndSkipsGaps(t *testing.T) {
+	start := time.Date(2026, 8, 22, 4, 0, 0, 0, time.UTC)
+	window := hourlyWindow{Start: start, End: start.Add(time.Hour)}
+	policy := model.RuntimeObservation{CPURequestPercent: 10, MemoryRequestPercent: 25, CPULimitPercent: 100, MemoryLimitPercent: 100}
+	first := policy
+	first.PeriodStart, first.PeriodEnd, first.WorkloadCreatedAt = start, start.Add(time.Minute), start.Add(30*time.Second)
+	first.DesiredReplicas, first.EffectiveCPURequest, first.EffectiveMemoryRequest = 2, "100m", "256Mi"
+	first.MetricsAvailable, first.CPUUsageMilli, first.MemoryUsageBytes = true, 500, 128*1024*1024
+	second := policy
+	second.PeriodStart, second.PeriodEnd, second.WorkloadCreatedAt = start.Add(2*time.Minute), start.Add(3*time.Minute), start
+	second.DesiredReplicas, second.EffectiveCPURequest, second.EffectiveMemoryRequest = 2, "100m", "256Mi"
+	second.MetricsAvailable = false
+
+	got, ok := aggregateRuntimeObservations(window, []model.RuntimeObservation{second, first})
+	if !ok || got.sampleCount != 2 || got.metricsSampleCount != 1 || got.observedSeconds != 90 {
+		t.Fatalf("aggregation metadata = %#v, %v", got, ok)
+	}
+	// CPU: 500m for 30s plus the 200m request floor for 60s.
+	if got.cpuBilled.String() != "0.00749999999999999" || got.cpuRequest.String() != "0.005" || got.cpuActual.String() != "0.00416666666666665" {
+		t.Fatalf("cpu aggregation = billed %s request %s actual %s", got.cpuBilled, got.cpuRequest, got.cpuActual)
+	}
+	// The missing minute between observations is intentionally not interpolated.
+	if !got.memoryBilled.Equal(got.memoryRequest) {
+		t.Fatalf("memory billed %s != request floor %s", got.memoryBilled, got.memoryRequest)
+	}
+}
+
+func TestAggregateRuntimeObservationsAvoidsOverlapAndDoesNotEstimateDisabledRequest(t *testing.T) {
+	start := time.Date(2026, 8, 22, 5, 0, 0, 0, time.UTC)
+	observations := []model.RuntimeObservation{
+		{PeriodStart: start, PeriodEnd: start.Add(time.Minute), WorkloadCreatedAt: start, DesiredReplicas: 1},
+		{PeriodStart: start.Add(30 * time.Second), PeriodEnd: start.Add(90 * time.Second), WorkloadCreatedAt: start, DesiredReplicas: 1},
+	}
+	got, ok := aggregateRuntimeObservations(hourlyWindow{Start: start, End: start.Add(time.Hour)}, observations)
+	if !ok || got.observedSeconds != 90 || !got.cpuBilled.IsZero() || !got.memoryBilled.IsZero() {
+		t.Fatalf("aggregation = %#v, %v", got, ok)
+	}
+}
+
+func TestAggregateRuntimeObservationsTakesMemoryActualMaximumAndSkipsStoppedMinute(t *testing.T) {
+	start := time.Date(2026, 8, 22, 6, 0, 0, 0, time.UTC)
+	observations := []model.RuntimeObservation{
+		{
+			PeriodStart: start, PeriodEnd: start.Add(time.Minute), WorkloadCreatedAt: start,
+			DesiredReplicas: 1, EffectiveMemoryRequest: "256Mi", MetricsAvailable: true,
+			MemoryUsageBytes: 512 * 1024 * 1024,
+		},
+		{
+			PeriodStart: start.Add(time.Minute), PeriodEnd: start.Add(2 * time.Minute), WorkloadCreatedAt: start,
+			DesiredReplicas: 0, EffectiveCPURequest: "1", EffectiveMemoryRequest: "1Gi", MetricsAvailable: true,
+			CPUUsageMilli: 1000, MemoryUsageBytes: 1024 * 1024 * 1024,
+		},
+	}
+	got, ok := aggregateRuntimeObservations(hourlyWindow{Start: start, End: start.Add(time.Hour)}, observations)
+	if !ok || got.sampleCount != 2 || got.metricsSampleCount != 2 || got.observedSeconds != 60 {
+		t.Fatalf("aggregation metadata = %#v, %v", got, ok)
+	}
+	wantMemoryGiBHours := decimal.RequireFromString("0.00833333333333335")
+	if !got.memoryBilled.Equal(wantMemoryGiBHours) || !got.cpuBilled.IsZero() {
+		t.Fatalf("billed CPU/memory = %s/%s, want 0/%s", got.cpuBilled, got.memoryBilled, wantMemoryGiBHours)
 	}
 }
 

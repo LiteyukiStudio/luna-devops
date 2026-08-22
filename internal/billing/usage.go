@@ -48,6 +48,28 @@ type RuntimeUsageInput struct {
 	ActorID            string
 }
 
+type RuntimeAggregatedUsageInput struct {
+	Context                       context.Context
+	ProjectID                     string
+	ApplicationID                 string
+	DeploymentTargetID            string
+	EnvironmentID                 string
+	PeriodStart                   time.Time
+	PeriodEnd                     time.Time
+	CPUCoreHours                  decimal.Decimal
+	MemoryGiBHours                decimal.Decimal
+	CPURequestFloorCoreHours      decimal.Decimal
+	MemoryRequestFloorGiBHours    decimal.Decimal
+	CPUActualObservedCoreHours    decimal.Decimal
+	MemoryActualObservedGiBHours  decimal.Decimal
+	SampleCount                   int
+	MetricsSampleCount            int
+	ObservedDurationSeconds       int64
+	ExpectedDurationSeconds       int64
+	ClusterResourcePolicySnapshot any
+	ActorID                       string
+}
+
 type ProjectVolumeStorageUsageInput struct {
 	Volume                model.ProjectVolume
 	ObservedCapacityBytes int64
@@ -199,6 +221,58 @@ func (s Service) SettleRuntimeTargetWindow(input RuntimeUsageInput) error {
 			Metadata:      string(metadata),
 			SettledAt:     &now,
 		},
+	}
+	return service.debitUsages(records, ReasonRuntimeUsage, "Runtime resource usage", input.ActorID)
+}
+
+func (s Service) SettleRuntimeTargetAggregation(input RuntimeAggregatedUsageInput) error {
+	service := s
+	if input.Context != nil {
+		service.DB = s.DB.WithContext(input.Context)
+	}
+	if input.ProjectID == "" || input.DeploymentTargetID == "" || !input.PeriodEnd.After(input.PeriodStart) {
+		return nil
+	}
+	if !input.CPUCoreHours.IsPositive() && !input.MemoryGiBHours.IsPositive() {
+		return nil
+	}
+	coverage := decimal.Zero
+	if input.ExpectedDurationSeconds > 0 {
+		coverage = decimal.NewFromInt(input.ObservedDurationSeconds).Div(decimal.NewFromInt(input.ExpectedDurationSeconds))
+	}
+	resourceID := runtimeUsageResourceID(input.DeploymentTargetID, input.PeriodStart)
+	now := time.Now().UTC()
+	metadata := func(requestFloor, actualObserved, billed decimal.Decimal) string {
+		payload, _ := json.Marshal(map[string]any{
+			"deploymentTargetId": input.DeploymentTargetID, "environmentId": input.EnvironmentID,
+			"formula": "max_request_actual", "sampleCount": input.SampleCount,
+			"metricsSampleCount": input.MetricsSampleCount, "observedDurationSeconds": input.ObservedDurationSeconds,
+			"expectedDurationSeconds": input.ExpectedDurationSeconds, "coverageRatio": coverage.String(),
+			"requestFloorQuantity": requestFloor.String(), "actualObservedQuantity": actualObserved.String(),
+			"billedQuantity": billed.String(), "clusterResourcePolicySnapshot": input.ClusterResourcePolicySnapshot,
+		})
+		return string(payload)
+	}
+	records := make([]model.BillingUsageRecord, 0, 2)
+	if input.CPUCoreHours.IsPositive() {
+		cpuRate, err := service.rate(MeterRuntimeCPU)
+		if err != nil {
+			return err
+		}
+		records = append(records, model.BillingUsageRecord{ID: id.New("busg"), ProjectID: input.ProjectID, ApplicationID: input.ApplicationID, Meter: MeterRuntimeCPU,
+			Quantity: input.CPUCoreHours, Unit: "vcpu_hour", AmountCredits: input.CPUCoreHours.Mul(cpuRate),
+			ResourceType: ResourceTypeRuntime, ResourceID: resourceID, PeriodStart: input.PeriodStart, PeriodEnd: input.PeriodEnd,
+			Status: "settled", Metadata: metadata(input.CPURequestFloorCoreHours, input.CPUActualObservedCoreHours, input.CPUCoreHours), SettledAt: &now})
+	}
+	if input.MemoryGiBHours.IsPositive() {
+		memoryRate, err := service.rate(MeterRuntimeMemory)
+		if err != nil {
+			return err
+		}
+		records = append(records, model.BillingUsageRecord{ID: id.New("busg"), ProjectID: input.ProjectID, ApplicationID: input.ApplicationID, Meter: MeterRuntimeMemory,
+			Quantity: input.MemoryGiBHours, Unit: "gib_hour", AmountCredits: input.MemoryGiBHours.Mul(memoryRate),
+			ResourceType: ResourceTypeRuntime, ResourceID: resourceID, PeriodStart: input.PeriodStart, PeriodEnd: input.PeriodEnd,
+			Status: "settled", Metadata: metadata(input.MemoryRequestFloorGiBHours, input.MemoryActualObservedGiBHours, input.MemoryGiBHours), SettledAt: &now})
 	}
 	return service.debitUsages(records, ReasonRuntimeUsage, "Runtime resource usage", input.ActorID)
 }

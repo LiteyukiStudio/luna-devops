@@ -14,6 +14,10 @@ Add a Kubernetes cluster under **Runtime Clusters**, paste a kubeconfig reachabl
 - When Luna DevOps runs in containers, do not use a loopback address reachable only from the host.
 - Configure the default Gateway, domain suffix, and TLS when required. Luna DevOps does not create ACME accounts or DNS Provider credentials.
 
+Under **Resource allocation policy**, set the percentages of the application quota used for CPU request, memory request, CPU limit, and memory limit. The defaults are `10% / 25% / 100% / 100%`; each value accepts 0–100, and `0%` omits that Kubernetes field. When a limit is enabled, its request percentage cannot be greater. Request-only and limit-only policies are both valid. Policy changes affect later redeployments and do not rewrite running workloads.
+
+The Kubernetes scheduler still reserves and schedules capacity from requests. Limits are runtime ceilings: exceeding a CPU limit normally throttles the container, while exceeding a memory limit may cause an OOMKill.
+
 Before deleting a cluster, migrate or remove every deployment that references it.
 
 ## 2. Add a registry

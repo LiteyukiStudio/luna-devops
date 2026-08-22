@@ -31,12 +31,6 @@ export function KubernetesAdvancedFields({ form }: KubernetesAdvancedFieldsProps
       <div className="grid gap-3 rounded-md border border-dashed border-border p-3">
         <p className="text-sm font-medium text-foreground">{t('deploymentsPage.kubernetesAdvancedContainer')}</p>
         <div className="grid gap-3 md:grid-cols-2">
-          <Field hint={t('deploymentsPage.cpuLimitHint')} label={t('deploymentsPage.cpuLimit')}>
-            <Input {...form.register('cpuLimit')} placeholder={t('deploymentsPage.cpuLimitPlaceholder')} />
-          </Field>
-          <Field hint={t('deploymentsPage.memoryLimitHint')} label={t('deploymentsPage.memoryLimit')}>
-            <Input {...form.register('memoryLimit')} placeholder={t('deploymentsPage.memoryLimitPlaceholder')} />
-          </Field>
           <Field hint={t('deploymentsPage.imagePullPolicyHint')} label={t('deploymentsPage.imagePullPolicy')}>
             <Select {...form.register('imagePullPolicy')}>
               <option value="">{t('deploymentsPage.kubernetesDefault')}</option>

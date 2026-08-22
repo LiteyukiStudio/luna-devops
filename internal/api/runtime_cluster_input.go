@@ -11,6 +11,7 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	kubeprovider "github.com/LiteyukiStudio/devops/internal/provider/kubernetes"
+	"github.com/LiteyukiStudio/devops/internal/resourcepolicy"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
@@ -47,6 +48,11 @@ func (h *Handlers) runtimeClusterFromInput(ctx *gin.Context, user model.User, in
 		return model.RuntimeCluster{}, false
 	}
 	gatewayDomainSuffixes := normalizeGatewayDomainSuffixes(input.GatewayDomainSuffixes, input.GatewayRootDomain, h.legacyGatewayRootDomain())
+	policy := runtimeClusterResourcePolicy(input)
+	if err := policy.Validate(); err != nil {
+		writeErrorCode(ctx, http.StatusBadRequest, "runtime.resource_policy_invalid", err.Error())
+		return model.RuntimeCluster{}, false
+	}
 	return model.RuntimeCluster{
 		ID:                            clusterID,
 		Name:                          strings.TrimSpace(input.Name),
@@ -58,6 +64,10 @@ func (h *Handlers) runtimeClusterFromInput(ctx *gin.Context, user model.User, in
 		KubeconfigRef:                 kubeconfigRef,
 		IsDefault:                     input.IsDefault,
 		MaxConcurrentBuilds:           normalizeBuildConcurrency(input.MaxConcurrentBuilds, defaultClusterBuildConcurrency),
+		CPURequestPercent:             policy.CPURequestPercent,
+		MemoryRequestPercent:          policy.MemoryRequestPercent,
+		CPULimitPercent:               policy.CPULimitPercent,
+		MemoryLimitPercent:            policy.MemoryLimitPercent,
 		GatewayProvider:               normalizeGatewayProvider(input.GatewayProvider),
 		GatewayRootDomain:             gatewayDomainSuffixes[0],
 		GatewayDomainSuffixesRaw:      encodeGatewayDomainSuffixes(gatewayDomainSuffixes),
@@ -135,6 +145,10 @@ type runtimeClusterInput struct {
 	Kubeconfig                    string   `json:"kubeconfig"`
 	IsDefault                     bool     `json:"isDefault"`
 	MaxConcurrentBuilds           int      `json:"maxConcurrentBuilds"`
+	CPURequestPercent             *int     `json:"cpuRequestPercent"`
+	MemoryRequestPercent          *int     `json:"memoryRequestPercent"`
+	CPULimitPercent               *int     `json:"cpuLimitPercent"`
+	MemoryLimitPercent            *int     `json:"memoryLimitPercent"`
 	GatewayProvider               string   `json:"gatewayProvider"`
 	GatewayRootDomain             string   `json:"gatewayRootDomain"`
 	GatewayDomainSuffixes         []string `json:"gatewayDomainSuffixes"`
@@ -161,6 +175,23 @@ type runtimeClusterInput struct {
 	GatewayTrustedProxyCIDRs      string   `json:"gatewayTrustedProxyCIDRs"`
 	GatewayDefaultRequestHeaders  string   `json:"gatewayDefaultRequestHeaders"`
 	GatewayDefaultResponseHeaders string   `json:"gatewayDefaultResponseHeaders"`
+}
+
+func runtimeClusterResourcePolicy(input runtimeClusterInput) resourcepolicy.Policy {
+	defaults := resourcepolicy.Default()
+	if input.CPURequestPercent != nil {
+		defaults.CPURequestPercent = *input.CPURequestPercent
+	}
+	if input.MemoryRequestPercent != nil {
+		defaults.MemoryRequestPercent = *input.MemoryRequestPercent
+	}
+	if input.CPULimitPercent != nil {
+		defaults.CPULimitPercent = *input.CPULimitPercent
+	}
+	if input.MemoryLimitPercent != nil {
+		defaults.MemoryLimitPercent = *input.MemoryLimitPercent
+	}
+	return defaults
 }
 
 func normalizeGatewayRootDomain(value string, fallbackValue string) string {

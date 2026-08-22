@@ -39,7 +39,7 @@ func periodicTaskSpecs() ([]periodicTaskSpec, error) {
 		periodicVolumeTaskSpec("@every 15m", volumeTransferCleanupTask),
 		{Cron: "@every 1m", Task: asynq.NewTask(tasks.TypeSyncStatus, []byte("{}")), Queue: tasks.QueueLight, Timeout: 5 * time.Minute},
 		{Cron: "@every 1m", Task: asynq.NewTask(tasks.TypeBillingAI, []byte("{}")), Queue: tasks.QueueLight, Timeout: time.Minute},
-		{Cron: "@every 10m", Task: asynq.NewTask(tasks.TypeBillingRuntime, []byte("{}")), Queue: tasks.QueueLight, Timeout: 5 * time.Minute},
+		{Cron: "@every 1m", Task: asynq.NewTask(tasks.TypeBillingRuntime, []byte("{}")), Queue: tasks.QueueLight, Timeout: 5 * time.Minute},
 		{Cron: "@every 24h", Task: asynq.NewTask(tasks.TypeRetentionRun, []byte("{}")), Queue: tasks.QueueLight, Timeout: 30 * time.Minute},
 	}, nil
 }

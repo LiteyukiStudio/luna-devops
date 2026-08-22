@@ -54,6 +54,8 @@ Luna DevOps 将代码仓库、镜像站、BuildKit、Kubernetes、访问入口�
 | 平台运营 | 事件、通知、应用市场、计费和站点设置 |
 | 用户体验 | React 控制台、国际化、浅色 / 深色 / 跟随系统主题和内嵌生产前端 |
 
+运行集群统一管理应用资源分配策略：默认按应用每副本配额的 CPU `10%`、内存 `25%` 写入 requests，按 CPU/内存 `100%` 写入 limits，任一项设为 `0%` 时省略对应 Kubernetes 字段。Worker 继续使用 `metrics.k8s.io` 每分钟保存不可变运行观察，并按小时把每个区间的 `max(有效 request，实际用量)` 聚合为 CPU、内存账单；访问流量仍由现有 Gateway Traffic Probe 独立采集和结算。
+
 ## 技术栈
 
 | 层级 | 技术栈 |

@@ -14,6 +14,11 @@ import (
 const MeterBuildJob = "build.job"
 
 const (
+	MeterRuntimeCPU    = "runtime.cpu_vcpu_hour"
+	MeterRuntimeMemory = "runtime.memory_gib_hour"
+)
+
+const (
 	MeterAIInputTokens        = "ai.input_tokens_1m"
 	MeterAIOutputTokens       = "ai.output_tokens_1m"
 	MeterAICachedInputTokens  = "ai.cached_input_tokens_1m"

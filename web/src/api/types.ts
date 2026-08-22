@@ -1178,8 +1178,6 @@ export interface DeploymentTarget {
   replicas: number
   cpuRequest: string
   memoryRequest: string
-  cpuLimit: string
-  memoryLimit: string
   imagePullPolicy: '' | 'IfNotPresent' | 'Always' | 'Never' | string
   containerCommand: string
   containerArgs: string
@@ -1456,6 +1454,10 @@ export interface RuntimeCluster {
   kubeconfigSet: boolean
   isDefault: boolean
   maxConcurrentBuilds: number
+  cpuRequestPercent: number
+  memoryRequestPercent: number
+  cpuLimitPercent: number
+  memoryLimitPercent: number
   gatewayRootDomain: string
   gatewayDomainSuffixes: string[]
   gatewayPublicScheme: 'http' | 'https'

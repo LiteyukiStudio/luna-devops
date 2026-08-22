@@ -1,5 +1,11 @@
 # TODO
 
+## 2026-08-22 Kubernetes 资源分配与运行计费
+
+- [x] 将 requests/limits 策略绑定 RuntimeCluster，部署配置改为 CPU/内存配额并移除独立 limits。
+- [x] 使用 metrics.k8s.io 保存分钟级不可变观察，按小时逐区间聚合 max(有效 request，实际用量)。
+- [x] 同步迁移、API、OpenAPI、Agent 派生契约、Web 五语言、双语文档和自动化验证。
+
 ## 2026-08-22 全项目日志与错误边界重构
 
 - [x] 统一 Go 与 Agent 的结构化日志契约、终端渲染、OTel 导出和凭据遮罩行为。

@@ -19,7 +19,7 @@ export function RuntimeResourceFields({ form, priceText }: RuntimeResourceFields
         <Field label={t('deploymentsPage.replicas')} required>
           <Input {...form.register('replicas', { valueAsNumber: true })} min={1} type="number" />
         </Field>
-        <Field label={t('deploymentsPage.cpuRequest')} required>
+        <Field hint={t('deploymentsPage.runtimeQuotaPolicyHint')} label={t('deploymentsPage.cpuRequest')} required>
           <UnitInput
             unitSelectLabel={t('deploymentsPage.cpuRequest')}
             units={[
@@ -30,7 +30,7 @@ export function RuntimeResourceFields({ form, priceText }: RuntimeResourceFields
             onChange={value => form.setValue('cpuRequest', value, { shouldDirty: true, shouldValidate: true })}
           />
         </Field>
-        <Field label={t('deploymentsPage.memoryRequest')} required>
+        <Field hint={t('deploymentsPage.runtimeQuotaPolicyHint')} label={t('deploymentsPage.memoryRequest')} required>
           <UnitInput
             unitSelectLabel={t('deploymentsPage.memoryRequest')}
             units={[

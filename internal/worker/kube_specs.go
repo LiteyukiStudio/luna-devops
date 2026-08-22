@@ -12,6 +12,7 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/model"
 	kubeprovider "github.com/LiteyukiStudio/devops/internal/provider/kubernetes"
 	"github.com/LiteyukiStudio/devops/internal/resourcename"
+	"github.com/LiteyukiStudio/devops/internal/resourcepolicy"
 	"github.com/LiteyukiStudio/devops/internal/runtimeconfig"
 	"github.com/LiteyukiStudio/devops/internal/variables"
 	"gorm.io/gorm"
@@ -53,6 +54,22 @@ func deploymentTargetEnvironment(target model.DeploymentTarget) model.Environmen
 		CPURequest:    firstNonEmpty(target.CPURequest, "1"),
 		MemoryRequest: firstNonEmpty(target.MemoryRequest, "1Gi"),
 	}
+}
+
+func applyRuntimeClusterResourcePolicy(spec *kubeprovider.ApplicationResourcesSpec, cluster model.RuntimeCluster) error {
+	policy := resourcepolicy.Policy{
+		CPURequestPercent: cluster.CPURequestPercent, MemoryRequestPercent: cluster.MemoryRequestPercent,
+		CPULimitPercent: cluster.CPULimitPercent, MemoryLimitPercent: cluster.MemoryLimitPercent,
+	}
+	effective, err := resourcepolicy.Calculate(spec.CPURequest, spec.MemoryRequest, policy)
+	if err != nil {
+		return fmt.Errorf("runtime.resource_policy_render_failed: cluster %s deployment target %s: %w", cluster.ID, spec.DeploymentTargetID, err)
+	}
+	spec.CPURequest = effective.CPURequest
+	spec.MemoryRequest = effective.MemoryRequest
+	spec.CPULimit = effective.CPULimit
+	spec.MemoryLimit = effective.MemoryLimit
+	return nil
 }
 
 func (r *Runner) kubeconfigForEnvironment(ctx context.Context, environment model.Environment) (string, error) {
@@ -372,8 +389,8 @@ func applicationResourcesSpec(release model.Release, project model.Project, appl
 		ServicePorts:                 servicePorts,
 		CPURequest:                   strings.TrimSpace(environment.CPURequest),
 		MemoryRequest:                strings.TrimSpace(environment.MemoryRequest),
-		CPULimit:                     strings.TrimSpace(deploymentTarget.CPULimit),
-		MemoryLimit:                  strings.TrimSpace(deploymentTarget.MemoryLimit),
+		CPULimit:                     "",
+		MemoryLimit:                  "",
 		ImagePullPolicy:              strings.TrimSpace(deploymentTarget.ImagePullPolicy),
 		ContainerCommand:             strings.TrimSpace(deploymentTarget.ContainerCommand),
 		ContainerArgs:                strings.TrimSpace(deploymentTarget.ContainerArgs),

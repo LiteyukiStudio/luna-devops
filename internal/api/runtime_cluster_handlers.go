@@ -112,6 +112,10 @@ func (h *Handlers) UpdateRuntimeCluster(ctx *gin.Context) {
 	}
 	existing.IsDefault = next.IsDefault
 	existing.MaxConcurrentBuilds = next.MaxConcurrentBuilds
+	existing.CPURequestPercent = next.CPURequestPercent
+	existing.MemoryRequestPercent = next.MemoryRequestPercent
+	existing.CPULimitPercent = next.CPULimitPercent
+	existing.MemoryLimitPercent = next.MemoryLimitPercent
 	existing.GatewayProvider = next.GatewayProvider
 	existing.GatewayRootDomain = next.GatewayRootDomain
 	existing.GatewayDomainSuffixesRaw = next.GatewayDomainSuffixesRaw

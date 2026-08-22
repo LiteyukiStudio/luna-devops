@@ -63,14 +63,6 @@ func (h *Handlers) deploymentTargetFromInput(ctx *gin.Context, user model.User, 
 	if !ok {
 		return model.DeploymentTarget{}, nil, false
 	}
-	runtimeCPULimit, ok := normalizeOptionalResourceQuantity(ctx, input.CPULimit, "运行 CPU 上限")
-	if !ok {
-		return model.DeploymentTarget{}, nil, false
-	}
-	runtimeMemoryLimit, ok := normalizeOptionalResourceQuantity(ctx, input.MemoryLimit, "运行内存上限")
-	if !ok {
-		return model.DeploymentTarget{}, nil, false
-	}
 	kubernetesAdvanced, ok := normalizeDeploymentKubernetesAdvanced(ctx, input)
 	if !ok {
 		return model.DeploymentTarget{}, nil, false
@@ -181,8 +173,8 @@ func (h *Handlers) deploymentTargetFromInput(ctx *gin.Context, user model.User, 
 		Replicas:                     replicas,
 		CPURequest:                   runtimeCPURequest,
 		MemoryRequest:                runtimeMemoryRequest,
-		CPULimit:                     runtimeCPULimit,
-		MemoryLimit:                  runtimeMemoryLimit,
+		CPULimit:                     "",
+		MemoryLimit:                  "",
 		ImagePullPolicy:              kubernetesAdvanced.ImagePullPolicy,
 		ContainerCommand:             kubernetesAdvanced.ContainerCommand,
 		ContainerArgs:                kubernetesAdvanced.ContainerArgs,

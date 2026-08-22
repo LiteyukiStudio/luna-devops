@@ -1869,13 +1869,9 @@
               "description": "JSON string array or line-separated container command.",
               "type": "string"
             },
-            "cpuLimit": {
-              "description": "Optional Kubernetes CPU limit.",
-              "type": "string"
-            },
             "cpuRequest": {
               "default": "1",
-              "description": "Kubernetes CPU quantity for each replica.",
+              "description": "CPU quota for each replica; the selected runtime cluster policy derives Kubernetes requests and limits.",
               "type": "string"
             },
             "dataVolumes": {
@@ -2074,13 +2070,9 @@
               "description": "JSON Kubernetes liveness probe.",
               "type": "string"
             },
-            "memoryLimit": {
-              "description": "Optional Kubernetes memory limit.",
-              "type": "string"
-            },
             "memoryRequest": {
               "default": "1Gi",
-              "description": "Kubernetes memory quantity for each replica.",
+              "description": "Memory quota for each replica; the selected runtime cluster policy derives Kubernetes requests and limits.",
               "type": "string"
             },
             "name": {
@@ -5210,7 +5202,22 @@
       "properties": {
         "body": {
           "additionalProperties": false,
+          "description": "Runtime cluster configuration. Resource percentages are 0-100; zero omits that Kubernetes field. When the corresponding limit is non-zero, request percent must not exceed limit percent. Policy changes apply only after a later workload render or redeploy.",
           "properties": {
+            "cpuLimitPercent": {
+              "default": 100,
+              "description": "Percentage of the per-replica CPU quota written as limits.cpu; 0 omits the field.",
+              "maximum": 100,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "cpuRequestPercent": {
+              "default": 10,
+              "description": "Percentage of the per-replica CPU quota written as requests.cpu; 0 omits the field.",
+              "maximum": 100,
+              "minimum": 0,
+              "type": "integer"
+            },
             "endpoint": {
               "type": "string"
             },
@@ -5338,6 +5345,20 @@
               "minimum": 1,
               "type": "integer"
             },
+            "memoryLimitPercent": {
+              "default": 100,
+              "description": "Percentage of the per-replica memory quota written as limits.memory; 0 omits the field.",
+              "maximum": 100,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "memoryRequestPercent": {
+              "default": 25,
+              "description": "Percentage of the per-replica memory quota written as requests.memory; 0 omits the field.",
+              "maximum": 100,
+              "minimum": 0,
+              "type": "integer"
+            },
             "name": {
               "minLength": 1,
               "type": "string"
@@ -5385,9 +5406,244 @@
       "type": "object"
     },
     "outputSchema": {
-      "additionalProperties": true,
-      "description": "Extensible business object returned by an API whose domain model is not shared across operations.",
-      "type": "object"
+      "allOf": [
+        {
+          "additionalProperties": false,
+          "description": "Runtime cluster configuration. Resource percentages are 0-100; zero omits that Kubernetes field. When the corresponding limit is non-zero, request percent must not exceed limit percent. Policy changes apply only after a later workload render or redeploy.",
+          "properties": {
+            "cpuLimitPercent": {
+              "default": 100,
+              "description": "Percentage of the per-replica CPU quota written as limits.cpu; 0 omits the field.",
+              "maximum": 100,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "cpuRequestPercent": {
+              "default": 10,
+              "description": "Percentage of the per-replica CPU quota written as requests.cpu; 0 omits the field.",
+              "maximum": 100,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "endpoint": {
+              "type": "string"
+            },
+            "gatewayCertIssuerKind": {
+              "enum": [
+                "Issuer",
+                "ClusterIssuer"
+              ],
+              "type": "string"
+            },
+            "gatewayCertIssuerName": {
+              "type": "string"
+            },
+            "gatewayCertificateNamespace": {
+              "type": "string"
+            },
+            "gatewayClassName": {
+              "type": "string"
+            },
+            "gatewayControllerType": {
+              "enum": [
+                "traefik",
+                "generic"
+              ],
+              "type": "string"
+            },
+            "gatewayDefaultRequestHeaders": {
+              "type": "string"
+            },
+            "gatewayDefaultResponseHeaders": {
+              "type": "string"
+            },
+            "gatewayDomainSuffixes": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "gatewayExternalTLSMode": {
+              "enum": [
+                "none",
+                "gateway",
+                "upstream"
+              ],
+              "type": "string"
+            },
+            "gatewayForwardedHeadersMode": {
+              "enum": [
+                "preserve",
+                "overwrite",
+                "none"
+              ],
+              "type": "string"
+            },
+            "gatewayHttpListenerName": {
+              "type": "string"
+            },
+            "gatewayHttpListenerPort": {
+              "maximum": 65535,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "gatewayHttpsListenerName": {
+              "type": "string"
+            },
+            "gatewayHttpsListenerPort": {
+              "maximum": 65535,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "gatewayName": {
+              "type": "string"
+            },
+            "gatewayNamespace": {
+              "type": "string"
+            },
+            "gatewayProvider": {
+              "enum": [
+                "gateway-api"
+              ],
+              "type": "string"
+            },
+            "gatewayPublicPort": {
+              "maximum": 65535,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "gatewayPublicScheme": {
+              "enum": [
+                "http",
+                "https"
+              ],
+              "type": "string"
+            },
+            "gatewayRootDomain": {
+              "type": "string"
+            },
+            "gatewayTlsSecretName": {
+              "type": "string"
+            },
+            "gatewayTlsSecretNamespace": {
+              "type": "string"
+            },
+            "gatewayTrustedProxyCIDRs": {
+              "type": "string"
+            },
+            "gatewayWildcardCertDomain": {
+              "type": "string"
+            },
+            "gatewayWildcardCertEnabled": {
+              "type": "boolean"
+            },
+            "gatewayWildcardCertSecretName": {
+              "type": "string"
+            },
+            "isDefault": {
+              "type": "boolean"
+            },
+            "kubeconfig": {
+              "type": "string",
+              "writeOnly": true,
+              "x-luna-sensitive": true
+            },
+            "maxConcurrentBuilds": {
+              "minimum": 1,
+              "type": "integer"
+            },
+            "memoryLimitPercent": {
+              "default": 100,
+              "description": "Percentage of the per-replica memory quota written as limits.memory; 0 omits the field.",
+              "maximum": 100,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "memoryRequestPercent": {
+              "default": 25,
+              "description": "Percentage of the per-replica memory quota written as requests.memory; 0 omits the field.",
+              "maximum": 100,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "name": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "ownerRef": {
+              "type": "string"
+            },
+            "projectIds": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "scope": {
+              "enum": [
+                "global",
+                "project",
+                "user"
+              ],
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "kubernetes",
+                "k3s"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "type",
+            "endpoint",
+            "scope"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "createdAt": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "createdBy": {
+              "type": "string"
+            },
+            "id": {
+              "pattern": "^clu_",
+              "type": "string"
+            },
+            "kubeconfigSet": {
+              "type": "boolean"
+            },
+            "lastCheckedAt": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "observationCode": {
+              "type": "string"
+            },
+            "updatedAt": {
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "kubeconfigSet",
+            "createdBy",
+            "createdAt"
+          ],
+          "type": "object"
+        }
+      ]
     },
     "sensitivePaths": [
       "body.kubeconfig"
@@ -21969,13 +22225,248 @@
       "type": "object"
     },
     "outputSchema": {
-      "additionalProperties": true,
+      "additionalProperties": false,
       "properties": {
         "items": {
           "items": {
-            "additionalProperties": true,
-            "description": "Extensible business object returned by an API whose domain model is not shared across operations.",
-            "type": "object"
+            "allOf": [
+              {
+                "additionalProperties": false,
+                "description": "Runtime cluster configuration. Resource percentages are 0-100; zero omits that Kubernetes field. When the corresponding limit is non-zero, request percent must not exceed limit percent. Policy changes apply only after a later workload render or redeploy.",
+                "properties": {
+                  "cpuLimitPercent": {
+                    "default": 100,
+                    "description": "Percentage of the per-replica CPU quota written as limits.cpu; 0 omits the field.",
+                    "maximum": 100,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "cpuRequestPercent": {
+                    "default": 10,
+                    "description": "Percentage of the per-replica CPU quota written as requests.cpu; 0 omits the field.",
+                    "maximum": 100,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "endpoint": {
+                    "type": "string"
+                  },
+                  "gatewayCertIssuerKind": {
+                    "enum": [
+                      "Issuer",
+                      "ClusterIssuer"
+                    ],
+                    "type": "string"
+                  },
+                  "gatewayCertIssuerName": {
+                    "type": "string"
+                  },
+                  "gatewayCertificateNamespace": {
+                    "type": "string"
+                  },
+                  "gatewayClassName": {
+                    "type": "string"
+                  },
+                  "gatewayControllerType": {
+                    "enum": [
+                      "traefik",
+                      "generic"
+                    ],
+                    "type": "string"
+                  },
+                  "gatewayDefaultRequestHeaders": {
+                    "type": "string"
+                  },
+                  "gatewayDefaultResponseHeaders": {
+                    "type": "string"
+                  },
+                  "gatewayDomainSuffixes": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "gatewayExternalTLSMode": {
+                    "enum": [
+                      "none",
+                      "gateway",
+                      "upstream"
+                    ],
+                    "type": "string"
+                  },
+                  "gatewayForwardedHeadersMode": {
+                    "enum": [
+                      "preserve",
+                      "overwrite",
+                      "none"
+                    ],
+                    "type": "string"
+                  },
+                  "gatewayHttpListenerName": {
+                    "type": "string"
+                  },
+                  "gatewayHttpListenerPort": {
+                    "maximum": 65535,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "gatewayHttpsListenerName": {
+                    "type": "string"
+                  },
+                  "gatewayHttpsListenerPort": {
+                    "maximum": 65535,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "gatewayName": {
+                    "type": "string"
+                  },
+                  "gatewayNamespace": {
+                    "type": "string"
+                  },
+                  "gatewayProvider": {
+                    "enum": [
+                      "gateway-api"
+                    ],
+                    "type": "string"
+                  },
+                  "gatewayPublicPort": {
+                    "maximum": 65535,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "gatewayPublicScheme": {
+                    "enum": [
+                      "http",
+                      "https"
+                    ],
+                    "type": "string"
+                  },
+                  "gatewayRootDomain": {
+                    "type": "string"
+                  },
+                  "gatewayTlsSecretName": {
+                    "type": "string"
+                  },
+                  "gatewayTlsSecretNamespace": {
+                    "type": "string"
+                  },
+                  "gatewayTrustedProxyCIDRs": {
+                    "type": "string"
+                  },
+                  "gatewayWildcardCertDomain": {
+                    "type": "string"
+                  },
+                  "gatewayWildcardCertEnabled": {
+                    "type": "boolean"
+                  },
+                  "gatewayWildcardCertSecretName": {
+                    "type": "string"
+                  },
+                  "isDefault": {
+                    "type": "boolean"
+                  },
+                  "kubeconfig": {
+                    "type": "string",
+                    "writeOnly": true,
+                    "x-luna-sensitive": true
+                  },
+                  "maxConcurrentBuilds": {
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "memoryLimitPercent": {
+                    "default": 100,
+                    "description": "Percentage of the per-replica memory quota written as limits.memory; 0 omits the field.",
+                    "maximum": 100,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "memoryRequestPercent": {
+                    "default": 25,
+                    "description": "Percentage of the per-replica memory quota written as requests.memory; 0 omits the field.",
+                    "maximum": 100,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "name": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "ownerRef": {
+                    "type": "string"
+                  },
+                  "projectIds": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "scope": {
+                    "enum": [
+                      "global",
+                      "project",
+                      "user"
+                    ],
+                    "type": "string"
+                  },
+                  "status": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "enum": [
+                      "kubernetes",
+                      "k3s"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name",
+                  "type",
+                  "endpoint",
+                  "scope"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "createdAt": {
+                    "format": "date-time",
+                    "type": "string"
+                  },
+                  "createdBy": {
+                    "type": "string"
+                  },
+                  "id": {
+                    "pattern": "^clu_",
+                    "type": "string"
+                  },
+                  "kubeconfigSet": {
+                    "type": "boolean"
+                  },
+                  "lastCheckedAt": {
+                    "format": "date-time",
+                    "type": "string"
+                  },
+                  "observationCode": {
+                    "type": "string"
+                  },
+                  "updatedAt": {
+                    "format": "date-time",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "kubeconfigSet",
+                  "createdBy",
+                  "createdAt"
+                ],
+                "type": "object"
+              }
+            ]
           },
           "type": "array"
         },
@@ -21999,6 +22490,7 @@
           "type": "string"
         },
         "total": {
+          "format": "int64",
           "minimum": 0,
           "type": "integer"
         },
@@ -27046,13 +27538,9 @@
               "description": "JSON string array or line-separated container command.",
               "type": "string"
             },
-            "cpuLimit": {
-              "description": "Optional Kubernetes CPU limit.",
-              "type": "string"
-            },
             "cpuRequest": {
               "default": "1",
-              "description": "Kubernetes CPU quantity for each replica.",
+              "description": "CPU quota for each replica; the selected runtime cluster policy derives Kubernetes requests and limits.",
               "type": "string"
             },
             "dataVolumes": {
@@ -27251,13 +27739,9 @@
               "description": "JSON Kubernetes liveness probe.",
               "type": "string"
             },
-            "memoryLimit": {
-              "description": "Optional Kubernetes memory limit.",
-              "type": "string"
-            },
             "memoryRequest": {
               "default": "1Gi",
-              "description": "Kubernetes memory quantity for each replica.",
+              "description": "Memory quota for each replica; the selected runtime cluster policy derives Kubernetes requests and limits.",
               "type": "string"
             },
             "name": {
@@ -30456,7 +30940,22 @@
       "properties": {
         "body": {
           "additionalProperties": false,
+          "description": "Runtime cluster configuration. Resource percentages are 0-100; zero omits that Kubernetes field. When the corresponding limit is non-zero, request percent must not exceed limit percent. Policy changes apply only after a later workload render or redeploy.",
           "properties": {
+            "cpuLimitPercent": {
+              "default": 100,
+              "description": "Percentage of the per-replica CPU quota written as limits.cpu; 0 omits the field.",
+              "maximum": 100,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "cpuRequestPercent": {
+              "default": 10,
+              "description": "Percentage of the per-replica CPU quota written as requests.cpu; 0 omits the field.",
+              "maximum": 100,
+              "minimum": 0,
+              "type": "integer"
+            },
             "endpoint": {
               "type": "string"
             },
@@ -30582,6 +31081,20 @@
             },
             "maxConcurrentBuilds": {
               "minimum": 1,
+              "type": "integer"
+            },
+            "memoryLimitPercent": {
+              "default": 100,
+              "description": "Percentage of the per-replica memory quota written as limits.memory; 0 omits the field.",
+              "maximum": 100,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "memoryRequestPercent": {
+              "default": 25,
+              "description": "Percentage of the per-replica memory quota written as requests.memory; 0 omits the field.",
+              "maximum": 100,
+              "minimum": 0,
               "type": "integer"
             },
             "name": {

@@ -988,7 +988,7 @@ paths:
           description: Paginated runtime cluster list.
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/PaginatedBusinessObjects" }
+              schema: { $ref: "#/components/schemas/PaginatedRuntimeClusters" }
 
     post:
       operationId: createRuntimeCluster
@@ -1007,7 +1007,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/BusinessObject"
+                $ref: "#/components/schemas/RuntimeCluster"
         "400":
           $ref: "#/components/responses/BadRequest"
         "403":
@@ -3013,7 +3013,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/BusinessObject"
+                $ref: "#/components/schemas/RuntimeCluster"
         "400":
           $ref: "#/components/responses/BadRequest"
         "403":
@@ -10009,17 +10009,11 @@ components:
         cpuRequest:
           type: string
           default: "1"
-          description: Kubernetes CPU quantity for each replica.
+          description: CPU quota for each replica; the selected runtime cluster policy derives Kubernetes requests and limits.
         memoryRequest:
           type: string
           default: 1Gi
-          description: Kubernetes memory quantity for each replica.
-        cpuLimit:
-          type: string
-          description: Optional Kubernetes CPU limit.
-        memoryLimit:
-          type: string
-          description: Optional Kubernetes memory limit.
+          description: Memory quota for each replica; the selected runtime cluster policy derives Kubernetes requests and limits.
         imagePullPolicy:
           type: string
           enum: [Always, IfNotPresent, Never]
@@ -11074,6 +11068,7 @@ components:
         enabled: { type: boolean }
     RuntimeClusterInput:
       type: object
+      description: Runtime cluster configuration. Resource percentages are 0-100; zero omits that Kubernetes field. When the corresponding limit is non-zero, request percent must not exceed limit percent. Policy changes apply only after a later workload render or redeploy.
       required: [name, type, endpoint, scope]
       properties:
         name: { type: string, minLength: 1 }
@@ -11090,6 +11085,10 @@ components:
           x-luna-sensitive: true
         isDefault: { type: boolean }
         maxConcurrentBuilds: { type: integer, minimum: 1 }
+        cpuRequestPercent: { type: integer, minimum: 0, maximum: 100, default: 10, description: Percentage of the per-replica CPU quota written as requests.cpu; 0 omits the field. }
+        memoryRequestPercent: { type: integer, minimum: 0, maximum: 100, default: 25, description: Percentage of the per-replica memory quota written as requests.memory; 0 omits the field. }
+        cpuLimitPercent: { type: integer, minimum: 0, maximum: 100, default: 100, description: Percentage of the per-replica CPU quota written as limits.cpu; 0 omits the field. }
+        memoryLimitPercent: { type: integer, minimum: 0, maximum: 100, default: 100, description: Percentage of the per-replica memory quota written as limits.memory; 0 omits the field. }
         gatewayProvider: { type: string, enum: [gateway-api] }
         gatewayRootDomain: { type: string }
         gatewayDomainSuffixes:
@@ -11119,6 +11118,32 @@ components:
         gatewayDefaultRequestHeaders: { type: string }
         gatewayDefaultResponseHeaders: { type: string }
         status: { type: string }
+    RuntimeCluster:
+      allOf:
+        - $ref: "#/components/schemas/RuntimeClusterInput"
+        - type: object
+          required: [id, kubeconfigSet, createdBy, createdAt]
+          properties:
+            id: { type: string, pattern: '^clu_' }
+            kubeconfigSet: { type: boolean }
+            observationCode: { type: string }
+            lastCheckedAt: { type: string, format: date-time }
+            createdBy: { type: string }
+            createdAt: { type: string, format: date-time }
+            updatedAt: { type: string, format: date-time }
+    PaginatedRuntimeClusters:
+      type: object
+      required: [items, page, pageSize, sortBy, sortOrder, total, totalPages]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/RuntimeCluster" }
+        page: { type: integer, minimum: 1 }
+        pageSize: { type: integer, minimum: 1, maximum: 100 }
+        sortBy: { type: string }
+        sortOrder: { type: string, enum: [asc, desc] }
+        total: { type: integer, format: int64, minimum: 0 }
+        totalPages: { type: integer, minimum: 0 }
     SystemComponentInstallInput:
       type: object
       required: [clusterId, apiBaseUrl]

@@ -24,8 +24,6 @@ type deploymentTargetResponse struct {
 	Replicas                     int                                  `json:"replicas"`
 	CPURequest                   string                               `json:"cpuRequest"`
 	MemoryRequest                string                               `json:"memoryRequest"`
-	CPULimit                     string                               `json:"cpuLimit"`
-	MemoryLimit                  string                               `json:"memoryLimit"`
 	ImagePullPolicy              string                               `json:"imagePullPolicy"`
 	ContainerCommand             string                               `json:"containerCommand"`
 	ContainerArgs                string                               `json:"containerArgs"`
@@ -148,8 +146,6 @@ func deploymentTargetResponseFromModel(target model.DeploymentTarget, mounts ...
 		Replicas:                     fallbackInt(target.Replicas, 1),
 		CPURequest:                   fallback(strings.TrimSpace(target.CPURequest), model.DefaultDeploymentCPURequest),
 		MemoryRequest:                fallback(strings.TrimSpace(target.MemoryRequest), model.DefaultDeploymentMemoryRequest),
-		CPULimit:                     strings.TrimSpace(target.CPULimit),
-		MemoryLimit:                  strings.TrimSpace(target.MemoryLimit),
 		ImagePullPolicy:              normalizeImagePullPolicyValue(target.ImagePullPolicy),
 		ContainerCommand:             target.ContainerCommand,
 		ContainerArgs:                target.ContainerArgs,
@@ -287,8 +283,6 @@ type deploymentTargetInput struct {
 	Replicas                     int                                `json:"replicas"`
 	CPURequest                   string                             `json:"cpuRequest"`
 	MemoryRequest                string                             `json:"memoryRequest"`
-	CPULimit                     string                             `json:"cpuLimit"`
-	MemoryLimit                  string                             `json:"memoryLimit"`
 	ImagePullPolicy              string                             `json:"imagePullPolicy"`
 	ContainerCommand             string                             `json:"containerCommand"`
 	ContainerArgs                string                             `json:"containerArgs"`

@@ -4,14 +4,17 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"sort"
 	"time"
 
 	"github.com/LiteyukiStudio/devops/internal/billing"
 	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	kubeprovider "github.com/LiteyukiStudio/devops/internal/provider/kubernetes"
+	"github.com/LiteyukiStudio/devops/internal/resourcepolicy"
 	"github.com/LiteyukiStudio/devops/internal/telemetry"
 	"github.com/hibiken/asynq"
+	"github.com/shopspring/decimal"
 	"go.opentelemetry.io/otel/attribute"
 	"gorm.io/gorm/clause"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -45,6 +48,8 @@ func (r *Runner) settleRuntimeUsageWindows(ctx context.Context, now time.Time) e
 		if err := ctx.Err(); err != nil {
 			return err
 		}
+		observationPeriodStart := now.UTC().Truncate(time.Minute)
+		observationPeriodEnd := observationPeriodStart.Add(time.Minute)
 		project, err := workerStageValue(ctx, "billing.load_project", func(stageCtx context.Context) (model.Project, error) {
 			var project model.Project
 			err := r.db.WithContext(stageCtx).First(&project, "id = ?", target.ProjectID).Error
@@ -53,10 +58,26 @@ func (r *Runner) settleRuntimeUsageWindows(ctx context.Context, now time.Time) e
 		if err != nil {
 			continue
 		}
+		settlementErr := workerStage(ctx, "billing.settle_runtime", func(stageCtx context.Context) error {
+			return r.settleRuntimeUsageForTarget(stageCtx, service, target, windows)
+		}, attribute.String("deployment_target.id", target.ID))
+		runtimeErr = errors.Join(runtimeErr, settlementErr)
 		manager, err := workerStageValue(ctx, "billing.connect_runtime", func(stageCtx context.Context) (kubeprovider.NamespaceManager, error) {
 			return r.kubernetesManager(stageCtx, deploymentTargetEnvironment(target))
 		}, attribute.String("deployment_target.id", target.ID))
 		if err != nil {
+			telemetry.LogError(ctx, "Runtime resource observation failed to connect to the cluster", "runtime.resource_observation.failed", "runtime.resource_observe", "runtime.cluster_unavailable", err,
+				slog.String("resource.type", "deployment_target"), slog.String("resource.id", target.ID), slog.String("runtime_cluster_id", target.ClusterID), slog.String("deployment_target_id", target.ID),
+				slog.String("period_start", observationPeriodStart.Format(time.RFC3339)), slog.String("period_end", observationPeriodEnd.Format(time.RFC3339)),
+				slog.Int("sample_count", 0), slog.Int("metrics_sample_count", 0))
+			continue
+		}
+		cluster, err := r.runtimeClusterForEnvironment(ctx, deploymentTargetEnvironment(target))
+		if err != nil {
+			telemetry.LogError(ctx, "Runtime resource observation failed to resolve the cluster", "runtime.resource_observation.failed", "runtime.resource_observe", "runtime.cluster_unavailable", err,
+				slog.String("resource.type", "deployment_target"), slog.String("resource.id", target.ID), slog.String("runtime_cluster_id", target.ClusterID), slog.String("deployment_target_id", target.ID),
+				slog.String("period_start", observationPeriodStart.Format(time.RFC3339)), slog.String("period_end", observationPeriodEnd.Format(time.RFC3339)),
+				slog.Int("sample_count", 0), slog.Int("metrics_sample_count", 0))
 			continue
 		}
 		namespace := target.Namespace
@@ -66,14 +87,36 @@ func (r *Runner) settleRuntimeUsageWindows(ctx context.Context, now time.Time) e
 		snapshot, err := workerStageValue(ctx, "billing.observe_runtime", func(stageCtx context.Context) (kubeprovider.DeploymentSnapshot, error) {
 			return manager.GetWorkloadSnapshot(stageCtx, namespace, applicationResourceName(target), target.WorkloadType)
 		}, attribute.String("deployment_target.id", target.ID))
-		if err == nil {
-			if observationErr := r.recordRuntimeObservation(ctx, target, snapshot); observationErr != nil {
+		if err != nil {
+			telemetry.LogError(ctx, "Runtime resource observation failed to query the workload", "runtime.resource_observation.failed", "runtime.resource_observe", "runtime.workload_unavailable", err,
+				slog.String("resource.type", "deployment_target"), slog.String("resource.id", target.ID),
+				slog.String("runtime_cluster_id", cluster.ID), slog.String("deployment_target_id", target.ID),
+				slog.String("period_start", observationPeriodStart.Format(time.RFC3339)), slog.String("period_end", observationPeriodEnd.Format(time.RFC3339)),
+				slog.Int("sample_count", 0), slog.Int("metrics_sample_count", 0))
+			continue
+		}
+		{
+			metrics := kubeprovider.RuntimeMetricsSnapshot{Available: false, Reason: "metrics_unavailable", UpdatedAt: snapshot.ObservedAt}
+			if provider, ok := manager.(interface {
+				RuntimeMetrics(context.Context, kubeprovider.RuntimeMetricsOptions) (kubeprovider.RuntimeMetricsSnapshot, error)
+			}); ok {
+				metrics, err = workerStageValue(ctx, "runtime.metrics.query", func(stageCtx context.Context) (kubeprovider.RuntimeMetricsSnapshot, error) {
+					return provider.RuntimeMetrics(stageCtx, kubeprovider.RuntimeMetricsOptions{
+						Namespace: namespace, DeploymentTargetID: target.ID, WorkloadName: applicationResourceName(target), WorkloadType: target.WorkloadType,
+					})
+				}, attribute.String("deployment_target.id", target.ID), attribute.String("runtime_cluster.id", cluster.ID))
+				if err != nil {
+					metrics = kubeprovider.RuntimeMetricsSnapshot{Available: false, Reason: "metrics_unavailable", UpdatedAt: snapshot.ObservedAt}
+				}
+			}
+			if observationErr := r.recordRuntimeObservation(ctx, target, cluster, snapshot, metrics); observationErr != nil {
+				telemetry.LogError(ctx, "Runtime resource observation failed", "runtime.resource_observation.failed", "runtime.resource_observe", "runtime.resource_observation_failed", observationErr,
+					slog.String("resource.type", "deployment_target"), slog.String("resource.id", target.ID),
+					slog.String("runtime_cluster_id", cluster.ID), slog.String("deployment_target_id", target.ID),
+					slog.String("period_start", observationPeriodStart.Format(time.RFC3339)), slog.String("period_end", observationPeriodEnd.Format(time.RFC3339)),
+					slog.Int("sample_count", 0), slog.Int("metrics_sample_count", 0))
 				return observationErr
 			}
-			settlementErr := workerStage(ctx, "billing.settle_runtime", func(stageCtx context.Context) error {
-				return r.settleRuntimeUsageForTarget(stageCtx, service, target, windows)
-			}, attribute.String("deployment_target.id", target.ID))
-			runtimeErr = errors.Join(runtimeErr, settlementErr)
 		}
 	}
 	volumeErr := workerStage(ctx, "billing.settle_project_volumes", func(stageCtx context.Context) error {
@@ -91,41 +134,82 @@ func (r *Runner) settleRuntimeUsageForTarget(ctx context.Context, service billin
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		var observation model.RuntimeObservation
-		if err := r.db.WithContext(ctx).Where("deployment_target_id = ? AND period_start = ?", target.ID, window.Start).First(&observation).Error; err != nil {
-			telemetry.LogWarn(ctx, "Runtime billing window has no authoritative observation",
-				"billing.runtime.observation_missing", "billing.runtime.observe",
-				"dependency.postgres.unavailable", err,
-				slog.String("billing.observation.status", "pending"),
-				slog.String("resource.type", "deployment_target"),
-				slog.String("resource.id", target.ID))
+		var observations []model.RuntimeObservation
+		if err := r.db.WithContext(ctx).
+			Where("deployment_target_id = ? AND period_start < ? AND period_end > ?", target.ID, window.End, window.Start).
+			Order("period_start asc").Find(&observations).Error; err != nil {
+			telemetry.LogError(ctx, "Runtime billing settlement failed while loading observations",
+				"billing.runtime_settlement.failed", "billing.runtime_settle", "dependency.postgres.unavailable", err,
+				slog.String("resource.type", "deployment_target"), slog.String("resource.id", target.ID),
+				slog.String("deployment_target_id", target.ID), slog.String("runtime_cluster_id", target.ClusterID), slog.String("period_start", window.Start.Format(time.RFC3339)),
+				slog.String("period_end", window.End.Format(time.RFC3339)), slog.Int("sample_count", 0), slog.Int("metrics_sample_count", 0))
+			result = errors.Join(result, err)
 			continue
 		}
-		periodStart, periodEnd, ok := runtimeBillingEffectivePeriod(window.Start, window.End, observation.WorkloadCreatedAt)
+		if len(observations) == 0 {
+			telemetry.LogWarn(ctx, "Runtime billing settlement skipped because no minute observations exist",
+				"billing.runtime_settlement.skipped", "billing.runtime_settle", "billing.runtime_observation_missing", nil,
+				slog.String("resource.type", "deployment_target"), slog.String("resource.id", target.ID),
+				slog.String("deployment_target_id", target.ID), slog.String("runtime_cluster_id", target.ClusterID),
+				slog.String("period_start", window.Start.Format(time.RFC3339)), slog.String("period_end", window.End.Format(time.RFC3339)),
+				slog.Int("sample_count", 0), slog.Int("metrics_sample_count", 0))
+			continue
+		}
+		aggregation, ok := aggregateRuntimeObservations(window, observations)
 		if !ok {
 			continue
 		}
-		err := service.SettleRuntimeTargetWindow(billing.RuntimeUsageInput{
+		if !aggregation.cpuBilled.IsPositive() && !aggregation.memoryBilled.IsPositive() {
+			telemetry.LogWarn(ctx, "Runtime billing settlement skipped because the observed workload produced no billable usage",
+				"billing.runtime_settlement.skipped", "billing.runtime_settle", "billing.runtime_usage_zero", nil,
+				slog.String("resource.type", "deployment_target"), slog.String("resource.id", target.ID),
+				slog.String("deployment_target_id", target.ID), slog.String("runtime_cluster_id", observations[0].RuntimeClusterID),
+				slog.String("period_start", window.Start.Format(time.RFC3339)), slog.String("period_end", window.End.Format(time.RFC3339)),
+				slog.Int("sample_count", aggregation.sampleCount), slog.Int("metrics_sample_count", aggregation.metricsSampleCount))
+			continue
+		}
+		err := service.SettleRuntimeTargetAggregation(billing.RuntimeAggregatedUsageInput{
 			Context:            ctx,
 			ProjectID:          target.ProjectID,
 			ApplicationID:      target.ApplicationID,
 			DeploymentTargetID: target.ID,
 			EnvironmentID:      target.EnvironmentID,
-			DesiredReplicas:    observation.DesiredReplicas,
-			CPURequest:         observation.CPURequest,
-			MemoryRequest:      observation.MemoryRequest,
-			PeriodStart:        periodStart,
-			PeriodEnd:          periodEnd,
-			ActorID:            "system",
+			PeriodStart:        window.Start, PeriodEnd: window.End,
+			CPUCoreHours: aggregation.cpuBilled, MemoryGiBHours: aggregation.memoryBilled,
+			CPURequestFloorCoreHours: aggregation.cpuRequest, MemoryRequestFloorGiBHours: aggregation.memoryRequest,
+			CPUActualObservedCoreHours: aggregation.cpuActual, MemoryActualObservedGiBHours: aggregation.memoryActual,
+			SampleCount: aggregation.sampleCount, MetricsSampleCount: aggregation.metricsSampleCount,
+			ObservedDurationSeconds: aggregation.observedSeconds, ExpectedDurationSeconds: int64(window.End.Sub(window.Start) / time.Second),
+			ClusterResourcePolicySnapshot: aggregation.policySnapshots,
+			ActorID:                       "system",
 		})
-		if err != nil && !errors.Is(err, billing.ErrAlreadySettled) {
+		if errors.Is(err, billing.ErrAlreadySettled) {
+			telemetry.LogWarn(ctx, "Runtime billing settlement skipped because the hourly usage is already settled",
+				"billing.runtime_settlement.skipped", "billing.runtime_settle", "billing.runtime_already_settled", nil,
+				slog.String("resource.type", "deployment_target"), slog.String("resource.id", target.ID),
+				slog.String("deployment_target_id", target.ID), slog.String("runtime_cluster_id", observations[0].RuntimeClusterID),
+				slog.String("period_start", window.Start.Format(time.RFC3339)), slog.String("period_end", window.End.Format(time.RFC3339)),
+				slog.Int("sample_count", aggregation.sampleCount), slog.Int("metrics_sample_count", aggregation.metricsSampleCount))
+		} else if err != nil {
+			telemetry.LogError(ctx, "Runtime billing settlement failed", "billing.runtime_settlement.failed", "billing.runtime_settle", "billing.runtime_settlement_failed", err,
+				slog.String("resource.type", "deployment_target"), slog.String("resource.id", target.ID),
+				slog.String("deployment_target_id", target.ID), slog.String("runtime_cluster_id", observations[0].RuntimeClusterID),
+				slog.String("period_start", window.Start.Format(time.RFC3339)), slog.String("period_end", window.End.Format(time.RFC3339)),
+				slog.Int("sample_count", aggregation.sampleCount), slog.Int("metrics_sample_count", aggregation.metricsSampleCount))
 			result = errors.Join(result, err)
+		} else if err == nil {
+			telemetry.Logger().InfoContext(ctx, "Runtime billing settlement completed",
+				slog.String("event.name", "billing.runtime_settlement.completed"), slog.String("operation", "billing.runtime_settle"), slog.String("outcome", "succeeded"),
+				slog.String("resource.type", "deployment_target"), slog.String("resource.id", target.ID),
+				slog.String("deployment_target_id", target.ID), slog.String("runtime_cluster_id", observations[0].RuntimeClusterID),
+				slog.String("period_start", window.Start.Format(time.RFC3339)), slog.String("period_end", window.End.Format(time.RFC3339)),
+				slog.Int("sample_count", aggregation.sampleCount), slog.Int("metrics_sample_count", aggregation.metricsSampleCount))
 		}
 	}
 	return result
 }
 
-func (r *Runner) recordRuntimeObservation(ctx context.Context, target model.DeploymentTarget, snapshot kubeprovider.DeploymentSnapshot) error {
+func (r *Runner) recordRuntimeObservation(ctx context.Context, target model.DeploymentTarget, cluster model.RuntimeCluster, snapshot kubeprovider.DeploymentSnapshot, metrics kubeprovider.RuntimeMetricsSnapshot) error {
 	observedAt := snapshot.ObservedAt.UTC()
 	if observedAt.IsZero() {
 		observedAt = time.Now().UTC()
@@ -134,39 +218,178 @@ func (r *Runner) recordRuntimeObservation(ctx context.Context, target model.Depl
 	if !ok {
 		return nil
 	}
-	observation := model.RuntimeObservation{
-		ID:                 id.New("robs"),
-		DeploymentTargetID: target.ID,
-		PeriodStart:        periodStart,
-		PeriodEnd:          periodEnd,
-		DesiredReplicas:    snapshot.DesiredReplicas,
-		UpdatedReplicas:    snapshot.UpdatedReplicas,
-		ReadyReplicas:      snapshot.ReadyReplicas,
-		AvailableReplicas:  snapshot.AvailableReplicas,
-		CPURequest:         target.CPURequest,
-		MemoryRequest:      target.MemoryRequest,
-		WorkloadCreatedAt:  snapshot.CreatedAt,
-		Status:             snapshot.Phase,
-		ObservationCode:    "deployment_target.observed",
-		ObservedAt:         observedAt,
+	policy := resourcepolicy.Policy{CPURequestPercent: cluster.CPURequestPercent, MemoryRequestPercent: cluster.MemoryRequestPercent, CPULimitPercent: cluster.CPULimitPercent, MemoryLimitPercent: cluster.MemoryLimitPercent}
+	effective, err := resourcepolicy.Calculate(target.CPURequest, target.MemoryRequest, policy)
+	if err != nil {
+		return err
 	}
-	return r.db.WithContext(ctx).Clauses(clause.OnConflict{
-		Columns: []clause.Column{{Name: "deployment_target_id"}, {Name: "period_start"}},
-		DoUpdates: clause.AssignmentColumns([]string{
-			"period_end", "desired_replicas", "updated_replicas", "ready_replicas", "available_replicas",
-			"cpu_request", "memory_request", "workload_created_at", "status", "observation_code", "observed_at", "updated_at",
-		}),
+	observationCode := "runtime.metrics_observed"
+	if !metrics.Available {
+		observationCode = "runtime.metrics_unavailable"
+	}
+	observation := model.RuntimeObservation{
+		ID:                     id.New("robs"),
+		DeploymentTargetID:     target.ID,
+		RuntimeClusterID:       cluster.ID,
+		ProjectID:              target.ProjectID,
+		PeriodStart:            periodStart,
+		PeriodEnd:              periodEnd,
+		DesiredReplicas:        snapshot.DesiredReplicas,
+		UpdatedReplicas:        snapshot.UpdatedReplicas,
+		ReadyReplicas:          snapshot.ReadyReplicas,
+		AvailableReplicas:      snapshot.AvailableReplicas,
+		EffectiveCPURequest:    effective.CPURequest,
+		EffectiveMemoryRequest: effective.MemoryRequest,
+		CPUUsageMilli:          metrics.CPUUsageMilli,
+		MemoryUsageBytes:       metrics.MemoryUsageBytes,
+		MetricsAvailable:       metrics.Available,
+		PodCount:               metrics.PodCount,
+		ContainerCount:         metrics.ContainerCount,
+		CPURequestPercent:      policy.CPURequestPercent, MemoryRequestPercent: policy.MemoryRequestPercent,
+		CPULimitPercent: policy.CPULimitPercent, MemoryLimitPercent: policy.MemoryLimitPercent,
+		WorkloadCreatedAt: snapshot.CreatedAt,
+		Status:            snapshot.Phase,
+		ObservationCode:   observationCode,
+		ObservedAt:        observedAt,
+	}
+	err = r.db.WithContext(ctx).Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "deployment_target_id"}, {Name: "period_start"}},
+		DoNothing: true,
 	}).Create(&observation).Error
+	if err == nil {
+		metricsSampleCount := 0
+		if metrics.Available {
+			metricsSampleCount = 1
+		}
+		telemetry.Logger().InfoContext(ctx, "Runtime resource observation completed",
+			slog.String("event.name", "runtime.resource_observation.completed"), slog.String("operation", "runtime.resource_observe"), slog.String("outcome", "succeeded"),
+			slog.String("resource.type", "deployment_target"), slog.String("resource.id", target.ID),
+			slog.String("runtime_cluster_id", cluster.ID), slog.String("deployment_target_id", target.ID),
+			slog.String("period_start", periodStart.Format(time.RFC3339)), slog.String("period_end", periodEnd.Format(time.RFC3339)),
+			slog.Int("sample_count", 1), slog.Int("metrics_sample_count", metricsSampleCount))
+	}
+	return err
 }
 
 func runtimeObservationWindow(observedAt, now time.Time) (time.Time, time.Time, bool) {
 	observedAt = observedAt.UTC()
 	now = now.UTC()
-	periodStart := observedAt.Truncate(time.Hour)
-	if !periodStart.Equal(now.Truncate(time.Hour)) {
+	periodStart := observedAt.Truncate(time.Minute)
+	if !periodStart.Equal(now.Truncate(time.Minute)) {
 		return time.Time{}, time.Time{}, false
 	}
-	return periodStart, periodStart.Add(time.Hour), true
+	return periodStart, periodStart.Add(time.Minute), true
+}
+
+type runtimePolicySnapshot struct {
+	CPURequestPercent    int `json:"cpuRequestPercent"`
+	MemoryRequestPercent int `json:"memoryRequestPercent"`
+	CPULimitPercent      int `json:"cpuLimitPercent"`
+	MemoryLimitPercent   int `json:"memoryLimitPercent"`
+}
+
+type runtimeAggregation struct {
+	cpuBilled, memoryBilled   decimal.Decimal
+	cpuRequest, memoryRequest decimal.Decimal
+	cpuActual, memoryActual   decimal.Decimal
+	sampleCount               int
+	metricsSampleCount        int
+	observedSeconds           int64
+	policySnapshots           []runtimePolicySnapshot
+}
+
+func aggregateRuntimeObservations(window hourlyWindow, observations []model.RuntimeObservation) (runtimeAggregation, bool) {
+	result := runtimeAggregation{}
+	sort.Slice(observations, func(i, j int) bool { return observations[i].PeriodStart.Before(observations[j].PeriodStart) })
+	cursor := window.Start
+	seenPolicies := map[runtimePolicySnapshot]bool{}
+	for _, observation := range observations {
+		start := observation.PeriodStart
+		if start.Before(window.Start) {
+			start = window.Start
+		}
+		if start.Before(cursor) {
+			start = cursor
+		}
+		if observation.WorkloadCreatedAt.After(start) {
+			start = observation.WorkloadCreatedAt
+		}
+		end := observation.PeriodEnd
+		if end.After(window.End) {
+			end = window.End
+		}
+		if !end.After(start) {
+			continue
+		}
+		cursor = end
+		result.sampleCount++
+		if observation.MetricsAvailable {
+			result.metricsSampleCount++
+		}
+		policy := runtimePolicySnapshot{observation.CPURequestPercent, observation.MemoryRequestPercent, observation.CPULimitPercent, observation.MemoryLimitPercent}
+		if !seenPolicies[policy] {
+			seenPolicies[policy] = true
+			result.policySnapshots = append(result.policySnapshots, policy)
+		}
+		if observation.DesiredReplicas <= 0 {
+			continue
+		}
+		durationNanos := decimal.NewFromInt(end.Sub(start).Nanoseconds())
+		durationHours := durationNanos.Div(decimal.NewFromInt(int64(time.Hour)))
+		result.observedSeconds += int64(end.Sub(start) / time.Second)
+
+		requestCPUMilli := quantityMilliValue(observation.EffectiveCPURequest) * int64(observation.DesiredReplicas)
+		actualCPUMilli := int64(0)
+		if observation.MetricsAvailable {
+			actualCPUMilli = observation.CPUUsageMilli
+		}
+		billedCPUMilli := requestCPUMilli
+		if actualCPUMilli > billedCPUMilli {
+			billedCPUMilli = actualCPUMilli
+		}
+		cpuRequest := decimal.NewFromInt(requestCPUMilli).Div(decimal.NewFromInt(1000)).Mul(durationHours)
+		cpuActual := decimal.NewFromInt(actualCPUMilli).Div(decimal.NewFromInt(1000)).Mul(durationHours)
+		result.cpuRequest = result.cpuRequest.Add(cpuRequest)
+		result.cpuActual = result.cpuActual.Add(cpuActual)
+		result.cpuBilled = result.cpuBilled.Add(decimal.NewFromInt(billedCPUMilli).Div(decimal.NewFromInt(1000)).Mul(durationHours))
+
+		requestMemoryBytes := quantityValue(observation.EffectiveMemoryRequest) * int64(observation.DesiredReplicas)
+		actualMemoryBytes := int64(0)
+		if observation.MetricsAvailable {
+			actualMemoryBytes = observation.MemoryUsageBytes
+		}
+		billedMemoryBytes := requestMemoryBytes
+		if actualMemoryBytes > billedMemoryBytes {
+			billedMemoryBytes = actualMemoryBytes
+		}
+		gib := decimal.NewFromInt(1024 * 1024 * 1024)
+		result.memoryRequest = result.memoryRequest.Add(decimal.NewFromInt(requestMemoryBytes).Div(gib).Mul(durationHours))
+		result.memoryActual = result.memoryActual.Add(decimal.NewFromInt(actualMemoryBytes).Div(gib).Mul(durationHours))
+		result.memoryBilled = result.memoryBilled.Add(decimal.NewFromInt(billedMemoryBytes).Div(gib).Mul(durationHours))
+	}
+	return result, result.sampleCount > 0
+}
+
+func quantityMilliValue(value string) int64 {
+	if value == "" {
+		return 0
+	}
+	quantity, err := resource.ParseQuantity(value)
+	if err != nil || quantity.Sign() <= 0 {
+		return 0
+	}
+	return quantity.MilliValue()
+}
+
+func quantityValue(value string) int64 {
+	if value == "" {
+		return 0
+	}
+	quantity, err := resource.ParseQuantity(value)
+	if err != nil || quantity.Sign() <= 0 {
+		return 0
+	}
+	return quantity.Value()
 }
 
 func (r *Runner) settleProjectVolumeStorageWindows(ctx context.Context, service billing.Service, windows []hourlyWindow) error {

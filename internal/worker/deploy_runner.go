@@ -226,6 +226,10 @@ func (r *Runner) preflightApplicationResources(ctx context.Context, release mode
 }
 
 func (r *Runner) applicationResourcesManagerAndSpec(ctx context.Context, release model.Release, project model.Project, application model.Application, environment model.Environment, deploymentTarget model.DeploymentTarget, namespace string, serviceBindings resolvedServiceBindingConfig) (kubeprovider.NamespaceManager, kubeprovider.ApplicationResourcesSpec, error) {
+	cluster, err := r.runtimeClusterForEnvironment(ctx, environment)
+	if err != nil {
+		return nil, kubeprovider.ApplicationResourcesSpec{}, err
+	}
 	manager, err := r.kubernetesManager(ctx, environment)
 	if err != nil {
 		return nil, kubeprovider.ApplicationResourcesSpec{}, err
@@ -242,6 +246,9 @@ func (r *Runner) applicationResourcesManagerAndSpec(ctx context.Context, release
 	}
 	spec, err := applicationResourcesSpec(release, project, application, environment, deploymentTarget, runtimeConfigSets, dataVolumes, namespace, r.deployRolloutTimeoutSeconds)
 	if err != nil {
+		return nil, kubeprovider.ApplicationResourcesSpec{}, err
+	}
+	if err := applyRuntimeClusterResourcePolicy(&spec, cluster); err != nil {
 		return nil, kubeprovider.ApplicationResourcesSpec{}, err
 	}
 	if err := applyServiceBindingConfig(&spec, serviceBindings); err != nil {

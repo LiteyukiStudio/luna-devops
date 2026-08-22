@@ -17,6 +17,7 @@ import { NativeSelect as Select } from '@/components/ui/native-select'
 import { Textarea } from '@/components/ui/textarea'
 import { inspectKubeconfig, selectSingleKubeconfigContext } from '@/lib/kubeconfig'
 import { canInspectClusterKubeconfig, defaultGatewayPublicPort, formatGatewayDomainSuffixes, kubeconfigContextOptionLabel, normalizeFormPort, parseGatewayDomainSuffixes } from './cluster-helpers'
+import { clusterResourcePolicySchema } from './cluster-resource-policy-schema'
 
 type ClusterForm = Omit<RuntimeCluster, 'gatewayDomainSuffixes' | 'id' | 'createdBy' | 'createdAt' | 'kubeconfigSet' | 'lastCheckedAt'> & {
   gatewayDomainSuffixesText: string
@@ -54,6 +55,10 @@ const clusterDefaults: ClusterForm = {
   gatewayWildcardCertSecretName: '',
   gatewayTrustedProxyCIDRs: '',
   maxConcurrentBuilds: 4,
+  cpuRequestPercent: 10,
+  memoryRequestPercent: 25,
+  cpuLimitPercent: 100,
+  memoryLimitPercent: 100,
   name: '',
   ownerRef: '',
   projectIds: [],
@@ -74,6 +79,17 @@ export function ClusterFormDialog({ editingCluster, open, projects, user, onOpen
   const queryClient = useQueryClient()
   const [selectedKubeconfigContext, setSelectedKubeconfigContext] = useState('')
   const form = useForm<ClusterForm>({ defaultValues: editingCluster ? formValuesFromCluster(editingCluster) : clusterDefaults, mode: 'onChange' })
+  const policySchema = useMemo(() => clusterResourcePolicySchema(t), [t])
+  const policyValues = form.watch(['cpuRequestPercent', 'memoryRequestPercent', 'cpuLimitPercent', 'memoryLimitPercent'])
+  const policyValidation = policySchema.safeParse({
+    cpuRequestPercent: policyValues[0],
+    memoryRequestPercent: policyValues[1],
+    cpuLimitPercent: policyValues[2],
+    memoryLimitPercent: policyValues[3],
+  })
+  const policyErrors = policyValidation.success
+    ? new Map<string, string>()
+    : new Map(policyValidation.error.issues.map(issue => [String(issue.path[0]), issue.message]))
   const scope = form.watch('scope')
   const canEditKubeconfig = !editingCluster || canInspectClusterKubeconfig(editingCluster, user?.id, user?.role)
   const kubeconfigValue = form.watch('kubeconfig') ?? ''
@@ -119,6 +135,11 @@ export function ClusterFormDialog({ editingCluster, open, projects, user, onOpen
   })
 
   function submitCluster(values: ClusterForm) {
+    const parsedPolicy = policySchema.safeParse(values)
+    if (!parsedPolicy.success) {
+      toast.error(parsedPolicy.error.issues[0]?.message ?? t('clustersPage.resourcePercentRange'))
+      return
+    }
     let kubeconfig = values.kubeconfig ?? ''
     if (canEditKubeconfig && kubeconfig.trim() !== '') {
       if (kubeconfigInspection.error) {
@@ -182,6 +203,22 @@ export function ClusterFormDialog({ editingCluster, open, projects, user, onOpen
                   <Input {...form.register('maxConcurrentBuilds', { min: 1, required: true, valueAsNumber: true })} inputMode="numeric" min={1} placeholder={t('clustersPage.maxConcurrentBuildsPlaceholder')} type="number" />
                 </Field>
                 {scope === 'global' && <CheckboxField {...form.register('isDefault')}>{t('clustersPage.defaultCluster')}</CheckboxField>}
+              </ProgressiveSection>
+              <ProgressiveSection defaultOpen description={t('clustersPage.resourcePolicyDescription')} title={t('clustersPage.resourcePolicy')}>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <Field error={policyErrors.get('cpuRequestPercent')} hint={t('clustersPage.resourcePercentHint')} label={t('clustersPage.cpuRequestPercent')} required>
+                    <Input {...form.register('cpuRequestPercent', { valueAsNumber: true })} inputMode="numeric" max={100} min={0} type="number" />
+                  </Field>
+                  <Field error={policyErrors.get('memoryRequestPercent')} hint={t('clustersPage.resourcePercentHint')} label={t('clustersPage.memoryRequestPercent')} required>
+                    <Input {...form.register('memoryRequestPercent', { valueAsNumber: true })} inputMode="numeric" max={100} min={0} type="number" />
+                  </Field>
+                  <Field error={policyErrors.get('cpuLimitPercent')} hint={t('clustersPage.resourcePercentHint')} label={t('clustersPage.cpuLimitPercent')} required>
+                    <Input {...form.register('cpuLimitPercent', { valueAsNumber: true })} inputMode="numeric" max={100} min={0} type="number" />
+                  </Field>
+                  <Field error={policyErrors.get('memoryLimitPercent')} hint={t('clustersPage.resourcePercentHint')} label={t('clustersPage.memoryLimitPercent')} required>
+                    <Input {...form.register('memoryLimitPercent', { valueAsNumber: true })} inputMode="numeric" max={100} min={0} type="number" />
+                  </Field>
+                </div>
               </ProgressiveSection>
               <ProgressiveSection defaultOpen description={t('clustersPage.gatewayExternalAccessConfigDescription')} title={t('clustersPage.gatewayExternalAccessConfig')}>
                 <div className="grid gap-3 md:grid-cols-2">
@@ -283,7 +320,7 @@ export function ClusterFormDialog({ editingCluster, open, projects, user, onOpen
             </div>
           </div>
           <DialogFooter className="shrink-0 border-t border-border p-5 pt-4">
-            <Button disabled={!form.formState.isValid || saveCluster.isPending || kubeconfigInspection.error || (kubeconfigContextSelectionRequired && !effectiveKubeconfigContext)} type="submit">{t('common.save')}</Button>
+            <Button disabled={!form.formState.isValid || !policyValidation.success || saveCluster.isPending || kubeconfigInspection.error || (kubeconfigContextSelectionRequired && !effectiveKubeconfigContext)} type="submit">{t('common.save')}</Button>
           </DialogFooter>
         </form>
       </DialogContent>
@@ -323,6 +360,10 @@ function formValuesFromCluster(cluster: RuntimeCluster): ClusterForm {
     gatewayWildcardCertSecretName: cluster.gatewayWildcardCertSecretName || '',
     gatewayTrustedProxyCIDRs: cluster.gatewayTrustedProxyCIDRs || '',
     maxConcurrentBuilds: cluster.maxConcurrentBuilds || 4,
+    cpuRequestPercent: cluster.cpuRequestPercent ?? 10,
+    memoryRequestPercent: cluster.memoryRequestPercent ?? 25,
+    cpuLimitPercent: cluster.cpuLimitPercent ?? 100,
+    memoryLimitPercent: cluster.memoryLimitPercent ?? 100,
     name: cluster.name,
     ownerRef: cluster.ownerRef,
     projectIds: cluster.projectIds ?? [],

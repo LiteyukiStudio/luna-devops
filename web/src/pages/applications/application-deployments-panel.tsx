@@ -392,8 +392,6 @@ export function ApplicationDeploymentsPanel({ applicationId, applicationIdentifi
     overrides: t(targetHasAdvancedConfig ? 'deploymentsPage.advancedOverridesEnabled' : 'deploymentsPage.advancedOverridesDisabled'),
   })
   const targetKubernetesAdvancedCount = [
-    'cpuLimit',
-    'memoryLimit',
     'imagePullPolicy',
     'containerCommand',
     'containerArgs',

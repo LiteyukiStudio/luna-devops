@@ -28,7 +28,9 @@ Cost analysis groups settled usage by project, application, and deployment targe
 
 Usage without a specific application or deployment target appears as **Unassigned**. For unexpected costs, narrow the time range and inspect each project, application, and deployment target.
 
-Runtime resources are settled from an authoritative observation for each completed hour. Replica-hours use the Kubernetes workload's desired replicas for that window, while CPU and memory use the resource configuration captured with that observation. HPA changes affect later observation windows. A missing historical observation or an unreachable cluster is not replaced with the current value, so the platform does not silently overcharge.
+Runtime resources are observed on natural-minute boundaries through Kubernetes `metrics.k8s.io`, while billing still creates one CPU and one memory record for each completed natural hour. Each minute interval is calculated as `max(effective request × desired replicas, actual usage)`, multiplied by that interval's effective duration, and then aggregated into vCPU-hours and GiB-hours. A workload created partway through a minute is prorated, and overlapping intervals are not counted twice.
+
+If `metrics.k8s.io` is unavailable but Kubernetes confirms that the workload is running, that minute uses only the effective request floor. When the corresponding request policy is `0%`, the platform does not invent usage for that dimension. Entirely missing minutes are neither interpolated nor extrapolated, and minutes with zero desired replicas generate no runtime usage. The coverage ratio in billing metadata is the observed running duration divided by the full hour. Historical observations retain their effective request and cluster policy snapshot, and settled bills are never recalculated after a policy change.
 
 ## AI tokens
 

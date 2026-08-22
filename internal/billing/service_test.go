@@ -136,6 +136,72 @@ func TestProjectVolumeStorageUsageResourceIDUsesVolumeAndHour(t *testing.T) {
 	}
 }
 
+func TestSettleRuntimeTargetAggregationCreatesOneHourlyBatchAndIsIdempotent(t *testing.T) {
+	db := openBillingTestDB(t)
+	if err := db.AutoMigrate(
+		&model.User{}, &model.Project{}, &model.UserWallet{}, &model.BillingRateRule{},
+		&model.BillingUsageRecord{}, &model.BillingLedgerEntry{},
+	); err != nil {
+		t.Fatalf("migrate runtime billing tables: %v", err)
+	}
+	user := model.User{ID: "usr_runtime_owner", Email: "runtime-owner@example.invalid", Name: "Runtime Owner", Role: "user"}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("create runtime billing owner: %v", err)
+	}
+	project := model.Project{ID: "prj_runtime", Identifier: "runtime", Name: "Runtime", BillingOwnerUserID: user.ID}
+	if err := db.Create(&project).Error; err != nil {
+		t.Fatalf("create runtime billing project: %v", err)
+	}
+	service := Service{DB: db}
+	if err := service.EnsureDefaultRateRules(); err != nil {
+		t.Fatalf("seed runtime billing rates: %v", err)
+	}
+	periodStart := time.Date(2026, 8, 22, 12, 0, 0, 0, time.UTC)
+	input := RuntimeAggregatedUsageInput{
+		Context: t.Context(), ProjectID: project.ID, ApplicationID: "app_runtime",
+		DeploymentTargetID: "dplt_runtime", EnvironmentID: "env_runtime",
+		PeriodStart: periodStart, PeriodEnd: periodStart.Add(time.Hour),
+		CPUCoreHours: decimal.RequireFromString("0.25"), MemoryGiBHours: decimal.RequireFromString("0.5"),
+		CPURequestFloorCoreHours: decimal.RequireFromString("0.1"), MemoryRequestFloorGiBHours: decimal.RequireFromString("0.4"),
+		CPUActualObservedCoreHours: decimal.RequireFromString("0.2"), MemoryActualObservedGiBHours: decimal.RequireFromString("0.3"),
+		SampleCount: 42, MetricsSampleCount: 40, ObservedDurationSeconds: 2520, ExpectedDurationSeconds: 3600,
+		ClusterResourcePolicySnapshot: []map[string]int{{"cpuRequestPercent": 10, "memoryRequestPercent": 25, "cpuLimitPercent": 100, "memoryLimitPercent": 100}},
+		ActorID:                       "system",
+	}
+	if err := service.SettleRuntimeTargetAggregation(input); err != nil {
+		t.Fatalf("settle runtime aggregation: %v", err)
+	}
+	if err := service.SettleRuntimeTargetAggregation(input); !errors.Is(err, ErrAlreadySettled) {
+		t.Fatalf("repeat runtime aggregation error = %v", err)
+	}
+	var usages []model.BillingUsageRecord
+	if err := db.Where("resource_type = ?", ResourceTypeRuntime).Order("meter ASC").Find(&usages).Error; err != nil {
+		t.Fatalf("load runtime usage records: %v", err)
+	}
+	if len(usages) != 2 {
+		t.Fatalf("runtime usage count = %d, want 2", len(usages))
+	}
+	for _, usage := range usages {
+		if usage.ResourceID != "dplt_runtime:2026082212" || !usage.PeriodStart.Equal(periodStart) || !usage.PeriodEnd.Equal(periodStart.Add(time.Hour)) {
+			t.Fatalf("runtime usage window = %#v", usage)
+		}
+		var metadata map[string]any
+		if err := json.Unmarshal([]byte(usage.Metadata), &metadata); err != nil {
+			t.Fatalf("decode runtime usage metadata: %v", err)
+		}
+		if metadata["formula"] != "max_request_actual" || metadata["sampleCount"] != float64(42) || metadata["coverageRatio"] != "0.7" {
+			t.Fatalf("runtime usage metadata = %#v", metadata)
+		}
+	}
+	var ledgerCount int64
+	if err := db.Model(&model.BillingLedgerEntry{}).Where("resource_type = ?", ResourceTypeRuntime).Count(&ledgerCount).Error; err != nil {
+		t.Fatalf("count runtime ledger entries: %v", err)
+	}
+	if ledgerCount != 2 {
+		t.Fatalf("runtime ledger count = %d, want 2", ledgerCount)
+	}
+}
+
 func TestReferencedProjectVolumeIsNotBilledAsManagedStorage(t *testing.T) {
 	service := Service{}
 	err := service.SettleProjectVolumeStorageWindow(context.Background(), ProjectVolumeStorageUsageInput{

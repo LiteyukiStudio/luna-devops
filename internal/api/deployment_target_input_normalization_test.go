@@ -1,11 +1,30 @@
 package api
 
 import (
+	"encoding/json"
 	"reflect"
 	"testing"
 
 	"github.com/LiteyukiStudio/devops/internal/model"
 )
+
+func TestDeploymentTargetResponseDoesNotExposeLegacyLimits(t *testing.T) {
+	response := deploymentTargetResponseFromModel(model.DeploymentTarget{CPULimit: "2", MemoryLimit: "2Gi"})
+	payload, err := json.Marshal(response)
+	if err != nil {
+		t.Fatalf("marshal response: %v", err)
+	}
+	var values map[string]any
+	if err := json.Unmarshal(payload, &values); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if _, ok := values["cpuLimit"]; ok {
+		t.Fatalf("legacy cpu limit leaked into response: %s", payload)
+	}
+	if _, ok := values["memoryLimit"]; ok {
+		t.Fatalf("legacy memory limit leaked into response: %s", payload)
+	}
+}
 
 func TestNormalizeBuildTimeoutSecondsValue(t *testing.T) {
 	tests := []struct {
