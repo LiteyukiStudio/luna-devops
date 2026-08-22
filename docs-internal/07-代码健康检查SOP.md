@@ -22,6 +22,7 @@ git status --short
 git diff --stat
 go test ./...
 pnpm --dir web check:singletons
+pnpm --dir web check:i18n
 pnpm --dir web lint
 pnpm --dir web build
 pnpm --dir docs build
@@ -153,6 +154,23 @@ PostgreSQL 并发和迁移测试必须使用可销毁数据库，覆盖历史 sc
   `000067_baseline` 为最早受支持版本；低于 67 的开发数据库必须销毁重建，不使用
   `migrate.Force` 伪造版本。版本 68 及之后涉及配额、传输并发、AI 模型与运行时数据转换的
   迁移继续保留，并持续验证 `67 -> latest` 升级路径。
+
+### 4.5 前端 i18n 完整性
+
+前端变更必须执行 `pnpm --dir web check:i18n`；`pnpm --dir web lint` 已包含同一门禁。检查器必须
+保持以下诊断边界，不能用默认语言回退掩盖缺口：
+
+- `missing-key`：源码引用的静态 key 或动态 key 前缀在翻译资源中不存在。
+- `locale-key-mismatch`：支持语言的 key 集合不一致；插值变量不一致单独报告
+  `interpolation-mismatch`。
+- `missing-bundle`：key 已存在，但从 `App.tsx` 页面入口递归分析静态与动态 import 后，真实路由
+  没有加载对应 feature bundle。
+- `missing-lazy-locale`：按需注册的 lazy 翻译资源没有覆盖全部支持语言。
+
+无法由 AST 展开的数据驱动 key 必须在 `web/scripts/i18n-dynamic-key-allowlist.mjs` 逐项记录稳定调用
+签名和安全理由；新增、变更或已经移除的动态调用都必须重新审计。lazy 翻译数据使用
+`web/src/i18n/lazy/*-resources.ts`，导出资源路径和按语言资源，禁止在注册模块中维护检查器不可见的
+第二套内联翻译对象。
 
 ## 5. 重构分级
 

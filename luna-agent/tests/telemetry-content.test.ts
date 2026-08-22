@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import type { Span } from "@opentelemetry/api"
 import { configureAIContentCapture, recordAIContent, serializeAIContent } from "../src/telemetry.js"
 
@@ -25,7 +25,7 @@ describe("AI content telemetry", () => {
     expect(serializeAIContent({ count: 12n }).value).toBe('{"count":"12"}')
   })
 
-  it("does not add content attributes unless capture is explicitly enabled", () => {
+  it("keeps captured content on the controlled span and out of Pino logs", () => {
     const attributes: Record<string, unknown> = {}
     const span = {
       setAttribute(name: string, value: unknown) {
@@ -34,15 +34,22 @@ describe("AI content telemetry", () => {
       },
     } as unknown as Span
 
-    configureAIContentCapture(false)
-    recordAIContent(span, "luna.gen_ai.content.input", "gen_ai.input.messages", { content: "hidden" })
-    expect(attributes).toEqual({})
+    const write = vi.spyOn(process.stderr, "write").mockImplementation(() => true)
+    try {
+      configureAIContentCapture(false)
+      recordAIContent(span, "luna.gen_ai.content.input", "gen_ai.input.messages", { content: "hidden" })
+      expect(attributes).toEqual({})
 
-    configureAIContentCapture(true)
-    recordAIContent(span, "luna.gen_ai.content.input", "gen_ai.input.messages", { content: "visible" })
-    expect(JSON.parse(attributes["gen_ai.input.messages"] as string)).toEqual({ content: "visible" })
-    expect(attributes["luna.ai.content.truncated"]).toBe(false)
-    configureAIContentCapture(false)
+      configureAIContentCapture(true)
+      recordAIContent(span, "luna.gen_ai.content.input", "gen_ai.input.messages", { content: "visible" })
+      expect(JSON.parse(attributes["gen_ai.input.messages"] as string)).toEqual({ content: "visible" })
+      expect(attributes["luna.ai.content.truncated"]).toBe(false)
+      expect(JSON.stringify(write.mock.calls)).not.toContain("visible")
+    }
+    finally {
+      configureAIContentCapture(false)
+      write.mockRestore()
+    }
   })
 
   it("omits overlong content instead of emitting invalid JSON", () => {

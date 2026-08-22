@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
+	"go.opentelemetry.io/otel/trace"
 )
 
 func TestInternalErrorCodeUsesStableRouteTemplate(t *testing.T) {
@@ -35,12 +36,17 @@ func TestErrorResponseIncludesGeneratedRequestID(t *testing.T) {
 		writeErrorCode(ctx, http.StatusServiceUnavailable, "ai.tool_storage_unavailable", "database detail")
 	})
 
+	request := httptest.NewRequest(http.MethodGet, "/failure", nil)
+	request = request.WithContext(trace.ContextWithSpanContext(request.Context(), trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID: trace.TraceID{1}, SpanID: trace.SpanID{2}, TraceFlags: trace.FlagsSampled,
+	})))
 	recorder := httptest.NewRecorder()
-	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/failure", nil))
+	router.ServeHTTP(recorder, request)
 
 	var response struct {
 		Code      string `json:"code"`
 		RequestID string `json:"requestId"`
+		TraceID   string `json:"traceId"`
 	}
 	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
 		t.Fatalf("decode error response: %v", err)
@@ -53,6 +59,9 @@ func TestErrorResponseIncludesGeneratedRequestID(t *testing.T) {
 	}
 	if header := recorder.Header().Get("X-Request-ID"); header != response.RequestID {
 		t.Fatalf("X-Request-ID = %q, body requestId = %q", header, response.RequestID)
+	}
+	if response.TraceID != "01000000000000000000000000000000" {
+		t.Fatalf("trace id = %q", response.TraceID)
 	}
 }
 
@@ -122,8 +131,8 @@ func TestProductionErrorResponseContainsOnlySafeFields(t *testing.T) {
 	if response["code"] != "provider.request_failed" {
 		t.Fatalf("code = %#v", response["code"])
 	}
-	if response["error"] != "The service is temporarily unavailable. Please try again later." {
-		t.Fatalf("public error = %#v", response["error"])
+	if response["message"] != "errors.internal_error" {
+		t.Fatalf("message key = %#v", response["message"])
 	}
 	if requestID, ok := response["requestId"].(string); !ok || !strings.HasPrefix(requestID, "req_") {
 		t.Fatalf("requestId = %#v", response["requestId"])
@@ -145,8 +154,27 @@ func TestDevelopmentErrorResponseKeepsDiagnosticDetail(t *testing.T) {
 	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
 		t.Fatalf("decode error response: %v", err)
 	}
-	if response["error"] != "provider connection refused" || response["detail"] != "provider connection refused" {
-		t.Fatalf("development response lost diagnostic detail: %#v", response)
+	if response["developerDetail"] != "provider connection refused" {
+		t.Fatalf("development response omitted developerDetail: %#v", response)
+	}
+	if _, exists := response["error"]; exists {
+		t.Fatalf("development response exposed a backend-authored UI message: %#v", response)
+	}
+}
+
+func TestDevelopmentErrorResponseRedactsCredentials(t *testing.T) {
+	t.Setenv("APP_ENV", "development")
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/failure", nil)
+
+	writeErrorCode(ctx, http.StatusInternalServerError, "provider.request_failed",
+		"dial tcp internal-provider.local:443: connection refused; token=developer-secret")
+
+	if strings.Contains(recorder.Body.String(), "developer-secret") ||
+		!strings.Contains(recorder.Body.String(), "internal-provider.local:443") ||
+		!strings.Contains(recorder.Body.String(), "[REDACTED]") {
+		t.Fatalf("development response redaction is incorrect: %s", recorder.Body.String())
 	}
 }
 

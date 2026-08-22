@@ -19,6 +19,14 @@ OTEL_RESOURCE_ATTRIBUTES=deployment.environment.name=production,k8s.cluster.name
 - `luna-worker`
 - `luna-agent`（启用 AI 助手时）
 
+## 阅读与检索日志
+
+日志记录始终结构化，但终端渲染与 OTel 导出彼此独立。本地使用默认的 `LOG_FORMAT=auto`：交互式终端显示 console 格式，重定向后自动输出 JSON；Docker Compose 和 Helm 的生产配置固定使用 `LOG_FORMAT=json`。`LOG_COLOR=auto|always|never` 只影响 console，`NO_COLOR` 会强制禁用颜色，JSON 和 OTel 记录不会包含 ANSI。
+
+失败日志使用稳定的 `event.name`、`operation`、`outcome` 和 `error.code`，并在 `error.message` 保留经凭据遮罩的完整错误链；存在上下文时还包含 `trace_id`、`span_id`、`request_id` 和资源 ID。排障时先用响应中的 `requestId` 或 `traceId` 检索日志，再查看完整依赖错误。内部地址、文件路径、SQLSTATE 和资源 ID 属于诊断信息，不会被删除；Token、Authorization、Cookie、密码、API Key、私钥等真实凭据值会被遮罩。
+
+生产 API 错误响应只包含稳定 `code`、通用 `message` 本地化键和可用的 `requestId` / `traceId`，不会返回数据库错误、内部地址或堆栈。`APP_ENV=development` 时会额外返回经凭据遮罩的 `developerDetail`。
+
 ## 配置 Agent 观测页面
 
 平台管理员进入“全局设置 → AI 助手 → AI 高级设置”，分别填写：
@@ -44,7 +52,7 @@ METRICS_PATH=/metrics
 
 ## 高敏内容观测
 
-`AI_OBSERVABILITY_CAPTURE_CONTENT=true` 可能把脱敏后的模型输入输出、工具参数和结果写入 Trace 与日志。生产环境应保持关闭；只在受控排障窗口临时开启，并先限制 Tempo/Loki 权限和保留时间。结束后恢复为 `false` 并重启 Agent。
+`AI_OBSERVABILITY_CAPTURE_CONTENT=true` 可能把脱敏后的模型输入输出、工具参数和结果写入受控 Trace；关联日志只记录事件元数据，不记录 Prompt 或工具参数。生产环境应保持关闭；只在受控排障窗口临时开启，并先限制 Tempo 权限和保留时间。结束后恢复为 `false` 并重启 Agent。
 
 ## 验证
 

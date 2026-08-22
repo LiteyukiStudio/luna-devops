@@ -47,10 +47,11 @@ func Setup(ctx context.Context, config ServiceConfig) (*Runtime, error) {
 	}
 
 	otel.SetTextMapPropagator(defaultPropagator())
+	// Configure stderr rendering before exporter setup so exporter/bootstrap
+	// failures use the same diagnostic contract.
+	slog.SetDefault(newProcessLogger(serviceName, nil))
 
 	if strings.TrimSpace(os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")) == "" {
-		logger := newProcessLogger(serviceName, nil)
-		slog.SetDefault(logger)
 		return &Runtime{}, nil
 	}
 

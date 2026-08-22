@@ -1,6 +1,6 @@
 import { createId } from "../id.js"
 import type { ModelBudgetUsage, Repository } from "../persistence/repository.js"
-import { internalSpanOptions, telemetryLog, withSpan } from "../telemetry.js"
+import { errorDiagnostic, internalSpanOptions, telemetryLog, withSpan } from "../telemetry.js"
 import type { ModelCapabilities, ModelEvent, ModelProvider, ModelRequest, ModelResponse } from "./provider.js"
 
 const reservationLeaseSeconds = 10_800
@@ -107,7 +107,11 @@ export class BudgetedModelProvider implements ModelProvider {
       // authoritative hold. Confirm the full reservation and expose only a stable
       // low-cardinality telemetry code.
       await this.repository.confirmModelBudget(reservationId)
-      telemetryLog("agent.budget.usage_invalid", "warn", { "error.code": "ai.provider_usage_invalid" })
+      telemetryLog("agent.budget.usage_invalid", "warn", {
+        "operation": "agent.budget.confirm_usage",
+        "outcome": "rejected",
+        ...errorDiagnostic(error, "ai.provider_usage_invalid"),
+      })
     }
   }
 }

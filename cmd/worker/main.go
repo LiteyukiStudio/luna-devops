@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"os"
 	"time"
@@ -27,22 +26,22 @@ func runMain() int {
 	config.LoadEnvironment()
 	runtime, err := telemetry.Setup(ctx, telemetry.ServiceConfig{ServiceName: "luna-worker"})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "initialize telemetry: %v\n", err)
+		telemetry.LogError(ctx, "Worker startup failed", "worker.startup.failed", "worker.startup",
+			"telemetry.initialization.failed",
+			telemetry.WrapError("telemetry.initialization.failed", "verify the OTEL exporter configuration", "initialize telemetry", err))
 		return 1
 	}
 	defer func() {
 		shutdownCtx, cancel := shutdownContext()
 		defer cancel()
 		if err := runtime.Shutdown(shutdownCtx); err != nil {
-			telemetry.Logger().ErrorContext(shutdownCtx, "telemetry shutdown failed",
-				slog.String("event.name", "telemetry.shutdown.failed"),
-				slog.String("error.type", telemetry.ErrorType(err)),
-			)
+			telemetry.LogError(shutdownCtx, "Worker telemetry shutdown failed", "telemetry.shutdown.failed",
+				"telemetry.shutdown", "telemetry.shutdown.failed", err)
 		}
 	}()
 
 	if err := run(ctx); err != nil {
-		telemetry.RecordError(ctx, "worker.run.failed", err)
+		telemetry.LogError(ctx, "Worker startup failed", "worker.startup.failed", "worker.startup", "worker.startup.failed", err)
 		return 1
 	}
 	return 0
@@ -51,17 +50,17 @@ func runMain() int {
 func run(ctx context.Context) error {
 	cfg := config.Load()
 	if err := cfg.ValidateRedis(); err != nil {
-		return err
+		return telemetry.WrapError("config.invalid", "set REDIS_ADDR to a redis:// or rediss:// URI", "validate Redis configuration", err)
 	}
 	if err := cfg.ValidateVolumeTransfer(); err != nil {
-		return fmt.Errorf("validate volume transfer configuration: %w", err)
+		return telemetry.WrapError("config.invalid", "verify VOLUME_TRANSFER_MAX_BYTES and VOLUME_TRANSFER_JOB_IMAGE", "validate volume transfer configuration", err)
 	}
 	if err := secret.ValidateEncryptionConfig(); err != nil {
-		return fmt.Errorf("%w; set SECRET_ENCRYPTION_KEY or run local development with APP_ENV=development", err)
+		return telemetry.WrapError("config.invalid", "set SECRET_ENCRYPTION_KEY or use APP_ENV=development locally", "validate encryption configuration", err)
 	}
 
 	if err := redisconfig.CheckConnection(ctx, cfg.RedisOptions()); err != nil {
-		return fmt.Errorf("connect Redis: %w", err)
+		return telemetry.WrapError("dependency.redis.unavailable", "start Redis or verify REDIS_ADDR", "connect Redis", err)
 	}
 
 	db, err := database.OpenContext(ctx, cfg.DatabaseURL, database.Options{
@@ -71,13 +70,13 @@ func run(ctx context.Context) error {
 		ConnMaxIdleTime: cfg.DatabaseConnMaxIdleTime,
 	})
 	if err != nil {
-		return fmt.Errorf("open database: %w", err)
+		return telemetry.WrapError("dependency.postgres.unavailable", "start PostgreSQL or verify DATABASE_URL", "connect PostgreSQL", err)
 	}
 	if sqlDB, sqlErr := db.DB(); sqlErr == nil {
 		defer sqlDB.Close()
 		registration, registerErr := telemetry.RegisterDBPoolMetrics(sqlDB, "postgres")
 		if registerErr != nil {
-			return fmt.Errorf("register database pool metrics: %w", registerErr)
+			return telemetry.WrapError("telemetry.initialization.failed", "verify the database telemetry configuration", "register database pool metrics", registerErr)
 		}
 		defer registration.Unregister()
 	}
@@ -93,7 +92,7 @@ func run(ctx context.Context) error {
 		tasks.QueueLight,
 	})
 	if err != nil {
-		return fmt.Errorf("register worker queue metrics: %w", err)
+		return telemetry.WrapError("dependency.redis.unavailable", "start Redis or verify REDIS_ADDR", "register worker queue metrics", err)
 	}
 	if queueRegistration != nil {
 		defer queueRegistration.Unregister()
@@ -119,7 +118,7 @@ func run(ctx context.Context) error {
 		slog.String("event.name", "worker.starting"),
 	)
 	if err := worker.RunWithRedis(cfg.RedisOptions(), db, options); err != nil {
-		return fmt.Errorf("run worker: %w", err)
+		return telemetry.WrapError("worker.startup.failed", "verify Redis, PostgreSQL and Worker configuration", "run worker", err)
 	}
 	return nil
 }

@@ -3,7 +3,7 @@ import type { Span } from "@opentelemetry/api"
 import { trace } from "@opentelemetry/api"
 import { genAIInputMessages, genAIModelSpan, genAIOutputMessages, genAIToolDefinitions } from "../genai-semconv.js"
 import { isRetryableHTTPStatus, parseRetryAfter, waitForRetry } from "../retry.js"
-import { agentMetrics, clientSpanOptions, isAIContentCaptureEnabled, recordAIContent, telemetryLog, withSpan, withSpanStream } from "../telemetry.js"
+import { agentMetrics, clientSpanOptions, errorDiagnostic, isAIContentCaptureEnabled, recordAIContent, telemetryLog, withSpan, withSpanStream } from "../telemetry.js"
 
 type Options = { baseUrl: string, apiKey: string, model: string, timeoutMs: number, maxRetries?: number }
 
@@ -340,7 +340,9 @@ export class OpenAICompatibleProvider implements ModelProvider {
           outcome: transportError.message,
         })
         telemetryLog("agent.provider.request_failed", "warn", {
-          "error.code": transportError.message,
+		  "operation": stream ? "agent.provider.chat_stream" : "agent.provider.chat_complete",
+		  "outcome": "failed",
+		  ...errorDiagnostic(transportError, transportError.message),
         })
         throw transportError
       }
@@ -359,16 +361,19 @@ export class OpenAICompatibleProvider implements ModelProvider {
           operation: stream ? "chat_stream" : "chat_complete",
           outcome: errorCode,
         })
-        telemetryLog("agent.provider.request_failed", "warn", {
-          "http.response.status_code": response.status,
-          "error.code": errorCode,
-        })
-        throw new ProviderRequestError(
+        const providerError = new ProviderRequestError(
           errorCode,
           response.status,
           parseRetryAfter(response.headers),
           providerRequiresReasoningReplay(response.status, responseBody),
         )
+        telemetryLog("agent.provider.request_failed", "warn", {
+		  "operation": stream ? "agent.provider.chat_stream" : "agent.provider.chat_complete",
+		  "outcome": "failed",
+          "http.response.status_code": response.status,
+		  ...errorDiagnostic(providerError, errorCode),
+        })
+		throw providerError
       }
       activeSpan?.setAttribute("http.response.status_code", response.status)
       const providerRequestId = response.headers.get("x-request-id")
@@ -608,7 +613,11 @@ function parseArguments(value: string): Pick<ModelToolCall, "arguments" | "argum
       }
     }
     telemetryLog("agent.provider.invalid_tool_arguments", "warn", {
+      "operation": "agent.provider.parse_tool_arguments",
+      "outcome": "rejected",
       "error.code": "ai.provider_invalid_tool_arguments",
+      "error.type": "AgentProviderToolArgumentsError",
+      "error.message": "ai.provider_invalid_tool_arguments",
       "arguments.length": value.length,
       "arguments.starts_with_object": value.trimStart().startsWith("{"),
       "arguments.ends_with_object": value.trimEnd().endsWith("}"),

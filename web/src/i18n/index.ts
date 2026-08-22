@@ -1,14 +1,13 @@
 import type { BackendModule, ResourceKey } from 'i18next'
+import type { SupportedLanguage } from './config'
 import i18next from 'i18next'
 import { initReactI18next } from 'react-i18next'
-
-type SupportedLanguage = 'zh-CN' | 'zh-TW' | 'en-US' | 'ja-JP' | 'ko-KR'
+import { spreadFeatureBundles, supportedLanguages } from './config'
 
 interface LocaleModule {
   default: ResourceKey
 }
 
-const supportedLanguages = ['zh-CN', 'zh-TW', 'en-US', 'ja-JP', 'ko-KR'] as const satisfies readonly SupportedLanguage[]
 const localeLoaders: Record<SupportedLanguage, () => Promise<{ default: ResourceKey }>> = {
   'zh-CN': () => import('./locales/zh-CN'),
   'zh-TW': () => import('./locales/zh-TW'),
@@ -32,7 +31,7 @@ const featureLocaleLoaders = import.meta.glob<LocaleModule>([
   '!./locales/*/bootstrap.ts',
 ])
 const activeFeatureBundles = new Set<string>()
-const spreadFeatureBundles = new Set(['aiAssistant', 'inbox'])
+const spreadFeatureBundleSet = new Set<string>(spreadFeatureBundles)
 
 const localeBackend: BackendModule = {
   type: 'backend',
@@ -112,7 +111,7 @@ async function loadFeatureBundles(language: SupportedLanguage, bundleNames: read
     if (!loader)
       throw new Error(`Missing translation bundle: ${language}/${bundleName}`)
     const module = await loader()
-    const resources = spreadFeatureBundles.has(bundleName)
+    const resources = spreadFeatureBundleSet.has(bundleName)
       ? module.default
       : { [bundleName]: module.default }
     i18next.addResourceBundle(language, 'translation', resources, true, true)

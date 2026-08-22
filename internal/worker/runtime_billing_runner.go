@@ -93,10 +93,12 @@ func (r *Runner) settleRuntimeUsageForTarget(ctx context.Context, service billin
 		}
 		var observation model.RuntimeObservation
 		if err := r.db.WithContext(ctx).Where("deployment_target_id = ? AND period_start = ?", target.ID, window.Start).First(&observation).Error; err != nil {
-			telemetry.Logger().WarnContext(ctx, "runtime billing window has no authoritative observation",
-				slog.String("event.name", "billing.runtime.observation_missing"),
+			telemetry.LogWarn(ctx, "Runtime billing window has no authoritative observation",
+				"billing.runtime.observation_missing", "billing.runtime.observe",
+				"dependency.postgres.unavailable", err,
 				slog.String("billing.observation.status", "pending"),
-			)
+				slog.String("resource.type", "deployment_target"),
+				slog.String("resource.id", target.ID))
 			continue
 		}
 		periodStart, periodEnd, ok := runtimeBillingEffectivePeriod(window.Start, window.End, observation.WorkloadCreatedAt)

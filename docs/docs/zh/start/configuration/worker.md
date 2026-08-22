@@ -9,6 +9,8 @@
 | `REDIS_ADDR` | `redis://localhost:6379/0` | 连接 Redis 任务队列；填写 `redis://` 或 `rediss://` URI。 |
 | `SECRET_ENCRYPTION_KEY`<sup>1</sup> | 空 | 解密平台保存的凭据；填写与 API 相同的稳定密钥。 |
 | `PUBLIC_BASE_URL` | 空 | 设置任务通知中链接的平台根地址；填写 HTTP(S) URL。 |
+| `LOG_FORMAT` | `auto` | 选择终端日志渲染；可填 `auto`、`console` 或 `json`，生产容器应使用 `json`。 |
+| `LOG_COLOR` | `auto` | 控制 console 日志颜色；可填 `auto`、`always` 或 `never`，`NO_COLOR` 会强制关闭。 |
 | `LOG_LEVEL` | `info` | 设置日志级别；可填 `debug`、`info`、`warn` 或 `error`。 |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | 空 | 设置遥测数据接收端；填写 Collector 的 OTLP/HTTP URL。 |
 | `BUILD_EXECUTOR_IMAGE` | `moby/buildkit:v0.24.0-rootless` | 选择构建 Job 使用的 BuildKit；填写 OCI 镜像引用。 |

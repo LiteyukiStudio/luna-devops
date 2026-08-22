@@ -15,12 +15,13 @@ describe('api error boundary', () => {
     vi.unstubAllGlobals()
   })
 
-  it('prefers the safe public error over development-only detail', async () => {
+  it('keeps development detail diagnostic-only and localizes the response by code', async () => {
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({
       code: 'provider.future_failure',
-      detail: 'pq: relation secrets does not exist at /srv/luna/internal/provider/client.go',
-      error: 'The service is temporarily unavailable.',
+      developerDetail: 'pq: relation secrets does not exist at /srv/luna/internal/provider/client.go',
+      message: 'errors.internal_error',
       requestId: 'req_safe_error',
+      traceId: '0123456789abcdef0123456789abcdef',
     }, 500))
     vi.stubGlobal('fetch', fetchMock)
 
@@ -30,9 +31,10 @@ describe('api error boundary', () => {
     expect(error).toMatchObject({
       code: 'provider.future_failure',
       detail: 'pq: relation secrets does not exist at /srv/luna/internal/provider/client.go',
-      message: 'The service is temporarily unavailable.',
+      message: i18next.t('errors.internal_error'),
       requestId: 'req_safe_error',
       status: 500,
+      traceId: '0123456789abcdef0123456789abcdef',
     })
   })
 

@@ -33,7 +33,7 @@ func TestSetupIsDisabledWithoutExplicitEndpoint(t *testing.T) {
 	}
 }
 
-func TestOperationDoesNotRecordRawErrorText(t *testing.T) {
+func TestOperationRecordsRedactedDiagnosticErrorText(t *testing.T) {
 	previous := otel.GetTracerProvider()
 	recorder := tracetest.NewSpanRecorder()
 	provider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
@@ -45,21 +45,26 @@ func TestOperationDoesNotRecordRawErrorText(t *testing.T) {
 
 	ctx, end := StartOperation(context.Background(), "test", "safe_error")
 	_ = ctx
-	end(errors.New("token=must-not-leak"))
+	end(errors.New("dial tcp postgres.internal:5432: connection refused; token=must-not-leak"))
 	spans := recorder.Ended()
 	if len(spans) != 1 {
 		t.Fatalf("expected one span, got %d", len(spans))
 	}
 	span := spans[0]
-	if strings.Contains(span.Status().Description, "must-not-leak") {
-		t.Fatal("span status leaked raw error text")
-	}
+	foundMessage := false
 	for _, event := range span.Events() {
 		for _, attr := range event.Attributes {
-			if strings.Contains(attr.Value.Emit(), "must-not-leak") {
+			value := attr.Value.Emit()
+			if strings.Contains(value, "must-not-leak") {
 				t.Fatalf("span event leaked raw error text in %s", attr.Key)
 			}
+			if attr.Key == "error.message" && strings.Contains(value, "postgres.internal:5432") && strings.Contains(value, "[REDACTED]") {
+				foundMessage = true
+			}
 		}
+	}
+	if !foundMessage {
+		t.Fatal("span event omitted redacted diagnostic error chain")
 	}
 }
 

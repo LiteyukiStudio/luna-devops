@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -21,6 +22,26 @@ var (
 	httpRequestDuration metric.Float64Histogram
 	httpRequestInflight metric.Int64UpDownCounter
 )
+
+const (
+	httpErrorCodeContextKey   = "luna.telemetry.error_code"
+	httpErrorDetailContextKey = "luna.telemetry.error_detail"
+	httpErrorLoggedContextKey = "luna.telemetry.error_logged"
+)
+
+func SetHTTPError(ctx *gin.Context, code, detail string) {
+	if ctx == nil {
+		return
+	}
+	ctx.Set(httpErrorCodeContextKey, strings.TrimSpace(code))
+	ctx.Set(httpErrorDetailContextKey, strings.TrimSpace(detail))
+}
+
+func MarkHTTPErrorLogged(ctx *gin.Context) {
+	if ctx != nil {
+		ctx.Set(httpErrorLoggedContextKey, true)
+	}
+}
 
 func GinTracingMiddleware(serviceName string) gin.HandlerFunc {
 	return otelgin.Middleware(serviceName, otelgin.WithFilter(func(request *http.Request) bool {
@@ -110,21 +131,53 @@ func GinAccessLogMiddleware() gin.HandlerFunc {
 		)
 		attrs := []any{
 			slog.String("event.name", "http.request.completed"),
+			slog.String("operation", "http.request"),
 			slog.String("http.request.method", ctx.Request.Method),
 			slog.String("http.route", route),
 			slog.Int("http.response.status_code", ctx.Writer.Status()),
 			slog.Int64("http.server.duration_ms", time.Since(startedAt).Milliseconds()),
 			slog.String("network.protocol.version", ctx.Request.Proto),
 		}
+		if ctx.Writer.Status() < http.StatusBadRequest {
+			attrs = append(attrs, slog.String("outcome", "succeeded"))
+		}
 		if ctx.Writer.Status() >= http.StatusInternalServerError {
+			attrs = append(attrs, httpErrorAttrs(ctx, "failed")...)
+			if logged, _ := ctx.Get(httpErrorLoggedContextKey); logged == true {
+				Logger().InfoContext(requestCtx, "HTTP request completed with previously logged failure", attrs...)
+				return
+			}
 			Logger().ErrorContext(requestCtx, "HTTP request failed", attrs...)
 			return
 		}
 		if ctx.Writer.Status() >= http.StatusBadRequest {
 			attrs = append(attrs, slog.String("http.response.status_class", statusClass))
+			attrs = append(attrs, httpErrorAttrs(ctx, "rejected")...)
+			if logged, _ := ctx.Get(httpErrorLoggedContextKey); logged == true {
+				Logger().InfoContext(requestCtx, "HTTP request completed with previously logged rejection", attrs...)
+				return
+			}
 			Logger().WarnContext(requestCtx, "HTTP request rejected", attrs...)
 			return
 		}
 		Logger().InfoContext(requestCtx, "HTTP request completed", attrs...)
 	}
+}
+
+func httpErrorAttrs(ctx *gin.Context, outcome string) []any {
+	attrs := []any{slog.String("outcome", outcome)}
+	if code, ok := ctx.Get(httpErrorCodeContextKey); ok {
+		if value, valid := code.(string); valid && value != "" {
+			attrs = append(attrs, slog.String("error.code", value))
+		}
+	}
+	if detail, ok := ctx.Get(httpErrorDetailContextKey); ok {
+		if value, valid := detail.(string); valid && value != "" {
+			attrs = append(attrs,
+				slog.String("error.type", "api.response_error"),
+				slog.String("error.message", value),
+			)
+		}
+	}
+	return attrs
 }

@@ -5928,7 +5928,7 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
               example:
                 code: build.registry_push_credential_required
-                error: Configure a push-capable credential for the target registry before starting the build.
+                message: errors.build.registry_push_credential_required
                 requestId: req_example
   /api/v1/projects/{projectId}/build-runs/{runId}:
     get:
@@ -6035,7 +6035,7 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
               example:
                 code: build.registry_push_credential_required
-                error: Configure a push-capable credential for the target registry before retrying the build.
+                message: errors.build.registry_push_credential_required
                 requestId: req_example
   /api/v1/projects/{projectId}/build-runs/{runId}/cancel:
     post:
@@ -8761,15 +8761,19 @@ components:
         code:
           type: string
           description: Stable machine-readable error code.
-        error:
+        message:
           type: string
-          description: Safe user-facing error message.
-        detail:
+          description: Stable frontend localization key for a generic safe message; clients should localize primarily from code.
+        developerDetail:
           type: string
-          description: Development-only diagnostic detail; omitted in production responses.
+          description: Credential-redacted development-only diagnostic detail; omitted in production responses.
         requestId:
           type: string
           description: Request identifier for support and log correlation.
+        traceId:
+          type: string
+          pattern: "^[0-9a-f]{32}$"
+          description: Trace identifier when the request has a valid trace context.
         retryable:
           type: boolean
           description: Whether retrying the same operation without changing arguments may succeed.
@@ -8791,7 +8795,7 @@ components:
           type: object
           additionalProperties: true
           description: Development-only machine-readable diagnostic context; omitted in production responses.
-      required: [code, error, requestId]
+      required: [code, message, requestId]
     InboxCategory:
       type: string
       enum: [action, project, billing, security, delivery, system]

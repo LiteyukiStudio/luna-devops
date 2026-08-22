@@ -14,6 +14,8 @@
 | `BOOTSTRAP_TOKEN`<sup>2</sup> | 空 | 初始化首个管理员；填写一次性 Token 字符串。 |
 | `APP_CORS_ORIGINS` | 空 | 允许浏览器跨域访问；填写逗号分隔的 HTTP(S) Origin。 |
 | `TRUSTED_PROXY_CIDRS` | 空 | 识别可信反向代理；填写逗号分隔的 CIDR。 |
+| `LOG_FORMAT` | `auto` | 选择终端日志渲染；可填 `auto`、`console` 或 `json`，生产容器应使用 `json`。 |
+| `LOG_COLOR` | `auto` | 控制 console 日志颜色；可填 `auto`、`always` 或 `never`，`NO_COLOR` 会强制关闭。 |
 | `LOG_LEVEL` | `info` | 设置日志级别；可填 `debug`、`info`、`warn` 或 `error`。 |
 | `AI_ASSISTANT_AVAILABLE` | `false` | 控制 AI 助手是否可用；可填 `true` 或 `false`。 |
 | `AI_AGENT_BASE_URL` | 空 | 设置 API 访问 Agent 的地址；填写 HTTP(S) URL。 |

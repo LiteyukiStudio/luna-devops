@@ -39,6 +39,7 @@ const common = {
   viewOnly: '보기 전용',
   test: '테스트',
   validEmailRequired: '유효한 이메일을 입력하세요',
+  required: '필수 입력 항목입니다',
   lowercaseSlugOnly: '소문자, 숫자, -만 포함할 수 있습니다',
   identifier: '식별자',
   identifierFormat: '소문자, 숫자, 하이픈만 사용할 수 있으며 문자나 숫자로 시작하고 끝나야 합니다',

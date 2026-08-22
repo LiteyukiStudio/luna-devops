@@ -1,6 +1,8 @@
 import { AsyncLocalStorage } from "node:async_hooks"
+import { existsSync } from "node:fs"
+import { createRequire } from "node:module"
+import type { Writable } from "node:stream"
 import { context, metrics, propagation, ROOT_CONTEXT, SpanKind, SpanStatusCode, trace, type Attributes, type Context, type Counter, type Histogram, type Span, type SpanOptions, type UpDownCounter } from "@opentelemetry/api"
-import { logs, SeverityNumber } from "@opentelemetry/api-logs"
 import { FastifyOtelInstrumentation } from "@fastify/otel"
 import { OTLPLogExporter } from "@opentelemetry/exporter-logs-otlp-http"
 import { OTLPMetricExporter } from "@opentelemetry/exporter-metrics-otlp-http"
@@ -13,12 +15,15 @@ import { envDetector } from "@opentelemetry/resources"
 import { BatchLogRecordProcessor } from "@opentelemetry/sdk-logs"
 import { PeriodicExportingMetricReader } from "@opentelemetry/sdk-metrics"
 import { NodeSDK } from "@opentelemetry/sdk-node"
+import type pinoFactory from "pino"
+import type { DestinationStream, Logger } from "pino"
+import type pinoPrettyFactory from "pino-pretty"
 import { genAISchemaURL } from "./genai-semconv.js"
 import { redact } from "./redaction.js"
 
 const instrumentationName = "luna-agent"
 const tracer = trace.getTracerProvider().getTracer(instrumentationName, undefined, { schemaUrl: genAISchemaURL })
-const logger = logs.getLogger(instrumentationName)
+const require = createRequire(import.meta.url)
 const aiCorrelationStorage = new AsyncLocalStorage<Attributes>()
 const aiCorrelationAttributeNames = [
   "gen_ai.conversation.id",
@@ -27,6 +32,7 @@ const aiCorrelationAttributeNames = [
 ] as const
 
 let sdk: NodeSDK | undefined
+let processLogger: Logger | undefined
 let aiContentCaptureEnabled = false
 const aiContentAttributeLimit = 32_768
 
@@ -69,7 +75,6 @@ export function recordAIContent(
   const contentAttributes: Attributes = {
     ...activeAICorrelationAttributes(),
     ...attributes,
-    [attributeName]: content.value,
     "luna.ai.content.truncated": content.truncated,
   }
   span.setAttribute(attributeName, content.value)
@@ -273,7 +278,7 @@ export async function withSpan<T>(
       }
       catch (error) {
         if (isExpectedCancellation(error)) {
-          span.setAttribute("luna.operation.outcome", "canceled")
+          span.setAttribute("luna.operation.outcome", "cancelled")
         } else {
           recordSpanError(span, error)
         }
@@ -308,7 +313,7 @@ export async function* withSpanStream<T>(
     }
   }
   catch (error) {
-    if (isExpectedCancellation(error)) span.setAttribute("luna.operation.outcome", "canceled")
+    if (isExpectedCancellation(error)) span.setAttribute("luna.operation.outcome", "cancelled")
     else recordSpanError(span, error)
     throw error
   }
@@ -363,11 +368,15 @@ export function normalizeTraceContext(carrier: Record<string, string>): Record<s
 
 export function recordSpanError(span: Span, error: unknown): void {
   const code = stableErrorCode(error)
+  const diagnostic = errorDiagnostic(error, code)
   span.setStatus({ code: SpanStatusCode.ERROR, message: code })
-  span.setAttribute("error.type", code === "ai.internal_error"
-    ? error instanceof Error ? error.name : "_OTHER"
-    : code)
+  const errorType = diagnostic["error.type"]
+  if (errorType !== undefined) span.setAttribute("error.type", errorType)
   span.setAttribute("error.code", code)
+  const errorMessage = diagnostic["error.message"]
+  if (errorMessage !== undefined) span.setAttribute("error.message", errorMessage)
+  const stacktrace = diagnostic["exception.stacktrace"]
+  if (stacktrace !== undefined) span.setAttribute("exception.stacktrace", stacktrace)
 }
 
 export function stableErrorCode(error: unknown): string {
@@ -379,27 +388,137 @@ export function telemetryLog(
   eventName: string,
   severity: "debug" | "info" | "warn" | "error",
   attributes: Attributes = {},
+  message = eventName,
 ): void {
   const activeSpan = trace.getSpan(context.active())
   const spanContext = activeSpan?.spanContext()
-  const correlatedAttributes = {
+  const businessAttributes = { ...activeAICorrelationAttributes(), ...attributes }
+  const correlatedAttributes = redact({
     "event.name": eventName,
-    ...activeAICorrelationAttributes(),
-    ...attributes,
+    ...businessAttributes,
+    ...inferResourceAttributes(businessAttributes),
     ...(spanContext ? { trace_id: spanContext.traceId, span_id: spanContext.spanId } : {}),
-  }
-  logger.emit({
-    severityNumber: severityNumber(severity),
-    severityText: severity.toUpperCase(),
-    body: eventName,
-    attributes: correlatedAttributes,
   })
-  process.stdout.write(`${JSON.stringify({
-    level: severity,
-    time: new Date().toISOString(),
-    message: eventName,
-    ...correlatedAttributes,
-  })}\n`)
+  agentLogger()[severity](correlatedAttributes, message)
+}
+
+function inferResourceAttributes(attributes: Attributes): Attributes {
+  if (typeof attributes["resource.id"] === "string") return {}
+  const candidates = [
+    ["luna.tool_call.id", "agent_tool_call"],
+    ["luna.run.id", "agent_run"],
+    ["gen_ai.conversation.id", "agent_conversation"],
+  ] as const
+  for (const [idKey, resourceType] of candidates) {
+    const resourceId = attributes[idKey]
+    if (typeof resourceId === "string" && resourceId.length > 0)
+      return { "resource.type": resourceType, "resource.id": resourceId }
+  }
+  return {}
+}
+
+export function errorDiagnostic(error: unknown, fallbackCode = "ai.internal_error", hint?: string): Attributes {
+  const normalized = error instanceof Error ? error : new Error(String(error))
+  const code = stableErrorCode(error) === "ai.internal_error" ? fallbackCode : stableErrorCode(error)
+  const attributes: Attributes = {
+    "error.code": code,
+    "error.type": normalized.name || "UnknownError",
+    "error.message": redact(errorChain(normalized)),
+    ...(hint ? { "error.hint": hint } : {}),
+  }
+  if (normalized.stack) attributes["exception.stacktrace"] = redact(normalized.stack)
+  return attributes
+}
+
+export function agentLogger(): Logger {
+  return processLogger ??= createAgentLogger()
+}
+
+export function createAgentLogger(options: {
+  color?: string
+  destination?: Writable
+  format?: string
+  isContainer?: boolean
+  isTTY?: boolean
+  level?: string
+  noColor?: boolean
+} = {}): Logger {
+  const pino = require("pino") as typeof pinoFactory
+  const destination = options.destination ?? process.stderr
+  const format = resolveAgentLogFormat(
+    options.format ?? process.env.LOG_FORMAT,
+    options.isTTY ?? Boolean(process.stderr.isTTY),
+    options.isContainer ?? agentRunsInContainer(),
+  )
+  const color = format === "console" && resolveAgentLogColor(
+    options.color ?? process.env.LOG_COLOR,
+    options.isTTY ?? Boolean(process.stderr.isTTY),
+    options.noColor ?? process.env.NO_COLOR !== undefined,
+  )
+  let output: DestinationStream = destination
+  if (format === "console") {
+    const pretty = require("pino-pretty") as typeof pinoPrettyFactory
+    const prettyStream = pretty({
+      colorize: color,
+      destination,
+      hideObject: false,
+      ignore: "pid,hostname,service.name,time",
+      messageKey: "message",
+      singleLine: false,
+    })
+    output = prettyStream
+  }
+  return pino({
+    base: { "service.name": "luna-agent" },
+    level: resolveAgentLogLevel(options.level ?? process.env.LOG_LEVEL),
+    messageKey: "message",
+    redact: {
+      censor: "[REDACTED]",
+      paths: [
+        "authorization", "cookie", "password", "secret", "token", "apiKey", "api_key",
+        "accessToken", "access_token", "refreshToken", "refresh_token", "privateKey", "private_key",
+        "req.headers.authorization", "req.headers.cookie", "req.body", "request.body",
+      ],
+    },
+    timestamp: pino.stdTimeFunctions.isoTime,
+  }, output)
+}
+
+export function resolveAgentLogFormat(value: string | undefined, isTTY: boolean, isContainer: boolean): "console" | "json" {
+  const normalized = value?.trim().toLowerCase()
+  if (normalized === "console" || normalized === "json") return normalized
+  return isTTY && !isContainer ? "console" : "json"
+}
+
+export function resolveAgentLogColor(value: string | undefined, isTTY: boolean, noColor: boolean): boolean {
+  if (noColor) return false
+  const normalized = value?.trim().toLowerCase()
+  if (normalized === "always") return true
+  if (normalized === "never") return false
+  return isTTY
+}
+
+export function resolveAgentLogLevel(value: string | undefined): "debug" | "info" | "warn" | "error" {
+  const normalized = value?.trim().toLowerCase()
+  return normalized === "debug" || normalized === "warn" || normalized === "error" ? normalized : "info"
+}
+
+function agentRunsInContainer(): boolean {
+  return Boolean(process.env.KUBERNETES_SERVICE_HOST || process.env.container || process.platform === "linux" && existsSync("/.dockerenv"))
+}
+
+function errorChain(error: Error): string {
+  const messages: string[] = []
+  const seen = new Set<unknown>()
+  let current: unknown = error
+  while (current instanceof Error && !seen.has(current)) {
+    seen.add(current)
+    if (current.message && messages.at(-1) !== current.message) messages.push(current.message)
+    current = current.cause
+  }
+  if (typeof current === "string" || typeof current === "number" || typeof current === "boolean")
+    messages.push(String(current))
+  return messages.join(": ")
 }
 
 export function serverSpanOptions(attributes: Attributes = {}): SpanOptions {
@@ -412,11 +531,4 @@ export function internalSpanOptions(attributes: Attributes = {}): SpanOptions {
 
 export function clientSpanOptions(attributes: Attributes = {}): SpanOptions {
   return { kind: SpanKind.CLIENT, attributes }
-}
-
-function severityNumber(severity: "debug" | "info" | "warn" | "error"): SeverityNumber {
-  if (severity === "error") return SeverityNumber.ERROR
-  if (severity === "warn") return SeverityNumber.WARN
-  if (severity === "debug") return SeverityNumber.DEBUG
-  return SeverityNumber.INFO
 }

@@ -1,7 +1,7 @@
 import { z } from "zod"
 import { trace } from "@opentelemetry/api"
 import type { RemoteRuntimeSettings } from "../runtime-settings.js"
-import { agentMetrics, clientSpanOptions, telemetryLog, withSpan } from "../telemetry.js"
+import { agentMetrics, clientSpanOptions, errorDiagnostic, telemetryLog, withSpan } from "../telemetry.js"
 import { isRetryableHTTPStatus, parseRetryAfter, waitForRetry } from "../retry.js"
 import { defaultRuntimeSettings } from "../runtime-settings.js"
 import type { AIModelSnapshot } from "../domain.js"
@@ -83,14 +83,24 @@ export class ProviderConfigClient {
     }
     catch (error) {
       if (signal?.aborted) throw error
-      telemetryLog("agent.provider_config.failed", "warn", { "error.code": "ai.provider_config_unavailable" })
-      throw new Error("ai.provider_config_unavailable")
+	  telemetryLog("agent.provider_config.failed", "warn", {
+		"operation": "agent.provider_config.get",
+		"outcome": "failed",
+		...errorDiagnostic(error, "ai.provider_config_unavailable"),
+	  })
+      throw new Error("ai.provider_config_unavailable", { cause: error })
     }
     span.setAttribute("http.response.status_code", response.status)
     agentMetrics.externalRequests.add(1, { target: "luna_api", operation: "provider_config", outcome: response.ok ? "success" : String(response.status) })
     if (!response.ok) {
-      telemetryLog("agent.provider_config.failed", "warn", { "http.response.status_code": response.status })
-      throw new Error("ai.provider_config_unavailable")
+	  const error = new Error(`Luna API provider configuration returned HTTP ${response.status}`)
+	  telemetryLog("agent.provider_config.failed", "warn", {
+		"operation": "agent.provider_config.get",
+		"outcome": "failed",
+		"http.response.status_code": response.status,
+		...errorDiagnostic(error, "ai.provider_config_unavailable"),
+	  })
+      throw new Error("ai.provider_config_unavailable", { cause: error })
     }
     let payload: unknown
     try {
@@ -157,7 +167,11 @@ function stableConfigIssuePath(path: PropertyKey[]): string {
 
 function logInvalidProviderConfig(paths: string[], issueCodes: string[]): void {
   telemetryLog("agent.provider_config.failed", "warn", {
+    "operation": "agent.provider_config.validate",
+    "outcome": "rejected",
     "error.code": "ai.provider_config_invalid",
+    "error.type": "AgentProviderConfigError",
+    "error.message": "ai.provider_config_invalid",
     "luna.provider_config.invalid_fields": [...new Set(paths)].slice(0, 20),
     "luna.provider_config.issue_codes": [...new Set(issueCodes)].slice(0, 20),
   })

@@ -19,6 +19,14 @@ After restart, confirm that the Collector receives:
 - `luna-worker`
 - `luna-agent` when AI Assistant is enabled
 
+## Read and search logs
+
+Log records are always structured, while terminal rendering and OTel export are independent. Local processes use `LOG_FORMAT=auto` by default: interactive terminals render console output and redirected output switches to JSON. Production Docker Compose and Helm deployments set `LOG_FORMAT=json`. `LOG_COLOR=auto|always|never` affects console output only, and `NO_COLOR` always disables color; JSON and OTel records never contain ANSI sequences.
+
+Failure records use stable `event.name`, `operation`, `outcome`, and `error.code` fields. `error.message` keeps the complete credential-redacted error chain, and contextual records also include `trace_id`, `span_id`, `request_id`, and resource IDs. Start incident searches with the response `requestId` or `traceId`, then inspect the complete dependency error. Internal addresses, file paths, SQLSTATE values, and resource IDs remain available for diagnosis; actual token, Authorization, Cookie, password, API key, and private-key values are redacted.
+
+Production API error responses contain only a stable `code`, a generic `message` localization key, and available `requestId` / `traceId` values. They do not expose database errors, internal addresses, or stacks. With `APP_ENV=development`, responses also contain a credential-redacted `developerDetail`.
+
 ## Configure the Agent observability page
 
 Open **Global Settings → AI Assistant → Advanced AI Settings** and enter:
@@ -44,7 +52,7 @@ Expose this listener only to a controlled monitoring network. Worker and Agent m
 
 ## Sensitive content capture
 
-`AI_OBSERVABILITY_CAPTURE_CONTENT=true` may write redacted model inputs, outputs, tool arguments, and results to traces and logs. Keep it disabled in production. Enable it only during a controlled diagnostic window after restricting Tempo/Loki access and retention, then restore `false` and restart Agent.
+`AI_OBSERVABILITY_CAPTURE_CONTENT=true` may write redacted model inputs, outputs, tool arguments, and results to controlled traces. Correlated logs retain event metadata only and never include prompts or tool arguments. Keep it disabled in production. Enable it only during a controlled diagnostic window after restricting Tempo access and retention, then restore `false` and restart Agent.
 
 ## Verify
 

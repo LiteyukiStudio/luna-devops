@@ -127,7 +127,11 @@ export class CardGenerationService {
       telemetryLog("agent.card.schema_rejected", "warn", {
         "luna.run.id": runId,
         "tool.name": generation.operationId,
+        "operation": "agent.card.validate",
+        "outcome": "rejected",
         "error.code": "ai.provider_invalid_tool_arguments",
+        "error.type": "AgentCardValidationError",
+        "error.message": "ai.provider_invalid_tool_arguments",
         "card.issue_count": issues.length,
       })
       return { accepted: false as const, failure }
@@ -217,7 +221,15 @@ export class CardGenerationService {
     telemetryLog(canceled ? "agent.card.canceled" : "agent.card.failed", canceled ? "info" : "error", {
       "luna.run.id": runId,
       "tool.name": generation.operationId,
-      ...(canceled ? {} : { "error.code": errorCode }),
+      "operation": "agent.card.generate",
+      "outcome": canceled ? "cancelled" : "failed",
+      ...(canceled
+        ? {}
+        : {
+            "error.code": errorCode,
+            "error.type": "AgentCardError",
+            "error.message": errorCode,
+          }),
     })
     const result = {
       summaryKey: "aiAssistant.cards.failed",

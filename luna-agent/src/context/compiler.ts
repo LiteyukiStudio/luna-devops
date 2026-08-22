@@ -10,7 +10,7 @@ import type { Repository } from "../persistence/repository.js"
 import type { ModelMessage, ModelProvider, ModelToolDefinition } from "../provider/provider.js"
 import { redact } from "../redaction.js"
 import { defaultRuntimeSettings } from "../runtime-settings.js"
-import { agentMetrics, internalSpanOptions, telemetryLog, withSpan } from "../telemetry.js"
+import { agentMetrics, errorDiagnostic, internalSpanOptions, telemetryLog, withSpan } from "../telemetry.js"
 
 const summaryContentSchema = z.object({
   userGoals: z.array(z.string()).max(20),
@@ -171,7 +171,9 @@ export class ContextCompiler {
         outcome = "fallback"
         telemetryLog("agent.context.compression_failed", "warn", {
           "gen_ai.conversation.id": input.conversationId,
-          "error.code": stableCompressionError(error),
+          "operation": "agent.context.compress",
+          "outcome": "failed",
+          ...errorDiagnostic(error, stableCompressionError(error)),
         })
       }
 

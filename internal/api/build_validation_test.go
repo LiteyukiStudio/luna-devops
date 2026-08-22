@@ -159,7 +159,7 @@ func TestBuildRegistryPushCredentialRequiredResponseBoundary(t *testing.T) {
 		name          string
 		mode          string
 		language      string
-		wantError     string
+		wantMessage   string
 		wantDetail    string
 		forbidDetails bool
 	}{
@@ -167,22 +167,22 @@ func TestBuildRegistryPushCredentialRequiredResponseBoundary(t *testing.T) {
 			name:          "production Chinese",
 			mode:          "production",
 			language:      "zh-CN",
-			wantError:     "目标镜像站没有当前用户或项目空间可用的推送凭据。请先绑定 push 或 push-pull 凭据后重试。",
+			wantMessage:   "errors." + buildPushCredentialRequiredCode,
 			forbidDetails: true,
 		},
 		{
 			name:          "production English",
 			mode:          "production",
 			language:      "en-US",
-			wantError:     "The target registry has no push credential available to this user or project space. Bind a push or push-pull credential and try again.",
+			wantMessage:   "errors." + buildPushCredentialRequiredCode,
 			forbidDetails: true,
 		},
 		{
-			name:       "development detail",
-			mode:       "development",
-			language:   "zh-CN",
-			wantError:  "目标镜像站缺少可用推送凭据",
-			wantDetail: "目标镜像站缺少可用推送凭据",
+			name:        "development detail",
+			mode:        "development",
+			language:    "zh-CN",
+			wantMessage: "errors.resource.conflict",
+			wantDetail:  "目标镜像站缺少可用推送凭据",
 		},
 	}
 
@@ -209,15 +209,15 @@ func TestBuildRegistryPushCredentialRequiredResponseBoundary(t *testing.T) {
 			if body["code"] != buildPushCredentialRequiredCode {
 				t.Fatalf("code = %#v", body["code"])
 			}
-			if body["error"] != test.wantError {
-				t.Fatalf("error = %#v, want %q", body["error"], test.wantError)
+			if body["message"] != test.wantMessage {
+				t.Fatalf("message = %#v, want %q", body["message"], test.wantMessage)
 			}
 			if test.forbidDetails {
 				if _, exists := body["detail"]; exists {
 					t.Fatalf("production response leaked detail: %#v", body)
 				}
-			} else if body["detail"] != test.wantDetail {
-				t.Fatalf("detail = %#v, want %q", body["detail"], test.wantDetail)
+			} else if body["developerDetail"] != test.wantDetail {
+				t.Fatalf("developerDetail = %#v, want %q", body["developerDetail"], test.wantDetail)
 			}
 			if body["requestId"] == nil || body["requestId"] == "" {
 				t.Fatalf("response is missing requestId: %#v", body)
@@ -258,8 +258,8 @@ func TestWriteLocalizedErrorCodeKeepsStableCodeIndependentFromMessageKey(t *test
 	if body["code"] != "build.test_conflict" {
 		t.Fatalf("code = %#v, want stable caller-provided code", body["code"])
 	}
-	if body["error"] != localizedMessages["zh-CN"][buildPushCredentialRequiredCode] {
-		t.Fatalf("error = %#v, want localized public message", body["error"])
+	if body["message"] != "errors."+buildPushCredentialRequiredCode {
+		t.Fatalf("message = %#v, want stable frontend localization key", body["message"])
 	}
 	if _, exists := body["detail"]; exists {
 		t.Fatalf("production response leaked detail: %#v", body)

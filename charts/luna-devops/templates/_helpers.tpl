@@ -143,6 +143,10 @@ redis-url
 {{- define "luna-devops.commonEnv" -}}
 - name: APP_ENV
   value: {{ .Values.app.env | quote }}
+- name: LOG_FORMAT
+  value: {{ .Values.app.logFormat | quote }}
+- name: LOG_COLOR
+  value: {{ .Values.app.logColor | quote }}
 - name: LOG_LEVEL
   value: {{ .Values.app.logLevel | quote }}
 - name: SECRET_ENCRYPTION_KEY

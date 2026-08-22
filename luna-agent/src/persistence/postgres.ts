@@ -77,6 +77,10 @@ export class PostgresRepository implements Repository {
     return this.database.readiness()
   }
 
+  async assertReady(): Promise<void> {
+    await this.database.assertReady()
+  }
+
   async reserveModelBudget(input: {
     id: string
     runId: string

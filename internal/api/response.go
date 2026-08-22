@@ -13,6 +13,7 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/telemetry"
 	"github.com/gin-gonic/gin"
+	"go.opentelemetry.io/otel/trace"
 )
 
 const requestIDContextKey = "luna_request_id"
@@ -80,25 +81,19 @@ func internalErrorCode(ctx *gin.Context) string {
 	return strings.TrimSuffix(code.String(), "_")
 }
 
-func writeErrorKey(ctx *gin.Context, status int, language, key string) {
-	ctx.JSON(status, gin.H{
-		"code":      key,
-		"error":     messageFor(language, key),
-		"requestId": requestID(ctx),
-	})
+func writeErrorKey(ctx *gin.Context, status int, _ string, key string) {
+	telemetry.SetHTTPError(ctx, key, key)
+	ctx.JSON(status, errorEnvelope(ctx, status, key))
 }
 
 func writeErrorKeyWithDetails(
 	ctx *gin.Context,
 	status int,
-	language, key string,
+	_ string, key string,
 	details gin.H,
 ) {
-	response := gin.H{
-		"code":      key,
-		"error":     messageFor(language, key),
-		"requestId": requestID(ctx),
-	}
+	telemetry.SetHTTPError(ctx, key, key)
+	response := errorEnvelope(ctx, status, key)
 	if config.RuntimeMode() == "development" {
 		response["details"] = details
 	}
@@ -109,20 +104,19 @@ func writeErrorCode(ctx *gin.Context, status int, code, detail string) {
 	if code == "" {
 		code = defaultErrorCode(status)
 	}
-	requestID := requestID(ctx)
+	detail = telemetry.RedactText(detail)
+	telemetry.SetHTTPError(ctx, code, detail)
 	if config.RuntimeMode() == "development" {
-		ctx.JSON(status, gin.H{"code": code, "error": detail, "detail": detail, "requestId": requestID})
+		response := errorEnvelope(ctx, status, code)
+		response["developerDetail"] = detail
+		ctx.JSON(status, response)
 		return
 	}
-	ctx.JSON(status, gin.H{
-		"code":      code,
-		"error":     publicErrorMessage(status, requestLanguage(ctx)),
-		"requestId": requestID,
-	})
+	ctx.JSON(status, errorEnvelope(ctx, status, code))
 }
 
-// writeLocalizedErrorCode exposes a stable, localized remediation message in
-// production while preserving the original diagnostic detail in development.
+// writeLocalizedErrorCode exposes a stable frontend message key in production
+// while preserving the original credential-redacted diagnostic in development.
 func writeLocalizedErrorCode(ctx *gin.Context, status int, code, detail, publicMessageKey string) {
 	if config.RuntimeMode() == "development" {
 		writeErrorCode(ctx, status, code, detail)
@@ -131,11 +125,55 @@ func writeLocalizedErrorCode(ctx *gin.Context, status int, code, detail, publicM
 	if code == "" {
 		code = defaultErrorCode(status)
 	}
-	ctx.JSON(status, gin.H{
+	telemetry.SetHTTPError(ctx, code, detail)
+	response := errorEnvelope(ctx, status, code)
+	response["message"] = "errors." + publicMessageKey
+	ctx.JSON(status, response)
+}
+
+func errorEnvelope(ctx *gin.Context, status int, code string) gin.H {
+	response := gin.H{
 		"code":      code,
-		"error":     messageFor(requestLanguage(ctx), publicMessageKey),
+		"message":   publicErrorMessageKey(status),
 		"requestId": requestID(ctx),
-	})
+	}
+	if traceID := traceID(ctx); traceID != "" {
+		response["traceId"] = traceID
+	}
+	return response
+}
+
+func traceID(ctx *gin.Context) string {
+	if ctx == nil || ctx.Request == nil {
+		return ""
+	}
+	spanContext := trace.SpanContextFromContext(ctx.Request.Context())
+	if !spanContext.IsValid() {
+		return ""
+	}
+	return spanContext.TraceID().String()
+}
+
+func publicErrorMessageKey(status int) string {
+	switch status {
+	case http.StatusBadRequest:
+		return "errors.request.invalid"
+	case http.StatusUnauthorized:
+		return "errors.auth.unauthorized"
+	case http.StatusForbidden:
+		return "errors.auth.forbidden"
+	case http.StatusNotFound:
+		return "errors.resource.not_found"
+	case http.StatusConflict:
+		return "errors.resource.conflict"
+	case http.StatusTooManyRequests:
+		return "errors.rate_limited"
+	default:
+		if status >= 500 {
+			return "errors.internal_error"
+		}
+		return "errors.request.failed"
+	}
 }
 
 func errorResponseMiddleware() gin.HandlerFunc {
@@ -189,42 +227,6 @@ func defaultErrorCode(status int) string {
 		}
 		return "request.failed"
 	}
-}
-
-func publicErrorMessage(status int, language string) string {
-	messages := publicErrorMessages[normalizeLanguage(language)]
-	if status >= 500 {
-		return messages[http.StatusInternalServerError]
-	}
-	if message, ok := messages[status]; ok {
-		return message
-	}
-	return messages[0]
-}
-
-var publicErrorMessages = map[string]map[int]string{
-	"zh-CN": {
-		0:                              "请求处理失败",
-		http.StatusBadRequest:          "请求参数不正确",
-		http.StatusUnauthorized:        "请先登录",
-		http.StatusForbidden:           "没有权限执行该操作",
-		http.StatusNotFound:            "资源不存在",
-		http.StatusConflict:            "资源状态冲突",
-		http.StatusTooManyRequests:     "请求过于频繁，请稍后再试",
-		http.StatusBadGateway:          "上游服务调用失败，请稍后再试",
-		http.StatusInternalServerError: "服务暂时不可用，请稍后再试",
-	},
-	"en-US": {
-		0:                              "The request could not be completed.",
-		http.StatusBadRequest:          "The request parameters are invalid.",
-		http.StatusUnauthorized:        "Please sign in first.",
-		http.StatusForbidden:           "You do not have permission to perform this action.",
-		http.StatusNotFound:            "The requested resource was not found.",
-		http.StatusConflict:            "The resource state conflicts with this request.",
-		http.StatusTooManyRequests:     "Too many requests. Please try again later.",
-		http.StatusBadGateway:          "The upstream service request failed. Please try again later.",
-		http.StatusInternalServerError: "The service is temporarily unavailable. Please try again later.",
-	},
 }
 
 func messageFor(language, key string) string {

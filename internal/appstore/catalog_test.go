@@ -2,8 +2,30 @@ package appstore
 
 import (
 	"bytes"
+	"slices"
 	"testing"
 )
+
+func TestCatalogUsesConsolidatedCategories(t *testing.T) {
+	templates, err := Catalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := []string{"collaboration", "database", "developerTool", "middleware", "observability", "security", "storage"}
+	categorySet := make(map[string]struct{}, len(want))
+	for _, template := range templates {
+		categorySet[template.Category] = struct{}{}
+	}
+	categories := make([]string, 0, len(categorySet))
+	for category := range categorySet {
+		categories = append(categories, category)
+	}
+	slices.Sort(categories)
+	if !slices.Equal(categories, want) {
+		t.Fatalf("catalog categories = %v, want %v", categories, want)
+	}
+}
 
 func TestCatalogUsesTypedDataVolumeDeclarations(t *testing.T) {
 	raw, err := templateFS.ReadFile("templates.json")

@@ -46,6 +46,28 @@ export class AgentDatabase {
     }
   }
 
+  async assertReady(): Promise<void> {
+    let result
+    try {
+      result = await this.pool.query<{ schema_ready: boolean }>(`
+        select count(*) = 4 as schema_ready
+        from information_schema.columns
+        where table_schema = 'ai'
+          and (table_name, column_name) in (
+            ('tool_calls', 'input_mode'),
+            ('tool_calls', 'arguments_ciphertext'),
+            ('tool_calls', 'approval_decision'),
+            ('runs', 'actor_session_id')
+          )
+      `)
+    }
+    catch (cause) {
+      throw new Error("dependency.postgres.unavailable", { cause })
+    }
+    if (result.rows[0]?.schema_ready !== true)
+      throw new Error("database.schema.invalid")
+  }
+
   async close(): Promise<void> {
     await this.pool.end()
   }

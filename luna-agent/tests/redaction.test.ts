@@ -15,6 +15,13 @@ describe("redact", () => {
       field: { type: "secret", id: "credential", value: "[REDACTED]", defaultValue: "[REDACTED]" },
     })
   })
+  it("redacts private key blocks without removing adjacent diagnostics", () => {
+    const value = redact("read /srv/luna/key.pem: -----BEGIN PRIVATE KEY-----\nsecret-material\n-----END PRIVATE KEY-----: permission denied")
+    expect(value).toContain("/srv/luna/key.pem")
+    expect(value).toContain("permission denied")
+    expect(value).toContain("[REDACTED PRIVATE KEY]")
+    expect(value).not.toContain("secret-material")
+  })
   it("masks generated secret values with equal-length asterisks", () => {
     expect(redact({ secrets: ["abc123", "qwertyuiop"], encoding: "base64", length: 6 }))
       .toEqual({ secrets: ["******", "**********"], encoding: "base64", length: 6 })
@@ -33,6 +40,20 @@ describe("redact", () => {
       },
     })
     expect(JSON.stringify(value)).not.toContain("database-secret")
+  })
+
+  it("preserves non-credential token metrics and diagnostic identifiers", () => {
+    expect(redact({
+      "luna.context.input_tokens.estimated": 2048,
+      outputTokenCount: 512,
+      token: "credential-value",
+      resourceId: "airun_123",
+    })).toEqual({
+      "luna.context.input_tokens.estimated": 2048,
+      outputTokenCount: 512,
+      token: "[REDACTED]",
+      resourceId: "airun_123",
+    })
   })
   it("keeps non-secrets fields intact next to generated secrets", () => {
     expect(redact({ secrets: ["s3cr3t"], encoding: "alphanumeric" }))

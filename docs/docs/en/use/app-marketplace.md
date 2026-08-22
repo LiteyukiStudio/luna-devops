@@ -1,6 +1,6 @@
 # App Marketplace
 
-App Marketplace provides curated templates for quickly deploying databases, caches, monitoring tools, and common self-hosted applications.
+App Marketplace provides curated templates grouped into seven categories: databases, storage, observability, developer tools, collaboration and content, middleware, and security tools.
 
 ## Install an application
 

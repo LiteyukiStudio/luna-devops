@@ -11,6 +11,7 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/model"
 	gitprovider "github.com/LiteyukiStudio/devops/internal/provider/git"
 	"github.com/LiteyukiStudio/devops/internal/secret"
+	"github.com/LiteyukiStudio/devops/internal/telemetry"
 	"github.com/gin-gonic/gin"
 	"log/slog"
 	"net"
@@ -262,11 +263,10 @@ func (h *Handlers) syncApplicationRepositoryURL(binding model.RepositoryBinding)
 func writeGitUpstreamError(ctx *gin.Context, err error) {
 	if err != nil {
 		status, code := gitUpstreamErrorStatusAndCode(err)
-		slog.WarnContext(ctx.Request.Context(), "git.upstream.failed",
-			"error.code", code,
-			"http.status_code", status,
-			"error.type", fmt.Sprintf("%T", err),
-		)
+		telemetry.LogWarn(ctx.Request.Context(), "Git upstream request failed",
+			"git.upstream.failed", "git.upstream.request", code, err,
+			slog.Int("http.response.status_code", status))
+		telemetry.MarkHTTPErrorLogged(ctx)
 	}
 	status, code := gitUpstreamErrorStatusAndCode(err)
 	writeErrorKey(ctx, status, requestLanguage(ctx), code)

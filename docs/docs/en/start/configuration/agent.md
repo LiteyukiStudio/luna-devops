@@ -7,6 +7,9 @@
 | `NODE_ENV` | `development` | Selects the Agent runtime mode; use `development`, `test`, or `production`. |
 | `HOST` | `127.0.0.1` | Sets the Agent listen host; use an IP address or hostname. |
 | `PORT` | `8091` | Sets the Agent listen port; use an integer from `1` to `65535`. |
+| `LOG_FORMAT` | `auto` | Selects terminal log rendering; use `auto`, `console`, or `json`, and use `json` in production containers. |
+| `LOG_COLOR` | `auto` | Controls console log colors; use `auto`, `always`, or `never`; `NO_COLOR` always disables colors. |
+| `LOG_LEVEL` | `info` | Sets log verbosity; use `debug`, `info`, `warn`, or `error`. |
 | `DATABASE_URL` | Empty | Connects to PostgreSQL; use a PostgreSQL connection URI. |
 | `AUTH_MODE` | `development` | Selects internal-request authentication; use `development` or `bff-hmac`. |
 | `AI_INTERNAL_SECRET`<sup>1</sup> | Empty | Authenticates internal API-Agent requests; use a secret of at least 32 bytes. |
@@ -30,7 +33,7 @@
 | `OTEL_RESOURCE_ATTRIBUTES` | Empty | Sets OpenTelemetry resource attributes; use comma-separated `key=value` pairs. |
 | `OTEL_EXPORTER_OTLP_HEADERS` | Empty | Authenticates Collector requests; use comma-separated `key=value` headers. |
 | `OTEL_SERVICE_VERSION` | Empty | Labels Agent telemetry with a version; use a version string. |
-| `AI_OBSERVABILITY_CAPTURE_CONTENT` | `false` | Controls capture of redacted, length-limited model and tool content; use `true` or `false`. |
+| `AI_OBSERVABILITY_CAPTURE_CONTENT` | `false` | Controls redacted, length-limited model and tool content in controlled traces; use `true` or `false`; logs always retain metadata only. |
 | `AI_OBSERVABILITY_CAPTURE_DATABASE_SPANS` | `false` | Controls whether each PostgreSQL query produces a span; use `true` or `false`. |
 
 ### Context management

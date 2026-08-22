@@ -252,12 +252,10 @@ func (c *Client) enqueue(ctx context.Context, task *asynq.Task, queue string, op
 			slog.String("task.id", info.ID),
 		)
 	} else {
-		telemetry.Logger().ErrorContext(ctx, "worker task enqueue failed",
-			slog.String("event.name", "task.enqueue.failed"),
+		telemetry.LogError(ctx, "Worker task enqueue failed", "task.enqueue.failed",
+			"task.enqueue", "task.enqueue.failed", err,
 			slog.String("task.type", task.Type()),
-			slog.String("task.queue", queue),
-			slog.String("error.type", telemetry.ErrorType(err)),
-		)
+			slog.String("task.queue", queue))
 	}
 	return info, err
 }

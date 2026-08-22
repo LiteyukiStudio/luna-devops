@@ -14,6 +14,8 @@
 | `BOOTSTRAP_TOKEN`<sup>2</sup> | Empty | Initializes the first administrator; use a one-time token string. |
 | `APP_CORS_ORIGINS` | Empty | Allows browser cross-origin access; use comma-separated HTTP(S) origins. |
 | `TRUSTED_PROXY_CIDRS` | Empty | Identifies trusted reverse proxies; use comma-separated CIDRs. |
+| `LOG_FORMAT` | `auto` | Selects terminal log rendering; use `auto`, `console`, or `json`, and use `json` in production containers. |
+| `LOG_COLOR` | `auto` | Controls console log colors; use `auto`, `always`, or `never`; `NO_COLOR` always disables colors. |
 | `LOG_LEVEL` | `info` | Sets log verbosity; use `debug`, `info`, `warn`, or `error`. |
 | `AI_ASSISTANT_AVAILABLE` | `false` | Controls whether the AI assistant is available; use `true` or `false`. |
 | `AI_AGENT_BASE_URL` | Empty | Sets the Agent address used by API; use an HTTP(S) URL. |

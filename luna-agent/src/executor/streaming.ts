@@ -3,7 +3,7 @@ import type { Repository } from "../persistence/repository.js"
 import type { ModelToolCall } from "../provider/provider.js"
 import { createId } from "../id.js"
 import { redact } from "../redaction.js"
-import { agentMetrics, internalSpanOptions, isExpectedCancellation, recordAIContent, stableErrorCode, telemetryLog, withSpan } from "../telemetry.js"
+import { agentMetrics, errorDiagnostic, internalSpanOptions, isExpectedCancellation, recordAIContent, stableErrorCode, telemetryLog, withSpan } from "../telemetry.js"
 import { contentError } from "./tool-results.js"
 
 // 单次模型流式调用：消费 provider 事件流，把 reasoning/正文/tool call
@@ -162,10 +162,10 @@ export async function streamModel(
     agentMetrics.modelDuration.record((performance.now() - startedAt) / 1000, { operation: "stream", outcome })
     telemetryLog(canceled ? "agent.model.canceled" : "agent.model.failed", canceled ? "info" : "error", {
       "luna.run.id": runId,
-      "error.type": error instanceof Error ? error.name : "UnknownError",
-      ...(canceled ? {} : { "error.code": outcome }),
+	  "operation": "agent.model.stream",
+	  "outcome": canceled ? "cancelled" : "failed",
+	  ...(canceled ? {} : errorDiagnostic(error, outcome)),
     })
     throw error
   })
 }
-

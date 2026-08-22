@@ -48,8 +48,11 @@ func StartOperationWithKind(ctx context.Context, domain, operation string, kind 
 	return ctx, func(err error) {
 		outcome := ErrorOutcome(err)
 		if err != nil {
-			span.AddEvent("operation.error", trace.WithAttributes(attribute.String("error.type", ErrorType(err))))
-			span.SetStatus(codes.Error, "operation failed")
+			span.AddEvent("operation.error", trace.WithAttributes(
+				attribute.String("error.type", ErrorType(err)),
+				attribute.String("error.message", RedactText(err.Error())),
+			))
+			span.SetStatus(codes.Error, "failed")
 		} else {
 			span.SetStatus(codes.Ok, "")
 		}
@@ -72,14 +75,7 @@ func RecordError(ctx context.Context, eventName string, err error, attrs ...slog
 	if err == nil {
 		return
 	}
-	span := trace.SpanFromContext(ctx)
-	span.AddEvent("operation.error", trace.WithAttributes(attribute.String("error.type", ErrorType(err))))
-	span.SetStatus(codes.Error, "operation failed")
-	logAttrs := []any{slog.String("event.name", eventName), slog.String("error.type", ErrorType(err))}
-	for _, attr := range attrs {
-		logAttrs = append(logAttrs, attr)
-	}
-	Logger().ErrorContext(ctx, "operation failed", logAttrs...)
+	LogError(ctx, "operation failed", eventName, eventName, "operation.failed", err, attrs...)
 }
 
 func ErrorType(err error) string {
@@ -98,13 +94,13 @@ func ErrorType(err error) string {
 
 func ErrorOutcome(err error) string {
 	if err == nil {
-		return "success"
+		return "succeeded"
 	}
 	if errors.Is(err, context.Canceled) {
-		return "canceled"
+		return "cancelled"
 	}
 	if errors.Is(err, context.DeadlineExceeded) {
 		return "timeout"
 	}
-	return "error"
+	return "failed"
 }

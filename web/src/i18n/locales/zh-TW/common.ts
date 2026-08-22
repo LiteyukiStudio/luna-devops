@@ -39,6 +39,7 @@ const common = {
   viewOnly: '僅可檢視',
   test: '測試',
   validEmailRequired: '請輸入有效電郵',
+  required: '此欄位為必填項',
   lowercaseSlugOnly: '只能包含小寫字母、數字和 -',
   identifier: '標識',
   identifierFormat: '只能使用小寫字母、數字和短橫線，並且必須以字母或數字開頭和結尾',

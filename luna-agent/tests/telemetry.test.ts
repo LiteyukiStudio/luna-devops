@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest"
+import { Writable } from "node:stream"
 import { SpanStatusCode, type Span } from "@opentelemetry/api"
-import { captureTraceContext, initializeTelemetry, internalSpanOptions, isDatabaseSpanCaptureEnabled, isExpectedCancellation, isHealthCheckPath, normalizeTraceContext, recordAvailableTools, recordSpanError, sanitizeTelemetryURL, stableErrorCode, stableFastifyLifecycleSpanName, telemetryLog, withSpan } from "../src/telemetry.js"
+import { captureTraceContext, createAgentLogger, errorDiagnostic, initializeTelemetry, internalSpanOptions, isDatabaseSpanCaptureEnabled, isExpectedCancellation, isHealthCheckPath, normalizeTraceContext, recordAvailableTools, recordSpanError, resolveAgentLogColor, resolveAgentLogFormat, resolveAgentLogLevel, sanitizeTelemetryURL, stableErrorCode, stableFastifyLifecycleSpanName, telemetryLog, withSpan } from "../src/telemetry.js"
 
 describe("agent telemetry", () => {
   it("keeps noisy database spans opt-in", () => {
@@ -33,6 +34,99 @@ describe("agent telemetry", () => {
   it("only exposes stable error codes", () => {
     expect(stableErrorCode(new Error("ai.provider_timeout"))).toBe("ai.provider_timeout")
     expect(stableErrorCode(new Error("request contained secret abc"))).toBe("ai.internal_error")
+  })
+
+  it("matches Go log format, color, and level resolution", () => {
+    expect(resolveAgentLogFormat("console", false, true)).toBe("console")
+    expect(resolveAgentLogFormat("json", true, false)).toBe("json")
+    expect(resolveAgentLogFormat("auto", true, false)).toBe("console")
+    expect(resolveAgentLogFormat(undefined, false, false)).toBe("json")
+    expect(resolveAgentLogFormat("auto", true, true)).toBe("json")
+    expect(resolveAgentLogColor("always", false, false)).toBe(true)
+    expect(resolveAgentLogColor("always", true, true)).toBe(false)
+    expect(resolveAgentLogLevel("debug")).toBe("debug")
+    expect(resolveAgentLogLevel("invalid")).toBe("info")
+  })
+
+  it("keeps JSON output ANSI-free, structured, redacted, and level-filtered", () => {
+    let output = ""
+    const destination = new Writable({
+      write(chunk, _encoding, callback) {
+        output += String(chunk)
+        callback()
+      },
+    })
+    const logger = createAgentLogger({
+      color: "always",
+      destination,
+      format: "json",
+      isTTY: true,
+      level: "warn",
+    })
+    logger.info({ "event.name": "agent.hidden" }, "hidden")
+    logger.error({
+      "event.name": "agent.start_failed",
+      ...errorDiagnostic(
+        new Error("connect PostgreSQL at postgres.internal:5432; token=must-not-leak"),
+        "agent.startup.failed",
+      ),
+    }, "Agent startup failed")
+    expect(output).not.toContain("hidden")
+    expect(output).not.toContain("\u001B")
+    expect(output).not.toContain("must-not-leak")
+    expect(output).toContain("postgres.internal:5432")
+    expect(output).toContain("[REDACTED]")
+    expect(JSON.parse(output)).toMatchObject({
+      "event.name": "agent.start_failed",
+      "error.code": "agent.startup.failed",
+      "error.type": "Error",
+    })
+  })
+
+  it("renders readable colored console output without changing structured fields", async () => {
+    const noColor = process.env.NO_COLOR
+    delete process.env.NO_COLOR
+    let output = ""
+    const destination = new Writable({
+      write(chunk, _encoding, callback) {
+        output += String(chunk)
+        callback()
+      },
+    })
+    try {
+      const logger = createAgentLogger({
+        color: "always",
+        destination,
+        format: "console",
+        isTTY: true,
+        level: "debug",
+      })
+      logger.error({
+        "event.name": "agent.start_failed",
+        "operation": "agent.startup",
+        "outcome": "failed",
+        ...errorDiagnostic(new Error("dial tcp postgres.internal:5432: connection refused"), "agent.startup.failed"),
+      }, "Agent startup failed")
+      await new Promise(resolve => setImmediate(resolve))
+
+      expect(output).toContain("Agent startup failed")
+      expect(output).toContain("agent.startup.failed")
+      expect(output).toContain("postgres.internal:5432")
+      expect(output).toContain("\u001B[")
+    }
+    finally {
+      if (noColor === undefined) delete process.env.NO_COLOR
+      else process.env.NO_COLOR = noColor
+    }
+  })
+
+  it("keeps the complete cause chain and runtime stack while redacting credentials", () => {
+    const cause = new Error("dial tcp postgres.internal:5432: connection refused; password=must-not-leak")
+    const diagnostic = errorDiagnostic(new Error("dependency.postgres.unavailable", { cause }), "agent.startup.failed")
+    expect(diagnostic["error.message"]).toContain("dependency.postgres.unavailable: dial tcp postgres.internal:5432")
+    expect(diagnostic["error.message"]).toContain("[REDACTED]")
+    expect(diagnostic["error.message"]).not.toContain("must-not-leak")
+    expect(diagnostic["exception.stacktrace"]).toContain("dependency.postgres.unavailable")
   })
 
   it("marks failed spans with a stable code without recording sensitive error text", () => {
@@ -87,7 +181,7 @@ describe("agent telemetry", () => {
   })
 
   it("correlates nested logs with the active AI conversation, turn, and run", async () => {
-    const write = vi.spyOn(process.stdout, "write").mockImplementation(() => true)
+    const write = vi.spyOn(process.stderr, "write").mockImplementation(() => true)
     try {
       await withSpan("invoke_agent Luna Agent", internalSpanOptions({
         "gen_ai.operation.name": "invoke_agent",
@@ -106,6 +200,8 @@ describe("agent telemetry", () => {
         "gen_ai.conversation.id": "aicnv_test",
         "luna.turn.id": "aitrn_test",
         "luna.run.id": "airun_test",
+        "resource.type": "agent_run",
+        "resource.id": "airun_test",
       })
     }
     finally {

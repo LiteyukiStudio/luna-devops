@@ -15,7 +15,7 @@ func TestListAppTemplatesFiltersSummariesByQueryAndCategory(t *testing.T) {
 
 	response := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(response)
-	ctx.Request = httptest.NewRequest(http.MethodGet, "/api/v1/app-templates?query=postgres&category=database", nil)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/api/v1/app-templates?query=transactional&category=database", nil)
 	handlers.ListAppTemplates(ctx)
 
 	if response.Code != http.StatusOK {
@@ -41,6 +41,26 @@ func TestListAppTemplatesFiltersSummariesByQueryAndCategory(t *testing.T) {
 	handlers.ListAppTemplates(ctx)
 	if response.Code != http.StatusOK || response.Body.String() != "[]" {
 		t.Fatalf("Dify no-match response = %d %s", response.Code, response.Body.String())
+	}
+
+	response = httptest.NewRecorder()
+	ctx, _ = gin.CreateTestContext(response)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/api/v1/app-templates?category=storage", nil)
+	handlers.ListAppTemplates(ctx)
+	if response.Code != http.StatusOK {
+		t.Fatalf("storage status = %d body=%s", response.Code, response.Body.String())
+	}
+	items = nil
+	if err := json.Unmarshal(response.Body.Bytes(), &items); err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 3 {
+		t.Fatalf("storage items = %#v, want Garage, Verdaccio, and Docker Registry", items)
+	}
+	for _, item := range items {
+		if item["category"] != "storage" {
+			t.Fatalf("storage filter returned category %v", item["category"])
+		}
 	}
 }
 

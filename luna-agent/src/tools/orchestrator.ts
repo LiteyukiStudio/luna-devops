@@ -3,7 +3,7 @@ import { genAIToolCallObject, genAIToolSpanAttributes } from "../genai-semconv.j
 import { createId } from "../id.js"
 import type { Repository } from "../persistence/repository.js"
 import { redact } from "../redaction.js"
-import { agentMetrics, internalSpanOptions, recordAIContent, stableErrorCode, telemetryLog, withSpan } from "../telemetry.js"
+import { agentMetrics, errorDiagnostic, internalSpanOptions, recordAIContent, stableErrorCode, telemetryLog, withSpan } from "../telemetry.js"
 import { ToolArgumentsInvalidError, requiredInputFields, validateToolArguments } from "./argument-validator.js"
 import type { ToolCatalog } from "./catalog.js"
 import type { LunaApiToolClient, ToolExecutionResult } from "./luna-api-client.js"
@@ -238,7 +238,9 @@ export class ToolOrchestrator {
             "luna.run.id": call.runId,
             "luna.tool_call.id": call.id,
             "tool.name": call.operationId,
-            "error.code": errorCode,
+			"operation": "agent.tool.execute",
+			"outcome": "failed",
+			...errorDiagnostic(error, errorCode),
           })
           return failed
         }
@@ -257,7 +259,15 @@ export class ToolOrchestrator {
           "luna.run.id": call.runId,
           "luna.tool_call.id": call.id,
           "tool.name": call.operationId,
-          ...(finished.errorCode ? { "error.code": finished.errorCode } : {}),
+		  "operation": "agent.tool.execute",
+		  "outcome": finished.status === "succeeded" ? "succeeded" : "failed",
+          ...(finished.errorCode
+            ? {
+                "error.code": finished.errorCode,
+                "error.type": "AgentToolResultError",
+                "error.message": finished.errorCode,
+              }
+            : {}),
         })
         return finished
       })
@@ -268,8 +278,9 @@ export class ToolOrchestrator {
         "luna.run.id": call.runId,
         "luna.tool_call.id": call.id,
         "tool.name": call.operationId,
-        "error.type": error instanceof Error ? error.name : "UnknownError",
-        "error.code": outcome,
+		"operation": "agent.tool.execute",
+		"outcome": "failed",
+		...errorDiagnostic(error, outcome),
       })
       throw error
     }
@@ -318,7 +329,11 @@ export class ToolOrchestrator {
     telemetryLog("agent.tool.arguments_invalid", "warn", {
       "luna.run.id": input.runId,
       "tool.name": input.operationId,
+      "operation": "agent.tool.validate_arguments",
+      "outcome": "rejected",
       "error.code": error.code,
+      "error.type": error.name,
+      "error.message": error.code,
     })
     await this.store.emit({
       type: "tool.started",

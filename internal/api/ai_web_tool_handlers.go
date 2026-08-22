@@ -62,20 +62,16 @@ func (h *Handlers) writeAIWebToolError(ctx *gin.Context, operationID string, err
 	case errors.Is(err, aitool.ErrWebContentRejected):
 		writeErrorCode(ctx, http.StatusUnsupportedMediaType, "ai.web_content_rejected", "AI web content is not readable")
 	case errors.Is(err, aitool.ErrWebRequestFailed):
-		telemetry.Logger().WarnContext(ctx.Request.Context(), "AI web tool request failed",
-			slog.String("event.name", "ai.tool.web_request.failed"),
-			slog.String("request_id", requestID(ctx)),
-			slog.String("operation", operationID),
-			slog.String("error.type", telemetry.ErrorType(err)),
-		)
+		telemetry.LogWarn(ctx.Request.Context(), "AI web tool request failed",
+			"ai.tool.web_request.failed", operationID, "provider.request.failed", err,
+			slog.String("request_id", requestID(ctx)))
+		telemetry.MarkHTTPErrorLogged(ctx)
 		writeErrorCode(ctx, http.StatusBadGateway, "ai.web_request_failed", "AI web provider request failed")
 	default:
-		telemetry.Logger().ErrorContext(ctx.Request.Context(), "AI web tool execution failed",
-			slog.String("event.name", "ai.tool.execution.failed"),
-			slog.String("request_id", requestID(ctx)),
-			slog.String("operation", operationID),
-			slog.String("error.type", telemetry.ErrorType(err)),
-		)
+		telemetry.LogError(ctx.Request.Context(), "AI web tool execution failed",
+			"ai.tool.execution.failed", operationID, "agent.tool.failed", err,
+			slog.String("request_id", requestID(ctx)))
+		telemetry.MarkHTTPErrorLogged(ctx)
 		writeErrorCode(ctx, http.StatusInternalServerError, "ai.tool_execution_failed", "AI web tool execution failed")
 	}
 }

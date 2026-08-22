@@ -46,7 +46,9 @@ func newOAuthStateStore(redisAddr string) oauthStateStore {
 func newOAuthStateStoreWithRedis(options redisconfig.Options) oauthStateStore {
 	client := redis.NewClient(options.GoRedis())
 	if err := telemetry.InstrumentRedis(client); err != nil {
-		telemetry.Logger().Warn("Redis telemetry initialization failed", "event.name", "redis.instrumentation.failed", "error.type", telemetry.ErrorType(err))
+		telemetry.LogWarn(context.Background(), "Redis telemetry initialization failed",
+			"redis.instrumentation.failed", "redis.instrumentation.initialize",
+			"telemetry.initialization.failed", err)
 	}
 	return &redisOAuthStateStore{client: client}
 }

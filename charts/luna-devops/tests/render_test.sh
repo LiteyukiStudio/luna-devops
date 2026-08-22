@@ -66,5 +66,15 @@ assert_not_contains "$external_secret_render" '^[[:space:]]+- name: REDIS_(USERN
 assert_contains "$default_render" '^  VOLUME_TRANSFER_MAX_BYTES: "100Gi"$' 'the direct transfer size limit is missing'
 assert_contains "$default_render" '^  VOLUME_TRANSFER_JOB_IMAGE: "liteyukistudio/luna-worker:' 'the direct transfer image does not follow the Worker image'
 assert_not_contains "$default_render" 'VOLUME_TRANSFER_(STORE|S3|SPOOL|CALLBACK|OBJECT_TTL)' 'object-store transfer settings are still rendered'
+assert_count "$default_render" '^[[:space:]]+- name: LOG_FORMAT$' 2 'API and Worker LOG_FORMAT settings are missing'
+assert_count "$default_render" '^[[:space:]]+value: "json"$' 2 'production logs are not fixed to JSON'
+assert_count "$default_render" '^[[:space:]]+- name: LOG_COLOR$' 2 'API and Worker LOG_COLOR settings are missing'
+
+agent_render="$tmp_dir/agent.yaml"
+helm template luna-devops "$chart_dir" --namespace luna-devops \
+  --set ai.enabled=true \
+  --set ai.existingSecret=agent-auth > "$agent_render"
+assert_count "$agent_render" '^[[:space:]]+- name: LOG_FORMAT$' 3 'Agent LOG_FORMAT does not match API and Worker'
+assert_count "$agent_render" '^[[:space:]]+- name: LOG_LEVEL$' 3 'Agent LOG_LEVEL does not match API and Worker'
 
 printf 'Helm render tests passed.\n'

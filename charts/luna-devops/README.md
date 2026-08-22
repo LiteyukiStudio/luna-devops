@@ -64,8 +64,9 @@ follows the chart `appVersion` unless `ai.agent.image.tag` is set explicitly.
 
 For a short, controlled diagnostic window, set
 `ai.agent.observabilityCaptureContent=true` to export redacted model input,
-model output, tool arguments, and tool results. It is disabled by default
-because the content can contain user and platform data.
+model output, tool arguments, and tool results to controlled traces. Logs keep
+event metadata only. It is disabled by default because the trace content can
+contain user and platform data.
 
 ## Send telemetry to an OpenTelemetry Collector
 
@@ -84,6 +85,11 @@ Collector requires headers, store the complete `key=value` header value in a
 Secret, then set `observability.existingSecret` and
 `observability.headersKey`. See the public observability reference for local
 verification and production Collector guidance.
+
+The chart defaults API, Worker, and Agent to `app.logFormat=json`,
+`app.logColor=never`, and `app.logLevel=info`. Terminal rendering remains
+independent from OTel export; override these values only for a controlled
+interactive diagnostic session.
 
 ## Configure project-volume transfers
 

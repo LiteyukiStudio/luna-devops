@@ -106,13 +106,12 @@ func taskTelemetryMiddleware(next asynq.Handler) asynq.Handler {
 				slog.String("task.id", envelope.TaskID),
 			)
 		} else {
-			telemetry.Logger().ErrorContext(ctx, "worker task failed",
-				slog.String("event.name", "task.failed"),
+			telemetry.LogError(ctx, "Worker task failed", "task.failed", "task.execute",
+				"task.execute.failed", err,
 				slog.String("task.type", task.Type()),
 				slog.String("task.queue", queue),
-				slog.String("task.id", envelope.TaskID),
-				slog.String("error.type", telemetry.ErrorType(err)),
-			)
+				slog.String("resource.type", "task"),
+				slog.String("resource.id", envelope.TaskID))
 		}
 		return err
 	})
@@ -157,12 +156,6 @@ func workerStage(ctx context.Context, operation string, run func(context.Context
 			slog.String("event.name", "worker.stage.completed"),
 			slog.String("operation", operation),
 		)
-	} else {
-		telemetry.Logger().ErrorContext(ctx, "worker stage failed",
-			slog.String("event.name", "worker.stage.failed"),
-			slog.String("operation", operation),
-			slog.String("error.type", telemetry.ErrorType(err)),
-		)
 	}
 	return err
 }
@@ -179,12 +172,6 @@ func workerStageValue[T any](ctx context.Context, operation string, run func(con
 		telemetry.Logger().InfoContext(ctx, "worker stage completed",
 			slog.String("event.name", "worker.stage.completed"),
 			slog.String("operation", operation),
-		)
-	} else {
-		telemetry.Logger().ErrorContext(ctx, "worker stage failed",
-			slog.String("event.name", "worker.stage.failed"),
-			slog.String("operation", operation),
-			slog.String("error.type", telemetry.ErrorType(err)),
 		)
 	}
 	return value, err

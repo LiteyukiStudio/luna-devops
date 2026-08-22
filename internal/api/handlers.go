@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"log/slog"
 	"os"
 
 	"github.com/LiteyukiStudio/devops/internal/aiagent"
@@ -102,9 +103,9 @@ func NewHandlers(db *gorm.DB) *Handlers {
 		WithExistingClaimInspector(handlers.volumeClusters)
 	volumeContent, err := newVolumeTransferContentAdapter(handlers, cfg)
 	if err != nil {
-		telemetry.Logger().Error("Volume transfer content service initialization failed",
-			"event.name", "volume_transfer.content_service.initialization_failed",
-			"error.type", telemetry.ErrorType(err))
+		telemetry.LogError(context.Background(), "Volume transfer content service initialization failed",
+			"volume_transfer.content_service.initialization_failed", "volume_transfer.content_service.initialize",
+			"provider.request.failed", err)
 	} else {
 		handlers.volumeContent = volumeContent
 	}
@@ -113,11 +114,10 @@ func NewHandlers(db *gorm.DB) *Handlers {
 	var aiClientErr error
 	handlers.aiAgent, aiClientErr = aiConfig.Client()
 	if aiClientErr != nil {
-		telemetry.Logger().Error("AI Agent client initialization failed",
-			"event.name", "ai.agent_client.initialization_failed",
-			"error.type", telemetry.ErrorType(aiClientErr),
-			"error.message", aiClientErr.Error(),
-			"ai.enabled", aiConfig.Available)
+		telemetry.LogError(context.Background(), "AI Agent client initialization failed",
+			"ai.agent_client.initialization_failed", "ai.agent_client.initialize",
+			"agent.startup.failed", aiClientErr,
+			slog.Bool("ai.enabled", aiConfig.Available))
 	}
 	handlers.aiTools = aitool.NewService(
 		db,

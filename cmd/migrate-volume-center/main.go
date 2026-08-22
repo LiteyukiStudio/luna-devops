@@ -3,11 +3,9 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"flag"
 	"fmt"
 	"io"
-	"log/slog"
 	"os"
 	"os/signal"
 	"strings"
@@ -29,12 +27,18 @@ type commandOptions struct {
 }
 
 func main() {
+	os.Exit(runMain())
+}
+
+func runMain() int {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	runtime, err := telemetry.Setup(ctx, telemetry.ServiceConfig{ServiceName: "luna-volume-center-migration"})
 	if err != nil {
-		_, _ = os.Stderr.WriteString("volume center migration telemetry initialization failed\n")
-		os.Exit(1)
+		telemetry.LogError(ctx, "Volume center migration startup failed", "volume_center_migration.startup.failed",
+			"volume_center_migration.startup", "telemetry.initialization.failed",
+			telemetry.WrapError("telemetry.initialization.failed", "verify the OTEL exporter configuration", "initialize telemetry", err))
+		return 1
 	}
 	defer func() {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -42,12 +46,11 @@ func main() {
 		_ = runtime.Shutdown(shutdownCtx)
 	}()
 	if err := run(ctx, os.Args[1:], os.Stdout); err != nil {
-		telemetry.Logger().ErrorContext(ctx, "volume center migration failed",
-			slog.String("event.name", "volume_center_migration.failed"),
-			slog.String("error.type", telemetry.ErrorType(err)),
-		)
-		os.Exit(1)
+		telemetry.LogError(ctx, "Volume center migration failed", "volume_center_migration.failed",
+			"volume_center_migration.run", "database.migration.failed", err)
+		return 1
 	}
+	return 0
 }
 
 func run(ctx context.Context, args []string, output io.Writer) error {
@@ -62,11 +65,13 @@ func run(ctx context.Context, args []string, output io.Writer) error {
 		ConnMaxLifetime: cfg.DatabaseConnMaxLifetime, ConnMaxIdleTime: cfg.DatabaseConnMaxIdleTime,
 	})
 	if err != nil {
-		return errors.New("volume center migration database unavailable")
+		return telemetry.WrapError("dependency.postgres.unavailable", "start PostgreSQL or verify DATABASE_URL",
+			"connect PostgreSQL for volume center migration", err)
 	}
 	sqlDB, err := db.DB()
 	if err != nil {
-		return errors.New("volume center migration database handle unavailable")
+		return telemetry.WrapError("dependency.postgres.unavailable", "verify DATABASE_URL and PostgreSQL connectivity",
+			"open PostgreSQL handle for volume center migration", err)
 	}
 	defer sqlDB.Close()
 	secretStore := secret.NewStore(db, nil)

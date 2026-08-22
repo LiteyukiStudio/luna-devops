@@ -404,7 +404,7 @@ func TestWriteErrorCodeIncludesDetailInDevelopment(t *testing.T) {
 	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	if body["error"] != "validation detail" || body["detail"] != "validation detail" {
+	if body["developerDetail"] != "validation detail" {
 		t.Fatalf("development response should include detail: %#v", body)
 	}
 }

@@ -2,7 +2,6 @@ package worker
 
 import (
 	"context"
-	"log/slog"
 	"time"
 
 	"github.com/LiteyukiStudio/devops/internal/redisconfig"
@@ -83,10 +82,8 @@ func startSchedulerWithRedis(options redisconfig.Options) (*asynq.Scheduler, err
 	}
 	go func() {
 		if err := scheduler.Run(); err != nil {
-			telemetry.Logger().ErrorContext(context.Background(), "worker scheduler stopped",
-				slog.String("event.name", "worker.scheduler.stopped"),
-				slog.String("error.type", telemetry.ErrorType(err)),
-			)
+			telemetry.LogError(context.Background(), "Worker scheduler stopped",
+				"worker.scheduler.stopped", "worker.scheduler.run", "worker.scheduler.failed", err)
 		}
 	}()
 	return scheduler, nil

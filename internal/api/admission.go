@@ -135,11 +135,11 @@ func (h *Handlers) ensureAdmissionPolicy(ctx context.Context) (model.AuthAdmissi
 
 func writeAdmissionPolicyUnavailable(ctx *gin.Context, err error) {
 	requestID := requestID(ctx)
-	telemetry.Logger().ErrorContext(ctx.Request.Context(), "authentication admission policy unavailable",
-		slog.String("event.name", "auth.admission_policy.unavailable"),
-		slog.String("request_id", requestID),
-		slog.String("error.type", telemetry.ErrorType(err)),
-	)
+	telemetry.LogError(ctx.Request.Context(), "Authentication admission policy unavailable",
+		"auth.admission_policy.unavailable", "auth.admission_policy.read",
+		"dependency.postgres.unavailable", err,
+		slog.String("request_id", requestID))
+	telemetry.MarkHTTPErrorLogged(ctx)
 	writeErrorCode(
 		ctx,
 		http.StatusServiceUnavailable,
@@ -172,13 +172,11 @@ func (h *Handlers) auditWithContext(userID, action, resource string, success boo
 		"created_at": time.Now(),
 	}
 	if err := h.dbWithContext(ctx).Model(&model.AuditLog{}).Create(entry).Error; err != nil {
-		telemetry.Logger().ErrorContext(ctx, "audit write failed",
-			slog.String("event.name", "audit.write.failed"),
+		telemetry.LogError(ctx, "Audit write failed", "audit.write.failed",
+			"audit.write", "database.audit_write.failed", err,
 			slog.String("audit.action", action),
 			slog.String("resource.type", auditResourceType(action)),
-			slog.Bool("outcome.success", success),
-			slog.String("error.type", telemetry.ErrorType(err)),
-		)
+			slog.Bool("audit.operation_succeeded", success))
 	}
 }
 

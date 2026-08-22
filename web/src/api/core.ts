@@ -6,9 +6,11 @@ export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api/v1'
 
 interface ApiErrorBody {
   code?: unknown
+  developerDetail?: unknown
   detail?: unknown
-  error?: unknown
+  message?: unknown
   requestId?: unknown
+  traceId?: unknown
 }
 
 export class ApiError extends Error {
@@ -18,8 +20,9 @@ export class ApiError extends Error {
   requestId?: string
   retryAfterMs?: number
   status: number
+  traceId?: string
 
-  constructor(message: string, options: { code?: string, detail?: string, path: string, requestId?: string, retryAfterMs?: number, status: number }) {
+  constructor(message: string, options: { code?: string, detail?: string, path: string, requestId?: string, retryAfterMs?: number, status: number, traceId?: string }) {
     super(message)
     this.name = 'ApiError'
     this.code = options.code || 'request.failed'
@@ -28,6 +31,7 @@ export class ApiError extends Error {
     this.requestId = options.requestId
     this.retryAfterMs = options.retryAfterMs
     this.status = options.status
+    this.traceId = options.traceId
   }
 }
 
@@ -162,16 +166,19 @@ async function parseErrorBody(response: Response): Promise<ApiErrorBody> {
 async function apiErrorFromResponse(response: Response, path: string) {
   const body = await parseErrorBody(response)
   const code = typeof body.code === 'string' && body.code.trim() ? body.code.trim() : ''
-  const detail = typeof body.detail === 'string' && body.detail.trim() ? body.detail.trim() : ''
-  const bodyError = typeof body.error === 'string' && body.error.trim() ? body.error.trim() : ''
+  const developerDetail = typeof body.developerDetail === 'string' && body.developerDetail.trim()
+    ? body.developerDetail.trim()
+    : typeof body.detail === 'string' && body.detail.trim() ? body.detail.trim() : ''
   const requestId = typeof body.requestId === 'string' && body.requestId.trim() ? body.requestId.trim() : undefined
-  const message = translatedErrorMessage(code) || bodyError || fallbackMessageForStatus(response.status) || response.statusText
+  const traceId = typeof body.traceId === 'string' && body.traceId.trim() ? body.traceId.trim() : undefined
+  const message = translatedErrorMessage(code) || fallbackMessageForStatus(response.status) || response.statusText
   return new ApiError(message, {
     code: code || `http.${response.status}`,
-    detail: detail || undefined,
+    detail: developerDetail || undefined,
     path,
     requestId,
     status: response.status,
+    traceId,
   })
 }
 

@@ -39,6 +39,7 @@ const common = {
   viewOnly: '閲覧のみ',
   test: 'テスト',
   validEmailRequired: '有効なメールアドレスを入力してください',
+  required: 'この項目は必須です',
   lowercaseSlugOnly: '小文字、数字、- のみ使用できます',
   identifier: '識別子',
   identifierFormat: '小文字、数字、ハイフンのみ使用でき、先頭と末尾は文字または数字である必要があります',

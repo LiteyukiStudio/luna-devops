@@ -10,7 +10,9 @@ import (
 
 	"github.com/LiteyukiStudio/devops/internal/agentobservability"
 	"github.com/LiteyukiStudio/devops/internal/authz"
+	"github.com/LiteyukiStudio/devops/internal/config"
 	"github.com/LiteyukiStudio/devops/internal/model"
+	"github.com/LiteyukiStudio/devops/internal/telemetry"
 	"github.com/gin-gonic/gin"
 )
 
@@ -352,13 +354,13 @@ func (h *Handlers) requireAgentObservabilityAdmin(ctx *gin.Context) (model.User,
 
 func writeAgentObservabilityUnavailable(ctx *gin.Context, code, detail string) {
 	ctx.Header("Cache-Control", "no-store")
-	response := gin.H{
-		"code":            code,
-		"error":           detail,
-		"requestId":       requestID(ctx),
-		"retryable":       true,
-		"status":          "unavailable",
-		"observationCode": code,
+	telemetry.SetHTTPError(ctx, code, detail)
+	response := errorEnvelope(ctx, http.StatusServiceUnavailable, code)
+	response["retryable"] = true
+	response["status"] = "unavailable"
+	response["observationCode"] = code
+	if config.RuntimeMode() == "development" {
+		response["developerDetail"] = telemetry.RedactText(detail)
 	}
 	ctx.JSON(http.StatusServiceUnavailable, response)
 }

@@ -267,12 +267,11 @@ func (h *Handlers) deleteSupersededRuntimeSecrets(ctx context.Context, tx *gorm.
 }
 
 func writeRuntimeSecretMutationError(ctx *gin.Context, ownerType string, err error) {
-	telemetry.Logger().ErrorContext(ctx.Request.Context(), "runtime secret mutation failed",
-		slog.String("event.name", "runtime_secret.mutation.failed"),
-		slog.String("operation", "runtime_secret.mutate"),
-		slog.String("resource.type", ownerType),
-		slog.String("error.type", telemetry.ErrorType(err)),
-	)
+	telemetry.LogError(ctx.Request.Context(), "Runtime secret mutation failed",
+		"runtime_secret.mutation.failed", "runtime_secret.mutate",
+		"database.secret_write.failed", err,
+		slog.String("resource.type", ownerType))
+	telemetry.MarkHTTPErrorLogged(ctx)
 	writeErrorCode(ctx, http.StatusInternalServerError, "deployment.secret_store_unavailable", "密钥保存失败")
 }
 

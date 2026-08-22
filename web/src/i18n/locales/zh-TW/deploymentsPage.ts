@@ -288,7 +288,7 @@ const deploymentsPage = {
   runtimeProfile: '執行規格',
   runtimeEnvironment: '執行規格',
   runtimeEnvironmentHint: '應用釋出後實際使用的執行叢集、名稱空間和資源規格。',
-  runtimeSizeValue: '{{replicas}}副本{{cpu}}{{memory}}',
+  runtimeSizeValue: '{{cpu}} 核心 · {{memory}}',
   buildEnvironment: '構建規格',
   buildEnvironmentDescription: '構建映象時使用的臨時 Kubernetes Job 資源規格和超時時間；構建觸發時可臨時覆蓋。',
   buildEnvironmentHint: '構建 Job 會使用這裡的 CPU、記憶體和超時時間，並按當時規格寫入構建記錄用於計費。',

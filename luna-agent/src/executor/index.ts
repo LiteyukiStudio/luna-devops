@@ -8,7 +8,7 @@ import type { ProviderConfigClient } from "../provider/config-client.js"
 import type { ToolCatalogRegistry } from "../tools/catalog-registry.js"
 import { genAIAgentName, genAIAgentSpanAttributes, genAIInputMessages, genAIOutputMessages, genAIToolCallObject, genAIToolSpanAttributes } from "../genai-semconv.js"
 import { agentRuntimeInternals, defaultRuntimeSettings, type RuntimeSettings } from "../runtime-settings.js"
-import { agentMetrics, extractTraceContext, internalSpanOptions, recordAIContent, recordSpanError, stableErrorCode, telemetryLog, withSpan } from "../telemetry.js"
+import { agentMetrics, errorDiagnostic, extractTraceContext, internalSpanOptions, recordAIContent, recordSpanError, stableErrorCode, telemetryLog, withSpan } from "../telemetry.js"
 import { ToolInterruption, type ToolOrchestrator } from "../tools/orchestrator.js"
 import { ToolLoopStoppedError } from "../tools/loop-guard.js"
 import { businessCardToolInputs, compileBusinessCardToolInput, isBusinessCardToolOperationId } from "../tools/business-card-tools.js"
@@ -96,6 +96,11 @@ export class RunExecutor {
         "luna.user.id": run.ownerUserId,
         "luna.quota.user_concurrent_runs": this.runtimeSettings.userConcurrentRuns,
         "luna.quota.active_count": activeCount,
+        "operation": "agent.run.claim",
+        "outcome": "rejected",
+        "error.code": "ai.quota.user_concurrent_runs_exceeded",
+        "error.type": "AgentQuotaError",
+        "error.message": "ai.quota.user_concurrent_runs_exceeded",
       })
       try { await this.repository.updateRun(run.id, "running", "failed", { completedAt: new Date().toISOString(), errorCode: "ai.quota.user_concurrent_runs_exceeded" }) } catch { /* state may have changed */ }
       return true
@@ -594,12 +599,11 @@ export class RunExecutor {
         }
         telemetryLog(error instanceof ToolInterruption ? `agent.run.${error.state}` : "agent.run.failed", error instanceof ToolInterruption ? "info" : "error", {
           "luna.run.id": run.id,
+		  "operation": "agent.run",
+		  "outcome": error instanceof ToolInterruption ? error.state : "failed",
           ...(error instanceof ToolInterruption
             ? {}
-            : {
-                "error.type": error instanceof Error ? error.name : "UnknownError",
-                "error.code": errorCode,
-              }),
+            : errorDiagnostic(error, errorCode)),
           ...(error instanceof RunStateConflictError
             ? {
                 "luna.run.expected_status": error.expectedStatus,
@@ -687,7 +691,11 @@ export class RunExecutor {
     }
     catch (error) {
       agentMetrics.toolCatalogRefreshes.add(1, { outcome: "failed" })
-      telemetryLog("agent.tool_catalog.refresh_failed", "warn", { "error.code": stableErrorCode(error) })
+      telemetryLog("agent.tool_catalog.refresh_failed", "warn", {
+        "operation": "agent.tool_catalog.refresh",
+        "outcome": "failed",
+        ...errorDiagnostic(error, stableErrorCode(error)),
+      })
       // Keep the last validated settings when Luna API is temporarily unavailable.
     }
   }

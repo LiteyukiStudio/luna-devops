@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/LiteyukiStudio/devops/internal/config"
+	"github.com/LiteyukiStudio/devops/internal/telemetry"
 	"github.com/gin-gonic/gin"
 )
 
@@ -44,11 +45,9 @@ func (h *Handlers) ensureNoIncomingServiceBindings(ctx *gin.Context, projectID, 
 }
 
 func writeServiceBindingInUse(ctx *gin.Context, usages []serviceBindingUsage) {
-	response := gin.H{
-		"code":      "service_binding_in_use",
-		"error":     messageFor(requestLanguage(ctx), "service_binding_in_use"),
-		"requestId": requestID(ctx),
-	}
+	const code = "service_binding_in_use"
+	telemetry.SetHTTPError(ctx, code, code)
+	response := errorEnvelope(ctx, http.StatusConflict, code)
 	if config.RuntimeMode() == "development" {
 		response["affectedSources"] = usages
 	}

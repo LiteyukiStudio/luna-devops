@@ -12,7 +12,7 @@ export function formatReleaseTime(release: Release, t: TFunction) {
 }
 
 export function gatewayDeploymentTargetLabel(target: DeploymentTarget, t: TFunction) {
-  return `${target.name} · ${t(`deploymentsPage.stages.${target.stage}`, { defaultValue: target.stage })}`
+  return `${target.name} · ${t(`deploymentsPage.stageLabels.${target.stage}`, { defaultValue: target.stage })}`
 }
 
 export function deploymentReleaseKey(deploymentTargetId: string) {

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/LiteyukiStudio/devops/internal/redisconfig"
+	"github.com/LiteyukiStudio/devops/internal/telemetry"
 	"github.com/joho/godotenv"
 	"k8s.io/apimachinery/pkg/api/resource"
 )
@@ -116,10 +118,9 @@ func (c Config) ValidateVolumeTransfer() error {
 func trustedProxyCIDRs(raw string) []string {
 	values, err := parseTrustedProxyCIDRs(raw)
 	if err != nil {
-		slog.Warn("trusted proxy configuration rejected",
-			"event.name", "config.trusted_proxy.invalid",
-			"error.type", fmt.Sprintf("%T", err),
-		)
+		telemetry.LogWarn(context.Background(), "Trusted proxy configuration rejected",
+			"config.trusted_proxy.invalid", "config.trusted_proxy.parse", "config.invalid", err,
+			slog.String("error.hint", "verify TRUSTED_PROXY_CIDRS"))
 		return nil
 	}
 	return values
@@ -182,11 +183,14 @@ func loadEnvFiles(paths ...string) {
 		}
 		if err := godotenv.Load(path); err != nil {
 			if RuntimeMode() == "development" {
-				slog.Debug("environment file not loaded; using process environment",
-					"event.name", "config.env_file.not_loaded",
-					"file.path", path,
-					"error.type", fmt.Sprintf("%T", err),
-				)
+				attrs := []slog.Attr{
+					slog.String("event.name", "config.env_file.not_loaded"),
+					slog.String("operation", "config.env_file.load"),
+					slog.String("file.path", path),
+				}
+				attrs = append(attrs, telemetry.ErrorAttrs(err, "config.env_file.not_found")...)
+				telemetry.Logger().LogAttrs(context.Background(), slog.LevelDebug,
+					"Environment file not loaded; using process environment", attrs...)
 			}
 			continue
 		}

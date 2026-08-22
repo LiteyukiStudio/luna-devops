@@ -46,11 +46,11 @@ func NewCollector(config Config, discoverer RouteDiscoverer, reporter Reporter, 
 func (c *Collector) Run(ctx context.Context) error {
 	if err := c.refreshRoutes(ctx); err != nil {
 		c.setError(err)
-		c.logger.WarnContext(ctx, "initial route refresh failed", "event.name", "gateway_probe.routes.refresh_failed", "error.type", telemetry.ErrorType(err))
+		c.logWarning(ctx, "Initial route refresh failed", "gateway_probe.routes.refresh_failed", "gateway_probe.routes.refresh", err)
 	}
 	if err := c.scrapeAndReport(ctx); err != nil {
 		c.setError(err)
-		c.logger.WarnContext(ctx, "initial gateway traffic scrape failed", "event.name", "gateway_probe.scrape.failed", "error.type", telemetry.ErrorType(err))
+		c.logWarning(ctx, "Initial gateway traffic scrape failed", "gateway_probe.scrape.failed", "gateway_probe.scrape", err)
 	}
 	ticker := time.NewTicker(c.config.ScrapeInterval)
 	defer ticker.Stop()
@@ -61,10 +61,20 @@ func (c *Collector) Run(ctx context.Context) error {
 		case <-ticker.C:
 			if err := c.scrapeAndReport(ctx); err != nil {
 				c.setError(err)
-				c.logger.WarnContext(ctx, "gateway traffic scrape failed", "event.name", "gateway_probe.scrape.failed", "error.type", telemetry.ErrorType(err))
+				c.logWarning(ctx, "Gateway traffic scrape failed", "gateway_probe.scrape.failed", "gateway_probe.scrape", err)
 			}
 		}
 	}
+}
+
+func (c *Collector) logWarning(ctx context.Context, message, eventName, operation string, err error) {
+	attrs := []slog.Attr{
+		slog.String("event.name", eventName),
+		slog.String("operation", operation),
+		slog.String("outcome", telemetry.ErrorOutcome(err)),
+	}
+	attrs = append(attrs, telemetry.ErrorAttrs(err, "provider.request.failed")...)
+	c.logger.LogAttrs(ctx, slog.LevelWarn, message, attrs...)
 }
 
 func (c *Collector) Healthz(w http.ResponseWriter, _ *http.Request) {

@@ -265,7 +265,7 @@ func TestStreamControlSummaryIsRecordedOnAPISpan(t *testing.T) {
 	for _, item := range ended[0].Attributes() {
 		attributes[string(item.Key)] = item.Value.AsInterface()
 	}
-	if attributes["volume.transfer.outcome"] != "success" || attributes["volume.transfer.transferred_bytes"] != int64(12) ||
+	if attributes["volume.transfer.outcome"] != "succeeded" || attributes["volume.transfer.transferred_bytes"] != int64(12) ||
 		attributes["volume.transfer.logical_bytes"] != int64(34) || attributes["volume.transfer.processed_files"] != int64(2) {
 		t.Fatalf("span attributes = %#v", attributes)
 	}

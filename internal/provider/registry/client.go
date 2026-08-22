@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/LiteyukiStudio/devops/internal/security"
+	"github.com/LiteyukiStudio/devops/internal/telemetry"
 )
 
 type Credential struct {
@@ -48,10 +49,9 @@ func Ping(parent context.Context, endpointText string, policy security.EgressPol
 
 	resp, err := security.NewHTTPClient(policy, 5*time.Second).Do(req)
 	if err != nil {
-		slog.WarnContext(ctx, "registry.ping.failed",
-			"error.type", fmt.Sprintf("%T", err),
-			"registry.host", endpoint.Hostname(),
-		)
+		telemetry.LogWarn(ctx, "Registry request failed", "registry.ping.failed",
+			"registry.ping", "provider.request.failed", err,
+			slog.String("server.address", endpoint.Hostname()))
 		return PingResult{Success: false, Message: "镜像站连接失败，请检查地址、网络或凭据", Endpoint: endpoint.String()}
 	}
 	defer resp.Body.Close()

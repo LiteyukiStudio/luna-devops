@@ -17,6 +17,7 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/resourceidentifier"
+	"github.com/LiteyukiStudio/devops/internal/telemetry"
 	"github.com/gin-gonic/gin"
 	"github.com/shopspring/decimal"
 	"golang.org/x/crypto/bcrypt"
@@ -545,10 +546,9 @@ func ensureDevelopmentAdmin(db *gorm.DB) {
 func ensureDevelopmentAdminWallet(db *gorm.DB, user model.User) {
 	credits, err := developmentAdminFreeQuotaCredits()
 	if err != nil {
-		slog.Error("development administrator wallet bootstrap failed",
-			"event.name", "billing.development_wallet_bootstrap.failed",
-			"error.type", "billing.development_free_quota_invalid",
-		)
+		telemetry.LogError(context.Background(), "Development administrator wallet bootstrap failed",
+			"billing.development_wallet_bootstrap.failed", "billing.development_wallet.bootstrap",
+			"billing.development_free_quota_invalid", err)
 		return
 	}
 
@@ -567,10 +567,11 @@ func ensureDevelopmentAdminWallet(db *gorm.DB, user model.User) {
 		})
 	}
 	if err != nil {
-		slog.Error("development administrator wallet bootstrap failed",
-			"event.name", "billing.development_wallet_bootstrap.failed",
-			"error.type", "billing.development_wallet_bootstrap_failed",
-		)
+		telemetry.LogError(context.Background(), "Development administrator wallet bootstrap failed",
+			"billing.development_wallet_bootstrap.failed", "billing.development_wallet.bootstrap",
+			"billing.development_wallet_bootstrap_failed", err,
+			slog.String("resource.type", "user"),
+			slog.String("resource.id", user.ID))
 	}
 }
 

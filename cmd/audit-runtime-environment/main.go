@@ -17,6 +17,7 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/database"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/runtimeconfig"
+	"github.com/LiteyukiStudio/devops/internal/telemetry"
 	"gorm.io/gorm"
 )
 
@@ -42,12 +43,27 @@ type auditReport struct {
 }
 
 func main() {
+	os.Exit(runMain())
+}
+
+func runMain() int {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	if err := run(ctx, os.Args[1:], os.Stdout); err != nil {
-		_, _ = os.Stderr.WriteString("runtime environment audit failed\n")
-		os.Exit(1)
+	config.LoadEnvironment()
+	runtime, err := telemetry.Setup(ctx, telemetry.ServiceConfig{ServiceName: "luna-runtime-environment-audit"})
+	if err != nil {
+		telemetry.LogError(ctx, "Runtime environment audit startup failed", "runtime_environment_audit.startup.failed",
+			"runtime_environment_audit.startup", "telemetry.initialization.failed",
+			telemetry.WrapError("telemetry.initialization.failed", "verify the OTEL exporter configuration", "initialize telemetry", err))
+		return 1
 	}
+	defer func() { _ = runtime.Shutdown(context.Background()) }()
+	if err := run(ctx, os.Args[1:], os.Stdout); err != nil {
+		telemetry.LogError(ctx, "Runtime environment audit failed", "runtime_environment_audit.failed",
+			"runtime_environment_audit.run", "runtime_environment_audit.failed", err)
+		return 1
+	}
+	return 0
 }
 
 func run(ctx context.Context, args []string, output io.Writer) error {
@@ -55,18 +71,19 @@ func run(ctx context.Context, args []string, output io.Writer) error {
 	if err != nil {
 		return err
 	}
-	config.LoadEnvironment()
 	cfg := config.Load()
 	db, err := database.OpenContext(ctx, cfg.DatabaseURL, database.Options{
 		MaxOpenConns: cfg.DatabaseMaxOpenConns, MaxIdleConns: cfg.DatabaseMaxIdleConns,
 		ConnMaxLifetime: cfg.DatabaseConnMaxLifetime, ConnMaxIdleTime: cfg.DatabaseConnMaxIdleTime,
 	})
 	if err != nil {
-		return errors.New("runtime environment audit database unavailable")
+		return telemetry.WrapError("dependency.postgres.unavailable", "start PostgreSQL or verify DATABASE_URL",
+			"connect PostgreSQL for runtime environment audit", err)
 	}
 	sqlDB, err := db.DB()
 	if err != nil {
-		return errors.New("runtime environment audit database handle unavailable")
+		return telemetry.WrapError("dependency.postgres.unavailable", "verify DATABASE_URL and PostgreSQL connectivity",
+			"open PostgreSQL handle for runtime environment audit", err)
 	}
 	defer sqlDB.Close()
 
@@ -105,12 +122,12 @@ func inspect(ctx context.Context, db *gorm.DB, options commandOptions) (auditRep
 			query = query.Where("project_id = ?", options.ProjectID)
 		}
 		if err := query.Find(&targets).Error; err != nil {
-			return auditReport{}, errors.New("inspect deployment target environment metadata")
+			return auditReport{}, fmt.Errorf("inspect deployment target environment metadata: %w", err)
 		}
 		for _, target := range targets {
 			finding, ok, err := inspectRow("deployment_target", target.ID, target.ProjectID, target.EnvVars)
 			if err != nil {
-				return auditReport{}, errors.New("inspect deployment target environment metadata")
+				return auditReport{}, fmt.Errorf("inspect deployment target environment metadata: %w", err)
 			}
 			if ok {
 				report.Findings = append(report.Findings, finding)
@@ -128,12 +145,12 @@ func inspect(ctx context.Context, db *gorm.DB, options commandOptions) (auditRep
 			query = query.Where("project_id = ?", options.ProjectID)
 		}
 		if err := query.Find(&sets).Error; err != nil {
-			return auditReport{}, errors.New("inspect runtime config set environment metadata")
+			return auditReport{}, fmt.Errorf("inspect runtime config set environment metadata: %w", err)
 		}
 		for _, set := range sets {
 			finding, ok, err := inspectRow("runtime_config_set", set.ID, set.ProjectID, set.EnvVars)
 			if err != nil {
-				return auditReport{}, errors.New("inspect runtime config set environment metadata")
+				return auditReport{}, fmt.Errorf("inspect runtime config set environment metadata: %w", err)
 			}
 			if ok {
 				report.Findings = append(report.Findings, finding)

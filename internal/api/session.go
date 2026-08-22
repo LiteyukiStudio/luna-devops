@@ -584,7 +584,9 @@ func newRateLimiter(redisAddr ...string) *rateLimiter {
 func newRateLimiterWithRedis(options redisconfig.Options) *rateLimiter {
 	client := redis.NewClient(options.GoRedis())
 	if err := telemetry.InstrumentRedis(client); err != nil {
-		telemetry.Logger().Warn("Redis telemetry initialization failed", "event.name", "redis.instrumentation.failed", "error.type", telemetry.ErrorType(err))
+		telemetry.LogWarn(context.Background(), "Redis telemetry initialization failed",
+			"redis.instrumentation.failed", "redis.instrumentation.initialize",
+			"telemetry.initialization.failed", err)
 	}
 	return &rateLimiter{redis: client}
 }

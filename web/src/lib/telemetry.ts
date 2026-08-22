@@ -1,4 +1,4 @@
-import type { Attributes, Span, SpanOptions } from '@opentelemetry/api'
+import type { Span, SpanOptions } from '@opentelemetry/api'
 import { context, propagation, SpanKind, SpanStatusCode, trace } from '@opentelemetry/api'
 
 const tracerName = 'luna-web'
@@ -148,8 +148,8 @@ function withStreamTraceContext(url: string, span: Span) {
   return parsed.toString()
 }
 
-export function startUserOperation(operation: string, attributes?: Attributes) {
-  return startSpan(operation, { attributes })
+export function startUserOperation(operation: string) {
+  return startSpan(operation)
 }
 
 export function recordInteractionCardRenderError(scope: 'group' | 'card' | 'content' | 'field' | 'action', error: unknown) {
@@ -170,6 +170,16 @@ function recordSpanError(span: Span, error: unknown) {
   const normalized = error instanceof Error ? error : new Error(String(error))
   span.setStatus({ code: SpanStatusCode.ERROR, message: normalized.name })
   span.setAttribute('error.type', normalized.name)
+  if (isStableErrorCode(error))
+    span.setAttribute('error.code', error.code)
+}
+
+function isStableErrorCode(error: unknown): error is { code: string } {
+  return typeof error === 'object'
+    && error !== null
+    && 'code' in error
+    && typeof error.code === 'string'
+    && /^[a-z][a-z0-9_.-]{2,120}$/.test(error.code)
 }
 
 export function normalizeTelemetryRoute(input: string) {

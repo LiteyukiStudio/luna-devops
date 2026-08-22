@@ -1,10 +1,10 @@
 package builder
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"strconv"
 	"strings"
 
@@ -27,10 +27,9 @@ func HandleHookControlLine(line string, hookLabels map[string]string, onHookLog 
 		}
 		hookLog := string(content)
 		if err := onHookLog(parts[0], hookLog); err != nil {
-			telemetry.Logger().Error("builder hook log upload failed",
-				slog.String("event.name", "builder.hook_log.upload_failed"),
-				slog.String("error.type", telemetry.ErrorType(err)),
-			)
+			telemetry.LogError(context.Background(), "Builder hook log upload failed",
+				"builder.hook_log.upload_failed", "builder.hook_log.upload",
+				"provider.request.failed", err)
 		}
 		return formatHookLog(parts[0], hookLog, hookLabels), true
 	}
@@ -47,10 +46,9 @@ func HandleHookControlLine(line string, hookLabels map[string]string, onHookLog 
 			Message:   string(message),
 		}
 		if err := onHookComplete(parts[0], result); err != nil {
-			telemetry.Logger().Error("builder hook status upload failed",
-				slog.String("event.name", "builder.hook_status.upload_failed"),
-				slog.String("error.type", telemetry.ErrorType(err)),
-			)
+			telemetry.LogError(context.Background(), "Builder hook status upload failed",
+				"builder.hook_status.upload_failed", "builder.hook_status.upload",
+				"provider.request.failed", err)
 		}
 		return formatHookLog(parts[0], result.Message, hookLabels), true
 	}

@@ -39,6 +39,7 @@ const common = {
   viewOnly: 'View only',
   test: 'Test',
   validEmailRequired: 'Please enter a valid email',
+  required: 'This field is required',
   lowercaseSlugOnly: 'Lowercase letters, numbers and - only',
   identifier: 'Identifier',
   identifierFormat: 'Only lowercase letters, numbers, and hyphens are allowed. Must start and end with a letter or number.',

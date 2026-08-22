@@ -5,6 +5,8 @@ imagePullSecrets: []
 
 app:
   env: production
+  logFormat: json
+  logColor: never
   logLevel: info
   publicBaseUrl: http://localhost:8088
   corsOrigins: ""

@@ -7,6 +7,9 @@
 | `NODE_ENV` | `development` | 选择 Agent 运行模式；可填 `development`、`test` 或 `production`。 |
 | `HOST` | `127.0.0.1` | 设置 Agent 监听主机；填写 IP 或主机名。 |
 | `PORT` | `8091` | 设置 Agent 监听端口；填写 `1`–`65535` 的整数。 |
+| `LOG_FORMAT` | `auto` | 选择终端日志渲染；可填 `auto`、`console` 或 `json`，生产容器应使用 `json`。 |
+| `LOG_COLOR` | `auto` | 控制 console 日志颜色；可填 `auto`、`always` 或 `never`，`NO_COLOR` 会强制关闭。 |
+| `LOG_LEVEL` | `info` | 设置日志级别；可填 `debug`、`info`、`warn` 或 `error`。 |
 | `DATABASE_URL` | 空 | 连接 PostgreSQL；填写 PostgreSQL 连接 URI。 |
 | `AUTH_MODE` | `development` | 选择内部请求鉴权模式；可填 `development` 或 `bff-hmac`。 |
 | `AI_INTERNAL_SECRET`<sup>1</sup> | 空 | 鉴权 API 与 Agent 的内部请求；填写至少 32 字节的密钥。 |
@@ -30,7 +33,7 @@
 | `OTEL_RESOURCE_ATTRIBUTES` | 空 | 设置 OpenTelemetry 资源属性；填写逗号分隔的 `key=value`。 |
 | `OTEL_EXPORTER_OTLP_HEADERS` | 空 | 鉴权 Collector 请求；填写逗号分隔的 `key=value` Header。 |
 | `OTEL_SERVICE_VERSION` | 空 | 标记 Agent 的遥测版本；填写版本字符串。 |
-| `AI_OBSERVABILITY_CAPTURE_CONTENT` | `false` | 控制是否记录脱敏且限长的模型与工具内容；可填 `true` 或 `false`。 |
+| `AI_OBSERVABILITY_CAPTURE_CONTENT` | `false` | 控制是否在受控 Trace 中记录脱敏且限长的模型与工具内容；可填 `true` 或 `false`，日志始终只保留元数据。 |
 | `AI_OBSERVABILITY_CAPTURE_DATABASE_SPANS` | `false` | 控制是否为每条 PostgreSQL 查询生成 Span；可填 `true` 或 `false`。 |
 
 ### 上下文管理

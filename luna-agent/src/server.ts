@@ -1,4 +1,4 @@
-import Fastify, { type FastifyInstance } from "fastify"
+import Fastify, { type FastifyBaseLogger, type FastifyInstance, LogController } from "fastify"
 import { z } from "zod"
 import type { RequestVerifier } from "./auth.js"
 import type { Config } from "./config.js"
@@ -11,7 +11,7 @@ import { redact } from "./redaction.js"
 import type { ToolOrchestrator } from "./tools/orchestrator.js"
 import { presentEvent, presentTimeline } from "./timeline-presenter.js"
 import { defaultRuntimeSettings } from "./runtime-settings.js"
-import { captureTraceContext, internalSpanOptions, stableErrorCode as telemetryErrorCode, telemetryLog, withSpan } from "./telemetry.js"
+import { agentLogger, captureTraceContext, errorDiagnostic, internalSpanOptions, stableErrorCode as telemetryErrorCode, telemetryLog, withSpan } from "./telemetry.js"
 
 declare module "fastify" {
   interface FastifyRequest { actor: ActorContext }
@@ -46,21 +46,9 @@ export function buildServer(input: {
 }): FastifyInstance {
   const toolCatalogDigest = () => typeof input.toolCatalogDigest === "function" ? input.toolCatalogDigest() : input.toolCatalogDigest
   const app = Fastify({
-    logger: input.config.NODE_ENV === "test" ? false : {
-      level: "info",
-      redact: { paths: ["req.headers.authorization", "req.headers.x-luna-actor-context", "*.apiKey", "*.token", "*.secret"], censor: "[REDACTED]" },
-      serializers: {
-        req(request) {
-          return {
-            method: request.method,
-            url: String(request.url ?? "").split("?", 1)[0] ?? "",
-            host: request.host,
-            remoteAddress: request.raw.socket.remoteAddress ?? "",
-          }
-        },
-      },
-    },
+    ...(input.config.NODE_ENV === "test" ? { logger: false as const } : { loggerInstance: agentLogger() as unknown as FastifyBaseLogger }),
     bodyLimit: 256 * 1024,
+    logController: new LogController({ disableRequestLogging: true }),
     requestIdHeader: "x-request-id",
   })
 
@@ -76,7 +64,13 @@ export function buildServer(input: {
         : !persistence.schema
           ? "ai.database_schema_mismatch"
           : "ai.provider_config_unavailable"
-      telemetryLog("agent.readiness.failed", "warn", { "error.code": errorCode })
+      telemetryLog("agent.readiness.failed", "warn", {
+        "operation": "agent.readiness",
+        "outcome": "failed",
+        "error.code": errorCode,
+        "error.type": "AgentReadinessError",
+        "error.message": errorCode,
+      })
       return reply.code(503).send({
         status: "not_ready",
         checks: { ...persistence, providerConfigAvailable, providerConfigured },
@@ -447,16 +441,18 @@ export function buildServer(input: {
   app.setErrorHandler((error, request, reply) => {
     const normalized = error instanceof Error ? error : new Error("ai.internal_error")
     const code = normalized instanceof z.ZodError ? "invalid_request" : stableCode(normalized.message)
-    const status = code === "ai.unauthorized" ? 401 : code.endsWith("_not_found") ? 404 : code === "idempotency_conflict" ? 409 : 400
-    telemetryLog("agent.http.request_failed", "error", {
+    const status = code === "ai.unauthorized" ? 401 : code.endsWith("_not_found") ? 404 : code === "idempotency_conflict" ? 409 : code === "ai.internal_error" ? 500 : 400
+    telemetryLog("agent.http.request_failed", status >= 500 ? "error" : "warn", {
+      "operation": "agent.http.request",
+      "outcome": status >= 500 ? "failed" : "rejected",
       "http.request.method": request.method,
       "http.route": request.routeOptions.url,
       "http.response.status_code": status,
-      "request.id": request.id,
-      "error.type": normalized.name,
-      "error.code": telemetryErrorCode(normalized),
+      "request_id": request.id,
+      ...(normalized instanceof z.ZodError
+        ? errorDiagnostic(new Error("request schema validation failed"), code)
+        : errorDiagnostic(normalized, telemetryErrorCode(normalized))),
     })
-    request.log.warn({ err: { code, name: normalized.name }, requestId: request.id }, "agent request failed")
     void reply.code(status).send(errorBody(code, request.id))
   })
   return app

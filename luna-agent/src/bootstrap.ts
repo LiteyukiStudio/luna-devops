@@ -33,6 +33,7 @@ export async function startAgent(): Promise<void> {
   if (!config.DATABASE_URL) throw new Error("ai.persistence_database_url_required")
   if (!config.LUNA_API_BASE_URL || !internalKeys) throw new Error("ai.provider_config_required")
   const repository = new PostgresRepository(config.DATABASE_URL)
+  await repository.assertReady()
   const providerConfigClient = new ProviderConfigClient(config.LUNA_API_BASE_URL, internalKeys.callbackServiceToken)
   // Provider、平台运行参数和工具目录接受 Luna API 的同一份权威配置；
   // 少量实例级上下文策略在下方由 Agent 环境变量覆盖。

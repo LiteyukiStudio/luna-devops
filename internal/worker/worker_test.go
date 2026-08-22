@@ -58,7 +58,7 @@ func TestTaskTelemetryMiddlewareContinuesProducerTrace(t *testing.T) {
 	}
 }
 
-func TestAIBillingStageFailurePreservesParentAndDoesNotRecordReservationText(t *testing.T) {
+func TestAIBillingStageFailurePreservesParentAndRedactedDiagnosticText(t *testing.T) {
 	previousProvider := otel.GetTracerProvider()
 	recorder := tracetest.NewSpanRecorder()
 	provider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
@@ -71,7 +71,7 @@ func TestAIBillingStageFailurePreservesParentAndDoesNotRecordReservationText(t *
 	parentID := parent.SpanContext().SpanID()
 	const secretMarker = "aibgt-high-cardinality-secret-marker"
 	_, err := workerStageValue(parentCtx, "billing.settle_ai_usage", func(context.Context) (int, error) {
-		return 0, errors.New(secretMarker)
+		return 0, errors.New("reservation " + secretMarker + " failed; token=must-not-leak")
 	})
 	parent.End()
 	if err == nil {
@@ -95,12 +95,20 @@ func TestAIBillingStageFailurePreservesParentAndDoesNotRecordReservationText(t *
 			t.Fatalf("span attribute %s exposed reservation text", attr.Key)
 		}
 	}
+	foundDiagnostic := false
 	for _, event := range stage.Events() {
 		for _, attr := range event.Attributes {
-			if strings.Contains(attr.Value.Emit(), secretMarker) {
-				t.Fatalf("span event %s exposed reservation text", attr.Key)
+			value := attr.Value.Emit()
+			if strings.Contains(value, "must-not-leak") {
+				t.Fatalf("span event %s exposed credential", attr.Key)
+			}
+			if attr.Key == "error.message" && strings.Contains(value, secretMarker) && strings.Contains(value, "[REDACTED]") {
+				foundDiagnostic = true
 			}
 		}
+	}
+	if !foundDiagnostic {
+		t.Fatal("span event omitted redacted diagnostic error message")
 	}
 }
 

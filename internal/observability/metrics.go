@@ -124,11 +124,9 @@ func StartMetricsServer(config MetricsConfig, registry *prometheus.Registry) (*h
 			slog.String("url.path", path),
 		)
 		if err := server.Serve(listener); err != nil && err != http.ErrServerClosed {
-			telemetry.Logger().Error("metrics endpoint failed",
-				slog.String("event.name", "metrics.endpoint.failed"),
-				slog.String("service.component", config.Service),
-				slog.String("error.type", telemetry.ErrorType(err)),
-			)
+			telemetry.LogError(context.Background(), "Metrics endpoint failed",
+				"metrics.endpoint.failed", "metrics.serve", "server.listen.failed", err,
+				slog.String("service.component", config.Service))
 		}
 	}()
 	return server, nil
@@ -143,10 +141,8 @@ func ShutdownMetricsServer(ctx context.Context, server *http.Server) {
 		return
 	}
 	if err := server.Shutdown(ctx); err != nil {
-		telemetry.Logger().ErrorContext(ctx, "metrics endpoint shutdown failed",
-			slog.String("event.name", "metrics.endpoint.shutdown_failed"),
-			slog.String("error.type", telemetry.ErrorType(err)),
-		)
+		telemetry.LogError(ctx, "Metrics endpoint shutdown failed",
+			"metrics.endpoint.shutdown_failed", "metrics.shutdown", "server.shutdown.failed", err)
 	}
 }
 

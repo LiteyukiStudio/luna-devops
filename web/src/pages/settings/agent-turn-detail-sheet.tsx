@@ -287,7 +287,7 @@ function TimelineStep({ span, expanded, isLast, userMessage, assistantMessage, o
           {expanded ? <ChevronDown className="size-4 shrink-0 text-muted-foreground" /> : <ChevronRight className="size-4 shrink-0 text-muted-foreground" />}
         </button>
         {availableTools.length > 0 && (
-          <div className="flex flex-wrap gap-2 border-t border-border px-4 py-3" aria-label={t('operationsDashboardPage.turnDetail.availableTools')}>
+          <div className="flex flex-wrap gap-2 border-t border-border px-4 py-3" aria-label={t('operationsDashboardPage.traceDetail.availableTools')}>
             {availableTools.map(operationId => <Badge key={operationId} variant="secondary" className="font-mono">{operationId}</Badge>)}
           </div>
         )}

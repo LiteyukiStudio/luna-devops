@@ -38,6 +38,8 @@ services:
     environment:
       API_ADDR: :8080
       APP_ENV: production
+      LOG_FORMAT: json
+      LOG_COLOR: never
       LOG_LEVEL: ${LOG_LEVEL:-info}
       SECRET_ENCRYPTION_KEY: ${SECRET_ENCRYPTION_KEY:?SECRET_ENCRYPTION_KEY is required}
       BOOTSTRAP_TOKEN: ${BOOTSTRAP_TOKEN:-}
@@ -78,6 +80,8 @@ services:
       - devops-internal
     environment:
       APP_ENV: production
+      LOG_FORMAT: json
+      LOG_COLOR: never
       LOG_LEVEL: ${LOG_LEVEL:-info}
       SECRET_ENCRYPTION_KEY: ${SECRET_ENCRYPTION_KEY:?SECRET_ENCRYPTION_KEY is required}
       DATABASE_URL: ${DATABASE_URL:-postgres://devops:devops@postgres:5432/devops?sslmode=disable}
@@ -115,6 +119,9 @@ services:
       NODE_ENV: production
       HOST: 0.0.0.0
       PORT: 8091
+      LOG_FORMAT: json
+      LOG_COLOR: never
+      LOG_LEVEL: ${LOG_LEVEL:-info}
       DATABASE_URL: ${DATABASE_URL:-postgres://devops:devops@postgres:5432/devops?sslmode=disable}
       AUTH_MODE: bff-hmac
       AI_INTERNAL_SECRET: ${AI_INTERNAL_SECRET:-}

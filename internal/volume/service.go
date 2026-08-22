@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -1317,9 +1318,11 @@ func (service *Service) dispatchTerminalCleanup(ctx context.Context, transfer mo
 		Kind: OperationCleanup, ProjectID: transfer.ProjectID, VolumeID: transfer.ProjectVolumeID,
 		TransferID: transfer.ID, ActorID: transfer.ActorID,
 	}); err != nil {
-		telemetry.Logger().Error("Volume transfer targeted cleanup enqueue failed",
-			"event.name", "volume_transfer.cleanup.enqueue_failed",
-			"error.type", telemetry.ErrorType(err))
+		telemetry.LogError(dispatchCtx, "Volume transfer targeted cleanup enqueue failed",
+			"volume_transfer.cleanup.enqueue_failed", "volume_transfer.cleanup.enqueue",
+			"task.enqueue.failed", err,
+			slog.String("resource.type", "volume_transfer"),
+			slog.String("resource.id", transfer.ID))
 	}
 }
 

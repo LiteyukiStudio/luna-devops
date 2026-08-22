@@ -101,6 +101,8 @@ pnpm --dir web dev
 Vite 开发服务器会将 `/api/v1` 代理到 `http://localhost:8080`。
 Agent 联调配置见 [`luna-agent/.env.example`](luna-agent/.env.example)；根目录 `.env` 还需设置 `AI_ASSISTANT_AVAILABLE=true`、`AI_AGENT_BASE_URL=http://localhost:8091`，两处 `AI_INTERNAL_SECRET` 保持一致。
 
+API、Worker、辅助命令和 Agent 默认使用 `LOG_FORMAT=auto`：交互式终端显示便于阅读的 console 日志，重定向或容器中输出无 ANSI 的 JSON。可用 `LOG_LEVEL` 调整级别，或设置 `LOG_COLOR=never` / `NO_COLOR` 关闭颜色；OTel 始终接收与终端渲染无关的结构化记录。
+
 如需在本地查看 Trace、Metrics 和 Logs，可启动开发用的 Grafana + Prometheus + Loki + Tempo + OpenTelemetry Collector 栈：
 
 ```bash

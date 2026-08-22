@@ -9,6 +9,8 @@
 | `REDIS_ADDR` | `redis://localhost:6379/0` | Connects to the Redis task queue; use a `redis://` or `rediss://` URI. |
 | `SECRET_ENCRYPTION_KEY`<sup>1</sup> | Empty | Decrypts credentials stored by the platform; use the same stable key as API. |
 | `PUBLIC_BASE_URL` | Empty | Sets the platform root used in task-notification links; use an HTTP(S) URL. |
+| `LOG_FORMAT` | `auto` | Selects terminal log rendering; use `auto`, `console`, or `json`, and use `json` in production containers. |
+| `LOG_COLOR` | `auto` | Controls console log colors; use `auto`, `always`, or `never`; `NO_COLOR` always disables colors. |
 | `LOG_LEVEL` | `info` | Sets log verbosity; use `debug`, `info`, `warn`, or `error`. |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | Empty | Sets the telemetry receiver; use the Collector OTLP/HTTP URL. |
 | `BUILD_EXECUTOR_IMAGE` | `moby/buildkit:v0.24.0-rootless` | Selects the BuildKit used by build jobs; use an OCI image reference. |

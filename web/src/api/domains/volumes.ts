@@ -105,18 +105,20 @@ function uploadVolumeImportContent(
     xhr.addEventListener('load', () => finish(() => {
       const response = new Response(null, { status: xhr.status, statusText: xhr.statusText })
       telemetry.finish(response)
-      const body = (xhr.response && typeof xhr.response === 'object' ? xhr.response : {}) as Partial<VolumeTransfer> & { code?: unknown, error?: unknown, requestId?: unknown }
+      const body = (xhr.response && typeof xhr.response === 'object' ? xhr.response : {}) as Partial<VolumeTransfer> & { code?: unknown, developerDetail?: unknown, requestId?: unknown, traceId?: unknown }
       if (xhr.status >= 200 && xhr.status < 300) {
         resolve(body as VolumeTransfer)
         return
       }
       const code = typeof body.code === 'string' ? body.code : `http.${xhr.status}`
       const translated = i18next.exists(`errors.${code}`) ? i18next.t(`errors.${code}`) : ''
-      reject(new ApiError(translated || (typeof body.error === 'string' ? body.error : i18next.t(xhr.status >= 500 ? 'errors.internal_error' : 'errors.request.failed')), {
+      reject(new ApiError(translated || i18next.t(xhr.status >= 500 ? 'errors.internal_error' : 'errors.request.failed'), {
         code,
+        detail: typeof body.developerDetail === 'string' ? body.developerDetail : undefined,
         path,
         requestId: typeof body.requestId === 'string' ? body.requestId : undefined,
         status: xhr.status,
+        traceId: typeof body.traceId === 'string' ? body.traceId : undefined,
       }))
     }))
     xhr.addEventListener('error', () => finish(() => {

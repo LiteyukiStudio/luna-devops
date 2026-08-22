@@ -4,7 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"log/slog"
+	"io"
 	"os"
 
 	"github.com/LiteyukiStudio/devops/internal/config"
@@ -13,37 +13,45 @@ import (
 )
 
 func main() {
-	config.LoadEnvironment()
-	runtime, telemetryErr := telemetry.Setup(context.Background(), telemetry.ServiceConfig{ServiceName: "luna-tasks"})
-	if telemetryErr != nil {
-		_, _ = os.Stderr.WriteString("initialize telemetry failed\n")
-		os.Exit(1)
-	}
-	defer func() { _ = runtime.Shutdown(context.Background()) }()
-	if err := run(os.Args[1:]); err != nil {
-		telemetry.Logger().Error("task administration command failed",
-			slog.String("event.name", "tasks.command.failed"),
-			slog.String("error.type", telemetry.ErrorType(err)),
-		)
-		os.Exit(1)
-	}
+	os.Exit(runMain())
 }
 
-func run(args []string) error {
+func runMain() int {
+	config.LoadEnvironment()
+	ctx := context.Background()
+	runtime, telemetryErr := telemetry.Setup(ctx, telemetry.ServiceConfig{ServiceName: "luna-tasks"})
+	if telemetryErr != nil {
+		telemetry.LogError(ctx, "Task administration startup failed", "tasks.startup.failed", "tasks.startup",
+			"telemetry.initialization.failed",
+			telemetry.WrapError("telemetry.initialization.failed", "verify the OTEL exporter configuration", "initialize telemetry", telemetryErr))
+		return 1
+	}
+	defer func() { _ = runtime.Shutdown(context.Background()) }()
+	if err := run(os.Args[1:], os.Stdout); err != nil {
+		telemetry.LogError(ctx, "Task administration command failed", "tasks.command.failed", "tasks.command",
+			"tasks.command.failed", err)
+		return 1
+	}
+	return 0
+}
+
+func run(args []string, output io.Writer) error {
 	flags := flag.NewFlagSet("tasks", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
 	queue := flags.String("queue", "light", "asynq queue name")
 	taskID := flags.String("task-id", "", "asynq task id")
 	pageSize := flags.Int("page-size", 30, "list page size")
 	if err := flags.Parse(args); err != nil {
-		return err
+		return telemetry.WrapError("config.invalid", "run tasks with a supported command and flags", "parse task administration command", err)
 	}
 	if flags.NArg() == 0 {
-		return fmt.Errorf("usage: tasks [list-archived|run|delete] -queue <queue> [-task-id <id>]")
+		return telemetry.WrapError("config.invalid", "use list-archived, run, or delete", "validate task administration command",
+			fmt.Errorf("usage: tasks [list-archived|run|delete] -queue <queue> [-task-id <id>]"))
 	}
 
 	cfg := config.Load()
 	if err := cfg.ValidateRedis(); err != nil {
-		return err
+		return telemetry.WrapError("config.invalid", "set REDIS_ADDR to a redis:// or rediss:// URI", "validate Redis configuration", err)
 	}
 	inspector := asynq.NewInspector(cfg.RedisOptions().Asynq())
 	defer inspector.Close()
@@ -52,23 +60,30 @@ func run(args []string) error {
 	case "list-archived":
 		tasks, err := inspector.ListArchivedTasks(*queue, asynq.PageSize(*pageSize))
 		if err != nil {
-			return err
+			return telemetry.WrapError("dependency.redis.unavailable", "start Redis or verify REDIS_ADDR", "list archived tasks", err)
 		}
 		for _, task := range tasks {
-			fmt.Printf("%s\t%s\t%s\t%d\t%s\n", task.ID, task.Queue, task.Type, task.Retried, task.LastErr)
+			_, _ = fmt.Fprintf(output, "%s\t%s\t%s\t%d\t%s\n", task.ID, task.Queue, task.Type, task.Retried, task.LastErr)
 		}
 		return nil
 	case "run":
 		if *taskID == "" {
-			return fmt.Errorf("-task-id is required")
+			return telemetry.WrapError("config.invalid", "provide -task-id", "validate run task command", fmt.Errorf("-task-id is required"))
 		}
-		return inspector.RunTask(*queue, *taskID)
+		if err := inspector.RunTask(*queue, *taskID); err != nil {
+			return telemetry.WrapError("dependency.redis.unavailable", "start Redis or verify REDIS_ADDR", "run archived task", err)
+		}
+		return nil
 	case "delete":
 		if *taskID == "" {
-			return fmt.Errorf("-task-id is required")
+			return telemetry.WrapError("config.invalid", "provide -task-id", "validate delete task command", fmt.Errorf("-task-id is required"))
 		}
-		return inspector.DeleteTask(*queue, *taskID)
+		if err := inspector.DeleteTask(*queue, *taskID); err != nil {
+			return telemetry.WrapError("dependency.redis.unavailable", "start Redis or verify REDIS_ADDR", "delete archived task", err)
+		}
+		return nil
 	default:
-		return fmt.Errorf("unknown command %q", flags.Arg(0))
+		return telemetry.WrapError("config.invalid", "use list-archived, run, or delete", "validate task administration command",
+			fmt.Errorf("unknown command %q", flags.Arg(0)))
 	}
 }
