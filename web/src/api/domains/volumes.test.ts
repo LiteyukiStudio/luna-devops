@@ -56,102 +56,65 @@ describe('volumes API contract', () => {
     expect(new Headers(fetchMock.mock.calls[0]?.[1]?.headers).get('If-Match')).toBe('7')
   })
 
-  it('uses TUS headers and the server upload offset', async () => {
-    const fetchMock = vi.fn<typeof fetch>()
-      .mockResolvedValueOnce(new Response(null, { status: 200, headers: { 'Upload-Chunk-Size': String(64 * 1024 * 1024), 'Upload-Length': '20', 'Upload-Offset': '8' } }))
-      .mockResolvedValueOnce(new Response(null, { status: 204, headers: { 'Upload-Chunk-Size': String(64 * 1024 * 1024), 'Upload-Offset': '12' } }))
-    vi.stubGlobal('fetch', fetchMock)
+  it('streams one complete import file with a single raw PUT', async () => {
+    const requests: FakeUploadRequest[] = []
+    class FakeUploadRequest extends EventTarget {
+      body?: File
+      headers = new Headers()
+      method = ''
+      response: unknown = { id: 'vtx_1', state: 'succeeded' }
+      responseType: XMLHttpRequestResponseType = ''
+      status = 200
+      statusText = 'OK'
+      upload = new EventTarget()
+      url = ''
+      withCredentials = false
 
-    await expect(volumesApi.getVolumeImportUploadOffset('project-1', 'vtx_1')).resolves.toEqual({ chunkSize: 64 * 1024 * 1024, length: 20, offset: 8 })
-    await expect(volumesApi.uploadVolumeImportChunk('project-1', 'vtx_1', new Blob(['data']), 8, 'checksum')).resolves.toEqual({ chunkSize: 64 * 1024 * 1024, offset: 12 })
+      constructor() {
+        super()
+        requests.push(this)
+      }
 
-    const headers = new Headers(fetchMock.mock.calls[1]?.[1]?.headers)
-    expect(fetchMock.mock.calls[1]?.[1]?.method).toBe('PATCH')
-    expect(headers.get('Tus-Resumable')).toBe('1.0.0')
-    expect(headers.get('Upload-Offset')).toBe('8')
-    expect(headers.get('Upload-Checksum')).toBe('sha256 checksum')
+      open(method: string, url: string) {
+        this.method = method
+        this.url = url
+      }
+
+      setRequestHeader(name: string, value: string) {
+        this.headers.set(name, value)
+      }
+
+      send(body: File) {
+        this.body = body
+        this.upload.dispatchEvent(new ProgressEvent('progress', { loaded: body.size, total: body.size }))
+        this.dispatchEvent(new Event('load'))
+      }
+
+      abort() {
+        this.dispatchEvent(new Event('abort'))
+      }
+    }
+    vi.stubGlobal('XMLHttpRequest', FakeUploadRequest)
+    const file = new File(['archive'], 'backup.tar.gz')
+    const onProgress = vi.fn()
+
+    await expect(volumesApi.uploadVolumeImportContent('project-1', 'vtx_1', file, 'a'.repeat(64), undefined, onProgress)).resolves.toMatchObject({ state: 'succeeded' })
+
+    expect(requests[0]).toMatchObject({ body: file, method: 'PUT', withCredentials: true })
+    expect(requests[0]?.url).toContain('/projects/project-1/volume-imports/vtx_1/content')
+    expect(requests[0]?.headers.get('Content-Type')).toBe('application/octet-stream')
+    expect(requests[0]?.headers.get('X-Content-SHA256')).toBe('a'.repeat(64))
+    expect(onProgress).toHaveBeenCalledWith(file.size, file.size)
   })
 
-  it('rejects a resumable upload response without the server-required chunk size', async () => {
-    vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockResolvedValue(new Response(null, {
-      status: 200,
-      headers: { 'Upload-Length': '20', 'Upload-Offset': '0' },
-    })))
+  it('builds single-use ticket URLs without a resumable session exchange', () => {
+    const contentURL = new URL(volumesApi.volumeTransferContentURL('project-1', 'vtx_1', 'ticket-1'), 'http://localhost')
+    const manifestURL = new URL(volumesApi.volumeTransferManifestURL('project-1', 'vtx_1', 'ticket-2'), 'http://localhost')
 
-    await expect(volumesApi.getVolumeImportUploadOffset('project-1', 'vtx_1')).rejects.toMatchObject({
-      code: 'volume_transfer.response_invalid',
-      status: 502,
-    })
-  })
-
-  it('publishes a bounded Retry-After delay for an in-progress upload part', async () => {
-    vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({
-      code: 'volume_transfer.part_in_progress',
-      error: 'part is in progress',
-    }, 409, { 'Retry-After': '99' })))
-
-    await expect(volumesApi.uploadVolumeImportChunk('project-1', 'vtx_1', new Blob(['data']), 0, 'checksum')).rejects.toMatchObject({
-      code: 'volume_transfer.part_in_progress',
-      retryAfterMs: 5_000,
-      status: 409,
-    })
-  })
-
-  it('resumes export downloads with an HTTP byte range', async () => {
-    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(new Response(new Uint8Array([1, 2]), {
-      status: 206,
-      headers: { 'Content-Range': 'bytes 8-9/10' },
-    }))
-    vi.stubGlobal('fetch', fetchMock)
-
-    await volumesApi.downloadVolumeTransferContent('project-1', 'vtx_1', 'ticket-1', 8)
-
-    const url = new URL(String(fetchMock.mock.calls[0]?.[0]), 'http://localhost')
-    expect(url.searchParams.get('ticket')).toBe('ticket-1')
-    expect(new Headers(fetchMock.mock.calls[0]?.[1]?.headers).get('Range')).toBe('bytes=8-')
-  })
-
-  it('uses the HttpOnly download session cookie after ticket exchange', async () => {
-    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(new Response(new Uint8Array([1]), { status: 206 }))
-    vi.stubGlobal('fetch', fetchMock)
-
-    await volumesApi.downloadVolumeTransferContent('project-1', 'vtx_1', undefined, 9)
-
-    const url = new URL(String(fetchMock.mock.calls[0]?.[0]), 'http://localhost')
-    expect(url.searchParams.has('ticket')).toBe(false)
-    expect(fetchMock.mock.calls[0]?.[1]?.credentials).toBe('include')
-    expect(new Headers(fetchMock.mock.calls[0]?.[1]?.headers).get('Range')).toBe('bytes=9-')
-  })
-
-  it('exchanges a content ticket with HEAD before a native browser download', async () => {
-    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(new Response(null, { status: 200 }))
-    vi.stubGlobal('fetch', fetchMock)
-
-    await volumesApi.headVolumeTransferContent('project-1', 'vtx_1', 'ticket-1')
-
-    const url = new URL(String(fetchMock.mock.calls[0]?.[0]), 'http://localhost')
-    expect(url.pathname).toContain('/projects/project-1/volume-transfers/vtx_1/content')
-    expect(url.searchParams.get('ticket')).toBe('ticket-1')
-    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ credentials: 'include', method: 'HEAD' })
-    expect(volumesApi.volumeTransferContentURL('project-1', 'vtx_1')).not.toContain('ticket')
-  })
-
-  it('uses the shared download authorization protocol for the Block manifest', async () => {
-    const fetchMock = vi.fn<typeof fetch>()
-      .mockResolvedValueOnce(new Response(null, { status: 200 }))
-      .mockResolvedValueOnce(jsonResponse({ schemaVersion: 1 }))
-    vi.stubGlobal('fetch', fetchMock)
-
-    await volumesApi.headVolumeTransferManifest('project-1', 'vtx_1', 'ticket-2')
-    await volumesApi.downloadVolumeTransferManifest('project-1', 'vtx_1')
-
-    const headURL = new URL(String(fetchMock.mock.calls[0]?.[0]), 'http://localhost')
-    const getURL = new URL(String(fetchMock.mock.calls[1]?.[0]), 'http://localhost')
-    expect(headURL.pathname).toContain('/volume-transfers/vtx_1/manifest')
-    expect(headURL.searchParams.get('ticket')).toBe('ticket-2')
-    expect(fetchMock.mock.calls[0]?.[1]?.method).toBe('HEAD')
-    expect(getURL.searchParams.has('ticket')).toBe(false)
-    expect(fetchMock.mock.calls[1]?.[1]?.method).toBe('GET')
-    expect(volumesApi.volumeTransferManifestURL('project-1', 'vtx_1')).not.toContain('ticket')
+    expect(contentURL.pathname).toContain('/volume-transfers/vtx_1/content')
+    expect(contentURL.searchParams.get('ticket')).toBe('ticket-1')
+    expect(manifestURL.pathname).toContain('/volume-transfers/vtx_1/manifest')
+    expect(manifestURL.searchParams.get('ticket')).toBe('ticket-2')
+    expect(contentURL.searchParams.has('offset')).toBe(false)
   })
 })

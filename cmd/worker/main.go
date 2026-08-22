@@ -14,7 +14,6 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/secret"
 	"github.com/LiteyukiStudio/devops/internal/tasks"
 	"github.com/LiteyukiStudio/devops/internal/telemetry"
-	"github.com/LiteyukiStudio/devops/internal/volumetransfer"
 	"github.com/LiteyukiStudio/devops/internal/worker"
 	"github.com/hibiken/asynq"
 )
@@ -99,18 +98,12 @@ func run(ctx context.Context) error {
 	if queueRegistration != nil {
 		defer queueRegistration.Unregister()
 	}
-	volumeTransferStore, err := volumetransfer.NewConfiguredStore(cfg)
-	if err != nil {
-		return fmt.Errorf("initialize volume transfer store: %w", err)
-	}
-
 	options := worker.Options{
 		DeployRolloutTimeoutSeconds: cfg.DeployRolloutTimeoutSeconds,
 		CertManagerClusterIssuer:    cfg.CertManagerClusterIssuer,
 		PublicBaseURL:               cfg.PublicBaseURL,
 		WorkerMetrics:               workerMetrics,
 		BuildExecutorImage:          cfg.BuildExecutorImage,
-		BuildNPMRegistry:            cfg.BuildNPMRegistry,
 		BuildEgressMode:             cfg.BuildEgressMode,
 		BuildCacheEnabled:           cfg.BuildCacheEnabled,
 		BuildCacheTag:               cfg.BuildCacheTag,
@@ -119,8 +112,6 @@ func run(ctx context.Context) error {
 		BuildPrivateEgressCIDRs:     cfg.BuildPrivateEgressCIDRs,
 		BuildPrivateEgressPorts:     cfg.BuildPrivateEgressPorts,
 		BuildBlockedEgressCIDRs:     cfg.BuildBlockedEgressCIDRs,
-		VolumeTransferStore:         volumeTransferStore,
-		VolumeTransferCallbackURL:   cfg.VolumeTransferCallbackURL,
 		VolumeTransferJobImage:      cfg.VolumeTransferJobImage,
 		VolumeTransferMaxBytes:      cfg.VolumeTransferMaxBytes,
 	}

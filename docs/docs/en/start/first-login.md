@@ -1,37 +1,30 @@
-# First Time in the Console
+# Initialize the Platform
 
-After the platform starts, bootstrap an administrator and create your first project space. External services can be connected later as needed.
+After the platform starts, create the first administrator and finish the platform-level setup.
 
-## Sign in or bootstrap
+## Create the first administrator
 
-A full deployment does not create a fixed administrator. For the first visit, open:
+Production deployments do not include a fixed administrator. Open:
 
 ```text
-http://localhost:8088/bootstrap
+https://your-platform.example.com/bootstrap
 ```
 
-Enter the `BOOTSTRAP_TOKEN` from the deployment environment and create the first administrator. Remove or rotate this one-time credential in your deployment or secret manager afterward.
+Enter the `BOOTSTRAP_TOKEN` configured during deployment and create the administrator. Then **remove or rotate this one-time credential** in the deployment configuration or Secret manager.
 
-You can later sign in with a local account or an OIDC provider configured by an administrator. Enable “Keep me signed in” only on a trusted device. Password, role, or sign-in method changes may require you to sign in again to protect the account.
+> `/bootstrap` is for initial setup only. Later sign-ins should use local accounts or an OIDC identity provider configured by an administrator.
 
-## Dashboard
+## Finish platform settings
 
-The dashboard summarizes active builds and releases, failed work that needs attention, recent activity, and cluster and registry readiness. Open an item to continue troubleshooting in its resource page.
+Open **Global Settings** and check at least:
 
-## Create the first project space
+1. Site name, public URL, and default language.
+2. Registration policy and sign-in methods; internal platforms normally disable open registration.
+3. Whether email, OIDC, AI Assistant, and billing should be enabled.
+4. Data retention, security policy, and administrator accounts.
 
-A project space groups applications, members, and runtime configuration for one product or team. Open “Project Spaces” and create one:
+## Create a project space
 
-| Field | Recommendation |
-| --- | --- |
-| Name | Use the product or team name |
-| Slug | Use lowercase letters and hyphens |
-| Members | Keep only yourself for the first run |
+A project space is a logical isolation boundary for the applications, members, and resources of one product or team. Start with a test space, then add members with the minimum required roles.
 
-## Create the first application
-
-An application represents one independently deployable service. Enter a name and slug; the slug cannot be changed after creation. Configure the image, port, environment variables, and volumes in a deployment target.
-
-## Next
-
-Continue with [Connect Cluster and Registry](/en/start/connect-resources). If an image already exists, deploy it first to validate the platform. Connect a Git provider and build from source only when needed.
+Next, [add base resources](./connect-resources) so users have a cluster, registry, and Git Provider OAuth ready to use.

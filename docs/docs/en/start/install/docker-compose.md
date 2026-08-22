@@ -11,7 +11,6 @@ You need:
 - A machine that can run Docker.
 - Docker Compose.
 - Network access to pull DockerHub images.
-- Host port `8088` available.
 
 ## Choose A Version
 
@@ -59,15 +58,15 @@ AI_ASSISTANT_AVAILABLE=true docker compose --profile ai up -d
 
 Configure the Provider, model catalog, access rules, and quotas under **Global Settings → AI Assistant**. The Provider API key is stored by the platform Secret Store and does not belong in `.env`. For diagnostics, run `docker compose --profile ai logs -f agent`.
 
-## Open The Console
+## Expose The Console As Needed
 
-Visit:
+After deployment, configure the port, reverse proxy, domain, and TLS for the required access scope. The default local verification URL is:
 
 ```text
 http://localhost:8088
 ```
 
-The default Compose stack only exposes API on host port `8088`. PostgreSQL and Redis stay inside the container network and do not occupy host ports `5432` and `6379`.
+When using another URL, update `PUBLIC_BASE_URL` and `APP_CORS_ORIGINS` together. PostgreSQL and Redis remain inside the container network and do not need external exposure.
 
 ## Check Services
 
@@ -81,9 +80,9 @@ When API is healthy, the console opens in the browser. Worker must also be healt
 
 ## Next
 
-1. Open [First Sign-in](/en/start/first-login) and create or sign in as an administrator.
-2. Open [Connect Cluster and Registry](/en/start/connect-resources) to prepare runtime and image storage.
-3. Follow [Deploy a Web Project](/en/start/first-project) to complete the first delivery path.
+1. Open [Initialize](/en/start/first-login) and create the first administrator.
+2. Open [Add Base Resources](/en/start/connect-resources) and prepare a runtime cluster, registry, and Git Provider OAuth.
+3. Follow [Daily Delivery](/en/use/workflow) to create and deploy an application.
 
 ## Stop
 

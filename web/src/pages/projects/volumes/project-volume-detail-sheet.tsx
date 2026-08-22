@@ -2,13 +2,13 @@ import type { ProjectVolumeCapabilities } from './project-volume-capabilities'
 import type { ProjectVolume, ProjectVolumeDeletionPreview, ProjectVolumeUpdateInput, VolumeExportCreateInput, VolumeTransfer } from '@/api'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Download, FileJson, Pause, Pencil, Play, RefreshCcw, Trash2 } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { Download, FileJson, Pencil, RefreshCcw, Trash2 } from 'lucide-react'
+import { useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { z } from 'zod'
-import { api, ApiError } from '@/api'
+import { api } from '@/api'
 import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { ErrorState } from '@/components/common/error-state'
 import { FormField as Field } from '@/components/common/form-field'
@@ -23,7 +23,7 @@ import { NativeSelect } from '@/components/ui/native-select'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
 import { canCancelVolumeTransfer, canRetryProjectVolume, canRetryVolumeTransfer } from './project-volume-capabilities'
-import { startNativeVolumeTransferDownload, verifyVolumeTransferDownload } from './volume-transfer-download'
+import { startNativeVolumeTransferDownload } from './volume-transfer-download'
 
 function formatBytes(value: number) {
   if (value <= 0)
@@ -37,22 +37,6 @@ function transferProgress(transfer: VolumeTransfer) {
   if (transfer.expectedBytes <= 0)
     return 0
   return Math.min(100, (transfer.transferredBytes / transfer.expectedBytes) * 100)
-}
-
-interface VolumeDownloadWriter {
-  close: () => Promise<void>
-  seek: (position: number) => Promise<void>
-  truncate: (size: number) => Promise<void>
-  write: (data: ArrayBuffer) => Promise<void>
-}
-
-interface VolumeDownloadFileHandle {
-  createWritable: () => Promise<VolumeDownloadWriter>
-  getFile: () => Promise<File>
-}
-
-type VolumeDownloadWindow = Window & {
-  showSaveFilePicker?: (options: { suggestedName: string }) => Promise<VolumeDownloadFileHandle>
 }
 
 function DetailValue({ label, value }: { label: string, value: React.ReactNode }) {
@@ -82,7 +66,7 @@ export function ProjectVolumeDetailSheet({ capabilities, clusterId, onOpenChange
     queryKey: ['project-volume-detail', projectId, clusterId, volumeId],
     queryFn: () => api.getProjectVolume(projectId, volumeId!, { bindingPage: 1, bindingPageSize: 20, transferPage: 1, transferPageSize: 20 }),
     enabled: Boolean(projectId && volumeId),
-    refetchInterval: query => query.state.data?.recentTransfers.some(item => ['created', 'uploading', 'queued', 'running'].includes(item.state)) ? 3000 : false,
+    refetchInterval: query => query.state.data?.recentTransfers.some(item => ['created', 'preparing', 'ready', 'streaming'].includes(item.state)) ? 3000 : false,
   })
 
   const retryVolume = useMutation({
@@ -294,7 +278,7 @@ function ProjectVolumeExportDialog({ onOpenChange, open, projectId, volume }: { 
   const create = useMutation({
     mutationFn: (values: VolumeExportCreateInput) => api.createVolumeExport(projectId, volume.id, values),
     onSuccess: () => {
-      toast.success(t('projectVolumes.exportQueued'))
+      toast.success(t('projectVolumes.exportPreparing'))
       onOpenChange(false)
       invalidateVolumeQueries(queryClient, projectId, volume.id)
     },
@@ -307,6 +291,11 @@ function ProjectVolumeExportDialog({ onOpenChange, open, projectId, volume }: { 
           <DialogTitle>{t('projectVolumes.export')}</DialogTitle>
           <DialogDescription>{t('projectVolumes.exportDescription')}</DialogDescription>
         </DialogHeader>
+        <Alert>
+          <Download />
+          <AlertTitle>{t('projectVolumes.directTransfer')}</AlertTitle>
+          <AlertDescription>{t('projectVolumes.exportNoResume')}</AlertDescription>
+        </Alert>
         <form className="grid gap-4" onSubmit={form.handleSubmit(values => create.mutate(values))}>
           <Field label={t('projectVolumes.archiveFormat')}>
             <input type="hidden" {...form.register('format')} />
@@ -333,40 +322,10 @@ function ProjectVolumeExportDialog({ onOpenChange, open, projectId, volume }: { 
   )
 }
 
-async function openVolumeDownload(projectId: string, transferId: string, offset: number, sessionReady: { current: boolean }, signal: AbortSignal) {
-  const exchangeTicket = async () => {
-    const authorization = await api.authorizeVolumeTransferDownload(projectId, transferId)
-    const response = await api.downloadVolumeTransferContent(projectId, transferId, authorization.ticket, offset, signal)
-    sessionReady.current = true
-    return response
-  }
-  if (!sessionReady.current)
-    return exchangeTicket()
-  try {
-    return await api.downloadVolumeTransferContent(projectId, transferId, undefined, offset, signal)
-  }
-  catch (error) {
-    if (!(error instanceof ApiError) || (error.code !== 'volume_transfer.download_unauthorized' && error.code !== 'volume_transfer.expired'))
-      throw error
-    sessionReady.current = false
-    return exchangeTicket()
-  }
-}
-
 function TransferRow({ capabilities, projectId, transfer, volumeName }: { capabilities: ProjectVolumeCapabilities, projectId: string, transfer: VolumeTransfer, volumeName: string }) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
-  const [downloadStage, setDownloadStage] = useState<'idle' | 'native' | 'paused' | 'running'>('idle')
-  const [downloadedBytes, setDownloadedBytes] = useState(0)
-  const downloadAbortRef = useRef<AbortController | null>(null)
-  const downloadHandleRef = useRef<VolumeDownloadFileHandle | null>(null)
-  const downloadSessionReadyRef = useRef(false)
-  const downloadWriterRef = useRef<VolumeDownloadWriter | null>(null)
-  useEffect(() => () => {
-    downloadAbortRef.current?.abort()
-    if (downloadWriterRef.current)
-      void downloadWriterRef.current.close().catch(() => undefined)
-  }, [])
+  const [downloadStage, setDownloadStage] = useState<'idle' | 'starting'>('idle')
   const cancel = useMutation({
     mutationFn: () => api.cancelVolumeTransfer(projectId, transfer.id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['project-volume-detail', projectId] }),
@@ -380,78 +339,17 @@ function TransferRow({ capabilities, projectId, transfer, volumeName }: { capabi
 
   async function download() {
     const filename = transfer.sourceFilename || `${volumeName}.${transfer.format === 'tar_gz' ? 'tar.gz' : 'raw.zst'}`
-    const savePicker = (window as VolumeDownloadWindow).showSaveFilePicker
-    if (!savePicker && !downloadWriterRef.current) {
-      setDownloadStage('native')
-      try {
-        await startNativeVolumeTransferDownload({
-          filename,
-          projectId,
-          resource: 'content',
-          transferId: transfer.id,
-        })
-        toast.success(t('projectVolumes.downloadStarted'))
-      }
-      catch (error) {
-        toast.error(error instanceof Error ? error.message : t('errors.request.failed'))
-      }
-      finally {
-        setDownloadStage('idle')
-      }
-      return
-    }
-    const controller = new AbortController()
-    downloadAbortRef.current = controller
-    setDownloadStage('running')
+    setDownloadStage('starting')
     try {
-      if (!downloadWriterRef.current && savePicker) {
-        const handle = await savePicker({ suggestedName: filename })
-        downloadHandleRef.current = handle
-        downloadWriterRef.current = await handle.createWritable()
-      }
-      const offset = downloadedBytes
-      const response = await openVolumeDownload(projectId, transfer.id, offset, downloadSessionReadyRef, controller.signal)
-      if (offset > 0 && response.status !== 206) {
-        await downloadWriterRef.current?.truncate(0)
-        await downloadWriterRef.current?.seek(0)
-        setDownloadedBytes(0)
-      }
-      const reader = response.body?.getReader()
-      if (!reader || !downloadWriterRef.current)
-        throw new Error(t('projectVolumes.downloadStreamUnavailable'))
-      while (true) {
-        const result = await reader.read()
-        if (result.done)
-          break
-        const chunk = result.value.slice().buffer
-        await downloadWriterRef.current.write(chunk)
-        setDownloadedBytes(current => current + chunk.byteLength)
-      }
-      await downloadWriterRef.current.close()
-      downloadWriterRef.current = null
-      setDownloadedBytes(0)
-      const completedFile = await downloadHandleRef.current?.getFile()
-      downloadHandleRef.current = null
-      if (!completedFile)
-        throw new Error(t('projectVolumes.downloadVerificationUnavailable'))
-      const verification = await verifyVolumeTransferDownload(completedFile, transfer.expectedBytes, transfer.sha256)
-      if (verification.status !== 'verified')
-        throw new Error(t(`projectVolumes.downloadVerification.${verification.status}`))
-      setDownloadStage('idle')
-      toast.success(t('projectVolumes.downloadVerified'))
+      await startNativeVolumeTransferDownload({ filename, projectId, resource: 'content', transferId: transfer.id })
+      toast.success(t('projectVolumes.downloadStarted'))
+      queryClient.invalidateQueries({ queryKey: ['project-volume-detail', projectId] })
     }
     catch (error) {
-      if (controller.signal.aborted) {
-        setDownloadStage('paused')
-      }
-      else {
-        setDownloadStage(downloadWriterRef.current || downloadHandleRef.current ? 'paused' : 'idle')
-        toast.error(error instanceof Error ? error.message : t('errors.request.failed'))
-      }
+      toast.error(error instanceof Error ? error.message : t('errors.request.failed'))
     }
     finally {
-      if (downloadAbortRef.current === controller)
-        downloadAbortRef.current = null
+      setDownloadStage('idle')
     }
   }
 
@@ -466,7 +364,7 @@ function TransferRow({ capabilities, projectId, transfer, volumeName }: { capabi
     onError: error => toast.error(error instanceof Error ? error.message : t('errors.request.failed')),
   })
 
-  const active = ['created', 'uploading', 'queued', 'running'].includes(transfer.state)
+  const active = ['created', 'preparing', 'ready', 'streaming'].includes(transfer.state)
   const manifestAvailable = transfer.direction === 'export' && transfer.format === 'raw_zst' && transfer.state === 'succeeded'
     && transfer.logicalBytes > 0 && Boolean(transfer.dataSHA256)
   const canDownload = capabilities.canExport
@@ -489,35 +387,22 @@ function TransferRow({ capabilities, projectId, transfer, volumeName }: { capabi
               {t('projectVolumes.downloadManifest')}
             </Button>
           )}
-          {canDownload && transfer.state === 'succeeded' && transfer.direction === 'export' && downloadStage !== 'running' && downloadStage !== 'native' && (
-            <Button size="sm" variant="outline" onClick={download}>
-              {downloadStage === 'paused' ? <Play className="size-4" /> : <Download className="size-4" />}
-              {downloadStage === 'paused' ? t('projectVolumes.resume') : t('projectVolumes.download')}
-            </Button>
-          )}
-          {downloadStage === 'running' && (
-            <Button size="sm" variant="outline" onClick={() => downloadAbortRef.current?.abort()}>
-              <Pause className="size-4" />
-              {t('projectVolumes.pause')}
-            </Button>
-          )}
-          {downloadStage === 'native' && (
-            <Button disabled size="sm" variant="outline">
+          {canDownload && transfer.state === 'ready' && transfer.direction === 'export' && (
+            <Button disabled={downloadStage === 'starting'} size="sm" variant="outline" onClick={download}>
               <Download className="size-4" />
-              {t('projectVolumes.downloading')}
+              {downloadStage === 'starting' ? t('projectVolumes.startingDownload') : t('projectVolumes.download')}
             </Button>
           )}
           {active && canCancel && <Button disabled={cancel.isPending} size="sm" variant="ghost" onClick={() => cancel.mutate()}>{t('projectVolumes.cancelTransfer')}</Button>}
-          {(transfer.state === 'failed' || transfer.state === 'cancelled') && canRetry && <Button disabled={retry.isPending} size="sm" variant="ghost" onClick={() => retry.mutate()}>{t('projectVolumes.retryTransfer')}</Button>}
+          {(transfer.state === 'failed' || transfer.state === 'cancelled' || transfer.state === 'expired') && canRetry && <Button disabled={retry.isPending} size="sm" variant="ghost" onClick={() => retry.mutate()}>{t('projectVolumes.retryTransfer')}</Button>}
         </div>
       </div>
-      <div className="h-1.5 overflow-hidden rounded-full bg-background"><div className="h-full bg-primary" style={{ width: `${transferProgress(transfer)}%` }} /></div>
-      <p className="text-xs text-muted-foreground">{t('projectVolumes.transferProgress', { transferred: formatBytes(transfer.transferredBytes), total: formatBytes(transfer.expectedBytes) })}</p>
-      {(downloadStage === 'running' || downloadStage === 'paused') && (
-        <p className="text-xs text-muted-foreground">
-          {t('projectVolumes.transferProgress', { transferred: formatBytes(downloadedBytes), total: formatBytes(transfer.transferredBytes) })}
-        </p>
-      )}
+      {transfer.expectedBytes > 0 && <div className="h-1.5 overflow-hidden rounded-full bg-background"><div className="h-full bg-primary" style={{ width: `${transferProgress(transfer)}%` }} /></div>}
+      <p className="text-xs text-muted-foreground">
+        {transfer.expectedBytes > 0
+          ? t('projectVolumes.transferProgress', { transferred: formatBytes(transfer.transferredBytes), total: formatBytes(transfer.expectedBytes) })
+          : t('projectVolumes.transferredBytes', { transferred: formatBytes(transfer.transferredBytes) })}
+      </p>
       {transfer.lastErrorCode && (
         <Alert variant="destructive">
           <AlertTitle>{t('projectVolumes.transferError')}</AlertTitle>

@@ -28,21 +28,15 @@ type volumeWorkerService interface {
 	CompleteProjectVolumeDeletion(context.Context, string, string) (model.ProjectVolume, error)
 	ListStaleProjectVolumeOperations(context.Context, volume.MaintenanceScanOptions) ([]model.ProjectVolume, error)
 	ListStaleVolumeTransferOperations(context.Context, volume.MaintenanceScanOptions) ([]model.VolumeTransfer, error)
-	ListExpiredVolumeTransferObjects(context.Context, time.Time, int) ([]model.VolumeTransfer, error)
+	ListExpiredVolumeTransfers(context.Context, time.Time, int) ([]model.VolumeTransfer, error)
 	GetVolumeTransferForMaintenance(context.Context, string) (model.VolumeTransfer, error)
 	ExpireVolumeTransfer(context.Context, string, string, time.Time) (model.VolumeTransfer, error)
-	ClaimVolumeTransferObjectCleanup(context.Context, string, string, string, time.Time) (model.VolumeTransfer, error)
-	RenewVolumeTransferObjectCleanup(context.Context, string, string, string, time.Time) (model.VolumeTransfer, error)
-	CompleteVolumeTransferObjectCleanup(context.Context, string, string, string, time.Time) (model.VolumeTransfer, error)
-	ReleaseVolumeTransferObjectCleanup(context.Context, string, string, string) error
 	GetVolumeTransfer(context.Context, string, string) (model.VolumeTransfer, error)
-	ListVolumeTransferParts(context.Context, string, int, int) ([]model.VolumeTransferPart, int64, error)
 	ClaimVolumeTransferExecution(context.Context, string, string, string, string, time.Time) (model.VolumeTransfer, error)
 	RenewVolumeTransferExecutionLease(context.Context, string, string, string, int64, time.Time) (model.VolumeTransfer, error)
-	PrepareVolumeTransferExecution(context.Context, string, string, string, string, int64, string, time.Time) (model.VolumeTransfer, error)
 	ConfirmVolumeTransferJobCreated(context.Context, string, string, int64) (model.VolumeTransfer, error)
-	MarkVolumeTransferJobSucceeded(context.Context, string, string) (model.VolumeTransfer, error)
-	FinalizeVolumeTransferExecution(context.Context, string, string) (model.VolumeTransfer, error)
+	MarkVolumeTransferReady(context.Context, string, string, int64) (model.VolumeTransfer, error)
+	FailStaleVolumeTransfer(context.Context, string, string, time.Time, string, string) (model.VolumeTransfer, error)
 	FailVolumeTransferExecution(context.Context, string, string, string, string) (model.VolumeTransfer, error)
 	MarkVolumeTransferExecutionCleanupCompleted(context.Context, string, string) (model.VolumeTransfer, error)
 	TransitionVolumeTransfer(context.Context, string, string, string, string, string) (model.VolumeTransfer, error)
@@ -271,6 +265,12 @@ func (r *Runner) handleVolumeReconcile(ctx context.Context, task *asynq.Task) er
 		return safeVolumeTaskError(err)
 	}
 	for _, transfer := range transfers {
+		if transfer.State == model.VolumeTransferStateStreaming {
+			if err := r.failStaleStreamingVolumeTransfer(ctx, service, transfer, cutoff); err != nil {
+				return safeVolumeTaskError(err)
+			}
+			continue
+		}
 		if err := r.requeueVolumeTransfer(ctx, transfer); err != nil {
 			return safeVolumeTaskError(err)
 		}
@@ -298,18 +298,21 @@ func (r *Runner) handleVolumeTransferCleanup(ctx context.Context, task *asynq.Ta
 			}
 			return safeVolumeTaskError(lookupErr)
 		}
-		if transfer.ExpiresAt.After(now) || !transfer.ObjectOwned || transfer.ObjectDeletedAt != nil {
+		if !volume.IsVolumeTransferTerminal(transfer.State) && transfer.ExpiresAt.After(now) {
 			return nil
 		}
 		items = []model.VolumeTransfer{transfer}
 	} else {
-		items, err = service.ListExpiredVolumeTransferObjects(ctx, now, volumeMaintenanceBatch)
+		items, err = service.ListExpiredVolumeTransfers(ctx, now, volumeMaintenanceBatch)
 		if err != nil {
 			return safeVolumeTaskError(err)
 		}
 	}
 	for _, transfer := range items {
-		if transfer.State == model.VolumeTransferStateCreated || transfer.State == model.VolumeTransferStateUploading {
+		if !volume.IsVolumeTransferTerminal(transfer.State) && transfer.ExpiresAt.After(now) {
+			continue
+		}
+		if transfer.State == model.VolumeTransferStateCreated || transfer.State == model.VolumeTransferStatePreparing || transfer.State == model.VolumeTransferStateReady {
 			transfer, err = service.ExpireVolumeTransfer(ctx, transfer.ProjectID, transfer.ID, now)
 			if err != nil {
 				if volume.ErrorCode(err) == volume.CodeTransferStateConflict {
@@ -331,7 +334,7 @@ func (r *Runner) handleVolumeTransferCleanup(ctx context.Context, task *asynq.Ta
 			if getErr != nil {
 				return safeVolumeTaskError(getErr)
 			}
-			jobProvider, providerErr := r.volumeTransferJobProvider(ctx, projectVolume.ClusterID)
+			jobProvider, providerErr := r.volumeTransferProvider(ctx, projectVolume.ClusterID)
 			if providerErr != nil {
 				return safeVolumeTaskCode(volume.CodeClusterUnavailable)
 			}
@@ -340,12 +343,6 @@ func (r *Runner) handleVolumeTransferCleanup(ctx context.Context, task *asynq.Ta
 			if err != nil {
 				return safeVolumeTaskError(err)
 			}
-		}
-		if err := r.cleanupVolumeTransferObject(ctx, service, transfer); err != nil {
-			if volume.ErrorCode(err) == volume.CodeTransferStateConflict {
-				continue
-			}
-			return err
 		}
 	}
 	return nil

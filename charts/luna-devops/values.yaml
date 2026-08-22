@@ -96,7 +96,6 @@ worker:
   buildJobTtlSeconds: 3600
   buildCacheEnabled: false
   buildCacheTag: buildcache
-  buildNpmRegistry: ""
   buildPrivateEgressCidrs: ""
   buildPrivateEgressPorts: "443"
   buildBlockedEgressCidrs: ""
@@ -107,26 +106,10 @@ worker:
   podAnnotations: {}
   podLabels: {}
 
-# Project-volume imports and exports. Keep disabled until a private S3-compatible
-# bucket and a callback URL reachable from runtime clusters are configured.
+# Project-volume imports and exports stream through an ephemeral workload in the
+# runtime cluster. No object store or long-lived transfer credential is needed.
 volumeTransfer:
-  enabled: false
-  s3:
-    endpoint: ""
-    region: us-east-1
-    bucket: ""
-    pathStyle: true
-    existingSecret: ""
-    accessKeyIdKey: access-key-id
-    secretAccessKeyKey: secret-access-key
-  objectTtl: 24h
   maxBytes: 100Gi
-  spool:
-    dir: /tmp/luna-devops-volume-transfer-spool
-    maxBytes: 2Gi
-    minFreeBytes: 1Gi
-    orphanAge: 24h
-  callbackBaseUrl: ""
   # Empty uses the Worker image and tag from this release.
   jobImage: ""
 

@@ -12,7 +12,6 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/observability"
 	dnsprovider "github.com/LiteyukiStudio/devops/internal/provider/dns"
 	kubeprovider "github.com/LiteyukiStudio/devops/internal/provider/kubernetes"
-	"github.com/LiteyukiStudio/devops/internal/provider/volumestore"
 	"github.com/LiteyukiStudio/devops/internal/redisconfig"
 	"github.com/LiteyukiStudio/devops/internal/secret"
 	"github.com/LiteyukiStudio/devops/internal/tasks"
@@ -28,7 +27,6 @@ type Runner struct {
 	certManagerClusterIssuer     string
 	publicBaseURL                string
 	buildExecutorImage           string
-	buildNPMRegistry             string
 	buildEgressMode              string
 	buildCacheEnabled            bool
 	buildCacheTag                string
@@ -46,8 +44,6 @@ type Runner struct {
 	volumeTransferJobFactory     func(context.Context, string) (kubeprovider.VolumeTransferJobProvider, error)
 	volumeService                volumeWorkerService
 	volumeTaskEnqueuer           volumeTaskEnqueuer
-	volumeTransferStore          volumestore.Store
-	volumeTransferCallbackURL    string
 	volumeTransferJobImage       string
 	volumeTransferMaxBytes       int64
 	workerMetrics                *observability.WorkerMetrics
@@ -64,7 +60,6 @@ type Options struct {
 	PublicBaseURL               string
 	WorkerMetrics               *observability.WorkerMetrics
 	BuildExecutorImage          string
-	BuildNPMRegistry            string
 	BuildEgressMode             string
 	BuildCacheEnabled           bool
 	BuildCacheTag               string
@@ -73,8 +68,6 @@ type Options struct {
 	BuildPrivateEgressCIDRs     []string
 	BuildPrivateEgressPorts     []int
 	BuildBlockedEgressCIDRs     []string
-	VolumeTransferStore         volumestore.Store
-	VolumeTransferCallbackURL   string
 	VolumeTransferJobImage      string
 	VolumeTransferMaxBytes      int64
 }
@@ -249,7 +242,6 @@ func NewRunner(db *gorm.DB, options Options) *Runner {
 		certManagerClusterIssuer:    certManagerClusterIssuer,
 		publicBaseURL:               strings.TrimRight(strings.TrimSpace(options.PublicBaseURL), "/"),
 		buildExecutorImage:          buildExecutorImage,
-		buildNPMRegistry:            strings.TrimSpace(options.BuildNPMRegistry),
 		buildEgressMode:             buildEgressMode,
 		buildCacheEnabled:           options.BuildCacheEnabled,
 		buildCacheTag:               buildCacheTag,
@@ -262,8 +254,6 @@ func NewRunner(db *gorm.DB, options Options) *Runner {
 		workerMetrics:               options.WorkerMetrics,
 		runAutomaticRetention:       newAutomaticRetentionRunner(db),
 		volumeService:               volume.NewGormService(db),
-		volumeTransferStore:         options.VolumeTransferStore,
-		volumeTransferCallbackURL:   strings.TrimRight(strings.TrimSpace(options.VolumeTransferCallbackURL), "/"),
 		volumeTransferJobImage:      strings.TrimSpace(options.VolumeTransferJobImage),
 		volumeTransferMaxBytes:      volumeTransferMaxBytes,
 		namespaceFactory: func(kubeconfig string) (kubeprovider.NamespaceManager, error) {

@@ -1,17 +1,17 @@
 [
   {
-    "text": "Start",
+    "text": "Install",
     "link": "/start/install/kubernetes",
     "activeMatch": "/start/"
   },
   {
     "text": "Use",
     "link": "/use/workflow",
-    "activeMatch": "^/(use|download)/"
+    "activeMatch": "/use/"
   },
   {
     "text": "Reference",
-    "link": "/reference/configuration",
+    "link": "/reference/compatibility",
     "activeMatch": "/reference/"
   }
 ]

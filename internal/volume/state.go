@@ -39,12 +39,12 @@ func CanTransitionVolumeTransfer(from, to string) bool {
 	}
 	switch from {
 	case model.VolumeTransferStateCreated:
-		return to == model.VolumeTransferStateUploading || to == model.VolumeTransferStateQueued || isTransferFailureTerminal(to)
-	case model.VolumeTransferStateUploading:
-		return to == model.VolumeTransferStateQueued || isTransferFailureTerminal(to)
-	case model.VolumeTransferStateQueued:
-		return to == model.VolumeTransferStateRunning || to == model.VolumeTransferStateFailed || to == model.VolumeTransferStateCancelled
-	case model.VolumeTransferStateRunning:
+		return to == model.VolumeTransferStatePreparing || isTransferFailureTerminal(to)
+	case model.VolumeTransferStatePreparing:
+		return to == model.VolumeTransferStateReady || isTransferFailureTerminal(to)
+	case model.VolumeTransferStateReady:
+		return to == model.VolumeTransferStateStreaming || isTransferFailureTerminal(to)
+	case model.VolumeTransferStateStreaming:
 		return to == model.VolumeTransferStateSucceeded || to == model.VolumeTransferStateFailed || to == model.VolumeTransferStateCancelled
 	default:
 		return false

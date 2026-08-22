@@ -36,12 +36,14 @@ export function statusToneFor(value: string): StatusTone {
     case 'checking':
     case 'container-creating':
     case 'pending':
+    case 'preparing':
     case 'progressing':
     case 'queued':
     case 'deleting':
     case 'running':
     case 'in_progress':
     case 'scanning':
+    case 'streaming':
     case 'not-ready':
     case 'unregistered':
       return 'warning'
@@ -51,6 +53,7 @@ export function statusToneFor(value: string): StatusTone {
       return 'info'
     case 'disabled':
     case 'canceled':
+    case 'cancelled':
     case 'scaled-to-zero':
     case 'not-configured':
     case 'not-found':

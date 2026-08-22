@@ -54,10 +54,10 @@ func TestProjectVolumeAttachabilityAllowsFirstConsumerProvisioning(t *testing.T)
 
 func TestVolumeTransferStateMachineHasNoTerminalRollback(t *testing.T) {
 	t.Parallel()
-	if !CanTransitionVolumeTransfer(model.VolumeTransferStateCreated, model.VolumeTransferStateUploading) ||
-		!CanTransitionVolumeTransfer(model.VolumeTransferStateUploading, model.VolumeTransferStateQueued) ||
-		!CanTransitionVolumeTransfer(model.VolumeTransferStateQueued, model.VolumeTransferStateRunning) ||
-		!CanTransitionVolumeTransfer(model.VolumeTransferStateRunning, model.VolumeTransferStateSucceeded) {
+	if !CanTransitionVolumeTransfer(model.VolumeTransferStateCreated, model.VolumeTransferStatePreparing) ||
+		!CanTransitionVolumeTransfer(model.VolumeTransferStatePreparing, model.VolumeTransferStateReady) ||
+		!CanTransitionVolumeTransfer(model.VolumeTransferStateReady, model.VolumeTransferStateStreaming) ||
+		!CanTransitionVolumeTransfer(model.VolumeTransferStateStreaming, model.VolumeTransferStateSucceeded) {
 		t.Fatal("expected transfer success path is not allowed")
 	}
 	for _, terminal := range []string{
@@ -69,7 +69,7 @@ func TestVolumeTransferStateMachineHasNoTerminalRollback(t *testing.T) {
 		if !IsVolumeTransferTerminal(terminal) {
 			t.Fatalf("state %q must be terminal", terminal)
 		}
-		if CanTransitionVolumeTransfer(terminal, model.VolumeTransferStateQueued) {
+		if CanTransitionVolumeTransfer(terminal, model.VolumeTransferStatePreparing) {
 			t.Fatalf("terminal state %q must not transition back to queued", terminal)
 		}
 	}

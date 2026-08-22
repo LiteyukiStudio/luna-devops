@@ -53,12 +53,6 @@ func NewRouterWithStaticFSAndMetrics(db *gorm.DB, staticFS fs.FS, httpMetrics *o
 	})
 	router.GET("/.well-known/oauth-authorization-server", handlers.GetOAuthAuthorizationServerMetadata)
 	router.GET("/internal/v1/ai/provider-config", handlers.GetAIProviderConfigInternal)
-	router.HEAD("/internal/v1/volume-transfers/:transferId/content", handlers.HeadInternalVolumeTransferContent)
-	router.PATCH("/internal/v1/volume-transfers/:transferId/content", handlers.UploadInternalVolumeTransferContent)
-	router.GET("/internal/v1/volume-transfers/:transferId/content", handlers.DownloadInternalVolumeTransferContent)
-	router.POST("/internal/v1/volume-transfers/:transferId/progress", handlers.ReportInternalVolumeTransferProgress)
-	router.POST("/internal/v1/volume-transfers/:transferId/complete", handlers.CompleteInternalVolumeTransfer)
-	router.POST("/internal/v1/volume-transfers/:transferId/fail", handlers.FailInternalVolumeTransfer)
 
 	v1 := router.Group("/api/v1")
 	{
@@ -280,18 +274,14 @@ func NewRouterWithStaticFSAndMetrics(db *gorm.DB, staticFS fs.FS, httpMetrics *o
 		v1.POST("/projects/:projectId/volumes/:volumeId/retry", handlers.RetryProjectVolumeOperation)
 		v1.POST("/projects/:projectId/volumes/:volumeId/deletion-preview", handlers.PreviewProjectVolumeDeletion)
 		v1.POST("/projects/:projectId/volume-imports", handlers.CreateVolumeImport)
-		v1.HEAD("/projects/:projectId/volume-imports/:transferId/content", handlers.GetVolumeImportUploadOffset)
-		v1.PATCH("/projects/:projectId/volume-imports/:transferId/content", handlers.UploadVolumeImportContent)
-		v1.POST("/projects/:projectId/volume-imports/:transferId/complete", handlers.CompleteVolumeImportUpload)
+		v1.PUT("/projects/:projectId/volume-imports/:transferId/content", handlers.UploadVolumeImportContent)
 		v1.POST("/projects/:projectId/volumes/:volumeId/exports", handlers.CreateVolumeExport)
 		v1.GET("/projects/:projectId/volume-transfers", handlers.ListVolumeTransfers)
 		v1.GET("/projects/:projectId/volume-transfers/:transferId", handlers.GetVolumeTransfer)
 		v1.POST("/projects/:projectId/volume-transfers/:transferId/retry", handlers.RetryVolumeTransfer)
 		v1.POST("/projects/:projectId/volume-transfers/:transferId/cancel", handlers.CancelVolumeTransfer)
 		v1.POST("/projects/:projectId/volume-transfers/:transferId/download-authorizations", handlers.AuthorizeVolumeTransferDownload)
-		v1.HEAD("/projects/:projectId/volume-transfers/:transferId/content", handlers.HeadVolumeTransferContent)
 		v1.GET("/projects/:projectId/volume-transfers/:transferId/content", handlers.DownloadVolumeTransferContent)
-		v1.HEAD("/projects/:projectId/volume-transfers/:transferId/manifest", handlers.HeadVolumeTransferManifest)
 		v1.GET("/projects/:projectId/volume-transfers/:transferId/manifest", handlers.DownloadVolumeTransferManifest)
 
 		v1.GET("/projects/:projectId/members", handlers.ListProjectMembers)
@@ -396,9 +386,9 @@ func cors() gin.HandlerFunc {
 		if origin != "" && containsString(allowedOrigins, origin) {
 			ctx.Writer.Header().Set("Access-Control-Allow-Origin", origin)
 			ctx.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
-			ctx.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, Accept-Language, Idempotency-Key, If-Match, Tus-Resumable, Upload-Offset, Upload-Checksum, Range")
+			ctx.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, Accept-Language, Idempotency-Key, If-Match, X-Content-SHA256")
 			ctx.Writer.Header().Set("Access-Control-Allow-Methods", "GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS")
-			ctx.Writer.Header().Set("Access-Control-Expose-Headers", "X-Request-ID, Tus-Resumable, Upload-Offset, Upload-Length, Upload-Chunk-Size, Accept-Ranges, Content-Range, Content-Length, ETag, Retry-After")
+			ctx.Writer.Header().Set("Access-Control-Expose-Headers", "X-Request-ID, Content-Length, Content-Disposition, Retry-After")
 			ctx.Writer.Header().Add("Vary", "Origin")
 		}
 

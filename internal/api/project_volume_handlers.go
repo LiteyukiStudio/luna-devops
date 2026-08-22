@@ -28,6 +28,7 @@ type volumeTaskEnqueuer interface {
 	EnqueueVolumeProvision(context.Context, tasks.VolumeProvisionPayload) (*asynq.TaskInfo, error)
 	EnqueueVolumeImport(context.Context, tasks.VolumeTransferPayload) (*asynq.TaskInfo, error)
 	EnqueueVolumeExport(context.Context, tasks.VolumeTransferPayload) (*asynq.TaskInfo, error)
+	EnqueueVolumeTransferCleanup(context.Context, tasks.VolumeTransferCleanupPayload) (*asynq.TaskInfo, error)
 	EnqueueVolumeDelete(context.Context, tasks.VolumeDeletePayload) (*asynq.TaskInfo, error)
 }
 
@@ -49,6 +50,11 @@ func (dispatcher volumeOperationDispatcher) DispatchVolumeOperation(ctx context.
 	case volume.OperationExport:
 		_, err := dispatcher.tasks.EnqueueVolumeExport(ctx, tasks.VolumeTransferPayload{
 			TransferID: operation.TransferID, VolumeID: operation.VolumeID, ProjectID: operation.ProjectID, ActorID: operation.ActorID,
+		})
+		return err
+	case volume.OperationCleanup:
+		_, err := dispatcher.tasks.EnqueueVolumeTransferCleanup(ctx, tasks.VolumeTransferCleanupPayload{
+			TransferID: operation.TransferID, ActorID: operation.ActorID,
 		})
 		return err
 	case volume.OperationDelete:
@@ -649,22 +655,13 @@ func writeVolumeError(ctx *gin.Context, err error) {
 		status = http.StatusBadRequest
 	case volume.CodeNotFound, volume.CodeClaimNotFound, volume.CodeTransferNotFound:
 		status = http.StatusNotFound
-	case volume.CodeTaskEnqueueFailed, volume.CodeClusterUnavailable, volume.CodeTransferStoreUnavailable,
-		volume.CodeTransferSpoolUnavailable, volume.CodeQuotaUnavailable:
+	case volume.CodeTaskEnqueueFailed, volume.CodeClusterUnavailable, volume.CodeQuotaUnavailable, volume.CodeTransferUnavailable:
 		status = http.StatusServiceUnavailable
-	case volume.CodeTransferSpoolBusy:
-		status = http.StatusTooManyRequests
-		ctx.Header("Retry-After", "1")
-	case volume.CodeTransferSpoolInsufficient:
-		status = http.StatusInsufficientStorage
-	case volume.CodeTransferPartInProgress:
-		status = http.StatusConflict
-		ctx.Header("Retry-After", "1")
 	case volume.CodeOwnershipConflict, volume.CodeIncompatibleCluster, volume.CodeBindingConflict,
 		volume.CodeInUse, volume.CodeCapacityShrinkForbidden, volume.CodeRevisionConflict,
 		volume.CodeStateConflict, volume.CodeIdempotencyConflict, volume.CodeNameConflict,
 		volume.CodeClaimConflict, volume.CodeClaimSpecConflict, volume.CodeTransferStateConflict,
-		volume.CodeTransferFormatMismatch, volume.CodeTransferPartConflict, volume.CodeTransferOffsetMismatch,
+		volume.CodeTransferFormatMismatch,
 		volume.CodeQuotaExceeded:
 		status = http.StatusConflict
 	case volume.CodeExpansionUnsupported, volume.CodeSnapshotUnsupported, volume.CodeSnapshotRequired,
@@ -672,11 +669,9 @@ func writeVolumeError(ctx *gin.Context, err error) {
 		volume.CodeTransferChecksumMismatch, volume.CodeTransferArchiveUnsafe,
 		volume.CodeTransferCapacityExceeded:
 		status = http.StatusUnprocessableEntity
-	case volume.CodeTransferChunkChecksumMismatch:
-		status = 460
 	case volume.CodeTransferExpired:
 		status = http.StatusGone
-	case volume.CodeTransferCallbackUnauthorized, volume.CodeTransferDownloadUnauthorized:
+	case volume.CodeTransferDownloadUnauthorized:
 		status = http.StatusUnauthorized
 	case "":
 		code = "internal_error"

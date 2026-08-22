@@ -3,54 +3,47 @@ package transferjob
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/LiteyukiStudio/devops/internal/volumetransfer"
 )
 
 const (
-	DirectionImport = "import"
-	DirectionExport = "export"
-	FormatTarGZ     = "tar_gz"
-	FormatRawZST    = "raw_zst"
-	ModeFilesystem  = "Filesystem"
-	ModeBlock       = "Block"
-
-	defaultMaxFiles        = 1_000_000
-	minimumChunkSize int64 = volumetransfer.MinimumChunkSize
-	maximumChunkSize int64 = volumetransfer.MaximumChunkSize
+	DirectionImport           = "import"
+	DirectionExport           = "export"
+	FormatTarGZ               = "tar_gz"
+	FormatRawZST              = "raw_zst"
+	ModeFilesystem            = "Filesystem"
+	ModeBlock                 = "Block"
+	defaultMaxFiles           = 1_000_000
+	maximumTransferSize int64 = 5 * 1024 * 1024 * 1024 * 1024
 )
 
 var transferIDPattern = regexp.MustCompile(`^vtx_[A-Za-z0-9_-]{1,120}$`)
 
+// Config contains only immutable, non-secret execution metadata. Archive bytes
+// arrive through Kubernetes exec and are never fetched from a remote endpoint.
 type Config struct {
 	TransferID      string
 	Direction       string
 	Format          string
 	VolumeMode      string
 	ConsistencyMode string
-	CallbackBaseURL string
-	TokenFile       string
 	DataPath        string
 	CapacityBytes   int64
+	MaxArchiveBytes int64
 	ExpectedBytes   int64
 	ExpectedSHA256  string
 	ExportedAt      time.Time
 	MaxFiles        int
-	ChunkSize       int64
 	Traceparent     string
 	Tracestate      string
 }
 
-func ConfigFromEnv() (Config, error) {
-	return ConfigFromLookup(os.Getenv)
-}
+func ConfigFromEnv() (Config, error) { return ConfigFromLookup(os.Getenv) }
 
 func ConfigFromLookup(lookup func(string) string) (Config, error) {
 	if lookup == nil {
@@ -64,9 +57,9 @@ func ConfigFromLookup(lookup func(string) string) (Config, error) {
 	if err != nil {
 		return Config{}, invalidConfig("expected bytes")
 	}
-	chunkSize, err := parsePositiveInt64(lookup("LUNA_VOLUME_TRANSFER_CHUNK_SIZE"))
+	maxArchiveBytes, err := parsePositiveInt64(lookup("LUNA_VOLUME_TRANSFER_MAX_BYTES"))
 	if err != nil {
-		return Config{}, invalidConfig("chunk size")
+		return Config{}, invalidConfig("maximum archive bytes")
 	}
 	maxFiles := defaultMaxFiles
 	if value := strings.TrimSpace(lookup("LUNA_VOLUME_TRANSFER_MAX_FILES")); value != "" {
@@ -82,14 +75,12 @@ func ConfigFromLookup(lookup func(string) string) (Config, error) {
 		Format:          strings.ToLower(strings.TrimSpace(lookup("LUNA_VOLUME_TRANSFER_FORMAT"))),
 		VolumeMode:      strings.TrimSpace(lookup("LUNA_VOLUME_TRANSFER_VOLUME_MODE")),
 		ConsistencyMode: strings.ToLower(strings.TrimSpace(lookup("LUNA_VOLUME_TRANSFER_CONSISTENCY_MODE"))),
-		CallbackBaseURL: strings.TrimRight(strings.TrimSpace(lookup("LUNA_VOLUME_TRANSFER_CALLBACK_BASE_URL")), "/"),
-		TokenFile:       strings.TrimSpace(lookup("LUNA_VOLUME_TRANSFER_TOKEN_FILE")),
 		DataPath:        strings.TrimSpace(lookup("LUNA_VOLUME_TRANSFER_DATA_PATH")),
 		CapacityBytes:   capacity,
+		MaxArchiveBytes: maxArchiveBytes,
 		ExpectedBytes:   expected,
 		ExpectedSHA256:  strings.ToLower(strings.TrimSpace(lookup("LUNA_VOLUME_TRANSFER_EXPECTED_SHA256"))),
 		MaxFiles:        maxFiles,
-		ChunkSize:       chunkSize,
 		Traceparent:     strings.TrimSpace(lookup("LUNA_VOLUME_TRANSFER_TRACEPARENT")),
 		Tracestate:      strings.TrimSpace(lookup("LUNA_VOLUME_TRANSFER_TRACESTATE")),
 	}
@@ -138,10 +129,9 @@ func (config Config) Validate() error {
 			return invalidConfig("export timestamp")
 		}
 	}
-	if config.CapacityBytes < 1 || config.CapacityBytes > volumetransfer.MaximumTransferSize ||
-		config.ExpectedBytes < 0 || config.ExpectedBytes > volumetransfer.MaximumTransferSize ||
-		config.ChunkSize < volumetransfer.RequiredChunkSize(config.ExpectedBytes) ||
-		config.ChunkSize > maximumChunkSize || config.ChunkSize%(1024*1024) != 0 {
+	if config.CapacityBytes < 1 || config.CapacityBytes > maximumTransferSize ||
+		config.MaxArchiveBytes < 1 || config.MaxArchiveBytes > maximumTransferSize ||
+		config.ExpectedBytes < 0 || config.ExpectedBytes > maximumTransferSize {
 		return invalidConfig("byte limits")
 	}
 	if config.MaxFiles < 1 || config.MaxFiles > defaultMaxFiles {
@@ -150,18 +140,8 @@ func (config Config) Validate() error {
 	if config.ExpectedSHA256 != "" && !isSHA256(config.ExpectedSHA256) {
 		return invalidConfig("expected checksum")
 	}
-	parsed, err := url.Parse(config.CallbackBaseURL)
-	if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
-		return invalidConfig("callback URL")
-	}
-	if rawPort := parsed.Port(); rawPort != "" {
-		port, portErr := strconv.ParseInt(rawPort, 10, 32)
-		if portErr != nil || port < 1 || port > 65535 {
-			return invalidConfig("callback port")
-		}
-	}
-	if !safeAbsolutePath(config.TokenFile) || !safeAbsolutePath(config.DataPath) || config.TokenFile == config.DataPath {
-		return invalidConfig("mounted paths")
+	if !safeAbsolutePath(config.DataPath) {
+		return invalidConfig("data path")
 	}
 	if len(config.Traceparent) > 128 || len(config.Tracestate) > 512 || strings.ContainsAny(config.Traceparent+config.Tracestate, "\r\n") {
 		return invalidConfig("trace context")

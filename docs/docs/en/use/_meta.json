@@ -1,77 +1,9 @@
 [
-  {
-    "type": "file",
-    "name": "workflow",
-    "label": "Daily Delivery"
-  },
-  {
-    "type": "file",
-    "name": "ai-assistant",
-    "label": "AI Assistant"
-  },
-  {
-    "type": "file",
-    "name": "app-marketplace",
-    "label": "App Marketplace"
-  },
-  {
-    "type": "file",
-    "name": "configuration",
-    "label": "Configuration and Secrets"
-  },
-  {
-    "type": "file",
-    "name": "deployment-config-transfer",
-    "label": "Deploy Config Import and Export"
-  },
-  {
-    "type": "file",
-    "name": "project-volumes",
-    "label": "Project Volumes"
-  },
-  {
-    "type": "file",
-    "name": "volume-transfer",
-    "label": "Volume Import and Export"
-  },
-  {
-    "type": "file",
-    "name": "notifications",
-    "label": "Notifications"
-  },
-  {
-    "type": "file",
-    "name": "inbox",
-    "label": "Inbox"
-  },
-  {
-    "type": "file",
-    "name": "billing",
-    "label": "Billing and Spend"
-  },
-  {
-    "type": "file",
-    "name": "default-pricing",
-    "label": "Default and Suggested Pricing"
-  },
-  {
-    "type": "file",
-    "name": "data-retention",
-    "label": "Data Retention and Cleanup"
-  },
-  {
-    "type": "file",
-    "name": "diagnostics",
-    "label": "Status and Troubleshooting"
-  },
-  {
-    "type": "custom-link",
-    "label": "Install Luna CLI",
-    "link": "/download/installation"
-  },
-  {
-    "type": "custom-link",
-    "label": "Use Luna CLI",
-    "link": "/download/cli"
-  }
+  { "type": "dir", "name": "workflow", "label": "Daily Delivery" },
+  { "type": "file", "name": "ai-assistant", "label": "AI Assistant" },
+  { "type": "file", "name": "app-marketplace", "label": "App Marketplace" },
+  { "type": "file", "name": "notifications", "label": "Notifications" },
+  { "type": "file", "name": "billing", "label": "Billing and Spend" },
+  { "type": "file", "name": "diagnostics", "label": "Status and Troubleshooting" },
+  { "type": "dir", "name": "cli", "label": "Luna CLI" }
 ]

@@ -12,7 +12,6 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/tasks"
 	"github.com/LiteyukiStudio/devops/internal/volume"
-	"github.com/LiteyukiStudio/devops/internal/volumetransferapi"
 	"github.com/gin-gonic/gin"
 	"github.com/hibiken/asynq"
 )
@@ -96,6 +95,14 @@ func TestVolumeOperationDispatcherPreservesContextAndOperation(t *testing.T) {
 	if stub.provision.Operation != volume.OperationExpand || stub.provision.ProjectID != "prj_1" || stub.provision.VolumeID != "pvol_1" || stub.contextValue != "trace-parent" {
 		t.Fatalf("dispatched payload = %#v, context = %q", stub.provision, stub.contextValue)
 	}
+	if err := dispatcher.DispatchVolumeOperation(ctx, volume.VolumeOperation{
+		Kind: volume.OperationCleanup, ProjectID: "prj_1", VolumeID: "pvol_1", TransferID: "vtx_1", ActorID: "usr_1",
+	}); err != nil {
+		t.Fatalf("DispatchVolumeOperation(cleanup) error = %v", err)
+	}
+	if stub.cleanup.TransferID != "vtx_1" || stub.cleanup.ActorID != "usr_1" {
+		t.Fatalf("cleanup payload = %#v", stub.cleanup)
+	}
 }
 
 func TestProjectVolumeRetryAuthorizationPreservesOriginalRiskBoundary(t *testing.T) {
@@ -121,7 +128,7 @@ func TestProjectVolumeRetryAuthorizationPreservesOriginalRiskBoundary(t *testing
 	}
 }
 
-func TestVolumeResponsesDoNotExposeInternalDiagnosticsOrObjectKeys(t *testing.T) {
+func TestVolumeResponsesDoNotExposeInternalDiagnostics(t *testing.T) {
 	volumePayload, err := json.Marshal(projectVolumeResponseFor(model.ProjectVolume{
 		ID: "pvol_1", LastErrorCode: "volume.cluster_unavailable", LastErrorMessage: "token=secret internal-provider.local",
 	}))
@@ -129,13 +136,13 @@ func TestVolumeResponsesDoNotExposeInternalDiagnosticsOrObjectKeys(t *testing.T)
 		t.Fatal(err)
 	}
 	transferPayload, err := json.Marshal(volumeTransferResponseFor(model.VolumeTransfer{
-		ID: "vtx_1", ObjectKey: "private/project/archive.tar.gz", LastErrorMessage: "s3 secret failure",
+		ID: "vtx_1", LastErrorMessage: "runtime pod secret failure",
 	}, true))
 	if err != nil {
 		t.Fatal(err)
 	}
 	combined := string(volumePayload) + string(transferPayload)
-	for _, secret := range []string{"token=secret", "internal-provider.local", "private/project/archive.tar.gz", "s3 secret failure"} {
+	for _, secret := range []string{"token=secret", "internal-provider.local", "runtime pod secret failure"} {
 		if strings.Contains(combined, secret) {
 			t.Fatalf("safe API response contains %q: %s", secret, combined)
 		}
@@ -152,22 +159,6 @@ func TestProjectVolumeResponseKeepsFirstConsumerProvisioningAvailable(t *testing
 	}
 }
 
-func TestVolumeTransferResponsePublishesRequiredFiveTiBChunkSize(t *testing.T) {
-	const fiveTiB = int64(5 * 1024 * 1024 * 1024 * 1024)
-	response := volumeTransferResponseFor(model.VolumeTransfer{
-		ID:            "vtx_large",
-		Direction:     model.VolumeTransferDirectionImport,
-		ExpectedBytes: fiveTiB,
-	}, true)
-	if response.ChunkSize != 525*1024*1024 {
-		t.Fatalf("chunkSize = %d, want %d", response.ChunkSize, int64(525*1024*1024))
-	}
-	parts := (fiveTiB + response.ChunkSize - 1) / response.ChunkSize
-	if parts > volumetransferapi.MaxMultipartParts {
-		t.Fatalf("5 TiB needs %d parts, max = %d", parts, volumetransferapi.MaxMultipartParts)
-	}
-}
-
 func TestWriteVolumeErrorUsesStableStatusAndHidesUnknownProductionDetail(t *testing.T) {
 	t.Setenv("APP_ENV", "production")
 	tests := []struct {
@@ -175,16 +166,12 @@ func TestWriteVolumeErrorUsesStableStatusAndHidesUnknownProductionDetail(t *test
 		status int
 	}{
 		{code: volume.CodeClusterUnavailable, status: http.StatusServiceUnavailable},
+		{code: volume.CodeTransferUnavailable, status: http.StatusServiceUnavailable},
 		{code: volume.CodeClaimNotFound, status: http.StatusNotFound},
-		{code: volume.CodeTransferOffsetMismatch, status: http.StatusConflict},
+		{code: volume.CodeTransferStateConflict, status: http.StatusConflict},
 		{code: volume.CodeTransferChecksumMismatch, status: http.StatusUnprocessableEntity},
 		{code: volume.CodeTransferExpired, status: http.StatusGone},
-		{code: volume.CodeTransferCallbackUnauthorized, status: http.StatusUnauthorized},
 		{code: volume.CodeTransferDownloadUnauthorized, status: http.StatusUnauthorized},
-		{code: volume.CodeTransferSpoolBusy, status: http.StatusTooManyRequests},
-		{code: volume.CodeTransferSpoolUnavailable, status: http.StatusServiceUnavailable},
-		{code: volume.CodeTransferSpoolInsufficient, status: http.StatusInsufficientStorage},
-		{code: volume.CodeTransferPartInProgress, status: http.StatusConflict},
 	}
 	for _, test := range tests {
 		ctx, recorder := volumeTestContext(http.MethodGet, "/api/v1/projects/prj_1/volumes")
@@ -192,15 +179,27 @@ func TestWriteVolumeErrorUsesStableStatusAndHidesUnknownProductionDetail(t *test
 		if recorder.Code != test.status || !strings.Contains(recorder.Body.String(), test.code) {
 			t.Fatalf("%s response = %d %s", test.code, recorder.Code, recorder.Body.String())
 		}
-		if test.code == volume.CodeTransferPartInProgress && recorder.Header().Get("Retry-After") != "1" {
-			t.Fatalf("%s Retry-After = %q", test.code, recorder.Header().Get("Retry-After"))
-		}
 	}
 
 	ctx, recorder := volumeTestContext(http.MethodGet, "/api/v1/projects/prj_1/volumes")
 	writeVolumeError(ctx, context.Canceled)
 	if recorder.Code != http.StatusInternalServerError || !strings.Contains(recorder.Body.String(), `"code":"internal_error"`) || strings.Contains(recorder.Body.String(), context.Canceled.Error()) {
 		t.Fatalf("unknown production error response = %d %s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestVolumeTransferConfigurationGuardOnlyBlocksTransferCreation(t *testing.T) {
+	ctx, recorder := volumeTestContext(http.MethodPost, "/api/v1/projects/prj_1/volume-imports")
+	if (&Handlers{}).ensureVolumeTransferConfigured(ctx) {
+		t.Fatal("unconfigured transfer unexpectedly enabled")
+	}
+	if recorder.Code != http.StatusServiceUnavailable || !strings.Contains(recorder.Body.String(), volume.CodeTransferUnavailable) {
+		t.Fatalf("unconfigured transfer response = %d %s", recorder.Code, recorder.Body.String())
+	}
+
+	ctx, recorder = volumeTestContext(http.MethodPost, "/api/v1/projects/prj_1/volume-imports")
+	if !(&Handlers{volumeTransferEnabled: true}).ensureVolumeTransferConfigured(ctx) || recorder.Code != http.StatusOK {
+		t.Fatalf("configured transfer guard response = %d", recorder.Code)
 	}
 }
 
@@ -225,6 +224,7 @@ type volumeDispatcherContextKey struct{}
 
 type volumeTaskEnqueuerStub struct {
 	provision    tasks.VolumeProvisionPayload
+	cleanup      tasks.VolumeTransferCleanupPayload
 	contextValue string
 }
 
@@ -239,6 +239,11 @@ func (*volumeTaskEnqueuerStub) EnqueueVolumeImport(context.Context, tasks.Volume
 }
 
 func (*volumeTaskEnqueuerStub) EnqueueVolumeExport(context.Context, tasks.VolumeTransferPayload) (*asynq.TaskInfo, error) {
+	return &asynq.TaskInfo{}, nil
+}
+
+func (stub *volumeTaskEnqueuerStub) EnqueueVolumeTransferCleanup(_ context.Context, payload tasks.VolumeTransferCleanupPayload) (*asynq.TaskInfo, error) {
+	stub.cleanup = payload
 	return &asynq.TaskInfo{}, nil
 }
 

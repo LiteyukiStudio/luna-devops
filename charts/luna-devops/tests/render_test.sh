@@ -63,33 +63,8 @@ assert_contains "$external_secret_render" '^[[:space:]]+name: external-redis$' '
 assert_contains "$external_secret_render" '^[[:space:]]+key: redis-url$' 'the external Redis URI key is not referenced'
 assert_not_contains "$external_secret_render" '^[[:space:]]+- name: REDIS_(USERNAME|PASSWORD|DB)$' 'split Redis environment variables are still rendered'
 
-assert_not_contains "$default_render" 'VOLUME_TRANSFER_STORE' 'volume transfers must be disabled by default'
-
-volume_transfer_render="$tmp_dir/volume-transfer.yaml"
-helm template luna-devops "$chart_dir" --namespace luna-devops \
-  --set volumeTransfer.enabled=true \
-  --set volumeTransfer.s3.endpoint=https://objects.example.com \
-  --set volumeTransfer.s3.bucket=luna-volume-transfers \
-  --set volumeTransfer.s3.existingSecret=volume-transfer-s3 \
-  --set volumeTransfer.callbackBaseUrl=https://devops.example.com > "$volume_transfer_render"
-assert_contains "$volume_transfer_render" '^  VOLUME_TRANSFER_STORE: "s3"$' 'the volume transfer store is missing'
-assert_contains "$volume_transfer_render" '^  VOLUME_TRANSFER_JOB_IMAGE: "liteyukistudio/luna-worker:' 'the default volume transfer Job image does not follow the Worker image'
-assert_contains "$volume_transfer_render" '^  VOLUME_TRANSFER_SPOOL_DIR: "/tmp/luna-devops-volume-transfer-spool"$' 'the volume transfer spool directory is missing'
-assert_contains "$volume_transfer_render" '^  VOLUME_TRANSFER_SPOOL_MAX_BYTES: "2Gi"$' 'the volume transfer spool byte budget is missing'
-assert_contains "$volume_transfer_render" '^  VOLUME_TRANSFER_SPOOL_MIN_FREE_BYTES: "1Gi"$' 'the volume transfer spool free-space reserve is missing'
-assert_contains "$volume_transfer_render" '^  VOLUME_TRANSFER_SPOOL_ORPHAN_AGE: "24h"$' 'the volume transfer spool orphan age is missing'
-assert_count "$volume_transfer_render" '^[[:space:]]+name: volume-transfer-s3$' 4 'the API and Worker must both reference the two volume transfer credential keys'
-assert_count "$volume_transfer_render" '^[[:space:]]+key: access-key-id$' 2 'the API and Worker access-key references are incomplete'
-assert_count "$volume_transfer_render" '^[[:space:]]+key: secret-access-key$' 2 'the API and Worker secret-key references are incomplete'
-assert_not_contains "$volume_transfer_render" '^  VOLUME_TRANSFER_S3_ACCESS_KEY_ID:' 'the access key must not be rendered in the ConfigMap'
-
-if helm template luna-devops "$chart_dir" --namespace luna-devops \
-  --set volumeTransfer.enabled=true \
-  --set volumeTransfer.s3.endpoint=http://objects.example.com \
-  --set volumeTransfer.s3.bucket=luna-volume-transfers \
-  --set volumeTransfer.s3.existingSecret=volume-transfer-s3 \
-  --set volumeTransfer.callbackBaseUrl=https://devops.example.com > /dev/null 2>&1; then
-  fail 'an insecure volume transfer endpoint was accepted'
-fi
+assert_contains "$default_render" '^  VOLUME_TRANSFER_MAX_BYTES: "100Gi"$' 'the direct transfer size limit is missing'
+assert_contains "$default_render" '^  VOLUME_TRANSFER_JOB_IMAGE: "liteyukistudio/luna-worker:' 'the direct transfer image does not follow the Worker image'
+assert_not_contains "$default_render" 'VOLUME_TRANSFER_(STORE|S3|SPOOL|CALLBACK|OBJECT_TTL)' 'object-store transfer settings are still rendered'
 
 printf 'Helm render tests passed.\n'

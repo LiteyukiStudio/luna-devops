@@ -374,7 +374,6 @@ func TestBuildJobSpecUsesRestrictedServiceAccountAndBuildScope(t *testing.T) {
 		model.BuildRun{BuildCPURequest: "750m", BuildMemoryRequest: "768Mi"},
 		builder.Task{ProjectID: "prj_demo", ApplicationID: "app_api", DeploymentTargetID: "dplt_api", BuildRunID: "brn_1", JobID: "bjb_1"},
 		"moby/buildkit:v0.24.0-rootless",
-		"",
 		false,
 		"buildcache",
 		1800,
@@ -445,7 +444,6 @@ func TestBuildJobSecretSeparatesExplicitBuildArgs(t *testing.T) {
 				},
 			},
 		},
-		"",
 		false,
 		"buildcache",
 	)
@@ -472,7 +470,7 @@ func TestBuildJobUsesRenderedTemplateDockerfile(t *testing.T) {
 			TemplateDockerfile: "FROM scratch\n",
 		},
 	}
-	secret := buildJobSecret("build-secret", task, "", false, "buildcache")
+	secret := buildJobSecret("build-secret", task, false, "buildcache")
 	if secret.StringData["env-BUILD_DEFINITION_MODE"] != "template" {
 		t.Fatalf("BUILD_DEFINITION_MODE = %q", secret.StringData["env-BUILD_DEFINITION_MODE"])
 	}
@@ -480,7 +478,7 @@ func TestBuildJobUsesRenderedTemplateDockerfile(t *testing.T) {
 		t.Fatalf("template.Dockerfile = %q", secret.StringData["template.Dockerfile"])
 	}
 
-	spec := buildJobSpec("build-job", "build-secret", model.Environment{}, model.BuildRun{}, task, "executor", "", false, "buildcache", 1800, 3600)
+	spec := buildJobSpec("build-job", "build-secret", model.Environment{}, model.BuildRun{}, task, "executor", false, "buildcache", 1800, 3600)
 	found := false
 	for _, volume := range spec.Spec.Template.Spec.Volumes {
 		if volume.Name != "executor-files" || volume.Secret == nil {
@@ -519,7 +517,6 @@ func TestBuildJobSpecCopiesOnlyProjectedExecutorFiles(t *testing.T) {
 			}}},
 		},
 		"moby/buildkit:v0.24.0-rootless",
-		"",
 		false,
 		"buildcache",
 		1800,

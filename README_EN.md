@@ -120,7 +120,7 @@ luna login
 luna project get-projects
 ```
 
-- [CLI documentation](https://luna-devops.liteyuki.org/en/download/installation)
+- [CLI documentation](https://luna-devops.liteyuki.org/en/use/cli/installation)
 - [CLI GitHub repository](https://github.com/LiteyukiStudio/luna-cli)
 - [Paired Agent Skill](https://github.com/LiteyukiStudio/luna-cli/tree/main/skills/luna-devops)
 
@@ -169,7 +169,7 @@ More deployment guides:
 - [Kubernetes / Helm](docs/docs/en/start/install/kubernetes.md)
 - [Docker Compose](docs/docs/en/start/install/docker-compose.md)
 - [Binary deployment](docs/docs/en/start/install/binary.md)
-- [Configuration reference](docs/docs/en/reference/configuration.md)
+- [Configuration](docs/docs/en/start/configuration.md)
 
 ## Configuration Notes
 
@@ -179,7 +179,7 @@ More deployment guides:
 - `TRUSTED_PROXY_CIDRS` should include trusted reverse proxies or CDN egress ranges when Luna DevOps is behind a proxy.
 - Worker build networking is configurable. Use restricted egress plus explicit allowlists when builds need to access private registries or mirrors.
 
-For the full list of API and Worker options, use the [configuration reference](docs/docs/en/reference/configuration.md).
+For the full list of API and Worker options, see [Configuration](docs/docs/en/start/configuration.md).
 
 ## Repository Layout
 

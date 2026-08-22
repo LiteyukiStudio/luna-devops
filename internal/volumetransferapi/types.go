@@ -1,27 +1,12 @@
 package volumetransferapi
 
 import (
+	"context"
 	"io"
 	"time"
 
 	"github.com/LiteyukiStudio/devops/internal/model"
-	"github.com/LiteyukiStudio/devops/internal/volumetransfer"
 )
-
-const (
-	MinimumChunkSize  = volumetransfer.MinimumChunkSize
-	MaximumChunkSize  = volumetransfer.MaximumChunkSize
-	MaxMultipartParts = volumetransfer.MaxMultipartParts
-
-	DefaultChunkSize = MinimumChunkSize
-)
-
-// RequiredChunkSize returns the server-selected multipart size for a transfer
-// of expectedBytes. Sizes are MiB-aligned so every supported 5 TiB transfer
-// fits within S3's 10,000-part limit without accepting client-selected parts.
-func RequiredChunkSize(expectedBytes int64) int64 {
-	return volumetransfer.RequiredChunkSize(expectedBytes)
-}
 
 type Actor struct {
 	UserID    string
@@ -71,45 +56,29 @@ type DownloadAuthorization struct {
 	ExpiresAt time.Time
 }
 
-type DownloadCredential struct {
-	Ticket  string
-	Session string
-}
-
-type DownloadSession struct {
-	Token     string
-	ExpiresAt time.Time
-}
-
-type ContentInfo struct {
-	Offset    int64
-	Size      int64
-	ChunkSize int64
-	ETag      string
-}
-
 type Download struct {
-	Body         io.ReadCloser
-	Status       int
-	ContentType  string
-	Size         int64
-	ETag         string
-	ContentRange string
+	Body        io.ReadCloser
+	ContentType string
 }
 
-type Progress struct {
-	ExpectedState    string
+type StreamResult struct {
 	TransferredBytes int64
 	ProcessedFiles   int64
-	Stage            string
-}
-
-type Completion struct {
-	ExpectedState    string
-	TransferredBytes int64
 	SHA256           string
 	LogicalBytes     int64
 	DataSHA256       string
+}
+
+type ExportStream interface {
+	io.ReadCloser
+	Wait() (StreamResult, error)
+}
+
+// RuntimeStreamer connects the API request body/response directly to the
+// deterministic transfer Pod prepared by the Worker.
+type RuntimeStreamer interface {
+	OpenVolumeTransferImport(context.Context, model.ProjectVolume, model.VolumeTransfer, io.Reader) (StreamResult, error)
+	OpenVolumeTransferExport(context.Context, model.ProjectVolume, model.VolumeTransfer) (ExportStream, error)
 }
 
 type BlockManifest struct {
@@ -121,10 +90,4 @@ type BlockManifest struct {
 	FileCount       int64     `json:"fileCount"`
 	DataSHA256      string    `json:"dataSHA256"`
 	ConsistencyMode string    `json:"consistencyMode"`
-}
-
-type Failure struct {
-	ExpectedState string
-	ErrorCode     string
-	Diagnostic    string
 }

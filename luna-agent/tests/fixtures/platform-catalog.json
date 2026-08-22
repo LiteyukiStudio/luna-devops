@@ -145,13 +145,6 @@
         "actorId": {
           "type": "string"
         },
-        "chunkSize": {
-          "description": "Server-selected required multipart size. It is at least 64 MiB and grows in MiB steps so a transfer needs no more than 10,000 S3 parts; only the final import part may be smaller.",
-          "format": "int64",
-          "maximum": 5368709120,
-          "minimum": 67108864,
-          "type": "integer"
-        },
         "consistencyMode": {
           "enum": [
             "snapshot",
@@ -200,7 +193,7 @@
           "type": "string"
         },
         "lastErrorCode": {
-          "description": "Stable public transfer error code. `volume_transfer.completion_missing` is produced only by server-side reconciliation when a transfer Job ended without a confirmed callback; Jobs cannot submit that code through VolumeTransferFailInput.",
+          "description": "Stable public transfer error code. Raw runtime diagnostics are never returned.",
           "type": "string"
         },
         "logicalBytes": {
@@ -238,9 +231,9 @@
         "state": {
           "enum": [
             "created",
-            "uploading",
-            "queued",
-            "running",
+            "preparing",
+            "ready",
+            "streaming",
             "succeeded",
             "failed",
             "cancelled",
@@ -256,11 +249,6 @@
         "updatedAt": {
           "format": "date-time",
           "type": "string"
-        },
-        "uploadOffset": {
-          "format": "int64",
-          "minimum": 0,
-          "type": "integer"
         }
       },
       "required": [
@@ -275,7 +263,6 @@
         "transferredBytes",
         "logicalBytes",
         "processedFiles",
-        "chunkSize",
         "sha256",
         "dataSHA256",
         "actorId",
@@ -5716,13 +5703,6 @@
         "actorId": {
           "type": "string"
         },
-        "chunkSize": {
-          "description": "Server-selected required multipart size. It is at least 64 MiB and grows in MiB steps so a transfer needs no more than 10,000 S3 parts; only the final import part may be smaller.",
-          "format": "int64",
-          "maximum": 5368709120,
-          "minimum": 67108864,
-          "type": "integer"
-        },
         "consistencyMode": {
           "enum": [
             "snapshot",
@@ -5771,7 +5751,7 @@
           "type": "string"
         },
         "lastErrorCode": {
-          "description": "Stable public transfer error code. `volume_transfer.completion_missing` is produced only by server-side reconciliation when a transfer Job ended without a confirmed callback; Jobs cannot submit that code through VolumeTransferFailInput.",
+          "description": "Stable public transfer error code. Raw runtime diagnostics are never returned.",
           "type": "string"
         },
         "logicalBytes": {
@@ -5809,9 +5789,9 @@
         "state": {
           "enum": [
             "created",
-            "uploading",
-            "queued",
-            "running",
+            "preparing",
+            "ready",
+            "streaming",
             "succeeded",
             "failed",
             "cancelled",
@@ -5827,11 +5807,6 @@
         "updatedAt": {
           "format": "date-time",
           "type": "string"
-        },
-        "uploadOffset": {
-          "format": "int64",
-          "minimum": 0,
-          "type": "integer"
         }
       },
       "required": [
@@ -5846,7 +5821,6 @@
         "transferredBytes",
         "logicalBytes",
         "processedFiles",
-        "chunkSize",
         "sha256",
         "dataSHA256",
         "actorId",
@@ -11689,13 +11663,6 @@
                   "actorId": {
                     "type": "string"
                   },
-                  "chunkSize": {
-                    "description": "Server-selected required multipart size. It is at least 64 MiB and grows in MiB steps so a transfer needs no more than 10,000 S3 parts; only the final import part may be smaller.",
-                    "format": "int64",
-                    "maximum": 5368709120,
-                    "minimum": 67108864,
-                    "type": "integer"
-                  },
                   "consistencyMode": {
                     "enum": [
                       "snapshot",
@@ -11744,7 +11711,7 @@
                     "type": "string"
                   },
                   "lastErrorCode": {
-                    "description": "Stable public transfer error code. `volume_transfer.completion_missing` is produced only by server-side reconciliation when a transfer Job ended without a confirmed callback; Jobs cannot submit that code through VolumeTransferFailInput.",
+                    "description": "Stable public transfer error code. Raw runtime diagnostics are never returned.",
                     "type": "string"
                   },
                   "logicalBytes": {
@@ -11782,9 +11749,9 @@
                   "state": {
                     "enum": [
                       "created",
-                      "uploading",
-                      "queued",
-                      "running",
+                      "preparing",
+                      "ready",
+                      "streaming",
                       "succeeded",
                       "failed",
                       "cancelled",
@@ -11800,11 +11767,6 @@
                   "updatedAt": {
                     "format": "date-time",
                     "type": "string"
-                  },
-                  "uploadOffset": {
-                    "format": "int64",
-                    "minimum": 0,
-                    "type": "integer"
                   }
                 },
                 "required": [
@@ -11819,7 +11781,6 @@
                   "transferredBytes",
                   "logicalBytes",
                   "processedFiles",
-                  "chunkSize",
                   "sha256",
                   "dataSHA256",
                   "actorId",
@@ -12548,13 +12509,6 @@
         "actorId": {
           "type": "string"
         },
-        "chunkSize": {
-          "description": "Server-selected required multipart size. It is at least 64 MiB and grows in MiB steps so a transfer needs no more than 10,000 S3 parts; only the final import part may be smaller.",
-          "format": "int64",
-          "maximum": 5368709120,
-          "minimum": 67108864,
-          "type": "integer"
-        },
         "consistencyMode": {
           "enum": [
             "snapshot",
@@ -12603,7 +12557,7 @@
           "type": "string"
         },
         "lastErrorCode": {
-          "description": "Stable public transfer error code. `volume_transfer.completion_missing` is produced only by server-side reconciliation when a transfer Job ended without a confirmed callback; Jobs cannot submit that code through VolumeTransferFailInput.",
+          "description": "Stable public transfer error code. Raw runtime diagnostics are never returned.",
           "type": "string"
         },
         "logicalBytes": {
@@ -12641,9 +12595,9 @@
         "state": {
           "enum": [
             "created",
-            "uploading",
-            "queued",
-            "running",
+            "preparing",
+            "ready",
+            "streaming",
             "succeeded",
             "failed",
             "cancelled",
@@ -12659,11 +12613,6 @@
         "updatedAt": {
           "format": "date-time",
           "type": "string"
-        },
-        "uploadOffset": {
-          "format": "int64",
-          "minimum": 0,
-          "type": "integer"
         }
       },
       "required": [
@@ -12678,7 +12627,6 @@
         "transferredBytes",
         "logicalBytes",
         "processedFiles",
-        "chunkSize",
         "sha256",
         "dataSHA256",
         "actorId",
@@ -22481,9 +22429,9 @@
         "state": {
           "enum": [
             "created",
-            "uploading",
-            "queued",
-            "running",
+            "preparing",
+            "ready",
+            "streaming",
             "succeeded",
             "failed",
             "cancelled",
@@ -22509,13 +22457,6 @@
             "properties": {
               "actorId": {
                 "type": "string"
-              },
-              "chunkSize": {
-                "description": "Server-selected required multipart size. It is at least 64 MiB and grows in MiB steps so a transfer needs no more than 10,000 S3 parts; only the final import part may be smaller.",
-                "format": "int64",
-                "maximum": 5368709120,
-                "minimum": 67108864,
-                "type": "integer"
               },
               "consistencyMode": {
                 "enum": [
@@ -22565,7 +22506,7 @@
                 "type": "string"
               },
               "lastErrorCode": {
-                "description": "Stable public transfer error code. `volume_transfer.completion_missing` is produced only by server-side reconciliation when a transfer Job ended without a confirmed callback; Jobs cannot submit that code through VolumeTransferFailInput.",
+                "description": "Stable public transfer error code. Raw runtime diagnostics are never returned.",
                 "type": "string"
               },
               "logicalBytes": {
@@ -22603,9 +22544,9 @@
               "state": {
                 "enum": [
                   "created",
-                  "uploading",
-                  "queued",
-                  "running",
+                  "preparing",
+                  "ready",
+                  "streaming",
                   "succeeded",
                   "failed",
                   "cancelled",
@@ -22621,11 +22562,6 @@
               "updatedAt": {
                 "format": "date-time",
                 "type": "string"
-              },
-              "uploadOffset": {
-                "format": "int64",
-                "minimum": 0,
-                "type": "integer"
               }
             },
             "required": [
@@ -22640,7 +22576,6 @@
               "transferredBytes",
               "logicalBytes",
               "processedFiles",
-              "chunkSize",
               "sha256",
               "dataSHA256",
               "actorId",
@@ -23453,13 +23388,6 @@
               "actorId": {
                 "type": "string"
               },
-              "chunkSize": {
-                "description": "Server-selected required multipart size. It is at least 64 MiB and grows in MiB steps so a transfer needs no more than 10,000 S3 parts; only the final import part may be smaller.",
-                "format": "int64",
-                "maximum": 5368709120,
-                "minimum": 67108864,
-                "type": "integer"
-              },
               "consistencyMode": {
                 "enum": [
                   "snapshot",
@@ -23508,7 +23436,7 @@
                 "type": "string"
               },
               "lastErrorCode": {
-                "description": "Stable public transfer error code. `volume_transfer.completion_missing` is produced only by server-side reconciliation when a transfer Job ended without a confirmed callback; Jobs cannot submit that code through VolumeTransferFailInput.",
+                "description": "Stable public transfer error code. Raw runtime diagnostics are never returned.",
                 "type": "string"
               },
               "logicalBytes": {
@@ -23546,9 +23474,9 @@
               "state": {
                 "enum": [
                   "created",
-                  "uploading",
-                  "queued",
-                  "running",
+                  "preparing",
+                  "ready",
+                  "streaming",
                   "succeeded",
                   "failed",
                   "cancelled",
@@ -23564,11 +23492,6 @@
               "updatedAt": {
                 "format": "date-time",
                 "type": "string"
-              },
-              "uploadOffset": {
-                "format": "int64",
-                "minimum": 0,
-                "type": "integer"
               }
             },
             "required": [
@@ -23583,7 +23506,6 @@
               "transferredBytes",
               "logicalBytes",
               "processedFiles",
-              "chunkSize",
               "sha256",
               "dataSHA256",
               "actorId",

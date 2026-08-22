@@ -17,7 +17,7 @@ describe('project volume capabilities', () => {
     expect(canRetryProjectVolume(capabilities, volume('provision'))).toBe(canWrite)
     expect(canRetryProjectVolume(capabilities, volume('expand'))).toBe(canWrite)
     expect(canRetryProjectVolume(capabilities, volume('delete'))).toBe(canDelete)
-    expect(canRetryVolumeTransfer(capabilities, transfer({ direction: 'import' }))).toBe(canImport)
+    expect(canRetryVolumeTransfer(capabilities, transfer({ direction: 'import' }))).toBe(false)
     expect(canRetryVolumeTransfer(capabilities, transfer({ direction: 'export' }))).toBe(canExport)
   })
 

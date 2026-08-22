@@ -40,33 +40,18 @@ type Repository interface {
 	LockVolumeTransfer(context.Context, string, string) (model.VolumeTransfer, error)
 	CreateVolumeTransfer(context.Context, *model.VolumeTransfer) error
 	TransitionVolumeTransfer(context.Context, string, string, string, string, string, string) (model.VolumeTransfer, error)
-	CompleteVolumeTransferUpload(context.Context, string, string, string, int64, string) (model.VolumeTransfer, error)
 	ClaimVolumeTransferExecution(context.Context, string, string, string, string, time.Time, time.Time) (model.VolumeTransfer, error)
 	RenewVolumeTransferExecutionLease(context.Context, string, string, string, int64, time.Time, time.Time) (model.VolumeTransfer, error)
-	PrepareVolumeTransferExecution(context.Context, string, string, string, string, int64, string, time.Time) (model.VolumeTransfer, error)
 	ConfirmVolumeTransferJobCreated(context.Context, string, string, int64) (model.VolumeTransfer, error)
-	ReportVolumeTransferCompletion(context.Context, string, string, TransferCompletion) (model.VolumeTransfer, error)
-	MarkVolumeTransferJobSucceeded(context.Context, string, string) (model.VolumeTransfer, error)
-	FinalizeVolumeTransferExecution(context.Context, string, string) (model.VolumeTransfer, error)
+	MarkVolumeTransferReady(context.Context, string, string, int64) (model.VolumeTransfer, error)
+	ClaimVolumeTransferStream(context.Context, string, string, string) (model.VolumeTransfer, error)
+	CompleteVolumeTransferStream(context.Context, string, string, TransferCompletion) (model.VolumeTransfer, error)
+	FailStaleVolumeTransfer(context.Context, string, string, time.Time, string, string) (model.VolumeTransfer, error)
 	MarkVolumeTransferExecutionCleanupCompleted(context.Context, string, string) (model.VolumeTransfer, error)
 	UpdateVolumeTransferProgress(context.Context, string, string, TransferProgress) (model.VolumeTransfer, error)
-	CreateVolumeTransferPart(context.Context, *model.VolumeTransferPart) (bool, model.VolumeTransferPart, error)
-	GetVolumeTransferPartByOffset(context.Context, string, int64) (model.VolumeTransferPart, error)
-	TakeOverVolumeTransferPart(context.Context, string, int, string, string, time.Time) (bool, model.VolumeTransferPart, error)
-	CompleteVolumeTransferPart(context.Context, string, int, string, string) (bool, model.VolumeTransferPart, error)
-	ExpireVolumeTransferPartLease(context.Context, string, int, string, time.Time) (bool, error)
-	ListVolumeTransferParts(context.Context, string, int, int) ([]model.VolumeTransferPart, int64, error)
-	VolumeTransferUploadOffset(context.Context, string) (int64, error)
-	NextVolumeTransferPartNumber(context.Context, string) (int, error)
 	ListStaleProjectVolumes(context.Context, time.Time, int) ([]model.ProjectVolume, error)
 	ListStaleVolumeTransfers(context.Context, time.Time, int) ([]model.VolumeTransfer, error)
-	ListExpiredVolumeTransferObjects(context.Context, time.Time, int) ([]model.VolumeTransfer, error)
-	TransferVolumeTransferObjectOwnership(context.Context, string, string, time.Time) (bool, error)
-	ClaimVolumeTransferObjectCleanup(context.Context, string, string, string, time.Time, time.Time) (bool, model.VolumeTransfer, error)
-	RenewVolumeTransferObjectCleanup(context.Context, string, string, string, time.Time, time.Time) (bool, model.VolumeTransfer, error)
-	CompleteVolumeTransferObjectCleanup(context.Context, string, string, string, time.Time) (bool, model.VolumeTransfer, error)
-	ReleaseVolumeTransferObjectCleanup(context.Context, string, string, string, time.Time) (bool, error)
-	MarkVolumeTransferObjectDeleted(context.Context, string, string, time.Time) (bool, error)
+	ListExpiredVolumeTransfers(context.Context, time.Time, int) ([]model.VolumeTransfer, error)
 }
 
 type GormRepository struct {
@@ -486,7 +471,7 @@ func (repository *GormRepository) TransitionVolumeTransfer(ctx context.Context, 
 		"last_error_message": errorMessage,
 		"updated_at":         time.Now().UTC(),
 	}
-	if to == model.VolumeTransferStateRunning {
+	if to == model.VolumeTransferStateStreaming {
 		updates["started_at"] = time.Now().UTC()
 	}
 	if IsVolumeTransferTerminal(to) {
@@ -500,26 +485,6 @@ func (repository *GormRepository) TransitionVolumeTransfer(ctx context.Context, 
 	}
 	if result.RowsAffected != 1 {
 		return model.VolumeTransfer{}, newDomainError(CodeTransferStateConflict, "volume transfer state changed")
-	}
-	return repository.GetVolumeTransfer(ctx, projectID, transferID)
-}
-
-func (repository *GormRepository) CompleteVolumeTransferUpload(ctx context.Context, projectID, transferID, from string, expectedBytes int64, sha256 string) (model.VolumeTransfer, error) {
-	now := time.Now().UTC()
-	result := repository.db.WithContext(ctx).Model(&model.VolumeTransfer{}).
-		Where("project_id = ? AND id = ? AND state = ? AND expected_bytes = ? AND (sha256 = '' OR sha256 = ?)", projectID, transferID, from, expectedBytes, sha256).
-		Updates(map[string]any{
-			"state":               model.VolumeTransferStateQueued,
-			"transferred_bytes":   expectedBytes,
-			"sha256":              sha256,
-			"multipart_upload_id": "",
-			"updated_at":          now,
-		})
-	if result.Error != nil {
-		return model.VolumeTransfer{}, result.Error
-	}
-	if result.RowsAffected != 1 {
-		return model.VolumeTransfer{}, newDomainError(CodeTransferStateConflict, "volume transfer upload state changed")
 	}
 	return repository.GetVolumeTransfer(ctx, projectID, transferID)
 }
@@ -540,52 +505,22 @@ func (repository *GormRepository) ClaimVolumeTransferExecution(ctx context.Conte
 		return model.VolumeTransfer{}, result.Error
 	}
 	if result.RowsAffected != 1 {
-		return model.VolumeTransfer{}, newDomainError(CodeTransferStateConflict, "volume transfer execution lease is held")
+		return model.VolumeTransfer{}, newDomainError(CodeTransferStateConflict, "volume transfer preparation lease is held")
 	}
 	return repository.GetVolumeTransfer(ctx, projectID, transferID)
 }
 
 func (repository *GormRepository) RenewVolumeTransferExecutionLease(ctx context.Context, projectID, transferID, leaseOwner string, generation int64, renewedAt, leaseExpiresAt time.Time) (model.VolumeTransfer, error) {
 	result := repository.db.WithContext(ctx).Model(&model.VolumeTransfer{}).
-		Where(`project_id = ? AND id = ? AND state IN ? AND execution_generation = ?
-			AND creation_lease_owner = ? AND creation_lease_expires_at > ?`,
-			projectID, transferID, []string{model.VolumeTransferStateQueued, model.VolumeTransferStateRunning}, generation, leaseOwner, renewedAt.UTC()).
-		Updates(map[string]any{
-			"creation_lease_expires_at": leaseExpiresAt.UTC(),
-			"updated_at":                renewedAt.UTC(),
-		})
-	if result.Error != nil {
-		return model.VolumeTransfer{}, result.Error
-	}
-	if result.RowsAffected != 1 {
-		return model.VolumeTransfer{}, newDomainError(CodeTransferStateConflict, "volume transfer execution lease changed")
-	}
-	return repository.GetVolumeTransfer(ctx, projectID, transferID)
-}
-
-func (repository *GormRepository) PrepareVolumeTransferExecution(ctx context.Context, projectID, transferID, expectedState, leaseOwner string, generation int64, tokenHash string, expiresAt time.Time) (model.VolumeTransfer, error) {
-	now := time.Now().UTC()
-	updates := map[string]any{
-		"state":                     model.VolumeTransferStateRunning,
-		"callback_token_hash":       tokenHash,
-		"callback_token_expires_at": expiresAt.UTC(),
-		"completion_reported_at":    nil,
-		"job_succeeded_at":          nil,
-		"updated_at":                now,
-	}
-	if expectedState == model.VolumeTransferStateQueued {
-		updates["started_at"] = now
-	}
-	result := repository.db.WithContext(ctx).Model(&model.VolumeTransfer{}).
 		Where(`project_id = ? AND id = ? AND state = ? AND execution_generation = ?
 			AND creation_lease_owner = ? AND creation_lease_expires_at > ?`,
-			projectID, transferID, expectedState, generation, leaseOwner, now).
-		Updates(updates)
+			projectID, transferID, model.VolumeTransferStatePreparing, generation, leaseOwner, renewedAt.UTC()).
+		Updates(map[string]any{"creation_lease_expires_at": leaseExpiresAt.UTC(), "updated_at": renewedAt.UTC()})
 	if result.Error != nil {
 		return model.VolumeTransfer{}, result.Error
 	}
 	if result.RowsAffected != 1 {
-		return model.VolumeTransfer{}, newDomainError(CodeTransferStateConflict, "volume transfer execution state changed")
+		return model.VolumeTransfer{}, newDomainError(CodeTransferStateConflict, "volume transfer preparation lease changed")
 	}
 	return repository.GetVolumeTransfer(ctx, projectID, transferID)
 }
@@ -593,76 +528,82 @@ func (repository *GormRepository) PrepareVolumeTransferExecution(ctx context.Con
 func (repository *GormRepository) ConfirmVolumeTransferJobCreated(ctx context.Context, projectID, transferID string, generation int64) (model.VolumeTransfer, error) {
 	now := time.Now().UTC()
 	result := repository.db.WithContext(ctx).Model(&model.VolumeTransfer{}).
-		Where("project_id = ? AND id = ? AND state = ? AND execution_generation = ? AND job_created_at IS NULL",
-			projectID, transferID, model.VolumeTransferStateRunning, generation).
+		Where("project_id = ? AND id = ? AND state = ? AND execution_generation = ?", projectID, transferID, model.VolumeTransferStatePreparing, generation).
+		Updates(map[string]any{"job_created_at": now, "updated_at": now})
+	if result.Error != nil {
+		return model.VolumeTransfer{}, result.Error
+	}
+	if result.RowsAffected != 1 {
+		return model.VolumeTransfer{}, newDomainError(CodeTransferStateConflict, "volume transfer runtime identity changed")
+	}
+	return repository.GetVolumeTransfer(ctx, projectID, transferID)
+}
+
+func (repository *GormRepository) MarkVolumeTransferReady(ctx context.Context, projectID, transferID string, generation int64) (model.VolumeTransfer, error) {
+	now := time.Now().UTC()
+	result := repository.db.WithContext(ctx).Model(&model.VolumeTransfer{}).
+		Where("project_id = ? AND id = ? AND state = ? AND execution_generation = ? AND job_created_at IS NOT NULL", projectID, transferID, model.VolumeTransferStatePreparing, generation).
 		Updates(map[string]any{
-			"job_created_at":            now,
-			"creation_lease_owner":      "",
-			"creation_lease_expires_at": nil,
-			"updated_at":                now,
+			"state": model.VolumeTransferStateReady, "phase": "ready",
+			"creation_lease_owner": "", "creation_lease_expires_at": nil, "updated_at": now,
 		})
 	if result.Error != nil {
 		return model.VolumeTransfer{}, result.Error
 	}
 	if result.RowsAffected != 1 {
-		return model.VolumeTransfer{}, newDomainError(CodeTransferStateConflict, "volume transfer Job creation state changed")
+		return model.VolumeTransfer{}, newDomainError(CodeTransferStateConflict, "volume transfer is not ready to stream")
 	}
 	return repository.GetVolumeTransfer(ctx, projectID, transferID)
 }
 
-func (repository *GormRepository) ReportVolumeTransferCompletion(ctx context.Context, projectID, transferID string, completion TransferCompletion) (model.VolumeTransfer, error) {
+func (repository *GormRepository) ClaimVolumeTransferStream(ctx context.Context, projectID, transferID, direction string) (model.VolumeTransfer, error) {
 	now := time.Now().UTC()
 	result := repository.db.WithContext(ctx).Model(&model.VolumeTransfer{}).
-		Where("project_id = ? AND id = ? AND state = ? AND completion_reported_at IS NULL", projectID, transferID, completion.ExpectedState).
-		Updates(map[string]any{
-			"expected_bytes":         completion.TransferredBytes,
-			"transferred_bytes":      completion.TransferredBytes,
-			"sha256":                 completion.SHA256,
-			"logical_bytes":          completion.LogicalBytes,
-			"data_sha256":            completion.DataSHA256,
-			"multipart_upload_id":    "",
-			"completion_reported_at": now,
-			"last_error_code":        "",
-			"last_error_message":     "",
-			"updated_at":             now,
-		})
+		Where("project_id = ? AND id = ? AND state = ? AND direction = ? AND expires_at > ?", projectID, transferID, model.VolumeTransferStateReady, direction, now).
+		Updates(map[string]any{"state": model.VolumeTransferStateStreaming, "phase": "streaming", "started_at": now, "updated_at": now})
 	if result.Error != nil {
 		return model.VolumeTransfer{}, result.Error
 	}
 	if result.RowsAffected != 1 {
-		return model.VolumeTransfer{}, newDomainError(CodeTransferStateConflict, "volume transfer completion report state changed")
+		return model.VolumeTransfer{}, newDomainError(CodeTransferStateConflict, "volume transfer stream is already claimed")
 	}
 	return repository.GetVolumeTransfer(ctx, projectID, transferID)
 }
 
-func (repository *GormRepository) MarkVolumeTransferJobSucceeded(ctx context.Context, projectID, transferID string) (model.VolumeTransfer, error) {
+func (repository *GormRepository) CompleteVolumeTransferStream(ctx context.Context, projectID, transferID string, completion TransferCompletion) (model.VolumeTransfer, error) {
 	now := time.Now().UTC()
 	result := repository.db.WithContext(ctx).Model(&model.VolumeTransfer{}).
-		Where("project_id = ? AND id = ? AND state = ? AND job_succeeded_at IS NULL", projectID, transferID, model.VolumeTransferStateRunning).
-		Updates(map[string]any{"job_succeeded_at": now, "updated_at": now})
-	if result.Error != nil {
-		return model.VolumeTransfer{}, result.Error
-	}
-	if result.RowsAffected != 1 {
-		return model.VolumeTransfer{}, newDomainError(CodeTransferStateConflict, "volume transfer job success state changed")
-	}
-	return repository.GetVolumeTransfer(ctx, projectID, transferID)
-}
-
-func (repository *GormRepository) FinalizeVolumeTransferExecution(ctx context.Context, projectID, transferID string) (model.VolumeTransfer, error) {
-	now := time.Now().UTC()
-	result := repository.db.WithContext(ctx).Model(&model.VolumeTransfer{}).
-		Where("project_id = ? AND id = ? AND state = ? AND completion_reported_at IS NOT NULL AND job_succeeded_at IS NOT NULL",
-			projectID, transferID, model.VolumeTransferStateRunning).
+		Where("project_id = ? AND id = ? AND state = ?", projectID, transferID, model.VolumeTransferStateStreaming).
 		Updates(map[string]any{
-			"state": model.VolumeTransferStateSucceeded, "finished_at": now,
+			"state": model.VolumeTransferStateSucceeded, "phase": "completed",
+			"transferred_bytes": completion.TransferredBytes, "processed_files": completion.ProcessedFiles,
+			"sha256": completion.SHA256, "logical_bytes": completion.LogicalBytes,
+			"data_sha256": completion.DataSHA256, "finished_at": now,
 			"last_error_code": "", "last_error_message": "", "updated_at": now,
 		})
 	if result.Error != nil {
 		return model.VolumeTransfer{}, result.Error
 	}
 	if result.RowsAffected != 1 {
-		return model.VolumeTransfer{}, newDomainError(CodeTransferStateConflict, "volume transfer finalization state changed")
+		return model.VolumeTransfer{}, newDomainError(CodeTransferStateConflict, "volume transfer stream state changed")
+	}
+	return repository.GetVolumeTransfer(ctx, projectID, transferID)
+}
+
+func (repository *GormRepository) FailStaleVolumeTransfer(ctx context.Context, projectID, transferID string, cutoff time.Time, errorCode, internalMessage string) (model.VolumeTransfer, error) {
+	now := time.Now().UTC()
+	result := repository.db.WithContext(ctx).Model(&model.VolumeTransfer{}).
+		Where("project_id = ? AND id = ? AND state = ? AND updated_at < ?", projectID, transferID, model.VolumeTransferStateStreaming, cutoff.UTC()).
+		Updates(map[string]any{
+			"state": model.VolumeTransferStateFailed, "phase": "failed",
+			"last_error_code": errorCode, "last_error_message": internalMessage,
+			"finished_at": now, "updated_at": now,
+		})
+	if result.Error != nil {
+		return model.VolumeTransfer{}, result.Error
+	}
+	if result.RowsAffected != 1 {
+		return model.VolumeTransfer{}, newDomainError(CodeTransferStateConflict, "volume transfer heartbeat or state changed")
 	}
 	return repository.GetVolumeTransfer(ctx, projectID, transferID)
 }
@@ -671,30 +612,23 @@ func (repository *GormRepository) MarkVolumeTransferExecutionCleanupCompleted(ct
 	now := time.Now().UTC()
 	result := repository.db.WithContext(ctx).Model(&model.VolumeTransfer{}).
 		Where("project_id = ? AND id = ? AND state IN ? AND execution_cleanup_completed_at IS NULL", projectID, transferID, []string{
-			model.VolumeTransferStateSucceeded,
-			model.VolumeTransferStateFailed,
-			model.VolumeTransferStateCancelled,
-			model.VolumeTransferStateExpired,
+			model.VolumeTransferStateSucceeded, model.VolumeTransferStateFailed,
+			model.VolumeTransferStateCancelled, model.VolumeTransferStateExpired,
 		}).Updates(map[string]any{"execution_cleanup_completed_at": now, "updated_at": now})
 	if result.Error != nil {
 		return model.VolumeTransfer{}, result.Error
 	}
 	if result.RowsAffected != 1 {
-		return model.VolumeTransfer{}, newDomainError(CodeTransferStateConflict, "volume transfer execution cleanup state changed")
+		return model.VolumeTransfer{}, newDomainError(CodeTransferStateConflict, "volume transfer cleanup state changed")
 	}
 	return repository.GetVolumeTransfer(ctx, projectID, transferID)
 }
 
 func (repository *GormRepository) UpdateVolumeTransferProgress(ctx context.Context, projectID, transferID string, progress TransferProgress) (model.VolumeTransfer, error) {
 	result := repository.db.WithContext(ctx).Model(&model.VolumeTransfer{}).
-		Where("project_id = ? AND id = ? AND state IN ? AND transferred_bytes <= ? AND processed_files <= ?", projectID, transferID,
-			[]string{model.VolumeTransferStateUploading, model.VolumeTransferStateRunning}, progress.TransferredBytes, progress.ProcessedFiles).
-		Updates(map[string]any{
-			"transferred_bytes": progress.TransferredBytes,
-			"processed_files":   progress.ProcessedFiles,
-			"phase":             progress.Phase,
-			"updated_at":        time.Now().UTC(),
-		})
+		Where("project_id = ? AND id = ? AND state = ? AND transferred_bytes <= ? AND processed_files <= ?", projectID, transferID,
+			model.VolumeTransferStateStreaming, progress.TransferredBytes, progress.ProcessedFiles).
+		Updates(map[string]any{"transferred_bytes": progress.TransferredBytes, "processed_files": progress.ProcessedFiles, "phase": progress.Phase, "updated_at": time.Now().UTC()})
 	if result.Error != nil {
 		return model.VolumeTransfer{}, result.Error
 	}
@@ -702,102 +636,6 @@ func (repository *GormRepository) UpdateVolumeTransferProgress(ctx context.Conte
 		return model.VolumeTransfer{}, newDomainError(CodeTransferProgressInvalid, "volume transfer progress cannot move backwards")
 	}
 	return repository.GetVolumeTransfer(ctx, projectID, transferID)
-}
-
-func (repository *GormRepository) CreateVolumeTransferPart(ctx context.Context, part *model.VolumeTransferPart) (bool, model.VolumeTransferPart, error) {
-	result := repository.db.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(part)
-	if result.Error != nil {
-		return false, model.VolumeTransferPart{}, result.Error
-	}
-	if result.RowsAffected == 1 {
-		return true, *part, nil
-	}
-	var existing model.VolumeTransferPart
-	err := repository.db.WithContext(ctx).
-		Where("transfer_id = ? AND (part_number = ? OR byte_offset = ?)", part.TransferID, part.PartNumber, part.Offset).
-		First(&existing).Error
-	return false, existing, err
-}
-
-func (repository *GormRepository) GetVolumeTransferPartByOffset(ctx context.Context, transferID string, offset int64) (model.VolumeTransferPart, error) {
-	var part model.VolumeTransferPart
-	err := repository.db.WithContext(ctx).
-		Where("transfer_id = ? AND byte_offset = ?", transferID, offset).
-		First(&part).Error
-	return part, err
-}
-
-func (repository *GormRepository) TakeOverVolumeTransferPart(ctx context.Context, transferID string, partNumber int, expectedLeaseToken, leaseToken string, leaseExpiresAt time.Time) (bool, model.VolumeTransferPart, error) {
-	result := repository.db.WithContext(ctx).Model(&model.VolumeTransferPart{}).
-		Where("transfer_id = ? AND part_number = ? AND state = ? AND lease_token = ?", transferID, partNumber, model.VolumeTransferPartStateReserved, expectedLeaseToken).
-		Updates(map[string]any{
-			"lease_token":      leaseToken,
-			"lease_expires_at": leaseExpiresAt.UTC(),
-			"updated_at":       time.Now().UTC(),
-		})
-	if result.Error != nil {
-		return false, model.VolumeTransferPart{}, result.Error
-	}
-	if result.RowsAffected != 1 {
-		return false, model.VolumeTransferPart{}, nil
-	}
-	var stored model.VolumeTransferPart
-	err := repository.db.WithContext(ctx).Where("transfer_id = ? AND part_number = ?", transferID, partNumber).First(&stored).Error
-	return true, stored, err
-}
-
-func (repository *GormRepository) CompleteVolumeTransferPart(ctx context.Context, transferID string, partNumber int, leaseToken, etag string) (bool, model.VolumeTransferPart, error) {
-	result := repository.db.WithContext(ctx).Model(&model.VolumeTransferPart{}).
-		Where("transfer_id = ? AND part_number = ? AND state = ? AND lease_token = ?", transferID, partNumber, model.VolumeTransferPartStateReserved, leaseToken).
-		Updates(map[string]any{
-			"etag":             etag,
-			"state":            model.VolumeTransferPartStateCompleted,
-			"lease_token":      "",
-			"lease_expires_at": nil,
-			"updated_at":       time.Now().UTC(),
-		})
-	if result.Error != nil {
-		return false, model.VolumeTransferPart{}, result.Error
-	}
-	var stored model.VolumeTransferPart
-	err := repository.db.WithContext(ctx).Where("transfer_id = ? AND part_number = ?", transferID, partNumber).First(&stored).Error
-	return result.RowsAffected == 1, stored, err
-}
-
-func (repository *GormRepository) ExpireVolumeTransferPartLease(ctx context.Context, transferID string, partNumber int, leaseToken string, expiredAt time.Time) (bool, error) {
-	result := repository.db.WithContext(ctx).Model(&model.VolumeTransferPart{}).
-		Where("transfer_id = ? AND part_number = ? AND state = ? AND lease_token = ?", transferID, partNumber, model.VolumeTransferPartStateReserved, leaseToken).
-		Updates(map[string]any{"lease_expires_at": expiredAt.UTC(), "updated_at": time.Now().UTC()})
-	return result.RowsAffected == 1, result.Error
-}
-
-func (repository *GormRepository) ListVolumeTransferParts(ctx context.Context, transferID string, page, pageSize int) ([]model.VolumeTransferPart, int64, error) {
-	page, pageSize = normalizeRepositoryPage(page, pageSize)
-	query := repository.db.WithContext(ctx).Model(&model.VolumeTransferPart{}).
-		Where("transfer_id = ? AND state = ?", transferID, model.VolumeTransferPartStateCompleted)
-	var total int64
-	if err := query.Session(&gorm.Session{}).Count(&total).Error; err != nil {
-		return nil, 0, err
-	}
-	parts := make([]model.VolumeTransferPart, 0)
-	err := query.Order("part_number ASC").Limit(pageSize).Offset((page - 1) * pageSize).Find(&parts).Error
-	return parts, total, err
-}
-
-func (repository *GormRepository) VolumeTransferUploadOffset(ctx context.Context, transferID string) (int64, error) {
-	var result struct{ Offset int64 }
-	err := repository.db.WithContext(ctx).Model(&model.VolumeTransferPart{}).
-		Select(`COALESCE(MAX(byte_offset + size), 0) AS "offset"`).
-		Where("transfer_id = ? AND state = ?", transferID, model.VolumeTransferPartStateCompleted).Scan(&result).Error
-	return result.Offset, err
-}
-
-func (repository *GormRepository) NextVolumeTransferPartNumber(ctx context.Context, transferID string) (int, error) {
-	var result struct{ PartNumber int }
-	err := repository.db.WithContext(ctx).Model(&model.VolumeTransferPart{}).
-		Select("COALESCE(MAX(part_number), 0) + 1 AS part_number").
-		Where("transfer_id = ?", transferID).Scan(&result).Error
-	return result.PartNumber, err
 }
 
 func (repository *GormRepository) ListStaleProjectVolumes(ctx context.Context, cutoff time.Time, limit int) ([]model.ProjectVolume, error) {
@@ -813,149 +651,29 @@ func (repository *GormRepository) ListStaleProjectVolumes(ctx context.Context, c
 func (repository *GormRepository) ListStaleVolumeTransfers(ctx context.Context, cutoff time.Time, limit int) ([]model.VolumeTransfer, error) {
 	limit = normalizeMaintenanceLimit(limit)
 	items := make([]model.VolumeTransfer, 0)
-	// A cancellation is durable before its cleanup task is enqueued. Include
-	// cancelled transfers whose backing object has not been removed so the
-	// periodic reconciler repairs a transient queue failure without requiring
-	// another user request. An import remains eligible until its provisional
-	// ProjectVolume is also soft-deleted; this closes the narrow crash window
-	// between object cleanup and domain-asset cleanup. Completed cleanup is
-	// excluded to avoid requeueing a terminal transfer forever.
 	err := repository.db.WithContext(ctx).
-		Where(`updated_at < ? AND (state IN ? OR (state IN ? AND execution_cleanup_completed_at IS NULL) OR (state = ? AND (
-			(object_owned = true AND object_deleted_at IS NULL) OR (direction = ? AND EXISTS (
-				SELECT 1 FROM project_volumes
-				WHERE project_volumes.id = volume_transfers.project_volume_id
-				  AND project_volumes.deleted_at IS NULL
-			))
-		)))`, cutoff.UTC(), []string{
-			model.VolumeTransferStateQueued,
-			model.VolumeTransferStateRunning,
+		Where(`updated_at < ? AND (state IN ? OR (state IN ? AND execution_cleanup_completed_at IS NULL))`, cutoff.UTC(), []string{
+			model.VolumeTransferStatePreparing,
+			model.VolumeTransferStateReady,
+			model.VolumeTransferStateStreaming,
 		}, []string{
 			model.VolumeTransferStateSucceeded,
 			model.VolumeTransferStateFailed,
 			model.VolumeTransferStateCancelled,
 			model.VolumeTransferStateExpired,
-		}, model.VolumeTransferStateCancelled, model.VolumeTransferDirectionImport).
+		}).
 		Order("updated_at ASC, id ASC").Limit(limit).Find(&items).Error
 	return items, err
 }
 
-func (repository *GormRepository) ListExpiredVolumeTransferObjects(ctx context.Context, now time.Time, limit int) ([]model.VolumeTransfer, error) {
+func (repository *GormRepository) ListExpiredVolumeTransfers(ctx context.Context, now time.Time, limit int) ([]model.VolumeTransfer, error) {
 	limit = normalizeMaintenanceLimit(limit)
 	items := make([]model.VolumeTransfer, 0)
 	err := repository.db.WithContext(ctx).
-		Where(`expires_at <= ? AND object_owned = true AND object_deleted_at IS NULL AND (
-			state IN ? OR (state IN ? AND execution_cleanup_completed_at IS NOT NULL)
-		)`, now.UTC(), []string{
-			model.VolumeTransferStateCreated,
-			model.VolumeTransferStateUploading,
-		}, []string{
-			model.VolumeTransferStateSucceeded,
-			model.VolumeTransferStateFailed,
-			model.VolumeTransferStateCancelled,
-			model.VolumeTransferStateExpired,
+		Where("expires_at <= ? AND state IN ?", now.UTC(), []string{
+			model.VolumeTransferStateCreated, model.VolumeTransferStatePreparing, model.VolumeTransferStateReady,
 		}).Order("expires_at ASC, id ASC").Limit(limit).Find(&items).Error
 	return items, err
-}
-
-func (repository *GormRepository) TransferVolumeTransferObjectOwnership(ctx context.Context, projectID, transferID string, transferredAt time.Time) (bool, error) {
-	result := repository.db.WithContext(ctx).Model(&model.VolumeTransfer{}).
-		Where(`project_id = ? AND id = ? AND object_owned = true AND object_deleted_at IS NULL
-			AND object_cleanup_started_at IS NULL`, projectID, transferID).
-		Updates(map[string]any{
-			"object_owned":                    false,
-			"object_cleanup_lease_token":      "",
-			"object_cleanup_lease_expires_at": nil,
-			"updated_at":                      transferredAt.UTC(),
-		})
-	return result.RowsAffected == 1, result.Error
-}
-
-func (repository *GormRepository) ClaimVolumeTransferObjectCleanup(ctx context.Context, projectID, transferID, leaseToken string, claimedAt, leaseExpiresAt time.Time) (bool, model.VolumeTransfer, error) {
-	result := repository.db.WithContext(ctx).Model(&model.VolumeTransfer{}).
-		Where(`project_id = ? AND id = ? AND object_owned = true AND object_deleted_at IS NULL
-			AND execution_cleanup_completed_at IS NOT NULL AND state IN ?
-			AND (object_cleanup_lease_expires_at IS NULL OR object_cleanup_lease_expires_at <= ?)`,
-			projectID, transferID, []string{
-				model.VolumeTransferStateSucceeded,
-				model.VolumeTransferStateFailed,
-				model.VolumeTransferStateCancelled,
-				model.VolumeTransferStateExpired,
-			}, claimedAt.UTC()).
-		Updates(map[string]any{
-			"object_cleanup_started_at":       gorm.Expr("COALESCE(object_cleanup_started_at, ?)", claimedAt.UTC()),
-			"object_cleanup_lease_token":      leaseToken,
-			"object_cleanup_lease_expires_at": leaseExpiresAt.UTC(),
-			"updated_at":                      claimedAt.UTC(),
-		})
-	if result.Error != nil || result.RowsAffected != 1 {
-		return false, model.VolumeTransfer{}, result.Error
-	}
-	transfer, err := repository.GetVolumeTransfer(ctx, projectID, transferID)
-	return err == nil, transfer, err
-}
-
-func (repository *GormRepository) RenewVolumeTransferObjectCleanup(ctx context.Context, projectID, transferID, leaseToken string, renewedAt, leaseExpiresAt time.Time) (bool, model.VolumeTransfer, error) {
-	result := repository.db.WithContext(ctx).Model(&model.VolumeTransfer{}).
-		Where(`project_id = ? AND id = ? AND object_owned = true AND object_deleted_at IS NULL
-			AND object_cleanup_lease_token = ? AND object_cleanup_lease_expires_at > ?`,
-			projectID, transferID, leaseToken, renewedAt.UTC()).
-		Updates(map[string]any{
-			"object_cleanup_lease_expires_at": leaseExpiresAt.UTC(),
-			"updated_at":                      renewedAt.UTC(),
-		})
-	if result.Error != nil || result.RowsAffected != 1 {
-		return false, model.VolumeTransfer{}, result.Error
-	}
-	transfer, err := repository.GetVolumeTransfer(ctx, projectID, transferID)
-	return err == nil, transfer, err
-}
-
-func (repository *GormRepository) CompleteVolumeTransferObjectCleanup(ctx context.Context, projectID, transferID, leaseToken string, deletedAt time.Time) (bool, model.VolumeTransfer, error) {
-	result := repository.db.WithContext(ctx).Model(&model.VolumeTransfer{}).
-		Where(`project_id = ? AND id = ? AND object_owned = true AND object_deleted_at IS NULL
-			AND object_cleanup_lease_token = ?`, projectID, transferID, leaseToken).
-		Updates(map[string]any{
-			"object_owned":                    false,
-			"object_deleted_at":               deletedAt.UTC(),
-			"object_cleanup_lease_token":      "",
-			"object_cleanup_lease_expires_at": nil,
-			"updated_at":                      deletedAt.UTC(),
-		})
-	if result.Error != nil || result.RowsAffected != 1 {
-		return false, model.VolumeTransfer{}, result.Error
-	}
-	transfer, err := repository.GetVolumeTransfer(ctx, projectID, transferID)
-	return err == nil, transfer, err
-}
-
-func (repository *GormRepository) ReleaseVolumeTransferObjectCleanup(ctx context.Context, projectID, transferID, leaseToken string, releasedAt time.Time) (bool, error) {
-	result := repository.db.WithContext(ctx).Model(&model.VolumeTransfer{}).
-		Where(`project_id = ? AND id = ? AND object_owned = true AND object_deleted_at IS NULL
-			AND object_cleanup_lease_token = ?`, projectID, transferID, leaseToken).
-		Updates(map[string]any{
-			"object_cleanup_lease_token":      "",
-			"object_cleanup_lease_expires_at": nil,
-			"updated_at":                      releasedAt.UTC(),
-		})
-	return result.RowsAffected == 1, result.Error
-}
-
-func (repository *GormRepository) MarkVolumeTransferObjectDeleted(ctx context.Context, projectID, transferID string, deletedAt time.Time) (bool, error) {
-	result := repository.db.WithContext(ctx).Model(&model.VolumeTransfer{}).
-		Where("project_id = ? AND id = ? AND object_owned = true AND object_deleted_at IS NULL AND execution_cleanup_completed_at IS NOT NULL AND state IN ?", projectID, transferID, []string{
-			model.VolumeTransferStateSucceeded,
-			model.VolumeTransferStateFailed,
-			model.VolumeTransferStateCancelled,
-			model.VolumeTransferStateExpired,
-		}).Updates(map[string]any{
-		"object_owned":                    false,
-		"object_deleted_at":               deletedAt.UTC(),
-		"object_cleanup_lease_token":      "",
-		"object_cleanup_lease_expires_at": nil,
-		"updated_at":                      deletedAt.UTC(),
-	})
-	return result.RowsAffected == 1, result.Error
 }
 
 var projectVolumeSortColumns = map[string]string{
@@ -975,17 +693,17 @@ var volumeTransferSortColumns = map[string]string{
 }
 
 func blockingVolumeTransferQuery(query *gorm.DB) *gorm.DB {
-	return query.Where("(state IN ? OR (state IN ? AND execution_cleanup_completed_at IS NULL) OR (state = ? AND object_owned = true AND object_deleted_at IS NULL))", []string{
+	return query.Where("state IN ? OR (state IN ? AND execution_cleanup_completed_at IS NULL)", []string{
 		model.VolumeTransferStateCreated,
-		model.VolumeTransferStateUploading,
-		model.VolumeTransferStateQueued,
-		model.VolumeTransferStateRunning,
+		model.VolumeTransferStatePreparing,
+		model.VolumeTransferStateReady,
+		model.VolumeTransferStateStreaming,
 	}, []string{
 		model.VolumeTransferStateSucceeded,
 		model.VolumeTransferStateFailed,
 		model.VolumeTransferStateCancelled,
 		model.VolumeTransferStateExpired,
-	}, model.VolumeTransferStateCancelled)
+	})
 }
 
 func escapeLike(value string) string {

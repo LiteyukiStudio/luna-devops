@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
-import { startNativeVolumeTransferDownload, verifyVolumeTransferDownload } from './volume-transfer-download'
+import { startNativeVolumeTransferDownload } from './volume-transfer-download'
 
 describe('native volume transfer download', () => {
-  it('exchanges the ticket with HEAD before starting a cookie-authenticated native download', async () => {
+  it('places the one-time ticket on the native download URL without a preflight request', async () => {
     const calls: string[] = []
     const triggerDownload = vi.fn()
 
@@ -16,12 +16,10 @@ describe('native volume transfer download', () => {
         calls.push('authorize')
         return { ticket: 'ticket_1' }
       },
-      exchangeSession: async (_projectId, _transferId, resource, ticket) => {
-        calls.push(`head:${resource}:${ticket}`)
-      },
-      resourceURL: () => {
+      resourceURL: (_projectId, _transferId, resource, ticket) => {
+        calls.push(`url:${resource}:${ticket}`)
         calls.push('url')
-        return '/api/v1/projects/prj_1/volume-transfers/vtx_1/content'
+        return `/api/v1/projects/prj_1/volume-transfers/vtx_1/content?ticket=${ticket}`
       },
       triggerDownload: (url, filename) => {
         calls.push('download')
@@ -29,15 +27,14 @@ describe('native volume transfer download', () => {
       },
     })
 
-    expect(calls).toEqual(['authorize', 'head:content:ticket_1', 'url', 'download'])
+    expect(calls).toEqual(['authorize', 'url:content:ticket_1', 'url', 'download'])
     expect(triggerDownload).toHaveBeenCalledWith(
-      '/api/v1/projects/prj_1/volume-transfers/vtx_1/content',
+      '/api/v1/projects/prj_1/volume-transfers/vtx_1/content?ticket=ticket_1',
       'database.raw.zst',
     )
   })
 
-  it('uses the same ticket-session sequence for a block manifest', async () => {
-    const exchangeSession = vi.fn().mockResolvedValue(undefined)
+  it('uses the same single-request authorization for a block manifest', async () => {
     const triggerDownload = vi.fn()
 
     await startNativeVolumeTransferDownload({
@@ -47,27 +44,13 @@ describe('native volume transfer download', () => {
       transferId: 'vtx_1',
     }, {
       authorize: vi.fn().mockResolvedValue({ ticket: 'ticket_2' }),
-      exchangeSession,
-      resourceURL: () => '/api/v1/projects/prj_1/volume-transfers/vtx_1/manifest',
+      resourceURL: (_projectId, _transferId, _resource, ticket) => `/api/v1/projects/prj_1/volume-transfers/vtx_1/manifest?ticket=${ticket}`,
       triggerDownload,
     })
 
-    expect(exchangeSession).toHaveBeenCalledWith('prj_1', 'vtx_1', 'manifest', 'ticket_2')
     expect(triggerDownload).toHaveBeenCalledWith(
-      '/api/v1/projects/prj_1/volume-transfers/vtx_1/manifest',
+      '/api/v1/projects/prj_1/volume-transfers/vtx_1/manifest?ticket=ticket_2',
       'database.raw.zst.manifest.json',
     )
-  })
-
-  it('verifies the completed picker download against authoritative size and checksum', async () => {
-    const content = new Blob(['abc'])
-    await expect(verifyVolumeTransferDownload(
-      content,
-      content.size,
-      'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad',
-    )).resolves.toMatchObject({ status: 'verified', bytes: 3 })
-    await expect(verifyVolumeTransferDownload(content, 4, 'a'.repeat(64))).resolves.toMatchObject({ status: 'length_mismatch' })
-    await expect(verifyVolumeTransferDownload(content, 3, 'a'.repeat(64))).resolves.toMatchObject({ status: 'checksum_mismatch' })
-    await expect(verifyVolumeTransferDownload(content, 3, '')).resolves.toEqual({ status: 'metadata_invalid' })
   })
 })

@@ -27,7 +27,7 @@ func TestVolumeTransferUsageSkipsNonTerminalOrEmptyTransfers(t *testing.T) {
 	t.Parallel()
 	service := Service{}
 	for _, transfer := range []model.VolumeTransfer{
-		{ID: "vtx_running", ProjectID: "prj_demo", State: model.VolumeTransferStateRunning, TransferredBytes: 1024},
+		{ID: "vtx_streaming", ProjectID: "prj_demo", State: model.VolumeTransferStateStreaming, TransferredBytes: 1024},
 		{ID: "vtx_empty", ProjectID: "prj_demo", State: model.VolumeTransferStateSucceeded},
 		{ID: "", ProjectID: "prj_demo", State: model.VolumeTransferStateSucceeded, TransferredBytes: 1024},
 	} {
@@ -70,7 +70,7 @@ func TestSettleVolumeTransferUsageIsCrossReplicaIdempotent(t *testing.T) {
 		ID: "vtx_billing_once", ProjectID: project.ID, ProjectVolumeID: "pvol_billing",
 		Direction: model.VolumeTransferDirectionImport, Format: model.VolumeTransferFormatTarGZ,
 		State: model.VolumeTransferStateSucceeded, TransferredBytes: 2 * 1024 * 1024 * 1024,
-		ActorID: "usr_transfer_actor", ObjectKey: "must-not-enter-billing-metadata", SourceFilename: "private.tar.gz",
+		ActorID: "usr_transfer_actor", SourceFilename: "private.tar.gz",
 		CreatedAt: createdAt, FinishedAt: &finishedAt,
 	}
 

@@ -1,23 +1,13 @@
 [
   {
     "type": "file",
-    "name": "configuration",
-    "label": "环境变量"
-  },
-  {
-    "type": "file",
     "name": "compatibility",
     "label": "兼容范围"
   },
   {
     "type": "file",
     "name": "observability",
-    "label": "可观测平台"
-  },
-  {
-    "type": "file",
-    "name": "volume-transfer",
-    "label": "数据卷传输"
+    "label": "可观测"
   },
   {
     "type": "file",

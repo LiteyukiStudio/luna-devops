@@ -1,60 +1,50 @@
-# External Component Compatibility Matrix
+# Compatibility
 
-Last updated: 2026-07-01.
+Updated: 2026-07-24.
 
-This page is based on the external APIs the platform actually calls. Use it before installation, upgrades, or troubleshooting to choose a practical version range. “Supported range” is what the current implementation prioritizes for validation, while “Recommended version” is the safer choice for a new deployment. For SaaS products such as GitHub.com and Docker Hub, the current public API is the compatibility boundary because there is no installable server version.
+The following versions are the current priority support and test ranges. Prefer a maintained stable release for new deployments and run the smoke tests at the end after upgrades.
 
-## Compatibility overview
+## Source and registries
 
-| External component | Interface or capability used | Supported range | Recommended version | Notes |
-| --- | --- | --- | --- | --- |
-| GitHub.com / GitHub Enterprise Server | REST API, OAuth App, Webhooks, repository/branch/content reads; requests send `X-GitHub-Api-Version: 2022-11-28` | Current GitHub.com; GHES `3.17 ~ 3.21` as of the 2026-07-01 support window | GitHub.com or GHES `>= 3.18` | Older GHES versions may still expose the endpoints but be out of security support. GHES 3.17 closes down on 2026-08-25. Validate OAuth callback, webhook creation, `/user/repos`, and contents API after upgrades. |
-| Gitea | `/api/v1` REST API, OAuth2, repository search, branches, contents, repository webhooks | `1.20.x ~ 1.25.x` | `1.25.x` or current stable | Gitea's REST API is released with the instance. Check the instance Swagger/OpenAPI page before connecting older private deployments. |
-| GitLab | Not available | Not supported | Not applicable | Use GitHub or Gitea. |
-| Docker Hub | Docker Hub API v2 repository search and tag listing | Current Docker Hub public API v2 | Current Docker Hub SaaS | Docker Hub is SaaS and has no installable version range. Watch for rate limits and network reachability. |
-| Harbor | Harbor `/api/v2.0/search`, `/api/v2.0/projects/{project}/repositories/{repo}/artifacts`, with Distribution API fallback | `>= 2.0`, validate primarily with `2.10.x ~ 2.14.x` | `2.14.x` or current maintained release | Harbor 2.x keeps the `/api/v2.0` path. Keep Basic/Auth Token compatibility in smoke tests. |
-| Generic OCI/Docker Registry | Docker Registry HTTP API V2: `/v2/`, `/_catalog`, `/tags/list` | Distribution API V2 compatible or OCI Distribution Spec `1.0 ~ 1.1` | Registry that passes OCI Distribution Spec 1.1 compatibility | The platform only depends on basic catalog/tag APIs. Some registries disable catalog listing; manual image input still works. |
-| Kubernetes / K3s | Workloads, Jobs, logs, exec, events, and runtime status | Kubernetes `1.34 ~ 1.36`; lower versions are not guaranteed | Kubernetes/K3s `1.34 ~ 1.36` | For K3s, use its embedded Kubernetes minor version. |
-| Metrics Server | `metrics.k8s.io/v1beta1` Pod metrics | Metrics Server compatible with the Kubernetes version | Distribution-recommended Metrics Server version | Missing metrics degrade live resource metrics only; build and release flows still work. |
-| Kubernetes Gateway API | GatewayClass, Gateway, HTTPRoute, and route filters | Gateway API `1.0.0 ~ 1.6.x` | `v1.6.x` CRDs | Install the CRDs and a compatible Gateway controller. |
-| Traefik Gateway API Provider | Kubernetes Gateway provider and Gateway/HTTPRoute reconciliation | Traefik `3.x` | Latest stable Traefik `3.x` | Enable `providers.kubernetesGateway` and install Gateway API CRDs. Traefik v2 Gateway API support is not a current target. |
-| cert-manager | `cert-manager.io/v1` Certificate | cert-manager `>= 1.0`; choose a release supported by the current Kubernetes version | Current maintained cert-manager release | Runtime clusters support manual TLS Secret `certificateRefs`; HTTP Challenge and DNS-01 wildcard modes can create Certificates and attach their Secrets to the Gateway HTTPS listener. DNS provider credentials and solvers are owned by the Issuer/ClusterIssuer. |
-| OpenID Connect Provider | OIDC Core 1.0, Discovery 1.0, OAuth2 Authorization Code, ID Token verification | Provider supporting OIDC Core 1.0 + Discovery 1.0 | Standard implementations such as Logto, Keycloak, Auth0, or GHES OIDC | The `issuer` must be reachable by the API service. The callback URL must match the one shown by the platform. |
-| PostgreSQL | PostgreSQL wire protocol, GORM, golang-migrate | PostgreSQL `14 ~ 18` | `17`, matching compose/Helm defaults | SQLite is not supported. Production deployments should configure backups and connection limits. |
-| Redis | Single Redis endpoint, go-redis, Asynq queues | Redis `7.x ~ 8.x` | `8`, matching compose/Helm defaults | The current configuration model uses one Redis address. Redis Cluster/Sentinel are not first-phase targets. |
-| BuildKit | `moby/buildkit:*rootless`, `buildctl-daemonless.sh`, `dockerfile.v0` frontend | Primarily validated with `v0.24.x-rootless`; replacing with `v0.20+ rootless` requires smoke tests | `moby/buildkit:v0.24.0-rootless` | Build Jobs use rootless BuildKit and do not mount the host Docker socket. |
-| Prometheus | Prometheus text exposition format for API's dedicated `/metrics` listener; Worker/Agent use OTLP | Prometheus `2.40+` or `3.x` | Current stable | The API endpoint is a compatibility scrape surface; the Collector sends complete platform metrics to one backend. |
-| Grafana | Dashboard JSON and operations iframe URL | Grafana `9.x ~ 12.x` | Current stable | iframe embedding requires Grafana-side `allow_embedding` and proper authentication / origin policy handling. |
-| SMTP | SMTP/STARTTLS notification sending | Standard SMTP service | Enterprise mail, cloud SMTP, or current stable self-hosted SMTP | SMTP is a notification adapter. Credentials must be stored as secrets. |
-| Generic webhook notification | Custom method, URL, and JSON body templates | HTTP/HTTPS endpoint | Current webhook API of the target platform | Feishu and WeCom bots can be created as webhook template snapshots. Signing and rate limits belong to the adapter or user configuration. |
+| Component | Supported range | Notes |
+| --- | --- | --- |
+| GitHub | GitHub.com; GHES `3.17 ~ 3.21` | Verify OAuth, webhooks, and repository reads |
+| Gitea | `1.20.x ~ 1.25.x` | Prefer the current stable release |
+| GitLab | Not supported yet | Use GitHub or Gitea |
+| Docker Hub | Current public API v2 | Consider rate limits and connectivity |
+| Harbor | `>= 2.0`; priority tests on `2.10.x ~ 2.14.x` | Prefer a maintained release |
+| Generic OCI Registry | Distribution API V2; OCI Distribution `1.0 ~ 1.1` | Enter a full image reference when catalog listing is unavailable |
 
-## Upgrade smoke tests
+## Runtime and build
 
-After upgrading an external component, run at least these smoke tests. A successful connection check alone is not enough:
+| Component | Supported range | Notes |
+| --- | --- | --- |
+| Kubernetes / K3s | Kubernetes `1.34 ~ 1.36` | Evaluate K3s by its embedded Kubernetes version |
+| Metrics Server | A version compatible with the cluster | Absence affects live resource metrics only |
+| Gateway API | `1.0.0 ~ 1.6.x` | Requires CRDs and a compatible controller |
+| Traefik | `3.x` | Enable the Kubernetes Gateway Provider |
+| cert-manager | `>= 1.0` | Must also support the current Kubernetes version |
+| PostgreSQL | `14 ~ 18` | `17` recommended; SQLite is unsupported |
+| Redis | `7.x ~ 8.x` | Cluster and Sentinel are not currently supported |
+| BuildKit | `v0.20+ rootless` | Default and priority test target is `v0.24.0-rootless` |
 
-1. GitHub/Gitea: OAuth login, repository list, branch list, Dockerfile read, webhook create or reconfigure.
-2. Registry: connection test, repository search, tag listing, build push, runtime image pull.
-3. Kubernetes/K3s: cluster connection test, build Job creation, Deployment/Service creation, Pod log read, Web Console exec.
-4. Gateway API: after creating an access route, verify Gateway Accepted/Programmed and HTTPRoute Accepted/ResolvedRefs/Programmed.
-5. OIDC: complete login, bind external identity, validate callback URL and issuer.
-6. Prometheus/Grafana: scrape API compatibility metrics, confirm API/Worker/Agent OTLP Metrics reach the unified backend, import the dashboard JSON, and open the iframe URL.
+## Identity, notifications, and observability
 
-## References
+| Component | Supported range | Notes |
+| --- | --- | --- |
+| OIDC Provider | OIDC Core 1.0 + Discovery 1.0 | `issuer` and callback URLs must be reachable and match |
+| Prometheus | `2.40+` or `3.x` | API can be scraped; complete metrics can also use OTLP |
+| Grafana | `9.x ~ 12.x` | iframe embedding requires Grafana configuration and authentication |
+| SMTP | Standard SMTP / STARTTLS | Handle credentials as Secrets |
+| Webhook notifications | HTTP / HTTPS endpoint | Configure target authentication and rate limits explicitly |
 
-- [GitHub REST API versions](https://docs.github.com/en/rest/about-the-rest-api/api-versions?apiVersion=2022-11-28)
-- [GitHub Enterprise Server releases](https://docs.github.com/en/enterprise-server@3.18/admin/all-releases)
-- [Gitea API usage](https://docs.gitea.com/development/api-usage)
-- [Docker Registry HTTP API V2](https://distribution.github.io/distribution/spec/api/)
-- [OCI Distribution Specification](https://specs.opencontainers.org/distribution-spec/)
-- [Docker Hub API reference](https://docs.docker.com/reference/api/hub/latest/)
-- [Harbor API explorer](https://goharbor.io/docs/2.14.0/working-with-projects/using-api-explorer/)
-- [Kubernetes client-go compatibility](https://github.com/kubernetes/client-go#compatibility-matrix)
-- [Kubernetes version skew policy](https://kubernetes.io/releases/version-skew-policy/)
-- [Gateway API versioning](https://gateway-api.sigs.k8s.io/concepts/versioning/)
-- [Traefik Kubernetes Gateway provider](https://doc.traefik.io/traefik/providers/kubernetes-gateway/)
-- [cert-manager release policy](https://cert-manager.io/docs/releases/)
-- [OpenID Connect Core 1.0](https://openid.net/specs/openid-connect-core-1_0.html)
-- [PostgreSQL versioning policy](https://www.postgresql.org/support/versioning/)
-- [BuildKit rootless mode](https://github.com/moby/buildkit/blob/master/docs/rootless.md)
-- [Prometheus exposition formats](https://prometheus.io/docs/instrumenting/exposition_formats/)
-- [Grafana dashboard JSON model](https://grafana.com/docs/grafana/latest/dashboards/build-dashboards/view-dashboard-json-model/)
+## Verify after upgrades
+
+1. Git Provider: complete OAuth, read repositories and branches, and create a webhook.
+2. Registry: search images, read tags, push a build, and pull it from a runtime cluster.
+3. Kubernetes: create a build Job and Deployment, then read status, logs, and terminal access.
+4. Gateway: confirm that Gateway and HTTPRoute become accepted and programmed.
+5. OIDC: complete a real sign-in and verify the callback URL.
+6. Observability: confirm that API, Worker, and Agent telemetry is queryable.
+
+Use each component's official support matrix and the current Luna DevOps Release notes when a more exact compatibility decision is required.

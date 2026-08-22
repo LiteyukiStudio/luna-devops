@@ -1,0 +1,5 @@
+[
+  { "type": "file", "name": "api", "label": "API" },
+  { "type": "file", "name": "worker", "label": "Worker" },
+  { "type": "file", "name": "agent", "label": "Agent" }
+]

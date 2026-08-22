@@ -44,6 +44,7 @@ type Handlers struct {
 	volumeClusters         projectVolumeClusterService
 	volumeContent          volumeTransferContentService
 	volumeTransferMaxBytes int64
+	volumeTransferEnabled  bool
 }
 
 type inboxService interface {
@@ -81,7 +82,11 @@ func NewHandlers(db *gorm.DB) *Handlers {
 	}
 	cfg := config.Load()
 	redisOptions := cfg.RedisOptions()
-	handlers := &Handlers{db: db, configs: newConfigCache(db), mode: mode, rateLimiter: newRateLimiterWithRedis(redisOptions), oauthStates: newOAuthStateStoreWithRedis(redisOptions), projects: repository.NewProjectRepository(db), volumeTransferMaxBytes: cfg.VolumeTransferMaxBytes}
+	handlers := &Handlers{
+		db: db, configs: newConfigCache(db), mode: mode, rateLimiter: newRateLimiterWithRedis(redisOptions),
+		oauthStates: newOAuthStateStoreWithRedis(redisOptions), projects: repository.NewProjectRepository(db),
+		volumeTransferMaxBytes: cfg.VolumeTransferMaxBytes, volumeTransferEnabled: cfg.VolumeTransferEnabled(),
+	}
 	if cfg.RedisAddr != "" {
 		handlers.taskClient = tasks.NewClientWithRedis(redisOptions)
 	}
@@ -95,15 +100,13 @@ func NewHandlers(db *gorm.DB) *Handlers {
 	handlers.volumeClusters = newProjectVolumeClusterAdapter(db, handlers.secrets)
 	handlers.volumes = volume.NewGormService(db, volumeOperationDispatcher{tasks: volumeTasks}).
 		WithExistingClaimInspector(handlers.volumeClusters)
-	if cfg.VolumeTransferEnabled() {
-		volumeContent, err := newVolumeTransferContentAdapter(handlers, cfg)
-		if err != nil {
-			telemetry.Logger().Error("Volume transfer content service initialization failed",
-				"event.name", "volume_transfer.content_service.initialization_failed",
-				"error.type", telemetry.ErrorType(err))
-		} else {
-			handlers.volumeContent = volumeContent
-		}
+	volumeContent, err := newVolumeTransferContentAdapter(handlers, cfg)
+	if err != nil {
+		telemetry.Logger().Error("Volume transfer content service initialization failed",
+			"event.name", "volume_transfer.content_service.initialization_failed",
+			"error.type", telemetry.ErrorType(err))
+	} else {
+		handlers.volumeContent = volumeContent
 	}
 	aiConfig := aiagent.LoadConfig()
 	handlers.aiDeploymentEnabled = aiConfig.Available

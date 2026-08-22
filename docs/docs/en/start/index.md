@@ -6,6 +6,6 @@ Choose a deployment method for your environment:
 - [Docker Compose](/en/start/install/docker-compose): suitable for evaluation, small teams, and test environments.
 - [Binaries](/en/start/install/binary): intended for debugging, offline troubleshooting, or special environments.
 
-After deployment, continue with [First Login](/en/start/first-login). To connect monitoring, see [Connect an Observability Backend](/en/reference/observability).
+After deployment, [initialize the platform](/en/start/first-login), then [add base resources](/en/start/connect-resources) for users. See [Observability](/en/reference/observability) to connect monitoring.
 
 After a new version is deployed, users with an older page open will see a prompt that the site has been updated. Select **Refresh** to continue; the page is not refreshed automatically.

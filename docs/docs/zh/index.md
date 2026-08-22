@@ -11,20 +11,20 @@ hero:
       text: 快速部署
       link: /start/install/kubernetes
     - theme: alt
-      text: 使用项目
-      link: /start/first-project
+      text: 日常交付
+      link: /use/workflow
   image:
     src: /brand/mascot-luna-catgirl-alpha.webp
     alt: Luna DevOps mascot
 features:
   - title: 安装平台
-    details: 根据使用环境选择 Kubernetes、K3s 或 Docker Compose，快速启动完整平台。
+    details: 根据使用环境选择 Kubernetes (Helm)、Docker Compose 或二进制，启动完整平台。
     link: /start/install/kubernetes
-  - title: 部署一个 Web 项目
-    details: 跟着完整示例创建项目空间、构建镜像、发布应用，再为它配置可访问的域名。
-    link: /start/first-project
-  - title: 连接集群和镜像站
-    details: 连接运行集群和镜像站，为构建与发布做好准备。
+  - title: 日常交付
+    details: 从项目空间、应用和部署配置开始，按需完成构建、发布与访问入口配置。
+    link: /use/workflow
+  - title: 添加基础资源
+    details: 为团队准备运行集群、镜像站和 Git Provider OAuth。
     link: /start/connect-resources
   - title: 排查失败状态
     details: 不知道问题在哪？按构建、发布、集群和访问入口的顺序逐段检查。

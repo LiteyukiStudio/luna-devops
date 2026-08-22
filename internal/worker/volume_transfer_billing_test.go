@@ -43,7 +43,7 @@ func TestVolumeTransferBillingReconcilerSettlesTerminalBytesOnce(t *testing.T) {
 	transfers := []model.VolumeTransfer{
 		workerBillingTransfer("vtx_worker_succeeded", project.ID, model.VolumeTransferStateSucceeded, 1024*1024*1024, now, &finishedAt),
 		workerBillingTransfer("vtx_worker_failed", project.ID, model.VolumeTransferStateFailed, 512*1024*1024, now, &finishedAt),
-		workerBillingTransfer("vtx_worker_running", project.ID, model.VolumeTransferStateRunning, 1024*1024*1024, now, nil),
+		workerBillingTransfer("vtx_worker_streaming", project.ID, model.VolumeTransferStateStreaming, 1024*1024*1024, now, nil),
 		workerBillingTransfer("vtx_worker_empty", project.ID, model.VolumeTransferStateCancelled, 0, now, &finishedAt),
 	}
 	if err := db.Create(&transfers).Error; err != nil {
@@ -91,7 +91,7 @@ func workerBillingTransfer(id, projectID, state string, transferredBytes int64, 
 	return model.VolumeTransfer{
 		ID: id, ProjectID: projectID, ProjectVolumeID: "pvol_worker", Direction: model.VolumeTransferDirectionExport,
 		Format: model.VolumeTransferFormatTarGZ, ConsistencyMode: model.VolumeTransferConsistencySnapshot,
-		State: state, ObjectKey: "worker/" + id, ExpectedBytes: transferredBytes, TransferredBytes: transferredBytes,
+		State: state, ExpectedBytes: transferredBytes, TransferredBytes: transferredBytes,
 		ActorID: "usr_worker_transfer", ExpiresAt: now.Add(time.Hour), CreatedAt: now.Add(-time.Minute), UpdatedAt: now, FinishedAt: finishedAt,
 	}
 }

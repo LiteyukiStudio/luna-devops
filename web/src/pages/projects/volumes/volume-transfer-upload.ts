@@ -1,30 +1,33 @@
-import type { VolumeImportResumeRecord, VolumeTransfer } from '@/api'
+import type { VolumeTransfer } from '@/api'
 import { api, ApiError } from '@/api'
 import i18next from '@/i18n'
 
 const HASH_READ_SIZE = 8 * 1024 * 1024
-const MIN_UPLOAD_CHUNK_SIZE = 64 * 1024 * 1024
-const MAX_UPLOAD_CHUNK_SIZE = 5 * 1024 * 1024 * 1024
-const DEFAULT_PART_RETRY_DELAY_MS = 1_000
-const MAX_PART_IN_PROGRESS_RETRIES = 5
-const RESUME_STORAGE_PREFIX = 'luna.project-volume-import.v1'
+const DEFAULT_READY_POLL_INTERVAL_MS = 1_000
 
 export interface VolumeUploadProgress {
-  offset: number
+  transferredBytes: number
   total: number
   percent: number
 }
 
-interface VolumeUploadInput {
+export interface VolumeUploadInput {
   file: File
   onProgress?: (progress: VolumeUploadProgress) => void
   projectId: string
   sha256: string
   signal?: AbortSignal
-  transfer: VolumeTransfer
+  transferId: string
 }
 
-type VolumeUploadApi = Pick<typeof api, 'completeVolumeImportUpload' | 'getVolumeImportUploadOffset' | 'uploadVolumeImportChunk'>
+interface WaitForReadyInput {
+  pollIntervalMs?: number
+  projectId: string
+  signal?: AbortSignal
+  transferId: string
+}
+
+type VolumeUploadApi = Pick<typeof api, 'getVolumeTransfer' | 'uploadVolumeImportContent'>
 
 function rotateRight(value: number, bits: number) {
   return (value >>> bits) | (value << (32 - bits))
@@ -186,31 +189,15 @@ class IncrementalSha256 {
   }
 }
 
-export async function sha256File(file: Blob, onProgress?: (processed: number, total: number) => void) {
+export async function sha256File(file: Blob, onProgress?: (processed: number, total: number) => void, signal?: AbortSignal) {
   const hash = new IncrementalSha256()
   for (let offset = 0; offset < file.size; offset += HASH_READ_SIZE) {
+    signal?.throwIfAborted()
     const bytes = new Uint8Array(await file.slice(offset, offset + HASH_READ_SIZE).arrayBuffer())
     hash.update(bytes)
     onProgress?.(Math.min(offset + bytes.byteLength, file.size), file.size)
   }
   return hash.digestHex()
-}
-
-export async function sha256BlobBase64(blob: Blob) {
-  const hash = new IncrementalSha256()
-  for (let offset = 0; offset < blob.size; offset += HASH_READ_SIZE) {
-    const bytes = new Uint8Array(await blob.slice(offset, offset + HASH_READ_SIZE).arrayBuffer())
-    hash.update(bytes)
-  }
-  const digestHex = hash.digestHex()
-  let binary = ''
-  for (let offset = 0; offset < digestHex.length; offset += 2)
-    binary += String.fromCharCode(Number.parseInt(digestHex.slice(offset, offset + 2), 16))
-  return btoa(binary)
-}
-
-function validUploadChunkSize(value: number) {
-  return Number.isSafeInteger(value) && value >= MIN_UPLOAD_CHUNK_SIZE && value <= MAX_UPLOAD_CHUNK_SIZE
 }
 
 function abortableDelay(milliseconds: number, signal?: AbortSignal) {
@@ -229,117 +216,49 @@ function abortableDelay(milliseconds: number, signal?: AbortSignal) {
   })
 }
 
-export function volumeImportResumeStorageKey(projectId: string) {
-  return `${RESUME_STORAGE_PREFIX}.${projectId}`
-}
-
-export function readVolumeImportResumeRecord(projectId: string): VolumeImportResumeRecord | null {
-  try {
-    const raw = localStorage.getItem(volumeImportResumeStorageKey(projectId))
-    if (!raw)
-      return null
-    const value = JSON.parse(raw) as Partial<VolumeImportResumeRecord>
-    if (value.projectId !== projectId
-      || typeof value.transferId !== 'string'
-      || !value.transferId.startsWith('vtx_')
-      || typeof value.volumeId !== 'string'
-      || !value.volumeId.startsWith('pvol_')
-      || typeof value.filename !== 'string'
-      || typeof value.size !== 'number'
-      || !Number.isFinite(value.size)
-      || value.size <= 0
-      || typeof value.lastModified !== 'number'
-      || !Number.isFinite(value.lastModified)
-      || typeof value.sha256 !== 'string'
-      || !/^[a-f0-9]{64}$/.test(value.sha256)
-      || (value.format !== 'tar_gz' && value.format !== 'raw_zst')
-      || typeof value.createdAt !== 'string') {
-      return null
-    }
-    return value as VolumeImportResumeRecord
-  }
-  catch {
-    return null
-  }
-}
-
-export function writeVolumeImportResumeRecord(record: VolumeImportResumeRecord) {
-  try {
-    localStorage.setItem(volumeImportResumeStorageKey(record.projectId), JSON.stringify(record))
-  }
-  catch {
-    // Resuming is optional when browser storage is unavailable; the active upload can continue.
-  }
-}
-
-export function clearVolumeImportResumeRecord(projectId: string, transferId?: string) {
-  try {
-    if (!transferId || readVolumeImportResumeRecord(projectId)?.transferId === transferId)
-      localStorage.removeItem(volumeImportResumeStorageKey(projectId))
-  }
-  catch {
-    // Nothing else is required when browser storage is unavailable.
-  }
-}
-
-export function fileMatchesResumeRecord(file: File, record: VolumeImportResumeRecord) {
-  return file.name === record.filename && file.size === record.size && file.lastModified === record.lastModified
-}
-
 export function uploadVolumeImport(input: VolumeUploadInput) {
   return uploadVolumeImportWithApi(input, api)
 }
 
-export async function uploadVolumeImportWithApi({ file, onProgress, projectId, sha256, signal, transfer }: VolumeUploadInput, uploadApi: VolumeUploadApi) {
-  const remote = await uploadApi.getVolumeImportUploadOffset(projectId, transfer.id, signal)
-  if (remote.length > 0 && remote.length !== file.size)
-    throw new ApiError('upload_length_mismatch', { code: 'volume_transfer.offset_mismatch', path: '/volume-imports/content', status: 409 })
-  if (!validUploadChunkSize(transfer.chunkSize)
-    || !validUploadChunkSize(remote.chunkSize)
-    || transfer.chunkSize !== remote.chunkSize) {
-    throw new ApiError(i18next.t('errors.request.failed'), { code: 'volume_transfer.response_invalid', path: '/volume-imports/content', status: 502 })
-  }
+export function waitForVolumeTransferReady(input: WaitForReadyInput) {
+  return waitForVolumeTransferReadyWithApi(input, api)
+}
 
-  const chunkSize = remote.chunkSize
-  let offset = remote.offset
-  while (offset < file.size) {
+export async function waitForVolumeTransferReadyWithApi(
+  { pollIntervalMs = DEFAULT_READY_POLL_INTERVAL_MS, projectId, signal, transferId }: WaitForReadyInput,
+  transferApi: Pick<VolumeUploadApi, 'getVolumeTransfer'>,
+): Promise<VolumeTransfer> {
+  while (true) {
     signal?.throwIfAborted()
-    const chunk = file.slice(offset, Math.min(offset + chunkSize, file.size))
-    const checksum = await sha256BlobBase64(chunk)
-    const attemptedOffset = offset
-    let partInProgressRetries = 0
-    while (true) {
-      try {
-        const uploaded = await uploadApi.uploadVolumeImportChunk(projectId, transfer.id, chunk, attemptedOffset, checksum, signal)
-        if (uploaded.chunkSize !== chunkSize || uploaded.offset !== attemptedOffset + chunk.size)
-          throw new ApiError(i18next.t('errors.request.failed'), { code: 'volume_transfer.response_invalid', path: '/volume-imports/content', status: 502 })
-        offset = uploaded.offset
-        break
-      }
-      catch (error) {
-        if (!(error instanceof ApiError))
-          throw error
-        if (error.code !== 'volume_transfer.offset_mismatch' && error.code !== 'volume_transfer.part_in_progress')
-          throw error
-        if (error.code === 'volume_transfer.part_in_progress') {
-          if (partInProgressRetries >= MAX_PART_IN_PROGRESS_RETRIES)
-            throw error
-          partInProgressRetries += 1
-          await abortableDelay(error.retryAfterMs ?? DEFAULT_PART_RETRY_DELAY_MS, signal)
-        }
-        const refreshed = await uploadApi.getVolumeImportUploadOffset(projectId, transfer.id, signal)
-        if (refreshed.chunkSize !== chunkSize || refreshed.length !== file.size || refreshed.offset < attemptedOffset || refreshed.offset > attemptedOffset + chunk.size) {
-          throw new ApiError(i18next.t('errors.request.failed'), { code: 'volume_transfer.response_invalid', path: '/volume-imports/content', status: 502 })
-        }
-        if (refreshed.offset > attemptedOffset) {
-          offset = refreshed.offset
-          break
-        }
-        if (error.code === 'volume_transfer.offset_mismatch')
-          throw error
-      }
+    const transfer = await transferApi.getVolumeTransfer(projectId, transferId, signal)
+    if (transfer.state === 'ready')
+      return transfer
+    if (transfer.state === 'failed' || transfer.state === 'cancelled' || transfer.state === 'expired') {
+      const code = transfer.lastErrorCode || `volume_transfer.${transfer.state}`
+      const message = i18next.exists(`errors.${code}`) ? i18next.t(`errors.${code}`) : i18next.t('errors.request.failed')
+      throw new ApiError(message, { code, path: '/volume-transfers', status: 409 })
     }
-    onProgress?.({ offset, total: file.size, percent: file.size > 0 ? (offset / file.size) * 100 : 100 })
+    if (transfer.state === 'streaming' || transfer.state === 'succeeded') {
+      throw new ApiError(i18next.t('errors.request.failed'), {
+        code: 'volume_transfer.invalid_state',
+        path: '/volume-transfers',
+        status: 409,
+      })
+    }
+    await abortableDelay(pollIntervalMs, signal)
   }
-  return uploadApi.completeVolumeImportUpload(projectId, transfer.id, file.size, sha256)
+}
+
+export function uploadVolumeImportWithApi(
+  { file, onProgress, projectId, sha256, signal, transferId }: VolumeUploadInput,
+  uploadApi: Pick<VolumeUploadApi, 'uploadVolumeImportContent'>,
+) {
+  signal?.throwIfAborted()
+  return uploadApi.uploadVolumeImportContent(projectId, transferId, file, sha256, signal, (transferredBytes, total) => {
+    onProgress?.({
+      transferredBytes,
+      total,
+      percent: total > 0 ? (transferredBytes / total) * 100 : 0,
+    })
+  })
 }

@@ -1,35 +1,40 @@
-# Connect Cluster and Registry
+# Add Base Resources
 
-Once the console opens, resist the urge to connect everything at once. Prepare the following pieces in order so that a failure is easy to locate.
+Administrators should prepare these resources so users can build or deploy immediately after creating an application:
 
 ```text
-Runtime cluster -> Registry -> Deployment target -> Route
+Runtime cluster → Registry → Git Provider OAuth
 ```
 
-## 1. Configure a runtime cluster
+## 1. Add a runtime cluster
 
-A runtime cluster is where applications actually run. It can be Kubernetes or the lighter K3s distribution.
+Add a Kubernetes cluster under **Runtime Clusters**, paste a kubeconfig reachable by both API and Worker, and test the connection.
 
-For the first integration, prepare a test cluster and make sure its kubeconfig can be reached from the API and worker containers.
+- The kubeconfig API server must use HTTPS.
+- When Luna DevOps runs in containers, do not use a loopback address reachable only from the host.
+- Configure the default Gateway, domain suffix, and TLS when required. Luna DevOps does not create ACME accounts or DNS Provider credentials.
 
-Before deleting a runtime cluster, migrate or delete deployment targets that reference it. The platform does not automatically delete deployment targets when a cluster is deleted.
+Before deleting a cluster, migrate or remove every deployment that references it.
 
-## 2. Configure a registry
+## 2. Add a registry
 
-The registry stores build outputs and can also provide existing images for deployment.
+Add a Harbor, Gitea Registry, DockerHub, or generic OCI Registry and test the connection.
 
-If you only want to explore deployment, start with an existing image. Add push credentials when you are ready for the full build path.
+- **Source builds** need a push or pull-and-push credential visible to the current user or project space.
+- **Existing-image deployments** require image-pull access from the target cluster.
+- Limit credentials to the necessary users or project spaces. Deleting a registry also deletes its credentials.
 
-## 3. Create a deployment target
+## 3. Configure Git Provider OAuth
 
-A deployment target describes the application's source, runtime cluster, resources, service port, environment variables, secrets, and volumes.
+Open **Code Repositories → Git Providers**, create a GitHub or Gitea Provider, choose OAuth, and create an OAuth App on the Git host using the callback URL shown by Luna DevOps.
 
-If you only want to verify the platform first, use an existing image. After the cluster and route work, connect Git providers and automated builds.
+1. Enter the Provider type and service URL.
+2. Copy the callback URL into the OAuth App.
+3. Save the Client ID and Client Secret in the Provider.
+4. Test the connection and complete one OAuth authorization as a regular user.
 
-## 4. Create a route
+GitLab currently works best with PAT credentials. Teams that deploy existing images only can configure a Git Provider later.
 
-A route points a domain, path, and TLS policy at an already deployed service. Check its status first, then send a real request with a browser or `curl`.
+## Verify the setup
 
-## 5. Enable automation later
-
-After the first manual deployment works, connect the repository and gradually enable automatic builds, releases, custom domains, and HTTPS.
+Use a non-administrator test account to confirm that it can select the cluster and registry, authorize a Git account through OAuth, and search repositories. Then continue to [Daily Delivery](/use/workflow).
