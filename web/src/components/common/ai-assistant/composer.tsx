@@ -1,12 +1,11 @@
-import type { KeyboardEvent, ReactNode, RefObject } from 'react'
+import type { KeyboardEvent, RefObject } from 'react'
 import type { AIRunUsage } from './state'
 import type { AIModelOption } from '@/api'
 import { Check, ChevronDown, CircleStop, LoaderCircle, Send } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { UsageRing } from '@/components/common/usage-ring'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
-import { cn } from '@/lib/utils'
 
 export interface AIAssistantComposerProps {
   activeRun: boolean
@@ -46,59 +45,6 @@ function formatTokenRatio(used: number, total: number): { used: string, total: s
   return { used: formatKValue(used), total: `${formatKValue(total)}k` }
 }
 
-function TokenRing({ ratio, ariaLabel, tooltip }: { ratio: number, ariaLabel: string, tooltip: ReactNode }) {
-  const clamped = Math.min(1, Math.max(0, ratio))
-  // 圆环几何：r=7，周长≈43.98
-  const radius = 7
-  const circumference = 2 * Math.PI * radius
-  const filled = clamped * circumference
-  const over = ratio >= 1
-  const warn = !over && ratio >= 0.8
-  return (
-    <TooltipProvider>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <button
-            type="button"
-            aria-label={ariaLabel}
-            className="inline-flex size-7 shrink-0 items-center justify-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <svg className="size-5 -rotate-90" viewBox="0 0 18 18" role="img">
-              <circle
-                className="text-separator-subtle"
-                cx="9"
-                cy="9"
-                fill="none"
-                r={radius}
-                stroke="currentColor"
-                strokeWidth="2"
-              />
-              <circle
-                className={cn(
-                  'transition-[stroke-dashoffset] duration-200',
-                  over ? 'text-destructive' : warn ? 'text-warning' : 'text-primary',
-                )}
-                cx="9"
-                cy="9"
-                fill="none"
-                r={radius}
-                stroke="currentColor"
-                strokeDasharray={circumference}
-                strokeDashoffset={circumference - filled}
-                strokeLinecap="round"
-                strokeWidth="2"
-              />
-            </svg>
-          </button>
-        </TooltipTrigger>
-        <TooltipContent side="top">
-          {tooltip}
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
-  )
-}
-
 function ContextUsageRing({
   ratio,
   used,
@@ -113,7 +59,7 @@ function ContextUsageRing({
   const contextTokens = formatTokenRatio(used, total)
   const contextLabel = t('aiAssistant.contextUsage', { ...contextTokens, percent })
   return (
-    <TokenRing
+    <UsageRing
       ariaLabel={contextLabel}
       ratio={ratio}
       tooltip={contextLabel}

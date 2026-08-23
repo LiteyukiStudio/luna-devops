@@ -15,6 +15,7 @@ import { buildRunImageRef, latestDeployableBuildRuns } from '@/components/common
 import { useBillingDisplay } from '@/lib/billing-display'
 import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
 import { statusRefetchInterval } from '@/lib/polling'
+import { useRuntimeClusterPressure } from '@/lib/runtime-cluster-pressure'
 import { publicRuntimeEnvironmentInputs, publicRuntimeEnvironmentRecord, runtimeSecretKeys } from '@/lib/runtime-environment'
 import { defaultBuildCpuRequest, defaultBuildMemoryRequest, defaultBuildTimeoutSeconds } from './application-build-defaults'
 import { deploymentReleaseKey, deploymentTargetCanRelease, registryInputPrefix } from './application-config-utils'
@@ -156,6 +157,11 @@ export function ApplicationDeploymentsPanel({ applicationId, applicationIdentifi
     projectIdentifier,
     registries,
     repositoryBindings,
+  })
+  const runtimeClusterPressure = useRuntimeClusterPressure({
+    clusterIds: (runtimeClusters.data ?? []).map(cluster => cluster.id),
+    enabled: targetDialogOpen,
+    projectId,
   })
   const runtimeHourCost = billingDisplay.runtimeHourCost(watchedTargetValues.replicas, watchedTargetValues.cpuRequest, watchedTargetValues.memoryRequest)
   const buildMinuteCost = billingDisplay.buildMinuteCost(watchedTargetValues.buildCpuRequest, watchedTargetValues.buildMemoryRequest)
@@ -698,6 +704,8 @@ export function ApplicationDeploymentsPanel({ applicationId, applicationIdentifi
         repositoryBindings={repositoryBindings}
         recommendedTemplateIds={targetBuildOptions.data?.recommendedTemplateIds ?? []}
         runtimeClusters={runtimeClusters.data ?? []}
+        runtimeClusterPressureById={runtimeClusterPressure.byClusterId}
+        runtimeClusterPressureLoading={runtimeClusterPressure.isPending}
         runtimeConfigRedeployableCount={runtimeConfigRedeployableTargets.length}
         runtimeConfigRedeployPending={redeployRuntimeConfigTargets.isPending}
         runtimeConfigRestartAffectedCount={runtimeConfigRestartAffectedCount}

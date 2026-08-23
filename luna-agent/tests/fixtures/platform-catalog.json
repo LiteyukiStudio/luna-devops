@@ -23194,6 +23194,263 @@
     "requestRequired": false
   },
   {
+    "operationId": "observeRuntimeClusterPressure",
+    "name": "observeRuntimeClusterPressure",
+    "summary": "Observe current runtime cluster pressure",
+    "category": "runtime",
+    "tags": [
+      "Runtime"
+    ],
+    "aliases": {
+      "zh": [
+        "查看集群压力",
+        "查询集群负载等级",
+        "比较集群余量",
+        "运行时",
+        "集群"
+      ],
+      "en": [
+        "Runtime",
+        "check cluster load level",
+        "compare cluster headroom",
+        "observe cluster pressure",
+        "observe runtime cluster pressure",
+        "observeRuntimeClusterPressure"
+      ]
+    },
+    "purpose": {
+      "zh": "查询一个或多个运行集群当前的资源分配压力，用于部署前判断集群余量。",
+      "en": "Observe current resource pressure for one or more runtime clusters before deployment."
+    },
+    "avoidWhen": {
+      "zh": "查询历史资源用量或计费记录时不要使用此工具。",
+      "en": "Do not use this tool for historical usage or billing records."
+    },
+    "preconditions": {
+      "zh": [
+        "先用 listRuntimeClusters 获取当前用户可见的真实 clusterId"
+      ],
+      "en": [
+        "Resolve visible clusterId values with listRuntimeClusters first"
+      ]
+    },
+    "successEvidence": {
+      "zh": "返回实时压力等级；平台管理员还会得到 CPU、内存的 requests、allocatable 与可用实际用量。",
+      "en": "Returns a live pressure level and, for platform administrators, exact CPU and memory requests, allocatable capacity, and available usage."
+    },
+    "requiresApproval": false,
+    "idempotent": true,
+    "method": "GET",
+    "path": "/api/v1/runtime/clusters/pressure",
+    "requiredScopes": [
+      "cluster:read"
+    ],
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "clusterId": {
+          "items": {
+            "pattern": "^clu_",
+            "type": "string"
+          },
+          "maxItems": 100,
+          "minItems": 1,
+          "type": "array"
+        },
+        "projectId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "clusterId"
+      ],
+      "type": "object"
+    },
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "clusterId": {
+                "pattern": "^clu_",
+                "type": "string"
+              },
+              "details": {
+                "allOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "cpu": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "allocatable": {
+                            "description": "CPU millicores or memory bytes reported as allocatable by Nodes.",
+                            "format": "int64",
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "requestPercent": {
+                            "format": "double",
+                            "minimum": 0,
+                            "type": "number"
+                          },
+                          "requests": {
+                            "description": "CPU millicores or memory bytes requested by scheduled non-terminal Pods.",
+                            "format": "int64",
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "usage": {
+                            "description": "Current CPU millicores or memory bytes from metrics.k8s.io when all Nodes were observed.",
+                            "format": "int64",
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "usagePercent": {
+                            "format": "double",
+                            "minimum": 0,
+                            "type": "number"
+                          }
+                        },
+                        "required": [
+                          "requests",
+                          "allocatable",
+                          "requestPercent"
+                        ],
+                        "type": "object"
+                      },
+                      "memory": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "allocatable": {
+                            "description": "CPU millicores or memory bytes reported as allocatable by Nodes.",
+                            "format": "int64",
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "requestPercent": {
+                            "format": "double",
+                            "minimum": 0,
+                            "type": "number"
+                          },
+                          "requests": {
+                            "description": "CPU millicores or memory bytes requested by scheduled non-terminal Pods.",
+                            "format": "int64",
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "usage": {
+                            "description": "Current CPU millicores or memory bytes from metrics.k8s.io when all Nodes were observed.",
+                            "format": "int64",
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "usagePercent": {
+                            "format": "double",
+                            "minimum": 0,
+                            "type": "number"
+                          }
+                        },
+                        "required": [
+                          "requests",
+                          "allocatable",
+                          "requestPercent"
+                        ],
+                        "type": "object"
+                      },
+                      "metricsAvailable": {
+                        "type": "boolean"
+                      },
+                      "nodeCount": {
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "podCount": {
+                        "minimum": 0,
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "cpu",
+                      "memory",
+                      "nodeCount",
+                      "podCount",
+                      "metricsAvailable"
+                    ],
+                    "type": "object"
+                  }
+                ],
+                "description": "Exact current resource values returned only to platform administrators."
+              },
+              "observationCode": {
+                "type": "string"
+              },
+              "observedAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "pressureLevel": {
+                "enum": [
+                  "idle",
+                  "light",
+                  "moderate",
+                  "heavy",
+                  "full",
+                  "unavailable"
+                ],
+                "type": "string"
+              },
+              "pressureScore": {
+                "description": "Weighted pressure score returned only to platform administrators.",
+                "format": "double",
+                "minimum": 0,
+                "type": "number"
+              },
+              "status": {
+                "enum": [
+                  "ready",
+                  "unavailable"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "clusterId",
+              "status",
+              "pressureLevel",
+              "observedAt"
+            ],
+            "type": "object"
+          },
+          "maxItems": 100,
+          "type": "array"
+        }
+      },
+      "required": [
+        "items"
+      ],
+      "type": "object"
+    },
+    "parameters": [
+      {
+        "inputName": "clusterId",
+        "wireName": "clusterId",
+        "in": "query",
+        "required": true
+      },
+      {
+        "inputName": "projectId",
+        "wireName": "projectId",
+        "in": "query",
+        "required": false
+      }
+    ],
+    "requestBody": false,
+    "requestRequired": false
+  },
+  {
     "operationId": "pinProject",
     "name": "pinProject",
     "summary": "Pin project for current user",

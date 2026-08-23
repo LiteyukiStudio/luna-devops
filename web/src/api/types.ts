@@ -1490,6 +1490,32 @@ export interface RuntimeCluster {
   createdAt: string
 }
 
+export type RuntimeClusterPressureLevel = 'idle' | 'light' | 'moderate' | 'heavy' | 'full' | 'unavailable'
+
+export interface RuntimeClusterPressureResource {
+  requests: number
+  allocatable: number
+  usage?: number
+  requestPercent: number
+  usagePercent?: number
+}
+
+export interface RuntimeClusterPressure {
+  clusterId: string
+  status: 'ready' | 'unavailable'
+  pressureLevel: RuntimeClusterPressureLevel
+  pressureScore?: number
+  observationCode?: string
+  observedAt: string
+  details?: {
+    cpu: RuntimeClusterPressureResource
+    memory: RuntimeClusterPressureResource
+    nodeCount: number
+    podCount: number
+    metricsAvailable: boolean
+  }
+}
+
 export type RuntimeClusterResourceCategory = 'namespaces' | 'workloads' | 'services' | 'configs' | 'storage'
 
 export type RuntimeClusterResourceKind

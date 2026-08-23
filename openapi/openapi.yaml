@@ -1014,6 +1014,45 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+
+  /api/v1/runtime/clusters/pressure:
+    get:
+      operationId: observeRuntimeClusterPressure
+      tags: [Runtime]
+      summary: Observe current runtime cluster pressure
+      description: Returns a current Kubernetes observation for the requested visible clusters. Platform administrators receive exact allocation and usage details; other users receive only the derived pressure level.
+      x-luna-agent:
+        purpose: { zh: 查询一个或多个运行集群当前的资源分配压力，用于部署前判断集群余量。, en: Observe current resource pressure for one or more runtime clusters before deployment. }
+        aliases: { zh: [查看集群压力, 查询集群负载等级, 比较集群余量], en: [observe cluster pressure, check cluster load level, compare cluster headroom] }
+        avoidWhen: { zh: 查询历史资源用量或计费记录时不要使用此工具。, en: Do not use this tool for historical usage or billing records. }
+        preconditions: { zh: [先用 listRuntimeClusters 获取当前用户可见的真实 clusterId], en: [Resolve visible clusterId values with listRuntimeClusters first] }
+        successEvidence: { zh: 返回实时压力等级；平台管理员还会得到 CPU、内存的 requests、allocatable 与可用实际用量。, en: "Returns a live pressure level and, for platform administrators, exact CPU and memory requests, allocatable capacity, and available usage." }
+      parameters:
+        - name: clusterId
+          in: query
+          required: true
+          description: One to 100 visible runtime cluster identifiers. Repeat the query parameter for multiple clusters.
+          style: form
+          explode: true
+          schema:
+            type: array
+            minItems: 1
+            maxItems: 100
+            items: { type: string, pattern: '^clu_' }
+        - name: projectId
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        "200":
+          description: Current pressure observations in requested cluster order; invisible identifiers are omitted.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RuntimeClusterPressureList" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
   /api/v1/git/providers:
     get:
       operationId: listGitProviders
@@ -11208,6 +11247,49 @@ components:
             createdBy: { type: string }
             createdAt: { type: string, format: date-time }
             updatedAt: { type: string, format: date-time }
+    RuntimeClusterPressureLevel:
+      type: string
+      enum: [idle, light, moderate, heavy, full, unavailable]
+    RuntimeClusterPressureResource:
+      type: object
+      required: [requests, allocatable, requestPercent]
+      properties:
+        requests: { type: integer, format: int64, minimum: 0, description: CPU millicores or memory bytes requested by scheduled non-terminal Pods. }
+        allocatable: { type: integer, format: int64, minimum: 0, description: CPU millicores or memory bytes reported as allocatable by Nodes. }
+        usage: { type: integer, format: int64, minimum: 0, description: Current CPU millicores or memory bytes from metrics.k8s.io when all Nodes were observed. }
+        requestPercent: { type: number, format: double, minimum: 0 }
+        usagePercent: { type: number, format: double, minimum: 0 }
+    RuntimeClusterPressureDetails:
+      type: object
+      required: [cpu, memory, nodeCount, podCount, metricsAvailable]
+      properties:
+        cpu: { $ref: "#/components/schemas/RuntimeClusterPressureResource" }
+        memory: { $ref: "#/components/schemas/RuntimeClusterPressureResource" }
+        nodeCount: { type: integer, minimum: 0 }
+        podCount: { type: integer, minimum: 0 }
+        metricsAvailable: { type: boolean }
+    RuntimeClusterPressure:
+      type: object
+      required: [clusterId, status, pressureLevel, observedAt]
+      properties:
+        clusterId: { type: string, pattern: '^clu_' }
+        status: { type: string, enum: [ready, unavailable] }
+        pressureLevel: { $ref: "#/components/schemas/RuntimeClusterPressureLevel" }
+        pressureScore: { type: number, format: double, minimum: 0, description: Weighted pressure score returned only to platform administrators. }
+        observationCode: { type: string }
+        observedAt: { type: string, format: date-time }
+        details:
+          allOf:
+            - $ref: "#/components/schemas/RuntimeClusterPressureDetails"
+          description: Exact current resource values returned only to platform administrators.
+    RuntimeClusterPressureList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items: { $ref: "#/components/schemas/RuntimeClusterPressure" }
     PaginatedRuntimeClusters:
       type: object
       required: [items, page, pageSize, sortBy, sortOrder, total, totalPages]

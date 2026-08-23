@@ -196,6 +196,7 @@ func NewRouterWithStaticFSAndMetrics(db *gorm.DB, staticFS fs.FS, httpMetrics *o
 		v1.DELETE("/build/variable-sets/:setId", handlers.DeleteBuildVariableSet)
 
 		v1.GET("/runtime/clusters", handlers.ListRuntimeClusters)
+		v1.GET("/runtime/clusters/pressure", handlers.ObserveRuntimeClusterPressure)
 		v1.POST("/runtime/clusters", handlers.CreateRuntimeCluster)
 		v1.PUT("/runtime/clusters/:clusterId", handlers.UpdateRuntimeCluster)
 		v1.DELETE("/runtime/clusters/:clusterId", handlers.DeleteRuntimeCluster)

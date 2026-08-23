@@ -1,4 +1,4 @@
-import type { ClusterResource, ClusterResourceEvent, ClusterResourceYAML, PaginatedResponse, PaginationParams, Release, ReleaseImageCandidates, ReleaseLog, ReleaseRuntimeExecResult, ReleaseRuntimeLog, RuntimeCluster, RuntimeClusterResourceCategory, RuntimeClusterResourceKind, RuntimeClusterResourceListParams } from '../types'
+import type { ClusterResource, ClusterResourceEvent, ClusterResourceYAML, PaginatedResponse, PaginationParams, Release, ReleaseImageCandidates, ReleaseLog, ReleaseRuntimeExecResult, ReleaseRuntimeLog, RuntimeCluster, RuntimeClusterPressure, RuntimeClusterResourceCategory, RuntimeClusterResourceKind, RuntimeClusterResourceListParams } from '../types'
 import { paginationWithProjectQuery, request, runtimeClusterResourceListQuery } from '../core'
 import { selectionItems, selectionPageParams } from '../selection-page'
 
@@ -7,6 +7,14 @@ export const runtimeApi = {
     request<PaginatedResponse<RuntimeCluster>>(`/runtime/clusters?${paginationWithProjectQuery({ ...selectionPageParams, projectId })}`).then(selectionItems),
   listRuntimeClustersPage: (params: PaginationParams & { projectId?: string }) =>
     request<PaginatedResponse<RuntimeCluster>>(`/runtime/clusters?${paginationWithProjectQuery(params)}`),
+  observeRuntimeClusterPressure: (clusterIds: string[], projectId?: string) => {
+    const query = new URLSearchParams()
+    for (const clusterId of clusterIds)
+      query.append('clusterId', clusterId)
+    if (projectId)
+      query.set('projectId', projectId)
+    return request<{ items: RuntimeClusterPressure[] }>(`/runtime/clusters/pressure?${query.toString()}`).then(response => response.items)
+  },
   createRuntimeCluster: (payload: Omit<RuntimeCluster, 'id' | 'createdBy' | 'createdAt' | 'kubeconfigSet' | 'lastCheckedAt'> & { kubeconfig?: string }) =>
     request<RuntimeCluster>('/runtime/clusters', { method: 'POST', body: JSON.stringify(payload) }),
   updateRuntimeCluster: (clusterId: string, payload: Omit<RuntimeCluster, 'id' | 'createdBy' | 'createdAt' | 'kubeconfigSet' | 'lastCheckedAt'> & { kubeconfig?: string }) =>

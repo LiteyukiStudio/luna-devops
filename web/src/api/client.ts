@@ -314,6 +314,7 @@ const domainOperations = {
   runtime: [
     'listRuntimeClusters',
     'listRuntimeClustersPage',
+    'observeRuntimeClusterPressure',
     'createRuntimeCluster',
     'updateRuntimeCluster',
     'deleteRuntimeCluster',

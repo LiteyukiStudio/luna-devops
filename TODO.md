@@ -1,5 +1,11 @@
 # TODO
 
+## 2026-08-24 运行集群实时资源压力
+
+- [x] 新增基于 Kubernetes Nodes、Pods 与可选 Node Metrics 的 CPU/内存实时压力观察，按 10 秒轮询且不持久化当前状态。
+- [x] 集群列表展示 requests / allocatable 圆环与实际用量提示，部署集群选择仅向普通用户展示加权压力等级。
+- [x] 同步 OpenAPI、Agent 工具契约、五语言文案、双语公开文档和自动化验证。
+
 ## 2026-08-23 AI 官方用量、上下文压缩与计费链路重构
 
 - [x] 以 Chat Completions 官方 `usage` 作为已发生 Token 的唯一事实源，删除本地 Token 估算、预留值回填和 cached output 链路。

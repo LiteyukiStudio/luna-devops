@@ -10,6 +10,8 @@ A deployment defines **where the application comes from, where it runs, and how 
 - Container port, per-replica CPU quota, per-replica memory quota, and replicas.
 - Image pull policy and required health checks.
 
+The **Idle / Light / Moderate / Heavy / Full** badge beside each runtime cluster is a current pressure overview refreshed about every 10 seconds. Regular users see only the level, not exact cluster capacity or other workload usage. **Unavailable** means Luna DevOps could not complete the observation. The level helps choose a cluster but does not guarantee that Kubernetes can schedule a particular Pod.
+
 ## Choose a source
 
 **Existing image** is the fastest route. Enter the full image reference, confirm that the target cluster can pull it, save, and create a Release.

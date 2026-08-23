@@ -206,6 +206,7 @@ func TestRequiredAccessTokenScopeUsesFineGrainedProjectRoutes(t *testing.T) {
 		{"/api/v1/registries/:registryId/test", "POST", string(ActionRegistryRead)},
 		{"/api/v1/projects/:projectId/service-bindings/:bindingId/check", "POST", string(ActionProjectRead)},
 		{"/api/v1/runtime/clusters/:clusterId/resources", "GET", string(ActionClusterRead)},
+		{"/api/v1/runtime/clusters/pressure", "GET", string(ActionClusterRead)},
 		{"/api/v1/runtime/clusters/:clusterId/resource-yaml", "GET", string(ActionClusterRead)},
 		{"/api/v1/runtime/clusters/:clusterId/resource-events", "GET", string(ActionClusterRead)},
 		{"/api/v1/runtime/clusters/:clusterId/test", "POST", string(ActionClusterUse)},

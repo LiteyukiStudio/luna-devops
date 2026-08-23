@@ -1,18 +1,21 @@
 import type { UseFormReturn } from 'react-hook-form'
-import type { BuildTemplate, DeploymentRuntimeConfigRef, DeploymentTarget, DeploymentTargetPayload, ProjectHookConfig, ProjectRuntimeConfigSet, RuntimeCluster, RuntimeConfigRefMode } from '@/api'
+import type { BuildTemplate, DeploymentRuntimeConfigRef, DeploymentTarget, DeploymentTargetPayload, ProjectHookConfig, ProjectRuntimeConfigSet, RuntimeCluster, RuntimeClusterPressure, RuntimeConfigRefMode } from '@/api'
 import type { KeyValueRow } from '@/components/common/key-value-rows-editor'
 import { Rocket, Save } from 'lucide-react'
+import { Controller } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { CheckboxField } from '@/components/common/checkbox-field'
 import { FormField as Field } from '@/components/common/form-field'
 import { KeyValueRowsEditor } from '@/components/common/key-value-rows-editor'
 import { KeyValueTextEditor } from '@/components/common/key-value-text-editor'
 import { ProgressiveSection } from '@/components/common/progressive-section'
+import { RuntimeClusterPressureBadge } from '@/components/common/runtime-cluster-pressure'
 import { RuntimeConfigFilesEditor } from '@/components/common/runtime-config-files-editor'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { NativeSelect as Select } from '@/components/ui/native-select'
+import { Select as RichSelect, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { projectVolumeRowsAreValid } from '@/lib/runtime-data-volumes'
 import { publicRuntimeEnvironmentInputs, publicRuntimeEnvironmentRecord } from '@/lib/runtime-environment'
 import { RuntimeDataVolumesEditor } from './application-deployment-data-volumes-editor'
@@ -70,6 +73,8 @@ export function ApplicationDeploymentTargetDialog({
   targetRuntimeFilesValid,
   targetSecretFilesValid,
   runtimeClusters,
+  runtimeClusterPressureById,
+  runtimeClusterPressureLoading,
   savePending,
   summaries,
   onBindRepository,
@@ -132,6 +137,8 @@ export function ApplicationDeploymentTargetDialog({
   targetRuntimeFilesValid: boolean
   targetSecretFilesValid: boolean
   runtimeClusters: RuntimeCluster[]
+  runtimeClusterPressureById: Record<string, RuntimeClusterPressure>
+  runtimeClusterPressureLoading: boolean
   savePending: boolean
   summaries: {
     basic: string
@@ -209,15 +216,37 @@ export function ApplicationDeploymentTargetDialog({
                   </Select>
                 </Field>
                 <Field hint={t('deploymentsPage.runtimeEnvironmentHint')} label={t('clustersPage.runtimeCluster')}>
-                  <Select {...form.register('clusterId', {
-                    onChange: () => onUpdateDataVolumes(targetDataVolumes.map(volume => volume.sourceType === 'projectVolume'
-                      ? { ...volume, capacity: '', devicePath: '', projectVolumeId: '' }
-                      : volume)),
-                  })}
-                  >
-                    <option value="">{defaultRuntimeCluster ? t('deploymentsPage.clusterDefaultOption', { name: defaultRuntimeCluster.name }) : t('common.select')}</option>
-                    {runtimeClusters.map(cluster => <option key={cluster.id} value={cluster.id}>{cluster.name}</option>)}
-                  </Select>
+                  <Controller
+                    control={form.control}
+                    name="clusterId"
+                    render={({ field }) => (
+                      <RichSelect
+                        value={field.value || '__default__'}
+                        onValueChange={(value) => {
+                          field.onChange(value === '__default__' ? '' : value)
+                          onUpdateDataVolumes(targetDataVolumes.map(volume => volume.sourceType === 'projectVolume'
+                            ? { ...volume, capacity: '', devicePath: '', projectVolumeId: '' }
+                            : volume))
+                        }}
+                      >
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder={t('common.select')} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__default__">
+                            <span>{defaultRuntimeCluster ? t('deploymentsPage.clusterDefaultOption', { name: defaultRuntimeCluster.name }) : t('common.select')}</span>
+                            {defaultRuntimeCluster && <RuntimeClusterPressureBadge loading={runtimeClusterPressureLoading} pressure={runtimeClusterPressureById[defaultRuntimeCluster.id]} />}
+                          </SelectItem>
+                          {runtimeClusters.map(cluster => (
+                            <SelectItem key={cluster.id} value={cluster.id}>
+                              <span>{cluster.name}</span>
+                              <RuntimeClusterPressureBadge loading={runtimeClusterPressureLoading} pressure={runtimeClusterPressureById[cluster.id]} />
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </RichSelect>
+                    )}
+                  />
                 </Field>
                 <Field label={t('common.status')}>
                   <Select {...form.register('enabled')}>

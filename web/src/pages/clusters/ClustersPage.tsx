@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button'
 import { NativeSelect as Select } from '@/components/ui/native-select'
 import { TabsContent } from '@/components/ui/tabs'
 import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
+import { useRuntimeClusterPressure } from '@/lib/runtime-cluster-pressure'
 import { canManageCluster } from './cluster-helpers'
 import { ClusterResourcesPanel } from './cluster-resources-panel'
 import { RuntimeClusterTable } from './runtime-cluster-table'
@@ -45,6 +46,10 @@ export function ClustersPage() {
     queryFn: () => api.listRuntimeClustersPage({ page: clusterPage, pageSize: clusterPageSize, sortBy: 'createdAt', sortOrder: 'desc' }),
   })
   const clusterOptions = useQuery({ ...liveObservationQueryPolicy, queryKey: ['runtime-clusters', 'options'], queryFn: () => api.listRuntimeClusters() })
+  const clusterPressure = useRuntimeClusterPressure({
+    clusterIds: (clusters.data?.items ?? []).map(cluster => cluster.id),
+    enabled: activeTab === 'clusters',
+  })
   const manageableClusters = useMemo(
     () => (clusterOptions.data ?? []).filter(cluster => canManageCluster(cluster, user?.id, user?.role)),
     [clusterOptions.data, user?.id, user?.role],
@@ -157,6 +162,8 @@ export function ClustersPage() {
         <TabsContent value="clusters">
           <RuntimeClusterTable
             clusters={clusters.data?.items ?? []}
+            pressureByClusterId={clusterPressure.byClusterId}
+            pressureLoading={clusterPressure.isPending}
             pagination={{
               page: clusters.data?.page ?? clusterPage,
               pageSize: clusters.data?.pageSize ?? clusterPageSize,

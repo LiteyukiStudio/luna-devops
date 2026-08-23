@@ -1,13 +1,14 @@
-import type { CurrentUser, Project, RuntimeCluster } from '@/api'
+import type { CurrentUser, Project, RuntimeCluster, RuntimeClusterPressure } from '@/api'
 import { Trash2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { DataList } from '@/components/common/data-list'
 import { EditActionButton } from '@/components/common/edit-action-button'
+import { RuntimeClusterPressureRings } from '@/components/common/runtime-cluster-pressure'
 import { StatusValueBadge } from '@/components/common/status-badge'
 import { Button } from '@/components/ui/button'
 import { canManageCluster, clusterTypeLabel, gatewayDomainSuffixSummary, gatewayPublicPortSummary, scopeLabel } from './cluster-helpers'
 
-export function RuntimeClusterTable({ clusters, pagination, projects, user, onDelete, onEdit, onTest }: {
+export function RuntimeClusterTable({ clusters, pagination, pressureByClusterId, pressureLoading, projects, user, onDelete, onEdit, onTest }: {
   clusters: RuntimeCluster[]
   pagination: {
     page: number
@@ -17,6 +18,8 @@ export function RuntimeClusterTable({ clusters, pagination, projects, user, onDe
     onPageChange: (page: number) => void
     onPageSizeChange: (pageSize: number) => void
   }
+  pressureByClusterId: Record<string, RuntimeClusterPressure>
+  pressureLoading: boolean
   projects: Project[]
   user?: CurrentUser
   onDelete: (cluster: RuntimeCluster) => void
@@ -34,10 +37,11 @@ export function RuntimeClusterTable({ clusters, pagination, projects, user, onDe
         { key: 'scope', header: t('common.scope'), width: 'status', render: item => scopeLabel(item, projectMap, t) },
         { key: 'default', header: t('clustersPage.defaultCluster'), width: 'status', render: item => item.isDefault ? t('common.yes') : t('common.no') },
         { key: 'buildConcurrency', header: t('clustersPage.maxConcurrentBuilds'), width: 'number', render: item => item.maxConcurrentBuilds || 4 },
+        { key: 'pressure', header: t('clustersPage.resourcePressure'), width: 'secondary', render: item => <RuntimeClusterPressureRings loading={pressureLoading} pressure={pressureByClusterId[item.id]} /> },
         { key: 'gatewayRootDomain', header: t('clustersPage.gatewayDomainSuffixes'), width: 'secondary', render: item => gatewayDomainSuffixSummary(item) },
         { key: 'gatewayPublicScheme', header: t('clustersPage.gatewayPublicScheme'), width: 'compact', render: item => item.gatewayPublicScheme || 'http' },
         { key: 'gatewayPublicPort', header: t('clustersPage.gatewayPublicPort'), width: 'compact', render: item => gatewayPublicPortSummary(item) },
-        { key: 'status', header: t('common.status'), width: 'status', render: item => <StatusValueBadge value={item.status} /> },
+        { key: 'status', header: t('common.status'), width: 'status', render: item => <StatusValueBadge value={pressureByClusterId[item.id]?.status ?? item.status} /> },
         {
           key: 'actions',
           header: t('common.actions'),
