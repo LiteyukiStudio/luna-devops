@@ -21,16 +21,16 @@ import (
 const aiModelCatalogMutationLockID int64 = 0x4c554e41494d4f44
 
 var (
-	ErrDatabaseUnavailable      = errors.New("ai model database is unavailable")
-	ErrLastEnabled              = errors.New("at least one AI model must remain enabled")
-	ErrNameConflict             = errors.New("AI model name is already in use")
-	ErrNotFound                 = errors.New("AI model was not found")
-	ErrNameRequired             = errors.New("AI model name is required")
-	ErrInputPriceInvalid        = errors.New("AI model input price is invalid")
-	ErrOutputPriceInvalid       = errors.New("AI model output price is invalid")
-	ErrCachedInputPriceInvalid  = errors.New("AI model cached input price is invalid")
-	ErrMaxContextTokensInvalid  = errors.New("AI model context token limit is invalid")
-	ErrMaxOutputTokensInvalid   = errors.New("AI model output token limit is invalid")
+	ErrDatabaseUnavailable     = errors.New("ai model database is unavailable")
+	ErrLastEnabled             = errors.New("at least one AI model must remain enabled")
+	ErrNameConflict            = errors.New("AI model name is already in use")
+	ErrNotFound                = errors.New("AI model was not found")
+	ErrNameRequired            = errors.New("AI model name is required")
+	ErrInputPriceInvalid       = errors.New("AI model input price is invalid")
+	ErrOutputPriceInvalid      = errors.New("AI model output price is invalid")
+	ErrCachedInputPriceInvalid = errors.New("AI model cached input price is invalid")
+	ErrMaxContextTokensInvalid = errors.New("AI model context token limit is invalid")
+	ErrMaxOutputTokensInvalid  = errors.New("AI model output token limit is invalid")
 )
 
 const (
@@ -41,13 +41,13 @@ const (
 )
 
 type WriteInput struct {
-	Name                          string `json:"name"`
-	MaxContextTokens              int64  `json:"maxContextTokens"`
-	MaxOutputTokens               int64  `json:"maxOutputTokens"`
-	InputCreditsPerMillion        string `json:"inputCreditsPerMillion"`
-	OutputCreditsPerMillion       string `json:"outputCreditsPerMillion"`
-	CachedInputCreditsPerMillion  string `json:"cachedInputCreditsPerMillion"`
-	Enabled                       *bool  `json:"enabled"`
+	Name                         string `json:"name"`
+	MaxContextTokens             int64  `json:"maxContextTokens"`
+	MaxOutputTokens              int64  `json:"maxOutputTokens"`
+	InputCreditsPerMillion       string `json:"inputCreditsPerMillion"`
+	OutputCreditsPerMillion      string `json:"outputCreditsPerMillion"`
+	CachedInputCreditsPerMillion string `json:"cachedInputCreditsPerMillion"`
+	Enabled                      *bool  `json:"enabled"`
 }
 
 type Service struct {

@@ -119,26 +119,26 @@ func aiDefaultIntegerConfig(key string) int {
 }
 
 type aiProviderModel struct {
-	ID                            string `json:"id"`
-	Name                          string `json:"name"`
-	MaxContextTokens              int64  `json:"maxContextTokens"`
-	MaxOutputTokens               int64  `json:"maxOutputTokens"`
-	InputCreditsPerMillion        string `json:"inputCreditsPerMillion"`
-	OutputCreditsPerMillion       string `json:"outputCreditsPerMillion"`
-	CachedInputCreditsPerMillion  string `json:"cachedInputCreditsPerMillion"`
+	ID                           string `json:"id"`
+	Name                         string `json:"name"`
+	MaxContextTokens             int64  `json:"maxContextTokens"`
+	MaxOutputTokens              int64  `json:"maxOutputTokens"`
+	InputCreditsPerMillion       string `json:"inputCreditsPerMillion"`
+	OutputCreditsPerMillion      string `json:"outputCreditsPerMillion"`
+	CachedInputCreditsPerMillion string `json:"cachedInputCreditsPerMillion"`
 }
 
 func aiProviderModels(configured []model.AIModel) []aiProviderModel {
 	models := make([]aiProviderModel, 0, len(configured))
 	for _, item := range configured {
 		models = append(models, aiProviderModel{
-			ID:                            item.ID,
-			Name:                          item.Name,
-			MaxContextTokens:              item.MaxContextTokens,
-			MaxOutputTokens:               item.MaxOutputTokens,
-			InputCreditsPerMillion:        item.InputCreditsPerMillion.String(),
-			OutputCreditsPerMillion:       item.OutputCreditsPerMillion.String(),
-			CachedInputCreditsPerMillion:  item.CachedInputCreditsPerMillion.String(),
+			ID:                           item.ID,
+			Name:                         item.Name,
+			MaxContextTokens:             item.MaxContextTokens,
+			MaxOutputTokens:              item.MaxOutputTokens,
+			InputCreditsPerMillion:       item.InputCreditsPerMillion.String(),
+			OutputCreditsPerMillion:      item.OutputCreditsPerMillion.String(),
+			CachedInputCreditsPerMillion: item.CachedInputCreditsPerMillion.String(),
 		})
 	}
 	return models

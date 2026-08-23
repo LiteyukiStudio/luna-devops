@@ -174,13 +174,13 @@ func (h *Handlers) attachAIModelSnapshot(ctx *gin.Context, body []byte) ([]byte,
 		return nil, false
 	}
 	input["modelSnapshot"] = gin.H{
-		"id":                            selected.ID,
-		"name":                          selected.Name,
-		"maxContextTokens":              selected.MaxContextTokens,
-		"maxOutputTokens":               selected.MaxOutputTokens,
-		"inputCreditsPerMillion":        selected.InputCreditsPerMillion,
-		"outputCreditsPerMillion":       selected.OutputCreditsPerMillion,
-		"cachedInputCreditsPerMillion":  selected.CachedInputCreditsPerMillion,
+		"id":                           selected.ID,
+		"name":                         selected.Name,
+		"maxContextTokens":             selected.MaxContextTokens,
+		"maxOutputTokens":              selected.MaxOutputTokens,
+		"inputCreditsPerMillion":       selected.InputCreditsPerMillion,
+		"outputCreditsPerMillion":      selected.OutputCreditsPerMillion,
+		"cachedInputCreditsPerMillion": selected.CachedInputCreditsPerMillion,
 	}
 	prepared, err := json.Marshal(input)
 	if err != nil {
