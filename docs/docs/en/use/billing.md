@@ -34,7 +34,7 @@ If `metrics.k8s.io` is unavailable but Kubernetes confirms that the workload is 
 
 ## AI tokens
 
-AI usage is billed from the input, output, cached-input, and cached-output tokens reported by the model and charged to the user who started the conversation. Prices are credits per one million tokens and are snapshotted on Run creation; catalog changes affect only later Runs. Older events without a model or price snapshot are not rebilled.
+AI usage is billed only from schema-valid prompt, completion, cached-prompt, and cache-write prompt usage in the Provider's official `usage` object and is charged to the user who started the conversation. Completion usage already includes reasoning, so reasoning details are not charged again. Three prices per million tokens are snapshotted when the Run is created; catalog changes affect only later Runs. If Provider usage is missing or invalid, the call enters reconciliation and is not settled from zeroes or the credit hold.
 
 ## Gateway traffic
 

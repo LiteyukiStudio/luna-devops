@@ -12,7 +12,6 @@ export const aiModelFormSchema = z.object({
   inputCreditsPerMillion: price(),
   outputCreditsPerMillion: price(),
   cachedInputCreditsPerMillion: price(),
-  cachedOutputCreditsPerMillion: price(),
   enabled: z.boolean(),
 }).refine(value => value.maxOutputTokens < value.maxContextTokens, {
   path: ['maxOutputTokens'],
@@ -28,7 +27,6 @@ export const emptyModel: ModelFormValues = {
   inputCreditsPerMillion: '0',
   outputCreditsPerMillion: '0',
   cachedInputCreditsPerMillion: '0',
-  cachedOutputCreditsPerMillion: '0',
   enabled: true,
 }
 
@@ -72,7 +70,6 @@ export function modelFormValues(model: AIModelConfig): ModelFormValues {
     inputCreditsPerMillion: model.inputCreditsPerMillion,
     outputCreditsPerMillion: model.outputCreditsPerMillion,
     cachedInputCreditsPerMillion: model.cachedInputCreditsPerMillion,
-    cachedOutputCreditsPerMillion: model.cachedOutputCreditsPerMillion,
     enabled: model.enabled,
   }
 }

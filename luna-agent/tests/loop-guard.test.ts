@@ -26,6 +26,17 @@ describe("run tool loop guard", () => {
     expect(() => guard.beforePropose({ ...call, runId: "airun_other" })).not.toThrow()
   })
 
+  it("stops the next identical proposal after an explicitly non-retryable result", () => {
+    const guard = new InMemoryLoopGuard({ sameCallLimit: 3 })
+    guard.beforePropose(call)
+    guard.blockNonRetryable(call)
+    expect(() => guard.beforePropose(call)).toThrowError(expect.objectContaining({
+      code: "ai.tool_repeated_in_run",
+      retryable: false,
+    }))
+    expect(() => guard.beforePropose({ ...call, argumentsHash: "sha256:corrected" })).not.toThrow()
+  })
+
   it("snapshots limits per Run and clears all same-Run state", () => {
     const guard = new InMemoryLoopGuard({ maxToolCalls: 32 })
     guard.beforePropose(call)

@@ -151,12 +151,15 @@ describe('timeline query cache', () => {
       ...event(2),
       type: 'model.completed',
       item: undefined,
-      payload: { usage: { inputTokens: 25_600, outputTokens: 512 } },
+      payload: { usage: { status: 'reported', promptTokens: 25_600, completionTokens: 512, totalTokens: 26_112 }, modelId: 'aimod_test', maxContextTokensSnapshot: 128_000 },
     })
     const aggregate = timelineQueryDataFromInfinite(completed)
 
     expect(aggregate?.state.runUsage['run-1']).toEqual({
-      latestInputTokens: 25_600,
+      status: 'reported',
+      promptTokens: 25_600,
+      modelId: 'aimod_test',
+      maxContextTokensSnapshot: 128_000,
     })
   })
 
@@ -164,7 +167,9 @@ describe('timeline query cache', () => {
     const durable = snapshot(8)
     durable.turns[0]!.selectedRun = {
       ...durable.turns[0]!.selectedRun!,
-      latestInputTokens: 32_000,
+      latestPromptTokens: 32_000,
+      latestUsageModelId: 'aimod_test',
+      latestUsageMaxContextTokensSnapshot: 128_000,
     }
     const aggregate = timelineQueryDataFromInfinite({
       pageParams: [null],
@@ -172,7 +177,10 @@ describe('timeline query cache', () => {
     })
 
     expect(aggregate?.state.runUsage['run-1']).toEqual({
-      latestInputTokens: 32_000,
+      status: 'reported',
+      promptTokens: 32_000,
+      modelId: 'aimod_test',
+      maxContextTokensSnapshot: 128_000,
     })
   })
 

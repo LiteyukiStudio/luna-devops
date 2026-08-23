@@ -16,9 +16,9 @@ export const aiApi = {
   getAICapabilities: () => request<AICapabilities>('/ai/capabilities'),
   listAIModels: () => request<AIModelOption[]>('/ai/models'),
   listAIModelConfigs: () => request<AIModelConfig[]>('/configs/ai/models'),
-  createAIModel: (payload: { name: string, maxContextTokens: number, maxOutputTokens: number, inputCreditsPerMillion: string, outputCreditsPerMillion: string, cachedInputCreditsPerMillion: string, cachedOutputCreditsPerMillion: string, enabled?: boolean }) =>
+  createAIModel: (payload: { name: string, maxContextTokens: number, maxOutputTokens: number, inputCreditsPerMillion: string, outputCreditsPerMillion: string, cachedInputCreditsPerMillion: string, enabled?: boolean }) =>
     request<AIModelConfig>('/configs/ai/models', { method: 'POST', body: JSON.stringify(payload) }),
-  updateAIModel: (id: string, payload: Partial<{ name: string, maxContextTokens: number, maxOutputTokens: number, inputCreditsPerMillion: string, outputCreditsPerMillion: string, cachedInputCreditsPerMillion: string, cachedOutputCreditsPerMillion: string, enabled: boolean }>) =>
+  updateAIModel: (id: string, payload: Partial<{ name: string, maxContextTokens: number, maxOutputTokens: number, inputCreditsPerMillion: string, outputCreditsPerMillion: string, cachedInputCreditsPerMillion: string, enabled: boolean }>) =>
     request<AIModelConfig>(`/configs/ai/models/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(payload) }),
   deleteAIModel: (id: string) =>
     request<void>(`/configs/ai/models/${encodeURIComponent(id)}`, { method: 'DELETE' }),

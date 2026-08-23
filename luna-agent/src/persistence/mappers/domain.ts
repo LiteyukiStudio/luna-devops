@@ -72,7 +72,6 @@ export function mapRun(row: RunRow): Run {
         inputCreditsPerMillion: row.inputCreditsPerMillion ?? "0",
         outputCreditsPerMillion: row.outputCreditsPerMillion ?? "0",
         cachedInputCreditsPerMillion: row.cachedInputCreditsPerMillion ?? "0",
-        cachedOutputCreditsPerMillion: row.cachedOutputCreditsPerMillion ?? "0",
       },
     } : {}),
   }

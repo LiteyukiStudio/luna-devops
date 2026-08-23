@@ -6,7 +6,7 @@ import type { AIModelSnapshot, ActorContext, Run } from "./domain.js"
 import type { Repository } from "./persistence/repository.js"
 import type { ModelProvider } from "./provider/provider.js"
 import type { ProviderConfigClient } from "./provider/config-client.js"
-import { OpenAICompatibleProvider } from "./provider/openai-compatible.js"
+import { OpenAIChatCompletionsProvider } from "./provider/openai-chat-completions.js"
 import { redact } from "./redaction.js"
 import type { ToolOrchestrator } from "./tools/orchestrator.js"
 import { presentEvent, presentTimeline } from "./timeline-presenter.js"
@@ -32,7 +32,6 @@ const aiModelSnapshot = z.object({
   inputCreditsPerMillion: z.string(),
   outputCreditsPerMillion: z.string(),
   cachedInputCreditsPerMillion: z.string(),
-  cachedOutputCreditsPerMillion: z.string(),
 }).refine(snapshot => snapshot.maxOutputTokens < snapshot.maxContextTokens, { path: ["maxOutputTokens"] }) satisfies z.ZodType<AIModelSnapshot>
 export function buildServer(input: {
   config: Config
@@ -106,7 +105,6 @@ export function buildServer(input: {
           maxInputBytes: runtime.maxInputBytes,
           maxConcurrentRuns: runtime.agentConcurrentRuns,
           maxUserConcurrentRuns: runtime.userConcurrentRuns,
-          contextInputTokenBudget: runtime.contextInputTokenBudget,
         },
         provider: input.provider.capabilities(),
       }
@@ -119,10 +117,9 @@ export function buildServer(input: {
       const config = await input.providerConfigClient.get()
       const selectedModel = config.provider.models[0]
       if (!config.provider.configured || !selectedModel) return reply.code(409).send({ status: "not_configured", configVersion: config.version, capabilities: {} })
-      const provider = new OpenAICompatibleProvider({
+      const provider = new OpenAIChatCompletionsProvider({
         baseUrl: config.provider.baseUrl, apiKey: config.provider.apiKey,
         model: selectedModel.name, timeoutMs: config.runtime.providerTimeoutMs,
-        maxRetries: config.runtime.maxRequestRetries,
       })
       const health = await provider.health()
       return {

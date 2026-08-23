@@ -40,15 +40,14 @@
 
 | 配置项名称 | 默认值 | 说明 |
 | --- | --- | --- |
-| `AI_CONTEXT_COMPRESSION_TRIGGER_RATIO`<sup>2</sup> | `0.9` | 设置上下文使用率达到何值时触发压缩；填写 `0.5`–`0.95`。 |
-| `AI_CONTEXT_COMPRESSION_TARGET_RATIO` | `0.7` | 设置压缩后的目标上下文使用率；填写 `0.1`–`0.8`。 |
-| `AI_CONTEXT_RECENT_TURN_COUNT`<sup>3</sup> | `16` | 设置压缩时保留的近期对话轮数；填写 `1`–`32` 的整数。 |
-| `AI_CONTEXT_MAX_RECENT_TURN_COUNT` | `32` | 限制上下文携带的近期对话轮数；填写 `2`–`64` 的整数。 |
-| `AI_CONTEXT_HISTORICAL_TOOL_K_TOKENS` | `64` | 限制历史工具结果占用的上下文；填写 `1`–`256` 的整数，单位为 KiToken。 |
+| `AI_CONTEXT_COMPRESSION_TRIGGER_RATIO`<sup>2</sup> | `0.9` | 设置何时依据上一次同模型官方 `prompt_tokens` 触发压缩；填写 `0.5`–`0.95`。 |
+| `AI_CONTEXT_RECENT_TURN_COUNT` | `16` | 设置主动压缩时保留的近期对话轮数；填写 `1`–`32` 的整数。 |
+| `AI_CONTEXT_MAX_HISTORY_PAYLOAD_K_BYTES` | `4096` | 限制一次编译携带的历史负载；填写 `64`–`16384` 的整数，单位为 KiB。 |
+| `AI_CONTEXT_MAX_SUMMARY_PAYLOAD_K_BYTES` | `512` | 限制单次摘要请求的历史负载；填写 `16`–`4096` 的整数，单位为 KiB。 |
+| `AI_CONTEXT_MAX_CONTINUATION_PAYLOAD_K_BYTES` | `1024` | 限制工具续跑消息负载；填写 `16`–`4096` 的整数，单位为 KiB。 |
 | `AI_TOOLS_RESULT_PAYLOAD_K_BYTES` | `512` | 限制单次工具结果进入上下文的大小；填写 `4`–`4096` 的整数，单位为 KiB。 |
 
-2. 说明：压缩触发比例必须大于目标比例。
-3. 说明：近期轮数不能大于近期轮数上限。
+2. 说明：新会话没有官方用量时会直接请求 Provider；字节上限只保护传输和内存，不代表 Token 数。
 
 ### Docker Compose
 

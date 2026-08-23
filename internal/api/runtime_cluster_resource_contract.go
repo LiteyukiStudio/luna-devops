@@ -4,7 +4,6 @@ import (
 	"net/http"
 	"slices"
 
-	"github.com/LiteyukiStudio/devops/internal/telemetry"
 	"github.com/gin-gonic/gin"
 )
 
@@ -33,10 +32,5 @@ func validRuntimeResourceKind(value string) bool {
 }
 
 func writeRuntimeResourceArgumentError(ctx *gin.Context, code, path string, allowedValues []string) {
-	telemetry.SetHTTPError(ctx, code, code)
-	response := errorEnvelope(ctx, http.StatusBadRequest, code)
-	response["retryable"] = false
-	response["path"] = path
-	response["allowedValues"] = allowedValues
-	ctx.JSON(http.StatusBadRequest, response)
+	writeArgumentErrorCode(ctx, http.StatusBadRequest, code, code, path, allowedValues, false)
 }

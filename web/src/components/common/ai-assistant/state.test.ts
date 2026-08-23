@@ -392,9 +392,9 @@ describe('aI assistant state', () => {
       eventSequence: 2,
       type: 'model.completed',
       item: undefined,
-      payload: { usage: { inputTokens: 25600, outputTokens: 512, cachedInputTokens: 0, cachedOutputTokens: 0 } },
+      payload: { usage: { status: 'reported', promptTokens: 25600, completionTokens: 512, totalTokens: 26112 }, modelId: 'aimod_test', maxContextTokensSnapshot: 32_000 },
     }))
-    expect(completed.runUsage['run-1']?.latestInputTokens).toBe(25600)
+    expect(completed.runUsage['run-1']).toEqual({ status: 'reported', promptTokens: 25600, modelId: 'aimod_test', maxContextTokensSnapshot: 32_000 })
 
     const withoutUsage = reduceAIEvent(completed, event({
       eventId: 'event-3',
@@ -403,7 +403,7 @@ describe('aI assistant state', () => {
       item: undefined,
       payload: {},
     }))
-    expect(withoutUsage.runUsage['run-1']?.latestInputTokens).toBe(25600)
+    expect(withoutUsage.runUsage['run-1']).toEqual({ status: 'unavailable' })
   })
 
   it('keeps only the latest model input usage for context display', () => {
@@ -413,17 +413,17 @@ describe('aI assistant state', () => {
       eventSequence: 2,
       type: 'model.completed',
       item: undefined,
-      payload: { usage: { inputTokens: 1000, outputTokens: 500 } },
+      payload: { usage: { status: 'reported', promptTokens: 1000, completionTokens: 500, totalTokens: 1500 }, modelId: 'aimod_test', maxContextTokensSnapshot: 32_000 },
     }))
-    expect(first.runUsage['run-1']?.latestInputTokens).toBe(1000)
+    expect(first.runUsage['run-1']?.promptTokens).toBe(1000)
     const second = reduceAIEvent(first, event({
       eventId: 'event-3',
       eventSequence: 3,
       type: 'model.completed',
       item: undefined,
-      payload: { usage: { inputTokens: 200, outputTokens: 300 } },
+      payload: { usage: { status: 'reported', promptTokens: 200, completionTokens: 300, totalTokens: 500 }, modelId: 'aimod_test', maxContextTokensSnapshot: 32_000 },
     }))
-    expect(second.runUsage['run-1']?.latestInputTokens).toBe(200)
+    expect(second.runUsage['run-1']?.promptTokens).toBe(200)
   })
 
   it('isolates token usage between runs', () => {
@@ -432,7 +432,7 @@ describe('aI assistant state', () => {
       eventSequence: 1,
       type: 'model.completed',
       item: undefined,
-      payload: { usage: { inputTokens: 1000, outputTokens: 200 } },
+      payload: { usage: { status: 'reported', promptTokens: 1000, completionTokens: 200, totalTokens: 1200 }, modelId: 'aimod_test', maxContextTokensSnapshot: 32_000 },
     }))
     const nextRun = reduceAIEvent(first, event({
       eventId: 'event-next-1',
@@ -444,7 +444,7 @@ describe('aI assistant state', () => {
       payload: {},
     }))
 
-    expect(nextRun.runUsage['run-1']).toEqual({ latestInputTokens: 1000 })
+    expect(nextRun.runUsage['run-1']).toEqual({ status: 'reported', promptTokens: 1000, modelId: 'aimod_test', maxContextTokensSnapshot: 32_000 })
     expect(nextRun.runUsage['run-2']).toBeUndefined()
   })
 })

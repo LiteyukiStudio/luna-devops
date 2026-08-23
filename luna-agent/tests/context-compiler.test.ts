@@ -1,376 +1,149 @@
 import { describe, expect, it, vi } from "vitest"
-import { ContextCompiler, type CompileContextInput } from "../src/context/compiler.js"
-import type { ConversationHistoryEntry } from "../src/domain.js"
-import { TestRepository } from "./support/test-repository.js"
-import type { ModelProvider } from "../src/provider/provider.js"
+import { ContextCompiler } from "../src/context/compiler.js"
+import type { AIModelSnapshot, ConversationHistoryEntry, ConversationSummary } from "../src/domain.js"
+import type { Repository } from "../src/persistence/repository.js"
+import { ProviderRequestError } from "../src/provider/provider-error.js"
 
-describe("ContextCompiler", () => {
-  it("persists an incremental structured summary and reuses its coverage cursor", async () => {
-    const repository = new TestRepository()
-    const conversation = await repository.createConversation("usr_a", "长会话")
-    for (let index = 0; index < 10; index += 1) {
-      const created = await repository.createTurn("usr_a", {
-        conversationId: conversation.id,
-        input: `用户消息 ${index}`,
-        pageContext: {},
-        idempotencyKey: `context-${index}`,
-      })
-      await repository.appendItem({
-        runId: created.run.id,
-        turnId: created.turn.id,
-        type: "assistant_message",
-        status: "completed",
-        content: { parts: [{ type: "text", text: `助手回复 ${index}` }] },
-      })
-    }
-    const current = await repository.createTurn("usr_a", {
-      conversationId: conversation.id,
-      input: "继续",
-      pageContext: {},
-      idempotencyKey: "context-current",
-    })
-    const execution = await repository.getExecutionInput(current.run.id)
-    const provider = summaryProvider()
-    const compiler = new ContextCompiler(repository, provider, {
-      inputTokenBudget: 8_000,
-      compressionTriggerRatio: 0.8,
-      compressionTargetRatio: 0.5,
-      recentTurnCount: 4,
-      maxRecentTurnCount: 8,
-      maxUncompressedTurnCount: 8,
-      maxCompressionTurnsPerCompile: 96,
-      summaryInputTokenBudget: 4_000,
-      summaryMaxOutputTokens: 500,
-      historicalToolTokenBudget: 1_000,
-    })
+const model: AIModelSnapshot = {
+  id: "aimdl_400k", name: "400K", maxContextTokens: 400_000, maxOutputTokens: 8_000,
+  inputCreditsPerMillion: "1", outputCreditsPerMillion: "2", cachedInputCreditsPerMillion: "0.5",
+}
+const summaryJSON = JSON.stringify({
+  userGoals: ["完成部署"], constraints: [], confirmedResources: [], completedActions: [], failures: [], pendingWork: [], durableFacts: [],
+})
+const options = {
+  compressionTriggerRatio: 0.8,
+  recentTurnCount: 1,
+  maxUncompressedTurnCount: 4,
+  maxCompressionTurnsPerCompile: 8,
+  summaryMaxOutputTokens: 1_024,
+  maxHistoryPayloadBytes: 64 * 1_024,
+  maxSummaryPayloadBytes: 2 * 1_024,
+  maxContinuationPayloadBytes: 32 * 1_024,
+}
 
-    const first = await compiler.compile(compileInput(conversation.id, execution!.turnIndex, execution!.history))
-    expect(first.compressionOutcome).toBe("compressed")
-    expect(first.summarizedThroughTurnIndex).toBe(5)
-    expect(first.recentTurnCount).toBe(4)
-    expect(first.messages.some(message => message.content.includes("历史会话结构化摘要"))).toBe(true)
-    expect(await repository.getConversationSummary(conversation.id)).toMatchObject({
-      coveredThroughTurnIndex: 5,
-      compressionVersion: 1,
-      sourceTurnCount: 6,
-    })
+describe("ContextCompiler authoritative compression", () => {
+  it("triggers from the previous official prompt_tokens ratio", async () => {
+    const history = entries(3)
+    const repository = memoryRepository({ history, latestUsage: { modelId: "aimdl_400k", promptTokens: 320_000, maxContextTokensSnapshot: 400_000 } })
+    const complete = vi.fn(async () => ({ text: summaryJSON, usage: reported(500, 100) }))
 
-    const second = await compiler.compile(compileInput(conversation.id, execution!.turnIndex, execution!.history))
-    expect(second.compressionOutcome).toBe("reused")
-    expect(provider.complete).toHaveBeenCalledOnce()
+    const result = await new ContextCompiler(repository, { complete }, options).compile(compileInput(history))
+
+    expect(complete).toHaveBeenCalledOnce()
+    expect(result.compaction).toEqual({ summarizedThroughTurnIndex: 1, sourceTurnCount: 2, trigger: "provider_usage", priorPromptTokens: 320_000 })
+    expect(result.messages.some(message => message.content.includes("历史会话结构化摘要"))).toBe(true)
   })
 
-  it("falls back to recent authoritative turns when summary generation fails", async () => {
-    const repository = new TestRepository()
-    const conversation = await repository.createConversation("usr_a", "fallback")
-    const history: ConversationHistoryEntry[] = Array.from({ length: 8 }, (_, turnIndex) => ({
-      turnIndex,
-      user: `user-${turnIndex}`,
-      assistant: `assistant-${turnIndex}`,
-    }))
-    vi.spyOn(repository, "listConversationHistory").mockResolvedValue(history.slice(0, 4))
-    const provider = summaryProvider(new Error("ai.provider_request_failed"))
-    const compiler = new ContextCompiler(repository, provider, {
-      inputTokenBudget: 8_000,
-      compressionTriggerRatio: 0.8,
-      compressionTargetRatio: 0.5,
-      recentTurnCount: 4,
-      maxRecentTurnCount: 6,
-      maxUncompressedTurnCount: 6,
-      maxCompressionTurnsPerCompile: 96,
-      summaryInputTokenBudget: 4_000,
-      summaryMaxOutputTokens: 500,
-      historicalToolTokenBudget: 1_000,
-    })
+  it("does not reject a new 400K-model request before calling the Provider", async () => {
+    const repository = memoryRepository({ history: [] })
+    const complete = vi.fn(async () => ({ text: summaryJSON, usage: reported(1, 1) }))
+    const current = "新输入".repeat(200_000)
 
-    const result = await compiler.compile(compileInput(conversation.id, 8, history.slice(-4)))
+    const result = await new ContextCompiler(repository, { complete }, options).compile(compileInput([], { currentUserMessage: { role: "user", content: current } }))
 
-    expect(result.compressionOutcome).toBe("fallback")
-    expect(result.messages.some(message => message.content.includes("user-7"))).toBe(true)
-    expect(await repository.getConversationSummary(conversation.id)).toBeUndefined()
-  })
-
-  it("keeps current tool calls and results paired while compiling", async () => {
-    const repository = new TestRepository()
-    const conversation = await repository.createConversation("usr_a", "tools")
-    const compiler = new ContextCompiler(repository, summaryProvider(), {
-      inputTokenBudget: 8_000,
-      compressionTriggerRatio: 0.8,
-      compressionTargetRatio: 0.5,
-      recentTurnCount: 4,
-      maxRecentTurnCount: 8,
-      maxUncompressedTurnCount: 24,
-      maxCompressionTurnsPerCompile: 96,
-      summaryInputTokenBudget: 4_000,
-      summaryMaxOutputTokens: 500,
-      historicalToolTokenBudget: 1_000,
-    })
-    const input = compileInput(conversation.id, 0, [])
-    input.continuationMessages = [
-      { role: "assistant", content: "正在查询", toolCalls: [{ id: "call-1", operationId: "listProjects", arguments: {} }] },
-      { role: "tool", toolCallId: "call-1", content: JSON.stringify({ status: "succeeded", result: [] }) },
-    ]
-
-    const result = await compiler.compile(input)
-
-    expect(result.messages.slice(-2)).toEqual(input.continuationMessages)
-  })
-
-  it("keeps only one rolling summary and recent raw history while incrementally advancing", async () => {
-    const repository = new TestRepository()
-    const conversation = await repository.createConversation("usr_a", "large-history")
-    const history: ConversationHistoryEntry[] = Array.from({ length: 250 }, (_, turnIndex) => ({
-      turnIndex,
-      user: `user-${turnIndex}`,
-      assistant: `assistant-${turnIndex}`,
-    }))
-    vi.spyOn(repository, "listConversationHistory").mockImplementation(async (_conversationId, after, before, limit) =>
-      history.filter(entry => entry.turnIndex > after && entry.turnIndex < before).slice(0, limit))
-    const compiler = new ContextCompiler(repository, summaryProvider(), {
-      inputTokenBudget: 8_000,
-      compressionTriggerRatio: 0.8,
-      compressionTargetRatio: 0.5,
-      recentTurnCount: 4,
-      maxRecentTurnCount: 8,
-      maxUncompressedTurnCount: 8,
-      maxCompressionTurnsPerCompile: 48,
-      summaryInputTokenBudget: 4_000,
-      summaryMaxOutputTokens: 500,
-      historicalToolTokenBudget: 1_000,
-    })
-
-    const first = await compiler.compile(compileInput(conversation.id, 250, history.slice(-8)))
-    expect(first.compressionOutcome).toBe("compressed")
-    expect(first.summarizedThroughTurnIndex).toBe(47)
-    expect(first.messages.some(message => message.content.includes("尚未进入摘要"))).toBe(false)
-
-    const second = await compiler.compile(compileInput(conversation.id, 250, history.slice(-8)))
-    expect(second.compressionOutcome).toBe("compressed")
-    expect(second.summarizedThroughTurnIndex).toBe(95)
-    expect(await repository.getConversationSummary(conversation.id)).toMatchObject({ sourceTurnCount: 96 })
-  })
-
-  it("bounds oversized continuation payloads while retaining complete tool call and result pairs", async () => {
-    const repository = new TestRepository()
-    const conversation = await repository.createConversation("usr_a", "large-tools")
-    const compiler = new ContextCompiler(repository, summaryProvider(), {
-      inputTokenBudget: 600,
-      compressionTriggerRatio: 0.8,
-      compressionTargetRatio: 0.5,
-      recentTurnCount: 4,
-      maxRecentTurnCount: 8,
-      maxUncompressedTurnCount: 24,
-      maxCompressionTurnsPerCompile: 96,
-      summaryInputTokenBudget: 300,
-      summaryMaxOutputTokens: 500,
-      historicalToolTokenBudget: 200,
-    })
-    const input = compileInput(conversation.id, 0, [])
-    input.continuationMessages = ["call-1", "call-2"].flatMap((id): CompileContextInput["continuationMessages"] => [
-      {
-        role: "assistant",
-        content: "准备调用".repeat(2_000),
-        toolCalls: [{ id, operationId: "inspectResource", arguments: { payload: "参数".repeat(8_000) } }],
-      },
-      { role: "tool", toolCallId: id, content: JSON.stringify({ result: "结果".repeat(12_000) }) },
-    ])
-
-    const result = await compiler.compile(input)
-
-    expect(result.estimatedInputTokens).toBeLessThanOrEqual(600)
-    const continuation = result.messages.filter(message => message.role === "assistant" || message.role === "tool")
-    expect(continuation).toHaveLength(4)
-    for (let index = 0; index < continuation.length; index += 2) {
-      const call = continuation[index]
-      const toolResult = continuation[index + 1]
-      expect(call?.role).toBe("assistant")
-      expect(toolResult?.role).toBe("tool")
-      if (call?.role === "assistant" && toolResult?.role === "tool") {
-        expect(call.toolCalls?.[0]?.id).toBe(toolResult.toolCallId)
-      }
-    }
-  })
-
-  it("does not summarize a short conversation below the token high watermark", async () => {
-    const repository = new TestRepository()
-    const conversation = await repository.createConversation("usr_a", "short-history")
-    const history: ConversationHistoryEntry[] = Array.from({ length: 10 }, (_, turnIndex) => ({
-      turnIndex,
-      user: `user-${turnIndex}`,
-      assistant: `assistant-${turnIndex}`,
-    }))
-    vi.spyOn(repository, "listConversationHistory").mockResolvedValue(history)
-    const provider = summaryProvider()
-    const compiler = new ContextCompiler(repository, provider, {
-      inputTokenBudget: 8_000,
-      compressionTriggerRatio: 0.8,
-      compressionTargetRatio: 0.5,
-      recentTurnCount: 4,
-      maxRecentTurnCount: 12,
-      maxUncompressedTurnCount: 24,
-      maxCompressionTurnsPerCompile: 96,
-      summaryInputTokenBudget: 4_000,
-      summaryMaxOutputTokens: 500,
-      historicalToolTokenBudget: 1_000,
-    })
-
-    const result = await compiler.compile(compileInput(conversation.id, 10, history.slice(-8)))
-
+    expect(complete).not.toHaveBeenCalled()
     expect(result.compressionOutcome).toBe("not_needed")
-    expect(provider.complete).not.toHaveBeenCalled()
-    expect(result.estimatedInputTokens).toBeLessThanOrEqual(8_000)
+    expect(result.messages.at(-1)).toEqual({ role: "user", content: current })
   })
 
-  it("summarizes oversized recent turns by token pressure instead of dropping them silently", async () => {
-    const repository = new TestRepository()
-    const conversation = await repository.createConversation("usr_a", "token-pressure")
-    const history: ConversationHistoryEntry[] = Array.from({ length: 4 }, (_, turnIndex) => ({
-      turnIndex,
-      user: `user-${turnIndex}-${"输入".repeat(4_000)}`,
-      assistant: `assistant-${turnIndex}-${"输出".repeat(8_000)}`,
-      toolInteractions: [{ result: "工具结果".repeat(5_000) }],
+  it("uses explicit turn backlog instead of a local Token preflight", async () => {
+    const history = entries(6)
+    const repository = memoryRepository({ history })
+    const complete = vi.fn(async () => ({ text: summaryJSON, usage: reported(20, 5) }))
+
+    const result = await new ContextCompiler(repository, { complete }, options).compile(compileInput(history))
+
+    expect(result.compaction?.trigger).toBe("turn_backlog")
+    expect(result.compaction?.priorPromptTokens).toBeUndefined()
+  })
+
+  it("bisects a summary batch only after a structured context error", async () => {
+    const history = entries(4)
+    const repository = memoryRepository({ history })
+    const complete = vi.fn()
+      .mockRejectedValueOnce(contextError())
+      .mockResolvedValue({ text: summaryJSON, usage: reported(20, 5) })
+
+    const result = await new ContextCompiler(repository, { complete }, options).compile(compileInput(history, { forceCompressionTrigger: "context_error" }))
+
+    expect(complete).toHaveBeenCalledTimes(3)
+    expect(result.compaction).toMatchObject({ trigger: "context_error", sourceTurnCount: 4, summarizedThroughTurnIndex: 3 })
+  })
+
+  it("segments a single oversized turn on a byte boundary after Provider rejection", async () => {
+    const history: ConversationHistoryEntry[] = [{ turnIndex: 0, user: "用户".repeat(4_000), assistant: "助手".repeat(4_000) }]
+    const repository = memoryRepository({ history })
+    const complete = vi.fn()
+      .mockRejectedValueOnce(contextError())
+      .mockResolvedValue({ text: summaryJSON, usage: reported(20, 5) })
+
+    const result = await new ContextCompiler(repository, { complete }, options).compile(compileInput(history, { forceCompressionTrigger: "context_error" }))
+
+    expect(complete.mock.calls.length).toBeGreaterThan(2)
+    expect(result.compaction).toMatchObject({ trigger: "context_error", sourceTurnCount: 1 })
+  })
+
+  it("does not hide authentication and availability failures behind fallback", async () => {
+    const history = entries(2)
+    const repository = memoryRepository({ history })
+    const complete = vi.fn(async () => { throw new ProviderRequestError("ai.provider_auth_failed", { stage: "response_headers", requestOutcome: "rejected" }) })
+
+    await expect(new ContextCompiler(repository, { complete }, options).compile(compileInput(history, { forceCompressionTrigger: "context_error" })))
+      .rejects.toThrow("ai.provider_auth_failed")
+    expect(complete).toHaveBeenCalledOnce()
+  })
+
+  it("preserves an official usage contract failure instead of accepting the summary", async () => {
+    const history = entries(2)
+    const repository = memoryRepository({ history })
+    const complete = vi.fn(async () => ({
+      text: summaryJSON,
+      usage: { status: "unavailable" as const, reason: "missing_usage" as const },
     }))
-    vi.spyOn(repository, "listConversationHistory").mockResolvedValue(history)
-    const provider = summaryProvider()
-    const compiler = new ContextCompiler(repository, provider, {
-      inputTokenBudget: 4_000,
-      compressionTriggerRatio: 0.8,
-      compressionTargetRatio: 0.5,
-      recentTurnCount: 4,
-      maxRecentTurnCount: 8,
-      maxUncompressedTurnCount: 24,
-      maxCompressionTurnsPerCompile: 96,
-      summaryInputTokenBudget: 4_000,
-      summaryMaxOutputTokens: 500,
-      historicalToolTokenBudget: 500,
-    })
 
-    const result = await compiler.compile(compileInput(conversation.id, 4, history))
-
-    expect(result.compressionOutcome).toBe("compressed")
-    expect(result.summarizedThroughTurnIndex).toBeGreaterThanOrEqual(0)
-    expect(provider.complete).toHaveBeenCalled()
-    expect(result.estimatedInputTokens).toBeLessThanOrEqual(4_000)
-  })
-
-  it("continues compressing a legacy backlog across runs until only recent verbatim turns remain", async () => {
-    const repository = new TestRepository()
-    const conversation = await repository.createConversation("usr_a", "legacy-backlog")
-    const history: ConversationHistoryEntry[] = Array.from({ length: 300 }, (_, turnIndex) => ({
-      turnIndex,
-      user: `user-${turnIndex}`,
-      assistant: `assistant-${turnIndex}`,
-    }))
-    vi.spyOn(repository, "listConversationHistory").mockImplementation(async (_conversationId, after, before, limit) =>
-      history.filter(entry => entry.turnIndex > after && entry.turnIndex < before).slice(0, limit))
-    const compiler = new ContextCompiler(repository, summaryProvider(), {
-      inputTokenBudget: 8_000,
-      compressionTriggerRatio: 0.8,
-      compressionTargetRatio: 0.5,
-      recentTurnCount: 4,
-      maxRecentTurnCount: 8,
-      maxUncompressedTurnCount: 24,
-      maxCompressionTurnsPerCompile: 48,
-      summaryInputTokenBudget: 4_000,
-      summaryMaxOutputTokens: 500,
-      historicalToolTokenBudget: 1_000,
-    })
-
-    let result = await compiler.compile(compileInput(conversation.id, 300, history.slice(-8)))
-    for (let attempt = 0; attempt < 8 && (result.summarizedThroughTurnIndex ?? -1) < 295; attempt += 1) {
-      expect(result.estimatedInputTokens).toBeLessThanOrEqual(8_000)
-      result = await compiler.compile(compileInput(conversation.id, 300, history.slice(-8)))
-    }
-
-    expect(result.summarizedThroughTurnIndex).toBe(295)
-    expect(result.compressionOutcome).toBe("compressed")
-    expect(result.messages.some(message => message.content.includes("压缩正在增量追赶"))).toBe(false)
-    expect(result.estimatedInputTokens).toBeLessThanOrEqual(8_000)
-  })
-
-  it("applies a validated context budget update without recreating the compiler", async () => {
-    const repository = new TestRepository()
-    const conversation = await repository.createConversation("usr_a", "runtime-budget")
-    const compiler = new ContextCompiler(repository, summaryProvider(), {
-      inputTokenBudget: 1,
-      compressionTriggerRatio: 0.8,
-      compressionTargetRatio: 0.5,
-      recentTurnCount: 4,
-      maxRecentTurnCount: 8,
-      maxUncompressedTurnCount: 24,
-      maxCompressionTurnsPerCompile: 96,
-      summaryInputTokenBudget: 4_000,
-      summaryMaxOutputTokens: 500,
-      historicalToolTokenBudget: 1_000,
-    })
-
-    await expect(compiler.compile(compileInput(conversation.id, 0, [])))
-      .rejects.toThrow("ai.context_base_budget_exhausted")
-    compiler.setInputTokenBudget(8_000)
-
-    const result = await compiler.compile(compileInput(conversation.id, 0, []))
-    expect(result.estimatedInputTokens).toBeLessThanOrEqual(8_000)
-  })
-
-  it("counts and preserves stable plus dynamic system messages before user context", async () => {
-    const repository = new TestRepository()
-    const conversation = await repository.createConversation("usr_a", "system-messages")
-    const compiler = new ContextCompiler(repository, summaryProvider(), {
-      inputTokenBudget: 8_000, compressionTriggerRatio: 0.8, compressionTargetRatio: 0.5,
-      recentTurnCount: 4, maxRecentTurnCount: 8, maxUncompressedTurnCount: 24,
-      maxCompressionTurnsPerCompile: 96, summaryInputTokenBudget: 4_000,
-      summaryMaxOutputTokens: 500, historicalToolTokenBudget: 1_000,
-    })
-    const one = await compiler.compile(compileInput(conversation.id, 0, []))
-    const multiple = await compiler.compile({
-      conversationId: conversation.id,
-      beforeTurnIndex: 0,
-      systemMessages: [
-        { role: "system", content: "稳定平台前缀" },
-        { role: "system", content: "按本轮目标加载的动态参考" },
-      ],
-      currentUserMessage: { role: "user", content: "当前问题" },
-      history: [],
-      continuationMessages: [],
-      tools: [],
-    })
-
-    expect(multiple.messages.slice(0, 2)).toEqual([
-      { role: "system", content: "稳定平台前缀" },
-      { role: "system", content: "按本轮目标加载的动态参考" },
-    ])
-    expect(multiple.estimatedInputTokens).toBeGreaterThan(one.estimatedInputTokens)
+    await expect(new ContextCompiler(repository, { complete }, options).compile(compileInput(history, { forceCompressionTrigger: "context_error" })))
+      .rejects.toThrow("ai.provider_usage_unavailable")
+    expect(complete).toHaveBeenCalledOnce()
   })
 })
 
-function compileInput(conversationId: string, beforeTurnIndex: number, history: ConversationHistoryEntry[]): CompileContextInput {
+function compileInput(history: ConversationHistoryEntry[], overrides: Record<string, unknown> = {}) {
   return {
-    conversationId,
-    beforeTurnIndex,
+    conversationId: "aicnv_test", beforeTurnIndex: history.length,
     systemMessage: { role: "system" as const, content: "系统提示" },
-    currentUserMessage: { role: "user" as const, content: "当前问题" },
-    history,
-    continuationMessages: [],
-    tools: [],
+    currentUserMessage: { role: "user" as const, content: "继续" },
+    history, continuationMessages: [], tools: [], model,
+    ...overrides,
   }
 }
 
-function summaryProvider(failure?: Error) {
+function entries(count: number): ConversationHistoryEntry[] {
+  return Array.from({ length: count }, (_, turnIndex) => ({ turnIndex, user: `用户 ${turnIndex}`, assistant: `助手 ${turnIndex}` }))
+}
+
+function reported(promptTokens: number, completionTokens: number) {
+  return { status: "reported" as const, value: { promptTokens, completionTokens, totalTokens: promptTokens + completionTokens } }
+}
+
+function contextError() {
+  return new ProviderRequestError("ai.provider_context_length_exceeded", { stage: "response_headers", requestOutcome: "rejected" })
+}
+
+function memoryRepository(input: {
+  history: ConversationHistoryEntry[]
+  latestUsage?: { modelId: string, promptTokens: number, maxContextTokensSnapshot: number }
+}) {
+  let summary: ConversationSummary | undefined
   return {
-    complete: vi.fn(async () => {
-      if (failure) throw failure
-      return {
-        text: JSON.stringify({
-          userGoals: ["完成诊断"],
-          constraints: [],
-          confirmedResources: [],
-          completedActions: [],
-          failures: [],
-          pendingWork: ["继续检查"],
-          durableFacts: [],
-        }),
-        usage: { inputTokens: 100, outputTokens: 30 },
-      }
-    }),
-  } satisfies Pick<ModelProvider, "complete">
+    getConversationSummary: async () => summary,
+    getLatestReportedModelUsage: async () => input.latestUsage,
+    listConversationHistory: async (_conversationId: string, after: number, before: number, limit: number) =>
+      input.history.filter(entry => entry.turnIndex > after && entry.turnIndex < before).slice(0, limit),
+    saveConversationSummary: async (value: Omit<ConversationSummary, "createdAt" | "updatedAt">) => {
+      const now = new Date().toISOString()
+      summary = { ...value, createdAt: now, updatedAt: now }
+      return summary
+    },
+  } as Pick<Repository, "getConversationSummary" | "getLatestReportedModelUsage" | "listConversationHistory" | "saveConversationSummary">
 }

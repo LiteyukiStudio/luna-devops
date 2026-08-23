@@ -75,7 +75,6 @@ export function AIModelManagement() {
     form.setValue('inputCreditsPerMillion', suggestedPreset.prices.input, { shouldValidate: true })
     form.setValue('outputCreditsPerMillion', suggestedPreset.prices.output, { shouldValidate: true })
     form.setValue('cachedInputCreditsPerMillion', suggestedPreset.prices.cachedInput, { shouldValidate: true })
-    form.setValue('cachedOutputCreditsPerMillion', suggestedPreset.prices.cachedOutput, { shouldValidate: true })
   }
   return (
     <div className="max-w-3xl">
@@ -135,7 +134,6 @@ export function AIModelManagement() {
                     input: suggestedPreset.prices.input,
                     output: suggestedPreset.prices.output,
                     cachedInput: suggestedPreset.prices.cachedInput,
-                    cachedOutput: suggestedPreset.prices.cachedOutput,
                   })}
                 </span>
                 <Button size="sm" type="button" variant="outline" onClick={applySuggestedPreset}>
@@ -151,7 +149,6 @@ export function AIModelManagement() {
               <Field error={errors.inputCreditsPerMillion?.message} hint={t('settings.ai.models.priceHint')} label={t('settings.ai.models.inputPrice')} required><Input inputMode="decimal" {...form.register('inputCreditsPerMillion')} /></Field>
               <Field error={errors.outputCreditsPerMillion?.message} hint={t('settings.ai.models.priceHint')} label={t('settings.ai.models.outputPrice')} required><Input inputMode="decimal" {...form.register('outputCreditsPerMillion')} /></Field>
               <Field error={errors.cachedInputCreditsPerMillion?.message} hint={t('settings.ai.models.priceHint')} label={t('settings.ai.models.cachedInputPrice')} required><Input inputMode="decimal" {...form.register('cachedInputCreditsPerMillion')} /></Field>
-              <Field error={errors.cachedOutputCreditsPerMillion?.message} hint={t('settings.ai.models.priceHint')} label={t('settings.ai.models.cachedOutputPrice')} required><Input inputMode="decimal" {...form.register('cachedOutputCreditsPerMillion')} /></Field>
             </div>
             <label className="flex items-center gap-2 text-sm">
               <input type="checkbox" {...form.register('enabled')} />

@@ -49,11 +49,15 @@ export async function streamModel(
             content: redact({
               notice: "context_compacted",
               summarizedThroughTurnIndex: event.summarizedThroughTurnIndex,
-              estimatedInputTokens: event.estimatedInputTokens,
+              sourceTurnCount: event.sourceTurnCount,
+              trigger: event.trigger,
+              ...(event.priorPromptTokens !== undefined ? { priorPromptTokens: event.priorPromptTokens } : {}),
             }),
           }, "context.compacted", redact({
             summarizedThroughTurnIndex: event.summarizedThroughTurnIndex,
-            estimatedInputTokens: event.estimatedInputTokens,
+            sourceTurnCount: event.sourceTurnCount,
+            trigger: event.trigger,
+            ...(event.priorPromptTokens !== undefined ? { priorPromptTokens: event.priorPromptTokens } : {}),
           }))
           continue
         }
@@ -113,16 +117,31 @@ export async function streamModel(
         if (event.type === "completed") {
           toolCalls = event.toolCalls ?? []
           span.setAttribute("luna.tool_call.count", toolCalls.length)
-          agentMetrics.modelTokens.add(event.usage.inputTokens, { direction: "input" })
-          agentMetrics.modelTokens.add(event.usage.outputTokens, { direction: "output" })
+          if (event.usage.status === "reported") {
+            agentMetrics.modelTokens.add(event.usage.value.promptTokens, { direction: "input" })
+            agentMetrics.modelTokens.add(event.usage.value.completionTokens, { direction: "output" })
+          }
+          const usage = event.reconciliationRequired
+            ? { status: "reconciliation_required" as const, reason: event.usage.status === "unavailable" ? event.usage.reason : "hold_deficit" }
+            : event.usage.status === "reported"
+              ? {
+                  status: "reported" as const,
+                  promptTokens: event.usage.value.promptTokens,
+                  completionTokens: event.usage.value.completionTokens,
+                  totalTokens: event.usage.value.totalTokens,
+                  ...(event.usage.value.cachedPromptTokens !== undefined ? { cachedPromptTokens: event.usage.value.cachedPromptTokens } : {}),
+                  ...(event.usage.value.cacheWritePromptTokens !== undefined ? { cacheWritePromptTokens: event.usage.value.cacheWritePromptTokens } : {}),
+                  ...(event.usage.value.reasoningCompletionTokens !== undefined ? { reasoningCompletionTokens: event.usage.value.reasoningCompletionTokens } : {}),
+                }
+              : event.usage
           await repository.appendEvent(runId, "model.completed", {
-            usage: {
-              inputTokens: event.usage.inputTokens,
-              outputTokens: event.usage.outputTokens,
-              cachedInputTokens: event.usage.cachedInputTokens ?? 0,
-              cachedOutputTokens: event.usage.cachedOutputTokens ?? 0,
-            },
-            ...(event.reservationId ? { reservationId: event.reservationId } : {}),
+            usage,
+            ...(input.model ? { modelId: input.model.id, maxContextTokensSnapshot: input.model.maxContextTokens } : {}),
+            ...(event.creditHoldId ? { creditHoldId: event.creditHoldId } : {}),
+            ...(event.providerRequestId ? { providerRequestId: event.providerRequestId } : {}),
+            ...(event.responseId ? { responseId: event.responseId } : {}),
+            ...(event.responseModel ? { responseModel: event.responseModel } : {}),
+            ...(event.finishReason ? { finishReason: event.finishReason } : {}),
           })
         }
       }

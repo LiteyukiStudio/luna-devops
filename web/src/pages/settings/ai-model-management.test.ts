@@ -11,7 +11,6 @@ const validModel = {
   inputCreditsPerMillion: '1.25',
   outputCreditsPerMillion: '2.5',
   cachedInputCreditsPerMillion: '0.5',
-  cachedOutputCreditsPerMillion: '1',
   enabled: true,
   createdAt: '2026-08-17T00:00:00Z',
   updatedAt: '2026-08-17T00:00:00Z',
@@ -25,7 +24,7 @@ describe('ai model management contract', () => {
     expect(aiModelFormSchema.safeParse({ ...validModel, maxOutputTokens: 262145 }).success).toBe(false)
   })
 
-  it('roundtrips capability and four-price fields when editing', () => {
+  it('roundtrips capability and official prompt/completion price fields when editing', () => {
     expect(modelFormValues(validModel)).toEqual({
       name: validModel.name,
       maxContextTokens: validModel.maxContextTokens,
@@ -33,7 +32,6 @@ describe('ai model management contract', () => {
       inputCreditsPerMillion: validModel.inputCreditsPerMillion,
       outputCreditsPerMillion: validModel.outputCreditsPerMillion,
       cachedInputCreditsPerMillion: validModel.cachedInputCreditsPerMillion,
-      cachedOutputCreditsPerMillion: validModel.cachedOutputCreditsPerMillion,
       enabled: true,
     })
   })

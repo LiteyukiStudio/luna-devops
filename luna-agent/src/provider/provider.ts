@@ -86,15 +86,32 @@ export type ModelEvent =
   | { type: "reasoning_summary_delta", delta: string }
   | { type: "message_delta", delta: string }
   | { type: "tool_call_delta" }
-  | { type: "completed", usage: ModelUsage, reservationId?: string, toolCalls?: ModelToolCall[], finishReason?: string }
-export type ModelUsage = {
-  inputTokens: number
-  outputTokens: number
-  cachedInputTokens?: number
-  cachedOutputTokens?: number
-  reasoningOutputTokens?: number
-  reported?: boolean
+  | {
+      type: "completed"
+      usage: ModelUsage
+      creditHoldId?: string
+      reconciliationRequired?: boolean
+      toolCalls?: ModelToolCall[]
+      finishReason?: string
+      providerRequestId?: string
+      responseId?: string
+      responseModel?: string
+    }
+export type OfficialModelUsage = {
+  promptTokens: number
+  completionTokens: number
+  totalTokens: number
+  cachedPromptTokens?: number
+  cacheWritePromptTokens?: number
+  reasoningCompletionTokens?: number
 }
+export type ModelUsage =
+  | { status: "reported", value: OfficialModelUsage }
+  | { status: "unavailable", reason: UsageUnavailableReason }
+export type UsageUnavailableReason =
+  | "missing_usage"
+  | "invalid_usage"
+  | "stream_ended_without_usage"
 export type ModelToolArgumentError = {
   code: "invalid_json"
   message: string
@@ -105,7 +122,20 @@ export type ModelToolCall = {
   arguments: Record<string, unknown>
   argumentError?: ModelToolArgumentError
 }
-export type ModelResponse = { text: string, reasoningSummary?: string, toolCalls?: ModelToolCall[], finishReason?: string, reservationId?: string, requestId?: string, serviceTier?: string, systemFingerprint?: string, usage: ModelUsage }
+export type ModelResponse = {
+  text: string
+  reasoningSummary?: string
+  toolCalls?: ModelToolCall[]
+  finishReason?: string
+  creditHoldId?: string
+  reconciliationRequired?: boolean
+  providerRequestId?: string
+  responseId?: string
+  responseModel?: string
+  serviceTier?: string
+  systemFingerprint?: string
+  usage: ModelUsage
+}
 export type ModelCapabilities = { streaming: boolean, toolCalling: boolean, structuredOutput: boolean }
 
 export interface ModelProvider {

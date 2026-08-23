@@ -285,11 +285,11 @@ func (h *Handlers) buildTemplateInstallPlan(ctx *gin.Context, user model.User, p
 	applicationID := id.New("app")
 	stage, validStage := normalizePublicStage(input.Stage)
 	if !validStage {
-		writeErrorCode(ctx, http.StatusBadRequest, "deployment.stage_invalid", "deployment stage must be dev, test, staging, or prod")
+		writeDeploymentStageInvalid(ctx, "stage", "deployment stage must be dev, test, staging, or prod")
 		return templateInstallPlan{}, false
 	}
 	if err := resourceidentifier.Validate(stage, stageIdentifierMinLength, stageIdentifierMaxLength); err != nil {
-		writeErrorCode(ctx, http.StatusBadRequest, "deployment.stage_invalid", err.Error())
+		writeDeploymentStageInvalid(ctx, "stage", err.Error())
 		return templateInstallPlan{}, false
 	}
 	targetID := id.New("dplt")

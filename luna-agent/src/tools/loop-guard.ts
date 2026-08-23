@@ -19,6 +19,7 @@ export interface LoopGuard {
   setMaxToolCalls(limit: number): void
   beforePropose(call: ToolLoopCall): void
   beforeExecute(call: ToolLoopCall): void
+  blockNonRetryable(call: ToolLoopCall): void
   snapshot(runId: string): ToolLoopSnapshot
   clearRun(runId: string): void
 }
@@ -44,11 +45,12 @@ type RunLoopState = {
   executed: number
   maxToolCalls: number
   occurrences: Map<string, number>
+  nonRetryableCalls: Set<string>
 }
 
 /**
- * Run 内循环保护只依据 operationId 与规范化参数计数。
- * 不读取历史 Run，也不对结果或错误做推断，避免把合法轮询误判为跨会话循环。
+ * Run 内循环保护依据 operationId 与规范化参数计数，并只信任平台显式返回的
+ * retryable=false 熔断下一次原样调用；不从错误文本推断，避免误伤合法轮询。
  */
 export class InMemoryLoopGuard implements LoopGuard {
   private maxToolCalls: number
@@ -70,6 +72,7 @@ export class InMemoryLoopGuard implements LoopGuard {
     if (state.proposed > state.maxToolCalls) throw stop("ai.run_tool_call_budget_exceeded", call)
 
     const key = callKey(call)
+    if (state.nonRetryableCalls.has(key)) throw stop("ai.tool_repeated_in_run", call)
     const occurrences = (state.occurrences.get(key) ?? 0) + 1
     state.occurrences.set(key, occurrences)
     if (occurrences > this.sameCallLimit) throw stop("ai.tool_repeated_in_run", call)
@@ -79,6 +82,10 @@ export class InMemoryLoopGuard implements LoopGuard {
     const state = this.state(call.runId)
     state.executed += 1
     if (state.executed > state.maxToolCalls) throw stop("ai.run_tool_call_budget_exceeded", call)
+  }
+
+  blockNonRetryable(call: ToolLoopCall): void {
+    this.state(call.runId).nonRetryableCalls.add(callKey(call))
   }
 
   snapshot(runId: string): ToolLoopSnapshot {
@@ -97,7 +104,7 @@ export class InMemoryLoopGuard implements LoopGuard {
   private state(runId: string): RunLoopState {
     let state = this.runs.get(runId)
     if (!state) {
-      state = { proposed: 0, executed: 0, maxToolCalls: this.maxToolCalls, occurrences: new Map() }
+      state = { proposed: 0, executed: 0, maxToolCalls: this.maxToolCalls, occurrences: new Map(), nonRetryableCalls: new Set() }
       this.runs.set(runId, state)
     }
     return state

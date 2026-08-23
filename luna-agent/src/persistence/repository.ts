@@ -15,6 +15,7 @@ import type {
   UIActionAcknowledgement,
   UIActionDelivery,
 } from "../domain.js"
+import type { OfficialModelUsage, UsageUnavailableReason } from "../provider/provider.js"
 
 export class RunStateConflictError extends Error {
   override readonly name = "RunStateConflictError"
@@ -39,15 +40,15 @@ export type TimelinePageOptions = {
   limit?: number
 }
 
-export type ModelBudgetOperation = "assistant" | "summary" | "title"
-export type ModelBudgetUsage = {
-  inputTokens: number
-  outputTokens: number
-  cachedInputTokens?: number
-  cachedOutputTokens?: number
-  reported: boolean
+export type ModelCallOperation = "assistant" | "summary" | "title"
+export type ModelCreditHold = { id: string, attempt: number, maxOutputTokens: number }
+export type ModelAttemptMetadata = {
+  providerRequestId?: string
+  responseId?: string
+  responseModel?: string
+  finishReason?: string
+  failureStage?: string
 }
-export type ModelBudgetReservation = { id: string, maxOutputTokens: number }
 export type RepositoryReadiness = { database: boolean, schema: boolean }
 export type RunToolSelection = {
   selectedOperationIds: string[]
@@ -87,17 +88,30 @@ export interface Repository {
     conversation: Pick<Conversation, "title" | "titleSource">
     model?: AIModelSnapshot
   } | undefined>
-  reserveModelBudget(input: {
+  createModelCreditHold(input: {
     id: string
     runId: string
     ownerUserId: string
-    operation: ModelBudgetOperation
-    estimatedInputTokens: number
+    operation: ModelCallOperation
     requestedOutputTokens: number
     leaseSeconds: number
-  }): Promise<ModelBudgetReservation>
-  confirmModelBudget(reservationId: string, usage?: ModelBudgetUsage): Promise<void>
-  releaseModelBudget(reservationId: string): Promise<void>
+  }): Promise<ModelCreditHold>
+  recordReportedModelUsage(
+    creditHoldId: string,
+    usage: OfficialModelUsage,
+    metadata: ModelAttemptMetadata & { callType: "stream" | "complete" },
+  ): Promise<{ reconciliationRequired: boolean }>
+  markModelUsageUnavailable(
+    creditHoldId: string,
+    reason: UsageUnavailableReason | "request_outcome_unknown",
+    metadata: ModelAttemptMetadata,
+  ): Promise<void>
+  releaseModelCreditHold(creditHoldId: string): Promise<void>
+  getLatestReportedModelUsage(conversationId: string): Promise<{
+    modelId: string
+    promptTokens: number
+    maxContextTokensSnapshot: number
+  } | undefined>
   getConversationSummary(conversationId: string): Promise<ConversationSummary | undefined>
   saveConversationSummary(summary: Omit<ConversationSummary, "createdAt" | "updatedAt">): Promise<ConversationSummary>
   listConversationHistory(conversationId: string, afterTurnIndex: number, beforeTurnIndex: number, limit: number): Promise<ConversationHistoryEntry[]>

@@ -56,7 +56,6 @@ create table if not exists ai.runs (
   input_credits_per_million numeric(24,8),
   output_credits_per_million numeric(24,8),
   cached_input_credits_per_million numeric(24,8),
-  cached_output_credits_per_million numeric(24,8),
   client_instance_id text,
   trace_context jsonb not null default '{}'::jsonb
     check (jsonb_typeof(trace_context) = 'object'),
@@ -83,35 +82,83 @@ alter table ai.runs add column if not exists max_output_tokens bigint;
 alter table ai.runs add column if not exists input_credits_per_million numeric(24,8);
 alter table ai.runs add column if not exists output_credits_per_million numeric(24,8);
 alter table ai.runs add column if not exists cached_input_credits_per_million numeric(24,8);
-alter table ai.runs add column if not exists cached_output_credits_per_million numeric(24,8);
 alter table ai.runs add column if not exists selected_operation_ids text[] not null default '{}';
 
-create table if not exists ai.model_budget_reservations (
+create table if not exists ai.model_credit_holds (
   id text primary key,
   run_id text not null references ai.runs(id) on delete cascade,
   owner_user_id text not null,
   operation text not null check (operation in ('assistant', 'summary', 'title')),
-  state text not null check (state in ('reserved', 'confirmed', 'released', 'settled')),
+  attempt integer not null check (attempt > 0),
+  state text not null check (state in ('held', 'released', 'usage_recorded', 'hold_deficit', 'reconciliation_required', 'settled')),
   model_id text not null,
   model_name text not null,
+  max_context_tokens_snapshot bigint not null check (max_context_tokens_snapshot > 0),
+  max_output_tokens_snapshot bigint not null check (max_output_tokens_snapshot > 0),
   input_credits_per_million numeric(24,8) not null,
   output_credits_per_million numeric(24,8) not null,
   cached_input_credits_per_million numeric(24,8) not null,
-  cached_output_credits_per_million numeric(24,8) not null,
-  reserved_tokens bigint not null,
-  reserved_input_tokens bigint not null,
-  reserved_output_tokens bigint not null,
-  confirmed_tokens bigint,
-  reserved_credits numeric(24,8) not null,
-  confirmed_credits numeric(24,8),
-  input_tokens bigint,
-  output_tokens bigint,
-  cached_input_tokens bigint,
-  cached_output_tokens bigint,
+  max_risk_credits numeric(24,8) not null check (max_risk_credits >= 0),
+  actual_credits numeric(24,8),
+  provider_request_id text,
+  response_id text,
+  response_model text,
+  failure_stage text,
+  reconciliation_reason text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  expires_at timestamptz not null
+  expires_at timestamptz not null,
+  unique (run_id, operation, attempt),
+  constraint ai_model_credit_holds_state_valid check (
+    (state in ('held', 'released') and actual_credits is null)
+    or (state in ('usage_recorded', 'hold_deficit', 'settled') and actual_credits is not null)
+    or state = 'reconciliation_required'
+  )
 );
+create index if not exists ai_model_credit_holds_owner_state_idx
+  on ai.model_credit_holds(owner_user_id, state);
+create index if not exists ai_model_credit_holds_expiry_idx
+  on ai.model_credit_holds(expires_at) where state = 'held';
+
+create table if not exists ai.model_usages (
+  id text primary key,
+  credit_hold_id text not null unique references ai.model_credit_holds(id) on delete restrict,
+  run_id text not null references ai.runs(id) on delete cascade,
+  owner_user_id text not null,
+  operation text not null check (operation in ('assistant', 'summary', 'title')),
+  attempt integer not null check (attempt > 0),
+  status text not null check (status = 'reported'),
+  settlement_status text not null check (settlement_status in ('pending', 'reconciliation_required', 'settled')),
+  model_id text not null,
+  model_name text not null,
+  max_context_tokens_snapshot bigint not null check (max_context_tokens_snapshot > 0),
+  prompt_tokens bigint not null check (prompt_tokens >= 0),
+  completion_tokens bigint not null check (completion_tokens >= 0),
+  total_tokens bigint not null check (total_tokens = prompt_tokens + completion_tokens),
+  cached_prompt_tokens bigint,
+  cache_write_prompt_tokens bigint,
+  reasoning_completion_tokens bigint,
+  provider_request_id text,
+  response_id text,
+  response_model text,
+  finish_reason text,
+  call_type text not null check (call_type in ('stream', 'complete')),
+  official_details jsonb not null default '{}'::jsonb,
+  occurred_at timestamptz not null default now(),
+  settled_at timestamptz,
+  constraint ai_model_usages_official_relationships_valid check (
+    total_tokens = prompt_tokens + completion_tokens
+    and (cached_prompt_tokens is null or cached_prompt_tokens <= prompt_tokens)
+    and (cache_write_prompt_tokens is null or cache_write_prompt_tokens <= prompt_tokens)
+    and (coalesce(cached_prompt_tokens, 0) + coalesce(cache_write_prompt_tokens, 0) <= prompt_tokens)
+    and (reasoning_completion_tokens is null or reasoning_completion_tokens <= completion_tokens)
+  ),
+  unique (run_id, operation, attempt)
+);
+create index if not exists ai_model_usages_settlement_idx
+  on ai.model_usages(settlement_status, occurred_at);
+create index if not exists ai_model_usages_run_idx
+  on ai.model_usages(run_id, operation, occurred_at desc);
 
 create table if not exists ai.items (
   id text primary key,

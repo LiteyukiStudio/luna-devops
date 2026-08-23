@@ -87,11 +87,11 @@ func (h *Handlers) CreateDeploymentTarget(ctx *gin.Context) {
 	input.Enabled = true
 	stage, validStage := normalizePublicStage(input.Stage)
 	if !validStage {
-		writeErrorCode(ctx, http.StatusBadRequest, "deployment.stage_invalid", "deployment stage must be dev, test, staging, or prod")
+		writeDeploymentStageInvalid(ctx, "stage", "deployment stage must be dev, test, staging, or prod")
 		return
 	}
 	if err := resourceidentifier.Validate(stage, stageIdentifierMinLength, stageIdentifierMaxLength); err != nil {
-		writeErrorCode(ctx, http.StatusBadRequest, "deployment.stage_invalid", err.Error())
+		writeDeploymentStageInvalid(ctx, "stage", err.Error())
 		return
 	}
 	if !h.ensureDeploymentStageAvailable(ctx, app.ID, stage, "") {

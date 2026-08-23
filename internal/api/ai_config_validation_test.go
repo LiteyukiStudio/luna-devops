@@ -18,7 +18,7 @@ func TestAIConfigDefinitionsCoverSpecificationCatalog(t *testing.T) {
 		"ai.assistant.enabled", "ai.provider.base_url", "ai.provider.api_key",
 		"ai.web.proxy_enabled", "ai.web.proxy_pool",
 		"ai.runtime.provider_timeout_seconds", "ai.runtime.run_timeout_seconds", "ai.runtime.agent_concurrent_runs",
-		"ai.runtime.context_input_k_tokens", "ai.runtime.max_request_retries",
+		"ai.runtime.max_request_retries",
 		"ai.observability.enabled", "ai.observability.prometheus_url", "ai.observability.prometheus_token",
 		"ai.observability.loki_url", "ai.observability.loki_tenant_id", "ai.observability.loki_token",
 		"ai.observability.tempo_url", "ai.observability.tempo_tenant_id", "ai.observability.tempo_token",
@@ -27,7 +27,7 @@ func TestAIConfigDefinitionsCoverSpecificationCatalog(t *testing.T) {
 		"ai.quota.run_max_tool_calls", "ai.quota.platform_daily_cost_soft", "ai.quota.platform_daily_cost_hard",
 		"ai.retention.conversation_days", "ai.retention.run_event_days", "ai.retention.checkpoint_days",
 		"ai.context.max_uncompressed_turn_count", "ai.context.max_compression_turns_per_compile",
-		"ai.context.summary_input_k_tokens", "ai.context.summary_max_output_tokens",
+		"ai.context.summary_max_output_tokens",
 		"ai.model.max_output_tokens",
 		"ai.run.max_model_steps", "ai.run.max_input_k_bytes", "ai.run.navigate_action_ttl_seconds",
 		"ai.tools.max_card_repair_attempts",
@@ -36,9 +36,6 @@ func TestAIConfigDefinitionsCoverSpecificationCatalog(t *testing.T) {
 		if definition := configDefinitionByKey(key); definition == nil {
 			t.Errorf("missing AI config definition %s", key)
 		}
-	}
-	if got := aiConfigDefaults()["ai.runtime.context_input_k_tokens"]; got != "1024" {
-		t.Fatalf("context input budget default = %q, want 1024", got)
 	}
 	if got := aiConfigDefaults()["ai.quota.run_max_tool_calls"]; got != "256" {
 		t.Fatalf("Run tool-call guard default = %q, want 256", got)
@@ -117,11 +114,9 @@ func TestAIConfigRejectsUnsafeRuntimeBounds(t *testing.T) {
 		"ai.runtime.max_request_retries":               "11",
 		"ai.runtime.run_timeout_seconds":               "10",
 		"ai.runtime.agent_concurrent_runs":             "0",
-		"ai.runtime.context_input_k_tokens":            "32",
 		"ai.quota.run_max_tool_calls":                  "31",
 		"ai.context.max_uncompressed_turn_count":       "3",
 		"ai.context.max_compression_turns_per_compile": "7",
-		"ai.context.summary_input_k_tokens":            "3",
 		"ai.context.summary_max_output_tokens":         "199",
 		"ai.model.max_output_tokens":                   "131073",
 		"ai.run.max_model_steps":                       "1025",
@@ -155,16 +150,6 @@ func TestAIConfigAcceptsHighRunToolCallGuard(t *testing.T) {
 	}
 	if err := h.validateAIConfigValues(map[string]string{"ai.quota.run_max_tool_calls": "2049"}); err == nil {
 		t.Fatal("Run tool-call guard above hard limit was accepted")
-	}
-}
-
-func TestAIConfigAcceptsExpandedContextBudget(t *testing.T) {
-	h := &Handlers{configs: &configCache{values: aiConfigDefaults()}}
-	if err := h.validateAIConfigValues(map[string]string{"ai.runtime.context_input_k_tokens": "2048"}); err != nil {
-		t.Fatalf("expanded context budget rejected: %v", err)
-	}
-	if err := h.validateAIConfigValues(map[string]string{"ai.runtime.context_input_k_tokens": "2049"}); err == nil {
-		t.Fatal("context budget above model catalog capacity was accepted")
 	}
 }
 

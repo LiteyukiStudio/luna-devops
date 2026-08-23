@@ -14,10 +14,8 @@ const validValues = {
   maxRequestRetries: 5,
   runTimeoutSeconds: 300,
   agentConcurrentRuns: 2,
-  contextInputKTokens: 256,
   contextMaxUncompressedTurnCount: 32,
   contextMaxCompressionTurnsPerCompile: 128,
-  contextSummaryInputKTokens: 32,
   contextSummaryMaxOutputTokens: 3000,
   modelMaxOutputTokens: 8192,
   runMaxModelSteps: 64,
@@ -55,10 +53,8 @@ describe('aI assistant admin settings', () => {
       'ai.runtime.max_request_retries': 5,
       'ai.runtime.run_timeout_seconds': 300,
       'ai.runtime.agent_concurrent_runs': 2,
-      'ai.runtime.context_input_k_tokens': 256,
       'ai.context.max_uncompressed_turn_count': 32,
       'ai.context.max_compression_turns_per_compile': 128,
-      'ai.context.summary_input_k_tokens': 32,
       'ai.context.summary_max_output_tokens': 3000,
       'ai.model.max_output_tokens': 8192,
       'ai.run.max_model_steps': 64,
@@ -98,9 +94,6 @@ describe('aI assistant admin settings', () => {
   it('rejects unsafe runtime settings', () => {
     expect(aiSettingsSchema.safeParse({ ...validValues, runTimeoutSeconds: 10 }).success).toBe(false)
     expect(aiSettingsSchema.safeParse({ ...validValues, agentConcurrentRuns: 101 }).success).toBe(false)
-    expect(aiSettingsSchema.safeParse({ ...validValues, contextInputKTokens: 32 }).success).toBe(false)
-    expect(aiSettingsSchema.safeParse({ ...validValues, contextInputKTokens: 2049 }).success).toBe(false)
-    expect(aiSettingsSchema.safeParse({ ...validValues, contextInputKTokens: 2048 }).success).toBe(true)
   })
 
   it('rejects unsafe advanced settings', () => {
@@ -116,7 +109,6 @@ describe('aI assistant admin settings', () => {
       ...validValues,
       contextMaxUncompressedTurnCount: 48,
       contextMaxCompressionTurnsPerCompile: 160,
-      contextSummaryInputKTokens: 48,
       contextSummaryMaxOutputTokens: 4000,
       modelMaxOutputTokens: 12000,
       runMaxModelSteps: 96,

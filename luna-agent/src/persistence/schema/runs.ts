@@ -28,7 +28,6 @@ export const runs = aiSchema.table("runs", {
   inputCreditsPerMillion: text("input_credits_per_million"),
   outputCreditsPerMillion: text("output_credits_per_million"),
   cachedInputCreditsPerMillion: text("cached_input_credits_per_million"),
-  cachedOutputCreditsPerMillion: text("cached_output_credits_per_million"),
   clientInstanceId: text("client_instance_id"),
   traceContext: jsonb("trace_context").notNull().$type<Record<string, string>>().default({}),
   nextItemPosition: bigint("next_item_position", { mode: "number" }).notNull().default(0),

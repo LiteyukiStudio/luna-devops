@@ -10,10 +10,10 @@ describe("configuration", () => {
     expect(config.AI_OBSERVABILITY_CAPTURE_CONTENT).toBe(false)
     expect(config).toMatchObject({
       AI_CONTEXT_COMPRESSION_TRIGGER_RATIO: 0.9,
-      AI_CONTEXT_COMPRESSION_TARGET_RATIO: 0.7,
       AI_CONTEXT_RECENT_TURN_COUNT: 16,
-      AI_CONTEXT_MAX_RECENT_TURN_COUNT: 32,
-      AI_CONTEXT_HISTORICAL_TOOL_K_TOKENS: 64,
+      AI_CONTEXT_MAX_HISTORY_PAYLOAD_K_BYTES: 4096,
+      AI_CONTEXT_MAX_SUMMARY_PAYLOAD_K_BYTES: 512,
+      AI_CONTEXT_MAX_CONTINUATION_PAYLOAD_K_BYTES: 1024,
       AI_TOOLS_RESULT_PAYLOAD_K_BYTES: 512,
     })
   })
@@ -21,30 +21,28 @@ describe("configuration", () => {
     expect(loadConfig({
       NODE_ENV: "test",
       AI_CONTEXT_COMPRESSION_TRIGGER_RATIO: "0.85",
-      AI_CONTEXT_COMPRESSION_TARGET_RATIO: "0.6",
       AI_CONTEXT_RECENT_TURN_COUNT: "12",
-      AI_CONTEXT_MAX_RECENT_TURN_COUNT: "24",
-      AI_CONTEXT_HISTORICAL_TOOL_K_TOKENS: "32",
+      AI_CONTEXT_MAX_HISTORY_PAYLOAD_K_BYTES: "2048",
+      AI_CONTEXT_MAX_SUMMARY_PAYLOAD_K_BYTES: "256",
+      AI_CONTEXT_MAX_CONTINUATION_PAYLOAD_K_BYTES: "512",
       AI_TOOLS_RESULT_PAYLOAD_K_BYTES: "256",
     })).toMatchObject({
       AI_CONTEXT_COMPRESSION_TRIGGER_RATIO: 0.85,
-      AI_CONTEXT_COMPRESSION_TARGET_RATIO: 0.6,
       AI_CONTEXT_RECENT_TURN_COUNT: 12,
-      AI_CONTEXT_MAX_RECENT_TURN_COUNT: 24,
-      AI_CONTEXT_HISTORICAL_TOOL_K_TOKENS: 32,
+      AI_CONTEXT_MAX_HISTORY_PAYLOAD_K_BYTES: 2048,
+      AI_CONTEXT_MAX_SUMMARY_PAYLOAD_K_BYTES: 256,
+      AI_CONTEXT_MAX_CONTINUATION_PAYLOAD_K_BYTES: 512,
       AI_TOOLS_RESULT_PAYLOAD_K_BYTES: 256,
     })
   })
-  it("rejects inconsistent Agent-local context strategy overrides", () => {
+  it("rejects invalid Agent-local byte limits", () => {
     expect(() => loadConfig({
       NODE_ENV: "test",
-      AI_CONTEXT_COMPRESSION_TRIGGER_RATIO: "0.6",
-      AI_CONTEXT_COMPRESSION_TARGET_RATIO: "0.7",
+      AI_CONTEXT_MAX_HISTORY_PAYLOAD_K_BYTES: "32",
     })).toThrow()
     expect(() => loadConfig({
       NODE_ENV: "test",
-      AI_CONTEXT_RECENT_TURN_COUNT: "24",
-      AI_CONTEXT_MAX_RECENT_TURN_COUNT: "12",
+      AI_CONTEXT_MAX_SUMMARY_PAYLOAD_K_BYTES: "8192",
     })).toThrow()
   })
   it("enables sensitive AI content observability only when explicitly requested", () => {

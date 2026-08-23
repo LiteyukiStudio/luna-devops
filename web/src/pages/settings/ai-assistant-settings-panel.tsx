@@ -36,10 +36,8 @@ const defaults: FormValues = {
   maxRequestRetries: 5,
   runTimeoutSeconds: 3600,
   agentConcurrentRuns: 10,
-  contextInputKTokens: 1024,
   contextMaxUncompressedTurnCount: 64,
   contextMaxCompressionTurnsPerCompile: 512,
-  contextSummaryInputKTokens: 256,
   contextSummaryMaxOutputTokens: 16384,
   modelMaxOutputTokens: 65536,
   runMaxModelSteps: 256,
@@ -65,10 +63,8 @@ const runtimeDefaultFields = [
   ['ai.runtime.max_request_retries', 'maxRequestRetries'],
   ['ai.runtime.run_timeout_seconds', 'runTimeoutSeconds'],
   ['ai.runtime.agent_concurrent_runs', 'agentConcurrentRuns'],
-  ['ai.runtime.context_input_k_tokens', 'contextInputKTokens'],
   ['ai.context.max_uncompressed_turn_count', 'contextMaxUncompressedTurnCount'],
   ['ai.context.max_compression_turns_per_compile', 'contextMaxCompressionTurnsPerCompile'],
-  ['ai.context.summary_input_k_tokens', 'contextSummaryInputKTokens'],
   ['ai.context.summary_max_output_tokens', 'contextSummaryMaxOutputTokens'],
   ['ai.model.max_output_tokens', 'modelMaxOutputTokens'],
   ['ai.run.max_model_steps', 'runMaxModelSteps'],
@@ -82,7 +78,6 @@ const runtimeDefaultFields = [
 type AdvancedFieldName
   = 'contextMaxUncompressedTurnCount'
     | 'contextMaxCompressionTurnsPerCompile'
-    | 'contextSummaryInputKTokens'
     | 'contextSummaryMaxOutputTokens'
     | 'modelMaxOutputTokens'
     | 'runMaxModelSteps'
@@ -112,7 +107,6 @@ const advancedGroups: AdvancedGroup[] = [
     fields: [
       { name: 'contextMaxUncompressedTurnCount', labelKey: 'settings.ai.maxUncompressedTurnCount', hintKey: 'settings.ai.maxUncompressedTurnCountHint', min: 4, max: 128, step: 1 },
       { name: 'contextMaxCompressionTurnsPerCompile', labelKey: 'settings.ai.maxCompressionTurnsPerCompile', hintKey: 'settings.ai.maxCompressionTurnsPerCompileHint', min: 8, max: 1024, step: 1 },
-      { name: 'contextSummaryInputKTokens', labelKey: 'settings.ai.summaryInputKTokens', hintKey: 'settings.ai.summaryInputKTokensHint', min: 4, max: 512, step: 1 },
       { name: 'contextSummaryMaxOutputTokens', labelKey: 'settings.ai.summaryMaxOutputTokens', hintKey: 'settings.ai.summaryMaxOutputTokensHint', min: 200, max: 32768, step: 1 },
     ],
   },
@@ -179,7 +173,6 @@ export function AIAssistantSettingsPanel() {
   const maxRequestRetries = form.watch('maxRequestRetries')
   const runTimeoutSeconds = form.watch('runTimeoutSeconds')
   const agentConcurrentRuns = form.watch('agentConcurrentRuns')
-  const contextInputKTokens = form.watch('contextInputKTokens')
   const webProxyEnabled = form.watch('webProxyEnabled')
   const observabilityEnabled = form.watch('observabilityEnabled')
   return (
@@ -227,7 +220,6 @@ export function AIAssistantSettingsPanel() {
               retries: maxRequestRetries,
               runTimeout: runTimeoutSeconds,
               concurrency: agentConcurrentRuns,
-              contextBudget: contextInputKTokens,
             })}
             title={t('settings.ai.runtimeTitle')}
           >
@@ -243,9 +235,6 @@ export function AIAssistantSettingsPanel() {
               </Field>
               <Field error={errors.agentConcurrentRuns?.message} hint={t('settings.ai.agentConcurrentRunsHint')} label={t('settings.ai.agentConcurrentRuns')}>
                 <Input max={100} min={1} step={1} type="number" {...form.register('agentConcurrentRuns', { valueAsNumber: true })} />
-              </Field>
-              <Field error={errors.contextInputKTokens?.message} hint={t('settings.ai.contextInputBudgetHint')} label={t('settings.ai.contextInputBudget')}>
-                <Input max={2048} min={64} step={1} type="number" {...form.register('contextInputKTokens', { valueAsNumber: true })} />
               </Field>
             </div>
           </ProgressiveSection>
@@ -323,10 +312,8 @@ function aiSettingsFormValues(values: Record<string, string>): FormValues {
     maxRequestRetries: Number(values['ai.runtime.max_request_retries'] ?? 5),
     runTimeoutSeconds: Number(values['ai.runtime.run_timeout_seconds'] ?? 3600),
     agentConcurrentRuns: Number(values['ai.runtime.agent_concurrent_runs'] ?? 10),
-    contextInputKTokens: Number(values['ai.runtime.context_input_k_tokens'] ?? 1024),
     contextMaxUncompressedTurnCount: Number(values['ai.context.max_uncompressed_turn_count'] ?? 64),
     contextMaxCompressionTurnsPerCompile: Number(values['ai.context.max_compression_turns_per_compile'] ?? 512),
-    contextSummaryInputKTokens: Number(values['ai.context.summary_input_k_tokens'] ?? 256),
     contextSummaryMaxOutputTokens: Number(values['ai.context.summary_max_output_tokens'] ?? 16384),
     modelMaxOutputTokens: Number(values['ai.model.max_output_tokens'] ?? 65536),
     runMaxModelSteps: Number(values['ai.run.max_model_steps'] ?? 256),

@@ -3,8 +3,8 @@ import { findSuggestedModelPreset, findSuggestedModelPrice, listSuggestedModelPr
 
 describe('findSuggestedModelPrice', () => {
   it('matches exact model names case-insensitively', () => {
-    expect(findSuggestedModelPrice('GPT-4o')).toEqual({ input: '250', output: '1000', cachedInput: '125', cachedOutput: '0' })
-    expect(findSuggestedModelPrice(' deepseek-chat ')).toEqual({ input: '28', output: '42', cachedInput: '2.8', cachedOutput: '0' })
+    expect(findSuggestedModelPrice('GPT-4o')).toEqual({ input: '250', output: '1000', cachedInput: '125' })
+    expect(findSuggestedModelPrice(' deepseek-chat ')).toEqual({ input: '28', output: '42', cachedInput: '2.8' })
   })
 
   it('matches dated variants through prefixes', () => {
@@ -26,7 +26,7 @@ describe('findSuggestedModelPreset', () => {
   it('returns prices together with capability limits', () => {
     expect(findSuggestedModelPreset('deepseek-chat')).toEqual({
       displayName: 'deepseek-chat',
-      prices: { input: '28', output: '42', cachedInput: '2.8', cachedOutput: '0' },
+      prices: { input: '28', output: '42', cachedInput: '2.8' },
       maxContextTokens: 131072,
       maxOutputTokens: 8192,
     })

@@ -26,7 +26,6 @@ export type AIModelSnapshot = {
   inputCreditsPerMillion: string
   outputCreditsPerMillion: string
   cachedInputCreditsPerMillion: string
-  cachedOutputCreditsPerMillion: string
 }
 
 export type Conversation = {
@@ -111,8 +110,10 @@ export type Run = {
   completedAt?: string
   errorCode?: string
   model?: AIModelSnapshot
-  /** 当前 Run 最近一次主回答模型调用的输入 token 数，用于展示上下文占用。 */
-  latestInputTokens?: number
+  /** 当前 Run 最近一次主回答模型调用的官方 prompt_tokens 快照。 */
+  latestPromptTokens?: number
+  latestUsageModelId?: string
+  latestUsageMaxContextTokensSnapshot?: number
 }
 
 export type TimelineItem = {

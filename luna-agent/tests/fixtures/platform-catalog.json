@@ -739,10 +739,6 @@
               "pattern": "^\\d+(\\.\\d{1,8})?$",
               "type": "string"
             },
-            "cachedOutputCreditsPerMillion": {
-              "pattern": "^\\d+(\\.\\d{1,8})?$",
-              "type": "string"
-            },
             "enabled": {
               "type": "boolean"
             },
@@ -777,8 +773,7 @@
             "maxOutputTokens",
             "inputCreditsPerMillion",
             "outputCreditsPerMillion",
-            "cachedInputCreditsPerMillion",
-            "cachedOutputCreditsPerMillion"
+            "cachedInputCreditsPerMillion"
           ],
           "type": "object"
         }
@@ -792,10 +787,6 @@
       "additionalProperties": false,
       "properties": {
         "cachedInputCreditsPerMillion": {
-          "pattern": "^\\d+(\\.\\d{1,8})?$",
-          "type": "string"
-        },
-        "cachedOutputCreditsPerMillion": {
           "pattern": "^\\d+(\\.\\d{1,8})?$",
           "type": "string"
         },
@@ -846,7 +837,6 @@
         "inputCreditsPerMillion",
         "outputCreditsPerMillion",
         "cachedInputCreditsPerMillion",
-        "cachedOutputCreditsPerMillion",
         "enabled",
         "createdAt",
         "updatedAt"
@@ -12913,37 +12903,53 @@
   {
     "operationId": "installAppTemplate",
     "name": "installAppTemplate",
-    "summary": "Install App Template",
+    "summary": "Install an app template into a project",
     "category": "projects",
     "tags": [
       "Projects"
     ],
     "aliases": {
       "zh": [
+        "从应用市场安装",
+        "安装应用模板",
+        "模板部署应用",
         "项目",
         "项目空间"
       ],
       "en": [
         "Projects",
+        "deploy app template",
         "install app template",
+        "install from app marketplace",
         "installAppTemplate"
       ]
     },
     "purpose": {
-      "zh": "用于调用 installAppTemplate 对应的平台能力。",
-      "en": "Install App Template"
+      "zh": "从应用市场模板创建应用和部署配置，并可立即创建首个 Release。",
+      "en": "Create an application and deployment target from an App Marketplace template"
     },
     "avoidWhen": {
-      "zh": "",
-      "en": ""
+      "zh": "修改已有应用或部署配置时不要重复安装模板，应使用对应更新工具。",
+      "en": "Do not reinstall a template to modify an existing application or deployment target; use the corresponding update operation."
     },
     "preconditions": {
-      "zh": [],
-      "en": []
+      "zh": [
+        "stage 必须使用 dev、test、staging 或 prod",
+        "先用 listAppTemplates 和 getAppTemplate 确认模板与必填参数",
+        "先用 listRuntimeClusters 解析真实 clusterId"
+      ],
+      "en": [
+        "Confirm the template and required values with listAppTemplates and getAppTemplate",
+        "Resolve an authoritative clusterId with listRuntimeClusters",
+        "Use dev",
+        "or prod for stage",
+        "staging",
+        "test"
+      ]
     },
     "successEvidence": {
-      "zh": "",
-      "en": ""
+      "zh": "返回安装记录、应用和部署目标；installNow 为 true 时还必须用 getRelease 回读首个 Release 终态。",
+      "en": "Returns the installation"
     },
     "requiresApproval": false,
     "idempotent": false,
@@ -12994,6 +13000,13 @@
               "type": "integer"
             },
             "stage": {
+              "description": "Canonical deployment stage. Use dev, test, staging, or prod; arbitrary values such as default or qa are rejected before installation.",
+              "enum": [
+                "dev",
+                "test",
+                "staging",
+                "prod"
+              ],
               "type": "string"
             },
             "values": {
@@ -13196,10 +13209,6 @@
             "pattern": "^\\d+(\\.\\d{1,8})?$",
             "type": "string"
           },
-          "cachedOutputCreditsPerMillion": {
-            "pattern": "^\\d+(\\.\\d{1,8})?$",
-            "type": "string"
-          },
           "createdAt": {
             "format": "date-time",
             "type": "string"
@@ -13247,7 +13256,6 @@
           "inputCreditsPerMillion",
           "outputCreditsPerMillion",
           "cachedInputCreditsPerMillion",
-          "cachedOutputCreditsPerMillion",
           "enabled",
           "createdAt",
           "updatedAt"
@@ -25855,10 +25863,6 @@
               "pattern": "^\\d+(\\.\\d{1,8})?$",
               "type": "string"
             },
-            "cachedOutputCreditsPerMillion": {
-              "pattern": "^\\d+(\\.\\d{1,8})?$",
-              "type": "string"
-            },
             "enabled": {
               "type": "boolean"
             },
@@ -25893,8 +25897,7 @@
             "maxOutputTokens",
             "inputCreditsPerMillion",
             "outputCreditsPerMillion",
-            "cachedInputCreditsPerMillion",
-            "cachedOutputCreditsPerMillion"
+            "cachedInputCreditsPerMillion"
           ],
           "type": "object"
         },
@@ -25912,10 +25915,6 @@
       "additionalProperties": false,
       "properties": {
         "cachedInputCreditsPerMillion": {
-          "pattern": "^\\d+(\\.\\d{1,8})?$",
-          "type": "string"
-        },
-        "cachedOutputCreditsPerMillion": {
           "pattern": "^\\d+(\\.\\d{1,8})?$",
           "type": "string"
         },
@@ -25966,7 +25965,6 @@
         "inputCreditsPerMillion",
         "outputCreditsPerMillion",
         "cachedInputCreditsPerMillion",
-        "cachedOutputCreditsPerMillion",
         "enabled",
         "createdAt",
         "updatedAt"

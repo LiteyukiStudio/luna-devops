@@ -181,7 +181,6 @@ func (h *Handlers) attachAIModelSnapshot(ctx *gin.Context, body []byte) ([]byte,
 		"inputCreditsPerMillion":        selected.InputCreditsPerMillion,
 		"outputCreditsPerMillion":       selected.OutputCreditsPerMillion,
 		"cachedInputCreditsPerMillion":  selected.CachedInputCreditsPerMillion,
-		"cachedOutputCreditsPerMillion": selected.CachedOutputCreditsPerMillion,
 	}
 	prepared, err := json.Marshal(input)
 	if err != nil {

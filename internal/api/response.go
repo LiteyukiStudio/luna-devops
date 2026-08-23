@@ -115,6 +115,22 @@ func writeErrorCode(ctx *gin.Context, status int, code, detail string) {
 	ctx.JSON(status, errorEnvelope(ctx, status, code))
 }
 
+func writeArgumentErrorCode(ctx *gin.Context, status int, code, detail, path string, allowedValues []string, retryable bool) {
+	if code == "" {
+		code = defaultErrorCode(status)
+	}
+	detail = telemetry.RedactText(detail)
+	telemetry.SetHTTPError(ctx, code, detail)
+	response := errorEnvelope(ctx, status, code)
+	response["retryable"] = retryable
+	response["path"] = path
+	response["allowedValues"] = allowedValues
+	if config.RuntimeMode() == "development" {
+		response["developerDetail"] = detail
+	}
+	ctx.JSON(status, response)
+}
+
 // writeLocalizedErrorCode exposes a stable frontend message key in production
 // while preserving the original credential-redacted diagnostic in development.
 func writeLocalizedErrorCode(ctx *gin.Context, status int, code, detail, publicMessageKey string) {

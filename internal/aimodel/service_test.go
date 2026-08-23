@@ -27,10 +27,9 @@ func TestParseInputValidationCodes(t *testing.T) {
 		{name: "input price", input: WriteInput{Name: "model", MaxContextTokens: 524288, MaxOutputTokens: 65536, InputCreditsPerMillion: "-1"}, want: ErrInputPriceInvalid},
 		{name: "output price", input: WriteInput{Name: "model", MaxContextTokens: 524288, MaxOutputTokens: 65536, InputCreditsPerMillion: "0", OutputCreditsPerMillion: "invalid"}, want: ErrOutputPriceInvalid},
 		{name: "cached input price", input: WriteInput{Name: "model", MaxContextTokens: 524288, MaxOutputTokens: 65536, InputCreditsPerMillion: "0", OutputCreditsPerMillion: "0", CachedInputCreditsPerMillion: "-1"}, want: ErrCachedInputPriceInvalid},
-		{name: "cached output price", input: WriteInput{Name: "model", MaxContextTokens: 524288, MaxOutputTokens: 65536, InputCreditsPerMillion: "0", OutputCreditsPerMillion: "0", CachedInputCreditsPerMillion: "0", CachedOutputCreditsPerMillion: "-1"}, want: ErrCachedOutputPriceInvalid},
-		{name: "exponent price", input: WriteInput{Name: "model", MaxContextTokens: 524288, MaxOutputTokens: 65536, InputCreditsPerMillion: "1e3", OutputCreditsPerMillion: "0", CachedInputCreditsPerMillion: "0", CachedOutputCreditsPerMillion: "0"}, want: ErrInputPriceInvalid},
-		{name: "price precision", input: WriteInput{Name: "model", MaxContextTokens: 524288, MaxOutputTokens: 65536, InputCreditsPerMillion: "0.000000001", OutputCreditsPerMillion: "0", CachedInputCreditsPerMillion: "0", CachedOutputCreditsPerMillion: "0"}, want: ErrInputPriceInvalid},
-		{name: "price numeric overflow", input: WriteInput{Name: "model", MaxContextTokens: 524288, MaxOutputTokens: 65536, InputCreditsPerMillion: "10000000000000000", OutputCreditsPerMillion: "0", CachedInputCreditsPerMillion: "0", CachedOutputCreditsPerMillion: "0"}, want: ErrInputPriceInvalid},
+		{name: "exponent price", input: WriteInput{Name: "model", MaxContextTokens: 524288, MaxOutputTokens: 65536, InputCreditsPerMillion: "1e3", OutputCreditsPerMillion: "0", CachedInputCreditsPerMillion: "0"}, want: ErrInputPriceInvalid},
+		{name: "price precision", input: WriteInput{Name: "model", MaxContextTokens: 524288, MaxOutputTokens: 65536, InputCreditsPerMillion: "0.000000001", OutputCreditsPerMillion: "0", CachedInputCreditsPerMillion: "0"}, want: ErrInputPriceInvalid},
+		{name: "price numeric overflow", input: WriteInput{Name: "model", MaxContextTokens: 524288, MaxOutputTokens: 65536, InputCreditsPerMillion: "10000000000000000", OutputCreditsPerMillion: "0", CachedInputCreditsPerMillion: "0"}, want: ErrInputPriceInvalid},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -50,7 +49,7 @@ func TestParseInputAcceptsNumeric24Scale8PriceBoundaries(t *testing.T) {
 		input := WriteInput{
 			Name: "model", MaxContextTokens: 524288, MaxOutputTokens: 65536,
 			InputCreditsPerMillion: price, OutputCreditsPerMillion: "0",
-			CachedInputCreditsPerMillion: "0", CachedOutputCreditsPerMillion: "0",
+			CachedInputCreditsPerMillion: "0",
 		}
 		if _, err := parseInput(input, true); err != nil {
 			t.Fatalf("valid price %q rejected: %v", price, err)

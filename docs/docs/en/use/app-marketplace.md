@@ -14,6 +14,8 @@ The template creates an application and deployment and can create its first Rele
 
 After installation, check the Release, workload, logs, and access method. A template does not configure every third-party integration, such as Grafana data sources, application database accounts, or external OAuth.
 
+The deployment stage must be `dev`, `test`, `staging`, or `prod`. The CLI exposes the stable `luna app-template install` command. Agent and CLI validation rejects values such as `default` or `qa` before sending the request and reports the allowed values. The platform fallback returns `deployment.stage_invalid`, the argument path, and `retryable: false`; automation must correct the argument instead of replaying it unchanged.
+
 ## Volumes
 
 A template that declares persistent data requires a compatible volume from the same project space and cluster. It never silently falls back to `emptyDir`. Follow [Runtime Data Persistence](./workflow/runtime-data-persistence) to create or connect a volume first.

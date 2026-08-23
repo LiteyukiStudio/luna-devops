@@ -210,15 +210,15 @@ func debitUsagesForUser(tx *gorm.DB, usages []model.BillingUsageRecord, reason s
 }
 
 func activeAIReservationHolds(tx *gorm.DB, userID, excludedReservationID string) (decimal.Decimal, error) {
-	query := tx.Table("ai.model_budget_reservations").
-		Where("owner_user_id = ? AND state IN ?", userID, []string{"reserved", "confirmed"})
+	query := tx.Table("ai.model_credit_holds").
+		Where("owner_user_id = ? AND state IN ?", userID, []string{"held", "usage_recorded", "hold_deficit", "reconciliation_required"})
 	if strings.TrimSpace(excludedReservationID) != "" {
 		query = query.Where("id <> ?", excludedReservationID)
 	}
 	var result struct {
 		Credits decimal.Decimal `gorm:"column:credits"`
 	}
-	err := query.Select("COALESCE(SUM(COALESCE(confirmed_credits, reserved_credits)), 0) AS credits").Scan(&result).Error
+	err := query.Select("COALESCE(SUM(COALESCE(actual_credits, max_risk_credits)), 0) AS credits").Scan(&result).Error
 	return result.Credits, err
 }
 

@@ -248,7 +248,8 @@ func assertFreshMigrationState(t *testing.T, db *gorm.DB) {
 		"project_volume_quota_reservations",
 		"ai.ui_actions",
 		"ai.conversation_summaries",
-		"ai.model_budget_reservations",
+		"ai.model_credit_holds",
+		"ai.model_usages",
 		"ai.tool_approval_exemptions",
 	} {
 		if !db.Migrator().HasTable(table) {
@@ -281,9 +282,6 @@ func assertFreshMigrationState(t *testing.T, db *gorm.DB) {
 		{table: "inbox_action_requests", column: "row_version"},
 		{table: "volume_transfers", column: "logical_bytes"},
 		{table: "volume_transfers", column: "data_sha256"},
-		{table: "volume_transfers", column: "completion_reported_at"},
-		{table: "volume_transfers", column: "job_succeeded_at"},
-		{table: "volume_transfers", column: "execution_cleanup_completed_at"},
 		{table: "volume_transfers", column: "execution_generation"},
 		{table: "volume_transfers", column: "creation_lease_owner"},
 		{table: "volume_transfers", column: "creation_lease_expires_at"},

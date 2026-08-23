@@ -9,8 +9,11 @@ export type AIBlock
     | { id: string, turnId: string, runId: string, index: number, type: 'tool_call', toolCallId: string, operationId: string, visibility: AIToolVisibility, titleKey?: string, errorCode?: string, status: AIToolStatus, arguments: Record<string, unknown>, result?: AIToolDisplayResult, uiActions: AIUIAction[], durationMs?: number, traceId?: string }
 
 export interface AIRunUsage {
-  /** 最近一次主回答模型调用由 Provider 返回的输入 Token 数。 */
-  latestInputTokens?: number
+  /** 只有 reported 状态允许参与上下文比例展示。 */
+  status: 'reported' | 'unavailable' | 'reconciliation_required'
+  promptTokens?: number
+  modelId?: string
+  maxContextTokensSnapshot?: number
 }
 
 export interface AIAssistantState {
@@ -37,6 +40,17 @@ function isOptionalTokenCount(value: unknown) {
   return value === undefined || (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0)
 }
 
+function hasCompleteReportedUsage(run: NonNullable<AITimeline['turns'][number]['selectedRun']>) {
+  const values = [run.latestPromptTokens, run.latestUsageModelId, run.latestUsageMaxContextTokensSnapshot]
+  return values.every(value => value !== undefined)
+    && isOptionalTokenCount(run.latestPromptTokens)
+    && typeof run.latestUsageModelId === 'string'
+    && run.latestUsageModelId.length > 0
+    && typeof run.latestUsageMaxContextTokensSnapshot === 'number'
+    && Number.isSafeInteger(run.latestUsageMaxContextTokensSnapshot)
+    && run.latestUsageMaxContextTokensSnapshot > 0
+}
+
 export function isValidAITimeline(value: unknown): value is AITimeline {
   if (!value || typeof value !== 'object')
     return false
@@ -55,9 +69,12 @@ export function isValidAITimeline(value: unknown): value is AITimeline {
     && Array.isArray(turn.input.parts)
     && turn.input.parts.every(part => Boolean(part) && typeof part.id === 'string' && typeof part.partIndex === 'number')
     && (!turn.selectedRun || (typeof turn.selectedRun.id === 'string'
-      && isOptionalTokenCount(turn.selectedRun.latestInputTokens)
-      && Array.isArray(turn.selectedRun.items)
-      && turn.selectedRun.items.every(item => Boolean(item) && typeof item.id === 'string' && typeof item.timelineIndex === 'number' && typeof item.revision === 'number' && typeof item.createdAt === 'string' && Array.isArray(item.parts)))),
+      && (hasCompleteReportedUsage(turn.selectedRun)
+        || (turn.selectedRun.latestPromptTokens === undefined
+          && turn.selectedRun.latestUsageModelId === undefined
+          && turn.selectedRun.latestUsageMaxContextTokensSnapshot === undefined))
+        && Array.isArray(turn.selectedRun.items)
+        && turn.selectedRun.items.every(item => Boolean(item) && typeof item.id === 'string' && typeof item.timelineIndex === 'number' && typeof item.revision === 'number' && typeof item.createdAt === 'string' && Array.isArray(item.parts)))),
   ) && candidate.eventCursors.every(cursor => Boolean(cursor) && typeof cursor.runId === 'string' && typeof cursor.after === 'number')
 }
 
@@ -138,9 +155,14 @@ export function stateFromTimeline(timeline: AITimeline): AIAssistantState {
       const run = turn.selectedRun
       if (!run)
         return []
-      return [[run.id, {
-        ...(run.latestInputTokens !== undefined ? { latestInputTokens: run.latestInputTokens } : {}),
-      }]]
+      return [[run.id, hasCompleteReportedUsage(run)
+        ? {
+            status: 'reported' as const,
+            promptTokens: run.latestPromptTokens,
+            modelId: run.latestUsageModelId,
+            maxContextTokensSnapshot: run.latestUsageMaxContextTokensSnapshot,
+          }
+        : { status: 'unavailable' as const }]]
     })),
   }
 }
@@ -152,16 +174,10 @@ function mergeRunUsage(
   currentSequences: Record<string, number>,
 ) {
   return Object.fromEntries([...new Set([...Object.keys(snapshot), ...Object.keys(current)])].map((runId) => {
-    const snapshotUsage = snapshot[runId] ?? {}
-    const currentUsage = current[runId] ?? {}
+    const snapshotUsage = snapshot[runId]
+    const currentUsage = current[runId]
     const currentAhead = (currentSequences[runId] ?? 0) > (snapshotSequences[runId] ?? 0)
-    const preferred = currentAhead ? currentUsage : snapshotUsage
-    const fallback = currentAhead ? snapshotUsage : currentUsage
-    return [runId, {
-      ...(preferred.latestInputTokens !== undefined
-        ? { latestInputTokens: preferred.latestInputTokens }
-        : fallback.latestInputTokens !== undefined ? { latestInputTokens: fallback.latestInputTokens } : {}),
-    }]
+    return [runId, (currentAhead ? currentUsage : snapshotUsage) ?? currentUsage ?? snapshotUsage ?? { status: 'unavailable' }]
   }))
 }
 
@@ -227,7 +243,7 @@ export function addOptimisticTurn(state: AIAssistantState, input: { turnId: stri
       createdAt: new Date().toISOString(),
     }].sort((a, b) => a.index - b.index),
     runStatuses: { ...state.runStatuses, [input.runId]: 'queued' },
-    runUsage: { ...state.runUsage, [input.runId]: {} },
+    runUsage: { ...state.runUsage, [input.runId]: { status: 'unavailable' } },
     turnIndexes: { ...state.turnIndexes, [input.turnId]: input.turnIndex },
     itemRevisions: { ...state.itemRevisions, [`${input.turnId}:input`]: 0 },
   }
@@ -380,19 +396,26 @@ export function reduceAIEvent(state: AIAssistantState, event: AIEvent): AIAssist
     const usageRecord = usage && typeof usage === 'object' && !Array.isArray(usage)
       ? (usage as Record<string, unknown>)
       : undefined
-    const inputTokens = usageRecord?.inputTokens
-    const hasInput = typeof inputTokens === 'number' && Number.isFinite(inputTokens)
-    if (!hasInput)
-      return next
-    const currentUsage = next.runUsage[event.runId] ?? {}
+    const status = usageRecord?.status
+    const promptTokens = usageRecord?.promptTokens
+    const modelId = event.payload.modelId
+    const maxContextTokensSnapshot = event.payload.maxContextTokensSnapshot
+    const hasReportedUsage = status === 'reported'
+      && typeof promptTokens === 'number'
+      && Number.isSafeInteger(promptTokens)
+      && promptTokens >= 0
+      && typeof modelId === 'string'
+      && modelId.length > 0
+      && typeof maxContextTokensSnapshot === 'number'
+      && Number.isSafeInteger(maxContextTokensSnapshot)
+      && maxContextTokensSnapshot > 0
     return {
       ...next,
       runUsage: {
         ...next.runUsage,
-        [event.runId]: {
-          ...currentUsage,
-          latestInputTokens: inputTokens,
-        },
+        [event.runId]: hasReportedUsage
+          ? { status: 'reported', promptTokens, modelId, maxContextTokensSnapshot }
+          : { status: status === 'reconciliation_required' ? 'reconciliation_required' : 'unavailable' },
       },
     }
   }

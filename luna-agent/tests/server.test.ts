@@ -150,7 +150,7 @@ describe("internal API", () => {
         modelSnapshot: {
           id: "aimod_test", name: "test", maxContextTokens: 4096, maxOutputTokens: 4096,
           inputCreditsPerMillion: "0", outputCreditsPerMillion: "0",
-          cachedInputCreditsPerMillion: "0", cachedOutputCreditsPerMillion: "0",
+          cachedInputCreditsPerMillion: "0",
         },
         input: { parts: [{ type: "text", text: "test" }] }, pageContext: {}, clientInstanceId: "browser-client-snapshot-1",
       },

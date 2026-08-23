@@ -34,13 +34,11 @@ describe("ProviderConfigClient", () => {
     expect(configClient.current()?.version).toBe("cfg-2")
   })
 
-  it("accepts the configured upper context and tool-call limits", async () => {
+  it("accepts the configured upper tool-call limit", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => response(authoritativePayload({
-      contextInputTokenBudget: 2048 * 1024,
       runMaxToolCalls: 2048,
     }))))
     const config = await client().get()
-    expect(config.runtime.contextInputTokenBudget).toBe(2048 * 1024)
     expect(config.runtime.runMaxToolCalls).toBe(2048)
   })
 
@@ -99,7 +97,6 @@ function authoritativePayload(runtimeOverrides: Partial<RemoteRuntimeSettings> =
     runTimeoutMs: defaultRuntimeSettings.runTimeoutMs,
     agentConcurrentRuns: defaultRuntimeSettings.agentConcurrentRuns,
     userConcurrentRuns: defaultRuntimeSettings.userConcurrentRuns,
-    contextInputTokenBudget: defaultRuntimeSettings.contextInputTokenBudget,
     assistantMaxOutputTokens: defaultRuntimeSettings.assistantMaxOutputTokens,
     maxModelSteps: defaultRuntimeSettings.maxModelSteps,
     runMaxToolCalls: defaultRuntimeSettings.runMaxToolCalls,
@@ -108,7 +105,6 @@ function authoritativePayload(runtimeOverrides: Partial<RemoteRuntimeSettings> =
     maxCardRepairAttempts: defaultRuntimeSettings.maxCardRepairAttempts,
     contextMaxUncompressedTurnCount: defaultRuntimeSettings.contextMaxUncompressedTurnCount,
     contextMaxCompressionTurnsPerCompile: defaultRuntimeSettings.contextMaxCompressionTurnsPerCompile,
-    contextSummaryInputTokenBudget: defaultRuntimeSettings.contextSummaryInputTokenBudget,
     contextSummaryMaxOutputTokens: defaultRuntimeSettings.contextSummaryMaxOutputTokens,
   }
   return {
@@ -125,7 +121,6 @@ function authoritativePayload(runtimeOverrides: Partial<RemoteRuntimeSettings> =
         inputCreditsPerMillion: "1.25",
         outputCreditsPerMillion: "2.5",
         cachedInputCreditsPerMillion: "0.5",
-        cachedOutputCreditsPerMillion: "0.75",
       }],
     },
     runtime: { ...remoteRuntimeDefaults, providerTimeoutMs: 45_000, ...runtimeOverrides },

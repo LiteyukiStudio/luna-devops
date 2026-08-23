@@ -21,18 +21,11 @@ const schema = z.object({
   OTEL_EXPORTER_OTLP_HEADERS: optionalValue(z.string()),
   AI_OBSERVABILITY_CAPTURE_CONTENT: z.stringbool().default(false),
   AI_CONTEXT_COMPRESSION_TRIGGER_RATIO: z.coerce.number().min(0.5).max(0.95).default(0.9),
-  AI_CONTEXT_COMPRESSION_TARGET_RATIO: z.coerce.number().min(0.1).max(0.8).default(0.7),
   AI_CONTEXT_RECENT_TURN_COUNT: z.coerce.number().int().min(1).max(32).default(16),
-  AI_CONTEXT_MAX_RECENT_TURN_COUNT: z.coerce.number().int().min(2).max(64).default(32),
-  AI_CONTEXT_HISTORICAL_TOOL_K_TOKENS: z.coerce.number().int().min(1).max(256).default(64),
+  AI_CONTEXT_MAX_HISTORY_PAYLOAD_K_BYTES: z.coerce.number().int().min(64).max(16_384).default(4096),
+  AI_CONTEXT_MAX_SUMMARY_PAYLOAD_K_BYTES: z.coerce.number().int().min(16).max(4096).default(512),
+  AI_CONTEXT_MAX_CONTINUATION_PAYLOAD_K_BYTES: z.coerce.number().int().min(16).max(4096).default(1024),
   AI_TOOLS_RESULT_PAYLOAD_K_BYTES: z.coerce.number().int().min(4).max(4096).default(512),
-}).superRefine((value, context) => {
-  if (value.AI_CONTEXT_COMPRESSION_TRIGGER_RATIO <= value.AI_CONTEXT_COMPRESSION_TARGET_RATIO) {
-    context.addIssue({ code: "custom", path: ["AI_CONTEXT_COMPRESSION_TRIGGER_RATIO"], message: "must exceed AI_CONTEXT_COMPRESSION_TARGET_RATIO" })
-  }
-  if (value.AI_CONTEXT_RECENT_TURN_COUNT > value.AI_CONTEXT_MAX_RECENT_TURN_COUNT) {
-    context.addIssue({ code: "custom", path: ["AI_CONTEXT_RECENT_TURN_COUNT"], message: "must not exceed AI_CONTEXT_MAX_RECENT_TURN_COUNT" })
-  }
 })
 
 export type Config = z.infer<typeof schema>

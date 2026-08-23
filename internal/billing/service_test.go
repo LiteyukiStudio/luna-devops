@@ -39,7 +39,7 @@ func TestDefaultRateRulesPreferGatewayTrafficOverRequestBilling(t *testing.T) {
 
 func TestDefaultRateRulesExcludeAIModelTokenRates(t *testing.T) {
 	rules := defaultRateRuleByMeter()
-	for _, meter := range []string{MeterAIInputTokens, MeterAIOutputTokens, MeterAICachedInputTokens, MeterAICachedOutputTokens} {
+	for _, meter := range []string{MeterAIPromptTokens, MeterAICompletionTokens, MeterAICachedPromptTokens, MeterAICacheWritePromptTokens} {
 		if _, ok := rules[meter]; ok {
 			t.Fatalf("AI model token rate %q must not be a generic default rate", meter)
 		}
@@ -52,15 +52,6 @@ func TestTokenBillingQuantityPreservesPartialMillions(t *testing.T) {
 	}
 }
 
-func TestNormalTokenBillingNeverBecomesNegativeWhenCacheExceedsTotal(t *testing.T) {
-	if got := maxNormalTokens(10, 25); got != 0 {
-		t.Fatalf("normal token count = %d, want 0", got)
-	}
-	if got := maxNormalTokens(25, 10); got != 15 {
-		t.Fatalf("normal token count = %d, want 15", got)
-	}
-}
-
 func TestSettleAIModelUsageBillsRunOwnerOnce(t *testing.T) {
 	db := openBillingTestDB(t)
 	if err := db.AutoMigrate(&model.UserWallet{}, &model.BillingRateRule{}, &model.BillingUsageRecord{}, &model.BillingLedgerEntry{}); err != nil {
@@ -70,7 +61,7 @@ func TestSettleAIModelUsageBillsRunOwnerOnce(t *testing.T) {
 	input := AIModelUsageInput{
 		EventID: "aievt_usage", RunID: "airun_usage", UserID: "usr_owner",
 		ModelID: "aimod_test", ModelName: "test-model",
-		InputTokens: 2_000_000, OutputTokens: 1_000_000, OccurredAt: time.Now(),
+		PromptTokens: 2_000_000, CompletionTokens: 1_000_000, TotalTokens: 3_000_000, OccurredAt: time.Now(),
 		Pricing: AIModelPricingSnapshot{
 			InputCreditsPerMillion: decimal.NewFromInt(1), OutputCreditsPerMillion: decimal.NewFromInt(4),
 		},
@@ -293,12 +284,12 @@ func openBillingTestDB(t *testing.T) *gorm.DB {
 		Migrate: func(db *gorm.DB) error {
 			return db.Exec(`
 CREATE SCHEMA ai;
-CREATE TABLE ai.model_budget_reservations (
+CREATE TABLE ai.model_credit_holds (
     id text PRIMARY KEY,
     owner_user_id text NOT NULL,
     state text NOT NULL,
-    reserved_credits numeric NOT NULL DEFAULT 0,
-    confirmed_credits numeric
+    max_risk_credits numeric NOT NULL DEFAULT 0,
+    actual_credits numeric
 )`).Error
 		},
 	})

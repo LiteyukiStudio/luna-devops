@@ -19,11 +19,11 @@ const (
 )
 
 const (
-	MeterAIInputTokens        = "ai.input_tokens_1m"
-	MeterAIOutputTokens       = "ai.output_tokens_1m"
-	MeterAICachedInputTokens  = "ai.cached_input_tokens_1m"
-	MeterAICachedOutputTokens = "ai.cached_output_tokens_1m"
-	MeterStorageTransferGiB   = "storage.transfer_gib"
+	MeterAIPromptTokens           = "ai.prompt_tokens_1m"
+	MeterAICompletionTokens       = "ai.completion_tokens_1m"
+	MeterAICachedPromptTokens     = "ai.cached_prompt_tokens_1m"
+	MeterAICacheWritePromptTokens = "ai.cache_write_prompt_tokens_1m"
+	MeterStorageTransferGiB       = "storage.transfer_gib"
 )
 
 type RateRuleUpdate struct {

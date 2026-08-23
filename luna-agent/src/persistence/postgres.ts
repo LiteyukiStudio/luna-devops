@@ -11,13 +11,14 @@ import type {
   UIActionAcknowledgement,
 } from "../domain.js"
 import { createId } from "../id.js"
+import type { OfficialModelUsage, UsageUnavailableReason } from "../provider/provider.js"
 import { internalSpanOptions, withSpan } from "../telemetry.js"
 import {
   RunStateConflictError,
   type ConversationListOptions,
   type Repository,
-  type ModelBudgetOperation,
-  type ModelBudgetUsage,
+  type ModelAttemptMetadata,
+  type ModelCallOperation,
   type TimelinePageOptions,
 } from "./repository.js"
 import { createTurnRequestHash } from "./create-turn-hash.js"
@@ -81,25 +82,20 @@ export class PostgresRepository implements Repository {
     await this.database.assertReady()
   }
 
-  async reserveModelBudget(input: {
+  async createModelCreditHold(input: {
     id: string
     runId: string
     ownerUserId: string
-    operation: ModelBudgetOperation
-    estimatedInputTokens: number
+    operation: ModelCallOperation
     requestedOutputTokens: number
     leaseSeconds: number
   }) {
-    if (!Number.isSafeInteger(input.estimatedInputTokens) || input.estimatedInputTokens < 1
-      || !Number.isSafeInteger(input.requestedOutputTokens) || input.requestedOutputTokens < 1
+    if (!Number.isSafeInteger(input.requestedOutputTokens) || input.requestedOutputTokens < 1
       || !Number.isSafeInteger(input.leaseSeconds) || input.leaseSeconds < 5 || input.leaseSeconds > 10_800)
       throw new Error("ai.model_output_limit_invalid")
-    return withSpan("agent.budget.reserve", internalSpanOptions({
-      "luna.budget.operation": input.operation,
+    return withSpan("agent.credit_hold.create", internalSpanOptions({
+      "luna.credit_hold.operation": input.operation,
     }), () => this.db.transaction(async tx => {
-      // Global lock order is wallet -> Run -> reservation. Go settlement and
-      // ordinary wallet debits use wallet -> reservation, so stale recovery can
-      // never hold a reservation while waiting for the same wallet.
       const wallet = (await tx.execute<Record<string, unknown>>(sql`
         select balance_credits::numeric as balance_credits
         from user_wallets where user_id = ${input.ownerUserId} for update
@@ -113,137 +109,140 @@ export class PostgresRepository implements Repository {
                coalesce(model_name, 'legacy') as model_name,
                coalesce(input_credits_per_million, 0)::numeric as input_price,
                coalesce(output_credits_per_million, 0)::numeric as output_price,
-               coalesce(cached_input_credits_per_million, 0)::numeric as cached_input_price,
-               coalesce(cached_output_credits_per_million, 0)::numeric as cached_output_price
+               coalesce(cached_input_credits_per_million, 0)::numeric as cached_input_price
         from ai.runs where id = ${input.runId} and owner_user_id = ${input.ownerUserId}
         for update
       `)).rows[0]
       if (!run) throw new Error("ai.run_not_found")
-      // An expired in-flight request may already have reached the provider. Confirm
-      // its full hold conservatively so a replica restart cannot release paid work.
       await tx.execute(sql`
-        update ai.model_budget_reservations
-        set state = 'confirmed',
-            confirmed_tokens = reserved_tokens,
-            confirmed_credits = reserved_credits,
-            input_tokens = reserved_input_tokens,
-            output_tokens = reserved_output_tokens,
-            cached_input_tokens = 0,
-            cached_output_tokens = 0,
-            updated_at = now()
+        update ai.model_credit_holds
+        set state = 'reconciliation_required', reconciliation_reason = 'hold_expired', updated_at = now()
         where owner_user_id = ${input.ownerUserId}
-          and state = 'reserved' and expires_at <= now()
+          and state = 'held' and expires_at <= now()
       `)
-      const limits = (await tx.execute<Record<string, unknown>>(sql`
+      const decision = (await tx.execute<Record<string, unknown>>(sql`
         with owner_holds as (
-          select coalesce(sum(coalesce(confirmed_credits, reserved_credits)), 0)::numeric as credits
-          from ai.model_budget_reservations
-          where owner_user_id = ${input.ownerUserId} and state in ('reserved', 'confirmed')
-        ), limits as (
-          select ${String(run.max_context_tokens)}::bigint as context_limit,
-                 ${String(run.max_output_tokens)}::bigint as output_limit,
-                 ${String(wallet.balance_credits)}::numeric - owner_holds.credits as wallet_credit_available,
-                 greatest(${String(run.input_price)}::numeric, ${String(run.cached_input_price)}::numeric) as input_rate,
-                 greatest(${String(run.output_price)}::numeric, ${String(run.cached_output_price)}::numeric) as output_rate
+          select coalesce(sum(coalesce(actual_credits, max_risk_credits)), 0)::numeric as credits
+          from ai.model_credit_holds
+          where owner_user_id = ${input.ownerUserId}
+            and state in ('held', 'usage_recorded', 'hold_deficit', 'reconciliation_required')
+        ), risk as (
+          select least(${input.requestedOutputTokens}::bigint, ${String(run.max_output_tokens)}::bigint)::bigint as output_limit,
+                 ((${String(run.max_context_tokens)}::numeric * greatest(${String(run.input_price)}::numeric, ${String(run.cached_input_price)}::numeric))
+                  + (${String(run.max_output_tokens)}::numeric * ${String(run.output_price)}::numeric)) / 1000000 as max_risk_credits,
+                 ${String(wallet.balance_credits)}::numeric - owner_holds.credits as wallet_credit_available
           from owner_holds
-        ), capacities as (
-          select *,
-          (${input.estimatedInputTokens}::numeric * input_rate / 1000000)::numeric as input_cost,
-          case when output_rate = 0 then ${input.requestedOutputTokens}::bigint
-               else least(${input.requestedOutputTokens}::numeric,
-                 floor(greatest(wallet_credit_available - (${input.estimatedInputTokens}::numeric * input_rate / 1000000), 0) * 1000000 / output_rate))::bigint end as wallet_output_capacity
-          from limits
         )
-        select case
-          when context_limit - ${input.estimatedInputTokens}::bigint < 1 then 'ai.model_context_insufficient'
-          when input_cost > wallet_credit_available then 'ai.wallet_balance_insufficient'
-          when wallet_output_capacity < 1 then 'ai.wallet_balance_insufficient'
-          else null
-        end as denial_code,
-        least(
-          ${input.requestedOutputTokens}::bigint,
-          output_limit,
-          context_limit - ${input.estimatedInputTokens}::bigint,
-          wallet_output_capacity
-        )::bigint as clamped_output_tokens
-        from capacities
+        select output_limit, max_risk_credits,
+               max_risk_credits <= wallet_credit_available as allowed
+        from risk
       `)).rows[0]!
-      if (typeof limits.denial_code === "string") throw new Error(limits.denial_code)
-      const clampedOutputTokens = BigInt(String(limits.clamped_output_tokens))
-      if (clampedOutputTokens < 1n || clampedOutputTokens > BigInt(Number.MAX_SAFE_INTEGER))
-        throw new Error("ai.model_output_limit_invalid")
-      const maxOutputTokens = Number(clampedOutputTokens)
+      if (decision.allowed !== true) throw new Error("ai.wallet_balance_insufficient")
+      const maxOutputTokens = Number(decision.output_limit)
+      const attemptRow = (await tx.execute<Record<string, unknown>>(sql`
+        select coalesce(max(attempt), 0) + 1 as attempt
+        from ai.model_credit_holds where run_id = ${input.runId} and operation = ${input.operation}
+      `)).rows[0]!
+      const attempt = Number(attemptRow.attempt)
       await tx.execute(sql`
-        insert into ai.model_budget_reservations (
-          id, run_id, owner_user_id, operation, state, model_id, model_name,
+        insert into ai.model_credit_holds (
+          id, run_id, owner_user_id, operation, attempt, state, model_id, model_name,
+          max_context_tokens_snapshot, max_output_tokens_snapshot,
           input_credits_per_million, output_credits_per_million,
-          cached_input_credits_per_million, cached_output_credits_per_million,
-          reserved_tokens, reserved_input_tokens, reserved_output_tokens, reserved_credits, expires_at
+          cached_input_credits_per_million, max_risk_credits, expires_at
         ) values (
-          ${input.id}, ${input.runId}, ${input.ownerUserId}, ${input.operation}, 'reserved',
+          ${input.id}, ${input.runId}, ${input.ownerUserId}, ${input.operation}, ${attempt}, 'held',
           ${String(run.model_id)}, ${String(run.model_name)},
+          ${String(run.max_context_tokens)}::bigint, ${String(run.max_output_tokens)}::bigint,
           ${String(run.input_price)}::numeric, ${String(run.output_price)}::numeric,
-          ${String(run.cached_input_price)}::numeric, ${String(run.cached_output_price)}::numeric,
-          ${input.estimatedInputTokens + maxOutputTokens}, ${input.estimatedInputTokens}, ${maxOutputTokens},
-          ((${input.estimatedInputTokens}::numeric * greatest(${String(run.input_price)}::numeric, ${String(run.cached_input_price)}::numeric))
-           + (${maxOutputTokens}::numeric * greatest(${String(run.output_price)}::numeric, ${String(run.cached_output_price)}::numeric))) / 1000000,
+          ${String(run.cached_input_price)}::numeric, ${String(decision.max_risk_credits)}::numeric,
           now() + make_interval(secs => ${input.leaseSeconds})
         )
       `)
-      return { id: input.id, maxOutputTokens }
+      return { id: input.id, attempt, maxOutputTokens }
     }))
   }
 
-  async confirmModelBudget(reservationId: string, usage?: ModelBudgetUsage): Promise<void> {
-    const reported = usage?.reported === true
-    const inputTokens = reported ? usage.inputTokens : undefined
-    const outputTokens = reported ? usage.outputTokens : undefined
-    const cachedInputTokens = reported ? (usage.cachedInputTokens ?? 0) : 0
-    const cachedOutputTokens = reported ? (usage.cachedOutputTokens ?? 0) : 0
-    for (const value of [inputTokens, outputTokens, cachedInputTokens, cachedOutputTokens]) {
-      if (value !== undefined && (!Number.isSafeInteger(value) || value < 0)) throw new Error("ai.provider_usage_invalid")
-    }
-    if (inputTokens !== undefined && outputTokens !== undefined
-      && (cachedInputTokens > inputTokens || cachedOutputTokens > outputTokens
-        || !Number.isSafeInteger(inputTokens + outputTokens)))
-      throw new Error("ai.provider_usage_invalid")
-    await withSpan("agent.budget.confirm", internalSpanOptions(), () => this.db.transaction(async tx => {
+  async recordReportedModelUsage(creditHoldId: string, usage: OfficialModelUsage, metadata: ModelAttemptMetadata & { callType: "stream" | "complete" }) {
+    return withSpan("agent.usage.persist", internalSpanOptions(), () => this.db.transaction(async tx => {
       const current = (await tx.execute<Record<string, unknown>>(sql`
-        select id, state, reserved_input_tokens, reserved_output_tokens
-        from ai.model_budget_reservations where id = ${reservationId} for update
+        select * from ai.model_credit_holds where id = ${creditHoldId} for update
       `)).rows[0]
-      if (!current || current.state === "confirmed" || current.state === "settled") return
-      if (current.state !== "reserved") throw new Error("ai.budget_reservation_released")
-      if (inputTokens !== undefined && outputTokens !== undefined
-        && (inputTokens > Number(current.reserved_input_tokens) || outputTokens > Number(current.reserved_output_tokens)))
-        throw new Error("ai.provider_usage_invalid")
-      const actualInput = inputTokens ?? Number(current.reserved_input_tokens)
-      const actualOutput = outputTokens ?? Number(current.reserved_output_tokens)
+      if (!current) throw new Error("ai.credit_hold_not_found")
+      if (current.state !== "held") throw new Error("ai.credit_hold_not_active")
+      const cached = usage.cachedPromptTokens ?? 0
+      const cacheWrite = usage.cacheWritePromptTokens ?? 0
+      const normalPrompt = usage.promptTokens - cached - cacheWrite
+      const actual = (await tx.execute<Record<string, unknown>>(sql`
+        select calculated.credits,
+               calculated.credits > ${String(current.max_risk_credits)}::numeric as deficit
+        from (select ((${normalPrompt}::numeric * ${String(current.input_credits_per_million)}::numeric)
+          + ((${cached}::numeric + ${cacheWrite}::numeric) * ${String(current.cached_input_credits_per_million)}::numeric)
+          + (${usage.completionTokens}::numeric * ${String(current.output_credits_per_million)}::numeric)) / 1000000 as credits) calculated
+      `)).rows[0]!
+      const deficit = actual.deficit === true
+      const usageId = createId("aiuse")
       await tx.execute(sql`
-        update ai.model_budget_reservations
-        set state = 'confirmed',
-            input_tokens = ${actualInput}, output_tokens = ${actualOutput},
-            cached_input_tokens = ${cachedInputTokens}, cached_output_tokens = ${cachedOutputTokens},
-            confirmed_tokens = ${actualInput + actualOutput},
-            confirmed_credits = (
-              greatest(${actualInput}::bigint - ${cachedInputTokens}::bigint, 0)::numeric * input_credits_per_million
-              + ${cachedInputTokens}::bigint::numeric * cached_input_credits_per_million
-              + greatest(${actualOutput}::bigint - ${cachedOutputTokens}::bigint, 0)::numeric * output_credits_per_million
-              + ${cachedOutputTokens}::bigint::numeric * cached_output_credits_per_million
-            ) / 1000000,
-            updated_at = now()
-        where id = ${reservationId} and state = 'reserved'
+        insert into ai.model_usages (
+          id, credit_hold_id, run_id, owner_user_id, operation, attempt, status, settlement_status,
+          model_id, model_name, max_context_tokens_snapshot,
+          prompt_tokens, completion_tokens, total_tokens, cached_prompt_tokens,
+          cache_write_prompt_tokens, reasoning_completion_tokens,
+          provider_request_id, response_id, response_model, finish_reason, call_type
+        ) values (
+          ${usageId}, ${creditHoldId}, ${String(current.run_id)}, ${String(current.owner_user_id)},
+          ${String(current.operation)}, ${Number(current.attempt)}, 'reported',
+          ${deficit ? "reconciliation_required" : "pending"},
+          ${String(current.model_id)}, ${String(current.model_name)}, ${String(current.max_context_tokens_snapshot)}::bigint,
+          ${usage.promptTokens}, ${usage.completionTokens}, ${usage.totalTokens},
+          ${usage.cachedPromptTokens ?? null}, ${usage.cacheWritePromptTokens ?? null}, ${usage.reasoningCompletionTokens ?? null},
+          ${metadata.providerRequestId ?? null}, ${metadata.responseId ?? null}, ${metadata.responseModel ?? null},
+          ${metadata.finishReason ?? null}, ${metadata.callType}
+        )
       `)
+      await tx.execute(sql`
+        update ai.model_credit_holds
+        set state = ${deficit ? "hold_deficit" : "usage_recorded"}, actual_credits = ${String(actual.credits)}::numeric,
+            provider_request_id = ${metadata.providerRequestId ?? null}, response_id = ${metadata.responseId ?? null},
+            response_model = ${metadata.responseModel ?? null},
+            reconciliation_reason = ${deficit ? "hold_deficit" : null},
+            updated_at = now()
+        where id = ${creditHoldId} and state = 'held'
+      `)
+      return { reconciliationRequired: deficit }
     }))
   }
 
-  async releaseModelBudget(reservationId: string): Promise<void> {
-    await withSpan("agent.budget.release", internalSpanOptions(), async () => {
+  async markModelUsageUnavailable(creditHoldId: string, reason: UsageUnavailableReason | "request_outcome_unknown", metadata: ModelAttemptMetadata): Promise<void> {
+    await withSpan("agent.usage.reconciliation_required", internalSpanOptions(), async () => {
       await this.db.execute(sql`
-        update ai.model_budget_reservations set state = 'released', updated_at = now()
-        where id = ${reservationId} and state = 'reserved'
+        update ai.model_credit_holds
+        set state = 'reconciliation_required', reconciliation_reason = ${reason},
+            provider_request_id = ${metadata.providerRequestId ?? null}, response_id = ${metadata.responseId ?? null},
+            response_model = ${metadata.responseModel ?? null}, failure_stage = ${metadata.failureStage ?? null},
+            updated_at = now()
+        where id = ${creditHoldId} and state = 'held'
       `)
     })
+  }
+
+  async releaseModelCreditHold(creditHoldId: string): Promise<void> {
+    await withSpan("agent.credit_hold.release", internalSpanOptions(), async () => {
+      await this.db.execute(sql`update ai.model_credit_holds set state = 'released', updated_at = now() where id = ${creditHoldId} and state = 'held'`)
+    })
+  }
+
+  async getLatestReportedModelUsage(conversationId: string) {
+    const row = (await this.db.execute<Record<string, unknown>>(sql`
+      select usage.model_id, usage.prompt_tokens, usage.max_context_tokens_snapshot
+      from ai.model_usages usage
+      join ai.runs run on run.id = usage.run_id
+      where run.conversation_id = ${conversationId}
+        and usage.operation = 'assistant' and usage.status = 'reported'
+      order by usage.occurred_at desc, usage.id desc limit 1
+    `)).rows[0]
+    if (!row) return undefined
+    return { modelId: String(row.model_id), promptTokens: Number(row.prompt_tokens), maxContextTokensSnapshot: Number(row.max_context_tokens_snapshot) }
   }
 
   async createConversation(ownerUserId: string, title: string, projectId?: string, titleSource?: ConversationTitleSource, modelId?: string) {
@@ -419,7 +418,6 @@ export class PostgresRepository implements Repository {
         inputCreditsPerMillion: input.modelSnapshot?.inputCreditsPerMillion ?? null,
         outputCreditsPerMillion: input.modelSnapshot?.outputCreditsPerMillion ?? null,
         cachedInputCreditsPerMillion: input.modelSnapshot?.cachedInputCreditsPerMillion ?? null,
-        cachedOutputCreditsPerMillion: input.modelSnapshot?.cachedOutputCreditsPerMillion ?? null,
       })
       await tx.insert(idempotencyKeys).values({
         ownerUserId,
@@ -554,7 +552,6 @@ export class PostgresRepository implements Repository {
       inputCreditsPerMillion: runs.inputCreditsPerMillion,
       outputCreditsPerMillion: runs.outputCreditsPerMillion,
       cachedInputCreditsPerMillion: runs.cachedInputCreditsPerMillion,
-      cachedOutputCreditsPerMillion: runs.cachedOutputCreditsPerMillion,
     })
       .from(runs)
       .innerJoin(turns, eq(turns.id, runs.turnId))
@@ -625,7 +622,6 @@ export class PostgresRepository implements Repository {
           inputCreditsPerMillion: row.inputCreditsPerMillion ?? "0",
           outputCreditsPerMillion: row.outputCreditsPerMillion ?? "0",
           cachedInputCreditsPerMillion: row.cachedInputCreditsPerMillion ?? "0",
-          cachedOutputCreditsPerMillion: row.cachedOutputCreditsPerMillion ?? "0",
         },
       } : {}),
       toolInteractions: currentToolInteractions.map(item => ({ itemId: item.id, type: item.type as "tool_call" | "tool_result", status: item.status, content: item.content })),
@@ -998,20 +994,23 @@ export class PostgresRepository implements Repository {
       const authorizedRunIds = runRows.map(run => run.id)
       // 最近一次主回答的实际输入量用于展示单次上下文占用；不再维护 Run 累计预算。
       const usageRows = authorizedRunIds.length === 0
-        ? { rows: [] as { runId: string, latestInputTokens: string }[] }
-        : await tx.execute<{ runId: string, latestInputTokens: string }>(sql`
+        ? { rows: [] as { runId: string, latestPromptTokens: string, modelId: string, maxContextTokensSnapshot: string }[] }
+        : await tx.execute<{ runId: string, latestPromptTokens: string, modelId: string, maxContextTokensSnapshot: string }>(sql`
             select distinct on (run_id)
                    run_id as "runId",
-                   input_tokens as "latestInputTokens"
-            from ai.model_budget_reservations
+                   prompt_tokens as "latestPromptTokens",
+                   model_id as "modelId",
+                   max_context_tokens_snapshot as "maxContextTokensSnapshot"
+            from ai.model_usages
             where run_id in ${authorizedRunIds}
               and operation = 'assistant'
-              and state in ('confirmed', 'settled')
-              and input_tokens is not null
-            order by run_id, created_at desc, id desc
+              and status = 'reported'
+            order by run_id, occurred_at desc, id desc
           `)
       const usageByRun = new Map(usageRows.rows.map(row => [row.runId, {
-        latestInputTokens: Number(row.latestInputTokens),
+        latestPromptTokens: Number(row.latestPromptTokens),
+        latestUsageModelId: row.modelId,
+        latestUsageMaxContextTokensSnapshot: Number(row.maxContextTokensSnapshot),
       }]))
       const itemRows = authorizedRunIds.length === 0
         ? []

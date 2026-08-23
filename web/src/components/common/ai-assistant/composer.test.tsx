@@ -104,7 +104,7 @@ describe('ai assistant composer keyboard submission', () => {
         activeRun={false}
         canceling={false}
         canCancel={false}
-        contextUsedTokens={74_600}
+        providerUsage={{ status: 'reported', promptTokens: 74_600, modelId: 'aimod_test', maxContextTokensSnapshot: 524_000 }}
         draft="测试消息"
         inputRef={createRef<HTMLTextAreaElement>()}
         models={[{ id: 'aimod_test', name: 'Test model', maxContextTokens: 524_000, maxOutputTokens: 16_000 }]}
@@ -131,7 +131,7 @@ describe('ai assistant composer keyboard submission', () => {
         activeRun={false}
         canceling={false}
         canCancel={false}
-        contextUsedTokens={25_600}
+        providerUsage={{ status: 'reported', promptTokens: 25_600, modelId: 'aimod_test', maxContextTokensSnapshot: 128_000 }}
         draft="测试消息"
         inputRef={createRef<HTMLTextAreaElement>()}
         models={[{ id: 'aimod_test', name: 'Test model', maxContextTokens: 128_000, maxOutputTokens: 16_000 }]}
@@ -149,6 +149,31 @@ describe('ai assistant composer keyboard submission', () => {
     expect(contextRing).not.toBeNull()
     await user.hover(contextRing!)
     expect(await screen.findByRole('tooltip')).toHaveTextContent(i18next.t('aiAssistant.contextUsage', { used: '25.6', total: '128k', percent: 20 }))
+  })
+
+  it('shows no Provider usage data instead of reusing a different model or unavailable call', () => {
+    render(
+      <AIAssistantComposer
+        activeRun={false}
+        canceling={false}
+        canCancel={false}
+        draft="测试消息"
+        inputRef={createRef<HTMLTextAreaElement>()}
+        models={[{ id: 'aimod_current', name: 'Current', maxContextTokens: 128_000, maxOutputTokens: 16_000 }]}
+        providerUsage={{ status: 'reported', promptTokens: 25_600, modelId: 'aimod_previous', maxContextTokensSnapshot: 64_000 }}
+        selectedModelId="aimod_current"
+        sending={false}
+        submitting={false}
+        waitingInput={false}
+        onCancel={vi.fn()}
+        onDraftChange={vi.fn()}
+        onModelChange={vi.fn()}
+        onSubmit={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByText(i18next.t('aiAssistant.contextUsageUnavailable'))).toBeInTheDocument()
+    expect(document.querySelector('[aria-label*="%"]')).toBeNull()
   })
 
   it('keeps the draft editable but blocks submission while the current run is active', () => {

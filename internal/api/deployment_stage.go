@@ -1,10 +1,14 @@
 package api
 
 import (
+	"net/http"
 	"strings"
 
 	"github.com/LiteyukiStudio/devops/internal/model"
+	"github.com/gin-gonic/gin"
 )
+
+var publicDeploymentStages = []string{"dev", "test", "staging", "prod"}
 
 // normalizeStage is the single normalization boundary for deployment stages.
 // Public writes must additionally call normalizePublicStage; persisted sys-*
@@ -32,4 +36,16 @@ func normalizePublicStage(value string) (string, bool) {
 	default:
 		return stage, false
 	}
+}
+
+func writeDeploymentStageInvalid(ctx *gin.Context, path, detail string) {
+	writeArgumentErrorCode(
+		ctx,
+		http.StatusBadRequest,
+		"deployment.stage_invalid",
+		detail,
+		path,
+		publicDeploymentStages,
+		false,
+	)
 }

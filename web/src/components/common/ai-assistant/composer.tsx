@@ -1,4 +1,5 @@
 import type { KeyboardEvent, ReactNode, RefObject } from 'react'
+import type { AIRunUsage } from './state'
 import type { AIModelOption } from '@/api'
 import { Check, ChevronDown, CircleStop, LoaderCircle, Send } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
@@ -16,8 +17,8 @@ export interface AIAssistantComposerProps {
   modelChanging?: boolean
   modelSelectionDisabled?: boolean
   selectedModelId?: string
-  /** 最近一次模型调用 provider 实际返回的输入 token 数；undefined 表示暂无数据。 */
-  contextUsedTokens?: number
+  /** 最近一次模型调用的官方 Provider 用量；非 reported 状态不展示百分比。 */
+  providerUsage?: AIRunUsage
   draft: string
   inputRef: RefObject<HTMLTextAreaElement | null>
   maxLength?: number
@@ -129,7 +130,7 @@ export function AIAssistantComposer({
   modelChanging = false,
   modelSelectionDisabled = false,
   selectedModelId,
-  contextUsedTokens,
+  providerUsage,
   draft,
   inputRef,
   maxLength,
@@ -145,10 +146,14 @@ export function AIAssistantComposer({
   const busy = sending || submitting
   const canSubmit = modelAvailable && (!activeRun || waitingInput)
   const selectedModel = models.find(model => model.id === selectedModelId)
-  const contextTotal = selectedModel?.maxContextTokens ?? 0
-  const contextUsed = contextUsedTokens ?? 0
-  const hasContext = contextTotal > 0
-  const contextRatio = hasContext ? contextUsed / contextTotal : 0
+  const hasReportedUsage = providerUsage?.status === 'reported'
+    && providerUsage.modelId === selectedModel?.id
+    && typeof providerUsage.promptTokens === 'number'
+    && typeof providerUsage.maxContextTokensSnapshot === 'number'
+    && providerUsage.maxContextTokensSnapshot > 0
+  const contextTotal = hasReportedUsage ? providerUsage.maxContextTokensSnapshot! : 0
+  const contextUsed = hasReportedUsage ? providerUsage.promptTokens! : 0
+  const contextRatio = hasReportedUsage ? contextUsed / contextTotal : 0
   return (
     <footer className="shrink-0 border-t border-separator-subtle bg-surface p-2.5 pb-[max(0.625rem,env(safe-area-inset-bottom))]">
       <div className="flex min-h-20 flex-col gap-1 rounded-container border border-input bg-surface px-2 py-2 focus-within:ring-2 focus-within:ring-ring">
@@ -196,13 +201,15 @@ export function AIAssistantComposer({
               ))}
             </SelectContent>
           </Select>
-          {hasContext && (
-            <ContextUsageRing
-              ratio={contextRatio}
-              total={contextTotal}
-              used={contextUsed}
-            />
-          )}
+          {hasReportedUsage
+            ? (
+                <ContextUsageRing
+                  ratio={contextRatio}
+                  total={contextTotal}
+                  used={contextUsed}
+                />
+              )
+            : <span className="px-1 text-xs text-muted-foreground">{t('aiAssistant.contextUsageUnavailable')}</span>}
           {activeRun && !waitingInput
             ? (
                 <Button

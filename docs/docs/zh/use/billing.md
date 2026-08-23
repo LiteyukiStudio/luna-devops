@@ -34,7 +34,7 @@
 
 ## AI Token
 
-AI 助手按模型实际返回的输入、输出、缓存输入和缓存输出 Token 计费，费用归属发起对话的用户账户。价格使用每百万 Token 的额度，并在 Run 创建时保存四项价格快照；后续修改模型目录只影响新 Run。旧事件缺少模型或价格快照时不会重新计费。
+AI 助手只按 Provider 官方 `usage` 中经校验的 Prompt、Completion、缓存 Prompt 和 cache-write Prompt 用量计费，费用归属发起对话的用户账户。Completion 已包含 reasoning 用量，不会重复扣费。价格使用每百万 Token 的 Credits，并在 Run 创建时保存三项价格快照；后续修改模型目录只影响新 Run。Provider 未返回或返回非法 `usage` 时，该次调用进入对账而不是用 `0` 或预授信值结算。
 
 ## 访问流量
 

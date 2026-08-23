@@ -14,6 +14,8 @@
 
 安装完成后检查 Release、工作负载、日志和访问方式。模板不会替你完成第三方应用内部配置，例如 Grafana 数据源、数据库业务账号或外部 OAuth。
 
+部署阶段只接受 `dev`、`test`、`staging` 或 `prod`。CLI 使用稳定命令 `luna app-template install`；Agent 与 CLI 会在请求发出前拒绝 `default`、`qa` 等非法值，并返回允许值。平台兜底校验返回 `deployment.stage_invalid`、字段路径和 `retryable: false`；自动化调用方必须修正参数，不能原样重试。
+
 ## 数据卷
 
 需要持久数据的模板会要求选择同项目空间、同集群且卷模式匹配的数据卷。未选择真实数据卷时不会自动降级为 `emptyDir`。请先按[运行数据持久化](./workflow/runtime-data-persistence)创建或接入数据卷。

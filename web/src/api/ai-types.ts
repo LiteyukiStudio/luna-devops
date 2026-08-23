@@ -16,7 +16,6 @@ export interface AIModelConfig extends AIModelOption {
   inputCreditsPerMillion: string
   outputCreditsPerMillion: string
   cachedInputCreditsPerMillion: string
-  cachedOutputCreditsPerMillion: string
   enabled: boolean
   createdAt: string
   updatedAt: string
@@ -143,8 +142,10 @@ export interface AITimelineTurn {
     status: AIRunStatus
     expectedVersion?: number
     errorCode?: string
-    /** 当前 Run 最近一次主回答模型调用的输入 token 数。 */
-    latestInputTokens?: number
+    /** 当前 Run 最近一次主回答模型调用的官方 prompt_tokens。 */
+    latestPromptTokens?: number
+    latestUsageModelId?: string
+    latestUsageMaxContextTokensSnapshot?: number
     items: AITimelineItem[]
   }
 }
@@ -157,6 +158,30 @@ export interface AITimeline {
     olderCursor?: string
     hasOlder: boolean
   }
+}
+
+export type AIProviderUsage
+  = | {
+    status: 'reported'
+    promptTokens: number
+    completionTokens: number
+    totalTokens: number
+    cachedPromptTokens?: number
+    cacheWritePromptTokens?: number
+    reasoningCompletionTokens?: number
+  }
+  | { status: 'unavailable', reason: 'missing_usage' | 'invalid_usage' | 'stream_ended_without_usage' }
+  | { status: 'reconciliation_required', reason: 'missing_usage' | 'invalid_usage' | 'stream_ended_without_usage' | 'request_outcome_unknown' | 'hold_deficit' }
+
+export interface AIModelCompletedPayload {
+  usage: AIProviderUsage
+  modelId?: string
+  maxContextTokensSnapshot?: number
+  creditHoldId?: string
+  providerRequestId?: string
+  responseId?: string
+  responseModel?: string
+  finishReason?: string
 }
 
 export interface AIEvent {

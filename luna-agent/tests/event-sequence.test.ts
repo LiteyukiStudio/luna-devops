@@ -30,7 +30,7 @@ describe("PostgreSQL bigint event sequence normalization", () => {
     expect(() => normalizeEventSequence("1.5")).toThrow("ai.event_sequence_invalid")
   })
 
-  it("projects authoritative Run and context token usage into timeline snapshots", async () => {
+  it("projects authoritative Provider prompt usage into timeline snapshots", async () => {
     const repository = new TestRepository()
     const conversation = await repository.createConversation("usr_usage", "usage")
     const created = await repository.createTurn("usr_usage", {
@@ -38,39 +38,40 @@ describe("PostgreSQL bigint event sequence normalization", () => {
       input: "inspect usage",
       pageContext: {},
       idempotencyKey: "usage-request",
+      modelId: "aimdl_usage",
+      modelSnapshot: {
+        id: "aimdl_usage", name: "usage", maxContextTokens: 32_000, maxOutputTokens: 4_000,
+        inputCreditsPerMillion: "1", outputCreditsPerMillion: "2", cachedInputCreditsPerMillion: "0.5",
+      },
     })
-    await repository.reserveModelBudget({
-      id: "aibgt_assistant_1",
+    await repository.createModelCreditHold({
+      id: "aihold_assistant_1",
       runId: created.run.id,
       ownerUserId: "usr_usage",
       operation: "assistant",
-      estimatedInputTokens: 20_000,
       requestedOutputTokens: 4_000,
       leaseSeconds: 60,
     })
-    await repository.confirmModelBudget("aibgt_assistant_1", {
-      reported: true,
-      inputTokens: 18_000,
-      outputTokens: 2_000,
-    })
-    await repository.reserveModelBudget({
-      id: "aibgt_title_1",
+    await repository.recordReportedModelUsage("aihold_assistant_1", {
+      promptTokens: 18_000, completionTokens: 2_000, totalTokens: 20_000,
+    }, { callType: "stream" })
+    await repository.createModelCreditHold({
+      id: "aihold_title_1",
       runId: created.run.id,
       ownerUserId: "usr_usage",
       operation: "title",
-      estimatedInputTokens: 800,
       requestedOutputTokens: 200,
       leaseSeconds: 60,
     })
-    await repository.confirmModelBudget("aibgt_title_1", {
-      reported: true,
-      inputTokens: 700,
-      outputTokens: 100,
-    })
+    await repository.recordReportedModelUsage("aihold_title_1", {
+      promptTokens: 700, completionTokens: 100, totalTokens: 800,
+    }, { callType: "complete" })
 
     const timeline = await presentTimeline(repository, "usr_usage", conversation.id)
     expect(timeline?.turns[0]?.selectedRun).toMatchObject({
-      latestInputTokens: 18_000,
+      latestPromptTokens: 18_000,
+      latestUsageModelId: "aimdl_usage",
+      latestUsageMaxContextTokensSnapshot: 32_000,
     })
   })
 

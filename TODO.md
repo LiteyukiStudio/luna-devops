@@ -1,5 +1,17 @@
 # TODO
 
+## 2026-08-23 AI 官方用量、上下文压缩与计费链路重构
+
+- [x] 以 Chat Completions 官方 `usage` 作为已发生 Token 的唯一事实源，删除本地 Token 估算、预留值回填和 cached output 链路。
+- [x] 拆分每 attempt 信用 hold 与权威 usage，同步 Provider、Agent、PostgreSQL、Go 结算、OpenAPI 与 Web 五语契约。
+- [x] 完成可销毁 PostgreSQL、模拟 Chat Completions、临时 OTel、全量测试与中英文档验收。
+
+## 2026-08-23 应用模板安装工具契约增强
+
+- [x] 为 `installAppTemplate` 补齐稳定 CLI 命令、Agent 语义、严格阶段枚举与可修复参数校验。
+- [x] 统一后端结构化阶段错误，并让 Agent 对明确不可重试的同参数失败即时熔断。
+- [x] 同步 CLI 生成契约、双语公开文档并完成全链路验证。
+
 ## 2026-08-22 Kubernetes 资源分配与运行计费
 
 - [x] 将 requests/limits 策略绑定 RuntimeCluster，部署配置改为 CPU/内存配额并移除独立 limits。

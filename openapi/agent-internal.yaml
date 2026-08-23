@@ -227,7 +227,7 @@ components:
         modelSnapshot:
           type: object
           additionalProperties: false
-          required: [id, name, maxContextTokens, maxOutputTokens, inputCreditsPerMillion, outputCreditsPerMillion, cachedInputCreditsPerMillion, cachedOutputCreditsPerMillion]
+          required: [id, name, maxContextTokens, maxOutputTokens, inputCreditsPerMillion, outputCreditsPerMillion, cachedInputCreditsPerMillion]
           description: Immutable model identity, capability, and price snapshot attached by the Luna API BFF. maxOutputTokens must be less than maxContextTokens.
           properties:
             id: { type: string, minLength: 5, maxLength: 64 }
@@ -237,7 +237,6 @@ components:
             inputCreditsPerMillion: { type: string, pattern: '^\d+(\.\d{1,8})?$' }
             outputCreditsPerMillion: { type: string, pattern: '^\d+(\.\d{1,8})?$' }
             cachedInputCreditsPerMillion: { type: string, pattern: '^\d+(\.\d{1,8})?$' }
-            cachedOutputCreditsPerMillion: { type: string, pattern: '^\d+(\.\d{1,8})?$' }
         input: { type: object, additionalProperties: true }
         pageContext: { type: object, additionalProperties: true }
         clientInstanceId: { type: string, minLength: 16, maxLength: 80 }

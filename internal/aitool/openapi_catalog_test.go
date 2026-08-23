@@ -184,6 +184,24 @@ func TestPlatformCatalogPreservesExecutionRelevantJSONSchemaConstraints(t *testi
 	}
 }
 
+func TestAppTemplateInstallCatalogCarriesStrictStageAndSemantics(t *testing.T) {
+	operation, ok := PlatformOperation("installAppTemplate")
+	if !ok {
+		t.Fatal("missing installAppTemplate")
+	}
+	if operation.RequiresApproval || !reflect.DeepEqual(operation.RequiredScopes, []string{"project:write"}) {
+		t.Fatalf("installAppTemplate policy = %#v", operation)
+	}
+	if strings.TrimSpace(operation.Purpose.ZH) == "" || strings.TrimSpace(operation.AvoidWhen.ZH) == "" || len(operation.Preconditions.ZH) == 0 || strings.TrimSpace(operation.SuccessEvidence.ZH) == "" {
+		t.Fatalf("installAppTemplate semantic metadata = %#v", operation)
+	}
+	body := mapValue(mapValue(operation.InputSchema["properties"])["body"])
+	stage := mapValue(mapValue(body["properties"])["stage"])
+	if !reflect.DeepEqual(stage["enum"], []any{"dev", "test", "staging", "prod"}) {
+		t.Fatalf("installAppTemplate stage schema = %#v", stage)
+	}
+}
+
 func TestHighFrequencyOperationsCarryExplicitSemanticMetadata(t *testing.T) {
 	for _, operationID := range []string{
 		"listProjects", "createProject", "getProject", "updateProject", "deleteProject",
@@ -192,6 +210,7 @@ func TestHighFrequencyOperationsCarryExplicitSemanticMetadata(t *testing.T) {
 		"listRuntimeClusters", "listRuntimeClusterResources", "getDashboard", "listUsers",
 		"getBillingSummary", "listNotificationChannels", "webSearch", "fetchWebPage",
 		"listAppTemplates", "getAppTemplate",
+		"installAppTemplate",
 		"listApplications", "createApplication", "getApplication", "updateApplication", "deleteApplication",
 		"listDeploymentTargets", "createDeploymentTarget", "updateDeploymentTarget", "deleteDeploymentTarget",
 		"listBuildRuns", "triggerBuildRun", "getBuildRun", "retryBuildRun",

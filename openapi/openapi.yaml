@@ -5679,7 +5679,20 @@ paths:
       operationId: installAppTemplate
       tags:
         - Projects
-      summary: Install App Template
+      summary: Install an app template into a project
+      description: Creates an application and deployment target from the selected template. When installNow is true, the response also contains the first Release; read that Release back to verify its terminal state.
+      x-luna-agent:
+        purpose: { zh: 从应用市场模板创建应用和部署配置，并可立即创建首个 Release。, en: Create an application and deployment target from an App Marketplace template, optionally creating the first Release. }
+        aliases: { zh: [安装应用模板, 从应用市场安装, 模板部署应用], en: [install app template, install from app marketplace, deploy app template] }
+        avoidWhen: { zh: 修改已有应用或部署配置时不要重复安装模板，应使用对应更新工具。, en: Do not reinstall a template to modify an existing application or deployment target; use the corresponding update operation. }
+        preconditions: { zh: [先用 listAppTemplates 和 getAppTemplate 确认模板与必填参数, 先用 listRuntimeClusters 解析真实 clusterId, stage 必须使用 dev、test、staging 或 prod], en: [Confirm the template and required values with listAppTemplates and getAppTemplate, Resolve an authoritative clusterId with listRuntimeClusters, Use dev, test, staging, or prod for stage] }
+        successEvidence: { zh: 返回安装记录、应用和部署目标；installNow 为 true 时还必须用 getRelease 回读首个 Release 终态。, en: Returns the installation, application, and deployment target; when installNow is true, getRelease must read back the first Release terminal state. }
+      x-luna-cli:
+        command: app-template.install
+        classification: business-command
+        risk: medium
+        requiredScopes: ["project:write"]
+        agentAllowed: true
       parameters:
         - name: projectId
           in: path
@@ -7584,7 +7597,7 @@ paths:
         - { name: after, in: query, required: false, schema: { type: integer, format: int64, minimum: 0 } }
         - { name: Last-Event-ID, in: header, required: false, schema: { type: string } }
       responses:
-        "200": { description: Unbuffered recoverable SSE stream of persisted content, thinking, tool, and run lifecycle deltas, content: { text/event-stream: { schema: { type: string } } } }
+        "200": { description: Unbuffered recoverable SSE stream of persisted content, thinking, tool, and run lifecycle deltas. Each data frame is an AIEvent; model.completed uses AIModelCompletedPayload and never substitutes estimated Token values., content: { text/event-stream: { schema: { type: string } } } }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
   /api/v1/ai/runs/{runId}/cancel:
@@ -8128,7 +8141,7 @@ components:
     AIModelConfig:
       type: object
       additionalProperties: false
-      required: [id, name, maxContextTokens, maxOutputTokens, inputCreditsPerMillion, outputCreditsPerMillion, cachedInputCreditsPerMillion, cachedOutputCreditsPerMillion, enabled, createdAt, updatedAt]
+      required: [id, name, maxContextTokens, maxOutputTokens, inputCreditsPerMillion, outputCreditsPerMillion, cachedInputCreditsPerMillion, enabled, createdAt, updatedAt]
       properties:
         id: { type: string }
         name: { type: string, minLength: 1 }
@@ -8137,14 +8150,13 @@ components:
         inputCreditsPerMillion: { type: string, pattern: "^\\d+(\\.\\d{1,8})?$" }
         outputCreditsPerMillion: { type: string, pattern: "^\\d+(\\.\\d{1,8})?$" }
         cachedInputCreditsPerMillion: { type: string, pattern: "^\\d+(\\.\\d{1,8})?$" }
-        cachedOutputCreditsPerMillion: { type: string, pattern: "^\\d+(\\.\\d{1,8})?$" }
         enabled: { type: boolean }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
     AIModelWriteInput:
       type: object
       additionalProperties: false
-      required: [name, maxContextTokens, maxOutputTokens, inputCreditsPerMillion, outputCreditsPerMillion, cachedInputCreditsPerMillion, cachedOutputCreditsPerMillion]
+      required: [name, maxContextTokens, maxOutputTokens, inputCreditsPerMillion, outputCreditsPerMillion, cachedInputCreditsPerMillion]
       properties:
         name: { type: string, minLength: 1 }
         maxContextTokens: { type: integer, format: int64, minimum: 4096, maximum: 2097152 }
@@ -8152,12 +8164,11 @@ components:
         inputCreditsPerMillion: { type: string, pattern: "^\\d+(\\.\\d{1,8})?$" }
         outputCreditsPerMillion: { type: string, pattern: "^\\d+(\\.\\d{1,8})?$" }
         cachedInputCreditsPerMillion: { type: string, pattern: "^\\d+(\\.\\d{1,8})?$" }
-        cachedOutputCreditsPerMillion: { type: string, pattern: "^\\d+(\\.\\d{1,8})?$" }
         enabled: { type: boolean }
     AIModelPricingSnapshot:
       type: object
       additionalProperties: false
-      required: [id, name, maxContextTokens, maxOutputTokens, inputCreditsPerMillion, outputCreditsPerMillion, cachedInputCreditsPerMillion, cachedOutputCreditsPerMillion]
+      required: [id, name, maxContextTokens, maxOutputTokens, inputCreditsPerMillion, outputCreditsPerMillion, cachedInputCreditsPerMillion]
       properties:
         id: { type: string }
         name: { type: string, minLength: 1 }
@@ -8166,7 +8177,6 @@ components:
         inputCreditsPerMillion: { type: string, pattern: "^\\d+(\\.\\d{1,8})?$" }
         outputCreditsPerMillion: { type: string, pattern: "^\\d+(\\.\\d{1,8})?$" }
         cachedInputCreditsPerMillion: { type: string, pattern: "^\\d+(\\.\\d{1,8})?$" }
-        cachedOutputCreditsPerMillion: { type: string, pattern: "^\\d+(\\.\\d{1,8})?$" }
     AICreateTurnInput:
       type: object
       additionalProperties: false
@@ -8344,8 +8354,70 @@ components:
             status: { type: string, enum: [queued, running, waiting_approval, waiting_input, completed, failed, canceled, interrupted] }
             expectedVersion: { type: integer, format: int64, minimum: 0 }
             errorCode: { type: string }
-            latestInputTokens: { type: integer, format: int64, minimum: 0, description: Provider-reported input tokens for the latest completed assistant model call in this Run. }
+            latestPromptTokens: { type: integer, format: int64, minimum: 0, description: Official prompt_tokens from the latest reported assistant model usage in this Run. }
+            latestUsageModelId: { type: string }
+            latestUsageMaxContextTokensSnapshot: { type: integer, format: int64, minimum: 1 }
             items: { type: array, items: { $ref: "#/components/schemas/AITimelineItem" } }
+    AIProviderUsage:
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [status, promptTokens, completionTokens, totalTokens]
+          properties:
+            status: { type: string, enum: [reported] }
+            promptTokens: { type: integer, format: int64, minimum: 0 }
+            completionTokens: { type: integer, format: int64, minimum: 0 }
+            totalTokens: { type: integer, format: int64, minimum: 0, description: Must equal promptTokens plus completionTokens. }
+            cachedPromptTokens: { type: integer, format: int64, minimum: 0 }
+            cacheWritePromptTokens: { type: integer, format: int64, minimum: 0 }
+            reasoningCompletionTokens: { type: integer, format: int64, minimum: 0, description: Informational subset of completionTokens and never billed twice. }
+        - type: object
+          additionalProperties: false
+          required: [status, reason]
+          properties:
+            status: { type: string, enum: [unavailable] }
+            reason: { type: string, enum: [missing_usage, invalid_usage, stream_ended_without_usage] }
+        - type: object
+          additionalProperties: false
+          required: [status, reason]
+          properties:
+            status: { type: string, enum: [reconciliation_required] }
+            reason: { type: string, enum: [missing_usage, invalid_usage, stream_ended_without_usage, request_outcome_unknown, hold_deficit] }
+      discriminator: { propertyName: status }
+    AIModelCompletedPayload:
+      type: object
+      additionalProperties: false
+      required: [usage]
+      properties:
+        usage: { $ref: "#/components/schemas/AIProviderUsage" }
+        modelId: { type: string }
+        maxContextTokensSnapshot: { type: integer, format: int64, minimum: 1 }
+        creditHoldId: { type: string }
+        providerRequestId: { type: string }
+        responseId: { type: string }
+        responseModel: { type: string }
+        finishReason: { type: string }
+    AIEvent:
+      type: object
+      additionalProperties: false
+      required: [version, eventId, eventSequence, type, conversationId, turnId, runId, occurredAt, payload]
+      properties:
+        version: { type: integer, enum: [2] }
+        eventId: { type: string }
+        eventSequence: { type: integer, format: int64, minimum: 1 }
+        type: { type: string }
+        conversationId: { type: string }
+        turnId: { type: string }
+        runId: { type: string }
+        itemId: { type: string }
+        contentPartId: { type: string }
+        toolCallId: { type: string }
+        item: { $ref: "#/components/schemas/AITimelineItem" }
+        occurredAt: { type: string, format: date-time }
+        payload:
+          anyOf:
+            - { $ref: "#/components/schemas/AIModelCompletedPayload" }
+            - { $ref: "#/components/schemas/AIObject" }
     AITimelineEventCursor:
       type: object
       additionalProperties: false
@@ -11389,7 +11461,10 @@ components:
         applicationName: { type: string }
         applicationIdentifier: { type: string }
         deploymentName: { type: string }
-        stage: { type: string }
+        stage:
+          type: string
+          enum: [dev, test, staging, prod]
+          description: Canonical deployment stage. Use dev, test, staging, or prod; arbitrary values such as default or qa are rejected before installation.
         clusterId: { type: string }
         namespace: { type: string }
         imageRef: { type: string }

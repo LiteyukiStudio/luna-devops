@@ -301,8 +301,13 @@ export class ToolOrchestrator {
       })
     if (result.status === 401 || result.status === 403)
       return this.fail(call, code ?? "ai.tool_forbidden", storedResult, diagnostics)
-    if (result.status < 200 || result.status >= 300)
-      return this.fail(call, code ?? "ai.tool_failed", storedResult, diagnostics)
+    if (result.status < 200 || result.status >= 300) {
+      const failed = await this.fail(call, code ?? "ai.tool_failed", storedResult, diagnostics)
+      if (isExplicitlyNonRetryable(result.body)) {
+        this.loopGuard.blockNonRetryable({ runId: call.runId, operationId: call.operationId, argumentsHash: call.argumentsHash })
+      }
+      return failed
+    }
     return this.transition(call, "succeeded", { result: storedResult }, "tool_call.succeeded", diagnostics)
   }
 
@@ -380,6 +385,14 @@ function extractCode(body: unknown): string | undefined {
     : typeof (object.error as Record<string, unknown> | undefined)?.code === "string"
       ? (object.error as { code: string }).code
       : undefined
+}
+
+function isExplicitlyNonRetryable(body: unknown): boolean {
+  if (!body || typeof body !== "object" || Array.isArray(body)) return false
+  const value = body as Record<string, unknown>
+  if (value.retryable === false) return true
+  const nested = value.error
+  return Boolean(nested && typeof nested === "object" && !Array.isArray(nested) && (nested as Record<string, unknown>).retryable === false)
 }
 
 function withRequestId(body: unknown, requestId: string | undefined): unknown {

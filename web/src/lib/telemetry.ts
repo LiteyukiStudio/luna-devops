@@ -7,16 +7,21 @@ const dynamicResourceParents = new Set([
   'build-jobs',
   'build-runs',
   'clusters',
+  'conversations',
   'deployment-targets',
   'environments',
   'external-identities',
   'oidc',
+  'approvals',
   'providers',
   'projects',
   'registries',
   'releases',
   'routes',
+  'runs',
   'tokens',
+  'turns',
+  'ui-actions',
   'users',
   'volume-imports',
   'volume-transfers',
@@ -198,7 +203,7 @@ function normalizeRoute(input: string) {
   return `/${segments.map((segment, index) => {
     if (index > 0 && dynamicResourceParents.has(segments[index - 1]))
       return ':id'
-    if (/^(?:prj|app|rel|run|usr|reg|clu|dpt|env|pvol|vtx)_[\w-]+$/i.test(segment))
+    if (/^(?:prj|app|rel|run|usr|reg|clu|dpt|env|pvol|vtx|aicnv|aiturn|airun|aiitem|aitc|aiuia)_[\w-]+$/i.test(segment))
       return ':id'
     if (/^[0-9a-f]{8}-[0-9a-f-]{27,}$/i.test(segment))
       return ':id'

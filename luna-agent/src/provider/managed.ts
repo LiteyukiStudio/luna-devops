@@ -1,5 +1,6 @@
 import type { ProviderConfigClient, RemoteAIModel, RemoteProviderConfig } from "./config-client.js"
-import { OpenAICompatibleProvider } from "./openai-compatible.js"
+import { DeepSeekChatCompletionsProvider } from "./deepseek-chat-completions.js"
+import { OpenAIChatCompletionsProvider } from "./openai-chat-completions.js"
 import type { ModelCapabilities, ModelEvent, ModelProvider, ModelRequest, ModelResponse } from "./provider.js"
 
 type ProviderFactory = (config: RemoteProviderConfig, modelName: string) => ModelProvider
@@ -103,11 +104,18 @@ function resolveModel(config: RemoteProviderConfig, request: ModelRequest): Remo
 }
 
 function defaultFactory(config: RemoteProviderConfig, modelName: string): ModelProvider {
-  return new OpenAICompatibleProvider({
+  const Provider = isDeepSeekEndpoint(config.provider.baseUrl)
+    ? DeepSeekChatCompletionsProvider
+    : OpenAIChatCompletionsProvider
+  return new Provider({
     baseUrl: config.provider.baseUrl,
     apiKey: config.provider.apiKey,
     model: modelName,
     timeoutMs: config.runtime.providerTimeoutMs,
-    maxRetries: config.runtime.maxRequestRetries,
   })
+}
+
+function isDeepSeekEndpoint(baseUrl: string): boolean {
+  try { return new URL(baseUrl).hostname.toLowerCase().endsWith("deepseek.com") }
+  catch { return false }
 }

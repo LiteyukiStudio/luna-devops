@@ -94,7 +94,6 @@ function modelSnapshot(id: string, name: string) {
     inputCreditsPerMillion: "1",
     outputCreditsPerMillion: "1",
     cachedInputCreditsPerMillion: "0",
-    cachedOutputCreditsPerMillion: "0",
   }
 }
 
@@ -102,10 +101,10 @@ function fakeProvider(model: string): ModelProvider {
   return {
     capabilities: () => ({ streaming: true, toolCalling: true, structuredOutput: true }),
     health: async () => ({ ok: true, requestId: `request-${model}` }),
-    complete: async () => ({ text: model, usage: { inputTokens: 1, outputTokens: 1 } }),
+    complete: async () => ({ text: model, usage: { status: "reported" as const, value: { promptTokens: 1, completionTokens: 1, totalTokens: 1 + 1 } } }),
     async *stream() {
       yield { type: "message_delta" as const, delta: model }
-      yield { type: "completed" as const, usage: { inputTokens: 1, outputTokens: 1 } }
+      yield { type: "completed" as const, usage: { status: "reported" as const, value: { promptTokens: 1, completionTokens: 1, totalTokens: 1 + 1 } } }
     },
   }
 }

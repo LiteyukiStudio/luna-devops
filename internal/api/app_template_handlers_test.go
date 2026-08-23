@@ -4,10 +4,56 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
 )
+
+func TestAppTemplateInstallOpenAPIContractIsAgentRepairable(t *testing.T) {
+	document := readOpenAPIDocument(t, apiRepositoryRoot(t)+"/openapi/openapi.yaml")
+	paths := document["paths"].(map[string]any)
+	operation := paths["/api/v1/projects/{projectId}/app-templates/{templateId}/install"].(map[string]any)["post"].(map[string]any)
+	cli := operation["x-luna-cli"].(map[string]any)
+	scopes, _ := schemaStringList(cli["requiredScopes"])
+	if cli["command"] != "app-template.install" || cli["classification"] != "business-command" || cli["risk"] != "medium" || cli["agentAllowed"] != true || !reflect.DeepEqual(scopes, []string{"project:write"}) {
+		t.Fatalf("installAppTemplate CLI metadata = %#v", cli)
+	}
+	agent := operation["x-luna-agent"].(map[string]any)
+	for _, field := range []string{"purpose", "aliases", "avoidWhen", "preconditions", "successEvidence"} {
+		if agent[field] == nil {
+			t.Fatalf("installAppTemplate Agent metadata is missing %s: %#v", field, agent)
+		}
+	}
+	schemas := document["components"].(map[string]any)["schemas"].(map[string]any)
+	input := schemas["AppTemplateInstallInput"].(map[string]any)
+	stage := input["properties"].(map[string]any)["stage"].(map[string]any)
+	values, ok := schemaStringList(stage["enum"])
+	if !ok || !reflect.DeepEqual(values, publicDeploymentStages) || !strings.Contains(stage["description"].(string), "default") {
+		t.Fatalf("AppTemplateInstallInput.stage = %#v", stage)
+	}
+}
+
+func TestDeploymentStageInvalidErrorIsStructuredAndNotRetryable(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/api/v1/projects/prj/app-templates/redis/install", nil)
+	writeDeploymentStageInvalid(ctx, "stage", "deployment stage must be canonical")
+
+	var response map[string]any
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if recorder.Code != http.StatusBadRequest || response["code"] != "deployment.stage_invalid" || response["path"] != "stage" || response["retryable"] != false {
+		t.Fatalf("structured stage error = %d %#v", recorder.Code, response)
+	}
+	allowed, ok := schemaStringList(response["allowedValues"])
+	if !ok || !reflect.DeepEqual(allowed, publicDeploymentStages) {
+		t.Fatalf("allowedValues = %#v", response["allowedValues"])
+	}
+}
 
 func TestListAppTemplatesFiltersSummariesByQueryAndCategory(t *testing.T) {
 	gin.SetMode(gin.TestMode)

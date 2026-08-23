@@ -44,7 +44,11 @@ export async function presentTimeline(
           status: turn.run.status === "expired" ? "failed" as const : turn.run.status,
           expectedVersion: turn.run.rowVersion,
           ...(turn.run.errorCode ? { errorCode: turn.run.errorCode } : {}),
-          ...(turn.run.latestInputTokens !== undefined ? { latestInputTokens: turn.run.latestInputTokens } : {}),
+          ...(turn.run.latestPromptTokens !== undefined ? {
+            latestPromptTokens: turn.run.latestPromptTokens,
+            latestUsageModelId: turn.run.latestUsageModelId,
+            latestUsageMaxContextTokensSnapshot: turn.run.latestUsageMaxContextTokensSnapshot,
+          } : {}),
           items: turn.items.filter(item => item.type !== "user_message").map(presentItem),
         },
       } : {}),

@@ -89,8 +89,10 @@ func TestAITimelineOpenAPIDocumentsLatestContextUsage(t *testing.T) {
 	selectedRun, _ := turnProperties["selectedRun"].(map[string]any)
 	runProperties, _ := selectedRun["properties"].(map[string]any)
 
-	if runProperties["latestInputTokens"] == nil {
-		t.Fatal("AITimelineTurn.selectedRun is missing latestInputTokens")
+	for _, field := range []string{"latestPromptTokens", "latestUsageModelId", "latestUsageMaxContextTokensSnapshot"} {
+		if runProperties[field] == nil {
+			t.Fatalf("AITimelineTurn.selectedRun is missing %s", field)
+		}
 	}
 	for _, removed := range []string{"usedTokens", "budget"} {
 		if runProperties[removed] != nil {

@@ -40,15 +40,14 @@
 
 | Setting | Default | Description |
 | --- | --- | --- |
-| `AI_CONTEXT_COMPRESSION_TRIGGER_RATIO`<sup>2</sup> | `0.9` | Sets the context-usage ratio that triggers compression; use `0.5`–`0.95`. |
-| `AI_CONTEXT_COMPRESSION_TARGET_RATIO` | `0.7` | Sets the target context usage after compression; use `0.1`–`0.8`. |
-| `AI_CONTEXT_RECENT_TURN_COUNT`<sup>3</sup> | `16` | Sets how many recent turns compression preserves; use an integer from `1` to `32`. |
-| `AI_CONTEXT_MAX_RECENT_TURN_COUNT` | `32` | Limits recent turns included in context; use an integer from `2` to `64`. |
-| `AI_CONTEXT_HISTORICAL_TOOL_K_TOKENS` | `64` | Limits context used by historical tool results; use an integer from `1` to `256` KiTokens. |
+| `AI_CONTEXT_COMPRESSION_TRIGGER_RATIO`<sup>2</sup> | `0.9` | Triggers compression from the previous same-model official `prompt_tokens` ratio; use `0.5`–`0.95`. |
+| `AI_CONTEXT_RECENT_TURN_COUNT` | `16` | Sets how many recent turns proactive compression preserves; use an integer from `1` to `32`. |
+| `AI_CONTEXT_MAX_HISTORY_PAYLOAD_K_BYTES` | `4096` | Bounds history payload per context compilation; use an integer from `64` to `16384` KiB. |
+| `AI_CONTEXT_MAX_SUMMARY_PAYLOAD_K_BYTES` | `512` | Bounds history payload per summary request; use an integer from `16` to `4096` KiB. |
+| `AI_CONTEXT_MAX_CONTINUATION_PAYLOAD_K_BYTES` | `1024` | Bounds tool-continuation messages; use an integer from `16` to `4096` KiB. |
 | `AI_TOOLS_RESULT_PAYLOAD_K_BYTES` | `512` | Limits one tool result added to context; use an integer from `4` to `4096` KiB. |
 
-2. Note: The compression trigger ratio must exceed the target ratio.
-3. Note: The recent-turn count cannot exceed its maximum.
+2. Note: A new conversation without official usage calls the Provider directly. Byte limits protect transport and memory only; they are not token counts.
 
 ### Docker Compose
 

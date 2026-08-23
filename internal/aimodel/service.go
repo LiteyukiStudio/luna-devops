@@ -29,7 +29,6 @@ var (
 	ErrInputPriceInvalid        = errors.New("AI model input price is invalid")
 	ErrOutputPriceInvalid       = errors.New("AI model output price is invalid")
 	ErrCachedInputPriceInvalid  = errors.New("AI model cached input price is invalid")
-	ErrCachedOutputPriceInvalid = errors.New("AI model cached output price is invalid")
 	ErrMaxContextTokensInvalid  = errors.New("AI model context token limit is invalid")
 	ErrMaxOutputTokensInvalid   = errors.New("AI model output token limit is invalid")
 )
@@ -48,7 +47,6 @@ type WriteInput struct {
 	InputCreditsPerMillion        string `json:"inputCreditsPerMillion"`
 	OutputCreditsPerMillion       string `json:"outputCreditsPerMillion"`
 	CachedInputCreditsPerMillion  string `json:"cachedInputCreditsPerMillion"`
-	CachedOutputCreditsPerMillion string `json:"cachedOutputCreditsPerMillion"`
 	Enabled                       *bool  `json:"enabled"`
 }
 
@@ -288,8 +286,6 @@ func ErrorCode(err error) string {
 		return "ai.model_output_price_invalid"
 	case errors.Is(err, ErrCachedInputPriceInvalid):
 		return "ai.model_cached_input_price_invalid"
-	case errors.Is(err, ErrCachedOutputPriceInvalid):
-		return "ai.model_cached_output_price_invalid"
 	case errors.Is(err, ErrMaxContextTokensInvalid):
 		return "ai.model_context_limit_invalid"
 	case errors.Is(err, ErrMaxOutputTokensInvalid):
@@ -325,7 +321,6 @@ func parseInput(input WriteInput, create bool) (model.AIModel, error) {
 		{input.InputCreditsPerMillion, &result.InputCreditsPerMillion, ErrInputPriceInvalid},
 		{input.OutputCreditsPerMillion, &result.OutputCreditsPerMillion, ErrOutputPriceInvalid},
 		{input.CachedInputCreditsPerMillion, &result.CachedInputCreditsPerMillion, ErrCachedInputPriceInvalid},
-		{input.CachedOutputCreditsPerMillion, &result.CachedOutputCreditsPerMillion, ErrCachedOutputPriceInvalid},
 	} {
 		if strings.TrimSpace(field.raw) == "" {
 			if create {
@@ -357,9 +352,6 @@ func applyInput(current *model.AIModel, parsed model.AIModel, input WriteInput) 
 	}
 	if strings.TrimSpace(input.CachedInputCreditsPerMillion) != "" {
 		current.CachedInputCreditsPerMillion = parsed.CachedInputCreditsPerMillion
-	}
-	if strings.TrimSpace(input.CachedOutputCreditsPerMillion) != "" {
-		current.CachedOutputCreditsPerMillion = parsed.CachedOutputCreditsPerMillion
 	}
 }
 

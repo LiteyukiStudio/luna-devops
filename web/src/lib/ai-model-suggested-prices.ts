@@ -18,7 +18,6 @@ export interface SuggestedModelPrice {
   input: string
   output: string
   cachedInput: string
-  cachedOutput: string
 }
 
 export interface SuggestedModelPreset {
@@ -43,7 +42,7 @@ interface SuggestedModelEntry {
 
 function entry(
   matches: string[],
-  prices: [string, string, string?, string?],
+  prices: [string, string, string?],
   capability: [context: number, output: number],
   prefixes?: string[],
 ): SuggestedModelEntry {
@@ -54,7 +53,6 @@ function entry(
       input: prices[0],
       output: prices[1],
       cachedInput: prices[2] ?? '0',
-      cachedOutput: prices[3] ?? '0',
     },
     maxContextTokens: capability[0],
     maxOutputTokens: capability[1],

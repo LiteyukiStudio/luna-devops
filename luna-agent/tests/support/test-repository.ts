@@ -16,11 +16,12 @@ import { createId } from "../../src/id.js"
 import {
   RunStateConflictError,
   type ConversationListOptions,
+  type ModelAttemptMetadata,
   type Repository,
   type TimelinePageOptions,
-  type ModelBudgetOperation,
-  type ModelBudgetUsage,
+  type ModelCallOperation,
 } from "../../src/persistence/repository.js"
+import type { OfficialModelUsage, UsageUnavailableReason } from "../../src/provider/provider.js"
 import { createTurnRequestHash } from "../../src/persistence/create-turn-hash.js"
 
 type StoredRun = Run & { ownerUserId: string }
@@ -34,14 +35,14 @@ export class TestRepository implements Repository {
   private readonly uiActions = new Map<string, UIActionDelivery>()
   private readonly summaries = new Map<string, ConversationSummary>()
   private readonly idempotency = new Map<string, { hash: string, created: CreatedTurn }>()
-  private readonly modelReservations = new Map<string, {
+  private readonly modelHolds = new Map<string, {
     runId: string
-    operation: ModelBudgetOperation
-    inputTokens: number
-    tokens: number
-    state: "reserved" | "confirmed" | "released"
+    operation: ModelCallOperation
+    attempt: number
+    state: "held" | "reported" | "released" | "reconciliation_required"
     maxOutputTokens: number
   }>()
+  private readonly modelUsages: Array<{ runId: string, operation: ModelCallOperation, usage: OfficialModelUsage }> = []
   private readonly approvalExemptions = new Map<string, string>()
 
   async health(): Promise<boolean> { return true }
@@ -243,44 +244,61 @@ export class TestRepository implements Repository {
     return count
   }
 
-  async reserveModelBudget(input: {
+  async createModelCreditHold(input: {
     id: string
     runId: string
     ownerUserId: string
-    operation: ModelBudgetOperation
-    estimatedInputTokens: number
+    operation: ModelCallOperation
     requestedOutputTokens: number
     leaseSeconds: number
   }) {
     const run = this.runs.get(input.runId)
     if (!run || run.ownerUserId !== input.ownerUserId) throw new Error("ai.run_not_found")
-    const contextCapacity = (run.model?.maxContextTokens ?? 524_288) - input.estimatedInputTokens
-    if (contextCapacity < 1) throw new Error("ai.model_context_insufficient")
-    const maxOutputTokens = Math.min(input.requestedOutputTokens, run.model?.maxOutputTokens ?? 65_536, contextCapacity)
-    this.modelReservations.set(input.id, {
+    const maxOutputTokens = Math.min(input.requestedOutputTokens, run.model?.maxOutputTokens ?? 65_536)
+    const attempt = [...this.modelHolds.values()].filter(item => item.runId === input.runId && item.operation === input.operation).length + 1
+    this.modelHolds.set(input.id, {
       runId: input.runId,
       operation: input.operation,
-      inputTokens: input.estimatedInputTokens,
-      tokens: input.estimatedInputTokens + maxOutputTokens,
-      state: "reserved",
+      attempt,
+      state: "held",
       maxOutputTokens,
     })
-    return { id: input.id, maxOutputTokens }
+    return { id: input.id, attempt, maxOutputTokens }
   }
 
-  async confirmModelBudget(reservationId: string, usage?: ModelBudgetUsage): Promise<void> {
-    const item = this.modelReservations.get(reservationId)
-    if (!item || item.state !== "reserved") return
-    if (usage?.reported) {
-      item.inputTokens = usage.inputTokens
-      item.tokens = usage.inputTokens + usage.outputTokens
-    }
-    item.state = "confirmed"
+  async recordReportedModelUsage(
+    creditHoldId: string,
+    usage: OfficialModelUsage,
+    _metadata: ModelAttemptMetadata & { callType: "stream" | "complete" },
+  ): Promise<{ reconciliationRequired: boolean }> {
+    void _metadata
+    const item = this.modelHolds.get(creditHoldId)
+    if (!item || item.state !== "held") throw new Error("ai.credit_hold_not_active")
+    item.state = "reported"
+    this.modelUsages.push({ runId: item.runId, operation: item.operation, usage })
+    return { reconciliationRequired: false }
   }
 
-  async releaseModelBudget(reservationId: string): Promise<void> {
-    const item = this.modelReservations.get(reservationId)
-    if (item?.state === "reserved") item.state = "released"
+  async markModelUsageUnavailable(creditHoldId: string, _reason: UsageUnavailableReason | "request_outcome_unknown"): Promise<void> {
+    void _reason
+    const item = this.modelHolds.get(creditHoldId)
+    if (item?.state === "held") item.state = "reconciliation_required"
+  }
+
+  async releaseModelCreditHold(creditHoldId: string): Promise<void> {
+    const item = this.modelHolds.get(creditHoldId)
+    if (item?.state === "held") item.state = "released"
+  }
+
+  async getLatestReportedModelUsage(conversationId: string) {
+    const item = this.modelUsages.toReversed().find(candidate => {
+      const run = this.runs.get(candidate.runId)
+      return run?.conversationId === conversationId && candidate.operation === "assistant"
+    })
+    const run = item ? this.runs.get(item.runId) : undefined
+    return item && run?.model
+      ? { modelId: run.model.id, promptTokens: item.usage.promptTokens, maxContextTokensSnapshot: run.model.maxContextTokens }
+      : undefined
   }
   async getExecutionInput(runId: string) {
     const run = this.runs.get(runId)
@@ -538,14 +556,18 @@ export class TestRepository implements Repository {
     const boundedTurns = recentTurns.slice(0, limit).reverse()
     const pageTurns = boundedTurns.map((turn) => {
       const storedRun = this.runs.get(turn.selectedRunId)
-      const reservations = storedRun
-        ? [...this.modelReservations.values()].filter(item => item.runId === storedRun.id && item.state !== "released")
+      const usages = storedRun
+        ? this.modelUsages.filter(item => item.runId === storedRun.id && item.operation === "assistant")
         : []
-      const latestAssistant = reservations.findLast(item => item.operation === "assistant" && item.state === "confirmed")
+      const latestAssistant = usages.at(-1)
       const run = storedRun
         ? {
             ...storedRun,
-            ...(latestAssistant ? { latestInputTokens: latestAssistant.inputTokens } : {}),
+            ...(latestAssistant && storedRun.model ? {
+              latestPromptTokens: latestAssistant.usage.promptTokens,
+              latestUsageModelId: storedRun.model.id,
+              latestUsageMaxContextTokensSnapshot: storedRun.model.maxContextTokens,
+            } : {}),
           }
         : undefined
       return {

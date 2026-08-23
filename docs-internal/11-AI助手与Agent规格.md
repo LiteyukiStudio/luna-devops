@@ -101,30 +101,37 @@ AI 助手不是悬浮在控制台上的通用聊天机器人。它理解用户�
 
 - 首版只提供会话内短期记忆，不自动建立跨会话长期记忆。
 - 上下文先放稳定的核心系统提示，再把本轮目标命中的 Skill/参考以独立、较后的 system message
-  加入，然后组装一个滚动摘要、近期完整原文和当前工具结果。`ContextCompiler` 必须把所有 system
-  message 一并计入 Token 预算并保持顺序。没有 deferred/catch-up、多级摘要复用或独立 compaction
-  状态；压缩失败安全回退且不修改权威完整事件。
+  加入，然后组装滚动摘要、近期完整原文和当前工具结果。新会话不做本地 Token 预检，直接
+  请求 Provider。压缩只由上一次同模型官方 `prompt_tokens / maxContextTokensSnapshot`、未压缩
+  轮次上限或结构化上下文超限错误触发。
+- 上下文超限时先压缩更旧历史，再以新 Provider attempt 重试；没有可压缩历史时返回
+  `ai.model_context_insufficient`。摘要批次超限时按轮次二分，单轮仍超限才按明确字节上限分段。
+  字节上限只用于传输与内存保护，不生成 Token 数据。鉴权、额度、Provider 不可用和用量契约错误不允许
+  被 fallback 掩盖。
 - 禁止进入上下文与记忆：Secret、Token、Cookie、Authorization、kubeconfig、Registry 密码、
   Git Access Token、完整终端历史、未脱敏的第三方响应与日志。
 
 ### 4.1 模型能力、用量预留与结算
 
-- 模型目录的最大上下文、最大单次输出和四类价格由 `internal/aimodel`
+- 模型目录的最大上下文、最大单次输出和 Prompt/Completion/缓存 Prompt 三类价格由 `internal/aimodel`
   统一校验；Run 创建时保存模型身份、能力与价格快照，后续管理变更不影响历史 Run。
-- Run 不设置累计 Token 或 Credits 预算，也不因对话累计用量要求用户新建任务。所有归属 Run 的
-  Provider 调用仍在调用前由 PostgreSQL 原子 reservation 预留个人钱包额度；输出上限取 Agent
-  单次上限、模型输出、上下文剩余与个人钱包可负担额度的最小值。
-- 过期的 `reserved` 不可直接释放，因为 Provider 可能已收到请求；恢复时按全额
-  保守确认。只有明确在外部请求前失败或 Provider 调用前取消才可释放。
-- Worker 以 reservation ID 作为计费资源与幂等键，从 `confirmed` reservation
-  生成四类 usage/ledger 并与 `settled` 转换同事务完成。AI 费用只属于发起用户个人钱包，
+- Run 不设置累计 Token 或 Credits 预算。每次实际 Provider attempt 调用前在 `ai.model_credit_holds`
+  原子创建独立 hold，只保存模型硬上限与价格快照推导的最大信用风险，不保存或推导实际 Token。
+  SDK/HTTP 模型客户端不自动重试；上层因结构化上下文错误重试时，每次都创建新 attempt 和 hold。
+- `ai.model_usages` 只能由严格校验通过的 Provider 官方 `usage` 创建：`prompt_tokens`、
+  `completion_tokens`、`total_tokens`、可选 cached/cache-write Prompt 和 reasoning Completion 明细。缺失、
+  类型/范围/关系非法或调用结果不可知时，hold 进入 `reconciliation_required`，不写入可结算 usage。
+  明确被 Provider 拒绝或未发送的请求可释放 hold；过期且无法确定结果的 hold 进入对账，不会复制风险上限
+  伪造 Token。
+- Provider 官方用量超过 hold 假设时保留原值，hold/usage 进入 `hold_deficit` /
+  `reconciliation_required`。Worker 只选取 `reported + pending` 且 hold 为 `usage_recorded` 的记录结算。普通
+  Prompt 从官方关系扣除 cached/cache-write 子集，Completion 已包含 reasoning，不重复扣费。AI 费用
+  只属于发起用户个人钱包，
   `project_id` 始终为空。钱包普通 debit 和负 adjustment 都要扣除未结束 hold。
-- 全链路锁序为 wallet → Run → reservation（无 Run 的结算/普通扣费为 wallet →
-  reservation）；Run 锁只用于归属与模型快照一致性，不承载累计预算。结算可用余额检查排除当前
-  reservation，但不排除其他活跃 hold。
-- 工具结果上下文上限、压缩触发/目标比例、近期轮次与最多近期轮次、历史工具结果上限是 Agent
-  进程内无状态策略，只允许通过可选环境变量覆盖，平台数据库与动态配置 API 不存储或下发。
-  未配置时分别使用 `512 KiB`、`0.9`、`0.7`、`16`、`32`、`64K Token`。
+- 全链路锁序为 wallet → Run → hold（无 Run 的结算/普通扣费为 wallet → hold）。Run 锁只用于
+  attempt 顺序、归属与模型快照一致性，不承载累计预算。
+- 工具结果上限、压缩触发比例、保留轮次和历史/摘要/续跑负载字节上限是 Agent 进程内无状态策略，
+  只允许通过可选环境变量覆盖；平台数据库与动态配置 API 不存储或下发 Token 输入/摘要预算。
 
 ## 5. 安全与 Prompt Injection 防护
 

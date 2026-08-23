@@ -57,4 +57,13 @@ describe('normalizeTelemetryRoute', () => {
     expect(normalizeTelemetryRoute('/api/v1/projects/prj_1/volume-transfers/vtx_secret/content?ticket=hidden'))
       .toBe('/api/v1/projects/:id/volume-transfers/:id/content')
   })
+
+  it('removes AI conversation, turn, and run IDs from telemetry routes', () => {
+    expect(normalizeTelemetryRoute('/ai/conversations/aicnv_secret/turns'))
+      .toBe('/ai/conversations/:id/turns')
+    expect(normalizeTelemetryRoute('/ai/turns/aiturn_secret/runs'))
+      .toBe('/ai/turns/:id/runs')
+    expect(normalizeTelemetryRoute('/ai/runs/airun_secret/events'))
+      .toBe('/ai/runs/:id/events')
+  })
 })

@@ -211,7 +211,7 @@ func writeInputFor(name string, enabled *bool) WriteInput {
 	return WriteInput{
 		Name: name, InputCreditsPerMillion: "1", OutputCreditsPerMillion: "2",
 		MaxContextTokens: 524288, MaxOutputTokens: 65536,
-		CachedInputCreditsPerMillion: "1", CachedOutputCreditsPerMillion: "2", Enabled: enabled,
+		CachedInputCreditsPerMillion: "1", Enabled: enabled,
 	}
 }
 

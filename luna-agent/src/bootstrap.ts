@@ -56,10 +56,10 @@ export async function startAgent(): Promise<void> {
   const runtime = {
     ...initialRemoteConfig.runtime,
     contextCompressionTriggerRatio: config.AI_CONTEXT_COMPRESSION_TRIGGER_RATIO,
-    contextCompressionTargetRatio: config.AI_CONTEXT_COMPRESSION_TARGET_RATIO,
     contextRecentTurnCount: config.AI_CONTEXT_RECENT_TURN_COUNT,
-    contextMaxRecentTurnCount: config.AI_CONTEXT_MAX_RECENT_TURN_COUNT,
-    contextHistoricalToolTokenBudget: config.AI_CONTEXT_HISTORICAL_TOOL_K_TOKENS * 1024,
+    contextMaxHistoryPayloadBytes: config.AI_CONTEXT_MAX_HISTORY_PAYLOAD_K_BYTES * 1024,
+    contextMaxSummaryPayloadBytes: config.AI_CONTEXT_MAX_SUMMARY_PAYLOAD_K_BYTES * 1024,
+    contextMaxContinuationPayloadBytes: config.AI_CONTEXT_MAX_CONTINUATION_PAYLOAD_K_BYTES * 1024,
     toolResultPayloadBudget: config.AI_TOOLS_RESULT_PAYLOAD_K_BYTES * 1024,
   }
   const tools = new ToolOrchestrator(async (runId) => {
@@ -73,16 +73,14 @@ export async function startAgent(): Promise<void> {
   ), toolStore, undefined, repository)
   tools.setRunMaxToolCalls(runtime.runMaxToolCalls)
   const contextCompiler = new ContextCompiler(repository, provider, {
-    inputTokenBudget: runtime.contextInputTokenBudget,
     compressionTriggerRatio: runtime.contextCompressionTriggerRatio,
-    compressionTargetRatio: runtime.contextCompressionTargetRatio,
     recentTurnCount: runtime.contextRecentTurnCount,
-    maxRecentTurnCount: runtime.contextMaxRecentTurnCount,
     maxUncompressedTurnCount: runtime.contextMaxUncompressedTurnCount,
     maxCompressionTurnsPerCompile: runtime.contextMaxCompressionTurnsPerCompile,
-    summaryInputTokenBudget: runtime.contextSummaryInputTokenBudget,
     summaryMaxOutputTokens: runtime.contextSummaryMaxOutputTokens,
-    historicalToolTokenBudget: runtime.contextHistoricalToolTokenBudget,
+    maxHistoryPayloadBytes: runtime.contextMaxHistoryPayloadBytes,
+    maxSummaryPayloadBytes: runtime.contextMaxSummaryPayloadBytes,
+    maxContinuationPayloadBytes: runtime.contextMaxContinuationPayloadBytes,
   })
   const modelRuntime = new ModelRuntime(provider, {
     resolve: async (_pageContext, _userInput, loadedOperationIds, _signal, toolCatalogDigest) => {

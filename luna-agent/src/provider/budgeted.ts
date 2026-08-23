@@ -1,15 +1,12 @@
 import { createId } from "../id.js"
-import type { ModelBudgetUsage, Repository } from "../persistence/repository.js"
-import { errorDiagnostic, internalSpanOptions, telemetryLog, withSpan } from "../telemetry.js"
-import type { ModelCapabilities, ModelEvent, ModelProvider, ModelRequest, ModelResponse } from "./provider.js"
+import type { ModelAttemptMetadata, Repository } from "../persistence/repository.js"
+import { internalSpanOptions, telemetryLog, withSpan } from "../telemetry.js"
+import { ProviderRequestError } from "./provider-error.js"
+import type { ModelCapabilities, ModelEvent, ModelProvider, ModelRequest, ModelResponse, ModelUsage } from "./provider.js"
 
-const reservationLeaseSeconds = 10_800
+const creditHoldLeaseSeconds = 10_800
 
-/**
- * 所有归属 Run 的模型调用必须经过此包装器。它只把数据库批准后的
- * maxOutputTokens 交给真实 Provider，并在 usage 缺失或调用结果未知时
- * 保守确认完整钱包预留，防止用量缺失、重试或进程重启造成少计费。
- */
+/** 每次 Provider attempt 独立创建信用风险 hold；hold 从不包含或推导实际 Token。 */
 export class BudgetedModelProvider implements ModelProvider {
   constructor(private readonly inner: ModelProvider, private readonly repository: Repository) {}
 
@@ -18,126 +15,98 @@ export class BudgetedModelProvider implements ModelProvider {
 
   async complete(request: ModelRequest): Promise<ModelResponse> {
     if (!request.budget) return this.inner.complete(request)
-    return withSpan("agent.model.budgeted", internalSpanOptions({
-      "luna.budget.operation": request.budget.operation,
-    }), async span => {
-      const reservation = await this.reserve(request)
-      span.setAttribute("luna.budget.clamped", reservation.maxOutputTokens < request.maxOutputTokens)
+    return withSpan("agent.model.credit_hold", internalSpanOptions({ "luna.credit_hold.operation": request.budget.operation }), async span => {
+      const hold = await this.hold(request)
+      span.setAttribute("luna.credit_hold.attempt", hold.attempt)
       if (request.signal?.aborted) {
-        await this.repository.releaseModelBudget(reservation.id)
+        await this.repository.releaseModelCreditHold(hold.id)
         throw request.signal.reason ?? new Error("ai.run_canceled")
       }
       try {
-        const response = await this.inner.complete({ ...request, maxOutputTokens: reservation.maxOutputTokens })
-        await this.confirmReportedUsage(reservation.id, {
-          ...response.usage,
-          reported: response.usage.reported !== false,
+        const response = await this.inner.complete({ ...request, maxOutputTokens: hold.maxOutputTokens })
+        const reconciliationRequired = await this.finalizeSuccess(hold.id, response.usage, {
+          callType: "complete",
+          ...(response.providerRequestId ? { providerRequestId: response.providerRequestId } : {}),
+          ...(response.responseId ? { responseId: response.responseId } : {}),
+          ...(response.responseModel ? { responseModel: response.responseModel } : {}),
+          ...(response.finishReason ? { finishReason: response.finishReason } : {}),
         })
-        return { ...response, reservationId: reservation.id }
+        return { ...response, creditHoldId: hold.id, ...(reconciliationRequired ? { reconciliationRequired: true } : {}) }
       }
       catch (error) {
-        if (isPreDispatchError(error)) await this.repository.releaseModelBudget(reservation.id)
-        else await this.repository.confirmModelBudget(reservation.id)
+        await this.finalizeFailure(hold.id, error)
         throw error
       }
     })
   }
 
   async *stream(request: ModelRequest): AsyncIterable<ModelEvent> {
-    if (!request.budget) {
-      yield* this.inner.stream(request)
-      return
-    }
-    const reservation = await this.reserve(request)
+    if (!request.budget) { yield* this.inner.stream(request); return }
+    const hold = await this.hold(request)
     if (request.signal?.aborted) {
-      await this.repository.releaseModelBudget(reservation.id)
+      await this.repository.releaseModelCreditHold(hold.id)
       throw request.signal.reason ?? new Error("ai.run_canceled")
     }
-    let confirmed = false
+    let finalized = false
     try {
-      for await (const event of this.inner.stream({ ...request, maxOutputTokens: reservation.maxOutputTokens })) {
-        if (event.type === "completed") {
-          await this.confirmReportedUsage(reservation.id, {
-            ...event.usage,
-            reported: event.usage.reported !== false,
-          })
-          confirmed = true
-          yield { ...event, reservationId: reservation.id }
-        }
-        else yield event
+      for await (const event of this.inner.stream({ ...request, maxOutputTokens: hold.maxOutputTokens })) {
+        if (event.type !== "completed") { yield event; continue }
+        const reconciliationRequired = await this.finalizeSuccess(hold.id, event.usage, {
+          callType: "stream",
+          ...(event.providerRequestId ? { providerRequestId: event.providerRequestId } : {}),
+          ...(event.responseId ? { responseId: event.responseId } : {}),
+          ...(event.responseModel ? { responseModel: event.responseModel } : {}),
+          ...(event.finishReason ? { finishReason: event.finishReason } : {}),
+        })
+        finalized = true
+        yield { ...event, creditHoldId: hold.id, ...(reconciliationRequired ? { reconciliationRequired: true } : {}) }
       }
-      if (!confirmed) await this.repository.confirmModelBudget(reservation.id)
+      if (!finalized) await this.repository.markModelUsageUnavailable(hold.id, "request_outcome_unknown", { failureStage: "stream" })
     }
     catch (error) {
-      if (!confirmed) {
-        if (isPreDispatchError(error)) await this.repository.releaseModelBudget(reservation.id)
-        else await this.repository.confirmModelBudget(reservation.id)
-      }
+      if (!finalized) await this.finalizeFailure(hold.id, error)
       throw error
     }
   }
 
-  private async reserve(request: ModelRequest) {
+  private async hold(request: ModelRequest) {
     const budget = request.budget!
-    const estimatedInputTokens = estimateRequestInputTokens(request)
-    const reservation = await this.repository.reserveModelBudget({
-      id: createId("aibgt"),
-      runId: budget.runId,
-      ownerUserId: budget.ownerUserId,
-      operation: budget.operation,
-      estimatedInputTokens,
-      requestedOutputTokens: request.maxOutputTokens,
-      leaseSeconds: reservationLeaseSeconds,
+    const hold = await this.repository.createModelCreditHold({
+      id: createId("aihold"), runId: budget.runId, ownerUserId: budget.ownerUserId,
+      operation: budget.operation, requestedOutputTokens: request.maxOutputTokens,
+      leaseSeconds: creditHoldLeaseSeconds,
     })
-    telemetryLog("agent.budget.allowed", "info", {
-      "luna.budget.operation": budget.operation,
-      "luna.budget.clamped": reservation.maxOutputTokens < request.maxOutputTokens,
-      "luna.budget.remaining_bucket": remainingBucket(reservation.maxOutputTokens),
+    telemetryLog("agent.credit_hold.created", "info", {
+      "luna.credit_hold.operation": budget.operation,
+      "luna.credit_hold.attempt": hold.attempt,
     })
-    return reservation
+    return hold
   }
 
-  private async confirmReportedUsage(reservationId: string, usage: ModelBudgetUsage): Promise<void> {
-    try {
-      await this.repository.confirmModelBudget(reservationId, usage)
+  private async finalizeSuccess(
+    holdId: string,
+    usage: ModelUsage,
+    metadata: ModelAttemptMetadata & { callType: "stream" | "complete" },
+  ): Promise<boolean> {
+    if (usage.status === "reported") {
+      return (await this.repository.recordReportedModelUsage(holdId, usage.value, metadata)).reconciliationRequired
     }
-    catch (error) {
-      if (!(error instanceof Error) || error.message !== "ai.provider_usage_invalid") throw error
-      // Provider output remains usable, but malformed usage must never lower the
-      // authoritative hold. Confirm the full reservation and expose only a stable
-      // low-cardinality telemetry code.
-      await this.repository.confirmModelBudget(reservationId)
-      telemetryLog("agent.budget.usage_invalid", "warn", {
-        "operation": "agent.budget.confirm_usage",
-        "outcome": "rejected",
-        ...errorDiagnostic(error, "ai.provider_usage_invalid"),
-      })
-    }
+    await this.repository.markModelUsageUnavailable(holdId, usage.reason, metadata)
+    return true
   }
-}
 
-const preDispatchErrorCodes = new Set([
-  "ai.not_configured",
-  "ai.model_not_available",
-  "ai.provider_config_unavailable",
-])
-
-function isPreDispatchError(error: unknown): boolean {
-  return error instanceof Error && preDispatchErrorCodes.has(error.message)
-}
-
-export function estimateRequestInputTokens(request: Pick<ModelRequest, "messages" | "tools">): number {
-  const messageBytes = Buffer.byteLength(JSON.stringify(request.messages), "utf8")
-  const toolBytes = Buffer.byteLength(JSON.stringify(request.tools ?? []), "utf8")
-  // One token per UTF-8 byte is a tokenizer-independent safety upper bound for
-  // ASCII identifiers, code and JSON. ContextCompiler may use a looser packing
-  // estimate, but this final gate must never under-estimate the provider input.
-  return Math.max(1, messageBytes + toolBytes + request.messages.length * 8 + (request.tools?.length ?? 0) * 12)
-}
-
-function remainingBucket(tokens: number): "lt_1k" | "lt_8k" | "lt_64k" | "gte_64k" {
-  if (tokens < 1_000) return "lt_1k"
-  if (tokens < 8_000) return "lt_8k"
-  if (tokens < 64_000) return "lt_64k"
-  return "gte_64k"
+  private async finalizeFailure(holdId: string, error: unknown): Promise<void> {
+    if (error instanceof ProviderRequestError
+      && (error.options.requestOutcome === "not_dispatched" || error.options.requestOutcome === "rejected")) {
+      await this.repository.releaseModelCreditHold(holdId)
+      return
+    }
+    const provider = error instanceof ProviderRequestError ? error.options : undefined
+    await this.repository.markModelUsageUnavailable(holdId, "request_outcome_unknown", {
+      ...(provider?.providerRequestId ? { providerRequestId: provider.providerRequestId } : {}),
+      ...(provider?.responseId ? { responseId: provider.responseId } : {}),
+      ...(provider?.responseModel ? { responseModel: provider.responseModel } : {}),
+      ...(provider?.stage ? { failureStage: provider.stage } : {}),
+    })
+  }
 }

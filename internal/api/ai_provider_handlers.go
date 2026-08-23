@@ -21,7 +21,6 @@ var aiProviderConfigKeys = []string{
 	"ai.runtime.max_request_retries",
 	"ai.runtime.run_timeout_seconds",
 	"ai.runtime.agent_concurrent_runs",
-	"ai.runtime.context_input_k_tokens",
 	"ai.quota.user_concurrent_runs",
 	"ai.model.max_output_tokens",
 	"ai.run.max_model_steps",
@@ -31,7 +30,6 @@ var aiProviderConfigKeys = []string{
 	"ai.tools.max_card_repair_attempts",
 	"ai.context.max_uncompressed_turn_count",
 	"ai.context.max_compression_turns_per_compile",
-	"ai.context.summary_input_k_tokens",
 	"ai.context.summary_max_output_tokens",
 }
 
@@ -88,7 +86,6 @@ func aiProviderRuntimeConfig(values map[string]string) gin.H {
 		"runTimeoutMs":                         aiBoundedIntegerConfig(values, "ai.runtime.run_timeout_seconds") * 1000,
 		"agentConcurrentRuns":                  aiBoundedIntegerConfig(values, "ai.runtime.agent_concurrent_runs"),
 		"userConcurrentRuns":                   aiBoundedIntegerConfig(values, "ai.quota.user_concurrent_runs"),
-		"contextInputTokenBudget":              aiBoundedIntegerConfig(values, "ai.runtime.context_input_k_tokens") * 1024,
 		"assistantMaxOutputTokens":             aiBoundedIntegerConfig(values, "ai.model.max_output_tokens"),
 		"maxModelSteps":                        aiBoundedIntegerConfig(values, "ai.run.max_model_steps"),
 		"runMaxToolCalls":                      aiBoundedIntegerConfig(values, "ai.quota.run_max_tool_calls"),
@@ -97,7 +94,6 @@ func aiProviderRuntimeConfig(values map[string]string) gin.H {
 		"maxCardRepairAttempts":                aiBoundedIntegerConfig(values, "ai.tools.max_card_repair_attempts"),
 		"contextMaxUncompressedTurnCount":      aiBoundedIntegerConfig(values, "ai.context.max_uncompressed_turn_count"),
 		"contextMaxCompressionTurnsPerCompile": aiBoundedIntegerConfig(values, "ai.context.max_compression_turns_per_compile"),
-		"contextSummaryInputTokenBudget":       aiBoundedIntegerConfig(values, "ai.context.summary_input_k_tokens") * 1024,
 		"contextSummaryMaxOutputTokens":        aiBoundedIntegerConfig(values, "ai.context.summary_max_output_tokens"),
 	}
 }
@@ -130,7 +126,6 @@ type aiProviderModel struct {
 	InputCreditsPerMillion        string `json:"inputCreditsPerMillion"`
 	OutputCreditsPerMillion       string `json:"outputCreditsPerMillion"`
 	CachedInputCreditsPerMillion  string `json:"cachedInputCreditsPerMillion"`
-	CachedOutputCreditsPerMillion string `json:"cachedOutputCreditsPerMillion"`
 }
 
 func aiProviderModels(configured []model.AIModel) []aiProviderModel {
@@ -144,7 +139,6 @@ func aiProviderModels(configured []model.AIModel) []aiProviderModel {
 			InputCreditsPerMillion:        item.InputCreditsPerMillion.String(),
 			OutputCreditsPerMillion:       item.OutputCreditsPerMillion.String(),
 			CachedInputCreditsPerMillion:  item.CachedInputCreditsPerMillion.String(),
-			CachedOutputCreditsPerMillion: item.CachedOutputCreditsPerMillion.String(),
 		})
 	}
 	return models
@@ -154,7 +148,7 @@ func aiProviderConfigVersionWithModels(base string, models []model.AIModel) stri
 	hash := sha256.New()
 	_, _ = hash.Write([]byte(base))
 	for _, item := range models {
-		_, _ = hash.Write([]byte("\x00" + item.ID + "\x00" + item.Name + "\x00" + strconv.FormatInt(item.MaxContextTokens, 10) + "\x00" + strconv.FormatInt(item.MaxOutputTokens, 10) + "\x00" + item.InputCreditsPerMillion.String() + "\x00" + item.OutputCreditsPerMillion.String() + "\x00" + item.CachedInputCreditsPerMillion.String() + "\x00" + item.CachedOutputCreditsPerMillion.String() + "\x00" + item.UpdatedAt.UTC().String()))
+		_, _ = hash.Write([]byte("\x00" + item.ID + "\x00" + item.Name + "\x00" + strconv.FormatInt(item.MaxContextTokens, 10) + "\x00" + strconv.FormatInt(item.MaxOutputTokens, 10) + "\x00" + item.InputCreditsPerMillion.String() + "\x00" + item.OutputCreditsPerMillion.String() + "\x00" + item.CachedInputCreditsPerMillion.String() + "\x00" + item.UpdatedAt.UTC().String()))
 	}
 	return "aipcfg_" + hex.EncodeToString(hash.Sum(nil))[:16]
 }

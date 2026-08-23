@@ -665,23 +665,21 @@ export class RunExecutor {
         ...candidate.runtime,
         // 这些策略只在进程启动时从环境变量读取，不随平台配置热更新。
         contextCompressionTriggerRatio: this.runtimeSettings.contextCompressionTriggerRatio,
-        contextCompressionTargetRatio: this.runtimeSettings.contextCompressionTargetRatio,
         contextRecentTurnCount: this.runtimeSettings.contextRecentTurnCount,
-        contextMaxRecentTurnCount: this.runtimeSettings.contextMaxRecentTurnCount,
-        contextHistoricalToolTokenBudget: this.runtimeSettings.contextHistoricalToolTokenBudget,
+        contextMaxHistoryPayloadBytes: this.runtimeSettings.contextMaxHistoryPayloadBytes,
+        contextMaxSummaryPayloadBytes: this.runtimeSettings.contextMaxSummaryPayloadBytes,
+        contextMaxContinuationPayloadBytes: this.runtimeSettings.contextMaxContinuationPayloadBytes,
         toolResultPayloadBudget: this.runtimeSettings.toolResultPayloadBudget,
       }
       this.modelRuntime.setContextOptions({
-        inputTokenBudget: runtimeSettings.contextInputTokenBudget,
         compressionTriggerRatio: runtimeSettings.contextCompressionTriggerRatio,
-        compressionTargetRatio: runtimeSettings.contextCompressionTargetRatio,
         recentTurnCount: runtimeSettings.contextRecentTurnCount,
-        maxRecentTurnCount: runtimeSettings.contextMaxRecentTurnCount,
         maxUncompressedTurnCount: runtimeSettings.contextMaxUncompressedTurnCount,
         maxCompressionTurnsPerCompile: runtimeSettings.contextMaxCompressionTurnsPerCompile,
-        summaryInputTokenBudget: runtimeSettings.contextSummaryInputTokenBudget,
         summaryMaxOutputTokens: runtimeSettings.contextSummaryMaxOutputTokens,
-        historicalToolTokenBudget: runtimeSettings.contextHistoricalToolTokenBudget,
+        maxHistoryPayloadBytes: runtimeSettings.contextMaxHistoryPayloadBytes,
+        maxSummaryPayloadBytes: runtimeSettings.contextMaxSummaryPayloadBytes,
+        maxContinuationPayloadBytes: runtimeSettings.contextMaxContinuationPayloadBytes,
       })
       this.modelRuntime.setAssistantMaxOutputTokens(runtimeSettings.assistantMaxOutputTokens)
       setToolResultPayloadBudget(runtimeSettings.toolResultPayloadBudget)

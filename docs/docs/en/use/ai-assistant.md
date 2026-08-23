@@ -34,3 +34,5 @@ Describe the goal directly, such as “check why this application is unreachable
 An administrator must configure an OpenAI `chat/completions`-compatible Provider, enabled models, access scope, and personal-wallet billing under **Global Settings → AI Assistant**. Once enabled, the entry appears in the lower-right corner.
 
 If the entry is missing, ask an administrator to check enablement and account scope. If the model is temporarily unavailable, keep the conversation and retry later.
+
+The context ratio beside the composer uses only the current model's latest official `prompt_tokens` and the model-window snapshot captured for that call. If the Provider did not return verifiable usage or the model has changed, the UI shows **No Provider usage data** instead of estimating or reusing an old percentage.

@@ -29,14 +29,16 @@ export class AgentDatabase {
   async readiness(): Promise<{ database: boolean, schema: boolean }> {
     try {
       const result = await this.pool.query<{ schema_ready: boolean }>(`
-		select count(*) = 4 as schema_ready
+		select count(*) = 6 as schema_ready
         from information_schema.columns
         where table_schema = 'ai'
 		  and (table_name, column_name) in (
 			('tool_calls', 'input_mode'),
 			('tool_calls', 'arguments_ciphertext'),
 			('tool_calls', 'approval_decision'),
-			('runs', 'actor_session_id')
+			('runs', 'actor_session_id'),
+			('model_credit_holds', 'max_risk_credits'),
+			('model_usages', 'prompt_tokens')
           )
       `)
       return { database: true, schema: result.rows[0]?.schema_ready === true }
@@ -50,14 +52,16 @@ export class AgentDatabase {
     let result
     try {
       result = await this.pool.query<{ schema_ready: boolean }>(`
-        select count(*) = 4 as schema_ready
+        select count(*) = 6 as schema_ready
         from information_schema.columns
         where table_schema = 'ai'
           and (table_name, column_name) in (
             ('tool_calls', 'input_mode'),
             ('tool_calls', 'arguments_ciphertext'),
             ('tool_calls', 'approval_decision'),
-            ('runs', 'actor_session_id')
+            ('runs', 'actor_session_id'),
+            ('model_credit_holds', 'max_risk_credits'),
+            ('model_usages', 'prompt_tokens')
           )
       `)
     }

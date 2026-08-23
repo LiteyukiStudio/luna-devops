@@ -26,7 +26,6 @@ const runtimeSettingsSchema = z.object({
   runTimeoutMs: z.number().int().min(30_000).max(7_200_000),
   agentConcurrentRuns: z.number().int().min(1).max(100),
   userConcurrentRuns: z.number().int().min(1).max(100),
-  contextInputTokenBudget: z.number().int().min(64 * 1024).max(2048 * 1024),
   assistantMaxOutputTokens: z.number().int().min(256).max(128 * 1024),
   maxModelSteps: z.number().int().min(1).max(1024),
   runMaxToolCalls: z.number().int().min(32).max(2048),
@@ -35,7 +34,6 @@ const runtimeSettingsSchema = z.object({
   maxCardRepairAttempts: z.number().int().min(1).max(10),
   contextMaxUncompressedTurnCount: z.number().int().min(4).max(128),
   contextMaxCompressionTurnsPerCompile: z.number().int().min(8).max(1024),
-  contextSummaryInputTokenBudget: z.number().int().min(4 * 1024).max(512 * 1024),
   contextSummaryMaxOutputTokens: z.number().int().min(200).max(32 * 1024),
 })
 
@@ -50,7 +48,7 @@ const remoteProviderConfigSchema = z.object({
       maxContextTokens: z.number().int().min(4096).max(2097152),
       maxOutputTokens: z.number().int().min(256).max(262144),
       inputCreditsPerMillion: z.string(), outputCreditsPerMillion: z.string(),
-      cachedInputCreditsPerMillion: z.string(), cachedOutputCreditsPerMillion: z.string(),
+      cachedInputCreditsPerMillion: z.string(),
     })),
   }),
   runtime: runtimeSettingsSchema,

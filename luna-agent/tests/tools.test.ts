@@ -52,6 +52,27 @@ describe("tool catalog and orchestration", () => {
     expect(store.records.get(result.id)?.status).toBe("failed")
   })
 
+  it("blocks an identical call after the platform marks its failure non-retryable", async () => {
+    const client = new DeterministicLunaApiClient(() => ({
+      status: 400,
+      body: {
+        code: "deployment.stage_invalid",
+        retryable: false,
+        path: "stage",
+        allowedValues: ["dev", "test", "staging", "prod"],
+      },
+    }))
+    const orchestrator = new ToolOrchestrator(catalog, client, new MemoryToolCallStore())
+    const argumentsValue = { buildId: "default" }
+    await expect(orchestrator.propose({ runId: "airun_test", operationId: "getBuildRun", arguments: argumentsValue }))
+      .resolves.toMatchObject({ status: "failed", errorCode: "deployment.stage_invalid" })
+    await expect(orchestrator.propose({ runId: "airun_test", operationId: "getBuildRun", arguments: argumentsValue }))
+      .rejects.toMatchObject({ code: "ai.tool_repeated_in_run", retryable: false })
+    await expect(orchestrator.propose({ runId: "airun_test", operationId: "getBuildRun", arguments: { buildId: "dev" } }))
+      .resolves.toMatchObject({ status: "failed", errorCode: "deployment.stage_invalid" })
+    expect(client.calls).toHaveLength(2)
+  })
+
   it("persists one-call approval before execution", async () => {
     const client = new DeterministicLunaApiClient(() => ({ status: 200, body: { restarted: true } }))
     const store = new MemoryToolCallStore()

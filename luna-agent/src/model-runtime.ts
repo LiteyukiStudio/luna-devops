@@ -14,11 +14,18 @@ import type {
 import { dynamicSkillGuidanceFor, systemPromptFor } from "./prompt/system.js"
 import { recordAvailableTools } from "./telemetry.js"
 import { renameConversationTool } from "./tools/conversation-title.js"
+import { isProviderContextLengthError } from "./provider/provider-error.js"
 
 /** ModelRuntime 在 provider 事件之上额外透出的事件。
  *  当前用于让上层在压缩实际发生时向时间线写入一条用户可见的系统提示。 */
 export type ModelRuntimeEvent = ModelEvent
-  | { type: "context.compacted", summarizedThroughTurnIndex: number, estimatedInputTokens: number }
+  | {
+      type: "context.compacted"
+      summarizedThroughTurnIndex: number
+      sourceTurnCount: number
+      trigger: "provider_usage" | "context_error" | "turn_backlog"
+      priorPromptTokens?: number
+    }
 import { defaultRuntimeSettings } from "./runtime-settings.js"
 import { modelVisibleHistory } from "./model-history.js"
 
@@ -81,10 +88,6 @@ export class ModelRuntime {
     }
   }
 
-  setContextInputTokenBudget(inputTokenBudget: number): void {
-    this.contextCompiler?.setInputTokenBudget(inputTokenBudget)
-  }
-
   setContextOptions(options: Partial<ContextCompilerOptions>): void {
     this.contextCompiler?.setOptions(options)
   }
@@ -96,10 +99,26 @@ export class ModelRuntime {
   }
 
   async *stream(input: AssistantModelInput, signal?: AbortSignal): AsyncIterable<ModelRuntimeEvent> {
-    const { request, compaction } = await this.modelRequest(input, signal)
-    recordAvailableTools(request.tools ?? [])
-    if (compaction) yield { type: "context.compacted", ...compaction }
-    yield* this.provider.stream(request)
+    let forceCompressionTrigger: "context_error" | undefined
+    let contextErrorCause: unknown
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      const { request, compaction } = await this.modelRequest(input, signal, forceCompressionTrigger)
+      if (forceCompressionTrigger === "context_error" && !compaction)
+        throw new Error("ai.model_context_insufficient", { cause: contextErrorCause })
+      recordAvailableTools(request.tools ?? [])
+      if (compaction) yield { type: "context.compacted", ...compaction }
+      try {
+        yield* this.provider.stream(request)
+        return
+      }
+      catch (error) {
+        if (!isProviderContextLengthError(error)) throw error
+        contextErrorCause = error
+        if (attempt >= 3)
+          throw new Error("ai.model_context_insufficient", { cause: error })
+        forceCompressionTrigger = "context_error"
+      }
+    }
   }
 
   async complete(input: AssistantModelInput, signal?: AbortSignal): Promise<ModelResponse> {
@@ -151,7 +170,7 @@ export class ModelRuntime {
     return title ? [...title].slice(0, 60).join("") : undefined
   }
 
-  private async modelRequest(input: AssistantModelInput, signal?: AbortSignal) {
+  private async modelRequest(input: AssistantModelInput, signal?: AbortSignal, forceCompressionTrigger?: "context_error") {
     const tools = await this.modelTools(
       input.pageContext,
       input.conversation,
@@ -175,6 +194,7 @@ export class ModelRuntime {
           maxOutputTokens: this.assistantMaxOutputTokens,
           ...(input.model ? { model: input.model } : {}),
           ...(signal ? { signal } : {}),
+          ...(forceCompressionTrigger ? { forceCompressionTrigger } : {}),
         })
       : undefined
     const messages = compiled
@@ -186,9 +206,7 @@ export class ModelRuntime {
       : undefined
     // 仅“本轮实际发生了压缩”才需要透传事件；
     // reused 已在之前轮次通知过，避免重复提醒。
-    const compaction = compiled?.compressionOutcome === "compressed" && compiled.summarizedThroughTurnIndex !== undefined
-      ? { summarizedThroughTurnIndex: compiled.summarizedThroughTurnIndex, estimatedInputTokens: compiled.estimatedInputTokens }
-      : undefined
+    const compaction = compiled?.compaction
     return {
       request: {
         messages,

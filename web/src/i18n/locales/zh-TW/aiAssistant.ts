@@ -4,6 +4,7 @@ const aiAssistant = {
     title: 'Luna 助手',
     modelLabel: 'AI 模型',
     contextUsage: '上下文 {{used}}/{{total}} · {{percent}}%',
+    contextUsageUnavailable: '暫無 Provider 用量資料',
     modelEmpty: '暫無可用模型',
     modelUnavailable: '暫無啟用的 AI 模型，請聯絡管理員配置後再試。',
     context: '當前頁面：{{path}}',

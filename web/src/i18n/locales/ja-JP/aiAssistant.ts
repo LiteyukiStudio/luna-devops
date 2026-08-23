@@ -4,6 +4,7 @@ const aiAssistant = {
     title: 'Luna アシスタント',
     modelLabel: 'AI モデル',
     contextUsage: 'コンテキスト {{used}}/{{total}} · {{percent}}%',
+    contextUsageUnavailable: 'Provider の使用量データはありません',
     modelEmpty: '利用可能なモデルがありません',
     modelUnavailable: '有効な AI モデルがありません。管理者に設定を依頼してから再試行してください。',
     context: '現在のページ：{{path}}',

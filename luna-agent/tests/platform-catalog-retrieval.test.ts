@@ -2,6 +2,7 @@ import { readdirSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 import { ToolCatalog, validateArguments } from "../src/tools/catalog.js"
+import { ToolArgumentsInvalidError } from "../src/tools/argument-validator.js"
 
 const platformCatalog = ToolCatalog.load(JSON.parse(readFileSync(
   new URL("./fixtures/platform-catalog.json", import.meta.url),
@@ -136,6 +137,37 @@ describe("real PlatformCatalog retrieval", () => {
       revision: 1,
       body: {},
     })).toThrow("ai.tool_arguments_invalid")
+  })
+
+  it("rejects a non-canonical app-template stage before platform execution", () => {
+    const install = platformCatalog.get("installAppTemplate")
+    const input = {
+      projectId: "prj_1",
+      templateId: "redis",
+      body: {
+        applicationName: "Redis",
+        applicationIdentifier: "redis",
+        deploymentName: "Redis dev",
+        stage: "default",
+        clusterId: "clu_1",
+      },
+    }
+    try {
+      validateArguments(install.inputSchema, input)
+      throw new Error("expected installAppTemplate arguments to be rejected")
+    }
+    catch (error) {
+      expect(error).toBeInstanceOf(ToolArgumentsInvalidError)
+      expect((error as ToolArgumentsInvalidError).issues).toContainEqual(expect.objectContaining({
+        path: "/body/stage",
+        code: "enum",
+        allowedValues: ["dev", "test", "staging", "prod"],
+      }))
+    }
+    expect(validateArguments(install.inputSchema, {
+      ...input,
+      body: { ...input.body, stage: "dev" },
+    })).toEqual({ ...input, body: { ...input.body, stage: "dev" } })
   })
 
   it("loads both storage-class discovery and creation for a managed-volume goal", () => {
