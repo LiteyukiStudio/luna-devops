@@ -172,8 +172,11 @@ func (h *Handlers) auditWithContext(userID, action, resource string, success boo
 		"created_at": time.Now(),
 	}
 	if err := h.dbWithContext(ctx).Model(&model.AuditLog{}).Create(entry).Error; err != nil {
+		// Database diagnostics can contain resource values or driver-provided SQL
+		// details. Keep this terminal boundary correlated by its stable code without
+		// copying the upstream error text into logs or spans.
 		telemetry.LogError(ctx, "Audit write failed", "audit.write.failed",
-			"audit.write", "database.audit_write.failed", err,
+			"audit.write", "database.audit_write.failed", errors.New("audit write failed"),
 			slog.String("audit.action", action),
 			slog.String("resource.type", auditResourceType(action)),
 			slog.Bool("audit.operation_succeeded", success))

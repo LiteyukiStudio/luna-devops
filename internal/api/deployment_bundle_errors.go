@@ -97,6 +97,15 @@ func deploymentBundleErrorCode(err error) string {
 	return "deployment_bundle.internal_error"
 }
 
+func deploymentBundleOperationError(err error) error {
+	if err == nil {
+		return nil
+	}
+	// Operation telemetry must remain useful without copying database messages,
+	// bundle contents, mapped identifiers, or secret metadata into span events.
+	return errors.New(deploymentBundleErrorCode(err))
+}
+
 func writeDeploymentBundleCode(ctx *gin.Context, code string) {
 	spec, ok := deploymentBundleErrorSpecFor(code)
 	if !ok {

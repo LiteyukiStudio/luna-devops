@@ -30,7 +30,7 @@ func (h *Handlers) ExportDeploymentTargetBundle(ctx *gin.Context) {
 	operationCtx, endOperation := telemetry.StartOperation(ctx.Request.Context(), "deployment", "bundle_export")
 	ctx.Request = ctx.Request.WithContext(operationCtx)
 	var operationErr error
-	defer func() { endOperation(operationErr) }()
+	defer func() { endOperation(deploymentBundleOperationError(operationErr)) }()
 	var target model.DeploymentTarget
 	if err := h.dbFor(ctx).First(&target, "id = ? and project_id = ? and application_id = ?", ctx.Param("targetId"), project.ID, app.ID).Error; err != nil {
 		operationErr = err
@@ -66,7 +66,7 @@ func (h *Handlers) PreviewDeploymentTargetBundleImport(ctx *gin.Context) {
 	operationCtx, endOperation := telemetry.StartOperation(ctx.Request.Context(), "deployment", "bundle_preview")
 	ctx.Request = ctx.Request.WithContext(operationCtx)
 	var operationErr error
-	defer func() { endOperation(operationErr) }()
+	defer func() { endOperation(deploymentBundleOperationError(operationErr)) }()
 	plan, err := h.buildDeploymentTargetImportPlan(ctx, user, project, app, request, false)
 	if err != nil {
 		operationErr = err
@@ -123,7 +123,7 @@ func (h *Handlers) ListDeploymentTargetBundleReferenceCandidates(ctx *gin.Contex
 	operationCtx, endOperation := telemetry.StartOperation(ctx.Request.Context(), "deployment", "bundle_reference_candidates")
 	ctx.Request = ctx.Request.WithContext(operationCtx)
 	var operationErr error
-	defer func() { endOperation(operationErr) }()
+	defer func() { endOperation(deploymentBundleOperationError(operationErr)) }()
 	page, _, err := h.deploymentBundleCandidates(ctx.Request.Context(), user, project, app, request.Reference, deploymentBundleCandidateQuery{
 		Pagination: pagination,
 		Search:     search,
@@ -147,7 +147,7 @@ func (h *Handlers) ImportDeploymentTargetBundle(ctx *gin.Context) {
 	operationCtx, endOperation := telemetry.StartOperation(ctx.Request.Context(), "deployment", "bundle_import")
 	ctx.Request = ctx.Request.WithContext(operationCtx)
 	var operationErr error
-	defer func() { endOperation(operationErr) }()
+	defer func() { endOperation(deploymentBundleOperationError(operationErr)) }()
 	plan, err := h.buildDeploymentTargetImportPlan(ctx, user, project, app, request, true)
 	if err != nil {
 		operationErr = err
