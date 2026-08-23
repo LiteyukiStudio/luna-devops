@@ -2260,6 +2260,7 @@ paths:
         agentAllowed: false
         transport: upload
         streaming: true
+        exclusionReason: The single direct byte stream is handled by a dedicated Web or CLI upload adapter.
       parameters:
         - $ref: "#/components/parameters/ProjectId"
         - $ref: "#/components/parameters/TransferId"
@@ -2426,6 +2427,7 @@ paths:
         hidden: true
         agentAllowed: false
         risk: high
+        exclusionReason: The one-time ticket is consumed only by a dedicated Web or CLI download adapter.
       parameters:
         - $ref: "#/components/parameters/ProjectId"
         - $ref: "#/components/parameters/TransferId"
@@ -2450,6 +2452,7 @@ paths:
         agentAllowed: false
         transport: download
         streaming: true
+        exclusionReason: The direct byte stream is handled by a dedicated Web or CLI download adapter.
       parameters:
         - $ref: "#/components/parameters/ProjectId"
         - $ref: "#/components/parameters/TransferId"
@@ -2475,6 +2478,7 @@ paths:
         hidden: true
         agentAllowed: false
         transport: download
+        exclusionReason: The manifest file is handled by a dedicated Web or CLI download adapter.
       parameters:
         - $ref: "#/components/parameters/ProjectId"
         - $ref: "#/components/parameters/TransferId"
@@ -2606,6 +2610,7 @@ paths:
       tags: [Deployments]
       summary: Get configured runtime secret keys without values
       x-luna-cli:
+        classification: browser-workflow
         agentAllowed: false
         hidden: true
         exclusionReason: Runtime secret metadata is displayed only in the human Web console.

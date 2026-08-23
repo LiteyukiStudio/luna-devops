@@ -234,6 +234,9 @@ func TestVolumeManifestOpenAPIContract(t *testing.T) {
 	if extension["classification"] != "protocol-adapter" || extension["hidden"] != true || extension["agentAllowed"] != false {
 		t.Fatalf("manifest GET CLI metadata = %#v", extension)
 	}
+	if reason, _ := extension["exclusionReason"].(string); reason == "" {
+		t.Fatalf("manifest GET CLI exclusion reason = %#v", extension["exclusionReason"])
+	}
 	components := document["components"].(map[string]any)
 	schemas := components["schemas"].(map[string]any)
 	manifest := schemas["VolumeTransferManifest"].(map[string]any)
@@ -241,6 +244,38 @@ func TestVolumeManifestOpenAPIContract(t *testing.T) {
 	want := []string{"schemaVersion", "volumeMode", "format", "exportedAt", "logicalBytes", "fileCount", "dataSHA256", "consistencyMode"}
 	if !ok || !reflect.DeepEqual(required, want) {
 		t.Fatalf("VolumeTransferManifest.required = %v, want %v", required, want)
+	}
+}
+
+func TestVolumeTransferProtocolOpenAPIContract(t *testing.T) {
+	document := readOpenAPIDocument(t, apiRepositoryRoot(t)+"/openapi/openapi.yaml")
+	paths := document["paths"].(map[string]any)
+	operations := []struct {
+		method string
+		path   string
+	}{
+		{method: "put", path: "/api/v1/projects/{projectId}/volume-imports/{transferId}/content"},
+		{method: "post", path: "/api/v1/projects/{projectId}/volume-transfers/{transferId}/download-authorizations"},
+		{method: "get", path: "/api/v1/projects/{projectId}/volume-transfers/{transferId}/content"},
+	}
+	for _, item := range operations {
+		operation := paths[item.path].(map[string]any)[item.method].(map[string]any)
+		extension := operation["x-luna-cli"].(map[string]any)
+		reason, _ := extension["exclusionReason"].(string)
+		if extension["classification"] != "protocol-adapter" || extension["hidden"] != true || extension["agentAllowed"] != false || reason == "" {
+			t.Fatalf("%s %s CLI metadata = %#v", item.method, item.path, extension)
+		}
+	}
+}
+
+func TestDeploymentRuntimeSecretSummaryOpenAPIContract(t *testing.T) {
+	document := readOpenAPIDocument(t, apiRepositoryRoot(t)+"/openapi/openapi.yaml")
+	paths := document["paths"].(map[string]any)
+	path := paths["/api/v1/projects/{projectId}/applications/{applicationId}/deployment-targets/{targetId}/runtime-secrets"].(map[string]any)
+	operation := path["get"].(map[string]any)
+	extension := operation["x-luna-cli"].(map[string]any)
+	if extension["classification"] != "browser-workflow" || extension["hidden"] != true || extension["agentAllowed"] != false {
+		t.Fatalf("runtime secret summary CLI metadata = %#v", extension)
 	}
 }
 
