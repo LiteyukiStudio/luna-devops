@@ -20,6 +20,7 @@ describe("real PlatformCatalog retrieval", () => {
     ["查看项目空间详情", "getProject"],
     ["列出平台用户", "listUsers"],
     ["查看平台账单概览", "getBillingSummary"],
+    ["查看集群压力", "observeRuntimeClusterPressure"],
     ["查看通知渠道", "listNotificationChannels"],
     ["搜索互联网", "webSearch"],
     ["读取公开网页正文", "fetchWebPage"],
@@ -63,7 +64,7 @@ describe("real PlatformCatalog retrieval", () => {
     const browsed = Array.from({ length: Math.ceil(operations.length / 100) }, (_, index) =>
       platformCatalog.search({ page: index + 1, pageSize: 100 }).items.map(item => item.operationId)).flat()
 
-    expect(operations).toHaveLength(208)
+    expect(operations).toHaveLength(209)
     expect(new Set(browsed)).toEqual(new Set(operations.map(operation => operation.operationId)))
     for (const operation of operations) {
       expect(platformCatalog.search({ query: operation.operationId, pageSize: 8 }).items[0]?.operationId)
