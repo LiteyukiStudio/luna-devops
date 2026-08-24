@@ -2,10 +2,10 @@ import type { AIToolVisibility } from '@luna-devops/ai-interaction-card-contract
 import type { AIEvent, AIMessagePart, AITimeline, AITimelineItem, AIToolDisplayResult, AIToolStatus, AIUIAction } from '@/api'
 
 export type AIBlock
-  = | { id: string, turnId: string, index: number, type: 'thinking', status: string, display: 'summary' | 'progress', text: string }
-    | { id: string, turnId: string, index: number, type: 'message', role: 'user' | 'assistant', status: string, text: string, createdAt: string }
+  = | { id: string, turnId: string, runId?: string, index: number, type: 'thinking', status: string, display: 'summary' | 'progress', text: string }
+    | { id: string, turnId: string, runId?: string, index: number, type: 'message', role: 'user' | 'assistant', status: string, text: string, createdAt: string }
     | { id: string, turnId: string, runId: string, index: number, type: 'run_status', status: 'failed' | 'canceled' | 'interrupted', errorCode?: string }
-    | { id: string, turnId: string, index: number, type: 'context_compacted', status: string }
+    | { id: string, turnId: string, runId?: string, index: number, type: 'context_compacted', status: string }
     | { id: string, turnId: string, runId: string, index: number, type: 'tool_call', toolCallId: string, operationId: string, visibility: AIToolVisibility, titleKey?: string, errorCode?: string, status: AIToolStatus, arguments: Record<string, unknown>, result?: AIToolDisplayResult, uiActions: AIUIAction[], durationMs?: number, traceId?: string }
 
 export interface AIRunUsage {
@@ -98,13 +98,13 @@ export function stateFromTimeline(timeline: AITimeline): AIAssistantState {
     const results = new Map(turn.selectedRun?.items.filter(item => item.type === 'tool_result' && item.relatedItemId).map(item => [item.relatedItemId!, item]) ?? [])
     for (const item of [...(turn.selectedRun?.items ?? [])].sort((a, b) => a.timelineIndex - b.timelineIndex)) {
       if (item.type === 'assistant_message') {
-        blocks.push({ id: item.id, turnId: turn.id, index: blockIndex(turn.turnIndex, item.timelineIndex), type: 'message', role: 'assistant', status: item.status, text: textFromParts(item.parts), createdAt: item.createdAt })
+        blocks.push({ id: item.id, turnId: turn.id, runId: turn.selectedRun?.id, index: blockIndex(turn.turnIndex, item.timelineIndex), type: 'message', role: 'assistant', status: item.status, text: textFromParts(item.parts), createdAt: item.createdAt })
       }
       else if (item.type === 'reasoning_summary' || item.type === 'progress') {
-        blocks.push({ id: item.id, turnId: turn.id, index: blockIndex(turn.turnIndex, item.timelineIndex), type: 'thinking', status: item.status, display: item.type === 'progress' ? 'progress' : 'summary', text: textFromParts(item.parts) })
+        blocks.push({ id: item.id, turnId: turn.id, runId: turn.selectedRun?.id, index: blockIndex(turn.turnIndex, item.timelineIndex), type: 'thinking', status: item.status, display: item.type === 'progress' ? 'progress' : 'summary', text: textFromParts(item.parts) })
       }
       else if (item.type === 'system_notice' && item.notice === 'context_compacted') {
-        blocks.push({ id: item.id, turnId: turn.id, index: blockIndex(turn.turnIndex, item.timelineIndex), type: 'context_compacted', status: item.status })
+        blocks.push({ id: item.id, turnId: turn.id, runId: turn.selectedRun?.id, index: blockIndex(turn.turnIndex, item.timelineIndex), type: 'context_compacted', status: item.status })
       }
       else if (item.type === 'tool_call' && item.toolCall) {
         const resultItem = results.get(item.id)
@@ -185,20 +185,44 @@ export function mergeTimelineSnapshot(current: AIAssistantState | undefined, tim
   const snapshot = stateFromTimeline(timeline)
   if (!current)
     return snapshot
+  const activeRunByTurn = new Map(timeline.turns.flatMap((turn) => {
+    const run = turn.selectedRun
+    if (!run || isTerminalRunStatus(run.status) || isTerminalRunStatus(current.runStatuses[run.id]))
+      return []
+    return [[turn.id, run.id] as const]
+  }))
+  const belongsToActiveRun = (block: AIBlock) =>
+    block.runId !== undefined && activeRunByTurn.get(block.turnId) === block.runId
   const snapshotIds = new Set(snapshot.blocks.map(block => block.id))
   const currentBlocks = new Map(current.blocks.map(block => [block.id, block]))
+  const retainedCurrentIds = new Set<string>()
   const blocks = snapshot.blocks.map((block) => {
     const live = currentBlocks.get(block.id)
     if (!live || live.type !== block.type)
       return block
-    return (current.itemRevisions[block.id] ?? 0) > (snapshot.itemRevisions[block.id] ?? 0) ? live : block
+    if (belongsToActiveRun(live)
+      && (current.itemRevisions[block.id] ?? 0) > (snapshot.itemRevisions[block.id] ?? 0)) {
+      retainedCurrentIds.add(block.id)
+      return live
+    }
+    return block
   })
   current.blocks
     .filter(block => block.type === 'message'
       && block.role === 'user'
       && (current.itemRevisions[block.id] ?? 0) === 0
       && !snapshotIds.has(block.id))
-    .forEach(block => blocks.push(block))
+    .forEach((block) => {
+      retainedCurrentIds.add(block.id)
+      blocks.push(block)
+    })
+  current.blocks
+    .filter(block => !snapshotIds.has(block.id) && belongsToActiveRun(block))
+    .forEach((block) => {
+      retainedCurrentIds.add(block.id)
+      blocks.push(block)
+    })
+  const itemRevisionIds = new Set([...Object.keys(snapshot.itemRevisions), ...retainedCurrentIds])
   return {
     ...snapshot,
     blocks: blocks.sort((a, b) => a.index - b.index),
@@ -208,7 +232,7 @@ export function mergeTimelineSnapshot(current: AIAssistantState | undefined, tim
     runStatuses: mergeRunStatuses(snapshot.runStatuses, current.runStatuses),
     runExpectedVersions: { ...snapshot.runExpectedVersions, ...current.runExpectedVersions },
     turnIndexes: { ...snapshot.turnIndexes, ...current.turnIndexes },
-    itemRevisions: Object.fromEntries([...new Set([...Object.keys(current.itemRevisions), ...Object.keys(snapshot.itemRevisions)])]
+    itemRevisions: Object.fromEntries([...itemRevisionIds]
       .map(itemId => [itemId, Math.max(current.itemRevisions[itemId] ?? 0, snapshot.itemRevisions[itemId] ?? 0)])),
     runUsage: mergeRunUsage(snapshot.runUsage, current.runUsage, snapshot.lastEventSequences, current.lastEventSequences),
     desyncedRunIds: new Set([...current.desyncedRunIds].filter(runId =>
@@ -219,12 +243,15 @@ export function mergeTimelineSnapshot(current: AIAssistantState | undefined, tim
 }
 
 function mergeRunStatuses(snapshot: Record<string, string>, current: Record<string, string>) {
-  const terminal = new Set(['completed', 'failed', 'canceled', 'interrupted'])
   return Object.fromEntries([...new Set([...Object.keys(snapshot), ...Object.keys(current)])].map((runId) => {
     const currentStatus = current[runId]
     const snapshotStatus = snapshot[runId]
-    return [runId, terminal.has(currentStatus) ? currentStatus : snapshotStatus ?? currentStatus]
+    return [runId, isTerminalRunStatus(currentStatus) ? currentStatus : snapshotStatus ?? currentStatus]
   }))
+}
+
+function isTerminalRunStatus(status: string | undefined) {
+  return status === 'completed' || status === 'failed' || status === 'canceled' || status === 'interrupted'
 }
 
 export function addOptimisticTurn(state: AIAssistantState, input: { turnId: string, turnIndex: number, runId: string, text: string }): AIAssistantState {
@@ -253,6 +280,26 @@ function stringPayload(payload: Record<string, unknown>, key: string) {
   return typeof payload[key] === 'string' ? payload[key] : ''
 }
 
+function integerPayload(payload: Record<string, unknown>, key: string) {
+  const value = payload[key]
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : undefined
+}
+
+function assertPayloadString(payload: Record<string, unknown>, key: string) {
+  const value = stringPayload(payload, key)
+  if (!value)
+    throw new Error('ai_invalid_stream_event_payload')
+  return value
+}
+
+function assertLiveItemIdentity(event: AIEvent) {
+  const itemId = assertPayloadString(event.payload, 'itemId')
+  const timelineIndex = integerPayload(event.payload, 'timelineIndex')
+  if (event.item !== undefined || event.itemId !== itemId || timelineIndex === undefined)
+    throw new Error('ai_invalid_stream_event_payload')
+  return { itemId, timelineIndex }
+}
+
 function updateBlock(state: AIAssistantState, id: string, update: (block: AIBlock) => AIBlock, create?: () => AIBlock) {
   const blockIndex = state.blocks.findIndex(block => block.id === id || (block.type === 'tool_call' && block.toolCallId === id))
   if (blockIndex < 0)
@@ -278,6 +325,7 @@ function blockFromTimelineItem(item: AITimelineItem, turnId: string, runId: stri
     return {
       id: item.id,
       turnId,
+      runId,
       index,
       type: 'message',
       role: 'assistant',
@@ -290,6 +338,7 @@ function blockFromTimelineItem(item: AITimelineItem, turnId: string, runId: stri
     return {
       id: item.id,
       turnId,
+      runId,
       index,
       type: 'thinking',
       status: item.status,
@@ -300,7 +349,7 @@ function blockFromTimelineItem(item: AITimelineItem, turnId: string, runId: stri
   if (item.type === 'system_notice') {
     if (item.notice !== 'context_compacted')
       return undefined
-    return { id: item.id, turnId, index, type: 'context_compacted', status: item.status }
+    return { id: item.id, turnId, runId, index, type: 'context_compacted', status: item.status }
   }
   if (item.type !== 'tool_call' || !item.toolCall)
     return undefined
@@ -342,6 +391,101 @@ function applyAuthoritativeItem(state: AIAssistantState, event: AIEvent, turnInd
   }
 }
 
+function applyContentDelta(state: AIAssistantState, event: AIEvent, turnIndex: number): AIAssistantState {
+  const { itemId, timelineIndex } = assertLiveItemIdentity(event)
+  const contentPartId = assertPayloadString(event.payload, 'contentPartId')
+  const partIndex = integerPayload(event.payload, 'partIndex')
+  const delta = assertPayloadString(event.payload, 'delta')
+  if (event.contentPartId !== contentPartId || partIndex !== 0)
+    throw new Error('ai_invalid_stream_event_payload')
+  const index = blockIndex(turnIndex, timelineIndex)
+  const existing = state.blocks.find(block => block.id === itemId)
+  if (existing) {
+    if (existing.type !== 'message'
+      || existing.role !== 'assistant'
+      || existing.turnId !== event.turnId
+      || existing.runId !== event.runId
+      || existing.index !== index
+      || existing.status !== 'streaming') {
+      throw new Error('ai_invalid_stream_event_payload')
+    }
+    return {
+      ...state,
+      blocks: state.blocks.map(block => block.id === itemId ? { ...existing, text: existing.text + delta } : block),
+      itemRevisions: { ...state.itemRevisions, [itemId]: (state.itemRevisions[itemId] ?? 0) + 1 },
+    }
+  }
+  const createdAt = assertPayloadString(event.payload, 'createdAt')
+  if (!Number.isFinite(Date.parse(createdAt)))
+    throw new Error('ai_invalid_stream_event_payload')
+  const block: AIBlock = {
+    id: itemId,
+    turnId: event.turnId,
+    runId: event.runId,
+    index,
+    type: 'message',
+    role: 'assistant',
+    status: 'streaming',
+    text: delta,
+    createdAt,
+  }
+  return {
+    ...state,
+    blocks: [...state.blocks, block].sort((left, right) => left.index - right.index),
+    itemRevisions: { ...state.itemRevisions, [itemId]: 1 },
+  }
+}
+
+function applyThinkingStarted(state: AIAssistantState, event: AIEvent, turnIndex: number): AIAssistantState {
+  const { itemId, timelineIndex } = assertLiveItemIdentity(event)
+  const summary = assertPayloadString(event.payload, 'summary')
+  const display = event.payload.display
+  const createdAt = assertPayloadString(event.payload, 'createdAt')
+  if ((display !== 'summary' && display !== 'progress')
+    || !Number.isFinite(Date.parse(createdAt))
+    || state.blocks.some(block => block.id === itemId)) {
+    throw new Error('ai_invalid_stream_event_payload')
+  }
+  const block: AIBlock = {
+    id: itemId,
+    turnId: event.turnId,
+    runId: event.runId,
+    index: blockIndex(turnIndex, timelineIndex),
+    type: 'thinking',
+    status: 'streaming',
+    display,
+    text: summary,
+  }
+  return {
+    ...state,
+    blocks: [...state.blocks, block].sort((left, right) => left.index - right.index),
+    itemRevisions: { ...state.itemRevisions, [itemId]: 1 },
+  }
+}
+
+function applyThinkingDelta(state: AIAssistantState, event: AIEvent, turnIndex: number): AIAssistantState {
+  const { itemId, timelineIndex } = assertLiveItemIdentity(event)
+  const delta = assertPayloadString(event.payload, 'delta')
+  const display = event.payload.display
+  const index = blockIndex(turnIndex, timelineIndex)
+  const existing = state.blocks.find(block => block.id === itemId)
+  if ((display !== 'summary' && display !== 'progress')
+    || !existing
+    || existing.type !== 'thinking'
+    || existing.turnId !== event.turnId
+    || existing.runId !== event.runId
+    || existing.index !== index
+    || existing.display !== display
+    || existing.status !== 'streaming') {
+    throw new Error('ai_invalid_stream_event_payload')
+  }
+  return {
+    ...state,
+    blocks: state.blocks.map(block => block.id === itemId ? { ...existing, text: existing.text + delta } : block),
+    itemRevisions: { ...state.itemRevisions, [itemId]: (state.itemRevisions[itemId] ?? 0) + 1 },
+  }
+}
+
 export function reduceAIEvent(state: AIAssistantState, event: AIEvent): AIAssistantState {
   if (event.version !== 2 || !event.eventId || state.seenEventIds.has(event.eventId))
     return state
@@ -360,12 +504,28 @@ export function reduceAIEvent(state: AIAssistantState, event: AIEvent): AIAssist
   }
 
   const turnIndex = state.turnIndexes[event.turnId] ?? Math.max(-1, ...Object.values(state.turnIndexes)) + 1
+  const desyncedRunIds = new Set(state.desyncedRunIds)
+  const desyncRecoverySequences = { ...state.desyncRecoverySequences }
+  const recoverySequence = desyncRecoverySequences[event.runId]
+  if (recoverySequence !== undefined && event.eventSequence >= recoverySequence) {
+    desyncedRunIds.delete(event.runId)
+    delete desyncRecoverySequences[event.runId]
+  }
   const next = applyAuthoritativeItem({
     ...state,
+    desyncedRunIds,
+    desyncRecoverySequences,
     seenEventIds: new Set(state.seenEventIds).add(event.eventId),
     lastEventSequences: { ...state.lastEventSequences, [event.runId]: event.eventSequence },
     turnIndexes: { ...state.turnIndexes, [event.turnId]: turnIndex },
   }, event, turnIndex)
+
+  if (event.type === 'content.delta')
+    return applyContentDelta(next, event, turnIndex)
+  if (event.type === 'thinking.started')
+    return applyThinkingStarted(next, event, turnIndex)
+  if (event.type === 'thinking.delta')
+    return applyThinkingDelta(next, event, turnIndex)
 
   if (event.type === 'run.started' || event.type === 'run.running' || event.type === 'run.queued' || event.type === 'run.waiting_approval' || event.type === 'run.waiting_input' || event.type === 'run.completed' || event.type === 'run.failed' || event.type === 'run.canceled' || event.type === 'run.interrupted') {
     const status = event.type === 'run.started' || event.type === 'run.running' ? 'running' : event.type.slice(4)

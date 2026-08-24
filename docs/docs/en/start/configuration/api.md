@@ -19,6 +19,7 @@
 | `LOG_LEVEL` | `info` | Sets log verbosity; use `debug`, `info`, `warn`, or `error`. |
 | `AI_ASSISTANT_AVAILABLE` | `false` | Controls whether the AI assistant is available; use `true` or `false`. |
 | `AI_AGENT_BASE_URL` | Empty | Sets the Agent address used by API; use an HTTP(S) URL. |
+| `AI_AGENT_TIMEOUT` | `10s` | Bounds non-streaming API-to-Agent requests; use a Go duration such as `10s` or `1m`; SSE is not bounded by this setting. |
 | `AI_INTERNAL_SECRET`<sup>3</sup> | Empty | Authenticates internal API-Agent requests; use a secret of at least 32 bytes. |
 
 1. Note: `SECRET_ENCRYPTION_KEY` is required in production; changing it makes stored encrypted credentials unreadable.

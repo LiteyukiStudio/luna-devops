@@ -17,7 +17,7 @@ paths:
     get:
       operationId: getAgentReadiness
       security: []
-      responses: { "200": { description: Agent is ready }, "503": { $ref: "#/components/responses/AgentError" } }
+      responses: { "200": { description: PostgreSQL, the AI schema, Provider configuration, and Redis active-stream transport are ready. }, "503": { description: At least one required dependency is unavailable; Redis failures use ai.stream_transport_unavailable., content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } } }
   /internal/v1/capabilities:
     get:
       operationId: getInternalAICapabilities
@@ -132,12 +132,12 @@ paths:
         - { $ref: "#/components/parameters/RunId" }
         - { name: after, in: query, required: false, schema: { type: integer, format: int64, minimum: 0 } }
         - { name: Last-Event-ID, in: header, required: false, schema: { type: string } }
-      responses: { "200": { description: Recoverable SSE stream of persisted content.delta, thinking.delta, tool, and run lifecycle events, content: { text/event-stream: { schema: { type: string } } } }, "404": { $ref: "#/components/responses/AgentError" } }
+      responses: { "200": { description: Recoverable SSE stream of bounded active-Run AIEvent frames plus transient stream.heartbeat frames. Business frames replay by after or Last-Event-ID; heartbeats have no id, are not persisted, and do not advance eventSequence. Completed output and workflow terminal facts are available from the authoritative Timeline., content: { text/event-stream: { schema: { type: string } } } }, "404": { $ref: "#/components/responses/AgentError" }, "429": { description: Per-Run or per-instance SSE subscriber limit reached., content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } }, "503": { description: Redis active-stream transport is unavailable., content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } } }
   /internal/v1/runs/{runId}/cancel:
     post:
       operationId: cancelInternalAIRun
       parameters: [{ $ref: "#/components/parameters/ActorContext" }, { $ref: "#/components/parameters/ActorSignature" }, { $ref: "#/components/parameters/RunId" }]
-      responses: { "202": { description: Cancellation accepted, content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } }, "404": { $ref: "#/components/responses/AgentError" } }
+      responses: { "202": { description: Cancellation accepted or still processing; running Runs acknowledge only after the owner flushes the terminal batch., content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } }, "404": { $ref: "#/components/responses/AgentError" }, "503": { description: Redis cancellation transport is unavailable., content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } } }
   /internal/v1/runs/{runId}/input:
     post:
       operationId: submitInternalAIRunInput

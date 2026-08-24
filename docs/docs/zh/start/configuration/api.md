@@ -19,6 +19,7 @@
 | `LOG_LEVEL` | `info` | 设置日志级别；可填 `debug`、`info`、`warn` 或 `error`。 |
 | `AI_ASSISTANT_AVAILABLE` | `false` | 控制 AI 助手是否可用；可填 `true` 或 `false`。 |
 | `AI_AGENT_BASE_URL` | 空 | 设置 API 访问 Agent 的地址；填写 HTTP(S) URL。 |
+| `AI_AGENT_TIMEOUT` | `10s` | 限制 API 对 Agent 的非流式请求时长；填写 Go duration（如 `10s` 或 `1m`），SSE 不受此项限制。 |
 | `AI_INTERNAL_SECRET`<sup>3</sup> | 空 | 鉴权 API 与 Agent 的内部请求；填写至少 32 字节的密钥。 |
 
 1. 说明：生产环境必须设置 `SECRET_ENCRYPTION_KEY`；更换后已有加密凭据将无法读取。

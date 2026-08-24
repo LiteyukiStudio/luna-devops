@@ -11,12 +11,16 @@
 | `LOG_COLOR` | `auto` | 控制 console 日志颜色；可填 `auto`、`always` 或 `never`，`NO_COLOR` 会强制关闭。 |
 | `LOG_LEVEL` | `info` | 设置日志级别；可填 `debug`、`info`、`warn` 或 `error`。 |
 | `DATABASE_URL` | 空 | 连接 PostgreSQL；填写 PostgreSQL 连接 URI。 |
+| `REDIS_ADDR` | 空 | 为活动 Run 提供短期事件传输与跨实例回放；填写必需的 Redis 连接 URI。 |
 | `AUTH_MODE` | `development` | 选择内部请求鉴权模式；可填 `development` 或 `bff-hmac`。 |
 | `AI_INTERNAL_SECRET`<sup>1</sup> | 空 | 鉴权 API 与 Agent 的内部请求；填写至少 32 字节的密钥。 |
 | `LUNA_API_BASE_URL` | 空 | 设置 Agent 访问 API 的地址；填写 HTTP(S) URL。 |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | 空 | 设置遥测数据接收端；填写 Collector 的 OTLP/HTTP URL。 |
 
 1. 说明：生产环境必须使用 `bff-hmac`，并与 API 共享同一个 `AI_INTERNAL_SECRET`。
+
+生产模式必须同时提供 PostgreSQL、Redis 与 Luna API 配置。就绪探针会实时检查数据库 Schema、
+Provider 配置和 Redis 活动流；任一依赖不可用时返回 `503`，实例不会继续接收新 Run。
 
 ## 高级配置
 
@@ -25,6 +29,14 @@
 | 配置项名称 | 默认值 | 说明 |
 | --- | --- | --- |
 | `INSTANCE_ID` | 自动生成 | 标识当前 Agent 实例；填写 `1`–`128` 个字符。 |
+
+### 数据库连接
+
+| 配置项名称 | 默认值 | 说明 |
+| --- | --- | --- |
+| `AI_DATABASE_MAX_CONNECTIONS` | `10` | 限制单个 Agent 实例的 PostgreSQL 连接池；填写 `1`–`100` 的整数，并按副本总数预留数据库连接预算。 |
+| `AI_DATABASE_CONNECTION_TIMEOUT_MS` | `5000` | 限制等待空闲 PostgreSQL 连接的时间；填写 `100`–`30000` 的整数，单位为毫秒。 |
+| `AI_DATABASE_STATEMENT_TIMEOUT_MS` | `15000` | 限制单条 Agent SQL 的执行时间；填写 `1000`–`120000` 的整数，单位为毫秒。 |
 
 ### 可观测
 

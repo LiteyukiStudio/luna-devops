@@ -12,9 +12,16 @@ function event(overrides: Partial<AIEvent>): AIEvent {
     turnId: 'turn-1',
     runId: 'run-1',
     itemId: 'item-1',
+    contentPartId: 'item-1:0',
     occurredAt: '2026-07-28T00:00:00Z',
-    payload: { delta: 'hello' },
-    item: messageItem(),
+    payload: {
+      itemId: 'item-1',
+      contentPartId: 'item-1:0',
+      partIndex: 0,
+      delta: 'hello',
+      timelineIndex: 0,
+      createdAt: '2026-07-28T00:00:00Z',
+    },
     ...overrides,
   }
 }
@@ -58,11 +65,107 @@ describe('aI assistant state', () => {
     const second = reduceAIEvent(duplicate, event({
       eventId: 'event-2',
       eventSequence: 2,
-      payload: { delta: ' world' },
-      item: messageItem({ revision: 2, parts: [{ id: 'item-1:0', partIndex: 0, type: 'text', text: 'hello world' }] }),
+      payload: { itemId: 'item-1', contentPartId: 'item-1:0', partIndex: 0, delta: ' world', timelineIndex: 0 },
     }))
     expect(duplicate).toBe(first)
     expect(second.blocks[0]).toMatchObject({ text: 'hello world' })
+  })
+
+  it('projects real message and thinking delta frames before authoritative completion overwrites them', () => {
+    const thinkingStarted = reduceAIEvent(emptyAIAssistantState, event({
+      type: 'thinking.started',
+      itemId: 'thinking-1',
+      payload: { itemId: 'thinking-1', summary: '先分析', display: 'summary', timelineIndex: 0, createdAt: '2026-07-28T00:00:00Z' },
+    }))
+    const thinkingDelta = reduceAIEvent(thinkingStarted, event({
+      eventId: 'event-2',
+      eventSequence: 2,
+      type: 'thinking.delta',
+      itemId: 'thinking-1',
+      payload: { itemId: 'thinking-1', delta: '再检查', display: 'summary', timelineIndex: 0 },
+    }))
+    const thinkingCompleted = reduceAIEvent(thinkingDelta, event({
+      eventId: 'event-3',
+      eventSequence: 3,
+      type: 'thinking.completed',
+      itemId: 'thinking-1',
+      payload: { itemId: 'thinking-1', display: 'summary', timelineIndex: 0 },
+      item: messageItem({
+        id: 'thinking-1',
+        timelineIndex: 0,
+        revision: 3,
+        type: 'reasoning_summary',
+        status: 'completed',
+        display: 'summary',
+        parts: [{ id: 'thinking-1:0', partIndex: 0, type: 'text', text: '权威思考摘要' }],
+      }),
+    }))
+    const messageStarted = reduceAIEvent(thinkingCompleted, event({
+      eventId: 'event-4',
+      eventSequence: 4,
+      itemId: 'message-1',
+      contentPartId: 'message-1:0',
+      payload: { itemId: 'message-1', contentPartId: 'message-1:0', partIndex: 0, delta: 'Hel', timelineIndex: 1, createdAt: '2026-07-28T00:00:01Z' },
+    }))
+    const messageDelta = reduceAIEvent(messageStarted, event({
+      eventId: 'event-5',
+      eventSequence: 5,
+      itemId: 'message-1',
+      contentPartId: 'message-1:0',
+      payload: { itemId: 'message-1', contentPartId: 'message-1:0', partIndex: 0, delta: 'lo', timelineIndex: 1 },
+    }))
+    const completed = reduceAIEvent(messageDelta, event({
+      eventId: 'event-6',
+      eventSequence: 6,
+      type: 'message.completed',
+      itemId: 'message-1',
+      contentPartId: 'message-1:0',
+      payload: { itemId: 'message-1', contentPartId: 'message-1:0', partIndex: 0, timelineIndex: 1 },
+      item: messageItem({
+        id: 'message-1',
+        timelineIndex: 1,
+        revision: 3,
+        status: 'completed',
+        parts: [{ id: 'message-1:0', partIndex: 0, type: 'text', text: 'Hello!' }],
+      }),
+    }))
+
+    expect(thinkingDelta.blocks[0]).toMatchObject({ type: 'thinking', status: 'streaming', text: '先分析再检查' })
+    expect(messageDelta.blocks.find(block => block.id === 'message-1')).toMatchObject({ status: 'streaming', text: 'Hello' })
+    expect(completed.blocks).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'thinking-1', status: 'completed', text: '权威思考摘要' }),
+      expect.objectContaining({ id: 'message-1', status: 'completed', text: 'Hello!' }),
+    ]))
+  })
+
+  it('rebuilds live text when refresh replays from the first delta', () => {
+    const refreshed = stateFromTimeline({
+      pageInfo: { hasOlder: false },
+      conversation: { id: 'conversation-1', title: '刷新恢复', titleSource: 'assistant', status: 'active' },
+      eventCursors: [{ runId: 'run-1', after: 0 }],
+      turns: [{
+        id: 'turn-1',
+        turnIndex: 0,
+        status: 'running',
+        input: { id: 'turn-1:input', type: 'user_message', createdAt: '2026-07-28T00:00:00Z', parts: [{ id: 'input:0', partIndex: 0, type: 'text', text: '继续' }] },
+        selectedRun: { id: 'run-1', runIndex: 0, status: 'running', items: [] },
+      }],
+    })
+    const first = reduceAIEvent(refreshed, event({}))
+    const second = reduceAIEvent(first, event({
+      eventId: 'event-2',
+      eventSequence: 2,
+      payload: { itemId: 'item-1', contentPartId: 'item-1:0', partIndex: 0, delta: ' after refresh', timelineIndex: 0 },
+    }))
+
+    expect(second.blocks.find(block => block.id === 'item-1')).toMatchObject({ status: 'streaming', text: 'hello after refresh' })
+  })
+
+  it('rejects malformed live payloads before advancing the sequence', () => {
+    expect(() => reduceAIEvent(emptyAIAssistantState, event({
+      payload: { itemId: 'item-1', delta: 'missing required fields' },
+    }))).toThrow('ai_invalid_stream_event_payload')
+    expect(emptyAIAssistantState.lastEventSequences['run-1']).toBeUndefined()
   })
 
   it('keeps a newly streamed turn after older turns by its stable turn and timeline indexes', () => {
@@ -84,8 +187,8 @@ describe('aI assistant state', () => {
       turnId: 'turn-new',
       runId: 'run-new',
       itemId: 'new-answer',
-      payload: { delta: 'answer', timelineIndex: 0 },
-      item: messageItem({ id: 'new-answer', parts: [{ id: 'new-answer:0', partIndex: 0, type: 'text', text: 'answer' }] }),
+      contentPartId: 'new-answer:0',
+      payload: { itemId: 'new-answer', contentPartId: 'new-answer:0', partIndex: 0, delta: 'answer', timelineIndex: 0, createdAt: '2026-07-28T00:00:00Z' },
     }))
     expect(streamed.blocks.map(block => block.id)).toEqual([
       'turn-older:input',
@@ -95,15 +198,27 @@ describe('aI assistant state', () => {
   })
 
   it('does not regress a newer live item revision when a delayed timeline snapshot arrives', () => {
-    const live = reduceAIEvent(addOptimisticTurn(emptyAIAssistantState, {
+    const optimistic = addOptimisticTurn(emptyAIAssistantState, {
       turnId: 'turn',
       turnIndex: 0,
       runId: 'run',
       text: 'question',
-    }), event({
+    })
+    const started = reduceAIEvent(optimistic, event({
+      turnId: 'turn',
+      runId: 'run',
       itemId: 'answer',
-      payload: { delta: 'streamed answer', timelineIndex: 0 },
-      item: messageItem({ id: 'answer', revision: 2, parts: [{ id: 'answer:0', partIndex: 0, type: 'text', text: 'streamed answer' }] }),
+      contentPartId: 'answer:0',
+      payload: { itemId: 'answer', contentPartId: 'answer:0', partIndex: 0, delta: 'streamed', timelineIndex: 0, createdAt: '2026-07-28T00:00:00Z' },
+    }))
+    const live = reduceAIEvent(started, event({
+      eventId: 'event-2',
+      eventSequence: 2,
+      turnId: 'turn',
+      runId: 'run',
+      itemId: 'answer',
+      contentPartId: 'answer:0',
+      payload: { itemId: 'answer', contentPartId: 'answer:0', partIndex: 0, delta: ' answer', timelineIndex: 0 },
     }))
     const snapshot: AITimeline = {
       pageInfo: { hasOlder: false },
@@ -345,7 +460,9 @@ describe('aI assistant state', () => {
 
   it('keeps message, tool and follow-up message in authoritative item order during streaming', () => {
     const firstMessage = reduceAIEvent(emptyAIAssistantState, event({
-      item: messageItem({ id: 'message-1', timelineIndex: 0, revision: 1, parts: [{ id: 'message-1:0', partIndex: 0, type: 'text', text: '先检查资源。' }] }),
+      itemId: 'message-1',
+      contentPartId: 'message-1:0',
+      payload: { itemId: 'message-1', contentPartId: 'message-1:0', partIndex: 0, delta: '先检查资源。', timelineIndex: 0, createdAt: '2026-07-28T00:00:00Z' },
     }))
     const completedMessage = reduceAIEvent(firstMessage, event({
       eventId: 'event-2',
@@ -365,8 +482,8 @@ describe('aI assistant state', () => {
       eventId: 'event-4',
       eventSequence: 4,
       itemId: 'message-2',
-      payload: { delta: '接下来检查部署。' },
-      item: messageItem({ id: 'message-2', timelineIndex: 2, revision: 1, parts: [{ id: 'message-2:0', partIndex: 0, type: 'text', text: '接下来检查部署。' }] }),
+      contentPartId: 'message-2:0',
+      payload: { itemId: 'message-2', contentPartId: 'message-2:0', partIndex: 0, delta: '接下来检查部署。', timelineIndex: 2, createdAt: '2026-07-28T00:00:00Z' },
     }))
 
     expect(followUp.blocks.map(block => block.id)).toEqual(['message-1', 'tool-item', 'message-2'])
@@ -377,12 +494,38 @@ describe('aI assistant state', () => {
     const gap = reduceAIEvent(first, event({
       eventId: 'event-3',
       eventSequence: 3,
-      item: messageItem({ revision: 3, parts: [{ id: 'item-1:0', partIndex: 0, type: 'text', text: 'must not apply before recovery' }] }),
+      payload: { itemId: 'item-1', contentPartId: 'item-1:0', partIndex: 0, delta: ' must not apply before recovery', timelineIndex: 0 },
     }))
 
     expect(gap.blocks[0]).toMatchObject({ text: 'hello' })
     expect(gap.desyncedRunIds.has('run-1')).toBe(true)
     expect(gap.lastEventSequences['run-1']).toBe(1)
+  })
+
+  it('accepts replayed missing events in order and clears desync at the observed high watermark', () => {
+    const first = reduceAIEvent(emptyAIAssistantState, event({}))
+    const gap = reduceAIEvent(first, event({
+      eventId: 'event-3',
+      eventSequence: 3,
+      payload: { itemId: 'item-1', contentPartId: 'item-1:0', partIndex: 0, delta: ' third', timelineIndex: 0 },
+    }))
+    const second = reduceAIEvent(gap, event({
+      eventId: 'event-2',
+      eventSequence: 2,
+      payload: { itemId: 'item-1', contentPartId: 'item-1:0', partIndex: 0, delta: ' second', timelineIndex: 0 },
+    }))
+    const recovered = reduceAIEvent(second, event({
+      eventId: 'event-3',
+      eventSequence: 3,
+      payload: { itemId: 'item-1', contentPartId: 'item-1:0', partIndex: 0, delta: ' third', timelineIndex: 0 },
+    }))
+
+    expect(second.lastEventSequences['run-1']).toBe(2)
+    expect(second.desyncedRunIds.has('run-1')).toBe(true)
+    expect(recovered.lastEventSequences['run-1']).toBe(3)
+    expect(recovered.desyncedRunIds.has('run-1')).toBe(false)
+    expect(recovered.desyncRecoverySequences['run-1']).toBeUndefined()
+    expect(recovered.blocks[0]).toMatchObject({ text: 'hello second third' })
   })
 
   it('records provider-reported input tokens from model.completed usage', () => {

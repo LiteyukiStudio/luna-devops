@@ -1,13 +1,15 @@
-import { describe, expect, it } from "vitest"
+import { EventEmitter } from "node:events"
+import { describe, expect, it, vi } from "vitest"
 import { DevelopmentRequestVerifier } from "../src/auth.js"
 import { loadConfig } from "../src/config.js"
 import { TestRepository } from "./support/test-repository.js"
 import { DeterministicProvider } from "../src/provider/deterministic.js"
 import { ProviderConfigClient } from "../src/provider/config-client.js"
 import { defaultRuntimeSettings } from "../src/runtime-settings.js"
-import { buildServer } from "../src/server.js"
+import { buildServer, writeSSE } from "../src/server.js"
 import type { AIEvent, AITimeline, AITurnCreated } from "../../web/src/api/ai-types.js"
 import { presentTimeline } from "../src/timeline-presenter.js"
+import { InMemoryRunStreamBus } from "../src/run-stream-bus.js"
 
 function fixture() {
   const repository = new TestRepository()
@@ -17,13 +19,67 @@ function fixture() {
 }
 
 describe("internal API", () => {
+  it("bounds an SSE write that never drains and destroys the slow connection", async () => {
+    vi.useFakeTimers()
+    try {
+      let destroyed = false
+      const stream = Object.assign(new EventEmitter(), {
+        write: () => false,
+        end: () => undefined,
+        destroy: () => { destroyed = true },
+      }) as unknown as NodeJS.WritableStream
+      const pending = writeSSE(stream, "data: blocked\n\n", new AbortController().signal)
+
+      await vi.advanceTimersByTimeAsync(9_999)
+      expect(destroyed).toBe(false)
+      await vi.advanceTimersByTimeAsync(1)
+
+      await expect(pending).resolves.toBe(false)
+      expect(destroyed).toBe(true)
+      expect(stream.listenerCount("drain")).toBe(0)
+      expect(stream.listenerCount("close")).toBe(0)
+      expect(stream.listenerCount("error")).toBe(0)
+    }
+    finally { vi.useRealTimers() }
+  })
+
+  it("releases the accepted SSE slot when initial replay fails before hijacking", async () => {
+    class ReplayFailureBus extends InMemoryRunStreamBus {
+      override async read(): Promise<never> { throw new Error("ai.stream_transport_unavailable") }
+    }
+    const repository = new TestRepository()
+    const conversation = await repository.createConversation("usr_replay_failure", "replay")
+    const created = await repository.createTurn("usr_replay_failure", {
+      conversationId: conversation.id,
+      input: "hello",
+      pageContext: {},
+      idempotencyKey: "replay-failure-slot",
+    })
+    const app = buildServer({
+      config: loadConfig({ NODE_ENV: "test" }), repository,
+      provider: new DeterministicProvider(), requestVerifier: new DevelopmentRequestVerifier(),
+      streamBus: new ReplayFailureBus(repository),
+      streamHubLimits: { perRun: 1, perInstance: 1 },
+    })
+    const request = {
+      method: "GET" as const,
+      url: `/internal/v1/runs/${created.run.id}/events`,
+      headers: { "x-luna-dev-user": "usr_replay_failure", accept: "text/event-stream" },
+    }
+
+    expect((await app.inject(request)).statusCode).toBe(503)
+    // 若第一次 replay 异常泄漏 subscription，此请求会被 per-instance cap 以 429 拒绝。
+    expect((await app.inject(request)).statusCode).toBe(503)
+    await app.close()
+  })
+
   it("reports readiness dimensions and fails with stable dependency codes", async () => {
     const healthy = fixture()
     const healthyResponse = await healthy.app.inject({ method: "GET", url: "/internal/health/ready" })
     expect(healthyResponse.statusCode).toBe(200)
     expect(healthyResponse.json()).toEqual({
       status: "ready",
-      checks: { database: true, schema: true, providerConfigAvailable: true, providerConfigured: true },
+      checks: { database: true, schema: true, providerConfigAvailable: true, providerConfigured: true, streamAvailable: true },
     })
     await healthy.app.close()
 
@@ -52,6 +108,20 @@ describe("internal API", () => {
     expect(configResponse.statusCode).toBe(503)
     expect(configResponse.json()).toMatchObject({ errorCode: "ai.provider_config_unavailable" })
     await configApp.close()
+
+    class UnavailableStreamBus extends InMemoryRunStreamBus {
+      override async health() { return false }
+    }
+    const streamRepository = new TestRepository()
+    const streamApp = buildServer({
+      config: loadConfig({ NODE_ENV: "test" }), repository: streamRepository,
+      provider: new DeterministicProvider(), requestVerifier: new DevelopmentRequestVerifier(),
+      streamBus: new UnavailableStreamBus(streamRepository),
+    })
+    const streamResponse = await streamApp.inject({ method: "GET", url: "/internal/health/ready" })
+    expect(streamResponse.statusCode).toBe(503)
+    expect(streamResponse.json()).toMatchObject({ errorCode: "ai.stream_transport_unavailable", checks: { streamAvailable: false } })
+    await streamApp.close()
   })
 
   it("requires an authenticated actor", async () => {
@@ -244,8 +314,39 @@ describe("internal API", () => {
     })
     const runId = created.json<AITurnCreated>().runId
     const canceled = await app.inject({ method: "POST", url: `/internal/v1/runs/${runId}/cancel`, headers })
-    expect(canceled.statusCode).toBe(200)
+    expect(canceled.statusCode).toBe(202)
     expect(canceled.json()).toMatchObject({ id: runId, status: "canceled" })
+    await app.close()
+  })
+  it("cancels a waiting Run directly without waiting for a stream owner", async () => {
+    class UnexpectedControlBus extends InMemoryRunStreamBus {
+      override async requestCancellation(): Promise<void> {
+        throw new Error("queued and waiting Runs must not use the live cancellation channel")
+      }
+    }
+    const repository = new TestRepository()
+    const bus = new UnexpectedControlBus(repository)
+    const app = buildServer({
+      config: loadConfig({ NODE_ENV: "test" }), repository,
+      provider: new DeterministicProvider(), requestVerifier: new DevelopmentRequestVerifier(),
+      streamBus: bus,
+    })
+    const ownerUserId = "usr_cancel_waiting"
+    const headers = { "x-luna-dev-user": ownerUserId }
+    const conversation = await repository.createConversation(ownerUserId, "Waiting")
+    const created = await repository.createTurn(ownerUserId, {
+      conversationId: conversation.id,
+      input: "approve this",
+      pageContext: {},
+      idempotencyKey: "cancel-waiting-request",
+    })
+    await repository.updateRun(created.run.id, "queued", "waiting_approval")
+
+    const canceled = await app.inject({ method: "POST", url: `/internal/v1/runs/${created.run.id}/cancel`, headers })
+
+    expect(canceled.statusCode).toBe(202)
+    expect(canceled.json()).toMatchObject({ id: created.run.id, status: "canceled" })
+    expect((await repository.getEvents(ownerUserId, created.run.id, 0)).at(-1)?.type).toBe("run.canceled")
     await app.close()
   })
   it("returns Agent feature and limit metadata without a redundant health flag", async () => {

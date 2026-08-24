@@ -152,6 +152,48 @@ suite("PostgresRepository (Drizzle) integration", () => {
     expect(executionInput?.toolInteractions).toHaveLength(1)
   })
 
+  it("persists a sparse terminal stream batch and advances the authoritative high-watermark", async () => {
+    while (await repository.claimNextQueuedRun()) { /* drain earlier queued fixtures */ }
+    const conversation = await repository.createConversation(owner, "稀疏流终态")
+    const created = await repository.createTurn(owner, {
+      conversationId: conversation.id, input: "stream", pageContext: {},
+      idempotencyKey: key("sparse-stream"), actorSessionId: key("session"),
+    })
+    const running = await repository.claimNextQueuedRun()
+    expect(running?.id).toBe(created.run.id)
+    const expected = (await repository.getRunStreamPosition(created.run.id))!
+    const createdAt = new Date().toISOString()
+    const batch = {
+      runId: created.run.id,
+      expected,
+      eventHighWatermark: expected.nextEventSequence + 4,
+      expectedRunVersion: expected.runVersion,
+      items: [{
+        id: `aiitm_sparse_${suffix}`, runId: created.run.id, turnId: created.turn.id,
+        timelineIndex: expected.nextItemPosition, revision: 4, type: "assistant_message" as const,
+        status: "completed" as const, content: { parts: [{ type: "text", text: "final" }] }, createdAt,
+      }],
+      events: [
+        { id: `aievt_sparse_message_${suffix}`, runId: created.run.id, sequence: expected.nextEventSequence + 2, type: "message.completed", data: {}, createdAt },
+        { id: `aievt_sparse_model_${suffix}`, runId: created.run.id, sequence: expected.nextEventSequence + 4, type: "model.completed", data: {}, createdAt },
+      ],
+    }
+    await repository.persistRunStreamBatch(batch)
+    await repository.persistRunStreamBatch(batch)
+    const position = await repository.getRunStreamPosition(created.run.id)
+    expect(position?.nextEventSequence).toBe(batch.eventHighWatermark + 1)
+    const sparse = await repository.getEvents(owner, created.run.id, expected.nextEventSequence - 1)
+    expect(sparse.map(event => event.sequence)).toEqual([
+      expected.nextEventSequence + 2,
+      expected.nextEventSequence + 4,
+    ])
+    const terminal = await repository.appendEvent(created.run.id, "run.completed", { state: "completed" })
+    expect(terminal.sequence).toBe(batch.eventHighWatermark + 1)
+    const timeline = await repository.getTimeline(owner, conversation.id)
+    expect(timeline?.eventCursors).toEqual([{ runId: created.run.id, after: terminal.sequence }])
+    expect(timeline?.turns[0]?.items.some(item => item.id === batch.items[0]!.id)).toBe(true)
+  })
+
   it("pages complete timeline turns and keeps item snapshots aligned with event cursors", async () => {
     const conversation = await repository.createConversation(owner, "分页一致性")
     const createdTurns: CreatedTurn[] = []

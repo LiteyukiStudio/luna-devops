@@ -2,16 +2,18 @@ import Fastify, { type FastifyBaseLogger, type FastifyInstance, LogController } 
 import { z } from "zod"
 import type { RequestVerifier } from "./auth.js"
 import type { Config } from "./config.js"
-import type { AIModelSnapshot, ActorContext, Run } from "./domain.js"
+import type { AIModelSnapshot, ActorContext, Run, RunEvent } from "./domain.js"
 import type { Repository } from "./persistence/repository.js"
 import type { ModelProvider } from "./provider/provider.js"
 import type { ProviderConfigClient } from "./provider/config-client.js"
 import { OpenAIChatCompletionsProvider } from "./provider/openai-chat-completions.js"
 import { redact } from "./redaction.js"
 import type { ToolOrchestrator } from "./tools/orchestrator.js"
-import { presentEvent, presentTimeline } from "./timeline-presenter.js"
+import { presentEventForRun, presentTimeline } from "./timeline-presenter.js"
 import { defaultRuntimeSettings } from "./runtime-settings.js"
-import { agentLogger, captureTraceContext, errorDiagnostic, internalSpanOptions, stableErrorCode as telemetryErrorCode, telemetryLog, withSpan } from "./telemetry.js"
+import type { RunStreamBus } from "./run-stream-bus.js"
+import { RunStreamHubManager } from "./run-stream-hub.js"
+import { agentLogger, agentMetrics, captureTraceContext, errorDiagnostic, internalSpanOptions, stableErrorCode as telemetryErrorCode, telemetryLog, withSpan } from "./telemetry.js"
 
 declare module "fastify" {
   interface FastifyRequest { actor: ActorContext }
@@ -42,6 +44,8 @@ export function buildServer(input: {
   providerConfigClient?: ProviderConfigClient
   cancelRun?: (runId: string) => void
   toolCatalogDigest?: string | (() => string)
+  streamBus?: RunStreamBus
+  streamHubLimits?: { perRun: number, perInstance: number, pendingEvents?: number, pendingBytes?: number }
 }): FastifyInstance {
   const toolCatalogDigest = () => typeof input.toolCatalogDigest === "function" ? input.toolCatalogDigest() : input.toolCatalogDigest
   const app = Fastify({
@@ -50,19 +54,24 @@ export function buildServer(input: {
     logController: new LogController({ disableRequestLogging: true }),
     requestIdHeader: "x-request-id",
   })
+  const streamHubs = new RunStreamHubManager(input.repository, input.streamBus, input.streamHubLimits)
+  app.addHook("onClose", async () => streamHubs.close())
 
   app.get("/internal/health/live", { logLevel: "silent" }, async () => ({ status: "ok" }))
   app.get("/internal/health/ready", { logLevel: "silent" }, async (_request, reply) => {
     const persistence = await input.repository.readiness()
+    const streamAvailable = input.streamBus ? await input.streamBus.health() : true
     const remoteConfig = input.providerConfigClient?.current()
     const providerConfigAvailable = !input.providerConfigClient || remoteConfig !== undefined
     const providerConfigured = input.providerConfigClient ? remoteConfig?.provider.configured === true : true
-    if (!persistence.database || !persistence.schema || !providerConfigAvailable) {
+    if (!persistence.database || !persistence.schema || !providerConfigAvailable || !streamAvailable) {
       const errorCode = !persistence.database
         ? "ai.persistence_unavailable"
         : !persistence.schema
           ? "ai.database_schema_mismatch"
-          : "ai.provider_config_unavailable"
+          : !providerConfigAvailable
+            ? "ai.provider_config_unavailable"
+            : "ai.stream_transport_unavailable"
       telemetryLog("agent.readiness.failed", "warn", {
         "operation": "agent.readiness",
         "outcome": "failed",
@@ -72,11 +81,11 @@ export function buildServer(input: {
       })
       return reply.code(503).send({
         status: "not_ready",
-        checks: { ...persistence, providerConfigAvailable, providerConfigured },
+        checks: { ...persistence, providerConfigAvailable, providerConfigured, streamAvailable },
         errorCode,
       })
     }
-    return { status: "ready", checks: { ...persistence, providerConfigAvailable, providerConfigured } }
+    return { status: "ready", checks: { ...persistence, providerConfigAvailable, providerConfigured, streamAvailable } }
   })
   app.get("/internal/v1/health/compatibility", async () => ({
     component: "luna-agent", version: "0.1.0", internalApiVersions: ["v1"],
@@ -340,13 +349,36 @@ export function buildServer(input: {
     })
     secured.post("/internal/v1/runs/:runId/cancel", async (request, reply) => {
       const { runId } = z.object({ runId: id }).parse(request.params)
-      const value = await input.repository.cancelRun(request.actor.userId, runId)
-      if (value?.status === "canceled") {
-        try { input.cancelRun?.(runId) } catch {
-          // The durable canceled state is authoritative; a local abort is only a latency optimization.
+      const current = await input.repository.getRun(request.actor.userId, runId)
+      if (!current) return reply.code(404).send(errorBody("ai.run_not_found", request.id))
+      if (current.status === "running") {
+        if (input.streamBus) {
+          try {
+            await input.streamBus.requestCancellation(runId)
+            try { input.cancelRun?.(runId) } catch { /* Redis control remains authoritative across replicas. */ }
+            const flushed = await input.streamBus.waitForCancellationAcknowledgement(runId)
+            if (!flushed) telemetryLog("agent.stream.cancel_flush_timeout", "warn", {
+              operation: "agent.stream.cancel", outcome: "timeout", "error.code": "ai.stream_cancel_flush_timeout",
+            })
+          }
+          catch (error) {
+            telemetryLog("agent.stream.cancel_signal_failed", "warn", {
+              operation: "agent.stream.cancel", outcome: "failed",
+              ...errorDiagnostic(error, "ai.stream_transport_unavailable"),
+            })
+            return reply.code(503).send(errorBody("ai.stream_transport_unavailable", request.id))
+          }
+        }
+        else {
+          try { input.cancelRun?.(runId) } catch { /* durable cancellation below is authoritative. */ }
         }
       }
-      return value ? presentRun(value) : reply.code(404).send(errorBody("ai.run_not_found", request.id))
+      const value = input.streamBus && current.status === "running"
+        ? await input.repository.getRun(request.actor.userId, runId)
+        : await input.repository.cancelRun(request.actor.userId, runId)
+      if (!value) return reply.code(404).send(errorBody("ai.run_not_found", request.id))
+      if (isTerminalRun(value)) await input.streamBus?.cleanup(runId).catch(() => undefined)
+      return reply.code(202).send(presentRun(value))
     })
     secured.post("/internal/v1/runs/:runId/approvals/:toolCallId/decision", async (request, reply) => {
       if (!input.tools) return reply.code(503).send(errorBody("ai.tool_not_available", request.id))
@@ -394,51 +426,108 @@ export function buildServer(input: {
     })
     secured.get("/internal/v1/runs/:runId/events", async (request, reply) => {
       const { runId } = z.object({ runId: id }).parse(request.params)
-      if (!await input.repository.getRun(request.actor.userId, runId)) return reply.code(404).send(errorBody("ai.run_not_found", request.id))
+      let run = await input.repository.getRun(request.actor.userId, runId)
+      if (!run) return reply.code(404).send(errorBody("ai.run_not_found", request.id))
       const query = z.object({ after: z.coerce.number().int().min(0).optional(), stream: z.enum(["true", "false"]).optional() }).parse(request.query)
       const headerCursor = typeof request.headers["last-event-id"] === "string" ? Number(request.headers["last-event-id"]) : 0
       const after = Math.max(query.after ?? 0, Number.isSafeInteger(headerCursor) && headerCursor >= 0 ? headerCursor : 0)
-      const events = await input.repository.getEvents(request.actor.userId, runId, after)
-      const presentedEvents = (await Promise.all(events.map(event => presentEvent(input.repository, request.actor.userId, event)))).filter(event => event !== undefined)
       const acceptsEventStream = request.headers.accept?.split(",").some(value => value.trim().split(";")[0] === "text/event-stream") ?? false
       const streamRequested = acceptsEventStream || query.stream === "true"
+      const subscription = streamRequested && !isTerminalRun(run)
+        ? await streamHubs.subscribe(runId, request.actor.userId, after)
+        : undefined
+      try {
+      let durableEvents: RunEvent[]
+      try { durableEvents = await input.repository.getEvents(request.actor.userId, runId, after) }
+      catch (error) {
+        subscription?.close()
+        throw error
+      }
+      let liveEvents: typeof durableEvents = []
+      let liveReplayFailed = false
+      try { liveEvents = input.streamBus ? await input.streamBus.read(runId, after) : [] }
+      catch (error) {
+        liveReplayFailed = true
+        telemetryLog("agent.stream.replay_failed", "warn", {
+          operation: "agent.stream.replay", outcome: "failed",
+          ...errorDiagnostic(error, "ai.stream_transport_unavailable"),
+        })
+      }
+      const events = mergeEvents(durableEvents, liveEvents)
+      const presentedEvents = events.filter(isPublicStreamEvent).map(event => presentEventForRun(run!, event))
       if (!streamRequested) return { items: presentedEvents, cursor: events.at(-1)?.sequence ?? after }
+      if (liveReplayFailed && !isTerminalRun(run)) {
+        subscription?.close()
+        return reply.code(503).send(errorBody("ai.stream_transport_unavailable", request.id))
+      }
       reply.raw.setHeader("content-type", "text/event-stream")
       reply.raw.setHeader("cache-control", "no-cache, no-store")
       reply.raw.setHeader("x-accel-buffering", "no")
       reply.hijack()
       let cursor = after
       let closed = false
-      request.raw.once("close", () => { closed = true })
+      const streamAbort = new AbortController()
+      request.raw.once("close", () => { closed = true; streamAbort.abort() })
       const push = async (batch: typeof events) => {
         for (const event of batch) {
-          const presented = await presentEvent(input.repository, request.actor.userId, event)
-          if (presented) reply.raw.write(sse(event.type, event.sequence, presented))
+          if (isPublicStreamEvent(event)) {
+            const presented = presentEventForRun(run!, event)
+            if (!await writeSSE(reply.raw, sse(event.type, event.sequence, presented), streamAbort.signal)) return
+          }
           cursor = event.sequence
         }
       }
       await push(events)
+      subscription?.advance(cursor)
       let heartbeatAt = Date.now()
-      while (!closed) {
-        const run = await input.repository.getRun(request.actor.userId, runId)
-        const batch = await input.repository.getEvents(request.actor.userId, runId, cursor)
-        await push(batch)
-        if (run && ["completed", "failed", "canceled", "expired"].includes(run.status) && batch.length === 0) break
-        if (Date.now() - heartbeatAt >= 15_000) {
-          reply.raw.write(": heartbeat\n\n")
-          heartbeatAt = Date.now()
+      try {
+        while (!closed) {
+          if (!subscription) break
+          const update = await subscription.next(streamAbort.signal)
+          if (update.error) {
+            telemetryLog("agent.stream.read_failed", "warn", {
+              operation: "agent.stream.read", outcome: "failed",
+              ...errorDiagnostic(update.error, "ai.stream_transport_unavailable"),
+            })
+            if (!isTerminalRun(run)) {
+              reply.raw.destroy(new Error("ai.stream_transport_unavailable"))
+            }
+            break
+          }
+          if (update.run) run = update.run
+          await push(update.events)
+          subscription.advance(cursor)
+          if (update.terminal && update.events.length === 0) break
+          if (Date.now() - heartbeatAt >= 15_000) {
+            if (!await writeSSE(reply.raw, sseHeartbeat(runId, run.conversationId), streamAbort.signal)) break
+            heartbeatAt = Date.now()
+          }
         }
-        await delay(100)
       }
+      finally { subscription?.close() }
       if (!closed) reply.raw.end()
       return reply
+      }
+      finally { subscription?.close() }
     })
   })
 
   app.setErrorHandler((error, request, reply) => {
     const normalized = error instanceof Error ? error : new Error("ai.internal_error")
     const code = normalized instanceof z.ZodError ? "invalid_request" : stableCode(normalized.message)
-    const status = code === "ai.unauthorized" ? 401 : code.endsWith("_not_found") ? 404 : code === "idempotency_conflict" ? 409 : code === "ai.internal_error" ? 500 : 400
+    const status = code === "ai.unauthorized"
+      ? 401
+      : code.endsWith("_not_found")
+        ? 404
+        : code === "ai.stream_subscriber_limit"
+          ? 429
+          : code === "ai.stream_transport_unavailable"
+            ? 503
+            : code === "idempotency_conflict"
+              ? 409
+              : code === "ai.internal_error"
+                ? 500
+                : 400
     telemetryLog("agent.http.request_failed", status >= 500 ? "error" : "warn", {
       "operation": "agent.http.request",
       "outcome": status >= 500 ? "failed" : "rejected",
@@ -464,4 +553,54 @@ function presentRun(run: Run): Omit<Run, "traceContext"> {
 function errorBody(code: string, requestId: string) { return { error: { code, requestId } } }
 function stableCode(message: string) { return /^(ai\.|idempotency_)[a-z0-9_.]+$/.test(message) ? message : "ai.internal_error" }
 function sse(type: string, idValue: number, data: unknown) { return `id: ${idValue}\nevent: ${type}\ndata: ${JSON.stringify(data)}\n\n` }
-function delay(milliseconds: number) { return new Promise(resolve => setTimeout(resolve, milliseconds)) }
+function sseHeartbeat(runId: string, conversationId: string) {
+  return `event: stream.heartbeat\ndata: ${JSON.stringify({ version: 1, type: "stream.heartbeat", runId, conversationId, occurredAt: new Date().toISOString() })}\n\n`
+}
+function mergeEvents(...groups: RunEvent[][]) {
+  const unique = new Map<string, RunEvent>()
+  for (const event of groups.flat()) unique.set(event.id, event)
+  return [...unique.values()].sort((left, right) => left.sequence - right.sequence)
+}
+function isPublicStreamEvent(event: RunEvent) { return event.type !== "run.cancel_requested" }
+function isTerminalRun(run: Run | undefined) {
+  return Boolean(run && ["completed", "failed", "canceled", "expired", "interrupted"].includes(run.status))
+}
+const sseDrainDeadlineMs = 10_000
+export async function writeSSE(stream: NodeJS.WritableStream, chunk: string, signal: AbortSignal): Promise<boolean> {
+  if (signal.aborted) return false
+  if (stream.write(chunk)) return true
+  const startedAt = performance.now()
+  return new Promise(resolve => {
+    let settled = false
+    const aborted = () => finish(false, "aborted")
+    const drained = () => finish(true, "drained")
+    const closed = () => finish(false, "closed")
+    const failed = () => finish(false, "failed")
+    const deadline = setTimeout(() => {
+      finish(false, "timeout")
+      const destroy = (stream as NodeJS.WritableStream & { destroy?: () => void }).destroy
+      if (typeof destroy === "function") destroy.call(stream)
+    }, sseDrainDeadlineMs)
+    deadline.unref?.()
+    const cleanup = () => {
+      clearTimeout(deadline)
+      signal.removeEventListener("abort", aborted)
+      stream.removeListener("drain", drained)
+      stream.removeListener("close", closed)
+      stream.removeListener("error", failed)
+    }
+    const finish = (value: boolean, outcome: "aborted" | "drained" | "closed" | "failed" | "timeout") => {
+      if (settled) return
+      settled = true
+      cleanup()
+      agentMetrics.sseBackpressureDuration.record((performance.now() - startedAt) / 1000, {
+        outcome,
+      })
+      resolve(value)
+    }
+    signal.addEventListener("abort", aborted, { once: true })
+    stream.once("drain", drained)
+    stream.once("close", closed)
+    stream.once("error", failed)
+  })
+}

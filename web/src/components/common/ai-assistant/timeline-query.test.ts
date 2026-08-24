@@ -7,6 +7,7 @@ import {
   mergeLatestTimelineSnapshot,
   mergeTimelineQuerySnapshot,
   recoverTimelineOnce,
+  runStreamRecoveryFromTimeline,
   timelineQueryDataFromInfinite,
   timelineQueryDataFromSnapshot,
 } from './timeline-query'
@@ -58,9 +59,33 @@ function event(sequence: number, item = messageItem(sequence, `answer-${sequence
     turnId: 'turn-1',
     runId: 'run-1',
     itemId: item.id,
-    item,
+    contentPartId: `${item.id}:0`,
     occurredAt: '2026-08-15T00:00:01Z',
-    payload: {},
+    payload: {
+      itemId: item.id,
+      contentPartId: `${item.id}:0`,
+      partIndex: 0,
+      delta: item.parts[0]?.text ?? '',
+      timelineIndex: item.timelineIndex,
+      createdAt: item.createdAt,
+    },
+  }
+}
+
+function thinkingEvent(sequence: number, type: 'thinking.started' | 'thinking.delta', delta: string): AIEvent {
+  return {
+    version: 2,
+    eventId: `thinking-event-${sequence}`,
+    eventSequence: sequence,
+    type,
+    conversationId: 'conversation-1',
+    turnId: 'turn-1',
+    runId: 'run-1',
+    itemId: 'thinking-1',
+    occurredAt: '2026-08-15T00:00:01Z',
+    payload: type === 'thinking.started'
+      ? { itemId: 'thinking-1', summary: delta, display: 'summary', timelineIndex: 0, createdAt: '2026-08-15T00:00:01Z' }
+      : { itemId: 'thinking-1', delta, display: 'summary', timelineIndex: 0 },
   }
 }
 
@@ -126,8 +151,65 @@ describe('timeline query cache', () => {
     const streamed = applyTimelineQueryEvent(initial, event(1, messageItem(2, 'streamed')))
     const merged = mergeTimelineQuerySnapshot(streamed, timelineQueryDataFromSnapshot(snapshot(0, messageItem(1, 'stale'))))
 
-    expect(merged.state.blocks.at(-1)).toMatchObject({ text: 'streamed' })
+    expect(merged.state.blocks.at(-1)).toMatchObject({ text: 'snapshotstreamed' })
     expect(merged.snapshot?.turns[0]?.selectedRun?.items[0]).toMatchObject({ revision: 1, parts: [{ text: 'stale' }] })
+  })
+
+  it('preserves a live-only message across an active refetch so a delta without createdAt can continue', () => {
+    const first = applyTimelineQueryEvent(timelineQueryDataFromSnapshot(snapshot(3)), event(4, messageItem(1, 'Hel')))
+    const refreshed = mergeTimelineQuerySnapshot(first, timelineQueryDataFromSnapshot(snapshot(4)))
+    const continuation = event(5, messageItem(2, 'lo'))
+    continuation.payload = {
+      itemId: 'message-1',
+      contentPartId: 'message-1:0',
+      partIndex: 0,
+      delta: 'lo',
+      timelineIndex: 0,
+    }
+    const continued = applyTimelineQueryEvent(refreshed, continuation)
+
+    expect(refreshed.state.blocks.find(block => block.id === 'message-1')).toMatchObject({ runId: 'run-1', text: 'Hel' })
+    expect(continued.state.blocks.find(block => block.id === 'message-1')).toMatchObject({ text: 'Hello' })
+    expect(continued.state.lastEventSequences['run-1']).toBe(5)
+  })
+
+  it('preserves live-only thinking across an active refetch so the next thinking delta can continue', () => {
+    const first = applyTimelineQueryEvent(timelineQueryDataFromSnapshot(snapshot(3)), thinkingEvent(4, 'thinking.started', '先分析'))
+    const refreshed = mergeTimelineQuerySnapshot(first, timelineQueryDataFromSnapshot(snapshot(4)))
+    const continued = applyTimelineQueryEvent(refreshed, thinkingEvent(5, 'thinking.delta', '再检查'))
+
+    expect(refreshed.state.blocks.find(block => block.id === 'thinking-1')).toMatchObject({ runId: 'run-1', text: '先分析' })
+    expect(continued.state.blocks.find(block => block.id === 'thinking-1')).toMatchObject({ text: '先分析再检查' })
+    expect(continued.state.lastEventSequences['run-1']).toBe(5)
+  })
+
+  it('drops live-only blocks and their revisions once the authoritative run is terminal', () => {
+    const first = applyTimelineQueryEvent(timelineQueryDataFromSnapshot(snapshot(3)), event(4, messageItem(1, 'temporary')))
+    const terminal = snapshot(5)
+    terminal.turns[0]!.status = 'completed'
+    terminal.turns[0]!.selectedRun!.status = 'completed'
+    const merged = mergeTimelineQuerySnapshot(first, timelineQueryDataFromSnapshot(terminal))
+
+    expect(merged.state.blocks.find(block => block.id === 'message-1')).toBeUndefined()
+    expect(merged.state.itemRevisions['message-1']).toBeUndefined()
+    expect(merged.state.runStatuses['run-1']).toBe('completed')
+  })
+
+  it('does not carry a live-only block into a replacement run for the same turn', () => {
+    const first = applyTimelineQueryEvent(timelineQueryDataFromSnapshot(snapshot(3)), event(4, messageItem(1, 'old run')))
+    const replacement = snapshot(0)
+    replacement.eventCursors = [{ runId: 'run-2', after: 0 }]
+    replacement.turns[0]!.selectedRun = {
+      id: 'run-2',
+      runIndex: 1,
+      status: 'running',
+      items: [],
+    }
+    const merged = mergeTimelineQuerySnapshot(first, timelineQueryDataFromSnapshot(replacement))
+
+    expect(merged.state.blocks.find(block => block.id === 'message-1')).toBeUndefined()
+    expect(merged.state.itemRevisions['message-1']).toBeUndefined()
+    expect(merged.state.runStatuses['run-2']).toBe('running')
   })
 
   it('preserves cache identity for a duplicate event so side effects are not repeated', () => {
@@ -226,6 +308,23 @@ describe('timeline query cache', () => {
       expect.objectContaining({ runId: 'run-1' }),
       optimistic,
     ])
+  })
+
+  it('keeps an active gap recovery on the accepted cursor and converges after the terminal commit', () => {
+    const subscription = {
+      conversationId: 'conversation-1',
+      eventsUrl: '/api/v1/ai/runs/run-1/events',
+      runId: 'run-1',
+      after: 1,
+    }
+    const active = timelineQueryDataFromSnapshot(snapshot(1, messageItem(1, 'accepted')))
+    expect(runStreamRecoveryFromTimeline(active, subscription)).toEqual({ after: 1, terminal: false })
+
+    const terminalSnapshot = snapshot(3, messageItem(3, 'committed'))
+    terminalSnapshot.turns[0]!.status = 'completed'
+    terminalSnapshot.turns[0]!.selectedRun!.status = 'completed'
+    const terminal = timelineQueryDataFromSnapshot(terminalSnapshot)
+    expect(runStreamRecoveryFromTimeline(terminal, subscription)).toEqual({ after: 3, terminal: true })
   })
 
   it('coalesces concurrent snapshot recovery for the same conversation', async () => {

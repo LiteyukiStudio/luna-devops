@@ -4,6 +4,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { describe, expect, it, vi } from 'vitest'
 import i18next from '@/i18n'
 import { AIAssistantTimeline } from './timeline'
+import { shouldShowTypingIndicator } from './timeline-stream-state'
 import { groupAIAssistantBlocksByTurn } from './turns'
 
 const blocks: AIBlock[] = [
@@ -63,6 +64,55 @@ const blocks: AIBlock[] = [
 ]
 
 describe('ai assistant turn topology', () => {
+  it('does not let an old streaming block hide the current run indicator after refresh', () => {
+    const refreshedBlocks: AIBlock[] = [
+      {
+        id: 'old-stream',
+        turnId: 'turn-old',
+        index: 0,
+        type: 'message',
+        role: 'assistant',
+        status: 'streaming',
+        text: '旧回合遗留内容',
+        createdAt: '2026-08-01T09:00:00+08:00',
+      },
+      {
+        id: 'current-input',
+        turnId: 'turn-current',
+        index: 1_000_000,
+        type: 'message',
+        role: 'user',
+        status: 'completed',
+        text: '继续检查',
+        createdAt: '2026-08-01T09:01:00+08:00',
+      },
+    ]
+
+    expect(shouldShowTypingIndicator({
+      activeTurnId: 'turn-current',
+      blocks: refreshedBlocks,
+      generating: true,
+      outputStreaming: true,
+    })).toBe(true)
+  })
+
+  it('only hides the indicator while the current turn is receiving fresh output', () => {
+    const currentStreaming: AIBlock[] = [{
+      id: 'current-stream',
+      turnId: 'turn-current',
+      index: 1,
+      type: 'message',
+      role: 'assistant',
+      status: 'streaming',
+      text: '当前输出',
+      createdAt: '2026-08-01T09:01:00+08:00',
+    }]
+
+    expect(shouldShowTypingIndicator({ activeTurnId: 'turn-current', blocks: currentStreaming, generating: true, outputStreaming: true })).toBe(false)
+    expect(shouldShowTypingIndicator({ activeTurnId: 'turn-current', blocks: currentStreaming, generating: true, outputStreaming: false })).toBe(true)
+    expect(shouldShowTypingIndicator({ activeTurnId: 'turn-current', blocks: currentStreaming, generating: false, outputStreaming: false })).toBe(false)
+  })
+
   it('groups one user input and all ordered response blocks into one turn', () => {
     const turns = groupAIAssistantBlocksByTurn(blocks)
 

@@ -35,4 +35,6 @@ An administrator must configure an OpenAI `chat/completions`-compatible Provider
 
 If the entry is missing, ask an administrator to check enablement and account scope. If the model is temporarily unavailable, keep the conversation and retry later.
 
+If you refresh or reopen the assistant while it is responding, the page first reads the confirmed timeline and then resumes the active Run from the latest event position. The output indicator remains visible while the connection is opening or briefly stalled. If recovery remains unavailable, the server's completed, failed, canceled, or interrupted state is authoritative; unconfirmed partial text is not treated as a completed answer.
+
 The context ratio beside the composer uses only the current model's latest official `prompt_tokens` and the model-window snapshot captured for that call. A new conversation with no model call yet starts at 0%. If the Provider did not return verifiable usage or the model has changed, the UI shows only a gray ring; hover or keyboard focus reveals **No Provider usage data**. It never estimates or reuses an old percentage.

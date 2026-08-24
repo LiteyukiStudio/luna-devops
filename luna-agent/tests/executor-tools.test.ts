@@ -10,8 +10,75 @@ import { DeterministicLunaApiClient } from "../src/tools/luna-api-client.js"
 import { MemoryToolCallStore, ProjectingToolCallStore, ToolOrchestrator } from "../src/tools/orchestrator.js"
 import { getToolDetailsTool } from "../src/tools/tool-details.js"
 import { searchToolsTool } from "../src/tools/tool-search.js"
+import { InMemoryRunStreamBus } from "../src/run-stream-bus.js"
+import { defaultRuntimeSettings } from "../src/runtime-settings.js"
 
 describe("RunExecutor slim lifecycle", () => {
+  it("contains a polling claim failure instead of creating an unhandled rejection", async () => {
+    class FailingClaimRepository extends TestRepository {
+      override async claimNextQueuedRun(): Promise<never> { throw new Error("dependency.postgres.unavailable") }
+    }
+    const executor = new RunExecutor(
+      new FailingClaimRepository(), new ModelRuntime(new DeterministicProvider()),
+      loadConfig({ NODE_ENV: "test", INSTANCE_ID: "worker-claim-failure" }),
+    )
+    executor.start()
+    await new Promise(resolve => setTimeout(resolve, 10))
+    await expect(executor.stop()).resolves.toBeUndefined()
+  })
+
+  it("interrupts its freshly claimed Run when Redis lease acquisition throws", async () => {
+    class FailingLeaseBus extends InMemoryRunStreamBus {
+      cleanupCalls = 0
+      override async acquireOwnership(): Promise<never> { throw new Error("ai.stream_transport_unavailable") }
+      override async cleanup(runId: string) { this.cleanupCalls += 1; await super.cleanup(runId) }
+    }
+    const repository = new TestRepository()
+    const conversation = await repository.createConversation("usr_lease_failure", "lease")
+    const created = await repository.createTurn("usr_lease_failure", {
+      conversationId: conversation.id, input: "hello", pageContext: {},
+      idempotencyKey: "lease-acquire-failure", actorSessionId: "ses_lease_failure",
+    })
+    const streamBus = new FailingLeaseBus(repository)
+    const executor = new RunExecutor(
+      repository, new ModelRuntime(new DeterministicProvider()),
+      loadConfig({ NODE_ENV: "test", INSTANCE_ID: "worker-lease-failure" }),
+      undefined, undefined, defaultRuntimeSettings, undefined, streamBus,
+    )
+    executor.start()
+    await new Promise(resolve => setTimeout(resolve, 10))
+    await executor.stop()
+    expect((await repository.getRun("usr_lease_failure", created.run.id))?.status).toBe("interrupted")
+    expect(streamBus.cleanupCalls).toBe(1)
+  })
+
+  it("shortens the Redis retention after owner reconciliation durably interrupts a stale Run", async () => {
+    class CleanupBus extends InMemoryRunStreamBus {
+      cleanupCalls = 0
+      override async cleanup(runId: string) { this.cleanupCalls += 1; await super.cleanup(runId) }
+    }
+    const repository = new TestRepository()
+    const conversation = await repository.createConversation("usr_reconcile_cleanup", "stale")
+    await repository.createTurn("usr_reconcile_cleanup", {
+      conversationId: conversation.id, input: "hello", pageContext: {},
+      idempotencyKey: "reconcile-cleanup", actorSessionId: "ses_reconcile_cleanup",
+    })
+    const run = await repository.claimNextQueuedRun()
+    if (!run) throw new Error("missing run")
+    run.startedAt = new Date(Date.now() - 60_000).toISOString()
+    const streamBus = new CleanupBus(repository)
+    const executor = new RunExecutor(
+      repository, new ModelRuntime(new DeterministicProvider()),
+      loadConfig({ NODE_ENV: "test", INSTANCE_ID: "worker-reconcile-cleanup" }),
+      undefined, undefined, defaultRuntimeSettings, undefined, streamBus,
+    )
+
+    await (executor as unknown as { reconcileAbandonedRuns(): Promise<void> }).reconcileAbandonedRuns()
+
+    expect((await repository.getRun("usr_reconcile_cleanup", run.id))?.status).toBe("interrupted")
+    expect(streamBus.cleanupCalls).toBe(1)
+  })
+
   it("atomically claims and completes a queued Run without a lease heartbeat", async () => {
     const repository = new TestRepository()
     const conversation = await repository.createConversation("usr_a", "hello")
@@ -67,6 +134,51 @@ describe("RunExecutor slim lifecycle", () => {
     await executing
 
     expect((await repository.getRun("usr_a", created.run.id))?.status).toBe("interrupted")
+  })
+
+  it("flushes the partial item before a cross-instance cancellation becomes durable", async () => {
+    const repository = new TestRepository()
+    const conversation = await repository.createConversation("usr_cancel", "cancel")
+    const created = await repository.createTurn("usr_cancel", {
+      conversationId: conversation.id, input: "等待", pageContext: {},
+      idempotencyKey: "run-cross-cancel", actorSessionId: "ses_cancel",
+    })
+    let notifyDelta!: () => void
+    const deltaPublished = new Promise<void>(resolve => { notifyDelta = resolve })
+    const provider: ModelProvider = {
+      async *stream(request) {
+        yield { type: "message_delta", delta: "partial" }
+        notifyDelta()
+        await new Promise<void>((_resolve, reject) => {
+          const signal = request.signal
+          const abort = () => reject(signal?.reason instanceof Error ? signal.reason : new Error("ai.run_canceled"))
+          if (signal?.aborted) abort()
+          signal?.addEventListener("abort", abort, { once: true })
+        })
+      },
+      async complete() { return { text: "", usage: { status: "reported" as const, value: { promptTokens: 1, completionTokens: 0, totalTokens: 1 } }, toolCalls: [] } },
+      capabilities: () => ({ streaming: true, toolCalling: true, structuredOutput: true }),
+      health: async () => ({ ok: true }),
+    }
+    const bus = new InMemoryRunStreamBus(repository)
+    const executor = new RunExecutor(
+      repository, new ModelRuntime(provider), loadConfig({ NODE_ENV: "test" }),
+      undefined, undefined, defaultRuntimeSettings, undefined, bus,
+    )
+    const executing = executor.runOnce()
+    await deltaPublished
+    await bus.requestCancellation(created.run.id)
+    await executing
+
+    expect(await bus.waitForCancellationAcknowledgement(created.run.id, 100)).toBe(true)
+    expect((await repository.getRun("usr_cancel", created.run.id))?.status).toBe("canceled")
+    const timeline = await repository.getTimeline("usr_cancel", conversation.id)
+    expect(timeline?.turns[0]?.items).toContainEqual(expect.objectContaining({
+      type: "assistant_message", status: "failed", content: { parts: [{ type: "text", text: "partial" }] },
+    }))
+    const events = await repository.getEvents("usr_cancel", created.run.id, 0)
+    expect(events.at(-1)).toMatchObject({ type: "run.canceled" })
+    expect(events.every((event, index) => index === 0 || event.sequence > events[index - 1]!.sequence)).toBe(true)
   })
 
   it("resumes the same Run after one-call approval and preserves the Tool result", async () => {

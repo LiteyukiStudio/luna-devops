@@ -20,6 +20,7 @@ import { businessCardTools } from "./tools/business-card-tools.js"
 import { navigateToRouteTool } from "./tools/ui-route.js"
 import { searchToolsTool } from "./tools/tool-search.js"
 import { getToolDetailsTool } from "./tools/tool-details.js"
+import { RedisRunStreamBus } from "./run-stream-bus.js"
 
 export async function startAgent(): Promise<void> {
   const config = loadConfig()
@@ -31,9 +32,16 @@ export async function startAgent(): Promise<void> {
   }
   const internalKeys = config.AI_INTERNAL_SECRET ? deriveInternalKeys(config.AI_INTERNAL_SECRET) : undefined
   if (!config.DATABASE_URL) throw new Error("ai.persistence_database_url_required")
+  if (!config.REDIS_ADDR) throw new Error("ai.stream_redis_url_required")
   if (!config.LUNA_API_BASE_URL || !internalKeys) throw new Error("ai.provider_config_required")
-  const repository = new PostgresRepository(config.DATABASE_URL)
+  const repository = new PostgresRepository(config.DATABASE_URL, {
+    maxConnections: config.AI_DATABASE_MAX_CONNECTIONS,
+    connectionTimeoutMs: config.AI_DATABASE_CONNECTION_TIMEOUT_MS,
+    statementTimeoutMs: config.AI_DATABASE_STATEMENT_TIMEOUT_MS,
+  })
   await repository.assertReady()
+  const streamBus = new RedisRunStreamBus(config.REDIS_ADDR, repository)
+  await streamBus.connect()
   const providerConfigClient = new ProviderConfigClient(config.LUNA_API_BASE_URL, internalKeys.callbackServiceToken)
   // Provider、平台运行参数和工具目录接受 Luna API 的同一份权威配置；
   // 少量实例级上下文策略在下方由 Agent 环境变量覆盖。
@@ -144,13 +152,14 @@ export async function startAgent(): Promise<void> {
       }
     },
   }, contextCompiler)
-  const executor = new RunExecutor(repository, modelRuntime, config, tools, providerConfigClient, runtime, catalogRegistry)
+  const executor = new RunExecutor(repository, modelRuntime, config, tools, providerConfigClient, runtime, catalogRegistry, streamBus)
   const server = buildServer({
     config, repository, requestVerifier, provider,
     cancelRun: runId => { executor.cancel(runId) },
     toolCatalogDigest: () => catalogRegistry.digest(),
     tools,
     providerConfigClient,
+    streamBus,
   })
 
   executor.start()
@@ -164,6 +173,7 @@ export async function startAgent(): Promise<void> {
     telemetryLog("agent.stopping", "info")
     await executor.stop()
     await server.close()
+    await streamBus.close()
     if (repository instanceof PostgresRepository) await repository.close()
     await shutdownTelemetry()
   }

@@ -11,12 +11,17 @@
 | `LOG_COLOR` | `auto` | Controls console log colors; use `auto`, `always`, or `never`; `NO_COLOR` always disables colors. |
 | `LOG_LEVEL` | `info` | Sets log verbosity; use `debug`, `info`, `warn`, or `error`. |
 | `DATABASE_URL` | Empty | Connects to PostgreSQL; use a PostgreSQL connection URI. |
+| `REDIS_ADDR` | Empty | Provides short-lived active-Run transport and cross-instance replay; use a required Redis connection URI. |
 | `AUTH_MODE` | `development` | Selects internal-request authentication; use `development` or `bff-hmac`. |
 | `AI_INTERNAL_SECRET`<sup>1</sup> | Empty | Authenticates internal API-Agent requests; use a secret of at least 32 bytes. |
 | `LUNA_API_BASE_URL` | Empty | Sets the API address used by Agent; use an HTTP(S) URL. |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | Empty | Sets the telemetry receiver; use the Collector OTLP/HTTP URL. |
 
 1. Note: Production requires `bff-hmac` and the same `AI_INTERNAL_SECRET` used by API.
+
+Production requires PostgreSQL, Redis, and Luna API configuration. The readiness probe checks the database
+schema, Provider configuration, and the Redis active stream; it returns `503` and the replica stops accepting
+new Runs while any dependency is unavailable.
 
 ## Advanced configuration
 
@@ -25,6 +30,14 @@
 | Setting | Default | Description |
 | --- | --- | --- |
 | `INSTANCE_ID` | Generated | Identifies the current Agent instance; use `1`–`128` characters. |
+
+### Database connections
+
+| Setting | Default | Description |
+| --- | --- | --- |
+| `AI_DATABASE_MAX_CONNECTIONS` | `10` | Caps the PostgreSQL pool for one Agent replica; use an integer from `1` to `100` and reserve the database-wide budget across all replicas. |
+| `AI_DATABASE_CONNECTION_TIMEOUT_MS` | `5000` | Bounds how long a request waits for a PostgreSQL connection; use an integer from `100` to `30000` milliseconds. |
+| `AI_DATABASE_STATEMENT_TIMEOUT_MS` | `15000` | Bounds one Agent SQL statement; use an integer from `1000` to `120000` milliseconds. |
 
 ### Observability
 

@@ -19,10 +19,12 @@ import { AIMarkdown } from './markdown'
 import { AIMessageMeta } from './message-meta'
 import { AINavigationEvent } from './navigation-event'
 import { AIOptionsBar } from './options'
+import { shouldShowTypingIndicator } from './timeline-stream-state'
 import { AIToolCallCard } from './tool-call'
 import { groupAIAssistantBlocksByTurn } from './turns'
 
 interface AIAssistantTimelineProps {
+  activeTurnId?: string
   bottomInset?: boolean
   blocks: AIBlock[]
   error: Error | null
@@ -31,6 +33,7 @@ interface AIAssistantTimelineProps {
   loading: boolean
   loadingOlder?: boolean
   olderError?: Error | null
+  outputStreaming?: boolean
   onAction: (action: AIUIAction) => Promise<boolean>
   onApproval: (block: ToolCallBlock, decision: AIApprovalDecision, reason?: string) => Promise<void>
   onLoadOlder?: () => Promise<void>
@@ -50,7 +53,7 @@ function isVisibleResponseBlock(block: AIBlock, showInternalTools: boolean): boo
   return block.type !== 'tool_call' || block.visibility !== 'internal' || showInternalTools
 }
 
-export function AIAssistantTimeline({ bottomInset = false, blocks, error, generating, hasOlder = false, loading, loadingOlder = false, olderError = null, onAction, onApproval, onLoadOlder = async () => {}, onResend, onRetry, resetKey, resendDisabled, showInternalTools = false, topContent }: AIAssistantTimelineProps) {
+export function AIAssistantTimeline({ activeTurnId, bottomInset = false, blocks, error, generating, hasOlder = false, loading, loadingOlder = false, olderError = null, outputStreaming = false, onAction, onApproval, onLoadOlder = async () => {}, onResend, onRetry, resetKey, resendDisabled, showInternalTools = false, topContent }: AIAssistantTimelineProps) {
   const { t } = useTranslation()
   const viewportRef = useRef<HTMLDivElement>(null)
   const shouldFollowLatestRef = useRef(true)
@@ -59,7 +62,7 @@ export function AIAssistantTimeline({ bottomInset = false, blocks, error, genera
   const prependAnchorRef = useRef<{ element: HTMLElement, offsetTop: number, scrollTop: number } | undefined>(undefined)
   const [historyAutoLoadKey, setHistoryAutoLoadKey] = useState<string>()
   const historyAutoLoadEnabled = Boolean(resetKey && historyAutoLoadKey === resetKey)
-  const showTypingIndicator = generating && !blocks.some(block => block.status === 'streaming')
+  const showTypingIndicator = shouldShowTypingIndicator({ activeTurnId, blocks, generating, outputStreaming })
   const turns = groupAIAssistantBlocksByTurn(blocks)
 
   const scrollToLatest = () => {
@@ -186,7 +189,7 @@ export function AIAssistantTimeline({ bottomInset = false, blocks, error, genera
               {turns.map((turn, index) => (
                 <ConversationTurn
                   key={turn.id}
-                  generating={showTypingIndicator && index === turns.length - 1}
+                  generating={showTypingIndicator && (activeTurnId ? turn.id === activeTurnId : index === turns.length - 1)}
                   responseBlocks={turn.responseBlocks}
                   userMessage={turn.userMessage}
                   onAction={onAction}

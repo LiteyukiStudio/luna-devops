@@ -21,16 +21,32 @@ AI 助手不是悬浮在控制台上的通用聊天机器人。它理解用户�
 
 ## 2. 核心架构决策
 
-- 独立 `luna-agent` 服务承载模型编排，与 `cmd/api`、`cmd/worker` 分离；无状态可水平扩容。
+- 独立 `luna-agent` 服务承载模型编排，与 `cmd/api`、`cmd/worker` 分离；活动 Run 的短期事件经有界
+  Redis Stream 跨实例回放，终态事实落 PostgreSQL，因此 Agent 可水平扩容且不依赖会话亲和。
 - 平台能力以 OpenAPI 和既有 API 为唯一业务入口；MCP 不作为内部服务总线，仅保留为未来
   连接外部工具的可选协议。
 - 编排采用显式 ModelRuntime + RunExecutor：ModelRuntime 只负责上下文编译、工具解析和 Provider 调用；RunExecutor 负责单 Run 循环、工具执行、审批、取消和调用上限。
-- 数据落 PostgreSQL `ai` schema；事件按 Run 单调递增 sequence 持久化后再可读，SSE 支持断线续传。
-- `run_events` 是不可变事实源：初始用户消息以 `run.input_received` 携带完整 Item 修订；工具终态在
-  同一事务中保存 `tool_call` 修订、独立 `tool_result` 和事件；自动/手动标题事件记录来源与锁定状态。
-  `ai.items` 与会话标题只是可重建投影，不能替代原始事件。
+- PostgreSQL `ai` schema 保存 Run 接纳、用户输入、工具审批与结果、模型步骤终态、最终 Item、用量和
+  Run 终态；模型输出中的正文与思考 delta 只进入进程内会话和有界 Redis Stream，不逐片写数据库。
+- 每次模型输出完成、失败或取消时，Agent 在一个事务中写入最终 Item 修订、必要的终态事件并推进
+  Run 的事件 sequence 高水位；`run_events` 因此只保存可审计的工作流与终态事实，sequence 可以因
+  未持久化的临时 delta 而稀疏。初始用户消息、工具终态、标题来源与锁定状态仍按原有事务边界持久化。
+  活动 Run 期间的人工标题修改以 PATCH 返回的 Conversation 和后续权威回读为准，不向该 Run 追加
+  PostgreSQL 事件，避免与 Redis 活动流形成两个 sequence 分配器；自动标题则进入最终事务。
+- Redis Stream 只承担活动 Run 的跨实例传输和短期断线回放，活动 TTL 为 3 小时，终态提交后缩短为
+  5 分钟；单事件限制 256 KiB，单 Run 限制 131072 个事件和 64 MiB，全局限制 512 MiB。正文与思考
+  帧只传当前增量，避免长输出形成 O(n²) 缓冲。Redis 不是终态事实源；不可用或超过限额时不得静默
+  继续执行一个前端无法观察的 Run。
 - Web 以服务端 Timeline 快照在 TanStack Query 中的投影作为唯一事实源；每个 Run 最多保留一条
-  SSE 连接，事件直接合并到查询缓存，序号缺口通过权威快照恢复，不再维护独立 reducer 镜像状态。
+  SSE 连接，事件直接合并到查询缓存；刷新或跨实例重连按 `after`/`Last-Event-ID` 从活动流补发，
+  sequence 缺口或连接停滞先回读权威 Timeline 再重连。显式 `stream.heartbeat` 不带事件 ID、不进入
+  Reducer，也不推进业务 sequence。
+- 单个 Agent 实例按 Run 共享一个 Redis 阻塞 reader 和一个 PostgreSQL 终态 watcher，再向本地 SSE
+  连接扇出；不会按浏览器标签页线性增加 Redis 连接或数据库轮询。每 Run 最多 64 个、每实例最多
+  512 个 SSE 订阅；单订阅待发送队列最多 2048 个事件或 4 MiB，慢订阅者只断开自身。
+- 终态写入固定最初的 completed/failed/canceled/interrupted 意图，以同一幂等 batch 最多尝试 3 次
+  指数退避；已提交但响应未知的重试不得重复事件或改变终态。确定性的状态冲突和契约错误不重试，
+  也不得把 completed 降级伪装成 failed。
 - Agent 只持有一个服务身份，不持有用户 Cookie、Token 或可转授权限。创建 Run 时保存 API 已验证的
   `actor_session_id`；工具请求只携带服务凭据、`runId` 和 `toolCallId`。Luna API 从 PostgreSQL 回读
   用户、会话、会话所有权、项目范围、ToolCall 与审批状态，再进入原有 Handler/Service/RBAC。
@@ -41,10 +57,16 @@ AI 助手不是悬浮在控制台上的通用聊天机器人。它理解用户�
   最终答复或明确终态（批准/补充输入/取消/超时/上限）。
 - 工具只有 `requiresApproval` 一个审批字段。普通工具直接执行；高风险工具支持拒绝、批准本次和
   始终允许。豁免只绑定 `user_id + operation_id`，可撤销；拒绝只终结当前 ToolCall，让模型继续。
-- queued Run 通过 `FOR UPDATE SKIP LOCKED` 原子更新为 running，不记录实例 owner、租约或心跳。
-  服务中断把运行中 Run 标记为 interrupted 并保留事件，不接管、不从调用栈中间恢复。
-- fresh schema 不再创建 Grant/lease 列或 lease 函数；升级库仅保留可能承载历史值的旧列，运行时不读写，
-  lease 函数和旧 claim 索引由非破坏迁移移除，避免为物理瘦身删除历史数据。
+- queued Run 通过 `FOR UPDATE SKIP LOCKED` 原子更新为 running，并把 PostgreSQL `row_version` 作为
+  本次执行的 fencing generation。Agent 在 Redis 获取带 generation 的短租约并周期续约；更高
+  generation 可原子接管旧租约，旧执行器随即失去续租和终态写入资格，避免恢复审批后被残留 owner
+  阻塞。租约只保存实例标识和 generation，不保存用户输入、模型内容或凭据。
+- owner 租约超过阈值后，协调器先在 Redis 取得一次性恢复 fencing marker，再用原 generation 做
+  PostgreSQL CAS，将孤儿 running Run 标记为 interrupted 并保留已提交事实；不会从 Provider 或工具
+  调用栈中间接管执行。进程正常停止也走相同的 interrupted 终态收敛。
+- fresh schema 不创建独立 Grant/lease 列或数据库 lease 函数；升级库仅保留可能承载历史值的旧列，
+  运行时只使用既有 `row_version` 作为 fencing generation。旧 lease 函数和 claim 索引由非破坏迁移
+  移除，避免为物理瘦身删除历史数据。
 - 卡片时间线保留真实事件顺序。`placement: turn_end` 只在渲染层把单张、阻塞后续流程的交互表单
   投影到本轮末尾；默认使用 `inline`。多卡片、展示卡、进度卡或一轮出现多个末尾卡片时保持事件原位。
 

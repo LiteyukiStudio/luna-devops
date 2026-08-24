@@ -66,7 +66,11 @@ type HTTPClient struct {
 }
 
 func NewHTTPClient(baseURL, serviceToken, actorSigningKey string) (*HTTPClient, error) {
-	client, err := newBaseHTTPClient(baseURL)
+	return NewHTTPClientWithTimeout(baseURL, serviceToken, actorSigningKey, 10*time.Second)
+}
+
+func NewHTTPClientWithTimeout(baseURL, serviceToken, actorSigningKey string, timeout time.Duration) (*HTTPClient, error) {
+	client, err := newBaseHTTPClient(baseURL, timeout)
 	if err != nil {
 		return nil, err
 	}
@@ -78,7 +82,7 @@ func NewHTTPClient(baseURL, serviceToken, actorSigningKey string) (*HTTPClient, 
 	return client, nil
 }
 
-func newBaseHTTPClient(baseURL string) (*HTTPClient, error) {
+func newBaseHTTPClient(baseURL string, timeout time.Duration) (*HTTPClient, error) {
 	parsed, err := url.Parse(strings.TrimSpace(baseURL))
 	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
 		return nil, fmt.Errorf("%w: invalid AI agent URL", ErrUnavailable)
@@ -86,10 +90,13 @@ func newBaseHTTPClient(baseURL string) (*HTTPClient, error) {
 	if parsed.Scheme != "http" && parsed.Scheme != "https" {
 		return nil, fmt.Errorf("%w: unsupported AI agent URL scheme", ErrUnavailable)
 	}
+	if timeout <= 0 {
+		return nil, fmt.Errorf("%w: invalid AI agent timeout", ErrUnavailable)
+	}
 	return &HTTPClient{
 		baseURL:      parsed,
-		httpClient:   telemetry.InstrumentHTTPClient(&http.Client{Timeout: 5 * time.Second}),
-		runClient:    telemetry.InstrumentHTTPClient(&http.Client{Timeout: 10 * time.Second}),
+		httpClient:   telemetry.InstrumentHTTPClient(&http.Client{Timeout: timeout}),
+		runClient:    telemetry.InstrumentHTTPClient(&http.Client{Timeout: timeout}),
 		streamClient: telemetry.InstrumentHTTPClient(&http.Client{}),
 		now:          time.Now,
 	}, nil

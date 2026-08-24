@@ -17,11 +17,15 @@ import { getToolDetailsInput } from "../tools/tool-details.js"
 import { CardGenerationService, cardValidationFailure, providerArgumentFailure, setMaxCardRepairAttempts, validationIssues, type CardGeneration } from "./cards.js"
 import { InternalToolHandlers } from "./internal-tools.js"
 import { internalToolOperationIds, cardToolOperationIds, normalizeToolSearchQuery, resumedToolMessages } from "./resume.js"
-import { streamModel } from "./streaming.js"
+import { StreamModelFinalizationError, streamModel } from "./streaming.js"
 import { setToolResultPayloadBudget, stableError, toolResultMessage } from "./tool-results.js"
+import { InMemoryRunStreamBus, TerminalPersistenceExhaustedError, type RunStreamBus } from "../run-stream-bus.js"
 
 const selectedOperationLimit = 16
 const searchAutoLoadLimit = 5
+const ownerLeaseRenewMs = 5_000
+const ownerLeaseReconcileMs = 10_000
+const ownerLeaseStaleMs = 30_000
 type RuntimeConfigSource = Pick<ProviderConfigClient, "get"> & Partial<Pick<ProviderConfigClient, "getCandidate" | "commit">>
 
 export class RunExecutor {
@@ -31,6 +35,8 @@ export class RunExecutor {
   private readonly controllers = new Map<string, AbortController>()
   private runtimeSettings: RuntimeSettings
   private runtimeRefreshTimer?: NodeJS.Timeout
+  private ownerReconcileTimer?: NodeJS.Timeout
+  private ownerReconcileActive = false
   private readonly cards: CardGenerationService
   private readonly internalTools: InternalToolHandlers
 
@@ -42,6 +48,7 @@ export class RunExecutor {
     private readonly runtimeConfig?: RuntimeConfigSource,
     initialRuntimeSettings: RuntimeSettings = defaultRuntimeSettings,
     private readonly catalogRegistry?: ToolCatalogRegistry,
+    private readonly streamBus: RunStreamBus = new InMemoryRunStreamBus(repository),
   ) {
     this.runtimeSettings = initialRuntimeSettings
     this.cards = new CardGenerationService(repository)
@@ -54,10 +61,18 @@ export class RunExecutor {
       this.runtimeRefreshTimer = setInterval(() => void this.refreshRuntimeSettings(), agentRuntimeInternals.configRefreshMs)
       this.runtimeRefreshTimer.unref()
     }
+    void this.reconcileAbandonedRuns()
+    this.ownerReconcileTimer = setInterval(() => void this.reconcileAbandonedRuns(), ownerLeaseReconcileMs)
+    this.ownerReconcileTimer.unref()
     const tick = () => {
       if (this.stopping) return
       if (this.active.size < this.runtimeSettings.agentConcurrentRuns) {
-        const task = this.claimAndExecute().finally(() => this.active.delete(task))
+        const task = this.claimAndExecute().catch((error) => {
+          telemetryLog("agent.run.dispatch_failed", "error", {
+            operation: "agent.run.dispatch", outcome: "failed", ...errorDiagnostic(error, stableErrorCode(error)),
+          })
+          return false
+        }).finally(() => this.active.delete(task))
         this.active.add(task)
       }
       this.timer = setTimeout(tick, agentRuntimeInternals.runPollMs)
@@ -70,6 +85,7 @@ export class RunExecutor {
     this.stopping = true
     if (this.timer) clearTimeout(this.timer)
     if (this.runtimeRefreshTimer) clearInterval(this.runtimeRefreshTimer)
+    if (this.ownerReconcileTimer) clearInterval(this.ownerReconcileTimer)
     this.controllers.forEach(controller => controller.abort(new Error("ai.agent_stopping")))
     await Promise.allSettled([...this.active])
   }
@@ -105,6 +121,23 @@ export class RunExecutor {
       try { await this.repository.updateRun(run.id, "running", "failed", { completedAt: new Date().toISOString(), errorCode: "ai.quota.user_concurrent_runs_exceeded" }) } catch { /* state may have changed */ }
       return true
     }
+    let ownerLease
+    try {
+      ownerLease = await this.streamBus.acquireOwnership(run.id, run.rowVersion, this.config.INSTANCE_ID)
+    }
+    catch (error) {
+      const interrupted = await this.streamBus.getHighWatermark(run.id)
+        .then(highWatermark => this.repository.interruptAbandonedRun(run.id, run.rowVersion, highWatermark))
+        .catch(() => false)
+      if (interrupted) await this.cleanupTerminalStream(run.id)
+      throw error
+    }
+    if (!ownerLease) {
+      telemetryLog("agent.run.owner_lease_contended", "warn", {
+        operation: "agent.run.owner.acquire", outcome: "contended", "error.code": "ai.owner_lease_contended",
+      })
+      return true
+    }
     return withSpan(`invoke_agent ${genAIAgentName}`, internalSpanOptions({
       ...genAIAgentSpanAttributes(run.conversationId, run.model?.name, this.runtimeSettings.assistantMaxOutputTokens),
       "luna.run.id": run.id,
@@ -114,9 +147,23 @@ export class RunExecutor {
       let outcome = "completed"
       agentMetrics.activeRuns.add(1)
       const abort = new AbortController()
+      const cancelWatchAbort = new AbortController()
+      let cancelWatch: Promise<void> | undefined
+      let leaseRenewing = false
       this.controllers.set(run.id, abort)
       const timeout = setTimeout(() => abort.abort(new Error("ai.run_timeout")), this.runtimeSettings.runTimeoutMs)
+      const leaseRenewal = setInterval(() => {
+        if (leaseRenewing || abort.signal.aborted) return
+        leaseRenewing = true
+        void ownerLease.renew().then((renewed) => {
+          if (!renewed && !abort.signal.aborted) abort.abort(new Error("ai.owner_lease_lost"))
+        }).catch((error) => {
+          if (!abort.signal.aborted) abort.abort(new Error("ai.owner_lease_lost", { cause: error }))
+        }).finally(() => { leaseRenewing = false })
+      }, ownerLeaseRenewMs)
+      leaseRenewal.unref()
       let cardGeneration: CardGeneration | undefined
+      let pendingTerminal: ((to: "completed" | "failed" | "canceled" | "interrupted", errorCode?: string, conversationTitle?: string) => Promise<void>) | undefined
       const providerArgumentRepairAttempts = new Map<string, number>()
       try {
         telemetryLog("agent.run.started", "info", {
@@ -124,6 +171,17 @@ export class RunExecutor {
         })
         await this.repository.appendEvent(run.id, "run.started", {
           state: "running",
+        })
+        const streamPosition = await this.repository.getRunStreamPosition(run.id)
+        if (!streamPosition) throw new Error("ai.run_not_found")
+        cancelWatch = this.streamBus.waitForCancellation(
+          run.id,
+          streamPosition.nextEventSequence - 1,
+          cancelWatchAbort.signal,
+        ).then(() => {
+          if (!cancelWatchAbort.signal.aborted) abort.abort(new Error("ai.run_canceled"))
+        }).catch((error) => {
+          if (!cancelWatchAbort.signal.aborted) abort.abort(new Error("ai.stream_transport_unavailable", { cause: error }))
         })
         const executionInput = await this.repository.getExecutionInput(run.id)
         if (!executionInput) throw new Error("ai.turn_not_found")
@@ -177,7 +235,8 @@ export class RunExecutor {
             loadedOperationIds,
             toolCatalogDigest: run.toolCatalogDigest,
             ...(executionInput.model ? { model: executionInput.model } : {}),
-          }, abort.signal)
+          }, abort.signal, run.rowVersion)
+          pendingTerminal = result.finalizeTerminal
           finalAnswer = result.answer
           finalResponseMissing = false
           if (cardRepairExhausted) {
@@ -539,10 +598,11 @@ export class RunExecutor {
           }
         }
         if (!completed) throw new Error(finalResponseMissing ? "ai.final_response_missing" : "ai.limit_exceeded")
+        let generatedTitle: string | undefined
         if (executionInput.conversation.titleSource === "default" && !assistantRenamed) {
           try {
             const title = await this.modelRuntime.generateConversationTitle(executionInput.input, finalAnswer, { runId: run.id, ownerUserId: run.ownerUserId }, abort.signal, executionInput.model)
-            if (title) await this.internalTools.renameConversation(run.id, run.turnId, run.conversationId, { title })
+            if (title) generatedTitle = title
           }
           catch {
             // Title generation is best-effort and must never fail a completed response.
@@ -553,10 +613,32 @@ export class RunExecutor {
           finishReason: "stop",
         }))
         span.setAttribute("gen_ai.response.finish_reasons", ["stop"])
-        await this.repository.updateRun(run.id, "running", "completed", { completedAt: new Date().toISOString() })
+        await this.repository.finalizeStreamingItems(run.id, "completed")
+        if (pendingTerminal) {
+          await pendingTerminal("completed", undefined, generatedTitle)
+          pendingTerminal = undefined
+        }
+        else {
+          await this.repository.updateRun(run.id, "running", "completed", { completedAt: new Date().toISOString() })
+        }
         telemetryLog("agent.run.completed", "info", { "luna.run.id": run.id })
       }
       catch (error) {
+        if (error instanceof StreamModelFinalizationError) pendingTerminal = error.finalizeTerminal
+        if (error instanceof TerminalPersistenceExhaustedError) {
+          // 终态意图已固定：数据库短暂故障耗尽本轮重试时，不得把 completed 伪造成 failed。
+          // 保留 Redis grace 缓冲，释放 lease 后由 owner reconciliation 将长期未收敛 Run 明确终止。
+          outcome = "terminal_persistence_exhausted"
+          span.setAttribute("luna.run.outcome", outcome)
+          recordSpanError(span, error)
+          telemetryLog("agent.run.terminal_persistence_exhausted", "error", {
+            operation: "agent.run.terminal_persistence",
+            outcome: "exhausted",
+            terminal_state: error.terminalState,
+            ...errorDiagnostic(error, error.message),
+          })
+          return true
+        }
         const message = error instanceof Error ? error.message : "ai.run_failed"
         const errorCode = stableErrorCode(error)
         const canceled = errorCode === "ai.run_canceled"
@@ -574,18 +656,32 @@ export class RunExecutor {
             "luna.run.cancel_source": error instanceof RunStateConflictError ? "durable_state" : "abort_signal",
           })
           if (cardGeneration) await this.cards.fail(run.id, cardGeneration, "ai.run_canceled")
+          try {
+            await this.repository.finalizeStreamingItems(run.id, "failed")
+            if (pendingTerminal) {
+              await pendingTerminal("canceled", errorCode)
+              pendingTerminal = undefined
+            }
+            else await this.repository.cancelRun(run.ownerUserId, run.id)
+            await this.streamBus.acknowledgeCancellation(run.id)
+          }
+          catch { /* cancellation request remains in Redis for bounded replay/recovery */ }
           return true
         }
-        if (errorCode === "ai.agent_stopping") {
+        if (errorCode === "ai.agent_stopping" || errorCode === "ai.owner_lease_lost") {
           outcome = "interrupted"
           span.setAttribute("luna.run.outcome", outcome)
           telemetryLog("agent.run.interrupted", "info", { "luna.run.id": run.id })
           if (cardGeneration) await this.cards.fail(run.id, cardGeneration, "ai.agent_stopping")
           try {
-            await this.repository.updateRun(run.id, "running", "interrupted", {
-              completedAt: new Date().toISOString(),
-              errorCode: "ai.agent_stopping",
-            })
+            await this.repository.finalizeStreamingItems(run.id, "failed")
+            if (pendingTerminal) {
+              await pendingTerminal("interrupted", errorCode)
+              pendingTerminal = undefined
+            }
+            else await this.repository.updateRun(run.id, "running", "interrupted", {
+                completedAt: new Date().toISOString(), errorCode,
+              })
           }
           catch { /* cancellation or completion won the state transition */ }
           return true
@@ -620,21 +716,76 @@ export class RunExecutor {
           return true
         }
         recordSpanError(span, error)
-        try { await this.repository.updateRun(run.id, "running", "failed", { completedAt: new Date().toISOString(), errorCode: stableError(message) }) } catch { /* state was changed by cancellation */ }
+        try {
+          await this.repository.finalizeStreamingItems(run.id, "failed")
+          if (pendingTerminal) {
+            await pendingTerminal("failed", stableError(message))
+            pendingTerminal = undefined
+          }
+          else await this.repository.updateRun(run.id, "running", "failed", { completedAt: new Date().toISOString(), errorCode: stableError(message) })
+        }
+        catch { /* state was changed by cancellation */ }
       }
       finally {
         clearTimeout(timeout)
+        clearInterval(leaseRenewal)
+        cancelWatchAbort.abort()
+        await cancelWatch
         this.controllers.delete(run.id)
-        await this.repository.finalizeStreamingItems(run.id, "completed")
 		if (!["waiting_approval", "waiting_input"].includes(outcome))
           this.tools?.clearRunLoopState(run.id)
         const metricAttributes = { outcome }
         agentMetrics.activeRuns.add(-1)
         agentMetrics.runs.add(1, metricAttributes)
         agentMetrics.runDuration.record((performance.now() - startedAt) / 1000, metricAttributes)
+        const finalRun = await this.repository.getRun(run.ownerUserId, run.id).catch(() => undefined)
+        if (finalRun && ["completed", "failed", "canceled", "interrupted"].includes(finalRun.status)) {
+          await this.streamBus.cleanup(run.id).catch(() => undefined)
+        }
+        await ownerLease.release().catch(() => undefined)
       }
       return true
     }, extractTraceContext(run.traceContext))
+  }
+
+  private async reconcileAbandonedRuns(): Promise<void> {
+    if (this.ownerReconcileActive || this.stopping) return
+    this.ownerReconcileActive = true
+    try {
+      const stale = await this.repository.listStaleRunningRuns(new Date(Date.now() - ownerLeaseStaleMs).toISOString())
+      for (const run of stale) {
+        const fenced = await this.streamBus.fenceExpiredOwnership(run.id, run.rowVersion, this.config.INSTANCE_ID)
+        if (!fenced) continue
+        // fence先阻止旧owner继续publish，再读取最终Redis高水位；读取失败时保留running，
+        // 不能从旧PG cursor伪造一个客户端永远看不到的terminal事件。
+        const highWatermark = await this.streamBus.getHighWatermark(run.id)
+        const interrupted = await this.repository.interruptAbandonedRun(run.id, run.rowVersion, highWatermark)
+        if (interrupted) {
+          telemetryLog("agent.run.owner_lease_expired", "warn", {
+            operation: "agent.run.reconcile", outcome: "interrupted", "error.code": "ai.owner_lease_expired",
+          })
+          await this.cleanupTerminalStream(run.id)
+        }
+      }
+    }
+    catch (error) {
+      telemetryLog("agent.run.owner_reconcile_failed", "warn", {
+        operation: "agent.run.reconcile", outcome: "failed", ...errorDiagnostic(error, "ai.stream_transport_unavailable"),
+      })
+    }
+    finally { this.ownerReconcileActive = false }
+  }
+
+  private async cleanupTerminalStream(runId: string): Promise<void> {
+    try { await this.streamBus.cleanup(runId) }
+    catch (error) {
+      agentMetrics.streamCleanups.add(1, { outcome: "failed" })
+      telemetryLog("agent.stream.cleanup_failed", "warn", {
+        operation: "agent.stream.cleanup",
+        outcome: "failed",
+        ...errorDiagnostic(error, "ai.stream_transport_unavailable"),
+      })
+    }
   }
 
   private async refreshRuntimeSettings(): Promise<void> {
@@ -698,8 +849,8 @@ export class RunExecutor {
     }
   }
 
-  private async streamModel(runId: string, turnId: string, input: AssistantModelInput, signal: AbortSignal): Promise<AssistantModelInput> {
-    return streamModel(this.repository, this.modelRuntime, runId, turnId, input, signal)
+  private async streamModel(runId: string, turnId: string, input: AssistantModelInput, signal: AbortSignal, expectedRunVersion?: number): ReturnType<typeof streamModel> {
+    return streamModel(this.streamBus, this.modelRuntime, runId, turnId, input, signal, expectedRunVersion)
   }
 
   private async traceInternalTool<T>(operationId: string, runId: string, input: unknown, operation: () => Promise<T>, callId?: string, captureContent = true): Promise<T> {

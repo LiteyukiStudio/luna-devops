@@ -1,8 +1,10 @@
 package aiagent
 
 import (
+	"fmt"
 	"os"
 	"strings"
+	"time"
 )
 
 type Config struct {
@@ -10,6 +12,7 @@ type Config struct {
 	BaseURL         string
 	ServiceToken    string
 	ActorSigningKey string
+	Timeout         string
 }
 
 func LoadConfig() Config {
@@ -23,6 +26,7 @@ func LoadConfig() Config {
 		BaseURL:         baseURL,
 		ServiceToken:    keys.ServiceToken,
 		ActorSigningKey: keys.ActorSigningKey,
+		Timeout:         strings.TrimSpace(os.Getenv("AI_AGENT_TIMEOUT")),
 	}
 }
 
@@ -30,7 +34,15 @@ func (c Config) Client() (Client, error) {
 	if !c.Available {
 		return nil, nil
 	}
-	client, err := NewHTTPClient(c.BaseURL, c.ServiceToken, c.ActorSigningKey)
+	timeout := 10 * time.Second
+	if c.Timeout != "" {
+		parsed, err := time.ParseDuration(c.Timeout)
+		if err != nil || parsed <= 0 {
+			return nil, fmt.Errorf("%w: invalid AI_AGENT_TIMEOUT", ErrUnavailable)
+		}
+		timeout = parsed
+	}
+	client, err := NewHTTPClientWithTimeout(c.BaseURL, c.ServiceToken, c.ActorSigningKey, timeout)
 	if err != nil {
 		return nil, err
 	}

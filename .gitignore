@@ -36,6 +36,7 @@ coverage.out
 postgres-data/
 redis-data/
 .local/
+/reports/
 
 # Frontend dependencies and build outputs
 node_modules/

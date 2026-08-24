@@ -1,5 +1,5 @@
 import type { Repository } from "./persistence/repository.js"
-import type { RunEvent, TimelineItem } from "./domain.js"
+import type { Run, RunEvent, TimelineItem } from "./domain.js"
 import { normalizeEventSequence } from "./event-sequence.js"
 import { decodeTimelineCursor, encodeTimelineCursor } from "./timeline-cursor.js"
 import type { optionUIActions } from "./tools/ui-options.js"
@@ -66,6 +66,10 @@ export async function presentTimeline(
 export async function presentEvent(repository: Repository, ownerUserId: string, event: RunEvent) {
   const run = await repository.getRun(ownerUserId, event.runId)
   if (!run) return undefined
+  return presentEventForRun(run, event)
+}
+
+export function presentEventForRun(run: Pick<Run, "id" | "conversationId" | "turnId">, event: RunEvent) {
   const eventItem = timelineItemValue(event.data.item)
   const payload = presentEventPayload(Object.fromEntries(Object.entries(event.data).filter(([key]) => key !== "item" && key !== "resultItem")))
   return {

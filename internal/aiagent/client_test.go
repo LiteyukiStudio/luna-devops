@@ -77,3 +77,23 @@ func TestHTTPClientRejectsMissingTrustMaterial(t *testing.T) {
 		t.Fatalf("error = %v", err)
 	}
 }
+
+func TestConfigClientUsesConfiguredTimeout(t *testing.T) {
+	config := Config{Available: true, BaseURL: "http://agent.internal", ServiceToken: "service-token", ActorSigningKey: "actor-key", Timeout: "23s"}
+	client, err := config.Client()
+	if err != nil {
+		t.Fatal(err)
+	}
+	httpClient := client.(*HTTPClient)
+	if httpClient.httpClient.Timeout != 23*time.Second || httpClient.runClient.Timeout != 23*time.Second || httpClient.streamClient.Timeout != 0 {
+		t.Fatalf("timeouts = %s, %s, %s", httpClient.httpClient.Timeout, httpClient.runClient.Timeout, httpClient.streamClient.Timeout)
+	}
+}
+
+func TestConfigClientRejectsInvalidTimeout(t *testing.T) {
+	config := Config{Available: true, BaseURL: "http://agent.internal", ServiceToken: "service-token", ActorSigningKey: "actor-key", Timeout: "later"}
+	_, err := config.Client()
+	if !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("error = %v", err)
+	}
+}

@@ -82,6 +82,17 @@ spec:
                 secretKeyRef:
                   name: {{ include "luna-devops.databaseUrlSecretName" . }}
                   key: {{ include "luna-devops.databaseUrlSecretKey" . }}
+            - name: REDIS_ADDR
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "luna-devops.redisURLSecretName" . }}
+                  key: {{ include "luna-devops.redisURLSecretKey" . }}
+            - name: AI_DATABASE_MAX_CONNECTIONS
+              value: {{ .Values.ai.agent.database.maxConnections | quote }}
+            - name: AI_DATABASE_CONNECTION_TIMEOUT_MS
+              value: {{ .Values.ai.agent.database.connectionTimeoutMs | quote }}
+            - name: AI_DATABASE_STATEMENT_TIMEOUT_MS
+              value: {{ .Values.ai.agent.database.statementTimeoutMs | quote }}
             - name: AI_INTERNAL_SECRET
               valueFrom:
                 secretKeyRef:

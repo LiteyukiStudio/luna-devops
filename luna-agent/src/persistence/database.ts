@@ -1,6 +1,37 @@
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres"
-import { Pool } from "pg"
+import { Pool, type PoolClient } from "pg"
 import * as schema from "./schema/index.js"
+import { agentMetrics, observeDatabasePool } from "../telemetry.js"
+
+export type AgentDatabaseOptions = {
+  maxConnections?: number
+  connectionTimeoutMs?: number
+  statementTimeoutMs?: number
+}
+
+class InstrumentedPool extends Pool {
+  override connect(): Promise<PoolClient>
+  override connect(callback: (error: Error | undefined, client: PoolClient | undefined, done: (release?: unknown) => void) => void): void
+  override connect(callback?: (error: Error | undefined, client: PoolClient | undefined, done: (release?: unknown) => void) => void): Promise<PoolClient> | void {
+    const startedAt = performance.now()
+    if (callback) {
+      super.connect((error, client, done) => {
+        agentMetrics.databasePoolAcquireDuration.record((performance.now() - startedAt) / 1000, {
+          outcome: error ? "failed" : "succeeded",
+        })
+        callback(error ?? undefined, client, done)
+      })
+      return
+    }
+    return super.connect().then((client) => {
+      agentMetrics.databasePoolAcquireDuration.record((performance.now() - startedAt) / 1000, { outcome: "succeeded" })
+      return client
+    }, (error: unknown) => {
+      agentMetrics.databasePoolAcquireDuration.record((performance.now() - startedAt) / 1000, { outcome: "failed" })
+      throw error
+    })
+  }
+}
 
 /**
  * 数据库连接层：只负责连接池、Drizzle 实例与连接生命周期。
@@ -10,8 +41,15 @@ export class AgentDatabase {
   readonly pool: Pool
   readonly db: NodePgDatabase<typeof schema> & { $client: Pool }
 
-  constructor(connectionString: string) {
-    this.pool = new Pool({ connectionString, max: 10, application_name: "luna-agent" })
+  constructor(connectionString: string, options: AgentDatabaseOptions = {}) {
+    this.pool = new InstrumentedPool({
+      connectionString,
+      max: options.maxConnections ?? 10,
+      connectionTimeoutMillis: options.connectionTimeoutMs ?? 5_000,
+      statement_timeout: options.statementTimeoutMs ?? 15_000,
+      application_name: "luna-agent",
+    })
+    observeDatabasePool(this.pool)
     // 不启用 Drizzle 查询日志，避免 SQL 参数进入日志
     this.db = drizzle({ client: this.pool, schema })
   }

@@ -57,6 +57,7 @@ services:
       VOLUME_TRANSFER_JOB_IMAGE: ${VOLUME_TRANSFER_JOB_IMAGE:-liteyukistudio/luna-worker:${DEVOPS_IMAGE_TAG:-nightly}}
       AI_ASSISTANT_AVAILABLE: ${AI_ASSISTANT_AVAILABLE:-false}
       AI_AGENT_BASE_URL: http://agent:8091
+      AI_AGENT_TIMEOUT: ${AI_AGENT_TIMEOUT:-10s}
       AI_INTERNAL_SECRET: ${AI_INTERNAL_SECRET:-}
     depends_on:
       postgres:
@@ -123,6 +124,10 @@ services:
       LOG_COLOR: never
       LOG_LEVEL: ${LOG_LEVEL:-info}
       DATABASE_URL: ${DATABASE_URL:-postgres://devops:devops@postgres:5432/devops?sslmode=disable}
+      REDIS_ADDR: redis://default:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379/0
+      AI_DATABASE_MAX_CONNECTIONS: ${AI_DATABASE_MAX_CONNECTIONS:-10}
+      AI_DATABASE_CONNECTION_TIMEOUT_MS: ${AI_DATABASE_CONNECTION_TIMEOUT_MS:-5000}
+      AI_DATABASE_STATEMENT_TIMEOUT_MS: ${AI_DATABASE_STATEMENT_TIMEOUT_MS:-15000}
       AUTH_MODE: bff-hmac
       AI_INTERNAL_SECRET: ${AI_INTERNAL_SECRET:-}
       LUNA_API_BASE_URL: http://api:8080
@@ -134,6 +139,8 @@ services:
       api:
         condition: service_healthy
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     expose:
       - "8091"

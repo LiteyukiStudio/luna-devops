@@ -55,6 +55,24 @@ export type RunToolSelection = {
   alreadySelectedOperationIds: string[]
   evictedOperationIds: string[]
 }
+export type RunStreamPosition = { nextItemPosition: number, nextEventSequence: number, runVersion: number }
+export type RunStreamBatch = {
+  runId: string
+  expected: RunStreamPosition
+  items: TimelineItem[]
+  events: RunEvent[]
+  /** Redis live cursor high-watermark; transient deltas below it are intentionally not durable. */
+  eventHighWatermark: number
+  /** Claim-time fencing generation. A superseded owner must never persist late output. */
+  expectedRunVersion: number
+  terminal?: {
+    from: Run["status"]
+    to: Extract<Run["status"], "completed" | "failed" | "canceled" | "interrupted">
+    completedAt: string
+    errorCode?: string
+    conversationTitle?: string
+  }
+}
 
 export interface Repository {
   health(): Promise<boolean>
@@ -70,10 +88,14 @@ export interface Repository {
   createTurn(ownerUserId: string, input: CreateTurn): Promise<CreatedTurn>
   getRun(ownerUserId: string, runId: string): Promise<Run | undefined>
   getRunToolState(runId: string): Promise<Pick<Run, "toolCatalogDigest" | "selectedOperationIds"> | undefined>
+  getRunStreamPosition(runId: string): Promise<RunStreamPosition | undefined>
+  persistRunStreamBatch(batch: RunStreamBatch): Promise<void>
   touchRunSelectedOperations(runId: string, operationIds: string[], limit: number): Promise<RunToolSelection>
   listActiveToolCatalogDigests(): Promise<string[]>
   cancelRun(ownerUserId: string, runId: string): Promise<Run | undefined>
   claimNextQueuedRun(): Promise<Run | undefined>
+  listStaleRunningRuns(startedBefore: string): Promise<Array<Pick<Run, "id" | "rowVersion">>>
+  interruptAbandonedRun(runId: string, expectedRunVersion: number, eventHighWatermark: number): Promise<boolean>
   countActiveUserRuns(userId: string): Promise<number>
   getExecutionInput(runId: string): Promise<{
     conversationId: string

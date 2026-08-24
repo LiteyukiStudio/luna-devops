@@ -12,7 +12,7 @@ import type {
 } from "../domain.js"
 import { createId } from "../id.js"
 import type { OfficialModelUsage, UsageUnavailableReason } from "../provider/provider.js"
-import { internalSpanOptions, withSpan } from "../telemetry.js"
+import { agentMetrics, internalSpanOptions, withSpan } from "../telemetry.js"
 import {
   RunStateConflictError,
   type ConversationListOptions,
@@ -20,9 +20,10 @@ import {
   type ModelAttemptMetadata,
   type ModelCallOperation,
   type TimelinePageOptions,
+  type RunStreamBatch,
 } from "./repository.js"
 import { createTurnRequestHash } from "./create-turn-hash.js"
-import { AgentDatabase, type AgentDb, type AgentTx } from "./database.js"
+import { AgentDatabase, type AgentDatabaseOptions, type AgentDb, type AgentTx } from "./database.js"
 import {
   mapConversation,
   mapConversationSummary,
@@ -53,8 +54,8 @@ const historyTurnWindow = 8
 export class PostgresRepository implements Repository {
   private readonly database: AgentDatabase
 
-  constructor(connectionString: string) {
-    this.database = new AgentDatabase(connectionString)
+  constructor(connectionString: string, options: AgentDatabaseOptions = {}) {
+    this.database = new AgentDatabase(connectionString, options)
   }
 
   /** 连接池仅供既有 ToolCallStore 过渡使用；新代码不得直接使用 */
@@ -314,11 +315,13 @@ export class PostgresRepository implements Repository {
         .returning())[0]
       if (!row) return undefined
       if (input.title && (current.title !== input.title || current.titleSource !== "user")) {
-        const latestRun = (await tx.select({ id: runs.id }).from(runs)
+        const latestRun = (await tx.select({ id: runs.id, status: runs.status }).from(runs)
           .where(eq(runs.conversationId, id))
           .orderBy(desc(runs.createdAt), desc(runs.id))
           .limit(1))[0]
-        if (latestRun) {
+        // 用户改名接口本身返回权威 Conversation；活动模型 session 的序号由 Redis
+        // 独占，不能在其间从 PostgreSQL 分配同一 Run 的事件序号。
+        if (latestRun && latestRun.status !== "running") {
           await this.appendEventWith(tx, latestRun.id, "conversation.title.updated", {
             title: input.title,
             titleSource: "user",
@@ -452,6 +455,129 @@ export class PostgresRepository implements Repository {
     return row
   }
 
+  async getRunStreamPosition(runId: string) {
+    return (await this.db.select({
+      nextItemPosition: runs.nextItemPosition,
+      nextEventSequence: runs.nextEventSequence,
+      runVersion: runs.rowVersion,
+    }).from(runs).where(eq(runs.id, runId)))[0]
+  }
+
+  async persistRunStreamBatch(batch: RunStreamBatch): Promise<void> {
+    const startedAt = performance.now()
+    let outcome = "succeeded"
+    try {
+      await withSpan("agent.repository.stream.persist", internalSpanOptions({
+        "luna.stream.item_count": batch.items.length,
+        "luna.stream.event_count": batch.events.length,
+      }), () => this.db.transaction(async (tx) => {
+        const run = (await tx.select({
+          nextItemPosition: runs.nextItemPosition,
+          nextEventSequence: runs.nextEventSequence,
+          conversationId: runs.conversationId,
+          turnId: runs.turnId,
+          status: runs.status,
+          rowVersion: runs.rowVersion,
+        }).from(runs).where(eq(runs.id, batch.runId)).for("update"))[0]
+        if (!run) throw new Error("ai.run_not_found")
+        const itemIds = batch.items.map(item => item.id)
+        const eventIds = batch.events.map(event => event.id)
+        const existingItems = itemIds.length
+          ? (await tx.select({ count: count() }).from(items).where(inArray(items.id, itemIds)))[0]?.count ?? 0
+          : 0
+        const existingEvents = eventIds.length
+          ? (await tx.select({ count: count() }).from(runEvents).where(inArray(runEvents.id, eventIds)))[0]?.count ?? 0
+          : 0
+        const batchAlreadyPersisted = existingItems === itemIds.length && existingEvents === eventIds.length
+          && run.nextEventSequence > batch.eventHighWatermark
+          && run.nextItemPosition >= batch.expected.nextItemPosition + batch.items.length
+        if (batchAlreadyPersisted && (!batch.terminal || run.status === batch.terminal.to)) return
+        if (run.rowVersion !== batch.expectedRunVersion || run.status !== "running") {
+          throw new RunStateConflictError(
+            batch.runId,
+            batch.terminal?.from ?? "running",
+            batch.terminal?.to ?? "running",
+            run.status,
+          )
+        }
+        if (existingItems > 0 || existingEvents > 0) throw new Error("ai.stream_batch_partial_conflict")
+        if (run.nextItemPosition !== batch.expected.nextItemPosition) throw new Error("ai.stream_item_position_conflict")
+        const rebasedItems = batch.items
+        const conflictingSequences = batch.events.length
+          ? await tx.select({ sequence: runEvents.eventSequence }).from(runEvents).where(and(
+              eq(runEvents.runId, batch.runId),
+              inArray(runEvents.eventSequence, batch.events.map(event => event.sequence)),
+            ))
+          : []
+        if (conflictingSequences.length) throw new Error("ai.stream_sequence_conflict")
+        const rebasedEvents = batch.events
+        if (rebasedItems.length) {
+          await tx.insert(items).values(rebasedItems.map(item => ({
+            id: item.id, runId: item.runId, turnId: item.turnId,
+            timelineIndex: item.timelineIndex, type: item.type, status: item.status,
+            content: item.content, revision: item.revision, createdAt: new Date(item.createdAt),
+          })))
+        }
+        if (rebasedEvents.length) {
+          await tx.insert(runEvents).values(rebasedEvents.map(event => ({
+            id: event.id, runId: event.runId, eventSequence: event.sequence,
+            type: event.type, data: event.data, createdAt: new Date(event.createdAt),
+          })))
+        }
+        await tx.update(runs).set({
+          nextItemPosition: run.nextItemPosition + rebasedItems.length,
+          nextEventSequence: Math.max(
+            run.nextEventSequence,
+            batch.eventHighWatermark + 1,
+            ...rebasedEvents.map(event => event.sequence + 1),
+          ),
+        }).where(eq(runs.id, batch.runId))
+        if (rebasedItems.some(item => item.type === "assistant_message")) {
+          await tx.update(conversations).set({ updatedAt: sql`now()` })
+            .where(eq(conversations.id, run.conversationId))
+        }
+        if (batch.terminal) {
+          if (batch.terminal.conversationTitle) {
+            const renamed = await tx.update(conversations).set({
+              title: batch.terminal.conversationTitle,
+              titleSource: "assistant",
+              updatedAt: sql`now()`,
+            }).where(and(
+              eq(conversations.id, run.conversationId), ne(conversations.titleSource, "user"),
+            )).returning({ id: conversations.id })
+            if (renamed.length) await this.appendEventWith(tx, batch.runId, "conversation.title.updated", {
+              title: batch.terminal.conversationTitle, titleSource: "assistant", locked: false,
+            })
+          }
+          const row = (await tx.update(runs).set({
+            status: batch.terminal.to,
+            rowVersion: sql`${runs.rowVersion} + 1`,
+            completedAt: new Date(batch.terminal.completedAt),
+            ...(batch.terminal.errorCode ? { errorCode: batch.terminal.errorCode } : {}),
+          }).where(and(
+            eq(runs.id, batch.runId),
+            eq(runs.status, batch.terminal.from),
+            eq(runs.rowVersion, batch.expectedRunVersion),
+          )).returning({ rowVersion: runs.rowVersion }))[0]
+          if (!row) throw new RunStateConflictError(batch.runId, batch.terminal.from, batch.terminal.to)
+          await tx.update(turns).set({ status: batch.terminal.to }).where(eq(turns.id, run.turnId))
+          await this.appendEventWith(tx, batch.runId, `run.${batch.terminal.to}`, {
+            state: batch.terminal.to,
+            rowVersion: row.rowVersion,
+            ...(batch.terminal.errorCode ? { errorCode: batch.terminal.errorCode } : {}),
+          })
+        }
+      }))
+    }
+    catch (error) {
+      outcome = "failed"
+      throw error
+    }
+    finally {
+      agentMetrics.streamPersistenceDuration.record((performance.now() - startedAt) / 1000, { outcome })
+    }
+  }
+
   async touchRunSelectedOperations(runId: string, operationIds: string[], limit: number) {
     const boundedLimit = Math.max(1, Math.min(64, Math.floor(limit)))
     const requested = [...new Set(operationIds)].filter(operationId => /^[A-Za-z][A-Za-z0-9._-]{2,100}$/.test(operationId))
@@ -522,6 +648,33 @@ export class PostgresRepository implements Repository {
       await this.appendEventWith(tx, row.id, "run.running", { state: "running", rowVersion: row.rowVersion })
       return mapRun(row)
     }))
+  }
+
+  async listStaleRunningRuns(startedBefore: string) {
+    return this.db.select({ id: runs.id, rowVersion: runs.rowVersion }).from(runs).where(and(
+      eq(runs.status, "running"),
+      lt(runs.startedAt, new Date(startedBefore)),
+    ))
+  }
+
+  async interruptAbandonedRun(runId: string, expectedRunVersion: number, eventHighWatermark: number): Promise<boolean> {
+    return this.db.transaction(async (tx) => {
+      const row = (await tx.update(runs).set({
+        status: "interrupted",
+        rowVersion: sql`${runs.rowVersion} + 1`,
+        completedAt: sql`now()`,
+        errorCode: "ai.owner_lease_expired",
+        nextEventSequence: sql`greatest(${runs.nextEventSequence}, ${eventHighWatermark + 1})`,
+      }).where(and(
+        eq(runs.id, runId), eq(runs.status, "running"), eq(runs.rowVersion, expectedRunVersion),
+      )).returning({ turnId: runs.turnId, rowVersion: runs.rowVersion }))[0]
+      if (!row) return false
+      await tx.update(turns).set({ status: "interrupted" }).where(eq(turns.id, row.turnId))
+      await this.appendEventWith(tx, runId, "run.interrupted", {
+        state: "interrupted", rowVersion: row.rowVersion, errorCode: "ai.owner_lease_expired",
+      })
+      return true
+    })
   }
 
   async countActiveUserRuns(userId: string) {

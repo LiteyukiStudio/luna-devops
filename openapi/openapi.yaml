@@ -7629,23 +7629,25 @@ paths:
     get:
       operationId: streamAIRunEvents
       tags: [AI Assistant]
-      summary: Replay and stream durable run events
+      summary: Replay and stream active run events
       security: [{ SessionCookie: [] }]
       parameters:
         - { name: runId, in: path, required: true, schema: { type: string } }
         - { name: after, in: query, required: false, schema: { type: integer, format: int64, minimum: 0 } }
         - { name: Last-Event-ID, in: header, required: false, schema: { type: string } }
       responses:
-        "200": { description: Unbuffered recoverable SSE stream of persisted content, thinking, tool, and run lifecycle deltas. Each data frame is an AIEvent; model.completed uses AIModelCompletedPayload and never substitutes estimated Token values., content: { text/event-stream: { schema: { type: string } } } }
+        "200": { description: Unbuffered recoverable SSE stream. Business frames are AIEvent values replayed from a bounded active-Run stream by after or Last-Event-ID; completed output and workflow terminal facts are persisted in the authoritative Timeline. A stream.heartbeat frame is transient JSON with version, type, runId, conversationId, and occurredAt; it has no id, is not persisted, and does not advance eventSequence. model.completed uses AIModelCompletedPayload and never substitutes estimated Token values., content: { text/event-stream: { schema: { type: string } } } }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "429": { description: Per-Run or per-Agent-instance SSE subscriber limit reached, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+        "503": { description: Agent Redis active-stream transport is unavailable, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
   /api/v1/ai/runs/{runId}/cancel:
     post:
       operationId: cancelAIRun
       tags: [AI Assistant]
       security: [{ SessionCookie: [] }]
       parameters: [{ name: runId, in: path, required: true, schema: { type: string } }]
-      responses: { "202": { description: Cancellation accepted, content: { application/json: { schema: { $ref: "#/components/schemas/AIObject" } } } }, "401": { $ref: "#/components/responses/Unauthorized" }, "404": { $ref: "#/components/responses/NotFound" } }
+      responses: { "202": { description: Cancellation accepted or still processing; a running Run is acknowledged only after its owner flushes the terminal batch., content: { application/json: { schema: { $ref: "#/components/schemas/AIObject" } } } }, "401": { $ref: "#/components/responses/Unauthorized" }, "404": { $ref: "#/components/responses/NotFound" }, "503": { description: Agent Redis cancellation transport is unavailable, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } } }
   /api/v1/ai/runs/{runId}/input:
     post:
       operationId: submitAIRunInput
@@ -8436,6 +8438,36 @@ components:
         responseId: { type: string }
         responseModel: { type: string }
         finishReason: { type: string }
+    AIContentDeltaPayload:
+      type: object
+      additionalProperties: false
+      required: [itemId, contentPartId, partIndex, delta, timelineIndex]
+      properties:
+        itemId: { type: string }
+        contentPartId: { type: string }
+        partIndex: { type: integer, minimum: 0 }
+        delta: { type: string }
+        timelineIndex: { type: integer, minimum: 0 }
+        createdAt: { type: string, format: date-time, description: Present only on the first content.delta frame that creates the live item. }
+    AIThinkingStartedPayload:
+      type: object
+      additionalProperties: false
+      required: [itemId, summary, display, timelineIndex, createdAt]
+      properties:
+        itemId: { type: string }
+        summary: { type: string }
+        display: { type: string, enum: [summary] }
+        timelineIndex: { type: integer, minimum: 0 }
+        createdAt: { type: string, format: date-time }
+    AIThinkingDeltaPayload:
+      type: object
+      additionalProperties: false
+      required: [itemId, delta, display, timelineIndex]
+      properties:
+        itemId: { type: string }
+        delta: { type: string }
+        display: { type: string, enum: [summary] }
+        timelineIndex: { type: integer, minimum: 0 }
     AIEvent:
       type: object
       additionalProperties: false
@@ -8456,6 +8488,9 @@ components:
         payload:
           anyOf:
             - { $ref: "#/components/schemas/AIModelCompletedPayload" }
+            - { $ref: "#/components/schemas/AIContentDeltaPayload" }
+            - { $ref: "#/components/schemas/AIThinkingStartedPayload" }
+            - { $ref: "#/components/schemas/AIThinkingDeltaPayload" }
             - { $ref: "#/components/schemas/AIObject" }
     AITimelineEventCursor:
       type: object

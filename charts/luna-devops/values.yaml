@@ -42,6 +42,10 @@ ai:
     # High-sensitivity diagnostics. Exports redacted model and tool content.
     observabilityCaptureContent: false
     replicaCount: 2
+    database:
+      maxConnections: 10
+      connectionTimeoutMs: 5000
+      statementTimeoutMs: 15000
     image:
       repository: liteyukistudio/luna-agent
       tag: ""

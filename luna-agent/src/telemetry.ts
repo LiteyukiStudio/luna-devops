@@ -18,6 +18,7 @@ import { NodeSDK } from "@opentelemetry/sdk-node"
 import type pinoFactory from "pino"
 import type { DestinationStream, Logger } from "pino"
 import type pinoPrettyFactory from "pino-pretty"
+import type { Pool } from "pg"
 import { genAISchemaURL } from "./genai-semconv.js"
 import { redact } from "./redaction.js"
 
@@ -116,6 +117,41 @@ export const agentMetrics = {
   externalRequests: deferredCounter("luna_devops_agent_external_requests", "外部请求次数"),
   contextCompilations: deferredCounter("luna_devops_agent_context_compilations", "上下文编译次数"),
   contextCompressionDuration: deferredHistogram("luna_devops_agent_context_compression_duration", "上下文压缩耗时", "s"),
+  streamEvents: deferredCounter("luna_devops_agent_stream_events", "Agent 实时事件发布次数"),
+  streamTransportDuration: deferredHistogram("luna_devops_agent_stream_transport_duration", "Agent Redis 流传输操作耗时", "s"),
+  streamBufferBytes: deferredHistogram("luna_devops_agent_stream_event_bytes", "Agent Redis 单事件字节数", "By"),
+  streamRetainedBytes: deferredHistogram("luna_devops_agent_stream_retained_bytes", "Agent Redis 流缓冲总字节数", "By"),
+  activeStreamReaders: deferredUpDownCounter("luna_devops_agent_stream_active_readers", "当前 Agent Redis 流读取器数"),
+  streamCancellations: deferredCounter("luna_devops_agent_stream_cancellations", "Agent 跨副本取消控制次数"),
+  ownerLeases: deferredCounter("luna_devops_agent_owner_leases", "Agent Run owner lease 操作次数"),
+  streamCleanups: deferredCounter("luna_devops_agent_stream_cleanups", "Agent Redis 终态缓冲清理次数"),
+  sseBackpressureDuration: deferredHistogram("luna_devops_agent_sse_backpressure_duration", "Agent SSE 背压等待耗时", "s"),
+  activeSseSubscribers: deferredUpDownCounter("luna_devops_agent_sse_active_subscribers", "当前 Agent SSE 订阅者数"),
+  sseSubscriptions: deferredCounter("luna_devops_agent_sse_subscriptions", "Agent SSE 订阅结果"),
+  databasePoolAcquireDuration: deferredHistogram("luna_devops_agent_database_pool_acquire_duration", "Agent PostgreSQL 获取连接等待耗时", "s"),
+  streamPersistenceDuration: deferredHistogram("luna_devops_agent_stream_persistence_duration", "Agent 流式终态批量持久化耗时", "s"),
+  streamTerminalPersistence: deferredCounter("luna_devops_agent_stream_terminal_persistence", "Agent 终态持久化尝试次数"),
+}
+
+const observedDatabasePools = new WeakSet<Pool>()
+
+/** PostgreSQL 池指标只包含稳定状态枚举，不暴露用户、Run 或实例标识。 */
+export function observeDatabasePool(pool: Pool): void {
+  if (observedDatabasePools.has(pool)) return
+  observedDatabasePools.add(pool)
+  const meter = metrics.getMeter(instrumentationName)
+  meter.createObservableGauge("luna_devops_agent_database_pool_connections", {
+    description: "Agent PostgreSQL 连接池连接数",
+    unit: "connection",
+  }).addCallback((result) => {
+    result.observe(pool.totalCount, { state: "total" })
+    result.observe(pool.idleCount, { state: "idle" })
+    result.observe(Math.max(0, pool.totalCount - pool.idleCount), { state: "active" })
+  })
+  meter.createObservableGauge("luna_devops_agent_database_pool_waiting", {
+    description: "等待 Agent PostgreSQL 连接的请求数",
+    unit: "request",
+  }).addCallback(result => result.observe(pool.waitingCount))
 }
 
 function deferredCounter(name: string, description: string): Pick<Counter, "add"> {

@@ -517,10 +517,11 @@ func TestAIAccessModeDefaultsToAuthenticatedUsersAndCanRestrictAdmins(t *testing
 
 func TestAIProxyFlushesSSEChunks(t *testing.T) {
 	gin.SetMode(gin.TestMode)
+	streamBody := "event: stream.heartbeat\ndata: {\"version\":1,\"type\":\"stream.heartbeat\",\"runId\":\"airun_stream\",\"conversationId\":\"aicnv_stream\",\"occurredAt\":\"2026-08-24T00:00:00Z\"}\n\nevent: content.delta\ndata: {\"delta\":\"hello\"}\n\n"
 	fake := &fakeAIAgentClient{response: &aiagent.Response{
 		StatusCode: http.StatusOK,
 		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
-		Body:       io.NopCloser(strings.NewReader("event: content.delta\ndata: {\"delta\":\"hello\"}\n\n")),
+		Body:       io.NopCloser(strings.NewReader(streamBody)),
 	}}
 	handler := aiTestHandlers(fake, true)
 	router := gin.New()
@@ -535,6 +536,9 @@ func TestAIProxyFlushesSSEChunks(t *testing.T) {
 	}
 	if fake.request.LastEventID != "" || !fake.request.Stream {
 		t.Fatalf("agent stream request = %#v", fake.request)
+	}
+	if response.Body.String() != streamBody {
+		t.Fatalf("SSE frames changed while proxying: %q", response.Body.String())
 	}
 }
 

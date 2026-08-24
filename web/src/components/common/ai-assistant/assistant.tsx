@@ -64,6 +64,7 @@ import {
   mergeTimelineInfiniteSnapshot,
   olderTimelinePageParam,
   recoverTimelineOnce,
+  runStreamRecoveryFromTimeline,
   timelineQueryDataFromInfinite,
   timelineQueryDataFromSnapshot,
 } from './timeline-query'
@@ -123,6 +124,7 @@ export function AiAssistant({ capabilities, initiallyOpen = false }: { capabilit
     queryKey: ['ai', 'conversations', conversationSearch],
     queryFn: ({ pageParam }) => api.listAIConversations({ page: pageParam, pageSize: 50, search: conversationSearch || undefined }),
     enabled: open,
+    retry: false,
     initialPageParam: 1,
     getNextPageParam: page => page.page < page.totalPages ? page.page + 1 : undefined,
   })
@@ -158,6 +160,7 @@ export function AiAssistant({ capabilities, initiallyOpen = false }: { capabilit
       limit: AI_TIMELINE_PAGE_SIZE,
     })),
     enabled: open && Boolean(selectedConversationId),
+    retry: false,
     initialPageParam: null as string | null,
     getPreviousPageParam: olderTimelinePageParam,
     getNextPageParam: () => undefined,
@@ -193,28 +196,33 @@ export function AiAssistant({ capabilities, initiallyOpen = false }: { capabilit
     conversationId,
     async () => {
       const latest = timelineQueryDataFromSnapshot(await api.getAIConversationTimeline(conversationId, { limit: AI_TIMELINE_PAGE_SIZE }))
-      queryClient.setQueryData<AITimelineInfiniteData>(aiTimelineQueryKey(conversationId), current => mergeLatestTimelineSnapshot(current, latest))
+      let recovered = latest
+      queryClient.setQueryData<AITimelineInfiniteData>(aiTimelineQueryKey(conversationId), (current) => {
+        const next = mergeLatestTimelineSnapshot(current, latest)
+        recovered = timelineQueryDataFromInfinite(next) ?? latest
+        return next
+      })
+      return recovered
     },
   ), [queryClient])
   const handleStreamEvent = useCallback((event: Parameters<typeof applyTimelineInfiniteEvent>[1]) => {
     let desynced = false
-    let accepted = false
+    let acknowledged = false
+    let projected = false
     queryClient.setQueryData<AITimelineInfiniteData>(aiTimelineQueryKey(event.conversationId), (current) => {
       const next = applyTimelineInfiniteEvent(current, event)
       if (!next)
         return current
       const nextData = timelineQueryDataFromInfinite(next)
-      desynced = nextData?.state.desyncedRunIds.has(event.runId) ?? false
-      accepted = next !== current
-        && !desynced
-        && nextData?.state.lastEventSequences[event.runId] === event.eventSequence
+      acknowledged = (nextData?.state.lastEventSequences[event.runId] ?? 0) >= event.eventSequence
+      desynced = !acknowledged && (nextData?.state.desyncedRunIds.has(event.runId) ?? false)
+      projected = next !== current
+        && acknowledged
       return next
     })
-    const automaticDelivery = accepted ? automaticRouteDeliveryFromEvent(event) : undefined
+    const automaticDelivery = projected ? automaticRouteDeliveryFromEvent(event) : undefined
     if (automaticDelivery && automaticDeliveryHandlerRef.current)
       void automaticDeliveryHandlerRef.current(automaticDelivery)
-    if (desynced)
-      void recoverTimeline(event.conversationId)
     if (event.type === 'conversation.title.updated') {
       void queryClient.invalidateQueries({ queryKey: ['ai', 'conversations'] })
       void queryClient.invalidateQueries({ queryKey: aiTimelineQueryKey(event.conversationId) })
@@ -223,9 +231,12 @@ export function AiAssistant({ capabilities, initiallyOpen = false }: { capabilit
       void queryClient.invalidateQueries({ queryKey: ['ai', 'conversations'] })
       void queryClient.invalidateQueries({ queryKey: aiTimelineQueryKey(event.conversationId) })
     }
-  }, [queryClient, recoverTimeline])
+    return { accepted: acknowledged, desynced }
+  }, [queryClient])
   const {
     connect: connectRunStream,
+    reconnect: reconnectRunStream,
+    streamStates: runStreamStates,
     subscriptions: runSubscriptions,
     syncConversation: syncRunStreams,
   } = useAIRunStreamManager({
@@ -234,7 +245,13 @@ export function AiAssistant({ capabilities, initiallyOpen = false }: { capabilit
     enabled: true,
     onEvent: handleStreamEvent,
     onCapabilitiesChanged: () => void queryClient.invalidateQueries({ queryKey: ['ai', 'capabilities'] }),
-    onMalformedEvent: subscription => recoverTimeline(subscription.conversationId),
+    onMalformedEvent: async (subscription) => {
+      await recoverTimeline(subscription.conversationId)
+    },
+    onSequenceGap: async (subscription) => {
+      const recovered = await recoverTimeline(subscription.conversationId)
+      return runStreamRecoveryFromTimeline(recovered, subscription)
+    },
   })
 
   useEffect(() => {
@@ -374,6 +391,9 @@ export function AiAssistant({ capabilities, initiallyOpen = false }: { capabilit
     onError: error => toast.error(error instanceof Error ? error.message : t('aiAssistant.errors.input')),
   })
   const activeRunStatus = activeRunId ? streamState.runStatuses[activeRunId] ?? 'queued' : undefined
+  const activeRunStreamState = activeRunId ? runStreamStates.find(state => state.runId === activeRunId) : undefined
+  const timelineActiveTurnId = timelineData?.snapshot?.turns.find(turn => turn.selectedRun?.id === activeRunId)?.id
+  const activeTurnId = activeRunId ? timelineActiveTurnId ?? streamState.blocks.at(-1)?.turnId : undefined
   const latestRunId = timelineData?.snapshot?.turns.at(-1)?.selectedRun?.id
   const displayedRunUsage = streamState.runUsage[activeRunId ?? latestRunId ?? '']
   const generating = activeRunStatus === 'queued' || activeRunStatus === 'running'
@@ -388,6 +408,12 @@ export function AiAssistant({ capabilities, initiallyOpen = false }: { capabilit
       ids.add(selectedConversationId)
     return ids
   }, [generating, runSubscriptions, selectedConversationId])
+
+  useEffect(() => {
+    if (!selectedConversationId || !activeRunId || activeRunStreamState?.status !== 'stalled')
+      return
+    void recoverTimeline(selectedConversationId).finally(() => reconnectRunStream(activeRunId))
+  }, [activeRunId, activeRunStreamState?.status, reconnectRunStream, recoverTimeline, selectedConversationId])
   const allowPresetSuggestions = !conversations.isLoading
     && (!selectedConversationId || timelineData?.snapshot?.turns.length === 0)
     && !activeRunId
@@ -618,6 +644,7 @@ export function AiAssistant({ capabilities, initiallyOpen = false }: { capabilit
       </header>
       <div className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden">
         <AIAssistantTimeline
+          activeTurnId={activeTurnId}
           bottomInset={Boolean(visibleSuggestions)}
           blocks={streamState.blocks}
           error={timeline.data ? null : timeline.error}
@@ -626,6 +653,7 @@ export function AiAssistant({ capabilities, initiallyOpen = false }: { capabilit
           loadingOlder={timeline.isFetchingPreviousPage}
           olderError={timeline.isFetchPreviousPageError ? timeline.error : null}
           loading={timeline.isLoading}
+          outputStreaming={activeRunStreamState?.status === 'streaming'}
           onAction={executeAction}
           onApproval={async (block, decision, reason) => {
             await api.decideAIToolApproval(block.runId, block.toolCallId, {

@@ -1,5 +1,5 @@
 import type { InfiniteData } from '@tanstack/react-query'
-import type { AIRunStreamSubscription } from './run-stream-manager'
+import type { AIRunStreamRecovery, AIRunStreamSubscription } from './run-stream-manager'
 import type { AIAssistantState } from './state'
 import type { AIEvent, AITimeline, AITimelineTurn } from '@/api'
 import {
@@ -290,16 +290,27 @@ export function activeRunStreamSubscriptions(
   return [...authoritative, ...optimistic]
 }
 
-export async function recoverTimelineOnce(
+export function runStreamRecoveryFromTimeline(
+  data: AITimelineQueryData | undefined,
+  subscription: AIRunStreamSubscription,
+): AIRunStreamRecovery {
+  const status = data?.state.runStatuses[subscription.runId]
+  return {
+    after: data?.state.lastEventSequences[subscription.runId] ?? subscription.after,
+    terminal: status !== undefined && ['completed', 'failed', 'canceled', 'interrupted'].includes(status),
+  }
+}
+
+export async function recoverTimelineOnce<Result>(
   recoveries: Set<string>,
   conversationId: string,
-  recover: () => Promise<unknown>,
-) {
+  recover: () => Promise<Result>,
+): Promise<Result | undefined> {
   if (recoveries.has(conversationId))
     return
   recoveries.add(conversationId)
   try {
-    await recover()
+    return await recover()
   }
   finally {
     recoveries.delete(conversationId)

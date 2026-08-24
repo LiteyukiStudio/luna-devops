@@ -20,6 +20,7 @@ import {
   type Repository,
   type TimelinePageOptions,
   type ModelCallOperation,
+  type RunStreamBatch,
 } from "../../src/persistence/repository.js"
 import type { OfficialModelUsage, UsageUnavailableReason } from "../../src/provider/provider.js"
 import { createTurnRequestHash } from "../../src/persistence/create-turn-hash.js"
@@ -44,6 +45,7 @@ export class TestRepository implements Repository {
   }>()
   private readonly modelUsages: Array<{ runId: string, operation: ModelCallOperation, usage: OfficialModelUsage }> = []
   private readonly approvalExemptions = new Map<string, string>()
+  private readonly streamHighWatermarks = new Map<string, number>()
 
   async health(): Promise<boolean> { return true }
   async readiness() { return { database: true, schema: true } }
@@ -102,7 +104,7 @@ export class TestRepository implements Repository {
       const latestRun = [...this.runs.values()]
         .filter(run => run.conversationId === id)
         .sort((left, right) => right.createdAt.localeCompare(left.createdAt) || right.id.localeCompare(left.id))[0]
-      if (latestRun) {
+      if (latestRun && latestRun.status !== "running") {
         await this.appendEvent(latestRun.id, "conversation.title.updated", {
           title: input.title,
           titleSource: "user",
@@ -193,6 +195,64 @@ export class TestRepository implements Repository {
     const run = this.runs.get(runId)
     return run ? { toolCatalogDigest: run.toolCatalogDigest, selectedOperationIds: [...run.selectedOperationIds] } : undefined
   }
+  async getRunStreamPosition(runId: string) {
+    const run = this.runs.get(runId)
+    if (!run) return undefined
+    return {
+      nextItemPosition: this.items.filter(item => item.runId === runId).length,
+      nextEventSequence: Math.max(
+        this.streamHighWatermarks.get(runId) ?? 0,
+        ...this.events.filter(event => event.runId === runId).map(event => event.sequence),
+      ) + 1,
+      runVersion: run.rowVersion,
+    }
+  }
+  async persistRunStreamBatch(batch: RunStreamBatch): Promise<void> {
+    const position = await this.getRunStreamPosition(batch.runId)
+    if (!position) throw new Error("ai.run_not_found")
+    const existingItemCount = batch.items.filter(item => this.items.some(candidate => candidate.id === item.id)).length
+    const existingEventCount = batch.events.filter(event => this.events.some(candidate => candidate.id === event.id)).length
+    const run = this.runs.get(batch.runId)!
+    const alreadyPersisted = existingItemCount === batch.items.length && existingEventCount === batch.events.length
+      && (this.streamHighWatermarks.get(batch.runId) ?? 0) >= batch.eventHighWatermark
+    if (alreadyPersisted && (!batch.terminal || run.status === batch.terminal.to)) return
+    if (run.rowVersion !== batch.expectedRunVersion || run.status !== "running") {
+      throw new RunStateConflictError(batch.runId, batch.terminal?.from ?? "running", batch.terminal?.to ?? "running", run.status)
+    }
+    if (existingItemCount || existingEventCount) throw new Error("ai.stream_batch_partial_conflict")
+    if (position.nextItemPosition !== batch.expected.nextItemPosition) throw new Error("ai.stream_item_position_conflict")
+    if (batch.events.some(event => this.events.some(candidate => candidate.runId === batch.runId && candidate.sequence === event.sequence))) {
+      throw new Error("ai.stream_sequence_conflict")
+    }
+    this.items.push(...batch.items.map(item => structuredClone(item)))
+    this.events.push(...batch.events.map(event => structuredClone(event)))
+    this.streamHighWatermarks.set(batch.runId, batch.eventHighWatermark)
+    if (batch.terminal) {
+      if (batch.terminal.conversationTitle) {
+        const conversation = this.conversations.get(run.conversationId)
+        if (conversation && conversation.titleSource !== "user") {
+          conversation.title = batch.terminal.conversationTitle
+          conversation.titleSource = "assistant"
+          await this.appendEvent(batch.runId, "conversation.title.updated", {
+            title: batch.terminal.conversationTitle, titleSource: "assistant", locked: false,
+          })
+        }
+      }
+      Object.assign(run, {
+        status: batch.terminal.to,
+        completedAt: batch.terminal.completedAt,
+        ...(batch.terminal.errorCode ? { errorCode: batch.terminal.errorCode } : {}),
+        rowVersion: run.rowVersion + 1,
+      })
+      const turn = this.turns.get(run.turnId)
+      if (turn) turn.status = batch.terminal.to
+      await this.appendEvent(batch.runId, `run.${batch.terminal.to}`, {
+        state: batch.terminal.to,
+        rowVersion: run.rowVersion,
+        ...(batch.terminal.errorCode ? { errorCode: batch.terminal.errorCode } : {}),
+      })
+    }
+  }
   async touchRunSelectedOperations(runId: string, operationIds: string[], limit: number) {
     const run = this.runs.get(runId)
     if (!run) throw new Error("ai.run_not_found")
@@ -233,6 +293,21 @@ export class TestRepository implements Repository {
     if (turn) turn.status = "running"
     await this.appendEvent(run.id, "run.running", { state: "running", rowVersion: run.rowVersion })
     return run
+  }
+  async listStaleRunningRuns(startedBefore: string) {
+    const cutoff = Date.parse(startedBefore)
+    return [...this.runs.values()].filter(run => run.status === "running"
+      && run.startedAt !== undefined && Date.parse(run.startedAt) < cutoff)
+      .map(run => ({ id: run.id, rowVersion: run.rowVersion }))
+  }
+  async interruptAbandonedRun(runId: string, expectedRunVersion: number, eventHighWatermark: number): Promise<boolean> {
+    const run = this.runs.get(runId)
+    if (!run || run.status !== "running" || run.rowVersion !== expectedRunVersion) return false
+    this.streamHighWatermarks.set(runId, Math.max(this.streamHighWatermarks.get(runId) ?? 0, eventHighWatermark))
+    await this.updateRun(runId, "running", "interrupted", {
+      completedAt: new Date().toISOString(), errorCode: "ai.owner_lease_expired",
+    })
+    return true
   }
   async countActiveUserRuns(userId: string) {
     let count = 0
@@ -488,7 +563,10 @@ export class TestRepository implements Repository {
   }
 
   async appendEvent(runId: string, type: string, data: Record<string, unknown>) {
-    const sequence = this.events.filter(event => event.runId === runId).length + 1
+    const sequence = Math.max(
+      this.streamHighWatermarks.get(runId) ?? 0,
+      ...this.events.filter(event => event.runId === runId).map(event => event.sequence),
+    ) + 1
     const event: RunEvent = { id: createId("aievt"), runId, sequence, type, data, createdAt: new Date().toISOString() }
     this.events.push(event)
     return event
