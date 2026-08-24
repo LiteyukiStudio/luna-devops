@@ -127,7 +127,7 @@ suite("Postgres authoritative model usage", () => {
     await hold(repository, ownerUserId, runId, "deficit", "assistant")
 
     await expect(repository.recordReportedModelUsage("aihold_deficit", {
-      inputTokens: 5_000, outputTokens: 1_000, totalTokens: 6_000,
+      inputTokens: 6_500, outputTokens: 1_000, totalTokens: 7_500,
       cacheReadInputTokens: 1_000, cacheWriteInputTokens: 500, reasoningOutputTokens: 250,
     }, { callType: "stream", providerRequestId: "req_deficit", responseId: "chatcmpl_deficit" }))
       .resolves.toEqual({ reconciliationRequired: true })
@@ -142,7 +142,7 @@ suite("Postgres authoritative model usage", () => {
     }>("SELECT prompt_tokens, completion_tokens, cached_prompt_tokens, cache_write_prompt_tokens, reasoning_completion_tokens, settlement_status FROM ai.model_usages WHERE credit_hold_id = 'aihold_deficit'")
     const held = await repository.pool.query<{ state: string }>("SELECT state FROM ai.model_credit_holds WHERE id = 'aihold_deficit'")
     expect(usage.rows[0]).toEqual({
-      prompt_tokens: "5000",
+      prompt_tokens: "6500",
       completion_tokens: "1000",
       cached_prompt_tokens: "1000",
       cache_write_prompt_tokens: "500",
