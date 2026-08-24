@@ -11,6 +11,11 @@
   },
   {
     "type": "file",
+    "name": "channel-affinity",
+    "label": "Channel Affinity"
+  },
+  {
+    "type": "file",
     "name": "gateway-traffic-probe",
     "label": "Gateway Traffic Probe"
   },

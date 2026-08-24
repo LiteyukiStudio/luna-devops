@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { DiagnosticError } from "./diagnostic-error.js"
 
 function optionalValue<T extends z.ZodType>(schema: T) {
   return z.preprocess(value => typeof value === "string" && value.trim() === "" ? undefined : value, schema.optional())
@@ -48,7 +49,11 @@ export function loadConfig(input: NodeJS.ProcessEnv = process.env): Config {
     throw new Error("Production model execution requires Luna API provider configuration")
   }
   if (config.NODE_ENV === "production" && !config.REDIS_ADDR) {
-    throw new Error("Production streaming requires REDIS_ADDR")
+    throw new DiagnosticError(
+      "ai.stream_redis_url_required",
+      "Production streaming requires REDIS_ADDR",
+      "configure REDIS_ADDR with a valid Redis connection URI in the Agent deployment and redeploy",
+    )
   }
   return config
 }

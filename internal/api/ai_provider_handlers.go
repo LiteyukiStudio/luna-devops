@@ -17,6 +17,7 @@ import (
 
 var aiProviderConfigKeys = []string{
 	"ai.provider.base_url",
+	"ai.provider.channel_affinity_enabled",
 	"ai.runtime.provider_timeout_seconds",
 	"ai.runtime.max_request_retries",
 	"ai.runtime.run_timeout_seconds",
@@ -61,10 +62,11 @@ func (h *Handlers) GetAIProviderConfigInternal(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, gin.H{
 		"version": version,
 		"provider": gin.H{
-			"baseUrl":    baseURL,
-			"apiKey":     apiKey,
-			"configured": baseURL != "" && len(models) > 0 && strings.TrimSpace(apiKey) != "",
-			"models":     models,
+			"baseUrl":                baseURL,
+			"apiKey":                 apiKey,
+			"channelAffinityEnabled": configBool(values["ai.provider.channel_affinity_enabled"]),
+			"configured":             baseURL != "" && len(models) > 0 && strings.TrimSpace(apiKey) != "",
+			"models":                 models,
 		},
 		"runtime":     aiProviderRuntimeConfig(values),
 		"toolCatalog": toolCatalog,

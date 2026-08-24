@@ -71,6 +71,10 @@ const settings = {
     baseUrlHint: 'OpenAI 互換の HTTPS API アドレスを使用します。例：https://api.example.com/v1。',
     apiKey: 'API Key',
     apiKeyHint: 'シークレットはプラットフォームで暗号化保存され、編集時に再表示されません。',
+    channelAffinity: 'チャネルアフィニティ',
+    channelAffinityDescription: '同じ会話のリクエストについて、互換ゲートウェイへ安定した仮名化アフィニティキーを送信します。',
+    channelAffinityHelp: 'チャネルアフィニティについて',
+    channelAffinityTip: '同じ会話で同じ上流チャネルを再利用しやすくし、長いコンテキストのキャッシュ局所性と応答の安定性を高めます。チャネル障害時にはゲートウェイが切り替え可能です。無効にすると Luna はアフィニティヘッダーを送信しません。',
     secretUnchanged: '空欄の場合は変更しません',
     runtimeTitle: '高度な実行設定',
     runtimeDescription: 'これらの設定はプラットフォームが Agent に動的に配信します。コンテナ環境変数を変更する必要はありません。通常はデフォルト値のままにしてください。',
@@ -180,6 +184,11 @@ const settings = {
     loadFailedDescription: '現在のアカウントにプラットフォーム管理者権限があることを確認するか、後ほど再試行してください。',
   },
   configDefinitions: {
+    ai: {
+      provider: {
+        channel_affinity_enabled: { label: 'チャネルアフィニティ', description: '会話に紐づくモデルリクエストへ仮名化アフィニティキーを送信します。デフォルトで有効です。' },
+      },
+    },
     site: {
       title: { label: 'サイトタイトル', description: 'ブラウザタイトルとコンソールブランド名。' },
       logoUrl: { label: 'Logo アドレス', description: 'コンソール左上の Logo 画像アドレス。空欄の場合デフォルトアイコンを使用します。' },

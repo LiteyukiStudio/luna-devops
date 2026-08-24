@@ -23,6 +23,10 @@ Production requires PostgreSQL, Redis, and Luna API configuration. The readiness
 schema, Provider configuration, and the Redis active stream; it returns `503` and the replica stops accepting
 new Runs while any dependency is unavailable.
 
+If startup logs contain `error.code=ai.stream_redis_url_required`, `REDIS_ADDR` was not injected or is empty;
+the Agent has not attempted a Redis connection yet. Recreate the Agent with the current Helm chart or Docker
+Compose manifest. Updating only `.env` has no effect when an older Compose manifest does not forward the variable.
+
 ## Advanced configuration
 
 ### Runtime

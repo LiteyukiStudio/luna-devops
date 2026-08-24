@@ -7,6 +7,7 @@ const validValues = {
   baseUrl: 'https://api.example.com/v1',
   apiKey: '',
   apiKeyConfigured: true,
+  channelAffinityEnabled: true,
   webProxyEnabled: false,
   webProxyPool: '',
   webProxyPoolConfigured: false,
@@ -48,6 +49,7 @@ describe('aI assistant admin settings', () => {
       'ai.assistant.enabled': false,
       'ai.access.mode': 'all_authenticated',
       'ai.provider.base_url': 'https://api.example.com/v1',
+      'ai.provider.channel_affinity_enabled': true,
       'ai.web.proxy_enabled': false,
       'ai.runtime.provider_timeout_seconds': 30,
       'ai.runtime.max_request_retries': 5,
@@ -68,6 +70,11 @@ describe('aI assistant admin settings', () => {
       'ai.observability.tempo_url': '',
       'ai.observability.tempo_tenant_id': '',
     })
+  })
+
+  it('publishes the channel-affinity switch as an explicit boolean', () => {
+    expect(aiSettingsPayload(validValues)['ai.provider.channel_affinity_enabled']).toBe(true)
+    expect(aiSettingsPayload({ ...validValues, channelAffinityEnabled: false })['ai.provider.channel_affinity_enabled']).toBe(false)
   })
 
   it('supports restricting assistant access to platform administrators', () => {

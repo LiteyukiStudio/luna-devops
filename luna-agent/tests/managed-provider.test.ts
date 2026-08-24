@@ -74,6 +74,7 @@ function configForModels() {
     provider: {
       baseUrl: "https://provider.example/v1/",
       apiKey: "secret-value",
+      channelAffinityEnabled: true,
       configured: true,
       models: [
         modelSnapshot("model-a-id", "model-a"),

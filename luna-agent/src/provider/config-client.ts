@@ -13,6 +13,7 @@ export type RemoteProviderConfig = {
   provider: {
     baseUrl: string
     apiKey: string
+    channelAffinityEnabled: boolean
     configured: boolean
     models: RemoteAIModel[]
   }
@@ -42,6 +43,7 @@ const remoteProviderConfigSchema = z.object({
   provider: z.object({
     baseUrl: z.string(),
     apiKey: z.string(),
+    channelAffinityEnabled: z.boolean(),
     configured: z.boolean(),
     models: z.array(z.object({
       id: z.string().min(1), name: z.string().min(1),

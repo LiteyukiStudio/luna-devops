@@ -19,6 +19,7 @@ import type pinoFactory from "pino"
 import type { DestinationStream, Logger } from "pino"
 import type pinoPrettyFactory from "pino-pretty"
 import type { Pool } from "pg"
+import { findDiagnosticError } from "./diagnostic-error.js"
 import { genAISchemaURL } from "./genai-semconv.js"
 import { redact } from "./redaction.js"
 
@@ -454,12 +455,15 @@ function inferResourceAttributes(attributes: Attributes): Attributes {
 
 export function errorDiagnostic(error: unknown, fallbackCode = "ai.internal_error", hint?: string): Attributes {
   const normalized = error instanceof Error ? error : new Error(String(error))
-  const code = stableErrorCode(error) === "ai.internal_error" ? fallbackCode : stableErrorCode(error)
+  const embeddedDiagnostic = findDiagnosticError(error)
+  const stableCode = stableErrorCode(error)
+  const code = embeddedDiagnostic?.code ?? (stableCode === "ai.internal_error" ? fallbackCode : stableCode)
+  const resolvedHint = embeddedDiagnostic?.hint ?? hint
   const attributes: Attributes = {
     "error.code": code,
     "error.type": normalized.name || "UnknownError",
     "error.message": redact(errorChain(normalized)),
-    ...(hint ? { "error.hint": hint } : {}),
+    ...(resolvedHint ? { "error.hint": resolvedHint } : {}),
   }
   if (normalized.stack) attributes["exception.stacktrace"] = redact(normalized.stack)
   return attributes

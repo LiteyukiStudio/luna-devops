@@ -1,4 +1,5 @@
 import type { Span } from "@opentelemetry/api"
+import { createHash } from "node:crypto"
 import { trace } from "@opentelemetry/api"
 import { z } from "zod"
 import { genAIInputMessages, genAIModelSpan, genAIOutputMessages, genAIToolDefinitions } from "../genai-semconv.js"
@@ -18,6 +19,7 @@ import type {
 export type OpenAIChatCompletionsOptions = {
   baseUrl: string
   apiKey: string
+  channelAffinityEnabled: boolean
   model: string
   timeoutMs: number
 }
@@ -280,7 +282,7 @@ export class OpenAIChatCompletionsProvider implements ModelProvider {
       try {
         response = await fetch(new URL("chat/completions", ensureTrailingSlash(this.options.baseUrl)), {
           method: "POST",
-          headers: { authorization: `Bearer ${this.options.apiKey}`, "content-type": "application/json" },
+          headers: this.requestHeaders(request),
           body: JSON.stringify(this.buildRequestBody(request, stream)),
           signal: controller.signal,
         })
@@ -324,10 +326,27 @@ export class OpenAIChatCompletionsProvider implements ModelProvider {
   }
 
   private recordRequest(span: Span, request: ModelRequest): void {
+    span.setAttribute("luna.gen_ai.channel_affinity.applied", Boolean(this.channelAffinityKey(request)))
     recordAIContent(span, "luna.gen_ai.content.input", "gen_ai.input.messages", genAIInputMessages(request.messages))
     const system = request.messages.filter(message => message.role === "system")
     if (system.length) recordAIContent(span, "luna.gen_ai.content.system_instructions", "gen_ai.system_instructions", genAIInputMessages(system))
     if (request.tools?.length) recordAIContent(span, "luna.gen_ai.content.tools", "gen_ai.tool.definitions", genAIToolDefinitions(request.tools))
+  }
+
+  private requestHeaders(request: ModelRequest): Record<string, string> {
+    const affinityKey = this.channelAffinityKey(request)
+    return {
+      authorization: `Bearer ${this.options.apiKey}`,
+      "content-type": "application/json",
+      ...(affinityKey ? { "X-Luna-Affinity-Key": affinityKey } : {}),
+    }
+  }
+
+  private channelAffinityKey(request: ModelRequest): string | undefined {
+    if (!this.options.channelAffinityEnabled || !request.conversationId) return undefined
+    return createHash("sha256")
+      .update(`luna.devops.channel-affinity.v1\0${request.conversationId}`)
+      .digest("hex")
   }
 
   private recordResponse(span: Span, usage: ModelUsage, finishReason: string | undefined, toolCallCount: number, responseId?: string, responseModel?: string): void {

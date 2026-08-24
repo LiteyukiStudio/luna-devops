@@ -3,7 +3,7 @@ import { DeepSeekChatCompletionsProvider } from "../src/provider/deepseek-chat-c
 import { OpenAIChatCompletionsProvider } from "../src/provider/openai-chat-completions.js"
 import { ProviderRequestError } from "../src/provider/provider-error.js"
 
-const options = { baseUrl: "https://provider.example/v1", apiKey: "secret", model: "model-a", timeoutMs: 5_000 }
+const options = { baseUrl: "https://provider.example/v1", apiKey: "secret", channelAffinityEnabled: true, model: "model-a", timeoutMs: 5_000 }
 const request = { messages: [{ role: "user" as const, content: "hello" }], maxOutputTokens: 100 }
 
 afterEach(() => vi.unstubAllGlobals())
@@ -28,6 +28,31 @@ async function collect(provider: OpenAIChatCompletionsProvider) {
 }
 
 describe("OpenAIChatCompletionsProvider official usage", () => {
+  it("sends a stable pseudonymous affinity key only for conversation-bound requests when enabled", async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({
+      id: "chatcmpl_affinity", model: "model-a", choices: [{ message: { content: "done" } }],
+      usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+    }), { status: 200 }))
+    vi.stubGlobal("fetch", fetchMock)
+    const provider = new OpenAIChatCompletionsProvider(options)
+
+    await provider.complete({ ...request, conversationId: "aicnv_private_value" })
+    await provider.complete({ ...request, conversationId: "aicnv_private_value" })
+    await provider.complete({ ...request, conversationId: "aicnv_other_value" })
+
+    const keys = fetchMock.mock.calls.map(([, init]) => new Headers(init?.headers).get("x-luna-affinity-key"))
+    expect(keys[0]).toMatch(/^[a-f0-9]{64}$/)
+    expect(keys[1]).toBe(keys[0])
+    expect(keys[2]).not.toBe(keys[0])
+    expect(keys.join(" ")).not.toContain("aicnv_private_value")
+
+    await new OpenAIChatCompletionsProvider({ ...options, channelAffinityEnabled: false })
+      .complete({ ...request, conversationId: "aicnv_private_value" })
+    await provider.complete(request)
+    expect(new Headers(fetchMock.mock.calls[3]?.[1]?.headers).has("x-luna-affinity-key")).toBe(false)
+    expect(new Headers(fetchMock.mock.calls[4]?.[1]?.headers).has("x-luna-affinity-key")).toBe(false)
+  })
+
   it("accepts a complete non-streaming official usage payload", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
       id: "chatcmpl_1", model: "model-a", choices: [{ message: { content: "done" }, finish_reason: "stop" }],

@@ -59,6 +59,13 @@ var configDefinitions = []configDefinition{
 	},
 	{Key: "ai.provider.base_url", Label: "AI API 地址", Type: "string", Default: ""},
 	{Key: "ai.provider.api_key", Label: "AI API Key", Type: "secret", Default: ""},
+	{
+		Key:         "ai.provider.channel_affinity_enabled",
+		Label:       "渠道亲和性",
+		Description: "启用后，Agent 为会话内模型请求发送匿名亲和键；关闭后不发送，默认启用。",
+		Type:        "boolean",
+		Default:     "true",
+	},
 	{Key: "ai.web.proxy_enabled", Label: "AI 外网工具代理池", Type: "boolean", Default: "false"},
 	{Key: "ai.web.proxy_pool", Label: "AI 外网工具代理地址", Type: "secret", Default: ""},
 	{Key: "ai.runtime.provider_timeout_seconds", Label: "模型请求超时", Type: "number", Default: "300"},

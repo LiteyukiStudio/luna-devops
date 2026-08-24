@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { loadConfig } from "../src/config.js"
+import { DiagnosticError } from "../src/diagnostic-error.js"
+import { errorDiagnostic } from "../src/telemetry.js"
 
 describe("configuration", () => {
   it("rejects unsafe production defaults", () => {
@@ -63,5 +65,40 @@ describe("configuration", () => {
       AUTH_MODE: "bff-hmac",
       AI_INTERNAL_SECRET: "x".repeat(32),
     })).toThrow("Luna API")
+  })
+  it("reports a stable diagnostic when production Redis configuration is missing", () => {
+    const input = {
+      NODE_ENV: "production",
+      DATABASE_URL: "postgres://localhost/luna",
+      AUTH_MODE: "bff-hmac",
+      AI_INTERNAL_SECRET: "x".repeat(32),
+      LUNA_API_BASE_URL: "http://localhost:8080",
+    } as const
+
+    let startupError: unknown
+    try {
+      loadConfig(input)
+    }
+    catch (error) {
+      startupError = error
+    }
+
+    expect(startupError).toBeInstanceOf(DiagnosticError)
+    expect(errorDiagnostic(startupError, "agent.startup.failed", "generic startup hint")).toMatchObject({
+      "error.code": "ai.stream_redis_url_required",
+      "error.message": "Production streaming requires REDIS_ADDR",
+      "error.hint": "configure REDIS_ADDR with a valid Redis connection URI in the Agent deployment and redeploy",
+    })
+    expect(errorDiagnostic(
+      new Error("Agent bootstrap failed", { cause: startupError }),
+      "agent.startup.failed",
+      "generic startup hint",
+    )).toMatchObject({
+      "error.code": "ai.stream_redis_url_required",
+      "error.hint": "configure REDIS_ADDR with a valid Redis connection URI in the Agent deployment and redeploy",
+    })
+    expect(() => loadConfig({ ...input, REDIS_ADDR: " " })).toThrow("Production streaming requires REDIS_ADDR")
+    expect(loadConfig({ ...input, REDIS_ADDR: "redis://localhost:6379/0" }).REDIS_ADDR)
+      .toBe("redis://localhost:6379/0")
   })
 })

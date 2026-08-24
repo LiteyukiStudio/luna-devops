@@ -33,6 +33,8 @@ Describe the goal directly, such as “check why this application is unreachable
 
 An administrator must configure an OpenAI `chat/completions`-compatible Provider, enabled models, access scope, and personal-wallet billing under **Global Settings → AI Assistant**. Once enabled, the entry appears in the lower-right corner.
 
+When New API or another compatible gateway fronts multiple upstream channels, see [Channel affinity](/en/reference/channel-affinity) to encourage one conversation to reuse the same channel.
+
 If the entry is missing, ask an administrator to check enablement and account scope. If the model is temporarily unavailable, keep the conversation and retry later.
 
 If you refresh or reopen the assistant while it is responding, the page first reads the confirmed timeline and then resumes the active Run from the latest event position. The output indicator remains visible while the connection is opening or briefly stalled. If recovery remains unavailable, the server's completed, failed, canceled, or interrupted state is authoritative; unconfirmed partial text is not treated as a completed answer.

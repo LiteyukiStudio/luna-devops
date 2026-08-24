@@ -71,6 +71,10 @@ const settings = {
     baseUrlHint: '使用 OpenAI 相容的 HTTPS API 地址，例如 https://api.example.com/v1。',
     apiKey: 'API Key',
     apiKeyHint: '金鑰由平臺加密儲存，編輯時不回顯。',
+    channelAffinity: '渠道親和性',
+    channelAffinityDescription: '啟用後，同一會話會向相容閘道傳送穩定的匿名親和鍵。',
+    channelAffinityHelp: '渠道親和性說明',
+    channelAffinityTip: '儘量讓同一會話複用相同上游渠道，以提高長上下文快取命中率和回應穩定性；閘道仍可在渠道故障時切換。關閉後 Luna 不傳送親和請求標頭。',
     secretUnchanged: '留空表示不修改',
     runtimeTitle: '高階執行設定',
     runtimeDescription: '這些設定由平臺動態下發給 Agent，無需修改容器環境變數。通常保持預設值即可。',
@@ -180,6 +184,11 @@ const settings = {
     loadFailedDescription: '請確認當前賬號具有平臺管理員許可權，或稍後重試。',
   },
   configDefinitions: {
+    ai: {
+      provider: {
+        channel_affinity_enabled: { label: '渠道親和性', description: '啟用後，Agent 為會話內模型請求傳送匿名親和鍵；關閉後不傳送，預設啟用。' },
+      },
+    },
     site: {
       title: { label: '網站標題', description: '瀏覽器標題和控制檯品牌名稱。' },
       logoUrl: { label: 'Logo 地址', description: '控制檯左上角 Logo 圖片地址，留空時使用預設圖示。' },

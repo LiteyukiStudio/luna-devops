@@ -17,6 +17,7 @@ export const aiSettingsSchema = z.object({
   baseUrl: z.union([z.literal(''), z.url().refine(value => value.startsWith('https://'))]),
   apiKey: z.string(),
   apiKeyConfigured: z.boolean(),
+  channelAffinityEnabled: z.boolean(),
   webProxyEnabled: z.boolean(),
   webProxyPool: z.string().superRefine((value, context) => {
     const entries = value.split(/\r?\n/).map(item => item.trim()).filter(Boolean)
@@ -97,6 +98,7 @@ export function aiSettingsPayload(values: AISettingsFormValues) {
     'ai.assistant.enabled': values.enabled,
     'ai.access.mode': values.accessMode,
     'ai.provider.base_url': values.baseUrl.trim(),
+    'ai.provider.channel_affinity_enabled': values.channelAffinityEnabled,
     'ai.web.proxy_enabled': values.webProxyEnabled,
     'ai.runtime.provider_timeout_seconds': values.providerTimeoutSeconds,
     'ai.runtime.max_request_retries': values.maxRequestRetries,

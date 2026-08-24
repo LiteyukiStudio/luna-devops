@@ -152,7 +152,7 @@ suite("Postgres authoritative model usage", () => {
     const model = freeModel()
     const runId = await createRun(repository, ownerUserId, "trace-chain", model)
     const provider = new BudgetedModelProvider(new OpenAIChatCompletionsProvider({
-      baseUrl: providerBaseUrl, apiKey: "test-key", model: "model-pg-chain", timeoutMs: 5_000,
+      baseUrl: providerBaseUrl, apiKey: "test-key", channelAffinityEnabled: true, model: "model-pg-chain", timeoutMs: 5_000,
     }), repository)
 
     const result = await withSpan("agent.request", internalSpanOptions(), () => provider.complete({

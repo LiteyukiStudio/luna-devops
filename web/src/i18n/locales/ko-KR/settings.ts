@@ -71,6 +71,10 @@ const settings = {
     baseUrlHint: 'OpenAI 호환 HTTPS API 주소를 사용합니다. 예: https://api.example.com/v1.',
     apiKey: 'API Key',
     apiKeyHint: '시크릿은 플랫폼에서 암호화 저장되고 편집 시 다시 표시되지 않습니다.',
+    channelAffinity: '채널 어피니티',
+    channelAffinityDescription: '같은 대화의 요청에 대해 호환 게이트웨이로 안정적인 가명 어피니티 키를 전송합니다.',
+    channelAffinityHelp: '채널 어피니티 정보',
+    channelAffinityTip: '같은 대화가 동일한 업스트림 채널을 재사용하도록 유도해 긴 컨텍스트 캐시 지역성과 응답 안정성을 높입니다. 채널 장애 시 게이트웨이는 계속 전환할 수 있습니다. 비활성화하면 Luna는 어피니티 헤더를 보내지 않습니다.',
     secretUnchanged: '비워 두면 변경하지 않음',
     runtimeTitle: '고급 실행 설정',
     runtimeDescription: '이러한 설정은 플랫폼이 Agent에 동적으로 배포합니다. 컨테이너 환경 변수를 변경할 필요가 없습니다. 일반적으로 기본값을 유지하면 됩니다.',
@@ -180,6 +184,11 @@ const settings = {
     loadFailedDescription: '현재 계정에 플랫폼 관리자 권한이 있는지 확인하거나 잠시 후 다시 시도하세요.',
   },
   configDefinitions: {
+    ai: {
+      provider: {
+        channel_affinity_enabled: { label: '채널 어피니티', description: '대화에 연결된 모델 요청에 가명 어피니티 키를 전송합니다. 기본적으로 활성화됩니다.' },
+      },
+    },
     site: {
       title: { label: '사이트 제목', description: '브라우저 제목과 콘솔 브랜드 이름.' },
       logoUrl: { label: 'Logo 주소', description: '콘솔 왼쪽 상단의 Logo 이미지 주소. 비워 두면 기본 아이콘을 사용합니다.' },

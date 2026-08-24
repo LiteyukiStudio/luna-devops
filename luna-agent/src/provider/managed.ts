@@ -110,6 +110,7 @@ function defaultFactory(config: RemoteProviderConfig, modelName: string): ModelP
   return new Provider({
     baseUrl: config.provider.baseUrl,
     apiKey: config.provider.apiKey,
+    channelAffinityEnabled: config.provider.channelAffinityEnabled,
     model: modelName,
     timeoutMs: config.runtime.providerTimeoutMs,
   })

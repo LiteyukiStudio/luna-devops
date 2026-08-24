@@ -1,9 +1,9 @@
 import type { AISettingsFormValues } from './ai-assistant-settings'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { FlaskConical, LoaderCircle, RotateCcw } from 'lucide-react'
+import { CircleHelp, FlaskConical, LoaderCircle, RotateCcw } from 'lucide-react'
 import { useEffect, useMemo } from 'react'
-import { useForm } from 'react-hook-form'
+import { Controller, useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { api } from '@/api'
@@ -16,7 +16,9 @@ import { Surface } from '@/components/common/surface'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { NativeSelect as Select } from '@/components/ui/native-select'
+import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { aiSettingsPayload, aiSettingsSchema } from './ai-assistant-settings'
 import { AIModelManagement } from './ai-model-management'
 import { SettingsTabSaveButton } from './settings-tab-save-button'
@@ -29,6 +31,7 @@ const defaults: FormValues = {
   baseUrl: '',
   apiKey: '',
   apiKeyConfigured: false,
+  channelAffinityEnabled: true,
   webProxyEnabled: false,
   webProxyPool: '',
   webProxyPoolConfigured: false,
@@ -212,6 +215,45 @@ export function AIAssistantSettingsPanel() {
           <Field error={errors.apiKey?.message} hint={t('settings.ai.apiKeyHint')} label={t('settings.ai.apiKey')} required>
             <Input autoComplete="off" placeholder={form.getValues('apiKeyConfigured') ? t('settings.ai.secretUnchanged') : 'sk-…'} type="password" {...form.register('apiKey')} />
           </Field>
+          <div className="flex items-start justify-between gap-4 rounded-lg bg-surface-subtle p-4">
+            <div className="grid min-w-0 gap-1">
+              <div className="flex items-center gap-1.5">
+                <span className="text-sm font-medium" id="channel-affinity-label">{t('settings.ai.channelAffinity')}</span>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      aria-label={t('settings.ai.channelAffinityHelp')}
+                      className="inline-flex shrink-0 text-muted-foreground outline-none hover:text-primary-text focus-visible:text-primary-text focus-visible:ring-2 focus-visible:ring-primary/30"
+                      type="button"
+                    >
+                      <CircleHelp aria-hidden="true" className="size-3.5" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent className="max-w-72 leading-5" side="top">
+                    {t('settings.ai.channelAffinityTip')}
+                  </TooltipContent>
+                </Tooltip>
+              </div>
+              <p className="text-xs leading-5 text-muted-foreground" id="channel-affinity-description">
+                {t('settings.ai.channelAffinityDescription')}
+              </p>
+            </div>
+            <Controller
+              control={form.control}
+              name="channelAffinityEnabled"
+              render={({ field }) => (
+                <Switch
+                  aria-describedby="channel-affinity-description"
+                  aria-labelledby="channel-affinity-label"
+                  checked={field.value}
+                  name={field.name}
+                  ref={field.ref}
+                  onBlur={field.onBlur}
+                  onCheckedChange={field.onChange}
+                />
+              )}
+            />
+          </div>
           <ProgressiveSection
             description={t('settings.ai.runtimeDescription')}
             storageKey="luna-settings-ai-runtime-open"
@@ -305,6 +347,7 @@ function aiSettingsFormValues(values: Record<string, string>): FormValues {
     baseUrl: values['ai.provider.base_url'] ?? '',
     apiKey: '',
     apiKeyConfigured: values['ai.provider.api_key'] === 'true',
+    channelAffinityEnabled: values['ai.provider.channel_affinity_enabled'] !== 'false',
     webProxyEnabled: values['ai.web.proxy_enabled'] === 'true',
     webProxyPool: '',
     webProxyPoolConfigured: values['ai.web.proxy_pool'] === 'true',

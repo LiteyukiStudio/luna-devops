@@ -128,6 +128,7 @@ export function buildServer(input: {
       if (!config.provider.configured || !selectedModel) return reply.code(409).send({ status: "not_configured", configVersion: config.version, capabilities: {} })
       const provider = new OpenAIChatCompletionsProvider({
         baseUrl: config.provider.baseUrl, apiKey: config.provider.apiKey,
+        channelAffinityEnabled: config.provider.channelAffinityEnabled,
         model: selectedModel.name, timeoutMs: config.runtime.providerTimeoutMs,
       })
       const health = await provider.health()

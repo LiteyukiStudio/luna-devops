@@ -60,6 +60,14 @@ describe("ProviderConfigClient", () => {
     await expect(client().get()).rejects.toThrow("ai.provider_config_invalid")
   })
 
+  it("rejects an omitted channel-affinity policy instead of inventing a local default", async () => {
+    const payload = authoritativePayload()
+    const provider = { ...payload.provider }
+    Reflect.deleteProperty(provider, "channelAffinityEnabled")
+    vi.stubGlobal("fetch", vi.fn(async () => response({ ...payload, provider })))
+    await expect(client().get()).rejects.toThrow("ai.provider_config_invalid")
+  })
+
   it("rejects invalid limits instead of normalizing them", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => response(authoritativePayload({ runMaxToolCalls: 20 }))))
     await expect(client().get()).rejects.toThrow("ai.provider_config_invalid")
@@ -112,6 +120,7 @@ function authoritativePayload(runtimeOverrides: Partial<RemoteRuntimeSettings> =
     provider: {
       baseUrl: "https://provider.example/v1/",
       apiKey: "secret",
+      channelAffinityEnabled: true,
       configured: true,
       models: [{
         id: "aimod_test",

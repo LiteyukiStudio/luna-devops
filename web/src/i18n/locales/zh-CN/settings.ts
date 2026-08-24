@@ -71,6 +71,10 @@ const settings = {
     baseUrlHint: '使用 OpenAI 兼容的 HTTPS API 地址，例如 https://api.example.com/v1。',
     apiKey: 'API Key',
     apiKeyHint: '密钥由平台加密保存，编辑时不回显。',
+    channelAffinity: '渠道亲和性',
+    channelAffinityDescription: '启用后，同一会话会向兼容网关发送稳定的匿名亲和键。',
+    channelAffinityHelp: '渠道亲和性说明',
+    channelAffinityTip: '尽量让同一会话复用相同上游渠道，以提高长上下文缓存命中率和响应稳定性；网关仍可在渠道故障时切换。关闭后 Luna 不发送亲和请求头。',
     secretUnchanged: '留空表示不修改',
     runtimeTitle: '高级运行设置',
     runtimeDescription: '这些设置由平台动态下发给 Agent，无需修改容器环境变量。通常保持默认值即可。',
@@ -180,6 +184,11 @@ const settings = {
     loadFailedDescription: '请确认当前账号具有平台管理员权限，或稍后重试。',
   },
   configDefinitions: {
+    ai: {
+      provider: {
+        channel_affinity_enabled: { label: '渠道亲和性', description: '启用后，Agent 为会话内模型请求发送匿名亲和键；关闭后不发送，默认启用。' },
+      },
+    },
     site: {
       title: { label: '网站标题', description: '浏览器标题和控制台品牌名称。' },
       logoUrl: { label: 'Logo 地址', description: '控制台左上角 Logo 图片地址，留空时使用默认图标。' },

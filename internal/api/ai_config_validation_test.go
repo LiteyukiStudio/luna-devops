@@ -15,7 +15,7 @@ func aiConfigDefaults() map[string]string {
 
 func TestAIConfigDefinitionsCoverSpecificationCatalog(t *testing.T) {
 	expected := []string{
-		"ai.assistant.enabled", "ai.provider.base_url", "ai.provider.api_key",
+		"ai.assistant.enabled", "ai.provider.base_url", "ai.provider.api_key", "ai.provider.channel_affinity_enabled",
 		"ai.web.proxy_enabled", "ai.web.proxy_pool",
 		"ai.runtime.provider_timeout_seconds", "ai.runtime.run_timeout_seconds", "ai.runtime.agent_concurrent_runs",
 		"ai.runtime.max_request_retries",
@@ -39,6 +39,9 @@ func TestAIConfigDefinitionsCoverSpecificationCatalog(t *testing.T) {
 	}
 	if got := aiConfigDefaults()["ai.quota.run_max_tool_calls"]; got != "256" {
 		t.Fatalf("Run tool-call guard default = %q, want 256", got)
+	}
+	if got := aiConfigDefaults()["ai.provider.channel_affinity_enabled"]; got != "true" {
+		t.Fatalf("channel affinity default = %q, want true", got)
 	}
 }
 

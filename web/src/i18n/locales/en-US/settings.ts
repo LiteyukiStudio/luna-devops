@@ -71,6 +71,10 @@ const settings = {
     baseUrlHint: 'Use an OpenAI-compatible HTTPS API URL, such as https://api.example.com/v1.',
     apiKey: 'API key',
     apiKeyHint: 'The key is encrypted by the platform and is never displayed when editing.',
+    channelAffinity: 'Channel affinity',
+    channelAffinityDescription: 'Send a stable pseudonymous affinity key to compatible gateways for requests in the same conversation.',
+    channelAffinityHelp: 'About channel affinity',
+    channelAffinityTip: 'Encourages the gateway to reuse the same upstream channel for a conversation, improving long-context cache locality and response consistency. The gateway can still fail over when a channel is unhealthy. Luna sends no affinity header when disabled.',
     secretUnchanged: 'Leave blank to keep unchanged',
     runtimeTitle: 'Advanced runtime settings',
     runtimeDescription: 'The platform delivers these settings to Agent dynamically, so container environment variables are not required. The defaults suit most installations.',
@@ -180,6 +184,11 @@ const settings = {
     loadFailedDescription: 'Confirm that the current account is a platform administrator, or try again later.',
   },
   configDefinitions: {
+    ai: {
+      provider: {
+        channel_affinity_enabled: { label: 'Channel affinity', description: 'Send a pseudonymous affinity key for conversation-bound model requests. Enabled by default.' },
+      },
+    },
     site: {
       title: { label: 'Site title', description: 'Browser title and console brand name.' },
       logoUrl: { label: 'Logo URL', description: 'Logo displayed in the top-left corner of the console. Leave empty to use the default icon.' },

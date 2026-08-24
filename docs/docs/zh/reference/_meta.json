@@ -11,6 +11,11 @@
   },
   {
     "type": "file",
+    "name": "channel-affinity",
+    "label": "渠道亲和性"
+  },
+  {
+    "type": "file",
     "name": "gateway-traffic-probe",
     "label": "网关流量探针"
   },

@@ -22,6 +22,10 @@
 生产模式必须同时提供 PostgreSQL、Redis 与 Luna API 配置。就绪探针会实时检查数据库 Schema、
 Provider 配置和 Redis 活动流；任一依赖不可用时返回 `503`，实例不会继续接收新 Run。
 
+启动日志出现 `error.code=ai.stream_redis_url_required` 时，表示 `REDIS_ADDR` 未注入或值为空，
+Agent 此时尚未尝试连接 Redis。请使用当前版本的 Helm Chart 或 Docker Compose 清单重新创建 Agent；
+旧 Compose 清单没有转发该变量时，只修改 `.env` 不会生效。
+
 ## 高级配置
 
 ### 运行时

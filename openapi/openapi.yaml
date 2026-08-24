@@ -8564,9 +8564,10 @@ components:
           properties:
             baseUrl: { type: string, format: uri }
             apiKey: { type: string, writeOnly: true, x-luna-sensitive: true, description: In-memory Agent use only; never returned to browser APIs. }
+            channelAffinityEnabled: { type: boolean, description: When enabled, Agent adds a pseudonymous X-Luna-Affinity-Key header only to conversation-bound model requests. }
             configured: { type: boolean }
             models: { type: array, items: { $ref: "#/components/schemas/AIModelPricingSnapshot" } }
-          required: [baseUrl, apiKey, configured, models]
+          required: [baseUrl, apiKey, channelAffinityEnabled, configured, models]
         runtime:
           type: object
           properties:
