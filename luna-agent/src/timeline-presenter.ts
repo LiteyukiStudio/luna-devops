@@ -27,6 +27,16 @@ export async function presentTimeline(
       status: snapshot.conversation.status,
       ...(snapshot.conversation.modelId ? { modelId: snapshot.conversation.modelId } : {}),
     },
+    ...(snapshot.contextUsage ? {
+      contextUsage: {
+        status: snapshot.contextUsage.status,
+        runId: snapshot.contextUsage.runId,
+        modelId: snapshot.contextUsage.modelId,
+        usedTokens: snapshot.contextUsage.usedTokens,
+        maxContextTokensSnapshot: snapshot.contextUsage.maxContextTokensSnapshot,
+        recordedAt: snapshot.contextUsage.recordedAt,
+      },
+    } : {}),
     turns: snapshot.turns.map(turn => ({
       id: turn.id,
       turnIndex: turn.turnIndex,

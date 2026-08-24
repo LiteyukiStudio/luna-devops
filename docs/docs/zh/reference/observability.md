@@ -38,6 +38,8 @@ OTEL_RESOURCE_ATTRIBUTES=deployment.environment.name=production,k8s.cluster.name
 
 三个地址都填写后开启“Agent 可观测”，逐个执行“测试连接”。查询地址和 Token 只由 Luna API 使用，不会发送到浏览器。配置完成后在“运营面板 → Agent 观测”查看模型用量、工具调用、对话轮和 Trace。
 
+打开某一轮对话详情后，头部会展示该轮完整 Trace ID；点击该信息块即可复制，用于在 Tempo、日志平台或诊断工单中检索同一条调用链。
+
 ## Prometheus 抓取
 
 需要直接抓取 API 指标时配置：

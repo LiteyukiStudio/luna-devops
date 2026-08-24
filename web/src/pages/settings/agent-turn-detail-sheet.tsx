@@ -83,6 +83,18 @@ export function AgentTurnDetailSheet({ turn, onOpenChange }: {
   const canExportDiagnostic = Boolean(turn && detail.data)
   const exportUnavailableLabel = t('operationsDashboardPage.turnDetail.exportUnavailable')
 
+  const copyTraceId = async () => {
+    if (!turn?.traceId)
+      return
+    try {
+      await navigator.clipboard.writeText(turn.traceId)
+      toast.success(t('common.copied'))
+    }
+    catch {
+      toast.error(t('common.copyFailed'))
+    }
+  }
+
   const copyDiagnosticJSON = async () => {
     if (!turn || !detail.data)
       return
@@ -145,6 +157,24 @@ export function AgentTurnDetailSheet({ turn, onOpenChange }: {
             </span>
             {turn && <span>{formatDateTime(turn.createdAt, i18n.language)}</span>}
           </SheetDescription>
+          {turn?.traceId && (
+            <button
+              aria-label={`${t('common.copy')} ${t('operationsDashboardPage.traceId')}`}
+              className="group flex w-full min-w-0 items-center gap-3 rounded-control bg-primary-subtle px-3 py-2 text-left text-primary-text transition-colors hover:bg-primary-subtle-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:w-fit sm:max-w-full"
+              title={`${t('common.copy')} ${t('operationsDashboardPage.traceId')}`}
+              type="button"
+              onClick={() => void copyTraceId()}
+            >
+              <span className="grid size-8 shrink-0 place-items-center rounded-control bg-surface/70">
+                <Network className="size-4" />
+              </span>
+              <span className="min-w-0">
+                <span className="block text-[10px] font-medium uppercase tracking-wide opacity-75">{t('operationsDashboardPage.traceId')}</span>
+                <code className="block break-all text-xs font-semibold sm:text-sm">{turn.traceId}</code>
+              </span>
+              <Copy className="ml-auto size-4 shrink-0 opacity-70 transition-opacity group-hover:opacity-100" />
+            </button>
+          )}
         </SheetHeader>
         <div className="min-h-0 flex-1 overflow-auto p-6">
           {turn && (

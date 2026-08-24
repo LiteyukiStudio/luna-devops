@@ -163,6 +163,13 @@ suite("Postgres authoritative model usage", () => {
     expect(result.usage).toEqual({ status: "reported", value: { promptTokens: 11, completionTokens: 4, totalTokens: 15 } })
     const usage = await repository.pool.query("SELECT prompt_tokens, completion_tokens, total_tokens FROM ai.model_usages WHERE run_id = $1", [runId])
     expect(usage.rows).toEqual([{ prompt_tokens: "11", completion_tokens: "4", total_tokens: "15" }])
+    const run = await repository.getRun(ownerUserId, runId)
+    const timeline = await repository.getTimeline(ownerUserId, run!.conversationId)
+    expect(timeline?.contextUsage).toMatchObject({
+      status: "reported", runId, modelId: model.id, usedTokens: 15,
+      maxContextTokensSnapshot: model.maxContextTokens,
+    })
+    expect(Number.isFinite(Date.parse(timeline!.contextUsage!.recordedAt))).toBe(true)
   })
 })
 

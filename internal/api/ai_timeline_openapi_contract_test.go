@@ -99,6 +99,36 @@ func TestAITimelineOpenAPIDocumentsLatestContextUsage(t *testing.T) {
 			t.Fatalf("AITimelineTurn.selectedRun still exposes removed %s", removed)
 		}
 	}
+	timelinePage, _ := schemas["AITimelinePage"].(map[string]any)
+	timelineProperties, _ := timelinePage["properties"].(map[string]any)
+	contextUsage, _ := timelineProperties["contextUsage"].(map[string]any)
+	if contextUsage["$ref"] != "#/components/schemas/AIContextUsage" {
+		t.Fatalf("AITimelinePage.contextUsage = %#v", contextUsage)
+	}
+	usageSchema, _ := schemas["AIContextUsage"].(map[string]any)
+	usageProperties, _ := usageSchema["properties"].(map[string]any)
+	for _, field := range []string{"status", "runId", "modelId", "usedTokens", "maxContextTokensSnapshot", "recordedAt"} {
+		if usageProperties[field] == nil {
+			t.Fatalf("AIContextUsage is missing %s", field)
+		}
+	}
+
+	internalDocument := readOpenAPIDocument(t, filepath.Join(apiRepositoryRoot(t), "openapi", "agent-internal.yaml"))
+	internalComponents, _ := internalDocument["components"].(map[string]any)
+	internalSchemas, _ := internalComponents["schemas"].(map[string]any)
+	agentTimelinePage, _ := internalSchemas["AgentTimelinePage"].(map[string]any)
+	agentTimelineProperties, _ := agentTimelinePage["properties"].(map[string]any)
+	agentContextUsage, _ := agentTimelineProperties["contextUsage"].(map[string]any)
+	if agentContextUsage["$ref"] != "#/components/schemas/AgentContextUsage" {
+		t.Fatalf("AgentTimelinePage.contextUsage = %#v", agentContextUsage)
+	}
+	agentUsageSchema, _ := internalSchemas["AgentContextUsage"].(map[string]any)
+	agentUsageProperties, _ := agentUsageSchema["properties"].(map[string]any)
+	for _, field := range []string{"status", "runId", "modelId", "usedTokens", "maxContextTokensSnapshot", "recordedAt"} {
+		if agentUsageProperties[field] == nil {
+			t.Fatalf("AgentContextUsage is missing %s", field)
+		}
+	}
 }
 
 func TestAIConversationDirectoryOpenAPISearchAndSortContract(t *testing.T) {

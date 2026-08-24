@@ -1,4 +1,4 @@
-import { index, pgSchema, text, timestamp } from "drizzle-orm/pg-core"
+import { bigint, index, pgSchema, text, timestamp } from "drizzle-orm/pg-core"
 
 export const aiSchema = pgSchema("ai")
 
@@ -11,6 +11,11 @@ export const conversations = aiSchema.table("conversations", {
   // 数据库当前使用 text + check constraint，类型约束在 TypeScript 边界完成
   titleSource: text("title_source").notNull().$type<"default" | "assistant" | "user">().default("default"),
   status: text("status").notNull().$type<"active">().default("active"),
+  contextUsageRunId: text("context_usage_run_id"),
+  contextUsageModelId: text("context_usage_model_id"),
+  contextUsedTokens: bigint("context_used_tokens", { mode: "number" }),
+  contextMaxTokensSnapshot: bigint("context_max_tokens_snapshot", { mode: "number" }),
+  contextUsageRecordedAt: timestamp("context_usage_recorded_at", { withTimezone: true, mode: "date" }),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
 }, table => [

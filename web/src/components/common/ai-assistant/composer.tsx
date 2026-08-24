@@ -1,6 +1,5 @@
 import type { KeyboardEvent, RefObject } from 'react'
-import type { AIRunUsage } from './state'
-import type { AIModelOption } from '@/api'
+import type { AIContextUsage, AIModelOption } from '@/api'
 import { Check, ChevronDown, CircleStop, LoaderCircle, Send } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { UsageRing } from '@/components/common/usage-ring'
@@ -18,8 +17,8 @@ export interface AIAssistantComposerProps {
   selectedModelId?: string
   /** 尚未发起过模型调用的新会话可以安全地展示为 0% 上下文用量。 */
   isNewConversation?: boolean
-  /** 最近一次模型调用的官方 Provider 用量；非 reported 状态不展示百分比。 */
-  providerUsage?: AIRunUsage
+  /** 会话最近一次已确认的上下文大小；新 Run 启动时保持不变。 */
+  contextUsage?: AIContextUsage
   draft: string
   inputRef: RefObject<HTMLTextAreaElement | null>
   maxLength?: number
@@ -91,7 +90,7 @@ export function AIAssistantComposer({
   modelSelectionDisabled = false,
   selectedModelId,
   isNewConversation = false,
-  providerUsage,
+  contextUsage,
   draft,
   inputRef,
   maxLength,
@@ -107,13 +106,13 @@ export function AIAssistantComposer({
   const busy = sending || submitting
   const canSubmit = modelAvailable && (!activeRun || waitingInput)
   const selectedModel = models.find(model => model.id === selectedModelId)
-  const hasReportedUsage = providerUsage?.status === 'reported'
-    && providerUsage.modelId === selectedModel?.id
-    && typeof providerUsage.promptTokens === 'number'
-    && typeof providerUsage.maxContextTokensSnapshot === 'number'
-    && providerUsage.maxContextTokensSnapshot > 0
-  const contextTotal = hasReportedUsage ? providerUsage.maxContextTokensSnapshot! : 0
-  const contextUsed = hasReportedUsage ? providerUsage.promptTokens! : 0
+  const hasReportedUsage = contextUsage?.status === 'reported'
+    && contextUsage.modelId === selectedModel?.id
+    && typeof contextUsage.usedTokens === 'number'
+    && typeof contextUsage.maxContextTokensSnapshot === 'number'
+    && contextUsage.maxContextTokensSnapshot > 0
+  const contextTotal = hasReportedUsage ? contextUsage.maxContextTokensSnapshot : 0
+  const contextUsed = hasReportedUsage ? contextUsage.usedTokens : 0
   const contextRatio = hasReportedUsage ? contextUsed / contextTotal : 0
   const hasInitialContextUsage = isNewConversation
     && typeof selectedModel?.maxContextTokens === 'number'

@@ -243,10 +243,26 @@ describe('timeline query cache', () => {
       modelId: 'aimod_test',
       maxContextTokensSnapshot: 128_000,
     })
+    expect(aggregate?.state.contextUsage).toEqual({
+      status: 'reported',
+      runId: 'run-1',
+      modelId: 'aimod_test',
+      usedTokens: 26_112,
+      maxContextTokensSnapshot: 128_000,
+      recordedAt: '2026-08-15T00:00:01Z',
+    })
   })
 
   it('restores context usage from a durable timeline snapshot', () => {
     const durable = snapshot(8)
+    durable.contextUsage = {
+      status: 'reported',
+      runId: 'run-1',
+      modelId: 'aimod_test',
+      usedTokens: 33_024,
+      maxContextTokensSnapshot: 128_000,
+      recordedAt: '2026-08-15T00:00:08Z',
+    }
     durable.turns[0]!.selectedRun = {
       ...durable.turns[0]!.selectedRun!,
       latestPromptTokens: 32_000,
@@ -264,6 +280,29 @@ describe('timeline query cache', () => {
       modelId: 'aimod_test',
       maxContextTokensSnapshot: 128_000,
     })
+    expect(aggregate?.state.contextUsage).toEqual(durable.contextUsage)
+  })
+
+  it('does not regress a newly reported context value when an older snapshot finishes late', () => {
+    const durable = snapshot(1)
+    durable.contextUsage = {
+      status: 'reported',
+      runId: 'run-previous',
+      modelId: 'aimod_test',
+      usedTokens: 20_000,
+      maxContextTokensSnapshot: 128_000,
+      recordedAt: '2026-08-15T00:00:00Z',
+    }
+    const initial = timelineQueryDataFromSnapshot(durable)
+    const live = applyTimelineQueryEvent(initial, {
+      ...event(2),
+      type: 'model.completed',
+      item: undefined,
+      payload: { usage: { status: 'reported', promptTokens: 24_000, completionTokens: 2_000, totalTokens: 26_000 }, modelId: 'aimod_test', maxContextTokensSnapshot: 128_000 },
+    })
+    const merged = mergeTimelineQuerySnapshot(live, timelineQueryDataFromSnapshot(durable))
+
+    expect(merged.state.contextUsage).toMatchObject({ runId: 'run-1', usedTokens: 26_000 })
   })
 
   it('marks a sequence gap and only clears it after an authoritative snapshot covers the missing event', () => {

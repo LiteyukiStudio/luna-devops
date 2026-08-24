@@ -98,13 +98,13 @@ describe('ai assistant composer keyboard submission', () => {
     expect(onSubmit).toHaveBeenCalledOnce()
   })
 
-  it('shows the provider-reported context usage as a ring with a formatted tooltip label', () => {
+  it('shows the latest confirmed conversation context as a ring with a formatted tooltip label', () => {
     render(
       <AIAssistantComposer
         activeRun={false}
         canceling={false}
         canCancel={false}
-        providerUsage={{ status: 'reported', promptTokens: 74_600, modelId: 'aimod_test', maxContextTokensSnapshot: 524_000 }}
+        contextUsage={{ status: 'reported', runId: 'run-1', modelId: 'aimod_test', usedTokens: 74_600, maxContextTokensSnapshot: 524_000, recordedAt: '2026-08-24T00:00:00Z' }}
         draft="测试消息"
         inputRef={createRef<HTMLTextAreaElement>()}
         models={[{ id: 'aimod_test', name: 'Test model', maxContextTokens: 524_000, maxOutputTokens: 16_000 }]}
@@ -131,7 +131,7 @@ describe('ai assistant composer keyboard submission', () => {
         activeRun={false}
         canceling={false}
         canCancel={false}
-        providerUsage={{ status: 'reported', promptTokens: 25_600, modelId: 'aimod_test', maxContextTokensSnapshot: 128_000 }}
+        contextUsage={{ status: 'reported', runId: 'run-1', modelId: 'aimod_test', usedTokens: 25_600, maxContextTokensSnapshot: 128_000, recordedAt: '2026-08-24T00:00:00Z' }}
         draft="测试消息"
         inputRef={createRef<HTMLTextAreaElement>()}
         models={[{ id: 'aimod_test', name: 'Test model', maxContextTokens: 128_000, maxOutputTokens: 16_000 }]}
@@ -190,7 +190,7 @@ describe('ai assistant composer keyboard submission', () => {
         draft="测试消息"
         inputRef={createRef<HTMLTextAreaElement>()}
         models={[{ id: 'aimod_current', name: 'Current', maxContextTokens: 128_000, maxOutputTokens: 16_000 }]}
-        providerUsage={{ status: 'reported', promptTokens: 25_600, modelId: 'aimod_previous', maxContextTokensSnapshot: 64_000 }}
+        contextUsage={{ status: 'reported', runId: 'run-1', modelId: 'aimod_previous', usedTokens: 25_600, maxContextTokensSnapshot: 64_000, recordedAt: '2026-08-24T00:00:00Z' }}
         selectedModelId="aimod_current"
         sending={false}
         submitting={false}

@@ -143,8 +143,18 @@ export type TimelineTurn = {
   items: TimelineItem[]
 }
 
+export type ContextUsageSnapshot = {
+  status: "reported"
+  runId: string
+  modelId: string
+  usedTokens: number
+  maxContextTokensSnapshot: number
+  recordedAt: string
+}
+
 export type TimelinePage = {
   conversation: Conversation
+  contextUsage?: ContextUsageSnapshot
   turns: TimelineTurn[]
   eventCursors: Array<{ runId: string, after: number }>
   pageInfo: {

@@ -528,7 +528,7 @@ describe('aI assistant state', () => {
     expect(recovered.blocks[0]).toMatchObject({ text: 'hello second third' })
   })
 
-  it('records provider-reported input tokens from model.completed usage', () => {
+  it('records provider-reported total tokens as the latest confirmed conversation context', () => {
     const started = reduceAIEvent(emptyAIAssistantState, event({ eventId: 'event-1', eventSequence: 1, type: 'run.started', item: undefined, payload: {} }))
     const completed = reduceAIEvent(started, event({
       eventId: 'event-2',
@@ -538,6 +538,14 @@ describe('aI assistant state', () => {
       payload: { usage: { status: 'reported', promptTokens: 25600, completionTokens: 512, totalTokens: 26112 }, modelId: 'aimod_test', maxContextTokensSnapshot: 32_000 },
     }))
     expect(completed.runUsage['run-1']).toEqual({ status: 'reported', promptTokens: 25600, modelId: 'aimod_test', maxContextTokensSnapshot: 32_000 })
+    expect(completed.contextUsage).toEqual({
+      status: 'reported',
+      runId: 'run-1',
+      modelId: 'aimod_test',
+      usedTokens: 26112,
+      maxContextTokensSnapshot: 32_000,
+      recordedAt: '2026-07-28T00:00:00Z',
+    })
 
     const withoutUsage = reduceAIEvent(completed, event({
       eventId: 'event-3',
@@ -547,9 +555,10 @@ describe('aI assistant state', () => {
       payload: {},
     }))
     expect(withoutUsage.runUsage['run-1']).toEqual({ status: 'unavailable' })
+    expect(withoutUsage.contextUsage).toEqual(completed.contextUsage)
   })
 
-  it('keeps only the latest model input usage for context display', () => {
+  it('replaces the confirmed context with the latest total and allows compaction to reduce it', () => {
     const started = reduceAIEvent(emptyAIAssistantState, event({ eventId: 'event-1', eventSequence: 1, type: 'run.started', item: undefined, payload: {} }))
     const first = reduceAIEvent(started, event({
       eventId: 'event-2',
@@ -559,6 +568,7 @@ describe('aI assistant state', () => {
       payload: { usage: { status: 'reported', promptTokens: 1000, completionTokens: 500, totalTokens: 1500 }, modelId: 'aimod_test', maxContextTokensSnapshot: 32_000 },
     }))
     expect(first.runUsage['run-1']?.promptTokens).toBe(1000)
+    expect(first.contextUsage?.usedTokens).toBe(1500)
     const second = reduceAIEvent(first, event({
       eventId: 'event-3',
       eventSequence: 3,
@@ -567,9 +577,10 @@ describe('aI assistant state', () => {
       payload: { usage: { status: 'reported', promptTokens: 200, completionTokens: 300, totalTokens: 500 }, modelId: 'aimod_test', maxContextTokensSnapshot: 32_000 },
     }))
     expect(second.runUsage['run-1']?.promptTokens).toBe(200)
+    expect(second.contextUsage?.usedTokens).toBe(500)
   })
 
-  it('isolates token usage between runs', () => {
+  it('keeps the last confirmed conversation context when a new run starts', () => {
     const first = reduceAIEvent(emptyAIAssistantState, event({
       eventId: 'event-1',
       eventSequence: 1,
@@ -577,7 +588,13 @@ describe('aI assistant state', () => {
       item: undefined,
       payload: { usage: { status: 'reported', promptTokens: 1000, completionTokens: 200, totalTokens: 1200 }, modelId: 'aimod_test', maxContextTokensSnapshot: 32_000 },
     }))
-    const nextRun = reduceAIEvent(first, event({
+    const optimistic = addOptimisticTurn(first, {
+      turnId: 'turn-2',
+      turnIndex: 1,
+      runId: 'run-2',
+      text: 'continue',
+    })
+    const nextRun = reduceAIEvent(optimistic, event({
       eventId: 'event-next-1',
       eventSequence: 1,
       runId: 'run-2',
@@ -588,6 +605,7 @@ describe('aI assistant state', () => {
     }))
 
     expect(nextRun.runUsage['run-1']).toEqual({ status: 'reported', promptTokens: 1000, modelId: 'aimod_test', maxContextTokensSnapshot: 32_000 })
-    expect(nextRun.runUsage['run-2']).toBeUndefined()
+    expect(nextRun.runUsage['run-2']).toEqual({ status: 'unavailable' })
+    expect(nextRun.contextUsage).toEqual(first.contextUsage)
   })
 })

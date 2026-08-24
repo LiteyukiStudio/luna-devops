@@ -143,7 +143,7 @@ func TestAIProxyForwardsTimelineCursorPagination(t *testing.T) {
 		StatusCode: http.StatusOK,
 		Header:     http.Header{"Content-Type": []string{"application/json"}},
 		Body: io.NopCloser(strings.NewReader(
-			`{"conversation":{"id":"aicnv_owned"},"turns":[],"eventCursors":[],"pageInfo":{"hasOlder":true,"olderCursor":"next-opaque-cursor"}}`,
+			`{"conversation":{"id":"aicnv_owned"},"contextUsage":{"status":"reported","runId":"airun_previous","modelId":"aimod_test","usedTokens":26112,"maxContextTokensSnapshot":128000,"recordedAt":"2026-08-24T00:00:00Z"},"turns":[],"eventCursors":[],"pageInfo":{"hasOlder":true,"olderCursor":"next-opaque-cursor"}}`,
 		)),
 	}}
 	handler := aiTestHandlers(fake, true)
@@ -169,6 +169,9 @@ func TestAIProxyForwardsTimelineCursorPagination(t *testing.T) {
 	}
 	if !strings.Contains(response.Body.String(), `"olderCursor":"next-opaque-cursor"`) {
 		t.Fatalf("timeline page response = %s", response.Body.String())
+	}
+	if !strings.Contains(response.Body.String(), `"usedTokens":26112`) {
+		t.Fatalf("timeline context usage was not forwarded: %s", response.Body.String())
 	}
 }
 

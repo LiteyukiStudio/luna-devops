@@ -1,5 +1,5 @@
 import type { AIToolVisibility } from '@luna-devops/ai-interaction-card-contract'
-import type { AIEvent, AIMessagePart, AITimeline, AITimelineItem, AIToolDisplayResult, AIToolStatus, AIUIAction } from '@/api'
+import type { AIContextUsage, AIEvent, AIMessagePart, AITimeline, AITimelineItem, AIToolDisplayResult, AIToolStatus, AIUIAction } from '@/api'
 
 export type AIBlock
   = | { id: string, turnId: string, runId?: string, index: number, type: 'thinking', status: string, display: 'summary' | 'progress', text: string }
@@ -28,6 +28,8 @@ export interface AIAssistantState {
   desyncRecoverySequences: Record<string, number>
   /** 上下文用量必须按 Run 隔离，避免新一轮继承上一轮的输入量。 */
   runUsage: Record<string, AIRunUsage>
+  /** 会话最近一次已确认的上下文大小；活动 Run 创建时保持不变。 */
+  contextUsage?: AIContextUsage
 }
 
 const TURN_ORDER_STRIDE = 1_000_000
@@ -51,13 +53,41 @@ function hasCompleteReportedUsage(run: NonNullable<AITimeline['turns'][number]['
     && run.latestUsageMaxContextTokensSnapshot > 0
 }
 
+function isValidContextUsage(value: unknown): value is AIContextUsage {
+  if (!value || typeof value !== 'object' || Array.isArray(value))
+    return false
+  const usage = value as Partial<AIContextUsage>
+  return usage.status === 'reported'
+    && typeof usage.runId === 'string'
+    && usage.runId.length > 0
+    && typeof usage.modelId === 'string'
+    && usage.modelId.length > 0
+    && typeof usage.usedTokens === 'number'
+    && Number.isSafeInteger(usage.usedTokens)
+    && usage.usedTokens >= 0
+    && typeof usage.maxContextTokensSnapshot === 'number'
+    && Number.isSafeInteger(usage.maxContextTokensSnapshot)
+    && usage.maxContextTokensSnapshot > 0
+    && typeof usage.recordedAt === 'string'
+    && Number.isFinite(Date.parse(usage.recordedAt))
+}
+
+export function latestContextUsage(left: AIContextUsage | undefined, right: AIContextUsage | undefined) {
+  if (!left)
+    return right
+  if (!right)
+    return left
+  return Date.parse(right.recordedAt) >= Date.parse(left.recordedAt) ? right : left
+}
+
 export function isValidAITimeline(value: unknown): value is AITimeline {
   if (!value || typeof value !== 'object')
     return false
   const candidate = value as Partial<AITimeline>
   if (!candidate.conversation || typeof candidate.conversation.id !== 'string' || !Array.isArray(candidate.turns) || !Array.isArray(candidate.eventCursors)
     || !candidate.pageInfo || typeof candidate.pageInfo.hasOlder !== 'boolean'
-    || (candidate.pageInfo.olderCursor !== undefined && typeof candidate.pageInfo.olderCursor !== 'string')) {
+    || (candidate.pageInfo.olderCursor !== undefined && typeof candidate.pageInfo.olderCursor !== 'string')
+    || (candidate.contextUsage !== undefined && !isValidContextUsage(candidate.contextUsage))) {
     return false
   }
   return candidate.turns.every(turn =>
@@ -151,6 +181,7 @@ export function stateFromTimeline(timeline: AITimeline): AIAssistantState {
     itemRevisions: Object.fromEntries(timeline.turns.flatMap(turn => turn.selectedRun?.items.map(item => [item.id, item.revision]) ?? [])),
     desyncedRunIds: new Set(),
     desyncRecoverySequences: {},
+    contextUsage: timeline.contextUsage,
     runUsage: Object.fromEntries(timeline.turns.flatMap((turn) => {
       const run = turn.selectedRun
       if (!run)
@@ -235,6 +266,7 @@ export function mergeTimelineSnapshot(current: AIAssistantState | undefined, tim
     itemRevisions: Object.fromEntries([...itemRevisionIds]
       .map(itemId => [itemId, Math.max(current.itemRevisions[itemId] ?? 0, snapshot.itemRevisions[itemId] ?? 0)])),
     runUsage: mergeRunUsage(snapshot.runUsage, current.runUsage, snapshot.lastEventSequences, current.lastEventSequences),
+    contextUsage: latestContextUsage(current.contextUsage, snapshot.contextUsage),
     desyncedRunIds: new Set([...current.desyncedRunIds].filter(runId =>
       (snapshot.lastEventSequences[runId] ?? 0) < (current.desyncRecoverySequences[runId] ?? Number.MAX_SAFE_INTEGER))),
     desyncRecoverySequences: Object.fromEntries(Object.entries(current.desyncRecoverySequences).filter(([runId, sequence]) =>
@@ -558,12 +590,16 @@ export function reduceAIEvent(state: AIAssistantState, event: AIEvent): AIAssist
       : undefined
     const status = usageRecord?.status
     const promptTokens = usageRecord?.promptTokens
+    const totalTokens = usageRecord?.totalTokens
     const modelId = event.payload.modelId
     const maxContextTokensSnapshot = event.payload.maxContextTokensSnapshot
     const hasReportedUsage = status === 'reported'
       && typeof promptTokens === 'number'
       && Number.isSafeInteger(promptTokens)
       && promptTokens >= 0
+      && typeof totalTokens === 'number'
+      && Number.isSafeInteger(totalTokens)
+      && totalTokens >= promptTokens
       && typeof modelId === 'string'
       && modelId.length > 0
       && typeof maxContextTokensSnapshot === 'number'
@@ -571,6 +607,16 @@ export function reduceAIEvent(state: AIAssistantState, event: AIEvent): AIAssist
       && maxContextTokensSnapshot > 0
     return {
       ...next,
+      contextUsage: hasReportedUsage
+        ? {
+            status: 'reported',
+            runId: event.runId,
+            modelId,
+            usedTokens: totalTokens,
+            maxContextTokensSnapshot,
+            recordedAt: event.occurredAt,
+          }
+        : next.contextUsage,
       runUsage: {
         ...next.runUsage,
         [event.runId]: hasReportedUsage
@@ -638,4 +684,5 @@ export const emptyAIAssistantState: AIAssistantState = {
   desyncedRunIds: new Set(),
   desyncRecoverySequences: {},
   runUsage: {},
+  contextUsage: undefined,
 }

@@ -150,8 +150,20 @@ export interface AITimelineTurn {
   }
 }
 
+export interface AIContextUsage {
+  status: 'reported'
+  runId: string
+  modelId: string
+  /** 最近一次主回答完成后的官方 total_tokens。 */
+  usedTokens: number
+  maxContextTokensSnapshot: number
+  recordedAt: string
+}
+
 export interface AITimeline {
   conversation: Pick<AIConversation, 'id' | 'title' | 'titleSource' | 'status' | 'modelId'>
+  /** 会话最近一次已确认的上下文大小；新 Run 启动时不会清零。 */
+  contextUsage?: AIContextUsage
   turns: AITimelineTurn[]
   eventCursors: Array<{ runId: string, after: number }>
   pageInfo: {

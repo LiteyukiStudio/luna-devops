@@ -38,6 +38,8 @@ Open **Global Settings → AI Assistant → Advanced AI Settings** and enter:
 
 Enable **Agent Observability** after all three URLs are present and test each connection. Only Luna API receives these query URLs and tokens; they are not sent to browsers. Use **Operations → Agent Observability** to view model usage, tool calls, turns, and traces.
 
+Open a turn to see its complete Trace ID prominently in the header. Click the Trace ID block to copy it for searching the same request chain in Tempo, a log platform, or a diagnostic ticket.
+
 ## Prometheus scraping
 
 To scrape API metrics directly, configure:

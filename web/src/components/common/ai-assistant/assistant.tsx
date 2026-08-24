@@ -394,8 +394,6 @@ export function AiAssistant({ capabilities, initiallyOpen = false }: { capabilit
   const activeRunStreamState = activeRunId ? runStreamStates.find(state => state.runId === activeRunId) : undefined
   const timelineActiveTurnId = timelineData?.snapshot?.turns.find(turn => turn.selectedRun?.id === activeRunId)?.id
   const activeTurnId = activeRunId ? timelineActiveTurnId ?? streamState.blocks.at(-1)?.turnId : undefined
-  const latestRunId = timelineData?.snapshot?.turns.at(-1)?.selectedRun?.id
-  const displayedRunUsage = streamState.runUsage[activeRunId ?? latestRunId ?? '']
   const generating = activeRunStatus === 'queued' || activeRunStatus === 'running'
   const waitingInput = activeRunStatus === 'waiting_input'
   const sendingSelected = Boolean(pendingSends[draftKey])
@@ -692,7 +690,7 @@ export function AiAssistant({ capabilities, initiallyOpen = false }: { capabilit
         models={aiModels.data ?? []}
         modelAvailable={Boolean(selectedModel)}
         modelChanging={modelChangingSelected}
-        providerUsage={displayedRunUsage}
+        contextUsage={streamState.contextUsage}
         isNewConversation={!selectedConversationId}
         modelSelectionDisabled={Boolean(activeRunId || sendingSelected || sendTurn.isPending)}
         selectedModelId={selectedModel?.id}

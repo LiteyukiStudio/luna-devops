@@ -73,6 +73,27 @@ describe("PostgreSQL bigint event sequence normalization", () => {
       latestUsageModelId: "aimdl_usage",
       latestUsageMaxContextTokensSnapshot: 32_000,
     })
+    expect(timeline?.contextUsage).toMatchObject({
+      status: "reported",
+      runId: created.run.id,
+      modelId: "aimdl_usage",
+      usedTokens: 20_000,
+      maxContextTokensSnapshot: 32_000,
+    })
+
+    await repository.updateRun(created.run.id, "queued", "running")
+    await repository.updateRun(created.run.id, "running", "completed")
+    const next = await repository.createTurn("usr_usage", {
+      conversationId: conversation.id,
+      input: "continue",
+      pageContext: {},
+      idempotencyKey: "usage-request-next",
+      modelId: "aimdl_usage",
+      modelSnapshot: created.run.model!,
+    })
+    const activeTimeline = await presentTimeline(repository, "usr_usage", conversation.id)
+    expect(activeTimeline?.turns.at(-1)?.selectedRun).toMatchObject({ id: next.run.id, status: "queued" })
+    expect(activeTimeline?.contextUsage).toMatchObject({ runId: created.run.id, usedTokens: 20_000 })
   })
 
   it("projects bounded non-sensitive tool results consistently for snapshots and events", async () => {

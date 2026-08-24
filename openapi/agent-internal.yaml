@@ -258,6 +258,7 @@ components:
       required: [conversation, turns, eventCursors, pageInfo]
       properties:
         conversation: { $ref: "#/components/schemas/AgentConversationSummary" }
+        contextUsage: { $ref: "#/components/schemas/AgentContextUsage" }
         turns:
           type: array
           description: Complete turns in chronological order within this page; a turn is never split across pages.
@@ -278,6 +279,18 @@ components:
           properties:
             hasOlder: { type: boolean }
             olderCursor: { type: string, description: Opaque cursor for the next older page; omitted when hasOlder is false. }
+    AgentContextUsage:
+      type: object
+      additionalProperties: false
+      description: Latest confirmed conversation context, tagged with its model identity. It remains stable while a new Run is active and may decrease after context compaction.
+      required: [status, runId, modelId, usedTokens, maxContextTokensSnapshot, recordedAt]
+      properties:
+        status: { type: string, enum: [reported] }
+        runId: { type: string }
+        modelId: { type: string }
+        usedTokens: { type: integer, format: int64, minimum: 0, description: Official total_tokens after the latest reported assistant model call; not a sum of historical requests. }
+        maxContextTokensSnapshot: { type: integer, format: int64, minimum: 1 }
+        recordedAt: { type: string, format: date-time }
     AgentError:
       type: object
       properties:

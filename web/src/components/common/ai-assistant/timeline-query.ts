@@ -6,6 +6,7 @@ import {
   addOptimisticTurn,
   emptyAIAssistantState,
   isValidAITimeline,
+  latestContextUsage,
   mergeTimelineSnapshot,
   reduceAIEvent,
   stateFromTimeline,
@@ -150,8 +151,10 @@ function combinedSnapshot(pages: AITimelineQueryData[]): AITimeline | undefined 
     const snapshotIndex = snapshot.turns.at(-1)?.turnIndex ?? -1
     return snapshotIndex > candidateIndex ? snapshot : candidate
   })
+  const contextUsage = snapshots.reduce((candidate, snapshot) => latestContextUsage(candidate, snapshot.contextUsage), undefined as AITimeline['contextUsage'])
   return {
     conversation: latest.conversation,
+    ...(contextUsage ? { contextUsage } : {}),
     turns: [...turnsById.values()].sort((left, right) => left.turnIndex - right.turnIndex),
     eventCursors: [...eventCursors].map(([runId, after]) => ({ runId, after })),
     pageInfo: oldest.pageInfo,
@@ -169,6 +172,7 @@ function combinedState(pages: AITimelineQueryData[], snapshot: AITimeline): AIAs
   const runStatuses = { ...authoritative.runStatuses }
   const runExpectedVersions = { ...authoritative.runExpectedVersions }
   const runUsage = { ...authoritative.runUsage }
+  let contextUsage = authoritative.contextUsage
   const turnIndexes = { ...authoritative.turnIndexes }
   const desyncRecoverySequences: Record<string, number> = {}
 
@@ -178,6 +182,7 @@ function combinedState(pages: AITimelineQueryData[], snapshot: AITimeline): AIAs
     Object.assign(runStatuses, page.state.runStatuses)
     Object.assign(runExpectedVersions, page.state.runExpectedVersions)
     Object.assign(runUsage, page.state.runUsage)
+    contextUsage = latestContextUsage(contextUsage, page.state.contextUsage)
     Object.assign(turnIndexes, page.state.turnIndexes)
     for (const [runId, sequence] of Object.entries(page.state.lastEventSequences))
       lastEventSequences[runId] = Math.max(lastEventSequences[runId] ?? 0, sequence)
@@ -200,6 +205,7 @@ function combinedState(pages: AITimelineQueryData[], snapshot: AITimeline): AIAs
     runStatuses,
     runExpectedVersions,
     runUsage,
+    contextUsage,
     lastEventSequences,
     turnIndexes,
     itemRevisions,

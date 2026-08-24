@@ -44,6 +44,7 @@ export class TestRepository implements Repository {
     maxOutputTokens: number
   }>()
   private readonly modelUsages: Array<{ runId: string, operation: ModelCallOperation, usage: OfficialModelUsage }> = []
+  private readonly contextUsageByConversation = new Map<string, NonNullable<Awaited<ReturnType<Repository["getTimeline"]>>>["contextUsage"]>()
   private readonly approvalExemptions = new Map<string, string>()
   private readonly streamHighWatermarks = new Map<string, number>()
 
@@ -351,6 +352,17 @@ export class TestRepository implements Repository {
     if (!item || item.state !== "held") throw new Error("ai.credit_hold_not_active")
     item.state = "reported"
     this.modelUsages.push({ runId: item.runId, operation: item.operation, usage })
+    const run = this.runs.get(item.runId)
+    if (item.operation === "assistant" && run?.model) {
+      this.contextUsageByConversation.set(run.conversationId, {
+        status: "reported",
+        runId: run.id,
+        modelId: run.model.id,
+        usedTokens: usage.totalTokens,
+        maxContextTokensSnapshot: run.model.maxContextTokens,
+        recordedAt: new Date().toISOString(),
+      })
+    }
     return { reconciliationRequired: false }
   }
 
@@ -624,6 +636,7 @@ export class TestRepository implements Repository {
   async getTimeline(ownerUserId: string, conversationId: string, options: TimelinePageOptions = {}) {
     const conversation = await this.getConversation(ownerUserId, conversationId)
     if (!conversation) return undefined
+    const contextUsage = this.contextUsageByConversation.get(conversationId)
     const limit = Math.max(1, Math.min(100, Math.trunc(options.limit ?? 30)))
     const recentTurns = [...this.turns.values()]
       .filter(turn => turn.conversationId === conversationId
@@ -670,6 +683,7 @@ export class TestRepository implements Repository {
     })
     return {
       conversation,
+      ...(contextUsage ? { contextUsage } : {}),
       turns: pageTurns,
       eventCursors,
       pageInfo: {

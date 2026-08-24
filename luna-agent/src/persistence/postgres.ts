@@ -201,6 +201,18 @@ export class PostgresRepository implements Repository {
           ${metadata.finishReason ?? null}, ${metadata.callType}
         )
       `)
+      if (current.operation === "assistant") {
+        await tx.execute(sql`
+          update ai.conversations conversation
+          set context_usage_run_id = ${String(current.run_id)},
+              context_usage_model_id = ${String(current.model_id)},
+              context_used_tokens = ${usage.totalTokens}::bigint,
+              context_max_tokens_snapshot = ${String(current.max_context_tokens_snapshot)}::bigint,
+              context_usage_recorded_at = now()
+          from ai.runs run
+          where run.id = ${String(current.run_id)} and conversation.id = run.conversation_id
+        `)
+      }
       await tx.execute(sql`
         update ai.model_credit_holds
         set state = ${deficit ? "hold_deficit" : "usage_recorded"}, actual_credits = ${String(actual.credits)}::numeric,
@@ -1129,6 +1141,20 @@ export class PostgresRepository implements Repository {
         .where(and(eq(conversations.id, conversationId), eq(conversations.ownerUserId, ownerUserId))))[0]
       if (!conversationRow) return undefined
       const conversation = mapConversation(conversationRow)
+      const contextUsage = conversationRow.contextUsageRunId
+        && conversationRow.contextUsageModelId
+        && conversationRow.contextUsedTokens !== null
+        && conversationRow.contextMaxTokensSnapshot !== null
+        && conversationRow.contextUsageRecordedAt
+        ? {
+            status: "reported" as const,
+            runId: conversationRow.contextUsageRunId,
+            modelId: conversationRow.contextUsageModelId,
+            usedTokens: conversationRow.contextUsedTokens,
+            maxContextTokensSnapshot: conversationRow.contextMaxTokensSnapshot,
+            recordedAt: conversationRow.contextUsageRecordedAt.toISOString(),
+          }
+        : undefined
       const constraints = [eq(turns.conversationId, conversationId)]
       if (options.beforeTurnIndex !== undefined) constraints.push(lt(turns.turnIndex, options.beforeTurnIndex))
       const recentTurns = await tx.select().from(turns)
@@ -1138,7 +1164,7 @@ export class PostgresRepository implements Repository {
       const hasOlder = recentTurns.length > limit
       const boundedTurns = recentTurns.slice(0, limit).reverse()
       if (boundedTurns.length === 0) {
-        return { conversation, turns: [], eventCursors: [], pageInfo: { hasOlder: false } }
+        return { conversation, ...(contextUsage ? { contextUsage } : {}), turns: [], eventCursors: [], pageInfo: { hasOlder: false } }
       }
 
       const runIds = boundedTurns.map(turn => turn.selectedRunId)
@@ -1192,6 +1218,7 @@ export class PostgresRepository implements Repository {
       })
       return {
         conversation,
+        ...(contextUsage ? { contextUsage } : {}),
         turns: pageTurns,
         eventCursors: boundedTurns.flatMap((turn) => {
           const runRow = runById.get(turn.selectedRunId)

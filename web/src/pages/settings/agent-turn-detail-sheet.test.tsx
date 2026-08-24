@@ -61,6 +61,17 @@ describe('agent turn detail diagnostic actions', () => {
     vi.mocked(api.getAgentObservabilityTrace).mockResolvedValue(detail)
   })
 
+  it('prominently displays the trace id and copies it from the header', async () => {
+    const writeText = vi.fn(async (_value: string) => {})
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
+    renderSheet()
+
+    expect(screen.getByText('trace-1')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '复制 Trace ID' }))
+
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('trace-1'))
+  })
+
   it('copies every span even when external services remain hidden', async () => {
     const writeText = vi.fn(async (_value: string) => {})
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })

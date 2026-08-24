@@ -8425,6 +8425,18 @@ components:
             status: { type: string, enum: [reconciliation_required] }
             reason: { type: string, enum: [missing_usage, invalid_usage, stream_ended_without_usage, request_outcome_unknown, hold_deficit] }
       discriminator: { propertyName: status }
+    AIContextUsage:
+      type: object
+      additionalProperties: false
+      description: Latest confirmed conversation context, tagged with its model identity. It remains stable while a new Run is active and may decrease after context compaction; clients display it only while the conversation model matches.
+      required: [status, runId, modelId, usedTokens, maxContextTokensSnapshot, recordedAt]
+      properties:
+        status: { type: string, enum: [reported] }
+        runId: { type: string }
+        modelId: { type: string }
+        usedTokens: { type: integer, format: int64, minimum: 0, description: Official total_tokens after the latest reported assistant model call; this is not a sum of historical requests. }
+        maxContextTokensSnapshot: { type: integer, format: int64, minimum: 1 }
+        recordedAt: { type: string, format: date-time }
     AIModelCompletedPayload:
       type: object
       additionalProperties: false
@@ -8512,6 +8524,7 @@ components:
       required: [conversation, turns, eventCursors, pageInfo]
       properties:
         conversation: { $ref: "#/components/schemas/AIConversationTimelineSummary" }
+        contextUsage: { $ref: "#/components/schemas/AIContextUsage" }
         turns:
           type: array
           description: Complete turns in chronological order within this page; a turn is never split across pages.
