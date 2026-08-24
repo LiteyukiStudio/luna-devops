@@ -665,6 +665,7 @@ export function AiAssistant({ capabilities, initiallyOpen = false }: { capabilit
         modelAvailable={Boolean(selectedModel)}
         modelChanging={modelChangingSelected}
         providerUsage={displayedRunUsage}
+        isNewConversation={!selectedConversationId}
         modelSelectionDisabled={Boolean(activeRunId || sendingSelected || sendTurn.isPending)}
         selectedModelId={selectedModel?.id}
         draft={draft}

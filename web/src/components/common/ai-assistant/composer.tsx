@@ -16,6 +16,8 @@ export interface AIAssistantComposerProps {
   modelChanging?: boolean
   modelSelectionDisabled?: boolean
   selectedModelId?: string
+  /** 尚未发起过模型调用的新会话可以安全地展示为 0% 上下文用量。 */
+  isNewConversation?: boolean
   /** 最近一次模型调用的官方 Provider 用量；非 reported 状态不展示百分比。 */
   providerUsage?: AIRunUsage
   draft: string
@@ -67,6 +69,18 @@ function ContextUsageRing({
   )
 }
 
+function UnavailableContextUsageRing() {
+  const { t } = useTranslation()
+  const unavailableLabel = t('aiAssistant.contextUsageUnavailable')
+  return (
+    <UsageRing
+      ariaLabel={unavailableLabel}
+      ratio={0}
+      tooltip={unavailableLabel}
+    />
+  )
+}
+
 export function AIAssistantComposer({
   activeRun,
   canceling,
@@ -76,6 +90,7 @@ export function AIAssistantComposer({
   modelChanging = false,
   modelSelectionDisabled = false,
   selectedModelId,
+  isNewConversation = false,
   providerUsage,
   draft,
   inputRef,
@@ -100,6 +115,9 @@ export function AIAssistantComposer({
   const contextTotal = hasReportedUsage ? providerUsage.maxContextTokensSnapshot! : 0
   const contextUsed = hasReportedUsage ? providerUsage.promptTokens! : 0
   const contextRatio = hasReportedUsage ? contextUsed / contextTotal : 0
+  const hasInitialContextUsage = isNewConversation
+    && typeof selectedModel?.maxContextTokens === 'number'
+    && selectedModel.maxContextTokens > 0
   return (
     <footer className="shrink-0 border-t border-separator-subtle bg-surface p-2.5 pb-[max(0.625rem,env(safe-area-inset-bottom))]">
       <div className="flex min-h-20 flex-col gap-1 rounded-container border border-input bg-surface px-2 py-2 focus-within:ring-2 focus-within:ring-ring">
@@ -155,7 +173,15 @@ export function AIAssistantComposer({
                   used={contextUsed}
                 />
               )
-            : <span className="px-1 text-xs text-muted-foreground">{t('aiAssistant.contextUsageUnavailable')}</span>}
+            : hasInitialContextUsage
+              ? (
+                  <ContextUsageRing
+                    ratio={0}
+                    total={selectedModel.maxContextTokens}
+                    used={0}
+                  />
+                )
+              : <UnavailableContextUsageRing />}
           {activeRun && !waitingInput
             ? (
                 <Button

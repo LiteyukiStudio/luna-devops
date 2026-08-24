@@ -151,7 +151,37 @@ describe('ai assistant composer keyboard submission', () => {
     expect(await screen.findByRole('tooltip')).toHaveTextContent(i18next.t('aiAssistant.contextUsage', { used: '25.6', total: '128k', percent: 20 }))
   })
 
-  it('shows no Provider usage data instead of reusing a different model or unavailable call', () => {
+  it('shows zero usage for a new conversation before its first model call', async () => {
+    const user = userEvent.setup()
+    render(
+      <AIAssistantComposer
+        activeRun={false}
+        canceling={false}
+        canCancel={false}
+        draft=""
+        inputRef={createRef<HTMLTextAreaElement>()}
+        isNewConversation
+        models={[{ id: 'aimod_test', name: 'Test model', maxContextTokens: 128_000, maxOutputTokens: 16_000 }]}
+        selectedModelId="aimod_test"
+        sending={false}
+        submitting={false}
+        waitingInput={false}
+        onCancel={vi.fn()}
+        onDraftChange={vi.fn()}
+        onModelChange={vi.fn()}
+        onSubmit={vi.fn()}
+      />,
+    )
+
+    const ring = screen.getByRole('button', {
+      name: i18next.t('aiAssistant.contextUsage', { used: '0', total: '128k', percent: 0 }),
+    })
+    await user.hover(ring)
+    expect(await screen.findByRole('tooltip')).toHaveTextContent(i18next.t('aiAssistant.contextUsage', { used: '0', total: '128k', percent: 0 }))
+  })
+
+  it('shows unavailable Provider usage as a gray ring without persistent copy', async () => {
+    const user = userEvent.setup()
     render(
       <AIAssistantComposer
         activeRun={false}
@@ -172,8 +202,12 @@ describe('ai assistant composer keyboard submission', () => {
       />,
     )
 
-    expect(screen.getByText(i18next.t('aiAssistant.contextUsageUnavailable'))).toBeInTheDocument()
+    const unavailableLabel = i18next.t('aiAssistant.contextUsageUnavailable')
+    const ring = screen.getByRole('button', { name: unavailableLabel })
+    expect(screen.queryByText(unavailableLabel)).not.toBeInTheDocument()
     expect(document.querySelector('[aria-label*="%"]')).toBeNull()
+    await user.hover(ring)
+    expect(await screen.findByRole('tooltip')).toHaveTextContent(unavailableLabel)
   })
 
   it('keeps the draft editable but blocks submission while the current run is active', () => {

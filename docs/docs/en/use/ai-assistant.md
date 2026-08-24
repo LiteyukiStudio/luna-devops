@@ -35,4 +35,4 @@ An administrator must configure an OpenAI `chat/completions`-compatible Provider
 
 If the entry is missing, ask an administrator to check enablement and account scope. If the model is temporarily unavailable, keep the conversation and retry later.
 
-The context ratio beside the composer uses only the current model's latest official `prompt_tokens` and the model-window snapshot captured for that call. If the Provider did not return verifiable usage or the model has changed, the UI shows **No Provider usage data** instead of estimating or reusing an old percentage.
+The context ratio beside the composer uses only the current model's latest official `prompt_tokens` and the model-window snapshot captured for that call. A new conversation with no model call yet starts at 0%. If the Provider did not return verifiable usage or the model has changed, the UI shows only a gray ring; hover or keyboard focus reveals **No Provider usage data**. It never estimates or reuses an old percentage.
