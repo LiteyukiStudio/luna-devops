@@ -1,7 +1,7 @@
 import type { AgentObservabilityRange, AgentObservabilityToolSummary, AgentObservabilityTurn } from '@/api'
 import type { DataListColumn } from '@/components/common/data-list'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowDownToLine, ArrowUpFromLine, CircleGauge, Clock3, ExternalLink, Eye, MessagesSquare, RefreshCw, Settings, UserRound, Wrench } from 'lucide-react'
+import { CircleGauge, Clock3, ExternalLink, Eye, MessagesSquare, RefreshCw, Settings, UserRound, Wrench } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
@@ -22,6 +22,7 @@ import { Card } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { isPlatformAdmin } from '@/lib/roles'
 import { agentObservabilityRanges, readAgentObservabilityRange, writeAgentObservabilityRange } from './agent-observability-range-preference'
+import { AgentTokenUsageInline, AgentTokenUsageStrip } from './agent-token-usage'
 import { AgentToolDetailSheet } from './agent-tool-detail-sheet'
 import { AgentTurnDetailSheet } from './agent-turn-detail-sheet'
 
@@ -195,8 +196,8 @@ function AgentObservabilityView({ active, enabled, userId }: { active: boolean, 
     {
       key: 'summary',
       header: t('operationsDashboardPage.executionSummary'),
-      minWidth: 170,
-      maxWidth: 196,
+      minWidth: 260,
+      maxWidth: 320,
       mobile: 'hidden',
       render: item => (
         <span className="grid gap-1">
@@ -204,13 +205,7 @@ function AgentObservabilityView({ active, enabled, userId }: { active: boolean, 
             <StatusBadge tone={runStatusTone(item.status)}>{t(`operationsDashboardPage.runStatus.${item.status}`, { defaultValue: item.status })}</StatusBadge>
             <span className="font-mono text-xs text-muted-foreground">{item.durationMs > 0 ? formatDuration(item.durationMs) : '—'}</span>
           </span>
-          <span className="flex items-center gap-1 font-mono text-xs text-muted-foreground">
-            ↑
-            {formatNumber(item.inputTokens)}
-            {' · '}
-            ↓
-            {formatNumber(item.outputTokens)}
-          </span>
+          <AgentTokenUsageInline className="text-[11px]" usage={item} />
           <span className="flex items-center gap-1 font-mono text-xs text-muted-foreground" title={t('operationsDashboardPage.toolCalls')}>
             <Wrench className="size-3" />
             {formatNumber(item.toolCallCount)}
@@ -315,15 +310,16 @@ function AgentObservabilityView({ active, enabled, userId }: { active: boolean, 
       {overview.isLoading && <ToolViewportSkeleton />}
       {overview.isError && <ErrorState title={t('operationsDashboardPage.agentLoadFailedTitle')} description={t('operationsDashboardPage.agentLoadFailedDescription')} />}
       {data && (
-        <MetricGroup className="grid-cols-2 xl:grid-cols-7">
-          <MetricItem icon={<ArrowDownToLine className="size-4" />} label={t('operationsDashboardPage.inputTokens')} value={formatNumber(data.summary.inputTokens)} />
-          <MetricItem icon={<ArrowUpFromLine className="size-4" />} label={t('operationsDashboardPage.outputTokens')} value={formatNumber(data.summary.outputTokens)} />
-          <MetricItem icon={<Wrench className="size-4" />} label={t('operationsDashboardPage.toolCalls')} value={formatNumber(data.summary.toolCalls)} />
-          <MetricItem icon={<CircleGauge className="size-4" />} label={t('operationsDashboardPage.toolSuccessRate')} value={`${toolSuccessRate.toFixed(1)}%`} tone={successRateTone(toolSuccessRate)} />
-          <MetricItem icon={<MessagesSquare className="size-4" />} label={t('operationsDashboardPage.turnCount')} value={formatNumber(data.summary.turnCount)} />
-          <MetricItem icon={<CircleGauge className="size-4" />} label={t('operationsDashboardPage.turnSuccessRate')} value={`${successRate.toFixed(1)}%`} tone={successRate >= 95 ? 'success' : successRate >= 85 ? 'warning' : 'danger'} />
-          <MetricItem icon={<Clock3 className="size-4" />} label={t('operationsDashboardPage.runDurationP95')} value={formatSeconds(data.summary.runDurationP95)} />
-        </MetricGroup>
+        <div className="grid gap-3">
+          <AgentTokenUsageStrip usage={data.summary} />
+          <MetricGroup className="grid-cols-2 lg:grid-cols-5">
+            <MetricItem icon={<Wrench className="size-4" />} label={t('operationsDashboardPage.toolCalls')} value={formatNumber(data.summary.toolCalls)} />
+            <MetricItem icon={<CircleGauge className="size-4" />} label={t('operationsDashboardPage.toolSuccessRate')} value={`${toolSuccessRate.toFixed(1)}%`} tone={successRateTone(toolSuccessRate)} />
+            <MetricItem icon={<MessagesSquare className="size-4" />} label={t('operationsDashboardPage.turnCount')} value={formatNumber(data.summary.turnCount)} />
+            <MetricItem icon={<CircleGauge className="size-4" />} label={t('operationsDashboardPage.turnSuccessRate')} value={`${successRate.toFixed(1)}%`} tone={successRate >= 95 ? 'success' : successRate >= 85 ? 'warning' : 'danger'} />
+            <MetricItem icon={<Clock3 className="size-4" />} label={t('operationsDashboardPage.runDurationP95')} value={formatSeconds(data.summary.runDurationP95)} />
+          </MetricGroup>
+        </div>
       )}
       <Tabs
         value={dataTab}
@@ -400,8 +396,8 @@ function AgentObservabilityView({ active, enabled, userId }: { active: boolean, 
           </Section>
         </TabsContent>
       </Tabs>
-      <AgentTurnDetailSheet key={selectedTurn?.id ?? 'closed'} turn={selectedTurn} onOpenChange={open => !open && setSelectedTurn(null)} />
-      <AgentToolDetailSheet key={selectedTool?.operationId ?? 'closed'} range={range} summary={selectedTool} onOpenChange={open => !open && setSelectedTool(null)} />
+      <AgentTurnDetailSheet key={selectedTurn?.id ?? 'turn-closed'} turn={selectedTurn} onOpenChange={open => !open && setSelectedTurn(null)} />
+      <AgentToolDetailSheet key={selectedTool?.operationId ?? 'tool-closed'} range={range} summary={selectedTool} onOpenChange={open => !open && setSelectedTool(null)} />
     </div>
   )
 }

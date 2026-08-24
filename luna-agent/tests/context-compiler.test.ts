@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest"
-import { ContextCompiler } from "../src/context/compiler.js"
+import { contextCompilationUsageAttributes, ContextCompiler } from "../src/context/compiler.js"
 import type { AIModelSnapshot, ConversationHistoryEntry, ConversationSummary } from "../src/domain.js"
 import type { Repository } from "../src/persistence/repository.js"
 import { ProviderRequestError } from "../src/provider/provider-error.js"
@@ -33,6 +33,12 @@ describe("ContextCompiler authoritative compression", () => {
     expect(complete).toHaveBeenCalledOnce()
     expect(result.compaction).toEqual({ summarizedThroughTurnIndex: 1, sourceTurnCount: 2, trigger: "provider_usage", priorPromptTokens: 320_000 })
     expect(result.messages.some(message => message.content.includes("历史会话结构化摘要"))).toBe(true)
+  })
+
+  it("keeps prior usage off current-call GenAI usage attributes", () => {
+    const attributes = contextCompilationUsageAttributes(320_000)
+    expect(attributes).toEqual({ "luna.agent.context.prior_input_tokens": 320_000 })
+    expect(attributes).not.toHaveProperty("gen_ai.usage.input_tokens")
   })
 
   it("does not reject a new 400K-model request before calling the Provider", async () => {
@@ -122,8 +128,8 @@ function entries(count: number): ConversationHistoryEntry[] {
   return Array.from({ length: count }, (_, turnIndex) => ({ turnIndex, user: `用户 ${turnIndex}`, assistant: `助手 ${turnIndex}` }))
 }
 
-function reported(promptTokens: number, completionTokens: number) {
-  return { status: "reported" as const, value: { promptTokens, completionTokens, totalTokens: promptTokens + completionTokens } }
+function reported(inputTokens: number, outputTokens: number) {
+  return { status: "reported" as const, value: { inputTokens, outputTokens, totalTokens: inputTokens + outputTokens } }
 }
 
 function contextError() {

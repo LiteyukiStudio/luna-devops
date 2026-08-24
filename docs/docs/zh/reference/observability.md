@@ -40,6 +40,17 @@ OTEL_RESOURCE_ATTRIBUTES=deployment.environment.name=production,k8s.cluster.name
 
 打开某一轮对话详情后，头部会展示该轮完整 Trace ID；点击该信息块即可复制，用于在 Tempo、日志平台或诊断工单中检索同一条调用链。
 
+### 理解模型 Token 用量
+
+会话总览、轮次列表和轮次详情都使用 Provider 官方 `usage` 作为事实源：
+
+- 输入 Token 是完整输入量，已经包含缓存读取和缓存写入；输出 Token 已经包含 reasoning。缓存与 reasoning 数值只用于拆分说明，不能再次加到输入或输出。
+- 缓存读取、缓存写入或 reasoning 显示为 `—`，表示 Provider 没有报告该明细；显示 `0` 才表示 Provider 明确报告为零。
+- Agent 模型 Span 使用 `gen_ai.usage.input_tokens`、`gen_ai.usage.output_tokens`、`gen_ai.usage.cache_read.input_tokens`、`gen_ai.usage.cache_write.input_tokens` 和 `gen_ai.usage.reasoning.output_tokens`。用量不可用时，可查看 `luna.gen_ai.usage.status` 与 `luna.gen_ai.usage.unavailable_reason`。
+- 输入与输出吞吐使用标准 Histogram `gen_ai.client.token.usage`，并由 `gen_ai.token.type` 区分 `input` 和 `output`；缓存与 reasoning 明细仍从 Span 或轮次接口读取。
+
+缓存明细是否存在取决于模型 Provider 的官方响应；未报告缓存写入不能据此推断发生了缓存写入或写入量为零。
+
 ## Prometheus 抓取
 
 需要直接抓取 API 指标时配置：

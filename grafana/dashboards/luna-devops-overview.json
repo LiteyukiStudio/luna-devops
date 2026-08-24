@@ -1715,8 +1715,8 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate(luna_devops_agent_model_tokens_total[$__rate_interval])) by (direction)",
-          "legendFormat": "{{direction}}",
+          "expr": "sum(rate(gen_ai_client_token_usage_sum[$__rate_interval])) by (gen_ai_token_type)",
+          "legendFormat": "{{gen_ai_token_type}}",
           "range": true
         }
       ]

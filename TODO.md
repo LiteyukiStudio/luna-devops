@@ -1,5 +1,11 @@
 # TODO
 
+## 2026-08-25 Agent Token 观测语义统一
+
+- [x] 按 OpenTelemetry GenAI 当前语义统一模型 input、output、cache-read、cache-write 与 reasoning 用量字段，并修复 DeepSeek 缓存命中适配。
+- [x] 将 Agent 会话与轮次聚合切换到权威 `ai.model_usages`，同步 Go、OpenAPI、Web 五语言和 Tempo 属性消费。
+- [x] 补齐跨边界契约测试、中英文可观测参考与完整验收，确认缓存和 reasoning 子集不会重复计入总量。
+
 ## 2026-08-24 Agent 轮次 Trace ID 快速复制
 
 - [x] 在轮次详情头部突出展示完整 Trace ID，并支持点击复制与成功/失败反馈。

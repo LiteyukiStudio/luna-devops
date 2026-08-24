@@ -8403,15 +8403,15 @@ components:
       oneOf:
         - type: object
           additionalProperties: false
-          required: [status, promptTokens, completionTokens, totalTokens]
+          required: [status, inputTokens, outputTokens, totalTokens]
           properties:
             status: { type: string, enum: [reported] }
-            promptTokens: { type: integer, format: int64, minimum: 0 }
-            completionTokens: { type: integer, format: int64, minimum: 0 }
-            totalTokens: { type: integer, format: int64, minimum: 0, description: Must equal promptTokens plus completionTokens. }
-            cachedPromptTokens: { type: integer, format: int64, minimum: 0 }
-            cacheWritePromptTokens: { type: integer, format: int64, minimum: 0 }
-            reasoningCompletionTokens: { type: integer, format: int64, minimum: 0, description: Informational subset of completionTokens and never billed twice. }
+            inputTokens: { type: integer, format: int64, minimum: 0 }
+            outputTokens: { type: integer, format: int64, minimum: 0 }
+            totalTokens: { type: integer, format: int64, minimum: 0, description: Must equal inputTokens plus outputTokens. }
+            cacheReadInputTokens: { type: integer, format: int64, minimum: 0, nullable: true }
+            cacheWriteInputTokens: { type: integer, format: int64, minimum: 0, nullable: true }
+            reasoningOutputTokens: { type: integer, format: int64, minimum: 0, nullable: true, description: Informational subset of outputTokens and never billed twice. }
         - type: object
           additionalProperties: false
           required: [status, reason]
@@ -8751,7 +8751,7 @@ components:
         updatedAt: { type: string, format: date-time }
     AgentObservabilityConversationTurn:
       type: object
-      required: [id, turnIndex, status, userMessage, assistantMessage, runId, traceId, durationMs, createdAt, loops]
+      required: [id, turnIndex, status, userMessage, assistantMessage, runId, traceId, inputTokens, outputTokens, cacheReadInputTokens, cacheWriteInputTokens, reasoningOutputTokens, durationMs, createdAt, loops]
       properties:
         id: { type: string }
         turnIndex: { type: integer }
@@ -8760,12 +8760,17 @@ components:
         assistantMessage: { type: string }
         runId: { type: string }
         traceId: { type: string }
+        inputTokens: { type: integer, format: int64, minimum: 0 }
+        outputTokens: { type: integer, format: int64, minimum: 0 }
+        cacheReadInputTokens: { type: integer, format: int64, minimum: 0, nullable: true }
+        cacheWriteInputTokens: { type: integer, format: int64, minimum: 0, nullable: true }
+        reasoningOutputTokens: { type: integer, format: int64, minimum: 0, nullable: true }
         durationMs: { type: number, format: double }
         createdAt: { type: string, format: date-time }
         loops: { type: array, items: { $ref: "#/components/schemas/AgentObservabilityConversationLoop" } }
     AgentObservabilityTurn:
       type: object
-      required: [id, conversationId, conversationTitle, user, turnIndex, status, userMessage, assistantMessage, runId, traceId, inputTokens, outputTokens, toolCallCount, durationMs, createdAt]
+      required: [id, conversationId, conversationTitle, user, turnIndex, status, userMessage, assistantMessage, runId, traceId, inputTokens, outputTokens, cacheReadInputTokens, cacheWriteInputTokens, reasoningOutputTokens, toolCallCount, durationMs, createdAt]
       properties:
         id: { type: string }
         conversationId: { type: string }
@@ -8779,6 +8784,9 @@ components:
         traceId: { type: string }
         inputTokens: { type: integer, format: int64, minimum: 0 }
         outputTokens: { type: integer, format: int64, minimum: 0 }
+        cacheReadInputTokens: { type: integer, format: int64, minimum: 0, nullable: true }
+        cacheWriteInputTokens: { type: integer, format: int64, minimum: 0, nullable: true }
+        reasoningOutputTokens: { type: integer, format: int64, minimum: 0, nullable: true }
         toolCallCount: { type: integer, format: int64, minimum: 0 }
         durationMs: { type: number, format: double }
         createdAt: { type: string, format: date-time }
@@ -8909,10 +8917,13 @@ components:
         range: { type: string, enum: [1h, 6h, 24h, 7d, 30d, 1y] }
         summary:
           type: object
-          required: [inputTokens, outputTokens, toolCalls, toolSuccessRate, turnCount, turnSuccessRate, runDurationP95]
+          required: [inputTokens, outputTokens, cacheReadInputTokens, cacheWriteInputTokens, reasoningOutputTokens, toolCalls, toolSuccessRate, turnCount, turnSuccessRate, runDurationP95]
           properties:
-            inputTokens: { type: number, minimum: 0, description: Input tokens consumed during the selected period. }
-            outputTokens: { type: number, minimum: 0, description: Output tokens generated during the selected period. }
+            inputTokens: { type: integer, format: int64, minimum: 0, description: Input tokens consumed during the selected period; cache-read and cache-write tokens are subsets and are not added again. }
+            outputTokens: { type: integer, format: int64, minimum: 0, description: Output tokens generated during the selected period. }
+            cacheReadInputTokens: { type: integer, format: int64, minimum: 0, nullable: true, description: Cache-read subset of inputTokens, or null when any included provider usage omitted it. }
+            cacheWriteInputTokens: { type: integer, format: int64, minimum: 0, nullable: true, description: Cache-write subset of inputTokens, or null when any included provider usage omitted it. }
+            reasoningOutputTokens: { type: integer, format: int64, minimum: 0, nullable: true, description: Reasoning subset of outputTokens, or null when any included provider usage omitted it. }
             toolCalls: { type: number, minimum: 0, description: Tool calls recorded during the selected period, including internal UI tools and non-terminal calls. }
             toolSuccessRate: { type: number, minimum: 0, maximum: 100, description: Succeeded tool calls divided by succeeded plus failed calls during the selected period. }
             turnCount: { type: integer, format: int64, minimum: 0, description: Conversation turns created during the selected period. }

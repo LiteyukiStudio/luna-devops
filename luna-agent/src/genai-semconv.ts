@@ -44,16 +44,14 @@ export function genAIAgentSpanAttributes(conversationId: string, model?: string,
   }
 }
 
-export function genAIModelSpan(baseUrl: string, model: string, maxTokens: number, streaming: boolean) {
+export function genAIModelSpan(baseUrl: string, providerName: string, model: string, maxTokens: number, streaming: boolean) {
   const endpoint = new URL(baseUrl)
   const port = endpoint.port ? Number(endpoint.port) : endpoint.protocol === "https:" ? 443 : 80
   return {
     name: `chat ${model}`,
     attributes: {
       "gen_ai.operation.name": "chat",
-      // The provider implements the OpenAI telemetry/API flavor, even when a proxy
-      // or another OpenAI-compatible upstream is configured behind the endpoint.
-      "gen_ai.provider.name": "openai",
+      "gen_ai.provider.name": providerName,
       "gen_ai.request.model": model,
       "gen_ai.request.max_tokens": maxTokens,
       "gen_ai.output.type": "text",
@@ -61,6 +59,21 @@ export function genAIModelSpan(baseUrl: string, model: string, maxTokens: number
       "server.port": port,
       ...(streaming ? { "gen_ai.request.stream": true } : {}),
     } satisfies Attributes,
+  }
+}
+
+export function genAIClientTokenUsageAttributes(
+  providerName: string,
+  requestModel: string,
+  tokenType: "input" | "output",
+  responseModel?: string,
+): Attributes {
+  return {
+    "gen_ai.operation.name": "chat",
+    "gen_ai.provider.name": providerName,
+    "gen_ai.request.model": requestModel,
+    "gen_ai.token.type": tokenType,
+    ...(responseModel ? { "gen_ai.response.model": responseModel } : {}),
   }
 }
 

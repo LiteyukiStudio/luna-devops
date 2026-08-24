@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { DeepSeekChatCompletionsProvider } from "../src/provider/deepseek-chat-completions.js"
-import { OpenAIChatCompletionsProvider } from "../src/provider/openai-chat-completions.js"
+import { modelUsageSpanAttributes, OpenAIChatCompletionsProvider } from "../src/provider/openai-chat-completions.js"
 import { ProviderRequestError } from "../src/provider/provider-error.js"
 
 const options = { baseUrl: "https://provider.example/v1", apiKey: "secret", channelAffinityEnabled: true, model: "model-a", timeoutMs: 5_000 }
@@ -61,7 +61,7 @@ describe("OpenAIChatCompletionsProvider official usage", () => {
 
     await expect(new OpenAIChatCompletionsProvider(options).complete(request)).resolves.toMatchObject({
       text: "done", providerRequestId: "req_1", responseId: "chatcmpl_1", responseModel: "model-a", finishReason: "stop",
-      usage: { status: "reported", value: { promptTokens: 12, completionTokens: 8, totalTokens: 20 } },
+      usage: { status: "reported", value: { inputTokens: 12, outputTokens: 8, totalTokens: 20 } },
     })
   })
 
@@ -77,7 +77,7 @@ describe("OpenAIChatCompletionsProvider official usage", () => {
 
     expect(events.at(-1)).toMatchObject({
       type: "completed", providerRequestId: "req_provider", responseId: "chatcmpl_2", responseModel: "model-a", finishReason: "stop",
-      usage: { status: "reported", value: { promptTokens: 20, completionTokens: 5, totalTokens: 25 } },
+      usage: { status: "reported", value: { inputTokens: 20, outputTokens: 5, totalTokens: 25 } },
     })
     const body = requestBody(fetchMock)
     expect(body).toMatchObject({ stream: true, stream_options: { include_usage: true }, max_completion_tokens: 100 })
@@ -96,9 +96,35 @@ describe("OpenAIChatCompletionsProvider official usage", () => {
 
     const result = await new OpenAIChatCompletionsProvider(options).complete(request)
     expect(result.usage).toEqual({ status: "reported", value: {
-      promptTokens: 100, completionTokens: 20, totalTokens: 120,
-      cachedPromptTokens: 70, cacheWritePromptTokens: 10, reasoningCompletionTokens: 15,
+      inputTokens: 100, outputTokens: 20, totalTokens: 120,
+      cacheReadInputTokens: 70, cacheWriteInputTokens: 10, reasoningOutputTokens: 15,
     } })
+  })
+
+  it("uses current GenAI usage span attributes and preserves the unavailable reason", () => {
+    const attributes = modelUsageSpanAttributes({
+      status: "reported",
+      value: {
+        inputTokens: 100,
+        outputTokens: 20,
+        totalTokens: 120,
+        cacheReadInputTokens: 70,
+        cacheWriteInputTokens: 10,
+        reasoningOutputTokens: 15,
+      },
+    })
+    expect(attributes).toEqual({
+      "gen_ai.usage.input_tokens": 100,
+      "gen_ai.usage.output_tokens": 20,
+      "gen_ai.usage.cache_read.input_tokens": 70,
+      "gen_ai.usage.cache_write.input_tokens": 10,
+      "gen_ai.usage.reasoning.output_tokens": 15,
+    })
+    expect(attributes).not.toHaveProperty("gen_ai.usage.cache_creation.input_tokens")
+    expect(modelUsageSpanAttributes({ status: "unavailable", reason: "missing_usage" })).toEqual({
+      "luna.gen_ai.usage.status": "unavailable",
+      "luna.gen_ai.usage.unavailable_reason": "missing_usage",
+    })
   })
 
   it.each([
@@ -134,7 +160,7 @@ describe("OpenAIChatCompletionsProvider official usage", () => {
       JSON.stringify({ id: "chatcmpl_5", model: "model-a", choices: [], usage: { prompt_tokens: 4, completion_tokens: 2, total_tokens: 6 } }),
     ], false)))
     expect((await collect(new OpenAIChatCompletionsProvider(options))).at(-1)).toMatchObject({
-      usage: { status: "reported", value: { promptTokens: 4, completionTokens: 2, totalTokens: 6 } },
+      usage: { status: "reported", value: { inputTokens: 4, outputTokens: 2, totalTokens: 6 } },
     })
   })
 
@@ -164,7 +190,7 @@ describe("OpenAIChatCompletionsProvider official usage", () => {
     expect(body).not.toHaveProperty("thinking")
     expect(JSON.stringify(body)).not.toContain("reasoning_content")
     expect(result).not.toHaveProperty("reasoningSummary")
-    expect(result.usage).toEqual({ status: "reported", value: { promptTokens: 3, completionTokens: 1, totalTokens: 4 } })
+    expect(result.usage).toEqual({ status: "reported", value: { inputTokens: 3, outputTokens: 1, totalTokens: 4 } })
   })
 })
 
@@ -184,6 +210,38 @@ describe("DeepSeekChatCompletionsProvider adapter", () => {
     expect(body).toMatchObject({ max_tokens: 100, thinking: { type: "enabled" } })
     expect(body).not.toHaveProperty("max_completion_tokens")
     expect(JSON.stringify(body)).toContain("reasoning_content")
+  })
+
+  it("maps non-streaming prompt_cache_hit_tokens into the normalized cache-read field", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      id: "deepseek_usage", model: "deepseek-chat", choices: [{ message: { content: "done" } }],
+      usage: { prompt_tokens: 10, completion_tokens: 2, total_tokens: 12, prompt_cache_hit_tokens: 7 },
+    }), { status: 200 })))
+
+    const result = await new DeepSeekChatCompletionsProvider({ ...options, baseUrl: "https://api.deepseek.com/v1", model: "deepseek-chat" }).complete(request)
+
+    expect(result.usage).toEqual({
+      status: "reported",
+      value: { inputTokens: 10, outputTokens: 2, totalTokens: 12, cacheReadInputTokens: 7 },
+    })
+  })
+
+  it("maps streaming prompt_cache_hit_tokens into the normalized cache-read field", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => streamResponse([
+      JSON.stringify({ id: "deepseek_stream", model: "deepseek-chat", choices: [{ delta: { content: "done" } }] }),
+      JSON.stringify({
+        id: "deepseek_stream", model: "deepseek-chat", choices: [],
+        usage: { prompt_tokens: 9, completion_tokens: 3, total_tokens: 12, prompt_cache_hit_tokens: 6 },
+      }),
+      "[DONE]",
+    ])))
+
+    const events = await collect(new DeepSeekChatCompletionsProvider({ ...options, baseUrl: "https://api.deepseek.com/v1", model: "deepseek-chat" }))
+
+    expect(events.at(-1)).toMatchObject({
+      type: "completed",
+      usage: { status: "reported", value: { inputTokens: 9, outputTokens: 3, totalTokens: 12, cacheReadInputTokens: 6 } },
+    })
   })
 })
 

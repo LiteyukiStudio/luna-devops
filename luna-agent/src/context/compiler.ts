@@ -150,7 +150,7 @@ export class ContextCompiler {
         "luna.context.history.turn_count": input.history.length,
         "luna.context.recent.turn_count": history.length,
         ...(trigger ? { "luna.context.compression.trigger": trigger } : {}),
-        ...(latestUsage ? { "gen_ai.usage.input_tokens": latestUsage.promptTokens } : {}),
+        ...contextCompilationUsageAttributes(latestUsage?.promptTokens),
       })
       agentMetrics.contextCompilations.add(1, { outcome })
       agentMetrics.contextCompressionDuration.record((performance.now() - startedAt) / 1000, { outcome })
@@ -244,6 +244,10 @@ export class ContextCompiler {
       })),
     }
   }
+}
+
+export function contextCompilationUsageAttributes(priorInputTokens: number | undefined) {
+  return priorInputTokens === undefined ? {} : { "luna.agent.context.prior_input_tokens": priorInputTokens }
 }
 
 const summarySystemPrompt = `你是 Luna DevOps 会话记忆压缩器。将旧会话压缩为结构化中文事实，只保留后续完成任务需要的信息。

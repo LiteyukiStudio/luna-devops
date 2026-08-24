@@ -127,13 +127,28 @@ suite("Postgres authoritative model usage", () => {
     await hold(repository, ownerUserId, runId, "deficit", "assistant")
 
     await expect(repository.recordReportedModelUsage("aihold_deficit", {
-      promptTokens: 5_000, completionTokens: 1_000, totalTokens: 6_000,
+      inputTokens: 5_000, outputTokens: 1_000, totalTokens: 6_000,
+      cacheReadInputTokens: 1_000, cacheWriteInputTokens: 500, reasoningOutputTokens: 250,
     }, { callType: "stream", providerRequestId: "req_deficit", responseId: "chatcmpl_deficit" }))
       .resolves.toEqual({ reconciliationRequired: true })
 
-    const usage = await repository.pool.query<{ prompt_tokens: string, completion_tokens: string, settlement_status: string }>("SELECT prompt_tokens, completion_tokens, settlement_status FROM ai.model_usages WHERE credit_hold_id = 'aihold_deficit'")
+    const usage = await repository.pool.query<{
+      prompt_tokens: string
+      completion_tokens: string
+      cached_prompt_tokens: string
+      cache_write_prompt_tokens: string
+      reasoning_completion_tokens: string
+      settlement_status: string
+    }>("SELECT prompt_tokens, completion_tokens, cached_prompt_tokens, cache_write_prompt_tokens, reasoning_completion_tokens, settlement_status FROM ai.model_usages WHERE credit_hold_id = 'aihold_deficit'")
     const held = await repository.pool.query<{ state: string }>("SELECT state FROM ai.model_credit_holds WHERE id = 'aihold_deficit'")
-    expect(usage.rows[0]).toEqual({ prompt_tokens: "5000", completion_tokens: "1000", settlement_status: "reconciliation_required" })
+    expect(usage.rows[0]).toEqual({
+      prompt_tokens: "5000",
+      completion_tokens: "1000",
+      cached_prompt_tokens: "1000",
+      cache_write_prompt_tokens: "500",
+      reasoning_completion_tokens: "250",
+      settlement_status: "reconciliation_required",
+    })
     expect(held.rows[0]?.state).toBe("hold_deficit")
   })
 
@@ -160,7 +175,7 @@ suite("Postgres authoritative model usage", () => {
       budget: { runId, ownerUserId, operation: "assistant" },
     }))
 
-    expect(result.usage).toEqual({ status: "reported", value: { promptTokens: 11, completionTokens: 4, totalTokens: 15 } })
+    expect(result.usage).toEqual({ status: "reported", value: { inputTokens: 11, outputTokens: 4, totalTokens: 15 } })
     const usage = await repository.pool.query("SELECT prompt_tokens, completion_tokens, total_tokens FROM ai.model_usages WHERE run_id = $1", [runId])
     expect(usage.rows).toEqual([{ prompt_tokens: "11", completion_tokens: "4", total_tokens: "15" }])
     const run = await repository.getRun(ownerUserId, runId)

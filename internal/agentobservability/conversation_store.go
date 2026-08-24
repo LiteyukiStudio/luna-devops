@@ -31,16 +31,21 @@ type ConversationSummary struct {
 }
 
 type ConversationTurn struct {
-	ID               string             `json:"id"`
-	TurnIndex        int                `json:"turnIndex"`
-	Status           string             `json:"status"`
-	UserMessage      string             `json:"userMessage"`
-	AssistantMessage string             `json:"assistantMessage"`
-	RunID            string             `json:"runId"`
-	TraceID          string             `json:"traceId"`
-	DurationMs       float64            `json:"durationMs"`
-	CreatedAt        time.Time          `json:"createdAt"`
-	Loops            []ConversationLoop `json:"loops"`
+	ID                    string             `json:"id"`
+	TurnIndex             int                `json:"turnIndex"`
+	Status                string             `json:"status"`
+	UserMessage           string             `json:"userMessage"`
+	AssistantMessage      string             `json:"assistantMessage"`
+	RunID                 string             `json:"runId"`
+	TraceID               string             `json:"traceId"`
+	InputTokens           int64              `json:"inputTokens"`
+	OutputTokens          int64              `json:"outputTokens"`
+	CacheReadInputTokens  *int64             `json:"cacheReadInputTokens"`
+	CacheWriteInputTokens *int64             `json:"cacheWriteInputTokens"`
+	ReasoningOutputTokens *int64             `json:"reasoningOutputTokens"`
+	DurationMs            float64            `json:"durationMs"`
+	CreatedAt             time.Time          `json:"createdAt"`
+	Loops                 []ConversationLoop `json:"loops"`
 }
 
 type ConversationLoop struct {
@@ -78,21 +83,24 @@ type ConversationDetail struct {
 }
 
 type TurnSummary struct {
-	ID                string           `json:"id"`
-	ConversationID    string           `json:"conversationId"`
-	ConversationTitle string           `json:"conversationTitle"`
-	User              ConversationUser `gorm:"embedded;embeddedPrefix:user_" json:"user"`
-	TurnIndex         int              `json:"turnIndex"`
-	Status            string           `json:"status"`
-	UserMessage       string           `json:"userMessage"`
-	AssistantMessage  string           `json:"assistantMessage"`
-	RunID             string           `json:"runId"`
-	TraceID           string           `json:"traceId"`
-	InputTokens       int64            `json:"inputTokens"`
-	OutputTokens      int64            `json:"outputTokens"`
-	ToolCallCount     int64            `json:"toolCallCount"`
-	DurationMs        float64          `json:"durationMs"`
-	CreatedAt         time.Time        `json:"createdAt"`
+	ID                    string           `json:"id"`
+	ConversationID        string           `json:"conversationId"`
+	ConversationTitle     string           `json:"conversationTitle"`
+	User                  ConversationUser `gorm:"embedded;embeddedPrefix:user_" json:"user"`
+	TurnIndex             int              `json:"turnIndex"`
+	Status                string           `json:"status"`
+	UserMessage           string           `json:"userMessage"`
+	AssistantMessage      string           `json:"assistantMessage"`
+	RunID                 string           `json:"runId"`
+	TraceID               string           `json:"traceId"`
+	InputTokens           int64            `json:"inputTokens"`
+	OutputTokens          int64            `json:"outputTokens"`
+	CacheReadInputTokens  *int64           `json:"cacheReadInputTokens"`
+	CacheWriteInputTokens *int64           `json:"cacheWriteInputTokens"`
+	ReasoningOutputTokens *int64           `json:"reasoningOutputTokens"`
+	ToolCallCount         int64            `json:"toolCallCount"`
+	DurationMs            float64          `json:"durationMs"`
+	CreatedAt             time.Time        `json:"createdAt"`
 }
 
 type TurnPeriodSummary struct {
@@ -108,9 +116,12 @@ type ToolPeriodSummary struct {
 }
 
 type RunPeriodSummary struct {
-	InputTokens        int64
-	OutputTokens       int64
-	DurationP95Seconds float64
+	InputTokens           int64
+	OutputTokens          int64
+	CacheReadInputTokens  *int64
+	CacheWriteInputTokens *int64
+	ReasoningOutputTokens *int64
+	DurationP95Seconds    float64
 }
 
 type ToolSummary struct {
@@ -267,36 +278,48 @@ func summarizeToolPeriod(total, successful, failed int64) ToolPeriodSummary {
 	return result
 }
 
-// SummarizeRuns uses the durable run ledger as the overview source of truth.
-// Prometheus remains useful for operational health, but process restarts or a
-// temporarily missing exporter must not make persisted token usage disappear.
+// SummarizeRuns uses the durable run and authoritative model usage ledgers as
+// the overview source of truth. Prometheus remains useful for operational
+// health, but a missing exporter must not make persisted usage disappear.
 func (s *ConversationStore) SummarizeRuns(ctx context.Context, start time.Time) (RunPeriodSummary, error) {
 	var row struct {
-		InputTokens        int64
-		OutputTokens       int64
-		DurationP95Seconds float64
+		InputTokens           int64
+		OutputTokens          int64
+		CacheReadInputTokens  *int64
+		CacheWriteInputTokens *int64
+		ReasoningOutputTokens *int64
+		DurationP95Seconds    float64
 	}
 	if err := s.db.WithContext(ctx).Raw(summarizeRunsSQL, start, start).Scan(&row).Error; err != nil {
 		return RunPeriodSummary{}, err
 	}
 	return RunPeriodSummary{
-		InputTokens: row.InputTokens, OutputTokens: row.OutputTokens, DurationP95Seconds: row.DurationP95Seconds,
+		InputTokens: row.InputTokens, OutputTokens: row.OutputTokens,
+		CacheReadInputTokens: row.CacheReadInputTokens, CacheWriteInputTokens: row.CacheWriteInputTokens,
+		ReasoningOutputTokens: row.ReasoningOutputTokens, DurationP95Seconds: row.DurationP95Seconds,
 	}, nil
 }
 
 const summarizeRunsSQL = `
 		WITH usage AS (
 			SELECT
-				COALESCE(SUM(CASE WHEN data->'usage'->>'inputTokens' ~ '^[0-9]+$' THEN (data->'usage'->>'inputTokens')::bigint ELSE 0 END), 0) AS input_tokens,
-				COALESCE(SUM(CASE WHEN data->'usage'->>'outputTokens' ~ '^[0-9]+$' THEN (data->'usage'->>'outputTokens')::bigint ELSE 0 END), 0) AS output_tokens
-			FROM ai.run_events
-			WHERE type = 'model.completed' AND created_at >= ?
+				COALESCE(SUM(prompt_tokens), 0)::bigint AS input_tokens,
+				COALESCE(SUM(completion_tokens), 0)::bigint AS output_tokens,
+				CASE WHEN COUNT(*) > 0 AND COUNT(cached_prompt_tokens) = COUNT(*)
+					THEN SUM(cached_prompt_tokens)::bigint END AS cache_read_input_tokens,
+				CASE WHEN COUNT(*) > 0 AND COUNT(cache_write_prompt_tokens) = COUNT(*)
+					THEN SUM(cache_write_prompt_tokens)::bigint END AS cache_write_input_tokens,
+				CASE WHEN COUNT(*) > 0 AND COUNT(reasoning_completion_tokens) = COUNT(*)
+					THEN SUM(reasoning_completion_tokens)::bigint END AS reasoning_output_tokens
+			FROM ai.model_usages
+			WHERE status = 'reported' AND operation = 'assistant' AND occurred_at >= ?
 		), durations AS (
 			SELECT EXTRACT(EPOCH FROM (completed_at - started_at)) AS duration_seconds
 			FROM ai.runs
 			WHERE completed_at IS NOT NULL AND started_at IS NOT NULL AND completed_at >= ?
 		)
 		SELECT usage.input_tokens, usage.output_tokens,
+			usage.cache_read_input_tokens, usage.cache_write_input_tokens, usage.reasoning_output_tokens,
 			COALESCE((SELECT percentile_cont(0.95) WITHIN GROUP (ORDER BY duration_seconds) FROM durations), 0) AS duration_p95_seconds
 		FROM usage`
 
@@ -466,11 +489,18 @@ func (s *ConversationStore) FindTraceContext(ctx context.Context, traceID string
 	if err != nil {
 		return nil, err
 	}
+	statsByRun, err := s.loadRunStats(ctx, []string{row.RunID})
+	if err != nil {
+		return nil, err
+	}
+	stats := statsByRun[row.RunID]
 	loops := buildConversationLoops(runItems[row.RunID])
 	turn := ConversationTurn{
 		ID: row.TurnID, TurnIndex: row.TurnIndex, Status: row.TurnStatus, UserMessage: row.TurnInput,
 		AssistantMessage: assistantMessageFromLoops(loops), RunID: row.RunID,
-		TraceID: traceIDFromContext(row.TraceContext), CreatedAt: row.TurnCreatedAt, Loops: loops,
+		TraceID: traceIDFromContext(row.TraceContext), InputTokens: stats.InputTokens, OutputTokens: stats.OutputTokens,
+		CacheReadInputTokens: stats.CacheReadInputTokens, CacheWriteInputTokens: stats.CacheWriteInputTokens,
+		ReasoningOutputTokens: stats.ReasoningOutputTokens, CreatedAt: row.TurnCreatedAt, Loops: loops,
 	}
 	if row.StartedAt != nil && row.CompletedAt != nil {
 		turn.DurationMs = float64(row.CompletedAt.Sub(*row.StartedAt).Microseconds()) / 1000
@@ -590,7 +620,9 @@ func (s *ConversationStore) ListTurns(ctx context.Context, options ConversationL
 			TurnIndex: row.TurnIndex, Status: row.Status, UserMessage: row.UserMessage, RunID: row.RunID,
 			AssistantMessage: assistantMessages[row.RunID], TraceID: traceIDFromContext(row.TraceContext),
 			InputTokens: stats.InputTokens, OutputTokens: stats.OutputTokens,
-			ToolCallCount: stats.ToolCallCount, CreatedAt: row.CreatedAt,
+			CacheReadInputTokens: stats.CacheReadInputTokens, CacheWriteInputTokens: stats.CacheWriteInputTokens,
+			ReasoningOutputTokens: stats.ReasoningOutputTokens,
+			ToolCallCount:         stats.ToolCallCount, CreatedAt: row.CreatedAt,
 		}
 		if row.StartedAt != nil && row.CompletedAt != nil {
 			item.DurationMs = float64(row.CompletedAt.Sub(*row.StartedAt).Microseconds()) / 1000
@@ -602,9 +634,12 @@ func (s *ConversationStore) ListTurns(ctx context.Context, options ConversationL
 }
 
 type runStats struct {
-	InputTokens   int64
-	OutputTokens  int64
-	ToolCallCount int64
+	InputTokens           int64
+	OutputTokens          int64
+	CacheReadInputTokens  *int64
+	CacheWriteInputTokens *int64
+	ReasoningOutputTokens *int64
+	ToolCallCount         int64
 }
 
 func (s *ConversationStore) loadAssistantMessages(ctx context.Context, runIDs []string) (map[string]string, error) {
@@ -639,27 +674,50 @@ func (s *ConversationStore) loadRunStats(ctx context.Context, runIDs []string) (
 		return stats, nil
 	}
 	var rows []struct {
-		RunID         string
-		InputTokens   int64
-		OutputTokens  int64
-		ToolCallCount int64
+		RunID                 string
+		InputTokens           int64
+		OutputTokens          int64
+		CacheReadInputTokens  *int64
+		CacheWriteInputTokens *int64
+		ReasoningOutputTokens *int64
+		ToolCallCount         int64
 	}
-	if err := s.db.WithContext(ctx).Raw(`
-		SELECT run.id AS run_id,
-			COALESCE((SELECT SUM(CASE WHEN event.data->'usage'->>'inputTokens' ~ '^[0-9]+$' THEN (event.data->'usage'->>'inputTokens')::bigint ELSE 0 END)
-				FROM ai.run_events event WHERE event.run_id = run.id AND event.type = 'model.completed'), 0) AS input_tokens,
-			COALESCE((SELECT SUM(CASE WHEN event.data->'usage'->>'outputTokens' ~ '^[0-9]+$' THEN (event.data->'usage'->>'outputTokens')::bigint ELSE 0 END)
-				FROM ai.run_events event WHERE event.run_id = run.id AND event.type = 'model.completed'), 0) AS output_tokens,
-			(SELECT COUNT(*) FROM ai.items item WHERE item.run_id = run.id AND item.type = 'tool_call') AS tool_call_count
-		FROM ai.runs run
-		WHERE run.id IN ?`, runIDs).Scan(&rows).Error; err != nil {
+	if err := s.db.WithContext(ctx).Raw(loadRunStatsSQL, runIDs, runIDs).Scan(&rows).Error; err != nil {
 		return nil, err
 	}
 	for _, row := range rows {
-		stats[row.RunID] = runStats{InputTokens: row.InputTokens, OutputTokens: row.OutputTokens, ToolCallCount: row.ToolCallCount}
+		stats[row.RunID] = runStats{
+			InputTokens: row.InputTokens, OutputTokens: row.OutputTokens,
+			CacheReadInputTokens: row.CacheReadInputTokens, CacheWriteInputTokens: row.CacheWriteInputTokens,
+			ReasoningOutputTokens: row.ReasoningOutputTokens, ToolCallCount: row.ToolCallCount,
+		}
 	}
 	return stats, nil
 }
+
+const loadRunStatsSQL = `
+	WITH usage AS (
+		SELECT run_id,
+			COALESCE(SUM(prompt_tokens), 0)::bigint AS input_tokens,
+			COALESCE(SUM(completion_tokens), 0)::bigint AS output_tokens,
+			CASE WHEN COUNT(*) > 0 AND COUNT(cached_prompt_tokens) = COUNT(*)
+				THEN SUM(cached_prompt_tokens)::bigint END AS cache_read_input_tokens,
+			CASE WHEN COUNT(*) > 0 AND COUNT(cache_write_prompt_tokens) = COUNT(*)
+				THEN SUM(cache_write_prompt_tokens)::bigint END AS cache_write_input_tokens,
+			CASE WHEN COUNT(*) > 0 AND COUNT(reasoning_completion_tokens) = COUNT(*)
+				THEN SUM(reasoning_completion_tokens)::bigint END AS reasoning_output_tokens
+		FROM ai.model_usages
+		WHERE run_id IN ? AND status = 'reported' AND operation = 'assistant'
+		GROUP BY run_id
+	)
+	SELECT run.id AS run_id,
+		COALESCE(usage.input_tokens, 0)::bigint AS input_tokens,
+		COALESCE(usage.output_tokens, 0)::bigint AS output_tokens,
+		usage.cache_read_input_tokens, usage.cache_write_input_tokens, usage.reasoning_output_tokens,
+		(SELECT COUNT(*) FROM ai.items item WHERE item.run_id = run.id AND item.type = 'tool_call') AS tool_call_count
+	FROM ai.runs run
+	LEFT JOIN usage ON usage.run_id = run.id
+	WHERE run.id IN ?`
 
 func (s *ConversationStore) Get(ctx context.Context, conversationID string, turnPage, turnPageSize int) (ConversationDetail, error) {
 	turnPage, turnPageSize = normalizePage(turnPage, turnPageSize)
@@ -714,10 +772,21 @@ func (s *ConversationStore) Get(ctx context.Context, conversationID string, turn
 	if err != nil {
 		return ConversationDetail{}, err
 	}
+	statsByRun, err := s.loadRunStats(ctx, runIDs)
+	if err != nil {
+		return ConversationDetail{}, err
+	}
 	turns := make([]ConversationTurn, 0, len(rows))
 	for _, row := range rows {
+		stats := statsByRun[row.RunID]
 		loops := buildConversationLoops(runItems[row.RunID])
-		turn := ConversationTurn{ID: row.ID, TurnIndex: row.TurnIndex, Status: row.Status, UserMessage: row.Input, AssistantMessage: assistantMessageFromLoops(loops), RunID: row.RunID, TraceID: traceIDFromContext(row.TraceContext), CreatedAt: row.CreatedAt, Loops: loops}
+		turn := ConversationTurn{
+			ID: row.ID, TurnIndex: row.TurnIndex, Status: row.Status, UserMessage: row.Input,
+			AssistantMessage: assistantMessageFromLoops(loops), RunID: row.RunID, TraceID: traceIDFromContext(row.TraceContext),
+			InputTokens: stats.InputTokens, OutputTokens: stats.OutputTokens,
+			CacheReadInputTokens: stats.CacheReadInputTokens, CacheWriteInputTokens: stats.CacheWriteInputTokens,
+			ReasoningOutputTokens: stats.ReasoningOutputTokens, CreatedAt: row.CreatedAt, Loops: loops,
+		}
 		if row.StartedAt != nil && row.CompletedAt != nil {
 			turn.DurationMs = float64(row.CompletedAt.Sub(*row.StartedAt).Microseconds()) / 1000
 		}

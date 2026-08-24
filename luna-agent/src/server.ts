@@ -6,7 +6,7 @@ import type { AIModelSnapshot, ActorContext, Run, RunEvent } from "./domain.js"
 import type { Repository } from "./persistence/repository.js"
 import type { ModelProvider } from "./provider/provider.js"
 import type { ProviderConfigClient } from "./provider/config-client.js"
-import { OpenAIChatCompletionsProvider } from "./provider/openai-chat-completions.js"
+import { createConfiguredProvider } from "./provider/managed.js"
 import { redact } from "./redaction.js"
 import type { ToolOrchestrator } from "./tools/orchestrator.js"
 import { presentEventForRun, presentTimeline } from "./timeline-presenter.js"
@@ -126,11 +126,7 @@ export function buildServer(input: {
       const config = await input.providerConfigClient.get()
       const selectedModel = config.provider.models[0]
       if (!config.provider.configured || !selectedModel) return reply.code(409).send({ status: "not_configured", configVersion: config.version, capabilities: {} })
-      const provider = new OpenAIChatCompletionsProvider({
-        baseUrl: config.provider.baseUrl, apiKey: config.provider.apiKey,
-        channelAffinityEnabled: config.provider.channelAffinityEnabled,
-        model: selectedModel.name, timeoutMs: config.runtime.providerTimeoutMs,
-      })
+      const provider = createConfiguredProvider(config, selectedModel.name)
       const health = await provider.health()
       return {
         status: health.ok ? "available" : "unavailable",

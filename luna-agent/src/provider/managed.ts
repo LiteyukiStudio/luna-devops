@@ -15,7 +15,7 @@ export class ManagedProvider implements ModelProvider {
   constructor(
     private readonly resolver: Pick<ProviderConfigClient, "get">,
     private readonly ttlMs: number,
-    private readonly factory: ProviderFactory = defaultFactory,
+    private readonly factory: ProviderFactory = createConfiguredProvider,
   ) {}
 
   capabilities(): ModelCapabilities {
@@ -103,7 +103,7 @@ function resolveModel(config: RemoteProviderConfig, request: ModelRequest): Remo
   return selected
 }
 
-function defaultFactory(config: RemoteProviderConfig, modelName: string): ModelProvider {
+export function createConfiguredProvider(config: RemoteProviderConfig, modelName: string): ModelProvider {
   const Provider = isDeepSeekEndpoint(config.provider.baseUrl)
     ? DeepSeekChatCompletionsProvider
     : OpenAIChatCompletionsProvider

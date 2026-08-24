@@ -93,6 +93,13 @@ export function recordAvailableTools(tools: Array<{ operationId: string }>): voi
   span.end()
 }
 
+export const genAIClientTokenUsageMetric = {
+  name: "gen_ai.client.token.usage",
+  description: "Number of input and output tokens used.",
+  unit: "{token}",
+  explicitBucketBoundaries: [1, 4, 16, 64, 256, 1_024, 4_096, 16_384, 65_536, 262_144, 1_048_576, 4_194_304, 16_777_216, 67_108_864],
+}
+
 export const agentMetrics = {
   runs: deferredCounter("luna_devops_agent_runs", "Agent 运行次数"),
   runDuration: deferredHistogram("luna_devops_agent_run_duration", "Agent 运行耗时", "s"),
@@ -101,7 +108,12 @@ export const agentMetrics = {
   modelDuration: deferredHistogram("luna_devops_agent_model_request_duration", "模型请求耗时", "s"),
   modelFirstTokenDuration: deferredHistogram("luna_devops_agent_model_first_token_duration", "模型首个输出片段耗时", "s"),
   modelSteps: deferredCounter("luna_devops_agent_model_steps", "Agent 模型循环轮次"),
-  modelTokens: deferredCounter("luna_devops_agent_model_tokens", "模型 Token 用量"),
+  modelTokenUsage: deferredHistogram(
+    genAIClientTokenUsageMetric.name,
+    genAIClientTokenUsageMetric.description,
+    genAIClientTokenUsageMetric.unit,
+    genAIClientTokenUsageMetric.explicitBucketBoundaries,
+  ),
   toolCalls: deferredCounter("luna_devops_agent_tool_calls", "工具调用次数"),
   toolDuration: deferredHistogram("luna_devops_agent_tool_call_duration", "工具调用耗时", "s"),
   toolSearches: deferredCounter("luna_devops_agent_tool_searches", "工具目录检索次数"),
@@ -165,9 +177,15 @@ function deferredUpDownCounter(name: string, description: string): Pick<UpDownCo
   return { add: (value, attributes, activeContext) => (instrument ??= metrics.getMeter(instrumentationName).createUpDownCounter(name, { description })).add(value, attributes, activeContext) }
 }
 
-function deferredHistogram(name: string, description: string, unit?: string): Pick<Histogram, "record"> {
+function deferredHistogram(name: string, description: string, unit?: string, explicitBucketBoundaries?: number[]): Pick<Histogram, "record"> {
   let instrument: Histogram | undefined
-  return { record: (value, attributes, activeContext) => (instrument ??= metrics.getMeter(instrumentationName).createHistogram(name, { description, ...(unit ? { unit } : {}) })).record(value, attributes, activeContext) }
+  return {
+    record: (value, attributes, activeContext) => (instrument ??= metrics.getMeter(instrumentationName).createHistogram(name, {
+      description,
+      ...(unit ? { unit } : {}),
+      ...(explicitBucketBoundaries ? { advice: { explicitBucketBoundaries } } : {}),
+    })).record(value, attributes, activeContext),
+  }
 }
 
 export function initializeTelemetry(endpoint = process.env.OTEL_EXPORTER_OTLP_ENDPOINT): void {

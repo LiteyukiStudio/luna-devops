@@ -384,7 +384,7 @@ export class TestRepository implements Repository {
     })
     const run = item ? this.runs.get(item.runId) : undefined
     return item && run?.model
-      ? { modelId: run.model.id, promptTokens: item.usage.promptTokens, maxContextTokensSnapshot: run.model.maxContextTokens }
+      ? { modelId: run.model.id, promptTokens: item.usage.inputTokens, maxContextTokensSnapshot: run.model.maxContextTokens }
       : undefined
   }
   async getExecutionInput(runId: string) {
@@ -655,7 +655,7 @@ export class TestRepository implements Repository {
         ? {
             ...storedRun,
             ...(latestAssistant && storedRun.model ? {
-              latestPromptTokens: latestAssistant.usage.promptTokens,
+              latestPromptTokens: latestAssistant.usage.inputTokens,
               latestUsageModelId: storedRun.model.id,
               latestUsageMaxContextTokensSnapshot: storedRun.model.maxContextTokens,
             } : {}),

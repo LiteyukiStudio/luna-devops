@@ -25,6 +25,9 @@ const turn: AgentObservabilityTurn = {
   traceId: 'trace-1',
   inputTokens: 10,
   outputTokens: 20,
+  cacheReadInputTokens: 0,
+  cacheWriteInputTokens: null,
+  reasoningOutputTokens: 5,
   toolCallCount: 1,
   durationMs: 50,
   createdAt: '2026-08-13T00:00:00Z',
@@ -135,6 +138,44 @@ describe('agent turn detail diagnostic actions', () => {
     expect(await screen.findByText('下发模型工具 · 2 个')).toBeInTheDocument()
     expect(screen.getByText('createGatewayRoute')).toBeInTheDocument()
     expect(screen.getByText('listGatewayRoutes')).toBeInTheDocument()
+  })
+
+  it('shows official cache-write and unavailable-usage Span attributes', async () => {
+    vi.mocked(api.getAgentObservabilityTrace).mockResolvedValue({
+      ...detail,
+      spans: [
+        ...detail.spans,
+        {
+          spanId: 'model',
+          parentSpanId: 'root',
+          name: 'chat gpt-5',
+          serviceName: 'luna-agent',
+          kind: 'client',
+          status: 'ok',
+          startTimeUnixNano: '30',
+          startOffsetMs: 30,
+          durationMs: 10,
+          attributes: {
+            'gen_ai.operation.name': 'chat',
+            'gen_ai.usage.cache_write.input_tokens': '1234',
+            'luna.gen_ai.usage.status': 'unavailable',
+            'luna.gen_ai.usage.unavailable_reason': 'missing_usage',
+          },
+          events: [],
+          raw: { spanId: 'model' },
+        },
+      ],
+    })
+    renderSheet()
+
+    fireEvent.click(await screen.findByRole('button', { name: /模型生成回复/ }))
+
+    expect(screen.getByText('缓存写入输入 Token')).toBeInTheDocument()
+    expect(screen.getByText('1,234')).toBeInTheDocument()
+    expect(screen.getByText('Token 用量状态')).toBeInTheDocument()
+    expect(screen.getByText('不可用')).toBeInTheDocument()
+    expect(screen.getByText('Token 用量不可用原因')).toBeInTheDocument()
+    expect(screen.getByText('上游未返回用量')).toBeInTheDocument()
   })
 })
 

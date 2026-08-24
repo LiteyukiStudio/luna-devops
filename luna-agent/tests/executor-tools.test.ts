@@ -100,6 +100,43 @@ describe("RunExecutor slim lifecycle", () => {
     expect(await executor.runOnce()).toBe(false)
   })
 
+  it("publishes normalized official usage fields in model.completed", async () => {
+    const repository = new TestRepository()
+    const conversation = await repository.createConversation("usr_usage_event", "usage")
+    const created = await repository.createTurn("usr_usage_event", {
+      conversationId: conversation.id,
+      input: "usage",
+      pageContext: {},
+      idempotencyKey: "usage-event",
+      actorSessionId: "ses_usage_event",
+    })
+    const usage = {
+      inputTokens: 120,
+      outputTokens: 30,
+      totalTokens: 150,
+      cacheReadInputTokens: 70,
+      cacheWriteInputTokens: 10,
+      reasoningOutputTokens: 20,
+    }
+    const provider: ModelProvider = {
+      async *stream() {
+        yield { type: "message_delta", delta: "done" }
+        yield { type: "completed", usage: { status: "reported", value: usage } }
+      },
+      async complete() { return { text: "done", usage: { status: "reported", value: usage } } },
+      capabilities: () => ({ streaming: true, toolCalling: true, structuredOutput: true }),
+      health: async () => ({ ok: true }),
+    }
+
+    await new RunExecutor(repository, new ModelRuntime(provider), loadConfig({ NODE_ENV: "test" })).runOnce()
+
+    const completed = (await repository.getEvents("usr_usage_event", created.run.id, 0))
+      .find(event => event.type === "model.completed")
+    expect(completed?.data.usage).toEqual({ status: "reported", ...usage })
+    expect(completed?.data.usage).not.toHaveProperty("promptTokens")
+    expect(completed?.data.usage).not.toHaveProperty("completionTokens")
+  })
+
   it("marks an in-flight Run interrupted when the Agent stops", async () => {
     const repository = new TestRepository()
     const conversation = await repository.createConversation("usr_a", "stop")
@@ -121,9 +158,9 @@ describe("RunExecutor slim lifecycle", () => {
           if (signal?.aborted) reject(abortError())
           signal?.addEventListener("abort", () => reject(abortError()), { once: true })
         })
-        yield { type: "completed", usage: { status: "reported" as const, value: { promptTokens: 0, completionTokens: 0, totalTokens: 0 + 0 } } }
+        yield { type: "completed", usage: { status: "reported" as const, value: { inputTokens: 0, outputTokens: 0, totalTokens: 0 + 0 } } }
       },
-      async complete() { return { text: "", usage: { status: "reported" as const, value: { promptTokens: 1, completionTokens: 0, totalTokens: 1 + 0 } }, toolCalls: [] } },
+      async complete() { return { text: "", usage: { status: "reported" as const, value: { inputTokens: 1, outputTokens: 0, totalTokens: 1 + 0 } }, toolCalls: [] } },
       capabilities: () => ({ streaming: true, toolCalling: true, structuredOutput: true }),
       health: async () => ({ ok: true }),
     }
@@ -156,7 +193,7 @@ describe("RunExecutor slim lifecycle", () => {
           signal?.addEventListener("abort", abort, { once: true })
         })
       },
-      async complete() { return { text: "", usage: { status: "reported" as const, value: { promptTokens: 1, completionTokens: 0, totalTokens: 1 } }, toolCalls: [] } },
+      async complete() { return { text: "", usage: { status: "reported" as const, value: { inputTokens: 1, outputTokens: 0, totalTokens: 1 } }, toolCalls: [] } },
       capabilities: () => ({ streaming: true, toolCalling: true, structuredOutput: true }),
       health: async () => ({ ok: true }),
     }
@@ -208,13 +245,13 @@ describe("RunExecutor slim lifecycle", () => {
     const provider: ModelProvider = {
       async *stream() {
         if (step++ === 0) {
-          yield { type: "completed", usage: { status: "reported" as const, value: { promptTokens: 4, completionTokens: 2, totalTokens: 4 + 2 } }, toolCalls: [{ id: "restart", operationId: "restartRelease", arguments: { releaseId: "rel_a" } }] }
+          yield { type: "completed", usage: { status: "reported" as const, value: { inputTokens: 4, outputTokens: 2, totalTokens: 4 + 2 } }, toolCalls: [{ id: "restart", operationId: "restartRelease", arguments: { releaseId: "rel_a" } }] }
           return
         }
         yield { type: "message_delta", delta: "发布已重启。" }
-        yield { type: "completed", usage: { status: "reported" as const, value: { promptTokens: 6, completionTokens: 3, totalTokens: 6 + 3 } } }
+        yield { type: "completed", usage: { status: "reported" as const, value: { inputTokens: 6, outputTokens: 3, totalTokens: 6 + 3 } } }
       },
-      async complete() { return { text: "", usage: { status: "reported" as const, value: { promptTokens: 1, completionTokens: 0, totalTokens: 1 + 0 } }, toolCalls: [] } },
+      async complete() { return { text: "", usage: { status: "reported" as const, value: { inputTokens: 1, outputTokens: 0, totalTokens: 1 + 0 } }, toolCalls: [] } },
       capabilities: () => ({ streaming: true, toolCalling: true, structuredOutput: true }),
       health: async () => ({ ok: true }),
     }
@@ -277,17 +314,17 @@ describe("RunExecutor slim lifecycle", () => {
       async *stream(request) {
         observedTools.push((request.tools ?? []).map(tool => tool.operationId))
         if (step++ === 0) {
-          yield { type: "completed", usage: { status: "reported" as const, value: { promptTokens: 2, completionTokens: 1, totalTokens: 2 + 1 } }, toolCalls: [{ id: "details", operationId: "get_tool_details", arguments: { operationIds: ["getProject"] } }] }
+          yield { type: "completed", usage: { status: "reported" as const, value: { inputTokens: 2, outputTokens: 1, totalTokens: 2 + 1 } }, toolCalls: [{ id: "details", operationId: "get_tool_details", arguments: { operationIds: ["getProject"] } }] }
           return
         }
         if (step === 2) {
-          yield { type: "completed", usage: { status: "reported" as const, value: { promptTokens: 3, completionTokens: 1, totalTokens: 3 + 1 } }, toolCalls: [{ id: "get", operationId: "getProject", arguments: { projectId: "prj_a" } }] }
+          yield { type: "completed", usage: { status: "reported" as const, value: { inputTokens: 3, outputTokens: 1, totalTokens: 3 + 1 } }, toolCalls: [{ id: "get", operationId: "getProject", arguments: { projectId: "prj_a" } }] }
           return
         }
         yield { type: "message_delta", delta: "项目空间已读取。" }
-        yield { type: "completed", usage: { status: "reported" as const, value: { promptTokens: 4, completionTokens: 2, totalTokens: 4 + 2 } } }
+        yield { type: "completed", usage: { status: "reported" as const, value: { inputTokens: 4, outputTokens: 2, totalTokens: 4 + 2 } } }
       },
-      async complete() { return { text: "", usage: { status: "reported" as const, value: { promptTokens: 1, completionTokens: 0, totalTokens: 1 + 0 } }, toolCalls: [] } },
+      async complete() { return { text: "", usage: { status: "reported" as const, value: { inputTokens: 1, outputTokens: 0, totalTokens: 1 + 0 } }, toolCalls: [] } },
       capabilities: () => ({ streaming: true, toolCalling: true, structuredOutput: true }),
       health: async () => ({ ok: true }),
     }
@@ -359,19 +396,19 @@ describe("RunExecutor slim lifecycle", () => {
         observedTools.push((request.tools ?? []).map(tool => tool.operationId))
         if (step === 0 || step === 3) {
           step += 1
-          yield { type: "completed", usage: { status: "reported" as const, value: { promptTokens: 2, completionTokens: 1, totalTokens: 2 + 1 } }, toolCalls: [{ id: `search-${step}`, operationId: "search_tools", arguments: { query: "查看项目空间详情" } }] }
+          yield { type: "completed", usage: { status: "reported" as const, value: { inputTokens: 2, outputTokens: 1, totalTokens: 2 + 1 } }, toolCalls: [{ id: `search-${step}`, operationId: "search_tools", arguments: { query: "查看项目空间详情" } }] }
           return
         }
         if (step === 1 || step === 2) {
           const projectId = step === 1 ? "prj_a" : "prj_b"
           step += 1
-          yield { type: "completed", usage: { status: "reported" as const, value: { promptTokens: 2, completionTokens: 1, totalTokens: 2 + 1 } }, toolCalls: [{ id: `get-${projectId}`, operationId: "getProject", arguments: { projectId } }] }
+          yield { type: "completed", usage: { status: "reported" as const, value: { inputTokens: 2, outputTokens: 1, totalTokens: 2 + 1 } }, toolCalls: [{ id: `get-${projectId}`, operationId: "getProject", arguments: { projectId } }] }
           return
         }
         yield { type: "message_delta", delta: "两个项目空间都已读取。" }
-        yield { type: "completed", usage: { status: "reported" as const, value: { promptTokens: 2, completionTokens: 1, totalTokens: 2 + 1 } } }
+        yield { type: "completed", usage: { status: "reported" as const, value: { inputTokens: 2, outputTokens: 1, totalTokens: 2 + 1 } } }
       },
-      async complete() { return { text: "", usage: { status: "reported" as const, value: { promptTokens: 1, completionTokens: 0, totalTokens: 1 + 0 } }, toolCalls: [] } },
+      async complete() { return { text: "", usage: { status: "reported" as const, value: { inputTokens: 1, outputTokens: 0, totalTokens: 1 + 0 } }, toolCalls: [] } },
       capabilities: () => ({ streaming: true, toolCalling: true, structuredOutput: true }),
       health: async () => ({ ok: true }),
     }
@@ -432,15 +469,15 @@ describe("RunExecutor slim lifecycle", () => {
       async *stream() {
         if (step++ < 2) {
           yield {
-            type: "completed", usage: { status: "reported" as const, value: { promptTokens: 1, completionTokens: 1, totalTokens: 1 + 1 } },
+            type: "completed", usage: { status: "reported" as const, value: { inputTokens: 1, outputTokens: 1, totalTokens: 1 + 1 } },
             toolCalls: [{ id: `details-${step}`, operationId: "get_tool_details", arguments: { operationIds: step === 1 ? ["getProject", "missingTool"] : ["missingTool", "getProject", "getProject"] } }],
           }
           return
         }
         yield { type: "message_delta", delta: "详情已确认。" }
-        yield { type: "completed", usage: { status: "reported" as const, value: { promptTokens: 1, completionTokens: 1, totalTokens: 1 + 1 } } }
+        yield { type: "completed", usage: { status: "reported" as const, value: { inputTokens: 1, outputTokens: 1, totalTokens: 1 + 1 } } }
       },
-      async complete() { return { text: "", usage: { status: "reported" as const, value: { promptTokens: 1, completionTokens: 0, totalTokens: 1 + 0 } }, toolCalls: [] } },
+      async complete() { return { text: "", usage: { status: "reported" as const, value: { inputTokens: 1, outputTokens: 0, totalTokens: 1 + 0 } }, toolCalls: [] } },
       capabilities: () => ({ streaming: true, toolCalling: true, structuredOutput: true }), health: async () => ({ ok: true }),
     }
     const runtime = new ModelRuntime(provider, {

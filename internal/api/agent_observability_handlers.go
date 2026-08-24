@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/LiteyukiStudio/devops/internal/agentobservability"
@@ -46,13 +45,16 @@ type agentObservabilityOverview struct {
 }
 
 type agentObservabilitySummary struct {
-	InputTokens     float64 `json:"inputTokens"`
-	OutputTokens    float64 `json:"outputTokens"`
-	ToolCalls       float64 `json:"toolCalls"`
-	ToolSuccessRate float64 `json:"toolSuccessRate"`
-	TurnCount       int64   `json:"turnCount"`
-	TurnSuccessRate float64 `json:"turnSuccessRate"`
-	RunDurationP95  float64 `json:"runDurationP95"`
+	InputTokens           int64   `json:"inputTokens"`
+	OutputTokens          int64   `json:"outputTokens"`
+	CacheReadInputTokens  *int64  `json:"cacheReadInputTokens"`
+	CacheWriteInputTokens *int64  `json:"cacheWriteInputTokens"`
+	ReasoningOutputTokens *int64  `json:"reasoningOutputTokens"`
+	ToolCalls             float64 `json:"toolCalls"`
+	ToolSuccessRate       float64 `json:"toolSuccessRate"`
+	TurnCount             int64   `json:"turnCount"`
+	TurnSuccessRate       float64 `json:"turnSuccessRate"`
+	RunDurationP95        float64 `json:"runDurationP95"`
 }
 
 func (h *Handlers) TestAgentObservabilitySource(ctx *gin.Context) {
@@ -124,32 +126,13 @@ func (h *Handlers) GetAgentObservabilityOverview(ctx *gin.Context) {
 		ObservationCode: "ai.observability.ready",
 	}
 	queries := agentObservabilitySummaryQueries(rangeText)
-	queryTargets := []struct {
-		query  string
-		target *float64
-	}{
-		{queries["inputTokens"], &result.Summary.InputTokens},
-		{queries["outputTokens"], &result.Summary.OutputTokens},
-		{queries["runDurationP95"], &result.Summary.RunDurationP95},
+	series, queryErr := client.Query(ctx.Request.Context(), queries["runDurationP95"], end)
+	if queryErr != nil {
+		result.SourceStatus[agentobservability.SourcePrometheus] = "unavailable"
+		result.ObservationCode = "ai.observability.partial"
+	} else {
+		result.Summary.RunDurationP95 = firstSeriesValue(series)
 	}
-	var wait sync.WaitGroup
-	var mutex sync.Mutex
-	for _, item := range queryTargets {
-		wait.Add(1)
-		go func() {
-			defer wait.Done()
-			series, queryErr := client.Query(ctx.Request.Context(), item.query, end)
-			mutex.Lock()
-			defer mutex.Unlock()
-			if queryErr != nil {
-				result.SourceStatus[agentobservability.SourcePrometheus] = "unavailable"
-				result.ObservationCode = "ai.observability.partial"
-				return
-			}
-			*item.target = firstSeriesValue(series)
-		}()
-	}
-	wait.Wait()
 	store := agentobservability.NewConversationStore(h.dbFor(ctx))
 	turnSummary, err := store.SummarizeTurns(ctx.Request.Context(), start)
 	if err != nil {
@@ -166,8 +149,11 @@ func (h *Handlers) GetAgentObservabilityOverview(ctx *gin.Context) {
 		writeErrorCode(ctx, http.StatusInternalServerError, "ai.observability.runs_failed", "Agent run summaries are unavailable")
 		return
 	}
-	result.Summary.InputTokens = float64(runSummary.InputTokens)
-	result.Summary.OutputTokens = float64(runSummary.OutputTokens)
+	result.Summary.InputTokens = runSummary.InputTokens
+	result.Summary.OutputTokens = runSummary.OutputTokens
+	result.Summary.CacheReadInputTokens = runSummary.CacheReadInputTokens
+	result.Summary.CacheWriteInputTokens = runSummary.CacheWriteInputTokens
+	result.Summary.ReasoningOutputTokens = runSummary.ReasoningOutputTokens
 	result.Summary.RunDurationP95 = runSummary.DurationP95Seconds
 	result.Summary.TurnCount = turnSummary.Total
 	result.Summary.TurnSuccessRate = turnSummary.SuccessRate
@@ -179,8 +165,6 @@ func (h *Handlers) GetAgentObservabilityOverview(ctx *gin.Context) {
 
 func agentObservabilitySummaryQueries(rangeText string) map[string]string {
 	return map[string]string{
-		"inputTokens":    fmt.Sprintf(`sum(increase(luna_devops_agent_model_tokens_total{direction="input"}[%s])) or vector(0)`, rangeText),
-		"outputTokens":   fmt.Sprintf(`sum(increase(luna_devops_agent_model_tokens_total{direction="output"}[%s])) or vector(0)`, rangeText),
 		"runDurationP95": fmt.Sprintf(`histogram_quantile(0.95, sum(increase(luna_devops_agent_run_duration_seconds_bucket[%s])) by (le)) or vector(0)`, rangeText),
 	}
 }

@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { AgentConversationLoopView } from './agent-conversation-loop'
 import { AgentConversationMessage } from './agent-conversation-message'
+import { AgentTokenUsageInline } from './agent-token-usage'
 
 export function AgentConversationDetailSheet({ conversation, turnPage, onOpenChange, onTurnPageChange, onViewTrace }: {
   conversation: AgentObservabilityConversation | null
@@ -56,19 +57,22 @@ export function AgentConversationDetailSheet({ conversation, turnPage, onOpenCha
               <div className="grid gap-4">
                 {detail.data.turns.map(turn => (
                   <section key={turn.id} className="overflow-hidden rounded-container bg-surface-raised">
-                    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-sm font-semibold">{t('operationsDashboardPage.conversationDetail.turnLabel', { index: turn.turnIndex + 1 })}</span>
-                        <StatusBadge tone={statusTone(turn.status)}>{t(`operationsDashboardPage.runStatus.${turn.status}`, { defaultValue: turn.status })}</StatusBadge>
-                        <span className="text-xs text-muted-foreground">{formatDate(turn.createdAt, i18n.language)}</span>
-                        {turn.durationMs > 0 && <span className="text-xs text-muted-foreground">{formatDuration(turn.durationMs)}</span>}
+                    <div className="grid gap-2 border-b border-border px-4 py-3">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-sm font-semibold">{t('operationsDashboardPage.conversationDetail.turnLabel', { index: turn.turnIndex + 1 })}</span>
+                          <StatusBadge tone={statusTone(turn.status)}>{t(`operationsDashboardPage.runStatus.${turn.status}`, { defaultValue: turn.status })}</StatusBadge>
+                          <span className="text-xs text-muted-foreground">{formatDate(turn.createdAt, i18n.language)}</span>
+                          {turn.durationMs > 0 && <span className="text-xs text-muted-foreground">{formatDuration(turn.durationMs)}</span>}
+                        </div>
+                        {turn.traceId && (
+                          <Button size="sm" variant="outline" onClick={() => onViewTrace(traceFromTurn(turn.traceId, turn.createdAt, turn.durationMs))}>
+                            <Network className="size-4" />
+                            {t('operationsDashboardPage.viewTrace')}
+                          </Button>
+                        )}
                       </div>
-                      {turn.traceId && (
-                        <Button size="sm" variant="outline" onClick={() => onViewTrace(traceFromTurn(turn.traceId, turn.createdAt, turn.durationMs))}>
-                          <Network className="size-4" />
-                          {t('operationsDashboardPage.viewTrace')}
-                        </Button>
-                      )}
+                      <AgentTokenUsageInline usage={turn} />
                     </div>
                     <div className="grid gap-4 p-4">
                       <AgentConversationMessage role="user" text={turn.userMessage} />

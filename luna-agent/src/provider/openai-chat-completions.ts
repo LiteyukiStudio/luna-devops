@@ -1,8 +1,8 @@
-import type { Span } from "@opentelemetry/api"
+import type { Attributes, Span } from "@opentelemetry/api"
 import { createHash } from "node:crypto"
 import { trace } from "@opentelemetry/api"
 import { z } from "zod"
-import { genAIInputMessages, genAIModelSpan, genAIOutputMessages, genAIToolDefinitions } from "../genai-semconv.js"
+import { genAIClientTokenUsageAttributes, genAIInputMessages, genAIModelSpan, genAIOutputMessages, genAIToolDefinitions } from "../genai-semconv.js"
 import { agentMetrics, clientSpanOptions, errorDiagnostic, recordAIContent, telemetryLog, withSpan, withSpanStream } from "../telemetry.js"
 import { mapProviderError, parseProviderErrorBody, ProviderRequestError } from "./provider-error.js"
 import type {
@@ -137,13 +137,13 @@ export class OpenAIChatCompletionsProvider implements ModelProvider {
   async health(): Promise<{ ok: boolean, requestId?: string }> {
     const response = await this.complete({ messages: [{ role: "user", content: "只回复 OK。" }], maxOutputTokens: 32 })
     return {
-      ok: Boolean(response.text.trim() || response.usage.status === "reported" && response.usage.value.completionTokens > 0),
+      ok: Boolean(response.text.trim() || response.usage.status === "reported" && response.usage.value.outputTokens > 0),
       ...(response.providerRequestId ? { requestId: response.providerRequestId } : {}),
     }
   }
 
   async complete(request: ModelRequest): Promise<ModelResponse> {
-    const modelSpan = genAIModelSpan(this.options.baseUrl, this.options.model, request.maxOutputTokens, false)
+    const modelSpan = genAIModelSpan(this.options.baseUrl, this.providerName(), this.options.model, request.maxOutputTokens, false)
     return withSpan(modelSpan.name, clientSpanOptions({ ...modelSpan.attributes, ...requestIdentity(request) }), async span => {
       this.recordRequest(span, request)
       const response = await this.fetchCompletion(request, false)
@@ -158,7 +158,7 @@ export class OpenAIChatCompletionsProvider implements ModelProvider {
       const body = parsed.data
       const message = body.choices[0]?.message
       const toolCalls = (message?.tool_calls ?? []).map(parseToolCall).filter(call => call.operationId)
-      const usage = parseUsage(body.usage, "missing_usage")
+      const usage = parseUsage(this.adaptUsagePayload(body.usage), "missing_usage")
       const finishReason = body.choices[0]?.finish_reason ?? undefined
       this.recordResponse(span, usage, finishReason, toolCalls.length, body.id, body.model)
       const text = contentText(message?.content)
@@ -178,7 +178,7 @@ export class OpenAIChatCompletionsProvider implements ModelProvider {
   }
 
   async *stream(request: ModelRequest): AsyncIterable<ModelEvent> {
-    const modelSpan = genAIModelSpan(this.options.baseUrl, this.options.model, request.maxOutputTokens, true)
+    const modelSpan = genAIModelSpan(this.options.baseUrl, this.providerName(), this.options.model, request.maxOutputTokens, true)
     yield* withSpanStream(modelSpan.name, clientSpanOptions({ ...modelSpan.attributes, ...requestIdentity(request) }), span => this.streamAttempt(request, span))
   }
 
@@ -209,6 +209,14 @@ export class OpenAIChatCompletionsProvider implements ModelProvider {
   protected reasoningDelta(_delta: Record<string, unknown> | undefined): string {
     void _delta
     return ""
+  }
+
+  protected providerName(): string {
+    return "openai"
+  }
+
+  protected adaptUsagePayload(raw: unknown): unknown {
+    return raw
   }
 
   private async *streamAttempt(request: ModelRequest, span: Span): AsyncIterable<ModelEvent> {
@@ -253,7 +261,7 @@ export class OpenAIChatCompletionsProvider implements ModelProvider {
       }
       if (chunk.usage !== undefined) {
         usageSeen = true
-        usage = parseUsage(chunk.usage, "invalid_usage")
+        usage = parseUsage(this.adaptUsagePayload(chunk.usage), "invalid_usage")
       }
     }
     if (!usageSeen) usage = { status: "unavailable", reason: "stream_ended_without_usage" }
@@ -350,18 +358,37 @@ export class OpenAIChatCompletionsProvider implements ModelProvider {
   }
 
   private recordResponse(span: Span, usage: ModelUsage, finishReason: string | undefined, toolCallCount: number, responseId?: string, responseModel?: string): void {
+    span.setAttributes(modelUsageSpanAttributes(usage))
     if (usage.status === "reported") {
-      span.setAttribute("gen_ai.usage.input_tokens", usage.value.promptTokens)
-      span.setAttribute("gen_ai.usage.output_tokens", usage.value.completionTokens)
-      if (usage.value.cachedPromptTokens !== undefined) span.setAttribute("gen_ai.usage.cache_read.input_tokens", usage.value.cachedPromptTokens)
-      if (usage.value.cacheWritePromptTokens !== undefined) span.setAttribute("gen_ai.usage.cache_creation.input_tokens", usage.value.cacheWritePromptTokens)
-      if (usage.value.reasoningCompletionTokens !== undefined) span.setAttribute("gen_ai.usage.reasoning.output_tokens", usage.value.reasoningCompletionTokens)
+      agentMetrics.modelTokenUsage.record(
+        usage.value.inputTokens,
+        genAIClientTokenUsageAttributes(this.providerName(), this.options.model, "input", responseModel),
+      )
+      agentMetrics.modelTokenUsage.record(
+        usage.value.outputTokens,
+        genAIClientTokenUsageAttributes(this.providerName(), this.options.model, "output", responseModel),
+      )
     }
-    else span.setAttribute("luna.gen_ai.usage.status", usage.status)
     if (finishReason) span.setAttribute("gen_ai.response.finish_reasons", [finishReason])
     if (responseId) span.setAttribute("gen_ai.response.id", responseId)
     if (responseModel) span.setAttribute("gen_ai.response.model", responseModel)
     span.setAttribute("luna.tool_call.count", toolCallCount)
+  }
+}
+
+export function modelUsageSpanAttributes(usage: ModelUsage): Attributes {
+  if (usage.status === "unavailable") {
+    return {
+      "luna.gen_ai.usage.status": usage.status,
+      "luna.gen_ai.usage.unavailable_reason": usage.reason,
+    }
+  }
+  return {
+    "gen_ai.usage.input_tokens": usage.value.inputTokens,
+    "gen_ai.usage.output_tokens": usage.value.outputTokens,
+    ...(usage.value.cacheReadInputTokens !== undefined ? { "gen_ai.usage.cache_read.input_tokens": usage.value.cacheReadInputTokens } : {}),
+    ...(usage.value.cacheWriteInputTokens !== undefined ? { "gen_ai.usage.cache_write.input_tokens": usage.value.cacheWriteInputTokens } : {}),
+    ...(usage.value.reasoningOutputTokens !== undefined ? { "gen_ai.usage.reasoning.output_tokens": usage.value.reasoningOutputTokens } : {}),
   }
 }
 
@@ -371,12 +398,12 @@ function parseUsage(raw: unknown, absentReason: "missing_usage" | "invalid_usage
   if (!parsed.success) return { status: "unavailable", reason: "invalid_usage" }
   const usage = parsed.data
   const value: OfficialModelUsage = {
-    promptTokens: usage.prompt_tokens,
-    completionTokens: usage.completion_tokens,
+    inputTokens: usage.prompt_tokens,
+    outputTokens: usage.completion_tokens,
     totalTokens: usage.total_tokens,
-    ...(usage.prompt_tokens_details?.cached_tokens !== undefined ? { cachedPromptTokens: usage.prompt_tokens_details.cached_tokens } : {}),
-    ...(usage.prompt_tokens_details?.cache_write_tokens !== undefined ? { cacheWritePromptTokens: usage.prompt_tokens_details.cache_write_tokens } : {}),
-    ...(usage.completion_tokens_details?.reasoning_tokens !== undefined ? { reasoningCompletionTokens: usage.completion_tokens_details.reasoning_tokens } : {}),
+    ...(usage.prompt_tokens_details?.cached_tokens !== undefined ? { cacheReadInputTokens: usage.prompt_tokens_details.cached_tokens } : {}),
+    ...(usage.prompt_tokens_details?.cache_write_tokens !== undefined ? { cacheWriteInputTokens: usage.prompt_tokens_details.cache_write_tokens } : {}),
+    ...(usage.completion_tokens_details?.reasoning_tokens !== undefined ? { reasoningOutputTokens: usage.completion_tokens_details.reasoning_tokens } : {}),
   }
   return { status: "reported", value }
 }

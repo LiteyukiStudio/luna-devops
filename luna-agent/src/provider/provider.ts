@@ -98,12 +98,12 @@ export type ModelEvent =
       responseModel?: string
     }
 export type OfficialModelUsage = {
-  promptTokens: number
-  completionTokens: number
+  inputTokens: number
+  outputTokens: number
   totalTokens: number
-  cachedPromptTokens?: number
-  cacheWritePromptTokens?: number
-  reasoningCompletionTokens?: number
+  cacheReadInputTokens?: number
+  cacheWriteInputTokens?: number
+  reasoningOutputTokens?: number
 }
 export type ModelUsage =
   | { status: "reported", value: OfficialModelUsage }

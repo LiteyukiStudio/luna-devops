@@ -21,6 +21,7 @@ import { cn } from '@/lib/utils'
 import { availableToolNames } from './agent-available-tools'
 import { ObservabilityJsonBlock, ObservabilityJsonValue } from './agent-observability-json'
 import { agentModelOutput, agentSpanContentSections, agentSpanMessageMarkdown, agentSpanMessages, formatSpanJSON, isAgentSpanContentAttribute } from './agent-span-content'
+import { AgentTokenUsageStrip } from './agent-token-usage'
 import { agentTurnDiagnosticFilename, formatAgentTurnDiagnosticExport } from './agent-turn-diagnostic-export'
 import { agentTurnTimelineKind, filterAgentTurnTimelineSpans } from './agent-turn-timeline'
 
@@ -39,8 +40,8 @@ const spanAttributeLabelKeys: Record<string, string> = {
   'gen_ai.response.time_to_first_chunk': 'timeToFirstChunk',
   'gen_ai.usage.input_tokens': 'inputTokens',
   'gen_ai.usage.output_tokens': 'outputTokens',
-  'gen_ai.usage.cache_read.input_tokens': 'cachedInputTokens',
-  'gen_ai.usage.cache_creation.input_tokens': 'cacheCreationInputTokens',
+  'gen_ai.usage.cache_read.input_tokens': 'cacheReadInputTokens',
+  'gen_ai.usage.cache_write.input_tokens': 'cacheWriteInputTokens',
   'gen_ai.usage.reasoning.output_tokens': 'reasoningOutputTokens',
   'gen_ai.conversation.compacted': 'conversationCompacted',
   'gen_ai.tool.name': 'toolName',
@@ -52,7 +53,8 @@ const spanAttributeLabelKeys: Record<string, string> = {
   'luna.turn.id': 'turnId',
   'luna.run.id': 'runId',
   'luna.tool_call.id': 'toolCallId',
-  'luna.gen_ai.usage.reported': 'usageReported',
+  'luna.gen_ai.usage.status': 'usageStatus',
+  'luna.gen_ai.usage.unavailable_reason': 'usageUnavailableReason',
   'http.request.method': 'httpMethod',
   'http.response.status_code': 'httpStatus',
   'db.system.name': 'databaseSystem',
@@ -179,14 +181,15 @@ export function AgentTurnDetailSheet({ turn, onOpenChange }: {
         <div className="min-h-0 flex-1 overflow-auto p-6">
           {turn && (
             <div className="grid gap-6">
-              <MetricGroup className="grid-cols-2 sm:grid-cols-3 xl:grid-cols-6">
-                <MetricItem icon={<Clock3 className="size-4" />} label={t('operationsDashboardPage.duration')} value={turn.durationMs > 0 ? formatDuration(turn.durationMs) : '—'} />
-                <MetricItem icon={<MessageSquareText className="size-4" />} label={t('operationsDashboardPage.inputTokens')} value={formatNumber(turn.inputTokens)} />
-                <MetricItem icon={<Bot className="size-4" />} label={t('operationsDashboardPage.outputTokens')} value={formatNumber(turn.outputTokens)} />
-                <MetricItem icon={<Wrench className="size-4" />} label={t('operationsDashboardPage.toolCalls')} value={formatNumber(turn.toolCallCount)} />
-                <MetricItem icon={<Network className="size-4" />} label={t('operationsDashboardPage.turnDetail.spans')} value={formatNumber(detail.data?.spanCount)} />
-                <MetricItem icon={<TriangleAlert className="size-4" />} label={t('operationsDashboardPage.turnDetail.errorSpans')} value={formatNumber(detail.data?.errorCount)} tone={(detail.data?.errorCount ?? 0) > 0 ? 'danger' : 'success'} />
-              </MetricGroup>
+              <div className="grid gap-3">
+                <AgentTokenUsageStrip usage={turn} />
+                <MetricGroup className="grid-cols-2 lg:grid-cols-4">
+                  <MetricItem icon={<Clock3 className="size-4" />} label={t('operationsDashboardPage.duration')} value={turn.durationMs > 0 ? formatDuration(turn.durationMs) : '—'} />
+                  <MetricItem icon={<Wrench className="size-4" />} label={t('operationsDashboardPage.toolCalls')} value={formatNumber(turn.toolCallCount)} />
+                  <MetricItem icon={<Network className="size-4" />} label={t('operationsDashboardPage.turnDetail.spans')} value={formatNumber(detail.data?.spanCount)} />
+                  <MetricItem icon={<TriangleAlert className="size-4" />} label={t('operationsDashboardPage.turnDetail.errorSpans')} value={formatNumber(detail.data?.errorCount)} tone={(detail.data?.errorCount ?? 0) > 0 ? 'danger' : 'success'} />
+                </MetricGroup>
+              </div>
 
               <div className="grid gap-2 rounded-container bg-surface-raised p-4">
                 <p className="m-0 text-xs font-medium text-muted-foreground">{t('operationsDashboardPage.userMessage')}</p>
@@ -440,13 +443,17 @@ function spanAttributeLabel(key: string, t: (key: string, options?: Record<strin
 function spanAttributeValue(key: string, value: string, t: (key: string, options?: Record<string, unknown>) => string, language: string) {
   if (key === 'gen_ai.operation.name' || key === 'luna.run.outcome')
     return t(`operationsDashboardPage.turnDetail.attributeValues.${value}`, { defaultValue: value })
-  if (key === 'gen_ai.request.stream' || key === 'gen_ai.conversation.compacted' || key === 'luna.gen_ai.usage.reported')
+  if (key === 'luna.gen_ai.usage.status')
+    return t(`operationsDashboardPage.turnDetail.usageStatusValues.${value}`, { defaultValue: value })
+  if (key === 'luna.gen_ai.usage.unavailable_reason')
+    return t(`operationsDashboardPage.turnDetail.usageUnavailableReasonValues.${value}`, { defaultValue: value })
+  if (key === 'gen_ai.request.stream' || key === 'gen_ai.conversation.compacted')
     return t(`operationsDashboardPage.turnDetail.booleanValue.${value === 'true' ? 'true' : 'false'}`, { defaultValue: value })
   if (key === 'gen_ai.response.time_to_first_chunk') {
     const seconds = Number(value)
     return Number.isFinite(seconds) ? `${new Intl.NumberFormat(language, { maximumFractionDigits: 3 }).format(seconds)} s` : value
   }
-  if (key === 'gen_ai.usage.input_tokens' || key === 'gen_ai.usage.output_tokens' || key === 'gen_ai.usage.cache_read.input_tokens' || key === 'gen_ai.usage.cache_creation.input_tokens' || key === 'gen_ai.usage.reasoning.output_tokens' || key === 'gen_ai.request.max_tokens') {
+  if (key === 'gen_ai.usage.input_tokens' || key === 'gen_ai.usage.output_tokens' || key === 'gen_ai.usage.cache_read.input_tokens' || key === 'gen_ai.usage.cache_write.input_tokens' || key === 'gen_ai.usage.reasoning.output_tokens' || key === 'gen_ai.request.max_tokens') {
     const number = Number(value)
     return Number.isFinite(number) ? new Intl.NumberFormat(language).format(number) : value
   }

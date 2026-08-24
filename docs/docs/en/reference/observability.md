@@ -40,6 +40,17 @@ Enable **Agent Observability** after all three URLs are present and test each co
 
 Open a turn to see its complete Trace ID prominently in the header. Click the Trace ID block to copy it for searching the same request chain in Tempo, a log platform, or a diagnostic ticket.
 
+### Interpret model token usage
+
+The conversation overview, turn list, and turn detail use the Provider's official `usage` as their source of truth:
+
+- Input tokens are the complete input count and already include cache-read and cache-write tokens. Output tokens already include reasoning tokens. Cache and reasoning values are breakdowns and must not be added to input or output again.
+- A `—` for cache read, cache write, or reasoning means the Provider did not report that detail. A displayed `0` means it explicitly reported zero.
+- Agent model spans use `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens`, `gen_ai.usage.cache_read.input_tokens`, `gen_ai.usage.cache_write.input_tokens`, and `gen_ai.usage.reasoning.output_tokens`. When usage is unavailable, inspect `luna.gen_ai.usage.status` and `luna.gen_ai.usage.unavailable_reason`.
+- Input and output throughput use the standard `gen_ai.client.token.usage` Histogram, with `gen_ai.token.type` set to `input` or `output`. Cache and reasoning breakdowns remain available from spans or the turn APIs.
+
+Cache breakdown availability depends on the model Provider's official response. Missing cache-write usage does not prove that a cache write occurred or that its size was zero.
+
 ## Prometheus scraping
 
 To scrape API metrics directly, configure:

@@ -34,7 +34,17 @@ describe("OpenAI Chat Completions real HTTP contract", () => {
 
     expect(events.at(-1)).toMatchObject({
       type: "completed",
-      usage: { status: "reported", value: { promptTokens: 11, completionTokens: 4, totalTokens: 15 } },
+      usage: {
+        status: "reported",
+        value: {
+          inputTokens: 11,
+          outputTokens: 4,
+          totalTokens: 15,
+          cacheReadInputTokens: 5,
+          cacheWriteInputTokens: 1,
+          reasoningOutputTokens: 2,
+        },
+      },
     })
   })
 
@@ -100,7 +110,18 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
   if (body.stream) {
     response.writeHead(200, { "content-type": "text/event-stream", "x-request-id": "req_http_stream" })
     response.write(`data: ${JSON.stringify({ id: "chatcmpl_http", model: "model-http", choices: [{ delta: { content: "done" }, finish_reason: "stop" }] })}\n\n`)
-    response.write(`data: ${JSON.stringify({ id: "chatcmpl_http", model: "model-http", choices: [], usage: { prompt_tokens: 11, completion_tokens: 4, total_tokens: 15 } })}\n\n`)
+    response.write(`data: ${JSON.stringify({
+      id: "chatcmpl_http",
+      model: "model-http",
+      choices: [],
+      usage: {
+        prompt_tokens: 11,
+        completion_tokens: 4,
+        total_tokens: 15,
+        prompt_tokens_details: { cached_tokens: 5, cache_write_tokens: 1 },
+        completion_tokens_details: { reasoning_tokens: 2 },
+      },
+    })}\n\n`)
     response.end("data: [DONE]\n\n")
     return
   }

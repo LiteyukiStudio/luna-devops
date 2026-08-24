@@ -89,6 +89,26 @@ func TestTempoAttributesNormalizesStructuredAnyValues(t *testing.T) {
 	}
 }
 
+func TestTraceAttributeAllowlistUsesCurrentUsageContract(t *testing.T) {
+	for _, key := range []string{
+		"gen_ai.usage.cache_write.input_tokens",
+		"luna.gen_ai.usage.status",
+		"luna.gen_ai.usage.unavailable_reason",
+	} {
+		if _, ok := traceAttributeAllowlist[key]; !ok {
+			t.Fatalf("current usage attribute %q is not retained", key)
+		}
+	}
+	for _, key := range []string{
+		"gen_ai.usage.cache_creation.input_tokens",
+		"luna.gen_ai.usage.reported",
+	} {
+		if _, ok := traceAttributeAllowlist[key]; ok {
+			t.Fatalf("pre-release legacy usage attribute %q is still retained", key)
+		}
+	}
+}
+
 func TestTempoTraceDetailParsesTempoV2ResourceSpans(t *testing.T) {
 	const payload = `{"trace":{"resourceSpans":[{"resource":{"attributes":[{"key":"service.name","value":{"stringValue":"luna-agent"}}]},"scopeSpans":[{"spans":[{"spanId":"cm9vdA==","name":"handler - async secured => { /* generated handler source */ }","kind":"SPAN_KIND_INTERNAL","startTimeUnixNano":"1000000000","endTimeUnixNano":"2500000000","status":{"code":"STATUS_CODE_OK"}}]}]}]},"metrics":{"inspectedBytes":"1024"}}`
 	var response tempoTraceResponse

@@ -53,7 +53,7 @@ describe("PostgreSQL bigint event sequence normalization", () => {
       leaseSeconds: 60,
     })
     await repository.recordReportedModelUsage("aihold_assistant_1", {
-      promptTokens: 18_000, completionTokens: 2_000, totalTokens: 20_000,
+      inputTokens: 18_000, outputTokens: 2_000, totalTokens: 20_000,
     }, { callType: "stream" })
     await repository.createModelCreditHold({
       id: "aihold_title_1",
@@ -64,7 +64,7 @@ describe("PostgreSQL bigint event sequence normalization", () => {
       leaseSeconds: 60,
     })
     await repository.recordReportedModelUsage("aihold_title_1", {
-      promptTokens: 700, completionTokens: 100, totalTokens: 800,
+      inputTokens: 700, outputTokens: 100, totalTokens: 800,
     }, { callType: "complete" })
 
     const timeline = await presentTimeline(repository, "usr_usage", conversation.id)

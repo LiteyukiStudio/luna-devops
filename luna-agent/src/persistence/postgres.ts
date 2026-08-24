@@ -171,15 +171,15 @@ export class PostgresRepository implements Repository {
       `)).rows[0]
       if (!current) throw new Error("ai.credit_hold_not_found")
       if (current.state !== "held") throw new Error("ai.credit_hold_not_active")
-      const cached = usage.cachedPromptTokens ?? 0
-      const cacheWrite = usage.cacheWritePromptTokens ?? 0
-      const normalPrompt = usage.promptTokens - cached - cacheWrite
+      const cached = usage.cacheReadInputTokens ?? 0
+      const cacheWrite = usage.cacheWriteInputTokens ?? 0
+      const normalPrompt = usage.inputTokens - cached - cacheWrite
       const actual = (await tx.execute<Record<string, unknown>>(sql`
         select calculated.credits,
                calculated.credits > ${String(current.max_risk_credits)}::numeric as deficit
         from (select ((${normalPrompt}::numeric * ${String(current.input_credits_per_million)}::numeric)
           + ((${cached}::numeric + ${cacheWrite}::numeric) * ${String(current.cached_input_credits_per_million)}::numeric)
-          + (${usage.completionTokens}::numeric * ${String(current.output_credits_per_million)}::numeric)) / 1000000 as credits) calculated
+          + (${usage.outputTokens}::numeric * ${String(current.output_credits_per_million)}::numeric)) / 1000000 as credits) calculated
       `)).rows[0]!
       const deficit = actual.deficit === true
       const usageId = createId("aiuse")
@@ -195,8 +195,8 @@ export class PostgresRepository implements Repository {
           ${String(current.operation)}, ${Number(current.attempt)}, 'reported',
           ${deficit ? "reconciliation_required" : "pending"},
           ${String(current.model_id)}, ${String(current.model_name)}, ${String(current.max_context_tokens_snapshot)}::bigint,
-          ${usage.promptTokens}, ${usage.completionTokens}, ${usage.totalTokens},
-          ${usage.cachedPromptTokens ?? null}, ${usage.cacheWritePromptTokens ?? null}, ${usage.reasoningCompletionTokens ?? null},
+          ${usage.inputTokens}, ${usage.outputTokens}, ${usage.totalTokens},
+          ${usage.cacheReadInputTokens ?? null}, ${usage.cacheWriteInputTokens ?? null}, ${usage.reasoningOutputTokens ?? null},
           ${metadata.providerRequestId ?? null}, ${metadata.responseId ?? null}, ${metadata.responseModel ?? null},
           ${metadata.finishReason ?? null}, ${metadata.callType}
         )

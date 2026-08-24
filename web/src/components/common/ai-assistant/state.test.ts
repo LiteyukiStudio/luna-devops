@@ -535,7 +535,7 @@ describe('aI assistant state', () => {
       eventSequence: 2,
       type: 'model.completed',
       item: undefined,
-      payload: { usage: { status: 'reported', promptTokens: 25600, completionTokens: 512, totalTokens: 26112 }, modelId: 'aimod_test', maxContextTokensSnapshot: 32_000 },
+      payload: { usage: { status: 'reported', inputTokens: 25600, outputTokens: 512, totalTokens: 26112 }, modelId: 'aimod_test', maxContextTokensSnapshot: 32_000 },
     }))
     expect(completed.runUsage['run-1']).toEqual({ status: 'reported', promptTokens: 25600, modelId: 'aimod_test', maxContextTokensSnapshot: 32_000 })
     expect(completed.contextUsage).toEqual({
@@ -565,7 +565,7 @@ describe('aI assistant state', () => {
       eventSequence: 2,
       type: 'model.completed',
       item: undefined,
-      payload: { usage: { status: 'reported', promptTokens: 1000, completionTokens: 500, totalTokens: 1500 }, modelId: 'aimod_test', maxContextTokensSnapshot: 32_000 },
+      payload: { usage: { status: 'reported', inputTokens: 1000, outputTokens: 500, totalTokens: 1500 }, modelId: 'aimod_test', maxContextTokensSnapshot: 32_000 },
     }))
     expect(first.runUsage['run-1']?.promptTokens).toBe(1000)
     expect(first.contextUsage?.usedTokens).toBe(1500)
@@ -574,7 +574,7 @@ describe('aI assistant state', () => {
       eventSequence: 3,
       type: 'model.completed',
       item: undefined,
-      payload: { usage: { status: 'reported', promptTokens: 200, completionTokens: 300, totalTokens: 500 }, modelId: 'aimod_test', maxContextTokensSnapshot: 32_000 },
+      payload: { usage: { status: 'reported', inputTokens: 200, outputTokens: 300, totalTokens: 500 }, modelId: 'aimod_test', maxContextTokensSnapshot: 32_000 },
     }))
     expect(second.runUsage['run-1']?.promptTokens).toBe(200)
     expect(second.contextUsage?.usedTokens).toBe(500)
@@ -586,7 +586,7 @@ describe('aI assistant state', () => {
       eventSequence: 1,
       type: 'model.completed',
       item: undefined,
-      payload: { usage: { status: 'reported', promptTokens: 1000, completionTokens: 200, totalTokens: 1200 }, modelId: 'aimod_test', maxContextTokensSnapshot: 32_000 },
+      payload: { usage: { status: 'reported', inputTokens: 1000, outputTokens: 200, totalTokens: 1200 }, modelId: 'aimod_test', maxContextTokensSnapshot: 32_000 },
     }))
     const optimistic = addOptimisticTurn(first, {
       turnId: 'turn-2',

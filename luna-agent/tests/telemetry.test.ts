@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest"
 import { Writable } from "node:stream"
 import { SpanStatusCode, type Span } from "@opentelemetry/api"
-import { captureTraceContext, createAgentLogger, errorDiagnostic, initializeTelemetry, internalSpanOptions, isDatabaseSpanCaptureEnabled, isExpectedCancellation, isHealthCheckPath, normalizeTraceContext, recordAvailableTools, recordSpanError, resolveAgentLogColor, resolveAgentLogFormat, resolveAgentLogLevel, sanitizeTelemetryURL, stableErrorCode, stableFastifyLifecycleSpanName, telemetryLog, withSpan } from "../src/telemetry.js"
+import { captureTraceContext, createAgentLogger, errorDiagnostic, genAIClientTokenUsageMetric, initializeTelemetry, internalSpanOptions, isDatabaseSpanCaptureEnabled, isExpectedCancellation, isHealthCheckPath, normalizeTraceContext, recordAvailableTools, recordSpanError, resolveAgentLogColor, resolveAgentLogFormat, resolveAgentLogLevel, sanitizeTelemetryURL, stableErrorCode, stableFastifyLifecycleSpanName, telemetryLog, withSpan } from "../src/telemetry.js"
 
 describe("agent telemetry", () => {
   it("keeps noisy database spans opt-in", () => {
@@ -17,6 +17,17 @@ describe("agent telemetry", () => {
 
   it("stays disabled when no OTLP endpoint is configured", () => {
     expect(() => initializeTelemetry(undefined)).not.toThrow()
+  })
+
+  it("uses the official GenAI client token usage histogram contract", () => {
+    expect(genAIClientTokenUsageMetric).toMatchObject({
+      name: "gen_ai.client.token.usage",
+      description: "Number of input and output tokens used.",
+      unit: "{token}",
+    })
+    expect(genAIClientTokenUsageMetric.explicitBucketBoundaries).toEqual([
+      1, 4, 16, 64, 256, 1_024, 4_096, 16_384, 65_536, 262_144, 1_048_576, 4_194_304, 16_777_216, 67_108_864,
+    ])
   })
 
   it("records the effective model tool set without requiring sensitive content capture", () => {

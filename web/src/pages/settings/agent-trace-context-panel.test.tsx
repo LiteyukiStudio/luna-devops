@@ -23,6 +23,11 @@ const context: AgentObservabilityTraceContext = {
     assistantMessage: '镜像拉取失败。',
     runId: 'run-1',
     traceId: '0123456789abcdef0123456789abcdef',
+    inputTokens: 1200,
+    outputTokens: 200,
+    cacheReadInputTokens: null,
+    cacheWriteInputTokens: null,
+    reasoningOutputTokens: null,
     durationMs: 1200,
     createdAt: '2026-08-04T00:00:00Z',
     loops: [{

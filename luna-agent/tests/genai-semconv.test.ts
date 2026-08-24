@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import {
   genAIAgentName,
   genAIAgentSpanAttributes,
+  genAIClientTokenUsageAttributes,
   genAIInputMessages,
   genAIModelSpan,
   genAIOutputMessages,
@@ -22,7 +23,7 @@ describe("OpenTelemetry GenAI semantic conventions", () => {
       "gen_ai.request.model": "gpt-5",
       "gen_ai.request.max_tokens": 8192,
     })
-    expect(genAIModelSpan("https://models.example.com/v1", "gpt-5", 4096, true)).toEqual({
+    expect(genAIModelSpan("https://models.example.com/v1", "openai", "gpt-5", 4096, true)).toEqual({
       name: "chat gpt-5",
       attributes: {
         "gen_ai.operation.name": "chat",
@@ -34,6 +35,13 @@ describe("OpenTelemetry GenAI semantic conventions", () => {
         "server.address": "models.example.com",
         "server.port": 443,
       },
+    })
+    expect(genAIClientTokenUsageAttributes("deepseek", "deepseek-chat", "input", "deepseek-chat-v3")).toEqual({
+      "gen_ai.operation.name": "chat",
+      "gen_ai.provider.name": "deepseek",
+      "gen_ai.request.model": "deepseek-chat",
+      "gen_ai.response.model": "deepseek-chat-v3",
+      "gen_ai.token.type": "input",
     })
     expect(genAIToolSpanAttributes({ name: "listProjects", callId: "call-1", description: "List projects" })).toEqual({
       "gen_ai.operation.name": "execute_tool",

@@ -132,21 +132,12 @@ export async function streamModel(
         if (event.type === "completed") {
           toolCalls = event.toolCalls ?? []
           span.setAttribute("luna.tool_call.count", toolCalls.length)
-          if (event.usage.status === "reported") {
-            agentMetrics.modelTokens.add(event.usage.value.promptTokens, { direction: "input" })
-            agentMetrics.modelTokens.add(event.usage.value.completionTokens, { direction: "output" })
-          }
           const usage = event.reconciliationRequired
             ? { status: "reconciliation_required" as const, reason: event.usage.status === "unavailable" ? event.usage.reason : "hold_deficit" }
             : event.usage.status === "reported"
               ? {
                   status: "reported" as const,
-                  promptTokens: event.usage.value.promptTokens,
-                  completionTokens: event.usage.value.completionTokens,
-                  totalTokens: event.usage.value.totalTokens,
-                  ...(event.usage.value.cachedPromptTokens !== undefined ? { cachedPromptTokens: event.usage.value.cachedPromptTokens } : {}),
-                  ...(event.usage.value.cacheWritePromptTokens !== undefined ? { cacheWritePromptTokens: event.usage.value.cacheWritePromptTokens } : {}),
-                  ...(event.usage.value.reasoningCompletionTokens !== undefined ? { reasoningCompletionTokens: event.usage.value.reasoningCompletionTokens } : {}),
+                  ...event.usage.value,
                 }
               : event.usage
           await stream.appendEvent("model.completed", {

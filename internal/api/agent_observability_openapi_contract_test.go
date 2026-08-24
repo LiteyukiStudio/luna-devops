@@ -94,3 +94,74 @@ func TestAgentObservabilityOpenAPISupportsBearerAndUnavailableEvidence(t *testin
 		}
 	}
 }
+
+func TestAgentUsageOpenAPIUsesGenericNullableBreakdownContract(t *testing.T) {
+	document := readOpenAPIDocument(t, apiRepositoryRoot(t)+"/openapi/openapi.yaml")
+	schemas := document["components"].(map[string]any)["schemas"].(map[string]any)
+
+	providerUsage := schemas["AIProviderUsage"].(map[string]any)
+	reportedUsage := providerUsage["oneOf"].([]any)[0].(map[string]any)
+	required, _ := schemaStringList(reportedUsage["required"])
+	if !reflect.DeepEqual(required, []string{"status", "inputTokens", "outputTokens", "totalTokens"}) {
+		t.Fatalf("AIProviderUsage reported required fields = %#v", required)
+	}
+	providerProperties := reportedUsage["properties"].(map[string]any)
+	for _, field := range []string{"inputTokens", "outputTokens", "totalTokens"} {
+		property := providerProperties[field].(map[string]any)
+		if property["type"] != "integer" || property["format"] != "int64" {
+			t.Fatalf("AIProviderUsage.%s = %#v", field, property)
+		}
+	}
+	for _, field := range []string{"cacheReadInputTokens", "cacheWriteInputTokens", "reasoningOutputTokens"} {
+		property := providerProperties[field].(map[string]any)
+		if property["type"] != "integer" || property["format"] != "int64" || property["nullable"] != true {
+			t.Fatalf("AIProviderUsage.%s = %#v", field, property)
+		}
+	}
+	for _, legacyField := range []string{"promptTokens", "completionTokens", "cachedPromptTokens", "cacheWritePromptTokens", "reasoningCompletionTokens"} {
+		if providerProperties[legacyField] != nil {
+			t.Fatalf("AIProviderUsage still exposes pre-release field %s", legacyField)
+		}
+	}
+
+	for _, schemaName := range []string{"AgentObservabilityConversationTurn", "AgentObservabilityTurn"} {
+		assertObservabilityUsageSchema(t, schemaName, schemas[schemaName].(map[string]any))
+	}
+	overview := schemas["AgentObservabilityOverview"].(map[string]any)
+	overviewSummary := overview["properties"].(map[string]any)["summary"].(map[string]any)
+	assertObservabilityUsageSchema(t, "AgentObservabilityOverview.summary", overviewSummary)
+
+	completed := schemas["AIModelCompletedPayload"].(map[string]any)
+	usageRef := completed["properties"].(map[string]any)["usage"].(map[string]any)["$ref"]
+	if usageRef != "#/components/schemas/AIProviderUsage" {
+		t.Fatalf("AIModelCompletedPayload.usage ref = %#v", usageRef)
+	}
+}
+
+func assertObservabilityUsageSchema(t *testing.T, name string, schema map[string]any) {
+	t.Helper()
+	required, _ := schemaStringList(schema["required"])
+	requiredSet := make(map[string]struct{}, len(required))
+	for _, field := range required {
+		requiredSet[field] = struct{}{}
+	}
+	properties := schema["properties"].(map[string]any)
+	for _, field := range []string{"inputTokens", "outputTokens"} {
+		if _, ok := requiredSet[field]; !ok {
+			t.Fatalf("%s does not require %s", name, field)
+		}
+		property := properties[field].(map[string]any)
+		if property["type"] != "integer" || property["format"] != "int64" || property["nullable"] == true {
+			t.Fatalf("%s.%s = %#v", name, field, property)
+		}
+	}
+	for _, field := range []string{"cacheReadInputTokens", "cacheWriteInputTokens", "reasoningOutputTokens"} {
+		if _, ok := requiredSet[field]; !ok {
+			t.Fatalf("%s does not require %s", name, field)
+		}
+		property := properties[field].(map[string]any)
+		if property["type"] != "integer" || property["format"] != "int64" || property["nullable"] != true {
+			t.Fatalf("%s.%s = %#v", name, field, property)
+		}
+	}
+}

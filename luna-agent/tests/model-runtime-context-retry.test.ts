@@ -4,7 +4,7 @@ import { ModelRuntime, type AssistantModelInput } from "../src/model-runtime.js"
 import { ProviderRequestError } from "../src/provider/provider-error.js"
 import type { ModelProvider } from "../src/provider/provider.js"
 
-const reported = { status: "reported" as const, value: { promptTokens: 20, completionTokens: 5, totalTokens: 25 } }
+const reported = { status: "reported" as const, value: { inputTokens: 20, outputTokens: 5, totalTokens: 25 } }
 
 describe("ModelRuntime structured context retry", () => {
   it("compresses after a structured context rejection and performs a second independent Provider attempt", async () => {

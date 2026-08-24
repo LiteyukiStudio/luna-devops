@@ -4,7 +4,7 @@ import { BudgetedModelProvider } from "../src/provider/budgeted.js"
 import { ProviderRequestError } from "../src/provider/provider-error.js"
 import type { ModelProvider } from "../src/provider/provider.js"
 
-const reported = { status: "reported" as const, value: { promptTokens: 11, completionTokens: 7, totalTokens: 18 } }
+const reported = { status: "reported" as const, value: { inputTokens: 11, outputTokens: 7, totalTokens: 18 } }
 const budget = { runId: "airun_test", ownerUserId: "usr_test", operation: "assistant" as const }
 
 describe("BudgetedModelProvider", () => {

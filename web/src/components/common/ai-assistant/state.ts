@@ -589,17 +589,21 @@ export function reduceAIEvent(state: AIAssistantState, event: AIEvent): AIAssist
       ? (usage as Record<string, unknown>)
       : undefined
     const status = usageRecord?.status
-    const promptTokens = usageRecord?.promptTokens
+    const inputTokens = usageRecord?.inputTokens
+    const outputTokens = usageRecord?.outputTokens
     const totalTokens = usageRecord?.totalTokens
     const modelId = event.payload.modelId
     const maxContextTokensSnapshot = event.payload.maxContextTokensSnapshot
     const hasReportedUsage = status === 'reported'
-      && typeof promptTokens === 'number'
-      && Number.isSafeInteger(promptTokens)
-      && promptTokens >= 0
+      && typeof inputTokens === 'number'
+      && Number.isSafeInteger(inputTokens)
+      && inputTokens >= 0
+      && typeof outputTokens === 'number'
+      && Number.isSafeInteger(outputTokens)
+      && outputTokens >= 0
       && typeof totalTokens === 'number'
       && Number.isSafeInteger(totalTokens)
-      && totalTokens >= promptTokens
+      && totalTokens === inputTokens + outputTokens
       && typeof modelId === 'string'
       && modelId.length > 0
       && typeof maxContextTokensSnapshot === 'number'
@@ -620,7 +624,7 @@ export function reduceAIEvent(state: AIAssistantState, event: AIEvent): AIAssist
       runUsage: {
         ...next.runUsage,
         [event.runId]: hasReportedUsage
-          ? { status: 'reported', promptTokens, modelId, maxContextTokensSnapshot }
+          ? { status: 'reported', promptTokens: inputTokens, modelId, maxContextTokensSnapshot }
           : { status: status === 'reconciliation_required' ? 'reconciliation_required' : 'unavailable' },
       },
     }

@@ -233,7 +233,7 @@ describe('timeline query cache', () => {
       ...event(2),
       type: 'model.completed',
       item: undefined,
-      payload: { usage: { status: 'reported', promptTokens: 25_600, completionTokens: 512, totalTokens: 26_112 }, modelId: 'aimod_test', maxContextTokensSnapshot: 128_000 },
+      payload: { usage: { status: 'reported', inputTokens: 25_600, outputTokens: 512, totalTokens: 26_112 }, modelId: 'aimod_test', maxContextTokensSnapshot: 128_000 },
     })
     const aggregate = timelineQueryDataFromInfinite(completed)
 
@@ -298,7 +298,7 @@ describe('timeline query cache', () => {
       ...event(2),
       type: 'model.completed',
       item: undefined,
-      payload: { usage: { status: 'reported', promptTokens: 24_000, completionTokens: 2_000, totalTokens: 26_000 }, modelId: 'aimod_test', maxContextTokensSnapshot: 128_000 },
+      payload: { usage: { status: 'reported', inputTokens: 24_000, outputTokens: 2_000, totalTokens: 26_000 }, modelId: 'aimod_test', maxContextTokensSnapshot: 128_000 },
     })
     const merged = mergeTimelineQuerySnapshot(live, timelineQueryDataFromSnapshot(durable))
 

@@ -403,7 +403,7 @@ var traceAttributeAllowlist = map[string]struct{}{
 	"gen_ai.response.id":             {}, "gen_ai.response.model": {}, "gen_ai.response.finish_reasons": {},
 	"gen_ai.response.time_to_first_chunk": {},
 	"gen_ai.usage.input_tokens":           {}, "gen_ai.usage.output_tokens": {},
-	"gen_ai.usage.cache_read.input_tokens": {}, "gen_ai.usage.cache_creation.input_tokens": {},
+	"gen_ai.usage.cache_read.input_tokens": {}, "gen_ai.usage.cache_write.input_tokens": {},
 	"gen_ai.usage.reasoning.output_tokens": {},
 	"gen_ai.system_instructions":           {}, "gen_ai.input.messages": {}, "gen_ai.output.messages": {}, "gen_ai.tool.definitions": {},
 	"gen_ai.tool.name": {}, "gen_ai.tool.call.id": {}, "gen_ai.tool.description": {}, "gen_ai.tool.type": {},
@@ -412,7 +412,8 @@ var traceAttributeAllowlist = map[string]struct{}{
 	"server.address": {}, "server.port": {}, "luna.turn.id": {}, "luna.run.id": {},
 	"luna.agent.available_tool.count": {}, "luna.agent.available_tool.names": {},
 	"luna.tool_call.id": {}, "luna.tool_call.count": {}, "luna.ai.content.truncated": {},
-	"luna.gen_ai.request.purpose": {}, "luna.gen_ai.usage.reported": {}, "luna.gen_ai.response.error_body": {}, "luna.operation.name": {},
+	"luna.gen_ai.request.purpose": {}, "luna.gen_ai.usage.status": {}, "luna.gen_ai.usage.unavailable_reason": {},
+	"luna.gen_ai.response.error_body": {}, "luna.operation.name": {},
 	"http.request.method": {}, "http.response.status_code": {},
 	"db.system.name": {}, "error.type": {}, "luna.run.outcome": {},
 }

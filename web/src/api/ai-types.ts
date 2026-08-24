@@ -175,12 +175,12 @@ export interface AITimeline {
 export type AIProviderUsage
   = | {
     status: 'reported'
-    promptTokens: number
-    completionTokens: number
+    inputTokens: number
+    outputTokens: number
     totalTokens: number
-    cachedPromptTokens?: number
-    cacheWritePromptTokens?: number
-    reasoningCompletionTokens?: number
+    cacheReadInputTokens?: number | null
+    cacheWriteInputTokens?: number | null
+    reasoningOutputTokens?: number | null
   }
   | { status: 'unavailable', reason: 'missing_usage' | 'invalid_usage' | 'stream_ended_without_usage' }
   | { status: 'reconciliation_required', reason: 'missing_usage' | 'invalid_usage' | 'stream_ended_without_usage' | 'request_outcome_unknown' | 'hold_deficit' }

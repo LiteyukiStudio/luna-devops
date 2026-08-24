@@ -21,10 +21,44 @@ func TestAgentObservabilitySummaryQueriesUseSelectedRange(t *testing.T) {
 			t.Fatalf("query %s still uses a rolling rate: %s", key, query)
 		}
 	}
-	for _, key := range []string{"inputTokens", "outputTokens", "runDurationP95"} {
-		if queries[key] == "" {
-			t.Fatalf("missing summary query %s", key)
-		}
+	if len(queries) != 1 || queries["runDurationP95"] == "" {
+		t.Fatalf("only the operational run duration query should remain: %#v", queries)
+	}
+	if queries["inputTokens"] != "" || queries["outputTokens"] != "" {
+		t.Fatalf("authoritative database token usage must not be queried and overwritten through Prometheus: %#v", queries)
+	}
+}
+
+func TestAgentObservabilitySummaryUsageBreakdownsAreStableNullableJSON(t *testing.T) {
+	zero := int64(0)
+	for name, summary := range map[string]agentObservabilitySummary{
+		"unreported": {},
+		"zero": {
+			CacheReadInputTokens: &zero, CacheWriteInputTokens: &zero, ReasoningOutputTokens: &zero,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			payload, err := json.Marshal(summary)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var decoded map[string]any
+			if err := json.Unmarshal(payload, &decoded); err != nil {
+				t.Fatal(err)
+			}
+			for _, field := range []string{"cacheReadInputTokens", "cacheWriteInputTokens", "reasoningOutputTokens"} {
+				value, exists := decoded[field]
+				if !exists {
+					t.Fatalf("summary omitted stable usage field %s: %s", field, payload)
+				}
+				if name == "unreported" && value != nil {
+					t.Fatalf("unreported %s = %#v, want null", field, value)
+				}
+				if name == "zero" && value != float64(0) {
+					t.Fatalf("reported zero %s = %#v, want 0", field, value)
+				}
+			}
+		})
 	}
 }
 

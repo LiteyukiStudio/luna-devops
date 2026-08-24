@@ -1,6 +1,7 @@
 package agentobservability
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -11,6 +12,62 @@ func TestSummarizeRunsUsesTheOverviewSecondsContract(t *testing.T) {
 	}
 	if strings.Contains(summarizeRunsSQL, "* 1000") || strings.Contains(summarizeRunsSQL, "duration_ms") {
 		t.Fatal("run duration SQL must not expose milliseconds to the seconds-based overview field")
+	}
+}
+
+func TestRunUsageQueriesUseAuthoritativeReportedAssistantUsage(t *testing.T) {
+	for name, query := range map[string]string{
+		"period": summarizeRunsSQL,
+		"run":    loadRunStatsSQL,
+	} {
+		t.Run(name, func(t *testing.T) {
+			if !strings.Contains(query, "FROM ai.model_usages") {
+				t.Fatal("usage query must read the authoritative ai.model_usages ledger")
+			}
+			if !strings.Contains(query, "status = 'reported'") || !strings.Contains(query, "operation = 'assistant'") {
+				t.Fatal("usage query must include only reported assistant model calls")
+			}
+			if strings.Contains(query, "ai.run_events") || strings.Contains(query, "data->'usage'") {
+				t.Fatal("usage query must not parse compatibility event JSON")
+			}
+			if !strings.Contains(query, "SUM(prompt_tokens)") || !strings.Contains(query, "SUM(completion_tokens)") {
+				t.Fatal("usage query must aggregate official input and output columns directly")
+			}
+			for _, field := range []string{"cached_prompt_tokens", "cache_write_prompt_tokens", "reasoning_completion_tokens"} {
+				if !strings.Contains(query, "COUNT("+field+") = COUNT(*)") {
+					t.Fatalf("usage query must preserve incomplete %s as null", field)
+				}
+			}
+		})
+	}
+	if !strings.Contains(summarizeRunsSQL, "occurred_at >= ?") {
+		t.Fatal("period usage must be filtered by the authoritative occurrence time")
+	}
+	if !strings.Contains(loadRunStatsSQL, "GROUP BY run_id") {
+		t.Fatal("turn usage must be aggregated by run_id")
+	}
+}
+
+func TestConversationUsageJSONDistinguishesUnreportedFromZero(t *testing.T) {
+	zero := int64(0)
+	payload, err := json.Marshal([]ConversationTurn{
+		{},
+		{CacheReadInputTokens: &zero, CacheWriteInputTokens: &zero, ReasoningOutputTokens: &zero},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var turns []map[string]any
+	if err := json.Unmarshal(payload, &turns); err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range []string{"cacheReadInputTokens", "cacheWriteInputTokens", "reasoningOutputTokens"} {
+		if value, exists := turns[0][field]; !exists || value != nil {
+			t.Fatalf("unreported %s must be emitted as null: %#v", field, turns[0])
+		}
+		if value, exists := turns[1][field]; !exists || value != float64(0) {
+			t.Fatalf("reported zero %s must remain zero: %#v", field, turns[1])
+		}
 	}
 }
 

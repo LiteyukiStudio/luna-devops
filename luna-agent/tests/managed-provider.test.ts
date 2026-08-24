@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { ManagedProvider } from "../src/provider/managed.js"
+import { createConfiguredProvider, ManagedProvider } from "../src/provider/managed.js"
+import { DeepSeekChatCompletionsProvider } from "../src/provider/deepseek-chat-completions.js"
+import { OpenAIChatCompletionsProvider } from "../src/provider/openai-chat-completions.js"
 import { defaultRuntimeSettings } from "../src/runtime-settings.js"
 import type { ModelProvider } from "../src/provider/provider.js"
 
@@ -8,6 +10,14 @@ afterEach(() => {
 })
 
 describe("ManagedProvider", () => {
+  it("selects a provider adapter whose telemetry dimension matches the endpoint", () => {
+    expect(createConfiguredProvider(configForModels(), "model-a")).toBeInstanceOf(OpenAIChatCompletionsProvider)
+    expect(createConfiguredProvider({
+      ...configForModels(),
+      provider: { ...configForModels().provider, baseUrl: "https://api.deepseek.com/v1" },
+    }, "deepseek-chat")).toBeInstanceOf(DeepSeekChatCompletionsProvider)
+  })
+
   it("uses a short-lived authoritative configuration and applies updates", async () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date("2026-07-29T00:00:00Z"))
@@ -102,10 +112,10 @@ function fakeProvider(model: string): ModelProvider {
   return {
     capabilities: () => ({ streaming: true, toolCalling: true, structuredOutput: true }),
     health: async () => ({ ok: true, requestId: `request-${model}` }),
-    complete: async () => ({ text: model, usage: { status: "reported" as const, value: { promptTokens: 1, completionTokens: 1, totalTokens: 1 + 1 } } }),
+    complete: async () => ({ text: model, usage: { status: "reported" as const, value: { inputTokens: 1, outputTokens: 1, totalTokens: 1 + 1 } } }),
     async *stream() {
       yield { type: "message_delta" as const, delta: model }
-      yield { type: "completed" as const, usage: { status: "reported" as const, value: { promptTokens: 1, completionTokens: 1, totalTokens: 1 + 1 } } }
+      yield { type: "completed" as const, usage: { status: "reported" as const, value: { inputTokens: 1, outputTokens: 1, totalTokens: 1 + 1 } } }
     },
   }
 }

@@ -88,6 +88,11 @@ export interface AgentObservabilityConversationTurn {
   assistantMessage: string
   runId: string
   traceId: string
+  inputTokens: number
+  outputTokens: number
+  cacheReadInputTokens: number | null
+  cacheWriteInputTokens: number | null
+  reasoningOutputTokens: number | null
   durationMs: number
   createdAt: string
   loops: AgentObservabilityConversationLoop[]
@@ -105,6 +110,9 @@ export interface AgentObservabilityTurn {
   traceId: string
   inputTokens: number
   outputTokens: number
+  cacheReadInputTokens: number | null
+  cacheWriteInputTokens: number | null
+  reasoningOutputTokens: number | null
   toolCallCount: number
   durationMs: number
   createdAt: string
@@ -167,6 +175,9 @@ export interface AgentObservabilityOverview {
   summary: {
     inputTokens: number
     outputTokens: number
+    cacheReadInputTokens: number | null
+    cacheWriteInputTokens: number | null
+    reasoningOutputTokens: number | null
     toolCalls: number
     toolSuccessRate: number
     turnCount: number
