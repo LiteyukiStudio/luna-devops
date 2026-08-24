@@ -10,6 +10,11 @@ create table if not exists ai.conversations (
   title text not null,
   title_source text not null default 'default' check (title_source in ('default', 'assistant', 'user')),
   status text not null default 'active' check (status = 'active'),
+  context_usage_run_id text,
+  context_usage_model_id text,
+  context_used_tokens bigint,
+  context_max_tokens_snapshot bigint,
+  context_usage_recorded_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -18,6 +23,43 @@ alter table ai.conversations
   add column if not exists title_source text not null default 'default'
   check (title_source in ('default', 'assistant', 'user'));
 alter table ai.conversations add column if not exists model_id text;
+alter table ai.conversations add column if not exists context_usage_run_id text;
+alter table ai.conversations add column if not exists context_usage_model_id text;
+alter table ai.conversations add column if not exists context_used_tokens bigint;
+alter table ai.conversations add column if not exists context_max_tokens_snapshot bigint;
+alter table ai.conversations add column if not exists context_usage_recorded_at timestamptz;
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'ai_conversations_context_usage_complete'
+      and conrelid = 'ai.conversations'::regclass
+  ) then
+    alter table ai.conversations
+      add constraint ai_conversations_context_usage_complete check (
+        (
+          context_usage_run_id is null
+          and context_usage_model_id is null
+          and context_used_tokens is null
+          and context_max_tokens_snapshot is null
+          and context_usage_recorded_at is null
+        )
+        or (
+          context_usage_run_id is not null
+          and context_usage_model_id is not null
+          and context_used_tokens is not null
+          and context_used_tokens >= 0
+          and context_max_tokens_snapshot is not null
+          and context_max_tokens_snapshot > 0
+          and context_usage_recorded_at is not null
+        )
+      );
+  end if;
+end
+$$;
+comment on column ai.conversations.context_used_tokens is
+  'Latest confirmed assistant Provider total_tokens for continuous conversation context display; not a historical sum.';
 update ai.conversations set title_source = 'user' where title <> '新会话' and title_source = 'default';
 
 create table if not exists ai.turns (

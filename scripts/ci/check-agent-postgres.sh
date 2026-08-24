@@ -12,4 +12,4 @@ fi
 
 pnpm --dir luna-agent exec vitest run \
   tests/postgres-repository.test.ts \
-  tests/postgres-model-budget.test.ts
+  tests/postgres-model-usage.test.ts
