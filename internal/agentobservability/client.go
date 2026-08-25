@@ -80,6 +80,7 @@ type TraceDetail struct {
 	DurationMS float64       `json:"durationMs"`
 	SpanCount  int           `json:"spanCount"`
 	ErrorCount int           `json:"errorCount"`
+	Usage      *TokenUsage   `json:"usage"`
 	Spans      []TraceSpan   `json:"spans"`
 	Context    *TraceContext `json:"context,omitempty"`
 }
@@ -479,6 +480,7 @@ func tempoTraceDetail(traceID string, response tempoTraceResponse) TraceDetail {
 		start, _ := strconv.ParseInt(detail.Spans[index].StartTimeNanos, 10, 64)
 		detail.Spans[index].StartOffsetMS = float64(start-earliest) / 1e6
 	}
+	detail.Usage = aggregateTraceTokenUsage(detail.Spans)
 	return detail
 }
 

@@ -8720,14 +8720,30 @@ components:
         attributes: { type: object, additionalProperties: { type: string } }
         events: { type: array, items: { $ref: "#/components/schemas/AgentObservabilityTraceSpanEvent" } }
         raw: { type: object, additionalProperties: true, description: Original OTLP JSON object returned by Tempo for this span. }
+    AgentObservabilityTraceUsage:
+      type: object
+      additionalProperties: false
+      required: [inputTokens, outputTokens, cacheReadInputTokens, cacheWriteInputTokens, reasoningOutputTokens, cacheHitRate]
+      properties:
+        inputTokens: { type: integer, format: int64, minimum: 0, description: Provider-reported input tokens summed across model spans in this trace. }
+        outputTokens: { type: integer, format: int64, minimum: 0, description: Provider-reported output tokens summed across model spans in this trace. }
+        cacheReadInputTokens: { type: integer, format: int64, minimum: 0, nullable: true, description: Cache-read subset of inputTokens, or null when any included model span omitted or invalidated it. }
+        cacheWriteInputTokens: { type: integer, format: int64, minimum: 0, nullable: true, description: Cache-write subset of inputTokens, or null when any included model span omitted or invalidated it. }
+        reasoningOutputTokens: { type: integer, format: int64, minimum: 0, nullable: true, description: Reasoning subset of outputTokens, or null when any included model span omitted or invalidated it. }
+        cacheHitRate: { type: number, format: double, minimum: 0, maximum: 100, nullable: true, description: Weighted cacheReadInputTokens divided by inputTokens as a percentage; null when cache-read usage is incomplete or total input is zero. }
     AgentObservabilityTraceDetail:
       type: object
-      required: [traceId, durationMs, spanCount, errorCount, spans]
+      required: [traceId, durationMs, spanCount, errorCount, usage, spans]
       properties:
         traceId: { type: string }
         durationMs: { type: number, format: double }
         spanCount: { type: integer }
         errorCount: { type: integer }
+        usage:
+          nullable: true
+          description: Typed usage for provider-reported model spans in this trace, or null when reported input/output totals are absent, ambiguous, or invalid.
+          allOf:
+            - { $ref: "#/components/schemas/AgentObservabilityTraceUsage" }
         spans: { type: array, items: { $ref: "#/components/schemas/AgentObservabilityTraceSpan" } }
         context: { $ref: "#/components/schemas/AgentObservabilityTraceContext" }
     AgentObservabilityConversationUser:
@@ -8917,13 +8933,14 @@ components:
         range: { type: string, enum: [1h, 6h, 24h, 7d, 30d, 1y] }
         summary:
           type: object
-          required: [inputTokens, outputTokens, cacheReadInputTokens, cacheWriteInputTokens, reasoningOutputTokens, toolCalls, toolSuccessRate, turnCount, turnSuccessRate, runDurationP95]
+          required: [inputTokens, outputTokens, cacheReadInputTokens, cacheWriteInputTokens, reasoningOutputTokens, cacheHitRate, toolCalls, toolSuccessRate, turnCount, turnSuccessRate, runDurationP95]
           properties:
             inputTokens: { type: integer, format: int64, minimum: 0, description: Input tokens consumed during the selected period; cache-read and cache-write tokens are subsets and are not added again. }
             outputTokens: { type: integer, format: int64, minimum: 0, description: Output tokens generated during the selected period. }
             cacheReadInputTokens: { type: integer, format: int64, minimum: 0, nullable: true, description: Cache-read subset of inputTokens, or null when any included provider usage omitted it. }
             cacheWriteInputTokens: { type: integer, format: int64, minimum: 0, nullable: true, description: Cache-write subset of inputTokens, or null when any included provider usage omitted it. }
             reasoningOutputTokens: { type: integer, format: int64, minimum: 0, nullable: true, description: Reasoning subset of outputTokens, or null when any included provider usage omitted it. }
+            cacheHitRate: { type: number, format: double, minimum: 0, maximum: 100, nullable: true, description: Weighted cacheReadInputTokens divided by inputTokens as a percentage; null when cache-read usage is incomplete or total input is zero. }
             toolCalls: { type: number, minimum: 0, description: Tool calls recorded during the selected period, including internal UI tools and non-terminal calls. }
             toolSuccessRate: { type: number, minimum: 0, maximum: 100, description: Succeeded tool calls divided by succeeded plus failed calls during the selected period. }
             turnCount: { type: integer, format: int64, minimum: 0, description: Conversation turns created during the selected period. }

@@ -45,16 +45,17 @@ type agentObservabilityOverview struct {
 }
 
 type agentObservabilitySummary struct {
-	InputTokens           int64   `json:"inputTokens"`
-	OutputTokens          int64   `json:"outputTokens"`
-	CacheReadInputTokens  *int64  `json:"cacheReadInputTokens"`
-	CacheWriteInputTokens *int64  `json:"cacheWriteInputTokens"`
-	ReasoningOutputTokens *int64  `json:"reasoningOutputTokens"`
-	ToolCalls             float64 `json:"toolCalls"`
-	ToolSuccessRate       float64 `json:"toolSuccessRate"`
-	TurnCount             int64   `json:"turnCount"`
-	TurnSuccessRate       float64 `json:"turnSuccessRate"`
-	RunDurationP95        float64 `json:"runDurationP95"`
+	InputTokens           int64    `json:"inputTokens"`
+	OutputTokens          int64    `json:"outputTokens"`
+	CacheReadInputTokens  *int64   `json:"cacheReadInputTokens"`
+	CacheWriteInputTokens *int64   `json:"cacheWriteInputTokens"`
+	ReasoningOutputTokens *int64   `json:"reasoningOutputTokens"`
+	CacheHitRate          *float64 `json:"cacheHitRate"`
+	ToolCalls             float64  `json:"toolCalls"`
+	ToolSuccessRate       float64  `json:"toolSuccessRate"`
+	TurnCount             int64    `json:"turnCount"`
+	TurnSuccessRate       float64  `json:"turnSuccessRate"`
+	RunDurationP95        float64  `json:"runDurationP95"`
 }
 
 func (h *Handlers) TestAgentObservabilitySource(ctx *gin.Context) {
@@ -154,6 +155,7 @@ func (h *Handlers) GetAgentObservabilityOverview(ctx *gin.Context) {
 	result.Summary.CacheReadInputTokens = runSummary.CacheReadInputTokens
 	result.Summary.CacheWriteInputTokens = runSummary.CacheWriteInputTokens
 	result.Summary.ReasoningOutputTokens = runSummary.ReasoningOutputTokens
+	result.Summary.CacheHitRate = runSummary.CacheHitRate
 	result.Summary.RunDurationP95 = runSummary.DurationP95Seconds
 	result.Summary.TurnCount = turnSummary.Total
 	result.Summary.TurnSuccessRate = turnSummary.SuccessRate

@@ -57,11 +57,20 @@ export interface AgentObservabilityTraceSpan {
   events: AgentObservabilityTraceSpanEvent[]
   raw: Record<string, unknown>
 }
+export interface AgentObservabilityUsage {
+  inputTokens: number
+  outputTokens: number
+  cacheReadInputTokens: number | null
+  cacheWriteInputTokens: number | null
+  reasoningOutputTokens: number | null
+  cacheHitRate: number | null
+}
 export interface AgentObservabilityTraceDetail {
   traceId: string
   durationMs: number
   spanCount: number
   errorCount: number
+  usage: AgentObservabilityUsage | null
   spans: AgentObservabilityTraceSpan[]
   context?: AgentObservabilityTraceContext
 }
@@ -172,12 +181,7 @@ export interface AgentObservabilityTraceContext {
 export interface AgentObservabilityOverview {
   generatedAt: string
   range: AgentObservabilityRange
-  summary: {
-    inputTokens: number
-    outputTokens: number
-    cacheReadInputTokens: number | null
-    cacheWriteInputTokens: number | null
-    reasoningOutputTokens: number | null
+  summary: AgentObservabilityUsage & {
     toolCalls: number
     toolSuccessRate: number
     turnCount: number

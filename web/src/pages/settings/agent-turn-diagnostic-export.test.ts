@@ -45,6 +45,7 @@ const detail: AgentObservabilityTraceDetail = {
   durationMs: 50,
   spanCount: 3,
   errorCount: 0,
+  usage: null,
   spans: [
     span('tool', '1000000000000000030', 30, [{ name: 'gen_ai.tool.content.input', timeUnixNano: '31', attributes: { 'gen_ai.tool.call.arguments': '{"projectId":"project-1"}' } }]),
     span('root-b', '1000000000000000010', 10),
@@ -79,5 +80,18 @@ describe('agent turn diagnostic export', () => {
     expect(parsed.spans[0].spanId).toBe('root-a')
     expect(json.endsWith('\n')).toBe(true)
     expect(agentTurnDiagnosticFilename(turn, new Date('2026-08-13T01:02:03.456Z'))).toBe('luna-agent-turn-turn-diagnostic-1-2026-08-13T01-02-03-456Z.json')
+  })
+
+  it('keeps the typed trace usage aggregate in diagnostic exports', () => {
+    const usage = {
+      inputTokens: 200,
+      outputTokens: 40,
+      cacheReadInputTokens: 100,
+      cacheWriteInputTokens: null,
+      reasoningOutputTokens: 20,
+      cacheHitRate: 50,
+    }
+
+    expect(buildAgentTurnDiagnosticExport(turn, { ...detail, usage }).trace.usage).toEqual(usage)
   })
 })

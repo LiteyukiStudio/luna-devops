@@ -51,7 +51,7 @@ describe('agent conversation observability detail', () => {
     vi.mocked(api.getAgentObservabilityConversation).mockResolvedValue(detail)
   })
 
-  it('shows the five-field token breakdown for every conversation turn', async () => {
+  it('shows the five-field usage breakdown for every conversation turn', async () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     render(
       <QueryClientProvider client={queryClient}>
@@ -66,11 +66,12 @@ describe('agent conversation observability detail', () => {
     )
 
     expect(await screen.findByText('第 1 轮')).toBeInTheDocument()
-    expect(usageValue('输入 Token')).toBe('1,200')
-    expect(usageValue('输出 Token')).toBe('340')
-    expect(usageValue('缓存读取 Token')).toBe('0')
-    expect(usageValue('缓存写入 Token')).toBe('—')
-    expect(usageValue('推理输出 Token')).toBe('45')
+    expect(usageValue('输入')).toBe('1,200')
+    expect(usageValue('输出')).toBe('340')
+    expect(usageValue('缓存读取')).toBe('0')
+    expect(usageValue('缓存写入')).toBe('—')
+    expect(usageValue('推理输出')).toBe('45')
+    expect(screen.queryByText('缓存命中率')).not.toBeInTheDocument()
   })
 })
 

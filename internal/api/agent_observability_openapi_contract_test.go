@@ -130,12 +130,51 @@ func TestAgentUsageOpenAPIUsesGenericNullableBreakdownContract(t *testing.T) {
 	overview := schemas["AgentObservabilityOverview"].(map[string]any)
 	overviewSummary := overview["properties"].(map[string]any)["summary"].(map[string]any)
 	assertObservabilityUsageSchema(t, "AgentObservabilityOverview.summary", overviewSummary)
+	assertRequiredNullablePercentage(t, "AgentObservabilityOverview.summary", overviewSummary, "cacheHitRate")
+
+	traceDetail := schemas["AgentObservabilityTraceDetail"].(map[string]any)
+	traceRequired, _ := schemaStringList(traceDetail["required"])
+	if !containsSchemaField(traceRequired, "usage") {
+		t.Fatalf("AgentObservabilityTraceDetail does not require usage: %#v", traceRequired)
+	}
+	traceUsageProperty := traceDetail["properties"].(map[string]any)["usage"].(map[string]any)
+	if traceUsageProperty["nullable"] != true {
+		t.Fatalf("AgentObservabilityTraceDetail.usage = %#v", traceUsageProperty)
+	}
+	traceUsageAllOf := traceUsageProperty["allOf"].([]any)
+	if len(traceUsageAllOf) != 1 || traceUsageAllOf[0].(map[string]any)["$ref"] != "#/components/schemas/AgentObservabilityTraceUsage" {
+		t.Fatalf("AgentObservabilityTraceDetail.usage ref = %#v", traceUsageAllOf)
+	}
+	traceUsage := schemas["AgentObservabilityTraceUsage"].(map[string]any)
+	assertObservabilityUsageSchema(t, "AgentObservabilityTraceUsage", traceUsage)
+	assertRequiredNullablePercentage(t, "AgentObservabilityTraceUsage", traceUsage, "cacheHitRate")
 
 	completed := schemas["AIModelCompletedPayload"].(map[string]any)
 	usageRef := completed["properties"].(map[string]any)["usage"].(map[string]any)["$ref"]
 	if usageRef != "#/components/schemas/AIProviderUsage" {
 		t.Fatalf("AIModelCompletedPayload.usage ref = %#v", usageRef)
 	}
+}
+
+func assertRequiredNullablePercentage(t *testing.T, name string, schema map[string]any, field string) {
+	t.Helper()
+	required, _ := schemaStringList(schema["required"])
+	if !containsSchemaField(required, field) {
+		t.Fatalf("%s does not require %s", name, field)
+	}
+	property := schema["properties"].(map[string]any)[field].(map[string]any)
+	if property["type"] != "number" || property["format"] != "double" || property["nullable"] != true || property["minimum"] != float64(0) || property["maximum"] != float64(100) {
+		t.Fatalf("%s.%s = %#v", name, field, property)
+	}
+}
+
+func containsSchemaField(fields []string, want string) bool {
+	for _, field := range fields {
+		if field == want {
+			return true
+		}
+	}
+	return false
 }
 
 func assertObservabilityUsageSchema(t *testing.T, name string, schema map[string]any) {

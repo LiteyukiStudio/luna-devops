@@ -1,5 +1,11 @@
 # TODO
 
+## 2026-08-25 Agent Prompt 缓存命中率分层观测
+
+- [x] 在 Agent 观测总览按选中时段展示官方加权缓存命中率，在 Trace 详情按当前 Trace 展示同口径结果；统一使用 `Σcache-read input tokens / Σinput tokens`，不得平均逐次请求比例。
+- [x] 保证 cache-write 只进入总输入分母、不进入命中分子，并区分未报告或零输入的 `null` 与明确上报零命中的 `0%`。
+- [x] 同步 Go、OpenAPI、Web 五语言、双语公开文档与契约测试，并完成列表、详情和时段切换验收。
+
 ## 2026-08-25 Agent Token 观测语义统一
 
 - [x] 按 OpenTelemetry GenAI 当前语义统一模型 input、output、cache-read、cache-write 与 reasoning 用量字段，并修复 DeepSeek 缓存命中适配。

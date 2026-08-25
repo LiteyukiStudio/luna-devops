@@ -38,6 +38,14 @@ const detail: AgentObservabilityTraceDetail = {
   durationMs: 50,
   spanCount: 2,
   errorCount: 0,
+  usage: {
+    inputTokens: 100,
+    outputTokens: 40,
+    cacheReadInputTokens: 25,
+    cacheWriteInputTokens: 0,
+    reasoningOutputTokens: 5,
+    cacheHitRate: 25,
+  },
   spans: [
     { spanId: 'external', parentSpanId: 'root', name: 'http.request', serviceName: 'luna-devops-api', kind: 'client', status: 'ok', startTimeUnixNano: '20', startOffsetMs: 20, durationMs: 5, attributes: {}, events: [], raw: { spanId: 'external' } },
     { spanId: 'root', parentSpanId: '', name: 'agent.run.execute', serviceName: 'luna-agent', kind: 'internal', status: 'ok', startTimeUnixNano: '10', startOffsetMs: 10, durationMs: 40, attributes: {}, events: [], raw: { spanId: 'root' } },
@@ -73,6 +81,25 @@ describe('agent turn detail diagnostic actions', () => {
     fireEvent.click(screen.getByRole('button', { name: '复制 Trace ID' }))
 
     await waitFor(() => expect(writeText).toHaveBeenCalledWith('trace-1'))
+  })
+
+  it('shows only typed usage for the current trace and never falls back to the turn snapshot', async () => {
+    const { unmount } = renderSheet()
+    expect(await screen.findByText('唤起 Agent')).toBeInTheDocument()
+    expect(usageValue('输入')).toBe('100')
+    expect(usageValue('缓存读取')).toBe('25')
+    expect(usageValue('缓存命中率')).toBe('25%')
+    unmount()
+
+    vi.mocked(api.getAgentObservabilityTrace).mockResolvedValue({ ...detail, usage: null })
+    renderSheet()
+    expect(await screen.findByText('唤起 Agent')).toBeInTheDocument()
+    expect(usageValue('输入')).toBe('—')
+    expect(usageValue('输出')).toBe('—')
+    expect(usageValue('缓存读取')).toBe('—')
+    expect(usageValue('缓存写入')).toBe('—')
+    expect(usageValue('推理输出')).toBe('—')
+    expect(usageValue('缓存命中率')).toBe('—')
   })
 
   it('copies every span even when external services remain hidden', async () => {
@@ -170,11 +197,11 @@ describe('agent turn detail diagnostic actions', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: /模型生成回复/ }))
 
-    expect(screen.getByText('缓存写入输入 Token')).toBeInTheDocument()
+    expect(screen.getByText('缓存写入输入')).toBeInTheDocument()
     expect(screen.getByText('1,234')).toBeInTheDocument()
-    expect(screen.getByText('Token 用量状态')).toBeInTheDocument()
+    expect(screen.getByText('用量状态')).toBeInTheDocument()
     expect(screen.getByText('不可用')).toBeInTheDocument()
-    expect(screen.getByText('Token 用量不可用原因')).toBeInTheDocument()
+    expect(screen.getByText('用量不可用原因')).toBeInTheDocument()
     expect(screen.getByText('上游未返回用量')).toBeInTheDocument()
   })
 })
@@ -186,4 +213,8 @@ function renderSheet() {
       <AgentTurnDetailSheet turn={turn} onOpenChange={vi.fn()} />
     </QueryClientProvider>,
   )
+}
+
+function usageValue(label: string) {
+  return screen.getByText(label).closest('div')?.querySelector('dd')?.textContent
 }

@@ -71,6 +71,31 @@ func TestConversationUsageJSONDistinguishesUnreportedFromZero(t *testing.T) {
 	}
 }
 
+func TestCacheHitRatePreservesWeightedNullAndZeroSemantics(t *testing.T) {
+	cacheRead := int64(50)
+	if rate := cacheHitRate(400, &cacheRead); rate == nil || *rate != 12.5 {
+		t.Fatalf("weighted cache hit rate = %#v, want 12.5", rate)
+	}
+	zero := int64(0)
+	if rate := cacheHitRate(100, &zero); rate == nil || *rate != 0 {
+		t.Fatalf("explicit zero cache hit rate = %#v, want 0", rate)
+	}
+	for name, input := range map[string]struct {
+		input int64
+		cache *int64
+	}{
+		"missing breakdown": {input: 100},
+		"zero denominator":  {cache: &zero},
+		"invalid subset":    {input: 10, cache: &cacheRead},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if rate := cacheHitRate(input.input, input.cache); rate != nil {
+				t.Fatalf("cache hit rate = %#v, want nil", rate)
+			}
+		})
+	}
+}
+
 func TestTraceIDFromContext(t *testing.T) {
 	tests := []struct {
 		name string

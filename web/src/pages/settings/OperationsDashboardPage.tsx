@@ -205,7 +205,7 @@ function AgentObservabilityView({ active, enabled, userId }: { active: boolean, 
             <StatusBadge tone={runStatusTone(item.status)}>{t(`operationsDashboardPage.runStatus.${item.status}`, { defaultValue: item.status })}</StatusBadge>
             <span className="font-mono text-xs text-muted-foreground">{item.durationMs > 0 ? formatDuration(item.durationMs) : '—'}</span>
           </span>
-          <AgentTokenUsageInline className="text-[11px]" usage={item} />
+          <AgentTokenUsageInline className="text-[11px]" usage={item} variant="summary" />
           <span className="flex items-center gap-1 font-mono text-xs text-muted-foreground" title={t('operationsDashboardPage.toolCalls')}>
             <Wrench className="size-3" />
             {formatNumber(item.toolCallCount)}

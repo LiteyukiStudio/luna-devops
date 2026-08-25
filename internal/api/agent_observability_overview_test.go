@@ -31,10 +31,12 @@ func TestAgentObservabilitySummaryQueriesUseSelectedRange(t *testing.T) {
 
 func TestAgentObservabilitySummaryUsageBreakdownsAreStableNullableJSON(t *testing.T) {
 	zero := int64(0)
+	zeroRate := float64(0)
 	for name, summary := range map[string]agentObservabilitySummary{
 		"unreported": {},
 		"zero": {
 			CacheReadInputTokens: &zero, CacheWriteInputTokens: &zero, ReasoningOutputTokens: &zero,
+			CacheHitRate: &zeroRate,
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -46,7 +48,7 @@ func TestAgentObservabilitySummaryUsageBreakdownsAreStableNullableJSON(t *testin
 			if err := json.Unmarshal(payload, &decoded); err != nil {
 				t.Fatal(err)
 			}
-			for _, field := range []string{"cacheReadInputTokens", "cacheWriteInputTokens", "reasoningOutputTokens"} {
+			for _, field := range []string{"cacheReadInputTokens", "cacheWriteInputTokens", "reasoningOutputTokens", "cacheHitRate"} {
 				value, exists := decoded[field]
 				if !exists {
 					t.Fatalf("summary omitted stable usage field %s: %s", field, payload)

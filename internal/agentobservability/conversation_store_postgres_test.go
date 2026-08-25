@@ -95,6 +95,9 @@ func TestAuthoritativeUsageAggregationAgainstPostgres(t *testing.T) {
 	if summary.CacheReadInputTokens != nil {
 		t.Fatalf("partially unreported cache read total must be null: %#v", summary.CacheReadInputTokens)
 	}
+	if summary.CacheHitRate != nil {
+		t.Fatalf("partially unreported cache read rate must be null: %#v", summary.CacheHitRate)
+	}
 	assertInt64Pointer(t, "period cache write", summary.CacheWriteInputTokens, 5)
 	assertInt64Pointer(t, "period reasoning", summary.ReasoningOutputTokens, 7)
 

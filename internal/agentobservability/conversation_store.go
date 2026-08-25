@@ -121,6 +121,7 @@ type RunPeriodSummary struct {
 	CacheReadInputTokens  *int64
 	CacheWriteInputTokens *int64
 	ReasoningOutputTokens *int64
+	CacheHitRate          *float64
 	DurationP95Seconds    float64
 }
 
@@ -296,7 +297,9 @@ func (s *ConversationStore) SummarizeRuns(ctx context.Context, start time.Time) 
 	return RunPeriodSummary{
 		InputTokens: row.InputTokens, OutputTokens: row.OutputTokens,
 		CacheReadInputTokens: row.CacheReadInputTokens, CacheWriteInputTokens: row.CacheWriteInputTokens,
-		ReasoningOutputTokens: row.ReasoningOutputTokens, DurationP95Seconds: row.DurationP95Seconds,
+		ReasoningOutputTokens: row.ReasoningOutputTokens,
+		CacheHitRate:          cacheHitRate(row.InputTokens, row.CacheReadInputTokens),
+		DurationP95Seconds:    row.DurationP95Seconds,
 	}, nil
 }
 

@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { cn } from '@/lib/utils'
 import { isAgentSpanContentAttribute } from './agent-span-content'
+import { AgentTokenUsageStrip } from './agent-token-usage'
 import { AgentTraceContextPanel } from './agent-trace-context-panel'
 import { filterAgentTraceDisplaySpans, isAgentModelSpan, isCanonicalAgentToolSpan } from './agent-turn-timeline'
 
@@ -35,6 +36,8 @@ export function AgentTraceDetailSheet({ trace, onOpenChange }: {
   const selected = displaySpans.find(span => span.spanId === selectedSpanId) ?? displaySpans[0]
   const modelSpans = detail.data?.spans.filter(span => isAgentModelSpan(span)).length ?? 0
   const toolSpans = detail.data?.spans.filter(span => isCanonicalAgentToolSpan(span)).length ?? 0
+  const traceDetail = detail.data
+  const traceUsage = traceDetail && traceDetail.traceId === trace?.traceId ? traceDetail.usage : null
   const updateCollapsedSpanIds = (values: Set<string>) => {
     if (traceId)
       setCollapsedSpanIdsByTrace(current => ({ ...current, [traceId]: [...values] }))
@@ -68,6 +71,7 @@ export function AgentTraceDetailSheet({ trace, onOpenChange }: {
           {detail.isError && <ErrorState title={t('operationsDashboardPage.traceDetail.loadFailed')} description={t('operationsDashboardPage.traceDetail.loadFailedDescription')} />}
           {detail.data && (
             <div className="grid gap-6">
+              <AgentTokenUsageStrip usage={traceUsage} />
               <MetricGroup>
                 <MetricItem icon={<Clock3 className="size-4" />} label={t('operationsDashboardPage.duration')} value={formatDuration(detail.data.durationMs)} />
                 <MetricItem icon={<Network className="size-4" />} label={t('operationsDashboardPage.traceDetail.spans')} value={String(detail.data.spanCount)} />

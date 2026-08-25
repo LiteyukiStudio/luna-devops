@@ -80,6 +80,8 @@ export function AgentTurnDetailSheet({ turn, onOpenChange }: {
   })
   const spans = useMemo(() => filterAgentTurnTimelineSpans(detail.data?.spans ?? [], filter, showExternalServices), [detail.data?.spans, filter, showExternalServices])
   const lastModelSpanId = useMemo(() => [...(detail.data?.spans ?? [])].reverse().find(span => agentTurnTimelineKind(span) === 'model')?.spanId, [detail.data?.spans])
+  const traceDetail = detail.data
+  const traceUsage = traceDetail && traceDetail.traceId === turn?.traceId ? traceDetail.usage : null
   const toggleSpan = (spanId: string) => setExpandedSpanIds(current => current.includes(spanId) ? current.filter(id => id !== spanId) : [...current, spanId])
   const owner = turn?.user.name || turn?.user.email || '—'
   const canExportDiagnostic = Boolean(turn && detail.data)
@@ -182,7 +184,7 @@ export function AgentTurnDetailSheet({ turn, onOpenChange }: {
           {turn && (
             <div className="grid gap-6">
               <div className="grid gap-3">
-                <AgentTokenUsageStrip usage={turn} />
+                <AgentTokenUsageStrip usage={traceUsage} />
                 <MetricGroup className="grid-cols-2 lg:grid-cols-4">
                   <MetricItem icon={<Clock3 className="size-4" />} label={t('operationsDashboardPage.duration')} value={turn.durationMs > 0 ? formatDuration(turn.durationMs) : '—'} />
                   <MetricItem icon={<Wrench className="size-4" />} label={t('operationsDashboardPage.toolCalls')} value={formatNumber(turn.toolCallCount)} />
