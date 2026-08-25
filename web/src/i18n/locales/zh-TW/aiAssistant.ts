@@ -2,6 +2,11 @@ const aiAssistant = {
   aiAssistant: {
     open: '開啟 Luna 助手',
     title: 'Luna 助手',
+    page: {
+      backToWorkspace: '返回工作區',
+      unavailableTitle: '助手目前無法使用',
+      unavailableDescription: '目前帳號暫時無法使用 Luna 助手，請聯絡管理員確認功能與帳號範圍。',
+    },
     modelLabel: 'AI 模型',
     contextUsage: '上下文 {{used}}/{{total}} · {{percent}}%',
     contextUsageUnavailable: '暫無 Provider 用量資料',
@@ -554,6 +559,8 @@ const aiAssistant = {
       returnPreviousCountdown: '{{count}} 秒',
       returnPreviousLabel: '返回上一個會話，提示將在 {{count}} 秒後消失',
       search: '搜尋會話',
+      clearSearch: '清除搜尋',
+      loadError: '會話載入失敗，請重試。',
       loadMore: '載入更多會話',
       loadingMore: '正在載入更多會話',
       manage: '管理',

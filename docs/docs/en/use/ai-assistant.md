@@ -31,7 +31,9 @@ Describe the goal directly, such as “check why this application is unreachable
 
 ## Start using it
 
-An administrator must configure an OpenAI `chat/completions`-compatible Provider, enabled models, access scope, and personal-wallet billing under **Global Settings → AI Assistant**. Once enabled, the entry appears in the lower-right corner.
+An administrator must configure an OpenAI `chat/completions`-compatible Provider, enabled models, access scope, and personal-wallet billing under **Global Settings → AI Assistant**. Once enabled, entries appear in the lower-right corner and the Workbench navigation.
+
+Desktop devices open a movable assistant window over the current workspace. Phones, narrow screens, and touch devices that are not suited to a floating window open a dedicated assistant page instead. On mobile, the conversation list is also a full page: Back first returns to the chat, then to the workspace where you entered the assistant. Entering the mobile page does not open the keyboard automatically; tap the composer when you are ready to type, and the composer remains visible while the keyboard is open.
 
 When New API or another compatible gateway fronts multiple upstream channels, see [Channel affinity and prompt cache keys](/en/reference/channel-affinity) to select the hidden Provider compatibility explicitly and encourage one conversation to reuse the same channel. Unknown compatible endpoints do not receive `prompt_cache_key` by default; enable it only after confirming the complete request path supports it.
 

@@ -3,7 +3,7 @@ import type { AIBlock } from './state'
 import type { AIApprovalDecision, ToolCallBlock } from './tool-call'
 import type { MessageBlock } from './turns'
 import type { AIUIAction } from '@/api'
-import { AlertCircle, Bot, ChevronRight, CircleStop, LoaderCircle, RotateCcw, Sparkles } from 'lucide-react'
+import { AlertCircle, ArrowDown, Bot, ChevronRight, CircleStop, LoaderCircle, RotateCcw, Sparkles } from 'lucide-react'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
@@ -42,10 +42,14 @@ interface AIAssistantTimelineProps {
   resetKey?: string
   resendDisabled?: boolean
   showInternalTools?: boolean
+  surface?: 'page' | 'window'
   topContent?: ReactNode
 }
 
-const latestPositionThreshold = 12
+const latestPositionThreshold = {
+  page: 48,
+  window: 12,
+} as const
 
 function isVisibleResponseBlock(block: AIBlock, showInternalTools: boolean): boolean {
   if (block.type === 'tool_call' && block.operationId === 'create_options')
@@ -53,23 +57,28 @@ function isVisibleResponseBlock(block: AIBlock, showInternalTools: boolean): boo
   return block.type !== 'tool_call' || block.visibility !== 'internal' || showInternalTools
 }
 
-export function AIAssistantTimeline({ activeTurnId, bottomInset = false, blocks, error, generating, hasOlder = false, loading, loadingOlder = false, olderError = null, outputStreaming = false, onAction, onApproval, onLoadOlder = async () => {}, onResend, onRetry, resetKey, resendDisabled, showInternalTools = false, topContent }: AIAssistantTimelineProps) {
+export function AIAssistantTimeline({ activeTurnId, bottomInset = false, blocks, error, generating, hasOlder = false, loading, loadingOlder = false, olderError = null, outputStreaming = false, onAction, onApproval, onLoadOlder = async () => {}, onResend, onRetry, resetKey, resendDisabled, showInternalTools = false, surface = 'window', topContent }: AIAssistantTimelineProps) {
   const { t } = useTranslation()
+  const page = surface === 'page'
   const viewportRef = useRef<HTMLDivElement>(null)
   const shouldFollowLatestRef = useRef(true)
   const skipLatestFollowRef = useRef(false)
   const lastScrollTopRef = useRef(0)
   const prependAnchorRef = useRef<{ element: HTMLElement, offsetTop: number, scrollTop: number } | undefined>(undefined)
   const [historyAutoLoadKey, setHistoryAutoLoadKey] = useState<string>()
+  const [showBackToLatest, setShowBackToLatest] = useState(false)
   const historyAutoLoadEnabled = Boolean(resetKey && historyAutoLoadKey === resetKey)
   const showTypingIndicator = shouldShowTypingIndicator({ activeTurnId, blocks, generating, outputStreaming })
   const turns = groupAIAssistantBlocksByTurn(blocks)
 
-  const scrollToLatest = () => {
+  const scrollToLatest = useCallback(() => {
     const viewport = viewportRef.current
-    if (viewport)
+    if (viewport) {
       viewport.scrollTop = viewport.scrollHeight
-  }
+      shouldFollowLatestRef.current = true
+      setShowBackToLatest(false)
+    }
+  }, [])
 
   const handleScroll = (event: UIEvent<HTMLDivElement>) => {
     const viewport = event.currentTarget
@@ -77,7 +86,9 @@ export function AIAssistantTimeline({ activeTurnId, bottomInset = false, blocks,
       setHistoryAutoLoadKey(resetKey)
     lastScrollTopRef.current = viewport.scrollTop
     const distanceFromLatest = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight
-    shouldFollowLatestRef.current = distanceFromLatest <= latestPositionThreshold
+    shouldFollowLatestRef.current = distanceFromLatest <= latestPositionThreshold[surface]
+    if (page)
+      setShowBackToLatest(!shouldFollowLatestRef.current)
   }
 
   const loadOlder = useCallback(async () => {
@@ -116,7 +127,7 @@ export function AIAssistantTimeline({ activeTurnId, bottomInset = false, blocks,
     lastScrollTopRef.current = 0
     const frame = requestAnimationFrame(scrollToLatest)
     return () => cancelAnimationFrame(frame)
-  }, [resetKey])
+  }, [resetKey, scrollToLatest])
 
   useEffect(() => {
     if (skipLatestFollowRef.current) {
@@ -127,10 +138,44 @@ export function AIAssistantTimeline({ activeTurnId, bottomInset = false, blocks,
       return
     const frame = requestAnimationFrame(scrollToLatest)
     return () => cancelAnimationFrame(frame)
-  }, [blocks, showTypingIndicator])
+  }, [blocks, scrollToLatest, showTypingIndicator])
+
+  useEffect(() => {
+    const viewport = viewportRef.current
+    if (!viewport || typeof ResizeObserver === 'undefined')
+      return
+
+    let frame = 0
+    const observer = new ResizeObserver(() => {
+      cancelAnimationFrame(frame)
+      frame = requestAnimationFrame(() => {
+        if (shouldFollowLatestRef.current) {
+          scrollToLatest()
+          return
+        }
+
+        if (page) {
+          const distanceFromLatest = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight
+          setShowBackToLatest(distanceFromLatest > latestPositionThreshold[surface])
+        }
+      })
+    })
+    observer.observe(viewport)
+    return () => {
+      cancelAnimationFrame(frame)
+      observer.disconnect()
+    }
+  }, [loading, page, scrollToLatest, surface])
+
   if (loading) {
     return (
-      <div className="grid flex-1 content-start gap-2.5 p-3">
+      <div
+        className={cn(
+          'grid flex-1 content-start gap-2.5 p-3',
+          page && 'gap-4 py-4 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))]',
+        )}
+        data-ai-timeline-surface={surface}
+      >
         <Skeleton className="ml-auto h-14 w-[62%]" />
         <Skeleton className="h-16 w-[70%]" />
         <Skeleton className="h-24 w-[78%]" />
@@ -139,24 +184,33 @@ export function AIAssistantTimeline({ activeTurnId, bottomInset = false, blocks,
   }
   if (error) {
     return (
-      <div className="grid flex-1 place-content-center gap-3 p-6 text-center">
-        <p className="text-[13px] font-medium">{t('aiAssistant.errors.timeline')}</p>
-        <Button size="sm" variant="outline" onClick={onRetry}>
+      <div
+        className={cn(
+          'grid flex-1 place-content-center gap-3 p-6 text-center',
+          page && 'pl-[max(1.5rem,env(safe-area-inset-left))] pr-[max(1.5rem,env(safe-area-inset-right))]',
+        )}
+        data-ai-timeline-surface={surface}
+      >
+        <p className={cn('text-[13px] font-medium', page && 'text-sm')}>{t('aiAssistant.errors.timeline')}</p>
+        <Button className={cn(page && 'min-h-11')} size="sm" variant="outline" onClick={onRetry}>
           <RotateCcw className="size-4" />
           {t('common.retry')}
         </Button>
       </div>
     )
   }
-  return (
+  const timelineViewport = (
     <div
       ref={viewportRef}
-      aria-live="polite"
+      aria-live={page ? undefined : 'polite'}
       className={cn(
         'min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-x-none bg-surface p-3',
+        page && 'py-4 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))]',
         bottomInset && 'pb-16',
       )}
+      data-ai-timeline-surface={surface}
       data-slot="ai-assistant-timeline"
+      role={page ? 'log' : undefined}
       onScroll={handleScroll}
     >
       {topContent}
@@ -165,7 +219,7 @@ export function AIAssistantTimeline({ activeTurnId, bottomInset = false, blocks,
           {olderError && <span className="text-[11px] text-danger">{t('aiAssistant.olderLoadFailed')}</span>}
           <Button
             aria-label={t(loadingOlder ? 'aiAssistant.loadingOlder' : 'aiAssistant.loadOlder')}
-            className="h-7 gap-1.5 px-2 text-[11px] text-muted-foreground"
+            className={cn('h-7 gap-1.5 px-2 text-[11px] text-muted-foreground', page && 'min-h-11 px-3 text-sm')}
             disabled={loadingOlder}
             size="sm"
             variant="ghost"
@@ -185,7 +239,7 @@ export function AIAssistantTimeline({ activeTurnId, bottomInset = false, blocks,
             </div>
           )
         : (
-            <div className="mx-auto grid w-full min-w-0 max-w-[48rem] gap-4">
+            <div className={cn('mx-auto grid w-full min-w-0 gap-4', page ? 'max-w-none' : 'max-w-[48rem]')}>
               {turns.map((turn, index) => (
                 <ConversationTurn
                   key={turn.id}
@@ -197,16 +251,41 @@ export function AIAssistantTimeline({ activeTurnId, bottomInset = false, blocks,
                   onResend={onResend}
                   resendDisabled={resendDisabled}
                   showInternalTools={showInternalTools}
+                  surface={surface}
                 />
               ))}
-              {turns.length === 0 && showTypingIndicator && <AssistantReply generating responseBlocks={[]} onAction={onAction} onApproval={onApproval} />}
+              {turns.length === 0 && showTypingIndicator && <AssistantReply generating responseBlocks={[]} surface={surface} onAction={onAction} onApproval={onApproval} />}
             </div>
           )}
     </div>
   )
+
+  if (!page)
+    return timelineViewport
+
+  return (
+    <div className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden" data-ai-timeline-container-surface={surface}>
+      {timelineViewport}
+      {showBackToLatest && (
+        <Button
+          aria-label={t('aiAssistant.thinking.backToLatest')}
+          className={cn(
+            'absolute left-1/2 z-10 min-h-11 -translate-x-1/2 rounded-full px-4 shadow-raised',
+            bottomInset ? 'bottom-16' : 'bottom-3',
+          )}
+          size="sm"
+          variant="secondary"
+          onClick={scrollToLatest}
+        >
+          <ArrowDown className="size-4" />
+          {t('aiAssistant.thinking.backToLatest')}
+        </Button>
+      )}
+    </div>
+  )
 }
 
-function ConversationTurn({ generating, responseBlocks, userMessage, onAction, onApproval, onResend, resendDisabled, showInternalTools }: {
+function ConversationTurn({ generating, responseBlocks, userMessage, onAction, onApproval, onResend, resendDisabled, showInternalTools, surface }: {
   generating: boolean
   responseBlocks: AIBlock[]
   userMessage?: MessageBlock
@@ -215,15 +294,17 @@ function ConversationTurn({ generating, responseBlocks, userMessage, onAction, o
   onResend: (message: string) => void
   resendDisabled?: boolean
   showInternalTools?: boolean
+  surface: 'page' | 'window'
 }) {
+  const page = surface === 'page'
   const visibleResponseBlocks = responseBlocks.filter(block => isVisibleResponseBlock(block, showInternalTools ?? false))
   const turnId = userMessage?.turnId ?? visibleResponseBlocks[0]?.turnId
   return (
     <article className="grid min-w-0 gap-2.5" data-ai-turn data-ai-turn-id={turnId}>
       {userMessage && (
         <div className="flex min-w-0 max-w-full justify-end" data-ai-user-message>
-          <div className="group/message flex min-w-0 max-w-[78%] flex-col items-end" data-ai-message-group>
-            <div className="min-w-0 max-w-full whitespace-pre-wrap break-words rounded-container rounded-br-sm bg-primary px-3 py-2 text-[13px] leading-5 text-primary-foreground" data-ai-user-bubble>
+          <div className={cn('group/message flex min-w-0 max-w-[78%] flex-col items-end', page && 'max-w-[84%]')} data-ai-message-group>
+            <div className={cn('min-w-0 max-w-full whitespace-pre-wrap break-words rounded-container rounded-br-sm bg-primary px-3 py-2 text-[13px] leading-5 text-primary-foreground', page && 'px-4 py-2.5 text-base leading-6')} data-ai-user-bubble>
               {userMessage.text}
             </div>
             <AIMessageMeta
@@ -231,6 +312,7 @@ function ConversationTurn({ generating, responseBlocks, userMessage, onAction, o
               copyText={userMessage.text}
               createdAt={userMessage.createdAt}
               resendDisabled={resendDisabled}
+              surface={surface}
               onResend={() => onResend(userMessage.text)}
             />
           </div>
@@ -240,6 +322,7 @@ function ConversationTurn({ generating, responseBlocks, userMessage, onAction, o
         <AssistantReply
           generating={generating}
           responseBlocks={visibleResponseBlocks}
+          surface={surface}
           onAction={onAction}
           onApproval={onApproval}
         />
@@ -248,12 +331,14 @@ function ConversationTurn({ generating, responseBlocks, userMessage, onAction, o
   )
 }
 
-function AssistantReply({ generating, responseBlocks, onAction, onApproval }: {
+function AssistantReply({ generating, responseBlocks, surface, onAction, onApproval }: {
   generating: boolean
   responseBlocks: AIBlock[]
+  surface: 'page' | 'window'
   onAction: (action: AIUIAction) => Promise<boolean>
   onApproval: (block: ToolCallBlock, decision: AIApprovalDecision, reason?: string) => Promise<void>
 }) {
+  const page = surface === 'page'
   const hasWideContent = responseBlocks.some(block =>
     block.type === 'tool_call'
     && block.operationId === 'create_interaction_cards')
@@ -266,15 +351,15 @@ function AssistantReply({ generating, responseBlocks, onAction, onApproval }: {
       <div
         className={cn(
           'group/message flex min-w-0 flex-col items-start',
-          hasWideContent ? 'w-full max-w-full flex-1' : 'w-fit max-w-[78%] flex-none',
+          page || hasWideContent ? 'w-full max-w-full flex-1' : 'w-fit max-w-[78%] flex-none',
         )}
         data-ai-message-group
       >
-        <div className="grid min-w-0 max-w-full gap-2.5 rounded-container rounded-tl-sm bg-surface-subtle px-3 py-2.5" data-ai-assistant-bubble>
-          {responseBlocks.map(block => <ResponseBlock key={block.id} block={block} onAction={onAction} onApproval={onApproval} />)}
+        <div className={cn('grid min-w-0 max-w-full gap-2.5 rounded-container rounded-tl-sm bg-surface-subtle px-3 py-2.5', page && 'w-full gap-3 px-4 py-3 [&_button]:min-h-11 [&_button]:min-w-11')} data-ai-assistant-bubble>
+          {responseBlocks.map(block => <ResponseBlock key={block.id} block={block} surface={surface} onAction={onAction} onApproval={onApproval} />)}
           {generating && <TypingIndicator />}
         </div>
-        {createdAt && <AIMessageMeta align="start" copyText={copyText} createdAt={createdAt} />}
+        {createdAt && <AIMessageMeta align="start" copyText={copyText} createdAt={createdAt} surface={surface} />}
       </div>
     </div>
   )
@@ -293,9 +378,10 @@ function TypingIndicator() {
   )
 }
 
-function ResponseBlock({ block, onAction, onApproval }: { block: AIBlock, onAction: (action: AIUIAction) => Promise<boolean>, onApproval: (block: ToolCallBlock, decision: AIApprovalDecision, reason?: string) => Promise<void> }) {
+function ResponseBlock({ block, surface, onAction, onApproval }: { block: AIBlock, surface: 'page' | 'window', onAction: (action: AIUIAction) => Promise<boolean>, onApproval: (block: ToolCallBlock, decision: AIApprovalDecision, reason?: string) => Promise<void> }) {
+  const page = surface === 'page'
   if (block.type === 'thinking')
-    return <ThinkingBlock block={block} />
+    return <ThinkingBlock block={block} surface={surface} />
   if (block.type === 'tool_call' && block.operationId === 'create_interaction_cards' && block.status === 'running')
     return <AIInteractionCardPlaceholder arguments={block.arguments} result={block.result} />
   if (block.type === 'tool_call' && block.operationId === 'create_interaction_cards' && block.status === 'succeeded')
@@ -306,6 +392,7 @@ function ResponseBlock({ block, onAction, onApproval }: { block: AIBlock, onActi
         actions={block.uiActions}
         placement="inline"
         sourceKey={`agent:${block.id}`}
+        surface={surface}
         onAction={onAction}
       />
     )
@@ -313,7 +400,7 @@ function ResponseBlock({ block, onAction, onApproval }: { block: AIBlock, onActi
   if (block.type === 'tool_call' && block.operationId === 'navigate_to_route')
     return <AINavigationEvent block={block} onAction={onAction} />
   if (block.type === 'tool_call')
-    return <AIToolCallCard block={block} onAction={onAction} onApproval={onApproval} />
+    return <AIToolCallCard block={block} surface={surface} onAction={onAction} onApproval={onApproval} />
   if (block.type === 'run_status')
     return <RunStatusBlock block={block} />
   if (block.type === 'context_compacted')
@@ -321,7 +408,7 @@ function ResponseBlock({ block, onAction, onApproval }: { block: AIBlock, onActi
   if (block.role === 'user')
     return null
   return (
-    <AIMarkdown className="min-w-0 max-w-full text-foreground">
+    <AIMarkdown className={cn('min-w-0 max-w-full text-foreground', page && 'text-base leading-6')}>
       {block.text}
     </AIMarkdown>
   )
@@ -344,8 +431,9 @@ function RunStatusBlock({ block }: { block: Extract<AIBlock, { type: 'run_status
   )
 }
 
-function ThinkingBlock({ block }: { block: Extract<AIBlock, { type: 'thinking' }> }) {
+function ThinkingBlock({ block, surface }: { block: Extract<AIBlock, { type: 'thinking' }>, surface: 'page' | 'window' }) {
   const { t } = useTranslation()
+  const page = surface === 'page'
   const viewportRef = useRef<HTMLDivElement>(null)
   const [following, setFollowing] = useState(true)
   const [expanded, setExpanded] = useState(false)
@@ -364,7 +452,7 @@ function ThinkingBlock({ block }: { block: Extract<AIBlock, { type: 'thinking' }
 
   return (
     <div className="min-w-0 rounded-control bg-surface-inset/70 px-2.5 py-1.5">
-      <button aria-expanded={expanded} className="flex w-full items-center gap-1.5 text-left text-[11px] font-medium text-muted-foreground" type="button" onClick={() => setExpanded(value => !value)}>
+      <button aria-expanded={expanded} className={cn('flex w-full items-center gap-1.5 text-left text-[11px] font-medium text-muted-foreground', page && 'min-h-11 text-sm')} type="button" onClick={() => setExpanded(value => !value)}>
         <Sparkles className="size-3.5" />
         <span>{t(block.display === 'summary' ? `aiAssistant.thinking.${block.status === 'completed' ? 'summaryComplete' : 'summaryStreaming'}` : `aiAssistant.thinking.${block.status === 'completed' ? 'progressComplete' : 'progressStreaming'}`)}</span>
         <ChevronRight className={cn('ml-auto size-3.5 transition-transform', expanded && 'rotate-90')} />
@@ -373,6 +461,7 @@ function ThinkingBlock({ block }: { block: Extract<AIBlock, { type: 'thinking' }
         ref={viewportRef}
         className={cn(
           'whitespace-pre-wrap break-words text-[11px] leading-4 text-muted-foreground',
+          page && 'text-sm leading-5',
           expanded
             ? 'mt-1 max-h-56 overflow-y-auto'
             : 'mt-1 max-h-12 overflow-hidden',
@@ -386,7 +475,7 @@ function ThinkingBlock({ block }: { block: Extract<AIBlock, { type: 'thinking' }
       >
         {block.text}
       </div>
-      {expanded && !following && <button className="mt-1 text-[10px] font-medium text-primary-text" type="button" onClick={() => setFollowing(true)}>{t('aiAssistant.thinking.backToLatest')}</button>}
+      {expanded && !following && <button className={cn('mt-1 text-[10px] font-medium text-primary-text', page && 'min-h-11 text-sm')} type="button" onClick={() => setFollowing(true)}>{t('aiAssistant.thinking.backToLatest')}</button>}
     </div>
   )
 }

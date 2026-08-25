@@ -25,6 +25,7 @@
 
 - [16-application-deployments-panel重构方案.md](16-application-deployments-panel重构方案.md) — 部署面板的行为保持型拆分。
 - [17-项目空间数据卷中心与数据迁移方案.md](17-项目空间数据卷中心与数据迁移方案.md) — 数据卷主链完成后的 legacy Contract 清理。
+- [23-移动端AI助手真实页面重构方案.md](23-移动端AI助手真实页面重构方案.md) — 移动真实路由、唯一 Runtime 与桌面浮窗共存重构。
 
 ## 临时操作手册
 

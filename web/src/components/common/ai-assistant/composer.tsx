@@ -24,6 +24,7 @@ export interface AIAssistantComposerProps {
   maxLength?: number
   sending: boolean
   submitting: boolean
+  surface?: 'page' | 'window'
   waitingInput: boolean
   onCancel: () => void
   onDraftChange: (value: string) => void
@@ -96,6 +97,7 @@ export function AIAssistantComposer({
   maxLength,
   sending,
   submitting,
+  surface = 'window',
   waitingInput,
   onCancel,
   onDraftChange,
@@ -103,6 +105,7 @@ export function AIAssistantComposer({
   onSubmit,
 }: AIAssistantComposerProps) {
   const { t } = useTranslation()
+  const page = surface === 'page'
   const busy = sending || submitting
   const canSubmit = modelAvailable && (!activeRun || waitingInput)
   const selectedModel = models.find(model => model.id === selectedModelId)
@@ -118,19 +121,31 @@ export function AIAssistantComposer({
     && typeof selectedModel?.maxContextTokens === 'number'
     && selectedModel.maxContextTokens > 0
   return (
-    <footer className="shrink-0 border-t border-separator-subtle bg-surface p-2.5 pb-[max(0.625rem,env(safe-area-inset-bottom))]">
-      <div className="flex min-h-20 flex-col gap-1 rounded-container border border-input bg-surface px-2 py-2 focus-within:ring-2 focus-within:ring-ring">
+    <footer
+      className={page
+        ? 'shrink-0 border-t border-separator-subtle bg-surface pb-[max(0.75rem,env(safe-area-inset-bottom))] pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))] pt-3'
+        : 'shrink-0 border-t border-separator-subtle bg-surface p-2.5 pb-[max(0.625rem,env(safe-area-inset-bottom))]'}
+      data-ai-assistant-surface={surface}
+    >
+      <div
+        className={page
+          ? 'flex min-h-24 flex-col gap-2 rounded-container border border-input bg-surface px-3 py-2.5 focus-within:ring-2 focus-within:ring-ring'
+          : 'flex min-h-20 flex-col gap-1 rounded-container border border-input bg-surface px-2 py-2 focus-within:ring-2 focus-within:ring-ring'}
+      >
         <textarea
           ref={inputRef}
           aria-label={t('aiAssistant.inputLabel')}
-          className="min-h-10 w-full resize-none bg-transparent px-1 !text-base leading-5 outline-none placeholder:text-muted-foreground sm:!text-[13px]"
+          className={page
+            ? 'min-h-11 max-h-36 w-full resize-none overflow-y-auto bg-transparent px-1 !text-base leading-6 outline-none placeholder:text-muted-foreground'
+            : 'min-h-10 w-full resize-none bg-transparent px-1 !text-base leading-5 outline-none placeholder:text-muted-foreground sm:!text-[13px]'}
           disabled={busy}
           maxLength={maxLength}
           placeholder={waitingInput ? t('aiAssistant.inputRequired') : activeRun ? t('aiAssistant.inputRunning') : t('aiAssistant.inputPlaceholder')}
           value={draft}
           onChange={event => onDraftChange(event.target.value)}
           onKeyDown={(event) => {
-            if (event.key === 'Enter' && !event.shiftKey && !isConfirmingIME(event) && draft.trim() && canSubmit) {
+            const submitShortcut = page ? event.metaKey || event.ctrlKey : !event.shiftKey
+            if (event.key === 'Enter' && submitShortcut && !isConfirmingIME(event) && draft.trim() && canSubmit) {
               event.preventDefault()
               onSubmit()
             }
@@ -144,7 +159,9 @@ export function AIAssistantComposer({
           >
             <SelectTrigger
               aria-label={t('aiAssistant.modelLabel')}
-              className="!h-7 w-auto min-w-0 max-w-[55%] gap-1 rounded-full border border-separator-subtle bg-surface-subtle px-2.5 text-xs shadow-none hover:bg-surface-inset focus:ring-1 focus:ring-ring [&_svg]:hidden"
+              className={page
+                ? '!h-11 w-auto min-w-0 max-w-[65%] gap-1 rounded-full border border-separator-subtle bg-surface-subtle px-3 text-sm shadow-none hover:bg-surface-inset focus:ring-1 focus:ring-ring [&_svg]:hidden'
+                : '!h-7 w-auto min-w-0 max-w-[55%] gap-1 rounded-full border border-separator-subtle bg-surface-subtle px-2.5 text-xs shadow-none hover:bg-surface-inset focus:ring-1 focus:ring-ring [&_svg]:hidden'}
             >
               <span className="truncate">
                 <SelectValue placeholder={t('aiAssistant.modelEmpty')} />
@@ -153,7 +170,7 @@ export function AIAssistantComposer({
                 ? <LoaderCircle className="size-3 shrink-0 animate-spin text-muted-foreground motion-reduce:animate-none" />
                 : <ChevronDown className="size-3 shrink-0 text-muted-foreground" />}
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent className={page ? '[&_[data-slot=select-item]]:min-h-11' : undefined}>
               {models.map(model => (
                 <SelectItem key={model.id} value={model.id}>
                   <span className="flex items-center gap-1.5">
@@ -164,28 +181,30 @@ export function AIAssistantComposer({
               ))}
             </SelectContent>
           </Select>
-          {hasReportedUsage
-            ? (
-                <ContextUsageRing
-                  ratio={contextRatio}
-                  total={contextTotal}
-                  used={contextUsed}
-                />
-              )
-            : hasInitialContextUsage
+          <div className={page ? 'grid size-11 shrink-0 place-items-center [&_button]:size-11' : 'contents'}>
+            {hasReportedUsage
               ? (
                   <ContextUsageRing
-                    ratio={0}
-                    total={selectedModel.maxContextTokens}
-                    used={0}
+                    ratio={contextRatio}
+                    total={contextTotal}
+                    used={contextUsed}
                   />
                 )
-              : <UnavailableContextUsageRing />}
+              : hasInitialContextUsage
+                ? (
+                    <ContextUsageRing
+                      ratio={0}
+                      total={selectedModel.maxContextTokens}
+                      used={0}
+                    />
+                  )
+                : <UnavailableContextUsageRing />}
+          </div>
           {activeRun && !waitingInput
             ? (
                 <Button
                   aria-label={t('aiAssistant.stop')}
-                  className="size-7 shrink-0 rounded-full"
+                  className={page ? 'size-12 shrink-0 rounded-full' : 'size-7 shrink-0 rounded-full'}
                   disabled={canceling || !canCancel}
                   size="icon"
                   variant="outline"
@@ -197,7 +216,7 @@ export function AIAssistantComposer({
             : (
                 <Button
                   aria-label={waitingInput ? t('aiAssistant.continue') : t('aiAssistant.send')}
-                  className="size-7 shrink-0 rounded-full"
+                  className={page ? 'size-11 shrink-0 rounded-full' : 'size-7 shrink-0 rounded-full'}
                   disabled={!draft.trim() || busy || !modelAvailable}
                   size="icon"
                   onClick={onSubmit}
@@ -207,8 +226,8 @@ export function AIAssistantComposer({
               )}
         </div>
       </div>
-      {!modelAvailable && <p className="mt-1.5 px-1 text-[10px] text-destructive">{t('aiAssistant.modelUnavailable')}</p>}
-      <p className="mt-1.5 truncate px-1 text-[10px] text-muted-foreground">{t('aiAssistant.securityHint')}</p>
+      {!modelAvailable && <p className={page ? 'mt-2 px-1 text-sm text-destructive' : 'mt-1.5 px-1 text-[10px] text-destructive'}>{t('aiAssistant.modelUnavailable')}</p>}
+      <p className={page ? 'mt-2 px-1 text-xs leading-5 text-muted-foreground' : 'mt-1.5 truncate px-1 text-[10px] text-muted-foreground'}>{t('aiAssistant.securityHint')}</p>
     </footer>
   )
 }

@@ -1,6 +1,5 @@
 import type { CSSProperties, ReactNode } from 'react'
 import { useEffect, useState } from 'react'
-import { createPortal } from 'react-dom'
 
 interface VisualViewportRect {
   height: number
@@ -27,7 +26,10 @@ export function AIMobileViewport({ children }: { children: ReactNode }) {
     let frame = 0
     const update = () => {
       window.cancelAnimationFrame(frame)
-      frame = window.requestAnimationFrame(() => setViewport(currentVisualViewport()))
+      frame = window.requestAnimationFrame(() => {
+        const nextViewport = currentVisualViewport()
+        setViewport(current => sameViewport(current, nextViewport) ? current : nextViewport)
+      })
     }
     visualViewport?.addEventListener('resize', update)
     visualViewport?.addEventListener('scroll', update)
@@ -42,17 +44,6 @@ export function AIMobileViewport({ children }: { children: ReactNode }) {
     }
   }, [])
 
-  useEffect(() => {
-    const previousBodyOverflow = document.body.style.overflow
-    const previousRootOverflow = document.documentElement.style.overflow
-    document.body.style.overflow = 'hidden'
-    document.documentElement.style.overflow = 'hidden'
-    return () => {
-      document.body.style.overflow = previousBodyOverflow
-      document.documentElement.style.overflow = previousRootOverflow
-    }
-  }, [])
-
   const style: CSSProperties = {
     height: `${viewport.height}px`,
     left: `${viewport.left}px`,
@@ -60,10 +51,21 @@ export function AIMobileViewport({ children }: { children: ReactNode }) {
     width: `${viewport.width}px`,
   }
 
-  return createPortal(
-    <div className="pointer-events-auto fixed z-50 overflow-hidden overscroll-none" data-ai-mobile-viewport style={style}>
+  return (
+    <div
+      className="fixed overflow-hidden overscroll-none bg-surface"
+      data-ai-mobile-viewport
+      data-ai-page-viewport
+      style={style}
+    >
       {children}
-    </div>,
-    document.body,
+    </div>
   )
+}
+
+function sameViewport(current: VisualViewportRect, next: VisualViewportRect): boolean {
+  return current.height === next.height
+    && current.left === next.left
+    && current.top === next.top
+    && current.width === next.width
 }

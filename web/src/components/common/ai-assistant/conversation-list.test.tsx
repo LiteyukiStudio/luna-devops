@@ -198,4 +198,64 @@ describe('ai conversation list', () => {
     await user.click(screen.getByRole('button', { name: '加载更多会话' }))
     expect(onLoadMore).toHaveBeenCalledOnce()
   })
+
+  it('shows a recoverable error instead of an empty state on a page surface', async () => {
+    const user = userEvent.setup()
+    const onRetry = vi.fn()
+    render(
+      <AIConversationList
+        conversations={[]}
+        deleting={false}
+        error={new Error('network unavailable')}
+        loading={false}
+        runningConversationIds={new Set()}
+        search=""
+        surface="page"
+        onDeleteMany={vi.fn(async () => {})}
+        onRename={vi.fn()}
+        onRetry={onRetry}
+        onSearch={vi.fn()}
+        onSelect={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByRole('alert')).toHaveTextContent(i18next.t('aiAssistant.conversations.loadError'))
+    expect(screen.queryByText(i18next.t('aiAssistant.conversations.empty'))).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: i18next.t('common.retry') }))
+    expect(onRetry).toHaveBeenCalledOnce()
+  })
+
+  it('provides a 44px search clear action on a page surface', async () => {
+    const user = userEvent.setup()
+    const onClearSearch = vi.fn()
+    render(
+      <AIConversationList
+        conversations={conversations}
+        deleting={false}
+        loading={false}
+        runningConversationIds={new Set()}
+        search="failed"
+        surface="page"
+        onClearSearch={onClearSearch}
+        onDeleteMany={vi.fn(async () => {})}
+        onRename={vi.fn()}
+        onSearch={vi.fn()}
+        onSelect={vi.fn()}
+      />,
+    )
+
+    const clear = screen.getByRole('button', { name: i18next.t('aiAssistant.conversations.clearSearch') })
+    expect(clear).toHaveClass('size-11')
+    expect(document.querySelector('[data-slot="ai-conversation-toolbar"]')).toHaveClass(
+      'pl-[max(0.5rem,env(safe-area-inset-left))]',
+      'pr-[max(0.5rem,env(safe-area-inset-right))]',
+    )
+    expect(document.querySelector('[data-slot="ai-conversation-list"]')).toHaveClass(
+      'pl-[max(0.5rem,env(safe-area-inset-left))]',
+      'pr-[max(0.5rem,env(safe-area-inset-right))]',
+    )
+    await user.click(clear)
+    expect(onClearSearch).toHaveBeenCalledOnce()
+    expect(screen.getAllByRole('button', { name: i18next.t('common.actions') })[0]).toHaveClass('size-11')
+  })
 })

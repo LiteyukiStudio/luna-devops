@@ -54,6 +54,23 @@ describe('ai assistant options', () => {
     expect(screen.getByRole('button', { name: /查看项目空间/ })).toBeInTheDocument()
   })
 
+  it('keeps floating page options inside horizontal safe areas', () => {
+    render(<AIOptionsBar actions={actions} sourceKey="page:turn-1" surface="page" onAction={vi.fn()} />)
+
+    const region = screen.getByRole('region', { name: i18next.t('aiAssistant.options.suggested') })
+    expect(region).toHaveClass(
+      'pl-[max(0.75rem,env(safe-area-inset-left))]',
+      'pr-[max(0.75rem,env(safe-area-inset-right))]',
+    )
+    expect(screen.getByRole('button', { name: /查看项目空间/ })).toHaveClass('min-h-11')
+  })
+
+  it('keeps inline page options large enough for touch input', () => {
+    render(<AIOptionsBar actions={actions} placement="inline" sourceKey="page:turn-inline" surface="page" onAction={vi.fn()} />)
+
+    expect(screen.getByRole('button', { name: /查看项目空间/ })).toHaveClass('min-h-11', '!text-sm')
+  })
+
   it('keeps repeatable navigation and sibling actions available after a one-time choice', async () => {
     const user = userEvent.setup()
     const onAction = vi.fn(async () => true)

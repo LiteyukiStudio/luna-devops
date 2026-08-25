@@ -2,6 +2,11 @@ const aiAssistant = {
   aiAssistant: {
     open: 'Open Luna Assistant',
     title: 'Luna Assistant',
+    page: {
+      backToWorkspace: 'Back to workspace',
+      unavailableTitle: 'Assistant unavailable',
+      unavailableDescription: 'Luna Assistant is not available for this account. Ask an administrator to check feature access and account scope.',
+    },
     modelLabel: 'AI model',
     contextUsage: 'Context {{used}}/{{total}} · {{percent}}%',
     contextUsageUnavailable: 'No Provider usage data',
@@ -554,6 +559,8 @@ const aiAssistant = {
       returnPreviousCountdown: '{{count}}s',
       returnPreviousLabel: 'Return to the previous conversation; this notice disappears in {{count}} seconds',
       search: 'Search conversations',
+      clearSearch: 'Clear search',
+      loadError: 'Could not load conversations. Try again.',
       loadMore: 'Load more conversations',
       loadingMore: 'Loading more conversations',
       manage: 'Manage',

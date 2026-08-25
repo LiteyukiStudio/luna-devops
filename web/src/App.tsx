@@ -45,6 +45,7 @@ export default function App() {
           {AIInteractionCardGallery && <Route path="/__dev/ai-interaction-cards" element={<AIInteractionCardGallery />} />}
           <Route element={<AppLayout />}>
             <Route index element={<Navigate to="/dashboard" replace />} />
+            <Route path="/ai-assistant" element={<></>} />
             <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/projects" element={<ProjectsPage />} />
             <Route path="/events" element={<EventsPage />} />

@@ -28,8 +28,9 @@ const statusTone: Record<AIToolStatus, string> = {
   skipped: 'bg-surface-inset text-muted-foreground',
 }
 
-export function AIToolCallCard({ block, onAction, onApproval }: { block: ToolCallBlock, onAction: (action: AIUIAction) => Promise<boolean>, onApproval: (block: ToolCallBlock, decision: AIApprovalDecision, reason?: string) => Promise<void> }) {
+export function AIToolCallCard({ block, onAction, onApproval, surface = 'window' }: { block: ToolCallBlock, onAction: (action: AIUIAction) => Promise<boolean>, onApproval: (block: ToolCallBlock, decision: AIApprovalDecision, reason?: string) => Promise<void>, surface?: 'page' | 'window' }) {
   const { t, i18n } = useTranslation()
+  const page = surface === 'page'
   const title = block.titleKey && i18n.exists(block.titleKey) ? t(block.titleKey) : toolDisplayName(t, block.operationId)
   const errorCode = block.errorCode ?? block.result?.errorCode
   const summary = block.status === 'failed'
@@ -40,8 +41,8 @@ export function AIToolCallCard({ block, onAction, onApproval }: { block: ToolCal
   return (
     <div className="overflow-hidden rounded-container bg-surface">
       <details className="group">
-        <summary className="flex min-h-9 cursor-pointer list-none items-center gap-1.5 px-2 py-1 outline-none hover:bg-surface-inset focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring [&::-webkit-details-marker]:hidden" data-ai-tool-summary>
-          <strong className="min-w-0 flex-1 truncate text-xs font-medium">{title}</strong>
+        <summary className={cn('flex cursor-pointer list-none items-center gap-1.5 outline-none hover:bg-surface-inset focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring [&::-webkit-details-marker]:hidden', page ? 'min-h-11 px-3 py-1.5' : 'min-h-9 px-2 py-1')} data-ai-tool-summary data-ai-tool-surface={surface}>
+          <strong className={page ? 'min-w-0 flex-1 truncate text-sm font-medium' : 'min-w-0 flex-1 truncate text-xs font-medium'}>{title}</strong>
           {block.visibility === 'internal' && (
             <Badge className="border-transparent bg-warning-subtle px-1.5 py-0 text-[10px] leading-4 text-warning">
               {t('aiAssistant.toolDebug.internal')}
@@ -59,18 +60,20 @@ export function AIToolCallCard({ block, onAction, onApproval }: { block: ToolCal
           </Badge>
           <ChevronRight className="size-3.5 shrink-0 text-muted-foreground transition-transform group-open:rotate-90" />
         </summary>
-        <AIToolCallDetails block={block} errorCode={errorCode} summary={summary} />
+        <div className={page ? '[&_button]:min-h-11 [&_button]:min-w-11' : undefined}>
+          <AIToolCallDetails block={block} errorCode={errorCode} summary={summary} />
+        </div>
         {block.uiActions.length > 0 && (
           <div className="bg-surface-subtle/40 px-3 pb-3">
             <div className="mt-3 flex flex-wrap justify-end gap-2">
-              {block.uiActions.map(action => <ActionButton key={`${action.type}-${JSON.stringify(action.payload)}`} action={action} onAction={onAction} />)}
+              {block.uiActions.map(action => <ActionButton key={`${action.type}-${JSON.stringify(action.payload)}`} action={action} surface={surface} onAction={onAction} />)}
             </div>
           </div>
         )}
       </details>
       {block.status === 'awaiting_approval' && (
         <div className="bg-surface-subtle/40 px-3 pb-3" data-ai-tool-intervention>
-          <ApprovalControls block={block} onApproval={onApproval} />
+          <ApprovalControls block={block} surface={surface} onApproval={onApproval} />
         </div>
       )}
     </div>
@@ -96,7 +99,7 @@ function ToolStatusIcon({ status }: { status: AIToolStatus }) {
   return <CircleDashed aria-hidden="true" className={className} data-ai-tool-status-icon={status} />
 }
 
-function ActionButton({ action, onAction }: { action: AIUIAction, onAction: (action: AIUIAction) => Promise<boolean> }) {
+function ActionButton({ action, onAction, surface }: { action: AIUIAction, onAction: (action: AIUIAction) => Promise<boolean>, surface: 'page' | 'window' }) {
   const { t } = useTranslation()
   const [done, setDone] = useState(false)
   const [pending, setPending] = useState(false)
@@ -126,11 +129,12 @@ function ActionButton({ action, onAction }: { action: AIUIAction, onAction: (act
   }
   const label = 'label' in action && action.label ? action.label : t(`aiAssistant.actions.${action.type}`)
   const variant = 'tone' in action && action.tone === 'primary' ? 'default' : 'outline'
-  return <Button className="h-7 px-2.5 !text-[11px]" disabled={pending || done} size="sm" variant={variant} onClick={() => void execute()}>{done ? t('aiAssistant.actions.opened') : label}</Button>
+  return <Button className={surface === 'page' ? 'min-h-11 px-3 !text-sm' : 'h-7 px-2.5 !text-[11px]'} disabled={pending || done} size="sm" variant={variant} onClick={() => void execute()}>{done ? t('aiAssistant.actions.opened') : label}</Button>
 }
 
-function ApprovalControls({ block, onApproval }: { block: ToolCallBlock, onApproval: (block: ToolCallBlock, decision: AIApprovalDecision, reason?: string) => Promise<void> }) {
+function ApprovalControls({ block, onApproval, surface }: { block: ToolCallBlock, onApproval: (block: ToolCallBlock, decision: AIApprovalDecision, reason?: string) => Promise<void>, surface: 'page' | 'window' }) {
   const { t } = useTranslation()
+  const page = surface === 'page'
   const [reason, setReason] = useState('')
   const [pending, setPending] = useState(false)
   const decide = async (decision: AIApprovalDecision) => {
@@ -149,11 +153,11 @@ function ApprovalControls({ block, onApproval }: { block: ToolCallBlock, onAppro
     <div className="mt-3 grid gap-2 rounded-control bg-warning-subtle p-3">
       <strong className="text-xs text-warning">{t('aiAssistant.approval.title')}</strong>
       <p className="text-xs text-muted-foreground">{t('aiAssistant.approval.bindingHint')}</p>
-      <Input aria-label={t('aiAssistant.approval.reason')} disabled={pending} maxLength={500} placeholder={t('aiAssistant.approval.reasonPlaceholder')} value={reason} onChange={event => setReason(event.target.value)} />
-      <div className="flex flex-wrap justify-end gap-2">
-        <Button className="h-7 px-2.5 !text-[11px]" disabled={pending} size="sm" variant="outline" onClick={() => void decide('reject')}>{t('aiAssistant.approval.reject')}</Button>
-        <Button className="h-7 px-2.5 !text-[11px]" disabled={pending} size="sm" variant="outline" onClick={() => void decide('approve')}>{t('aiAssistant.approval.approve')}</Button>
-        <Button className="h-7 px-2.5 !text-[11px]" disabled={pending} size="sm" onClick={() => void decide('approve_always')}>{t('aiAssistant.approval.approveAlways')}</Button>
+      <Input aria-label={t('aiAssistant.approval.reason')} className={page ? 'h-11 text-base' : undefined} disabled={pending} maxLength={500} placeholder={t('aiAssistant.approval.reasonPlaceholder')} value={reason} onChange={event => setReason(event.target.value)} />
+      <div className={page ? 'grid grid-cols-2 gap-2' : 'flex flex-wrap justify-end gap-2'}>
+        <Button className={page ? 'min-h-12 w-full px-3 !text-sm' : 'h-7 px-2.5 !text-[11px]'} disabled={pending} size="sm" variant="outline" onClick={() => void decide('reject')}>{t('aiAssistant.approval.reject')}</Button>
+        <Button className={page ? 'min-h-12 w-full px-3 !text-sm' : 'h-7 px-2.5 !text-[11px]'} disabled={pending} size="sm" variant="outline" onClick={() => void decide('approve')}>{t('aiAssistant.approval.approve')}</Button>
+        <Button className={page ? 'col-span-2 min-h-12 w-full px-3 !text-sm' : 'h-7 px-2.5 !text-[11px]'} disabled={pending} size="sm" onClick={() => void decide('approve_always')}>{t('aiAssistant.approval.approveAlways')}</Button>
       </div>
     </div>
   )

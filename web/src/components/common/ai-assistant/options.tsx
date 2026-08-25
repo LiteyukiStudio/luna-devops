@@ -9,10 +9,11 @@ import { cn } from '@/lib/utils'
 import { isAIUIActionRepeatable, parseAIOptionActions } from './actions'
 import { AIOptionLeadingVisual } from './option-visual'
 
-export function AIOptionsBar({ actions, placement = 'floating', sourceKey, onAction }: {
+export function AIOptionsBar({ actions, placement = 'floating', sourceKey, surface = 'window', onAction }: {
   actions: AIUIAction[]
   placement?: 'floating' | 'inline'
   sourceKey: string
+  surface?: 'page' | 'window'
   onAction: (action: AIUIAction) => Promise<boolean>
 }) {
   const { t } = useTranslation()
@@ -22,6 +23,7 @@ export function AIOptionsBar({ actions, placement = 'floating', sourceKey, onAct
   const pendingKeysRef = useRef(new Set<string>())
   const selectedKeysRef = useRef(new Set<string>())
   const options = useMemo(() => parseAIOptionActions(actions), [actions])
+  const page = surface === 'page'
   const visualType = options[0]?.visual?.type
   const showVisuals = Boolean(visualType && options.every(option => option.visual?.type === visualType))
 
@@ -63,9 +65,14 @@ export function AIOptionsBar({ actions, placement = 'floating', sourceKey, onAct
       aria-label={t('aiAssistant.options.suggested')}
       className={cn(
         'min-w-0 overflow-hidden',
-        placement === 'floating' && 'pointer-events-none absolute inset-x-0 bottom-0 z-10 px-3 pb-2',
+        placement === 'floating' && (
+          page
+            ? 'pointer-events-none absolute inset-x-0 bottom-0 z-10 pb-2 pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))]'
+            : 'pointer-events-none absolute inset-x-0 bottom-0 z-10 px-3 pb-2'
+        ),
       )}
       data-ai-options-placement={placement}
+      data-ai-options-surface={surface}
     >
       <AnimatePresence initial mode="popLayout">
         <motion.div
@@ -103,8 +110,8 @@ export function AIOptionsBar({ actions, placement = 'floating', sourceKey, onAct
                   className={cn(
                     'shrink-0 rounded-full shadow-none [&_svg]:size-3.5',
                     placement === 'floating'
-                      ? 'h-8 max-w-52 px-3 !text-[11px]'
-                      : 'h-7 max-w-full px-2.5 !text-xs',
+                      ? page ? 'min-h-11 max-w-64 px-4 !text-sm' : 'h-8 max-w-52 px-3 !text-[11px]'
+                      : page ? 'min-h-11 max-w-full px-3 !text-sm' : 'h-7 max-w-full px-2.5 !text-xs',
                   )}
                   disabled={pending || (!repeatable && selected)}
                   title={label}

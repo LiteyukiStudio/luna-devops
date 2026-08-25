@@ -2,6 +2,11 @@ const aiAssistant = {
   aiAssistant: {
     open: 'Luna 어시스턴트 열기',
     title: 'Luna 어시스턴트',
+    page: {
+      backToWorkspace: '작업 공간으로 돌아가기',
+      unavailableTitle: '어시스턴트를 사용할 수 없음',
+      unavailableDescription: '현재 이 계정에서는 Luna 어시스턴트를 사용할 수 없습니다. 관리자에게 기능 및 계정 범위를 확인해 달라고 요청하세요.',
+    },
     modelLabel: 'AI 모델',
     contextUsage: '컨텍스트 {{used}}/{{total}} · {{percent}}%',
     contextUsageUnavailable: 'Provider 사용량 데이터 없음',
@@ -554,6 +559,8 @@ const aiAssistant = {
       returnPreviousCountdown: '{{count}}초',
       returnPreviousLabel: '이전 세션으로 돌아갑니다. 프롬프트는 {{count}}초 후에 사라집니다',
       search: '세션 검색',
+      clearSearch: '검색 지우기',
+      loadError: '세션을 불러오지 못했습니다. 다시 시도하세요.',
       loadMore: '더 많은 세션 로드',
       loadingMore: '더 많은 세션 로드 중',
       manage: '관리',

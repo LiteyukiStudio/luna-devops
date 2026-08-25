@@ -53,8 +53,8 @@ export const aiApi = {
       headers: { 'Idempotency-Key': idempotencyKey },
       body: JSON.stringify(payload),
     }),
-  listPendingAIUIActions: (clientInstanceId: string) =>
-    request<AIPendingUIActions>(`/ai/ui-actions/pending?${new URLSearchParams({ clientInstanceId })}`),
+  listPendingAIUIActions: (clientInstanceId: string, signal?: AbortSignal) =>
+    request<AIPendingUIActions>(`/ai/ui-actions/pending?${new URLSearchParams({ clientInstanceId })}`, { signal }),
   acknowledgeAIUIAction: (actionId: string, payload: AIUIActionAcknowledgement) =>
     request<void>(`/ai/ui-actions/${encodeURIComponent(actionId)}/ack`, {
       method: 'POST',

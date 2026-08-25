@@ -225,6 +225,26 @@ describe('ai assistant tool status icon', () => {
     ))
   })
 
+  it('uses page-sized summary and approval targets on a page surface', async () => {
+    await i18next.changeLanguage('zh-CN')
+    const { container } = render(
+      <AIToolCallCard
+        block={{
+          ...toolBlock('awaiting_approval'),
+          arguments: { applicationId: 'app-1' },
+        }}
+        surface="page"
+        onAction={vi.fn(async () => true)}
+        onApproval={vi.fn(async () => {})}
+      />,
+    )
+
+    expect(container.querySelector('[data-ai-tool-summary]')).toHaveClass('min-h-11')
+    expect(screen.getByRole('button', { name: '拒绝' })).toHaveClass('min-h-12')
+    expect(screen.getByRole('button', { name: '批准执行' })).toHaveClass('min-h-12')
+    expect(screen.getByRole('button', { name: '始终允许' })).toHaveClass('min-h-12', 'col-span-2')
+  })
+
   it('does not show approval controls for an ordinary tool call', () => {
     const { container } = render(
       <AIToolCallCard

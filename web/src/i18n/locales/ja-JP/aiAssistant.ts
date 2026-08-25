@@ -2,6 +2,11 @@ const aiAssistant = {
   aiAssistant: {
     open: 'Luna アシスタントを開く',
     title: 'Luna アシスタント',
+    page: {
+      backToWorkspace: 'ワークスペースに戻る',
+      unavailableTitle: 'アシスタントを利用できません',
+      unavailableDescription: 'このアカウントでは現在 Luna アシスタントを利用できません。機能とアカウント範囲を管理者に確認してください。',
+    },
     modelLabel: 'AI モデル',
     contextUsage: 'コンテキスト {{used}}/{{total}} · {{percent}}%',
     contextUsageUnavailable: 'Provider の使用量データはありません',
@@ -554,6 +559,8 @@ const aiAssistant = {
       returnPreviousCountdown: '{{count}} 秒',
       returnPreviousLabel: '前のセッションに戻ります。プロンプトは {{count}} 秒後に消えます',
       search: 'セッションを検索',
+      clearSearch: '検索をクリア',
+      loadError: 'セッションを読み込めませんでした。もう一度お試しください。',
       loadMore: 'さらにセッションを読み込む',
       loadingMore: 'さらにセッションを読み込み中',
       manage: '管理',

@@ -1,15 +1,13 @@
-import { useEffect, useState } from 'react'
-
 export const WINDOW_STORAGE_KEY = 'luna.ai-assistant.window.v2'
 export const LAUNCHER_STORAGE_KEY = 'luna.ai-assistant.launcher.v1'
 export const VIEWPORT_GUTTER = 24
+export const PAGE_LAUNCHER_GUTTER = 48
 export const MIN_WINDOW_WIDTH = 360
 export const MIN_WINDOW_HEIGHT = 480
 export const LAUNCHER_SIZE = 56
 export const AI_ASSISTANT_SPLIT_MIN_WIDTH = 720
 export const AI_ASSISTANT_SIDEBAR_WIDTH = 264
 
-const DESKTOP_MEDIA_QUERY = '(min-width: 640px)'
 const DEFAULT_WINDOW_WIDTH = 420
 const DEFAULT_WINDOW_HEIGHT = 640
 
@@ -38,11 +36,11 @@ function viewportSize(): { width: number, height: number } {
   }
 }
 
-export function clampAssistantPosition(position: Position, width: number, height: number): Position {
+export function clampAssistantPosition(position: Position, width: number, height: number, gutter = VIEWPORT_GUTTER): Position {
   const viewport = viewportSize()
   return {
-    x: Math.min(Math.max(VIEWPORT_GUTTER, viewport.width - width - VIEWPORT_GUTTER), Math.max(VIEWPORT_GUTTER, position.x)),
-    y: Math.min(Math.max(VIEWPORT_GUTTER, viewport.height - height - VIEWPORT_GUTTER), Math.max(VIEWPORT_GUTTER, position.y)),
+    x: Math.min(Math.max(gutter, viewport.width - width - gutter), Math.max(gutter, position.x)),
+    y: Math.min(Math.max(gutter, viewport.height - height - gutter), Math.max(gutter, position.y)),
   }
 }
 
@@ -80,15 +78,4 @@ export function readLauncherPosition(): Position {
   }
   catch {}
   return defaultLauncherPosition()
-}
-
-export function useDesktopViewport() {
-  const [desktop, setDesktop] = useState(() => typeof window === 'undefined' || !window.matchMedia || window.matchMedia(DESKTOP_MEDIA_QUERY).matches)
-  useEffect(() => {
-    const media = window.matchMedia(DESKTOP_MEDIA_QUERY)
-    const update = () => setDesktop(media.matches)
-    media.addEventListener('change', update)
-    return () => media.removeEventListener('change', update)
-  }, [])
-  return desktop
 }

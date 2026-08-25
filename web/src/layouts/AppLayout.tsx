@@ -1,8 +1,9 @@
+import type { AIAssistantView } from '@/components/common/ai-assistant/route-state'
 import { useQuery } from '@tanstack/react-query'
 import { Bell, ChartNoAxesCombined, CircleUserRound, Container, CreditCard, Fingerprint, FolderKanban, GitBranch, LayoutDashboard, Menu, ScrollText, Server, Settings, Sparkles, Store, Users } from 'lucide-react'
-import { lazy, useCallback, useEffect, useMemo, useState } from 'react'
+import { lazy, useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Link, Navigate, NavLink, Outlet, useLocation } from 'react-router-dom'
+import { Link, Navigate, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import { api } from '@/api'
 import { useDocumentTitle } from '@/app/document-title'
@@ -10,8 +11,22 @@ import { usePublicConfig } from '@/app/public-config-context'
 import { useSession } from '@/app/session-context'
 import { AccountMenu } from '@/components/common/account-menu'
 import { DeferredAIAssistantLauncher } from '@/components/common/ai-assistant/deferred-launcher'
-import { AI_ASSISTANT_OPEN_EVENT } from '@/components/common/ai-assistant/events'
-import { LAUNCHER_STORAGE_KEY, readLauncherPosition } from '@/components/common/ai-assistant/layout'
+import { AIAssistantDesktopHost } from '@/components/common/ai-assistant/desktop-host'
+import {
+  clampAssistantPosition,
+  LAUNCHER_SIZE,
+  LAUNCHER_STORAGE_KEY,
+  PAGE_LAUNCHER_GUTTER,
+  readLauncherPosition,
+} from '@/components/common/ai-assistant/layout'
+import { useAIAssistantPresentationMode } from '@/components/common/ai-assistant/presentation-mode'
+import {
+  AI_ASSISTANT_ROUTE_PATH,
+  createAIAssistantRouteState,
+  isAIAssistantRoutePath,
+} from '@/components/common/ai-assistant/route-state'
+import { useAIAssistantRuntime } from '@/components/common/ai-assistant/runtime-context'
+import { AIAssistantRuntimeProvider } from '@/components/common/ai-assistant/runtime-provider'
 import { InboxTrigger } from '@/components/common/inbox/inbox-trigger'
 import { LazyLoadBoundary } from '@/components/common/lazy-load-boundary'
 import { AppLoadingState } from '@/components/common/loading-states'
@@ -30,8 +45,8 @@ import {
   SidebarMenuItem,
 } from '@/components/ui/sidebar'
 import { cn } from '@/lib/utils'
+import { AIAssistantPage } from '@/pages/ai-assistant/AIAssistantPage'
 
-const AiAssistant = lazy(async () => ({ default: (await import('@/components/common/ai-assistant/assistant')).AiAssistant }))
 const DebugFloatingPanel = import.meta.env.DEV
   ? lazy(() => import('@/components/common/debug-floating-panel').then(module => ({ default: module.DebugFloatingPanel })))
   : null
@@ -96,6 +111,7 @@ const navSections: NavSection[] = [
 
 const pageMetaRules = [
   { match: (pathname: string) => pathname === '/dashboard', titleKey: 'dashboard' },
+  { match: (pathname: string) => isAIAssistantRoutePath(pathname), titleKey: 'aiAssistant.title' },
   { match: (pathname: string) => /^\/projects\/[^/]+\/apps\/[^/]+$/.test(pathname), titleKey: 'apps.detailTitle' },
   { match: (pathname: string) => /^\/projects\/[^/]+\/members$/.test(pathname), titleKey: 'projectMembers.title' },
   { match: (pathname: string) => /^\/projects\/[^/]+\/apps$/.test(pathname), titleKey: 'apps.title' },
@@ -146,8 +162,6 @@ export function AppLayout() {
   const configs = usePublicConfig()
   const location = useLocation()
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
-  const [assistantMounted, setAssistantMounted] = useState(false)
-  const [deferredAssistantPosition, setDeferredAssistantPosition] = useState(readLauncherPosition)
   const [topbarTabsTarget, setTopbarTabsTarget] = useState<HTMLDivElement | null>(null)
   const [topbarToolsTarget, setTopbarToolsTarget] = useState<HTMLDivElement | null>(null)
   const [hasTopbarTabs, registerTopbarTabs] = useChromeSlotPresence()
@@ -164,14 +178,7 @@ export function AppLayout() {
     enabled: Boolean(user),
   })
   const enabledAICapabilities = aiCapabilities.data?.enabled ? aiCapabilities.data : undefined
-  useEffect(() => {
-    const mountAssistant = () => setAssistantMounted(true)
-    window.addEventListener(AI_ASSISTANT_OPEN_EVENT, mountAssistant)
-    return () => window.removeEventListener(AI_ASSISTANT_OPEN_EVENT, mountAssistant)
-  }, [])
-  useEffect(() => {
-    localStorage.setItem(LAUNCHER_STORAGE_KEY, JSON.stringify(deferredAssistantPosition))
-  }, [deferredAssistantPosition])
+  const assistantRoute = isAIAssistantRoutePath(location.pathname)
   const projectRouteMatch = location.pathname.match(/^\/projects\/([^/]+)/)
   const appRouteMatch = location.pathname.match(/^\/projects\/([^/]+)\/apps\/([^/]+)$/)
   const currentProject = useQuery({
@@ -277,18 +284,11 @@ export function AppLayout() {
                     <SidebarMenuItem key={item.to}>
                       {item.action
                         ? (
-                            <button
-                              className={sidebarMenuButtonClassName(false)}
-                              title={t(item.labelKey)}
-                              type="button"
-                              onClick={() => {
-                                onNavigate?.()
-                                window.dispatchEvent(new CustomEvent(AI_ASSISTANT_OPEN_EVENT))
-                              }}
-                            >
-                              <item.icon className="size-4 shrink-0" />
-                              <span className="min-w-0 flex-1 truncate text-left text-sm leading-none">{t(item.labelKey)}</span>
-                            </button>
+                            <AIAssistantNavButton
+                              icon={item.icon}
+                              label={t(item.labelKey)}
+                              onNavigate={onNavigate}
+                            />
                           )
                         : (
                             <NavLink
@@ -327,83 +327,198 @@ export function AppLayout() {
   }
 
   return (
-    <div className="workspace-canvas h-dvh overflow-hidden text-foreground">
-      <div className="flex h-full w-full min-w-0 overflow-hidden">
-        <Sidebar>
-          {renderSidebarContent()}
-        </Sidebar>
-        <Sheet open={mobileSidebarOpen} onOpenChange={setMobileSidebarOpen}>
-          <SheetContent className="workspace-canvas flex h-full w-72 max-w-[86vw] flex-col gap-0 overflow-hidden p-0 sm:max-w-80" side="left">
-            <SheetTitle className="sr-only">{configs['site.title'] || t('appName')}</SheetTitle>
-            {renderSidebarContent(() => setMobileSidebarOpen(false))}
-          </SheetContent>
-        </Sheet>
+    <AIAssistantRuntimeProvider capabilities={enabledAICapabilities}>
+      {assistantRoute
+        ? (
+            <div className="h-dvh min-h-0 overflow-hidden bg-surface text-foreground">
+              <main className="size-full min-h-0 overflow-hidden">
+                {aiCapabilities.isPending
+                  ? <AppLoadingState logoUrl={configs['site.logoUrl'] || '/luna-devops-logo.svg'} title={t('aiAssistant.title')} />
+                  : <AIAssistantPage />}
+              </main>
+            </div>
+          )
+        : (
+            <div className="workspace-canvas h-dvh overflow-hidden text-foreground">
+              <div className="flex h-full w-full min-w-0 overflow-hidden">
+                <Sidebar>
+                  {renderSidebarContent()}
+                </Sidebar>
+                <Sheet open={mobileSidebarOpen} onOpenChange={setMobileSidebarOpen}>
+                  <SheetContent className="workspace-canvas flex h-full w-72 max-w-[86vw] flex-col gap-0 overflow-hidden p-0 sm:max-w-80" side="left">
+                    <SheetTitle className="sr-only">{configs['site.title'] || t('appName')}</SheetTitle>
+                    {renderSidebarContent(() => setMobileSidebarOpen(false))}
+                  </SheetContent>
+                </Sheet>
 
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-          <WorkspaceChromeTargetsProvider value={workspaceChromeTargets}>
-            <header
-              className={cn(
-                'relative z-20 flex shrink-0 flex-col bg-transparent',
-                hasTopbarSecondaryRow ? 'h-26 lg:h-30' : 'h-14 lg:h-18',
-              )}
-            >
-              <div className="flex h-14 min-w-0 shrink-0 items-center gap-2 px-page-inline lg:h-18">
-                <Button
-                  aria-label={t('nav.openSidebar')}
-                  className="shrink-0 lg:hidden"
-                  size="icon"
-                  variant="ghost"
-                  onClick={() => setMobileSidebarOpen(true)}
-                >
-                  <Menu className="size-5" />
-                </Button>
-                <div className="min-w-0 flex-1">
-                  <TopbarTitle crumbs={pageMeta.titleCrumbs} prefix={pageMeta.titlePrefix} title={pageMeta.title} />
+                <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+                  <WorkspaceChromeTargetsProvider value={workspaceChromeTargets}>
+                    <header
+                      className={cn(
+                        'relative z-20 flex shrink-0 flex-col bg-transparent',
+                        hasTopbarSecondaryRow ? 'h-26 lg:h-30' : 'h-14 lg:h-18',
+                      )}
+                    >
+                      <div className="flex h-14 min-w-0 shrink-0 items-center gap-2 px-page-inline lg:h-18">
+                        <Button
+                          aria-label={t('nav.openSidebar')}
+                          className="shrink-0 lg:hidden"
+                          size="icon"
+                          variant="ghost"
+                          onClick={() => setMobileSidebarOpen(true)}
+                        >
+                          <Menu className="size-5" />
+                        </Button>
+                        <div className="min-w-0 flex-1">
+                          <TopbarTitle crumbs={pageMeta.titleCrumbs} prefix={pageMeta.titlePrefix} title={pageMeta.title} />
+                        </div>
+                        <InboxTrigger />
+                        <AccountMenu
+                          logoutPending={isLoggingOut}
+                          user={user}
+                          onLogout={handleLogout}
+                        />
+                      </div>
+                      <div className={cn('flex min-w-0 shrink-0 items-center gap-3 overflow-hidden px-page-inline', hasTopbarSecondaryRow ? 'h-12' : 'h-0')}>
+                        <div ref={setTopbarTabsTarget} className="min-w-0 flex-1 overflow-hidden" data-slot="workspace-topbar-tabs" />
+                        <div ref={setTopbarToolsTarget} className="hidden min-w-0 shrink-0 items-center justify-end empty:hidden lg:flex" data-slot="workspace-topbar-tools" />
+                      </div>
+                    </header>
+                    <main
+                      className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden bg-transparent px-page-inline py-page-block transition-colors"
+                    >
+                      <div className="flex min-h-full min-w-0 flex-col gap-group py-0">
+                        {pageMeta.backNavigation && <PageBackNavigation {...pageMeta.backNavigation} />}
+                        <PageMotion key={pageMotionKey} className="w-full min-w-0 max-w-full">
+                          <Outlet />
+                        </PageMotion>
+                      </div>
+                    </main>
+                  </WorkspaceChromeTargetsProvider>
                 </div>
-                <InboxTrigger />
-                <AccountMenu
-                  logoutPending={isLoggingOut}
-                  user={user}
-                  onLogout={handleLogout}
-                />
               </div>
-              <div className={cn('flex min-w-0 shrink-0 items-center gap-3 overflow-hidden px-page-inline', hasTopbarSecondaryRow ? 'h-12' : 'h-0')}>
-                <div ref={setTopbarTabsTarget} className="min-w-0 flex-1 overflow-hidden" data-slot="workspace-topbar-tabs" />
-                <div ref={setTopbarToolsTarget} className="hidden min-w-0 shrink-0 items-center justify-end empty:hidden lg:flex" data-slot="workspace-topbar-tools" />
-              </div>
-            </header>
-            <main
-              className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden bg-transparent px-page-inline py-page-block transition-colors"
-            >
-              <div className="flex min-h-full min-w-0 flex-col gap-group py-0">
-                {pageMeta.backNavigation && <PageBackNavigation {...pageMeta.backNavigation} />}
-                <PageMotion key={pageMotionKey} className="w-full min-w-0 max-w-full">
-                  <Outlet />
-                </PageMotion>
-              </div>
-            </main>
-          </WorkspaceChromeTargetsProvider>
-        </div>
-      </div>
-      {DebugFloatingPanel && (
-        <LazyLoadBoundary fallback={null} resetKey="debug-floating-panel">
-          <DebugFloatingPanel />
-        </LazyLoadBoundary>
-      )}
-      {enabledAICapabilities && !assistantMounted && (
-        <DeferredAIAssistantLauncher
-          label={t('aiAssistant.open')}
-          position={deferredAssistantPosition}
-          onOpen={() => setAssistantMounted(true)}
-          onPositionChange={setDeferredAssistantPosition}
-        />
-      )}
-      {enabledAICapabilities && assistantMounted && (
-        <LazyLoadBoundary fallback={null} resetKey="ai-assistant">
-          <AiAssistant capabilities={enabledAICapabilities} initiallyOpen />
-        </LazyLoadBoundary>
-      )}
-    </div>
+              {DebugFloatingPanel && (
+                <LazyLoadBoundary fallback={null} resetKey="debug-floating-panel">
+                  <DebugFloatingPanel />
+                </LazyLoadBoundary>
+              )}
+              <AIAssistantEntryHost />
+            </div>
+          )}
+    </AIAssistantRuntimeProvider>
+  )
+}
+
+function AIAssistantEntryHost() {
+  const { t } = useTranslation()
+  const location = useLocation()
+  const navigate = useNavigate()
+  const runtime = useAIAssistantRuntime()
+  const { enabled, open, rememberWorkspaceLocation, transitionAssistantToPage } = runtime
+  const presentationMode = useAIAssistantPresentationMode(location.pathname)
+  const [assistantView, setAssistantView] = useState<AIAssistantView>('chat')
+
+  useLayoutEffect(() => {
+    if (!enabled || presentationMode !== 'page' || !open)
+      return
+
+    rememberWorkspaceLocation(location)
+    transitionAssistantToPage()
+    navigate(AI_ASSISTANT_ROUTE_PATH, {
+      state: createAIAssistantRouteState(location, assistantView),
+    })
+  }, [assistantView, enabled, location, navigate, open, presentationMode, rememberWorkspaceLocation, transitionAssistantToPage])
+
+  if (!runtime.enabled)
+    return null
+
+  if (presentationMode === 'window')
+    return <AIAssistantDesktopHost view={assistantView} onViewChange={setAssistantView} />
+
+  if (runtime.open)
+    return <div aria-hidden="true" className="fixed inset-0 z-50 bg-surface" data-ai-assistant-transition />
+
+  return (
+    <AIAssistantPageLauncher
+      label={t('aiAssistant.open')}
+      onOpen={() => {
+        runtime.rememberWorkspaceLocation(location)
+        navigate(AI_ASSISTANT_ROUTE_PATH, {
+          state: createAIAssistantRouteState(location),
+        })
+      }}
+    />
+  )
+}
+
+function AIAssistantPageLauncher({ label, onOpen }: { label: string, onOpen: () => void }) {
+  const [position, setPosition] = useState(() => clampAssistantPosition(
+    readLauncherPosition(),
+    LAUNCHER_SIZE,
+    LAUNCHER_SIZE,
+    PAGE_LAUNCHER_GUTTER,
+  ))
+
+  useEffect(() => {
+    localStorage.setItem(LAUNCHER_STORAGE_KEY, JSON.stringify(position))
+  }, [position])
+
+  useEffect(() => {
+    const clampToViewport = () => setPosition(current => clampAssistantPosition(
+      current,
+      LAUNCHER_SIZE,
+      LAUNCHER_SIZE,
+      PAGE_LAUNCHER_GUTTER,
+    ))
+    window.addEventListener('resize', clampToViewport)
+    return () => window.removeEventListener('resize', clampToViewport)
+  }, [])
+
+  return (
+    <DeferredAIAssistantLauncher
+      label={label}
+      position={position}
+      onOpen={onOpen}
+      onPositionChange={nextPosition => setPosition(clampAssistantPosition(
+        nextPosition,
+        LAUNCHER_SIZE,
+        LAUNCHER_SIZE,
+        PAGE_LAUNCHER_GUTTER,
+      ))}
+    />
+  )
+}
+
+function AIAssistantNavButton({ icon: Icon, label, onNavigate }: {
+  icon: typeof LayoutDashboard
+  label: string
+  onNavigate?: () => void
+}) {
+  const location = useLocation()
+  const navigate = useNavigate()
+  const runtime = useAIAssistantRuntime()
+  const presentationMode = useAIAssistantPresentationMode(location.pathname)
+
+  return (
+    <button
+      className={sidebarMenuButtonClassName(false)}
+      title={label}
+      type="button"
+      onClick={() => {
+        onNavigate?.()
+        if (presentationMode === 'window') {
+          runtime.openAssistant()
+          return
+        }
+        runtime.rememberWorkspaceLocation(location)
+        navigate(AI_ASSISTANT_ROUTE_PATH, {
+          state: createAIAssistantRouteState(location),
+        })
+      }}
+    >
+      <Icon className="size-4 shrink-0" />
+      <span className="min-w-0 flex-1 truncate text-left text-sm leading-none">{label}</span>
+    </button>
   )
 }
 
