@@ -54,7 +54,7 @@ Cache breakdown availability depends on the model Provider's official response. 
 ### Analyze prompt-cache hit rate
 
 1. Select the period to analyze in the Agent observability overview. The overview hit rate aggregates the official model usage included in that period.
-2. When you open a trace detail, narrow the scope to the included model calls in the current trace.
+2. When you open a trace detail, narrow the scope to model calls marked `assistant` in the current trace. Title generation and context summarization are marked `title` and `summary`, so their Tokens do not affect assistant-response usage or cache hit rate.
 3. At both levels, sum the token counts first and then calculate the official weighted hit rate: `Σ cache-read input tokens / Σ input tokens`. Do not take the arithmetic mean of per-request hit rates.
 
 Cache-write tokens are already included in input tokens, so they belong in the denominator but never in the cache-hit numerator. A missing standalone cache-write breakdown does not change the total-input denominator. If any included official usage omits its cache-read breakdown, or the summed input-token count is zero, display the hit rate as `—` (`null` in the API). Display `0%` only when the summed input-token count is positive and cache-read usage was explicitly reported as zero.

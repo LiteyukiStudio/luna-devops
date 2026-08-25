@@ -11,6 +11,9 @@
   "scripts": {
     "dev": "tsx watch --env-file-if-exists=../.env --env-file-if-exists=.env.local src/index.ts",
     "build": "tsc -p tsconfig.build.json",
+    "benchmark:prompt-cache": "tsx benchmarks/prompt-cache/cli.ts run",
+    "benchmark:prompt-cache:compare": "tsx benchmarks/prompt-cache/cli.ts compare",
+    "benchmark:prompt-cache:report": "tsx benchmarks/prompt-cache/cli.ts report",
     "lint": "eslint .",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",

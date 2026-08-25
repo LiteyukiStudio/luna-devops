@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { DeepSeekChatCompletionsProvider } from "../src/provider/deepseek-chat-completions.js"
-import { modelUsageSpanAttributes, OpenAIChatCompletionsProvider } from "../src/provider/openai-chat-completions.js"
+import { modelRequestSpanAttributes, modelUsageSpanAttributes, OpenAIChatCompletionsProvider } from "../src/provider/openai-chat-completions.js"
 import { ProviderRequestError } from "../src/provider/provider-error.js"
 
-const options = { baseUrl: "https://provider.example/v1", apiKey: "secret", channelAffinityEnabled: true, model: "model-a", timeoutMs: 5_000 }
+const options = { baseUrl: "https://provider.example/v1", apiKey: "secret", channelAffinityEnabled: true, promptCacheKeyEnabled: false, model: "model-a", timeoutMs: 5_000 }
 const request = { messages: [{ role: "user" as const, content: "hello" }], maxOutputTokens: 100 }
 
 afterEach(() => vi.unstubAllGlobals())
@@ -51,6 +51,71 @@ describe("OpenAIChatCompletionsProvider official usage", () => {
     await provider.complete(request)
     expect(new Headers(fetchMock.mock.calls[3]?.[1]?.headers).has("x-luna-affinity-key")).toBe(false)
     expect(new Headers(fetchMock.mock.calls[4]?.[1]?.headers).has("x-luna-affinity-key")).toBe(false)
+  })
+
+  it("sends a distinct stable prompt cache key only for opted-in conversation-bound requests", async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({
+      id: "chatcmpl_prompt_cache", model: "model-a", choices: [{ message: { content: "done" } }],
+      usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+    }), { status: 200 }))
+    vi.stubGlobal("fetch", fetchMock)
+    const provider = new OpenAIChatCompletionsProvider({ ...options, promptCacheKeyEnabled: true })
+    const assistantRequest = {
+      ...request,
+      conversationId: "aicnv_private_value",
+      budget: { runId: "airun_private", ownerUserId: "usr_private", operation: "assistant" as const },
+    }
+
+    await provider.complete(assistantRequest)
+    await provider.complete(assistantRequest)
+    await provider.complete({ ...assistantRequest, conversationId: "aicnv_other_value" })
+    await new OpenAIChatCompletionsProvider(options).complete(assistantRequest)
+    await provider.complete(request)
+    await provider.complete({ ...assistantRequest, budget: { ...assistantRequest.budget, operation: "summary" } })
+
+    const bodies = fetchMock.mock.calls.map(([, init]) => {
+      const raw = init?.body
+      if (typeof raw !== "string") throw new TypeError("expected JSON request body")
+      return JSON.parse(raw) as Record<string, unknown>
+    })
+    const keys = bodies.map(body => body.prompt_cache_key)
+    expect(keys[0]).toMatch(/^[a-f0-9]{64}$/)
+    expect(keys[1]).toBe(keys[0])
+    expect(keys[2]).not.toBe(keys[0])
+    expect(String(keys[0])).not.toContain("aicnv_private_value")
+    expect(keys[3]).toBeUndefined()
+    expect(keys[4]).toBeUndefined()
+    expect(keys[5]).toBeUndefined()
+    const affinity = new Headers(fetchMock.mock.calls[0]?.[1]?.headers).get("x-luna-affinity-key")
+    expect(keys[0]).not.toBe(affinity)
+  })
+
+  it("never sends prompt_cache_key through the DeepSeek adapter", async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({
+      id: "deepseek_prompt_cache", model: "deepseek-chat", choices: [{ message: { content: "done" } }],
+      usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+    }), { status: 200 }))
+    vi.stubGlobal("fetch", fetchMock)
+
+    await new DeepSeekChatCompletionsProvider({ ...options, promptCacheKeyEnabled: true })
+      .complete({
+        ...request,
+        conversationId: "aicnv_private_value",
+        budget: { runId: "airun_private", ownerUserId: "usr_private", operation: "assistant" },
+      })
+
+    expect(requestBody(fetchMock)).not.toHaveProperty("prompt_cache_key")
+  })
+
+  it.each(["assistant", "summary", "title"] as const)("records the low-cardinality %s model-request purpose", (operation) => {
+    expect(modelRequestSpanAttributes({
+      ...request,
+      budget: { runId: "airun_private", ownerUserId: "usr_private", operation },
+    })).toMatchObject({ "luna.gen_ai.request.purpose": operation })
+  })
+
+  it("omits a model-request purpose for the unbudgeted health probe", () => {
+    expect(modelRequestSpanAttributes(request)).not.toHaveProperty("luna.gen_ai.request.purpose")
   })
 
   it("accepts a complete non-streaming official usage payload", async () => {

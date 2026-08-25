@@ -135,7 +135,7 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
 }
 
 function provider(baseUrl: string): OpenAIChatCompletionsProvider {
-  return new OpenAIChatCompletionsProvider({ baseUrl, apiKey: "test-key", channelAffinityEnabled: true, model: "model-http", timeoutMs: 5_000 })
+  return new OpenAIChatCompletionsProvider({ baseUrl, apiKey: "test-key", channelAffinityEnabled: true, promptCacheKeyEnabled: false, model: "model-http", timeoutMs: 5_000 })
 }
 
 function modelRequest(content: string) {

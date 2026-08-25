@@ -7,6 +7,7 @@ import type { ModelProvider } from "../src/provider/provider.js"
 
 afterEach(() => {
   vi.useRealTimers()
+  vi.unstubAllGlobals()
 })
 
 describe("ManagedProvider", () => {
@@ -16,6 +17,48 @@ describe("ManagedProvider", () => {
       ...configForModels(),
       provider: { ...configForModels().provider, baseUrl: "https://api.deepseek.com/v1" },
     }, "deepseek-chat")).toBeInstanceOf(DeepSeekChatCompletionsProvider)
+    expect(createConfiguredProvider({
+      ...configForModels(),
+      provider: { ...configForModels().provider, baseUrl: "https://notdeepseek.com/v1" },
+    }, "model-a")).toBeInstanceOf(OpenAIChatCompletionsProvider)
+    expect(createConfiguredProvider({
+      ...configForModels(),
+      provider: { ...configForModels().provider, baseUrl: "https://gateway.example/v1", providerCompatibility: "deepseek" },
+    }, "deepseek-chat")).toBeInstanceOf(DeepSeekChatCompletionsProvider)
+    expect(createConfiguredProvider({
+      ...configForModels(),
+      provider: { ...configForModels().provider, baseUrl: "https://api.deepseek.com/v1", providerCompatibility: "openai" },
+    }, "deepseek-chat")).toBeInstanceOf(OpenAIChatCompletionsProvider)
+  })
+
+  it.each([
+    ["official OpenAI auto mode", "https://api.openai.com/v1", "auto", "auto", true],
+    ["unknown gateway auto mode", "https://gateway.example/v1", "auto", "auto", false],
+    ["confirmed compatible gateway", "https://gateway.example/v1", "openai", "enabled", true],
+    ["DeepSeek adapter defense", "https://gateway.example/v1", "deepseek", "enabled", false],
+  ] as const)("gates prompt_cache_key for %s", async (_name, baseUrl, providerCompatibility, promptCacheKeyMode, expected) => {
+    const fetchMock = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({
+      id: "chatcmpl_gate", model: "model-a", choices: [{ message: { content: "done" } }],
+      usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+    }), { status: 200 }))
+    vi.stubGlobal("fetch", fetchMock)
+    const config = configForModels()
+    const provider = createConfiguredProvider({
+      ...config,
+      provider: { ...config.provider, baseUrl, providerCompatibility, promptCacheKeyMode },
+    }, "model-a")
+
+    await provider.complete({
+      messages: [{ role: "user", content: "hello" }],
+      maxOutputTokens: 10,
+      conversationId: "aicnv_test",
+      budget: { runId: "airun_test", ownerUserId: "usr_test", operation: "assistant" },
+    })
+
+    const raw = fetchMock.mock.calls[0]?.[1]?.body
+    if (typeof raw !== "string") throw new TypeError("expected JSON request body")
+    const body = JSON.parse(raw) as Record<string, unknown>
+    expect(Object.hasOwn(body, "prompt_cache_key")).toBe(expected)
   })
 
   it("uses a short-lived authoritative configuration and applies updates", async () => {
@@ -84,6 +127,8 @@ function configForModels() {
     provider: {
       baseUrl: "https://provider.example/v1/",
       apiKey: "secret-value",
+      providerCompatibility: "auto" as const,
+      promptCacheKeyMode: "auto" as const,
       channelAffinityEnabled: true,
       configured: true,
       models: [

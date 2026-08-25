@@ -71,6 +71,16 @@ const settings = {
     baseUrlHint: 'OpenAI 호환 HTTPS API 주소를 사용합니다. 예: https://api.example.com/v1.',
     apiKey: 'API Key',
     apiKeyHint: '시크릿은 플랫폼에서 암호화 저장되고 편집 시 다시 표시되지 않습니다.',
+    providerCompatibility: 'Provider 호환 유형',
+    providerCompatibilityHint: 'Agent가 사용할 요청 및 사용량 어댑터를 선택합니다. 자동 모드는 공식 DeepSeek 호스트 이름만 감지하므로 게이트웨이가 업스트림 주소를 숨기면 명시적으로 선택하세요.',
+    providerCompatibilityAuto: '자동 감지',
+    providerCompatibilityOpenAI: 'OpenAI 호환',
+    providerCompatibilityDeepSeek: 'DeepSeek 호환',
+    promptCacheKeyMode: 'Prompt 캐시 키',
+    promptCacheKeyModeHint: '가명 키는 대화에 연결된 어시스턴트 요청에만 사용됩니다. 자동 모드는 api.openai.com에만 전송합니다. 게이트웨이 또는 엔드포인트 지원을 확인한 경우에만 활성화하세요. DeepSeek 어댑터는 전송하지 않습니다.',
+    promptCacheKeyModeAuto: '자동(OpenAI 공식 주소만)',
+    promptCacheKeyModeEnabled: '확인된 엔드포인트에서 활성화',
+    promptCacheKeyModeDisabled: '비활성화',
     channelAffinity: '채널 어피니티',
     channelAffinityDescription: '같은 대화의 요청에 대해 호환 게이트웨이로 안정적인 가명 어피니티 키를 전송합니다.',
     channelAffinityHelp: '채널 어피니티 정보',
@@ -186,6 +196,8 @@ const settings = {
   configDefinitions: {
     ai: {
       provider: {
+        compatibility: { label: 'Provider 호환 유형', description: 'Agent가 사용할 요청 및 사용량 어댑터를 선택합니다. 자동 모드는 공식 DeepSeek 호스트 이름만 감지합니다.' },
+        prompt_cache_key_mode: { label: 'Prompt 캐시 키', description: '대화에 연결된 어시스턴트 요청의 가명 prompt_cache_key를 제어합니다. 자동 모드는 OpenAI 공식 주소에만 전송합니다.' },
         channel_affinity_enabled: { label: '채널 어피니티', description: '대화에 연결된 모델 요청에 가명 어피니티 키를 전송합니다. 기본적으로 활성화됩니다.' },
       },
     },

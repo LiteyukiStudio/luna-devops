@@ -1,5 +1,14 @@
 # TODO
 
+## 2026-08-25 Agent Provider 安全缓存能力
+
+- [x] 用显式 Provider 兼容类型解决网关隐藏 DeepSeek hostname 后的适配器误判，同时保留直连地址的自动识别默认行为。
+- [x] 为会话助手请求增加 capability-gated 匿名 `prompt_cache_key`；未知兼容端点默认不发送，DeepSeek 适配器强制截断。
+- [x] 将动态工作流参考、用户/页面上下文与历史工具交互规范化为按 Turn 可重放的追加式消息组，并稳定工具序列与单项裁剪结果。
+- [x] 模型 Span 增加 `assistant|summary|title` 低基数 purpose，并让 Trace typed usage 只聚合 `assistant`。
+- [x] 增加可跨 checkout 重放的确定性 Prompt Cache 前缀基准、功能等价断言、JSON 对比与无外网 HTML 报告生成器。
+- [x] 补齐双层 New API Header 转发与叶子截断说明、中英文文档、OpenAPI/Agent/Web 契约和分层测试。
+
 ## 2026-08-25 Agent Prompt 缓存命中率分层观测
 
 - [x] 在 Agent 观测总览按选中时段展示官方加权缓存命中率，在 Trace 详情按当前 Trace 展示同口径结果；统一使用 `Σcache-read input tokens / Σinput tokens`，不得平均逐次请求比例。

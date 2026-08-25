@@ -71,6 +71,16 @@ const settings = {
     baseUrlHint: '使用 OpenAI 兼容的 HTTPS API 地址，例如 https://api.example.com/v1。',
     apiKey: 'API Key',
     apiKeyHint: '密钥由平台加密保存，编辑时不回显。',
+    providerCompatibility: 'Provider 兼容类型',
+    providerCompatibilityHint: '选择 Agent 使用的请求和用量适配器。自动模式只识别官方 DeepSeek 地址；网关隐藏上游地址时应显式选择。',
+    providerCompatibilityAuto: '自动识别',
+    providerCompatibilityOpenAI: 'OpenAI 兼容',
+    providerCompatibilityDeepSeek: 'DeepSeek 兼容',
+    promptCacheKeyMode: 'Prompt 缓存键',
+    promptCacheKeyModeHint: '匿名键只用于会话内助手请求。自动模式仅向 api.openai.com 发送；只有确认网关或端点支持时才应启用。DeepSeek 适配器始终不发送。',
+    promptCacheKeyModeAuto: '自动（仅 OpenAI 官方地址）',
+    promptCacheKeyModeEnabled: '为已确认兼容的端点启用',
+    promptCacheKeyModeDisabled: '禁用',
     channelAffinity: '渠道亲和性',
     channelAffinityDescription: '启用后，同一会话会向兼容网关发送稳定的匿名亲和键。',
     channelAffinityHelp: '渠道亲和性说明',
@@ -186,6 +196,8 @@ const settings = {
   configDefinitions: {
     ai: {
       provider: {
+        compatibility: { label: 'Provider 兼容类型', description: '选择 Agent 使用的请求与用量适配器；自动模式只识别官方 DeepSeek 地址。' },
+        prompt_cache_key_mode: { label: 'Prompt 缓存键', description: '控制是否为会话内助手请求发送匿名 prompt_cache_key；自动模式仅向 OpenAI 官方地址发送。' },
         channel_affinity_enabled: { label: '渠道亲和性', description: '启用后，Agent 为会话内模型请求发送匿名亲和键；关闭后不发送，默认启用。' },
       },
     },

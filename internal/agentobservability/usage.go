@@ -33,7 +33,7 @@ func aggregateTraceTokenUsage(spans []TraceSpan) *TokenUsage {
 	cacheReadComplete, cacheWriteComplete, reasoningComplete := true, true, true
 
 	for _, span := range spans {
-		if !isTraceModelSpan(span.Attributes) {
+		if !isTraceModelSpan(span.Attributes) || strings.TrimSpace(span.Attributes["luna.gen_ai.request.purpose"]) != "assistant" {
 			continue
 		}
 		status := strings.TrimSpace(span.Attributes["luna.gen_ai.usage.status"])

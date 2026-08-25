@@ -7,6 +7,10 @@ export class DeepSeekChatCompletionsProvider extends OpenAIChatCompletionsProvid
     return "deepseek"
   }
 
+  protected override supportsPromptCacheKey(): boolean {
+    return false
+  }
+
   protected override buildRequestBody(request: ModelRequest, stream: boolean): Record<string, unknown> {
     const official = super.buildRequestBody(request, stream)
     const { max_completion_tokens: maxCompletionTokens, messages, ...rest } = official

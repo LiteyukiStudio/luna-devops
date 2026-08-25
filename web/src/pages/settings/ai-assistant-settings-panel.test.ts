@@ -7,6 +7,8 @@ const validValues = {
   baseUrl: 'https://api.example.com/v1',
   apiKey: '',
   apiKeyConfigured: true,
+  providerCompatibility: 'auto' as const,
+  promptCacheKeyMode: 'auto' as const,
   channelAffinityEnabled: true,
   webProxyEnabled: false,
   webProxyPool: '',
@@ -49,6 +51,8 @@ describe('aI assistant admin settings', () => {
       'ai.assistant.enabled': false,
       'ai.access.mode': 'all_authenticated',
       'ai.provider.base_url': 'https://api.example.com/v1',
+      'ai.provider.compatibility': 'auto',
+      'ai.provider.prompt_cache_key_mode': 'auto',
       'ai.provider.channel_affinity_enabled': true,
       'ai.web.proxy_enabled': false,
       'ai.runtime.provider_timeout_seconds': 30,
@@ -75,6 +79,18 @@ describe('aI assistant admin settings', () => {
   it('publishes the channel-affinity switch as an explicit boolean', () => {
     expect(aiSettingsPayload(validValues)['ai.provider.channel_affinity_enabled']).toBe(true)
     expect(aiSettingsPayload({ ...validValues, channelAffinityEnabled: false })['ai.provider.channel_affinity_enabled']).toBe(false)
+  })
+
+  it('publishes explicit Provider compatibility and prompt cache key policies', () => {
+    const payload = aiSettingsPayload({
+      ...validValues,
+      providerCompatibility: 'deepseek',
+      promptCacheKeyMode: 'disabled',
+    })
+    expect(payload['ai.provider.compatibility']).toBe('deepseek')
+    expect(payload['ai.provider.prompt_cache_key_mode']).toBe('disabled')
+    expect(aiSettingsSchema.safeParse({ ...validValues, providerCompatibility: 'unknown' }).success).toBe(false)
+    expect(aiSettingsSchema.safeParse({ ...validValues, promptCacheKeyMode: 'unknown' }).success).toBe(false)
   })
 
   it('supports restricting assistant access to platform administrators', () => {

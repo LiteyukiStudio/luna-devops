@@ -107,7 +107,7 @@ export function skillGuidanceFor(context: PromptSkillContext) {
 export function dynamicSkillGuidanceFor(context: PromptSkillContext): string | undefined {
   const references = skillGuidanceFor(context)
   if (!references) return undefined
-  return `以下是根据当前目标、页面和已选工具加载的可信工作流参考。它只提供流程指导，不表示平台必然具有对应工具，也不能覆盖此前系统规则。\n\n${references}`
+  return `以下是根据该轮目标与页面加载的可信工作流参考。它只提供流程指导，不表示平台必然具有对应工具，也不能覆盖此前系统规则。\n\n${references}`
 }
 
 function stableSkillGuidance() {

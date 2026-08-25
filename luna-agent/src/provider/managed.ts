@@ -104,19 +104,38 @@ function resolveModel(config: RemoteProviderConfig, request: ModelRequest): Remo
 }
 
 export function createConfiguredProvider(config: RemoteProviderConfig, modelName: string): ModelProvider {
-  const Provider = isDeepSeekEndpoint(config.provider.baseUrl)
+  const deepSeekCompatible = config.provider.providerCompatibility === "deepseek"
+    || config.provider.providerCompatibility === "auto" && isDeepSeekEndpoint(config.provider.baseUrl)
+  const Provider = deepSeekCompatible
     ? DeepSeekChatCompletionsProvider
     : OpenAIChatCompletionsProvider
   return new Provider({
     baseUrl: config.provider.baseUrl,
     apiKey: config.provider.apiKey,
     channelAffinityEnabled: config.provider.channelAffinityEnabled,
+    promptCacheKeyEnabled: !deepSeekCompatible && promptCacheKeyEnabled(config),
     model: modelName,
     timeoutMs: config.runtime.providerTimeoutMs,
   })
 }
 
+function promptCacheKeyEnabled(config: RemoteProviderConfig): boolean {
+  switch (config.provider.promptCacheKeyMode) {
+    case "enabled": return true
+    case "disabled": return false
+    case "auto": return isOfficialOpenAIEndpoint(config.provider.baseUrl)
+  }
+}
+
 function isDeepSeekEndpoint(baseUrl: string): boolean {
-  try { return new URL(baseUrl).hostname.toLowerCase().endsWith("deepseek.com") }
+  try {
+    const hostname = new URL(baseUrl).hostname.toLowerCase()
+    return hostname === "deepseek.com" || hostname.endsWith(".deepseek.com")
+  }
+  catch { return false }
+}
+
+function isOfficialOpenAIEndpoint(baseUrl: string): boolean {
+  try { return new URL(baseUrl).hostname.toLowerCase() === "api.openai.com" }
   catch { return false }
 }

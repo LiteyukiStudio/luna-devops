@@ -8568,6 +8568,14 @@ components:
             code: { type: string }
             requestId: { type: string }
             traceId: { type: string }
+    AIProviderCompatibility:
+      type: string
+      enum: [auto, openai, deepseek]
+      description: auto preserves direct-endpoint detection; select openai or deepseek explicitly when a compatible gateway hides the leaf Provider hostname.
+    AIPromptCacheKeyMode:
+      type: string
+      enum: [auto, enabled, disabled]
+      description: auto sends prompt_cache_key only to the official OpenAI endpoint; enabled opts a confirmed compatible endpoint in, while disabled never sends it.
     AIProviderInternalConfig:
       type: object
       properties:
@@ -8577,10 +8585,12 @@ components:
           properties:
             baseUrl: { type: string, format: uri }
             apiKey: { type: string, writeOnly: true, x-luna-sensitive: true, description: In-memory Agent use only; never returned to browser APIs. }
+            providerCompatibility: { $ref: "#/components/schemas/AIProviderCompatibility" }
+            promptCacheKeyMode: { $ref: "#/components/schemas/AIPromptCacheKeyMode" }
             channelAffinityEnabled: { type: boolean, description: When enabled, Agent adds a pseudonymous X-Luna-Affinity-Key header only to conversation-bound model requests. }
             configured: { type: boolean }
             models: { type: array, items: { $ref: "#/components/schemas/AIModelPricingSnapshot" } }
-          required: [baseUrl, apiKey, channelAffinityEnabled, configured, models]
+          required: [baseUrl, apiKey, providerCompatibility, promptCacheKeyMode, channelAffinityEnabled, configured, models]
         runtime:
           type: object
           properties:
@@ -8725,8 +8735,8 @@ components:
       additionalProperties: false
       required: [inputTokens, outputTokens, cacheReadInputTokens, cacheWriteInputTokens, reasoningOutputTokens, cacheHitRate]
       properties:
-        inputTokens: { type: integer, format: int64, minimum: 0, description: Provider-reported input tokens summed across model spans in this trace. }
-        outputTokens: { type: integer, format: int64, minimum: 0, description: Provider-reported output tokens summed across model spans in this trace. }
+        inputTokens: { type: integer, format: int64, minimum: 0, description: Provider-reported input tokens summed across model spans whose luna.gen_ai.request.purpose is assistant in this trace. }
+        outputTokens: { type: integer, format: int64, minimum: 0, description: Provider-reported output tokens summed across model spans whose luna.gen_ai.request.purpose is assistant in this trace. }
         cacheReadInputTokens: { type: integer, format: int64, minimum: 0, nullable: true, description: Cache-read subset of inputTokens, or null when any included model span omitted or invalidated it. }
         cacheWriteInputTokens: { type: integer, format: int64, minimum: 0, nullable: true, description: Cache-write subset of inputTokens, or null when any included model span omitted or invalidated it. }
         reasoningOutputTokens: { type: integer, format: int64, minimum: 0, nullable: true, description: Reasoning subset of outputTokens, or null when any included model span omitted or invalidated it. }
@@ -8741,7 +8751,7 @@ components:
         errorCount: { type: integer }
         usage:
           nullable: true
-          description: Typed usage for provider-reported model spans in this trace, or null when reported input/output totals are absent, ambiguous, or invalid.
+          description: Typed usage for provider-reported assistant-purpose model spans in this trace, or null when reported input/output totals are absent, ambiguous, or invalid. Summary, title, and legacy spans without an explicit purpose are excluded.
           allOf:
             - { $ref: "#/components/schemas/AgentObservabilityTraceUsage" }
         spans: { type: array, items: { $ref: "#/components/schemas/AgentObservabilityTraceSpan" } }

@@ -46,7 +46,7 @@ describe("ContextCompiler authoritative compression", () => {
     const complete = vi.fn(async () => ({ text: summaryJSON, usage: reported(1, 1) }))
     const current = "新输入".repeat(200_000)
 
-    const result = await new ContextCompiler(repository, { complete }, options).compile(compileInput([], { currentUserMessage: { role: "user", content: current } }))
+    const result = await new ContextCompiler(repository, { complete }, options).compile(compileInput([], { currentMessages: [{ role: "user", content: current }] }))
 
     expect(complete).not.toHaveBeenCalled()
     expect(result.compressionOutcome).toBe("not_needed")
@@ -118,7 +118,7 @@ function compileInput(history: ConversationHistoryEntry[], overrides: Record<str
   return {
     conversationId: "aicnv_test", beforeTurnIndex: history.length,
     systemMessage: { role: "system" as const, content: "系统提示" },
-    currentUserMessage: { role: "user" as const, content: "继续" },
+    currentMessages: [{ role: "user" as const, content: "继续" }],
     history, continuationMessages: [], tools: [], model,
     ...overrides,
   }

@@ -54,9 +54,41 @@ func TestAIProviderModelsIncludeAgentRequiredTokenLimits(t *testing.T) {
 	}
 }
 
+func TestAIProviderInternalOpenAPIRequiresCapabilityPolicies(t *testing.T) {
+	document := readOpenAPIDocument(t, apiRepositoryRoot(t)+"/openapi/openapi.yaml")
+	schemas := document["components"].(map[string]any)["schemas"].(map[string]any)
+	internal := schemas["AIProviderInternalConfig"].(map[string]any)
+	provider := internal["properties"].(map[string]any)["provider"].(map[string]any)
+	required, _ := schemaStringList(provider["required"])
+	for _, field := range []string{"providerCompatibility", "promptCacheKeyMode"} {
+		if !containsSchemaField(required, field) {
+			t.Fatalf("AIProviderInternalConfig.provider does not require %s: %#v", field, required)
+		}
+	}
+
+	wants := map[string][]string{
+		"AIProviderCompatibility": {"auto", "openai", "deepseek"},
+		"AIPromptCacheKeyMode":    {"auto", "enabled", "disabled"},
+	}
+	for name, want := range wants {
+		schema := schemas[name].(map[string]any)
+		got, _ := schemaStringList(schema["enum"])
+		if len(got) != len(want) {
+			t.Fatalf("%s enum = %#v, want %#v", name, got, want)
+		}
+		for index := range want {
+			if got[index] != want[index] {
+				t.Fatalf("%s enum = %#v, want %#v", name, got, want)
+			}
+		}
+	}
+}
+
 func TestAIProviderConfigVersionIncludesRuntimePolicy(t *testing.T) {
 	values := map[string]string{
 		"ai.provider.base_url":                 "https://example.com/v1",
+		"ai.provider.compatibility":            "auto",
+		"ai.provider.prompt_cache_key_mode":    "auto",
 		"ai.provider.channel_affinity_enabled": "true",
 		"ai.runtime.provider_timeout_seconds":  "30",
 		"ai.runtime.max_request_retries":       "5",
@@ -73,6 +105,32 @@ func TestAIProviderConfigVersionIncludesRuntimePolicy(t *testing.T) {
 	withoutAffinity := aiProviderConfigVersion(values, "secret-v1")
 	if updated == withoutAffinity {
 		t.Fatal("channel affinity policy change did not update Provider config version")
+	}
+	values["ai.provider.compatibility"] = "deepseek"
+	withExplicitCompatibility := aiProviderConfigVersion(values, "secret-v1")
+	if withoutAffinity == withExplicitCompatibility {
+		t.Fatal("Provider compatibility change did not update Provider config version")
+	}
+	values["ai.provider.prompt_cache_key_mode"] = "enabled"
+	withPromptCacheKey := aiProviderConfigVersion(values, "secret-v1")
+	if withExplicitCompatibility == withPromptCacheKey {
+		t.Fatal("prompt cache key policy change did not update Provider config version")
+	}
+}
+
+func TestAIProviderSelectConfigPreservesValidValuesAndDefaultsInvalidStorage(t *testing.T) {
+	values := aiConfigDefaults()
+	values["ai.provider.compatibility"] = "deepseek"
+	values["ai.provider.prompt_cache_key_mode"] = "enabled"
+	if got := aiProviderSelectConfig(values, "ai.provider.compatibility"); got != "deepseek" {
+		t.Fatalf("Provider compatibility = %q, want deepseek", got)
+	}
+	if got := aiProviderSelectConfig(values, "ai.provider.prompt_cache_key_mode"); got != "enabled" {
+		t.Fatalf("prompt cache key mode = %q, want enabled", got)
+	}
+	values["ai.provider.compatibility"] = "legacy-invalid"
+	if got := aiProviderSelectConfig(values, "ai.provider.compatibility"); got != "auto" {
+		t.Fatalf("invalid Provider compatibility = %q, want auto", got)
 	}
 }
 

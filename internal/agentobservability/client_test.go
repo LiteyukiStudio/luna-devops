@@ -52,19 +52,19 @@ func TestTempoTraceDetailNormalizesAgentSpans(t *testing.T) {
 func TestTraceTokenUsageUsesWeightedReportedModelUsage(t *testing.T) {
 	usage := aggregateTraceTokenUsage([]TraceSpan{
 		{Attributes: map[string]string{
-			"gen_ai.operation.name": "chat", "gen_ai.usage.input_tokens": "100", "gen_ai.usage.output_tokens": "10",
+			"gen_ai.operation.name": "chat", "luna.gen_ai.request.purpose": "assistant", "gen_ai.usage.input_tokens": "100", "gen_ai.usage.output_tokens": "10",
 			"gen_ai.usage.cache_read.input_tokens": "20", "gen_ai.usage.cache_write.input_tokens": "5", "gen_ai.usage.reasoning.output_tokens": "2",
 		}},
 		{Attributes: map[string]string{
-			"gen_ai.operation.name": "generate_content", "gen_ai.usage.input_tokens": "300", "gen_ai.usage.output_tokens": "20",
+			"gen_ai.operation.name": "generate_content", "luna.gen_ai.request.purpose": "assistant", "gen_ai.usage.input_tokens": "300", "gen_ai.usage.output_tokens": "20",
 			"gen_ai.usage.cache_read.input_tokens": "30", "gen_ai.usage.cache_write.input_tokens": "10", "gen_ai.usage.reasoning.output_tokens": "3",
 		}},
 		{Attributes: map[string]string{
-			"gen_ai.operation.name": "execute_tool", "gen_ai.usage.input_tokens": "999", "gen_ai.usage.output_tokens": "999",
+			"gen_ai.operation.name": "chat", "luna.gen_ai.request.purpose": "summary", "gen_ai.usage.input_tokens": "999", "gen_ai.usage.output_tokens": "999",
 			"gen_ai.usage.cache_read.input_tokens": "999",
 		}},
 		{Attributes: map[string]string{
-			"gen_ai.operation.name": "chat", "luna.gen_ai.usage.status": "unavailable",
+			"gen_ai.operation.name": "chat", "luna.gen_ai.request.purpose": "assistant", "luna.gen_ai.usage.status": "unavailable",
 			"luna.gen_ai.usage.unavailable_reason": "missing_usage",
 		}},
 	})
@@ -83,7 +83,7 @@ func TestTraceTokenUsageUsesWeightedReportedModelUsage(t *testing.T) {
 }
 
 func TestTempoTraceDetailBuildsTypedUsageFromNormalizedAttributes(t *testing.T) {
-	const payload = `{"batches":[{"resource":{"attributes":[{"key":"service.name","value":{"stringValue":"luna-agent"}}]},"scopeSpans":[{"spans":[{"spanId":"model","name":"chat gpt-5","kind":"SPAN_KIND_CLIENT","startTimeUnixNano":"1000000000","endTimeUnixNano":"2000000000","attributes":[{"key":"gen_ai.operation.name","value":{"stringValue":"chat"}},{"key":"gen_ai.usage.input_tokens","value":{"intValue":"80"}},{"key":"gen_ai.usage.output_tokens","value":{"intValue":"20"}},{"key":"gen_ai.usage.cache_read.input_tokens","value":{"intValue":"20"}}],"status":{"code":"STATUS_CODE_OK"}}]}]}]}`
+	const payload = `{"batches":[{"resource":{"attributes":[{"key":"service.name","value":{"stringValue":"luna-agent"}}]},"scopeSpans":[{"spans":[{"spanId":"model","name":"chat gpt-5","kind":"SPAN_KIND_CLIENT","startTimeUnixNano":"1000000000","endTimeUnixNano":"2000000000","attributes":[{"key":"gen_ai.operation.name","value":{"stringValue":"chat"}},{"key":"luna.gen_ai.request.purpose","value":{"stringValue":"assistant"}},{"key":"gen_ai.usage.input_tokens","value":{"intValue":"80"}},{"key":"gen_ai.usage.output_tokens","value":{"intValue":"20"}},{"key":"gen_ai.usage.cache_read.input_tokens","value":{"intValue":"20"}}],"status":{"code":"STATUS_CODE_OK"}}]}]}]}`
 	var response tempoTraceResponse
 	if err := json.Unmarshal([]byte(payload), &response); err != nil {
 		t.Fatal(err)
@@ -100,7 +100,7 @@ func TestTempoTraceDetailBuildsTypedUsageFromNormalizedAttributes(t *testing.T) 
 
 func TestTraceTokenUsagePreservesNullAndExplicitZero(t *testing.T) {
 	zero := aggregateTraceTokenUsage([]TraceSpan{{Attributes: map[string]string{
-		"gen_ai.operation.name": "text_completion", "gen_ai.usage.input_tokens": "100", "gen_ai.usage.output_tokens": "0",
+		"gen_ai.operation.name": "text_completion", "luna.gen_ai.request.purpose": "assistant", "gen_ai.usage.input_tokens": "100", "gen_ai.usage.output_tokens": "0",
 		"gen_ai.usage.cache_read.input_tokens": "0",
 	}}})
 	if zero == nil || zero.CacheReadInputTokens == nil || *zero.CacheReadInputTokens != 0 || zero.CacheHitRate == nil || *zero.CacheHitRate != 0 {
@@ -111,14 +111,14 @@ func TestTraceTokenUsagePreservesNullAndExplicitZero(t *testing.T) {
 	}
 
 	missing := aggregateTraceTokenUsage([]TraceSpan{{Attributes: map[string]string{
-		"gen_ai.operation.name": "chat", "gen_ai.usage.input_tokens": "100", "gen_ai.usage.output_tokens": "10",
+		"gen_ai.operation.name": "chat", "luna.gen_ai.request.purpose": "assistant", "gen_ai.usage.input_tokens": "100", "gen_ai.usage.output_tokens": "10",
 	}}})
 	if missing == nil || missing.CacheReadInputTokens != nil || missing.CacheHitRate != nil {
 		t.Fatalf("missing cache-read usage must produce a null rate: %#v", missing)
 	}
 
 	zeroInput := aggregateTraceTokenUsage([]TraceSpan{{Attributes: map[string]string{
-		"gen_ai.operation.name": "chat", "gen_ai.usage.input_tokens": "0", "gen_ai.usage.output_tokens": "0",
+		"gen_ai.operation.name": "chat", "luna.gen_ai.request.purpose": "assistant", "gen_ai.usage.input_tokens": "0", "gen_ai.usage.output_tokens": "0",
 		"gen_ai.usage.cache_read.input_tokens": "0",
 	}}})
 	if zeroInput == nil || zeroInput.CacheReadInputTokens == nil || zeroInput.CacheHitRate != nil {
@@ -130,13 +130,13 @@ func TestTraceTokenUsageRejectsAmbiguousOrMalformedTotals(t *testing.T) {
 	maxInt64 := strconv.FormatInt(math.MaxInt64, 10)
 	tests := map[string][]TraceSpan{
 		"no model usage":   {{Attributes: map[string]string{"gen_ai.operation.name": "execute_tool"}}},
-		"unavailable only": {{Attributes: map[string]string{"gen_ai.operation.name": "chat", "luna.gen_ai.usage.status": "unavailable"}}},
-		"missing output":   {{Attributes: map[string]string{"gen_ai.operation.name": "chat", "gen_ai.usage.input_tokens": "1"}}},
-		"negative input":   {{Attributes: map[string]string{"gen_ai.operation.name": "chat", "gen_ai.usage.input_tokens": "-1", "gen_ai.usage.output_tokens": "1"}}},
-		"unknown status":   {{Attributes: map[string]string{"gen_ai.operation.name": "chat", "luna.gen_ai.usage.status": "partial", "gen_ai.usage.input_tokens": "1", "gen_ai.usage.output_tokens": "1"}}},
+		"unavailable only": {{Attributes: map[string]string{"gen_ai.operation.name": "chat", "luna.gen_ai.request.purpose": "assistant", "luna.gen_ai.usage.status": "unavailable"}}},
+		"missing output":   {{Attributes: map[string]string{"gen_ai.operation.name": "chat", "luna.gen_ai.request.purpose": "assistant", "gen_ai.usage.input_tokens": "1"}}},
+		"negative input":   {{Attributes: map[string]string{"gen_ai.operation.name": "chat", "luna.gen_ai.request.purpose": "assistant", "gen_ai.usage.input_tokens": "-1", "gen_ai.usage.output_tokens": "1"}}},
+		"unknown status":   {{Attributes: map[string]string{"gen_ai.operation.name": "chat", "luna.gen_ai.request.purpose": "assistant", "luna.gen_ai.usage.status": "partial", "gen_ai.usage.input_tokens": "1", "gen_ai.usage.output_tokens": "1"}}},
 		"overflow": {
-			{Attributes: map[string]string{"gen_ai.operation.name": "chat", "gen_ai.usage.input_tokens": maxInt64, "gen_ai.usage.output_tokens": "0"}},
-			{Attributes: map[string]string{"gen_ai.operation.name": "chat", "gen_ai.usage.input_tokens": "1", "gen_ai.usage.output_tokens": "0"}},
+			{Attributes: map[string]string{"gen_ai.operation.name": "chat", "luna.gen_ai.request.purpose": "assistant", "gen_ai.usage.input_tokens": maxInt64, "gen_ai.usage.output_tokens": "0"}},
+			{Attributes: map[string]string{"gen_ai.operation.name": "chat", "luna.gen_ai.request.purpose": "assistant", "gen_ai.usage.input_tokens": "1", "gen_ai.usage.output_tokens": "0"}},
 		},
 	}
 	for name, spans := range tests {
@@ -150,7 +150,7 @@ func TestTraceTokenUsageRejectsAmbiguousOrMalformedTotals(t *testing.T) {
 
 func TestTraceTokenUsageInvalidBreakdownDoesNotBecomeZero(t *testing.T) {
 	usage := aggregateTraceTokenUsage([]TraceSpan{{Attributes: map[string]string{
-		"gen_ai.operation.name": "chat", "gen_ai.usage.input_tokens": "10", "gen_ai.usage.output_tokens": "2",
+		"gen_ai.operation.name": "chat", "luna.gen_ai.request.purpose": "assistant", "gen_ai.usage.input_tokens": "10", "gen_ai.usage.output_tokens": "2",
 		"gen_ai.usage.cache_read.input_tokens": "11", "gen_ai.usage.cache_write.input_tokens": "bad",
 		"gen_ai.usage.reasoning.output_tokens": "3",
 	}}})
@@ -159,6 +159,20 @@ func TestTraceTokenUsageInvalidBreakdownDoesNotBecomeZero(t *testing.T) {
 	}
 	if usage.CacheReadInputTokens != nil || usage.CacheWriteInputTokens != nil || usage.ReasoningOutputTokens != nil || usage.CacheHitRate != nil {
 		t.Fatalf("invalid trace breakdowns must remain null: %#v", usage)
+	}
+}
+
+func TestTraceTokenUsageRequiresExplicitAssistantPurpose(t *testing.T) {
+	for name, attributes := range map[string]map[string]string{
+		"legacy missing purpose": {"gen_ai.operation.name": "chat", "gen_ai.usage.input_tokens": "10", "gen_ai.usage.output_tokens": "2"},
+		"summary":                {"gen_ai.operation.name": "chat", "luna.gen_ai.request.purpose": "summary", "gen_ai.usage.input_tokens": "10", "gen_ai.usage.output_tokens": "2"},
+		"title":                  {"gen_ai.operation.name": "chat", "luna.gen_ai.request.purpose": "title", "gen_ai.usage.input_tokens": "10", "gen_ai.usage.output_tokens": "2"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if usage := aggregateTraceTokenUsage([]TraceSpan{{Attributes: attributes}}); usage != nil {
+				t.Fatalf("non-assistant trace usage = %#v, want nil", usage)
+			}
+		})
 	}
 }
 

@@ -155,7 +155,7 @@ describe("conversation repository", () => {
     const repository = new TestRepository()
     const conversation = await repository.createConversation("usr_a", "history")
     const first = await repository.createTurn("usr_a", {
-      conversationId: conversation.id, input: "先检查构建", pageContext: {}, idempotencyKey: "history-1",
+      conversationId: conversation.id, input: "先检查构建", pageContext: { routeName: "build.detail", resourceId: "bld_1" }, idempotencyKey: "history-1",
     })
     await repository.appendItem({
       runId: first.run.id,
@@ -172,6 +172,7 @@ describe("conversation repository", () => {
       turnIndex: 0,
       user: "先检查构建",
       assistant: "构建失败在测试阶段。",
+      pageContext: { routeName: "build.detail", resourceId: "bld_1" },
     }])
   })
 

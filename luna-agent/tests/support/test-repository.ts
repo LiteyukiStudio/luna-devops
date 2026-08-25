@@ -428,6 +428,7 @@ export class TestRepository implements Repository {
     const bounded = fromEnd ? ordered.slice(-limit) : ordered.slice(0, limit)
     return bounded
       .map((item) => {
+        const selectedRun = this.runs.get(item.selectedRunId)
         const assistant = this.items
           .filter(candidate => candidate.runId === item.selectedRunId && candidate.type === "assistant_message")
           .sort((a, b) => a.timelineIndex - b.timelineIndex)
@@ -437,11 +438,12 @@ export class TestRepository implements Repository {
         const toolInteractions = this.items
           .filter(candidate => candidate.runId === item.selectedRunId && ["tool_call", "tool_result"].includes(candidate.type))
           .sort((a, b) => a.timelineIndex - b.timelineIndex)
-          .map(candidate => ({ type: candidate.type, status: candidate.status, content: structuredClone(candidate.content), createdAt: candidate.createdAt }))
+          .map(candidate => ({ type: candidate.type, status: candidate.status, content: structuredClone(candidate.content) }))
         return {
           turnIndex: item.turnIndex,
           user: item.input,
           assistant,
+          pageContext: structuredClone(selectedRun?.pageContext ?? {}),
           ...(toolInteractions.length ? { toolInteractions } : {}),
         }
       })

@@ -150,6 +150,14 @@ suite("PostgresRepository (Drizzle) integration", () => {
     const executionInput = await repository.getExecutionInput(created.run.id)
     expect(executionInput?.pageContext).toEqual({ nested: { a: [1, 2] } })
     expect(executionInput?.toolInteractions).toHaveLength(1)
+
+    const next = await repository.createTurn(owner, {
+      conversationId: conversation.id, input: "继续", pageContext: {},
+      idempotencyKey: key("order-next"), actorSessionId: key("session"),
+    })
+    const prior = (await repository.getExecutionInput(next.run.id))?.history.find(item => item.turnIndex === created.turn.turnIndex)
+    expect(prior?.pageContext).toEqual({ nested: { a: [1, 2] } })
+    expect(prior?.toolInteractions?.[0]).not.toHaveProperty("createdAt")
   })
 
   it("persists a sparse terminal stream batch and advances the authoritative high-watermark", async () => {

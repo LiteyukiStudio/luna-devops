@@ -54,7 +54,7 @@ OTEL_RESOURCE_ATTRIBUTES=deployment.environment.name=production,k8s.cluster.name
 ### 分析 Prompt 缓存命中率
 
 1. 在 Agent 观测总览选择要分析的时段。总览命中率汇总该时段内纳入统计的官方模型用量。
-2. 打开 Trace 详情时，将范围收窄到当前 Trace 内纳入统计的模型调用。
+2. 打开 Trace 详情时，将范围收窄到当前 Trace 中标记为 `assistant` 的模型调用；标题生成和上下文摘要分别标记为 `title` 与 `summary`，不会混入助手回复的 Token 与缓存命中率。
 3. 两个层级都先分别汇总 Token，再计算官方加权命中率：`Σ缓存读取输入 Token / Σ输入 Token`。不要对每次请求的命中率做算术平均。
 
 缓存写入已经包含在输入 Token 中，因此属于分母，但不属于缓存命中分子。单独的缓存写入明细缺失不会改变总输入分母。若任一纳入统计的官方用量缺少缓存读取明细，或汇总输入 Token 为零，命中率显示为 `—`（API 中为 `null`）；只有汇总输入 Token 大于零且缓存读取明确汇总为零时，才显示 `0%`。

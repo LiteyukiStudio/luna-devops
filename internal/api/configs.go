@@ -60,6 +60,22 @@ var configDefinitions = []configDefinition{
 	{Key: "ai.provider.base_url", Label: "AI API 地址", Type: "string", Default: ""},
 	{Key: "ai.provider.api_key", Label: "AI API Key", Type: "secret", Default: ""},
 	{
+		Key:         "ai.provider.compatibility",
+		Label:       "Provider 兼容类型",
+		Description: "选择 Agent 使用的请求与用量适配器；auto 仅对官方 DeepSeek 地址自动识别，网关地址应显式选择。",
+		Type:        "select",
+		Default:     "auto",
+		Options:     []string{"auto", "openai", "deepseek"},
+	},
+	{
+		Key:         "ai.provider.prompt_cache_key_mode",
+		Label:       "Prompt 缓存键",
+		Description: "控制是否为会话内助手请求发送匿名 prompt_cache_key；auto 仅向 OpenAI 官方地址发送。",
+		Type:        "select",
+		Default:     "auto",
+		Options:     []string{"auto", "enabled", "disabled"},
+	},
+	{
 		Key:         "ai.provider.channel_affinity_enabled",
 		Label:       "渠道亲和性",
 		Description: "启用后，Agent 为会话内模型请求发送匿名亲和键；关闭后不发送，默认启用。",

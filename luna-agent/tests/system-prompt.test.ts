@@ -68,6 +68,8 @@ describe("versioned system prompt", () => {
       "task-completion",
     ])
     expect(prompt.match(/<LUNA_DEVOPS_REFERENCE name=/g)).toHaveLength(3)
+    expect(prompt).toContain("根据该轮目标与页面加载")
+    expect(prompt).not.toContain("已选工具加载")
     expect(prompt).not.toContain('<LUNA_DEVOPS_REFERENCE name="application-diagnostics">')
     expect(prompt).not.toContain('<LUNA_DEVOPS_REFERENCE name="source-build-release">')
     expect(prompt.length).toBeLessThan(50_000)

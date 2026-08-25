@@ -71,6 +71,16 @@ const settings = {
     baseUrlHint: 'Use an OpenAI-compatible HTTPS API URL, such as https://api.example.com/v1.',
     apiKey: 'API key',
     apiKeyHint: 'The key is encrypted by the platform and is never displayed when editing.',
+    providerCompatibility: 'Provider compatibility',
+    providerCompatibilityHint: 'Select the request and usage adapter. Automatic mode detects only official DeepSeek hostnames; choose a type explicitly when a gateway hides the upstream address.',
+    providerCompatibilityAuto: 'Automatic detection',
+    providerCompatibilityOpenAI: 'OpenAI-compatible',
+    providerCompatibilityDeepSeek: 'DeepSeek-compatible',
+    promptCacheKeyMode: 'Prompt cache key',
+    promptCacheKeyModeHint: 'The pseudonymous key is used only for conversation-bound assistant requests. Automatic mode sends it only to api.openai.com; enable it only after confirming gateway or endpoint support. The DeepSeek adapter never sends it.',
+    promptCacheKeyModeAuto: 'Automatic (official OpenAI only)',
+    promptCacheKeyModeEnabled: 'Enable for a confirmed endpoint',
+    promptCacheKeyModeDisabled: 'Disabled',
     channelAffinity: 'Channel affinity',
     channelAffinityDescription: 'Send a stable pseudonymous affinity key to compatible gateways for requests in the same conversation.',
     channelAffinityHelp: 'About channel affinity',
@@ -186,6 +196,8 @@ const settings = {
   configDefinitions: {
     ai: {
       provider: {
+        compatibility: { label: 'Provider compatibility', description: 'Select the request and usage adapter. Automatic mode detects only official DeepSeek hostnames.' },
+        prompt_cache_key_mode: { label: 'Prompt cache key', description: 'Control the pseudonymous prompt_cache_key for conversation-bound assistant requests. Automatic mode sends it only to the official OpenAI endpoint.' },
         channel_affinity_enabled: { label: 'Channel affinity', description: 'Send a pseudonymous affinity key for conversation-bound model requests. Enabled by default.' },
       },
     },

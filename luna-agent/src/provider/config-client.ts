@@ -8,11 +8,16 @@ import type { AIModelSnapshot } from "../domain.js"
 
 export type RemoteAIModel = AIModelSnapshot
 
+export type ProviderCompatibility = "auto" | "openai" | "deepseek"
+export type PromptCacheKeyMode = "auto" | "enabled" | "disabled"
+
 export type RemoteProviderConfig = {
   version: string
   provider: {
     baseUrl: string
     apiKey: string
+    providerCompatibility: ProviderCompatibility
+    promptCacheKeyMode: PromptCacheKeyMode
     channelAffinityEnabled: boolean
     configured: boolean
     models: RemoteAIModel[]
@@ -43,6 +48,8 @@ const remoteProviderConfigSchema = z.object({
   provider: z.object({
     baseUrl: z.string(),
     apiKey: z.string(),
+    providerCompatibility: z.enum(["auto", "openai", "deepseek"]),
+    promptCacheKeyMode: z.enum(["auto", "enabled", "disabled"]),
     channelAffinityEnabled: z.boolean(),
     configured: z.boolean(),
     models: z.array(z.object({

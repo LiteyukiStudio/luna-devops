@@ -730,19 +730,20 @@ export class PostgresRepository implements Repository {
         .from(items)
         .where(and(eq(items.runId, runId), inArray(items.type, ["tool_call", "tool_result"])))
         .orderBy(asc(items.timelineIndex)),
-      this.db.execute<{ turn_index: number, input: string, assistant: string }>(sql`
-        select recent.turn_index, recent.input,
+      this.db.execute<{ turn_index: number, input: string, page_context: Record<string, unknown>, assistant: string }>(sql`
+        select recent.turn_index, recent.input, recent.page_context,
                coalesce(string_agg(i.content->'parts'->0->>'text', E'\n' order by i.timeline_index)
                  filter (where i.type = 'assistant_message'), '') assistant
         from (
-          select turn_index, input, selected_run_id
-          from ai.turns
-          where conversation_id = ${row.conversationId} and turn_index < ${row.turnIndex}
-          order by turn_index desc
+          select t.turn_index, t.input, t.selected_run_id, r.page_context
+          from ai.turns t
+          inner join ai.runs r on r.id = t.selected_run_id
+          where t.conversation_id = ${row.conversationId} and t.turn_index < ${row.turnIndex}
+          order by t.turn_index desc
           limit ${historyTurnWindow}
         ) recent
         left join ai.items i on i.run_id = recent.selected_run_id
-        group by recent.turn_index, recent.input
+        group by recent.turn_index, recent.input, recent.page_context
         order by recent.turn_index
       `),
       this.db.select({
@@ -751,7 +752,6 @@ export class PostgresRepository implements Repository {
         status: items.status,
         content: items.content,
         timelineIndex: items.timelineIndex,
-        createdAt: items.createdAt,
       })
         .from(turns)
         .innerJoin(items, eq(items.runId, turns.selectedRunId))
@@ -794,8 +794,9 @@ export class PostgresRepository implements Repository {
         turnIndex: item.turn_index,
         user: item.input,
         assistant: item.assistant,
+        pageContext: item.page_context,
         ...((toolInteractionsByTurn.get(item.turn_index)?.length ?? 0) > 0
-          ? { toolInteractions: toolInteractionsByTurn.get(item.turn_index)!.map(tool => ({ type: tool.type, status: tool.status, content: tool.content, createdAt: tool.createdAt.toISOString() })) }
+          ? { toolInteractions: toolInteractionsByTurn.get(item.turn_index)!.map(tool => ({ type: tool.type, status: tool.status, content: tool.content })) }
           : {}),
       })),
       conversation: { title: row.title, titleSource: row.titleSource },
@@ -813,8 +814,10 @@ export class PostgresRepository implements Repository {
       turnIndex: turns.turnIndex,
       input: turns.input,
       selectedRunId: turns.selectedRunId,
+      pageContext: runs.pageContext,
     })
       .from(turns)
+      .innerJoin(runs, eq(runs.id, turns.selectedRunId))
       .where(and(
         eq(turns.conversationId, conversationId),
         gt(turns.turnIndex, afterTurnIndex),
@@ -854,6 +857,7 @@ export class PostgresRepository implements Repository {
         turnIndex: turn.turnIndex,
         user: turn.input,
         assistant,
+        pageContext: turn.pageContext,
         ...(toolInteractions.length ? { toolInteractions } : {}),
       }
     })

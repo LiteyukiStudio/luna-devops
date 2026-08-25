@@ -71,6 +71,16 @@ const settings = {
     baseUrlHint: 'OpenAI 互換の HTTPS API アドレスを使用します。例：https://api.example.com/v1。',
     apiKey: 'API Key',
     apiKeyHint: 'シークレットはプラットフォームで暗号化保存され、編集時に再表示されません。',
+    providerCompatibility: 'Provider 互換タイプ',
+    providerCompatibilityHint: 'Agent が使用するリクエストと使用量のアダプターを選択します。自動モードは公式 DeepSeek ホスト名のみを検出するため、ゲートウェイが上流アドレスを隠す場合は明示的に選択してください。',
+    providerCompatibilityAuto: '自動検出',
+    providerCompatibilityOpenAI: 'OpenAI 互換',
+    providerCompatibilityDeepSeek: 'DeepSeek 互換',
+    promptCacheKeyMode: 'Prompt キャッシュキー',
+    promptCacheKeyModeHint: '仮名化キーは会話に紐づく助手リクエストだけに使用されます。自動モードは api.openai.com にのみ送信します。ゲートウェイまたはエンドポイントの対応を確認した場合だけ有効にしてください。DeepSeek アダプターは送信しません。',
+    promptCacheKeyModeAuto: '自動（OpenAI 公式アドレスのみ）',
+    promptCacheKeyModeEnabled: '確認済みエンドポイントで有効化',
+    promptCacheKeyModeDisabled: '無効',
     channelAffinity: 'チャネルアフィニティ',
     channelAffinityDescription: '同じ会話のリクエストについて、互換ゲートウェイへ安定した仮名化アフィニティキーを送信します。',
     channelAffinityHelp: 'チャネルアフィニティについて',
@@ -186,6 +196,8 @@ const settings = {
   configDefinitions: {
     ai: {
       provider: {
+        compatibility: { label: 'Provider 互換タイプ', description: 'Agent が使用するリクエストと使用量のアダプターを選択します。自動モードは公式 DeepSeek ホスト名のみを検出します。' },
+        prompt_cache_key_mode: { label: 'Prompt キャッシュキー', description: '会話に紐づく助手リクエストの匿名 prompt_cache_key を制御します。自動モードは OpenAI 公式アドレスにのみ送信します。' },
         channel_affinity_enabled: { label: 'チャネルアフィニティ', description: '会話に紐づくモデルリクエストへ仮名化アフィニティキーを送信します。デフォルトで有効です。' },
       },
     },

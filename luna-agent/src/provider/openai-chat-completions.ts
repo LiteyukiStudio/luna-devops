@@ -20,6 +20,7 @@ export type OpenAIChatCompletionsOptions = {
   baseUrl: string
   apiKey: string
   channelAffinityEnabled: boolean
+  promptCacheKeyEnabled: boolean
   model: string
   timeoutMs: number
 }
@@ -42,6 +43,7 @@ const requestSchema = z.object({
   max_completion_tokens: nonNegativeSafeInteger.refine(value => value > 0),
   stream: z.boolean(),
   stream_options: z.object({ include_usage: z.literal(true) }).strict().optional(),
+  prompt_cache_key: z.string().regex(/^[a-f0-9]{64}$/).optional(),
   tools: z.array(z.object({
     type: z.literal("function"),
     function: z.object({
@@ -144,7 +146,7 @@ export class OpenAIChatCompletionsProvider implements ModelProvider {
 
   async complete(request: ModelRequest): Promise<ModelResponse> {
     const modelSpan = genAIModelSpan(this.options.baseUrl, this.providerName(), this.options.model, request.maxOutputTokens, false)
-    return withSpan(modelSpan.name, clientSpanOptions({ ...modelSpan.attributes, ...requestIdentity(request) }), async span => {
+    return withSpan(modelSpan.name, clientSpanOptions({ ...modelSpan.attributes, ...modelRequestSpanAttributes(request) }), async span => {
       this.recordRequest(span, request)
       const response = await this.fetchCompletion(request, false)
       const providerRequestId = response.headers.get("x-request-id") ?? undefined
@@ -179,16 +181,18 @@ export class OpenAIChatCompletionsProvider implements ModelProvider {
 
   async *stream(request: ModelRequest): AsyncIterable<ModelEvent> {
     const modelSpan = genAIModelSpan(this.options.baseUrl, this.providerName(), this.options.model, request.maxOutputTokens, true)
-    yield* withSpanStream(modelSpan.name, clientSpanOptions({ ...modelSpan.attributes, ...requestIdentity(request) }), span => this.streamAttempt(request, span))
+    yield* withSpanStream(modelSpan.name, clientSpanOptions({ ...modelSpan.attributes, ...modelRequestSpanAttributes(request) }), span => this.streamAttempt(request, span))
   }
 
   protected buildRequestBody(request: ModelRequest, stream: boolean): Record<string, unknown> {
+    const promptCacheKey = this.promptCacheKey(request)
     const parsed = requestSchema.safeParse({
       model: this.options.model,
       messages: providerMessages(request.messages),
       max_completion_tokens: request.maxOutputTokens,
       stream,
       ...(stream ? { stream_options: { include_usage: true } } : {}),
+      ...(promptCacheKey ? { prompt_cache_key: promptCacheKey } : {}),
       ...(request.tools?.length ? {
         tools: request.tools.map(tool => ({
           type: "function",
@@ -213,6 +217,10 @@ export class OpenAIChatCompletionsProvider implements ModelProvider {
 
   protected providerName(): string {
     return "openai"
+  }
+
+  protected supportsPromptCacheKey(): boolean {
+    return true
   }
 
   protected adaptUsagePayload(raw: unknown): unknown {
@@ -357,6 +365,14 @@ export class OpenAIChatCompletionsProvider implements ModelProvider {
       .digest("hex")
   }
 
+  private promptCacheKey(request: ModelRequest): string | undefined {
+    if (!this.options.promptCacheKeyEnabled || !this.supportsPromptCacheKey()
+      || !request.conversationId || request.budget?.operation !== "assistant") return undefined
+    return createHash("sha256")
+      .update(`luna.devops.prompt-cache.v1\0${request.conversationId}`)
+      .digest("hex")
+  }
+
   private recordResponse(span: Span, usage: ModelUsage, finishReason: string | undefined, toolCallCount: number, responseId?: string, responseModel?: string): void {
     span.setAttributes(modelUsageSpanAttributes(usage))
     if (usage.status === "reported") {
@@ -444,8 +460,9 @@ function transportError(error: unknown, signal?: AbortSignal): ProviderRequestEr
   return new ProviderRequestError("ai.provider_unavailable", { stage: "dispatch", requestOutcome: "unknown" })
 }
 
-function requestIdentity(request: ModelRequest): Record<string, string | boolean> {
+export function modelRequestSpanAttributes(request: ModelRequest): Record<string, string | boolean> {
   return {
+    ...(request.budget ? { "luna.gen_ai.request.purpose": request.budget.operation } : {}),
     ...(request.conversationId ? { "gen_ai.conversation.id": request.conversationId } : {}),
     ...(request.conversationCompacted !== undefined ? { "gen_ai.conversation.compacted": request.conversationCompacted } : {}),
   }

@@ -28,6 +28,8 @@ vi.mock('@/api', async (importOriginal) => {
 vi.mock('./ai-model-management', () => ({ AIModelManagement: () => null }))
 
 const runtimeDefaults = {
+  'ai.provider.compatibility': 'auto',
+  'ai.provider.prompt_cache_key_mode': 'auto',
   'ai.runtime.provider_timeout_seconds': '300',
   'ai.runtime.max_request_retries': '5',
   'ai.runtime.run_timeout_seconds': '3600',
@@ -62,7 +64,7 @@ describe('aI assistant channel affinity setting', () => {
       default: value,
       key,
       public: false,
-      type: 'number',
+      type: key.startsWith('ai.provider.') ? 'select' : 'number',
     })))
     mocks.updateConfigs.mockImplementation(async values => values)
   })
@@ -81,5 +83,12 @@ describe('aI assistant channel affinity setting', () => {
 
     await user.click(affinitySwitch)
     expect(affinitySwitch).not.toBeChecked()
+  })
+
+  it('defaults capability-sensitive Provider policies to automatic mode', async () => {
+    renderPanel()
+
+    expect(await screen.findByRole('combobox', { name: i18next.t('settings.ai.providerCompatibility') })).toHaveValue('auto')
+    expect(screen.getByRole('combobox', { name: i18next.t('settings.ai.promptCacheKeyMode') })).toHaveValue('auto')
   })
 })

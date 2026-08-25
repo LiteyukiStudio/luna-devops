@@ -71,6 +71,16 @@ const settings = {
     baseUrlHint: '使用 OpenAI 相容的 HTTPS API 地址，例如 https://api.example.com/v1。',
     apiKey: 'API Key',
     apiKeyHint: '金鑰由平臺加密儲存，編輯時不回顯。',
+    providerCompatibility: 'Provider 相容類型',
+    providerCompatibilityHint: '選擇 Agent 使用的請求與用量配接器。自動模式只識別官方 DeepSeek 位址；閘道隱藏上游位址時應明確選擇。',
+    providerCompatibilityAuto: '自動識別',
+    providerCompatibilityOpenAI: 'OpenAI 相容',
+    providerCompatibilityDeepSeek: 'DeepSeek 相容',
+    promptCacheKeyMode: 'Prompt 快取鍵',
+    promptCacheKeyModeHint: '匿名鍵只用於會話內助手請求。自動模式僅向 api.openai.com 傳送；只有確認閘道或端點支援時才應啟用。DeepSeek 配接器永不傳送。',
+    promptCacheKeyModeAuto: '自動（僅 OpenAI 官方位址）',
+    promptCacheKeyModeEnabled: '為已確認相容的端點啟用',
+    promptCacheKeyModeDisabled: '停用',
     channelAffinity: '渠道親和性',
     channelAffinityDescription: '啟用後，同一會話會向相容閘道傳送穩定的匿名親和鍵。',
     channelAffinityHelp: '渠道親和性說明',
@@ -186,6 +196,8 @@ const settings = {
   configDefinitions: {
     ai: {
       provider: {
+        compatibility: { label: 'Provider 相容類型', description: '選擇 Agent 使用的請求與用量配接器；自動模式只識別官方 DeepSeek 位址。' },
+        prompt_cache_key_mode: { label: 'Prompt 快取鍵', description: '控制是否為會話內助手請求傳送匿名 prompt_cache_key；自動模式僅向 OpenAI 官方位址傳送。' },
         channel_affinity_enabled: { label: '渠道親和性', description: '啟用後，Agent 為會話內模型請求傳送匿名親和鍵；關閉後不傳送，預設啟用。' },
       },
     },

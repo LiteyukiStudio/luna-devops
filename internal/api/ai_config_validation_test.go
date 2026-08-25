@@ -15,7 +15,8 @@ func aiConfigDefaults() map[string]string {
 
 func TestAIConfigDefinitionsCoverSpecificationCatalog(t *testing.T) {
 	expected := []string{
-		"ai.assistant.enabled", "ai.provider.base_url", "ai.provider.api_key", "ai.provider.channel_affinity_enabled",
+		"ai.assistant.enabled", "ai.provider.base_url", "ai.provider.api_key", "ai.provider.compatibility",
+		"ai.provider.prompt_cache_key_mode", "ai.provider.channel_affinity_enabled",
 		"ai.web.proxy_enabled", "ai.web.proxy_pool",
 		"ai.runtime.provider_timeout_seconds", "ai.runtime.run_timeout_seconds", "ai.runtime.agent_concurrent_runs",
 		"ai.runtime.max_request_retries",
@@ -42,6 +43,11 @@ func TestAIConfigDefinitionsCoverSpecificationCatalog(t *testing.T) {
 	}
 	if got := aiConfigDefaults()["ai.provider.channel_affinity_enabled"]; got != "true" {
 		t.Fatalf("channel affinity default = %q, want true", got)
+	}
+	for _, key := range []string{"ai.provider.compatibility", "ai.provider.prompt_cache_key_mode"} {
+		if got := aiConfigDefaults()[key]; got != "auto" {
+			t.Fatalf("%s default = %q, want auto", key, got)
+		}
 	}
 }
 
@@ -76,6 +82,26 @@ func TestAIConfigRejectsUnsafeProviderURLBeforeSaving(t *testing.T) {
 	for _, raw := range []string{"http://api.example.com/v1", "https://user:pass@api.example.com/v1"} {
 		if err := h.validateAIConfigValues(map[string]string{"ai.provider.base_url": raw}); err == nil {
 			t.Fatalf("unsafe URL accepted: %s", raw)
+		}
+	}
+}
+
+func TestAIProviderCapabilityEnumsRejectUnknownValues(t *testing.T) {
+	for key, values := range map[string][]string{
+		"ai.provider.compatibility":         {"auto", "openai", "deepseek"},
+		"ai.provider.prompt_cache_key_mode": {"auto", "enabled", "disabled"},
+	} {
+		definition := configDefinitionByKey(key)
+		if definition == nil || definition.Type != "select" {
+			t.Fatalf("%s is not a select definition", key)
+		}
+		for _, value := range values {
+			if _, err := validateConfigValues(map[string]any{key: value}); err != nil {
+				t.Errorf("%s rejected valid value %q: %v", key, value, err)
+			}
+		}
+		if _, err := validateConfigValues(map[string]any{key: "unknown"}); err == nil {
+			t.Errorf("%s accepted an unknown value", key)
 		}
 	}
 }

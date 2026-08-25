@@ -33,7 +33,7 @@ Describe the goal directly, such as “check why this application is unreachable
 
 An administrator must configure an OpenAI `chat/completions`-compatible Provider, enabled models, access scope, and personal-wallet billing under **Global Settings → AI Assistant**. Once enabled, the entry appears in the lower-right corner.
 
-When New API or another compatible gateway fronts multiple upstream channels, see [Channel affinity](/en/reference/channel-affinity) to encourage one conversation to reuse the same channel.
+When New API or another compatible gateway fronts multiple upstream channels, see [Channel affinity and prompt cache keys](/en/reference/channel-affinity) to select the hidden Provider compatibility explicitly and encourage one conversation to reuse the same channel. Unknown compatible endpoints do not receive `prompt_cache_key` by default; enable it only after confirming the complete request path supports it.
 
 If the entry is missing, ask an administrator to check enablement and account scope. If the model is temporarily unavailable, keep the conversation and retry later.
 

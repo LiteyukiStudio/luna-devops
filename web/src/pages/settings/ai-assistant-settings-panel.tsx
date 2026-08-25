@@ -31,6 +31,8 @@ const defaults: FormValues = {
   baseUrl: '',
   apiKey: '',
   apiKeyConfigured: false,
+  providerCompatibility: 'auto',
+  promptCacheKeyMode: 'auto',
   channelAffinityEnabled: true,
   webProxyEnabled: false,
   webProxyPool: '',
@@ -211,9 +213,23 @@ export function AIAssistantSettingsPanel() {
             <Field error={errors.baseUrl?.message} hint={t('settings.ai.baseUrlHint')} label={t('settings.ai.baseUrl')} required>
               <Input autoComplete="url" placeholder="https://api.example.com/v1" {...form.register('baseUrl')} />
             </Field>
+            <Field hint={t('settings.ai.providerCompatibilityHint')} label={t('settings.ai.providerCompatibility')} required>
+              <Select aria-label={t('settings.ai.providerCompatibility')} {...form.register('providerCompatibility')}>
+                <option value="auto">{t('settings.ai.providerCompatibilityAuto')}</option>
+                <option value="openai">{t('settings.ai.providerCompatibilityOpenAI')}</option>
+                <option value="deepseek">{t('settings.ai.providerCompatibilityDeepSeek')}</option>
+              </Select>
+            </Field>
           </div>
           <Field error={errors.apiKey?.message} hint={t('settings.ai.apiKeyHint')} label={t('settings.ai.apiKey')} required>
             <Input autoComplete="off" placeholder={form.getValues('apiKeyConfigured') ? t('settings.ai.secretUnchanged') : 'sk-…'} type="password" {...form.register('apiKey')} />
+          </Field>
+          <Field hint={t('settings.ai.promptCacheKeyModeHint')} label={t('settings.ai.promptCacheKeyMode')} required>
+            <Select aria-label={t('settings.ai.promptCacheKeyMode')} {...form.register('promptCacheKeyMode')}>
+              <option value="auto">{t('settings.ai.promptCacheKeyModeAuto')}</option>
+              <option value="enabled">{t('settings.ai.promptCacheKeyModeEnabled')}</option>
+              <option value="disabled">{t('settings.ai.promptCacheKeyModeDisabled')}</option>
+            </Select>
           </Field>
           <div className="flex items-start justify-between gap-4 rounded-lg bg-surface-subtle p-4">
             <div className="grid min-w-0 gap-1">
@@ -347,6 +363,8 @@ function aiSettingsFormValues(values: Record<string, string>): FormValues {
     baseUrl: values['ai.provider.base_url'] ?? '',
     apiKey: '',
     apiKeyConfigured: values['ai.provider.api_key'] === 'true',
+    providerCompatibility: providerCompatibilityValue(values['ai.provider.compatibility']),
+    promptCacheKeyMode: promptCacheKeyModeValue(values['ai.provider.prompt_cache_key_mode']),
     channelAffinityEnabled: values['ai.provider.channel_affinity_enabled'] !== 'false',
     webProxyEnabled: values['ai.web.proxy_enabled'] === 'true',
     webProxyPool: '',
@@ -376,6 +394,14 @@ function aiSettingsFormValues(values: Record<string, string>): FormValues {
     tempoToken: '',
     tempoTokenConfigured: values['ai.observability.tempo_token'] === 'true',
   }
+}
+
+function providerCompatibilityValue(value: string | undefined): FormValues['providerCompatibility'] {
+  return value === 'openai' || value === 'deepseek' ? value : 'auto'
+}
+
+function promptCacheKeyModeValue(value: string | undefined): FormValues['promptCacheKeyMode'] {
+  return value === 'enabled' || value === 'disabled' ? value : 'auto'
 }
 
 function ObservabilitySourceFields({ form, source, tenant = false }: { form: ReturnType<typeof useForm<FormValues>>, source: 'prometheus' | 'loki' | 'tempo', tenant?: boolean }) {

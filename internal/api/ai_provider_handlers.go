@@ -17,6 +17,8 @@ import (
 
 var aiProviderConfigKeys = []string{
 	"ai.provider.base_url",
+	"ai.provider.compatibility",
+	"ai.provider.prompt_cache_key_mode",
 	"ai.provider.channel_affinity_enabled",
 	"ai.runtime.provider_timeout_seconds",
 	"ai.runtime.max_request_retries",
@@ -64,6 +66,8 @@ func (h *Handlers) GetAIProviderConfigInternal(ctx *gin.Context) {
 		"provider": gin.H{
 			"baseUrl":                baseURL,
 			"apiKey":                 apiKey,
+			"providerCompatibility":  aiProviderSelectConfig(values, "ai.provider.compatibility"),
+			"promptCacheKeyMode":     aiProviderSelectConfig(values, "ai.provider.prompt_cache_key_mode"),
 			"channelAffinityEnabled": configBool(values["ai.provider.channel_affinity_enabled"]),
 			"configured":             baseURL != "" && len(models) > 0 && strings.TrimSpace(apiKey) != "",
 			"models":                 models,
@@ -71,6 +75,18 @@ func (h *Handlers) GetAIProviderConfigInternal(ctx *gin.Context) {
 		"runtime":     aiProviderRuntimeConfig(values),
 		"toolCatalog": toolCatalog,
 	})
+}
+
+func aiProviderSelectConfig(values map[string]string, key string) string {
+	definition := configDefinitionByKey(key)
+	if definition == nil || definition.Type != "select" {
+		panic("missing AI Provider select configuration definition for " + key)
+	}
+	value := strings.TrimSpace(values[key])
+	if configOptionAllowed(value, definition.Options) {
+		return value
+	}
+	return definition.Default
 }
 
 func aiProviderConfigVersionWithCatalog(base string, operations []aitool.OpenAPIOperation) string {

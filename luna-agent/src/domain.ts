@@ -55,6 +55,7 @@ export type ConversationHistoryEntry = {
   turnIndex: number
   user: string
   assistant: string
+  pageContext?: Record<string, unknown>
   toolInteractions?: Array<Record<string, unknown>>
 }
 
