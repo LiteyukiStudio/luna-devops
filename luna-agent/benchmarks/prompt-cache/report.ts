@@ -108,7 +108,10 @@ function renderSingle(result: PromptCacheBenchmarkResult): string {
         ${metricCard("相邻请求", formatInteger(result.summary.transitionCount), "逐对比较")}
         ${metricCard("加权前缀占比", formatPercent(result.summary.weightedNextRequestReuseRatio), "相对于后一个请求")}
         ${metricCard("估算公共前缀", formatInteger(result.summary.estimatedCommonPrefixTokens), "约每 4 UTF-8 字节 / Token")}
+        ${metricCard("未复用后缀", formatInteger(result.summary.uncachedSuffixBytes), "后请求字节减公共前缀")}
+        ${metricCard("Cache epoch 失效", formatInteger(result.summary.cacheEpochInvalidationTransitionCount), "压缩边界单独标记")}
       </div>
+      ${renderEpochLayers(result)}
       <div class="source-proof" aria-label="Benchmark 来源校验">
         ${sourceIdentity("Source", result)}
         ${digestIdentity("Harness", result.benchmark.harnessDigest)}
@@ -145,11 +148,14 @@ function renderComparison(comparison: PromptCacheBenchmarkComparison): string {
         ${metricCard("Optimized 前缀占比", formatPercent(optimized.summary.weightedNextRequestReuseRatio), optimized.benchmark.checkoutLabel)}
         ${metricCard("占比变化", formatSignedDecimal(summary.weightedNextRequestReusePercentagePointDelta, " pp"), deltaMeaning(summary.weightedNextRequestReusePercentagePointDelta))}
         ${metricCard("估算公共前缀变化", formatSigned(summary.estimatedCommonPrefixTokensDelta), "估算 Token")}
+        ${metricCard("未复用后缀变化", formatSigned(summary.uncachedSuffixBytesDelta, " bytes"), "负值表示改善")}
       </div>
+      ${renderEpochLayerComparison(baseline, optimized)}
       <div class="comparison-meta">
         <p><strong>${formatInteger(summary.comparableTransitionCount)}</strong> 组可比转换</p>
         <p><strong>${formatInteger(summary.missingBaselineTransitionCount)}</strong> 组缺 baseline</p>
         <p><strong>${formatInteger(summary.missingOptimizedTransitionCount)}</strong> 组缺 optimized</p>
+        <p><strong>${formatInteger(baseline.summary.cacheEpochInvalidationTransitionCount)}</strong> 组 cache epoch 失效边界</p>
       </div>
       <div class="source-proof" aria-label="Baseline 与 optimized 来源校验">
         ${sourceIdentity("Baseline", baseline)}
@@ -193,9 +199,74 @@ function methodology(): string {
         <div><dt>序列化</dt><dd>生产 OpenAI-compatible chat/completions 流式请求体的 <code>JSON.stringify</code> 结果。</dd></div>
         <div><dt>公共前缀</dt><dd>相邻请求从第一个 UTF-8 字节开始连续相同的最长长度。</dd></div>
         <div><dt>Token 估算</dt><dd><code>ceil(commonPrefixBytes / 4)</code>，仅用于稳定的 checkout 间相对比较。</dd></div>
+        <div><dt>未复用后缀</dt><dd><code>nextRequestBytes - commonPrefixBytes</code>；无需 Provider Tokenizer 即可并列观察新增或改写的请求负担。</dd></div>
+        <div><dt>Cache epoch</dt><dd>压缩替换历史时明确标记为失效边界，保留原始指标但与摘要持久化后的同 epoch 复用区分解读。</dd></div>
         <div><dt>功能门禁</dt><dd>校验消息事实、工具 Schema、会话归属和压缩摘要不变量；失败时 runner 非零退出。</dd></div>
       </dl>
     </section>`
+}
+
+function renderEpochLayers(result: PromptCacheBenchmarkResult): string {
+  const withinEpoch = cacheEpochSummary(result, "within_epoch")
+  const invalidation = cacheEpochSummary(result, "cache_epoch_invalidation")
+  return `<div class="epoch-summary-grid" aria-label="Cache epoch 分层指标">
+      ${epochSummaryCard("同一 cache epoch", withinEpoch, "摘要与历史前缀可继续复用")}
+      ${epochSummaryCard("Cache epoch 失效边界", invalidation, "压缩改写历史，原始指标仍计入总览")}
+    </div>`
+}
+
+function renderEpochLayerComparison(
+  baseline: PromptCacheBenchmarkResult,
+  optimized: PromptCacheBenchmarkResult,
+): string {
+  const baselineWithin = cacheEpochSummary(baseline, "within_epoch")
+  const optimizedWithin = cacheEpochSummary(optimized, "within_epoch")
+  const baselineInvalidation = cacheEpochSummary(baseline, "cache_epoch_invalidation")
+  const optimizedInvalidation = cacheEpochSummary(optimized, "cache_epoch_invalidation")
+  return `<div class="epoch-summary-grid" aria-label="Baseline 与 optimized 的 cache epoch 分层对比">
+      ${epochComparisonCard("同一 cache epoch", baselineWithin, optimizedWithin)}
+      ${epochComparisonCard("Cache epoch 失效边界", baselineInvalidation, optimizedInvalidation)}
+    </div>`
+}
+
+type CacheEpochSummary = {
+  transitionCount: number
+  commonPrefixBytes: number
+  nextRequestBytes: number
+  uncachedSuffixBytes: number
+  weightedNextRequestReuseRatio: number
+}
+
+function cacheEpochSummary(
+  result: PromptCacheBenchmarkResult,
+  cacheEpochTransition: PromptCacheBenchmarkComparisonTransition["cacheEpochTransition"],
+): CacheEpochSummary {
+  const transitions = result.scenarios.flatMap(scenario => scenario.transitions)
+    .filter(transition => transition.cacheEpochTransition === cacheEpochTransition)
+  const commonPrefixBytes = transitions.reduce((total, transition) => total + transition.commonPrefixBytes, 0)
+  const uncachedSuffixBytes = transitions.reduce((total, transition) => total + transition.uncachedSuffixBytes, 0)
+  const nextRequestBytes = commonPrefixBytes + uncachedSuffixBytes
+  return {
+    transitionCount: transitions.length,
+    commonPrefixBytes,
+    nextRequestBytes,
+    uncachedSuffixBytes,
+    weightedNextRequestReuseRatio: nextRequestBytes > 0 ? commonPrefixBytes / nextRequestBytes : 0,
+  }
+}
+
+function epochSummaryCard(label: string, summary: CacheEpochSummary, detail: string): string {
+  return `<article class="epoch-summary"><p class="eyebrow">${escapeHTML(label)}</p><strong>${formatPercent(summary.weightedNextRequestReuseRatio)}</strong><span>${formatInteger(summary.transitionCount)} 组转换 · 未复用 ${formatInteger(summary.uncachedSuffixBytes)} / ${formatInteger(summary.nextRequestBytes)} bytes</span><small>${escapeHTML(detail)}</small></article>`
+}
+
+function epochComparisonCard(
+  label: string,
+  baseline: CacheEpochSummary,
+  optimized: CacheEpochSummary,
+): string {
+  const reuseDelta = (optimized.weightedNextRequestReuseRatio - baseline.weightedNextRequestReuseRatio) * 100
+  const uncachedDelta = optimized.uncachedSuffixBytes - baseline.uncachedSuffixBytes
+  return `<article class="epoch-summary"><p class="eyebrow">${escapeHTML(label)}</p><strong>${formatPercent(baseline.weightedNextRequestReuseRatio)} → ${formatPercent(optimized.weightedNextRequestReuseRatio)}</strong><span>占比 ${formatSignedDecimal(reuseDelta, " pp")} · 未复用后缀 ${formatSigned(uncachedDelta)} bytes</span><small>Baseline ${formatInteger(baseline.transitionCount)} 组 / Optimized ${formatInteger(optimized.transitionCount)} 组；未复用负值更好</small></article>`
 }
 
 function renderScenario(scenario: PromptCacheBenchmarkScenario): string {
@@ -221,12 +292,14 @@ function renderTransitionTable(scenario: PromptCacheBenchmarkScenario, id: strin
   return `<div class="table-region" role="region" aria-labelledby="${id}-transition-caption" tabindex="0">
         <table>
           <caption id="${id}-transition-caption">相邻请求最长公共前缀</caption>
-          <thead><tr><th scope="col">转换</th><th scope="col">公共前缀字节</th><th scope="col">估算 Token</th><th scope="col">后请求占比</th></tr></thead>
+          <thead><tr><th scope="col">转换</th><th scope="col">缓存阶段</th><th scope="col">公共前缀字节</th><th scope="col">估算 Token</th><th scope="col">后请求占比</th><th scope="col">未复用后缀</th></tr></thead>
           <tbody>${scenario.transitions.map(transition => `<tr>
             <th scope="row"><code>${escapeHTML(transition.fromStepId)}</code> → <code>${escapeHTML(transition.toStepId)}</code></th>
+            <td>${cacheEpochBadge(transition.cacheEpochTransition)}</td>
             <td>${formatInteger(transition.commonPrefixBytes)}</td>
             <td>${formatInteger(transition.estimatedCommonPrefixTokens)}</td>
             <td>${ratioMeter(transition.nextRequestReuseRatio, `${scenario.title} ${transition.fromStepId} 到 ${transition.toStepId} 的后请求前缀占比`)}</td>
+            <td>${formatInteger(transition.uncachedSuffixBytes)} bytes</td>
           </tr>`).join("")}</tbody>
         </table>
       </div>`
@@ -262,12 +335,13 @@ function renderComparisonScenario(transitions: PromptCacheBenchmarkComparisonTra
       <div class="table-region" role="region" aria-labelledby="${id}-caption" tabindex="0">
         <table>
           <caption id="${id}-caption">Baseline 与 optimized 的相邻请求前缀对比</caption>
-          <thead><tr><th scope="col">转换</th><th scope="col">Baseline</th><th scope="col">Optimized</th><th scope="col">变化</th></tr></thead>
+          <thead><tr><th scope="col">转换</th><th scope="col">缓存阶段</th><th scope="col">Baseline</th><th scope="col">Optimized</th><th scope="col">变化</th></tr></thead>
           <tbody>${transitions.map(transition => `<tr>
             <th scope="row"><code>${escapeHTML(transition.fromStepId)}</code> → <code>${escapeHTML(transition.toStepId)}</code></th>
+            <td>${cacheEpochBadge(transition.cacheEpochTransition)}</td>
             <td>${transitionSnapshot(transition.baseline)}</td>
             <td>${transitionSnapshot(transition.optimized)}</td>
-            <td>${deltaCell(transition.delta.nextRequestReusePercentagePoints, transition.delta.commonPrefixBytes)}</td>
+            <td>${deltaCell(transition.delta.nextRequestReusePercentagePoints, transition.delta.commonPrefixBytes, transition.delta.uncachedSuffixBytes)}</td>
           </tr>`).join("")}</tbody>
         </table>
       </div>
@@ -304,13 +378,17 @@ function renderAssertions(assertions: PromptCacheBenchmarkAssertion[], id: strin
 
 function transitionSnapshot(snapshot: PromptCacheBenchmarkComparisonTransition["baseline"]): string {
   if (!snapshot) return `<span class="not-available">无对应数据</span>`
-  return `<span class="stacked-value"><strong>${formatPercent(snapshot.nextRequestReuseRatio)}</strong><span>${formatInteger(snapshot.commonPrefixBytes)} bytes · 约 ${formatInteger(snapshot.estimatedCommonPrefixTokens)} Token</span></span>`
+  return `<span class="stacked-value"><strong>${formatPercent(snapshot.nextRequestReuseRatio)}</strong><span>${formatInteger(snapshot.commonPrefixBytes)} bytes · 约 ${formatInteger(snapshot.estimatedCommonPrefixTokens)} Token</span><span>未复用 ${formatInteger(snapshot.uncachedSuffixBytes)} bytes</span></span>`
 }
 
-function deltaCell(percentagePoints: number | null, bytes: number | null): string {
-  if (percentagePoints === null || bytes === null) return `<span class="not-available">不可比较</span>`
+function deltaCell(percentagePoints: number, bytes: number, uncachedSuffixBytes: number): string {
   const tone = percentagePoints > 0 ? "positive" : percentagePoints < 0 ? "negative" : "neutral"
-  return `<span class="delta ${tone}"><strong>${escapeHTML(deltaMeaning(percentagePoints))} ${formatSignedDecimal(percentagePoints, " pp")}</strong><span>${formatSigned(bytes)} bytes</span></span>`
+  return `<span class="delta ${tone}"><strong>${escapeHTML(deltaMeaning(percentagePoints))} ${formatSignedDecimal(percentagePoints, " pp")}</strong><span>公共前缀 ${formatSigned(bytes)} bytes</span><span>未复用后缀 ${formatSigned(uncachedSuffixBytes)} bytes（负值更好）</span></span>`
+}
+
+function cacheEpochBadge(value: PromptCacheBenchmarkComparisonTransition["cacheEpochTransition"]): string {
+  const invalidated = value === "cache_epoch_invalidation"
+  return `<span class="epoch ${invalidated ? "invalidation" : "within"}">${invalidated ? "Cache epoch 失效" : "同一 cache epoch"}</span>`
 }
 
 function metricCard(label: string, value: string, detail: string): string {
@@ -431,6 +509,11 @@ function reportStyles(): string {
     .metric h3 { color: var(--muted); font-size: .9rem; font-weight: 650; }
     .metric p { margin-block-end: 0; color: var(--muted); }
     .metric .metric-value { margin-block: .3rem; color: var(--text); font-size: clamp(1.55rem, 4vw, 2.25rem); font-weight: 760; font-variant-numeric: tabular-nums; }
+    .epoch-summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr)); gap: 1rem; margin-block-start: 1rem; }
+    .epoch-summary { display: grid; gap: .25rem; padding: 1rem 1.25rem; border-radius: 1rem; background: var(--surface); }
+    .epoch-summary p, .epoch-summary strong, .epoch-summary span, .epoch-summary small { margin: 0; }
+    .epoch-summary strong { font-size: 1.25rem; font-variant-numeric: tabular-nums; }
+    .epoch-summary span, .epoch-summary small { color: var(--muted); }
     .panel { padding: clamp(1rem, 3vw, 1.5rem); }
     .method { display: grid; gap: 1.25rem; }
     .definition-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr)); gap: 1rem; margin: 0; }
@@ -467,6 +550,9 @@ function reportStyles(): string {
     .checkout-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 25rem), 1fr)); gap: 1rem; }
     .stacked-value, .delta { display: grid; gap: .1rem; }
     .stacked-value span, .delta span { color: var(--muted); font-size: .82rem; white-space: nowrap; }
+    .epoch { display: inline-flex; align-items: center; min-height: 1.75rem; padding: .2rem .55rem; border: 1px solid currentColor; border-radius: 999px; font-size: .78rem; font-weight: 700; white-space: nowrap; }
+    .epoch.invalidation { color: var(--warning); }
+    .epoch.within { color: var(--muted); }
     .delta.positive strong { color: var(--success); }
     .delta.negative strong { color: var(--danger); }
     .not-available { color: var(--muted); }

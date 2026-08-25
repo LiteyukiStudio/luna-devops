@@ -5,6 +5,7 @@
 ## 测量边界
 
 - 指标是相邻请求 JSON 序列化结果的 UTF-8 最长公共前缀字节数。
+- 每个 transition 同时记录 `uncachedSuffixBytes = nextRequestBytes - commonPrefixBytes`，避免仅用比例掩盖请求总量变化。
 - 估算 Token 固定使用 `ceil(commonPrefixBytes / 4)`，只适合 checkout 间的相对比较。
 - 这不是 Provider 实际缓存读取量、命中率、计费量或官方 usage；判断真实效果仍需生产链路上报的 `cacheReadInputTokens`。
 - JSON 只保存请求字节数、SHA-256、结构计数、比较指标和断言结果，不保存原始 Prompt 或请求正文。
@@ -14,7 +15,7 @@
 1. 同一 Run 在工具结果加入前后的多步调用。
 2. 前一 Turn 的规范化用户输入与页面上下文转入历史后的相邻 Turn。
 3. 既有工具被触碰而改变 LRU 顺序，以及新增工具。
-4. 权威上一轮 usage 触发上下文压缩的前后请求。
+4. 三个输入、页面上下文和 TurnIndex 均不同的自然相邻 Turn：首次未压缩、下一 Turn 依据权威 usage 触发压缩、再下一 Turn 复用已持久摘要。
 
 每个场景还包含功能不变量断言，覆盖消息事实、页面上下文、工具 Schema、会话归属、近期历史和结构化摘要。任一断言失败时 runner 会在写出结果后以非零状态退出。
 
@@ -24,7 +25,9 @@
 - `implementationDigest`：对参与请求编译、运行时、Provider 能力门禁、持久化和 OpenAI-compatible 序列化的固定源码清单计算 SHA-256；旧 checkout 尚不存在的新实现文件使用稳定的 `<missing>` 标记，因此同一 harness 可以回放优化前代码。
 - `harnessDigest`：对本目录的 runner、比较器、报告生成器和说明文档计算 SHA-256。
 
-结果读取采用严格一致性校验：场景、Step 与断言 ID 必须唯一；每个 transition 必须恰好对应相邻 Step；公共前缀不得超过两侧请求；Token 估算、复用比例、断言计数和所有 summary 汇总必须能从明细精确重算。缺失或篡改明细会使命令以非零状态退出。
+结果读取采用严格一致性校验：场景、Step 与断言 ID 必须唯一；每个 transition 必须恰好对应相邻 Step；公共前缀不得超过两侧请求；Token 估算、复用比例、未复用后缀、cache epoch 失效数量、断言计数和所有 summary 汇总必须能从明细精确重算。缺失或篡改明细会使命令以非零状态退出。
+
+压缩会用结构化摘要替换旧历史，因此跨越压缩边界必然开启新的缓存 epoch。基准保留这条 transition 的原始 LCP 和未复用后缀，并标记为 `cache_epoch_invalidation`；随后持久摘要继续服务下一自然 Turn 的 transition 标记为 `within_epoch`。报告不会删除、降权或把失效边界伪装成稳态命中。
 
 ## 在 baseline 与 optimized checkout 运行
 
@@ -69,6 +72,7 @@ compare 在生成结果前执行以下门禁：
 1. baseline 与 optimized 的 `harnessDigest` 必须一致，确保测量工具完全相同。
 2. 两侧 `implementationDigest` 必须不同，避免把同一实现仅换 `--label` 后伪装成优化。
 3. 场景、Step、transition、断言 ID 及说明必须逐项一致，不允许静默忽略任一侧缺失的数据。
-4. 两份输入都必须通过明细和 summary 的严格派生值校验。
+4. cache epoch 分类必须逐项一致，不能把压缩失效边界与同 epoch 稳态转换混为一谈。
+5. 两份输入都必须通过明细和 summary 的严格派生值校验。
 
-HTML 报告是无脚本、无字体/图片/CDN 的单文件，包含系统 light/dark 主题、可见键盘焦点、跳到主要内容链接、表格 caption、窄屏横向滚动、`prefers-reduced-motion` 和 A4 打印样式。测试会校验主要语义色在浅色与深色表面均达到 WCAG AA 4.5:1 对比度。
+HTML 报告将总体指标、同一 cache epoch 稳态指标和压缩失效边界指标并列展示，同时列出复用比例、公共前缀和未复用后缀；分层不删除或降权任何原始 transition。报告是无脚本、无字体/图片/CDN 的单文件，包含系统 light/dark 主题、可见键盘焦点、跳到主要内容链接、表格 caption、窄屏横向滚动、`prefers-reduced-motion` 和 A4 打印样式。测试会校验主要语义色在浅色与深色表面均达到 WCAG AA 4.5:1 对比度。

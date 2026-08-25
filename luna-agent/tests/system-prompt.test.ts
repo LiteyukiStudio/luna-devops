@@ -22,6 +22,7 @@ describe("versioned system prompt", () => {
       "绝不能提供 defaultValue",
       "随机生成必须调用平台后端 generate 动作",
       "rename_conversation 只会在平台允许助手改名时提供",
+      "平台当前轮工作流参考",
     ])
       expect(prompt).toContain(invariant)
     for (const obsolete of ["prepare_interaction_cards", "LangGraph", "titleSource"])
@@ -128,6 +129,21 @@ describe("versioned system prompt", () => {
 
   it("does not load domain references for an unrelated greeting", () => {
     expect(loadedSkillReferences({ userInput: "你好" })).toEqual([])
+  })
+
+  it("does not treat internal protocol tools as business workflow signals", () => {
+    expect(loadedSkillReferences({
+      userInput: "继续",
+      operationIds: [
+        "navigate_to_route",
+        "search_tools",
+        "get_tool_details",
+        "present_card",
+        "request_input",
+        "request_choice",
+        "rename_conversation",
+      ],
+    })).toEqual([])
   })
 
   it("caps progressively loaded references", () => {

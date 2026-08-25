@@ -5,19 +5,21 @@ import {
   type PromptCacheBenchmarkTransition,
 } from "./benchmark.js"
 
-export const promptCacheBenchmarkComparisonSchemaVersion = "luna.agent.prompt-cache-benchmark-comparison.v2" as const
+export const promptCacheBenchmarkComparisonSchemaVersion = "luna.agent.prompt-cache-benchmark-comparison.v3" as const
 
 export type PromptCacheBenchmarkComparisonTransition = {
   scenarioId: string
   scenarioTitle: string
   fromStepId: string
   toStepId: string
+  cacheEpochTransition: PromptCacheBenchmarkTransition["cacheEpochTransition"]
   baseline: TransitionSnapshot
   optimized: TransitionSnapshot
   delta: {
     commonPrefixBytes: number
     estimatedCommonPrefixTokens: number
     nextRequestReusePercentagePoints: number
+    uncachedSuffixBytes: number
   }
 }
 
@@ -33,6 +35,7 @@ export type PromptCacheBenchmarkComparison = {
     weightedNextRequestReusePercentagePointDelta: number
     commonPrefixBytesDelta: number
     estimatedCommonPrefixTokensDelta: number
+    uncachedSuffixBytesDelta: number
   }
   transitions: PromptCacheBenchmarkComparisonTransition[]
 }
@@ -42,6 +45,7 @@ type TransitionSnapshot = {
   estimatedCommonPrefixTokens: number
   nextRequestReuseRatio: number
   nextRequestBytes: number
+  uncachedSuffixBytes: number
 }
 
 export function comparePromptCacheBenchmarks(
@@ -69,6 +73,7 @@ export function comparePromptCacheBenchmarks(
         scenarioTitle: baselineScenario.title,
         fromStepId: baselineTransition.fromStepId,
         toStepId: baselineTransition.toStepId,
+        cacheEpochTransition: baselineTransition.cacheEpochTransition,
         baseline: baselineSnapshot,
         optimized: optimizedSnapshot,
         delta: {
@@ -79,6 +84,7 @@ export function comparePromptCacheBenchmarks(
             optimizedSnapshot.nextRequestReuseRatio,
             baselineSnapshot.nextRequestReuseRatio,
           ),
+          uncachedSuffixBytes: optimizedSnapshot.uncachedSuffixBytes - baselineSnapshot.uncachedSuffixBytes,
         },
       }
     })
@@ -101,6 +107,7 @@ export function comparePromptCacheBenchmarks(
       commonPrefixBytesDelta: optimized.summary.commonPrefixBytes - baseline.summary.commonPrefixBytes,
       estimatedCommonPrefixTokensDelta: optimized.summary.estimatedCommonPrefixTokens
         - baseline.summary.estimatedCommonPrefixTokens,
+      uncachedSuffixBytesDelta: optimized.summary.uncachedSuffixBytes - baseline.summary.uncachedSuffixBytes,
     },
     transitions,
   }
@@ -129,6 +136,7 @@ export function isPromptCacheBenchmarkComparison(value: unknown): value is Promp
       "weightedNextRequestReusePercentagePointDelta",
       "commonPrefixBytesDelta",
       "estimatedCommonPrefixTokensDelta",
+      "uncachedSuffixBytesDelta",
     ])
     || !sameComparisonSummary(value.summary, expected.summary)
     || !Array.isArray(value.transitions)
@@ -160,7 +168,7 @@ function assertComparableStructure(
     assertSameSequence(
       baselineScenario.transitions,
       optimizedScenario.transitions,
-      transition => `${transition.fromStepId}\0${transition.toStepId}`,
+      transition => `${transition.fromStepId}\0${transition.toStepId}\0${transition.cacheEpochTransition}`,
       `prompt_cache_benchmark_transition_mismatch:${baselineScenario.id}`,
     )
     assertSameSequence(
@@ -195,6 +203,7 @@ function snapshot(
     estimatedCommonPrefixTokens: transition.estimatedCommonPrefixTokens,
     nextRequestReuseRatio: transition.nextRequestReuseRatio,
     nextRequestBytes,
+    uncachedSuffixBytes: transition.uncachedSuffixBytes,
   }
 }
 
@@ -214,6 +223,7 @@ function sameComparisonSummary(
       === expected.weightedNextRequestReusePercentagePointDelta
     && candidate.commonPrefixBytesDelta === expected.commonPrefixBytesDelta
     && candidate.estimatedCommonPrefixTokensDelta === expected.estimatedCommonPrefixTokensDelta
+    && candidate.uncachedSuffixBytesDelta === expected.uncachedSuffixBytesDelta
 }
 
 function sameComparisonTransition(
@@ -226,6 +236,7 @@ function sameComparisonTransition(
       "scenarioTitle",
       "fromStepId",
       "toStepId",
+      "cacheEpochTransition",
       "baseline",
       "optimized",
       "delta",
@@ -234,6 +245,7 @@ function sameComparisonTransition(
     || candidate.scenarioTitle !== expected.scenarioTitle
     || candidate.fromStepId !== expected.fromStepId
     || candidate.toStepId !== expected.toStepId
+    || candidate.cacheEpochTransition !== expected.cacheEpochTransition
     || !sameSnapshot(candidate.baseline, expected.baseline)
     || !sameSnapshot(candidate.optimized, expected.optimized)
     || !isRecord(candidate.delta)
@@ -241,10 +253,12 @@ function sameComparisonTransition(
       "commonPrefixBytes",
       "estimatedCommonPrefixTokens",
       "nextRequestReusePercentagePoints",
+      "uncachedSuffixBytes",
     ])) return false
   return candidate.delta.commonPrefixBytes === expected.delta.commonPrefixBytes
     && candidate.delta.estimatedCommonPrefixTokens === expected.delta.estimatedCommonPrefixTokens
     && candidate.delta.nextRequestReusePercentagePoints === expected.delta.nextRequestReusePercentagePoints
+    && candidate.delta.uncachedSuffixBytes === expected.delta.uncachedSuffixBytes
 }
 
 function sameSnapshot(candidate: unknown, expected: TransitionSnapshot): boolean {
@@ -254,11 +268,13 @@ function sameSnapshot(candidate: unknown, expected: TransitionSnapshot): boolean
       "estimatedCommonPrefixTokens",
       "nextRequestReuseRatio",
       "nextRequestBytes",
+      "uncachedSuffixBytes",
     ])
     && candidate.commonPrefixBytes === expected.commonPrefixBytes
     && candidate.estimatedCommonPrefixTokens === expected.estimatedCommonPrefixTokens
     && candidate.nextRequestReuseRatio === expected.nextRequestReuseRatio
     && candidate.nextRequestBytes === expected.nextRequestBytes
+    && candidate.uncachedSuffixBytes === expected.uncachedSuffixBytes
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

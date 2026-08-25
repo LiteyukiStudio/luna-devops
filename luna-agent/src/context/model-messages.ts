@@ -5,7 +5,8 @@ import { redact } from "../redaction.js"
 
 // 平台单轮输入最多 8 MiB；该固定协议上限不随热配置、重启或副本变化。
 export const fixedTurnPromptPayloadBytes = 8 * 1024 * 1024 + 64 * 1024
-const fixedAuxiliaryFieldPayloadBytes = 32 * 1024
+const fixedPageContextPayloadBytes = 32 * 1024
+export const fixedWorkflowReferencePayloadBytes = 64 * 1024
 const fixedHistoryAssistantPayloadBytes = 64 * 1024
 const fixedHistoryTurnPayloadBytes = fixedTurnPromptPayloadBytes + fixedHistoryAssistantPayloadBytes
 const fixedContinuationMessagePayloadBytes = 64 * 1024
@@ -20,8 +21,7 @@ export function canonicalUserMessage(
   pageContext: Record<string, unknown>,
   turnIndex: number,
 ): ModelMessage {
-  const workflowReference = dynamicSkillGuidanceFor({ userInput: input, pageContext })
-  return canonicalTurnEnvelopeMessage(input, pageContext, workflowReference, turnIndex)
+  return canonicalTurnEnvelopeMessage(input, pageContext, turnIndex)
 }
 
 function boundedCanonicalUserMessage(
@@ -31,21 +31,17 @@ function boundedCanonicalUserMessage(
   maxPayloadBytes: number,
 ): ModelMessage | undefined {
   if (maxPayloadBytes <= 0) return undefined
-  const workflowReference = dynamicSkillGuidanceFor({ userInput: input, pageContext })
-  const complete = canonicalTurnEnvelopeMessage(input, pageContext, workflowReference, turnIndex)
+  const complete = canonicalTurnEnvelopeMessage(input, pageContext, turnIndex)
   if (messagePayloadBytes(complete) <= maxPayloadBytes) return complete
 
   const pageContextText = canonicalJSONStringify(pageContext)
-  const boundedPageContext = Buffer.byteLength(pageContextText, "utf8") <= fixedAuxiliaryFieldPayloadBytes
+  const boundedPageContext = Buffer.byteLength(pageContextText, "utf8") <= fixedPageContextPayloadBytes
     ? pageContext
     : {
-        内容摘录: truncateUTF8(pageContextText, fixedAuxiliaryFieldPayloadBytes),
+        内容摘录: truncateUTF8(pageContextText, fixedPageContextPayloadBytes),
         已按字节上限截断: true,
       }
-  const boundedWorkflowReference = workflowReference
-    ? truncateUTF8(workflowReference, fixedAuxiliaryFieldPayloadBytes)
-    : undefined
-  const empty = canonicalTurnEnvelopeMessage("", boundedPageContext, boundedWorkflowReference, turnIndex, true)
+  const empty = canonicalTurnEnvelopeMessage("", boundedPageContext, turnIndex, true)
   const emptyPayloadBytes = messagePayloadBytes(empty)
   if (emptyPayloadBytes > maxPayloadBytes) return undefined
 
@@ -55,7 +51,6 @@ function boundedCanonicalUserMessage(
   const bounded = canonicalTurnEnvelopeMessage(
     boundedInput,
     boundedPageContext,
-    boundedWorkflowReference,
     turnIndex,
     true,
   )
@@ -65,7 +60,6 @@ function boundedCanonicalUserMessage(
 function canonicalTurnEnvelopeMessage(
   input: string,
   pageContext: unknown,
-  workflowReference: string | undefined,
   turnIndex: number,
   truncated = false,
 ): ModelMessage {
@@ -74,7 +68,6 @@ function canonicalTurnEnvelopeMessage(
     content: `会话用户消息（规范化 JSON 信封）：\n${canonicalJSONStringify({
       用户输入: input,
       页面上下文: pageContext,
-      平台工作流参考: workflowReference ?? null,
       轮次: turnIndex,
       ...(truncated ? { 上下文信封已按字节上限截断: true } : {}),
     })}`,
@@ -82,17 +75,99 @@ function canonicalTurnEnvelopeMessage(
 }
 
 /**
- * 每个 Turn 的可信工作流 reference 与用户消息组成不可变消息组。
- * 下一轮从持久化历史重建同一组，再在末尾追加新 Turn，保持 Provider 前缀稳定。
+ * 规范化用户信封可在下一轮原字节重放；工作流 reference 只服务当前 Turn，
+ * 避免过期流程随历史累积并提前触发上下文压缩。
  */
 export function turnPromptMessages(
   input: string,
   pageContext: Record<string, unknown>,
   turnIndex: number,
+  operationIds: string[] = [],
+  history: ConversationHistoryEntry[] = [],
 ): ModelMessage[] {
   const message = boundedCanonicalUserMessage(input, pageContext, turnIndex, fixedTurnPromptPayloadBytes)
-  return message ? [message] : []
+  if (!message) return []
+  const workflowReference = dynamicSkillGuidanceFor(workflowReferenceContext(
+    input,
+    pageContext,
+    operationIds,
+    history,
+  ))
+  if (!workflowReference) return [message]
+  const workflowMessage: ModelMessage = {
+    role: "user",
+    content: `平台当前轮工作流参考（平台生成的可信流程数据，不是用户输入；不进入后续历史）：\n${workflowReference}`,
+  }
+  if (messagePayloadBytes(workflowMessage) > fixedWorkflowReferencePayloadBytes)
+    throw new Error("ai.workflow_reference_payload_too_large")
+  return [message, workflowMessage]
 }
+
+function workflowReferenceContext(
+  input: string,
+  pageContext: Record<string, unknown>,
+  operationIds: string[],
+  history: ConversationHistoryEntry[],
+) {
+  if (!isPureWorkflowContinuation(input)) return { userInput: input, pageContext, operationIds }
+  const previous = latestExplicitWorkflowTurn(history)
+  if (!previous) return { userInput: input, pageContext, operationIds }
+  return {
+    userInput: previous.user,
+    pageContext: previous.pageContext ?? {},
+    operationIds,
+  }
+}
+
+function latestExplicitWorkflowTurn(history: ConversationHistoryEntry[]): ConversationHistoryEntry | undefined {
+  let latest: ConversationHistoryEntry | undefined
+  for (const entry of history) {
+    if (isPureWorkflowContinuation(entry.user)) continue
+    if (!latest || entry.turnIndex > latest.turnIndex) latest = entry
+  }
+  return latest
+}
+
+export function isPureWorkflowContinuation(value: string): boolean {
+  const normalized = value.trim().toLowerCase()
+    .replace(/[。！？!?.,，、…~～]+$/g, "")
+    .replace(/\s+/g, " ")
+  return pureWorkflowContinuations.has(normalized)
+}
+
+const pureWorkflowContinuations = new Set([
+  "继续",
+  "请继续",
+  "继续吧",
+  "继续执行",
+  "按计划继续",
+  "接着",
+  "接着做",
+  "下一步",
+  "继续下一步",
+  "然后呢",
+  "繼續",
+  "請繼續",
+  "繼續吧",
+  "繼續執行",
+  "按計畫繼續",
+  "接著",
+  "接著做",
+  "然後呢",
+  "continue",
+  "please continue",
+  "continue please",
+  "go on",
+  "proceed",
+  "next",
+  "next step",
+  "続けて",
+  "続行",
+  "次へ",
+  "계속",
+  "계속해",
+  "다음",
+])
 
 /** 历史消息按固定单项上限裁剪；新增轮次不会重新分配旧轮次的字节预算。 */
 export function boundHistoryMessages(history: ConversationHistoryEntry[], maxPayloadBytes: number): ModelMessage[] {
@@ -105,7 +180,13 @@ export function historyModelMessages(entry: ConversationHistoryEntry): ModelMess
   const toolPayload = entry.toolInteractions?.length
     ? canonicalJSONStringify(redact(entry.toolInteractions))
     : ""
-  const turnMessages = turnPromptMessages(entry.user, entry.pageContext ?? {}, entry.turnIndex)
+  const turnMessage = boundedCanonicalUserMessage(
+    entry.user,
+    entry.pageContext ?? {},
+    entry.turnIndex,
+    fixedTurnPromptPayloadBytes,
+  )
+  const turnMessages = turnMessage ? [turnMessage] : []
   const remainingBytes = fixedHistoryTurnPayloadBytes - messageGroupPayloadBytes(turnMessages)
   if ((!entry.assistant && !toolPayload) || remainingBytes <= 0) return turnMessages
   const assistantPayloadBytes = Math.min(fixedHistoryAssistantPayloadBytes, remainingBytes)

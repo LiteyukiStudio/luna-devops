@@ -66,6 +66,8 @@ Compose manifest. Updating only `.env` has no effect when an older Compose manif
 
 2. Note: A new conversation without official usage calls the Provider directly. Byte limits protect transport and memory only; they are not token counts.
 
+The Agent injects only the workflow references needed by the current task and does not duplicate them in history. A pure continuation such as “continue” reselects references from the latest explicit goal. User and page data plus completed interactions are replayed with fixed boundaries. A summary update starts a new cache-prefix epoch, so one cold request is expected before later turns reuse that summary prefix.
+
 ### Docker Compose
 
 | Setting | Default | Description |

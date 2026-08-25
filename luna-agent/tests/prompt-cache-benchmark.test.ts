@@ -40,10 +40,11 @@ describe("Agent prompt-cache benchmark", () => {
     ])
     expect(first.summary).toMatchObject({
       scenarioCount: 4,
-      transitionCount: 5,
-      assertionCount: 19,
-      passedAssertionCount: 19,
+      transitionCount: 6,
+      assertionCount: 24,
+      passedAssertionCount: 24,
       failedAssertionCount: 0,
+      cacheEpochInvalidationTransitionCount: 1,
     })
     expect(first.benchmark).toMatchObject({
       sourceRevision: baselineRevision,
@@ -57,8 +58,20 @@ describe("Agent prompt-cache benchmark", () => {
       transition.commonPrefixBytes > 0
       && transition.estimatedCommonPrefixTokens === Math.ceil(transition.commonPrefixBytes / 4)
       && transition.nextRequestReuseRatio >= 0
-      && transition.nextRequestReuseRatio <= 1,
+      && transition.nextRequestReuseRatio <= 1
+      && transition.uncachedSuffixBytes >= 0,
     )).toBe(true)
+    expect(first.summary.uncachedSuffixBytes).toBe(first.summary.nextRequestBytes - first.summary.commonPrefixBytes)
+    const compaction = first.scenarios.find(scenario => scenario.id === "before-and-after-compaction")!
+    expect(compaction.steps.map(step => step.id)).toEqual([
+      "before-compaction",
+      "after-compaction",
+      "summary-reused",
+    ])
+    expect(compaction.transitions.map(transition => transition.cacheEpochTransition)).toEqual([
+      "cache_epoch_invalidation",
+      "within_epoch",
+    ])
     expect(JSON.stringify(first)).not.toContain("serializedRequest")
     expect(isPromptCacheBenchmarkResult(first)).toBe(true)
     expect(isPromptCacheBenchmarkResult({ ...first, scenarios: [{ id: "incomplete" }] })).toBe(false)
@@ -77,18 +90,20 @@ describe("Agent prompt-cache benchmark", () => {
     const comparison = comparePromptCacheBenchmarks(baseline, optimized)
 
     expect(comparison.summary).toMatchObject({
-      comparableTransitionCount: 5,
+      comparableTransitionCount: 6,
       missingBaselineTransitionCount: 0,
       missingOptimizedTransitionCount: 0,
       functionalAssertionsPassed: true,
       commonPrefixBytesDelta: expected.summaryBytesDelta,
       estimatedCommonPrefixTokensDelta: expected.summaryTokenDelta,
       weightedNextRequestReusePercentagePointDelta: expected.summaryPercentagePointDelta,
+      uncachedSuffixBytesDelta: expected.summaryUncachedSuffixBytesDelta,
     })
     expect(comparison.transitions[0]?.delta).toMatchObject({
       commonPrefixBytes: expected.transitionBytesDelta,
       estimatedCommonPrefixTokens: expected.transitionTokenDelta,
       nextRequestReusePercentagePoints: expected.transitionPercentagePointDelta,
+      uncachedSuffixBytes: expected.transitionUncachedSuffixBytesDelta,
     })
     expect(isPromptCacheBenchmarkComparison(comparison)).toBe(true)
   })
@@ -125,6 +140,14 @@ describe("Agent prompt-cache benchmark", () => {
     const malformedSummary = structuredClone(valid)
     malformedSummary.summary.transitionCount -= 1
     expect(isPromptCacheBenchmarkResult(malformedSummary)).toBe(false)
+
+    const malformedUncachedSuffix = structuredClone(valid)
+    malformedUncachedSuffix.scenarios[0]!.transitions[0]!.uncachedSuffixBytes += 1
+    expect(isPromptCacheBenchmarkResult(malformedUncachedSuffix)).toBe(false)
+
+    const malformedCacheEpochCount = structuredClone(valid)
+    malformedCacheEpochCount.summary.cacheEpochInvalidationTransitionCount += 1
+    expect(isPromptCacheBenchmarkResult(malformedCacheEpochCount)).toBe(false)
   })
 
   it("requires the same scenario, step and assertion contract across checkouts", async () => {
@@ -155,6 +178,9 @@ describe("Agent prompt-cache HTML report", () => {
     expect(html).toContain("@media print")
     expect(html).toContain("overflow-x: auto")
     expect(html).toContain("Benchmark 来源校验")
+    expect(html).toContain("未复用后缀")
+    expect(html).toContain("Cache epoch 失效")
+    expect(html).toContain("Cache epoch 分层指标")
     expect(html).toContain(`${result.benchmark.sourceRevision.slice(0, 12)}…`)
     expect(html).toContain(`${result.benchmark.implementationDigest.slice(0, 12)}…`)
     expect(html).toContain(`${result.benchmark.harnessDigest.slice(0, 12)}…`)
@@ -181,8 +207,10 @@ describe("Agent prompt-cache HTML report", () => {
     expect(html).toContain(`${optimized.benchmark.sourceRevision.slice(0, 12)}…`)
     expect(html).toContain("共享 Harness")
     expect(html).toContain("Baseline 与 optimized")
+    expect(html).toContain("负值更好")
+    expect(html).toContain("Baseline 与 optimized 的 cache epoch 分层对比")
     const comparisonRow = html.match(/Baseline 与 optimized[\s\S]*?<tbody>([\s\S]*?)<\/tbody>/)?.[1]
-    expect(comparisonRow?.match(/<(?:th|td)\b/g)).toHaveLength(4)
+    expect(comparisonRow?.match(/<(?:th|td)\b/g)).toHaveLength(5)
   })
 
   it("keeps every semantic text color above WCAG AA contrast on report surfaces", () => {
@@ -230,12 +258,14 @@ function improveFirstTransition(result: PromptCacheBenchmarkResult, requestedByt
     summaryCommonPrefixBytes: result.summary.commonPrefixBytes,
     summaryEstimatedCommonPrefixTokens: result.summary.estimatedCommonPrefixTokens,
     summaryWeightedNextRequestReuseRatio: result.summary.weightedNextRequestReuseRatio,
+    summaryUncachedSuffixBytes: result.summary.uncachedSuffixBytes,
   }
   const transitionBytesDelta = Math.min(requestedBytes, nextStep.requestBytes - target.commonPrefixBytes)
   if (transitionBytesDelta <= 0) throw new Error("prompt_cache_benchmark_test_transition_cannot_improve")
   target.commonPrefixBytes += transitionBytesDelta
   target.estimatedCommonPrefixTokens = Math.ceil(target.commonPrefixBytes / 4)
   target.nextRequestReuseRatio = roundedRatio(target.commonPrefixBytes, nextStep.requestBytes)
+  target.uncachedSuffixBytes = nextStep.requestBytes - target.commonPrefixBytes
   refreshSummary(result)
   return {
     transitionBytesDelta,
@@ -244,12 +274,14 @@ function improveFirstTransition(result: PromptCacheBenchmarkResult, requestedByt
       target.nextRequestReuseRatio,
       before.nextRequestReuseRatio,
     ),
+    transitionUncachedSuffixBytesDelta: -transitionBytesDelta,
     summaryBytesDelta: result.summary.commonPrefixBytes - before.summaryCommonPrefixBytes,
     summaryTokenDelta: result.summary.estimatedCommonPrefixTokens - before.summaryEstimatedCommonPrefixTokens,
     summaryPercentagePointDelta: percentagePointDelta(
       result.summary.weightedNextRequestReuseRatio,
       before.summaryWeightedNextRequestReuseRatio,
     ),
+    summaryUncachedSuffixBytesDelta: result.summary.uncachedSuffixBytes - before.summaryUncachedSuffixBytes,
   }
 }
 
@@ -259,6 +291,10 @@ function refreshSummary(result: PromptCacheBenchmarkResult): void {
   const commonPrefixBytes = transitions.reduce((total, transition) => total + transition.commonPrefixBytes, 0)
   const nextRequestBytes = result.scenarios.reduce((total, scenario) => total
     + scenario.steps.slice(1).reduce((scenarioTotal, step) => scenarioTotal + step.requestBytes, 0), 0)
+  const uncachedSuffixBytes = transitions.reduce(
+    (total, transition) => total + transition.uncachedSuffixBytes,
+    0,
+  )
   result.summary = {
     scenarioCount: result.scenarios.length,
     transitionCount: transitions.length,
@@ -268,6 +304,10 @@ function refreshSummary(result: PromptCacheBenchmarkResult): void {
     commonPrefixBytes,
     estimatedCommonPrefixTokens: Math.ceil(commonPrefixBytes / 4),
     nextRequestBytes,
+    uncachedSuffixBytes,
+    cacheEpochInvalidationTransitionCount: transitions.filter(
+      transition => transition.cacheEpochTransition === "cache_epoch_invalidation",
+    ).length,
     weightedNextRequestReuseRatio: roundedRatio(commonPrefixBytes, nextRequestBytes),
   }
 }

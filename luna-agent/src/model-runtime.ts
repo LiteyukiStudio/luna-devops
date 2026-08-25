@@ -185,6 +185,8 @@ export class ModelRuntime {
       input.input,
       input.pageContext,
       input.conversation,
+      tools.map(tool => tool.operationId),
+      input.history,
     )
     const history = modelVisibleHistory(input.history)
     const compiled = this.contextCompiler
@@ -248,13 +250,15 @@ function modelMessageParts(
   input: string,
   pageContext: Record<string, unknown>,
   conversation: ConversationPromptContext,
+  loadedOperationIds: string[],
+  history: ConversationHistoryEntry[],
 ) {
   return {
     systemMessages: [{
       role: "system" as const,
       content: systemPromptFor(promptVersion),
     }],
-    currentMessages: turnPromptMessages(input, pageContext, conversation.turnIndex),
+    currentMessages: turnPromptMessages(input, pageContext, conversation.turnIndex, loadedOperationIds, history),
   }
 }
 

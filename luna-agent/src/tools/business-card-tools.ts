@@ -10,6 +10,7 @@ import {
   resourceConfigurationTemplate,
 } from "./business-card-templates.js"
 import { createInteractionCardsInput, normalizeInteractionCardsInput } from "./ui-cards.js"
+import { cardToolOperationIds } from "./internal-operation-ids.js"
 
 const identifier = z.string().regex(/^[a-zA-Z0-9_-]{1,64}$/)
 const shortText = z.string().trim().min(1).max(120)
@@ -38,9 +39,7 @@ export const businessCardToolInputs = {
 
 export type BusinessCardToolOperationId = keyof typeof businessCardToolInputs
 
-export const businessCardToolOperationIds = new Set<BusinessCardToolOperationId>(
-  Object.keys(businessCardToolInputs) as BusinessCardToolOperationId[],
-)
+export const businessCardToolOperationIds = cardToolOperationIds
 
 export const businessCardTools: ModelToolDefinition[] = [
   modelTool(
@@ -61,7 +60,7 @@ export const businessCardTools: ModelToolDefinition[] = [
 ]
 
 export function isBusinessCardToolOperationId(operationId: string): operationId is BusinessCardToolOperationId {
-  return businessCardToolOperationIds.has(operationId as BusinessCardToolOperationId)
+  return businessCardToolOperationIds.has(operationId)
 }
 
 export function compileBusinessCardToolInput(operationId: BusinessCardToolOperationId, raw: unknown): unknown {

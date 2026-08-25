@@ -1,5 +1,9 @@
+import { performance } from "node:perf_hooks"
 import { describe, expect, it } from "vitest"
 import { redact } from "../src/redaction.js"
+
+const longTextBytes = 64 * 1024
+const redactionPerformanceBudgetMs = 1_000
 
 describe("redact", () => {
   it("removes sensitive fields and bearer tokens recursively", () => {
@@ -58,5 +62,26 @@ describe("redact", () => {
   it("keeps non-secrets fields intact next to generated secrets", () => {
     expect(redact({ secrets: ["s3cr3t"], encoding: "alphanumeric" }))
       .toEqual({ secrets: ["******"], encoding: "alphanumeric" })
+  })
+
+  it("processes long non-sensitive text without superlinear URL scanning", () => {
+    const value = "a".repeat(longTextBytes)
+    const startedAt = performance.now()
+    const result = redact(value)
+    const elapsedMs = performance.now() - startedAt
+
+    expect(result).toBe(value)
+    expect(elapsedMs).toBeLessThan(redactionPerformanceBudgetMs)
+  })
+
+  it("redacts credentials in long text without superlinear URL scanning", () => {
+    const padding = "a".repeat(longTextBytes)
+    const value = `${padding} https://alice:hunter2@example.com token=credential-value ${padding}`
+    const startedAt = performance.now()
+    const result = redact(value)
+    const elapsedMs = performance.now() - startedAt
+
+    expect(result).toBe(`${padding} https://[REDACTED]@example.com token=[REDACTED] ${padding}`)
+    expect(elapsedMs).toBeLessThan(redactionPerformanceBudgetMs)
   })
 })

@@ -18,7 +18,9 @@ import type {
   ModelToolDefinition,
 } from "../../src/provider/provider.js"
 
-export const promptCacheBenchmarkSchemaVersion = "luna.agent.prompt-cache-benchmark.v2" as const
+export const promptCacheBenchmarkSchemaVersion = "luna.agent.prompt-cache-benchmark.v3" as const
+
+export type PromptCacheBenchmarkCacheEpochTransition = "within_epoch" | "cache_epoch_invalidation"
 
 export type PromptCacheBenchmarkAssertion = {
   id: string
@@ -42,6 +44,8 @@ export type PromptCacheBenchmarkTransition = {
   commonPrefixBytes: number
   estimatedCommonPrefixTokens: number
   nextRequestReuseRatio: number
+  uncachedSuffixBytes: number
+  cacheEpochTransition: PromptCacheBenchmarkCacheEpochTransition
 }
 
 export type PromptCacheBenchmarkScenario = {
@@ -57,7 +61,7 @@ export type PromptCacheBenchmarkResult = {
   schemaVersion: typeof promptCacheBenchmarkSchemaVersion
   benchmark: {
     name: "agent-prompt-cache-prefix"
-    version: 2
+    version: 3
     checkoutLabel: string
     sourceRevision: string
     implementationDigest: string
@@ -77,6 +81,8 @@ export type PromptCacheBenchmarkResult = {
     commonPrefixBytes: number
     estimatedCommonPrefixTokens: number
     nextRequestBytes: number
+    uncachedSuffixBytes: number
+    cacheEpochInvalidationTransitionCount: number
     weightedNextRequestReuseRatio: number
   }
   scenarios: PromptCacheBenchmarkScenario[]
@@ -98,11 +104,15 @@ const disclaimer = "该指标只比较确定性 fixture 生成的 OpenAI-compati
 const implementationSourcePaths = [
   "src/context/compiler.ts",
   "src/context/model-messages.ts",
+  "src/model-history.ts",
   "src/model-runtime.ts",
   "src/persistence/postgres.ts",
   "src/prompt/system.ts",
   "src/provider/openai-chat-completions.ts",
   "src/provider/managed.ts",
+  "src/redaction.ts",
+  "src/runtime-settings.ts",
+  "src/tools/internal-operation-ids.ts",
 ] as const
 
 const harnessSourcePaths = [
@@ -206,7 +216,7 @@ export async function runPromptCacheBenchmark(
     schemaVersion: promptCacheBenchmarkSchemaVersion,
     benchmark: {
       name: "agent-prompt-cache-prefix",
-      version: 2,
+      version: 3,
       checkoutLabel: options.checkoutLabel?.trim() || "current-checkout",
       sourceRevision,
       implementationDigest,
@@ -249,7 +259,7 @@ export function isPromptCacheBenchmarkResult(value: unknown): value is PromptCac
       "disclaimer",
     ])
     || value.benchmark.name !== "agent-prompt-cache-prefix"
-    || value.benchmark.version !== 2
+    || value.benchmark.version !== 3
     || value.benchmark.providerMeasurement !== false
     || !isNonEmptyString(value.benchmark.checkoutLabel)
     || !isSourceRevision(value.benchmark.sourceRevision)
@@ -269,6 +279,8 @@ export function isPromptCacheBenchmarkResult(value: unknown): value is PromptCac
       "commonPrefixBytes",
       "estimatedCommonPrefixTokens",
       "nextRequestBytes",
+      "uncachedSuffixBytes",
+      "cacheEpochInvalidationTransitionCount",
       "weightedNextRequestReuseRatio",
     ])
     || !Array.isArray(value.scenarios)) return false
@@ -304,6 +316,8 @@ function isPromptCacheBenchmarkScenario(value: unknown): value is PromptCacheBen
         "commonPrefixBytes",
         "estimatedCommonPrefixTokens",
         "nextRequestReuseRatio",
+        "uncachedSuffixBytes",
+        "cacheEpochTransition",
       ])) return false
     const previous = steps[index]
     const next = steps[index + 1]
@@ -314,6 +328,8 @@ function isPromptCacheBenchmarkScenario(value: unknown): value is PromptCacheBen
       && candidate.commonPrefixBytes <= Math.min(previous.requestBytes, next.requestBytes)
       && candidate.estimatedCommonPrefixTokens === estimateTokens(candidate.commonPrefixBytes)
       && candidate.nextRequestReuseRatio === ratio(candidate.commonPrefixBytes, next.requestBytes)
+      && candidate.uncachedSuffixBytes === next.requestBytes - candidate.commonPrefixBytes
+      && isCacheEpochTransition(candidate.cacheEpochTransition)
   })
 }
 
@@ -353,6 +369,10 @@ function summarizeScenarios(
   const commonPrefixBytes = transitions.reduce((total, transition) => total + transition.commonPrefixBytes, 0)
   const nextRequestBytes = scenarios.reduce((total, scenario) => total
     + scenario.steps.slice(1).reduce((scenarioTotal, step) => scenarioTotal + step.requestBytes, 0), 0)
+  const uncachedSuffixBytes = transitions.reduce(
+    (total, transition) => total + transition.uncachedSuffixBytes,
+    0,
+  )
   return {
     scenarioCount: scenarios.length,
     transitionCount: transitions.length,
@@ -362,6 +382,10 @@ function summarizeScenarios(
     commonPrefixBytes,
     estimatedCommonPrefixTokens: estimateTokens(commonPrefixBytes),
     nextRequestBytes,
+    uncachedSuffixBytes,
+    cacheEpochInvalidationTransitionCount: transitions.filter(
+      transition => transition.cacheEpochTransition === "cache_epoch_invalidation",
+    ).length,
     weightedNextRequestReuseRatio: ratio(commonPrefixBytes, nextRequestBytes),
   }
 }
@@ -378,6 +402,8 @@ function sameSummary(
     && left.commonPrefixBytes === right.commonPrefixBytes
     && left.estimatedCommonPrefixTokens === right.estimatedCommonPrefixTokens
     && left.nextRequestBytes === right.nextRequestBytes
+    && left.uncachedSuffixBytes === right.uncachedSuffixBytes
+    && left.cacheEpochInvalidationTransitionCount === right.cacheEpochInvalidationTransitionCount
     && left.weightedNextRequestReuseRatio === right.weightedNextRequestReuseRatio
 }
 
@@ -507,6 +533,7 @@ async function crossTurnHistoryScenario(): Promise<PromptCacheBenchmarkScenario>
       assertion("history-answer-preserved", "后一轮包含上一轮助手结论", requestContains(second.request, firstAnswer)),
       assertion("history-page-context-preserved", "后一轮包含上一轮页面上下文", requestContains(second.request, firstPageContext.route)),
       assertion("new-user-preserved", "后一轮包含当前用户任务", requestContains(second.request, "继续核对最新部署状态")),
+      assertion("transient-reference-not-replayed", "历史 Turn 不重放工作流参考，仅当前轮保留一条 transient reference 消息", workflowReferenceMessageCount(second.request) === 1),
       assertion("same-conversation", "相邻 Turn 绑定同一会话", first.request.conversationId === second.request.conversationId),
     ],
   )
@@ -554,10 +581,14 @@ async function compactionScenario(): Promise<PromptCacheBenchmarkScenario> {
   const repository = new MutableContextRepository(history)
   const provider = new CapturingProvider(JSON.stringify(summaryContent))
   const runtime = runtimeWithCompiler(provider, repository)
-  const current = baseInput({
-    runId: "airun_compaction",
+  const firstInput = "先确认应用 alpha 当前副本与健康状态。"
+  const firstAnswer = "已确认应用 alpha 当前健康，期望副本数为 3。"
+  const firstPageContext = { projectId: "prj_benchmark", route: "/applications/app_alpha" }
+  const firstTurn = baseInput({
+    runId: "airun_compaction_turn_5",
     conversationId: "aicnv_compaction",
-    input: "继续核对最新部署状态，并遵守只读约束。",
+    input: firstInput,
+    pageContext: firstPageContext,
     history,
     conversation: { title: "压缩基准", titleSource: "user", turnIndex: history.length },
     loadedOperationIds: [inspectApplicationTool.operationId],
@@ -568,33 +599,90 @@ async function compactionScenario(): Promise<PromptCacheBenchmarkScenario> {
     promptTokens: 1_000,
     maxContextTokensSnapshot: model.maxContextTokens,
   }
-  await runtime.complete(current)
+  await runtime.complete(firstTurn)
+
+  const firstTurnEntry: ConversationHistoryEntry = {
+    turnIndex: history.length,
+    user: firstInput,
+    assistant: firstAnswer,
+    pageContext: firstPageContext,
+  }
+  const secondHistory = [...history, firstTurnEntry]
+  const secondInput = "继续检查部署 dep_alpha 是否 ready，并保持只读。"
+  const secondAnswer = "已确认部署 dep_alpha 状态为 ready，未执行写操作。"
+  const secondPageContext = {
+    projectId: "prj_benchmark",
+    route: "/deployments/dep_alpha",
+    deploymentId: "dep_alpha",
+  }
   repository.latestUsage = {
     modelId: model.id,
     promptTokens: 3_600,
     maxContextTokensSnapshot: model.maxContextTokens,
   }
-  await runtime.complete(current)
-  const before = measuredStep("before-compaction", "压缩前", provider.assistantRequest(0))
-  const after = measuredStep("after-compaction", "压缩后", provider.assistantRequest(1))
+  await runtime.complete(baseInput({
+    runId: "airun_compaction_turn_6",
+    conversationId: "aicnv_compaction",
+    input: secondInput,
+    pageContext: secondPageContext,
+    history: secondHistory,
+    conversation: { title: "压缩基准", titleSource: "user", turnIndex: secondHistory.length },
+    loadedOperationIds: [inspectApplicationTool.operationId],
+    model,
+  }))
+
+  const secondTurnEntry: ConversationHistoryEntry = {
+    turnIndex: secondHistory.length,
+    user: secondInput,
+    assistant: secondAnswer,
+    pageContext: secondPageContext,
+  }
+  const thirdHistory = [...secondHistory, secondTurnEntry]
+  const thirdInput = "汇总已确认事实并列出仍需权威回读的项目。"
+  repository.latestUsage = {
+    modelId: model.id,
+    promptTokens: 1_000,
+    maxContextTokensSnapshot: model.maxContextTokens,
+  }
+  await runtime.complete(baseInput({
+    runId: "airun_compaction_turn_7",
+    conversationId: "aicnv_compaction",
+    input: thirdInput,
+    pageContext: { projectId: "prj_benchmark", route: "/deployments" },
+    history: thirdHistory,
+    conversation: { title: "压缩基准", titleSource: "user", turnIndex: thirdHistory.length },
+    loadedOperationIds: [inspectApplicationTool.operationId],
+    model,
+  }))
+
+  const before = measuredStep("before-compaction", "首次未压缩 Turn", provider.assistantRequest(0))
+  const after = measuredStep("after-compaction", "下一自然 Turn 触发压缩", provider.assistantRequest(1))
+  const reused = measuredStep("summary-reused", "再下一自然 Turn 复用摘要", provider.assistantRequest(2))
+  const afterSummary = messageStartingWith(after.request, "历史会话结构化摘要")
+  const reusedSummary = messageStartingWith(reused.request, "历史会话结构化摘要")
   return scenario(
     "before-and-after-compaction",
-    "压缩前后",
-    "用固定摘要 Provider 触发权威 usage 阈值压缩，验证旧事实进入结构化摘要、近期历史和当前任务仍被保留。",
-    [before, after],
+    "压缩边界与摘要复用",
+    "用三个输入与 TurnIndex 均不同的自然相邻 Turn，测量首次跨越缓存 epoch 的压缩失效，以及持久摘要在新 epoch 内的后续复用。",
+    [before, after, reused],
     [
+      assertion("natural-turn-sequence", "三个步骤使用不同当前任务", [firstInput, secondInput, thirdInput].every((input, index) => requestContains([before, after, reused][index]!.request, input))),
+      assertion("before-not-compacted", "首个自然 Turn 尚未压缩", before.request.conversationCompacted === false),
       assertion("compaction-flag", "压缩后的请求带有内部压缩状态", after.request.conversationCompacted === true),
-      assertion("summary-present", "压缩后包含结构化历史摘要", requestContains(after.request, "历史会话结构化摘要")),
-      assertion("durable-facts-preserved", "摘要保留目标、约束、资源与持久事实", [
+      assertion("summary-reused-flag", "再下一自然 Turn 复用已持久摘要", reused.request.conversationCompacted === true),
+      assertion("summary-stable", "压缩摘要在新 cache epoch 内逐字节稳定复用", Boolean(afterSummary) && afterSummary === reusedSummary),
+      assertion("references-do-not-accumulate", "自然 Turn 增长和摘要复用均不累计历史工作流参考", [before, after, reused].every(step => workflowReferenceMessageCount(step.request) === 1)),
+      assertion("durable-facts-preserved", "压缩与复用请求均保留目标、约束、资源与持久事实", [
         "保持应用 alpha 可用",
         "仅使用只读操作",
         "app_alpha",
         "期望副本数为 3",
-      ].every(fact => requestContains(after.request, fact))),
-      assertion("recent-history-preserved", "压缩后仍保留最近一轮历史", requestContains(after.request, history.at(-1)?.assistant ?? "__missing__")),
-      assertion("current-task-preserved", "压缩前后均保留当前任务", requestContains(before.request, current.input) && requestContains(after.request, current.input)),
-      assertion("compressed-history-removed", "压缩后不再携带最早一轮原文", requestContains(before.request, history[0]?.assistant ?? "__missing__") && !requestContains(after.request, history[0]?.assistant ?? "__missing__")),
+      ].every(fact => requestContains(after.request, fact) && requestContains(reused.request, fact))),
+      assertion("boundary-retains-recent-turn", "跨越压缩边界后仍保留紧邻的自然 Turn", requestContains(after.request, firstInput) && requestContains(after.request, firstAnswer)),
+      assertion("reused-epoch-retains-new-turn", "摘要复用请求继续保留压缩后的新增 Turn", requestContains(reused.request, secondInput) && requestContains(reused.request, secondAnswer)),
+      assertion("compressed-history-removed", "压缩后不再携带最早一轮原文", requestContains(before.request, history[0]?.assistant ?? "__missing__") && !requestContains(after.request, history[0]?.assistant ?? "__missing__") && !requestContains(reused.request, history[0]?.assistant ?? "__missing__")),
     ],
+    ["cache_epoch_invalidation", "within_epoch"],
   )
 }
 
@@ -604,13 +692,18 @@ function scenario(
   description: string,
   steps: MeasuredStep[],
   assertions: PromptCacheBenchmarkAssertion[],
+  cacheEpochTransitions: PromptCacheBenchmarkCacheEpochTransition[] = [],
 ): PromptCacheBenchmarkScenario {
   return {
     id,
     title,
     description,
     steps: steps.map(step => step.result),
-    transitions: steps.slice(1).map((step, index) => transition(steps[index]!, step)),
+    transitions: steps.slice(1).map((step, index) => transition(
+      steps[index]!,
+      step,
+      cacheEpochTransitions[index] ?? "within_epoch",
+    )),
     assertions,
   }
 }
@@ -632,7 +725,11 @@ function measuredStep(id: string, label: string, request: ModelRequest): Measure
   }
 }
 
-function transition(previous: MeasuredStep, next: MeasuredStep): PromptCacheBenchmarkTransition {
+function transition(
+  previous: MeasuredStep,
+  next: MeasuredStep,
+  cacheEpochTransition: PromptCacheBenchmarkCacheEpochTransition,
+): PromptCacheBenchmarkTransition {
   const commonPrefixBytes = utf8LongestCommonPrefixBytes(previous.serialized, next.serialized)
   return {
     fromStepId: previous.result.id,
@@ -640,6 +737,8 @@ function transition(previous: MeasuredStep, next: MeasuredStep): PromptCacheBenc
     commonPrefixBytes,
     estimatedCommonPrefixTokens: estimateTokens(commonPrefixBytes),
     nextRequestReuseRatio: ratio(commonPrefixBytes, next.result.requestBytes),
+    uncachedSuffixBytes: next.result.requestBytes - commonPrefixBytes,
+    cacheEpochTransition,
   }
 }
 
@@ -837,6 +936,14 @@ function requestContains(request: ModelRequest, value: string): boolean {
   })
 }
 
+function messageStartingWith(request: ModelRequest, value: string): string | undefined {
+  return request.messages.find(message => message.content.startsWith(value))?.content
+}
+
+function workflowReferenceMessageCount(request: ModelRequest): number {
+  return request.messages.filter(message => message.content.includes("<LUNA_DEVOPS_REFERENCE")).length
+}
+
 function sameToolSet(left: ModelToolDefinition[] | undefined, right: ModelToolDefinition[] | undefined): boolean {
   return sameJSON(
     [...(left ?? [])].map(tool => tool.operationId).sort(),
@@ -892,4 +999,8 @@ function isSha256(value: unknown): value is string {
 
 function isSourceRevision(value: unknown): value is string {
   return typeof value === "string" && /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(value)
+}
+
+function isCacheEpochTransition(value: unknown): value is PromptCacheBenchmarkCacheEpochTransition {
+  return value === "within_epoch" || value === "cache_epoch_invalidation"
 }
