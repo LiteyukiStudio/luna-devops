@@ -180,7 +180,12 @@ export class ModelRuntime {
       signal,
       input.toolCatalogDigest,
     )
-    const base = modelMessageParts(input.promptVersion, input.input, input.pageContext, input.conversation)
+    const base = modelMessageParts(
+      input.promptVersion,
+      input.input,
+      input.pageContext,
+      input.conversation,
+    )
     const history = modelVisibleHistory(input.history)
     const compiled = this.contextCompiler
       ? await this.contextCompiler.compile({

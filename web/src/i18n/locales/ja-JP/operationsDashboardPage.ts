@@ -211,6 +211,7 @@ const operationsDashboardPage = {
       missing_usage: 'プロバイダーが使用量を返しませんでした',
       invalid_usage: 'プロバイダーの使用量が無効です',
       stream_ended_without_usage: '使用量なしでストリームが終了しました',
+      request_failed: 'モデルリクエストが失敗しました',
       request_outcome_unknown: 'リクエスト結果が不明です',
       hold_deficit: 'クレジット予約が不足しています',
     },

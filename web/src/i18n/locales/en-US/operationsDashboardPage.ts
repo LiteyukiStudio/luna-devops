@@ -211,6 +211,7 @@ const operationsDashboardPage = {
       missing_usage: 'Provider did not return usage',
       invalid_usage: 'Provider returned invalid usage',
       stream_ended_without_usage: 'Stream ended without usage',
+      request_failed: 'Model request failed',
       request_outcome_unknown: 'Request outcome is unknown',
       hold_deficit: 'Credit hold was insufficient',
     },

@@ -147,34 +147,40 @@ export class OpenAIChatCompletionsProvider implements ModelProvider {
   async complete(request: ModelRequest): Promise<ModelResponse> {
     const modelSpan = genAIModelSpan(this.options.baseUrl, this.providerName(), this.options.model, request.maxOutputTokens, false)
     return withSpan(modelSpan.name, clientSpanOptions({ ...modelSpan.attributes, ...modelRequestSpanAttributes(request) }), async span => {
-      this.recordRequest(span, request)
-      const response = await this.fetchCompletion(request, false)
-      const providerRequestId = response.headers.get("x-request-id") ?? undefined
-      const raw = await response.json().catch(() => {
-        throw new ProviderRequestError("ai.provider_response_invalid", {
-          stage: "response_body", requestOutcome: "unknown", ...(providerRequestId ? { providerRequestId } : {}),
+      try {
+        this.recordRequest(span, request)
+        const response = await this.fetchCompletion(request, false)
+        const providerRequestId = response.headers.get("x-request-id") ?? undefined
+        const raw = await response.json().catch(() => {
+          throw new ProviderRequestError("ai.provider_response_invalid", {
+            stage: "response_body", requestOutcome: "unknown", ...(providerRequestId ? { providerRequestId } : {}),
+          })
         })
-      })
-      const parsed = completionSchema.safeParse(raw)
-      if (!parsed.success) throw this.schemaError("ai.provider_response_invalid", "response_body", providerRequestId)
-      const body = parsed.data
-      const message = body.choices[0]?.message
-      const toolCalls = (message?.tool_calls ?? []).map(parseToolCall).filter(call => call.operationId)
-      const usage = parseUsage(this.adaptUsagePayload(body.usage), "missing_usage")
-      const finishReason = body.choices[0]?.finish_reason ?? undefined
-      this.recordResponse(span, usage, finishReason, toolCalls.length, body.id, body.model)
-      const text = contentText(message?.content)
-      recordAIContent(span, "luna.gen_ai.content.output", "gen_ai.output.messages", genAIOutputMessages({ text, toolCalls, ...(finishReason ? { finishReason } : {}) }))
-      return {
-        text,
-        usage,
-        ...(toolCalls.length ? { toolCalls } : {}),
-        ...(finishReason ? { finishReason } : {}),
-        ...(providerRequestId ? { providerRequestId } : {}),
-        responseId: body.id,
-        responseModel: body.model,
-        ...(body.service_tier ? { serviceTier: body.service_tier } : {}),
-        ...(body.system_fingerprint ? { systemFingerprint: body.system_fingerprint } : {}),
+        const parsed = completionSchema.safeParse(raw)
+        if (!parsed.success) throw this.schemaError("ai.provider_response_invalid", "response_body", providerRequestId)
+        const body = parsed.data
+        const message = body.choices[0]?.message
+        const toolCalls = (message?.tool_calls ?? []).map(parseToolCall).filter(call => call.operationId)
+        const usage = parseUsage(this.adaptUsagePayload(body.usage), "missing_usage")
+        const finishReason = body.choices[0]?.finish_reason ?? undefined
+        this.recordResponse(span, usage, finishReason, toolCalls.length, body.id, body.model)
+        const text = contentText(message?.content)
+        recordAIContent(span, "luna.gen_ai.content.output", "gen_ai.output.messages", genAIOutputMessages({ text, toolCalls, ...(finishReason ? { finishReason } : {}) }))
+        return {
+          text,
+          usage,
+          ...(toolCalls.length ? { toolCalls } : {}),
+          ...(finishReason ? { finishReason } : {}),
+          ...(providerRequestId ? { providerRequestId } : {}),
+          responseId: body.id,
+          responseModel: body.model,
+          ...(body.service_tier ? { serviceTier: body.service_tier } : {}),
+          ...(body.system_fingerprint ? { systemFingerprint: body.system_fingerprint } : {}),
+        }
+      }
+      catch (error) {
+        span.setAttributes(modelUsageSpanAttributes({ status: "unavailable", reason: "request_failed" }))
+        throw error
       }
     })
   }
@@ -228,63 +234,69 @@ export class OpenAIChatCompletionsProvider implements ModelProvider {
   }
 
   private async *streamAttempt(request: ModelRequest, span: Span): AsyncIterable<ModelEvent> {
-    this.recordRequest(span, request)
-    const response = await this.fetchCompletion(request, true)
-    const providerRequestId = response.headers.get("x-request-id") ?? undefined
-    if (!response.body) throw this.schemaError("ai.provider_empty_stream", "stream", providerRequestId)
-    let usage: ModelUsage = { status: "unavailable", reason: "stream_ended_without_usage" }
-    let usageSeen = false
-    let finishReason: string | undefined
-    let responseId: string | undefined
-    let responseModel: string | undefined
-    let responseText = ""
-    let reasoningText = ""
-    let toolDeltaEmitted = false
-    const toolFragments = new Map<number, { id?: string, operationId: string, arguments: string }>()
-    for await (const data of readSSEData(response.body, request.signal)) {
-      if (!data || data === "[DONE]") continue
-      let raw: unknown
-      try { raw = JSON.parse(data) }
-      catch { throw this.schemaError("ai.provider_stream_invalid", "stream", providerRequestId) }
-      const parsed = streamChunkSchema.safeParse(raw)
-      if (!parsed.success) throw this.schemaError("ai.provider_stream_invalid", "stream", providerRequestId)
-      const chunk = parsed.data
-      if (chunk.error !== undefined) throw providerPayloadError(chunk.error, providerRequestId, responseId, responseModel)
-      responseId = chunk.id ?? responseId
-      responseModel = chunk.model ?? responseModel
-      const choice = chunk.choices[0]
-      const delta = choice?.delta as Record<string, unknown> | undefined
-      finishReason = choice?.finish_reason ?? finishReason
-      const reasoning = this.reasoningDelta(delta)
-      const content = contentText(delta?.content)
-      if (reasoning) { reasoningText += reasoning; yield { type: "reasoning_summary_delta", delta: reasoning } }
-      if (content) { responseText += content; yield { type: "message_delta", delta: content } }
-      for (const fragment of choice?.delta?.tool_calls ?? []) {
-        if (!toolDeltaEmitted) { toolDeltaEmitted = true; yield { type: "tool_call_delta" } }
-        const current = toolFragments.get(fragment.index) ?? { operationId: "", arguments: "" }
-        if (!current.id && fragment.id) current.id = fragment.id
-        current.operationId += fragment.function?.name ?? ""
-        current.arguments += fragment.function?.arguments ?? ""
-        toolFragments.set(fragment.index, current)
+    try {
+      this.recordRequest(span, request)
+      const response = await this.fetchCompletion(request, true)
+      const providerRequestId = response.headers.get("x-request-id") ?? undefined
+      if (!response.body) throw this.schemaError("ai.provider_empty_stream", "stream", providerRequestId)
+      let usage: ModelUsage = { status: "unavailable", reason: "stream_ended_without_usage" }
+      let usageSeen = false
+      let finishReason: string | undefined
+      let responseId: string | undefined
+      let responseModel: string | undefined
+      let responseText = ""
+      let reasoningText = ""
+      let toolDeltaEmitted = false
+      const toolFragments = new Map<number, { id?: string, operationId: string, arguments: string }>()
+      for await (const data of readSSEData(response.body, request.signal)) {
+        if (!data || data === "[DONE]") continue
+        let raw: unknown
+        try { raw = JSON.parse(data) }
+        catch { throw this.schemaError("ai.provider_stream_invalid", "stream", providerRequestId) }
+        const parsed = streamChunkSchema.safeParse(raw)
+        if (!parsed.success) throw this.schemaError("ai.provider_stream_invalid", "stream", providerRequestId)
+        const chunk = parsed.data
+        if (chunk.error !== undefined) throw providerPayloadError(chunk.error, providerRequestId, responseId, responseModel)
+        responseId = chunk.id ?? responseId
+        responseModel = chunk.model ?? responseModel
+        const choice = chunk.choices[0]
+        const delta = choice?.delta as Record<string, unknown> | undefined
+        finishReason = choice?.finish_reason ?? finishReason
+        const reasoning = this.reasoningDelta(delta)
+        const content = contentText(delta?.content)
+        if (reasoning) { reasoningText += reasoning; yield { type: "reasoning_summary_delta", delta: reasoning } }
+        if (content) { responseText += content; yield { type: "message_delta", delta: content } }
+        for (const fragment of choice?.delta?.tool_calls ?? []) {
+          if (!toolDeltaEmitted) { toolDeltaEmitted = true; yield { type: "tool_call_delta" } }
+          const current = toolFragments.get(fragment.index) ?? { operationId: "", arguments: "" }
+          if (!current.id && fragment.id) current.id = fragment.id
+          current.operationId += fragment.function?.name ?? ""
+          current.arguments += fragment.function?.arguments ?? ""
+          toolFragments.set(fragment.index, current)
+        }
+        if (chunk.usage !== undefined) {
+          usageSeen = true
+          usage = parseUsage(this.adaptUsagePayload(chunk.usage), "invalid_usage")
+        }
       }
-      if (chunk.usage !== undefined) {
-        usageSeen = true
-        usage = parseUsage(this.adaptUsagePayload(chunk.usage), "invalid_usage")
+      if (!usageSeen) usage = { status: "unavailable", reason: "stream_ended_without_usage" }
+      const toolCalls = parseToolFragments(toolFragments)
+      this.recordResponse(span, usage, finishReason, toolCalls.length, responseId, responseModel)
+      recordAIContent(span, "luna.gen_ai.content.output", "gen_ai.output.messages", genAIOutputMessages({
+        text: responseText, ...(reasoningText ? { reasoningSummary: reasoningText } : {}), ...(toolCalls.length ? { toolCalls } : {}), ...(finishReason ? { finishReason } : {}),
+      }))
+      yield {
+        type: "completed", usage,
+        ...(toolCalls.length ? { toolCalls } : {}),
+        ...(finishReason ? { finishReason } : {}),
+        ...(providerRequestId ? { providerRequestId } : {}),
+        ...(responseId ? { responseId } : {}),
+        ...(responseModel ? { responseModel } : {}),
       }
     }
-    if (!usageSeen) usage = { status: "unavailable", reason: "stream_ended_without_usage" }
-    const toolCalls = parseToolFragments(toolFragments)
-    this.recordResponse(span, usage, finishReason, toolCalls.length, responseId, responseModel)
-    recordAIContent(span, "luna.gen_ai.content.output", "gen_ai.output.messages", genAIOutputMessages({
-      text: responseText, ...(reasoningText ? { reasoningSummary: reasoningText } : {}), ...(toolCalls.length ? { toolCalls } : {}), ...(finishReason ? { finishReason } : {}),
-    }))
-    yield {
-      type: "completed", usage,
-      ...(toolCalls.length ? { toolCalls } : {}),
-      ...(finishReason ? { finishReason } : {}),
-      ...(providerRequestId ? { providerRequestId } : {}),
-      ...(responseId ? { responseId } : {}),
-      ...(responseModel ? { responseModel } : {}),
+    catch (error) {
+      span.setAttributes(modelUsageSpanAttributes({ status: "unavailable", reason: "request_failed" }))
+      throw error
     }
   }
 
@@ -392,7 +404,7 @@ export class OpenAIChatCompletionsProvider implements ModelProvider {
   }
 }
 
-export function modelUsageSpanAttributes(usage: ModelUsage): Attributes {
+export function modelUsageSpanAttributes(usage: ModelUsage | { status: "unavailable", reason: "request_failed" }): Attributes {
   if (usage.status === "unavailable") {
     return {
       "luna.gen_ai.usage.status": usage.status,

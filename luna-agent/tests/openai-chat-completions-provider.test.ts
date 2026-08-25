@@ -190,6 +190,10 @@ describe("OpenAIChatCompletionsProvider official usage", () => {
       "luna.gen_ai.usage.status": "unavailable",
       "luna.gen_ai.usage.unavailable_reason": "missing_usage",
     })
+    expect(modelUsageSpanAttributes({ status: "unavailable", reason: "request_failed" })).toEqual({
+      "luna.gen_ai.usage.status": "unavailable",
+      "luna.gen_ai.usage.unavailable_reason": "request_failed",
+    })
   })
 
   it.each([

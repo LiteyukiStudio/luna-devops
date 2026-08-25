@@ -3,9 +3,13 @@ import {
   failedPromptCacheBenchmarkAssertions,
   isPromptCacheBenchmarkResult,
   runPromptCacheBenchmark,
+  type PromptCacheBenchmarkResult,
   utf8LongestCommonPrefixBytes,
 } from "../benchmarks/prompt-cache/benchmark.js"
-import { comparePromptCacheBenchmarks } from "../benchmarks/prompt-cache/comparison.js"
+import {
+  comparePromptCacheBenchmarks,
+  isPromptCacheBenchmarkComparison,
+} from "../benchmarks/prompt-cache/comparison.js"
 import {
   promptCacheReportPalettes,
   renderPromptCacheBenchmarkReport,
@@ -13,10 +17,19 @@ import {
 
 process.env.LOG_LEVEL = "error"
 
+const baselineRevision = "1".repeat(40)
+const optimizedRevision = "2".repeat(40)
+
 describe("Agent prompt-cache benchmark", () => {
   it("runs every deterministic scenario with functional invariants intact", async () => {
-    const first = await runPromptCacheBenchmark({ checkoutLabel: "baseline" })
-    const second = await runPromptCacheBenchmark({ checkoutLabel: "baseline" })
+    const first = await runPromptCacheBenchmark({
+      checkoutLabel: "baseline",
+      sourceRevision: baselineRevision,
+    })
+    const second = await runPromptCacheBenchmark({
+      checkoutLabel: "baseline",
+      sourceRevision: baselineRevision,
+    })
 
     expect(second).toEqual(first)
     expect(first.scenarios.map(scenario => scenario.id)).toEqual([
@@ -28,10 +41,15 @@ describe("Agent prompt-cache benchmark", () => {
     expect(first.summary).toMatchObject({
       scenarioCount: 4,
       transitionCount: 5,
-      assertionCount: 18,
-      passedAssertionCount: 18,
+      assertionCount: 19,
+      passedAssertionCount: 19,
       failedAssertionCount: 0,
     })
+    expect(first.benchmark).toMatchObject({
+      sourceRevision: baselineRevision,
+    })
+    expect(first.benchmark.implementationDigest).toMatch(/^[a-f0-9]{64}$/)
+    expect(first.benchmark.harnessDigest).toMatch(/^[a-f0-9]{64}$/)
     expect(failedPromptCacheBenchmarkAssertions(first)).toEqual([])
     for (const step of first.scenarios.flatMap(scenario => scenario.steps))
       expect(step.requestSha256).toMatch(/^[a-f0-9]{64}$/)
@@ -52,18 +70,9 @@ describe("Agent prompt-cache benchmark", () => {
   })
 
   it("aligns baseline and optimized results by scenario and transition IDs", async () => {
-    const baseline = await runPromptCacheBenchmark({ checkoutLabel: "baseline" })
-    const optimized = structuredClone(baseline)
-    optimized.benchmark.checkoutLabel = "optimized"
-    const target = optimized.scenarios[0]!.transitions[0]!
-    target.commonPrefixBytes += 400
-    target.estimatedCommonPrefixTokens += 100
-    target.nextRequestReuseRatio = Number((target.nextRequestReuseRatio + 0.01).toFixed(6))
-    optimized.summary.commonPrefixBytes += 400
-    optimized.summary.estimatedCommonPrefixTokens += 100
-    optimized.summary.weightedNextRequestReuseRatio = Number((
-      optimized.summary.weightedNextRequestReuseRatio + 0.01
-    ).toFixed(6))
+    const baseline = await benchmarkResult("baseline", baselineRevision)
+    const optimized = distinctClone(baseline)
+    const expected = improveFirstTransition(optimized, 400)
 
     const comparison = comparePromptCacheBenchmarks(baseline, optimized)
 
@@ -72,21 +81,69 @@ describe("Agent prompt-cache benchmark", () => {
       missingBaselineTransitionCount: 0,
       missingOptimizedTransitionCount: 0,
       functionalAssertionsPassed: true,
-      commonPrefixBytesDelta: 400,
-      estimatedCommonPrefixTokensDelta: 100,
-      weightedNextRequestReusePercentagePointDelta: 1,
+      commonPrefixBytesDelta: expected.summaryBytesDelta,
+      estimatedCommonPrefixTokensDelta: expected.summaryTokenDelta,
+      weightedNextRequestReusePercentagePointDelta: expected.summaryPercentagePointDelta,
     })
     expect(comparison.transitions[0]?.delta).toMatchObject({
-      commonPrefixBytes: 400,
-      estimatedCommonPrefixTokens: 100,
-      nextRequestReusePercentagePoints: 1,
+      commonPrefixBytes: expected.transitionBytesDelta,
+      estimatedCommonPrefixTokens: expected.transitionTokenDelta,
+      nextRequestReusePercentagePoints: expected.transitionPercentagePointDelta,
     })
+    expect(isPromptCacheBenchmarkComparison(comparison)).toBe(true)
+  })
+
+  it("rejects relabelled results from the same implementation", async () => {
+    const baseline = await benchmarkResult("baseline", baselineRevision)
+    const relabelled = structuredClone(baseline)
+    relabelled.benchmark.checkoutLabel = "optimized"
+    relabelled.benchmark.sourceRevision = optimizedRevision
+
+    expect(() => comparePromptCacheBenchmarks(baseline, relabelled))
+      .toThrow("prompt_cache_benchmark_source_not_distinct")
+  })
+
+  it("rejects different benchmark harnesses before comparing implementation results", async () => {
+    const baseline = await benchmarkResult("baseline", baselineRevision)
+    const optimized = distinctClone(baseline)
+    optimized.benchmark.harnessDigest = differentDigest(baseline.benchmark.harnessDigest)
+
+    expect(() => comparePromptCacheBenchmarks(baseline, optimized))
+      .toThrow("prompt_cache_benchmark_harness_mismatch")
+  })
+
+  it("rejects missing transitions and inconsistent derived values", async () => {
+    const valid = await benchmarkResult("baseline", baselineRevision)
+    const missingTransition = structuredClone(valid)
+    missingTransition.scenarios[0]!.transitions.pop()
+    expect(isPromptCacheBenchmarkResult(missingTransition)).toBe(false)
+
+    const malformedRatio = structuredClone(valid)
+    malformedRatio.scenarios[0]!.transitions[0]!.nextRequestReuseRatio += 0.000001
+    expect(isPromptCacheBenchmarkResult(malformedRatio)).toBe(false)
+
+    const malformedSummary = structuredClone(valid)
+    malformedSummary.summary.transitionCount -= 1
+    expect(isPromptCacheBenchmarkResult(malformedSummary)).toBe(false)
+  })
+
+  it("requires the same scenario, step and assertion contract across checkouts", async () => {
+    const baseline = await benchmarkResult("baseline", baselineRevision)
+    const optimized = distinctClone(baseline)
+    optimized.scenarios[0]!.assertions[0]!.description = "被篡改的断言说明"
+
+    expect(isPromptCacheBenchmarkResult(optimized)).toBe(true)
+    expect(() => comparePromptCacheBenchmarks(baseline, optimized))
+      .toThrow("prompt_cache_benchmark_assertion_mismatch")
   })
 })
 
 describe("Agent prompt-cache HTML report", () => {
   it("renders escaped, self-contained, responsive light/dark and print markup", async () => {
-    const result = await runPromptCacheBenchmark({ checkoutLabel: "optimized </title><script>alert(1)</script>" })
+    const result = await runPromptCacheBenchmark({
+      checkoutLabel: "optimized </title><script>alert(1)</script>",
+      sourceRevision: optimizedRevision,
+    })
     const html = renderPromptCacheBenchmarkReport(result)
 
     expect(html).toContain("<!doctype html>")
@@ -97,6 +154,10 @@ describe("Agent prompt-cache HTML report", () => {
     expect(html).toContain("@media (prefers-reduced-motion: reduce)")
     expect(html).toContain("@media print")
     expect(html).toContain("overflow-x: auto")
+    expect(html).toContain("Benchmark 来源校验")
+    expect(html).toContain(`${result.benchmark.sourceRevision.slice(0, 12)}…`)
+    expect(html).toContain(`${result.benchmark.implementationDigest.slice(0, 12)}…`)
+    expect(html).toContain(`${result.benchmark.harnessDigest.slice(0, 12)}…`)
     expect(html).toContain("&lt;script&gt;alert(1)&lt;/script&gt;")
     expect(html).not.toMatch(/<script(?:\s|>)/i)
     expect(html).not.toMatch(/https?:\/\//i)
@@ -104,18 +165,21 @@ describe("Agent prompt-cache HTML report", () => {
   })
 
   it("renders a baseline/optimized comparison without relying on color alone", async () => {
-    const baseline = await runPromptCacheBenchmark({ checkoutLabel: "baseline" })
-    const optimized = structuredClone(baseline)
-    optimized.benchmark.checkoutLabel = "optimized"
-    optimized.summary.weightedNextRequestReuseRatio += 0.01
+    const baseline = await benchmarkResult("baseline", baselineRevision)
+    const optimized = distinctClone(baseline)
+    const expected = improveFirstTransition(optimized, 400)
     const comparison = comparePromptCacheBenchmarks(baseline, optimized)
 
     const html = renderPromptCacheBenchmarkReport(comparison)
 
     expect(html).toContain("baseline → optimized")
-    expect(html).toContain(">+1.00 pp<")
+    expect(html).toContain(`提升 ${formatSignedDecimal(expected.transitionPercentagePointDelta)} pp`)
     expect(html).toContain(">提升<")
     expect(html).toContain("功能等价断言")
+    expect(html).toContain("Baseline 与 optimized 来源校验")
+    expect(html).toContain(`${baseline.benchmark.sourceRevision.slice(0, 12)}…`)
+    expect(html).toContain(`${optimized.benchmark.sourceRevision.slice(0, 12)}…`)
+    expect(html).toContain("共享 Harness")
     expect(html).toContain("Baseline 与 optimized")
     const comparisonRow = html.match(/Baseline 与 optimized[\s\S]*?<tbody>([\s\S]*?)<\/tbody>/)?.[1]
     expect(comparisonRow?.match(/<(?:th|td)\b/g)).toHaveLength(4)
@@ -138,6 +202,87 @@ describe("Agent prompt-cache HTML report", () => {
     }
   })
 })
+
+async function benchmarkResult(label: string, sourceRevision: string): Promise<PromptCacheBenchmarkResult> {
+  return runPromptCacheBenchmark({ checkoutLabel: label, sourceRevision })
+}
+
+function distinctClone(baseline: PromptCacheBenchmarkResult): PromptCacheBenchmarkResult {
+  const optimized = structuredClone(baseline)
+  optimized.benchmark.checkoutLabel = "optimized"
+  optimized.benchmark.sourceRevision = optimizedRevision
+  optimized.benchmark.implementationDigest = differentDigest(baseline.benchmark.implementationDigest)
+  return optimized
+}
+
+function differentDigest(value: string): string {
+  return value === "f".repeat(64) ? "e".repeat(64) : "f".repeat(64)
+}
+
+function improveFirstTransition(result: PromptCacheBenchmarkResult, requestedBytes: number) {
+  const scenario = result.scenarios[0]!
+  const target = scenario.transitions[0]!
+  const nextStep = scenario.steps[1]!
+  const before = {
+    commonPrefixBytes: target.commonPrefixBytes,
+    estimatedCommonPrefixTokens: target.estimatedCommonPrefixTokens,
+    nextRequestReuseRatio: target.nextRequestReuseRatio,
+    summaryCommonPrefixBytes: result.summary.commonPrefixBytes,
+    summaryEstimatedCommonPrefixTokens: result.summary.estimatedCommonPrefixTokens,
+    summaryWeightedNextRequestReuseRatio: result.summary.weightedNextRequestReuseRatio,
+  }
+  const transitionBytesDelta = Math.min(requestedBytes, nextStep.requestBytes - target.commonPrefixBytes)
+  if (transitionBytesDelta <= 0) throw new Error("prompt_cache_benchmark_test_transition_cannot_improve")
+  target.commonPrefixBytes += transitionBytesDelta
+  target.estimatedCommonPrefixTokens = Math.ceil(target.commonPrefixBytes / 4)
+  target.nextRequestReuseRatio = roundedRatio(target.commonPrefixBytes, nextStep.requestBytes)
+  refreshSummary(result)
+  return {
+    transitionBytesDelta,
+    transitionTokenDelta: target.estimatedCommonPrefixTokens - before.estimatedCommonPrefixTokens,
+    transitionPercentagePointDelta: percentagePointDelta(
+      target.nextRequestReuseRatio,
+      before.nextRequestReuseRatio,
+    ),
+    summaryBytesDelta: result.summary.commonPrefixBytes - before.summaryCommonPrefixBytes,
+    summaryTokenDelta: result.summary.estimatedCommonPrefixTokens - before.summaryEstimatedCommonPrefixTokens,
+    summaryPercentagePointDelta: percentagePointDelta(
+      result.summary.weightedNextRequestReuseRatio,
+      before.summaryWeightedNextRequestReuseRatio,
+    ),
+  }
+}
+
+function refreshSummary(result: PromptCacheBenchmarkResult): void {
+  const transitions = result.scenarios.flatMap(scenario => scenario.transitions)
+  const assertions = result.scenarios.flatMap(scenario => scenario.assertions)
+  const commonPrefixBytes = transitions.reduce((total, transition) => total + transition.commonPrefixBytes, 0)
+  const nextRequestBytes = result.scenarios.reduce((total, scenario) => total
+    + scenario.steps.slice(1).reduce((scenarioTotal, step) => scenarioTotal + step.requestBytes, 0), 0)
+  result.summary = {
+    scenarioCount: result.scenarios.length,
+    transitionCount: transitions.length,
+    assertionCount: assertions.length,
+    passedAssertionCount: assertions.filter(assertion => assertion.passed).length,
+    failedAssertionCount: assertions.filter(assertion => !assertion.passed).length,
+    commonPrefixBytes,
+    estimatedCommonPrefixTokens: Math.ceil(commonPrefixBytes / 4),
+    nextRequestBytes,
+    weightedNextRequestReuseRatio: roundedRatio(commonPrefixBytes, nextRequestBytes),
+  }
+}
+
+function roundedRatio(numerator: number, denominator: number): number {
+  return denominator > 0 ? Number((numerator / denominator).toFixed(6)) : 0
+}
+
+function percentagePointDelta(optimized: number, baseline: number): number {
+  return Number(((optimized - baseline) * 100).toFixed(4))
+}
+
+function formatSignedDecimal(value: number): string {
+  return `${value > 0 ? "+" : value < 0 ? "-" : ""}${Math.abs(value).toFixed(2)}`
+}
 
 function contrastRatio(left: string, right: string): number {
   const leftLuminance = relativeLuminance(left)

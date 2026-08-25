@@ -109,6 +109,10 @@ function renderSingle(result: PromptCacheBenchmarkResult): string {
         ${metricCard("加权前缀占比", formatPercent(result.summary.weightedNextRequestReuseRatio), "相对于后一个请求")}
         ${metricCard("估算公共前缀", formatInteger(result.summary.estimatedCommonPrefixTokens), "约每 4 UTF-8 字节 / Token")}
       </div>
+      <div class="source-proof" aria-label="Benchmark 来源校验">
+        ${sourceIdentity("Source", result)}
+        ${digestIdentity("Harness", result.benchmark.harnessDigest)}
+      </div>
     </section>
     ${methodology()}
     <section aria-labelledby="scenarios-title">
@@ -146,6 +150,11 @@ function renderComparison(comparison: PromptCacheBenchmarkComparison): string {
         <p><strong>${formatInteger(summary.comparableTransitionCount)}</strong> 组可比转换</p>
         <p><strong>${formatInteger(summary.missingBaselineTransitionCount)}</strong> 组缺 baseline</p>
         <p><strong>${formatInteger(summary.missingOptimizedTransitionCount)}</strong> 组缺 optimized</p>
+      </div>
+      <div class="source-proof" aria-label="Baseline 与 optimized 来源校验">
+        ${sourceIdentity("Baseline", baseline)}
+        ${sourceIdentity("Optimized", optimized)}
+        ${digestIdentity("共享 Harness", baseline.benchmark.harnessDigest)}
       </div>
     </section>
     ${methodology()}
@@ -308,6 +317,18 @@ function metricCard(label: string, value: string, detail: string): string {
   return `<article class="metric"><h3>${escapeHTML(label)}</h3><p class="metric-value">${escapeHTML(value)}</p><p>${escapeHTML(detail)}</p></article>`
 }
 
+function sourceIdentity(label: string, result: PromptCacheBenchmarkResult): string {
+  return `<p><strong>${escapeHTML(label)}</strong><span>Revision <code title="${escapeHTML(result.benchmark.sourceRevision)}">${escapeHTML(shortDigest(result.benchmark.sourceRevision))}</code></span><span>Implementation <code title="${escapeHTML(result.benchmark.implementationDigest)}">${escapeHTML(shortDigest(result.benchmark.implementationDigest))}</code></span></p>`
+}
+
+function digestIdentity(label: string, digest: string): string {
+  return `<p><strong>${escapeHTML(label)}</strong><span><code title="${escapeHTML(digest)}">${escapeHTML(shortDigest(digest))}</code></span></p>`
+}
+
+function shortDigest(value: string): string {
+  return `${value.slice(0, 12)}…`
+}
+
 function statusPill(passed: boolean): string {
   return `<span class="status ${passed ? "pass" : "fail"}"><span aria-hidden="true">${passed ? "✓" : "×"}</span>${passed ? "功能断言通过" : "存在断言失败"}</span>`
 }
@@ -439,6 +460,10 @@ function reportStyles(): string {
     .assertion-list li span:last-child { color: var(--text); }
     .comparison-meta { display: flex; gap: 1rem 2rem; margin-block-start: 1rem; color: var(--muted); flex-wrap: wrap; }
     .comparison-meta p { margin: 0; }
+    .source-proof { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr)); gap: .75rem; margin-block-start: 1rem; }
+    .source-proof p { display: grid; gap: .2rem; margin: 0; padding: .8rem 1rem; border-radius: .75rem; background: var(--surface); color: var(--muted); }
+    .source-proof strong { color: var(--text); }
+    .source-proof span { overflow-wrap: anywhere; }
     .checkout-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 25rem), 1fr)); gap: 1rem; }
     .stacked-value, .delta { display: grid; gap: .1rem; }
     .stacked-value span, .delta span { color: var(--muted); font-size: .82rem; white-space: nowrap; }

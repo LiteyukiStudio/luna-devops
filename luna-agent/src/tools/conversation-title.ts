@@ -7,7 +7,7 @@ export const renameConversationInput = z.object({
 
 export const renameConversationTool: ModelToolDefinition = {
   operationId: "rename_conversation",
-  description: "使用用户当前语言为会话设置简洁标题。titleSource 为 default 时在首轮调用；titleSource 为 assistant 且原有标题不再符合主要话题时可以再次调用；titleSource 为 user 时绝不能调用。",
+  description: "使用用户当前语言为会话设置简洁标题。此工具只在当前会话允许助手改名时提供；主要话题明显变化时调用。首轮默认标题由执行层兜底，不要在话题未变化时反复调用。",
   inputSchema: {
     type: "object",
     properties: {

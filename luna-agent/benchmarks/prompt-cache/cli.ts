@@ -49,6 +49,8 @@ async function runCommand(args: string[]): Promise<void> {
   const result = await runPromptCacheBenchmark({
     ...(options.label ? { checkoutLabel: options.label } : {}),
   })
+  if (!isPromptCacheBenchmarkResult(result))
+    throw new Error("prompt_cache_benchmark_generated_result_invalid")
   await writeText(options.output ?? "-", `${JSON.stringify(result, null, 2)}\n`)
   if (options.report) await writeText(options.report, renderPromptCacheBenchmarkReport(result))
   const failures = failedPromptCacheBenchmarkAssertions(result)

@@ -59,7 +59,7 @@ Compose manifest. Updating only `.env` has no effect when an older Compose manif
 | --- | --- | --- |
 | `AI_CONTEXT_COMPRESSION_TRIGGER_RATIO`<sup>2</sup> | `0.9` | Triggers compression from the previous same-model official `prompt_tokens` ratio; use `0.5`–`0.95`. |
 | `AI_CONTEXT_RECENT_TURN_COUNT` | `16` | Sets how many recent turns proactive compression preserves; use an integer from `1` to `32`. |
-| `AI_CONTEXT_MAX_HISTORY_PAYLOAD_K_BYTES` | `4096` | Bounds history payload per context compilation; use an integer from `64` to `16384` KiB. |
+| `AI_CONTEXT_MAX_HISTORY_PAYLOAD_K_BYTES` | `4096` | Normally bounds history payload per context compilation; use an integer from `64` to `16384` KiB. The newest complete Turn may temporarily exceed this total when required for byte-identical replay on the next Turn. |
 | `AI_CONTEXT_MAX_SUMMARY_PAYLOAD_K_BYTES` | `512` | Bounds history payload per summary request; use an integer from `16` to `4096` KiB. |
 | `AI_CONTEXT_MAX_CONTINUATION_PAYLOAD_K_BYTES` | `1024` | Bounds tool-continuation messages; use an integer from `16` to `4096` KiB. |
 | `AI_TOOLS_RESULT_PAYLOAD_K_BYTES` | `512` | Limits one tool result added to context; use an integer from `4` to `4096` KiB. |

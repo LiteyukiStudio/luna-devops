@@ -50,6 +50,15 @@ describe("ProviderConfigClient", () => {
     await expect(client().get()).rejects.toThrow("ai.provider_config_invalid")
   })
 
+  it("rejects runtime fields outside the strict OpenAPI contract", async () => {
+    const payload = authoritativePayload()
+    vi.stubGlobal("fetch", vi.fn(async () => response({
+      ...payload,
+      runtime: { ...payload.runtime, unexpected: 1 },
+    })))
+    await expect(client().get()).rejects.toThrow("ai.provider_config_invalid")
+  })
+
   it("rejects omitted model and tool catalogs", async () => {
     const payload = authoritativePayload()
     const provider = { ...payload.provider }

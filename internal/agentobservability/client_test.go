@@ -65,7 +65,7 @@ func TestTraceTokenUsageUsesWeightedReportedModelUsage(t *testing.T) {
 		}},
 		{Attributes: map[string]string{
 			"gen_ai.operation.name": "chat", "luna.gen_ai.request.purpose": "assistant", "luna.gen_ai.usage.status": "unavailable",
-			"luna.gen_ai.usage.unavailable_reason": "missing_usage",
+			"luna.gen_ai.usage.unavailable_reason": "request_failed",
 		}},
 	})
 	if usage == nil {

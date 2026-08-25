@@ -21,9 +21,10 @@ describe("versioned system prompt", () => {
       "不提供 generationId",
       "绝不能提供 defaultValue",
       "随机生成必须调用平台后端 generate 动作",
+      "rename_conversation 只会在平台允许助手改名时提供",
     ])
       expect(prompt).toContain(invariant)
-    for (const obsolete of ["prepare_interaction_cards", "LangGraph"])
+    for (const obsolete of ["prepare_interaction_cards", "LangGraph", "titleSource"])
       expect(prompt).not.toContain(obsolete)
   })
 

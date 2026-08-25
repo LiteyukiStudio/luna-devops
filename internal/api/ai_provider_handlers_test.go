@@ -82,6 +82,55 @@ func TestAIProviderInternalOpenAPIRequiresCapabilityPolicies(t *testing.T) {
 			}
 		}
 	}
+
+	runtime := internal["properties"].(map[string]any)["runtime"].(map[string]any)
+	if additionalProperties, ok := runtime["additionalProperties"].(bool); !ok || additionalProperties {
+		t.Fatalf("AIProviderInternalConfig.runtime additionalProperties = %#v, want false", runtime["additionalProperties"])
+	}
+	runtimeFields := map[string][2]float64{
+		"providerTimeoutMs":                    {1_000, 900_000},
+		"maxRequestRetries":                    {0, 10},
+		"runTimeoutMs":                         {30_000, 7_200_000},
+		"agentConcurrentRuns":                  {1, 100},
+		"userConcurrentRuns":                   {1, 100},
+		"assistantMaxOutputTokens":             {256, 131_072},
+		"maxModelSteps":                        {1, 1_024},
+		"runMaxToolCalls":                      {32, 2_048},
+		"maxInputBytes":                        {8_192, 8_388_608},
+		"navigateActionTtlSeconds":             {10, 600},
+		"maxCardRepairAttempts":                {1, 10},
+		"contextMaxUncompressedTurnCount":      {4, 128},
+		"contextMaxCompressionTurnsPerCompile": {8, 1_024},
+		"contextSummaryMaxOutputTokens":        {200, 32_768},
+	}
+	runtimeRequired, _ := schemaStringList(runtime["required"])
+	if len(runtimeRequired) != len(runtimeFields) {
+		t.Fatalf("AIProviderInternalConfig.runtime required = %#v, want exactly %d fields", runtimeRequired, len(runtimeFields))
+	}
+	runtimeProperties := runtime["properties"].(map[string]any)
+	if len(runtimeProperties) != len(runtimeFields) {
+		t.Fatalf("AIProviderInternalConfig.runtime properties = %#v, want exactly %d fields", runtimeProperties, len(runtimeFields))
+	}
+	mappedRuntime := aiProviderRuntimeConfig(aiConfigDefaults())
+	if len(mappedRuntime) != len(runtimeFields) {
+		t.Fatalf("AI Provider runtime response = %#v, want exactly %d fields", mappedRuntime, len(runtimeFields))
+	}
+	for field, bounds := range runtimeFields {
+		if !containsSchemaField(runtimeRequired, field) {
+			t.Fatalf("AIProviderInternalConfig.runtime does not require %s: %#v", field, runtimeRequired)
+		}
+		property, ok := runtimeProperties[field].(map[string]any)
+		if !ok {
+			t.Fatalf("AIProviderInternalConfig.runtime property %s missing", field)
+		}
+		if property["minimum"] != bounds[0] || property["maximum"] != bounds[1] {
+			t.Fatalf("AIProviderInternalConfig.runtime.%s bounds = [%v,%v], want [%v,%v]", field, property["minimum"], property["maximum"], bounds[0], bounds[1])
+		}
+		value, ok := mappedRuntime[field].(int)
+		if !ok || float64(value) < bounds[0] || float64(value) > bounds[1] {
+			t.Fatalf("AI Provider runtime response %s = %#v, want an integer in [%v,%v]", field, mappedRuntime[field], bounds[0], bounds[1])
+		}
+	}
 }
 
 func TestAIProviderConfigVersionIncludesRuntimePolicy(t *testing.T) {

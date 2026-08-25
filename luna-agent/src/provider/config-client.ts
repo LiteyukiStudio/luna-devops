@@ -41,7 +41,7 @@ const runtimeSettingsSchema = z.object({
   contextMaxUncompressedTurnCount: z.number().int().min(4).max(128),
   contextMaxCompressionTurnsPerCompile: z.number().int().min(8).max(1024),
   contextSummaryMaxOutputTokens: z.number().int().min(200).max(32 * 1024),
-})
+}).strict()
 
 const remoteProviderConfigSchema = z.object({
   version: z.string().min(1),

@@ -58,7 +58,7 @@ Agent 此时尚未尝试连接 Redis。请使用当前版本的 Helm Chart 或 D
 | --- | --- | --- |
 | `AI_CONTEXT_COMPRESSION_TRIGGER_RATIO`<sup>2</sup> | `0.9` | 设置何时依据上一次同模型官方 `prompt_tokens` 触发压缩；填写 `0.5`–`0.95`。 |
 | `AI_CONTEXT_RECENT_TURN_COUNT` | `16` | 设置主动压缩时保留的近期对话轮数；填写 `1`–`32` 的整数。 |
-| `AI_CONTEXT_MAX_HISTORY_PAYLOAD_K_BYTES` | `4096` | 限制一次编译携带的历史负载；填写 `64`–`16384` 的整数，单位为 KiB。 |
+| `AI_CONTEXT_MAX_HISTORY_PAYLOAD_K_BYTES` | `4096` | 限制一次编译通常携带的历史负载；填写 `64`–`16384` 的整数，单位为 KiB；为保证刚完成的超大 Turn 能在下一轮按原字节重放，最新完整 Turn 必要时可临时超过该总预算。 |
 | `AI_CONTEXT_MAX_SUMMARY_PAYLOAD_K_BYTES` | `512` | 限制单次摘要请求的历史负载；填写 `16`–`4096` 的整数，单位为 KiB。 |
 | `AI_CONTEXT_MAX_CONTINUATION_PAYLOAD_K_BYTES` | `1024` | 限制工具续跑消息负载；填写 `16`–`4096` 的整数，单位为 KiB。 |
 | `AI_TOOLS_RESULT_PAYLOAD_K_BYTES` | `512` | 限制单次工具结果进入上下文的大小；填写 `4`–`4096` 的整数，单位为 KiB。 |

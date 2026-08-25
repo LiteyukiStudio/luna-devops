@@ -211,6 +211,7 @@ const operationsDashboardPage = {
       missing_usage: '上游未回傳用量',
       invalid_usage: '上游用量無效',
       stream_ended_without_usage: '串流結束時未回傳用量',
+      request_failed: '模型請求失敗',
       request_outcome_unknown: '請求結果未知',
       hold_deficit: '額度預留不足',
     },

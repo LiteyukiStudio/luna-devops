@@ -211,6 +211,7 @@ const operationsDashboardPage = {
       missing_usage: '上游未返回用量',
       invalid_usage: '上游用量无效',
       stream_ended_without_usage: '流结束时未返回用量',
+      request_failed: '模型请求失败',
       request_outcome_unknown: '请求结果未知',
       hold_deficit: '额度预留不足',
     },

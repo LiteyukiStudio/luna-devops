@@ -5,19 +5,19 @@ import {
   type PromptCacheBenchmarkTransition,
 } from "./benchmark.js"
 
-export const promptCacheBenchmarkComparisonSchemaVersion = "luna.agent.prompt-cache-benchmark-comparison.v1" as const
+export const promptCacheBenchmarkComparisonSchemaVersion = "luna.agent.prompt-cache-benchmark-comparison.v2" as const
 
 export type PromptCacheBenchmarkComparisonTransition = {
   scenarioId: string
   scenarioTitle: string
   fromStepId: string
   toStepId: string
-  baseline: TransitionSnapshot | null
-  optimized: TransitionSnapshot | null
+  baseline: TransitionSnapshot
+  optimized: TransitionSnapshot
   delta: {
-    commonPrefixBytes: number | null
-    estimatedCommonPrefixTokens: number | null
-    nextRequestReusePercentagePoints: number | null
+    commonPrefixBytes: number
+    estimatedCommonPrefixTokens: number
+    nextRequestReusePercentagePoints: number
   }
 }
 
@@ -27,8 +27,8 @@ export type PromptCacheBenchmarkComparison = {
   optimized: PromptCacheBenchmarkResult
   summary: {
     comparableTransitionCount: number
-    missingBaselineTransitionCount: number
-    missingOptimizedTransitionCount: number
+    missingBaselineTransitionCount: 0
+    missingOptimizedTransitionCount: 0
     functionalAssertionsPassed: boolean
     weightedNextRequestReusePercentagePointDelta: number
     commonPrefixBytesDelta: number
@@ -41,65 +41,63 @@ type TransitionSnapshot = {
   commonPrefixBytes: number
   estimatedCommonPrefixTokens: number
   nextRequestReuseRatio: number
-  nextRequestBytes: number | null
-}
-
-type IndexedTransition = {
-  scenario: PromptCacheBenchmarkScenario
-  transition: PromptCacheBenchmarkTransition
+  nextRequestBytes: number
 }
 
 export function comparePromptCacheBenchmarks(
   baseline: PromptCacheBenchmarkResult,
   optimized: PromptCacheBenchmarkResult,
 ): PromptCacheBenchmarkComparison {
-  const baselineTransitions = indexTransitions(baseline)
-  const optimizedTransitions = indexTransitions(optimized)
-  const keys = [
-    ...baselineTransitions.keys(),
-    ...[...optimizedTransitions.keys()].filter(key => !baselineTransitions.has(key)),
-  ]
-  const transitions = keys.map((key) => {
-    const baselineEntry = baselineTransitions.get(key)
-    const optimizedEntry = optimizedTransitions.get(key)
-    const scenario = optimizedEntry?.scenario ?? baselineEntry?.scenario
-    if (!scenario) throw new Error(`prompt_cache_benchmark_transition_missing:${key}`)
-    const baselineSnapshot = baselineEntry ? snapshot(baselineEntry) : null
-    const optimizedSnapshot = optimizedEntry ? snapshot(optimizedEntry) : null
-    return {
-      scenarioId: scenario.id,
-      scenarioTitle: scenario.title,
-      fromStepId: optimizedEntry?.transition.fromStepId ?? baselineEntry!.transition.fromStepId,
-      toStepId: optimizedEntry?.transition.toStepId ?? baselineEntry!.transition.toStepId,
-      baseline: baselineSnapshot,
-      optimized: optimizedSnapshot,
-      delta: {
-        commonPrefixBytes: difference(optimizedSnapshot?.commonPrefixBytes, baselineSnapshot?.commonPrefixBytes),
-        estimatedCommonPrefixTokens: difference(
-          optimizedSnapshot?.estimatedCommonPrefixTokens,
-          baselineSnapshot?.estimatedCommonPrefixTokens,
-        ),
-        nextRequestReusePercentagePoints: percentagePointDifference(
-          optimizedSnapshot?.nextRequestReuseRatio,
-          baselineSnapshot?.nextRequestReuseRatio,
-        ),
-      },
-    }
+  if (!isPromptCacheBenchmarkResult(baseline))
+    throw new Error("prompt_cache_benchmark_baseline_invalid")
+  if (!isPromptCacheBenchmarkResult(optimized))
+    throw new Error("prompt_cache_benchmark_optimized_invalid")
+  if (baseline.benchmark.harnessDigest !== optimized.benchmark.harnessDigest)
+    throw new Error("prompt_cache_benchmark_harness_mismatch")
+  if (baseline.benchmark.implementationDigest === optimized.benchmark.implementationDigest)
+    throw new Error("prompt_cache_benchmark_source_not_distinct")
+  assertComparableStructure(baseline, optimized)
+
+  const transitions = baseline.scenarios.flatMap((baselineScenario, scenarioIndex) => {
+    const optimizedScenario = optimized.scenarios[scenarioIndex]!
+    return baselineScenario.transitions.map((baselineTransition, transitionIndex) => {
+      const optimizedTransition = optimizedScenario.transitions[transitionIndex]!
+      const baselineSnapshot = snapshot(baselineScenario, baselineTransition)
+      const optimizedSnapshot = snapshot(optimizedScenario, optimizedTransition)
+      return {
+        scenarioId: baselineScenario.id,
+        scenarioTitle: baselineScenario.title,
+        fromStepId: baselineTransition.fromStepId,
+        toStepId: baselineTransition.toStepId,
+        baseline: baselineSnapshot,
+        optimized: optimizedSnapshot,
+        delta: {
+          commonPrefixBytes: optimizedSnapshot.commonPrefixBytes - baselineSnapshot.commonPrefixBytes,
+          estimatedCommonPrefixTokens: optimizedSnapshot.estimatedCommonPrefixTokens
+            - baselineSnapshot.estimatedCommonPrefixTokens,
+          nextRequestReusePercentagePoints: percentagePointDifference(
+            optimizedSnapshot.nextRequestReuseRatio,
+            baselineSnapshot.nextRequestReuseRatio,
+          ),
+        },
+      }
+    })
   })
+
   return {
     schemaVersion: promptCacheBenchmarkComparisonSchemaVersion,
     baseline,
     optimized,
     summary: {
-      comparableTransitionCount: transitions.filter(item => item.baseline && item.optimized).length,
-      missingBaselineTransitionCount: transitions.filter(item => !item.baseline).length,
-      missingOptimizedTransitionCount: transitions.filter(item => !item.optimized).length,
+      comparableTransitionCount: transitions.length,
+      missingBaselineTransitionCount: 0,
+      missingOptimizedTransitionCount: 0,
       functionalAssertionsPassed: baseline.summary.failedAssertionCount === 0
         && optimized.summary.failedAssertionCount === 0,
       weightedNextRequestReusePercentagePointDelta: percentagePointDifference(
         optimized.summary.weightedNextRequestReuseRatio,
         baseline.summary.weightedNextRequestReuseRatio,
-      ) ?? 0,
+      ),
       commonPrefixBytesDelta: optimized.summary.commonPrefixBytes - baseline.summary.commonPrefixBytes,
       estimatedCommonPrefixTokensDelta: optimized.summary.estimatedCommonPrefixTokens
         - baseline.summary.estimatedCommonPrefixTokens,
@@ -109,50 +107,165 @@ export function comparePromptCacheBenchmarks(
 }
 
 export function isPromptCacheBenchmarkComparison(value: unknown): value is PromptCacheBenchmarkComparison {
-  return isRecord(value)
-    && value.schemaVersion === promptCacheBenchmarkComparisonSchemaVersion
-    && isPromptCacheBenchmarkResult(value.baseline)
-    && isPromptCacheBenchmarkResult(value.optimized)
-    && isRecord(value.summary)
-    && typeof value.summary.functionalAssertionsPassed === "boolean"
-    && typeof value.summary.weightedNextRequestReusePercentagePointDelta === "number"
-    && Array.isArray(value.transitions)
-    && value.transitions.every(transition => isRecord(transition)
-      && typeof transition.scenarioId === "string"
-      && typeof transition.fromStepId === "string"
-      && typeof transition.toStepId === "string"
-      && isRecord(transition.delta))
+  if (!isRecord(value)
+    || !hasExactKeys(value, ["schemaVersion", "baseline", "optimized", "summary", "transitions"])
+    || value.schemaVersion !== promptCacheBenchmarkComparisonSchemaVersion
+    || !isPromptCacheBenchmarkResult(value.baseline)
+    || !isPromptCacheBenchmarkResult(value.optimized)) return false
+
+  let expected: PromptCacheBenchmarkComparison
+  try {
+    expected = comparePromptCacheBenchmarks(value.baseline, value.optimized)
+  }
+  catch {
+    return false
+  }
+  if (!isRecord(value.summary)
+    || !hasExactKeys(value.summary, [
+      "comparableTransitionCount",
+      "missingBaselineTransitionCount",
+      "missingOptimizedTransitionCount",
+      "functionalAssertionsPassed",
+      "weightedNextRequestReusePercentagePointDelta",
+      "commonPrefixBytesDelta",
+      "estimatedCommonPrefixTokensDelta",
+    ])
+    || !sameComparisonSummary(value.summary, expected.summary)
+    || !Array.isArray(value.transitions)
+    || value.transitions.length !== expected.transitions.length) return false
+
+  return value.transitions.every((transition, index) =>
+    sameComparisonTransition(transition, expected.transitions[index]!))
 }
 
-function indexTransitions(result: PromptCacheBenchmarkResult): Map<string, IndexedTransition> {
-  return new Map(result.scenarios.flatMap(scenario => scenario.transitions.map(transition => [
-    transitionKey(scenario.id, transition),
-    { scenario, transition },
-  ])))
+function assertComparableStructure(
+  baseline: PromptCacheBenchmarkResult,
+  optimized: PromptCacheBenchmarkResult,
+): void {
+  if (baseline.scenarios.length !== optimized.scenarios.length)
+    throw new Error("prompt_cache_benchmark_scenario_mismatch")
+  baseline.scenarios.forEach((baselineScenario, scenarioIndex) => {
+    const optimizedScenario = optimized.scenarios[scenarioIndex]
+    if (!optimizedScenario
+      || baselineScenario.id !== optimizedScenario.id
+      || baselineScenario.title !== optimizedScenario.title
+      || baselineScenario.description !== optimizedScenario.description)
+      throw new Error(`prompt_cache_benchmark_scenario_mismatch:${baselineScenario.id}`)
+    assertSameSequence(
+      baselineScenario.steps,
+      optimizedScenario.steps,
+      step => `${step.id}\0${step.label}`,
+      `prompt_cache_benchmark_step_mismatch:${baselineScenario.id}`,
+    )
+    assertSameSequence(
+      baselineScenario.transitions,
+      optimizedScenario.transitions,
+      transition => `${transition.fromStepId}\0${transition.toStepId}`,
+      `prompt_cache_benchmark_transition_mismatch:${baselineScenario.id}`,
+    )
+    assertSameSequence(
+      baselineScenario.assertions,
+      optimizedScenario.assertions,
+      assertion => `${assertion.id}\0${assertion.description}`,
+      `prompt_cache_benchmark_assertion_mismatch:${baselineScenario.id}`,
+    )
+  })
 }
 
-function transitionKey(scenarioId: string, transition: PromptCacheBenchmarkTransition): string {
-  return `${scenarioId}\0${transition.fromStepId}\0${transition.toStepId}`
+function assertSameSequence<T>(
+  baseline: T[],
+  optimized: T[],
+  identity: (value: T) => string,
+  errorCode: string,
+): void {
+  if (baseline.length !== optimized.length
+    || baseline.some((value, index) => identity(value) !== identity(optimized[index]!)))
+    throw new Error(errorCode)
 }
 
-function snapshot(entry: IndexedTransition): TransitionSnapshot {
+function snapshot(
+  scenario: PromptCacheBenchmarkScenario,
+  transition: PromptCacheBenchmarkTransition,
+): TransitionSnapshot {
+  const nextRequestBytes = scenario.steps.find(step => step.id === transition.toStepId)?.requestBytes
+  if (nextRequestBytes === undefined)
+    throw new Error(`prompt_cache_benchmark_transition_target_missing:${scenario.id}:${transition.toStepId}`)
   return {
-    commonPrefixBytes: entry.transition.commonPrefixBytes,
-    estimatedCommonPrefixTokens: entry.transition.estimatedCommonPrefixTokens,
-    nextRequestReuseRatio: entry.transition.nextRequestReuseRatio,
-    nextRequestBytes: entry.scenario.steps.find(step => step.id === entry.transition.toStepId)?.requestBytes ?? null,
+    commonPrefixBytes: transition.commonPrefixBytes,
+    estimatedCommonPrefixTokens: transition.estimatedCommonPrefixTokens,
+    nextRequestReuseRatio: transition.nextRequestReuseRatio,
+    nextRequestBytes,
   }
 }
 
-function difference(optimized: number | undefined, baseline: number | undefined): number | null {
-  return optimized === undefined || baseline === undefined ? null : optimized - baseline
+function percentagePointDifference(optimized: number, baseline: number): number {
+  return Number(((optimized - baseline) * 100).toFixed(4))
 }
 
-function percentagePointDifference(optimized: number | undefined, baseline: number | undefined): number | null {
-  const delta = difference(optimized, baseline)
-  return delta === null ? null : Number((delta * 100).toFixed(4))
+function sameComparisonSummary(
+  candidate: Record<string, unknown>,
+  expected: PromptCacheBenchmarkComparison["summary"],
+): boolean {
+  return candidate.comparableTransitionCount === expected.comparableTransitionCount
+    && candidate.missingBaselineTransitionCount === expected.missingBaselineTransitionCount
+    && candidate.missingOptimizedTransitionCount === expected.missingOptimizedTransitionCount
+    && candidate.functionalAssertionsPassed === expected.functionalAssertionsPassed
+    && candidate.weightedNextRequestReusePercentagePointDelta
+      === expected.weightedNextRequestReusePercentagePointDelta
+    && candidate.commonPrefixBytesDelta === expected.commonPrefixBytesDelta
+    && candidate.estimatedCommonPrefixTokensDelta === expected.estimatedCommonPrefixTokensDelta
+}
+
+function sameComparisonTransition(
+  candidate: unknown,
+  expected: PromptCacheBenchmarkComparisonTransition,
+): boolean {
+  if (!isRecord(candidate)
+    || !hasExactKeys(candidate, [
+      "scenarioId",
+      "scenarioTitle",
+      "fromStepId",
+      "toStepId",
+      "baseline",
+      "optimized",
+      "delta",
+    ])
+    || candidate.scenarioId !== expected.scenarioId
+    || candidate.scenarioTitle !== expected.scenarioTitle
+    || candidate.fromStepId !== expected.fromStepId
+    || candidate.toStepId !== expected.toStepId
+    || !sameSnapshot(candidate.baseline, expected.baseline)
+    || !sameSnapshot(candidate.optimized, expected.optimized)
+    || !isRecord(candidate.delta)
+    || !hasExactKeys(candidate.delta, [
+      "commonPrefixBytes",
+      "estimatedCommonPrefixTokens",
+      "nextRequestReusePercentagePoints",
+    ])) return false
+  return candidate.delta.commonPrefixBytes === expected.delta.commonPrefixBytes
+    && candidate.delta.estimatedCommonPrefixTokens === expected.delta.estimatedCommonPrefixTokens
+    && candidate.delta.nextRequestReusePercentagePoints === expected.delta.nextRequestReusePercentagePoints
+}
+
+function sameSnapshot(candidate: unknown, expected: TransitionSnapshot): boolean {
+  return isRecord(candidate)
+    && hasExactKeys(candidate, [
+      "commonPrefixBytes",
+      "estimatedCommonPrefixTokens",
+      "nextRequestReuseRatio",
+      "nextRequestBytes",
+    ])
+    && candidate.commonPrefixBytes === expected.commonPrefixBytes
+    && candidate.estimatedCommonPrefixTokens === expected.estimatedCommonPrefixTokens
+    && candidate.nextRequestReuseRatio === expected.nextRequestReuseRatio
+    && candidate.nextRequestBytes === expected.nextRequestBytes
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value)
+}
+
+function hasExactKeys(value: Record<string, unknown>, expected: readonly string[]): boolean {
+  const keys = Object.keys(value)
+  return keys.length === expected.length && expected.every(key => Object.hasOwn(value, key))
 }

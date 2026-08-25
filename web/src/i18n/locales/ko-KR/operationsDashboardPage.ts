@@ -211,6 +211,7 @@ const operationsDashboardPage = {
       missing_usage: '프로바이더가 사용량을 반환하지 않음',
       invalid_usage: '프로바이더 사용량이 유효하지 않음',
       stream_ended_without_usage: '사용량 없이 스트림 종료',
+      request_failed: '모델 요청 실패',
       request_outcome_unknown: '요청 결과를 알 수 없음',
       hold_deficit: '크레딧 예약이 부족함',
     },

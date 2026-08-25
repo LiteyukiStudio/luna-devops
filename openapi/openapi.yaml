@@ -8593,11 +8593,23 @@ components:
           required: [baseUrl, apiKey, providerCompatibility, promptCacheKeyMode, channelAffinityEnabled, configured, models]
         runtime:
           type: object
+          additionalProperties: false
           properties:
-            providerTimeoutMs: { type: integer, minimum: 1000, maximum: 120000 }
-            runTimeoutMs: { type: integer, minimum: 30000, maximum: 900000 }
-            agentConcurrentRuns: { type: integer, minimum: 1, maximum: 10 }
-          required: [providerTimeoutMs, runTimeoutMs, agentConcurrentRuns]
+            providerTimeoutMs: { type: integer, minimum: 1000, maximum: 900000 }
+            maxRequestRetries: { type: integer, minimum: 0, maximum: 10 }
+            runTimeoutMs: { type: integer, minimum: 30000, maximum: 7200000 }
+            agentConcurrentRuns: { type: integer, minimum: 1, maximum: 100 }
+            userConcurrentRuns: { type: integer, minimum: 1, maximum: 100 }
+            assistantMaxOutputTokens: { type: integer, minimum: 256, maximum: 131072 }
+            maxModelSteps: { type: integer, minimum: 1, maximum: 1024 }
+            runMaxToolCalls: { type: integer, minimum: 32, maximum: 2048 }
+            maxInputBytes: { type: integer, minimum: 8192, maximum: 8388608 }
+            navigateActionTtlSeconds: { type: integer, minimum: 10, maximum: 600 }
+            maxCardRepairAttempts: { type: integer, minimum: 1, maximum: 10 }
+            contextMaxUncompressedTurnCount: { type: integer, minimum: 4, maximum: 128 }
+            contextMaxCompressionTurnsPerCompile: { type: integer, minimum: 8, maximum: 1024 }
+            contextSummaryMaxOutputTokens: { type: integer, minimum: 200, maximum: 32768 }
+          required: [providerTimeoutMs, maxRequestRetries, runTimeoutMs, agentConcurrentRuns, userConcurrentRuns, assistantMaxOutputTokens, maxModelSteps, runMaxToolCalls, maxInputBytes, navigateActionTtlSeconds, maxCardRepairAttempts, contextMaxUncompressedTurnCount, contextMaxCompressionTurnsPerCompile, contextSummaryMaxOutputTokens]
         toolCatalog:
           type: array
           items: { $ref: "#/components/schemas/AIPlatformToolCatalogOperation" }

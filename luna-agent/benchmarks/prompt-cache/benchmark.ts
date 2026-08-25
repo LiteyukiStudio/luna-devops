@@ -1,4 +1,6 @@
 import { createHash } from "node:crypto"
+import { execFile } from "node:child_process"
+import { readFile } from "node:fs/promises"
 import { ContextCompiler, type ContextCompilerOptions } from "../../src/context/compiler.js"
 import type { AIModelSnapshot, ConversationHistoryEntry, ConversationSummary } from "../../src/domain.js"
 import { ModelRuntime, type AssistantModelInput } from "../../src/model-runtime.js"
@@ -16,7 +18,7 @@ import type {
   ModelToolDefinition,
 } from "../../src/provider/provider.js"
 
-export const promptCacheBenchmarkSchemaVersion = "luna.agent.prompt-cache-benchmark.v1" as const
+export const promptCacheBenchmarkSchemaVersion = "luna.agent.prompt-cache-benchmark.v2" as const
 
 export type PromptCacheBenchmarkAssertion = {
   id: string
@@ -55,8 +57,11 @@ export type PromptCacheBenchmarkResult = {
   schemaVersion: typeof promptCacheBenchmarkSchemaVersion
   benchmark: {
     name: "agent-prompt-cache-prefix"
-    version: 1
+    version: 2
     checkoutLabel: string
+    sourceRevision: string
+    implementationDigest: string
+    harnessDigest: string
     serialization: "openai-compatible-chat-completions-stream-json"
     prefixMetric: "utf8-longest-common-prefix-bytes"
     tokenEstimate: "ceil(commonPrefixBytes/4)"
@@ -79,6 +84,7 @@ export type PromptCacheBenchmarkResult = {
 
 export type RunPromptCacheBenchmarkOptions = {
   checkoutLabel?: string
+  sourceRevision?: string
 }
 
 type MeasuredStep = {
@@ -88,6 +94,26 @@ type MeasuredStep = {
 }
 
 const disclaimer = "该指标只比较确定性 fixture 生成的 OpenAI-compatible 流式请求 JSON 的 UTF-8 最长公共前缀；Token 为每 4 字节的粗略估算，不是 Provider 实际缓存命中、计费或 usage。"
+
+const implementationSourcePaths = [
+  "src/context/compiler.ts",
+  "src/context/model-messages.ts",
+  "src/model-runtime.ts",
+  "src/persistence/postgres.ts",
+  "src/prompt/system.ts",
+  "src/provider/openai-chat-completions.ts",
+  "src/provider/managed.ts",
+] as const
+
+const harnessSourcePaths = [
+  "benchmarks/prompt-cache/README.md",
+  "benchmarks/prompt-cache/benchmark.ts",
+  "benchmarks/prompt-cache/cli.ts",
+  "benchmarks/prompt-cache/comparison.ts",
+  "benchmarks/prompt-cache/report.ts",
+] as const
+
+const packageRoot = new URL("../../", import.meta.url)
 
 const model: AIModelSnapshot = {
   id: "aimdl_prompt_cache_benchmark",
@@ -163,43 +189,35 @@ const compilerOptions: ContextCompilerOptions = {
 export async function runPromptCacheBenchmark(
   options: RunPromptCacheBenchmarkOptions = {},
 ): Promise<PromptCacheBenchmarkResult> {
-  const scenarios = await Promise.all([
-    sameRunMultiStepScenario(),
-    crossTurnHistoryScenario(),
-    toolTouchAndAdditionScenario(),
-    compactionScenario(),
+  const [sourceRevision, implementationDigest, harnessDigest, scenarios] = await Promise.all([
+    options.sourceRevision === undefined
+      ? readSourceRevision()
+      : Promise.resolve(normalizeSourceRevision(options.sourceRevision)),
+    digestSourceFiles(implementationSourcePaths, true),
+    digestSourceFiles(harnessSourcePaths),
+    Promise.all([
+      sameRunMultiStepScenario(),
+      crossTurnHistoryScenario(),
+      toolTouchAndAdditionScenario(),
+      compactionScenario(),
+    ]),
   ])
-  const transitions = scenarios.flatMap(scenario => scenario.transitions)
-  const assertions = scenarios.flatMap(scenario => scenario.assertions)
-  const commonPrefixBytes = transitions.reduce((total, transition) => total + transition.commonPrefixBytes, 0)
-  const nextRequestBytes = transitions.reduce((total, transition) => {
-    const scenario = scenarios.find(item => item.transitions.includes(transition))
-    const step = scenario?.steps.find(item => item.id === transition.toStepId)
-    return total + (step?.requestBytes ?? 0)
-  }, 0)
   return {
     schemaVersion: promptCacheBenchmarkSchemaVersion,
     benchmark: {
       name: "agent-prompt-cache-prefix",
-      version: 1,
+      version: 2,
       checkoutLabel: options.checkoutLabel?.trim() || "current-checkout",
+      sourceRevision,
+      implementationDigest,
+      harnessDigest,
       serialization: "openai-compatible-chat-completions-stream-json",
       prefixMetric: "utf8-longest-common-prefix-bytes",
       tokenEstimate: "ceil(commonPrefixBytes/4)",
       providerMeasurement: false,
       disclaimer,
     },
-    summary: {
-      scenarioCount: scenarios.length,
-      transitionCount: transitions.length,
-      assertionCount: assertions.length,
-      passedAssertionCount: assertions.filter(assertion => assertion.passed).length,
-      failedAssertionCount: assertions.filter(assertion => !assertion.passed).length,
-      commonPrefixBytes,
-      estimatedCommonPrefixTokens: estimateTokens(commonPrefixBytes),
-      nextRequestBytes,
-      weightedNextRequestReuseRatio: ratio(commonPrefixBytes, nextRequestBytes),
-    },
+    summary: summarizeScenarios(scenarios),
     scenarios,
   }
 }
@@ -213,41 +231,198 @@ export function failedPromptCacheBenchmarkAssertions(
 }
 
 export function isPromptCacheBenchmarkResult(value: unknown): value is PromptCacheBenchmarkResult {
-  if (!isRecord(value) || value.schemaVersion !== promptCacheBenchmarkSchemaVersion) return false
+  if (!isRecord(value)
+    || !hasExactKeys(value, ["schemaVersion", "benchmark", "summary", "scenarios"])
+    || value.schemaVersion !== promptCacheBenchmarkSchemaVersion) return false
   if (!isRecord(value.benchmark)
+    || !hasExactKeys(value.benchmark, [
+      "name",
+      "version",
+      "checkoutLabel",
+      "sourceRevision",
+      "implementationDigest",
+      "harnessDigest",
+      "serialization",
+      "prefixMetric",
+      "tokenEstimate",
+      "providerMeasurement",
+      "disclaimer",
+    ])
     || value.benchmark.name !== "agent-prompt-cache-prefix"
+    || value.benchmark.version !== 2
     || value.benchmark.providerMeasurement !== false
-    || typeof value.benchmark.checkoutLabel !== "string"
+    || !isNonEmptyString(value.benchmark.checkoutLabel)
+    || !isSourceRevision(value.benchmark.sourceRevision)
+    || !isSha256(value.benchmark.implementationDigest)
+    || !isSha256(value.benchmark.harnessDigest)
+    || value.benchmark.serialization !== "openai-compatible-chat-completions-stream-json"
+    || value.benchmark.prefixMetric !== "utf8-longest-common-prefix-bytes"
+    || value.benchmark.tokenEstimate !== "ceil(commonPrefixBytes/4)"
     || typeof value.benchmark.disclaimer !== "string") return false
   if (!isRecord(value.summary)
-    || !isFiniteNumber(value.summary.scenarioCount)
-    || !isFiniteNumber(value.summary.failedAssertionCount)
-    || !isFiniteNumber(value.summary.weightedNextRequestReuseRatio)
+    || !hasExactKeys(value.summary, [
+      "scenarioCount",
+      "transitionCount",
+      "assertionCount",
+      "passedAssertionCount",
+      "failedAssertionCount",
+      "commonPrefixBytes",
+      "estimatedCommonPrefixTokens",
+      "nextRequestBytes",
+      "weightedNextRequestReuseRatio",
+    ])
     || !Array.isArray(value.scenarios)) return false
-  return value.scenarios.every(scenario => isRecord(scenario)
-    && typeof scenario.id === "string"
-    && typeof scenario.title === "string"
-    && typeof scenario.description === "string"
-    && Array.isArray(scenario.steps)
-    && scenario.steps.every(step => isRecord(step)
-      && typeof step.id === "string"
-      && typeof step.label === "string"
-      && isFiniteNumber(step.requestBytes)
-      && typeof step.requestSha256 === "string"
-      && isFiniteNumber(step.messageCount)
-      && isFiniteNumber(step.toolCount))
-    && Array.isArray(scenario.transitions)
-    && scenario.transitions.every(transition => isRecord(transition)
-      && typeof transition.fromStepId === "string"
-      && typeof transition.toStepId === "string"
-      && isFiniteNumber(transition.commonPrefixBytes)
-      && isFiniteNumber(transition.estimatedCommonPrefixTokens)
-      && isFiniteNumber(transition.nextRequestReuseRatio))
-    && Array.isArray(scenario.assertions)
-    && scenario.assertions.every(assertion => isRecord(assertion)
-      && typeof assertion.id === "string"
-      && typeof assertion.description === "string"
-      && typeof assertion.passed === "boolean"))
+  if (!hasUniqueStrings(value.scenarios, scenario => isRecord(scenario) ? scenario.id : undefined)) return false
+  if (!value.scenarios.every(isPromptCacheBenchmarkScenario)) return false
+  const result = value as PromptCacheBenchmarkResult
+  return sameSummary(result.summary, summarizeScenarios(result.scenarios))
+}
+
+function isPromptCacheBenchmarkScenario(value: unknown): value is PromptCacheBenchmarkScenario {
+  if (!isRecord(value)
+    || !hasExactKeys(value, ["id", "title", "description", "steps", "transitions", "assertions"])
+    || !isNonEmptyString(value.id)
+    || !isNonEmptyString(value.title)
+    || !isNonEmptyString(value.description)
+    || !Array.isArray(value.steps)
+    || value.steps.length < 2
+    || !hasUniqueStrings(value.steps, step => isRecord(step) ? step.id : undefined)
+    || !value.steps.every(isPromptCacheBenchmarkStep)
+    || !Array.isArray(value.transitions)
+    || value.transitions.length !== value.steps.length - 1
+    || !Array.isArray(value.assertions)
+    || value.assertions.length < 1
+    || !hasUniqueStrings(value.assertions, assertion => isRecord(assertion) ? assertion.id : undefined)
+    || !value.assertions.every(isPromptCacheBenchmarkAssertion)) return false
+
+  const steps = value.steps
+  return value.transitions.every((candidate, index) => {
+    if (!isRecord(candidate)
+      || !hasExactKeys(candidate, [
+        "fromStepId",
+        "toStepId",
+        "commonPrefixBytes",
+        "estimatedCommonPrefixTokens",
+        "nextRequestReuseRatio",
+      ])) return false
+    const previous = steps[index]
+    const next = steps[index + 1]
+    if (!previous || !next) return false
+    return candidate.fromStepId === previous.id
+      && candidate.toStepId === next.id
+      && isNonNegativeInteger(candidate.commonPrefixBytes)
+      && candidate.commonPrefixBytes <= Math.min(previous.requestBytes, next.requestBytes)
+      && candidate.estimatedCommonPrefixTokens === estimateTokens(candidate.commonPrefixBytes)
+      && candidate.nextRequestReuseRatio === ratio(candidate.commonPrefixBytes, next.requestBytes)
+  })
+}
+
+function isPromptCacheBenchmarkStep(value: unknown): value is PromptCacheBenchmarkStep {
+  return isRecord(value)
+    && hasExactKeys(value, [
+      "id",
+      "label",
+      "requestBytes",
+      "requestSha256",
+      "messageCount",
+      "toolCount",
+      "conversationCompacted",
+    ])
+    && isNonEmptyString(value.id)
+    && isNonEmptyString(value.label)
+    && isPositiveInteger(value.requestBytes)
+    && isSha256(value.requestSha256)
+    && isNonNegativeInteger(value.messageCount)
+    && isNonNegativeInteger(value.toolCount)
+    && (typeof value.conversationCompacted === "boolean" || value.conversationCompacted === null)
+}
+
+function isPromptCacheBenchmarkAssertion(value: unknown): value is PromptCacheBenchmarkAssertion {
+  return isRecord(value)
+    && hasExactKeys(value, ["id", "description", "passed"])
+    && isNonEmptyString(value.id)
+    && isNonEmptyString(value.description)
+    && typeof value.passed === "boolean"
+}
+
+function summarizeScenarios(
+  scenarios: PromptCacheBenchmarkScenario[],
+): PromptCacheBenchmarkResult["summary"] {
+  const transitions = scenarios.flatMap(scenario => scenario.transitions)
+  const assertions = scenarios.flatMap(scenario => scenario.assertions)
+  const commonPrefixBytes = transitions.reduce((total, transition) => total + transition.commonPrefixBytes, 0)
+  const nextRequestBytes = scenarios.reduce((total, scenario) => total
+    + scenario.steps.slice(1).reduce((scenarioTotal, step) => scenarioTotal + step.requestBytes, 0), 0)
+  return {
+    scenarioCount: scenarios.length,
+    transitionCount: transitions.length,
+    assertionCount: assertions.length,
+    passedAssertionCount: assertions.filter(assertion => assertion.passed).length,
+    failedAssertionCount: assertions.filter(assertion => !assertion.passed).length,
+    commonPrefixBytes,
+    estimatedCommonPrefixTokens: estimateTokens(commonPrefixBytes),
+    nextRequestBytes,
+    weightedNextRequestReuseRatio: ratio(commonPrefixBytes, nextRequestBytes),
+  }
+}
+
+function sameSummary(
+  left: PromptCacheBenchmarkResult["summary"],
+  right: PromptCacheBenchmarkResult["summary"],
+): boolean {
+  return left.scenarioCount === right.scenarioCount
+    && left.transitionCount === right.transitionCount
+    && left.assertionCount === right.assertionCount
+    && left.passedAssertionCount === right.passedAssertionCount
+    && left.failedAssertionCount === right.failedAssertionCount
+    && left.commonPrefixBytes === right.commonPrefixBytes
+    && left.estimatedCommonPrefixTokens === right.estimatedCommonPrefixTokens
+    && left.nextRequestBytes === right.nextRequestBytes
+    && left.weightedNextRequestReuseRatio === right.weightedNextRequestReuseRatio
+}
+
+async function readSourceRevision(): Promise<string> {
+  const sourceRevision = await new Promise<string>((resolve, reject) => {
+    execFile(
+      "git",
+      ["rev-parse", "--verify", "HEAD"],
+      { cwd: packageRoot, encoding: "utf8" },
+      (error, stdout) => {
+        if (error) {
+          reject(new Error("prompt_cache_benchmark_source_revision_unavailable", { cause: error }))
+          return
+        }
+        resolve(stdout)
+      },
+    )
+  })
+  return normalizeSourceRevision(sourceRevision)
+}
+
+function normalizeSourceRevision(value: string): string {
+  const normalized = value.trim().toLowerCase()
+  if (!isSourceRevision(normalized)) throw new Error("prompt_cache_benchmark_source_revision_invalid")
+  return normalized
+}
+
+async function digestSourceFiles(
+  relativePaths: readonly string[],
+  allowMissing = false,
+): Promise<string> {
+  const digest = createHash("sha256")
+  for (const relativePath of [...relativePaths].sort()) {
+    digest.update(relativePath, "utf8")
+    digest.update("\0", "utf8")
+    try {
+      digest.update(await readFile(new URL(relativePath, packageRoot)))
+    }
+    catch (error) {
+      if (!allowMissing || !isRecord(error) || error.code !== "ENOENT") throw error
+      digest.update("<missing>", "utf8")
+    }
+    digest.update("\0", "utf8")
+  }
+  return digest.digest("hex")
 }
 
 async function sameRunMultiStepScenario(): Promise<PromptCacheBenchmarkScenario> {
@@ -300,17 +475,24 @@ async function crossTurnHistoryScenario(): Promise<PromptCacheBenchmarkScenario>
   const runtime = runtimeWithCompiler(provider, emptyRepository())
   const firstQuestion = "确认应用 alpha 的期望副本数。"
   const firstAnswer = "应用 alpha 的期望副本数为 3。"
+  const firstPageContext = { projectId: "prj_benchmark", route: "/applications/app_alpha" }
   await runtime.complete(baseInput({
     runId: "airun_turn_0",
     conversationId: "aicnv_cross_turn",
     input: firstQuestion,
+    pageContext: firstPageContext,
     conversation: { title: "跨轮历史基准", titleSource: "user", turnIndex: 0 },
   }))
   await runtime.complete(baseInput({
     runId: "airun_turn_1",
     conversationId: "aicnv_cross_turn",
     input: "继续核对最新部署状态。",
-    history: [{ turnIndex: 0, user: firstQuestion, assistant: firstAnswer }],
+    history: [{
+      turnIndex: 0,
+      user: firstQuestion,
+      assistant: firstAnswer,
+      pageContext: firstPageContext,
+    }],
     conversation: { title: "跨轮历史基准", titleSource: "user", turnIndex: 1 },
   }))
   const first = measuredStep("turn-0", "第 0 轮", provider.assistantRequest(0))
@@ -318,11 +500,12 @@ async function crossTurnHistoryScenario(): Promise<PromptCacheBenchmarkScenario>
   return scenario(
     "cross-turn-history",
     "跨 Turn 历史",
-    "比较相邻 Turn 请求，验证前一轮转入历史后仍保留用户事实和助手结论。",
+    "比较相邻 Turn 请求，验证前一轮规范化输入（含页面上下文）转入历史后仍保留用户事实和助手结论。",
     [first, second],
     [
       assertion("history-user-preserved", "后一轮包含上一轮用户消息", requestContains(second.request, firstQuestion)),
       assertion("history-answer-preserved", "后一轮包含上一轮助手结论", requestContains(second.request, firstAnswer)),
+      assertion("history-page-context-preserved", "后一轮包含上一轮页面上下文", requestContains(second.request, firstPageContext.route)),
       assertion("new-user-preserved", "后一轮包含当前用户任务", requestContains(second.request, "继续核对最新部署状态")),
       assertion("same-conversation", "相邻 Turn 绑定同一会话", first.request.conversationId === second.request.conversationId),
     ],
@@ -681,6 +864,32 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value)
 }
 
-function isFiniteNumber(value: unknown): value is number {
-  return typeof value === "number" && Number.isFinite(value)
+function hasExactKeys(value: Record<string, unknown>, expected: readonly string[]): boolean {
+  const keys = Object.keys(value)
+  return keys.length === expected.length && expected.every(key => Object.hasOwn(value, key))
+}
+
+function hasUniqueStrings<T>(values: T[], select: (value: T) => unknown): boolean {
+  const selected = values.map(select)
+  return selected.every(isNonEmptyString) && new Set(selected).size === selected.length
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0
+}
+
+function isPositiveInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value > 0
+}
+
+function isNonNegativeInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0
+}
+
+function isSha256(value: unknown): value is string {
+  return typeof value === "string" && /^[a-f0-9]{64}$/.test(value)
+}
+
+function isSourceRevision(value: unknown): value is string {
+  return typeof value === "string" && /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(value)
 }
