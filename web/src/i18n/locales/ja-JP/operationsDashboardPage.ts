@@ -236,13 +236,7 @@ const operationsDashboardPage = {
   },
   conversationDetail: {
     untitled: '無題セッション',
-    loadFailed: 'セッション詳細の読み込みに失敗しました',
-    loadFailedDescription: 'このセッションのメッセージとターンを読み取れません。',
-    owner: 'セッションユーザー',
     user: 'ユーザー',
-    turns: '会話ターン',
-    traces: '関連 Trace',
-    updatedAt: '最近更新',
     turnLabel: '第 {{index}} ターン',
     assistant: 'Agent',
     thinking: '思考サマリ',

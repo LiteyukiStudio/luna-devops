@@ -23,7 +23,4 @@ func TestCommandFailureKeepsStdoutClean(t *testing.T) {
 	if output.Len() != 0 {
 		t.Fatalf("stdout was polluted: %q", output.String())
 	}
-	if strings.Contains(output.String(), "\x1b[") {
-		t.Fatalf("stdout contains ANSI: %q", output.String())
-	}
 }

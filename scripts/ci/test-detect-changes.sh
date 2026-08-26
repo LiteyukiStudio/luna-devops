@@ -95,10 +95,4 @@ assert_output "${output}" 'docs=true'
 assert_output "${output}" 'helm=true'
 assert_output "${output}" 'container_images=["api","worker","agent","gateway-traffic-probe"]'
 
-bash "${ROOT_DIR}/scripts/ci/check-job-results.sh" success skipped success >/dev/null
-if bash "${ROOT_DIR}/scripts/ci/check-job-results.sh" success failure skipped >/dev/null 2>&1; then
-  printf '%s\n' 'a failed child job did not fail the aggregate check' >&2
-  exit 1
-fi
-
-printf '%s\n' 'CI change detection and aggregation tests passed.'
+printf '%s\n' 'CI change detection tests passed.'

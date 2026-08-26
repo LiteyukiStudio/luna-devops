@@ -168,12 +168,6 @@ export interface AgentObservabilityConversationToolCall {
   durationMs?: number
   traceId?: string
 }
-export interface AgentObservabilityConversationDetail extends AgentObservabilityConversation {
-  turns: AgentObservabilityConversationTurn[]
-  turnPage: number
-  turnPageSize: number
-  totalTurnPages: number
-}
 export interface AgentObservabilityTraceContext {
   conversation: AgentObservabilityConversation
   turn: AgentObservabilityConversationTurn

@@ -236,13 +236,7 @@ const operationsDashboardPage = {
   },
   conversationDetail: {
     untitled: '무제 세션',
-    loadFailed: '세션 상세 로드 실패',
-    loadFailedDescription: '이 세션의 메시지와 턴을 읽을 수 없습니다.',
-    owner: '세션 사용자',
     user: '사용자',
-    turns: '대화 턴',
-    traces: '관련 Trace',
-    updatedAt: '최근 업데이트',
     turnLabel: '{{index}}번째 턴',
     assistant: 'Agent',
     thinking: '사고 요약',

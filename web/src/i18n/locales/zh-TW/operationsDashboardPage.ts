@@ -236,13 +236,7 @@ const operationsDashboardPage = {
   },
   conversationDetail: {
     untitled: '未命名會話',
-    loadFailed: '會話詳情載入失敗',
-    loadFailedDescription: '無法讀取這條會話的訊息和輪次。',
-    owner: '會話使用者',
     user: '使用者',
-    turns: '對話輪次',
-    traces: '關聯 Trace',
-    updatedAt: '最近更新',
     turnLabel: '第 {{index}} 輪',
     assistant: 'Agent',
     thinking: '思考摘要',

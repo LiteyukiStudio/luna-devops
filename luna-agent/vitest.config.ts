@@ -7,7 +7,17 @@ export default defineConfig({
         test: {
           name: "unit",
           include: ["tests/**/*.test.ts"],
-          exclude: ["tests/context-compiler.test.ts"],
+          exclude: [
+            "tests/context-compiler.test.ts",
+            "tests/platform-catalog-retrieval.test.ts",
+          ],
+        },
+      },
+      {
+        test: {
+          name: "platform-catalog-contract",
+          include: ["tests/platform-catalog-retrieval.test.ts"],
+          globalSetup: ["tests/support/platform-catalog-global-setup.ts"],
         },
       },
       {

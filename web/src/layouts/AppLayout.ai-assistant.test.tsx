@@ -108,6 +108,15 @@ beforeEach(async () => {
 })
 
 describe('app layout ai assistant route', () => {
+  it('opens the assistant window directly from the navigation entry', async () => {
+    const user = userEvent.setup()
+    renderAppLayout('/dashboard')
+
+    await user.click(screen.getByRole('button', { name: i18next.t('aiAssistantNav') }))
+
+    expect(assistantMocks.runtime.openAssistant).toHaveBeenCalledOnce()
+  })
+
   it('renders the assistant outlet without the sidebar or workspace chrome', () => {
     const queryClient = new QueryClient({
       defaultOptions: {

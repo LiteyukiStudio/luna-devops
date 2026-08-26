@@ -1,11 +1,11 @@
 import { readdirSync, readFileSync } from "node:fs"
 import { join } from "node:path"
-import { describe, expect, it } from "vitest"
+import { describe, expect, inject, it } from "vitest"
 import { ToolCatalog, validateArguments } from "../src/tools/catalog.js"
 import { ToolArgumentsInvalidError } from "../src/tools/argument-validator.js"
 
 const platformCatalog = ToolCatalog.load(JSON.parse(readFileSync(
-  new URL("./fixtures/platform-catalog.json", import.meta.url),
+  inject("platformCatalogFixturePath"),
   "utf8",
 )))
 

@@ -236,13 +236,7 @@ const operationsDashboardPage = {
   },
   conversationDetail: {
     untitled: 'Untitled conversation',
-    loadFailed: 'Conversation failed to load',
-    loadFailedDescription: 'The messages and turns for this conversation could not be read.',
-    owner: 'Conversation user',
     user: 'User',
-    turns: 'Turns',
-    traces: 'Linked traces',
-    updatedAt: 'Updated',
     turnLabel: 'Turn {{index}}',
     assistant: 'Agent',
     thinking: 'Thinking summary',

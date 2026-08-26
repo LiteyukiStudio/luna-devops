@@ -24,7 +24,6 @@ import {
   isRecentConversationInteraction,
   REFRESH_CONVERSATION_RETURN_DURATION_MS,
 } from './conversation-session'
-import { AI_ASSISTANT_OPEN_EVENT } from './events'
 import { aiConversationModelKey, resolveAIConversationModel } from './model-selection'
 import { buildAIPageContext } from './page-context'
 import { pendingUIActionsPollInterval } from './pending-ui-actions-query'
@@ -650,13 +649,6 @@ export function AIAssistantRuntimeProvider({ capabilities, children, initiallyOp
     dispatchConversationSession({ type: 'open', now: Date.now() })
     setOpen(true)
   }, [])
-  // 监听侧边栏等入口派发的打开请求，与悬浮球打开行为一致
-  useEffect(() => {
-    const handleOpenRequest = () => openAssistant()
-    window.addEventListener(AI_ASSISTANT_OPEN_EVENT, handleOpenRequest)
-    return () => window.removeEventListener(AI_ASSISTANT_OPEN_EVENT, handleOpenRequest)
-  }, [openAssistant])
-
   const closeAssistant = useCallback(() => {
     pageTransitionPendingRef.current = false
     invalidateActionSession()

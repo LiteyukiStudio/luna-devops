@@ -48,6 +48,9 @@ jobs:
           GITHUB_EVENT_BEFORE: ${{ github.event.before }}
         run: bash scripts/ci/detect-changes.sh
 
+      - name: Test change detection
+        run: bash scripts/ci/test-detect-changes.sh
+
   go-quality:
     name: Go quality
     needs: changes
