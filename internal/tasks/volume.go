@@ -22,38 +22,33 @@ const (
 )
 
 type VolumeProvisionPayload struct {
-	Envelope  TaskEnvelope `json:"envelope"`
-	VolumeID  string       `json:"volumeId"`
-	ProjectID string       `json:"projectId"`
-	ActorID   string       `json:"actorId"`
-	Operation string       `json:"operation"`
+	VolumeID  string `json:"volumeId"`
+	ProjectID string `json:"projectId"`
+	ActorID   string `json:"actorId"`
+	Operation string `json:"operation"`
 }
 
 type VolumeTransferPayload struct {
-	Envelope   TaskEnvelope `json:"envelope"`
-	TransferID string       `json:"transferId"`
-	VolumeID   string       `json:"volumeId"`
-	ProjectID  string       `json:"projectId"`
-	ActorID    string       `json:"actorId"`
+	TransferID string `json:"transferId"`
+	VolumeID   string `json:"volumeId"`
+	ProjectID  string `json:"projectId"`
+	ActorID    string `json:"actorId"`
 }
 
 type VolumeDeletePayload struct {
-	Envelope  TaskEnvelope `json:"envelope"`
-	VolumeID  string       `json:"volumeId"`
-	ProjectID string       `json:"projectId"`
-	ActorID   string       `json:"actorId"`
+	VolumeID  string `json:"volumeId"`
+	ProjectID string `json:"projectId"`
+	ActorID   string `json:"actorId"`
 }
 
 type VolumeReconcilePayload struct {
-	Envelope TaskEnvelope `json:"envelope"`
-	VolumeID string       `json:"volumeId,omitempty"`
-	ActorID  string       `json:"actorId"`
+	VolumeID string `json:"volumeId,omitempty"`
+	ActorID  string `json:"actorId"`
 }
 
 type VolumeTransferCleanupPayload struct {
-	Envelope   TaskEnvelope `json:"envelope"`
-	TransferID string       `json:"transferId,omitempty"`
-	ActorID    string       `json:"actorId"`
+	TransferID string `json:"transferId,omitempty"`
+	ActorID    string `json:"actorId"`
 }
 
 func (c *Client) EnqueueVolumeProvision(ctx context.Context, payload VolumeProvisionPayload) (*asynq.TaskInfo, error) {
@@ -115,19 +110,6 @@ func NewVolumeProvisionTask(payload VolumeProvisionPayload) (*asynq.Task, error)
 	if payload.Operation != VolumeOperationProvision && payload.Operation != VolumeOperationExpand {
 		return nil, errors.New("volume provision operation is invalid")
 	}
-	hasDedupeKey := strings.TrimSpace(payload.Envelope.DedupeKey) != ""
-	hasTaskID := strings.TrimSpace(payload.Envelope.TaskID) != ""
-	hasTraceID := strings.TrimSpace(payload.Envelope.TraceID) != ""
-	payload.Envelope = ensureEnvelope(payload.Envelope, TypeVolumeProvision, payload.ActorID, payload.ProjectID, payload.VolumeID)
-	if !hasDedupeKey {
-		payload.Envelope.DedupeKey = TypeVolumeProvision + ":" + payload.Operation + ":" + strings.TrimSpace(payload.ProjectID) + ":" + strings.TrimSpace(payload.VolumeID)
-	}
-	if !hasTaskID {
-		payload.Envelope.TaskID = payload.Envelope.DedupeKey
-	}
-	if !hasTraceID {
-		payload.Envelope.TraceID = payload.Envelope.TaskID
-	}
 	return marshalTask(TypeVolumeProvision, payload)
 }
 
@@ -146,7 +128,6 @@ func newVolumeTransferTask(taskType string, payload VolumeTransferPayload) (*asy
 	if err := validateVolumeIdentity(payload.VolumeID, payload.ProjectID); err != nil {
 		return nil, err
 	}
-	payload.Envelope = ensureEnvelope(payload.Envelope, taskType, payload.ActorID, payload.ProjectID, payload.TransferID)
 	return marshalTask(taskType, payload)
 }
 
@@ -154,25 +135,14 @@ func NewVolumeDeleteTask(payload VolumeDeletePayload) (*asynq.Task, error) {
 	if err := validateVolumeIdentity(payload.VolumeID, payload.ProjectID); err != nil {
 		return nil, err
 	}
-	payload.Envelope = ensureEnvelope(payload.Envelope, TypeVolumeDelete, payload.ActorID, payload.ProjectID, payload.VolumeID)
 	return marshalTask(TypeVolumeDelete, payload)
 }
 
 func NewVolumeReconcileTask(payload VolumeReconcilePayload) (*asynq.Task, error) {
-	resourceID := strings.TrimSpace(payload.VolumeID)
-	if resourceID == "" {
-		resourceID = "stale-volumes"
-	}
-	payload.Envelope = ensureEnvelope(payload.Envelope, TypeVolumeReconcile, payload.ActorID, "system", resourceID)
 	return marshalTask(TypeVolumeReconcile, payload)
 }
 
 func NewVolumeTransferCleanupTask(payload VolumeTransferCleanupPayload) (*asynq.Task, error) {
-	resourceID := strings.TrimSpace(payload.TransferID)
-	if resourceID == "" {
-		resourceID = "expired-transfers"
-	}
-	payload.Envelope = ensureEnvelope(payload.Envelope, TypeVolumeTransferCleanup, payload.ActorID, "system", resourceID)
 	return marshalTask(TypeVolumeTransferCleanup, payload)
 }
 

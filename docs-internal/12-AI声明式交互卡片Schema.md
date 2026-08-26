@@ -1,6 +1,6 @@
 # AI 声明式交互卡片契约
 
-本文只保留交互卡片的长期协议边界。字段、枚举、长度上限和模板编译细节以当前 Zod Schema、
+本文只保留交互卡片的长期协议边界。字段、枚举和长度上限以当前 Zod Schema、
 共享 TypeScript Contract 和测试为唯一事实源，不在文档复制一份容易漂移的实现。
 
 ## 1. 定位
@@ -23,8 +23,8 @@ Template -> Content Block -> Field -> Action -> Platform Runtime
 ## 2. 核心不变量
 
 - 根协议统一为 `InteractionCardGroup`，当前唯一版本是 `schemaVersion: 1`。
-- 新卡片只写当前 `InteractionCardGroup` v1；已经持久化的旧卡片 operationId、payload、actions 与
-  Web 解析器保持只读兼容，禁止批量重写历史事件。未知 payload 版本直接拒绝。
+- 卡片只写和读取当前 `InteractionCardGroup` v1；未知 payload 版本直接拒绝，不保留旧业务卡片
+  operationId 或模板输入的解析分支。
 - 模型不能输出 HTML、JSX、CSS、脚本、DOM Selector、任意组件名、API URL 或可执行表达式。
 - 模型只能选择平台注册模板、内容块、字段和动作，不能控制任意颜色、尺寸、动画和布局。
 - 所有资源 ID、选项值和操作参数必须来自当前 Run 的可信 Tool Result，不允许模型猜测。
@@ -40,8 +40,8 @@ Agent 新生成卡片只使用：
 - `request_input`：收集结构化输入。
 - `request_choice`：请求用户选择。
 
-三者都编译为同一 `InteractionCardGroup` v1。旧 `create_interaction_cards` 和七个窄业务工具只保留
-历史事件解析，不再注册给模型。校验失败最多完整修复一次，仍失败时退化为普通文本。
+三者都直接接收同一 `InteractionCardGroup` v1，并分别校验展示、表单和候选选择职责。校验失败
+最多完整修复一次，仍失败时退化为普通文本。
 
 `placement` 默认 `inline`，按权威 Timeline 事件位置展示；只有当前回合唯一、
 阻塞后续流程且等待用户提交的单张交互表单才可使用 `turn_end`，将它投影到该回复末尾。一个回合
@@ -51,7 +51,7 @@ Agent 新生成卡片只使用：
 实现事实源：
 
 - Agent Schema 与 Tool 定义：`luna-agent/src/tools/ui-cards.ts`
-- 业务模板 Schema 与编译器：`luna-agent/src/tools/business-card-templates.ts`
+- 三个模型工具：`luna-agent/src/tools/business-card-tools.ts`
 - Web 事件包络校验：`web/src/components/common/ai-assistant/interaction-card-schema.ts`
 - Web 模板布局：`web/src/components/common/ai-assistant/interaction-card-templates.ts`
 - 渲染与行为测试：`web/src/components/common/ai-assistant/interaction-cards.test.tsx`
@@ -114,8 +114,8 @@ Web 在对应 Timeline Item 的真实位置渲染；只有尚未开始对话的�
   `__proto__`、`prototype`、`constructor` 等原型链段在 Agent 与 Web 两端都必须拒绝。
 - 平台对绑定后的最终参数重新校验当前用户、Session、Scope、RBAC、风险、确认和参数摘要。
 - Tool Action 必须沿用平台幂等和审计语义；模型不能通过卡片声明 `approved`、`force` 或成功终态。
-- Timeline 为兼容 Web 可以把窄卡片工具投影为稳定的内部卡片 operation，但必须同时保存真实模型
-  operationId；恢复模型历史时还原真实窄工具，禁止让模型误判自己使用了已下线的大型通用工具。
+- Agent 持久化边界把三个卡片工具投影为稳定的内部卡片 Timeline operation，并同时保存真实模型
+  operationId；恢复模型历史时还原 `present_card`、`request_input` 或 `request_choice`。
 - 站内导航使用注册路由，不替代业务操作，也不能作为已完成证明。
 - 发送消息动作只回灌已校验且非敏感的用户选择/输入，不伪造历史消息。
 - 工具动作的参数不得序列化为普通聊天消息；BFF/Agent 必须将动作绑定为独立 Run，工具调用记录只保留加密原文和脱敏投影。
@@ -173,7 +173,7 @@ create tool call starts -> Agent generationId + placeholder -> arguments complet
 修改协议至少验证：
 
 1. Agent Schema 拒绝未知版本、非法组合、超限内容、未知路由和未注册操作。
-2. 业务模板编译结果通过同一通用 Schema，不存在旁路字段。
+2. 三个卡片工具直接通过同一通用 Schema，不存在模板编译旁路。
 3. Web 对每个模板、窄窗口、键盘、错误和极端内容正常渲染。
 4. Timeline 流式、刷新恢复、失败修复和跨 Run 隔离保持一致。
 5. Tool Action 经过真实用户权限、逐次参数绑定审批、幂等、审计和权威回读。

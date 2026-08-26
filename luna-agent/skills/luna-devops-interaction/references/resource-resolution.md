@@ -37,8 +37,8 @@
 仓库、模板、网关、域名、配置集、变量集、通知渠道等）时，只要该平台支持创建对应资源，
 就必须在候选之外额外提供一个“新建”入口，不得只给出现有候选让用户被迫二选一：
 
-- `candidate_picker` / `candidate_select` 使用其 `creationAction` 生成次级“新建”按钮；
-  通用卡片使用 `groupActions` 增加一个 `send_message` 动作。
+- `request_choice` 使用 `groupActions` 增加一个 `send_message` 类型的次级“新建”按钮；
+  候选较多而改用 `request_input` 的 select 字段时，在同一卡片保留等价的次级入口。
 - 新建入口的 label 明确指出资源类型，例如“新建项目空间”“新建集群”“绑定新的 Git 账号”。
 - 新建入口的 `send_message` 应把用户带入该资源的创建流程：说明缺失，并收集创建所需参数；
   创建完成并通过回读取得真实 ID 后，自动回到原工作流继续，不要让用户重新开始。

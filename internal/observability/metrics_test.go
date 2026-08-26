@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/hibiken/asynq"
 )
 
 func TestMetricsConfigActiveRequiresEnabledAndAddr(t *testing.T) {
@@ -76,97 +75,6 @@ func TestHTTPMetricsMiddlewareExportsRequest(t *testing.T) {
 	}
 }
 
-func TestWorkerMetricsMiddlewareExportsTask(t *testing.T) {
-	registry := NewRegistry("worker")
-	metrics := NewWorkerMetrics(registry, "worker").WithQueueResolver(func(string) string { return "build" })
-	handler := metrics.Middleware(asynq.HandlerFunc(func(context.Context, *asynq.Task) error {
-		return nil
-	}))
-
-	if err := handler.ProcessTask(context.Background(), asynq.NewTask("build:run", nil)); err != nil {
-		t.Fatalf("ProcessTask returned error: %v", err)
-	}
-
-	metricsRecorder := httptest.NewRecorder()
-	NewMetricsHandler(registry).ServeHTTP(metricsRecorder, httptest.NewRequest(http.MethodGet, "/metrics", nil))
-	body := metricsRecorder.Body.String()
-	if !strings.Contains(body, `luna_devops_worker_task_completed_total{queue="build",result="succeeded",service="worker",task_type="build:run"} 1`) {
-		t.Fatalf("metrics body did not contain worker counter:\n%s", body)
-	}
-}
-
-func TestWorkerMetricsExportsBusinessMetrics(t *testing.T) {
-	registry := NewRegistry("worker")
-	metrics := NewWorkerMetrics(registry, "worker")
-	startedAt := time.Now().Add(-2 * time.Minute)
-	finishedAt := time.Now()
-
-	metrics.RecordBuildRun(context.Background(), BusinessRunMetric{
-		Status:     "succeeded",
-		Type:       "manual",
-		StartedAt:  &startedAt,
-		FinishedAt: &finishedAt,
-		CreatedAt:  startedAt.Add(-time.Minute),
-	})
-	metrics.RecordRelease(context.Background(), BusinessRunMetric{
-		Status:     "failed",
-		Type:       "deploy",
-		StartedAt:  &startedAt,
-		FinishedAt: &finishedAt,
-		CreatedAt:  startedAt,
-	})
-	metrics.RecordGatewaySync(context.Background(), "apply", "succeeded", 150*time.Millisecond)
-	metrics.SetDeploymentRuntime(context.Background(), DeploymentRuntimeMetric{
-		DesiredReplicas:   3,
-		ReadyReplicas:     2,
-		AvailableReplicas: 2,
-		UpdatedReplicas:   2,
-	})
-
-	metricsRecorder := httptest.NewRecorder()
-	NewMetricsHandler(registry).ServeHTTP(metricsRecorder, httptest.NewRequest(http.MethodGet, "/metrics", nil))
-	body := metricsRecorder.Body.String()
-	for _, expected := range []string{
-		`luna_devops_build_runs_total{service="worker",status="succeeded",trigger_type="manual"} 1`,
-		`luna_devops_releases_total{service="worker",status="failed",type="deploy"} 1`,
-		`luna_devops_gateway_sync_total{operation="apply",result="succeeded",service="worker"} 1`,
-		`luna_devops_deployment_observations_total{service="worker",state="degraded"} 1`,
-	} {
-		if !strings.Contains(body, expected) {
-			t.Fatalf("metrics body did not contain %q:\n%s", expected, body)
-		}
-	}
-}
-
-func TestAsynqQueueCollectorExportsQueueInfo(t *testing.T) {
-	registry := NewRegistry("worker")
-	registry.MustRegister(NewAsynqQueueCollector("worker", fakeQueueInspector{
-		"build": &asynq.QueueInfo{
-			Queue:          "build",
-			Pending:        2,
-			Retry:          1,
-			Latency:        3 * time.Second,
-			ProcessedTotal: 10,
-			FailedTotal:    4,
-		},
-	}, []string{"build"}))
-
-	metricsRecorder := httptest.NewRecorder()
-	NewMetricsHandler(registry).ServeHTTP(metricsRecorder, httptest.NewRequest(http.MethodGet, "/metrics", nil))
-	body := metricsRecorder.Body.String()
-	for _, expected := range []string{
-		`luna_devops_asynq_queue_depth{queue="build",service="worker",state="pending"} 2`,
-		`luna_devops_asynq_queue_depth{queue="build",service="worker",state="retry"} 1`,
-		`luna_devops_asynq_queue_latency_seconds{queue="build",service="worker"} 3`,
-		`luna_devops_asynq_queue_processed_total{queue="build",service="worker"} 10`,
-		`luna_devops_asynq_queue_failed_total{queue="build",service="worker"} 4`,
-	} {
-		if !strings.Contains(body, expected) {
-			t.Fatalf("metrics body did not contain %q:\n%s", expected, body)
-		}
-	}
-}
-
 func TestStartMetricsServerServesMetrics(t *testing.T) {
 	registry := NewRegistry("api")
 	server, err := StartMetricsServer(MetricsConfig{Enabled: true, Addr: "127.0.0.1:0", Path: "/metrics", Service: "api"}, registry)
@@ -188,10 +96,4 @@ func TestStartMetricsServerServesMetrics(t *testing.T) {
 	if !strings.Contains(string(body), "luna_devops_up") {
 		t.Fatalf("metrics body did not contain luna_devops_up:\n%s", body)
 	}
-}
-
-type fakeQueueInspector map[string]*asynq.QueueInfo
-
-func (f fakeQueueInspector) GetQueueInfo(queue string) (*asynq.QueueInfo, error) {
-	return f[queue], nil
 }

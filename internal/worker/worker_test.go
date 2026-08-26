@@ -174,7 +174,7 @@ func TestPeriodicTaskSpecsIncludeGitRefresh(t *testing.T) {
 	}
 }
 
-func TestRetentionHandlerIsRegisteredWithTaskEvents(t *testing.T) {
+func TestRetentionHandlerIsRegistered(t *testing.T) {
 	runner := NewRunner(nil, Options{})
 	called := false
 	runner.runAutomaticRetention = func(_ context.Context, _ time.Time) error {
@@ -199,7 +199,7 @@ func TestRetentionHandlerReturnsRunnerError(t *testing.T) {
 		return wantErr
 	}
 
-	handler := runner.withTaskEvents((*Runner).handleRetentionRun)
+	handler := runner.withTaskContext((*Runner).handleRetentionRun)
 	err := handler(context.Background(), asynq.NewTask(tasks.TypeRetentionRun, []byte("{}")))
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("retention handler error = %v", err)
@@ -435,24 +435,6 @@ func TestExpiredBuildJobUpdatesClearLease(t *testing.T) {
 	gotFinishedAt, ok := updates["finished_at"].(*time.Time)
 	if !ok || !gotFinishedAt.Equal(finishedAt) {
 		t.Fatalf("finished_at = %#v", updates["finished_at"])
-	}
-}
-
-func TestTaskEnvelopeFromPayloadReadsEnvelope(t *testing.T) {
-	task, err := tasks.NewDeployRunTask(tasks.DeployRunPayload{ReleaseID: "rel_1", ProjectID: "prj_1", ActorID: "usr_1"})
-	if err != nil {
-		t.Fatalf("NewDeployRunTask returned error: %v", err)
-	}
-	envelope := taskEnvelopeFromPayload(task.Type(), task.Payload())
-	if envelope.TaskType != tasks.TypeDeployRun || envelope.ResourceRef != "rel_1" || envelope.ActorID != "usr_1" {
-		t.Fatalf("envelope = %#v", envelope)
-	}
-}
-
-func TestTaskEnvelopeFromPayloadFallsBackForLegacyPayload(t *testing.T) {
-	envelope := taskEnvelopeFromPayload(tasks.TypeSyncStatus, []byte("{}"))
-	if envelope.TaskType != tasks.TypeSyncStatus || envelope.TaskID != tasks.TypeSyncStatus || envelope.DedupeKey != tasks.TypeSyncStatus {
-		t.Fatalf("envelope = %#v", envelope)
 	}
 }
 

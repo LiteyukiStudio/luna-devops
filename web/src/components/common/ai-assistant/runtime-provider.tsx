@@ -313,7 +313,7 @@ export function AIAssistantRuntimeProvider({ capabilities, children, initiallyOp
     subscriptions: runSubscriptions,
     syncConversation: syncRunStreams,
   } = useAIRunStreamManager({
-    // AiAssistant 在关闭时仍常驻布局；保持已知 Run 的唯一流连接，避免关窗后
+    // 助手 Runtime Provider 在关闭时仍常驻布局；保持已知 Run 的唯一流连接，避免关窗后
     // 后台任务失去事件。组件真正卸载时 manager 才统一关闭连接。
     enabled,
     onEvent: handleStreamEvent,

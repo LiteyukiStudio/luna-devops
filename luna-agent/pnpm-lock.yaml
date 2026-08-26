@@ -16,9 +16,6 @@ importers:
 
   .:
     dependencies:
-      '@fastify/cors':
-        specifier: ^11.1.0
-        version: 11.3.0
       '@fastify/otel':
         specifier: ^0.20.1
         version: 0.20.1(@opentelemetry/api@1.9.1)
@@ -28,9 +25,6 @@ importers:
       '@opentelemetry/api':
         specifier: ^1.9.1
         version: 1.9.1
-      '@opentelemetry/api-logs':
-        specifier: ^0.221.0
-        version: 0.221.0
       '@opentelemetry/exporter-logs-otlp-http':
         specifier: ^0.221.0
         version: 0.221.0(@opentelemetry/api@1.9.1)
@@ -324,9 +318,6 @@ packages:
 
   '@fastify/ajv-compiler@4.0.5':
     resolution: {integrity: sha512-KoWKW+MhvfTRWL4qrhUwAAZoaChluo0m0vbiJlGMt2GXvL4LVPQEjt8kSpHI3IBq5Rez8fg+XeH3cneztq+C7A==}
-
-  '@fastify/cors@11.3.0':
-    resolution: {integrity: sha512-ggQGua+xHv1MvePbPr0v//xLYEsCXbWspquXCJS9Ot5YoRXq8J8ZWzHnxDBVnbtXosvistXo6LtNzOJswf64Fw==}
 
   '@fastify/error@4.2.0':
     resolution: {integrity: sha512-RSo3sVDXfHskiBZKBPRgnQTtIqpi/7zhJOEmAxCiBcM7d0uwdGdxLlsCaLzGs8v8NnxIRlfG0N51p5yFaOentQ==}
@@ -1222,9 +1213,6 @@ packages:
   fast-uri@4.1.2:
     resolution: {integrity: sha512-TyGmBcbDTZXcb2cj5MV89DrF42DKvb3y5DDUNh95iO+IMeAzMkVSxK1PZRrRIpc9yg8U2GhGdbofNa0LS/a4Bw==}
 
-  fastify-plugin@6.0.0:
-    resolution: {integrity: sha512-fZOty7z3O7vOliF6d8bHE3wiEh1KcNnKEQensSgTk9C1DvN6nRLS++XVd86v33Hw/8u9Un8A1zDrQ8ujcQDHEg==}
-
   fastify@5.10.0:
     resolution: {integrity: sha512-A9L0ziuWGQHgEEVgF3davQ9vbD93IuX+lo2IsxapQmu5b/Y/ynn9m9K5JHt9dvyJXOFc5iN0Zk5GHEOqnzhWjg==}
 
@@ -2057,11 +2045,6 @@ snapshots:
       ajv: 8.20.0
       ajv-formats: 3.0.1(ajv@8.20.0)
       fast-uri: 3.1.5
-
-  '@fastify/cors@11.3.0':
-    dependencies:
-      fastify-plugin: 6.0.0
-      toad-cache: 3.7.4
 
   '@fastify/error@4.2.0': {}
 
@@ -2937,8 +2920,6 @@ snapshots:
   fast-uri@3.1.5: {}
 
   fast-uri@4.1.2: {}
-
-  fastify-plugin@6.0.0: {}
 
   fastify@5.10.0:
     dependencies:

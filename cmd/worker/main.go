@@ -81,7 +81,7 @@ func run(ctx context.Context) error {
 		defer registration.Unregister()
 	}
 
-	workerMetrics := observability.NewWorkerMetrics(nil, "worker").WithQueueResolver(func(taskType string) string {
+	workerMetrics := observability.NewWorkerMetrics().WithQueueResolver(func(taskType string) string {
 		return tasks.PolicyForType(taskType).Queue
 	})
 	queueInspector := asynq.NewInspector(cfg.RedisOptions().Asynq())

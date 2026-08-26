@@ -204,21 +204,7 @@ func (m *HTTPMetrics) GinMiddleware() gin.HandlerFunc {
 }
 
 type WorkerMetrics struct {
-	buildDuration          *prometheus.HistogramVec
-	buildRuns              *prometheus.CounterVec
-	completed              *prometheus.CounterVec
-	deploymentObservations *prometheus.CounterVec
-	deploymentReadyRatio   *prometheus.HistogramVec
-	deploymentReplicaCount *prometheus.HistogramVec
-	duration               *prometheus.HistogramVec
-	gatewaySync            *prometheus.CounterVec
-	gatewaySyncDuration    *prometheus.HistogramVec
-	inflight               *prometheus.GaugeVec
 	queueFor               func(taskType string) string
-	releaseDuration        *prometheus.HistogramVec
-	releases               *prometheus.CounterVec
-	retries                *prometheus.CounterVec
-	started                *prometheus.CounterVec
 	otelBuildDuration      otelmetric.Float64Histogram
 	otelBuildRuns          otelmetric.Int64Counter
 	otelCompleted          otelmetric.Int64Counter
@@ -235,9 +221,9 @@ type WorkerMetrics struct {
 	otelStarted            otelmetric.Int64Counter
 }
 
-func NewWorkerMetrics(registry *prometheus.Registry, service string) *WorkerMetrics {
+func NewWorkerMetrics() *WorkerMetrics {
 	meter := otel.Meter("github.com/LiteyukiStudio/devops/internal/observability/worker")
-	metrics := &WorkerMetrics{
+	return &WorkerMetrics{
 		otelBuildDuration:      mustFloat64Histogram(meter, "luna_devops_build_run_duration_seconds", "Duration of Luna build runs.", "s"),
 		otelBuildRuns:          mustInt64Counter(meter, "luna_devops_build_runs_total", "Total Luna build runs completed by status and trigger type."),
 		otelCompleted:          mustInt64Counter(meter, "luna_devops_worker_task_completed_total", "Total worker tasks completed by Luna."),
@@ -253,102 +239,6 @@ func NewWorkerMetrics(registry *prometheus.Registry, service string) *WorkerMetr
 		otelRetries:            mustInt64Counter(meter, "luna_devops_worker_task_retries_total", "Total worker task retry attempts observed by Luna."),
 		otelStarted:            mustInt64Counter(meter, "luna_devops_worker_task_started_total", "Total worker tasks started by Luna."),
 	}
-	if registry == nil {
-		return metrics
-	}
-	metrics.buildDuration = prometheus.NewHistogramVec(prometheus.HistogramOpts{
-		Name:        "luna_devops_build_run_duration_seconds",
-		Help:        "Duration of Luna build runs.",
-		ConstLabels: prometheus.Labels{"service": service},
-		Buckets:     []float64{30, 60, 120, 300, 600, 900, 1800, 3600, 5400},
-	}, []string{"status", "trigger_type"})
-	metrics.buildRuns = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name:        "luna_devops_build_runs_total",
-		Help:        "Total Luna build runs completed by status and trigger type.",
-		ConstLabels: prometheus.Labels{"service": service},
-	}, []string{"status", "trigger_type"})
-	metrics.completed = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name:        "luna_devops_worker_task_completed_total",
-		Help:        "Total worker tasks completed by Luna.",
-		ConstLabels: prometheus.Labels{"service": service},
-	}, []string{"queue", "task_type", "result"})
-	metrics.deploymentObservations = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name:        "luna_devops_deployment_observations_total",
-		Help:        "Total Kubernetes deployment observations grouped by readiness state.",
-		ConstLabels: prometheus.Labels{"service": service},
-	}, []string{"state"})
-	metrics.deploymentReadyRatio = prometheus.NewHistogramVec(prometheus.HistogramOpts{
-		Name:        "luna_devops_deployment_ready_ratio",
-		Help:        "Distribution of ready replica ratios observed for Luna deployments.",
-		ConstLabels: prometheus.Labels{"service": service},
-		Buckets:     []float64{0, 0.25, 0.5, 0.75, 0.9, 1},
-	}, []string{"state"})
-	metrics.deploymentReplicaCount = prometheus.NewHistogramVec(prometheus.HistogramOpts{
-		Name:        "luna_devops_deployment_replica_count",
-		Help:        "Distribution of desired, ready, available, and updated replica counts.",
-		ConstLabels: prometheus.Labels{"service": service},
-		Buckets:     []float64{0, 1, 2, 3, 5, 10, 25, 50, 100},
-	}, []string{"kind"})
-	metrics.duration = prometheus.NewHistogramVec(prometheus.HistogramOpts{
-		Name:        "luna_devops_worker_task_duration_seconds",
-		Help:        "Duration of worker tasks processed by Luna.",
-		ConstLabels: prometheus.Labels{"service": service},
-		Buckets:     prometheus.DefBuckets,
-	}, []string{"task_type", "result"})
-	metrics.gatewaySync = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name:        "luna_devops_gateway_sync_total",
-		Help:        "Total Luna gateway sync operations.",
-		ConstLabels: prometheus.Labels{"service": service},
-	}, []string{"operation", "result"})
-	metrics.gatewaySyncDuration = prometheus.NewHistogramVec(prometheus.HistogramOpts{
-		Name:        "luna_devops_gateway_sync_duration_seconds",
-		Help:        "Duration of Luna gateway sync operations.",
-		ConstLabels: prometheus.Labels{"service": service},
-		Buckets:     []float64{0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 120},
-	}, []string{"operation", "result"})
-	metrics.inflight = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Name:        "luna_devops_worker_task_inflight",
-		Help:        "Current in-flight worker tasks processed by Luna.",
-		ConstLabels: prometheus.Labels{"service": service},
-	}, []string{"task_type"})
-	metrics.releaseDuration = prometheus.NewHistogramVec(prometheus.HistogramOpts{
-		Name:        "luna_devops_release_duration_seconds",
-		Help:        "Duration of Luna release runs.",
-		ConstLabels: prometheus.Labels{"service": service},
-		Buckets:     []float64{5, 10, 30, 60, 120, 300, 600, 900, 1800},
-	}, []string{"status", "type"})
-	metrics.releases = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name:        "luna_devops_releases_total",
-		Help:        "Total Luna releases completed by status and type.",
-		ConstLabels: prometheus.Labels{"service": service},
-	}, []string{"status", "type"})
-	metrics.retries = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name:        "luna_devops_worker_task_retries_total",
-		Help:        "Total worker task retry attempts observed by Luna.",
-		ConstLabels: prometheus.Labels{"service": service},
-	}, []string{"queue", "task_type"})
-	metrics.started = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name:        "luna_devops_worker_task_started_total",
-		Help:        "Total worker tasks started by Luna.",
-		ConstLabels: prometheus.Labels{"service": service},
-	}, []string{"queue", "task_type"})
-	registry.MustRegister(
-		metrics.buildDuration,
-		metrics.buildRuns,
-		metrics.completed,
-		metrics.deploymentObservations,
-		metrics.deploymentReadyRatio,
-		metrics.deploymentReplicaCount,
-		metrics.duration,
-		metrics.gatewaySync,
-		metrics.gatewaySyncDuration,
-		metrics.inflight,
-		metrics.releaseDuration,
-		metrics.releases,
-		metrics.retries,
-		metrics.started,
-	)
-	return metrics
 }
 
 func (m *WorkerMetrics) WithQueueResolver(queueFor func(taskType string) string) *WorkerMetrics {
@@ -367,29 +257,15 @@ func (m *WorkerMetrics) Middleware(next asynq.Handler) asynq.Handler {
 		start := time.Now()
 		taskType := task.Type()
 		queue := m.queueName(taskType)
-		if m.started != nil {
-			m.started.WithLabelValues(queue, taskType).Inc()
-		}
 		m.otelStarted.Add(ctx, 1, otelmetric.WithAttributes(attribute.String("queue", queue), attribute.String("task_type", taskType)))
 		if retryCount, ok := asynq.GetRetryCount(ctx); ok && retryCount > 0 {
-			if m.retries != nil {
-				m.retries.WithLabelValues(queue, taskType).Inc()
-			}
 			m.otelRetries.Add(ctx, 1, otelmetric.WithAttributes(attribute.String("queue", queue), attribute.String("task_type", taskType)))
-		}
-		if m.inflight != nil {
-			m.inflight.WithLabelValues(taskType).Inc()
 		}
 		m.otelInflight.Add(ctx, 1, otelmetric.WithAttributes(attribute.String("task_type", taskType)))
 		err := next.ProcessTask(ctx, task)
 		result := "succeeded"
 		if err != nil {
 			result = "failed"
-		}
-		if m.inflight != nil {
-			m.inflight.WithLabelValues(taskType).Dec()
-			m.duration.WithLabelValues(taskType, result).Observe(time.Since(start).Seconds())
-			m.completed.WithLabelValues(queue, taskType, result).Inc()
 		}
 		attrs := otelmetric.WithAttributes(attribute.String("queue", queue), attribute.String("task_type", taskType), attribute.String("result", result))
 		m.otelInflight.Add(ctx, -1, otelmetric.WithAttributes(attribute.String("task_type", taskType)))
@@ -405,15 +281,9 @@ func (m *WorkerMetrics) RecordBuildRun(ctx context.Context, run BusinessRunMetri
 	}
 	status := stableLabel(run.Status, "unknown")
 	triggerType := stableLabel(run.Type, "unknown")
-	if m.buildRuns != nil {
-		m.buildRuns.WithLabelValues(status, triggerType).Inc()
-	}
 	attrs := otelmetric.WithAttributes(attribute.String("status", status), attribute.String("trigger_type", triggerType))
 	m.otelBuildRuns.Add(ctx, 1, attrs)
 	if duration, ok := runDuration(run); ok {
-		if m.buildDuration != nil {
-			m.buildDuration.WithLabelValues(status, triggerType).Observe(duration.Seconds())
-		}
 		m.otelBuildDuration.Record(ctx, duration.Seconds(), attrs)
 	}
 }
@@ -424,15 +294,9 @@ func (m *WorkerMetrics) RecordRelease(ctx context.Context, run BusinessRunMetric
 	}
 	status := stableLabel(run.Status, "unknown")
 	releaseType := stableLabel(run.Type, "deploy")
-	if m.releases != nil {
-		m.releases.WithLabelValues(status, releaseType).Inc()
-	}
 	attrs := otelmetric.WithAttributes(attribute.String("status", status), attribute.String("type", releaseType))
 	m.otelReleases.Add(ctx, 1, attrs)
 	if duration, ok := runDuration(run); ok {
-		if m.releaseDuration != nil {
-			m.releaseDuration.WithLabelValues(status, releaseType).Observe(duration.Seconds())
-		}
 		m.otelReleaseDuration.Record(ctx, duration.Seconds(), attrs)
 	}
 }
@@ -443,15 +307,9 @@ func (m *WorkerMetrics) RecordGatewaySync(ctx context.Context, operation string,
 	}
 	operation = stableLabel(operation, "apply")
 	result = stableLabel(result, "unknown")
-	if m.gatewaySync != nil {
-		m.gatewaySync.WithLabelValues(operation, result).Inc()
-	}
 	attrs := otelmetric.WithAttributes(attribute.String("operation", operation), attribute.String("result", result))
 	m.otelGatewaySync.Add(ctx, 1, attrs)
 	if duration >= 0 {
-		if m.gatewaySyncDuration != nil {
-			m.gatewaySyncDuration.WithLabelValues(operation, result).Observe(duration.Seconds())
-		}
 		m.otelGatewayDuration.Record(ctx, duration.Seconds(), attrs)
 	}
 }
@@ -471,14 +329,6 @@ func (m *WorkerMetrics) SetDeploymentRuntime(ctx context.Context, metric Deploym
 	readyRatio := 1.0
 	if desired > 0 {
 		readyRatio = ready / desired
-	}
-	if m.deploymentObservations != nil {
-		m.deploymentObservations.WithLabelValues(state).Inc()
-		m.deploymentReadyRatio.WithLabelValues(state).Observe(readyRatio)
-		m.deploymentReplicaCount.WithLabelValues("desired").Observe(desired)
-		m.deploymentReplicaCount.WithLabelValues("ready").Observe(ready)
-		m.deploymentReplicaCount.WithLabelValues("available").Observe(available)
-		m.deploymentReplicaCount.WithLabelValues("updated").Observe(updated)
 	}
 	m.otelDeploymentObserved.Add(ctx, 1, otelmetric.WithAttributes(attribute.String("state", state)))
 	m.otelDeploymentRatio.Record(ctx, readyRatio, otelmetric.WithAttributes(attribute.String("state", state)))
@@ -582,85 +432,6 @@ func (c *DependencyCollector) Collect(ch chan<- prometheus.Metric) {
 		}
 		ch <- prometheus.MustNewConstMetric(c.up, prometheus.GaugeValue, up, name)
 		ch <- prometheus.MustNewConstMetric(c.duration, prometheus.GaugeValue, time.Since(start).Seconds(), name)
-	}
-}
-
-type AsynqQueueCollector struct {
-	inspector interface {
-		GetQueueInfo(string) (*asynq.QueueInfo, error)
-	}
-	queues    []string
-	depth     *prometheus.Desc
-	failed    *prometheus.Desc
-	latency   *prometheus.Desc
-	processed *prometheus.Desc
-}
-
-func NewAsynqQueueCollector(service string, inspector interface {
-	GetQueueInfo(string) (*asynq.QueueInfo, error)
-}, queues []string) prometheus.Collector {
-	return &AsynqQueueCollector{
-		inspector: inspector,
-		queues:    append([]string(nil), queues...),
-		depth: prometheus.NewDesc(
-			"luna_devops_asynq_queue_depth",
-			"Current Asynq queue task count by state.",
-			[]string{"queue", "state"},
-			prometheus.Labels{"service": service},
-		),
-		failed: prometheus.NewDesc(
-			"luna_devops_asynq_queue_failed_total",
-			"Total Asynq tasks failed by queue.",
-			[]string{"queue"},
-			prometheus.Labels{"service": service},
-		),
-		latency: prometheus.NewDesc(
-			"luna_devops_asynq_queue_latency_seconds",
-			"Latency of the oldest pending task in an Asynq queue.",
-			[]string{"queue"},
-			prometheus.Labels{"service": service},
-		),
-		processed: prometheus.NewDesc(
-			"luna_devops_asynq_queue_processed_total",
-			"Total Asynq tasks processed by queue.",
-			[]string{"queue"},
-			prometheus.Labels{"service": service},
-		),
-	}
-}
-
-func (c *AsynqQueueCollector) Describe(ch chan<- *prometheus.Desc) {
-	ch <- c.depth
-	ch <- c.failed
-	ch <- c.latency
-	ch <- c.processed
-}
-
-func (c *AsynqQueueCollector) Collect(ch chan<- prometheus.Metric) {
-	if c.inspector == nil {
-		return
-	}
-	for _, queue := range c.queues {
-		info, err := c.inspector.GetQueueInfo(queue)
-		if err != nil {
-			continue
-		}
-		queueName := stableLabel(info.Queue, queue)
-		states := map[string]int{
-			"active":      info.Active,
-			"aggregating": info.Aggregating,
-			"archived":    info.Archived,
-			"completed":   info.Completed,
-			"pending":     info.Pending,
-			"retry":       info.Retry,
-			"scheduled":   info.Scheduled,
-		}
-		for state, value := range states {
-			ch <- prometheus.MustNewConstMetric(c.depth, prometheus.GaugeValue, float64(value), queueName, state)
-		}
-		ch <- prometheus.MustNewConstMetric(c.failed, prometheus.CounterValue, float64(info.FailedTotal), queueName)
-		ch <- prometheus.MustNewConstMetric(c.latency, prometheus.GaugeValue, info.Latency.Seconds(), queueName)
-		ch <- prometheus.MustNewConstMetric(c.processed, prometheus.CounterValue, float64(info.ProcessedTotal), queueName)
 	}
 }
 

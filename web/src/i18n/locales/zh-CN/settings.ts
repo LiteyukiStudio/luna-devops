@@ -236,7 +236,6 @@ const settings = {
     retention: {
       platformEventsDays: { label: '平台事件保留天数', description: '平台事件明细的保留天数，0 表示不自动清理。' },
       notificationDeliveriesDays: { label: '通知投递记录保留天数', description: '通知投递记录的保留天数，0 表示不自动清理。' },
-      workerTaskEventsDays: { label: 'Worker 任务事件保留天数', description: 'Worker 任务事件的保留天数，0 表示不自动清理。' },
       buildLogsDays: { label: '构建日志保留天数', description: '构建日志内容的保留天数，0 表示不自动清理。' },
       releaseLogsDays: { label: '发布日志保留天数', description: '发布日志内容的保留天数，0 表示不自动清理。' },
       hookRunLogsDays: { label: 'Hook 运行日志保留天数', description: 'Hook 运行日志内容的保留天数，0 表示不自动清理。' },
@@ -313,7 +312,6 @@ const settings = {
   retentionDatasetLabels: {
     platform_events: '平台事件',
     notification_deliveries: '通知投递记录',
-    worker_task_events: 'Worker 任务事件',
     build_logs: '构建日志',
     release_logs: '发布日志',
     hook_run_logs: 'Hook 运行日志',

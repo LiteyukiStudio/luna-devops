@@ -9,7 +9,6 @@ func TestCatalogDefaults(t *testing.T) {
 	want := []Dataset{
 		{Key: DatasetPlatformEvents, ConfigKey: "retention.platformEventsDays", DefaultDays: 90},
 		{Key: DatasetNotificationDeliveries, ConfigKey: "retention.notificationDeliveriesDays", DefaultDays: 90},
-		{Key: DatasetWorkerTaskEvents, ConfigKey: "retention.workerTaskEventsDays", DefaultDays: 30},
 		{Key: DatasetBuildLogs, ConfigKey: "retention.buildLogsDays", DefaultDays: 30},
 		{Key: DatasetReleaseLogs, ConfigKey: "retention.releaseLogsDays", DefaultDays: 90},
 		{Key: DatasetHookRunLogs, ConfigKey: "retention.hookRunLogsDays", DefaultDays: 90},

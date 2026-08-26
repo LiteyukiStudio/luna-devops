@@ -1,9 +1,5 @@
 import { describe, expect, it } from "vitest"
-import {
-  createInteractionCardsInput,
-  legacyInteractionCardsInputSchema,
-  normalizeInteractionCardsInput,
-} from "../src/tools/ui-cards.js"
+import { createInteractionCardsInput } from "../src/tools/ui-cards.js"
 
 const databaseCard = {
   schemaVersion: 1,
@@ -155,18 +151,6 @@ describe("interaction card tool", () => {
       expect(createInteractionCardsInput.safeParse(input).success).toBe(false)
   })
 
-  it("normalizes only representational version and missing section IDs", () => {
-    const input = structuredClone(databaseCard) as unknown as Record<string, unknown>
-    input.schemaVersion = "1"
-    const cards = input.cards as Array<{ form: { sections: Array<Record<string, unknown>> } }>
-    delete cards[0]!.form.sections[0]!.id
-
-    const parsed = createInteractionCardsInput.parse(normalizeInteractionCardsInput(input))
-
-    expect(parsed.schemaVersion).toBe(1)
-    expect(parsed.cards[0]?.form?.sections[0]?.id).toBe("section_1_1")
-  })
-
   it("allows message templates for public fields and rejects unknown or sensitive fields", () => {
     const input = structuredClone(databaseCard) as unknown as {
       cards: Array<{
@@ -297,20 +281,6 @@ describe("interaction card tool", () => {
       defaultValue: [{ key: "APP_ENV", value: "production" }],
     })
     expect(createInteractionCardsInput.safeParse(publicKeyValueDefault).success).toBe(true)
-  })
-
-  it("retains the full historical payload schema without registering a legacy model tool", () => {
-    expect(legacyInteractionCardsInputSchema.type).toBe("object")
-    expect(Array.isArray(legacyInteractionCardsInputSchema.anyOf)).toBe(true)
-    const schema = JSON.stringify(legacyInteractionCardsInputSchema)
-    expect(schema).toContain("businessTemplate")
-    expect(schema).toContain("candidate_picker")
-    expect(schema).toContain("resource_configuration")
-    expect(schema).toContain("health_overview")
-    expect(schema).toContain("presentation")
-    expect(schema).toContain("status_list")
-    expect(schema).toContain("multi_select")
-    expect(schema).toContain("label_value")
   })
 
   it.each([

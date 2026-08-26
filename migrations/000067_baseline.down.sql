@@ -25,7 +25,6 @@ DROP TABLE IF EXISTS
     deployment_targets,
     deployment_volume_mounts,
     email_registration_challenges,
-    environments,
     external_identities,
     gateway_routes,
     git_accounts,
@@ -66,5 +65,4 @@ DROP TABLE IF EXISTS
     user_wallets,
     users,
     volume_transfer_parts,
-    volume_transfers,
-    worker_task_events CASCADE;
+    volume_transfers CASCADE;

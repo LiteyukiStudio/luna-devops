@@ -236,7 +236,6 @@ const settings = {
     retention: {
       platformEventsDays: { label: 'Platform event retention', description: 'Days to retain platform event details. Set to 0 to disable automatic cleanup.' },
       notificationDeliveriesDays: { label: 'Notification delivery retention', description: 'Days to retain notification delivery records. Set to 0 to disable automatic cleanup.' },
-      workerTaskEventsDays: { label: 'Worker task event retention', description: 'Days to retain Worker task events. Set to 0 to disable automatic cleanup.' },
       buildLogsDays: { label: 'Build log retention', description: 'Days to retain build log content. Set to 0 to disable automatic cleanup.' },
       releaseLogsDays: { label: 'Release log retention', description: 'Days to retain release log content. Set to 0 to disable automatic cleanup.' },
       hookRunLogsDays: { label: 'Hook run log retention', description: 'Days to retain Hook run log content. Set to 0 to disable automatic cleanup.' },
@@ -313,7 +312,6 @@ const settings = {
   retentionDatasetLabels: {
     platform_events: 'Platform events',
     notification_deliveries: 'Notification deliveries',
-    worker_task_events: 'Worker task events',
     build_logs: 'Build logs',
     release_logs: 'Release logs',
     hook_run_logs: 'Hook run logs',

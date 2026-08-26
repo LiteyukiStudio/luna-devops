@@ -277,14 +277,6 @@ var configDefinitions = []configDefinition{
 		Default:     "90",
 	},
 	{
-		Key:         "retention.workerTaskEventsDays",
-		Label:       "Worker 任务事件保留天数",
-		Description: "Worker 任务事件的保留天数，0 表示不自动清理。",
-		Type:        "number",
-		Public:      false,
-		Default:     "30",
-	},
-	{
 		Key:         "retention.buildLogsDays",
 		Label:       "构建日志保留天数",
 		Description: "构建日志内容的保留天数，0 表示不自动清理。",

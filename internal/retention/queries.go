@@ -39,26 +39,8 @@ USING victims
 WHERE target.id = victims.id`,
 		}},
 	},
-	DatasetWorkerTaskEvents: {
-		dataset: catalog[2],
-		queries: []querySpec{{
-			countSQL: `SELECT COUNT(*) AS count
-FROM worker_task_events
-WHERE created_at >= ? AND created_at < ?`,
-			deleteSQL: `WITH victims AS (
-    SELECT id
-    FROM worker_task_events
-    WHERE created_at >= ? AND created_at < ?
-    ORDER BY created_at, id
-    LIMIT 1000
-)
-DELETE FROM worker_task_events AS target
-USING victims
-WHERE target.id = victims.id`,
-		}},
-	},
 	DatasetBuildLogs: {
-		dataset: catalog[3],
+		dataset: catalog[2],
 		queries: []querySpec{{
 			countSQL: `SELECT COUNT(*) AS count
 FROM build_logs AS logs
@@ -80,7 +62,7 @@ WHERE target.id = victims.id`,
 		}},
 	},
 	DatasetReleaseLogs: {
-		dataset: catalog[4],
+		dataset: catalog[3],
 		queries: []querySpec{{
 			countSQL: `SELECT COUNT(*) AS count
 FROM release_logs AS logs
@@ -102,7 +84,7 @@ WHERE target.id = victims.id`,
 		}},
 	},
 	DatasetHookRunLogs: {
-		dataset: catalog[5],
+		dataset: catalog[4],
 		queries: []querySpec{{
 			countSQL: `SELECT COUNT(*) AS count
 FROM hook_run_logs AS logs
@@ -124,7 +106,7 @@ WHERE target.id = victims.id`,
 		}},
 	},
 	DatasetExpiredAuthData: {
-		dataset: catalog[6],
+		dataset: catalog[5],
 		queries: []querySpec{
 			{
 				requireExpired: true,

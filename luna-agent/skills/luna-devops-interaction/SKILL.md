@@ -26,20 +26,20 @@ description: 指导 Luna DevOps 助手选择工具、收集输入、执行平台
 
 ## 选择交互方式
 
-- 需要用户从少量可信候选中选择时直接调用 `request_choice`；不存在完成回复后的独立预测阶段，也不能用选择卡片代替工具检索、参数收集或业务执行。
-- `request_resource_choice`：只用于让用户从可信工具取得的 2～50 个真实资源候选中单选；候选更少时展示卡片，候选较多时平台自动编译为下拉表单。
-- `request_tool_input`：只用于为真实平台 operationId 收集尚缺的结构化参数；可发现的资源使用真实候选，不让用户手填 ID。
-- `review_tool_action`：只用于执行写操作前核对已确认的目标、参数、影响和风险；它不替代平台的逐次参数绑定批准。
-- `present_diagnosis`、`present_health_overview`、`present_execution_progress`、`present_operation_result`：分别呈现可信诊断、实时健康、权威异步进度和已经验收的终态结果，不得混用或提前声称成功。
+- `present_card`：使用 `mode: presentation` 呈现已经由可信工具结果确认的事实、诊断、健康状态、权威进度或终态结果；卡片不代表业务已经执行。
+- `request_input`：使用 `mode: interactive` 与 `template: form` 收集当前工作流真正缺少的结构化输入；可发现的资源使用真实候选，不让用户手填 ID。
+- `request_choice`：使用 `mode: interactive` 与 `template: candidates` 让用户从少量可信候选中选择；候选较多时改用 `request_input` 的 select 字段。
+- 写操作参数已经完整时直接调用真实平台工具；需要批准时使用平台逐次参数绑定批准，不再制造另一套卡片核对协议。
+- 不存在完成回复后的独立预测阶段，也不能用卡片代替工具检索、参数收集、业务执行或权威回读。
 - 只要继续执行需要一个或多个结构化值，就用交互卡片表单；不要用纯文本占位符或快捷选项收集。
 - 资源选择字段的 `label` 使用名称、`value` 使用可信资源 ID，并设置 `submissionFormat: label_value`。界面显示名称，消息回传“名称 (ID)”，工具绑定仍使用原始 ID。
 - 表单把非敏感值带回会话时，只使用 `{{field_id}}`。不得引用 Secret 或自行发明模板语法。
 - `secret` 与 `key_value.valueMode: secret` 只能由用户在当前卡片中手动填写；禁止提供 `defaultValue`、示例密钥或其他预填明文。留空表示不修改，随机生成绑定平台后端 `generate` 动作，清除绑定独立明确的 `clear` 动作。
 - 卡片动作只能引用当前可用的真实 operationId；缺少写工具时不得生成看似可执行的按钮。
 
-每个窄卡片工具一次提交完整输入，不调用准备工具、不提供 `generationId`、不跨调用维护草稿。Agent 会在调用开始时创建占位并签发稳定 ID；校验通过后同一项原位替换。校验失败时读取 `issues`、`attempt` 和 `retryable`，只修正列出的字段后完整重试；`retryable=false` 时停止。
+每个卡片工具一次提交完整 `InteractionCardGroup` v1 输入，不调用准备工具、不提供 `generationId`、不跨调用维护草稿。Agent 会在调用开始时创建占位并签发稳定 ID；校验通过后同一项原位替换。校验失败时读取 `issues`、`attempt` 和 `retryable`，只修正列出的字段后完整重试；`retryable=false` 时停止。
 
-窄工具已经固定少量丰富候选、长候选选择、资源配置、变更审阅、诊断报告、权威执行进度、终态结果和健康概览的模板。工具不能表达的关系、代码、Diff、图表或特殊组合使用简洁正文呈现，不得自行拼装通用卡片 DSL。动态任务只能绑定平台权威任务，不得由模型猜测百分比或步骤。
+当前三个工具共享受控内容块、字段和动作 Schema。关系、代码、Diff、图表或特殊组合只有确实改善理解时才放入对应卡片，否则使用简洁正文。动态任务只能绑定平台权威任务，不得由模型猜测百分比或步骤。
 
 ## 维持页面与会话连续性
 

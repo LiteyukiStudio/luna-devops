@@ -2,12 +2,9 @@ package worker
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"strings"
 	"time"
 
-	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/observability"
 	dnsprovider "github.com/LiteyukiStudio/devops/internal/provider/dns"
@@ -116,41 +113,28 @@ func RunWithRedis(redisOptions redisconfig.Options, db *gorm.DB, options Options
 }
 
 func registerTaskHandlers(mux *asynq.ServeMux, runner *Runner) {
-	mux.HandleFunc(tasks.TypeBuildRun, runner.withTaskEvents((*Runner).handleBuildRun))
-	mux.HandleFunc(tasks.TypeDeployRun, runner.withTaskEvents((*Runner).handleDeployRun))
-	mux.HandleFunc(tasks.TypeGatewayApply, runner.withTaskEvents((*Runner).handleGatewayApply))
-	mux.HandleFunc(tasks.TypeApplicationDelete, runner.withTaskEvents((*Runner).handleApplicationDelete))
-	mux.HandleFunc(tasks.TypeResourceCleanup, runner.withTaskEvents((*Runner).handleResourceCleanup))
-	mux.HandleFunc(tasks.TypeNotificationDeliver, runner.withTaskEvents((*Runner).handleNotificationDeliver))
-	mux.HandleFunc(tasks.TypeGitAccountRefresh, runner.withTaskEvents((*Runner).handleGitAccountRefresh))
-	mux.HandleFunc(tasks.TypeSyncStatus, runner.withTaskEvents((*Runner).handleSyncStatus))
-	mux.HandleFunc(tasks.TypeBillingAI, runner.withTaskEvents((*Runner).handleBillingAI))
-	mux.HandleFunc(tasks.TypeBillingRuntime, runner.withTaskEvents((*Runner).handleBillingRuntime))
-	mux.HandleFunc(tasks.TypeRetentionRun, runner.withTaskEvents((*Runner).handleRetentionRun))
-	mux.HandleFunc(tasks.TypeVolumeProvision, runner.withTaskEvents((*Runner).handleVolumeProvision))
-	mux.HandleFunc(tasks.TypeVolumeImport, runner.withTaskEvents((*Runner).handleVolumeImport))
-	mux.HandleFunc(tasks.TypeVolumeExport, runner.withTaskEvents((*Runner).handleVolumeExport))
-	mux.HandleFunc(tasks.TypeVolumeDelete, runner.withTaskEvents((*Runner).handleVolumeDelete))
-	mux.HandleFunc(tasks.TypeVolumeReconcile, runner.withTaskEvents((*Runner).handleVolumeReconcile))
-	mux.HandleFunc(tasks.TypeVolumeTransferCleanup, runner.withTaskEvents((*Runner).handleVolumeTransferCleanup))
+	mux.HandleFunc(tasks.TypeBuildRun, runner.withTaskContext((*Runner).handleBuildRun))
+	mux.HandleFunc(tasks.TypeDeployRun, runner.withTaskContext((*Runner).handleDeployRun))
+	mux.HandleFunc(tasks.TypeGatewayApply, runner.withTaskContext((*Runner).handleGatewayApply))
+	mux.HandleFunc(tasks.TypeApplicationDelete, runner.withTaskContext((*Runner).handleApplicationDelete))
+	mux.HandleFunc(tasks.TypeResourceCleanup, runner.withTaskContext((*Runner).handleResourceCleanup))
+	mux.HandleFunc(tasks.TypeNotificationDeliver, runner.withTaskContext((*Runner).handleNotificationDeliver))
+	mux.HandleFunc(tasks.TypeGitAccountRefresh, runner.withTaskContext((*Runner).handleGitAccountRefresh))
+	mux.HandleFunc(tasks.TypeSyncStatus, runner.withTaskContext((*Runner).handleSyncStatus))
+	mux.HandleFunc(tasks.TypeBillingAI, runner.withTaskContext((*Runner).handleBillingAI))
+	mux.HandleFunc(tasks.TypeBillingRuntime, runner.withTaskContext((*Runner).handleBillingRuntime))
+	mux.HandleFunc(tasks.TypeRetentionRun, runner.withTaskContext((*Runner).handleRetentionRun))
+	mux.HandleFunc(tasks.TypeVolumeProvision, runner.withTaskContext((*Runner).handleVolumeProvision))
+	mux.HandleFunc(tasks.TypeVolumeImport, runner.withTaskContext((*Runner).handleVolumeImport))
+	mux.HandleFunc(tasks.TypeVolumeExport, runner.withTaskContext((*Runner).handleVolumeExport))
+	mux.HandleFunc(tasks.TypeVolumeDelete, runner.withTaskContext((*Runner).handleVolumeDelete))
+	mux.HandleFunc(tasks.TypeVolumeReconcile, runner.withTaskContext((*Runner).handleVolumeReconcile))
+	mux.HandleFunc(tasks.TypeVolumeTransferCleanup, runner.withTaskContext((*Runner).handleVolumeTransferCleanup))
 }
 
-func (r *Runner) withTaskEvents(handler func(*Runner, context.Context, *asynq.Task) error) func(context.Context, *asynq.Task) error {
+func (r *Runner) withTaskContext(handler func(*Runner, context.Context, *asynq.Task) error) func(context.Context, *asynq.Task) error {
 	return func(ctx context.Context, task *asynq.Task) error {
-		runner := r.scoped(ctx)
-		envelope := taskEnvelopeFromPayload(task.Type(), task.Payload())
-		_ = runner.recordTaskEvent(envelope, "running", "")
-		err := handler(runner, ctx, task)
-		if err != nil {
-			status := "failed"
-			if errors.Is(err, errBuildCapacityUnavailable) {
-				status = "waiting"
-			}
-			_ = runner.recordTaskEvent(envelope, status, err.Error())
-			return err
-		}
-		_ = runner.recordTaskEvent(envelope, "succeeded", "")
-		return nil
+		return handler(r.scoped(ctx), ctx, task)
 	}
 }
 
@@ -162,44 +146,6 @@ func (r *Runner) scoped(ctx context.Context) *Runner {
 	copy.db = r.db.WithContext(ctx)
 	copy.secrets = secret.NewStore(copy.db, nil)
 	return &copy
-}
-
-func taskEnvelopeFromPayload(taskType string, payload []byte) tasks.TaskEnvelope {
-	var raw struct {
-		Envelope tasks.TaskEnvelope `json:"envelope"`
-	}
-	_ = json.Unmarshal(payload, &raw)
-	envelope := raw.Envelope
-	if strings.TrimSpace(envelope.TaskType) == "" {
-		envelope.TaskType = taskType
-	}
-	if strings.TrimSpace(envelope.TaskID) == "" {
-		envelope.TaskID = taskType
-	}
-	if strings.TrimSpace(envelope.DedupeKey) == "" {
-		envelope.DedupeKey = envelope.TaskID
-	}
-	if strings.TrimSpace(envelope.TraceID) == "" {
-		envelope.TraceID = envelope.TaskID
-	}
-	return envelope
-}
-
-func (r *Runner) recordTaskEvent(envelope tasks.TaskEnvelope, status string, message string) error {
-	if r.db == nil {
-		return nil
-	}
-	return r.db.Create(&model.WorkerTaskEvent{
-		ID:          id.New("tke"),
-		TaskID:      envelope.TaskID,
-		TaskType:    envelope.TaskType,
-		DedupeKey:   envelope.DedupeKey,
-		ActorID:     envelope.ActorID,
-		ResourceRef: envelope.ResourceRef,
-		Status:      status,
-		Message:     message,
-		Attempt:     envelope.Attempt,
-	}).Error
 }
 
 func NewRunner(db *gorm.DB, options Options) *Runner {

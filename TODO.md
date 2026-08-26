@@ -4,7 +4,8 @@
 
 - [x] 删除运行时环境明文审计、旧数据卷中心迁移命令及仅由它们使用的代码、测试和操作文档。
 - [x] 完成 Go、Web 与 Agent 的静态入口、导入导出、脚本和构建引用审计。
-- [ ] 分批清理审计确认的 Go、Web 与 Agent 历史死代码，并修复 Agent 密钥派生测试未被 Vitest 收集的问题。
+- [x] 完成第一批低风险清理：删除零入口 Web/Go 模块、旧 Agent 卡片协议与一次性 Prompt Cache benchmark，收敛 Worker 指标，并移除无消费者的任务影子事件及测试专用数据库 Schema。
+- [ ] 继续评估审计报告中需要产品取舍的后续批次，并修复 Agent 密钥派生测试未被 Vitest 收集的问题。
 
 ## 2026-08-26 终端日志单行渲染
 
@@ -25,7 +26,7 @@
 - [x] 为会话助手请求增加 capability-gated 匿名 `prompt_cache_key`；未知兼容端点默认不发送，DeepSeek 适配器强制截断。
 - [x] 将用户/页面上下文与历史工具交互规范化为按 Turn 可重放的追加式消息组；动态工作流参考只用于当前轮，避免过期流程随历史累积，并稳定工具序列与单项裁剪结果。
 - [x] 模型 Span 增加 `assistant|summary|title` 低基数 purpose，并让 Trace typed usage 只聚合 `assistant`。
-- [x] 增加可跨 checkout 重放的确定性 Prompt Cache 前缀基准、功能等价断言、JSON 对比与无外网 HTML 报告生成器。
+- [x] 增加确定性 Prompt Cache 前缀稳定性与功能等价回归，并以 Provider 官方 usage 观测真实缓存命中。
 - [x] 补齐双层 New API Header 转发与叶子截断说明、中英文文档、OpenAPI/Agent/Web 契约和分层测试。
 
 ## 2026-08-25 Agent Prompt 缓存命中率分层观测

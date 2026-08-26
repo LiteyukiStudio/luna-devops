@@ -12,7 +12,6 @@ export const auditedDynamicTranslationCalls = {
   'src/components/common/ai-assistant/tool-call.tsx|block.result.summaryKey': 'The Agent card summary checks i18next.exists and falls back to resultAvailable.',
   'src/components/common/inbox/message-format.ts|titleKey': 'The key comes from the local titleCatalog and has an inbox fallback.',
   'src/components/common/inbox/message-format.ts|contentKey': 'The key comes from the local contentCatalog and has an inbox fallback.',
-  'src/components/common/theme-mode-segmented.tsx|item.labelKey': 'Theme mode labels come from the local typed mode catalog.',
   'src/layouts/AppLayout.tsx|rule.titleKey': 'Page title keys come from the local route title catalog.',
   'src/layouts/AppLayout.tsx|section.titleKey': 'Sidebar section keys come from the local navigation catalog.',
   'src/layouts/AppLayout.tsx|item.labelKey': 'Sidebar item keys come from the local navigation catalog.',

@@ -236,7 +236,6 @@ const settings = {
     retention: {
       platformEventsDays: { label: '플랫폼 이벤트 보존 일수', description: '플랫폼 이벤트 상세의 보존 일수. 0은 자동 정리하지 않음을 의미합니다.' },
       notificationDeliveriesDays: { label: '알림 전송 기록 보존 일수', description: '알림 전송 기록의 보존 일수. 0은 자동 정리하지 않음을 의미합니다.' },
-      workerTaskEventsDays: { label: 'Worker 작업 이벤트 보존 일수', description: 'Worker 작업 이벤트의 보존 일수. 0은 자동 정리하지 않음을 의미합니다.' },
       buildLogsDays: { label: '빌드 로그 보존 일수', description: '빌드 로그 내용의 보존 일수. 0은 자동 정리하지 않음을 의미합니다.' },
       releaseLogsDays: { label: '릴리스 로그 보존 일수', description: '릴리스 로그 내용의 보존 일수. 0은 자동 정리하지 않음을 의미합니다.' },
       hookRunLogsDays: { label: 'Hook 실행 로그 보존 일수', description: 'Hook 실행 로그 내용의 보존 일수. 0은 자동 정리하지 않음을 의미합니다.' },
@@ -313,7 +312,6 @@ const settings = {
   retentionDatasetLabels: {
     platform_events: '플랫폼 이벤트',
     notification_deliveries: '알림 전송 기록',
-    worker_task_events: 'Worker 작업 이벤트',
     build_logs: '빌드 로그',
     release_logs: '릴리스 로그',
     hook_run_logs: 'Hook 실행 로그',

@@ -573,7 +573,6 @@ func TestRetentionConfigDefinitionsAndBounds(t *testing.T) {
 	expectedDefaults := map[string]string{
 		"retention.platformEventsDays":         "90",
 		"retention.notificationDeliveriesDays": "90",
-		"retention.workerTaskEventsDays":       "30",
 		"retention.buildLogsDays":              "30",
 		"retention.releaseLogsDays":            "90",
 		"retention.hookRunLogsDays":            "90",

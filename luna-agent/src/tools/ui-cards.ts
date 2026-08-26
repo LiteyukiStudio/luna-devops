@@ -1,9 +1,5 @@
 import { z } from "zod"
 import type { InteractionCardGroup } from "@luna-devops/ai-interaction-card-contract"
-import {
-  compileBusinessCardTemplate,
-  createBusinessCardTemplateInput,
-} from "./business-card-templates.js"
 import { safeJsonPointer } from "./json-pointer-schema.js"
 import { registeredRouteName, routeIdentifiers } from "./ui-route.js"
 
@@ -668,67 +664,6 @@ export const createInteractionCardsInput = z.object({
 
 export type CreateInteractionCardsInput = Omit<InteractionCardGroup, "generationId">
 
-
-const createInteractionCardsRequestInput = z.union([
-  createBusinessCardTemplateInput,
-  createInteractionCardsInput,
-])
-
-export function normalizeInteractionCardsInput(raw: unknown): unknown {
-  if (!raw || typeof raw !== "object" || Array.isArray(raw))
-    return raw
-  const input = structuredClone(raw) as Record<string, unknown>
-  if (input.schemaVersion === "1")
-    input.schemaVersion = 1
-  const businessTemplate = createBusinessCardTemplateInput.safeParse(input)
-  const normalizedInput = businessTemplate.success
-    ? compileBusinessCardTemplate(businessTemplate.data)
-    : input
-  if (!normalizedInput || typeof normalizedInput !== "object" || Array.isArray(normalizedInput))
-    return normalizedInput
-  return normalizeCardSections(normalizedInput as Record<string, unknown>)
-}
-
-function normalizeCardSections(input: Record<string, unknown>): unknown {
-  if (!Array.isArray(input.cards))
-    return input
-  const cards = input.cards as unknown[]
-  input.cards = cards.map((cardValue: unknown, cardIndex) => {
-    if (!cardValue || typeof cardValue !== "object" || Array.isArray(cardValue))
-      return cardValue
-    const card = cardValue as Record<string, unknown>
-    if (!card.form || typeof card.form !== "object" || Array.isArray(card.form))
-      return card
-    const form = card.form as Record<string, unknown>
-    if (!Array.isArray(form.sections))
-      return card
-    const sections = form.sections as unknown[]
-    form.sections = sections.map((sectionValue: unknown, sectionIndex) => {
-      if (!sectionValue || typeof sectionValue !== "object" || Array.isArray(sectionValue))
-        return sectionValue
-      const section = sectionValue as Record<string, unknown>
-      if (typeof section.id !== "string" || section.id.trim() === "")
-        section.id = `section_${cardIndex + 1}_${sectionIndex + 1}`
-      return section
-    })
-    return card
-  })
-  return input
-}
-
-// 仅供历史 create_interaction_cards payload 校验与回放；它不是模型工具
-// 定义，避免旧 operationId 再次被加入未来模型的工具集合。
-export const legacyInteractionCardsInputSchema = cardInputJsonSchema()
-
 function messageTemplateFieldIds(message: string): string[] {
   return [...message.matchAll(/\{\{([a-zA-Z0-9_-]{1,64})\}\}/g)].map(match => match[1]!)
-}
-
-function cardInputJsonSchema(): Record<string, unknown> {
-  const schema = z.toJSONSchema(createInteractionCardsRequestInput, { io: "input" }) as Record<string, unknown>
-  delete schema.$schema
-  // OpenAI-compatible providers require function parameters to declare an
-  // object at the schema root, even when the object variants are expressed by
-  // a top-level anyOf generated from a Zod union.
-  return { ...schema, type: "object" }
 }

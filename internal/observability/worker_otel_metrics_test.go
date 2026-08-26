@@ -21,7 +21,7 @@ func TestWorkerMetricsExportThroughOTelWithoutPrometheusRegistry(t *testing.T) {
 		_ = provider.Shutdown(context.Background())
 	})
 
-	workerMetrics := NewWorkerMetrics(nil, "worker").WithQueueResolver(func(string) string { return "build" })
+	workerMetrics := NewWorkerMetrics().WithQueueResolver(func(string) string { return "build" })
 	handler := workerMetrics.Middleware(asynq.HandlerFunc(func(context.Context, *asynq.Task) error { return nil }))
 	if err := handler.ProcessTask(context.Background(), asynq.NewTask("build:run", nil)); err != nil {
 		t.Fatalf("ProcessTask returned error: %v", err)
@@ -71,4 +71,10 @@ func assertOTelMetricPresent(t *testing.T, resourceMetrics metricdata.ResourceMe
 		}
 	}
 	t.Fatalf("OTel metric %q was not collected", name)
+}
+
+type fakeQueueInspector map[string]*asynq.QueueInfo
+
+func (f fakeQueueInspector) GetQueueInfo(queue string) (*asynq.QueueInfo, error) {
+	return f[queue], nil
 }

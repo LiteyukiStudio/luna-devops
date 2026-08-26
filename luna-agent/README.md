@@ -104,7 +104,7 @@ queued ──原子 claim──► running ──┬─► completed
 2. **step 循环**（`maxModelSteps` 上限内）：
    - `streaming.ts` 消费模型事件流，实时投影 reasoning/正文到时间线（SSE 推给前端）；
    - 模型返回 tool calls 后逐个派发：**内部工具**包括目录搜索、详情加载、会话命名、页面导航与三类通用卡片；**平台工具**经 `ToolOrchestrator` 校验后直接调用真实业务路由。高危调用等待 `reject / approve / approve_always`，模型与安全表单提交遵循相同的工具 Schema 和业务校验；
-   - 新模型只接收 `present_card`、`request_input`、`request_choice` 三个卡片 Schema，并编译为稳定 `InteractionCardGroup` v1；旧 operationId 只用于历史恢复和既有 Web 渲染；
+   - 模型只接收 `present_card`、`request_input`、`request_choice` 三个卡片 Schema，三者直接使用稳定的 `InteractionCardGroup` v1；
    - 每个工具结果以 `tool` 角色消息追加到 continuation，进入下一 step。
 3. **续跑**：审批决策或表单完成后重新入队。`resume.ts` 从不可变工具事件重建必要的 assistant+tool 消息对，保证模型看到暂停前已经发生的结果。
 4. **收尾**：自动生成会话标题（best-effort，失败不影响结果），写入终态、不可变事件和遥测；没有独立的“下一步预测”模型调用。

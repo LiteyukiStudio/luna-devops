@@ -3,6 +3,11 @@ import { join } from "node:path"
 import { describe, expect, inject, it } from "vitest"
 import { ToolCatalog, validateArguments } from "../src/tools/catalog.js"
 import { ToolArgumentsInvalidError } from "../src/tools/argument-validator.js"
+import { businessCardTools } from "../src/tools/business-card-tools.js"
+import { renameConversationTool } from "../src/tools/conversation-title.js"
+import { getToolDetailsTool } from "../src/tools/tool-details.js"
+import { searchToolsTool } from "../src/tools/tool-search.js"
+import { navigateToRouteTool } from "../src/tools/ui-route.js"
 
 const platformCatalog = ToolCatalog.load(JSON.parse(readFileSync(
   inject("platformCatalogFixturePath"),
@@ -213,10 +218,11 @@ describe("real PlatformCatalog retrieval", () => {
   it("keeps every platform operation named by a Skill available in the real catalog", () => {
     const known = new Set([
       ...platformCatalog.all().map(operation => operation.operationId),
-      "search_tools", "get_tool_details", "present_card", "request_input", "request_choice",
-      "navigate_to_route", "rename_conversation", "present_diagnosis", "present_execution_progress",
-      "present_health_overview", "present_operation_result", "request_resource_choice",
-      "request_tool_input", "review_tool_action",
+      searchToolsTool.operationId,
+      getToolDetailsTool.operationId,
+      navigateToRouteTool.operationId,
+      renameConversationTool.operationId,
+      ...businessCardTools.map(tool => tool.operationId),
     ])
     const operationLike = /^(?:get|list|create|update|delete|preview|retry|install|trigger|check|test|read|fetch|search|rotate|revoke|unbind|pin|unpin|rollback|cancel|cleanup|export|import|resolve|set|start|complete|authorize|reconfigure)[A-Z_]/
     const missing = skillMarkdownFiles(new URL("../skills", import.meta.url).pathname)

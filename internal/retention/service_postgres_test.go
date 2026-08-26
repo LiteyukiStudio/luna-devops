@@ -13,7 +13,6 @@ func TestCleanupEnforcesTerminalParentsInPostgres(t *testing.T) {
 	if err := db.Exec(`
 CREATE TABLE platform_events (id text PRIMARY KEY, occurred_at timestamptz NOT NULL);
 CREATE TABLE notification_deliveries (id text PRIMARY KEY, status text NOT NULL, finished_at timestamptz);
-CREATE TABLE worker_task_events (id text PRIMARY KEY, created_at timestamptz NOT NULL);
 CREATE TABLE build_runs (id text PRIMARY KEY, status text NOT NULL, finished_at timestamptz);
 CREATE TABLE build_logs (id text PRIMARY KEY, build_run_id text NOT NULL, created_at timestamptz NOT NULL);
 CREATE TABLE releases (id text PRIMARY KEY, status text NOT NULL, finished_at timestamptz);
@@ -31,7 +30,6 @@ CREATE TABLE hook_run_logs (id text PRIMARY KEY, hook_run_id text NOT NULL, crea
 		args  []any
 	}{
 		{"INSERT INTO platform_events(id, occurred_at) VALUES (?, ?)", []any{"event_old", old}},
-		{"INSERT INTO worker_task_events(id, created_at) VALUES (?, ?)", []any{"task_old", old}},
 		{"INSERT INTO notification_deliveries(id, status, finished_at) VALUES (?, ?, ?), (?, ?, ?), (?, ?, ?)", []any{"delivery_ok", "succeeded", old, "delivery_failed", "failed", old, "delivery_pending", "pending", old}},
 		{"INSERT INTO build_runs(id, status, finished_at) VALUES (?, ?, ?), (?, ?, ?)", []any{"build_done", "succeeded", old, "build_running", "running", old}},
 		{"INSERT INTO build_logs(id, build_run_id, created_at) VALUES (?, ?, ?), (?, ?, ?)", []any{"build_log_done", "build_done", old, "build_log_running", "build_running", old}},
@@ -49,7 +47,6 @@ CREATE TABLE hook_run_logs (id text PRIMARY KEY, hook_run_id text NOT NULL, crea
 	datasets := []string{
 		DatasetPlatformEvents,
 		DatasetNotificationDeliveries,
-		DatasetWorkerTaskEvents,
 		DatasetBuildLogs,
 		DatasetReleaseLogs,
 		DatasetHookRunLogs,
@@ -59,7 +56,7 @@ CREATE TABLE hook_run_logs (id text PRIMARY KEY, hook_run_id text NOT NULL, crea
 		t.Fatalf("cleanup: %v", err)
 	}
 	wantMatched := map[string]int64{
-		DatasetPlatformEvents: 1, DatasetNotificationDeliveries: 2, DatasetWorkerTaskEvents: 1,
+		DatasetPlatformEvents: 1, DatasetNotificationDeliveries: 2,
 		DatasetBuildLogs: 1, DatasetReleaseLogs: 1, DatasetHookRunLogs: 1,
 	}
 	for _, result := range results {
@@ -133,13 +130,13 @@ func TestRunAutomaticReadsConfigsAndHonorsZeroInPostgres(t *testing.T) {
 	db := openRetentionTestDB(t)
 	if err := db.Exec(`
 CREATE TABLE app_configs (key text PRIMARY KEY, value text NOT NULL);
-CREATE TABLE worker_task_events (id text PRIMARY KEY, created_at timestamptz NOT NULL);
+CREATE TABLE platform_events (id text PRIMARY KEY, occurred_at timestamptz NOT NULL);
 `).Error; err != nil {
 		t.Fatalf("create automatic retention tables: %v", err)
 	}
 	for _, dataset := range catalog {
 		value := "0"
-		if dataset.Key == DatasetWorkerTaskEvents {
+		if dataset.Key == DatasetPlatformEvents {
 			value = "30"
 		}
 		if err := db.Exec("INSERT INTO app_configs(key, value) VALUES (?, ?)", dataset.ConfigKey, value).Error; err != nil {
@@ -148,8 +145,8 @@ CREATE TABLE worker_task_events (id text PRIMARY KEY, created_at timestamptz NOT
 	}
 
 	now := time.Date(2026, 7, 14, 12, 0, 0, 0, time.UTC)
-	if err := db.Exec("INSERT INTO worker_task_events(id, created_at) VALUES (?, ?), (?, ?)",
-		"task_old", now.AddDate(0, 0, -31), "task_recent", now.AddDate(0, 0, -29)).Error; err != nil {
+	if err := db.Exec("INSERT INTO platform_events(id, occurred_at) VALUES (?, ?), (?, ?)",
+		"event_old", now.AddDate(0, 0, -91), "event_recent", now.AddDate(0, 0, -89)).Error; err != nil {
 		t.Fatal(err)
 	}
 	results, err := NewService(db).RunAutomatic(t.Context(), now)
@@ -160,12 +157,12 @@ CREATE TABLE worker_task_events (id text PRIMARY KEY, created_at timestamptz NOT
 		t.Fatalf("automatic results = %d, want one enabled dataset", len(results))
 	}
 	for _, result := range results {
-		if result.Dataset != DatasetWorkerTaskEvents || result.Matched != 1 || result.Deleted != 1 {
-			t.Fatalf("worker automatic result = %#v", result)
+		if result.Dataset != DatasetPlatformEvents || result.Matched != 1 || result.Deleted != 1 {
+			t.Fatalf("platform event automatic result = %#v", result)
 		}
 	}
-	assertRowCount(t, db, "worker_task_events", 1)
-	assertIDExists(t, db, "worker_task_events", "task_recent")
+	assertRowCount(t, db, "platform_events", 1)
+	assertIDExists(t, db, "platform_events", "event_recent")
 }
 
 func openRetentionTestDB(t *testing.T) *gorm.DB {

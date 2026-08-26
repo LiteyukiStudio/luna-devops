@@ -591,25 +591,6 @@ CREATE TABLE email_registration_challenges (
     updated_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
-CREATE TABLE environments (
-    id text NOT NULL,
-    project_id text NOT NULL,
-    name text NOT NULL,
-    slug text NOT NULL,
-    cluster_id text DEFAULT ''::text NOT NULL,
-    namespace text DEFAULT ''::text NOT NULL,
-    replicas integer DEFAULT 1 NOT NULL,
-    cpu_request text DEFAULT ''::text NOT NULL,
-    memory_request text DEFAULT ''::text NOT NULL,
-    env_vars text DEFAULT ''::text NOT NULL,
-    config_refs text DEFAULT ''::text NOT NULL,
-    secret_refs text DEFAULT ''::text NOT NULL,
-    created_by text DEFAULT ''::text NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    deleted_at timestamp with time zone
-);
-
 CREATE TABLE external_identities (
     id text NOT NULL,
     user_id text NOT NULL,
@@ -1383,19 +1364,6 @@ CREATE TABLE volume_transfers (
     CONSTRAINT chk_volume_transfers_transferred_bytes CHECK ((transferred_bytes >= 0))
 );
 
-CREATE TABLE worker_task_events (
-    id text NOT NULL,
-    task_id text NOT NULL,
-    task_type text NOT NULL,
-    dedupe_key text NOT NULL,
-    actor_id text DEFAULT ''::text NOT NULL,
-    resource_ref text DEFAULT ''::text NOT NULL,
-    status text NOT NULL,
-    message text DEFAULT ''::text NOT NULL,
-    attempt integer DEFAULT 0 NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL
-);
-
 ALTER TABLE ONLY ai.conversation_summaries
     ADD CONSTRAINT conversation_summaries_pkey PRIMARY KEY (conversation_id);
 
@@ -1506,9 +1474,6 @@ ALTER TABLE ONLY deployment_volume_mounts
 
 ALTER TABLE ONLY email_registration_challenges
     ADD CONSTRAINT email_registration_challenges_pkey PRIMARY KEY (id);
-
-ALTER TABLE ONLY environments
-    ADD CONSTRAINT environments_pkey PRIMARY KEY (id);
 
 ALTER TABLE ONLY external_identities
     ADD CONSTRAINT external_identities_pkey PRIMARY KEY (id);
@@ -1641,9 +1606,6 @@ ALTER TABLE ONLY volume_transfer_parts
 
 ALTER TABLE ONLY volume_transfers
     ADD CONSTRAINT volume_transfers_pkey PRIMARY KEY (id);
-
-ALTER TABLE ONLY worker_task_events
-    ADD CONSTRAINT worker_task_events_pkey PRIMARY KEY (id);
 
 CREATE INDEX ai_conversation_summaries_updated_idx ON ai.conversation_summaries USING btree (updated_at DESC);
 
@@ -1884,16 +1846,6 @@ CREATE INDEX idx_email_registration_challenges_consumed_at ON email_registration
 CREATE INDEX idx_email_registration_challenges_email ON email_registration_challenges USING btree (email);
 
 CREATE INDEX idx_email_registration_challenges_expires_at ON email_registration_challenges USING btree (expires_at);
-
-CREATE INDEX idx_environments_cluster_id ON environments USING btree (cluster_id);
-
-CREATE INDEX idx_environments_created_by ON environments USING btree (created_by);
-
-CREATE INDEX idx_environments_deleted_at ON environments USING btree (deleted_at);
-
-CREATE INDEX idx_environments_project_id ON environments USING btree (project_id);
-
-CREATE INDEX idx_environments_slug ON environments USING btree (slug);
 
 CREATE UNIQUE INDEX idx_external_identities_provider_subject ON external_identities USING btree (provider_id, subject);
 
@@ -2336,20 +2288,6 @@ CREATE INDEX idx_volume_transfers_expired_objects ON volume_transfers USING btre
 CREATE INDEX idx_volume_transfers_project_state_created ON volume_transfers USING btree (project_id, state, created_at DESC);
 
 CREATE INDEX idx_volume_transfers_volume_created ON volume_transfers USING btree (project_volume_id, created_at DESC);
-
-CREATE INDEX idx_worker_task_events_actor_id ON worker_task_events USING btree (actor_id);
-
-CREATE INDEX idx_worker_task_events_dedupe_key ON worker_task_events USING btree (dedupe_key);
-
-CREATE INDEX idx_worker_task_events_resource_ref ON worker_task_events USING btree (resource_ref);
-
-CREATE INDEX idx_worker_task_events_retention ON worker_task_events USING btree (created_at, id);
-
-CREATE INDEX idx_worker_task_events_status ON worker_task_events USING btree (status);
-
-CREATE INDEX idx_worker_task_events_task_id ON worker_task_events USING btree (task_id);
-
-CREATE INDEX idx_worker_task_events_task_type ON worker_task_events USING btree (task_type);
 
 ALTER TABLE ONLY ai.conversation_summaries
     ADD CONSTRAINT conversation_summaries_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES ai.conversations(id) ON DELETE CASCADE;

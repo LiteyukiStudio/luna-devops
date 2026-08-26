@@ -34,67 +34,51 @@ const (
 	QueueDeploy = "deploy"
 	QueueBuild  = "build"
 	QueueLight  = "light"
+
+	HeaderEnqueuedAt = "luna-enqueued-at"
 )
 
 type BuildRunPayload struct {
-	Envelope   TaskEnvelope `json:"envelope"`
-	BuildRunID string       `json:"buildRunId"`
-	BuildJobID string       `json:"buildJobId"`
-	ProjectID  string       `json:"projectId"`
-	ActorID    string       `json:"actorId"`
+	BuildRunID string `json:"buildRunId"`
+	BuildJobID string `json:"buildJobId"`
+	ProjectID  string `json:"projectId"`
+	ActorID    string `json:"actorId"`
 }
 
 type DeployRunPayload struct {
-	Envelope  TaskEnvelope `json:"envelope"`
-	ReleaseID string       `json:"releaseId"`
-	ProjectID string       `json:"projectId"`
-	ActorID   string       `json:"actorId"`
+	ReleaseID string `json:"releaseId"`
+	ProjectID string `json:"projectId"`
+	ActorID   string `json:"actorId"`
 }
 
 type GatewayApplyPayload struct {
-	Envelope       TaskEnvelope `json:"envelope"`
-	GatewayRouteID string       `json:"gatewayRouteId"`
-	ProjectID      string       `json:"projectId"`
-	ActorID        string       `json:"actorId"`
+	GatewayRouteID string `json:"gatewayRouteId"`
+	ProjectID      string `json:"projectId"`
+	ActorID        string `json:"actorId"`
 }
 
 type ApplicationDeletePayload struct {
-	Envelope      TaskEnvelope `json:"envelope"`
-	ApplicationID string       `json:"applicationId"`
-	ProjectID     string       `json:"projectId"`
-	ActorID       string       `json:"actorId"`
-	DeleteData    bool         `json:"deleteData"`
+	ApplicationID string `json:"applicationId"`
+	ProjectID     string `json:"projectId"`
+	ActorID       string `json:"actorId"`
+	DeleteData    bool   `json:"deleteData"`
 }
 
 type ResourceCleanupPayload struct {
-	Envelope     TaskEnvelope `json:"envelope"`
-	ResourceType string       `json:"resourceType"`
-	ResourceID   string       `json:"resourceId"`
-	ProjectID    string       `json:"projectId"`
-	ActorID      string       `json:"actorId"`
-	DeleteData   bool         `json:"deleteData"`
+	ResourceType string `json:"resourceType"`
+	ResourceID   string `json:"resourceId"`
+	ProjectID    string `json:"projectId"`
+	ActorID      string `json:"actorId"`
+	DeleteData   bool   `json:"deleteData"`
 }
 
 type NotificationDeliverPayload struct {
-	Envelope   TaskEnvelope `json:"envelope"`
-	DeliveryID string       `json:"deliveryId"`
-	ActorID    string       `json:"actorId"`
+	DeliveryID string `json:"deliveryId"`
+	ActorID    string `json:"actorId"`
 }
 
 type GitAccountRefreshPayload struct {
-	Envelope TaskEnvelope `json:"envelope"`
-	ActorID  string       `json:"actorId"`
-}
-
-type TaskEnvelope struct {
-	TaskID      string    `json:"taskId"`
-	TaskType    string    `json:"taskType"`
-	DedupeKey   string    `json:"dedupeKey"`
-	ActorID     string    `json:"actorId"`
-	ResourceRef string    `json:"resourceRef"`
-	TraceID     string    `json:"traceId"`
-	Attempt     int       `json:"attempt"`
-	CreatedAt   time.Time `json:"createdAt"`
+	ActorID string `json:"actorId"`
 }
 
 type Client struct {
@@ -278,31 +262,8 @@ func taskWithTraceHeaders(ctx context.Context, task *asynq.Task) *asynq.Task {
 	for key, value := range telemetry.InjectMap(ctx) {
 		headers[key] = value
 	}
-	return asynq.NewTaskWithHeaders(task.Type(), taskPayloadWithEnqueueTimestamp(task.Payload()), headers)
-}
-
-func taskPayloadWithEnqueueTimestamp(payload []byte) []byte {
-	var document map[string]json.RawMessage
-	if err := json.Unmarshal(payload, &document); err != nil {
-		return payload
-	}
-	var envelope TaskEnvelope
-	if rawEnvelope, ok := document["envelope"]; ok {
-		if err := json.Unmarshal(rawEnvelope, &envelope); err != nil {
-			return payload
-		}
-	}
-	envelope.CreatedAt = time.Now().UTC()
-	encodedEnvelope, err := json.Marshal(envelope)
-	if err != nil {
-		return payload
-	}
-	document["envelope"] = encodedEnvelope
-	encodedPayload, err := json.Marshal(document)
-	if err != nil {
-		return payload
-	}
-	return encodedPayload
+	headers[HeaderEnqueuedAt] = time.Now().UTC().Format(time.RFC3339Nano)
+	return asynq.NewTaskWithHeaders(task.Type(), task.Payload(), headers)
 }
 
 func taskOperationName(taskType string) string {
@@ -353,7 +314,6 @@ func NewBuildRunTask(payload BuildRunPayload) (*asynq.Task, error) {
 		return nil, errors.New("project id is required")
 	}
 
-	payload.Envelope = ensureEnvelope(payload.Envelope, TypeBuildRun, payload.ActorID, payload.ProjectID, payload.BuildJobID)
 	data, err := json.Marshal(payload)
 	if err != nil {
 		return nil, err
@@ -369,7 +329,6 @@ func NewDeployRunTask(payload DeployRunPayload) (*asynq.Task, error) {
 		return nil, errors.New("project id is required")
 	}
 
-	payload.Envelope = ensureEnvelope(payload.Envelope, TypeDeployRun, payload.ActorID, payload.ProjectID, payload.ReleaseID)
 	data, err := json.Marshal(payload)
 	if err != nil {
 		return nil, err
@@ -385,7 +344,6 @@ func NewGatewayApplyTask(payload GatewayApplyPayload) (*asynq.Task, error) {
 		return nil, errors.New("project id is required")
 	}
 
-	payload.Envelope = ensureEnvelope(payload.Envelope, TypeGatewayApply, payload.ActorID, payload.ProjectID, payload.GatewayRouteID)
 	data, err := json.Marshal(payload)
 	if err != nil {
 		return nil, err
@@ -401,7 +359,6 @@ func NewApplicationDeleteTask(payload ApplicationDeletePayload) (*asynq.Task, er
 		return nil, errors.New("project id is required")
 	}
 
-	payload.Envelope = ensureEnvelope(payload.Envelope, TypeApplicationDelete, payload.ActorID, payload.ProjectID, payload.ApplicationID)
 	data, err := json.Marshal(payload)
 	if err != nil {
 		return nil, err
@@ -420,8 +377,6 @@ func NewResourceCleanupTask(payload ResourceCleanupPayload) (*asynq.Task, error)
 		return nil, errors.New("project id is required")
 	}
 
-	resourceType := strings.TrimSpace(payload.ResourceType)
-	payload.Envelope = ensureEnvelope(payload.Envelope, TypeResourceCleanup, payload.ActorID, payload.ProjectID, resourceType+":"+strings.TrimSpace(payload.ResourceID))
 	data, err := json.Marshal(payload)
 	if err != nil {
 		return nil, err
@@ -434,7 +389,6 @@ func NewNotificationDeliverTask(payload NotificationDeliverPayload) (*asynq.Task
 		return nil, errors.New("notification delivery id is required")
 	}
 
-	payload.Envelope = ensureEnvelope(payload.Envelope, TypeNotificationDeliver, payload.ActorID, "notification", payload.DeliveryID)
 	data, err := json.Marshal(payload)
 	if err != nil {
 		return nil, err
@@ -443,32 +397,9 @@ func NewNotificationDeliverTask(payload NotificationDeliverPayload) (*asynq.Task
 }
 
 func NewGitAccountRefreshTask(payload GitAccountRefreshPayload) (*asynq.Task, error) {
-	payload.Envelope = ensureEnvelope(payload.Envelope, TypeGitAccountRefresh, payload.ActorID, "system", "git-accounts")
 	data, err := json.Marshal(payload)
 	if err != nil {
 		return nil, err
 	}
 	return asynq.NewTask(TypeGitAccountRefresh, data), nil
-}
-
-func ensureEnvelope(envelope TaskEnvelope, taskType string, actorID string, scope string, resourceID string) TaskEnvelope {
-	if strings.TrimSpace(envelope.TaskType) == "" {
-		envelope.TaskType = taskType
-	}
-	if strings.TrimSpace(envelope.ActorID) == "" {
-		envelope.ActorID = strings.TrimSpace(actorID)
-	}
-	if strings.TrimSpace(envelope.ResourceRef) == "" {
-		envelope.ResourceRef = strings.TrimSpace(resourceID)
-	}
-	if strings.TrimSpace(envelope.DedupeKey) == "" {
-		envelope.DedupeKey = taskType + ":" + strings.TrimSpace(scope) + ":" + strings.TrimSpace(resourceID)
-	}
-	if strings.TrimSpace(envelope.TaskID) == "" {
-		envelope.TaskID = envelope.DedupeKey
-	}
-	if strings.TrimSpace(envelope.TraceID) == "" {
-		envelope.TraceID = envelope.TaskID
-	}
-	return envelope
 }

@@ -11,7 +11,7 @@ describe("model-visible conversation history", () => {
         type: "tool_call",
         content: {
           operationId: "create_interaction_cards",
-          modelOperationId: "request_resource_choice",
+          modelOperationId: "request_choice",
           arguments: { template: "form" },
         },
       }],
@@ -19,7 +19,7 @@ describe("model-visible conversation history", () => {
 
     expect(modelVisibleHistory(history)[0]?.toolInteractions?.[0]).toMatchObject({
       content: {
-        operationId: "request_resource_choice",
+        operationId: "request_choice",
         timelineOperationId: "create_interaction_cards",
       },
     })

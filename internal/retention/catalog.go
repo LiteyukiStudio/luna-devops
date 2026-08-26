@@ -3,7 +3,6 @@ package retention
 const (
 	DatasetPlatformEvents         = "platform_events"
 	DatasetNotificationDeliveries = "notification_deliveries"
-	DatasetWorkerTaskEvents       = "worker_task_events"
 	DatasetBuildLogs              = "build_logs"
 	DatasetReleaseLogs            = "release_logs"
 	DatasetHookRunLogs            = "hook_run_logs"
@@ -25,7 +24,6 @@ type Dataset struct {
 var catalog = []Dataset{
 	{Key: DatasetPlatformEvents, DefaultDays: 90, ConfigKey: "retention.platformEventsDays"},
 	{Key: DatasetNotificationDeliveries, DefaultDays: 90, ConfigKey: "retention.notificationDeliveriesDays"},
-	{Key: DatasetWorkerTaskEvents, DefaultDays: 30, ConfigKey: "retention.workerTaskEventsDays"},
 	{Key: DatasetBuildLogs, DefaultDays: 30, ConfigKey: "retention.buildLogsDays"},
 	{Key: DatasetReleaseLogs, DefaultDays: 90, ConfigKey: "retention.releaseLogsDays"},
 	{Key: DatasetHookRunLogs, DefaultDays: 90, ConfigKey: "retention.hookRunLogsDays"},

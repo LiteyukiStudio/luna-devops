@@ -36,7 +36,7 @@ describe("versioned system prompt", () => {
 
     for (const expected of ["你是 Luna DevOps 的内嵌平台助手", interaction, navigation])
       expect(prompt).toContain(expected)
-    for (const expected of ["name: luna-devops-interaction", "每个窄卡片工具一次提交完整输入"])
+    for (const expected of ["name: luna-devops-interaction", "每个卡片工具一次提交完整 `InteractionCardGroup` v1 输入"])
       expect(interaction).toContain(expected)
     expect(navigation).toContain("name: luna-devops-navigation")
     expect(prompt).not.toContain("You are Luna DevOps")

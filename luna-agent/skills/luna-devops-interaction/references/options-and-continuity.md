@@ -5,13 +5,12 @@
 - 先按根 Skill 直接索引的 `resource-resolution.md` 解析资源候选。有效候选只有一个时直接
   采用并继续，不生成卡片或快捷选项；以下规则只处理仍然存在的真实选择。
 - 用卡片或快捷选项让用户从已有资源中选择时，只要平台支持创建该资源，就额外提供一个
-  “新建”入口（`candidate_picker` / `candidate_select` 的 `creationAction`，或通用卡片的
-  `groupActions`），用户选择后进入创建流程并在完成后回到原工作流；不得只给现有候选。
+  “新建”入口（卡片的 `groupActions`），用户选择后进入创建流程并在完成后回到原工作流；不得只给现有候选。
   具体规则见根 Skill 直接索引的 `resource-resolution.md`。
-- 真实资源单选使用 `request_resource_choice`，结构化参数使用 `request_tool_input`，变更核对使用 `review_tool_action`；诊断、健康、进度和终态结果使用对应 `present_*` 工具。
-- 每个窄工具单次提交完整输入；Agent 在调用开始时签发生成标识并创建占位，校验通过后客户端在同一位置显示最终内容。模型不要提供或维护 `generationId`。
+- 真实资源单选使用 `request_choice`，结构化参数使用 `request_input`；诊断、健康、进度和终态结果使用 `present_card`。
+- 每个卡片工具单次提交完整输入；Agent 在调用开始时签发生成标识并创建占位，校验通过后客户端在同一位置显示最终内容。模型不要提供或维护 `generationId`。
 - 简单追问、单一步骤建议或无需结构化交互的动作直接写入回复；只有确实需要用户选择少量可信候选时才调用 `request_choice`。
-- 需要用户填写文本、数值、布尔值、枚举或多字段配置时使用 `request_tool_input`；只需从真实资源候选中单选时使用 `request_resource_choice`，不得用快捷选项代替输入控件。
+- 需要用户填写文本、数值、布尔值、枚举或多字段配置时使用 `request_input`；只需从少量真实资源候选中单选时使用 `request_choice`，不得用快捷选项代替输入控件。
 - 同一个最终回复只选择一种，不重复呈现相同动作。
 
 ## 组织有用选项

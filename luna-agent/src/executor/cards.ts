@@ -7,7 +7,7 @@ import { createId } from "../id.js"
 import type { Repository } from "../persistence/repository.js"
 import type { ModelToolCall } from "../provider/provider.js"
 import { agentMetrics, telemetryLog } from "../telemetry.js"
-import { createInteractionCardsInput, normalizeInteractionCardsInput } from "../tools/ui-cards.js"
+import { createInteractionCardsInput } from "../tools/ui-cards.js"
 
 const CARD_MAX_ATTEMPTS = 2
 let maxCardRepairAttempts = CARD_MAX_ATTEMPTS
@@ -118,7 +118,7 @@ export class CardGenerationService {
     raw: unknown,
     generation: CardGeneration,
   ) {
-    const parsed = createInteractionCardsInput.safeParse(normalizeInteractionCardsInput(raw))
+    const parsed = createInteractionCardsInput.safeParse(raw)
     if (!parsed.success) {
       const issues = validationIssues(parsed.error.issues)
       const attempt = await this.recordRepairFailure(runId, generation, issues, "ai.interaction_card_schema_invalid")

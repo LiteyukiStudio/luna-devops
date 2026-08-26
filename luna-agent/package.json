@@ -11,20 +11,15 @@
   "scripts": {
     "dev": "tsx watch --env-file-if-exists=../.env --env-file-if-exists=.env.local src/index.ts",
     "build": "tsc -p tsconfig.build.json",
-    "benchmark:prompt-cache": "tsx benchmarks/prompt-cache/cli.ts run",
-    "benchmark:prompt-cache:compare": "tsx benchmarks/prompt-cache/cli.ts compare",
-    "benchmark:prompt-cache:report": "tsx benchmarks/prompt-cache/cli.ts report",
     "lint": "eslint .",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "start": "node dist/index.js"
   },
   "dependencies": {
-    "@fastify/cors": "^11.1.0",
     "@fastify/otel": "^0.20.1",
     "@luna-devops/ai-interaction-card-contract": "file:../packages/ai-interaction-card-contract",
     "@opentelemetry/api": "^1.9.1",
-    "@opentelemetry/api-logs": "^0.221.0",
     "@opentelemetry/exporter-logs-otlp-http": "^0.221.0",
     "@opentelemetry/exporter-metrics-otlp-http": "^0.221.0",
     "@opentelemetry/exporter-trace-otlp-http": "^0.221.0",

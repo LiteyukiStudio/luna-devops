@@ -9,7 +9,9 @@ if [[ -z "${AGENT_TEST_DATABASE_URL:-}" ]]; then
   exit 1
 fi
 
-psql "${AGENT_TEST_DATABASE_URL}" \
-  --set ON_ERROR_STOP=1 \
-  --file "${ROOT_DIR}/luna-agent/sql/001_ai_schema.sql" \
-  >/dev/null
+while IFS= read -r migration; do
+  psql "${AGENT_TEST_DATABASE_URL}" \
+    --set ON_ERROR_STOP=1 \
+    --file "${migration}" \
+    >/dev/null
+done < <(find "${ROOT_DIR}/migrations" -maxdepth 1 -type f -name '*.up.sql' -print | sort)

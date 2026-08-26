@@ -98,7 +98,7 @@
 - `Input`、`Textarea`、`Native Select`、`Field`、`Label`、`Tooltip`：表单基础组件已拆分到 shadcn 组件文件，业务字段组合改为 `components/common/form-field.tsx`。
 - `Alert Dialog`：`ConfirmDialog` 已改为组合 `web/src/components/ui/alert-dialog.tsx`。
 - `Empty`、`Alert`：空状态和错误状态已切到底层 shadcn 组件。
-- `Table`、`Pagination`：`DataList` 内部已改为组合 shadcn Table/Pagination。
+- `Pagination`：`DataList` 内部已改为组合 shadcn Pagination。
 - `Sidebar`、`Separator`：`AppLayout` 侧边栏已改为组合 shadcn Sidebar/Separator。
 - `Input`：邮箱注册验证码使用普通数字输入框，并保留系统验证码自动填充语义。
 
@@ -133,8 +133,6 @@ shadcn/ui 没有直接提供满足平台资源筛选需求的完整单选和多�
 
 允许保留业务组合组件，例如：
 
-- `PageHeader`
-- `AuthErrorPage`
 - `ForbiddenPage`
 - `AccessTokensPanel`
 - `RegistryCredentialPanel`

@@ -28,17 +28,17 @@ func TestTaskWithTraceHeadersInjectsW3CContext(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewDeployRunTask returned error: %v", err)
 	}
+	payloadBeforeHeaders := string(task.Payload())
 	task = taskWithTraceHeaders(ctx, task)
 	span.End()
 	if task.Headers()["traceparent"] == "" {
 		t.Fatalf("task headers did not include traceparent: %#v", task.Headers())
 	}
-	var payload DeployRunPayload
-	if err := json.Unmarshal(task.Payload(), &payload); err != nil {
-		t.Fatalf("decode task payload: %v", err)
+	if _, err := time.Parse(time.RFC3339Nano, task.Headers()[HeaderEnqueuedAt]); err != nil {
+		t.Fatalf("task headers did not include a valid enqueue timestamp: %#v", task.Headers())
 	}
-	if payload.Envelope.CreatedAt.IsZero() {
-		t.Fatal("task payload did not include enqueue timestamp")
+	if got := string(task.Payload()); got != payloadBeforeHeaders {
+		t.Fatalf("trace headers changed task payload used by Unique: before %s, after %s", payloadBeforeHeaders, got)
 	}
 }
 
@@ -79,9 +79,6 @@ func TestNewDeployRunTaskBuildsTypedPayload(t *testing.T) {
 	if got.ReleaseID != payload.ReleaseID || got.ProjectID != payload.ProjectID {
 		t.Fatalf("payload = %#v", got)
 	}
-	if got.Envelope.TaskType != TypeDeployRun || got.Envelope.ResourceRef != "rel_1" {
-		t.Fatalf("envelope = %#v", got.Envelope)
-	}
 }
 
 func TestNewDeployRunTaskRequiresCoreIDs(t *testing.T) {
@@ -115,9 +112,6 @@ func TestNewGatewayApplyTaskBuildsTypedPayload(t *testing.T) {
 	if got.GatewayRouteID != payload.GatewayRouteID || got.ProjectID != payload.ProjectID {
 		t.Fatalf("payload = %#v", got)
 	}
-	if got.Envelope.TaskType != TypeGatewayApply || got.Envelope.ResourceRef != "gwr_1" {
-		t.Fatalf("envelope = %#v", got.Envelope)
-	}
 }
 
 func TestNewGatewayApplyTaskRequiresCoreIDs(t *testing.T) {
@@ -150,9 +144,6 @@ func TestNewApplicationDeleteTaskBuildsTypedPayload(t *testing.T) {
 	}
 	if got.ApplicationID != payload.ApplicationID || got.ProjectID != payload.ProjectID {
 		t.Fatalf("payload = %#v", got)
-	}
-	if got.Envelope.TaskType != TypeApplicationDelete || got.Envelope.ResourceRef != "app_1" {
-		t.Fatalf("envelope = %#v", got.Envelope)
 	}
 }
 
@@ -188,9 +179,6 @@ func TestNewResourceCleanupTaskBuildsTypedPayload(t *testing.T) {
 	if got.ResourceType != payload.ResourceType || got.ResourceID != payload.ResourceID || got.ProjectID != payload.ProjectID {
 		t.Fatalf("payload = %#v", got)
 	}
-	if got.Envelope.TaskType != TypeResourceCleanup || got.Envelope.ResourceRef != "deployment_target:dplt_1" {
-		t.Fatalf("envelope = %#v", got.Envelope)
-	}
 }
 
 func TestNewGitAccountRefreshTaskBuildsTypedPayload(t *testing.T) {
@@ -211,12 +199,9 @@ func TestNewGitAccountRefreshTaskBuildsTypedPayload(t *testing.T) {
 	if got.ActorID != payload.ActorID {
 		t.Fatalf("payload = %#v", got)
 	}
-	if got.Envelope.TaskType != TypeGitAccountRefresh || got.Envelope.ResourceRef != "git-accounts" {
-		t.Fatalf("envelope = %#v", got.Envelope)
-	}
 }
 
-func TestTaskEnvelopeDedupeKeyIsStableForSameResource(t *testing.T) {
+func TestTaskPayloadIsStableForSameInput(t *testing.T) {
 	first, err := NewGatewayApplyTask(GatewayApplyPayload{GatewayRouteID: "gwr_1", ProjectID: "prj_1", ActorID: "usr_1"})
 	if err != nil {
 		t.Fatalf("NewGatewayApplyTask returned error: %v", err)
@@ -226,15 +211,7 @@ func TestTaskEnvelopeDedupeKeyIsStableForSameResource(t *testing.T) {
 		t.Fatalf("NewGatewayApplyTask returned error: %v", err)
 	}
 
-	var firstPayload GatewayApplyPayload
-	var secondPayload GatewayApplyPayload
-	if err := json.Unmarshal(first.Payload(), &firstPayload); err != nil {
-		t.Fatalf("unmarshal first payload: %v", err)
-	}
-	if err := json.Unmarshal(second.Payload(), &secondPayload); err != nil {
-		t.Fatalf("unmarshal second payload: %v", err)
-	}
-	if firstPayload.Envelope.DedupeKey != secondPayload.Envelope.DedupeKey || firstPayload.Envelope.TaskID != secondPayload.Envelope.TaskID {
-		t.Fatalf("envelopes = %#v / %#v", firstPayload.Envelope, secondPayload.Envelope)
+	if string(first.Payload()) != string(second.Payload()) {
+		t.Fatalf("task payloads differ: %s / %s", first.Payload(), second.Payload())
 	}
 }

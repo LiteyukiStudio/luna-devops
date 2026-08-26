@@ -236,7 +236,6 @@ const settings = {
     retention: {
       platformEventsDays: { label: 'プラットフォームイベント保持日数', description: 'プラットフォームイベント明細の保持日数。0 は自動クリーンアップしないことを意味します。' },
       notificationDeliveriesDays: { label: '通知配信記録保持日数', description: '通知配信記録の保持日数。0 は自動クリーンアップしないことを意味します。' },
-      workerTaskEventsDays: { label: 'Worker タスクイベント保持日数', description: 'Worker タスクイベントの保持日数。0 は自動クリーンアップしないことを意味します。' },
       buildLogsDays: { label: 'ビルドログ保持日数', description: 'ビルドログ内容の保持日数。0 は自動クリーンアップしないことを意味します。' },
       releaseLogsDays: { label: 'リリースログ保持日数', description: 'リリースログ内容の保持日数。0 は自動クリーンアップしないことを意味します。' },
       hookRunLogsDays: { label: 'Hook 実行ログ保持日数', description: 'Hook 実行ログ内容の保持日数。0 は自動クリーンアップしないことを意味します。' },
@@ -313,7 +312,6 @@ const settings = {
   retentionDatasetLabels: {
     platform_events: 'プラットフォームイベント',
     notification_deliveries: '通知配信記録',
-    worker_task_events: 'Worker タスクイベント',
     build_logs: 'ビルドログ',
     release_logs: 'リリースログ',
     hook_run_logs: 'Hook 実行ログ',

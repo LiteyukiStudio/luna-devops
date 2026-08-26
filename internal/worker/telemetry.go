@@ -45,7 +45,10 @@ func taskTelemetryMiddleware(next asynq.Handler) asynq.Handler {
 	return asynq.HandlerFunc(func(ctx context.Context, task *asynq.Task) (err error) {
 		initTaskConsumerMetrics()
 		ctx = telemetry.ExtractMap(ctx, task.Headers())
-		envelope := taskEnvelopeFromPayload(task.Type(), task.Payload())
+		taskID, ok := asynq.GetTaskID(ctx)
+		if !ok || strings.TrimSpace(taskID) == "" {
+			taskID = task.Type()
+		}
 		queue := tasks.PolicyForType(task.Type()).Queue
 		retryCount, _ := asynq.GetRetryCount(ctx)
 		ctx, end := telemetry.StartOperationWithKind(ctx, "task", "process."+workerTaskOperationName(task.Type()), trace.SpanKindConsumer,
@@ -53,7 +56,7 @@ func taskTelemetryMiddleware(next asynq.Handler) asynq.Handler {
 			attribute.String("messaging.destination.name", queue),
 			attribute.String("messaging.operation.type", "process"),
 			attribute.String("task.type", task.Type()),
-			attribute.String("task.id", envelope.TaskID),
+			attribute.String("task.id", taskID),
 			attribute.Int("task.retry_count", retryCount),
 		)
 		defer func() { end(err) }()
@@ -72,8 +75,8 @@ func taskTelemetryMiddleware(next asynq.Handler) asynq.Handler {
 		if retryCount > 0 && taskRetryTotal != nil {
 			taskRetryTotal.Add(ctx, 1, baseMetricOptions)
 		}
-		if !envelope.CreatedAt.IsZero() && taskQueueWaitDuration != nil {
-			wait := time.Since(envelope.CreatedAt)
+		if enqueuedAt, parseErr := time.Parse(time.RFC3339Nano, task.Headers()[tasks.HeaderEnqueuedAt]); parseErr == nil && taskQueueWaitDuration != nil {
+			wait := time.Since(enqueuedAt)
 			if wait >= 0 {
 				taskQueueWaitDuration.Record(ctx, wait.Seconds(), baseMetricOptions)
 			}
@@ -83,7 +86,7 @@ func taskTelemetryMiddleware(next asynq.Handler) asynq.Handler {
 			slog.String("event.name", "task.started"),
 			slog.String("task.type", task.Type()),
 			slog.String("task.queue", queue),
-			slog.String("task.id", envelope.TaskID),
+			slog.String("task.id", taskID),
 			slog.Int("task.retry_count", retryCount),
 		)
 		err = next.ProcessTask(ctx, task)
@@ -103,7 +106,7 @@ func taskTelemetryMiddleware(next asynq.Handler) asynq.Handler {
 				slog.String("event.name", "task.completed"),
 				slog.String("task.type", task.Type()),
 				slog.String("task.queue", queue),
-				slog.String("task.id", envelope.TaskID),
+				slog.String("task.id", taskID),
 			)
 		} else {
 			telemetry.LogError(ctx, "Worker task failed", "task.failed", "task.execute",
@@ -111,7 +114,7 @@ func taskTelemetryMiddleware(next asynq.Handler) asynq.Handler {
 				slog.String("task.type", task.Type()),
 				slog.String("task.queue", queue),
 				slog.String("resource.type", "task"),
-				slog.String("resource.id", envelope.TaskID))
+				slog.String("resource.id", taskID))
 		}
 		return err
 	})

@@ -7,7 +7,6 @@ const (
 	projectIdentifierMaxLength     = resourceidentifier.ProjectMaxLength
 	applicationIdentifierMinLength = resourceidentifier.ApplicationMinLength
 	applicationIdentifierMaxLength = resourceidentifier.ApplicationMaxLength
-	environmentSlugMaxLength       = resourceidentifier.StageMaxLength
 	stageIdentifierMinLength       = resourceidentifier.StageMinLength
 	stageIdentifierMaxLength       = resourceidentifier.StageMaxLength
 )

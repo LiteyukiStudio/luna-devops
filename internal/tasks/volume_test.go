@@ -4,15 +4,16 @@ import (
 	"encoding/json"
 	"testing"
 	"time"
+
+	"github.com/hibiken/asynq"
 )
 
-func TestNewVolumeTasksBuildTypedEnvelopes(t *testing.T) {
+func TestNewVolumeTasksBuildTypedPayloads(t *testing.T) {
 	tests := []struct {
-		name        string
-		taskType    string
-		newTask     func() ([]byte, string, error)
-		resourceRef string
-		dedupeKey   string
+		name     string
+		taskType string
+		newTask  func() ([]byte, string, error)
+		want     map[string]string
 	}{
 		{
 			name:     "provision",
@@ -24,8 +25,7 @@ func TestNewVolumeTasksBuildTypedEnvelopes(t *testing.T) {
 				}
 				return task.Payload(), task.Type(), nil
 			},
-			resourceRef: "pvol_1",
-			dedupeKey:   "volume:provision:provision:prj_1:pvol_1",
+			want: map[string]string{"volumeId": "pvol_1", "projectId": "prj_1", "operation": VolumeOperationProvision},
 		},
 		{
 			name:     "import",
@@ -37,8 +37,7 @@ func TestNewVolumeTasksBuildTypedEnvelopes(t *testing.T) {
 				}
 				return task.Payload(), task.Type(), nil
 			},
-			resourceRef: "vtx_1",
-			dedupeKey:   "volume:import:prj_1:vtx_1",
+			want: map[string]string{"transferId": "vtx_1", "volumeId": "pvol_1", "projectId": "prj_1"},
 		},
 		{
 			name:     "export",
@@ -50,8 +49,7 @@ func TestNewVolumeTasksBuildTypedEnvelopes(t *testing.T) {
 				}
 				return task.Payload(), task.Type(), nil
 			},
-			resourceRef: "vtx_2",
-			dedupeKey:   "volume:export:prj_1:vtx_2",
+			want: map[string]string{"transferId": "vtx_2", "volumeId": "pvol_1", "projectId": "prj_1"},
 		},
 	}
 
@@ -64,14 +62,14 @@ func TestNewVolumeTasksBuildTypedEnvelopes(t *testing.T) {
 			if taskType != tt.taskType {
 				t.Fatalf("task type = %q, want %q", taskType, tt.taskType)
 			}
-			var document struct {
-				Envelope TaskEnvelope `json:"envelope"`
-			}
+			var document map[string]any
 			if err := json.Unmarshal(payload, &document); err != nil {
 				t.Fatalf("decode payload: %v", err)
 			}
-			if document.Envelope.ResourceRef != tt.resourceRef || document.Envelope.DedupeKey != tt.dedupeKey {
-				t.Fatalf("envelope = %#v", document.Envelope)
+			for key, want := range tt.want {
+				if document[key] != want {
+					t.Fatalf("payload[%s] = %#v, want %q", key, document[key], want)
+				}
 			}
 		})
 	}
@@ -101,33 +99,26 @@ func TestNewVolumeProvisionTaskDistinguishesExpansion(t *testing.T) {
 	if err := json.Unmarshal(task.Payload(), &payload); err != nil {
 		t.Fatalf("decode payload: %v", err)
 	}
-	if payload.Operation != VolumeOperationExpand || payload.Envelope.DedupeKey != "volume:provision:expand:prj_1:pvol_1" {
+	if payload.Operation != VolumeOperationExpand {
 		t.Fatalf("payload = %#v", payload)
 	}
 }
 
-func TestVolumeMaintenanceTasksUseStableSystemDedupeKeys(t *testing.T) {
-	reconcile, err := NewVolumeReconcileTask(VolumeReconcilePayload{})
-	if err != nil {
-		t.Fatalf("new reconcile task: %v", err)
-	}
-	cleanup, err := NewVolumeTransferCleanupTask(VolumeTransferCleanupPayload{})
-	if err != nil {
-		t.Fatalf("new cleanup task: %v", err)
-	}
-
-	for _, test := range []struct {
-		payload []byte
-		want    string
-	}{{reconcile.Payload(), "volume:reconcile:system:stale-volumes"}, {cleanup.Payload(), "volume-transfer:cleanup:system:expired-transfers"}} {
-		var document struct {
-			Envelope TaskEnvelope `json:"envelope"`
+func TestVolumeMaintenanceTaskPayloadsAreStable(t *testing.T) {
+	for _, newTask := range []func() (*asynq.Task, error){
+		func() (*asynq.Task, error) { return NewVolumeReconcileTask(VolumeReconcilePayload{}) },
+		func() (*asynq.Task, error) { return NewVolumeTransferCleanupTask(VolumeTransferCleanupPayload{}) },
+	} {
+		first, err := newTask()
+		if err != nil {
+			t.Fatalf("new first maintenance task: %v", err)
 		}
-		if err := json.Unmarshal(test.payload, &document); err != nil {
-			t.Fatalf("decode payload: %v", err)
+		second, err := newTask()
+		if err != nil {
+			t.Fatalf("new second maintenance task: %v", err)
 		}
-		if document.Envelope.DedupeKey != test.want {
-			t.Fatalf("dedupe key = %q, want %q", document.Envelope.DedupeKey, test.want)
+		if string(first.Payload()) != string(second.Payload()) {
+			t.Fatalf("maintenance payloads differ: %s / %s", first.Payload(), second.Payload())
 		}
 	}
 }

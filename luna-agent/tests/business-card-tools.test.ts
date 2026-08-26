@@ -1,147 +1,119 @@
 import { describe, expect, it } from "vitest"
 import {
+  businessCardToolInputs,
   businessCardTools,
-  compileLegacyBusinessCardToolInput,
-  requestResourceChoiceInput,
-  requestToolInputInput,
+  compileBusinessCardToolInput,
 } from "../src/tools/business-card-tools.js"
-import { createInteractionCardsInput, normalizeInteractionCardsInput } from "../src/tools/ui-cards.js"
+import { createInteractionCardsInput } from "../src/tools/ui-cards.js"
 
-const toolInputFixtures = {
-  request_resource_choice: {
-    title: "选择项目空间",
-    candidates: [
-      { id: "prj_alpha", title: "Alpha" },
-      { id: "prj_beta", title: "Beta" },
-    ],
-    selectionLabel: "使用这个项目空间",
-    selectionMessage: "使用项目空间 {{candidate}}",
-  },
-  request_tool_input: {
-    title: "配置应用",
-    resourceTitle: "PostgreSQL 16",
-    sections: [{
-      id: "main",
-      fields: [{ id: "name", type: "text", label: "应用名称", required: true, format: "identifier" }],
-    }],
-    submit: {
-      type: "tool",
-      label: "创建应用",
-      operationId: "createApplication",
-      fieldBindings: [{ target: "/body/name", fieldId: "name" }],
-    },
-  },
-  review_tool_action: {
-    title: "发布前核对",
-    resourceTitle: "发布 api:v2",
-    changes: [{ label: "镜像", value: "registry.example/api:v2", format: "code" }],
-    submit: { type: "send_message", label: "继续发布", message: "按以上参数继续发布" },
-  },
-  present_diagnosis: {
-    title: "构建失败诊断",
-    conclusion: "Dockerfile 路径不存在。",
-    conclusionTone: "error",
-    findings: [{ id: "dockerfile", label: "Dockerfile", status: "error" }],
-  },
-  present_health_overview: {
-    title: "应用健康状态",
-    metrics: [{ label: "健康副本", value: "3/3", tone: "success" }],
-    statuses: [{ id: "gateway", label: "访问入口", status: "success" }],
-  },
-  present_execution_progress: {
-    title: "应用发布",
-    binding: { operationType: "release", projectId: "prj_alpha", operationId: "rel_1" },
-    label: "平台任务进度",
-  },
-  present_operation_result: {
-    title: "发布结果",
-    outcome: "success",
-    summary: "应用已发布并通过权威健康检查。",
-    facts: [{ label: "Release", value: "rel_1", format: "code" }],
-  },
+const presentationCard = {
+  schemaVersion: 1,
+  title: "部署结果",
+  mode: "presentation",
+  template: "result",
+  cards: [{
+    id: "result",
+    presentation: { variant: "receipt", title: "部署成功" },
+    blocks: [{ id: "summary", type: "callout", tone: "success", content: "应用已通过健康检查。" }],
+  }],
 } as const
 
-describe("narrow business card model tools", () => {
-  it("exposes only the three future InteractionCardGroup v1 tools", () => {
+const inputCard = {
+  schemaVersion: 1,
+  title: "配置应用",
+  mode: "interactive",
+  placement: "turn_end",
+  template: "form",
+  cards: [{
+    id: "configuration",
+    presentation: { variant: "form", title: "应用配置" },
+    form: {
+      sections: [{
+        id: "main",
+        fields: [{ id: "name", type: "text", label: "应用名称", required: true }],
+      }],
+    },
+    actions: [{ id: "submit", type: "send_message", label: "继续", message: "创建应用 {{name}}" }],
+  }],
+} as const
+
+const choiceCard = {
+  schemaVersion: 1,
+  title: "选择项目空间",
+  mode: "interactive",
+  template: "candidates",
+  cards: [
+    {
+      id: "prj_alpha",
+      presentation: { variant: "resource", title: "Alpha" },
+      actions: [{ id: "select", type: "send_message", label: "选择 Alpha", message: "使用 Alpha (prj_alpha)" }],
+    },
+    {
+      id: "prj_beta",
+      presentation: { variant: "resource", title: "Beta" },
+      actions: [{ id: "select", type: "send_message", label: "选择 Beta", message: "使用 Beta (prj_beta)" }],
+    },
+  ],
+} as const
+
+describe("business card model tools", () => {
+  it("registers only the three InteractionCardGroup v1 operations", () => {
     expect(businessCardTools.map(tool => tool.operationId)).toEqual([
       "present_card",
       "request_input",
       "request_choice",
     ])
-    expect(businessCardTools.some(tool => tool.operationId === "create_interaction_cards")).toBe(false)
+    expect(Object.keys(businessCardToolInputs)).toEqual([
+      "present_card",
+      "request_input",
+      "request_choice",
+    ])
   })
 
-  it("publishes strict InteractionCardGroup object schemas", () => {
-    for (const tool of businessCardTools) {
+  it("publishes object schemas for every registered operation", () => {
+    for (const tool of businessCardTools)
       expect(tool.inputSchema).toMatchObject({ type: "object" })
-    }
   })
 
-  it.each(Object.entries(toolInputFixtures))("compiles %s into a valid stable card contract", (operationId, raw) => {
-    const compiled = compileLegacyBusinessCardToolInput(
-      operationId as keyof typeof toolInputFixtures,
-      raw,
-    )
+  it.each([
+    ["present_card", presentationCard],
+    ["request_input", inputCard],
+    ["request_choice", choiceCard],
+  ] as const)("accepts the current %s contract without a legacy compiler", (operationId, input) => {
+    const compiled = compileBusinessCardToolInput(operationId, input)
+    expect(compiled).toEqual(input)
     expect(createInteractionCardsInput.safeParse(compiled).success).toBe(true)
   })
 
-  it("selects candidate cards for short lists and a blocking select form for long lists", () => {
-    const shortList = createInteractionCardsInput.parse(compileLegacyBusinessCardToolInput(
-      "request_resource_choice",
-      toolInputFixtures.request_resource_choice,
-    ))
-    expect(shortList).toMatchObject({ placement: "inline", mode: "interactive", template: "candidates" })
-    expect(shortList.cards[0]?.actions?.[0]).toMatchObject({
-      type: "send_message",
-      message: "使用项目空间 Alpha (prj_alpha)",
-    })
-
-    const longList = createInteractionCardsInput.parse(compileLegacyBusinessCardToolInput("request_resource_choice", {
-      ...toolInputFixtures.request_resource_choice,
-      candidates: Array.from({ length: 6 }, (_, index) => ({ id: `prj_${index}`, title: `项目 ${index}` })),
-    }))
-    expect(longList).toMatchObject({ placement: "turn_end", mode: "interactive", template: "form" })
-    expect(longList.cards[0]?.form?.sections[0]?.fields[0]).toMatchObject({
-      type: "select",
-      submissionFormat: "label_value",
-    })
+  it("keeps each operation within its conversation responsibility", () => {
+    expect(businessCardToolInputs.present_card.safeParse(inputCard).success).toBe(false)
+    expect(businessCardToolInputs.request_input.safeParse(choiceCard).success).toBe(false)
+    expect(businessCardToolInputs.request_choice.safeParse(inputCard).success).toBe(false)
   })
 
   it("rejects unknown root fields and model-provided Secret defaults", () => {
-    expect(requestResourceChoiceInput.safeParse({
-      ...toolInputFixtures.request_resource_choice,
-      schemaVersion: 1,
+    expect(businessCardToolInputs.present_card.safeParse({
+      ...presentationCard,
+      generationId: "model-controlled",
     }).success).toBe(false)
-    expect(requestToolInputInput.safeParse({
-      ...toolInputFixtures.request_tool_input,
-      sections: [{
-        id: "secret",
-        fields: [{
-          id: "token",
-          type: "secret",
-          label: "访问令牌",
-          generation: "disabled",
-          defaultValue: "model-injected-token",
-        }],
-      }],
-    }).success).toBe(false)
-  })
 
-  it("continues to normalize a legacy persisted full-DSL input", () => {
-    const legacy = {
-      schemaVersion: "1",
-      title: "历史诊断卡片",
-      mode: "presentation",
-      template: "result",
+    expect(businessCardToolInputs.request_input.safeParse({
+      ...inputCard,
       cards: [{
-        id: "legacy_result",
-        presentation: { variant: "finding", title: "历史结论" },
-        blocks: [{ id: "summary", type: "callout", tone: "warning", content: "需要继续观察。" }],
+        ...inputCard.cards[0],
+        form: {
+          sections: [{
+            id: "secret",
+            fields: [{
+              id: "token",
+              type: "secret",
+              label: "访问令牌",
+              generation: "disabled",
+              defaultValue: "model-injected-token",
+            }],
+          }],
+        },
       }],
-    }
-    expect(createInteractionCardsInput.parse(normalizeInteractionCardsInput(legacy))).toMatchObject({
-      schemaVersion: 1,
-      cards: [{ id: "legacy_result" }],
-    })
+    }).success).toBe(false)
   })
 })

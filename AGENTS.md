@@ -168,7 +168,7 @@ web/src/i18n
 - 列表中的编辑、删除、测试、绑定等操作必须使用明确按钮或菜单入口；不要把整行或整张展示卡片做成编辑入口，避免误触和语义混乱。
 - 涉及状态的展示必须使用有语义颜色的 `StatusValueBadge` 或带 `tone` 的 `StatusBadge`，包括集群健康状态、镜像站/外部连接健康状态、构建/部署/网关任务状态、Webhook/DNS/证书/扫描状态、启用/禁用和校验状态；不要在列表、详情或卡片中直接显示纯文本状态。
 - **MUST 列表 API**：任何返回列表/批量对象的接口，只要未来数据量可能超过 100，就必须支持分页和排序参数，返回 `items/page/pageSize/sortBy/sortOrder/total/totalPages`。排序字段必须做后端白名单映射，排序方向只允许 `asc` 或 `desc`。OIDC Provider、少量系统配置定义等明确不太可能超过 10 条的小规模配置列表可以例外。
-- 错误页面必须用户友好，并复用 `ErrorState`、`AuthErrorPage`、`ForbiddenPage` 等公共组件。
+- 错误页面必须用户友好，并复用 `ErrorState`、`ForbiddenPage` 等公共组件。
 - 主题必须支持 light、dark、system 三态，并监听系统主题变化。
 - 前端展示“Project”时统一称为“项目空间”，强调集合概念。
 
