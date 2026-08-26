@@ -117,13 +117,15 @@ describe("agent telemetry", () => {
         "operation": "agent.startup",
         "outcome": "failed",
         ...errorDiagnostic(new Error("dial tcp postgres.internal:5432: connection refused"), "agent.startup.failed"),
-      }, "Agent startup failed")
+      }, "Agent startup failed\nretry later")
       await new Promise(resolve => setImmediate(resolve))
 
       expect(output).toContain("Agent startup failed")
+      expect(output).toContain("\\nretry later")
       expect(output).toContain("agent.startup.failed")
       expect(output).toContain("postgres.internal:5432")
       expect(output).toContain("\u001B[")
+      expect(output.trimEnd().split("\n")).toHaveLength(1)
     }
     finally {
       if (noColor === undefined) delete process.env.NO_COLOR

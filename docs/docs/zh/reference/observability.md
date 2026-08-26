@@ -21,7 +21,7 @@ OTEL_RESOURCE_ATTRIBUTES=deployment.environment.name=production,k8s.cluster.name
 
 ## 阅读与检索日志
 
-日志记录始终结构化，但终端渲染与 OTel 导出彼此独立。本地使用默认的 `LOG_FORMAT=auto`：交互式终端显示 console 格式，重定向后自动输出 JSON；Docker Compose 和 Helm 的生产配置固定使用 `LOG_FORMAT=json`。`LOG_COLOR=auto|always|never` 只影响 console，`NO_COLOR` 会强制禁用颜色，JSON 和 OTel 记录不会包含 ANSI。
+日志记录始终结构化，但终端渲染与 OTel 导出彼此独立。本地使用默认的 `LOG_FORMAT=auto`：交互式终端显示每条记录占一行的 console 格式，重定向后自动输出 JSON；Docker Compose 和 Helm 的生产配置固定使用 `LOG_FORMAT=json`。`LOG_COLOR=auto|always|never` 只影响 console，`NO_COLOR` 会强制禁用颜色，JSON 和 OTel 记录不会包含 ANSI。
 
 失败日志使用稳定的 `event.name`、`operation`、`outcome` 和 `error.code`，并在 `error.message` 保留经凭据遮罩的完整错误链；存在上下文时还包含 `trace_id`、`span_id`、`request_id` 和资源 ID。排障时先用响应中的 `requestId` 或 `traceId` 检索日志，再查看完整依赖错误。内部地址、文件路径、SQLSTATE 和资源 ID 属于诊断信息，不会被删除；Token、Authorization、Cookie、密码、API Key、私钥等真实凭据值会被遮罩。
 

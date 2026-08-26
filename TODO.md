@@ -1,5 +1,10 @@
 # TODO
 
+## 2026-08-26 终端日志单行渲染
+
+- [x] 将 Go API、Worker、辅助进程与 Agent 的 console 日志统一为每条记录占一行，并保持结构化字段、凭据遮罩及 OTel 导出语义不变。
+- [x] 同步中英文可观测文档，并用 Go 与 Agent 针对性测试锁定单行输出契约。
+
 ## 2026-08-25 移动端 AI 助手真实页面重构
 
 - [x] 抽取唯一 AI Runtime 与共享 ChatSurface，保证页面/浮窗切换时会话、草稿、Mutation 和 SSE 不重建。

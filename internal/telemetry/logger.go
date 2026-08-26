@@ -251,18 +251,22 @@ func (h *consoleHandler) Handle(_ context.Context, record slog.Record) error {
 	var output strings.Builder
 	output.WriteString(level)
 	output.WriteByte(' ')
-	output.WriteString(record.Message)
-	output.WriteByte('\n')
+	output.WriteString(consoleMessage(record.Message))
 	for _, field := range fields {
+		output.WriteByte(' ')
 		output.WriteString(consoleFieldName(field.Key))
 		output.WriteByte('=')
 		output.WriteString(consoleValue(field.Value))
-		output.WriteByte('\n')
 	}
+	output.WriteByte('\n')
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	_, err := io.WriteString(h.writer, output.String())
 	return err
+}
+
+func consoleMessage(message string) string {
+	return strings.NewReplacer("\r", "\\r", "\n", "\\n").Replace(message)
 }
 
 func (h *consoleHandler) WithAttrs(attrs []slog.Attr) slog.Handler {

@@ -58,6 +58,22 @@ func TestConsoleColorAndNoColor(t *testing.T) {
 	}
 }
 
+func TestConsoleRendersOneRecordPerLine(t *testing.T) {
+	var output bytes.Buffer
+	logger := newProcessLoggerWithOptions("test", nil, processLoggerOptions{
+		Writer: &output, IsTerminal: true, Format: "console", Color: "never",
+	})
+	logger.Info("HTTP request\r\ncompleted",
+		"event.name", "http.request.completed",
+		"operation", "http.request",
+		"request_id", "req_123")
+
+	want := "INFO HTTP request\\r\\ncompleted request_id=\"req_123\" operation=\"http.request\" event.name=\"http.request.completed\" service.name=\"test\"\n"
+	if got := output.String(); got != want {
+		t.Fatalf("console output = %q, want %q", got, want)
+	}
+}
+
 func TestJSONNeverContainsANSIAndHonorsLevel(t *testing.T) {
 	var output bytes.Buffer
 	logger := newProcessLoggerWithOptions("test", nil, processLoggerOptions{

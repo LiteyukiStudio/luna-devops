@@ -521,7 +521,8 @@ export function createAgentLogger(options: {
       hideObject: false,
       ignore: "pid,hostname,service.name,time",
       messageKey: "message",
-      singleLine: false,
+      messageFormat: (log, messageKey) => singleLineConsoleMessage(log[messageKey]),
+      singleLine: true,
     })
     output = prettyStream
   }
@@ -539,6 +540,13 @@ export function createAgentLogger(options: {
     },
     timestamp: pino.stdTimeFunctions.isoTime,
   }, output)
+}
+
+function singleLineConsoleMessage(value: unknown): string {
+  const message = typeof value === "string"
+    ? value
+    : typeof value === "number" || typeof value === "boolean" ? `${value}` : ""
+  return message.replaceAll("\r", "\\r").replaceAll("\n", "\\n")
 }
 
 export function resolveAgentLogFormat(value: string | undefined, isTTY: boolean, isContainer: boolean): "console" | "json" {
