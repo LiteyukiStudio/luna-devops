@@ -59,7 +59,7 @@
 | `VOLUME_TRANSFER_MAX_BYTES` | `100Gi` | Limits one volume import or export; use a quantity from `1Gi` to `5Ti`. |
 | `VOLUME_TRANSFER_JOB_IMAGE` | Empty | Selects the program used by volume-transfer Pods; use an OCI image matching the Worker version. |
 
-Helm and Docker Compose reuse the current Worker image by default. Source and binary installations that need imports or exports must set a matching `VOLUME_TRANSFER_JOB_IMAGE`. Transfer bytes do not pass through object storage.
+Helm reuses the current Worker image by default. Minimal Docker Compose, source, and binary deployments leave imports and exports disabled; when needed, set `VOLUME_TRANSFER_JOB_IMAGE` to the same version for both API and Worker. Transfer bytes do not pass through object storage.
 
 ### Docker Compose
 

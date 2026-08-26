@@ -105,14 +105,6 @@ Agent 联调配置见 [`luna-agent/.env.example`](luna-agent/.env.example)；根
 
 API、Worker、辅助命令和 Agent 默认使用 `LOG_FORMAT=auto`：交互式终端显示便于阅读的 console 日志，重定向或容器中输出无 ANSI 的 JSON。可用 `LOG_LEVEL` 调整级别，或设置 `LOG_COLOR=never` / `NO_COLOR` 关闭颜色；OTel 始终接收与终端渲染无关的结构化记录。
 
-如需在本地查看 Trace、Metrics 和 Logs，可启动开发用的 Grafana + Prometheus + Loki + Tempo + OpenTelemetry Collector 栈：
-
-```bash
-docker compose -f docker-compose-dev-observability.yaml up -d
-```
-
-Grafana 默认访问地址为 `http://localhost:3000`。上报环境变量、Agent 查询地址和清理方式见 [`observability/README.md`](observability/README.md)。该栈无生产级鉴权与高可用保护，仅允许本机开发使用。
-
 ## Luna CLI
 
 Luna CLI 可在终端中管理 Luna DevOps，支持人类可读输出和面向自动化的 JSON 输出：
@@ -151,12 +143,6 @@ AI 助手默认关闭。为 API 与 Agent 配置同一个稳定的 `AI_INTERNAL_
 
 ```bash
 AI_ASSISTANT_AVAILABLE=true docker compose --profile ai up -d
-```
-
-从当前源码构建并启动完整服务：
-
-```bash
-docker compose -f docker-compose-build.yaml up -d --build
 ```
 
 使用 Helm 安装：
@@ -220,7 +206,7 @@ pnpm --dir web build
 - `web/`、`docs/`、`tests/` 和 `luna-agent/` 分别维护自己的依赖清单与 lockfile，不使用跨目录的根 pnpm workspace；需要 pnpm 项目配置时也只放在对应工作目录。
 - Python 工具链统一使用 `uv`。
 - 后端 Handler 保持精简，业务逻辑放入 Service，外部平台集成放入 Provider。
-- 新功能必须按 [`docs-internal/14-可观测插桩与验收标准.md`](docs-internal/14-可观测插桩与验收标准.md) 补齐 Trace、关键结构化日志和低基数 Metrics，并保持跨服务 Context 连续。
+- 新功能必须按 [`docs-internal/可观测和插桩规范.md`](docs-internal/可观测和插桩规范.md) 补齐 Trace、关键结构化日志和低基数 Metrics，并保持跨服务 Context 连续。
 - 所有用户可见的前端文案都放入 i18n 文件。
 - 功能或行为变化时同步更新文档站。
 
@@ -232,9 +218,9 @@ pnpm --dir web build
 ## 文档
 
 - 在线文档：[luna-devops.liteyuki.org](https://luna-devops.liteyuki.org/)
-- 产品方案：[`docs-internal/01-产品与一体化方案.md`](docs-internal/01-产品与一体化方案.md)
+- 产品方案：[`docs-internal/产品概要.md`](docs-internal/产品概要.md)
 - 内部开发文档索引：[`docs-internal/README.md`](docs-internal/README.md)
-- 代码健康检查 SOP：[`docs-internal/07-代码健康检查SOP.md`](docs-internal/07-代码健康检查SOP.md)
+- 代码健康检查 SOP：[`docs-internal/代码检查流程.md`](docs-internal/代码检查流程.md)
 - 开发计划：[`TODO.md`](TODO.md)
 - AI 代理规范：[`AGENTS.md`](AGENTS.md)
 - 贡献指南：[`CONTRIBUTING.md`](CONTRIBUTING.md)

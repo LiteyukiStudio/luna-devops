@@ -31,7 +31,7 @@ func TestWorkerImageDeliversVolumeTransferBinary(t *testing.T) {
 	}
 }
 
-func TestWorkerBuildConfigurationsSelectRuntimeWorkerTarget(t *testing.T) {
+func TestWorkerPublishConfigurationSelectsRuntimeWorkerTarget(t *testing.T) {
 	root := repositoryRoot(t)
 	var workflow struct {
 		Jobs struct {
@@ -62,22 +62,6 @@ func TestWorkerBuildConfigurationsSelectRuntimeWorkerTarget(t *testing.T) {
 	}
 	if !foundWorker {
 		t.Fatal("Worker image is missing from the publish matrix")
-	}
-
-	var compose struct {
-		Services map[string]struct {
-			Build struct {
-				Target string            `json:"target"`
-				Args   map[string]string `json:"args"`
-			} `json:"build"`
-		} `json:"services"`
-	}
-	if err := yaml.Unmarshal([]byte(readContractFile(t, filepath.Join(root, "docker-compose-build.yaml"))), &compose); err != nil {
-		t.Fatalf("parse build compose file: %v", err)
-	}
-	worker, ok := compose.Services["worker"]
-	if !ok || worker.Build.Target != "runtime-worker" || worker.Build.Args["TARGET"] != "worker" {
-		t.Fatalf("local Worker image build contract = %#v", worker.Build)
 	}
 }
 

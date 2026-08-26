@@ -95,6 +95,19 @@ export function AIOptionsBar({ actions, placement = 'floating', sourceKey, surfa
             const repeatable = isAIUIActionRepeatable(action)
             const variant = action.tone === 'primary' ? 'default' : action.tone === 'danger' ? 'destructive' : 'outline'
             const label = action.label ?? t(`aiAssistant.actions.${action.type}`)
+            const compactPageOption = page && placement === 'floating'
+            const content = (
+              <>
+                {(pending || selected || showVisuals) && (
+                  <span className="grid size-4 shrink-0 place-items-center" data-ai-option-visual>
+                    {pending && <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" />}
+                    {!pending && selected && <Check className="size-3.5" />}
+                    {!pending && !selected && showVisuals && action.visual && <AIOptionLeadingVisual visual={action.visual} />}
+                  </span>
+                )}
+                <span className="truncate">{label}</span>
+              </>
+            )
             return (
               <motion.div
                 key={key}
@@ -109,23 +122,30 @@ export function AIOptionsBar({ actions, placement = 'floating', sourceKey, surfa
                   aria-pressed={selected}
                   className={cn(
                     'shrink-0 rounded-full shadow-none [&_svg]:size-3.5',
-                    placement === 'floating'
-                      ? page ? 'min-h-11 max-w-64 px-4 !text-sm' : 'h-8 max-w-52 px-3 !text-[11px]'
-                      : page ? 'min-h-11 max-w-full px-3 !text-sm' : 'h-7 max-w-full px-2.5 !text-xs',
+                    compactPageOption
+                      ? 'group h-11 max-w-52 p-0 hover:bg-transparent'
+                      : placement === 'floating'
+                        ? page ? 'min-h-11 max-w-64 px-4 !text-sm' : 'h-8 max-w-52 px-3 !text-[11px]'
+                        : page ? 'min-h-11 max-w-full px-3 !text-sm' : 'h-7 max-w-full px-2.5 !text-xs',
                   )}
                   disabled={pending || (!repeatable && selected)}
                   title={label}
-                  variant={variant}
+                  variant={compactPageOption ? 'ghost' : variant}
                   onClick={() => void choose(action, key)}
                 >
-                  {(pending || selected || showVisuals) && (
-                    <span className="grid size-4 shrink-0 place-items-center" data-ai-option-visual>
-                      {pending && <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" />}
-                      {!pending && selected && <Check className="size-3.5" />}
-                      {!pending && !selected && showVisuals && action.visual && <AIOptionLeadingVisual visual={action.visual} />}
-                    </span>
-                  )}
-                  <span className="truncate">{label}</span>
+                  {compactPageOption
+                    ? (
+                        <span className={cn(
+                          'flex h-7 min-w-0 max-w-full items-center justify-center gap-1 rounded-full px-2.5 text-xs font-medium transition-colors',
+                          action.tone === 'primary' && 'bg-primary text-primary-foreground group-hover:bg-primary-hover',
+                          action.tone === 'danger' && 'bg-danger text-white group-hover:bg-danger/90',
+                          (!action.tone || action.tone === 'default') && 'border border-border bg-background text-foreground group-hover:bg-muted',
+                        )}
+                        >
+                          {content}
+                        </span>
+                      )
+                    : content}
                   <span className="sr-only">{t('aiAssistant.options.position', { current: index + 1, total: options.length })}</span>
                 </Button>
               </motion.div>

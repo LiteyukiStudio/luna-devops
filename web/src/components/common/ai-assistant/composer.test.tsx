@@ -110,16 +110,20 @@ describe('ai assistant composer keyboard submission', () => {
     fireEvent.keyDown(input, { key: 'Enter', metaKey: true })
     expect(onSubmit).toHaveBeenCalledTimes(2)
     expect(screen.getByRole('button', { name: i18next.t('aiAssistant.send') })).toHaveClass('size-11')
+    expect(document.querySelector('[data-ai-composer-submit-visual]')).toHaveClass('size-7')
+    expect(document.querySelector('[data-ai-composer-model-visual]')).toHaveClass('h-7', 'px-2.5', 'text-xs')
     expect(input.closest('footer')).toHaveClass(
       'pl-[max(0.75rem,env(safe-area-inset-left))]',
       'pr-[max(0.75rem,env(safe-area-inset-right))]',
     )
+    expect(screen.getByText(i18next.t('aiAssistant.securityHint'))).toBeInTheDocument()
   })
 
-  it('uses a 48px stop target on a page surface', () => {
+  it('uses a 44px stop target on a page surface', () => {
     renderComposer({ activeRun: true, surface: 'page' })
 
-    expect(screen.getByRole('button', { name: i18next.t('aiAssistant.stop') })).toHaveClass('size-12')
+    expect(screen.getByRole('button', { name: i18next.t('aiAssistant.stop') })).toHaveClass('size-11')
+    expect(document.querySelector('[data-ai-composer-stop-visual]')).toHaveClass('size-7')
   })
 
   it('shows the latest confirmed conversation context as a ring with a formatted tooltip label', () => {

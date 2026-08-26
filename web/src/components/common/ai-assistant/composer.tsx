@@ -123,20 +123,20 @@ export function AIAssistantComposer({
   return (
     <footer
       className={page
-        ? 'shrink-0 border-t border-separator-subtle bg-surface pb-[max(0.75rem,env(safe-area-inset-bottom))] pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))] pt-3'
+        ? 'shrink-0 border-t border-separator-subtle bg-surface pb-[max(0.75rem,env(safe-area-inset-bottom))] pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))] pt-2'
         : 'shrink-0 border-t border-separator-subtle bg-surface p-2.5 pb-[max(0.625rem,env(safe-area-inset-bottom))]'}
       data-ai-assistant-surface={surface}
     >
       <div
         className={page
-          ? 'flex min-h-24 flex-col gap-2 rounded-container border border-input bg-surface px-3 py-2.5 focus-within:ring-2 focus-within:ring-ring'
+          ? 'flex min-h-20 flex-col gap-1.5 rounded-container border border-input bg-surface px-3 py-2 focus-within:ring-2 focus-within:ring-ring'
           : 'flex min-h-20 flex-col gap-1 rounded-container border border-input bg-surface px-2 py-2 focus-within:ring-2 focus-within:ring-ring'}
       >
         <textarea
           ref={inputRef}
           aria-label={t('aiAssistant.inputLabel')}
           className={page
-            ? 'min-h-11 max-h-36 w-full resize-none overflow-y-auto bg-transparent px-1 !text-base leading-6 outline-none placeholder:text-muted-foreground'
+            ? 'min-h-11 max-h-28 w-full resize-none overflow-y-auto bg-transparent px-1 !text-base leading-6 outline-none placeholder:text-muted-foreground'
             : 'min-h-10 w-full resize-none bg-transparent px-1 !text-base leading-5 outline-none placeholder:text-muted-foreground sm:!text-[13px]'}
           disabled={busy}
           maxLength={maxLength}
@@ -160,15 +160,30 @@ export function AIAssistantComposer({
             <SelectTrigger
               aria-label={t('aiAssistant.modelLabel')}
               className={page
-                ? '!h-11 w-auto min-w-0 max-w-[65%] gap-1 rounded-full border border-separator-subtle bg-surface-subtle px-3 text-sm shadow-none hover:bg-surface-inset focus:ring-1 focus:ring-ring [&_svg]:hidden'
+                ? '!h-11 w-auto min-w-0 max-w-[55%] rounded-full border-0 bg-transparent p-0 text-xs shadow-none hover:bg-transparent focus:ring-2 focus:ring-ring [&_svg]:hidden'
                 : '!h-7 w-auto min-w-0 max-w-[55%] gap-1 rounded-full border border-separator-subtle bg-surface-subtle px-2.5 text-xs shadow-none hover:bg-surface-inset focus:ring-1 focus:ring-ring [&_svg]:hidden'}
             >
-              <span className="truncate">
-                <SelectValue placeholder={t('aiAssistant.modelEmpty')} />
-              </span>
-              {modelChanging
-                ? <LoaderCircle className="size-3 shrink-0 animate-spin text-muted-foreground motion-reduce:animate-none" />
-                : <ChevronDown className="size-3 shrink-0 text-muted-foreground" />}
+              {page
+                ? (
+                    <span className="flex h-7 min-w-0 max-w-full items-center gap-1 rounded-full border border-separator-subtle bg-surface-subtle px-2.5 text-xs transition-colors hover:bg-surface-inset" data-ai-composer-model-visual>
+                      <span className="truncate">
+                        <SelectValue placeholder={t('aiAssistant.modelEmpty')} />
+                      </span>
+                      {modelChanging
+                        ? <LoaderCircle className="size-3 shrink-0 animate-spin text-muted-foreground motion-reduce:animate-none" />
+                        : <ChevronDown className="size-3 shrink-0 text-muted-foreground" />}
+                    </span>
+                  )
+                : (
+                    <>
+                      <span className="truncate">
+                        <SelectValue placeholder={t('aiAssistant.modelEmpty')} />
+                      </span>
+                      {modelChanging
+                        ? <LoaderCircle className="size-3 shrink-0 animate-spin text-muted-foreground motion-reduce:animate-none" />
+                        : <ChevronDown className="size-3 shrink-0 text-muted-foreground" />}
+                    </>
+                  )}
             </SelectTrigger>
             <SelectContent className={page ? '[&_[data-slot=select-item]]:min-h-11' : undefined}>
               {models.map(model => (
@@ -204,24 +219,37 @@ export function AIAssistantComposer({
             ? (
                 <Button
                   aria-label={t('aiAssistant.stop')}
-                  className={page ? 'size-12 shrink-0 rounded-full' : 'size-7 shrink-0 rounded-full'}
+                  className={page ? 'group size-11 shrink-0 rounded-full p-0 hover:bg-transparent' : 'size-7 shrink-0 rounded-full'}
                   disabled={canceling || !canCancel}
                   size="icon"
-                  variant="outline"
+                  variant={page ? 'ghost' : 'outline'}
                   onClick={onCancel}
                 >
-                  {canceling ? <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" /> : <CircleStop className="size-3.5" />}
+                  {page
+                    ? (
+                        <span className="grid size-7 place-items-center rounded-full border border-border bg-background text-foreground transition-colors group-hover:bg-muted" data-ai-composer-stop-visual>
+                          {canceling ? <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" /> : <CircleStop className="size-3.5" />}
+                        </span>
+                      )
+                    : canceling ? <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" /> : <CircleStop className="size-3.5" />}
                 </Button>
               )
             : (
                 <Button
                   aria-label={waitingInput ? t('aiAssistant.continue') : t('aiAssistant.send')}
-                  className={page ? 'size-11 shrink-0 rounded-full' : 'size-7 shrink-0 rounded-full'}
+                  className={page ? 'group size-11 shrink-0 rounded-full p-0 hover:bg-transparent' : 'size-7 shrink-0 rounded-full'}
                   disabled={!draft.trim() || busy || !modelAvailable}
                   size="icon"
+                  variant={page ? 'ghost' : 'default'}
                   onClick={onSubmit}
                 >
-                  {busy ? <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" /> : <Send className="size-3.5" />}
+                  {page
+                    ? (
+                        <span className="grid size-7 place-items-center rounded-full bg-primary text-primary-foreground transition-colors group-hover:bg-primary-hover" data-ai-composer-submit-visual>
+                          {busy ? <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" /> : <Send className="size-3.5" />}
+                        </span>
+                      )
+                    : busy ? <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" /> : <Send className="size-3.5" />}
                 </Button>
               )}
         </div>

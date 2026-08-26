@@ -66,7 +66,7 @@ AI_ASSISTANT_AVAILABLE=true docker compose --profile ai up -d
 http://localhost:8088
 ```
 
-使用其他访问地址时，同步修改 `PUBLIC_BASE_URL` 和 `APP_CORS_ORIGINS`。PostgreSQL 和 Redis 保留在容器网络中，不需要对外暴露。
+最小 Compose 不注入外部访问地址。使用其他访问地址或接入 OAuth、Webhook 时，请按[API 配置](/start/configuration/api)为 API 显式添加 `PUBLIC_BASE_URL`；控制台跨域部署时再同时添加 `APP_CORS_ORIGINS`。PostgreSQL 和 Redis 保留在容器网络中，不需要对外暴露。
 
 ## 检查状态
 

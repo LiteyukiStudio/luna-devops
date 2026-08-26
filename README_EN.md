@@ -103,14 +103,6 @@ See [`luna-agent/.env.example`](luna-agent/.env.example) for Agent integration s
 
 API, Worker, helper commands, and Agent default to `LOG_FORMAT=auto`: interactive terminals get readable console logs, while redirected output and containers get ANSI-free JSON. Use `LOG_LEVEL` to change verbosity or `LOG_COLOR=never` / `NO_COLOR` to disable color. OTel always receives structured records independently of terminal rendering.
 
-To inspect local traces, metrics, and logs, start the development-only Grafana + Prometheus + Loki + Tempo + OpenTelemetry Collector stack:
-
-```bash
-docker compose -f docker-compose-dev-observability.yaml up -d
-```
-
-Grafana is available at `http://localhost:3000`. See [`observability/README.md`](observability/README.md) for exporter variables, Agent query URLs, and cleanup commands. The stack has no production-grade authentication or high availability and is restricted to local development.
-
 ## Luna CLI
 
 Luna CLI manages Luna DevOps from a terminal with human-readable output and
@@ -150,12 +142,6 @@ The AI assistant is disabled by default. After configuring the Agent trust mater
 
 ```bash
 AI_ASSISTANT_AVAILABLE=true docker compose --profile ai up -d
-```
-
-Build the complete stack from the current source tree:
-
-```bash
-docker compose -f docker-compose-build.yaml up -d --build
 ```
 
 Install with Helm:
@@ -229,9 +215,9 @@ Project conventions:
 ## Documentation
 
 - Public documentation: [luna-devops.liteyuki.org](https://luna-devops.liteyuki.org/en/)
-- Product notes: [`docs-internal/01-产品与一体化方案.md`](docs-internal/01-产品与一体化方案.md)
+- Product notes: [`docs-internal/产品概要.md`](docs-internal/产品概要.md)
 - Internal engineering docs index: [`docs-internal/README.md`](docs-internal/README.md)
-- Code health SOP: [`docs-internal/07-代码健康检查SOP.md`](docs-internal/07-代码健康检查SOP.md)
+- Code health SOP: [`docs-internal/代码检查流程.md`](docs-internal/代码检查流程.md)
 - Development plan: [`TODO.md`](TODO.md)
 - AI agent rules: [`AGENTS.md`](AGENTS.md)
 - Contributing guide: [`CONTRIBUTING.md`](CONTRIBUTING.md)

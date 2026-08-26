@@ -21,7 +21,7 @@ After restart, confirm that the Collector receives:
 
 ## Read and search logs
 
-Log records are always structured, while terminal rendering and OTel export are independent. Local processes use `LOG_FORMAT=auto` by default: interactive terminals render one console record per line, while redirected output switches to JSON. Production Docker Compose and Helm deployments set `LOG_FORMAT=json`. `LOG_COLOR=auto|always|never` affects console output only, and `NO_COLOR` always disables color; JSON and OTel records never contain ANSI sequences.
+Log records are always structured, while terminal rendering and OTel export are independent. Local processes use `LOG_FORMAT=auto` by default: interactive terminals render one console record per line, while redirected output switches to JSON. Docker Compose keeps `auto` and therefore emits JSON in non-interactive containers, while production Helm explicitly sets `LOG_FORMAT=json`. `LOG_COLOR=auto|always|never` affects console output only, and `NO_COLOR` always disables color; JSON and OTel records never contain ANSI sequences.
 
 Failure records use stable `event.name`, `operation`, `outcome`, and `error.code` fields. `error.message` keeps the complete credential-redacted error chain, and contextual records also include `trace_id`, `span_id`, `request_id`, and resource IDs. Start incident searches with the response `requestId` or `traceId`, then inspect the complete dependency error. Internal addresses, file paths, SQLSTATE values, and resource IDs remain available for diagnosis; actual token, Authorization, Cookie, password, API key, and private-key values are redacted.
 

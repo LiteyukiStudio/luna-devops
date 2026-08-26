@@ -66,7 +66,7 @@ After deployment, configure the port, reverse proxy, domain, and TLS for the req
 http://localhost:8088
 ```
 
-When using another URL, update `PUBLIC_BASE_URL` and `APP_CORS_ORIGINS` together. PostgreSQL and Redis remain inside the container network and do not need external exposure.
+The minimal Compose file does not inject an external access URL. When using another URL or enabling OAuth or webhooks, explicitly add `PUBLIC_BASE_URL` to the API service as described in [API Configuration](/en/start/configuration/api); add `APP_CORS_ORIGINS` as well only when the console is deployed cross-origin. PostgreSQL and Redis remain inside the container network and do not need external exposure.
 
 ## Check Services
 

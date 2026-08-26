@@ -81,7 +81,4 @@ Volume content streams directly among the client, API, and runtime-cluster Trans
 | Setting | Default | Description |
 | --- | --- | --- |
 | `DEVOPS_IMAGE_TAG` | `nightly` | Selects the API and Web image version used by Docker Compose; use an image tag. |
-| `API_METRICS_ENABLED` | Inherits `METRICS_ENABLED` | Overrides the Compose API metrics switch; use `true` or `false`. |
-| `API_METRICS_ADDR` | `:9090` | Overrides the Compose API metrics listen address; use `IP:port` or `:port`. |
-| `API_METRICS_PATH` | Inherits `METRICS_PATH` | Overrides the Compose API metrics path; use an HTTP path beginning with `/`. |
 | `VITE_DOCS_BASE_URL` | Official documentation | Sets the Web documentation link; use an HTTP(S) URL available at build time. |

@@ -9,8 +9,8 @@
 1. `README.md`
 2. `TODO.md`
 3. `docs-internal/README.md`（内部文档分层与索引）
-4. `docs-internal/01-产品与一体化方案.md`
-5. `docs-internal/07-代码健康检查SOP.md`
+4. `docs-internal/产品概要.md`
+5. `docs-internal/代码检查流程.md`
 
 ## 1. Hard MUST
 
@@ -28,7 +28,7 @@
 - **MUST 后端适配外部平台**：涉及 GitHub、Gitea、GitLab、Harbor、DockerHub、OIDC、Kubernetes、Traefik、AI Provider 等第三方/外部平台的读取、探测、搜索、状态同步和写操作，必须由后端 provider/service/API 适配、聚合或反代。前端只调用平台后端 API，不允许在前端编排第三方平台 API、暴露底层外部平台能力，或用多个底层代理接口拼出业务流程。
 - **MUST 实时状态单一事实源**：当前状态、健康度、实时资源数量、实时指标等有时效要求的数据，必须在请求时从 Kubernetes 或对应外部平台读取。数据库只保存期望配置、资源引用、工作流过程与结果、不可变历史，不得持久化、回写或用 Redis/进程内缓存保存上游当前状态。上游不可达时统一返回 `unavailable` 和稳定 `observationCode`；实时响应必须使用 `Cache-Control: no-store`，前端不得通过长 `staleTime` 延续旧状态。
 - **MUST Agent Prompt 中文**：`luna-agent` 中的系统 Prompt、模型任务提示、上下文包裹说明、工具描述和配套 Skill 必须使用中文编写；工具名、参数名、枚举、路由名、协议字段和用户原始输入保持原值。Prompt 仍应要求模型按用户当前语言回复。项目未发版，只保留当前 Prompt 版本，不维护旧 Prompt 前向兼容分支。
-- **MUST 全链路可观测**：新增或修改业务功能时必须遵守 `docs-internal/14-可观测插桩与验收标准.md`。每个 HTTP/SSE/WebSocket、数据库、Redis、异步任务、外部 Provider、模型和工具调用都必须处于有效 Trace Context 中；关键状态转换必须输出可关联的结构化日志；可聚合结果必须补充低基数 Metric。禁止只给接口入口建 Span 而把内部操作留作黑盒。
+- **MUST 全链路可观测**：新增或修改业务功能时必须遵守 `docs-internal/可观测和插桩规范.md`。每个 HTTP/SSE/WebSocket、数据库、Redis、异步任务、外部 Provider、模型和工具调用都必须处于有效 Trace Context 中；关键状态转换必须输出可关联的结构化日志；可聚合结果必须补充低基数 Metric。禁止只给接口入口建 Span 而把内部操作留作黑盒。
 - **MUST Context 传播**：请求、Repository、Secret、审计、外部 Client、任务投递和 Worker 执行必须继续传递现有 `context.Context` 或 W3C `traceparent`/`tracestate`，不得在业务调用链中改用 `context.Background()` 截断父链路。跨服务新增 HTTP、消息队列、SSE 或 WebSocket 通道时，必须同时实现传播与父子关系测试；Trace Context 只携带遥测标识，不得复制 Cookie、Token、请求正文或用户输入。
 - **MUST 遥测安全与稳定维度**：Span 名、日志事件名和 Metric label 必须使用稳定模板与有限枚举，不得包含用户输入、URL 查询值、资源名、用户/项目/请求/Trace ID 等高基数内容；Secret、Token、Authorization、Cookie、密码、模型 Prompt、工具敏感参数和进程命令行参数不得进入遥测。
 - **MUST 可观测验收**：涉及新业务边界、数据库/Redis、异步任务、外部平台或跨服务通信的改动，测试至少断言父子 Trace 传播、失败 Span 状态、关键日志关联字段及敏感字段不出现；完整验收时使用临时外部 OTel 栈抽样验证一条成功链路、一条失败链路和一条跨服务/异步链路，临时可观测组件不得写入仓库。
@@ -83,7 +83,7 @@ Python：
 - 仓库是 monorepo。
 - Go 后端在仓库根目录。
 - 前端在 `web/`。
-- 本地数据库依赖放 `docker-compose-dev-db.yaml`，只包含 PostgreSQL 和 Redis；本地可观测组件放 `docker-compose-dev-observability.yaml`。API、Worker、Agent 和 Web 均在宿主机手动启动，不纳入开发 Compose。
+- 本地数据库依赖放 `docker-compose-dev-db.yaml`，只包含 PostgreSQL 和 Redis；API、Worker、Agent 和 Web 均在宿主机手动启动，不纳入开发 Compose。
 - `.env.*` 不提交；`.env.example` 可提交。
 - 后端配置默认读取进程环境和仓库根目录 `.env`；需要临时使用另一份本地文件时可通过 `ENV_FILE=.env.local go run ./cmd/api` 显式替代 `.env`。
 

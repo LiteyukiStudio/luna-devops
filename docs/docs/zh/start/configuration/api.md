@@ -81,7 +81,4 @@
 | 配置项名称 | 默认值 | 说明 |
 | --- | --- | --- |
 | `DEVOPS_IMAGE_TAG` | `nightly` | 选择 Docker Compose 使用的 API 和 Web 镜像版本；填写镜像标签。 |
-| `API_METRICS_ENABLED` | 继承 `METRICS_ENABLED` | 覆盖 Compose API 的指标开关；可填 `true` 或 `false`。 |
-| `API_METRICS_ADDR` | `:9090` | 覆盖 Compose API 的指标监听地址；填写 `IP:端口` 或 `:端口`。 |
-| `API_METRICS_PATH` | 继承 `METRICS_PATH` | 覆盖 Compose API 的指标接口路径；填写以 `/` 开头的 HTTP 路径。 |
 | `VITE_DOCS_BASE_URL` | 官方文档站 | 设置 Web 中的文档入口；填写构建时可用的 HTTP(S) URL。 |

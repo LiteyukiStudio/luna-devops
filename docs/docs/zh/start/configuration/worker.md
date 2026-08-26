@@ -59,7 +59,7 @@
 | `VOLUME_TRANSFER_MAX_BYTES` | `100Gi` | 限制单次数据卷导入或导出大小；填写 `1Gi`–`5Ti` 容量值。 |
 | `VOLUME_TRANSFER_JOB_IMAGE` | 空 | 选择数据卷传输 Pod 使用的程序版本；填写与 Worker 同版本的 OCI 镜像引用。 |
 
-Helm 与 Docker Compose 默认复用当前 Worker 版本的镜像。源码或二进制部署需要导入导出时，应显式设置同版本 `VOLUME_TRANSFER_JOB_IMAGE`。数据流不经过对象存储。
+Helm 默认复用当前 Worker 版本的镜像。最小 Docker Compose、源码或二进制部署默认不启用导入导出；需要时应为 API 和 Worker 显式设置同版本 `VOLUME_TRANSFER_JOB_IMAGE`。数据流不经过对象存储。
 
 ### Docker Compose
 

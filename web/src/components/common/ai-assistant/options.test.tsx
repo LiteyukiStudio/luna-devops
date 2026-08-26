@@ -62,7 +62,9 @@ describe('ai assistant options', () => {
       'pl-[max(0.75rem,env(safe-area-inset-left))]',
       'pr-[max(0.75rem,env(safe-area-inset-right))]',
     )
-    expect(screen.getByRole('button', { name: /查看项目空间/ })).toHaveClass('min-h-11')
+    const option = screen.getByRole('button', { name: /查看项目空间/ })
+    expect(option).toHaveClass('h-11', 'p-0')
+    expect(option.firstElementChild).toHaveClass('h-7', 'px-2.5', 'text-xs')
   })
 
   it('keeps inline page options large enough for touch input', () => {
