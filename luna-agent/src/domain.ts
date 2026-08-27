@@ -1,3 +1,6 @@
+import type { RemoteProviderConfig } from "./provider/config-client.js"
+import type { RuntimeSettings } from "./runtime-settings.js"
+
 export const runStatuses = [
 	"queued", "running", "waiting_approval", "waiting_input",
   "completed", "failed", "canceled", "expired", "interrupted",
@@ -105,7 +108,6 @@ export type Run = {
   selectedOperationIds: string[]
   pageContext: Record<string, unknown>
   traceContext?: Record<string, string>
-  clientInstanceId?: string
   createdAt: string
   startedAt?: string
   completedAt?: string
@@ -116,6 +118,15 @@ export type Run = {
   latestUsageModelId?: string
   latestUsageMaxContextTokensSnapshot?: number
 }
+
+/** 仅供 Executor claim 使用；不得通过 Run 查询或 API 返回。 */
+export type RunExecutionSnapshot = {
+  runtimeSettings: RuntimeSettings
+  providerConfig?: RemoteProviderConfig
+  toolCatalogDigest?: string
+}
+
+export type ClaimedRun = Run & { executionSnapshot?: RunExecutionSnapshot }
 
 export type TimelineItem = {
   id: string
@@ -182,33 +193,8 @@ export type CreateTurn = {
   preallocatedRunId?: string
   actorSessionId?: string
   toolCatalogDigest?: string
-  clientInstanceId?: string
   modelId?: string
   modelSnapshot?: AIModelSnapshot
 }
 
 export type CreatedTurn = { turn: Turn, run: Run }
-
-export type UIActionStatus = "pending" | "succeeded" | "failed" | "expired"
-
-export type UIActionDelivery = {
-  id: string
-  runId: string
-  toolCallId: string
-  clientInstanceId: string
-  action: Record<string, unknown>
-  status: UIActionStatus
-  attempts: number
-  expiresAt: string
-  acknowledgedAt?: string
-  actualPath?: string
-  errorCode?: string
-  createdAt: string
-  updatedAt: string
-}
-
-export type UIActionAcknowledgement = {
-  status: "succeeded" | "failed"
-  actualPath?: string
-  errorCode?: string
-}

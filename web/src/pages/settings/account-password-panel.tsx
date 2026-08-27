@@ -29,7 +29,7 @@ type PasswordForm = z.infer<typeof schema>
 
 export function AccountPasswordPanel() {
   const { t } = useTranslation()
-  const { actualUser, user } = useSession()
+  const { user } = useSession()
   const registration = useQuery({ queryKey: ['auth-registration-status'], queryFn: api.getAuthRegistrationStatus })
   const form = useForm<PasswordForm>({
     resolver: zodResolver(schema),
@@ -62,7 +62,7 @@ export function AccountPasswordPanel() {
           )
         : (
             <form className="grid gap-3" onSubmit={form.handleSubmit(values => save.mutate(values))}>
-              <PasswordManagerUsernameField value={(actualUser ?? user)?.email} />
+              <PasswordManagerUsernameField value={user?.email} />
               {user?.passwordSet && (
                 <Field error={form.formState.errors.currentPassword?.message} label={t('accountPage.password.current')} required>
                   <Input {...form.register('currentPassword', { required: t('accountPage.password.currentRequired') })} autoComplete="current-password" type="password" />

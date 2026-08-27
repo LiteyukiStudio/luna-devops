@@ -80,7 +80,6 @@ services:
     environment:
       HOST: 0.0.0.0
       DATABASE_URL: postgres://devops:devops@postgres:5432/devops?sslmode=disable
-      REDIS_ADDR: redis://default:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379/0
       AUTH_MODE: bff-hmac
       AI_INTERNAL_SECRET: ${AI_INTERNAL_SECRET:-}
       LUNA_API_BASE_URL: http://api:8080
@@ -88,8 +87,6 @@ services:
       api:
         condition: service_healthy
       postgres:
-        condition: service_healthy
-      redis:
         condition: service_healthy
     expose:
       - "8091"

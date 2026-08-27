@@ -1071,10 +1071,6 @@ func (fakeNamespaceManager) Ping(context.Context) error {
 	return nil
 }
 
-func (fakeNamespaceManager) EnsureBuildNetworkPolicy(context.Context, kubeprovider.BuildNetworkPolicySpec) error {
-	return nil
-}
-
 func (fakeNamespaceManager) EnsureBuildPolicy(context.Context, networkpolicy.BuildPolicy) error {
 	return nil
 }

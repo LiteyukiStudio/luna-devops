@@ -30,7 +30,7 @@ func TestAIConfigDefinitionsCoverSpecificationCatalog(t *testing.T) {
 		"ai.context.max_uncompressed_turn_count", "ai.context.max_compression_turns_per_compile",
 		"ai.context.summary_max_output_tokens",
 		"ai.model.max_output_tokens",
-		"ai.run.max_model_steps", "ai.run.max_input_k_bytes", "ai.run.navigate_action_ttl_seconds",
+		"ai.run.max_model_steps", "ai.run.max_input_k_bytes",
 		"ai.tools.max_card_repair_attempts",
 	}
 	for _, key := range expected {
@@ -150,7 +150,6 @@ func TestAIConfigRejectsUnsafeRuntimeBounds(t *testing.T) {
 		"ai.model.max_output_tokens":                   "131073",
 		"ai.run.max_model_steps":                       "1025",
 		"ai.run.max_input_k_bytes":                     "7",
-		"ai.run.navigate_action_ttl_seconds":           "601",
 		"ai.tools.max_card_repair_attempts":            "11",
 	} {
 		h := &Handlers{configs: &configCache{values: aiConfigDefaults()}}

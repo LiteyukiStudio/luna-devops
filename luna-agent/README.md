@@ -8,7 +8,7 @@ Luna DevOps 的 AI 助手运行时。一个**自研的、以 PostgreSQL 为权�
 
 - 每次模型调用前都要按模型能力、上下文剩余和个人钱包余额完成单次用量预留与输出收紧，调用后再按四类 token 价格（输入 / 输出 / 缓存输入 / 缓存输出）结算到**用户个人钱包**；Run 不设置累计 Token/Credits 预算——框架不知道这种计费控制流。
 - 敏感输入（密钥、Token）必须走用户表单通道，**永不进入模型上下文**——这是定制到工具 schema 层的约束。
-- 高危 ToolCall 的逐次审批、账号级豁免、敏感表单与不可变事件续跑需要统一控制，通用框架的 interrupt/resume 语义无法直接覆盖这些约束。
+- 高危 ToolCall 的逐次参数绑定审批、敏感表单与不可变事件续跑需要统一控制，通用框架的 interrupt/resume 语义无法直接覆盖这些约束。
 - 全链路 OTel GenAI 语义 + 零高基数 label，与 LangChain 的 callback/LangSmith 体系是两套。
 
 选型结论（2026-08 评审）：**工具循环 + 动态工具检索 + 审批断点**的形态，自写循环完全可控。触发重新评估的条件：出现多 Agent 协作（handoff 语义）、多步会签 / 超时升级类复杂人机协同、或团队规模使自研内核的上手成本成为瓶颈。届时优先考虑 Temporal（持久工作流）而非 LangGraph（Node 版为二等公民）。
@@ -26,6 +26,7 @@ Web ──► luna-gateway (Go BFF) ──HMAC──► luna-agent (本服务)
 ```
 
 - **无内存权威状态**：run、turn、不可变事件、工具调用和滚动摘要全部落 PostgreSQL。队列使用数据库原子 `queued -> running` claim；实例中断时 run 进入 `interrupted`，不发生 takeover。
+- **单 Agent 副本**：部署使用 `Recreate` 且始终只运行一个副本。PostgreSQL 时间线与 SSE 回放可持久恢复；正在进行的内存流和取消不承诺跨 Pod 连续，重启遗留的 Run 会明确进入 `interrupted`。
 - **单跳业务执行**：Agent 只持有固定服务身份，按 Catalog 直接请求 Luna API 的真实 `/api/v1` 业务路由。后端从数据库回读 Run、ToolCall、用户 Session、会话和项目绑定，再由原 Handler/Service 执行 RBAC 与审计。
 
 ## 目录结构与模块职责
@@ -44,7 +45,7 @@ src/
 │   ├── cards.ts              CardGenerationService：交互卡片的占位项、
 │   │                         schema 校验、修复重试（上限内复用同一占位）、终态
 │   ├── internal-tools.ts     内部工具副作用：navigate_to_route /
-│   │                         rename_conversation 的时间线与 UI Action 写入
+│   │                         rename_conversation 的时间线写入
 │   ├── tool-results.ts       工具结果序列化与字节预算瘦身（数组按元素粒度保留）
 │   └── resume.ts             断点续跑：把已完成工具调用重建为 assistant+tool
 │                             消息对，不恢复 sticky 工具集
@@ -103,7 +104,7 @@ queued ──原子 claim──► running ──┬─► completed
 1. **领取**：`RunExecutor` 使用 PostgreSQL 条件更新原子领取一条 queued run。进程退出或执行中断时写入 `interrupted`，保留全部事件，不把正在执行的 run 转交另一实例。
 2. **step 循环**（`maxModelSteps` 上限内）：
    - `streaming.ts` 消费模型事件流，实时投影 reasoning/正文到时间线（SSE 推给前端）；
-   - 模型返回 tool calls 后逐个派发：**内部工具**包括目录搜索、详情加载、会话命名、页面导航与三类通用卡片；**平台工具**经 `ToolOrchestrator` 校验后直接调用真实业务路由。高危调用等待 `reject / approve / approve_always`，模型与安全表单提交遵循相同的工具 Schema 和业务校验；
+   - 模型返回 tool calls 后逐个派发：**内部工具**包括目录搜索、详情加载、会话命名、显式页面导航与三类通用卡片；**平台工具**经 `ToolOrchestrator` 校验后直接调用真实业务路由。高危调用等待逐次绑定参数的 `reject / approve`，模型与安全表单提交遵循相同的工具 Schema 和业务校验；
    - 模型只接收 `present_card`、`request_input`、`request_choice` 三个卡片 Schema，三者直接使用稳定的 `InteractionCardGroup` v1；
    - 每个工具结果以 `tool` 角色消息追加到 continuation，进入下一 step。
 3. **续跑**：审批决策或表单完成后重新入队。`resume.ts` 从不可变工具事件重建必要的 assistant+tool 消息对，保证模型看到暂停前已经发生的结果。

@@ -93,6 +93,36 @@ helm upgrade --install luna-devops ./charts/luna-devops \
   -f values-prod.yaml
 ```
 
+## Configure The Agent Network Policy
+
+The chart enables API-to-Agent ingress isolation by default but does not restrict Agent egress by default. The
+Agent must reach its model Provider, OpenTelemetry Collector, and PostgreSQL; native Kubernetes NetworkPolicy
+cannot reliably express destinations backed by dynamic DNS records.
+
+Enable egress isolation only after listing every real destination, for example:
+
+```yaml
+ai:
+  agent:
+    networkPolicy:
+      egress:
+        enabled: true
+        additionalCIDRs:
+          - 203.0.113.10/32
+        additionalRules:
+          - to:
+              - namespaceSelector:
+                  matchLabels:
+                    kubernetes.io/metadata.name: observability
+            ports:
+              - protocol: TCP
+                port: 4318
+```
+
+For model Providers with dynamic addresses, use a CNI that supports FQDN policies or a stable egress proxy. A
+deny-all rule that omits real destinations is not a working configuration. The non-root user, read-only Agent
+root filesystem, and disabled ServiceAccount token remain enforced independently.
+
 ## Common Values
 
 | Value | Default | Notes |
@@ -101,6 +131,8 @@ helm upgrade --install luna-devops ./charts/luna-devops \
 | `app.secretEncryptionKey` | Generated | Encrypts credentials stored by the platform; use a stable non-empty key. |
 | `api.image.tag` / `worker.image.tag` | `nightly` | Selects the API and Worker image versions; use image tags. |
 | `ai.enabled` / `ai.existingSecret` | `false` / empty | Enables Agent and selects its internal secret; use a boolean and a Kubernetes Secret name. |
+| `ai.agent.networkPolicy.ingress.enabled` / `egress.enabled` | `true` / `false` | Controls API-to-Agent ingress isolation and Agent egress isolation; use booleans and enable egress only after its destination rules are complete. |
+| `ai.agent.networkPolicy.egress.additionalCIDRs` / `additionalRules` | `[]` / `[]` | Adds Agent destinations; use a CIDR list and a list of Kubernetes NetworkPolicy egress rules. |
 | `postgresql.enabled` / `externalDatabase.url` | `true` / empty | Selects bundled or external PostgreSQL; use a boolean and a PostgreSQL connection URI. |
 | `redis.enabled` / `externalRedis.url` | `true` / empty | Selects bundled or external Redis; use a boolean and a `redis://` or `rediss://` URI. |
 | `worker.buildEgressMode` | `restricted` | Sets the build-network egress policy; use `restricted` or `permissive`. |

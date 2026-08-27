@@ -8,8 +8,7 @@ const (
 	brandThemeHTMLPlaceholder = "__LUNA_DEVOPS_BRAND_THEME__"
 )
 
-// Curated multi-color themes are followed by Radix Colors 3.0.0 single-color
-// scales. The backend persists only these stable IDs.
+// The backend accepts the same compact catalog exposed by the settings picker.
 var brandColorPresetOptions = []string{
 	"aurora",
 	"harbor",
@@ -18,30 +17,15 @@ var brandColorPresetOptions = []string{
 	"meadow",
 	"citrus",
 	"gold",
-	"bronze",
-	"brown",
-	"yellow",
-	"amber",
 	"orange",
-	"tomato",
 	"red",
-	"ruby",
-	"crimson",
 	"pink",
-	"plum",
-	"purple",
 	"violet",
-	"iris",
-	"indigo",
 	"blue",
 	"cyan",
 	"teal",
-	"jade",
 	"green",
-	"grass",
 	"lime",
-	"mint",
-	"sky",
 }
 
 func normalizeBrandColorPreset(value string) string {

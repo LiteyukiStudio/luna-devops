@@ -66,7 +66,7 @@ suite("Postgres authoritative model usage", () => {
 
   beforeEach(async () => {
     await repository.pool.query(`
-      TRUNCATE ai.model_usages, ai.model_credit_holds, ai.ui_actions, ai.tool_calls, ai.run_events,
+      TRUNCATE ai.model_usages, ai.model_credit_holds, ai.tool_calls, ai.run_events,
                ai.items, ai.idempotency_keys, ai.conversation_summaries, ai.runs, ai.turns, ai.conversations CASCADE
     `)
     await repository.pool.query("UPDATE user_wallets SET balance_credits = 0 WHERE user_id = $1", [ownerUserId])

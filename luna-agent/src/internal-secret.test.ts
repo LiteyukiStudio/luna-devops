@@ -8,6 +8,8 @@ describe("deriveInternalKeys", () => {
     expect(keys.actorSigningKey).toHaveLength(43)
     expect(keys.callbackServiceToken).toHaveLength(43)
     expect(keys.toolArgumentsEncryptionKey).toHaveLength(32)
+    expect(keys.runExecutionSnapshotEncryptionKey).toHaveLength(32)
+    expect(keys.runExecutionSnapshotEncryptionKey.equals(keys.toolArgumentsEncryptionKey)).toBe(false)
     expect(keys.callbackServiceToken).not.toBe(keys.serviceToken)
   })
 

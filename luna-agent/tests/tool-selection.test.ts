@@ -34,6 +34,18 @@ describe("Run tool selection and catalog snapshots", () => {
     expect(registry.current().get("listProjects").operationId).toBe("listProjects")
   })
 
+  it("restores a persisted old catalog without replacing the current catalog", () => {
+    const oldCatalog = ToolCatalog.load([operation("getProject")])
+    const currentCatalog = ToolCatalog.load([operation("listProjects")])
+    const registry = new ToolCatalogRegistry(currentCatalog, "cfg-new")
+
+    registry.restore(oldCatalog.all(), oldCatalog.digest)
+
+    expect(registry.current().digest).toBe(currentCatalog.digest)
+    expect(registry.get(oldCatalog.digest).get("getProject").operationId).toBe("getProject")
+    expect(() => registry.restore(oldCatalog.all(), "sha256:not-the-old-catalog")).toThrow("ai.tool_catalog_snapshot_invalid")
+  })
+
   it("keeps old and new Runs isolated for search and execution", async () => {
     const repository = new TestRepository()
     const conversation = await repository.createConversation("usr_a", "snapshots")

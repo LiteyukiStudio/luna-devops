@@ -1,6 +1,6 @@
 import { performance } from "node:perf_hooks"
 import { describe, expect, it } from "vitest"
-import { redact } from "../src/redaction.js"
+import { redact, redactSensitivePaths } from "../src/redaction.js"
 
 const longTextBytes = 64 * 1024
 const redactionPerformanceBudgetMs = 1_000
@@ -83,5 +83,30 @@ describe("redact", () => {
 
     expect(result).toBe(`${padding} https://[REDACTED]@example.com token=[REDACTED] ${padding}`)
     expect(elapsedMs).toBeLessThan(redactionPerformanceBudgetMs)
+  })
+})
+
+describe("redactSensitivePaths", () => {
+  it("masks catalog paths without changing the arguments used for approval and execution", () => {
+    const argumentsValue = {
+      body: {
+        command: "kubectl get secret",
+        items: [{ name: "PUBLIC_NAME", value: "runtime-secret" }],
+      },
+    }
+
+    expect(redactSensitivePaths(argumentsValue, ["body.command", "body.items.*.value"])).toEqual({
+      body: {
+        command: "[REDACTED]",
+        items: [{ name: "PUBLIC_NAME", value: "[REDACTED]" }],
+      },
+    })
+    expect(argumentsValue.body.command).toBe("kubectl get secret")
+    expect(argumentsValue.body.items[0]?.value).toBe("runtime-secret")
+  })
+
+  it("also accepts JSON Pointer paths", () => {
+    expect(redactSensitivePaths({ body: { "command/name": "secret" } }, ["/body/command~1name"]))
+      .toEqual({ body: { "command/name": "[REDACTED]" } })
   })
 })

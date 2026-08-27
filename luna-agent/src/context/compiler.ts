@@ -9,6 +9,7 @@ import {
 import type { Repository } from "../persistence/repository.js"
 import { isProviderContextLengthError } from "../provider/provider-error.js"
 import type { ModelMessage, ModelProvider, ModelToolDefinition } from "../provider/provider.js"
+import type { RemoteProviderConfig } from "../provider/config-client.js"
 import { redact } from "../redaction.js"
 import { defaultRuntimeSettings } from "../runtime-settings.js"
 import { agentMetrics, internalSpanOptions, telemetryLog, withSpan } from "../telemetry.js"
@@ -54,6 +55,8 @@ export type CompileContextInput = {
   budget?: { runId: string, ownerUserId: string }
   maxOutputTokens?: number
   forceCompressionTrigger?: "context_error"
+  options?: ContextCompilerOptions
+  providerConfig?: RemoteProviderConfig
 }
 
 export type CompiledContext = {
@@ -82,18 +85,19 @@ const defaultOptions: ContextCompilerOptions = {
 
 /** 只依据上一条权威 Provider usage、轮次积压或结构化上下文错误决定是否压缩。 */
 export class ContextCompiler {
+  private readonly options: ContextCompilerOptions
+
   constructor(
     private readonly repository: Pick<Repository,
       "getConversationSummary" | "saveConversationSummary" | "listConversationHistory" | "getLatestReportedModelUsage">,
     private readonly provider: Pick<ModelProvider, "complete">,
-    private options: ContextCompilerOptions = defaultOptions,
-  ) {}
-
-  setOptions(partial: Partial<ContextCompilerOptions>): void {
-    this.options = { ...this.options, ...partial }
+    options: ContextCompilerOptions = defaultOptions,
+  ) {
+    this.options = Object.freeze({ ...options })
   }
 
   async compile(input: CompileContextInput): Promise<CompiledContext> {
+    const options = Object.freeze({ ...(input.options ?? this.options) })
     return withSpan("agent.context.compile", internalSpanOptions({
       "gen_ai.conversation.id": input.conversationId,
       "luna.context.compression.version": conversationSummaryVersion,
@@ -102,7 +106,7 @@ export class ContextCompiler {
       const systemMessages = input.systemMessages ?? (input.systemMessage ? [input.systemMessage] : [])
       if (!systemMessages.length) throw new Error("ai.system_prompt_required")
       let summary = await this.repository.getConversationSummary(input.conversationId)
-      const historyLimit = this.options.maxCompressionTurnsPerCompile + this.options.maxUncompressedTurnCount + 1
+      const historyLimit = options.maxCompressionTurnsPerCompile + options.maxUncompressedTurnCount + 1
       const uncovered = await this.repository.listConversationHistory(
         input.conversationId, summary?.coveredThroughTurnIndex ?? -1, input.beforeTurnIndex, historyLimit,
       )
@@ -114,21 +118,21 @@ export class ContextCompiler {
       const usageRatio = latestUsage
         ? latestUsage.promptTokens / latestUsage.maxContextTokensSnapshot
         : undefined
-      const backlog = uncovered.length >= historyLimit || history.length > this.options.maxUncompressedTurnCount
+      const backlog = uncovered.length >= historyLimit || history.length > options.maxUncompressedTurnCount
       const trigger: CompressionTrigger | undefined = input.forceCompressionTrigger
-        ?? (latestUsage && usageRatio !== undefined && usageRatio >= this.options.compressionTriggerRatio ? "provider_usage" : undefined)
+        ?? (latestUsage && usageRatio !== undefined && usageRatio >= options.compressionTriggerRatio ? "provider_usage" : undefined)
         ?? (backlog ? "turn_backlog" : undefined)
       let outcome: CompiledContext["compressionOutcome"] = summary ? "reused" : "not_needed"
       let compaction: CompiledContext["compaction"]
       if (trigger) {
-        const keepRecent = trigger === "context_error" ? 0 : this.options.recentTurnCount
+        const keepRecent = trigger === "context_error" ? 0 : options.recentTurnCount
         const candidateCount = Math.min(
-          this.options.maxCompressionTurnsPerCompile,
+          options.maxCompressionTurnsPerCompile,
           Math.max(0, history.length - keepRecent),
         )
         const candidates = history.slice(0, candidateCount)
         if (candidates.length) {
-          summary = await this.summarize(input.conversationId, summary, candidates, input.budget, input.signal, input.model)
+          summary = await this.summarize(input.conversationId, summary, candidates, options, input.budget, input.signal, input.model, input.providerConfig)
           history = history.filter(entry => entry.turnIndex > summary!.coveredThroughTurnIndex)
           outcome = "compressed"
           compaction = {
@@ -142,8 +146,8 @@ export class ContextCompiler {
       history = history
         .filter(entry => entry.turnIndex > (summary?.coveredThroughTurnIndex ?? -1))
         .sort((left, right) => left.turnIndex - right.turnIndex)
-      const historyMessages = boundHistoryMessages(history, this.options.maxHistoryPayloadBytes)
-      const continuationMessages = boundContinuationMessages(input.continuationMessages, this.options.maxContinuationPayloadBytes)
+      const historyMessages = boundHistoryMessages(history, options.maxHistoryPayloadBytes)
+      const continuationMessages = boundContinuationMessages(input.continuationMessages, options.maxContinuationPayloadBytes)
       const summaryMessage = summary ? [summaryModelMessage(summary)] : []
       const messages = [...systemMessages, ...summaryMessage, ...historyMessages, ...input.currentMessages, ...continuationMessages]
       span.setAttributes({
@@ -176,11 +180,13 @@ export class ContextCompiler {
     conversationId: string,
     previous: ConversationSummary | undefined,
     entries: ConversationHistoryEntry[],
+    options: ContextCompilerOptions,
     budget: { runId: string, ownerUserId: string } | undefined,
     signal?: AbortSignal,
     model?: AIModelSnapshot,
+    providerConfig?: RemoteProviderConfig,
   ): Promise<ConversationSummary> {
-    const content = await this.summarizeBatch(previous?.content ?? emptySummaryContent(), entries, budget, signal, model)
+    const content = await this.summarizeBatch(previous?.content ?? emptySummaryContent(), entries, options, budget, signal, model, providerConfig)
     const coveredThroughTurnIndex = entries.at(-1)?.turnIndex
     if (coveredThroughTurnIndex === undefined) throw new Error("ai.context_summary_empty")
     return this.repository.saveConversationSummary({
@@ -195,24 +201,26 @@ export class ContextCompiler {
   private async summarizeBatch(
     previous: ConversationSummaryContent,
     entries: ConversationHistoryEntry[],
+    options: ContextCompilerOptions,
     budget: { runId: string, ownerUserId: string } | undefined,
     signal?: AbortSignal,
     model?: AIModelSnapshot,
+    providerConfig?: RemoteProviderConfig,
   ): Promise<ConversationSummaryContent> {
     try {
-      return await this.requestSummary(previous, entries, budget, signal, model)
+      return await this.requestSummary(previous, entries, options, budget, signal, model, providerConfig)
     }
     catch (error) {
       if (!isProviderContextLengthError(error)) throw error
       if (entries.length > 1) {
         const middle = Math.ceil(entries.length / 2)
-        const first = await this.summarizeBatch(previous, entries.slice(0, middle), budget, signal, model)
-        return this.summarizeBatch(first, entries.slice(middle), budget, signal, model)
+        const first = await this.summarizeBatch(previous, entries.slice(0, middle), options, budget, signal, model, providerConfig)
+        return this.summarizeBatch(first, entries.slice(middle), options, budget, signal, model, providerConfig)
       }
-      const segments = splitHistoryEntry(entries[0]!, this.options.maxSummaryPayloadBytes)
+      const segments = splitHistoryEntry(entries[0]!, options.maxSummaryPayloadBytes)
       if (segments.length <= 1) throw error
       let current = previous
-      for (const segment of segments) current = await this.summarizeBatch(current, [segment], budget, signal, model)
+      for (const segment of segments) current = await this.summarizeBatch(current, [segment], options, budget, signal, model, providerConfig)
       return current
     }
   }
@@ -220,19 +228,22 @@ export class ContextCompiler {
   private async requestSummary(
     previous: ConversationSummaryContent,
     entries: ConversationHistoryEntry[],
+    options: ContextCompilerOptions,
     budget: { runId: string, ownerUserId: string } | undefined,
     signal?: AbortSignal,
     model?: AIModelSnapshot,
+    providerConfig?: RemoteProviderConfig,
   ): Promise<ConversationSummaryContent> {
     const response = await this.provider.complete({
       messages: [
         { role: "system", content: summarySystemPrompt },
-        { role: "user", content: summaryUserContent(previous, entries, this.options.maxSummaryPayloadBytes) },
+        { role: "user", content: summaryUserContent(previous, entries, options.maxSummaryPayloadBytes) },
       ],
-      maxOutputTokens: this.options.summaryMaxOutputTokens,
+      maxOutputTokens: options.summaryMaxOutputTokens,
       ...(budget ? { budget: { ...budget, operation: "summary" as const } } : {}),
       ...(signal ? { signal } : {}),
       ...(model ? { modelId: model.id, modelName: model.name, modelPricing: model } : {}),
+      ...(providerConfig ? { providerConfig } : {}),
     })
     if (response.usage.status !== "reported") throw new Error("ai.provider_usage_unavailable")
     const parsed = summaryContentSchema.parse(parseJSONObject(response.text))

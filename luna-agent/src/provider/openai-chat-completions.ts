@@ -25,6 +25,11 @@ export type OpenAIChatCompletionsOptions = {
   timeoutMs: number
 }
 
+type ProviderHTTPResponse = {
+  response: Response
+  dispose: () => void
+}
+
 const nonNegativeSafeInteger = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER)
 const requestToolCallSchema = z.object({
   id: z.string(),
@@ -149,33 +154,40 @@ export class OpenAIChatCompletionsProvider implements ModelProvider {
     return withSpan(modelSpan.name, clientSpanOptions({ ...modelSpan.attributes, ...modelRequestSpanAttributes(request) }), async span => {
       try {
         this.recordRequest(span, request)
-        const response = await this.fetchCompletion(request, false)
-        const providerRequestId = response.headers.get("x-request-id") ?? undefined
-        const raw = await response.json().catch(() => {
-          throw new ProviderRequestError("ai.provider_response_invalid", {
-            stage: "response_body", requestOutcome: "unknown", ...(providerRequestId ? { providerRequestId } : {}),
+        const providerResponse = await this.fetchCompletion(request, false)
+        try {
+          const response = providerResponse.response
+          const providerRequestId = response.headers.get("x-request-id") ?? undefined
+          const raw = await response.json().catch((error) => {
+            if (request.signal?.aborted || error instanceof Error && error.name === "AbortError") throw transportError(error, request.signal)
+            throw new ProviderRequestError("ai.provider_response_invalid", {
+              stage: "response_body", requestOutcome: "unknown", ...(providerRequestId ? { providerRequestId } : {}),
+            })
           })
-        })
-        const parsed = completionSchema.safeParse(raw)
-        if (!parsed.success) throw this.schemaError("ai.provider_response_invalid", "response_body", providerRequestId)
-        const body = parsed.data
-        const message = body.choices[0]?.message
-        const toolCalls = (message?.tool_calls ?? []).map(parseToolCall).filter(call => call.operationId)
-        const usage = parseUsage(this.adaptUsagePayload(body.usage), "missing_usage")
-        const finishReason = body.choices[0]?.finish_reason ?? undefined
-        this.recordResponse(span, usage, finishReason, toolCalls.length, body.id, body.model)
-        const text = contentText(message?.content)
-        recordAIContent(span, "luna.gen_ai.content.output", "gen_ai.output.messages", genAIOutputMessages({ text, toolCalls, ...(finishReason ? { finishReason } : {}) }))
-        return {
-          text,
-          usage,
-          ...(toolCalls.length ? { toolCalls } : {}),
-          ...(finishReason ? { finishReason } : {}),
-          ...(providerRequestId ? { providerRequestId } : {}),
-          responseId: body.id,
-          responseModel: body.model,
-          ...(body.service_tier ? { serviceTier: body.service_tier } : {}),
-          ...(body.system_fingerprint ? { systemFingerprint: body.system_fingerprint } : {}),
+          const parsed = completionSchema.safeParse(raw)
+          if (!parsed.success) throw this.schemaError("ai.provider_response_invalid", "response_body", providerRequestId)
+          const body = parsed.data
+          const message = body.choices[0]?.message
+          const toolCalls = (message?.tool_calls ?? []).map(parseToolCall).filter(call => call.operationId)
+          const usage = parseUsage(this.adaptUsagePayload(body.usage), "missing_usage")
+          const finishReason = body.choices[0]?.finish_reason ?? undefined
+          this.recordResponse(span, usage, finishReason, toolCalls.length, body.id, body.model)
+          const text = contentText(message?.content)
+          recordAIContent(span, "luna.gen_ai.content.output", "gen_ai.output.messages", genAIOutputMessages({ text, toolCalls, ...(finishReason ? { finishReason } : {}) }, request.tools))
+          return {
+            text,
+            usage,
+            ...(toolCalls.length ? { toolCalls } : {}),
+            ...(finishReason ? { finishReason } : {}),
+            ...(providerRequestId ? { providerRequestId } : {}),
+            responseId: body.id,
+            responseModel: body.model,
+            ...(body.service_tier ? { serviceTier: body.service_tier } : {}),
+            ...(body.system_fingerprint ? { systemFingerprint: body.system_fingerprint } : {}),
+          }
+        }
+        finally {
+          providerResponse.dispose()
         }
       }
       catch (error) {
@@ -236,62 +248,68 @@ export class OpenAIChatCompletionsProvider implements ModelProvider {
   private async *streamAttempt(request: ModelRequest, span: Span): AsyncIterable<ModelEvent> {
     try {
       this.recordRequest(span, request)
-      const response = await this.fetchCompletion(request, true)
-      const providerRequestId = response.headers.get("x-request-id") ?? undefined
-      if (!response.body) throw this.schemaError("ai.provider_empty_stream", "stream", providerRequestId)
-      let usage: ModelUsage = { status: "unavailable", reason: "stream_ended_without_usage" }
-      let usageSeen = false
-      let finishReason: string | undefined
-      let responseId: string | undefined
-      let responseModel: string | undefined
-      let responseText = ""
-      let reasoningText = ""
-      let toolDeltaEmitted = false
-      const toolFragments = new Map<number, { id?: string, operationId: string, arguments: string }>()
-      for await (const data of readSSEData(response.body, request.signal)) {
-        if (!data || data === "[DONE]") continue
-        let raw: unknown
-        try { raw = JSON.parse(data) }
-        catch { throw this.schemaError("ai.provider_stream_invalid", "stream", providerRequestId) }
-        const parsed = streamChunkSchema.safeParse(raw)
-        if (!parsed.success) throw this.schemaError("ai.provider_stream_invalid", "stream", providerRequestId)
-        const chunk = parsed.data
-        if (chunk.error !== undefined) throw providerPayloadError(chunk.error, providerRequestId, responseId, responseModel)
-        responseId = chunk.id ?? responseId
-        responseModel = chunk.model ?? responseModel
-        const choice = chunk.choices[0]
-        const delta = choice?.delta as Record<string, unknown> | undefined
-        finishReason = choice?.finish_reason ?? finishReason
-        const reasoning = this.reasoningDelta(delta)
-        const content = contentText(delta?.content)
-        if (reasoning) { reasoningText += reasoning; yield { type: "reasoning_summary_delta", delta: reasoning } }
-        if (content) { responseText += content; yield { type: "message_delta", delta: content } }
-        for (const fragment of choice?.delta?.tool_calls ?? []) {
-          if (!toolDeltaEmitted) { toolDeltaEmitted = true; yield { type: "tool_call_delta" } }
-          const current = toolFragments.get(fragment.index) ?? { operationId: "", arguments: "" }
-          if (!current.id && fragment.id) current.id = fragment.id
-          current.operationId += fragment.function?.name ?? ""
-          current.arguments += fragment.function?.arguments ?? ""
-          toolFragments.set(fragment.index, current)
+      const providerResponse = await this.fetchCompletion(request, true)
+      try {
+        const response = providerResponse.response
+        const providerRequestId = response.headers.get("x-request-id") ?? undefined
+        if (!response.body) throw this.schemaError("ai.provider_empty_stream", "stream", providerRequestId)
+        let usage: ModelUsage = { status: "unavailable", reason: "stream_ended_without_usage" }
+        let usageSeen = false
+        let finishReason: string | undefined
+        let responseId: string | undefined
+        let responseModel: string | undefined
+        let responseText = ""
+        let reasoningText = ""
+        let toolDeltaEmitted = false
+        const toolFragments = new Map<number, { id?: string, operationId: string, arguments: string }>()
+        for await (const data of readSSEData(response.body, request.signal)) {
+          if (!data || data === "[DONE]") continue
+          let raw: unknown
+          try { raw = JSON.parse(data) }
+          catch { throw this.schemaError("ai.provider_stream_invalid", "stream", providerRequestId) }
+          const parsed = streamChunkSchema.safeParse(raw)
+          if (!parsed.success) throw this.schemaError("ai.provider_stream_invalid", "stream", providerRequestId)
+          const chunk = parsed.data
+          if (chunk.error !== undefined) throw providerPayloadError(chunk.error, providerRequestId, responseId, responseModel)
+          responseId = chunk.id ?? responseId
+          responseModel = chunk.model ?? responseModel
+          const choice = chunk.choices[0]
+          const delta = choice?.delta as Record<string, unknown> | undefined
+          finishReason = choice?.finish_reason ?? finishReason
+          const reasoning = this.reasoningDelta(delta)
+          const content = contentText(delta?.content)
+          if (reasoning) { reasoningText += reasoning; yield { type: "reasoning_summary_delta", delta: reasoning } }
+          if (content) { responseText += content; yield { type: "message_delta", delta: content } }
+          for (const fragment of choice?.delta?.tool_calls ?? []) {
+            if (!toolDeltaEmitted) { toolDeltaEmitted = true; yield { type: "tool_call_delta" } }
+            const current = toolFragments.get(fragment.index) ?? { operationId: "", arguments: "" }
+            if (!current.id && fragment.id) current.id = fragment.id
+            current.operationId += fragment.function?.name ?? ""
+            current.arguments += fragment.function?.arguments ?? ""
+            toolFragments.set(fragment.index, current)
+          }
+          if (chunk.usage !== undefined) {
+            usageSeen = true
+            usage = parseUsage(this.adaptUsagePayload(chunk.usage), "invalid_usage")
+          }
         }
-        if (chunk.usage !== undefined) {
-          usageSeen = true
-          usage = parseUsage(this.adaptUsagePayload(chunk.usage), "invalid_usage")
+        if (!usageSeen) usage = { status: "unavailable", reason: "stream_ended_without_usage" }
+        const toolCalls = parseToolFragments(toolFragments)
+        this.recordResponse(span, usage, finishReason, toolCalls.length, responseId, responseModel)
+        recordAIContent(span, "luna.gen_ai.content.output", "gen_ai.output.messages", genAIOutputMessages({
+          text: responseText, ...(reasoningText ? { reasoningSummary: reasoningText } : {}), ...(toolCalls.length ? { toolCalls } : {}), ...(finishReason ? { finishReason } : {}),
+        }, request.tools))
+        yield {
+          type: "completed", usage,
+          ...(toolCalls.length ? { toolCalls } : {}),
+          ...(finishReason ? { finishReason } : {}),
+          ...(providerRequestId ? { providerRequestId } : {}),
+          ...(responseId ? { responseId } : {}),
+          ...(responseModel ? { responseModel } : {}),
         }
       }
-      if (!usageSeen) usage = { status: "unavailable", reason: "stream_ended_without_usage" }
-      const toolCalls = parseToolFragments(toolFragments)
-      this.recordResponse(span, usage, finishReason, toolCalls.length, responseId, responseModel)
-      recordAIContent(span, "luna.gen_ai.content.output", "gen_ai.output.messages", genAIOutputMessages({
-        text: responseText, ...(reasoningText ? { reasoningSummary: reasoningText } : {}), ...(toolCalls.length ? { toolCalls } : {}), ...(finishReason ? { finishReason } : {}),
-      }))
-      yield {
-        type: "completed", usage,
-        ...(toolCalls.length ? { toolCalls } : {}),
-        ...(finishReason ? { finishReason } : {}),
-        ...(providerRequestId ? { providerRequestId } : {}),
-        ...(responseId ? { responseId } : {}),
-        ...(responseModel ? { responseModel } : {}),
+      finally {
+        providerResponse.dispose()
       }
     }
     catch (error) {
@@ -300,11 +318,23 @@ export class OpenAIChatCompletionsProvider implements ModelProvider {
     }
   }
 
-  private async fetchCompletion(request: ModelRequest, stream: boolean): Promise<Response> {
+  private async fetchCompletion(request: ModelRequest, stream: boolean): Promise<ProviderHTTPResponse> {
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), this.options.timeoutMs)
     const abort = () => controller.abort(request.signal?.reason)
-    request.signal?.addEventListener("abort", abort, { once: true })
+    let listening = false
+    let disposed = false
+    const dispose = () => {
+      if (disposed) return
+      disposed = true
+      clearTimeout(timer)
+      if (listening) request.signal?.removeEventListener("abort", abort)
+    }
+    if (request.signal?.aborted) controller.abort(request.signal.reason)
+    else if (request.signal) {
+      request.signal.addEventListener("abort", abort, { once: true })
+      listening = true
+    }
     try {
       let response: Response
       try {
@@ -322,7 +352,10 @@ export class OpenAIChatCompletionsProvider implements ModelProvider {
       }
       const providerRequestId = response.headers.get("x-request-id") ?? undefined
       if (!response.ok) {
-        const raw = await response.clone().json().catch(() => undefined)
+        const raw = await response.clone().json().catch((error) => {
+          if (request.signal?.aborted) throw transportError(error, request.signal)
+          return undefined
+        })
         const detail = parseProviderErrorBody(raw)
         const code = mapProviderError(response.status, detail)
         const error = new ProviderRequestError(code, {
@@ -341,11 +374,12 @@ export class OpenAIChatCompletionsProvider implements ModelProvider {
       agentMetrics.externalRequests.add(1, { target: "model_provider", operation: stream ? "chat_stream" : "chat_complete", outcome: "success" })
       trace.getActiveSpan()?.setAttribute("http.response.status_code", response.status)
       if (providerRequestId) trace.getActiveSpan()?.setAttribute("server.request.id", providerRequestId)
-      return response
+      return { response, dispose }
     }
-    finally {
-      clearTimeout(timer)
-      request.signal?.removeEventListener("abort", abort)
+    catch (error) {
+      controller.abort()
+      dispose()
+      throw error
     }
   }
 
@@ -355,7 +389,7 @@ export class OpenAIChatCompletionsProvider implements ModelProvider {
 
   private recordRequest(span: Span, request: ModelRequest): void {
     span.setAttribute("luna.gen_ai.channel_affinity.applied", Boolean(this.channelAffinityKey(request)))
-    recordAIContent(span, "luna.gen_ai.content.input", "gen_ai.input.messages", genAIInputMessages(request.messages))
+    recordAIContent(span, "luna.gen_ai.content.input", "gen_ai.input.messages", genAIInputMessages(request.messages, request.tools))
     const system = request.messages.filter(message => message.role === "system")
     if (system.length) recordAIContent(span, "luna.gen_ai.content.system_instructions", "gen_ai.system_instructions", genAIInputMessages(system))
     if (request.tools?.length) recordAIContent(span, "luna.gen_ai.content.tools", "gen_ai.tool.definitions", genAIToolDefinitions(request.tools))
@@ -440,16 +474,33 @@ async function* readSSEData(body: ReadableStream<Uint8Array>, signal?: AbortSign
   const reader = body.getReader()
   const decoder = new TextDecoder()
   let buffer = ""
-  while (true) {
-    const result = await reader.read().catch((error) => { throw transportError(error, signal) })
-    if (result.done) break
-    buffer += decoder.decode(result.value, { stream: true })
-    const frames = buffer.split(/\r?\n\r?\n/)
-    buffer = frames.pop() ?? ""
-    for (const frame of frames) yield sseFrameData(frame)
+  let completed = false
+  let cancellation: Promise<void> | undefined
+  const cancelReader = () => cancellation ??= reader.cancel(signal?.reason).catch(() => undefined)
+  const abort = () => { void cancelReader() }
+  if (!signal?.aborted) signal?.addEventListener("abort", abort, { once: true })
+  try {
+    while (true) {
+      if (signal?.aborted) throw transportError(signal.reason, signal)
+      const result = await reader.read().catch((error) => { throw transportError(error, signal) })
+      if (signal?.aborted) throw transportError(signal.reason, signal)
+      if (result.done) {
+        completed = true
+        break
+      }
+      buffer += decoder.decode(result.value, { stream: true })
+      const frames = buffer.split(/\r?\n\r?\n/)
+      buffer = frames.pop() ?? ""
+      for (const frame of frames) yield sseFrameData(frame)
+    }
+    buffer += decoder.decode()
+    if (buffer.trim()) yield sseFrameData(buffer)
   }
-  buffer += decoder.decode()
-  if (buffer.trim()) yield sseFrameData(buffer)
+  finally {
+    signal?.removeEventListener("abort", abort)
+    if (!completed) await cancelReader()
+    reader.releaseLock()
+  }
 }
 
 function sseFrameData(frame: string): string {

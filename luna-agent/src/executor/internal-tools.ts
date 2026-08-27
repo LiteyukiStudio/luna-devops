@@ -2,17 +2,13 @@ import { createId } from "../id.js"
 import { trace } from "@opentelemetry/api"
 import type { Repository } from "../persistence/repository.js"
 import { redact } from "../redaction.js"
-import type { RuntimeSettings } from "../runtime-settings.js"
 import { renameConversationInput } from "../tools/conversation-title.js"
-import { automaticRouteUIAction, navigateToRouteInput } from "../tools/ui-route.js"
+import { navigateToRouteInput, routeUIAction } from "../tools/ui-route.js"
 
 // 内部工具的副作用处理：这些工具不调用平台 API，
-// 只向时间线、会话或前端 UI Action 通道写入记录。
+// 只向时间线或会话写入记录。
 export class InternalToolHandlers {
-  constructor(
-    private readonly repository: Repository,
-    private readonly runtimeSettings: () => RuntimeSettings,
-  ) {}
+  constructor(private readonly repository: Repository) {}
 
   async recordToolCall(
     runId: string,
@@ -55,17 +51,9 @@ export class InternalToolHandlers {
     const input = navigateToRouteInput.parse(raw)
     const itemId = createId("aiitm")
     const toolCallId = createId("aitool")
-    const uiActions = [automaticRouteUIAction(input)]
-    const delivery = await this.repository.createUIAction(
-      runId,
-      toolCallId,
-      uiActions[0]!,
-      new Date(Date.now() + this.runtimeSettings().navigateActionTtlSeconds * 1000).toISOString(),
-    )
+    const uiActions = [routeUIAction(input)]
     const result = {
-      summaryKey: "aiAssistant.tools.navigateToRouteDispatched",
-      actionId: delivery.id,
-      expiresAt: delivery.expiresAt,
+      summaryKey: "aiAssistant.tools.navigateToRouteReady",
       uiActions,
     }
     await this.repository.appendItemWithEvent({
@@ -80,13 +68,9 @@ export class InternalToolHandlers {
       },
     }, "tool.completed", {
       itemId, toolCallId, operationId: "navigate_to_route", titleKey: "aiAssistant.tools.navigateToRoute",
-      result, uiActions, uiActionDelivery: {
-        actionId: delivery.id,
-        expiresAt: delivery.expiresAt,
-        attempts: delivery.attempts,
-      },
+      result, uiActions,
     })
-    return delivery
+    return result
   }
 
   async renameConversation(runId: string, turnId: string, conversationId: string, raw: unknown) {

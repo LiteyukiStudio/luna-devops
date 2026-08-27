@@ -32,15 +32,18 @@ func TestRedactSensitiveLogContent(t *testing.T) {
 
 func TestRuntimeExecAuditMessageDoesNotIncludeCommand(t *testing.T) {
 	command := "echo super-secret-token"
-	got := runtimeExecAuditMessage(command, "app", kubeprovider.RuntimeExecResult{
-		Pod:      "app-123",
-		ExitCode: 0,
+	got := runtimeExecAuditMessage(command, kubeprovider.RuntimeExecResult{
+		Pod:       "app-123",
+		Container: "resolved-default-container",
+		ExitCode:  0,
+		Truncated: true,
+		Duration:  42,
 	})
 
 	if strings.Contains(got, command) || strings.Contains(got, "super-secret-token") {
 		t.Fatalf("audit message leaked command: %s", got)
 	}
-	for _, expected := range []string{"pod=app-123", "container=app", "exitCode=0", "commandBytes=", "commandSha256="} {
+	for _, expected := range []string{"pod=app-123", "container=resolved-default-container", "exitCode=0", "truncated=true", "durationMs=42", "commandBytes=", "commandSha256="} {
 		if !strings.Contains(got, expected) {
 			t.Fatalf("audit message missing %q: %s", expected, got)
 		}

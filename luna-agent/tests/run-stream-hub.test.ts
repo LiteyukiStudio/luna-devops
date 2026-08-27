@@ -38,7 +38,7 @@ async function fixture() {
 }
 
 describe("per-Run SSE hub", () => {
-  it("fans one Redis reader and one PG watcher out to 25 subscribers", async () => {
+  it("fans one live reader and one PG watcher out to 25 subscribers", async () => {
     const { repository, bus, run, turn } = await fixture()
     const manager = new RunStreamHubManager(repository, bus)
     const after = (await repository.getRunStreamPosition(run.id))!.nextEventSequence - 1

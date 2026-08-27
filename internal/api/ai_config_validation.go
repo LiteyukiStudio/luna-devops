@@ -28,7 +28,6 @@ var aiIntegerConfigBounds = map[string][2]int{
 	"ai.model.max_output_tokens":                   {256, 131072},
 	"ai.run.max_model_steps":                       {1, 1024},
 	"ai.run.max_input_k_bytes":                     {8, 8192},
-	"ai.run.navigate_action_ttl_seconds":           {10, 600},
 	"ai.tools.max_card_repair_attempts":            {1, 10},
 }
 

@@ -7,13 +7,13 @@ import type {
   CreatedTurn,
   CreateTurn,
   AIModelSnapshot,
+  ClaimedRun,
   Run,
+  RunExecutionSnapshot,
   RunEvent,
   TimelineItem,
   TimelineMutation,
   TimelinePage,
-  UIActionAcknowledgement,
-  UIActionDelivery,
 } from "../domain.js"
 import type { OfficialModelUsage, UsageUnavailableReason } from "../provider/provider.js"
 
@@ -61,9 +61,9 @@ export type RunStreamBatch = {
   expected: RunStreamPosition
   items: TimelineItem[]
   events: RunEvent[]
-  /** Redis live cursor high-watermark; transient deltas below it are intentionally not durable. */
+  /** In-memory stream high-watermark; transient deltas below it are intentionally not durable. */
   eventHighWatermark: number
-  /** Claim-time fencing generation. A superseded owner must never persist late output. */
+  /** Run-version fence. A superseded execution must never persist late output. */
   expectedRunVersion: number
   terminal?: {
     from: Run["status"]
@@ -93,9 +93,9 @@ export interface Repository {
   touchRunSelectedOperations(runId: string, operationIds: string[], limit: number): Promise<RunToolSelection>
   listActiveToolCatalogDigests(): Promise<string[]>
   cancelRun(ownerUserId: string, runId: string): Promise<Run | undefined>
-  claimNextQueuedRun(): Promise<Run | undefined>
-  listStaleRunningRuns(startedBefore: string): Promise<Array<Pick<Run, "id" | "rowVersion">>>
-  interruptAbandonedRun(runId: string, expectedRunVersion: number, eventHighWatermark: number): Promise<boolean>
+  claimNextQueuedRun(executionSnapshot?: RunExecutionSnapshot): Promise<ClaimedRun | undefined>
+  listRunningRuns(): Promise<Array<Pick<Run, "id" | "rowVersion">>>
+  interruptOrphanedRun(runId: string, expectedRunVersion: number): Promise<boolean>
   countActiveUserRuns(userId: string): Promise<number>
   getExecutionInput(runId: string): Promise<{
     conversationId: string
@@ -137,10 +137,6 @@ export interface Repository {
   getConversationSummary(conversationId: string): Promise<ConversationSummary | undefined>
   saveConversationSummary(summary: Omit<ConversationSummary, "createdAt" | "updatedAt">): Promise<ConversationSummary>
   listConversationHistory(conversationId: string, afterTurnIndex: number, beforeTurnIndex: number, limit: number): Promise<ConversationHistoryEntry[]>
-  hasToolApprovalExemption(runId: string, operationId: string): Promise<boolean>
-  grantToolApprovalExemption(runId: string, operationId: string, sourceToolCallId: string): Promise<void>
-  listToolApprovalExemptions(ownerUserId: string): Promise<Array<{ operationId: string, createdAt: string }>>
-  revokeToolApprovalExemption(ownerUserId: string, operationId: string): Promise<boolean>
   appendRunInput(runId: string, text: string): Promise<void>
   updateRun(runId: string, from: Run["status"], to: Run["status"], fields?: Partial<Run>): Promise<Run>
   appendItem(item: Omit<TimelineItem, "id" | "timelineIndex" | "revision" | "createdAt"> & { id?: string }): Promise<TimelineItem>
@@ -158,8 +154,5 @@ export interface Repository {
   finalizeStreamingItems(runId: string, status: Exclude<TimelineItem["status"], "streaming">): Promise<void>
   appendEvent(runId: string, type: string, data: Record<string, unknown>): Promise<RunEvent>
   getEvents(ownerUserId: string, runId: string, after: number): Promise<RunEvent[]>
-  createUIAction(runId: string, toolCallId: string, action: Record<string, unknown>, expiresAt: string): Promise<UIActionDelivery>
-  listPendingUIActions(ownerUserId: string, clientInstanceId: string): Promise<UIActionDelivery[]>
-  acknowledgeUIAction(ownerUserId: string, clientInstanceId: string, actionId: string, acknowledgement: UIActionAcknowledgement): Promise<UIActionDelivery | undefined>
   getTimeline(ownerUserId: string, conversationId: string, options?: TimelinePageOptions): Promise<TimelinePage | undefined>
 }

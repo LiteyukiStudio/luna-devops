@@ -9,15 +9,6 @@ import type { ModelToolCall } from "../provider/provider.js"
 import { agentMetrics, telemetryLog } from "../telemetry.js"
 import { createInteractionCardsInput } from "../tools/ui-cards.js"
 
-const CARD_MAX_ATTEMPTS = 2
-let maxCardRepairAttempts = CARD_MAX_ATTEMPTS
-
-export function setMaxCardRepairAttempts(attempts: number): void {
-  // 初次失败后只允许一次定向修复；第二次失败立即转为文字 fallback。
-  void attempts
-  maxCardRepairAttempts = CARD_MAX_ATTEMPTS
-}
-
 export type CardGeneration = {
   operationId: string
   itemId: string
@@ -32,6 +23,7 @@ export type CardGeneration = {
     placement: "inline" | "turn_end"
   }
   attempt: number
+  maxAttempts: number
   status: "streaming" | "completed" | "failed"
   issues?: InteractionCardValidationIssue[]
 }
@@ -46,6 +38,7 @@ export class CardGenerationService {
     runId: string,
     turnId: string,
     raw: unknown,
+    maxAttempts: number,
     operationId = "create_interaction_cards",
   ): Promise<CardGeneration> {
     const rawObject = raw && typeof raw === "object" && !Array.isArray(raw) ? raw as Record<string, unknown> : {}
@@ -83,7 +76,7 @@ export class CardGenerationService {
           summaryKey: "aiAssistant.cards.preparing",
           generationId,
           attempt: 0,
-          maxAttempts: maxCardRepairAttempts,
+          maxAttempts,
         },
       },
     }, "tool.started", {
@@ -102,6 +95,7 @@ export class CardGenerationService {
       generationId,
       placeholderArguments,
       attempt: 0,
+      maxAttempts,
       status: "streaming",
     }
     agentMetrics.cards.add(1, { phase: "started" })
@@ -122,7 +116,7 @@ export class CardGenerationService {
     if (!parsed.success) {
       const issues = validationIssues(parsed.error.issues)
       const attempt = await this.recordRepairFailure(runId, generation, issues, "ai.interaction_card_schema_invalid")
-      const failure = cardValidationFailure("create", issues, attempt, generation.generationId, "ai.interaction_card_schema_invalid", generation.operationId)
+      const failure = cardValidationFailure("create", issues, attempt, generation.maxAttempts, generation.generationId, "ai.interaction_card_schema_invalid", generation.operationId)
       agentMetrics.cards.add(1, { phase: "rejected", mode: "unknown" })
       telemetryLog("agent.card.schema_rejected", "warn", {
         "luna.run.id": runId,
@@ -184,7 +178,7 @@ export class CardGenerationService {
     const attempt = generation.attempt + 1
     generation.attempt = attempt
     generation.issues = issues
-    if (attempt >= maxCardRepairAttempts) {
+    if (attempt >= generation.maxAttempts) {
       await this.fail(runId, generation, errorCode)
       return attempt
     }
@@ -199,7 +193,7 @@ export class CardGenerationService {
         summaryKey: "aiAssistant.cards.repairing",
         generationId: generation.generationId,
         attempt,
-        maxAttempts: maxCardRepairAttempts,
+        maxAttempts: generation.maxAttempts,
         issues,
       },
     }, "tool.progress", {
@@ -208,7 +202,7 @@ export class CardGenerationService {
       operationId: "create_interaction_cards",
       modelOperationId: generation.operationId,
       timelineIndex: generation.timelineIndex,
-      result: cardValidationFailure("create", issues, attempt, generation.generationId, errorCode, generation.operationId),
+      result: cardValidationFailure("create", issues, attempt, generation.maxAttempts, generation.generationId, errorCode, generation.operationId),
     })
     return attempt
   }
@@ -236,7 +230,7 @@ export class CardGenerationService {
       errorCode,
       generationId: generation.generationId,
       attempt: generation.attempt,
-      maxAttempts: maxCardRepairAttempts,
+      maxAttempts: generation.maxAttempts,
       ...(generation.issues?.length ? { issues: generation.issues } : {}),
     }
     await this.repository.updateItemWithEvent(generation.itemId, "failed", {
@@ -279,11 +273,12 @@ export function cardValidationFailure(
   phase: InteractionCardValidationFailure["phase"],
   issues: InteractionCardValidationIssue[],
   attempt: number,
+  maxAttempts: number,
   generationId?: string,
   errorCode: InteractionCardValidationFailure["errorCode"] = "ai.interaction_card_schema_invalid",
   operationId = "create_interaction_cards",
 ): InteractionCardValidationFailure {
-  const retryable = attempt < maxCardRepairAttempts
+  const retryable = attempt < maxAttempts
   return {
     status: "rejected",
     errorCode,
@@ -291,7 +286,7 @@ export function cardValidationFailure(
     ...(generationId ? { generationId } : {}),
     retryable,
     attempt,
-    maxAttempts: maxCardRepairAttempts,
+    maxAttempts,
     issues,
     guidance: retryable
       ? `只修正 issues 中列出的字段并重新调用 ${operationId}；不要提供 generationId，Agent 会复用当前占位项。`
@@ -302,6 +297,7 @@ export function cardValidationFailure(
 export function providerArgumentFailure(
   error: NonNullable<ModelToolCall["argumentError"]>,
   attempt: number,
+  maxAttempts: number,
   generationId?: string,
   operationId = "create_interaction_cards",
 ): InteractionCardValidationFailure {
@@ -310,7 +306,7 @@ export function providerArgumentFailure(
     path: "$",
     message: error.message,
     expected: "完整 JSON 对象",
-  }], attempt, generationId, "ai.tool_arguments_json_invalid", operationId)
+  }], attempt, maxAttempts, generationId, "ai.tool_arguments_json_invalid", operationId)
   return {
     ...failure,
     guidance: failure.retryable

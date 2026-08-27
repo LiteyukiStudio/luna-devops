@@ -4,7 +4,6 @@ set -euo pipefail
 
 readonly ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 readonly HELM_CHART_DIR="${ROOT_DIR}/charts/luna-devops"
-readonly GOVULNCHECK_VERSION="v1.6.0"
 
 section() {
   printf '\n==> %s\n' "$1"
@@ -101,15 +100,8 @@ section "Building the documentation site"
 "${ROOT_DIR}/scripts/generate-changelog.sh"
 bash "${ROOT_DIR}/scripts/ci/check-docs.sh"
 
-section "Auditing pnpm dependencies"
-# GHSA-qwww-vcr4-c8h2 only affects React Router's unstable RSC APIs, which
-# neither the Vite SPA nor Rspress documentation site enables.
-pnpm --dir web audit --prod --audit-level=high --ignore=GHSA-qwww-vcr4-c8h2
-pnpm --dir docs audit --prod --audit-level=high --ignore=GHSA-qwww-vcr4-c8h2
-pnpm --dir luna-agent audit --prod --audit-level=high
-
-section "Scanning Go dependencies and reachable code"
-go run "golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}" ./...
+section "Auditing dependency vulnerabilities"
+bash "${ROOT_DIR}/scripts/ci/check-dependencies.sh"
 
 section "Linting, rendering, and testing the Helm chart"
 bash "${ROOT_DIR}/scripts/ci/check-helm.sh"

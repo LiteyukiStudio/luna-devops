@@ -17,6 +17,7 @@ export interface InternalKeys {
   actorSigningKey: string
   callbackServiceToken: string
   toolArgumentsEncryptionKey: Buffer
+  runExecutionSnapshotEncryptionKey: Buffer
 }
 
 export function deriveInternalKeys(secret: string): InternalKeys {
@@ -29,5 +30,6 @@ export function deriveInternalKeys(secret: string): InternalKeys {
     actorSigningKey: deriveText("actor-context-signing-key"),
     callbackServiceToken: deriveText("agent-callback-service-token"),
     toolArgumentsEncryptionKey: derive(secret, "tool-arguments-encryption-key"),
+    runExecutionSnapshotEncryptionKey: derive(secret, "run-execution-snapshot-encryption-key"),
   }
 }

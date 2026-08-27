@@ -68,6 +68,35 @@ model output, tool arguments, and tool results to controlled traces. Logs keep
 event metadata only. It is disabled by default because the trace content can
 contain user and platform data.
 
+The chart enables an API-to-Agent ingress NetworkPolicy by default. Agent
+egress isolation is opt-in because the Agent may connect to externally managed
+model Providers, OpenTelemetry Collectors, and PostgreSQL endpoints. To
+enable it, allow every destination first:
+
+```yaml
+ai:
+  agent:
+    networkPolicy:
+      egress:
+        enabled: true
+        additionalCIDRs:
+          - 203.0.113.10/32
+        additionalRules:
+          - to:
+              - namespaceSelector:
+                  matchLabels:
+                    kubernetes.io/metadata.name: observability
+            ports:
+              - protocol: TCP
+                port: 4318
+```
+
+Native Kubernetes NetworkPolicy does not match dynamic FQDNs. A model Provider
+whose addresses change cannot be expressed reliably as a static IP block; use
+a CNI with an FQDN policy or a stable egress proxy for that case. The separate
+non-root image user, read-only Agent root filesystem, disabled ServiceAccount
+token mount, and Secret references remain enforced independently of egress.
+
 ## Send telemetry to an OpenTelemetry Collector
 
 The Collector is deployed separately from this chart. Configure one OTLP HTTP

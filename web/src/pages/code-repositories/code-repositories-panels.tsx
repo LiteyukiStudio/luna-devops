@@ -5,7 +5,6 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { gitOAuthStartUrl } from '@/api'
-import { useSession } from '@/app/session-context'
 import { DataList } from '@/components/common/data-list'
 import { EditActionButton } from '@/components/common/edit-action-button'
 import { StatusBadge, StatusValueBadge } from '@/components/common/status-badge'
@@ -374,16 +373,6 @@ function GuideValue({ important, label, value }: { important?: boolean, label: s
 
 export function CredentialOAuthGuide({ provider }: { provider: GitProvider }) {
   const { t } = useTranslation()
-  const { debugOverride } = useSession()
-  if (debugOverride) {
-    return (
-      <Alert>
-        <Info />
-        <AlertTitle>{t('codeRepositoriesView.oauthDebugBlockedTitle')}</AlertTitle>
-        <AlertDescription>{t('codeRepositoriesView.oauthDebugBlockedDescription')}</AlertDescription>
-      </Alert>
-    )
-  }
   if (isGitOAuthReady(provider)) {
     return (
       <Alert>

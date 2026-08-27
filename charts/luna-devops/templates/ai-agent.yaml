@@ -25,7 +25,9 @@ metadata:
   labels:
     {{- include "luna-devops.componentLabels" (dict "root" . "component" "agent") | nindent 4 }}
 spec:
-  replicas: {{ .Values.ai.agent.replicaCount }}
+  strategy:
+    type: Recreate
+  replicas: 1
   selector:
     matchLabels:
       {{- include "luna-devops.selectorLabels" . | nindent 6 }}
@@ -82,11 +84,6 @@ spec:
                 secretKeyRef:
                   name: {{ include "luna-devops.databaseUrlSecretName" . }}
                   key: {{ include "luna-devops.databaseUrlSecretKey" . }}
-            - name: REDIS_ADDR
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "luna-devops.redisURLSecretName" . }}
-                  key: {{ include "luna-devops.redisURLSecretKey" . }}
             - name: AI_DATABASE_MAX_CONNECTIONS
               value: {{ .Values.ai.agent.database.maxConnections | quote }}
             - name: AI_DATABASE_CONNECTION_TIMEOUT_MS
@@ -141,19 +138,4 @@ spec:
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-{{- if .Values.ai.agent.podDisruptionBudget.enabled }}
----
-apiVersion: policy/v1
-kind: PodDisruptionBudget
-metadata:
-  name: {{ include "luna-devops.agentName" . }}
-  labels:
-    {{- include "luna-devops.componentLabels" (dict "root" . "component" "agent") | nindent 4 }}
-spec:
-  minAvailable: {{ .Values.ai.agent.podDisruptionBudget.minAvailable }}
-  selector:
-    matchLabels:
-      {{- include "luna-devops.selectorLabels" . | nindent 6 }}
-      app.kubernetes.io/component: agent
-{{- end }}
 {{- end }}

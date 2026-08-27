@@ -69,7 +69,8 @@ describe("real PlatformCatalog retrieval", () => {
     const browsed = Array.from({ length: Math.ceil(operations.length / 100) }, (_, index) =>
       platformCatalog.search({ page: index + 1, pageSize: 100 }).items.map(item => item.operationId)).flat()
 
-    expect(operations).toHaveLength(209)
+    // Stateful runtime command sessions were three operations; runtime exec is now one stateless operation.
+    expect(operations).toHaveLength(206)
     expect(new Set(browsed)).toEqual(new Set(operations.map(operation => operation.operationId)))
     for (const operation of operations) {
       expect(platformCatalog.search({ query: operation.operationId, pageSize: 8 }).items[0]?.operationId)

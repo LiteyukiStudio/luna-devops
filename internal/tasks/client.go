@@ -277,7 +277,7 @@ func taskOperationName(taskType string) string {
 func PolicyForType(taskType string) EnqueuePolicy {
 	switch taskType {
 	case TypeBuildRun:
-		return EnqueuePolicy{Queue: QueueBuild, MaxRetry: 1, Timeout: 90 * time.Minute, Retention: 24 * time.Hour, Unique: 30 * time.Minute}
+		return EnqueuePolicy{Queue: QueueBuild, MaxRetry: 0, Timeout: 90 * time.Minute, Retention: 24 * time.Hour, Unique: 30 * time.Minute}
 	case TypeDeployRun:
 		return EnqueuePolicy{Queue: QueueDeploy, MaxRetry: 3, Timeout: 30 * time.Minute, Retention: 24 * time.Hour, Unique: 30 * time.Minute}
 	case TypeGatewayApply:

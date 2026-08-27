@@ -1,7 +1,10 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
-import type { CreatedTurn } from "../src/domain.js"
+import type { CreatedTurn, RunExecutionSnapshot } from "../src/domain.js"
+import { PayloadCipher } from "../src/payload-cipher.js"
 import { PostgresRepository } from "../src/persistence/postgres.js"
 import { RunStateConflictError } from "../src/persistence/repository.js"
+import type { RemoteProviderConfig } from "../src/provider/config-client.js"
+import { defaultRuntimeSettings, type RemoteRuntimeSettings } from "../src/runtime-settings.js"
 
 /**
  * 真实 PostgreSQL 集成测试：验证 Drizzle 持久层的事务、并发与状态机语义。
@@ -10,6 +13,12 @@ import { RunStateConflictError } from "../src/persistence/repository.js"
  */
 const databaseUrl = process.env.AGENT_TEST_DATABASE_URL
 const suite = databaseUrl ? describe : describe.skip
+const runExecutionSnapshotKey = Buffer.alloc(32, 17)
+const runExecutionSnapshotCipher = () => new PayloadCipher(
+  runExecutionSnapshotKey,
+  "run-execution-snapshot-v1",
+  "ai.run_execution_snapshot_key_unavailable",
+)
 
 suite("PostgresRepository (Drizzle) integration", () => {
   let repository: PostgresRepository
@@ -18,9 +27,9 @@ suite("PostgresRepository (Drizzle) integration", () => {
   const key = (name: string) => `it-${name}-${suffix}`
 
   beforeAll(async () => {
-    repository = new PostgresRepository(databaseUrl!)
+    repository = new PostgresRepository(databaseUrl!, {}, runExecutionSnapshotCipher())
     await repository.pool.query(`
-      truncate ai.tool_approval_exemptions, ai.ui_actions, ai.tool_calls, ai.run_events, ai.items,
+      truncate ai.tool_calls, ai.run_events, ai.items,
                ai.idempotency_keys, ai.conversation_summaries, ai.runs, ai.turns, ai.conversations
       cascade
     `)
@@ -77,6 +86,58 @@ suite("PostgresRepository (Drizzle) integration", () => {
     expect(claimed[0]?.status).toBe("running")
   })
 
+  it("encrypts and restores the first-claim execution snapshot after a repository restart", async () => {
+    while (await repository.claimNextQueuedRun()) { /* drain earlier queued fixtures */ }
+    const conversation = await repository.createConversation(owner, "配置快照")
+    const created = await repository.createTurn(owner, {
+      conversationId: conversation.id, input: "等待批准", pageContext: {},
+      idempotencyKey: key("execution-snapshot"), actorSessionId: key("session"),
+    })
+    const oldSnapshot = executionSnapshot("cfg-old", "old-provider-secret", 512, 2)
+    const newSnapshot = executionSnapshot("cfg-new", "new-provider-secret", 1_024, 5)
+
+    const firstClaim = await repository.claimNextQueuedRun(oldSnapshot)
+    expect(firstClaim?.id).toBe(created.run.id)
+    expect(firstClaim?.executionSnapshot?.providerConfig?.version).toBe("cfg-old")
+    expect(firstClaim?.executionSnapshot?.runtimeSettings.assistantMaxOutputTokens).toBe(512)
+    expect(await repository.getRun(owner, created.run.id)).not.toHaveProperty("executionSnapshot")
+    const stored = await repository.pool.query<{ execution_snapshot_ciphertext: string }>(
+      "select execution_snapshot_ciphertext from ai.runs where id = $1",
+      [created.run.id],
+    )
+    expect(stored.rows[0]?.execution_snapshot_ciphertext).not.toContain("old-provider-secret")
+    expect(stored.rows[0]?.execution_snapshot_ciphertext).not.toContain("https://cfg-old.example/v1/")
+
+    await repository.updateRun(created.run.id, "running", "waiting_approval")
+    await repository.updateRun(created.run.id, "waiting_approval", "queued")
+    const restarted = new PostgresRepository(databaseUrl!, {}, runExecutionSnapshotCipher())
+    try {
+      const resumed = await restarted.claimNextQueuedRun(newSnapshot)
+      expect(resumed?.id).toBe(created.run.id)
+      expect(resumed?.executionSnapshot?.providerConfig?.version).toBe("cfg-old")
+      expect(resumed?.executionSnapshot?.providerConfig?.provider.apiKey).toBe("old-provider-secret")
+      expect(resumed?.executionSnapshot?.runtimeSettings.assistantMaxOutputTokens).toBe(512)
+      expect(resumed?.executionSnapshot?.runtimeSettings.maxCardRepairAttempts).toBe(2)
+      expect(resumed?.executionSnapshot?.runtimeSettings.runMaxToolCalls).toBe(32)
+      if (!resumed) throw new Error("expected resumed Run")
+      await restarted.updateRun(resumed.id, "running", "completed", { completedAt: new Date().toISOString() })
+
+      const next = await restarted.createTurn(owner, {
+        conversationId: conversation.id, input: "新任务", pageContext: {},
+        idempotencyKey: key("execution-snapshot-next"), actorSessionId: key("session"),
+      })
+      const nextClaim = await restarted.claimNextQueuedRun(newSnapshot)
+      expect(nextClaim?.id).toBe(next.run.id)
+      expect(nextClaim?.executionSnapshot?.providerConfig?.version).toBe("cfg-new")
+      expect(nextClaim?.executionSnapshot?.runtimeSettings.assistantMaxOutputTokens).toBe(1_024)
+      expect(nextClaim?.executionSnapshot?.runtimeSettings.maxCardRepairAttempts).toBe(5)
+      expect(nextClaim?.executionSnapshot?.runtimeSettings.runMaxToolCalls).toBe(64)
+    }
+    finally {
+      await restarted.close()
+    }
+  })
+
   it("transitions run state atomically and reports authoritative actualStatus on conflict", async () => {
     const conversation = await repository.createConversation(owner, "状态机")
     const created = await repository.createTurn(owner, { conversationId: conversation.id, input: "状态", pageContext: {}, idempotencyKey: key("state"), actorSessionId: key("session") })
@@ -104,6 +165,75 @@ suite("PostgresRepository (Drizzle) integration", () => {
     const events = await repository.getEvents(owner, created.run.id, 0)
     expect(events.map(event => event.type)).toContain("run.canceled")
     expect(events.map(event => event.type)).not.toContain("run.completed")
+  })
+
+  it("cancels pending ToolCalls and their timeline items in the Run transaction", async () => {
+    const conversation = await repository.createConversation(owner, "审批取消")
+    const created = await repository.createTurn(owner, {
+      conversationId: conversation.id,
+      input: "取消待审批操作",
+      pageContext: {},
+      idempotencyKey: key("cancel-approval"),
+      actorSessionId: key("session"),
+    })
+    await repository.updateRun(created.run.id, "queued", "waiting_approval")
+    const pendingId = `aitool_pending_${suffix}`
+    const completedId = `aitool_completed_${suffix}`
+    await repository.pool.query(`
+      insert into ai.tool_calls (
+        id, run_id, operation_id, status, input_mode, arguments, arguments_hash,
+        attempt, row_version, result, error_code
+      ) values
+        ($1, $2, 'updateThing', 'awaiting_approval', 'model', '{}'::jsonb, 'sha256:pending', 1, 2, null, null),
+        ($3, $2, 'readThing', 'succeeded', 'model', '{}'::jsonb, 'sha256:completed', 1, 4, '{"ok":true}'::jsonb, null)
+    `, [pendingId, created.run.id, completedId])
+    await repository.appendItem({
+      id: `${pendingId}:item`,
+      runId: created.run.id,
+      turnId: created.turn.id,
+      type: "tool_call",
+      status: "streaming",
+      content: { toolCallId: pendingId, operationId: "updateThing", status: "awaiting_approval" },
+    })
+    await repository.appendItem({
+      id: `${completedId}:item`,
+      runId: created.run.id,
+      turnId: created.turn.id,
+      type: "tool_call",
+      status: "completed",
+      content: { toolCallId: completedId, operationId: "readThing", status: "succeeded", result: { ok: true } },
+    })
+
+    const canceled = await repository.cancelRun(owner, created.run.id)
+
+    expect(canceled?.status).toBe("canceled")
+    const calls = await repository.pool.query<{ id: string, status: string, row_version: number, error_code: string | null, result: unknown }>(
+      `select id, status, row_version, error_code, result from ai.tool_calls where id = any($1::text[]) order by id`,
+      [[pendingId, completedId]],
+    )
+    expect(calls.rows.find(row => row.id === pendingId)).toMatchObject({
+      status: "canceled",
+      row_version: 3,
+      error_code: "ai.run_canceled",
+      result: { code: "ai.run_canceled", retryable: false },
+    })
+    expect(calls.rows.find(row => row.id === completedId)).toMatchObject({
+      status: "succeeded",
+      row_version: 4,
+      error_code: null,
+      result: { ok: true },
+    })
+    const timeline = await repository.getTimeline(owner, conversation.id)
+    const pendingItem = timeline?.turns[0]?.items.find(item => item.id === `${pendingId}:item`)
+    const completedItem = timeline?.turns[0]?.items.find(item => item.id === `${completedId}:item`)
+    expect(pendingItem).toMatchObject({
+      status: "completed",
+      revision: 2,
+      content: { status: "canceled", errorCode: "ai.run_canceled", result: { code: "ai.run_canceled", retryable: false } },
+    })
+    expect(completedItem).toMatchObject({ status: "completed", revision: 1, content: { status: "succeeded", result: { ok: true } } })
+    const events = await repository.getEvents(owner, created.run.id, 0)
+    expect(events.findIndex(event => event.type === "item.finalized")).toBeLessThan(events.findIndex(event => event.type === "run.canceled"))
   })
 
   it("rolls back the whole transaction when any step fails", async () => {
@@ -253,24 +383,6 @@ suite("PostgresRepository (Drizzle) integration", () => {
     expect((await repository.getConversationSummary(conversation.id))?.sourceTurnCount).toBe(2)
   })
 
-  it("delivers, expires and acknowledges UI actions idempotently", async () => {
-    const conversation = await repository.createConversation(owner, "卡片")
-    const created = await repository.createTurn(owner, {
-      conversationId: conversation.id, input: "卡片", pageContext: {}, idempotencyKey: key("ui"), clientInstanceId: "client-1", actorSessionId: key("session"),
-    })
-    const expiresAt = new Date(Date.now() + 60_000).toISOString()
-    const action = await repository.createUIAction(created.run.id, `aitool_${suffix}`, { kind: "navigate" }, expiresAt)
-    expect(action.status).toBe("pending")
-    const duplicated = await repository.createUIAction(created.run.id, `aitool_${suffix}`, { kind: "navigate" }, expiresAt)
-    expect(duplicated.id).toBe(action.id)
-    const pending = await repository.listPendingUIActions(owner, "client-1")
-    expect(pending).toHaveLength(1)
-    expect(pending[0]?.attempts).toBe(2)
-    const acked = await repository.acknowledgeUIAction(owner, "client-1", action.id, { status: "succeeded", actualPath: "/apps" })
-    expect(acked?.status).toBe("succeeded")
-    expect(await repository.listPendingUIActions(owner, "client-1")).toHaveLength(0)
-  })
-
   it("appends additional input to a queued run turn", async () => {
     const conversation = await repository.createConversation(owner, "补充输入")
     const created = await repository.createTurn(owner, { conversationId: conversation.id, input: "原始", pageContext: {}, idempotencyKey: key("append"), actorSessionId: key("session") })
@@ -279,23 +391,56 @@ suite("PostgresRepository (Drizzle) integration", () => {
     await expect(repository.appendRunInput("airun_missing", "x")).rejects.toThrow("ai.run_not_found")
   })
 
-  it("lists and revokes approval exemptions by owner and operation", async () => {
-    const conversation = await repository.createConversation(owner, "审批豁免")
-    const created = await repository.createTurn(owner, {
-      conversationId: conversation.id,
-      input: "restart",
-      pageContext: {},
-      idempotencyKey: key("approval-exemption"),
-      actorSessionId: key("session"),
-    })
-    await repository.grantToolApprovalExemption(created.run.id, "restartRelease", "aitool_approval_exemption")
-    const exemptions = await repository.listToolApprovalExemptions(owner)
-    expect(exemptions).toHaveLength(1)
-    expect(exemptions[0]?.operationId).toBe("restartRelease")
-    expect(typeof exemptions[0]?.createdAt).toBe("string")
-    expect(await repository.listToolApprovalExemptions("usr_other")).toEqual([])
-    expect(await repository.revokeToolApprovalExemption("usr_other", "restartRelease")).toBe(false)
-    expect(await repository.revokeToolApprovalExemption(owner, "restartRelease")).toBe(true)
-    expect(await repository.listToolApprovalExemptions(owner)).toEqual([])
-  })
 })
+
+function executionSnapshot(version: string, apiKey: string, assistantMaxOutputTokens: number, maxCardRepairAttempts: number): RunExecutionSnapshot {
+  return {
+    runtimeSettings: {
+      ...defaultRuntimeSettings,
+      assistantMaxOutputTokens,
+      maxCardRepairAttempts,
+      runMaxToolCalls: maxCardRepairAttempts === 2 ? 32 : 64,
+    },
+    providerConfig: remoteProviderConfig(version, apiKey, assistantMaxOutputTokens, maxCardRepairAttempts),
+  }
+}
+
+function remoteProviderConfig(version: string, apiKey: string, assistantMaxOutputTokens: number, maxCardRepairAttempts: number): RemoteProviderConfig {
+  const runtime: RemoteRuntimeSettings = {
+    providerTimeoutMs: defaultRuntimeSettings.providerTimeoutMs,
+    maxRequestRetries: defaultRuntimeSettings.maxRequestRetries,
+    runTimeoutMs: defaultRuntimeSettings.runTimeoutMs,
+    agentConcurrentRuns: defaultRuntimeSettings.agentConcurrentRuns,
+    userConcurrentRuns: defaultRuntimeSettings.userConcurrentRuns,
+    assistantMaxOutputTokens,
+    maxModelSteps: defaultRuntimeSettings.maxModelSteps,
+    runMaxToolCalls: maxCardRepairAttempts === 2 ? 32 : 64,
+    maxInputBytes: defaultRuntimeSettings.maxInputBytes,
+    maxCardRepairAttempts,
+    contextMaxUncompressedTurnCount: defaultRuntimeSettings.contextMaxUncompressedTurnCount,
+    contextMaxCompressionTurnsPerCompile: defaultRuntimeSettings.contextMaxCompressionTurnsPerCompile,
+    contextSummaryMaxOutputTokens: defaultRuntimeSettings.contextSummaryMaxOutputTokens,
+  }
+  return {
+    version,
+    provider: {
+      baseUrl: `https://${version}.example/v1/`,
+      apiKey,
+      providerCompatibility: "openai",
+      promptCacheKeyMode: "disabled",
+      channelAffinityEnabled: false,
+      configured: true,
+      models: [{
+        id: "aimod_snapshot",
+        name: "snapshot-model",
+        maxContextTokens: 32_000,
+        maxOutputTokens: 8_000,
+        inputCreditsPerMillion: "1",
+        outputCreditsPerMillion: "2",
+        cachedInputCreditsPerMillion: "0.5",
+      }],
+    },
+    runtime,
+    toolCatalog: [],
+  }
+}

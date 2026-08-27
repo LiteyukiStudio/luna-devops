@@ -17,7 +17,7 @@ paths:
     get:
       operationId: getAgentReadiness
       security: []
-      responses: { "200": { description: PostgreSQL, the AI schema, Provider configuration, and Redis active-stream transport are ready. }, "503": { description: At least one required dependency is unavailable; Redis failures use ai.stream_transport_unavailable., content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } } }
+      responses: { "200": { description: PostgreSQL, the AI schema, and the last valid Provider configuration are ready. }, "503": { description: A required dependency is unavailable., content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } } }
   /internal/v1/capabilities:
     get:
       operationId: getInternalAICapabilities
@@ -88,23 +88,6 @@ paths:
         - { $ref: "#/components/parameters/IdempotencyKey" }
       requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } }
       responses: { "202": { description: Tool action accepted, content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } }, "409": { $ref: "#/components/responses/AgentError" } }
-  /internal/v1/ui-actions/pending:
-    get:
-      operationId: listInternalPendingAIUIActions
-      parameters:
-        - { $ref: "#/components/parameters/ActorContext" }
-        - { $ref: "#/components/parameters/ActorSignature" }
-        - { name: clientInstanceId, in: query, required: true, schema: { type: string, minLength: 16, maxLength: 80, pattern: "^[A-Za-z0-9_-]+$" } }
-      responses: { "200": { description: Pending UI actions bound to the actor and browser client, content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } } }
-  /internal/v1/ui-actions/{actionId}/ack:
-    post:
-      operationId: acknowledgeInternalAIUIAction
-      parameters:
-        - { $ref: "#/components/parameters/ActorContext" }
-        - { $ref: "#/components/parameters/ActorSignature" }
-        - { name: actionId, in: path, required: true, schema: { type: string } }
-      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } }
-      responses: { "202": { description: UI action acknowledgement accepted, content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } }, "404": { $ref: "#/components/responses/AgentError" }, "409": { $ref: "#/components/responses/AgentError" } }
   /internal/v1/turns/{turnId}/runs:
     parameters:
       - { $ref: "#/components/parameters/ActorContext" }
@@ -132,12 +115,12 @@ paths:
         - { $ref: "#/components/parameters/RunId" }
         - { name: after, in: query, required: false, schema: { type: integer, format: int64, minimum: 0 } }
         - { name: Last-Event-ID, in: header, required: false, schema: { type: string } }
-      responses: { "200": { description: Recoverable SSE stream of bounded active-Run AIEvent frames plus transient stream.heartbeat frames. Business frames replay by after or Last-Event-ID; heartbeats have no id, are not persisted, and do not advance eventSequence. Completed output and workflow terminal facts are available from the authoritative Timeline., content: { text/event-stream: { schema: { type: string } } } }, "404": { $ref: "#/components/responses/AgentError" }, "429": { description: Per-Run or per-instance SSE subscriber limit reached., content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } }, "503": { description: Redis active-stream transport is unavailable., content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } } }
+      responses: { "200": { description: Recoverable SSE stream from the single Agent replica, backed by a bounded live buffer and PostgreSQL durable replay. Business frames replay by after or Last-Event-ID; heartbeats have no id, are not persisted, and do not advance eventSequence. Completed output and workflow terminal facts are available from the authoritative Timeline., content: { text/event-stream: { schema: { type: string } } } }, "404": { $ref: "#/components/responses/AgentError" }, "429": { description: Per-Run or per-instance SSE subscriber limit reached., content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } } }
   /internal/v1/runs/{runId}/cancel:
     post:
       operationId: cancelInternalAIRun
       parameters: [{ $ref: "#/components/parameters/ActorContext" }, { $ref: "#/components/parameters/ActorSignature" }, { $ref: "#/components/parameters/RunId" }]
-      responses: { "202": { description: Cancellation accepted or still processing; running Runs acknowledge only after the owner flushes the terminal batch., content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } }, "404": { $ref: "#/components/responses/AgentError" }, "503": { description: Redis cancellation transport is unavailable., content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } } }
+      responses: { "202": { description: Cancellation is durably reflected in the returned Run state and signals any active model or platform-tool HTTP request on the single Agent replica. Aborting an external request is best-effort after that system has committed a side effect; authoritative business readback remains required., content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } }, "404": { $ref: "#/components/responses/AgentError" } }
   /internal/v1/runs/{runId}/input:
     post:
       operationId: submitInternalAIRunInput
@@ -150,19 +133,6 @@ paths:
       parameters: [{ $ref: "#/components/parameters/ActorContext" }, { $ref: "#/components/parameters/ActorSignature" }, { $ref: "#/components/parameters/RunId" }, { $ref: "#/components/parameters/ToolCallId" }]
       requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } }
       responses: { "202": { description: Decision accepted, content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } }, "409": { $ref: "#/components/responses/AgentError" } }
-  /internal/v1/tool-approval-exemptions:
-    get:
-      operationId: listInternalAIToolApprovalExemptions
-      parameters: [{ $ref: "#/components/parameters/ActorContext" }, { $ref: "#/components/parameters/ActorSignature" }]
-      responses: { "200": { description: Current actor's user-and-operation scoped approval exemptions, content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } } }
-  /internal/v1/tool-approval-exemptions/{operationId}:
-    delete:
-      operationId: revokeInternalAIToolApprovalExemption
-      parameters:
-        - { $ref: "#/components/parameters/ActorContext" }
-        - { $ref: "#/components/parameters/ActorSignature" }
-        - { name: operationId, in: path, required: true, schema: { type: string } }
-      responses: { "204": { description: Exemption revoked or already absent. } }
 components:
   securitySchemes:
     APIServiceToken: { type: http, scheme: bearer, bearerFormat: short-lived EdDSA service JWT }
@@ -220,7 +190,7 @@ components:
     AgentCreateTurnInput:
       type: object
       additionalProperties: false
-      required: [runId, modelId, input, pageContext, clientInstanceId]
+      required: [runId, modelId, input, pageContext]
       properties:
         runId: { type: string, minLength: 1, maxLength: 128, description: Stable Run ID preallocated by the authenticated Luna API BFF. }
         modelId: { type: string, minLength: 1 }
@@ -239,7 +209,6 @@ components:
             cachedInputCreditsPerMillion: { type: string, pattern: '^\d+(\.\d{1,8})?$' }
         input: { type: object, additionalProperties: true }
         pageContext: { type: object, additionalProperties: true }
-        clientInstanceId: { type: string, minLength: 16, maxLength: 80 }
     AgentConversationPage:
       type: object
       additionalProperties: false

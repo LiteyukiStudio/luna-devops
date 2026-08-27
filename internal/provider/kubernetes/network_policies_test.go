@@ -11,21 +11,21 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 )
 
-func TestEnsureBuildNetworkPolicyCreatesDefaultDenyPolicy(t *testing.T) {
+func TestEnsureBuildPolicyCreatesDefaultDenyPolicy(t *testing.T) {
 	client := NewClientForInterface(fake.NewSimpleClientset())
-	spec := BuildNetworkPolicySpec{
+	buildPolicy := networkpolicy.BuildPolicy{
 		Name:      "luna-build-egress",
 		Namespace: "luna-build",
-		Labels: map[string]string{
+		PodLabels: map[string]string{
 			"luna.devops/scope": "build",
 		},
 	}
 
-	if err := client.EnsureBuildNetworkPolicy(context.Background(), spec); err != nil {
-		t.Fatalf("EnsureBuildNetworkPolicy returned error: %v", err)
+	if err := client.EnsureBuildPolicy(context.Background(), buildPolicy); err != nil {
+		t.Fatalf("EnsureBuildPolicy returned error: %v", err)
 	}
 
-	policy, err := client.client.NetworkingV1().NetworkPolicies("luna-build").Get(context.Background(), spec.Name, metav1.GetOptions{})
+	policy, err := client.client.NetworkingV1().NetworkPolicies("luna-build").Get(context.Background(), buildPolicy.Name, metav1.GetOptions{})
 	if err != nil {
 		t.Fatalf("get policy: %v", err)
 	}
@@ -40,21 +40,21 @@ func TestEnsureBuildNetworkPolicyCreatesDefaultDenyPolicy(t *testing.T) {
 	}
 }
 
-func TestEnsureBuildNetworkPolicyUpdatesPolicy(t *testing.T) {
+func TestEnsureBuildPolicyUpdatesPolicy(t *testing.T) {
 	client := NewClientForInterface(fake.NewSimpleClientset())
-	spec := BuildNetworkPolicySpec{
+	buildPolicy := networkpolicy.BuildPolicy{
 		Name:      "luna-build-egress",
 		Namespace: "luna-build",
-		Labels:    map[string]string{"luna.devops/scope": "build"},
+		PodLabels: map[string]string{"luna.devops/scope": "build"},
 	}
-	if err := client.EnsureBuildNetworkPolicy(context.Background(), spec); err != nil {
+	if err := client.EnsureBuildPolicy(context.Background(), buildPolicy); err != nil {
 		t.Fatalf("create policy: %v", err)
 	}
-	spec.Egress = []networkingv1.NetworkPolicyEgressRule{{Ports: []networkingv1.NetworkPolicyPort{TCPPort(443)}}}
-	if err := client.EnsureBuildNetworkPolicy(context.Background(), spec); err != nil {
+	buildPolicy.Egress = []networkpolicy.EgressRule{{Ports: []networkpolicy.Port{{Protocol: "TCP", Number: 443}}}}
+	if err := client.EnsureBuildPolicy(context.Background(), buildPolicy); err != nil {
 		t.Fatalf("update policy: %v", err)
 	}
-	policy, err := client.client.NetworkingV1().NetworkPolicies("luna-build").Get(context.Background(), spec.Name, metav1.GetOptions{})
+	policy, err := client.client.NetworkingV1().NetworkPolicies("luna-build").Get(context.Background(), buildPolicy.Name, metav1.GetOptions{})
 	if err != nil {
 		t.Fatalf("get policy: %v", err)
 	}

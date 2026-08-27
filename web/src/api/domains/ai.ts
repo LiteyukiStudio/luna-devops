@@ -4,11 +4,8 @@ import type {
   AIModelConfig,
   AIModelOption,
   AIPaginatedResponse,
-  AIPendingUIActions,
   AITimeline,
-  AIToolApprovalExemptions,
   AITurnCreated,
-  AIUIActionAcknowledgement,
 } from '../ai-types'
 import { paginationQuery, request } from '../core'
 
@@ -41,33 +38,22 @@ export const aiApi = {
     const suffix = query.size > 0 ? `?${query}` : ''
     return request<AITimeline>(`/ai/conversations/${encodeURIComponent(conversationId)}/timeline${suffix}`)
   },
-  createAITurn: (conversationId: string, payload: { modelId: string, input: { parts: Array<{ type: 'text', text: string }> }, pageContext: Record<string, unknown>, clientInstanceId: string }, idempotencyKey: string) =>
+  createAITurn: (conversationId: string, payload: { modelId: string, input: { parts: Array<{ type: 'text', text: string }> }, pageContext: Record<string, unknown> }, idempotencyKey: string) =>
     request<AITurnCreated>(`/ai/conversations/${encodeURIComponent(conversationId)}/turns`, {
       method: 'POST',
       headers: { 'Idempotency-Key': idempotencyKey },
       body: JSON.stringify(payload),
     }),
-  executeAIToolAction: (conversationId: string, payload: { operationId: string, arguments: Record<string, unknown>, message: string, clientInstanceId: string }, idempotencyKey: string) =>
+  executeAIToolAction: (conversationId: string, payload: { operationId: string, arguments: Record<string, unknown>, message: string }, idempotencyKey: string) =>
     request<AITurnCreated>(`/ai/conversations/${encodeURIComponent(conversationId)}/tool-actions`, {
       method: 'POST',
       headers: { 'Idempotency-Key': idempotencyKey },
       body: JSON.stringify(payload),
     }),
-  listPendingAIUIActions: (clientInstanceId: string, signal?: AbortSignal) =>
-    request<AIPendingUIActions>(`/ai/ui-actions/pending?${new URLSearchParams({ clientInstanceId })}`, { signal }),
-  acknowledgeAIUIAction: (actionId: string, payload: AIUIActionAcknowledgement) =>
-    request<void>(`/ai/ui-actions/${encodeURIComponent(actionId)}/ack`, {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    }),
   cancelAIRun: (runId: string) =>
     request<void>(`/ai/runs/${encodeURIComponent(runId)}/cancel`, { method: 'POST' }),
-  decideAIToolApproval: (runId: string, toolCallId: string, payload: { decision: 'reject' | 'approve' | 'approve_always', reason?: string }) =>
+  decideAIToolApproval: (runId: string, toolCallId: string, payload: { decision: 'reject' | 'approve' }) =>
     request<void>(`/ai/runs/${encodeURIComponent(runId)}/approvals/${encodeURIComponent(toolCallId)}/decision`, { method: 'POST', body: JSON.stringify(payload) }),
-  listAIToolApprovalExemptions: () =>
-    request<AIToolApprovalExemptions>('/ai/tool-approval-exemptions'),
-  revokeAIToolApprovalExemption: (operationId: string) =>
-    request<void>(`/ai/tool-approval-exemptions/${encodeURIComponent(operationId)}`, { method: 'DELETE' }),
   submitAIRunInput: (runId: string, payload: { input: { parts: Array<{ type: 'text', text: string }> }, expectedVersion: number }) =>
     request<void>(`/ai/runs/${encodeURIComponent(runId)}/input`, { method: 'POST', body: JSON.stringify(payload) }),
 }

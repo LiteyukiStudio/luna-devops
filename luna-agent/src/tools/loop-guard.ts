@@ -17,6 +17,7 @@ export type ToolLoopSnapshot = {
 
 export interface LoopGuard {
   setMaxToolCalls(limit: number): void
+  setRunMaxToolCalls(runId: string, limit: number): void
   beforePropose(call: ToolLoopCall): void
   beforeExecute(call: ToolLoopCall): void
   blockNonRetryable(call: ToolLoopCall): void
@@ -64,6 +65,11 @@ export class InMemoryLoopGuard implements LoopGuard {
 
   setMaxToolCalls(limit: number): void {
     this.maxToolCalls = validateMaxToolCalls(limit)
+  }
+
+  setRunMaxToolCalls(runId: string, limit: number): void {
+    const state = this.state(runId)
+    state.maxToolCalls = validateMaxToolCalls(limit)
   }
 
   beforePropose(call: ToolLoopCall): void {

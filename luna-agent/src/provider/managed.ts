@@ -1,85 +1,66 @@
-import type { ProviderConfigClient, RemoteAIModel, RemoteProviderConfig } from "./config-client.js"
+import type { RemoteAIModel, RemoteConfigSnapshot, RemoteProviderConfig } from "./config-client.js"
 import { DeepSeekChatCompletionsProvider } from "./deepseek-chat-completions.js"
 import { OpenAIChatCompletionsProvider } from "./openai-chat-completions.js"
 import type { ModelCapabilities, ModelEvent, ModelProvider, ModelRequest, ModelResponse } from "./provider.js"
 
 type ProviderFactory = (config: RemoteProviderConfig, modelName: string) => ModelProvider
-type ResolvedProvider = { expiresAt: number, version: string, modelKey: string, provider: ModelProvider }
+type ResolvedProvider = { version: string, modelKey: string, provider: ModelProvider }
 
 export class ManagedProvider implements ModelProvider {
-  #cached: ResolvedProvider | undefined
-  #config: { expiresAt: number, value: RemoteProviderConfig } | undefined
-  #loading: { version: string, modelKey: string, promise: Promise<ResolvedProvider> } | undefined
-  #configLoading: Promise<RemoteProviderConfig> | undefined
+  #cacheVersion: string | undefined
+  #cached = new Map<string, ResolvedProvider>()
 
   constructor(
-    private readonly resolver: Pick<ProviderConfigClient, "get">,
-    private readonly ttlMs: number,
+    private readonly snapshot: Pick<RemoteConfigSnapshot, "current">,
     private readonly factory: ProviderFactory = createConfiguredProvider,
   ) {}
 
   capabilities(): ModelCapabilities {
-    return this.#cached?.provider.capabilities() ?? { streaming: true, toolCalling: true, structuredOutput: true }
+    return this.#cached.values().next().value?.provider.capabilities() ?? { streaming: true, toolCalling: true, structuredOutput: true }
   }
 
   async complete(request: ModelRequest): Promise<ModelResponse> {
-    return (await this.resolve(request)).provider.complete(request)
+    return this.resolve(request).provider.complete(request)
   }
 
   async *stream(request: ModelRequest): AsyncIterable<ModelEvent> {
-    yield* (await this.resolve(request)).provider.stream(request)
+    yield* this.resolve(request).provider.stream(request)
   }
 
   async health(): Promise<{ ok: boolean, requestId?: string }> {
-    return (await this.resolve({ messages: [], maxOutputTokens: 1 })).provider.health()
+    return this.resolve({ messages: [], maxOutputTokens: 1 }).provider.health()
   }
 
   invalidate(): void {
-    this.#cached = undefined
-    this.#config = undefined
+    this.#cached.clear()
+    this.#cacheVersion = undefined
   }
 
   currentVersion(): string | undefined {
-    return this.#cached?.version ?? this.#config?.value.version
+    return this.snapshot.current()?.version
   }
 
-  private async resolve(request: ModelRequest): Promise<ResolvedProvider> {
-    const config = await this.getConfig(request.signal)
+  private resolve(request: ModelRequest): ResolvedProvider {
+    const config = request.providerConfig ?? this.snapshot.current()
+    if (!config) throw new Error("ai.provider_config_unavailable")
     const selected = resolveModel(config, request)
     if (!config.provider.configured || !config.provider.apiKey || !config.provider.baseUrl) {
       throw new Error("ai.not_configured")
     }
     const modelKey = selected.id || selected.name
-    const now = Date.now()
-    if (this.#cached && this.#cached.expiresAt > now && this.#cached.version === config.version && this.#cached.modelKey === modelKey)
-      return this.#cached
-    if (this.#loading?.version === config.version && this.#loading.modelKey === modelKey)
-      return this.#loading.promise
-    const promise: Promise<ResolvedProvider> = Promise.resolve().then(() => {
-      const resolved: ResolvedProvider = {
-        version: config.version,
-        modelKey,
-        provider: this.factory(config, selected.name),
-        expiresAt: Date.now() + this.ttlMs,
-      }
-      this.#cached = resolved
-      return resolved
-    }).finally(() => {
-      if (this.#loading?.promise === promise)
-        this.#loading = undefined
-    })
-    this.#loading = { version: config.version, modelKey, promise }
-    return promise
-  }
-
-  private async getConfig(signal?: AbortSignal): Promise<RemoteProviderConfig> {
-    if (this.#config && this.#config.expiresAt > Date.now()) return this.#config.value
-    if (this.#configLoading) return this.#configLoading
-    this.#configLoading = this.resolver.get(signal).then(value => {
-      this.#config = { value, expiresAt: Date.now() + this.ttlMs }
-      return value
-    }).finally(() => { this.#configLoading = undefined })
-    return this.#configLoading
+    if (this.#cacheVersion !== config.version) {
+      this.#cached.clear()
+      this.#cacheVersion = config.version
+    }
+    const cached = this.#cached.get(modelKey)
+    if (cached) return cached
+    const resolved: ResolvedProvider = {
+      version: config.version,
+      modelKey,
+      provider: this.factory(config, selected.name),
+    }
+    this.#cached.set(modelKey, resolved)
+    return resolved
   }
 }
 

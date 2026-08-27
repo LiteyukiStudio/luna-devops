@@ -5,7 +5,7 @@ import { LazyLoadBoundary } from './components/common/lazy-load-boundary'
 import { TooltipProvider } from './components/ui/tooltip'
 import { loadTranslationBundles } from './i18n'
 
-const AppLayout = lazyTranslated(() => import('./layouts/AppLayout'), 'AppLayout', ['nav', 'inbox', 'accountPage', 'aiAssistant', 'debugPanel', 'projectSpaces', 'apps'])
+const AppLayout = lazyTranslated(() => import('./layouts/AppLayout'), 'AppLayout', ['nav', 'inbox', 'accountPage', 'aiAssistant', 'projectSpaces', 'apps'])
 const AccountPage = lazyTranslated(() => import('./pages/settings/AccountPage'), 'AccountPage', ['accountPage', 'accessTokens', 'settings', 'usersPage'])
 const AppTemplatesPage = lazyTranslated(() => import('./pages/app-templates/AppTemplatesPage'), 'AppTemplatesPage', ['appTemplatesPage', 'deploymentsPage', 'projectSpaces', 'projectVolumes'])
 const ApplicationConfigPage = lazyTranslated(() => import('./pages/applications/ApplicationConfigPage'), 'ApplicationConfigPage', ['apps', 'buildTemplates', 'buildsPage', 'deploymentsPage', 'gatewayRoutesPage', 'repositories', 'runtimeConfigSets', 'runtimeConfigFilesEditor', 'clustersPage', 'billingPage', 'projectHooks', 'codeRepositoriesView', 'projectVolumes'])

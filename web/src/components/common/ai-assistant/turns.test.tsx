@@ -543,7 +543,7 @@ describe('ai assistant turn topology', () => {
     expect(screen.getByText('内部工具')).toBeInTheDocument()
   })
 
-  it('renders an automatic route switch as a compact repeatable navigation event', async () => {
+  it('renders an explicit route action as a compact persistent navigation event', async () => {
     const onAction = vi.fn(async () => true)
     const { container } = render(
       <MemoryRouter>
@@ -567,13 +567,13 @@ describe('ai assistant turn topology', () => {
               type: 'tool_call',
               toolCallId: 'navigation-tool-call',
               operationId: 'navigate_to_route',
-              visibility: 'normal',
+              visibility: 'internal',
               status: 'succeeded',
               arguments: { routeName: 'billing', params: {}, query: {} },
               uiActions: [{
                 version: 1,
                 type: 'navigate',
-                activation: 'automatic',
+                activation: 'manual',
                 repeatable: false,
                 payload: { routeName: 'billing', params: {}, query: {} },
               }],
@@ -590,13 +590,67 @@ describe('ai assistant turn topology', () => {
       </MemoryRouter>,
     )
 
-    const navigationEvent = screen.getByRole('button', { name: '再次打开账单' })
-    expect(navigationEvent).toHaveTextContent('已跳转到账单')
+    const navigationEvent = screen.getByRole('button', { name: '打开账单' })
+    expect(navigationEvent).toHaveTextContent('打开账单')
     expect(container.querySelector('[data-ai-navigation-event]')).toBe(navigationEvent)
     expect(screen.queryByText('切换当前页面')).not.toBeInTheDocument()
 
     fireEvent.click(navigationEvent)
     expect(onAction).toHaveBeenCalledWith(expect.objectContaining({ type: 'navigate' }))
+  })
+
+  it.each([
+    {
+      name: 'failed tool call',
+      status: 'failed' as const,
+      action: {
+        version: 1 as const,
+        type: 'navigate' as const,
+        activation: 'manual' as const,
+        repeatable: false,
+        payload: { routeName: 'billing', params: {}, query: {} },
+      },
+    },
+    {
+      name: 'invalid route action',
+      status: 'succeeded' as const,
+      action: {
+        version: 1 as const,
+        type: 'navigate' as const,
+        activation: 'manual' as const,
+        repeatable: false,
+        payload: { routeName: 'https://evil.example', params: {}, query: {} },
+      },
+    },
+  ])('does not expose an internal navigation event for a $name', ({ action, status }) => {
+    const { container } = render(
+      <MemoryRouter>
+        <AIAssistantTimeline
+          blocks={[{
+            id: 'navigation-tool',
+            turnId: 'turn-navigation',
+            runId: 'run-navigation',
+            index: 1,
+            type: 'tool_call',
+            toolCallId: 'navigation-tool-call',
+            operationId: 'navigate_to_route',
+            visibility: 'internal',
+            status,
+            arguments: { routeName: action.payload.routeName, params: {}, query: {} },
+            uiActions: [action as never],
+          }]}
+          error={null}
+          generating={false}
+          loading={false}
+          onAction={vi.fn(async () => true)}
+          onApproval={vi.fn(async () => {})}
+          onResend={vi.fn()}
+          onRetry={vi.fn()}
+        />
+      </MemoryRouter>,
+    )
+
+    expect(container.querySelector('[data-ai-navigation-event]')).not.toBeInTheDocument()
   })
 
   it('keeps loaded messages visible when loading an older page fails', async () => {

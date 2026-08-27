@@ -9,6 +9,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { SessionContext } from '@/app/session-context'
 import { readAIAssistantRouteState } from '@/components/common/ai-assistant/route-state'
 import i18next from '@/i18n'
+import { PlatformRole } from '@/lib/roles'
 import { AppLayout } from './AppLayout'
 
 const assistantMocks = vi.hoisted(() => ({
@@ -70,20 +71,17 @@ const currentUser: CurrentUser = {
   permissions: [],
 }
 const sessionValue: SessionContextValue = {
-  actualUser: currentUser,
   initialized: true,
   isLoading: false,
   isLoggingIn: false,
   isLoggingOut: false,
   recentLoginUsers: [],
   user: currentUser,
-  clearDebugOverride: vi.fn(),
   initializeAdmin: vi.fn(async () => currentUser),
   login: vi.fn(async () => currentUser),
   logout: vi.fn(async () => {}),
   refreshUser: vi.fn(async () => {}),
   resumeLogin: vi.fn(async () => currentUser),
-  setDebugOverride: vi.fn(),
   updateProfile: vi.fn(async () => currentUser),
   updateLanguage: vi.fn(async () => currentUser),
 }
@@ -108,6 +106,19 @@ beforeEach(async () => {
 })
 
 describe('app layout ai assistant route', () => {
+  it.each([
+    { label: 'platform admin', role: PlatformRole.Admin, permissions: ['user.manage'], expectedManagementNavigation: true },
+    { label: 'user', role: PlatformRole.User, permissions: [], expectedManagementNavigation: false },
+  ])('renders management navigation from the real $label session permissions', ({ role, permissions, expectedManagementNavigation }) => {
+    renderAppLayout('/dashboard', { ...currentUser, role, permissions })
+
+    const usersNavigation = document.querySelector('a[href="/settings/users"]')
+    if (expectedManagementNavigation)
+      expect(usersNavigation).toBeInTheDocument()
+    else
+      expect(usersNavigation).not.toBeInTheDocument()
+  })
+
   it('opens the assistant window directly from the navigation entry', async () => {
     const user = userEvent.setup()
     renderAppLayout('/dashboard')
@@ -175,7 +186,7 @@ describe('app layout ai assistant route', () => {
   })
 })
 
-function renderAppLayout(initialEntry: string) {
+function renderAppLayout(initialEntry: string, user: CurrentUser = currentUser) {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: { retry: false, staleTime: Number.POSITIVE_INFINITY },
@@ -185,7 +196,7 @@ function renderAppLayout(initialEntry: string) {
   queryClient.setQueryData(['ai', 'capabilities'], capabilities)
   const createUI = () => (
     <QueryClientProvider client={queryClient}>
-      <SessionContext value={sessionValue}>
+      <SessionContext value={{ ...sessionValue, user }}>
         <MemoryRouter initialEntries={[initialEntry]}>
           <Routes>
             <Route element={<AppLayout />}>

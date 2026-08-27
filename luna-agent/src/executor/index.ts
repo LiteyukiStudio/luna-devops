@@ -1,69 +1,60 @@
 import type { Config } from "../config.js"
 import type { InteractionCardValidationIssue } from "@luna-devops/ai-interaction-card-contract"
 import type { AssistantModelInput, ModelRuntime } from "../model-runtime.js"
-import type { ConversationToolInteraction } from "../domain.js"
+import type { ConversationToolInteraction, RunExecutionSnapshot } from "../domain.js"
 import type { ModelToolDetailsResult, ModelToolSearchResult } from "../provider/provider.js"
 import { RunStateConflictError, type Repository } from "../persistence/repository.js"
-import type { ProviderConfigClient } from "../provider/config-client.js"
+import type { RemoteConfigSnapshot, RemoteProviderConfig } from "../provider/config-client.js"
 import type { ToolCatalogRegistry } from "../tools/catalog-registry.js"
 import { genAIAgentName, genAIAgentSpanAttributes, genAIInputMessages, genAIOutputMessages, genAIToolCallObject, genAIToolSpanAttributes } from "../genai-semconv.js"
-import { agentRuntimeInternals, defaultRuntimeSettings, type RuntimeSettings } from "../runtime-settings.js"
+import { agentRuntimeInternals, defaultRuntimeSettings, runtimeSettingsSnapshot, type RuntimeSettings } from "../runtime-settings.js"
 import { agentMetrics, errorDiagnostic, extractTraceContext, internalSpanOptions, recordAIContent, recordSpanError, stableErrorCode, telemetryLog, withSpan } from "../telemetry.js"
 import { ToolInterruption, type ToolOrchestrator } from "../tools/orchestrator.js"
 import { ToolLoopStoppedError } from "../tools/loop-guard.js"
 import { businessCardToolInputs, compileBusinessCardToolInput, isBusinessCardToolOperationId } from "../tools/business-card-tools.js"
 import { searchToolsInput } from "../tools/tool-search.js"
 import { getToolDetailsInput } from "../tools/tool-details.js"
-import { CardGenerationService, cardValidationFailure, providerArgumentFailure, setMaxCardRepairAttempts, validationIssues, type CardGeneration } from "./cards.js"
+import { CardGenerationService, cardValidationFailure, providerArgumentFailure, validationIssues, type CardGeneration } from "./cards.js"
 import { InternalToolHandlers } from "./internal-tools.js"
 import { internalToolOperationIds, cardToolOperationIds, normalizeToolSearchQuery, resumedToolMessages } from "./resume.js"
 import { StreamModelFinalizationError, streamModel } from "./streaming.js"
-import { setToolResultPayloadBudget, stableError, toolResultMessage } from "./tool-results.js"
+import { stableError, toolResultMessage } from "./tool-results.js"
 import { InMemoryRunStreamBus, TerminalPersistenceExhaustedError, type RunStreamBus } from "../run-stream-bus.js"
 
 const selectedOperationLimit = 16
 const searchAutoLoadLimit = 5
-const ownerLeaseRenewMs = 5_000
-const ownerLeaseReconcileMs = 10_000
-const ownerLeaseStaleMs = 30_000
-type RuntimeConfigSource = Pick<ProviderConfigClient, "get"> & Partial<Pick<ProviderConfigClient, "getCandidate" | "commit">>
-
 export class RunExecutor {
   private timer?: NodeJS.Timeout
   private stopping = false
   private readonly active = new Set<Promise<boolean>>()
   private readonly controllers = new Map<string, AbortController>()
+  private readonly settlements = new Map<string, Promise<void>>()
   private runtimeSettings: RuntimeSettings
-  private runtimeRefreshTimer?: NodeJS.Timeout
-  private ownerReconcileTimer?: NodeJS.Timeout
-  private ownerReconcileActive = false
+  private providerConfig: RemoteProviderConfig | undefined
+  private unsubscribeRemoteConfig: (() => void) | undefined
   private readonly cards: CardGenerationService
   private readonly internalTools: InternalToolHandlers
 
   constructor(
     private readonly repository: Repository,
     private readonly modelRuntime: ModelRuntime,
-    private readonly config: Config,
+    config: Config,
     private readonly tools?: ToolOrchestrator,
-    private readonly runtimeConfig?: RuntimeConfigSource,
+    private readonly runtimeConfig?: RemoteConfigSnapshot,
     initialRuntimeSettings: RuntimeSettings = defaultRuntimeSettings,
     private readonly catalogRegistry?: ToolCatalogRegistry,
     private readonly streamBus: RunStreamBus = new InMemoryRunStreamBus(repository),
   ) {
-    this.runtimeSettings = initialRuntimeSettings
+    void config
+    this.runtimeSettings = runtimeSettingsSnapshot(initialRuntimeSettings)
     this.cards = new CardGenerationService(repository)
-    this.internalTools = new InternalToolHandlers(repository, () => this.runtimeSettings)
+    this.internalTools = new InternalToolHandlers(repository)
+    const currentConfig = this.runtimeConfig?.current()
+    if (currentConfig) this.applyRemoteConfig(currentConfig)
+    this.unsubscribeRemoteConfig = this.runtimeConfig?.subscribe(candidate => this.applyRemoteConfig(candidate))
   }
 
   start(): void {
-    void this.refreshRuntimeSettings()
-    if (this.runtimeConfig) {
-      this.runtimeRefreshTimer = setInterval(() => void this.refreshRuntimeSettings(), agentRuntimeInternals.configRefreshMs)
-      this.runtimeRefreshTimer.unref()
-    }
-    void this.reconcileAbandonedRuns()
-    this.ownerReconcileTimer = setInterval(() => void this.reconcileAbandonedRuns(), ownerLeaseReconcileMs)
-    this.ownerReconcileTimer.unref()
     const tick = () => {
       if (this.stopping) return
       if (this.active.size < this.runtimeSettings.agentConcurrentRuns) {
@@ -78,22 +69,46 @@ export class RunExecutor {
       this.timer = setTimeout(tick, agentRuntimeInternals.runPollMs)
       this.timer.unref()
     }
-    tick()
+    const reconcile = () => {
+      if (this.stopping) return
+      void this.interruptOrphanedRuns().then((complete) => {
+        if (this.stopping) return
+        if (complete) {
+          tick()
+          return
+        }
+        this.timer = setTimeout(reconcile, agentRuntimeInternals.runPollMs)
+        this.timer.unref()
+      })
+    }
+    reconcile()
   }
 
   async stop(): Promise<void> {
     this.stopping = true
     if (this.timer) clearTimeout(this.timer)
-    if (this.runtimeRefreshTimer) clearInterval(this.runtimeRefreshTimer)
-    if (this.ownerReconcileTimer) clearInterval(this.ownerReconcileTimer)
-    this.controllers.forEach(controller => controller.abort(new Error("ai.agent_stopping")))
+    this.unsubscribeRemoteConfig?.()
+    this.unsubscribeRemoteConfig = undefined
+    const reason = new Error("ai.agent_stopping")
+    this.controllers.forEach(controller => controller.abort(reason))
+    this.tools?.cancelAll(reason)
     await Promise.allSettled([...this.active])
   }
 
-  cancel(runId: string): boolean {
+  async cancel(runId: string): Promise<boolean> {
     const controller = this.controllers.get(runId)
-    if (!controller) return false
-    controller.abort(new Error("ai.run_canceled"))
+    const reason = new Error("ai.run_canceled")
+    const toolCanceled = this.tools?.cancelRun(runId, reason) ?? false
+    if (!controller && !toolCanceled) return false
+    controller?.abort(reason)
+    if (controller) {
+      const settlement = this.settlements.get(runId)
+      if (settlement) await Promise.race([
+        settlement,
+        new Promise<void>(resolve => setTimeout(resolve, 2_000)),
+      ])
+    }
+    this.tools?.clearRunLoopState(runId)
     return true
   }
 
@@ -102,15 +117,28 @@ export class RunExecutor {
   }
 
   private async claimAndExecute(): Promise<boolean> {
-    const run = await this.repository.claimNextQueuedRun()
+    const candidateExecutionSnapshot: RunExecutionSnapshot = Object.freeze({
+      runtimeSettings: this.runtimeSettings,
+      ...(this.providerConfig ? { providerConfig: this.providerConfig } : {}),
+      ...(this.catalogRegistry ? { toolCatalogDigest: this.catalogRegistry.digest() } : {}),
+    })
+    const run = await this.repository.claimNextQueuedRun(candidateExecutionSnapshot)
     if (!run) return false
+    const executionSnapshot = run.executionSnapshot ?? candidateExecutionSnapshot
+    const runtimeSettings = executionSnapshot.runtimeSettings
+    const providerConfig = executionSnapshot.providerConfig
+    if (providerConfig && executionSnapshot.toolCatalogDigest && this.catalogRegistry) {
+      if (executionSnapshot.toolCatalogDigest !== run.toolCatalogDigest)
+        throw new Error("ai.tool_catalog_snapshot_invalid")
+      this.catalogRegistry.restore(providerConfig.toolCatalog, executionSnapshot.toolCatalogDigest)
+    }
 
     const activeCount = await this.repository.countActiveUserRuns(run.ownerUserId)
-    if (activeCount > this.runtimeSettings.userConcurrentRuns) {
+    if (activeCount > runtimeSettings.userConcurrentRuns) {
       telemetryLog("agent.run.quota_rejected", "warn", {
         "luna.run.id": run.id,
         "luna.user.id": run.ownerUserId,
-        "luna.quota.user_concurrent_runs": this.runtimeSettings.userConcurrentRuns,
+        "luna.quota.user_concurrent_runs": runtimeSettings.userConcurrentRuns,
         "luna.quota.active_count": activeCount,
         "operation": "agent.run.claim",
         "outcome": "rejected",
@@ -121,25 +149,13 @@ export class RunExecutor {
       try { await this.repository.updateRun(run.id, "running", "failed", { completedAt: new Date().toISOString(), errorCode: "ai.quota.user_concurrent_runs_exceeded" }) } catch { /* state may have changed */ }
       return true
     }
-    let ownerLease
-    try {
-      ownerLease = await this.streamBus.acquireOwnership(run.id, run.rowVersion, this.config.INSTANCE_ID)
-    }
-    catch (error) {
-      const interrupted = await this.streamBus.getHighWatermark(run.id)
-        .then(highWatermark => this.repository.interruptAbandonedRun(run.id, run.rowVersion, highWatermark))
-        .catch(() => false)
-      if (interrupted) await this.cleanupTerminalStream(run.id)
-      throw error
-    }
-    if (!ownerLease) {
-      telemetryLog("agent.run.owner_lease_contended", "warn", {
-        operation: "agent.run.owner.acquire", outcome: "contended", "error.code": "ai.owner_lease_contended",
-      })
-      return true
-    }
+    this.tools?.setRunMaxToolCallsForRun(run.id, runtimeSettings.runMaxToolCalls)
+    const runToolResultMessage = (
+      toolCall: Parameters<typeof toolResultMessage>[0],
+      result: Parameters<typeof toolResultMessage>[1],
+    ) => toolResultMessage(toolCall, result, runtimeSettings.toolResultPayloadBudget)
     return withSpan(`invoke_agent ${genAIAgentName}`, internalSpanOptions({
-      ...genAIAgentSpanAttributes(run.conversationId, run.model?.name, this.runtimeSettings.assistantMaxOutputTokens),
+      ...genAIAgentSpanAttributes(run.conversationId, run.model?.name, runtimeSettings.assistantMaxOutputTokens),
       "luna.run.id": run.id,
       "luna.turn.id": run.turnId,
     }), async span => {
@@ -147,21 +163,11 @@ export class RunExecutor {
       let outcome = "completed"
       agentMetrics.activeRuns.add(1)
       const abort = new AbortController()
-      const cancelWatchAbort = new AbortController()
-      let cancelWatch: Promise<void> | undefined
-      let leaseRenewing = false
+      let settleRun!: () => void
+      const settlement = new Promise<void>((resolve) => { settleRun = resolve })
+      this.settlements.set(run.id, settlement)
       this.controllers.set(run.id, abort)
-      const timeout = setTimeout(() => abort.abort(new Error("ai.run_timeout")), this.runtimeSettings.runTimeoutMs)
-      const leaseRenewal = setInterval(() => {
-        if (leaseRenewing || abort.signal.aborted) return
-        leaseRenewing = true
-        void ownerLease.renew().then((renewed) => {
-          if (!renewed && !abort.signal.aborted) abort.abort(new Error("ai.owner_lease_lost"))
-        }).catch((error) => {
-          if (!abort.signal.aborted) abort.abort(new Error("ai.owner_lease_lost", { cause: error }))
-        }).finally(() => { leaseRenewing = false })
-      }, ownerLeaseRenewMs)
-      leaseRenewal.unref()
+      const timeout = setTimeout(() => abort.abort(new Error("ai.run_timeout")), runtimeSettings.runTimeoutMs)
       let cardGeneration: CardGeneration | undefined
       let pendingTerminal: ((to: "completed" | "failed" | "canceled" | "interrupted", errorCode?: string, conversationTitle?: string) => Promise<void>) | undefined
       const providerArgumentRepairAttempts = new Map<string, number>()
@@ -171,17 +177,6 @@ export class RunExecutor {
         })
         await this.repository.appendEvent(run.id, "run.started", {
           state: "running",
-        })
-        const streamPosition = await this.repository.getRunStreamPosition(run.id)
-        if (!streamPosition) throw new Error("ai.run_not_found")
-        cancelWatch = this.streamBus.waitForCancellation(
-          run.id,
-          streamPosition.nextEventSequence - 1,
-          cancelWatchAbort.signal,
-        ).then(() => {
-          if (!cancelWatchAbort.signal.aborted) abort.abort(new Error("ai.run_canceled"))
-        }).catch((error) => {
-          if (!cancelWatchAbort.signal.aborted) abort.abort(new Error("ai.stream_transport_unavailable", { cause: error }))
         })
         const executionInput = await this.repository.getExecutionInput(run.id)
         if (!executionInput) throw new Error("ai.turn_not_found")
@@ -217,7 +212,7 @@ export class RunExecutor {
         const continuationMessages = resumedToolMessages(executionInput.toolInteractions)
         const searchedToolQueries = restoredInternalToolResults(executionInput.toolInteractions, "search_tools")
         const detailedToolRequests = restoredInternalToolResults(executionInput.toolInteractions, "get_tool_details")
-        for (let step = 0; step < this.runtimeSettings.maxModelSteps; step += 1) {
+        for (let step = 0; step < runtimeSettings.maxModelSteps; step += 1) {
           const loadedOperationIds = [...selectedOperationIds]
           const result = await this.streamModel(run.id, run.turnId, {
             runId: run.id,
@@ -234,6 +229,8 @@ export class RunExecutor {
             continuationMessages,
             loadedOperationIds,
             toolCatalogDigest: run.toolCatalogDigest,
+            runtimeSettings,
+            ...(providerConfig ? { providerConfig } : {}),
             ...(executionInput.model ? { model: executionInput.model } : {}),
           }, abort.signal, run.rowVersion)
           pendingTerminal = result.finalizeTerminal
@@ -276,7 +273,7 @@ export class RunExecutor {
                   await this.cards.fail(run.id, cardGeneration, "ai.interaction_card_schema_invalid")
                   cardGeneration = undefined
                 }
-                cardGeneration ??= await this.cards.start(run.id, run.turnId, toolCall.arguments, toolCall.operationId)
+                cardGeneration ??= await this.cards.start(run.id, run.turnId, toolCall.arguments, runtimeSettings.maxCardRepairAttempts, toolCall.operationId)
               }
               const key = toolCall.operationId
               let attempt = (providerArgumentRepairAttempts.get(key) ?? 0) + 1
@@ -290,10 +287,10 @@ export class RunExecutor {
               if (cardToolOperationIds.has(toolCall.operationId) && cardGeneration?.operationId === toolCall.operationId) {
                 attempt = await this.cards.recordRepairFailure(run.id, cardGeneration, issues, "ai.tool_arguments_json_invalid")
               }
-              const failure = providerArgumentFailure(toolCall.argumentError, attempt, cardGeneration?.generationId, toolCall.operationId)
+              const failure = providerArgumentFailure(toolCall.argumentError, attempt, runtimeSettings.maxCardRepairAttempts, cardGeneration?.generationId, toolCall.operationId)
               recoverableToolError ||= failure.retryable
               cardRepairExhausted ||= !failure.retryable && cardToolOperationIds.has(toolCall.operationId)
-              continuationMessages.push(toolResultMessage(toolCall, { ...failure }))
+              continuationMessages.push(runToolResultMessage(toolCall, { ...failure }))
               continue
             }
             if (cardToolOperationIds.has(toolCall.operationId)) {
@@ -306,37 +303,38 @@ export class RunExecutor {
                 if (isBusinessCardToolOperationId(toolCall.operationId)) {
                   const parsed = businessCardToolInputs[toolCall.operationId].safeParse(toolCall.arguments)
                   if (!parsed.success) {
-                    cardGeneration ??= await this.cards.start(run.id, run.turnId, toolCall.arguments, toolCall.operationId)
+                    cardGeneration ??= await this.cards.start(run.id, run.turnId, toolCall.arguments, runtimeSettings.maxCardRepairAttempts, toolCall.operationId)
                     const issues = validationIssues(parsed.error.issues)
                     const attempt = await this.cards.recordRepairFailure(run.id, cardGeneration, issues, "ai.interaction_card_schema_invalid")
                     const failure = cardValidationFailure(
                       "create",
                       issues,
                       attempt,
+                      runtimeSettings.maxCardRepairAttempts,
                       cardGeneration.generationId,
                       "ai.interaction_card_schema_invalid",
                       toolCall.operationId,
                     )
                     recoverableToolError ||= failure.retryable
                     cardRepairExhausted ||= !failure.retryable
-                    continuationMessages.push(toolResultMessage(toolCall, { ...failure }))
+                    continuationMessages.push(runToolResultMessage(toolCall, { ...failure }))
                     continue
                   }
                   cardInput = compileBusinessCardToolInput(toolCall.operationId, parsed.data)
                 }
-                cardGeneration ??= await this.cards.start(run.id, run.turnId, cardInput, toolCall.operationId)
+                cardGeneration ??= await this.cards.start(run.id, run.turnId, cardInput, runtimeSettings.maxCardRepairAttempts, toolCall.operationId)
                 const creation = await this.traceInternalTool(toolCall.operationId, run.id, toolCall.arguments, () => this.cards.create(run.id, cardInput, cardGeneration!), toolCall.id)
                 if (!creation.accepted) {
                   recoverableToolError ||= creation.failure.retryable
                   cardRepairExhausted ||= !creation.failure.retryable
-                  continuationMessages.push(toolResultMessage(toolCall, { ...creation.failure }))
+                  continuationMessages.push(runToolResultMessage(toolCall, { ...creation.failure }))
                   continue
                 }
                 createInteractionCardsCalled = true
                 createdInteractionCardMode = creation.mode
                 cardGeneration = undefined
               }
-              continuationMessages.push(toolResultMessage(toolCall, {
+              continuationMessages.push(runToolResultMessage(toolCall, {
                 status: hasPlatformTool ? "deferred_until_platform_results" : "succeeded",
                 ...(!hasPlatformTool && createdInteractionCardMode
                   ? {
@@ -368,7 +366,7 @@ export class RunExecutor {
                   toolCall.id,
                 )
                 recoverableToolError = true
-                continuationMessages.push(toolResultMessage(toolCall, {
+                continuationMessages.push(runToolResultMessage(toolCall, {
                   status: "failed",
                   errorCode,
                   retryable: true,
@@ -427,7 +425,7 @@ export class RunExecutor {
               const detailsOutcome = alreadyLoaded ? "duplicate" : itemCount ? "succeeded" : "empty"
               agentMetrics.toolDetailLoads.add(1, { outcome: detailsOutcome })
               agentMetrics.toolDetailItems.record(itemCount, { outcome: detailsOutcome })
-              continuationMessages.push(toolResultMessage(toolCall, {
+              continuationMessages.push(runToolResultMessage(toolCall, {
                 status: itemCount ? "succeeded" : "empty",
                 ...detailsResult,
                 guidance: detailsResult.loadedOperationIds.length
@@ -452,7 +450,7 @@ export class RunExecutor {
                   toolCall.id,
                 )
                 recoverableToolError = true
-                continuationMessages.push(toolResultMessage(toolCall, {
+                continuationMessages.push(runToolResultMessage(toolCall, {
                   status: "failed",
                   errorCode,
                   retryable: true,
@@ -522,7 +520,7 @@ export class RunExecutor {
               const searchOutcome = alreadySearched ? "duplicate" : searchResult.items.length ? "succeeded" : "no_matches"
               agentMetrics.toolSearches.add(1, { outcome: searchOutcome })
               agentMetrics.toolSearchMatches.record(searchResult.items.length, { outcome: searchOutcome })
-              continuationMessages.push(toolResultMessage(toolCall, {
+              continuationMessages.push(runToolResultMessage(toolCall, {
                 status: searchResult.items.length ? "succeeded" : "no_matches",
                 ...searchResult,
                 guidance: searchResult.loadedOperationIds.length
@@ -539,18 +537,17 @@ export class RunExecutor {
                 assistantRenamed = true
                 conversationContext = { ...conversationContext, title: renamed.title, titleSource: renamed.titleSource }
               }
-              continuationMessages.push(toolResultMessage(toolCall, {
+              continuationMessages.push(runToolResultMessage(toolCall, {
                 status: renamed ? "succeeded" : "skipped",
                 ...(renamed ? { title: renamed.title } : {}),
               }))
               continue
             }
             if (toolCall.operationId === "navigate_to_route") {
-              const delivery = await this.traceInternalTool("navigate_to_route", run.id, toolCall.arguments, () => this.internalTools.navigateToRoute(run.id, run.turnId, toolCall.arguments), toolCall.id)
-              continuationMessages.push(toolResultMessage(toolCall, {
-                status: "dispatched",
-                actionId: delivery.id,
-                expiresAt: delivery.expiresAt,
+              await this.traceInternalTool("navigate_to_route", run.id, toolCall.arguments, () => this.internalTools.navigateToRoute(run.id, run.turnId, toolCall.arguments), toolCall.id)
+              continuationMessages.push(runToolResultMessage(toolCall, {
+                status: "succeeded",
+                guidance: "已在时间线生成可点击的内部导航按钮；页面不会自动切换。",
               }))
               continue
             }
@@ -559,19 +556,19 @@ export class RunExecutor {
             selectedOperationIds = (await this.repository.touchRunSelectedOperations(run.id, [toolCall.operationId], selectedOperationLimit)).selectedOperationIds
             let call: Awaited<ReturnType<ToolOrchestrator["propose"]>>
             try {
-              call = await this.tools.propose({ runId: run.id, operationId: toolCall.operationId, arguments: toolCall.arguments, inputMode: "model" })
+              call = await this.tools.propose({ runId: run.id, operationId: toolCall.operationId, arguments: toolCall.arguments, inputMode: "model" }, abort.signal)
             }
             catch (error) {
               if (!(error instanceof ToolLoopStoppedError)) throw error
               recoverableToolError = true
-              continuationMessages.push(toolResultMessage(toolCall, {
+              continuationMessages.push(runToolResultMessage(toolCall, {
                 status: "failed",
                 ...error.toJSON(),
                 guidance: "工具循环保护已停止这次调用；不要原样重试。请基于现有结果回答，或改用参数和信息来源都不同的下一步。",
               }))
               continue
             }
-            continuationMessages.push(toolResultMessage(toolCall, {
+            continuationMessages.push(runToolResultMessage(toolCall, {
               status: call.status,
               ...(call.result !== undefined ? { result: call.result } : {}),
               ...(call.errorCode ? { errorCode: call.errorCode } : {}),
@@ -601,7 +598,7 @@ export class RunExecutor {
         let generatedTitle: string | undefined
         if (executionInput.conversation.titleSource === "default" && !assistantRenamed) {
           try {
-            const title = await this.modelRuntime.generateConversationTitle(executionInput.input, finalAnswer, { runId: run.id, ownerUserId: run.ownerUserId }, abort.signal, executionInput.model)
+            const title = await this.modelRuntime.generateConversationTitle(executionInput.input, finalAnswer, { runId: run.id, ownerUserId: run.ownerUserId }, abort.signal, executionInput.model, providerConfig)
             if (title) generatedTitle = title
           }
           catch {
@@ -627,7 +624,7 @@ export class RunExecutor {
         if (error instanceof StreamModelFinalizationError) pendingTerminal = error.finalizeTerminal
         if (error instanceof TerminalPersistenceExhaustedError) {
           // 终态意图已固定：数据库短暂故障耗尽本轮重试时，不得把 completed 伪造成 failed。
-          // 保留 Redis grace 缓冲，释放 lease 后由 owner reconciliation 将长期未收敛 Run 明确终止。
+          // 尽力将遗留的 running Run 明确标记为 interrupted；失败时由下次单副本启动接管。
           outcome = "terminal_persistence_exhausted"
           span.setAttribute("luna.run.outcome", outcome)
           recordSpanError(span, error)
@@ -637,6 +634,8 @@ export class RunExecutor {
             terminal_state: error.terminalState,
             ...errorDiagnostic(error, error.message),
           })
+          const interrupted = await this.repository.interruptOrphanedRun(run.id, run.rowVersion).catch(() => false)
+          if (interrupted) await this.cleanupTerminalStream(run.id)
           return true
         }
         const message = error instanceof Error ? error.message : "ai.run_failed"
@@ -663,12 +662,11 @@ export class RunExecutor {
               pendingTerminal = undefined
             }
             else await this.repository.cancelRun(run.ownerUserId, run.id)
-            await this.streamBus.acknowledgeCancellation(run.id)
           }
-          catch { /* cancellation request remains in Redis for bounded replay/recovery */ }
+          catch { /* 终态可能已由并发取消请求持久化。 */ }
           return true
         }
-        if (errorCode === "ai.agent_stopping" || errorCode === "ai.owner_lease_lost") {
+        if (errorCode === "ai.agent_stopping") {
           outcome = "interrupted"
           span.setAttribute("luna.run.outcome", outcome)
           telemetryLog("agent.run.interrupted", "info", { "luna.run.id": run.id })
@@ -728,9 +726,6 @@ export class RunExecutor {
       }
       finally {
         clearTimeout(timeout)
-        clearInterval(leaseRenewal)
-        cancelWatchAbort.abort()
-        await cancelWatch
         this.controllers.delete(run.id)
 		if (!["waiting_approval", "waiting_input"].includes(outcome))
           this.tools?.clearRunLoopState(run.id)
@@ -739,41 +734,47 @@ export class RunExecutor {
         agentMetrics.runs.add(1, metricAttributes)
         agentMetrics.runDuration.record((performance.now() - startedAt) / 1000, metricAttributes)
         const finalRun = await this.repository.getRun(run.ownerUserId, run.id).catch(() => undefined)
-        if (finalRun && ["completed", "failed", "canceled", "interrupted"].includes(finalRun.status)) {
+        if (finalRun && !["queued", "running"].includes(finalRun.status)) {
           await this.streamBus.cleanup(run.id).catch(() => undefined)
         }
-        await ownerLease.release().catch(() => undefined)
+        this.settlements.delete(run.id)
+        settleRun()
       }
       return true
     }, extractTraceContext(run.traceContext))
   }
 
-  private async reconcileAbandonedRuns(): Promise<void> {
-    if (this.ownerReconcileActive || this.stopping) return
-    this.ownerReconcileActive = true
+  private async interruptOrphanedRuns(): Promise<boolean> {
+    let complete = true
+    let running: Array<{ id: string, rowVersion: number }>
     try {
-      const stale = await this.repository.listStaleRunningRuns(new Date(Date.now() - ownerLeaseStaleMs).toISOString())
-      for (const run of stale) {
-        const fenced = await this.streamBus.fenceExpiredOwnership(run.id, run.rowVersion, this.config.INSTANCE_ID)
-        if (!fenced) continue
-        // fence先阻止旧owner继续publish，再读取最终Redis高水位；读取失败时保留running，
-        // 不能从旧PG cursor伪造一个客户端永远看不到的terminal事件。
-        const highWatermark = await this.streamBus.getHighWatermark(run.id)
-        const interrupted = await this.repository.interruptAbandonedRun(run.id, run.rowVersion, highWatermark)
+      running = await this.repository.listRunningRuns()
+    }
+    catch (error) {
+      telemetryLog("agent.run.startup_reconcile_failed", "warn", {
+        operation: "agent.run.startup_reconcile", outcome: "failed", ...errorDiagnostic(error, "ai.persistence_unavailable"),
+      })
+      return false
+    }
+    for (const run of running) {
+      try {
+        const interrupted = await this.repository.interruptOrphanedRun(run.id, run.rowVersion)
         if (interrupted) {
-          telemetryLog("agent.run.owner_lease_expired", "warn", {
-            operation: "agent.run.reconcile", outcome: "interrupted", "error.code": "ai.owner_lease_expired",
+          telemetryLog("agent.run.orphan_interrupted", "warn", {
+            operation: "agent.run.startup_reconcile", outcome: "interrupted", "error.code": "ai.agent_restarted",
           })
           await this.cleanupTerminalStream(run.id)
         }
+        else complete = false
+      }
+      catch (error) {
+        complete = false
+        telemetryLog("agent.run.startup_reconcile_failed", "warn", {
+          operation: "agent.run.startup_reconcile", outcome: "failed", ...errorDiagnostic(error, "ai.persistence_unavailable"),
+        })
       }
     }
-    catch (error) {
-      telemetryLog("agent.run.owner_reconcile_failed", "warn", {
-        operation: "agent.run.reconcile", outcome: "failed", ...errorDiagnostic(error, "ai.stream_transport_unavailable"),
-      })
-    }
-    finally { this.ownerReconcileActive = false }
+    return complete
   }
 
   private async cleanupTerminalStream(runId: string): Promise<void> {
@@ -783,70 +784,40 @@ export class RunExecutor {
       telemetryLog("agent.stream.cleanup_failed", "warn", {
         operation: "agent.stream.cleanup",
         outcome: "failed",
-        ...errorDiagnostic(error, "ai.stream_transport_unavailable"),
+        ...errorDiagnostic(error, "ai.stream_cleanup_failed"),
       })
     }
   }
 
-  private async refreshRuntimeSettings(): Promise<void> {
-    if (!this.runtimeConfig)
-      return
-    try {
-      const candidate = this.catalogRegistry && this.runtimeConfig.getCandidate
-        ? await this.runtimeConfig.getCandidate()
-        : await this.runtimeConfig.get()
-      if (this.catalogRegistry && this.runtimeConfig.commit) {
-        await withSpan("agent.tool_catalog.refresh", internalSpanOptions(), async (span) => {
-          const refresh = this.catalogRegistry!.refresh(candidate.toolCatalog, candidate.version)
-          this.runtimeConfig!.commit!(candidate)
-          const outcome = refresh.changed ? "updated" : "unchanged"
-          span.setAttributes({
-            "luna.tool_catalog.refresh.outcome": outcome,
-            "luna.tool_catalog.operation_count": this.catalogRegistry!.current().all().length,
-          })
-          agentMetrics.toolCatalogRefreshes.add(1, { outcome })
-          telemetryLog("agent.tool_catalog.refreshed", "info", {
-            "luna.tool_catalog.refresh.outcome": outcome,
-            "luna.tool_catalog.operation_count": this.catalogRegistry!.current().all().length,
-          })
-          this.catalogRegistry!.retain(await this.repository.listActiveToolCatalogDigests())
-        })
-      }
-      const runtimeSettings = {
-        ...candidate.runtime,
-        // 这些策略只在进程启动时从环境变量读取，不随平台配置热更新。
-        contextCompressionTriggerRatio: this.runtimeSettings.contextCompressionTriggerRatio,
-        contextRecentTurnCount: this.runtimeSettings.contextRecentTurnCount,
-        contextMaxHistoryPayloadBytes: this.runtimeSettings.contextMaxHistoryPayloadBytes,
-        contextMaxSummaryPayloadBytes: this.runtimeSettings.contextMaxSummaryPayloadBytes,
-        contextMaxContinuationPayloadBytes: this.runtimeSettings.contextMaxContinuationPayloadBytes,
-        toolResultPayloadBudget: this.runtimeSettings.toolResultPayloadBudget,
-      }
-      this.modelRuntime.setContextOptions({
-        compressionTriggerRatio: runtimeSettings.contextCompressionTriggerRatio,
-        recentTurnCount: runtimeSettings.contextRecentTurnCount,
-        maxUncompressedTurnCount: runtimeSettings.contextMaxUncompressedTurnCount,
-        maxCompressionTurnsPerCompile: runtimeSettings.contextMaxCompressionTurnsPerCompile,
-        summaryMaxOutputTokens: runtimeSettings.contextSummaryMaxOutputTokens,
-        maxHistoryPayloadBytes: runtimeSettings.contextMaxHistoryPayloadBytes,
-        maxSummaryPayloadBytes: runtimeSettings.contextMaxSummaryPayloadBytes,
-        maxContinuationPayloadBytes: runtimeSettings.contextMaxContinuationPayloadBytes,
+  private applyRemoteConfig(candidate: RemoteProviderConfig): void {
+    if (this.catalogRegistry) {
+      const refresh = this.catalogRegistry.refresh(candidate.toolCatalog, candidate.version)
+      const outcome = refresh.changed ? "updated" : "unchanged"
+      agentMetrics.toolCatalogRefreshes.add(1, { outcome })
+      telemetryLog("agent.tool_catalog.refreshed", "info", {
+        "luna.tool_catalog.refresh.outcome": outcome,
+        "luna.tool_catalog.operation_count": this.catalogRegistry.current().all().length,
       })
-      this.modelRuntime.setAssistantMaxOutputTokens(runtimeSettings.assistantMaxOutputTokens)
-      setToolResultPayloadBudget(runtimeSettings.toolResultPayloadBudget)
-      setMaxCardRepairAttempts(runtimeSettings.maxCardRepairAttempts)
-      this.tools?.setRunMaxToolCalls(runtimeSettings.runMaxToolCalls)
-      this.runtimeSettings = runtimeSettings
+      void this.repository.listActiveToolCatalogDigests()
+        .then(digests => this.catalogRegistry!.retain(digests))
+        .catch(error => telemetryLog("agent.tool_catalog.retain_failed", "warn", {
+          operation: "agent.tool_catalog.retain", outcome: "failed",
+          ...errorDiagnostic(error, "ai.persistence_unavailable"),
+        }))
     }
-    catch (error) {
-      agentMetrics.toolCatalogRefreshes.add(1, { outcome: "failed" })
-      telemetryLog("agent.tool_catalog.refresh_failed", "warn", {
-        "operation": "agent.tool_catalog.refresh",
-        "outcome": "failed",
-        ...errorDiagnostic(error, stableErrorCode(error)),
-      })
-      // Keep the last validated settings when Luna API is temporarily unavailable.
+    const runtimeSettings = {
+      ...candidate.runtime,
+      // 这些策略只在进程启动时从环境变量读取，不随平台配置热更新。
+      contextCompressionTriggerRatio: this.runtimeSettings.contextCompressionTriggerRatio,
+      contextRecentTurnCount: this.runtimeSettings.contextRecentTurnCount,
+      contextMaxHistoryPayloadBytes: this.runtimeSettings.contextMaxHistoryPayloadBytes,
+      contextMaxSummaryPayloadBytes: this.runtimeSettings.contextMaxSummaryPayloadBytes,
+      contextMaxContinuationPayloadBytes: this.runtimeSettings.contextMaxContinuationPayloadBytes,
+      toolResultPayloadBudget: this.runtimeSettings.toolResultPayloadBudget,
     }
+    this.tools?.setRunMaxToolCalls(runtimeSettings.runMaxToolCalls)
+    this.runtimeSettings = runtimeSettingsSnapshot(runtimeSettings)
+    this.providerConfig = candidate
   }
 
   private async streamModel(runId: string, turnId: string, input: AssistantModelInput, signal: AbortSignal, expectedRunVersion?: number): ReturnType<typeof streamModel> {

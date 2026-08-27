@@ -3,10 +3,12 @@ package kubernetes
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -16,7 +18,55 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/remotecommand"
+	clientexec "k8s.io/client-go/util/exec"
 )
+
+type runtimeExecOutput struct {
+	mu        sync.Mutex
+	stdout    bytes.Buffer
+	stderr    bytes.Buffer
+	remaining int
+	truncated bool
+}
+
+type runtimeExecOutputWriter struct {
+	output *runtimeExecOutput
+	stderr bool
+}
+
+func newRuntimeExecOutput(limit int) *runtimeExecOutput {
+	return &runtimeExecOutput{remaining: limit}
+}
+
+func (output *runtimeExecOutput) writer(stderr bool) io.Writer {
+	return runtimeExecOutputWriter{output: output, stderr: stderr}
+}
+
+func (writer runtimeExecOutputWriter) Write(data []byte) (int, error) {
+	if writer.output == nil {
+		return len(data), nil
+	}
+	writer.output.mu.Lock()
+	defer writer.output.mu.Unlock()
+	written := len(data)
+	if len(data) > writer.output.remaining {
+		data = data[:max(writer.output.remaining, 0)]
+		writer.output.truncated = true
+	}
+	writer.output.remaining -= len(data)
+	if writer.stderr {
+		_, _ = writer.output.stderr.Write(data)
+	} else {
+		_, _ = writer.output.stdout.Write(data)
+	}
+	return written, nil
+}
+
+func (output *runtimeExecOutput) snapshot() (stdout, stderr string, truncated bool) {
+	output.mu.Lock()
+	defer output.mu.Unlock()
+	return output.stdout.String(), output.stderr.String(), output.truncated
+}
 
 func (c *Client) RuntimeMetrics(ctx context.Context, options RuntimeMetricsOptions) (RuntimeMetricsSnapshot, error) {
 	if c.dynamic == nil {
@@ -105,14 +155,6 @@ func (c *Client) RuntimePodLogs(ctx context.Context, options RuntimePodLogsOptio
 	return RuntimePodLogsResult{Pod: pod.Name, Container: container, Content: string(content)}, nil
 }
 
-func (c *Client) ResolveRuntimePod(ctx context.Context, namespace, deploymentTargetID, container string) (RuntimePodIdentity, error) {
-	pod, selectedContainer, err := c.runtimePod(ctx, namespace, deploymentTargetID, container)
-	if err != nil {
-		return RuntimePodIdentity{}, err
-	}
-	return RuntimePodIdentity{Pod: pod.Name, Container: selectedContainer}, nil
-}
-
 func (c *Client) RuntimeExec(ctx context.Context, options RuntimeExecOptions) (RuntimeExecResult, error) {
 	if c.restConfig == nil {
 		return RuntimeExecResult{}, fmt.Errorf("runtime exec requires a REST config")
@@ -141,28 +183,39 @@ func (c *Client) RuntimeExec(ctx context.Context, options RuntimeExecOptions) (R
 	if err != nil {
 		return RuntimeExecResult{}, err
 	}
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
+	output := newRuntimeExecOutput(256 * 1024)
+	startedAt := time.Now()
 	streamErr := executor.StreamWithContext(ctx, remotecommand.StreamOptions{
-		Stdout: &stdout,
-		Stderr: &stderr,
+		Stdout: output.writer(false),
+		Stderr: output.writer(true),
 		Tty:    false,
 	})
 	exitCode := 0
 	if streamErr != nil {
-		exitCode = 1
-		if stderr.Len() > 0 {
-			stderr.WriteByte('\n')
+		var exited bool
+		exitCode, exited = runtimeExecExitCode(streamErr)
+		if !exited {
+			return RuntimeExecResult{}, fmt.Errorf("stream runtime exec: %w", streamErr)
 		}
-		stderr.WriteString(streamErr.Error())
 	}
+	stdout, stderr, truncated := output.snapshot()
 	return RuntimeExecResult{
 		Pod:       pod.Name,
 		Container: container,
-		Stdout:    stdout.String(),
-		Stderr:    stderr.String(),
+		Stdout:    stdout,
+		Stderr:    stderr,
 		ExitCode:  exitCode,
+		Truncated: truncated,
+		Duration:  time.Since(startedAt).Milliseconds(),
 	}, nil
+}
+
+func runtimeExecExitCode(err error) (int, bool) {
+	var exitError clientexec.ExitError
+	if !errors.As(err, &exitError) || !exitError.Exited() {
+		return 0, false
+	}
+	return exitError.ExitStatus(), true
 }
 
 func (c *Client) RuntimeTerminal(ctx context.Context, options RuntimeTerminalOptions) error {
@@ -199,39 +252,6 @@ func (c *Client) RuntimeTerminal(ctx context.Context, options RuntimeTerminalOpt
 		Stderr:            options.Stdout,
 		Tty:               true,
 		TerminalSizeQueue: options.SizeQueue,
-	})
-}
-
-func (c *Client) RuntimeShell(ctx context.Context, options RuntimeShellOptions) error {
-	if c.restConfig == nil {
-		return fmt.Errorf("runtime shell requires a REST config")
-	}
-	if options.Stdin == nil || options.Stdout == nil {
-		return fmt.Errorf("runtime shell streams are required")
-	}
-	pod, container, err := c.runtimePod(ctx, options.Namespace, options.DeploymentTargetID, options.Container)
-	if err != nil {
-		return err
-	}
-	req := c.client.CoreV1().RESTClient().Post().
-		Resource("pods").
-		Name(pod.Name).
-		Namespace(pod.Namespace).
-		SubResource("exec").
-		VersionedParams(&corev1.PodExecOptions{
-			Container: container,
-			Command:   []string{"/bin/sh"},
-			Stdin:     true,
-			Stdout:    true,
-			Stderr:    true,
-			TTY:       false,
-		}, scheme.ParameterCodec)
-	executor, err := remotecommand.NewSPDYExecutor(c.restConfig, "POST", req.URL())
-	if err != nil {
-		return err
-	}
-	return executor.StreamWithContext(ctx, remotecommand.StreamOptions{
-		Stdin: options.Stdin, Stdout: options.Stdout, Stderr: options.Stdout, Tty: false,
 	})
 }
 

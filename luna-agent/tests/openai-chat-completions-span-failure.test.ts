@@ -1,14 +1,15 @@
 import type { Attributes, Span, SpanOptions } from "@opentelemetry/api"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { ToolCatalog } from "../src/tools/catalog.js"
 
 const telemetryState = vi.hoisted(() => ({
-  spans: [] as Array<{ attributes: Record<string, unknown>, ended: boolean }>,
+  spans: [] as Array<{ attributes: Record<string, unknown>, events: unknown[], ended: boolean }>,
 }))
 
 vi.mock("../src/telemetry.js", async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>()
   const createSpan = (): Span => {
-    const captured = { attributes: {} as Record<string, unknown>, ended: false }
+    const captured = { attributes: {} as Record<string, unknown>, events: [] as unknown[], ended: false }
     telemetryState.spans.push(captured)
     return {
       setAttribute(name: string, value: unknown) {
@@ -21,7 +22,10 @@ vi.mock("../src/telemetry.js", async (importOriginal) => {
       },
       setStatus() { return this },
       updateName() { return this },
-      addEvent() { return this },
+      addEvent(name: string, attributes?: Attributes) {
+        captured.events.push({ name, attributes })
+        return this
+      },
       addLink() { return this },
       addLinks() { return this },
       recordException() {},
@@ -57,6 +61,7 @@ vi.mock("../src/telemetry.js", async (importOriginal) => {
 })
 
 const { OpenAIChatCompletionsProvider } = await import("../src/provider/openai-chat-completions.js")
+const { configureAIContentCapture } = await import("../src/telemetry.js")
 
 const providerOptions = {
   baseUrl: "https://provider.example/v1",
@@ -78,7 +83,9 @@ beforeEach(() => {
 
 afterEach(() => vi.unstubAllGlobals())
 
-describe("OpenAI Chat Completions failure usage spans", () => {
+afterEach(() => configureAIContentCapture(false))
+
+describe("OpenAI Chat Completions spans", () => {
   it("marks a rejected complete attempt as unavailable before ending the span", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
       error: { code: "context_length_exceeded", message: "too long" },
@@ -119,5 +126,70 @@ describe("OpenAI Chat Completions failure usage spans", () => {
         "luna.gen_ai.usage.unavailable_reason": "request_failed",
       },
     })
+  })
+
+  it("applies catalog sensitive paths only to captured model content", async () => {
+    const rawCommand = "kubectl get pods --namespace telemetry-private"
+    const operationId = "executeRuntimeCommand"
+    const argumentsValue = { body: { command: rawCommand, container: "api" } }
+    const catalog = ToolCatalog.load([{
+      operationId,
+      category: "runtime",
+      idempotent: false,
+      method: "POST",
+      path: "/api/v1/runtime/exec",
+      requiredScopes: ["runtime:write"],
+      sensitivePaths: ["body.command"],
+      inputSchema: {
+        type: "object",
+        properties: {
+          body: { type: "object" },
+        },
+        required: ["body"],
+        additionalProperties: false,
+      },
+    }])
+    const fetchMock = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({
+      id: "chatcmpl_sensitive",
+      model: "model-a",
+      choices: [{
+        message: {
+          content: "",
+          tool_calls: [{
+            id: "call_output",
+            type: "function",
+            function: { name: operationId, arguments: JSON.stringify(argumentsValue) },
+          }],
+        },
+        finish_reason: "tool_calls",
+      }],
+      usage: { prompt_tokens: 8, completion_tokens: 4, total_tokens: 12 },
+    }), { status: 200 }))
+    vi.stubGlobal("fetch", fetchMock)
+    configureAIContentCapture(true)
+
+    const result = await new OpenAIChatCompletionsProvider(providerOptions).complete({
+      messages: [{
+        role: "assistant",
+        content: "",
+        toolCalls: [{ id: "call_input", operationId, arguments: argumentsValue }],
+      }],
+      tools: catalog.modelTools([operationId]),
+      maxOutputTokens: 100,
+    })
+
+    const rawRequestBody = fetchMock.mock.calls[0]?.[1]?.body
+    expect(typeof rawRequestBody).toBe("string")
+    expect(rawRequestBody).toContain(rawCommand)
+    expect(rawRequestBody).not.toContain("sensitivePaths")
+    expect(result.toolCalls?.[0]?.arguments).toEqual(argumentsValue)
+    expect(argumentsValue.body.command).toBe(rawCommand)
+
+    const span = telemetryState.spans.at(-1)
+    expect(span?.attributes["gen_ai.input.messages"]).toContain("[REDACTED]")
+    expect(span?.attributes["gen_ai.output.messages"]).toContain("[REDACTED]")
+    expect(span?.attributes["gen_ai.input.messages"]).toContain("api")
+    expect(span?.attributes["gen_ai.output.messages"]).toContain("api")
+    expect(JSON.stringify(span)).not.toContain(rawCommand)
   })
 })

@@ -17,7 +17,7 @@ export type NavigateToRouteInput = z.infer<typeof navigateToRouteInput>
 
 export const navigateToRouteTool: ModelToolDefinition = {
   operationId: "navigate_to_route",
-  description: "在不刷新页面的情况下，将当前登录用户的浏览器视图立即切换到已注册的 Luna DevOps 路由。只要用户的主要意图唯一对应另一个已注册专用页面就必须使用；用户不必逐字说出“打开”或“跳转”。目标必须唯一，资源页参数必须来自页面上下文、用户输入或可信工具结果；无资源 ID 的全局页面可直接切换。跳转只同步当前视图，必须继续执行任务所需的业务工具，不能代替结构化输入、批准或验收。候选未确定时可使用 request_choice；不得为纯后台查询、无关建议、正在填写的表单或待批准操作制造意外跳转。绝不能编造路由名或资源标识符。",
+  description: "在会话时间线中生成一个指向已注册 Luna DevOps 内部路由的可点击按钮，不会自动切换当前页面。仅当用户需要查看另一个专用页面时使用；目标必须唯一，资源页参数必须来自页面上下文、用户输入或可信工具结果。导航记录不能代替结构化输入、批准、业务操作或验收。候选未确定时可使用 request_choice；绝不能编造路由名、资源标识符或跨源地址。",
   inputSchema: {
     type: "object",
     additionalProperties: false,
@@ -30,11 +30,11 @@ export const navigateToRouteTool: ModelToolDefinition = {
   },
 }
 
-export function automaticRouteUIAction(input: NavigateToRouteInput) {
+export function routeUIAction(input: NavigateToRouteInput) {
   return {
     version: 1 as const,
     type: "navigate" as const,
-    activation: "automatic" as const,
+    activation: "manual" as const,
     repeatable: false,
     payload: {
       routeName: input.routeName,

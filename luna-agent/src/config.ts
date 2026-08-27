@@ -1,5 +1,4 @@
 import { z } from "zod"
-import { DiagnosticError } from "./diagnostic-error.js"
 
 function optionalValue<T extends z.ZodType>(schema: T) {
   return z.preprocess(value => typeof value === "string" && value.trim() === "" ? undefined : value, schema.optional())
@@ -13,11 +12,9 @@ const schema = z.object({
   LOG_COLOR: z.enum(["auto", "always", "never"]).default("auto"),
   LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
   DATABASE_URL: optionalValue(z.string()),
-  REDIS_ADDR: optionalValue(z.string().url()),
   AI_DATABASE_MAX_CONNECTIONS: z.coerce.number().int().min(1).max(100).default(10),
   AI_DATABASE_CONNECTION_TIMEOUT_MS: z.coerce.number().int().min(100).max(30_000).default(5_000),
   AI_DATABASE_STATEMENT_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(120_000).default(15_000),
-  INSTANCE_ID: z.string().min(1).max(128).default(`agent-${process.pid}`),
   AUTH_MODE: z.enum(["development", "bff-hmac"]).default("development"),
   AI_INTERNAL_SECRET: optionalValue(z.string().min(32)),
   LUNA_API_BASE_URL: optionalValue(z.string().url()),
@@ -47,13 +44,6 @@ export function loadConfig(input: NodeJS.ProcessEnv = process.env): Config {
   }
   if (config.NODE_ENV === "production" && !config.LUNA_API_BASE_URL) {
     throw new Error("Production model execution requires Luna API provider configuration")
-  }
-  if (config.NODE_ENV === "production" && !config.REDIS_ADDR) {
-    throw new DiagnosticError(
-      "ai.stream_redis_url_required",
-      "Production streaming requires REDIS_ADDR",
-      "configure REDIS_ADDR with a valid Redis connection URI in the Agent deployment and redeploy",
-    )
   }
   return config
 }

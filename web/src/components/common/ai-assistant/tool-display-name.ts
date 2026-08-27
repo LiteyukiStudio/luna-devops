@@ -176,8 +176,6 @@ const resourceAliases: Record<string, string> = {
   aiRunInput: 'aiRunInput',
   aiToolApproval: 'aiToolApproval',
   aiTurn: 'aiTurn',
-  pendingAIUIActions: 'aiUIActions',
-  aiUIAction: 'aiUIAction',
   registeredAITool: 'registeredAITool',
   internalAIProviderConfig: 'aiProviderConfig',
   aiProviderConnection: 'aiProviderConnection',

@@ -1,5 +1,4 @@
 import type { ReactNode } from 'react'
-import type { AutomaticRouteDelivery } from './automatic-actions'
 import type { AIAssistantWorkspaceLocation } from './runtime-context'
 import type { AITimelineInfiniteData, AITimelineQueryData } from './timeline-query'
 import type { AICapabilities, AIUIAction } from '@/api'
@@ -13,12 +12,6 @@ import { useSession } from '@/app/session-context'
 import { isPlatformAdmin } from '@/lib/roles'
 import { executeAIUIAction } from './actions'
 import {
-  automaticRouteDeliveryFromEvent,
-  automaticRouteDeliveryFromPending,
-} from './automatic-actions'
-import { executeAutomaticRouteDelivery } from './automatic-route-delivery'
-import { readAIClientInstanceId } from './client-instance'
-import {
   aiConversationSessionReducer,
   initialAIConversationSessionState,
   isRecentConversationInteraction,
@@ -26,7 +19,6 @@ import {
 } from './conversation-session'
 import { aiConversationModelKey, resolveAIConversationModel } from './model-selection'
 import { buildAIPageContext } from './page-context'
-import { pendingUIActionsPollInterval } from './pending-ui-actions-query'
 import { AIRefreshConversationReturn } from './refresh-conversation-return'
 import { isAIAssistantRoutePath, readAIAssistantRouteState } from './route-state'
 import { useAIRunStreamManager } from './run-stream-manager'
@@ -68,11 +60,9 @@ function runtimeConversationSessionReducer(
     : aiConversationSessionReducer(state, action)
 }
 
-const INVALID_ACTION_SESSION_GENERATION = -1
-
 export function AIAssistantRuntimeProvider({ capabilities, children, initiallyOpen = false }: AIAssistantRuntimeProviderProps) {
   const { i18n, t } = useTranslation()
-  const { actualUser } = useSession()
+  const { user } = useSession()
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const location = useLocation()
@@ -90,17 +80,11 @@ export function AIAssistantRuntimeProvider({ capabilities, children, initiallyOp
   const workspaceLocation = assistantRoute
     ? readAIAssistantRouteState(location.state).returnTo
     : currentWorkspaceLocation
-  const locationRef = useRef(location)
-  locationRef.current = location
   const pageContext = useCallback(() => buildAIPageContext(workspaceLocation.pathname, workspaceLocation.search, i18n.language, {
     hash: workspaceLocation.hash,
   }), [i18n.language, workspaceLocation.hash, workspaceLocation.pathname, workspaceLocation.search])
   const inputRef = useRef<HTMLTextAreaElement>(null)
-  const automaticDeliveryHandlerRef = useRef<((delivery: AutomaticRouteDelivery, actionGeneration: number) => Promise<void>) | undefined>(undefined)
-  const processingAutomaticActionsRef = useRef(new Set<string>())
   const actionSessionGenerationRef = useRef(0)
-  const automaticActionGenerationsRef = useRef(new Map<string, number>())
-  const runActionGenerationsRef = useRef(new Map<string, number>())
   const pageTransitionPendingRef = useRef(false)
   const timelineRecoveriesRef = useRef(new Set<string>())
   const [open, setOpen] = useState(initiallyOpen && enabled)
@@ -114,21 +98,18 @@ export function AIAssistantRuntimeProvider({ capabilities, children, initiallyOp
   const [drafts, setDrafts] = useState<Record<string, string>>({})
   const [pendingSends, setPendingSends] = useState<Record<string, number>>({})
   const [modelSelectionOverrides, setModelSelectionOverrides] = useState<Record<string, string>>({})
-  const [clientInstanceId] = useState(readAIClientInstanceId)
   const [previousEnabled, setPreviousEnabled] = useState(enabled)
   if (previousEnabled !== enabled) {
     setPreviousEnabled(enabled)
     if (!enabled) {
       actionSessionGenerationRef.current += 1
-      automaticActionGenerationsRef.current.clear()
-      runActionGenerationsRef.current.clear()
       pageTransitionPendingRef.current = false
       setOpen(false)
       dispatchConversationSession({ type: 'reset' })
     }
   }
-  const canDebugInternalTools = isPlatformAdmin(actualUser?.role)
-  const toolDebugMode = useAIToolDebugMode(actualUser?.id, canDebugInternalTools)
+  const canDebugInternalTools = isPlatformAdmin(user?.role)
+  const toolDebugMode = useAIToolDebugMode(user?.id, canDebugInternalTools)
   const invalidateActionSession = useCallback(() => {
     actionSessionGenerationRef.current += 1
   }, [])
@@ -164,27 +145,6 @@ export function AIAssistantRuntimeProvider({ capabilities, children, initiallyOp
     staleTime: 0,
     retry: false,
   })
-  const pendingUIActions = useQuery({
-    queryKey: ['ai', 'ui-actions', 'pending', clientInstanceId],
-    queryFn: async ({ signal }) => {
-      const actionGeneration = actionSessionGenerationRef.current
-      const response = await api.listPendingAIUIActions(clientInstanceId, signal)
-      response.items.forEach((item) => {
-        if (!automaticActionGenerationsRef.current.has(item.actionId)) {
-          automaticActionGenerationsRef.current.set(
-            item.actionId,
-            runActionGenerationsRef.current.get(item.runId) ?? actionGeneration,
-          )
-        }
-      })
-      return response
-    },
-    enabled: enabled && surfaceVisible,
-    retry: false,
-    refetchInterval: query => pendingUIActionsPollInterval(query.state.data, Boolean(query.state.error)),
-    staleTime: 0,
-  })
-
   const conversations = useInfiniteQuery({
     queryKey: ['ai', 'conversations', conversationSearch],
     queryFn: ({ pageParam }) => api.listAIConversations({ page: pageParam, pageSize: 50, search: conversationSearch || undefined }),
@@ -273,7 +233,6 @@ export function AIAssistantRuntimeProvider({ capabilities, children, initiallyOp
   const handleStreamEvent = useCallback((event: Parameters<typeof applyTimelineInfiniteEvent>[1]) => {
     let desynced = false
     let acknowledged = false
-    let projected = false
     queryClient.setQueryData<AITimelineInfiniteData>(aiTimelineQueryKey(event.conversationId), (current) => {
       const next = applyTimelineInfiniteEvent(current, event)
       if (!next)
@@ -281,26 +240,13 @@ export function AIAssistantRuntimeProvider({ capabilities, children, initiallyOp
       const nextData = timelineQueryDataFromInfinite(next)
       acknowledged = (nextData?.state.lastEventSequences[event.runId] ?? 0) >= event.eventSequence
       desynced = !acknowledged && (nextData?.state.desyncedRunIds.has(event.runId) ?? false)
-      projected = next !== current
-        && acknowledged
       return next
     })
-    const automaticDelivery = projected
-      ? automaticRouteDeliveryFromEvent(event)
-      : undefined
-    if (automaticDelivery) {
-      const actionGeneration = runActionGenerationsRef.current.get(event.runId) ?? INVALID_ACTION_SESSION_GENERATION
-      if (!automaticActionGenerationsRef.current.has(automaticDelivery.actionId))
-        automaticActionGenerationsRef.current.set(automaticDelivery.actionId, actionGeneration)
-      if (enabledRef.current && surfaceVisibleRef.current && automaticDeliveryHandlerRef.current)
-        void automaticDeliveryHandlerRef.current(automaticDelivery, actionGeneration)
-    }
     if (event.type === 'conversation.title.updated') {
       void queryClient.invalidateQueries({ queryKey: ['ai', 'conversations'] })
       void queryClient.invalidateQueries({ queryKey: aiTimelineQueryKey(event.conversationId) })
     }
     if (event.type === 'run.completed' || event.type === 'run.failed' || event.type === 'run.canceled' || event.type === 'run.interrupted') {
-      runActionGenerationsRef.current.delete(event.runId)
       void queryClient.invalidateQueries({ queryKey: ['ai', 'conversations'] })
       void queryClient.invalidateQueries({ queryKey: aiTimelineQueryKey(event.conversationId) })
     }
@@ -417,7 +363,6 @@ export function AIAssistantRuntimeProvider({ capabilities, children, initiallyOp
         modelId: selectedModel.id,
         input: { parts: [{ type: 'text', text }] },
         pageContext: pageContext(),
-        clientInstanceId,
       }, crypto.randomUUID())
       return { ...result, actionGeneration, conversationId, text, sourceDraftKey: aiConversationModelKey(requestedConversationId) }
     },
@@ -426,7 +371,6 @@ export function AIAssistantRuntimeProvider({ capabilities, children, initiallyOp
       setPendingSends(current => ({ ...current, [key]: (current[key] ?? 0) + 1 }))
     },
     onSuccess: async (result) => {
-      runActionGenerationsRef.current.set(result.runId, result.actionGeneration)
       setDrafts(current => ({ ...current, [result.sourceDraftKey]: '', [result.conversationId]: '' }))
       queryClient.setQueryData<AITimelineInfiniteData>(aiTimelineQueryKey(result.conversationId), current => addOptimisticTimelineTurn(current, {
         turnId: result.turnId,
@@ -511,12 +455,10 @@ export function AIAssistantRuntimeProvider({ capabilities, children, initiallyOp
         operationId: action.payload.operationId,
         arguments: action.payload.arguments ?? {},
         message: action.payload.message,
-        clientInstanceId,
       }, crypto.randomUUID())
       return { ...result, action, actionGeneration, conversationId }
     },
     onSuccess: async (result) => {
-      runActionGenerationsRef.current.set(result.runId, result.actionGeneration)
       queryClient.setQueryData<AITimelineInfiniteData>(aiTimelineQueryKey(result.conversationId), current => addOptimisticTimelineTurn(current, {
         turnId: result.turnId,
         turnIndex: result.turnIndex,
@@ -553,55 +495,6 @@ export function AIAssistantRuntimeProvider({ capabilities, children, initiallyOp
       },
     })
   }, [activeRunId, isCurrentActionSession, navigate, queryClient, requestToolActionAsync, selectedConversationId, sendTurnAsync, t, workspaceLocation.pathname, workspaceLocation.search])
-  const processAutomaticDelivery = useCallback(async (delivery: AutomaticRouteDelivery, actionGeneration: number) => {
-    if (processingAutomaticActionsRef.current.has(delivery.actionId))
-      return
-    processingAutomaticActionsRef.current.add(delivery.actionId)
-    let terminallyAcknowledged = false
-    try {
-      const success = await executeAutomaticRouteDelivery({
-        delivery,
-        execute: action => isCurrentActionSession(actionGeneration)
-          ? executeAction(action)
-          : Promise.resolve(false),
-        currentPath: () => `${locationRef.current.pathname}${locationRef.current.search}`,
-        acknowledge: async (actionId, acknowledgement) => {
-          await api.acknowledgeAIUIAction(actionId, {
-            ...acknowledgement,
-            clientInstanceId,
-          })
-          terminallyAcknowledged = true
-        },
-      })
-      if (!success && isCurrentActionSession(actionGeneration))
-        toast.error(t('aiAssistant.actions.unavailable'))
-      await queryClient.invalidateQueries({ queryKey: ['ai', 'ui-actions', 'pending', clientInstanceId] })
-    }
-    catch (error) {
-      if (isCurrentActionSession(actionGeneration))
-        toast.error(error instanceof Error ? error.message : t('aiAssistant.actions.unavailable'))
-    }
-    finally {
-      if (terminallyAcknowledged)
-        automaticActionGenerationsRef.current.delete(delivery.actionId)
-      processingAutomaticActionsRef.current.delete(delivery.actionId)
-    }
-  }, [clientInstanceId, executeAction, isCurrentActionSession, queryClient, t])
-  useEffect(() => {
-    automaticDeliveryHandlerRef.current = processAutomaticDelivery
-    return () => {
-      automaticDeliveryHandlerRef.current = undefined
-    }
-  }, [processAutomaticDelivery])
-  useEffect(() => {
-    pendingUIActions.data?.items.forEach((item) => {
-      const delivery = automaticRouteDeliveryFromPending(item)
-      if (delivery) {
-        const actionGeneration = automaticActionGenerationsRef.current.get(item.actionId) ?? INVALID_ACTION_SESSION_GENERATION
-        void processAutomaticDelivery(delivery, actionGeneration)
-      }
-    })
-  }, [pendingUIActions.data, processAutomaticDelivery])
   const submitDraft = () => {
     if (waitingInput && activeRunId && selectedConversationId) {
       submitRunInput.mutate({
@@ -762,10 +655,9 @@ export function AIAssistantRuntimeProvider({ capabilities, children, initiallyOp
           loading: timeline.isLoading,
           outputStreaming: activeRunStreamState?.status === 'streaming',
           onAction: executeAction,
-          onApproval: async (block, decision, reason) => {
+          onApproval: async (block, decision) => {
             await api.decideAIToolApproval(block.runId, block.toolCallId, {
               decision,
-              reason,
             })
           },
           onResend: message => sendTurn.mutate({

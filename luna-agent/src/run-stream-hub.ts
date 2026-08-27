@@ -23,7 +23,7 @@ export interface RunStreamHubSubscription {
 }
 
 /**
- * 每个 Agent 实例内的同一 Run 只保留一个 Redis 阻塞读取器和一个 PG 权威观察器。
+ * 单 Agent 副本内的同一 Run 只保留一个实时缓冲读取器和一个 PG 权威观察器。
  * 浏览器连接只订阅本地扇出，慢连接的背压不会阻塞其他订阅者。
  */
 export class RunStreamHubManager {
@@ -101,7 +101,7 @@ class RunStreamHub {
   private reader: RunStreamReader | undefined
   private starting: Promise<void> | undefined
   private loop: Promise<void> | undefined
-  private redisCursor: number
+  private liveCursor: number
   private durableCursor: number
   private stopped = false
 
@@ -113,7 +113,7 @@ class RunStreamHub {
     private readonly bus: RunStreamBus | undefined,
     private readonly onStopped: () => void,
   ) {
-    this.redisCursor = after
+    this.liveCursor = after
     this.durableCursor = after
   }
 
@@ -149,11 +149,11 @@ class RunStreamHub {
     let durablePollAt = 0
     while (!this.abort.signal.aborted && this.subscribers.size > 0) {
       const live = this.reader
-        ? await this.reader.wait(this.redisCursor, this.abort.signal)
+        ? await this.reader.wait(this.liveCursor, this.abort.signal)
         : await delay(durablePollIntervalMs, this.abort.signal).then(() => [] as RunEvent[])
       if (this.abort.signal.aborted) break
       if (live.length) {
-        this.redisCursor = Math.max(this.redisCursor, ...live.map(event => event.sequence))
+        this.liveCursor = Math.max(this.liveCursor, ...live.map(event => event.sequence))
         this.broadcast(live, undefined, undefined, false)
       }
       if (Date.now() - durablePollAt < durablePollIntervalMs) continue

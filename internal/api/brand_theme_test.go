@@ -2,12 +2,10 @@ package api
 
 import "testing"
 
-func TestBrandColorPresetOptionsIncludeCuratedAndRadixThemes(t *testing.T) {
+func TestBrandColorPresetOptionsMatchSettingsCatalog(t *testing.T) {
 	want := []string{
 		"aurora", "harbor", "sunset", "botanical", "meadow", "citrus",
-		"gold", "bronze", "brown", "yellow", "amber", "orange", "tomato", "red", "ruby", "crimson",
-		"pink", "plum", "purple", "violet", "iris", "indigo", "blue", "cyan", "teal", "jade",
-		"green", "grass", "lime", "mint", "sky",
+		"gold", "orange", "red", "pink", "violet", "blue", "cyan", "teal", "green", "lime",
 	}
 	if len(brandColorPresetOptions) != len(want) {
 		t.Fatalf("brand preset count = %d, want %d", len(brandColorPresetOptions), len(want))
@@ -32,8 +30,11 @@ func TestNormalizeUserBrandColorPresetAllowsFollowingPlatform(t *testing.T) {
 	if got, valid := normalizeUserBrandColorPreset("  "); !valid || got != "" {
 		t.Fatalf("empty user preset = %q, valid=%v; want empty and valid", got, valid)
 	}
-	if got, valid := normalizeUserBrandColorPreset(" Ruby "); !valid || got != "ruby" {
-		t.Fatalf("official user preset = %q, valid=%v; want ruby and valid", got, valid)
+	if got, valid := normalizeUserBrandColorPreset(" Teal "); !valid || got != "teal" {
+		t.Fatalf("official user preset = %q, valid=%v; want teal and valid", got, valid)
+	}
+	if got, valid := normalizeUserBrandColorPreset(" Ruby "); valid || got != "ruby" {
+		t.Fatalf("hidden user preset = %q, valid=%v; want ruby and invalid", got, valid)
 	}
 	if got, valid := normalizeUserBrandColorPreset("custom-css"); valid || got != "custom-css" {
 		t.Fatalf("custom user preset = %q, valid=%v; want invalid", got, valid)
@@ -41,14 +42,16 @@ func TestNormalizeUserBrandColorPresetAllowsFollowingPlatform(t *testing.T) {
 }
 
 func TestValidateConfigValuesRejectsUnknownBrandColorPreset(t *testing.T) {
-	if _, err := validateConfigValues(map[string]any{siteBrandColorPresetKey: "custom-css"}); err == nil {
-		t.Fatal("expected unknown brand color preset to be rejected")
+	for _, invalid := range []string{"custom-css", "ruby"} {
+		if _, err := validateConfigValues(map[string]any{siteBrandColorPresetKey: invalid}); err == nil {
+			t.Fatalf("expected brand color preset %q to be rejected", invalid)
+		}
 	}
-	values, err := validateConfigValues(map[string]any{siteBrandColorPresetKey: "ruby"})
+	values, err := validateConfigValues(map[string]any{siteBrandColorPresetKey: "red"})
 	if err != nil {
 		t.Fatalf("validate official brand color preset: %v", err)
 	}
-	if values[siteBrandColorPresetKey] != "ruby" {
-		t.Fatalf("validated preset = %q, want ruby", values[siteBrandColorPresetKey])
+	if values[siteBrandColorPresetKey] != "red" {
+		t.Fatalf("validated preset = %q, want red", values[siteBrandColorPresetKey])
 	}
 }

@@ -155,6 +155,7 @@ export class ToolCatalog {
       operationId: operation.operationId,
       description: modelDescription(operation),
       inputSchema: operation.inputSchema,
+      sensitivePaths: [...operation.sensitivePaths],
     }))
   }
 }

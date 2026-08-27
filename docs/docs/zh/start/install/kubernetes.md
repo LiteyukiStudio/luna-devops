@@ -93,6 +93,35 @@ helm upgrade --install luna-devops ./charts/luna-devops \
   -f values-prod.yaml
 ```
 
+## 配置 Agent 网络策略
+
+Chart 默认启用 API 到 Agent 的入站隔离，但不默认限制 Agent 出站。Agent 需要访问模型 Provider、
+OpenTelemetry Collector 和 PostgreSQL；其中动态域名无法由原生 Kubernetes NetworkPolicy 可靠表达。
+
+只有列全实际目的地后才启用出站隔离，例如：
+
+```yaml
+ai:
+  agent:
+    networkPolicy:
+      egress:
+        enabled: true
+        additionalCIDRs:
+          - 203.0.113.10/32
+        additionalRules:
+          - to:
+              - namespaceSelector:
+                  matchLabels:
+                    kubernetes.io/metadata.name: observability
+            ports:
+              - protocol: TCP
+                port: 4318
+```
+
+模型 Provider 使用动态地址时，请改用支持 FQDN 策略的 CNI 或稳定出口代理，不要把未覆盖真实目的地
+的 deny-all 规则当作可用配置。Agent 的非 root 用户、只读根文件系统和禁用 ServiceAccount Token
+不受此开关影响。
+
 ## 常用配置
 
 | 配置项 | 默认值 | 说明 |
@@ -101,6 +130,8 @@ helm upgrade --install luna-devops ./charts/luna-devops \
 | `app.secretEncryptionKey` | 自动生成 | 加密平台保存的凭据；填写稳定的非空密钥。 |
 | `api.image.tag` / `worker.image.tag` | `nightly` | 选择 API 与 Worker 镜像版本；填写镜像标签。 |
 | `ai.enabled` / `ai.existingSecret` | `false` / 空 | 启用 Agent 并指定内部密钥；分别填写布尔值和 Kubernetes Secret 名称。 |
+| `ai.agent.networkPolicy.ingress.enabled` / `egress.enabled` | `true` / `false` | 分别控制 API 到 Agent 的入站隔离和 Agent 出站隔离；填写布尔值，并仅在目的地规则完整时启用出站。 |
+| `ai.agent.networkPolicy.egress.additionalCIDRs` / `additionalRules` | `[]` / `[]` | 补充 Agent 可访问目的地；分别填写 CIDR 列表和 Kubernetes NetworkPolicy egress rule 列表。 |
 | `postgresql.enabled` / `externalDatabase.url` | `true` / 空 | 选择内置或外部 PostgreSQL；分别填写布尔值和 PostgreSQL 连接 URI。 |
 | `redis.enabled` / `externalRedis.url` | `true` / 空 | 选择内置或外部 Redis；分别填写布尔值和 `redis://` 或 `rediss://` URI。 |
 | `worker.buildEgressMode` | `restricted` | 设置构建网络出口策略；可填 `restricted` 或 `permissive`。 |

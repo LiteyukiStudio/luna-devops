@@ -150,13 +150,6 @@ var configDefinitions = []configDefinition{
 		Default:     "1024",
 	},
 	{
-		Key:         "ai.run.navigate_action_ttl_seconds",
-		Label:       "路由跳转动作有效期（秒）",
-		Description: "navigate_to_route 生成的跳转动作可被前端执行的秒数，范围 10–600，默认 120。",
-		Type:        "number",
-		Default:     "120",
-	},
-	{
 		Key:         "ai.tools.max_card_repair_attempts",
 		Label:       "交互卡片修复上限",
 		Description: "模型生成的交互卡片参数校验失败后允许自动修正的最大次数，范围 1–10，默认 5。",

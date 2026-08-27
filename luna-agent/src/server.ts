@@ -3,9 +3,9 @@ import { z } from "zod"
 import type { RequestVerifier } from "./auth.js"
 import type { Config } from "./config.js"
 import type { AIModelSnapshot, ActorContext, Run, RunEvent } from "./domain.js"
-import type { Repository } from "./persistence/repository.js"
+import { RunStateConflictError, type Repository } from "./persistence/repository.js"
 import type { ModelProvider } from "./provider/provider.js"
-import type { ProviderConfigClient } from "./provider/config-client.js"
+import type { RemoteConfigSnapshot } from "./provider/config-client.js"
 import { createConfiguredProvider } from "./provider/managed.js"
 import { redact } from "./redaction.js"
 import type { ToolOrchestrator } from "./tools/orchestrator.js"
@@ -20,9 +20,6 @@ declare module "fastify" {
 }
 
 const id = z.string().min(5).max(64)
-const clientInstanceId = z.string().regex(/^[A-Za-z0-9_-]{16,80}$/)
-const relativePath = z.string().trim().min(1).max(2048).regex(/^\/(?!\/)/)
-const stableErrorCode = z.string().trim().min(3).max(120).regex(/^[a-z][a-z0-9_.-]+$/)
 const page = z.coerce.number().int().min(1).default(1)
 const pageSize = z.coerce.number().int().min(1).max(100).default(20)
 const timelineLimit = z.coerce.number().int().min(1).max(100).default(30)
@@ -41,8 +38,8 @@ export function buildServer(input: {
   requestVerifier: RequestVerifier
   provider: ModelProvider
   tools?: ToolOrchestrator
-  providerConfigClient?: ProviderConfigClient
-  cancelRun?: (runId: string) => void
+  remoteConfig?: RemoteConfigSnapshot
+  cancelRun?: (runId: string) => boolean | Promise<boolean>
   toolCatalogDigest?: string | (() => string)
   streamBus?: RunStreamBus
   streamHubLimits?: { perRun: number, perInstance: number, pendingEvents?: number, pendingBytes?: number }
@@ -60,18 +57,15 @@ export function buildServer(input: {
   app.get("/internal/health/live", { logLevel: "silent" }, async () => ({ status: "ok" }))
   app.get("/internal/health/ready", { logLevel: "silent" }, async (_request, reply) => {
     const persistence = await input.repository.readiness()
-    const streamAvailable = input.streamBus ? await input.streamBus.health() : true
-    const remoteConfig = input.providerConfigClient?.current()
-    const providerConfigAvailable = !input.providerConfigClient || remoteConfig !== undefined
-    const providerConfigured = input.providerConfigClient ? remoteConfig?.provider.configured === true : true
-    if (!persistence.database || !persistence.schema || !providerConfigAvailable || !streamAvailable) {
+    const remoteConfig = input.remoteConfig?.current()
+    const providerConfigAvailable = !input.remoteConfig || remoteConfig !== undefined
+    const providerConfigured = input.remoteConfig ? remoteConfig?.provider.configured === true : true
+    if (!persistence.database || !persistence.schema || !providerConfigAvailable) {
       const errorCode = !persistence.database
         ? "ai.persistence_unavailable"
         : !persistence.schema
           ? "ai.database_schema_mismatch"
-          : !providerConfigAvailable
-            ? "ai.provider_config_unavailable"
-            : "ai.stream_transport_unavailable"
+          : "ai.provider_config_unavailable"
       telemetryLog("agent.readiness.failed", "warn", {
         "operation": "agent.readiness",
         "outcome": "failed",
@@ -81,11 +75,11 @@ export function buildServer(input: {
       })
       return reply.code(503).send({
         status: "not_ready",
-        checks: { ...persistence, providerConfigAvailable, providerConfigured, streamAvailable },
+        checks: { ...persistence, providerConfigAvailable, providerConfigured },
         errorCode,
       })
     }
-    return { status: "ready", checks: { ...persistence, providerConfigAvailable, providerConfigured, streamAvailable } }
+    return { status: "ready", checks: { ...persistence, providerConfigAvailable, providerConfigured } }
   })
   app.get("/internal/v1/health/compatibility", async () => ({
     component: "luna-agent", version: "0.1.0", internalApiVersions: ["v1"],
@@ -99,9 +93,7 @@ export function buildServer(input: {
     })
 
     secured.get("/internal/v1/capabilities", async () => {
-      const runtime = input.providerConfigClient
-        ? await input.providerConfigClient.get().then(config => config.runtime)
-        : defaultRuntimeSettings
+      const runtime = input.remoteConfig?.current()?.runtime ?? defaultRuntimeSettings
       return {
         mode: input.tools ? "controlled_tools" : "read_only",
         features: {
@@ -121,9 +113,10 @@ export function buildServer(input: {
 
     secured.get("/internal/v1/provider/health", async () => redact(await input.provider.health()))
     secured.post("/internal/v1/provider/test", async (_request, reply) => {
-      if (!input.providerConfigClient) return reply.code(503).send(errorBody("ai.provider_config_unavailable", _request.id))
+      if (!input.remoteConfig) return reply.code(503).send(errorBody("ai.provider_config_unavailable", _request.id))
       reply.header("cache-control", "no-store")
-      const config = await input.providerConfigClient.get()
+      const config = input.remoteConfig.current()
+      if (!config) return reply.code(503).send(errorBody("ai.provider_config_unavailable", _request.id))
       const selectedModel = config.provider.models[0]
       if (!config.provider.configured || !selectedModel) return reply.code(409).send({ status: "not_configured", configVersion: config.version, capabilities: {} })
       const provider = createConfiguredProvider(config, selectedModel.name)
@@ -149,16 +142,6 @@ export function buildServer(input: {
         sortOrder: query.sortOrder,
       })
       return { ...result, page: query.page, pageSize: query.pageSize, sortBy: query.sortBy, sortOrder: query.sortOrder, totalPages: Math.ceil(result.total / query.pageSize) }
-    })
-    secured.get("/internal/v1/tool-approval-exemptions", async request => {
-      return { items: await input.repository.listToolApprovalExemptions(request.actor.userId) }
-    })
-    secured.delete("/internal/v1/tool-approval-exemptions/:operationId", async (request, reply) => {
-      const { operationId } = z.object({
-        operationId: z.string().regex(/^[a-zA-Z][a-zA-Z0-9_.-]{2,100}$/),
-      }).parse(request.params)
-      await input.repository.revokeToolApprovalExemption(request.actor.userId, operationId)
-      return reply.code(204).send()
     })
     secured.post("/internal/v1/conversations", async (request, reply) => {
       const body = z.object({
@@ -226,7 +209,6 @@ export function buildServer(input: {
         modelId: id,
         modelSnapshot: aiModelSnapshot.optional(),
         pageContext: z.record(z.string(), z.unknown()).default({}),
-        clientInstanceId,
         runId: id.optional(),
       }).parse(request.body)
       const catalogDigest = toolCatalogDigest()
@@ -240,7 +222,6 @@ export function buildServer(input: {
           actorSessionId: request.actor.sessionId,
           idempotencyKey: key, ...(body.runId ? { preallocatedRunId: body.runId } : {}),
           ...(catalogDigest ? { toolCatalogDigest: catalogDigest } : {}),
-          clientInstanceId: body.clientInstanceId,
           modelId: body.modelId,
           ...(body.modelSnapshot ? { modelSnapshot: body.modelSnapshot } : {}),
         })
@@ -259,7 +240,6 @@ export function buildServer(input: {
         operationId: z.string().regex(/^[a-zA-Z][a-zA-Z0-9_.-]{2,100}$/),
         arguments: z.record(z.string(), z.unknown()),
         message: z.string().trim().min(1).max(2000),
-        clientInstanceId,
         runId: id,
       }).parse(request.body)
       if (body.runId !== request.actor.runId) return reply.code(409).send(errorBody("ai.run_state_conflict", request.id))
@@ -277,7 +257,6 @@ export function buildServer(input: {
           idempotencyKey: key,
           preallocatedRunId: body.runId,
           ...(catalogDigest ? { toolCatalogDigest: catalogDigest } : {}),
-          clientInstanceId: body.clientInstanceId,
         })
         span.setAttribute("luna.turn.id", value.turn.id)
         span.setAttribute("luna.run.id", value.run.id)
@@ -297,48 +276,6 @@ export function buildServer(input: {
         throw error
       }
     })
-    secured.get("/internal/v1/ui-actions/pending", async request => {
-      const query = z.object({ clientInstanceId }).parse(request.query)
-      const items = await input.repository.listPendingUIActions(request.actor.userId, query.clientInstanceId)
-      return {
-        items: items.map(item => ({
-          actionId: item.id,
-          runId: item.runId,
-          toolCallId: item.toolCallId,
-          action: item.action,
-          attempts: item.attempts,
-          expiresAt: item.expiresAt,
-        })),
-      }
-    })
-    secured.post("/internal/v1/ui-actions/:actionId/ack", async (request, reply) => {
-      const { actionId } = z.object({ actionId: id }).parse(request.params)
-      const body = z.object({
-        clientInstanceId,
-        status: z.enum(["succeeded", "failed"]),
-        actualPath: relativePath.optional(),
-        errorCode: stableErrorCode.optional(),
-      }).superRefine((value, context) => {
-        if (value.status === "succeeded" && !value.actualPath) {
-          context.addIssue({ code: "custom", path: ["actualPath"], message: "actualPath is required after successful navigation" })
-        }
-        if (value.status === "failed" && !value.errorCode) {
-          context.addIssue({ code: "custom", path: ["errorCode"], message: "errorCode is required after failed navigation" })
-        }
-      }).parse(request.body)
-      const action = await input.repository.acknowledgeUIAction(request.actor.userId, body.clientInstanceId, actionId, {
-        status: body.status,
-        ...(body.actualPath ? { actualPath: body.actualPath } : {}),
-        ...(body.errorCode ? { errorCode: body.errorCode } : {}),
-      })
-      if (!action) return reply.code(404).send(errorBody("ai.ui_action_not_found", request.id))
-      if (action.status !== body.status) return reply.code(409).send(errorBody("ai.ui_action_not_pending", request.id))
-      return reply.code(202).send({
-        actionId: action.id,
-        status: action.status,
-        acknowledgedAt: action.acknowledgedAt,
-      })
-    })
     secured.get("/internal/v1/runs/:runId", async (request, reply) => {
       const { runId } = z.object({ runId: id }).parse(request.params)
       const value = await input.repository.getRun(request.actor.userId, runId)
@@ -348,32 +285,14 @@ export function buildServer(input: {
       const { runId } = z.object({ runId: id }).parse(request.params)
       const current = await input.repository.getRun(request.actor.userId, runId)
       if (!current) return reply.code(404).send(errorBody("ai.run_not_found", request.id))
-      if (current.status === "running") {
-        if (input.streamBus) {
-          try {
-            await input.streamBus.requestCancellation(runId)
-            try { input.cancelRun?.(runId) } catch { /* Redis control remains authoritative across replicas. */ }
-            const flushed = await input.streamBus.waitForCancellationAcknowledgement(runId)
-            if (!flushed) telemetryLog("agent.stream.cancel_flush_timeout", "warn", {
-              operation: "agent.stream.cancel", outcome: "timeout", "error.code": "ai.stream_cancel_flush_timeout",
-            })
-          }
-          catch (error) {
-            telemetryLog("agent.stream.cancel_signal_failed", "warn", {
-              operation: "agent.stream.cancel", outcome: "failed",
-              ...errorDiagnostic(error, "ai.stream_transport_unavailable"),
-            })
-            return reply.code(503).send(errorBody("ai.stream_transport_unavailable", request.id))
-          }
-        }
-        else {
-          try { input.cancelRun?.(runId) } catch { /* durable cancellation below is authoritative. */ }
-        }
-      }
-      const value = input.streamBus && current.status === "running"
-        ? await input.repository.getRun(request.actor.userId, runId)
+      const wasTerminal = isTerminalRun(current)
+      const value = wasTerminal
+        ? current
         : await input.repository.cancelRun(request.actor.userId, runId)
       if (!value) return reply.code(404).send(errorBody("ai.run_not_found", request.id))
+      if (!wasTerminal && value.status === "canceled") {
+        try { await input.cancelRun?.(runId) } catch { /* 权威 canceled 已持久化，本地中止仅为 best effort。 */ }
+      }
       if (isTerminalRun(value)) await input.streamBus?.cleanup(runId).catch(() => undefined)
       return reply.code(202).send(presentRun(value))
     })
@@ -381,21 +300,36 @@ export function buildServer(input: {
       if (!input.tools) return reply.code(503).send(errorBody("ai.tool_not_available", request.id))
       const { runId, toolCallId } = z.object({ runId: id, toolCallId: id }).parse(request.params)
       const body = z.object({
-		decision: z.enum(["reject", "approve", "approve_always"]),
+		decision: z.enum(["reject", "approve"]),
 	  }).parse(request.body)
       const run = await input.repository.getRun(request.actor.userId, runId)
       if (!run || run.status !== "waiting_approval") return reply.code(409).send(errorBody("ai.run_not_resumable", request.id))
       const selected = await input.tools.inspect(toolCallId)
       if (selected.runId !== runId) return reply.code(404).send(errorBody("ai.tool_call_not_found", request.id))
       if (body.decision === "reject") {
-        await input.tools.resolveApproval(toolCallId, "reject")
-        await input.repository.updateRun(runId, "waiting_approval", "queued")
-        return reply.code(202).send({ runId, state: "queued" })
+        try {
+          await input.tools.resolveApproval(toolCallId, "reject")
+          await input.repository.updateRun(runId, "waiting_approval", "queued")
+          return reply.code(202).send({ runId, state: "queued" })
+        }
+        catch (error) {
+          const latest = await input.repository.getRun(request.actor.userId, runId)
+          if (!latest || latest.status !== "waiting_approval")
+            return reply.code(409).send(errorBody("ai.run_not_resumable", request.id))
+          throw error
+        }
       }
       // 批准后的平台调用必须在权威 Run 处于 running 时执行，Go 执行身份
       // 中间件会据此拒绝过期、并发或跨 Run 的 ToolCall。running 不会被
       // queued claim 领取，因此同步执行期间不存在第二个 Executor 竞争。
-      await input.repository.updateRun(runId, "waiting_approval", "running")
+      try {
+        await input.repository.updateRun(runId, "waiting_approval", "running")
+      }
+      catch (error) {
+        if (error instanceof RunStateConflictError)
+          return reply.code(409).send(errorBody("ai.run_not_resumable", request.id))
+        throw error
+      }
       try {
         const resolved = await input.tools.resolveApproval(toolCallId, body.decision)
         if (resolved.status === "awaiting_approval") {
@@ -407,7 +341,18 @@ export function buildServer(input: {
         return reply.code(202).send({ runId, state: "queued" })
       }
       catch (error) {
-        await input.repository.updateRun(runId, "running", "queued")
+        const latest = await input.repository.getRun(request.actor.userId, runId)
+        if (!latest || latest.status !== "running")
+          return reply.code(409).send(errorBody("ai.run_not_resumable", request.id))
+        try {
+          await input.repository.updateRun(runId, "running", "queued")
+        }
+        catch {
+          const afterConflict = await input.repository.getRun(request.actor.userId, runId)
+          if (!afterConflict || afterConflict.status !== "running")
+            return reply.code(409).send(errorBody("ai.run_not_resumable", request.id))
+          throw error
+        }
         throw error
       }
 	})

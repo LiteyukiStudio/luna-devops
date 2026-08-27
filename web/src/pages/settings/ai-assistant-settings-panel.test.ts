@@ -23,7 +23,6 @@ const validValues = {
   modelMaxOutputTokens: 8192,
   runMaxModelSteps: 64,
   runMaxInputKBytes: 64,
-  runNavigateActionTtlSeconds: 120,
   toolsMaxCardRepairAttempts: 5,
   observabilityEnabled: false,
   prometheusUrl: '',
@@ -65,7 +64,6 @@ describe('aI assistant admin settings', () => {
       'ai.model.max_output_tokens': 8192,
       'ai.run.max_model_steps': 64,
       'ai.run.max_input_k_bytes': 64,
-      'ai.run.navigate_action_ttl_seconds': 120,
       'ai.tools.max_card_repair_attempts': 5,
       'ai.observability.enabled': false,
       'ai.observability.prometheus_url': '',
@@ -123,7 +121,6 @@ describe('aI assistant admin settings', () => {
     expect(aiSettingsSchema.safeParse({ ...validValues, modelMaxOutputTokens: 100 }).success).toBe(false)
     expect(aiSettingsSchema.safeParse({ ...validValues, runMaxModelSteps: 0 }).success).toBe(false)
     expect(aiSettingsSchema.safeParse({ ...validValues, runMaxInputKBytes: 8193 }).success).toBe(false)
-    expect(aiSettingsSchema.safeParse({ ...validValues, runNavigateActionTtlSeconds: 5 }).success).toBe(false)
     expect(aiSettingsSchema.safeParse({ ...validValues, toolsMaxCardRepairAttempts: 0 }).success).toBe(false)
   })
 
@@ -136,7 +133,6 @@ describe('aI assistant admin settings', () => {
       modelMaxOutputTokens: 12000,
       runMaxModelSteps: 96,
       runMaxInputKBytes: 96,
-      runNavigateActionTtlSeconds: 240,
       toolsMaxCardRepairAttempts: 8,
     }
     const parsed = aiSettingsSchema.safeParse(tuned)

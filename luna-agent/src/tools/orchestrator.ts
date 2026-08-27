@@ -1,10 +1,10 @@
 import { hashCanonicalJSON } from "../canonical-json.js"
 import { genAIToolCallObject, genAIToolSpanAttributes } from "../genai-semconv.js"
 import { createId } from "../id.js"
-import type { Repository } from "../persistence/repository.js"
-import { redact } from "../redaction.js"
+import { redact, redactSensitivePaths } from "../redaction.js"
 import { agentMetrics, errorDiagnostic, internalSpanOptions, recordAIContent, stableErrorCode, telemetryLog, withSpan } from "../telemetry.js"
 import { ToolArgumentsInvalidError, requiredInputFields, validateToolArguments } from "./argument-validator.js"
+import type { Repository } from "../persistence/repository.js"
 import type { ToolCatalog } from "./catalog.js"
 import type { LunaApiToolClient, ToolExecutionResult } from "./luna-api-client.js"
 import { InMemoryLoopGuard, type LoopGuard, type ToolLoopSnapshot } from "./loop-guard.js"
@@ -22,13 +22,13 @@ export type ToolCallRecord = {
   attempt: number
   /** 仅用于工具状态的原子更新，不再由审批 API 暴露。 */
   rowVersion: number
-  approvalDecision?: "approve" | "approve_always"
+  approvalDecision?: "approve"
   inputMode?: "model" | "direct"
   result?: unknown
   errorCode?: string
 }
 export type ToolEvent = { type: string, toolCallId: string, data: Record<string, unknown> }
-export type ApprovalDecision = "reject" | "approve" | "approve_always"
+export type ApprovalDecision = "reject" | "approve"
 
 export interface ToolCallStore {
   insert(value: ToolCallRecord): Promise<void>
@@ -43,26 +43,23 @@ export class ToolInterruption extends Error {
   }
 }
 
-type ApprovalRepository = Pick<Repository, "hasToolApprovalExemption" | "grantToolApprovalExemption">
 type ToolCatalogResolver = ToolCatalog | ((runId: string) => ToolCatalog | Promise<ToolCatalog>)
 
 export class ToolOrchestrator {
-  private readonly approvalRepository: ApprovalRepository | undefined
   private readonly loopGuard: LoopGuard
+  private readonly executionControllers = new Map<string, Set<AbortController>>()
 
   constructor(
     private readonly catalogResolver: ToolCatalogResolver,
     private readonly client: LunaApiToolClient,
     private readonly store: ToolCallStore,
     private readonly policy = new ToolPolicy(),
-    approvalRepository?: ApprovalRepository,
     loopGuard: LoopGuard = new InMemoryLoopGuard(),
   ) {
-    this.approvalRepository = approvalRepository
     this.loopGuard = loopGuard
   }
 
-  async propose(input: { runId: string, operationId: string, arguments: unknown, inputMode?: "model" | "direct" }): Promise<ToolCallRecord> {
+  async propose(input: { runId: string, operationId: string, arguments: unknown, inputMode?: "model" | "direct" }, signal?: AbortSignal): Promise<ToolCallRecord> {
     const operation = (await this.catalogForRun(input.runId)).get(input.operationId)
     const argumentsHash = safeArgumentsHash(input.arguments)
     this.loopGuard.beforePropose({ runId: input.runId, operationId: input.operationId, argumentsHash })
@@ -95,11 +92,10 @@ export class ToolOrchestrator {
       toolCallId: record.id,
       data: { operationId: record.operationId, parameterSummary: redact(record.arguments) },
     })
-    const exempt = await this.approvalRepository?.hasToolApprovalExemption(record.runId, record.operationId) ?? false
-    return this.advance(record, { approved: false, exempt })
+    return this.advance(record, false, signal)
   }
 
-  async resolveApproval(id: string, decision: ApprovalDecision): Promise<ToolCallRecord> {
+  async resolveApproval(id: string, decision: ApprovalDecision, signal?: AbortSignal): Promise<ToolCallRecord> {
     const call = await this.requireAwaitingApproval(id)
     agentMetrics.approvals.add(1, { decision, tool: call.operationId })
     telemetryLog("agent.approval.resolved", "info", {
@@ -107,9 +103,6 @@ export class ToolOrchestrator {
       "tool.name": call.operationId,
       decision,
     })
-    if (decision === "approve_always") {
-      await this.approvalRepository?.grantToolApprovalExemption(call.runId, call.operationId, call.id)
-    }
     await this.store.emit({
       type: "approval.resolved",
       toolCallId: call.id,
@@ -125,14 +118,14 @@ export class ToolOrchestrator {
       approvalDecision: decision,
       rowVersion: call.rowVersion + 1,
     })
-    return this.advance(approved, { approved: true, exempt: decision === "approve_always" })
+    return this.advance(approved, true, signal)
   }
 
   async inspect(id: string): Promise<ToolCallRecord> {
     return this.require(id)
   }
 
-  async retryFailed(id: string): Promise<ToolCallRecord> {
+  async retryFailed(id: string, signal?: AbortSignal): Promise<ToolCallRecord> {
     const previous = await this.require(id)
     if (previous.status !== "failed") throw new Error("ai.tool_call_not_retryable")
     this.loopGuard.beforePropose({ runId: previous.runId, operationId: previous.operationId, argumentsHash: previous.argumentsHash })
@@ -158,12 +151,34 @@ export class ToolOrchestrator {
         attempt: retry.attempt,
       },
     })
-    const exempt = await this.approvalRepository?.hasToolApprovalExemption(retry.runId, retry.operationId) ?? false
-    return this.advance(retry, { approved: false, exempt })
+    return this.advance(retry, false, signal)
+  }
+
+  cancelRun(runId: string, reason: unknown = new Error("ai.run_canceled")): boolean {
+    const controllers = this.executionControllers.get(runId)
+    if (!controllers?.size) return false
+    for (const controller of controllers) controller.abort(reason)
+    return true
+  }
+
+  cancelAll(reason: unknown = new Error("ai.agent_stopping")): number {
+    let canceled = 0
+    for (const controllers of this.executionControllers.values()) {
+      for (const controller of controllers) {
+        if (controller.signal.aborted) continue
+        controller.abort(reason)
+        canceled += 1
+      }
+    }
+    return canceled
   }
 
   setRunMaxToolCalls(limit: number): void {
     this.loopGuard.setMaxToolCalls(limit)
+  }
+
+  setRunMaxToolCallsForRun(runId: string, limit: number): void {
+    this.loopGuard.setRunMaxToolCalls(runId, limit)
   }
 
   toolLoopSnapshot(runId: string): ToolLoopSnapshot {
@@ -174,27 +189,27 @@ export class ToolOrchestrator {
     this.loopGuard.clearRun(runId)
   }
 
-  private async advance(call: ToolCallRecord, state: { approved: boolean, exempt: boolean }): Promise<ToolCallRecord> {
-    const operation = (await this.catalogForRun(call.runId)).get(call.operationId)
-    const decision = this.policy.evaluate(operation, state)
-    if (decision.action === "wait_approval")
-      return this.transition(call, "awaiting_approval", {}, "approval.required", {
-        operationId: call.operationId,
-        parameterSummary: redact(call.arguments),
-      })
-    if (state.exempt && !call.approvalDecision) {
-      call = await this.store.update(call.id, call.status, {
-        approvalDecision: "approve_always",
-        rowVersion: call.rowVersion + 1,
-      })
+  private async advance(call: ToolCallRecord, approved: boolean, externalSignal?: AbortSignal): Promise<ToolCallRecord> {
+    const execution = this.beginExecution(call.runId, externalSignal)
+    try {
+      const operation = (await this.catalogForRun(call.runId)).get(call.operationId)
+      const decision = this.policy.evaluate(operation, approved)
+      if (decision.action === "wait_approval")
+        return this.transition(call, "awaiting_approval", {}, "approval.required", {
+          operationId: call.operationId,
+          parameterSummary: redact(call.arguments),
+        })
+      const result = await this.execute(call, approved, operation, execution.signal)
+      return result
     }
-    return this.execute(call, state.approved || state.exempt)
+    finally {
+      execution.release()
+    }
   }
 
-  private async execute(call: ToolCallRecord, approvalGranted: boolean): Promise<ToolCallRecord> {
+  private async execute(call: ToolCallRecord, approvalGranted: boolean, operation: ReturnType<ToolCatalog["get"]>, signal: AbortSignal): Promise<ToolCallRecord> {
     const startedAt = performance.now()
     let outcome = "succeeded"
-    const operation = (await this.catalogForRun(call.runId)).get(call.operationId)
     this.loopGuard.beforeExecute({ runId: call.runId, operationId: call.operationId, argumentsHash: call.argumentsHash })
     try {
       return await withSpan(`execute_tool ${call.operationId}`, internalSpanOptions({
@@ -207,21 +222,47 @@ export class ToolOrchestrator {
         "luna.tool_call.id": call.id,
         "luna.tool.approval_granted": approvalGranted,
       }), async span => {
-        recordAIContent(span, "luna.gen_ai.tool.content.input", "gen_ai.tool.call.arguments", genAIToolCallObject(call.arguments), {
+        recordAIContent(span, "luna.gen_ai.tool.content.input", "gen_ai.tool.call.arguments", genAIToolCallObject(
+          redactSensitivePaths(call.arguments, operation.sensitivePaths),
+        ), {
           "gen_ai.tool.name": call.operationId,
           "luna.tool_call.id": call.id,
         })
         const running = await this.transition(call, "running", {}, "tool_call.running")
         let result: ToolExecutionResult
         try {
+          signal.throwIfAborted()
           result = await this.client.execute({
             runId: call.runId,
             toolCallId: call.id,
             operation,
             arguments: call.arguments,
+            signal,
           })
         }
         catch (error) {
+          let durablyCanceled: ToolCallRecord | undefined
+          if (signal.aborted) {
+            try {
+              const current = await this.store.get(call.id)
+              if (current?.status === "canceled") durablyCanceled = current
+            }
+            catch { /* 下方保留原始执行错误，数据库异常由 Run 终态回读处理。 */ }
+          }
+          if (durablyCanceled) {
+            outcome = "canceled"
+            recordAIContent(span, "luna.gen_ai.tool.content.output", "gen_ai.tool.call.result", {
+              error: { type: "AbortError", code: durablyCanceled.errorCode ?? "ai.run_canceled" },
+            }, { "gen_ai.tool.name": call.operationId, "luna.tool_call.id": call.id })
+            telemetryLog("agent.tool.canceled", "info", {
+              "luna.run.id": call.runId,
+              "luna.tool_call.id": call.id,
+              "tool.name": call.operationId,
+              "operation": "agent.tool.execute",
+              "outcome": "canceled",
+            })
+            return durablyCanceled
+          }
           const errorCode = stableErrorCode(error)
           recordAIContent(span, "luna.gen_ai.tool.content.output", "gen_ai.tool.call.result", {
             error: { type: error instanceof Error ? error.name : "UnknownError", code: errorCode },
@@ -374,6 +415,23 @@ export class ToolOrchestrator {
 
   private catalogForRun(runId: string): ToolCatalog | Promise<ToolCatalog> {
     return typeof this.catalogResolver === "function" ? this.catalogResolver(runId) : this.catalogResolver
+  }
+
+  private beginExecution(runId: string, externalSignal?: AbortSignal): { signal: AbortSignal, release: () => void } {
+    const controller = new AbortController()
+    const controllers = this.executionControllers.get(runId) ?? new Set<AbortController>()
+    controllers.add(controller)
+    this.executionControllers.set(runId, controllers)
+    const signal = externalSignal
+      ? AbortSignal.any([controller.signal, externalSignal])
+      : controller.signal
+    return {
+      signal,
+      release: () => {
+        controllers.delete(controller)
+        if (controllers.size === 0) this.executionControllers.delete(runId)
+      },
+    }
   }
 }
 

@@ -24,7 +24,6 @@ export const AI_EVENT_TYPES = [
   'tool.failed',
   'approval.required',
   'approval.resolved',
-  'ui.action',
   'model.completed',
   'context.compacted',
   'run.failed',

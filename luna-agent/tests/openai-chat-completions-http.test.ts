@@ -1,5 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http"
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest"
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest"
 import type { ContextCompiler } from "../src/context/compiler.js"
 import { ModelRuntime, type AssistantModelInput } from "../src/model-runtime.js"
 import { OpenAIChatCompletionsProvider } from "../src/provider/openai-chat-completions.js"
@@ -26,6 +26,14 @@ describe("OpenAI Chat Completions real HTTP contract", () => {
   afterAll(async () => {
     await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()))
     if (process.env.OTEL_SMOKE === "true") await shutdownTelemetry()
+  })
+
+  afterEach(() => {
+    hangingResponse?.destroy()
+    hangingResponse = undefined
+    hangingStreamClosed = undefined
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
   })
 
   it("reads the final usage-only SSE chunk from /v1/chat/completions", async () => {
@@ -64,6 +72,50 @@ describe("OpenAI Chat Completions real HTTP contract", () => {
     expect(error).toMatchObject({ message: "ai.provider_unavailable", options: { requestOutcome: "unknown" } })
   })
 
+  it("maps a timeout while reading a response body to provider_timeout", async () => {
+    const closed = new Promise<void>((resolve) => { hangingStreamClosed = resolve })
+
+    await expect(settleWithin(provider(baseUrl, 50).complete(modelRequest("hanging-complete"))))
+      .rejects.toMatchObject({ message: "ai.provider_timeout" })
+    await expect(settleWithin(closed)).resolves.toBeUndefined()
+  })
+
+  it("aborts a hanging SSE response body and releases its reader", async () => {
+    const nativeFetch = globalThis.fetch
+    let responseBody: ReadableStream<Uint8Array> | null | undefined
+    vi.stubGlobal("fetch", vi.fn<typeof fetch>(async (input, init) => {
+      const response = await nativeFetch(input, init)
+      responseBody = response.body
+      return response
+    }))
+    const controller = new AbortController()
+    const addEventListener = vi.spyOn(controller.signal, "addEventListener")
+    const removeEventListener = vi.spyOn(controller.signal, "removeEventListener")
+    const closed = new Promise<void>((resolve) => { hangingStreamClosed = resolve })
+    const iterator = provider(baseUrl, 30_000).stream({
+      ...modelRequest("hanging-stream"),
+      signal: controller.signal,
+    })[Symbol.asyncIterator]()
+
+    await expect(iterator.next()).resolves.toEqual({
+      done: false,
+      value: { type: "message_delta", delta: "partial" },
+    })
+    expect(responseBody?.locked).toBe(true)
+    const pendingRead = settleWithin(iterator.next())
+    await new Promise<void>(resolve => setImmediate(resolve))
+    controller.abort(new Error("ai.run_canceled"))
+
+    await expect(pendingRead).rejects.toMatchObject({ message: "ai.run_canceled" })
+    expect(responseBody?.locked).toBe(false)
+    await expect(settleWithin(iterator.next())).resolves.toEqual({ done: true, value: undefined })
+    await expect(settleWithin(closed)).resolves.toBeUndefined()
+    const addedAbortListeners = addEventListener.mock.calls.filter(([type]) => type === "abort").length
+    const removedAbortListeners = removeEventListener.mock.calls.filter(([type]) => type === "abort").length
+    expect(addedAbortListeners).toBe(2)
+    expect(removedAbortListeners).toBe(addedAbortListeners)
+  })
+
   it("lets ModelRuntime compress and retry once after a structured context rejection", async () => {
     contextAttempts = 0
     const compile = vi.fn()
@@ -83,6 +135,8 @@ describe("OpenAI Chat Completions real HTTP contract", () => {
 })
 
 let contextAttempts = 0
+let hangingResponse: ServerResponse | undefined
+let hangingStreamClosed: (() => void) | undefined
 
 async function handleRequest(request: IncomingMessage, response: ServerResponse): Promise<void> {
   if (request.method !== "POST" || request.url !== "/v1/chat/completions") {
@@ -109,6 +163,17 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
   }
   if (body.stream) {
     response.writeHead(200, { "content-type": "text/event-stream", "x-request-id": "req_http_stream" })
+    if (content === "hanging-stream") {
+      hangingResponse = response
+      response.once("close", () => {
+        hangingResponse = undefined
+        hangingStreamClosed?.()
+        hangingStreamClosed = undefined
+      })
+      response.flushHeaders()
+      response.write(`data: ${JSON.stringify({ id: "chatcmpl_hanging", model: "model-http", choices: [{ delta: { content: "partial" } }] })}\n\n`)
+      return
+    }
     response.write(`data: ${JSON.stringify({ id: "chatcmpl_http", model: "model-http", choices: [{ delta: { content: "done" }, finish_reason: "stop" }] })}\n\n`)
     response.write(`data: ${JSON.stringify({
       id: "chatcmpl_http",
@@ -125,6 +190,18 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
     response.end("data: [DONE]\n\n")
     return
   }
+  if (content === "hanging-complete") {
+    hangingResponse = response
+    response.once("close", () => {
+      hangingResponse = undefined
+      hangingStreamClosed?.()
+      hangingStreamClosed = undefined
+    })
+    response.writeHead(200, { "content-type": "application/json", "x-request-id": "req_http_hanging" })
+    response.flushHeaders()
+    response.write('{"id":"chatcmpl_hanging"')
+    return
+  }
   const usage = content === "missing-usage"
     ? {}
     : content === "invalid-usage"
@@ -134,8 +211,8 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
   response.end(JSON.stringify({ id: "chatcmpl_http", model: "model-http", choices: [{ message: { content: "done" } }], ...usage }))
 }
 
-function provider(baseUrl: string): OpenAIChatCompletionsProvider {
-  return new OpenAIChatCompletionsProvider({ baseUrl, apiKey: "test-key", channelAffinityEnabled: true, promptCacheKeyEnabled: false, model: "model-http", timeoutMs: 5_000 })
+function provider(baseUrl: string, timeoutMs = 5_000): OpenAIChatCompletionsProvider {
+  return new OpenAIChatCompletionsProvider({ baseUrl, apiKey: "test-key", channelAffinityEnabled: true, promptCacheKeyEnabled: false, model: "model-http", timeoutMs })
 }
 
 function modelRequest(content: string) {
@@ -158,4 +235,14 @@ function runtimeInput(): AssistantModelInput {
     conversation: { title: "HTTP", titleSource: "user", turnIndex: 1 }, promptVersion: "system-v4",
     reasoningSummary: "", answer: "", toolCalls: [], continuationMessages: [], loadedOperationIds: [], toolCatalogDigest: "sha256:http",
   }
+}
+
+function settleWithin<T>(promise: Promise<T>, timeoutMs = 1_000): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error("test_timeout")), timeoutMs)
+  })
+  return Promise.race([promise, timeout]).finally(() => {
+    if (timer) clearTimeout(timer)
+  })
 }

@@ -3,7 +3,7 @@ import { trace } from "@opentelemetry/api"
 import type { RemoteRuntimeSettings } from "../runtime-settings.js"
 import { agentMetrics, clientSpanOptions, errorDiagnostic, telemetryLog, withSpan } from "../telemetry.js"
 import { isRetryableHTTPStatus, parseRetryAfter, waitForRetry } from "../retry.js"
-import { defaultRuntimeSettings } from "../runtime-settings.js"
+import { agentRuntimeInternals, defaultRuntimeSettings } from "../runtime-settings.js"
 import type { AIModelSnapshot } from "../domain.js"
 
 export type RemoteAIModel = AIModelSnapshot
@@ -36,7 +36,6 @@ const runtimeSettingsSchema = z.object({
   maxModelSteps: z.number().int().min(1).max(1024),
   runMaxToolCalls: z.number().int().min(32).max(2048),
   maxInputBytes: z.number().int().min(8 * 1024).max(8 * 1024 * 1024),
-  navigateActionTtlSeconds: z.number().int().min(10).max(600),
   maxCardRepairAttempts: z.number().int().min(1).max(10),
   contextMaxUncompressedTurnCount: z.number().int().min(4).max(128),
   contextMaxCompressionTurnsPerCompile: z.number().int().min(8).max(1024),
@@ -64,32 +63,82 @@ const remoteProviderConfigSchema = z.object({
   toolCatalog: z.array(z.record(z.string(), z.unknown())),
 })
 
-export class ProviderConfigClient {
+export class RemoteConfigSnapshot {
   private currentConfig?: RemoteProviderConfig
-  constructor(private readonly baseUrl: string, private readonly serviceToken: string) {}
+  private readonly listeners = new Set<(config: RemoteProviderConfig) => void>()
+  private timer: ReturnType<typeof setTimeout> | undefined
+  private refreshInFlight: Promise<RemoteProviderConfig> | undefined
+  private polling = false
+
+  constructor(
+    private readonly baseUrl: string,
+    private readonly serviceToken: string,
+    private readonly validateCandidate: (config: RemoteProviderConfig) => void | Promise<void> = () => undefined,
+    private readonly refreshMs: number = agentRuntimeInternals.configRefreshMs,
+  ) {}
+
   current(): RemoteProviderConfig | undefined {
     return this.currentConfig
   }
-  async get(signal?: AbortSignal): Promise<RemoteProviderConfig> {
-    const config = await this.getCandidate(signal)
-    this.commit(config)
+
+  async initialize(signal?: AbortSignal): Promise<RemoteProviderConfig> {
+    return this.refresh(signal)
+  }
+
+  refresh(signal?: AbortSignal): Promise<RemoteProviderConfig> {
+    if (!this.refreshInFlight) {
+      const inFlight = this.refreshOnce().finally(() => {
+        if (this.refreshInFlight === inFlight) this.refreshInFlight = undefined
+      })
+      this.refreshInFlight = inFlight
+    }
+    return waitForRefresh(this.refreshInFlight, signal)
+  }
+
+  private async refreshOnce(): Promise<RemoteProviderConfig> {
+    const candidate = await this.fetchCandidate()
+    await this.validateCandidate(candidate)
+    const config = immutableRemoteProviderConfig(candidate)
+    this.currentConfig = config
+    for (const listener of this.listeners) listener(config)
     return config
   }
 
-  commit(config: RemoteProviderConfig): void {
-    this.currentConfig = config
+  subscribe(listener: (config: RemoteProviderConfig) => void): () => void {
+    this.listeners.add(listener)
+    return () => this.listeners.delete(listener)
   }
 
-  async getCandidate(signal?: AbortSignal): Promise<RemoteProviderConfig> {
+  start(): void {
+    if (this.polling) return
+    this.polling = true
+    this.scheduleRefresh()
+  }
+
+  private scheduleRefresh(): void {
+    if (!this.polling) return
+    this.timer = setTimeout(() => {
+      this.timer = undefined
+      void this.refresh().catch(() => undefined).finally(() => this.scheduleRefresh())
+    }, this.refreshMs)
+    this.timer.unref()
+  }
+
+  stop(): void {
+    this.polling = false
+    if (this.timer) clearTimeout(this.timer)
+    this.timer = undefined
+  }
+
+  private async fetchCandidate(): Promise<RemoteProviderConfig> {
     return withSpan("luna_api.provider_config.get", clientSpanOptions({
       "server.address": new URL(this.baseUrl).hostname,
     }), async span => {
     let response: Response
     try {
-      response = await this.fetchConfig(signal)
+      response = await this.fetchConfig()
     }
     catch (error) {
-      if (signal?.aborted) throw error
 	  telemetryLog("agent.provider_config.failed", "warn", {
 		"operation": "agent.provider_config.get",
 		"outcome": "failed",
@@ -131,24 +180,30 @@ export class ProviderConfigClient {
     })
   }
 
-  private async fetchConfig(signal?: AbortSignal): Promise<Response> {
+  private async fetchConfig(): Promise<Response> {
     const maxRetries = this.currentConfig?.runtime.maxRequestRetries ?? defaultRuntimeSettings.maxRequestRetries
-    for (let retry = 0; ; retry += 1) {
-      try {
-        const response = await fetch(new URL("/internal/v1/ai/provider-config", this.baseUrl), {
-          headers: { authorization: `Bearer ${this.serviceToken}`, accept: "application/json" },
-          ...(signal ? { signal } : {}),
-        })
-        if (!isRetryableHTTPStatus(response.status) || retry >= maxRetries)
-          return response
-        agentMetrics.externalRequests.add(1, { target: "luna_api", operation: "provider_config", outcome: String(response.status) })
-        await this.scheduleRetry(retry + 1, maxRetries, signal, parseRetryAfter(response.headers), String(response.status))
+    const request = configFetchSignal()
+    try {
+      for (let retry = 0; ; retry += 1) {
+        try {
+          const response = await fetch(new URL("/internal/v1/ai/provider-config", this.baseUrl), {
+            headers: { authorization: `Bearer ${this.serviceToken}`, accept: "application/json" },
+            signal: request.signal,
+          })
+          if (!isRetryableHTTPStatus(response.status) || retry >= maxRetries)
+            return response
+          agentMetrics.externalRequests.add(1, { target: "luna_api", operation: "provider_config", outcome: String(response.status) })
+          await this.scheduleRetry(retry + 1, maxRetries, request.signal, parseRetryAfter(response.headers), String(response.status))
+        }
+        catch (error) {
+          if (request.signal.aborted || retry >= maxRetries) throw error
+          agentMetrics.externalRequests.add(1, { target: "luna_api", operation: "provider_config", outcome: "network_error" })
+          await this.scheduleRetry(retry + 1, maxRetries, request.signal, undefined, "network_error")
+        }
       }
-      catch (error) {
-        if (signal?.aborted || retry >= maxRetries) throw error
-        agentMetrics.externalRequests.add(1, { target: "luna_api", operation: "provider_config", outcome: "network_error" })
-        await this.scheduleRetry(retry + 1, maxRetries, signal, undefined, "network_error")
-      }
+    }
+    finally {
+      request.dispose()
     }
   }
 
@@ -165,6 +220,49 @@ export class ProviderConfigClient {
     })
     await waitForRetry(attempt, { maxRetries, ...(signal ? { signal } : {}), ...(retryAfterMs !== undefined ? { retryAfterMs } : {}) })
   }
+}
+
+function configFetchSignal(): { signal: AbortSignal, dispose: () => void } {
+  const controller = new AbortController()
+  const timeout = setTimeout(
+    () => controller.abort(new Error("ai.provider_config_timeout")),
+    agentRuntimeInternals.configFetchTimeoutMs,
+  )
+  timeout.unref()
+  return {
+    signal: controller.signal,
+    dispose: () => clearTimeout(timeout),
+  }
+}
+
+function waitForRefresh(refresh: Promise<RemoteProviderConfig>, signal?: AbortSignal): Promise<RemoteProviderConfig> {
+  if (!signal) return refresh
+  if (signal.aborted) return Promise.reject(abortReason(signal))
+  return new Promise((resolve, reject) => {
+    const onAbort = () => reject(abortReason(signal))
+    signal.addEventListener("abort", onAbort, { once: true })
+    void refresh.then(resolve, reject).finally(() => signal.removeEventListener("abort", onAbort))
+  })
+}
+
+function abortReason(signal: AbortSignal): Error {
+  return signal.reason instanceof Error ? signal.reason : new Error("ai.provider_config_aborted")
+}
+
+export function immutableRemoteProviderConfig(config: RemoteProviderConfig): RemoteProviderConfig {
+  for (const model of config.provider.models) Object.freeze(model)
+  Object.freeze(config.provider.models)
+  Object.freeze(config.provider)
+  Object.freeze(config.runtime)
+  for (const operation of config.toolCatalog) Object.freeze(operation)
+  Object.freeze(config.toolCatalog)
+  return Object.freeze(config)
+}
+
+export function parseRemoteProviderConfig(input: unknown): RemoteProviderConfig {
+  const parsed = remoteProviderConfigSchema.safeParse(input)
+  if (!parsed.success) throw new Error("ai.provider_config_invalid")
+  return immutableRemoteProviderConfig(parsed.data)
 }
 
 function stableConfigIssuePath(path: PropertyKey[]): string {

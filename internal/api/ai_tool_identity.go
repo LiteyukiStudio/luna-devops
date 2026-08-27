@@ -88,8 +88,7 @@ func (h *Handlers) aiToolExecutionIdentityMiddleware() gin.HandlerFunc {
 			ctx.Abort()
 			return
 		}
-		if operation.RequiresApproval && binding.ApprovalDecision != "approve" && binding.ApprovalDecision != "approve_always" &&
-			!h.hasAIToolApprovalExemption(ctx, binding.OwnerUserID, operation.OperationID) {
+		if operation.RequiresApproval && binding.ApprovalDecision != "approve" {
 			writeErrorCode(ctx, http.StatusPreconditionRequired, "ai.approval_required", "high-risk AI tool requires approval")
 			ctx.Abort()
 			return
@@ -256,14 +255,6 @@ func (h *Handlers) resolveAIToolExecutionBinding(ctx *gin.Context, runID, toolCa
 		return aiToolExecutionBinding{}, false
 	}
 	return binding, true
-}
-
-func (h *Handlers) hasAIToolApprovalExemption(ctx *gin.Context, userID, operationID string) bool {
-	var count int64
-	return h.dbFor(ctx).Raw(`
-		SELECT count(*) FROM ai.tool_approval_exemptions
-		WHERE user_id = ? AND operation_id = ?
-	`, userID, operationID).Scan(&count).Error == nil && count == 1
 }
 
 func requireAIAgentService(ctx *gin.Context) bool {

@@ -1626,6 +1626,8 @@ export interface ReleaseRuntimeExecResult {
   stdout: string
   stderr: string
   exitCode: number
+  truncated: boolean
+  durationMs: number
 }
 
 export interface GatewayRoute {
@@ -2002,7 +2004,7 @@ export interface CurrentUser {
   passwordSet: boolean
   role: PlatformRoleValue
   language: 'zh-CN' | 'zh-TW' | 'en-US' | 'ja-JP' | 'ko-KR'
-  brandColorPreset: '' | 'aurora' | 'harbor' | 'sunset' | 'botanical' | 'meadow' | 'citrus' | 'gold' | 'bronze' | 'brown' | 'yellow' | 'amber' | 'orange' | 'tomato' | 'red' | 'ruby' | 'crimson' | 'pink' | 'plum' | 'purple' | 'violet' | 'iris' | 'indigo' | 'blue' | 'cyan' | 'teal' | 'jade' | 'green' | 'grass' | 'lime' | 'mint' | 'sky'
+  brandColorPreset: '' | 'aurora' | 'harbor' | 'sunset' | 'botanical' | 'meadow' | 'citrus' | 'gold' | 'orange' | 'red' | 'pink' | 'violet' | 'blue' | 'cyan' | 'teal' | 'green' | 'lime'
   interfaceStyle: '' | 'minimal' | 'themed'
   permissions: string[]
 }

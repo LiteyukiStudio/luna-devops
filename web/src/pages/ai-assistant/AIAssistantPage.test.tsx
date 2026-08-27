@@ -6,7 +6,7 @@ import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { aiApi } from '@/api/domains/ai'
+import { api } from '@/api'
 import { SessionContext } from '@/app/session-context'
 import { createAIAssistantRouteState } from '@/components/common/ai-assistant/route-state'
 import { useAIAssistantRuntime } from '@/components/common/ai-assistant/runtime-context'
@@ -38,34 +38,30 @@ const currentUser: CurrentUser = {
 }
 
 const sessionValue: SessionContextValue = {
-  actualUser: currentUser,
   initialized: true,
   isLoading: false,
   isLoggingIn: false,
   isLoggingOut: false,
   recentLoginUsers: [],
   user: currentUser,
-  clearDebugOverride: vi.fn(),
   initializeAdmin: vi.fn(async () => currentUser),
   login: vi.fn(async () => currentUser),
   logout: vi.fn(async () => {}),
   refreshUser: vi.fn(async () => {}),
   resumeLogin: vi.fn(async () => currentUser),
-  setDebugOverride: vi.fn(),
   updateProfile: vi.fn(async () => currentUser),
   updateLanguage: vi.fn(async () => currentUser),
 }
 
 beforeEach(async () => {
   await i18next.changeLanguage('zh-CN')
-  vi.spyOn(aiApi, 'listAIModels').mockResolvedValue([{
+  vi.spyOn(api, 'listAIModels').mockResolvedValue([{
     id: 'model-1',
     name: 'Luna Test Model',
     maxContextTokens: 128_000,
     maxOutputTokens: 8_192,
   }])
-  vi.spyOn(aiApi, 'listPendingAIUIActions').mockResolvedValue({ items: [], agentAvailable: true })
-  vi.spyOn(aiApi, 'listAIConversations').mockResolvedValue({
+  vi.spyOn(api, 'listAIConversations').mockResolvedValue({
     items: [conversation],
     page: 1,
     pageSize: 50,
@@ -74,7 +70,7 @@ beforeEach(async () => {
     total: 1,
     totalPages: 1,
   })
-  vi.spyOn(aiApi, 'getAIConversationTimeline').mockResolvedValue({
+  vi.spyOn(api, 'getAIConversationTimeline').mockResolvedValue({
     conversation: {
       id: conversation.id,
       title: conversation.title,
@@ -99,8 +95,8 @@ describe('ai assistant route page', () => {
     const { container } = renderAssistantPage()
 
     await waitFor(() => {
-      expect(aiApi.listAIModels).toHaveBeenCalledOnce()
-      expect(aiApi.listAIConversations).toHaveBeenCalledOnce()
+      expect(api.listAIModels).toHaveBeenCalledOnce()
+      expect(api.listAIConversations).toHaveBeenCalledOnce()
     })
     const pageViewport = container.querySelector('[data-ai-page-viewport]')
     expect(pageViewport).toContainElement(container.querySelector('[data-ai-assistant-page]'))
@@ -127,7 +123,7 @@ describe('ai assistant route page', () => {
     await waitFor(() => {
       expect(container.querySelector('[data-ai-assistant-surface="page"]')).toBeInTheDocument()
       expect(screen.getByRole('heading', { name: conversation.title })).toBeInTheDocument()
-      expect(aiApi.getAIConversationTimeline).toHaveBeenCalledWith(conversation.id, expect.any(Object))
+      expect(api.getAIConversationTimeline).toHaveBeenCalledWith(conversation.id, expect.any(Object))
     })
   })
 
@@ -158,8 +154,8 @@ describe('ai assistant route page', () => {
 
     expect(screen.getByRole('heading', { name: i18next.t('aiAssistant.page.unavailableTitle') })).toBeInTheDocument()
     expect(screen.getByText(i18next.t('aiAssistant.page.unavailableDescription'))).toBeInTheDocument()
-    expect(aiApi.listAIModels).not.toHaveBeenCalled()
-    expect(aiApi.listAIConversations).not.toHaveBeenCalled()
+    expect(api.listAIModels).not.toHaveBeenCalled()
+    expect(api.listAIConversations).not.toHaveBeenCalled()
 
     await user.click(screen.getByRole('button', { name: i18next.t('aiAssistant.page.backToWorkspace') }))
     expect(await screen.findByTestId('dashboard-route')).toBeInTheDocument()
@@ -173,60 +169,13 @@ describe('ai assistant route page', () => {
 
     renderAssistantPage()
     const composer = await screen.findByRole('textbox', { name: i18next.t('aiAssistant.inputLabel') })
-    await waitFor(() => expect(aiApi.listAIModels).toHaveBeenCalledOnce())
+    await waitFor(() => expect(api.listAIModels).toHaveBeenCalledOnce())
     await act(async () => {
       await new Promise(resolve => window.setTimeout(resolve, 10))
     })
 
     expect(focusSentinel).toHaveFocus()
     expect(composer).not.toHaveFocus()
-  })
-
-  it('does not apply pending automatic navigation after leaving the assistant page', async () => {
-    const user = userEvent.setup()
-    let resolvePendingActions!: (value: Awaited<ReturnType<typeof aiApi.listPendingAIUIActions>>) => void
-    vi.mocked(aiApi.listPendingAIUIActions).mockImplementationOnce(() => new Promise((resolve) => {
-      resolvePendingActions = resolve
-    }))
-    const acknowledge = vi.spyOn(aiApi, 'acknowledgeAIUIAction').mockResolvedValue()
-    renderAssistantPage({
-      initialEntries: [
-        '/dashboard',
-        {
-          pathname: '/ai-assistant',
-          state: createAIAssistantRouteState({ pathname: '/dashboard' }),
-        },
-      ],
-      initialIndex: 1,
-    })
-
-    await waitFor(() => expect(aiApi.listPendingAIUIActions).toHaveBeenCalledOnce())
-    await user.click(screen.getByRole('button', { name: i18next.t('aiAssistant.page.backToWorkspace') }))
-    expect(await screen.findByTestId('dashboard-route')).toBeInTheDocument()
-
-    await act(async () => resolvePendingActions({
-      agentAvailable: true,
-      items: [{
-        actionId: 'aiuia_stale_navigation',
-        action: {
-          version: 1,
-          type: 'navigate',
-          activation: 'automatic',
-          payload: { routeName: 'settings.notifications', params: {}, query: {} },
-        },
-        attempts: 0,
-        expiresAt: '2099-01-01T00:00:00.000Z',
-        runId: 'run-stale',
-        toolCallId: 'tool-stale',
-      }],
-    }))
-
-    await waitFor(() => expect(acknowledge).toHaveBeenCalledWith('aiuia_stale_navigation', expect.objectContaining({
-      errorCode: 'ai.ui_action_rejected',
-      status: 'failed',
-    })))
-    expect(screen.getByTestId('dashboard-route')).toBeInTheDocument()
-    expect(screen.queryByTestId('notifications-route')).not.toBeInTheDocument()
   })
 
   it('uses a restored history entry return location on its first render', async () => {

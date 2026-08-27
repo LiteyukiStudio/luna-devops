@@ -75,19 +75,10 @@ CREATE TABLE ai.runs (
     started_at timestamp with time zone,
     completed_at timestamp with time zone,
     error_code text,
-    client_instance_id text,
     trace_context jsonb DEFAULT '{}'::jsonb NOT NULL,
     next_item_position bigint DEFAULT 0 NOT NULL,
     next_event_sequence bigint DEFAULT 1 NOT NULL,
     CONSTRAINT ai_runs_trace_context_object_check CHECK ((jsonb_typeof(trace_context) = 'object'::text))
-);
-
-CREATE TABLE ai.tool_approval_exemptions (
-    user_id text NOT NULL,
-    operation_id text NOT NULL,
-    source_tool_call_id text NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
 CREATE TABLE ai.tool_calls (
@@ -105,7 +96,7 @@ CREATE TABLE ai.tool_calls (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     arguments_ciphertext text,
-    CONSTRAINT tool_calls_approval_decision_check CHECK ((approval_decision = ANY (ARRAY['approve'::text, 'approve_always'::text])))
+    CONSTRAINT tool_calls_approval_decision_check CHECK ((approval_decision = 'approve'::text))
 );
 
 CREATE TABLE ai.turns (
@@ -116,24 +107,6 @@ CREATE TABLE ai.turns (
     input text NOT NULL,
     selected_run_id text NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL
-);
-
-CREATE TABLE ai.ui_actions (
-    id text NOT NULL,
-    run_id text NOT NULL,
-    tool_call_id text NOT NULL,
-    client_instance_id text NOT NULL,
-    action jsonb NOT NULL,
-    status text DEFAULT 'pending'::text NOT NULL,
-    attempts integer DEFAULT 1 NOT NULL,
-    expires_at timestamp with time zone NOT NULL,
-    acknowledged_at timestamp with time zone,
-    actual_path text,
-    error_code text,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT ui_actions_attempts_check CHECK ((attempts > 0)),
-    CONSTRAINT ui_actions_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'succeeded'::text, 'failed'::text, 'expired'::text])))
 );
 
 CREATE TABLE access_tokens (
@@ -1391,9 +1364,6 @@ ALTER TABLE ONLY ai.runs
 ALTER TABLE ONLY ai.runs
     ADD CONSTRAINT runs_turn_id_run_index_key UNIQUE (turn_id, run_index);
 
-ALTER TABLE ONLY ai.tool_approval_exemptions
-    ADD CONSTRAINT tool_approval_exemptions_pkey PRIMARY KEY (user_id, operation_id);
-
 ALTER TABLE ONLY ai.tool_calls
     ADD CONSTRAINT tool_calls_pkey PRIMARY KEY (id);
 
@@ -1402,12 +1372,6 @@ ALTER TABLE ONLY ai.turns
 
 ALTER TABLE ONLY ai.turns
     ADD CONSTRAINT turns_pkey PRIMARY KEY (id);
-
-ALTER TABLE ONLY ai.ui_actions
-    ADD CONSTRAINT ui_actions_pkey PRIMARY KEY (id);
-
-ALTER TABLE ONLY ai.ui_actions
-    ADD CONSTRAINT ui_actions_tool_call_id_key UNIQUE (tool_call_id);
 
 ALTER TABLE ONLY access_tokens
     ADD CONSTRAINT access_tokens_pkey PRIMARY KEY (id);
@@ -1614,8 +1578,6 @@ CREATE INDEX ai_conversations_owner_updated_idx ON ai.conversations USING btree 
 CREATE INDEX ai_runs_queue_idx ON ai.runs USING btree (status, created_at) WHERE (status = 'queued'::text);
 
 CREATE INDEX ai_tool_calls_run_created_idx ON ai.tool_calls USING btree (run_id, created_at);
-
-CREATE INDEX ai_ui_actions_pending_client_idx ON ai.ui_actions USING btree (client_instance_id, created_at) WHERE (status = 'pending'::text);
 
 CREATE INDEX idx_access_tokens_oauth_application_id ON access_tokens USING btree (oauth_application_id);
 
@@ -2318,9 +2280,6 @@ ALTER TABLE ONLY ai.tool_calls
 
 ALTER TABLE ONLY ai.turns
     ADD CONSTRAINT turns_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES ai.conversations(id) ON DELETE CASCADE;
-
-ALTER TABLE ONLY ai.ui_actions
-    ADD CONSTRAINT ui_actions_run_id_fkey FOREIGN KEY (run_id) REFERENCES ai.runs(id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY access_tokens
     ADD CONSTRAINT access_tokens_user_id_fkey FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;

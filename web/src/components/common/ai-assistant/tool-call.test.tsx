@@ -197,7 +197,7 @@ describe('ai assistant tool status icon', () => {
     expect(screen.getByText(/"name": "PostgreSQL"/)).toBeInTheDocument()
   })
 
-  it('offers reject, one-time approve, and always-allow decisions for a high-risk call', async () => {
+  it('offers reject and one-time approve decisions for a high-risk call', async () => {
     await i18next.changeLanguage('zh-CN')
     const onApproval = vi.fn(async () => {})
     const { container } = render(
@@ -215,13 +215,12 @@ describe('ai assistant tool status icon', () => {
     expect(container.querySelector('[data-ai-tool-intervention]')).toBeVisible()
     expect(screen.getByRole('button', { name: '拒绝' })).toBeVisible()
     expect(screen.getByRole('button', { name: '批准执行' })).toBeVisible()
-    expect(screen.getByRole('button', { name: '始终允许' })).toBeVisible()
+    expect(screen.queryByRole('button', { name: '始终允许' })).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: '始终允许' }))
+    fireEvent.click(screen.getByRole('button', { name: '批准执行' }))
     await waitFor(() => expect(onApproval).toHaveBeenCalledWith(
       expect.objectContaining({ runId: 'run-1', toolCallId: 'tool-call-1' }),
-      'approve_always',
-      undefined,
+      'approve',
     ))
   })
 
@@ -242,7 +241,7 @@ describe('ai assistant tool status icon', () => {
     expect(container.querySelector('[data-ai-tool-summary]')).toHaveClass('min-h-11')
     expect(screen.getByRole('button', { name: '拒绝' })).toHaveClass('min-h-12')
     expect(screen.getByRole('button', { name: '批准执行' })).toHaveClass('min-h-12')
-    expect(screen.getByRole('button', { name: '始终允许' })).toHaveClass('min-h-12', 'col-span-2')
+    expect(screen.queryByRole('button', { name: '始终允许' })).not.toBeInTheDocument()
   })
 
   it('does not show approval controls for an ordinary tool call', () => {

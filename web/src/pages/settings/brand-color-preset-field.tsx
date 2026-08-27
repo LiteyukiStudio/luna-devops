@@ -1,7 +1,7 @@
 import type { BrandColorPreset, UserBrandColorPreference } from '@/app/brand-theme'
 import { Check, Link2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { brandColorPresets, brandThemeSwatchBackground, brandThemeSwatchColors, normalizeBrandColorPreset, normalizeUserBrandColorPreference, themePickerPresets } from '@/app/brand-theme'
+import { brandColorPresets, brandColorUsesDarkForeground, brandThemeSwatchBackground, brandThemeSwatchColors, normalizeBrandColorPreset, normalizeUserBrandColorPreference } from '@/app/brand-theme'
 import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -22,10 +22,7 @@ export function BrandColorPresetField({ ariaLabel, inheritedPreset, inheritLabel
   const allowsInheritance = Boolean(inheritLabel)
   const selectedPreset = allowsInheritance ? normalizeUserBrandColorPreference(value) : normalizeBrandColorPreset(value)
   const platformPreset = normalizeBrandColorPreset(inheritedPreset)
-  const configuredPresets = (options ?? themePickerPresets).filter((preset): preset is BrandColorPreset => brandColorPresetSet.has(preset))
-  const availablePresets = selectedPreset && !configuredPresets.includes(selectedPreset)
-    ? [...configuredPresets, selectedPreset]
-    : configuredPresets
+  const configuredPresets = (options ?? brandColorPresets).filter((preset): preset is BrandColorPreset => brandColorPresetSet.has(preset))
 
   return (
     <RadioGroup
@@ -43,7 +40,7 @@ export function BrandColorPresetField({ ariaLabel, inheritedPreset, inheritLabel
           value={inheritValue}
         />
       )}
-      {availablePresets.map(preset => (
+      {configuredPresets.map(preset => (
         <BrandColorOption
           key={preset}
           checked={selectedPreset === preset}
@@ -80,6 +77,7 @@ function BrandColorOption({ checked, id, label, preset, value }: {
           >
             <span
               className="brand-theme-swatch relative flex size-full items-center justify-center overflow-hidden rounded-full border border-border/70 shadow-xs"
+              data-dark-foreground={brandColorUsesDarkForeground(preset)}
               style={{ background: compositeColors ? compositeColors[0] : brandThemeSwatchBackground(preset) }}
             >
               {compositeColors && <CompositeThemeSwatch colors={compositeColors} />}

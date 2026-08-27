@@ -6450,6 +6450,17 @@ paths:
       tags:
         - Releases
       summary: Exec Release Runtime Command
+      description: Executes one bounded, non-interactive command in the selected workload container. Every call is independently authorized, audited, and limited; Agent-mediated calls additionally require approval of the current arguments. Command state is not retained between calls.
+      x-luna-agent:
+        purpose: { zh: 在 Release 当前工作负载容器中执行一条独立诊断命令。, en: Execute one independent diagnostic command in a Release workload container. }
+        aliases: { zh: [执行运行时诊断命令, 检查 Release 容器, 运行容器命令], en: [execute runtime diagnostic command, inspect release container, run container command] }
+        avoidWhen: { zh: 不要用于需要交互式 TTY、跨命令工作目录或环境变量状态的流程。, en: Do not use for interactive TTY or workflows that require state across commands. }
+        preconditions: { zh: [确认真实 projectId 和 releaseId, 明确单条只读或受控命令及可选容器, 每次调用等待当前参数批准], en: [Resolve the authoritative projectId and releaseId, Provide one bounded command and optional container, Wait for approval of the current arguments on every call] }
+        successEvidence: { zh: 返回实际 Pod、容器、限长 stdout/stderr、截断标志和退出码；需要时用权威读取工具继续核验。, en: Returns the actual Pod, container, bounded stdout/stderr, truncation flag, and exit code; use an authoritative read tool for further verification when needed. }
+      x-luna-cli:
+        classification: business-command
+        risk: high
+        requiredScopes: ["deployment:exec"]
       parameters:
         - name: projectId
           in: path
@@ -6473,122 +6484,13 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/BusinessObject"
+                $ref: "#/components/schemas/RuntimeExecResult"
         "400":
           $ref: "#/components/responses/BadRequest"
         "403":
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
-  /api/v1/projects/{projectId}/releases/{releaseId}/command-sessions:
-    post:
-      operationId: createReleaseRuntimeCommandSession
-      tags: [Releases]
-      summary: Create a persistent release runtime command session
-      description: Creates an API-owned, non-TTY shell session for bounded Agent diagnostics. The session is bound to the current user session, Agent Run when present, release, deployment target, and container. Idle and absolute TTLs are enforced by the owning API instance.
-      x-luna-cli:
-        classification: business-command
-        risk: high
-      parameters:
-        - name: projectId
-          in: path
-          required: true
-          schema: { type: string }
-        - name: releaseId
-          in: path
-          required: true
-          schema: { type: string }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: "#/components/schemas/ReleaseRuntimeCommandSessionInput" }
-      responses:
-        "201":
-          description: Runtime command session created.
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/RuntimeCommandSession" }
-        "400": { $ref: "#/components/responses/BadRequest" }
-        "403": { $ref: "#/components/responses/Forbidden" }
-        "404": { $ref: "#/components/responses/NotFound" }
-  /api/v1/projects/{projectId}/releases/{releaseId}/command-sessions/{sessionId}/commands:
-    post:
-      operationId: executeReleaseRuntimeCommandSession
-      tags: [Releases]
-      summary: Execute a command in a persistent release runtime session
-      description: Executes one bounded command serially in the existing shell. Authorization, project role, Web Console policy, Agent Run binding, and the parameter-bound approval are revalidated for every command.
-      x-luna-cli:
-        classification: business-command
-        risk: high
-      parameters:
-        - name: projectId
-          in: path
-          required: true
-          schema: { type: string }
-        - name: releaseId
-          in: path
-          required: true
-          schema: { type: string }
-        - name: sessionId
-          in: path
-          required: true
-          schema: { type: string, pattern: "^rtcs_[a-z0-9]{1,8}_[a-f0-9]{36}$" }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: "#/components/schemas/ReleaseRuntimeCommandSessionExecuteInput" }
-      responses:
-        "200":
-          description: Command completed.
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/RuntimeCommandSessionCommandResult" }
-        "400": { $ref: "#/components/responses/BadRequest" }
-        "403": { $ref: "#/components/responses/Forbidden" }
-        "404": { $ref: "#/components/responses/NotFound" }
-        "409":
-          description: The session belongs to another API instance.
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ErrorResponse" }
-        "410":
-          description: The session expired.
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ErrorResponse" }
-  /api/v1/projects/{projectId}/releases/{releaseId}/command-sessions/{sessionId}:
-    delete:
-      operationId: closeReleaseRuntimeCommandSession
-      tags: [Releases]
-      summary: Close a persistent release runtime command session
-      description: Closes the API-owned shell and releases its Kubernetes exec stream. Closing does not execute a workload command.
-      x-luna-cli:
-        classification: business-command
-        risk: medium
-      parameters:
-        - name: projectId
-          in: path
-          required: true
-          schema: { type: string }
-        - name: releaseId
-          in: path
-          required: true
-          schema: { type: string }
-        - name: sessionId
-          in: path
-          required: true
-          schema: { type: string, pattern: "^rtcs_[a-z0-9]{1,8}_[a-f0-9]{36}$" }
-      responses:
-        "204": { description: Runtime command session closed. }
-        "403": { $ref: "#/components/responses/Forbidden" }
-        "404": { $ref: "#/components/responses/NotFound" }
-        "409":
-          description: The session belongs to another API instance.
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ErrorResponse" }
   /api/v1/projects/{projectId}/releases/{releaseId}/terminal:
     get:
       operationId: streamReleaseRuntimeTerminal
@@ -7579,31 +7481,6 @@ paths:
         - { name: Idempotency-Key, in: header, required: true, schema: { type: string } }
       requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/AIInteractionCardToolActionInput" } } } }
       responses: { "202": { description: Tool action accepted; sensitive arguments are encrypted in the Agent tool-call store and omitted from timeline projections, content: { application/json: { schema: { $ref: "#/components/schemas/AIObject" } } } }, "401": { $ref: "#/components/responses/Unauthorized" }, "404": { $ref: "#/components/responses/NotFound" }, "409": { $ref: "#/components/responses/Conflict" } }
-  /api/v1/ai/ui-actions/pending:
-    get:
-      operationId: listPendingAIUIActions
-      tags: [AI Assistant]
-      summary: List unacknowledged UI actions for the initiating browser client
-      security: [{ SessionCookie: [] }]
-      parameters:
-        - { name: clientInstanceId, in: query, required: true, schema: { type: string, minLength: 16, maxLength: 80, pattern: "^[A-Za-z0-9_-]+$" } }
-      responses:
-        "200": { description: Pending UI actions bound to the current user and browser client. Returns an empty list with agentAvailable=false and retryAfterSeconds while Agent is temporarily unavailable so clients can back off and retry without surfacing a transport error., content: { application/json: { schema: { $ref: "#/components/schemas/AIObject" } } } }
-        "401": { $ref: "#/components/responses/Unauthorized" }
-  /api/v1/ai/ui-actions/{actionId}/ack:
-    post:
-      operationId: acknowledgeAIUIAction
-      tags: [AI Assistant]
-      summary: Acknowledge a browser UI action after route execution succeeds or fails
-      security: [{ SessionCookie: [] }]
-      parameters:
-        - { name: actionId, in: path, required: true, schema: { type: string } }
-      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/AIUIActionAcknowledgementInput" } } } }
-      responses:
-        "202": { description: UI action acknowledgement accepted, content: { application/json: { schema: { $ref: "#/components/schemas/AIObject" } } } }
-        "401": { $ref: "#/components/responses/Unauthorized" }
-        "404": { $ref: "#/components/responses/NotFound" }
-        "409": { $ref: "#/components/responses/Conflict" }
   /api/v1/ai/turns/{turnId}/runs:
     parameters: [{ name: turnId, in: path, required: true, schema: { type: string } }]
     get:
@@ -7636,18 +7513,17 @@ paths:
         - { name: after, in: query, required: false, schema: { type: integer, format: int64, minimum: 0 } }
         - { name: Last-Event-ID, in: header, required: false, schema: { type: string } }
       responses:
-        "200": { description: Unbuffered recoverable SSE stream. Business frames are AIEvent values replayed from a bounded active-Run stream by after or Last-Event-ID; completed output and workflow terminal facts are persisted in the authoritative Timeline. A stream.heartbeat frame is transient JSON with version, type, runId, conversationId, and occurredAt; it has no id, is not persisted, and does not advance eventSequence. model.completed uses AIModelCompletedPayload and never substitutes estimated Token values., content: { text/event-stream: { schema: { type: string } } } }
+        "200": { description: Unbuffered SSE stream for the single Agent replica. Active frames are AIEvent values replayed from that process's bounded stream by after or Last-Event-ID; committed workflow events, completed output, and terminal facts remain available from the authoritative PostgreSQL Timeline. A process restart interrupts unfinished Runs and does not recover unconfirmed partial deltas. A stream.heartbeat frame is transient JSON with version, type, runId, conversationId, and occurredAt; it has no id, is not persisted, and does not advance eventSequence. model.completed uses AIModelCompletedPayload and never substitutes estimated Token values., content: { text/event-stream: { schema: { type: string } } } }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
         "429": { description: Per-Run or per-Agent-instance SSE subscriber limit reached, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
-        "503": { description: Agent Redis active-stream transport is unavailable, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
   /api/v1/ai/runs/{runId}/cancel:
     post:
       operationId: cancelAIRun
       tags: [AI Assistant]
       security: [{ SessionCookie: [] }]
       parameters: [{ name: runId, in: path, required: true, schema: { type: string } }]
-      responses: { "202": { description: Cancellation accepted or still processing; a running Run is acknowledged only after its owner flushes the terminal batch., content: { application/json: { schema: { $ref: "#/components/schemas/AIObject" } } } }, "401": { $ref: "#/components/responses/Unauthorized" }, "404": { $ref: "#/components/responses/NotFound" }, "503": { description: Agent Redis cancellation transport is unavailable, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } } }
+      responses: { "202": { description: Cancellation accepted. PostgreSQL records the authoritative canceled terminal state, and the current single Agent replica signals any active model request or platform-tool HTTP request to abort. Cancellation is best-effort once an external system has already committed a side effect; callers must use the operation's authoritative readback to determine the final business result. Cross-Pod cancellation continuity is not provided., content: { application/json: { schema: { $ref: "#/components/schemas/AIObject" } } } }, "401": { $ref: "#/components/responses/Unauthorized" }, "404": { $ref: "#/components/responses/NotFound" } }
   /api/v1/ai/runs/{runId}/input:
     post:
       operationId: submitAIRunInput
@@ -7666,30 +7542,6 @@ paths:
         - { name: toolCallId, in: path, required: true, schema: { type: string } }
       requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/AIToolApprovalDecisionInput" } } } }
       responses: { "202": { description: Approval decision accepted, content: { application/json: { schema: { $ref: "#/components/schemas/AIObject" } } } }, "401": { $ref: "#/components/responses/Unauthorized" }, "404": { $ref: "#/components/responses/NotFound" }, "409": { $ref: "#/components/responses/Conflict" } }
-  /api/v1/ai/tool-approval-exemptions:
-    get:
-      operationId: listAIToolApprovalExemptions
-      tags: [AI Assistant]
-      summary: List the current user's revocable approve-always tool preferences
-      security: [{ SessionCookie: [] }]
-      responses:
-        "200":
-          description: Current user and operation scoped exemptions.
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/AIToolApprovalExemptionList" }
-        "401": { $ref: "#/components/responses/Unauthorized" }
-  /api/v1/ai/tool-approval-exemptions/{operationId}:
-    delete:
-      operationId: revokeAIToolApprovalExemption
-      tags: [AI Assistant]
-      summary: Revoke one approve-always preference for the current user and operation
-      security: [{ SessionCookie: [] }]
-      parameters:
-        - { name: operationId, in: path, required: true, schema: { type: string, pattern: "^[a-zA-Z][a-zA-Z0-9_.-]{2,100}$" } }
-      responses:
-        "204": { description: Exemption revoked or already absent. }
-        "401": { $ref: "#/components/responses/Unauthorized" }
   /api/v1/ai/progress/projects/{projectId}/{operationType}/{operationId}:
     get:
       operationId: getAIProgress
@@ -8221,7 +8073,7 @@ components:
     AICreateTurnInput:
       type: object
       additionalProperties: false
-      required: [modelId, input, pageContext, clientInstanceId]
+      required: [modelId, input, pageContext]
       properties:
         modelId: { type: string, minLength: 1 }
         input:
@@ -8241,7 +8093,6 @@ components:
                   type: { type: string, const: text }
                   text: { type: string, minLength: 1, maxLength: 12000 }
         pageContext: { type: object, additionalProperties: true }
-        clientInstanceId: { type: string, minLength: 16, maxLength: 80 }
     AIObject:
       type: object
       additionalProperties: true
@@ -8264,46 +8115,15 @@ components:
       additionalProperties: false
       required: [decision]
       properties:
-        decision: { type: string, enum: [approve, approve_always, reject] }
-        reason: { type: string, maxLength: 500 }
-    AIToolApprovalExemption:
-      type: object
-      additionalProperties: false
-      required: [operationId, createdAt]
-      properties:
-        operationId: { type: string }
-        createdAt: { type: string, format: date-time }
-    AIToolApprovalExemptionList:
-      type: object
-      additionalProperties: false
-      required: [items]
-      properties:
-        items:
-          type: array
-          items: { $ref: "#/components/schemas/AIToolApprovalExemption" }
+        decision: { type: string, enum: [approve, reject] }
     AIInteractionCardToolActionInput:
       type: object
       additionalProperties: false
-      required: [operationId, arguments, message, clientInstanceId]
+      required: [operationId, arguments, message]
       properties:
         operationId: { type: string, pattern: "^[a-zA-Z][a-zA-Z0-9_.-]{2,100}$" }
         arguments: { type: object, additionalProperties: true }
         message: { type: string, minLength: 1, maxLength: 2000 }
-        clientInstanceId: { type: string, minLength: 16, maxLength: 80, pattern: "^[A-Za-z0-9_-]+$" }
-    AIUIActionAcknowledgementInput:
-      type: object
-      additionalProperties: false
-      required: [clientInstanceId, status]
-      oneOf:
-        - properties: { status: { const: succeeded } }
-          required: [actualPath]
-        - properties: { status: { const: failed } }
-          required: [errorCode]
-      properties:
-        clientInstanceId: { type: string, minLength: 16, maxLength: 80, pattern: "^[A-Za-z0-9_-]+$" }
-        status: { type: string, enum: [succeeded, failed] }
-        actualPath: { type: string, minLength: 1, maxLength: 2048, pattern: "^/(?!/)" }
-        errorCode: { type: string, minLength: 3, maxLength: 120, pattern: "^[a-z][a-z0-9_.-]+$" }
     AIConversationCreateInput:
       type: object
       additionalProperties: false
@@ -8604,12 +8424,11 @@ components:
             maxModelSteps: { type: integer, minimum: 1, maximum: 1024 }
             runMaxToolCalls: { type: integer, minimum: 32, maximum: 2048 }
             maxInputBytes: { type: integer, minimum: 8192, maximum: 8388608 }
-            navigateActionTtlSeconds: { type: integer, minimum: 10, maximum: 600 }
             maxCardRepairAttempts: { type: integer, minimum: 1, maximum: 10 }
             contextMaxUncompressedTurnCount: { type: integer, minimum: 4, maximum: 128 }
             contextMaxCompressionTurnsPerCompile: { type: integer, minimum: 8, maximum: 1024 }
             contextSummaryMaxOutputTokens: { type: integer, minimum: 200, maximum: 32768 }
-          required: [providerTimeoutMs, maxRequestRetries, runTimeoutMs, agentConcurrentRuns, userConcurrentRuns, assistantMaxOutputTokens, maxModelSteps, runMaxToolCalls, maxInputBytes, navigateActionTtlSeconds, maxCardRepairAttempts, contextMaxUncompressedTurnCount, contextMaxCompressionTurnsPerCompile, contextSummaryMaxOutputTokens]
+          required: [providerTimeoutMs, maxRequestRetries, runTimeoutMs, agentConcurrentRuns, userConcurrentRuns, assistantMaxOutputTokens, maxModelSteps, runMaxToolCalls, maxInputBytes, maxCardRepairAttempts, contextMaxUncompressedTurnCount, contextMaxCompressionTurnsPerCompile, contextSummaryMaxOutputTokens]
         toolCatalog:
           type: array
           items: { $ref: "#/components/schemas/AIPlatformToolCatalogOperation" }
@@ -11067,8 +10886,8 @@ components:
         language: { type: string, enum: [zh-CN, en-US] }
         brandColorPreset:
           type: string
-          description: Empty follows the platform color theme; otherwise contains a curated multi-color theme or official Radix single-color preset ID.
-          enum: ['', gold, bronze, brown, yellow, amber, orange, tomato, red, ruby, crimson, pink, plum, purple, violet, iris, indigo, blue, cyan, teal, jade, green, grass, lime, mint, sky]
+          description: Empty follows the platform color theme; otherwise contains a preset from the current curated catalog.
+          enum: ['', aurora, harbor, sunset, botanical, meadow, citrus, gold, orange, red, pink, violet, blue, cyan, teal, green, lime]
         interfaceStyle:
           type: string
           description: Empty follows the platform default; minimal uses a neutral canvas and themed uses the brand-tinted canvas.
@@ -11146,8 +10965,8 @@ components:
         language: { type: string, enum: [zh-CN, en-US] }
         brandColorPreset:
           type: string
-          description: Empty follows the platform color theme; otherwise stores a curated multi-color theme or official Radix single-color preset ID.
-          enum: ['', gold, bronze, brown, yellow, amber, orange, tomato, red, ruby, crimson, pink, plum, purple, violet, iris, indigo, blue, cyan, teal, jade, green, grass, lime, mint, sky]
+          description: Empty follows the platform color theme; otherwise stores a preset from the current curated catalog.
+          enum: ['', aurora, harbor, sunset, botanical, meadow, citrus, gold, orange, red, pink, violet, blue, cyan, teal, green, lime]
         interfaceStyle:
           type: string
           description: Empty follows the platform default; otherwise overrides the interface style.
@@ -11757,47 +11576,24 @@ components:
         updatedAt: { type: string, format: date-time }
     ReleaseRuntimeExecInput:
       type: object
+      additionalProperties: false
       required: [command]
       properties:
         command:
           type: string
           minLength: 1
           maxLength: 2000
+          x-luna-sensitive: true
         container: { type: string }
-    ReleaseRuntimeCommandSessionInput:
+    RuntimeExecResult:
       type: object
       additionalProperties: false
+      required: [pod, container, stdout, stderr, exitCode, truncated, durationMs]
       properties:
-        container:
-          type: string
-          description: Optional workload container. The platform selects the default container when omitted.
-    ReleaseRuntimeCommandSessionExecuteInput:
-      type: object
-      additionalProperties: false
-      required: [command]
-      properties:
-        command:
-          type: string
-          minLength: 1
-          maxLength: 16384
-          description: Shell command executed in the existing session. Command content is never written to logs or traces.
-    RuntimeCommandSession:
-      type: object
-      required: [sessionId, createdAt, lastActiveAt, idleExpiresAt, expiresAt]
-      properties:
-        sessionId: { type: string }
+        pod: { type: string }
         container: { type: string }
-        createdAt: { type: string, format: date-time }
-        lastActiveAt: { type: string, format: date-time }
-        idleExpiresAt: { type: string, format: date-time }
-        expiresAt: { type: string, format: date-time }
-    RuntimeCommandSessionCommandResult:
-      type: object
-      required: [stdout, exitCode, truncated, durationMs]
-      properties:
-        stdout:
-          type: string
-          description: Combined bounded stdout and stderr returned to the authorized caller.
+        stdout: { type: string }
+        stderr: { type: string }
         exitCode: { type: integer }
         truncated: { type: boolean }
         durationMs: { type: integer, format: int64, minimum: 0 }

@@ -29,7 +29,7 @@ describe('brand color preset field', () => {
     expect(onValueChange).toHaveBeenCalledWith('blue')
   })
 
-  it('uses the curated picker set while keeping a stored legacy solid theme editable', () => {
+  it('uses only the accepted catalog and falls back a hidden value to blue', () => {
     const { rerender } = render(
       <TooltipProvider>
         <BrandColorPresetField
@@ -56,6 +56,21 @@ describe('brand color preset field', () => {
       </TooltipProvider>,
     )
 
-    expect(screen.getByRole('radio', { name: 'Ruby' })).toBeChecked()
+    expect(screen.getByRole('radio', { name: 'Blue' })).toBeChecked()
+    expect(screen.queryByRole('radio', { name: 'Ruby' })).not.toBeInTheDocument()
+  })
+
+  it('marks the bright lime swatch for a contrast-safe foreground', () => {
+    const { container } = render(
+      <TooltipProvider>
+        <BrandColorPresetField
+          ariaLabel="Color theme"
+          value="lime"
+          onValueChange={vi.fn()}
+        />
+      </TooltipProvider>,
+    )
+
+    expect(container.querySelector('#brand-color-lime + label .brand-theme-swatch')).toHaveAttribute('data-dark-foreground', 'true')
   })
 })

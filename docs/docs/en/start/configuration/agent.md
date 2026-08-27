@@ -11,7 +11,6 @@
 | `LOG_COLOR` | `auto` | Controls console log colors; use `auto`, `always`, or `never`; `NO_COLOR` always disables colors. |
 | `LOG_LEVEL` | `info` | Sets log verbosity; use `debug`, `info`, `warn`, or `error`. |
 | `DATABASE_URL` | Empty | Connects to PostgreSQL; use a PostgreSQL connection URI. |
-| `REDIS_ADDR` | Empty | Provides short-lived active-Run transport and cross-instance replay; use a required Redis connection URI. |
 | `AUTH_MODE` | `development` | Selects internal-request authentication; use `development` or `bff-hmac`. |
 | `AI_INTERNAL_SECRET`<sup>1</sup> | Empty | Authenticates internal API-Agent requests; use a secret of at least 32 bytes. |
 | `LUNA_API_BASE_URL` | Empty | Sets the API address used by Agent; use an HTTP(S) URL. |
@@ -19,27 +18,19 @@
 
 1. Note: Production requires `bff-hmac` and the same `AI_INTERNAL_SECRET` used by API.
 
-Production requires PostgreSQL, Redis, and Luna API configuration. The readiness probe checks the database
-schema, Provider configuration, and the Redis active stream; it returns `503` and the replica stops accepting
-new Runs while any dependency is unavailable.
-
-If startup logs contain `error.code=ai.stream_redis_url_required`, `REDIS_ADDR` was not injected or is empty;
-the Agent has not attempted a Redis connection yet. Recreate the Agent with the current Helm chart or Docker
-Compose manifest. Updating only `.env` has no effect when an older Compose manifest does not forward the variable.
+Production requires PostgreSQL and Luna API configuration. The readiness probe checks the database schema and
+Provider configuration; it returns `503` and the Agent stops accepting new Runs while either dependency is
+unavailable. Active-Run deltas remain in the current Agent process, so production deployment is fixed to one
+replica. A process restart converges unfinished Runs to `interrupted`; committed Timeline and terminal facts remain
+available from PostgreSQL.
 
 ## Advanced configuration
-
-### Runtime
-
-| Setting | Default | Description |
-| --- | --- | --- |
-| `INSTANCE_ID` | Generated | Identifies the current Agent instance; use `1`–`128` characters. |
 
 ### Database connections
 
 | Setting | Default | Description |
 | --- | --- | --- |
-| `AI_DATABASE_MAX_CONNECTIONS` | `10` | Caps the PostgreSQL pool for one Agent replica; use an integer from `1` to `100` and reserve the database-wide budget across all replicas. |
+| `AI_DATABASE_MAX_CONNECTIONS` | `10` | Caps the Agent PostgreSQL pool; use an integer from `1` to `100` and reserve database connections for API and Worker processes. |
 | `AI_DATABASE_CONNECTION_TIMEOUT_MS` | `5000` | Bounds how long a request waits for a PostgreSQL connection; use an integer from `100` to `30000` milliseconds. |
 | `AI_DATABASE_STATEMENT_TIMEOUT_MS` | `15000` | Bounds one Agent SQL statement; use an integer from `1000` to `120000` milliseconds. |
 

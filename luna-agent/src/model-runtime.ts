@@ -15,6 +15,7 @@ import { systemPromptFor } from "./prompt/system.js"
 import { recordAvailableTools } from "./telemetry.js"
 import { renameConversationTool } from "./tools/conversation-title.js"
 import { isProviderContextLengthError } from "./provider/provider-error.js"
+import type { RemoteProviderConfig } from "./provider/config-client.js"
 
 /** ModelRuntime 在 provider 事件之上额外透出的事件。
  *  当前用于让上层在压缩实际发生时向时间线写入一条用户可见的系统提示。 */
@@ -26,7 +27,7 @@ export type ModelRuntimeEvent = ModelEvent
       trigger: "provider_usage" | "context_error" | "turn_backlog"
       priorPromptTokens?: number
     }
-import { defaultRuntimeSettings } from "./runtime-settings.js"
+import { defaultRuntimeSettings, runtimeSettingsSnapshot, type RuntimeSettings } from "./runtime-settings.js"
 import { modelVisibleHistory } from "./model-history.js"
 import { boundContinuationMessages, boundHistoryMessages, turnPromptMessages } from "./context/model-messages.js"
 
@@ -52,6 +53,8 @@ export type AssistantModelInput = {
   loadedOperationIds: string[]
   toolCatalogDigest: string
   model?: AIModelSnapshot
+  runtimeSettings?: RuntimeSettings
+  providerConfig?: RemoteProviderConfig
 }
 
 /**
@@ -59,7 +62,6 @@ export type AssistantModelInput = {
  * Agent 循环、工具执行和暂停/恢复都由 RunExecutor 统一编排。
  */
 export class ModelRuntime {
-  private assistantMaxOutputTokens = defaultRuntimeSettings.assistantMaxOutputTokens
   private readonly resolveTools: (
     pageContext: Record<string, unknown>,
     userInput: string,
@@ -89,21 +91,12 @@ export class ModelRuntime {
     }
   }
 
-  setContextOptions(options: Partial<ContextCompilerOptions>): void {
-    this.contextCompiler?.setOptions(options)
-  }
-
-  setAssistantMaxOutputTokens(tokens: number): void {
-    if (!Number.isSafeInteger(tokens) || tokens < 1)
-      throw new Error("ai.max_output_tokens_invalid")
-    this.assistantMaxOutputTokens = tokens
-  }
-
   async *stream(input: AssistantModelInput, signal?: AbortSignal): AsyncIterable<ModelRuntimeEvent> {
+    const requestInput = modelInputSnapshot(input)
     let forceCompressionTrigger: "context_error" | undefined
     let contextErrorCause: unknown
     for (let attempt = 1; attempt <= 3; attempt += 1) {
-      const { request, compaction } = await this.modelRequest(input, signal, forceCompressionTrigger)
+      const { request, compaction } = await this.modelRequest(requestInput, signal, forceCompressionTrigger)
       if (forceCompressionTrigger === "context_error" && !compaction)
         throw new Error("ai.model_context_insufficient", { cause: contextErrorCause })
       recordAvailableTools(request.tools ?? [])
@@ -123,7 +116,7 @@ export class ModelRuntime {
   }
 
   async complete(input: AssistantModelInput, signal?: AbortSignal): Promise<ModelResponse> {
-    const { request } = await this.modelRequest(input, signal)
+    const { request } = await this.modelRequest(modelInputSnapshot(input), signal)
     return this.provider.complete(request)
   }
 
@@ -156,7 +149,14 @@ export class ModelRuntime {
     return this.getToolDetails(operationIds, toolCatalogDigest)
   }
 
-  async generateConversationTitle(input: string, answer: string, budget: { runId: string, ownerUserId: string }, signal?: AbortSignal, model?: AIModelSnapshot): Promise<string | undefined> {
+  async generateConversationTitle(
+    input: string,
+    answer: string,
+    budget: { runId: string, ownerUserId: string },
+    signal?: AbortSignal,
+    model?: AIModelSnapshot,
+    providerConfig?: RemoteProviderConfig,
+  ): Promise<string | undefined> {
     const response = await this.provider.complete({
       messages: [
         { role: "system", content: "根据会话内容生成一个简洁标题，并使用用户当前语言。只返回标题，不要添加引号、Markdown、句末标点或解释；标题不超过 30 个字符。" },
@@ -166,12 +166,14 @@ export class ModelRuntime {
       budget: { ...budget, operation: "title" },
       ...(signal ? { signal } : {}),
       ...(model ? { modelId: model.id, modelName: model.name, modelPricing: model } : {}),
+      ...(providerConfig ? { providerConfig } : {}),
     })
     const title = response.text.trim().split(/\r?\n/, 1)[0]?.replace(/^["'“”‘’]+|["'“”‘’。.！!？?]+$/g, "").trim()
     return title ? [...title].slice(0, 60).join("") : undefined
   }
 
   private async modelRequest(input: AssistantModelInput, signal?: AbortSignal, forceCompressionTrigger?: "context_error") {
+    const runtimeSettings = input.runtimeSettings ?? defaultRuntimeSettings
     const tools = await this.modelTools(
       input.pageContext,
       input.conversation,
@@ -199,7 +201,9 @@ export class ModelRuntime {
           continuationMessages: input.continuationMessages,
           tools,
           budget: { runId: input.runId, ownerUserId: input.ownerUserId },
-          maxOutputTokens: this.assistantMaxOutputTokens,
+          maxOutputTokens: runtimeSettings.assistantMaxOutputTokens,
+          options: contextCompilerOptions(runtimeSettings),
+          ...(input.providerConfig ? { providerConfig: input.providerConfig } : {}),
           ...(input.model ? { model: input.model } : {}),
           ...(signal ? { signal } : {}),
           ...(forceCompressionTrigger ? { forceCompressionTrigger } : {}),
@@ -207,7 +211,7 @@ export class ModelRuntime {
       : undefined
     const messages = compiled
       ? compiled.messages
-      : modelMessages(base.systemMessages, base.currentMessages, history.slice(-4), input.continuationMessages)
+      : modelMessages(base.systemMessages, base.currentMessages, history.slice(-4), input.continuationMessages, runtimeSettings)
     const conversationCompacted = compiled
       ? compiled.compressionOutcome === "compressed"
         || compiled.compressionOutcome === "reused"
@@ -218,13 +222,14 @@ export class ModelRuntime {
     return {
       request: {
         messages,
-        maxOutputTokens: this.assistantMaxOutputTokens,
+        maxOutputTokens: runtimeSettings.assistantMaxOutputTokens,
         budget: { runId: input.runId, ownerUserId: input.ownerUserId, operation: "assistant" as const },
         tools,
         conversationId: input.conversationId,
         ...(conversationCompacted !== undefined ? { conversationCompacted } : {}),
         ...(signal ? { signal } : {}),
         ...(input.model ? { modelId: input.model.id, modelName: input.model.name, modelPricing: input.model } : {}),
+        ...(input.providerConfig ? { providerConfig: input.providerConfig } : {}),
       },
       compaction,
     }
@@ -267,11 +272,32 @@ function modelMessages(
   currentMessages: ModelMessage[],
   history: ConversationHistoryEntry[],
   continuationMessages: ModelMessage[],
+  runtimeSettings: RuntimeSettings,
 ) {
   return [
     ...systemMessages,
-    ...boundHistoryMessages(history, defaultRuntimeSettings.contextMaxHistoryPayloadBytes),
+    ...boundHistoryMessages(history, runtimeSettings.contextMaxHistoryPayloadBytes),
     ...currentMessages,
-    ...boundContinuationMessages(continuationMessages, defaultRuntimeSettings.contextMaxContinuationPayloadBytes),
+    ...boundContinuationMessages(continuationMessages, runtimeSettings.contextMaxContinuationPayloadBytes),
   ]
+}
+
+function modelInputSnapshot(input: AssistantModelInput): AssistantModelInput {
+  return {
+    ...input,
+    runtimeSettings: runtimeSettingsSnapshot(input.runtimeSettings ?? defaultRuntimeSettings),
+  }
+}
+
+function contextCompilerOptions(runtimeSettings: RuntimeSettings): ContextCompilerOptions {
+  return Object.freeze({
+    compressionTriggerRatio: runtimeSettings.contextCompressionTriggerRatio,
+    recentTurnCount: runtimeSettings.contextRecentTurnCount,
+    maxUncompressedTurnCount: runtimeSettings.contextMaxUncompressedTurnCount,
+    maxCompressionTurnsPerCompile: runtimeSettings.contextMaxCompressionTurnsPerCompile,
+    summaryMaxOutputTokens: runtimeSettings.contextSummaryMaxOutputTokens,
+    maxHistoryPayloadBytes: runtimeSettings.contextMaxHistoryPayloadBytes,
+    maxSummaryPayloadBytes: runtimeSettings.contextMaxSummaryPayloadBytes,
+    maxContinuationPayloadBytes: runtimeSettings.contextMaxContinuationPayloadBytes,
+  })
 }

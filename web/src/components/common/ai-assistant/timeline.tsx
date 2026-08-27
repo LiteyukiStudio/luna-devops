@@ -35,7 +35,7 @@ interface AIAssistantTimelineProps {
   olderError?: Error | null
   outputStreaming?: boolean
   onAction: (action: AIUIAction) => Promise<boolean>
-  onApproval: (block: ToolCallBlock, decision: AIApprovalDecision, reason?: string) => Promise<void>
+  onApproval: (block: ToolCallBlock, decision: AIApprovalDecision) => Promise<void>
   onLoadOlder?: () => Promise<void>
   onResend: (message: string) => void
   onRetry: () => void
@@ -54,6 +54,8 @@ const latestPositionThreshold = {
 function isVisibleResponseBlock(block: AIBlock, showInternalTools: boolean): boolean {
   if (block.type === 'tool_call' && block.operationId === 'create_options')
     return block.status === 'succeeded' && parseAIOptionActions(block.uiActions).length > 0 ? true : showInternalTools
+  if (block.type === 'tool_call' && block.operationId === 'navigate_to_route')
+    return block.status === 'succeeded' && parseAIOptionActions(block.uiActions).some(action => action.type === 'navigate') ? true : showInternalTools
   return block.type !== 'tool_call' || block.visibility !== 'internal' || showInternalTools
 }
 
@@ -290,7 +292,7 @@ function ConversationTurn({ generating, responseBlocks, userMessage, onAction, o
   responseBlocks: AIBlock[]
   userMessage?: MessageBlock
   onAction: (action: AIUIAction) => Promise<boolean>
-  onApproval: (block: ToolCallBlock, decision: AIApprovalDecision, reason?: string) => Promise<void>
+  onApproval: (block: ToolCallBlock, decision: AIApprovalDecision) => Promise<void>
   onResend: (message: string) => void
   resendDisabled?: boolean
   showInternalTools?: boolean
@@ -336,7 +338,7 @@ function AssistantReply({ generating, responseBlocks, surface, onAction, onAppro
   responseBlocks: AIBlock[]
   surface: 'page' | 'window'
   onAction: (action: AIUIAction) => Promise<boolean>
-  onApproval: (block: ToolCallBlock, decision: AIApprovalDecision, reason?: string) => Promise<void>
+  onApproval: (block: ToolCallBlock, decision: AIApprovalDecision) => Promise<void>
 }) {
   const page = surface === 'page'
   const hasWideContent = responseBlocks.some(block =>
@@ -378,7 +380,7 @@ function TypingIndicator() {
   )
 }
 
-function ResponseBlock({ block, surface, onAction, onApproval }: { block: AIBlock, surface: 'page' | 'window', onAction: (action: AIUIAction) => Promise<boolean>, onApproval: (block: ToolCallBlock, decision: AIApprovalDecision, reason?: string) => Promise<void> }) {
+function ResponseBlock({ block, surface, onAction, onApproval }: { block: AIBlock, surface: 'page' | 'window', onAction: (action: AIUIAction) => Promise<boolean>, onApproval: (block: ToolCallBlock, decision: AIApprovalDecision) => Promise<void> }) {
   const page = surface === 'page'
   if (block.type === 'thinking')
     return <ThinkingBlock block={block} surface={surface} />

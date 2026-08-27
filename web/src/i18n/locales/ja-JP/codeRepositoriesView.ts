@@ -84,8 +84,6 @@ const codeRepositoriesView = {
   oauthConnect: '{{provider}} に接続',
   oauthReadyTitle: 'リダイレクト認証を使用できます',
   oauthReadyDescription: '{{provider}} に OAuth App が設定されています。承認をクリックするとコードプラットフォームにリダイレクトされ、承認成功後に Git クレデンシャルが自動生成されます。',
-  oauthDebugBlockedTitle: '現在はロールプレビューです',
-  oauthDebugBlockedDescription: 'ロールプレビューは実際のログインセッションを変更しません。Debug ロールプレビューを終了するか、対象アカウントで実際にログインしてからコードプラットフォームを承認してください。',
   oauthManualOnlyTitle: '現在は手動で Token を入力するのみです',
   oauthManualOnlyDescription: '{{provider}} には Client ID と Client Secret がまだ設定されていないため、一時的にリダイレクト認証ができません。以下でユーザー名と PAT / access token を入力し続けることができます。',
   patManualOnlyDescription: '{{provider}} は PAT モードを使用しています。以下でユーザー名と access token を入力してください。',

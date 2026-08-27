@@ -34,6 +34,7 @@ assert_output "${output}" 'web=false'
 assert_output "${output}" 'agent=false'
 assert_output "${output}" 'docs=false'
 assert_output "${output}" 'helm=false'
+assert_output "${output}" 'dependencies=false'
 assert_output "${output}" 'container=true'
 assert_output "${output}" 'container_images=["api"]'
 
@@ -44,6 +45,25 @@ assert_output "${output}" 'web=true'
 assert_output "${output}" 'agent=false'
 assert_output "${output}" 'docs=false'
 assert_output "${output}" 'container_images=["api"]'
+assert_output "${output}" 'dependencies=false'
+
+: > "${output}"
+run_case 'web/pnpm-lock.yaml' "${output}"
+assert_output "${output}" 'web=true'
+assert_output "${output}" 'dependencies=true'
+assert_output "${output}" 'container_images=["api"]'
+
+: > "${output}"
+run_case 'go.mod' "${output}"
+assert_output "${output}" 'go=true'
+assert_output "${output}" 'dependencies=true'
+
+: > "${output}"
+run_case 'scripts/ci/check-dependencies.sh' "${output}"
+assert_output "${output}" 'dependencies=true'
+assert_output "${output}" 'go=true'
+assert_output "${output}" 'web=true'
+assert_output "${output}" 'agent=true'
 
 : > "${output}"
 run_case 'internal/worker/runner.go' "${output}"
@@ -79,8 +99,18 @@ assert_output "${output}" 'web=true'
 assert_output "${output}" 'agent=true'
 assert_output "${output}" 'docs=true'
 assert_output "${output}" 'helm=true'
+assert_output "${output}" 'dependencies=true'
 assert_output "${output}" 'container=true'
 assert_output "${output}" 'container_images=["api","worker","agent","gateway-traffic-probe"]'
+
+: > "${output}"
+run_case '' "${output}"
+assert_output "${output}" 'go=true'
+assert_output "${output}" 'web=true'
+assert_output "${output}" 'agent=true'
+assert_output "${output}" 'docs=true'
+assert_output "${output}" 'helm=true'
+assert_output "${output}" 'dependencies=true'
 
 : > "${output}"
 tag_paths="$(mktemp)"
@@ -93,6 +123,7 @@ assert_output "${output}" 'web=true'
 assert_output "${output}" 'agent=true'
 assert_output "${output}" 'docs=true'
 assert_output "${output}" 'helm=true'
+assert_output "${output}" 'dependencies=true'
 assert_output "${output}" 'container_images=["api","worker","agent","gateway-traffic-probe"]'
 
 printf '%s\n' 'CI change detection tests passed.'

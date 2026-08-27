@@ -13,7 +13,7 @@ export const toolCalls = aiSchema.table("tool_calls", {
   argumentsHash: text("arguments_hash").notNull(),
   attempt: integer("attempt").notNull().default(1),
   rowVersion: integer("row_version").notNull().default(1),
-  approvalDecision: text("approval_decision").$type<"approve" | "approve_always">(),
+  approvalDecision: text("approval_decision").$type<"approve">(),
   result: jsonb("result").$type<unknown>(),
   errorCode: text("error_code"),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),

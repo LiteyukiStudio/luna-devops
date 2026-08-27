@@ -9,7 +9,6 @@ export interface RuntimeSettings {
   maxModelSteps: number
   runMaxToolCalls: number
   maxInputBytes: number
-  navigateActionTtlSeconds: number
   // 高级设置：工具结果与卡片
   toolResultPayloadBudget: number
   maxCardRepairAttempts: number
@@ -33,7 +32,7 @@ export type RemoteRuntimeSettings = Omit<RuntimeSettings,
   | "contextMaxContinuationPayloadBytes"
 >
 
-export const defaultRuntimeSettings: RuntimeSettings = {
+export const defaultRuntimeSettings: RuntimeSettings = Object.freeze({
   providerTimeoutMs: 300_000,
   maxRequestRetries: 5,
   runTimeoutMs: 3_600_000,
@@ -43,7 +42,6 @@ export const defaultRuntimeSettings: RuntimeSettings = {
   maxModelSteps: 256,
   runMaxToolCalls: 256,
   maxInputBytes: 1024 * 1024,
-  navigateActionTtlSeconds: 120,
   toolResultPayloadBudget: 512 * 1024,
   maxCardRepairAttempts: 5,
   contextCompressionTriggerRatio: 0.9,
@@ -54,10 +52,15 @@ export const defaultRuntimeSettings: RuntimeSettings = {
   contextMaxHistoryPayloadBytes: 4 * 1024 * 1024,
   contextMaxSummaryPayloadBytes: 512 * 1024,
   contextMaxContinuationPayloadBytes: 1024 * 1024,
+})
+
+export function runtimeSettingsSnapshot(settings: RuntimeSettings): RuntimeSettings {
+  return Object.freeze({ ...settings })
 }
 
 // 平台内部时序参数：保持与平台配置无关，无需暴露为可配置项。
 export const agentRuntimeInternals = {
   configRefreshMs: 30_000,
+  configFetchTimeoutMs: 10_000,
   runPollMs: 500,
 } as const

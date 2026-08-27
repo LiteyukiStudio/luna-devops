@@ -77,11 +77,6 @@ type RuntimePodLogsResult struct {
 	Content   string `json:"content"`
 }
 
-type RuntimePodIdentity struct {
-	Pod       string `json:"pod"`
-	Container string `json:"container"`
-}
-
 type RuntimeExecOptions struct {
 	Namespace          string
 	DeploymentTargetID string
@@ -95,6 +90,8 @@ type RuntimeExecResult struct {
 	Stdout    string `json:"stdout"`
 	Stderr    string `json:"stderr"`
 	ExitCode  int    `json:"exitCode"`
+	Truncated bool   `json:"truncated"`
+	Duration  int64  `json:"durationMs"`
 }
 
 type RuntimeTerminalOptions struct {
@@ -104,17 +101,6 @@ type RuntimeTerminalOptions struct {
 	Stdin              io.Reader
 	Stdout             io.Writer
 	SizeQueue          remotecommand.TerminalSizeQueue
-}
-
-// RuntimeShellOptions starts a persistent non-TTY shell for bounded,
-// machine-driven command sessions. It is intentionally separate from the
-// browser terminal transport, which requires terminal resizing and TTY mode.
-type RuntimeShellOptions struct {
-	Namespace          string
-	DeploymentTargetID string
-	Container          string
-	Stdin              io.Reader
-	Stdout             io.Writer
 }
 
 type PodTerminalOptions struct {

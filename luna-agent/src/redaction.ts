@@ -21,6 +21,35 @@ export function redact<T>(value: T): T {
   return visit(value, new WeakSet()) as T
 }
 
+export function redactSensitivePaths<T>(value: T, paths: readonly string[]): T {
+  const result = redact(value)
+  for (const path of paths) maskPath(result, sensitivePathSegments(path), 0)
+  return result
+}
+
+function sensitivePathSegments(path: string): string[] {
+  if (!path.startsWith("/")) return path.split(".").filter(Boolean)
+  return path.slice(1).split("/").filter(Boolean).map(segment => segment.replaceAll("~1", "/").replaceAll("~0", "~"))
+}
+
+function maskPath(value: unknown, segments: string[], index: number): void {
+  if (!value || typeof value !== "object" || index >= segments.length) return
+  const segment = segments[index]
+  if (!segment) return
+  if (segment === "*") {
+    for (const item of Array.isArray(value) ? value : Object.values(value))
+      maskPath(item, segments, index + 1)
+    return
+  }
+  const record = value as Record<string, unknown>
+  if (!Object.prototype.hasOwnProperty.call(record, segment)) return
+  if (index === segments.length - 1) {
+    record[segment] = "[REDACTED]"
+    return
+  }
+  maskPath(record[segment], segments, index + 1)
+}
+
 function maskSecrets(item: unknown): unknown {
   if (typeof item === "string") return "*".repeat(item.length)
   if (Array.isArray(item)) return item.map(maskSecrets)

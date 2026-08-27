@@ -61,7 +61,6 @@ export const aiSettingsSchema = z.object({
   modelMaxOutputTokens: boundedInt(256, 131072, 'settings.ai.advancedNumberInvalid'),
   runMaxModelSteps: boundedInt(1, 1024, 'settings.ai.advancedNumberInvalid'),
   runMaxInputKBytes: boundedInt(8, 8192, 'settings.ai.advancedNumberInvalid'),
-  runNavigateActionTtlSeconds: boundedInt(10, 600, 'settings.ai.advancedNumberInvalid'),
   // 高级设置：工具结果与卡片
   toolsMaxCardRepairAttempts: boundedInt(1, 10, 'settings.ai.advancedNumberInvalid'),
   observabilityEnabled: z.boolean(),
@@ -114,7 +113,6 @@ export function aiSettingsPayload(values: AISettingsFormValues) {
     'ai.model.max_output_tokens': values.modelMaxOutputTokens,
     'ai.run.max_model_steps': values.runMaxModelSteps,
     'ai.run.max_input_k_bytes': values.runMaxInputKBytes,
-    'ai.run.navigate_action_ttl_seconds': values.runNavigateActionTtlSeconds,
     'ai.tools.max_card_repair_attempts': values.toolsMaxCardRepairAttempts,
     'ai.observability.enabled': values.observabilityEnabled,
     'ai.observability.prometheus_url': values.prometheusUrl.trim(),

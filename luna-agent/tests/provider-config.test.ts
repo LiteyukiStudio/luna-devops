@@ -1,10 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { ProviderConfigClient } from "../src/provider/config-client.js"
-import { defaultRuntimeSettings, type RemoteRuntimeSettings } from "../src/runtime-settings.js"
+import { RemoteConfigSnapshot } from "../src/provider/config-client.js"
+import { agentRuntimeInternals, defaultRuntimeSettings, type RemoteRuntimeSettings } from "../src/runtime-settings.js"
 
-afterEach(() => vi.unstubAllGlobals())
+afterEach(() => {
+  vi.useRealTimers()
+  vi.unstubAllGlobals()
+})
 
-describe("ProviderConfigClient", () => {
+describe("RemoteConfigSnapshot", () => {
   it("uses only the callback service identity and accepts the complete authority payload", async () => {
     const fetchMock = vi.fn(async (_url: URL, init: RequestInit) => {
       expect(init.headers).toMatchObject({ authorization: "Bearer callback-token-value" })
@@ -12,7 +15,7 @@ describe("ProviderConfigClient", () => {
     })
     vi.stubGlobal("fetch", fetchMock)
 
-    const config = await client().get()
+    const config = await client().initialize()
     expect(config.version).toBe("cfg-1")
     expect(config.provider.models[0]).toMatchObject({ id: "aimod_test", name: "model-a" })
     expect(config.runtime).toEqual(authoritativePayload().runtime)
@@ -20,25 +23,113 @@ describe("ProviderConfigClient", () => {
     expect(fetchMock).toHaveBeenCalledOnce()
   })
 
-  it("does not publish a refresh candidate until the caller commits it", async () => {
+  it("publishes one validated refresh to all consumers", async () => {
     const fetchMock = vi.fn<typeof fetch>()
       .mockResolvedValueOnce(response(authoritativePayload()))
       .mockResolvedValueOnce(response({ ...authoritativePayload(), version: "cfg-2" }))
     vi.stubGlobal("fetch", fetchMock)
     const configClient = client()
-    expect((await configClient.get()).version).toBe("cfg-1")
-    const candidate = await configClient.getCandidate()
-    expect(candidate.version).toBe("cfg-2")
-    expect(configClient.current()?.version).toBe("cfg-1")
-    configClient.commit(candidate)
+    expect((await configClient.initialize()).version).toBe("cfg-1")
+    const observed: string[] = []
+    configClient.subscribe(config => observed.push(config.version))
+    expect((await configClient.refresh()).version).toBe("cfg-2")
     expect(configClient.current()?.version).toBe("cfg-2")
+    expect(observed).toEqual(["cfg-2"])
+  })
+
+  it("coalesces a slow refresh so an older request cannot overwrite a newer snapshot", async () => {
+    const pending = deferred<Response>()
+    const fetchMock = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(response(authoritativePayload()))
+      .mockImplementationOnce(() => pending.promise)
+      .mockResolvedValueOnce(response({ ...authoritativePayload(), version: "cfg-3" }))
+    vi.stubGlobal("fetch", fetchMock)
+    const snapshot = client()
+    await snapshot.initialize()
+
+    const controller = new AbortController()
+    const first = snapshot.refresh(controller.signal)
+    const joined = snapshot.refresh()
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
+    controller.abort(new Error("caller stopped waiting"))
+    await expect(first).rejects.toThrow("caller stopped waiting")
+    pending.resolve(response({ ...authoritativePayload(), version: "cfg-2" }))
+
+    await expect(joined).resolves.toMatchObject({ version: "cfg-2" })
+    expect(snapshot.current()?.version).toBe("cfg-2")
+    await expect(snapshot.refresh()).resolves.toMatchObject({ version: "cfg-3" })
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+  })
+
+  it("bounds a hanging fetch and schedules no overlapping polling refreshes", async () => {
+    vi.useFakeTimers()
+    const fetchMock = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(response(authoritativePayload({ maxRequestRetries: 0 })))
+      .mockImplementationOnce((_input, init) => new Promise<Response>((_resolve, reject) => {
+        const signal = init?.signal
+        const rejectOnAbort = () => reject(signal?.reason instanceof Error ? signal.reason : new Error("aborted"))
+        if (signal?.aborted) rejectOnAbort()
+        else signal?.addEventListener("abort", rejectOnAbort, { once: true })
+      }))
+      .mockResolvedValueOnce(response({ ...authoritativePayload({ maxRequestRetries: 0 }), version: "cfg-2" }))
+    vi.stubGlobal("fetch", fetchMock)
+    const snapshot = new RemoteConfigSnapshot(
+      "https://luna-api.internal",
+      "callback-token-value",
+      () => undefined,
+      50,
+    )
+    await snapshot.initialize()
+    snapshot.start()
+
+    await vi.advanceTimersByTimeAsync(50)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    await vi.advanceTimersByTimeAsync(agentRuntimeInternals.configFetchTimeoutMs - 1)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(snapshot.current()?.version).toBe("cfg-1")
+
+    await vi.advanceTimersByTimeAsync(1)
+    await vi.advanceTimersByTimeAsync(49)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+    expect(snapshot.current()?.version).toBe("cfg-2")
+    snapshot.stop()
+  })
+
+  it("keeps the last valid snapshot when a semantic candidate is rejected", async () => {
+    const fetchMock = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(response(authoritativePayload()))
+      .mockResolvedValueOnce(response({ ...authoritativePayload(), version: "cfg-2" }))
+    vi.stubGlobal("fetch", fetchMock)
+    const snapshot = new RemoteConfigSnapshot(
+      "https://luna-api.internal",
+      "callback-token-value",
+      candidate => { if (candidate.version === "cfg-2") throw new Error("invalid catalog") },
+    )
+    await snapshot.initialize()
+
+    await expect(snapshot.refresh()).rejects.toThrow("invalid catalog")
+    expect(snapshot.current()?.version).toBe("cfg-1")
+  })
+
+  it("keeps serving the last valid snapshot during a short authority outage", async () => {
+    const fetchMock = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(response(authoritativePayload({ maxRequestRetries: 0 })))
+      .mockRejectedValueOnce(new Error("connection reset"))
+    vi.stubGlobal("fetch", fetchMock)
+    const snapshot = client()
+    await snapshot.initialize()
+
+    await expect(snapshot.refresh()).rejects.toThrow("ai.provider_config_unavailable")
+    expect(snapshot.current()?.version).toBe("cfg-1")
   })
 
   it("accepts the configured upper tool-call limit", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => response(authoritativePayload({
       runMaxToolCalls: 2048,
     }))))
-    const config = await client().get()
+    const config = await client().initialize()
     expect(config.runtime.runMaxToolCalls).toBe(2048)
   })
 
@@ -47,7 +138,7 @@ describe("ProviderConfigClient", () => {
     const runtime = { ...payload.runtime }
     Reflect.deleteProperty(runtime, "assistantMaxOutputTokens")
     vi.stubGlobal("fetch", vi.fn(async () => response({ ...payload, runtime })))
-    await expect(client().get()).rejects.toThrow("ai.provider_config_invalid")
+    await expect(client().initialize()).rejects.toThrow("ai.provider_config_invalid")
   })
 
   it("rejects runtime fields outside the strict OpenAPI contract", async () => {
@@ -56,7 +147,7 @@ describe("ProviderConfigClient", () => {
       ...payload,
       runtime: { ...payload.runtime, unexpected: 1 },
     })))
-    await expect(client().get()).rejects.toThrow("ai.provider_config_invalid")
+    await expect(client().initialize()).rejects.toThrow("ai.provider_config_invalid")
   })
 
   it("rejects omitted model and tool catalogs", async () => {
@@ -66,7 +157,7 @@ describe("ProviderConfigClient", () => {
     Reflect.deleteProperty(provider, "models")
     Reflect.deleteProperty(withoutCatalog, "toolCatalog")
     vi.stubGlobal("fetch", vi.fn(async () => response({ ...withoutCatalog, provider })))
-    await expect(client().get()).rejects.toThrow("ai.provider_config_invalid")
+    await expect(client().initialize()).rejects.toThrow("ai.provider_config_invalid")
   })
 
   it("rejects an omitted channel-affinity policy instead of inventing a local default", async () => {
@@ -74,7 +165,7 @@ describe("ProviderConfigClient", () => {
     const provider = { ...payload.provider }
     Reflect.deleteProperty(provider, "channelAffinityEnabled")
     vi.stubGlobal("fetch", vi.fn(async () => response({ ...payload, provider })))
-    await expect(client().get()).rejects.toThrow("ai.provider_config_invalid")
+    await expect(client().initialize()).rejects.toThrow("ai.provider_config_invalid")
   })
 
   it.each(["providerCompatibility", "promptCacheKeyMode"])("rejects an omitted %s policy instead of inventing a local default", async (field) => {
@@ -82,12 +173,12 @@ describe("ProviderConfigClient", () => {
     const provider = { ...payload.provider }
     Reflect.deleteProperty(provider, field)
     vi.stubGlobal("fetch", vi.fn(async () => response({ ...payload, provider })))
-    await expect(client().get()).rejects.toThrow("ai.provider_config_invalid")
+    await expect(client().initialize()).rejects.toThrow("ai.provider_config_invalid")
   })
 
   it("rejects invalid limits instead of normalizing them", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => response(authoritativePayload({ runMaxToolCalls: 20 }))))
-    await expect(client().get()).rejects.toThrow("ai.provider_config_invalid")
+    await expect(client().initialize()).rejects.toThrow("ai.provider_config_invalid")
   })
 
   it("retries transient configuration failures before parsing the authority payload", async () => {
@@ -96,7 +187,7 @@ describe("ProviderConfigClient", () => {
       .mockResolvedValueOnce(response(authoritativePayload({ maxRequestRetries: 1 })))
     vi.stubGlobal("fetch", fetchMock)
 
-    expect((await client().get()).version).toBe("cfg-1")
+    expect((await client().initialize()).version).toBe("cfg-1")
     expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 
@@ -106,12 +197,12 @@ describe("ProviderConfigClient", () => {
       ...payload,
       provider: { ...payload.provider, models: [{ id: "aimod_test", name: "model-a", maxContextTokens: 1 }] },
     })))
-    await expect(client().get()).rejects.toThrow("ai.provider_config_invalid")
+    await expect(client().initialize()).rejects.toThrow("ai.provider_config_invalid")
   })
 
   it("maps an unavailable authority endpoint to a stable error", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response("unauthorized", { status: 401 })))
-    await expect(client().get()).rejects.toThrow("ai.provider_config_unavailable")
+    await expect(client().initialize()).rejects.toThrow("ai.provider_config_unavailable")
   })
 })
 
@@ -126,7 +217,6 @@ function authoritativePayload(runtimeOverrides: Partial<RemoteRuntimeSettings> =
     maxModelSteps: defaultRuntimeSettings.maxModelSteps,
     runMaxToolCalls: defaultRuntimeSettings.runMaxToolCalls,
     maxInputBytes: defaultRuntimeSettings.maxInputBytes,
-    navigateActionTtlSeconds: defaultRuntimeSettings.navigateActionTtlSeconds,
     maxCardRepairAttempts: defaultRuntimeSettings.maxCardRepairAttempts,
     contextMaxUncompressedTurnCount: defaultRuntimeSettings.contextMaxUncompressedTurnCount,
     contextMaxCompressionTurnsPerCompile: defaultRuntimeSettings.contextMaxCompressionTurnsPerCompile,
@@ -163,6 +253,12 @@ function response(payload: unknown): Response {
   })
 }
 
-function client(): ProviderConfigClient {
-  return new ProviderConfigClient("https://luna-api.internal", "callback-token-value")
+function client(): RemoteConfigSnapshot {
+  return new RemoteConfigSnapshot("https://luna-api.internal", "callback-token-value")
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((settle) => { resolve = settle })
+  return { promise, resolve }
 }

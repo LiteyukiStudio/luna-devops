@@ -7,7 +7,6 @@ import { AIAssistantComposer } from './composer'
 import { AIOptionsBar } from './options'
 import { useAIAssistantRuntime } from './runtime-context'
 import { AIAssistantTimeline } from './timeline'
-import { AIToolApprovalExemptionsDialog } from './tool-approval-exemptions'
 
 export interface AIAssistantChatSurfaceProps {
   closeLabel?: string
@@ -64,9 +63,6 @@ export function AIAssistantChatSurface({
         <div className="min-w-0 flex-1">
           <Title className={cn('truncate font-semibold', page ? 'text-base leading-6' : 'text-[13px] leading-5')}>{runtime.conversationTitle || t('aiAssistant.title')}</Title>
           <p className={cn('truncate text-muted-foreground', page ? 'text-xs leading-5' : 'text-[10px] leading-4')}>{t('aiAssistant.context', { path: runtime.workspaceLocation.pathname })}</p>
-        </div>
-        <div className={page ? '[&_button]:size-11' : undefined}>
-          <AIToolApprovalExemptionsDialog />
         </div>
         {runtime.canDebugInternalTools && (
           <Button

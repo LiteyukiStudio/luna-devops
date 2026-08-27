@@ -43,6 +43,10 @@ func TestTaskWithTraceHeadersInjectsW3CContext(t *testing.T) {
 }
 
 func TestPolicyForTypeUsesDedicatedQueuesAndTimeouts(t *testing.T) {
+	build := PolicyForType(TypeBuildRun)
+	if build.Queue != QueueBuild || build.MaxRetry != 0 {
+		t.Fatalf("build policy = %#v", build)
+	}
 	deploy := PolicyForType(TypeDeployRun)
 	if deploy.Queue != QueueDeploy || deploy.Unique != 30*time.Minute {
 		t.Fatalf("deploy policy = %#v", deploy)

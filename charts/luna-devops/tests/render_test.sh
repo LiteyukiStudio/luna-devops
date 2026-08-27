@@ -77,12 +77,58 @@ helm template luna-devops "$chart_dir" --namespace luna-devops \
 assert_count "$agent_render" '^[[:space:]]+- name: LOG_FORMAT$' 3 'Agent LOG_FORMAT does not match API and Worker'
 assert_count "$agent_render" '^[[:space:]]+- name: LOG_LEVEL$' 3 'Agent LOG_LEVEL does not match API and Worker'
 
+agent_network_default="$tmp_dir/agent-network-default.yaml"
+helm template luna-devops "$chart_dir" --namespace luna-devops \
+  --set ai.enabled=true \
+  --set ai.existingSecret=agent-auth \
+  --show-only templates/ai-networkpolicy.yaml > "$agent_network_default"
+assert_count "$agent_network_default" '^kind: NetworkPolicy$' 1 'Agent default network isolation should only render ingress'
+assert_contains "$agent_network_default" '^  name: luna-devops-agent-ingress$' 'Agent ingress policy is missing'
+assert_contains "$agent_network_default" '^[[:space:]]+- Ingress$' 'Agent ingress policy type is missing'
+assert_not_contains "$agent_network_default" '^[[:space:]]+- Egress$' 'Agent egress isolation must require explicit opt-in'
+
+agent_egress_values="$tmp_dir/agent-egress-values.yaml"
+cat > "$agent_egress_values" <<'EOF'
+ai:
+  enabled: true
+  existingSecret: agent-auth
+  agent:
+    networkPolicy:
+      ingress:
+        enabled: true
+      egress:
+        enabled: true
+        additionalCIDRs:
+          - 203.0.113.10/32
+        additionalRules:
+          - to:
+              - namespaceSelector:
+                  matchLabels:
+                    kubernetes.io/metadata.name: observability
+            ports:
+              - protocol: TCP
+                port: 4318
+EOF
+agent_network_egress="$tmp_dir/agent-network-egress.yaml"
+helm template luna-devops "$chart_dir" --namespace luna-devops \
+  --values "$agent_egress_values" \
+  --show-only templates/ai-networkpolicy.yaml > "$agent_network_egress"
+assert_count "$agent_network_egress" '^kind: NetworkPolicy$' 2 'Agent ingress and opted-in egress policies were not split'
+assert_contains "$agent_network_egress" '^  name: luna-devops-agent-egress$' 'Agent egress policy is missing after opt-in'
+assert_contains "$agent_network_egress" 'cidr: "203\.0\.113\.10/32"' 'Agent additional egress CIDR is missing'
+assert_contains "$agent_network_egress" 'port: 4318' 'Agent additional egress rule is missing'
+assert_not_contains "$agent_network_egress" 'port: 6379' 'Agent no longer uses Redis egress'
+
 agent_deployment_render="$tmp_dir/agent-deployment.yaml"
 helm template luna-devops "$chart_dir" --namespace luna-devops \
   --set ai.enabled=true \
   --set ai.existingSecret=agent-auth \
   --show-only templates/ai-agent.yaml > "$agent_deployment_render"
-assert_count "$agent_deployment_render" '^[[:space:]]+- name: REDIS_ADDR$' 1 'Agent REDIS_ADDR is missing or duplicated'
-assert_contains "$agent_deployment_render" '^[[:space:]]+key: redis-url$' 'Agent REDIS_ADDR does not reference the Redis URL secret key'
+assert_contains "$agent_deployment_render" '^[[:space:]]+replicas: 1$' 'Agent must remain a single replica'
+assert_contains "$agent_deployment_render" '^[[:space:]]+type: Recreate$' 'Agent deployment must avoid overlapping owners during rollout'
+assert_not_contains "$agent_deployment_render" '^[[:space:]]+- name: REDIS_ADDR$' 'Agent must not receive REDIS_ADDR'
+assert_not_contains "$agent_deployment_render" '^kind: PodDisruptionBudget$' 'single-replica Agent must not render a disruption budget'
+assert_contains "$agent_deployment_render" '^[[:space:]]+automountServiceAccountToken: false$' 'Agent ServiceAccount token mounting must remain disabled'
+assert_contains "$agent_deployment_render" '^[[:space:]]+readOnlyRootFilesystem: true$' 'Agent root filesystem must remain read-only'
 
 printf 'Helm render tests passed.\n'

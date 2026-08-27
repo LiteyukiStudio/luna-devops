@@ -140,7 +140,6 @@ describe('site settings page', () => {
       'ai.model.max_output_tokens': '65536',
       'ai.run.max_model_steps': '256',
       'ai.run.max_input_k_bytes': '1024',
-      'ai.run.navigate_action_ttl_seconds': '120',
       'ai.tools.max_card_repair_attempts': '5',
     }
     const savedValues = { ...runtimeDefaults, 'ai.model.max_output_tokens': '8192' }

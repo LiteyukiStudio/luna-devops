@@ -99,7 +99,7 @@ func (h *Handlers) ExecReleaseRuntimeCommand(ctx *gin.Context) {
 		writeError(ctx, http.StatusBadGateway, err.Error())
 		return
 	}
-	h.auditWithContext(user.ID, "release_runtime.exec", release.ID, result.ExitCode == 0, runtimeExecAuditMessage(command, input.Container, result), ctx.Request.Context())
+	h.auditWithContext(user.ID, "release_runtime.exec", release.ID, result.ExitCode == 0, runtimeExecAuditMessage(command, result), ctx.Request.Context())
 	ctx.JSON(http.StatusOK, result)
 }
 

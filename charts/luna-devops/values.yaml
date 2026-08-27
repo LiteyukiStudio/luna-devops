@@ -41,7 +41,6 @@ ai:
   agent:
     # High-sensitivity diagnostics. Exports redacted model and tool content.
     observabilityCaptureContent: false
-    replicaCount: 2
     database:
       maxConnections: 10
       connectionTimeoutMs: 5000
@@ -58,11 +57,15 @@ ai:
     affinity: {}
     podAnnotations: {}
     podLabels: {}
-    podDisruptionBudget:
-      enabled: true
-      minAvailable: 1
     networkPolicy:
-      enabled: true
+      ingress:
+        enabled: true
+      egress:
+        # Kubernetes NetworkPolicy accepts IP blocks and selectors, not dynamic FQDNs.
+        # Enable only after every Provider, OTLP, and database destination is allowed.
+        enabled: false
+        additionalCIDRs: []
+        additionalRules: []
 
 metrics:
   enabled: false

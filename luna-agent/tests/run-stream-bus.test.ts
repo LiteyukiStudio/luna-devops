@@ -1,6 +1,5 @@
-import { afterEach, describe, expect, it } from "vitest"
-import { createClient } from "redis"
-import { InMemoryRunStreamBus, RedisRunStreamBus } from "../src/run-stream-bus.js"
+import { afterEach, describe, expect, it, vi } from "vitest"
+import { InMemoryRunStreamBus } from "../src/run-stream-bus.js"
 import { TestRepository } from "./support/test-repository.js"
 
 async function fixture() {
@@ -16,6 +15,8 @@ async function fixture() {
   if (!run || run.id !== created.run.id) throw new Error("stream fixture claim failed")
   return { repository, conversation, turn: created.turn, run }
 }
+
+afterEach(() => vi.useRealTimers())
 
 describe("run stream terminal persistence", () => {
   it("keeps deltas live-only and persists one final item plus durable checkpoints", async () => {
@@ -161,41 +162,6 @@ describe("run stream terminal persistence", () => {
     })
   })
 
-  it("fences a late owner after reconciliation and rejects its terminal write", async () => {
-    const { repository, run, turn } = await fixture()
-    const bus = new InMemoryRunStreamBus(repository)
-    const lease = await bus.acquireOwnership(run.id, run.rowVersion, "owner-a")
-    expect(lease).toBeDefined()
-    expect(await bus.fenceExpiredOwnership(run.id, run.rowVersion, "owner-b")).toBe(false)
-    const staleStream = await bus.open(run.id, turn.id, run.rowVersion)
-    await staleStream.appendEvent("model.started", {})
-    await lease!.release()
-    expect(await bus.fenceExpiredOwnership(run.id, run.rowVersion, "owner-b")).toBe(true)
-    const highWatermark = await bus.getHighWatermark(run.id)
-    expect(await repository.interruptAbandonedRun(run.id, run.rowVersion, highWatermark)).toBe(true)
-    expect(await lease!.renew()).toBe(false)
-    await expect(staleStream.appendEvent("content.delta", { delta: "late" })).rejects.toThrow("ai.owner_lease_lost")
-    await expect(staleStream.commitTerminal("completed")).rejects.toMatchObject({
-      name: "RunStateConflictError",
-      actualStatus: "interrupted",
-    })
-    expect((await repository.getRun("user-stream", run.id))?.status).toBe("interrupted")
-    const terminal = (await repository.getEvents("user-stream", run.id, highWatermark)).at(-1)
-    expect(terminal?.type).toBe("run.interrupted")
-    expect(terminal?.sequence).toBe(highWatermark + 1)
-  })
-
-  it("lets a newer claim generation replace a lease left by the prior attempt", async () => {
-    const { repository, run } = await fixture()
-    const bus = new InMemoryRunStreamBus(repository)
-    const oldOwner = await bus.acquireOwnership(run.id, run.rowVersion, "agent|old")
-    const newOwner = await bus.acquireOwnership(run.id, run.rowVersion + 2, "agent|new")
-    expect(oldOwner).toBeDefined()
-    expect(newOwner).toBeDefined()
-    expect(await oldOwner!.renew()).toBe(false)
-    expect(await newOwner!.renew()).toBe(true)
-  })
-
   it("atomically persists the final answer and title before the unique terminal event", async () => {
     const { repository, run, turn, conversation } = await fixture()
     const bus = new InMemoryRunStreamBus(repository)
@@ -233,7 +199,7 @@ describe("run stream terminal persistence", () => {
     expect((await repository.getConversation("user-stream", conversation.id))?.title).toBe("User title")
   })
 
-  it("keeps an assistant rename between model checkpoints ahead of the next Redis sequence", async () => {
+  it("keeps an assistant rename between model checkpoints ahead of the next live sequence", async () => {
     const { repository, run, turn, conversation } = await fixture()
     const bus = new InMemoryRunStreamBus(repository)
     const firstSession = await bus.open(run.id, turn.id, run.rowVersion)
@@ -249,63 +215,27 @@ describe("run stream terminal persistence", () => {
     expect(nextStarted.sequence).toBe(renameEvent.sequence + 1)
   })
 
-  it("fails explicitly when the required Redis transport is unavailable", async () => {
-    const { repository } = await fixture()
-    const bus = new RedisRunStreamBus("redis://127.0.0.1:1/0", repository)
-    await expect(bus.connect()).rejects.toBeDefined()
-    await bus.close()
-  })
-})
-
-const redisURL = process.env.TEST_REDIS_URL ?? process.env.REDIS_ADDR
-describe.runIf(Boolean(redisURL))("Redis run stream cross-instance replay", () => {
-  const buses: RedisRunStreamBus[] = []
-  afterEach(async () => Promise.all(buses.splice(0).map(bus => bus.close())))
-
-  it("allows another Agent instance to replay after a cursor", async () => {
+  it("rejects an oversized live event without persisting partial state", async () => {
     const { repository, run, turn } = await fixture()
-    const owner = new RedisRunStreamBus(redisURL!, repository)
-    const reader = new RedisRunStreamBus(redisURL!, repository)
-    buses.push(owner, reader)
-    await owner.connect()
-    await reader.connect()
-    expect(await owner.acquireOwnership(run.id, run.rowVersion, "redis-owner")).toBeDefined()
-    const stream = await owner.open(run.id, turn.id)
-    const first = await stream.appendEvent("model.started", {})
-    const second = await stream.appendEvent("model.completed", {})
-    const replay = await reader.read(run.id, first.sequence)
-    expect(replay.map(event => event.id)).toContain(second.id)
+    const bus = new InMemoryRunStreamBus(repository)
+    const stream = await bus.open(run.id, turn.id, run.rowVersion)
+    await expect(stream.appendEvent("content.delta", { delta: "x".repeat(300 * 1024) }))
+      .rejects.toThrow("ai.stream_buffer_overflow")
+    expect(await bus.read(run.id, 0)).toEqual([])
   })
 
-  it("delivers cancellation control across instances without consuming business sequence", async () => {
-    const { repository, run } = await fixture()
-    const owner = new RedisRunStreamBus(redisURL!, repository)
-    const canceller = new RedisRunStreamBus(redisURL!, repository)
-    buses.push(owner, canceller)
-    await owner.connect()
-    await canceller.connect()
-    const baseline = (await repository.getRunStreamPosition(run.id))!.nextEventSequence - 1
-    const abort = new AbortController()
-    const watched = owner.waitForCancellation(run.id, baseline, abort.signal)
-    await canceller.requestCancellation(run.id)
-    await watched
-    await owner.acknowledgeCancellation(run.id)
-    expect(await canceller.waitForCancellationAcknowledgement(run.id, 500)).toBe(true)
-    expect(await canceller.read(run.id, baseline)).toEqual([])
-  })
+  it("releases retained events and the process byte count after the cleanup grace period", async () => {
+    vi.useFakeTimers()
+    const { repository, run, turn } = await fixture()
+    const bus = new InMemoryRunStreamBus(repository)
+    const stream = await bus.open(run.id, turn.id, run.rowVersion)
+    await stream.appendEvent("content.delta", { delta: "retained" })
+    expect((bus as unknown as { totalBytes: number }).totalBytes).toBeGreaterThan(0)
 
-  it("rejects a malformed Redis row instead of replaying it forever as a healthy stream", async () => {
-    const { repository, run } = await fixture()
-    const bus = new RedisRunStreamBus(redisURL!, repository)
-    buses.push(bus)
-    await bus.connect()
-    const raw = createClient({ url: redisURL! })
-    await raw.connect()
-    try {
-      const baseline = (await repository.getRunStreamPosition(run.id))!.nextEventSequence
-      await raw.xAdd(`luna:agent:run-stream:v1:${run.id}:events`, `${baseline}-0`, { event: "not-json" })
-      await expect(bus.read(run.id, baseline - 1)).rejects.toThrow("ai.stream_event_invalid")
-    }
-    finally { await raw.close() }
+    await bus.cleanup(run.id)
+    await vi.advanceTimersByTimeAsync(5 * 60 * 1_000)
+
+    expect(await bus.read(run.id, 0)).toEqual([])
+    expect((bus as unknown as { totalBytes: number }).totalBytes).toBe(0)
   })
 })

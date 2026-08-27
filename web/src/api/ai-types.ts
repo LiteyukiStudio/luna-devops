@@ -82,7 +82,7 @@ export interface AIToolDisplayResult {
 }
 
 export type AIUIAction
-  = | { version: 1, id?: string, repeatable?: boolean, activation?: 'manual' | 'automatic', type: 'navigate', label?: string, description?: string, tone?: 'default' | 'primary' | 'danger', visual?: AIOptionVisual, payload: { routeName: string, params?: Record<string, string>, query?: Record<string, string> } }
+  = | { version: 1, id?: string, repeatable?: boolean, activation?: 'manual', type: 'navigate', label?: string, description?: string, tone?: 'default' | 'primary' | 'danger', visual?: AIOptionVisual, payload: { routeName: string, params?: Record<string, string>, query?: Record<string, string> } }
     | { version: 1, type: 'select_tab', payload: { tabId: string } }
     | { version: 1, type: 'set_filters', payload: { targetId: string, values: Record<string, string> } }
     | { version: 1, type: 'refresh_query', payload: { queryKeyId: string } }
@@ -115,15 +115,6 @@ export interface AITimelineItem {
     durationMs?: number
     traceId?: string
   }
-}
-
-export interface AIToolApprovalExemption {
-  operationId: string
-  createdAt: string
-}
-
-export interface AIToolApprovalExemptions {
-  items: AIToolApprovalExemption[]
 }
 
 export interface AITimelineTurn {
@@ -218,28 +209,4 @@ export interface AITurnCreated {
   runId: string
   state: AIRunStatus
   eventsUrl: string
-}
-
-export interface AIPendingUIAction {
-  actionId: string
-  runId: string
-  toolCallId: string
-  action: AIUIAction
-  attempts: number
-  expiresAt: string
-}
-
-export interface AIPendingUIActions {
-  items: AIPendingUIAction[]
-  /** False when the BFF is temporarily unable to reconcile actions with Agent. */
-  agentAvailable?: boolean
-  /** Suggested recovery interval while Agent is temporarily unavailable. */
-  retryAfterSeconds?: number
-}
-
-export interface AIUIActionAcknowledgement {
-  clientInstanceId: string
-  status: 'succeeded' | 'failed'
-  actualPath?: string
-  errorCode?: string
 }

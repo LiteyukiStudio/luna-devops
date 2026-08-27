@@ -1,41 +1,24 @@
 import type { ReactNode } from 'react'
-import type { DebugSessionOverride, InitializeAdminInput, LoginInput, RecentLoginUser, SessionContextValue } from './session-context'
+import type { InitializeAdminInput, LoginInput, RecentLoginUser, SessionContextValue } from './session-context'
 import type { CurrentUser } from '@/api'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import { api } from '@/api'
-import { isPlatformRole, PlatformRole } from '@/lib/roles'
 import { enableBrowserTelemetry } from '@/lib/telemetry'
 import { applyUserBrandColorPreference, clearActiveUserBrandColorPreference } from './brand-theme'
 import { applyUserInterfaceStylePreference, clearActiveUserInterfaceStylePreference } from './interface-style'
 import { SessionContext } from './session-context'
 
 const currentUserQueryKey = ['current-user'] as const
-const debugOverrideStorageKey = 'luna-devops.debug.sessionOverride'
 const recentLoginUsersStorageKey = 'luna-devops.auth.recentUsers'
 const maxRecentLoginUsers = 3
-const adminPermissions = [
-  'project.create',
-  'project.read',
-  'project.update',
-  'project.delete',
-  'application.create',
-  'application.read',
-  'application.update',
-  'application.delete',
-  'token.create',
-  'token.revoke',
-  'user.manage',
-]
-const userPermissions = ['project.read', 'application.read']
 
 export function SessionProvider({ children }: { children: ReactNode }) {
   const { i18n } = useTranslation()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const [debugSessionOverride, setDebugSessionOverride] = useState<DebugSessionOverride | undefined>(() => readDebugOverride())
   const [pendingLoginUsername, setPendingLoginUsername] = useState<string>()
   const [recentLoginUsers, setRecentLoginUsers] = useState<RecentLoginUser[]>(() => readRecentLoginUsers())
   const currentUser = useQuery({
@@ -49,8 +32,6 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     },
     retry: false,
   })
-  const effectiveUser = useMemo(() => applyDebugOverride(currentUser.data, debugSessionOverride), [currentUser.data, debugSessionOverride])
-
   useEffect(() => {
     if (currentUser.data)
       enableBrowserTelemetry()
@@ -112,20 +93,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   })
 
   const value = useMemo<SessionContextValue>(() => ({
-    actualUser: currentUser.data,
-    debugOverride: debugSessionOverride,
     initialized: currentUser.isFetched,
     isLoading: currentUser.isLoading,
     isLoggingIn: loginMutation.isPending || initializeMutation.isPending || resumeLoginMutation.isPending,
     isLoggingOut: logoutMutation.isPending,
     pendingLoginUsername,
     recentLoginUsers,
-    user: effectiveUser,
-    clearDebugOverride() {
-      setDebugSessionOverride(undefined)
-      if (import.meta.env.DEV)
-        localStorage.removeItem(debugOverrideStorageKey)
-    },
+    user: currentUser.data,
     async initializeAdmin(input: InitializeAdminInput) {
       const result = await initializeMutation.mutateAsync(input)
       return result.user
@@ -156,18 +130,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         setPendingLoginUsername(undefined)
       }
     },
-    setDebugOverride(override: DebugSessionOverride) {
-      setDebugSessionOverride(override)
-      if (import.meta.env.DEV)
-        localStorage.setItem(debugOverrideStorageKey, JSON.stringify(override))
-    },
     async updateProfile(input) {
       return updateProfileMutation.mutateAsync(input)
     },
     async updateLanguage(language: CurrentUser['language']) {
       return updateLanguageMutation.mutateAsync({ language })
     },
-  }), [currentUser.data, currentUser.isFetched, currentUser.isLoading, debugSessionOverride, effectiveUser, initializeMutation, loginMutation, logoutMutation, pendingLoginUsername, queryClient, recentLoginUsers, resumeLoginMutation, updateLanguageMutation, updateProfileMutation])
+  }), [currentUser.data, currentUser.isFetched, currentUser.isLoading, initializeMutation, loginMutation, logoutMutation, pendingLoginUsername, queryClient, recentLoginUsers, resumeLoginMutation, updateLanguageMutation, updateProfileMutation])
 
   return <SessionContext value={value}>{children}</SessionContext>
 }
@@ -228,42 +197,4 @@ function isRecentLoginUser(value: unknown): value is RecentLoginUser {
 
   const user = value as Partial<RecentLoginUser>
   return Boolean(user.id && user.email && user.lastLoginAt)
-}
-
-function readDebugOverride(): DebugSessionOverride | undefined {
-  if (!import.meta.env.DEV)
-    return undefined
-
-  try {
-    const raw = localStorage.getItem(debugOverrideStorageKey)
-    if (!raw)
-      return undefined
-
-    const parsed = JSON.parse(raw) as DebugSessionOverride
-    if (parsed.type === 'role' && isPlatformRole(parsed.role))
-      return parsed
-  }
-  catch {
-    localStorage.removeItem(debugOverrideStorageKey)
-  }
-  return undefined
-}
-
-function applyDebugOverride(user: CurrentUser | undefined, override: DebugSessionOverride | undefined): CurrentUser | undefined {
-  if (!import.meta.env.DEV || !user || !override)
-    return user
-
-  if (override.type === 'role') {
-    return {
-      ...user,
-      role: override.role,
-      permissions: permissionsForRole(override.role),
-    }
-  }
-
-  return user
-}
-
-function permissionsForRole(role: string) {
-  return role === PlatformRole.Admin ? adminPermissions : userPermissions
 }

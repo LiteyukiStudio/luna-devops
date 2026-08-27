@@ -1,7 +1,7 @@
 import type { AIAssistantView } from '@/components/common/ai-assistant/route-state'
 import { useQuery } from '@tanstack/react-query'
 import { Bell, ChartNoAxesCombined, CircleUserRound, Container, CreditCard, Fingerprint, FolderKanban, GitBranch, LayoutDashboard, Menu, ScrollText, Server, Settings, Sparkles, Store, Users } from 'lucide-react'
-import { lazy, useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, Navigate, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -28,7 +28,6 @@ import {
 import { useAIAssistantRuntime } from '@/components/common/ai-assistant/runtime-context'
 import { AIAssistantRuntimeProvider } from '@/components/common/ai-assistant/runtime-provider'
 import { InboxTrigger } from '@/components/common/inbox/inbox-trigger'
-import { LazyLoadBoundary } from '@/components/common/lazy-load-boundary'
 import { AppLoadingState } from '@/components/common/loading-states'
 import { PageMotion } from '@/components/common/motion'
 import { PageBackNavigation } from '@/components/common/page-chrome'
@@ -46,10 +45,6 @@ import {
 } from '@/components/ui/sidebar'
 import { cn } from '@/lib/utils'
 import { AIAssistantPage } from '@/pages/ai-assistant/AIAssistantPage'
-
-const DebugFloatingPanel = import.meta.env.DEV
-  ? lazy(() => import('@/components/common/debug-floating-panel').then(module => ({ default: module.DebugFloatingPanel })))
-  : null
 
 interface TopbarCrumb {
   label: string
@@ -397,11 +392,6 @@ export function AppLayout() {
                   </WorkspaceChromeTargetsProvider>
                 </div>
               </div>
-              {DebugFloatingPanel && (
-                <LazyLoadBoundary fallback={null} resetKey="debug-floating-panel">
-                  <DebugFloatingPanel />
-                </LazyLoadBoundary>
-              )}
               <AIAssistantEntryHost />
             </div>
           )}

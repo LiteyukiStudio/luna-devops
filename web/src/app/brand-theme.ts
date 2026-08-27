@@ -5,52 +5,23 @@ export const userBrandColorPresetStoragePrefix = 'luna-devops-user-brand-color-p
 
 export const compositeBrandColorPresets = ['aurora', 'harbor', 'sunset', 'botanical', 'meadow', 'citrus'] as const
 
-// Curated multi-color themes lead the official Radix single-color scales.
+// This catalog is both the accepted contract and the settings picker source.
 export const brandColorPresets = [
   ...compositeBrandColorPresets,
   'gold',
-  'bronze',
-  'brown',
-  'yellow',
-  'amber',
   'orange',
-  'tomato',
   'red',
-  'ruby',
-  'crimson',
   'pink',
-  'plum',
-  'purple',
   'violet',
-  'iris',
-  'indigo',
   'blue',
   'cyan',
   'teal',
-  'jade',
   'green',
-  'grass',
   'lime',
-  'mint',
-  'sky',
 ] as const
 
 export type BrandColorPreset = typeof brandColorPresets[number]
 export type UserBrandColorPreference = BrandColorPreset | ''
-
-export const themePickerPresets: BrandColorPreset[] = [
-  ...compositeBrandColorPresets,
-  'gold',
-  'orange',
-  'red',
-  'pink',
-  'violet',
-  'blue',
-  'cyan',
-  'teal',
-  'green',
-  'lime',
-]
 
 const brandColorPresetSet = new Set<string>(brandColorPresets)
 const compositeBrandColorPresetSet = new Set<string>(compositeBrandColorPresets)
@@ -102,7 +73,7 @@ export function userBrandColorPresetStorageKey(userId: string) {
 }
 
 export function brandColorUsesDarkForeground(preset: BrandColorPreset) {
-  return preset === 'sky' || preset === 'mint' || preset === 'lime' || preset === 'yellow' || preset === 'amber'
+  return preset === 'lime'
 }
 
 export function brandThemeIsComposite(preset: BrandColorPreset) {

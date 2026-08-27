@@ -4,6 +4,7 @@ import { DeepSeekChatCompletionsProvider } from "../src/provider/deepseek-chat-c
 import { OpenAIChatCompletionsProvider } from "../src/provider/openai-chat-completions.js"
 import { defaultRuntimeSettings } from "../src/runtime-settings.js"
 import type { ModelProvider } from "../src/provider/provider.js"
+import type { RemoteProviderConfig } from "../src/provider/config-client.js"
 
 afterEach(() => {
   vi.useRealTimers()
@@ -61,49 +62,60 @@ describe("ManagedProvider", () => {
     expect(Object.hasOwn(body, "prompt_cache_key")).toBe(expected)
   })
 
-  it("uses a short-lived authoritative configuration and applies updates", async () => {
-    vi.useFakeTimers()
-    vi.setSystemTime(new Date("2026-07-29T00:00:00Z"))
-    let version = 1
-    const resolver = { get: vi.fn(async () => configForVersion(version)) }
-    const provider = new ManagedProvider(resolver, 1000, (_config, modelName) => fakeProvider(modelName))
+  it("uses the current atomic snapshot and applies updates", async () => {
+    let config = configForVersion(1)
+    const snapshot = { current: () => config }
+    const provider = new ManagedProvider(snapshot, (_config, modelName) => fakeProvider(modelName))
     const request = { messages: [{ role: "user" as const, content: "hello" }], maxOutputTokens: 10 }
 
     expect((await provider.complete(request)).text).toBe("model-1")
-    version = 2
-    expect((await provider.complete(request)).text).toBe("model-1")
-    expect(resolver.get).toHaveBeenCalledOnce()
-    vi.advanceTimersByTime(1001)
+    config = configForVersion(2)
     expect((await provider.complete(request)).text).toBe("model-2")
     expect(provider.currentVersion()).toBe("cfg-2")
-    expect(resolver.get).toHaveBeenCalledTimes(2)
   })
 
-  it("coalesces concurrent refreshes without persisting provider secrets", async () => {
-    const resolver = { get: vi.fn(async () => configForVersion(1)) }
-    const provider = new ManagedProvider(resolver, 1000, (_config, modelName) => fakeProvider(modelName))
+  it("reuses the provider for concurrent requests without persisting provider secrets", async () => {
+    const factory = vi.fn((_config: RemoteProviderConfig, modelName: string) => fakeProvider(modelName))
+    const provider = new ManagedProvider({ current: () => configForVersion(1) }, factory)
     await Promise.all([provider.health(), provider.health(), provider.health()])
-    expect(resolver.get).toHaveBeenCalledOnce()
+    expect(factory).toHaveBeenCalledOnce()
     expect(JSON.stringify(provider)).not.toContain("secret-value")
   })
 
   it("keeps concurrent first requests on their selected models", async () => {
-    let resolveConfig!: (config: ReturnType<typeof configForModels>) => void
-    const configPromise = new Promise<ReturnType<typeof configForModels>>(resolve => { resolveConfig = resolve })
-    const resolver = { get: vi.fn(() => configPromise) }
-    const provider = new ManagedProvider(resolver, 1000, (_config, modelName) => fakeProvider(modelName))
+    const provider = new ManagedProvider({ current: () => configForModels() }, (_config, modelName) => fakeProvider(modelName))
     const request = (modelId: string) => provider.complete({ modelId, messages: [], maxOutputTokens: 10 })
 
     const first = request("model-a-id")
     const second = request("model-b-id")
-    resolveConfig(configForModels())
 
     expect((await first).text).toBe("model-a")
     expect((await second).text).toBe("model-b")
   })
 
+  it("keeps an in-flight request on the snapshot selected at its start", async () => {
+    let config = configForVersion(1)
+    let finish!: () => void
+    const blocked = new Promise<void>(resolve => { finish = resolve })
+    const provider = new ManagedProvider({ current: () => config }, (_config, modelName) => ({
+      ...fakeProvider(modelName),
+      complete: async () => {
+        await blocked
+        return { text: modelName, usage: { status: "reported" as const, value: { inputTokens: 1, outputTokens: 1, totalTokens: 2 } } }
+      },
+    }))
+    const request = { messages: [{ role: "user" as const, content: "hello" }], maxOutputTokens: 10 }
+
+    const inFlight = provider.complete(request)
+    config = configForVersion(2)
+    finish()
+
+    expect((await inFlight).text).toBe("model-1")
+    expect((await provider.complete(request)).text).toBe("model-2")
+  })
+
   it("rejects an unknown model instead of inventing a zero-price fallback", async () => {
-    const provider = new ManagedProvider({ get: vi.fn(async () => configForModels()) }, 1000)
+    const provider = new ManagedProvider({ current: () => configForModels() })
     await expect(provider.complete({ modelId: "missing", messages: [], maxOutputTokens: 10 }))
       .rejects.toThrow("ai.model_not_available")
   })

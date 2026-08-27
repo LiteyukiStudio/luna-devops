@@ -84,8 +84,6 @@ const codeRepositoriesView = {
   oauthConnect: '授权连接 {{provider}}',
   oauthReadyTitle: '可以使用跳转授权',
   oauthReadyDescription: '{{provider}} 已配置 OAuth App。点击授权后会跳转到代码平台，授权成功后自动生成 Git 凭据。',
-  oauthDebugBlockedTitle: '当前为角色预览',
-  oauthDebugBlockedDescription: '角色预览不会改变真实登录会话。请退出 Debug 角色预览，或使用目标账号真实登录后再授权代码平台。',
   oauthManualOnlyTitle: '当前只能手动填写 Token',
   oauthManualOnlyDescription: '{{provider}} 还没有配置 Client ID 和 Client Secret，暂时不能跳转授权。你可以继续在下方填写用户名和 PAT / access token。',
   patManualOnlyDescription: '{{provider}} 使用 PAT 模式，请在下方填写用户名和 access token。',

@@ -1,5 +1,6 @@
 import type { Attributes } from "@opentelemetry/api"
 import type { ModelMessage, ModelToolCall, ModelToolDefinition } from "./provider/provider.js"
+import { redactSensitivePaths } from "./redaction.js"
 
 export const genAISchemaURL = "https://opentelemetry.io/schemas/gen-ai-dev/1.42.0-dev"
 export const genAIAgentName = "Luna Agent"
@@ -92,7 +93,8 @@ export function genAIToolSpanAttributes(input: {
   }
 }
 
-export function genAIInputMessages(messages: ModelMessage[]): GenAIInputMessage[] {
+export function genAIInputMessages(messages: ModelMessage[], tools?: ModelToolDefinition[]): GenAIInputMessage[] {
+  const sensitivePaths = toolSensitivePaths(tools)
   return messages.map((message) => {
     if (message.role === "tool") {
       return {
@@ -107,7 +109,7 @@ export function genAIInputMessages(messages: ModelMessage[]): GenAIInputMessage[
     const parts: GenAIMessagePart[] = []
     if (message.content) parts.push({ type: "text", content: message.content })
     if (message.role === "assistant") {
-      for (const call of message.toolCalls ?? []) parts.push(genAIToolCallPart(call))
+      for (const call of message.toolCalls ?? []) parts.push(genAIToolCallPart(call, sensitivePaths))
     }
     return { role: message.role, parts }
   })
@@ -118,11 +120,12 @@ export function genAIOutputMessages(input: {
   reasoningSummary?: string
   toolCalls?: ModelToolCall[]
   finishReason?: string
-}): GenAIOutputMessage[] {
+}, tools?: ModelToolDefinition[]): GenAIOutputMessage[] {
+  const sensitivePaths = toolSensitivePaths(tools)
   const parts: GenAIMessagePart[] = []
   if (input.reasoningSummary) parts.push({ type: "reasoning", content: input.reasoningSummary })
   if (input.text) parts.push({ type: "text", content: input.text })
-  for (const call of input.toolCalls ?? []) parts.push(genAIToolCallPart(call))
+  for (const call of input.toolCalls ?? []) parts.push(genAIToolCallPart(call, sensitivePaths))
   return [{
     role: "assistant",
     parts,
@@ -145,13 +148,20 @@ export function genAIToolCallObject(value: unknown): Record<string, unknown> {
   return value === undefined ? {} : { value }
 }
 
-function genAIToolCallPart(call: ModelToolCall): GenAIToolCallPart {
+function genAIToolCallPart(call: ModelToolCall, sensitivePaths: ReadonlyMap<string, readonly string[]>): GenAIToolCallPart {
+  const paths = sensitivePaths.get(call.operationId) ?? []
   return {
     type: "tool_call",
     name: call.operationId,
     ...(call.id ? { id: call.id } : {}),
-    arguments: call.arguments,
+    arguments: paths.length ? redactSensitivePaths(call.arguments, paths) : call.arguments,
   }
+}
+
+function toolSensitivePaths(tools: ModelToolDefinition[] | undefined): ReadonlyMap<string, readonly string[]> {
+  return new Map((tools ?? [])
+    .filter(tool => tool.sensitivePaths?.length)
+    .map(tool => [tool.operationId, tool.sensitivePaths ?? []]))
 }
 
 function parseJSONValue(value: string): unknown {

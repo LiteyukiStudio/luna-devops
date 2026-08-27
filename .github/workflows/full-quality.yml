@@ -169,7 +169,7 @@ jobs:
 
   dependency-quality:
     name: Dependency vulnerability checks
-    if: inputs.release_mode != true && github.event_name != 'workflow_dispatch'
+    if: github.event_name == 'schedule'
     runs-on: ubuntu-24.04
     steps:
       - name: Check out code
@@ -188,25 +188,8 @@ jobs:
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "24"
-      - name: Audit production pnpm dependencies
-        run: |
-          pnpm --dir web audit --prod --audit-level=high --ignore=GHSA-qwww-vcr4-c8h2
-          pnpm --dir docs audit --prod --audit-level=high --ignore=GHSA-qwww-vcr4-c8h2
-          pnpm --dir luna-agent audit --prod --audit-level=high
-      - name: Scan reachable Go vulnerabilities
-        run: go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...
-
-  helm-full-quality:
-    name: Full Helm checks
-    if: inputs.release_mode != true && github.event_name != 'workflow_dispatch'
-    runs-on: ubuntu-24.04
-    steps:
-      - name: Check out code
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - name: Set up Helm
-        uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4
-      - name: Run complete Helm validation
-        run: bash scripts/ci/check-helm.sh
+      - name: Audit dependency vulnerabilities
+        run: bash scripts/ci/check-dependencies.sh
 
   full-quality:
     name: Full Quality Gate
@@ -216,7 +199,6 @@ jobs:
       - agent-postgres-quality
       - go-race-quality
       - dependency-quality
-      - helm-full-quality
     if: always()
     runs-on: ubuntu-24.04
     steps:
@@ -227,11 +209,10 @@ jobs:
           AGENT_POSTGRES_RESULT: ${{ needs.agent-postgres-quality.result }}
           RACE_RESULT: ${{ needs.go-race-quality.result }}
           DEPENDENCY_RESULT: ${{ needs.dependency-quality.result }}
-          HELM_RESULT: ${{ needs.helm-full-quality.result }}
         run: |
           for result in \
             "$RELEASE_RESULT" "$POSTGRES_RESULT" "$AGENT_POSTGRES_RESULT" \
-            "$RACE_RESULT" "$DEPENDENCY_RESULT" "$HELM_RESULT"; do
+            "$RACE_RESULT" "$DEPENDENCY_RESULT"; do
             case "$result" in
               success|skipped) ;;
               *) echo "required full-quality job finished with result: $result" >&2; exit 1 ;;

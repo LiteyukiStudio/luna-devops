@@ -7,11 +7,14 @@ import type {
   CreatedTurn,
   CreateTurn,
   Run,
+  RunExecutionSnapshot,
   TimelineItem,
-  UIActionAcknowledgement,
 } from "../domain.js"
 import { createId } from "../id.js"
+import type { PayloadCipher } from "../payload-cipher.js"
+import { parseRemoteProviderConfig } from "../provider/config-client.js"
 import type { OfficialModelUsage, UsageUnavailableReason } from "../provider/provider.js"
+import { defaultRuntimeSettings, runtimeSettingsSnapshot, type RuntimeSettings } from "../runtime-settings.js"
 import { agentMetrics, internalSpanOptions, withSpan } from "../telemetry.js"
 import {
   RunStateConflictError,
@@ -27,10 +30,10 @@ import { AgentDatabase, type AgentDatabaseOptions, type AgentDb, type AgentTx } 
 import {
   mapConversation,
   mapConversationSummary,
+  mapClaimedRun,
   mapRun,
   mapRunEvent,
   mapTimelineItem,
-  mapUIAction,
   timelineContentText,
 } from "./mappers/domain.js"
 import {
@@ -40,10 +43,9 @@ import {
   items,
   runEvents,
   runs,
+  toolCalls,
   turns,
-  uiActions,
   type RunRow,
-  type UIActionRow,
 } from "./schema/index.js"
 
 /** Drizzle 事务回调或共享 db 实例均可执行的最小查询接口 */
@@ -54,7 +56,11 @@ const historyTurnWindow = 8
 export class PostgresRepository implements Repository {
   private readonly database: AgentDatabase
 
-  constructor(connectionString: string, options: AgentDatabaseOptions = {}) {
+  constructor(
+    connectionString: string,
+    options: AgentDatabaseOptions = {},
+    private readonly runExecutionSnapshotCipher?: PayloadCipher,
+  ) {
     this.database = new AgentDatabase(connectionString, options)
   }
 
@@ -331,8 +337,8 @@ export class PostgresRepository implements Repository {
           .where(eq(runs.conversationId, id))
           .orderBy(desc(runs.createdAt), desc(runs.id))
           .limit(1))[0]
-        // 用户改名接口本身返回权威 Conversation；活动模型 session 的序号由 Redis
-        // 独占，不能在其间从 PostgreSQL 分配同一 Run 的事件序号。
+        // 用户改名接口本身返回权威 Conversation；活动模型 session 的事件序号由
+        // Agent 内存流会话单写，不能在其间从 PostgreSQL 分配同一 Run 的事件序号。
         if (latestRun && latestRun.status !== "running") {
           await this.appendEventWith(tx, latestRun.id, "conversation.title.updated", {
             title: input.title,
@@ -425,7 +431,6 @@ export class PostgresRepository implements Repository {
         selectedOperationIds: [],
         pageContext: input.pageContext,
         traceContext: input.traceContext ?? {},
-        clientInstanceId: input.clientInstanceId ?? null,
         modelId: input.modelSnapshot?.id ?? input.modelId ?? null,
         modelName: input.modelSnapshot?.name ?? null,
         maxContextTokens: input.modelSnapshot?.maxContextTokens ?? null,
@@ -627,6 +632,35 @@ export class PostgresRepository implements Repository {
         .returning())[0]
       if (!row) return undefined
       await tx.update(turns).set({ status: "canceled" }).where(eq(turns.id, row.turnId))
+      const canceledResult = { code: "ai.run_canceled", retryable: false }
+      const canceledCalls = await tx.update(toolCalls).set({
+        status: "canceled",
+        rowVersion: sql`${toolCalls.rowVersion} + 1`,
+        result: canceledResult,
+        errorCode: "ai.run_canceled",
+        updatedAt: sql`now()`,
+      }).where(and(
+        eq(toolCalls.runId, id),
+        sql`${toolCalls.status} not in ('succeeded', 'failed', 'rejected', 'canceled', 'skipped')`,
+      )).returning({ id: toolCalls.id })
+      if (canceledCalls.length > 0) {
+        const toolCallIdByItemId = new Map(canceledCalls.map(call => [`${call.id}:item`, call.id]))
+        const toolItems = await tx.select().from(items)
+          .where(and(eq(items.runId, id), inArray(items.id, [...toolCallIdByItemId.keys()])))
+          .orderBy(asc(items.timelineIndex))
+          .for("update")
+        for (const current of toolItems) {
+          const toolCallId = toolCallIdByItemId.get(current.id)
+          if (!toolCallId) continue
+          const item = await this.updateItemWith(tx, current.id, "completed", {
+            ...current.content,
+            status: "canceled",
+            result: canceledResult,
+            errorCode: "ai.run_canceled",
+          })
+          await this.appendEventWith(tx, id, "item.finalized", { itemId: item.id, toolCallId, item })
+        }
+      }
       await this.appendEventWith(tx, id, "run.canceled", { state: "canceled", rowVersion: row.rowVersion })
       return mapRun(row)
     }).then(async (run) => {
@@ -636,54 +670,90 @@ export class PostgresRepository implements Repository {
     })
   }
 
-  async claimNextQueuedRun() {
+  async claimNextQueuedRun(executionSnapshot?: RunExecutionSnapshot) {
+    const candidateToolCatalogDigest = executionSnapshot?.toolCatalogDigest ?? null
     return withSpan("agent.repository.run.claim", internalSpanOptions(), async () => this.db.transaction(async (tx) => {
+      const candidate = (await tx.execute<Record<string, unknown>>(sql`
+        select id, execution_snapshot_ciphertext
+        from ai.runs
+        where status = 'queued'
+        order by created_at, id
+        for update skip locked
+        limit 1
+      `)).rows[0]
+      if (!candidate || typeof candidate.id !== "string") return undefined
+      const candidateCiphertext = candidate.execution_snapshot_ciphertext === null && executionSnapshot
+        ? this.encryptRunExecutionSnapshot(executionSnapshot)
+        : null
       const raw = (await tx.execute<Record<string, unknown>>(sql`
-        with candidate as (
-          select id from ai.runs
-          where status = 'queued'
-          order by created_at, id
-          for update skip locked
-          limit 1
-        )
         update ai.runs r
         set status = 'running',
             row_version = r.row_version + 1,
-            started_at = coalesce(r.started_at, now())
-        from candidate
-        where r.id = candidate.id
+            started_at = coalesce(r.started_at, now()),
+            tool_catalog_digest = case
+              when r.execution_snapshot_ciphertext is null
+                then coalesce(${candidateToolCatalogDigest}, r.tool_catalog_digest)
+              else r.tool_catalog_digest
+            end,
+            execution_snapshot_ciphertext = coalesce(r.execution_snapshot_ciphertext, ${candidateCiphertext})
+        where r.id = ${candidate.id}
+          and r.status = 'queued'
         returning r.*
       `)).rows[0]
       if (!raw) return undefined
       const row = driverRow(runs, raw) as RunRow
+      const restoredSnapshot = row.executionSnapshotCiphertext
+        ? this.decryptRunExecutionSnapshot(row.executionSnapshotCiphertext)
+        : undefined
       await tx.update(turns).set({ status: "running" }).where(eq(turns.id, row.turnId))
       await this.appendEventWith(tx, row.id, "run.running", { state: "running", rowVersion: row.rowVersion })
-      return mapRun(row)
+      return mapClaimedRun(row, restoredSnapshot)
     }))
   }
 
-  async listStaleRunningRuns(startedBefore: string) {
-    return this.db.select({ id: runs.id, rowVersion: runs.rowVersion }).from(runs).where(and(
-      eq(runs.status, "running"),
-      lt(runs.startedAt, new Date(startedBefore)),
-    ))
+  private encryptRunExecutionSnapshot(snapshot: RunExecutionSnapshot): string {
+    if (!this.runExecutionSnapshotCipher) throw new Error("ai.run_execution_snapshot_key_unavailable")
+    return this.runExecutionSnapshotCipher.encrypt(JSON.stringify(snapshot))
   }
 
-  async interruptAbandonedRun(runId: string, expectedRunVersion: number, eventHighWatermark: number): Promise<boolean> {
+  private decryptRunExecutionSnapshot(ciphertext: string): RunExecutionSnapshot {
+    if (!this.runExecutionSnapshotCipher) throw new Error("ai.run_execution_snapshot_key_unavailable")
+    try {
+      const parsed: unknown = JSON.parse(this.runExecutionSnapshotCipher.decrypt(ciphertext))
+      if (!isRecord(parsed) || !isRuntimeSettings(parsed.runtimeSettings))
+        throw new Error("ai.run_execution_snapshot_invalid")
+      if (parsed.toolCatalogDigest !== undefined && typeof parsed.toolCatalogDigest !== "string")
+        throw new Error("ai.run_execution_snapshot_invalid")
+      return Object.freeze({
+        runtimeSettings: runtimeSettingsSnapshot(parsed.runtimeSettings),
+        ...(parsed.providerConfig === undefined ? {} : { providerConfig: parseRemoteProviderConfig(parsed.providerConfig) }),
+        ...(typeof parsed.toolCatalogDigest === "string" ? { toolCatalogDigest: parsed.toolCatalogDigest } : {}),
+      })
+    }
+    catch (error) {
+      if (error instanceof Error && error.message === "ai.run_execution_snapshot_key_unavailable") throw error
+      throw new Error("ai.run_execution_snapshot_invalid", { cause: error })
+    }
+  }
+
+  async listRunningRuns() {
+    return this.db.select({ id: runs.id, rowVersion: runs.rowVersion }).from(runs).where(eq(runs.status, "running"))
+  }
+
+  async interruptOrphanedRun(runId: string, expectedRunVersion: number): Promise<boolean> {
     return this.db.transaction(async (tx) => {
       const row = (await tx.update(runs).set({
         status: "interrupted",
         rowVersion: sql`${runs.rowVersion} + 1`,
         completedAt: sql`now()`,
-        errorCode: "ai.owner_lease_expired",
-        nextEventSequence: sql`greatest(${runs.nextEventSequence}, ${eventHighWatermark + 1})`,
+        errorCode: "ai.agent_restarted",
       }).where(and(
         eq(runs.id, runId), eq(runs.status, "running"), eq(runs.rowVersion, expectedRunVersion),
       )).returning({ turnId: runs.turnId, rowVersion: runs.rowVersion }))[0]
       if (!row) return false
       await tx.update(turns).set({ status: "interrupted" }).where(eq(turns.id, row.turnId))
       await this.appendEventWith(tx, runId, "run.interrupted", {
-        state: "interrupted", rowVersion: row.rowVersion, errorCode: "ai.owner_lease_expired",
+        state: "interrupted", rowVersion: row.rowVersion, errorCode: "ai.agent_restarted",
       })
       return true
     })
@@ -890,52 +960,6 @@ export class PostgresRepository implements Repository {
     return current
   }
 
-  async hasToolApprovalExemption(runId: string, operationId: string) {
-    const row = (await this.db.execute<{ exists: boolean }>(sql`
-      select exists(
-        select 1
-        from ai.runs r
-        join ai.tool_approval_exemptions e on e.user_id = r.owner_user_id
-        where r.id = ${runId} and e.operation_id = ${operationId}
-      ) as exists
-    `)).rows[0]
-    return row?.exists === true
-  }
-
-  async grantToolApprovalExemption(runId: string, operationId: string, sourceToolCallId: string) {
-    const inserted = await this.db.execute(sql`
-      insert into ai.tool_approval_exemptions(user_id, operation_id, created_at, updated_at, source_tool_call_id)
-      select owner_user_id, ${operationId}, now(), now(), ${sourceToolCallId}
-      from ai.runs where id = ${runId}
-      on conflict (user_id, operation_id) do update
-      set updated_at = excluded.updated_at,
-          source_tool_call_id = excluded.source_tool_call_id
-      returning user_id
-    `)
-    if (inserted.rowCount !== 1) throw new Error("ai.run_not_found")
-  }
-
-  async listToolApprovalExemptions(ownerUserId: string) {
-    const result = await this.db.execute<{ operationId: string, createdAt: Date | string }>(sql`
-      select operation_id as "operationId", created_at as "createdAt"
-      from ai.tool_approval_exemptions
-      where user_id = ${ownerUserId}
-      order by operation_id
-    `)
-    return result.rows.map(row => ({
-      operationId: row.operationId,
-      createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : new Date(row.createdAt).toISOString(),
-    }))
-  }
-
-  async revokeToolApprovalExemption(ownerUserId: string, operationId: string) {
-    const deleted = await this.db.execute(sql`
-      delete from ai.tool_approval_exemptions
-      where user_id = ${ownerUserId} and operation_id = ${operationId}
-    `)
-    return (deleted.rowCount ?? 0) > 0
-  }
-
   async appendRunInput(runId: string, text: string) {
     const updated = await this.db.update(turns)
       .set({ input: sql`${turns.input} || E'\n' || ${text}` })
@@ -1060,80 +1084,6 @@ export class PostgresRepository implements Repository {
       ))
       .orderBy(asc(runEvents.eventSequence))
     return rows.map(row => mapRunEvent(row.event))
-  }
-
-  async createUIAction(runId: string, toolCallId: string, action: Record<string, unknown>, expiresAt: string) {
-    // insert ... select 保证 run 存在且已绑定客户端实例，on conflict 提供幂等；
-    // 该 PostgreSQL 专属形态无法以 ORM insert values 表达，保留最小 sql 模板
-    const row = (await this.db.execute<Record<string, unknown>>(sql`
-      insert into ai.ui_actions (id, run_id, tool_call_id, client_instance_id, action, status, attempts, expires_at)
-      select ${createId("aiuia")}, r.id, ${toolCallId}, r.client_instance_id, ${JSON.stringify(action)}::jsonb, 'pending', 1, ${expiresAt}::timestamptz
-      from ai.runs r
-      where r.id = ${runId} and r.client_instance_id is not null
-      on conflict (tool_call_id) do update set tool_call_id = excluded.tool_call_id
-      returning *
-    `)).rows[0]
-    if (!row) throw new Error("ai.client_instance_unavailable")
-    return mapUIAction(driverRow(uiActions, row) as UIActionRow)
-  }
-
-  async listPendingUIActions(ownerUserId: string, clientInstanceId: string) {
-    // 先把本客户端实例已过期的待办置为 expired，再领取剩余待办并递增投递次数
-    await this.db.update(uiActions)
-      .set({ status: "expired", updatedAt: sql`now()` })
-      .from(runs)
-      .where(and(
-        eq(uiActions.runId, runs.id),
-        eq(runs.ownerUserId, ownerUserId),
-        eq(uiActions.clientInstanceId, clientInstanceId),
-        eq(uiActions.status, "pending"),
-        sql`${uiActions.expiresAt} <= now()`,
-      ))
-    const delivered = await this.db.update(uiActions)
-      .set({ attempts: sql`${uiActions.attempts} + 1`, updatedAt: sql`now()` })
-      .from(runs)
-      .where(and(
-        eq(uiActions.runId, runs.id),
-        eq(runs.ownerUserId, ownerUserId),
-        eq(uiActions.clientInstanceId, clientInstanceId),
-        eq(uiActions.status, "pending"),
-        sql`${uiActions.expiresAt} > now()`,
-      ))
-      .returning()
-    return delivered
-      .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime())
-      .map(mapUIAction)
-  }
-
-  async acknowledgeUIAction(ownerUserId: string, clientInstanceId: string, actionId: string, acknowledgement: UIActionAcknowledgement) {
-    const row = (await this.db.update(uiActions)
-      .set({
-        status: acknowledgement.status,
-        acknowledgedAt: sql`now()`,
-        actualPath: acknowledgement.actualPath ?? null,
-        errorCode: acknowledgement.errorCode ?? null,
-        updatedAt: sql`now()`,
-      })
-      .from(runs)
-      .where(and(
-        eq(uiActions.id, actionId),
-        eq(uiActions.runId, runs.id),
-        eq(runs.ownerUserId, ownerUserId),
-        eq(uiActions.clientInstanceId, clientInstanceId),
-        eq(uiActions.status, "pending"),
-        sql`${uiActions.expiresAt} > now()`,
-      ))
-      .returning({ action: uiActions }))[0]
-    if (row) return mapUIAction(row.action)
-    const existing = (await this.db.select({ action: uiActions })
-      .from(uiActions)
-      .innerJoin(runs, eq(runs.id, uiActions.runId))
-      .where(and(
-        eq(uiActions.id, actionId),
-        eq(runs.ownerUserId, ownerUserId),
-        eq(uiActions.clientInstanceId, clientInstanceId),
-      )))[0]
-    return existing ? mapUIAction(existing.action) : undefined
   }
 
   async getTimeline(ownerUserId: string, conversationId: string, options: TimelinePageOptions = {}) {
@@ -1328,6 +1278,20 @@ function driverRow(
       : (candidate.mapFromDriverValue as (input: unknown) => unknown)(value)
   }
   return result
+}
+
+const runtimeSettingKeys = Object.keys(defaultRuntimeSettings) as Array<keyof RuntimeSettings>
+
+function isRuntimeSettings(input: unknown): input is RuntimeSettings {
+  if (!isRecord(input)) return false
+  return runtimeSettingKeys.every((key) => {
+    const value = input[key]
+    return typeof value === "number" && Number.isFinite(value)
+  })
+}
+
+function isRecord(input: unknown): input is Record<string, unknown> {
+  return typeof input === "object" && input !== null && !Array.isArray(input)
 }
 
 function escapeLikePattern(value: string): string {

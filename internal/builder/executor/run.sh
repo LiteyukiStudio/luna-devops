@@ -239,7 +239,7 @@ mkdir -p "$HOME/.docker"
 AUTH="$(printf "%s:%s" "$REGISTRY_USERNAME" "$REGISTRY_PASSWORD" | base64 | tr -d "\n")"
 printf '{"auths":{"%s":{"auth":"%s"}}}' "$REGISTRY_ENDPOINT" "$AUTH" > "$HOME/.docker/config.json"
 
-build_with_retry() {
+run_build() {
 	dockerfile_dir="$PWD/$(dirname "$DOCKERFILE_PATH")"
 	dockerfile_name="$(basename "$DOCKERFILE_PATH")"
 	if [ "${BUILD_DEFINITION_MODE:-repository_dockerfile}" = "template" ]; then
@@ -250,28 +250,18 @@ build_with_retry() {
 		dockerfile_dir="/executor"
 		dockerfile_name="template.Dockerfile"
 	fi
-  attempt=1
-  while [ "$attempt" -le 3 ]; do
-    if buildctl-daemonless.sh build \
-      --progress=plain \
-      --frontend dockerfile.v0 \
-      --local context="$PWD/$BUILD_CONTEXT" \
-      --local dockerfile="$dockerfile_dir" \
-      --opt filename="$dockerfile_name" \
-      "$@" \
-      --output type=image,name="$IMAGE_REF",push=true; then
-      return 0
-    fi
-    if [ "$attempt" -eq 3 ]; then
-      return 1
-    fi
-    sleep $((attempt * 3))
-    attempt=$((attempt + 1))
-  done
+  buildctl-daemonless.sh build \
+    --progress=plain \
+    --frontend dockerfile.v0 \
+    --local context="$PWD/$BUILD_CONTEXT" \
+    --local dockerfile="$dockerfile_dir" \
+    --opt filename="$dockerfile_name" \
+    "$@" \
+    --output type=image,name="$IMAGE_REF",push=true
 }
 
 run_hooks "prePush" "${PRE_PUSH_HOOK_IDS:-}"
-build_with_retry "$@"
+run_build "$@"
 
 export_luna_devops_build_context
 run_hooks "postPush" "${POST_PUSH_HOOK_IDS:-}"

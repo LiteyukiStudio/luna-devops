@@ -84,8 +84,6 @@ const codeRepositoriesView = {
   oauthConnect: '{{provider}}에 연결',
   oauthReadyTitle: '리다이렉트 인증을 사용할 수 있습니다',
   oauthReadyDescription: '{{provider}}에 OAuth App이 설정되어 있습니다. 승인을 클릭하면 코드 플랫폼으로 리다이렉트되고 승인 성공 후 Git 자격 증명이 자동 생성됩니다.',
-  oauthDebugBlockedTitle: '현재 역할 미리보기입니다',
-  oauthDebugBlockedDescription: '역할 미리보기는 실제 로그인 세션을 변경하지 않습니다. Debug 역할 미리보기를 종료하거나 대상 계정으로 실제 로그인한 후 코드 플랫폼을 승인하세요.',
   oauthManualOnlyTitle: '현재는 수동으로 Token 입력만 가능합니다',
   oauthManualOnlyDescription: '{{provider}}에 Client ID와 Client Secret이 아직 설정되지 않아 일시적으로 리다이렉트 인증을 할 수 없습니다. 아래에서 사용자 이름과 PAT / access token을 계속 입력할 수 있습니다.',
   patManualOnlyDescription: '{{provider}}는 PAT 모드를 사용합니다. 아래에서 사용자 이름과 access token을 입력하세요.',

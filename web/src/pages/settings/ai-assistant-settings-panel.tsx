@@ -47,7 +47,6 @@ const defaults: FormValues = {
   modelMaxOutputTokens: 65536,
   runMaxModelSteps: 256,
   runMaxInputKBytes: 1024,
-  runNavigateActionTtlSeconds: 120,
   toolsMaxCardRepairAttempts: 5,
   observabilityEnabled: false,
   prometheusUrl: '',
@@ -74,7 +73,6 @@ const runtimeDefaultFields = [
   ['ai.model.max_output_tokens', 'modelMaxOutputTokens'],
   ['ai.run.max_model_steps', 'runMaxModelSteps'],
   ['ai.run.max_input_k_bytes', 'runMaxInputKBytes'],
-  ['ai.run.navigate_action_ttl_seconds', 'runNavigateActionTtlSeconds'],
   ['ai.tools.max_card_repair_attempts', 'toolsMaxCardRepairAttempts'],
 ] as const
 
@@ -87,7 +85,6 @@ type AdvancedFieldName
     | 'modelMaxOutputTokens'
     | 'runMaxModelSteps'
     | 'runMaxInputKBytes'
-    | 'runNavigateActionTtlSeconds'
     | 'toolsMaxCardRepairAttempts'
 
 interface AdvancedField {
@@ -122,7 +119,6 @@ const advancedGroups: AdvancedGroup[] = [
       { name: 'modelMaxOutputTokens', labelKey: 'settings.ai.modelMaxOutputTokens', hintKey: 'settings.ai.modelMaxOutputTokensHint', min: 256, max: 131072, step: 1 },
       { name: 'runMaxModelSteps', labelKey: 'settings.ai.runMaxModelSteps', hintKey: 'settings.ai.runMaxModelStepsHint', min: 1, max: 1024, step: 1 },
       { name: 'runMaxInputKBytes', labelKey: 'settings.ai.runMaxInputKBytes', hintKey: 'settings.ai.runMaxInputKBytesHint', min: 8, max: 8192, step: 1 },
-      { name: 'runNavigateActionTtlSeconds', labelKey: 'settings.ai.runNavigateActionTtlSeconds', hintKey: 'settings.ai.runNavigateActionTtlSecondsHint', min: 10, max: 600, step: 1 },
     ],
   },
   {
@@ -379,7 +375,6 @@ function aiSettingsFormValues(values: Record<string, string>): FormValues {
     modelMaxOutputTokens: Number(values['ai.model.max_output_tokens'] ?? 65536),
     runMaxModelSteps: Number(values['ai.run.max_model_steps'] ?? 256),
     runMaxInputKBytes: Number(values['ai.run.max_input_k_bytes'] ?? 1024),
-    runNavigateActionTtlSeconds: Number(values['ai.run.navigate_action_ttl_seconds'] ?? 120),
     toolsMaxCardRepairAttempts: Number(values['ai.tools.max_card_repair_attempts'] ?? 5),
     observabilityEnabled: values['ai.observability.enabled'] === 'true',
     prometheusUrl: values['ai.observability.prometheus_url'] ?? '',

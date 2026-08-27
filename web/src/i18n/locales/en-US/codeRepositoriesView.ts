@@ -84,8 +84,6 @@ const codeRepositoriesView = {
   oauthConnect: 'Connect {{provider}}',
   oauthReadyTitle: 'OAuth redirect is available',
   oauthReadyDescription: '{{provider}} has an OAuth App configured. Continue to the code platform and the credential will be created after authorization.',
-  oauthDebugBlockedTitle: 'Role preview is active',
-  oauthDebugBlockedDescription: 'Role preview does not change the real login session. Leave the Debug role preview, or sign in with the target account before authorizing Git access.',
   oauthManualOnlyTitle: 'Manual token only',
   oauthManualOnlyDescription: '{{provider}} does not have Client ID and Client Secret configured, so redirect authorization is unavailable. Fill a username and PAT / access token below instead.',
   patManualOnlyDescription: '{{provider}} uses PAT mode. Fill a username and access token below.',

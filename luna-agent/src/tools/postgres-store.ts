@@ -122,7 +122,7 @@ type DbToolCall = {
   id: string; run_id: string; operation_id: string; status: ToolCallStatus; input_mode: string; arguments: Record<string, unknown>;
   arguments_ciphertext: string | null;
   arguments_hash: string; attempt: number; row_version: number;
-	approval_decision: "approve" | "approve_always" | null;
+	approval_decision: "approve" | null;
 	result: unknown; error_code: string | null
 }
 

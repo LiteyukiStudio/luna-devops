@@ -19,7 +19,6 @@ import (
 type NamespaceManager interface {
 	Ping(ctx context.Context) error
 	EnsureNamespace(ctx context.Context, name string, labels map[string]string) error
-	EnsureBuildNetworkPolicy(ctx context.Context, spec BuildNetworkPolicySpec) error
 	EnsureBuildPolicy(ctx context.Context, policy networkpolicy.BuildPolicy) error
 	EnsureGatewayTrafficProbeAccess(ctx context.Context, spec GatewayTrafficProbeSpec) error
 	PreflightApplicationResources(ctx context.Context, spec ApplicationResourcesSpec) error

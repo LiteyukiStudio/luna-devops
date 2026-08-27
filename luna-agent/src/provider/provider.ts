@@ -6,6 +6,8 @@ export type ModelToolDefinition = {
   operationId: string
   description: string
   inputSchema: Record<string, unknown>
+  /** Telemetry-only catalog metadata; providers must not send it to the model. */
+  sensitivePaths?: readonly string[]
 }
 export type ModelToolSearchResult = {
   query: string
@@ -81,6 +83,7 @@ export type ModelRequest = {
   budget?: { runId: string, ownerUserId: string, operation: "assistant" | "summary" | "title" }
   conversationId?: string
   conversationCompacted?: boolean
+  providerConfig?: RemoteProviderConfig
 }
 export type ModelEvent =
   | { type: "reasoning_summary_delta", delta: string }
@@ -145,3 +148,4 @@ export interface ModelProvider {
   health(): Promise<{ ok: boolean, requestId?: string }>
 }
 import type { AIModelSnapshot } from "../domain.js"
+import type { RemoteProviderConfig } from "./config-client.js"

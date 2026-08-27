@@ -1,5 +1,4 @@
 import type { CurrentUser } from '@/api'
-import type { PlatformRoleValue } from '@/lib/roles'
 import { createContext, use } from 'react'
 
 export interface LoginInput {
@@ -25,16 +24,7 @@ export interface InitializeAdminInput {
   rememberMe: boolean
 }
 
-interface DebugRoleOverride {
-  role: PlatformRoleValue
-  type: 'role'
-}
-
-export type DebugSessionOverride = DebugRoleOverride
-
 export interface SessionContextValue {
-  actualUser?: CurrentUser
-  debugOverride?: DebugSessionOverride
   initialized: boolean
   isLoading: boolean
   isLoggingIn: boolean
@@ -42,13 +32,11 @@ export interface SessionContextValue {
   pendingLoginUsername?: string
   recentLoginUsers: RecentLoginUser[]
   user?: CurrentUser
-  clearDebugOverride: () => void
   initializeAdmin: (input: InitializeAdminInput) => Promise<CurrentUser>
   login: (input: LoginInput) => Promise<CurrentUser>
   logout: () => Promise<void>
   refreshUser: () => Promise<void>
   resumeLogin: (userId: string) => Promise<CurrentUser>
-  setDebugOverride: (override: DebugSessionOverride) => void
   updateProfile: (input: { name: string, avatarUrl: string, language: CurrentUser['language'], brandColorPreset: CurrentUser['brandColorPreset'], interfaceStyle: CurrentUser['interfaceStyle'] }) => Promise<CurrentUser>
   updateLanguage: (language: CurrentUser['language']) => Promise<CurrentUser>
 }

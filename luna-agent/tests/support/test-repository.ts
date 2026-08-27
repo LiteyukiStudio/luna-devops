@@ -3,14 +3,14 @@ import type {
   ConversationHistoryEntry,
   ConversationSummary,
   ConversationTitleSource,
+  ClaimedRun,
   CreatedTurn,
   CreateTurn,
   Run,
   RunEvent,
+  RunExecutionSnapshot,
   TimelineItem,
   Turn,
-  UIActionAcknowledgement,
-  UIActionDelivery,
 } from "../../src/domain.js"
 import { createId } from "../../src/id.js"
 import {
@@ -24,16 +24,20 @@ import {
 } from "../../src/persistence/repository.js"
 import type { OfficialModelUsage, UsageUnavailableReason } from "../../src/provider/provider.js"
 import { createTurnRequestHash } from "../../src/persistence/create-turn-hash.js"
+import { immutableRemoteProviderConfig } from "../../src/provider/config-client.js"
+import { runtimeSettingsSnapshot } from "../../src/runtime-settings.js"
+import { MemoryToolCallStore } from "../../src/tools/orchestrator.js"
 
 type StoredRun = Run & { ownerUserId: string }
 
 export class TestRepository implements Repository {
+  readonly toolCallStore = new MemoryToolCallStore()
   private readonly conversations = new Map<string, Conversation>()
   private readonly turns = new Map<string, Turn>()
   private readonly runs = new Map<string, StoredRun>()
+  private readonly executionSnapshots = new Map<string, RunExecutionSnapshot>()
   private readonly items: TimelineItem[] = []
   private readonly events: RunEvent[] = []
-  private readonly uiActions = new Map<string, UIActionDelivery>()
   private readonly summaries = new Map<string, ConversationSummary>()
   private readonly idempotency = new Map<string, { hash: string, created: CreatedTurn }>()
   private readonly modelHolds = new Map<string, {
@@ -45,7 +49,6 @@ export class TestRepository implements Repository {
   }>()
   private readonly modelUsages: Array<{ runId: string, operation: ModelCallOperation, usage: OfficialModelUsage }> = []
   private readonly contextUsageByConversation = new Map<string, NonNullable<Awaited<ReturnType<Repository["getTimeline"]>>>["contextUsage"]>()
-  private readonly approvalExemptions = new Map<string, string>()
   private readonly streamHighWatermarks = new Map<string, number>()
 
   async health(): Promise<boolean> { return true }
@@ -138,7 +141,11 @@ export class TestRepository implements Repository {
     this.summaries.delete(id)
     const turnIds = [...this.turns.values()].filter(t => t.conversationId === id).map(t => t.id)
     for (const turnId of turnIds) this.turns.delete(turnId)
-    for (const [runId, run] of this.runs) if (run.conversationId === id) this.runs.delete(runId)
+    for (const [runId, run] of this.runs) {
+      if (run.conversationId !== id) continue
+      this.runs.delete(runId)
+      this.executionSnapshots.delete(runId)
+    }
     return true
   }
 
@@ -170,7 +177,7 @@ export class TestRepository implements Repository {
       selectedOperationIds: [],
       actorSessionId: input.actorSessionId ?? `test:${ownerUserId}`,
       ...(input.traceContext ? { traceContext: input.traceContext } : {}),
-      clientInstanceId: input.clientInstanceId ?? "memory-client-instance", createdAt: now, ownerUserId,
+      createdAt: now, ownerUserId,
       ...(input.modelSnapshot ? { model: input.modelSnapshot } : {}),
     }
     this.turns.set(turn.id, turn)
@@ -280,33 +287,63 @@ export class TestRepository implements Repository {
     run.rowVersion += 1
     const turn = this.turns.get(run.turnId)
     if (turn) turn.status = "canceled"
+    const canceledResult = { code: "ai.run_canceled", retryable: false }
+    const activeToolStatuses = new Set(["proposed", "awaiting_approval", "running"])
+    for (const call of this.toolCallStore.records.values()) {
+      if (call.runId !== id || !activeToolStatuses.has(call.status)) continue
+      await this.toolCallStore.update(call.id, call.status, {
+        status: "canceled",
+        rowVersion: call.rowVersion + 1,
+        result: canceledResult,
+        errorCode: "ai.run_canceled",
+      })
+    }
+    for (const item of this.items) {
+      const contentStatus = typeof item.content.status === "string" ? item.content.status : undefined
+      const active = activeToolStatuses.has(contentStatus ?? "") || contentStatus === undefined && item.status === "streaming"
+      if (item.runId !== id || item.type !== "tool_call" || !active) continue
+      item.status = "completed"
+      item.content = { ...item.content, status: "canceled", result: canceledResult, errorCode: "ai.run_canceled" }
+      item.revision += 1
+      await this.appendEvent(id, "item.finalized", {
+        itemId: item.id,
+        ...(typeof item.content.toolCallId === "string" ? { toolCallId: item.content.toolCallId } : {}),
+        item: structuredClone(item),
+      })
+    }
     await this.appendEvent(id, "run.canceled", { state: "canceled", rowVersion: run.rowVersion })
     return run
   }
 
-  async claimNextQueuedRun() {
+  async claimNextQueuedRun(executionSnapshot?: RunExecutionSnapshot): Promise<ClaimedRun | undefined> {
     const run = [...this.runs.values()].find(item => item.status === "queued")
     if (!run) return undefined
+    if (!this.executionSnapshots.has(run.id) && executionSnapshot) {
+      const snapshot = cloneExecutionSnapshot(executionSnapshot)
+      this.executionSnapshots.set(run.id, snapshot)
+      if (snapshot.toolCatalogDigest) run.toolCatalogDigest = snapshot.toolCatalogDigest
+    }
     run.status = "running"
     run.startedAt ??= new Date().toISOString()
     run.rowVersion += 1
     const turn = this.turns.get(run.turnId)
     if (turn) turn.status = "running"
     await this.appendEvent(run.id, "run.running", { state: "running", rowVersion: run.rowVersion })
-    return run
+    const restoredSnapshot = this.executionSnapshots.get(run.id)
+    return {
+      ...run,
+      ...(restoredSnapshot ? { executionSnapshot: cloneExecutionSnapshot(restoredSnapshot) } : {}),
+    }
   }
-  async listStaleRunningRuns(startedBefore: string) {
-    const cutoff = Date.parse(startedBefore)
-    return [...this.runs.values()].filter(run => run.status === "running"
-      && run.startedAt !== undefined && Date.parse(run.startedAt) < cutoff)
+  async listRunningRuns() {
+    return [...this.runs.values()].filter(run => run.status === "running")
       .map(run => ({ id: run.id, rowVersion: run.rowVersion }))
   }
-  async interruptAbandonedRun(runId: string, expectedRunVersion: number, eventHighWatermark: number): Promise<boolean> {
+  async interruptOrphanedRun(runId: string, expectedRunVersion: number): Promise<boolean> {
     const run = this.runs.get(runId)
     if (!run || run.status !== "running" || run.rowVersion !== expectedRunVersion) return false
-    this.streamHighWatermarks.set(runId, Math.max(this.streamHighWatermarks.get(runId) ?? 0, eventHighWatermark))
     await this.updateRun(runId, "running", "interrupted", {
-      completedAt: new Date().toISOString(), errorCode: "ai.owner_lease_expired",
+      completedAt: new Date().toISOString(), errorCode: "ai.agent_restarted",
     })
     return true
   }
@@ -462,26 +499,6 @@ export class TestRepository implements Repository {
     this.summaries.set(input.conversationId, value)
     return value
   }
-  async hasToolApprovalExemption(runId: string, operationId: string) {
-    const run = this.runs.get(runId)
-    return Boolean(run && this.approvalExemptions.has(`${run.ownerUserId}\u0000${operationId}`))
-  }
-  async grantToolApprovalExemption(runId: string, operationId: string, sourceToolCallId: string) {
-    void sourceToolCallId
-    const run = this.runs.get(runId)
-    if (!run) throw new Error("ai.run_not_found")
-    this.approvalExemptions.set(`${run.ownerUserId}\u0000${operationId}`, new Date().toISOString())
-  }
-  async listToolApprovalExemptions(ownerUserId: string) {
-    const prefix = `${ownerUserId}\u0000`
-    return [...this.approvalExemptions.entries()]
-      .filter(([key]) => key.startsWith(prefix))
-      .map(([key, createdAt]) => ({ operationId: key.slice(prefix.length), createdAt }))
-      .sort((left, right) => left.operationId.localeCompare(right.operationId))
-  }
-  async revokeToolApprovalExemption(ownerUserId: string, operationId: string) {
-    return this.approvalExemptions.delete(`${ownerUserId}\u0000${operationId}`)
-  }
   async appendRunInput(runId: string, text: string) {
     const run = this.runs.get(runId)
     const turn = run ? this.turns.get(run.turnId) : undefined
@@ -591,50 +608,6 @@ export class TestRepository implements Repository {
     return this.events.filter(event => event.runId === runId && event.sequence > after)
   }
 
-  async createUIAction(runId: string, toolCallId: string, action: Record<string, unknown>, expiresAt: string) {
-    const existing = [...this.uiActions.values()].find(item => item.toolCallId === toolCallId)
-    if (existing) return existing
-    const run = this.runs.get(runId)
-    if (!run?.clientInstanceId) throw new Error("ai.client_instance_unavailable")
-    const now = new Date().toISOString()
-    const value: UIActionDelivery = {
-      id: createId("aiuia"), runId, toolCallId, clientInstanceId: run.clientInstanceId,
-      action, status: "pending", attempts: 1, expiresAt, createdAt: now, updatedAt: now,
-    }
-    this.uiActions.set(value.id, value)
-    return value
-  }
-
-  async listPendingUIActions(ownerUserId: string, clientInstanceId: string) {
-    const now = Date.now()
-    for (const action of this.uiActions.values()) {
-      if (action.status === "pending" && Date.parse(action.expiresAt) <= now) {
-        action.status = "expired"
-        action.updatedAt = new Date().toISOString()
-      }
-    }
-    return [...this.uiActions.values()]
-      .filter(action => action.status === "pending"
-        && action.clientInstanceId === clientInstanceId
-        && this.runs.get(action.runId)?.ownerUserId === ownerUserId)
-      .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
-  }
-
-  async acknowledgeUIAction(ownerUserId: string, clientInstanceId: string, actionId: string, acknowledgement: UIActionAcknowledgement) {
-    const action = this.uiActions.get(actionId)
-    if (!action
-      || action.clientInstanceId !== clientInstanceId
-      || this.runs.get(action.runId)?.ownerUserId !== ownerUserId)
-      return undefined
-    if (action.status !== "pending") return action
-    action.status = acknowledgement.status
-    action.acknowledgedAt = new Date().toISOString()
-    action.updatedAt = action.acknowledgedAt
-    if (acknowledgement.actualPath) action.actualPath = acknowledgement.actualPath
-    if (acknowledgement.errorCode) action.errorCode = acknowledgement.errorCode
-    return action
-  }
-
   async getTimeline(ownerUserId: string, conversationId: string, options: TimelinePageOptions = {}) {
     const conversation = await this.getConversation(ownerUserId, conversationId)
     if (!conversation) return undefined
@@ -694,6 +667,16 @@ export class TestRepository implements Repository {
       },
     }
   }
+}
+
+function cloneExecutionSnapshot(snapshot: RunExecutionSnapshot): RunExecutionSnapshot {
+  return Object.freeze({
+    runtimeSettings: runtimeSettingsSnapshot(snapshot.runtimeSettings),
+    ...(snapshot.providerConfig ? {
+      providerConfig: immutableRemoteProviderConfig(structuredClone(snapshot.providerConfig)),
+    } : {}),
+    ...(snapshot.toolCatalogDigest ? { toolCatalogDigest: snapshot.toolCatalogDigest } : {}),
+  })
 }
 
 function timelineText(content: Record<string, unknown>) {

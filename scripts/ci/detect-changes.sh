@@ -50,6 +50,7 @@ web_changed=false
 agent_changed=false
 docs_changed=false
 helm_changed=false
+dependencies_changed=false
 api_image=false
 worker_image=false
 agent_image=false
@@ -61,6 +62,7 @@ mark_all() {
   agent_changed=true
   docs_changed=true
   helm_changed=true
+  dependencies_changed=true
   api_image=true
   worker_image=true
   agent_image=true
@@ -146,6 +148,12 @@ else
   while IFS= read -r path; do
     [[ -z "${path}" ]] && continue
     printf 'changed: %s\n' "${path}" >&2
+
+    case "${path}" in
+      go.mod|go.sum|*/package.json|*/pnpm-lock.yaml|scripts/ci/check-dependencies.sh)
+        dependencies_changed=true
+        ;;
+    esac
 
     case "${path}" in
       .github/workflows/*|scripts/ci/*|scripts/release-check.sh|.go-version)
@@ -274,5 +282,6 @@ emit web "${web_changed}"
 emit agent "${agent_changed}"
 emit docs "${docs_changed}"
 emit helm "${helm_changed}"
+emit dependencies "${dependencies_changed}"
 emit container "${container_changed}"
 emit container_images "${container_images}"

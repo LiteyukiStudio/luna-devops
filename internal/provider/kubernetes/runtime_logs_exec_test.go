@@ -1,10 +1,44 @@
 package kubernetes
 
 import (
+	"errors"
+	"strings"
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
+	clientexec "k8s.io/client-go/util/exec"
 )
+
+func TestRuntimeExecOutputIsBoundedAcrossStreams(t *testing.T) {
+	output := newRuntimeExecOutput(8)
+	if _, err := output.writer(false).Write([]byte("stdout")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := output.writer(true).Write([]byte("stderr")); err != nil {
+		t.Fatal(err)
+	}
+	stdout, stderr, truncated := output.snapshot()
+	if stdout != "stdout" || stderr != "st" || !truncated {
+		t.Fatalf("bounded output = stdout %q, stderr %q, truncated %v", stdout, stderr, truncated)
+	}
+	if len(stdout)+len(stderr) != 8 || strings.Contains(stdout+stderr, "derr") {
+		t.Fatalf("combined output exceeded its limit: %q / %q", stdout, stderr)
+	}
+}
+
+func TestRuntimeExecExitCodePreservesCommandStatus(t *testing.T) {
+	code, exited := runtimeExecExitCode(clientexec.CodeExitError{Err: errors.New("command failed"), Code: 42})
+	if !exited || code != 42 {
+		t.Fatalf("runtime exec exit = (%d, %t), want (42, true)", code, exited)
+	}
+}
+
+func TestRuntimeExecExitCodeRejectsTransportFailure(t *testing.T) {
+	code, exited := runtimeExecExitCode(errors.New("transport unavailable"))
+	if exited || code != 0 {
+		t.Fatalf("transport failure exit = (%d, %t), want (0, false)", code, exited)
+	}
+}
 
 func TestSelectPodContainer(t *testing.T) {
 	pod := corev1.Pod{

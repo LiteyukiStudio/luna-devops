@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import { loadConfig } from "../src/config.js"
 import { RunExecutor } from "../src/executor.js"
 import { ModelRuntime } from "../src/model-runtime.js"
@@ -11,7 +11,14 @@ import { MemoryToolCallStore, ProjectingToolCallStore, ToolOrchestrator } from "
 import { getToolDetailsTool } from "../src/tools/tool-details.js"
 import { searchToolsTool } from "../src/tools/tool-search.js"
 import { InMemoryRunStreamBus } from "../src/run-stream-bus.js"
-import { defaultRuntimeSettings } from "../src/runtime-settings.js"
+import { defaultRuntimeSettings, type RemoteRuntimeSettings } from "../src/runtime-settings.js"
+import { ManagedProvider } from "../src/provider/managed.js"
+import type { RemoteConfigSnapshot, RemoteProviderConfig } from "../src/provider/config-client.js"
+
+afterEach(() => {
+  vi.useRealTimers()
+  vi.unstubAllGlobals()
+})
 
 describe("RunExecutor slim lifecycle", () => {
   it("contains a polling claim failure instead of creating an unhandled rejection", async () => {
@@ -20,39 +27,14 @@ describe("RunExecutor slim lifecycle", () => {
     }
     const executor = new RunExecutor(
       new FailingClaimRepository(), new ModelRuntime(new DeterministicProvider()),
-      loadConfig({ NODE_ENV: "test", INSTANCE_ID: "worker-claim-failure" }),
+      loadConfig({ NODE_ENV: "test" }),
     )
     executor.start()
     await new Promise(resolve => setTimeout(resolve, 10))
     await expect(executor.stop()).resolves.toBeUndefined()
   })
 
-  it("interrupts its freshly claimed Run when Redis lease acquisition throws", async () => {
-    class FailingLeaseBus extends InMemoryRunStreamBus {
-      cleanupCalls = 0
-      override async acquireOwnership(): Promise<never> { throw new Error("ai.stream_transport_unavailable") }
-      override async cleanup(runId: string) { this.cleanupCalls += 1; await super.cleanup(runId) }
-    }
-    const repository = new TestRepository()
-    const conversation = await repository.createConversation("usr_lease_failure", "lease")
-    const created = await repository.createTurn("usr_lease_failure", {
-      conversationId: conversation.id, input: "hello", pageContext: {},
-      idempotencyKey: "lease-acquire-failure", actorSessionId: "ses_lease_failure",
-    })
-    const streamBus = new FailingLeaseBus(repository)
-    const executor = new RunExecutor(
-      repository, new ModelRuntime(new DeterministicProvider()),
-      loadConfig({ NODE_ENV: "test", INSTANCE_ID: "worker-lease-failure" }),
-      undefined, undefined, defaultRuntimeSettings, undefined, streamBus,
-    )
-    executor.start()
-    await new Promise(resolve => setTimeout(resolve, 10))
-    await executor.stop()
-    expect((await repository.getRun("usr_lease_failure", created.run.id))?.status).toBe("interrupted")
-    expect(streamBus.cleanupCalls).toBe(1)
-  })
-
-  it("shortens the Redis retention after owner reconciliation durably interrupts a stale Run", async () => {
+  it("cleans up the live buffer after startup interrupts an orphaned Run", async () => {
     class CleanupBus extends InMemoryRunStreamBus {
       cleanupCalls = 0
       override async cleanup(runId: string) { this.cleanupCalls += 1; await super.cleanup(runId) }
@@ -69,14 +51,306 @@ describe("RunExecutor slim lifecycle", () => {
     const streamBus = new CleanupBus(repository)
     const executor = new RunExecutor(
       repository, new ModelRuntime(new DeterministicProvider()),
-      loadConfig({ NODE_ENV: "test", INSTANCE_ID: "worker-reconcile-cleanup" }),
+      loadConfig({ NODE_ENV: "test" }),
       undefined, undefined, defaultRuntimeSettings, undefined, streamBus,
     )
 
-    await (executor as unknown as { reconcileAbandonedRuns(): Promise<void> }).reconcileAbandonedRuns()
+    await expect((executor as unknown as { interruptOrphanedRuns(): Promise<boolean> }).interruptOrphanedRuns()).resolves.toBe(true)
 
     expect((await repository.getRun("usr_reconcile_cleanup", run.id))?.status).toBe("interrupted")
     expect(streamBus.cleanupCalls).toBe(1)
+  })
+
+  it("does not claim work until a failed PostgreSQL startup reconciliation succeeds", async () => {
+    vi.useFakeTimers()
+    class FlakyReconcileRepository extends TestRepository {
+      reconcileAttempts = 0
+      claimAttempts = 0
+
+      override async listRunningRuns() {
+        this.reconcileAttempts += 1
+        if (this.reconcileAttempts === 1) throw new Error("database unavailable")
+        return super.listRunningRuns()
+      }
+
+      override async claimNextQueuedRun() {
+        this.claimAttempts += 1
+        return super.claimNextQueuedRun()
+      }
+    }
+    const repository = new FlakyReconcileRepository()
+    const executor = new RunExecutor(
+      repository, new ModelRuntime(new DeterministicProvider()),
+      loadConfig({ NODE_ENV: "test" }),
+    )
+
+    executor.start()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(repository.reconcileAttempts).toBe(1)
+    expect(repository.claimAttempts).toBe(0)
+    await vi.advanceTimersByTimeAsync(499)
+    expect(repository.claimAttempts).toBe(0)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(repository.reconcileAttempts).toBe(2)
+    expect(repository.claimAttempts).toBe(1)
+    await executor.stop()
+  })
+
+  it("retries a failed orphaned Run without skipping the rest of the reconciliation round", async () => {
+    vi.useFakeTimers()
+    const repository = new TestRepository()
+    const firstConversation = await repository.createConversation("usr_reconcile_first", "first")
+    const firstCreated = await repository.createTurn("usr_reconcile_first", {
+      conversationId: firstConversation.id, input: "first", pageContext: {},
+      idempotencyKey: "reconcile-first", actorSessionId: "ses_reconcile_first",
+    })
+    const firstRun = await repository.claimNextQueuedRun()
+    if (!firstRun) throw new Error("missing first run")
+    const secondConversation = await repository.createConversation("usr_reconcile_second", "second")
+    const secondCreated = await repository.createTurn("usr_reconcile_second", {
+      conversationId: secondConversation.id, input: "second", pageContext: {},
+      idempotencyKey: "reconcile-second", actorSessionId: "ses_reconcile_second",
+    })
+    const secondRun = await repository.claimNextQueuedRun()
+    if (!secondRun) throw new Error("missing second run")
+    const interrupt = repository.interruptOrphanedRun.bind(repository)
+    const attempts = new Map<string, number>()
+    repository.interruptOrphanedRun = vi.fn(async (runId: string, rowVersion: number) => {
+      const attempt = (attempts.get(runId) ?? 0) + 1
+      attempts.set(runId, attempt)
+      if (runId === firstCreated.run.id && attempt === 1) throw new Error("database unavailable")
+      return interrupt(runId, rowVersion)
+    })
+    const claim = vi.spyOn(repository, "claimNextQueuedRun")
+    const executor = new RunExecutor(
+      repository, new ModelRuntime(new DeterministicProvider()),
+      loadConfig({ NODE_ENV: "test" }),
+    )
+
+    executor.start()
+    await vi.advanceTimersByTimeAsync(0)
+    expect((await repository.getRun("usr_reconcile_first", firstCreated.run.id))?.status).toBe("running")
+    expect((await repository.getRun("usr_reconcile_second", secondCreated.run.id))?.status).toBe("interrupted")
+    expect(claim).not.toHaveBeenCalled()
+
+    await vi.advanceTimersByTimeAsync(500)
+    expect((await repository.getRun("usr_reconcile_first", firstCreated.run.id))?.status).toBe("interrupted")
+    expect(attempts.get(firstCreated.run.id)).toBe(2)
+    expect(attempts.get(secondCreated.run.id)).toBe(1)
+    expect(claim).toHaveBeenCalledOnce()
+    await executor.stop()
+  })
+
+  it("keeps one immutable provider and runtime snapshot across a refresh between model steps", async () => {
+    const oldConfig = remoteConfig("cfg-old", "https://old-provider.example/v1/", 512, 2)
+    const newConfig = remoteConfig("cfg-new", "https://new-provider.example/v1/", 1_024, 5)
+    let current = oldConfig
+    const listeners = new Set<(config: RemoteProviderConfig) => void>()
+    const remoteSnapshot = {
+      current: () => current,
+      subscribe: (listener: (config: RemoteProviderConfig) => void) => {
+        listeners.add(listener)
+        return () => listeners.delete(listener)
+      },
+    } as unknown as RemoteConfigSnapshot
+    const publish = (config: RemoteProviderConfig) => {
+      current = config
+      for (const listener of listeners) listener(config)
+    }
+    const observed: Array<{ runId: string, configVersion: string, baseUrl: string, maxOutputTokens: number }> = []
+    const modelAttempts = new Map<string, number>()
+    let firstRunId = ""
+    let secondRunId = ""
+    const managedProvider = new ManagedProvider(remoteSnapshot, config => ({
+      async *stream(request) {
+        const runId = request.budget?.runId ?? "unknown"
+        const attempt = (modelAttempts.get(runId) ?? 0) + 1
+        modelAttempts.set(runId, attempt)
+        observed.push({ runId, configVersion: config.version, baseUrl: config.provider.baseUrl, maxOutputTokens: request.maxOutputTokens })
+        const invalidCard = runId === firstRunId && attempt <= 2 || runId === secondRunId && attempt === 1
+        if (invalidCard) {
+          yield {
+            type: "completed" as const,
+            usage: { status: "reported" as const, value: { inputTokens: 1, outputTokens: 1, totalTokens: 2 } },
+            toolCalls: [{ id: `card-${runId}-${attempt}`, operationId: "present_card", arguments: {} }],
+          }
+          return
+        }
+        yield { type: "message_delta" as const, delta: "done" }
+        yield { type: "completed" as const, usage: { status: "reported" as const, value: { inputTokens: 1, outputTokens: 1, totalTokens: 2 } } }
+      },
+      async complete() {
+        return { text: "done", usage: { status: "reported" as const, value: { inputTokens: 1, outputTokens: 1, totalTokens: 2 } } }
+      },
+      capabilities: () => ({ streaming: true, toolCalling: true, structuredOutput: true }),
+      health: async () => ({ ok: true }),
+    }))
+    let releaseSecondStep!: () => void
+    const secondStepReleased = new Promise<void>(resolve => { releaseSecondStep = resolve })
+    let notifySecondStep!: () => void
+    const secondStepStarted = new Promise<void>(resolve => { notifySecondStep = resolve })
+    let toolResolutionCount = 0
+    const runtime = new ModelRuntime(managedProvider, async () => {
+      toolResolutionCount += 1
+      if (toolResolutionCount === 2) {
+        notifySecondStep()
+        await secondStepReleased
+      }
+      return []
+    })
+    const repository = new TestRepository()
+    const conversation = await repository.createConversation("usr_snapshot", "snapshot")
+    const first = await repository.createTurn("usr_snapshot", {
+      conversationId: conversation.id, input: "first", pageContext: {},
+      idempotencyKey: "runtime-snapshot-first", actorSessionId: "ses_snapshot",
+    })
+    firstRunId = first.run.id
+    const executor = new RunExecutor(
+      repository,
+      runtime,
+      loadConfig({ NODE_ENV: "test" }),
+      undefined,
+      remoteSnapshot,
+      { ...defaultRuntimeSettings, ...oldConfig.runtime },
+    )
+
+    const firstExecution = executor.runOnce()
+    await secondStepStarted
+    publish(newConfig)
+    releaseSecondStep()
+    await expect(firstExecution).resolves.toBe(true)
+
+    const second = await repository.createTurn("usr_snapshot", {
+      conversationId: conversation.id, input: "second", pageContext: {},
+      idempotencyKey: "runtime-snapshot-second", actorSessionId: "ses_snapshot",
+    })
+    secondRunId = second.run.id
+    await expect(executor.runOnce()).resolves.toBe(true)
+    await executor.stop()
+
+    expect(observed.filter(item => item.runId === firstRunId)).toEqual([
+      { runId: firstRunId, configVersion: "cfg-old", baseUrl: "https://old-provider.example/v1/", maxOutputTokens: 512 },
+      { runId: firstRunId, configVersion: "cfg-old", baseUrl: "https://old-provider.example/v1/", maxOutputTokens: 512 },
+      { runId: firstRunId, configVersion: "cfg-old", baseUrl: "https://old-provider.example/v1/", maxOutputTokens: 512 },
+    ])
+    expect(observed.filter(item => item.runId === secondRunId)).toEqual([
+      { runId: secondRunId, configVersion: "cfg-new", baseUrl: "https://new-provider.example/v1/", maxOutputTokens: 1_024 },
+      { runId: secondRunId, configVersion: "cfg-new", baseUrl: "https://new-provider.example/v1/", maxOutputTokens: 1_024 },
+    ])
+    const firstCard = (await repository.getExecutionInput(firstRunId))?.toolInteractions
+      .find(item => item.content.operationId === "create_interaction_cards")
+    const secondCard = (await repository.getExecutionInput(secondRunId))?.toolInteractions
+      .find(item => item.content.operationId === "create_interaction_cards")
+    expect(firstCard?.content.result).toMatchObject({ maxAttempts: 2 })
+    expect(secondCard?.content.result).toMatchObject({ maxAttempts: 5 })
+  })
+
+  it("restores the first-claim configuration after approval while new Runs use the refresh", async () => {
+    const oldConfig = remoteConfig("cfg-approval-old", "https://old-approval.example/v1/", 512, 2)
+    const newConfig = remoteConfig("cfg-approval-new", "https://new-approval.example/v1/", 1_024, 5)
+    let current = oldConfig
+    const listeners = new Set<(config: RemoteProviderConfig) => void>()
+    const remoteSnapshot = {
+      current: () => current,
+      subscribe: (listener: (config: RemoteProviderConfig) => void) => {
+        listeners.add(listener)
+        return () => listeners.delete(listener)
+      },
+    } as unknown as RemoteConfigSnapshot
+    const publish = (config: RemoteProviderConfig) => {
+      current = config
+      for (const listener of listeners) listener(config)
+    }
+    const catalog = ToolCatalog.load([{
+      operationId: "restartRelease",
+      name: "重启发布",
+      summary: "重启指定发布。",
+      method: "POST",
+      path: "/api/v1/releases/{releaseId}/restart",
+      category: "deployment",
+      requiredScopes: ["deployment:write"],
+      requiresApproval: true,
+      idempotent: true,
+      parameters: [{ inputName: "releaseId", wireName: "releaseId", in: "path", required: true }],
+      inputSchema: { type: "object", properties: { releaseId: { type: "string" } }, required: ["releaseId"], additionalProperties: false },
+    }])
+    const observed: Array<{ runId: string, configVersion: string, maxOutputTokens: number }> = []
+    const attempts = new Map<string, number>()
+    let approvalRunId = ""
+    const provider = new ManagedProvider(remoteSnapshot, config => ({
+      async *stream(request) {
+        const runId = request.budget?.runId ?? "unknown"
+        const attempt = (attempts.get(runId) ?? 0) + 1
+        attempts.set(runId, attempt)
+        observed.push({ runId, configVersion: config.version, maxOutputTokens: request.maxOutputTokens })
+        if (runId === approvalRunId && attempt === 1) {
+          yield {
+            type: "completed" as const,
+            usage: { status: "reported" as const, value: { inputTokens: 4, outputTokens: 2, totalTokens: 6 } },
+            toolCalls: [{ id: "restart-snapshot", operationId: "restartRelease", arguments: { releaseId: "rel_snapshot" } }],
+          }
+          return
+        }
+        yield { type: "message_delta" as const, delta: "done" }
+        yield { type: "completed" as const, usage: { status: "reported" as const, value: { inputTokens: 3, outputTokens: 1, totalTokens: 4 } } }
+      },
+      async complete() {
+        return { text: "done", usage: { status: "reported" as const, value: { inputTokens: 1, outputTokens: 1, totalTokens: 2 } } }
+      },
+      capabilities: () => ({ streaming: true, toolCalling: true, structuredOutput: true }),
+      health: async () => ({ ok: true }),
+    }))
+    const repository = new TestRepository()
+    const conversation = await repository.createConversation("usr_claim_snapshot", "approval snapshot")
+    const approvalTurn = await repository.createTurn("usr_claim_snapshot", {
+      conversationId: conversation.id, input: "restart", pageContext: {},
+      idempotencyKey: "claim-snapshot-approval", actorSessionId: "ses_claim_snapshot",
+    })
+    approvalRunId = approvalTurn.run.id
+    const store = new MemoryToolCallStore()
+    const tools = new ToolOrchestrator(
+      catalog,
+      new DeterministicLunaApiClient(() => ({ status: 200, body: { restarted: true } })),
+      new ProjectingToolCallStore(store, repository),
+    )
+    const runLimit = vi.spyOn(tools, "setRunMaxToolCallsForRun")
+    const executor = new RunExecutor(
+      repository,
+      new ModelRuntime(provider, catalog.modelTools(["restartRelease"])),
+      loadConfig({ NODE_ENV: "test" }),
+      tools,
+      remoteSnapshot,
+      { ...defaultRuntimeSettings, ...oldConfig.runtime },
+    )
+
+    await expect(executor.runOnce()).resolves.toBe(true)
+    expect((await repository.getRun("usr_claim_snapshot", approvalRunId))?.status).toBe("waiting_approval")
+    expect(await repository.getRun("usr_claim_snapshot", approvalRunId)).not.toHaveProperty("executionSnapshot")
+    publish(newConfig)
+    const pending = [...store.records.values()][0]!
+    await tools.resolveApproval(pending.id, "approve")
+    await repository.updateRun(approvalRunId, "waiting_approval", "queued")
+    await expect(executor.runOnce()).resolves.toBe(true)
+
+    const nextTurn = await repository.createTurn("usr_claim_snapshot", {
+      conversationId: conversation.id, input: "next", pageContext: {},
+      idempotencyKey: "claim-snapshot-next", actorSessionId: "ses_claim_snapshot",
+    })
+    await expect(executor.runOnce()).resolves.toBe(true)
+    await executor.stop()
+
+    expect(observed.filter(item => item.runId === approvalRunId)).toEqual([
+      { runId: approvalRunId, configVersion: "cfg-approval-old", maxOutputTokens: 512 },
+      { runId: approvalRunId, configVersion: "cfg-approval-old", maxOutputTokens: 512 },
+    ])
+    expect(observed.filter(item => item.runId === nextTurn.run.id)).toEqual([
+      { runId: nextTurn.run.id, configVersion: "cfg-approval-new", maxOutputTokens: 1_024 },
+    ])
+    expect(runLimit.mock.calls).toEqual([
+      [approvalRunId, 32],
+      [approvalRunId, 32],
+      [nextTurn.run.id, 64],
+    ])
   })
 
   it("atomically claims and completes a queued Run without a lease heartbeat", async () => {
@@ -92,12 +366,35 @@ describe("RunExecutor slim lifecycle", () => {
     const executor = new RunExecutor(
       repository,
       new ModelRuntime(new DeterministicProvider()),
-      loadConfig({ NODE_ENV: "test", INSTANCE_ID: "worker-a" }),
+      loadConfig({ NODE_ENV: "test" }),
     )
 
     expect(await executor.runOnce()).toBe(true)
     expect((await repository.getRun("usr_a", created.run.id))?.status).toBe("completed")
     expect(await executor.runOnce()).toBe(false)
+  })
+
+  it("interrupts a Run when terminal persistence exhausts its bounded retries", async () => {
+    const repository = new TestRepository()
+    const conversation = await repository.createConversation("usr_terminal_failure", "terminal")
+    const created = await repository.createTurn("usr_terminal_failure", {
+      conversationId: conversation.id,
+      input: "complete",
+      pageContext: {},
+      idempotencyKey: "terminal-persistence-failure",
+    })
+    repository.persistRunStreamBatch = async () => { throw new Error("database unavailable") }
+    const executor = new RunExecutor(
+      repository,
+      new ModelRuntime(new DeterministicProvider()),
+      loadConfig({ NODE_ENV: "test" }),
+    )
+
+    expect(await executor.runOnce()).toBe(true)
+    expect(await repository.getRun("usr_terminal_failure", created.run.id)).toMatchObject({
+      status: "interrupted",
+      errorCode: "ai.agent_restarted",
+    })
   })
 
   it("publishes normalized official usage fields in model.completed", async () => {
@@ -164,7 +461,7 @@ describe("RunExecutor slim lifecycle", () => {
       capabilities: () => ({ streaming: true, toolCalling: true, structuredOutput: true }),
       health: async () => ({ ok: true }),
     }
-    const executor = new RunExecutor(repository, new ModelRuntime(provider), loadConfig({ NODE_ENV: "test", INSTANCE_ID: "worker-stop" }))
+    const executor = new RunExecutor(repository, new ModelRuntime(provider), loadConfig({ NODE_ENV: "test" }))
     const executing = executor.runOnce()
     await started
     await executor.stop()
@@ -173,7 +470,7 @@ describe("RunExecutor slim lifecycle", () => {
     expect((await repository.getRun("usr_a", created.run.id))?.status).toBe("interrupted")
   })
 
-  it("flushes the partial item before a cross-instance cancellation becomes durable", async () => {
+  it("flushes the partial item before a local cancellation becomes durable", async () => {
     const repository = new TestRepository()
     const conversation = await repository.createConversation("usr_cancel", "cancel")
     const created = await repository.createTurn("usr_cancel", {
@@ -204,10 +501,9 @@ describe("RunExecutor slim lifecycle", () => {
     )
     const executing = executor.runOnce()
     await deltaPublished
-    await bus.requestCancellation(created.run.id)
+    expect(await executor.cancel(created.run.id)).toBe(true)
     await executing
 
-    expect(await bus.waitForCancellationAcknowledgement(created.run.id, 100)).toBe(true)
     expect((await repository.getRun("usr_cancel", created.run.id))?.status).toBe("canceled")
     const timeline = await repository.getTimeline("usr_cancel", conversation.id)
     expect(timeline?.turns[0]?.items).toContainEqual(expect.objectContaining({
@@ -216,6 +512,76 @@ describe("RunExecutor slim lifecycle", () => {
     const events = await repository.getEvents("usr_cancel", created.run.id, 0)
     expect(events.at(-1)).toMatchObject({ type: "run.canceled" })
     expect(events.every((event, index) => index === 0 || event.sequence > events[index - 1]!.sequence)).toBe(true)
+  })
+
+  it("aborts an in-flight platform tool when the Run is canceled", async () => {
+    const repository = new TestRepository()
+    const conversation = await repository.createConversation("usr_tool_cancel", "cancel tool")
+    const created = await repository.createTurn("usr_tool_cancel", {
+      conversationId: conversation.id,
+      input: "读取项目空间",
+      pageContext: {},
+      idempotencyKey: "run-tool-cancel",
+      actorSessionId: "ses_tool_cancel",
+    })
+    const catalog = ToolCatalog.load([{
+      operationId: "getProject",
+      name: "读取项目空间",
+      summary: "读取指定项目空间。",
+      method: "GET",
+      path: "/api/v1/projects/{projectId}",
+      category: "project",
+      requiredScopes: ["project:read"],
+      requiresApproval: false,
+      idempotent: true,
+      parameters: [{ inputName: "projectId", wireName: "projectId", in: "path", required: true }],
+      inputSchema: { type: "object", properties: { projectId: { type: "string" } }, required: ["projectId"], additionalProperties: false },
+    }])
+    let modelStep = 0
+    const provider: ModelProvider = {
+      async *stream(request) {
+        if (modelStep++ === 0) {
+          yield {
+            type: "completed",
+            usage: { status: "reported" as const, value: { inputTokens: 2, outputTokens: 1, totalTokens: 3 } },
+            toolCalls: [{ id: "get-project", operationId: "getProject", arguments: { projectId: "prj_cancel" } }],
+          }
+          return
+        }
+        request.signal?.throwIfAborted()
+        yield { type: "completed", usage: { status: "reported" as const, value: { inputTokens: 1, outputTokens: 0, totalTokens: 1 } } }
+      },
+      async complete() { return { text: "", usage: { status: "reported" as const, value: { inputTokens: 1, outputTokens: 0, totalTokens: 1 } } } },
+      capabilities: () => ({ streaming: true, toolCalling: true, structuredOutput: true }),
+      health: async () => ({ ok: true }),
+    }
+    let notifyToolStarted!: () => void
+    const toolStarted = new Promise<void>(resolve => { notifyToolStarted = resolve })
+    let observedSignal: AbortSignal | undefined
+    const client = new DeterministicLunaApiClient(request => new Promise((_resolve, reject) => {
+      observedSignal = request.signal
+      notifyToolStarted()
+      const abort = () => reject(request.signal?.reason instanceof Error ? request.signal.reason : new Error("ai.run_canceled"))
+      if (request.signal?.aborted) abort()
+      request.signal?.addEventListener("abort", abort, { once: true })
+    }))
+    const store = new MemoryToolCallStore()
+    const tools = new ToolOrchestrator(catalog, client, new ProjectingToolCallStore(store, repository))
+    const executor = new RunExecutor(
+      repository,
+      new ModelRuntime(provider, catalog.modelTools(["getProject"])),
+      loadConfig({ NODE_ENV: "test" }),
+      tools,
+    )
+
+    const executing = executor.runOnce()
+    await toolStarted
+    expect(await executor.cancel(created.run.id)).toBe(true)
+    await executing
+
+    expect(observedSignal?.aborted).toBe(true)
+    expect((await repository.getRun("usr_tool_cancel", created.run.id))?.status).toBe("canceled")
+    expect([...store.records.values()][0]).toMatchObject({ status: "failed", errorCode: "ai.run_canceled" })
   })
 
   it("resumes the same Run after one-call approval and preserves the Tool result", async () => {
@@ -256,17 +622,30 @@ describe("RunExecutor slim lifecycle", () => {
       health: async () => ({ ok: true }),
     }
     const store = new MemoryToolCallStore()
+    class WaitingCleanupBus extends InMemoryRunStreamBus {
+      cleanupCalls = 0
+      override async cleanup(runId: string) { this.cleanupCalls += 1; await super.cleanup(runId) }
+    }
+    const streamBus = new WaitingCleanupBus(repository)
     const tools = new ToolOrchestrator(
       catalog,
       new DeterministicLunaApiClient(() => ({ status: 200, body: { restarted: true } })),
       new ProjectingToolCallStore(store, repository),
-      undefined,
-      repository,
     )
-    const executor = new RunExecutor(repository, new ModelRuntime(provider, catalog.modelTools(["restartRelease"])), loadConfig({ NODE_ENV: "test" }), tools)
+    const executor = new RunExecutor(
+      repository,
+      new ModelRuntime(provider, catalog.modelTools(["restartRelease"])),
+      loadConfig({ NODE_ENV: "test" }),
+      tools,
+      undefined,
+      defaultRuntimeSettings,
+      undefined,
+      streamBus,
+    )
 
     await executor.runOnce()
     expect((await repository.getRun("usr_a", created.run.id))?.status).toBe("waiting_approval")
+    expect(streamBus.cleanupCalls).toBe(1)
     expect((await repository.getRunToolState(created.run.id))?.selectedOperationIds).toEqual(["restartRelease"])
     const pending = [...store.records.values()][0]!
     await tools.resolveApproval(pending.id, "approve")
@@ -498,3 +877,48 @@ describe("RunExecutor slim lifecycle", () => {
     expect((records[1]?.content.result as { items: unknown[] }).items).toHaveLength(1)
   })
 })
+
+function remoteConfig(
+  version: string,
+  baseUrl: string,
+  assistantMaxOutputTokens: number,
+  maxCardRepairAttempts: number,
+): RemoteProviderConfig {
+  const runtime: RemoteRuntimeSettings = {
+    providerTimeoutMs: defaultRuntimeSettings.providerTimeoutMs,
+    maxRequestRetries: defaultRuntimeSettings.maxRequestRetries,
+    runTimeoutMs: defaultRuntimeSettings.runTimeoutMs,
+    agentConcurrentRuns: defaultRuntimeSettings.agentConcurrentRuns,
+    userConcurrentRuns: defaultRuntimeSettings.userConcurrentRuns,
+    assistantMaxOutputTokens,
+    maxModelSteps: defaultRuntimeSettings.maxModelSteps,
+    runMaxToolCalls: maxCardRepairAttempts === 2 ? 32 : 64,
+    maxInputBytes: defaultRuntimeSettings.maxInputBytes,
+    maxCardRepairAttempts,
+    contextMaxUncompressedTurnCount: defaultRuntimeSettings.contextMaxUncompressedTurnCount,
+    contextMaxCompressionTurnsPerCompile: defaultRuntimeSettings.contextMaxCompressionTurnsPerCompile,
+    contextSummaryMaxOutputTokens: defaultRuntimeSettings.contextSummaryMaxOutputTokens,
+  }
+  return {
+    version,
+    provider: {
+      baseUrl,
+      apiKey: `${version}-secret`,
+      providerCompatibility: "openai",
+      promptCacheKeyMode: "disabled",
+      channelAffinityEnabled: false,
+      configured: true,
+      models: [{
+        id: "aimod_snapshot",
+        name: "snapshot-model",
+        maxContextTokens: 32_000,
+        maxOutputTokens: 8_000,
+        inputCreditsPerMillion: "1",
+        outputCreditsPerMillion: "2",
+        cachedInputCreditsPerMillion: "0.5",
+      }],
+    },
+    runtime,
+    toolCatalog: [],
+  }
+}

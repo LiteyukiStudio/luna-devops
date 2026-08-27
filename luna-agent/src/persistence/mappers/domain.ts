@@ -1,10 +1,11 @@
 import type {
+  ClaimedRun,
   Conversation,
   ConversationSummary,
   Run,
+  RunExecutionSnapshot,
   RunEvent,
   TimelineItem,
-  UIActionDelivery,
 } from "../../domain.js"
 import { normalizeEventSequence } from "../../event-sequence.js"
 import type {
@@ -13,7 +14,6 @@ import type {
   RunEventRow,
   RunRow,
   TimelineItemRow,
-  UIActionRow,
 } from "../schema/index.js"
 
 /** 行到领域模型的统一映射，禁止在 Repository 各方法中散落转换逻辑 */
@@ -59,7 +59,6 @@ export function mapRun(row: RunRow): Run {
     pageContext: row.pageContext,
     ...(Object.keys(row.traceContext ?? {}).length ? { traceContext: row.traceContext } : {}),
     createdAt: row.createdAt.toISOString(),
-    ...(row.clientInstanceId ? { clientInstanceId: row.clientInstanceId } : {}),
     ...(row.startedAt ? { startedAt: row.startedAt.toISOString() } : {}),
     ...(row.completedAt ? { completedAt: row.completedAt.toISOString() } : {}),
     ...(row.errorCode ? { errorCode: row.errorCode } : {}),
@@ -74,6 +73,13 @@ export function mapRun(row: RunRow): Run {
         cachedInputCreditsPerMillion: row.cachedInputCreditsPerMillion ?? "0",
       },
     } : {}),
+  }
+}
+
+export function mapClaimedRun(row: RunRow, executionSnapshot?: RunExecutionSnapshot): ClaimedRun {
+  return {
+    ...mapRun(row),
+    ...(executionSnapshot ? { executionSnapshot } : {}),
   }
 }
 
@@ -99,24 +105,6 @@ export function mapRunEvent(row: RunEventRow): RunEvent {
     type: row.type,
     data: row.data,
     createdAt: row.createdAt.toISOString(),
-  }
-}
-
-export function mapUIAction(row: UIActionRow): UIActionDelivery {
-  return {
-    id: row.id,
-    runId: row.runId,
-    toolCallId: row.toolCallId,
-    clientInstanceId: row.clientInstanceId,
-    action: row.action,
-    status: row.status,
-    attempts: row.attempts,
-    expiresAt: row.expiresAt.toISOString(),
-    ...(row.acknowledgedAt ? { acknowledgedAt: row.acknowledgedAt.toISOString() } : {}),
-    ...(row.actualPath ? { actualPath: row.actualPath } : {}),
-    ...(row.errorCode ? { errorCode: row.errorCode } : {}),
-    createdAt: row.createdAt.toISOString(),
-    updatedAt: row.updatedAt.toISOString(),
   }
 }
 

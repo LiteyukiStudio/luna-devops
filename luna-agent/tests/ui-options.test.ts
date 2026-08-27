@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { createOptionsInput, optionUIActions } from "../src/tools/ui-options.js"
-import { automaticRouteUIAction, navigateToRouteInput } from "../src/tools/ui-route.js"
+import { navigateToRouteInput, routeUIAction } from "../src/tools/ui-route.js"
 
 describe("create options tool", () => {
   it("maps validated model choices to the three supported UI action types", () => {
@@ -83,12 +83,12 @@ describe("create options tool", () => {
     expect(createOptionsInput.safeParse(base([{ type: "img", value: "http://example.com/a.png" }, { type: "img", value: "https://example.com/b.png" }])).success).toBe(false)
   })
 
-  it("creates a one-shot automatic action only for a registered frontend route", () => {
+  it("creates an explicit navigation action only for a registered frontend route", () => {
     const input = navigateToRouteInput.parse({ routeName: "project.workspace", params: { projectId: "prj_1" } })
-    expect(automaticRouteUIAction(input)).toEqual({
+    expect(routeUIAction(input)).toEqual({
       version: 1,
       type: "navigate",
-      activation: "automatic",
+      activation: "manual",
       repeatable: false,
       payload: {
         routeName: "project.workspace",

@@ -93,20 +93,6 @@ describe("tool catalog and orchestration", () => {
     expect(client.calls).toHaveLength(0)
   })
 
-  it("grants approve_always only for the same Run owner and operation", async () => {
-    const exemptions = new Set<string>()
-    const repository = {
-      hasToolApprovalExemption: async (runId: string, operationId: string) => exemptions.has(`${runId}:${operationId}`),
-      grantToolApprovalExemption: async (runId: string, operationId: string) => { exemptions.add(`${runId}:${operationId}`) },
-    }
-    const client = new DeterministicLunaApiClient(() => ({ status: 200, body: {} }))
-    const orchestrator = new ToolOrchestrator(catalog, client, new MemoryToolCallStore(), undefined, repository)
-    const pending = await orchestrator.propose({ runId: "airun_test", operationId: "restartRelease", arguments: { releaseId: "rel_a" } })
-    await orchestrator.resolveApproval(pending.id, "approve_always")
-    const later = await orchestrator.propose({ runId: "airun_test", operationId: "restartRelease", arguments: { releaseId: "rel_b" } })
-    expect(later).toMatchObject({ status: "succeeded", approvalDecision: "approve_always" })
-  })
-
   it("allows model tools to submit schema-sensitive input through the normal approval flow", async () => {
     const sensitive = ToolCatalog.load([{
       operationId: "updateRuntimeSecret", name: "更新密钥", summary: "更新运行密钥。", method: "PUT", path: "/api/v1/runtime-secrets", category: "deployment",
@@ -124,5 +110,101 @@ describe("tool catalog and orchestration", () => {
     const completed = await orchestrator.resolveApproval(pending.id, "approve")
     expect(completed).toMatchObject({ status: "succeeded", result: { configured: ["TOKEN"] } })
     expect(client.calls).toHaveLength(1)
+  })
+
+  it("aborts only the selected Run and can stop all remaining tool executions", async () => {
+    const signals = new Map<string, AbortSignal>()
+    let markBothStarted!: () => void
+    const bothStarted = new Promise<void>((resolve) => { markBothStarted = resolve })
+    const client = new DeterministicLunaApiClient(request => {
+      const signal = request.signal
+      if (!signal) throw new Error("ai.tool_signal_missing")
+      signals.set(request.runId, signal)
+      if (signals.size === 2) markBothStarted()
+      return new Promise((_, reject) => {
+        const onAbort = () => reject(signal.reason instanceof Error ? signal.reason : new Error("ai.run_canceled"))
+        if (signal.aborted) onAbort()
+        else signal.addEventListener("abort", onAbort, { once: true })
+      })
+    })
+    const orchestrator = new ToolOrchestrator(catalog, client, new MemoryToolCallStore())
+    const first = orchestrator.propose({ runId: "airun_cancel_first", operationId: "getBuildRun", arguments: { buildId: "build_a" } })
+    const second = orchestrator.propose({ runId: "airun_cancel_second", operationId: "getBuildRun", arguments: { buildId: "build_b" } })
+    await bothStarted
+
+    expect(orchestrator.cancelRun("airun_cancel_first")).toBe(true)
+    await expect(first).resolves.toMatchObject({ status: "failed", errorCode: "ai.run_canceled" })
+    expect(signals.get("airun_cancel_first")?.aborted).toBe(true)
+    expect(signals.get("airun_cancel_second")?.aborted).toBe(false)
+
+    expect(orchestrator.cancelAll()).toBe(1)
+    await expect(second).resolves.toMatchObject({ status: "failed", errorCode: "ai.agent_stopping" })
+    expect(signals.get("airun_cancel_second")?.aborted).toBe(true)
+    expect(orchestrator.cancelRun("airun_cancel_first")).toBe(false)
+  })
+
+  it("combines an external Run signal with the tracked tool signal", async () => {
+    let receivedSignal: AbortSignal | undefined
+    let markStarted!: () => void
+    const started = new Promise<void>((resolve) => { markStarted = resolve })
+    const client = new DeterministicLunaApiClient(request => {
+      receivedSignal = request.signal
+      markStarted()
+      return new Promise((_, reject) => {
+        const signal = request.signal
+        if (!signal) return reject(new Error("ai.tool_signal_missing"))
+        const onAbort = () => reject(signal.reason instanceof Error ? signal.reason : new Error("ai.run_canceled"))
+        if (signal.aborted) onAbort()
+        else signal.addEventListener("abort", onAbort, { once: true })
+      })
+    })
+    const orchestrator = new ToolOrchestrator(catalog, client, new MemoryToolCallStore())
+    const external = new AbortController()
+    const pending = orchestrator.propose({
+      runId: "airun_external_cancel",
+      operationId: "getBuildRun",
+      arguments: { buildId: "build_external" },
+    }, external.signal)
+    await started
+
+    external.abort(new Error("ai.run_canceled"))
+
+    await expect(pending).resolves.toMatchObject({ status: "failed", errorCode: "ai.run_canceled" })
+    expect(receivedSignal).not.toBe(external.signal)
+    expect(receivedSignal?.aborted).toBe(true)
+  })
+
+  it("accepts a durably canceled ToolCall when an in-flight execution observes the abort", async () => {
+    let markStarted!: () => void
+    const started = new Promise<void>((resolve) => { markStarted = resolve })
+    const client = new DeterministicLunaApiClient(request => new Promise((_, reject) => {
+      const signal = request.signal
+      if (!signal) return reject(new Error("ai.tool_signal_missing"))
+      markStarted()
+      const onAbort = () => reject(signal.reason instanceof Error ? signal.reason : new Error("ai.run_canceled"))
+      if (signal.aborted) onAbort()
+      else signal.addEventListener("abort", onAbort, { once: true })
+    }))
+    const store = new MemoryToolCallStore()
+    const orchestrator = new ToolOrchestrator(catalog, client, store)
+    const pending = orchestrator.propose({
+      runId: "airun_durable_cancel",
+      operationId: "getBuildRun",
+      arguments: { buildId: "build_durable" },
+    })
+    await started
+    const running = [...store.records.values()][0]
+    if (!running) throw new Error("missing ToolCall")
+    await store.update(running.id, "running", {
+      status: "canceled",
+      rowVersion: running.rowVersion + 1,
+      result: { code: "ai.run_canceled", retryable: false },
+      errorCode: "ai.run_canceled",
+    })
+
+    expect(orchestrator.cancelRun("airun_durable_cancel")).toBe(true)
+
+    await expect(pending).resolves.toMatchObject({ status: "canceled", errorCode: "ai.run_canceled" })
+    expect(store.events.map(event => event.type)).not.toContain("tool_call.failed")
   })
 })

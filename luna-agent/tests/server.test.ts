@@ -4,7 +4,7 @@ import { DevelopmentRequestVerifier } from "../src/auth.js"
 import { loadConfig } from "../src/config.js"
 import { TestRepository } from "./support/test-repository.js"
 import { DeterministicProvider } from "../src/provider/deterministic.js"
-import { ProviderConfigClient } from "../src/provider/config-client.js"
+import { RemoteConfigSnapshot } from "../src/provider/config-client.js"
 import { defaultRuntimeSettings } from "../src/runtime-settings.js"
 import { buildServer, writeSSE } from "../src/server.js"
 import type { AIEvent, AITimeline, AITurnCreated } from "../../web/src/api/ai-types.js"
@@ -79,7 +79,7 @@ describe("internal API", () => {
     expect(healthyResponse.statusCode).toBe(200)
     expect(healthyResponse.json()).toEqual({
       status: "ready",
-      checks: { database: true, schema: true, providerConfigAvailable: true, providerConfigured: true, streamAvailable: true },
+      checks: { database: true, schema: true, providerConfigAvailable: true, providerConfigured: true },
     })
     await healthy.app.close()
 
@@ -102,26 +102,13 @@ describe("internal API", () => {
       repository: new TestRepository(),
       provider: new DeterministicProvider(),
       requestVerifier: new DevelopmentRequestVerifier(),
-      providerConfigClient: new ProviderConfigClient("https://luna-api.internal", "callback-token-value"),
+      remoteConfig: new RemoteConfigSnapshot("https://luna-api.internal", "callback-token-value"),
     })
     const configResponse = await configApp.inject({ method: "GET", url: "/internal/health/ready" })
     expect(configResponse.statusCode).toBe(503)
     expect(configResponse.json()).toMatchObject({ errorCode: "ai.provider_config_unavailable" })
     await configApp.close()
 
-    class UnavailableStreamBus extends InMemoryRunStreamBus {
-      override async health() { return false }
-    }
-    const streamRepository = new TestRepository()
-    const streamApp = buildServer({
-      config: loadConfig({ NODE_ENV: "test" }), repository: streamRepository,
-      provider: new DeterministicProvider(), requestVerifier: new DevelopmentRequestVerifier(),
-      streamBus: new UnavailableStreamBus(streamRepository),
-    })
-    const streamResponse = await streamApp.inject({ method: "GET", url: "/internal/health/ready" })
-    expect(streamResponse.statusCode).toBe(503)
-    expect(streamResponse.json()).toMatchObject({ errorCode: "ai.stream_transport_unavailable", checks: { streamAvailable: false } })
-    await streamApp.close()
   })
 
   it("requires an authenticated actor", async () => {
@@ -154,35 +141,6 @@ describe("internal API", () => {
     }
     await app.close()
   })
-  it("lists and revokes approve-always exemptions only for the current user", async () => {
-    const { app, repository } = fixture()
-    const conversation = await repository.createConversation("usr_exemption_a", "approval")
-    const created = await repository.createTurn("usr_exemption_a", {
-      conversationId: conversation.id,
-      input: "restart",
-      pageContext: {},
-      idempotencyKey: "exemption-turn",
-    })
-    await repository.grantToolApprovalExemption(created.run.id, "restartRelease", "aitool_exemption")
-
-    const ownerHeaders = { "x-luna-dev-user": "usr_exemption_a" }
-    const otherHeaders = { "x-luna-dev-user": "usr_exemption_b" }
-    const ownerList = await app.inject({ method: "GET", url: "/internal/v1/tool-approval-exemptions", headers: ownerHeaders })
-    expect(ownerList.statusCode).toBe(200)
-    const ownerListBody = ownerList.json<{ items: Array<{ operationId: string, createdAt: string }> }>()
-    expect(ownerListBody.items).toHaveLength(1)
-    expect(ownerListBody.items[0]?.operationId).toBe("restartRelease")
-    expect(typeof ownerListBody.items[0]?.createdAt).toBe("string")
-
-    const otherList = await app.inject({ method: "GET", url: "/internal/v1/tool-approval-exemptions", headers: otherHeaders })
-    expect(otherList.json()).toEqual({ items: [] })
-    expect((await app.inject({ method: "DELETE", url: "/internal/v1/tool-approval-exemptions/restartRelease", headers: otherHeaders })).statusCode).toBe(204)
-    expect((await app.inject({ method: "GET", url: "/internal/v1/tool-approval-exemptions", headers: ownerHeaders })).json()).toMatchObject({ items: [{ operationId: "restartRelease" }] })
-
-    expect((await app.inject({ method: "DELETE", url: "/internal/v1/tool-approval-exemptions/restartRelease", headers: ownerHeaders })).statusCode).toBe(204)
-    expect((await app.inject({ method: "GET", url: "/internal/v1/tool-approval-exemptions", headers: ownerHeaders })).json()).toEqual({ items: [] })
-    await app.close()
-  })
   it("creates a conversation and a durable turn", async () => {
     const { app, repository } = fixture()
     const headers = { "x-luna-dev-user": "usr_test" }
@@ -197,7 +155,7 @@ describe("internal API", () => {
         "idempotency-key": "browser-request-1",
         traceparent: "00-abcdefabcdefabcdefabcdefabcdefab-0123456789abcdef-01",
       },
-      payload: { modelId: "aimod_test", input: { parts: [{ type: "text", text: "为什么失败？" }] }, pageContext: { routeName: "application.builds" }, clientInstanceId: "browser-client-instance-1" },
+      payload: { modelId: "aimod_test", input: { parts: [{ type: "text", text: "为什么失败？" }] }, pageContext: { routeName: "application.builds" } },
     })
     expect(turn.statusCode).toBe(202)
     expect(turn.json()).toMatchObject({ state: "queued", turnIndex: 0 })
@@ -222,7 +180,7 @@ describe("internal API", () => {
           inputCreditsPerMillion: "0", outputCreditsPerMillion: "0",
           cachedInputCreditsPerMillion: "0",
         },
-        input: { parts: [{ type: "text", text: "test" }] }, pageContext: {}, clientInstanceId: "browser-client-snapshot-1",
+        input: { parts: [{ type: "text", text: "test" }] }, pageContext: {},
       },
     })
     expect(response.statusCode).toBe(400)
@@ -310,7 +268,7 @@ describe("internal API", () => {
       method: "POST",
       url: `/internal/v1/conversations/${conversationId}/turns`,
       headers: { ...headers, "idempotency-key": "cancel-request-1" },
-      payload: { modelId: "aimod_test", input: { parts: [{ type: "text", text: "stop" }] }, pageContext: {}, clientInstanceId: "browser-client-instance-2" },
+      payload: { modelId: "aimod_test", input: { parts: [{ type: "text", text: "stop" }] }, pageContext: {} },
     })
     const runId = created.json<AITurnCreated>().runId
     const canceled = await app.inject({ method: "POST", url: `/internal/v1/runs/${runId}/cancel`, headers })
@@ -318,14 +276,9 @@ describe("internal API", () => {
     expect(canceled.json()).toMatchObject({ id: runId, status: "canceled" })
     await app.close()
   })
-  it("cancels a waiting Run directly without waiting for a stream owner", async () => {
-    class UnexpectedControlBus extends InMemoryRunStreamBus {
-      override async requestCancellation(): Promise<void> {
-        throw new Error("queued and waiting Runs must not use the live cancellation channel")
-      }
-    }
+  it("cancels a waiting Run directly without a live executor", async () => {
     const repository = new TestRepository()
-    const bus = new UnexpectedControlBus(repository)
+    const bus = new InMemoryRunStreamBus(repository)
     const app = buildServer({
       config: loadConfig({ NODE_ENV: "test" }), repository,
       provider: new DeterministicProvider(), requestVerifier: new DevelopmentRequestVerifier(),
@@ -400,7 +353,7 @@ describe("internal API", () => {
       method: "POST",
       url: `/internal/v1/conversations/${conversationId}/turns`,
       headers: { ...headers, "idempotency-key": "timeline-request-1" },
-      payload: { modelId: "aimod_test", input: { parts: [{ type: "text", text: "检查构建状态" }] }, pageContext: {}, clientInstanceId: "browser-client-instance-3" },
+      payload: { modelId: "aimod_test", input: { parts: [{ type: "text", text: "检查构建状态" }] }, pageContext: {} },
     })
     const turnCreated: AITurnCreated = created.json<AITurnCreated>()
     const runId = turnCreated.runId
@@ -546,7 +499,7 @@ describe("internal API", () => {
       method: "POST",
       url: `/internal/v1/conversations/${conversationId}/turns`,
       headers: { ...headers, "idempotency-key": "sse-request-1" },
-      payload: { modelId: "aimod_test", input: { parts: [{ type: "text", text: "hello" }] }, pageContext: {}, clientInstanceId: "browser-client-instance-4" },
+      payload: { modelId: "aimod_test", input: { parts: [{ type: "text", text: "hello" }] }, pageContext: {} },
     })
     const runId = created.json<AITurnCreated>().runId
     await app.inject({ method: "POST", url: `/internal/v1/runs/${runId}/cancel`, headers })
@@ -560,66 +513,6 @@ describe("internal API", () => {
     expect(response.body).toContain("event: run.queued")
     expect(response.body).toContain("\"version\":2")
     expect(response.body).not.toContain("\"items\"")
-    await app.close()
-  })
-  it("replays and acknowledges UI actions only for their bound browser client", async () => {
-    const { app, repository } = fixture()
-    const headers = { "x-luna-dev-user": "usr_ui_action" }
-    const clientInstanceId = "browser-client-instance-5"
-    const conversation = await app.inject({ method: "POST", url: "/internal/v1/conversations", headers, payload: { title: "Navigation", modelId: "aimod_test" } })
-    const conversationId = conversation.json<{ id: string }>().id
-    const created = await app.inject({
-      method: "POST",
-      url: `/internal/v1/conversations/${conversationId}/turns`,
-      headers: { ...headers, "idempotency-key": "ui-action-request-1" },
-      payload: { modelId: "aimod_test", input: { parts: [{ type: "text", text: "打开项目空间" }] }, pageContext: {}, clientInstanceId },
-    })
-    const runId = created.json<AITurnCreated>().runId
-    const delivery = await repository.createUIAction(runId, "aitool_navigation", {
-      version: 1,
-      type: "navigate",
-      activation: "automatic",
-      repeatable: false,
-      payload: { routeName: "projects", params: {}, query: {} },
-    }, new Date(Date.now() + 60_000).toISOString())
-
-    const wrongClient = await app.inject({
-      method: "GET",
-      url: "/internal/v1/ui-actions/pending?clientInstanceId=another-browser-client",
-      headers,
-    })
-    expect(wrongClient.json()).toEqual({ items: [] })
-
-    const pending = await app.inject({
-      method: "GET",
-      url: `/internal/v1/ui-actions/pending?clientInstanceId=${clientInstanceId}`,
-      headers,
-    })
-    expect(pending.json()).toMatchObject({ items: [{ actionId: delivery.id, runId, toolCallId: "aitool_navigation" }] })
-
-    const rejectedAck = await app.inject({
-      method: "POST",
-      url: `/internal/v1/ui-actions/${delivery.id}/ack`,
-      headers,
-      payload: { clientInstanceId: "another-browser-client", status: "succeeded", actualPath: "/projects" },
-    })
-    expect(rejectedAck.statusCode).toBe(404)
-
-    const acknowledged = await app.inject({
-      method: "POST",
-      url: `/internal/v1/ui-actions/${delivery.id}/ack`,
-      headers,
-      payload: { clientInstanceId, status: "succeeded", actualPath: "/projects" },
-    })
-    expect(acknowledged.statusCode).toBe(202)
-    expect(acknowledged.json()).toMatchObject({ actionId: delivery.id, status: "succeeded" })
-
-    const empty = await app.inject({
-      method: "GET",
-      url: `/internal/v1/ui-actions/pending?clientInstanceId=${clientInstanceId}`,
-      headers,
-    })
-    expect(empty.json()).toEqual({ items: [] })
     await app.close()
   })
 })

@@ -46,6 +46,13 @@ export class ToolCatalogRegistry {
     return { changed: previousDigest !== prepared.digest, previousDigest, currentDigest: prepared.digest, version }
   }
 
+  restore(input: unknown, expectedDigest: string): void {
+    if (this.snapshots.has(expectedDigest)) return
+    const prepared = ToolCatalog.load(input)
+    if (prepared.digest !== expectedDigest) throw new Error("ai.tool_catalog_snapshot_invalid")
+    this.snapshots.set(prepared.digest, prepared)
+  }
+
   retain(activeDigests: Iterable<string>): void {
     const retained = new Set(activeDigests)
     retained.add(this.currentCatalog.digest)

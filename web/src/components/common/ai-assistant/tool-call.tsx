@@ -7,7 +7,6 @@ import { toast } from 'sonner'
 import { formatMillisecondsDuration } from '@/components/common/time-format'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 import { isAIUIActionRepeatable } from './actions'
 import { runFailureTranslationKey } from './errors'
@@ -15,7 +14,7 @@ import { AIToolCallDetails } from './tool-call-details'
 import { toolDisplayName } from './tool-display-name'
 
 export type ToolCallBlock = Extract<AIBlock, { type: 'tool_call' }>
-export type AIApprovalDecision = 'reject' | 'approve' | 'approve_always'
+export type AIApprovalDecision = 'reject' | 'approve'
 
 const statusTone: Record<AIToolStatus, string> = {
   proposed: 'bg-surface-inset text-muted-foreground',
@@ -28,7 +27,7 @@ const statusTone: Record<AIToolStatus, string> = {
   skipped: 'bg-surface-inset text-muted-foreground',
 }
 
-export function AIToolCallCard({ block, onAction, onApproval, surface = 'window' }: { block: ToolCallBlock, onAction: (action: AIUIAction) => Promise<boolean>, onApproval: (block: ToolCallBlock, decision: AIApprovalDecision, reason?: string) => Promise<void>, surface?: 'page' | 'window' }) {
+export function AIToolCallCard({ block, onAction, onApproval, surface = 'window' }: { block: ToolCallBlock, onAction: (action: AIUIAction) => Promise<boolean>, onApproval: (block: ToolCallBlock, decision: AIApprovalDecision) => Promise<void>, surface?: 'page' | 'window' }) {
   const { t, i18n } = useTranslation()
   const page = surface === 'page'
   const title = block.titleKey && i18n.exists(block.titleKey) ? t(block.titleKey) : toolDisplayName(t, block.operationId)
@@ -132,15 +131,14 @@ function ActionButton({ action, onAction, surface }: { action: AIUIAction, onAct
   return <Button className={surface === 'page' ? 'min-h-11 px-3 !text-sm' : 'h-7 px-2.5 !text-[11px]'} disabled={pending || done} size="sm" variant={variant} onClick={() => void execute()}>{done ? t('aiAssistant.actions.opened') : label}</Button>
 }
 
-function ApprovalControls({ block, onApproval, surface }: { block: ToolCallBlock, onApproval: (block: ToolCallBlock, decision: AIApprovalDecision, reason?: string) => Promise<void>, surface: 'page' | 'window' }) {
+function ApprovalControls({ block, onApproval, surface }: { block: ToolCallBlock, onApproval: (block: ToolCallBlock, decision: AIApprovalDecision) => Promise<void>, surface: 'page' | 'window' }) {
   const { t } = useTranslation()
   const page = surface === 'page'
-  const [reason, setReason] = useState('')
   const [pending, setPending] = useState(false)
   const decide = async (decision: AIApprovalDecision) => {
     try {
       setPending(true)
-      await onApproval(block, decision, reason.trim() || undefined)
+      await onApproval(block, decision)
     }
     catch (error) {
       toast.error(error instanceof Error ? error.message : t('aiAssistant.errors.approval'))
@@ -153,11 +151,9 @@ function ApprovalControls({ block, onApproval, surface }: { block: ToolCallBlock
     <div className="mt-3 grid gap-2 rounded-control bg-warning-subtle p-3">
       <strong className="text-xs text-warning">{t('aiAssistant.approval.title')}</strong>
       <p className="text-xs text-muted-foreground">{t('aiAssistant.approval.bindingHint')}</p>
-      <Input aria-label={t('aiAssistant.approval.reason')} className={page ? 'h-11 text-base' : undefined} disabled={pending} maxLength={500} placeholder={t('aiAssistant.approval.reasonPlaceholder')} value={reason} onChange={event => setReason(event.target.value)} />
       <div className={page ? 'grid grid-cols-2 gap-2' : 'flex flex-wrap justify-end gap-2'}>
         <Button className={page ? 'min-h-12 w-full px-3 !text-sm' : 'h-7 px-2.5 !text-[11px]'} disabled={pending} size="sm" variant="outline" onClick={() => void decide('reject')}>{t('aiAssistant.approval.reject')}</Button>
         <Button className={page ? 'min-h-12 w-full px-3 !text-sm' : 'h-7 px-2.5 !text-[11px]'} disabled={pending} size="sm" variant="outline" onClick={() => void decide('approve')}>{t('aiAssistant.approval.approve')}</Button>
-        <Button className={page ? 'col-span-2 min-h-12 w-full px-3 !text-sm' : 'h-7 px-2.5 !text-[11px]'} disabled={pending} size="sm" onClick={() => void decide('approve_always')}>{t('aiAssistant.approval.approveAlways')}</Button>
       </div>
     </div>
   )

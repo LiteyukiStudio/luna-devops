@@ -21,12 +21,10 @@ import (
 )
 
 const (
-	aiAssistantEnabledConfigKey    = "ai.assistant.enabled"
-	aiAccessModeConfigKey          = "ai.access.mode"
-	aiMaxInputBytesConfigKey       = "ai.run.max_input_k_bytes"
-	aiDefaultMaxInputKBytes        = 1024
-	aiPendingUIActionsRetrySeconds = 30
-	aiPendingUIActionsDrainLimit   = 64 << 10
+	aiAssistantEnabledConfigKey = "ai.assistant.enabled"
+	aiAccessModeConfigKey       = "ai.access.mode"
+	aiMaxInputBytesConfigKey    = "ai.run.max_input_k_bytes"
+	aiDefaultMaxInputKBytes     = 1024
 )
 
 var aiToolActionOperationID = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_.-]{2,100}$`)
@@ -71,10 +69,6 @@ func (h *Handlers) ProxyAIRequest(ctx *gin.Context) {
 		return
 	}
 	if reason := h.aiUnavailableReason(); reason != "" {
-		if reason == "ai.agent_unavailable" && isPendingAIUIActionsRoute(route) {
-			writePendingAIUIActionsUnavailable(ctx)
-			return
-		}
 		writeErrorCode(ctx, http.StatusServiceUnavailable, reason, "AI assistant is unavailable")
 		return
 	}
@@ -122,10 +116,6 @@ func (h *Handlers) ProxyAIRequest(ctx *gin.Context) {
 		Stream:         route.stream,
 	})
 	if err != nil {
-		if isPendingAIUIActionsRoute(route) {
-			writePendingAIUIActionsUnavailable(ctx)
-			return
-		}
 		if errors.Is(err, aiagent.ErrUnavailable) {
 			writeErrorCode(ctx, http.StatusServiceUnavailable, "ai.agent_unavailable", "AI agent is unavailable")
 			return
@@ -134,14 +124,6 @@ func (h *Handlers) ProxyAIRequest(ctx *gin.Context) {
 		return
 	}
 	defer response.Body.Close()
-	if isPendingAIUIActionsRoute(route) && response.StatusCode >= http.StatusInternalServerError {
-		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, aiPendingUIActionsDrainLimit))
-		writePendingAIUIActionsUnavailable(ctx)
-		return
-	}
-	if isPendingAIUIActionsRoute(route) {
-		response.Header.Set("Cache-Control", "no-store")
-	}
 	h.copyAIResponse(ctx, response, route.status, "ai.agent_unavailable")
 }
 
@@ -188,19 +170,6 @@ func (h *Handlers) attachAIModelSnapshot(ctx *gin.Context, body []byte) ([]byte,
 		return nil, false
 	}
 	return prepared, true
-}
-
-func isPendingAIUIActionsRoute(route aiProxyRoute) bool {
-	return route.method == http.MethodGet && route.internal == "/internal/v1/ui-actions/pending"
-}
-
-func writePendingAIUIActionsUnavailable(ctx *gin.Context) {
-	ctx.Header("Cache-Control", "no-store")
-	ctx.JSON(http.StatusOK, gin.H{
-		"items":             []any{},
-		"agentAvailable":    false,
-		"retryAfterSeconds": aiPendingUIActionsRetrySeconds,
-	})
 }
 
 func (h *Handlers) aiActorFromSession(ctx *gin.Context) (aiagent.ActorContext, string, bool) {
@@ -445,9 +414,8 @@ func validateEnabledAIModel(h *Handlers, ctx *gin.Context, modelID string) bool 
 
 func validateTurnInput(h *Handlers, ctx *gin.Context, _ model.User, body []byte) bool {
 	var input struct {
-		ModelID          string `json:"modelId"`
-		ClientInstanceID string `json:"clientInstanceId"`
-		Input            struct {
+		ModelID string `json:"modelId"`
+		Input   struct {
 			Parts []struct {
 				Type string `json:"type"`
 				Text string `json:"text"`
@@ -459,10 +427,6 @@ func validateTurnInput(h *Handlers, ctx *gin.Context, _ model.User, body []byte)
 		return false
 	}
 	if !validateEnabledAIModel(h, ctx, input.ModelID) {
-		return false
-	}
-	if !validAIClientInstanceID(input.ClientInstanceID) {
-		writeErrorCode(ctx, http.StatusBadRequest, "ai.client_instance_invalid", "clientInstanceId is invalid")
 		return false
 	}
 	for _, part := range input.Input.Parts {
@@ -480,10 +444,9 @@ func validateTurnInput(h *Handlers, ctx *gin.Context, _ model.User, body []byte)
 
 func validateToolActionInput(_ *Handlers, ctx *gin.Context, _ model.User, body []byte) bool {
 	var input struct {
-		OperationID      string         `json:"operationId"`
-		Arguments        map[string]any `json:"arguments"`
-		Message          string         `json:"message"`
-		ClientInstanceID string         `json:"clientInstanceId"`
+		OperationID string         `json:"operationId"`
+		Arguments   map[string]any `json:"arguments"`
+		Message     string         `json:"message"`
 	}
 	if json.Unmarshal(body, &input) != nil || !aiToolActionOperationID.MatchString(input.OperationID) || strings.TrimSpace(input.Message) == "" || len([]byte(input.Message)) > 2000 {
 		writeErrorCode(ctx, http.StatusBadRequest, "ai.input_invalid", "invalid AI tool action input")
@@ -493,29 +456,8 @@ func validateToolActionInput(_ *Handlers, ctx *gin.Context, _ model.User, body [
 		writeErrorCode(ctx, http.StatusBadRequest, "ai.input_invalid", "tool action arguments are required")
 		return false
 	}
-	if !validAIClientInstanceID(input.ClientInstanceID) {
-		writeErrorCode(ctx, http.StatusBadRequest, "ai.client_instance_invalid", "clientInstanceId is invalid")
-		return false
-	}
 	if strings.TrimSpace(ctx.GetHeader("Idempotency-Key")) == "" {
 		writeErrorCode(ctx, http.StatusBadRequest, "idempotency_key_required", "Idempotency-Key is required")
-		return false
-	}
-	return true
-}
-
-func validAIClientInstanceID(value string) bool {
-	value = strings.TrimSpace(value)
-	if len(value) < 16 || len(value) > 80 {
-		return false
-	}
-	for _, character := range value {
-		if (character >= 'a' && character <= 'z') ||
-			(character >= 'A' && character <= 'Z') ||
-			(character >= '0' && character <= '9') ||
-			character == '_' || character == '-' {
-			continue
-		}
 		return false
 	}
 	return true
@@ -577,8 +519,6 @@ var aiProxyRoutes = map[string]aiProxyRoute{
 	"GET /api/v1/ai/conversations/:conversationId/timeline":      {method: "GET", internal: "/internal/v1/conversations/:conversationId/timeline"},
 	"POST /api/v1/ai/conversations/:conversationId/turns":        {method: "POST", internal: "/internal/v1/conversations/:conversationId/turns", status: http.StatusAccepted, validate: validateTurnInput},
 	"POST /api/v1/ai/conversations/:conversationId/tool-actions": {method: "POST", internal: "/internal/v1/conversations/:conversationId/tool-actions", status: http.StatusAccepted, validate: validateToolActionInput},
-	"GET /api/v1/ai/ui-actions/pending":                          {method: "GET", internal: "/internal/v1/ui-actions/pending"},
-	"POST /api/v1/ai/ui-actions/:actionId/ack":                   {method: "POST", internal: "/internal/v1/ui-actions/:actionId/ack", status: http.StatusAccepted},
 	"GET /api/v1/ai/turns/:turnId/runs":                          {method: "GET", internal: "/internal/v1/turns/:turnId/runs"},
 	"POST /api/v1/ai/turns/:turnId/runs":                         {method: "POST", internal: "/internal/v1/turns/:turnId/runs", status: http.StatusAccepted},
 	"GET /api/v1/ai/runs/:runId":                                 {method: "GET", internal: "/internal/v1/runs/:runId"},
@@ -586,6 +526,4 @@ var aiProxyRoutes = map[string]aiProxyRoute{
 	"POST /api/v1/ai/runs/:runId/cancel":                         {method: "POST", internal: "/internal/v1/runs/:runId/cancel", status: http.StatusAccepted},
 	"POST /api/v1/ai/runs/:runId/input":                          {method: "POST", internal: "/internal/v1/runs/:runId/input", status: http.StatusAccepted},
 	"POST /api/v1/ai/runs/:runId/approvals/:toolCallId/decision": {method: "POST", internal: "/internal/v1/runs/:runId/approvals/:toolCallId/decision", status: http.StatusAccepted},
-	"GET /api/v1/ai/tool-approval-exemptions":                    {method: "GET", internal: "/internal/v1/tool-approval-exemptions"},
-	"DELETE /api/v1/ai/tool-approval-exemptions/:operationId":    {method: "DELETE", internal: "/internal/v1/tool-approval-exemptions/:operationId", status: http.StatusNoContent},
 }

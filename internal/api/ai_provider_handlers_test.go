@@ -97,7 +97,6 @@ func TestAIProviderInternalOpenAPIRequiresCapabilityPolicies(t *testing.T) {
 		"maxModelSteps":                        {1, 1_024},
 		"runMaxToolCalls":                      {32, 2_048},
 		"maxInputBytes":                        {8_192, 8_388_608},
-		"navigateActionTtlSeconds":             {10, 600},
 		"maxCardRepairAttempts":                {1, 10},
 		"contextMaxUncompressedTurnCount":      {4, 128},
 		"contextMaxCompressionTurnsPerCompile": {8, 1_024},
@@ -239,7 +238,7 @@ func TestAIProviderRuntimeConfigDefaultsHaveValidationContracts(t *testing.T) {
 	// Calling the complete mapper proves every runtime key has a definition,
 	// a parseable default and a shared read/write range contract.
 	runtime := aiProviderRuntimeConfig(aiConfigDefaults())
-	if len(runtime) != 14 {
-		t.Fatalf("runtime field count = %d, want 14", len(runtime))
+	if len(runtime) != 13 {
+		t.Fatalf("runtime field count = %d, want 13", len(runtime))
 	}
 }

@@ -22,7 +22,10 @@ import (
 	"gorm.io/gorm/schema"
 )
 
-const preReleaseBaselineVersion = 67
+const (
+	preReleaseBaselineVersion     = 67
+	retiredAIDeliveryStateVersion = 87
+)
 
 func TestEmbeddedMigrationsStartAtPreReleaseBaseline(t *testing.T) {
 	entries, err := sqlmigrations.FS.ReadDir(".")
@@ -153,9 +156,22 @@ func TestMigrateBootstrapsFreshPostgresSchema(t *testing.T) {
 	if err := runner.Migrate(preReleaseBaselineVersion); err != nil {
 		t.Fatalf("reapply pre-release baseline: %v", err)
 	}
+	if err := runner.Migrate(retiredAIDeliveryStateVersion); err != nil {
+		t.Fatalf("migrate database to retired AI delivery state: %v", err)
+	}
+	seedRetiredAIDeliveryState(t, testDB)
 	if err := MigrateContext(context.Background(), testDB); err != nil {
 		t.Fatalf("migrate fresh database: %v", err)
 	}
+	assertRetiredAIDeliveryStateRemoved(t, testDB)
+	if err := runner.Steps(-1); err != nil {
+		t.Fatalf("roll back retired AI delivery state migration: %v", err)
+	}
+	assertRetiredAIDeliveryStateSchemaRestored(t, testDB)
+	if err := MigrateContext(context.Background(), testDB); err != nil {
+		t.Fatalf("reapply retired AI delivery state migration: %v", err)
+	}
+	assertRetiredAIDeliveryStateRemoved(t, testDB)
 	if err := MigrateContext(context.Background(), testDB); err != nil {
 		t.Fatalf("repeat migration after fresh bootstrap: %v", err)
 	}
@@ -164,6 +180,103 @@ func TestMigrateBootstrapsFreshPostgresSchema(t *testing.T) {
 	assertStableModelMigrationCoverage(t, testDB)
 	assertActiveDeploymentStageUniqueness(t, testDB)
 	assertDirtyMigrationFailsClosed(t, testDB)
+}
+
+func seedRetiredAIDeliveryState(t *testing.T, db *gorm.DB) {
+	t.Helper()
+
+	statements := []string{
+		`INSERT INTO users (id, email, name, brand_color_preset) VALUES ('usr_retired_theme', 'retired-theme@example.test', 'Retired Theme', 'ruby')`,
+		`INSERT INTO app_configs (key, value) VALUES ('site.brandColorPreset', 'plum') ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+		`ALTER TABLE ai.runs ADD COLUMN IF NOT EXISTS client_instance_id text`,
+		`ALTER TABLE ai.tool_calls DROP CONSTRAINT IF EXISTS tool_calls_approval_decision_check`,
+		`ALTER TABLE ai.tool_calls ADD CONSTRAINT tool_calls_approval_decision_check CHECK (approval_decision IN ('approve', 'approve_always'))`,
+		`CREATE TABLE ai.tool_approval_exemptions (
+  user_id text NOT NULL,
+  operation_id text NOT NULL,
+  source_tool_call_id text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (user_id, operation_id)
+)`,
+		`CREATE TABLE ai.ui_actions (
+  id text PRIMARY KEY,
+  run_id text NOT NULL REFERENCES ai.runs(id) ON DELETE CASCADE,
+  tool_call_id text NOT NULL UNIQUE,
+  client_instance_id text NOT NULL,
+  action jsonb NOT NULL,
+  status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'succeeded', 'failed', 'expired')),
+  attempts integer NOT NULL DEFAULT 1 CHECK (attempts > 0),
+  expires_at timestamptz NOT NULL,
+  acknowledged_at timestamptz,
+  actual_path text,
+  error_code text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+)`,
+		`CREATE INDEX ai_ui_actions_pending_client_idx ON ai.ui_actions (client_instance_id, created_at) WHERE status = 'pending'`,
+		`INSERT INTO ai.conversations (id, owner_user_id, title) VALUES ('conv_retired_delivery', 'usr_retired_delivery', 'Retired delivery state')`,
+		`INSERT INTO ai.turns (id, conversation_id, turn_index, status, input, selected_run_id) VALUES ('turn_retired_delivery', 'conv_retired_delivery', 1, 'completed', 'test', 'run_retired_delivery')`,
+		`INSERT INTO ai.runs (id, owner_user_id, conversation_id, turn_id, run_index, status, prompt_version, tool_catalog_digest, actor_session_id, client_instance_id) VALUES ('run_retired_delivery', 'usr_retired_delivery', 'conv_retired_delivery', 'turn_retired_delivery', 1, 'completed', 'v1', 'digest', 'ses_retired_delivery', 'client_retired_delivery')`,
+		`INSERT INTO ai.tool_calls (id, run_id, operation_id, status, arguments, approval_decision) VALUES ('tool_retired_delivery', 'run_retired_delivery', 'restartRelease', 'succeeded', '{}'::jsonb, 'approve_always')`,
+		`INSERT INTO ai.tool_approval_exemptions (user_id, operation_id, source_tool_call_id) VALUES ('usr_retired_delivery', 'restartRelease', 'tool_retired_delivery')`,
+		`INSERT INTO ai.ui_actions (id, run_id, tool_call_id, client_instance_id, action, expires_at) VALUES ('uia_retired_delivery', 'run_retired_delivery', 'tool_retired_delivery', 'client_retired_delivery', '{"type":"navigate"}'::jsonb, now() + interval '5 minutes')`,
+	}
+	for _, statement := range statements {
+		if err := db.Exec(statement).Error; err != nil {
+			t.Fatalf("seed retired AI delivery state with %q: %v", statement, err)
+		}
+	}
+}
+
+func assertRetiredAIDeliveryStateRemoved(t *testing.T, db *gorm.DB) {
+	t.Helper()
+
+	for _, table := range []string{"ai.ui_actions", "ai.tool_approval_exemptions"} {
+		if db.Migrator().HasTable(table) {
+			t.Fatalf("retired AI delivery table still exists: %s", table)
+		}
+	}
+	if db.Migrator().HasColumn("ai.runs", "client_instance_id") {
+		t.Fatal("retired ai.runs.client_instance_id still exists")
+	}
+	var decision string
+	if err := db.Raw(`SELECT approval_decision FROM ai.tool_calls WHERE id = 'tool_retired_delivery'`).Scan(&decision).Error; err != nil {
+		t.Fatalf("read migrated approval decision: %v", err)
+	}
+	if decision != "approve" {
+		t.Fatalf("migrated approval decision = %q, want approve", decision)
+	}
+	var userPreset string
+	if err := db.Raw(`SELECT brand_color_preset FROM users WHERE id = 'usr_retired_theme'`).Scan(&userPreset).Error; err != nil {
+		t.Fatalf("read migrated user theme: %v", err)
+	}
+	if userPreset != "" {
+		t.Fatalf("retired user theme = %q, want inherited empty preference", userPreset)
+	}
+	var sitePreset string
+	if err := db.Raw(`SELECT value FROM app_configs WHERE key = 'site.brandColorPreset'`).Scan(&sitePreset).Error; err != nil {
+		t.Fatalf("read migrated site theme: %v", err)
+	}
+	if sitePreset != "blue" {
+		t.Fatalf("retired site theme = %q, want blue", sitePreset)
+	}
+}
+
+func assertRetiredAIDeliveryStateSchemaRestored(t *testing.T, db *gorm.DB) {
+	t.Helper()
+
+	for _, table := range []string{"ai.ui_actions", "ai.tool_approval_exemptions"} {
+		if !db.Migrator().HasTable(table) {
+			t.Fatalf("rollback did not restore retired AI delivery table %s", table)
+		}
+	}
+	if !db.Migrator().HasColumn("ai.runs", "client_instance_id") {
+		t.Fatal("rollback did not restore ai.runs.client_instance_id")
+	}
+	if err := db.Exec(`UPDATE ai.tool_calls SET approval_decision = 'approve_always' WHERE id = 'tool_retired_delivery'`).Error; err != nil {
+		t.Fatalf("rollback did not restore approve_always constraint: %v", err)
+	}
 }
 
 func TestMigrateRejectsUnversionedNonEmptySchema(t *testing.T) {
@@ -246,14 +359,17 @@ func assertFreshMigrationState(t *testing.T, db *gorm.DB) {
 		"inbox_action_requests",
 		"project_volume_quota_usage",
 		"project_volume_quota_reservations",
-		"ai.ui_actions",
 		"ai.conversation_summaries",
 		"ai.model_credit_holds",
 		"ai.model_usages",
-		"ai.tool_approval_exemptions",
 	} {
 		if !db.Migrator().HasTable(table) {
 			t.Fatalf("fresh database is missing table %s", table)
+		}
+	}
+	for _, table := range []string{"ai.ui_actions", "ai.tool_approval_exemptions"} {
+		if db.Migrator().HasTable(table) {
+			t.Fatalf("fresh database still contains retired table %s", table)
 		}
 	}
 	for _, expected := range []struct {
@@ -286,7 +402,6 @@ func assertFreshMigrationState(t *testing.T, db *gorm.DB) {
 		{table: "volume_transfers", column: "creation_lease_owner"},
 		{table: "volume_transfers", column: "creation_lease_expires_at"},
 		{table: "volume_transfers", column: "job_created_at"},
-		{table: "ai.runs", column: "client_instance_id"},
 		{table: "ai.runs", column: "next_item_position"},
 		{table: "ai.runs", column: "next_event_sequence"},
 		{table: "ai.runs", column: "max_context_tokens"},
@@ -322,7 +437,7 @@ func assertFreshMigrationState(t *testing.T, db *gorm.DB) {
 			t.Fatalf("fresh database contains obsolete %s.%s", obsolete.table, obsolete.column)
 		}
 	}
-	for _, column := range []string{"run_actor_grant_ciphertext", "lease_owner", "lease_expires_at", "heartbeat_at"} {
+	for _, column := range []string{"client_instance_id", "run_actor_grant_ciphertext", "lease_owner", "lease_expires_at", "heartbeat_at"} {
 		if db.Migrator().HasColumn("ai.runs", column) {
 			t.Fatalf("fresh database contains obsolete ai.runs.%s", column)
 		}

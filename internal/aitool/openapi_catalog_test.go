@@ -328,6 +328,22 @@ func TestPlatformCatalogMarksRuntimeSecretInputsAsSensitive(t *testing.T) {
 	}
 }
 
+func TestReleaseRuntimeExecRequiresFreshApprovalAndRedactsCommand(t *testing.T) {
+	operation, ok := PlatformOperation("execReleaseRuntimeCommand")
+	if !ok {
+		t.Fatal("missing execReleaseRuntimeCommand")
+	}
+	if !operation.RequiresApproval {
+		t.Fatal("release runtime exec must require approval for every call")
+	}
+	if !reflect.DeepEqual(operation.RequiredScopes, []string{"deployment:exec"}) {
+		t.Fatalf("release runtime exec scopes = %#v", operation.RequiredScopes)
+	}
+	if !reflect.DeepEqual(operation.SensitivePaths, []string{"body.command"}) {
+		t.Fatalf("release runtime exec sensitive paths = %#v", operation.SensitivePaths)
+	}
+}
+
 func TestDisabledOperationsAlwaysExplainWhy(t *testing.T) {
 	for operationID, reason := range agentDisabledOperations {
 		if strings.TrimSpace(operationID) == "" || strings.TrimSpace(reason) == "" {

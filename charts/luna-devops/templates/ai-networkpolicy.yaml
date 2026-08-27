@@ -1,8 +1,8 @@
-{{- if and .Values.ai.enabled .Values.ai.agent.networkPolicy.enabled }}
+{{- if and .Values.ai.enabled .Values.ai.agent.networkPolicy.ingress.enabled }}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: {{ include "luna-devops.agentName" . }}
+  name: {{ include "luna-devops.agentName" . }}-ingress
   labels:
     {{- include "luna-devops.componentLabels" (dict "root" . "component" "agent") | nindent 4 }}
 spec:
@@ -12,7 +12,6 @@ spec:
       app.kubernetes.io/component: agent
   policyTypes:
     - Ingress
-    - Egress
   ingress:
     - from:
         - podSelector:
@@ -22,6 +21,24 @@ spec:
       ports:
         - protocol: TCP
           port: {{ .Values.ai.agent.service.port }}
+{{- end }}
+{{- if and .Values.ai.enabled .Values.ai.agent.networkPolicy.egress.enabled }}
+{{- if .Values.ai.agent.networkPolicy.ingress.enabled }}
+---
+{{- end }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "luna-devops.agentName" . }}-egress
+  labels:
+    {{- include "luna-devops.componentLabels" (dict "root" . "component" "agent") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "luna-devops.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: agent
+  policyTypes:
+    - Egress
   egress:
     - to:
         - namespaceSelector: {}
@@ -51,14 +68,12 @@ spec:
         - protocol: TCP
           port: 5432
     {{- end }}
-    {{- if .Values.redis.enabled }}
+    {{- range .Values.ai.agent.networkPolicy.egress.additionalCIDRs }}
     - to:
-        - podSelector:
-            matchLabels:
-              {{- include "luna-devops.selectorLabels" . | nindent 14 }}
-              app.kubernetes.io/component: redis
-      ports:
-        - protocol: TCP
-          port: 6379
+        - ipBlock:
+            cidr: {{ . | quote }}
+    {{- end }}
+    {{- with .Values.ai.agent.networkPolicy.egress.additionalRules }}
+    {{- toYaml . | nindent 4 }}
     {{- end }}
 {{- end }}
