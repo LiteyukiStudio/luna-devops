@@ -1,16 +1,18 @@
 package api
 
 import (
+	"strings"
+
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/resourcename"
 )
 
 func runtimeProjectNamespace(project model.Project) string {
-	return resourcename.PersistedOrLegacy(project.KubernetesNamespace, "ns", project.ID)
+	return strings.TrimSpace(project.KubernetesNamespace)
 }
 
 func deploymentTargetResourceName(target model.DeploymentTarget) string {
-	return resourcename.PersistedOrLegacy(target.KubernetesName, "dplt", target.ID)
+	return strings.TrimSpace(target.KubernetesName)
 }
 
 func shortResourceID(value string) string {

@@ -100,7 +100,7 @@ func TestVolumeOperationDispatcherPreservesContextAndOperation(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("DispatchVolumeOperation(cleanup) error = %v", err)
 	}
-	if stub.cleanup.TransferID != "vtx_1" || stub.cleanup.ActorID != "usr_1" {
+	if stub.cleanup.TransferID != "vtx_1" {
 		t.Fatalf("cleanup payload = %#v", stub.cleanup)
 	}
 }

@@ -4,6 +4,7 @@ import { ChevronDown, CircleHelp } from 'lucide-react'
 import { useId, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { safeStorageGet, safeStorageSet } from '@/lib/safe-storage'
 import { cn } from '@/lib/utils'
 
 interface ProgressiveSectionProps {
@@ -23,17 +24,17 @@ interface ProgressiveSectionProps {
 export function ProgressiveSection({ children, defaultOpen = false, description, hint, storageKey, summary, title }: ProgressiveSectionProps) {
   const titleId = useId()
   const [open, setOpen] = useState(() => {
-    if (!storageKey || typeof window === 'undefined')
+    if (!storageKey)
       return defaultOpen
-    const stored = window.localStorage.getItem(storageKey)
+    const stored = safeStorageGet(storageKey)
     return stored === null ? defaultOpen : stored === 'true'
   })
 
   const toggleOpen = () => {
     setOpen((value) => {
       const next = !value
-      if (storageKey && typeof window !== 'undefined')
-        window.localStorage.setItem(storageKey, String(next))
+      if (storageKey)
+        safeStorageSet(storageKey, String(next))
       return next
     })
   }

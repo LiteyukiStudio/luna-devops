@@ -22,12 +22,6 @@ const schema = z.object({
   OTEL_RESOURCE_ATTRIBUTES: optionalValue(z.string()),
   OTEL_EXPORTER_OTLP_HEADERS: optionalValue(z.string()),
   AI_OBSERVABILITY_CAPTURE_CONTENT: z.stringbool().default(false),
-  AI_CONTEXT_COMPRESSION_TRIGGER_RATIO: z.coerce.number().min(0.5).max(0.95).default(0.9),
-  AI_CONTEXT_RECENT_TURN_COUNT: z.coerce.number().int().min(1).max(32).default(16),
-  AI_CONTEXT_MAX_HISTORY_PAYLOAD_K_BYTES: z.coerce.number().int().min(64).max(16_384).default(4096),
-  AI_CONTEXT_MAX_SUMMARY_PAYLOAD_K_BYTES: z.coerce.number().int().min(16).max(4096).default(512),
-  AI_CONTEXT_MAX_CONTINUATION_PAYLOAD_K_BYTES: z.coerce.number().int().min(16).max(4096).default(1024),
-  AI_TOOLS_RESULT_PAYLOAD_K_BYTES: z.coerce.number().int().min(4).max(4096).default(512),
 })
 
 export type Config = z.infer<typeof schema>

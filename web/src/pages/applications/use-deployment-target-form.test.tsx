@@ -92,13 +92,12 @@ describe('deployment target form', () => {
       repositoryBindings: [binding],
       target: deploymentTarget('target-1', {
         runtimeConfigRefs: [{ mode: 'live', setId: 'live-set' }, { mode: 'snapshot', setId: 'snapshot-set' }],
-        runtimeConfigSetIds: ['legacy-set'],
         secretFilesSet: true,
         environmentVariables: [{ configured: true, key: 'API_TOKEN', valueMode: 'secret' }],
       }),
     })
 
-    expect(editValues.runtimeConfigSetIds).toEqual(['live-set'])
+    expect(editValues.runtimeConfigRefs).toEqual([{ mode: 'live', setId: 'live-set' }, { mode: 'snapshot', setId: 'snapshot-set' }])
     expect(editValues.secretFiles).toBe('')
   })
 

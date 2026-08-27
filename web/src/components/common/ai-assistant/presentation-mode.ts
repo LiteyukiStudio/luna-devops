@@ -35,15 +35,11 @@ export function resolveAIAssistantPresentationMode(
 }
 
 function mediaMatches(query: string): boolean {
-  return typeof window !== 'undefined'
-    && typeof window.matchMedia === 'function'
+  return typeof window.matchMedia === 'function'
     && window.matchMedia(query).matches
 }
 
 function presentationModeSnapshot(pathname: string): AIAssistantPresentationMode {
-  if (typeof window === 'undefined')
-    return 'page'
-
   return resolveAIAssistantPresentationMode({
     pathname,
     viewportWidth: window.innerWidth,
@@ -54,9 +50,6 @@ function presentationModeSnapshot(pathname: string): AIAssistantPresentationMode
 }
 
 function subscribePresentationEnvironment(onStoreChange: () => void): () => void {
-  if (typeof window === 'undefined')
-    return () => undefined
-
   const mediaQueries = typeof window.matchMedia === 'function'
     ? [
         window.matchMedia(AI_ASSISTANT_FINE_POINTER_MEDIA_QUERY),

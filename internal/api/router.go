@@ -380,7 +380,7 @@ func cors() gin.HandlerFunc {
 		if origin != "" && containsString(allowedOrigins, origin) {
 			ctx.Writer.Header().Set("Access-Control-Allow-Origin", origin)
 			ctx.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
-			ctx.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, Accept-Language, Idempotency-Key, If-Match, X-Content-SHA256")
+			ctx.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, Accept-Language, Idempotency-Key, If-Match")
 			ctx.Writer.Header().Set("Access-Control-Allow-Methods", "GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS")
 			ctx.Writer.Header().Set("Access-Control-Expose-Headers", "X-Request-ID, Content-Length, Content-Disposition, Retry-After")
 			ctx.Writer.Header().Add("Vary", "Origin")

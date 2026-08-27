@@ -43,14 +43,9 @@ describe('agent span content', () => {
   })
 
   it('normalizes model messages and output for Markdown presentation', () => {
-    expect(agentSpanMessageMarkdown([{ type: 'text', text: 'First' }, { type: 'text', text: '**Second**' }])).toBe('First\n\n**Second**')
+    expect(agentSpanMessageMarkdown([{ type: 'text', content: 'First' }, { type: 'text', content: '**Second**' }])).toBe('First\n\n**Second**')
     expect(agentSpanMessageMarkdown({ type: 'tool_call', name: 'getProject', arguments: { projectId: 'proj-1' } })).toContain('`getProject`')
     expect(agentSpanMessageMarkdown({ type: 'tool_call_response', response: { ok: true } })).toContain('"ok": true')
-    expect(agentModelOutput({ text: '## Done', reasoningSummary: 'Checked dependencies', toolCalls: [{ operationId: 'getProject' }], usage: { inputTokens: 1 } })).toEqual({
-      text: '## Done',
-      reasoningSummary: 'Checked dependencies',
-      toolCalls: [{ operationId: 'getProject' }],
-    })
     expect(agentModelOutput([{
       role: 'assistant',
       parts: [
@@ -64,5 +59,6 @@ describe('agent span content', () => {
       reasoningSummary: 'Checked dependencies',
       toolCalls: [{ type: 'tool_call', id: 'call-1', name: 'getProject', arguments: { projectId: 'proj-1' } }],
     })
+    expect(agentModelOutput({ text: 'legacy' })).toEqual({})
   })
 })

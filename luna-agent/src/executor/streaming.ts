@@ -66,13 +66,11 @@ export async function streamModel(
               summarizedThroughTurnIndex: event.summarizedThroughTurnIndex,
               sourceTurnCount: event.sourceTurnCount,
               trigger: event.trigger,
-              ...(event.priorPromptTokens !== undefined ? { priorPromptTokens: event.priorPromptTokens } : {}),
             }),
           }, "context.compacted", redact({
             summarizedThroughTurnIndex: event.summarizedThroughTurnIndex,
             sourceTurnCount: event.sourceTurnCount,
             trigger: event.trigger,
-            ...(event.priorPromptTokens !== undefined ? { priorPromptTokens: event.priorPromptTokens } : {}),
           }))
           continue
         }

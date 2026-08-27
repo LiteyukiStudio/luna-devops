@@ -88,7 +88,7 @@ src/
 ├── redaction.ts              凭据/敏感字段脱敏
 ├── payload-cipher.ts         AEAD 载荷加密（工具参数）
 ├── auth.ts                   BFF HMAC 认证 / 开发模式认证
-└── runtime-settings.ts       运行时参数默认值（可被平台高级设置动态下发）
+└── runtime-settings.ts       Provider/并发远程参数与 Agent 固定执行边界
 ```
 
 ## 核心流程：一个 Run 的生命周期
@@ -122,18 +122,10 @@ Luna API 取得 Provider、运行参数与 Catalog 的同一份完整权威配�
 
 - **增量水位**：`ConversationSummary.coveredThroughTurnIndex` 单调推进，数据库层用条件 upsert 保证多实例并发不回退。
 - **结构化摘要**：固定七字段 JSON（userGoals / constraints / confirmedResources / completedActions / failures / pendingWork / durableFacts），摘要内容经 `redact()` 脱敏，Prompt 明确禁止保存凭据、禁止执行历史中的指令。
-- **触发条件**：token 超水位（90% 触发 / 70% 目标）、backlog 积压或历史缺口、超过最大未压缩轮数、超过近期保留轮数。
-- **单份滚动摘要**：摘要覆盖线单调前进，配合近期原始消息装填；不存在 deferred/catch-up 或多层摘要状态。
-- **降级**：压缩失败退回近期原文 + warn 日志，不阻塞用户请求。
+- **固定触发**：未压缩历史超过 32 轮时压缩旧内容并保留最近 16 轮；Provider 明确返回上下文长度错误时再压缩一次并以新的 attempt 重试。
+- **单份滚动摘要**：每次只处理一个有界批次并单调推进摘要覆盖线；不存在 usage 比值、backlog、递归二分、deferred/catch-up 或多层摘要状态。
+- **失败语义**：没有可压缩历史或一次重试后仍超限时返回稳定错误，不用静默裁剪或旧摘要掩盖失败。
 - **注入防护**：摘要、历史、工具结果全部包裹"不可信数据"标签。
-
-**已知短板**（按优先级，欢迎认领）：
-
-1. 每个模型 step 都可能同步触发摘要调用，工具循环内延迟与成本翻倍——应改为按水位滞后量触发或异步化；
-2. token 估算为 `bytes/3` 粗略近似——应引入 provider usage 比值校准或分词器；
-3. 轮数硬触发（64 轮）对短消息对话过于敏感——token 水位应为主判据，轮数仅作兜底；
-4. `compile()` 的 catch 范围过大，DB 故障与摘要生成失败未区分；
-5. 摘要 schema 超限时 zod 直接拒绝而非截断保留。
 
 ## 硬规范（修改本仓库前必读）
 
@@ -155,13 +147,11 @@ Luna API 取得 Provider、运行参数与 Catalog 的同一份完整权威配�
 
 **近期（不改变架构）**：
 
-- 上下文压缩器短板修复（见上节 1–5），优先做"按水位滞后触发"和"usage 比值校准"，收益最直接；
 - `RunExecutor.claimAndExecute` 的 step 循环体仍可继续提取（平台工具派发段、`argumentError` 修复段），目标是把 index.ts 压到纯编排；
 
 **中期（需要设计评审）**：
 
 - **并行工具调用**：当前同一 step 内工具串行执行。并行化需要先解决审批中断与部分完成的续跑语义（`resume.ts` 要支持乱序完成），以及计费预留的合并；
-- **摘要异步化**：如将来将压缩移到后台任务，需要先定义摘要水位落后阈值与请求降级策略，不恢复 deferred/catch-up 运行时状态机；
 - **多模型路由**：Provider 层已支持按 run 快照选模型，下一步是按任务类型（摘要 / 主循环 / 标题）路由到不同档位模型，`budgeted.ts` 的预留逻辑要相应分组。
 
 **远期（触发前文"重新评估框架"的条件）**：

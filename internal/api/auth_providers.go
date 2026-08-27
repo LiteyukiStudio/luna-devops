@@ -48,9 +48,6 @@ func (h *Handlers) GetOIDCCallbackURL(ctx *gin.Context) {
 }
 
 func (h *Handlers) CreateAuthProvider(ctx *gin.Context) {
-	if !h.requirePlatformAdmin(ctx) {
-		return
-	}
 	var input authProviderInput
 	if !bindJSON(ctx, &input) {
 		return
@@ -83,9 +80,6 @@ func (h *Handlers) CreateAuthProvider(ctx *gin.Context) {
 }
 
 func (h *Handlers) UpdateAuthProvider(ctx *gin.Context) {
-	if !h.requirePlatformAdmin(ctx) {
-		return
-	}
 	var provider model.AuthProvider
 	if err := h.dbFor(ctx).First(&provider, "id = ?", ctx.Param("providerId")).Error; err != nil {
 		writeError(ctx, http.StatusNotFound, "auth provider not found")

@@ -133,18 +133,22 @@ func TestVolumeUploadOpenAPIUsesSingleDirectStreamContract(t *testing.T) {
 		t.Fatalf("direct import content types = %#v", requestContent)
 	}
 	parameters := put["parameters"].([]any)
-	foundChecksum, foundLength := false, false
+	foundLength := false
 	for _, raw := range parameters {
 		parameter := raw.(map[string]any)
-		if parameter["name"] == "X-Content-SHA256" && parameter["in"] == "header" && parameter["required"] == true {
-			foundChecksum = true
+		if parameter["name"] == "X-Content-SHA256" {
+			t.Fatal("direct import must not require a client-declared checksum")
 		}
 		if parameter["name"] == "Content-Length" && parameter["in"] == "header" && parameter["required"] == true {
 			foundLength = true
 		}
 	}
-	if !foundChecksum || !foundLength {
+	if !foundLength {
 		t.Fatalf("direct import parameters = %#v", parameters)
+	}
+	createInput := schemas["VolumeImportCreateInput"].(map[string]any)
+	if _, exists := createInput["properties"].(map[string]any)["sha256"]; exists {
+		t.Fatal("volume import creation must not accept a client-declared checksum")
 	}
 	for path := range paths {
 		if len(path) >= len("/internal/v1/volume-transfers") && path[:len("/internal/v1/volume-transfers")] == "/internal/v1/volume-transfers" {

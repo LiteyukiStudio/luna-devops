@@ -88,6 +88,36 @@ describe('ai assistant composer keyboard submission', () => {
     expect(onSubmit).not.toHaveBeenCalled()
   })
 
+  it('enforces the input limit by UTF-8 bytes instead of character count', () => {
+    const onSubmit = vi.fn()
+    render(
+      <AIAssistantComposer
+        activeRun={false}
+        canceling={false}
+        canCancel={false}
+        draft="中文"
+        inputRef={createRef<HTMLTextAreaElement>()}
+        maxInputBytes={4}
+        models={[{ id: 'aimod_test', name: 'Test model', maxContextTokens: 128_000, maxOutputTokens: 16_000 }]}
+        selectedModelId="aimod_test"
+        sending={false}
+        submitting={false}
+        waitingInput={false}
+        onCancel={vi.fn()}
+        onDraftChange={vi.fn()}
+        onSubmit={onSubmit}
+      />,
+    )
+
+    const input = screen.getByRole('textbox', { name: i18next.t('aiAssistant.inputLabel') })
+    expect(input).toHaveAttribute('aria-invalid', 'true')
+    expect(screen.getByRole('alert')).toHaveTextContent(i18next.t('aiAssistant.inputTooLarge', { limit: '4 B' }))
+    expect(screen.getByRole('button', { name: i18next.t('aiAssistant.send') })).toBeDisabled()
+
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(onSubmit).not.toHaveBeenCalled()
+  })
+
   it('submits with plain Enter and keeps Shift+Enter for a newline', () => {
     const onSubmit = vi.fn()
     const { input } = renderComposer({ onSubmit })

@@ -40,15 +40,11 @@ describe('ai assistant route state', () => {
     expect(resolveAIAssistantReturnPath(state)).toBe(AI_ASSISTANT_DIRECT_ACCESS_FALLBACK_PATH)
   })
 
-  it('rejects malformed structured location components', () => {
+  it('ignores non-string optional location components', () => {
     expect(resolveAIAssistantReturnPath({
-      returnTo: { pathname: '/projects', search: '//attacker.example', hash: '' },
+      returnTo: { pathname: '/projects', search: 1, hash: null },
       aiView: 'chat',
-    })).toBe(AI_ASSISTANT_DIRECT_ACCESS_FALLBACK_PATH)
-    expect(resolveAIAssistantReturnPath({
-      returnTo: { pathname: '/projects', search: '?tab=all', hash: 'section' },
-      aiView: 'chat',
-    })).toBe(AI_ASSISTANT_DIRECT_ACCESS_FALLBACK_PATH)
+    })).toBe('/projects')
   })
 
   it('uses the dashboard and chat view for direct access or untrusted history state', () => {

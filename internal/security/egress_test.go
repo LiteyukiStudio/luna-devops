@@ -58,10 +58,17 @@ func TestDomainAllowListBypassesReservedIPBlock(t *testing.T) {
 	policy.DomainAllowList = []string{"localhost"}
 	policy.IPBlockList = []string{"127.0.0.0/8", "::1/128"}
 
-	if _, err := PublicEgressPolicy().ValidateURL("http://localhost:8080"); !errors.Is(err, ErrBlockedByPolicy) {
-		t.Fatalf("localhost should be blocked by default, got %v", err)
+	if _, err := PublicEgressPolicy().ValidateURL("http://localhost:8080"); err != nil {
+		t.Fatalf("URL preflight must defer DNS policy to dial time: %v", err)
 	}
-	if _, err := policy.ValidateURL("http://localhost:8080"); err != nil {
+	lookup := func(context.Context, string) ([]net.IPAddr, error) {
+		return []net.IPAddr{{IP: net.ParseIP("127.0.0.1")}}, nil
+	}
+	dial := func(context.Context, string, string) (net.Conn, error) { return nil, errors.New("test dial stopped") }
+	if _, err := dialContextWithPolicy(context.Background(), "tcp", "localhost:8080", PublicEgressPolicy(), lookup, dial); !errors.Is(err, ErrBlockedByPolicy) {
+		t.Fatalf("localhost should be blocked at dial time, got %v", err)
+	}
+	if _, err := dialContextWithPolicy(context.Background(), "tcp", "localhost:8080", policy, lookup, dial); errors.Is(err, ErrBlockedByPolicy) {
 		t.Fatalf("domain allowlist should permit reserved resolved ip: %v", err)
 	}
 }
@@ -173,5 +180,15 @@ func TestDialContextRejectsPrivateDNSResultBeforeDial(t *testing.T) {
 	}
 	if dialCalled {
 		t.Fatal("dial must not run for a blocked DNS result")
+	}
+}
+
+func TestProxyTargetRetainsPrivateDNSValidation(t *testing.T) {
+	target, err := PublicEgressPolicy().ValidateURL("http://localhost:8080")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := PublicEgressPolicy().ValidateProxyTarget(context.Background(), target); !errors.Is(err, ErrBlockedByPolicy) {
+		t.Fatalf("proxy target resolving to loopback should be blocked, got %v", err)
 	}
 }

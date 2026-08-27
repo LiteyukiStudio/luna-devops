@@ -144,7 +144,6 @@ func (h *Handlers) DeleteProjectRuntimeConfigSet(ctx *gin.Context) {
 		ResourceType: "runtime_config",
 		ResourceID:   set.ID,
 		ProjectID:    set.ProjectID,
-		ActorID:      set.CreatedBy,
 	}) {
 		_ = markResourceDeleteFailed(h.dbFor(ctx), &model.ProjectRuntimeConfigSet{}, set.ID, "资源清理任务投递失败，请稍后重试")
 		writeError(ctx, http.StatusServiceUnavailable, "资源清理任务投递失败，请稍后重试")
@@ -353,15 +352,12 @@ func projectRuntimeConfigSetResponseFor(set model.ProjectRuntimeConfigSet) proje
 
 func (h *Handlers) countRuntimeConfigSetDeploymentTargets(projectID string, setID string, ctx context.Context) int {
 	var targets []model.DeploymentTarget
-	if err := h.dbWithContext(ctx).Select("runtime_config_set_ids", "runtime_config_refs").Where("project_id = ?", projectID).Find(&targets).Error; err != nil {
+	if err := h.dbWithContext(ctx).Select("runtime_config_refs").Where("project_id = ?", projectID).Find(&targets).Error; err != nil {
 		return 0
 	}
 	count := 0
 	for _, target := range targets {
 		liveIDs := model.DeploymentRuntimeConfigLiveSetIDs(model.DecodeDeploymentRuntimeConfigRefs(target.RuntimeConfigRefs))
-		if len(liveIDs) == 0 && strings.TrimSpace(target.RuntimeConfigRefs) == "" {
-			liveIDs = buildVariableSetIDs(target.RuntimeConfigSetIDs)
-		}
 		for _, id := range liveIDs {
 			if id == setID {
 				count++

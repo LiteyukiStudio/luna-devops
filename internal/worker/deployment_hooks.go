@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -41,6 +42,7 @@ func (r *Runner) runDeploymentHooks(ctx context.Context, phase string, release m
 	}
 	resourceName := applicationResourceName(deploymentTarget)
 	buildContext := r.releaseBuildContext(ctx, release)
+	sensitiveValues := r.deploymentHookSensitiveValues(ctx, project.ID, environment, deploymentTarget)
 	for _, binding := range bindings {
 		config, ok := configsByID[binding.HookConfigID]
 		if !ok {
@@ -97,7 +99,7 @@ func (r *Runner) runDeploymentHooks(ctx context.Context, phase string, release m
 		if err != nil {
 			result = kubeprovider.HookJobResult{Succeeded: false, ExitCode: 1, Message: err.Error()}
 		}
-		r.appendHookRunLog(ctx, hookRun, result.Logs)
+		r.appendHookRunLog(ctx, hookRun, result.Logs, sensitiveValues)
 		status := "succeeded"
 		if !result.Succeeded {
 			status = "failed"
@@ -116,7 +118,7 @@ func (r *Runner) runDeploymentHooks(ctx context.Context, phase string, release m
 		hookRun.FinishedAt = &finishedAt
 		r.emitHookEvent(ctx, hookRun, status, result.Message)
 		if result.Logs != "" {
-			r.appendReleaseLog(ctx, release, result.Logs)
+			r.appendReleaseLog(ctx, release, redactSensitiveLogContent(result.Logs, sensitiveValues))
 		}
 		if !result.Succeeded && config.FailurePolicy != "ignore" {
 			return errors.New(firstNonEmpty(result.Message, phase+" hook failed"))
@@ -151,11 +153,11 @@ func (r *Runner) appendReleaseLog(ctx context.Context, release model.Release, co
 	_ = r.db.WithContext(ctx).Save(&existing).Error
 }
 
-func (r *Runner) appendHookRunLog(ctx context.Context, run model.HookRun, content string) {
+func (r *Runner) appendHookRunLog(ctx context.Context, run model.HookRun, content string, sensitiveValues []string) {
 	if r.db == nil {
 		return
 	}
-	content = trimReleaseLogContent(content)
+	content = trimReleaseLogContent(redactSensitiveLogContent(content, sensitiveValues))
 	if content == "" {
 		return
 	}
@@ -175,6 +177,64 @@ func (r *Runner) appendHookRunLog(ctx context.Context, run model.HookRun, conten
 	}
 	existing.Content = trimReleaseLogContent(existing.Content + "\n" + content)
 	_ = r.db.WithContext(ctx).Save(&existing).Error
+}
+
+func (r *Runner) deploymentHookSensitiveValues(ctx context.Context, projectID string, environment model.Environment, target model.DeploymentTarget) []string {
+	values := make([]string, 0, 8)
+	values = append(values, r.resolveSecretValues(ctx, environment.SecretRefs, target.SecretRefs, target.SecretFiles)...)
+	sets, err := r.runtimeConfigSetsForTarget(ctx, projectID, target)
+	if err != nil {
+		return values
+	}
+	for _, set := range sets {
+		values = append(values, decodedMapValues(set.SecretRefs)...)
+		values = append(values, decodedFileContents(set.SecretFiles)...)
+	}
+	return values
+}
+
+func (r *Runner) resolveSecretValues(ctx context.Context, rawValues ...string) []string {
+	values := make([]string, 0, len(rawValues))
+	for _, raw := range rawValues {
+		refs := map[string]string{}
+		if json.Unmarshal([]byte(strings.TrimSpace(raw)), &refs) != nil {
+			continue
+		}
+		for _, ref := range refs {
+			if value := r.secrets.ResolveContext(ctx, ref); strings.TrimSpace(value) != "" {
+				values = append(values, value)
+			}
+		}
+	}
+	return values
+}
+
+func decodedMapValues(raw string) []string {
+	valuesByKey := map[string]string{}
+	if json.Unmarshal([]byte(strings.TrimSpace(raw)), &valuesByKey) != nil {
+		return nil
+	}
+	values := make([]string, 0, len(valuesByKey))
+	for _, value := range valuesByKey {
+		if strings.TrimSpace(value) != "" {
+			values = append(values, value)
+		}
+	}
+	return values
+}
+
+func decodedFileContents(raw string) []string {
+	var files []runtimeConfigFileInput
+	if json.Unmarshal([]byte(strings.TrimSpace(raw)), &files) != nil {
+		return nil
+	}
+	values := make([]string, 0, len(files))
+	for _, file := range files {
+		if strings.TrimSpace(file.Content) != "" {
+			values = append(values, file.Content)
+		}
+	}
+	return values
 }
 
 func (r *Runner) releaseBuildContext(ctx context.Context, release model.Release) deploymentHookBuildContext {

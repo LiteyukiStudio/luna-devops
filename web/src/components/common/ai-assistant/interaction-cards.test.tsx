@@ -686,38 +686,6 @@ describe('ai interaction cards', () => {
     expect(timeline.scrollTop).toBe(120)
   })
 
-  it('contains a broken generated content block without hiding sibling content', () => {
-    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
-    const brokenBlock = { id: 'broken', type: 'key_value' } as Record<string, unknown>
-    Object.defineProperty(brokenBlock, 'items', {
-      get: () => {
-        throw new Error('broken generated block')
-      },
-    })
-    const card = {
-      schemaVersion: 1,
-      generationId: 'isolated-render-error',
-      title: '诊断结果',
-      mode: 'presentation',
-      template: 'result',
-      cards: [{
-        id: 'resource',
-        presentation: { variant: 'resource', title: '资源详情' },
-        blocks: [
-          { id: 'healthy', type: 'markdown', content: '仍然可见的内容' },
-          brokenBlock,
-        ],
-      }],
-    }
-
-    render(<AIInteractionCards arguments={card} onAction={vi.fn()} />)
-
-    expect(screen.getByText('仍然可见的内容')).toBeInTheDocument()
-    expect(screen.getByText('This part of the card cannot be displayed right now.')).toBeInTheDocument()
-    expect(screen.queryByText('This interaction card group cannot be displayed right now. Other conversation content is unaffected.')).not.toBeInTheDocument()
-    consoleError.mockRestore()
-  })
-
   it('renders card descriptions as safe markdown and ignores model HTML', () => {
     const card = structuredClone(candidatesCard) as unknown as {
       description?: string

@@ -1,15 +1,11 @@
-import type { QueryClient } from '@tanstack/react-query'
 import type { NavigateFunction } from 'react-router-dom'
 import type { AIUIAction } from '@/api'
-import { aiOptionIconNames } from '@luna-devops/ai-interaction-card-contract'
+import { aiInternalRouteNames, aiOptionIconNames } from '@luna-devops/ai-interaction-card-contract'
 import { z } from 'zod'
-import { aiInternalRouteNames, buildAIInternalRoute } from './internal-routes'
+import { buildAIInternalRoute } from './internal-routes'
 
 export interface AIActionContext {
-  pathname: string
-  search: string
   navigate: NavigateFunction
-  queryClient: QueryClient
   sendMessage?: (message: string) => Promise<void>
   requestTool?: (action: Extract<AIUIAction, { type: 'request_tool' }>) => Promise<void>
 }
@@ -21,13 +17,6 @@ const routeSchema = z.object({
   query: identifiers,
 })
 
-const tabSchema = z.object({ tabId: z.enum(['overview', 'apps', 'members', 'builds', 'deployments', 'gateway', 'runtime']) })
-const filterSchema = z.object({
-  targetId: z.enum(['events']),
-  values: identifiers,
-})
-const refreshSchema = z.object({ queryKeyId: z.enum(['projects', 'events', 'applications', 'build-runs', 'releases', 'runtime']) })
-const highlightSchema = z.object({ resourceId: z.string().regex(/^[\w.:-]{1,160}$/) })
 const sendMessageSchema = z.object({ message: z.string().trim().min(1).max(2000) })
 const requestToolSchema = z.object({
   operationId: z.string().regex(/^[a-z][\w.-]{2,100}$/i),
@@ -74,11 +63,7 @@ export function parseAIOptionActions(values: readonly unknown[]): AIOptionAction
 }
 
 export function isAIUIActionRepeatable(action: AIUIAction): boolean {
-  if (action.type === 'send_message' || action.type === 'request_tool')
-    return false
-  if (action.type === 'navigate')
-    return action.repeatable ?? true
-  return true
+  return action.type === 'navigate' ? action.repeatable ?? true : false
 }
 
 export function getAIUIActionTargetPath(action: AIUIAction): string | null {
@@ -100,33 +85,6 @@ export async function executeAIUIAction(action: AIUIAction, context: AIActionCon
     context.navigate(path)
     return true
   }
-  if (action.type === 'select_tab') {
-    const parsed = tabSchema.safeParse(action.payload)
-    if (!parsed.success || !context.pathname.startsWith('/projects/'))
-      return false
-    const search = new URLSearchParams(context.search)
-    search.set('tab', parsed.data.tabId)
-    context.navigate(`${context.pathname}?${search}`)
-    return true
-  }
-  if (action.type === 'set_filters') {
-    const parsed = filterSchema.safeParse(action.payload)
-    if (!parsed.success || context.pathname !== '/events')
-      return false
-    const search = new URLSearchParams(context.search)
-    Object.entries(parsed.data.values).forEach(([key, value]) => search.set(key, value))
-    context.navigate(`${context.pathname}?${search}`)
-    return true
-  }
-  if (action.type === 'refresh_query') {
-    const parsed = refreshSchema.safeParse(action.payload)
-    if (!parsed.success)
-      return false
-    await context.queryClient.invalidateQueries({ queryKey: [parsed.data.queryKeyId] })
-    return true
-  }
-  if (action.type === 'highlight')
-    return highlightSchema.safeParse(action.payload).success
   if (action.type === 'send_message' || action.type === 'request_tool') {
     if (action.type === 'send_message') {
       if (!context.sendMessage)

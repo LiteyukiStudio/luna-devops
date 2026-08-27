@@ -18,7 +18,6 @@ export interface AIRunUsage {
 
 export interface AIAssistantState {
   blocks: AIBlock[]
-  seenEventIds: Set<string>
   runStatuses: Record<string, string>
   runExpectedVersions: Record<string, number>
   lastEventSequences: Record<string, number>
@@ -173,7 +172,6 @@ export function stateFromTimeline(timeline: AITimeline): AIAssistantState {
   }
   return {
     blocks: blocks.sort((a, b) => a.index - b.index),
-    seenEventIds: new Set(),
     runStatuses: Object.fromEntries(timeline.turns.flatMap(turn => turn.selectedRun ? [[turn.selectedRun.id, turn.selectedRun.status]] : [])),
     runExpectedVersions: Object.fromEntries(timeline.turns.flatMap(turn => turn.selectedRun?.expectedVersion === undefined ? [] : [[turn.selectedRun.id, turn.selectedRun.expectedVersion]])),
     lastEventSequences: Object.fromEntries(timeline.eventCursors.map(cursor => [cursor.runId, cursor.after])),
@@ -257,7 +255,6 @@ export function mergeTimelineSnapshot(current: AIAssistantState | undefined, tim
   return {
     ...snapshot,
     blocks: blocks.sort((a, b) => a.index - b.index),
-    seenEventIds: current.seenEventIds,
     lastEventSequences: Object.fromEntries([...new Set([...Object.keys(snapshot.lastEventSequences), ...Object.keys(current.lastEventSequences)])]
       .map(runId => [runId, Math.max(snapshot.lastEventSequences[runId] ?? 0, current.lastEventSequences[runId] ?? 0)])),
     runStatuses: mergeRunStatuses(snapshot.runStatuses, current.runStatuses),
@@ -519,7 +516,7 @@ function applyThinkingDelta(state: AIAssistantState, event: AIEvent, turnIndex: 
 }
 
 export function reduceAIEvent(state: AIAssistantState, event: AIEvent): AIAssistantState {
-  if (event.version !== 2 || !event.eventId || state.seenEventIds.has(event.eventId))
+  if (event.version !== 2 || !event.eventId)
     return state
   const lastSequence = state.lastEventSequences[event.runId] ?? 0
   if (event.eventSequence <= lastSequence)
@@ -547,7 +544,6 @@ export function reduceAIEvent(state: AIAssistantState, event: AIEvent): AIAssist
     ...state,
     desyncedRunIds,
     desyncRecoverySequences,
-    seenEventIds: new Set(state.seenEventIds).add(event.eventId),
     lastEventSequences: { ...state.lastEventSequences, [event.runId]: event.eventSequence },
     turnIndexes: { ...state.turnIndexes, [event.turnId]: turnIndex },
   }, event, turnIndex)
@@ -679,7 +675,6 @@ function normalizeToolResult(value: unknown): AIToolDisplayResult | undefined {
 
 export const emptyAIAssistantState: AIAssistantState = {
   blocks: [],
-  seenEventIds: new Set(),
   runStatuses: {},
   runExpectedVersions: {},
   lastEventSequences: {},

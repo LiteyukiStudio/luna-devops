@@ -1,3 +1,5 @@
+import { safeStorageGet, safeStorageRemove, safeStorageSet } from '@/lib/safe-storage'
+
 export type InterfaceStyle = 'minimal' | 'themed'
 export type UserInterfaceStylePreference = '' | InterfaceStyle
 
@@ -7,7 +9,7 @@ const userStyleStoragePrefix = 'luna-devops-user-interface-style:'
 
 export function applySiteMinimalModeDefault(value: unknown) {
   const minimal = String(value).trim().toLowerCase() === 'true'
-  writeStorage(siteMinimalModeStorageKey, String(minimal))
+  safeStorageSet(siteMinimalModeStorageKey, String(minimal))
   return applyInterfaceStyle(readActiveUserPreference() || (minimal ? 'minimal' : 'themed'))
 }
 
@@ -17,17 +19,17 @@ export function applyUserInterfaceStylePreference(userId: string, value: unknown
   if (!normalizedUserId)
     return applyInterfaceStyle(readSiteDefault())
 
-  writeStorage(activeUserStorageKey, normalizedUserId)
+  safeStorageSet(activeUserStorageKey, normalizedUserId)
   if (preference)
-    writeStorage(userStorageKey(normalizedUserId), preference)
+    safeStorageSet(userStorageKey(normalizedUserId), preference)
   else
-    removeStorage(userStorageKey(normalizedUserId))
+    safeStorageRemove(userStorageKey(normalizedUserId))
 
   return applyInterfaceStyle(preference || readSiteDefault())
 }
 
 export function clearActiveUserInterfaceStylePreference() {
-  removeStorage(activeUserStorageKey)
+  safeStorageRemove(activeUserStorageKey)
   return applyInterfaceStyle(readSiteDefault())
 }
 
@@ -41,41 +43,14 @@ function applyInterfaceStyle(style: InterfaceStyle) {
 }
 
 function readActiveUserPreference() {
-  const userId = readStorage(activeUserStorageKey)
-  return userId ? normalizeUserInterfaceStylePreference(readStorage(userStorageKey(userId))) : ''
+  const userId = safeStorageGet(activeUserStorageKey)
+  return userId ? normalizeUserInterfaceStylePreference(safeStorageGet(userStorageKey(userId))) : ''
 }
 
 function readSiteDefault(): InterfaceStyle {
-  return readStorage(siteMinimalModeStorageKey) === 'true' ? 'minimal' : 'themed'
+  return safeStorageGet(siteMinimalModeStorageKey) === 'true' ? 'minimal' : 'themed'
 }
 
 function userStorageKey(userId: string) {
   return `${userStyleStoragePrefix}${userId}`
-}
-
-function readStorage(key: string) {
-  try {
-    return localStorage.getItem(key)
-  }
-  catch {
-    return null
-  }
-}
-
-function writeStorage(key: string, value: string) {
-  try {
-    localStorage.setItem(key, value)
-  }
-  catch {
-    // The current DOM style remains usable when browser storage is unavailable.
-  }
-}
-
-function removeStorage(key: string) {
-  try {
-    localStorage.removeItem(key)
-  }
-  catch {
-    // The current DOM style remains usable when browser storage is unavailable.
-  }
 }

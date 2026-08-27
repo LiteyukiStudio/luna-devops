@@ -84,15 +84,6 @@ export function recordAIContent(
   telemetryLog(eventName, "debug", contentAttributes)
 }
 
-export function recordAvailableTools(tools: Array<{ operationId: string }>): void {
-  const operationIds = [...new Set(tools.map(tool => tool.operationId))].sort()
-  const span = tracer.startSpan("agent.tools.available", internalSpanOptions({
-    "luna.agent.available_tool.count": operationIds.length,
-    "luna.agent.available_tool.names": JSON.stringify(operationIds),
-  }))
-  span.end()
-}
-
 export const genAIClientTokenUsageMetric = {
   name: "gen_ai.client.token.usage",
   description: "Number of input and output tokens used.",

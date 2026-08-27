@@ -11,7 +11,7 @@ let provider: WebTracerProvider | undefined
 let spanProcessor: BatchSpanProcessor | undefined
 
 export function enableBrowserTelemetryRuntime() {
-  if (provider || typeof window === 'undefined')
+  if (provider)
     return
 
   spanProcessor = new WebBatchSpanProcessor(createBrowserTraceExporter(), {

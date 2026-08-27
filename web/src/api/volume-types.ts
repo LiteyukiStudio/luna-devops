@@ -178,7 +178,6 @@ export interface VolumeImportCreateInput {
   format: VolumeTransferFormat
   filename: string
   contentLength: number
-  sha256: string
 }
 
 export interface VolumeImportCreateResponse {

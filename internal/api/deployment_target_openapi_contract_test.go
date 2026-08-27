@@ -159,6 +159,11 @@ func TestDeploymentTargetAgentSchemaDescribesSourceAndStructuredFields(t *testin
 	if !ok || port["minimum"] != float64(1) || port["maximum"] != float64(65535) {
 		t.Fatalf("servicePorts.port bounds are invalid: %#v", port)
 	}
+	for _, legacy := range []string{"servicePort", "runtimeConfigSetIds"} {
+		if _, exists := properties[legacy]; exists {
+			t.Fatalf("Agent schema retains legacy deployment field %s", legacy)
+		}
+	}
 
 	buildVariables, ok := properties["buildVariables"].(map[string]any)
 	if !ok {

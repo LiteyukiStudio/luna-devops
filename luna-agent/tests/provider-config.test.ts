@@ -125,18 +125,10 @@ describe("RemoteConfigSnapshot", () => {
     expect(snapshot.current()?.version).toBe("cfg-1")
   })
 
-  it("accepts the configured upper tool-call limit", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => response(authoritativePayload({
-      runMaxToolCalls: 2048,
-    }))))
-    const config = await client().initialize()
-    expect(config.runtime.runMaxToolCalls).toBe(2048)
-  })
-
   it("rejects omitted runtime fields instead of merging local defaults", async () => {
     const payload = authoritativePayload()
     const runtime = { ...payload.runtime }
-    Reflect.deleteProperty(runtime, "assistantMaxOutputTokens")
+    Reflect.deleteProperty(runtime, "maxRequestRetries")
     vi.stubGlobal("fetch", vi.fn(async () => response({ ...payload, runtime })))
     await expect(client().initialize()).rejects.toThrow("ai.provider_config_invalid")
   })
@@ -177,7 +169,7 @@ describe("RemoteConfigSnapshot", () => {
   })
 
   it("rejects invalid limits instead of normalizing them", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => response(authoritativePayload({ runMaxToolCalls: 20 }))))
+    vi.stubGlobal("fetch", vi.fn(async () => response(authoritativePayload({ maxRequestRetries: 11 }))))
     await expect(client().initialize()).rejects.toThrow("ai.provider_config_invalid")
   })
 
@@ -213,14 +205,6 @@ function authoritativePayload(runtimeOverrides: Partial<RemoteRuntimeSettings> =
     runTimeoutMs: defaultRuntimeSettings.runTimeoutMs,
     agentConcurrentRuns: defaultRuntimeSettings.agentConcurrentRuns,
     userConcurrentRuns: defaultRuntimeSettings.userConcurrentRuns,
-    assistantMaxOutputTokens: defaultRuntimeSettings.assistantMaxOutputTokens,
-    maxModelSteps: defaultRuntimeSettings.maxModelSteps,
-    runMaxToolCalls: defaultRuntimeSettings.runMaxToolCalls,
-    maxInputBytes: defaultRuntimeSettings.maxInputBytes,
-    maxCardRepairAttempts: defaultRuntimeSettings.maxCardRepairAttempts,
-    contextMaxUncompressedTurnCount: defaultRuntimeSettings.contextMaxUncompressedTurnCount,
-    contextMaxCompressionTurnsPerCompile: defaultRuntimeSettings.contextMaxCompressionTurnsPerCompile,
-    contextSummaryMaxOutputTokens: defaultRuntimeSettings.contextSummaryMaxOutputTokens,
   }
   return {
     version: "cfg-1",

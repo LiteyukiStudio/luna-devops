@@ -28,15 +28,6 @@ const FALLBACK_RETURN_LOCATION: AIAssistantReturnLocation = {
   search: '',
   hash: '',
 }
-const URL_SCHEME_PATTERN = /^[a-z][a-z\d+.-]*:/i
-
-function hasControlCharacter(value: string): boolean {
-  return [...value].some((character) => {
-    const code = character.charCodeAt(0)
-    return code <= 31 || code === 127
-  })
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
 }
@@ -59,24 +50,7 @@ function safePathname(pathname: unknown): pathname is string {
   return typeof pathname === 'string'
     && pathname.startsWith('/')
     && !pathname.startsWith('//')
-    && !URL_SCHEME_PATTERN.test(pathname)
-    && !hasControlCharacter(pathname)
-    && !pathname.includes('\\')
-    && !pathname.includes('?')
-    && !pathname.includes('#')
     && !isAIAssistantRoutePath(pathname)
-}
-
-function safeSearch(search: unknown): search is string {
-  return typeof search === 'string'
-    && (search === '' || search.startsWith('?'))
-    && !hasControlCharacter(search)
-}
-
-function safeHash(hash: unknown): hash is string {
-  return typeof hash === 'string'
-    && (hash === '' || hash.startsWith('#'))
-    && !hasControlCharacter(hash)
 }
 
 function fallbackReturnLocation(): AIAssistantReturnLocation {
@@ -87,12 +61,14 @@ function readReturnLocation(value: unknown): AIAssistantReturnLocation | undefin
   if (!isRecord(value))
     return undefined
 
-  const search = value.search ?? ''
-  const hash = value.hash ?? ''
-  if (!safePathname(value.pathname) || !safeSearch(search) || !safeHash(hash))
+  if (!safePathname(value.pathname))
     return undefined
 
-  return { pathname: value.pathname, search, hash }
+  return {
+    pathname: value.pathname,
+    search: typeof value.search === 'string' ? value.search : '',
+    hash: typeof value.hash === 'string' ? value.hash : '',
+  }
 }
 
 export function createAIAssistantRouteState(

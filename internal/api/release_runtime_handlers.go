@@ -205,9 +205,8 @@ func (h *Handlers) StreamReleaseRuntimeTerminal(ctx *gin.Context) {
 	authorizationRevoked := h.monitorRuntimeTerminalAuthorization(sessionCtx, authorization, func(checkCtx context.Context, currentUser model.User) bool {
 		return h.releaseRuntimeTerminalAuthorizationAllowed(checkCtx, currentUser, reference)
 	}, cancel)
-	activityTracker := h.newRuntimeTerminalActivityTracker(authorization)
 
-	go h.readRuntimeTerminalMessages(sessionCtx, conn, stdinWriter, sizeQueue, activityTracker, cancel)
+	go h.readRuntimeTerminalMessages(conn, stdinWriter, sizeQueue, cancel)
 	err = client.RuntimeTerminal(sessionCtx, kubeprovider.RuntimeTerminalOptions{
 		Namespace:          namespace,
 		DeploymentTargetID: target.ID,
@@ -298,7 +297,7 @@ func (h *Handlers) releaseRuntimeTerminalProjectForUser(ctx *gin.Context, user m
 	return project, true
 }
 
-func (h *Handlers) readRuntimeTerminalMessages(ctx context.Context, conn *websocket.Conn, stdin *io.PipeWriter, sizeQueue *runtimeTerminalSizeQueue, activityTracker *runtimeTerminalActivityTracker, cancel context.CancelFunc) {
+func (h *Handlers) readRuntimeTerminalMessages(conn *websocket.Conn, stdin *io.PipeWriter, sizeQueue *runtimeTerminalSizeQueue, cancel context.CancelFunc) {
 	defer cancel()
 	defer stdin.Close()
 	for {
@@ -309,9 +308,6 @@ func (h *Handlers) readRuntimeTerminalMessages(ctx context.Context, conn *websoc
 		data, isInput := runtimeTerminalInputPayload(messageType, data, sizeQueue)
 		if !isInput {
 			continue
-		}
-		if !activityTracker.Record(ctx, time.Now()) {
-			return
 		}
 		if _, err := stdin.Write(data); err != nil {
 			return

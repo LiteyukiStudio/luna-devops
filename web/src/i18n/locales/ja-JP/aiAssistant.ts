@@ -17,6 +17,7 @@ const aiAssistant = {
     empty: 'アシスタントは現在のページコンテキストを組み合わせて、問題の診断やプラットフォーム操作の実行を支援します',
     inputLabel: 'Luna アシスタントへのメッセージを送信',
     inputPlaceholder: '診断する問題を記述…',
+    inputTooLarge: 'メッセージが {{limit}} の上限を超えています。短くしてから送信してください。',
     loadOlder: '以前のメッセージを読み込む',
     loadingOlder: '以前のメッセージを読み込み中',
     olderLoadFailed: '以前のメッセージの読み込みに失敗しました。再試行してください',
@@ -109,10 +110,6 @@ const aiAssistant = {
     },
     actions: {
       navigate: 'ページを開く',
-      select_tab: 'タブを切り替え',
-      set_filters: 'フィルターを適用',
-      refresh_query: 'データを更新',
-      highlight: 'リソースを特定',
       send_message: 'メッセージを送信',
       request_tool: '実行をリクエスト',
       opened: '実行済み',
@@ -263,9 +260,6 @@ const aiAssistant = {
       renderError: {
         group: 'この対話カードセットは一時的に表示できません。他のチャット内容は影響を受けません。',
         card: 'このカードは一時的に表示できません。他のカードは引き続き使用できます。',
-        content: 'このカード内容は一時的に表示できません。',
-        field: 'このフィールドは一時的に表示できません。アシスタントにカードを再生成させてください。',
-        action: 'このカード操作は一時的に利用できません。',
       },
       liveProgress: {
         label: 'タスクリアルタイム進捗',

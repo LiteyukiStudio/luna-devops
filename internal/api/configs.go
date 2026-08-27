@@ -32,12 +32,6 @@ type configDefinition struct {
 	Options     []string `json:"options,omitempty"`
 }
 
-const (
-	aiRunMaxToolCallsMin     = 32
-	aiRunMaxToolCallsMax     = 2048
-	aiRunMaxToolCallsDefault = 256
-)
-
 type configDefinitionResponse struct {
 	Key            string   `json:"key"`
 	LabelKey       string   `json:"labelKey"`
@@ -99,63 +93,6 @@ var configDefinitions = []configDefinition{
 	{Key: "ai.observability.tempo_token", Label: "Tempo 访问令牌", Type: "secret", Default: ""},
 	{Key: "ai.access.mode", Label: "AI 访问范围", Type: "select", Default: "all_authenticated", Options: []string{"all_authenticated", "admins"}},
 	{Key: "ai.quota.user_concurrent_runs", Label: "用户并发 Run", Type: "number", Default: "10"},
-	{Key: "ai.quota.user_daily_tokens", Label: "用户每日 Token", Type: "number", Default: "200000"},
-	{Key: "ai.quota.project_concurrent_runs", Label: "项目并发 Run", Type: "number", Default: "5"},
-	{Key: "ai.quota.run_max_tool_calls", Label: "Run 最大工具调用", Type: "number", Default: strconv.Itoa(aiRunMaxToolCallsDefault)},
-	{Key: "ai.quota.platform_daily_cost_soft", Label: "平台每日成本软上限", Type: "number", Default: "0"},
-	{Key: "ai.quota.platform_daily_cost_hard", Label: "平台每日成本硬上限", Type: "number", Default: "0"},
-	{Key: "ai.retention.conversation_days", Label: "AI 会话保留天数", Type: "number", Default: "90"},
-	{Key: "ai.retention.run_event_days", Label: "AI Run 事件保留天数", Type: "number", Default: "30"},
-	{Key: "ai.retention.checkpoint_days", Label: "AI Checkpoint 保留天数", Type: "number", Default: "7"},
-	{
-		Key:         "ai.context.max_uncompressed_turn_count",
-		Label:       "未压缩轮次阈值",
-		Description: "历史轮次超过该数量后强制触发压缩，范围 4–128，默认 64。",
-		Type:        "number",
-		Default:     "64",
-	},
-	{
-		Key:         "ai.context.max_compression_turns_per_compile",
-		Label:       "单次压缩最大轮次数",
-		Description: "一次上下文编译最多送入压缩器的历史轮次数，范围 8–1024，默认 512。",
-		Type:        "number",
-		Default:     "512",
-	},
-	{
-		Key:         "ai.context.summary_max_output_tokens",
-		Label:       "摘要最大输出 Token",
-		Description: "单次摘要生成允许的最大输出 Token 数，范围 200–32768，默认 16384。",
-		Type:        "number",
-		Default:     "16384",
-	},
-	{
-		Key:         "ai.model.max_output_tokens",
-		Label:       "模型最大输出 Token",
-		Description: "助手每次回复允许的最大输出 Token 数，范围 256–131072，默认 65536。实际可用上限仍由模型服务决定。",
-		Type:        "number",
-		Default:     "65536",
-	},
-	{
-		Key:         "ai.run.max_model_steps",
-		Label:       "Run 最大模型轮次",
-		Description: "单个 Run 内模型生成（含工具调用）的最大轮次数，用于防止失控循环，范围 1–1024，默认 256。",
-		Type:        "number",
-		Default:     "256",
-	},
-	{
-		Key:         "ai.run.max_input_k_bytes",
-		Label:       "用户输入大小上限（KB）",
-		Description: "单轮用户输入允许的最大字节数，范围 8–8192K，默认 1024K。",
-		Type:        "number",
-		Default:     "1024",
-	},
-	{
-		Key:         "ai.tools.max_card_repair_attempts",
-		Label:       "交互卡片修复上限",
-		Description: "模型生成的交互卡片参数校验失败后允许自动修正的最大次数，范围 1–10，默认 5。",
-		Type:        "number",
-		Default:     "5",
-	},
 	{
 		Key:         "site.title",
 		Label:       "网站标题",

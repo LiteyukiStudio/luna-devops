@@ -1,4 +1,4 @@
-import type { ApiError, Release } from '@/api'
+import type { Release } from '@/api'
 import { FitAddon } from '@xterm/addon-fit'
 import { Terminal as XTerm } from '@xterm/xterm'
 import { useEffect, useRef } from 'react'
@@ -8,7 +8,6 @@ import { createTracedWebSocket } from '@/lib/telemetry'
 import '@xterm/xterm/css/xterm.css'
 
 export function ApplicationRuntimeTerminalPanel({
-  authorize,
   container,
   fullscreen = false,
   projectId,
@@ -16,7 +15,6 @@ export function ApplicationRuntimeTerminalPanel({
   ready,
   socketUrl,
 }: {
-  authorize?: () => Promise<void>
   container: string
   fullscreen?: boolean
   projectId: string
@@ -67,7 +65,6 @@ export function ApplicationRuntimeTerminalPanel({
     terminal.writeln(t('deploymentsPage.webConsoleConnecting'))
     terminal.focus()
 
-    let cancelled = false
     let socket: WebSocket | undefined
 
     const sendResize = () => {
@@ -108,27 +105,12 @@ export function ApplicationRuntimeTerminalPanel({
       terminal.writeln(t('deploymentsPage.webConsoleConnectionFailed'))
     }
 
-    const connect = async () => {
-      try {
-        await authorize?.()
-      }
-      catch (error) {
-        if (!cancelled) {
-          terminal.writeln('')
-          terminal.writeln((error as ApiError).message || t('deploymentsPage.webConsoleAuthorizationFailed'))
-        }
-        return
-      }
-      if (cancelled)
-        return
-      socket = createTracedWebSocket(terminalSocketUrl, undefined, 'runtime.terminal.websocket')
-      socket.binaryType = 'arraybuffer'
-      socket.addEventListener('open', handleOpen)
-      socket.addEventListener('message', handleMessage)
-      socket.addEventListener('close', handleClose)
-      socket.addEventListener('error', handleError)
-    }
-    void connect()
+    socket = createTracedWebSocket(terminalSocketUrl, undefined, 'runtime.terminal.websocket')
+    socket.binaryType = 'arraybuffer'
+    socket.addEventListener('open', handleOpen)
+    socket.addEventListener('message', handleMessage)
+    socket.addEventListener('close', handleClose)
+    socket.addEventListener('error', handleError)
 
     const fitTimer = window.setTimeout(fitAndResize, 50)
     window.addEventListener('resize', fitAndResize)
@@ -136,7 +118,6 @@ export function ApplicationRuntimeTerminalPanel({
     return () => {
       window.clearTimeout(fitTimer)
       window.removeEventListener('resize', fitAndResize)
-      cancelled = true
       socket?.removeEventListener('open', handleOpen)
       socket?.removeEventListener('message', handleMessage)
       socket?.removeEventListener('close', handleClose)
@@ -146,7 +127,7 @@ export function ApplicationRuntimeTerminalPanel({
       socket?.close()
       terminal.dispose()
     }
-  }, [authorize, container, projectId, ready, release, socketUrl, t])
+  }, [container, projectId, ready, release, socketUrl, t])
 
   return (
     <div className={fullscreen ? 'flex h-full min-h-0 p-3 pt-2' : 'p-3'}>

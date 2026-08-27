@@ -32,14 +32,6 @@ const runtimeSettingsSchema = z.object({
   runTimeoutMs: z.number().int().min(30_000).max(7_200_000),
   agentConcurrentRuns: z.number().int().min(1).max(100),
   userConcurrentRuns: z.number().int().min(1).max(100),
-  assistantMaxOutputTokens: z.number().int().min(256).max(128 * 1024),
-  maxModelSteps: z.number().int().min(1).max(1024),
-  runMaxToolCalls: z.number().int().min(32).max(2048),
-  maxInputBytes: z.number().int().min(8 * 1024).max(8 * 1024 * 1024),
-  maxCardRepairAttempts: z.number().int().min(1).max(10),
-  contextMaxUncompressedTurnCount: z.number().int().min(4).max(128),
-  contextMaxCompressionTurnsPerCompile: z.number().int().min(8).max(1024),
-  contextSummaryMaxOutputTokens: z.number().int().min(200).max(32 * 1024),
 }).strict()
 
 const remoteProviderConfigSchema = z.object({

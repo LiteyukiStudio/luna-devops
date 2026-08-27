@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"io"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -136,14 +135,12 @@ func TestStreamHeartbeatRefreshesProgressAndStops(t *testing.T) {
 
 func TestStreamImportHasAbsoluteDurationLimit(t *testing.T) {
 	content := []byte("direct import archive")
-	digest := sha256.Sum256(content)
-	checksum := hex.EncodeToString(digest[:])
 	domain := &volumeDomainStub{
 		project: model.ProjectVolume{ID: "pvol_timeout", ProjectID: "prj_timeout"},
 		transfer: model.VolumeTransfer{
 			ID: "vtx_timeout", ProjectID: "prj_timeout", ProjectVolumeID: "pvol_timeout",
 			Direction: model.VolumeTransferDirectionImport, State: model.VolumeTransferStateReady,
-			ExpectedBytes: int64(len(content)), SHA256: checksum, ActorID: "usr_timeout", ExpiresAt: time.Now().Add(time.Hour),
+			ExpectedBytes: int64(len(content)), ActorID: "usr_timeout", ExpiresAt: time.Now().Add(time.Hour),
 		},
 	}
 	service := NewService(domain, deadlineRuntimeStub{}, ticketStoreStub{}, Options{
@@ -152,7 +149,7 @@ func TestStreamImportHasAbsoluteDurationLimit(t *testing.T) {
 	})
 	body := newDeadlineBlockingReader()
 	started := time.Now()
-	_, err := service.StreamImport(context.Background(), "prj_timeout", "vtx_timeout", Actor{UserID: "usr_timeout"}, body, int64(len(content)), checksum)
+	_, err := service.StreamImport(context.Background(), "prj_timeout", "vtx_timeout", Actor{UserID: "usr_timeout"}, body, int64(len(content)))
 	if !errors.Is(err, context.DeadlineExceeded) || volume.ErrorCode(err) != volume.CodeTransferJobFailed {
 		t.Fatalf("stream timeout error = %v (code %q)", err, volume.ErrorCode(err))
 	}
@@ -223,19 +220,17 @@ func TestStreamErrorCodePreservesRuntimeStableCode(t *testing.T) {
 
 func TestStreamImportCompletionFailureTransitionsToFailed(t *testing.T) {
 	content := []byte("direct import archive")
-	digest := sha256.Sum256(content)
-	checksum := hex.EncodeToString(digest[:])
 	domain := &volumeDomainStub{
 		project: model.ProjectVolume{ID: "pvol_import", ProjectID: "prj_import"},
 		transfer: model.VolumeTransfer{
 			ID: "vtx_import", ProjectID: "prj_import", ProjectVolumeID: "pvol_import",
 			Direction: model.VolumeTransferDirectionImport, State: model.VolumeTransferStateReady,
-			ExpectedBytes: int64(len(content)), SHA256: checksum, ActorID: "usr_import", ExpiresAt: time.Now().Add(time.Hour),
+			ExpectedBytes: int64(len(content)), ActorID: "usr_import", ExpiresAt: time.Now().Add(time.Hour),
 		},
 		completeErr: errors.New("database unavailable"),
 	}
 	service := NewService(domain, runtimeStreamerStub{}, ticketStoreStub{}, Options{HeartbeatInterval: time.Hour})
-	_, err := service.StreamImport(context.Background(), "prj_import", "vtx_import", Actor{UserID: "usr_import"}, io.NopCloser(bytesReader(content)), int64(len(content)), checksum)
+	_, err := service.StreamImport(context.Background(), "prj_import", "vtx_import", Actor{UserID: "usr_import"}, io.NopCloser(bytesReader(content)), int64(len(content)))
 	if volume.ErrorCode(err) != volume.CodeTransferJobFailed || domain.failCalls.Load() != 1 {
 		t.Fatalf("completion failure = %v (code %q), fail calls=%d", err, volume.ErrorCode(err), domain.failCalls.Load())
 	}
@@ -247,7 +242,7 @@ func TestReadyImportExpiryIsRejectedBeforeClaim(t *testing.T) {
 		State: model.VolumeTransferStateReady, ActorID: "usr_expired", ExpiresAt: time.Now().Add(-time.Minute),
 	}}
 	service := NewService(domain, runtimeStreamerStub{}, ticketStoreStub{}, Options{})
-	_, err := service.StreamImport(context.Background(), "prj_expired", "vtx_expired", Actor{UserID: "usr_expired"}, bytesReader(nil), 1, strings.Repeat("0", 64))
+	_, err := service.StreamImport(context.Background(), "prj_expired", "vtx_expired", Actor{UserID: "usr_expired"}, bytesReader(nil), 1)
 	if volume.ErrorCode(err) != volume.CodeTransferExpired || domain.claimCalls.Load() != 0 {
 		t.Fatalf("expired stream error=%v code=%q claim calls=%d", err, volume.ErrorCode(err), domain.claimCalls.Load())
 	}

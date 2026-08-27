@@ -23,8 +23,8 @@ import (
 const (
 	aiAssistantEnabledConfigKey = "ai.assistant.enabled"
 	aiAccessModeConfigKey       = "ai.access.mode"
-	aiMaxInputBytesConfigKey    = "ai.run.max_input_k_bytes"
-	aiDefaultMaxInputKBytes     = 1024
+	aiTextInputLimitBytes       = 128 * 1024
+	aiRequestBodyLimitBytes     = 1024 * 1024
 )
 
 var aiToolActionOperationID = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_.-]{2,100}$`)
@@ -50,7 +50,7 @@ func (h *Handlers) GetAICapabilities(ctx *gin.Context) {
 	}
 	ctx.JSON(http.StatusOK, aiCapabilitiesResponse{
 		Enabled:       h.aiAssistantEnabled() && h.aiAccessAllowed(role),
-		MaxInputBytes: h.aiMaxInputBytes(),
+		MaxInputBytes: aiTextInputLimitBytes,
 	})
 }
 
@@ -77,16 +77,12 @@ func (h *Handlers) ProxyAIRequest(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	if len(body) > 0 && containsUntrustedAIIdentity(body) {
-		writeErrorCode(ctx, http.StatusBadRequest, "ai.actor_field_forbidden", "actor identity is derived from the current session")
-		return
-	}
 	if route.validate != nil && !route.validate(h, ctx, model.User{ID: actor.UserID, Language: actor.Locale}, body) {
 		return
 	}
 	if ctx.FullPath() == "/api/v1/ai/conversations/:conversationId/turns" {
 		var attached bool
-		body, attached = h.attachAIModelSnapshot(ctx, body)
+		body, attached = h.attachAIModelSnapshot(ctx, actor.UserID, body)
 		if !attached {
 			return
 		}
@@ -127,7 +123,7 @@ func (h *Handlers) ProxyAIRequest(ctx *gin.Context) {
 	h.copyAIResponse(ctx, response, route.status, "ai.agent_unavailable")
 }
 
-func (h *Handlers) attachAIModelSnapshot(ctx *gin.Context, body []byte) ([]byte, bool) {
+func (h *Handlers) attachAIModelSnapshot(ctx *gin.Context, userID string, body []byte) ([]byte, bool) {
 	var input map[string]any
 	if json.Unmarshal(body, &input) != nil {
 		writeErrorCode(ctx, http.StatusBadRequest, "request.invalid_json", "invalid turn input")
@@ -142,11 +138,7 @@ func (h *Handlers) attachAIModelSnapshot(ctx *gin.Context, body []byte) ([]byte,
 	if db == nil {
 		return body, true
 	}
-	user, ok := h.currentUser(ctx)
-	if !ok {
-		return nil, false
-	}
-	if _, err := (billing.Service{DB: db}).EnsureWallet(user.ID); err != nil {
+	if _, err := (billing.Service{DB: db}).EnsureWallet(userID); err != nil {
 		writeErrorCode(ctx, http.StatusServiceUnavailable, "billing.wallet_unavailable", "personal wallet is unavailable")
 		return nil, false
 	}
@@ -257,17 +249,6 @@ func (h *Handlers) aiAssistantEnabled() bool {
 	return strings.EqualFold(strings.TrimSpace(h.configs.get([]string{aiAssistantEnabledConfigKey})[aiAssistantEnabledConfigKey]), "true")
 }
 
-func (h *Handlers) aiMaxInputBytes() int {
-	if h.configs == nil {
-		return aiDefaultMaxInputKBytes * 1024
-	}
-	return configuredAIMaxInputBytes(h.configs.get([]string{aiMaxInputBytesConfigKey}))
-}
-
-func configuredAIMaxInputBytes(values map[string]string) int {
-	return aiBoundedIntegerConfig(values, aiMaxInputBytesConfigKey) * 1024
-}
-
 func (h *Handlers) copyAIResponse(ctx *gin.Context, response *aiagent.Response, fallbackStatus int, errorCode string) {
 	status := response.StatusCode
 	if status == 0 {
@@ -312,47 +293,17 @@ func (h *Handlers) readAIBody(ctx *gin.Context) ([]byte, bool) {
 	if ctx.Request.Body == nil {
 		return nil, true
 	}
-	maxInputBytes := h.aiMaxInputBytes()
-	body, err := io.ReadAll(io.LimitReader(ctx.Request.Body, int64(maxInputBytes)+1))
+	body, err := io.ReadAll(io.LimitReader(ctx.Request.Body, aiRequestBodyLimitBytes+1))
 	if err != nil {
 		writeErrorCode(ctx, http.StatusBadRequest, "request.invalid", "cannot read request body")
 		return nil, false
 	}
-	if len(body) > maxInputBytes {
+	if len(body) > aiRequestBodyLimitBytes {
 		writeErrorCode(ctx, http.StatusRequestEntityTooLarge, "ai.input_too_large", "AI request body exceeds the limit")
 		return nil, false
 	}
 	ctx.Request.Body = io.NopCloser(bytes.NewReader(body))
 	return body, true
-}
-
-func containsUntrustedAIIdentity(body []byte) bool {
-	var value any
-	if json.Unmarshal(body, &value) != nil {
-		return false
-	}
-	var walk func(any) bool
-	walk = func(current any) bool {
-		switch typed := current.(type) {
-		case map[string]any:
-			for key, child := range typed {
-				if strings.EqualFold(key, "userId") || strings.EqualFold(key, "sessionId") || strings.EqualFold(key, "oauthGrantId") {
-					return true
-				}
-				if walk(child) {
-					return true
-				}
-			}
-		case []any:
-			for _, child := range typed {
-				if walk(child) {
-					return true
-				}
-			}
-		}
-		return false
-	}
-	return walk(value)
 }
 
 func validateCreateAIConversation(h *Handlers, ctx *gin.Context, user model.User, body []byte) bool {
@@ -426,12 +377,23 @@ func validateTurnInput(h *Handlers, ctx *gin.Context, _ model.User, body []byte)
 		writeErrorCode(ctx, http.StatusBadRequest, "request.invalid_json", "invalid turn input")
 		return false
 	}
-	if !validateEnabledAIModel(h, ctx, input.ModelID) {
+	if strings.TrimSpace(input.ModelID) == "" {
+		writeErrorCode(ctx, http.StatusBadRequest, "ai.model_required", "AI model is required")
 		return false
 	}
-	for _, part := range input.Input.Parts {
-		if part.Type != "text" || strings.TrimSpace(part.Text) == "" {
+	totalTextBytes := 0
+	for index, part := range input.Input.Parts {
+		text := strings.TrimSpace(part.Text)
+		if part.Type != "text" || text == "" {
 			writeErrorCode(ctx, http.StatusBadRequest, "ai.input_invalid", "only non-empty text parts are supported")
+			return false
+		}
+		if index > 0 {
+			totalTextBytes++
+		}
+		totalTextBytes += len([]byte(text))
+		if totalTextBytes > aiTextInputLimitBytes {
+			writeErrorCode(ctx, http.StatusRequestEntityTooLarge, "ai.input_too_large", "AI text input exceeds the limit")
 			return false
 		}
 	}
@@ -448,8 +410,17 @@ func validateToolActionInput(_ *Handlers, ctx *gin.Context, _ model.User, body [
 		Arguments   map[string]any `json:"arguments"`
 		Message     string         `json:"message"`
 	}
-	if json.Unmarshal(body, &input) != nil || !aiToolActionOperationID.MatchString(input.OperationID) || strings.TrimSpace(input.Message) == "" || len([]byte(input.Message)) > 2000 {
+	if json.Unmarshal(body, &input) != nil || !aiToolActionOperationID.MatchString(input.OperationID) {
 		writeErrorCode(ctx, http.StatusBadRequest, "ai.input_invalid", "invalid AI tool action input")
+		return false
+	}
+	message := strings.TrimSpace(input.Message)
+	if message == "" {
+		writeErrorCode(ctx, http.StatusBadRequest, "ai.input_invalid", "invalid AI tool action input")
+		return false
+	}
+	if len([]byte(message)) > aiTextInputLimitBytes {
+		writeErrorCode(ctx, http.StatusRequestEntityTooLarge, "ai.input_too_large", "AI text input exceeds the limit")
 		return false
 	}
 	if input.Arguments == nil {
@@ -458,6 +429,22 @@ func validateToolActionInput(_ *Handlers, ctx *gin.Context, _ model.User, body [
 	}
 	if strings.TrimSpace(ctx.GetHeader("Idempotency-Key")) == "" {
 		writeErrorCode(ctx, http.StatusBadRequest, "idempotency_key_required", "Idempotency-Key is required")
+		return false
+	}
+	return true
+}
+
+func validateRunInput(_ *Handlers, ctx *gin.Context, _ model.User, body []byte) bool {
+	var input struct {
+		Text            string `json:"text"`
+		ExpectedVersion *int64 `json:"expectedVersion"`
+	}
+	if json.Unmarshal(body, &input) != nil || input.ExpectedVersion == nil || strings.TrimSpace(input.Text) == "" {
+		writeErrorCode(ctx, http.StatusBadRequest, "ai.input_invalid", "invalid AI run input")
+		return false
+	}
+	if len([]byte(strings.TrimSpace(input.Text))) > aiTextInputLimitBytes {
+		writeErrorCode(ctx, http.StatusRequestEntityTooLarge, "ai.input_too_large", "AI text input exceeds the limit")
 		return false
 	}
 	return true
@@ -524,6 +511,6 @@ var aiProxyRoutes = map[string]aiProxyRoute{
 	"GET /api/v1/ai/runs/:runId":                                 {method: "GET", internal: "/internal/v1/runs/:runId"},
 	"GET /api/v1/ai/runs/:runId/events":                          {method: "GET", internal: "/internal/v1/runs/:runId/events", stream: true},
 	"POST /api/v1/ai/runs/:runId/cancel":                         {method: "POST", internal: "/internal/v1/runs/:runId/cancel", status: http.StatusAccepted},
-	"POST /api/v1/ai/runs/:runId/input":                          {method: "POST", internal: "/internal/v1/runs/:runId/input", status: http.StatusAccepted},
+	"POST /api/v1/ai/runs/:runId/input":                          {method: "POST", internal: "/internal/v1/runs/:runId/input", status: http.StatusAccepted, validate: validateRunInput},
 	"POST /api/v1/ai/runs/:runId/approvals/:toolCallId/decision": {method: "POST", internal: "/internal/v1/runs/:runId/approvals/:toolCallId/decision", status: http.StatusAccepted},
 }

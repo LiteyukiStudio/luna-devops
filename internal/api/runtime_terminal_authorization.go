@@ -15,7 +15,8 @@ import (
 )
 
 const (
-	runtimeTerminalAuthorizationInterval = 3 * time.Second
+	runtimeTerminalIdentityCheckInterval = 20 * time.Second
+	runtimeTerminalResourceCheckInterval = 60 * time.Second
 	runtimeTerminalResourceCheckTimeout  = 2 * time.Second
 )
 
@@ -123,30 +124,31 @@ func (h *Handlers) monitorRuntimeTerminalAuthorization(
 	authorizationAllowed func(context.Context, model.User) bool,
 	cancel context.CancelFunc,
 ) <-chan struct{} {
-	return h.monitorRuntimeTerminalAuthorizationAtInterval(ctx, binding, authorizationAllowed, cancel, runtimeTerminalAuthorizationInterval)
-}
-
-func (h *Handlers) monitorRuntimeTerminalAuthorizationAtInterval(
-	ctx context.Context,
-	binding runtimeTerminalAuthorizationBinding,
-	authorizationAllowed func(context.Context, model.User) bool,
-	cancel context.CancelFunc,
-	interval time.Duration,
-) <-chan struct{} {
 	revoked := make(chan struct{})
 	go func() {
-		ticker := time.NewTicker(interval)
-		defer ticker.Stop()
+		identityTicker := time.NewTicker(runtimeTerminalIdentityCheckInterval)
+		resourceTicker := time.NewTicker(runtimeTerminalResourceCheckInterval)
+		defer identityTicker.Stop()
+		defer resourceTicker.Stop()
+		revoke := func() {
+			close(revoked)
+			cancel()
+		}
 		for {
 			select {
 			case <-ctx.Done():
 				return
-			case <-ticker.C:
+			case <-identityTicker.C:
+				if _, ok := h.runtimeTerminalIdentityState(ctx, binding); ok {
+					continue
+				}
+				revoke()
+				return
+			case <-resourceTicker.C:
 				if h.runtimeTerminalAuthorizationActive(ctx, binding, authorizationAllowed) {
 					continue
 				}
-				close(revoked)
-				cancel()
+				revoke()
 				return
 			}
 		}
@@ -159,7 +161,15 @@ func (h *Handlers) runtimeTerminalAuthorizationActive(
 	binding runtimeTerminalAuthorizationBinding,
 	authorizationAllowed func(context.Context, model.User) bool,
 ) bool {
-	now := time.Now()
+	state, ok := h.runtimeTerminalIdentityState(ctx, binding)
+	if !ok {
+		return false
+	}
+	state.AuthorizationAllowed = authorizationAllowed(ctx, state.User)
+	return state.active(binding, time.Now())
+}
+
+func (h *Handlers) runtimeTerminalIdentityState(ctx context.Context, binding runtimeTerminalAuthorizationBinding) (runtimeTerminalAuthorizationState, bool) {
 	state := runtimeTerminalAuthorizationState{}
 	db := h.dbWithContext(ctx).WithContext(ctx)
 	if grantID, oauth := runtimeTerminalOAuthGrantID(binding.SubjectID); oauth {
@@ -169,27 +179,7 @@ func (h *Handlers) runtimeTerminalAuthorizationActive(
 		_ = db.First(&state.Session, "id = ? and user_id = ?", binding.SubjectID, binding.UserID).Error
 	}
 	_ = db.First(&state.User, "id = ? and disabled = ?", binding.UserID, false).Error
-	if !state.identityActive(binding, now) {
-		return false
-	}
-	state.AuthorizationAllowed = authorizationAllowed(ctx, state.User)
-	now = time.Now()
-	if !state.active(binding, now) {
-		return false
-	}
-	return true
-}
-
-type runtimeTerminalActivityTracker struct {
-	binding runtimeTerminalAuthorizationBinding
-}
-
-func (h *Handlers) newRuntimeTerminalActivityTracker(binding runtimeTerminalAuthorizationBinding) *runtimeTerminalActivityTracker {
-	return &runtimeTerminalActivityTracker{binding: binding}
-}
-
-func (tracker *runtimeTerminalActivityTracker) Record(_ context.Context, now time.Time) bool {
-	return tracker == nil || tracker.binding.Deadline.After(now)
+	return state, state.identityActive(binding, time.Now())
 }
 
 type releaseRuntimeTerminalAuthorizationReference struct {

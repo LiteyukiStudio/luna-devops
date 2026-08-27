@@ -202,8 +202,6 @@ const operationsDashboardPage = {
       databaseSystem: 'データベースタイプ',
       errorType: 'エラータイプ',
       runOutcome: '実行結果',
-      availableToolCount: '利用可能ツール数',
-      availableToolNames: '利用可能ツール一覧',
     },
     attributeValues: { agent: 'Agent 実行', invoke_agent: 'Agent 呼び出し', chat: 'モデル会話', execute_tool: 'ツール実行', completed: '完了', failed: '失敗', canceled: 'キャンセル済み' },
     usageStatusValues: { reported: '報告済み', unavailable: '利用不可', reconciliation_required: '照合が必要' },
@@ -231,7 +229,6 @@ const operationsDashboardPage = {
       persistence: '実行状態を保存',
       externalRequest: '外部サービスにアクセス',
       internalOperation: '内部処理',
-      availableTools: 'モデルツールを配信 · {{count}} 個',
     },
   },
   conversationDetail: {
@@ -272,7 +269,6 @@ const operationsDashboardPage = {
     contextUnavailable: 'この Trace に関連するセッションタイムラインが見つかりませんでした。セッションがクリーンアップされたか、Trace が関連情報をまだ書き込んでいない旧バージョンからのものです。',
     spanWaterfall: 'Span ウォーターフォール',
     spanWaterfallDescription: 'モデル、ツール、HTTP、データベース操作の親子関係と時間を確認します。',
-    availableTools: '今回のモデルで利用可能なツール',
   },
 }
 

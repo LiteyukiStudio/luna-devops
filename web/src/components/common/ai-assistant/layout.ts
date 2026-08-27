@@ -1,3 +1,5 @@
+import { safeStorageGet } from '@/lib/safe-storage'
+
 export const WINDOW_STORAGE_KEY = 'luna.ai-assistant.window.v2'
 export const LAUNCHER_STORAGE_KEY = 'luna.ai-assistant.launcher.v1'
 export const VIEWPORT_GUTTER = 24
@@ -31,8 +33,8 @@ export function resolveAIDesktopConversationLayout(width: number): AIDesktopConv
 
 function viewportSize(): { width: number, height: number } {
   return {
-    width: typeof window === 'undefined' ? 1280 : window.innerWidth,
-    height: typeof window === 'undefined' ? 800 : window.innerHeight,
+    width: window.innerWidth,
+    height: window.innerHeight,
   }
 }
 
@@ -53,7 +55,7 @@ function defaultWindowPreference(): WindowPreference {
 
 export function readWindowPreference(): WindowPreference {
   try {
-    const value = JSON.parse(localStorage.getItem(WINDOW_STORAGE_KEY) ?? '')
+    const value = JSON.parse(safeStorageGet(WINDOW_STORAGE_KEY) ?? '')
     if (typeof value.x === 'number' && typeof value.y === 'number' && typeof value.width === 'number' && typeof value.height === 'number') {
       const viewport = viewportSize()
       const width = Math.min(viewport.width - VIEWPORT_GUTTER * 2, Math.max(MIN_WINDOW_WIDTH, value.width))
@@ -72,7 +74,7 @@ function defaultLauncherPosition(): Position {
 
 export function readLauncherPosition(): Position {
   try {
-    const value = JSON.parse(localStorage.getItem(LAUNCHER_STORAGE_KEY) ?? '')
+    const value = JSON.parse(safeStorageGet(LAUNCHER_STORAGE_KEY) ?? '')
     if (typeof value.x === 'number' && typeof value.y === 'number')
       return clampAssistantPosition(value, LAUNCHER_SIZE, LAUNCHER_SIZE)
   }

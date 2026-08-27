@@ -462,8 +462,11 @@ func validateVolumeTransferSpec(ctx context.Context, spec VolumeTransferSpec) (V
 	if spec.CapacityBytes < 1 || spec.CapacityBytes > volumeTransferMaximumBytes || spec.MaxArchiveBytes < 1 || spec.MaxArchiveBytes > volumeTransferMaximumBytes || spec.ExpectedBytes < 0 || spec.ExpectedBytes > volumeTransferMaximumBytes {
 		return VolumeTransferSpec{}, fmt.Errorf("%w: byte limits are invalid", ErrInvalidVolumeTransferSpec)
 	}
-	if spec.Direction == "import" && (spec.ExpectedBytes < 1 || !validSHA256Hex(spec.ExpectedSHA256)) {
-		return VolumeTransferSpec{}, fmt.Errorf("%w: import length and checksum are required", ErrInvalidVolumeTransferSpec)
+	if spec.Direction == "import" && spec.ExpectedBytes < 1 {
+		return VolumeTransferSpec{}, fmt.Errorf("%w: import length is required", ErrInvalidVolumeTransferSpec)
+	}
+	if spec.ExpectedSHA256 != "" && !validSHA256Hex(spec.ExpectedSHA256) {
+		return VolumeTransferSpec{}, fmt.Errorf("%w: expected checksum is invalid", ErrInvalidVolumeTransferSpec)
 	}
 	if spec.VolumeMode == "Filesystem" && spec.Format != "tar_gz" || spec.VolumeMode == "Block" && spec.Format != "raw_zst" || spec.VolumeMode != "Filesystem" && spec.VolumeMode != "Block" {
 		return VolumeTransferSpec{}, fmt.Errorf("%w: volume mode and format mismatch", ErrInvalidVolumeTransferSpec)

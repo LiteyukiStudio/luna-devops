@@ -7,7 +7,7 @@ import { RunStateConflictError, type Repository } from "../persistence/repositor
 import type { RemoteConfigSnapshot, RemoteProviderConfig } from "../provider/config-client.js"
 import type { ToolCatalogRegistry } from "../tools/catalog-registry.js"
 import { genAIAgentName, genAIAgentSpanAttributes, genAIInputMessages, genAIOutputMessages, genAIToolCallObject, genAIToolSpanAttributes } from "../genai-semconv.js"
-import { agentRuntimeInternals, defaultRuntimeSettings, runtimeSettingsSnapshot, type RuntimeSettings } from "../runtime-settings.js"
+import { agentRuntimeInternals, defaultRuntimeSettings, runtimeSettingsFromRemote, runtimeSettingsSnapshot, type RuntimeSettings } from "../runtime-settings.js"
 import { agentMetrics, errorDiagnostic, extractTraceContext, internalSpanOptions, recordAIContent, recordSpanError, stableErrorCode, telemetryLog, withSpan } from "../telemetry.js"
 import { ToolInterruption, type ToolOrchestrator } from "../tools/orchestrator.js"
 import { ToolLoopStoppedError } from "../tools/loop-guard.js"
@@ -805,16 +805,7 @@ export class RunExecutor {
           ...errorDiagnostic(error, "ai.persistence_unavailable"),
         }))
     }
-    const runtimeSettings = {
-      ...candidate.runtime,
-      // 这些策略只在进程启动时从环境变量读取，不随平台配置热更新。
-      contextCompressionTriggerRatio: this.runtimeSettings.contextCompressionTriggerRatio,
-      contextRecentTurnCount: this.runtimeSettings.contextRecentTurnCount,
-      contextMaxHistoryPayloadBytes: this.runtimeSettings.contextMaxHistoryPayloadBytes,
-      contextMaxSummaryPayloadBytes: this.runtimeSettings.contextMaxSummaryPayloadBytes,
-      contextMaxContinuationPayloadBytes: this.runtimeSettings.contextMaxContinuationPayloadBytes,
-      toolResultPayloadBudget: this.runtimeSettings.toolResultPayloadBudget,
-    }
+    const runtimeSettings = runtimeSettingsFromRemote(candidate.runtime)
     this.tools?.setRunMaxToolCalls(runtimeSettings.runMaxToolCalls)
     this.runtimeSettings = runtimeSettingsSnapshot(runtimeSettings)
     this.providerConfig = candidate

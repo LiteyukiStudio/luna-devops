@@ -157,6 +157,12 @@ func (s *Service) getWebResource(ctx context.Context, userID, rawURL string) (*h
 		return nil, "", err
 	}
 	if proxyURL != nil {
+		if err := policy.ValidateProxyTarget(ctx, parsed); err != nil {
+			if errors.Is(err, security.ErrBlockedByPolicy) {
+				return nil, "", fmt.Errorf("%w: target denied by network policy", ErrWebTargetBlocked)
+			}
+			return nil, "", ErrInvalidInput
+		}
 		// 目标地址已在请求与重定向阶段按用户出网策略校验。代理本身是平台管理员
 		// 配置的受信传输节点，因此拨号策略只精确放行当前代理主机与端口。
 		proxyPolicy := security.AdminEgressPolicy()
@@ -178,6 +184,14 @@ func (s *Service) getWebResource(ctx context.Context, userID, rawURL string) (*h
 				return fmt.Errorf("%w: redirect target is blocked", ErrWebTargetBlocked)
 			}
 			return ErrInvalidInput
+		}
+		if proxyURL != nil {
+			if err := policy.ValidateProxyTarget(request.Context(), request.URL); err != nil {
+				if errors.Is(err, security.ErrBlockedByPolicy) {
+					return fmt.Errorf("%w: redirect target is blocked", ErrWebTargetBlocked)
+				}
+				return ErrInvalidInput
+			}
 		}
 		return nil
 	}

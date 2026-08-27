@@ -4,15 +4,14 @@ import type { RequestVerifier } from "./auth.js"
 import type { Config } from "./config.js"
 import type { AIModelSnapshot, ActorContext, Run, RunEvent } from "./domain.js"
 import { RunStateConflictError, type Repository } from "./persistence/repository.js"
-import type { ModelProvider } from "./provider/provider.js"
 import type { RemoteConfigSnapshot } from "./provider/config-client.js"
 import { createConfiguredProvider } from "./provider/managed.js"
 import { redact } from "./redaction.js"
 import type { ToolOrchestrator } from "./tools/orchestrator.js"
 import { presentEventForRun, presentTimeline } from "./timeline-presenter.js"
-import { defaultRuntimeSettings } from "./runtime-settings.js"
 import type { RunStreamBus } from "./run-stream-bus.js"
 import { RunStreamHubManager } from "./run-stream-hub.js"
+import { maximumRequestBodyBytes, maximumTurnInputBytes, utf8ByteLength } from "./input-limits.js"
 import { agentLogger, agentMetrics, captureTraceContext, errorDiagnostic, internalSpanOptions, stableErrorCode as telemetryErrorCode, telemetryLog, withSpan } from "./telemetry.js"
 
 declare module "fastify" {
@@ -23,6 +22,16 @@ const id = z.string().min(5).max(64)
 const page = z.coerce.number().int().min(1).default(1)
 const pageSize = z.coerce.number().int().min(1).max(100).default(20)
 const timelineLimit = z.coerce.number().int().min(1).max(100).default(30)
+const inputText = z.string().trim().min(1).refine(
+  value => utf8ByteLength(value) <= maximumTurnInputBytes,
+  { message: "input exceeds UTF-8 byte limit" },
+)
+const turnInput = z.object({
+  parts: z.array(z.object({ type: z.literal("text"), text: inputText })).min(1).max(10),
+}).refine(
+  value => utf8ByteLength(value.parts.map(part => part.text).join("\n")) <= maximumTurnInputBytes,
+  { message: "input exceeds UTF-8 byte limit", path: ["parts"] },
+)
 const aiModelSnapshot = z.object({
   id: id,
   name: z.string().trim().min(1).max(200),
@@ -36,7 +45,6 @@ export function buildServer(input: {
   config: Config
   repository: Repository
   requestVerifier: RequestVerifier
-  provider: ModelProvider
   tools?: ToolOrchestrator
   remoteConfig?: RemoteConfigSnapshot
   cancelRun?: (runId: string) => boolean | Promise<boolean>
@@ -47,7 +55,7 @@ export function buildServer(input: {
   const toolCatalogDigest = () => typeof input.toolCatalogDigest === "function" ? input.toolCatalogDigest() : input.toolCatalogDigest
   const app = Fastify({
     ...(input.config.NODE_ENV === "test" ? { logger: false as const } : { loggerInstance: agentLogger() as unknown as FastifyBaseLogger }),
-    bodyLimit: 256 * 1024,
+    bodyLimit: maximumRequestBodyBytes,
     logController: new LogController({ disableRequestLogging: true }),
     requestIdHeader: "x-request-id",
   })
@@ -81,37 +89,11 @@ export function buildServer(input: {
     }
     return { status: "ready", checks: { ...persistence, providerConfigAvailable, providerConfigured } }
   })
-  app.get("/internal/v1/health/compatibility", async () => ({
-    component: "luna-agent", version: "0.1.0", internalApiVersions: ["v1"],
-    aiSchemaMin: 1, aiSchemaMax: 1,
-    toolCatalogDigest: toolCatalogDigest() ?? "sha256:platform-tools-v1", promptVersions: ["system-v4"],
-  }))
-
   app.register(async secured => {
     secured.addHook("preHandler", async request => {
       request.actor = await input.requestVerifier.verify(request.headers)
     })
 
-    secured.get("/internal/v1/capabilities", async () => {
-      const runtime = input.remoteConfig?.current()?.runtime ?? defaultRuntimeSettings
-      return {
-        mode: input.tools ? "controlled_tools" : "read_only",
-        features: {
-		  conversations: true, streaming: true, cancel: true, uiActions: true,
-		  approvals: Boolean(input.tools),
-		  longTermMemory: false,
-		  toolCalling: Boolean(input.tools),
-        },
-        limits: {
-          maxInputBytes: runtime.maxInputBytes,
-          maxConcurrentRuns: runtime.agentConcurrentRuns,
-          maxUserConcurrentRuns: runtime.userConcurrentRuns,
-        },
-        provider: input.provider.capabilities(),
-      }
-    })
-
-    secured.get("/internal/v1/provider/health", async () => redact(await input.provider.health()))
     secured.post("/internal/v1/provider/test", async (_request, reply) => {
       if (!input.remoteConfig) return reply.code(503).send(errorBody("ai.provider_config_unavailable", _request.id))
       reply.header("cache-control", "no-store")
@@ -205,7 +187,7 @@ export function buildServer(input: {
       const key = request.headers["idempotency-key"]
       if (typeof key !== "string" || key.length < 8 || key.length > 128) return reply.code(400).send(errorBody("idempotency_key_required", request.id))
       const body = z.object({
-        input: z.object({ parts: z.array(z.object({ type: z.literal("text"), text: z.string().trim().min(1).max(12000) })).min(1).max(10) }),
+        input: turnInput,
         modelId: id,
         modelSnapshot: aiModelSnapshot.optional(),
         pageContext: z.record(z.string(), z.unknown()).default({}),
@@ -239,7 +221,7 @@ export function buildServer(input: {
       const body = z.object({
         operationId: z.string().regex(/^[a-zA-Z][a-zA-Z0-9_.-]{2,100}$/),
         arguments: z.record(z.string(), z.unknown()),
-        message: z.string().trim().min(1).max(2000),
+        message: inputText,
         runId: id,
       }).parse(request.body)
       if (body.runId !== request.actor.runId) return reply.code(409).send(errorBody("ai.run_state_conflict", request.id))
@@ -358,7 +340,7 @@ export function buildServer(input: {
 	})
     secured.post("/internal/v1/runs/:runId/input", async (request, reply) => {
       const { runId } = z.object({ runId: id }).parse(request.params)
-      const body = z.object({ text: z.string().trim().min(1).max(12000), expectedVersion: z.number().int() }).parse(request.body)
+      const body = z.object({ text: inputText, expectedVersion: z.number().int() }).parse(request.body)
       const run = await input.repository.getRun(request.actor.userId, runId)
       if (!run || run.status !== "waiting_input" || run.rowVersion !== body.expectedVersion) return reply.code(409).send(errorBody("ai.run_not_resumable", request.id))
       await input.repository.appendRunInput(runId, body.text)

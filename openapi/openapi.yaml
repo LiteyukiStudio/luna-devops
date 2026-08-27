@@ -2292,7 +2292,7 @@ paths:
       operationId: uploadVolumeImportContent
       tags: [Volumes]
       summary: Stream one complete archive directly into the prepared runtime Pod
-      description: This request is not resumable. Content-Length and X-Content-SHA256 must match the transfer created earlier.
+      description: This request is not resumable. Content-Length must match the transfer created earlier; the API and runtime Pod independently calculate and compare the authoritative checksum while streaming.
       x-luna-cli:
         classification: protocol-adapter
         hidden: true
@@ -2307,10 +2307,6 @@ paths:
           in: header
           required: true
           schema: { type: integer, format: int64, minimum: 1 }
-        - name: X-Content-SHA256
-          in: header
-          required: true
-          schema: { type: string, pattern: '^[a-fA-F0-9]{64}$' }
       requestBody:
         required: true
         content:
@@ -4909,7 +4905,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/PaginatedBusinessObjects"
+                $ref: "#/components/schemas/PaginatedPlatformEvents"
         "400":
           $ref: "#/components/responses/BadRequest"
         "403":
@@ -4928,7 +4924,9 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/BusinessObjectList"
+                type: array
+                items:
+                  $ref: "#/components/schemas/PlatformEventCatalogEntry"
         "400":
           $ref: "#/components/responses/BadRequest"
         "403":
@@ -4953,7 +4951,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/BusinessObject"
+                $ref: "#/components/schemas/PlatformEvent"
         "400":
           $ref: "#/components/responses/BadRequest"
         "403":
@@ -7239,7 +7237,7 @@ paths:
       operationId: getAICapabilities
       tags: [AI Assistant]
       summary: Resolve AI assistant enablement and access for the current browser session
-      description: Returns the platform-and-user enablement decision plus the configured browser input limit. It does not probe Agent or Provider runtime health; transient runtime failures are reported by the requested AI operation and never hide the assistant entry point.
+      description: Returns the platform-and-user enablement decision plus the fixed browser text-input limit. It does not probe Agent or Provider runtime health; transient runtime failures are reported by the requested AI operation and never hide the assistant entry point.
       security: [{ SessionCookie: [] }]
       responses:
         "200": { description: Assistant access result, content: { application/json: { schema: { $ref: "#/components/schemas/AIAssistantAccess" } } } }
@@ -7516,7 +7514,7 @@ paths:
         "200": { description: Unbuffered SSE stream for the single Agent replica. Active frames are AIEvent values replayed from that process's bounded stream by after or Last-Event-ID; committed workflow events, completed output, and terminal facts remain available from the authoritative PostgreSQL Timeline. A process restart interrupts unfinished Runs and does not recover unconfirmed partial deltas. A stream.heartbeat frame is transient JSON with version, type, runId, conversationId, and occurredAt; it has no id, is not persisted, and does not advance eventSequence. model.completed uses AIModelCompletedPayload and never substitutes estimated Token values., content: { text/event-stream: { schema: { type: string } } } }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
-        "429": { description: Per-Run or per-Agent-instance SSE subscriber limit reached, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+        "429": { description: The limit of 4 subscribers per Run or 64 subscribers per Agent instance was reached, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
   /api/v1/ai/runs/{runId}/cancel:
     post:
       operationId: cancelAIRun
@@ -7530,7 +7528,7 @@ paths:
       tags: [AI Assistant]
       security: [{ SessionCookie: [] }]
       parameters: [{ name: runId, in: path, required: true, schema: { type: string } }]
-      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/AIObject" } } } }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/AIRunInput" } } } }
       responses: { "202": { description: Supplemental input accepted, content: { application/json: { schema: { $ref: "#/components/schemas/AIObject" } } } }, "401": { $ref: "#/components/responses/Unauthorized" }, "404": { $ref: "#/components/responses/NotFound" }, "409": { $ref: "#/components/responses/Conflict" } }
   /api/v1/ai/runs/{runId}/approvals/{toolCallId}/decision:
     post:
@@ -7599,6 +7597,7 @@ paths:
         "200": { description: Stable Provider connection result, content: { application/json: { schema: { $ref: "#/components/schemas/AIObject" } } } }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { description: Provider configuration has not been completed, content: { application/json: { schema: { $ref: "#/components/schemas/AIObject" } } } }
         "503": { description: Agent or Provider is unavailable, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
   /api/v1/configs/ai/observability/test:
     post:
@@ -8019,9 +8018,8 @@ components:
           description: Whether the platform enables the assistant for the current authenticated user. Runtime Agent or Provider health never changes this value.
         maxInputBytes:
           type: integer
-          minimum: 8192
-          maximum: 1048576
-          description: Maximum UTF-8 request body size enforced by the Luna API BFF.
+          const: 131072
+          description: Maximum UTF-8 text size accepted for one user turn or supplemental input; the JSON envelope has a separate internal transport limit.
     AIModelOption:
       type: object
       additionalProperties: false
@@ -8080,6 +8078,7 @@ components:
           type: object
           additionalProperties: false
           required: [parts]
+          description: Combined text across all parts must not exceed 128 KiB when encoded as UTF-8.
           properties:
             parts:
               type: array
@@ -8091,7 +8090,7 @@ components:
                 required: [type, text]
                 properties:
                   type: { type: string, const: text }
-                  text: { type: string, minLength: 1, maxLength: 12000 }
+                  text: { type: string, minLength: 1, maxLength: 131072, description: Text is trimmed and is also subject to the combined 128 KiB UTF-8 limit. }
         pageContext: { type: object, additionalProperties: true }
     AIObject:
       type: object
@@ -8123,7 +8122,14 @@ components:
       properties:
         operationId: { type: string, pattern: "^[a-zA-Z][a-zA-Z0-9_.-]{2,100}$" }
         arguments: { type: object, additionalProperties: true }
-        message: { type: string, minLength: 1, maxLength: 2000 }
+        message: { type: string, minLength: 1, maxLength: 131072, description: Text is trimmed and must not exceed 128 KiB when encoded as UTF-8. }
+    AIRunInput:
+      type: object
+      additionalProperties: false
+      required: [text, expectedVersion]
+      properties:
+        text: { type: string, minLength: 1, maxLength: 131072, description: Text is trimmed and must not exceed 128 KiB when encoded as UTF-8. }
+        expectedVersion: { type: integer }
     AIConversationCreateInput:
       type: object
       additionalProperties: false
@@ -8420,15 +8426,7 @@ components:
             runTimeoutMs: { type: integer, minimum: 30000, maximum: 7200000 }
             agentConcurrentRuns: { type: integer, minimum: 1, maximum: 100 }
             userConcurrentRuns: { type: integer, minimum: 1, maximum: 100 }
-            assistantMaxOutputTokens: { type: integer, minimum: 256, maximum: 131072 }
-            maxModelSteps: { type: integer, minimum: 1, maximum: 1024 }
-            runMaxToolCalls: { type: integer, minimum: 32, maximum: 2048 }
-            maxInputBytes: { type: integer, minimum: 8192, maximum: 8388608 }
-            maxCardRepairAttempts: { type: integer, minimum: 1, maximum: 10 }
-            contextMaxUncompressedTurnCount: { type: integer, minimum: 4, maximum: 128 }
-            contextMaxCompressionTurnsPerCompile: { type: integer, minimum: 8, maximum: 1024 }
-            contextSummaryMaxOutputTokens: { type: integer, minimum: 200, maximum: 32768 }
-          required: [providerTimeoutMs, maxRequestRetries, runTimeoutMs, agentConcurrentRuns, userConcurrentRuns, assistantMaxOutputTokens, maxModelSteps, runMaxToolCalls, maxInputBytes, maxCardRepairAttempts, contextMaxUncompressedTurnCount, contextMaxCompressionTurnsPerCompile, contextSummaryMaxOutputTokens]
+          required: [providerTimeoutMs, maxRequestRetries, runTimeoutMs, agentConcurrentRuns, userConcurrentRuns]
         toolCatalog:
           type: array
           items: { $ref: "#/components/schemas/AIPlatformToolCatalogOperation" }
@@ -9313,6 +9311,7 @@ components:
       required: [code, deploymentTargetId, deploymentTargetName, clusterId, clusterName]
     ApplicationInput:
       type: object
+      additionalProperties: false
       properties:
         name: { type: string }
         identifier:
@@ -9321,13 +9320,11 @@ components:
           maxLength: 22
           pattern: "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$"
           description: Human-readable identifier that is immutable while the application exists and unique among active applications in the project space. It may be reused after deletion cleanup; the internal application ID is generated independently.
-        sourceType: { type: string, enum: [repository, image] }
-        repositoryUrl: { type: string }
-        imageReference: { type: string }
-        dockerfilePath: { type: string }
-        buildContext: { type: string }
-        servicePort: { type: integer }
-      required: [name, identifier, sourceType]
+        icon:
+          type: string
+          maxLength: 512
+          description: Curated icon name or supported image reference; empty selects the default application icon.
+      required: [name, identifier]
     ApplicationDeploymentSummary:
       type: object
       description: Point-in-time aggregate of Kubernetes replicas for an application. It is returned only when includeRuntime=true and is never persisted as current state.
@@ -9730,7 +9727,7 @@ components:
     VolumeImportCreateInput:
       type: object
       additionalProperties: false
-      required: [displayName, clusterId, capacity, storageClassName, accessMode, volumeMode, format, filename, contentLength, sha256]
+      required: [displayName, clusterId, capacity, storageClassName, accessMode, volumeMode, format, filename, contentLength]
       properties:
         displayName: { type: string, minLength: 1, maxLength: 120 }
         clusterId: { type: string }
@@ -9741,7 +9738,6 @@ components:
         format: { $ref: "#/components/schemas/VolumeTransferFormat" }
         filename: { type: string, minLength: 1, maxLength: 255 }
         contentLength: { type: integer, format: int64, minimum: 1 }
-        sha256: { type: string, pattern: '^[a-fA-F0-9]{64}$' }
     VolumeImportCreateResponse:
       type: object
       additionalProperties: false
@@ -10156,12 +10152,6 @@ components:
         autoScalingBehavior:
           type: string
           description: JSON Kubernetes horizontal pod autoscaler behavior object.
-        servicePort:
-          type: integer
-          minimum: 1
-          maximum: 65535
-          default: 8080
-          description: Legacy single-port projection of servicePorts[0]. New clients should use servicePorts.
         servicePorts:
           type: array
           maxItems: 16
@@ -10276,10 +10266,6 @@ components:
           type: string
           enum: [queue, parallel]
           default: queue
-        runtimeConfigSetIds:
-          type: array
-          items: { type: string }
-          description: Legacy shorthand for live runtime configuration references.
         runtimeConfigRefs:
           type: array
           items:
@@ -10334,6 +10320,25 @@ components:
         buildTemplateId: { type: string }
         buildTemplateVersion: { type: string }
         buildTemplateValues: { type: string }
+        servicePorts:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [name, port]
+            properties:
+              name: { type: string }
+              port: { type: integer, minimum: 1, maximum: 65535 }
+              appProtocol: { type: string }
+        runtimeConfigRefs:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [setId, mode]
+            properties:
+              setId: { type: string }
+              mode: { type: string, enum: [live, snapshot] }
         environmentVariables:
           type: array
           items: { $ref: "#/components/schemas/RuntimeEnvironmentVariable" }
@@ -10356,7 +10361,7 @@ components:
         webConsoleEnabled:
           type: [boolean, "null"]
           description: Nullable target restriction. Effective policy is `project.webConsoleEnabled && webConsoleEnabled != false`; a true value is treated as inheritance.
-      required: [id, projectId, applicationId, stage, kubernetesName, dataVolumes, webConsoleEnabled]
+      required: [id, projectId, applicationId, stage, kubernetesName, servicePorts, runtimeConfigRefs, dataVolumes, webConsoleEnabled]
     DeploymentTargetRuntimeSecretsInput:
       type: object
       additionalProperties: false
@@ -10982,6 +10987,79 @@ components:
         language: { type: string, enum: [zh-CN, en-US] }
         disabled: { type: boolean }
       required: [email, name]
+    PlatformEvent:
+      type: object
+      required:
+        - id
+        - type
+        - category
+        - severity
+        - status
+        - projectId
+        - applicationId
+        - deploymentTargetId
+        - resourceType
+        - resourceId
+        - actorId
+        - summaryKey
+        - message
+        - correlationId
+        - traceId
+        - occurredAt
+        - createdAt
+        - detail
+        - links
+        - deliveryCount
+      properties:
+        id: { type: string }
+        type: { type: string }
+        category: { type: string }
+        severity: { type: string }
+        status: { type: string }
+        projectId: { type: string }
+        applicationId: { type: string }
+        deploymentTargetId: { type: string }
+        resourceType: { type: string }
+        resourceId: { type: string }
+        actorId: { type: string }
+        summaryKey: { type: string }
+        message: { type: string }
+        correlationId: { type: string }
+        traceId: { type: string }
+        occurredAt: { type: string, format: date-time }
+        createdAt: { type: string, format: date-time }
+        detail:
+          type: object
+          additionalProperties: true
+        links:
+          type: object
+          additionalProperties: { type: string }
+        deliveryCount: { type: integer, format: int64, minimum: 0 }
+      additionalProperties: false
+    PlatformEventCatalogEntry:
+      type: object
+      required: [type, category, defaultSeverity, recommendedNotify]
+      properties:
+        type: { type: string }
+        category: { type: string }
+        defaultSeverity: { type: string }
+        recommendedNotify: { type: boolean }
+      additionalProperties: false
+    PaginatedPlatformEvents:
+      type: object
+      required: [items, page, pageSize, sortBy, sortOrder, total, totalPages]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlatformEvent"
+        page: { type: integer, minimum: 1 }
+        pageSize: { type: integer, minimum: 1, maximum: 100 }
+        sortBy: { type: string }
+        sortOrder: { type: string, enum: [asc, desc] }
+        total: { type: integer, minimum: 0 }
+        totalPages: { type: integer, minimum: 0 }
+      additionalProperties: false
     BusinessObject:
       type: object
       description: Extensible business object returned by an API whose domain model is not shared across operations.

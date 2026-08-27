@@ -411,7 +411,6 @@ var traceAttributeAllowlist = map[string]struct{}{
 	"gen_ai.tool.call.arguments": {}, "gen_ai.tool.call.result": {},
 	"openai.response.service_tier": {}, "openai.response.system_fingerprint": {},
 	"server.address": {}, "server.port": {}, "luna.turn.id": {}, "luna.run.id": {},
-	"luna.agent.available_tool.count": {}, "luna.agent.available_tool.names": {},
 	"luna.tool_call.id": {}, "luna.tool_call.count": {}, "luna.ai.content.truncated": {},
 	"luna.gen_ai.request.purpose": {}, "luna.gen_ai.usage.status": {}, "luna.gen_ai.usage.unavailable_reason": {},
 	"luna.gen_ai.response.error_body": {}, "luna.operation.name": {},

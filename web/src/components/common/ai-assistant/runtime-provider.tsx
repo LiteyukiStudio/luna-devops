@@ -17,6 +17,7 @@ import {
   isRecentConversationInteraction,
   REFRESH_CONVERSATION_RETURN_DURATION_MS,
 } from './conversation-session'
+import { isAIInputWithinLimit } from './input-size'
 import { aiConversationModelKey, resolveAIConversationModel } from './model-selection'
 import { buildAIPageContext } from './page-context'
 import { AIRefreshConversationReturn } from './refresh-conversation-return'
@@ -477,10 +478,7 @@ export function AIAssistantRuntimeProvider({ capabilities, children, initiallyOp
     if (!isCurrentActionSession(actionGeneration))
       return Promise.resolve(false)
     return executeAIUIAction(action, {
-      pathname: workspaceLocation.pathname,
-      search: workspaceLocation.search,
       navigate,
-      queryClient,
       sendMessage: async (message) => {
         if (activeRunId)
           throw new Error(t('aiAssistant.actions.runActive'))
@@ -494,13 +492,16 @@ export function AIAssistantRuntimeProvider({ capabilities, children, initiallyOp
         await requestToolActionAsync({ action, actionGeneration, conversationId: selectedConversationId })
       },
     })
-  }, [activeRunId, isCurrentActionSession, navigate, queryClient, requestToolActionAsync, selectedConversationId, sendTurnAsync, t, workspaceLocation.pathname, workspaceLocation.search])
+  }, [activeRunId, isCurrentActionSession, navigate, requestToolActionAsync, selectedConversationId, sendTurnAsync, t])
   const submitDraft = () => {
+    const input = draft.trim()
+    if (!input || !isAIInputWithinLimit(input, capabilities?.maxInputBytes))
+      return
     if (waitingInput && activeRunId && selectedConversationId) {
       submitRunInput.mutate({
         runId: activeRunId,
         conversationId: selectedConversationId,
-        text: draft.trim(),
+        text: input,
         expectedVersion: streamState.runExpectedVersions[activeRunId] ?? -1,
       })
       return
@@ -613,7 +614,7 @@ export function AIAssistantRuntimeProvider({ capabilities, children, initiallyOp
           selectedModelId: selectedModel?.id,
           draft,
           inputRef,
-          maxLength: capabilities?.maxInputBytes,
+          maxInputBytes: capabilities?.maxInputBytes,
           sending: sendingSelected,
           submitting: submittingSelected,
           waitingInput,

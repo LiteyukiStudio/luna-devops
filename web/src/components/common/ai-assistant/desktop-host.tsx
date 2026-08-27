@@ -3,6 +3,7 @@ import type { AIAssistantView } from './route-state'
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Rnd } from 'react-rnd'
+import { safeStorageSet } from '@/lib/safe-storage'
 import { AIAssistantChatSurface } from './chat-surface'
 import { AIConversationList } from './conversation-list'
 import { AIDesktopShell } from './desktop-shell'
@@ -26,9 +27,6 @@ interface AIAssistantDesktopHostProps {
 }
 
 function clampWindowPreference(preference: WindowPreference): WindowPreference {
-  if (typeof window === 'undefined')
-    return preference
-
   const availableWidth = Math.max(MIN_WINDOW_WIDTH, window.innerWidth - VIEWPORT_GUTTER * 2)
   const availableHeight = Math.max(MIN_WINDOW_HEIGHT, window.innerHeight - VIEWPORT_GUTTER * 2)
   const width = Math.min(availableWidth, Math.max(MIN_WINDOW_WIDTH, preference.width))
@@ -58,12 +56,12 @@ export function AIAssistantDesktopHost({ view, onViewChange }: AIAssistantDeskto
   useEffect(() => {
     if (!runtime.enabled)
       return
-    localStorage.setItem(WINDOW_STORAGE_KEY, JSON.stringify(preference))
+    safeStorageSet(WINDOW_STORAGE_KEY, JSON.stringify(preference))
   }, [preference, runtime.enabled])
   useEffect(() => {
     if (!runtime.enabled)
       return
-    localStorage.setItem(LAUNCHER_STORAGE_KEY, JSON.stringify(launcherPosition))
+    safeStorageSet(LAUNCHER_STORAGE_KEY, JSON.stringify(launcherPosition))
   }, [launcherPosition, runtime.enabled])
   useEffect(() => {
     if (!runtime.enabled)

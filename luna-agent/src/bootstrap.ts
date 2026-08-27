@@ -21,6 +21,7 @@ import { navigateToRouteTool } from "./tools/ui-route.js"
 import { searchToolsTool } from "./tools/tool-search.js"
 import { getToolDetailsTool } from "./tools/tool-details.js"
 import { InMemoryRunStreamBus } from "./run-stream-bus.js"
+import { runtimeSettingsFromRemote } from "./runtime-settings.js"
 
 export async function startAgent(): Promise<void> {
   const config = loadConfig()
@@ -50,8 +51,8 @@ export async function startAgent(): Promise<void> {
     internalKeys.callbackServiceToken,
     candidate => { ToolCatalog.load(candidate.toolCatalog) },
   )
-  // Provider、平台运行参数和工具目录接受 Luna API 的同一份权威配置；
-  // 少量实例级上下文策略在下方由 Agent 环境变量覆盖。
+  // Provider、运行时调度参数和工具目录接受 Luna API 的同一份权威配置。
+  // 输入、模型循环、工具、卡片和上下文预算是 Agent 内部固定不变量。
   const initialRemoteConfig = await remoteConfig.initialize()
   const rawProvider = createRuntimeProvider(config, remoteConfig)
   const provider = new BudgetedModelProvider(rawProvider, repository)
@@ -66,16 +67,7 @@ export async function startAgent(): Promise<void> {
   const catalog = ToolCatalog.load(initialRemoteConfig.toolCatalog)
   const catalogRegistry = new ToolCatalogRegistry(catalog, initialRemoteConfig.version)
   const toolStore = new PostgresToolCallStore(repository.pool, repository, toolArgumentsCipher)
-  // 上下文收敛策略属于 Agent 进程内的无状态策略：默认无需配置，只有显式环境变量才覆盖。
-  const runtime = {
-    ...initialRemoteConfig.runtime,
-    contextCompressionTriggerRatio: config.AI_CONTEXT_COMPRESSION_TRIGGER_RATIO,
-    contextRecentTurnCount: config.AI_CONTEXT_RECENT_TURN_COUNT,
-    contextMaxHistoryPayloadBytes: config.AI_CONTEXT_MAX_HISTORY_PAYLOAD_K_BYTES * 1024,
-    contextMaxSummaryPayloadBytes: config.AI_CONTEXT_MAX_SUMMARY_PAYLOAD_K_BYTES * 1024,
-    contextMaxContinuationPayloadBytes: config.AI_CONTEXT_MAX_CONTINUATION_PAYLOAD_K_BYTES * 1024,
-    toolResultPayloadBudget: config.AI_TOOLS_RESULT_PAYLOAD_K_BYTES * 1024,
-  }
+  const runtime = runtimeSettingsFromRemote(initialRemoteConfig.runtime)
   const tools = new ToolOrchestrator(async (runId) => {
     const state = await repository.getRunToolState(runId)
     if (!state) throw new Error("ai.run_not_found")
@@ -87,7 +79,6 @@ export async function startAgent(): Promise<void> {
   ), toolStore)
   tools.setRunMaxToolCalls(runtime.runMaxToolCalls)
   const contextCompiler = new ContextCompiler(repository, provider, {
-    compressionTriggerRatio: runtime.contextCompressionTriggerRatio,
     recentTurnCount: runtime.contextRecentTurnCount,
     maxUncompressedTurnCount: runtime.contextMaxUncompressedTurnCount,
     maxCompressionTurnsPerCompile: runtime.contextMaxCompressionTurnsPerCompile,
@@ -160,7 +151,7 @@ export async function startAgent(): Promise<void> {
   }, contextCompiler)
   const executor = new RunExecutor(repository, modelRuntime, config, tools, remoteConfig, runtime, catalogRegistry, streamBus)
   const server = buildServer({
-    config, repository, requestVerifier, provider,
+    config, repository, requestVerifier,
     cancelRun: runId => executor.cancel(runId),
     toolCatalogDigest: () => catalogRegistry.digest(),
     tools,

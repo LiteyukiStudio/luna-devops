@@ -21,9 +21,5 @@ export const auditedDynamicTranslationCalls = {
   'src/pages/applications/application-gateway-panel.tsx|gatewayRouteTlsModeLabels[item.tlsMode]': 'TLS mode keys come from the local exhaustive mode map.',
   'src/pages/oauth/oauth-utils.ts|key': 'The key is derived from the accessTokens.scopeLabels prefix and falls back to the raw scope value.',
   'src/pages/settings/UsersPage.tsx|languageKeys[user.language] ?? \'languages.zhCN\'': 'Language keys come from a local supported-language map with a zh-CN fallback.',
-  'src/pages/settings/ai-assistant-settings-panel.tsx|group.titleKey': 'Group title keys come from the local AI settings field definition catalog.',
-  'src/pages/settings/ai-assistant-settings-panel.tsx|group.descriptionKey': 'Group description keys come from the local AI settings field definition catalog.',
-  'src/pages/settings/ai-assistant-settings-panel.tsx|field.hintKey': 'Field hint keys come from the local AI settings field definition catalog.',
-  'src/pages/settings/ai-assistant-settings-panel.tsx|field.labelKey': 'Field label keys come from the local AI settings field definition catalog.',
   'src/pages/settings/ai-assistant-settings.ts|messageKey': 'boundedInt callers pass literal settings.ai validation keys.',
 }

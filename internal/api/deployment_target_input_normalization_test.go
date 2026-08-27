@@ -8,8 +8,13 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/model"
 )
 
-func TestDeploymentTargetResponseDoesNotExposeLegacyLimits(t *testing.T) {
-	response := deploymentTargetResponseFromModel(model.DeploymentTarget{CPULimit: "2", MemoryLimit: "2Gi"})
+func TestDeploymentTargetResponseUsesCanonicalStructuredFields(t *testing.T) {
+	response := deploymentTargetResponseFromModel(model.DeploymentTarget{
+		CPULimit: "2", MemoryLimit: "2Gi",
+		ServicePorts:        `[{"name":"http","port":8080}]`,
+		BuildVariableSetIDs: `["bvs_1"]`,
+		RuntimeConfigRefs:   `[{"setId":"rcs_1","mode":"live"}]`,
+	})
 	payload, err := json.Marshal(response)
 	if err != nil {
 		t.Fatalf("marshal response: %v", err)
@@ -18,11 +23,13 @@ func TestDeploymentTargetResponseDoesNotExposeLegacyLimits(t *testing.T) {
 	if err := json.Unmarshal(payload, &values); err != nil {
 		t.Fatalf("unmarshal response: %v", err)
 	}
-	if _, ok := values["cpuLimit"]; ok {
-		t.Fatalf("legacy cpu limit leaked into response: %s", payload)
+	for _, legacy := range []string{"cpuLimit", "memoryLimit", "servicePort", "runtimeConfigSetIds"} {
+		if _, ok := values[legacy]; ok {
+			t.Fatalf("legacy field %s leaked into response: %s", legacy, payload)
+		}
 	}
-	if _, ok := values["memoryLimit"]; ok {
-		t.Fatalf("legacy memory limit leaked into response: %s", payload)
+	if !reflect.DeepEqual(response.BuildVariableSetIDs, []string{"bvs_1"}) || len(response.RuntimeConfigRefs) != 1 || response.RuntimeConfigRefs[0].SetID != "rcs_1" {
+		t.Fatalf("structured response fields = %#v, %#v", response.BuildVariableSetIDs, response.RuntimeConfigRefs)
 	}
 }
 

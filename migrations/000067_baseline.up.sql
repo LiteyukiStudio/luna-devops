@@ -157,7 +157,6 @@ CREATE TABLE applications (
     delete_message text DEFAULT ''::text NOT NULL,
     delete_started_at timestamp with time zone,
     delete_finished_at timestamp with time zone,
-    data_retention_mode text DEFAULT 'retain'::text NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     deleted_at timestamp with time zone
@@ -435,7 +434,6 @@ CREATE TABLE deployment_targets (
     replicas integer DEFAULT 1 NOT NULL,
     cpu_request text DEFAULT '1'::text NOT NULL,
     memory_request text DEFAULT '1Gi'::text NOT NULL,
-    service_port integer DEFAULT 8080 NOT NULL,
     delete_status text DEFAULT 'active'::text NOT NULL,
     delete_message text DEFAULT ''::text NOT NULL,
     delete_started_at timestamp with time zone,
@@ -522,7 +520,6 @@ CREATE TABLE deployment_targets (
     build_template_values text DEFAULT '{}'::text NOT NULL,
     kubernetes_name text DEFAULT ''::text NOT NULL,
     service_ports text DEFAULT ''::text NOT NULL,
-    runtime_config_set_ids text DEFAULT ''::text NOT NULL,
     config_files text DEFAULT ''::text NOT NULL,
     secret_files text DEFAULT ''::text NOT NULL
 );

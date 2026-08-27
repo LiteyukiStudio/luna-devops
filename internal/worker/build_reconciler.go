@@ -89,8 +89,7 @@ func (r *Runner) handleSyncStatus(ctx context.Context, task *asynq.Task) error {
 	if err := workerStage(ctx, "runtime.sync_releases", r.syncReleaseRuntimeStatus); err != nil {
 		return err
 	}
-	r.retryPendingResourceCleanups(ctx)
-	return nil
+	return workerStage(ctx, "cleanup.recover_stale", r.recoverStaleResourceCleanups)
 }
 
 func (r *Runner) syncReleaseRuntimeStatus(ctx context.Context) error {

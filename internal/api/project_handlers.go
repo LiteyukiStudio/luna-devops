@@ -193,8 +193,6 @@ func (h *Handlers) DeleteProject(ctx *gin.Context) {
 		ResourceType: "project",
 		ResourceID:   project.ID,
 		ProjectID:    project.ID,
-		ActorID:      user.ID,
-		DeleteData:   true,
 	}) {
 		_ = markResourceDeleteFailed(h.dbFor(ctx), &model.Project{}, project.ID, "资源清理任务投递失败，请稍后重试")
 		writeError(ctx, http.StatusServiceUnavailable, "资源清理任务投递失败，请稍后重试")

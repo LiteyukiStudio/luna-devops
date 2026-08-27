@@ -75,7 +75,6 @@ function uploadVolumeImportContent(
   projectId: string,
   transferId: string,
   file: File,
-  sha256: string,
   signal?: AbortSignal,
   onProgress?: (transferredBytes: number, totalBytes: number) => void,
 ): Promise<VolumeTransfer> {
@@ -98,7 +97,6 @@ function uploadVolumeImportContent(
     xhr.responseType = 'json'
     xhr.setRequestHeader('Accept-Language', i18next.language)
     xhr.setRequestHeader('Content-Type', 'application/octet-stream')
-    xhr.setRequestHeader('X-Content-SHA256', sha256)
     for (const [name, value] of Object.entries(telemetry.headers))
       xhr.setRequestHeader(name, value)
     xhr.upload.addEventListener('progress', event => onProgress?.(event.loaded, file.size))

@@ -1,7 +1,6 @@
 package api
 
 import (
-	"context"
 	"errors"
 	"net/http"
 	"strings"
@@ -208,38 +207,6 @@ func (h *Handlers) projectHookConfigFromInput(ctx *gin.Context, user model.User,
 		FailurePolicy:  normalizeHookFailurePolicy(input.FailurePolicy),
 		CreatedBy:      user.ID,
 	}, true
-}
-
-func (h *Handlers) appendHookRunLog(run model.HookRun, content string, ctx context.Context) error {
-	content = h.redactHookRunLogContent(run, content, ctx)
-	content = trimHookRunLogContent(content)
-	if content == "" {
-		return nil
-	}
-	var existing model.HookRunLog
-	err := h.dbWithContext(ctx).First(&existing, "hook_run_id = ? and project_id = ?", run.ID, run.ProjectID).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return h.dbWithContext(ctx).Create(&model.HookRunLog{
-			ID:        id.New("hlog"),
-			HookRunID: run.ID,
-			ProjectID: run.ProjectID,
-			Content:   content,
-		}).Error
-	}
-	if err != nil {
-		return err
-	}
-	existing.Content = trimHookRunLogContent(existing.Content + "\n" + content)
-	return h.dbWithContext(ctx).Save(&existing).Error
-}
-
-func trimHookRunLogContent(content string) string {
-	content = strings.TrimSpace(content)
-	const maxLogBytes = 1024 * 1024
-	if len(content) <= maxLogBytes {
-		return content
-	}
-	return content[len(content)-maxLogBytes:]
 }
 
 func normalizeHookPhase(value string) string {

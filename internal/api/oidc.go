@@ -320,10 +320,6 @@ func oidcCallbackURL(publicBaseURL string) string {
 }
 
 func (h *Handlers) resolveSecretContext(ctx context.Context, ref string) string {
-	ref = strings.TrimSpace(ref)
-	if strings.HasPrefix(ref, "env:") {
-		return os.Getenv(strings.TrimPrefix(ref, "env:"))
-	}
 	return h.secrets.ResolveContext(ctx, ref)
 }
 

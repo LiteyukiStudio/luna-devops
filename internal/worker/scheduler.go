@@ -25,11 +25,11 @@ func periodicTaskSpecs() ([]periodicTaskSpec, error) {
 	if err != nil {
 		return nil, err
 	}
-	volumeReconcileTask, err := tasks.NewVolumeReconcileTask(tasks.VolumeReconcilePayload{ActorID: "system"})
+	volumeReconcileTask, err := tasks.NewVolumeReconcileTask(tasks.VolumeReconcilePayload{})
 	if err != nil {
 		return nil, err
 	}
-	volumeTransferCleanupTask, err := tasks.NewVolumeTransferCleanupTask(tasks.VolumeTransferCleanupPayload{ActorID: "system"})
+	volumeTransferCleanupTask, err := tasks.NewVolumeTransferCleanupTask(tasks.VolumeTransferCleanupPayload{})
 	if err != nil {
 		return nil, err
 	}
@@ -66,16 +66,7 @@ func startSchedulerWithRedis(options redisconfig.Options) (*asynq.Scheduler, err
 		return nil, err
 	}
 	for _, spec := range specs {
-		options := []asynq.Option{asynq.Queue(spec.Queue), asynq.Timeout(spec.Timeout)}
-		if spec.MaxRetry > 0 {
-			options = append(options, asynq.MaxRetry(spec.MaxRetry))
-		}
-		if spec.Retention > 0 {
-			options = append(options, asynq.Retention(spec.Retention))
-		}
-		if spec.Unique > 0 {
-			options = append(options, asynq.Unique(spec.Unique))
-		}
+		options := periodicTaskOptions(spec)
 		if _, err := scheduler.Register(spec.Cron, spec.Task, options...); err != nil {
 			return nil, err
 		}
@@ -87,4 +78,19 @@ func startSchedulerWithRedis(options redisconfig.Options) (*asynq.Scheduler, err
 		}
 	}()
 	return scheduler, nil
+}
+
+func periodicTaskOptions(spec periodicTaskSpec) []asynq.Option {
+	options := []asynq.Option{
+		asynq.Queue(spec.Queue),
+		asynq.Timeout(spec.Timeout),
+		asynq.MaxRetry(spec.MaxRetry),
+	}
+	if spec.Retention > 0 {
+		options = append(options, asynq.Retention(spec.Retention))
+	}
+	if spec.Unique > 0 {
+		options = append(options, asynq.Unique(spec.Unique))
+	}
+	return options
 }

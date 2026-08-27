@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { safeStorageGet, safeStorageSet } from '@/lib/safe-storage'
 
 const storageKey = 'luna-devops.ai.internal-tools.visible-users'
 
@@ -22,10 +23,8 @@ export function useAIToolDebugMode(userId: string | undefined, allowed: boolean)
 }
 
 function readEnabledUserIds(): Set<string> {
-  if (typeof window === 'undefined')
-    return new Set()
   try {
-    const value: unknown = JSON.parse(window.localStorage.getItem(storageKey) ?? '[]')
+    const value: unknown = JSON.parse(safeStorageGet(storageKey) ?? '[]')
     return new Set(Array.isArray(value) ? value.filter(item => typeof item === 'string') : [])
   }
   catch {
@@ -34,5 +33,5 @@ function readEnabledUserIds(): Set<string> {
 }
 
 function writeEnabledUserIds(userIds: Set<string>) {
-  window.localStorage.setItem(storageKey, JSON.stringify([...userIds].sort()))
+  safeStorageSet(storageKey, JSON.stringify([...userIds].sort()))
 }

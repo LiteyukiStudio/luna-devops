@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import { api } from '@/api'
+import { safeStorageGet, safeStorageRemove, safeStorageSet } from '@/lib/safe-storage'
 import { enableBrowserTelemetry } from '@/lib/telemetry'
 import { applyUserBrandColorPreference, clearActiveUserBrandColorPreference } from './brand-theme'
 import { applyUserInterfaceStylePreference, clearActiveUserInterfaceStylePreference } from './interface-style'
@@ -75,7 +76,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const updateLanguageMutation = useMutation({
     mutationFn: api.updateCurrentUser,
     onSuccess: (result) => {
-      localStorage.setItem('luna-devops-language', result.language)
+      safeStorageSet('luna-devops-language', result.language)
       i18n.changeLanguage(result.language)
       setCurrentUser(queryClient, result)
       setRecentLoginUsers(cacheRecentLoginUser(result))
@@ -85,7 +86,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const updateProfileMutation = useMutation({
     mutationFn: api.updateCurrentUser,
     onSuccess: (result) => {
-      localStorage.setItem('luna-devops-language', result.language)
+      safeStorageSet('luna-devops-language', result.language)
       i18n.changeLanguage(result.language)
       setCurrentUser(queryClient, result)
       setRecentLoginUsers(cacheRecentLoginUser(result))
@@ -142,7 +143,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 }
 
 function setCurrentUser(queryClient: ReturnType<typeof useQueryClient>, user: CurrentUser) {
-  localStorage.setItem('luna-devops-language', user.language)
+  safeStorageSet('luna-devops-language', user.language)
   applyUserBrandColorPreference(user.id, user.brandColorPreset)
   applyUserInterfaceStylePreference(user.id, user.interfaceStyle)
   queryClient.setQueryData(currentUserQueryKey, user)
@@ -169,7 +170,7 @@ function cacheRecentLoginUser(user: CurrentUser) {
 
 function readRecentLoginUsers(): RecentLoginUser[] {
   try {
-    const raw = localStorage.getItem(recentLoginUsersStorageKey)
+    const raw = safeStorageGet(recentLoginUsersStorageKey)
     if (!raw)
       return []
 
@@ -182,13 +183,13 @@ function readRecentLoginUsers(): RecentLoginUser[] {
       .slice(0, maxRecentLoginUsers)
   }
   catch {
-    localStorage.removeItem(recentLoginUsersStorageKey)
+    safeStorageRemove(recentLoginUsersStorageKey)
     return []
   }
 }
 
 function writeRecentLoginUsers(users: RecentLoginUser[]) {
-  localStorage.setItem(recentLoginUsersStorageKey, JSON.stringify(users))
+  safeStorageSet(recentLoginUsersStorageKey, JSON.stringify(users))
 }
 
 function isRecentLoginUser(value: unknown): value is RecentLoginUser {

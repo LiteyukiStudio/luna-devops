@@ -2,6 +2,7 @@ import type { BackendModule, ResourceKey } from 'i18next'
 import type { SupportedLanguage } from './config'
 import i18next from 'i18next'
 import { initReactI18next } from 'react-i18next'
+import { safeStorageGet } from '@/lib/safe-storage'
 import { spreadFeatureBundles, supportedLanguages } from './config'
 
 interface LocaleModule {
@@ -50,7 +51,7 @@ const localeBackend: BackendModule = {
 }
 
 function detectBrowserLanguage() {
-  const storedLanguage = normalizeLanguage(localStorage.getItem('luna-devops-language'))
+  const storedLanguage = normalizeLanguage(safeStorageGet('luna-devops-language'))
   if (storedLanguage)
     return storedLanguage
 

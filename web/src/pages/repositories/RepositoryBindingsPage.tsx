@@ -223,7 +223,7 @@ export function RepositoryBindingsPage({ applicationId, embedded = false, projec
                   <Plus size={16} />
                   {t('repositories.bindRepoTitle')}
                 </Button>
-                <Link className="text-sm text-primary-text hover:underline" to={`/projects/${projectId}/apps`}>{t('backToApps')}</Link>
+                <Link className="text-sm text-primary-text hover:underline" to={`/projects/${projectId}#tab=apps`}>{t('backToApps')}</Link>
               </div>
             )
           : undefined}

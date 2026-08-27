@@ -1,19 +1,15 @@
 import type { ReactNode } from 'react'
 import type { ThemeContextValue, ThemeMode } from './theme-context'
 import { useEffect, useMemo, useState } from 'react'
+import { safeStorageGet, safeStorageSet } from '@/lib/safe-storage'
 import { ThemeContext } from './theme-context'
 
 const storageKey = 'luna-devops-theme'
 
 function readStoredTheme(): ThemeMode {
-  try {
-    const stored = localStorage.getItem(storageKey)
-    if (stored === 'light' || stored === 'dark' || stored === 'system')
-      return stored
-  }
-  catch {
-    // Fall through to the system preference when browser storage is unavailable.
-  }
+  const stored = safeStorageGet(storageKey)
+  if (stored === 'light' || stored === 'dark' || stored === 'system')
+    return stored
   return 'system'
 }
 
@@ -38,12 +34,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const value = useMemo<ThemeContextValue>(() => ({
     mode,
     setMode(nextMode) {
-      try {
-        localStorage.setItem(storageKey, nextMode)
-      }
-      catch {
-        // The in-memory preference remains usable for the current session.
-      }
+      safeStorageSet(storageKey, nextMode)
       setMode(nextMode)
     },
   }), [mode])

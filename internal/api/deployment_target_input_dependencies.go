@@ -77,10 +77,6 @@ func runtimeConfigRefInputs(input deploymentTargetInput) []deploymentRuntimeConf
 				Mode:  model.RuntimeConfigRefMode(ref.Mode),
 			})
 		}
-		return refs
-	}
-	for _, setID := range normalizeStringList(input.RuntimeConfigSetIDs) {
-		refs = append(refs, deploymentRuntimeConfigRefInput{SetID: setID, Mode: model.RuntimeConfigRefModeLive})
 	}
 	return refs
 }

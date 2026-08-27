@@ -329,7 +329,7 @@ export function ApplicationDeploymentsPanel({ applicationId, applicationIdentifi
     if (!runtimeConfigRestartSetId)
       return []
     return deploymentTargets.filter((target) => {
-      const refs = normalizeRuntimeConfigRefs(target.runtimeConfigRefs, target.runtimeConfigSetIds)
+      const refs = normalizeRuntimeConfigRefs(target.runtimeConfigRefs)
       return runtimeConfigLiveSetIds(refs).includes(runtimeConfigRestartSetId)
     })
   }, [deploymentTargets, runtimeConfigRestartSetId])

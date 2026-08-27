@@ -98,12 +98,12 @@ describe('volumes API contract', () => {
     const file = new File(['archive'], 'backup.tar.gz')
     const onProgress = vi.fn()
 
-    await expect(volumesApi.uploadVolumeImportContent('project-1', 'vtx_1', file, 'a'.repeat(64), undefined, onProgress)).resolves.toMatchObject({ state: 'succeeded' })
+    await expect(volumesApi.uploadVolumeImportContent('project-1', 'vtx_1', file, undefined, onProgress)).resolves.toMatchObject({ state: 'succeeded' })
 
     expect(requests[0]).toMatchObject({ body: file, method: 'PUT', withCredentials: true })
     expect(requests[0]?.url).toContain('/projects/project-1/volume-imports/vtx_1/content')
     expect(requests[0]?.headers.get('Content-Type')).toBe('application/octet-stream')
-    expect(requests[0]?.headers.get('X-Content-SHA256')).toBe('a'.repeat(64))
+    expect(requests[0]?.headers.has('X-Content-SHA256')).toBe(false)
     expect(onProgress).toHaveBeenCalledWith(file.size, file.size)
   })
 

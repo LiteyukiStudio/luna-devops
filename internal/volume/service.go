@@ -25,6 +25,9 @@ type Service struct {
 }
 
 func NewService(repository Repository, dispatchers ...OperationDispatcher) *Service {
+	if repository == nil {
+		panic("volume repository is required")
+	}
 	service := &Service{repository: repository}
 	if len(dispatchers) > 0 {
 		service.dispatcher = dispatchers[0]
@@ -33,26 +36,26 @@ func NewService(repository Repository, dispatchers ...OperationDispatcher) *Serv
 }
 
 func NewGormService(db *gorm.DB, dispatchers ...OperationDispatcher) *Service {
+	if db == nil {
+		panic("volume database is required")
+	}
 	return NewService(NewGormRepository(db), dispatchers...)
 }
 
 func NewServiceWithDependencies(repository Repository, dispatcher OperationDispatcher, claimInspector ExistingClaimInspector) *Service {
-	return &Service{repository: repository, dispatcher: dispatcher, claimInspector: claimInspector}
+	service := NewService(repository, dispatcher)
+	service.claimInspector = claimInspector
+	return service
 }
 
 func (service *Service) WithExistingClaimInspector(inspector ExistingClaimInspector) *Service {
-	if service != nil {
-		service.claimInspector = inspector
-	}
+	service.claimInspector = inspector
 	return service
 }
 
 func (service *Service) ListProjectVolumes(ctx context.Context, projectID string, options ProjectVolumeListOptions) (result ProjectVolumeListResult, err error) {
 	ctx, end := telemetry.StartOperation(ctx, "volume", "list")
 	defer func() { end(err) }()
-	if err = service.validate(); err != nil {
-		return ProjectVolumeListResult{}, err
-	}
 	projectID = strings.TrimSpace(projectID)
 	if projectID == "" {
 		return ProjectVolumeListResult{}, newDomainError(CodeInvalidInput, "project id is required")
@@ -67,9 +70,6 @@ func (service *Service) ListProjectVolumes(ctx context.Context, projectID string
 func (service *Service) GetProjectVolume(ctx context.Context, projectID, volumeID string) (result model.ProjectVolume, err error) {
 	ctx, end := telemetry.StartOperation(ctx, "volume", "get")
 	defer func() { end(err) }()
-	if err = service.validate(); err != nil {
-		return model.ProjectVolume{}, err
-	}
 	result, err = service.repository.GetProjectVolume(ctx, strings.TrimSpace(projectID), strings.TrimSpace(volumeID))
 	return result, err
 }
@@ -80,9 +80,6 @@ func (service *Service) GetProjectVolume(ctx context.Context, projectID, volumeI
 func (service *Service) GetProjectVolumeForMaintenance(ctx context.Context, volumeID string) (result model.ProjectVolume, err error) {
 	ctx, end := telemetry.StartOperation(ctx, "volume", "maintenance.get")
 	defer func() { end(err) }()
-	if err = service.validate(); err != nil {
-		return model.ProjectVolume{}, err
-	}
 	volumeID = strings.TrimSpace(volumeID)
 	if volumeID == "" {
 		return model.ProjectVolume{}, newDomainError(CodeInvalidInput, "volume id is required")
@@ -98,9 +95,6 @@ func (service *Service) GetProjectVolumeDetail(ctx context.Context, projectID, v
 func (service *Service) GetProjectVolumeDetailPage(ctx context.Context, projectID, volumeID string, bindingPage, bindingPageSize, transferPage, transferPageSize int) (result ProjectVolumeDetail, err error) {
 	ctx, end := telemetry.StartOperation(ctx, "volume", "detail")
 	defer func() { end(err) }()
-	if err = service.validate(); err != nil {
-		return ProjectVolumeDetail{}, err
-	}
 	projectID = strings.TrimSpace(projectID)
 	volumeID = strings.TrimSpace(volumeID)
 	if projectID == "" || volumeID == "" {
@@ -136,9 +130,6 @@ func (service *Service) GetProjectVolumeDetailPage(ctx context.Context, projectI
 func (service *Service) PreviewProjectVolumeDeletion(ctx context.Context, projectID, volumeID string) (result ProjectVolumeDeletionPreview, err error) {
 	ctx, end := telemetry.StartOperation(ctx, "volume", "delete.preview")
 	defer func() { end(err) }()
-	if err = service.validate(); err != nil {
-		return ProjectVolumeDeletionPreview{}, err
-	}
 	projectID = strings.TrimSpace(projectID)
 	volumeID = strings.TrimSpace(volumeID)
 	if projectID == "" || volumeID == "" {
@@ -184,9 +175,6 @@ func (service *Service) CreateProjectVolume(ctx context.Context, input CreatePro
 		end(err)
 		recordVolumeOperationMetrics(ctx, "create", sourceKindAttribute, metricStartedAt, err)
 	}()
-	if err = service.validate(); err != nil {
-		return CreateProjectVolumeResult{}, err
-	}
 	if err = validateCreateProjectVolumeInput(input); err != nil {
 		return CreateProjectVolumeResult{}, err
 	}
@@ -294,9 +282,6 @@ func (service *Service) UpdateProjectVolume(ctx context.Context, projectID, volu
 		end(err)
 		recordVolumeOperationMetrics(ctx, "update", metricSourceKind, metricStartedAt, err)
 	}()
-	if err = service.validate(); err != nil {
-		return model.ProjectVolume{}, err
-	}
 	projectID = strings.TrimSpace(projectID)
 	volumeID = strings.TrimSpace(volumeID)
 	if projectID == "" || volumeID == "" || expectedRevision < 1 {
@@ -378,9 +363,6 @@ func (service *Service) RequestDeleteProjectVolume(ctx context.Context, input De
 		end(err)
 		recordVolumeOperationMetrics(ctx, "delete", metricSourceKind, metricStartedAt, err)
 	}()
-	if err = service.validate(); err != nil {
-		return model.ProjectVolume{}, false, err
-	}
 	input.ProjectID = strings.TrimSpace(input.ProjectID)
 	input.VolumeID = strings.TrimSpace(input.VolumeID)
 	input.ActorID = strings.TrimSpace(input.ActorID)
@@ -466,9 +448,6 @@ func (service *Service) RetryProjectVolumeOperation(ctx context.Context, project
 		end(err)
 		recordVolumeOperationMetrics(ctx, "retry", metricSourceKind, metricStartedAt, err)
 	}()
-	if err = service.validate(); err != nil {
-		return model.ProjectVolume{}, err
-	}
 	projectID = strings.TrimSpace(projectID)
 	volumeID = strings.TrimSpace(volumeID)
 	actorID = strings.TrimSpace(actorID)
@@ -523,9 +502,6 @@ func (service *Service) RetryProjectVolumeOperation(ctx context.Context, project
 func (service *Service) CompleteProjectVolumeDeletion(ctx context.Context, projectID, volumeID string) (result model.ProjectVolume, err error) {
 	ctx, end := telemetry.StartOperation(ctx, "volume", "delete")
 	defer func() { end(err) }()
-	if err = service.validate(); err != nil {
-		return model.ProjectVolume{}, err
-	}
 	projectID = strings.TrimSpace(projectID)
 	volumeID = strings.TrimSpace(volumeID)
 	if projectID == "" || volumeID == "" {
@@ -568,9 +544,6 @@ func (service *Service) CompleteProjectVolumeDeletion(ctx context.Context, proje
 func (service *Service) SetProjectVolumeLifecycle(ctx context.Context, projectID, volumeID string, from []string, to, errorCode, internalMessage string) (result model.ProjectVolume, err error) {
 	ctx, end := telemetry.StartOperation(ctx, "volume", "state_transition")
 	defer func() { end(err) }()
-	if err = service.validate(); err != nil {
-		return model.ProjectVolume{}, err
-	}
 	if len(from) == 0 || !allProjectVolumeTransitionsAllowed(from, to) {
 		return model.ProjectVolume{}, newDomainError(CodeStateConflict, "project volume lifecycle transition is not allowed")
 	}
@@ -587,9 +560,6 @@ func (service *Service) ReserveDeploymentVolumeMount(ctx context.Context, input 
 		end(err)
 		recordVolumeOperationMetrics(ctx, "bind", metricSourceKind, metricStartedAt, err)
 	}()
-	if err = service.validate(); err != nil {
-		return model.DeploymentVolumeMount{}, err
-	}
 	input = normalizeReserveMountInput(input)
 	if err = validateReserveMountInput(input); err != nil {
 		return model.DeploymentVolumeMount{}, err
@@ -676,9 +646,6 @@ func (service *Service) CompleteDeploymentVolumeUnbind(ctx context.Context, proj
 		end(err)
 		recordVolumeOperationMetrics(ctx, "unbind", "unknown", metricStartedAt, err)
 	}()
-	if err = service.validate(); err != nil {
-		return err
-	}
 	deleted, err := service.repository.DeleteDeploymentVolumeMount(ctx, strings.TrimSpace(projectID), strings.TrimSpace(mountID),
 		[]string{model.DeploymentVolumeActivationReleasePending})
 	if err != nil {
@@ -693,9 +660,6 @@ func (service *Service) CompleteDeploymentVolumeUnbind(ctx context.Context, proj
 func (service *Service) transitionMount(ctx context.Context, operation, projectID, mountID string, from []string, to, errorCode, internalMessage string) (result model.DeploymentVolumeMount, err error) {
 	ctx, end := telemetry.StartOperation(ctx, "volume", operation)
 	defer func() { end(err) }()
-	if err = service.validate(); err != nil {
-		return model.DeploymentVolumeMount{}, err
-	}
 	result, err = service.repository.TransitionDeploymentVolumeMount(ctx, strings.TrimSpace(projectID), strings.TrimSpace(mountID), from, to, errorCode, internalMessage)
 	return result, err
 }
@@ -703,9 +667,6 @@ func (service *Service) transitionMount(ctx context.Context, operation, projectI
 func (service *Service) ListVolumeTransfers(ctx context.Context, projectID string, options VolumeTransferListOptions) (result VolumeTransferListResult, err error) {
 	ctx, end := telemetry.StartOperation(ctx, "volume", "transfer.list")
 	defer func() { end(err) }()
-	if err = service.validate(); err != nil {
-		return VolumeTransferListResult{}, err
-	}
 	projectID = strings.TrimSpace(projectID)
 	if projectID == "" {
 		return VolumeTransferListResult{}, newDomainError(CodeInvalidInput, "project id is required")
@@ -720,9 +681,6 @@ func (service *Service) ListVolumeTransfers(ctx context.Context, projectID strin
 func (service *Service) GetVolumeTransfer(ctx context.Context, projectID, transferID string) (result model.VolumeTransfer, err error) {
 	ctx, end := telemetry.StartOperation(ctx, "volume", "transfer.get")
 	defer func() { end(err) }()
-	if err = service.validate(); err != nil {
-		return model.VolumeTransfer{}, err
-	}
 	result, err = service.repository.GetVolumeTransfer(ctx, strings.TrimSpace(projectID), strings.TrimSpace(transferID))
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return model.VolumeTransfer{}, newDomainError(CodeTransferNotFound, "volume transfer was not found")
@@ -736,9 +694,6 @@ func (service *Service) GetVolumeTransfer(ctx context.Context, projectID, transf
 func (service *Service) GetVolumeTransferForMaintenance(ctx context.Context, transferID string) (result model.VolumeTransfer, err error) {
 	ctx, end := telemetry.StartOperation(ctx, "volume", "transfer.get_internal")
 	defer func() { end(err) }()
-	if err = service.validate(); err != nil {
-		return model.VolumeTransfer{}, err
-	}
 	transferID = strings.TrimSpace(transferID)
 	if transferID == "" {
 		return model.VolumeTransfer{}, newDomainError(CodeInvalidInput, "volume transfer id is required")
@@ -766,9 +721,6 @@ func (service *Service) CreateVolumeTransfer(ctx context.Context, input CreateVo
 		attribute.String("volume.transfer.format", formatAttribute),
 	)
 	defer func() { end(err) }()
-	if err = service.validate(); err != nil {
-		return model.VolumeTransfer{}, err
-	}
 	if err = validateCreateVolumeTransferInput(input); err != nil {
 		return model.VolumeTransfer{}, err
 	}
@@ -807,7 +759,6 @@ func (service *Service) CreateVolumeTransfer(ctx context.Context, input CreateVo
 			State:           model.VolumeTransferStatePreparing,
 			SourceFilename:  input.SourceFilename,
 			ExpectedBytes:   input.ExpectedBytes,
-			SHA256:          input.SHA256,
 			ActorID:         input.ActorID,
 			ExpiresAt:       input.ExpiresAt,
 		}
@@ -841,9 +792,6 @@ func (service *Service) CreateVolumeTransfer(ctx context.Context, input CreateVo
 func (service *Service) TransitionVolumeTransfer(ctx context.Context, projectID, transferID, to, errorCode, internalMessage string) (result model.VolumeTransfer, err error) {
 	ctx, end := telemetry.StartOperation(ctx, "volume", "transfer.transition")
 	defer func() { end(err) }()
-	if err = service.validate(); err != nil {
-		return model.VolumeTransfer{}, err
-	}
 	projectID = strings.TrimSpace(projectID)
 	transferID = strings.TrimSpace(transferID)
 	to = strings.TrimSpace(to)
@@ -883,9 +831,6 @@ func (service *Service) TransitionVolumeTransfer(ctx context.Context, projectID,
 func (service *Service) ClaimVolumeTransferExecution(ctx context.Context, projectID, transferID, expectedState, leaseOwner string, leaseExpiresAt time.Time) (result model.VolumeTransfer, err error) {
 	ctx, end := telemetry.StartOperation(ctx, "volume", "transfer.claim_preparation")
 	defer func() { end(err) }()
-	if err = service.validate(); err != nil {
-		return model.VolumeTransfer{}, err
-	}
 	projectID = strings.TrimSpace(projectID)
 	transferID = strings.TrimSpace(transferID)
 	leaseOwner = strings.TrimSpace(leaseOwner)
@@ -899,9 +844,6 @@ func (service *Service) ClaimVolumeTransferExecution(ctx context.Context, projec
 func (service *Service) RenewVolumeTransferExecutionLease(ctx context.Context, projectID, transferID, leaseOwner string, generation int64, leaseExpiresAt time.Time) (result model.VolumeTransfer, err error) {
 	ctx, end := telemetry.StartOperation(ctx, "volume", "transfer.renew_preparation_lease")
 	defer func() { end(err) }()
-	if err = service.validate(); err != nil {
-		return model.VolumeTransfer{}, err
-	}
 	projectID = strings.TrimSpace(projectID)
 	transferID = strings.TrimSpace(transferID)
 	leaseOwner = strings.TrimSpace(leaseOwner)
@@ -915,9 +857,6 @@ func (service *Service) RenewVolumeTransferExecutionLease(ctx context.Context, p
 func (service *Service) ConfirmVolumeTransferJobCreated(ctx context.Context, projectID, transferID string, generation int64) (result model.VolumeTransfer, err error) {
 	ctx, end := telemetry.StartOperation(ctx, "volume", "transfer.confirm_runtime")
 	defer func() { end(err) }()
-	if err = service.validate(); err != nil {
-		return model.VolumeTransfer{}, err
-	}
 	if strings.TrimSpace(projectID) == "" || strings.TrimSpace(transferID) == "" || generation < 1 {
 		return model.VolumeTransfer{}, newDomainError(CodeInvalidInput, "volume transfer runtime identity is invalid")
 	}
@@ -927,9 +866,6 @@ func (service *Service) ConfirmVolumeTransferJobCreated(ctx context.Context, pro
 func (service *Service) MarkVolumeTransferReady(ctx context.Context, projectID, transferID string, generation int64) (result model.VolumeTransfer, err error) {
 	ctx, end := telemetry.StartOperation(ctx, "volume", "transfer.ready")
 	defer func() { end(err) }()
-	if err = service.validate(); err != nil {
-		return model.VolumeTransfer{}, err
-	}
 	if strings.TrimSpace(projectID) == "" || strings.TrimSpace(transferID) == "" || generation < 1 {
 		return model.VolumeTransfer{}, newDomainError(CodeInvalidInput, "volume transfer ready identity is invalid")
 	}
@@ -939,9 +875,6 @@ func (service *Service) MarkVolumeTransferReady(ctx context.Context, projectID, 
 func (service *Service) ClaimVolumeTransferStream(ctx context.Context, projectID, transferID, direction string) (result model.VolumeTransfer, err error) {
 	ctx, end := telemetry.StartOperation(ctx, "volume", "transfer.claim_stream")
 	defer func() { end(err) }()
-	if err = service.validate(); err != nil {
-		return model.VolumeTransfer{}, err
-	}
 	projectID = strings.TrimSpace(projectID)
 	transferID = strings.TrimSpace(transferID)
 	direction = strings.TrimSpace(direction)
@@ -954,9 +887,6 @@ func (service *Service) ClaimVolumeTransferStream(ctx context.Context, projectID
 func (service *Service) CompleteVolumeTransferStream(ctx context.Context, projectID, transferID string, completion TransferCompletion) (result model.VolumeTransfer, err error) {
 	ctx, end := telemetry.StartOperation(ctx, "volume", "transfer.complete_stream")
 	defer func() { end(err) }()
-	if err = service.validate(); err != nil {
-		return model.VolumeTransfer{}, err
-	}
 	projectID = strings.TrimSpace(projectID)
 	transferID = strings.TrimSpace(transferID)
 	completion.SHA256 = strings.ToLower(strings.TrimSpace(completion.SHA256))
@@ -972,8 +902,8 @@ func (service *Service) CompleteVolumeTransferStream(ctx context.Context, projec
 		if transfer.State != model.VolumeTransferStateStreaming {
 			return newDomainError(CodeTransferStateConflict, "volume transfer is not streaming")
 		}
-		if transfer.Direction == model.VolumeTransferDirectionImport && (transfer.ExpectedBytes != completion.TransferredBytes || !strings.EqualFold(transfer.SHA256, completion.SHA256)) {
-			return newDomainError(CodeTransferChecksumMismatch, "volume import content does not match its declared checksum")
+		if transfer.Direction == model.VolumeTransferDirectionImport && transfer.ExpectedBytes != completion.TransferredBytes {
+			return newDomainError(CodeTransferChecksumMismatch, "volume import content length does not match its prepared transfer")
 		}
 		if transfer.Format == model.VolumeTransferFormatRawZST {
 			if completion.LogicalBytes < 1 || !validSHA256(completion.DataSHA256) {
@@ -1015,9 +945,6 @@ func (service *Service) CompleteVolumeTransferStream(ctx context.Context, projec
 func (service *Service) FailVolumeTransferExecution(ctx context.Context, projectID, transferID, errorCode, internalMessage string) (result model.VolumeTransfer, err error) {
 	ctx, end := telemetry.StartOperation(ctx, "volume", "transfer.fail_execution")
 	defer func() { end(err) }()
-	if err = service.validate(); err != nil {
-		return model.VolumeTransfer{}, err
-	}
 	projectID = strings.TrimSpace(projectID)
 	transferID = strings.TrimSpace(transferID)
 	errorCode = strings.TrimSpace(errorCode)
@@ -1095,9 +1022,6 @@ func (service *Service) FailVolumeTransferExecution(ctx context.Context, project
 func (service *Service) FailStaleVolumeTransfer(ctx context.Context, projectID, transferID string, cutoff time.Time, errorCode, internalMessage string) (result model.VolumeTransfer, err error) {
 	ctx, end := telemetry.StartOperation(ctx, "volume", "transfer.fail_stale")
 	defer func() { end(err) }()
-	if err = service.validate(); err != nil {
-		return model.VolumeTransfer{}, err
-	}
 	projectID = strings.TrimSpace(projectID)
 	transferID = strings.TrimSpace(transferID)
 	errorCode = strings.TrimSpace(errorCode)
@@ -1132,9 +1056,6 @@ func (service *Service) FailStaleVolumeTransfer(ctx context.Context, projectID, 
 func (service *Service) MarkVolumeTransferExecutionCleanupCompleted(ctx context.Context, projectID, transferID string) (result model.VolumeTransfer, err error) {
 	ctx, end := telemetry.StartOperation(ctx, "volume", "transfer.mark_execution_cleanup")
 	defer func() { end(err) }()
-	if err = service.validate(); err != nil {
-		return model.VolumeTransfer{}, err
-	}
 	projectID = strings.TrimSpace(projectID)
 	transferID = strings.TrimSpace(transferID)
 	if projectID == "" || transferID == "" {
@@ -1171,9 +1092,6 @@ func (service *Service) MarkVolumeTransferExecutionCleanupCompleted(ctx context.
 func (service *Service) CompleteCancelledVolumeImport(ctx context.Context, projectID, volumeID, transferID string) (result model.ProjectVolume, err error) {
 	ctx, end := telemetry.StartOperation(ctx, "volume", "transfer.cancel_import_complete")
 	defer func() { end(err) }()
-	if err = service.validate(); err != nil {
-		return model.ProjectVolume{}, err
-	}
 	projectID = strings.TrimSpace(projectID)
 	volumeID = strings.TrimSpace(volumeID)
 	transferID = strings.TrimSpace(transferID)
@@ -1227,9 +1145,6 @@ func (service *Service) CompleteCancelledVolumeImport(ctx context.Context, proje
 func (service *Service) UpdateVolumeTransferProgress(ctx context.Context, projectID, transferID string, progress TransferProgress) (result model.VolumeTransfer, err error) {
 	ctx, end := telemetry.StartOperation(ctx, "volume", "transfer.progress")
 	defer func() { end(err) }()
-	if err = service.validate(); err != nil {
-		return model.VolumeTransfer{}, err
-	}
 	progress.Phase = strings.TrimSpace(progress.Phase)
 	if progress.TransferredBytes < 0 || progress.ProcessedFiles < 0 || len(progress.Phase) > 128 {
 		return model.VolumeTransfer{}, newDomainError(CodeTransferProgressInvalid, "volume transfer progress is invalid")
@@ -1239,9 +1154,6 @@ func (service *Service) UpdateVolumeTransferProgress(ctx context.Context, projec
 }
 
 func (service *Service) ListStaleProjectVolumeOperations(ctx context.Context, options MaintenanceScanOptions) ([]model.ProjectVolume, error) {
-	if err := service.validate(); err != nil {
-		return nil, err
-	}
 	if options.Cutoff.IsZero() {
 		return nil, newDomainError(CodeInvalidInput, "maintenance cutoff is required")
 	}
@@ -1249,9 +1161,6 @@ func (service *Service) ListStaleProjectVolumeOperations(ctx context.Context, op
 }
 
 func (service *Service) ListStaleVolumeTransferOperations(ctx context.Context, options MaintenanceScanOptions) ([]model.VolumeTransfer, error) {
-	if err := service.validate(); err != nil {
-		return nil, err
-	}
 	if options.Cutoff.IsZero() {
 		return nil, newDomainError(CodeInvalidInput, "maintenance cutoff is required")
 	}
@@ -1259,9 +1168,6 @@ func (service *Service) ListStaleVolumeTransferOperations(ctx context.Context, o
 }
 
 func (service *Service) ListExpiredVolumeTransfers(ctx context.Context, now time.Time, limit int) ([]model.VolumeTransfer, error) {
-	if err := service.validate(); err != nil {
-		return nil, err
-	}
 	if now.IsZero() {
 		return nil, newDomainError(CodeInvalidInput, "volume transfer expiry time is required")
 	}
@@ -1271,9 +1177,6 @@ func (service *Service) ListExpiredVolumeTransfers(ctx context.Context, now time
 func (service *Service) ExpireVolumeTransfer(ctx context.Context, projectID, transferID string, now time.Time) (result model.VolumeTransfer, err error) {
 	ctx, end := telemetry.StartOperation(ctx, "volume", "transfer.expire")
 	defer func() { end(err) }()
-	if err = service.validate(); err != nil {
-		return model.VolumeTransfer{}, err
-	}
 	projectID = strings.TrimSpace(projectID)
 	transferID = strings.TrimSpace(transferID)
 	if projectID == "" || transferID == "" || now.IsZero() {
@@ -1326,13 +1229,6 @@ func (service *Service) dispatchTerminalCleanup(ctx context.Context, transfer mo
 	}
 }
 
-func (service *Service) validate() error {
-	if service == nil || service.repository == nil {
-		return newDomainError(CodeInvalidInput, "volume service is not configured")
-	}
-	return nil
-}
-
 func hashValue(value string) string {
 	sum := sha256.Sum256([]byte(value))
 	return hex.EncodeToString(sum[:])
@@ -1353,7 +1249,6 @@ func sameVolumeTransferRequest(existing model.VolumeTransfer, input CreateVolume
 		existing.ConsistencyMode == input.ConsistencyMode &&
 		existing.SourceFilename == input.SourceFilename &&
 		existing.ExpectedBytes == input.ExpectedBytes &&
-		existing.SHA256 == input.SHA256 &&
 		existing.ActorID == input.ActorID &&
 		existing.ExpiresAt.UTC().Truncate(time.Microsecond).Equal(input.ExpiresAt.UTC().Truncate(time.Microsecond))
 }

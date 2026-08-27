@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
-	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -89,7 +88,7 @@ func (service *Service) CreateImport(ctx context.Context, request ImportRequest)
 		return ImportResult{}, err
 	}
 	request = normalizeImportRequest(request)
-	if request.ProjectID == "" || request.ActorID == "" || request.ContentLength < 1 || !validSHA256(request.SHA256) ||
+	if request.ProjectID == "" || request.ActorID == "" || request.ContentLength < 1 ||
 		(service.maxBytes > 0 && request.ContentLength > service.maxBytes) {
 		return ImportResult{}, domainError(volume.CodeInvalidInput, "volume import metadata is invalid", nil)
 	}
@@ -105,7 +104,7 @@ func (service *Service) CreateImport(ctx context.Context, request ImportRequest)
 	transfer, err := service.volumes.CreateVolumeTransfer(ctx, volume.CreateVolumeTransferInput{
 		ProjectID: request.ProjectID, ProjectVolumeID: volumeResult.Volume.ID, Direction: model.VolumeTransferDirectionImport,
 		Format: request.Format, ConsistencyMode: model.VolumeTransferConsistencyUnmounted, SourceFilename: request.Filename,
-		ExpectedBytes: request.ContentLength, SHA256: request.SHA256, ActorID: request.ActorID,
+		ExpectedBytes: request.ContentLength, ActorID: request.ActorID,
 		ExpiresAt: service.now().UTC().Add(service.readyTTL), IdempotencyKey: request.IdempotencyKey,
 	})
 	if err != nil {
@@ -157,12 +156,12 @@ func (service *Service) RetryTransfer(ctx context.Context, actor Actor, original
 	return service.volumes.CreateVolumeTransfer(ctx, volume.CreateVolumeTransferInput{
 		ProjectID: original.ProjectID, ProjectVolumeID: original.ProjectVolumeID, Direction: original.Direction,
 		Format: original.Format, ConsistencyMode: original.ConsistencyMode, SourceFilename: original.SourceFilename,
-		ExpectedBytes: original.ExpectedBytes, SHA256: original.SHA256, ActorID: actor.UserID,
+		ExpectedBytes: original.ExpectedBytes, ActorID: actor.UserID,
 		ExpiresAt: service.now().UTC().Add(service.readyTTL), IdempotencyKey: strings.TrimSpace(idempotencyKey),
 	})
 }
 
-func (service *Service) StreamImport(ctx context.Context, projectID, transferID string, actor Actor, body io.Reader, contentLength int64, checksum string) (result model.VolumeTransfer, err error) {
+func (service *Service) StreamImport(ctx context.Context, projectID, transferID string, actor Actor, body io.Reader, contentLength int64) (result model.VolumeTransfer, err error) {
 	ctx, end := telemetry.StartOperation(ctx, "volume_transfer_api", "import.stream")
 	defer func() { end(err) }()
 	if err = service.validate(); err != nil {
@@ -178,9 +177,8 @@ func (service *Service) StreamImport(ctx context.Context, projectID, transferID 
 	if transfer.State == model.VolumeTransferStateReady && !transfer.ExpiresAt.After(service.now()) {
 		return model.VolumeTransfer{}, domainError(volume.CodeTransferExpired, "volume import session expired", nil)
 	}
-	checksum = strings.ToLower(strings.TrimSpace(checksum))
-	if transfer.Direction != model.VolumeTransferDirectionImport || contentLength != transfer.ExpectedBytes || contentLength < 1 || !validSHA256(checksum) || !strings.EqualFold(checksum, transfer.SHA256) {
-		return model.VolumeTransfer{}, domainError(volume.CodeTransferChecksumInvalid, "volume import headers do not match the prepared transfer", nil)
+	if transfer.Direction != model.VolumeTransferDirectionImport || contentLength != transfer.ExpectedBytes || contentLength < 1 {
+		return model.VolumeTransfer{}, domainError(volume.CodeInvalidInput, "volume import length does not match the prepared transfer", nil)
 	}
 	claimed, err := service.volumes.ClaimVolumeTransferStream(ctx, transfer.ProjectID, transfer.ID, model.VolumeTransferDirectionImport)
 	if err != nil {
@@ -206,7 +204,7 @@ func (service *Service) StreamImport(ctx context.Context, projectID, transferID 
 		return model.VolumeTransfer{}, service.fail(streamCtx, claimed, streamErrorCode(streamErr), "direct import stream failed", streamErr)
 	}
 	actualSHA := hex.EncodeToString(hasher.Sum(nil))
-	if limited.N != 1 || streamResult.TransferredBytes != contentLength || subtle.ConstantTimeCompare([]byte(actualSHA), []byte(checksum)) != 1 || !strings.EqualFold(streamResult.SHA256, checksum) {
+	if limited.N != 1 || streamResult.TransferredBytes != contentLength || !strings.EqualFold(streamResult.SHA256, actualSHA) {
 		return model.VolumeTransfer{}, service.fail(ctx, claimed, volume.CodeTransferChecksumMismatch, "direct import checksum mismatch", nil)
 	}
 	result, err = service.volumes.CompleteVolumeTransferStream(ctx, transfer.ProjectID, transfer.ID, volume.TransferCompletion{
@@ -445,7 +443,6 @@ func normalizeImportRequest(request ImportRequest) ImportRequest {
 	request.VolumeMode = strings.TrimSpace(request.VolumeMode)
 	request.Format = strings.TrimSpace(request.Format)
 	request.Filename = strings.TrimSpace(request.Filename)
-	request.SHA256 = strings.ToLower(strings.TrimSpace(request.SHA256))
 	request.ActorID = strings.TrimSpace(request.ActorID)
 	request.IdempotencyKey = strings.TrimSpace(request.IdempotencyKey)
 	return request

@@ -340,8 +340,6 @@ func (h *Handlers) DeleteDeploymentTarget(ctx *gin.Context) {
 		ResourceType: "deployment_target",
 		ResourceID:   target.ID,
 		ProjectID:    target.ProjectID,
-		ActorID:      user.ID,
-		DeleteData:   false,
 	}) {
 		_ = markResourceDeleteFailed(h.dbFor(ctx), &model.DeploymentTarget{}, target.ID, "资源清理任务投递失败，请稍后重试")
 		_ = markDeploymentTargetGatewayRoutesDeleteFailed(h.dbFor(ctx), target, "资源清理任务投递失败，请稍后重试")

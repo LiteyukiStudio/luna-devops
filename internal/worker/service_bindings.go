@@ -12,7 +12,6 @@ import (
 
 	"github.com/LiteyukiStudio/devops/internal/model"
 	kubeprovider "github.com/LiteyukiStudio/devops/internal/provider/kubernetes"
-	resourcename "github.com/LiteyukiStudio/devops/internal/resourcename"
 )
 
 type resolvedServiceBindingConfig struct {
@@ -135,8 +134,12 @@ func serviceBindingTargetPort(binding model.ServiceBinding, target model.Deploym
 }
 
 func serviceBindingValues(project model.Project, binding model.ServiceBinding, target model.DeploymentTarget, port model.DeploymentServicePort) (map[string]string, error) {
-	host := resourcename.PersistedOrLegacy(target.KubernetesName, "dplt", target.ID) + "." +
-		resourcename.PersistedOrLegacy(project.KubernetesNamespace, "ns", project.ID) + ".svc.cluster.local"
+	serviceName := strings.TrimSpace(target.KubernetesName)
+	namespace := strings.TrimSpace(project.KubernetesNamespace)
+	if serviceName == "" || namespace == "" {
+		return nil, fmt.Errorf("service binding %s target runtime name is unavailable", binding.ID)
+	}
+	host := serviceName + "." + namespace + ".svc.cluster.local"
 	switch strings.TrimSpace(binding.InjectionMode) {
 	case "url":
 		protocol := strings.ToLower(strings.TrimSpace(binding.Protocol))

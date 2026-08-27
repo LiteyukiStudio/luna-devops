@@ -3,7 +3,7 @@ import { Component } from 'react'
 import { useTranslation } from 'react-i18next'
 import { recordInteractionCardRenderError } from '@/lib/telemetry'
 
-type InteractionCardRenderScope = 'group' | 'card' | 'content' | 'field' | 'action'
+type InteractionCardRenderScope = 'group' | 'card'
 
 interface InteractionCardErrorBoundaryProps {
   children: ReactNode

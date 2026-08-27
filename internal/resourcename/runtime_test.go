@@ -19,14 +19,3 @@ func TestRuntimeResourceNames(t *testing.T) {
 		})
 	}
 }
-
-func TestPersistedOrLegacy(t *testing.T) {
-	t.Parallel()
-
-	if got := PersistedOrLegacy("luna-api-prod", "dplt", "dplt_abcdef123456"); got != "luna-api-prod" {
-		t.Fatalf("PersistedOrLegacy() = %q", got)
-	}
-	if got := PersistedOrLegacy("", "dplt", "dplt_abcdef123456"); got != "dplt-abcdef1234" {
-		t.Fatalf("PersistedOrLegacy() legacy = %q", got)
-	}
-}

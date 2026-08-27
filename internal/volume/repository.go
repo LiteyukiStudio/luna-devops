@@ -59,6 +59,9 @@ type GormRepository struct {
 }
 
 func NewGormRepository(db *gorm.DB) *GormRepository {
+	if db == nil {
+		panic("volume repository database is required")
+	}
 	return &GormRepository{db: db}
 }
 

@@ -51,7 +51,6 @@ export const deploymentTargetDefaults: DeploymentTargetPayload = {
   autoScalingCpuPercent: 0,
   autoScalingMemoryPercent: 0,
   autoScalingBehavior: '',
-  servicePort: 8080,
   servicePorts: [{ appProtocol: '', name: 'http', port: 8080 }],
   sourceType: 'repository',
   repositoryBindingId: '',
@@ -80,7 +79,6 @@ export const deploymentTargetDefaults: DeploymentTargetPayload = {
   branchPattern: '',
   tagPattern: '',
   concurrencyPolicy: 'queue',
-  runtimeConfigSetIds: [],
   runtimeConfigRefs: [],
   environmentVariables: [],
   configRefs: {},
@@ -200,7 +198,6 @@ export function deploymentTargetRuntimeChanged(current: DeploymentTarget, next: 
     'autoScalingMemoryPercent',
     'autoScalingBehavior',
     'stage',
-    'servicePort',
     'servicePorts',
     'sourceType',
     'runtimeConfigRefs',
@@ -236,8 +233,8 @@ export function normalizeDeploymentTargetPayload(values: DeploymentTargetPayload
   const dataVolumes = parseRuntimeDataVolumes(values.dataVolumes)
   const sourceType = values.sourceType === 'image' ? 'image' : 'repository'
   const buildDefinitionMode = values.buildDefinitionMode === 'template' ? 'template' : 'repository_dockerfile'
-  const servicePorts = normalizeDeploymentServicePorts(values.servicePorts, values.servicePort)
-  const runtimeConfigRefs = normalizeRuntimeConfigRefs(values.runtimeConfigRefs, values.runtimeConfigSetIds)
+  const servicePorts = normalizeDeploymentServicePorts(values.servicePorts)
+  const runtimeConfigRefs = normalizeRuntimeConfigRefs(values.runtimeConfigRefs)
   return {
     ...values,
     sourceType,
@@ -283,7 +280,6 @@ export function normalizeDeploymentTargetPayload(values: DeploymentTargetPayload
     autoScalingBehavior: values.autoScalingBehavior?.trim() ?? '',
     stage: normalizeDeploymentStage(values.stage),
     servicePorts,
-    servicePort: servicePorts[0]?.port ?? 8080,
     enabled,
     autoDeploy,
     requireApproval,
@@ -306,7 +302,6 @@ export function normalizeDeploymentTargetPayload(values: DeploymentTargetPayload
     targetTag: values.targetTag || 'latest',
     buildVariableSetIds: normalizeStringIds(values.buildVariableSetIds),
     runtimeConfigRefs,
-    runtimeConfigSetIds: runtimeConfigLiveSetIds(runtimeConfigRefs),
     configFiles: values.configFiles?.trim() ?? '',
     secretFiles: values.secretFiles?.trim() ?? '',
     buildHookBindings: normalizeDeploymentHookBindings(values.buildHookBindings),
@@ -353,7 +348,7 @@ export function normalizeDeploymentHookBindings(value: unknown): DeploymentTarge
   return output
 }
 
-export function normalizeRuntimeConfigRefs(value: unknown, fallbackIds: unknown = []): DeploymentRuntimeConfigRef[] {
+export function normalizeRuntimeConfigRefs(value: unknown): DeploymentRuntimeConfigRef[] {
   const rawRefs = Array.isArray(value) ? value : []
   const refs = rawRefs
     .map((item) => {
@@ -364,11 +359,8 @@ export function normalizeRuntimeConfigRefs(value: unknown, fallbackIds: unknown 
       } satisfies DeploymentRuntimeConfigRef
     })
     .filter(ref => ref.setId)
-  const source = refs.length > 0
-    ? refs
-    : normalizeStringIds(fallbackIds).map(setId => ({ mode: 'live', setId }) satisfies DeploymentRuntimeConfigRef)
   const seen = new Set<string>()
-  return source.filter((ref) => {
+  return refs.filter((ref) => {
     if (seen.has(ref.setId))
       return false
     seen.add(ref.setId)
@@ -404,17 +396,16 @@ export function applyDockerfileBuildDefaults(form: UseFormReturn<DeploymentTarge
   form.setValue('buildDirectory', buildContext === '.' ? '' : buildContext, { shouldDirty: true, shouldValidate: true })
   const detectedPort = exposedPorts[normalizedDockerfile]?.find(port => Number.isInteger(port) && port > 0 && port <= 65535)
   if (detectedPort) {
-    form.setValue('servicePort', detectedPort, { shouldDirty: true, shouldValidate: true })
     form.setValue('servicePorts', [{ name: 'http', port: detectedPort }], { shouldDirty: true, shouldValidate: true })
   }
 }
 
-export function normalizeDeploymentServicePorts(value: unknown, fallbackPort = 8080) {
+export function normalizeDeploymentServicePorts(value: unknown) {
   const input = Array.isArray(value) ? value : []
   const seen = new Set<number>()
   const ports = input
     .map((item, index) => {
-      const port = normalizePositiveInteger(Number((item as { port?: unknown })?.port), index === 0 ? fallbackPort : 0)
+      const port = normalizePositiveInteger(Number((item as { port?: unknown })?.port), index === 0 ? 8080 : 0)
       const name = String((item as { name?: unknown })?.name ?? '').trim() || (index === 0 ? 'http' : `port-${port}`)
       const appProtocol = String((item as { appProtocol?: unknown })?.appProtocol ?? '').trim()
       return { appProtocol, name, port }
@@ -425,7 +416,7 @@ export function normalizeDeploymentServicePorts(value: unknown, fallbackPort = 8
       seen.add(item.port)
       return true
     })
-  return ports.length > 0 ? ports : [{ appProtocol: '', name: 'http', port: normalizePositiveInteger(fallbackPort, 8080) }]
+  return ports.length > 0 ? ports : [{ appProtocol: '', name: 'http', port: 8080 }]
 }
 
 function normalizeNonNegativeInteger(value: unknown) {
@@ -445,23 +436,8 @@ export function normalizeBoolean(value: unknown, fallback: boolean) {
   return fallback
 }
 
-export function normalizeStringIds(value: unknown): string[] {
-  if (Array.isArray(value))
-    return value.map(item => String(item).trim()).filter(Boolean)
-  if (typeof value !== 'string')
-    return []
-  const trimmed = value.trim()
-  if (!trimmed)
-    return []
-  try {
-    const parsed = JSON.parse(trimmed)
-    if (Array.isArray(parsed))
-      return parsed.map(item => String(item).trim()).filter(Boolean)
-  }
-  catch {
-    return trimmed.split(',').map(item => item.trim()).filter(Boolean)
-  }
-  return []
+export function normalizeStringIds(value: string[] | undefined): string[] {
+  return (value ?? []).map(item => item.trim()).filter(Boolean)
 }
 
 export function formatMetricsPercent(value: number, locale: string) {

@@ -17,6 +17,7 @@ const aiAssistant = {
     empty: '助手會結合當前頁面上下文，幫你診斷問題或執行平臺操作',
     inputLabel: '傳送給 Luna 助手的訊息',
     inputPlaceholder: '描述要診斷的問題…',
+    inputTooLarge: '訊息超過 {{limit}} 上限，請縮短後再傳送。',
     loadOlder: '載入更早的訊息',
     loadingOlder: '正在載入更早的訊息',
     olderLoadFailed: '更早的訊息載入失敗，請重試',
@@ -109,10 +110,6 @@ const aiAssistant = {
     },
     actions: {
       navigate: '開啟頁面',
-      select_tab: '切換標籤',
-      set_filters: '應用篩選',
-      refresh_query: '重新整理資料',
-      highlight: '定位資源',
       send_message: '傳送訊息',
       request_tool: '請求執行',
       opened: '已執行',
@@ -263,9 +260,6 @@ const aiAssistant = {
       renderError: {
         group: '這組互動卡片暫時無法顯示，其他聊天內容不受影響。',
         card: '這張卡片暫時無法顯示，其他卡片仍可繼續使用。',
-        content: '這部分卡片內容暫時無法顯示。',
-        field: '這個欄位暫時無法顯示，請讓助手重新生成卡片。',
-        action: '這個卡片操作暫時不可用。',
       },
       liveProgress: {
         label: '任務實時進度',

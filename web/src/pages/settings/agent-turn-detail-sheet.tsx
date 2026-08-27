@@ -13,12 +13,10 @@ import { ErrorState } from '@/components/common/error-state'
 import { ToolViewportSkeleton } from '@/components/common/loading-states'
 import { MetricGroup, MetricItem } from '@/components/common/metric-group'
 import { StatusBadge } from '@/components/common/status-badge'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
-import { availableToolNames } from './agent-available-tools'
 import { ObservabilityJsonBlock, ObservabilityJsonValue } from './agent-observability-json'
 import { agentModelOutput, agentSpanContentSections, agentSpanMessageMarkdown, agentSpanMessages, formatSpanJSON, isAgentSpanContentAttribute } from './agent-span-content'
 import { AgentTokenUsageStrip } from './agent-token-usage'
@@ -60,8 +58,6 @@ const spanAttributeLabelKeys: Record<string, string> = {
   'db.system.name': 'databaseSystem',
   'error.type': 'errorType',
   'luna.run.outcome': 'runOutcome',
-  'luna.agent.available_tool.count': 'availableToolCount',
-  'luna.agent.available_tool.names': 'availableToolNames',
 }
 
 export function AgentTurnDetailSheet({ turn, onOpenChange }: {
@@ -283,9 +279,8 @@ function TimelineStep({ span, expanded, isLast, userMessage, assistantMessage, o
 }) {
   const { t, i18n } = useTranslation()
   const kind = agentTurnTimelineKind(span)
-  const availableTools = availableToolNames(span)
   const attributes = Object.entries(span.attributes)
-    .filter(([key]) => !isAgentSpanContentAttribute(key) && (availableTools.length === 0 || key !== 'luna.agent.available_tool.names'))
+    .filter(([key]) => !isAgentSpanContentAttribute(key))
   const contentSections = agentSpanContentSections(span)
   return (
     <li className="grid grid-cols-[4.5rem_1.5rem_minmax(0,1fr)] gap-3">
@@ -321,11 +316,6 @@ function TimelineStep({ span, expanded, isLast, userMessage, assistantMessage, o
           <span className="shrink-0 font-mono text-xs text-muted-foreground">{formatDuration(span.durationMs)}</span>
           {expanded ? <ChevronDown className="size-4 shrink-0 text-muted-foreground" /> : <ChevronRight className="size-4 shrink-0 text-muted-foreground" />}
         </button>
-        {availableTools.length > 0 && (
-          <div className="flex flex-wrap gap-2 border-t border-border px-4 py-3" aria-label={t('operationsDashboardPage.traceDetail.availableTools')}>
-            {availableTools.map(operationId => <Badge key={operationId} variant="secondary" className="font-mono">{operationId}</Badge>)}
-          </div>
-        )}
         {expanded && (
           <div className="grid gap-3 border-t border-border px-4 py-3">
             {userMessage && <TimelineMarkdownContent label={t('operationsDashboardPage.userMessage')} value={userMessage} />}
@@ -410,7 +400,7 @@ function SpanContentSection({ kind, value }: { kind: 'systemInstructions' | 'mod
             ? <ObservabilityJsonBlock className="max-h-96" value={value} />
             : kind === 'modelError' && typeof value !== 'string'
               ? <ObservabilityJsonBlock className="max-h-96" value={value} />
-              : <TimelineMarkdownContent value={kind === 'modelOutput' ? t('operationsDashboardPage.turnDetail.noReadableModelContent') : agentSpanMessageMarkdown(value) || displayContent(value)} />}
+              : <TimelineMarkdownContent value={agentSpanMessageMarkdown(value) || displayContent(value)} />}
     </section>
   )
 }
@@ -480,7 +470,7 @@ function TimelineIcon({ kind, status }: { kind: AgentTurnTimelineKind, status: s
     return <MessageSquareText className={className} />
   if (kind === 'agent' || kind === 'model')
     return <Bot className={className} />
-  if (kind === 'toolset' || kind === 'tool')
+  if (kind === 'tool')
     return <Wrench className={className} />
   if (kind === 'storage')
     return <Database className={className} />
@@ -490,8 +480,6 @@ function TimelineIcon({ kind, status }: { kind: AgentTurnTimelineKind, status: s
 }
 
 function timelineTitle(span: AgentObservabilityTraceSpan, kind: AgentTurnTimelineKind, t: (key: string, options?: Record<string, unknown>) => string) {
-  if (span.name === 'agent.tools.available')
-    return t('operationsDashboardPage.turnDetail.steps.availableTools', { count: availableToolNames(span).length })
   if (kind === 'turn')
     return t('operationsDashboardPage.turnDetail.steps.turnAccepted')
   if (kind === 'agent')
@@ -510,7 +498,7 @@ function timelineTitle(span: AgentObservabilityTraceSpan, kind: AgentTurnTimelin
 function timelineDotClass(span: AgentObservabilityTraceSpan, kind: AgentTurnTimelineKind) {
   if (span.status === 'error')
     return 'bg-danger-subtle text-danger'
-  if (kind === 'model' || kind === 'agent' || kind === 'toolset')
+  if (kind === 'model' || kind === 'agent')
     return 'bg-primary-subtle text-primary'
   if (kind === 'tool')
     return 'bg-warning-subtle text-warning'

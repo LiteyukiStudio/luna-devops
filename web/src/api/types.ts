@@ -1221,7 +1221,6 @@ export interface DeploymentTarget {
   autoScalingCpuPercent: number
   autoScalingMemoryPercent: number
   autoScalingBehavior: string
-  servicePort: number
   servicePorts: DeploymentServicePort[]
   sourceType: 'repository' | 'image'
   repositoryBindingId: string
@@ -1243,14 +1242,13 @@ export interface DeploymentTarget {
   targetImageRef?: string
   imageRef: string
   buildLabels: string
-  buildVariableSetIds: string | string[]
+  buildVariableSetIds: string[]
   buildHooksEnabled: boolean
   buildHookBindings: DeploymentTargetHookBinding[]
   autoDeploy: boolean
   branchPattern: string
   tagPattern: string
   concurrencyPolicy: 'queue' | 'parallel'
-  runtimeConfigSetIds: string | string[]
   runtimeConfigRefs: DeploymentRuntimeConfigRef[]
   environmentVariables: RuntimeEnvironmentVariable[]
   configRefs: Record<string, string>
@@ -1321,11 +1319,10 @@ export interface RuntimeSecretMutationResponse {
   environmentVariables: RuntimeEnvironmentVariable[]
 }
 
-export type DeploymentTargetPayload = Omit<DeploymentTarget, 'id' | 'projectId' | 'applicationId' | 'kubernetesName' | 'createdBy' | 'createdAt' | 'buildVariableSetIds' | 'runtimeConfigSetIds' | 'runtimeConfigRefs' | 'environmentVariables' | 'secretFilesSet' | 'dataVolumes' | 'status' | 'observationCode' | 'lastCheckedAt' | 'desiredReplicas' | 'updatedReplicas' | 'readyReplicas' | 'availableReplicas' | 'deleteStatus' | 'deleteMessage' | 'deleteStartedAt' | 'deleteFinishedAt'> & {
-  buildVariableSetIds: string | string[]
+export type DeploymentTargetPayload = Omit<DeploymentTarget, 'id' | 'projectId' | 'applicationId' | 'kubernetesName' | 'createdBy' | 'createdAt' | 'buildVariableSetIds' | 'runtimeConfigRefs' | 'environmentVariables' | 'secretFilesSet' | 'dataVolumes' | 'status' | 'observationCode' | 'lastCheckedAt' | 'desiredReplicas' | 'updatedReplicas' | 'readyReplicas' | 'availableReplicas' | 'deleteStatus' | 'deleteMessage' | 'deleteStartedAt' | 'deleteFinishedAt'> & {
+  buildVariableSetIds: string[]
   buildVariables?: Record<string, string>
   buildSecrets?: Record<string, string>
-  runtimeConfigSetIds: string | string[]
   runtimeConfigRefs: DeploymentRuntimeConfigRef[]
   environmentVariables: RuntimeEnvironmentVariableInput[]
   secretFiles?: string

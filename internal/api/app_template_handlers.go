@@ -452,7 +452,6 @@ func (h *Handlers) buildTemplateInstallPlan(ctx *gin.Context, user model.User, p
 		Replicas:            replicas,
 		CPURequest:          cpuRequest,
 		MemoryRequest:       memoryRequest,
-		ServicePort:         fallbackInt(template.ServicePort, 8080),
 		ServicePorts:        model.EncodeDeploymentServicePorts([]model.DeploymentServicePort{{Name: "http", Port: fallbackInt(template.ServicePort, 8080)}}, fallbackInt(template.ServicePort, 8080)),
 		SourceType:          "image",
 		ImageRef:            imageRef,

@@ -2,7 +2,6 @@ package api
 
 import (
 	"fmt"
-	"math"
 	"net/url"
 	"strconv"
 	"strings"
@@ -11,24 +10,11 @@ import (
 )
 
 var aiIntegerConfigBounds = map[string][2]int{
-	"ai.runtime.provider_timeout_seconds":          {1, 900},
-	"ai.runtime.max_request_retries":               {0, 10},
-	"ai.runtime.run_timeout_seconds":               {30, 7200},
-	"ai.runtime.agent_concurrent_runs":             {1, 100},
-	"ai.quota.user_concurrent_runs":                {1, 100},
-	"ai.quota.user_daily_tokens":                   {1000, 10000000},
-	"ai.quota.project_concurrent_runs":             {1, 100},
-	"ai.quota.run_max_tool_calls":                  {aiRunMaxToolCallsMin, aiRunMaxToolCallsMax},
-	"ai.retention.conversation_days":               {0, 365},
-	"ai.retention.run_event_days":                  {0, 90},
-	"ai.retention.checkpoint_days":                 {1, 30},
-	"ai.context.max_uncompressed_turn_count":       {4, 128},
-	"ai.context.max_compression_turns_per_compile": {8, 1024},
-	"ai.context.summary_max_output_tokens":         {200, 32768},
-	"ai.model.max_output_tokens":                   {256, 131072},
-	"ai.run.max_model_steps":                       {1, 1024},
-	"ai.run.max_input_k_bytes":                     {8, 8192},
-	"ai.tools.max_card_repair_attempts":            {1, 10},
+	"ai.runtime.provider_timeout_seconds": {1, 900},
+	"ai.runtime.max_request_retries":      {0, 10},
+	"ai.runtime.run_timeout_seconds":      {30, 7200},
+	"ai.runtime.agent_concurrent_runs":    {1, 100},
+	"ai.quota.user_concurrent_runs":       {1, 100},
 }
 
 func containsAIConfig[T any](values map[string]T) bool {
@@ -141,16 +127,6 @@ func (h *Handlers) validateAIConfigValues(values map[string]string) error {
 		number, err := strconv.Atoi(strings.TrimSpace(raw))
 		if err != nil || number < bounds[0] || number > bounds[1] {
 			return fmt.Errorf("%s must be between %d and %d", key, bounds[0], bounds[1])
-		}
-	}
-	for _, key := range []string{"ai.quota.platform_daily_cost_soft", "ai.quota.platform_daily_cost_hard"} {
-		raw, submitted := values[key]
-		if !submitted {
-			continue
-		}
-		number, err := strconv.ParseFloat(strings.TrimSpace(raw), 64)
-		if err != nil || math.IsNaN(number) || math.IsInf(number, 0) || number < 0 {
-			return fmt.Errorf("%s must be a non-negative number", key)
 		}
 	}
 	if mode, submitted := values["ai.access.mode"]; submitted {

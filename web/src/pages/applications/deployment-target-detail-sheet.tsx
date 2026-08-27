@@ -108,7 +108,7 @@ export function DeploymentTargetDetailSheet({ applicationId, item, onOpenChange,
                 <DetailValue label={t('deploymentsPage.replicas')} value={target.status === 'unavailable' ? '-' : `${target.readyReplicas} / ${target.desiredReplicas}`} />
                 <DetailValue label={t('deploymentsPage.workloadType')} value={target.workloadType || '-'} />
                 <DetailValue label={t('deploymentsPage.autoScalingEnabled')} value={<StatusValueBadge value={target.autoScalingEnabled ? 'enabled' : 'disabled'} />} />
-                <DetailValue label={t('deploymentsPage.servicePorts')} value={formatServicePorts(target.servicePorts, target.servicePort)} />
+                <DetailValue label={t('deploymentsPage.servicePorts')} value={formatServicePorts(target.servicePorts)} />
               </dl>
             </Section>
 
@@ -159,7 +159,6 @@ function CopyableValue({ value }: { value?: string }) {
   return <CopyableHoverText className="max-w-full font-mono text-xs" value={value} />
 }
 
-function formatServicePorts(ports: Array<{ name: string, port: number }>, fallbackPort: number) {
-  const values = ports.length > 0 ? ports : [{ name: 'http', port: fallbackPort }]
-  return values.map(port => `${port.name || 'http'}:${port.port}`).join(' · ')
+function formatServicePorts(ports: Array<{ name: string, port: number }>) {
+  return ports.map(port => `${port.name || 'http'}:${port.port}`).join(' · ')
 }

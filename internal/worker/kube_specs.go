@@ -128,7 +128,7 @@ func environmentClusterLookup(clusterID string) (string, []any) {
 }
 
 func projectNamespace(project model.Project) string {
-	return resourcename.PersistedOrLegacy(project.KubernetesNamespace, "ns", project.ID)
+	return strings.TrimSpace(project.KubernetesNamespace)
 }
 
 func deploymentNamespace(project model.Project, _ model.Environment) string {
@@ -136,7 +136,7 @@ func deploymentNamespace(project model.Project, _ model.Environment) string {
 }
 
 func applicationResourceName(deploymentTarget model.DeploymentTarget) string {
-	return resourcename.PersistedOrLegacy(deploymentTarget.KubernetesName, "dplt", deploymentTarget.ID)
+	return strings.TrimSpace(deploymentTarget.KubernetesName)
 }
 
 func hookJobName(run model.HookRun) string {
@@ -361,20 +361,21 @@ func applicationResourcesSpec(release model.Release, project model.Project, appl
 		return kubeprovider.ApplicationResourcesSpec{}, err
 	}
 	configuredServicePorts := model.DeploymentTargetServicePorts(deploymentTarget)
-	servicePort := deploymentTarget.ServicePort
-	if len(configuredServicePorts) > 0 {
-		servicePort = configuredServicePorts[0].Port
+	if len(configuredServicePorts) == 0 {
+		return kubeprovider.ApplicationResourcesSpec{}, errors.New("deployment service ports are required")
 	}
-	if servicePort <= 0 {
-		servicePort = 8080
+	resourceName := applicationResourceName(deploymentTarget)
+	if resourceName == "" {
+		return kubeprovider.ApplicationResourcesSpec{}, errors.New("deployment kubernetes name is required")
 	}
-	servicePorts := deploymentTargetApplicationServicePorts(deploymentTarget, servicePort)
+	servicePort := configuredServicePorts[0].Port
+	servicePorts := deploymentTargetApplicationServicePorts(deploymentTarget)
 	replicas := environment.Replicas
 	if replicas <= 0 {
 		replicas = 1
 	}
 	return kubeprovider.ApplicationResourcesSpec{
-		Name:                         applicationResourceName(deploymentTarget),
+		Name:                         resourceName,
 		Namespace:                    namespace,
 		ProjectID:                    project.ID,
 		ApplicationID:                application.ID,
@@ -434,14 +435,11 @@ func applicationResourcesSpec(release model.Release, project model.Project, appl
 	}, nil
 }
 
-func deploymentTargetApplicationServicePorts(target model.DeploymentTarget, fallbackPort int) []kubeprovider.ApplicationServicePort {
+func deploymentTargetApplicationServicePorts(target model.DeploymentTarget) []kubeprovider.ApplicationServicePort {
 	ports := model.DeploymentTargetServicePorts(target)
 	result := make([]kubeprovider.ApplicationServicePort, 0, len(ports))
 	for _, item := range ports {
 		result = append(result, kubeprovider.ApplicationServicePort{Name: item.Name, Port: int32(item.Port), AppProtocol: strings.TrimSpace(item.AppProtocol)})
-	}
-	if len(result) == 0 {
-		result = append(result, kubeprovider.ApplicationServicePort{Name: "http", Port: int32(fallbackPort)})
 	}
 	return result
 }
@@ -549,34 +547,8 @@ func runtimeConfigFileKey(index int, filePath string) string {
 	return fmt.Sprintf("%02d-%s", index+1, key)
 }
 
-func runtimeConfigSetIDs(raw string) []string {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return nil
-	}
-	var ids []string
-	if err := json.Unmarshal([]byte(raw), &ids); err == nil {
-		return compactStringList(ids)
-	}
-	return compactStringList(strings.Split(raw, ","))
-}
-
-func compactStringList(values []string) []string {
-	seen := map[string]bool{}
-	output := make([]string, 0, len(values))
-	for _, value := range values {
-		item := strings.TrimSpace(value)
-		if item == "" || seen[item] {
-			continue
-		}
-		seen[item] = true
-		output = append(output, item)
-	}
-	return output
-}
-
 func parseKeyValueMap(value string) (map[string]string, error) {
-	return runtimeconfig.ParseLegacyKeyValue(value)
+	return runtimeconfig.DecodeKeyValue(value)
 }
 
 // expandEnvRefsCrossBoundary 合并 config 和 secret 数据作为引用源，展开 config 中的 ${VAR_NAME} 引用。

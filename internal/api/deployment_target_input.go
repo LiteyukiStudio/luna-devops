@@ -46,11 +46,10 @@ func (h *Handlers) deploymentTargetFromInput(ctx *gin.Context, user model.User, 
 	if !ok {
 		return model.DeploymentTarget{}, nil, false
 	}
-	servicePorts, ok := normalizeDeploymentServicePorts(ctx, input.ServicePorts, input.ServicePort)
+	servicePorts, ok := normalizeDeploymentServicePorts(ctx, input.ServicePorts, 8080)
 	if !ok {
 		return model.DeploymentTarget{}, nil, false
 	}
-	servicePort := servicePorts[0].Port
 	replicas := input.Replicas
 	if replicas <= 0 {
 		replicas = 1
@@ -139,7 +138,6 @@ func (h *Handlers) deploymentTargetFromInput(ctx *gin.Context, user model.User, 
 	if !ok {
 		return model.DeploymentTarget{}, nil, false
 	}
-	runtimeConfigSetIDs := model.DeploymentRuntimeConfigLiveSetIDs(runtimeConfigRefs)
 	configFiles, ok := normalizeRuntimeConfigFilesInput(ctx, input.ConfigFiles)
 	if !ok {
 		return model.DeploymentTarget{}, nil, false
@@ -209,8 +207,7 @@ func (h *Handlers) deploymentTargetFromInput(ctx *gin.Context, user model.User, 
 		AutoScalingCPUPercent:        autoScaling.CPUPercent,
 		AutoScalingMemoryPercent:     autoScaling.MemoryPercent,
 		AutoScalingBehavior:          autoScaling.Behavior,
-		ServicePort:                  servicePort,
-		ServicePorts:                 model.EncodeDeploymentServicePorts(servicePorts, servicePort),
+		ServicePorts:                 model.EncodeDeploymentServicePorts(servicePorts, servicePorts[0].Port),
 		SourceType:                   sourceType,
 		RepositoryBindingID:          repositoryBindingID,
 		BuildDefinitionMode:          buildDefinitionMode,
@@ -236,7 +233,6 @@ func (h *Handlers) deploymentTargetFromInput(ctx *gin.Context, user model.User, 
 		BranchPattern:                strings.TrimSpace(input.BranchPattern),
 		TagPattern:                   strings.TrimSpace(input.TagPattern),
 		ConcurrencyPolicy:            normalizeBuildConcurrencyPolicy(input.ConcurrencyPolicy),
-		RuntimeConfigSetIDs:          encodeBuildVariableSetIDs(runtimeConfigSetIDs),
 		RuntimeConfigRefs:            model.EncodeDeploymentRuntimeConfigRefs(runtimeConfigRefs),
 		EnvVars:                      envVars,
 		ConfigRefs:                   configRefs,

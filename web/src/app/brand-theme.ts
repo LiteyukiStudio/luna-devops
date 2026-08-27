@@ -1,3 +1,5 @@
+import { safeStorageGet, safeStorageRemove, safeStorageSet } from '@/lib/safe-storage'
+
 export const defaultBrandColorPreset = 'blue'
 export const siteBrandColorPresetStorageKey = 'luna-devops-site-brand-color-preset'
 export const activeThemeUserStorageKey = 'luna-devops-theme-active-user'
@@ -44,7 +46,7 @@ export function applyBrandColorPreset(value: unknown) {
 
 export function applySiteBrandColorPreset(value: unknown) {
   const sitePreset = normalizeBrandColorPreset(value)
-  writeStorage(siteBrandColorPresetStorageKey, sitePreset)
+  safeStorageSet(siteBrandColorPresetStorageKey, sitePreset)
   return applyBrandColorPreset(readActiveUserBrandColorPreference() || sitePreset)
 }
 
@@ -54,17 +56,17 @@ export function applyUserBrandColorPreference(userId: string, value: unknown) {
   if (!normalizedUserId)
     return applyBrandColorPreset(readSiteBrandColorPreset())
 
-  writeStorage(activeThemeUserStorageKey, normalizedUserId)
+  safeStorageSet(activeThemeUserStorageKey, normalizedUserId)
   if (preference)
-    writeStorage(userBrandColorPresetStorageKey(normalizedUserId), preference)
+    safeStorageSet(userBrandColorPresetStorageKey(normalizedUserId), preference)
   else
-    removeStorage(userBrandColorPresetStorageKey(normalizedUserId))
+    safeStorageRemove(userBrandColorPresetStorageKey(normalizedUserId))
 
   return applyBrandColorPreset(preference || readSiteBrandColorPreset())
 }
 
 export function clearActiveUserBrandColorPreference() {
-  removeStorage(activeThemeUserStorageKey)
+  safeStorageRemove(activeThemeUserStorageKey)
   return applyBrandColorPreset(readSiteBrandColorPreset())
 }
 
@@ -104,37 +106,10 @@ export function brandThemeSwatchBackground(preset: BrandColorPreset) {
 }
 
 function readActiveUserBrandColorPreference() {
-  const userId = readStorage(activeThemeUserStorageKey)
-  return userId ? normalizeUserBrandColorPreference(readStorage(userBrandColorPresetStorageKey(userId))) : ''
+  const userId = safeStorageGet(activeThemeUserStorageKey)
+  return userId ? normalizeUserBrandColorPreference(safeStorageGet(userBrandColorPresetStorageKey(userId))) : ''
 }
 
 function readSiteBrandColorPreset() {
-  return normalizeBrandColorPreset(readStorage(siteBrandColorPresetStorageKey))
-}
-
-function readStorage(key: string) {
-  try {
-    return localStorage.getItem(key)
-  }
-  catch {
-    return null
-  }
-}
-
-function writeStorage(key: string, value: string) {
-  try {
-    localStorage.setItem(key, value)
-  }
-  catch {
-    // The current DOM theme remains usable when browser storage is unavailable.
-  }
-}
-
-function removeStorage(key: string) {
-  try {
-    localStorage.removeItem(key)
-  }
-  catch {
-    // The current DOM theme remains usable when browser storage is unavailable.
-  }
+  return normalizeBrandColorPreset(safeStorageGet(siteBrandColorPresetStorageKey))
 }

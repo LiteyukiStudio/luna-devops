@@ -19,7 +19,7 @@ func TestNewVolumeTasksBuildTypedPayloads(t *testing.T) {
 			name:     "provision",
 			taskType: TypeVolumeProvision,
 			newTask: func() ([]byte, string, error) {
-				task, err := NewVolumeProvisionTask(VolumeProvisionPayload{VolumeID: "pvol_1", ProjectID: "prj_1", ActorID: "usr_1"})
+				task, err := NewVolumeProvisionTask(VolumeProvisionPayload{VolumeID: "pvol_1", ProjectID: "prj_1"})
 				if err != nil {
 					return nil, "", err
 				}
@@ -31,7 +31,7 @@ func TestNewVolumeTasksBuildTypedPayloads(t *testing.T) {
 			name:     "import",
 			taskType: TypeVolumeImport,
 			newTask: func() ([]byte, string, error) {
-				task, err := NewVolumeImportTask(VolumeTransferPayload{TransferID: "vtx_1", VolumeID: "pvol_1", ProjectID: "prj_1", ActorID: "usr_1"})
+				task, err := NewVolumeImportTask(VolumeTransferPayload{TransferID: "vtx_1", VolumeID: "pvol_1", ProjectID: "prj_1"})
 				if err != nil {
 					return nil, "", err
 				}
@@ -43,7 +43,7 @@ func TestNewVolumeTasksBuildTypedPayloads(t *testing.T) {
 			name:     "export",
 			taskType: TypeVolumeExport,
 			newTask: func() ([]byte, string, error) {
-				task, err := NewVolumeExportTask(VolumeTransferPayload{TransferID: "vtx_2", VolumeID: "pvol_1", ProjectID: "prj_1", ActorID: "usr_1"})
+				task, err := NewVolumeExportTask(VolumeTransferPayload{TransferID: "vtx_2", VolumeID: "pvol_1", ProjectID: "prj_1"})
 				if err != nil {
 					return nil, "", err
 				}
@@ -70,6 +70,9 @@ func TestNewVolumeTasksBuildTypedPayloads(t *testing.T) {
 				if document[key] != want {
 					t.Fatalf("payload[%s] = %#v, want %q", key, document[key], want)
 				}
+			}
+			if _, ok := document["actorId"]; ok {
+				t.Fatalf("task payload must not include mutable actor identity: %s", payload)
 			}
 		})
 	}
@@ -126,7 +129,7 @@ func TestVolumeMaintenanceTaskPayloadsAreStable(t *testing.T) {
 func TestVolumeTaskPoliciesAreBounded(t *testing.T) {
 	for _, taskType := range []string{TypeVolumeProvision, TypeVolumeImport, TypeVolumeExport, TypeVolumeDelete} {
 		policy := PolicyForType(taskType)
-		if policy.Queue != QueueDeploy || policy.Timeout <= 0 || policy.Unique <= 0 || policy.Retention != 24*time.Hour {
+		if policy.Queue != QueueDeploy || policy.Timeout <= 0 || policy.Unique != 24*time.Hour || policy.Retention != 24*time.Hour {
 			t.Fatalf("policy for %s = %#v", taskType, policy)
 		}
 	}

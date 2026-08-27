@@ -71,7 +71,7 @@ func TestIsHealthCheckPathOnlyMatchesMachineProbes(t *testing.T) {
 			t.Errorf("expected %q to be a health check path", path)
 		}
 	}
-	for _, path := range []string{"/api/v1/meta", "/internal/v1/provider/health", "/api/v1/registries/reg_1/test"} {
+	for _, path := range []string{"/api/v1/meta", "/internal/v1/provider/test", "/api/v1/registries/reg_1/test"} {
 		if IsHealthCheckPath(path) {
 			t.Errorf("did not expect %q to be a health check path", path)
 		}

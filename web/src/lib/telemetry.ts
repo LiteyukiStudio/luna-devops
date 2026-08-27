@@ -30,7 +30,7 @@ const dynamicResourceParents = new Set([
 let telemetryRuntimePromise: Promise<void> | undefined
 
 export function enableBrowserTelemetry() {
-  if (telemetryRuntimePromise || typeof window === 'undefined')
+  if (telemetryRuntimePromise)
     return
 
   const runtimePromise = import('./browser-telemetry-runtime').then(({ enableBrowserTelemetryRuntime }) => {

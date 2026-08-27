@@ -108,7 +108,6 @@ const projectVolumes = {
   archiveFormat: 'アーカイブ形式',
   formatTarGz: 'tar.gz',
   formatRawZst: 'raw.zst',
-  hashing: 'アーカイブチェックサムを計算中 {{percent}}%',
   preparingTransfer: '対象ボリュームと転送環境を準備中',
   uploading: 'アップロード中 {{percent}}%',
   verifyingImport: 'アップロード完了。検証してボリュームへ書き込み中',

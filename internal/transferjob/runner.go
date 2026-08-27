@@ -92,7 +92,7 @@ func (runner *Runner) runImport(ctx context.Context, source io.Reader) (Result, 
 		return Result{}, newError(CodeChecksumMismatch, probeErr)
 	}
 	checksum := hex.EncodeToString(archiveDigest.Sum(nil))
-	if !strings.EqualFold(runner.config.ExpectedSHA256, checksum) {
+	if runner.config.ExpectedSHA256 != "" && !strings.EqualFold(runner.config.ExpectedSHA256, checksum) {
 		return Result{}, newError(CodeChecksumMismatch, nil)
 	}
 	return Result{TransferredBytes: limited.read, ProcessedFiles: processedFiles, SHA256: checksum,

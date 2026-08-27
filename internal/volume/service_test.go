@@ -210,6 +210,27 @@ type dispatcherStub struct {
 	err            error
 }
 
+func TestVolumeServiceConstructorsRejectMissingRequiredDependencies(t *testing.T) {
+	tests := []struct {
+		name string
+		new  func()
+	}{
+		{name: "repository", new: func() { NewService(nil) }},
+		{name: "database", new: func() { NewGormService(nil) }},
+		{name: "complete dependencies", new: func() { NewServiceWithDependencies(nil, nil, nil) }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			defer func() {
+				if recover() == nil {
+					t.Fatal("constructor accepted a missing required dependency")
+				}
+			}()
+			tt.new()
+		})
+	}
+}
+
 func (dispatcher *dispatcherStub) DispatchVolumeOperation(ctx context.Context, operation VolumeOperation) error {
 	dispatcher.operation = operation
 	dispatcher.operations = append(dispatcher.operations, operation)
@@ -253,6 +274,66 @@ func TestTerminalVolumeTransferDispatchesTargetedCleanupWithoutChangingResult(t 
 			t.Fatalf("cleanup operation = %#v", dispatcher.operation)
 		}
 	})
+}
+
+func TestCreateImportTransferDoesNotRequireOrPersistClientChecksum(t *testing.T) {
+	repository := &repositoryStub{lockedVolume: model.ProjectVolume{
+		ID: "pvol_import", ProjectID: "prj_import", SourceKind: model.ProjectVolumeSourceArchiveImport,
+		LifecycleState: model.ProjectVolumeLifecycleProvisioning, VolumeMode: model.ProjectVolumeModeFilesystem,
+	}}
+	dispatcher := &dispatcherStub{}
+	input := CreateVolumeTransferInput{
+		ProjectID: "prj_import", ProjectVolumeID: "pvol_import", Direction: model.VolumeTransferDirectionImport,
+		Format: model.VolumeTransferFormatTarGZ, ConsistencyMode: model.VolumeTransferConsistencyUnmounted,
+		SourceFilename: "backup.tar.gz", ExpectedBytes: 42, ActorID: "usr_import", ExpiresAt: time.Now().Add(time.Hour),
+		IdempotencyKey: "import-request-0001",
+	}
+	result, err := NewService(repository, dispatcher).CreateVolumeTransfer(t.Context(), input)
+	if err != nil {
+		t.Fatalf("CreateVolumeTransfer() error = %v", err)
+	}
+	if result.SHA256 != "" || repository.createdTransfer.SHA256 != "" {
+		t.Fatalf("client checksum was persisted: result=%q stored=%q", result.SHA256, repository.createdTransfer.SHA256)
+	}
+	if dispatcher.operation.Kind != model.VolumeTransferDirectionImport || dispatcher.operation.TransferID != result.ID {
+		t.Fatalf("dispatch operation = %#v", dispatcher.operation)
+	}
+}
+
+func TestCompletedChecksumDoesNotChangeImportIdempotencyIdentity(t *testing.T) {
+	input := CreateVolumeTransferInput{
+		ProjectID: "prj_import", ProjectVolumeID: "pvol_import", Direction: model.VolumeTransferDirectionImport,
+		Format: model.VolumeTransferFormatTarGZ, ConsistencyMode: model.VolumeTransferConsistencyUnmounted,
+		SourceFilename: "backup.tar.gz", ExpectedBytes: 42, ActorID: "usr_import", ExpiresAt: time.Now().Add(time.Hour),
+	}
+	existing := model.VolumeTransfer{
+		ProjectID: input.ProjectID, ProjectVolumeID: input.ProjectVolumeID, Direction: input.Direction,
+		Format: input.Format, ConsistencyMode: input.ConsistencyMode, SourceFilename: input.SourceFilename,
+		ExpectedBytes: input.ExpectedBytes, SHA256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+		ActorID: input.ActorID, ExpiresAt: input.ExpiresAt,
+	}
+	if !sameVolumeTransferRequest(existing, input) {
+		t.Fatal("authoritative completion checksum must not make an idempotent create replay conflict")
+	}
+}
+
+func TestCompleteImportStoresAuthoritativeChecksumWithoutDeclaredDigest(t *testing.T) {
+	const checksum = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	repository := &repositoryStub{
+		lockedTransfer: model.VolumeTransfer{
+			ID: "vtx_import", ProjectID: "prj_import", ProjectVolumeID: "pvol_import", Direction: model.VolumeTransferDirectionImport,
+			Format: model.VolumeTransferFormatTarGZ, State: model.VolumeTransferStateStreaming, ExpectedBytes: 42,
+		},
+		lockedVolume: model.ProjectVolume{
+			ID: "pvol_import", ProjectID: "prj_import", LifecycleState: model.ProjectVolumeLifecycleProvisioning, PendingOperation: OperationImport,
+		},
+	}
+	result, err := NewService(repository, &dispatcherStub{}).CompleteVolumeTransferStream(t.Context(), "prj_import", "vtx_import", TransferCompletion{
+		ExpectedState: model.VolumeTransferStateStreaming, TransferredBytes: 42, SHA256: checksum,
+	})
+	if err != nil || result.SHA256 != checksum || repository.transitionTo != model.ProjectVolumeLifecycleReady {
+		t.Fatalf("completion result=%#v transition=%q err=%v", result, repository.transitionTo, err)
+	}
 }
 
 type inspectorStub struct {

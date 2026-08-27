@@ -85,8 +85,8 @@ func TestConfigClientUsesConfiguredTimeout(t *testing.T) {
 		t.Fatal(err)
 	}
 	httpClient := client.(*HTTPClient)
-	if httpClient.httpClient.Timeout != 23*time.Second || httpClient.runClient.Timeout != 23*time.Second || httpClient.streamClient.Timeout != 0 {
-		t.Fatalf("timeouts = %s, %s, %s", httpClient.httpClient.Timeout, httpClient.runClient.Timeout, httpClient.streamClient.Timeout)
+	if httpClient.httpClient.Timeout != 23*time.Second || httpClient.streamClient.Timeout != 0 {
+		t.Fatalf("timeouts = %s, %s", httpClient.httpClient.Timeout, httpClient.streamClient.Timeout)
 	}
 }
 

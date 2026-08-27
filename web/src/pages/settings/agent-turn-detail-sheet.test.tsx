@@ -4,7 +4,6 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { api } from '@/api'
 import i18next from '@/i18n'
-import { availableToolNames } from './agent-available-tools'
 import { AgentTurnDetailSheet } from './agent-turn-detail-sheet'
 
 vi.mock('@/api', async (importOriginal) => {
@@ -51,20 +50,6 @@ const detail: AgentObservabilityTraceDetail = {
     { spanId: 'root', parentSpanId: '', name: 'agent.run.execute', serviceName: 'luna-agent', kind: 'internal', status: 'ok', startTimeUnixNano: '10', startOffsetMs: 10, durationMs: 40, attributes: {}, events: [], raw: { spanId: 'root' } },
   ],
 }
-
-describe('available model tool inventory', () => {
-  it('parses, deduplicates, and sorts the effective tool set', () => {
-    expect(availableToolNames({
-      name: 'agent.tools.available',
-      attributes: { 'luna.agent.available_tool.names': '["listProjects","createGatewayRoute","listProjects"]' },
-    })).toEqual(['createGatewayRoute', 'listProjects'])
-  })
-
-  it('rejects malformed or unrelated span attributes', () => {
-    expect(availableToolNames({ name: 'agent.model.stream', attributes: { 'luna.agent.available_tool.names': '["listProjects"]' } })).toEqual([])
-    expect(availableToolNames({ name: 'agent.tools.available', attributes: { 'luna.agent.available_tool.names': '{broken' } })).toEqual([])
-  })
-})
 
 describe('agent turn detail diagnostic actions', () => {
   beforeEach(async () => {
@@ -134,37 +119,6 @@ describe('agent turn detail diagnostic actions', () => {
     click.mockRestore()
     createObjectURL.mockRestore()
     revokeObjectURL.mockRestore()
-  })
-
-  it('renders the effective model tool inventory as compact capsules', async () => {
-    vi.mocked(api.getAgentObservabilityTrace).mockResolvedValue({
-      ...detail,
-      spans: [
-        ...detail.spans,
-        {
-          spanId: 'tools',
-          parentSpanId: 'root',
-          name: 'agent.tools.available',
-          serviceName: 'luna-agent',
-          kind: 'internal',
-          status: 'ok',
-          startTimeUnixNano: '15',
-          startOffsetMs: 15,
-          durationMs: 0.1,
-          attributes: {
-            'luna.agent.available_tool.count': '2',
-            'luna.agent.available_tool.names': '["createGatewayRoute","listGatewayRoutes"]',
-          },
-          events: [],
-          raw: { spanId: 'tools' },
-        },
-      ],
-    })
-    renderSheet()
-
-    expect(await screen.findByText('下发模型工具 · 2 个')).toBeInTheDocument()
-    expect(screen.getByText('createGatewayRoute')).toBeInTheDocument()
-    expect(screen.getByText('listGatewayRoutes')).toBeInTheDocument()
   })
 
   it('shows official cache-write and unavailable-usage Span attributes', async () => {

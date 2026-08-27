@@ -17,6 +17,7 @@ const aiAssistant = {
     empty: '助手会结合当前页面上下文，帮你诊断问题或执行平台操作',
     inputLabel: '发送给 Luna 助手的消息',
     inputPlaceholder: '描述要诊断的问题…',
+    inputTooLarge: '消息超过 {{limit}} 上限，请缩短后再发送。',
     loadOlder: '加载更早的消息',
     loadingOlder: '正在加载更早的消息',
     olderLoadFailed: '更早的消息加载失败，请重试',
@@ -109,10 +110,6 @@ const aiAssistant = {
     },
     actions: {
       navigate: '打开页面',
-      select_tab: '切换标签',
-      set_filters: '应用筛选',
-      refresh_query: '刷新数据',
-      highlight: '定位资源',
       send_message: '发送消息',
       request_tool: '请求执行',
       opened: '已执行',
@@ -263,9 +260,6 @@ const aiAssistant = {
       renderError: {
         group: '这组交互卡片暂时无法显示，其他聊天内容不受影响。',
         card: '这张卡片暂时无法显示，其他卡片仍可继续使用。',
-        content: '这部分卡片内容暂时无法显示。',
-        field: '这个字段暂时无法显示，请让助手重新生成卡片。',
-        action: '这个卡片操作暂时不可用。',
       },
       liveProgress: {
         label: '任务实时进度',

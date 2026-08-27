@@ -101,7 +101,6 @@ const projectVolumes = {
   archiveFormat: 'Archive format',
   formatTarGz: 'tar.gz',
   formatRawZst: 'raw.zst',
-  hashing: 'Calculating archive checksum {{percent}}%',
   preparingTransfer: 'Preparing the target volume and transfer environment',
   uploading: 'Uploading {{percent}}%',
   verifyingImport: 'Upload complete; verifying and writing the volume',

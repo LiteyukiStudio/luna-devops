@@ -129,11 +129,6 @@ export interface Repository {
     metadata: ModelAttemptMetadata,
   ): Promise<void>
   releaseModelCreditHold(creditHoldId: string): Promise<void>
-  getLatestReportedModelUsage(conversationId: string): Promise<{
-    modelId: string
-    promptTokens: number
-    maxContextTokensSnapshot: number
-  } | undefined>
   getConversationSummary(conversationId: string): Promise<ConversationSummary | undefined>
   saveConversationSummary(summary: Omit<ConversationSummary, "createdAt" | "updatedAt">): Promise<ConversationSummary>
   listConversationHistory(conversationId: string, afterTurnIndex: number, beforeTurnIndex: number, limit: number): Promise<ConversationHistoryEntry[]>

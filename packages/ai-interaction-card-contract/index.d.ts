@@ -30,11 +30,25 @@ export type AIOptionVisual
     | { type: 'icon', value: AIOptionIconName }
     | { type: 'img', value: string }
 
-export type InteractionCardRouteName
-  = | 'dashboard' | 'projects' | 'project.workspace' | 'application.detail' | 'events'
-    | 'code-repositories' | 'registries' | 'clusters' | 'app-templates' | 'billing'
-    | 'settings.account' | 'settings.auth-providers' | 'settings.notifications'
-    | 'settings.operations' | 'settings.site' | 'settings.users'
+export const aiInternalRouteNames: readonly [
+  'dashboard',
+  'projects',
+  'project.workspace',
+  'application.detail',
+  'events',
+  'code-repositories',
+  'registries',
+  'clusters',
+  'app-templates',
+  'billing',
+  'settings.account',
+  'settings.auth-providers',
+  'settings.notifications',
+  'settings.operations',
+  'settings.site',
+  'settings.users',
+]
+export type InteractionCardRouteName = typeof aiInternalRouteNames[number]
 
 export type InteractionCardIcon
   = | { type: 'asset', assetRef: string, alt: string }

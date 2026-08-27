@@ -34,13 +34,6 @@ const runtimeDefaults = {
   'ai.runtime.max_request_retries': '5',
   'ai.runtime.run_timeout_seconds': '3600',
   'ai.runtime.agent_concurrent_runs': '10',
-  'ai.context.max_uncompressed_turn_count': '64',
-  'ai.context.max_compression_turns_per_compile': '512',
-  'ai.context.summary_max_output_tokens': '16384',
-  'ai.model.max_output_tokens': '65536',
-  'ai.run.max_model_steps': '256',
-  'ai.run.max_input_k_bytes': '1024',
-  'ai.tools.max_card_repair_attempts': '5',
 }
 
 function renderPanel() {

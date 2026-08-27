@@ -174,6 +174,20 @@ func TestPeriodicTaskSpecsIncludeGitRefresh(t *testing.T) {
 	}
 }
 
+func TestPeriodicTaskOptionsPreserveZeroMaxRetry(t *testing.T) {
+	options := periodicTaskOptions(periodicTaskSpec{Queue: tasks.QueueLight, Timeout: time.Minute})
+	for _, option := range options {
+		if option.Type() != asynq.MaxRetryOpt {
+			continue
+		}
+		if got := option.Value(); got != 0 {
+			t.Fatalf("max retry = %v, want 0", got)
+		}
+		return
+	}
+	t.Fatal("periodic task options did not include MaxRetry")
+}
+
 func TestRetentionHandlerIsRegistered(t *testing.T) {
 	runner := NewRunner(nil, Options{})
 	called := false
@@ -274,7 +288,10 @@ func TestApplicationResourcesSpecIgnoresLegacyTargetLimitsAndAppliesCustomPolicy
 		model.Project{ID: "prj_policy"},
 		model.Application{ID: "app_policy"},
 		model.Environment{ID: "env_policy", Replicas: 1, CPURequest: "2", MemoryRequest: "2Gi"},
-		model.DeploymentTarget{ID: "dplt_policy", WorkloadType: "Deployment", CPULimit: "9", MemoryLimit: "9Gi"},
+		model.DeploymentTarget{
+			ID: "dplt_policy", KubernetesName: "dplt-policy", WorkloadType: "Deployment", CPULimit: "9", MemoryLimit: "9Gi",
+			ServicePorts: model.EncodeDeploymentServicePorts([]model.DeploymentServicePort{{Name: "http", Port: 8080}}, 8080),
+		},
 		nil, nil, "policy-test", 60,
 	)
 	if err != nil {
@@ -454,22 +471,17 @@ func TestProjectNamespaceSelection(t *testing.T) {
 		project model.Project
 		resolve func(model.Project) string
 		want    string
-		maxLen  int
 	}{
-		{name: "legacy fallback", project: model.Project{ID: "prj_abcdef1234567890", Identifier: "Demo_App"}, resolve: projectNamespace, want: "ns-abcdef1234"},
 		{name: "persisted name", project: model.Project{ID: "prj_payments", Identifier: "payments", KubernetesNamespace: "luna-payments"}, resolve: projectNamespace, want: "luna-payments"},
-		{name: "DNS limit", project: model.Project{ID: "prj_" + strings.Repeat("a", 80)}, resolve: projectNamespace, maxLen: 63},
-		{name: "deployment ignores environment namespace", project: model.Project{ID: "prj_abcdef1234567890", Identifier: "demo"}, resolve: func(project model.Project) string {
+		{name: "missing persisted name fails closed", project: model.Project{ID: "prj_abcdef1234567890", Identifier: "Demo_App"}, resolve: projectNamespace, want: ""},
+		{name: "deployment ignores environment namespace", project: model.Project{ID: "prj_abcdef1234567890", Identifier: "demo", KubernetesNamespace: "luna-demo"}, resolve: func(project model.Project) string {
 			return deploymentNamespace(project, model.Environment{Namespace: " Prod_App "})
-		}, want: "ns-abcdef1234"},
+		}, want: "luna-demo"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			got := test.resolve(test.project)
 			if test.want != "" && got != test.want {
 				t.Fatalf("namespace = %q, want %q", got, test.want)
-			}
-			if test.maxLen > 0 && len(got) > test.maxLen {
-				t.Fatalf("namespace too long: %q", got)
 			}
 		})
 	}
@@ -498,9 +510,8 @@ func TestApplicationResourceName(t *testing.T) {
 		target model.DeploymentTarget
 		want   string
 	}{
-		{name: "legacy target ID", target: model.DeploymentTarget{ID: "dplt_abcdef1234567890"}, want: "dplt-abcdef1234"},
 		{name: "persisted name", target: model.DeploymentTarget{ID: "dplt_payments_api_prod", KubernetesName: "luna-api-prod"}, want: "luna-api-prod"},
-		{name: "missing target ID", target: model.DeploymentTarget{}, want: "dplt"},
+		{name: "missing persisted name fails closed", target: model.DeploymentTarget{ID: "dplt_abcdef1234567890"}, want: ""},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			if got := applicationResourceName(test.target); got != test.want {
@@ -920,7 +931,7 @@ func TestHTTPRouteSpecMergesGatewayAdvancedConfig(t *testing.T) {
 			Host:                   "api.example.com",
 			ServicePort:            3000,
 			TLSMode:                "http-only",
-			RequestHeaders:         "X-App=route",
+			RequestHeaders:         `{"X-App":"route"}`,
 			ResponseHeaders:        `{"X-Frame-Options":"DENY"}`,
 			URLRewrite:             `{"replacePrefixMatch":"/"}`,
 			BackendWeight:          25,
@@ -933,8 +944,8 @@ func TestHTTPRouteSpecMergesGatewayAdvancedConfig(t *testing.T) {
 		model.RuntimeCluster{
 			GatewayExternalTLSMode:        "upstream",
 			GatewayForwardedHeadersMode:   "overwrite",
-			GatewayDefaultRequestHeaders:  "X-Cluster=default",
-			GatewayDefaultResponseHeaders: "X-Platform=luna",
+			GatewayDefaultRequestHeaders:  `{"X-Cluster":"default"}`,
+			GatewayDefaultResponseHeaders: `{"X-Platform":"luna"}`,
 		},
 		"project-demo",
 		"",
@@ -1031,8 +1042,7 @@ func TestParseKeyValueMap(t *testing.T) {
 		input string
 		want  map[string]string
 	}{
-		{name: "JSON object", input: `{"APP_ENV":"prod","REPLICAS":2}`, want: map[string]string{"APP_ENV": "prod", "REPLICAS": "2"}},
-		{name: "environment lines", input: "APP_ENV=prod\n# comment\nLOG_LEVEL=info", want: map[string]string{"APP_ENV": "prod", "LOG_LEVEL": "info"}},
+		{name: "JSON object", input: `{"APP_ENV":"prod","REPLICAS":"2"}`, want: map[string]string{"APP_ENV": "prod", "REPLICAS": "2"}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			got, err := parseKeyValueMap(test.input)
@@ -1045,6 +1055,11 @@ func TestParseKeyValueMap(t *testing.T) {
 				}
 			}
 		})
+	}
+	for _, input := range []string{"APP_ENV=prod", `{"REPLICAS":2}`} {
+		if _, err := parseKeyValueMap(input); err == nil {
+			t.Fatalf("legacy runtime configuration %q was accepted", input)
+		}
 	}
 }
 
@@ -1240,13 +1255,11 @@ func TestEnsureProjectNamespaceAppliesRestrictedBuildEgressPolicy(t *testing.T) 
 	}
 }
 
-func TestResourceCleanupCanRunAllowsRetryableStates(t *testing.T) {
-	for _, status := range []string{"deleting", "delete_failed"} {
-		if !resourceCleanupCanRun(status) {
-			t.Fatalf("expected status %q to be cleanup runnable", status)
-		}
+func TestResourceCleanupCanRunOnlyAllowsDeleting(t *testing.T) {
+	if !resourceCleanupCanRun("deleting") {
+		t.Fatal("expected deleting resource to be cleanup runnable")
 	}
-	for _, status := range []string{"", "active", "deleted"} {
+	for _, status := range []string{"", "active", "deleted", "delete_failed"} {
 		if resourceCleanupCanRun(status) {
 			t.Fatalf("expected status %q to be skipped", status)
 		}
@@ -1266,7 +1279,7 @@ func TestCleanupProjectNamespacesCoversDistinctClusters(t *testing.T) {
 		return manager, nil
 	}
 
-	project := model.Project{ID: "prj_abcdef1234567890", Identifier: "demo"}
+	project := model.Project{ID: "prj_abcdef1234567890", Identifier: "demo", KubernetesNamespace: "luna-demo"}
 	targets := []model.DeploymentTarget{
 		{ID: "dplt_dev", ClusterID: "rcl_one"},
 		{ID: "dplt_prod", ClusterID: "rcl_two"},
@@ -1282,7 +1295,7 @@ func TestCleanupProjectNamespacesCoversDistinctClusters(t *testing.T) {
 		if manager == nil {
 			t.Fatalf("manager %q was not used", key)
 		}
-		if len(manager.deletions) != 1 || manager.deletions[0] != "Namespace//ns-abcdef1234" {
+		if len(manager.deletions) != 1 || manager.deletions[0] != "Namespace//luna-demo" {
 			t.Fatalf("manager %q deletions = %#v", key, manager.deletions)
 		}
 	}
@@ -1323,8 +1336,12 @@ func TestApplicationResourcesSpecAppliesDefaults(t *testing.T) {
 		model.Release{ImageRef: "registry.example.com/acme/api:v1"},
 		model.Project{ID: "prj_demo", Identifier: "demo"},
 		model.Application{ID: "app_api", Identifier: "api"},
-		model.Environment{ID: "env_dev", Slug: "dev", EnvVars: `{"APP_ENV":"dev"}`, ConfigRefs: "LOG_LEVEL=debug", SecretRefs: "TOKEN=secret"},
-		model.DeploymentTarget{ID: "dplt_backend"},
+		model.Environment{ID: "env_dev", Slug: "dev", EnvVars: `{"APP_ENV":"dev"}`, ConfigRefs: `{"LOG_LEVEL":"debug"}`, SecretRefs: `{"TOKEN":"secret"}`},
+		model.DeploymentTarget{
+			ID:             "dplt_backend",
+			KubernetesName: "dplt-backend",
+			ServicePorts:   model.EncodeDeploymentServicePorts([]model.DeploymentServicePort{{Name: "http", Port: 8080}}, 8080),
+		},
 		nil,
 		nil,
 		"ns-demo",
@@ -1347,7 +1364,10 @@ func TestApplicationResourcesSpecUsesSecretAsSingleAuthoritativeMode(t *testing.
 		model.Project{ID: "prj_demo", Identifier: "demo"},
 		model.Application{ID: "app_api", Identifier: "api"},
 		model.Environment{ID: "env_dev", Slug: "dev"},
-		model.DeploymentTarget{ID: "dplt_backend", EnvVars: `{"TOKEN":"must-not-render"}`, SecretRefs: `{"TOKEN":"secret-value"}`},
+		model.DeploymentTarget{
+			ID: "dplt_backend", KubernetesName: "dplt-backend", EnvVars: `{"TOKEN":"must-not-render"}`, SecretRefs: `{"TOKEN":"secret-value"}`,
+			ServicePorts: model.EncodeDeploymentServicePorts([]model.DeploymentServicePort{{Name: "http", Port: 8080}}, 8080),
+		},
 		nil,
 		nil,
 		"ns-demo",
@@ -1370,7 +1390,10 @@ func TestApplicationResourcesSpecMergesRuntimeConfigFiles(t *testing.T) {
 		model.Project{ID: "prj_demo"},
 		model.Application{ID: "app_api"},
 		model.Environment{ID: "env_dev"},
-		model.DeploymentTarget{ID: "dplt_backend", ConfigFiles: `[{"path":"/app/config.yaml","content":"port: 3000"}]`},
+		model.DeploymentTarget{
+			ID: "dplt_backend", KubernetesName: "dplt-backend", ConfigFiles: `[{"path":"/app/config.yaml","content":"port: 3000"}]`,
+			ServicePorts: model.EncodeDeploymentServicePorts([]model.DeploymentServicePort{{Name: "http", Port: 8080}}, 8080),
+		},
 		[]model.ProjectRuntimeConfigSet{{ConfigFiles: `[{"path":"/app/config.yaml","content":"port: 8080"},{"path":"/app/base.yaml","content":"enabled: true"}]`}},
 		nil,
 		"ns-demo",

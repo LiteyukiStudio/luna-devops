@@ -254,7 +254,6 @@ const deploymentsPage = {
   webConsoleConnected: '연결되었습니다. shell 명령을 입력하여 문제 해결을 시작합니다.',
   webConsoleDisconnected: '터미널 연결이 끊겼습니다.',
   webConsoleConnectionFailed: '터미널 연결에 실패했습니다. 릴리스 상태와 컨테이너 shell을 확인하세요.',
-  webConsoleAuthorizationFailed: '터미널 권한 확인에 실패했습니다. 다시 로그인하고 이 런타임에 대한 접근 권한을 확인하세요.',
   terminalStdout: '표준 출력',
   terminalStderr: '표준 오류',
   command: '명령',

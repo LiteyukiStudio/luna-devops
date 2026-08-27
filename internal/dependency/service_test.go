@@ -175,11 +175,11 @@ func dependencyFixture() *fakeRepository {
 	repository.applications["app_target"] = model.Application{ID: "app_target", ProjectID: "prj_main", Name: "Target", Identifier: "target"}
 	repository.targets["dplt_source"] = model.DeploymentTarget{
 		ID: "dplt_source", ProjectID: "prj_main", ApplicationID: "app_source", Name: "source-prod", Stage: "prod", ClusterID: "clu_main", Enabled: true,
-		ServicePort: 8080, ServicePorts: model.EncodeDeploymentServicePorts([]model.DeploymentServicePort{{Name: "http", Port: 8080}}, 8080), EnvVars: `{}`,
+		ServicePorts: model.EncodeDeploymentServicePorts([]model.DeploymentServicePort{{Name: "http", Port: 8080}}, 8080), EnvVars: `{}`,
 	}
 	repository.targets["dplt_target"] = model.DeploymentTarget{
 		ID: "dplt_target", ProjectID: "prj_main", ApplicationID: "app_target", Name: "target-prod", Stage: "prod", ClusterID: "clu_main", Enabled: true,
-		ServicePort: 9000, ServicePorts: model.EncodeDeploymentServicePorts([]model.DeploymentServicePort{{Name: "http", Port: 9000}, {Name: "metrics", Port: 9090}}, 9000),
+		ServicePorts: model.EncodeDeploymentServicePorts([]model.DeploymentServicePort{{Name: "http", Port: 9000}, {Name: "metrics", Port: 9090}}, 9000),
 	}
 	return repository
 }

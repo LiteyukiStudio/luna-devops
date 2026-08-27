@@ -1,6 +1,7 @@
 import type { BillingLedgerEntry, GatewayTrafficStatus } from '@/api'
 import type { StatusTone } from '@/components/common/status-tone'
 import { formatBillingNumber } from '@/lib/billing-display'
+import { safeStorageGet, safeStorageRemove, safeStorageSet } from '@/lib/safe-storage'
 
 const BILLING_PROJECT_SCOPE_CACHE_KEY = 'luna.billing.projectScope'
 export const BILLING_PAGE_SIZE = 10
@@ -66,10 +67,8 @@ export function balanceStatusTone(status: BalanceStatus): StatusTone {
 }
 
 export function readCachedBillingProjectScope() {
-  if (typeof window === 'undefined')
-    return []
   try {
-    const cached = window.sessionStorage.getItem(BILLING_PROJECT_SCOPE_CACHE_KEY)
+    const cached = safeStorageGet(BILLING_PROJECT_SCOPE_CACHE_KEY, () => window.sessionStorage)
     if (!cached)
       return []
     const parsed = JSON.parse(cached)
@@ -83,19 +82,12 @@ export function readCachedBillingProjectScope() {
 }
 
 export function writeCachedBillingProjectScope(projectIds: string[]) {
-  if (typeof window === 'undefined')
+  const normalized = projectIds.map(item => item.trim()).filter(Boolean)
+  if (normalized.length === 0) {
+    safeStorageRemove(BILLING_PROJECT_SCOPE_CACHE_KEY, () => window.sessionStorage)
     return
-  try {
-    const normalized = projectIds.map(item => item.trim()).filter(Boolean)
-    if (normalized.length === 0) {
-      window.sessionStorage.removeItem(BILLING_PROJECT_SCOPE_CACHE_KEY)
-      return
-    }
-    window.sessionStorage.setItem(BILLING_PROJECT_SCOPE_CACHE_KEY, JSON.stringify(normalized))
   }
-  catch {
-    // Ignore storage errors so private mode or quota issues do not break billing.
-  }
+  safeStorageSet(BILLING_PROJECT_SCOPE_CACHE_KEY, JSON.stringify(normalized), () => window.sessionStorage)
 }
 
 export function periodSelectionForPreset(preset: BillingPeriodPreset): BillingPeriodSelection {

@@ -277,9 +277,8 @@ func (h *Handlers) StreamRuntimeClusterPodTerminal(ctx *gin.Context) {
 	authorizationRevoked := h.monitorRuntimeTerminalAuthorization(sessionCtx, authorization, func(checkCtx context.Context, currentUser model.User) bool {
 		return h.runtimeClusterPodTerminalAuthorizationAllowed(checkCtx, currentUser, client, reference)
 	}, cancel)
-	activityTracker := h.newRuntimeTerminalActivityTracker(authorization)
 
-	go h.readRuntimeTerminalMessages(sessionCtx, conn, stdinWriter, sizeQueue, activityTracker, cancel)
+	go h.readRuntimeTerminalMessages(conn, stdinWriter, sizeQueue, cancel)
 	err = client.PodTerminal(sessionCtx, kubeprovider.PodTerminalOptions{
 		Namespace: snapshot.Namespace,
 		PodName:   snapshot.Name,

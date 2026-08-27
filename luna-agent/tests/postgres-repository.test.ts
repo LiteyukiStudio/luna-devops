@@ -93,13 +93,13 @@ suite("PostgresRepository (Drizzle) integration", () => {
       conversationId: conversation.id, input: "等待批准", pageContext: {},
       idempotencyKey: key("execution-snapshot"), actorSessionId: key("session"),
     })
-    const oldSnapshot = executionSnapshot("cfg-old", "old-provider-secret", 512, 2)
-    const newSnapshot = executionSnapshot("cfg-new", "new-provider-secret", 1_024, 5)
+    const oldSnapshot = executionSnapshot("cfg-old", "old-provider-secret")
+    const newSnapshot = executionSnapshot("cfg-new", "new-provider-secret")
 
     const firstClaim = await repository.claimNextQueuedRun(oldSnapshot)
     expect(firstClaim?.id).toBe(created.run.id)
     expect(firstClaim?.executionSnapshot?.providerConfig?.version).toBe("cfg-old")
-    expect(firstClaim?.executionSnapshot?.runtimeSettings.assistantMaxOutputTokens).toBe(512)
+    expect(firstClaim?.executionSnapshot?.runtimeSettings.assistantMaxOutputTokens).toBe(defaultRuntimeSettings.assistantMaxOutputTokens)
     expect(await repository.getRun(owner, created.run.id)).not.toHaveProperty("executionSnapshot")
     const stored = await repository.pool.query<{ execution_snapshot_ciphertext: string }>(
       "select execution_snapshot_ciphertext from ai.runs where id = $1",
@@ -116,9 +116,9 @@ suite("PostgresRepository (Drizzle) integration", () => {
       expect(resumed?.id).toBe(created.run.id)
       expect(resumed?.executionSnapshot?.providerConfig?.version).toBe("cfg-old")
       expect(resumed?.executionSnapshot?.providerConfig?.provider.apiKey).toBe("old-provider-secret")
-      expect(resumed?.executionSnapshot?.runtimeSettings.assistantMaxOutputTokens).toBe(512)
-      expect(resumed?.executionSnapshot?.runtimeSettings.maxCardRepairAttempts).toBe(2)
-      expect(resumed?.executionSnapshot?.runtimeSettings.runMaxToolCalls).toBe(32)
+      expect(resumed?.executionSnapshot?.runtimeSettings.assistantMaxOutputTokens).toBe(defaultRuntimeSettings.assistantMaxOutputTokens)
+      expect(resumed?.executionSnapshot?.runtimeSettings.maxCardRepairAttempts).toBe(defaultRuntimeSettings.maxCardRepairAttempts)
+      expect(resumed?.executionSnapshot?.runtimeSettings.runMaxToolCalls).toBe(defaultRuntimeSettings.runMaxToolCalls)
       if (!resumed) throw new Error("expected resumed Run")
       await restarted.updateRun(resumed.id, "running", "completed", { completedAt: new Date().toISOString() })
 
@@ -129,9 +129,9 @@ suite("PostgresRepository (Drizzle) integration", () => {
       const nextClaim = await restarted.claimNextQueuedRun(newSnapshot)
       expect(nextClaim?.id).toBe(next.run.id)
       expect(nextClaim?.executionSnapshot?.providerConfig?.version).toBe("cfg-new")
-      expect(nextClaim?.executionSnapshot?.runtimeSettings.assistantMaxOutputTokens).toBe(1_024)
-      expect(nextClaim?.executionSnapshot?.runtimeSettings.maxCardRepairAttempts).toBe(5)
-      expect(nextClaim?.executionSnapshot?.runtimeSettings.runMaxToolCalls).toBe(64)
+      expect(nextClaim?.executionSnapshot?.runtimeSettings.assistantMaxOutputTokens).toBe(defaultRuntimeSettings.assistantMaxOutputTokens)
+      expect(nextClaim?.executionSnapshot?.runtimeSettings.maxCardRepairAttempts).toBe(defaultRuntimeSettings.maxCardRepairAttempts)
+      expect(nextClaim?.executionSnapshot?.runtimeSettings.runMaxToolCalls).toBe(defaultRuntimeSettings.runMaxToolCalls)
     }
     finally {
       await restarted.close()
@@ -393,33 +393,20 @@ suite("PostgresRepository (Drizzle) integration", () => {
 
 })
 
-function executionSnapshot(version: string, apiKey: string, assistantMaxOutputTokens: number, maxCardRepairAttempts: number): RunExecutionSnapshot {
+function executionSnapshot(version: string, apiKey: string): RunExecutionSnapshot {
   return {
-    runtimeSettings: {
-      ...defaultRuntimeSettings,
-      assistantMaxOutputTokens,
-      maxCardRepairAttempts,
-      runMaxToolCalls: maxCardRepairAttempts === 2 ? 32 : 64,
-    },
-    providerConfig: remoteProviderConfig(version, apiKey, assistantMaxOutputTokens, maxCardRepairAttempts),
+    runtimeSettings: { ...defaultRuntimeSettings },
+    providerConfig: remoteProviderConfig(version, apiKey),
   }
 }
 
-function remoteProviderConfig(version: string, apiKey: string, assistantMaxOutputTokens: number, maxCardRepairAttempts: number): RemoteProviderConfig {
+function remoteProviderConfig(version: string, apiKey: string): RemoteProviderConfig {
   const runtime: RemoteRuntimeSettings = {
     providerTimeoutMs: defaultRuntimeSettings.providerTimeoutMs,
     maxRequestRetries: defaultRuntimeSettings.maxRequestRetries,
     runTimeoutMs: defaultRuntimeSettings.runTimeoutMs,
     agentConcurrentRuns: defaultRuntimeSettings.agentConcurrentRuns,
     userConcurrentRuns: defaultRuntimeSettings.userConcurrentRuns,
-    assistantMaxOutputTokens,
-    maxModelSteps: defaultRuntimeSettings.maxModelSteps,
-    runMaxToolCalls: maxCardRepairAttempts === 2 ? 32 : 64,
-    maxInputBytes: defaultRuntimeSettings.maxInputBytes,
-    maxCardRepairAttempts,
-    contextMaxUncompressedTurnCount: defaultRuntimeSettings.contextMaxUncompressedTurnCount,
-    contextMaxCompressionTurnsPerCompile: defaultRuntimeSettings.contextMaxCompressionTurnsPerCompile,
-    contextSummaryMaxOutputTokens: defaultRuntimeSettings.contextSummaryMaxOutputTokens,
   }
   return {
     version,

@@ -17,13 +17,13 @@ import (
 )
 
 const (
-	volumeReconcileStaleAfter = 15 * time.Minute
-	volumeMaintenanceBatch    = 100
+	volumeTransferHeartbeatStaleAfter = 15 * time.Minute
+	volumeOperationRecoveryAfter      = 24 * time.Hour
+	volumeMaintenanceBatch            = 100
 )
 
 type volumeWorkerService interface {
 	GetProjectVolume(context.Context, string, string) (model.ProjectVolume, error)
-	GetProjectVolumeForMaintenance(context.Context, string) (model.ProjectVolume, error)
 	SetProjectVolumeLifecycle(context.Context, string, string, []string, string, string, string) (model.ProjectVolume, error)
 	CompleteProjectVolumeDeletion(context.Context, string, string) (model.ProjectVolume, error)
 	ListStaleProjectVolumeOperations(context.Context, volume.MaintenanceScanOptions) ([]model.ProjectVolume, error)
@@ -226,49 +226,40 @@ func (r *Runner) handleVolumeDelete(ctx context.Context, task *asynq.Task) error
 	return nil
 }
 
-func (r *Runner) handleVolumeReconcile(ctx context.Context, task *asynq.Task) error {
-	var payload tasks.VolumeReconcilePayload
-	if err := json.Unmarshal(task.Payload(), &payload); err != nil {
-		return skipVolumeTask(volume.CodeInvalidInput)
-	}
+func (r *Runner) handleVolumeReconcile(ctx context.Context, _ *asynq.Task) error {
 	service, err := r.projectVolumeService()
 	if err != nil {
 		return err
 	}
-	cutoff := time.Now().UTC().Add(-volumeReconcileStaleAfter)
-	volumes := make([]model.ProjectVolume, 0, volumeMaintenanceBatch)
-	if strings.TrimSpace(payload.VolumeID) != "" {
-		item, getErr := service.GetProjectVolumeForMaintenance(ctx, strings.TrimSpace(payload.VolumeID))
-		if getErr != nil {
-			if volume.ErrorCode(getErr) == volume.CodeNotFound {
-				return nil
-			}
-			return safeVolumeTaskError(getErr)
-		}
-		volumes = append(volumes, item)
-	} else {
-		volumes, err = service.ListStaleProjectVolumeOperations(ctx, volume.MaintenanceScanOptions{Cutoff: cutoff, Limit: volumeMaintenanceBatch})
-		if err != nil {
-			return safeVolumeTaskError(err)
-		}
+	now := time.Now().UTC()
+	recoveryCutoff := now.Add(-volumeOperationRecoveryAfter)
+	volumes, err := service.ListStaleProjectVolumeOperations(ctx, volume.MaintenanceScanOptions{Cutoff: recoveryCutoff, Limit: volumeMaintenanceBatch})
+	if err != nil {
+		return safeVolumeTaskError(err)
 	}
 	for _, item := range volumes {
 		if err := r.requeueProjectVolume(ctx, item); err != nil {
 			return safeVolumeTaskError(err)
 		}
 	}
-	if strings.TrimSpace(payload.VolumeID) != "" {
-		return nil
-	}
-	transfers, err := service.ListStaleVolumeTransferOperations(ctx, volume.MaintenanceScanOptions{Cutoff: cutoff, Limit: volumeMaintenanceBatch})
+	heartbeatCutoff := now.Add(-volumeTransferHeartbeatStaleAfter)
+	transfers, err := service.ListStaleVolumeTransferOperations(ctx, volume.MaintenanceScanOptions{Cutoff: heartbeatCutoff, Limit: volumeMaintenanceBatch})
 	if err != nil {
 		return safeVolumeTaskError(err)
 	}
 	for _, transfer := range transfers {
 		if transfer.State == model.VolumeTransferStateStreaming {
-			if err := r.failStaleStreamingVolumeTransfer(ctx, service, transfer, cutoff); err != nil {
+			if err := r.failStaleStreamingVolumeTransfer(ctx, service, transfer, heartbeatCutoff); err != nil {
 				return safeVolumeTaskError(err)
 			}
+		}
+	}
+	transfers, err = service.ListStaleVolumeTransferOperations(ctx, volume.MaintenanceScanOptions{Cutoff: recoveryCutoff, Limit: volumeMaintenanceBatch})
+	if err != nil {
+		return safeVolumeTaskError(err)
+	}
+	for _, transfer := range transfers {
+		if transfer.State == model.VolumeTransferStateReady || transfer.State == model.VolumeTransferStateStreaming {
 			continue
 		}
 		if err := r.requeueVolumeTransfer(ctx, transfer); err != nil {
@@ -355,13 +346,13 @@ func (r *Runner) requeueProjectVolume(ctx context.Context, item model.ProjectVol
 	switch {
 	case item.LifecycleState == model.ProjectVolumeLifecycleDeleting && item.PendingOperation == volume.OperationDelete:
 		_, err := r.volumeTaskEnqueuer.EnqueueVolumeDelete(ctx, tasks.VolumeDeletePayload{
-			ProjectID: item.ProjectID, VolumeID: item.ID, ActorID: "system",
+			ProjectID: item.ProjectID, VolumeID: item.ID,
 		})
 		return err
 	case item.LifecycleState == model.ProjectVolumeLifecycleProvisioning &&
 		(item.PendingOperation == volume.OperationProvision || item.PendingOperation == volume.OperationExpand):
 		_, err := r.volumeTaskEnqueuer.EnqueueVolumeProvision(ctx, tasks.VolumeProvisionPayload{
-			ProjectID: item.ProjectID, VolumeID: item.ID, ActorID: "system", Operation: item.PendingOperation,
+			ProjectID: item.ProjectID, VolumeID: item.ID, Operation: item.PendingOperation,
 		})
 		return err
 	default:
@@ -374,7 +365,7 @@ func (r *Runner) requeueVolumeTransfer(ctx context.Context, transfer model.Volum
 		return errors.New("volume task enqueuer is not configured")
 	}
 	payload := tasks.VolumeTransferPayload{
-		ProjectID: transfer.ProjectID, VolumeID: transfer.ProjectVolumeID, TransferID: transfer.ID, ActorID: transfer.ActorID,
+		ProjectID: transfer.ProjectID, VolumeID: transfer.ProjectVolumeID, TransferID: transfer.ID,
 	}
 	if transfer.Direction == model.VolumeTransferDirectionImport {
 		_, err := r.volumeTaskEnqueuer.EnqueueVolumeImport(ctx, payload)

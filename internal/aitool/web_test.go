@@ -133,7 +133,9 @@ func TestFetchWebPageUsesAuthenticatedProxyWithoutExposingCredentials(t *testing
 	service := NewService(
 		nil,
 		WithWebPolicyProvider(func(context.Context, string) (security.EgressPolicy, error) {
-			return security.AdminEgressPolicy(), nil
+			policy := security.AdminEgressPolicy()
+			policy.DomainAllowList = []string{"example.com"}
+			return policy, nil
 		}),
 		WithWebProxyProvider(func(context.Context, string) ([]string, error) {
 			return []string{proxyURL.String()}, nil
@@ -170,7 +172,9 @@ func TestWebProxyPoolRotatesBetweenEntries(t *testing.T) {
 	service := NewService(
 		nil,
 		WithWebPolicyProvider(func(context.Context, string) (security.EgressPolicy, error) {
-			return security.AdminEgressPolicy(), nil
+			policy := security.AdminEgressPolicy()
+			policy.DomainAllowList = []string{"example.com"}
+			return policy, nil
 		}),
 		WithWebProxyProvider(func(context.Context, string) ([]string, error) {
 			return []string{first.URL, second.URL}, nil

@@ -190,21 +190,6 @@ func TestTraceDetailUsageIsStableNullableJSON(t *testing.T) {
 	}
 }
 
-func TestTempoTraceDetailRetainsAvailableToolInventory(t *testing.T) {
-	const payload = `{"batches":[{"resource":{"attributes":[{"key":"service.name","value":{"stringValue":"luna-agent"}}]},"scopeSpans":[{"spans":[{"spanId":"tools","name":"agent.tools.available","kind":"SPAN_KIND_INTERNAL","startTimeUnixNano":"1000000000","endTimeUnixNano":"1000001000","attributes":[{"key":"luna.agent.available_tool.count","value":{"intValue":"2"}},{"key":"luna.agent.available_tool.names","value":{"stringValue":"[\"createGatewayRoute\",\"listGatewayRoutes\"]"}}],"status":{"code":"STATUS_CODE_OK"}}]}]}]}`
-	var response tempoTraceResponse
-	if err := json.Unmarshal([]byte(payload), &response); err != nil {
-		t.Fatal(err)
-	}
-	detail := tempoTraceDetail("0123456789abcdef0123456789abcdef", response)
-	if len(detail.Spans) != 1 {
-		t.Fatalf("unexpected spans: %+v", detail.Spans)
-	}
-	if got := detail.Spans[0].Attributes["luna.agent.available_tool.names"]; got != `["createGatewayRoute","listGatewayRoutes"]` {
-		t.Fatalf("available tool inventory was lost: %q", got)
-	}
-}
-
 func TestTempoAttributesNormalizesStructuredAnyValues(t *testing.T) {
 	finishReason := "stop"
 	projectID := "proj-1"

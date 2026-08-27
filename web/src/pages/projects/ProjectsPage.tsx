@@ -73,11 +73,11 @@ export function ProjectsPage() {
     queryKey: ['projects', 'page', page, pageSize, effectiveScope, sortBy, sortOrder, deferredSearch],
     queryFn: () => api.listProjectsPage({ page, pageSize, scope: effectiveScope, search: deferredSearch || undefined, sortBy, sortOrder }),
   })
-  const projectItems = Array.isArray(projects.data) ? projects.data : projects.data?.items ?? []
-  const projectTotal = Array.isArray(projects.data) ? projects.data.length : projects.data?.total ?? 0
-  const projectTotalPages = Math.max(1, Array.isArray(projects.data) ? 1 : projects.data?.totalPages ?? 1)
-  const projectPage = Array.isArray(projects.data) ? 1 : projects.data?.page ?? page
-  const projectPageSize = Array.isArray(projects.data) ? pageSize : projects.data?.pageSize ?? pageSize
+  const projectItems = projects.data?.items ?? []
+  const projectTotal = projects.data?.total ?? 0
+  const projectTotalPages = Math.max(1, projects.data?.totalPages ?? 1)
+  const projectPage = projects.data?.page ?? page
+  const projectPageSize = projects.data?.pageSize ?? pageSize
   const deleteConfirmationTarget = projectToDelete?.name ?? ''
   const deleteConfirmationMatches = Boolean(deleteConfirmationTarget) && deleteConfirmation === deleteConfirmationTarget
   const form = useForm<ProjectForm>({

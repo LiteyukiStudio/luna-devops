@@ -18,11 +18,23 @@ paths:
       operationId: getAgentReadiness
       security: []
       responses: { "200": { description: PostgreSQL, the AI schema, and the last valid Provider configuration are ready. }, "503": { description: A required dependency is unavailable., content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } } }
-  /internal/v1/capabilities:
-    get:
-      operationId: getInternalAICapabilities
-      description: Returns Agent feature, limit, and Provider metadata. Liveness and readiness are reported only by the dedicated health endpoints.
-      responses: { "200": { description: Capability result, content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } }, "401": { $ref: "#/components/responses/AgentError" } }
+  /internal/v1/provider/test:
+    post:
+      operationId: testInternalAIProvider
+      description: Performs the administrator-requested minimal read-only Provider connection test with the currently committed configuration.
+      parameters:
+        - { $ref: "#/components/parameters/ActorContext" }
+        - { $ref: "#/components/parameters/ActorSignature" }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: false }
+      responses:
+        "200": { description: Provider connection result, content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } }
+        "401": { $ref: "#/components/responses/AgentError" }
+        "409": { description: Provider configuration has not been completed., content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } }
+        "503": { $ref: "#/components/responses/AgentError" }
   /internal/v1/conversations:
     get:
       operationId: listInternalAIConversations
@@ -86,7 +98,7 @@ paths:
         - { $ref: "#/components/parameters/ActorSignature" }
         - { $ref: "#/components/parameters/ConversationId" }
         - { $ref: "#/components/parameters/IdempotencyKey" }
-      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/AgentToolActionInput" } } } }
       responses: { "202": { description: Tool action accepted, content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } }, "409": { $ref: "#/components/responses/AgentError" } }
   /internal/v1/turns/{turnId}/runs:
     parameters:
@@ -115,7 +127,7 @@ paths:
         - { $ref: "#/components/parameters/RunId" }
         - { name: after, in: query, required: false, schema: { type: integer, format: int64, minimum: 0 } }
         - { name: Last-Event-ID, in: header, required: false, schema: { type: string } }
-      responses: { "200": { description: Recoverable SSE stream from the single Agent replica, backed by a bounded live buffer and PostgreSQL durable replay. Business frames replay by after or Last-Event-ID; heartbeats have no id, are not persisted, and do not advance eventSequence. Completed output and workflow terminal facts are available from the authoritative Timeline., content: { text/event-stream: { schema: { type: string } } } }, "404": { $ref: "#/components/responses/AgentError" }, "429": { description: Per-Run or per-instance SSE subscriber limit reached., content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } } }
+      responses: { "200": { description: Recoverable SSE stream from the single Agent replica, backed by a bounded live buffer and PostgreSQL durable replay. Business frames replay by after or Last-Event-ID; heartbeats have no id, are not persisted, and do not advance eventSequence. Completed output and workflow terminal facts are available from the authoritative Timeline., content: { text/event-stream: { schema: { type: string } } } }, "404": { $ref: "#/components/responses/AgentError" }, "429": { description: The limit of 4 subscribers per Run or 64 subscribers per Agent instance was reached., content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } } }
   /internal/v1/runs/{runId}/cancel:
     post:
       operationId: cancelInternalAIRun
@@ -125,7 +137,7 @@ paths:
     post:
       operationId: submitInternalAIRunInput
       parameters: [{ $ref: "#/components/parameters/ActorContext" }, { $ref: "#/components/parameters/ActorSignature" }, { $ref: "#/components/parameters/RunId" }]
-      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/AgentRunInput" } } } }
       responses: { "202": { description: Input accepted, content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } }, "409": { $ref: "#/components/responses/AgentError" } }
   /internal/v1/runs/{runId}/approvals/{toolCallId}/decision:
     post:
@@ -135,10 +147,10 @@ paths:
       responses: { "202": { description: Decision accepted, content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } }, "409": { $ref: "#/components/responses/AgentError" } }
 components:
   securitySchemes:
-    APIServiceToken: { type: http, scheme: bearer, bearerFormat: short-lived EdDSA service JWT }
+    APIServiceToken: { type: http, scheme: bearer, bearerFormat: derived internal service token }
   parameters:
-    ActorContext: { name: X-Luna-Actor-Context, in: header, required: true, schema: { type: string }, description: Short-lived EdDSA Actor Context JWT; compatibility mode uses base64url-encoded JSON. }
-    ActorSignature: { name: X-Luna-Actor-Signature, in: header, required: false, schema: { type: string, pattern: "^sha256=[0-9a-f]{64}$" }, description: Required only by the explicitly configured HMAC compatibility mode. }
+    ActorContext: { name: X-Luna-Actor-Context, in: header, required: true, schema: { type: string }, description: Base64url-encoded JSON actor envelope issued by the Luna API for at most 60 seconds; its identity and Run binding are untrusted until the signature is verified. }
+    ActorSignature: { name: X-Luna-Actor-Signature, in: header, required: true, schema: { type: string, pattern: "^sha256=[0-9a-f]{64}$" }, description: HMAC-SHA256 over the exact ActorContext value using the independently derived actor-signing key. }
     IdempotencyKey: { name: Idempotency-Key, in: header, required: true, schema: { type: string } }
     ConversationId: { name: conversationId, in: path, required: true, schema: { type: string } }
     TurnId: { name: turnId, in: path, required: true, schema: { type: string } }
@@ -207,8 +219,40 @@ components:
             inputCreditsPerMillion: { type: string, pattern: '^\d+(\.\d{1,8})?$' }
             outputCreditsPerMillion: { type: string, pattern: '^\d+(\.\d{1,8})?$' }
             cachedInputCreditsPerMillion: { type: string, pattern: '^\d+(\.\d{1,8})?$' }
-        input: { type: object, additionalProperties: true }
+        input:
+          type: object
+          additionalProperties: false
+          required: [parts]
+          description: Combined text across all parts must not exceed 128 KiB when encoded as UTF-8.
+          properties:
+            parts:
+              type: array
+              minItems: 1
+              maxItems: 10
+              items:
+                type: object
+                additionalProperties: false
+                required: [type, text]
+                properties:
+                  type: { type: string, const: text }
+                  text: { type: string, minLength: 1, maxLength: 131072, description: Text is trimmed and is also subject to the combined 128 KiB UTF-8 limit. }
         pageContext: { type: object, additionalProperties: true }
+    AgentToolActionInput:
+      type: object
+      additionalProperties: false
+      required: [operationId, arguments, message, runId]
+      properties:
+        operationId: { type: string, pattern: "^[a-zA-Z][a-zA-Z0-9_.-]{2,100}$" }
+        arguments: { type: object, additionalProperties: true }
+        message: { type: string, minLength: 1, maxLength: 131072, description: Text is trimmed and must not exceed 128 KiB when encoded as UTF-8. }
+        runId: { type: string, minLength: 5, maxLength: 64 }
+    AgentRunInput:
+      type: object
+      additionalProperties: false
+      required: [text, expectedVersion]
+      properties:
+        text: { type: string, minLength: 1, maxLength: 131072, description: Text is trimmed and must not exceed 128 KiB when encoded as UTF-8. }
+        expectedVersion: { type: integer }
     AgentConversationPage:
       type: object
       additionalProperties: false

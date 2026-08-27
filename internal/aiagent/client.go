@@ -58,7 +58,6 @@ type Client interface {
 type HTTPClient struct {
 	baseURL      *url.URL
 	httpClient   *http.Client
-	runClient    *http.Client
 	streamClient *http.Client
 	serviceToken string
 	actorSignKey []byte
@@ -96,7 +95,6 @@ func newBaseHTTPClient(baseURL string, timeout time.Duration) (*HTTPClient, erro
 	return &HTTPClient{
 		baseURL:      parsed,
 		httpClient:   telemetry.InstrumentHTTPClient(&http.Client{Timeout: timeout}),
-		runClient:    telemetry.InstrumentHTTPClient(&http.Client{Timeout: timeout}),
 		streamClient: telemetry.InstrumentHTTPClient(&http.Client{}),
 		now:          time.Now,
 	}, nil
@@ -139,8 +137,6 @@ func (c *HTTPClient) Do(ctx context.Context, actor ActorContext, input Request) 
 	client := c.httpClient
 	if input.Stream {
 		client = c.streamClient
-	} else if input.Method == http.MethodPost && (strings.HasSuffix(input.Path, "/turns") || strings.HasSuffix(input.Path, "/runs")) {
-		client = c.runClient
 	}
 	response, err := client.Do(request)
 	if err != nil {

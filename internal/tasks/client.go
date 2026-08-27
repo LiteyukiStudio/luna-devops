@@ -68,8 +68,6 @@ type ResourceCleanupPayload struct {
 	ResourceType string `json:"resourceType"`
 	ResourceID   string `json:"resourceId"`
 	ProjectID    string `json:"projectId"`
-	ActorID      string `json:"actorId"`
-	DeleteData   bool   `json:"deleteData"`
 }
 
 type NotificationDeliverPayload struct {
@@ -285,15 +283,15 @@ func PolicyForType(taskType string) EnqueuePolicy {
 	case TypeApplicationDelete:
 		return EnqueuePolicy{Queue: QueueDeploy, MaxRetry: 3, Timeout: 15 * time.Minute, Retention: 24 * time.Hour, Unique: 10 * time.Minute}
 	case TypeResourceCleanup:
-		return EnqueuePolicy{Queue: QueueDeploy, MaxRetry: 3, Timeout: 15 * time.Minute, Retention: 24 * time.Hour, Unique: 10 * time.Minute}
+		return EnqueuePolicy{Queue: QueueDeploy, MaxRetry: 3, Timeout: 15 * time.Minute, Retention: 24 * time.Hour, Unique: 2 * time.Hour}
 	case TypeNotificationDeliver:
 		return EnqueuePolicy{Queue: QueueLight, MaxRetry: 5, Timeout: 2 * time.Minute, Retention: 24 * time.Hour, Unique: 30 * time.Second}
 	case TypeGitAccountRefresh:
 		return EnqueuePolicy{Queue: QueueLight, MaxRetry: 2, Timeout: 10 * time.Minute, Retention: 24 * time.Hour, Unique: 5 * time.Minute}
 	case TypeVolumeProvision, TypeVolumeDelete:
-		return EnqueuePolicy{Queue: QueueDeploy, MaxRetry: 10, Timeout: 30 * time.Minute, Retention: 24 * time.Hour, Unique: 30 * time.Minute}
+		return EnqueuePolicy{Queue: QueueDeploy, MaxRetry: 10, Timeout: 30 * time.Minute, Retention: 24 * time.Hour, Unique: 24 * time.Hour}
 	case TypeVolumeImport, TypeVolumeExport:
-		return EnqueuePolicy{Queue: QueueDeploy, MaxRetry: 5, Timeout: 2 * time.Hour, Retention: 24 * time.Hour, Unique: 2 * time.Hour}
+		return EnqueuePolicy{Queue: QueueDeploy, MaxRetry: 5, Timeout: 2 * time.Hour, Retention: 24 * time.Hour, Unique: 24 * time.Hour}
 	case TypeVolumeReconcile:
 		return EnqueuePolicy{Queue: QueueLight, MaxRetry: 3, Timeout: 10 * time.Minute, Retention: 24 * time.Hour, Unique: time.Minute}
 	case TypeVolumeTransferCleanup:

@@ -202,8 +202,6 @@ const operationsDashboardPage = {
       databaseSystem: 'Database system',
       errorType: 'Error type',
       runOutcome: 'Run outcome',
-      availableToolCount: 'Available tool count',
-      availableToolNames: 'Available tool inventory',
     },
     attributeValues: { agent: 'Agent execution', invoke_agent: 'Invoke agent', chat: 'Model chat', execute_tool: 'Execute tool', completed: 'Completed', failed: 'Failed', canceled: 'Canceled' },
     usageStatusValues: { reported: 'Reported', unavailable: 'Unavailable', reconciliation_required: 'Reconciliation required' },
@@ -231,7 +229,6 @@ const operationsDashboardPage = {
       persistence: 'Persist execution state',
       externalRequest: 'Call external service',
       internalOperation: 'Internal operation',
-      availableTools: 'Provide model tools · {{count}}',
     },
   },
   conversationDetail: {
@@ -272,7 +269,6 @@ const operationsDashboardPage = {
     contextUnavailable: 'No conversation timeline was found for this trace. The conversation may have been removed, or the trace may predate correlation support.',
     spanWaterfall: 'Span waterfall',
     spanWaterfallDescription: 'Inspect parent-child relationships and timing across model, tool, HTTP, and database operations.',
-    availableTools: 'Tools available to this model call',
   },
 }
 

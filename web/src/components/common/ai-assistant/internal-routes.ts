@@ -1,23 +1,6 @@
-export const aiInternalRouteNames = [
-  'dashboard',
-  'projects',
-  'project.workspace',
-  'application.detail',
-  'events',
-  'code-repositories',
-  'registries',
-  'clusters',
-  'app-templates',
-  'billing',
-  'settings.account',
-  'settings.auth-providers',
-  'settings.notifications',
-  'settings.operations',
-  'settings.site',
-  'settings.users',
-] as const
+import type { InteractionCardRouteName } from '@luna-devops/ai-interaction-card-contract'
 
-export type AIInternalRouteName = typeof aiInternalRouteNames[number]
+export type AIInternalRouteName = InteractionCardRouteName
 
 const identifierPattern = /^[\w.:-]{1,160}$/
 const dynamicPathPatterns: readonly RegExp[] = [

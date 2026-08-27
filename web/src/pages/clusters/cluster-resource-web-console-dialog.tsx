@@ -1,8 +1,8 @@
 import type { ClusterResource, RuntimeCluster } from '@/api'
 import { Maximize2, Minimize2, Minus, X } from 'lucide-react'
-import { lazy, useCallback, useMemo, useState } from 'react'
+import { lazy, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { api, runtimeClusterPodTerminalUrl } from '@/api'
+import { runtimeClusterPodTerminalUrl } from '@/api'
 import { LazyLoadBoundary } from '@/components/common/lazy-load-boundary'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
@@ -31,11 +31,6 @@ export function ClusterResourceWebConsoleDialog({
       return ''
     return runtimeClusterPodTerminalUrl(cluster.id, pod.namespace, pod.name, container)
   }, [cluster?.id, container, pod?.name, pod?.namespace])
-  const authorizeTerminal = useCallback(async () => {
-    if (!cluster?.id || !pod?.namespace || !pod?.name)
-      return
-    await api.authorizeRuntimeClusterPodTerminal(cluster.id, pod.namespace, pod.name)
-  }, [cluster?.id, pod?.name, pod?.namespace])
   const closeDialog = () => {
     setContainerState({ podKey: '', value: '' })
     setFullscreen(false)
@@ -108,7 +103,6 @@ export function ClusterResourceWebConsoleDialog({
             >
               <ApplicationRuntimeTerminalPanel
                 key={`${podKey}:${container}`}
-                authorize={authorizeTerminal}
                 container={container}
                 fullscreen={fullscreen}
                 projectId=""

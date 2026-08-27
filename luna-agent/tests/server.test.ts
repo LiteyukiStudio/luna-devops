@@ -3,18 +3,16 @@ import { describe, expect, it, vi } from "vitest"
 import { DevelopmentRequestVerifier } from "../src/auth.js"
 import { loadConfig } from "../src/config.js"
 import { TestRepository } from "./support/test-repository.js"
-import { DeterministicProvider } from "../src/provider/deterministic.js"
 import { RemoteConfigSnapshot } from "../src/provider/config-client.js"
-import { defaultRuntimeSettings } from "../src/runtime-settings.js"
 import { buildServer, writeSSE } from "../src/server.js"
 import type { AIEvent, AITimeline, AITurnCreated } from "../../web/src/api/ai-types.js"
 import { presentTimeline } from "../src/timeline-presenter.js"
 import { InMemoryRunStreamBus } from "../src/run-stream-bus.js"
+import { maximumRequestBodyBytes, maximumTurnInputBytes } from "../src/input-limits.js"
 
 function fixture() {
   const repository = new TestRepository()
-  const provider = new DeterministicProvider()
-  const app = buildServer({ config: loadConfig({ NODE_ENV: "test" }), repository, provider, requestVerifier: new DevelopmentRequestVerifier() })
+  const app = buildServer({ config: loadConfig({ NODE_ENV: "test" }), repository, requestVerifier: new DevelopmentRequestVerifier() })
   return { app, repository }
 }
 
@@ -57,7 +55,7 @@ describe("internal API", () => {
     })
     const app = buildServer({
       config: loadConfig({ NODE_ENV: "test" }), repository,
-      provider: new DeterministicProvider(), requestVerifier: new DevelopmentRequestVerifier(),
+      requestVerifier: new DevelopmentRequestVerifier(),
       streamBus: new ReplayFailureBus(repository),
       streamHubLimits: { perRun: 1, perInstance: 1 },
     })
@@ -89,7 +87,6 @@ describe("internal API", () => {
     const schemaApp = buildServer({
       config: loadConfig({ NODE_ENV: "test" }),
       repository: new SchemaMismatchRepository(),
-      provider: new DeterministicProvider(),
       requestVerifier: new DevelopmentRequestVerifier(),
     })
     const schemaResponse = await schemaApp.inject({ method: "GET", url: "/internal/health/ready" })
@@ -100,7 +97,6 @@ describe("internal API", () => {
     const configApp = buildServer({
       config: loadConfig({ NODE_ENV: "test" }),
       repository: new TestRepository(),
-      provider: new DeterministicProvider(),
       requestVerifier: new DevelopmentRequestVerifier(),
       remoteConfig: new RemoteConfigSnapshot("https://luna-api.internal", "callback-token-value"),
     })
@@ -163,6 +159,91 @@ describe("internal API", () => {
     expect((await repository.getRun("usr_test", runId))?.traceContext).toEqual({
       traceparent: "00-abcdefabcdefabcdefabcdefabcdefab-0123456789abcdef-01",
     })
+    await app.close()
+  })
+  it("reserves internal request headroom for the fields injected by Luna API", async () => {
+    const { app } = fixture()
+    const headers = { "x-luna-dev-user": "usr_envelope_headroom" }
+    const conversation = await app.inject({ method: "POST", url: "/internal/v1/conversations", headers, payload: { modelId: "aimod_test" } })
+    const conversationId = conversation.json<{ id: string }>().id
+    const publicBody = {
+      modelId: "aimod_test",
+      input: { parts: [{ type: "text", text: "check" }] },
+      pageContext: { padding: "" },
+    }
+    const publicLimit = 1024 * 1024
+    publicBody.pageContext.padding = "x".repeat(publicLimit - Buffer.byteLength(JSON.stringify(publicBody), "utf8") - 1)
+    const preparedBody = {
+      ...publicBody,
+      runId: "airun_envelope_headroom",
+      modelSnapshot: {
+        id: "aimod_test",
+        name: "Test model",
+        maxContextTokens: 128_000,
+        maxOutputTokens: 16_000,
+        inputCreditsPerMillion: "1",
+        outputCreditsPerMillion: "2",
+        cachedInputCreditsPerMillion: "0.5",
+      },
+    }
+    const publicBytes = Buffer.byteLength(JSON.stringify(publicBody), "utf8")
+    const preparedBytes = Buffer.byteLength(JSON.stringify(preparedBody), "utf8")
+    expect(publicBytes).toBeLessThanOrEqual(publicLimit)
+    expect(preparedBytes).toBeGreaterThan(publicLimit)
+    expect(preparedBytes).toBeLessThan(maximumRequestBodyBytes)
+
+    const response = await app.inject({
+      method: "POST",
+      url: `/internal/v1/conversations/${conversationId}/turns`,
+      headers: { ...headers, "idempotency-key": "envelope-headroom" },
+      payload: preparedBody,
+    })
+    expect(response.statusCode).toBe(202)
+    await app.close()
+  })
+  it("enforces the turn input limit by UTF-8 bytes", async () => {
+    const { app } = fixture()
+    const headers = { "x-luna-dev-user": "usr_input_bytes" }
+    const conversation = await app.inject({ method: "POST", url: "/internal/v1/conversations", headers, payload: { modelId: "aimod_test" } })
+    const conversationId = conversation.json<{ id: string }>().id
+    const withinLimit = "猫".repeat(Math.floor(maximumTurnInputBytes / 3))
+    const accepted = await app.inject({
+      method: "POST", url: `/internal/v1/conversations/${conversationId}/turns`,
+      headers: { ...headers, "idempotency-key": "utf8-byte-limit-ok" },
+      payload: { modelId: "aimod_test", input: { parts: [{ type: "text", text: withinLimit }] }, pageContext: {} },
+    })
+    const rejected = await app.inject({
+      method: "POST", url: `/internal/v1/conversations/${conversationId}/turns`,
+      headers: { ...headers, "idempotency-key": "utf8-byte-limit-over" },
+      payload: { modelId: "aimod_test", input: { parts: [{ type: "text", text: `${withinLimit}猫` }] }, pageContext: {} },
+    })
+
+    expect(accepted.statusCode).toBe(202)
+    expect(rejected.statusCode).toBe(400)
+    await app.close()
+  })
+  it("uses the same UTF-8 byte limit for resumed Run input", async () => {
+    const { app, repository } = fixture()
+    const ownerUserId = "usr_resumed_input_bytes"
+    const conversation = await repository.createConversation(ownerUserId, "resumed input")
+    const created = await repository.createTurn(ownerUserId, {
+      conversationId: conversation.id,
+      input: "开始",
+      pageContext: {},
+      idempotencyKey: "resumed-input-byte-limit",
+    })
+    const waiting = await repository.updateRun(created.run.id, "queued", "waiting_input")
+    const withinLimit = "猫".repeat(Math.floor(maximumTurnInputBytes / 3))
+    const request = (text: string) => app.inject({
+      method: "POST",
+      url: `/internal/v1/runs/${created.run.id}/input`,
+      headers: { "x-luna-dev-user": ownerUserId },
+      payload: { text, expectedVersion: waiting.rowVersion },
+    })
+
+    expect((await request(`${withinLimit}猫`)).statusCode).toBe(400)
+    expect((await request(withinLimit)).statusCode).toBe(202)
+    expect((await repository.getExecutionInput(created.run.id))?.input).toBe(`开始\n${withinLimit}`)
     await app.close()
   })
   it("rejects an invalid immutable model snapshot", async () => {
@@ -253,11 +334,9 @@ describe("internal API", () => {
   })
   it("keeps a durable cancellation successful when the local abort hook fails", async () => {
     const repository = new TestRepository()
-    const provider = new DeterministicProvider()
     const app = buildServer({
       config: loadConfig({ NODE_ENV: "test" }),
       repository,
-      provider,
       requestVerifier: new DevelopmentRequestVerifier(),
       cancelRun: () => { throw new Error("local abort failed") },
     })
@@ -281,7 +360,7 @@ describe("internal API", () => {
     const bus = new InMemoryRunStreamBus(repository)
     const app = buildServer({
       config: loadConfig({ NODE_ENV: "test" }), repository,
-      provider: new DeterministicProvider(), requestVerifier: new DevelopmentRequestVerifier(),
+      requestVerifier: new DevelopmentRequestVerifier(),
       streamBus: bus,
     })
     const ownerUserId = "usr_cancel_waiting"
@@ -300,48 +379,6 @@ describe("internal API", () => {
     expect(canceled.statusCode).toBe(202)
     expect(canceled.json()).toMatchObject({ id: created.run.id, status: "canceled" })
     expect((await repository.getEvents(ownerUserId, created.run.id, 0)).at(-1)?.type).toBe("run.canceled")
-    await app.close()
-  })
-  it("returns Agent feature and limit metadata without a redundant health flag", async () => {
-    const { app } = fixture()
-    const response = await app.inject({
-      method: "GET",
-      url: "/internal/v1/capabilities",
-      headers: { "x-luna-dev-user": "usr_test" },
-    })
-    expect(response.statusCode).toBe(200)
-    const capabilities = response.json<Record<string, unknown>>()
-    expect(capabilities).not.toHaveProperty("available")
-    expect(capabilities).not.toHaveProperty("enabled")
-    expect(capabilities).toMatchObject({
-      features: {
-        streaming: true,
-        approvals: false,
-        uiActions: true,
-        longTermMemory: false,
-      },
-      limits: {
-        maxInputBytes: defaultRuntimeSettings.maxInputBytes,
-        maxConcurrentRuns: 10,
-        maxUserConcurrentRuns: 10,
-      },
-    })
-    await app.close()
-  })
-  it("reports only compatibility dimensions that still select runtime behavior", async () => {
-    const { app } = fixture()
-    const response = await app.inject({ method: "GET", url: "/internal/v1/health/compatibility" })
-
-    expect(response.statusCode).toBe(200)
-    expect(response.json()).toMatchObject({
-      component: "luna-agent",
-      internalApiVersions: ["v1"],
-      aiSchemaMin: 1,
-      aiSchemaMax: 1,
-      promptVersions: ["system-v4"],
-      toolCatalogDigest: "sha256:platform-tools-v1",
-    })
-    expect(response.json()).not.toHaveProperty("graphVersions")
     await app.close()
   })
   it("presents a created turn as the strict Web timeline contract", async () => {

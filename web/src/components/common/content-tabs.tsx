@@ -50,7 +50,7 @@ export function ContentTabs({
   }, [tabs])
 
   const readHashRoute = useCallback(() => {
-    if (!hashRouting || typeof window === 'undefined')
+    if (!hashRouting)
       return null
 
     const hash = window.location.hash.replace(/^#/, '')
@@ -62,7 +62,7 @@ export function ContentTabs({
   }, [hashKey, hashRouting])
 
   const writeHashRoute = useCallback((route: string) => {
-    if (!hashRouting || typeof window === 'undefined')
+    if (!hashRouting)
       return
 
     const hash = window.location.hash.replace(/^#/, '')

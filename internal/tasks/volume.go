@@ -24,7 +24,6 @@ const (
 type VolumeProvisionPayload struct {
 	VolumeID  string `json:"volumeId"`
 	ProjectID string `json:"projectId"`
-	ActorID   string `json:"actorId"`
 	Operation string `json:"operation"`
 }
 
@@ -32,23 +31,17 @@ type VolumeTransferPayload struct {
 	TransferID string `json:"transferId"`
 	VolumeID   string `json:"volumeId"`
 	ProjectID  string `json:"projectId"`
-	ActorID    string `json:"actorId"`
 }
 
 type VolumeDeletePayload struct {
 	VolumeID  string `json:"volumeId"`
 	ProjectID string `json:"projectId"`
-	ActorID   string `json:"actorId"`
 }
 
-type VolumeReconcilePayload struct {
-	VolumeID string `json:"volumeId,omitempty"`
-	ActorID  string `json:"actorId"`
-}
+type VolumeReconcilePayload struct{}
 
 type VolumeTransferCleanupPayload struct {
 	TransferID string `json:"transferId,omitempty"`
-	ActorID    string `json:"actorId"`
 }
 
 func (c *Client) EnqueueVolumeProvision(ctx context.Context, payload VolumeProvisionPayload) (*asynq.TaskInfo, error) {

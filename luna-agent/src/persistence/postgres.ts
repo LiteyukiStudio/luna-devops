@@ -251,19 +251,6 @@ export class PostgresRepository implements Repository {
     })
   }
 
-  async getLatestReportedModelUsage(conversationId: string) {
-    const row = (await this.db.execute<Record<string, unknown>>(sql`
-      select usage.model_id, usage.prompt_tokens, usage.max_context_tokens_snapshot
-      from ai.model_usages usage
-      join ai.runs run on run.id = usage.run_id
-      where run.conversation_id = ${conversationId}
-        and usage.operation = 'assistant' and usage.status = 'reported'
-      order by usage.occurred_at desc, usage.id desc limit 1
-    `)).rows[0]
-    if (!row) return undefined
-    return { modelId: String(row.model_id), promptTokens: Number(row.prompt_tokens), maxContextTokensSnapshot: Number(row.max_context_tokens_snapshot) }
-  }
-
   async createConversation(ownerUserId: string, title: string, projectId?: string, titleSource?: ConversationTitleSource, modelId?: string) {
     const row = (await this.db.insert(conversations).values({
       id: createId("aicnv"),

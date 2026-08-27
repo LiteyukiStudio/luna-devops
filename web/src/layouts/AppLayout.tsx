@@ -43,6 +43,7 @@ import {
   SidebarMenu,
   SidebarMenuItem,
 } from '@/components/ui/sidebar'
+import { safeStorageSet } from '@/lib/safe-storage'
 import { cn } from '@/lib/utils'
 import { AIAssistantPage } from '@/pages/ai-assistant/AIAssistantPage'
 
@@ -108,8 +109,6 @@ const pageMetaRules = [
   { match: (pathname: string) => pathname === '/dashboard', titleKey: 'dashboard' },
   { match: (pathname: string) => isAIAssistantRoutePath(pathname), titleKey: 'aiAssistant.title' },
   { match: (pathname: string) => /^\/projects\/[^/]+\/apps\/[^/]+$/.test(pathname), titleKey: 'apps.detailTitle' },
-  { match: (pathname: string) => /^\/projects\/[^/]+\/members$/.test(pathname), titleKey: 'projectMembers.title' },
-  { match: (pathname: string) => /^\/projects\/[^/]+\/apps$/.test(pathname), titleKey: 'apps.title' },
   { match: (pathname: string) => /^\/projects\/[^/]+$/.test(pathname), titleKey: 'projectSpaces.workspaceTitle' },
   { match: (pathname: string) => pathname === '/projects', titleKey: 'projectSpaces.title' },
   { match: (pathname: string) => pathname === '/events', titleKey: 'eventsPage.title' },
@@ -119,7 +118,7 @@ const pageMetaRules = [
   { match: (pathname: string) => pathname === '/registries', titleKey: 'registries' },
   { match: (pathname: string) => pathname === '/clusters', titleKey: 'clusters' },
   { match: (pathname: string) => pathname === '/billing', titleKey: 'billing' },
-  { match: (pathname: string) => pathname === '/settings/account' || pathname === '/settings/security', titleKey: 'account' },
+  { match: (pathname: string) => pathname === '/settings/account', titleKey: 'account' },
   { match: (pathname: string) => pathname === '/settings/auth-providers', titleKey: 'authProvidersPage.title' },
   { match: (pathname: string) => pathname === '/settings/notifications', titleKey: 'notificationsPage.title' },
   { match: (pathname: string) => pathname === '/settings/operations', titleKey: 'operationsDashboard' },
@@ -189,8 +188,6 @@ export function AppLayout() {
   const pageMeta = useMemo(() => {
     const rule = pageMetaRules.find(item => item.match(location.pathname))
     const projectWorkspaceMatch = location.pathname.match(/^\/projects\/([^/]+)$/)
-    const projectMembersMatch = location.pathname.match(/^\/projects\/([^/]+)\/members$/)
-    const projectApplicationsMatch = location.pathname.match(/^\/projects\/([^/]+)\/apps$/)
     const project = currentProject.data ?? (projectRouteMatch ? projects.data?.find(project => project.id === projectRouteMatch[1]) : undefined)
     const application = appRouteMatch ? currentApplication.data : undefined
     let title = rule?.titleKey ? t(rule.titleKey) : configs['site.title'] || t('appName')
@@ -203,12 +200,6 @@ export function AppLayout() {
       titleCrumbs.push({ label: project.name, to: `/projects/${project.id}` })
       backNavigation = { label: t('backToProjectSpaces'), to: '/projects' }
     }
-    if ((projectMembersMatch || projectApplicationsMatch) && project) {
-      backNavigation = {
-        label: t('backToProjectWorkspace'),
-        to: `/projects/${project.id}`,
-      }
-    }
     if (application) {
       title = t('apps.detailTopbarTitle', { name: application.name, projectName: project?.name ?? t('projectSpaces.title') })
       titlePrefix = t('apps.applicationTopbarPrefix')
@@ -217,7 +208,7 @@ export function AppLayout() {
       titleCrumbs.push({ label: application.name, to: `/projects/${application.projectId}/apps/${application.id}` })
       backNavigation = {
         label: t('backToApps'),
-        to: `/projects/${application.projectId}?tab=apps`,
+        to: `/projects/${application.projectId}#tab=apps`,
       }
     }
     return {
@@ -450,7 +441,7 @@ function AIAssistantPageLauncher({ label, onOpen }: { label: string, onOpen: () 
   ))
 
   useEffect(() => {
-    localStorage.setItem(LAUNCHER_STORAGE_KEY, JSON.stringify(position))
+    safeStorageSet(LAUNCHER_STORAGE_KEY, JSON.stringify(position))
   }, [position])
 
   useEffect(() => {

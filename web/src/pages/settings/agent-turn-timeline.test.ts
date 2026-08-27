@@ -24,7 +24,6 @@ describe('agent turn timeline', () => {
     expect(agentTurnTimelineKind(span('agent.turn.accept', 0))).toBe('turn')
     expect(agentTurnTimelineKind(span('invoke_agent Luna Agent', 1, 'ok', { 'gen_ai.operation.name': 'invoke_agent' }))).toBe('agent')
     expect(agentTurnTimelineKind(span('chat gpt-5', 2, 'ok', { 'gen_ai.operation.name': 'chat' }))).toBe('model')
-    expect(agentTurnTimelineKind(span('agent.tools.available', 2.5))).toBe('toolset')
     expect(agentTurnTimelineKind(span('execute_tool getProject', 3, 'ok', { 'gen_ai.operation.name': 'execute_tool', 'gen_ai.tool.name': 'getProject' }))).toBe('tool')
     expect(agentTurnTimelineKind(span('agent.repository.turn.create', 4))).toBe('storage')
     expect(agentTurnTimelineKind(span('luna_api.tool.execute', 5))).toBe('external')
@@ -40,16 +39,14 @@ describe('agent turn timeline', () => {
     const spans = [
       span('execute_tool getProject', 30, 'ok', { 'gen_ai.operation.name': 'execute_tool', 'gen_ai.tool.name': 'getProject' }),
       span('chat gpt-5', 20, 'error', { 'gen_ai.operation.name': 'chat' }),
-      span('agent.tools.available', 19),
       span('invoke_agent Luna Agent', 10, 'ok', { 'gen_ai.operation.name': 'invoke_agent' }),
     ]
     expect(filterAgentTurnTimelineSpans(spans, 'all').map(item => item.name)).toEqual([
       'invoke_agent Luna Agent',
-      'agent.tools.available',
       'chat gpt-5',
       'execute_tool getProject',
     ])
-    expect(filterAgentTurnTimelineSpans(spans, 'model').map(item => item.name)).toEqual(['agent.tools.available', 'chat gpt-5'])
+    expect(filterAgentTurnTimelineSpans(spans, 'model').map(item => item.name)).toEqual(['chat gpt-5'])
     expect(filterAgentTurnTimelineSpans(spans, 'tool')).toHaveLength(1)
     expect(filterAgentTurnTimelineSpans(spans, 'error').map(item => item.name)).toEqual(['chat gpt-5'])
   })

@@ -171,7 +171,7 @@ function columnCellClassName(column: DataListColumn<unknown>) {
 const mobileActionMediaQuery = '(max-width: 47.999rem)'
 
 function subscribeMobileActionViewport(onStoreChange: () => void) {
-  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function')
+  if (typeof window.matchMedia !== 'function')
     return () => undefined
 
   const mediaQuery = window.matchMedia(mobileActionMediaQuery)
@@ -180,8 +180,7 @@ function subscribeMobileActionViewport(onStoreChange: () => void) {
 }
 
 function mobileActionViewportSnapshot() {
-  return typeof window !== 'undefined'
-    && typeof window.matchMedia === 'function'
+  return typeof window.matchMedia === 'function'
     && window.matchMedia(mobileActionMediaQuery).matches
 }
 

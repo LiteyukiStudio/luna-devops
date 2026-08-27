@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest"
-import { contextCompilationUsageAttributes, ContextCompiler } from "../src/context/compiler.js"
+import { ContextCompiler } from "../src/context/compiler.js"
 import type { AIModelSnapshot, ConversationHistoryEntry, ConversationSummary, ConversationSummaryContent } from "../src/domain.js"
 import type { Repository } from "../src/persistence/repository.js"
 import { ProviderRequestError } from "../src/provider/provider-error.js"
@@ -12,7 +12,6 @@ const summaryJSON = JSON.stringify({
   userGoals: ["完成部署"], constraints: [], confirmedResources: [], completedActions: [], failures: [], pendingWork: [], durableFacts: [],
 })
 const options = {
-  compressionTriggerRatio: 0.8,
   recentTurnCount: 1,
   maxUncompressedTurnCount: 4,
   maxCompressionTurnsPerCompile: 8,
@@ -23,71 +22,50 @@ const options = {
 }
 
 describe("ContextCompiler authoritative compression", () => {
-  it("triggers from the previous official prompt_tokens ratio", async () => {
-    const history = entries(3)
-    const repository = memoryRepository({ history, latestUsage: { modelId: "aimdl_400k", promptTokens: 320_000, maxContextTokensSnapshot: 400_000 } })
+  it("compresses older turns after the fixed threshold and preserves the recent window", async () => {
+    const history = entries(6)
+    const repository = memoryRepository({ history })
     const complete = vi.fn(async () => ({ text: summaryJSON, usage: reported(500, 100) }))
 
     const result = await new ContextCompiler(repository, { complete }, options).compile(compileInput(history))
 
     expect(complete).toHaveBeenCalledOnce()
-    expect(result.compaction).toEqual({ summarizedThroughTurnIndex: 1, sourceTurnCount: 2, trigger: "provider_usage", priorPromptTokens: 320_000 })
+    expect(result.compaction).toEqual({ summarizedThroughTurnIndex: 4, sourceTurnCount: 5, trigger: "fixed_threshold" })
+    expect(result.recentTurnCount).toBe(1)
     expect(result.messages.some(message => message.content.includes("历史会话结构化摘要"))).toBe(true)
   })
 
-  it("keeps prior usage off current-call GenAI usage attributes", () => {
-    const attributes = contextCompilationUsageAttributes(320_000)
-    expect(attributes).toEqual({ "luna.agent.context.prior_input_tokens": 320_000 })
-    expect(attributes).not.toHaveProperty("gen_ai.usage.input_tokens")
-  })
-
-  it("does not reject a new 400K-model request before calling the Provider", async () => {
-    const repository = memoryRepository({ history: [] })
-    const complete = vi.fn(async () => ({ text: summaryJSON, usage: reported(1, 1) }))
-    const current = "新输入".repeat(200_000)
-
-    const result = await new ContextCompiler(repository, { complete }, options).compile(compileInput([], { currentMessages: [{ role: "user", content: current }] }))
-
-    expect(complete).not.toHaveBeenCalled()
-    expect(result.compressionOutcome).toBe("not_needed")
-    expect(result.messages.at(-1)).toEqual({ role: "user", content: current })
-  })
-
-  it("uses explicit turn backlog instead of a local Token preflight", async () => {
-    const history = entries(6)
+  it("does not compress at or below the fixed threshold", async () => {
+    const history = entries(4)
     const repository = memoryRepository({ history })
     const complete = vi.fn(async () => ({ text: summaryJSON, usage: reported(20, 5) }))
 
     const result = await new ContextCompiler(repository, { complete }, options).compile(compileInput(history))
 
-    expect(result.compaction?.trigger).toBe("turn_backlog")
-    expect(result.compaction?.priorPromptTokens).toBeUndefined()
+    expect(result.compressionOutcome).toBe("not_needed")
+    expect(result.compaction).toBeUndefined()
+    expect(complete).not.toHaveBeenCalled()
   })
 
-  it("bisects a summary batch only after a structured context error", async () => {
+  it("performs one bounded summary request for an explicit context error", async () => {
     const history = entries(4)
     const repository = memoryRepository({ history })
-    const complete = vi.fn()
-      .mockRejectedValueOnce(contextError())
-      .mockResolvedValue({ text: summaryJSON, usage: reported(20, 5) })
+    const complete = vi.fn(async () => ({ text: summaryJSON, usage: reported(20, 5) }))
 
     const result = await new ContextCompiler(repository, { complete }, options).compile(compileInput(history, { forceCompressionTrigger: "context_error" }))
 
-    expect(complete).toHaveBeenCalledTimes(3)
+    expect(complete).toHaveBeenCalledOnce()
     expect(result.compaction).toMatchObject({ trigger: "context_error", sourceTurnCount: 4, summarizedThroughTurnIndex: 3 })
   })
 
-  it("segments a single oversized turn on a byte boundary after Provider rejection", async () => {
-    const history: ConversationHistoryEntry[] = [{ turnIndex: 0, user: "用户".repeat(4_000), assistant: "助手".repeat(4_000) }]
+  it("does not recursively retry a rejected summary request", async () => {
+    const history = entries(4)
     const repository = memoryRepository({ history })
-    const complete = vi.fn()
-      .mockRejectedValueOnce(contextError())
-      .mockResolvedValue({ text: summaryJSON, usage: reported(20, 5) })
+    const complete = vi.fn(async () => { throw contextError() })
 
-    const result = await new ContextCompiler(repository, { complete }, options).compile(compileInput(history, { forceCompressionTrigger: "context_error" }))
-
-    expect(complete.mock.calls.length).toBeGreaterThan(2)
-    expect(result.compaction).toMatchObject({ trigger: "context_error", sourceTurnCount: 1 })
+    await expect(new ContextCompiler(repository, { complete }, options).compile(compileInput(history, { forceCompressionTrigger: "context_error" })))
+      .rejects.toThrow("ai.provider_context_length_exceeded")
+    expect(complete).toHaveBeenCalledOnce()
   })
 
   it("does not hide authentication and availability failures behind fallback", async () => {
@@ -179,20 +157,6 @@ describe("ContextCompiler authoritative compression", () => {
     expect(parsed.durableFacts.join(" ")).toContain("[REDACTED]")
   })
 
-  it.each([
-    ["missing usage", undefined],
-    ["usage from a different model", { modelId: "aimdl_other", promptTokens: 390_000, maxContextTokensSnapshot: 400_000 }],
-    ["same-model usage below the threshold", { modelId: "aimdl_400k", promptTokens: 319_999, maxContextTokensSnapshot: 400_000 }],
-  ])("does not trigger proactive compression for %s", async (_name, latestUsage) => {
-    const history = entries(3)
-    const complete = vi.fn(async () => ({ text: summaryJSON, usage: reported(20, 5) }))
-    const result = await new ContextCompiler(memoryRepository({ history, ...(latestUsage ? { latestUsage } : {}) }), { complete }, options)
-      .compile(compileInput(history))
-
-    expect(result.compressionOutcome).toBe("not_needed")
-    expect(result.compaction).toBeUndefined()
-    expect(complete).not.toHaveBeenCalled()
-  })
 })
 
 function compileInput(history: ConversationHistoryEntry[], overrides: Record<string, unknown> = {}) {
@@ -219,13 +183,11 @@ function contextError() {
 
 function memoryRepository(input: {
   history: ConversationHistoryEntry[]
-  latestUsage?: { modelId: string, promptTokens: number, maxContextTokensSnapshot: number }
   summary?: ConversationSummary
 }) {
   let summary = input.summary
   return {
     getConversationSummary: async () => summary,
-    getLatestReportedModelUsage: async () => input.latestUsage,
     listConversationHistory: async (_conversationId: string, after: number, before: number, limit: number) =>
       input.history.filter(entry => entry.turnIndex > after && entry.turnIndex < before).slice(0, limit),
     saveConversationSummary: async (value: Omit<ConversationSummary, "createdAt" | "updatedAt">) => {
@@ -233,7 +195,7 @@ function memoryRepository(input: {
       summary = { ...value, createdAt: now, updatedAt: now }
       return summary
     },
-  } as Pick<Repository, "getConversationSummary" | "getLatestReportedModelUsage" | "listConversationHistory" | "saveConversationSummary">
+  } as Pick<Repository, "getConversationSummary" | "listConversationHistory" | "saveConversationSummary">
 }
 
 async function compileWithSummary(summary: ConversationSummary) {

@@ -26,7 +26,6 @@ const deploymentTarget = {
   projectId: 'prj_1',
   readyReplicas: 1,
   replicas: 1,
-  servicePort: 3000,
   servicePorts: [{ name: 'http', port: 3000 }],
   sourceType: 'image',
   stage: 'dev',

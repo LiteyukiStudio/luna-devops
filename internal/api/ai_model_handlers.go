@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/LiteyukiStudio/devops/internal/aimodel"
-	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/gin-gonic/gin"
 )
 
@@ -35,14 +34,6 @@ func (h *Handlers) ListAIModels(ctx *gin.Context) {
 }
 
 func (h *Handlers) ListAIModelConfigs(ctx *gin.Context) {
-	user, ok := h.currentUser(ctx)
-	if !ok {
-		return
-	}
-	if user.Role != authz.PlatformRoleAdmin {
-		writeErrorKey(ctx, http.StatusForbidden, user.Language, "config.admin.required")
-		return
-	}
 	models, err := aimodel.NewService(h.dbFor(ctx)).ListAll(requestContext(ctx))
 	if err != nil {
 		writeErrorCode(ctx, http.StatusInternalServerError, "ai.models_unavailable", "AI models are unavailable")

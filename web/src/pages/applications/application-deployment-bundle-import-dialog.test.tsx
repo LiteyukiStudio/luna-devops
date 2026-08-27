@@ -23,7 +23,6 @@ const bundle = {
     name: 'Imported service',
     namespace: '',
     runtimeConfigRefs: [],
-    runtimeConfigSetIds: [],
     buildVariableSetIds: [],
     sourceType: 'image',
     imageRef: 'registry.example/service:v1',

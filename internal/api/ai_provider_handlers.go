@@ -10,7 +10,6 @@ import (
 
 	"github.com/LiteyukiStudio/devops/internal/aiagent"
 	"github.com/LiteyukiStudio/devops/internal/aitool"
-	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/gin-gonic/gin"
 )
@@ -25,14 +24,6 @@ var aiProviderConfigKeys = []string{
 	"ai.runtime.run_timeout_seconds",
 	"ai.runtime.agent_concurrent_runs",
 	"ai.quota.user_concurrent_runs",
-	"ai.model.max_output_tokens",
-	"ai.run.max_model_steps",
-	"ai.quota.run_max_tool_calls",
-	"ai.run.max_input_k_bytes",
-	"ai.tools.max_card_repair_attempts",
-	"ai.context.max_uncompressed_turn_count",
-	"ai.context.max_compression_turns_per_compile",
-	"ai.context.summary_max_output_tokens",
 }
 
 func (h *Handlers) GetAIProviderConfigInternal(ctx *gin.Context) {
@@ -98,19 +89,11 @@ func aiProviderConfigVersionWithCatalog(base string, operations []aitool.OpenAPI
 
 func aiProviderRuntimeConfig(values map[string]string) gin.H {
 	return gin.H{
-		"providerTimeoutMs":                    aiBoundedIntegerConfig(values, "ai.runtime.provider_timeout_seconds") * 1000,
-		"maxRequestRetries":                    aiBoundedIntegerConfig(values, "ai.runtime.max_request_retries"),
-		"runTimeoutMs":                         aiBoundedIntegerConfig(values, "ai.runtime.run_timeout_seconds") * 1000,
-		"agentConcurrentRuns":                  aiBoundedIntegerConfig(values, "ai.runtime.agent_concurrent_runs"),
-		"userConcurrentRuns":                   aiBoundedIntegerConfig(values, "ai.quota.user_concurrent_runs"),
-		"assistantMaxOutputTokens":             aiBoundedIntegerConfig(values, "ai.model.max_output_tokens"),
-		"maxModelSteps":                        aiBoundedIntegerConfig(values, "ai.run.max_model_steps"),
-		"runMaxToolCalls":                      aiBoundedIntegerConfig(values, "ai.quota.run_max_tool_calls"),
-		"maxInputBytes":                        aiBoundedIntegerConfig(values, "ai.run.max_input_k_bytes") * 1024,
-		"maxCardRepairAttempts":                aiBoundedIntegerConfig(values, "ai.tools.max_card_repair_attempts"),
-		"contextMaxUncompressedTurnCount":      aiBoundedIntegerConfig(values, "ai.context.max_uncompressed_turn_count"),
-		"contextMaxCompressionTurnsPerCompile": aiBoundedIntegerConfig(values, "ai.context.max_compression_turns_per_compile"),
-		"contextSummaryMaxOutputTokens":        aiBoundedIntegerConfig(values, "ai.context.summary_max_output_tokens"),
+		"providerTimeoutMs":   aiBoundedIntegerConfig(values, "ai.runtime.provider_timeout_seconds") * 1000,
+		"maxRequestRetries":   aiBoundedIntegerConfig(values, "ai.runtime.max_request_retries"),
+		"runTimeoutMs":        aiBoundedIntegerConfig(values, "ai.runtime.run_timeout_seconds") * 1000,
+		"agentConcurrentRuns": aiBoundedIntegerConfig(values, "ai.runtime.agent_concurrent_runs"),
+		"userConcurrentRuns":  aiBoundedIntegerConfig(values, "ai.quota.user_concurrent_runs"),
 	}
 }
 
@@ -172,10 +155,6 @@ func aiProviderConfigVersionWithModels(base string, models []model.AIModel) stri
 func (h *Handlers) TestAIProviderConnection(ctx *gin.Context) {
 	user, ok := h.currentUser(ctx)
 	if !ok {
-		return
-	}
-	if user.Role != authz.PlatformRoleAdmin {
-		writeErrorKey(ctx, http.StatusForbidden, user.Language, "config.admin.required")
 		return
 	}
 	if h.aiUnavailableReason() != "" || h.aiAgent == nil {

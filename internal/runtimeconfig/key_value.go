@@ -2,63 +2,27 @@ package runtimeconfig
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
 )
 
-// ParseLegacyKeyValue reads the historical text representation used by runtime
-// configuration columns. It accepts both KEY=value lines and a JSON object
-// encoded as text so existing rows can be read during the contract migration.
-func ParseLegacyKeyValue(value string) (map[string]string, error) {
+// DecodeKeyValue reads the canonical JSON object stored in runtime
+// configuration columns.
+func DecodeKeyValue(value string) (map[string]string, error) {
 	trimmed := strings.TrimSpace(value)
 	if trimmed == "" {
 		return map[string]string{}, nil
 	}
-	if strings.HasPrefix(trimmed, "{") {
-		var raw map[string]json.RawMessage
-		if err := json.Unmarshal([]byte(trimmed), &raw); err != nil {
-			return nil, fmt.Errorf("runtime configuration JSON object is invalid: %w", err)
+	var raw map[string]string
+	if err := json.Unmarshal([]byte(trimmed), &raw); err != nil || raw == nil {
+		if err == nil {
+			err = errors.New("expected JSON object")
 		}
-		output := make(map[string]string, len(raw))
-		for key, encoded := range raw {
-			var item any
-			if err := json.Unmarshal(encoded, &item); err != nil {
-				return nil, fmt.Errorf("runtime configuration value for %q is invalid: %w", key, err)
-			}
-			var normalizedItem string
-			switch typed := item.(type) {
-			case string:
-				normalizedItem = typed
-			case float64, bool:
-				normalizedItem = fmt.Sprint(typed)
-			case nil:
-				normalizedItem = ""
-			default:
-				return nil, fmt.Errorf("runtime configuration value for %q must be a scalar", key)
-			}
-			if err := addValue(output, key, normalizedItem); err != nil {
-				return nil, err
-			}
-		}
-		return output, nil
+		return nil, fmt.Errorf("runtime configuration JSON object is invalid: %w", err)
 	}
-
-	output := map[string]string{}
-	for _, rawLine := range strings.Split(value, "\n") {
-		line := strings.TrimSpace(rawLine)
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		key, item, ok := strings.Cut(rawLine, "=")
-		if !ok {
-			return nil, fmt.Errorf("runtime configuration line %q must contain '='", line)
-		}
-		if err := addValue(output, key, strings.TrimRight(item, " \t\r")); err != nil {
-			return nil, err
-		}
-	}
-	return output, nil
+	return NormalizeKeyValue(raw)
 }
 
 // NormalizeKeyValue validates and normalizes an API object before it is

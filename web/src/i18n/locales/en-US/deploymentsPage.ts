@@ -254,7 +254,6 @@ const deploymentsPage = {
   webConsoleConnected: 'Connected. Type shell commands to inspect the runtime.',
   webConsoleDisconnected: 'Terminal disconnected.',
   webConsoleConnectionFailed: 'Terminal connection failed. Check release status and container shell.',
-  webConsoleAuthorizationFailed: 'Terminal authorization failed. Sign in again and verify that you still have access to this runtime.',
   terminalStdout: 'stdout',
   terminalStderr: 'stderr',
   command: 'Command',

@@ -2,9 +2,10 @@ import type { ConversationHistoryEntry } from "../domain.js"
 import { dynamicSkillGuidanceFor } from "../prompt/system.js"
 import type { ModelMessage } from "../provider/provider.js"
 import { redact } from "../redaction.js"
+import { maximumTurnInputBytes } from "../input-limits.js"
 
-// 平台单轮输入最多 8 MiB；该固定协议上限不随热配置、重启或副本变化。
-export const fixedTurnPromptPayloadBytes = 8 * 1024 * 1024 + 64 * 1024
+// JSON 字符串中单个 UTF-8 字节最坏可展开为六字节转义，再为规范化信封保留固定余量。
+export const fixedTurnPromptPayloadBytes = maximumTurnInputBytes * 6 + 64 * 1024
 const fixedPageContextPayloadBytes = 32 * 1024
 export const fixedWorkflowReferencePayloadBytes = 64 * 1024
 const fixedHistoryAssistantPayloadBytes = 64 * 1024
@@ -289,24 +290,6 @@ function messagePayloadBytes(message: ModelMessage): number {
     + (message.role === "assistant" && message.toolCalls
       ? Buffer.byteLength(canonicalJSONStringify(message.toolCalls), "utf8")
       : 0)
-}
-
-export function splitUTF8(value: string, maxBytes: number): string[] {
-  const chunks: string[] = []
-  let current = ""
-  let currentBytes = 0
-  for (const character of value) {
-    const characterBytes = Buffer.byteLength(character, "utf8")
-    if (current && currentBytes + characterBytes > maxBytes) {
-      chunks.push(current)
-      current = ""
-      currentBytes = 0
-    }
-    current += character
-    currentBytes += characterBytes
-  }
-  if (current) chunks.push(current)
-  return chunks
 }
 
 export function truncateUTF8(value: string, maxBytes: number): string {

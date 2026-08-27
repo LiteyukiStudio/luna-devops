@@ -174,53 +174,40 @@ func (p EgressPolicy) ValidateURL(raw string) (*url.URL, error) {
 
 func (p EgressPolicy) ValidateHostPort(host string, port int) error {
 	host = strings.Trim(strings.TrimSpace(host), "[]")
-	originalHost := host
-	egressDebug("validate host=%s port=%d allowPrivate=%t applyIPFilterToNames=%t allowedPorts=%s domainAllow=%s domainBlock=%s ipAllow=%s ipBlock=%s", originalHost, port, p.AllowPrivateNetwork, p.ApplyIPFilterToNames, debugPorts(p.AllowedPorts), debugList(p.DomainAllowList), debugList(p.DomainBlockList), debugList(p.IPAllowList), debugList(p.IPBlockList))
-	if host == "" || port < 1 || port > 65535 {
-		egressDebug("blocked host=%s port=%d reason=invalid-host-or-port", originalHost, port)
-		return fmt.Errorf("%w: invalid host or port", ErrInvalidURL)
+	if err := p.validateHostAndPortRules(host, port); err != nil {
+		return err
 	}
-	if len(p.AllowedPorts) > 0 && !containsPort(p.AllowedPorts, port) {
-		egressDebug("blocked host=%s port=%d reason=port-not-allowed allowedPorts=%s", originalHost, port, debugPorts(p.AllowedPorts))
-		return fmt.Errorf("%w: port is not allowed", ErrBlockedByPolicy)
-	}
-
 	if ip := net.ParseIP(host); ip != nil {
-		egressDebug("host is direct ip host=%s ip=%s", originalHost, ip.String())
-		if err := p.validateIP(ip); err != nil {
-			egressDebug("blocked host=%s ip=%s reason=%v", originalHost, ip.String(), err)
-			return err
-		}
-		egressDebug("allowed host=%s ip=%s reason=direct-ip-policy-pass", originalHost, ip.String())
+		return p.validateIP(ip)
+	}
+	// DNS is intentionally resolved only by dialContextWithPolicy, which
+	// validates and dials the same resolved address to prevent rebinding.
+	return nil
+}
+
+// ValidateProxyTarget resolves a target before handing it to an HTTP proxy.
+// Direct connections use dialContextWithPolicy instead, where validation and
+// dialing share the same resolved address.
+func (p EgressPolicy) ValidateProxyTarget(ctx context.Context, target *url.URL) error {
+	if target == nil {
+		return fmt.Errorf("%w: malformed url", ErrInvalidURL)
+	}
+	host := strings.TrimSpace(target.Hostname())
+	if err := p.ValidateHostPort(host, defaultPort(target)); err != nil {
+		return err
+	}
+	if net.ParseIP(host) != nil || domainListed(host, p.DomainAllowList) || !p.ApplyIPFilterToNames {
 		return nil
 	}
-	host = normalizeDomain(host)
-	if listed, item := domainListedBy(host, p.DomainBlockList); listed {
-		egressDebug("blocked host=%s normalized=%s reason=domain-blocklist matched=%s", originalHost, host, item)
-		return fmt.Errorf("%w: domain is in blocklist", ErrBlockedByPolicy)
-	}
-	if listed, item := domainListedBy(host, p.DomainAllowList); listed {
-		egressDebug("allowed host=%s normalized=%s reason=domain-allowlist matched=%s skipIPFilter=true", originalHost, host, item)
-		return nil
-	}
-	if !p.ApplyIPFilterToNames {
-		egressDebug("allowed host=%s normalized=%s reason=ip-filter-disabled", originalHost, host)
-		return nil
-	}
-	ips, err := net.LookupIP(host)
-	if err != nil {
-		egressDebug("blocked host=%s normalized=%s reason=dns-lookup-failed err=%v", originalHost, host, err)
+	addresses, err := net.DefaultResolver.LookupIPAddr(ctx, normalizeDomain(host))
+	if err != nil || len(addresses) == 0 {
 		return fmt.Errorf("%w: dns lookup failed", ErrBlockedByPolicy)
 	}
-	egressDebug("resolved host=%s normalized=%s ips=%s", originalHost, host, debugIPs(ips))
-	for _, ip := range ips {
-		if err := p.validateIP(ip); err != nil {
-			egressDebug("blocked host=%s normalized=%s ip=%s reason=%v", originalHost, host, ip.String(), err)
+	for _, address := range addresses {
+		if err := p.validateResolvedIP(host, address.IP); err != nil {
 			return err
 		}
-		egressDebug("ip allowed host=%s normalized=%s ip=%s", originalHost, host, ip.String())
 	}
-	egressDebug("allowed host=%s normalized=%s reason=all-resolved-ips-pass", originalHost, host)
 	return nil
 }
 

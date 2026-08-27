@@ -158,29 +158,6 @@ func (h *Handlers) currentUserFromAccessToken(ctx *gin.Context) (model.User, boo
 		)
 		return model.User{}, false
 	}
-	if token.Source == "oauth" {
-		var grant model.OAuthGrant
-		if token.OAuthGrantID == "" || token.OAuthApplicationID == "" || h.dbFor(ctx).First(
-			&grant,
-			"id = ? and application_id = ? and user_id = ? and revoked_at is null",
-			token.OAuthGrantID,
-			token.OAuthApplicationID,
-			token.UserID,
-		).Error != nil {
-			writeErrorKey(ctx, http.StatusUnauthorized, requestLanguage(ctx), "auth.oauth.grant_invalid")
-			return model.User{}, false
-		}
-		var application model.OAuthApplication
-		if h.dbFor(ctx).First(
-			&application,
-			"id = ? and revoked_at is null",
-			token.OAuthApplicationID,
-		).Error != nil {
-			writeErrorKey(ctx, http.StatusUnauthorized, requestLanguage(ctx), "auth.oauth.application_invalid")
-			return model.User{}, false
-		}
-	}
-
 	var user model.User
 	if err := h.dbFor(ctx).First(&user, "id = ? and disabled = ?", token.UserID, false).Error; err != nil {
 		writeErrorKey(ctx, http.StatusUnauthorized, requestLanguage(ctx), "auth.account.disabled")

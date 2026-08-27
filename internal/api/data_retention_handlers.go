@@ -50,9 +50,6 @@ func (h *Handlers) PreviewDataRetention(ctx *gin.Context) {
 }
 
 func (h *Handlers) CleanupDataRetention(ctx *gin.Context) {
-	if !h.requirePlatformAdmin(ctx) {
-		return
-	}
 	user, ok := h.currentUser(ctx)
 	if !ok {
 		return

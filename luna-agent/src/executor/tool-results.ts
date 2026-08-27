@@ -4,13 +4,8 @@ import { defaultRuntimeSettings } from "../runtime-settings.js"
 
 // 单个工具结果进入模型前的字节预算上限，防止单次大批量结果占满上下文。
 // 超出时按数组元素粒度保留尽可能多的完整元素并附加截断标记，不输出损坏的 JSON。
-// 工具结果上限在 Agent 启动时从可选环境变量读取；卡片修复上限仍由平台动态下发。
-let toolResultPayloadBudget = defaultRuntimeSettings.toolResultPayloadBudget
+const toolResultPayloadBudget = defaultRuntimeSettings.toolResultPayloadBudget
 const toolResultTruncatedNote = "结果过大已按上下文预算截断：仅保留部分条目，需要更多时请用更精确的条件或翻页重新查询"
-
-export function setToolResultPayloadBudget(bytes: number): void {
-  toolResultPayloadBudget = bytes
-}
 
 export function toolResultMessage(
   toolCall: ModelToolCall & { id: string },

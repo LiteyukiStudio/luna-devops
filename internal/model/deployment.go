@@ -152,7 +152,6 @@ type DeploymentTarget struct {
 	AutoScalingCPUPercent        int                           `gorm:"not null;default:0" json:"autoScalingCpuPercent"`
 	AutoScalingMemoryPercent     int                           `gorm:"not null;default:0" json:"autoScalingMemoryPercent"`
 	AutoScalingBehavior          string                        `gorm:"type:text;not null;default:''" json:"autoScalingBehavior"`
-	ServicePort                  int                           `gorm:"not null;default:8080" json:"servicePort"`
 	ServicePorts                 string                        `gorm:"type:text;not null;default:''" json:"servicePorts"`
 	DeleteStatus                 string                        `gorm:"index;not null;default:active" json:"deleteStatus"`
 	DeleteMessage                string                        `gorm:"type:text;not null;default:''" json:"deleteMessage"`
@@ -184,7 +183,6 @@ type DeploymentTarget struct {
 	BranchPattern                string                        `json:"branchPattern"`
 	TagPattern                   string                        `json:"tagPattern"`
 	ConcurrencyPolicy            string                        `gorm:"not null;default:queue" json:"concurrencyPolicy"`
-	RuntimeConfigSetIDs          string                        `gorm:"type:text;not null;default:''" json:"runtimeConfigSetIds"`
 	RuntimeConfigRefs            string                        `gorm:"type:text;not null;default:''" json:"runtimeConfigRefs"`
 	EnvVars                      string                        `gorm:"type:text;not null;default:''" json:"envVars"`
 	ConfigRefs                   string                        `gorm:"type:text;not null;default:''" json:"configRefs"`
@@ -319,7 +317,7 @@ type DeploymentServicePort struct {
 }
 
 func DeploymentTargetServicePorts(target DeploymentTarget) []DeploymentServicePort {
-	return DeploymentServicePortsFromJSON(target.ServicePorts, target.ServicePort)
+	return DeploymentServicePortsFromJSON(target.ServicePorts, 0)
 }
 
 func DeploymentServicePortsFromJSON(raw string, fallbackPort int) []DeploymentServicePort {
@@ -340,9 +338,6 @@ func EncodeDeploymentServicePorts(ports []DeploymentServicePort, fallbackPort in
 }
 
 func NormalizeDeploymentServicePorts(ports []DeploymentServicePort, fallbackPort int) []DeploymentServicePort {
-	if fallbackPort <= 0 {
-		fallbackPort = 8080
-	}
 	seen := map[int]bool{}
 	normalized := make([]DeploymentServicePort, 0, len(ports))
 	for _, item := range ports {
@@ -357,7 +352,7 @@ func NormalizeDeploymentServicePorts(ports []DeploymentServicePort, fallbackPort
 		}
 		normalized = append(normalized, DeploymentServicePort{Name: name, Port: port, AppProtocol: strings.TrimSpace(item.AppProtocol)})
 	}
-	if len(normalized) == 0 {
+	if len(normalized) == 0 && fallbackPort > 0 && fallbackPort <= 65535 {
 		return []DeploymentServicePort{{Name: "http", Port: fallbackPort}}
 	}
 	return normalized

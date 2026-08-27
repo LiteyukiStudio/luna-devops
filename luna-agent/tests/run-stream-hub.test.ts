@@ -38,11 +38,11 @@ async function fixture() {
 }
 
 describe("per-Run SSE hub", () => {
-  it("fans one live reader and one PG watcher out to 25 subscribers", async () => {
+  it("fans one live reader and one PG watcher out to the four supported subscribers", async () => {
     const { repository, bus, run, turn } = await fixture()
     const manager = new RunStreamHubManager(repository, bus)
     const after = (await repository.getRunStreamPosition(run.id))!.nextEventSequence - 1
-    const subscriptions = await Promise.all(Array.from({ length: 25 }, () => manager.subscribe(run.id, "hub-user", after)))
+    const subscriptions = await Promise.all(Array.from({ length: 4 }, () => manager.subscribe(run.id, "hub-user", after)))
     repository.runReads = 0
     repository.eventReads = 0
     expect(bus.readerOpens).toBe(1)
@@ -51,7 +51,7 @@ describe("per-Run SSE hub", () => {
     const first = await stream.appendEvent("model.started", {})
     const updates = await Promise.all(subscriptions.map(subscription => subscription.next(new AbortController().signal)))
     expect(updates.every(update => update.events.some(event => event.id === first.id))).toBe(true)
-    // TestRepository.getEvents 会做一次额外所有权回读；仍为单 hub 常数，不随 25 个订阅者增长。
+    // TestRepository.getEvents 会做一次额外所有权回读；仍为单 hub 常数，不随订阅者增长。
     expect(repository.runReads).toBeLessThanOrEqual(2)
     expect(repository.eventReads).toBeLessThanOrEqual(1)
 

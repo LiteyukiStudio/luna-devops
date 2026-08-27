@@ -181,6 +181,10 @@ func NewRunner(db *gorm.DB, options Options) *Runner {
 	if volumeTransferMaxBytes <= 0 {
 		volumeTransferMaxBytes = 100 * 1024 * 1024 * 1024
 	}
+	var volumeService volumeWorkerService
+	if db != nil {
+		volumeService = volume.NewGormService(db)
+	}
 	return &Runner{
 		db:                          db,
 		secrets:                     secret.NewStore(db, nil),
@@ -199,7 +203,7 @@ func NewRunner(db *gorm.DB, options Options) *Runner {
 		dnsResolver:                 dnsprovider.NewNetResolver(),
 		workerMetrics:               options.WorkerMetrics,
 		runAutomaticRetention:       newAutomaticRetentionRunner(db),
-		volumeService:               volume.NewGormService(db),
+		volumeService:               volumeService,
 		volumeTransferJobImage:      strings.TrimSpace(options.VolumeTransferJobImage),
 		volumeTransferMaxBytes:      volumeTransferMaxBytes,
 		namespaceFactory: func(kubeconfig string) (kubeprovider.NamespaceManager, error) {

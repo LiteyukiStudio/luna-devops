@@ -364,12 +364,11 @@ function GatewayRouteSummary({ item }: { item: GatewayRoute }) {
 }
 
 function deploymentTargetPrimaryServicePort(target?: DeploymentTarget) {
-  return target?.servicePorts?.[0]?.port || target?.servicePort || 8080
+  return target?.servicePorts?.[0]?.port || 8080
 }
 
 function deploymentTargetServicePortOptions(target: DeploymentTarget) {
-  const ports = target.servicePorts?.length ? target.servicePorts : [{ name: 'http', port: target.servicePort || 8080 }]
-  return ports.map(item => ({
+  return target.servicePorts.map(item => ({
     label: item.name ? `${item.name} · ${item.port}` : String(item.port),
     value: item.port,
   }))

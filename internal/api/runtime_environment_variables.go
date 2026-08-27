@@ -60,7 +60,7 @@ func normalizePublicEnvironmentVariables(ctx *gin.Context, items []runtimeEnviro
 }
 
 func runtimeEnvironmentVariables(publicRaw, secretRaw string) []runtimeEnvironmentVariableResponse {
-	publicValues, err := runtimeconfig.ParseLegacyKeyValue(publicRaw)
+	publicValues, err := runtimeconfig.DecodeKeyValue(publicRaw)
 	if err != nil {
 		publicValues = map[string]string{}
 	}

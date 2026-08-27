@@ -12,52 +12,61 @@ import (
 	kubeprovider "github.com/LiteyukiStudio/devops/internal/provider/kubernetes"
 	"github.com/LiteyukiStudio/devops/internal/tasks"
 	"github.com/hibiken/asynq"
-	"go.opentelemetry.io/otel/attribute"
 	"gorm.io/gorm"
 )
 
-func (r *Runner) retryPendingResourceCleanups(ctx context.Context) {
-	for _, payload := range r.pendingResourceCleanupPayloads() {
-		_ = workerStage(ctx, "cleanup.retry", func(stageCtx context.Context) error {
-			return r.handleResourceCleanupPayload(stageCtx, payload)
-		},
-			attribute.String("resource.type", payload.ResourceType),
-			attribute.String("resource.id", payload.ResourceID),
-		)
-	}
-}
+const resourceCleanupRecoveryAfter = 2 * time.Hour
 
-func (r *Runner) pendingResourceCleanupPayloads() []tasks.ResourceCleanupPayload {
-	if r.db == nil {
+func (r *Runner) recoverStaleResourceCleanups(ctx context.Context) error {
+	if r.taskClient == nil {
 		return nil
 	}
-	statuses := []string{"deleting", "delete_failed"}
+	payloads, err := r.staleResourceCleanupPayloads(ctx, time.Now().Add(-resourceCleanupRecoveryAfter))
+	if err != nil {
+		return err
+	}
+	for _, payload := range payloads {
+		if _, err := r.taskClient.EnqueueResourceCleanup(ctx, payload); err != nil && !errors.Is(err, asynq.ErrDuplicateTask) {
+			return err
+		}
+	}
+	return nil
+}
+
+func (r *Runner) staleResourceCleanupPayloads(ctx context.Context, cutoff time.Time) ([]tasks.ResourceCleanupPayload, error) {
+	if r.db == nil {
+		return nil, nil
+	}
 	payloads := make([]tasks.ResourceCleanupPayload, 0)
 	var projects []model.Project
-	if err := r.db.Where("delete_status in ?", statuses).Limit(20).Find(&projects).Error; err == nil {
-		for _, project := range projects {
-			payloads = append(payloads, tasks.ResourceCleanupPayload{ResourceType: "project", ResourceID: project.ID, ProjectID: project.ID, ActorID: "system", DeleteData: true})
-		}
+	if err := r.db.WithContext(ctx).Where("delete_status = ? and delete_started_at < ?", "deleting", cutoff).Limit(20).Find(&projects).Error; err != nil {
+		return nil, err
+	}
+	for _, project := range projects {
+		payloads = append(payloads, tasks.ResourceCleanupPayload{ResourceType: "project", ResourceID: project.ID, ProjectID: project.ID})
 	}
 	var targets []model.DeploymentTarget
-	if err := r.db.Where("delete_status in ?", statuses).Limit(50).Find(&targets).Error; err == nil {
-		for _, target := range targets {
-			payloads = append(payloads, tasks.ResourceCleanupPayload{ResourceType: "deployment_target", ResourceID: target.ID, ProjectID: target.ProjectID, ActorID: "system", DeleteData: false})
-		}
+	if err := r.db.WithContext(ctx).Where("delete_status = ? and delete_started_at < ?", "deleting", cutoff).Limit(50).Find(&targets).Error; err != nil {
+		return nil, err
+	}
+	for _, target := range targets {
+		payloads = append(payloads, tasks.ResourceCleanupPayload{ResourceType: "deployment_target", ResourceID: target.ID, ProjectID: target.ProjectID})
 	}
 	var routes []model.GatewayRoute
-	if err := r.db.Where("delete_status in ?", statuses).Limit(50).Find(&routes).Error; err == nil {
-		for _, route := range routes {
-			payloads = append(payloads, tasks.ResourceCleanupPayload{ResourceType: "gateway_route", ResourceID: route.ID, ProjectID: route.ProjectID, ActorID: "system"})
-		}
+	if err := r.db.WithContext(ctx).Where("delete_status = ? and delete_started_at < ?", "deleting", cutoff).Limit(50).Find(&routes).Error; err != nil {
+		return nil, err
+	}
+	for _, route := range routes {
+		payloads = append(payloads, tasks.ResourceCleanupPayload{ResourceType: "gateway_route", ResourceID: route.ID, ProjectID: route.ProjectID})
 	}
 	var sets []model.ProjectRuntimeConfigSet
-	if err := r.db.Where("delete_status in ?", statuses).Limit(50).Find(&sets).Error; err == nil {
-		for _, set := range sets {
-			payloads = append(payloads, tasks.ResourceCleanupPayload{ResourceType: "runtime_config", ResourceID: set.ID, ProjectID: set.ProjectID, ActorID: "system"})
-		}
+	if err := r.db.WithContext(ctx).Where("delete_status = ? and delete_started_at < ?", "deleting", cutoff).Limit(50).Find(&sets).Error; err != nil {
+		return nil, err
 	}
-	return payloads
+	for _, set := range sets {
+		payloads = append(payloads, tasks.ResourceCleanupPayload{ResourceType: "runtime_config", ResourceID: set.ID, ProjectID: set.ProjectID})
+	}
+	return payloads, nil
 }
 
 func (r *Runner) handleResourceCleanup(ctx context.Context, task *asynq.Task) error {
@@ -65,7 +74,11 @@ func (r *Runner) handleResourceCleanup(ctx context.Context, task *asynq.Task) er
 	if err := json.Unmarshal(task.Payload(), &payload); err != nil {
 		return err
 	}
-	return r.handleResourceCleanupPayload(ctx, payload)
+	err := r.handleResourceCleanupPayload(ctx, payload)
+	if err != nil && resourceCleanupAttemptExhausted(ctx) {
+		_ = r.markResourceCleanupFailed(payload, err)
+	}
+	return err
 }
 
 func (r *Runner) handleResourceCleanupPayload(ctx context.Context, payload tasks.ResourceCleanupPayload) error {
@@ -95,7 +108,6 @@ func (r *Runner) cleanupProject(ctx context.Context, payload tasks.ResourceClean
 		return nil
 	}
 	if err := r.cleanupProjectNamespaces(ctx, project); err != nil {
-		_ = r.markProjectDeleteFailed(project.ID, err)
 		return err
 	}
 	return r.finishProjectDelete(project)
@@ -168,11 +180,9 @@ func (r *Runner) cleanupDeploymentTarget(ctx context.Context, payload tasks.Reso
 		return nil
 	}
 	if err := r.cleanupDeploymentTargetGatewayRoutes(ctx, target); err != nil {
-		_ = r.markDeploymentTargetDeleteFailed(target.ID, err)
 		return err
 	}
-	if err := r.cleanupDeploymentTargetRuntimeResources(ctx, target, payload.DeleteData); err != nil {
-		_ = r.markDeploymentTargetDeleteFailed(target.ID, err)
+	if err := r.cleanupDeploymentTargetRuntimeResources(ctx, target); err != nil {
 		return err
 	}
 	return r.finishDeploymentTargetDelete(target)
@@ -198,7 +208,9 @@ func (r *Runner) cleanupDeploymentTargetGatewayRoutes(ctx context.Context, targe
 			route.DeleteStatus = "deleting"
 		}
 		if err := r.cleanupGatewayRuntimeResources(ctx, route); err != nil {
-			_ = r.markGatewayRouteDeleteFailed(route.ID, err)
+			if resourceCleanupAttemptExhausted(ctx) {
+				_ = r.markGatewayRouteDeleteFailed(route.ID, err)
+			}
 			return err
 		}
 		if err := r.finishGatewayRouteDelete(route); err != nil {
@@ -220,7 +232,6 @@ func (r *Runner) cleanupGatewayRoute(ctx context.Context, payload tasks.Resource
 		return nil
 	}
 	if err := r.cleanupGatewayRuntimeResources(ctx, route); err != nil {
-		_ = r.markGatewayRouteDeleteFailed(route.ID, err)
 		return err
 	}
 	return r.finishGatewayRouteDelete(route)
@@ -241,11 +252,10 @@ func (r *Runner) cleanupRuntimeConfigSet(payload tasks.ResourceCleanupPayload) e
 }
 
 func resourceCleanupCanRun(status string) bool {
-	status = strings.TrimSpace(status)
-	return status == "deleting" || status == "delete_failed"
+	return strings.TrimSpace(status) == "deleting"
 }
 
-func (r *Runner) cleanupDeploymentTargetRuntimeResources(ctx context.Context, target model.DeploymentTarget, _ bool) error {
+func (r *Runner) cleanupDeploymentTargetRuntimeResources(ctx context.Context, target model.DeploymentTarget) error {
 	var project model.Project
 	if err := r.db.First(&project, "id = ?", target.ProjectID).Error; err != nil {
 		return fmt.Errorf("project not found: %w", err)
@@ -305,16 +315,29 @@ func (r *Runner) cleanupGatewayRuntimeResources(ctx context.Context, route model
 	return nil
 }
 
-func (r *Runner) markProjectDeleteFailed(projectID string, err error) error {
-	return markCleanupFailed(r.db, &model.Project{}, projectID, err)
-}
-
-func (r *Runner) markDeploymentTargetDeleteFailed(targetID string, err error) error {
-	return markCleanupFailed(r.db, &model.DeploymentTarget{}, targetID, err)
-}
-
 func (r *Runner) markGatewayRouteDeleteFailed(routeID string, err error) error {
 	return markCleanupFailed(r.db, &model.GatewayRoute{}, routeID, err)
+}
+
+func resourceCleanupAttemptExhausted(ctx context.Context) bool {
+	retry, retryOK := asynq.GetRetryCount(ctx)
+	maxRetry, maxRetryOK := asynq.GetMaxRetry(ctx)
+	return !retryOK || !maxRetryOK || retry >= maxRetry
+}
+
+func (r *Runner) markResourceCleanupFailed(payload tasks.ResourceCleanupPayload, err error) error {
+	switch strings.TrimSpace(payload.ResourceType) {
+	case "project":
+		return markCleanupFailed(r.db, &model.Project{}, payload.ResourceID, err)
+	case "deployment_target":
+		return markCleanupFailed(r.db, &model.DeploymentTarget{}, payload.ResourceID, err)
+	case "gateway_route":
+		return markCleanupFailed(r.db, &model.GatewayRoute{}, payload.ResourceID, err)
+	case "runtime_config":
+		return markCleanupFailed(r.db, &model.ProjectRuntimeConfigSet{}, payload.ResourceID, err)
+	default:
+		return nil
+	}
 }
 
 func markCleanupFailed(db *gorm.DB, model any, id string, err error) error {
@@ -408,16 +431,14 @@ func (r *Runner) finishRuntimeConfigSetDelete(set model.ProjectRuntimeConfigSet)
 	finishedAt := time.Now()
 	return r.db.Transaction(func(tx *gorm.DB) error {
 		var targets []model.DeploymentTarget
-		if err := tx.Select("id", "runtime_config_set_ids", "runtime_config_refs").Where("project_id = ?", set.ProjectID).Find(&targets).Error; err != nil {
+		if err := tx.Select("id", "runtime_config_refs").Where("project_id = ?", set.ProjectID).Find(&targets).Error; err != nil {
 			return err
 		}
 		for _, target := range targets {
 			nextRefs := removeLiveRuntimeConfigRef(target.RuntimeConfigRefs, set.ID)
-			nextIDs := removeRuntimeConfigSetID(target.RuntimeConfigSetIDs, set.ID)
-			if nextIDs != target.RuntimeConfigSetIDs || nextRefs != target.RuntimeConfigRefs {
+			if nextRefs != target.RuntimeConfigRefs {
 				if err := tx.Model(&model.DeploymentTarget{}).Where("id = ?", target.ID).Updates(map[string]any{
-					"runtime_config_set_ids": nextIDs,
-					"runtime_config_refs":    nextRefs,
+					"runtime_config_refs": nextRefs,
 				}).Error; err != nil {
 					return err
 				}
@@ -447,25 +468,4 @@ func removeLiveRuntimeConfigRef(raw string, setID string) string {
 		next = append(next, ref)
 	}
 	return model.EncodeDeploymentRuntimeConfigRefs(next)
-}
-
-func removeRuntimeConfigSetID(raw string, setID string) string {
-	setID = strings.TrimSpace(setID)
-	if setID == "" {
-		return raw
-	}
-	next := make([]string, 0)
-	for _, id := range runtimeConfigSetIDs(raw) {
-		if id != setID {
-			next = append(next, id)
-		}
-	}
-	if len(next) == 0 {
-		return ""
-	}
-	content, err := json.Marshal(next)
-	if err != nil {
-		return raw
-	}
-	return string(content)
 }

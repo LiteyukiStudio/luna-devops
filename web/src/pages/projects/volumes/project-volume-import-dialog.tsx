@@ -15,7 +15,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from '@/components/ui/input'
 import { NativeSelect } from '@/components/ui/native-select'
 import { ProjectVolumeClusterSelect, ProjectVolumeStorageClassSelect } from './volume-resource-selectors'
-import { sha256File, uploadVolumeImport, waitForVolumeTransferReady } from './volume-transfer-upload'
+import { uploadVolumeImport, waitForVolumeTransferReady } from './volume-transfer-upload'
 
 interface ImportValues {
   accessMode: ProjectVolumeAccessMode
@@ -27,7 +27,7 @@ interface ImportValues {
   volumeMode: ProjectVolumeMode
 }
 
-type ImportStage = 'cancelling' | 'hashing' | 'idle' | 'preparing' | 'uploading' | 'verifying'
+type ImportStage = 'cancelling' | 'idle' | 'preparing' | 'uploading' | 'verifying'
 
 const defaults: ImportValues = {
   accessMode: 'ReadWriteOnce',
@@ -92,16 +92,12 @@ export function ProjectVolumeImportDialog({ onOpenChange, open, projectId }: { o
     cancelIssuedForRef.current = null
     let transferId: string | null = null
     try {
-      setStage('hashing')
-      setProgress(0)
-      const sha256 = await sha256File(file, (processed, total) => setProgress(total > 0 ? (processed / total) * 100 : 100), controller.signal)
       const result = await api.createVolumeImport(projectId, {
         ...values,
         displayName: values.displayName.trim(),
         capacity: values.capacity.trim(),
         filename: file.name,
         contentLength: file.size,
-        sha256,
       })
       transferId = result.transfer.id
       setActiveTransferId(transferId)
@@ -112,7 +108,6 @@ export function ProjectVolumeImportDialog({ onOpenChange, open, projectId }: { o
       await uploadVolumeImport({
         file,
         projectId,
-        sha256,
         signal: controller.signal,
         transferId,
         onProgress: (current) => {
@@ -168,17 +163,15 @@ export function ProjectVolumeImportDialog({ onOpenChange, open, projectId }: { o
   }
 
   const busy = stage !== 'idle'
-  const statusText = stage === 'hashing'
-    ? t('projectVolumes.hashing', { percent: Math.round(progress) })
-    : stage === 'preparing'
-      ? t('projectVolumes.preparingTransfer')
-      : stage === 'uploading'
-        ? t('projectVolumes.uploading', { percent: Math.round(progress) })
-        : stage === 'verifying'
-          ? t('projectVolumes.verifyingImport')
-          : stage === 'cancelling'
-            ? t('projectVolumes.cancellingTransfer')
-            : ''
+  const statusText = stage === 'preparing'
+    ? t('projectVolumes.preparingTransfer')
+    : stage === 'uploading'
+      ? t('projectVolumes.uploading', { percent: Math.round(progress) })
+      : stage === 'verifying'
+        ? t('projectVolumes.verifyingImport')
+        : stage === 'cancelling'
+          ? t('projectVolumes.cancellingTransfer')
+          : ''
 
   return (
     <Dialog open={open} onOpenChange={next => !busy && onOpenChange(next)}>

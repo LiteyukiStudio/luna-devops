@@ -1,19 +1,18 @@
 export interface RuntimeSettings {
+  // 权威平台配置：Provider 请求、Run 超时和调度并发。
   providerTimeoutMs: number
   maxRequestRetries: number
   runTimeoutMs: number
   agentConcurrentRuns: number
   userConcurrentRuns: number
-  // 高级设置：模型与执行
+  // Agent 固定不变量：模型循环与执行预算。
   assistantMaxOutputTokens: number
   maxModelSteps: number
   runMaxToolCalls: number
-  maxInputBytes: number
-  // 高级设置：工具结果与卡片
+  // Agent 固定不变量：工具结果与卡片预算。
   toolResultPayloadBudget: number
   maxCardRepairAttempts: number
-  // 高级设置：上下文与压缩
-  contextCompressionTriggerRatio: number
+  // Agent 固定不变量：上下文与压缩预算。
   contextRecentTurnCount: number
   contextMaxUncompressedTurnCount: number
   contextMaxCompressionTurnsPerCompile: number
@@ -23,13 +22,12 @@ export interface RuntimeSettings {
   contextMaxContinuationPayloadBytes: number
 }
 
-export type RemoteRuntimeSettings = Omit<RuntimeSettings,
-  | "toolResultPayloadBudget"
-  | "contextCompressionTriggerRatio"
-  | "contextRecentTurnCount"
-  | "contextMaxHistoryPayloadBytes"
-  | "contextMaxSummaryPayloadBytes"
-  | "contextMaxContinuationPayloadBytes"
+export type RemoteRuntimeSettings = Pick<RuntimeSettings,
+  | "providerTimeoutMs"
+  | "maxRequestRetries"
+  | "runTimeoutMs"
+  | "agentConcurrentRuns"
+  | "userConcurrentRuns"
 >
 
 export const defaultRuntimeSettings: RuntimeSettings = Object.freeze({
@@ -41,13 +39,11 @@ export const defaultRuntimeSettings: RuntimeSettings = Object.freeze({
   assistantMaxOutputTokens: 64 * 1024,
   maxModelSteps: 256,
   runMaxToolCalls: 256,
-  maxInputBytes: 1024 * 1024,
   toolResultPayloadBudget: 512 * 1024,
-  maxCardRepairAttempts: 5,
-  contextCompressionTriggerRatio: 0.9,
+  maxCardRepairAttempts: 2,
   contextRecentTurnCount: 16,
-  contextMaxUncompressedTurnCount: 64,
-  contextMaxCompressionTurnsPerCompile: 512,
+  contextMaxUncompressedTurnCount: 32,
+  contextMaxCompressionTurnsPerCompile: 32,
   contextSummaryMaxOutputTokens: 16 * 1024,
   contextMaxHistoryPayloadBytes: 4 * 1024 * 1024,
   contextMaxSummaryPayloadBytes: 512 * 1024,
@@ -55,7 +51,18 @@ export const defaultRuntimeSettings: RuntimeSettings = Object.freeze({
 })
 
 export function runtimeSettingsSnapshot(settings: RuntimeSettings): RuntimeSettings {
-  return Object.freeze({ ...settings })
+  return Object.freeze({
+    ...defaultRuntimeSettings,
+    providerTimeoutMs: settings.providerTimeoutMs,
+    maxRequestRetries: settings.maxRequestRetries,
+    runTimeoutMs: settings.runTimeoutMs,
+    agentConcurrentRuns: settings.agentConcurrentRuns,
+    userConcurrentRuns: settings.userConcurrentRuns,
+  })
+}
+
+export function runtimeSettingsFromRemote(settings: RemoteRuntimeSettings): RuntimeSettings {
+  return runtimeSettingsSnapshot({ ...defaultRuntimeSettings, ...settings })
 }
 
 // 平台内部时序参数：保持与平台配置无关，无需暴露为可配置项。

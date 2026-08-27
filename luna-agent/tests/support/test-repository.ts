@@ -414,16 +414,6 @@ export class TestRepository implements Repository {
     if (item?.state === "held") item.state = "released"
   }
 
-  async getLatestReportedModelUsage(conversationId: string) {
-    const item = this.modelUsages.toReversed().find(candidate => {
-      const run = this.runs.get(candidate.runId)
-      return run?.conversationId === conversationId && candidate.operation === "assistant"
-    })
-    const run = item ? this.runs.get(item.runId) : undefined
-    return item && run?.model
-      ? { modelId: run.model.id, promptTokens: item.usage.inputTokens, maxContextTokensSnapshot: run.model.maxContextTokens }
-      : undefined
-  }
   async getExecutionInput(runId: string) {
     const run = this.runs.get(runId)
     const turn = run ? this.turns.get(run.turnId) : undefined

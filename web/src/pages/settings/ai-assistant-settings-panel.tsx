@@ -41,13 +41,6 @@ const defaults: FormValues = {
   maxRequestRetries: 5,
   runTimeoutSeconds: 3600,
   agentConcurrentRuns: 10,
-  contextMaxUncompressedTurnCount: 64,
-  contextMaxCompressionTurnsPerCompile: 512,
-  contextSummaryMaxOutputTokens: 16384,
-  modelMaxOutputTokens: 65536,
-  runMaxModelSteps: 256,
-  runMaxInputKBytes: 1024,
-  toolsMaxCardRepairAttempts: 5,
   observabilityEnabled: false,
   prometheusUrl: '',
   prometheusToken: '',
@@ -67,68 +60,7 @@ const runtimeDefaultFields = [
   ['ai.runtime.max_request_retries', 'maxRequestRetries'],
   ['ai.runtime.run_timeout_seconds', 'runTimeoutSeconds'],
   ['ai.runtime.agent_concurrent_runs', 'agentConcurrentRuns'],
-  ['ai.context.max_uncompressed_turn_count', 'contextMaxUncompressedTurnCount'],
-  ['ai.context.max_compression_turns_per_compile', 'contextMaxCompressionTurnsPerCompile'],
-  ['ai.context.summary_max_output_tokens', 'contextSummaryMaxOutputTokens'],
-  ['ai.model.max_output_tokens', 'modelMaxOutputTokens'],
-  ['ai.run.max_model_steps', 'runMaxModelSteps'],
-  ['ai.run.max_input_k_bytes', 'runMaxInputKBytes'],
-  ['ai.tools.max_card_repair_attempts', 'toolsMaxCardRepairAttempts'],
 ] as const
-
-// 高级设置字段：对应 Agent 运行时中原本写死、现已由平台下发的参数。
-// 每个字段提供平台默认值；普通部署保持默认即可。
-type AdvancedFieldName
-  = 'contextMaxUncompressedTurnCount'
-    | 'contextMaxCompressionTurnsPerCompile'
-    | 'contextSummaryMaxOutputTokens'
-    | 'modelMaxOutputTokens'
-    | 'runMaxModelSteps'
-    | 'runMaxInputKBytes'
-    | 'toolsMaxCardRepairAttempts'
-
-interface AdvancedField {
-  name: AdvancedFieldName
-  labelKey: string
-  hintKey: string
-  min: number
-  max: number
-  step: number
-}
-
-interface AdvancedGroup {
-  titleKey: string
-  descriptionKey: string
-  fields: AdvancedField[]
-}
-
-const advancedGroups: AdvancedGroup[] = [
-  {
-    titleKey: 'settings.ai.contextTitle',
-    descriptionKey: 'settings.ai.contextDescription',
-    fields: [
-      { name: 'contextMaxUncompressedTurnCount', labelKey: 'settings.ai.maxUncompressedTurnCount', hintKey: 'settings.ai.maxUncompressedTurnCountHint', min: 4, max: 128, step: 1 },
-      { name: 'contextMaxCompressionTurnsPerCompile', labelKey: 'settings.ai.maxCompressionTurnsPerCompile', hintKey: 'settings.ai.maxCompressionTurnsPerCompileHint', min: 8, max: 1024, step: 1 },
-      { name: 'contextSummaryMaxOutputTokens', labelKey: 'settings.ai.summaryMaxOutputTokens', hintKey: 'settings.ai.summaryMaxOutputTokensHint', min: 200, max: 32768, step: 1 },
-    ],
-  },
-  {
-    titleKey: 'settings.ai.modelTitle',
-    descriptionKey: 'settings.ai.modelDescription',
-    fields: [
-      { name: 'modelMaxOutputTokens', labelKey: 'settings.ai.modelMaxOutputTokens', hintKey: 'settings.ai.modelMaxOutputTokensHint', min: 256, max: 131072, step: 1 },
-      { name: 'runMaxModelSteps', labelKey: 'settings.ai.runMaxModelSteps', hintKey: 'settings.ai.runMaxModelStepsHint', min: 1, max: 1024, step: 1 },
-      { name: 'runMaxInputKBytes', labelKey: 'settings.ai.runMaxInputKBytes', hintKey: 'settings.ai.runMaxInputKBytesHint', min: 8, max: 8192, step: 1 },
-    ],
-  },
-  {
-    titleKey: 'settings.ai.toolsTitle',
-    descriptionKey: 'settings.ai.toolsDescription',
-    fields: [
-      { name: 'toolsMaxCardRepairAttempts', labelKey: 'settings.ai.toolsMaxCardRepairAttempts', hintKey: 'settings.ai.toolsMaxCardRepairAttemptsHint', min: 1, max: 10, step: 1 },
-    ],
-  },
-]
 
 export function AIAssistantSettingsPanel() {
   const { t } = useTranslation()
@@ -293,28 +225,6 @@ export function AIAssistantSettingsPanel() {
             </div>
           </ProgressiveSection>
           <ProgressiveSection
-            description={t('settings.ai.advancedDescription')}
-            storageKey="luna-settings-ai-advanced-open"
-            summary={t('settings.ai.advancedSummary', { count: advancedGroups.reduce((total, group) => total + group.fields.length, 0) })}
-            title={t('settings.ai.advancedTitle')}
-          >
-            {advancedGroups.map(group => (
-              <div className="grid gap-4 rounded-lg bg-surface-subtle p-4" key={group.titleKey}>
-                <div className="grid gap-1">
-                  <p className="text-sm font-medium">{t(group.titleKey)}</p>
-                  <p className="text-xs text-muted-foreground">{t(group.descriptionKey)}</p>
-                </div>
-                <div className="grid gap-4 md:grid-cols-2">
-                  {group.fields.map(field => (
-                    <Field key={field.name} error={errors[field.name]?.message} hint={t(field.hintKey)} label={t(field.labelKey)}>
-                      <Input max={field.max} min={field.min} step={field.step} type="number" {...form.register(field.name, { valueAsNumber: true })} />
-                    </Field>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </ProgressiveSection>
-          <ProgressiveSection
             description={t('settings.ai.observabilityDescription')}
             storageKey="luna-settings-ai-observability-open"
             summary={observabilityEnabled ? t('settings.ai.observabilitySummaryEnabled') : t('settings.ai.observabilitySummaryDisabled')}
@@ -369,13 +279,6 @@ function aiSettingsFormValues(values: Record<string, string>): FormValues {
     maxRequestRetries: Number(values['ai.runtime.max_request_retries'] ?? 5),
     runTimeoutSeconds: Number(values['ai.runtime.run_timeout_seconds'] ?? 3600),
     agentConcurrentRuns: Number(values['ai.runtime.agent_concurrent_runs'] ?? 10),
-    contextMaxUncompressedTurnCount: Number(values['ai.context.max_uncompressed_turn_count'] ?? 64),
-    contextMaxCompressionTurnsPerCompile: Number(values['ai.context.max_compression_turns_per_compile'] ?? 512),
-    contextSummaryMaxOutputTokens: Number(values['ai.context.summary_max_output_tokens'] ?? 16384),
-    modelMaxOutputTokens: Number(values['ai.model.max_output_tokens'] ?? 65536),
-    runMaxModelSteps: Number(values['ai.run.max_model_steps'] ?? 256),
-    runMaxInputKBytes: Number(values['ai.run.max_input_k_bytes'] ?? 1024),
-    toolsMaxCardRepairAttempts: Number(values['ai.tools.max_card_repair_attempts'] ?? 5),
     observabilityEnabled: values['ai.observability.enabled'] === 'true',
     prometheusUrl: values['ai.observability.prometheus_url'] ?? '',
     prometheusToken: '',

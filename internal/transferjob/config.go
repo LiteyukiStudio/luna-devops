@@ -104,8 +104,8 @@ func (config Config) Validate() error {
 	if config.Direction != DirectionImport && config.Direction != DirectionExport {
 		return invalidConfig("direction")
 	}
-	if config.Direction == DirectionImport && (config.ExpectedBytes < 1 || config.ExpectedSHA256 == "") {
-		return invalidConfig("import length and checksum")
+	if config.Direction == DirectionImport && config.ExpectedBytes < 1 {
+		return invalidConfig("import length")
 	}
 	switch config.VolumeMode {
 	case ModeFilesystem:

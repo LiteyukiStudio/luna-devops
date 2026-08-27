@@ -17,6 +17,7 @@ const aiAssistant = {
     empty: '어시스턴트는 현재 페이지 컨텍스트를 결합하여 문제 진단이나 플랫폼 작업 실행을 도와줍니다',
     inputLabel: 'Luna 어시스턴트에게 메시지 본내기',
     inputPlaceholder: '진단할 문제를 설명…',
+    inputTooLarge: '메시지가 {{limit}} 한도를 초과했습니다. 줄인 후 다시 보내세요.',
     loadOlder: '이전 메시지 로드',
     loadingOlder: '이전 메시지 로드 중',
     olderLoadFailed: '이전 메시지 로드에 실패했습니다. 다시 시도하세요',
@@ -109,10 +110,6 @@ const aiAssistant = {
     },
     actions: {
       navigate: '페이지 열기',
-      select_tab: '탭 전환',
-      set_filters: '필터 적용',
-      refresh_query: '데이터 새로고침',
-      highlight: '리소스 위치 찾기',
       send_message: '메시지 본내기',
       request_tool: '실행 요청',
       opened: '실행됨',
@@ -263,9 +260,6 @@ const aiAssistant = {
       renderError: {
         group: '이 대화형 카드 세트는 일시적으로 표시할 수 없습니다. 다른 채팅 내용은 영향을 받지 않습니다.',
         card: '이 카드는 일시적으로 표시할 수 없습니다. 다른 카드는 계속 사용할 수 있습니다.',
-        content: '이 카드 내용은 일시적으로 표시할 수 없습니다.',
-        field: '이 필드는 일시적으로 표시할 수 없습니다. 어시스턴트에게 카드를 다시 생성하도록 하세요.',
-        action: '이 카드 작업은 일시적으로 사용할 수 없습니다.',
       },
       liveProgress: {
         label: '작업 실시간 진행',

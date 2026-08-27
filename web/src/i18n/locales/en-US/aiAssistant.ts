@@ -17,6 +17,7 @@ const aiAssistant = {
     empty: 'The assistant can diagnose issues or perform platform actions using the current page context',
     inputLabel: 'Message Luna Assistant',
     inputPlaceholder: 'Describe the issue to diagnose…',
+    inputTooLarge: 'The message exceeds the {{limit}} limit. Shorten it before sending.',
     loadOlder: 'Load earlier messages',
     loadingOlder: 'Loading earlier messages',
     olderLoadFailed: 'Earlier messages could not be loaded. Try again.',
@@ -109,10 +110,6 @@ const aiAssistant = {
     },
     actions: {
       navigate: 'Open page',
-      select_tab: 'Switch tab',
-      set_filters: 'Apply filters',
-      refresh_query: 'Refresh data',
-      highlight: 'Locate resource',
       send_message: 'Send message',
       request_tool: 'Request action',
       opened: 'Done',
@@ -263,9 +260,6 @@ const aiAssistant = {
       renderError: {
         group: 'This interaction card group cannot be displayed right now. Other conversation content is unaffected.',
         card: 'This card cannot be displayed right now. Other cards remain available.',
-        content: 'This part of the card cannot be displayed right now.',
-        field: 'This field cannot be displayed right now. Ask the assistant to regenerate the card.',
-        action: 'This card action is temporarily unavailable.',
       },
       liveProgress: {
         label: 'Live task progress',

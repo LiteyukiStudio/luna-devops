@@ -88,19 +88,11 @@ func TestAIProviderInternalOpenAPIRequiresCapabilityPolicies(t *testing.T) {
 		t.Fatalf("AIProviderInternalConfig.runtime additionalProperties = %#v, want false", runtime["additionalProperties"])
 	}
 	runtimeFields := map[string][2]float64{
-		"providerTimeoutMs":                    {1_000, 900_000},
-		"maxRequestRetries":                    {0, 10},
-		"runTimeoutMs":                         {30_000, 7_200_000},
-		"agentConcurrentRuns":                  {1, 100},
-		"userConcurrentRuns":                   {1, 100},
-		"assistantMaxOutputTokens":             {256, 131_072},
-		"maxModelSteps":                        {1, 1_024},
-		"runMaxToolCalls":                      {32, 2_048},
-		"maxInputBytes":                        {8_192, 8_388_608},
-		"maxCardRepairAttempts":                {1, 10},
-		"contextMaxUncompressedTurnCount":      {4, 128},
-		"contextMaxCompressionTurnsPerCompile": {8, 1_024},
-		"contextSummaryMaxOutputTokens":        {200, 32_768},
+		"providerTimeoutMs":   {1_000, 900_000},
+		"maxRequestRetries":   {0, 10},
+		"runTimeoutMs":        {30_000, 7_200_000},
+		"agentConcurrentRuns": {1, 100},
+		"userConcurrentRuns":  {1, 100},
 	}
 	runtimeRequired, _ := schemaStringList(runtime["required"])
 	if len(runtimeRequired) != len(runtimeFields) {
@@ -185,38 +177,31 @@ func TestAIProviderSelectConfigPreservesValidValuesAndDefaultsInvalidStorage(t *
 func TestAIProviderRuntimeConfigKeepsValidValues(t *testing.T) {
 	values := aiConfigDefaults()
 	values["ai.runtime.provider_timeout_seconds"] = "45"
-	values["ai.quota.run_max_tool_calls"] = "2048"
+	values["ai.quota.user_concurrent_runs"] = "20"
 
 	runtime := aiProviderRuntimeConfig(values)
 	if got := runtime["providerTimeoutMs"]; got != 45_000 {
 		t.Fatalf("providerTimeoutMs = %v, want 45000", got)
 	}
-	if got := runtime["runMaxToolCalls"]; got != 2048 {
-		t.Fatalf("runMaxToolCalls = %v, want 2048", got)
+	if got := runtime["userConcurrentRuns"]; got != 20 {
+		t.Fatalf("userConcurrentRuns = %v, want 20", got)
 	}
 }
 
-func TestAIProviderRuntimeConfigNormalizesLegacyValuesWithoutMutatingStorage(t *testing.T) {
+func TestAIProviderRuntimeConfigNormalizesInvalidStoredValues(t *testing.T) {
 	values := aiConfigDefaults()
 	values["ai.runtime.provider_timeout_seconds"] = "0"
 	values["ai.runtime.max_request_retries"] = "not-a-number"
-	values["ai.quota.run_max_tool_calls"] = "20"
-	values["ai.run.max_input_k_bytes"] = "9000"
 
 	runtime := aiProviderRuntimeConfig(values)
 	wants := map[string]any{
 		"providerTimeoutMs": 300_000,
 		"maxRequestRetries": 5,
-		"runMaxToolCalls":   256,
-		"maxInputBytes":     1024 * 1024,
 	}
 	for key, want := range wants {
 		if got := runtime[key]; got != want {
 			t.Errorf("%s = %v, want %v", key, got, want)
 		}
-	}
-	if got := values["ai.quota.run_max_tool_calls"]; got != "20" {
-		t.Fatalf("stored legacy value was mutated to %q", got)
 	}
 }
 
@@ -227,6 +212,14 @@ func TestAIProviderRuntimeConfigOmitsAgentLocalContextPolicy(t *testing.T) {
 		"toolResultPayloadBudget",
 		"contextCompressionTriggerRatio",
 		"contextRecentTurnCount",
+		"assistantMaxOutputTokens",
+		"maxModelSteps",
+		"runMaxToolCalls",
+		"maxInputBytes",
+		"maxCardRepairAttempts",
+		"contextMaxUncompressedTurnCount",
+		"contextMaxCompressionTurnsPerCompile",
+		"contextSummaryMaxOutputTokens",
 	} {
 		if _, ok := runtime[key]; ok {
 			t.Errorf("runtime must not publish Agent-local setting %q", key)
@@ -238,7 +231,7 @@ func TestAIProviderRuntimeConfigDefaultsHaveValidationContracts(t *testing.T) {
 	// Calling the complete mapper proves every runtime key has a definition,
 	// a parseable default and a shared read/write range contract.
 	runtime := aiProviderRuntimeConfig(aiConfigDefaults())
-	if len(runtime) != 13 {
-		t.Fatalf("runtime field count = %d, want 13", len(runtime))
+	if len(runtime) != 5 {
+		t.Fatalf("runtime field count = %d, want 5", len(runtime))
 	}
 }

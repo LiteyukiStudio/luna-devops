@@ -134,15 +134,8 @@ describe('site settings page', () => {
       'ai.runtime.max_request_retries': '5',
       'ai.runtime.run_timeout_seconds': '3600',
       'ai.runtime.agent_concurrent_runs': '10',
-      'ai.context.max_uncompressed_turn_count': '64',
-      'ai.context.max_compression_turns_per_compile': '512',
-      'ai.context.summary_max_output_tokens': '16384',
-      'ai.model.max_output_tokens': '65536',
-      'ai.run.max_model_steps': '256',
-      'ai.run.max_input_k_bytes': '1024',
-      'ai.tools.max_card_repair_attempts': '5',
     }
-    const savedValues = { ...runtimeDefaults, 'ai.model.max_output_tokens': '8192' }
+    const savedValues = { ...runtimeDefaults, 'ai.runtime.provider_timeout_seconds': '30' }
     mocks.listConfigDefinitions.mockResolvedValue(Object.entries(runtimeDefaults).map(([key, defaultValue]) => ({
       default: defaultValue,
       key,
@@ -154,18 +147,18 @@ describe('site settings page', () => {
     renderPage()
 
     await user.click(await screen.findByRole('tab', { name: i18next.t('settings.ai.tab') }))
-    await user.click(screen.getByRole('button', { name: i18next.t('settings.ai.advancedTitle') }))
-    expect(await screen.findByDisplayValue('8192')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: i18next.t('settings.ai.runtimeTitle') }))
+    expect(await screen.findByDisplayValue('30')).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: i18next.t('settings.restoreDefaults') }))
-    expect(screen.getByDisplayValue('65536')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('300')).toBeInTheDocument()
     expect(mocks.updateConfigs).not.toHaveBeenCalled()
 
     const saveButton = screen.getByRole('button', { name: i18next.t('settings.saveConfig') })
     await waitFor(() => expect(saveButton).toBeEnabled())
     await user.click(saveButton)
     await waitFor(() => expect(mocks.updateConfigs).toHaveBeenCalledWith(expect.objectContaining({
-      'ai.model.max_output_tokens': 65536,
+      'ai.runtime.provider_timeout_seconds': 300,
     })))
   })
 

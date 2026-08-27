@@ -3,10 +3,10 @@ import type { Repository } from "./persistence/repository.js"
 import type { RunStreamBus, RunStreamReader } from "./run-stream-bus.js"
 import { agentMetrics, errorDiagnostic, telemetryLog } from "./telemetry.js"
 
-const defaultMaximumSubscribersPerRun = 64
-const defaultMaximumSubscribersPerInstance = 512
-const defaultMaximumPendingEventsPerSubscriber = 2_048
-const defaultMaximumPendingBytesPerSubscriber = 4 * 1024 * 1024
+const defaultMaximumSubscribersPerRun = 4
+const defaultMaximumSubscribersPerInstance = 64
+const defaultMaximumPendingEventsPerSubscriber = 256
+const defaultMaximumPendingBytesPerSubscriber = 512 * 1024
 const durablePollIntervalMs = 1_000
 
 export interface RunStreamHubUpdate {
@@ -196,7 +196,8 @@ class RunStreamHub {
 }
 
 class LocalSubscription implements RunStreamHubSubscription {
-  private readonly pending = new Map<string, { event: RunEvent, bytes: number }>()
+  // 订阅者只保留共享 RunEvent 的有序引用，不再为每条事件维护一份 Map 节点。
+  private readonly pending: Array<{ event: RunEvent, bytes: number }> = []
   private pendingBytes = 0
   private cursor: number
   private currentRun: Run | undefined
@@ -215,9 +216,9 @@ class LocalSubscription implements RunStreamHubSubscription {
   push(events: RunEvent[], run: Run | undefined, error: Error | undefined, terminal: boolean): void {
     if (this.closed) return
     for (const event of this.error ? [] : events) {
-      if (event.sequence <= this.cursor || this.pending.has(event.id)) continue
-      const bytes = Buffer.byteLength(JSON.stringify(event))
-      if (this.pending.size + 1 > this.pendingLimits.events || this.pendingBytes + bytes > this.pendingLimits.bytes) {
+      if (event.sequence <= this.cursor || this.pending.some(pending => pending.event.id === event.id)) continue
+      const bytes = Buffer.byteLength(JSON.stringify(event), "utf8")
+      if (this.pending.length + 1 > this.pendingLimits.events || this.pendingBytes + bytes > this.pendingLimits.bytes) {
         this.error = new Error("ai.stream_subscriber_slow")
         agentMetrics.sseSubscriptions.add(1, { outcome: "slow" })
         telemetryLog("agent.stream.subscriber_slow", "warn", {
@@ -227,7 +228,7 @@ class LocalSubscription implements RunStreamHubSubscription {
         })
         break
       }
-      this.pending.set(event.id, { event, bytes })
+      this.pending.push({ event, bytes })
       this.pendingBytes += bytes
     }
     if (run) { this.currentRun = run; this.runDirty = true }
@@ -238,16 +239,17 @@ class LocalSubscription implements RunStreamHubSubscription {
 
   advance(after: number): void {
     this.cursor = Math.max(this.cursor, after)
-    for (const [id, pending] of this.pending) {
+    for (let index = this.pending.length - 1; index >= 0; index -= 1) {
+      const pending = this.pending[index]!
       if (pending.event.sequence <= this.cursor) {
-        this.pending.delete(id)
+        this.pending.splice(index, 1)
         this.pendingBytes = Math.max(0, this.pendingBytes - pending.bytes)
       }
     }
   }
 
   async next(signal: AbortSignal): Promise<RunStreamHubUpdate> {
-    while (!this.closed && !signal.aborted && this.pending.size === 0 && !this.runDirty && !this.terminal && !this.error) {
+    while (!this.closed && !signal.aborted && this.pending.length === 0 && !this.runDirty && !this.terminal && !this.error) {
       await new Promise<void>((resolve) => {
         const wake = () => { cleanup(); resolve() }
         const cleanup = () => { signal.removeEventListener("abort", wake); if (this.wake === wake) this.wake = undefined }
@@ -256,7 +258,7 @@ class LocalSubscription implements RunStreamHubSubscription {
       })
     }
     const update = {
-      events: [...this.pending.values()].map(value => value.event).sort((left, right) => left.sequence - right.sequence),
+      events: this.pending.map(value => value.event).sort((left, right) => left.sequence - right.sequence),
       ...(this.runDirty && this.currentRun ? { run: this.currentRun } : {}),
       terminal: this.terminal,
       ...(this.error ? { error: this.error } : {}),

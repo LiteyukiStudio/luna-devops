@@ -58,7 +58,6 @@ type deploymentTargetResponse struct {
 	AutoScalingCPUPercent        int                                  `json:"autoScalingCpuPercent"`
 	AutoScalingMemoryPercent     int                                  `json:"autoScalingMemoryPercent"`
 	AutoScalingBehavior          string                               `json:"autoScalingBehavior"`
-	ServicePort                  int                                  `json:"servicePort"`
 	ServicePorts                 []model.DeploymentServicePort        `json:"servicePorts"`
 	SourceType                   string                               `json:"sourceType"`
 	RepositoryBindingID          string                               `json:"repositoryBindingId"`
@@ -79,14 +78,13 @@ type deploymentTargetResponse struct {
 	TargetTag                    string                               `json:"targetTag"`
 	ImageRef                     string                               `json:"imageRef"`
 	BuildLabels                  string                               `json:"buildLabels"`
-	BuildVariableSetIDs          string                               `json:"buildVariableSetIds"`
+	BuildVariableSetIDs          []string                             `json:"buildVariableSetIds"`
 	BuildHooksEnabled            bool                                 `json:"buildHooksEnabled"`
 	BuildHookBindings            []model.DeploymentTargetHookBinding  `json:"buildHookBindings"`
 	AutoDeploy                   bool                                 `json:"autoDeploy"`
 	BranchPattern                string                               `json:"branchPattern"`
 	TagPattern                   string                               `json:"tagPattern"`
 	ConcurrencyPolicy            string                               `json:"concurrencyPolicy"`
-	RuntimeConfigSetIDs          string                               `json:"runtimeConfigSetIds"`
 	RuntimeConfigRefs            []deploymentRuntimeConfigRefResponse `json:"runtimeConfigRefs"`
 	EnvironmentVariables         []runtimeEnvironmentVariableResponse `json:"environmentVariables"`
 	ConfigRefs                   map[string]string                    `json:"configRefs"`
@@ -128,10 +126,6 @@ func deploymentTargetResponseFromModel(target model.DeploymentTarget, mounts ...
 		dataVolumes = []deploymentTargetDataVolumeResponse{}
 	}
 	servicePorts := model.DeploymentTargetServicePorts(target)
-	servicePort := target.ServicePort
-	if len(servicePorts) > 0 {
-		servicePort = servicePorts[0].Port
-	}
 	return deploymentTargetResponse{
 		ID:                           target.ID,
 		ProjectID:                    target.ProjectID,
@@ -180,7 +174,6 @@ func deploymentTargetResponseFromModel(target model.DeploymentTarget, mounts ...
 		AutoScalingCPUPercent:        target.AutoScalingCPUPercent,
 		AutoScalingMemoryPercent:     target.AutoScalingMemoryPercent,
 		AutoScalingBehavior:          target.AutoScalingBehavior,
-		ServicePort:                  fallbackInt(servicePort, 8080),
 		ServicePorts:                 servicePorts,
 		SourceType:                   normalizeDeploymentSourceType(target.SourceType),
 		RepositoryBindingID:          target.RepositoryBindingID,
@@ -201,14 +194,13 @@ func deploymentTargetResponseFromModel(target model.DeploymentTarget, mounts ...
 		TargetTag:                    target.TargetTag,
 		ImageRef:                     target.ImageRef,
 		BuildLabels:                  target.BuildLabels,
-		BuildVariableSetIDs:          target.BuildVariableSetIDs,
+		BuildVariableSetIDs:          buildVariableSetIDs(target.BuildVariableSetIDs),
 		BuildHooksEnabled:            target.BuildHooksEnabled,
 		BuildHookBindings:            target.BuildHookBindings,
 		AutoDeploy:                   target.AutoDeploy,
 		BranchPattern:                target.BranchPattern,
 		TagPattern:                   target.TagPattern,
 		ConcurrencyPolicy:            target.ConcurrencyPolicy,
-		RuntimeConfigSetIDs:          target.RuntimeConfigSetIDs,
 		RuntimeConfigRefs:            deploymentRuntimeConfigRefsResponse(target),
 		EnvironmentVariables:         runtimeEnvironmentVariables(target.EnvVars, target.SecretRefs),
 		ConfigRefs:                   runtimeConfigMap(target.ConfigRefs),
@@ -317,7 +309,6 @@ type deploymentTargetInput struct {
 	AutoScalingCPUPercent        int                                `json:"autoScalingCpuPercent"`
 	AutoScalingMemoryPercent     int                                `json:"autoScalingMemoryPercent"`
 	AutoScalingBehavior          string                             `json:"autoScalingBehavior"`
-	ServicePort                  int                                `json:"servicePort"`
 	ServicePorts                 []model.DeploymentServicePort      `json:"servicePorts"`
 	SourceType                   string                             `json:"sourceType"`
 	RepositoryBindingID          string                             `json:"repositoryBindingId"`
@@ -348,7 +339,6 @@ type deploymentTargetInput struct {
 	BranchPattern                string                             `json:"branchPattern"`
 	TagPattern                   string                             `json:"tagPattern"`
 	ConcurrencyPolicy            string                             `json:"concurrencyPolicy"`
-	RuntimeConfigSetIDs          []string                           `json:"runtimeConfigSetIds"`
 	RuntimeConfigRefs            []deploymentRuntimeConfigRefInput  `json:"runtimeConfigRefs"`
 	EnvironmentVariables         []runtimeEnvironmentVariableInput  `json:"environmentVariables"`
 	ConfigRefs                   map[string]string                  `json:"configRefs"`
@@ -361,7 +351,7 @@ type deploymentTargetInput struct {
 }
 
 func runtimeConfigMap(raw string) map[string]string {
-	values, err := runtimeconfig.ParseLegacyKeyValue(raw)
+	values, err := runtimeconfig.DecodeKeyValue(raw)
 	if err != nil {
 		return map[string]string{}
 	}
@@ -413,11 +403,6 @@ type deploymentRuntimeConfigRefResponse struct {
 
 func deploymentRuntimeConfigRefsResponse(target model.DeploymentTarget) []deploymentRuntimeConfigRefResponse {
 	refs := model.DecodeDeploymentRuntimeConfigRefs(target.RuntimeConfigRefs)
-	if len(refs) == 0 {
-		for _, setID := range buildVariableSetIDs(target.RuntimeConfigSetIDs) {
-			refs = append(refs, model.DeploymentRuntimeConfigRef{SetID: setID, Mode: model.RuntimeConfigRefModeLive})
-		}
-	}
 	output := make([]deploymentRuntimeConfigRefResponse, 0, len(refs))
 	for _, ref := range refs {
 		output = append(output, deploymentRuntimeConfigRefResponse{

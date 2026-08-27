@@ -35,11 +35,13 @@ func (h *Handlers) runtimeClusterFromInput(ctx *gin.Context, user model.User, in
 		kubeconfigRef = h.secrets.StoreContext(ctx.Request.Context(), kubeconfig, user.ID, "runtime_cluster:"+clusterID+":kubeconfig")
 	}
 	platformAdmin := user.Role == authz.PlatformRoleAdmin
-	if _, err := parseGatewayHeaderMap(input.GatewayDefaultRequestHeaders, platformAdmin); err != nil {
+	requestHeaders, err := parseGatewayHeaderMap(input.GatewayDefaultRequestHeaders, platformAdmin)
+	if err != nil {
 		writeError(ctx, http.StatusBadRequest, fmt.Sprintf("默认请求头配置无效: %s", err.Error()))
 		return model.RuntimeCluster{}, false
 	}
-	if _, err := parseGatewayHeaderMap(input.GatewayDefaultResponseHeaders, platformAdmin); err != nil {
+	responseHeaders, err := parseGatewayHeaderMap(input.GatewayDefaultResponseHeaders, platformAdmin)
+	if err != nil {
 		writeError(ctx, http.StatusBadRequest, fmt.Sprintf("默认响应头配置无效: %s", err.Error()))
 		return model.RuntimeCluster{}, false
 	}
@@ -93,8 +95,8 @@ func (h *Handlers) runtimeClusterFromInput(ctx *gin.Context, user model.User, in
 		GatewayExternalTLSMode:        normalizeGatewayExternalTLSMode(input.GatewayExternalTLSMode),
 		GatewayForwardedHeadersMode:   normalizeGatewayForwardedHeadersMode(input.GatewayForwardedHeadersMode),
 		GatewayTrustedProxyCIDRs:      strings.TrimSpace(input.GatewayTrustedProxyCIDRs),
-		GatewayDefaultRequestHeaders:  strings.TrimSpace(input.GatewayDefaultRequestHeaders),
-		GatewayDefaultResponseHeaders: strings.TrimSpace(input.GatewayDefaultResponseHeaders),
+		GatewayDefaultRequestHeaders:  encodeGatewayHeaderMap(requestHeaders),
+		GatewayDefaultResponseHeaders: encodeGatewayHeaderMap(responseHeaders),
 		CreatedBy:                     user.ID,
 	}, true
 }

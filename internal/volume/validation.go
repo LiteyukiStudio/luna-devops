@@ -257,7 +257,6 @@ func normalizeCreateVolumeTransferInput(input CreateVolumeTransferInput) CreateV
 	input.Format = strings.TrimSpace(input.Format)
 	input.ConsistencyMode = strings.TrimSpace(input.ConsistencyMode)
 	input.SourceFilename = strings.TrimSpace(input.SourceFilename)
-	input.SHA256 = strings.ToLower(strings.TrimSpace(input.SHA256))
 	input.ActorID = strings.TrimSpace(input.ActorID)
 	input.IdempotencyKey = strings.TrimSpace(input.IdempotencyKey)
 	return input
@@ -278,9 +277,6 @@ func validateCreateVolumeTransferInput(input CreateVolumeTransferInput) error {
 	}
 	if input.ExpectedBytes < 0 || !input.ExpiresAt.After(timeNowUTC()) {
 		return newDomainError(CodeInvalidInput, "volume transfer size or expiry is invalid")
-	}
-	if input.Direction == model.VolumeTransferDirectionImport && !validSHA256(input.SHA256) {
-		return newDomainError(CodeTransferChecksumInvalid, "volume transfer checksum is invalid")
 	}
 	if input.IdempotencyKey != "" && (len(input.IdempotencyKey) < 8 || len(input.IdempotencyKey) > 160) {
 		return newDomainError(CodeInvalidInput, "volume transfer idempotency key must contain 8 to 160 characters")

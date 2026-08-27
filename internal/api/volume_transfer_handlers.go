@@ -19,7 +19,7 @@ import (
 // download authorization. The HTTP layer never buffers a complete archive.
 type volumeTransferContentService interface {
 	CreateImport(context.Context, model.User, model.Project, volumeImportCreateInput, string) (model.ProjectVolume, model.VolumeTransfer, error)
-	StreamImport(context.Context, string, string, model.User, io.Reader, int64, string) (model.VolumeTransfer, error)
+	StreamImport(context.Context, string, string, model.User, io.Reader, int64) (model.VolumeTransfer, error)
 	CreateExport(context.Context, model.User, model.Project, string, volumeExportCreateInput, string) (model.VolumeTransfer, error)
 	RetryTransfer(context.Context, model.User, model.Project, model.VolumeTransfer, string) (model.VolumeTransfer, error)
 	AuthorizeDownload(context.Context, model.User, model.Project, model.VolumeTransfer, volumeDownloadBinding) (volumeDownloadAuthorizationResponse, error)
@@ -37,7 +37,6 @@ type volumeImportCreateInput struct {
 	Format           string `json:"format" binding:"required"`
 	Filename         string `json:"filename" binding:"required"`
 	ContentLength    int64  `json:"contentLength" binding:"required"`
-	SHA256           string `json:"sha256"`
 }
 
 type volumeExportCreateInput struct {
@@ -138,9 +137,8 @@ func (h *Handlers) UploadVolumeImportContent(ctx *gin.Context) {
 		writeTransferUnavailable(ctx)
 		return
 	}
-	checksum := strings.TrimSpace(ctx.GetHeader("X-Content-SHA256"))
-	if ctx.ContentType() != "application/octet-stream" || ctx.Request.ContentLength < 1 || checksum == "" {
-		writeErrorCode(ctx, http.StatusBadRequest, volume.CodeInvalidInput, "Content-Length, X-Content-SHA256, and application/octet-stream are required")
+	if ctx.ContentType() != "application/octet-stream" || ctx.Request.ContentLength < 1 {
+		writeErrorCode(ctx, http.StatusBadRequest, volume.CodeInvalidInput, "Content-Length and application/octet-stream are required")
 		return
 	}
 	deadlineController := http.NewResponseController(ctx.Writer)
@@ -148,7 +146,7 @@ func (h *Handlers) UploadVolumeImportContent(ctx *gin.Context) {
 	source := &volumeTransferDeadlineReader{
 		reader: ctx.Request.Body, controller: deadlineController, timeout: volumeTransferHTTPIdleTimeout,
 	}
-	transfer, err := h.volumeContent.StreamImport(ctx.Request.Context(), project.ID, ctx.Param("transferId"), user, source, ctx.Request.ContentLength, checksum)
+	transfer, err := h.volumeContent.StreamImport(ctx.Request.Context(), project.ID, ctx.Param("transferId"), user, source, ctx.Request.ContentLength)
 	if err != nil {
 		h.auditVolumeTransferStreamOutcome(ctx.Request.Context(), user.ID, "volume_transfer.import_stream", ctx.Param("transferId"), false, volumeAuditErrorCode(err))
 		writeVolumeError(ctx, err)

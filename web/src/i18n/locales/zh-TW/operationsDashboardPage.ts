@@ -202,8 +202,6 @@ const operationsDashboardPage = {
       databaseSystem: '資料庫型別',
       errorType: '錯誤型別',
       runOutcome: '執行結果',
-      availableToolCount: '可用工具數量',
-      availableToolNames: '可用工具清單',
     },
     attributeValues: { agent: 'Agent 執行', invoke_agent: '呼叫 Agent', chat: '模型對話', execute_tool: '執行工具', completed: '已完成', failed: '失敗', canceled: '已取消' },
     usageStatusValues: { reported: '已上報', unavailable: '不可用', reconciliation_required: '待對帳' },
@@ -231,7 +229,6 @@ const operationsDashboardPage = {
       persistence: '儲存執行狀態',
       externalRequest: '訪問外部服務',
       internalOperation: '內部處理',
-      availableTools: '下發模型工具 · {{count}} 個',
     },
   },
   conversationDetail: {
@@ -272,7 +269,6 @@ const operationsDashboardPage = {
     contextUnavailable: '沒有找到與這條 Trace 關聯的會話時間線。會話可能已被清理，或 Trace 來自尚未寫入關聯資訊的舊版本。',
     spanWaterfall: 'Span 瀑布',
     spanWaterfallDescription: '檢視模型、工具、HTTP 與資料庫操作的父子關係和耗時。',
-    availableTools: '本次模型可用工具',
   },
 }
 

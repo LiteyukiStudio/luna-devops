@@ -9,9 +9,9 @@ import (
 
 func TestServiceBindingValuesUsesStableServiceDNS(t *testing.T) {
 	values, err := serviceBindingValues(
-		model.Project{ID: "prj_c119e462fb7c5eed20ec4ca4"},
+		model.Project{ID: "prj_c119e462fb7c5eed20ec4ca4", KubernetesNamespace: "ns-c119e462fb"},
 		model.ServiceBinding{ID: "sbind_api", Protocol: "http", Path: "/v1", InjectionMode: "url", URLEnvVar: "API_URL"},
-		model.DeploymentTarget{ID: "dplt_b530527f18113463aa3bf8a7"},
+		model.DeploymentTarget{ID: "dplt_b530527f18113463aa3bf8a7", KubernetesName: "dplt-b530527f18"},
 		model.DeploymentServicePort{Name: "http", Port: 8080},
 	)
 	if err != nil {
@@ -25,9 +25,9 @@ func TestServiceBindingValuesUsesStableServiceDNS(t *testing.T) {
 
 func TestServiceBindingValuesSupportsHostAndPort(t *testing.T) {
 	values, err := serviceBindingValues(
-		model.Project{ID: "prj_demo"},
+		model.Project{ID: "prj_demo", KubernetesNamespace: "ns-demo"},
 		model.ServiceBinding{ID: "sbind_db", Protocol: "tcp", InjectionMode: "host_port", HostEnvVar: "DB_HOST", PortEnvVar: "DB_PORT"},
-		model.DeploymentTarget{ID: "dplt_database"},
+		model.DeploymentTarget{ID: "dplt_database", KubernetesName: "dplt-database"},
 		model.DeploymentServicePort{Name: "postgres", Port: 5432},
 	)
 	if err != nil {

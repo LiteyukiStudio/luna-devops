@@ -39,27 +39,27 @@ func (dispatcher volumeOperationDispatcher) DispatchVolumeOperation(ctx context.
 	switch operation.Kind {
 	case volume.OperationProvision, volume.OperationExpand:
 		_, err := dispatcher.tasks.EnqueueVolumeProvision(ctx, tasks.VolumeProvisionPayload{
-			VolumeID: operation.VolumeID, ProjectID: operation.ProjectID, ActorID: operation.ActorID, Operation: operation.Kind,
+			VolumeID: operation.VolumeID, ProjectID: operation.ProjectID, Operation: operation.Kind,
 		})
 		return err
 	case volume.OperationImport:
 		_, err := dispatcher.tasks.EnqueueVolumeImport(ctx, tasks.VolumeTransferPayload{
-			TransferID: operation.TransferID, VolumeID: operation.VolumeID, ProjectID: operation.ProjectID, ActorID: operation.ActorID,
+			TransferID: operation.TransferID, VolumeID: operation.VolumeID, ProjectID: operation.ProjectID,
 		})
 		return err
 	case volume.OperationExport:
 		_, err := dispatcher.tasks.EnqueueVolumeExport(ctx, tasks.VolumeTransferPayload{
-			TransferID: operation.TransferID, VolumeID: operation.VolumeID, ProjectID: operation.ProjectID, ActorID: operation.ActorID,
+			TransferID: operation.TransferID, VolumeID: operation.VolumeID, ProjectID: operation.ProjectID,
 		})
 		return err
 	case volume.OperationCleanup:
 		_, err := dispatcher.tasks.EnqueueVolumeTransferCleanup(ctx, tasks.VolumeTransferCleanupPayload{
-			TransferID: operation.TransferID, ActorID: operation.ActorID,
+			TransferID: operation.TransferID,
 		})
 		return err
 	case volume.OperationDelete:
 		_, err := dispatcher.tasks.EnqueueVolumeDelete(ctx, tasks.VolumeDeletePayload{
-			VolumeID: operation.VolumeID, ProjectID: operation.ProjectID, ActorID: operation.ActorID,
+			VolumeID: operation.VolumeID, ProjectID: operation.ProjectID,
 		})
 		return err
 	default:

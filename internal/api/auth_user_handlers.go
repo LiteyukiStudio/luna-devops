@@ -326,9 +326,6 @@ func (h *Handlers) userWalletBalances(users []model.User, ctx context.Context) (
 }
 
 func (h *Handlers) CreateUser(ctx *gin.Context) {
-	if !h.requirePlatformAdmin(ctx) {
-		return
-	}
 	var input userInput
 	if !bindJSON(ctx, &input) {
 		return
@@ -371,10 +368,6 @@ func (h *Handlers) CreateUser(ctx *gin.Context) {
 func (h *Handlers) UpdateUser(ctx *gin.Context) {
 	currentUser, ok := h.currentUser(ctx)
 	if !ok {
-		return
-	}
-	if currentUser.Role != authz.PlatformRoleAdmin {
-		writeErrorKey(ctx, http.StatusForbidden, currentUser.Language, "config.admin.required")
 		return
 	}
 	var user model.User

@@ -1,9 +1,8 @@
 import type { ButtonHTMLAttributes, ReactNode } from 'react'
 import type { Release } from '@/api'
 import { Maximize2, Minimize2, Minus, X } from 'lucide-react'
-import { lazy, useCallback, useState } from 'react'
+import { lazy, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { api } from '@/api'
 import { LazyLoadBoundary } from '@/components/common/lazy-load-boundary'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
@@ -26,11 +25,6 @@ export function ApplicationWebConsoleDialog({
   const [containerState, setContainerState] = useState({ releaseId: '', value: '' })
   const [fullscreen, setFullscreen] = useState(false)
   const container = containerState.releaseId === releaseId ? containerState.value : ''
-  const authorizeTerminal = useCallback(async () => {
-    if (!releaseId)
-      return
-    await api.authorizeReleaseRuntimeTerminal(projectId, releaseId)
-  }, [projectId, releaseId])
   const closeDialog = () => {
     setContainerState({ releaseId: '', value: '' })
     setFullscreen(false)
@@ -99,7 +93,7 @@ export function ApplicationWebConsoleDialog({
               fallback={<TerminalLoadingState fullscreen={fullscreen} label={t('common.loading')} />}
               resetKey={`${releaseId}:${container}`}
             >
-              <ApplicationRuntimeTerminalPanel key={`${releaseId}:${container}`} authorize={authorizeTerminal} fullscreen={fullscreen} container={container} projectId={projectId} release={release} />
+              <ApplicationRuntimeTerminalPanel key={`${releaseId}:${container}`} fullscreen={fullscreen} container={container} projectId={projectId} release={release} />
             </LazyLoadBoundary>
           </div>
         </div>

@@ -38,33 +38,9 @@ function platformEventQuery(params: PlatformEventListParams) {
 
 export const eventsApi = {
   listPlatformEvents: (params: PlatformEventListParams) =>
-    request<PaginatedResponse<PlatformEvent>>(`/events?${platformEventQuery(params)}`)
-      .then(response => ({
-        ...response,
-        items: response.items.map(normalizePlatformEvent),
-      })),
+    request<PaginatedResponse<PlatformEvent>>(`/events?${platformEventQuery(params)}`),
   getPlatformEvent: (eventId: string) =>
-    request<PlatformEvent>(`/events/${encodeURIComponent(eventId)}`)
-      .then(normalizePlatformEvent),
+    request<PlatformEvent>(`/events/${encodeURIComponent(eventId)}`),
   listPlatformEventCatalog: () =>
     request<PlatformEventCatalogEntry[]>('/events/catalog'),
-}
-
-function normalizePlatformEvent(event: PlatformEvent): PlatformEvent {
-  return {
-    ...event,
-    detail: isRecord(event.detail) ? event.detail : {},
-    links: stringRecord(event.links),
-    deliveryCount: Number.isFinite(event.deliveryCount) ? event.deliveryCount : 0,
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
-}
-
-function stringRecord(value: unknown) {
-  if (!isRecord(value))
-    return {}
-  return Object.fromEntries(Object.entries(value).filter((entry): entry is [string, string] => typeof entry[1] === 'string'))
 }

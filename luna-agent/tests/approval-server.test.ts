@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest"
 import { DevelopmentRequestVerifier } from "../src/auth.js"
 import { loadConfig } from "../src/config.js"
 import { TestRepository } from "./support/test-repository.js"
-import { DeterministicProvider } from "../src/provider/deterministic.js"
 import { buildServer } from "../src/server.js"
 import { ToolCatalog } from "../src/tools/catalog.js"
 import { DeterministicLunaApiClient, type ToolExecutionResult } from "../src/tools/luna-api-client.js"
@@ -40,7 +39,6 @@ async function approvalFixture(
   const app = buildServer({
     config: loadConfig({ NODE_ENV: "test" }),
     repository,
-    provider: new DeterministicProvider(),
     requestVerifier: new DevelopmentRequestVerifier(),
     tools,
     cancelRun: async (runId) => {

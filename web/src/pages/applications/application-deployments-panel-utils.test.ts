@@ -20,7 +20,6 @@ const currentTarget = {
   projectId: 'prj_1',
   readyReplicas: 1,
   runtimeConfigRefs: [],
-  runtimeConfigSetIds: [],
   secretFilesSet: false,
   status: 'ready',
   updatedReplicas: 1,
@@ -48,7 +47,7 @@ describe('deployment target runtime changes', () => {
     ['service account', { serviceAccountName: 'runtime-service-account' }],
     ['service account token mount', { automountServiceAccountToken: 'false' }],
     ['runtime config', { configRefs: { LOG_LEVEL: 'debug' } }],
-    ['service ports', { servicePort: 9090, servicePorts: [{ name: 'http', port: 9090 }] }],
+    ['service ports', { servicePorts: [{ name: 'http', port: 9090 }] }],
     ['deployment hook', { buildHookBindings: [{ hookConfigId: 'hook_1', phase: 'preDeployment', runOrder: 1 }] }],
   ] satisfies Array<[string, Partial<DeploymentTargetPayload>]>)('detects %s changes that require a redeploy', (_label, overrides) => {
     expect(deploymentTargetRuntimeChanged(currentTarget, changedPayload(overrides))).toBe(true)

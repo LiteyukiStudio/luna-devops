@@ -1,6 +1,6 @@
 import type { ComponentType } from 'react'
 import { lazy } from 'react'
-import { Navigate, Route, Routes, useParams } from 'react-router-dom'
+import { Navigate, Route, Routes } from 'react-router-dom'
 import { LazyLoadBoundary } from './components/common/lazy-load-boundary'
 import { TooltipProvider } from './components/ui/tooltip'
 import { loadTranslationBundles } from './i18n'
@@ -51,17 +51,12 @@ export default function App() {
             <Route path="/events" element={<EventsPage />} />
             <Route path="/inbox" element={<InboxPage />} />
             <Route path="/projects/:projectId" element={<ProjectWorkspacePage />} />
-            <Route path="/projects/:projectId/members" element={<ProjectRootRedirect />} />
-            <Route path="/projects/:projectId/apps" element={<ProjectRootRedirect />} />
-            <Route path="/projects/:projectId/repositories" element={<ProjectAppsRedirect />} />
             <Route path="/projects/:projectId/apps/:applicationId" element={<ApplicationConfigPage />} />
             <Route path="/app-templates" element={<AppTemplatesPage />} />
             <Route path="/code-repositories" element={<CodeRepositoriesPage />} />
             <Route path="/registries" element={<RegistriesPage />} />
             <Route path="/clusters" element={<ClustersPage />} />
             <Route path="/billing" element={<BillingPage />} />
-            <Route path="/access-tokens" element={<Navigate to="/settings/account" replace />} />
-            <Route path="/settings/security" element={<Navigate to="/settings/account" replace />} />
             <Route path="/settings/account" element={<AccountPage />} />
             <Route path="/settings/auth-providers" element={<AuthProvidersPage />} />
             <Route path="/settings/notifications" element={<NotificationsPage />} />
@@ -95,14 +90,4 @@ function lazyTranslated<T extends Record<string, ComponentType<object>>, K exten
 
 function RouteFallback() {
   return <div className="min-h-screen bg-primary-subtle" />
-}
-
-function ProjectRootRedirect() {
-  const { projectId = '' } = useParams()
-  return <Navigate to={`/projects/${projectId}`} replace />
-}
-
-function ProjectAppsRedirect() {
-  const { projectId = '' } = useParams()
-  return <Navigate to={`/projects/${projectId}#tab=apps`} replace />
 }

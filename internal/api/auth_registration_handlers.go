@@ -83,10 +83,6 @@ func (h *Handlers) UpdateAuthRegistrationSettings(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	if user.Role != authz.PlatformRoleAdmin {
-		writeErrorKey(ctx, http.StatusForbidden, user.Language, "config.admin.required")
-		return
-	}
 
 	var input authRegistrationSettingsInput
 	if !bindJSON(ctx, &input) {

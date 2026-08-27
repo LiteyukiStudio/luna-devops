@@ -202,8 +202,6 @@ const operationsDashboardPage = {
       databaseSystem: '데이터베이스 유형',
       errorType: '오류 유형',
       runOutcome: '실행 결과',
-      availableToolCount: '사용 가능한 도구 수',
-      availableToolNames: '사용 가능한 도구 목록',
     },
     attributeValues: { agent: 'Agent 실행', invoke_agent: 'Agent 호출', chat: '모델 대화', execute_tool: '도구 실행', completed: '완료됨', failed: '실패', canceled: '취소됨' },
     usageStatusValues: { reported: '보고됨', unavailable: '사용 불가', reconciliation_required: '조정 필요' },
@@ -231,7 +229,6 @@ const operationsDashboardPage = {
       persistence: '실행 상태 저장',
       externalRequest: '외부 서비스 접근',
       internalOperation: '남부 처리',
-      availableTools: '모델 도구 배포 · {{count}}개',
     },
   },
   conversationDetail: {
@@ -272,7 +269,6 @@ const operationsDashboardPage = {
     contextUnavailable: '이 Trace와 관련된 세션 타임라인을 찾을 수 없습니다. 세션이 정리되었거나 Trace가 관련 정보를 아직 기록하지 않은 이전 버전에서 온 것입니다.',
     spanWaterfall: 'Span 워터폴',
     spanWaterfallDescription: '모델, 도구, HTTP, 데이터베이스 작업의 부모-자식 관계와 시간을 확인합니다.',
-    availableTools: '이번 모델에서 사용 가능한 도구',
   },
 }
 

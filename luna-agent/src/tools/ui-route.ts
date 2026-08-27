@@ -1,13 +1,9 @@
 import { z } from "zod"
+import { aiInternalRouteNames } from "@luna-devops/ai-interaction-card-contract"
 import type { ModelToolDefinition } from "../provider/provider.js"
 
 export const routeIdentifiers = z.record(z.string(), z.string().regex(/^[\w.:-]{1,160}$/)).default({})
-export const registeredRouteName = z.enum([
-  "dashboard", "projects", "project.workspace", "application.detail", "events",
-  "code-repositories", "registries", "clusters", "app-templates", "billing",
-  "settings.account", "settings.auth-providers", "settings.notifications",
-  "settings.operations", "settings.site", "settings.users",
-])
+export const registeredRouteName = z.enum(aiInternalRouteNames)
 export const navigateToRouteInput = z.object({
   routeName: registeredRouteName,
   params: routeIdentifiers,

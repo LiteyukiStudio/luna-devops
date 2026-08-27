@@ -4,10 +4,7 @@ import { executeAIUIAction, getAIUIActionTargetPath } from './actions'
 
 function context(overrides: Partial<AIActionContext> = {}): AIActionContext {
   return {
-    pathname: '/events',
-    search: '',
     navigate: vi.fn(),
-    queryClient: { invalidateQueries: vi.fn() } as never,
     ...overrides,
   }
 }
@@ -33,11 +30,6 @@ describe('aI UI action registry', () => {
     const unsafe = { version: 1, type: 'navigate', payload: { routeName: 'https://evil.example', params: {}, query: {} } } as never
     expect(await executeAIUIAction(unsafe, ctx)).toBe(false)
     expect(ctx.navigate).not.toHaveBeenCalled()
-  })
-
-  it('only sets event filters on the registered target page', async () => {
-    const wrongPage = context({ pathname: '/dashboard' })
-    expect(await executeAIUIAction({ version: 1, type: 'set_filters', payload: { targetId: 'events', values: { category: 'release' } } }, wrongPage)).toBe(false)
   })
 
   it('turns message and controlled-tool options into a new user request', async () => {

@@ -190,8 +190,7 @@ func (s Store) StoreContextWithDB(ctx context.Context, db *gorm.DB, plaintext, c
 }
 
 // DeleteRefContextWithDB removes a stored secret only when both its reference
-// and owning resource match. Inline legacy references are not database rows and
-// therefore require no deletion.
+// and owning resource match.
 func (s Store) DeleteRefContextWithDB(ctx context.Context, db *gorm.DB, ref, resource string) error {
 	if db == nil {
 		return ErrStoreUnavailable
@@ -207,18 +206,18 @@ func (s Store) DeleteRefContextWithDB(ctx context.Context, db *gorm.DB, ref, res
 
 func (s Store) ResolveContext(ctx context.Context, ref string) string {
 	ref = strings.TrimSpace(ref)
-	if strings.HasPrefix(ref, storedSecretIDPrefix) {
-		var value model.SecretValue
-		if err := s.db.WithContext(ctx).First(&value, "id = ?", strings.TrimPrefix(ref, storedSecretIDPrefix)).Error; err != nil {
-			return ""
-		}
-		return ResolveInline(value.CipherRef)
+	if s.db == nil || !strings.HasPrefix(ref, storedSecretIDPrefix) {
+		return ""
 	}
-	return ResolveInline(ref)
+	var value model.SecretValue
+	if err := s.db.WithContext(ctx).First(&value, "id = ?", strings.TrimPrefix(ref, storedSecretIDPrefix)).Error; err != nil {
+		return ""
+	}
+	return ResolveInline(value.CipherRef)
 }
 
 func HasValue(ref string) bool {
-	return strings.TrimSpace(ref) != ""
+	return strings.HasPrefix(strings.TrimSpace(ref), storedSecretIDPrefix)
 }
 
 func SafeClientSecretRef(ref string) string {

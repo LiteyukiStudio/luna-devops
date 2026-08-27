@@ -261,11 +261,6 @@ func (r *Runner) applicationResourcesManagerAndSpec(ctx context.Context, release
 func (r *Runner) runtimeConfigSetsForTarget(ctx context.Context, projectID string, deploymentTarget model.DeploymentTarget) ([]model.ProjectRuntimeConfigSet, error) {
 	refs := model.DecodeDeploymentRuntimeConfigRefs(deploymentTarget.RuntimeConfigRefs)
 	if len(refs) == 0 {
-		for _, setID := range runtimeConfigSetIDs(deploymentTarget.RuntimeConfigSetIDs) {
-			refs = append(refs, model.DeploymentRuntimeConfigRef{SetID: setID, Mode: model.RuntimeConfigRefModeLive})
-		}
-	}
-	if len(refs) == 0 {
 		return nil, nil
 	}
 	liveIDs := model.DeploymentRuntimeConfigLiveSetIDs(refs)

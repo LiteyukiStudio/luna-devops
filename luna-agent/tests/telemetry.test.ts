@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest"
 import { Writable } from "node:stream"
 import { SpanStatusCode, type Span } from "@opentelemetry/api"
-import { captureTraceContext, createAgentLogger, errorDiagnostic, genAIClientTokenUsageMetric, initializeTelemetry, internalSpanOptions, isDatabaseSpanCaptureEnabled, isExpectedCancellation, isHealthCheckPath, normalizeTraceContext, recordAvailableTools, recordSpanError, resolveAgentLogColor, resolveAgentLogFormat, resolveAgentLogLevel, sanitizeTelemetryURL, stableErrorCode, stableFastifyLifecycleSpanName, telemetryLog, withSpan } from "../src/telemetry.js"
+import { captureTraceContext, createAgentLogger, errorDiagnostic, genAIClientTokenUsageMetric, initializeTelemetry, internalSpanOptions, isDatabaseSpanCaptureEnabled, isExpectedCancellation, isHealthCheckPath, normalizeTraceContext, recordSpanError, resolveAgentLogColor, resolveAgentLogFormat, resolveAgentLogLevel, sanitizeTelemetryURL, stableErrorCode, stableFastifyLifecycleSpanName, telemetryLog, withSpan } from "../src/telemetry.js"
 
 describe("agent telemetry", () => {
   it("keeps noisy database spans opt-in", () => {
@@ -28,14 +28,6 @@ describe("agent telemetry", () => {
     expect(genAIClientTokenUsageMetric.explicitBucketBoundaries).toEqual([
       1, 4, 16, 64, 256, 1_024, 4_096, 16_384, 65_536, 262_144, 1_048_576, 4_194_304, 16_777_216, 67_108_864,
     ])
-  })
-
-  it("records the effective model tool set without requiring sensitive content capture", () => {
-    expect(() => recordAvailableTools([
-      { operationId: "listProjects" },
-      { operationId: "createGatewayRoute" },
-      { operationId: "listProjects" },
-    ])).not.toThrow()
   })
 
   it("rejects unsupported OTLP endpoint protocols", () => {
@@ -182,7 +174,6 @@ describe("agent telemetry", () => {
     expect(isHealthCheckPath("/healthz")).toBe(true)
     expect(isHealthCheckPath("http://agent:8091/internal/health/ready?probe=1")).toBe(true)
     expect(isHealthCheckPath("/internal/health/live")).toBe(true)
-    expect(isHealthCheckPath("/internal/v1/provider/health")).toBe(false)
     expect(isHealthCheckPath("/api/v1/registries/reg_1/test")).toBe(false)
   })
 

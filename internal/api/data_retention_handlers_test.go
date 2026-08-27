@@ -89,6 +89,7 @@ func TestDataRetentionEndpointsRequirePlatformAdmin(t *testing.T) {
 		t.Fatal(err)
 	}
 	handlers := &Handlers{db: db, configs: newConfigCache(db), mode: "development"}
+	router := NewRouter(db)
 
 	tests := []struct {
 		method  string
@@ -97,7 +98,6 @@ func TestDataRetentionEndpointsRequirePlatformAdmin(t *testing.T) {
 	}{
 		{method: http.MethodGet, path: "/api/v1/data-retention/catalog", handler: handlers.ListDataRetentionCatalog},
 		{method: http.MethodPost, path: "/api/v1/data-retention/preview", handler: handlers.PreviewDataRetention},
-		{method: http.MethodPost, path: "/api/v1/data-retention/cleanup", handler: handlers.CleanupDataRetention},
 	}
 	for _, test := range tests {
 		t.Run(test.path, func(t *testing.T) {
@@ -107,6 +107,10 @@ func TestDataRetentionEndpointsRequirePlatformAdmin(t *testing.T) {
 				t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body.String())
 			}
 		})
+	}
+	cleanup := performCookieJSONRequest(router, http.MethodPost, "/api/v1/data-retention/cleanup", sessionToken, `{}`)
+	if cleanup.Code != http.StatusForbidden {
+		t.Fatalf("cleanup status = %d, body = %s", cleanup.Code, cleanup.Body.String())
 	}
 }
 

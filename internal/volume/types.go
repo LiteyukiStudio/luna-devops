@@ -151,7 +151,6 @@ type CreateVolumeTransferInput struct {
 	ConsistencyMode string
 	SourceFilename  string
 	ExpectedBytes   int64
-	SHA256          string
 	ActorID         string
 	ExpiresAt       time.Time
 	// IdempotencyKey is hashed into an internal transfer identity and is never

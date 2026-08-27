@@ -228,24 +228,28 @@ func TestAIProxyRequiresInitialConversationModel(t *testing.T) {
 	}
 }
 
-func TestAIProxyRejectsBrowserSuppliedActorIdentity(t *testing.T) {
-	fake := &fakeAIAgentClient{}
+func TestAIProxyKeepsSessionActorWhenPayloadContainsIdentityShapedData(t *testing.T) {
+	fake := &fakeAIAgentClient{response: &aiagent.Response{
+		StatusCode: http.StatusCreated,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(`{"id":"aicnv_created"}`)),
+	}}
 	handler := aiTestHandlers(fake, true)
 	router := gin.New()
 	router.POST("/api/v1/ai/conversations", handler.ProxyAIRequest)
 
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/ai/conversations", strings.NewReader(
-		`{"title":"forged","userId":"usr_other"}`,
+		`{"title":"identity data","modelId":"aimod_test","metadata":{"userId":"usr_other"}}`,
 	))
 	request.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
 	router.ServeHTTP(response, request)
 
-	if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), "ai.actor_field_forbidden") {
+	if response.Code != http.StatusCreated {
 		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
 	}
-	if fake.calls != 0 {
-		t.Fatalf("agent called %d times for forged actor", fake.calls)
+	if fake.calls != 1 || fake.actor.UserID != "usr_session_owner" || !strings.Contains(string(fake.request.Body), `"userId":"usr_other"`) {
+		t.Fatalf("calls=%d actor=%#v body=%s", fake.calls, fake.actor, fake.request.Body)
 	}
 }
 
@@ -287,7 +291,7 @@ func TestAICapabilitiesDependOnPlatformConfigurationNotAgentHealth(t *testing.T)
 
 	response := httptest.NewRecorder()
 	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/ai/capabilities", nil))
-	if response.Code != http.StatusOK || response.Body.String() != `{"enabled":true,"maxInputBytes":1048576}` {
+	if response.Code != http.StatusOK || response.Body.String() != `{"enabled":true,"maxInputBytes":131072}` {
 		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
 	}
 	if fake.calls != 0 {
@@ -297,17 +301,10 @@ func TestAICapabilitiesDependOnPlatformConfigurationNotAgentHealth(t *testing.T)
 		t.Fatalf("cache control = %q", response.Header().Get("Cache-Control"))
 	}
 
-	handler.configs.set(aiMaxInputBytesConfigKey, "64")
-	response = httptest.NewRecorder()
-	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/ai/capabilities", nil))
-	if response.Code != http.StatusOK || response.Body.String() != `{"enabled":true,"maxInputBytes":65536}` {
-		t.Fatalf("configured capability limits not returned: status = %d, body = %s", response.Code, response.Body.String())
-	}
-
 	handler.configs.set(aiAssistantEnabledConfigKey, "false")
 	response = httptest.NewRecorder()
 	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/ai/capabilities", nil))
-	if response.Code != http.StatusOK || response.Body.String() != `{"enabled":false,"maxInputBytes":65536}` {
+	if response.Code != http.StatusOK || response.Body.String() != `{"enabled":false,"maxInputBytes":131072}` {
 		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
 	}
 
@@ -315,27 +312,71 @@ func TestAICapabilitiesDependOnPlatformConfigurationNotAgentHealth(t *testing.T)
 	handler.aiDeploymentEnabled = false
 	response = httptest.NewRecorder()
 	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/ai/capabilities", nil))
-	if response.Code != http.StatusOK || response.Body.String() != `{"enabled":false,"maxInputBytes":65536}` {
+	if response.Code != http.StatusOK || response.Body.String() != `{"enabled":false,"maxInputBytes":131072}` {
 		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
 	}
 }
 
-func TestAIProxyBodyLimitUsesPlatformInputConfiguration(t *testing.T) {
+func TestAIProxyUsesFixedEnvelopeBodyLimit(t *testing.T) {
 	handler := aiTestHandlers(nil, true)
-	handler.configs.set(aiMaxInputBytesConfigKey, "64")
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)
-	ctx.Request = httptest.NewRequest(http.MethodPost, "/api/v1/ai/conversations", strings.NewReader(strings.Repeat("x", 48*1024)))
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/api/v1/ai/conversations", strings.NewReader(strings.Repeat("x", aiRequestBodyLimitBytes)))
 	if _, ok := handler.readAIBody(ctx); !ok {
-		t.Fatalf("48 KiB body rejected under 64 KiB limit: status = %d, body = %s", recorder.Code, recorder.Body.String())
+		t.Fatalf("body at transport limit rejected: status = %d, body = %s", recorder.Code, recorder.Body.String())
 	}
 
-	handler.configs.set(aiMaxInputBytesConfigKey, "8")
 	recorder = httptest.NewRecorder()
 	ctx, _ = gin.CreateTestContext(recorder)
-	ctx.Request = httptest.NewRequest(http.MethodPost, "/api/v1/ai/conversations", strings.NewReader(strings.Repeat("x", 8*1024+1)))
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/api/v1/ai/conversations", strings.NewReader(strings.Repeat("x", aiRequestBodyLimitBytes+1)))
 	if _, ok := handler.readAIBody(ctx); ok || recorder.Code != http.StatusRequestEntityTooLarge {
 		t.Fatalf("oversized body accepted: status = %d, body = %s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestAIProxyRejectsOversizedTextInsideAllowedEnvelope(t *testing.T) {
+	oversized := strings.Repeat("x", aiTextInputLimitBytes+1)
+	tests := []struct {
+		name         string
+		routePattern string
+		path         string
+		body         any
+	}{
+		{name: "turn", routePattern: "/api/v1/ai/conversations/:conversationId/turns", path: "/api/v1/ai/conversations/aicnv_1/turns", body: map[string]any{
+			"modelId": "aimod_test", "input": map[string]any{"parts": []any{map[string]any{"type": "text", "text": oversized}}},
+		}},
+		{name: "turn part separator", routePattern: "/api/v1/ai/conversations/:conversationId/turns", path: "/api/v1/ai/conversations/aicnv_1/turns", body: map[string]any{
+			"modelId": "aimod_test", "input": map[string]any{"parts": []any{
+				map[string]any{"type": "text", "text": strings.Repeat("x", aiTextInputLimitBytes-1)},
+				map[string]any{"type": "text", "text": "y"},
+			}},
+		}},
+		{name: "tool action", routePattern: "/api/v1/ai/conversations/:conversationId/tool-actions", path: "/api/v1/ai/conversations/aicnv_1/tool-actions", body: map[string]any{
+			"operationId": "saveConfig", "arguments": map[string]any{}, "message": oversized,
+		}},
+		{name: "run input", routePattern: "/api/v1/ai/runs/:runId/input", path: "/api/v1/ai/runs/airun_1/input", body: map[string]any{
+			"text": oversized, "expectedVersion": 1,
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			encoded, err := json.Marshal(tt.body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			fake := &fakeAIAgentClient{}
+			handler := aiTestHandlers(fake, true)
+			router := gin.New()
+			router.POST(tt.routePattern, handler.ProxyAIRequest)
+			request := httptest.NewRequest(http.MethodPost, tt.path, strings.NewReader(string(encoded)))
+			request.Header.Set("Content-Type", "application/json")
+			request.Header.Set("Idempotency-Key", "input-limit-test")
+			response := httptest.NewRecorder()
+			router.ServeHTTP(response, request)
+			if response.Code != http.StatusRequestEntityTooLarge || fake.calls != 0 || !strings.Contains(response.Body.String(), "ai.input_too_large") {
+				t.Fatalf("status=%d calls=%d body=%s", response.Code, fake.calls, response.Body.String())
+			}
+		})
 	}
 }
 
@@ -372,7 +413,7 @@ func TestAIAccessModeDefaultsToAuthenticatedUsersAndCanRestrictAdmins(t *testing
 	router.GET("/api/v1/ai/conversations", handler.ProxyAIRequest)
 	response := httptest.NewRecorder()
 	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/ai/capabilities", nil))
-	if response.Code != http.StatusOK || response.Body.String() != `{"enabled":false,"maxInputBytes":1048576}` || fake.calls != 0 {
+	if response.Code != http.StatusOK || response.Body.String() != `{"enabled":false,"maxInputBytes":131072}` || fake.calls != 0 {
 		t.Fatalf("status = %d, calls = %d, body = %s", response.Code, fake.calls, response.Body.String())
 	}
 

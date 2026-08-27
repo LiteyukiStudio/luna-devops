@@ -108,7 +108,6 @@ const projectVolumes = {
   archiveFormat: '아카이브 형식',
   formatTarGz: 'tar.gz',
   formatRawZst: 'raw.zst',
-  hashing: '아카이브 체크섬 계산 중 {{percent}}%',
   preparingTransfer: '대상 볼륨과 전송 환경 준비 중',
   uploading: '업로드 중 {{percent}}%',
   verifyingImport: '업로드 완료. 검증 후 볼륨에 쓰는 중',

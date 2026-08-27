@@ -12,7 +12,6 @@ import type {
   ModelToolSearchResult,
 } from "./provider/provider.js"
 import { systemPromptFor } from "./prompt/system.js"
-import { recordAvailableTools } from "./telemetry.js"
 import { renameConversationTool } from "./tools/conversation-title.js"
 import { isProviderContextLengthError } from "./provider/provider-error.js"
 import type { RemoteProviderConfig } from "./provider/config-client.js"
@@ -24,8 +23,7 @@ export type ModelRuntimeEvent = ModelEvent
       type: "context.compacted"
       summarizedThroughTurnIndex: number
       sourceTurnCount: number
-      trigger: "provider_usage" | "context_error" | "turn_backlog"
-      priorPromptTokens?: number
+      trigger: "fixed_threshold" | "context_error"
     }
 import { defaultRuntimeSettings, runtimeSettingsSnapshot, type RuntimeSettings } from "./runtime-settings.js"
 import { modelVisibleHistory } from "./model-history.js"
@@ -95,11 +93,10 @@ export class ModelRuntime {
     const requestInput = modelInputSnapshot(input)
     let forceCompressionTrigger: "context_error" | undefined
     let contextErrorCause: unknown
-    for (let attempt = 1; attempt <= 3; attempt += 1) {
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
       const { request, compaction } = await this.modelRequest(requestInput, signal, forceCompressionTrigger)
       if (forceCompressionTrigger === "context_error" && !compaction)
         throw new Error("ai.model_context_insufficient", { cause: contextErrorCause })
-      recordAvailableTools(request.tools ?? [])
       if (compaction) yield { type: "context.compacted", ...compaction }
       try {
         yield* this.provider.stream(request)
@@ -108,7 +105,7 @@ export class ModelRuntime {
       catch (error) {
         if (!isProviderContextLengthError(error)) throw error
         contextErrorCause = error
-        if (attempt >= 3)
+        if (attempt >= 2)
           throw new Error("ai.model_context_insufficient", { cause: error })
         forceCompressionTrigger = "context_error"
       }
@@ -174,6 +171,10 @@ export class ModelRuntime {
 
   private async modelRequest(input: AssistantModelInput, signal?: AbortSignal, forceCompressionTrigger?: "context_error") {
     const runtimeSettings = input.runtimeSettings ?? defaultRuntimeSettings
+    const maxOutputTokens = Math.min(
+      runtimeSettings.assistantMaxOutputTokens,
+      input.model?.maxOutputTokens ?? runtimeSettings.assistantMaxOutputTokens,
+    )
     const tools = await this.modelTools(
       input.pageContext,
       input.conversation,
@@ -201,7 +202,7 @@ export class ModelRuntime {
           continuationMessages: input.continuationMessages,
           tools,
           budget: { runId: input.runId, ownerUserId: input.ownerUserId },
-          maxOutputTokens: runtimeSettings.assistantMaxOutputTokens,
+          maxOutputTokens,
           options: contextCompilerOptions(runtimeSettings),
           ...(input.providerConfig ? { providerConfig: input.providerConfig } : {}),
           ...(input.model ? { model: input.model } : {}),
@@ -222,7 +223,7 @@ export class ModelRuntime {
     return {
       request: {
         messages,
-        maxOutputTokens: runtimeSettings.assistantMaxOutputTokens,
+        maxOutputTokens,
         budget: { runId: input.runId, ownerUserId: input.ownerUserId, operation: "assistant" as const },
         tools,
         conversationId: input.conversationId,
@@ -291,7 +292,6 @@ function modelInputSnapshot(input: AssistantModelInput): AssistantModelInput {
 
 function contextCompilerOptions(runtimeSettings: RuntimeSettings): ContextCompilerOptions {
   return Object.freeze({
-    compressionTriggerRatio: runtimeSettings.contextCompressionTriggerRatio,
     recentTurnCount: runtimeSettings.contextRecentTurnCount,
     maxUncompressedTurnCount: runtimeSettings.contextMaxUncompressedTurnCount,
     maxCompressionTurnsPerCompile: runtimeSettings.contextMaxCompressionTurnsPerCompile,

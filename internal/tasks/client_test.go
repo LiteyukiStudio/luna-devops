@@ -165,7 +165,6 @@ func TestNewResourceCleanupTaskBuildsTypedPayload(t *testing.T) {
 		ResourceType: "deployment_target",
 		ResourceID:   "dplt_1",
 		ProjectID:    "prj_1",
-		ActorID:      "usr_1",
 	}
 
 	task, err := NewResourceCleanupTask(payload)

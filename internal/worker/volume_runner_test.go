@@ -16,21 +16,23 @@ import (
 
 type volumeWorkerServiceStub struct {
 	volumeWorkerService
-	getVolumeFn        func(context.Context, string, string) (model.ProjectVolume, error)
-	getFn              func(context.Context, string, string) (model.ProjectVolume, error)
-	getTransferFn      func(context.Context, string, string) (model.VolumeTransfer, error)
-	getMaintenanceFn   func(context.Context, string) (model.VolumeTransfer, error)
-	claimFn            func(context.Context, string, string, string, string, time.Time) (model.VolumeTransfer, error)
-	renewFn            func(context.Context, string, string, string, int64, time.Time) (model.VolumeTransfer, error)
-	confirmFn          func(context.Context, string, string, int64) (model.VolumeTransfer, error)
-	readyFn            func(context.Context, string, string, int64) (model.VolumeTransfer, error)
-	failStaleFn        func(context.Context, string, string, time.Time, string, string) (model.VolumeTransfer, error)
-	cleanupFn          func(context.Context, string, string) (model.VolumeTransfer, error)
-	listExpiredFn      func(context.Context, time.Time, int) ([]model.VolumeTransfer, error)
-	expireFn           func(context.Context, string, string, time.Time) (model.VolumeTransfer, error)
-	listMountsFn       func(context.Context, string, string) ([]model.DeploymentVolumeMount, error)
-	setLifecycleFn     func(context.Context, string, string, []string, string, string, string) (model.ProjectVolume, error)
-	completeDeletionFn func(context.Context, string, string) (model.ProjectVolume, error)
+	getVolumeFn          func(context.Context, string, string) (model.ProjectVolume, error)
+	getFn                func(context.Context, string, string) (model.ProjectVolume, error)
+	getTransferFn        func(context.Context, string, string) (model.VolumeTransfer, error)
+	getMaintenanceFn     func(context.Context, string) (model.VolumeTransfer, error)
+	claimFn              func(context.Context, string, string, string, string, time.Time) (model.VolumeTransfer, error)
+	renewFn              func(context.Context, string, string, string, int64, time.Time) (model.VolumeTransfer, error)
+	confirmFn            func(context.Context, string, string, int64) (model.VolumeTransfer, error)
+	readyFn              func(context.Context, string, string, int64) (model.VolumeTransfer, error)
+	failStaleFn          func(context.Context, string, string, time.Time, string, string) (model.VolumeTransfer, error)
+	cleanupFn            func(context.Context, string, string) (model.VolumeTransfer, error)
+	listExpiredFn        func(context.Context, time.Time, int) ([]model.VolumeTransfer, error)
+	expireFn             func(context.Context, string, string, time.Time) (model.VolumeTransfer, error)
+	listMountsFn         func(context.Context, string, string) ([]model.DeploymentVolumeMount, error)
+	setLifecycleFn       func(context.Context, string, string, []string, string, string, string) (model.ProjectVolume, error)
+	completeDeletionFn   func(context.Context, string, string) (model.ProjectVolume, error)
+	listStaleVolumesFn   func(context.Context, volume.MaintenanceScanOptions) ([]model.ProjectVolume, error)
+	listStaleTransfersFn func(context.Context, volume.MaintenanceScanOptions) ([]model.VolumeTransfer, error)
 }
 
 func (s *volumeWorkerServiceStub) GetProjectVolume(ctx context.Context, projectID, volumeID string) (model.ProjectVolume, error) {
@@ -77,6 +79,36 @@ func (s *volumeWorkerServiceStub) ListExpiredVolumeTransfers(ctx context.Context
 }
 func (s *volumeWorkerServiceStub) ExpireVolumeTransfer(ctx context.Context, projectID, transferID string, now time.Time) (model.VolumeTransfer, error) {
 	return s.expireFn(ctx, projectID, transferID, now)
+}
+func (s *volumeWorkerServiceStub) ListStaleProjectVolumeOperations(ctx context.Context, options volume.MaintenanceScanOptions) ([]model.ProjectVolume, error) {
+	return s.listStaleVolumesFn(ctx, options)
+}
+func (s *volumeWorkerServiceStub) ListStaleVolumeTransferOperations(ctx context.Context, options volume.MaintenanceScanOptions) ([]model.VolumeTransfer, error) {
+	return s.listStaleTransfersFn(ctx, options)
+}
+
+type volumeTaskEnqueuerStub struct {
+	provision []tasks.VolumeProvisionPayload
+	imports   []tasks.VolumeTransferPayload
+	exports   []tasks.VolumeTransferPayload
+	deletes   []tasks.VolumeDeletePayload
+}
+
+func (s *volumeTaskEnqueuerStub) EnqueueVolumeProvision(_ context.Context, payload tasks.VolumeProvisionPayload) (*asynq.TaskInfo, error) {
+	s.provision = append(s.provision, payload)
+	return nil, nil
+}
+func (s *volumeTaskEnqueuerStub) EnqueueVolumeImport(_ context.Context, payload tasks.VolumeTransferPayload) (*asynq.TaskInfo, error) {
+	s.imports = append(s.imports, payload)
+	return nil, nil
+}
+func (s *volumeTaskEnqueuerStub) EnqueueVolumeExport(_ context.Context, payload tasks.VolumeTransferPayload) (*asynq.TaskInfo, error) {
+	s.exports = append(s.exports, payload)
+	return nil, nil
+}
+func (s *volumeTaskEnqueuerStub) EnqueueVolumeDelete(_ context.Context, payload tasks.VolumeDeletePayload) (*asynq.TaskInfo, error) {
+	s.deletes = append(s.deletes, payload)
+	return nil, nil
 }
 
 type projectVolumeProviderStub struct {
@@ -388,7 +420,7 @@ func TestVolumeTransferCleanupExpiresReadySessionAndRemovesPod(t *testing.T) {
 	}
 	provider := &volumeTransferProviderStub{cleanupFn: func(context.Context, string, string) error { return nil }}
 	runner := &Runner{volumeService: service, volumeTransferJobFactory: func(context.Context, string) (kubeprovider.VolumeTransferJobProvider, error) { return provider, nil }}
-	task, _ := tasks.NewVolumeTransferCleanupTask(tasks.VolumeTransferCleanupPayload{ActorID: "system"})
+	task, _ := tasks.NewVolumeTransferCleanupTask(tasks.VolumeTransferCleanupPayload{})
 	if err := runner.handleVolumeTransferCleanup(context.Background(), task); err != nil || !cleaned {
 		t.Fatalf("cleanup error=%v cleaned=%t", err, cleaned)
 	}
@@ -416,7 +448,7 @@ func TestTargetedCleanupImmediatelyRemovesSucceededExportRuntime(t *testing.T) {
 	runner := &Runner{volumeService: service, volumeTransferJobFactory: func(context.Context, string) (kubeprovider.VolumeTransferJobProvider, error) {
 		return provider, nil
 	}}
-	task, _ := tasks.NewVolumeTransferCleanupTask(tasks.VolumeTransferCleanupPayload{TransferID: transfer.ID, ActorID: "system"})
+	task, _ := tasks.NewVolumeTransferCleanupTask(tasks.VolumeTransferCleanupPayload{TransferID: transfer.ID})
 	if err := runner.handleVolumeTransferCleanup(context.Background(), task); err != nil {
 		t.Fatal(err)
 	}
@@ -453,7 +485,7 @@ func TestTargetedCleanupImmediatelyRemovesFailedImportClaim(t *testing.T) {
 			return claimProvider, nil
 		},
 	}
-	task, _ := tasks.NewVolumeTransferCleanupTask(tasks.VolumeTransferCleanupPayload{TransferID: transfer.ID, ActorID: "system"})
+	task, _ := tasks.NewVolumeTransferCleanupTask(tasks.VolumeTransferCleanupPayload{TransferID: transfer.ID})
 	if err := runner.handleVolumeTransferCleanup(context.Background(), task); err != nil {
 		t.Fatal(err)
 	}
@@ -462,11 +494,54 @@ func TestTargetedCleanupImmediatelyRemovesFailedImportClaim(t *testing.T) {
 	}
 }
 
+func TestVolumeReconcileUsesQueueBudgetWindowForCrashRecovery(t *testing.T) {
+	startedAt := time.Now().UTC()
+	var transferCutoffs []time.Time
+	service := &volumeWorkerServiceStub{
+		listStaleVolumesFn: func(_ context.Context, options volume.MaintenanceScanOptions) ([]model.ProjectVolume, error) {
+			want := startedAt.Add(-volumeOperationRecoveryAfter)
+			if options.Cutoff.Before(want.Add(-time.Second)) || options.Cutoff.After(want.Add(time.Second)) {
+				t.Fatalf("project recovery cutoff = %v, want around %v", options.Cutoff, want)
+			}
+			return []model.ProjectVolume{{
+				ID: "pvol_recover", ProjectID: "prj_1", LifecycleState: model.ProjectVolumeLifecycleProvisioning, PendingOperation: volume.OperationProvision,
+			}}, nil
+		},
+		listStaleTransfersFn: func(_ context.Context, options volume.MaintenanceScanOptions) ([]model.VolumeTransfer, error) {
+			transferCutoffs = append(transferCutoffs, options.Cutoff)
+			if len(transferCutoffs) == 1 {
+				return []model.VolumeTransfer{{
+					ID: "vtx_recent_preparing", ProjectID: "prj_1", ProjectVolumeID: "pvol_1", Direction: model.VolumeTransferDirectionImport, State: model.VolumeTransferStatePreparing,
+				}}, nil
+			}
+			return []model.VolumeTransfer{
+				{ID: "vtx_recover", ProjectID: "prj_1", ProjectVolumeID: "pvol_1", Direction: model.VolumeTransferDirectionImport, State: model.VolumeTransferStatePreparing},
+				{ID: "vtx_ready", ProjectID: "prj_1", ProjectVolumeID: "pvol_1", Direction: model.VolumeTransferDirectionImport, State: model.VolumeTransferStateReady},
+				{ID: "vtx_streaming", ProjectID: "prj_1", ProjectVolumeID: "pvol_1", Direction: model.VolumeTransferDirectionExport, State: model.VolumeTransferStateStreaming},
+			}, nil
+		},
+	}
+	enqueuer := &volumeTaskEnqueuerStub{}
+	runner := &Runner{volumeService: service, volumeTaskEnqueuer: enqueuer}
+	if err := runner.handleVolumeReconcile(t.Context(), asynq.NewTask(tasks.TypeVolumeReconcile, []byte(`{"actorId":"legacy"}`))); err != nil {
+		t.Fatalf("handleVolumeReconcile() error = %v", err)
+	}
+	if len(transferCutoffs) != 2 {
+		t.Fatalf("transfer scans = %d, want heartbeat and recovery scans", len(transferCutoffs))
+	}
+	if delta := transferCutoffs[0].Sub(transferCutoffs[1]); delta < volumeOperationRecoveryAfter-volumeTransferHeartbeatStaleAfter-time.Second || delta > volumeOperationRecoveryAfter-volumeTransferHeartbeatStaleAfter+time.Second {
+		t.Fatalf("transfer cutoff separation = %v", delta)
+	}
+	if len(enqueuer.provision) != 1 || len(enqueuer.imports) != 1 || enqueuer.imports[0].TransferID != "vtx_recover" || len(enqueuer.exports) != 0 {
+		t.Fatalf("recovered provision=%#v imports=%#v exports=%#v", enqueuer.provision, enqueuer.imports, enqueuer.exports)
+	}
+}
+
 func TestFailStaleStreamingImportCleansRuntimeAndPartialClaim(t *testing.T) {
 	projectVolume := transferProjectVolume(model.ProjectVolumeModeFilesystem)
 	transfer := transferFixture(model.VolumeTransferDirectionImport)
 	transfer.State = model.VolumeTransferStateStreaming
-	cutoff := time.Now().UTC().Add(-volumeReconcileStaleAfter)
+	cutoff := time.Now().UTC().Add(-volumeTransferHeartbeatStaleAfter)
 	streamCleaned := false
 	claimDeleted := false
 	marked := false

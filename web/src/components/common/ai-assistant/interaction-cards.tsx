@@ -51,7 +51,7 @@ import { AIInlineMarkdown, AIMarkdown } from './markdown'
 
 const compactActionClassName = 'h-auto min-h-7 max-w-full gap-1.5 whitespace-normal px-2.5 py-1 !text-[11px] leading-4 [&_svg]:size-3.5'
 
-function withStableKeys<T>(items: readonly T[], identity: (item: T) => string) {
+function withOccurrenceKeys<T>(items: readonly T[], identity: (item: T) => string) {
   const occurrences = new Map<string, number>()
   return items.map((item, ordinal) => {
     const base = identity(item)
@@ -106,19 +106,15 @@ function InteractionCardGroupView({ group, onAction }: { group: InteractionCardG
         {group.description && <AIMarkdown className="mt-0.5 text-[11px] leading-4 text-muted-foreground">{group.description}</AIMarkdown>}
       </header>
       <div className={cn('grid min-w-0', density === 'compact' ? 'gap-1.5' : 'gap-2', templateConfig.gridClassName)}>
-        {withStableKeys(group.cards, card => card.id).map(({ item: card, key: cardKey }) => (
-          <InteractionCardErrorBoundary key={cardKey} resetKey={`${group.generationId}:${cardKey}`} scope="card">
+        {group.cards.map(card => (
+          <InteractionCardErrorBoundary key={card.id} resetKey={`${group.generationId}:${card.id}`} scope="card">
             <InteractionCardView card={card} density={density} group={group} onAction={onAction} />
           </InteractionCardErrorBoundary>
         ))}
       </div>
       {group.groupActions && group.groupActions.length > 0 && (
         <div className="flex flex-wrap justify-end gap-1.5">
-          {withStableKeys(group.groupActions, action => action.id).map(({ item: action, key: actionKey }) => (
-            <InteractionCardErrorBoundary key={actionKey} resetKey={`${group.generationId}:group:${actionKey}`} scope="action">
-              <CardActionButton action={action} cardId="group" values={{}} onAction={onAction} />
-            </InteractionCardErrorBoundary>
-          ))}
+          {group.groupActions.map(action => <CardActionButton key={action.id} action={action} cardId="group" values={{}} onAction={onAction} />)}
         </div>
       )}
     </section>
@@ -160,7 +156,7 @@ function InteractionCardView({ card, density, group, onAction }: {
           {card.presentation.description && <AIMarkdown className="mt-1 text-[11px] leading-4 text-muted-foreground">{card.presentation.description}</AIMarkdown>}
           {card.presentation.badges && card.presentation.badges.length > 0 && (
             <div className="mt-1.5 flex flex-wrap gap-1">
-              {withStableKeys(card.presentation.badges, badge => `${badge.label}:${badge.tone}`).map(({ item: badge, key }) => (
+              {withOccurrenceKeys(card.presentation.badges, badge => `${badge.label}:${badge.tone}`).map(({ item: badge, key }) => (
                 <StatusBadge key={key} className="px-1.5 py-0 text-[9px]" tone={badge.tone === 'error' ? 'danger' : badge.tone}>
                   {badge.label}
                 </StatusBadge>
@@ -169,8 +165,8 @@ function InteractionCardView({ card, density, group, onAction }: {
           )}
           {card.sourceRefs && card.sourceRefs.length > 0 && (
             <div className="mt-1.5 flex min-w-0 flex-wrap gap-1" data-ai-card-sources>
-              {withStableKeys(card.sourceRefs.slice(0, 4), source => `${source.type}:${source.refId}`).map(({ item: source, key }) => (
-                <span key={key} className="inline-flex min-w-0 max-w-full items-center gap-1 rounded-full bg-surface-inset px-1.5 py-0.5 text-[9px] text-muted-foreground" title={source.label}>
+              {card.sourceRefs.slice(0, 4).map(source => (
+                <span key={`${source.type}:${source.refId}`} className="inline-flex min-w-0 max-w-full items-center gap-1 rounded-full bg-surface-inset px-1.5 py-0.5 text-[9px] text-muted-foreground" title={source.label}>
                   <SourceTrustIcon trust={source.trust} />
                   <span className="truncate">{source.label}</span>
                   <span className="sr-only">{t(`aiAssistant.cards.trust.${source.trust}`)}</span>
@@ -190,43 +186,27 @@ function InteractionCardView({ card, density, group, onAction }: {
           className={cn('grid min-w-0 border-t border-separator-subtle', density === 'compact' ? 'gap-2.5 p-2' : 'gap-3 p-2.5')}
           onSubmit={event => event.preventDefault()}
         >
-          {card.blocks && withStableKeys(card.blocks, block => block.id).map(({ item: block, key: blockKey }) => (
-            <InteractionCardErrorBoundary key={blockKey} resetKey={`${group.generationId}:${card.id}:block:${blockKey}`} scope="content">
-              <ContentBlock block={block} onAction={onAction} />
-            </InteractionCardErrorBoundary>
-          ))}
-          {card.form && withStableKeys(card.form.sections, section => section.id).map(({ item: section, key: sectionKey }) => (
-            <fieldset key={sectionKey} className="grid min-w-0 gap-2" data-ai-section-id={section.id}>
+          {card.blocks?.map(block => <ContentBlock key={block.id} block={block} onAction={onAction} />)}
+          {card.form?.sections.map(section => (
+            <fieldset key={section.id} className="grid min-w-0 gap-2" data-ai-section-id={section.id}>
               {section.title && <legend className="text-[11px] font-semibold"><AIInlineMarkdown>{section.title}</AIInlineMarkdown></legend>}
               {section.description && <AIMarkdown className="text-[10px] leading-4 text-muted-foreground">{section.description}</AIMarkdown>}
-              {withStableKeys(section.fields.filter(field => isFieldVisible(field, watchedValues)), field => field.id).map(({ item: field, key: fieldKey }) => (
-                <InteractionCardErrorBoundary key={fieldKey} resetKey={`${group.generationId}:${card.id}:section:${sectionKey}:field:${fieldKey}`} scope="field">
-                  <DynamicField control={form.control} field={field} error={form.formState.errors[field.id]?.message as string | undefined} />
-                </InteractionCardErrorBoundary>
+              {section.fields.filter(field => isFieldVisible(field, watchedValues)).map(field => (
+                <DynamicField key={field.id} control={form.control} field={field} error={form.formState.errors[field.id]?.message as string | undefined} />
               ))}
             </fieldset>
           ))}
           {(primaryAction || secondaryActions.length > 0) && (
             <div className="flex flex-wrap justify-end gap-1.5 pt-0.5">
-              {withStableKeys(secondaryActions, action => action.id).map(({ item: action, key: actionKey }) => (
-                <InteractionCardErrorBoundary key={actionKey} resetKey={`${group.generationId}:${card.id}:action:${actionKey}`} scope="action">
-                  <CardActionButton action={action} cardId={card.id} disabled={actionNeedsValidForm(action) && !form.formState.isValid} messageValues={messageValues} values={toolFormValues} onAction={onAction} />
-                </InteractionCardErrorBoundary>
-              ))}
-              {primaryAction && (
-                <InteractionCardErrorBoundary resetKey={`${group.generationId}:${card.id}:action:${primaryAction.id}`} scope="action">
-                  <CardActionButton action={primaryAction} cardId={card.id} disabled={actionNeedsValidForm(primaryAction) && !form.formState.isValid} messageValues={messageValues} values={toolFormValues} onAction={onAction} />
-                </InteractionCardErrorBoundary>
-              )}
+              {secondaryActions.map(action => <CardActionButton key={action.id} action={action} cardId={card.id} disabled={actionNeedsValidForm(action) && !form.formState.isValid} messageValues={messageValues} values={toolFormValues} onAction={onAction} />)}
+              {primaryAction && <CardActionButton action={primaryAction} cardId={card.id} disabled={actionNeedsValidForm(primaryAction) && !form.formState.isValid} messageValues={messageValues} values={toolFormValues} onAction={onAction} />}
             </div>
           )}
         </form>
       )}
       {!expanded && primaryAction && !card.form && (
         <div className="flex justify-end border-t border-separator-subtle px-2.5 py-2">
-          <InteractionCardErrorBoundary resetKey={`${group.generationId}:${card.id}:action:${primaryAction.id}`} scope="action">
-            <CardActionButton action={primaryAction} cardId={card.id} values={{}} onAction={onAction} />
-          </InteractionCardErrorBoundary>
+          <CardActionButton action={primaryAction} cardId={card.id} values={{}} onAction={onAction} />
         </div>
       )}
     </article>
@@ -243,7 +223,7 @@ function ContentBlock({ block, onAction }: { block: InteractionContentBlock, onA
     if (block.type === 'key_value') {
       return (
         <dl className="grid gap-1.5 text-[11px]">
-          {withStableKeys(block.items, item => `${item.label}:${item.value}`).map(({ item, key }) => (
+          {withOccurrenceKeys(block.items, item => `${item.label}:${item.value}`).map(({ item, key }) => (
             <div key={key} className="grid grid-cols-[minmax(4.5rem,35%)_minmax(0,1fr)] gap-2">
               <dt className="min-w-0 text-muted-foreground"><AIInlineMarkdown>{item.label}</AIInlineMarkdown></dt>
               <dd className={cn('min-w-0 break-words font-medium', item.format === 'code' && 'font-mono text-[10px]')}>
@@ -258,7 +238,7 @@ function ContentBlock({ block, onAction }: { block: InteractionContentBlock, onA
     if (block.type === 'metrics') {
       return (
         <div className="grid grid-cols-2 gap-1.5">
-          {withStableKeys(block.items, item => `${item.label}:${item.value}`).map(({ item, key }) => (
+          {withOccurrenceKeys(block.items, item => `${item.label}:${item.value}`).map(({ item, key }) => (
             <div
               key={key}
               className={cn(
@@ -288,8 +268,8 @@ function ContentBlock({ block, onAction }: { block: InteractionContentBlock, onA
     if (block.type === 'item_list') {
       return (
         <div className="divide-y divide-separator-subtle">
-          {withStableKeys(block.items, item => item.id).map(({ item, key }) => (
-            <div key={key} className="flex gap-2 py-1.5">
+          {block.items.map(item => (
+            <div key={item.id} className="flex gap-2 py-1.5">
               <Package className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
               <div className="min-w-0">
                 <AIInlineMarkdown className="block text-[11px] font-medium">{item.primary}</AIInlineMarkdown>
@@ -304,8 +284,8 @@ function ContentBlock({ block, onAction }: { block: InteractionContentBlock, onA
     if (block.type === 'status_list') {
       return (
         <div className="grid gap-1.5">
-          {withStableKeys(block.items, item => item.id).map(({ item, key }) => (
-            <div key={key} className="flex items-start gap-2 text-[11px]">
+          {block.items.map(item => (
+            <div key={item.id} className="flex items-start gap-2 text-[11px]">
               <StatusIcon status={item.status} />
               <div>
                 <AIInlineMarkdown className="block font-medium">{item.label}</AIInlineMarkdown>
@@ -320,8 +300,8 @@ function ContentBlock({ block, onAction }: { block: InteractionContentBlock, onA
       return (
         <div className="max-w-full overflow-x-auto rounded-control border border-separator-subtle">
           <table className="w-max min-w-full text-left text-[10px]">
-            <thead className="bg-surface-inset"><tr>{withStableKeys(block.columns, column => column.key).map(({ item: column, key }) => <th key={key} className="whitespace-nowrap px-2 py-1.5 font-medium"><AIInlineMarkdown>{column.label}</AIInlineMarkdown></th>)}</tr></thead>
-            <tbody>{withStableKeys(block.rows, row => row.id).map(({ item: row, key: rowKey }) => <tr key={rowKey} className="border-t border-separator-subtle">{withStableKeys(block.columns, column => column.key).map(({ item: column, key: columnKey }) => <td key={columnKey} className={cn('max-w-52 px-2 py-1.5 [overflow-wrap:anywhere]', column.format === 'code' && 'font-mono')}><AIInlineMarkdown>{row.cells[column.key] ?? '—'}</AIInlineMarkdown></td>)}</tr>)}</tbody>
+            <thead className="bg-surface-inset"><tr>{block.columns.map(column => <th key={column.key} className="whitespace-nowrap px-2 py-1.5 font-medium"><AIInlineMarkdown>{column.label}</AIInlineMarkdown></th>)}</tr></thead>
+            <tbody>{block.rows.map(row => <tr key={row.id} className="border-t border-separator-subtle">{block.columns.map(column => <td key={column.key} className={cn('max-w-52 px-2 py-1.5 [overflow-wrap:anywhere]', column.format === 'code' && 'font-mono')}><AIInlineMarkdown>{row.cells[column.key] ?? '—'}</AIInlineMarkdown></td>)}</tr>)}</tbody>
           </table>
         </div>
       )
@@ -333,8 +313,8 @@ function ContentBlock({ block, onAction }: { block: InteractionContentBlock, onA
     if (block.type === 'timeline') {
       return (
         <div className="grid gap-2 border-l border-separator-strong pl-2.5">
-          {withStableKeys(block.items, item => item.id).map(({ item, key }) => (
-            <div key={key} className="relative text-[11px] before:absolute before:-left-[13px] before:top-1 before:size-1.5 before:rounded-full before:bg-primary">
+          {block.items.map(item => (
+            <div key={item.id} className="relative text-[11px] before:absolute before:-left-[13px] before:top-1 before:size-1.5 before:rounded-full before:bg-primary">
               <p className="font-medium">{item.title}</p>
               {item.detail && <p className="text-[10px] text-muted-foreground">{item.detail}</p>}
               {item.timestamp && <time className="text-[9px] text-muted-foreground">{item.timestamp}</time>}
@@ -350,7 +330,7 @@ function ContentBlock({ block, onAction }: { block: InteractionContentBlock, onA
       const nodes = new Map(block.nodes.map(node => [node.id, node]))
       return (
         <div className="grid gap-1.5">
-          {withStableKeys(block.edges, edge => `${edge.source}:${edge.target}:${edge.label ?? ''}`).map(({ item: edge, key }) => (
+          {withOccurrenceKeys(block.edges, edge => `${edge.source}:${edge.target}:${edge.label ?? ''}`).map(({ item: edge, key }) => (
             <div key={key} className="flex min-w-0 items-center gap-1.5 rounded-control bg-surface-inset px-2 py-1.5 text-[10px]">
               <span className="truncate font-medium">{nodes.get(edge.source)?.label ?? edge.source}</span>
               <ChevronRight className="size-3 shrink-0 text-muted-foreground" />
@@ -358,7 +338,7 @@ function ContentBlock({ block, onAction }: { block: InteractionContentBlock, onA
               {edge.label && <span className="ml-auto shrink-0 text-[9px] text-muted-foreground">{edge.label}</span>}
             </div>
           ))}
-          {block.edges.length === 0 && withStableKeys(block.nodes, node => node.id).map(({ item: node, key }) => <div key={key} className="rounded-control bg-surface-inset px-2 py-1.5 text-[10px] font-medium">{node.label}</div>)}
+          {block.edges.length === 0 && block.nodes.map(node => <div key={node.id} className="rounded-control bg-surface-inset px-2 py-1.5 text-[10px] font-medium">{node.label}</div>)}
         </div>
       )
     }
@@ -367,7 +347,7 @@ function ContentBlock({ block, onAction }: { block: InteractionContentBlock, onA
     if (block.type === 'resource_links') {
       return (
         <div className="flex flex-wrap gap-1.5">
-          {withStableKeys(block.links.filter(link => link.routeName), link => `${link.label}:${link.routeName}`).map(({ item: link, key }) => (
+          {withOccurrenceKeys(block.links.filter(link => link.routeName), link => `${link.label}:${link.routeName}`).map(({ item: link, key }) => (
             <Button key={key} className={compactActionClassName} size="sm" variant="outline" onClick={() => void runInlineCardAction({ version: 1, type: 'navigate', label: link.label, payload: { routeName: link.routeName!, params: link.routeParams ?? {}, query: {} } }, onAction, t('aiAssistant.cards.actionFailed'))}>
               <ExternalLink />
               {link.label}
@@ -443,10 +423,10 @@ function DynamicField({ control, field, error }: { control: Control<FormValues>,
                   : field.type === 'multi_select'
                     ? (
                         <div aria-describedby={describedBy} aria-labelledby={labelId} aria-required={field.required} className="grid gap-1.5" role="group">
-                          {withStableKeys(field.options, option => option.value).map(({ item: option, key, ordinal }) => {
+                          {field.options.map((option, ordinal) => {
                             const optionId = `${controlId}-option-${ordinal}`
                             return (
-                              <div key={key} className="flex items-start gap-2 text-[10px]">
+                              <div key={option.value} className="flex items-start gap-2 text-[10px]">
                                 <Checkbox
                                   id={optionId}
                                   aria-invalid={Boolean(error)}
@@ -516,7 +496,7 @@ function SelectField({ controlId, describedBy, error, field, labelId, name, requ
     return (
       <NativeSelect id={controlId} aria-describedby={describedBy} aria-invalid={error} aria-required={required} name={name} value={value} onBlur={onBlur} onChange={event => onChange(event.target.value)}>
         <option value="">{field.placeholder ?? t('aiAssistant.cards.selectPlaceholder')}</option>
-        {withStableKeys(field.options, option => option.value).map(({ item: option, key }) => <option key={key} disabled={option.disabled} value={option.value}>{option.label}</option>)}
+        {field.options.map(option => <option key={option.value} disabled={option.disabled} value={option.value}>{option.label}</option>)}
       </NativeSelect>
     )
   }
@@ -533,7 +513,7 @@ function SelectField({ controlId, describedBy, error, field, labelId, name, requ
       onBlur={onBlur}
       onValueChange={onChange}
     >
-      {withStableKeys(field.options, option => option.value).map(({ item: option, key, ordinal }) => {
+      {field.options.map((option, ordinal) => {
         const optionId = `${controlId}-option-${ordinal}`
         const content = (
           <span className="min-w-0">
@@ -544,7 +524,7 @@ function SelectField({ controlId, describedBy, error, field, labelId, name, requ
         if (segmented) {
           return (
             <RadioGroupItem
-              key={key}
+              key={option.value}
               className="flex h-auto min-h-8 w-auto min-w-0 max-w-full aspect-auto items-start gap-2 rounded-control! border-separator-subtle px-2 py-1.5 text-left text-[10px] shadow-none focus-visible:ring-2! focus-visible:ring-primary/35! data-[state=checked]:border-primary-border data-[state=checked]:bg-primary-subtle data-[state=checked]:text-primary-text [&_[data-slot=radio-group-indicator]]:hidden"
               disabled={option.disabled}
               id={optionId}
@@ -555,7 +535,7 @@ function SelectField({ controlId, describedBy, error, field, labelId, name, requ
           )
         }
         return (
-          <div key={key} className={cn('flex min-w-0 items-start gap-2 rounded-control px-1 py-0.5 text-[10px]', option.disabled && 'opacity-50')}>
+          <div key={option.value} className={cn('flex min-w-0 items-start gap-2 rounded-control px-1 py-0.5 text-[10px]', option.disabled && 'opacity-50')}>
             <RadioGroupItem className="mt-0.5" disabled={option.disabled} id={optionId} value={option.value} />
             <Label className={cn('block min-w-0 text-[10px] leading-4', option.disabled ? 'cursor-not-allowed' : 'cursor-pointer')} htmlFor={optionId}>{content}</Label>
           </div>

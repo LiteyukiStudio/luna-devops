@@ -20,3 +20,22 @@ export const aiOptionIconNames = [
   'terminal',
   'wrench',
 ]
+
+export const aiInternalRouteNames = [
+  'dashboard',
+  'projects',
+  'project.workspace',
+  'application.detail',
+  'events',
+  'code-repositories',
+  'registries',
+  'clusters',
+  'app-templates',
+  'billing',
+  'settings.account',
+  'settings.auth-providers',
+  'settings.notifications',
+  'settings.operations',
+  'settings.site',
+  'settings.users',
+]

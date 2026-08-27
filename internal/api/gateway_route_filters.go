@@ -96,6 +96,17 @@ func compactGatewayKeyValueMap(values map[string]string) map[string]string {
 	return compacted
 }
 
+func encodeGatewayHeaderMap(values map[string]string) string {
+	if len(values) == 0 {
+		return ""
+	}
+	encoded, err := json.Marshal(values)
+	if err != nil {
+		return ""
+	}
+	return string(encoded)
+}
+
 func looksLikeSecretValue(value string) bool {
 	lower := strings.ToLower(strings.TrimSpace(value))
 	return strings.Contains(lower, "secret=") ||

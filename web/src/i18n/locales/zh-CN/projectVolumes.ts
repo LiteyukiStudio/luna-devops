@@ -108,7 +108,6 @@ const projectVolumes = {
   archiveFormat: '归档格式',
   formatTarGz: 'tar.gz',
   formatRawZst: 'raw.zst',
-  hashing: '正在计算归档校验和 {{percent}}%',
   preparingTransfer: '正在准备目标数据卷和传输环境',
   uploading: '正在上传 {{percent}}%',
   verifyingImport: '上传完成，正在校验并写入数据卷',

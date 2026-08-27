@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/LiteyukiStudio/devops/internal/agentobservability"
-	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/config"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/telemetry"
@@ -64,10 +63,6 @@ func (h *Handlers) TestAgentObservabilitySource(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	if user.Role != authz.PlatformRoleAdmin {
-		writeErrorKey(ctx, http.StatusForbidden, user.Language, "config.admin.required")
-		return
-	}
 	var input observabilityTestInput
 	if !bindJSON(ctx, &input) {
 		return
@@ -96,14 +91,6 @@ func (h *Handlers) TestAgentObservabilitySource(ctx *gin.Context) {
 
 func (h *Handlers) GetAgentObservabilityOverview(ctx *gin.Context) {
 	ctx.Header("Cache-Control", "no-store")
-	user, ok := h.currentUser(ctx)
-	if !ok {
-		return
-	}
-	if user.Role != authz.PlatformRoleAdmin {
-		writeErrorKey(ctx, http.StatusForbidden, user.Language, "config.admin.required")
-		return
-	}
 	values := h.configs.get(knownConfigKeys())
 	if !configBool(values[agentObservabilityEnabledKey]) {
 		writeAgentObservabilityUnavailable(ctx, "ai.observability.disabled", "Agent observability is disabled")
@@ -161,7 +148,6 @@ func (h *Handlers) GetAgentObservabilityOverview(ctx *gin.Context) {
 	result.Summary.TurnSuccessRate = turnSummary.SuccessRate
 	result.Summary.ToolCalls = float64(toolSummary.Total)
 	result.Summary.ToolSuccessRate = toolSummary.SuccessRate
-	h.auditWithContext(user.ID, "ai.observability.overview.view", rangeText, true, "Agent observability overview viewed", ctx.Request.Context())
 	ctx.JSON(http.StatusOK, result)
 }
 
@@ -175,10 +161,6 @@ func (h *Handlers) GetAgentObservabilityTrace(ctx *gin.Context) {
 	ctx.Header("Cache-Control", "no-store")
 	user, ok := h.currentUser(ctx)
 	if !ok {
-		return
-	}
-	if user.Role != authz.PlatformRoleAdmin {
-		writeErrorKey(ctx, http.StatusForbidden, user.Language, "config.admin.required")
 		return
 	}
 	values := h.configs.get(knownConfigKeys())
@@ -252,11 +234,11 @@ func (h *Handlers) ListAgentObservabilityTurns(ctx *gin.Context) {
 }
 
 func (h *Handlers) ListAgentObservabilityTools(ctx *gin.Context) {
-	user, ok := h.requireAgentObservabilityAdmin(ctx)
+	_, ok := h.requireAgentObservabilityAdmin(ctx)
 	if !ok {
 		return
 	}
-	rangeText, duration := observabilityRange(ctx.Query("range"))
+	_, duration := observabilityRange(ctx.Query("range"))
 	pagination := paginationFromQuery(ctx)
 	result, err := agentobservability.NewConversationStore(h.dbFor(ctx)).ListToolSummaries(ctx.Request.Context(), agentobservability.ToolSummaryListOptions{
 		Start: time.Now().Add(-duration), Search: ctx.Query("search"), Page: pagination.Page, PageSize: pagination.PageSize,
@@ -266,7 +248,6 @@ func (h *Handlers) ListAgentObservabilityTools(ctx *gin.Context) {
 		writeErrorCode(ctx, http.StatusInternalServerError, "ai.observability.tools_failed", "Agent tool summaries are unavailable")
 		return
 	}
-	h.auditWithContext(user.ID, "ai.observability.tools.list", rangeText, true, "Agent observability tool summaries listed", ctx.Request.Context())
 	ctx.JSON(http.StatusOK, gin.H{
 		"items": result.Items, "page": result.Page, "pageSize": result.PageSize, "sortBy": result.SortBy,
 		"sortOrder": result.SortOrder, "total": result.Total, "totalPages": result.TotalPages,
@@ -324,10 +305,6 @@ func (h *Handlers) requireAgentObservabilityAdmin(ctx *gin.Context) (model.User,
 	ctx.Header("Cache-Control", "no-store")
 	user, ok := h.currentUser(ctx)
 	if !ok {
-		return model.User{}, false
-	}
-	if user.Role != authz.PlatformRoleAdmin {
-		writeErrorKey(ctx, http.StatusForbidden, user.Language, "config.admin.required")
 		return model.User{}, false
 	}
 	values := h.configs.get(knownConfigKeys())

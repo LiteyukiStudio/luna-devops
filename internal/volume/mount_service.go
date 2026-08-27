@@ -14,9 +14,6 @@ import (
 func (service *Service) ListDeploymentTargetMounts(ctx context.Context, projectID, targetID string) (result []model.DeploymentVolumeMount, err error) {
 	ctx, end := telemetry.StartOperation(ctx, "volume", "mount.list_target")
 	defer func() { end(err) }()
-	if err = service.validate(); err != nil {
-		return nil, err
-	}
 	projectID = strings.TrimSpace(projectID)
 	targetID = strings.TrimSpace(targetID)
 	if projectID == "" || targetID == "" {

@@ -26,7 +26,6 @@ const contentAttributeKinds: Record<string, AgentSpanContentKind> = {
   'gen_ai.output.messages': 'modelOutput',
   'gen_ai.tool.definitions': 'toolDefinitions',
   'luna.gen_ai.response.error_body': 'modelError',
-  'gen_ai.response.error_body': 'modelError', // Legacy traces emitted before semantic-convention alignment.
   'gen_ai.tool.call.arguments': 'toolArguments',
   'gen_ai.tool.call.result': 'toolResult',
 }
@@ -48,18 +47,12 @@ export function isAgentSpanContentAttribute(key: string) {
 }
 
 export function agentSpanMessages(value: unknown): AgentSpanMessage[] {
-  const messages = Array.isArray(value)
-    ? value
-    : isRecord(value) && Array.isArray(value.messages)
-      ? value.messages
-      : undefined
-  if (!messages)
+  if (!Array.isArray(value))
     return []
-  return messages.flatMap((message, index) => {
-    if (!isRecord(message) || typeof message.role !== 'string')
+  return value.flatMap((message, index) => {
+    if (!isRecord(message) || typeof message.role !== 'string' || !Array.isArray(message.parts))
       return []
-    const content = Array.isArray(message.parts) ? message.parts : message.content
-    return [{ id: `${message.role}-${index}`, role: message.role, content }]
+    return [{ id: `${message.role}-${index}`, role: message.role, content: message.parts }]
   })
 }
 
@@ -78,42 +71,28 @@ export function agentSpanMessageMarkdown(value: unknown): string {
     const responseJSON = formatSpanJSON(value.response)
     return `\`tool_call_response\`\n\n\`\`\`json\n${responseJSON}\n\`\`\``
   }
-  for (const key of ['text', 'content', 'value']) {
-    if (typeof value[key] === 'string')
-      return value[key]
-  }
+  if ((value.type === 'text' || value.type === 'reasoning') && typeof value.content === 'string')
+    return value.content
   return ''
 }
 
 export function agentModelOutput(value: unknown): AgentModelOutput {
-  if (typeof value === 'string')
-    return { text: value }
-  if (Array.isArray(value)) {
-    const parts = value.flatMap(message => isRecord(message) && Array.isArray(message.parts) ? message.parts : [])
-    const text = parts
-      .filter(part => isRecord(part) && part.type === 'text' && typeof part.content === 'string')
-      .map(part => (part as Record<string, unknown>).content)
-      .join('\n\n')
-    const reasoningSummary = parts
-      .filter(part => isRecord(part) && part.type === 'reasoning' && typeof part.content === 'string')
-      .map(part => (part as Record<string, unknown>).content)
-      .join('\n\n')
-    const toolCalls = parts.filter(part => isRecord(part) && part.type === 'tool_call')
-    return {
-      ...(text ? { text } : {}),
-      ...(reasoningSummary ? { reasoningSummary } : {}),
-      ...(toolCalls.length > 0 ? { toolCalls } : {}),
-    }
-  }
-  if (!isRecord(value))
+  if (!Array.isArray(value))
     return {}
-  const text = firstString(value, ['text', 'content', 'output', 'message'])
-  const reasoningSummary = firstString(value, ['reasoningSummary', 'reasoning', 'thinking'])
-  const toolCalls = Array.isArray(value.toolCalls) && value.toolCalls.length > 0 ? value.toolCalls : undefined
+  const parts = value.flatMap(message => isRecord(message) && Array.isArray(message.parts) ? message.parts : [])
+  const text = parts
+    .filter(part => isRecord(part) && part.type === 'text' && typeof part.content === 'string')
+    .map(part => (part as Record<string, unknown>).content)
+    .join('\n\n')
+  const reasoningSummary = parts
+    .filter(part => isRecord(part) && part.type === 'reasoning' && typeof part.content === 'string')
+    .map(part => (part as Record<string, unknown>).content)
+    .join('\n\n')
+  const toolCalls = parts.filter(part => isRecord(part) && part.type === 'tool_call')
   return {
     ...(text ? { text } : {}),
     ...(reasoningSummary ? { reasoningSummary } : {}),
-    ...(toolCalls ? { toolCalls } : {}),
+    ...(toolCalls.length > 0 ? { toolCalls } : {}),
   }
 }
 
@@ -124,10 +103,6 @@ export function formatSpanJSON(value: unknown) {
   catch {
     return String(value)
   }
-}
-
-function firstString(value: Record<string, unknown>, keys: string[]): string | undefined {
-  return keys.map(key => value[key]).find(item => typeof item === 'string') as string | undefined
 }
 
 function parseSerializedContent(value: string): unknown {

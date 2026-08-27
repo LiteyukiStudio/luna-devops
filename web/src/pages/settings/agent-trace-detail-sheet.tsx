@@ -242,7 +242,7 @@ function SpanIcon({ span }: { span: AgentObservabilityTraceSpan }) {
 }
 
 function isToolSpan(span: AgentObservabilityTraceSpan) {
-  return span.name !== 'agent.tools.available' && (span.name.includes('tool') || Boolean(span.attributes['gen_ai.tool.name']))
+  return span.name.includes('tool') || Boolean(span.attributes['gen_ai.tool.name'])
 }
 function spanBarClass(span: AgentObservabilityTraceSpan) {
   if (span.status === 'error')

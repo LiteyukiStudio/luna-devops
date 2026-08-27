@@ -10,7 +10,7 @@ import { buildVariableRecordToRows, buildVariableRowsToRecord, secretStateToRows
 import { publicRuntimeEnvironmentInputs, publicRuntimeEnvironmentRecord } from '@/lib/runtime-environment'
 import { defaultBuildCpuRequest, defaultBuildMemoryRequest, defaultBuildTimeoutSeconds } from './application-build-defaults'
 import { defaultTargetImageRef, deploymentTargetImageRef } from './application-config-utils'
-import { deploymentTargetDefaults, normalizeBoolean, normalizeDeploymentHookBindings, normalizeDeploymentTargetPayload, normalizeRuntimeConfigRefs, normalizeStringIds, parseRuntimeDataVolumes, runtimeConfigLiveSetIds, serializeRuntimeDataVolumes } from './application-deployments-panel-utils'
+import { deploymentTargetDefaults, normalizeBoolean, normalizeDeploymentHookBindings, normalizeDeploymentTargetPayload, normalizeRuntimeConfigRefs, normalizeStringIds, parseRuntimeDataVolumes, serializeRuntimeDataVolumes } from './application-deployments-panel-utils'
 import { normalizeWebConsoleOverride } from './web-console-policy'
 
 type BuildEnvironmentStatus = 'loading' | 'ready' | 'unavailable'
@@ -52,7 +52,7 @@ export function deploymentTargetFormValues({
     ?? registries.find(registry => registry.credentialSet)
     ?? registries.find(registry => registry.isDefault)
     ?? registries[0]
-  const runtimeConfigRefs = normalizeRuntimeConfigRefs(target?.runtimeConfigRefs, target?.runtimeConfigSetIds)
+  const runtimeConfigRefs = normalizeRuntimeConfigRefs(target?.runtimeConfigRefs)
 
   return {
     ...deploymentTargetDefaults,
@@ -74,11 +74,9 @@ export function deploymentTargetFormValues({
     targetImageRef: deploymentTargetImageRef(target ?? undefined) || defaultTargetImageRef(defaultRegistry, projectIdentifier, applicationIdentifier),
     buildHooksEnabled: target?.buildHooksEnabled ?? true,
     buildHookBindings: target?.buildHookBindings ?? [],
-    servicePort: target?.servicePort ?? 8080,
-    servicePorts: target?.servicePorts?.length ? target.servicePorts : [{ name: 'http', port: target?.servicePort ?? 8080 }],
+    servicePorts: target?.servicePorts?.length ? target.servicePorts : [{ name: 'http', port: 8080 }],
     buildVariableSetIds: normalizeStringIds(target?.buildVariableSetIds),
     runtimeConfigRefs,
-    runtimeConfigSetIds: runtimeConfigLiveSetIds(runtimeConfigRefs),
     environmentVariables: publicRuntimeEnvironmentInputs(publicRuntimeEnvironmentRecord(target?.environmentVariables)),
     secretFiles: '',
     dataVolumes: target?.dataVolumes ?? [],
@@ -189,18 +187,17 @@ export function useDeploymentTargetForm({
   const setRuntimeConfigRefs = useCallback((refs: DeploymentRuntimeConfigRef[]) => {
     const normalizedRefs = normalizeRuntimeConfigRefs(refs)
     form.setValue('runtimeConfigRefs', normalizedRefs, { shouldDirty: true, shouldValidate: true })
-    form.setValue('runtimeConfigSetIds', runtimeConfigLiveSetIds(normalizedRefs), { shouldDirty: true, shouldValidate: true })
   }, [form])
 
   const toggleRuntimeConfigSet = useCallback((setId: string, checked: boolean) => {
-    const current = normalizeRuntimeConfigRefs(form.getValues('runtimeConfigRefs'), form.getValues('runtimeConfigSetIds'))
+    const current = normalizeRuntimeConfigRefs(form.getValues('runtimeConfigRefs'))
     setRuntimeConfigRefs(checked
       ? upsertRuntimeConfigRef(current, { mode: 'live', setId })
       : current.filter(ref => ref.setId !== setId))
   }, [form, setRuntimeConfigRefs])
 
   const changeRuntimeConfigRefMode = useCallback((setId: string, mode: RuntimeConfigRefMode) => {
-    const current = normalizeRuntimeConfigRefs(form.getValues('runtimeConfigRefs'), form.getValues('runtimeConfigSetIds'))
+    const current = normalizeRuntimeConfigRefs(form.getValues('runtimeConfigRefs'))
     setRuntimeConfigRefs(upsertRuntimeConfigRef(current, { mode, setId }))
   }, [form, setRuntimeConfigRefs])
 
@@ -216,12 +213,11 @@ export function useDeploymentTargetForm({
 
   const servicePorts = values.servicePorts?.length
     ? values.servicePorts
-    : [{ appProtocol: '', name: 'http', port: values.servicePort || 8080 }]
+    : [{ appProtocol: '', name: 'http', port: 8080 }]
 
   const updateServicePorts = useCallback((rows: DeploymentTargetPayload['servicePorts']) => {
     const nextRows = rows.length > 0 ? rows : [{ name: 'http', port: 8080 }]
     form.setValue('servicePorts', nextRows, { shouldDirty: true, shouldValidate: true })
-    form.setValue('servicePort', nextRows[0]?.port || 8080, { shouldDirty: true, shouldValidate: true })
   }, [form])
 
   const buildSubmissionPayload = useCallback((nextValues: DeploymentTargetPayload) => {
@@ -254,7 +250,7 @@ export function useDeploymentTargetForm({
     runtimeFilesValid: configFilesValid && secretFilesValid,
     secretFilesValid,
     selectedHookBindings: normalizeDeploymentHookBindings(values.buildHookBindings),
-    selectedRuntimeConfigRefs: normalizeRuntimeConfigRefs(values.runtimeConfigRefs, values.runtimeConfigSetIds),
+    selectedRuntimeConfigRefs: normalizeRuntimeConfigRefs(values.runtimeConfigRefs),
     servicePorts,
     setConfigFilesValid,
     setHookBindings,

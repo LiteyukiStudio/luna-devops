@@ -281,8 +281,7 @@ func TestDevelopmentAdminFreeQuotaCredits(t *testing.T) {
 }
 
 func TestAuthProviderResponseHidesStoredClientSecret(t *testing.T) {
-	t.Setenv("SECRET_ENCRYPTION_KEY", "test-key")
-	provider := model.AuthProvider{ClientSecretRef: secret.Encrypt("super-secret")}
+	provider := model.AuthProvider{ClientSecretRef: "secret-id:sec_test"}
 
 	output := authProviderResponse(provider)
 
@@ -355,21 +354,14 @@ func TestAuthProviderFromInputPreservesExistingSecret(t *testing.T) {
 	}
 }
 
-func TestResolveSecretSupportsStoredAndEnvRefsOnly(t *testing.T) {
+func TestResolveSecretRejectsNonCanonicalReferences(t *testing.T) {
 	t.Setenv("SECRET_ENCRYPTION_KEY", "test-key")
 	t.Setenv("OIDC_TEST_SECRET", "env-secret")
 	h := &Handlers{}
 
-	if secret := h.resolveSecretContext(context.Background(), secret.Encrypt("stored-secret")); secret != "stored-secret" {
-		t.Fatalf("expected stored secret, got %q", secret)
-	}
-	if secret := h.resolveSecretContext(context.Background(), "literal:literal-secret"); secret != "" {
-		t.Fatalf("expected literal secret ref to be rejected, got %q", secret)
-	}
-	if secret := h.resolveSecretContext(context.Background(), "plain-secret"); secret != "" {
-		t.Fatalf("expected bare secret ref to be rejected, got %q", secret)
-	}
-	if secret := h.resolveSecretContext(context.Background(), "env:OIDC_TEST_SECRET"); secret != "env-secret" {
-		t.Fatalf("expected env secret, got %q", secret)
+	for _, ref := range []string{secret.Encrypt("inline-secret"), "literal:literal-secret", "plain-secret", "env:OIDC_TEST_SECRET"} {
+		if resolved := h.resolveSecretContext(context.Background(), ref); resolved != "" {
+			t.Fatalf("non-canonical ref %q resolved to %q", ref, resolved)
+		}
 	}
 }

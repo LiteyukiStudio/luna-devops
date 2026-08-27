@@ -26,7 +26,6 @@ type ImportRequest struct {
 	Format           string
 	Filename         string
 	ContentLength    int64
-	SHA256           string
 	ActorID          string
 	IdempotencyKey   string
 }

@@ -190,14 +190,18 @@ func (h *Handlers) gatewayRouteAdvancedConfig(ctx *gin.Context, projectID string
 		return gatewayRouteAdvancedConfig{}, false
 	}
 	platformAdmin := user.Role == authz.PlatformRoleAdmin
-	if _, err := parseGatewayHeaderMap(config.RequestHeaders, platformAdmin); err != nil {
+	requestHeaders, err := parseGatewayHeaderMap(config.RequestHeaders, platformAdmin)
+	if err != nil {
 		writeError(ctx, http.StatusBadRequest, fmt.Sprintf("请求头配置无效: %s", err.Error()))
 		return gatewayRouteAdvancedConfig{}, false
 	}
-	if _, err := parseGatewayHeaderMap(config.ResponseHeaders, platformAdmin); err != nil {
+	responseHeaders, err := parseGatewayHeaderMap(config.ResponseHeaders, platformAdmin)
+	if err != nil {
 		writeError(ctx, http.StatusBadRequest, fmt.Sprintf("响应头配置无效: %s", err.Error()))
 		return gatewayRouteAdvancedConfig{}, false
 	}
+	config.RequestHeaders = encodeGatewayHeaderMap(requestHeaders)
+	config.ResponseHeaders = encodeGatewayHeaderMap(responseHeaders)
 	if err := validateGatewayRouteFilterJSON("URL rewrite", config.URLRewrite); err != nil {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return gatewayRouteAdvancedConfig{}, false
@@ -259,7 +263,7 @@ func deploymentTargetServicePort(target model.DeploymentTarget) int {
 	if len(ports) > 0 {
 		return ports[0].Port
 	}
-	return fallbackInt(target.ServicePort, 8080)
+	return 0
 }
 
 func deploymentTargetHasServicePort(target model.DeploymentTarget, port int) bool {

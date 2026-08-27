@@ -46,16 +46,7 @@ available from PostgreSQL.
 
 ### Context management
 
-| Setting | Default | Description |
-| --- | --- | --- |
-| `AI_CONTEXT_COMPRESSION_TRIGGER_RATIO`<sup>2</sup> | `0.9` | Triggers compression from the previous same-model official `prompt_tokens` ratio; use `0.5`–`0.95`. |
-| `AI_CONTEXT_RECENT_TURN_COUNT` | `16` | Sets how many recent turns proactive compression preserves; use an integer from `1` to `32`. |
-| `AI_CONTEXT_MAX_HISTORY_PAYLOAD_K_BYTES` | `4096` | Normally bounds history payload per context compilation; use an integer from `64` to `16384` KiB. The newest complete Turn may temporarily exceed this total when required for byte-identical replay on the next Turn. |
-| `AI_CONTEXT_MAX_SUMMARY_PAYLOAD_K_BYTES` | `512` | Bounds history payload per summary request; use an integer from `16` to `4096` KiB. |
-| `AI_CONTEXT_MAX_CONTINUATION_PAYLOAD_K_BYTES` | `1024` | Bounds tool-continuation messages; use an integer from `16` to `4096` KiB. |
-| `AI_TOOLS_RESULT_PAYLOAD_K_BYTES` | `512` | Limits one tool result added to context; use an integer from `4` to `4096` KiB. |
-
-2. Note: A new conversation without official usage calls the Provider directly. Byte limits protect transport and memory only; they are not token counts.
+The Agent uses fixed context boundaries: one user turn accepts at most 128 KiB of text, and history older than 32 turns is compressed while the latest 16 turns remain intact. Tool results, summary requests, and continuation messages also use built-in limits. These limits protect request transport and process memory; they are not token counts and require no deployment tuning.
 
 The Agent injects only the workflow references needed by the current task and does not duplicate them in history. A pure continuation such as “continue” reselects references from the latest explicit goal. User and page data plus completed interactions are replayed with fixed boundaries. A summary update starts a new cache-prefix epoch, so one cold request is expected before later turns reuse that summary prefix.
 

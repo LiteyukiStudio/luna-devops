@@ -431,7 +431,10 @@ func assertFreshMigrationState(t *testing.T, db *gorm.DB) {
 		{table: "applications", column: "image_reference"},
 		{table: "applications", column: "git_account_id"},
 		{table: "applications", column: "service_port"},
+		{table: "applications", column: "data_retention_mode"},
 		{table: "deployment_targets", column: "build_config_id"},
+		{table: "deployment_targets", column: "service_port"},
+		{table: "deployment_targets", column: "runtime_config_set_ids"},
 	} {
 		if db.Migrator().HasColumn(obsolete.table, obsolete.column) {
 			t.Fatalf("fresh database contains obsolete %s.%s", obsolete.table, obsolete.column)

@@ -24,7 +24,7 @@ Deleting an application or deployment only unbinds the volume; it does not autom
 
 ## Import and export
 
-An import writes the archive directly into the target volume mounted by a temporary Transfer Pod. It does not pass through object storage or a complete local platform spool. An interrupted connection cannot resume or retry against the same destination. Delete the failed import volume and start a fresh import so old partial data cannot mix with the new archive. Recovery is complete only when both the Transfer and volume reach succeeded and ready terminal states.
+An import writes the archive directly into the target volume mounted by a temporary Transfer Pod. It does not pass through object storage, browser-side pre-hashing, or a complete local platform spool. The API and Transfer Pod independently calculate and compare the digest during that same stream. An interrupted connection cannot resume or retry against the same destination. Delete the failed import volume and start a fresh import so old partial data cannot mix with the new archive. Recovery is complete only when both the Transfer and volume reach succeeded and ready terminal states.
 
 Export modes are:
 

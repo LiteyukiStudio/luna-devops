@@ -142,8 +142,8 @@ describe("RunExecutor slim lifecycle", () => {
   })
 
   it("keeps one immutable provider and runtime snapshot across a refresh between model steps", async () => {
-    const oldConfig = remoteConfig("cfg-old", "https://old-provider.example/v1/", 512, 2)
-    const newConfig = remoteConfig("cfg-new", "https://new-provider.example/v1/", 1_024, 5)
+    const oldConfig = remoteConfig("cfg-old", "https://old-provider.example/v1/")
+    const newConfig = remoteConfig("cfg-new", "https://new-provider.example/v1/")
     let current = oldConfig
     const listeners = new Set<(config: RemoteProviderConfig) => void>()
     const remoteSnapshot = {
@@ -229,25 +229,25 @@ describe("RunExecutor slim lifecycle", () => {
     await executor.stop()
 
     expect(observed.filter(item => item.runId === firstRunId)).toEqual([
-      { runId: firstRunId, configVersion: "cfg-old", baseUrl: "https://old-provider.example/v1/", maxOutputTokens: 512 },
-      { runId: firstRunId, configVersion: "cfg-old", baseUrl: "https://old-provider.example/v1/", maxOutputTokens: 512 },
-      { runId: firstRunId, configVersion: "cfg-old", baseUrl: "https://old-provider.example/v1/", maxOutputTokens: 512 },
+      { runId: firstRunId, configVersion: "cfg-old", baseUrl: "https://old-provider.example/v1/", maxOutputTokens: defaultRuntimeSettings.assistantMaxOutputTokens },
+      { runId: firstRunId, configVersion: "cfg-old", baseUrl: "https://old-provider.example/v1/", maxOutputTokens: defaultRuntimeSettings.assistantMaxOutputTokens },
+      { runId: firstRunId, configVersion: "cfg-old", baseUrl: "https://old-provider.example/v1/", maxOutputTokens: defaultRuntimeSettings.assistantMaxOutputTokens },
     ])
     expect(observed.filter(item => item.runId === secondRunId)).toEqual([
-      { runId: secondRunId, configVersion: "cfg-new", baseUrl: "https://new-provider.example/v1/", maxOutputTokens: 1_024 },
-      { runId: secondRunId, configVersion: "cfg-new", baseUrl: "https://new-provider.example/v1/", maxOutputTokens: 1_024 },
+      { runId: secondRunId, configVersion: "cfg-new", baseUrl: "https://new-provider.example/v1/", maxOutputTokens: defaultRuntimeSettings.assistantMaxOutputTokens },
+      { runId: secondRunId, configVersion: "cfg-new", baseUrl: "https://new-provider.example/v1/", maxOutputTokens: defaultRuntimeSettings.assistantMaxOutputTokens },
     ])
     const firstCard = (await repository.getExecutionInput(firstRunId))?.toolInteractions
       .find(item => item.content.operationId === "create_interaction_cards")
     const secondCard = (await repository.getExecutionInput(secondRunId))?.toolInteractions
       .find(item => item.content.operationId === "create_interaction_cards")
     expect(firstCard?.content.result).toMatchObject({ maxAttempts: 2 })
-    expect(secondCard?.content.result).toMatchObject({ maxAttempts: 5 })
+    expect(secondCard?.content.result).toMatchObject({ maxAttempts: 2 })
   })
 
   it("restores the first-claim configuration after approval while new Runs use the refresh", async () => {
-    const oldConfig = remoteConfig("cfg-approval-old", "https://old-approval.example/v1/", 512, 2)
-    const newConfig = remoteConfig("cfg-approval-new", "https://new-approval.example/v1/", 1_024, 5)
+    const oldConfig = remoteConfig("cfg-approval-old", "https://old-approval.example/v1/")
+    const newConfig = remoteConfig("cfg-approval-new", "https://new-approval.example/v1/")
     let current = oldConfig
     const listeners = new Set<(config: RemoteProviderConfig) => void>()
     const remoteSnapshot = {
@@ -340,16 +340,16 @@ describe("RunExecutor slim lifecycle", () => {
     await executor.stop()
 
     expect(observed.filter(item => item.runId === approvalRunId)).toEqual([
-      { runId: approvalRunId, configVersion: "cfg-approval-old", maxOutputTokens: 512 },
-      { runId: approvalRunId, configVersion: "cfg-approval-old", maxOutputTokens: 512 },
+      { runId: approvalRunId, configVersion: "cfg-approval-old", maxOutputTokens: defaultRuntimeSettings.assistantMaxOutputTokens },
+      { runId: approvalRunId, configVersion: "cfg-approval-old", maxOutputTokens: defaultRuntimeSettings.assistantMaxOutputTokens },
     ])
     expect(observed.filter(item => item.runId === nextTurn.run.id)).toEqual([
-      { runId: nextTurn.run.id, configVersion: "cfg-approval-new", maxOutputTokens: 1_024 },
+      { runId: nextTurn.run.id, configVersion: "cfg-approval-new", maxOutputTokens: defaultRuntimeSettings.assistantMaxOutputTokens },
     ])
     expect(runLimit.mock.calls).toEqual([
-      [approvalRunId, 32],
-      [approvalRunId, 32],
-      [nextTurn.run.id, 64],
+      [approvalRunId, defaultRuntimeSettings.runMaxToolCalls],
+      [approvalRunId, defaultRuntimeSettings.runMaxToolCalls],
+      [nextTurn.run.id, defaultRuntimeSettings.runMaxToolCalls],
     ])
   })
 
@@ -881,8 +881,6 @@ describe("RunExecutor slim lifecycle", () => {
 function remoteConfig(
   version: string,
   baseUrl: string,
-  assistantMaxOutputTokens: number,
-  maxCardRepairAttempts: number,
 ): RemoteProviderConfig {
   const runtime: RemoteRuntimeSettings = {
     providerTimeoutMs: defaultRuntimeSettings.providerTimeoutMs,
@@ -890,14 +888,6 @@ function remoteConfig(
     runTimeoutMs: defaultRuntimeSettings.runTimeoutMs,
     agentConcurrentRuns: defaultRuntimeSettings.agentConcurrentRuns,
     userConcurrentRuns: defaultRuntimeSettings.userConcurrentRuns,
-    assistantMaxOutputTokens,
-    maxModelSteps: defaultRuntimeSettings.maxModelSteps,
-    runMaxToolCalls: maxCardRepairAttempts === 2 ? 32 : 64,
-    maxInputBytes: defaultRuntimeSettings.maxInputBytes,
-    maxCardRepairAttempts,
-    contextMaxUncompressedTurnCount: defaultRuntimeSettings.contextMaxUncompressedTurnCount,
-    contextMaxCompressionTurnsPerCompile: defaultRuntimeSettings.contextMaxCompressionTurnsPerCompile,
-    contextSummaryMaxOutputTokens: defaultRuntimeSettings.contextSummaryMaxOutputTokens,
   }
   return {
     version,

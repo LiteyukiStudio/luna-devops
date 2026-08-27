@@ -153,7 +153,7 @@ func (h *Handlers) UpdateGatewayRoute(ctx *gin.Context) {
 }
 
 func (h *Handlers) DeleteGatewayRoute(ctx *gin.Context) {
-	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin)
+	_, project, ok := h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin)
 	if !ok {
 		return
 	}
@@ -176,7 +176,6 @@ func (h *Handlers) DeleteGatewayRoute(ctx *gin.Context) {
 		ResourceType: "gateway_route",
 		ResourceID:   route.ID,
 		ProjectID:    route.ProjectID,
-		ActorID:      user.ID,
 	}) {
 		_ = markResourceDeleteFailed(h.dbFor(ctx), &model.GatewayRoute{}, route.ID, "资源清理任务投递失败，请稍后重试")
 		writeError(ctx, http.StatusServiceUnavailable, "资源清理任务投递失败，请稍后重试")

@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next'
 import { UsageRing } from '@/components/common/usage-ring'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { isAIInputWithinLimit } from './input-size'
 
 export interface AIAssistantComposerProps {
   activeRun: boolean
@@ -21,7 +22,7 @@ export interface AIAssistantComposerProps {
   contextUsage?: AIContextUsage
   draft: string
   inputRef: RefObject<HTMLTextAreaElement | null>
-  maxLength?: number
+  maxInputBytes?: number
   sending: boolean
   submitting: boolean
   surface?: 'page' | 'window'
@@ -94,7 +95,7 @@ export function AIAssistantComposer({
   contextUsage,
   draft,
   inputRef,
-  maxLength,
+  maxInputBytes,
   sending,
   submitting,
   surface = 'window',
@@ -108,6 +109,14 @@ export function AIAssistantComposer({
   const page = surface === 'page'
   const busy = sending || submitting
   const canSubmit = modelAvailable && (!activeRun || waitingInput)
+  const normalizedDraft = draft.trim()
+  const inputTooLarge = !isAIInputWithinLimit(normalizedDraft, maxInputBytes)
+  const inputLimitLabel = maxInputBytes === undefined
+    ? ''
+    : maxInputBytes % 1024 === 0
+      ? `${maxInputBytes / 1024} KiB`
+      : `${maxInputBytes} B`
+  const submitEnabled = Boolean(normalizedDraft) && !busy && canSubmit && !inputTooLarge
   const selectedModel = models.find(model => model.id === selectedModelId)
   const hasReportedUsage = contextUsage?.status === 'reported'
     && contextUsage.modelId === selectedModel?.id
@@ -134,23 +143,33 @@ export function AIAssistantComposer({
       >
         <textarea
           ref={inputRef}
+          aria-describedby={inputTooLarge ? 'ai-assistant-input-size-error' : undefined}
+          aria-invalid={inputTooLarge}
           aria-label={t('aiAssistant.inputLabel')}
           className={page
             ? 'min-h-11 max-h-28 w-full resize-none overflow-y-auto bg-transparent px-1 !text-base leading-6 outline-none placeholder:text-muted-foreground'
             : 'min-h-10 w-full resize-none bg-transparent px-1 !text-base leading-5 outline-none placeholder:text-muted-foreground sm:!text-[13px]'}
           disabled={busy}
-          maxLength={maxLength}
           placeholder={waitingInput ? t('aiAssistant.inputRequired') : activeRun ? t('aiAssistant.inputRunning') : t('aiAssistant.inputPlaceholder')}
           value={draft}
           onChange={event => onDraftChange(event.target.value)}
           onKeyDown={(event) => {
             const submitShortcut = page ? event.metaKey || event.ctrlKey : !event.shiftKey
-            if (event.key === 'Enter' && submitShortcut && !isConfirmingIME(event) && draft.trim() && canSubmit) {
+            if (event.key === 'Enter' && submitShortcut && !isConfirmingIME(event) && submitEnabled) {
               event.preventDefault()
               onSubmit()
             }
           }}
         />
+        {inputTooLarge && (
+          <p
+            id="ai-assistant-input-size-error"
+            className={page ? 'px-1 text-sm text-destructive' : 'px-1 text-[10px] text-destructive'}
+            role="alert"
+          >
+            {t('aiAssistant.inputTooLarge', { limit: inputLimitLabel })}
+          </p>
+        )}
         <div className="flex items-center justify-end gap-1.5">
           <Select
             disabled={modelSelectionDisabled || modelChanging || models.length === 0}
@@ -238,7 +257,7 @@ export function AIAssistantComposer({
                 <Button
                   aria-label={waitingInput ? t('aiAssistant.continue') : t('aiAssistant.send')}
                   className={page ? 'group size-11 shrink-0 rounded-full p-0 hover:bg-transparent' : 'size-7 shrink-0 rounded-full'}
-                  disabled={!draft.trim() || busy || !modelAvailable}
+                  disabled={!submitEnabled}
                   size="icon"
                   variant={page ? 'ghost' : 'default'}
                   onClick={onSubmit}

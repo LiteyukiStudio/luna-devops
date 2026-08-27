@@ -5,8 +5,8 @@ import (
 	"testing"
 )
 
-func TestParseLegacyKeyValue(t *testing.T) {
-	got, err := ParseLegacyKeyValue(" APP=one\nEMPTY=\nURL=a=b\n# ignored\n")
+func TestDecodeKeyValue(t *testing.T) {
+	got, err := DecodeKeyValue(`{"APP":"one","EMPTY":"","URL":"a=b"}`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -16,8 +16,8 @@ func TestParseLegacyKeyValue(t *testing.T) {
 	}
 }
 
-func TestParseLegacyJSONKeyValue(t *testing.T) {
-	got, err := ParseLegacyKeyValue(`{"B":"two","A":"one"}`)
+func TestDecodeJSONKeyValue(t *testing.T) {
+	got, err := DecodeKeyValue(`{"B":"two","A":"one"}`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -27,22 +27,11 @@ func TestParseLegacyJSONKeyValue(t *testing.T) {
 	}
 }
 
-func TestParseLegacyKeyValueRejectsDuplicateAndEmptyKey(t *testing.T) {
-	for _, value := range []string{"A=one\n A=two", "=value"} {
-		if _, err := ParseLegacyKeyValue(value); err == nil {
-			t.Fatalf("ParseLegacyKeyValue(%q) succeeded", value)
+func TestDecodeKeyValueRejectsLegacyAndInvalidFormats(t *testing.T) {
+	for _, value := range []string{"A=one", `{"":"value"}`, `{"PORT":8080}`, `null`, `[]`} {
+		if _, err := DecodeKeyValue(value); err == nil {
+			t.Fatalf("DecodeKeyValue(%q) succeeded", value)
 		}
-	}
-}
-
-func TestParseLegacyJSONKeyValueNormalizesScalars(t *testing.T) {
-	got, err := ParseLegacyKeyValue(`{"PORT":8080,"ENABLED":true,"EMPTY":null}`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := map[string]string{"PORT": "8080", "ENABLED": "true", "EMPTY": ""}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("parsed = %#v, want %#v", got, want)
 	}
 }
 

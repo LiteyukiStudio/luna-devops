@@ -103,14 +103,14 @@ func (adapter *volumeTransferContentAdapter) CreateImport(ctx context.Context, u
 		ProjectID: project.ID, Namespace: runtimeProjectNamespace(project), DisplayName: input.DisplayName,
 		ClusterID: input.ClusterID, CapacityRequest: capacity, CapacityBytes: capacityBytes,
 		StorageClassName: input.StorageClassName, AccessMode: input.AccessMode, VolumeMode: input.VolumeMode,
-		Format: input.Format, Filename: input.Filename, ContentLength: input.ContentLength, SHA256: input.SHA256,
+		Format: input.Format, Filename: input.Filename, ContentLength: input.ContentLength,
 		ActorID: user.ID, IdempotencyKey: idempotencyKey,
 	})
 	return result.Volume, result.Transfer, err
 }
 
-func (adapter *volumeTransferContentAdapter) StreamImport(ctx context.Context, projectID, transferID string, user model.User, body io.Reader, length int64, checksum string) (model.VolumeTransfer, error) {
-	return adapter.service.StreamImport(ctx, projectID, transferID, adapter.actor(ctx, user, projectID), body, length, checksum)
+func (adapter *volumeTransferContentAdapter) StreamImport(ctx context.Context, projectID, transferID string, user model.User, body io.Reader, length int64) (model.VolumeTransfer, error) {
+	return adapter.service.StreamImport(ctx, projectID, transferID, adapter.actor(ctx, user, projectID), body, length)
 }
 
 func (adapter *volumeTransferContentAdapter) CreateExport(ctx context.Context, user model.User, project model.Project, volumeID string, input volumeExportCreateInput, idempotencyKey string) (model.VolumeTransfer, error) {

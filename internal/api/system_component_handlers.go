@@ -234,7 +234,6 @@ func (h *Handlers) systemComponentApplicationPlan(ctx *gin.Context, user model.U
 		Replicas:       1,
 		CPURequest:     firstNonEmpty(template.DefaultCPU, "100m"),
 		MemoryRequest:  firstNonEmpty(template.DefaultMemory, "128Mi"),
-		ServicePort:    fallbackInt(template.ServicePort, 9090),
 		ServicePorts:   model.EncodeDeploymentServicePorts([]model.DeploymentServicePort{{Name: "metrics", Port: fallbackInt(template.ServicePort, 9090)}}, fallbackInt(template.ServicePort, 9090)),
 		SourceType:     "image",
 		// Users may override the probe image; always pull so mutable tags such as

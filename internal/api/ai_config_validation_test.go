@@ -24,22 +24,12 @@ func TestAIConfigDefinitionsCoverSpecificationCatalog(t *testing.T) {
 		"ai.observability.loki_url", "ai.observability.loki_tenant_id", "ai.observability.loki_token",
 		"ai.observability.tempo_url", "ai.observability.tempo_tenant_id", "ai.observability.tempo_token",
 		"ai.access.mode",
-		"ai.quota.user_concurrent_runs", "ai.quota.user_daily_tokens", "ai.quota.project_concurrent_runs",
-		"ai.quota.run_max_tool_calls", "ai.quota.platform_daily_cost_soft", "ai.quota.platform_daily_cost_hard",
-		"ai.retention.conversation_days", "ai.retention.run_event_days", "ai.retention.checkpoint_days",
-		"ai.context.max_uncompressed_turn_count", "ai.context.max_compression_turns_per_compile",
-		"ai.context.summary_max_output_tokens",
-		"ai.model.max_output_tokens",
-		"ai.run.max_model_steps", "ai.run.max_input_k_bytes",
-		"ai.tools.max_card_repair_attempts",
+		"ai.quota.user_concurrent_runs",
 	}
 	for _, key := range expected {
 		if definition := configDefinitionByKey(key); definition == nil {
 			t.Errorf("missing AI config definition %s", key)
 		}
-	}
-	if got := aiConfigDefaults()["ai.quota.run_max_tool_calls"]; got != "256" {
-		t.Fatalf("Run tool-call guard default = %q, want 256", got)
 	}
 	if got := aiConfigDefaults()["ai.provider.channel_affinity_enabled"]; got != "true" {
 		t.Fatalf("channel affinity default = %q, want true", got)
@@ -56,9 +46,7 @@ func TestAINumericConfigDefinitionsHaveStrictWriteBounds(t *testing.T) {
 		if !strings.HasPrefix(definition.Key, "ai.") || definition.Type != "number" {
 			continue
 		}
-		_, integerBounded := aiIntegerConfigBounds[definition.Key]
-		costBounded := definition.Key == "ai.quota.platform_daily_cost_soft" || definition.Key == "ai.quota.platform_daily_cost_hard"
-		if !integerBounded && !costBounded {
+		if _, bounded := aiIntegerConfigBounds[definition.Key]; !bounded {
 			t.Errorf("AI numeric config %s has no strict write contract", definition.Key)
 		}
 	}
@@ -139,45 +127,16 @@ func TestAIConfigAcceptsSafePublicProviderWithoutManualDomainAllowlist(t *testin
 
 func TestAIConfigRejectsUnsafeRuntimeBounds(t *testing.T) {
 	for key, value := range map[string]string{
-		"ai.runtime.provider_timeout_seconds":          "901",
-		"ai.runtime.max_request_retries":               "11",
-		"ai.runtime.run_timeout_seconds":               "10",
-		"ai.runtime.agent_concurrent_runs":             "0",
-		"ai.quota.run_max_tool_calls":                  "31",
-		"ai.context.max_uncompressed_turn_count":       "3",
-		"ai.context.max_compression_turns_per_compile": "7",
-		"ai.context.summary_max_output_tokens":         "199",
-		"ai.model.max_output_tokens":                   "131073",
-		"ai.run.max_model_steps":                       "1025",
-		"ai.run.max_input_k_bytes":                     "7",
-		"ai.tools.max_card_repair_attempts":            "11",
+		"ai.runtime.provider_timeout_seconds": "901",
+		"ai.runtime.max_request_retries":      "11",
+		"ai.runtime.run_timeout_seconds":      "10",
+		"ai.runtime.agent_concurrent_runs":    "0",
+		"ai.quota.user_concurrent_runs":       "0",
 	} {
 		h := &Handlers{configs: &configCache{values: aiConfigDefaults()}}
 		if err := h.validateAIConfigValues(map[string]string{key: value}); err == nil {
 			t.Errorf("unsafe runtime setting accepted: %s=%s", key, value)
 		}
-	}
-}
-
-func TestAIConfigRejectsNonFiniteNumbers(t *testing.T) {
-	h := &Handlers{configs: &configCache{values: aiConfigDefaults()}}
-	for key, value := range map[string]string{
-		"ai.quota.platform_daily_cost_soft": "NaN",
-		"ai.quota.platform_daily_cost_hard": "+Inf",
-	} {
-		if err := h.validateAIConfigValues(map[string]string{key: value}); err == nil {
-			t.Errorf("non-finite value accepted for %s", key)
-		}
-	}
-}
-
-func TestAIConfigAcceptsHighRunToolCallGuard(t *testing.T) {
-	h := &Handlers{configs: &configCache{values: aiConfigDefaults()}}
-	if err := h.validateAIConfigValues(map[string]string{"ai.quota.run_max_tool_calls": "2048"}); err != nil {
-		t.Fatalf("high Run tool-call guard rejected: %v", err)
-	}
-	if err := h.validateAIConfigValues(map[string]string{"ai.quota.run_max_tool_calls": "2049"}); err == nil {
-		t.Fatal("Run tool-call guard above hard limit was accepted")
 	}
 }
 

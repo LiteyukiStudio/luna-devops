@@ -149,7 +149,7 @@ func TestDeploymentBundleConfigurationOmitsDestinationIdentifiersAndSecrets(t *t
 		ID: "dplt_source", ProjectID: "prj_source", ApplicationID: "app_source", EnvironmentID: "env_source",
 		Name: "Production", Stage: "prod", KubernetesName: "source-prod", ClusterID: "cluster_source",
 		SourceType: "repository", RepositoryBindingID: "binding_source", TargetRegistryID: "registry_source",
-		BuildVariableSetIDs: `["vars_source"]`, RuntimeConfigSetIDs: `["runtime_source"]`,
+		BuildVariableSetIDs: `["vars_source"]`, RuntimeConfigRefs: `[{"setId":"runtime_source","mode":"live"}]`,
 		SecretRefs: `{"TOKEN":"secret-id:sec_runtime"}`, SecretFiles: `{"/run/key":"secret-id:sec_file"}`,
 		Enabled: true,
 	}
