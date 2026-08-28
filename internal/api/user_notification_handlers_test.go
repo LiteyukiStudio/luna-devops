@@ -212,8 +212,8 @@ func TestPersonalNotificationChannelPresetControlsStoredAdapterAndConfig(t *test
 	deleteRecorder, deleteCtx := newUserNotificationHandlerContext(http.MethodDelete, "/api/v1/me/notification-channels/"+channel.ID, "usr_current", "")
 	deleteCtx.Params = gin.Params{{Key: "channelId", Value: channel.ID}}
 	handlers.DeleteMyNotificationChannel(deleteCtx)
-	if deleteRecorder.Code != http.StatusNoContent {
-		t.Fatalf("delete status = %d, body = %s", deleteRecorder.Code, deleteRecorder.Body.String())
+	if deleteCtx.Writer.Status() != http.StatusNoContent {
+		t.Fatalf("delete status = %d, body = %s", deleteCtx.Writer.Status(), deleteRecorder.Body.String())
 	}
 	if err := db.Model(&model.SecretValue{}).Count(&secretCount).Error; err != nil || secretCount != 0 {
 		t.Fatalf("secret count after delete = %d, err = %v", secretCount, err)
