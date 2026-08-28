@@ -14,17 +14,26 @@ import (
 )
 
 func (h *Handlers) ListRegistryCredentials(ctx *gin.Context) {
-	user, registry, ok := h.registryForCurrentUser(ctx)
+	user, ok := h.currentUser(ctx)
+	if !ok {
+		return
+	}
+	visibility, ok := resolveListVisibility(ctx, user)
+	if !ok {
+		return
+	}
+	registry, ok := h.findAccessibleRegistry(ctx, user, ctx.Param("registryId"))
 	if !ok {
 		return
 	}
 	query := h.dbFor(ctx).Model(&model.RegistryCredential{}).Where("registry_id = ?", registry.ID)
-	query, ok = h.applyScopedResourceVisibility(
+	query, ok = h.applyScopedResourceListVisibility(
 		ctx,
 		query,
 		scopedResourceRegistryCredential,
 		user,
 		strings.TrimSpace(ctx.Query("projectId")),
+		visibility,
 	)
 	if !ok {
 		return
@@ -37,11 +46,21 @@ func (h *Handlers) ListAllRegistryCredentials(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	query := h.applyScopedResourceVisibilityForUser(
+	visibility, ok := resolveListVisibility(ctx, user)
+	if !ok {
+		return
+	}
+	query, ok := h.applyScopedResourceListVisibility(
+		ctx,
 		h.dbFor(ctx).Model(&model.RegistryCredential{}),
 		scopedResourceRegistryCredential,
 		user,
-		ctx.Request.Context())
+		"",
+		visibility,
+	)
+	if !ok {
+		return
+	}
 	h.listRegistryCredentials(ctx, query)
 }
 

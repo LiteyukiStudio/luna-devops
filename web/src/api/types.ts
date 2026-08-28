@@ -518,12 +518,16 @@ export interface NotificationTemplate {
   updatedAt: string
 }
 
-export interface NotificationRuleFilter {
+export interface NotificationRuleAdvancedFilter {
   severities?: string[]
-  projectIds?: string[]
   applicationIds?: string[]
   deploymentTargetIds?: string[]
 }
+
+export type NotificationRuleFilter = NotificationRuleAdvancedFilter & (
+  | { scope: 'projects', projectIds: string[] }
+  | { scope: 'all', projectIds?: never }
+)
 
 export interface NotificationRule {
   id: string
@@ -582,6 +586,7 @@ export interface MailSettings {
   passwordSet: boolean
   fromAddress: string
   fromName: string
+  personalEmailCooldownSeconds: number
 }
 
 export interface MyNotificationPreferences {
@@ -654,6 +659,7 @@ export interface PlatformEvent {
   resourceType: string
   resourceId: string
   actorId: string
+  resourceOwnerUserId: string
   summaryKey: string
   message: string
   correlationId: string
@@ -739,7 +745,7 @@ export interface DashboardOverview {
 }
 
 export interface PlatformEventListParams extends PaginationParams {
-  scope?: 'mine' | 'all'
+  visibility?: ResultVisibility
   projectId?: string
   projectIds?: string[]
   applicationId?: string
@@ -1627,6 +1633,7 @@ export interface RuntimeClusterResourceListParams extends PaginationParams {
   resourceCategory: RuntimeClusterResourceCategory
   namespace?: string
   projectId?: string
+  visibility?: ResultVisibility
   applicationId?: string
   environmentId?: string
 }
@@ -1939,10 +1946,10 @@ export interface ApplicationListParams extends PaginationParams {
   includeRuntime?: boolean
 }
 
-export type ProjectListScope = 'related' | 'all'
+export type ResultVisibility = 'related' | 'all'
 
 export interface ProjectListParams extends PaginationParams {
-  scope?: ProjectListScope
+  visibility?: ResultVisibility
 }
 
 export interface BuildRunListParams extends PaginationParams {

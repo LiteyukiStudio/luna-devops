@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/tasks"
@@ -38,16 +39,18 @@ func TestEnqueueDeployRunPassesStablePayload(t *testing.T) {
 func TestEnqueueGatewayApplyPassesStablePayload(t *testing.T) {
 	fake := &fakeBuildTaskEnqueuer{}
 	h := &Handlers{taskClient: fake}
-	route := model.GatewayRoute{ID: "gwr_1", ProjectID: "prj_1", CreatedBy: "usr_1"}
+	updatedAt := time.Date(2026, time.August, 28, 7, 8, 9, 123456000, time.FixedZone("test", 8*60*60))
+	route := model.GatewayRoute{ID: "gwr_1", ProjectID: "prj_1", CreatedBy: "usr_owner", UpdatedAt: updatedAt}
 
-	if !h.enqueueGatewayApply(context.Background(), route) {
+	if !h.enqueueGatewayApply(context.Background(), route, "usr_operator") {
 		t.Fatal("expected enqueueGatewayApply to succeed")
 	}
 
 	want := tasks.GatewayApplyPayload{
-		GatewayRouteID: "gwr_1",
-		ProjectID:      "prj_1",
-		ActorID:        "usr_1",
+		GatewayRouteID:          "gwr_1",
+		ProjectID:               "prj_1",
+		ActorID:                 "usr_operator",
+		RouteUpdatedAtUnixMicro: updatedAt.UTC().UnixMicro(),
 	}
 	if fake.gatewayPayload != want {
 		t.Fatalf("payload = %#v", fake.gatewayPayload)

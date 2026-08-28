@@ -7,9 +7,12 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
+	"mime/multipart"
 	"net"
 	"net/mail"
 	"net/smtp"
+	"net/textproto"
 	"strconv"
 	"strings"
 	"time"
@@ -219,18 +222,49 @@ func buildSMTPMessage(cfg SMTPConfig, message RenderedMessage) []byte {
 	writeHeader("Cc", strings.Join(cfg.Cc, ", "))
 	writeHeader("Subject", mimeEncoded(message.Subject))
 	writeHeader("MIME-Version", "1.0")
+	if strings.TrimSpace(message.HTMLBody) != "" {
+		writeSMTPMultipartAlternative(&out, writeHeader, message)
+		return out.Bytes()
+	}
 	writeHeader("Content-Type", `text/plain; charset="UTF-8"`)
 	writeHeader("Content-Transfer-Encoding", "base64")
 	out.WriteString("\r\n")
-	encoded := base64.StdEncoding.EncodeToString([]byte(message.Body))
+	writeSMTPBase64(&out, message.Body)
+	return out.Bytes()
+}
+
+func writeSMTPMultipartAlternative(out *bytes.Buffer, writeHeader func(string, string), message RenderedMessage) {
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	writeHeader("Content-Type", `multipart/alternative; boundary="`+writer.Boundary()+`"`)
+	out.WriteString("\r\n")
+
+	writeSMTPAlternativePart(writer, `text/plain; charset="UTF-8"`, message.Body)
+	writeSMTPAlternativePart(writer, `text/html; charset="UTF-8"`, message.HTMLBody)
+	_ = writer.Close()
+	out.Write(body.Bytes())
+}
+
+func writeSMTPAlternativePart(writer *multipart.Writer, contentType string, body string) {
+	header := textproto.MIMEHeader{}
+	header.Set("Content-Type", contentType)
+	header.Set("Content-Transfer-Encoding", "base64")
+	part, err := writer.CreatePart(header)
+	if err != nil {
+		return
+	}
+	writeSMTPBase64(part, body)
+}
+
+func writeSMTPBase64(writer io.Writer, body string) {
+	encoded := base64.StdEncoding.EncodeToString([]byte(body))
 	for len(encoded) > 76 {
-		out.WriteString(encoded[:76])
-		out.WriteString("\r\n")
+		_, _ = io.WriteString(writer, encoded[:76])
+		_, _ = io.WriteString(writer, "\r\n")
 		encoded = encoded[76:]
 	}
-	out.WriteString(encoded)
-	out.WriteString("\r\n")
-	return out.Bytes()
+	_, _ = io.WriteString(writer, encoded)
+	_, _ = io.WriteString(writer, "\r\n")
 }
 
 func mimeEncoded(value string) string {

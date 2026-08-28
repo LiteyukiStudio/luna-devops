@@ -184,6 +184,12 @@ const errors = {
     quota_exceeded: '프로젝트 스페이스의 관리 데이터 볼륨 용량이 상한에 도달했습니다. 불필요한 데이터 볼륨을 삭제하거나 플랫폼 관리자에게 문의하여 쿼터를 높이세요.',
     quota_unavailable: '데이터 볼륨 용량 쿼터를 일시적으로 검증할 수 없습니다. 플랫폼 관리자에게 문의하여 쿼터 설정을 확인하세요.',
   },
+  notification: {
+    rule_required: '규칙 이름을 입력하고 이벤트 유형과 알림 채널을 각각 하나 이상 선택하세요.',
+    rule_filter_invalid: '알림 범위 또는 고급 필터가 올바르지 않습니다. 확인한 후 다시 시도하세요.',
+    rule_project_not_found: '선택한 프로젝트 스페이스가 없거나 삭제되었습니다. 다시 선택하세요.',
+    channel_not_found: '선택한 알림 채널이 없거나 공유 채널이 아닙니다. 다시 선택하세요.',
+  },
   git: {
     network_failed: 'Git 플랫폼 연결에 실패했습니다. 서버 측 네트워크, 프록시/VPN, DNS 해석 또는 FakeIP 설정을 확인한 후 다시 시도하세요.',
     token_refresh_failed: 'Git Token 갱신에 실패했습니다. 다시 승인하거나 자격 증명을 확인하세요.',

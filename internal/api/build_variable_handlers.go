@@ -17,11 +17,15 @@ func (h *Handlers) ListBuildVariableSets(ctx *gin.Context) {
 	if !ok {
 		return
 	}
+	visibility, ok := resolveListVisibility(ctx, user)
+	if !ok {
+		return
+	}
 	projectID := strings.TrimSpace(ctx.Query("projectId"))
 
 	query := h.dbFor(ctx).Model(&model.BuildVariableSet{})
 	var visible bool
-	query, visible = h.applyScopedResourceVisibility(ctx, query, scopedResourceBuildVariableSet, user, projectID)
+	query, visible = h.applyScopedResourceListVisibility(ctx, query, scopedResourceBuildVariableSet, user, projectID, visibility)
 	if !visible {
 		return
 	}

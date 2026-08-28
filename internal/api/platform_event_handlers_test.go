@@ -85,7 +85,7 @@ func TestPlatformEventResponseAddsBuildRunDeepLink(t *testing.T) {
 		LinksJSON:     `{"application":"https://devops.example.com/luna/projects/prj_1/apps/app_1"}`,
 	}, 0)
 
-	want := "https://devops.example.com/luna/projects/prj_1/apps/app_1#tab=builds&buildRunId=bldr_1"
+	want := "https://devops.example.com/luna/projects/prj_1/apps/app_1?tab=builds#buildRunId=bldr_1"
 	if response.Links["build"] != want {
 		t.Fatalf("build link = %q, want %q", response.Links["build"], want)
 	}
@@ -105,7 +105,7 @@ func TestPlatformEventResponseAddsRelativeBuildRunDeepLinkWithoutConfiguredBaseU
 		LinksJSON:     "{}",
 	}, 0)
 
-	want := "/projects/prj_1/apps/app_1#tab=builds&buildRunId=bldr_1"
+	want := "/projects/prj_1/apps/app_1?tab=builds#buildRunId=bldr_1"
 	if response.Links["build"] != want {
 		t.Fatalf("build link = %q, want %q", response.Links["build"], want)
 	}

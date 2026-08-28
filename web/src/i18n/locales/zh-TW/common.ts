@@ -89,6 +89,11 @@ const common = {
   loginRequiredDescription: '請先使用本地賬號或已授權的 OIDC 賬號登入平臺。',
   pinProject: '固定項目空間',
   unpinProject: '取消固定項目空間',
+  resultVisibility: {
+    label: '查看範圍',
+    related: '與我相關',
+    all: '全部',
+  },
 
   labels: {
     projectSpace: '項目空間',

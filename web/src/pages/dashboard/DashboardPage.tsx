@@ -1,16 +1,18 @@
 import type { ReactNode } from 'react'
-import type { DashboardActivity, DashboardAttentionItem, DashboardProjectShortcut, DashboardReadinessItem } from '@/api'
+import type { DashboardActivity, DashboardAttentionItem, DashboardProjectShortcut, DashboardReadinessItem, ResultVisibility } from '@/api'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Activity, AppWindow, ArrowRight, Boxes, Container, FileKey2, FolderKanban, Globe2, Hammer, Pin, Rocket, ScrollText, Server, ShieldAlert, Workflow } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import { api } from '@/api'
+import { useSession } from '@/app/session-context'
 import { EmptyState } from '@/components/common/empty-state'
 import { ErrorState } from '@/components/common/error-state'
 import { OverviewSkeleton } from '@/components/common/loading-states'
 import { MetricGroup, MetricItem } from '@/components/common/metric-group'
 import { Notice } from '@/components/common/notice'
 import { PageShell } from '@/components/common/page-shell'
+import { ResultVisibilitySelect } from '@/components/common/result-visibility-select'
 import { Section } from '@/components/common/section'
 import { StatusBadge, StatusValueBadge } from '@/components/common/status-badge'
 import { Surface } from '@/components/common/surface'
@@ -18,14 +20,20 @@ import { formatCompactDateTime } from '@/components/common/time-format'
 import { Button } from '@/components/ui/button'
 import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
 import { statusRefetchInterval } from '@/lib/polling'
+import { withResultVisibility } from '@/lib/result-visibility'
+import { isPlatformAdmin } from '@/lib/roles'
+import { useResultVisibility } from '@/lib/use-result-visibility'
 
 export function DashboardPage() {
   const { t } = useTranslation()
+  const { user } = useSession()
   const queryClient = useQueryClient()
+  const canViewAll = isPlatformAdmin(user?.role)
+  const [effectiveVisibility, setVisibility] = useResultVisibility(canViewAll)
   const dashboard = useQuery({
     ...liveObservationQueryPolicy,
-    queryKey: ['dashboard'],
-    queryFn: api.getDashboard,
+    queryKey: ['dashboard', effectiveVisibility],
+    queryFn: () => api.getDashboard(effectiveVisibility),
     refetchInterval: query => statusRefetchInterval(Boolean(
       query.state.data
       && (query.state.data.summary.activeBuilds > 0 || query.state.data.summary.activeReleases > 0),
@@ -64,7 +72,12 @@ export function DashboardPage() {
 
   return (
     <PageShell width="full">
-      {overview.attention.length > 0 && <AttentionPanel items={overview.attention} />}
+      {canViewAll && (
+        <div className="flex justify-end">
+          <ResultVisibilitySelect canViewAll value={effectiveVisibility} onChange={setVisibility} />
+        </div>
+      )}
+      {overview.attention.length > 0 && <AttentionPanel items={overview.attention} visibility={effectiveVisibility} />}
 
       <section className="grid gap-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -83,10 +96,10 @@ export function DashboardPage() {
         <Surface className="overflow-hidden" data-slot="dashboard-overview" variant="bordered">
           <div className="p-4 sm:p-6">
             <MetricGroup>
-              <MetricItem emphasis={overview.summary.activeBuilds > 0} href="/events?categories=build&statuses=in_progress" icon={<Hammer size={18} />} label={t('dashboardPage.activeBuilds')} value={overview.summary.activeBuilds} />
-              <MetricItem emphasis={overview.summary.activeReleases > 0} href="/events?categories=release&statuses=in_progress" icon={<Rocket size={18} />} label={t('dashboardPage.activeReleases')} value={overview.summary.activeReleases} />
-              <MetricItem emphasis={overview.summary.attentionItems > 0} href="/events?severities=error&severities=warning" icon={<ShieldAlert size={18} />} label={t('dashboardPage.attentionItems')} tone={overview.summary.attentionItems ? 'danger' : 'neutral'} value={overview.summary.attentionItems} />
-              <MetricItem emphasis={overview.summary.totalClusters > 0} href="/clusters" icon={<Server size={18} />} label={t('dashboardPage.healthyClusters')} tone={overview.summary.healthyClusters < overview.summary.totalClusters ? 'warning' : 'neutral'} value={`${overview.summary.healthyClusters}/${overview.summary.totalClusters}`} />
+              <MetricItem emphasis={overview.summary.activeBuilds > 0} href={withResultVisibility('/events?categories=build&statuses=in_progress', effectiveVisibility)} icon={<Hammer size={18} />} label={t('dashboardPage.activeBuilds')} value={overview.summary.activeBuilds} />
+              <MetricItem emphasis={overview.summary.activeReleases > 0} href={withResultVisibility('/events?categories=release&statuses=in_progress', effectiveVisibility)} icon={<Rocket size={18} />} label={t('dashboardPage.activeReleases')} value={overview.summary.activeReleases} />
+              <MetricItem emphasis={overview.summary.attentionItems > 0} href={withResultVisibility('/events?severities=error&severities=warning', effectiveVisibility)} icon={<ShieldAlert size={18} />} label={t('dashboardPage.attentionItems')} tone={overview.summary.attentionItems ? 'danger' : 'neutral'} value={overview.summary.attentionItems} />
+              <MetricItem emphasis={overview.summary.totalClusters > 0} href={withResultVisibility('/clusters', effectiveVisibility)} icon={<Server size={18} />} label={t('dashboardPage.healthyClusters')} tone={overview.summary.healthyClusters < overview.summary.totalClusters ? 'warning' : 'neutral'} value={`${overview.summary.healthyClusters}/${overview.summary.totalClusters}`} />
             </MetricGroup>
           </div>
 
@@ -96,7 +109,7 @@ export function DashboardPage() {
               icon={<ScrollText size={18} />}
               title={t('dashboardPage.recentActivity')}
               tools={(
-                <Link className="text-sm font-medium text-muted-foreground transition hover:text-primary-text" to="/events">
+                <Link className="text-sm font-medium text-muted-foreground transition hover:text-primary-text" to={withResultVisibility('/events', effectiveVisibility)}>
                   {t('dashboardPage.viewAllEvents')}
                 </Link>
               )}
@@ -105,7 +118,7 @@ export function DashboardPage() {
                 {overview.activities.length
                   ? (
                       <div className="divide-y divide-border">
-                        {overview.activities.map(activity => <ActivityRow key={activity.id} activity={activity} />)}
+                        {overview.activities.map(activity => <ActivityRow key={activity.id} activity={activity} visibility={effectiveVisibility} />)}
                       </div>
                     )
                   : (
@@ -121,8 +134,8 @@ export function DashboardPage() {
 
             <Section className="border-t border-border p-5 sm:p-6 xl:border-l xl:border-t-0" icon={<Boxes size={18} />} title={t('dashboardPage.platformReadiness')}>
               <div className="grid gap-3">
-                <ReadinessRow icon={<Container size={16} />} item={overview.readiness.registries} kind="registries" label={t('registries')} to="/registries" />
-                <ReadinessRow icon={<Server size={16} />} item={overview.readiness.clusters} kind="clusters" label={t('clusters')} to="/clusters" />
+                <ReadinessRow icon={<Container size={16} />} item={overview.readiness.registries} kind="registries" label={t('registries')} to={withResultVisibility('/registries', effectiveVisibility)} />
+                <ReadinessRow icon={<Server size={16} />} item={overview.readiness.clusters} kind="clusters" label={t('clusters')} to={withResultVisibility('/clusters', effectiveVisibility)} />
               </div>
             </Section>
           </div>
@@ -133,7 +146,7 @@ export function DashboardPage() {
         icon={<FolderKanban size={18} />}
         title={t('dashboardPage.projectShortcuts')}
         tools={hasMoreProjects && (
-          <Link className="text-sm font-medium text-muted-foreground transition hover:text-primary-text" to="/projects">
+          <Link className="text-sm font-medium text-muted-foreground transition hover:text-primary-text" to={withResultVisibility('/projects', effectiveVisibility)}>
             {t('dashboardPage.viewAllProjects')}
           </Link>
         )}
@@ -146,6 +159,7 @@ export function DashboardPage() {
                     key={project.id}
                     isPinPending={toggleProjectPin.isPending}
                     project={project}
+                    visibility={effectiveVisibility}
                     onTogglePin={(projectId, pinned) => toggleProjectPin.mutate({ pinned, projectId })}
                   />
                 ))}
@@ -164,12 +178,12 @@ export function DashboardPage() {
   )
 }
 
-function ProjectShortcutCard({ isPinPending, onTogglePin, project }: { isPinPending: boolean, onTogglePin: (projectId: string, pinned: boolean) => void, project: DashboardProjectShortcut }) {
+function ProjectShortcutCard({ isPinPending, onTogglePin, project, visibility }: { isPinPending: boolean, onTogglePin: (projectId: string, pinned: boolean) => void, project: DashboardProjectShortcut, visibility: ResultVisibility }) {
   const { t } = useTranslation()
   return (
     <Link
       className="group relative grid min-h-36 min-w-0 gap-4 rounded-container bg-surface-raised p-4 transition-colors hover:bg-surface-subtle"
-      to={`/projects/${project.id}`}
+      to={withResultVisibility(`/projects/${project.id}`, visibility)}
     >
       <div className="min-w-0">
         <span className="block truncate pr-9 font-medium">{project.name}</span>
@@ -204,29 +218,29 @@ function ProjectShortcutCard({ isPinPending, onTogglePin, project }: { isPinPend
   )
 }
 
-function AttentionPanel({ items }: { items: DashboardAttentionItem[] }) {
+function AttentionPanel({ items, visibility }: { items: DashboardAttentionItem[], visibility: ResultVisibility }) {
   const { t } = useTranslation()
   const tone = items.some(item => item.severity === 'error') ? 'danger' : 'warning'
   return (
     <Notice icon={<ShieldAlert size={18} />} title={t('dashboardPage.attention')} tone={tone} variant="neutral">
       <div className="flex min-w-0 flex-wrap gap-2">
         {items.slice(0, 4).map(item => (
-          <Link key={item.key} className="group flex min-h-8 min-w-0 max-w-full items-center gap-2 rounded-md bg-surface-subtle px-2 py-1.5 transition-colors hover:bg-surface-inset" to={activityTarget(item.latest)}>
+          <Link key={item.key} className="group flex min-h-8 min-w-0 max-w-full items-center gap-2 rounded-md bg-surface-subtle px-2 py-1.5 transition-colors hover:bg-surface-inset" to={withResultVisibility(activityTarget(item.latest), visibility)}>
             <span className="shrink-0 transition-colors group-hover:text-primary-text">{categoryIcon(item.category)}</span>
             <span className="truncate text-sm text-foreground">{eventTypeLabel(t, item.latest.type)}</span>
             {item.occurrences > 1 && <StatusBadge>{t('dashboardPage.occurrences', { count: item.occurrences })}</StatusBadge>}
           </Link>
         ))}
-        {items.length > 4 && <Link className="flex min-h-8 items-center px-2 text-sm font-medium text-primary-text" to="/events?severities=error&severities=warning">{t('dashboardPage.moreAttention', { count: items.length - 4 })}</Link>}
+        {items.length > 4 && <Link className="flex min-h-8 items-center px-2 text-sm font-medium text-primary-text" to={withResultVisibility('/events?severities=error&severities=warning', visibility)}>{t('dashboardPage.moreAttention', { count: items.length - 4 })}</Link>}
       </div>
     </Notice>
   )
 }
 
-function ActivityRow({ activity }: { activity: DashboardActivity }) {
+function ActivityRow({ activity, visibility }: { activity: DashboardActivity, visibility: ResultVisibility }) {
   const { t } = useTranslation()
   return (
-    <Link className="group grid gap-2 py-3 transition-colors first:pt-0 hover:text-primary-text sm:flex sm:items-center sm:justify-between" to={activityTarget(activity)}>
+    <Link className="group grid gap-2 py-3 transition-colors first:pt-0 hover:text-primary-text sm:flex sm:items-center sm:justify-between" to={withResultVisibility(activityTarget(activity), visibility)}>
       <div className="flex min-w-0 flex-1 items-start gap-3">
         <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
           {categoryIcon(activity.category)}

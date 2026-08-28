@@ -33,6 +33,39 @@ describe('api client', () => {
     expect(String(fetchMock.mock.calls[0]?.[0])).toContain('/projects?page=1&pageSize=100')
   })
 
+  it('sends one visibility parameter across discovery APIs', async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockImplementation(async () => jsonResponse({
+      items: [],
+      page: 1,
+      pageSize: 100,
+      sortBy: 'createdAt',
+      sortOrder: 'desc',
+      total: 0,
+      totalPages: 0,
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await api.listProjects('all')
+    await api.getDashboard('all')
+    await api.listPlatformEvents({ page: 1, pageSize: 20, visibility: 'all' })
+    await api.listRuntimeClusters(undefined, 'all')
+    await api.listRuntimeClusterResourcesPage('cluster-1', { resourceCategory: 'workloads', page: 1, pageSize: 20, visibility: 'all' })
+    await api.listGitProviders(undefined, 'all')
+    await api.listGitAccounts(undefined, 'all')
+    await api.listRegistries(undefined, 'all')
+    await api.listRegistryCredentialsPage('registry-1', { page: 1, pageSize: 20, visibility: 'all' })
+    await api.listAllRegistryCredentialsPage({ page: 1, pageSize: 20, visibility: 'all' })
+    await api.listContainerImages({ page: 1, pageSize: 20, visibility: 'all' })
+    await api.listBuildVariableSets(undefined, 'all')
+
+    expect(fetchMock).toHaveBeenCalledTimes(12)
+    for (const [input] of fetchMock.mock.calls) {
+      const url = new URL(String(input), 'https://luna.devops.local')
+      expect(url.searchParams.get('visibility'), url.pathname).toBe('all')
+      expect(url.searchParams.has('scope'), url.pathname).toBe(false)
+    }
+  })
+
   it('exposes domain methods without a proxy wrapper', () => {
     expect(api.getDashboard).toBe(dashboardApi.getDashboard)
   })

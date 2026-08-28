@@ -184,6 +184,12 @@ const errors = {
     quota_exceeded: '專案空間的託管資料卷容量已達到上限，請刪除不再需要的資料卷或聯絡平臺管理員提高配額。',
     quota_unavailable: '資料卷容量配額暫時無法校驗，請聯絡平臺管理員檢查配額配置。',
   },
+  notification: {
+    rule_required: '請填寫規則名稱，並至少選擇一個事件型別和通知渠道。',
+    rule_filter_invalid: '通知範圍或進階過濾條件無效，請檢查後重試。',
+    rule_project_not_found: '所選專案空間不存在或已被刪除，請重新選擇。',
+    channel_not_found: '所選通知渠道不存在或不屬於共用渠道，請重新選擇。',
+  },
   git: {
     network_failed: 'Git 平臺連線失敗。請檢查服務端網路、代理/VPN、DNS 解析或 FakeIP 設定後重試。',
     token_refresh_failed: 'Git Token 重新整理失敗，請重新授權或檢查憑據。',

@@ -8,18 +8,23 @@ import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { api } from '@/api'
+import { useSession } from '@/app/session-context'
 import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { ContentTabs } from '@/components/common/content-tabs'
+import { ResultVisibilitySelect } from '@/components/common/result-visibility-select'
 import { Button } from '@/components/ui/button'
 import { NativeSelect as Select } from '@/components/ui/native-select'
 import { TabsContent } from '@/components/ui/tabs'
 import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
+import { isPlatformAdmin } from '@/lib/roles'
+import { useResultVisibility } from '@/lib/use-result-visibility'
 import { CredentialDialog, ImageDialog, RegistryDialog } from './registry-dialogs'
 import { credentialDefaults, credentialSchema, imageSchema, registryDefaults, registrySchema, splitText } from './registry-form-model'
 import { CredentialsPanel, ImagesPanel, RegistriesPanel } from './registry-list-panels'
 
 export function RegistriesPage() {
   const { t } = useTranslation()
+  const { user } = useSession()
   const queryClient = useQueryClient()
   const [editingRegistry, setEditingRegistry] = useState<ArtifactRegistry | null>(null)
   const [editingCredential, setEditingCredential] = useState<CredentialWithRegistry | null>(null)
@@ -38,27 +43,29 @@ export function RegistriesPage() {
   const [imagePageSize, setImagePageSize] = useState(20)
   const [imageRepositorySearch, setImageRepositorySearch] = useState('')
   const [imageRepositoryResultsOpen, setImageRepositoryResultsOpen] = useState(false)
-  const projects = useQuery({ queryKey: ['projects'], queryFn: api.listProjects })
+  const canViewAll = isPlatformAdmin(user?.role)
+  const [effectiveVisibility, setVisibility] = useResultVisibility(canViewAll)
+  const projects = useQuery({ queryKey: ['projects', 'options', effectiveVisibility], queryFn: () => api.listProjects(effectiveVisibility) })
   const registries = useQuery({
     ...liveObservationQueryPolicy,
-    queryKey: ['registries', registryPage, registryPageSize],
-    queryFn: () => api.listRegistriesPage({ page: registryPage, pageSize: registryPageSize, sortBy: 'createdAt', sortOrder: 'desc' }),
+    queryKey: ['registries', registryPage, registryPageSize, effectiveVisibility],
+    queryFn: () => api.listRegistriesPage({ page: registryPage, pageSize: registryPageSize, visibility: effectiveVisibility, sortBy: 'createdAt', sortOrder: 'desc' }),
   })
   const registryItems = registries.data?.items ?? []
-  const registryOptions = useQuery({ ...liveObservationQueryPolicy, queryKey: ['registries', 'options'], queryFn: () => api.listRegistries() })
+  const registryOptions = useQuery({ ...liveObservationQueryPolicy, queryKey: ['registries', 'options', effectiveVisibility], queryFn: () => api.listRegistries(undefined, effectiveVisibility) })
   const registryOptionItems = useMemo(() => registryOptions.data ?? [], [registryOptions.data])
   const images = useQuery({
-    queryKey: ['container-images', imagePage, imagePageSize],
-    queryFn: () => api.listContainerImages({ page: imagePage, pageSize: imagePageSize, sortBy: 'createdAt', sortOrder: 'desc' }),
+    queryKey: ['container-images', imagePage, imagePageSize, effectiveVisibility],
+    queryFn: () => api.listContainerImages({ page: imagePage, pageSize: imagePageSize, visibility: effectiveVisibility, sortBy: 'createdAt', sortOrder: 'desc' }),
   })
   const projectMap = useMemo(() => Object.fromEntries((projects.data ?? []).map(project => [project.id, project])), [projects.data])
   const allCredentials = useQuery({
-    queryKey: ['registry-credentials', 'all', credentialPage, credentialPageSize],
-    queryFn: () => api.listAllRegistryCredentialsPage({ page: credentialPage, pageSize: credentialPageSize, sortBy: 'createdAt', sortOrder: 'desc' }),
+    queryKey: ['registry-credentials', 'all', credentialPage, credentialPageSize, effectiveVisibility],
+    queryFn: () => api.listAllRegistryCredentialsPage({ page: credentialPage, pageSize: credentialPageSize, visibility: effectiveVisibility, sortBy: 'createdAt', sortOrder: 'desc' }),
   })
   const credentials = useQuery({
-    queryKey: ['registry-credentials', credentialRegistryFilterId, credentialPage, credentialPageSize],
-    queryFn: () => api.listRegistryCredentialsPage(credentialRegistryFilterId, { page: credentialPage, pageSize: credentialPageSize, sortBy: 'createdAt', sortOrder: 'desc' }),
+    queryKey: ['registry-credentials', credentialRegistryFilterId, credentialPage, credentialPageSize, effectiveVisibility],
+    queryFn: () => api.listRegistryCredentialsPage(credentialRegistryFilterId, { page: credentialPage, pageSize: credentialPageSize, visibility: effectiveVisibility, sortBy: 'createdAt', sortOrder: 'desc' }),
     enabled: Boolean(credentialRegistryFilterId),
   })
 
@@ -263,6 +270,17 @@ export function RegistriesPage() {
         ]}
         tools={(
           <>
+            <ResultVisibilitySelect
+              canViewAll={canViewAll}
+              value={effectiveVisibility}
+              onChange={(nextVisibility) => {
+                setVisibility(nextVisibility)
+                setRegistryPage(1)
+                setCredentialPage(1)
+                setImagePage(1)
+                setCredentialRegistryFilterId('')
+              }}
+            />
             {activeTab === 'registries' && (
               <Button
                 onClick={() => {

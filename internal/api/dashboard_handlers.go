@@ -10,12 +10,17 @@ import (
 	dashboardservice "github.com/LiteyukiStudio/devops/internal/dashboard"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/observation"
+	projectservice "github.com/LiteyukiStudio/devops/internal/project"
 	"github.com/gin-gonic/gin"
 )
 
 func (h *Handlers) GetDashboard(ctx *gin.Context) {
 	markLiveObservationResponse(ctx)
 	user, ok := h.currentUser(ctx)
+	if !ok {
+		return
+	}
+	visibility, ok := resolveListVisibility(ctx, user)
 	if !ok {
 		return
 	}
@@ -26,13 +31,14 @@ func (h *Handlers) GetDashboard(ctx *gin.Context) {
 			return
 		}
 	}
+	allProjects := visibility == projectservice.ListVisibilityAll
 	projectIDs := []string{}
-	if !platformAdmin {
+	if !allProjects {
 		projectIDs = h.projectIDsForUser(ctx.Request.Context(), user.ID)
 	}
 	scope := dashboardservice.Scope{
 		UserID:            user.ID,
-		PlatformAdmin:     platformAdmin,
+		AllProjects:       allProjects,
 		VisibleProjectIDs: projectIDs,
 	}
 	service := dashboardservice.NewService(h.dbFor(ctx))

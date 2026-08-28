@@ -4,7 +4,7 @@ First determine whether a problem is in the build, release, application runtime,
 
 ## Start with events
 
-Open **Events** and narrow the time range, project, application, deployment target, and severity. Event details include a failure summary, related resources, and links to relevant pages.
+Open **Events**. The list defaults to **Related to me**, containing events performed by the current account and events from its project spaces. Platform administrators switch to **All** only for explicit platform-wide troubleshooting. Then narrow the time range, project, application, deployment target, and severity; these filters apply within the current visibility. Event details include a failure summary, related resources, and links to relevant pages.
 
 ## Build failures
 

@@ -1,4 +1,4 @@
-import type { Project, ProjectListScope } from '@/api'
+import type { Project } from '@/api'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import i18next from 'i18next'
@@ -18,6 +18,7 @@ import { FormField as Field } from '@/components/common/form-field'
 import { HoverText } from '@/components/common/hover-text'
 import { PageShell } from '@/components/common/page-shell'
 import { ProgressiveSection } from '@/components/common/progressive-section'
+import { ResultVisibilitySelect } from '@/components/common/result-visibility-select'
 import { StatusBadge, StatusValueBadge } from '@/components/common/status-badge'
 import { formatSmartDateTime } from '@/components/common/time-format'
 import { Button } from '@/components/ui/button'
@@ -30,6 +31,7 @@ import { NativeSelect as Select } from '@/components/ui/native-select'
 import { Textarea } from '@/components/ui/textarea'
 import { PROJECT_IDENTIFIER_MAX_LENGTH, PROJECT_IDENTIFIER_MIN_LENGTH } from '@/lib/identifier-limits'
 import { isPlatformAdmin } from '@/lib/roles'
+import { useResultVisibility } from '@/lib/use-result-visibility'
 import { cn } from '@/lib/utils'
 
 const schema = z.object({
@@ -46,7 +48,6 @@ const schema = z.object({
 type ProjectForm = z.infer<typeof schema>
 
 const PAGE_SIZE_OPTIONS = [10, 20, 50, 100]
-const PROJECT_SCOPE_OPTIONS = ['related', 'all'] as const
 const PROJECT_SORT_OPTIONS = ['lastUsed', 'useCount', 'createdAt', 'updatedAt', 'name'] as const
 
 type ProjectSortBy = typeof PROJECT_SORT_OPTIONS[number]
@@ -63,15 +64,14 @@ export function ProjectsPage() {
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
   const [search, setSearch] = useState('')
-  const [scope, setScope] = useState<ProjectListScope>('related')
   const [sortBy, setSortBy] = useState<ProjectSortBy>('lastUsed')
   const [sortOrder, setSortOrder] = useState<ProjectSortOrder>('desc')
   const deferredSearch = useDeferredValue(search.trim())
   const canViewAllProjects = isPlatformAdmin(user?.role)
-  const effectiveScope: ProjectListScope = canViewAllProjects ? scope : 'related'
+  const [effectiveVisibility, setVisibility] = useResultVisibility(canViewAllProjects)
   const projects = useQuery({
-    queryKey: ['projects', 'page', page, pageSize, effectiveScope, sortBy, sortOrder, deferredSearch],
-    queryFn: () => api.listProjectsPage({ page, pageSize, scope: effectiveScope, search: deferredSearch || undefined, sortBy, sortOrder }),
+    queryKey: ['projects', 'page', page, pageSize, effectiveVisibility, sortBy, sortOrder, deferredSearch],
+    queryFn: () => api.listProjectsPage({ page, pageSize, visibility: effectiveVisibility, search: deferredSearch || undefined, sortBy, sortOrder }),
   })
   const projectItems = projects.data?.items ?? []
   const projectTotal = projects.data?.total ?? 0
@@ -287,21 +287,15 @@ export function ProjectsPage() {
         }}
         toolbar={(
           <>
-            {canViewAllProjects && (
-              <Select
-                aria-label={t('projectSpaces.scope')}
-                containerClassName="min-w-32 flex-1 sm:w-40 sm:flex-none"
-                value={scope}
-                onChange={(event) => {
-                  setScope(event.target.value as ProjectListScope)
-                  setPage(1)
-                }}
-              >
-                {PROJECT_SCOPE_OPTIONS.map(option => (
-                  <option key={option} value={option}>{t(`projectSpaces.scopeOptions.${option}`)}</option>
-                ))}
-              </Select>
-            )}
+            <ResultVisibilitySelect
+              canViewAll={canViewAllProjects}
+              containerClassName="min-w-32 flex-1 sm:w-40 sm:flex-none"
+              value={effectiveVisibility}
+              onChange={(nextVisibility) => {
+                setVisibility(nextVisibility)
+                setPage(1)
+              }}
+            />
             <Select
               aria-label={t('projectSpaces.sortBy')}
               containerClassName="min-w-32 flex-1 sm:w-40 sm:flex-none"

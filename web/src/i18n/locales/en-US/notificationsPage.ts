@@ -53,7 +53,17 @@ const notificationsPage = {
   template: 'Template',
   defaultTemplate: 'Default template',
   eventTypes: 'Event types',
-  filterJson: 'Filter JSON',
+  ruleScope: 'Notification scope',
+  ruleScopeProjects: 'Selected project spaces (default)',
+  ruleScopeAll: 'All project spaces',
+  ruleProjects: 'Project spaces',
+  ruleProjectsHint: 'The rule only matches events in the selected project spaces.',
+  ruleProjectsRequired: 'Select at least one project space before saving the rule.',
+  ruleScopeAllWarning: 'All project spaces matches events platform-wide. Use it only when a global broadcast is explicitly required.',
+  filterJson: 'Advanced filter JSON',
+  filterJsonHint: 'Optional. Only severities, applicationIds, and deploymentTargetIds are supported; the scope and projects selected above take precedence.',
+  filterJsonInvalid: 'Enter a valid JSON object and remove unknown fields or invalid arrays.',
+  ruleInvalid: 'Complete the rule and correct its notification scope or advanced filters.',
 }
 
 export default notificationsPage

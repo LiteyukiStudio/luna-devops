@@ -191,10 +191,10 @@ export function ApplicationDeploymentsPanel({ applicationId, applicationIdentifi
   const selectedTargetRepositoryBinding = repositoryBindings.find(binding => binding.id === targetRepositoryBindingId)
   const targetRegistry = registries.find(registry => registry.id === targetRegistryId)
   const targetImagePrefix = targetRegistry ? registryInputPrefix(targetRegistry) : ''
-  const gitProviders = useQuery({ queryKey: ['git-providers'], queryFn: () => api.listGitProviders(), enabled: repositoryBindingDialogOpen })
+  const gitProviders = useQuery({ queryKey: ['git-providers', 'project', projectId], queryFn: () => api.listGitProviders(projectId), enabled: repositoryBindingDialogOpen })
   const gitAccounts = useQuery({
-    queryKey: ['git-accounts'],
-    queryFn: () => api.listGitAccounts(),
+    queryKey: ['git-accounts', 'project', projectId],
+    queryFn: () => api.listGitAccounts(projectId),
     enabled: repositoryBindingDialogOpen,
     ...liveObservationQueryPolicy,
   })

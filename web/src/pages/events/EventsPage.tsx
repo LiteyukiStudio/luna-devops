@@ -11,16 +11,17 @@ import { api } from '@/api'
 import { useSession } from '@/app/session-context'
 import { DataList } from '@/components/common/data-list'
 import { ErrorState } from '@/components/common/error-state'
+import { ResultVisibilitySelect } from '@/components/common/result-visibility-select'
 import { SearchMultiSelect } from '@/components/common/search-select'
 import { StatusValueBadge } from '@/components/common/status-badge'
 import { formatAbsoluteDateTime, formatSmartDateTime } from '@/components/common/time-format'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
 import { isPlatformAdmin } from '@/lib/roles'
+import { useResultVisibility } from '@/lib/use-result-visibility'
 import { initialEventFilterValues, initialEventSeverityFilters } from './event-filter-defaults'
 
 export function EventsPage() {
@@ -31,7 +32,7 @@ export function EventsPage() {
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
   const [search, setSearch] = useState('')
-  const [scope, setScope] = useState<'mine' | 'all'>('mine')
+  const [visibility, setVisibility] = useResultVisibility(platformAdmin)
   const [projectIds, setProjectIds] = useState(() => initialEventFilterValues(searchParams, 'projectIds', 'projectId'))
   const [applicationIds, setApplicationIds] = useState(() => initialEventFilterValues(searchParams, 'applicationIds', 'applicationId'))
   const [deploymentTargetIds, setDeploymentTargetIds] = useState(() => initialEventFilterValues(searchParams, 'deploymentTargetIds', 'deploymentTargetId'))
@@ -44,7 +45,7 @@ export function EventsPage() {
   const [selectedEventId, setSelectedEventId] = useState('')
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false)
 
-  const projects = useQuery({ queryKey: ['projects'], queryFn: api.listProjects })
+  const projects = useQuery({ queryKey: ['projects', 'options', visibility], queryFn: () => api.listProjects(visibility) })
   const applicationQueries = useQueries({
     queries: projectIds.map(projectId => ({
       queryKey: ['applications', projectId],
@@ -72,14 +73,14 @@ export function EventsPage() {
   )
   const catalog = useQuery({ queryKey: ['platform-event-catalog'], queryFn: api.listPlatformEventCatalog })
   const events = useQuery({
-    queryKey: ['platform-events', page, pageSize, search, scope, projectIds, applicationIds, deploymentTargetIds, categories, eventTypes, severities, statuses, dateFrom, dateTo],
+    queryKey: ['platform-events', page, pageSize, search, visibility, projectIds, applicationIds, deploymentTargetIds, categories, eventTypes, severities, statuses, dateFrom, dateTo],
     queryFn: () => api.listPlatformEvents({
       page,
       pageSize,
       search: search || undefined,
       sortBy: 'occurredAt',
       sortOrder: 'desc',
-      scope: platformAdmin ? scope : 'mine',
+      visibility,
       projectIds,
       applicationIds,
       deploymentTargetIds,
@@ -196,9 +197,9 @@ export function EventsPage() {
       ),
     },
   ], [t])
-  const activeFilterCount = projectIds.length + applicationIds.length + deploymentTargetIds.length + categories.length + eventTypes.length + severities.length + statuses.length + (scope === 'all' ? 1 : 0)
+  const activeFilterCount = projectIds.length + applicationIds.length + deploymentTargetIds.length + categories.length + eventTypes.length + severities.length + statuses.length + (visibility === 'all' ? 1 : 0)
   const clearFilters = () => {
-    setScope('mine')
+    setVisibility('related')
     setProjectIds([])
     setApplicationIds([])
     setDeploymentTargetIds([])
@@ -213,17 +214,19 @@ export function EventsPage() {
   const filterFields = (
     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
       {platformAdmin && (
-        <EventFilterSelect
-          label={t('eventsPage.filters.scope')}
-          value={scope}
-          onChange={(value) => {
-            setScope(value as 'mine' | 'all')
+        <ResultVisibilitySelect
+          canViewAll={platformAdmin}
+          containerClassName="w-full"
+          showLabel
+          value={visibility}
+          onChange={(nextVisibility) => {
+            setVisibility(nextVisibility)
+            setProjectIds([])
+            setApplicationIds([])
+            setDeploymentTargetIds([])
             resetPage()
           }}
-        >
-          <SelectItem value="mine">{t('eventsPage.scopes.mine')}</SelectItem>
-          <SelectItem value="all">{t('eventsPage.scopes.all')}</SelectItem>
-        </EventFilterSelect>
+        />
       )}
       <EventFilterMultiSelect
         label={t('eventsPage.filters.project')}
@@ -450,18 +453,6 @@ export function EventsPage() {
         onOpenChange={open => !open && setSelectedEventId('')}
       />
     </div>
-  )
-}
-
-function EventFilterSelect({ children, disabled, label, onChange, value }: { children: ReactNode, disabled?: boolean, label: string, onChange: (value: string) => void, value: string }) {
-  return (
-    <label className="grid gap-1.5 text-xs text-muted-foreground">
-      {label}
-      <Select disabled={disabled} value={value} onValueChange={onChange}>
-        <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
-        <SelectContent>{children}</SelectContent>
-      </Select>
-    </label>
   )
 }
 

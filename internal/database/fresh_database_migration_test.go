@@ -384,6 +384,7 @@ func assertFreshMigrationState(t *testing.T, db *gorm.DB) {
 		{table: "access_tokens", column: "oauth_application_id"},
 		{table: "access_tokens", column: "oauth_grant_id"},
 		{table: "auth_registration_settings", column: "allow_oidc_registration"},
+		{table: "platform_mail_settings", column: "personal_email_cooldown_seconds"},
 		{table: "notification_channels", column: "owner_user_id"},
 		{table: "notification_deliveries", column: "recipient_user_id"},
 		{table: "user_remember_tokens", column: "family_id"},

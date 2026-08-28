@@ -19,17 +19,19 @@ import (
 )
 
 const (
-	TypeDeployRun           = "deploy:run"
-	TypeBuildRun            = "build:run"
-	TypeGatewayApply        = "gateway:apply"
-	TypeApplicationDelete   = "application:delete"
-	TypeResourceCleanup     = "resource:cleanup"
-	TypeNotificationDeliver = "notification:deliver"
-	TypeGitAccountRefresh   = "git:accounts:refresh"
-	TypeSyncStatus          = "sync:status"
-	TypeBillingRuntime      = "billing:runtime"
-	TypeBillingAI           = "billing:ai"
-	TypeRetentionRun        = "retention:run"
+	TypeDeployRun               = "deploy:run"
+	TypeBuildRun                = "build:run"
+	TypeGatewayApply            = "gateway:apply"
+	TypeApplicationDelete       = "application:delete"
+	TypeResourceCleanup         = "resource:cleanup"
+	TypeNotificationDeliver     = "notification:deliver"
+	TypeNotificationEmailDigest = "notification:email-digest"
+	TypeNotificationReconcile   = "notification:reconcile"
+	TypeGitAccountRefresh       = "git:accounts:refresh"
+	TypeSyncStatus              = "sync:status"
+	TypeBillingRuntime          = "billing:runtime"
+	TypeBillingAI               = "billing:ai"
+	TypeRetentionRun            = "retention:run"
 
 	QueueDeploy = "deploy"
 	QueueBuild  = "build"
@@ -52,9 +54,10 @@ type DeployRunPayload struct {
 }
 
 type GatewayApplyPayload struct {
-	GatewayRouteID string `json:"gatewayRouteId"`
-	ProjectID      string `json:"projectId"`
-	ActorID        string `json:"actorId"`
+	GatewayRouteID          string `json:"gatewayRouteId"`
+	ProjectID               string `json:"projectId"`
+	ActorID                 string `json:"actorId"`
+	RouteUpdatedAtUnixMicro int64  `json:"routeUpdatedAtUnixMicro"`
 }
 
 type ApplicationDeletePayload struct {
@@ -74,6 +77,13 @@ type NotificationDeliverPayload struct {
 	DeliveryID string `json:"deliveryId"`
 	ActorID    string `json:"actorId"`
 }
+
+type NotificationEmailDigestPayload struct {
+	RecipientUserID string `json:"recipientUserId"`
+	DueAtUnix       int64  `json:"dueAtUnix"`
+}
+
+type NotificationReconcilePayload struct{}
 
 type GitAccountRefreshPayload struct {
 	ActorID string `json:"actorId"`
@@ -181,6 +191,25 @@ func (c *Client) EnqueueNotificationDeliver(ctx context.Context, payload Notific
 	return c.enqueueWithPolicy(ctx, task, PolicyForType(TypeNotificationDeliver))
 }
 
+func (c *Client) EnqueueNotificationEmailDigest(ctx context.Context, payload NotificationEmailDigestPayload) (*asynq.TaskInfo, error) {
+	task, err := NewNotificationEmailDigestTask(payload)
+	if err != nil {
+		return nil, err
+	}
+	policy := PolicyForType(TypeNotificationEmailDigest)
+	options := []asynq.Option{
+		asynq.Queue(policy.Queue),
+		asynq.MaxRetry(policy.MaxRetry),
+		asynq.Timeout(policy.Timeout),
+		asynq.Retention(policy.Retention),
+		asynq.Unique(policy.Unique),
+	}
+	if dueAt := time.Unix(payload.DueAtUnix, 0); dueAt.After(time.Now()) {
+		options = append(options, asynq.ProcessAt(dueAt))
+	}
+	return c.enqueue(ctx, task, policy.Queue, options...)
+}
+
 func (c *Client) EnqueueGitAccountRefresh(ctx context.Context, payload GitAccountRefreshPayload) (*asynq.TaskInfo, error) {
 	task, err := NewGitAccountRefreshTask(payload)
 	if err != nil {
@@ -286,6 +315,10 @@ func PolicyForType(taskType string) EnqueuePolicy {
 		return EnqueuePolicy{Queue: QueueDeploy, MaxRetry: 3, Timeout: 15 * time.Minute, Retention: 24 * time.Hour, Unique: 2 * time.Hour}
 	case TypeNotificationDeliver:
 		return EnqueuePolicy{Queue: QueueLight, MaxRetry: 5, Timeout: 2 * time.Minute, Retention: 24 * time.Hour, Unique: 30 * time.Second}
+	case TypeNotificationEmailDigest:
+		return EnqueuePolicy{Queue: QueueLight, MaxRetry: 5, Timeout: 2 * time.Minute, Retention: 24 * time.Hour, Unique: 24 * time.Hour}
+	case TypeNotificationReconcile:
+		return EnqueuePolicy{Queue: QueueLight, MaxRetry: 0, Timeout: time.Minute, Retention: 24 * time.Hour, Unique: time.Minute}
 	case TypeGitAccountRefresh:
 		return EnqueuePolicy{Queue: QueueLight, MaxRetry: 2, Timeout: 10 * time.Minute, Retention: 24 * time.Hour, Unique: 5 * time.Minute}
 	case TypeVolumeProvision, TypeVolumeDelete:
@@ -311,7 +344,6 @@ func NewBuildRunTask(payload BuildRunPayload) (*asynq.Task, error) {
 	if strings.TrimSpace(payload.ProjectID) == "" {
 		return nil, errors.New("project id is required")
 	}
-
 	data, err := json.Marshal(payload)
 	if err != nil {
 		return nil, err
@@ -326,7 +358,6 @@ func NewDeployRunTask(payload DeployRunPayload) (*asynq.Task, error) {
 	if strings.TrimSpace(payload.ProjectID) == "" {
 		return nil, errors.New("project id is required")
 	}
-
 	data, err := json.Marshal(payload)
 	if err != nil {
 		return nil, err
@@ -340,6 +371,9 @@ func NewGatewayApplyTask(payload GatewayApplyPayload) (*asynq.Task, error) {
 	}
 	if strings.TrimSpace(payload.ProjectID) == "" {
 		return nil, errors.New("project id is required")
+	}
+	if payload.RouteUpdatedAtUnixMicro <= 0 {
+		return nil, errors.New("gateway route updated generation is required")
 	}
 
 	data, err := json.Marshal(payload)
@@ -392,6 +426,28 @@ func NewNotificationDeliverTask(payload NotificationDeliverPayload) (*asynq.Task
 		return nil, err
 	}
 	return asynq.NewTask(TypeNotificationDeliver, data), nil
+}
+
+func NewNotificationEmailDigestTask(payload NotificationEmailDigestPayload) (*asynq.Task, error) {
+	if strings.TrimSpace(payload.RecipientUserID) == "" {
+		return nil, errors.New("notification email digest recipient user id is required")
+	}
+	if payload.DueAtUnix <= 0 {
+		return nil, errors.New("notification email digest due time is required")
+	}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+	return asynq.NewTask(TypeNotificationEmailDigest, data), nil
+}
+
+func NewNotificationReconcileTask(payload NotificationReconcilePayload) (*asynq.Task, error) {
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+	return asynq.NewTask(TypeNotificationReconcile, data), nil
 }
 
 func NewGitAccountRefreshTask(payload GitAccountRefreshPayload) (*asynq.Task, error) {

@@ -9,6 +9,7 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/model"
+	projectservice "github.com/LiteyukiStudio/devops/internal/project"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
@@ -162,55 +163,74 @@ func (h *Handlers) applyScopedResourceVisibility(ctx *gin.Context, query *gorm.D
 			return query, false
 		}
 	}
+	includeAllProjects := projectID == "" && authz.IsPlatformAdmin(user.Role)
+	var projectIDs []string
+	if projectID == "" && !includeAllProjects {
+		projectIDs = h.projectIDsForUser(ctx.Request.Context(), user.ID)
+	}
+	return applyScopedResourceVisibilityQuery(query, h.dbFor(ctx), resourceType, user.ID, projectID, projectIDs, includeAllProjects, false), true
+}
 
-	conditions := []string{"scope = 'global'", "(scope = 'user' and owner_ref = ?)"}
-	args := []any{user.ID}
-	projectSubquery := h.dbFor(ctx).Model(&model.ScopedResourceProjectBinding{}).
-		Select("resource_id").
-		Where("resource_type = ?", resourceType)
+// applyScopedResourceListVisibility applies discovery visibility without
+// changing the authorization rules for callers that already know a resource
+// identifier. An explicit project filter remains narrower than visibility.
+func (h *Handlers) applyScopedResourceListVisibility(ctx *gin.Context, query *gorm.DB, resourceType string, user model.User, projectID string, visibility projectservice.ListVisibility) (*gorm.DB, bool) {
+	projectID = strings.TrimSpace(projectID)
 	if projectID != "" {
-		projectSubquery = projectSubquery.Where("project_id = ?", projectID)
-		conditions = append(conditions, "(scope = 'project' and id in (?))")
-		args = append(args, projectSubquery)
-	} else if authz.IsPlatformAdmin(user.Role) {
-		conditions = append(conditions, "(scope = 'project' and id in (?))")
-		args = append(args, projectSubquery)
-	} else {
-		projectIDs := h.projectIDsForUser(ctx.Request.Context(), user.ID)
-		if len(projectIDs) > 0 {
-			projectSubquery = projectSubquery.Where("project_id in ?", projectIDs)
-			conditions = append(conditions, "(scope = 'project' and id in (?))")
-			args = append(args, projectSubquery)
+		if _, ok := h.findProjectForCurrentUserByID(ctx, projectID); !ok {
+			return query, false
 		}
 	}
-	return query.Where(strings.Join(conditions, " or "), args...), true
+
+	includeAllProjects := projectID == "" && visibility == projectservice.ListVisibilityAll
+	var projectIDs []string
+	if projectID == "" && !includeAllProjects {
+		projectIDs = h.projectIDsForUser(ctx.Request.Context(), user.ID)
+	}
+	return applyScopedResourceVisibilityQuery(query, h.dbFor(ctx), resourceType, user.ID, projectID, projectIDs, includeAllProjects, includeAllProjects), true
 }
 
 func (h *Handlers) applyScopedResourceVisibilityForUser(query *gorm.DB, resourceType string, user model.User, ctx context.Context) *gorm.DB {
-	conditions := []string{"scope = 'global'", "(scope = 'user' and owner_ref = ?)"}
-	args := []any{user.ID}
-	projectSubquery := h.dbWithContext(ctx).Model(&model.ScopedResourceProjectBinding{}).
-		Select("resource_id").
-		Where("resource_type = ?", resourceType)
-	if authz.IsPlatformAdmin(user.Role) {
-		conditions = append(conditions, "(scope = 'project' and id in (?))")
-		args = append(args, projectSubquery)
-	} else if projectIDs := h.projectIDsForUser(ctx, user.ID); len(projectIDs) > 0 {
-		conditions = append(conditions, "(scope = 'project' and id in (?))")
-		args = append(args, projectSubquery.Where("project_id in ?", projectIDs))
+	includeAllProjects := authz.IsPlatformAdmin(user.Role)
+	var projectIDs []string
+	if !includeAllProjects {
+		projectIDs = h.projectIDsForUser(ctx, user.ID)
 	}
-	return query.Where(strings.Join(conditions, " or "), args...)
+	return applyScopedResourceVisibilityQuery(query, h.dbWithContext(ctx), resourceType, user.ID, "", projectIDs, includeAllProjects, false)
 }
 
 func (h *Handlers) applyScopedResourceVisibilityForProject(query *gorm.DB, resourceType string, user model.User, projectID string, ctx context.Context) *gorm.DB {
-	projectSubquery := h.dbWithContext(ctx).Model(&model.ScopedResourceProjectBinding{}).
-		Select("resource_id").
-		Where("resource_type = ? and project_id = ?", resourceType, strings.TrimSpace(projectID))
-	return query.Where(
-		"scope = 'global' or (scope = 'user' and owner_ref = ?) or (scope = 'project' and id in (?))",
-		user.ID,
-		projectSubquery,
-	)
+	return applyScopedResourceVisibilityQuery(query, h.dbWithContext(ctx), resourceType, user.ID, projectID, nil, false, false)
+}
+
+func applyScopedResourceVisibilityQuery(query *gorm.DB, bindingDB *gorm.DB, resourceType, userID, projectID string, projectIDs []string, includeAllProjects, includeUnboundProjectScope bool) *gorm.DB {
+	conditions := []string{"scope = 'global'", "(scope = 'user' and owner_ref = ?)"}
+	args := []any{strings.TrimSpace(userID)}
+	projectID = strings.TrimSpace(projectID)
+	if projectID != "" {
+		projectSubquery := bindingDB.Model(&model.ScopedResourceProjectBinding{}).
+			Select("resource_id").
+			Where("resource_type = ? and project_id = ?", resourceType, projectID)
+		conditions = append(conditions, "(scope = 'project' and id in (?))")
+		args = append(args, projectSubquery)
+	} else if includeAllProjects {
+		if includeUnboundProjectScope {
+			conditions = append(conditions, "scope = 'project'")
+		} else {
+			projectSubquery := bindingDB.Model(&model.ScopedResourceProjectBinding{}).
+				Select("resource_id").
+				Where("resource_type = ?", resourceType)
+			conditions = append(conditions, "(scope = 'project' and id in (?))")
+			args = append(args, projectSubquery)
+		}
+	} else if projectIDs = normalizeStringList(projectIDs); len(projectIDs) > 0 {
+		projectSubquery := bindingDB.Model(&model.ScopedResourceProjectBinding{}).
+			Select("resource_id").
+			Where("resource_type = ? and project_id in ?", resourceType, projectIDs)
+		conditions = append(conditions, "(scope = 'project' and id in (?))")
+		args = append(args, projectSubquery)
+	}
+	return query.Where(strings.Join(conditions, " or "), args...)
 }
 
 func (h *Handlers) replaceScopedResourceProjectBindings(tx *gorm.DB, resourceType, resourceID string, projectIDs []string, defaultProjectIDs []string) error {

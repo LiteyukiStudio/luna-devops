@@ -6,6 +6,10 @@ Administrators should prepare these resources so users can build or deploy immed
 Runtime cluster → Registry → Git Provider OAuth
 ```
 
+## Choose global-resource visibility
+
+Cross-project lists for runtime clusters, registries, Git providers and accounts, images and credentials, and build variable sets default to **Related to me**. This keeps global resources, resources owned by the current account, and resources bound to project spaces where the account is a member. Platform administrators switch to **All** only for an explicit platform-wide inventory. When the target project space is known, select it as well; the project-space filter narrows results within the current visibility.
+
 ## 1. Add a runtime cluster
 
 Add a Kubernetes cluster under **Runtime Clusters**, paste a kubeconfig reachable by both API and Worker, and test the connection.

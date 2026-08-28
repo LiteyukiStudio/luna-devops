@@ -1,11 +1,11 @@
-import type { ArtifactRegistry, ArtifactRegistryPayload, ContainerImage, PaginatedResponse, PaginationParams, RegistryCredential, RegistryImageTemplateDefault, RegistryRepositoryItem, RegistryTagItem, RegistryTestResult } from '../types'
+import type { ArtifactRegistry, ArtifactRegistryPayload, ContainerImage, PaginatedResponse, PaginationParams, RegistryCredential, RegistryImageTemplateDefault, RegistryRepositoryItem, RegistryTagItem, RegistryTestResult, ResultVisibility } from '../types'
 import { paginationQuery, paginationWithProjectQuery, request } from '../core'
 import { selectionItems, selectionPageParams } from '../selection-page'
 
 export const registriesApi = {
-  listRegistries: (projectId?: string) =>
-    request<PaginatedResponse<ArtifactRegistry>>(`/registries?${paginationWithProjectQuery({ ...selectionPageParams, projectId })}`).then(selectionItems),
-  listRegistriesPage: (params: PaginationParams & { projectId?: string }) =>
+  listRegistries: (projectId?: string, visibility?: ResultVisibility) =>
+    request<PaginatedResponse<ArtifactRegistry>>(`/registries?${paginationWithProjectQuery({ ...selectionPageParams, projectId, visibility })}`).then(selectionItems),
+  listRegistriesPage: (params: PaginationParams & { projectId?: string, visibility?: ResultVisibility }) =>
     request<PaginatedResponse<ArtifactRegistry>>(`/registries?${paginationWithProjectQuery(params)}`),
   createRegistry: (payload: ArtifactRegistryPayload) =>
     request<ArtifactRegistry>('/registries', { method: 'POST', body: JSON.stringify(payload) }),
@@ -28,11 +28,11 @@ export const registriesApi = {
   },
   getDefaultRegistry: (projectId: string) =>
     request<ArtifactRegistry>(`/projects/${projectId}/registries/default`),
-  listRegistryCredentials: (registryId: string) =>
-    request<PaginatedResponse<RegistryCredential>>(`/registries/${registryId}/credentials?${paginationQuery(selectionPageParams)}`).then(selectionItems),
-  listRegistryCredentialsPage: (registryId: string, params: PaginationParams) =>
+  listRegistryCredentials: (registryId: string, visibility?: ResultVisibility) =>
+    request<PaginatedResponse<RegistryCredential>>(`/registries/${registryId}/credentials?${paginationQuery({ ...selectionPageParams, visibility })}`).then(selectionItems),
+  listRegistryCredentialsPage: (registryId: string, params: PaginationParams & { visibility?: ResultVisibility }) =>
     request<PaginatedResponse<RegistryCredential>>(`/registries/${registryId}/credentials?${paginationQuery(params)}`),
-  listAllRegistryCredentialsPage: (params: PaginationParams) =>
+  listAllRegistryCredentialsPage: (params: PaginationParams & { visibility?: ResultVisibility }) =>
     request<PaginatedResponse<RegistryCredential>>(`/registry-credentials?${paginationQuery(params)}`),
   createRegistryCredential: (registryId: string, payload: { name: string, username: string, password?: string, token?: string, usage: RegistryCredential['usage'], scope: RegistryCredential['scope'], projectIds: string[], repositoryTemplate: string, tagTemplate: string }) =>
     request<RegistryCredential>(`/registries/${registryId}/credentials`, { method: 'POST', body: JSON.stringify(payload) }),
@@ -50,7 +50,7 @@ export const registriesApi = {
     const search = new URLSearchParams({ repository, limit: String(limit) })
     return request<{ items: RegistryTagItem[], total: number, limited: boolean }>(`/registries/${registryId}/repository-tags?${search.toString()}`)
   },
-  listContainerImages: (params: PaginationParams & { projectId?: string } = { page: 1, pageSize: 20 }) => {
+  listContainerImages: (params: PaginationParams & { projectId?: string, visibility?: ResultVisibility } = { page: 1, pageSize: 20 }) => {
     const search = new URLSearchParams(paginationQuery(params))
     if (params.projectId)
       search.set('projectId', params.projectId)

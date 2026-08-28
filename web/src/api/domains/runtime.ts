@@ -1,11 +1,11 @@
-import type { ClusterResource, ClusterResourceEvent, ClusterResourceYAML, PaginatedResponse, PaginationParams, Release, ReleaseImageCandidates, ReleaseLog, ReleaseRuntimeExecResult, ReleaseRuntimeLog, RuntimeCluster, RuntimeClusterPressure, RuntimeClusterResourceCategory, RuntimeClusterResourceKind, RuntimeClusterResourceListParams } from '../types'
+import type { ClusterResource, ClusterResourceEvent, ClusterResourceYAML, PaginatedResponse, PaginationParams, Release, ReleaseImageCandidates, ReleaseLog, ReleaseRuntimeExecResult, ReleaseRuntimeLog, ResultVisibility, RuntimeCluster, RuntimeClusterPressure, RuntimeClusterResourceCategory, RuntimeClusterResourceKind, RuntimeClusterResourceListParams } from '../types'
 import { paginationWithProjectQuery, request, runtimeClusterResourceListQuery } from '../core'
 import { selectionItems, selectionPageParams } from '../selection-page'
 
 export const runtimeApi = {
-  listRuntimeClusters: (projectId?: string) =>
-    request<PaginatedResponse<RuntimeCluster>>(`/runtime/clusters?${paginationWithProjectQuery({ ...selectionPageParams, projectId })}`).then(selectionItems),
-  listRuntimeClustersPage: (params: PaginationParams & { projectId?: string }) =>
+  listRuntimeClusters: (projectId?: string, visibility?: ResultVisibility) =>
+    request<PaginatedResponse<RuntimeCluster>>(`/runtime/clusters?${paginationWithProjectQuery({ ...selectionPageParams, projectId, visibility })}`).then(selectionItems),
+  listRuntimeClustersPage: (params: PaginationParams & { projectId?: string, visibility?: ResultVisibility }) =>
     request<PaginatedResponse<RuntimeCluster>>(`/runtime/clusters?${paginationWithProjectQuery(params)}`),
   observeRuntimeClusterPressure: (clusterIds: string[], projectId?: string) => {
     const query = new URLSearchParams()
@@ -23,7 +23,7 @@ export const runtimeApi = {
     request<void>(`/runtime/clusters/${clusterId}`, { method: 'DELETE' }),
   testRuntimeCluster: (clusterId: string) =>
     request<RuntimeCluster>(`/runtime/clusters/${clusterId}/test`, { method: 'POST' }),
-  listRuntimeClusterResources: (clusterId: string, params: { resourceCategory: RuntimeClusterResourceCategory, namespace?: string, projectId?: string, applicationId?: string, environmentId?: string }) => {
+  listRuntimeClusterResources: (clusterId: string, params: { resourceCategory: RuntimeClusterResourceCategory, namespace?: string, projectId?: string, visibility?: ResultVisibility, applicationId?: string, environmentId?: string }) => {
     const query = runtimeClusterResourceListQuery({ ...selectionPageParams, ...params })
     return request<PaginatedResponse<ClusterResource>>(`/runtime/clusters/${clusterId}/resources?${query}`).then(selectionItems)
   },

@@ -23,6 +23,10 @@ func (h *Handlers) ListGitProviders(ctx *gin.Context) {
 	if !ok {
 		return
 	}
+	visibility, ok := resolveListVisibility(ctx, user)
+	if !ok {
+		return
+	}
 
 	query := h.dbFor(ctx).Model(&model.GitProvider{})
 	if user.Role != authz.PlatformRoleAdmin {
@@ -31,7 +35,7 @@ func (h *Handlers) ListGitProviders(ctx *gin.Context) {
 
 	projectID := strings.TrimSpace(ctx.Query("projectId"))
 	var visible bool
-	query, visible = h.applyScopedResourceVisibility(ctx, query, scopedResourceGitProvider, user, projectID)
+	query, visible = h.applyScopedResourceListVisibility(ctx, query, scopedResourceGitProvider, user, projectID, visibility)
 	if !visible {
 		return
 	}

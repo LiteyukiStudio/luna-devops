@@ -13,9 +13,12 @@ import { useSession } from '@/app/session-context'
 import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { ContentTabs } from '@/components/common/content-tabs'
 import { ErrorState } from '@/components/common/error-state'
+import { ResultVisibilitySelect } from '@/components/common/result-visibility-select'
 import { Button } from '@/components/ui/button'
 import { TabsContent } from '@/components/ui/tabs'
 import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
+import { isPlatformAdmin } from '@/lib/roles'
+import { useResultVisibility } from '@/lib/use-result-visibility'
 import { CredentialDialog, ProviderDialog } from './code-repositories-dialogs'
 import { credentialDefaults, credentialSchema, providerDefaults, providerSchema } from './code-repositories-form-model'
 import {
@@ -39,19 +42,21 @@ export function CodeRepositoriesPage() {
   const [providerPageSize, setProviderPageSize] = useState(10)
   const [credentialPage, setCredentialPage] = useState(1)
   const [credentialPageSize, setCredentialPageSize] = useState(10)
+  const canViewAll = isPlatformAdmin(user?.role)
+  const [effectiveVisibility, setVisibility] = useResultVisibility(canViewAll)
   const providers = useQuery({
-    queryKey: ['git-providers', providerPage, providerPageSize],
-    queryFn: () => api.listGitProvidersPage({ page: providerPage, pageSize: providerPageSize, sortBy: 'createdAt', sortOrder: 'desc' }),
+    queryKey: ['git-providers', providerPage, providerPageSize, effectiveVisibility],
+    queryFn: () => api.listGitProvidersPage({ page: providerPage, pageSize: providerPageSize, visibility: effectiveVisibility, sortBy: 'createdAt', sortOrder: 'desc' }),
   })
   const credentials = useQuery({
     ...liveObservationQueryPolicy,
-    queryKey: ['git-accounts', credentialPage, credentialPageSize],
-    queryFn: () => api.listGitAccountsPage({ page: credentialPage, pageSize: credentialPageSize, sortBy: 'createdAt', sortOrder: 'desc' }),
+    queryKey: ['git-accounts', credentialPage, credentialPageSize, effectiveVisibility],
+    queryFn: () => api.listGitAccountsPage({ page: credentialPage, pageSize: credentialPageSize, visibility: effectiveVisibility, sortBy: 'createdAt', sortOrder: 'desc' }),
   })
-  const providerOptions = useQuery({ queryKey: ['git-providers', 'options'], queryFn: () => api.listGitProviders() })
+  const providerOptions = useQuery({ queryKey: ['git-providers', 'options', effectiveVisibility], queryFn: () => api.listGitProviders(undefined, effectiveVisibility) })
   const providerOptionItems = useMemo(() => providerOptions.data ?? [], [providerOptions.data])
   const credentialItems = useMemo(() => credentials.data?.items ?? [], [credentials.data?.items])
-  const projects = useQuery({ queryKey: ['projects'], queryFn: api.listProjects })
+  const projects = useQuery({ queryKey: ['projects', 'options', effectiveVisibility], queryFn: () => api.listProjects(effectiveVisibility) })
   const canManageProviders = user?.permissions.includes('user.manage')
   const projectMap = useMemo(() => {
     const map: Record<string, string> = {}
@@ -234,36 +239,47 @@ export function CodeRepositoriesPage() {
           { value: 'providers', label: t('codeRepositoriesView.providersTab') },
           { value: 'credentials', label: t('codeRepositoriesView.credentialsTab') },
         ]}
-        tools={(
-          activeTab === 'providers'
-            ? (
-                canManageProviders
-                  ? (
-                      <Button
-                        onClick={() => {
-                          setEditingProvider(null)
-                          providerForm.reset(providerDefaults)
-                          setProviderDialogOpen(true)
-                        }}
-                      >
-                        <Plus size={16} />
-                        {t('codeRepositoriesView.createProvider')}
-                      </Button>
-                    )
-                  : undefined
-              )
-            : (
-                <Button
-                  onClick={() => {
-                    setEditingCredential(null)
-                    credentialForm.reset(credentialDefaults)
-                    setCredentialDialogOpen(true)
-                  }}
-                >
-                  <Plus size={16} />
-                  {t('codeRepositoriesView.createCredential')}
-                </Button>
-              )
+        tools={(canViewAll || activeTab === 'credentials' || canManageProviders) && (
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <ResultVisibilitySelect
+              canViewAll={canViewAll}
+              value={effectiveVisibility}
+              onChange={(nextVisibility) => {
+                setVisibility(nextVisibility)
+                setProviderPage(1)
+                setCredentialPage(1)
+              }}
+            />
+            {activeTab === 'providers'
+              ? (
+                  canManageProviders
+                    ? (
+                        <Button
+                          onClick={() => {
+                            setEditingProvider(null)
+                            providerForm.reset(providerDefaults)
+                            setProviderDialogOpen(true)
+                          }}
+                        >
+                          <Plus size={16} />
+                          {t('codeRepositoriesView.createProvider')}
+                        </Button>
+                      )
+                    : undefined
+                )
+              : (
+                  <Button
+                    onClick={() => {
+                      setEditingCredential(null)
+                      credentialForm.reset(credentialDefaults)
+                      setCredentialDialogOpen(true)
+                    }}
+                  >
+                    <Plus size={16} />
+                    {t('codeRepositoriesView.createCredential')}
+                  </Button>
+                )}
+          </div>
         )}
         value={activeTab}
         onValueChange={setActiveTab}

@@ -8,6 +8,7 @@ import (
 
 	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/model"
+	projectservice "github.com/LiteyukiStudio/devops/internal/project"
 	kubeprovider "github.com/LiteyukiStudio/devops/internal/provider/kubernetes"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -149,23 +150,22 @@ func (h *Handlers) canManageClusterResourceSnapshot(ctx *gin.Context, user model
 	return false
 }
 
-func (h *Handlers) filterClusterResourceSnapshots(ctx *gin.Context, user model.User, items []kubeprovider.ResourceSnapshot) []kubeprovider.ResourceSnapshot {
-	if user.Role == authz.PlatformRoleAdmin {
+func (h *Handlers) filterClusterResourceSnapshots(ctx *gin.Context, user model.User, items []kubeprovider.ResourceSnapshot, visibility projectservice.ListVisibility, projectID string) []kubeprovider.ResourceSnapshot {
+	projectID = strings.TrimSpace(projectID)
+	if visibility == projectservice.ListVisibilityAll && projectID == "" {
 		return items
 	}
 	allowed := make(map[string]bool)
+	if projectID != "" {
+		allowed[projectID] = true
+	} else {
+		for _, visibleProjectID := range h.projectIDsForUser(ctx.Request.Context(), user.ID) {
+			allowed[visibleProjectID] = true
+		}
+	}
 	filtered := make([]kubeprovider.ResourceSnapshot, 0, len(items))
 	for _, item := range items {
-		if strings.TrimSpace(item.ProjectID) == "" {
-			continue
-		}
-		allowedProject, ok := allowed[item.ProjectID]
-		if !ok {
-			_, projectOK := h.findProjectForCurrentUserWithRolesByID(ctx, item.ProjectID, authz.ProjectRoleOwner, authz.ProjectRoleAdmin)
-			allowedProject = projectOK
-			allowed[item.ProjectID] = projectOK
-		}
-		if allowedProject {
+		if allowed[strings.TrimSpace(item.ProjectID)] {
 			filtered = append(filtered, item)
 		}
 	}

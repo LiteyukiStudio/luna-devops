@@ -11,13 +11,14 @@ import (
 )
 
 type platformMailSettingsInput struct {
-	Host        string `json:"host"`
-	Port        int    `json:"port"`
-	Security    string `json:"security"`
-	Username    string `json:"username"`
-	Password    string `json:"password"`
-	FromAddress string `json:"fromAddress"`
-	FromName    string `json:"fromName"`
+	Host                         string `json:"host"`
+	Port                         int    `json:"port"`
+	Security                     string `json:"security"`
+	Username                     string `json:"username"`
+	Password                     string `json:"password"`
+	FromAddress                  string `json:"fromAddress"`
+	FromName                     string `json:"fromName"`
+	PersonalEmailCooldownSeconds *int   `json:"personalEmailCooldownSeconds" binding:"required"`
 }
 
 type platformMailTestInput struct {
@@ -25,13 +26,14 @@ type platformMailTestInput struct {
 }
 
 type platformMailSettingsResponse struct {
-	Host        string `json:"host"`
-	Port        int    `json:"port"`
-	Security    string `json:"security"`
-	Username    string `json:"username"`
-	PasswordSet bool   `json:"passwordSet"`
-	FromAddress string `json:"fromAddress"`
-	FromName    string `json:"fromName"`
+	Host                         string `json:"host"`
+	Port                         int    `json:"port"`
+	Security                     string `json:"security"`
+	Username                     string `json:"username"`
+	PasswordSet                  bool   `json:"passwordSet"`
+	FromAddress                  string `json:"fromAddress"`
+	FromName                     string `json:"fromName"`
+	PersonalEmailCooldownSeconds int    `json:"personalEmailCooldownSeconds"`
 }
 
 func (h *Handlers) GetPlatformMailSettings(ctx *gin.Context) {
@@ -128,18 +130,22 @@ func platformMailSettingsFromInput(existing model.PlatformMailSettings, input pl
 	settings.Username = input.Username
 	settings.FromAddress = input.FromAddress
 	settings.FromName = input.FromName
+	if input.PersonalEmailCooldownSeconds != nil {
+		settings.PersonalEmailCooldownSeconds = *input.PersonalEmailCooldownSeconds
+	}
 	return platformmail.Normalize(settings), strings.TrimSpace(input.Password)
 }
 
 func platformMailSettingsResponseFor(settings model.PlatformMailSettings) platformMailSettingsResponse {
 	settings = platformmail.Normalize(settings)
 	return platformMailSettingsResponse{
-		Host:        settings.Host,
-		Port:        settings.Port,
-		Security:    settings.Security,
-		Username:    settings.Username,
-		PasswordSet: settings.PasswordRef != "",
-		FromAddress: settings.FromAddress,
-		FromName:    settings.FromName,
+		Host:                         settings.Host,
+		Port:                         settings.Port,
+		Security:                     settings.Security,
+		Username:                     settings.Username,
+		PasswordSet:                  settings.PasswordRef != "",
+		FromAddress:                  settings.FromAddress,
+		FromName:                     settings.FromName,
+		PersonalEmailCooldownSeconds: settings.PersonalEmailCooldownSeconds,
 	}
 }

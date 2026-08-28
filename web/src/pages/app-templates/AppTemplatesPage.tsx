@@ -45,7 +45,7 @@ export function AppTemplatesPage() {
   const [formState, setFormState] = useState<{ templateId: string, value: AppTemplateInstallPayload } | null>(null)
   const requestedTemplateId = searchParams.get('template')
   const templates = useQuery({ queryKey: ['app-templates'], queryFn: () => api.listAppTemplates() })
-  const projects = useQuery({ queryKey: ['projects'], queryFn: api.listProjects })
+  const projects = useQuery({ queryKey: ['projects'], queryFn: () => api.listProjects() })
   const projectItems = useMemo(() => projects.data ?? [], [projects.data])
   const projectId = projectItems.some(project => project.id === selectedProjectId)
     ? selectedProjectId

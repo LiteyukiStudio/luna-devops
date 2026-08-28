@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/observation"
@@ -25,30 +24,17 @@ func (h *Handlers) ListGitAccounts(ctx *gin.Context) {
 	if !ok {
 		return
 	}
+	visibility, ok := resolveListVisibility(ctx, user)
+	if !ok {
+		return
+	}
 
 	projectID := strings.TrimSpace(ctx.Query("projectId"))
 	query := h.dbFor(ctx).Model(&model.GitAccount{})
-	conditions := []string{
-		"scope = 'global'",
-		"(scope = 'user' and owner_ref = ?)",
+	query, visible := h.applyScopedResourceListVisibility(ctx, query, scopedResourceGitAccount, user, projectID, visibility)
+	if !visible {
+		return
 	}
-	args := []any{user.ID}
-	if projectID != "" {
-		if _, ok := h.findProjectForCurrentUserByID(ctx, projectID); !ok {
-			return
-		}
-		conditions = append(conditions, "(scope = 'project' and exists (select 1 from scoped_resource_project_bindings srpb where srpb.resource_type = ? and srpb.resource_id = git_accounts.id and srpb.project_id = ?))")
-		args = append(args, scopedResourceGitAccount, projectID)
-	} else if user.Role == authz.PlatformRoleAdmin {
-		conditions = append(conditions, "scope = 'project'")
-	} else {
-		projectIDs := h.projectIDsForUser(ctx.Request.Context(), user.ID)
-		if len(projectIDs) > 0 {
-			conditions = append(conditions, "(scope = 'project' and exists (select 1 from scoped_resource_project_bindings srpb where srpb.resource_type = ? and srpb.resource_id = git_accounts.id and srpb.project_id in ?))")
-			args = append(args, scopedResourceGitAccount, projectIDs)
-		}
-	}
-	query = query.Where(strings.Join(conditions, " or "), args...)
 
 	var accounts []model.GitAccount
 	query = applySearch(ctx, query, "username", "external_user_id")

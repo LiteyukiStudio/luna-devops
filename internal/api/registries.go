@@ -18,13 +18,17 @@ func (h *Handlers) ListArtifactRegistries(ctx *gin.Context) {
 	if !ok {
 		return
 	}
+	visibility, ok := resolveListVisibility(ctx, user)
+	if !ok {
+		return
+	}
 
 	projectID := strings.TrimSpace(ctx.Query("projectId"))
 
 	var registries []model.ArtifactRegistry
 	query := h.dbFor(ctx).Model(&model.ArtifactRegistry{})
 	var visible bool
-	query, visible = h.applyScopedResourceVisibility(ctx, query, scopedResourceArtifactRegistry, user, projectID)
+	query, visible = h.applyScopedResourceListVisibility(ctx, query, scopedResourceArtifactRegistry, user, projectID, visibility)
 	if !visible {
 		return
 	}

@@ -3,18 +3,34 @@ package platformmail
 import (
 	"net/mail"
 	"testing"
+	"time"
 
 	"github.com/LiteyukiStudio/devops/internal/model"
+	"github.com/LiteyukiStudio/devops/internal/testdb"
+	"gorm.io/gorm"
 )
+
+func TestDefaultSettingsUseOneMinutePersonalEmailCooldown(t *testing.T) {
+	settings := DefaultSettings()
+	if settings.PersonalEmailCooldownSeconds != DefaultPersonalEmailCooldownSeconds {
+		t.Fatalf("personal email cooldown = %d, want %d", settings.PersonalEmailCooldownSeconds, DefaultPersonalEmailCooldownSeconds)
+	}
+
+	settings.PersonalEmailCooldownSeconds = 0
+	if normalized := Normalize(settings); normalized.PersonalEmailCooldownSeconds != 0 {
+		t.Fatalf("Normalize() changed disabled cooldown to %d", normalized.PersonalEmailCooldownSeconds)
+	}
+}
 
 func TestValidateRequiresCompleteSMTPSettings(t *testing.T) {
 	valid := model.PlatformMailSettings{
-		Host:        " smtp.example.com ",
-		Port:        587,
-		Security:    "STARTTLS",
-		Username:    "mailer",
-		PasswordRef: "secret:stored",
-		FromAddress: "noreply@example.com",
+		Host:                         " smtp.example.com ",
+		Port:                         587,
+		Security:                     "STARTTLS",
+		Username:                     "mailer",
+		PasswordRef:                  "secret:stored",
+		FromAddress:                  "noreply@example.com",
+		PersonalEmailCooldownSeconds: DefaultPersonalEmailCooldownSeconds,
 	}
 	if err := Validate(valid, false); err != nil {
 		t.Fatalf("Validate() rejected valid settings: %v", err)
@@ -34,17 +50,60 @@ func TestValidateRequiresCompleteSMTPSettings(t *testing.T) {
 	if err := Validate(invalidSender, false); err == nil {
 		t.Fatal("Validate() accepted a display name in fromAddress")
 	}
+
+	disabledCooldown := valid
+	disabledCooldown.PersonalEmailCooldownSeconds = 0
+	if err := Validate(disabledCooldown, false); err != nil {
+		t.Fatalf("Validate() rejected a disabled personal email cooldown: %v", err)
+	}
+	for _, seconds := range []int{-1, MaxPersonalEmailCooldownSeconds + 1} {
+		invalidCooldown := valid
+		invalidCooldown.PersonalEmailCooldownSeconds = seconds
+		if err := Validate(invalidCooldown, false); err == nil {
+			t.Fatalf("Validate() accepted personal email cooldown %d", seconds)
+		}
+	}
+}
+
+func TestPersonalEmailAggregationCooldownReadsSavedSetting(t *testing.T) {
+	db := testdb.Open(t, testdb.Options{
+		SchemaPrefix: "platform_mail_cooldown_test",
+		Migrate: func(db *gorm.DB) error {
+			return db.AutoMigrate(&model.PlatformMailSettings{})
+		},
+	})
+
+	cooldown, err := PersonalEmailAggregationCooldown(t.Context(), db)
+	if err != nil {
+		t.Fatalf("read default personal email cooldown: %v", err)
+	}
+	if cooldown != time.Minute {
+		t.Fatalf("default cooldown = %s, want %s", cooldown, time.Minute)
+	}
+	if err := db.Model(&model.PlatformMailSettings{}).
+		Where("id = ?", SettingsID).
+		Update("personal_email_cooldown_seconds", 0).Error; err != nil {
+		t.Fatalf("disable personal email cooldown: %v", err)
+	}
+	cooldown, err = PersonalEmailAggregationCooldown(t.Context(), db)
+	if err != nil {
+		t.Fatalf("read disabled personal email cooldown: %v", err)
+	}
+	if cooldown != 0 {
+		t.Fatalf("disabled cooldown = %s, want 0", cooldown)
+	}
 }
 
 func TestSMTPConfigUsesExplicitSingleRecipient(t *testing.T) {
 	settings := model.PlatformMailSettings{
-		Host:        "smtp.example.com",
-		Port:        465,
-		Security:    "tls",
-		Username:    "mailer",
-		PasswordRef: "secret:stored",
-		FromAddress: "noreply@example.com",
-		FromName:    "Luna DevOps",
+		Host:                         "smtp.example.com",
+		Port:                         465,
+		Security:                     "tls",
+		Username:                     "mailer",
+		PasswordRef:                  "secret:stored",
+		FromAddress:                  "noreply@example.com",
+		FromName:                     "Luna DevOps",
+		PersonalEmailCooldownSeconds: DefaultPersonalEmailCooldownSeconds,
 	}
 	cfg, err := smtpConfig(settings, "operator@example.com")
 	if err != nil {

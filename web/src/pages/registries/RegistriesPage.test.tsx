@@ -2,6 +2,7 @@ import type { ArtifactRegistry, RegistryCredential } from '@/api'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import i18next from '@/i18n'
@@ -15,6 +16,11 @@ const mocks = vi.hoisted(() => ({
   listAllRegistryCredentialsPage: vi.fn(),
   listRegistryCredentials: vi.fn(),
   listRegistryCredentialsPage: vi.fn(),
+  session: { user: { role: 'user' } },
+}))
+
+vi.mock('@/app/session-context', () => ({
+  useSession: () => mocks.session,
 }))
 
 vi.mock('@/api', async (importOriginal) => {
@@ -90,9 +96,11 @@ function renderPage() {
   })
   return render(
     <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <RegistriesPage />
-      </TooltipProvider>
+      <MemoryRouter initialEntries={['/registries#tab=credentials']}>
+        <TooltipProvider>
+          <RegistriesPage />
+        </TooltipProvider>
+      </MemoryRouter>
     </QueryClientProvider>,
   )
 }

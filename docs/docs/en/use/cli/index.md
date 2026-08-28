@@ -15,6 +15,8 @@ luna project get-projects
 luna project use project=prj_example
 ```
 
+List commands default to `visibility=related`. Platform administrators pass `visibility=all` only when they explicitly need platform-wide results, for example `luna project get-projects visibility=all`. Resource queries with a known project space should still pass its project ID to narrow the result.
+
 Use layered help to find arguments, permissions, and examples:
 
 ```bash

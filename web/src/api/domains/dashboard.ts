@@ -1,6 +1,9 @@
-import type { DashboardOverview } from '../types'
+import type { DashboardOverview, ResultVisibility } from '../types'
 import { request } from '../core'
 
 export const dashboardApi = {
-  getDashboard: () => request<DashboardOverview>('/dashboard'),
+  getDashboard: (visibility?: ResultVisibility) => {
+    const query = visibility ? `?visibility=${visibility}` : ''
+    return request<DashboardOverview>(`/dashboard${query}`)
+  },
 }

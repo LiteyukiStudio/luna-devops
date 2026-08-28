@@ -148,16 +148,16 @@ func TestProjectListOptionsDefaultToRelatedAndBoundedPagination(t *testing.T) {
 		if err != nil {
 			t.Fatalf("platformAdmin=%t default options error = %v", platformAdmin, err)
 		}
-		if options.Scope != projectservice.ListScopeRelated || options.Page != 1 || options.PageSize != 20 {
+		if options.Visibility != projectservice.ListVisibilityRelated || options.Page != 1 || options.PageSize != 20 {
 			t.Fatalf("platformAdmin=%t default options = %#v", platformAdmin, options)
 		}
 	}
 
-	options, err := resolveProjectListOptions(map[string]any{"scope": "all", "page": float64(3), "pageSize": float64(100)}, true)
+	options, err := resolveProjectListOptions(map[string]any{"visibility": "all", "page": float64(3), "pageSize": float64(100)}, true)
 	if err != nil {
 		t.Fatalf("admin all options error = %v", err)
 	}
-	if options.Scope != projectservice.ListScopeAll || options.Page != 3 || options.PageSize != 100 {
+	if options.Visibility != projectservice.ListVisibilityAll || options.Page != 3 || options.PageSize != 100 {
 		t.Fatalf("admin all options = %#v", options)
 	}
 }
@@ -168,11 +168,12 @@ func TestProjectListOptionsRejectUnauthorizedOrInvalidArguments(t *testing.T) {
 		platformAdmin bool
 		want          error
 	}{
-		"non-admin all":      {arguments: map[string]any{"scope": "all"}, want: ErrForbidden},
-		"unknown scope":      {arguments: map[string]any{"scope": "mine"}, platformAdmin: true, want: ErrInvalidInput},
-		"zero page":          {arguments: map[string]any{"page": float64(0)}, want: ErrInvalidInput},
-		"fractional page":    {arguments: map[string]any{"page": 1.5}, want: ErrInvalidInput},
-		"oversized pageSize": {arguments: map[string]any{"pageSize": float64(101)}, want: ErrInvalidInput},
+		"non-admin all":         {arguments: map[string]any{"visibility": "all"}, want: ErrForbidden},
+		"unknown visibility":    {arguments: map[string]any{"visibility": "mine"}, platformAdmin: true, want: ErrInvalidInput},
+		"non-string visibility": {arguments: map[string]any{"visibility": float64(1)}, platformAdmin: true, want: ErrInvalidInput},
+		"zero page":             {arguments: map[string]any{"page": float64(0)}, want: ErrInvalidInput},
+		"fractional page":       {arguments: map[string]any{"page": 1.5}, want: ErrInvalidInput},
+		"oversized pageSize":    {arguments: map[string]any{"pageSize": float64(101)}, want: ErrInvalidInput},
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, err := resolveProjectListOptions(testCase.arguments, testCase.platformAdmin); !errors.Is(err, testCase.want) {

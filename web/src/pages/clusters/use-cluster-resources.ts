@@ -1,5 +1,5 @@
 import type { ClusterResourcePagination } from './cluster-resources-panel'
-import type { ClusterResource, CurrentUser, RuntimeCluster, RuntimeClusterResourceCategory } from '@/api'
+import type { ClusterResource, CurrentUser, ResultVisibility, RuntimeCluster, RuntimeClusterResourceCategory } from '@/api'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -11,10 +11,11 @@ import { canDeleteClusterResource } from './cluster-resource-utils'
 const RESOURCE_PAGE_SIZE_OPTIONS = [10, 20, 50, 100]
 interface ResourceViewState { scope: string, page: number, selectedKeys: string[] }
 
-export function useClusterResources({ activeTab, manageableClusters, user }: {
+export function useClusterResources({ activeTab, manageableClusters, user, visibility }: {
   activeTab: string
   manageableClusters: RuntimeCluster[]
   user?: CurrentUser
+  visibility: ResultVisibility
 }) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
@@ -49,11 +50,12 @@ export function useClusterResources({ activeTab, manageableClusters, user }: {
   }
   const clusterResources = useQuery({
     ...liveObservationQueryPolicy,
-    queryKey: ['runtime-cluster-resources', selectedResourceCluster?.id, resourceCategory, resourcePage, resourcePageSize],
+    queryKey: ['runtime-cluster-resources', selectedResourceCluster?.id, resourceCategory, resourcePage, resourcePageSize, visibility],
     queryFn: () => api.listRuntimeClusterResourcesPage(selectedResourceCluster?.id ?? '', {
       resourceCategory,
       page: resourcePage,
       pageSize: resourcePageSize,
+      visibility,
       sortBy: 'updatedAt',
       sortOrder: 'desc',
     }),

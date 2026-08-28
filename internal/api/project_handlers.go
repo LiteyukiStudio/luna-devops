@@ -23,17 +23,8 @@ func (h *Handlers) ListProjects(ctx *gin.Context) {
 		return
 	}
 	platformAdmin := authz.IsPlatformAdmin(user.Role)
-	scope, err := projectservice.ResolveListScope(ctx.Query("scope"), platformAdmin)
-	if errors.Is(err, projectservice.ErrListScopeInvalid) {
-		writeErrorCode(ctx, http.StatusBadRequest, "request.invalid", err.Error())
-		return
-	}
-	if errors.Is(err, projectservice.ErrListScopeForbidden) {
-		writeErrorCode(ctx, http.StatusForbidden, "auth.forbidden", err.Error())
-		return
-	}
-	if err != nil {
-		writeError(ctx, http.StatusInternalServerError, err.Error())
+	visibility, ok := resolveListVisibility(ctx, user)
+	if !ok {
 		return
 	}
 	if platformAdmin {
@@ -52,7 +43,7 @@ func (h *Handlers) ListProjects(ctx *gin.Context) {
 	if projectID := aiConversationProjectID(ctx); projectID != "" {
 		baseQuery = baseQuery.Where("projects.id = ?", projectID)
 	}
-	if scope == projectservice.ListScopeRelated {
+	if visibility == projectservice.ListVisibilityRelated {
 		baseQuery = baseQuery.Where("project_members.user_id = ?", user.ID)
 	}
 	baseQuery = applySearch(ctx, baseQuery, "projects.name", "projects.identifier")

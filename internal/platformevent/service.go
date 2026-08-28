@@ -3,6 +3,7 @@ package platformevent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"time"
 
@@ -20,22 +21,23 @@ const (
 )
 
 type RecordInput struct {
-	ID                 string
-	Type               string
-	Severity           string
-	ProjectID          string
-	ApplicationID      string
-	DeploymentTargetID string
-	ResourceType       string
-	ResourceID         string
-	ActorID            string
-	Message            string
-	Detail             any
-	Links              map[string]string
-	CorrelationID      string
-	TraceID            string
-	DedupKey           string
-	OccurredAt         time.Time
+	ID                  string
+	Type                string
+	Severity            string
+	ProjectID           string
+	ApplicationID       string
+	DeploymentTargetID  string
+	ResourceType        string
+	ResourceID          string
+	ActorID             string
+	ResourceOwnerUserID string
+	Message             string
+	Detail              any
+	Links               map[string]string
+	CorrelationID       string
+	TraceID             string
+	DedupKey            string
+	OccurredAt          time.Time
 }
 
 type Service struct {
@@ -44,6 +46,20 @@ type Service struct {
 
 func (s Service) Record(ctx context.Context, input RecordInput) (model.PlatformEvent, bool, error) {
 	event := NewRecord(input)
+	return s.record(ctx, event)
+}
+
+// RecordNotification persists the authoritative event and marks only events
+// emitted through the notification service for durable fanout processing.
+func (s Service) RecordNotification(ctx context.Context, input RecordInput, traceparent string, tracestate string) (model.PlatformEvent, bool, error) {
+	event := NewRecord(input)
+	event.NotificationFanoutStatus = "pending"
+	event.FanoutTraceparent = traceparent
+	event.FanoutTracestate = tracestate
+	return s.record(ctx, event)
+}
+
+func (s Service) record(ctx context.Context, event model.PlatformEvent) (model.PlatformEvent, bool, error) {
 	if s.DB == nil {
 		return event, false, nil
 	}
@@ -59,9 +75,15 @@ func (s Service) Record(ctx context.Context, input RecordInput) (model.PlatformE
 		var existing model.PlatformEvent
 		if err := s.DB.WithContext(ctx).First(&existing, "dedup_key = ?", *event.DedupKey).Error; err == nil {
 			return existing, false, nil
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return model.PlatformEvent{}, false, err
 		}
 	}
-	return event, false, nil
+	var existing model.PlatformEvent
+	if err := s.DB.WithContext(ctx).First(&existing, "id = ?", event.ID).Error; err != nil {
+		return model.PlatformEvent{}, false, err
+	}
+	return existing, false, nil
 }
 
 func NewRecord(input RecordInput) model.PlatformEvent {
@@ -85,26 +107,27 @@ func NewRecord(input RecordInput) model.PlatformEvent {
 		dedupKey = &value
 	}
 	return model.PlatformEvent{
-		ID:                 eventID,
-		Type:               eventType,
-		Category:           CategoryForType(eventType),
-		Severity:           severity,
-		Status:             StatusForType(eventType),
-		ProjectID:          strings.TrimSpace(input.ProjectID),
-		ApplicationID:      strings.TrimSpace(input.ApplicationID),
-		DeploymentTargetID: strings.TrimSpace(input.DeploymentTargetID),
-		ResourceType:       strings.TrimSpace(input.ResourceType),
-		ResourceID:         strings.TrimSpace(input.ResourceID),
-		ActorID:            strings.TrimSpace(input.ActorID),
-		SummaryKey:         "events.types." + strings.ReplaceAll(eventType, ".", "_"),
-		Message:            redactSensitiveText(strings.TrimSpace(input.Message)),
-		DetailJSON:         detailJSON,
-		LinksJSON:          linksJSON,
-		CorrelationID:      strings.TrimSpace(input.CorrelationID),
-		TraceID:            strings.TrimSpace(input.TraceID),
-		DedupKey:           dedupKey,
-		OccurredAt:         occurredAt,
-		CreatedAt:          time.Now(),
+		ID:                  eventID,
+		Type:                eventType,
+		Category:            CategoryForType(eventType),
+		Severity:            severity,
+		Status:              StatusForType(eventType),
+		ProjectID:           strings.TrimSpace(input.ProjectID),
+		ApplicationID:       strings.TrimSpace(input.ApplicationID),
+		DeploymentTargetID:  strings.TrimSpace(input.DeploymentTargetID),
+		ResourceType:        strings.TrimSpace(input.ResourceType),
+		ResourceID:          strings.TrimSpace(input.ResourceID),
+		ActorID:             strings.TrimSpace(input.ActorID),
+		ResourceOwnerUserID: strings.TrimSpace(input.ResourceOwnerUserID),
+		SummaryKey:          "events.types." + strings.ReplaceAll(eventType, ".", "_"),
+		Message:             redactSensitiveText(strings.TrimSpace(input.Message)),
+		DetailJSON:          detailJSON,
+		LinksJSON:           linksJSON,
+		CorrelationID:       strings.TrimSpace(input.CorrelationID),
+		TraceID:             strings.TrimSpace(input.TraceID),
+		DedupKey:            dedupKey,
+		OccurredAt:          occurredAt,
+		CreatedAt:           time.Now(),
 	}
 }
 

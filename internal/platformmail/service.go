@@ -7,13 +7,18 @@ import (
 	"fmt"
 	"net/mail"
 	"strings"
+	"time"
 
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/notification"
 	"gorm.io/gorm"
 )
 
-const SettingsID = "default"
+const (
+	SettingsID                          = "default"
+	DefaultPersonalEmailCooldownSeconds = 60
+	MaxPersonalEmailCooldownSeconds     = 3600
+)
 
 var (
 	ErrInvalidSettings  = errors.New("platform mail settings are invalid")
@@ -22,10 +27,11 @@ var (
 
 func DefaultSettings() model.PlatformMailSettings {
 	return model.PlatformMailSettings{
-		ID:       SettingsID,
-		Port:     587,
-		Security: "starttls",
-		FromName: "Luna DevOps",
+		ID:                           SettingsID,
+		Port:                         587,
+		Security:                     "starttls",
+		FromName:                     "Luna DevOps",
+		PersonalEmailCooldownSeconds: DefaultPersonalEmailCooldownSeconds,
 	}
 }
 
@@ -71,6 +77,27 @@ func Validate(settings model.PlatformMailSettings, passwordProvided bool) error 
 	}
 	if settings.Username != "" && settings.PasswordRef == "" && !passwordProvided {
 		return errors.New("SMTP password is required when username is set")
+	}
+	if err := validatePersonalEmailCooldownSeconds(settings.PersonalEmailCooldownSeconds); err != nil {
+		return err
+	}
+	return nil
+}
+
+func PersonalEmailAggregationCooldown(ctx context.Context, db *gorm.DB) (time.Duration, error) {
+	settings, err := Get(ctx, db)
+	if err != nil {
+		return 0, err
+	}
+	if err := validatePersonalEmailCooldownSeconds(settings.PersonalEmailCooldownSeconds); err != nil {
+		return 0, err
+	}
+	return time.Duration(settings.PersonalEmailCooldownSeconds) * time.Second, nil
+}
+
+func validatePersonalEmailCooldownSeconds(seconds int) error {
+	if seconds < 0 || seconds > MaxPersonalEmailCooldownSeconds {
+		return fmt.Errorf("personal email cooldown must be between 0 and %d seconds", MaxPersonalEmailCooldownSeconds)
 	}
 	return nil
 }

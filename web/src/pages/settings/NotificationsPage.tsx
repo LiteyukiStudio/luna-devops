@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import type { NotificationChannel, NotificationChannelPayload, NotificationDelivery, NotificationRule, NotificationRulePayload, NotificationTemplate, NotificationTemplatePayload } from '@/api'
+import type { NotificationChannel, NotificationChannelPayload, NotificationDelivery, NotificationRule, NotificationRuleAdvancedFilter, NotificationRulePayload, NotificationTemplate, NotificationTemplatePayload, Project } from '@/api'
 import type { DataListColumn } from '@/components/common/data-list'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Bell, FlaskConical, Pencil, Plus, Trash2 } from 'lucide-react'
@@ -10,6 +10,7 @@ import { api } from '@/api'
 import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { ContentTabs } from '@/components/common/content-tabs'
 import { DataList } from '@/components/common/data-list'
+import { ProjectSpaceMultiSelect } from '@/components/common/project-space-select'
 import { StatusBadge, StatusValueBadge } from '@/components/common/status-badge'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -59,6 +60,10 @@ export function NotificationsPage() {
   const rules = useQuery({
     queryKey: ['notifications', 'rules', rulePage],
     queryFn: () => api.listNotificationRules({ page: rulePage, pageSize: PAGE_SIZE, sortBy: 'createdAt', sortOrder: 'desc' }),
+  })
+  const projectOptions = useQuery({
+    queryKey: ['projects', 'options', 'all', 'notification-rules'],
+    queryFn: () => api.listProjects('all'),
   })
   const deliveries = useQuery({
     queryKey: ['notifications', 'deliveries', deliveryPage],
@@ -121,15 +126,9 @@ export function NotificationsPage() {
   })
   const saveRule = useMutation({
     mutationFn: (state: RuleFormState) => {
-      const payload: NotificationRulePayload = {
-        channelIds: state.channelIds,
-        enabled: state.enabled,
-        eventTypes: state.eventTypes,
-        filter: parseJSON(state.filterText, {}),
-        locale: state.locale,
-        name: state.name,
-        templateId: state.templateId,
-      }
+      const payload = notificationRulePayloadFromState(state)
+      if (!payload)
+        throw new Error(t('notificationsPage.ruleInvalid'))
       return state.id ? api.updateNotificationRule(state.id, payload) : api.createNotificationRule(payload)
     },
     onSuccess: () => {
@@ -256,7 +255,7 @@ export function NotificationsPage() {
       <ChannelDialog openState={channelDialog} saving={saveChannel.isPending} onClose={() => setChannelDialog(null)} onSave={state => saveChannel.mutate(state)} onUpdate={setChannelDialog} />
       <PresetDialog openState={presetDialog} presets={presets.data ?? []} saving={createPreset.isPending} onClose={() => setPresetDialog(null)} onSave={state => createPreset.mutate(state)} onUpdate={setPresetDialog} />
       <TemplateDialog openState={templateDialog} saving={saveTemplate.isPending} onClose={() => setTemplateDialog(null)} onSave={state => saveTemplate.mutate(state)} onUpdate={setTemplateDialog} />
-      <RuleDialog channels={channelOptions.data?.items ?? []} openState={ruleDialog} saving={saveRule.isPending} templates={templateOptions.data?.items ?? []} onClose={() => setRuleDialog(null)} onSave={state => saveRule.mutate(state)} onUpdate={setRuleDialog} />
+      <RuleDialog channels={channelOptions.data?.items ?? []} openState={ruleDialog} projects={projectOptions.data ?? []} saving={saveRule.isPending} templates={templateOptions.data?.items ?? []} onClose={() => setRuleDialog(null)} onSave={state => saveRule.mutate(state)} onUpdate={setRuleDialog} />
       <ConfirmDialog
         cancelText={t('common.cancel')}
         confirmText={t('notificationsPage.sendTest')}
@@ -276,7 +275,7 @@ export function NotificationsPage() {
 interface ChannelFormState { adapterKind: string, configText: string, enabled: boolean, id?: string, name: string, secretKeys: string[], secretText: string }
 interface PresetFormState { enabled: boolean, name: string, presetId: string, secretText: string }
 interface TemplateFormState { adapterKind: string, bodyTemplate: string, enabled: boolean, eventType: string, id?: string, jsonBodyTemplate: string, locale: string, name: string, subjectTemplate: string }
-interface RuleFormState { channelIds: string[], enabled: boolean, eventTypes: string[], filterText: string, id?: string, locale: string, name: string, templateId: string }
+interface RuleFormState { channelIds: string[], enabled: boolean, eventTypes: string[], filterText: string, id?: string, locale: string, name: string, projectIds: string[], scope: 'projects' | 'all', templateId: string }
 
 function ChannelDialog({ onClose, onSave, onUpdate, openState, saving }: { onClose: () => void, onSave: (state: ChannelFormState) => void, onUpdate: (state: ChannelFormState) => void, openState: ChannelFormState | null, saving: boolean }) {
   const { t } = useTranslation()
@@ -372,11 +371,13 @@ function TemplateDialog({ onClose, onSave, onUpdate, openState, saving }: { onCl
   )
 }
 
-function RuleDialog({ channels, onClose, onSave, onUpdate, openState, saving, templates }: { channels: NotificationChannel[], onClose: () => void, onSave: (state: RuleFormState) => void, onUpdate: (state: RuleFormState) => void, openState: RuleFormState | null, saving: boolean, templates: NotificationTemplate[] }) {
+function RuleDialog({ channels, onClose, onSave, onUpdate, openState, projects, saving, templates }: { channels: NotificationChannel[], onClose: () => void, onSave: (state: RuleFormState) => void, onUpdate: (state: RuleFormState) => void, openState: RuleFormState | null, projects: Project[], saving: boolean, templates: NotificationTemplate[] }) {
   const { t } = useTranslation()
   if (!openState)
     return null
   const toggleChannel = (channelId: string, checked: boolean) => onUpdate({ ...openState, channelIds: checked ? [...openState.channelIds, channelId] : openState.channelIds.filter(id => id !== channelId) })
+  const advancedFilterValid = parseNotificationRuleAdvancedFilter(openState.filterText) !== null
+  const canSave = notificationRulePayloadFromState(openState) !== null
   return (
     <Dialog open onOpenChange={open => !open && onClose()}>
       <DialogContent className="max-w-3xl">
@@ -393,7 +394,38 @@ function RuleDialog({ channels, onClose, onSave, onUpdate, openState, saving, te
             </Select>
           </Field>
           <Field wide label={t('notificationsPage.eventTypes')}><Input value={openState.eventTypes.join(', ')} onChange={event => onUpdate({ ...openState, eventTypes: splitList(event.target.value) })} /></Field>
-          <Field wide label={t('notificationsPage.filterJson')}><Textarea className="min-h-28 font-mono" value={openState.filterText} onChange={event => onUpdate({ ...openState, filterText: event.target.value })} /></Field>
+          <Field wide label={t('notificationsPage.ruleScope')}>
+            <Select
+              value={openState.scope}
+              onChange={(event) => {
+                const scope = event.target.value as RuleFormState['scope']
+                onUpdate({ ...openState, projectIds: scope === 'all' ? [] : openState.projectIds, scope })
+              }}
+            >
+              <option value="projects">{t('notificationsPage.ruleScopeProjects')}</option>
+              <option value="all">{t('notificationsPage.ruleScopeAll')}</option>
+            </Select>
+          </Field>
+          {openState.scope === 'projects'
+            ? (
+                <Field wide label={t('notificationsPage.ruleProjects')}>
+                  <ProjectSpaceMultiSelect projects={projects} value={openState.projectIds} onChange={projectIds => onUpdate({ ...openState, projectIds })} />
+                  <p className={openState.projectIds.length === 0 ? 'text-sm text-danger' : 'text-sm text-muted-foreground'} role={openState.projectIds.length === 0 ? 'alert' : undefined}>
+                    {openState.projectIds.length === 0 ? t('notificationsPage.ruleProjectsRequired') : t('notificationsPage.ruleProjectsHint')}
+                  </p>
+                </Field>
+              )
+            : (
+                <div className="rounded-container bg-warning-subtle p-group text-sm text-warning md:col-span-2" role="status">
+                  {t('notificationsPage.ruleScopeAllWarning')}
+                </div>
+              )}
+          <Field wide label={t('notificationsPage.filterJson')}>
+            <Textarea aria-invalid={!advancedFilterValid} className="min-h-28 font-mono" value={openState.filterText} onChange={event => onUpdate({ ...openState, filterText: event.target.value })} />
+            <p className={advancedFilterValid ? 'text-sm text-muted-foreground' : 'text-sm text-danger'} role={advancedFilterValid ? undefined : 'alert'}>
+              {advancedFilterValid ? t('notificationsPage.filterJsonHint') : t('notificationsPage.filterJsonInvalid')}
+            </p>
+          </Field>
           <div className="grid gap-2 md:col-span-2">
             <Label>{t('notificationsPage.channels')}</Label>
             <div className="grid gap-2 rounded-lg border border-border p-3">
@@ -408,7 +440,7 @@ function RuleDialog({ channels, onClose, onSave, onUpdate, openState, saving, te
         </FormGrid>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>{t('common.cancel')}</Button>
-          <Button disabled={saving} onClick={() => onSave(openState)}>{t('common.save')}</Button>
+          <Button disabled={saving || !canSave} onClick={() => onSave(openState)}>{t('common.save')}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -487,7 +519,7 @@ function emptyTemplateState(): TemplateFormState {
 }
 
 function emptyRuleState(): RuleFormState {
-  return { channelIds: [], enabled: true, eventTypes: [...FAILURE_EVENTS], filterText: '{}', locale: '', name: '', templateId: '' }
+  return { channelIds: [], enabled: true, eventTypes: [...FAILURE_EVENTS], filterText: '{}', locale: '', name: '', projectIds: [], scope: 'projects', templateId: '' }
 }
 
 function channelStateFromItem(item: NotificationChannel): ChannelFormState {
@@ -500,7 +532,93 @@ function templateStateFromItem(item: NotificationTemplate): TemplateFormState {
 }
 
 function ruleStateFromItem(item: NotificationRule): RuleFormState {
-  return { channelIds: decodeStringList(item.channelIdsJson), enabled: item.enabled, eventTypes: decodeStringList(item.eventTypesJson), filterText: JSON.stringify(parseJSON(item.filterJson, {}), null, 2), id: item.id, locale: item.locale, name: item.name, templateId: item.templateId }
+  const storedFilter = parseJSONObject(item.filterJson)
+  if (!storedFilter) {
+    return { channelIds: decodeStringList(item.channelIdsJson), enabled: item.enabled, eventTypes: decodeStringList(item.eventTypesJson), filterText: item.filterJson, id: item.id, locale: item.locale, name: item.name, projectIds: [], scope: 'projects', templateId: item.templateId }
+  }
+  const advancedFilter = { ...storedFilter }
+  delete advancedFilter.scope
+  delete advancedFilter.projectIds
+  const projectIds = optionalStringList(storedFilter.projectIds)
+  return {
+    channelIds: decodeStringList(item.channelIdsJson),
+    enabled: item.enabled,
+    eventTypes: decodeStringList(item.eventTypesJson),
+    filterText: JSON.stringify(advancedFilter, null, 2),
+    id: item.id,
+    locale: item.locale,
+    name: item.name,
+    projectIds: projectIds ?? [],
+    scope: storedFilter.scope === 'all' ? 'all' : 'projects',
+    templateId: item.templateId,
+  }
+}
+
+function notificationRulePayloadFromState(state: RuleFormState): NotificationRulePayload | null {
+  const advancedFilter = parseNotificationRuleAdvancedFilter(state.filterText)
+  const channelIds = normalizedStringList(state.channelIds)
+  const eventTypes = normalizedStringList(state.eventTypes)
+  const projectIds = normalizedStringList(state.projectIds)
+  if (!advancedFilter || !state.name.trim() || channelIds.length === 0 || eventTypes.length === 0 || (state.scope === 'projects' && projectIds.length === 0))
+    return null
+  return {
+    channelIds,
+    enabled: state.enabled,
+    eventTypes,
+    filter: state.scope === 'all'
+      ? { ...advancedFilter, scope: 'all' }
+      : { ...advancedFilter, projectIds, scope: 'projects' },
+    locale: state.locale.trim(),
+    name: state.name.trim(),
+    templateId: state.templateId.trim(),
+  }
+}
+
+function parseNotificationRuleAdvancedFilter(value: string): NotificationRuleAdvancedFilter | null {
+  const parsed = parseJSONObject(value)
+  if (!parsed)
+    return null
+  const allowedKeys = new Set(['scope', 'projectIds', 'severities', 'applicationIds', 'deploymentTargetIds'])
+  if (Object.keys(parsed).some(key => !allowedKeys.has(key)))
+    return null
+  if (parsed.scope !== undefined && parsed.scope !== 'projects' && parsed.scope !== 'all')
+    return null
+  if (parsed.projectIds !== undefined && optionalStringList(parsed.projectIds) === null)
+    return null
+  const severities = optionalStringList(parsed.severities)
+  const applicationIds = optionalStringList(parsed.applicationIds)
+  const deploymentTargetIds = optionalStringList(parsed.deploymentTargetIds)
+  if (severities === null || applicationIds === null || deploymentTargetIds === null)
+    return null
+  if (severities?.some(severity => !['info', 'warning', 'error'].includes(severity)))
+    return null
+  return {
+    ...(severities === undefined ? {} : { severities }),
+    ...(applicationIds === undefined ? {} : { applicationIds }),
+    ...(deploymentTargetIds === undefined ? {} : { deploymentTargetIds }),
+  }
+}
+
+function parseJSONObject(value: string): Record<string, unknown> | null {
+  try {
+    const parsed = JSON.parse(value) as unknown
+    return parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : null
+  }
+  catch {
+    return null
+  }
+}
+
+function optionalStringList(value: unknown): string[] | null | undefined {
+  if (value === undefined)
+    return undefined
+  if (!Array.isArray(value) || value.some(item => typeof item !== 'string'))
+    return null
+  return normalizedStringList(value as string[])
+}
+
+function normalizedStringList(values: string[]) {
+  return [...new Set(values.map(value => value.trim()).filter(Boolean))]
 }
 
 function parseJSON<T>(value: string | unknown, fallback: T): T {

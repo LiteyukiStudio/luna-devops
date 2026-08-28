@@ -5,34 +5,35 @@ import (
 	"strings"
 )
 
-type ListScope string
+type ListVisibility string
 
 const (
-	ListScopeRelated ListScope = "related"
-	ListScopeAll     ListScope = "all"
+	ListVisibilityRelated ListVisibility = "related"
+	ListVisibilityAll     ListVisibility = "all"
 )
 
 var (
-	ErrListScopeInvalid   = errors.New("project list scope is invalid")
-	ErrListScopeForbidden = errors.New("project list scope requires platform administrator")
+	ErrListVisibilityInvalid   = errors.New("list visibility is invalid")
+	ErrListVisibilityForbidden = errors.New("all list visibility requires platform administrator")
 )
 
-// ResolveListScope keeps project discovery related to the caller by default.
-// Listing every project is an explicit platform-administrator-only operation.
-func ResolveListScope(value string, platformAdmin bool) (ListScope, error) {
-	scope := ListScope(strings.ToLower(strings.TrimSpace(value)))
-	if scope == "" {
-		scope = ListScopeRelated
+// ResolveListVisibility keeps cross-project discovery related to the caller by
+// default. Listing every project-scoped resource is an explicit
+// platform-administrator-only operation.
+func ResolveListVisibility(value string, platformAdmin bool) (ListVisibility, error) {
+	visibility := ListVisibility(strings.ToLower(strings.TrimSpace(value)))
+	if visibility == "" {
+		visibility = ListVisibilityRelated
 	}
-	switch scope {
-	case ListScopeRelated:
-		return scope, nil
-	case ListScopeAll:
+	switch visibility {
+	case ListVisibilityRelated:
+		return visibility, nil
+	case ListVisibilityAll:
 		if !platformAdmin {
-			return "", ErrListScopeForbidden
+			return "", ErrListVisibilityForbidden
 		}
-		return scope, nil
+		return visibility, nil
 	default:
-		return "", ErrListScopeInvalid
+		return "", ErrListVisibilityInvalid
 	}
 }

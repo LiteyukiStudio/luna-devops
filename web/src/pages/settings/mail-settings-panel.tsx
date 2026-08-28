@@ -1,7 +1,6 @@
-import type { MailSettings } from '@/api'
+import type { MailSettingsForm } from './mail-settings-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import i18next from 'i18next'
 import { Save, Send } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
@@ -16,28 +15,7 @@ import { Section } from '@/components/common/section'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { NativeSelect } from '@/components/ui/native-select'
-
-const mailSettingsSchema = z.object({
-  host: z.string().trim().min(1, i18next.t('settings.mail.hostRequired')),
-  port: z.number().int().min(1).max(65535),
-  security: z.enum(['none', 'starttls', 'tls']),
-  username: z.string(),
-  password: z.string(),
-  fromAddress: z.string().trim().email(i18next.t('common.validEmailRequired')),
-  fromName: z.string(),
-})
-
-type MailSettingsForm = z.infer<typeof mailSettingsSchema>
-
-const defaultValues: MailSettingsForm = {
-  host: '',
-  port: 587,
-  security: 'starttls',
-  username: '',
-  password: '',
-  fromAddress: '',
-  fromName: 'Luna DevOps',
-}
+import { defaultMailSettingsFormValues, mailSettingsSchema, mailSettingsToForm } from './mail-settings-form'
 
 export function MailSettingsPanel() {
   const { t } = useTranslation()
@@ -45,7 +23,7 @@ export function MailSettingsPanel() {
   const [testRecipient, setTestRecipient] = useState('')
   const settings = useQuery({ queryKey: ['mail-settings'], queryFn: api.getMailSettings })
   const form = useForm<MailSettingsForm>({
-    defaultValues,
+    defaultValues: defaultMailSettingsFormValues,
     mode: 'onChange',
     resolver: zodResolver(mailSettingsSchema),
   })
@@ -118,6 +96,22 @@ export function MailSettingsPanel() {
           <Field label={t('settings.mail.fromName')}>
             <Input {...form.register('fromName')} />
           </Field>
+          <Field
+            error={form.formState.errors.personalEmailCooldownSeconds?.message}
+            hint={t('settings.mail.personalEmailCooldownHint')}
+            label={t('settings.mail.personalEmailCooldown')}
+            required
+          >
+            <Input
+              {...form.register('personalEmailCooldownSeconds', { valueAsNumber: true })}
+              aria-invalid={Boolean(form.formState.errors.personalEmailCooldownSeconds)}
+              inputMode="numeric"
+              max={3600}
+              min={0}
+              step={1}
+              type="number"
+            />
+          </Field>
         </div>
 
         <div className="grid gap-2 border-t border-border pt-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
@@ -144,16 +138,4 @@ export function MailSettingsPanel() {
       </form>
     </Section>
   )
-}
-
-function mailSettingsToForm(settings: MailSettings): MailSettingsForm {
-  return {
-    host: settings.host,
-    port: settings.port,
-    security: settings.security,
-    username: settings.username,
-    password: '',
-    fromAddress: settings.fromAddress,
-    fromName: settings.fromName,
-  }
 }

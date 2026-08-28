@@ -55,8 +55,8 @@ export function RepositoryBindingsPage({ applicationId, embedded = false, projec
   const [branchSearch, setBranchSearch] = useState('')
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
-  const providers = useQuery({ queryKey: ['git-providers'], queryFn: () => api.listGitProviders() })
-  const accounts = useQuery({ ...liveObservationQueryPolicy, queryKey: ['git-accounts'], queryFn: () => api.listGitAccounts() })
+  const providers = useQuery({ queryKey: ['git-providers', 'project', projectId], queryFn: () => api.listGitProviders(projectId), enabled: Boolean(projectId) })
+  const accounts = useQuery({ ...liveObservationQueryPolicy, queryKey: ['git-accounts', 'project', projectId], queryFn: () => api.listGitAccounts(projectId), enabled: Boolean(projectId) })
   const applications = useQuery({
     queryKey: ['applications', projectId],
     queryFn: () => api.listApplications(projectId),

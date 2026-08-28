@@ -82,7 +82,7 @@ func (h *Handlers) CreateGatewayRoute(ctx *gin.Context) {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
-	if !h.enqueueGatewayApply(ctx.Request.Context(), route) {
+	if !h.enqueueGatewayApply(ctx.Request.Context(), route, user.ID) {
 		writeError(ctx, http.StatusServiceUnavailable, "网关任务投递失败，请稍后重试")
 		return
 	}
@@ -143,7 +143,7 @@ func (h *Handlers) UpdateGatewayRoute(ctx *gin.Context) {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
-	if !h.enqueueGatewayApply(ctx.Request.Context(), route) {
+	if !h.enqueueGatewayApply(ctx.Request.Context(), route, user.ID) {
 		writeError(ctx, http.StatusServiceUnavailable, "网关任务投递失败，请稍后重试")
 		return
 	}
@@ -193,14 +193,15 @@ func (h *Handlers) findGatewayRoute(ctx *gin.Context) (model.GatewayRoute, bool)
 	return route, true
 }
 
-func (h *Handlers) enqueueGatewayApply(ctx context.Context, route model.GatewayRoute) bool {
+func (h *Handlers) enqueueGatewayApply(ctx context.Context, route model.GatewayRoute, actorID string) bool {
 	if h.taskClient == nil {
 		return false
 	}
 	_, err := h.taskClient.EnqueueGatewayApply(ctx, tasks.GatewayApplyPayload{
-		GatewayRouteID: route.ID,
-		ProjectID:      route.ProjectID,
-		ActorID:        route.CreatedBy,
+		GatewayRouteID:          route.ID,
+		ProjectID:               route.ProjectID,
+		ActorID:                 strings.TrimSpace(actorID),
+		RouteUpdatedAtUnixMicro: route.UpdatedAt.UTC().UnixMicro(),
 	})
 	return err == nil
 }

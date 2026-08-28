@@ -1,9 +1,9 @@
-import type { AppTemplate, AppTemplateInstallPayload, AppTemplateInstallResponse, AppTemplateSummary, BillingDeploymentSpend, BillingLedgerEntry, BillingListParams, BillingPeriodParams, BillingRateRule, BillingRateRulePayload, BillingSummary, BillingUsageRecord, BillingUsageSettlementResult, BillingWalletTransactionPayload, GatewayTrafficStatus, GatewayTrafficUsagePayload, InboxActionRequest, PaginatedResponse, PaginationParams, Project, ProjectListParams, ProjectMember, ProjectMemberCandidate, ProjectPin, SystemComponentInstallPayload, SystemComponentInstallResponse, SystemComponentStatusResponse } from '../types'
+import type { AppTemplate, AppTemplateInstallPayload, AppTemplateInstallResponse, AppTemplateSummary, BillingDeploymentSpend, BillingLedgerEntry, BillingListParams, BillingPeriodParams, BillingRateRule, BillingRateRulePayload, BillingSummary, BillingUsageRecord, BillingUsageSettlementResult, BillingWalletTransactionPayload, GatewayTrafficStatus, GatewayTrafficUsagePayload, InboxActionRequest, PaginatedResponse, PaginationParams, Project, ProjectListParams, ProjectMember, ProjectMemberCandidate, ProjectPin, ResultVisibility, SystemComponentInstallPayload, SystemComponentInstallResponse, SystemComponentStatusResponse } from '../types'
 import { billingQuery, billingSummaryQuery, paginationQuery, request } from '../core'
 import { selectionItems, selectionPageParams } from '../selection-page'
 
 export const projectsApi = {
-  listProjects: () => request<PaginatedResponse<Project>>(`/projects?${paginationQuery(selectionPageParams)}`).then(selectionItems),
+  listProjects: (visibility?: ResultVisibility) => request<PaginatedResponse<Project>>(`/projects?${paginationQuery({ ...selectionPageParams, visibility })}`).then(selectionItems),
   listProjectsPage: (params: ProjectListParams) =>
     request<PaginatedResponse<Project>>(`/projects?${paginationQuery(params)}`),
   listAppTemplates: (params?: { query?: string, category?: string }) => {

@@ -89,6 +89,11 @@ const common = {
   loginRequiredDescription: 'Please log in with a local account or an authorized OIDC account.',
   pinProject: 'Pin project space',
   unpinProject: 'Unpin project space',
+  resultVisibility: {
+    label: 'View range',
+    related: 'Related to me',
+    all: 'All',
+  },
 
   labels: {
     projectSpace: 'Project Space',

@@ -89,6 +89,11 @@ const common = {
   loginRequiredDescription: '请先使用本地账号或已授权的 OIDC 账号登录平台。',
   pinProject: '固定项目空间',
   unpinProject: '取消固定项目空间',
+  resultVisibility: {
+    label: '查看范围',
+    related: '与我相关',
+    all: '全部',
+  },
 
   // 公共标签区域 - 用于消除重复翻译
   labels: {

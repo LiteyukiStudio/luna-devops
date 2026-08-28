@@ -69,6 +69,8 @@ type NotificationDelivery struct {
 	RuleID          string     `gorm:"index;not null;default:''" json:"ruleId"`
 	TemplateID      string     `gorm:"index;not null;default:''" json:"templateId"`
 	EventJSON       string     `gorm:"type:jsonb;not null;default:'{}'" json:"eventJson"`
+	Traceparent     string     `gorm:"type:text;not null;default:''" json:"-"`
+	Tracestate      string     `gorm:"type:text;not null;default:''" json:"-"`
 	Status          string     `gorm:"index;not null;default:pending" json:"status"`
 	AttemptCount    int        `gorm:"not null;default:0" json:"attemptCount"`
 	DurationMillis  int64      `gorm:"not null;default:0" json:"durationMillis"`

@@ -46,6 +46,9 @@ type Runner struct {
 	volumeTransferMaxBytes       int64
 	workerMetrics                *observability.WorkerMetrics
 	personalEmailSender          func(context.Context, string, notification.RenderedMessage) (notification.SendResult, error)
+	personalEmailCooldown        func(context.Context, *gorm.DB) (time.Duration, error)
+	enqueueEmailDigest           func(context.Context, tasks.NotificationEmailDigestPayload) (*asynq.TaskInfo, error)
+	notificationDeliveryEnqueuer notification.DeliveryEnqueuer
 }
 
 const (
@@ -107,6 +110,7 @@ func RunWithRedis(redisOptions redisconfig.Options, db *gorm.DB, options Options
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	runner.taskClient = tasks.NewClientWithRedis(redisOptions)
+	runner.notificationDeliveryEnqueuer = runner.taskClient
 	runner.volumeTaskEnqueuer = runner.taskClient
 	defer runner.taskClient.Close()
 	go runner.syncBuildJobStatus(ctx)
@@ -121,6 +125,8 @@ func registerTaskHandlers(mux *asynq.ServeMux, runner *Runner) {
 	mux.HandleFunc(tasks.TypeApplicationDelete, runner.withTaskContext((*Runner).handleApplicationDelete))
 	mux.HandleFunc(tasks.TypeResourceCleanup, runner.withTaskContext((*Runner).handleResourceCleanup))
 	mux.HandleFunc(tasks.TypeNotificationDeliver, runner.withTaskContext((*Runner).handleNotificationDeliver))
+	mux.HandleFunc(tasks.TypeNotificationEmailDigest, runner.withTaskContext((*Runner).handleNotificationEmailDigest))
+	mux.HandleFunc(tasks.TypeNotificationReconcile, runner.withTaskContext((*Runner).handleNotificationReconcile))
 	mux.HandleFunc(tasks.TypeGitAccountRefresh, runner.withTaskContext((*Runner).handleGitAccountRefresh))
 	mux.HandleFunc(tasks.TypeSyncStatus, runner.withTaskContext((*Runner).handleSyncStatus))
 	mux.HandleFunc(tasks.TypeBillingAI, runner.withTaskContext((*Runner).handleBillingAI))

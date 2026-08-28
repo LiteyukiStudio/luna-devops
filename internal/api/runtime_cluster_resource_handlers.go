@@ -21,6 +21,10 @@ func (h *Handlers) ListRuntimeClusterResources(ctx *gin.Context) {
 	if !ok {
 		return
 	}
+	visibility, ok := resolveListVisibility(ctx, user)
+	if !ok {
+		return
+	}
 	var cluster model.RuntimeCluster
 	if err := h.dbFor(ctx).First(&cluster, "id = ?", ctx.Param("clusterId")).Error; err != nil {
 		writeError(ctx, http.StatusNotFound, "runtime cluster not found")
@@ -67,7 +71,7 @@ func (h *Handlers) ListRuntimeClusterResources(ctx *gin.Context) {
 		writeError(ctx, http.StatusBadGateway, "集群资源读取失败，请检查集群连接和权限")
 		return
 	}
-	items := h.filterClusterResourceSnapshots(ctx, user, page.Items)
+	items := h.filterClusterResourceSnapshots(ctx, user, page.Items, visibility, options.ProjectID)
 	responses, err := h.clusterResourceResponses(items, ctx.Request.Context())
 	if err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())

@@ -7,9 +7,25 @@
 统一执行本规则。它只决定“使用哪个已有资源”，不代替创建参数、风险批准、写操作
 或结果验收。
 
+## 跨项目可见范围
+
+- `getDashboard`、`listProjects`、`listPlatformEvents`、`listRuntimeClusters`、
+  `listGitProviders`、`listGitAccounts`、`listArtifactRegistries`、
+  `listRegistryCredentials`、`listAllRegistryCredentials`、`listBuildVariableSets`、
+  `listContainerImages` 和 `listRuntimeClusterResources` 统一使用 `visibility`，只传
+  `related` 或 `all`；不得再传旧参数 `scope` 或旧值 `mine`。
+- 省略 `visibility` 与显式传 `related` 等价，默认只发现与当前用户相关的项目空间和资源。
+  即使当前用户是平台管理员，也不得因为角色自动改成 `all`。
+- 只有平台管理员明确要求全局盘点、跨项目比较或全局诊断时才传 `visibility: all`。普通用户
+  请求 `all` 会被拒绝；非法值也不得静默回退，读取稳定错误后修正参数。
+- 工具同时支持 `projectId`、`applicationId`、`registryId` 或其他资源条件时，可信资源 ID 是
+  当前可见范围内的更强过滤。已知目标时必须传入，不能用 `all` 代替精确过滤。
+- 通知、个人通知和收件箱保持个人/共享权限双轨，不接收 `visibility`；账单也按独立计费权限
+  选择范围，不套用本规则。
+
 ## 先建立有效候选集
 
-1. 使用对应读取工具获取当前用户在当前作用域内可见的实时资源。
+1. 使用对应读取工具获取当前用户在当前 `visibility` 与可信资源过滤条件内可见的实时资源。
 2. 根据当前任务过滤无权限、已禁用、未就绪、类型不匹配、作用域错误、版本不兼容、
    容量不足或缺少必要连通性的资源。
 3. 用户已经明确给出资源名称或 ID，或当前页面唯一指向一个可信目标时，先验证该目标，

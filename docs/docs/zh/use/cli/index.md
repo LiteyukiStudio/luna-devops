@@ -15,6 +15,8 @@ luna project get-projects
 luna project use project=prj_example
 ```
 
+列表命令默认使用 `visibility=related`。平台管理员只有在明确需要全局结果时才传入 `visibility=all`，例如 `luna project get-projects visibility=all`；已知项目空间的资源查询应继续传入项目 ID 缩小结果。
+
 不需要记住全部命令，使用分层帮助查找参数、权限和示例：
 
 ```bash

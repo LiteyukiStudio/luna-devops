@@ -26,7 +26,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func TestAIProjectListScopeDirectExecutionPostgres(t *testing.T) {
+func TestAIProjectListVisibilityDirectExecutionPostgres(t *testing.T) {
 	t.Setenv("APP_ENV", "production")
 	t.Setenv("REDIS_ADDR", "")
 	t.Setenv(aiagent.InternalSecretEnvironment, "ai-project-scope-integration-secret-0001")
@@ -51,18 +51,34 @@ func TestAIProjectListScopeDirectExecutionPostgres(t *testing.T) {
 	}
 
 	router := NewRouter(db)
-	relatedItems := executeAIProjectList(t, db, router, admin, session, map[string]any{"scope": "related", "page": 1, "pageSize": 20}, "")
+	defaultItems := executeAIProjectList(t, db, router, admin, session, map[string]any{"page": 1, "pageSize": 20}, "")
+	if !projectItemsContain(defaultItems, related.ID) || projectItemsContain(defaultItems, unrelated.ID) {
+		t.Fatalf("default visibility items = %#v", defaultItems)
+	}
+	relatedItems := executeAIProjectList(t, db, router, admin, session, map[string]any{"visibility": "related", "page": 1, "pageSize": 20}, "")
 	if !projectItemsContain(relatedItems, related.ID) || projectItemsContain(relatedItems, unrelated.ID) {
-		t.Fatalf("related scope items = %#v", relatedItems)
+		t.Fatalf("related visibility items = %#v", relatedItems)
 	}
-	allItems := executeAIProjectList(t, db, router, admin, session, map[string]any{"scope": "all", "page": 1, "pageSize": 20}, "")
+	allItems := executeAIProjectList(t, db, router, admin, session, map[string]any{"visibility": "all", "page": 1, "pageSize": 20}, "")
 	if !projectItemsContain(allItems, related.ID) || !projectItemsContain(allItems, unrelated.ID) {
-		t.Fatalf("all scope items = %#v", allItems)
+		t.Fatalf("all visibility items = %#v", allItems)
 	}
-	boundItems := executeAIProjectList(t, db, router, admin, session, map[string]any{"scope": "all", "page": 1, "pageSize": 20}, related.ID)
+	boundItems := executeAIProjectList(t, db, router, admin, session, map[string]any{"visibility": "all", "page": 1, "pageSize": 20}, related.ID)
 	if !projectItemsContain(boundItems, related.ID) || projectItemsContain(boundItems, unrelated.ID) {
-		t.Fatalf("project-bound scope items = %#v", boundItems)
+		t.Fatalf("project-bound visibility items = %#v", boundItems)
 	}
+
+	directTools := aitool.NewService(db)
+	dashboardRelated, err := directTools.Execute(t.Context(), aitool.Request{OperationID: "getDashboard", UserID: admin.ID, Arguments: map[string]any{}})
+	if err != nil {
+		t.Fatalf("direct getDashboard default visibility: %v", err)
+	}
+	assertAIProjectMapResult(t, dashboardRelated, "projects", "related", related.ID, unrelated.ID, false)
+	dashboardAll, err := directTools.Execute(t.Context(), aitool.Request{OperationID: "getDashboard", UserID: admin.ID, Arguments: map[string]any{"visibility": "all"}})
+	if err != nil {
+		t.Fatalf("direct getDashboard all visibility: %v", err)
+	}
+	assertAIProjectMapResult(t, dashboardAll, "projects", "all", related.ID, unrelated.ID, true)
 }
 
 func TestAIProjectVolumeDirectExecutionAndAuthoritativeReadbackPostgres(t *testing.T) {
@@ -251,7 +267,11 @@ func executeAIProjectList(t *testing.T, db *gorm.DB, router http.Handler, user m
 	if err != nil {
 		t.Fatal(err)
 	}
-	suffix := fmt.Sprintf("%s_%s", arguments["scope"], strings.TrimPrefix(conversationProjectID, "prj_ai_scope_"))
+	visibility := "default"
+	if value, exists := arguments["visibility"]; exists {
+		visibility = fmt.Sprint(value)
+	}
+	suffix := fmt.Sprintf("%s_%s", visibility, strings.TrimPrefix(conversationProjectID, "prj_ai_scope_"))
 	runID := "airun_scope_" + suffix
 	toolCallID := "aitool_scope_" + suffix
 	conversationID := "aicnv_scope_" + suffix
@@ -269,12 +289,20 @@ func executeAIProjectList(t *testing.T, db *gorm.DB, router http.Handler, user m
 	if err := db.Exec(`INSERT INTO ai.runs (id, owner_user_id, conversation_id, turn_id, run_index, status, prompt_version, tool_catalog_digest, actor_session_id) VALUES (?, ?, ?, ?, 1, 'running', 'system-v4', 'test', ?)`, runID, user.ID, conversationID, turnID, session.ID).Error; err != nil {
 		t.Fatalf("seed AI run: %v", err)
 	}
-	if err := db.Exec(`INSERT INTO ai.tool_calls (id, run_id, operation_id, status, arguments, input_mode) VALUES (?, ?, 'listProjects', 'running', ?::jsonb, 'model')`, toolCallID, runID, `{"scope":"`+fmt.Sprint(arguments["scope"])+`"}`).Error; err != nil {
+	argumentJSON, err := json.Marshal(arguments)
+	if err != nil {
+		t.Fatalf("encode AI ToolCall arguments: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO ai.tool_calls (id, run_id, operation_id, status, arguments, input_mode) VALUES (?, ?, 'listProjects', 'running', ?::jsonb, 'model')`, toolCallID, runID, string(argumentJSON)).Error; err != nil {
 		t.Fatalf("seed AI ToolCall: %v", err)
 	}
 	t.Cleanup(func() { _ = db.Exec(`DELETE FROM ai.conversations WHERE id = ?`, conversationID).Error })
 
-	target := fmt.Sprintf("/api/v1/projects?scope=%s&page=1&pageSize=20", url.QueryEscape(fmt.Sprint(arguments["scope"])))
+	query := url.Values{"page": {"1"}, "pageSize": {"20"}}
+	if value, exists := arguments["visibility"]; exists {
+		query.Set("visibility", fmt.Sprint(value))
+	}
+	target := "/api/v1/projects?" + query.Encode()
 	execute := httptest.NewRequest(http.MethodGet, target, nil)
 	execute.Header.Set("Authorization", "Bearer "+keys.CallbackServiceToken)
 	execute.Header.Set(aiRunIDHeader, runID)
@@ -301,6 +329,29 @@ func projectItemsContain(items []any, projectID string) bool {
 		}
 	}
 	return false
+}
+
+func assertAIProjectMapResult(t *testing.T, result aitool.Result, key, visibility, relatedID, unrelatedID string, wantUnrelated bool) {
+	t.Helper()
+	value, ok := result.Value.(map[string]any)
+	if !ok {
+		t.Fatalf("AI result value = %#v", result.Value)
+	}
+	items, ok := value[key].([]map[string]any)
+	if !ok {
+		t.Fatalf("AI result %s = %#v", key, value[key])
+	}
+	contains := func(projectID string) bool {
+		for _, item := range items {
+			if item["id"] == projectID {
+				return true
+			}
+		}
+		return false
+	}
+	if fmt.Sprint(value["visibility"]) != visibility || !contains(relatedID) || contains(unrelatedID) != wantUnrelated {
+		t.Fatalf("AI project result = %#v", value)
+	}
 }
 
 func aiProjectScopeIntegrationDB(t *testing.T) *gorm.DB {

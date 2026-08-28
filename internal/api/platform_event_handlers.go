@@ -12,6 +12,7 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/platformevent"
+	projectservice "github.com/LiteyukiStudio/devops/internal/project"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
@@ -28,8 +29,12 @@ func (h *Handlers) ListPlatformEvents(ctx *gin.Context) {
 	if !ok {
 		return
 	}
+	visibility, ok := resolveListVisibility(ctx, user)
+	if !ok {
+		return
+	}
 	pagination := paginationFromQuery(ctx)
-	query := h.platformEventsVisibleTo(user, strings.TrimSpace(ctx.Query("scope")), ctx.Request.Context())
+	query := h.platformEventsVisibleTo(user, visibility, ctx.Request.Context())
 	query = applySearch(ctx, query, "platform_events.type", "platform_events.message", "platform_events.resource_id")
 	query = applyPlatformEventFilters(ctx, query)
 
@@ -92,9 +97,9 @@ func (h *Handlers) ListPlatformEventCatalog(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, platformevent.Catalog())
 }
 
-func (h *Handlers) platformEventsVisibleTo(user model.User, scope string, ctx context.Context) *gorm.DB {
+func (h *Handlers) platformEventsVisibleTo(user model.User, visibility projectservice.ListVisibility, ctx context.Context) *gorm.DB {
 	query := h.dbWithContext(ctx).Model(&model.PlatformEvent{})
-	if authz.IsPlatformAdmin(user.Role) && scope == "all" {
+	if visibility == projectservice.ListVisibilityAll {
 		return query
 	}
 	projectIDs := h.projectIDsForUser(ctx, user.ID)
@@ -223,7 +228,7 @@ func platformEventLinks(event model.PlatformEvent, links map[string]string) map[
 	}
 
 	detailLink := fmt.Sprintf(
-		"/projects/%s/apps/%s#tab=builds&buildRunId=%s",
+		"/projects/%s/apps/%s?tab=builds#buildRunId=%s",
 		url.PathEscape(projectID),
 		url.PathEscape(applicationID),
 		url.QueryEscape(buildRunID),
@@ -234,8 +239,8 @@ func platformEventLinks(event model.PlatformEvent, links map[string]string) map[
 		if candidate == "" || err != nil || !parsed.IsAbs() {
 			continue
 		}
-		parsed.RawQuery = ""
-		parsed.Fragment = "tab=builds&buildRunId=" + url.QueryEscape(buildRunID)
+		parsed.RawQuery = "tab=builds"
+		parsed.Fragment = "buildRunId=" + url.QueryEscape(buildRunID)
 		detailLink = parsed.String()
 		break
 	}

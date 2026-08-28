@@ -3,9 +3,13 @@ package tasks
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 
+	"github.com/LiteyukiStudio/devops/internal/redisconfig"
+	"github.com/alicebob/miniredis/v2"
+	"github.com/hibiken/asynq"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -59,6 +63,79 @@ func TestPolicyForTypeUsesDedicatedQueuesAndTimeouts(t *testing.T) {
 	if appDelete.Queue != QueueDeploy || appDelete.Unique != 10*time.Minute {
 		t.Fatalf("application delete policy = %#v", appDelete)
 	}
+	emailDigest := PolicyForType(TypeNotificationEmailDigest)
+	if emailDigest.Queue != QueueLight || emailDigest.MaxRetry != 5 || emailDigest.Unique != 24*time.Hour {
+		t.Fatalf("notification email digest policy = %#v", emailDigest)
+	}
+	notificationReconcile := PolicyForType(TypeNotificationReconcile)
+	if notificationReconcile.Queue != QueueLight || notificationReconcile.MaxRetry != 0 ||
+		notificationReconcile.Timeout != time.Minute || notificationReconcile.Unique != time.Minute {
+		t.Fatalf("notification reconcile policy = %#v", notificationReconcile)
+	}
+}
+
+func TestNewNotificationEmailDigestTaskUsesUserAndDueSecond(t *testing.T) {
+	payload := NotificationEmailDigestPayload{RecipientUserID: "usr_digest", DueAtUnix: 1_788_000_000}
+	task, err := NewNotificationEmailDigestTask(payload)
+	if err != nil {
+		t.Fatalf("NewNotificationEmailDigestTask returned error: %v", err)
+	}
+	if task.Type() != TypeNotificationEmailDigest {
+		t.Fatalf("task type = %q", task.Type())
+	}
+	var got NotificationEmailDigestPayload
+	if err := json.Unmarshal(task.Payload(), &got); err != nil {
+		t.Fatalf("unmarshal notification email digest payload: %v", err)
+	}
+	if got != payload {
+		t.Fatalf("payload = %#v, want %#v", got, payload)
+	}
+}
+
+func TestNewNotificationEmailDigestTaskRequiresUserAndDueSecond(t *testing.T) {
+	if _, err := NewNotificationEmailDigestTask(NotificationEmailDigestPayload{DueAtUnix: 1}); err == nil {
+		t.Fatal("expected missing recipient user id to fail")
+	}
+	if _, err := NewNotificationEmailDigestTask(NotificationEmailDigestPayload{RecipientUserID: "usr_digest"}); err == nil {
+		t.Fatal("expected missing due time to fail")
+	}
+}
+
+func TestNewNotificationReconcileTaskUsesStableEmptyPayload(t *testing.T) {
+	task, err := NewNotificationReconcileTask(NotificationReconcilePayload{})
+	if err != nil {
+		t.Fatalf("NewNotificationReconcileTask returned error: %v", err)
+	}
+	if task.Type() != TypeNotificationReconcile {
+		t.Fatalf("task type = %q", task.Type())
+	}
+	if got := string(task.Payload()); got != "{}" {
+		t.Fatalf("task payload = %q, want stable empty object", got)
+	}
+}
+
+func TestEnqueueNotificationEmailDigestDeduplicatesOnlySameUserAndDueSecond(t *testing.T) {
+	redis := miniredis.RunT(t)
+	client := NewClientWithRedis(redisconfig.Options{Addr: redis.Addr()})
+	t.Cleanup(func() { _ = client.Close() })
+	dueAtUnix := time.Now().Add(time.Minute).Unix()
+	payload := NotificationEmailDigestPayload{RecipientUserID: "usr_digest", DueAtUnix: dueAtUnix}
+	if _, err := client.EnqueueNotificationEmailDigest(t.Context(), payload); err != nil {
+		t.Fatalf("enqueue first user digest: %v", err)
+	}
+	if _, err := client.EnqueueNotificationEmailDigest(t.Context(), payload); !errors.Is(err, asynq.ErrDuplicateTask) {
+		t.Fatalf("same user and due second error = %v, want ErrDuplicateTask", err)
+	}
+	if _, err := client.EnqueueNotificationEmailDigest(t.Context(), NotificationEmailDigestPayload{
+		RecipientUserID: "usr_other", DueAtUnix: dueAtUnix,
+	}); err != nil {
+		t.Fatalf("enqueue independent user digest: %v", err)
+	}
+	if _, err := client.EnqueueNotificationEmailDigest(t.Context(), NotificationEmailDigestPayload{
+		RecipientUserID: payload.RecipientUserID, DueAtUnix: dueAtUnix + 1,
+	}); err != nil {
+		t.Fatalf("enqueue same user at next due second: %v", err)
+	}
 }
 
 func TestNewDeployRunTaskBuildsTypedPayload(t *testing.T) {
@@ -96,9 +173,10 @@ func TestNewDeployRunTaskRequiresCoreIDs(t *testing.T) {
 
 func TestNewGatewayApplyTaskBuildsTypedPayload(t *testing.T) {
 	payload := GatewayApplyPayload{
-		GatewayRouteID: "gwr_1",
-		ProjectID:      "prj_1",
-		ActorID:        "usr_1",
+		GatewayRouteID:          "gwr_1",
+		ProjectID:               "prj_1",
+		ActorID:                 "usr_1",
+		RouteUpdatedAtUnixMicro: 1_788_000_000_123_456,
 	}
 
 	task, err := NewGatewayApplyTask(payload)
@@ -113,17 +191,20 @@ func TestNewGatewayApplyTaskBuildsTypedPayload(t *testing.T) {
 	if err := json.Unmarshal(task.Payload(), &got); err != nil {
 		t.Fatalf("unmarshal payload: %v", err)
 	}
-	if got.GatewayRouteID != payload.GatewayRouteID || got.ProjectID != payload.ProjectID {
+	if got != payload {
 		t.Fatalf("payload = %#v", got)
 	}
 }
 
 func TestNewGatewayApplyTaskRequiresCoreIDs(t *testing.T) {
-	if _, err := NewGatewayApplyTask(GatewayApplyPayload{ProjectID: "prj_1"}); err == nil {
+	if _, err := NewGatewayApplyTask(GatewayApplyPayload{ProjectID: "prj_1", RouteUpdatedAtUnixMicro: 1}); err == nil {
 		t.Fatal("expected missing gateway route id to fail")
 	}
-	if _, err := NewGatewayApplyTask(GatewayApplyPayload{GatewayRouteID: "gwr_1"}); err == nil {
+	if _, err := NewGatewayApplyTask(GatewayApplyPayload{GatewayRouteID: "gwr_1", RouteUpdatedAtUnixMicro: 1}); err == nil {
 		t.Fatal("expected missing project id to fail")
+	}
+	if _, err := NewGatewayApplyTask(GatewayApplyPayload{GatewayRouteID: "gwr_1", ProjectID: "prj_1"}); err == nil {
+		t.Fatal("expected missing gateway route generation to fail")
 	}
 }
 
@@ -205,11 +286,12 @@ func TestNewGitAccountRefreshTaskBuildsTypedPayload(t *testing.T) {
 }
 
 func TestTaskPayloadIsStableForSameInput(t *testing.T) {
-	first, err := NewGatewayApplyTask(GatewayApplyPayload{GatewayRouteID: "gwr_1", ProjectID: "prj_1", ActorID: "usr_1"})
+	payload := GatewayApplyPayload{GatewayRouteID: "gwr_1", ProjectID: "prj_1", ActorID: "usr_1", RouteUpdatedAtUnixMicro: 1_788_000_000_123_456}
+	first, err := NewGatewayApplyTask(payload)
 	if err != nil {
 		t.Fatalf("NewGatewayApplyTask returned error: %v", err)
 	}
-	second, err := NewGatewayApplyTask(GatewayApplyPayload{GatewayRouteID: "gwr_1", ProjectID: "prj_1", ActorID: "usr_1"})
+	second, err := NewGatewayApplyTask(payload)
 	if err != nil {
 		t.Fatalf("NewGatewayApplyTask returned error: %v", err)
 	}

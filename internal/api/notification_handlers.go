@@ -35,13 +35,13 @@ type notificationTemplateInput struct {
 }
 
 type notificationRuleInput struct {
-	Name       string                  `json:"name"`
-	EventTypes []string                `json:"eventTypes"`
-	Filter     notification.RuleFilter `json:"filter"`
-	ChannelIDs []string                `json:"channelIds"`
-	TemplateID string                  `json:"templateId"`
-	Locale     string                  `json:"locale"`
-	Enabled    *bool                   `json:"enabled"`
+	Name       string          `json:"name"`
+	EventTypes []string        `json:"eventTypes"`
+	Filter     json.RawMessage `json:"filter"`
+	ChannelIDs []string        `json:"channelIds"`
+	TemplateID string          `json:"templateId"`
+	Locale     string          `json:"locale"`
+	Enabled    *bool           `json:"enabled"`
 }
 
 type notificationPresetChannelInput struct {
@@ -591,10 +591,21 @@ func notificationTemplateFromInput(ctx *gin.Context, input notificationTemplateI
 }
 
 func (h *Handlers) notificationRuleFromInput(ctx *gin.Context, input notificationRuleInput, rule model.NotificationRule) (model.NotificationRule, bool) {
+	filter, err := notification.DecodeRuleFilter(input.Filter)
+	if err != nil {
+		writeErrorCode(ctx, http.StatusBadRequest, "notification.rule_filter_invalid", err.Error())
+		return model.NotificationRule{}, false
+	}
+	eventTypes := normalizedNotificationRuleValues(input.EventTypes)
+	channelIDs := normalizedNotificationRuleValues(input.ChannelIDs)
 	rule.Name = strings.TrimSpace(input.Name)
-	rule.EventTypesJSON = notification.EncodeStringList(input.EventTypes)
-	rule.FilterJSON = notification.EncodeRuleFilter(input.Filter)
-	rule.ChannelIDsJSON = notification.EncodeStringList(input.ChannelIDs)
+	rule.EventTypesJSON = notification.EncodeStringList(eventTypes)
+	rule.FilterJSON, err = notification.EncodeRuleFilter(filter)
+	if err != nil {
+		writeErrorCode(ctx, http.StatusBadRequest, "notification.rule_filter_invalid", err.Error())
+		return model.NotificationRule{}, false
+	}
+	rule.ChannelIDsJSON = notification.EncodeStringList(channelIDs)
 	rule.TemplateID = strings.TrimSpace(input.TemplateID)
 	rule.Locale = strings.TrimSpace(input.Locale)
 	if input.Enabled != nil {
@@ -602,20 +613,48 @@ func (h *Handlers) notificationRuleFromInput(ctx *gin.Context, input notificatio
 	} else if rule.ID != "" && rule.CreatedAt.IsZero() {
 		rule.Enabled = true
 	}
-	if rule.Name == "" || len(input.ChannelIDs) == 0 {
-		writeErrorCode(ctx, http.StatusBadRequest, "notification.rule_required", "notification rule name and channels are required")
+	if rule.Name == "" || len(eventTypes) == 0 || len(channelIDs) == 0 {
+		writeErrorCode(ctx, http.StatusBadRequest, "notification.rule_required", "notification rule name, event types and channels are required")
 		return model.NotificationRule{}, false
 	}
+	if filter.Scope == notification.RuleScopeProjects {
+		var projectCount int64
+		if err := h.dbFor(ctx).Model(&model.Project{}).Where("id in ?", filter.ProjectIDs).Count(&projectCount).Error; err != nil {
+			writeError(ctx, http.StatusInternalServerError, err.Error())
+			return model.NotificationRule{}, false
+		}
+		if projectCount != int64(len(filter.ProjectIDs)) {
+			writeErrorCode(ctx, http.StatusBadRequest, "notification.rule_project_not_found", "notification rule project not found")
+			return model.NotificationRule{}, false
+		}
+	}
 	var count int64
-	if err := h.dbFor(ctx).Model(&model.NotificationChannel{}).Where("id in ? and owner_user_id = ?", input.ChannelIDs, "").Count(&count).Error; err != nil {
+	if err := h.dbFor(ctx).Model(&model.NotificationChannel{}).Where("id in ? and owner_user_id = ?", channelIDs, "").Count(&count).Error; err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return model.NotificationRule{}, false
 	}
-	if count != int64(len(input.ChannelIDs)) {
+	if count != int64(len(channelIDs)) {
 		writeErrorCode(ctx, http.StatusBadRequest, "notification.channel_not_found", "notification channel not found")
 		return model.NotificationRule{}, false
 	}
 	return rule, true
+}
+
+func normalizedNotificationRuleValues(values []string) []string {
+	seen := make(map[string]struct{}, len(values))
+	normalized := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		normalized = append(normalized, value)
+	}
+	return normalized
 }
 
 func validateNotificationChannel(ctx context.Context, channel model.NotificationChannel, resolver notification.SecretResolver) error {

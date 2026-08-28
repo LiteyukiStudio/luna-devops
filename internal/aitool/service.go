@@ -118,14 +118,19 @@ func (s *Service) Execute(ctx context.Context, input Request) (Result, error) {
 	const limit = 20
 	switch input.OperationID {
 	case "getDashboard":
-		var projects []map[string]any
-		query := s.db.WithContext(ctx).Table("projects").Select("projects.id, projects.name, projects.identifier")
-		if !s.platformAdmin(ctx, input.UserID) {
-			query = query.Joins("join project_members on project_members.project_id = projects.id").
-				Where("project_members.user_id = ?", input.UserID)
+		visibility, err := resolveListVisibilityArgument(input.Arguments, s.platformAdmin(ctx, input.UserID))
+		if err != nil {
+			return Result{}, err
 		}
-		err := query.Order("projects.updated_at desc").Limit(limit).Scan(&projects).Error
-		return databaseResult(Result{Value: map[string]any{"projects": projects}, Truncated: len(projects) == limit}, err)
+		var projects []map[string]any
+		query := s.db.WithContext(ctx).Table("projects").
+			Select("projects.id, projects.name, projects.identifier").
+			Joins("left join project_members on project_members.project_id = projects.id and project_members.user_id = ?", input.UserID)
+		if visibility == projectservice.ListVisibilityRelated {
+			query = query.Where("project_members.user_id = ?", input.UserID)
+		}
+		err = query.Order("projects.updated_at desc").Limit(limit).Scan(&projects).Error
+		return databaseResult(Result{Value: map[string]any{"projects": projects, "visibility": visibility}, Truncated: len(projects) == limit}, err)
 	case "listProjects":
 		options, err := resolveProjectListOptions(input.Arguments, s.platformAdmin(ctx, input.UserID))
 		if err != nil {
@@ -135,7 +140,7 @@ func (s *Service) Execute(ctx context.Context, input Request) (Result, error) {
 		query := s.db.WithContext(ctx).Table("projects").
 			Select("projects.id, projects.name, projects.identifier, projects.description, project_members.role, projects.created_at, projects.updated_at").
 			Joins("left join project_members on project_members.project_id = projects.id and project_members.user_id = ?", input.UserID)
-		if options.Scope == projectservice.ListScopeRelated {
+		if options.Visibility == projectservice.ListVisibilityRelated {
 			query = query.Where("project_members.user_id = ?", input.UserID)
 		}
 		err = query.Order("projects.updated_at desc").
@@ -147,7 +152,7 @@ func (s *Service) Execute(ctx context.Context, input Request) (Result, error) {
 			projects = projects[:options.PageSize]
 		}
 		return databaseResult(Result{Value: map[string]any{
-			"items": projects, "page": options.Page, "pageSize": options.PageSize, "scope": options.Scope,
+			"items": projects, "page": options.Page, "pageSize": options.PageSize, "visibility": options.Visibility,
 		}, Truncated: truncated}, err)
 	case "listAppTemplates":
 		templates, err := appstore.Catalog()
@@ -372,18 +377,15 @@ func intArgument(arguments map[string]any, key string) int {
 }
 
 type projectListOptions struct {
-	Scope    projectservice.ListScope
-	Page     int
-	PageSize int
+	Visibility projectservice.ListVisibility
+	Page       int
+	PageSize   int
 }
 
 func resolveProjectListOptions(arguments map[string]any, platformAdmin bool) (projectListOptions, error) {
-	scope, err := projectservice.ResolveListScope(stringArgument(arguments, "scope"), platformAdmin)
-	if errors.Is(err, projectservice.ErrListScopeForbidden) {
-		return projectListOptions{}, ErrForbidden
-	}
+	visibility, err := resolveListVisibilityArgument(arguments, platformAdmin)
 	if err != nil {
-		return projectListOptions{}, ErrInvalidInput
+		return projectListOptions{}, err
 	}
 	page, err := boundedPositiveIntegerArgument(arguments, "page", 1, 100000)
 	if err != nil {
@@ -393,7 +395,26 @@ func resolveProjectListOptions(arguments map[string]any, platformAdmin bool) (pr
 	if err != nil {
 		return projectListOptions{}, ErrInvalidInput
 	}
-	return projectListOptions{Scope: scope, Page: page, PageSize: pageSize}, nil
+	return projectListOptions{Visibility: visibility, Page: page, PageSize: pageSize}, nil
+}
+
+func resolveListVisibilityArgument(arguments map[string]any, platformAdmin bool) (projectservice.ListVisibility, error) {
+	rawVisibility := ""
+	if value, exists := arguments["visibility"]; exists && value != nil {
+		var ok bool
+		rawVisibility, ok = value.(string)
+		if !ok {
+			return "", ErrInvalidInput
+		}
+	}
+	visibility, err := projectservice.ResolveListVisibility(rawVisibility, platformAdmin)
+	if errors.Is(err, projectservice.ErrListVisibilityForbidden) {
+		return "", ErrForbidden
+	}
+	if err != nil {
+		return "", ErrInvalidInput
+	}
+	return visibility, nil
 }
 
 func boundedPositiveIntegerArgument(arguments map[string]any, key string, defaultValue, maximum int) (int, error) {

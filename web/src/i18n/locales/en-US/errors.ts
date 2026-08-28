@@ -184,6 +184,12 @@ const errors = {
     quota_exceeded: 'This project space has reached its managed-volume limit. Delete an unused volume or ask a platform administrator to raise the quota.',
     quota_unavailable: 'The managed-volume quota cannot be verified. Ask a platform administrator to check the quota configuration.',
   },
+  notification: {
+    rule_required: 'Enter a rule name and select at least one event type and notification channel.',
+    rule_filter_invalid: 'The notification scope or advanced filters are invalid. Check them and try again.',
+    rule_project_not_found: 'A selected project space does not exist or was deleted. Select it again.',
+    channel_not_found: 'A selected notification channel does not exist or is not a shared channel. Select it again.',
+  },
   git: {
     network_failed: 'Failed to connect to the Git platform. Check server network, proxy/VPN, DNS resolution, or FakeIP settings and try again.',
     token_refresh_failed: 'Git token refresh failed. Reauthorize or check the credential.',

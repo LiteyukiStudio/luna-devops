@@ -53,7 +53,17 @@ const notificationsPage = {
   template: '템플릿',
   defaultTemplate: '기본 템플릿',
   eventTypes: '이벤트 유형',
-  filterJson: '필터 조건 JSON',
+  ruleScope: '알림 범위',
+  ruleScopeProjects: '선택한 프로젝트 스페이스(기본값)',
+  ruleScopeAll: '모든 프로젝트 스페이스',
+  ruleProjects: '프로젝트 스페이스',
+  ruleProjectsHint: '규칙은 선택한 프로젝트 스페이스의 이벤트만 일치시킵니다.',
+  ruleProjectsRequired: '규칙을 저장하려면 프로젝트 스페이스를 하나 이상 선택하세요.',
+  ruleScopeAllWarning: '모든 프로젝트 스페이스는 플랫폼 전체 이벤트와 일치합니다. 전역 알림이 명시적으로 필요한 경우에만 사용하세요.',
+  filterJson: '고급 필터 JSON',
+  filterJsonHint: '선택 사항입니다. severities, applicationIds, deploymentTargetIds만 지원하며 알림 범위와 프로젝트는 위 선택이 우선합니다.',
+  filterJsonInvalid: '유효한 JSON 객체를 입력하고 알 수 없는 필드나 잘못된 배열을 제거하세요.',
+  ruleInvalid: '규칙을 모두 입력하고 알림 범위 또는 고급 필터를 수정하세요.',
 }
 
 export default notificationsPage

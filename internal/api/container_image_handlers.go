@@ -7,12 +7,17 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/model"
+	projectservice "github.com/LiteyukiStudio/devops/internal/project"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
 func (h *Handlers) ListContainerImages(ctx *gin.Context) {
 	user, ok := h.currentUser(ctx)
+	if !ok {
+		return
+	}
+	visibility, ok := resolveListVisibility(ctx, user)
 	if !ok {
 		return
 	}
@@ -27,8 +32,12 @@ func (h *Handlers) ListContainerImages(ctx *gin.Context) {
 			return
 		}
 		query = query.Where("project_id = ?", projectID)
-	} else if user.Role != authz.PlatformRoleAdmin {
-		query = query.Where("created_by = ? or project_id in ?", user.ID, h.projectIDsForUser(ctx.Request.Context(), user.ID))
+	} else if visibility == projectservice.ListVisibilityAll {
+		query = query.Where("created_by = ? or project_id <> ''", user.ID)
+	} else if projectIDs := h.projectIDsForUser(ctx.Request.Context(), user.ID); len(projectIDs) > 0 {
+		query = query.Where("created_by = ? or project_id in ?", user.ID, projectIDs)
+	} else {
+		query = query.Where("created_by = ?", user.ID)
 	}
 	query = applySearch(ctx, query, "image_ref", "repository", "tag", "digest", "source_commit", "build_run_id", "source_type", "scan_status")
 

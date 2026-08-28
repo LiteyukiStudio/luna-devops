@@ -1,4 +1,4 @@
-import type { GitAccount, GitBranch, GitContentItem, GitFileContent, GitProvider, GitRepository, GitRepositoryBuildOptions, PaginatedResponse, PaginationParams } from '../types'
+import type { GitAccount, GitBranch, GitContentItem, GitFileContent, GitProvider, GitRepository, GitRepositoryBuildOptions, PaginatedResponse, PaginationParams, ResultVisibility } from '../types'
 import { paginationWithProjectQuery, request } from '../core'
 import { selectionItems, selectionPageParams } from '../selection-page'
 
@@ -11,9 +11,9 @@ type GitAccountPayload = Omit<GitAccount, 'id' | 'userId' | 'scopes' | 'createdA
 }
 
 export const gitApi = {
-  listGitProviders: (projectId?: string) =>
-    request<PaginatedResponse<GitProvider>>(`/git/providers?${paginationWithProjectQuery({ ...selectionPageParams, projectId })}`).then(selectionItems),
-  listGitProvidersPage: (params: PaginationParams & { projectId?: string }) =>
+  listGitProviders: (projectId?: string, visibility?: ResultVisibility) =>
+    request<PaginatedResponse<GitProvider>>(`/git/providers?${paginationWithProjectQuery({ ...selectionPageParams, projectId, visibility })}`).then(selectionItems),
+  listGitProvidersPage: (params: PaginationParams & { projectId?: string, visibility?: ResultVisibility }) =>
     request<PaginatedResponse<GitProvider>>(`/git/providers?${paginationWithProjectQuery(params)}`),
   createGitProvider: (payload: Omit<GitProvider, 'id' | 'createdAt' | 'clientSecretSet'> & { scope?: GitProvider['scope'], ownerRef?: string, clientSecret?: string }) =>
     request<GitProvider>('/git/providers', { method: 'POST', body: JSON.stringify(payload) }),
@@ -21,9 +21,9 @@ export const gitApi = {
     request<GitProvider>(`/git/providers/${providerId}`, { method: 'PUT', body: JSON.stringify(payload) }),
   deleteGitProvider: (providerId: string) =>
     request<void>(`/git/providers/${providerId}`, { method: 'DELETE' }),
-  listGitAccounts: (projectId?: string) =>
-    request<PaginatedResponse<GitAccount>>(`/git/accounts?${paginationWithProjectQuery({ ...selectionPageParams, projectId })}`).then(selectionItems),
-  listGitAccountsPage: (params: PaginationParams & { projectId?: string }) =>
+  listGitAccounts: (projectId?: string, visibility?: ResultVisibility) =>
+    request<PaginatedResponse<GitAccount>>(`/git/accounts?${paginationWithProjectQuery({ ...selectionPageParams, projectId, visibility })}`).then(selectionItems),
+  listGitAccountsPage: (params: PaginationParams & { projectId?: string, visibility?: ResultVisibility }) =>
     request<PaginatedResponse<GitAccount>>(`/git/accounts?${paginationWithProjectQuery(params)}`),
   createGitAccount: (payload: GitAccountPayload) =>
     request<GitAccount>('/git/accounts', { method: 'POST', body: JSON.stringify(payload) }),

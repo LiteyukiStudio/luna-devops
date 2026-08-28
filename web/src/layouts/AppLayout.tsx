@@ -160,7 +160,7 @@ export function AppLayout() {
   const [topbarToolsTarget, setTopbarToolsTarget] = useState<HTMLDivElement | null>(null)
   const [hasTopbarTabs, registerTopbarTabs] = useChromeSlotPresence()
   const [hasTopbarTools, registerTopbarTools] = useChromeSlotPresence()
-  const projects = useQuery({ queryKey: ['projects'], queryFn: api.listProjects, enabled: Boolean(user) })
+  const projects = useQuery({ queryKey: ['projects'], queryFn: () => api.listProjects(), enabled: Boolean(user) })
   // 布局层是 AI 访问状态的唯一查询者。Agent 短暂不可达时仍保留入口和已打开窗口，
   // 只有平台关闭助手或当前用户不在允许范围时才不挂载。
   const aiCapabilities = useQuery({

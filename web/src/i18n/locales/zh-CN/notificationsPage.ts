@@ -53,7 +53,17 @@ const notificationsPage = {
   template: '模板',
   defaultTemplate: '默认模板',
   eventTypes: '事件类型',
-  filterJson: '过滤条件 JSON',
+  ruleScope: '通知范围',
+  ruleScopeProjects: '指定项目空间（默认）',
+  ruleScopeAll: '全部项目空间',
+  ruleProjects: '项目空间',
+  ruleProjectsHint: '规则只匹配选中项目空间中的事件。',
+  ruleProjectsRequired: '至少选择一个项目空间，规则才可以保存。',
+  ruleScopeAllWarning: '全部项目空间会匹配平台范围内的事件；只有明确需要全局广播时才使用。',
+  filterJson: '高级过滤条件 JSON',
+  filterJsonHint: '可选。仅支持 severities、applicationIds 和 deploymentTargetIds；通知范围和项目空间以上方选择为准。',
+  filterJsonInvalid: '请输入有效的 JSON 对象，并移除未知字段或无效数组。',
+  ruleInvalid: '请完整填写规则，并修正通知范围或高级过滤条件。',
 }
 
 export default notificationsPage

@@ -16,26 +16,27 @@ const (
 )
 
 type Event struct {
-	ID               string                `json:"id"`
-	Type             string                `json:"type"`
-	Severity         string                `json:"severity"`
-	Locale           string                `json:"locale"`
-	Project          EntityRef             `json:"project"`
-	Application      EntityRef             `json:"application"`
-	DeploymentTarget EntityRef             `json:"deploymentTarget"`
-	Build            BuildContext          `json:"build"`
-	Release          ReleaseContext        `json:"release"`
-	Hook             HookContext           `json:"hook"`
-	Gateway          GatewayContext        `json:"gateway"`
-	Certificate      CertificateContext    `json:"certificate"`
-	ServiceBinding   ServiceBindingContext `json:"serviceBinding"`
-	Actor            ActorContext          `json:"actor"`
-	Links            map[string]string     `json:"links"`
-	CorrelationID    string                `json:"correlationId"`
-	TraceID          string                `json:"traceId"`
-	DedupKey         string                `json:"-"`
-	OccurredAt       time.Time             `json:"occurredAt"`
-	Message          string                `json:"message"`
+	ID                  string                `json:"id"`
+	Type                string                `json:"type"`
+	Severity            string                `json:"severity"`
+	Locale              string                `json:"locale"`
+	Project             EntityRef             `json:"project"`
+	Application         EntityRef             `json:"application"`
+	DeploymentTarget    EntityRef             `json:"deploymentTarget"`
+	Build               BuildContext          `json:"build"`
+	Release             ReleaseContext        `json:"release"`
+	Hook                HookContext           `json:"hook"`
+	Gateway             GatewayContext        `json:"gateway"`
+	Certificate         CertificateContext    `json:"certificate"`
+	ServiceBinding      ServiceBindingContext `json:"serviceBinding"`
+	Actor               ActorContext          `json:"actor"`
+	ResourceOwnerUserID string                `json:"resourceOwnerUserId"`
+	Links               map[string]string     `json:"links"`
+	CorrelationID       string                `json:"correlationId"`
+	TraceID             string                `json:"traceId"`
+	DedupKey            string                `json:"-"`
+	OccurredAt          time.Time             `json:"occurredAt"`
+	Message             string                `json:"message"`
 }
 
 type ServiceBindingContext struct {
@@ -108,12 +109,13 @@ type Template struct {
 }
 
 type RenderedMessage struct {
-	Subject string
-	Body    string
-	JSON    []byte
-	Method  string
-	URL     string
-	Headers map[string]string
+	Subject  string
+	Body     string
+	HTMLBody string
+	JSON     []byte
+	Method   string
+	URL      string
+	Headers  map[string]string
 }
 
 type SendResult struct {

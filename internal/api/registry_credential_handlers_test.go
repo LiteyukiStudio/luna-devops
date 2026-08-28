@@ -31,7 +31,7 @@ func TestListRegistryCredentialsAcceptsOptionalProjectFilterInOpenAPI(t *testing
 func TestListRegistryCredentialsUsesUnifiedProjectVisibility(t *testing.T) {
 	function := parseAPIFunction(t, "registry_credential_handlers.go", "ListRegistryCredentials")
 	calls := calledFunctions(function.Body)
-	if !calls["Query"] || !calls["applyScopedResourceVisibility"] {
+	if !calls["Query"] || !calls["applyScopedResourceListVisibility"] {
 		t.Fatal("ListRegistryCredentials must pass projectId through the shared project visibility filter")
 	}
 

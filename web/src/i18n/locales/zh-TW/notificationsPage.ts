@@ -53,7 +53,17 @@ const notificationsPage = {
   template: '模板',
   defaultTemplate: '預設模板',
   eventTypes: '事件型別',
-  filterJson: '過濾條件 JSON',
+  ruleScope: '通知範圍',
+  ruleScopeProjects: '指定專案空間（預設）',
+  ruleScopeAll: '全部專案空間',
+  ruleProjects: '專案空間',
+  ruleProjectsHint: '規則只匹配所選專案空間中的事件。',
+  ruleProjectsRequired: '至少選擇一個專案空間，規則才可以儲存。',
+  ruleScopeAllWarning: '全部專案空間會匹配平臺範圍內的事件；只有明確需要全域廣播時才使用。',
+  filterJson: '進階過濾條件 JSON',
+  filterJsonHint: '可選。僅支援 severities、applicationIds 和 deploymentTargetIds；通知範圍和專案空間以上方選擇為準。',
+  filterJsonInvalid: '請輸入有效的 JSON 物件，並移除未知欄位或無效陣列。',
+  ruleInvalid: '請完整填寫規則，並修正通知範圍或進階過濾條件。',
 }
 
 export default notificationsPage

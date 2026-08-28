@@ -22,7 +22,7 @@ const (
 
 type Scope struct {
 	UserID            string
-	PlatformAdmin     bool
+	AllProjects       bool
 	VisibleProjectIDs []string
 }
 
@@ -161,7 +161,7 @@ func (s *Service) Overview(ctx context.Context, scope Scope) (Overview, error) {
 
 func (s *Service) visibleProjectIDs(ctx context.Context, scope Scope) ([]string, error) {
 	query := s.db.WithContext(ctx).Model(&model.Project{}).Select("projects.id").Where("projects.deleted_at is null")
-	if !scope.PlatformAdmin {
+	if !scope.AllProjects {
 		if len(scope.VisibleProjectIDs) == 0 {
 			return []string{}, nil
 		}
@@ -241,7 +241,7 @@ func (s *Service) projectShortcuts(ctx context.Context, scope Scope, projectIDs 
 
 func (s *Service) recentEvents(ctx context.Context, scope Scope, projectIDs []string) ([]model.PlatformEvent, error) {
 	query := s.db.WithContext(ctx).Model(&model.PlatformEvent{})
-	if !scope.PlatformAdmin {
+	if !scope.AllProjects {
 		if len(projectIDs) == 0 {
 			query = query.Where("actor_id = ?", scope.UserID)
 		} else {
@@ -443,11 +443,10 @@ func (s *Service) scopedResourceQuery(ctx context.Context, scope Scope, projectI
 	query := s.db.WithContext(ctx).Model(value)
 	conditions := []string{"scope = 'global'", "(scope = 'user' and owner_ref = ?)"}
 	args := []any{scope.UserID}
-	bindings := s.db.WithContext(ctx).Model(&model.ScopedResourceProjectBinding{}).Select("resource_id").Where("resource_type = ?", resourceType)
-	if scope.PlatformAdmin {
-		conditions = append(conditions, "(scope = 'project' and id in (?))")
-		args = append(args, bindings)
+	if scope.AllProjects {
+		conditions = append(conditions, "scope = 'project'")
 	} else if len(projectIDs) > 0 {
+		bindings := s.db.WithContext(ctx).Model(&model.ScopedResourceProjectBinding{}).Select("resource_id").Where("resource_type = ?", resourceType)
 		conditions = append(conditions, "(scope = 'project' and id in (?))")
 		args = append(args, bindings.Where("project_id in ?", projectIDs))
 	}

@@ -30,7 +30,7 @@ export function useBillingPage() {
 
   const projectsQuery = useQuery({
     queryKey: ['billing', 'projects', canManageBilling],
-    queryFn: () => api.listProjectsPage({ page: 1, pageSize: 100, scope: canManageBilling ? 'all' : 'related', sortBy: 'lastUsedAt', sortOrder: 'desc' }),
+    queryFn: () => api.listProjectsPage({ page: 1, pageSize: 100, visibility: canManageBilling ? 'all' : 'related', sortBy: 'lastUsedAt', sortOrder: 'desc' }),
   })
   const projectItems = useMemo(() => projectsQuery.data?.items ?? [], [projectsQuery.data?.items])
   const visibleProjectItems = useMemo(() => {

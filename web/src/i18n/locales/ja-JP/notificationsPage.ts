@@ -53,7 +53,17 @@ const notificationsPage = {
   template: 'テンプレート',
   defaultTemplate: 'デフォルトテンプレート',
   eventTypes: 'イベントタイプ',
-  filterJson: 'フィルター条件 JSON',
+  ruleScope: '通知範囲',
+  ruleScopeProjects: '指定したプロジェクトスペース（デフォルト）',
+  ruleScopeAll: 'すべてのプロジェクトスペース',
+  ruleProjects: 'プロジェクトスペース',
+  ruleProjectsHint: 'ルールは選択したプロジェクトスペース内のイベントだけに一致します。',
+  ruleProjectsRequired: 'ルールを保存するには、プロジェクトスペースを 1 つ以上選択してください。',
+  ruleScopeAllWarning: 'すべてのプロジェクトスペースを選ぶと、プラットフォーム全体のイベントに一致します。明示的に全体配信が必要な場合だけ使用してください。',
+  filterJson: '高度なフィルター JSON',
+  filterJsonHint: '任意。severities、applicationIds、deploymentTargetIds のみ対応し、通知範囲とプロジェクトスペースは上の選択が優先されます。',
+  filterJsonInvalid: '有効な JSON オブジェクトを入力し、不明なフィールドまたは無効な配列を削除してください。',
+  ruleInvalid: 'ルールをすべて入力し、通知範囲または高度なフィルターを修正してください。',
 }
 
 export default notificationsPage

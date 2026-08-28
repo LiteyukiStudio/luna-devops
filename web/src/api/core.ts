@@ -1,4 +1,4 @@
-import type { BillingListParams, BuildRunListParams, PaginationParams, RuntimeClusterResourceListParams } from './types'
+import type { BillingListParams, BuildRunListParams, PaginationParams, ResultVisibility, RuntimeClusterResourceListParams } from './types'
 import i18next from '@/i18n'
 import { startAPIRequestSpan } from '@/lib/telemetry'
 
@@ -42,7 +42,7 @@ export function optionalProjectQuery(projectId?: unknown) {
   return normalized ? `?projectId=${encodeURIComponent(normalized)}` : ''
 }
 
-export function paginationQuery(params: PaginationParams & { scope?: string }) {
+export function paginationQuery(params: PaginationParams & { visibility?: ResultVisibility }) {
   const search = new URLSearchParams({
     page: String(params.page),
     pageSize: String(params.pageSize),
@@ -53,12 +53,12 @@ export function paginationQuery(params: PaginationParams & { scope?: string }) {
     search.set('sortOrder', params.sortOrder)
   if (params.search)
     search.set('search', params.search)
-  if (params.scope)
-    search.set('scope', params.scope)
+  if (params.visibility)
+    search.set('visibility', params.visibility)
   return search.toString()
 }
 
-export function paginationWithProjectQuery(params: PaginationParams & { projectId?: string }) {
+export function paginationWithProjectQuery(params: PaginationParams & { projectId?: string, visibility?: ResultVisibility }) {
   const search = new URLSearchParams(paginationQuery(params))
   if (params.projectId)
     search.set('projectId', params.projectId)

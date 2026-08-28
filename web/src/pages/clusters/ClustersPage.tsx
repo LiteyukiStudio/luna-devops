@@ -9,11 +9,14 @@ import { useSession } from '@/app/session-context'
 import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { ContentTabs } from '@/components/common/content-tabs'
 import { LazyDialogBoundary } from '@/components/common/lazy-dialog-boundary'
+import { ResultVisibilitySelect } from '@/components/common/result-visibility-select'
 import { Button } from '@/components/ui/button'
 import { NativeSelect as Select } from '@/components/ui/native-select'
 import { TabsContent } from '@/components/ui/tabs'
 import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
+import { isPlatformAdmin } from '@/lib/roles'
 import { useRuntimeClusterPressure } from '@/lib/runtime-cluster-pressure'
+import { useResultVisibility } from '@/lib/use-result-visibility'
 import { canManageCluster } from './cluster-helpers'
 import { ClusterResourcesPanel } from './cluster-resources-panel'
 import { RuntimeClusterTable } from './runtime-cluster-table'
@@ -39,13 +42,15 @@ export function ClustersPage() {
   const [clusterToDelete, setClusterToDelete] = useState<RuntimeCluster | null>(null)
   const [clusterPage, setClusterPage] = useState(1)
   const [clusterPageSize, setClusterPageSize] = useState(10)
-  const projects = useQuery({ queryKey: ['projects'], queryFn: api.listProjects })
+  const canViewAll = isPlatformAdmin(user?.role)
+  const [effectiveVisibility, setVisibility] = useResultVisibility(canViewAll)
+  const projects = useQuery({ queryKey: ['projects', 'options', effectiveVisibility], queryFn: () => api.listProjects(effectiveVisibility) })
   const clusters = useQuery({
     ...liveObservationQueryPolicy,
-    queryKey: ['runtime-clusters', 'page', clusterPage, clusterPageSize],
-    queryFn: () => api.listRuntimeClustersPage({ page: clusterPage, pageSize: clusterPageSize, sortBy: 'createdAt', sortOrder: 'desc' }),
+    queryKey: ['runtime-clusters', 'page', clusterPage, clusterPageSize, effectiveVisibility],
+    queryFn: () => api.listRuntimeClustersPage({ page: clusterPage, pageSize: clusterPageSize, visibility: effectiveVisibility, sortBy: 'createdAt', sortOrder: 'desc' }),
   })
-  const clusterOptions = useQuery({ ...liveObservationQueryPolicy, queryKey: ['runtime-clusters', 'options'], queryFn: () => api.listRuntimeClusters() })
+  const clusterOptions = useQuery({ ...liveObservationQueryPolicy, queryKey: ['runtime-clusters', 'options', effectiveVisibility], queryFn: () => api.listRuntimeClusters(undefined, effectiveVisibility) })
   const clusterPressure = useRuntimeClusterPressure({
     clusterIds: (clusters.data?.items ?? []).map(cluster => cluster.id),
     enabled: activeTab === 'clusters',
@@ -54,7 +59,7 @@ export function ClustersPage() {
     () => (clusterOptions.data ?? []).filter(cluster => canManageCluster(cluster, user?.id, user?.role)),
     [clusterOptions.data, user?.id, user?.role],
   )
-  const resources = useClusterResources({ activeTab, manageableClusters, user })
+  const resources = useClusterResources({ activeTab, manageableClusters, user, visibility: effectiveVisibility })
 
   const deleteCluster = useMutation({
     mutationFn: api.deleteRuntimeCluster,
@@ -107,6 +112,15 @@ export function ClustersPage() {
         ]}
         tools={(
           <div className="flex flex-wrap items-center gap-2">
+            <ResultVisibilitySelect
+              canViewAll={canViewAll}
+              value={effectiveVisibility}
+              onChange={(nextVisibility) => {
+                setVisibility(nextVisibility)
+                setClusterPage(1)
+                resources.resetPageAndSelection()
+              }}
+            />
             {activeTab === 'clusters'
               ? (
                   <Button onClick={() => openClusterDialog()}>

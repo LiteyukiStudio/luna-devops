@@ -3,6 +3,7 @@ package worker
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -16,28 +17,35 @@ import (
 	"github.com/hibiken/asynq"
 )
 
+var errGatewayApplyTaskStale = errors.New("gateway apply task generation is stale")
+
 func (r *Runner) handleGatewayApply(ctx context.Context, task *asynq.Task) (err error) {
 	startedAt := time.Now()
 	operation := "apply"
 	var route model.GatewayRoute
+	var payload tasks.GatewayApplyPayload
 	defer func() {
 		result := "succeeded"
-		if err != nil {
+		if errors.Is(err, errGatewayApplyTaskStale) {
+			result = "skipped"
+		} else if err != nil {
 			result = "failed"
 			if route.ID != "" {
-				r.emitGatewayApplyFailed(ctx, route, err.Error())
+				r.emitGatewayApplyFailed(ctx, route, payload.ActorID, err.Error())
 			}
 		}
 		r.recordGatewaySyncMetric(ctx, operation, result, startedAt)
 	}()
 
-	var payload tasks.GatewayApplyPayload
 	if err := json.Unmarshal(task.Payload(), &payload); err != nil {
 		return err
 	}
 
 	if err := r.db.First(&route, "id = ? and project_id = ?", payload.GatewayRouteID, payload.ProjectID).Error; err != nil {
 		return err
+	}
+	if !gatewayApplyPayloadMatchesRoute(payload, route) {
+		return fmt.Errorf("%w: %w", asynq.SkipRetry, errGatewayApplyTaskStale)
 	}
 	var project model.Project
 	if err := r.db.First(&project, "id = ?", payload.ProjectID).Error; err != nil {
@@ -61,7 +69,7 @@ func (r *Runner) handleGatewayApply(ctx context.Context, task *asynq.Task) (err 
 			return err
 		}
 		route.Status = "disabled"
-		r.emitGatewayEvent(ctx, route, "applied", "Gateway route disabled")
+		r.emitGatewayEvent(ctx, route, payload.ActorID, "applied", "Gateway route disabled")
 		return nil
 	}
 
@@ -88,7 +96,7 @@ func (r *Runner) handleGatewayApply(ctx context.Context, task *asynq.Task) (err 
 		failedRoute := route
 		failedRoute.CertificateStatus = kubeprovider.CertificateFailed
 		failedRoute.CertificateMessage = err.Error()
-		r.emitCertificateEvent(ctx, failedRoute, kubeprovider.CertificateFailed, err.Error())
+		r.emitCertificateEvent(ctx, failedRoute, payload.ActorID, kubeprovider.CertificateFailed, err.Error())
 		return err
 	}
 	certificateSnapshot := certificate.snapshot
@@ -104,13 +112,19 @@ func (r *Runner) handleGatewayApply(ctx context.Context, task *asynq.Task) (err 
 		route.CertificateNotAfter = certificateSnapshot.NotAfter
 		route.CertificateIssuerKind = gatewayCertificateIssuerKind(cluster)
 		route.CertificateIssuerName = gatewayCertificateIssuerName(cluster, r.certManagerClusterIssuer)
-		r.emitCertificateEvent(ctx, route, certificateSnapshot.Phase, certificateSnapshot.Message)
+		r.emitCertificateEvent(ctx, route, payload.ActorID, certificateSnapshot.Phase, certificateSnapshot.Message)
 	} else {
 		route.CertificateStatus = "disabled"
 	}
 	route.Status = "active"
-	r.emitGatewayEvent(ctx, route, "applied", "Gateway route applied")
+	r.emitGatewayEvent(ctx, route, payload.ActorID, "applied", "Gateway route applied")
 	return nil
+}
+
+func gatewayApplyPayloadMatchesRoute(payload tasks.GatewayApplyPayload, route model.GatewayRoute) bool {
+	return payload.RouteUpdatedAtUnixMicro > 0 &&
+		!route.UpdatedAt.IsZero() &&
+		payload.RouteUpdatedAtUnixMicro == route.UpdatedAt.UTC().UnixMicro()
 }
 
 func (r *Runner) ensureProjectNamespace(ctx context.Context, namespace string, project model.Project, environment model.Environment) error {

@@ -533,10 +533,10 @@ paths:
       operationId: getPlatformMailSettings
       tags: [Notifications]
       summary: Get the global mail service settings
-      description: Returns the platform SMTP transport configuration without exposing its Secret Store reference or password.
+      description: Returns the platform SMTP transport and personal-email cooldown configuration without exposing its Secret Store reference or password.
       x-luna-agent:
         aliases: { zh: [查看全局邮件配置, 查询 SMTP 设置, 邮件服务设置], en: [get global mail settings, get SMTP settings, mail service settings] }
-        purpose: { zh: 读取平台统一 SMTP 传输配置及密码是否已设置。, en: Read the platform-wide SMTP transport configuration and whether its password is set. }
+        purpose: { zh: 读取平台统一 SMTP 传输配置、个人邮件冷却时间及密码是否已设置。, en: Read the platform-wide SMTP transport, personal-email cooldown, and whether its password is set. }
         avoidWhen: { zh: 查看个人邮件偏好时应使用 getMyNotificationPreferences。, en: Use getMyNotificationPreferences for a user's personal email preference. }
         preconditions: { zh: [当前用户是平台管理员], en: [The current user is a platform administrator] }
         successEvidence: { zh: 返回不含密码和 Secret 引用的全局邮件配置。, en: Returns global mail settings without the password or Secret reference. }
@@ -558,10 +558,10 @@ paths:
       operationId: updatePlatformMailSettings
       tags: [Notifications]
       summary: Update the global mail service settings
-      description: Stores a newly supplied SMTP password in Secret Store; an empty password keeps the current value.
+      description: Stores a newly supplied SMTP password in Secret Store and configures the personal-event email cooldown; an empty password keeps the current value. The cooldown does not affect registration, account-recovery, administrator-test, or shared-channel email.
       x-luna-agent:
         aliases: { zh: [更新全局邮件配置, 配置 SMTP, 修改邮件服务], en: [update global mail settings, configure SMTP, update mail service] }
-        purpose: { zh: 配置注册、个人通知及后续账号恢复共用的 SMTP 传输服务。, en: Configure the SMTP transport shared by registration, personal notifications, and future account recovery. }
+        purpose: { zh: 配置注册、个人通知及后续账号恢复共用的 SMTP 传输服务，并设置仅作用于个人事件邮件的冷却时间。, en: Configure the SMTP transport shared by registration, personal notifications, and future account recovery, plus the cooldown used only for personal event email. }
         avoidWhen: { zh: 不要用它修改个人邮件开关或创建固定收件人渠道。, en: Do not use this to change a personal email toggle or create a fixed-recipient channel. }
         preconditions: { zh: [当前用户是平台管理员, 已确认 SMTP 服务地址、发件人和认证方式], en: [The current user is a platform administrator, The SMTP endpoint sender and authentication mode are confirmed] }
         successEvidence: { zh: 返回脱敏后的权威配置；随后可用 testPlatformMailSettings 验证真实投递。, en: Returns the sanitized authoritative settings; testPlatformMailSettings can then verify a real delivery. }
@@ -1061,17 +1061,19 @@ paths:
     get:
       operationId: listRuntimeClusters
       tags: [Runtime]
-      summary: List runtime clusters
-      description: Pagination is always applied; omitted parameters use page 1 and pageSize 20.
+      summary: List runtime clusters for the selected visibility
+      description: Defaults to resources related to the caller. Platform administrators may explicitly request all visible resources. When projectId is provided, it is applied as a stronger filter within the selected visibility. Pagination is always applied; omitted pagination parameters use page 1 and pageSize 20.
       x-luna-agent:
-        purpose: { zh: 列出当前用户可见的运行时集群，用于选择真实 clusterId。, en: List visible runtime clusters to resolve a real clusterId. }
+        purpose: { zh: 默认列出与当前用户相关的运行时集群；仅当平台管理员明确需要全局盘点时使用 visibility=all，并回读真实 clusterId。, en: List runtime clusters related to the caller by default; use visibility=all only for an explicit platform-administrator inventory and read back authoritative clusterId values. }
         aliases: { zh: [列出运行时集群, 查询集群, 选择集群], en: [list runtime clusters, find cluster, select cluster] }
-        avoidWhen: { zh: 已有资源已经绑定明确 clusterId 时不要重新选择。, en: Do not reselect when the resource already has an explicit clusterId. }
-        preconditions: { zh: [当前用户具有集群读取权限], en: [The current user can read runtime clusters] }
-        successEvidence: { zh: 返回分页集群列表及真实集群标识。, en: Returns a paginated cluster list with authoritative identifiers. }
+        avoidWhen: { zh: 已有资源已经绑定明确 clusterId 时不要重新选择；已知项目空间时应传 projectId，不要用 all 扩大候选。, en: Do not reselect when the resource already has an explicit clusterId; pass projectId when the project is known instead of widening candidates with all. }
+        preconditions: { zh: [当前用户具有集群读取权限, visibility=all 仅由平台管理员在明确需要全局范围时使用], en: [The current user can read runtime clusters, visibility=all is used only by a platform administrator who explicitly needs the global view] }
+        successEvidence: { zh: 返回符合 visibility 及 projectId 强过滤的分页集群列表和真实 clusterId。, en: Returns a paginated cluster list with authoritative clusterId values matching visibility and the stronger projectId filter. }
       parameters:
+        - $ref: "#/components/parameters/Visibility"
         - name: projectId
           in: query
+          description: Stronger project-space filter applied within the selected visibility.
           schema: { type: string }
         - $ref: "#/components/parameters/Page"
         - $ref: "#/components/parameters/PageSize"
@@ -1089,6 +1091,8 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/PaginatedRuntimeClusters" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
 
     post:
       operationId: createRuntimeCluster
@@ -1157,10 +1161,19 @@ paths:
     get:
       operationId: listGitProviders
       tags: [Git]
-      summary: List Git providers
+      summary: List Git providers for the selected visibility
+      description: Defaults to Git providers related to the caller. Platform administrators may explicitly request all visible providers. When projectId is provided, it is applied as a stronger filter within the selected visibility.
+      x-luna-agent:
+        purpose: { zh: 默认列出与当前用户相关的 Git Provider；仅当平台管理员明确盘点全局 Provider 时使用 visibility=all。, en: List Git providers related to the caller by default; use visibility=all only for an explicit platform-administrator inventory. }
+        aliases: { zh: [列出 Git Provider, 查询代码源 Provider, 选择 Git Provider], en: [list Git providers, find source providers, select Git provider] }
+        avoidWhen: { zh: 已知项目空间时应传 projectId；已有明确 providerId 时不要重新扩大候选。, en: Pass projectId when the project is known; do not widen candidates when an authoritative providerId is already available. }
+        preconditions: { zh: [当前用户具有 Git Provider 读取权限, visibility=all 仅由平台管理员显式使用], en: [The current user can read Git providers, visibility=all is explicitly used only by platform administrators] }
+        successEvidence: { zh: 返回符合 visibility 及 projectId 强过滤的分页 Provider 列表和真实 providerId。, en: Returns a paginated provider list with authoritative providerId values matching visibility and the stronger projectId filter. }
       parameters:
+        - $ref: "#/components/parameters/Visibility"
         - name: projectId
           in: query
+          description: Stronger project-space filter applied within the selected visibility.
           schema:
             type: string
         - $ref: "#/components/parameters/Page"
@@ -1176,6 +1189,8 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/PaginatedBusinessObjects" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
     post:
       operationId: createGitProvider
       tags: [Git]
@@ -1275,10 +1290,19 @@ paths:
     get:
       operationId: listGitAccounts
       tags: [Git]
-      summary: List current user Git accounts
+      summary: List Git accounts for the selected visibility
+      description: Defaults to Git accounts related to the caller. Platform administrators may explicitly request all visible accounts. When projectId is provided, it is applied as a stronger filter within the selected visibility.
+      x-luna-agent:
+        purpose: { zh: 默认列出与当前用户相关的 Git 账号；仅当平台管理员明确盘点全部可见账号时使用 visibility=all。, en: List Git accounts related to the caller by default; use visibility=all only for an explicit platform-administrator inventory. }
+        aliases: { zh: [列出 Git 账号, 查询代码账号, 选择仓库账号], en: [list Git accounts, find source accounts, select repository account] }
+        avoidWhen: { zh: 已知项目空间时应传 projectId；已有明确 accountId 时不要重新扩大候选。, en: Pass projectId when the project is known; do not widen candidates when an authoritative accountId is already available. }
+        preconditions: { zh: [当前用户具有 Git 账号读取权限, visibility=all 仅由平台管理员显式使用], en: [The current user can read Git accounts, visibility=all is explicitly used only by platform administrators] }
+        successEvidence: { zh: 返回符合 visibility 及 projectId 强过滤的分页账号列表和真实 accountId。, en: Returns a paginated account list with authoritative accountId values matching visibility and the stronger projectId filter. }
       parameters:
+        - $ref: "#/components/parameters/Visibility"
         - name: projectId
           in: query
+          description: Stronger project-space filter applied within the selected visibility.
           schema:
             type: string
         - $ref: "#/components/parameters/Page"
@@ -1294,6 +1318,8 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/PaginatedBusinessObjects" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
     post:
       operationId: createGitAccount
       tags: [Git]
@@ -1421,10 +1447,19 @@ paths:
     get:
       operationId: listArtifactRegistries
       tags: [Registries]
-      summary: List artifact registries
+      summary: List artifact registries for the selected visibility
+      description: Defaults to artifact registries related to the caller. Platform administrators may explicitly request all visible registries. When projectId is provided, it is applied as a stronger filter within the selected visibility.
+      x-luna-agent:
+        purpose: { zh: 默认列出与当前用户相关的镜像站；仅当平台管理员明确盘点全局镜像站时使用 visibility=all。, en: List artifact registries related to the caller by default; use visibility=all only for an explicit platform-administrator inventory. }
+        aliases: { zh: [列出镜像站, 查询制品库, 选择镜像仓库], en: [list registries, find artifact registries, select image registry] }
+        avoidWhen: { zh: 已知项目空间时应传 projectId；已有明确 registryId 时不要重新扩大候选。, en: Pass projectId when the project is known; do not widen candidates when an authoritative registryId is already available. }
+        preconditions: { zh: [当前用户具有镜像站读取权限, visibility=all 仅由平台管理员显式使用], en: [The current user can read artifact registries, visibility=all is explicitly used only by platform administrators] }
+        successEvidence: { zh: 返回符合 visibility 及 projectId 强过滤的分页镜像站列表和真实 registryId。, en: Returns a paginated registry list with authoritative registryId values matching visibility and the stronger projectId filter. }
       parameters:
+        - $ref: "#/components/parameters/Visibility"
         - name: projectId
           in: query
+          description: Stronger project-space filter applied within the selected visibility.
           schema:
             type: string
         - $ref: "#/components/parameters/Page"
@@ -1443,6 +1478,8 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/PaginatedBusinessObjects" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
     post:
       operationId: createArtifactRegistry
       tags: [Registries]
@@ -1498,12 +1535,20 @@ paths:
     get:
       operationId: listRegistryCredentials
       tags: [Registries]
-      summary: List registry credentials
+      summary: List registry credentials for the selected visibility
+      description: Defaults to credentials related to the caller in the selected registry. Platform administrators may explicitly request all visible credentials. When projectId is provided, it is applied as a stronger filter within the selected visibility.
+      x-luna-agent:
+        purpose: { zh: 默认列出指定镜像站中与当前用户相关的凭据；构建或部署已知项目空间时必须传 projectId，仅在管理员明确盘点时使用 visibility=all。, en: List credentials related to the caller in the selected registry by default; pass projectId for a known build or deployment project and use visibility=all only for an explicit administrator inventory. }
+        aliases: { zh: [列出镜像凭据, 查询镜像站凭据, 选择推送凭据], en: [list registry credentials, find image credentials, select push credential] }
+        avoidWhen: { zh: 不要用 visibility=all 代替已知 projectId；已有明确且已验证的 credentialId 时不要重新选择。, en: Do not use visibility=all instead of a known projectId; do not reselect when an authoritative verified credentialId already exists. }
+        preconditions: { zh: [提供真实 registryId, visibility=all 仅由平台管理员显式使用], en: [Provide an authoritative registryId, visibility=all is explicitly used only by platform administrators] }
+        successEvidence: { zh: 返回符合 registryId、visibility 及 projectId 强过滤的脱敏凭据列表和真实 credentialId。, en: Returns redacted credentials with authoritative credentialId values matching registryId, visibility, and the stronger projectId filter. }
       parameters:
         - $ref: "#/components/parameters/RegistryId"
+        - $ref: "#/components/parameters/Visibility"
         - name: projectId
           in: query
-          description: When provided, return only credentials usable for this project space (global, owned by the current user, or bound to this project); credentials bound only to other projects are excluded.
+          description: Stronger project-space filter applied within the selected visibility. Returns only credentials usable for this project space; credentials bound only to other projects are excluded.
           schema: { type: string }
         - $ref: "#/components/parameters/Page"
         - $ref: "#/components/parameters/PageSize"
@@ -1520,6 +1565,8 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/PaginatedBusinessObjects" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "403":
           $ref: "#/components/responses/Forbidden"
         "404":
@@ -1544,8 +1591,16 @@ paths:
     get:
       operationId: listAllRegistryCredentials
       tags: [Registries]
-      summary: List visible registry credentials across registries
+      summary: List registry credentials across registries for the selected visibility
+      description: Defaults to credentials related to the caller across registries. Platform administrators may explicitly request all visible credentials.
+      x-luna-agent:
+        purpose: { zh: 默认跨镜像站列出与当前用户相关的凭据；仅当平台管理员明确盘点全部可见凭据时使用 visibility=all。, en: List credentials related to the caller across registries by default; use visibility=all only for an explicit platform-administrator inventory. }
+        aliases: { zh: [跨镜像站列出凭据, 查询全部镜像凭据, 查找镜像凭据], en: [list credentials across registries, find all registry credentials, search image credentials] }
+        avoidWhen: { zh: 已知 registryId 或 projectId 时应使用带对应强过滤的列表接口，不要用 all 扩大候选。, en: Use the list operation with the corresponding stronger filter when registryId or projectId is known instead of widening candidates with all. }
+        preconditions: { zh: [当前用户具有镜像凭据读取权限, visibility=all 仅由平台管理员显式使用], en: [The current user can read registry credentials, visibility=all is explicitly used only by platform administrators] }
+        successEvidence: { zh: 返回符合 visibility 的跨镜像站脱敏凭据列表及真实 registryId、credentialId。, en: Returns redacted credentials across registries with authoritative registryId and credentialId values matching visibility. }
       parameters:
+        - $ref: "#/components/parameters/Visibility"
         - $ref: "#/components/parameters/Page"
         - $ref: "#/components/parameters/PageSize"
         - name: sortBy
@@ -1561,6 +1616,8 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/PaginatedBusinessObjects" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
 
   /api/v1/registries/{registryId}/credentials/{credentialId}:
     put:
@@ -1598,18 +1655,29 @@ paths:
     get:
       operationId: listContainerImages
       tags: [Registries]
-      summary: List container image records
+      summary: List container image records for the selected visibility
+      description: Defaults to container image records related to the caller. Platform administrators may explicitly request all visible records. projectId, applicationId, and registryId are stronger filters within the selected visibility.
+      x-luna-agent:
+        purpose: { zh: 默认列出与当前用户相关的容器镜像记录；仅当平台管理员明确盘点全局镜像时使用 visibility=all。, en: List container image records related to the caller by default; use visibility=all only for an explicit platform-administrator inventory. }
+        aliases: { zh: [列出容器镜像, 查询镜像记录, 选择发布镜像], en: [list container images, find image records, select release image] }
+        avoidWhen: { zh: 已知项目空间、应用或镜像站时应传对应 ID 强过滤，不要用 all 扩大候选。, en: Pass known project, application, or registry identifiers as stronger filters instead of widening candidates with all. }
+        preconditions: { zh: [当前用户具有镜像记录读取权限, visibility=all 仅由平台管理员显式使用], en: [The current user can read image records, visibility=all is explicitly used only by platform administrators] }
+        successEvidence: { zh: 返回符合 visibility 及资源 ID 强过滤的分页镜像记录和真实 imageId。, en: Returns paginated image records with authoritative imageId values matching visibility and the stronger resource filters. }
       parameters:
+        - $ref: "#/components/parameters/Visibility"
         - name: projectId
           in: query
+          description: Stronger project-space filter applied within the selected visibility.
           schema:
             type: string
         - name: applicationId
           in: query
+          description: Stronger application filter applied within the selected visibility.
           schema:
             type: string
         - name: registryId
           in: query
+          description: Stronger registry filter applied within the selected visibility.
           schema:
             type: string
         - $ref: "#/components/parameters/Page"
@@ -1625,6 +1693,8 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/PaginatedBusinessObjects" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
     post:
       operationId: createContainerImage
       tags: [Registries]
@@ -1643,21 +1713,23 @@ paths:
     get:
       operationId: getDashboard
       tags: [Dashboard]
-      summary: Get the current user's dashboard overview
-      description: Returns the task-oriented dashboard aggregation in one response. Future dashboard read models are added to this contract instead of being composed from multiple browser requests.
+      summary: Get the dashboard overview for the selected visibility
+      description: Returns the task-oriented dashboard aggregation in one response. The overview defaults to project spaces and resources related to the caller; platform administrators may explicitly request the all visibility. Future dashboard read models are added to this contract instead of being composed from multiple browser requests.
       x-luna-agent:
         aliases:
           zh: [查看平台仪表盘概览, 平台仪表盘, 看板概览]
           en: [platform dashboard overview, dashboard summary]
-        purpose: { zh: 读取当前用户可见资源的任务型仪表盘聚合。, en: Read the task-oriented dashboard aggregation visible to the current user. }
-        avoidWhen: { zh: 需要单个资源的完整详情时应使用对应详情工具。, en: Use the resource-specific detail tool for one resource's full details. }
-        preconditions: { zh: [当前用户已登录], en: [The current user is signed in] }
-        successEvidence: { zh: 返回当前可见范围的仪表盘概览。, en: Returns the dashboard overview for the current visible scope. }
+        purpose: { zh: 默认读取与当前用户相关的项目空间和资源看板；仅当平台管理员明确要求全局概览时使用 visibility=all。, en: Read the dashboard for project spaces and resources related to the caller by default; use visibility=all only for an explicit platform-administrator overview. }
+        avoidWhen: { zh: 需要单个资源的完整详情时应使用对应详情工具；不要为普通看板查看扩大到 all。, en: Use the resource-specific detail tool for one resource's full details; do not widen a normal dashboard view to all. }
+        preconditions: { zh: [当前用户已登录, visibility=all 仅由平台管理员显式使用], en: [The current user is signed in, visibility=all is explicitly used only by platform administrators] }
+        successEvidence: { zh: 返回与 visibility 一致的项目、活动、待处理项和资源就绪度概览。, en: Returns project, activity, attention, and resource-readiness summaries matching visibility. }
       x-luna-cli:
         command: dashboard.show
         classification: business-command
         risk: low
         requiredScopes: ["dashboard:read"]
+      parameters:
+        - $ref: "#/components/parameters/Visibility"
       responses:
         "200":
           description: Dashboard overview scoped to the current user's visible project spaces and resources.
@@ -1670,6 +1742,8 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
         "500":
           description: Dashboard aggregation failed (`dashboard.load_failed`).
           content:
@@ -1680,25 +1754,19 @@ paths:
     get:
       operationId: listProjects
       tags: [Projects]
-      summary: List projects
-      description: Pagination is always applied; omitted parameters use page 1 and pageSize 20. Project discovery defaults to project spaces related to the caller. Platform administrators may explicitly request all project spaces.
+      summary: List project spaces for the selected visibility
+      description: Project discovery defaults to project spaces related to the caller. Platform administrators may explicitly request all project spaces. Pagination is always applied; omitted pagination parameters use page 1 and pageSize 20.
       x-luna-agent:
-        purpose: { zh: 分页列出当前用户可见的项目空间。, en: List project spaces visible to the current user. }
+        purpose: { zh: 默认分页列出与当前用户相关的项目空间；仅当平台管理员明确要求全局查找或盘点时使用 visibility=all。, en: List project spaces related to the caller by default; use visibility=all only for an explicit platform-administrator search or inventory. }
         aliases: { zh: [列出项目空间, 查询项目空间, 项目空间列表], en: [list projects, list project spaces, project list] }
-        avoidWhen: { zh: 已知唯一 projectId 且只需读取该项目空间详情时应使用 getProject。, en: Use getProject when a single authoritative projectId is already known. }
-        preconditions: { zh: [当前用户具有项目空间读取权限], en: [The current user can read projects] }
-        successEvidence: { zh: 返回带分页信息的项目空间列表。, en: Returns a paginated project list. }
+        avoidWhen: { zh: 已知唯一 projectId 且只需读取该项目空间详情时应使用 getProject；不要为普通选择扩大到 all。, en: Use getProject when a single authoritative projectId is already known; do not widen a normal selection to all. }
+        preconditions: { zh: [当前用户具有项目空间读取权限, visibility=all 仅由平台管理员显式使用], en: [The current user can read projects, visibility=all is explicitly used only by platform administrators] }
+        successEvidence: { zh: 返回符合 visibility 的分页项目空间列表及真实 projectId。, en: Returns a paginated project-space list with authoritative projectId values matching visibility. }
       parameters:
         - $ref: "#/components/parameters/Page"
         - $ref: "#/components/parameters/PageSize"
         - $ref: "#/components/parameters/Search"
-        - name: scope
-          in: query
-          description: Use `related` by default. `all` is allowed only for platform administrators and must be requested explicitly.
-          schema:
-            type: string
-            enum: [related, all]
-            default: related
+        - $ref: "#/components/parameters/Visibility"
         - name: sortBy
           in: query
           schema:
@@ -3627,11 +3695,20 @@ paths:
       operationId: listBuildVariableSets
       tags:
         - Builds
-      summary: List Build Variable Sets
+      summary: List build variable sets for the selected visibility
+      description: Defaults to variable sets related to the caller. Platform administrators may explicitly request all visible sets. When projectId is provided, it is applied as a stronger filter within the selected visibility.
+      x-luna-agent:
+        purpose: { zh: 默认列出与当前用户相关的构建变量集；仅当平台管理员明确盘点全局变量集时使用 visibility=all。, en: List build variable sets related to the caller by default; use visibility=all only for an explicit platform-administrator inventory. }
+        aliases: { zh: [列出构建变量集, 查询构建变量, 选择变量集], en: [list build variable sets, find build variables, select variable set] }
+        avoidWhen: { zh: 已知项目空间时应传 projectId；已有明确 setId 时不要重新扩大候选。, en: Pass projectId when the project is known; do not widen candidates when an authoritative setId is already available. }
+        preconditions: { zh: [当前用户具有构建变量集读取权限, visibility=all 仅由平台管理员显式使用], en: [The current user can read build variable sets, visibility=all is explicitly used only by platform administrators] }
+        successEvidence: { zh: 返回符合 visibility 及 projectId 强过滤的分页变量集列表和真实 setId。, en: Returns a paginated variable-set list with authoritative setId values matching visibility and the stronger projectId filter. }
       parameters:
+        - $ref: "#/components/parameters/Visibility"
         - name: projectId
           in: query
           required: false
+          description: Stronger project-space filter applied within the selected visibility.
           schema:
             type: string
         - $ref: "#/components/parameters/Page"
@@ -3810,13 +3887,14 @@ paths:
       operationId: listRuntimeClusterResources
       tags:
         - Runtime
-      summary: List Runtime Cluster Resources
+      summary: List runtime cluster resources for the selected visibility
+      description: Lists live resources in the selected cluster. Results default to resources related to the caller; platform administrators may explicitly request all visible resources. projectId, applicationId, and environmentId are stronger filters within the selected visibility.
       x-luna-agent:
-        purpose: { zh: 按资源类别分页读取指定集群的实时资源。, en: List live resources in a runtime cluster by category. }
+        purpose: { zh: 默认按资源类别读取指定集群中与当前用户相关的实时资源；仅当平台管理员明确盘点集群全局资源时使用 visibility=all。, en: List live resources related to the caller in a runtime cluster by category by default; use visibility=all only for an explicit platform-administrator cluster inventory. }
         aliases: { zh: [列出集群资源, 查看运行时资源, 查询工作负载和服务], en: [list runtime cluster resources, list cluster workloads, inspect cluster resources] }
-        avoidWhen: { zh: 不知道 clusterId 时先使用 listRuntimeClusters。, en: Use listRuntimeClusters first when clusterId is unknown. }
-        preconditions: { zh: [提供真实 clusterId 和 resourceCategory], en: [Provide an authoritative clusterId and resourceCategory] }
-        successEvidence: { zh: 返回实时分页资源列表；上游不可达时返回 unavailable 语义。, en: Returns live paginated resources or an unavailable observation when upstream is unreachable. }
+        avoidWhen: { zh: 不知道 clusterId 时先使用 listRuntimeClusters；已知项目空间、应用或环境时应传对应 ID，不要用 all 扩大候选。, en: Use listRuntimeClusters first when clusterId is unknown; pass known project, application, or environment identifiers instead of widening candidates with all. }
+        preconditions: { zh: [提供真实 clusterId 和 resourceCategory, visibility=all 仅由平台管理员显式使用], en: [Provide an authoritative clusterId and resourceCategory, visibility=all is explicitly used only by platform administrators] }
+        successEvidence: { zh: 返回符合 visibility 及资源 ID 强过滤的实时分页资源；上游不可达时返回 unavailable 语义。, en: Returns live paginated resources matching visibility and the stronger resource filters, or an unavailable observation when upstream is unreachable. }
       parameters:
         - name: clusterId
           in: path
@@ -3834,19 +3912,23 @@ paths:
           required: false
           schema:
             type: string
+        - $ref: "#/components/parameters/Visibility"
         - name: projectId
           in: query
           required: false
+          description: Stronger project-space filter applied within the selected visibility.
           schema:
             type: string
         - name: applicationId
           in: query
           required: false
+          description: Stronger application filter applied within the selected visibility.
           schema:
             type: string
         - name: environmentId
           in: query
           required: false
+          description: Stronger environment filter applied within the selected visibility.
           schema:
             type: string
         - name: page
@@ -5207,13 +5289,16 @@ paths:
       operationId: listPlatformEvents
       tags:
         - Events
-      summary: List Platform Events
+      summary: List platform events for the selected visibility
+      description: Defaults to events related to the caller. Platform administrators may explicitly request all visible events. Resource identifiers and time or status filters are applied as stronger filters within the selected visibility.
+      x-luna-agent:
+        purpose: { zh: 默认列出与当前用户相关的项目空间事件和本人事件；仅当平台管理员明确进行全局诊断时使用 visibility=all。, en: List project-space and actor events related to the caller by default; use visibility=all only for an explicit platform-administrator diagnosis. }
+        aliases: { zh: [列出平台事件, 查询事件中心, 检查失败事件], en: [list platform events, search event center, inspect failure events] }
+        avoidWhen: { zh: 已知项目空间、应用、部署配置或时间窗口时应传对应强过滤；不要用 all 代替诊断边界。, en: Pass known project, application, deployment-target, or time filters; do not use all instead of a diagnostic boundary. }
+        preconditions: { zh: [当前用户具有事件读取权限, visibility=all 仅由平台管理员显式使用], en: [The current user can read events, visibility=all is explicitly used only by platform administrators] }
+        successEvidence: { zh: 返回符合 visibility 及资源、状态和时间强过滤的分页事件和真实资源关联。, en: Returns paginated events and authoritative resource links matching visibility and the stronger resource, status, and time filters. }
       parameters:
-        - name: scope
-          in: query
-          required: false
-          schema:
-            type: string
+        - $ref: "#/components/parameters/Visibility"
         - name: search
           in: query
           required: false
@@ -8359,6 +8444,15 @@ components:
         type: string
         enum: [asc, desc]
         default: desc
+    Visibility:
+      name: visibility
+      in: query
+      required: false
+      description: Controls cross-project discovery. Omitted or `related` returns resources related to the caller. `all` must be requested explicitly and is available only to platform administrators. Invalid values return `400`; an unauthorized `all` request returns `403`. When an operation also accepts `projectId` or another resource identifier, that identifier is applied as a stronger filter within the selected visibility.
+      schema:
+        type: string
+        enum: [related, all]
+        default: related
     TargetId:
       name: targetId
       in: path
@@ -11353,7 +11447,13 @@ components:
         passwordSet: { type: boolean }
         fromAddress: { type: string }
         fromName: { type: string }
-      required: [host, port, security, username, passwordSet, fromAddress, fromName]
+        personalEmailCooldownSeconds:
+          type: integer
+          minimum: 0
+          maximum: 3600
+          default: 60
+          description: Seconds after a personal event email starts during which later personal events are aggregated for the same user. Each digest contains at most 20 events; excess events remain queued for later cooldown cycles. Zero disables waiting. Registration, account-recovery, administrator-test, and shared SMTP email are unaffected.
+      required: [host, port, security, username, passwordSet, fromAddress, fromName, personalEmailCooldownSeconds]
     PlatformMailSettingsInput:
       type: object
       additionalProperties: false
@@ -11370,7 +11470,13 @@ components:
           description: Leave empty to keep the existing Secret Store value.
         fromAddress: { type: string, maxLength: 320 }
         fromName: { type: string, maxLength: 160 }
-      required: [host, port, security, username, fromAddress, fromName]
+        personalEmailCooldownSeconds:
+          type: integer
+          minimum: 0
+          maximum: 3600
+          default: 60
+          description: Seconds after a personal event email starts during which later personal events are aggregated for the same user. Each digest contains at most 20 events; excess events remain queued for later cooldown cycles. Zero disables waiting. Registration, account-recovery, administrator-test, and shared SMTP email are unaffected.
+      required: [host, port, security, username, fromAddress, fromName, personalEmailCooldownSeconds]
     PlatformMailTestInput:
       type: object
       additionalProperties: false
@@ -11445,6 +11551,7 @@ components:
         - resourceType
         - resourceId
         - actorId
+        - resourceOwnerUserId
         - summaryKey
         - message
         - correlationId
@@ -11466,6 +11573,7 @@ components:
         resourceType: { type: string }
         resourceId: { type: string }
         actorId: { type: string }
+        resourceOwnerUserId: { type: string }
         summaryKey: { type: string }
         message: { type: string }
         correlationId: { type: string }
@@ -11939,21 +12047,66 @@ components:
         enabled: { type: boolean }
     NotificationRuleInput:
       type: object
-      required: [name, eventTypes, channelIds]
+      additionalProperties: false
+      required: [name, eventTypes, filter, channelIds]
       properties:
         name: { type: string, minLength: 1 }
         eventTypes:
           type: array
-          items: { type: string }
+          minItems: 1
+          uniqueItems: true
+          items: { type: string, minLength: 1 }
         filter:
-          type: object
-          additionalProperties: true
+          $ref: "#/components/schemas/NotificationRuleFilter"
         channelIds:
           type: array
-          items: { type: string }
+          minItems: 1
+          uniqueItems: true
+          items: { type: string, minLength: 1 }
         templateId: { type: string }
         locale: { type: string }
         enabled: { type: boolean }
+    NotificationRuleFilter:
+      type: object
+      additionalProperties: false
+      required: [scope]
+      properties:
+        scope:
+          type: string
+          enum: [projects, all]
+          description: Project-scoped delivery is the safe default in clients; all must always be selected explicitly.
+        projectIds:
+          type: array
+          uniqueItems: true
+          items: { type: string, minLength: 1 }
+        severities:
+          type: array
+          uniqueItems: true
+          items: { type: string, enum: [info, warning, error] }
+        applicationIds:
+          type: array
+          uniqueItems: true
+          items: { type: string, minLength: 1 }
+        deploymentTargetIds:
+          type: array
+          uniqueItems: true
+          items: { type: string, minLength: 1 }
+      allOf:
+        - if:
+            properties:
+              scope: { const: projects }
+            required: [scope]
+          then:
+            required: [projectIds]
+            properties:
+              projectIds: { minItems: 1 }
+        - if:
+            properties:
+              scope: { const: all }
+            required: [scope]
+          then:
+            properties:
+              projectIds: { maxItems: 0 }
     ProjectOrderInput:
       type: object
       required: [projectIds]

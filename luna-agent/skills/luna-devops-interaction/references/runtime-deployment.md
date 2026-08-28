@@ -14,6 +14,9 @@
 
 ## 运行集群
 
+- `listRuntimeClusters` 和 `listRuntimeClusterResources` 默认使用 `visibility: related`；只有平台
+  管理员明确要求全局集群盘点时才传 `visibility: all`。已知项目空间、应用或环境时必须同时传
+  对应可信 ID 作为更强过滤，不得使用旧参数 `scope`。
 - 管理员连接集群时收集名称、Kubeconfig、默认命名空间策略、域名后缀、Gateway 与
   证书策略；Kubeconfig 只通过受控 Secret 字段提交。
 - 保存后执行连接测试，并读取集群实时资源或系统组件确认权限范围。创建记录成功但

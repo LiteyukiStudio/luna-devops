@@ -1,4 +1,4 @@
-import type { BuildEnvironmentConfig, BuildEnvironmentConfigParams, BuildEnvironmentConfigPayload, BuildJob, BuildLog, BuildRun, BuildRunListParams, BuildTemplate, BuildTemplatePreview, BuildVariableSet, BuildVariableSetPayload, DeploymentTargetRuntimeSecretsPayload, HookRun, HookRunLog, PaginatedResponse, PaginationParams, ProjectHookConfig, ProjectHookConfigPayload, ProjectRuntimeConfigSet, ProjectRuntimeConfigSetPayload, RuntimeSecretMutationResponse } from '../types'
+import type { BuildEnvironmentConfig, BuildEnvironmentConfigParams, BuildEnvironmentConfigPayload, BuildJob, BuildLog, BuildRun, BuildRunListParams, BuildTemplate, BuildTemplatePreview, BuildVariableSet, BuildVariableSetPayload, DeploymentTargetRuntimeSecretsPayload, HookRun, HookRunLog, PaginatedResponse, PaginationParams, ProjectHookConfig, ProjectHookConfigPayload, ProjectRuntimeConfigSet, ProjectRuntimeConfigSetPayload, ResultVisibility, RuntimeSecretMutationResponse } from '../types'
 import { buildRunListQuery, paginationQuery, paginationWithProjectQuery, request } from '../core'
 import { selectionItems, selectionPageParams } from '../selection-page'
 
@@ -10,9 +10,9 @@ export const buildsApi = {
   listBuildTemplates: () => request<BuildTemplate[]>('/build/templates'),
   previewBuildTemplate: (templateId: string, version: string, values: Record<string, string>) =>
     request<BuildTemplatePreview>(`/build/templates/${templateId}/preview`, { method: 'POST', body: JSON.stringify({ values, version }) }),
-  listBuildVariableSets: (projectId?: string) =>
-    request<PaginatedResponse<BuildVariableSet>>(`/build/variable-sets?${paginationWithProjectQuery({ ...selectionPageParams, projectId })}`).then(selectionItems),
-  listBuildVariableSetsPage: (params: PaginationParams & { projectId?: string }) =>
+  listBuildVariableSets: (projectId?: string, visibility?: ResultVisibility) =>
+    request<PaginatedResponse<BuildVariableSet>>(`/build/variable-sets?${paginationWithProjectQuery({ ...selectionPageParams, projectId, visibility })}`).then(selectionItems),
+  listBuildVariableSetsPage: (params: PaginationParams & { projectId?: string, visibility?: ResultVisibility }) =>
     request<PaginatedResponse<BuildVariableSet>>(`/build/variable-sets?${paginationWithProjectQuery(params)}`),
   createBuildVariableSet: (payload: BuildVariableSetPayload) =>
     request<BuildVariableSet>('/build/variable-sets', { method: 'POST', body: JSON.stringify(payload) }),

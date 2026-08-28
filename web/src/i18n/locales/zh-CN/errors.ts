@@ -184,6 +184,12 @@ const errors = {
     quota_exceeded: '项目空间的托管数据卷容量已达到上限，请删除不再需要的数据卷或联系平台管理员提高配额。',
     quota_unavailable: '数据卷容量配额暂时无法校验，请联系平台管理员检查配额配置。',
   },
+  notification: {
+    rule_required: '请填写规则名称，并至少选择一个事件类型和通知渠道。',
+    rule_filter_invalid: '通知范围或高级过滤条件无效，请检查后重试。',
+    rule_project_not_found: '所选项目空间不存在或已被删除，请重新选择。',
+    channel_not_found: '所选通知渠道不存在或不属于共享渠道，请重新选择。',
+  },
   git: {
     network_failed: 'Git 平台连接失败。请检查服务端网络、代理/VPN、DNS 解析或 FakeIP 设置后重试。',
     token_refresh_failed: 'Git Token 刷新失败，请重新授权或检查凭据。',

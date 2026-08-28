@@ -89,6 +89,11 @@ const common = {
   loginRequiredDescription: '로컬 계정 또는 승인된 OIDC 계정으로 플랫폼에 로그인하세요.',
   pinProject: '프로젝트 스페이스 고정',
   unpinProject: '프로젝트 스페이스 고정 해제',
+  resultVisibility: {
+    label: '표시 범위',
+    related: '나와 관련됨',
+    all: '전체',
+  },
 
   labels: {
     projectSpace: '프로젝트 스페이스',

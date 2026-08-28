@@ -20,12 +20,16 @@ func (h *Handlers) ListRuntimeClusters(ctx *gin.Context) {
 	if !ok {
 		return
 	}
+	visibility, ok := resolveListVisibility(ctx, user)
+	if !ok {
+		return
+	}
 	projectID := strings.TrimSpace(ctx.Query("projectId"))
 
 	var clusters []model.RuntimeCluster
 	query := h.dbFor(ctx).Model(&model.RuntimeCluster{})
 	var visible bool
-	query, visible = h.applyScopedResourceVisibility(ctx, query, scopedResourceRuntimeCluster, user, projectID)
+	query, visible = h.applyScopedResourceListVisibility(ctx, query, scopedResourceRuntimeCluster, user, projectID, visibility)
 	if !visible {
 		return
 	}

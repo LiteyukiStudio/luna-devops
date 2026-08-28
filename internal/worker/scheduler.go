@@ -33,10 +33,15 @@ func periodicTaskSpecs() ([]periodicTaskSpec, error) {
 	if err != nil {
 		return nil, err
 	}
+	notificationReconcileTask, err := tasks.NewNotificationReconcileTask(tasks.NotificationReconcilePayload{})
+	if err != nil {
+		return nil, err
+	}
 	return []periodicTaskSpec{
 		{Cron: "@every 5m", Task: gitRefreshTask, Queue: tasks.QueueLight, Timeout: 10 * time.Minute},
-		periodicVolumeTaskSpec("@every 5m", volumeReconcileTask),
-		periodicVolumeTaskSpec("@every 15m", volumeTransferCleanupTask),
+		periodicTaskSpecWithPolicy("@every 5m", volumeReconcileTask),
+		periodicTaskSpecWithPolicy("@every 15m", volumeTransferCleanupTask),
+		periodicTaskSpecWithPolicy("@every 1m", notificationReconcileTask),
 		{Cron: "@every 1m", Task: asynq.NewTask(tasks.TypeSyncStatus, []byte("{}")), Queue: tasks.QueueLight, Timeout: 5 * time.Minute},
 		{Cron: "@every 1m", Task: asynq.NewTask(tasks.TypeBillingAI, []byte("{}")), Queue: tasks.QueueLight, Timeout: time.Minute},
 		{Cron: "@every 1m", Task: asynq.NewTask(tasks.TypeBillingRuntime, []byte("{}")), Queue: tasks.QueueLight, Timeout: 5 * time.Minute},
@@ -44,7 +49,7 @@ func periodicTaskSpecs() ([]periodicTaskSpec, error) {
 	}, nil
 }
 
-func periodicVolumeTaskSpec(cron string, task *asynq.Task) periodicTaskSpec {
+func periodicTaskSpecWithPolicy(cron string, task *asynq.Task) periodicTaskSpec {
 	policy := tasks.PolicyForType(task.Type())
 	return periodicTaskSpec{
 		Cron: cron, Task: task, Queue: policy.Queue, Timeout: policy.Timeout,

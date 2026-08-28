@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import i18next from '@/i18n'
-import { ApiError, request, runtimeClusterResourceListQuery } from './core'
+import { ApiError, paginationWithProjectQuery, request, runtimeClusterResourceListQuery } from './core'
 
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -106,16 +106,30 @@ describe('api error boundary', () => {
 })
 
 describe('runtime resource query contract', () => {
-  it('uses resourceCategory for collection queries and does not emit the ambiguous kind key', () => {
+  it('uses resourceCategory and preserves visibility alongside a stronger project filter', () => {
     const query = new URLSearchParams(runtimeClusterResourceListQuery({
       resourceCategory: 'workloads',
       page: 1,
       pageSize: 20,
       projectId: 'project-1',
+      visibility: 'all',
     }))
 
     expect(query.get('resourceCategory')).toBe('workloads')
     expect(query.has('kind')).toBe(false)
     expect(query.get('projectId')).toBe('project-1')
+    expect(query.get('visibility')).toBe('all')
+  })
+
+  it('keeps visibility available for authorization validation when projectId narrows the list', () => {
+    const query = new URLSearchParams(paginationWithProjectQuery({
+      page: 1,
+      pageSize: 20,
+      projectId: 'project-1',
+      visibility: 'all',
+    }))
+
+    expect(query.get('projectId')).toBe('project-1')
+    expect(query.get('visibility')).toBe('all')
   })
 })
