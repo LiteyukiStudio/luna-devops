@@ -27,13 +27,6 @@ type AuthRegistrationSettings struct {
 	AllowEmailRegistration        bool      `gorm:"not null;default:false" json:"allowEmailRegistration"`
 	AllowOIDCRegistration         bool      `gorm:"column:allow_oidc_registration;not null;default:true" json:"allowOidcRegistration"`
 	AllowExternalIdentityPassword bool      `gorm:"not null;default:false" json:"allowExternalIdentityPassword"`
-	SMTPHost                      string    `gorm:"not null;default:''" json:"smtpHost"`
-	SMTPPort                      int       `gorm:"not null;default:587" json:"smtpPort"`
-	SMTPSecurity                  string    `gorm:"not null;default:starttls" json:"smtpSecurity"`
-	SMTPUsername                  string    `gorm:"not null;default:''" json:"smtpUsername"`
-	SMTPPasswordRef               string    `gorm:"not null;default:''" json:"-"`
-	SMTPFromAddress               string    `gorm:"not null;default:''" json:"smtpFromAddress"`
-	SMTPFromName                  string    `gorm:"not null;default:'Luna DevOps'" json:"smtpFromName"`
 	CreatedAt                     time.Time `json:"createdAt"`
 	UpdatedAt                     time.Time `json:"updatedAt"`
 }

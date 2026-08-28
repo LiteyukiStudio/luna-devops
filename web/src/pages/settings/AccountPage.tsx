@@ -27,6 +27,7 @@ import { Input } from '@/components/ui/input'
 import { NativeSelect as Select } from '@/components/ui/native-select'
 import { TabsContent } from '@/components/ui/tabs'
 import { AccessTokensPanel } from '@/pages/access-tokens/AccessTokensPage'
+import { AccountNotificationsPanel } from './account-notifications-panel'
 import { OAuthApplicationsPanel, OAuthGrantsPanel } from './account-oauth-panels'
 import { AccountPasswordPanel } from './account-password-panel'
 import { BrandColorPresetField } from './brand-color-preset-field'
@@ -56,6 +57,8 @@ export function AccountPage() {
         )
       case 'tokens':
         return <AccessTokensPanel />
+      case 'notifications':
+        return <AccountNotificationsPanel />
       case 'oauth-applications':
         return <OAuthApplicationsPanel />
       case 'oauth-grants':
@@ -71,6 +74,7 @@ export function AccountPage() {
       tabs={[
         { value: 'profile', label: t('accountPage.profileTab') },
         { value: 'security', label: t('accountPage.securityTab') },
+        { value: 'notifications', label: t('accountPage.notificationsTab') },
         { value: 'tokens', label: t('accountPage.tokensTab') },
         { value: 'oauth-applications', label: t('oauthApps.applicationsTab') },
         { value: 'oauth-grants', label: t('oauthApps.grantsTab') },

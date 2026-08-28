@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/LiteyukiStudio/devops/internal/notification"
+	"github.com/LiteyukiStudio/devops/internal/platformmail"
 )
 
 func TestNotificationSendErrorShouldSkipRetry(t *testing.T) {
@@ -22,9 +23,20 @@ func TestNotificationSendErrorShouldSkipRetry(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := notificationSendErrorShouldSkipRetry(notification.SendResult{StatusCode: tt.status})
+			got := notificationSendErrorShouldSkipRetry(notification.SendResult{StatusCode: tt.status}, nil)
 			if got != tt.want {
 				t.Fatalf("notificationSendErrorShouldSkipRetry(%d) = %v, want %v", tt.status, got, tt.want)
+			}
+		})
+	}
+
+	for name, err := range map[string]error{
+		"invalid platform mail settings":  platformmail.ErrInvalidSettings,
+		"invalid platform mail recipient": platformmail.ErrInvalidRecipient,
+	} {
+		t.Run(name, func(t *testing.T) {
+			if !notificationSendErrorShouldSkipRetry(notification.SendResult{}, err) {
+				t.Fatalf("notificationSendErrorShouldSkipRetry() = false for %v", err)
 			}
 		})
 	}

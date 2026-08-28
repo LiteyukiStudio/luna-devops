@@ -32,6 +32,9 @@ func TestPlatformAdminRoutesOwnAuthorizationInMiddleware(t *testing.T) {
 		path   string
 	}{
 		{http.MethodPut, "/api/v1/auth/registration/settings"},
+		{http.MethodGet, "/api/v1/mail/settings"},
+		{http.MethodPut, "/api/v1/mail/settings"},
+		{http.MethodPost, "/api/v1/mail/settings/test"},
 		{http.MethodPost, "/api/v1/auth/providers"},
 		{http.MethodPut, "/api/v1/auth/providers/ap_missing"},
 		{http.MethodGet, "/api/v1/configs/ai/models"},

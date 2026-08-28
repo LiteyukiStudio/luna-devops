@@ -1,7 +1,28 @@
-import type { NotificationChannel, NotificationChannelPayload, NotificationDelivery, NotificationPreset, NotificationRule, NotificationRulePayload, NotificationTemplate, NotificationTemplatePayload, PaginatedResponse, PaginationParams } from '../types'
+import type { MailSettings, MyNotificationChannel, MyNotificationChannelCreatePayload, MyNotificationChannelUpdatePayload, MyNotificationPreferences, MyNotificationPreset, NotificationChannel, NotificationChannelPayload, NotificationDelivery, NotificationPreset, NotificationRule, NotificationRulePayload, NotificationTemplate, NotificationTemplatePayload, PaginatedResponse, PaginationParams } from '../types'
 import { paginationQuery, request } from '../core'
 
 export const notificationsApi = {
+  getMailSettings: () => request<MailSettings>('/mail/settings'),
+  updateMailSettings: (payload: Omit<MailSettings, 'passwordSet'> & { password?: string }) =>
+    request<MailSettings>('/mail/settings', { method: 'PUT', body: JSON.stringify(payload) }),
+  testMailSettings: (recipient: string) =>
+    request<{ status: string }>('/mail/settings/test', { method: 'POST', body: JSON.stringify({ recipient }) }),
+  getMyNotificationPreferences: () => request<MyNotificationPreferences>('/me/notification-preferences'),
+  updateMyNotificationPreferences: (payload: MyNotificationPreferences) =>
+    request<MyNotificationPreferences>('/me/notification-preferences', { method: 'PUT', body: JSON.stringify(payload) }),
+  listMyNotificationPresets: () => request<MyNotificationPreset[]>('/me/notification-presets'),
+  listMyNotificationChannels: (params: PaginationParams) =>
+    request<PaginatedResponse<MyNotificationChannel>>(`/me/notification-channels?${paginationQuery(params)}`),
+  createMyNotificationChannel: (payload: MyNotificationChannelCreatePayload) =>
+    request<MyNotificationChannel>('/me/notification-channels', { method: 'POST', body: JSON.stringify(payload) }),
+  updateMyNotificationChannel: (channelId: string, payload: MyNotificationChannelUpdatePayload) =>
+    request<MyNotificationChannel>(`/me/notification-channels/${encodeURIComponent(channelId)}`, { method: 'PUT', body: JSON.stringify(payload) }),
+  deleteMyNotificationChannel: (channelId: string) =>
+    request<void>(`/me/notification-channels/${encodeURIComponent(channelId)}`, { method: 'DELETE' }),
+  testMyNotificationChannel: (channelId: string) =>
+    request<{ status: string }>(`/me/notification-channels/${encodeURIComponent(channelId)}/test`, { method: 'POST' }),
+  listMyNotificationDeliveries: (params: PaginationParams) =>
+    request<PaginatedResponse<NotificationDelivery>>(`/me/notification-deliveries?${paginationQuery(params)}`),
   listNotificationPresets: () => request<NotificationPreset[]>('/notifications/presets'),
   createNotificationChannelFromPreset: (presetId: string, payload: { name: string, secrets: Record<string, string>, enabled: boolean }) =>
     request<{ channel: NotificationChannel, template: NotificationTemplate }>(`/notifications/presets/${encodeURIComponent(presetId)}/channels`, { method: 'POST', body: JSON.stringify(payload) }),

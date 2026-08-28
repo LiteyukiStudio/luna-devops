@@ -12,7 +12,9 @@ import (
 
 	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/model"
+	"github.com/LiteyukiStudio/devops/internal/notification"
 	"github.com/LiteyukiStudio/devops/internal/secret"
+	"gorm.io/gorm"
 )
 
 func TestLoginInputRequiresExplicitRememberChoice(t *testing.T) {
@@ -75,40 +77,46 @@ func TestCurrentUserResponseIncludesBrandColorPreference(t *testing.T) {
 	}
 }
 
-func TestAuthRegistrationSettingsValidation(t *testing.T) {
-	valid := model.AuthRegistrationSettings{
-		AllowEmailRegistration: true,
-		SMTPHost:               "smtp.example.com",
-		SMTPPort:               587,
-		SMTPSecurity:           "starttls",
-		SMTPUsername:           "mailer",
-		SMTPPasswordRef:        "secret:stored",
-		SMTPFromAddress:        "noreply@example.com",
-	}
-	if err := validateAuthRegistrationSettings(valid, false); err != nil {
-		t.Fatalf("valid registration settings rejected: %v", err)
-	}
-
-	invalid := valid
-	invalid.SMTPHost = ""
-	if err := validateAuthRegistrationSettings(invalid, false); err == nil {
-		t.Fatal("email registration without an SMTP host must be rejected")
-	}
-
-	invalid = valid
-	invalid.SMTPSecurity = "implicit-starttls"
-	if err := validateAuthRegistrationSettings(invalid, false); err == nil {
-		t.Fatal("unsupported SMTP security mode must be rejected")
+func TestAuthRegistrationSettingsResponseContainsOnlyRegistrationPolicy(t *testing.T) {
+	response := authRegistrationSettingsResponse(model.AuthRegistrationSettings{
+		AllowEmailRegistration:        true,
+		AllowOIDCRegistration:         true,
+		AllowExternalIdentityPassword: true,
+	})
+	for _, key := range []string{"smtpHost", "smtpPort", "smtpSecurity", "smtpUsername", "smtpPasswordSet", "smtpFromAddress", "smtpFromName"} {
+		if _, exposed := response[key]; exposed {
+			t.Fatalf("registration settings unexpectedly expose %q", key)
+		}
 	}
 }
 
-func TestAuthRegistrationSettingsResponseDoesNotExposePasswordReference(t *testing.T) {
-	response := authRegistrationSettingsResponse(model.AuthRegistrationSettings{SMTPPasswordRef: "secret:private"})
-	if _, exposed := response["smtpPasswordRef"]; exposed {
-		t.Fatal("SMTP password reference must not be exposed")
+func TestRegistrationEmailUsesGlobalPlatformMailSender(t *testing.T) {
+	challenge := model.EmailRegistrationChallenge{Email: "operator@example.com", Language: "zh-CN"}
+	called := false
+	err := sendRegistrationEmailWith(t.Context(), nil, nil, challenge, "123456", func(
+		ctx context.Context,
+		db *gorm.DB,
+		resolver notification.SecretResolver,
+		recipient string,
+		message notification.RenderedMessage,
+	) (notification.SendResult, error) {
+		called = true
+		if ctx == nil || db != nil || resolver != nil {
+			t.Fatalf("unexpected sender dependencies: ctx=%v db=%v resolver=%v", ctx, db, resolver)
+		}
+		if recipient != challenge.Email {
+			t.Fatalf("recipient = %q, want %q", recipient, challenge.Email)
+		}
+		if !strings.Contains(message.Subject, "邮箱验证码") || !strings.Contains(message.Body, "123456") {
+			t.Fatalf("registration message = %#v", message)
+		}
+		return notification.SendResult{StatusCode: 250}, nil
+	})
+	if err != nil {
+		t.Fatalf("sendRegistrationEmailWith() error = %v", err)
 	}
-	if response["smtpPasswordSet"] != true {
-		t.Fatalf("smtpPasswordSet = %v, want true", response["smtpPasswordSet"])
+	if !called {
+		t.Fatal("global platform mail sender was not called")
 	}
 }
 

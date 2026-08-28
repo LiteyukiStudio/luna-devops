@@ -132,7 +132,7 @@ func TestRotateRememberLoginConsumesTokenOnce(t *testing.T) {
 
 func TestOIDCRegistrationToggleOnlyBlocksNewUsers(t *testing.T) {
 	db := authIntegrationDB(t)
-	settings := model.AuthRegistrationSettings{ID: authRegistrationSettingsID, AllowOIDCRegistration: true, SMTPPort: 587, SMTPSecurity: "starttls"}
+	settings := model.AuthRegistrationSettings{ID: authRegistrationSettingsID, AllowOIDCRegistration: true}
 	if err := db.Create(&settings).Error; err != nil {
 		t.Fatalf("create registration settings: %v", err)
 	}

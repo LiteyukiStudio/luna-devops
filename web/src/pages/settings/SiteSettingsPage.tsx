@@ -33,6 +33,7 @@ import { AIAssistantSettingsPanel } from './ai-assistant-settings-panel'
 import { AuthRegistrationSettingsPanel } from './auth-registration-settings-panel'
 import { BrandColorPresetField } from './brand-color-preset-field'
 import { configDefinitionText } from './config-definition-text'
+import { MailSettingsPanel } from './mail-settings-panel'
 import { SettingsTabSaveButton } from './settings-tab-save-button'
 import { changedConfigValues } from './site-settings-values'
 
@@ -137,13 +138,14 @@ export function SiteSettingsPage() {
           tabs={[
             { value: 'brand', label: t('settings.siteConfigTitle') },
             { value: 'registration', label: t('settings.registration.tab') },
+            { value: 'mail', label: t('settings.mail.tab') },
             { value: 'security', label: t('settings.securityEgressTitle') },
             { value: 'build', label: t('settings.buildConfigTitle') },
             { value: 'billing', label: t('settings.billingConfigTitle') },
             { value: 'retention', label: t('settings.retentionConfigTitle') },
             { value: 'ai', label: t('settings.ai.tab') },
           ]}
-          tools={!['registration', 'build', 'ai'].includes(activeTab)
+          tools={!['registration', 'mail', 'build', 'ai'].includes(activeTab)
             ? (
                 <SettingsTabSaveButton
                   disabled={!form.formState.isValid || !form.formState.isDirty}
@@ -164,6 +166,9 @@ export function SiteSettingsPage() {
           </TabsContent>
           <TabsContent value="registration">
             <AuthRegistrationSettingsPanel />
+          </TabsContent>
+          <TabsContent value="mail">
+            <MailSettingsPanel />
           </TabsContent>
           <TabsContent value="security">
             <Surface className="max-w-3xl rounded-xl p-6" variant="bordered">

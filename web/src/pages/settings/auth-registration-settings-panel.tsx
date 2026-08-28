@@ -1,63 +1,29 @@
 import type { AuthRegistrationSettings } from '@/api/types'
-import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import i18next from 'i18next'
 import { useEffect } from 'react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import { z } from 'zod'
 import { api } from '@/api'
 import { CheckboxField } from '@/components/common/checkbox-field'
 import { ErrorState } from '@/components/common/error-state'
-import { FormField as Field } from '@/components/common/form-field'
 import { PageChromeTools } from '@/components/common/page-chrome'
-import { Section } from '@/components/common/section'
 import { Surface } from '@/components/common/surface'
-import { Input } from '@/components/ui/input'
-import { NativeSelect } from '@/components/ui/native-select'
 import { SettingsTabSaveButton } from './settings-tab-save-button'
 
-const schema = z.object({
-  allowEmailRegistration: z.boolean(),
-  allowOidcRegistration: z.boolean(),
-  allowExternalIdentityPassword: z.boolean(),
-  smtpHost: z.string(),
-  smtpPort: z.number().int().min(1).max(65535),
-  smtpSecurity: z.enum(['none', 'starttls', 'tls']),
-  smtpUsername: z.string(),
-  smtpPassword: z.string(),
-  smtpFromAddress: z.string(),
-  smtpFromName: z.string(),
-}).superRefine((value, context) => {
-  if (!value.allowEmailRegistration)
-    return
-  if (!value.smtpHost.trim())
-    context.addIssue({ code: 'custom', path: ['smtpHost'], message: i18next.t('settings.registration.smtpHostRequired') })
-  if (!z.string().email().safeParse(value.smtpFromAddress.trim()).success)
-    context.addIssue({ code: 'custom', path: ['smtpFromAddress'], message: i18next.t('common.validEmailRequired') })
-})
-
-type FormValues = z.infer<typeof schema>
+type FormValues = AuthRegistrationSettings
 
 const defaultValues: FormValues = {
   allowEmailRegistration: false,
   allowOidcRegistration: true,
   allowExternalIdentityPassword: false,
-  smtpHost: '',
-  smtpPort: 587,
-  smtpSecurity: 'starttls',
-  smtpUsername: '',
-  smtpPassword: '',
-  smtpFromAddress: '',
-  smtpFromName: 'Luna DevOps',
 }
 
 export function AuthRegistrationSettingsPanel() {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const settings = useQuery({ queryKey: ['auth-registration-settings'], queryFn: api.getAuthRegistrationSettings })
-  const form = useForm<FormValues>({ resolver: zodResolver(schema), mode: 'onChange', defaultValues })
+  const form = useForm<FormValues>({ mode: 'onChange', defaultValues })
 
   useEffect(() => {
     if (settings.data)
@@ -77,9 +43,6 @@ export function AuthRegistrationSettingsPanel() {
 
   if (settings.isError)
     return <ErrorState title={t('settings.registration.loadFailedTitle')} description={t('settings.registration.loadFailedDescription')} />
-
-  const emailEnabled = form.watch('allowEmailRegistration')
-  const smtpPasswordSet = settings.data?.smtpPasswordSet ?? false
 
   return (
     <div className="grid max-w-3xl gap-4">
@@ -105,41 +68,6 @@ export function AuthRegistrationSettingsPanel() {
           </CheckboxField>
         </div>
       </Surface>
-
-      <Section className="rounded-xl" title={t('settings.registration.smtpTitle')} variant="bordered">
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field error={form.formState.errors.smtpHost?.message} label={t('settings.registration.smtpHost')} required={emailEnabled}>
-            <Input {...form.register('smtpHost')} aria-invalid={Boolean(form.formState.errors.smtpHost)} placeholder="smtp.example.com" />
-          </Field>
-          <Field error={form.formState.errors.smtpPort?.message} label={t('settings.registration.smtpPort')} required>
-            <Input {...form.register('smtpPort', { valueAsNumber: true })} aria-invalid={Boolean(form.formState.errors.smtpPort)} inputMode="numeric" type="number" />
-          </Field>
-          <Field label={t('settings.registration.smtpSecurity')} required>
-            <NativeSelect {...form.register('smtpSecurity')}>
-              <option value="starttls">{t('settings.registration.smtpSecurityStartTLS')}</option>
-              <option value="tls">{t('settings.registration.smtpSecurityTLS')}</option>
-              <option value="none">{t('settings.registration.smtpSecurityNone')}</option>
-            </NativeSelect>
-          </Field>
-          <Field label={t('settings.registration.smtpUsername')}>
-            <Input {...form.register('smtpUsername')} autoComplete="off" />
-          </Field>
-          <Field hint={t('settings.registration.smtpPasswordHint')} label={t('settings.registration.smtpPassword')}>
-            <Input
-              {...form.register('smtpPassword')}
-              autoComplete="off"
-              placeholder={smtpPasswordSet ? t('common.secretSetPlaceholder') : undefined}
-              type="password"
-            />
-          </Field>
-          <Field error={form.formState.errors.smtpFromAddress?.message} label={t('settings.registration.smtpFromAddress')} required={emailEnabled}>
-            <Input {...form.register('smtpFromAddress')} aria-invalid={Boolean(form.formState.errors.smtpFromAddress)} type="email" />
-          </Field>
-          <Field label={t('settings.registration.smtpFromName')}>
-            <Input {...form.register('smtpFromName')} />
-          </Field>
-        </div>
-      </Section>
     </div>
   )
 }
@@ -149,12 +77,5 @@ function settingsToForm(settings: AuthRegistrationSettings): FormValues {
     allowEmailRegistration: settings.allowEmailRegistration,
     allowOidcRegistration: settings.allowOidcRegistration,
     allowExternalIdentityPassword: settings.allowExternalIdentityPassword,
-    smtpHost: settings.smtpHost,
-    smtpPort: settings.smtpPort,
-    smtpSecurity: settings.smtpSecurity,
-    smtpUsername: settings.smtpUsername,
-    smtpPassword: '',
-    smtpFromAddress: settings.smtpFromAddress,
-    smtpFromName: settings.smtpFromName,
   }
 }

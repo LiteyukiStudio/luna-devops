@@ -1,63 +1,88 @@
 # Notifications
 
-Notifications send build, release, hook, and route events to collaboration tools or email. Start with failure events to avoid excessive messages for successful operations.
+Luna DevOps separates team-wide notification routing from personal notifications. Platform administrators maintain shared routes, while each user controls only their own preferences and personal Webhook channels. Subscribe only to failures that require action to avoid unnecessary messages.
 
-## Create a channel
+## Configure the platform mail service
 
-Supported channel types are:
+A platform administrator first configures one global SMTP service under **Site settings → Mail service**. The service stores the sending connection and sender identity, not fixed recipients. Registration codes and personal email notifications reuse this service.
 
-- **Webhook** for Feishu, Lark, WeCom, DingTalk, Slack, Discord, Gotify, and custom alert endpoints.
-- **SMTP** for email through standard SMTP, STARTTLS, or TLS.
+Enter the host, port, security mode, account, sender address, and sender name. When authentication is used, also enter the password. The password is stored only in Secret Store and is never shown again; leave it empty during a later edit to keep the current value.
 
-Prefer a built-in preset and enter only the token, key, or address it requests. For a custom webhook, configure the URL, method, headers, and JSON message template.
+After saving, enter an authorized test recipient and send a test email. If it fails, verify that the port matches the security mode, the account permits SMTP login, and the API and worker networks can reach the mail server.
 
-Channel secrets are stored securely and are not shown again. Webhook targets are checked by the platform's outbound security policy and cannot be used to access protected internal addresses.
+Personal notifications never combine multiple users in one message's To, CC, or BCC fields. The platform resolves one account email from an internal user ID and creates an independent delivery for that user, so other users' addresses are not exposed.
 
-After saving a channel, send a test message before creating a rule.
+## Configure my notifications
 
-## Create a rule
+Open **Account settings → Notifications** after signing in:
 
-A rule selects at least one channel and can filter by event type, severity, project, application, and deployment target. The main failure events are:
+1. Choose whether to receive email. It is enabled by default for a first-time user.
+2. Select the failure events you want to receive.
+3. Optionally add personal Feishu, Lark, WeCom, DingTalk, Slack, or Discord channels from the platform presets.
+4. Send a test after saving a channel, then check your personal delivery history.
+
+Personal email always goes to the account email. A user cannot enter arbitrary To, CC, or BCC recipients and does not provide personal SMTP credentials. Tokens and keys for personal Webhooks are stored only in Secret Store and are not shown again. Targets remain subject to the platform outbound security policy and cannot access protected internal addresses.
+
+Personal subscriptions currently support these failure events:
 
 - `build.failed`
 - `release.failed`
 - `hook.failed`
 - `gateway.apply_failed`
+- `certificate.failed`
+- `certificate.expired`
+A personal delivery is created only when the event's internal actor ID matches the user. Email addresses asserted by external payloads such as Git Webhooks are never trusted for recipient resolution.
 
-One event can be sent to multiple channels. Delivery records show status, attempt count, and an error summary for troubleshooting templates, credentials, network access, and destination services.
+Personal channels accept only built-in presets and their explicitly declared Secret fields. Arbitrary URLs, headers, and JSON configuration are not accepted, which keeps Webhook tokens out of business data.
 
-## Message templates
+Each user can keep at most 10 personal channels. A personal notification configuration request cannot exceed 64 KiB, a channel name cannot exceed 160 characters, and each preset-declared Secret cannot exceed 4,096 characters; undeclared fields are rejected. Personal channel tests are limited to 10 attempts per user per minute.
 
-Built-in presets already provide a suitable message format. Edit templates only when custom content is required.
+## Configure shared team notifications
 
-Templates can use event type, severity, resource names, actor, and detail links. Missing or invalid variables cause delivery to fail, so send another test after editing. Secrets are injected only during delivery and do not appear in previews or API responses.
+The **Notification integrations** page is restricted to platform administrators and manages shared destinations and event routes:
+
+- **Shared channels** are team chat groups, fixed Webhooks, or fixed email groups.
+- **Routing rules** select which platform events are sent to which shared channels.
+- **Message templates** are an advanced option for custom content.
+- **Delivery records** show shared delivery status, attempts, and error summaries.
+
+Shared SMTP channels remain appropriate for a fixed email group and can contain To, CC, and BCC recipients. They are different from the platform mail service: the platform service sends personal messages to account emails, while an administrator rule sends through a shared SMTP channel to its preconfigured recipients.
+
+Prefer a built-in integration preset when creating a Webhook channel and enter only the token, key, or address required by the destination. A custom Webhook needs a URL, method, headers, and JSON message template. Send a test after saving, then create the route.
 
 To include links back to Luna DevOps, configure the same `PUBLIC_BASE_URL` for the API and worker. Notifications still send without it, but do not include platform links.
 
-## SMTP
-
-Enter the host, port, security mode, account, sender, recipients, and password. Leaving the password empty during later edits keeps the existing value.
-
-If the test fails, verify that the port matches the security mode, the account permits SMTP login, and the network can reach the mail server.
-
 ## Verify notifications
 
-1. Create a webhook or SMTP channel and send a test.
-2. Create a rule for a failure event and select the channel.
-3. Trigger a failure in a test environment.
-4. Confirm the result and error details in delivery records.
+### Personal notifications
+
+1. Confirm that the email toggle and event selection under **Account settings → Notifications** are saved.
+2. Send a test through each personal Webhook channel.
+3. In a test environment, trigger a subscribed failure as your own account.
+4. Confirm the final email and Webhook states in your personal delivery history.
+
+### Shared notifications
+
+1. Create a shared Webhook or SMTP channel and send a test.
+2. Create a rule and select its events and shared channels.
+3. Trigger a matching event in a test environment.
+4. Confirm its state and error details in the administrator delivery records.
 
 Do not introduce a production failure merely to test notifications.
 
 ## FAQ
 
-### The webhook test succeeds but real events do not send
+### I did not receive a personal email
 
-Check that the rule is enabled, its event and filters match, and a delivery record was created.
+Confirm that the global mail test succeeds, the account email is correct, personal email is enabled, the event is selected, and the current user is the event's internal actor.
+
+### A Webhook test succeeds but a real event does not send
+
+For a personal channel, confirm that the event is selected in your preferences and the channel is enabled. For a shared channel, check that its rule is enabled, the event and filters match, and a delivery record was created.
 
 ### Deliveries keep failing
 
-Check credentials, template variables, destination URL, and destination availability. Network errors, rate limits, and server failures may retry automatically; configuration and template errors usually require a correction.
+Check credentials, message templates, destination URLs, and destination availability. Network errors, rate limits, and server failures may retry automatically; configuration and template errors usually require a correction and another test.
 
 ### Notifications have no detail link
 

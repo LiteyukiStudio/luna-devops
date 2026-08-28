@@ -15,7 +15,7 @@ export const authApi = {
   logout: () => request<void>('/auth/logout', { method: 'POST' }),
   getAuthRegistrationStatus: () => request<AuthRegistrationStatus>('/auth/registration'),
   getAuthRegistrationSettings: () => request<AuthRegistrationSettings>('/auth/registration/settings'),
-  updateAuthRegistrationSettings: (payload: Omit<AuthRegistrationSettings, 'smtpPasswordSet'> & { smtpPassword?: string }) =>
+  updateAuthRegistrationSettings: (payload: AuthRegistrationSettings) =>
     request<AuthRegistrationSettings>('/auth/registration/settings', { method: 'PUT', body: JSON.stringify(payload) }),
   requestEmailRegistrationCode: (payload: { email: string, language: 'zh-CN' | 'zh-TW' | 'en-US' | 'ja-JP' | 'ko-KR' }) =>
     request<{ challengeId: string, expiresAt: string }>('/auth/registration/email/code', { method: 'POST', body: JSON.stringify(payload) }),

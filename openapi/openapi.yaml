@@ -508,17 +508,17 @@ paths:
     get:
       operationId: getAuthRegistrationSettings
       tags: [Auth]
-      summary: Get registration and SMTP settings
+      summary: Get registration settings
       responses:
         "200":
-          description: Registration settings with the write-only SMTP password omitted.
+          description: Registration settings.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/AuthRegistrationSettings" }
     put:
       operationId: updateAuthRegistrationSettings
       tags: [Auth]
-      summary: Update registration and SMTP settings
+      summary: Update registration settings
       requestBody:
         required: true
         content:
@@ -527,6 +527,106 @@ paths:
       responses:
         "200":
           description: Registration settings updated.
+
+  /api/v1/mail/settings:
+    get:
+      operationId: getPlatformMailSettings
+      tags: [Notifications]
+      summary: Get the global mail service settings
+      description: Returns the platform SMTP transport configuration without exposing its Secret Store reference or password.
+      x-luna-agent:
+        aliases: { zh: [查看全局邮件配置, 查询 SMTP 设置, 邮件服务设置], en: [get global mail settings, get SMTP settings, mail service settings] }
+        purpose: { zh: 读取平台统一 SMTP 传输配置及密码是否已设置。, en: Read the platform-wide SMTP transport configuration and whether its password is set. }
+        avoidWhen: { zh: 查看个人邮件偏好时应使用 getMyNotificationPreferences。, en: Use getMyNotificationPreferences for a user's personal email preference. }
+        preconditions: { zh: [当前用户是平台管理员], en: [The current user is a platform administrator] }
+        successEvidence: { zh: 返回不含密码和 Secret 引用的全局邮件配置。, en: Returns global mail settings without the password or Secret reference. }
+      x-luna-cli:
+        command: mail.settings.get
+        classification: business-command
+        risk: low
+        requiredScopes: ["config:read"]
+        agentAllowed: true
+      responses:
+        "200":
+          description: Sanitized global mail settings.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PlatformMailSettings" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    put:
+      operationId: updatePlatformMailSettings
+      tags: [Notifications]
+      summary: Update the global mail service settings
+      description: Stores a newly supplied SMTP password in Secret Store; an empty password keeps the current value.
+      x-luna-agent:
+        aliases: { zh: [更新全局邮件配置, 配置 SMTP, 修改邮件服务], en: [update global mail settings, configure SMTP, update mail service] }
+        purpose: { zh: 配置注册、个人通知及后续账号恢复共用的 SMTP 传输服务。, en: Configure the SMTP transport shared by registration, personal notifications, and future account recovery. }
+        avoidWhen: { zh: 不要用它修改个人邮件开关或创建固定收件人渠道。, en: Do not use this to change a personal email toggle or create a fixed-recipient channel. }
+        preconditions: { zh: [当前用户是平台管理员, 已确认 SMTP 服务地址、发件人和认证方式], en: [The current user is a platform administrator, The SMTP endpoint sender and authentication mode are confirmed] }
+        successEvidence: { zh: 返回脱敏后的权威配置；随后可用 testPlatformMailSettings 验证真实投递。, en: Returns the sanitized authoritative settings; testPlatformMailSettings can then verify a real delivery. }
+        requiresApproval: true
+      x-luna-cli:
+        command: mail.settings.update
+        classification: business-command
+        risk: sensitive
+        requiredScopes: ["config:write"]
+        agentAllowed: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PlatformMailSettingsInput" }
+      responses:
+        "200":
+          description: Sanitized updated global mail settings.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PlatformMailSettings" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/v1/mail/settings/test:
+    post:
+      operationId: testPlatformMailSettings
+      tags: [Notifications]
+      summary: Send a global mail service test message
+      description: Sends one test message to the explicit recipient through the saved global SMTP configuration.
+      x-luna-agent:
+        aliases: { zh: [测试全局邮件, 测试 SMTP, 发送测试邮件], en: [test global mail, test SMTP, send test email] }
+        purpose: { zh: 用一次真实邮件验证已保存的全局 SMTP 配置。, en: Verify the saved global SMTP configuration with one real email. }
+        avoidWhen: { zh: 测试个人 Webhook 渠道时应使用 testMyNotificationChannel。, en: Use testMyNotificationChannel to test a personal webhook channel. }
+        preconditions: { zh: [当前用户是平台管理员, 全局邮件配置已保存, 已获得向收件地址发送测试邮件的授权], en: [The current user is a platform administrator, Global mail settings are saved, Sending a test to the recipient is authorized] }
+        successEvidence: { zh: SMTP 服务接受测试消息并返回成功结果。, en: The SMTP service accepts the test message and returns success. }
+        requiresApproval: true
+      x-luna-cli:
+        command: mail.settings.test
+        classification: business-command
+        risk: high
+        requiredScopes: ["config:write"]
+        agentAllowed: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PlatformMailTestInput" }
+      responses:
+        "200":
+          description: Test message accepted by SMTP.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NotificationTestResult" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "502":
+          description: SMTP rejected the message or was unavailable.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
 
   /api/v1/auth/providers:
     get:
@@ -4002,6 +4102,321 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+  /api/v1/me/notification-preferences:
+    get:
+      operationId: getMyNotificationPreferences
+      tags: [Notifications]
+      summary: Get my notification preferences
+      description: Missing preferences use the product defaults, including personal email notifications enabled.
+      x-luna-agent:
+        aliases: { zh: [查看我的通知偏好, 我的邮件通知开关, 个人通知设置], en: [get my notification preferences, my email notification toggle, personal notification settings] }
+        purpose: { zh: 读取当前用户自己的邮件开关和失败事件订阅。, en: Read the current user's email toggle and failure-event subscriptions. }
+        avoidWhen: { zh: 管理平台共享通知路由或全局 SMTP 时不要使用。, en: Do not use for shared notification routing or global SMTP. }
+        preconditions: { zh: [当前用户已登录], en: [The current user is signed in] }
+        successEvidence: { zh: 返回当前用户的权威通知偏好；首次读取邮件开关为启用。, en: Returns authoritative preferences for the current user; email is enabled on first read. }
+      x-luna-cli:
+        command: notification.preference.get
+        classification: business-command
+        risk: low
+        requiredScopes: ["user:read"]
+        agentAllowed: true
+      responses:
+        "200":
+          description: Current user's notification preferences.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UserNotificationPreference" }
+        "401":
+          description: Authentication required.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+    put:
+      operationId: updateMyNotificationPreferences
+      tags: [Notifications]
+      summary: Update my notification preferences
+      x-luna-agent:
+        aliases: { zh: [更新我的通知偏好, 开关邮件通知, 修改失败事件订阅], en: [update my notification preferences, toggle email notifications, change failure subscriptions] }
+        purpose: { zh: 修改当前用户自己的邮件开关和允许的失败事件订阅。, en: Update the current user's email toggle and allowed failure-event subscriptions. }
+        avoidWhen: { zh: 不要用它配置 SMTP 凭据、任意收件人或平台共享规则。, en: Do not use this to configure SMTP credentials arbitrary recipients or shared platform rules. }
+        preconditions: { zh: [当前用户已登录], en: [The current user is signed in] }
+        successEvidence: { zh: 返回保存后的权威个人通知偏好。, en: Returns the saved authoritative personal notification preferences. }
+      x-luna-cli:
+        command: notification.preference.update
+        classification: business-command
+        risk: low
+        requiredScopes: ["user:write"]
+        agentAllowed: true
+        idempotent: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UserNotificationPreferenceInput" }
+      responses:
+        "200":
+          description: Updated current user's notification preferences.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UserNotificationPreference" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "413":
+          description: Request body exceeds the 64 KiB personal-notification limit (`notification.request_too_large`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /api/v1/me/notification-presets:
+    get:
+      operationId: listMyNotificationPresets
+      tags: [Notifications]
+      summary: List safe personal notification integration presets
+      description: Returns fixed-destination Webhook integration metadata only; SMTP, Gotify, user-controlled hosts, and stored secrets are never included.
+      x-luna-agent:
+        aliases: { zh: [列出个人通知预设, 查看飞书企微通知集成, 个人 Webhook 预设], en: [list personal notification presets, personal webhook integrations, Feishu WeCom notification presets] }
+        purpose: { zh: 列出当前用户可用于创建本人 Webhook 渠道的安全集成预设。, en: List safe integration presets available for the current user's own webhook channels. }
+        avoidWhen: { zh: 已有渠道 ID 并只需修改渠道时不要重复读取。, en: Do not reread when an existing channel ID only needs an update. }
+        preconditions: { zh: [当前用户已登录], en: [The current user is signed in] }
+        successEvidence: { zh: 返回不含 SMTP 和 Secret 的 Webhook 集成预设。, en: Returns Webhook integration presets without SMTP or secrets. }
+      x-luna-cli:
+        command: notification.preset.list-mine
+        classification: business-command
+        risk: low
+        requiredScopes: ["user:read"]
+        agentAllowed: true
+      responses:
+        "200":
+          description: Safe personal Webhook integration presets.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/NotificationPreset" }
+
+  /api/v1/me/notification-channels:
+    get:
+      operationId: listMyNotificationChannels
+      tags: [Notifications]
+      summary: List my notification channels
+      x-luna-agent:
+        aliases: { zh: [列出我的通知渠道, 查询个人飞书企微渠道, 个人 Webhook 列表], en: [list my notification channels, list personal webhooks, personal Feishu WeCom channels] }
+        purpose: { zh: 分页列出当前用户自己拥有的 Webhook 通知渠道。, en: List only Webhook notification channels owned by the current user. }
+        avoidWhen: { zh: 查询管理员共享渠道时应使用 listNotificationChannels。, en: Use listNotificationChannels for administrator-managed shared channels. }
+        preconditions: { zh: [当前用户已登录], en: [The current user is signed in] }
+        successEvidence: { zh: 返回仅属于当前用户且已脱敏的分页渠道列表。, en: Returns a sanitized paginated list containing only the current user's channels. }
+      x-luna-cli:
+        command: notification.channel.list-mine
+        classification: business-command
+        risk: low
+        requiredScopes: ["user:read"]
+        agentAllowed: true
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - $ref: "#/components/parameters/Search"
+        - name: sortBy
+          in: query
+          schema: { type: string, enum: [createdAt, updatedAt, name], default: createdAt }
+        - $ref: "#/components/parameters/SortOrder"
+      responses:
+        "200":
+          description: Current user's paginated notification channels.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PaginatedNotificationChannels" }
+    post:
+      operationId: createMyNotificationChannel
+      tags: [Notifications]
+      summary: Create my notification channel
+      description: Creates one of at most 10 Webhook channels owned by the current user from a fixed-destination built-in preset. Arbitrary adapter and request configuration are not accepted, and the request body is limited to 64 KiB.
+      x-luna-agent:
+        aliases: { zh: [创建我的通知渠道, 添加个人飞书企微通知, 新建个人 Webhook], en: [create my notification channel, add personal Feishu WeCom notification, create personal webhook] }
+        purpose: { zh: 使用内置安全预设为当前用户创建只归本人所有的 Webhook 通知渠道。, en: Create a Webhook notification channel owned only by the current user from a built-in safe preset. }
+        avoidWhen: { zh: 个人邮件使用全局邮件服务和邮件开关，不要创建 SMTP 渠道。, en: Personal email uses the global mail service and email toggle; do not create an SMTP channel. }
+        preconditions: { zh: [先用 listMyNotificationPresets 取得 presetId 和 Secret 字段, 已确认向该集成发送通知的授权], en: [Get the presetId and Secret fields from listMyNotificationPresets, Confirm authorization to send notifications to the integration] }
+        successEvidence: { zh: 返回脱敏后的个人渠道，且 owner 由当前会话确定。, en: Returns the sanitized personal channel with ownership derived from the current session. }
+        requiresApproval: true
+      x-luna-cli:
+        command: notification.channel.create-mine
+        classification: business-command
+        risk: sensitive
+        requiredScopes: ["user:write"]
+        agentAllowed: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PersonalNotificationChannelCreateInput" }
+      responses:
+        "201":
+          description: Created personal notification channel.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NotificationChannel" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "409":
+          description: The user already has 10 personal channels (`notification.channel_limit_reached`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "413":
+          description: Request body exceeds the 64 KiB personal-notification limit (`notification.request_too_large`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /api/v1/me/notification-channels/{channelId}:
+    put:
+      operationId: updateMyNotificationChannel
+      tags: [Notifications]
+      summary: Update my notification channel
+      description: Updates the name, enabled state, or preset-declared Secrets of a Webhook channel owned by the current user; its adapter and request configuration remain fixed.
+      x-luna-agent:
+        aliases: { zh: [更新我的通知渠道, 修改个人 Webhook], en: [update my notification channel, update personal webhook] }
+        purpose: { zh: 修改当前用户自己拥有的 Webhook 渠道名称、凭据或启用状态。, en: Update the name, credentials, or enabled state of a Webhook channel owned by the current user. }
+        avoidWhen: { zh: 不要用个人接口修改管理员共享渠道或 SMTP。, en: Do not use the personal endpoint for shared administrator channels or SMTP. }
+        preconditions: { zh: [channelId 来自 listMyNotificationChannels, 当前用户拥有该渠道], en: [channelId came from listMyNotificationChannels, The current user owns the channel] }
+        successEvidence: { zh: 返回脱敏后的权威个人渠道配置。, en: Returns the sanitized authoritative personal channel. }
+        requiresApproval: true
+      x-luna-cli:
+        command: notification.channel.update-mine
+        classification: business-command
+        risk: sensitive
+        requiredScopes: ["user:write"]
+        agentAllowed: true
+      parameters:
+        - $ref: "#/components/parameters/NotificationChannelId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PersonalNotificationChannelUpdateInput" }
+      responses:
+        "200":
+          description: Updated personal notification channel.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NotificationChannel" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "413":
+          description: Request body exceeds the 64 KiB personal-notification limit (`notification.request_too_large`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+    delete:
+      operationId: deleteMyNotificationChannel
+      tags: [Notifications]
+      summary: Delete my notification channel
+      description: Deletes a Webhook channel only when it is owned by the current user.
+      x-luna-agent:
+        aliases: { zh: [删除我的通知渠道, 删除个人 Webhook], en: [delete my notification channel, delete personal webhook] }
+        purpose: { zh: 删除当前用户自己拥有的个人通知渠道。, en: Delete a personal notification channel owned by the current user. }
+        avoidWhen: { zh: 只需暂停通知时应更新渠道为禁用。, en: Disable the channel instead when notification should only be paused. }
+        preconditions: { zh: [channelId 来自 listMyNotificationChannels, 已确认删除该渠道], en: [channelId came from listMyNotificationChannels, Deletion of the channel is confirmed] }
+        successEvidence: { zh: 返回 204，后续列表不再包含该渠道。, en: Returns 204 and subsequent lists no longer contain the channel. }
+      x-luna-cli:
+        command: notification.channel.delete-mine
+        classification: business-command
+        risk: high
+        requiredScopes: ["user:write"]
+        agentAllowed: true
+      parameters:
+        - $ref: "#/components/parameters/NotificationChannelId"
+      responses:
+        "204":
+          description: Personal notification channel deleted.
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/me/notification-channels/{channelId}/test:
+    post:
+      operationId: testMyNotificationChannel
+      tags: [Notifications]
+      summary: Test my notification channel
+      description: Sends one test message through a Webhook channel owned by the current user, limited to 10 attempts per user per minute.
+      x-luna-agent:
+        aliases: { zh: [测试我的通知渠道, 测试个人飞书企微 Webhook], en: [test my notification channel, test personal Feishu WeCom webhook] }
+        purpose: { zh: 通过当前用户自己的 Webhook 渠道发送一次真实测试消息。, en: Send one real test message through the current user's own Webhook channel. }
+        avoidWhen: { zh: 测试全局邮件服务时应使用 testPlatformMailSettings。, en: Use testPlatformMailSettings to test the global mail service. }
+        preconditions: { zh: [channelId 来自 listMyNotificationChannels, 当前用户拥有该渠道, 已获得向目标发送测试消息的授权], en: [channelId came from listMyNotificationChannels, The current user owns the channel, Sending a test to the target is authorized] }
+        successEvidence: { zh: 目标服务接受测试消息并返回成功结果。, en: The destination accepts the test message and returns success. }
+        requiresApproval: true
+      x-luna-cli:
+        command: notification.channel.test-mine
+        classification: business-command
+        risk: high
+        requiredScopes: ["user:write"]
+        agentAllowed: true
+      parameters:
+        - $ref: "#/components/parameters/NotificationChannelId"
+      responses:
+        "200":
+          description: Test message accepted by the target.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NotificationTestResult" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          description: Per-user test limit exceeded (`notification.test_rate_limited`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "502":
+          description: Destination rejected the test or was unavailable (`notification.channel_test_failed`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "503":
+          description: Redis-backed test rate limiting is unavailable (`notification.test_rate_limit_unavailable`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /api/v1/me/notification-deliveries:
+    get:
+      operationId: listMyNotificationDeliveries
+      tags: [Notifications]
+      summary: List my notification deliveries
+      description: Returns only delivery attempts whose recipient is the current user.
+      x-luna-agent:
+        aliases: { zh: [查看我的通知投递, 个人通知发送记录, 我的邮件 Webhook 状态], en: [list my notification deliveries, personal notification history, my email webhook status] }
+        purpose: { zh: 分页查看当前用户自己的邮件和 Webhook 投递结果。, en: List the current user's own email and Webhook delivery results. }
+        avoidWhen: { zh: 平台管理员排查共享通知时应使用 listNotificationDeliveries。, en: Platform administrators should use listNotificationDeliveries for shared notification troubleshooting. }
+        preconditions: { zh: [当前用户已登录], en: [The current user is signed in] }
+        successEvidence: { zh: 返回 recipientUserId 仅为当前用户的分页投递记录。, en: Returns paginated deliveries whose recipientUserId is only the current user. }
+      x-luna-cli:
+        command: notification.delivery.list-mine
+        classification: business-command
+        risk: low
+        requiredScopes: ["user:read"]
+        agentAllowed: true
+      parameters:
+        - name: status
+          in: query
+          schema: { type: string }
+        - name: eventType
+          in: query
+          schema: { type: string }
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - name: sortBy
+          in: query
+          schema: { type: string, enum: [createdAt, status, eventType], default: createdAt }
+        - $ref: "#/components/parameters/SortOrder"
+      responses:
+        "200":
+          description: Current user's paginated notification deliveries.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PaginatedNotificationDeliveries" }
   /api/v1/notifications/presets:
     get:
       operationId: listNotificationPresets
@@ -7870,6 +8285,11 @@ components:
       in: path
       required: true
       schema: { type: string }
+    NotificationChannelId:
+      name: channelId
+      in: path
+      required: true
+      schema: { type: string, pattern: '^nch_' }
     OAuthCode:
       name: code
       in: query
@@ -10914,31 +11334,55 @@ components:
         allowEmailRegistration: { type: boolean }
         allowOidcRegistration: { type: boolean }
         allowExternalIdentityPassword: { type: boolean }
-        smtpHost: { type: string }
-        smtpPort: { type: integer, minimum: 1, maximum: 65535 }
-        smtpSecurity: { type: string, enum: [none, starttls, tls] }
-        smtpUsername: { type: string }
-        smtpPasswordSet: { type: boolean }
-        smtpFromAddress: { type: string, format: email }
-        smtpFromName: { type: string }
-      required: [allowEmailRegistration, allowOidcRegistration, allowExternalIdentityPassword, smtpHost, smtpPort, smtpSecurity, smtpUsername, smtpPasswordSet, smtpFromAddress, smtpFromName]
+      required: [allowEmailRegistration, allowOidcRegistration, allowExternalIdentityPassword]
     AuthRegistrationSettingsInput:
       type: object
       properties:
         allowEmailRegistration: { type: boolean }
         allowOidcRegistration: { type: boolean }
         allowExternalIdentityPassword: { type: boolean }
-        smtpHost: { type: string }
-        smtpPort: { type: integer, minimum: 1, maximum: 65535 }
-        smtpSecurity: { type: string, enum: [none, starttls, tls] }
-        smtpUsername: { type: string }
-        smtpPassword:
+      required: [allowEmailRegistration, allowOidcRegistration, allowExternalIdentityPassword]
+    PlatformMailSettings:
+      type: object
+      additionalProperties: false
+      properties:
+        host: { type: string }
+        port: { type: integer, minimum: 1, maximum: 65535 }
+        security: { type: string, enum: [none, starttls, tls] }
+        username: { type: string }
+        passwordSet: { type: boolean }
+        fromAddress: { type: string }
+        fromName: { type: string }
+      required: [host, port, security, username, passwordSet, fromAddress, fromName]
+    PlatformMailSettingsInput:
+      type: object
+      additionalProperties: false
+      properties:
+        host: { type: string, maxLength: 253 }
+        port: { type: integer, minimum: 1, maximum: 65535 }
+        security: { type: string, enum: [none, starttls, tls] }
+        username: { type: string, maxLength: 320 }
+        password:
           type: string
           writeOnly: true
+          x-luna-sensitive: true
+          maxLength: 4096
           description: Leave empty to keep the existing Secret Store value.
-        smtpFromAddress: { type: string, format: email }
-        smtpFromName: { type: string }
-      required: [allowEmailRegistration, allowOidcRegistration, allowExternalIdentityPassword, smtpHost, smtpPort, smtpSecurity, smtpUsername, smtpFromAddress, smtpFromName]
+        fromAddress: { type: string, maxLength: 320 }
+        fromName: { type: string, maxLength: 160 }
+      required: [host, port, security, username, fromAddress, fromName]
+    PlatformMailTestInput:
+      type: object
+      additionalProperties: false
+      properties:
+        recipient: { type: string, format: email, maxLength: 320 }
+      required: [recipient]
+    NotificationTestResult:
+      type: object
+      additionalProperties: false
+      properties:
+        status: { type: string, enum: [ok] }
+      required: [status]
     EmailRegistrationCodeInput:
       type: object
       properties:
@@ -11323,6 +11767,153 @@ components:
           x-luna-sensitive: true
           additionalProperties: { type: string }
         enabled: { type: boolean }
+    PersonalNotificationChannelCreateInput:
+      type: object
+      additionalProperties: false
+      required: [name, presetId, secrets]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 160 }
+        presetId:
+          type: string
+          minLength: 1
+          description: ID returned by listMyNotificationPresets; the server owns the adapter and request configuration.
+        secrets:
+          type: object
+          writeOnly: true
+          x-luna-sensitive: true
+          maxProperties: 2
+          description: Only fields declared by the selected personal preset are accepted; undeclared fields are rejected.
+          additionalProperties: { type: string, maxLength: 4096 }
+        enabled: { type: boolean }
+    PersonalNotificationChannelUpdateInput:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 160 }
+        secrets:
+          type: object
+          writeOnly: true
+          x-luna-sensitive: true
+          maxProperties: 2
+          description: Only preset-declared fields are accepted; omit or leave a field empty to preserve its stored value.
+          additionalProperties: { type: string, maxLength: 4096 }
+        enabled: { type: boolean }
+    UserNotificationPreference:
+      type: object
+      additionalProperties: false
+      required: [emailEnabled, eventTypes]
+      properties:
+        emailEnabled:
+          type: boolean
+          default: true
+        eventTypes:
+          type: array
+          uniqueItems: true
+          maxItems: 6
+          items:
+            type: string
+            enum: [build.failed, release.failed, hook.failed, gateway.apply_failed, certificate.failed, certificate.expired]
+    UserNotificationPreferenceInput:
+      type: object
+      additionalProperties: false
+      required: [emailEnabled, eventTypes]
+      properties:
+        emailEnabled:
+          type: boolean
+          default: true
+        eventTypes:
+          type: array
+          uniqueItems: true
+          maxItems: 6
+          items:
+            type: string
+            enum: [build.failed, release.failed, hook.failed, gateway.apply_failed, certificate.failed, certificate.expired]
+    NotificationPreset:
+      type: object
+      additionalProperties: false
+      required: [id, name, description, adapterKind, configTemplate, jsonBodyTemplate, secretFields]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        description: { type: string }
+        adapterKind: { type: string, enum: [webhook] }
+        configTemplate: { type: string }
+        jsonBodyTemplate: { type: string }
+        secretFields:
+          type: array
+          items: { type: string }
+    NotificationChannel:
+      type: object
+      additionalProperties: true
+      required: [id, ownerUserId, name, adapterKind, config, secretSet, enabled, createdAt, updatedAt]
+      properties:
+        id: { type: string, pattern: '^nch_' }
+        ownerUserId: { type: string }
+        name: { type: string }
+        adapterKind: { type: string }
+        config:
+          type: object
+          additionalProperties: true
+        secretSet:
+          type: object
+          additionalProperties: { type: boolean }
+        enabled: { type: boolean }
+        lastDeliveryStatus: { type: string }
+        lastDeliveryError: { type: string }
+        lastDeliveredAt: { type: string, format: date-time, nullable: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    NotificationDelivery:
+      type: object
+      additionalProperties: true
+      required: [id, eventId, eventType, severity, channelId, adapterKind, recipientUserId, status, attemptCount, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        projectId: { type: string }
+        eventId: { type: string }
+        eventType: { type: string }
+        severity: { type: string }
+        channelId: { type: string }
+        adapterKind: { type: string }
+        recipientUserId: { type: string }
+        status: { type: string }
+        attemptCount: { type: integer }
+        durationMillis: { type: integer, format: int64 }
+        errorMessage: { type: string }
+        queuedAt: { type: string, format: date-time }
+        startedAt: { type: string, format: date-time, nullable: true }
+        finishedAt: { type: string, format: date-time, nullable: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    PaginatedNotificationChannels:
+      type: object
+      additionalProperties: false
+      required: [items, page, pageSize, sortBy, sortOrder, total, totalPages]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/NotificationChannel" }
+        page: { type: integer, minimum: 1 }
+        pageSize: { type: integer, minimum: 1, maximum: 100 }
+        sortBy: { type: string }
+        sortOrder: { type: string, enum: [asc, desc] }
+        total: { type: integer, format: int64, minimum: 0 }
+        totalPages: { type: integer, minimum: 0 }
+    PaginatedNotificationDeliveries:
+      type: object
+      additionalProperties: false
+      required: [items, page, pageSize, sortBy, sortOrder, total, totalPages]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/NotificationDelivery" }
+        page: { type: integer, minimum: 1 }
+        pageSize: { type: integer, minimum: 1, maximum: 100 }
+        sortBy: { type: string }
+        sortOrder: { type: string, enum: [asc, desc] }
+        total: { type: integer, format: int64, minimum: 0 }
+        totalPages: { type: integer, minimum: 0 }
     NotificationPresetChannelInput:
       type: object
       required: [name]

@@ -3,6 +3,8 @@ package notification
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -15,7 +17,9 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-var defaultFailureEventTypes = []string{"build.failed", "release.failed", "hook.failed", "gateway.apply_failed", "certificate.failed", "certificate.expired", "service_binding.invalid"}
+var defaultFailureEventTypes = []string{"build.failed", "release.failed", "hook.failed", "gateway.apply_failed", "certificate.failed", "certificate.expired"}
+
+const UserEmailChannelID = "notification:user-email"
 
 type DeliveryEnqueuer interface {
 	EnqueueNotificationDeliver(ctx context.Context, payload tasks.NotificationDeliverPayload) (*asynq.TaskInfo, error)
@@ -33,16 +37,37 @@ type RuleFilter struct {
 	DeploymentTargetIDs []string `json:"deploymentTargetIds"`
 }
 
+type deliveryTarget struct {
+	ChannelID       string
+	AdapterKind     string
+	RuleID          string
+	TemplateID      string
+	RecipientUserID string
+}
+
+func DefaultFailureEventTypes() []string {
+	return append([]string(nil), defaultFailureEventTypes...)
+}
+
+func DefaultUserNotificationPreference(userID string) model.UserNotificationPreference {
+	return model.UserNotificationPreference{
+		UserID:         strings.TrimSpace(userID),
+		EmailEnabled:   true,
+		EventTypesJSON: EncodeStringList(DefaultFailureEventTypes()),
+	}
+}
+
 func (s Service) Emit(ctx context.Context, event Event) ([]model.NotificationDelivery, error) {
 	if s.DB == nil {
 		return nil, nil
 	}
+	db := s.DB.WithContext(ctx)
 	event = normalizeEvent(event)
 	resourceType, resourceID := platformevent.ResourceForType(event.Type, event.Build.ID, event.Release.ID, event.Hook.ID, event.Gateway.ID, event.Certificate.RouteID)
 	if platformevent.CategoryForType(event.Type) == "service_binding" {
 		resourceType, resourceID = "service_binding", event.ServiceBinding.ID
 	}
-	storedEvent, _, err := (platformevent.Service{DB: s.DB}).Record(ctx, platformevent.RecordInput{
+	storedEvent, created, err := (platformevent.Service{DB: db}).Record(ctx, platformevent.RecordInput{
 		ID:                 event.ID,
 		Type:               event.Type,
 		Severity:           event.Severity,
@@ -63,14 +88,22 @@ func (s Service) Emit(ctx context.Context, event Event) ([]model.NotificationDel
 	if err != nil {
 		return nil, err
 	}
+	if !created {
+		var authoritative Event
+		if err := json.Unmarshal([]byte(storedEvent.DetailJSON), &authoritative); err != nil {
+			return nil, fmt.Errorf("decode recorded notification event: %w", err)
+		}
+		event = normalizeEvent(authoritative)
+	}
 	event.ID = storedEvent.ID
+	event.Actor.ID = strings.TrimSpace(storedEvent.ActorID)
 	eventData, err := json.Marshal(event)
 	if err != nil {
 		return nil, err
 	}
 
 	var rules []model.NotificationRule
-	query := s.DB.Where("enabled = ?", true)
+	query := db.Where("enabled = ?", true)
 	if strings.TrimSpace(event.Project.ID) != "" {
 		query = query.Where("project_id in ?", []string{"", event.Project.ID})
 	} else {
@@ -91,7 +124,7 @@ func (s Service) Emit(ctx context.Context, event Event) ([]model.NotificationDel
 			continue
 		}
 		var channels []model.NotificationChannel
-		if err := s.DB.Where("id in ? and enabled = ?", channelIDs, true).Find(&channels).Error; err != nil {
+		if err := db.Where("id in ? and enabled = ? and owner_user_id = ?", channelIDs, true, "").Find(&channels).Error; err != nil {
 			return nil, err
 		}
 		for _, channel := range channels {
@@ -102,48 +135,160 @@ func (s Service) Emit(ctx context.Context, event Event) ([]model.NotificationDel
 			template := model.NotificationTemplate{}
 			templateID := strings.TrimSpace(rule.TemplateID)
 			if templateID != "" {
-				_ = s.DB.First(&template, "id = ? and enabled = ?", templateID, true).Error
+				_ = db.First(&template, "id = ? and enabled = ?", templateID, true).Error
 			}
 			if template.ID == "" {
 				template = DefaultTemplateFor(channel.AdapterKind, event.Type, strings.TrimSpace(rule.Locale))
 				templateID = ""
 			}
-			delivery := model.NotificationDelivery{
-				ID:          id.New("ndl"),
-				ProjectID:   event.Project.ID,
-				EventID:     event.ID,
-				EventType:   event.Type,
-				Severity:    event.Severity,
+			delivery, created, err := s.createDelivery(ctx, event, eventData, deliveryTarget{
 				ChannelID:   channel.ID,
 				AdapterKind: channel.AdapterKind,
 				RuleID:      rule.ID,
 				TemplateID:  templateID,
-				EventJSON:   string(eventData),
-				Status:      "pending",
-				QueuedAt:    time.Now(),
-				CreatedAt:   time.Now(),
-				UpdatedAt:   time.Now(),
+			})
+			if created {
+				deliveries = append(deliveries, delivery)
 			}
-			result := s.DB.Clauses(clause.OnConflict{
-				Columns:   []clause.Column{{Name: "event_id"}, {Name: "channel_id"}},
-				DoNothing: true,
-			}).Create(&delivery)
-			if result.Error != nil {
-				return deliveries, result.Error
-			}
-			if result.RowsAffected == 0 {
-				continue
-			}
-			deliveries = append(deliveries, delivery)
-			if s.Enqueuer != nil {
-				if _, err := s.Enqueuer.EnqueueNotificationDeliver(ctx, tasks.NotificationDeliverPayload{DeliveryID: delivery.ID}); err != nil {
-					_ = s.DB.Model(&delivery).Updates(map[string]any{"status": "enqueue_failed", "error_message": err.Error()}).Error
-					return deliveries, err
-				}
+			if err != nil {
+				return deliveries, err
 			}
 		}
 	}
+
+	personalTargets, err := s.personalDeliveryTargets(ctx, event)
+	if err != nil {
+		return deliveries, err
+	}
+	for _, target := range personalTargets {
+		delivery, created, err := s.createDelivery(ctx, event, eventData, target)
+		if created {
+			deliveries = append(deliveries, delivery)
+		}
+		if err != nil {
+			return deliveries, err
+		}
+	}
 	return deliveries, nil
+}
+
+func (s Service) personalDeliveryTargets(ctx context.Context, event Event) ([]deliveryTarget, error) {
+	actorID := strings.TrimSpace(event.Actor.ID)
+	if actorID == "" {
+		return nil, nil
+	}
+	db := s.DB.WithContext(ctx)
+	var user model.User
+	if err := db.Where("id = ? and disabled = ?", actorID, false).First(&user).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	preference := DefaultUserNotificationPreference(user.ID)
+	if err := db.First(&preference, "user_id = ?", user.ID).Error; err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
+	if !containsString(decodeStringList(preference.EventTypesJSON), event.Type) {
+		return nil, nil
+	}
+
+	targets := make([]deliveryTarget, 0, 2)
+	if preference.EmailEnabled && strings.TrimSpace(user.Email) != "" {
+		targets = append(targets, deliveryTarget{
+			ChannelID:       UserEmailChannelID,
+			AdapterKind:     AdapterKindSMTP,
+			RecipientUserID: user.ID,
+		})
+	}
+	var channels []model.NotificationChannel
+	if err := db.Where("owner_user_id = ? and adapter_kind = ? and enabled = ?", user.ID, AdapterKindWebhook, true).
+		Order("created_at asc").Find(&channels).Error; err != nil {
+		return nil, err
+	}
+	for _, channel := range channels {
+		targets = append(targets, deliveryTarget{
+			ChannelID:       channel.ID,
+			AdapterKind:     AdapterKindWebhook,
+			RecipientUserID: user.ID,
+		})
+	}
+	return targets, nil
+}
+
+func (s Service) createDelivery(ctx context.Context, event Event, eventData []byte, target deliveryTarget) (model.NotificationDelivery, bool, error) {
+	now := time.Now()
+	delivery := model.NotificationDelivery{
+		ID:              id.New("ndl"),
+		ProjectID:       event.Project.ID,
+		RecipientUserID: target.RecipientUserID,
+		EventID:         event.ID,
+		EventType:       event.Type,
+		Severity:        event.Severity,
+		ChannelID:       target.ChannelID,
+		AdapterKind:     target.AdapterKind,
+		RuleID:          target.RuleID,
+		TemplateID:      target.TemplateID,
+		EventJSON:       string(eventData),
+		Status:          "pending",
+		QueuedAt:        now,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	}
+	result := s.DB.WithContext(ctx).Clauses(clause.OnConflict{
+		Columns: []clause.Column{
+			{Name: "event_id"},
+			{Name: "channel_id"},
+			{Name: "recipient_user_id"},
+		},
+		DoNothing: true,
+	}).Create(&delivery)
+	if result.Error != nil {
+		return model.NotificationDelivery{}, false, result.Error
+	}
+	if result.RowsAffected == 0 {
+		var existing model.NotificationDelivery
+		if err := s.DB.WithContext(ctx).First(&existing,
+			"event_id = ? and channel_id = ? and recipient_user_id = ?",
+			event.ID,
+			target.ChannelID,
+			target.RecipientUserID,
+		).Error; err != nil {
+			return model.NotificationDelivery{}, false, err
+		}
+		if existing.Status != "enqueue_failed" || s.Enqueuer == nil {
+			return model.NotificationDelivery{}, false, nil
+		}
+		claimed := s.DB.WithContext(ctx).Model(&model.NotificationDelivery{}).
+			Where("id = ? and status = ?", existing.ID, "enqueue_failed").
+			Updates(map[string]any{
+				"status":        "pending",
+				"error_message": "",
+				"queued_at":     now,
+			})
+		if claimed.Error != nil {
+			return model.NotificationDelivery{}, false, claimed.Error
+		}
+		if claimed.RowsAffected == 0 {
+			return model.NotificationDelivery{}, false, nil
+		}
+		delivery = existing
+		delivery.Status = "pending"
+		delivery.ErrorMessage = ""
+		delivery.QueuedAt = now
+	}
+	if s.Enqueuer != nil {
+		if _, err := s.Enqueuer.EnqueueNotificationDeliver(ctx, tasks.NotificationDeliverPayload{DeliveryID: delivery.ID}); err != nil {
+			errorMessage := err.Error()
+			if strings.TrimSpace(target.RecipientUserID) != "" {
+				errorMessage = "notification.personal_delivery_enqueue_failed"
+			}
+			_ = s.DB.WithContext(ctx).Model(&delivery).Updates(map[string]any{"status": "enqueue_failed", "error_message": errorMessage}).Error
+			return delivery, true, err
+		}
+	}
+	return delivery, true, nil
 }
 
 func normalizeEvent(event Event) Event {

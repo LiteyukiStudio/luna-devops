@@ -32,9 +32,12 @@ func (t sanitizedTelemetryTransport) RoundTrip(request *http.Request) (*http.Res
 	ctx := context.WithValue(request.Context(), originalRequestURLKey{}, original)
 	sanitized := request.Clone(ctx)
 	sanitized.URL = cloneURL(request.URL)
+	sanitized.URL.Path = "/"
+	sanitized.URL.RawPath = ""
 	sanitized.URL.RawQuery = ""
 	sanitized.URL.ForceQuery = false
 	sanitized.URL.Fragment = ""
+	sanitized.URL.RawFragment = ""
 	sanitized.URL.User = nil
 	return t.next.RoundTrip(sanitized)
 }
@@ -51,8 +54,9 @@ func InstrumentHTTPTransport(transport http.RoundTripper) http.RoundTripper {
 	if transport == nil {
 		transport = http.DefaultTransport
 	}
-	// otelhttp records url.full. Present a redacted URL to instrumentation,
-	// then restore the actual URL only at the network boundary.
+	// otelhttp records url.full. Present only the origin and a stable root path
+	// to instrumentation because webhook credentials are commonly embedded in
+	// URL paths, then restore the actual URL only at the network boundary.
 	traced := otelhttp.NewTransport(restoreRequestURLTransport{next: transport})
 	return sanitizedTelemetryTransport{next: traced}
 }

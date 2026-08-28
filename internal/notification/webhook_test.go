@@ -3,6 +3,9 @@ package notification
 import (
 	"context"
 	"encoding/json"
+	"io"
+	"net/http"
+	"strings"
 	"testing"
 	"time"
 )
@@ -56,4 +59,41 @@ func TestWebhookAdapterRegistry(t *testing.T) {
 	if _, err := registry.Adapter(AdapterKindSMTP); err != nil {
 		t.Fatalf("smtp adapter missing: %v", err)
 	}
+}
+
+func TestWebhookHTTPClientDoesNotFollowRedirectWithCredentialHeader(t *testing.T) {
+	requests := 0
+	client := newWebhookHTTPClient(time.Second)
+	client.Transport = webhookRoundTripFunc(func(request *http.Request) (*http.Response, error) {
+		requests++
+		if requests > 1 && request.Header.Get("X-Gotify-Key") != "" {
+			t.Fatal("credential header was forwarded to a redirect target")
+		}
+		return &http.Response{
+			StatusCode: http.StatusFound,
+			Header:     http.Header{"Location": []string{"https://redirect.example/target"}},
+			Body:       io.NopCloser(strings.NewReader("redirect")),
+			Request:    request,
+		}, nil
+	})
+
+	request, err := http.NewRequest(http.MethodPost, "https://origin.example/message", strings.NewReader(`{}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("X-Gotify-Key", "credential-marker")
+	response, err := client.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if requests != 1 || response.StatusCode != http.StatusFound {
+		t.Fatalf("requests = %d, status = %d", requests, response.StatusCode)
+	}
+}
+
+type webhookRoundTripFunc func(*http.Request) (*http.Response, error)
+
+func (run webhookRoundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {
+	return run(request)
 }

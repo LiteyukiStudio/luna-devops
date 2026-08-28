@@ -172,8 +172,16 @@ func RequiredAccessTokenScope(path, method string) string {
 		return string(ActionUserRead)
 	case path == "/api/v1/users/me" && method != http.MethodGet:
 		return string(ActionUserWrite)
+	case strings.HasPrefix(path, "/api/v1/me/notification") && method == http.MethodGet:
+		return string(ActionUserRead)
+	case strings.HasPrefix(path, "/api/v1/me/notification") && method != http.MethodGet:
+		return string(ActionUserWrite)
 	case strings.HasPrefix(path, "/api/v1/users"):
 		return string(ActionUserManage)
+	case strings.HasPrefix(path, "/api/v1/mail") && method == http.MethodGet:
+		return string(ActionConfigRead)
+	case strings.HasPrefix(path, "/api/v1/mail") && method != http.MethodGet:
+		return string(ActionConfigWrite)
 	case strings.HasPrefix(path, "/api/v1/auth"):
 		return string(ActionAuthManage)
 	case strings.HasPrefix(path, "/api/v1/ai/observability"):

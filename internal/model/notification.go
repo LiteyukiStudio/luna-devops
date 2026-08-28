@@ -9,6 +9,7 @@ import (
 type NotificationChannel struct {
 	ID                 string         `gorm:"primaryKey" json:"id"`
 	ProjectID          string         `gorm:"index;not null;default:''" json:"projectId"`
+	OwnerUserID        string         `gorm:"index;not null;default:''" json:"ownerUserId"`
 	Name               string         `gorm:"not null" json:"name"`
 	AdapterKind        string         `gorm:"index;not null" json:"adapterKind"`
 	ConfigJSON         string         `gorm:"type:jsonb;not null;default:'{}'" json:"configJson"`
@@ -59,10 +60,11 @@ type NotificationRule struct {
 type NotificationDelivery struct {
 	ID              string     `gorm:"primaryKey" json:"id"`
 	ProjectID       string     `gorm:"index;not null;default:''" json:"projectId"`
-	EventID         string     `gorm:"index;not null;uniqueIndex:idx_notification_deliveries_event_channel" json:"eventId"`
+	RecipientUserID string     `gorm:"index;not null;default:'';uniqueIndex:idx_notification_deliveries_event_channel_recipient" json:"recipientUserId"`
+	EventID         string     `gorm:"index;not null;uniqueIndex:idx_notification_deliveries_event_channel_recipient" json:"eventId"`
 	EventType       string     `gorm:"index;not null" json:"eventType"`
 	Severity        string     `gorm:"index;not null;default:''" json:"severity"`
-	ChannelID       string     `gorm:"index;not null;uniqueIndex:idx_notification_deliveries_event_channel" json:"channelId"`
+	ChannelID       string     `gorm:"index;not null;uniqueIndex:idx_notification_deliveries_event_channel_recipient" json:"channelId"`
 	AdapterKind     string     `gorm:"index;not null" json:"adapterKind"`
 	RuleID          string     `gorm:"index;not null;default:''" json:"ruleId"`
 	TemplateID      string     `gorm:"index;not null;default:''" json:"templateId"`
@@ -78,4 +80,12 @@ type NotificationDelivery struct {
 	FinishedAt      *time.Time `json:"finishedAt"`
 	CreatedAt       time.Time  `json:"createdAt"`
 	UpdatedAt       time.Time  `json:"updatedAt"`
+}
+
+type UserNotificationPreference struct {
+	UserID         string    `gorm:"primaryKey" json:"userId"`
+	EmailEnabled   bool      `gorm:"not null;default:true" json:"emailEnabled"`
+	EventTypesJSON string    `gorm:"type:jsonb;not null;default:'[\"build.failed\",\"release.failed\",\"hook.failed\",\"gateway.apply_failed\",\"certificate.failed\",\"certificate.expired\"]'" json:"eventTypesJson"`
+	CreatedAt      time.Time `json:"createdAt"`
+	UpdatedAt      time.Time `json:"updatedAt"`
 }

@@ -70,7 +70,7 @@ func (h *Handlers) ListNotificationChannels(ctx *gin.Context) {
 	}
 	pagination := paginationFromQuery(ctx)
 	var total int64
-	query := h.dbFor(ctx).Model(&model.NotificationChannel{})
+	query := h.dbFor(ctx).Model(&model.NotificationChannel{}).Where("owner_user_id = ?", "")
 	if search := strings.TrimSpace(ctx.Query("search")); search != "" {
 		query = query.Where("name ILIKE ? or adapter_kind ILIKE ?", "%"+search+"%", "%"+search+"%")
 	}
@@ -108,7 +108,7 @@ func (h *Handlers) CreateNotificationChannel(ctx *gin.Context) {
 	if !bindJSON(ctx, &input) {
 		return
 	}
-	channel, ok := h.notificationChannelFromInput(ctx, user, input, model.NotificationChannel{ID: id.New("nch")})
+	channel, ok := h.notificationChannelFromInput(ctx, user, input, model.NotificationChannel{ID: id.New("nch"), OwnerUserID: ""})
 	if !ok {
 		return
 	}
@@ -130,7 +130,7 @@ func (h *Handlers) UpdateNotificationChannel(ctx *gin.Context) {
 		return
 	}
 	var existing model.NotificationChannel
-	if err := h.dbFor(ctx).First(&existing, "id = ?", ctx.Param("channelId")).Error; err != nil {
+	if err := h.dbFor(ctx).First(&existing, "id = ? and owner_user_id = ?", ctx.Param("channelId"), "").Error; err != nil {
 		writeError(ctx, http.StatusNotFound, "notification channel not found")
 		return
 	}
@@ -159,7 +159,7 @@ func (h *Handlers) DeleteNotificationChannel(ctx *gin.Context) {
 		writeErrorKey(ctx, http.StatusForbidden, user.Language, "config.admin.required")
 		return
 	}
-	if err := h.dbFor(ctx).Delete(&model.NotificationChannel{}, "id = ?", ctx.Param("channelId")).Error; err != nil {
+	if err := h.dbFor(ctx).Delete(&model.NotificationChannel{}, "id = ? and owner_user_id = ?", ctx.Param("channelId"), "").Error; err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -177,7 +177,7 @@ func (h *Handlers) TestNotificationChannel(ctx *gin.Context) {
 		return
 	}
 	var channel model.NotificationChannel
-	if err := h.dbFor(ctx).First(&channel, "id = ?", ctx.Param("channelId")).Error; err != nil {
+	if err := h.dbFor(ctx).First(&channel, "id = ? and owner_user_id = ?", ctx.Param("channelId"), "").Error; err != nil {
 		writeError(ctx, http.StatusNotFound, "notification channel not found")
 		return
 	}
@@ -282,6 +282,7 @@ func (h *Handlers) CreateNotificationChannelFromPreset(ctx *gin.Context) {
 	}
 	channel := model.NotificationChannel{
 		ID:             id.New("nch"),
+		OwnerUserID:    "",
 		Name:           firstNonEmpty(input.Name, preset.Name),
 		AdapterKind:    preset.AdapterKind,
 		ConfigJSON:     string(configRaw),
@@ -518,7 +519,7 @@ func (h *Handlers) ListNotificationDeliveries(ctx *gin.Context) {
 	}
 	pagination := paginationFromQuery(ctx)
 	var total int64
-	query := h.dbFor(ctx).Model(&model.NotificationDelivery{})
+	query := h.dbFor(ctx).Model(&model.NotificationDelivery{}).Where("recipient_user_id = ?", "")
 	if status := strings.TrimSpace(ctx.Query("status")); status != "" {
 		query = query.Where("status = ?", status)
 	}
@@ -606,7 +607,7 @@ func (h *Handlers) notificationRuleFromInput(ctx *gin.Context, input notificatio
 		return model.NotificationRule{}, false
 	}
 	var count int64
-	if err := h.dbFor(ctx).Model(&model.NotificationChannel{}).Where("id in ?", input.ChannelIDs).Count(&count).Error; err != nil {
+	if err := h.dbFor(ctx).Model(&model.NotificationChannel{}).Where("id in ? and owner_user_id = ?", input.ChannelIDs, "").Count(&count).Error; err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return model.NotificationRule{}, false
 	}

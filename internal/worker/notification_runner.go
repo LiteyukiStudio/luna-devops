@@ -3,12 +3,14 @@ package worker
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/notification"
+	"github.com/LiteyukiStudio/devops/internal/platformmail"
 	"github.com/LiteyukiStudio/devops/internal/tasks"
 	"github.com/hibiken/asynq"
 )
@@ -18,27 +20,41 @@ func (r *Runner) handleNotificationDeliver(ctx context.Context, task *asynq.Task
 	if err := json.Unmarshal(task.Payload(), &payload); err != nil {
 		return err
 	}
+	db := r.db.WithContext(ctx)
 	var delivery model.NotificationDelivery
-	if err := r.db.First(&delivery, "id = ?", payload.DeliveryID).Error; err != nil {
+	if err := db.First(&delivery, "id = ?", payload.DeliveryID).Error; err != nil {
 		return err
 	}
 	if delivery.Status == "succeeded" {
 		return nil
 	}
+	if isPersonalEmailDelivery(delivery) {
+		return r.handlePersonalEmailDelivery(ctx, delivery)
+	}
 	var channel model.NotificationChannel
-	if err := r.db.First(&channel, "id = ? and enabled = ?", delivery.ChannelID, true).Error; err != nil {
-		_ = r.markNotificationDeliveryFailed(delivery, err, 0, "", "")
+	channelQuery := db.Where("id = ? and enabled = ?", delivery.ChannelID, true)
+	if strings.TrimSpace(delivery.RecipientUserID) == "" {
+		channelQuery = channelQuery.Where("owner_user_id = ?", "")
+	} else {
+		channelQuery = channelQuery.Where(
+			"owner_user_id = ? and adapter_kind = ?",
+			delivery.RecipientUserID,
+			notification.AdapterKindWebhook,
+		)
+	}
+	if err := channelQuery.First(&channel).Error; err != nil {
+		_ = r.markNotificationDeliveryFailed(ctx, delivery, notificationDeliveryErrorForStorage(delivery, "notification.personal_webhook_channel_unavailable", err), 0, "", "")
 		return fmt.Errorf("%w: %v", asynq.SkipRetry, err)
 	}
 	var event notification.Event
 	if err := json.Unmarshal([]byte(delivery.EventJSON), &event); err != nil {
-		_ = r.markNotificationDeliveryFailed(delivery, err, 0, "", "")
+		_ = r.markNotificationDeliveryFailed(ctx, delivery, notificationDeliveryErrorForStorage(delivery, "notification.personal_webhook_payload_invalid", err), 0, "", "")
 		return fmt.Errorf("%w: %v", asynq.SkipRetry, err)
 	}
 	template := notification.Template{}
-	if delivery.TemplateID != "" {
+	if delivery.RecipientUserID == "" && delivery.TemplateID != "" {
 		var modelTemplate model.NotificationTemplate
-		if err := r.db.First(&modelTemplate, "id = ? and enabled = ?", delivery.TemplateID, true).Error; err == nil {
+		if err := db.First(&modelTemplate, "id = ? and enabled = ?", delivery.TemplateID, true).Error; err == nil {
 			template = notification.TemplateFromModel(modelTemplate)
 		}
 	}
@@ -48,11 +64,11 @@ func (r *Runner) handleNotificationDeliver(ctx context.Context, task *asynq.Task
 	registry := notification.DefaultRegistry()
 	adapter, err := registry.Adapter(channel.AdapterKind)
 	if err != nil {
-		_ = r.markNotificationDeliveryFailed(delivery, err, 0, "", "")
+		_ = r.markNotificationDeliveryFailed(ctx, delivery, notificationDeliveryErrorForStorage(delivery, "notification.personal_webhook_adapter_invalid", err), 0, "", "")
 		return fmt.Errorf("%w: %v", asynq.SkipRetry, err)
 	}
 	startedAt := time.Now()
-	_ = r.db.Model(&delivery).Updates(map[string]any{
+	_ = db.Model(&delivery).Updates(map[string]any{
 		"status":        "sending",
 		"attempt_count": delivery.AttemptCount + 1,
 		"started_at":    &startedAt,
@@ -61,7 +77,7 @@ func (r *Runner) handleNotificationDeliver(ctx context.Context, task *asynq.Task
 		return adapter.Render(stageCtx, event, template, json.RawMessage(channel.ConfigJSON), json.RawMessage(channel.SecretRefsJSON), r.secrets, event.Locale)
 	})
 	if err != nil {
-		_ = r.markNotificationDeliveryFailed(delivery, err, time.Since(startedAt), "", "")
+		_ = r.markNotificationDeliveryFailed(ctx, delivery, notificationDeliveryErrorForStorage(delivery, "notification.personal_webhook_render_failed", err), time.Since(startedAt), "", "")
 		return fmt.Errorf("%w: %v", asynq.SkipRetry, err)
 	}
 	requestSnapshot := r.notificationRequestSnapshot(ctx, message, channel.SecretRefsJSON)
@@ -69,18 +85,111 @@ func (r *Runner) handleNotificationDeliver(ctx context.Context, task *asynq.Task
 		return adapter.Send(stageCtx, json.RawMessage(channel.ConfigJSON), json.RawMessage(channel.SecretRefsJSON), message, r.secrets)
 	})
 	if err != nil {
-		_ = r.markNotificationDeliveryFailed(delivery, err, time.Since(startedAt), requestSnapshot, result.ResponseSnippet)
-		if notificationSendErrorShouldSkipRetry(result) {
+		_ = r.markNotificationDeliveryFailed(
+			ctx,
+			delivery,
+			notificationDeliveryErrorForStorage(delivery, "notification.personal_webhook_send_failed", err),
+			time.Since(startedAt),
+			requestSnapshot,
+			notificationDeliveryResponseSnippetForStorage(delivery, result.ResponseSnippet),
+		)
+		if notificationSendErrorShouldSkipRetry(result, err) {
 			return fmt.Errorf("%w: %v", asynq.SkipRetry, err)
 		}
 		return err
 	}
 	finishedAt := time.Now()
-	updates := notificationDeliverySucceededUpdates(time.Since(startedAt), requestSnapshot, result.ResponseSnippet, finishedAt)
-	if err := r.db.Model(&delivery).Updates(updates).Error; err != nil {
+	updates := notificationDeliverySucceededUpdates(
+		time.Since(startedAt),
+		requestSnapshot,
+		notificationDeliveryResponseSnippetForStorage(delivery, result.ResponseSnippet),
+		finishedAt,
+	)
+	if err := db.Model(&delivery).Updates(updates).Error; err != nil {
 		return err
 	}
 	return nil
+}
+
+func (r *Runner) handlePersonalEmailDelivery(ctx context.Context, delivery model.NotificationDelivery) error {
+	db := r.db.WithContext(ctx)
+	var user model.User
+	if err := db.First(&user, "id = ? and disabled = ?", delivery.RecipientUserID, false).Error; err != nil {
+		_ = r.markNotificationDeliveryFailed(ctx, delivery, errors.New("notification.personal_email_recipient_unavailable"), 0, "", "")
+		return fmt.Errorf("%w: %v", asynq.SkipRetry, err)
+	}
+	var event notification.Event
+	if err := json.Unmarshal([]byte(delivery.EventJSON), &event); err != nil {
+		_ = r.markNotificationDeliveryFailed(ctx, delivery, errors.New("notification.personal_email_payload_invalid"), 0, "", "")
+		return fmt.Errorf("%w: %v", asynq.SkipRetry, err)
+	}
+
+	startedAt := time.Now()
+	_ = db.Model(&delivery).Updates(map[string]any{
+		"status":        "sending",
+		"attempt_count": delivery.AttemptCount + 1,
+		"started_at":    &startedAt,
+	}).Error
+	template := notification.TemplateFromModel(notification.DefaultTemplateFor(notification.AdapterKindSMTP, event.Type, event.Locale))
+	message, err := workerStageValue(ctx, "notification.render", func(stageCtx context.Context) (notification.RenderedMessage, error) {
+		return (notification.SMTPAdapter{}).Render(stageCtx, event, template, nil, nil, r.secrets, event.Locale)
+	})
+	if err != nil {
+		_ = r.markNotificationDeliveryFailed(ctx, delivery, errors.New("notification.personal_email_render_failed"), time.Since(startedAt), "", "")
+		return fmt.Errorf("%w: %v", asynq.SkipRetry, err)
+	}
+	requestSnapshot := r.notificationRequestSnapshot(ctx, message, "{}")
+	result, err := workerStageValue(ctx, "notification.send", func(stageCtx context.Context) (notification.SendResult, error) {
+		if r.personalEmailSender != nil {
+			return r.personalEmailSender(stageCtx, user.Email, message)
+		}
+		return platformmail.Send(stageCtx, r.db, r.secrets, user.Email, message)
+	})
+	if err != nil {
+		_ = r.markNotificationDeliveryFailed(ctx, delivery, personalEmailDeliveryError(err), time.Since(startedAt), requestSnapshot, result.ResponseSnippet)
+		if notificationSendErrorShouldSkipRetry(result, err) {
+			return fmt.Errorf("%w: %v", asynq.SkipRetry, err)
+		}
+		return err
+	}
+	finishedAt := time.Now()
+	return db.Model(&delivery).Updates(notificationDeliverySucceededUpdates(
+		time.Since(startedAt),
+		requestSnapshot,
+		result.ResponseSnippet,
+		finishedAt,
+	)).Error
+}
+
+func personalEmailDeliveryError(err error) error {
+	switch {
+	case errors.Is(err, platformmail.ErrInvalidSettings):
+		return errors.New("notification.personal_email_not_configured")
+	case errors.Is(err, platformmail.ErrInvalidRecipient):
+		return errors.New("notification.personal_email_recipient_invalid")
+	default:
+		return errors.New("notification.personal_email_send_failed")
+	}
+}
+
+func notificationDeliveryErrorForStorage(delivery model.NotificationDelivery, personalCode string, err error) error {
+	if strings.TrimSpace(delivery.RecipientUserID) == "" {
+		return err
+	}
+	return errors.New(personalCode)
+}
+
+func notificationDeliveryResponseSnippetForStorage(delivery model.NotificationDelivery, responseSnippet string) string {
+	if strings.TrimSpace(delivery.RecipientUserID) != "" {
+		return ""
+	}
+	return responseSnippet
+}
+
+func isPersonalEmailDelivery(delivery model.NotificationDelivery) bool {
+	return delivery.ChannelID == notification.UserEmailChannelID &&
+		delivery.AdapterKind == notification.AdapterKindSMTP &&
+		strings.TrimSpace(delivery.RecipientUserID) != ""
 }
 
 func notificationDeliverySucceededUpdates(duration time.Duration, requestSnapshot string, responseSnippet string, finishedAt time.Time) map[string]any {
@@ -94,7 +203,7 @@ func notificationDeliverySucceededUpdates(duration time.Duration, requestSnapsho
 	}
 }
 
-func (r *Runner) markNotificationDeliveryFailed(delivery model.NotificationDelivery, err error, duration time.Duration, requestSnapshot string, responseSnippet string) error {
+func (r *Runner) markNotificationDeliveryFailed(ctx context.Context, delivery model.NotificationDelivery, err error, duration time.Duration, requestSnapshot string, responseSnippet string) error {
 	finishedAt := time.Now()
 	updates := map[string]any{
 		"status":          "failed",
@@ -108,14 +217,16 @@ func (r *Runner) markNotificationDeliveryFailed(delivery model.NotificationDeliv
 	if responseSnippet != "" {
 		updates["response_snippet"] = responseSnippet
 	}
-	if updateErr := r.db.Model(&delivery).Updates(updates).Error; updateErr != nil {
+	if updateErr := r.db.WithContext(ctx).Model(&delivery).Updates(updates).Error; updateErr != nil {
 		return updateErr
 	}
 	return nil
 }
 
-func notificationSendErrorShouldSkipRetry(result notification.SendResult) bool {
-	return result.StatusCode >= 400 && result.StatusCode < 500 && result.StatusCode != 429
+func notificationSendErrorShouldSkipRetry(result notification.SendResult, err error) bool {
+	return (result.StatusCode >= 400 && result.StatusCode < 500 && result.StatusCode != 429) ||
+		errors.Is(err, platformmail.ErrInvalidSettings) ||
+		errors.Is(err, platformmail.ErrInvalidRecipient)
 }
 
 func (r *Runner) notificationRequestSnapshot(ctx context.Context, message notification.RenderedMessage, secretRefsJSON string) string {

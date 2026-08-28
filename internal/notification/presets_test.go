@@ -73,6 +73,18 @@ func TestWebhookPresetsIncludePlatformTestTemplates(t *testing.T) {
 	}
 }
 
+func TestPersonalWebhookPresetsExcludeUserControlledDestinations(t *testing.T) {
+	personal := PersonalWebhookPresets()
+	for _, preset := range personal {
+		if preset.ID == "gotify" {
+			t.Fatal("personal presets must not expose the user-controlled Gotify host")
+		}
+	}
+	if len(personal) != len(WebhookPresets())-1 {
+		t.Fatalf("personal preset count = %d, all preset count = %d", len(personal), len(WebhookPresets()))
+	}
+}
+
 func presetSecretFixtures(fields []string) (json.RawMessage, StaticSecretResolver) {
 	secretRefs := map[string]string{}
 	resolver := StaticSecretResolver{}

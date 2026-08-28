@@ -95,6 +95,19 @@ func WebhookPresets() []WebhookPreset {
 	}
 }
 
+// PersonalWebhookPresets excludes integrations whose destination host is
+// user-controlled. Administrators can still use the complete preset catalog.
+func PersonalWebhookPresets() []WebhookPreset {
+	all := WebhookPresets()
+	personal := make([]WebhookPreset, 0, len(all))
+	for _, preset := range all {
+		if preset.ID != "gotify" {
+			personal = append(personal, preset)
+		}
+	}
+	return personal
+}
+
 func webhookPresetConfig(method string, url string, headers map[string]string, testJSONBodyTemplate string) string {
 	data, _ := json.MarshalIndent(WebhookConfig{
 		Method:               method,

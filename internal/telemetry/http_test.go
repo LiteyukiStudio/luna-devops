@@ -36,7 +36,7 @@ func TestInstrumentHTTPTransportRedactsTelemetryURLWithoutChangingRequest(t *tes
 			Request:    request,
 		}, nil
 	}))
-	request, err := http.NewRequest(http.MethodGet, "https://user:password@example.com/path?token=secret#fragment", nil)
+	request, err := http.NewRequest(http.MethodGet, "https://user:password@example.com/hooks/path-secret-marker?token=query-secret-marker#fragment", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,7 +45,7 @@ func TestInstrumentHTTPTransportRedactsTelemetryURLWithoutChangingRequest(t *tes
 		t.Fatal(err)
 	}
 	_ = response.Body.Close()
-	if actualURL != "https://user:password@example.com/path?token=secret#fragment" {
+	if actualURL != "https://user:password@example.com/hooks/path-secret-marker?token=query-secret-marker#fragment" {
 		t.Fatalf("network request URL = %q", actualURL)
 	}
 
@@ -55,8 +55,8 @@ func TestInstrumentHTTPTransportRedactsTelemetryURLWithoutChangingRequest(t *tes
 	}
 	for _, attr := range spans[0].Attributes() {
 		value := attr.Value.Emit()
-		if strings.Contains(value, "secret") || strings.Contains(value, "password") || strings.Contains(value, "user@") {
-			t.Fatalf("telemetry attribute %s leaked URL credentials or query: %q", attr.Key, value)
+		if strings.Contains(value, "path-secret-marker") || strings.Contains(value, "query-secret-marker") || strings.Contains(value, "password") || strings.Contains(value, "user@") {
+			t.Fatalf("telemetry attribute %s leaked URL credentials, path, or query: %q", attr.Key, value)
 		}
 	}
 }

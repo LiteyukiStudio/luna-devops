@@ -112,6 +112,18 @@ func TestErrorAttrsKeepChainAndRedactOnlyCredentials(t *testing.T) {
 	}
 }
 
+func TestRedactTextRemovesAbsoluteHTTPURLPathCredentials(t *testing.T) {
+	redacted := RedactText(`Post "https://user:password@hooks.slack.com/services/path-secret-marker?token=query-secret-marker": remote failure`)
+	for _, secret := range []string{"user", "password", "path-secret-marker", "query-secret-marker"} {
+		if strings.Contains(redacted, secret) {
+			t.Fatalf("redacted text leaked %q: %q", secret, redacted)
+		}
+	}
+	if !strings.Contains(redacted, `https://hooks.slack.com/`) || !strings.Contains(redacted, "remote failure") {
+		t.Fatalf("redacted text lost safe diagnostic context: %q", redacted)
+	}
+}
+
 func TestConsoleFanoutKeepsStructuredOTelRecord(t *testing.T) {
 	var terminal bytes.Buffer
 	var otel bytes.Buffer

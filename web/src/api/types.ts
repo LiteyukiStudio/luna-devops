@@ -487,6 +487,7 @@ export interface GatewayTrafficStatus {
 export interface NotificationChannel {
   id: string
   projectId: string
+  ownerUserId: string
   name: string
   adapterKind: 'webhook' | 'smtp' | string
   configJson: string
@@ -542,6 +543,7 @@ export interface NotificationRule {
 export interface NotificationDelivery {
   id: string
   projectId: string
+  recipientUserId: string
   eventId: string
   eventType: string
   severity: string
@@ -567,7 +569,54 @@ export interface NotificationPreset {
   name: string
   description: string
   adapterKind: string
+  configTemplate: string
+  jsonBodyTemplate: string
   secretFields: string[]
+}
+
+export interface MailSettings {
+  host: string
+  port: number
+  security: 'none' | 'starttls' | 'tls'
+  username: string
+  passwordSet: boolean
+  fromAddress: string
+  fromName: string
+}
+
+export interface MyNotificationPreferences {
+  emailEnabled: boolean
+  eventTypes: string[]
+}
+
+export type MyNotificationPreset = Pick<NotificationPreset, 'id' | 'name' | 'description' | 'secretFields'>
+
+export interface MyNotificationChannelCreatePayload {
+  name: string
+  presetId: string
+  secrets: Record<string, string>
+  enabled: boolean
+}
+
+export interface MyNotificationChannelUpdatePayload {
+  name: string
+  secrets: Record<string, string>
+  enabled: boolean
+}
+
+export interface MyNotificationChannel {
+  id: string
+  ownerUserId: string
+  name: string
+  adapterKind: 'webhook'
+  config: Record<string, unknown>
+  enabled: boolean
+  secretSet: Record<string, boolean>
+  lastDeliveryStatus: string
+  lastDeliveryError: string
+  lastDeliveredAt?: string | null
+  createdAt: string
+  updatedAt: string
 }
 
 export interface PlatformEventEntityRef {
@@ -2029,13 +2078,6 @@ export interface AuthRegistrationSettings {
   allowEmailRegistration: boolean
   allowOidcRegistration: boolean
   allowExternalIdentityPassword: boolean
-  smtpHost: string
-  smtpPort: number
-  smtpSecurity: 'none' | 'starttls' | 'tls'
-  smtpUsername: string
-  smtpPasswordSet: boolean
-  smtpFromAddress: string
-  smtpFromName: string
 }
 
 export interface AuthProvider {

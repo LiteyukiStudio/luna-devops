@@ -39,7 +39,7 @@ func (r *Runner) emitBuildEvent(ctx context.Context, run model.BuildRun, status 
 			GitRef:  firstNonEmpty(run.SourceBranch, run.SourceTag, run.SourceCommit),
 			GitSHA:  run.SourceCommit,
 		},
-		Actor:         r.notificationActor(run.CreatedBy, run.TriggeredByName, run.TriggeredByEmail),
+		Actor:         r.notificationActor(ctx, run.CreatedBy, run.TriggeredByName, run.TriggeredByEmail),
 		CorrelationID: run.ID,
 		DedupKey:      "build:" + run.ID + ":" + status,
 		OccurredAt:    time.Now(),
@@ -78,7 +78,7 @@ func (r *Runner) emitReleaseEvent(ctx context.Context, release model.Release, st
 			ImageRef: release.ImageRef,
 			Message:  strings.TrimSpace(message),
 		},
-		Actor:         r.notificationActor(release.CreatedBy, "", ""),
+		Actor:         r.notificationActor(ctx, release.CreatedBy, "", ""),
 		CorrelationID: release.ID,
 		DedupKey:      "release:" + release.ID + ":" + status,
 		OccurredAt:    time.Now(),
@@ -106,6 +106,7 @@ func (r *Runner) emitHookEvent(ctx context.Context, run model.HookRun, status st
 			Status:  status,
 			Message: strings.TrimSpace(message),
 		},
+		Actor:         r.notificationHookActor(ctx, run),
 		CorrelationID: firstNonEmpty(run.ReleaseID, run.BuildRunID, run.ID),
 		DedupKey:      "hook:" + run.ID + ":" + status,
 		OccurredAt:    time.Now(),
@@ -133,7 +134,7 @@ func (r *Runner) emitGatewayEvent(ctx context.Context, route model.GatewayRoute,
 			Status:  status,
 			Message: strings.TrimSpace(message),
 		},
-		Actor:         r.notificationActor(route.CreatedBy, "", ""),
+		Actor:         r.notificationActor(ctx, route.CreatedBy, "", ""),
 		CorrelationID: route.ID,
 		DedupKey:      "gateway:" + route.ID + ":" + status,
 		OccurredAt:    time.Now(),
@@ -165,7 +166,7 @@ func (r *Runner) emitCertificateEvent(ctx context.Context, route model.GatewayRo
 			IssuerKind: route.CertificateIssuerKind,
 			IssuerName: route.CertificateIssuerName,
 		},
-		Actor:         r.notificationActor(route.CreatedBy, "", ""),
+		Actor:         r.notificationActor(ctx, route.CreatedBy, "", ""),
 		CorrelationID: route.ID,
 		DedupKey:      "certificate:" + route.ID + ":" + status + ":" + certificateVersion(route.CertificateNotAfter),
 		OccurredAt:    time.Now(),
@@ -174,13 +175,32 @@ func (r *Runner) emitCertificateEvent(ctx context.Context, route model.GatewayRo
 	})
 }
 
-func (r *Runner) notificationActor(userID string, name string, email string) notification.ActorContext {
+func (r *Runner) notificationHookActor(ctx context.Context, run model.HookRun) notification.ActorContext {
+	if r.db == nil {
+		return notification.ActorContext{}
+	}
+	if buildRunID := strings.TrimSpace(run.BuildRunID); buildRunID != "" {
+		var buildRun model.BuildRun
+		if err := r.db.WithContext(ctx).First(&buildRun, "id = ? and project_id = ?", buildRunID, run.ProjectID).Error; err == nil {
+			return r.notificationActor(ctx, buildRun.CreatedBy, buildRun.TriggeredByName, buildRun.TriggeredByEmail)
+		}
+	}
+	if releaseID := strings.TrimSpace(run.ReleaseID); releaseID != "" {
+		var release model.Release
+		if err := r.db.WithContext(ctx).First(&release, "id = ? and project_id = ?", releaseID, run.ProjectID).Error; err == nil {
+			return r.notificationActor(ctx, release.CreatedBy, "", "")
+		}
+	}
+	return notification.ActorContext{}
+}
+
+func (r *Runner) notificationActor(ctx context.Context, userID string, name string, email string) notification.ActorContext {
 	actor := notification.ActorContext{ID: strings.TrimSpace(userID), Name: strings.TrimSpace(name), Email: strings.TrimSpace(email)}
-	if actor.ID == "" || (actor.Name != "" && actor.Email != "") {
+	if actor.ID == "" || r.db == nil || (actor.Name != "" && actor.Email != "") {
 		return actor
 	}
 	var user model.User
-	if err := r.db.First(&user, "id = ?", actor.ID).Error; err == nil {
+	if err := r.db.WithContext(ctx).First(&user, "id = ?", actor.ID).Error; err == nil {
 		actor.Name = firstNonEmpty(actor.Name, user.Name)
 		actor.Email = firstNonEmpty(actor.Email, user.Email)
 	}

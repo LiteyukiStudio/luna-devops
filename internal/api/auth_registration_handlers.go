@@ -3,7 +3,6 @@ package api
 import (
 	"context"
 	"crypto/rand"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
@@ -16,6 +15,7 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/notification"
+	"github.com/LiteyukiStudio/devops/internal/platformmail"
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
@@ -30,16 +30,9 @@ const (
 )
 
 type authRegistrationSettingsInput struct {
-	AllowEmailRegistration        bool   `json:"allowEmailRegistration"`
-	AllowOIDCRegistration         bool   `json:"allowOidcRegistration"`
-	AllowExternalIdentityPassword bool   `json:"allowExternalIdentityPassword"`
-	SMTPHost                      string `json:"smtpHost"`
-	SMTPPort                      int    `json:"smtpPort"`
-	SMTPSecurity                  string `json:"smtpSecurity"`
-	SMTPUsername                  string `json:"smtpUsername"`
-	SMTPPassword                  string `json:"smtpPassword"`
-	SMTPFromAddress               string `json:"smtpFromAddress"`
-	SMTPFromName                  string `json:"smtpFromName"`
+	AllowEmailRegistration        bool `json:"allowEmailRegistration"`
+	AllowOIDCRegistration         bool `json:"allowOidcRegistration"`
+	AllowExternalIdentityPassword bool `json:"allowExternalIdentityPassword"`
 }
 
 type requestEmailRegistrationCodeInput struct {
@@ -92,36 +85,16 @@ func (h *Handlers) UpdateAuthRegistrationSettings(ctx *gin.Context) {
 	settings.AllowEmailRegistration = input.AllowEmailRegistration
 	settings.AllowOIDCRegistration = input.AllowOIDCRegistration
 	settings.AllowExternalIdentityPassword = input.AllowExternalIdentityPassword
-	settings.SMTPHost = strings.TrimSpace(input.SMTPHost)
-	settings.SMTPPort = input.SMTPPort
-	settings.SMTPSecurity = strings.ToLower(strings.TrimSpace(input.SMTPSecurity))
-	settings.SMTPUsername = strings.TrimSpace(input.SMTPUsername)
-	settings.SMTPFromAddress = strings.TrimSpace(input.SMTPFromAddress)
-	settings.SMTPFromName = strings.TrimSpace(input.SMTPFromName)
-	if settings.SMTPPort == 0 {
-		settings.SMTPPort = 587
-	}
-	if settings.SMTPSecurity == "" {
-		settings.SMTPSecurity = "starttls"
-	}
-	if settings.SMTPFromName == "" {
-		settings.SMTPFromName = "Luna DevOps"
-	}
-	if err := validateAuthRegistrationSettings(settings, strings.TrimSpace(input.SMTPPassword) != ""); err != nil {
-		writeErrorCode(ctx, http.StatusBadRequest, "registration.settings_invalid", err.Error())
-		return
-	}
-	if password := strings.TrimSpace(input.SMTPPassword); password != "" {
-		ref := h.secrets.StoreContext(ctx.Request.Context(), password, user.ID, "auth_registration_settings:smtp_password")
-		if ref == "" {
-			writeErrorCode(ctx, http.StatusInternalServerError, "registration.smtp_secret_failed", "failed to store SMTP password")
+	if settings.AllowEmailRegistration {
+		mailSettings, err := platformmail.Get(ctx.Request.Context(), h.dbFor(ctx))
+		if err != nil {
+			writeErrorCode(ctx, http.StatusInternalServerError, "registration.mail_settings_failed", err.Error())
 			return
 		}
-		settings.SMTPPasswordRef = ref
-	}
-	if settings.SMTPUsername != "" && settings.SMTPPasswordRef == "" {
-		writeErrorCode(ctx, http.StatusBadRequest, "registration.smtp_password_required", "SMTP password is required when username is set")
-		return
+		if err := platformmail.Validate(mailSettings, false); err != nil {
+			writeErrorCode(ctx, http.StatusBadRequest, "registration.mail_not_configured", err.Error())
+			return
+		}
 	}
 	if err := h.dbFor(ctx).Save(&settings).Error; err != nil {
 		writeErrorCode(ctx, http.StatusInternalServerError, "registration.settings_update_failed", err.Error())
@@ -182,7 +155,7 @@ func (h *Handlers) RequestEmailRegistrationCode(ctx *gin.Context) {
 		writeErrorCode(ctx, http.StatusInternalServerError, "registration.challenge_failed", err.Error())
 		return
 	}
-	if err := h.sendRegistrationEmail(ctx.Request.Context(), settings, challenge, code); err != nil {
+	if err := h.sendRegistrationEmail(ctx.Request.Context(), challenge, code); err != nil {
 		_ = h.dbFor(ctx).Delete(&challenge).Error
 		writeErrorCode(ctx, http.StatusBadGateway, "registration.email_send_failed", err.Error())
 		return
@@ -326,9 +299,6 @@ func (h *Handlers) ensureAuthRegistrationSettings(ctx context.Context) model.Aut
 	settings = model.AuthRegistrationSettings{
 		ID:                    authRegistrationSettingsID,
 		AllowOIDCRegistration: true,
-		SMTPPort:              587,
-		SMTPSecurity:          "starttls",
-		SMTPFromName:          "Luna DevOps",
 	}
 	_ = h.dbWithContext(ctx).Create(&settings).Error
 	return settings
@@ -339,38 +309,7 @@ func authRegistrationSettingsResponse(settings model.AuthRegistrationSettings) g
 		"allowEmailRegistration":        settings.AllowEmailRegistration,
 		"allowOidcRegistration":         settings.AllowOIDCRegistration,
 		"allowExternalIdentityPassword": settings.AllowExternalIdentityPassword,
-		"smtpHost":                      settings.SMTPHost,
-		"smtpPort":                      settings.SMTPPort,
-		"smtpSecurity":                  settings.SMTPSecurity,
-		"smtpUsername":                  settings.SMTPUsername,
-		"smtpPasswordSet":               strings.TrimSpace(settings.SMTPPasswordRef) != "",
-		"smtpFromAddress":               settings.SMTPFromAddress,
-		"smtpFromName":                  settings.SMTPFromName,
 	}
-}
-
-func validateAuthRegistrationSettings(settings model.AuthRegistrationSettings, passwordProvided bool) error {
-	if settings.SMTPPort < 1 || settings.SMTPPort > 65535 {
-		return errors.New("SMTP port must be between 1 and 65535")
-	}
-	switch settings.SMTPSecurity {
-	case "none", "starttls", "tls":
-	default:
-		return errors.New("SMTP security must be none, starttls, or tls")
-	}
-	if settings.AllowEmailRegistration {
-		if settings.SMTPHost == "" || settings.SMTPFromAddress == "" {
-			return errors.New("SMTP host and sender address are required when email registration is enabled")
-		}
-		address, err := mail.ParseAddress(settings.SMTPFromAddress)
-		if err != nil || !strings.EqualFold(address.Address, settings.SMTPFromAddress) {
-			return errors.New("SMTP sender address is invalid")
-		}
-		if settings.SMTPUsername != "" && settings.SMTPPasswordRef == "" && !passwordProvided {
-			return errors.New("SMTP password is required when username is set")
-		}
-	}
-	return nil
 }
 
 func normalizedRegistrationEmail(value string) (string, error) {
@@ -390,25 +329,26 @@ func registrationVerificationCode() (string, error) {
 	return fmt.Sprintf("%06d", value.Int64()), nil
 }
 
-func (h *Handlers) sendRegistrationEmail(ctx context.Context, settings model.AuthRegistrationSettings, challenge model.EmailRegistrationChallenge, code string) error {
-	from := settings.SMTPFromAddress
-	if settings.SMTPFromName != "" {
-		from = (&mail.Address{Name: settings.SMTPFromName, Address: settings.SMTPFromAddress}).String()
-	}
-	cfg := notification.SMTPConfig{
-		Host:      settings.SMTPHost,
-		Port:      settings.SMTPPort,
-		Security:  settings.SMTPSecurity,
-		Username:  settings.SMTPUsername,
-		From:      from,
-		To:        []string{challenge.Email},
-		Timeout:   15,
-		SecretRef: settings.SMTPPasswordRef,
-	}
-	raw, err := json.Marshal(cfg)
-	if err != nil {
-		return err
-	}
+type platformMailSendFunc func(
+	context.Context,
+	*gorm.DB,
+	notification.SecretResolver,
+	string,
+	notification.RenderedMessage,
+) (notification.SendResult, error)
+
+func (h *Handlers) sendRegistrationEmail(ctx context.Context, challenge model.EmailRegistrationChallenge, code string) error {
+	return sendRegistrationEmailWith(ctx, h.dbWithContext(ctx), h.secrets, challenge, code, platformmail.Send)
+}
+
+func sendRegistrationEmailWith(
+	ctx context.Context,
+	db *gorm.DB,
+	resolver notification.SecretResolver,
+	challenge model.EmailRegistrationChallenge,
+	code string,
+	send platformMailSendFunc,
+) error {
 	message := notification.RenderedMessage{
 		Subject: "Luna DevOps verification code",
 		Body:    fmt.Sprintf("Your Luna DevOps verification code is %s. It expires in 10 minutes.", code),
@@ -417,6 +357,6 @@ func (h *Handlers) sendRegistrationEmail(ctx context.Context, settings model.Aut
 		message.Subject = "Luna DevOps 邮箱验证码"
 		message.Body = fmt.Sprintf("你的 Luna DevOps 邮箱验证码是 %s，10 分钟内有效。", code)
 	}
-	_, err = (notification.SMTPAdapter{}).Send(ctx, raw, nil, message, h.secrets)
+	_, err := send(ctx, db, resolver, challenge.Email, message)
 	return err
 }

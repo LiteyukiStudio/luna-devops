@@ -354,7 +354,9 @@ func assertFreshMigrationState(t *testing.T, db *gorm.DB) {
 		"oauth_authorization_codes",
 		"oauth_refresh_tokens",
 		"auth_registration_settings",
+		"platform_mail_settings",
 		"email_registration_challenges",
+		"user_notification_preferences",
 		"inbox_messages",
 		"inbox_action_requests",
 		"project_volume_quota_usage",
@@ -382,6 +384,8 @@ func assertFreshMigrationState(t *testing.T, db *gorm.DB) {
 		{table: "access_tokens", column: "oauth_application_id"},
 		{table: "access_tokens", column: "oauth_grant_id"},
 		{table: "auth_registration_settings", column: "allow_oidc_registration"},
+		{table: "notification_channels", column: "owner_user_id"},
+		{table: "notification_deliveries", column: "recipient_user_id"},
 		{table: "user_remember_tokens", column: "family_id"},
 		{table: "user_remember_tokens", column: "consumed_at"},
 		{table: "user_remember_tokens", column: "revoked_at"},
@@ -426,6 +430,8 @@ func assertFreshMigrationState(t *testing.T, db *gorm.DB) {
 		table  string
 		column string
 	}{
+		{table: "auth_registration_settings", column: "smtp_host"},
+		{table: "auth_registration_settings", column: "smtp_password_ref"},
 		{table: "applications", column: "source_type"},
 		{table: "applications", column: "repository_url"},
 		{table: "applications", column: "image_reference"},
@@ -580,7 +586,9 @@ func assertStableModelMigrationCoverage(t *testing.T, db *gorm.DB) {
 		&model.ExternalIdentity{},
 		&model.AuthAdmissionPolicy{},
 		&model.AuthRegistrationSettings{},
+		&model.PlatformMailSettings{},
 		&model.EmailRegistrationChallenge{},
+		&model.UserNotificationPreference{},
 		&model.Project{},
 		&model.ProjectMember{},
 		&model.ProjectPin{},

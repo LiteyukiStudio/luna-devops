@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/LiteyukiStudio/devops/internal/model"
+	"github.com/LiteyukiStudio/devops/internal/notification"
 	"github.com/LiteyukiStudio/devops/internal/observability"
 	dnsprovider "github.com/LiteyukiStudio/devops/internal/provider/dns"
 	kubeprovider "github.com/LiteyukiStudio/devops/internal/provider/kubernetes"
@@ -44,6 +45,7 @@ type Runner struct {
 	volumeTransferJobImage       string
 	volumeTransferMaxBytes       int64
 	workerMetrics                *observability.WorkerMetrics
+	personalEmailSender          func(context.Context, string, notification.RenderedMessage) (notification.SendResult, error)
 }
 
 const (

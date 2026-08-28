@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/url"
 	"os"
 	"regexp"
 	"runtime"
@@ -385,16 +386,28 @@ var (
 	bearerCredentialPattern = regexp.MustCompile(`(?i)\b(Bearer\s+)[A-Za-z0-9._~+/=-]+`)
 	credentialPattern       = regexp.MustCompile(`(?i)\b(authorization|cookie|set-cookie|password|passwd|secret|token|client_secret|api[-_]?key|access_token|refresh_token|private_key)(\s*[=:]\s*)("[^"]*"|'[^']*'|[^\s,;]+)`)
 	urlCredentialPattern    = regexp.MustCompile(`(?i)([a-z][a-z0-9+.-]*://)[^\s/@:]+:[^\s/@]+@`)
+	absoluteHTTPURLPattern  = regexp.MustCompile(`(?i)\bhttps?://[^\s"'<>]+`)
 	privateKeyPattern       = regexp.MustCompile(`(?s)-----BEGIN (?:[A-Z ]+ )?PRIVATE KEY-----.*?-----END (?:[A-Z ]+ )?PRIVATE KEY-----`)
 )
 
-// RedactText removes credential values while retaining addresses, paths,
-// resource identifiers and the rest of the diagnostic error chain.
+// RedactText removes credential values and sensitive HTTP URL paths while
+// retaining non-URL resource identifiers and the rest of the diagnostic chain.
 func RedactText(value string) string {
+	value = absoluteHTTPURLPattern.ReplaceAllStringFunc(value, redactAbsoluteHTTPURL)
 	value = bearerCredentialPattern.ReplaceAllString(value, `${1}[REDACTED]`)
 	value = credentialPattern.ReplaceAllString(value, `${1}${2}[REDACTED]`)
 	value = urlCredentialPattern.ReplaceAllString(value, `${1}[REDACTED]@`)
 	return privateKeyPattern.ReplaceAllString(value, "[REDACTED PRIVATE KEY]")
+}
+
+func redactAbsoluteHTTPURL(value string) string {
+	trimmed := strings.TrimRight(value, ".,;:!?)]}")
+	suffix := value[len(trimmed):]
+	parsed, err := url.Parse(trimmed)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return value
+	}
+	return (&url.URL{Scheme: parsed.Scheme, Host: parsed.Host, Path: "/"}).String() + suffix
 }
 
 func sanitizeRecord(record slog.Record) slog.Record {

@@ -128,7 +128,7 @@ func (adapter WebhookAdapter) Send(ctx context.Context, config json.RawMessage, 
 		}
 		req.Header.Set(key, value)
 	}
-	client := security.NewHTTPClient(security.PublicEgressPolicy(), timeout)
+	client := newWebhookHTTPClient(timeout)
 	resp, err := client.Do(req)
 	if err != nil {
 		return SendResult{}, err
@@ -139,6 +139,14 @@ func (adapter WebhookAdapter) Send(ctx context.Context, config json.RawMessage, 
 		return SendResult{StatusCode: resp.StatusCode, ResponseSnippet: snippet}, fmt.Errorf("webhook returned status %d", resp.StatusCode)
 	}
 	return SendResult{StatusCode: resp.StatusCode, ResponseSnippet: snippet}, nil
+}
+
+func newWebhookHTTPClient(timeout time.Duration) *http.Client {
+	client := security.NewHTTPClient(security.PublicEgressPolicy(), timeout)
+	client.CheckRedirect = func(_ *http.Request, _ []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+	return client
 }
 
 func (adapter WebhookAdapter) Test(ctx context.Context, config json.RawMessage, secrets json.RawMessage, resolver SecretResolver) error {
