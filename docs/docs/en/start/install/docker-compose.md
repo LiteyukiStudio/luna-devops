@@ -30,7 +30,7 @@ Prepare production settings first:
 cp .env.example .env
 ```
 
-Edit `.env`, set `SECRET_ENCRYPTION_KEY` to a stable random key, and replace the placeholders in `BOOTSTRAP_TOKEN` and `REDIS_PASSWORD`. Use URL-safe letters and digits for the Redis password. Compose passes it directly to the built-in Redis server and assembles the complete URI for API and Worker. The complete stack defaults to production mode and does not expose a fixed development administrator.
+Edit `.env`, set `SECRET_ENCRYPTION_KEY` to a stable random key, and replace the placeholders in `BOOTSTRAP_TOKEN` and `REDIS_PASSWORD`. Set `PUBLIC_BASE_URL` to the HTTP(S) root that users actually open; use `http://localhost:8088` for local-only access. Use URL-safe letters and digits for the Redis password. Compose passes it directly to the built-in Redis server and assembles the complete URI for API and Worker. The complete stack defaults to production mode and does not expose a fixed development administrator.
 
 Run this from the repository root:
 
@@ -66,7 +66,7 @@ After deployment, configure the port, reverse proxy, domain, and TLS for the req
 http://localhost:8088
 ```
 
-The minimal Compose file does not inject an external access URL. When using another URL or enabling OAuth or webhooks, explicitly add `PUBLIC_BASE_URL` to the API service as described in [API Configuration](/en/start/configuration/api); add `APP_CORS_ORIGINS` as well only when the console is deployed cross-origin. PostgreSQL and Redis remain inside the container network and do not need external exposure.
+Compose passes `PUBLIC_BASE_URL` from `.env` to both API and Worker for OAuth, webhooks, and notification detail links. Recreate both services after changing it. When the console is deployed cross-origin, also configure `APP_CORS_ORIGINS` as described in [API Configuration](/en/start/configuration/api). PostgreSQL and Redis remain inside the container network and do not need external exposure.
 
 ## Check Services
 

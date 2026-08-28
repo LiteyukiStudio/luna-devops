@@ -1,5 +1,10 @@
 # TODO
 
+## 2026-08-28 通知详情链接 Compose 配置修复
+
+- [x] 将 `PUBLIC_BASE_URL` 从 Compose 环境同时透传给 API 和 Worker，确保 Worker 生成通知详情绝对地址。
+- [x] 增加 Compose 部署契约测试，并同步中英文部署说明与重建要求。
+
 ## 2026-08-28 跨项目列表可见范围统一
 
 - [x] 将看板、项目空间、事件和跨项目资源列表的 OpenAPI 查询契约统一为 `visibility=related|all`，默认 `related`，并明确管理员显式全局查询及 400/403 语义。

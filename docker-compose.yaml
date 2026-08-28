@@ -38,6 +38,7 @@ services:
     environment:
       SECRET_ENCRYPTION_KEY: ${SECRET_ENCRYPTION_KEY:?SECRET_ENCRYPTION_KEY is required}
       BOOTSTRAP_TOKEN: ${BOOTSTRAP_TOKEN:-}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-}
       DATABASE_URL: postgres://devops:devops@postgres:5432/devops?sslmode=disable
       REDIS_ADDR: redis://default:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379/0
       AI_ASSISTANT_AVAILABLE: ${AI_ASSISTANT_AVAILABLE:-false}
@@ -63,6 +64,7 @@ services:
       - devops-internal
     environment:
       SECRET_ENCRYPTION_KEY: ${SECRET_ENCRYPTION_KEY:?SECRET_ENCRYPTION_KEY is required}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-}
       DATABASE_URL: postgres://devops:devops@postgres:5432/devops?sslmode=disable
       REDIS_ADDR: redis://default:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379/0
     depends_on:

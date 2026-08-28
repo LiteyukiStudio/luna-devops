@@ -30,7 +30,7 @@ DEVOPS_IMAGE_TAG=v0.1.0-rc.1 docker compose up -d
 cp .env.example .env
 ```
 
-编辑 `.env`，为 `SECRET_ENCRYPTION_KEY` 填写稳定随机密钥，并替换 `BOOTSTRAP_TOKEN` 和 `REDIS_PASSWORD` 中的占位值。Redis 密码请使用字母和数字等 URL-safe 字符；Compose 会直接用它启动内置 Redis，并自动为 API 和 Worker 组装完整连接 URI。完整 Compose 默认以生产模式启动，不会暴露固定开发管理员。
+编辑 `.env`，为 `SECRET_ENCRYPTION_KEY` 填写稳定随机密钥，并替换 `BOOTSTRAP_TOKEN` 和 `REDIS_PASSWORD` 中的占位值。把 `PUBLIC_BASE_URL` 改成用户实际访问平台的 HTTP(S) 根地址；仅在本机使用时填写 `http://localhost:8088`。Redis 密码请使用字母和数字等 URL-safe 字符；Compose 会直接用它启动内置 Redis，并自动为 API 和 Worker 组装完整连接 URI。完整 Compose 默认以生产模式启动，不会暴露固定开发管理员。
 
 在仓库根目录执行：
 
@@ -66,7 +66,7 @@ AI_ASSISTANT_AVAILABLE=true docker compose --profile ai up -d
 http://localhost:8088
 ```
 
-最小 Compose 不注入外部访问地址。使用其他访问地址或接入 OAuth、Webhook 时，请按[API 配置](/start/configuration/api)为 API 显式添加 `PUBLIC_BASE_URL`；控制台跨域部署时再同时添加 `APP_CORS_ORIGINS`。PostgreSQL 和 Redis 保留在容器网络中，不需要对外暴露。
+Compose 会把 `.env` 中的 `PUBLIC_BASE_URL` 同时传给 API 和 Worker，用于 OAuth、Webhook 以及通知详情链接。修改该值后需要重新创建这两个服务；控制台跨域部署时再按 [API 配置](/start/configuration/api)设置 `APP_CORS_ORIGINS`。PostgreSQL 和 Redis 保留在容器网络中，不需要对外暴露。
 
 ## 检查状态
 
