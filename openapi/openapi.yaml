@@ -4475,9 +4475,9 @@ paths:
       summary: List Notification Channels
       x-luna-agent:
         aliases:
-          zh: [列出通知渠道, 查询通知渠道, 通知渠道列表]
-          en: [list notification channels, notification channel list]
-        purpose: { zh: 分页列出已配置的通知渠道。, en: List configured notification channels. }
+          zh: [查看平台共享通知渠道, 列出平台共享通知渠道, 管理员共享通知渠道, 列出通知渠道, 查询通知渠道, 通知渠道列表]
+          en: [view platform shared notification channels, list administrator shared notification channels, list notification channels, notification channel list]
+        purpose: { zh: 分页列出由平台管理员配置的共享通知渠道。, en: List shared notification channels configured by platform administrators. }
         avoidWhen: { zh: 需要通知发送历史或事件时不要使用。, en: Do not use for notification delivery history or events. }
         preconditions: { zh: [当前用户具有通知配置读取权限], en: [The current user can read notification configuration] }
         successEvidence: { zh: 返回分页通知渠道列表。, en: Returns a paginated notification channel list. }

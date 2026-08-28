@@ -164,7 +164,7 @@ func TestMigrateBootstrapsFreshPostgresSchema(t *testing.T) {
 		t.Fatalf("migrate fresh database: %v", err)
 	}
 	assertRetiredAIDeliveryStateRemoved(t, testDB)
-	if err := runner.Steps(-1); err != nil {
+	if err := runner.Migrate(retiredAIDeliveryStateVersion); err != nil {
 		t.Fatalf("roll back retired AI delivery state migration: %v", err)
 	}
 	assertRetiredAIDeliveryStateSchemaRestored(t, testDB)

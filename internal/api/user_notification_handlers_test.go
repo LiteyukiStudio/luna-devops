@@ -131,6 +131,7 @@ func TestPersonalNotificationInputsRejectInvalidPresetSecretsAndPreferences(t *t
 }
 
 func TestPersonalNotificationChannelPresetControlsStoredAdapterAndConfig(t *testing.T) {
+	t.Setenv("SECRET_ENCRYPTION_KEY", "personal-notification-preset-test-key")
 	db := testdb.Open(t, testdb.Options{
 		SchemaPrefix: "personal_notification_preset_test",
 		Migrate: func(db *gorm.DB) error {
@@ -315,6 +316,7 @@ func TestPersonalNotificationChannelLimit(t *testing.T) {
 }
 
 func TestPersonalNotificationChannelLimitIsAtomic(t *testing.T) {
+	t.Setenv("SECRET_ENCRYPTION_KEY", "personal-notification-atomic-limit-test-key")
 	db := testdb.Open(t, testdb.Options{
 		SchemaPrefix: "personal_notification_atomic_limit_test",
 		Migrate: func(db *gorm.DB) error {

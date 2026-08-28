@@ -92,10 +92,16 @@ func (h *Handlers) UpdateMyNotificationPreferences(ctx *gin.Context) {
 		CreatedAt:      now,
 		UpdatedAt:      now,
 	}
-	if err := h.dbFor(ctx).Select("user_id", "email_enabled", "event_types_json", "created_at", "updated_at").Clauses(clause.OnConflict{
+	if err := h.dbFor(ctx).Model(&model.UserNotificationPreference{}).Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "user_id"}},
 		DoUpdates: clause.AssignmentColumns([]string{"email_enabled", "event_types_json", "updated_at"}),
-	}).Create(&preference).Error; err != nil {
+	}).Create(map[string]any{
+		"user_id":          preference.UserID,
+		"email_enabled":    preference.EmailEnabled,
+		"event_types_json": preference.EventTypesJSON,
+		"created_at":       preference.CreatedAt,
+		"updated_at":       preference.UpdatedAt,
+	}).Error; err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}

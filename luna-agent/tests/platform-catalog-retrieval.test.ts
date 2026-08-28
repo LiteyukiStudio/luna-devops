@@ -26,7 +26,9 @@ describe("real PlatformCatalog retrieval", () => {
     ["列出平台用户", "listUsers"],
     ["查看平台账单概览", "getBillingSummary"],
     ["查看集群压力", "observeRuntimeClusterPressure"],
-    ["查看通知渠道", "listNotificationChannels"],
+    ["查看平台共享通知渠道", "listNotificationChannels"],
+    ["列出我的通知渠道", "listMyNotificationChannels"],
+    ["查看我的通知投递", "listMyNotificationDeliveries"],
     ["搜索互联网", "webSearch"],
     ["读取公开网页正文", "fetchWebPage"],
     ["create project", "createProject"],
@@ -69,8 +71,8 @@ describe("real PlatformCatalog retrieval", () => {
     const browsed = Array.from({ length: Math.ceil(operations.length / 100) }, (_, index) =>
       platformCatalog.search({ page: index + 1, pageSize: 100 }).items.map(item => item.operationId)).flat()
 
-    // Stateful runtime command sessions were three operations; runtime exec is now one stateless operation.
-    expect(operations).toHaveLength(206)
+    // Global mail contributes three operations and personal notification self-service contributes nine.
+    expect(operations).toHaveLength(218)
     expect(new Set(browsed)).toEqual(new Set(operations.map(operation => operation.operationId)))
     for (const operation of operations) {
       expect(platformCatalog.search({ query: operation.operationId, pageSize: 8 }).items[0]?.operationId)
