@@ -19,6 +19,8 @@ var (
 	isolationSequence       atomic.Uint64
 )
 
+const postgresIdentifierMaxBytes = 63
+
 type Options struct {
 	Environment        string
 	SchemaPrefix       string
@@ -159,5 +161,10 @@ func OpenDatabase(t testing.TB, options Options) *gorm.DB {
 }
 
 func isolatedName(prefix string) string {
-	return fmt.Sprintf("%s_%d_%d", prefix, time.Now().UnixNano(), isolationSequence.Add(1))
+	suffix := fmt.Sprintf("_%d_%d", time.Now().UnixNano(), isolationSequence.Add(1))
+	maxPrefixBytes := postgresIdentifierMaxBytes - len(suffix)
+	if len(prefix) > maxPrefixBytes {
+		prefix = prefix[:maxPrefixBytes]
+	}
+	return prefix + suffix
 }
