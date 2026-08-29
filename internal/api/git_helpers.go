@@ -17,7 +17,6 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"os"
 	"strconv"
 	"strings"
 )
@@ -31,8 +30,8 @@ func (h *Handlers) gitWebhookURL(ctx *gin.Context, bindingID string) string {
 }
 
 func (h *Handlers) externalBaseURL(_ *gin.Context) string {
-	if value := strings.TrimRight(os.Getenv("PUBLIC_BASE_URL"), "/"); value != "" {
-		return value
+	if h != nil {
+		return h.config.PublicBaseURL
 	}
 	return ""
 }

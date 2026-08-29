@@ -1,5 +1,4 @@
 import auth from './ko-KR/auth'
-import bootstrap from './ko-KR/bootstrap'
 import common from './ko-KR/common'
 import errors from './ko-KR/errors'
 import languages from './ko-KR/languages'
@@ -21,7 +20,6 @@ const koKR = {
   oauthApps,
   theme,
   loginPage,
-  bootstrap,
 }
 
 export default koKR

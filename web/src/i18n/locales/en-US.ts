@@ -1,5 +1,4 @@
 import auth from './en-US/auth'
-import bootstrap from './en-US/bootstrap'
 import common from './en-US/common'
 import errors from './en-US/errors'
 import languages from './en-US/languages'
@@ -21,7 +20,6 @@ const enUS = {
   oauthApps,
   theme,
   loginPage,
-  bootstrap,
 }
 
 export default enUS

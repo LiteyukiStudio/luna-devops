@@ -117,12 +117,6 @@ const errors = {
     model_output_limit_invalid: '模型目錄的輸出上限無效，請聯絡平臺管理員檢查模型配置。',
     wallet_balance_insufficient: '個人錢包可用餘額不足，模型呼叫未傳送。',
   },
-  bootstrap: {
-    already_initialized: '平臺管理員已經初始化，請直接登入。',
-    invalid_input: '請輸入有效郵箱和至少 8 位密碼。',
-    token_invalid: '初始化令牌不正確。',
-    unavailable: '生產環境尚未配置初始化令牌，請聯絡部署管理員。',
-  },
   request: {
     invalid: '請求引數不正確',
     invalid_json: '請求 JSON 格式不正確',

@@ -40,10 +40,11 @@ spec:
         {{- with .Values.ai.agent.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
-      {{- with .Values.ai.agent.podAnnotations }}
       annotations:
+        checksum.luna.devops/managed-secrets: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        {{- with .Values.ai.agent.podAnnotations }}
         {{- toYaml . | nindent 8 }}
-      {{- end }}
+        {{- end }}
     spec:
       automountServiceAccountToken: false
       {{- with .Values.imagePullSecrets }}
@@ -75,6 +76,8 @@ spec:
               value: {{ .Values.app.logColor | quote }}
             - name: LOG_LEVEL
               value: {{ .Values.app.logLevel | quote }}
+            - name: OTEL_SERVICE_VERSION
+              value: {{ include "luna-devops.imageTag" (dict "Chart" .Chart "tag" .Values.ai.agent.image.tag) | quote }}
             - name: AUTH_MODE
               value: bff-hmac
             - name: LUNA_API_BASE_URL
@@ -97,6 +100,8 @@ spec:
                   key: {{ .Values.ai.internalSecretKey }}
             - name: AI_OBSERVABILITY_CAPTURE_CONTENT
               value: {{ .Values.ai.agent.observabilityCaptureContent | quote }}
+            - name: AI_OBSERVABILITY_CAPTURE_DATABASE_SPANS
+              value: {{ .Values.ai.agent.observabilityCaptureDatabaseSpans | quote }}
             {{- if .Values.observability.otlpEndpoint }}
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: {{ .Values.observability.otlpEndpoint | quote }}

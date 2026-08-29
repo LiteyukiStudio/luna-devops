@@ -117,12 +117,6 @@ const errors = {
     model_output_limit_invalid: 'モデルカタログの出力上限が無効です。プラットフォーム管理者に連絡してモデル設定を確認してください。',
     wallet_balance_insufficient: '個人ウォレットの利用可能残高が不足しています。モデル呼び出しは送信されませんでした。',
   },
-  bootstrap: {
-    already_initialized: 'プラットフォーム管理者は既に初期化されています。直接ログインしてください。',
-    invalid_input: '有効なメールアドレスと 8 文字以上のパスワードを入力してください。',
-    token_invalid: '初期化トークンが正しくありません。',
-    unavailable: '本番環境に初期化トークンがまだ設定されていません。デプロイ管理者に連絡してください。',
-  },
   request: {
     invalid: 'リクエストパラメータが正しくありません',
     invalid_json: 'リクエスト JSON 形式が正しくありません',

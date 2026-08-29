@@ -27,7 +27,7 @@ API also serves the web console, so no separate frontend service is required.
 
 ## Prepare Configuration
 
-At minimum, configure PostgreSQL, Redis, the public URL, and the secret encryption key:
+At minimum, configure PostgreSQL, Redis, the public URL, the secret encryption key, and the first administrator:
 
 ```bash
 export APP_ENV=production
@@ -35,9 +35,15 @@ export DATABASE_URL='postgres://devops:password@127.0.0.1:5432/devops?sslmode=di
 export REDIS_ADDR='redis://default:password@127.0.0.1:6379/0'
 export PUBLIC_BASE_URL='https://devops.example.com'
 export SECRET_ENCRYPTION_KEY='replace-with-a-stable-random-value'
+export INITIAL_ADMIN_EMAIL='admin@example.com'
+export INITIAL_ADMIN_PASSWORD='replace-with-a-strong-8-to-72-byte-password'
+export INITIAL_ADMIN_NAME='Platform Admin'
+export INITIAL_ADMIN_LANGUAGE='en-US'
 ```
 
 `SECRET_ENCRYPTION_KEY` encrypts Git, registry, and OIDC secrets. Keep it stable after deployment, otherwise old secrets may not decrypt.
+
+`INITIAL_ADMIN_*` is for API only and creates the first administrator in a fresh database. It never overwrites an active administrator; if users exist but no active administrator remains, API refuses to start until one is restored. Worker does not need and must not receive the administrator password.
 
 ## Start API
 
@@ -79,6 +85,10 @@ Environment=DATABASE_URL=postgres://devops:password@127.0.0.1:5432/devops?sslmod
 Environment=REDIS_ADDR=redis://default:password@127.0.0.1:6379/0
 Environment=PUBLIC_BASE_URL=https://devops.example.com
 Environment=SECRET_ENCRYPTION_KEY=replace-with-a-stable-random-value
+Environment=INITIAL_ADMIN_EMAIL=admin@example.com
+Environment=INITIAL_ADMIN_PASSWORD=replace-with-a-strong-8-to-72-byte-password
+Environment=INITIAL_ADMIN_NAME=Platform Admin
+Environment=INITIAL_ADMIN_LANGUAGE=en-US
 ExecStart=/opt/luna-devops/bin/luna-devops-api
 Restart=always
 
@@ -86,7 +96,7 @@ Restart=always
 WantedBy=multi-user.target
 ```
 
-For worker, reuse the same environment variables and change `ExecStart`:
+For worker, reuse the database, Redis, public URL, and encryption settings, but do not pass `INITIAL_ADMIN_*`. Change `ExecStart` to:
 
 ```ini
 ExecStart=/opt/luna-devops/bin/luna-devops-worker

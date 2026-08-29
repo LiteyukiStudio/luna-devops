@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import type { InitializeAdminInput, LoginInput, RecentLoginUser, SessionContextValue } from './session-context'
+import type { LoginInput, RecentLoginUser, SessionContextValue } from './session-context'
 import type { CurrentUser } from '@/api'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useMemo, useState } from 'react'
@@ -54,15 +54,6 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     },
   })
 
-  const initializeMutation = useMutation({
-    mutationFn: api.initializeAdmin,
-    onSuccess: (result) => {
-      setCurrentUser(queryClient, result.user)
-      setRecentLoginUsers(cacheRecentLoginUser(result.user))
-      queryClient.invalidateQueries({ queryKey: ['bootstrap-status'] })
-    },
-  })
-
   const logoutMutation = useMutation({
     mutationFn: api.logout,
     onSuccess: () => {
@@ -96,15 +87,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const value = useMemo<SessionContextValue>(() => ({
     initialized: currentUser.isFetched,
     isLoading: currentUser.isLoading,
-    isLoggingIn: loginMutation.isPending || initializeMutation.isPending || resumeLoginMutation.isPending,
+    isLoggingIn: loginMutation.isPending || resumeLoginMutation.isPending,
     isLoggingOut: logoutMutation.isPending,
     pendingLoginUsername,
     recentLoginUsers,
     user: currentUser.data,
-    async initializeAdmin(input: InitializeAdminInput) {
-      const result = await initializeMutation.mutateAsync(input)
-      return result.user
-    },
     async login(input: LoginInput) {
       setPendingLoginUsername(input.email)
       try {
@@ -137,7 +124,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     async updateLanguage(language: CurrentUser['language']) {
       return updateLanguageMutation.mutateAsync({ language })
     },
-  }), [currentUser.data, currentUser.isFetched, currentUser.isLoading, initializeMutation, loginMutation, logoutMutation, pendingLoginUsername, queryClient, recentLoginUsers, resumeLoginMutation, updateLanguageMutation, updateProfileMutation])
+  }), [currentUser.data, currentUser.isFetched, currentUser.isLoading, loginMutation, logoutMutation, pendingLoginUsername, queryClient, recentLoginUsers, resumeLoginMutation, updateLanguageMutation, updateProfileMutation])
 
   return <SessionContext value={value}>{children}</SessionContext>
 }

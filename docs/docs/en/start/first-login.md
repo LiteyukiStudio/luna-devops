@@ -1,22 +1,35 @@
-# Initialize the Platform
+# First Sign-In
 
-After the platform starts, create the first administrator and finish the platform-level setup.
+On the first startup against a fresh database, API creates the first administrator from deployment configuration. The platform has no browser initialization endpoint and includes no fixed administrator credentials.
 
-## Create the first administrator
+## Prepare administrator configuration
 
-Production deployments do not include a fixed administrator. Open:
+Set at least these values before starting API:
 
-```text
-https://your-platform.example.com/bootstrap
+```dotenv
+INITIAL_ADMIN_EMAIL=admin@example.com
+INITIAL_ADMIN_PASSWORD=replace-with-a-strong-8-to-72-byte-password
+INITIAL_ADMIN_NAME=Platform Admin
+INITIAL_ADMIN_LANGUAGE=en-US
 ```
 
-Enter the `BOOTSTRAP_TOKEN` configured during deployment and create the administrator. Then **remove or rotate this one-time credential** in the deployment configuration or Secret manager.
+The name may be empty and then falls back to the email. The language may be `zh-CN` or `en-US`. Supply the password through the deployment environment or a Kubernetes Secret, and never commit it to the repository.
 
-> `/bootstrap` is for initial setup only. Later sign-ins should use local accounts or an OIDC identity provider configured by an administrator.
+These settings are consumed only when the database has never contained a user. If an active platform administrator already exists, API does not compare or overwrite its email, name, language, or password. If users exist but no active administrator remains, API refuses to start until an existing administrator is restored; configuration cannot silently create a second administrator.
+
+## Sign in
+
+After the API health check passes, open:
+
+```text
+https://your-platform.example.com/login
+```
+
+Sign in with the configured email and password. Change the password later through account settings; changing `INITIAL_ADMIN_PASSWORD` does not reset an existing account.
 
 ## Finish platform settings
 
-Open **Global Settings** and check at least:
+After the first sign-in, open **Global Settings** and check at least:
 
 1. Site name, public URL, and default language.
 2. Registration policy and sign-in methods; internal platforms normally disable open registration.

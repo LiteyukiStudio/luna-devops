@@ -15,15 +15,37 @@ You need:
 
 ## Install
 
-Run this from the repository root:
+For a fresh database, first store the initial administrator configuration in a Kubernetes Secret. Keep the following file readable only by its owner and remove it securely after creating the Secret. The name and language keys may be omitted; API falls back to the email and `zh-CN`:
 
-```bash
-helm install luna-devops ./charts/luna-devops \
-  --namespace luna-devops \
-  --create-namespace
+```dotenv title="initial-admin.env"
+initial-admin-email=admin@example.com
+initial-admin-password=replace-with-a-strong-8-to-72-byte-password
 ```
 
-API, Worker, PostgreSQL, and Redis are installed by default. The AI assistant is disabled; enable it with `ai.enabled=true` and provide a stable `ai-internal-secret` through `ai.existingSecret`.
+Then run this from the repository root:
+
+```bash
+kubectl create namespace luna-devops
+kubectl -n luna-devops create secret generic luna-devops-initial-admin \
+  --from-env-file=initial-admin.env
+helm install luna-devops ./charts/luna-devops \
+  --namespace luna-devops \
+  --set api.initialAdmin.existingSecret=luna-devops-initial-admin
+```
+
+API, Worker, PostgreSQL, and Redis are installed by default. The administrator Secret is injected only into API; API creates the account only in a fresh database and never overwrites it during upgrades or restarts. A database with an active administrator can omit `api.initialAdmin`, and the chart still installs or upgrades normally. The AI assistant is disabled; enable it with `ai.enabled=true` and provide a stable `ai-internal-secret` through `ai.existingSecret`.
+
+After confirming that sign-in works, detach API from the initialization Secret and remove it:
+
+```bash
+helm upgrade luna-devops ./charts/luna-devops \
+  --namespace luna-devops \
+  --reuse-values \
+  --set-string api.initialAdmin.existingSecret=
+kubectl -n luna-devops delete secret luna-devops-initial-admin
+```
+
+All four Secret key references are optional. When `existingSecret`, `email`, `name`, `password`, and `language` are empty, the chart creates no initial administrator Secret. It creates a managed Secret only when at least one administrator field is explicitly supplied, and validates the password and language only when they are non-empty.
 
 ## Open The Console
 
@@ -36,7 +58,7 @@ kubectl -n luna-devops port-forward svc/luna-devops-api 8088:80
 Then visit:
 
 ```text
-http://localhost:8088
+http://localhost:8088/login
 ```
 
 ## Use A Fixed Version
@@ -45,6 +67,7 @@ http://localhost:8088
 helm upgrade --install luna-devops ./charts/luna-devops \
   --namespace luna-devops \
   --create-namespace \
+  --set api.initialAdmin.existingSecret=luna-devops-initial-admin \
   --set api.image.tag=v0.1.0-rc.1 \
   --set worker.image.tag=v0.1.0-rc.1 \
   --set ai.agent.image.tag=v0.1.0-rc.1
@@ -58,6 +81,7 @@ When exposing the console with Ingress, set `app.publicBaseUrl` to the real brow
 helm upgrade --install luna-devops ./charts/luna-devops \
   --namespace luna-devops \
   --create-namespace \
+  --set api.initialAdmin.existingSecret=luna-devops-initial-admin \
   --set app.publicBaseUrl=https://devops.example.com \
   --set ingress.enabled=true \
   --set ingress.className=nginx \
@@ -127,10 +151,16 @@ root filesystem, and disabled ServiceAccount token remain enforced independently
 
 | Value | Default | Notes |
 | --- | --- | --- |
-| `app.publicBaseUrl` | `http://localhost:8088` | Sets the user-facing platform root; use an HTTP(S) URL. |
+| `app.publicBaseUrl` | `http://localhost:8088` | Sets the shared platform root for API callbacks and Worker notification detail links; in production, use the absolute HTTP(S) URL users actually open. |
 | `app.secretEncryptionKey` | Generated | Encrypts credentials stored by the platform; use a stable non-empty key. |
+| `api.initialAdmin.existingSecret` | Empty | Selects the initial administrator Secret; a fresh database requires `initial-admin-email/password`, while `initial-admin-name/language` are optional. |
+| `api.initialAdmin.email` / `password` | Empty | Makes the chart create an initial administrator Secret when fields are explicitly supplied; for a fresh database use a valid email and an 8–72 byte password, and prefer `existingSecret` in production. |
+| `api.initialAdmin.name` / `language` | Empty / empty | Sets the initial administrator name and language; API falls back to the email and `zh-CN`, and a non-empty language may be `zh-CN` or `en-US`. |
 | `api.image.tag` / `worker.image.tag` | `nightly` | Selects the API and Worker image versions; use image tags. |
+| `api.database.maxOpenConns` / `maxIdleConns` | `20` / `5` | Caps open and idle PostgreSQL connections per API replica; use a positive integer and a non-negative integer no greater than the first value. |
+| `worker.database.maxOpenConns` / `maxIdleConns` | `20` / `5` | Caps open and idle PostgreSQL connections per Worker replica; use a positive integer and a non-negative integer no greater than the first value. |
 | `ai.enabled` / `ai.existingSecret` | `false` / empty | Enables Agent and selects its internal secret; use a boolean and a Kubernetes Secret name. |
+| `ai.agent.observabilityCaptureDatabaseSpans` | `false` | Controls temporary per-query Agent PostgreSQL spans; use a boolean and keep it disabled during normal operation. |
 | `ai.agent.networkPolicy.ingress.enabled` / `egress.enabled` | `true` / `false` | Controls API-to-Agent ingress isolation and Agent egress isolation; use booleans and enable egress only after its destination rules are complete. |
 | `ai.agent.networkPolicy.egress.additionalCIDRs` / `additionalRules` | `[]` / `[]` | Adds Agent destinations; use a CIDR list and a list of Kubernetes NetworkPolicy egress rules. |
 | `postgresql.enabled` / `externalDatabase.url` | `true` / empty | Selects bundled or external PostgreSQL; use a boolean and a PostgreSQL connection URI. |

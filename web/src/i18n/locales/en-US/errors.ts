@@ -117,12 +117,6 @@ const errors = {
     model_output_limit_invalid: 'The model catalog output limit is invalid. Ask a platform administrator to check the model configuration.',
     wallet_balance_insufficient: 'Your personal wallet has insufficient available credits. The model request was not sent.',
   },
-  bootstrap: {
-    already_initialized: 'The platform administrator is already initialized. Sign in instead.',
-    invalid_input: 'Enter a valid email and a password with at least 8 characters.',
-    token_invalid: 'The bootstrap token is incorrect.',
-    unavailable: 'The production bootstrap token is not configured. Contact the deployment administrator.',
-  },
   request: {
     invalid: 'The request parameters are invalid',
     invalid_json: 'The request JSON is invalid',

@@ -4,6 +4,25 @@ function optionalValue<T extends z.ZodType>(schema: T) {
   return z.preprocess(value => typeof value === "string" && value.trim() === "" ? undefined : value, schema.optional())
 }
 
+function validOTELKeyValueList(value: string): boolean {
+  return value.split(",").every((entry) => {
+    const separator = entry.indexOf("=")
+    if (separator <= 0 || entry.slice(0, separator).trim() === "") return false
+    try {
+      decodeURIComponent(entry.slice(0, separator).trim())
+      decodeURIComponent(entry.slice(separator + 1).trim())
+      return true
+    }
+    catch {
+      return false
+    }
+  })
+}
+
+const optionalOTELKeyValueList = optionalValue(z.string().refine(validOTELKeyValueList, {
+  message: "must be a comma-separated key=value list",
+}))
+
 const schema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   HOST: z.string().default("127.0.0.1"),
@@ -11,6 +30,7 @@ const schema = z.object({
   LOG_FORMAT: z.enum(["auto", "console", "json"]).default("auto"),
   LOG_COLOR: z.enum(["auto", "always", "never"]).default("auto"),
   LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
+  NO_COLOR: z.string().optional(),
   DATABASE_URL: optionalValue(z.string()),
   AI_DATABASE_MAX_CONNECTIONS: z.coerce.number().int().min(1).max(100).default(10),
   AI_DATABASE_CONNECTION_TIMEOUT_MS: z.coerce.number().int().min(100).max(30_000).default(5_000),
@@ -19,12 +39,31 @@ const schema = z.object({
   AI_INTERNAL_SECRET: optionalValue(z.string().min(32)),
   LUNA_API_BASE_URL: optionalValue(z.string().url()),
   OTEL_EXPORTER_OTLP_ENDPOINT: optionalValue(z.string().url()),
-  OTEL_RESOURCE_ATTRIBUTES: optionalValue(z.string()),
-  OTEL_EXPORTER_OTLP_HEADERS: optionalValue(z.string()),
+  OTEL_RESOURCE_ATTRIBUTES: optionalOTELKeyValueList,
+  OTEL_EXPORTER_OTLP_HEADERS: optionalOTELKeyValueList,
+  OTEL_SERVICE_VERSION: optionalValue(z.string()),
   AI_OBSERVABILITY_CAPTURE_CONTENT: z.stringbool().default(false),
+  AI_OBSERVABILITY_CAPTURE_DATABASE_SPANS: z.stringbool().default(false),
+})
+
+const telemetryConfigSchema = schema.pick({
+  LOG_FORMAT: true,
+  LOG_COLOR: true,
+  LOG_LEVEL: true,
+  NO_COLOR: true,
+  OTEL_EXPORTER_OTLP_ENDPOINT: true,
+  OTEL_RESOURCE_ATTRIBUTES: true,
+  OTEL_EXPORTER_OTLP_HEADERS: true,
+  OTEL_SERVICE_VERSION: true,
+  AI_OBSERVABILITY_CAPTURE_DATABASE_SPANS: true,
 })
 
 export type Config = z.infer<typeof schema>
+export type AgentTelemetryConfig = z.infer<typeof telemetryConfigSchema>
+
+export function loadTelemetryConfig(input: NodeJS.ProcessEnv = process.env): AgentTelemetryConfig {
+  return telemetryConfigSchema.parse(input)
+}
 
 export function loadConfig(input: NodeJS.ProcessEnv = process.env): Config {
   const config = schema.parse(input)

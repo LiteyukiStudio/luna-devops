@@ -1,5 +1,4 @@
 import auth from './ja-JP/auth'
-import bootstrap from './ja-JP/bootstrap'
 import common from './ja-JP/common'
 import errors from './ja-JP/errors'
 import languages from './ja-JP/languages'
@@ -21,7 +20,6 @@ const jaJP = {
   oauthApps,
   theme,
   loginPage,
-  bootstrap,
 }
 
 export default jaJP

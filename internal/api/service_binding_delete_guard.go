@@ -3,7 +3,6 @@ package api
 import (
 	"net/http"
 
-	"github.com/LiteyukiStudio/devops/internal/config"
 	"github.com/LiteyukiStudio/devops/internal/telemetry"
 	"github.com/gin-gonic/gin"
 )
@@ -48,7 +47,7 @@ func writeServiceBindingInUse(ctx *gin.Context, usages []serviceBindingUsage) {
 	const code = "service_binding_in_use"
 	telemetry.SetHTTPError(ctx, code, code)
 	response := errorEnvelope(ctx, http.StatusConflict, code)
-	if config.RuntimeMode() == "development" {
+	if isDevelopmentRequest(ctx) {
 		response["affectedSources"] = usages
 	}
 	ctx.JSON(http.StatusConflict, response)

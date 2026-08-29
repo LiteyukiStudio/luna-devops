@@ -1,5 +1,4 @@
 import auth from './zh-TW/auth'
-import bootstrap from './zh-TW/bootstrap'
 import common from './zh-TW/common'
 import errors from './zh-TW/errors'
 import languages from './zh-TW/languages'
@@ -21,7 +20,6 @@ const zhTW = {
   oauthApps,
   theme,
   loginPage,
-  bootstrap,
 }
 
 export default zhTW

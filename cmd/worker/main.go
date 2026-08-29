@@ -6,7 +6,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/LiteyukiStudio/devops/internal/config"
+	sharedconfig "github.com/LiteyukiStudio/devops/internal/config"
 	"github.com/LiteyukiStudio/devops/internal/database"
 	"github.com/LiteyukiStudio/devops/internal/observability"
 	"github.com/LiteyukiStudio/devops/internal/redisconfig"
@@ -23,7 +23,7 @@ func main() {
 
 func runMain() int {
 	ctx := context.Background()
-	config.LoadEnvironment()
+	sharedconfig.LoadEnvironment()
 	runtime, err := telemetry.Setup(ctx, telemetry.ServiceConfig{ServiceName: "luna-worker"})
 	if err != nil {
 		telemetry.LogError(ctx, "Worker startup failed", "worker.startup.failed", "worker.startup",
@@ -48,12 +48,9 @@ func runMain() int {
 }
 
 func run(ctx context.Context) error {
-	cfg := config.Load()
-	if err := cfg.ValidateRedis(); err != nil {
-		return telemetry.WrapError("config.invalid", "set REDIS_ADDR to a redis:// or rediss:// URI", "validate Redis configuration", err)
-	}
-	if err := cfg.ValidateVolumeTransfer(); err != nil {
-		return telemetry.WrapError("config.invalid", "verify VOLUME_TRANSFER_MAX_BYTES and VOLUME_TRANSFER_JOB_IMAGE", "validate volume transfer configuration", err)
+	cfg, err := worker.LoadConfig()
+	if err != nil {
+		return telemetry.WrapError("config.invalid", "verify Worker and shared environment variables", "load Worker configuration", err)
 	}
 	if err := secret.ValidateEncryptionConfig(); err != nil {
 		return telemetry.WrapError("config.invalid", "set SECRET_ENCRYPTION_KEY or use APP_ENV=development locally", "validate encryption configuration", err)

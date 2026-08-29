@@ -1,5 +1,7 @@
 # Worker 配置
 
+源码运行时，Worker 从根目录 `.env` 读取这些变量；Docker Compose 也只读取这一份 `.env`，并按消费者白名单向 Worker 注入公共值和 Worker 专属值。API 首次管理员、CORS、指标监听和 AI Client 等 API 专属配置不会进入 Worker。
+
 ## 基础配置
 
 | 配置项名称 | 默认值 | 说明 |
@@ -8,7 +10,7 @@
 | `DATABASE_URL` | 本地 PostgreSQL | 连接 PostgreSQL；填写 PostgreSQL 连接 URI。 |
 | `REDIS_ADDR` | `redis://localhost:6379/0` | 连接 Redis 任务队列；填写 `redis://` 或 `rediss://` URI。 |
 | `SECRET_ENCRYPTION_KEY`<sup>1</sup> | 空 | 解密平台保存的凭据；填写与 API 相同的稳定密钥。 |
-| `PUBLIC_BASE_URL` | 空 | 设置任务通知中链接的平台根地址；填写 HTTP(S) URL。 |
+| `PUBLIC_BASE_URL` | 生产环境必填 | 设置任务通知中链接的平台根地址；生产环境填写用户实际访问的绝对 HTTP(S) URL。 |
 | `LOG_FORMAT` | `auto` | 选择终端日志渲染；可填 `auto`、`console` 或 `json`，生产容器应使用 `json`。 |
 | `LOG_COLOR` | `auto` | 控制 console 日志颜色；可填 `auto`、`always` 或 `never`，`NO_COLOR` 会强制关闭。 |
 | `LOG_LEVEL` | `info` | 设置日志级别；可填 `debug`、`info`、`warn` 或 `error`。 |
@@ -29,10 +31,10 @@
 | 配置项名称 | 默认值 | 说明 |
 | --- | --- | --- |
 | `ENV_FILE` | `.env` | 指定 Worker 读取的环境文件；填写文件路径。 |
-| `DB_MAX_OPEN_CONNS` | `20` | 限制数据库最大打开连接数；填写正整数。 |
-| `DB_MAX_IDLE_CONNS` | `5` | 限制数据库最大空闲连接数；填写非负整数。 |
-| `DB_CONN_MAX_LIFETIME` | `30m` | 限制数据库连接总寿命；填写 Go duration，如 `30m`。 |
-| `DB_CONN_MAX_IDLE_TIME` | `5m` | 限制数据库连接空闲时间；填写 Go duration，如 `5m`。 |
+| `WORKER_DB_MAX_OPEN_CONNS` | `20` | 限制每个 Worker 副本的数据库最大打开连接数；填写正整数。 |
+| `WORKER_DB_MAX_IDLE_CONNS` | `5` | 限制每个 Worker 副本的数据库最大空闲连接数；填写非负整数。 |
+| `WORKER_DB_CONN_MAX_LIFETIME` | `30m` | 限制 Worker 数据库连接总寿命；填写 Go duration，如 `30m`。 |
+| `WORKER_DB_CONN_MAX_IDLE_TIME` | `5m` | 限制 Worker 数据库连接空闲时间；填写 Go duration，如 `5m`。 |
 
 ### 可观测
 
@@ -59,7 +61,7 @@
 | `VOLUME_TRANSFER_MAX_BYTES` | `100Gi` | 限制单次数据卷导入或导出大小；填写 `1Gi`–`5Ti` 容量值。 |
 | `VOLUME_TRANSFER_JOB_IMAGE` | 空 | 选择数据卷传输 Pod 使用的程序版本；填写与 Worker 同版本的 OCI 镜像引用。 |
 
-Helm 默认复用当前 Worker 版本的镜像。最小 Docker Compose、源码或二进制部署默认不启用导入导出；需要时应为 API 和 Worker 显式设置同版本 `VOLUME_TRANSFER_JOB_IMAGE`。数据流不经过对象存储。
+Helm 默认复用当前 Worker 版本的镜像。最小 Docker Compose、源码或二进制部署默认不启用导入导出；需要时只在根 `.env` 填写一次 `VOLUME_TRANSFER_JOB_IMAGE`，Compose 会将同一值传给 API 和 Worker。数据流不经过对象存储。
 
 ### Docker Compose
 

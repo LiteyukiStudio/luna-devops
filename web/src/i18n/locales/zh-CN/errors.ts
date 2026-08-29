@@ -117,12 +117,6 @@ const errors = {
     model_output_limit_invalid: '模型目录的输出上限无效，请联系平台管理员检查模型配置。',
     wallet_balance_insufficient: '个人钱包可用余额不足，模型调用未发送。',
   },
-  bootstrap: {
-    already_initialized: '平台管理员已经初始化，请直接登录。',
-    invalid_input: '请输入有效邮箱和至少 8 位密码。',
-    token_invalid: '初始化令牌不正确。',
-    unavailable: '生产环境尚未配置初始化令牌，请联系部署管理员。',
-  },
   request: {
     invalid: '请求参数不正确',
     invalid_json: '请求 JSON 格式不正确',

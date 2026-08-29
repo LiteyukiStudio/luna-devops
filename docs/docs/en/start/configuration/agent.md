@@ -1,5 +1,7 @@
 # Agent Configuration
 
+Source-based development reads the root `.env` first; use `luna-agent/.env.local` only for Agent-specific overrides. Docker Compose also uses the root `.env` as the single authoring entry and injects only the Agent's actual logging, OpenTelemetry, database-pool, and diagnostic dependencies. Compose fixes `NODE_ENV=production`, `AUTH_MODE=bff-hmac`, and the container-internal API address.
+
 ## Basic configuration
 
 | Setting | Default | Description |
@@ -51,6 +53,8 @@ The Agent uses fixed context boundaries: one user turn accepts at most 128 KiB o
 The Agent injects only the workflow references needed by the current task and does not duplicate them in history. A pure continuation such as “continue” reselects references from the latest explicit goal. User and page data plus completed interactions are replayed with fixed boundaries. A summary update starts a new cache-prefix epoch, so one cold request is expected before later turns reuse that summary prefix.
 
 ### Docker Compose
+
+Compose does not inject `PUBLIC_BASE_URL`, Redis, the platform encryption key, initial-administrator settings, or Worker execution policy into Agent. Set the `AI_INTERNAL_SECRET` shared by API and Agent once in the root `.env`.
 
 | Setting | Default | Description |
 | --- | --- | --- |

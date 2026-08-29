@@ -2,14 +2,17 @@ package api
 
 import (
 	"log/slog"
-	"os"
 	"strings"
 
 	"github.com/LiteyukiStudio/devops/internal/telemetry"
 )
 
-func debugLog(format string, args ...any) {
-	if !debugLogEnabled() {
+func (h *Handlers) debugLog(format string, args ...any) {
+	debugLogWithConfig(h.config, format, args...)
+}
+
+func debugLogWithConfig(cfg Config, format string, args ...any) {
+	if !debugLogEnabled(cfg) {
 		return
 	}
 	telemetry.Logger().Debug("API diagnostic checkpoint",
@@ -19,9 +22,9 @@ func debugLog(format string, args ...any) {
 	)
 }
 
-func debugLogEnabled() bool {
-	switch strings.ToLower(strings.TrimSpace(os.Getenv("LOG_LEVEL"))) {
-	case "debug", "trace":
+func debugLogEnabled(cfg Config) bool {
+	switch strings.ToLower(strings.TrimSpace(cfg.LogLevel)) {
+	case "debug":
 		return true
 	}
 	return false

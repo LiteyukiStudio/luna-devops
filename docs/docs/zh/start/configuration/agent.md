@@ -1,5 +1,7 @@
 # Agent 配置
 
+源码联调默认先读取根目录 `.env`，`luna-agent/.env.local` 只用于 Agent 专属覆盖；Docker Compose 同样使用根目录 `.env` 作为唯一填写入口，并只向 Agent 注入日志、OpenTelemetry、Agent 数据库池和诊断开关等真实依赖。Compose 固定使用 `NODE_ENV=production`、`AUTH_MODE=bff-hmac` 和容器内部 API 地址。
+
 ## 基础配置
 
 | 配置项名称 | 默认值 | 说明 |
@@ -50,6 +52,8 @@ Agent 使用固定的上下文边界：用户单轮文本最多为 128 KiB，历
 Agent 每轮只注入当前任务需要的工作流参考，不把参考重复写入历史；“继续”一类纯延续输入会根据最近一次明确目标重新选择参考。用户和页面信息以及已完成交互按固定边界重放。摘要更新会开启新的缓存前缀周期，首次请求出现一次冷启动属于预期行为，后续轮次会复用该摘要前缀。
 
 ### Docker Compose
+
+Compose 不向 Agent 注入 `PUBLIC_BASE_URL`、Redis、平台加密密钥、首个管理员或 Worker 执行策略。API 与 Agent 共享的 `AI_INTERNAL_SECRET` 只需在根 `.env` 填写一次。
 
 | 配置项名称 | 默认值 | 说明 |
 | --- | --- | --- |

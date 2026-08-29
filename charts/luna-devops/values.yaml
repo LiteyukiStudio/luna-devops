@@ -14,10 +14,29 @@ app:
   secretEncryptionKey: ""
   existingSecret: ""
   secretEncryptionKeyKey: secret-encryption-key
-  extraEnv: {}
 
 api:
   replicaCount: 1
+  database:
+    maxOpenConns: 20
+    maxIdleConns: 5
+    connMaxLifetime: 30m
+    connMaxIdleTime: 5m
+  # Initial administrator settings are consumed by API only. Leave all values
+  # empty after an administrator exists; prefer an existing Secret for a fresh
+  # production database so the password never enters Helm values.
+  initialAdmin:
+    existingSecret: ""
+    email: ""
+    name: ""
+    password: ""
+    language: ""
+    emailKey: initial-admin-email
+    nameKey: initial-admin-name
+    passwordKey: initial-admin-password
+    languageKey: initial-admin-language
+  # Non-sensitive API-only variables not managed elsewhere by this chart.
+  extraEnv: {}
   image:
     repository: liteyukistudio/luna-devops
     tag: ""
@@ -41,6 +60,8 @@ ai:
   agent:
     # High-sensitivity diagnostics. Exports redacted model and tool content.
     observabilityCaptureContent: false
+    # Optional PostgreSQL query spans for short diagnostic windows.
+    observabilityCaptureDatabaseSpans: false
     database:
       maxConnections: 10
       connectionTimeoutMs: 5000
@@ -93,6 +114,13 @@ observability:
 
 worker:
   replicaCount: 1
+  database:
+    maxOpenConns: 20
+    maxIdleConns: 5
+    connMaxLifetime: 30m
+    connMaxIdleTime: 5m
+  # Non-sensitive Worker-only variables not managed elsewhere by this chart.
+  extraEnv: {}
   image:
     repository: liteyukistudio/luna-worker
     tag: ""

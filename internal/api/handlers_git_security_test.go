@@ -262,11 +262,10 @@ func TestOIDCAdmissionEmailHonorsVerifiedRequirement(t *testing.T) {
 }
 
 func TestGitExternalBaseURLPrefersPublicEnv(t *testing.T) {
-	h := &Handlers{}
+	t.Setenv("PUBLIC_BASE_URL", "https://studio.example.com/")
+	h := &Handlers{config: mustLoadConfig()}
 	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
 	ctx.Request = httptest.NewRequest(http.MethodGet, "/api/v1/git/oauth/start", nil)
-
-	t.Setenv("PUBLIC_BASE_URL", "https://studio.example.com/")
 
 	if got := h.externalBaseURL(ctx); got != "https://studio.example.com" {
 		t.Fatalf("externalBaseURL = %q", got)
@@ -274,11 +273,10 @@ func TestGitExternalBaseURLPrefersPublicEnv(t *testing.T) {
 }
 
 func TestGitExternalBaseURLReturnsEmptyWhenNotConfigured(t *testing.T) {
-	h := &Handlers{}
+	t.Setenv("PUBLIC_BASE_URL", "")
+	h := &Handlers{config: mustLoadConfig()}
 	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
 	ctx.Request = httptest.NewRequest(http.MethodGet, "/api/v1/git/oauth/start", nil)
-
-	t.Setenv("PUBLIC_BASE_URL", "")
 
 	if got := h.externalBaseURL(ctx); got != "" {
 		t.Fatalf("externalBaseURL = %q", got)
@@ -394,9 +392,9 @@ func TestWriteErrorCodeHidesDetailInProduction(t *testing.T) {
 }
 
 func TestWriteErrorCodeIncludesDetailInDevelopment(t *testing.T) {
-	t.Setenv("APP_ENV", "development")
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)
+	setRuntimeMode(ctx, "development")
 
 	writeError(ctx, http.StatusBadRequest, "validation detail")
 

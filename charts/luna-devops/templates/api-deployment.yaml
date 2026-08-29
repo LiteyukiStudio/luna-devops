@@ -18,10 +18,13 @@ spec:
         {{- with .Values.api.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
-      {{- with .Values.api.podAnnotations }}
       annotations:
+        checksum.luna.devops/shared-config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        checksum.luna.devops/api-config: {{ include (print $.Template.BasePath "/api-configmap.yaml") . | sha256sum }}
+        checksum.luna.devops/managed-secrets: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        {{- with .Values.api.podAnnotations }}
         {{- toYaml . | nindent 8 }}
-      {{- end }}
+        {{- end }}
     spec:
       serviceAccountName: {{ include "luna-devops.serviceAccountName" . }}
       automountServiceAccountToken: false
@@ -48,6 +51,30 @@ spec:
             {{- end }}
           env:
             {{- include "luna-devops.commonEnv" . | nindent 12 }}
+            - name: INITIAL_ADMIN_EMAIL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "luna-devops.initialAdminSecretName" . }}
+                  key: {{ .Values.api.initialAdmin.emailKey }}
+                  optional: true
+            - name: INITIAL_ADMIN_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "luna-devops.initialAdminSecretName" . }}
+                  key: {{ .Values.api.initialAdmin.nameKey }}
+                  optional: true
+            - name: INITIAL_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "luna-devops.initialAdminSecretName" . }}
+                  key: {{ .Values.api.initialAdmin.passwordKey }}
+                  optional: true
+            - name: INITIAL_ADMIN_LANGUAGE
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "luna-devops.initialAdminSecretName" . }}
+                  key: {{ .Values.api.initialAdmin.languageKey }}
+                  optional: true
             - name: METRICS_ENABLED
               value: {{ .Values.metrics.enabled | quote }}
             - name: METRICS_ADDR
@@ -61,9 +88,12 @@ spec:
                   name: {{ include "luna-devops.aiSecretName" . }}
                   key: {{ .Values.ai.internalSecretKey }}
             {{- end }}
+            {{- include "luna-devops.extraEnv" (dict "component" "api" "values" .Values.api.extraEnv) | nindent 12 }}
           envFrom:
             - configMapRef:
-                name: {{ include "luna-devops.fullname" . }}-config
+                name: {{ include "luna-devops.sharedConfigName" . }}
+            - configMapRef:
+                name: {{ include "luna-devops.apiConfigName" . }}
           livenessProbe:
             httpGet:
               path: /healthz

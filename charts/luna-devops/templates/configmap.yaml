@@ -1,27 +1,10 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: {{ include "luna-devops.fullname" . }}-config
+  name: {{ include "luna-devops.sharedConfigName" . }}
   labels:
     {{- include "luna-devops.labels" . | nindent 4 }}
 data:
-  API_ADDR: ":8080"
   PUBLIC_BASE_URL: {{ .Values.app.publicBaseUrl | quote }}
-  APP_CORS_ORIGINS: {{ default .Values.app.publicBaseUrl .Values.app.corsOrigins | quote }}
-  TRUSTED_PROXY_CIDRS: {{ .Values.app.trustedProxyCidrs | quote }}
-  DEPLOY_ROLLOUT_TIMEOUT_SECONDS: {{ .Values.worker.deployRolloutTimeoutSeconds | quote }}
-  CERT_MANAGER_CLUSTER_ISSUER: {{ .Values.worker.certManagerClusterIssuer | quote }}
-  BUILD_EXECUTOR_IMAGE: {{ .Values.worker.buildExecutorImage | quote }}
-  BUILD_EGRESS_MODE: {{ .Values.worker.buildEgressMode | quote }}
-  BUILD_JOB_TIMEOUT_SECONDS: {{ .Values.worker.buildJobTimeoutSeconds | quote }}
-  BUILD_JOB_TTL_SECONDS: {{ .Values.worker.buildJobTtlSeconds | quote }}
-  BUILD_CACHE_ENABLED: {{ .Values.worker.buildCacheEnabled | quote }}
-  BUILD_CACHE_TAG: {{ .Values.worker.buildCacheTag | quote }}
-  BUILD_PRIVATE_EGRESS_CIDRS: {{ .Values.worker.buildPrivateEgressCidrs | quote }}
-  BUILD_PRIVATE_EGRESS_PORTS: {{ .Values.worker.buildPrivateEgressPorts | quote }}
-  BUILD_BLOCKED_EGRESS_CIDRS: {{ .Values.worker.buildBlockedEgressCidrs | quote }}
-  AI_ASSISTANT_AVAILABLE: {{ .Values.ai.enabled | quote }}
-  AI_AGENT_ADDR: {{ default (printf "http://%s:%v" (include "luna-devops.agentName" .) .Values.ai.agent.service.port) .Values.ai.agentAddress | quote }}
-  AI_AGENT_TIMEOUT: {{ .Values.ai.agentTimeout | quote }}
   VOLUME_TRANSFER_MAX_BYTES: {{ .Values.volumeTransfer.maxBytes | quote }}
   VOLUME_TRANSFER_JOB_IMAGE: {{ include "luna-devops.volumeTransferJobImage" . | quote }}

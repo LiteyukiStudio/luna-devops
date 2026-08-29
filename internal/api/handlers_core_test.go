@@ -25,20 +25,6 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-func TestBootstrapStatusHidesDevLoginHintInProduction(t *testing.T) {
-	t.Setenv("LOCAL_ADMIN_EMAIL", "admin@example.com")
-	t.Setenv("LOCAL_ADMIN_PASSWORD", "secret-password")
-
-	status := bootstrapStatusResponse("production", false)
-
-	if status["devLoginEnabled"] != false {
-		t.Fatalf("expected dev login disabled in production, got %v", status["devLoginEnabled"])
-	}
-	if _, ok := status["devLoginHint"]; ok {
-		t.Fatal("expected production bootstrap status to omit devLoginHint")
-	}
-}
-
 func TestPaginationFromQueryDefaultsAndCapsPageSize(t *testing.T) {
 	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
 	ctx.Request = httptest.NewRequest(http.MethodGet, "/access-tokens?page=0&pageSize=999&sortBy=name&sortOrder=asc", nil)

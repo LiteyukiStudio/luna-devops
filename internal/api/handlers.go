@@ -6,7 +6,6 @@ import (
 
 	"github.com/LiteyukiStudio/devops/internal/aiagent"
 	"github.com/LiteyukiStudio/devops/internal/aitool"
-	"github.com/LiteyukiStudio/devops/internal/config"
 	"github.com/LiteyukiStudio/devops/internal/inbox"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/repository"
@@ -25,6 +24,7 @@ const currentProjectRoleContextKey = "currentProjectRole"
 
 type Handlers struct {
 	db                     *gorm.DB
+	config                 Config
 	configs                *configCache
 	mode                   string
 	rateLimiter            *rateLimiter
@@ -74,14 +74,13 @@ type taskEnqueuer interface {
 }
 
 func NewHandlers(db *gorm.DB) *Handlers {
-	mode := config.RuntimeMode()
-	if mode == "development" {
-		ensureDevelopmentAdmin(db)
-	}
-	cfg := config.Load()
+	return NewHandlersWithConfig(db, mustLoadConfig())
+}
+
+func NewHandlersWithConfig(db *gorm.DB, cfg Config) *Handlers {
 	redisOptions := cfg.RedisOptions()
 	handlers := &Handlers{
-		db: db, configs: newConfigCache(db), mode: mode, rateLimiter: newRateLimiterWithRedis(redisOptions),
+		db: db, config: cfg, configs: newConfigCache(db), mode: cfg.Mode, rateLimiter: newRateLimiterWithRedis(redisOptions),
 		oauthStates: newOAuthStateStoreWithRedis(redisOptions), projects: repository.NewProjectRepository(db),
 		volumeTransferMaxBytes: cfg.VolumeTransferMaxBytes, volumeTransferEnabled: cfg.VolumeTransferEnabled(),
 	}
@@ -106,7 +105,7 @@ func NewHandlers(db *gorm.DB) *Handlers {
 	} else {
 		handlers.volumeContent = volumeContent
 	}
-	aiConfig := aiagent.LoadConfig()
+	aiConfig := cfg.AIAgent
 	handlers.aiDeploymentEnabled = aiConfig.Available
 	var aiClientErr error
 	handlers.aiAgent, aiClientErr = aiConfig.Client()

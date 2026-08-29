@@ -1,5 +1,7 @@
 # API Configuration
 
+When running from source, API reads these variables from the root `.env`. Docker Compose reads the same single `.env`, but its consumer allowlist injects only API settings into the API container. Shared values such as `PUBLIC_BASE_URL`, logging, OpenTelemetry, and the volume-transfer limit are authored once and forwarded only to their actual consumers.
+
 ## Basic configuration
 
 | Setting | Default | Description |
@@ -11,7 +13,10 @@
 | `REDIS_ADDR` | `redis://localhost:6379/0` | Connects to Redis; use a `redis://` or `rediss://` URI. |
 | `REDIS_PASSWORD` | Empty | Sets the bundled Docker Compose Redis password; use a password string or leave empty when authentication is disabled. |
 | `SECRET_ENCRYPTION_KEY`<sup>1</sup> | Empty | Encrypts credentials stored by the platform; use a stable non-empty key. |
-| `BOOTSTRAP_TOKEN`<sup>2</sup> | Empty | Initializes the first administrator; use a one-time token string. |
+| `INITIAL_ADMIN_EMAIL`<sup>2</sup> | Empty | Creates the first administrator in a fresh database; use a valid bare email address. |
+| `INITIAL_ADMIN_PASSWORD`<sup>2</sup> | Empty | Sets the first administrator's initial password; use a strong 8–72 byte value supplied through a Secret. |
+| `INITIAL_ADMIN_NAME`<sup>2</sup> | Empty | Sets the first administrator's display name; use a name or leave empty to use the email. |
+| `INITIAL_ADMIN_LANGUAGE`<sup>2</sup> | `zh-CN` | Sets the first administrator's language; use `zh-CN` or `en-US`. |
 | `APP_CORS_ORIGINS` | Empty | Allows browser cross-origin access; use comma-separated HTTP(S) origins. |
 | `TRUSTED_PROXY_CIDRS` | Empty | Identifies trusted reverse proxies; use comma-separated CIDRs. |
 | `LOG_FORMAT` | `auto` | Selects terminal log rendering; use `auto`, `console`, or `json`, and use `json` in production containers. |
@@ -23,7 +28,7 @@
 | `AI_INTERNAL_SECRET`<sup>3</sup> | Empty | Authenticates internal API-Agent requests; use a secret of at least 32 bytes. |
 
 1. Note: `SECRET_ENCRYPTION_KEY` is required in production; changing it makes stored encrypted credentials unreadable.
-2. Note: Remove or rotate `BOOTSTRAP_TOKEN` after initialization.
+2. Note: These settings create the first administrator only when the database has never contained a user. They never overwrite an active administrator; API refuses to start if users exist but no active administrator remains.
 3. Note: API and Agent must use the same `AI_INTERNAL_SECRET`.
 
 ## Advanced configuration
@@ -35,19 +40,16 @@
 | `ENV_FILE` | `.env` | Selects the environment file read by API; use a file path. |
 | `APP_ENABLE_HSTS` | `true` in production | Controls whether API sends the HSTS header; use `true` or `false`. |
 | `APP_VERSION` | Build version | Sets the version reported by API; use a version string. |
-| `LOCAL_ADMIN_EMAIL` | `admin@luna.dev` | Sets the development administrator email; use a valid email address. |
-| `LOCAL_ADMIN_PASSWORD` | `devops` | Sets the development administrator password; use a non-empty string. |
-| `LOCAL_ADMIN_NAME` | `Platform Admin` | Sets the development administrator name; use a display name. |
-| `LOCAL_ADMIN_FREE_QUOTA_CREDITS` | `1000` | Sets the development administrator's free quota; use a non-negative Credits value. |
+| `LOCAL_ADMIN_FREE_QUOTA_CREDITS` | `1000` | Grants free quota when the first administrator is created in development; use a non-negative Credits value. |
 
 ### Database
 
 | Setting | Default | Description |
 | --- | --- | --- |
-| `DB_MAX_OPEN_CONNS` | `20` | Limits open database connections; use a positive integer. |
-| `DB_MAX_IDLE_CONNS` | `5` | Limits idle database connections; use a non-negative integer. |
-| `DB_CONN_MAX_LIFETIME` | `30m` | Limits each database connection's lifetime; use a Go duration such as `30m`. |
-| `DB_CONN_MAX_IDLE_TIME` | `5m` | Limits each database connection's idle time; use a Go duration such as `5m`. |
+| `API_DB_MAX_OPEN_CONNS` | `20` | Limits open database connections per API replica; use a positive integer. |
+| `API_DB_MAX_IDLE_CONNS` | `5` | Limits idle database connections per API replica; use a non-negative integer. |
+| `API_DB_CONN_MAX_LIFETIME` | `30m` | Limits each API database connection's lifetime; use a Go duration such as `30m`. |
+| `API_DB_CONN_MAX_IDLE_TIME` | `5m` | Limits each API database connection's idle time; use a Go duration such as `5m`. |
 
 ### Metrics and observability
 
@@ -69,12 +71,6 @@
 | `VOLUME_TRANSFER_MAX_BYTES` | `100Gi` | Limits one volume import or export; use a quantity from `1Gi` to `5Ti`. |
 
 Volume content streams directly among the client, API, and runtime-cluster Transfer Pod. It does not require object storage, a callback URL, or a complete local API spool.
-
-### AI Assistant
-
-| Setting | Default | Description |
-| --- | --- | --- |
-| `AI_AGENT_ADDR` | Empty | Sets a fallback Agent address for API; use an HTTP(S) URL. |
 
 ### Docker Compose and Web build
 

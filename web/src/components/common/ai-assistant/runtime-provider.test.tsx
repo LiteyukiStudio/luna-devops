@@ -48,7 +48,6 @@ const sessionValue: SessionContextValue = {
   isLoggingOut: false,
   recentLoginUsers: [],
   user: currentUser,
-  initializeAdmin: vi.fn(async () => currentUser),
   login: vi.fn(async () => currentUser),
   logout: vi.fn(async () => {}),
   refreshUser: vi.fn(async () => {}),

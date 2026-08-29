@@ -39,7 +39,6 @@ export function LoginPage() {
   const redirectTo = safeRedirect(searchParams.get('redirect'))
   const authErrorCode = searchParams.get('auth_error')
   const authError = useMemo(() => authErrorCode ? authErrorMessage(authErrorCode, t) : null, [authErrorCode, t])
-  const status = useQuery({ queryKey: ['bootstrap-status'], queryFn: api.getBootstrapStatus })
   const providers = useQuery({ queryKey: ['auth-providers'], queryFn: () => api.listAuthProviders(false) })
   const registration = useQuery({ queryKey: ['auth-registration-status'], queryFn: api.getAuthRegistrationStatus })
   const form = useForm<LoginForm>({
@@ -57,11 +56,6 @@ export function LoginPage() {
     if (session.user)
       navigate(redirectTo, { replace: true })
   }, [navigate, redirectTo, session.user])
-
-  useEffect(() => {
-    if (status.data && !status.data.initialized)
-      navigate('/bootstrap', { replace: true })
-  }, [navigate, status.data])
 
   useEffect(() => {
     if (authError)
@@ -181,16 +175,6 @@ export function LoginPage() {
                       <Link to="/register">{t('loginPage.registration.createAccount')}</Link>
                     </Button>
                   )}
-                  {status.data?.mode === 'development' && status.data.devLoginEnabled && status.data.devLoginHint && (
-                    <p className="text-xs text-muted-foreground">
-                      {t('loginPage.devAccount')}
-                      {status.data.devLoginHint.email}
-                      {' '}
-                      /
-                      {' '}
-                      {status.data.devLoginHint.password}
-                    </p>
-                  )}
                 </form>
                 {(providers.data ?? []).length > 0 && (
                   <div className="mt-5 grid gap-2 border-t border-border pt-5">
@@ -221,7 +205,7 @@ export function LoginPage() {
 function safeRedirect(value: string | null) {
   if (!value || !value.startsWith('/') || value.startsWith('//'))
     return '/projects'
-  if (value === '/login' || value.startsWith('/login?') || value === '/bootstrap' || value.startsWith('/bootstrap?'))
+  if (value === '/login' || value.startsWith('/login?'))
     return '/projects'
   return value
 }

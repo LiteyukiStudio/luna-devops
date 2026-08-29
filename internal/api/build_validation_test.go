@@ -188,9 +188,9 @@ func TestBuildRegistryPushCredentialRequiredResponseBoundary(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			t.Setenv("APP_ENV", test.mode)
 			recorder := httptest.NewRecorder()
 			ctx, _ := gin.CreateTestContext(recorder)
+			setRuntimeMode(ctx, test.mode)
 			ctx.Request = httptest.NewRequest(http.MethodPost, "/api/v1/projects/prj_test/build-runs/trigger", nil)
 			ctx.Request.Header.Set("Accept-Language", test.language)
 

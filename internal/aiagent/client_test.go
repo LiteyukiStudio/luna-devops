@@ -56,10 +56,40 @@ func TestConfigDefaultsFailClosed(t *testing.T) {
 	t.Setenv("AI_ASSISTANT_AVAILABLE", "")
 	t.Setenv("AI_AGENT_BASE_URL", "")
 	t.Setenv("AI_INTERNAL_SECRET", "")
-	config := LoadConfig()
+	config, loadErr := LoadConfig()
+	if loadErr != nil {
+		t.Fatal(loadErr)
+	}
 	client, err := config.Client()
 	if config.Available || client != nil || err != nil {
 		t.Fatal("AI agent must be disabled by default")
+	}
+}
+
+func TestLoadConfigRejectsInvalidExplicitValues(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		key   string
+		value string
+	}{
+		{name: "availability", key: "AI_ASSISTANT_AVAILABLE", value: "sometimes"},
+		{name: "timeout", key: "AI_AGENT_TIMEOUT", value: "later"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv(test.key, test.value)
+			if _, err := LoadConfig(); err == nil {
+				t.Fatalf("LoadConfig accepted %s=%q", test.key, test.value)
+			}
+		})
+	}
+}
+
+func TestLoadConfigRequiresTrustMaterialWhenEnabled(t *testing.T) {
+	t.Setenv("AI_ASSISTANT_AVAILABLE", "true")
+	t.Setenv("AI_AGENT_BASE_URL", "http://agent.internal")
+	t.Setenv("AI_INTERNAL_SECRET", "short")
+	if _, err := LoadConfig(); err == nil || !strings.Contains(err.Error(), "AI_INTERNAL_SECRET") {
+		t.Fatalf("error = %v", err)
 	}
 }
 

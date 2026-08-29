@@ -6,6 +6,12 @@ export const genAISchemaURL = "https://opentelemetry.io/schemas/gen-ai-dev/1.42.
 export const genAIAgentName = "Luna Agent"
 export const genAIAgentDescription = "Operates and diagnoses Luna DevOps resources."
 
+let genAIAgentVersion: string | undefined
+
+export function configureGenAIAgentVersion(value?: string): void {
+  genAIAgentVersion = value?.trim() || undefined
+}
+
 type GenAITextPart = { type: "text", content: string }
 type GenAIReasoningPart = { type: "reasoning", content: string }
 type GenAIToolCallPart = { type: "tool_call", name: string, id?: string, arguments?: Record<string, unknown> }
@@ -39,9 +45,7 @@ export function genAIAgentSpanAttributes(conversationId: string, model?: string,
     "gen_ai.output.type": "text",
     ...(model ? { "gen_ai.request.model": model } : {}),
     ...(maxTokens !== undefined ? { "gen_ai.request.max_tokens": maxTokens } : {}),
-    ...(process.env.OTEL_SERVICE_VERSION?.trim()
-      ? { "gen_ai.agent.version": process.env.OTEL_SERVICE_VERSION.trim() }
-      : {}),
+    ...(genAIAgentVersion ? { "gen_ai.agent.version": genAIAgentVersion } : {}),
   }
 }
 

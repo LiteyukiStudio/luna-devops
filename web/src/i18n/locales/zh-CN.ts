@@ -1,5 +1,4 @@
 import auth from './zh-CN/auth'
-import bootstrap from './zh-CN/bootstrap'
 import common from './zh-CN/common'
 import errors from './zh-CN/errors'
 import languages from './zh-CN/languages'
@@ -21,7 +20,6 @@ const zhCN = {
   oauthApps,
   theme,
   loginPage,
-  bootstrap,
 }
 
 export default zhCN

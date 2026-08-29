@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/LiteyukiStudio/devops/internal/agentobservability"
-	"github.com/LiteyukiStudio/devops/internal/config"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/telemetry"
 	"github.com/gin-gonic/gin"
@@ -322,7 +321,7 @@ func writeAgentObservabilityUnavailable(ctx *gin.Context, code, detail string) {
 	response["retryable"] = true
 	response["status"] = "unavailable"
 	response["observationCode"] = code
-	if config.RuntimeMode() == "development" {
+	if isDevelopmentRequest(ctx) {
 		response["developerDetail"] = telemetry.RedactText(detail)
 	}
 	ctx.JSON(http.StatusServiceUnavailable, response)

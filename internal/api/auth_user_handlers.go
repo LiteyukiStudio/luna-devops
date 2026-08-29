@@ -2,8 +2,6 @@ package api
 
 import (
 	"context"
-	"crypto/sha256"
-	"crypto/subtle"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -13,7 +11,6 @@ import (
 
 	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/billing"
-	"github.com/LiteyukiStudio/devops/internal/config"
 	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/resourceidentifier"
@@ -24,113 +21,6 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
-
-const bootstrapAdminAdvisoryLockID int64 = 0x4c554e4141444d49
-
-var errBootstrapAlreadyInitialized = errors.New("platform administrator is already initialized")
-
-func (h *Handlers) GetBootstrapStatus(ctx *gin.Context) {
-	ctx.JSON(http.StatusOK, bootstrapStatusResponse(h.mode, h.hasPlatformAdmin(ctx.Request.Context())))
-}
-
-func bootstrapStatusResponse(mode string, initialized bool) gin.H {
-	status := gin.H{
-		"mode":            mode,
-		"initialized":     initialized,
-		"devLoginEnabled": mode == "development",
-	}
-	if mode == "development" {
-		status["devLoginHint"] = gin.H{
-			"email":    developmentAdminEmail(),
-			"password": developmentAdminPassword(),
-		}
-	}
-	return status
-}
-
-func (h *Handlers) InitializeAdmin(ctx *gin.Context) {
-	if !h.allowSensitiveAuthAttempt(ctx, "bootstrap_admin", 5, time.Minute) {
-		return
-	}
-	if h.hasPlatformAdmin(ctx.Request.Context()) {
-		writeErrorCode(ctx, http.StatusConflict, "bootstrap.already_initialized", "平台管理员已经初始化")
-		return
-	}
-
-	var input initializeAdminInput
-	if !bindJSON(ctx, &input) {
-		return
-	}
-	if h.mode == "production" {
-		expectedToken := config.Load().BootstrapToken
-		if expectedToken == "" {
-			writeErrorCode(ctx, http.StatusServiceUnavailable, "bootstrap.unavailable", "生产环境未配置 BOOTSTRAP_TOKEN")
-			return
-		}
-		if !bootstrapTokenMatches(expectedToken, input.BootstrapToken) {
-			writeErrorCode(ctx, http.StatusForbidden, "bootstrap.token_invalid", "Bootstrap Token 不正确")
-			return
-		}
-	}
-
-	email := strings.ToLower(strings.TrimSpace(input.Email))
-	name := strings.TrimSpace(input.Name)
-	if name == "" {
-		name = email
-	}
-	if email == "" || len(input.Password) < 8 {
-		writeErrorCode(ctx, http.StatusBadRequest, "bootstrap.invalid_input", "请输入有效邮箱和至少 8 位密码")
-		return
-	}
-
-	passwordHash, err := bcrypt.GenerateFromPassword([]byte(input.Password), bcrypt.DefaultCost)
-	if err != nil {
-		writeError(ctx, http.StatusInternalServerError, err.Error())
-		return
-	}
-
-	user := model.User{
-		ID:       id.New("usr"),
-		Email:    email,
-		Name:     name,
-		Role:     authz.PlatformRoleAdmin,
-		Language: normalizeLanguage(input.Language),
-		Password: string(passwordHash),
-	}
-	if err := initializeAdminWithLock(h.dbFor(ctx), user); err != nil {
-		if errors.Is(err, errBootstrapAlreadyInitialized) {
-			writeErrorCode(ctx, http.StatusConflict, "bootstrap.already_initialized", err.Error())
-			return
-		}
-		writeErrorCode(ctx, http.StatusInternalServerError, "bootstrap.initialize_failed", err.Error())
-		return
-	}
-
-	if !h.createLoginCredentials(ctx, user.ID, input.RememberMe) {
-		return
-	}
-
-	ctx.JSON(http.StatusCreated, gin.H{"user": currentUserResponse(user)})
-}
-
-func initializeAdminWithLock(db *gorm.DB, user model.User) error {
-	return db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Exec("SELECT pg_advisory_xact_lock(?)", bootstrapAdminAdvisoryLockID).Error; err != nil {
-			return err
-		}
-		initialized, err := platformAdminExists(tx)
-		if err != nil {
-			return err
-		}
-		if initialized {
-			return errBootstrapAlreadyInitialized
-		}
-		if err := tx.Create(&user).Error; err != nil {
-			return err
-		}
-		return createDefaultUserProject(tx, user)
-	})
-}
 
 func (h *Handlers) Login(ctx *gin.Context) {
 	if !h.allowSensitiveAuthAttempt(ctx, "login_ip", 10, time.Minute) {
@@ -474,73 +364,15 @@ type userInput struct {
 	Disabled bool   `json:"disabled"`
 }
 
-type initializeAdminInput struct {
-	Email          string `json:"email" binding:"required"`
-	Name           string `json:"name"`
-	Password       string `json:"password" binding:"required"`
-	Language       string `json:"language"`
-	BootstrapToken string `json:"bootstrapToken"`
-	RememberMe     bool   `json:"rememberMe"`
-}
-
-func bootstrapTokenMatches(expected, provided string) bool {
-	expectedHash := sha256.Sum256([]byte(expected))
-	providedHash := sha256.Sum256([]byte(provided))
-	return subtle.ConstantTimeCompare(expectedHash[:], providedHash[:]) == 1
-}
-
 func shouldRevokeUserAuthentication(originalRole, nextRole string, originallyDisabled, nextDisabled, passwordChanged bool) bool {
 	return originalRole != nextRole || (!originallyDisabled && nextDisabled) || passwordChanged
 }
 
-func ensureDevelopmentAdmin(db *gorm.DB) {
-	email := developmentAdminEmail()
-	password := developmentAdminPassword()
-	passwordHash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+func ensureDevelopmentAdminWallet(ctx context.Context, db *gorm.DB, user model.User, configuredCredits string) {
+	credits, err := developmentAdminFreeQuotaCredits(configuredCredits)
 	if err != nil {
-		panic(err)
-	}
-
-	var user model.User
-	err = db.First(&user, "email = ?", email).Error
-	if err != nil {
-		user = model.User{
-			ID:       "user_admin",
-			Email:    email,
-			Name:     env("LOCAL_ADMIN_NAME", "Platform Admin"),
-			Role:     authz.PlatformRoleAdmin,
-			Language: "zh-CN",
-		}
-		err = db.Create(&user).Error
-		if err != nil && strings.Contains(err.Error(), "users_pkey") {
-			user.ID = id.New("usr")
-			err = db.Create(&user).Error
-		}
-		if err != nil {
-			return
-		}
-	}
-
-	needsSave := false
-	if user.Password == "" {
-		user.Password = string(passwordHash)
-		needsSave = true
-	}
-	if user.Language == "" {
-		user.Language = "zh-CN"
-		needsSave = true
-	}
-	if needsSave {
-		_ = db.Save(&user).Error
-	}
-	ensureDevelopmentAdminWallet(db, user)
-}
-
-func ensureDevelopmentAdminWallet(db *gorm.DB, user model.User) {
-	credits, err := developmentAdminFreeQuotaCredits()
-	if err != nil {
-		telemetry.LogError(context.Background(), "Development administrator wallet bootstrap failed",
-			"billing.development_wallet_bootstrap.failed", "billing.development_wallet.bootstrap",
+		telemetry.LogError(ctx, "Development administrator wallet initialization failed",
+			"billing.development_wallet_initialization.failed", "billing.development_wallet.initialize",
 			"billing.development_free_quota_invalid", err)
 		return
 	}
@@ -556,32 +388,24 @@ func ensureDevelopmentAdminWallet(db *gorm.DB, user model.User) {
 			Reason:         billing.ReasonDevelopmentQuota,
 			Description:    "Development administrator free quota",
 			IdempotencyKey: "development-admin-free-quota:" + user.ID,
-			ActorID:        "system:development-bootstrap",
+			ActorID:        "system:initial-admin",
 		})
 	}
 	if err != nil {
-		telemetry.LogError(context.Background(), "Development administrator wallet bootstrap failed",
-			"billing.development_wallet_bootstrap.failed", "billing.development_wallet.bootstrap",
-			"billing.development_wallet_bootstrap_failed", err,
+		telemetry.LogError(ctx, "Development administrator wallet initialization failed",
+			"billing.development_wallet_initialization.failed", "billing.development_wallet.initialize",
+			"billing.development_wallet_initialization_failed", err,
 			slog.String("resource.type", "user"),
 			slog.String("resource.id", user.ID))
 	}
 }
 
-func developmentAdminFreeQuotaCredits() (decimal.Decimal, error) {
-	credits, err := decimal.NewFromString(strings.TrimSpace(env("LOCAL_ADMIN_FREE_QUOTA_CREDITS", "1000")))
+func developmentAdminFreeQuotaCredits(configured string) (decimal.Decimal, error) {
+	credits, err := decimal.NewFromString(strings.TrimSpace(configured))
 	if err != nil || credits.IsNegative() {
 		return decimal.Zero, errors.New("development administrator free quota must be a non-negative decimal")
 	}
 	return credits, nil
-}
-
-func developmentAdminEmail() string {
-	return strings.ToLower(env("LOCAL_ADMIN_EMAIL", "admin@luna.dev"))
-}
-
-func developmentAdminPassword() string {
-	return env("LOCAL_ADMIN_PASSWORD", "devops")
 }
 
 func normalizeLanguage(language string) string {

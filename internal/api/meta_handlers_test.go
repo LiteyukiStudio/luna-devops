@@ -15,7 +15,7 @@ func TestGetAPIMeta(t *testing.T) {
 	t.Setenv("APP_VERSION", "0.1.0-test")
 	gin.SetMode(gin.TestMode)
 
-	handlers := &Handlers{}
+	handlers := &Handlers{config: mustLoadConfig()}
 	router := gin.New()
 	router.GET("/api/v1/meta", handlers.GetAPIMeta)
 

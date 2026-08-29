@@ -1,5 +1,7 @@
 # API 配置
 
+源码运行时，API 从根目录 `.env` 读取这些变量；Docker Compose 也只读取这一份 `.env`，但会按消费者白名单仅把 API 所需变量注入 API 容器。`PUBLIC_BASE_URL`、日志、OpenTelemetry 和数据卷传输上限等公共值只填写一次，再由 Compose 同步给实际消费者。
+
 ## 基础配置
 
 | 配置项名称 | 默认值 | 说明 |
@@ -11,7 +13,10 @@
 | `REDIS_ADDR` | `redis://localhost:6379/0` | 连接 Redis；填写 `redis://` 或 `rediss://` URI。 |
 | `REDIS_PASSWORD` | 空 | 设置 Docker Compose 内置 Redis 的密码；填写密码字符串，未启用认证时留空。 |
 | `SECRET_ENCRYPTION_KEY`<sup>1</sup> | 空 | 加密平台保存的凭据；填写稳定的非空密钥。 |
-| `BOOTSTRAP_TOKEN`<sup>2</sup> | 空 | 初始化首个管理员；填写一次性 Token 字符串。 |
+| `INITIAL_ADMIN_EMAIL`<sup>2</sup> | 空 | 在全新数据库创建首个管理员；填写有效的纯邮箱地址。 |
+| `INITIAL_ADMIN_PASSWORD`<sup>2</sup> | 空 | 设置首个管理员的初始密码；填写 8–72 字节的强密码并通过 Secret 提供。 |
+| `INITIAL_ADMIN_NAME`<sup>2</sup> | 空 | 设置首个管理员的显示名称；填写名称或留空以使用邮箱。 |
+| `INITIAL_ADMIN_LANGUAGE`<sup>2</sup> | `zh-CN` | 设置首个管理员的语言；可填 `zh-CN` 或 `en-US`。 |
 | `APP_CORS_ORIGINS` | 空 | 允许浏览器跨域访问；填写逗号分隔的 HTTP(S) Origin。 |
 | `TRUSTED_PROXY_CIDRS` | 空 | 识别可信反向代理；填写逗号分隔的 CIDR。 |
 | `LOG_FORMAT` | `auto` | 选择终端日志渲染；可填 `auto`、`console` 或 `json`，生产容器应使用 `json`。 |
@@ -23,7 +28,7 @@
 | `AI_INTERNAL_SECRET`<sup>3</sup> | 空 | 鉴权 API 与 Agent 的内部请求；填写至少 32 字节的密钥。 |
 
 1. 说明：生产环境必须设置 `SECRET_ENCRYPTION_KEY`；更换后已有加密凭据将无法读取。
-2. 说明：初始化完成后移除或轮换 `BOOTSTRAP_TOKEN`。
+2. 说明：这些配置只在数据库从未存在用户时创建首个管理员；已有有效管理员时不会覆盖账号或密码，已有用户但没有有效管理员时 API 会拒绝启动并要求先恢复管理员。
 3. 说明：API 与 Agent 必须使用同一个 `AI_INTERNAL_SECRET`。
 
 ## 高级配置
@@ -35,19 +40,16 @@
 | `ENV_FILE` | `.env` | 指定 API 读取的环境文件；填写文件路径。 |
 | `APP_ENABLE_HSTS` | 生产为 `true` | 控制 API 是否发送 HSTS Header；可填 `true` 或 `false`。 |
 | `APP_VERSION` | 构建版本 | 设置 API 对外报告的版本；填写版本字符串。 |
-| `LOCAL_ADMIN_EMAIL` | `admin@luna.dev` | 设置开发模式管理员邮箱；填写有效邮箱地址。 |
-| `LOCAL_ADMIN_PASSWORD` | `devops` | 设置开发模式管理员密码；填写非空字符串。 |
-| `LOCAL_ADMIN_NAME` | `Platform Admin` | 设置开发模式管理员名称；填写显示名称。 |
-| `LOCAL_ADMIN_FREE_QUOTA_CREDITS` | `1000` | 设置开发管理员的免费额度；填写非负 Credits 数值。 |
+| `LOCAL_ADMIN_FREE_QUOTA_CREDITS` | `1000` | 设置开发模式下首个管理员创建时发放的免费额度；填写非负 Credits 数值。 |
 
 ### 数据库
 
 | 配置项名称 | 默认值 | 说明 |
 | --- | --- | --- |
-| `DB_MAX_OPEN_CONNS` | `20` | 限制数据库最大打开连接数；填写正整数。 |
-| `DB_MAX_IDLE_CONNS` | `5` | 限制数据库最大空闲连接数；填写非负整数。 |
-| `DB_CONN_MAX_LIFETIME` | `30m` | 限制数据库连接总寿命；填写 Go duration，如 `30m`。 |
-| `DB_CONN_MAX_IDLE_TIME` | `5m` | 限制数据库连接空闲时间；填写 Go duration，如 `5m`。 |
+| `API_DB_MAX_OPEN_CONNS` | `20` | 限制每个 API 副本的数据库最大打开连接数；填写正整数。 |
+| `API_DB_MAX_IDLE_CONNS` | `5` | 限制每个 API 副本的数据库最大空闲连接数；填写非负整数。 |
+| `API_DB_CONN_MAX_LIFETIME` | `30m` | 限制 API 数据库连接总寿命；填写 Go duration，如 `30m`。 |
+| `API_DB_CONN_MAX_IDLE_TIME` | `5m` | 限制 API 数据库连接空闲时间；填写 Go duration，如 `5m`。 |
 
 ### 指标与可观测
 
@@ -69,12 +71,6 @@
 | `VOLUME_TRANSFER_MAX_BYTES` | `100Gi` | 限制单次数据卷导入或导出大小；填写 `1Gi`–`5Ti` 容量值。 |
 
 数据卷内容在客户端、API 和运行集群 Transfer Pod 之间直接流式传输，不需要对象存储、回调地址或 API 本地完整暂存。
-
-### AI 助手
-
-| 配置项名称 | 默认值 | 说明 |
-| --- | --- | --- |
-| `AI_AGENT_ADDR` | 空 | 设置 API 访问 Agent 的备用地址；填写 HTTP(S) URL。 |
 
 ### Docker Compose 与 Web 构建
 

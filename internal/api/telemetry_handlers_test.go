@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/alicebob/miniredis/v2"
@@ -99,7 +100,12 @@ func TestRelayBrowserTracesForwardsOTLPProtobuf(t *testing.T) {
 	if recorder.Code != http.StatusNoContent {
 		t.Fatalf("relay status = %d, want %d; body = %s", recorder.Code, http.StatusNoContent, recorder.Body.String())
 	}
-	forwarded := <-received
+	var forwarded collectorRequest
+	select {
+	case forwarded = <-received:
+	case <-time.After(time.Second):
+		t.Fatal("collector did not receive the relayed trace")
+	}
 	if !bytes.Equal(forwarded.body, payload) {
 		t.Fatalf("collector body = %v, want %v", forwarded.body, payload)
 	}
@@ -138,7 +144,11 @@ func TestRelayBrowserTracesRejectsUnsupportedMediaTypeBeforeCollector(t *testing
 func newBrowserTraceRelayTestRouter(t *testing.T) http.Handler {
 	t.Helper()
 	redisServer := miniredis.RunT(t)
-	handlers := &Handlers{rateLimiter: newRateLimiter(redisServer.Addr())}
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	handlers := &Handlers{config: cfg, rateLimiter: newRateLimiter(redisServer.Addr())}
 	t.Cleanup(func() {
 		_ = handlers.rateLimiter.redis.Close()
 	})

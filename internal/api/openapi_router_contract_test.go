@@ -60,6 +60,33 @@ func TestOpenAPIOperationsHaveRegisteredRouterPaths(t *testing.T) {
 	}
 }
 
+func TestInitialAdministratorHasNoPublicHTTPInitializationRoutes(t *testing.T) {
+	t.Parallel()
+
+	repositoryRoot := apiRepositoryRoot(t)
+	registered := registeredRouterOperations(t, filepath.Join(repositoryRoot, "internal", "api", "router.go"))
+	document := readOpenAPIDocument(t, filepath.Join(repositoryRoot, "openapi", "openapi.yaml"))
+	paths, ok := document["paths"].(map[string]any)
+	if !ok {
+		t.Fatal("OpenAPI document has no paths object")
+	}
+
+	for _, route := range []struct {
+		method string
+		path   string
+	}{
+		{method: "GET", path: "/api/v1/auth/bootstrap"},
+		{method: "POST", path: "/api/v1/auth/bootstrap/admin"},
+	} {
+		if registered[route.method+" "+route.path] {
+			t.Fatalf("removed initialization route is still registered: %s %s", route.method, route.path)
+		}
+		if _, exists := paths[route.path]; exists {
+			t.Fatalf("removed initialization route is still documented: %s", route.path)
+		}
+	}
+}
+
 func apiRepositoryRoot(t *testing.T) string {
 	t.Helper()
 

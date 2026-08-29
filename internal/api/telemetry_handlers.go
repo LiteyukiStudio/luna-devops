@@ -5,9 +5,6 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"net/url"
-	"os"
-	"path"
 	"strings"
 	"time"
 
@@ -27,7 +24,7 @@ func (h *Handlers) RelayBrowserTraces(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	target, err := browserTraceEndpoint()
+	target, err := browserTraceEndpoint(h.config)
 	if err != nil {
 		// The browser can keep one same-origin exporter configuration in every
 		// environment. Disabled server-side telemetry intentionally becomes a
@@ -65,7 +62,7 @@ func (h *Handlers) RelayBrowserTraces(ctx *gin.Context) {
 		return
 	}
 	request.Header.Set("Content-Type", mediaType)
-	for key, value := range otlpRelayHeaders() {
+	for key, value := range otlpRelayHeaders(h.config) {
 		request.Header.Set(key, value)
 	}
 	response, err := telemetry.InstrumentHTTPClient(&http.Client{Timeout: 5 * time.Second}).Do(request)
@@ -92,45 +89,19 @@ func browserTraceMediaType(value string) (string, bool) {
 	}
 }
 
-func otlpRelayHeaders() map[string]string {
-	value := strings.TrimSpace(os.Getenv("OTEL_EXPORTER_OTLP_TRACES_HEADERS"))
-	if value == "" {
-		value = strings.TrimSpace(os.Getenv("OTEL_EXPORTER_OTLP_HEADERS"))
-	}
-	headers := make(map[string]string)
-	for _, entry := range strings.Split(value, ",") {
-		key, rawValue, ok := strings.Cut(entry, "=")
-		key = strings.TrimSpace(key)
-		rawValue = strings.TrimSpace(rawValue)
-		if !ok || key == "" || strings.ContainsAny(key+rawValue, "\r\n") {
-			continue
-		}
-		decoded, err := url.QueryUnescape(rawValue)
-		if err != nil || strings.ContainsAny(decoded, "\r\n") {
-			continue
-		}
-		headers[key] = decoded
+func otlpRelayHeaders(configs ...Config) map[string]string {
+	configured := configuredOrLoaded(configs).BrowserTraceHeaders
+	headers := make(map[string]string, len(configured))
+	for key, value := range configured {
+		headers[key] = value
 	}
 	return headers
 }
 
-func browserTraceEndpoint() (string, error) {
-	endpoint := strings.TrimSpace(os.Getenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"))
+func browserTraceEndpoint(configs ...Config) (string, error) {
+	endpoint := configuredOrLoaded(configs).BrowserTraceEndpoint
 	if endpoint == "" {
-		endpoint = strings.TrimSpace(os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT"))
-		if endpoint == "" {
-			return "", errors.New("OTLP endpoint is empty")
-		}
-		parsed, err := url.Parse(endpoint)
-		if err != nil || parsed.Scheme == "" || parsed.Host == "" {
-			return "", errors.New("OTLP endpoint is invalid")
-		}
-		parsed.Path = path.Join(parsed.Path, "/v1/traces")
-		return parsed.String(), nil
+		return "", errors.New("OTLP endpoint is empty")
 	}
-	parsed, err := url.Parse(endpoint)
-	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
-		return "", errors.New("OTLP traces endpoint is invalid")
-	}
-	return parsed.String(), nil
+	return endpoint, nil
 }

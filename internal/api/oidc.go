@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 	"time"
 
@@ -28,7 +27,7 @@ func (h *Handlers) StartOIDC(ctx *gin.Context) {
 		return
 	}
 
-	if strings.TrimSpace(os.Getenv("PUBLIC_BASE_URL")) == "" {
+	if h.config.PublicBaseURL == "" {
 		writeError(ctx, http.StatusInternalServerError, "PUBLIC_BASE_URL is required")
 		return
 	}
@@ -80,7 +79,7 @@ func (h *Handlers) CompleteOIDC(ctx *gin.Context) {
 		return
 	}
 
-	if strings.TrimSpace(os.Getenv("PUBLIC_BASE_URL")) == "" {
+	if h.config.PublicBaseURL == "" {
 		h.redirectAuthError(ctx, "oidc_callback_invalid")
 		return
 	}
@@ -191,7 +190,7 @@ func (h *Handlers) oauth2Config(ctx context.Context, provider model.AuthProvider
 		ClientID:     provider.ClientID,
 		ClientSecret: h.resolveSecretContext(ctx, provider.ClientSecretRef),
 		Endpoint:     oidcProvider.Endpoint(),
-		RedirectURL:  oidcCallbackURL(externalBaseURL()),
+		RedirectURL:  oidcCallbackURL(h.externalBaseURL(nil)),
 		Scopes:       normalizeScopes(provider.Scopes),
 	}
 }
@@ -305,10 +304,6 @@ func oidcClaimsFromToken(idToken *oidc.IDToken, provider model.AuthProvider) (oi
 
 func (h *Handlers) redirectAuthError(ctx *gin.Context, code string) {
 	ctx.Redirect(http.StatusFound, "/login?auth_error="+url.QueryEscape(code))
-}
-
-func externalBaseURL() string {
-	return strings.TrimRight(os.Getenv("PUBLIC_BASE_URL"), "/")
 }
 
 func oidcCallbackURL(publicBaseURL string) string {

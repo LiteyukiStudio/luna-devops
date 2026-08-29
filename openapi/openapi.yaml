@@ -354,58 +354,6 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/BuildEnvironmentConfig" }
 
-  /api/v1/auth/bootstrap:
-    get:
-      operationId: getBootstrapStatus
-      tags: [Auth]
-      summary: Get bootstrap and runtime mode status
-      responses:
-        "200":
-          description: Bootstrap status. devLoginHint is returned only in development mode.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/BootstrapStatus"
-
-  /api/v1/auth/bootstrap/admin:
-    post:
-      operationId: initializeAdmin
-      tags: [Auth]
-      summary: Initialize the first platform admin
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/InitializeAdminInput"
-      responses:
-        "201":
-          description: Created platform admin and session.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/AuthSessionResponse"
-        "400":
-          description: Invalid email, password, language, or JSON (`bootstrap.invalid_input` or `request.invalid_json`).
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ErrorResponse" }
-        "403":
-          description: The production bootstrap token is invalid (`bootstrap.token_invalid`).
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ErrorResponse" }
-        "409":
-          description: Platform admin already exists.
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ErrorResponse" }
-        "503":
-          description: Production bootstrap is unavailable because `BOOTSTRAP_TOKEN` is not configured (`bootstrap.unavailable`).
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ErrorResponse" }
-
   /api/v1/auth/login:
     post:
       operationId: login
@@ -9700,23 +9648,6 @@ components:
           type: object
           additionalProperties: true
       required: [user]
-    BootstrapStatus:
-      type: object
-      properties:
-        mode:
-          type: string
-          enum: [development, production]
-          description: Production initialization requires the API process to have `BOOTSTRAP_TOKEN` configured and the same value supplied as `bootstrapToken`.
-        initialized: { type: boolean }
-        devLoginEnabled: { type: boolean }
-        devLoginHint:
-          type: object
-          description: Present only in development mode.
-          properties:
-            email: { type: string, format: email }
-            password: { type: string }
-          required: [email, password]
-      required: [mode, initialized, devLoginEnabled]
     ConfigDefinition:
       type: object
       properties:
@@ -10393,22 +10324,6 @@ components:
         clientSecret: { type: string, writeOnly: true }
         enabled: { type: boolean }
       required: [name]
-    InitializeAdminInput:
-      type: object
-      properties:
-        email: { type: string, format: email }
-        name: { type: string }
-        password: { type: string, minLength: 8 }
-        language: { type: string, enum: [zh-CN, en-US] }
-        bootstrapToken:
-          type: string
-          writeOnly: true
-          description: Required when `mode` is `production`; must exactly match the API process `BOOTSTRAP_TOKEN`. Ignored in development.
-        rememberMe:
-          type: boolean
-          default: false
-          description: When true, also creates a rotating, per-user 30-day HttpOnly remember cookie. The regular session remains valid for 24 hours.
-      required: [email, password]
     LoginInput:
       type: object
       properties:

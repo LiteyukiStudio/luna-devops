@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "luna-devops.workerConfigName" . }}
+  labels:
+    {{- include "luna-devops.componentLabels" (dict "root" . "component" "worker") | nindent 4 }}
+data:
+  WORKER_DB_MAX_OPEN_CONNS: {{ .Values.worker.database.maxOpenConns | quote }}
+  WORKER_DB_MAX_IDLE_CONNS: {{ .Values.worker.database.maxIdleConns | quote }}
+  WORKER_DB_CONN_MAX_LIFETIME: {{ .Values.worker.database.connMaxLifetime | quote }}
+  WORKER_DB_CONN_MAX_IDLE_TIME: {{ .Values.worker.database.connMaxIdleTime | quote }}
+  DEPLOY_ROLLOUT_TIMEOUT_SECONDS: {{ .Values.worker.deployRolloutTimeoutSeconds | quote }}
+  CERT_MANAGER_CLUSTER_ISSUER: {{ .Values.worker.certManagerClusterIssuer | quote }}
+  BUILD_EXECUTOR_IMAGE: {{ .Values.worker.buildExecutorImage | quote }}
+  BUILD_EGRESS_MODE: {{ .Values.worker.buildEgressMode | quote }}
+  BUILD_JOB_TIMEOUT_SECONDS: {{ .Values.worker.buildJobTimeoutSeconds | quote }}
+  BUILD_JOB_TTL_SECONDS: {{ .Values.worker.buildJobTtlSeconds | quote }}
+  BUILD_CACHE_ENABLED: {{ .Values.worker.buildCacheEnabled | quote }}
+  BUILD_CACHE_TAG: {{ .Values.worker.buildCacheTag | quote }}
+  BUILD_PRIVATE_EGRESS_CIDRS: {{ .Values.worker.buildPrivateEgressCidrs | quote }}
+  BUILD_PRIVATE_EGRESS_PORTS: {{ .Values.worker.buildPrivateEgressPorts | quote }}
+  BUILD_BLOCKED_EGRESS_CIDRS: {{ .Values.worker.buildBlockedEgressCidrs | quote }}

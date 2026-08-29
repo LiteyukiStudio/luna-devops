@@ -49,11 +49,11 @@ func run(args []string, output io.Writer) error {
 			fmt.Errorf("usage: tasks [list-archived|run|delete] -queue <queue> [-task-id <id>]"))
 	}
 
-	cfg := config.Load()
-	if err := cfg.ValidateRedis(); err != nil {
+	cfg, err := loadTasksConfig()
+	if err != nil {
 		return telemetry.WrapError("config.invalid", "set REDIS_ADDR to a redis:// or rediss:// URI", "validate Redis configuration", err)
 	}
-	inspector := asynq.NewInspector(cfg.RedisOptions().Asynq())
+	inspector := asynq.NewInspector(cfg.Redis.Asynq())
 	defer inspector.Close()
 
 	switch flags.Arg(0) {

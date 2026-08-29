@@ -13,7 +13,6 @@ export const coreTranslationBundles = [
   'oauthApps',
   'theme',
   'loginPage',
-  'bootstrap',
 ] as const
 
 export const spreadFeatureBundles = ['aiAssistant', 'inbox'] as const

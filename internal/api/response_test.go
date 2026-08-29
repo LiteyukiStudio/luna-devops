@@ -74,9 +74,9 @@ func TestInternalErrorCodeFallsBackWithoutRegisteredRoute(t *testing.T) {
 }
 
 func TestWriteErrorKeyWithDetailsKeepsStableMachineReadableContext(t *testing.T) {
-	t.Setenv("APP_ENV", "development")
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)
+	setRuntimeMode(ctx, "development")
 
 	writeErrorKeyWithDetails(
 		ctx,
@@ -143,9 +143,9 @@ func TestProductionErrorResponseContainsOnlySafeFields(t *testing.T) {
 }
 
 func TestDevelopmentErrorResponseKeepsDiagnosticDetail(t *testing.T) {
-	t.Setenv("APP_ENV", "development")
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)
+	setRuntimeMode(ctx, "development")
 	ctx.Request = httptest.NewRequest(http.MethodGet, "/failure", nil)
 
 	writeErrorCode(ctx, http.StatusInternalServerError, "provider.request_failed", "provider connection refused")
@@ -163,9 +163,9 @@ func TestDevelopmentErrorResponseKeepsDiagnosticDetail(t *testing.T) {
 }
 
 func TestDevelopmentErrorResponseRedactsCredentials(t *testing.T) {
-	t.Setenv("APP_ENV", "development")
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)
+	setRuntimeMode(ctx, "development")
 	ctx.Request = httptest.NewRequest(http.MethodGet, "/failure", nil)
 
 	writeErrorCode(ctx, http.StatusInternalServerError, "provider.request_failed",
@@ -267,8 +267,8 @@ func TestProductionTerminalDisconnectMessageIsSafe(t *testing.T) {
 }
 
 func TestDevelopmentTerminalDisconnectMessageKeepsDetail(t *testing.T) {
-	t.Setenv("APP_ENV", "development")
 	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	setRuntimeMode(ctx, "development")
 	ctx.Request = httptest.NewRequest(http.MethodGet, "/terminal", nil)
 	detail := "provider connection refused"
 
@@ -302,9 +302,9 @@ func TestServiceBindingConflictOmitsAffectedSourcesInProduction(t *testing.T) {
 }
 
 func TestServiceBindingConflictKeepsAffectedSourcesInDevelopment(t *testing.T) {
-	t.Setenv("APP_ENV", "development")
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)
+	setRuntimeMode(ctx, "development")
 	ctx.Request = httptest.NewRequest(http.MethodDelete, "/service-binding-target", nil)
 
 	writeServiceBindingInUse(ctx, []serviceBindingUsage{{

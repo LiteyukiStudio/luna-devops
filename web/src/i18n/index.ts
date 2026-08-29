@@ -29,7 +29,6 @@ const featureLocaleLoaders = import.meta.glob<LocaleModule>([
   '!./locales/*/oauthApps.ts',
   '!./locales/*/theme.ts',
   '!./locales/*/loginPage.ts',
-  '!./locales/*/bootstrap.ts',
 ])
 const activeFeatureBundles = new Set<string>()
 const spreadFeatureBundleSet = new Set<string>(spreadFeatureBundles)

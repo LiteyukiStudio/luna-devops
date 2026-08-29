@@ -1,13 +1,10 @@
-import type { AgentObservabilityOverview, AgentObservabilityRange, AgentObservabilitySource, AgentObservabilityTestResult, AgentObservabilityToolCall, AgentObservabilityToolSummary, AgentObservabilityTraceDetail, AgentObservabilityTurn, AuthAdmissionPolicy, AuthProvider, AuthRegistrationSettings, AuthRegistrationStatus, BootstrapStatus, ConfigDefinition, CurrentUser, DataRetentionCatalogResponse, DataRetentionPayload, DataRetentionResultResponse, ExternalIdentity, OIDCCallbackConfig, PaginatedResponse, PaginationParams, User } from '../types'
+import type { AgentObservabilityOverview, AgentObservabilityRange, AgentObservabilitySource, AgentObservabilityTestResult, AgentObservabilityToolCall, AgentObservabilityToolSummary, AgentObservabilityTraceDetail, AgentObservabilityTurn, AuthAdmissionPolicy, AuthProvider, AuthRegistrationSettings, AuthRegistrationStatus, ConfigDefinition, CurrentUser, DataRetentionCatalogResponse, DataRetentionPayload, DataRetentionResultResponse, ExternalIdentity, OIDCCallbackConfig, PaginatedResponse, PaginationParams, User } from '../types'
 import type { PlatformRoleValue } from '@/lib/roles'
 import { paginationQuery, request } from '../core'
 
 export const authApi = {
   getPublicConfigs: (keys: string[]) =>
     request<Record<string, string>>('/public/configs', { method: 'POST', body: JSON.stringify({ keys }) }),
-  getBootstrapStatus: () => request<BootstrapStatus>('/auth/bootstrap'),
-  initializeAdmin: (payload: { email: string, name: string, password: string, language: 'zh-CN' | 'zh-TW' | 'en-US' | 'ja-JP' | 'ko-KR', rememberMe: boolean, bootstrapToken: string }) =>
-    request<{ user: CurrentUser }>('/auth/bootstrap/admin', { method: 'POST', body: JSON.stringify(payload) }),
   login: (payload: { email: string, password: string, rememberMe: boolean }) =>
     request<{ user: CurrentUser }>('/auth/login', { method: 'POST', body: JSON.stringify(payload) }),
   resumeLogin: (payload: { userId: string }) =>

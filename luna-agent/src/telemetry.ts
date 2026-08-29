@@ -11,7 +11,7 @@ import { HttpInstrumentation } from "@opentelemetry/instrumentation-http"
 import { PgInstrumentation } from "@opentelemetry/instrumentation-pg"
 import { PinoInstrumentation } from "@opentelemetry/instrumentation-pino"
 import { UndiciInstrumentation } from "@opentelemetry/instrumentation-undici"
-import { envDetector } from "@opentelemetry/resources"
+import { resourceFromAttributes } from "@opentelemetry/resources"
 import { BatchLogRecordProcessor } from "@opentelemetry/sdk-logs"
 import { PeriodicExportingMetricReader } from "@opentelemetry/sdk-metrics"
 import { NodeSDK } from "@opentelemetry/sdk-node"
@@ -19,8 +19,9 @@ import type pinoFactory from "pino"
 import type { DestinationStream, Logger } from "pino"
 import type pinoPrettyFactory from "pino-pretty"
 import type { Pool } from "pg"
+import { loadTelemetryConfig, type AgentTelemetryConfig } from "./config.js"
 import { findDiagnosticError } from "./diagnostic-error.js"
-import { genAISchemaURL } from "./genai-semconv.js"
+import { configureGenAIAgentVersion, genAISchemaURL } from "./genai-semconv.js"
 import { redact } from "./redaction.js"
 
 const instrumentationName = "luna-agent"
@@ -36,7 +37,16 @@ const aiCorrelationAttributeNames = [
 let sdk: NodeSDK | undefined
 let processLogger: Logger | undefined
 let aiContentCaptureEnabled = false
+let agentConfig: AgentTelemetryConfig | undefined
 const aiContentAttributeLimit = 32_768
+
+const safeDefaultConfig = loadTelemetryConfig({})
+
+export function configureAgentTelemetry(config: AgentTelemetryConfig): void {
+  agentConfig = config
+  processLogger = undefined
+  configureGenAIAgentVersion(config.OTEL_SERVICE_VERSION)
+}
 
 export function configureAIContentCapture(enabled: boolean): void {
   aiContentCaptureEnabled = enabled
@@ -177,21 +187,27 @@ function deferredHistogram(name: string, description: string, unit?: string, exp
   }
 }
 
-export function initializeTelemetry(endpoint = process.env.OTEL_EXPORTER_OTLP_ENDPOINT): void {
+export function initializeTelemetry(config = loadTelemetryConfig()): void {
+  configureAgentTelemetry(config)
+  const endpoint = config.OTEL_EXPORTER_OTLP_ENDPOINT
   if (!endpoint?.trim() || sdk) return
   const parsedEndpoint = new URL(endpoint)
   if (parsedEndpoint.protocol !== "http:" && parsedEndpoint.protocol !== "https:") {
     throw new Error("OTEL_EXPORTER_OTLP_ENDPOINT must use http or https")
   }
+  const headers = parseOTELKeyValueList(config.OTEL_EXPORTER_OTLP_HEADERS)
+  const resourceAttributes = parseOTELKeyValueList(config.OTEL_RESOURCE_ATTRIBUTES)
+  if (config.OTEL_SERVICE_VERSION) resourceAttributes["service.version"] = config.OTEL_SERVICE_VERSION.trim()
   sdk = new NodeSDK({
     serviceName: "luna-agent",
-    resourceDetectors: [envDetector],
-    traceExporter: new OTLPTraceExporter(),
+    resource: resourceFromAttributes(resourceAttributes),
+    resourceDetectors: [],
+    traceExporter: new OTLPTraceExporter({ url: otlpSignalEndpoint(parsedEndpoint, "traces"), headers }),
     metricReaders: [new PeriodicExportingMetricReader({
-      exporter: new OTLPMetricExporter(),
+      exporter: new OTLPMetricExporter({ url: otlpSignalEndpoint(parsedEndpoint, "metrics"), headers }),
       exportIntervalMillis: 15_000,
     })],
-    logRecordProcessors: [new BatchLogRecordProcessor({ exporter: new OTLPLogExporter() })],
+    logRecordProcessors: [new BatchLogRecordProcessor({ exporter: new OTLPLogExporter({ url: otlpSignalEndpoint(parsedEndpoint, "logs"), headers }) })],
     instrumentations: [
       new HttpInstrumentation({
         ignoreIncomingRequestHook: request => isHealthCheckPath(request.url ?? ""),
@@ -214,7 +230,7 @@ export function initializeTelemetry(endpoint = process.env.OTEL_EXPORTER_OTLP_EN
           span.setAttribute("hook.callback.name", "fastify.route_handler")
         },
       }),
-      ...(isDatabaseSpanCaptureEnabled()
+      ...(isDatabaseSpanCaptureEnabled(config.AI_OBSERVABILITY_CAPTURE_DATABASE_SPANS)
         ? [new PgInstrumentation({
             enhancedDatabaseReporting: false,
             ignoreConnectSpans: true,
@@ -244,8 +260,22 @@ export function initializeTelemetry(endpoint = process.env.OTEL_EXPORTER_OTLP_EN
   sdk.start()
 }
 
-export function isDatabaseSpanCaptureEnabled(value = process.env.AI_OBSERVABILITY_CAPTURE_DATABASE_SPANS): boolean {
-  return value?.trim().toLowerCase() === "true"
+export function isDatabaseSpanCaptureEnabled(value = false): boolean {
+  return value
+}
+
+function otlpSignalEndpoint(base: URL, signal: "logs" | "metrics" | "traces"): string {
+  const endpoint = new URL(base)
+  endpoint.pathname = `${endpoint.pathname.replace(/\/+$/, "")}/v1/${signal}`
+  return endpoint.toString()
+}
+
+function parseOTELKeyValueList(value?: string): Record<string, string> {
+  if (!value) return {}
+  return Object.fromEntries(value.split(",").map((entry) => {
+    const separator = entry.indexOf("=")
+    return [decodeURIComponent(entry.slice(0, separator).trim()), decodeURIComponent(entry.slice(separator + 1).trim())]
+  }))
 }
 
 export function isHealthCheckPath(value: string): boolean {
@@ -489,17 +519,18 @@ export function createAgentLogger(options: {
   level?: string
   noColor?: boolean
 } = {}): Logger {
+  const config = currentAgentConfig()
   const pino = require("pino") as typeof pinoFactory
   const destination = options.destination ?? process.stderr
   const format = resolveAgentLogFormat(
-    options.format ?? process.env.LOG_FORMAT,
+    options.format ?? config.LOG_FORMAT,
     options.isTTY ?? Boolean(process.stderr.isTTY),
     options.isContainer ?? agentRunsInContainer(),
   )
   const color = format === "console" && resolveAgentLogColor(
-    options.color ?? process.env.LOG_COLOR,
+    options.color ?? config.LOG_COLOR,
     options.isTTY ?? Boolean(process.stderr.isTTY),
-    options.noColor ?? process.env.NO_COLOR !== undefined,
+    options.noColor ?? config.NO_COLOR !== undefined,
   )
   let output: DestinationStream = destination
   if (format === "console") {
@@ -517,7 +548,7 @@ export function createAgentLogger(options: {
   }
   return pino({
     base: { "service.name": "luna-agent" },
-    level: resolveAgentLogLevel(options.level ?? process.env.LOG_LEVEL),
+    level: resolveAgentLogLevel(options.level ?? config.LOG_LEVEL),
     messageKey: "message",
     redact: {
       censor: "[REDACTED]",
@@ -529,6 +560,16 @@ export function createAgentLogger(options: {
     },
     timestamp: pino.stdTimeFunctions.isoTime,
   }, output)
+}
+
+function currentAgentConfig(): AgentTelemetryConfig {
+  if (agentConfig) return agentConfig
+  try {
+    return loadTelemetryConfig()
+  }
+  catch {
+    return safeDefaultConfig
+  }
 }
 
 function singleLineConsoleMessage(value: unknown): string {

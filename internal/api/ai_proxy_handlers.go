@@ -14,7 +14,6 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/aiagent"
 	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/billing"
-	"github.com/LiteyukiStudio/devops/internal/config"
 	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/gin-gonic/gin"
@@ -254,7 +253,7 @@ func (h *Handlers) copyAIResponse(ctx *gin.Context, response *aiagent.Response, 
 	if status == 0 {
 		status = fallbackStatus
 	}
-	if (status < http.StatusOK || status >= http.StatusMultipleChoices) && config.RuntimeMode() == "production" {
+	if (status < http.StatusOK || status >= http.StatusMultipleChoices) && !isDevelopmentRequest(ctx) {
 		ctx.Header("Cache-Control", "no-store")
 		if retryAfter := response.Header.Get("Retry-After"); retryAfter != "" {
 			ctx.Header("Retry-After", retryAfter)

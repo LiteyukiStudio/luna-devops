@@ -6,11 +6,59 @@ deploy the independently released `liteyukistudio/luna-agent` image.
 
 ## Install
 
+For a fresh database, create the API-only initial administrator Secret before
+the first install. Use your secret manager in production; the manifest below
+only shows the supported keys and must not be committed:
+
 ```bash
+kubectl create namespace luna-devops
+kubectl -n luna-devops apply -f - <<'EOF'
+apiVersion: v1
+kind: Secret
+metadata:
+  name: luna-devops-initial-admin
+type: Opaque
+stringData:
+  initial-admin-email: admin@example.com
+  initial-admin-name: Platform Admin
+  initial-admin-password: replace-with-a-strong-password
+  initial-admin-language: zh-CN
+EOF
+
 helm install luna-devops ./charts/luna-devops \
   --namespace luna-devops \
-  --create-namespace
+  --set api.initialAdmin.existingSecret=luna-devops-initial-admin
 ```
+
+For a fresh database, the external Secret must contain `initial-admin-email`
+and `initial-admin-password`. The `initial-admin-name` and
+`initial-admin-language` keys are optional; API falls back to the email and
+`zh-CN`. Override the corresponding `api.initialAdmin.*Key` values when your
+Secret uses different key names. The password must contain 8 to 72 bytes, and
+the language must be `zh-CN` or `en-US`. These values are injected into API
+only; Worker and Agent never receive them.
+
+For a controlled non-production install, the chart creates its own Secret when
+any `api.initialAdmin.email`, `name`, `password`, or `language` value is set.
+For a fresh database, provide at least `email` and `password`. Avoid this path
+in production because the password becomes part of Helm values and release
+history. No default initial administrator Secret or credentials are generated.
+
+```yaml
+api:
+  initialAdmin:
+    email: admin@example.com
+    name: Platform Admin
+    password: replace-with-a-strong-password
+    language: zh-CN
+```
+
+Once an active administrator exists, API no longer requires these settings and
+never uses them to reconcile or reset the account. You may clear
+`api.initialAdmin.existingSecret`, `email`, `name`, `password`, and `language`,
+then remove the external Secret after a successful login. An upgrade with none
+of those initial administrator values renders no chart-managed Secret; all
+four API Secret references are optional so the deployment remains valid.
 
 Open the console:
 
@@ -21,7 +69,7 @@ kubectl -n luna-devops port-forward svc/luna-devops-api 8088:80
 Then visit:
 
 ```text
-http://localhost:8088
+http://localhost:8088/login
 ```
 
 ## Set a public URL
@@ -32,6 +80,7 @@ When exposing the console with Ingress, set `app.publicBaseUrl` to the browser-f
 helm upgrade --install luna-devops ./charts/luna-devops \
   --namespace luna-devops \
   --create-namespace \
+  --set api.initialAdmin.existingSecret=luna-devops-initial-admin \
   --set app.publicBaseUrl=https://devops.example.com \
   --set ingress.enabled=true \
   --set ingress.className=nginx \
@@ -54,6 +103,36 @@ externalRedis:
 
 For production, keep `app.secretEncryptionKey` stable. If you do not set it, the chart creates one on first install and reuses the existing Secret during upgrades. The chart stores the built-in Redis password and application connection URI as separate Secret keys, so Redis does not parse its own URI. An external Redis still uses one complete URI; use `rediss://` when it requires TLS.
 
+## Configuration ownership and rollouts
+
+The chart renders three separate ConfigMaps instead of sharing every setting
+with every process:
+
+- The shared ConfigMap contains `PUBLIC_BASE_URL` and the project-volume
+  transfer contract consumed by both API and Worker.
+- The API ConfigMap contains the listener, API database-pool, CORS,
+  trusted-proxy, and Agent-client settings. `ai.agentAddress` is exposed to API
+  as `AI_AGENT_BASE_URL`.
+- The Worker ConfigMap contains the Worker database-pool, build, deployment,
+  and certificate settings.
+
+Database, Redis, encryption, logging, and OpenTelemetry settings continue to
+use an explicit workload allowlist. Initial administrator values remain API
+only, and the AI internal Secret remains API-and-Agent only.
+
+Use `api.extraEnv` or `worker.extraEnv` only for non-sensitive, workload-local
+variables that the chart does not already manage. The chart rejects attempts
+to override managed configuration or Secret-backed variables. The former
+shared `app.extraEnv` value is no longer accepted because it crossed process
+and Secret boundaries.
+
+Managed ConfigMap and Secret content is hashed into the consuming Pod template,
+so a Helm upgrade rolls out affected workloads. API-only and Worker-only
+ConfigMap changes do not restart the other workload; shared changes restart
+both. Kubernetes cannot observe content changes inside an externally managed
+Secret through Helm templating, so rotate those Secrets with a versioned name
+or explicitly restart the consuming workload.
+
 ## Enable the AI Agent
 
 AI is fail-closed and disabled by default. Set `ai.enabled=true` and point
@@ -66,7 +145,9 @@ For a short, controlled diagnostic window, set
 `ai.agent.observabilityCaptureContent=true` to export redacted model input,
 model output, tool arguments, and tool results to controlled traces. Logs keep
 event metadata only. It is disabled by default because the trace content can
-contain user and platform data.
+contain user and platform data. Set
+`ai.agent.observabilityCaptureDatabaseSpans=true` only when individual
+PostgreSQL query timings are needed; it remains disabled by default.
 
 The chart enables an API-to-Agent ingress NetworkPolicy by default. Agent
 egress isolation is opt-in because the Agent may connect to externally managed

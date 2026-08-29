@@ -1,9 +1,12 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"sync"
@@ -12,47 +15,38 @@ import (
 
 	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/model"
+	"github.com/alicebob/miniredis/v2"
+	"github.com/gin-gonic/gin"
+	"golang.org/x/crypto/bcrypt"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
 
-func TestInitializeAdminWithLockAllowsSingleConcurrentInitializer(t *testing.T) {
+func TestEnsureInitialAdminAllowsSingleConcurrentInitializer(t *testing.T) {
 	db := authIntegrationDB(t)
-	users := []model.User{
-		{ID: "usr_bootstrap_a", Email: "bootstrap-a@example.com", Name: "A", Role: authz.PlatformRoleAdmin, Language: "en-US", Password: "hash"},
-		{ID: "usr_bootstrap_b", Email: "bootstrap-b@example.com", Name: "B", Role: authz.PlatformRoleAdmin, Language: "en-US", Password: "hash"},
+	input := InitialAdminConfig{
+		Email: "admin@example.com", Name: "Initial Admin", Password: "secure-password", Language: "en-US",
 	}
 
 	start := make(chan struct{})
-	errorsByAttempt := make(chan error, len(users))
+	errorsByAttempt := make(chan error, 2)
 	var workers sync.WaitGroup
-	for _, user := range users {
-		user := user
+	for range 2 {
 		workers.Add(1)
 		go func() {
 			defer workers.Done()
 			<-start
-			errorsByAttempt <- initializeAdminWithLock(db, user)
+			errorsByAttempt <- EnsureInitialAdmin(context.Background(), db, "production", input)
 		}()
 	}
 	close(start)
 	workers.Wait()
 	close(errorsByAttempt)
 
-	succeeded := 0
-	alreadyInitialized := 0
 	for err := range errorsByAttempt {
-		switch {
-		case err == nil:
-			succeeded++
-		case errors.Is(err, errBootstrapAlreadyInitialized):
-			alreadyInitialized++
-		default:
-			t.Fatalf("unexpected bootstrap error: %v", err)
+		if err != nil {
+			t.Fatalf("EnsureInitialAdmin() error = %v", err)
 		}
-	}
-	if succeeded != 1 || alreadyInitialized != 1 {
-		t.Fatalf("bootstrap results: succeeded=%d alreadyInitialized=%d", succeeded, alreadyInitialized)
 	}
 
 	var adminCount int64
@@ -61,6 +55,119 @@ func TestInitializeAdminWithLockAllowsSingleConcurrentInitializer(t *testing.T) 
 	}
 	if adminCount != 1 {
 		t.Fatalf("administrator count = %d", adminCount)
+	}
+	var admin model.User
+	if err := db.Where("role = ?", authz.PlatformRoleAdmin).First(&admin).Error; err != nil {
+		t.Fatalf("load administrator: %v", err)
+	}
+	if admin.Email != input.Email || admin.Name != input.Name || admin.Language != input.Language {
+		t.Fatalf("administrator = %#v", admin)
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(admin.Password), []byte(input.Password)); err != nil {
+		t.Fatalf("administrator password does not match: %v", err)
+	}
+	assertRecordCount(t, db, &model.Project{}, "", nil, 1)
+	assertRecordCount(t, db, &model.ProjectMember{}, "user_id = ? and role = ?", []any{admin.ID, authz.ProjectRoleOwner}, 1)
+	assertRecordCount(t, db, &model.AuditLog{}, "action = ? and user_id = ?", []any{"auth.initial_admin_create", admin.ID}, 1)
+}
+
+func TestEnsureInitialAdminDoesNotReconcileExistingAdministrator(t *testing.T) {
+	db := authIntegrationDB(t)
+	existing := model.User{
+		ID: "usr_existing_admin", Email: "existing@example.com", Name: "Existing", Role: authz.PlatformRoleAdmin,
+		Language: "en-US", Password: "existing-hash",
+	}
+	if err := db.Create(&existing).Error; err != nil {
+		t.Fatalf("create existing administrator: %v", err)
+	}
+	if err := EnsureInitialAdmin(context.Background(), db, "production", InitialAdminConfig{}); err != nil {
+		t.Fatalf("EnsureInitialAdmin() with removed configuration error = %v", err)
+	}
+
+	err := EnsureInitialAdmin(context.Background(), db, "production", InitialAdminConfig{
+		Email: "replacement@example.com", Password: "replacement-password", Name: "Replacement", Language: "zh-CN",
+	})
+	if err != nil {
+		t.Fatalf("EnsureInitialAdmin() error = %v", err)
+	}
+	var stored model.User
+	if err := db.First(&stored, "id = ?", existing.ID).Error; err != nil {
+		t.Fatalf("load existing administrator: %v", err)
+	}
+	if stored.Email != existing.Email || stored.Name != existing.Name || stored.Password != existing.Password || stored.Language != existing.Language {
+		t.Fatalf("existing administrator was modified: %#v", stored)
+	}
+}
+
+func TestConfiguredInitialAdministratorCanLogin(t *testing.T) {
+	db := authIntegrationDB(t)
+	input := InitialAdminConfig{
+		Email: "login-admin@example.com", Name: "Login Admin", Password: "secure-password", Language: "en-US",
+	}
+	if err := EnsureInitialAdmin(context.Background(), db, "production", input); err != nil {
+		t.Fatalf("EnsureInitialAdmin() error = %v", err)
+	}
+	redisServer := miniredis.RunT(t)
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", bytes.NewBufferString(`{"email":"login-admin@example.com","password":"secure-password","rememberMe":false}`))
+	ctx.Request.Header.Set("Content-Type", "application/json")
+
+	(&Handlers{db: db, mode: "production", rateLimiter: newRateLimiter(redisServer.Addr())}).Login(ctx)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("login status = %d, body = %s", recorder.Code, recorder.Body.String())
+	}
+	assertRecordCount(t, db, &model.UserSession{}, "", nil, 1)
+}
+
+func TestEnsureInitialAdminRejectsInvalidConfigurationOnEmptyDatabase(t *testing.T) {
+	db := authIntegrationDB(t)
+	err := EnsureInitialAdmin(context.Background(), db, "production", InitialAdminConfig{
+		Password: "secure-password",
+	})
+	if !errors.Is(err, ErrInitialAdminConfigInvalid) {
+		t.Fatalf("EnsureInitialAdmin() error = %v, want config invalid", err)
+	}
+	assertRecordCount(t, db, &model.User{}, "", nil, 0)
+	assertRecordCount(t, db, &model.Project{}, "", nil, 0)
+	assertRecordCount(t, db, &model.ProjectMember{}, "", nil, 0)
+	assertRecordCount(t, db, &model.AuditLog{}, "", nil, 0)
+}
+
+func TestEnsureInitialAdminRejectsAmbiguousExistingUsers(t *testing.T) {
+	for _, testCase := range []struct {
+		name       string
+		user       model.User
+		softDelete bool
+	}{
+		{name: "ordinary user", user: model.User{ID: "usr_ordinary", Email: "ordinary@example.com", Name: "Ordinary", Role: authz.PlatformRoleUser}},
+		{name: "disabled administrator", user: model.User{ID: "usr_disabled_admin", Email: "disabled@example.com", Name: "Disabled", Role: authz.PlatformRoleAdmin, Disabled: true}},
+		{name: "deleted administrator", user: model.User{ID: "usr_deleted_admin", Email: "deleted@example.com", Name: "Deleted", Role: authz.PlatformRoleAdmin}, softDelete: true},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			db := authIntegrationDB(t)
+			if err := db.Create(&testCase.user).Error; err != nil {
+				t.Fatalf("create existing user: %v", err)
+			}
+			if testCase.softDelete {
+				if err := db.Delete(&testCase.user).Error; err != nil {
+					t.Fatalf("soft-delete existing user: %v", err)
+				}
+			}
+			err := EnsureInitialAdmin(context.Background(), db, "production", InitialAdminConfig{
+				Email: "admin@example.com", Password: "secure-password",
+			})
+			if !errors.Is(err, ErrInitialAdminRecoveryRequired) {
+				t.Fatalf("EnsureInitialAdmin() error = %v, want recovery required", err)
+			}
+			var userCount int64
+			if err := db.Unscoped().Model(&model.User{}).Count(&userCount).Error; err != nil {
+				t.Fatalf("count all users: %v", err)
+			}
+			if userCount != 1 {
+				t.Fatalf("user count = %d, want 1", userCount)
+			}
+		})
 	}
 }
 

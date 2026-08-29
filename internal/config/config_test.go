@@ -10,104 +10,183 @@ import (
 	"time"
 )
 
-func TestLoadEnvFile(t *testing.T) {
+func TestLoadSharedFromEnvFile(t *testing.T) {
 	resetEnvLoader(t)
-	unsetEnv(t, "API_ADDR")
-	unsetEnv(t, "DATABASE_URL")
-	unsetEnv(t, "REDIS_ADDR")
-
+	for _, key := range []string{"DATABASE_URL", "REDIS_ADDR", "PUBLIC_BASE_URL", "VOLUME_TRANSFER_MAX_BYTES"} {
+		unsetEnv(t, key)
+	}
 	envFile := filepath.Join(t.TempDir(), ".env.local")
-	content := []byte("API_ADDR=:19090\nDATABASE_URL=postgres://user:pass@db:5432/app?sslmode=disable\nREDIS_ADDR=redis://redis:6379/0\n")
+	content := []byte(strings.Join([]string{
+		"DATABASE_URL=postgres://user:pass@db:5432/app?sslmode=disable",
+		"REDIS_ADDR=redis://redis:6379/0",
+		"PUBLIC_BASE_URL=https://devops.example.com/",
+		"VOLUME_TRANSFER_MAX_BYTES=12Gi",
+	}, "\n") + "\n")
 	if err := os.WriteFile(envFile, content, 0o600); err != nil {
 		t.Fatalf("write env file: %v", err)
 	}
-
 	t.Setenv("ENV_FILE", envFile)
 
-	cfg := Load()
-	if cfg.APIAddr != ":19090" {
-		t.Fatalf("APIAddr = %q", cfg.APIAddr)
+	cfg, err := LoadShared()
+	if err != nil {
+		t.Fatal(err)
 	}
-	if cfg.DatabaseURL != "postgres://user:pass@db:5432/app?sslmode=disable" {
-		t.Fatalf("DatabaseURL = %q", cfg.DatabaseURL)
+	if cfg.DatabaseURL != "postgres://user:pass@db:5432/app?sslmode=disable" || cfg.RedisAddr != "redis://redis:6379/0" {
+		t.Fatalf("shared infrastructure = %#v", cfg)
 	}
-	if cfg.RedisAddr != "redis://redis:6379/0" {
-		t.Fatalf("RedisAddr = %q", cfg.RedisAddr)
+	if cfg.PublicBaseURL != "https://devops.example.com" || cfg.VolumeTransferMaxBytes != 12*1024*1024*1024 {
+		t.Fatalf("shared platform config = %#v", cfg)
 	}
 }
 
-func TestLoadRedisAuthentication(t *testing.T) {
+func TestLoadSharedEnvironmentOverridesEnvFile(t *testing.T) {
 	resetEnvLoader(t)
-	unsetEnv(t, "REDIS_ADDR")
-	t.Setenv("REDIS_ADDR", "redis://luna:secret@redis.example.com:6379/4")
+	envFile := filepath.Join(t.TempDir(), ".env.local")
+	if err := os.WriteFile(envFile, []byte("PUBLIC_BASE_URL=https://file.example.com\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("ENV_FILE", envFile)
+	t.Setenv("PUBLIC_BASE_URL", "https://environment.example.com")
 
-	options := Load().RedisOptions()
+	cfg, err := LoadShared()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.PublicBaseURL != "https://environment.example.com" {
+		t.Fatalf("PublicBaseURL = %q", cfg.PublicBaseURL)
+	}
+}
+
+func TestLoadSharedRedisAuthentication(t *testing.T) {
+	resetEnvLoader(t)
+	t.Setenv("REDIS_ADDR", "redis://luna:secret@redis.example.com:6379/4")
+	cfg, err := LoadShared()
+	if err != nil {
+		t.Fatal(err)
+	}
+	options := cfg.RedisOptions()
 	if options.Addr != "redis.example.com:6379" || options.Username != "luna" || options.Password != "secret" || options.DB != 4 {
 		t.Fatalf("RedisOptions() = %#v", options)
 	}
 }
 
-func TestLoadVolumeTransferConfig(t *testing.T) {
-	resetEnvLoader(t)
-	t.Setenv("VOLUME_TRANSFER_JOB_IMAGE", "registry.example.com/luna-worker:test")
-	t.Setenv("VOLUME_TRANSFER_MAX_BYTES", "12Gi")
-
-	cfg := Load()
-	if !cfg.VolumeTransferEnabled() {
-		t.Fatal("volume transfer should be enabled")
-	}
-	if cfg.VolumeTransferMaxBytes != 12*1024*1024*1024 || cfg.VolumeTransferJobImage != "registry.example.com/luna-worker:test" {
-		t.Fatalf("direct transfer config = bytes %d image %q", cfg.VolumeTransferMaxBytes, cfg.VolumeTransferJobImage)
-	}
-	if err := cfg.ValidateVolumeTransfer(); err != nil {
-		t.Fatalf("ValidateVolumeTransfer returned error: %v", err)
-	}
-}
-
-func TestVolumeTransferIsDisabledWithoutJobImage(t *testing.T) {
-	if (Config{VolumeTransferMaxBytes: 10 * 1024 * 1024 * 1024}).VolumeTransferEnabled() {
-		t.Fatal("volume transfer must stay disabled without VOLUME_TRANSFER_JOB_IMAGE")
-	}
-}
-
-func TestValidateVolumeTransferRejectsInvalidSize(t *testing.T) {
-	base := Config{
-		VolumeTransferMaxBytes: 10 * 1024 * 1024 * 1024,
-		VolumeTransferJobImage: "registry.example.com/luna-worker:test",
-	}
-
+func TestLoadSharedRejectsInvalidValues(t *testing.T) {
 	tests := []struct {
-		name   string
-		mutate func(*Config)
+		name  string
+		key   string
+		value string
+		want  string
 	}{
-		{name: "size below minimum", mutate: func(cfg *Config) { cfg.VolumeTransferMaxBytes = minimumVolumeTransferBytes - 1 }},
-		{name: "size above maximum", mutate: func(cfg *Config) { cfg.VolumeTransferMaxBytes = maximumVolumeTransferBytes + 1 }},
+		{name: "public URL", key: "PUBLIC_BASE_URL", value: "studio.example.com", want: "PUBLIC_BASE_URL"},
+		{name: "runtime mode", key: "APP_ENV", value: "staging-ish", want: "APP_ENV"},
+		{name: "log format", key: "LOG_FORMAT", value: "pretty", want: "LOG_FORMAT"},
+		{name: "log color", key: "LOG_COLOR", value: "sometimes", want: "LOG_COLOR"},
+		{name: "log level", key: "LOG_LEVEL", value: "trace", want: "LOG_LEVEL"},
+		{name: "Redis URL", key: "REDIS_ADDR", value: "redis.example.com:6379", want: "REDIS_ADDR"},
+		{name: "volume quantity", key: "VOLUME_TRANSFER_MAX_BYTES", value: "large", want: "VOLUME_TRANSFER_MAX_BYTES"},
+		{name: "volume minimum", key: "VOLUME_TRANSFER_MAX_BYTES", value: "512Mi", want: "between 1Gi and 5Ti"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cfg := base
-			tt.mutate(&cfg)
-			if err := cfg.ValidateVolumeTransfer(); err == nil {
-				t.Fatal("expected validation error")
+			resetEnvLoader(t)
+			t.Setenv(tt.key, tt.value)
+			_, err := LoadShared()
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("error = %v, want %q", err, tt.want)
 			}
 		})
 	}
 }
 
-func TestValidateRedisRejectsLegacyAddress(t *testing.T) {
-	if err := (Config{RedisAddr: "redis.example.com:6379"}).ValidateRedis(); err == nil {
-		t.Fatal("ValidateRedis() succeeded for a legacy address")
+func TestSharedVolumeTransferEnabledRequiresJobImage(t *testing.T) {
+	if (Shared{VolumeTransferJobImage: ""}).VolumeTransferEnabled() {
+		t.Fatal("volume transfer must be disabled without a job image")
+	}
+	if !(Shared{VolumeTransferJobImage: "worker:latest"}).VolumeTransferEnabled() {
+		t.Fatal("volume transfer must be enabled with a job image")
+	}
+}
+
+func TestStrictEnvironmentParsers(t *testing.T) {
+	t.Setenv("TEST_INT", "invalid")
+	if _, err := Int("TEST_INT", 1); err == nil {
+		t.Fatal("Int accepted invalid input")
+	}
+	t.Setenv("TEST_BOOL", "sometimes")
+	if _, err := Bool("TEST_BOOL", false); err == nil {
+		t.Fatal("Bool accepted invalid input")
+	}
+	t.Setenv("TEST_DURATION", "0")
+	if _, err := Duration("TEST_DURATION", time.Second); err == nil {
+		t.Fatal("Duration accepted invalid input")
+	}
+	t.Setenv("TEST_PORTS", "443,bad")
+	if _, err := PortList("TEST_PORTS", []int{443}); err == nil {
+		t.Fatal("PortList accepted invalid input")
+	}
+}
+
+func TestRuntimeModeDefaultsToProduction(t *testing.T) {
+	unsetEnv(t, "APP_ENV")
+	if got := RuntimeMode(); got != "production" {
+		t.Fatalf("RuntimeMode() = %q", got)
+	}
+}
+
+func TestLoadEnvFileLogsPathInDevelopment(t *testing.T) {
+	resetEnvLoader(t)
+	envFile := filepath.Join(t.TempDir(), ".env.local")
+	if err := os.WriteFile(envFile, []byte("APP_ENV=development\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("APP_ENV", "development")
+	t.Setenv("ENV_FILE", envFile)
+
+	var output bytes.Buffer
+	oldLogger := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&output, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	t.Cleanup(func() { slog.SetDefault(oldLogger) })
+	LoadEnvironment()
+	if got := output.String(); !strings.Contains(got, "environment file loaded") || !strings.Contains(got, envFile) {
+		t.Fatalf("log output = %q", got)
+	}
+}
+
+func TestExplicitEnvFileDoesNotLoadDefaultEnv(t *testing.T) {
+	resetEnvLoader(t)
+	unsetEnv(t, "PUBLIC_BASE_URL")
+	workDir := t.TempDir()
+	oldDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(workDir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(oldDir) })
+	if err := os.WriteFile(filepath.Join(workDir, ".env"), []byte("PUBLIC_BASE_URL=https://default.example.com\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	envFile := filepath.Join(workDir, ".env.local")
+	if err := os.WriteFile(envFile, []byte("APP_ENV=development\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("ENV_FILE", envFile)
+	cfg, err := LoadShared()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.PublicBaseURL != "" {
+		t.Fatalf("PublicBaseURL = %q", cfg.PublicBaseURL)
 	}
 }
 
 func unsetEnv(t *testing.T, key string) {
 	t.Helper()
-
 	oldValue, existed := os.LookupEnv(key)
 	if err := os.Unsetenv(key); err != nil {
 		t.Fatalf("unset %s: %v", key, err)
 	}
-
 	t.Cleanup(func() {
 		if existed {
 			_ = os.Setenv(key, oldValue)
@@ -121,375 +200,4 @@ func resetEnvLoader(t *testing.T) {
 	t.Helper()
 	resetEnvLoaderForTest()
 	t.Cleanup(resetEnvLoaderForTest)
-}
-
-func TestEnvOverridesEnvFile(t *testing.T) {
-	resetEnvLoader(t)
-	envFile := filepath.Join(t.TempDir(), ".env.local")
-	if err := os.WriteFile(envFile, []byte("API_ADDR=:19090\n"), 0o600); err != nil {
-		t.Fatalf("write env file: %v", err)
-	}
-
-	t.Setenv("ENV_FILE", envFile)
-	t.Setenv("API_ADDR", ":28080")
-
-	cfg := Load()
-	if cfg.APIAddr != ":28080" {
-		t.Fatalf("APIAddr = %q", cfg.APIAddr)
-	}
-}
-
-func TestLoadBuildPrivateEgressCIDRs(t *testing.T) {
-	resetEnvLoader(t)
-	t.Setenv("BUILD_PRIVATE_EGRESS_CIDRS", "10.20.0.0/16, fd00::/8 ,,")
-
-	cfg := Load()
-	if len(cfg.BuildPrivateEgressCIDRs) != 2 {
-		t.Fatalf("BuildPrivateEgressCIDRs = %#v", cfg.BuildPrivateEgressCIDRs)
-	}
-	if cfg.BuildPrivateEgressCIDRs[0] != "10.20.0.0/16" || cfg.BuildPrivateEgressCIDRs[1] != "fd00::/8" {
-		t.Fatalf("BuildPrivateEgressCIDRs = %#v", cfg.BuildPrivateEgressCIDRs)
-	}
-}
-
-func TestLoadBuildEgressModeDefaultsToRestricted(t *testing.T) {
-	resetEnvLoader(t)
-	unsetEnv(t, "BUILD_EGRESS_MODE")
-
-	cfg := Load()
-	if cfg.BuildEgressMode != "restricted" {
-		t.Fatalf("BuildEgressMode = %q", cfg.BuildEgressMode)
-	}
-}
-
-func TestLoadBuildEgressModeSupportsExplicitPermissive(t *testing.T) {
-	resetEnvLoader(t)
-	t.Setenv("BUILD_EGRESS_MODE", "permissive")
-
-	cfg := Load()
-	if cfg.BuildEgressMode != "permissive" {
-		t.Fatalf("BuildEgressMode = %q", cfg.BuildEgressMode)
-	}
-}
-
-func TestLoadBuildEgressModeFallsBackToRestricted(t *testing.T) {
-	resetEnvLoader(t)
-	t.Setenv("BUILD_EGRESS_MODE", "unexpected")
-
-	cfg := Load()
-	if cfg.BuildEgressMode != "restricted" {
-		t.Fatalf("BuildEgressMode = %q", cfg.BuildEgressMode)
-	}
-}
-
-func TestLoadMetricsConfigDefaultsDisabled(t *testing.T) {
-	resetEnvLoaderForTest()
-	unsetEnv(t, "METRICS_ENABLED")
-	unsetEnv(t, "METRICS_ADDR")
-	unsetEnv(t, "METRICS_PATH")
-
-	cfg := Load()
-	if cfg.MetricsEnabled {
-		t.Fatalf("MetricsEnabled = true, want false")
-	}
-	if cfg.MetricsAddr != "" {
-		t.Fatalf("MetricsAddr = %q, want empty", cfg.MetricsAddr)
-	}
-	if cfg.MetricsPath != "/metrics" {
-		t.Fatalf("MetricsPath = %q, want /metrics", cfg.MetricsPath)
-	}
-}
-
-func TestLoadMetricsConfigNormalizesPath(t *testing.T) {
-	resetEnvLoaderForTest()
-	t.Setenv("METRICS_ENABLED", "true")
-	t.Setenv("METRICS_ADDR", ":19090")
-	t.Setenv("METRICS_PATH", "metrics")
-
-	cfg := Load()
-	if !cfg.MetricsEnabled {
-		t.Fatalf("MetricsEnabled = false, want true")
-	}
-	if cfg.MetricsAddr != ":19090" {
-		t.Fatalf("MetricsAddr = %q", cfg.MetricsAddr)
-	}
-	if cfg.MetricsPath != "/metrics" {
-		t.Fatalf("MetricsPath = %q, want /metrics", cfg.MetricsPath)
-	}
-}
-
-func TestLoadDatabasePoolDefaults(t *testing.T) {
-	resetEnvLoader(t)
-	unsetEnv(t, "DB_MAX_OPEN_CONNS")
-	unsetEnv(t, "DB_MAX_IDLE_CONNS")
-	unsetEnv(t, "DB_CONN_MAX_LIFETIME")
-	unsetEnv(t, "DB_CONN_MAX_IDLE_TIME")
-
-	cfg := Load()
-	if cfg.DatabaseMaxOpenConns != 20 {
-		t.Fatalf("DatabaseMaxOpenConns = %d", cfg.DatabaseMaxOpenConns)
-	}
-	if cfg.DatabaseMaxIdleConns != 5 {
-		t.Fatalf("DatabaseMaxIdleConns = %d", cfg.DatabaseMaxIdleConns)
-	}
-	if cfg.DatabaseConnMaxLifetime != 30*time.Minute {
-		t.Fatalf("DatabaseConnMaxLifetime = %s", cfg.DatabaseConnMaxLifetime)
-	}
-	if cfg.DatabaseConnMaxIdleTime != 5*time.Minute {
-		t.Fatalf("DatabaseConnMaxIdleTime = %s", cfg.DatabaseConnMaxIdleTime)
-	}
-}
-
-func TestLoadDatabasePoolOverrides(t *testing.T) {
-	resetEnvLoader(t)
-	t.Setenv("DB_MAX_OPEN_CONNS", "8")
-	t.Setenv("DB_MAX_IDLE_CONNS", "3")
-	t.Setenv("DB_CONN_MAX_LIFETIME", "12m")
-	t.Setenv("DB_CONN_MAX_IDLE_TIME", "90")
-
-	cfg := Load()
-	if cfg.DatabaseMaxOpenConns != 8 {
-		t.Fatalf("DatabaseMaxOpenConns = %d", cfg.DatabaseMaxOpenConns)
-	}
-	if cfg.DatabaseMaxIdleConns != 3 {
-		t.Fatalf("DatabaseMaxIdleConns = %d", cfg.DatabaseMaxIdleConns)
-	}
-	if cfg.DatabaseConnMaxLifetime != 12*time.Minute {
-		t.Fatalf("DatabaseConnMaxLifetime = %s", cfg.DatabaseConnMaxLifetime)
-	}
-	if cfg.DatabaseConnMaxIdleTime != 90*time.Second {
-		t.Fatalf("DatabaseConnMaxIdleTime = %s", cfg.DatabaseConnMaxIdleTime)
-	}
-}
-
-func TestLoadBuildPrivateEgressPortsDefaultsTo443(t *testing.T) {
-	resetEnvLoader(t)
-	unsetEnv(t, "BUILD_PRIVATE_EGRESS_PORTS")
-
-	cfg := Load()
-	if len(cfg.BuildPrivateEgressPorts) != 1 || cfg.BuildPrivateEgressPorts[0] != 443 {
-		t.Fatalf("BuildPrivateEgressPorts = %#v", cfg.BuildPrivateEgressPorts)
-	}
-}
-
-func TestLoadBuildPrivateEgressPorts(t *testing.T) {
-	resetEnvLoader(t)
-	t.Setenv("BUILD_PRIVATE_EGRESS_PORTS", "443, 5000, 8081, bad, 0, 5000, 65536")
-
-	cfg := Load()
-	expected := []int{443, 5000, 8081}
-	if len(cfg.BuildPrivateEgressPorts) != len(expected) {
-		t.Fatalf("BuildPrivateEgressPorts = %#v", cfg.BuildPrivateEgressPorts)
-	}
-	for index, value := range expected {
-		if cfg.BuildPrivateEgressPorts[index] != value {
-			t.Fatalf("BuildPrivateEgressPorts = %#v", cfg.BuildPrivateEgressPorts)
-		}
-	}
-}
-
-func TestLoadBuildBlockedEgressCIDRsIncludesMetadataDefault(t *testing.T) {
-	resetEnvLoader(t)
-	t.Setenv("BUILD_BLOCKED_EGRESS_CIDRS", "10.96.0.0/12")
-
-	cfg := Load()
-	if len(cfg.BuildBlockedEgressCIDRs) != 2 {
-		t.Fatalf("BuildBlockedEgressCIDRs = %#v", cfg.BuildBlockedEgressCIDRs)
-	}
-	if cfg.BuildBlockedEgressCIDRs[0] != "169.254.169.254/32" || cfg.BuildBlockedEgressCIDRs[1] != "10.96.0.0/12" {
-		t.Fatalf("BuildBlockedEgressCIDRs = %#v", cfg.BuildBlockedEgressCIDRs)
-	}
-}
-
-func TestLoadDeployRolloutTimeoutSeconds(t *testing.T) {
-	resetEnvLoader(t)
-	t.Setenv("DEPLOY_ROLLOUT_TIMEOUT_SECONDS", "120")
-
-	cfg := Load()
-	if cfg.DeployRolloutTimeoutSeconds != 120 {
-		t.Fatalf("DeployRolloutTimeoutSeconds = %d", cfg.DeployRolloutTimeoutSeconds)
-	}
-}
-
-func TestLoadCertManagerClusterIssuer(t *testing.T) {
-	resetEnvLoader(t)
-	t.Setenv("CERT_MANAGER_CLUSTER_ISSUER", "letsencrypt-staging")
-
-	cfg := Load()
-	if cfg.CertManagerClusterIssuer != "letsencrypt-staging" {
-		t.Fatalf("CertManagerClusterIssuer = %q", cfg.CertManagerClusterIssuer)
-	}
-}
-
-func TestLoadBootstrapToken(t *testing.T) {
-	resetEnvLoader(t)
-	t.Setenv("BOOTSTRAP_TOKEN", "  bootstrap-secret  ")
-
-	cfg := Load()
-	if cfg.BootstrapToken != "bootstrap-secret" {
-		t.Fatalf("BootstrapToken = %q", cfg.BootstrapToken)
-	}
-}
-
-func TestParseTrustedProxyCIDRsNormalizesAndDeduplicates(t *testing.T) {
-	got, err := parseTrustedProxyCIDRs(" 10.0.1.7/8,fd00::1234/8,10.0.0.0/8,, ")
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := []string{"10.0.0.0/8", "fd00::/8"}
-	if len(got) != len(want) {
-		t.Fatalf("trusted proxy CIDRs = %#v", got)
-	}
-	for index := range want {
-		if got[index] != want[index] {
-			t.Fatalf("trusted proxy CIDRs = %#v", got)
-		}
-	}
-}
-
-func TestTrustedProxyCIDRsFailClosedOnInvalidEntry(t *testing.T) {
-	if got := trustedProxyCIDRs("10.0.0.0/8,not-a-cidr"); len(got) != 0 {
-		t.Fatalf("trusted proxy CIDRs = %#v, want none", got)
-	}
-}
-
-func TestLoadTrustedProxyCIDRsDefaultsToNone(t *testing.T) {
-	resetEnvLoader(t)
-	unsetEnv(t, "TRUSTED_PROXY_CIDRS")
-
-	if got := Load().TrustedProxyCIDRs; len(got) != 0 {
-		t.Fatalf("TrustedProxyCIDRs = %#v, want none", got)
-	}
-}
-
-func TestRuntimeModeDefaultsToProduction(t *testing.T) {
-	unsetEnv(t, "APP_ENV")
-
-	if got := RuntimeMode(); got != "production" {
-		t.Fatalf("RuntimeMode() = %q, want production", got)
-	}
-}
-
-func TestLoadEnvFileLogsPathInDevelopment(t *testing.T) {
-	resetEnvLoader(t)
-	unsetEnv(t, "API_ADDR")
-	unsetEnv(t, "DATABASE_URL")
-	unsetEnv(t, "REDIS_ADDR")
-
-	envFile := filepath.Join(t.TempDir(), ".env.local")
-	if err := os.WriteFile(envFile, []byte("API_ADDR=:19090\n"), 0o600); err != nil {
-		t.Fatalf("write env file: %v", err)
-	}
-
-	t.Setenv("APP_ENV", "development")
-	t.Setenv("ENV_FILE", envFile)
-
-	var output bytes.Buffer
-	oldLogger := slog.Default()
-	slog.SetDefault(slog.New(slog.NewTextHandler(&output, &slog.HandlerOptions{Level: slog.LevelDebug})))
-	t.Cleanup(func() {
-		slog.SetDefault(oldLogger)
-	})
-
-	_ = Load()
-
-	got := output.String()
-	if !strings.Contains(got, "environment file loaded") || !strings.Contains(got, envFile) {
-		t.Fatalf("log output %q does not include loaded env file path %q", got, envFile)
-	}
-}
-
-func TestLoadDefaultsToEnv(t *testing.T) {
-	resetEnvLoader(t)
-	unsetEnv(t, "API_ADDR")
-	unsetEnv(t, "ENV_FILE")
-
-	workDir := t.TempDir()
-	oldDir, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("get working directory: %v", err)
-	}
-	if err := os.Chdir(workDir); err != nil {
-		t.Fatalf("change working directory: %v", err)
-	}
-	t.Cleanup(func() {
-		_ = os.Chdir(oldDir)
-	})
-
-	if err := os.WriteFile(filepath.Join(workDir, ".env"), []byte("API_ADDR=:19091\n"), 0o600); err != nil {
-		t.Fatalf("write env file: %v", err)
-	}
-
-	cfg := Load()
-	if cfg.APIAddr != ":19091" {
-		t.Fatalf("APIAddr = %q", cfg.APIAddr)
-	}
-}
-
-func TestExplicitEnvFileDoesNotLoadDefaultEnv(t *testing.T) {
-	resetEnvLoader(t)
-	unsetEnv(t, "API_ADDR")
-
-	workDir := t.TempDir()
-	oldDir, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("get working directory: %v", err)
-	}
-	if err := os.Chdir(workDir); err != nil {
-		t.Fatalf("change working directory: %v", err)
-	}
-	t.Cleanup(func() {
-		_ = os.Chdir(oldDir)
-	})
-
-	if err := os.WriteFile(filepath.Join(workDir, ".env"), []byte("API_ADDR=:19092\n"), 0o600); err != nil {
-		t.Fatalf("write .env: %v", err)
-	}
-	envFile := filepath.Join(workDir, ".env.local")
-	if err := os.WriteFile(envFile, []byte("APP_ENV=development\n"), 0o600); err != nil {
-		t.Fatalf("write explicit env file: %v", err)
-	}
-	t.Setenv("ENV_FILE", envFile)
-
-	cfg := Load()
-	if cfg.APIAddr != ":8080" {
-		t.Fatalf("APIAddr = %q", cfg.APIAddr)
-	}
-}
-
-func TestLoadMissingDefaultEnvLogsFallback(t *testing.T) {
-	resetEnvLoader(t)
-	unsetEnv(t, "API_ADDR")
-	unsetEnv(t, "ENV_FILE")
-
-	workDir := t.TempDir()
-	oldDir, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("get working directory: %v", err)
-	}
-	if err := os.Chdir(workDir); err != nil {
-		t.Fatalf("change working directory: %v", err)
-	}
-	t.Cleanup(func() {
-		_ = os.Chdir(oldDir)
-	})
-
-	t.Setenv("APP_ENV", "development")
-
-	var output bytes.Buffer
-	oldLogger := slog.Default()
-	slog.SetDefault(slog.New(slog.NewTextHandler(&output, &slog.HandlerOptions{Level: slog.LevelDebug})))
-	t.Cleanup(func() {
-		slog.SetDefault(oldLogger)
-	})
-
-	cfg := Load()
-	if cfg.APIAddr != ":8080" {
-		t.Fatalf("APIAddr = %q", cfg.APIAddr)
-	}
-
-	got := output.String()
-	if !strings.Contains(got, ".env") || !strings.Contains(got, "using process environment") {
-		t.Fatalf("log output %q does not include .env fallback message", got)
-	}
 }

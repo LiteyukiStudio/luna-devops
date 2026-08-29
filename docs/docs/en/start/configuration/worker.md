@@ -1,5 +1,7 @@
 # Worker Configuration
 
+When running from source, Worker reads these variables from the root `.env`. Docker Compose reads the same single `.env` and uses a consumer allowlist to inject shared and Worker-only settings. API-only settings such as initial-administrator credentials, CORS, the metrics listener, and the AI Client never enter Worker.
+
 ## Basic configuration
 
 | Setting | Default | Description |
@@ -8,7 +10,7 @@
 | `DATABASE_URL` | Local PostgreSQL | Connects to PostgreSQL; use a PostgreSQL connection URI. |
 | `REDIS_ADDR` | `redis://localhost:6379/0` | Connects to the Redis task queue; use a `redis://` or `rediss://` URI. |
 | `SECRET_ENCRYPTION_KEY`<sup>1</sup> | Empty | Decrypts credentials stored by the platform; use the same stable key as API. |
-| `PUBLIC_BASE_URL` | Empty | Sets the platform root used in task-notification links; use an HTTP(S) URL. |
+| `PUBLIC_BASE_URL` | Required in production | Sets the platform root used in task-notification links; in production, use the absolute HTTP(S) URL users actually open. |
 | `LOG_FORMAT` | `auto` | Selects terminal log rendering; use `auto`, `console`, or `json`, and use `json` in production containers. |
 | `LOG_COLOR` | `auto` | Controls console log colors; use `auto`, `always`, or `never`; `NO_COLOR` always disables colors. |
 | `LOG_LEVEL` | `info` | Sets log verbosity; use `debug`, `info`, `warn`, or `error`. |
@@ -29,10 +31,10 @@
 | Setting | Default | Description |
 | --- | --- | --- |
 | `ENV_FILE` | `.env` | Selects the environment file read by Worker; use a file path. |
-| `DB_MAX_OPEN_CONNS` | `20` | Limits open database connections; use a positive integer. |
-| `DB_MAX_IDLE_CONNS` | `5` | Limits idle database connections; use a non-negative integer. |
-| `DB_CONN_MAX_LIFETIME` | `30m` | Limits each database connection's lifetime; use a Go duration such as `30m`. |
-| `DB_CONN_MAX_IDLE_TIME` | `5m` | Limits each database connection's idle time; use a Go duration such as `5m`. |
+| `WORKER_DB_MAX_OPEN_CONNS` | `20` | Limits open database connections per Worker replica; use a positive integer. |
+| `WORKER_DB_MAX_IDLE_CONNS` | `5` | Limits idle database connections per Worker replica; use a non-negative integer. |
+| `WORKER_DB_CONN_MAX_LIFETIME` | `30m` | Limits each Worker database connection's lifetime; use a Go duration such as `30m`. |
+| `WORKER_DB_CONN_MAX_IDLE_TIME` | `5m` | Limits each Worker database connection's idle time; use a Go duration such as `5m`. |
 
 ### Observability
 
@@ -59,7 +61,7 @@
 | `VOLUME_TRANSFER_MAX_BYTES` | `100Gi` | Limits one volume import or export; use a quantity from `1Gi` to `5Ti`. |
 | `VOLUME_TRANSFER_JOB_IMAGE` | Empty | Selects the program used by volume-transfer Pods; use an OCI image matching the Worker version. |
 
-Helm reuses the current Worker image by default. Minimal Docker Compose, source, and binary deployments leave imports and exports disabled; when needed, set `VOLUME_TRANSFER_JOB_IMAGE` to the same version for both API and Worker. Transfer bytes do not pass through object storage.
+Helm reuses the current Worker image by default. Minimal Docker Compose, source, and binary deployments leave imports and exports disabled; when needed, set `VOLUME_TRANSFER_JOB_IMAGE` once in the root `.env`, and Compose passes that same value to API and Worker. Transfer bytes do not pass through object storage.
 
 ### Docker Compose
 

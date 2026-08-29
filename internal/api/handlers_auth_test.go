@@ -196,18 +196,6 @@ func TestClearAuthenticationCookies(t *testing.T) {
 	}
 }
 
-func TestBootstrapTokenMatchesExactValue(t *testing.T) {
-	if !bootstrapTokenMatches("bootstrap-secret", "bootstrap-secret") {
-		t.Fatal("equal bootstrap tokens must match")
-	}
-	if bootstrapTokenMatches("bootstrap-secret", "bootstrap-secret ") {
-		t.Fatal("bootstrap token comparison must be exact")
-	}
-	if bootstrapTokenMatches("bootstrap-secret", "different") {
-		t.Fatal("different bootstrap tokens must not match")
-	}
-}
-
 func TestUserSecurityChangesRevokeAuthentication(t *testing.T) {
 	cases := []struct {
 		name               string
@@ -234,31 +222,9 @@ func TestUserSecurityChangesRevokeAuthentication(t *testing.T) {
 	}
 }
 
-func TestBootstrapStatusIncludesDevLoginHintInDevelopment(t *testing.T) {
-	t.Setenv("LOCAL_ADMIN_EMAIL", "Admin@Example.com")
-	t.Setenv("LOCAL_ADMIN_PASSWORD", "secret-password")
-
-	status := bootstrapStatusResponse("development", true)
-
-	if status["devLoginEnabled"] != true {
-		t.Fatalf("expected dev login enabled in development, got %v", status["devLoginEnabled"])
-	}
-	hint, ok := status["devLoginHint"].(gin.H)
-	if !ok {
-		t.Fatalf("expected devLoginHint map, got %T", status["devLoginHint"])
-	}
-	if hint["email"] != "admin@example.com" {
-		t.Fatalf("expected normalized dev email, got %q", hint["email"])
-	}
-	if hint["password"] != "secret-password" {
-		t.Fatalf("expected configured dev password, got %q", hint["password"])
-	}
-}
-
 func TestDevelopmentAdminFreeQuotaCredits(t *testing.T) {
 	t.Run("defaults to a positive local quota", func(t *testing.T) {
-		t.Setenv("LOCAL_ADMIN_FREE_QUOTA_CREDITS", "")
-		credits, err := developmentAdminFreeQuotaCredits()
+		credits, err := developmentAdminFreeQuotaCredits("1000")
 		if err != nil {
 			t.Fatalf("developmentAdminFreeQuotaCredits() error = %v", err)
 		}
@@ -268,8 +234,7 @@ func TestDevelopmentAdminFreeQuotaCredits(t *testing.T) {
 	})
 
 	t.Run("zero disables the grant", func(t *testing.T) {
-		t.Setenv("LOCAL_ADMIN_FREE_QUOTA_CREDITS", "0")
-		credits, err := developmentAdminFreeQuotaCredits()
+		credits, err := developmentAdminFreeQuotaCredits("0")
 		if err != nil {
 			t.Fatalf("developmentAdminFreeQuotaCredits() error = %v", err)
 		}
@@ -280,8 +245,7 @@ func TestDevelopmentAdminFreeQuotaCredits(t *testing.T) {
 
 	for _, value := range []string{"invalid", "-1"} {
 		t.Run("rejects "+value, func(t *testing.T) {
-			t.Setenv("LOCAL_ADMIN_FREE_QUOTA_CREDITS", value)
-			if _, err := developmentAdminFreeQuotaCredits(); err == nil {
+			if _, err := developmentAdminFreeQuotaCredits(value); err == nil {
 				t.Fatalf("developmentAdminFreeQuotaCredits() accepted %q", value)
 			}
 		})

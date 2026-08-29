@@ -185,7 +185,7 @@ func (h *Handlers) StreamReleaseRuntimeTerminal(ctx *gin.Context) {
 			if origin == "" {
 				return true
 			}
-			return containsString(configuredAllowedOrigins(), origin)
+			return containsString(h.config.AllowedOrigins, origin)
 		},
 	}
 	conn, err := upgrader.Upgrade(ctx.Writer, ctx.Request, nil)

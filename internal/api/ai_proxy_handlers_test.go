@@ -484,7 +484,6 @@ func TestAIProxySanitizesNonSuccessSSEBeforeStreamingInProduction(t *testing.T) 
 }
 
 func TestAIProxyKeepsNonSuccessBodyInDevelopment(t *testing.T) {
-	t.Setenv("APP_ENV", "development")
 	rawBody := `{"error":"provider connection failed","detail":"dial tcp internal-agent.local"}`
 	fake := &fakeAIAgentClient{response: &aiagent.Response{
 		StatusCode: http.StatusBadGateway,
@@ -493,6 +492,7 @@ func TestAIProxyKeepsNonSuccessBodyInDevelopment(t *testing.T) {
 	}}
 	handler := aiTestHandlers(fake, true)
 	router := gin.New()
+	router.Use(runtimeModeMiddleware("development"))
 	router.GET("/api/v1/ai/conversations", handler.ProxyAIRequest)
 	response := httptest.NewRecorder()
 	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/ai/conversations", nil))

@@ -19,7 +19,7 @@ func (h *Handlers) emitServiceBindingEvent(ctx context.Context, user model.User,
 	_ = h.dbWithContext(ctx).WithContext(ctx).First(&sourceTarget, "id = ?", binding.SourceDeploymentTargetID).Error
 
 	links := map[string]string{}
-	if base := strings.TrimRight(strings.TrimSpace(externalBaseURL()), "/"); base != "" {
+	if base := strings.TrimRight(strings.TrimSpace(h.config.PublicBaseURL), "/"); base != "" {
 		links["projectTopology"] = fmt.Sprintf("%s/projects/%s?tab=topology", base, project.ID)
 	}
 	if len(links) == 0 {

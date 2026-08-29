@@ -6,17 +6,18 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net/http"
-	"os"
 	"strings"
 
-	"github.com/LiteyukiStudio/devops/internal/config"
 	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/telemetry"
 	"github.com/gin-gonic/gin"
 	"go.opentelemetry.io/otel/trace"
 )
 
-const requestIDContextKey = "luna_request_id"
+const (
+	requestIDContextKey   = "luna_request_id"
+	runtimeModeContextKey = "luna_runtime_mode"
+)
 
 const terminalDisconnectedErrorCode = "runtime.terminal_disconnected"
 
@@ -28,6 +29,32 @@ func requestIDMiddleware() gin.HandlerFunc {
 		ctx.Request = ctx.Request.WithContext(telemetry.ContextWithRequestID(ctx.Request.Context(), requestID))
 		ctx.Next()
 	}
+}
+
+func runtimeModeMiddleware(mode string) gin.HandlerFunc {
+	return func(ctx *gin.Context) {
+		setRuntimeMode(ctx, mode)
+		ctx.Next()
+	}
+}
+
+func setRuntimeMode(ctx *gin.Context, mode string) {
+	if ctx == nil {
+		return
+	}
+	if strings.EqualFold(strings.TrimSpace(mode), "development") {
+		ctx.Set(runtimeModeContextKey, "development")
+		return
+	}
+	ctx.Set(runtimeModeContextKey, "production")
+}
+
+func isDevelopmentRequest(ctx *gin.Context) bool {
+	if ctx == nil {
+		return false
+	}
+	mode, exists := ctx.Get(runtimeModeContextKey)
+	return exists && mode == "development"
 }
 
 func requestID(ctx *gin.Context) string {
@@ -94,7 +121,7 @@ func writeErrorKeyWithDetails(
 ) {
 	telemetry.SetHTTPError(ctx, key, key)
 	response := errorEnvelope(ctx, status, key)
-	if config.RuntimeMode() == "development" {
+	if isDevelopmentRequest(ctx) {
 		response["details"] = details
 	}
 	ctx.JSON(status, response)
@@ -106,7 +133,7 @@ func writeErrorCode(ctx *gin.Context, status int, code, detail string) {
 	}
 	detail = telemetry.RedactText(detail)
 	telemetry.SetHTTPError(ctx, code, detail)
-	if config.RuntimeMode() == "development" {
+	if isDevelopmentRequest(ctx) {
 		response := errorEnvelope(ctx, status, code)
 		response["developerDetail"] = detail
 		ctx.JSON(status, response)
@@ -125,7 +152,7 @@ func writeArgumentErrorCode(ctx *gin.Context, status int, code, detail, path str
 	response["retryable"] = retryable
 	response["path"] = path
 	response["allowedValues"] = allowedValues
-	if config.RuntimeMode() == "development" {
+	if isDevelopmentRequest(ctx) {
 		response["developerDetail"] = detail
 	}
 	ctx.JSON(status, response)
@@ -134,7 +161,7 @@ func writeArgumentErrorCode(ctx *gin.Context, status int, code, detail, path str
 // writeLocalizedErrorCode exposes a stable frontend message key in production
 // while preserving the original credential-redacted diagnostic in development.
 func writeLocalizedErrorCode(ctx *gin.Context, status int, code, detail, publicMessageKey string) {
-	if config.RuntimeMode() == "development" {
+	if isDevelopmentRequest(ctx) {
 		writeErrorCode(ctx, status, code, detail)
 		return
 	}
@@ -210,7 +237,7 @@ func recoveryMiddleware() gin.HandlerFunc {
 }
 
 func terminalDisconnectedMessage(ctx *gin.Context, detail string) []byte {
-	if config.RuntimeMode() == "development" {
+	if isDevelopmentRequest(ctx) {
 		return []byte("\r\nterminal disconnected: " + detail + "\r\n")
 	}
 	return []byte(fmt.Sprintf(
@@ -346,12 +373,4 @@ var localizedMessages = map[string]map[string]string{
 		"registry.authentication_required": "This registry or repository requires credentials. Configure a pull credential in Credential Management and try again.",
 		buildPushCredentialRequiredCode:    "The target registry has no push credential available to this user or project space. Bind a push or push-pull credential and try again.",
 	},
-}
-
-func env(key, fallback string) string {
-	value := os.Getenv(key)
-	if value == "" {
-		return fallback
-	}
-	return value
 }

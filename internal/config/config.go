@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"net/netip"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -25,138 +25,223 @@ const (
 	maximumVolumeTransferBytes = int64(5 * 1024 * 1024 * 1024 * 1024)
 )
 
+// Shared contains startup values defined once by the deployment and explicitly
+// passed to both API and Worker. Service-specific values belong in the owning
+// service's config.go instead.
+type Shared struct {
+	Mode                   string
+	LogFormat              string
+	LogColor               string
+	LogLevel               string
+	PublicBaseURL          string
+	DatabaseURL            string
+	RedisAddr              string
+	VolumeTransferMaxBytes int64
+	VolumeTransferJobImage string
+}
+
+// LoadShared reads the small, allowlisted configuration contract shared by API
+// and Worker. Invalid explicit values fail startup instead of silently falling
+// back to defaults.
+func LoadShared() (Shared, error) {
+	LoadEnvironment()
+	mode, modeErr := runtimeModeFromValue(os.Getenv("APP_ENV"))
+
+	shared := Shared{
+		Mode:                   mode,
+		LogFormat:              strings.ToLower(strings.TrimSpace(String("LOG_FORMAT", "auto"))),
+		LogColor:               strings.ToLower(strings.TrimSpace(String("LOG_COLOR", "auto"))),
+		LogLevel:               strings.ToLower(strings.TrimSpace(String("LOG_LEVEL", "info"))),
+		PublicBaseURL:          strings.TrimRight(strings.TrimSpace(String("PUBLIC_BASE_URL", "")), "/"),
+		DatabaseURL:            String("DATABASE_URL", "postgres://devops:devops@localhost:5432/devops?sslmode=disable"),
+		RedisAddr:              strings.TrimSpace(String("REDIS_ADDR", "redis://localhost:6379/0")),
+		VolumeTransferJobImage: strings.TrimSpace(String("VOLUME_TRANSFER_JOB_IMAGE", "")),
+	}
+
+	var errs []error
+	if modeErr != nil {
+		errs = append(errs, modeErr)
+	}
+	if err := validateEnum("LOG_FORMAT", shared.LogFormat, "auto", "console", "json"); err != nil {
+		errs = append(errs, err)
+	}
+	if err := validateEnum("LOG_COLOR", shared.LogColor, "auto", "always", "never"); err != nil {
+		errs = append(errs, err)
+	}
+	if err := validateEnum("LOG_LEVEL", shared.LogLevel, "debug", "info", "warn", "error"); err != nil {
+		errs = append(errs, err)
+	}
+	if err := validatePublicBaseURL(shared.PublicBaseURL); err != nil {
+		errs = append(errs, err)
+	}
+	if _, err := redisconfig.Parse(shared.RedisAddr); err != nil {
+		errs = append(errs, fmt.Errorf("invalid REDIS_ADDR: %w", err))
+	}
+	maxBytes, err := ByteQuantity("VOLUME_TRANSFER_MAX_BYTES", 100*1024*1024*1024)
+	if err != nil {
+		errs = append(errs, err)
+	} else {
+		shared.VolumeTransferMaxBytes = maxBytes
+		if maxBytes < minimumVolumeTransferBytes || maxBytes > maximumVolumeTransferBytes {
+			errs = append(errs, errors.New("VOLUME_TRANSFER_MAX_BYTES must be between 1Gi and 5Ti"))
+		}
+	}
+	return shared, errors.Join(errs...)
+}
+
+func (c Shared) RedisOptions() redisconfig.Options {
+	return redisconfig.MustParse(c.RedisAddr)
+}
+
+func (c Shared) VolumeTransferEnabled() bool {
+	return c.VolumeTransferJobImage != ""
+}
+
+func validatePublicBaseURL(value string) error {
+	if value == "" {
+		return nil
+	}
+	parsed, err := url.Parse(value)
+	if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+		return errors.New("PUBLIC_BASE_URL must be an absolute http or https URL")
+	}
+	if parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return errors.New("PUBLIC_BASE_URL must not contain credentials, query parameters, or fragments")
+	}
+	return nil
+}
+
+func validateEnum(key string, value string, allowed ...string) error {
+	for _, candidate := range allowed {
+		if value == candidate {
+			return nil
+		}
+	}
+	return fmt.Errorf("%s must be one of %s", key, strings.Join(allowed, ", "))
+}
+
 // LoadEnvironment loads the configured dotenv file before process-wide
-// infrastructure such as telemetry is initialized. Load remains idempotent.
+// infrastructure such as telemetry is initialized. Loading is idempotent.
 func LoadEnvironment() {
 	loadEnvFile()
 }
 
-type Config struct {
-	APIAddr                     string
-	PublicBaseURL               string
-	DatabaseURL                 string
-	DatabaseMaxOpenConns        int
-	DatabaseMaxIdleConns        int
-	DatabaseConnMaxLifetime     time.Duration
-	DatabaseConnMaxIdleTime     time.Duration
-	RedisAddr                   string
-	TrustedProxyCIDRs           []string
-	BootstrapToken              string
-	MetricsEnabled              bool
-	MetricsAddr                 string
-	MetricsPath                 string
-	BuildExecutorImage          string
-	BuildEgressMode             string
-	BuildCacheEnabled           bool
-	BuildCacheTag               string
-	BuildJobTimeoutSeconds      int64
-	BuildJobTTLSeconds          int64
-	BuildPrivateEgressCIDRs     []string
-	BuildPrivateEgressPorts     []int
-	BuildBlockedEgressCIDRs     []string
-	DeployRolloutTimeoutSeconds int64
-	CertManagerClusterIssuer    string
-	VolumeTransferMaxBytes      int64
-	VolumeTransferJobImage      string
+func RuntimeMode() string {
+	mode, _ := runtimeModeFromValue(os.Getenv("APP_ENV"))
+	return mode
 }
 
-func Load() Config {
-	LoadEnvironment()
-
-	return Config{
-		APIAddr:                     env("API_ADDR", ":8080"),
-		PublicBaseURL:               strings.TrimRight(env("PUBLIC_BASE_URL", ""), "/"),
-		DatabaseURL:                 env("DATABASE_URL", "postgres://devops:devops@localhost:5432/devops?sslmode=disable"),
-		DatabaseMaxOpenConns:        envInt("DB_MAX_OPEN_CONNS", 20),
-		DatabaseMaxIdleConns:        envInt("DB_MAX_IDLE_CONNS", 5),
-		DatabaseConnMaxLifetime:     envDuration("DB_CONN_MAX_LIFETIME", 30*time.Minute),
-		DatabaseConnMaxIdleTime:     envDuration("DB_CONN_MAX_IDLE_TIME", 5*time.Minute),
-		RedisAddr:                   strings.TrimSpace(env("REDIS_ADDR", "redis://localhost:6379/0")),
-		TrustedProxyCIDRs:           trustedProxyCIDRs(env("TRUSTED_PROXY_CIDRS", "")),
-		BootstrapToken:              strings.TrimSpace(env("BOOTSTRAP_TOKEN", "")),
-		MetricsEnabled:              envBool("METRICS_ENABLED", false),
-		MetricsAddr:                 env("METRICS_ADDR", ""),
-		MetricsPath:                 normalizeMetricsPath(env("METRICS_PATH", "/metrics")),
-		BuildExecutorImage:          env("BUILD_EXECUTOR_IMAGE", "moby/buildkit:v0.24.0-rootless"),
-		BuildEgressMode:             buildEgressMode(env("BUILD_EGRESS_MODE", "restricted")),
-		BuildCacheEnabled:           envBool("BUILD_CACHE_ENABLED", false),
-		BuildCacheTag:               env("BUILD_CACHE_TAG", "buildcache"),
-		BuildJobTimeoutSeconds:      int64(envInt("BUILD_JOB_TIMEOUT_SECONDS", 1800)),
-		BuildJobTTLSeconds:          int64(envInt("BUILD_JOB_TTL_SECONDS", 3600)),
-		BuildPrivateEgressCIDRs:     envList("BUILD_PRIVATE_EGRESS_CIDRS"),
-		BuildPrivateEgressPorts:     envPortList("BUILD_PRIVATE_EGRESS_PORTS", []int{443}),
-		BuildBlockedEgressCIDRs:     append(defaultBuildBlockedEgressCIDRs(), envList("BUILD_BLOCKED_EGRESS_CIDRS")...),
-		DeployRolloutTimeoutSeconds: int64(envInt("DEPLOY_ROLLOUT_TIMEOUT_SECONDS", 600)),
-		CertManagerClusterIssuer:    env("CERT_MANAGER_CLUSTER_ISSUER", "letsencrypt-http01"),
-		VolumeTransferMaxBytes:      envByteQuantity("VOLUME_TRANSFER_MAX_BYTES", 100*1024*1024*1024),
-		VolumeTransferJobImage:      strings.TrimSpace(env("VOLUME_TRANSFER_JOB_IMAGE", "")),
+func runtimeModeFromValue(value string) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "production", "prod":
+		return "production", nil
+	case "development", "dev", "local":
+		return "development", nil
+	case "":
+		return "production", nil
+	default:
+		return "production", errors.New("APP_ENV must be production or development")
 	}
 }
 
-func (c Config) RedisOptions() redisconfig.Options {
-	return redisconfig.MustParse(c.RedisAddr)
-}
-
-func (c Config) ValidateRedis() error {
-	if _, err := redisconfig.Parse(c.RedisAddr); err != nil {
-		return fmt.Errorf("invalid REDIS_ADDR: %w", err)
+func String(key, fallback string) string {
+	value := os.Getenv(key)
+	if value == "" {
+		return fallback
 	}
-	return nil
+	return value
 }
 
-func (c Config) VolumeTransferEnabled() bool {
-	return c.VolumeTransferJobImage != ""
-}
-
-func (c Config) ValidateVolumeTransfer() error {
-	if c.VolumeTransferMaxBytes < minimumVolumeTransferBytes || c.VolumeTransferMaxBytes > maximumVolumeTransferBytes {
-		return errors.New("VOLUME_TRANSFER_MAX_BYTES must be between 1Gi and 5Ti")
+func Int(key string, fallback int) (int, error) {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return fallback, nil
 	}
-	return nil
-}
-
-func trustedProxyCIDRs(raw string) []string {
-	values, err := parseTrustedProxyCIDRs(raw)
+	parsed, err := strconv.Atoi(value)
 	if err != nil {
-		telemetry.LogWarn(context.Background(), "Trusted proxy configuration rejected",
-			"config.trusted_proxy.invalid", "config.trusted_proxy.parse", "config.invalid", err,
-			slog.String("error.hint", "verify TRUSTED_PROXY_CIDRS"))
+		return 0, fmt.Errorf("%s must be an integer", key)
+	}
+	return parsed, nil
+}
+
+func Duration(key string, fallback time.Duration) (time.Duration, error) {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return fallback, nil
+	}
+	if parsed, err := time.ParseDuration(value); err == nil && parsed > 0 {
+		return parsed, nil
+	}
+	if seconds, err := strconv.Atoi(value); err == nil && seconds > 0 {
+		return time.Duration(seconds) * time.Second, nil
+	}
+	return 0, fmt.Errorf("%s must be a positive duration or number of seconds", key)
+}
+
+func ByteQuantity(key string, fallback int64) (int64, error) {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return fallback, nil
+	}
+	quantity, err := resource.ParseQuantity(value)
+	if err != nil || quantity.Sign() <= 0 {
+		return 0, fmt.Errorf("%s must be a positive byte quantity", key)
+	}
+	return quantity.Value(), nil
+}
+
+func Bool(key string, fallback bool) (bool, error) {
+	value := strings.TrimSpace(strings.ToLower(os.Getenv(key)))
+	if value == "" {
+		return fallback, nil
+	}
+	switch value {
+	case "1", "true", "yes", "on":
+		return true, nil
+	case "0", "false", "no", "off":
+		return false, nil
+	default:
+		return false, fmt.Errorf("%s must be a boolean", key)
+	}
+}
+
+func List(key string) []string {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
 		return nil
+	}
+	parts := strings.Split(raw, ",")
+	values := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if value := strings.TrimSpace(part); value != "" {
+			values = append(values, value)
+		}
 	}
 	return values
 }
 
-func parseTrustedProxyCIDRs(raw string) ([]string, error) {
+func PortList(key string, fallback []int) ([]int, error) {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return append([]int(nil), fallback...), nil
+	}
 	parts := strings.Split(raw, ",")
-	values := make([]string, 0, len(parts))
-	seen := make(map[netip.Prefix]struct{}, len(parts))
+	values := make([]int, 0, len(parts))
+	seen := map[int]bool{}
 	for _, part := range parts {
-		value := strings.TrimSpace(part)
-		if value == "" {
-			continue
+		value, err := strconv.Atoi(strings.TrimSpace(part))
+		if err != nil || value < 1 || value > 65535 {
+			return nil, fmt.Errorf("%s must contain ports between 1 and 65535", key)
 		}
-		prefix, err := netip.ParsePrefix(value)
-		if err != nil {
-			return nil, err
+		if !seen[value] {
+			seen[value] = true
+			values = append(values, value)
 		}
-		prefix = prefix.Masked()
-		if _, exists := seen[prefix]; exists {
-			continue
-		}
-		seen[prefix] = struct{}{}
-		values = append(values, prefix.String())
+	}
+	if len(values) == 0 {
+		return nil, fmt.Errorf("%s must contain at least one port", key)
 	}
 	return values, nil
-}
-
-func RuntimeMode() string {
-	switch strings.ToLower(os.Getenv("APP_ENV")) {
-	case "production", "prod":
-		return "production"
-	case "development", "dev", "local":
-		return "development"
-	}
-	return "production"
 }
 
 func loadEnvFile() {
@@ -198,116 +283,4 @@ func loadEnvFiles(paths ...string) {
 			slog.Debug("environment file loaded", "event.name", "config.env_file.loaded", "file.path", path)
 		}
 	}
-}
-
-func env(key, fallback string) string {
-	value := os.Getenv(key)
-	if value == "" {
-		return fallback
-	}
-	return value
-}
-
-func envInt(key string, fallback int) int {
-	value := strings.TrimSpace(os.Getenv(key))
-	if value == "" {
-		return fallback
-	}
-	parsed, err := strconv.Atoi(value)
-	if err != nil {
-		return fallback
-	}
-	return parsed
-}
-
-func envDuration(key string, fallback time.Duration) time.Duration {
-	value := strings.TrimSpace(os.Getenv(key))
-	if value == "" {
-		return fallback
-	}
-	if parsed, err := time.ParseDuration(value); err == nil {
-		return parsed
-	}
-	if seconds, err := strconv.Atoi(value); err == nil && seconds > 0 {
-		return time.Duration(seconds) * time.Second
-	}
-	return fallback
-}
-
-func envByteQuantity(key string, fallback int64) int64 {
-	value := strings.TrimSpace(os.Getenv(key))
-	if value == "" {
-		return fallback
-	}
-	quantity, err := resource.ParseQuantity(value)
-	if err != nil || quantity.Sign() <= 0 {
-		return fallback
-	}
-	return quantity.Value()
-}
-
-func envBool(key string, fallback bool) bool {
-	value := strings.TrimSpace(strings.ToLower(os.Getenv(key)))
-	if value == "" {
-		return fallback
-	}
-	switch value {
-	case "1", "true", "yes", "on":
-		return true
-	case "0", "false", "no", "off":
-		return false
-	default:
-		return fallback
-	}
-}
-
-func envList(key string) []string {
-	raw := strings.TrimSpace(os.Getenv(key))
-	if raw == "" {
-		return nil
-	}
-	parts := strings.Split(raw, ",")
-	values := make([]string, 0, len(parts))
-	for _, part := range parts {
-		value := strings.TrimSpace(part)
-		if value != "" {
-			values = append(values, value)
-		}
-	}
-	return values
-}
-
-func envPortList(key string, fallback []int) []int {
-	raw := strings.TrimSpace(os.Getenv(key))
-	if raw == "" {
-		return append([]int(nil), fallback...)
-	}
-	parts := strings.Split(raw, ",")
-	values := make([]int, 0, len(parts))
-	seen := map[int]bool{}
-	for _, part := range parts {
-		value, err := strconv.Atoi(strings.TrimSpace(part))
-		if err != nil || value < 1 || value > 65535 || seen[value] {
-			continue
-		}
-		seen[value] = true
-		values = append(values, value)
-	}
-	if len(values) == 0 {
-		return append([]int(nil), fallback...)
-	}
-	return values
-}
-
-func buildEgressMode(value string) string {
-	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "permissive":
-		return "permissive"
-	default:
-		return "restricted"
-	}
-}
-
-func defaultBuildBlockedEgressCIDRs() []string {
-	return []string{"169.254.169.254/32"}
 }

@@ -2170,14 +2170,3 @@ export interface DataRetentionResult {
 export interface DataRetentionResultResponse {
   items: DataRetentionResult[]
 }
-
-export interface BootstrapStatus {
-  mode: 'development' | 'production'
-  initialized: boolean
-  devLoginEnabled: boolean
-  bootstrapTokenRequired?: boolean
-  devLoginHint?: {
-    email: string
-    password: string
-  }
-}

@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "luna-devops.apiConfigName" . }}
+  labels:
+    {{- include "luna-devops.componentLabels" (dict "root" . "component" "api") | nindent 4 }}
+data:
+  API_ADDR: ":8080"
+  API_DB_MAX_OPEN_CONNS: {{ .Values.api.database.maxOpenConns | quote }}
+  API_DB_MAX_IDLE_CONNS: {{ .Values.api.database.maxIdleConns | quote }}
+  API_DB_CONN_MAX_LIFETIME: {{ .Values.api.database.connMaxLifetime | quote }}
+  API_DB_CONN_MAX_IDLE_TIME: {{ .Values.api.database.connMaxIdleTime | quote }}
+  APP_CORS_ORIGINS: {{ default .Values.app.publicBaseUrl .Values.app.corsOrigins | quote }}
+  TRUSTED_PROXY_CIDRS: {{ .Values.app.trustedProxyCidrs | quote }}
+  AI_ASSISTANT_AVAILABLE: {{ .Values.ai.enabled | quote }}
+  AI_AGENT_BASE_URL: {{ default (printf "http://%s:%v" (include "luna-devops.agentName" .) .Values.ai.agent.service.port) .Values.ai.agentAddress | quote }}
+  AI_AGENT_TIMEOUT: {{ .Values.ai.agentTimeout | quote }}

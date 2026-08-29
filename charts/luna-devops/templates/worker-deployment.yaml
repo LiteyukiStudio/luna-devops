@@ -18,10 +18,13 @@ spec:
         {{- with .Values.worker.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
-      {{- with .Values.worker.podAnnotations }}
       annotations:
+        checksum.luna.devops/shared-config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        checksum.luna.devops/worker-config: {{ include (print $.Template.BasePath "/worker-configmap.yaml") . | sha256sum }}
+        checksum.luna.devops/managed-secrets: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        {{- with .Values.worker.podAnnotations }}
         {{- toYaml . | nindent 8 }}
-      {{- end }}
+        {{- end }}
     spec:
       serviceAccountName: {{ include "luna-devops.serviceAccountName" . }}
       automountServiceAccountToken: false
@@ -39,9 +42,12 @@ spec:
             {{- toYaml .Values.containerSecurityContext | nindent 12 }}
           env:
             {{- include "luna-devops.commonEnv" . | nindent 12 }}
+            {{- include "luna-devops.extraEnv" (dict "component" "worker" "values" .Values.worker.extraEnv) | nindent 12 }}
           envFrom:
             - configMapRef:
-                name: {{ include "luna-devops.fullname" . }}-config
+                name: {{ include "luna-devops.sharedConfigName" . }}
+            - configMapRef:
+                name: {{ include "luna-devops.workerConfigName" . }}
           {{- with .Values.worker.resources }}
           resources:
             {{- toYaml . | nindent 12 }}

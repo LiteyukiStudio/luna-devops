@@ -11,7 +11,6 @@ const AppTemplatesPage = lazyTranslated(() => import('./pages/app-templates/AppT
 const ApplicationConfigPage = lazyTranslated(() => import('./pages/applications/ApplicationConfigPage'), 'ApplicationConfigPage', ['apps', 'buildTemplates', 'buildsPage', 'deploymentsPage', 'gatewayRoutesPage', 'repositories', 'runtimeConfigSets', 'runtimeConfigFilesEditor', 'clustersPage', 'billingPage', 'projectHooks', 'codeRepositoriesView', 'projectVolumes'])
 const AuthProvidersPage = lazyTranslated(() => import('./pages/settings/AuthProvidersPage'), 'AuthProvidersPage', ['authProvidersPage', 'settings', 'usersPage'])
 const BillingPage = lazyTranslated(() => import('./pages/billing/BillingPage'), 'BillingPage', ['billingPage', 'projectSpaces', 'settings'])
-const BootstrapPage = lazyTranslated(() => import('./pages/bootstrap/BootstrapPage'), 'BootstrapPage', ['usersPage'])
 const ClustersPage = lazyTranslated(() => import('./pages/clusters/ClustersPage'), 'ClustersPage', ['clustersPage', 'codeRepositoriesView', 'deploymentsPage', 'gatewayRoutesPage', 'projectSpaces'])
 const CodeRepositoriesPage = lazyTranslated(() => import('./pages/code-repositories/CodeRepositoriesPage'), 'CodeRepositoriesPage', ['codeRepositoriesPage', 'codeRepositoriesView', 'repositories', 'projectSpaces'])
 const DashboardPage = lazyTranslated(() => import('./pages/dashboard/DashboardPage'), 'DashboardPage', ['dashboardPage', 'registriesPage', 'clustersPage', 'eventsPage', 'projectSpaces'])
@@ -37,7 +36,6 @@ export default function App() {
     <TooltipProvider>
       <LazyLoadBoundary fallback={<RouteFallback />}>
         <Routes>
-          <Route path="/bootstrap" element={<BootstrapPage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/oauth/authorize" element={<OAuthAuthorizePage />} />

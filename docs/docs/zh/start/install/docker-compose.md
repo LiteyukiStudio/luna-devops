@@ -30,7 +30,9 @@ DEVOPS_IMAGE_TAG=v0.1.0-rc.1 docker compose up -d
 cp .env.example .env
 ```
 
-编辑 `.env`，为 `SECRET_ENCRYPTION_KEY` 填写稳定随机密钥，并替换 `BOOTSTRAP_TOKEN` 和 `REDIS_PASSWORD` 中的占位值。把 `PUBLIC_BASE_URL` 改成用户实际访问平台的 HTTP(S) 根地址；仅在本机使用时填写 `http://localhost:8088`。Redis 密码请使用字母和数字等 URL-safe 字符；Compose 会直接用它启动内置 Redis，并自动为 API 和 Worker 组装完整连接 URI。完整 Compose 默认以生产模式启动，不会暴露固定开发管理员。
+根目录 `.env` 是 Compose 的唯一配置填写入口。为 `SECRET_ENCRYPTION_KEY` 填写稳定随机密钥，并替换 `REDIS_PASSWORD` 中的占位值。数据库全新时还要设置 `INITIAL_ADMIN_EMAIL`、`INITIAL_ADMIN_PASSWORD`；已有有效管理员时可将它们留空。管理员名称和语言可通过 `INITIAL_ADMIN_NAME`、`INITIAL_ADMIN_LANGUAGE` 设置。把 `PUBLIC_BASE_URL` 改成用户实际访问平台的 HTTP(S) 根地址；仅在本机使用时填写 `http://localhost:8088`。Redis 密码请使用字母和数字等 URL-safe 字符；Compose 会直接用它启动内置 Redis，并自动为 API 和 Worker 组装完整连接 URI。完整 Compose 固定以生产模式启动，不包含固定管理员凭据。
+
+Compose 会按消费者白名单下发配置：日志和通用 OpenTelemetry 配置进入 API、Worker、Agent；`PUBLIC_BASE_URL`、数据卷传输上限和传输镜像只进入 API、Worker；首个管理员、CORS、指标和 AI Client 只进入 API；构建与部署策略只进入 Worker；Agent 数据库池和诊断开关只进入 Agent。API、Worker 的连接池分别使用 `API_DB_*`、`WORKER_DB_*`，不会再因共用一组值而互相挤占预算。
 
 在仓库根目录执行：
 
@@ -38,7 +40,7 @@ cp .env.example .env
 docker compose up -d
 ```
 
-这会启动平台及其 PostgreSQL 和 Redis。第一次进入时打开 `/bootstrap`，使用 `.env` 中的 `BOOTSTRAP_TOKEN` 创建首个管理员，完成后轮换或移除该一次性 Token。
+这会启动平台及其 PostgreSQL 和 Redis。API 会在空数据库中用 `INITIAL_ADMIN_*` 创建首个管理员；健康检查通过后打开 `/login` 登录。创建完成后，可以清空这些变量；修改它们也不会覆盖已有管理员账号或密码。Compose 始终只把这些可选值透传给 API，由 API 根据数据库状态决定是否校验。
 
 ### 启用 AI 助手
 
@@ -50,10 +52,10 @@ printf 'AI_INTERNAL_SECRET=%s\n' "$(openssl rand -hex 32)" >> .env
 
 平台会隔离并保护 AI 助手的内部凭据。请保持该密钥稳定，并且不要与其他加密密钥共用。
 
-然后启动：
+再把同一份 `.env` 中的 `AI_ASSISTANT_AVAILABLE` 改为 `true`，然后启动：
 
 ```bash
-AI_ASSISTANT_AVAILABLE=true docker compose --profile ai up -d
+docker compose --profile ai up -d
 ```
 
 登录后在“全局设置 → AI 助手”配置 Provider、模型目录、访问范围和配额。Provider API Key 由平台 Secret Store 保存，不写入 `.env`。排障时可查看 `docker compose --profile ai logs -f agent`。
@@ -66,7 +68,7 @@ AI_ASSISTANT_AVAILABLE=true docker compose --profile ai up -d
 http://localhost:8088
 ```
 
-Compose 会把 `.env` 中的 `PUBLIC_BASE_URL` 同时传给 API 和 Worker，用于 OAuth、Webhook 以及通知详情链接。修改该值后需要重新创建这两个服务；控制台跨域部署时再按 [API 配置](/start/configuration/api)设置 `APP_CORS_ORIGINS`。PostgreSQL 和 Redis 保留在容器网络中，不需要对外暴露。
+Compose 会把 `.env` 中唯一一份 `PUBLIC_BASE_URL` 同时传给 API 和 Worker，用于 OAuth、Webhook 以及通知详情链接；Agent 不消费这个值。修改后需要重新创建 API 和 Worker。控制台跨域部署时再按 [API 配置](/start/configuration/api)设置 `APP_CORS_ORIGINS`。PostgreSQL 和 Redis 保留在容器网络中，不需要对外暴露。
 
 ## 检查状态
 
@@ -80,7 +82,7 @@ API 正常后就能打开控制台；Worker 正常后，构建、部署和状态
 
 ## 下一步
 
-1. 进入[初始化](/start/first-login)，创建首个管理员。
+1. 进入[首次登录](/start/first-login)，使用已配置的管理员账号登录。
 2. 进入[添加基础资源](/start/connect-resources)，准备运行集群、镜像站和 Git Provider OAuth。
 3. 按[日常交付](/use/workflow)创建并部署应用。
 

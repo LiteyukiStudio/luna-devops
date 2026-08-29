@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/LiteyukiStudio/devops/internal/authz"
-	"github.com/LiteyukiStudio/devops/internal/config"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	kubeprovider "github.com/LiteyukiStudio/devops/internal/provider/kubernetes"
 	"github.com/LiteyukiStudio/devops/internal/volume"
@@ -22,7 +21,7 @@ type volumeTransferContentAdapter struct {
 	service  *volumetransferapi.Service
 }
 
-func newVolumeTransferContentAdapter(handlers *Handlers, cfg config.Config) (*volumeTransferContentAdapter, error) {
+func newVolumeTransferContentAdapter(handlers *Handlers, cfg Config) (*volumeTransferContentAdapter, error) {
 	if handlers == nil || handlers.volumes == nil || handlers.rateLimiter == nil || handlers.rateLimiter.redis == nil {
 		return nil, errors.New("volume transfer dependencies are unavailable")
 	}

@@ -27,7 +27,7 @@ API 会同时提供控制台页面，不需要另行启动前端服务。
 
 ## 准备配置
 
-至少需要准备 PostgreSQL、Redis、公开访问地址和密钥加密 key：
+至少需要准备 PostgreSQL、Redis、公开访问地址、密钥加密 key 和首个管理员配置：
 
 ```bash
 export APP_ENV=production
@@ -35,9 +35,15 @@ export DATABASE_URL='postgres://devops:password@127.0.0.1:5432/devops?sslmode=di
 export REDIS_ADDR='redis://default:password@127.0.0.1:6379/0'
 export PUBLIC_BASE_URL='https://devops.example.com'
 export SECRET_ENCRYPTION_KEY='replace-with-a-stable-random-value'
+export INITIAL_ADMIN_EMAIL='admin@example.com'
+export INITIAL_ADMIN_PASSWORD='replace-with-a-strong-8-to-72-byte-password'
+export INITIAL_ADMIN_NAME='Platform Admin'
+export INITIAL_ADMIN_LANGUAGE='zh-CN'
 ```
 
 `SECRET_ENCRYPTION_KEY` 用于加密 Git、镜像站和 OIDC 密钥。部署后不要随意修改，否则旧密钥可能无法解密。
+
+`INITIAL_ADMIN_*` 只供 API 在全新数据库中创建首个管理员。已有有效管理员时不会覆盖账号或密码；数据库已有用户但没有有效管理员时，API 会拒绝启动并要求先恢复管理员。Worker 不需要、也不应接收管理员密码。
 
 ## 启动 API
 
@@ -79,6 +85,10 @@ Environment=DATABASE_URL=postgres://devops:password@127.0.0.1:5432/devops?sslmod
 Environment=REDIS_ADDR=redis://default:password@127.0.0.1:6379/0
 Environment=PUBLIC_BASE_URL=https://devops.example.com
 Environment=SECRET_ENCRYPTION_KEY=replace-with-a-stable-random-value
+Environment=INITIAL_ADMIN_EMAIL=admin@example.com
+Environment=INITIAL_ADMIN_PASSWORD=replace-with-a-strong-8-to-72-byte-password
+Environment=INITIAL_ADMIN_NAME=Platform Admin
+Environment=INITIAL_ADMIN_LANGUAGE=zh-CN
 ExecStart=/opt/luna-devops/bin/luna-devops-api
 Restart=always
 
@@ -86,7 +96,7 @@ Restart=always
 WantedBy=multi-user.target
 ```
 
-worker 可以使用同一组环境变量，`ExecStart` 改成：
+worker 复用数据库、Redis、公开地址和加密密钥配置，但不要下发 `INITIAL_ADMIN_*`。将 `ExecStart` 改成：
 
 ```ini
 ExecStart=/opt/luna-devops/bin/luna-devops-worker

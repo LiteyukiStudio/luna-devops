@@ -7,6 +7,6 @@ Open the console with port-forward:
   kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "luna-devops.apiName" . }} 8088:{{ .Values.api.service.port }}
 
 Then visit:
-  {{ .Values.app.publicBaseUrl }}
+  {{ printf "%s/login" (trimSuffix "/" .Values.app.publicBaseUrl) }}
 
 If you enabled ingress, make sure app.publicBaseUrl matches the public URL.

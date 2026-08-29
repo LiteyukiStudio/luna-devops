@@ -1,5 +1,17 @@
 # TODO
 
+## 2026-08-29 服务配置归属与公共透传收口
+
+- [x] 将 API、Worker、Agent 的环境变量解析收口到各自类型化配置入口，并在启动阶段拒绝非法显式值。
+- [x] 将公共 URL、日志、OpenTelemetry 和数据卷传输配置按消费者白名单统一透传，服务专属配置保持隔离。
+- [x] 同步 Compose、Helm、中英文配置文档与契约测试，并完成 Go、Agent、Chart 和文档门禁。
+
+## 2026-08-29 首个管理员显式配置
+
+- [x] 删除浏览器初始化页面、公共初始化 API 和 `BOOTSTRAP_TOKEN`，登录页不再查询初始化状态或回显开发密码。
+- [x] 将首个管理员改为 API 启动时读取 `INITIAL_ADMIN_*` 创建，并锁定空库、已有管理员、异常历史库和多副本并发语义。
+- [x] 同步 OpenAPI、Web、Compose、Helm、中英文部署文档与契约测试，确保管理员密码只下发给 API。
+
 ## 2026-08-28 通知详情链接 Compose 配置修复
 
 - [x] 将 `PUBLIC_BASE_URL` 从 Compose 环境同时透传给 API 和 Worker，确保 Worker 生成通知详情绝对地址。

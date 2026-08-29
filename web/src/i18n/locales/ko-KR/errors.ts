@@ -117,12 +117,6 @@ const errors = {
     model_output_limit_invalid: '모델 카탈로그의 출력 상한이 유효하지 않습니다. 플랫폼 관리자에게 문의하여 모델 설정을 확인하세요.',
     wallet_balance_insufficient: '개인 지갑의 사용 가능 잔액이 부족합니다. 모델 호출이 전송되지 않았습니다.',
   },
-  bootstrap: {
-    already_initialized: '플랫폼 관리자가 이미 초기화되었습니다. 바로 로그인하세요.',
-    invalid_input: '유효한 이메일과 8자 이상의 비밀번호를 입력하세요.',
-    token_invalid: '초기화 토큰이 올바르지 않습니다.',
-    unavailable: '프로덕션 환경에 초기화 토큰이 아직 설정되지 않았습니다. 배포 관리자에게 문의하세요.',
-  },
   request: {
     invalid: '요청 파라미터가 올바르지 않습니다',
     invalid_json: '요청 JSON 형식이 올바르지 않습니다',

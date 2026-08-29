@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import {
+  configureGenAIAgentVersion,
   genAIAgentName,
   genAIAgentSpanAttributes,
   genAIClientTokenUsageAttributes,
@@ -51,6 +52,13 @@ describe("OpenTelemetry GenAI semantic conventions", () => {
       "gen_ai.tool.call.id": "call-1",
       "gen_ai.tool.description": "List projects",
     })
+  })
+
+  it("uses the explicitly configured Agent service version", () => {
+    configureGenAIAgentVersion(" version-1 ")
+    expect(genAIAgentSpanAttributes("conversation-1")).toMatchObject({ "gen_ai.agent.version": "version-1" })
+    configureGenAIAgentVersion(undefined)
+    expect(genAIAgentSpanAttributes("conversation-1")).not.toHaveProperty("gen_ai.agent.version")
   })
 
   it("emits model content in the official input and output message shapes", () => {

@@ -82,6 +82,8 @@ docker compose -f docker-compose-dev-db.yaml up -d
 cp .env.example .env
 ```
 
+在 `.env` 中填写 `INITIAL_ADMIN_EMAIL` 和 `INITIAL_ADMIN_PASSWORD`；API 首次启动时会用它们创建管理员，随后直接从 `/login` 登录。
+
 四个 Luna DevOps 组件不由开发 Compose 管理，分别在四个终端运行：
 
 ```bash
@@ -101,7 +103,7 @@ pnpm --dir web dev
 ```
 
 Vite 开发服务器会将 `/api/v1` 代理到 `http://localhost:8080`。
-Agent 联调配置见 [`luna-agent/.env.example`](luna-agent/.env.example)；根目录 `.env` 还需设置 `AI_ASSISTANT_AVAILABLE=true`、`AI_AGENT_BASE_URL=http://localhost:8091`，两处 `AI_INTERNAL_SECRET` 保持一致。
+根目录 `.env` 是 API、Worker 和 Agent 联调的单一填写入口；设置 `AI_ASSISTANT_AVAILABLE=true`、`AI_AGENT_BASE_URL=http://localhost:8091` 和一份 `AI_INTERNAL_SECRET` 即可。只有 Agent 专属覆盖才写入 `luna-agent/.env.local`，可参考 [`luna-agent/.env.example`](luna-agent/.env.example)。API 与 Worker 数据库连接池分别使用 `API_DB_*`、`WORKER_DB_*`。
 
 API、Worker、辅助命令和 Agent 默认使用 `LOG_FORMAT=auto`：交互式终端显示便于阅读的 console 日志，重定向或容器中输出无 ANSI 的 JSON。可用 `LOG_LEVEL` 调整级别，或设置 `LOG_COLOR=never` / `NO_COLOR` 关闭颜色；OTel 始终接收与终端渲染无关的结构化记录。
 
@@ -135,7 +137,7 @@ DockerHub 发布镜像统一为 `liteyukistudio/luna-devops`、`liteyukistudio/l
 
 ```bash
 cp .env.example .env
-# 首次启动前请填写 SECRET_ENCRYPTION_KEY、BOOTSTRAP_TOKEN 和 REDIS_PASSWORD。
+# 请填写 SECRET_ENCRYPTION_KEY、REDIS_PASSWORD；全新数据库还需填写 INITIAL_ADMIN_EMAIL/PASSWORD。
 docker compose up -d
 ```
 
@@ -148,9 +150,11 @@ AI_ASSISTANT_AVAILABLE=true docker compose --profile ai up -d
 使用 Helm 安装：
 
 ```bash
+# 先按 Helm 部署文档创建 luna-devops-initial-admin Secret。
 helm install luna-devops ./charts/luna-devops \
   --namespace luna-devops \
-  --create-namespace
+  --create-namespace \
+  --set api.initialAdmin.existingSecret=luna-devops-initial-admin
 ```
 
 更多部署说明：
@@ -163,7 +167,7 @@ helm install luna-devops ./charts/luna-devops \
 ## 配置说明
 
 - `APP_ENV=development` 会启用本地开发便利功能。
-- `APP_ENV=production` 会关闭开发默认值，并要求初始化管理员。
+- 全新数据库需要配置 `INITIAL_ADMIN_EMAIL` 和 `INITIAL_ADMIN_PASSWORD`；API 会在开始监听前创建首个管理员。已有有效管理员时不会用环境变量覆盖账号或密码，初始化成功后可清空这些变量。
 - 生产环境中的 `SECRET_ENCRYPTION_KEY` 必须保持稳定。它用于保护已保存的 Token、镜像站凭据、OAuth Secret 和其他敏感数据。
 - Luna DevOps 位于反向代理之后时，`TRUSTED_PROXY_CIDRS` 应包含可信反向代理或 CDN 的出口网段。
 - Worker 的构建网络可以单独配置。构建需要访问私有镜像站或镜像源时，建议使用受限出口并显式配置白名单。

@@ -327,9 +327,7 @@ func agentEligibleOperation(path, method, operationID string, raw map[string]any
 // JSON platform operations. Every entry carries a reviewable reason; OpenAPI no
 // longer needs a second per-operation `allowed` admission flag.
 var agentDisabledOperations = map[string]string{
-	"getPublicConfigs":                 "public bootstrap protocol",
-	"getBootstrapStatus":               "public bootstrap protocol",
-	"initializeAdmin":                  "initial trust bootstrap",
+	"getPublicConfigs":                 "public client configuration protocol",
 	"login":                            "interactive authentication protocol",
 	"resumeLogin":                      "interactive authentication protocol",
 	"logout":                           "interactive authentication protocol",

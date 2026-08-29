@@ -10,7 +10,7 @@ import { RemoteConfigSnapshot } from "./provider/config-client.js"
 import { createRuntimeProvider } from "./provider/runtime.js"
 import { BudgetedModelProvider } from "./provider/budgeted.js"
 import { buildServer } from "./server.js"
-import { agentMetrics, configureAIContentCapture, internalSpanOptions, shutdownTelemetry, telemetryLog, withSpan } from "./telemetry.js"
+import { agentMetrics, configureAgentTelemetry, configureAIContentCapture, internalSpanOptions, shutdownTelemetry, telemetryLog, withSpan } from "./telemetry.js"
 import { ToolCatalog } from "./tools/catalog.js"
 import { ToolCatalogRegistry } from "./tools/catalog-registry.js"
 import { HttpLunaApiToolClient } from "./tools/luna-api-client.js"
@@ -25,6 +25,7 @@ import { runtimeSettingsFromRemote } from "./runtime-settings.js"
 
 export async function startAgent(): Promise<void> {
   const config = loadConfig()
+  configureAgentTelemetry(config)
   configureAIContentCapture(config.AI_OBSERVABILITY_CAPTURE_CONTENT)
   if (config.AI_OBSERVABILITY_CAPTURE_CONTENT) {
     telemetryLog("agent.telemetry.content_capture_enabled", "warn", {

@@ -185,11 +185,6 @@ func accessTokenAllows(scopeText, required string) bool {
 	return service.AccessTokenAllows(scopeText, required)
 }
 
-func (h *Handlers) hasPlatformAdmin(ctx context.Context) bool {
-	exists, err := platformAdminExists(h.dbWithContext(ctx))
-	return err == nil && exists
-}
-
 func platformAdminExists(db *gorm.DB) (bool, error) {
 	var count int64
 	if err := db.Model(&model.User{}).Where("role = ? and disabled = ?", authz.PlatformRoleAdmin, false).Count(&count).Error; err != nil {

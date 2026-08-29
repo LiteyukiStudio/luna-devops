@@ -2,12 +2,13 @@ import { describe, expect, it, vi } from "vitest"
 import { Writable } from "node:stream"
 import { SpanStatusCode, type Span } from "@opentelemetry/api"
 import { captureTraceContext, createAgentLogger, errorDiagnostic, genAIClientTokenUsageMetric, initializeTelemetry, internalSpanOptions, isDatabaseSpanCaptureEnabled, isExpectedCancellation, isHealthCheckPath, normalizeTraceContext, recordSpanError, resolveAgentLogColor, resolveAgentLogFormat, resolveAgentLogLevel, sanitizeTelemetryURL, stableErrorCode, stableFastifyLifecycleSpanName, telemetryLog, withSpan } from "../src/telemetry.js"
+import { loadTelemetryConfig } from "../src/config.js"
 
 describe("agent telemetry", () => {
   it("keeps noisy database spans opt-in", () => {
-    expect(isDatabaseSpanCaptureEnabled(undefined)).toBe(false)
-    expect(isDatabaseSpanCaptureEnabled("false")).toBe(false)
-    expect(isDatabaseSpanCaptureEnabled("TRUE")).toBe(true)
+    expect(isDatabaseSpanCaptureEnabled()).toBe(false)
+    expect(isDatabaseSpanCaptureEnabled(false)).toBe(false)
+    expect(isDatabaseSpanCaptureEnabled(true)).toBe(true)
   })
 
   it("removes credentials, query strings, and fragments from telemetry URLs", () => {
@@ -16,7 +17,7 @@ describe("agent telemetry", () => {
   })
 
   it("stays disabled when no OTLP endpoint is configured", () => {
-    expect(() => initializeTelemetry(undefined)).not.toThrow()
+    expect(() => initializeTelemetry(loadTelemetryConfig({}))).not.toThrow()
   })
 
   it("uses the official GenAI client token usage histogram contract", () => {
@@ -31,7 +32,7 @@ describe("agent telemetry", () => {
   })
 
   it("rejects unsupported OTLP endpoint protocols", () => {
-    expect(() => initializeTelemetry("file:///tmp/telemetry")).toThrow(/http or https/)
+    expect(() => initializeTelemetry(loadTelemetryConfig({ OTEL_EXPORTER_OTLP_ENDPOINT: "file:///tmp/telemetry" }))).toThrow(/http or https/)
   })
 
   it("only exposes stable error codes", () => {

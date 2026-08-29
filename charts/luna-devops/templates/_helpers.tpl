@@ -54,6 +54,10 @@ app.kubernetes.io/component: {{ .component }}
 {{- default (printf "%s-app" (include "luna-devops.fullname" .)) .Values.app.existingSecret -}}
 {{- end -}}
 
+{{- define "luna-devops.initialAdminSecretName" -}}
+{{- default (printf "%s-initial-admin" (include "luna-devops.fullname" .)) .Values.api.initialAdmin.existingSecret -}}
+{{- end -}}
+
 {{- define "luna-devops.connectionSecretName" -}}
 {{- printf "%s-connection" (include "luna-devops.fullname" .) -}}
 {{- end -}}
@@ -76,6 +80,18 @@ app.kubernetes.io/component: {{ .component }}
 
 {{- define "luna-devops.workerName" -}}
 {{- printf "%s-worker" (include "luna-devops.fullname" .) | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
+{{- define "luna-devops.sharedConfigName" -}}
+{{- printf "%s-config" (include "luna-devops.fullname" .) -}}
+{{- end -}}
+
+{{- define "luna-devops.apiConfigName" -}}
+{{- printf "%s-config" (include "luna-devops.apiName" .) -}}
+{{- end -}}
+
+{{- define "luna-devops.workerConfigName" -}}
+{{- printf "%s-config" (include "luna-devops.workerName" .) -}}
 {{- end -}}
 
 {{- define "luna-devops.agentName" -}}
@@ -141,6 +157,9 @@ redis-url
 {{- end -}}
 
 {{- define "luna-devops.commonEnv" -}}
+{{- if .Values.app.extraEnv -}}
+{{- fail "app.extraEnv has been removed; use api.extraEnv or worker.extraEnv" -}}
+{{- end -}}
 - name: APP_ENV
   value: {{ .Values.app.env | quote }}
 - name: LOG_FORMAT
@@ -177,8 +196,66 @@ redis-url
       key: {{ .Values.observability.headersKey }}
 {{- end }}
 {{- end }}
-{{- range $name, $value := .Values.app.extraEnv }}
-- name: {{ $name }}
+{{- end -}}
+
+{{- define "luna-devops.extraEnv" -}}
+{{- $component := .component -}}
+{{- $managed := list
+  "APP_ENV"
+  "LOG_FORMAT"
+  "LOG_COLOR"
+  "LOG_LEVEL"
+  "SECRET_ENCRYPTION_KEY"
+  "DATABASE_URL"
+  "REDIS_ADDR"
+  "REDIS_PASSWORD"
+  "POSTGRES_PASSWORD"
+  "OTEL_EXPORTER_OTLP_ENDPOINT"
+  "OTEL_RESOURCE_ATTRIBUTES"
+  "OTEL_EXPORTER_OTLP_HEADERS"
+  "PUBLIC_BASE_URL"
+  "VOLUME_TRANSFER_MAX_BYTES"
+  "VOLUME_TRANSFER_JOB_IMAGE"
+  "AI_INTERNAL_SECRET"
+  "INITIAL_ADMIN_EMAIL"
+  "INITIAL_ADMIN_NAME"
+  "INITIAL_ADMIN_PASSWORD"
+  "INITIAL_ADMIN_LANGUAGE"
+  "API_ADDR"
+  "APP_CORS_ORIGINS"
+  "TRUSTED_PROXY_CIDRS"
+  "METRICS_ENABLED"
+  "METRICS_ADDR"
+  "METRICS_PATH"
+  "AI_ASSISTANT_AVAILABLE"
+  "AI_AGENT_BASE_URL"
+  "AI_AGENT_ADDR"
+  "AI_AGENT_TIMEOUT"
+  "API_DB_MAX_OPEN_CONNS"
+  "API_DB_MAX_IDLE_CONNS"
+  "API_DB_CONN_MAX_LIFETIME"
+  "API_DB_CONN_MAX_IDLE_TIME"
+  "WORKER_DB_MAX_OPEN_CONNS"
+  "WORKER_DB_MAX_IDLE_CONNS"
+  "WORKER_DB_CONN_MAX_LIFETIME"
+  "WORKER_DB_CONN_MAX_IDLE_TIME"
+  "DEPLOY_ROLLOUT_TIMEOUT_SECONDS"
+  "CERT_MANAGER_CLUSTER_ISSUER"
+  "BUILD_EXECUTOR_IMAGE"
+  "BUILD_EGRESS_MODE"
+  "BUILD_JOB_TIMEOUT_SECONDS"
+  "BUILD_JOB_TTL_SECONDS"
+  "BUILD_CACHE_ENABLED"
+  "BUILD_CACHE_TAG"
+  "BUILD_PRIVATE_EGRESS_CIDRS"
+  "BUILD_PRIVATE_EGRESS_PORTS"
+  "BUILD_BLOCKED_EGRESS_CIDRS"
+-}}
+{{- range $name, $value := .values }}
+{{- if has $name $managed }}
+{{- fail (printf "%s is managed by the chart and cannot be set through %s.extraEnv" $name $component) }}
+{{- end }}
+- name: {{ $name | quote }}
   value: {{ $value | quote }}
 {{- end }}
 {{- end -}}

@@ -33,6 +33,8 @@ spec:
       labels:
         {{- include "luna-devops.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: postgresql
+      annotations:
+        checksum.luna.devops/managed-secrets: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
     spec:
       automountServiceAccountToken: false
       containers:

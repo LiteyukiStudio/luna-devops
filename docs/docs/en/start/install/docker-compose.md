@@ -30,7 +30,9 @@ Prepare production settings first:
 cp .env.example .env
 ```
 
-Edit `.env`, set `SECRET_ENCRYPTION_KEY` to a stable random key, and replace the placeholders in `BOOTSTRAP_TOKEN` and `REDIS_PASSWORD`. Set `PUBLIC_BASE_URL` to the HTTP(S) root that users actually open; use `http://localhost:8088` for local-only access. Use URL-safe letters and digits for the Redis password. Compose passes it directly to the built-in Redis server and assembles the complete URI for API and Worker. The complete stack defaults to production mode and does not expose a fixed development administrator.
+The root `.env` is the single configuration entry for Compose. Set `SECRET_ENCRYPTION_KEY` to a stable random key and replace the placeholder in `REDIS_PASSWORD`. For a fresh database, also set `INITIAL_ADMIN_EMAIL` and `INITIAL_ADMIN_PASSWORD`; leave them empty when an active administrator already exists. Set the optional administrator name and language with `INITIAL_ADMIN_NAME` and `INITIAL_ADMIN_LANGUAGE`. Set `PUBLIC_BASE_URL` to the HTTP(S) root that users actually open; use `http://localhost:8088` for local-only access. Use URL-safe letters and digits for the Redis password. Compose passes it directly to the built-in Redis server and assembles the complete URI for API and Worker. The complete stack always runs in production mode and includes no fixed administrator credentials.
+
+Compose distributes configuration through a consumer allowlist: logging and common OpenTelemetry settings reach API, Worker, and Agent; `PUBLIC_BASE_URL`, the volume-transfer limit, and the transfer image reach only API and Worker; initial-administrator, CORS, metrics, and AI Client settings reach only API; build and deployment policy reaches only Worker; and Agent database-pool and diagnostic settings reach only Agent. API and Worker connection pools use separate `API_DB_*` and `WORKER_DB_*` budgets.
 
 Run this from the repository root:
 
@@ -38,7 +40,7 @@ Run this from the repository root:
 docker compose up -d
 ```
 
-This starts the platform with PostgreSQL and Redis. On the first visit, open `/bootstrap`, create the first administrator with the `BOOTSTRAP_TOKEN` from `.env`, and then rotate or remove that one-time token.
+This starts the platform with PostgreSQL and Redis. API creates the first administrator from `INITIAL_ADMIN_*` when the database is empty; after the health check passes, sign in at `/login`. You may clear these variables after creation, and later changes never overwrite an existing administrator account or password. Compose always passes the optional values only to API, which validates them according to the database state.
 
 ### Enable The AI Assistant
 
@@ -50,10 +52,10 @@ printf 'AI_INTERNAL_SECRET=%s\n' "$(openssl rand -hex 32)" >> .env
 
 The platform isolates and protects the AI assistant's internal credentials. Keep this secret stable and do not reuse another encryption key.
 
-Then start the profile:
+Set `AI_ASSISTANT_AVAILABLE=true` in the same `.env`, then start the profile:
 
 ```bash
-AI_ASSISTANT_AVAILABLE=true docker compose --profile ai up -d
+docker compose --profile ai up -d
 ```
 
 Configure the Provider, model catalog, access rules, and quotas under **Global Settings → AI Assistant**. The Provider API key is stored by the platform Secret Store and does not belong in `.env`. For diagnostics, run `docker compose --profile ai logs -f agent`.
@@ -66,7 +68,7 @@ After deployment, configure the port, reverse proxy, domain, and TLS for the req
 http://localhost:8088
 ```
 
-Compose passes `PUBLIC_BASE_URL` from `.env` to both API and Worker for OAuth, webhooks, and notification detail links. Recreate both services after changing it. When the console is deployed cross-origin, also configure `APP_CORS_ORIGINS` as described in [API Configuration](/en/start/configuration/api). PostgreSQL and Redis remain inside the container network and do not need external exposure.
+Compose passes the single `PUBLIC_BASE_URL` from `.env` to API and Worker for OAuth, webhooks, and notification detail links; Agent does not consume it. Recreate API and Worker after changing it. When the console is deployed cross-origin, also configure `APP_CORS_ORIGINS` as described in [API Configuration](/en/start/configuration/api). PostgreSQL and Redis remain inside the container network and do not need external exposure.
 
 ## Check Services
 
@@ -80,7 +82,7 @@ When API is healthy, the console opens in the browser. Worker must also be healt
 
 ## Next
 
-1. Open [Initialize](/en/start/first-login) and create the first administrator.
+1. Open [First Sign-In](/en/start/first-login) and sign in with the configured administrator account.
 2. Open [Add Base Resources](/en/start/connect-resources) and prepare a runtime cluster, registry, and Git Provider OAuth.
 3. Follow [Daily Delivery](/en/use/workflow) to create and deploy an application.
 

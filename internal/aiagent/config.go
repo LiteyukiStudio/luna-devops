@@ -1,6 +1,7 @@
 package aiagent
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -15,19 +16,36 @@ type Config struct {
 	Timeout         string
 }
 
-func LoadConfig() Config {
+func LoadConfig() (Config, error) {
 	baseURL := strings.TrimSpace(os.Getenv("AI_AGENT_BASE_URL"))
-	if baseURL == "" {
-		baseURL = strings.TrimSpace(os.Getenv("AI_AGENT_ADDR"))
+	available, err := parseBool(os.Getenv("AI_ASSISTANT_AVAILABLE"))
+	if err != nil {
+		return Config{}, err
 	}
-	keys, _ := LoadInternalKeys()
-	return Config{
-		Available:       parseBool(os.Getenv("AI_ASSISTANT_AVAILABLE")),
-		BaseURL:         baseURL,
-		ServiceToken:    keys.ServiceToken,
-		ActorSigningKey: keys.ActorSigningKey,
-		Timeout:         strings.TrimSpace(os.Getenv("AI_AGENT_TIMEOUT")),
+	cfg := Config{
+		Available: available,
+		BaseURL:   baseURL,
+		Timeout:   strings.TrimSpace(os.Getenv("AI_AGENT_TIMEOUT")),
 	}
+	if cfg.Timeout != "" {
+		parsed, parseErr := time.ParseDuration(cfg.Timeout)
+		if parseErr != nil || parsed <= 0 {
+			return Config{}, fmt.Errorf("%w: AI_AGENT_TIMEOUT must be a positive duration", ErrUnavailable)
+		}
+	}
+	if !cfg.Available {
+		return cfg, nil
+	}
+	keys, err := LoadInternalKeys()
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.ServiceToken = keys.ServiceToken
+	cfg.ActorSigningKey = keys.ActorSigningKey
+	if _, err := cfg.Client(); err != nil {
+		return Config{}, err
+	}
+	return cfg, nil
 }
 
 func (c Config) Client() (Client, error) {
@@ -49,11 +67,13 @@ func (c Config) Client() (Client, error) {
 	return client, nil
 }
 
-func parseBool(value string) bool {
+func parseBool(value string) (bool, error) {
 	switch strings.ToLower(strings.TrimSpace(value)) {
 	case "1", "true", "yes", "on":
-		return true
+		return true, nil
+	case "", "0", "false", "no", "off":
+		return false, nil
 	default:
-		return false
+		return false, errors.New("AI_ASSISTANT_AVAILABLE must be a boolean")
 	}
 }

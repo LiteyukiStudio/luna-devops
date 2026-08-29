@@ -8,13 +8,11 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"os"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/LiteyukiStudio/devops/internal/authz"
-	"github.com/LiteyukiStudio/devops/internal/config"
 	"github.com/LiteyukiStudio/devops/internal/telemetry"
 )
 
@@ -388,11 +386,7 @@ func egressDebug(format string, args ...any) {
 }
 
 func egressDebugEnabled() bool {
-	switch strings.ToLower(strings.TrimSpace(os.Getenv("LOG_LEVEL"))) {
-	case "debug", "trace":
-		return true
-	}
-	return config.RuntimeMode() == "development"
+	return telemetry.Logger().Enabled(context.Background(), slog.LevelDebug)
 }
 
 func debugList(values []string) string {

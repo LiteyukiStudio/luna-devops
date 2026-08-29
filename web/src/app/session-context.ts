@@ -15,15 +15,6 @@ export interface RecentLoginUser {
   name: string
 }
 
-export interface InitializeAdminInput {
-  bootstrapToken: string
-  email: string
-  name: string
-  password: string
-  language: CurrentUser['language']
-  rememberMe: boolean
-}
-
 export interface SessionContextValue {
   initialized: boolean
   isLoading: boolean
@@ -32,7 +23,6 @@ export interface SessionContextValue {
   pendingLoginUsername?: string
   recentLoginUsers: RecentLoginUser[]
   user?: CurrentUser
-  initializeAdmin: (input: InitializeAdminInput) => Promise<CurrentUser>
   login: (input: LoginInput) => Promise<CurrentUser>
   logout: () => Promise<void>
   refreshUser: () => Promise<void>

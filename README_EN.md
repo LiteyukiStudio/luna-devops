@@ -80,6 +80,8 @@ Create local configuration:
 cp .env.example .env
 ```
 
+Set `INITIAL_ADMIN_EMAIL` and `INITIAL_ADMIN_PASSWORD` in `.env`. API creates that administrator on its first startup, then you sign in at `/login`.
+
 The development Compose files do not manage Luna DevOps processes. Run the four components in separate terminals:
 
 ```bash
@@ -99,7 +101,7 @@ pnpm --dir web dev
 ```
 
 The Vite dev server proxies `/api/v1` to `http://localhost:8080`.
-See [`luna-agent/.env.example`](luna-agent/.env.example) for Agent integration settings. Also set `AI_ASSISTANT_AVAILABLE=true` and `AI_AGENT_BASE_URL=http://localhost:8091` in the root `.env`; `AI_INTERNAL_SECRET` must match in both files.
+The root `.env` is the single authoring entry for API, Worker, and Agent development. Set `AI_ASSISTANT_AVAILABLE=true`, `AI_AGENT_BASE_URL=http://localhost:8091`, and one `AI_INTERNAL_SECRET` there. Use `luna-agent/.env.local` only for Agent-specific overrides; see [`luna-agent/.env.example`](luna-agent/.env.example). API and Worker database pools use separate `API_DB_*` and `WORKER_DB_*` settings.
 
 API, Worker, helper commands, and Agent default to `LOG_FORMAT=auto`: interactive terminals get readable console logs, while redirected output and containers get ANSI-free JSON. Use `LOG_LEVEL` to change verbosity or `LOG_COLOR=never` / `NO_COLOR` to disable color. OTel always receives structured records independently of terminal rendering.
 
@@ -134,7 +136,7 @@ Start the published container images with Docker Compose:
 
 ```bash
 cp .env.example .env
-# Fill SECRET_ENCRYPTION_KEY, BOOTSTRAP_TOKEN, and REDIS_PASSWORD before first startup.
+# Fill SECRET_ENCRYPTION_KEY and REDIS_PASSWORD; a fresh database also needs INITIAL_ADMIN_EMAIL/PASSWORD.
 docker compose up -d
 ```
 
@@ -147,9 +149,11 @@ AI_ASSISTANT_AVAILABLE=true docker compose --profile ai up -d
 Install with Helm:
 
 ```bash
+# First create luna-devops-initial-admin as described in the Helm guide.
 helm install luna-devops ./charts/luna-devops \
   --namespace luna-devops \
-  --create-namespace
+  --create-namespace \
+  --set api.initialAdmin.existingSecret=luna-devops-initial-admin
 ```
 
 More deployment guides:
@@ -162,7 +166,7 @@ More deployment guides:
 ## Configuration Notes
 
 - `APP_ENV=development` enables local development conveniences.
-- `APP_ENV=production` disables development defaults and requires administrator bootstrap.
+- A fresh database requires `INITIAL_ADMIN_EMAIL` and `INITIAL_ADMIN_PASSWORD`; API creates the first administrator before listening. Existing active administrators are never overwritten from environment variables, and these variables may be cleared after initialization succeeds.
 - `SECRET_ENCRYPTION_KEY` must be stable in production. It protects stored tokens, registry credentials, OAuth secrets, and other sensitive values.
 - `TRUSTED_PROXY_CIDRS` should include trusted reverse proxies or CDN egress ranges when Luna DevOps is behind a proxy.
 - Worker build networking is configurable. Use restricted egress plus explicit allowlists when builds need to access private registries or mirrors.

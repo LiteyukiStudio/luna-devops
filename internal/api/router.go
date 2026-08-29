@@ -4,10 +4,8 @@ import (
 	"io/fs"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 
-	"github.com/LiteyukiStudio/devops/internal/config"
 	"github.com/LiteyukiStudio/devops/internal/observability"
 	"github.com/LiteyukiStudio/devops/internal/telemetry"
 	"github.com/gin-gonic/gin"
@@ -23,29 +21,34 @@ func NewRouterWithStaticFS(db *gorm.DB, staticFS fs.FS) *gin.Engine {
 }
 
 func NewRouterWithStaticFSAndMetrics(db *gorm.DB, staticFS fs.FS, httpMetrics *observability.HTTPMetrics) *gin.Engine {
+	return NewRouterWithStaticFSAndMetricsConfig(db, staticFS, httpMetrics, mustLoadConfig())
+}
+
+func NewRouterWithStaticFSAndMetricsConfig(db *gorm.DB, staticFS fs.FS, httpMetrics *observability.HTTPMetrics, cfg Config) *gin.Engine {
 	gin.SetMode(gin.ReleaseMode)
-	if debugLogEnabled() {
-		debugLog("api log level set to debug")
+	if debugLogEnabled(cfg) {
+		debugLogWithConfig(cfg, "api log level set to debug")
 	}
 	router := gin.New()
-	configureTrustedProxies(router, config.Load().TrustedProxyCIDRs)
+	configureTrustedProxies(router, cfg.TrustedProxyCIDRs)
 	middlewares := []gin.HandlerFunc{
+		runtimeModeMiddleware(cfg.Mode),
 		telemetry.QueryTraceContextMiddleware(),
 		requestIDMiddleware(),
 		telemetry.GinTracingMiddleware("luna-devops-api"),
 		telemetry.GinAccessLogMiddleware(),
 		recoveryMiddleware(),
 		errorResponseMiddleware(),
-		securityHeaders(),
-		cors(),
-		csrfOriginGuard(),
+		securityHeaders(cfg),
+		cors(cfg),
+		csrfOriginGuard(cfg),
 	}
 	if httpMetrics != nil {
 		middlewares = append(middlewares, httpMetrics.GinMiddleware())
 	}
 	router.Use(middlewares...)
 
-	handlers := NewHandlers(db)
+	handlers := NewHandlersWithConfig(db, cfg)
 	router.Use(handlers.aiToolExecutionIdentityMiddleware())
 
 	router.GET("/healthz", func(ctx *gin.Context) {
@@ -58,8 +61,6 @@ func NewRouterWithStaticFSAndMetrics(db *gorm.DB, staticFS fs.FS, httpMetrics *o
 	{
 		v1.GET("/meta", handlers.GetAPIMeta)
 		v1.POST("/public/configs", handlers.GetPublicConfigs)
-		v1.GET("/auth/bootstrap", handlers.GetBootstrapStatus)
-		v1.POST("/auth/bootstrap/admin", handlers.InitializeAdmin)
 		v1.POST("/auth/login", handlers.Login)
 		v1.POST("/auth/login/resume", handlers.ResumeLogin)
 		v1.POST("/auth/logout", handlers.Logout)
@@ -385,8 +386,8 @@ func configureTrustedProxies(router *gin.Engine, cidrs []string) {
 	_ = router.SetTrustedProxies(nil)
 }
 
-func cors() gin.HandlerFunc {
-	allowedOrigins := configuredAllowedOrigins()
+func cors(configs ...Config) gin.HandlerFunc {
+	allowedOrigins := configuredAllowedOrigins(configs...)
 	return func(ctx *gin.Context) {
 		origin := strings.TrimSpace(ctx.GetHeader("Origin"))
 		if origin != "" && containsString(allowedOrigins, origin) {
@@ -412,7 +413,7 @@ func cors() gin.HandlerFunc {
 	}
 }
 
-func securityHeaders() gin.HandlerFunc {
+func securityHeaders(configs ...Config) gin.HandlerFunc {
 	csp := strings.Join([]string{
 		"default-src 'self'",
 		"script-src 'self'",
@@ -426,7 +427,7 @@ func securityHeaders() gin.HandlerFunc {
 		"base-uri 'self'",
 		"form-action 'self'",
 	}, "; ")
-	enableHSTS := hstsEnabled()
+	enableHSTS := hstsEnabled(configs...)
 	return func(ctx *gin.Context) {
 		ctx.Writer.Header().Set("X-Content-Type-Options", "nosniff")
 		ctx.Writer.Header().Set("X-Frame-Options", "SAMEORIGIN")
@@ -440,19 +441,12 @@ func securityHeaders() gin.HandlerFunc {
 	}
 }
 
-func hstsEnabled() bool {
-	switch strings.ToLower(strings.TrimSpace(os.Getenv("APP_ENABLE_HSTS"))) {
-	case "true", "1", "yes", "on":
-		return true
-	case "false", "0", "no", "off":
-		return false
-	default:
-		return config.RuntimeMode() == "production"
-	}
+func hstsEnabled(configs ...Config) bool {
+	return configuredOrLoaded(configs).EnableHSTS
 }
 
-func csrfOriginGuard() gin.HandlerFunc {
-	allowedOrigins := configuredAllowedOrigins()
+func csrfOriginGuard(configs ...Config) gin.HandlerFunc {
+	allowedOrigins := configuredAllowedOrigins(configs...)
 	return func(ctx *gin.Context) {
 		if !requiresCSRForiginCheck(ctx) {
 			ctx.Next()
@@ -504,24 +498,8 @@ func requestOriginAllowed(ctx *gin.Context, allowedOrigins []string) bool {
 	return containsString(allowedOrigins, strings.TrimRight(parsed.Scheme+"://"+parsed.Host, "/"))
 }
 
-func configuredAllowedOrigins() []string {
-	origins := normalizeList(strings.Split(os.Getenv("APP_CORS_ORIGINS"), ","), false)
-	if publicBase := originFromURL(os.Getenv("PUBLIC_BASE_URL")); publicBase != "" {
-		origins = append(origins, publicBase)
-	}
-	if config.RuntimeMode() == "development" {
-		origins = append(origins,
-			"http://localhost:5173",
-			"http://127.0.0.1:5173",
-			"http://localhost:4173",
-			"http://127.0.0.1:4173",
-			"http://localhost:4174",
-			"http://127.0.0.1:4174",
-			"http://localhost:4184",
-			"http://127.0.0.1:4184",
-		)
-	}
-	return normalizeList(origins, false)
+func configuredAllowedOrigins(configs ...Config) []string {
+	return append([]string(nil), configuredOrLoaded(configs).AllowedOrigins...)
 }
 
 func originFromURL(raw string) string {

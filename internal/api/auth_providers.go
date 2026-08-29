@@ -35,7 +35,7 @@ func (h *Handlers) GetOIDCCallbackURL(ctx *gin.Context) {
 	if !h.requirePlatformAdmin(ctx) {
 		return
 	}
-	publicBaseURL := externalBaseURL()
+	publicBaseURL := h.externalBaseURL(ctx)
 	callbackURL := ""
 	if publicBaseURL != "" {
 		callbackURL = oidcCallbackURL(publicBaseURL)

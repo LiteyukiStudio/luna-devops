@@ -2,12 +2,13 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"os"
 	"time"
 
 	"github.com/LiteyukiStudio/devops/internal/api"
-	"github.com/LiteyukiStudio/devops/internal/config"
+	sharedconfig "github.com/LiteyukiStudio/devops/internal/config"
 	"github.com/LiteyukiStudio/devops/internal/database"
 	"github.com/LiteyukiStudio/devops/internal/observability"
 	"github.com/LiteyukiStudio/devops/internal/redisconfig"
@@ -24,7 +25,7 @@ func main() {
 }
 
 func run() (runErr error) {
-	config.LoadEnvironment()
+	sharedconfig.LoadEnvironment()
 	ctx := context.Background()
 	telemetryRuntime, err := telemetry.Setup(ctx, telemetry.ServiceConfig{ServiceName: "luna-devops-api"})
 	if err != nil {
@@ -41,12 +42,9 @@ func run() (runErr error) {
 				"telemetry.shutdown.failed", err)
 		}
 	}()
-	cfg := config.Load()
-	if err := cfg.ValidateRedis(); err != nil {
-		return telemetry.WrapError("config.invalid", "set REDIS_ADDR to a redis:// or rediss:// URI", "validate Redis configuration", err)
-	}
-	if err := cfg.ValidateVolumeTransfer(); err != nil {
-		return telemetry.WrapError("config.invalid", "verify VOLUME_TRANSFER_MAX_BYTES and VOLUME_TRANSFER_JOB_IMAGE", "validate volume transfer configuration", err)
+	cfg, err := api.LoadConfig()
+	if err != nil {
+		return telemetry.WrapError("config.invalid", "verify API and shared environment variables", "load API configuration", err)
 	}
 	if err := secret.ValidateEncryptionConfig(); err != nil {
 		return telemetry.WrapError("config.invalid", "set a stable SECRET_ENCRYPTION_KEY", "validate encryption configuration", err)
@@ -67,6 +65,16 @@ func run() (runErr error) {
 
 	if err := database.MigrateContext(ctx, db); err != nil {
 		return telemetry.WrapError("database.migration.failed", "inspect migration state and PostgreSQL permissions", "migrate database", err)
+	}
+	if err := api.EnsureInitialAdmin(ctx, db, cfg.Mode, cfg.InitialAdmin); err != nil {
+		switch {
+		case errors.Is(err, api.ErrInitialAdminConfigInvalid):
+			return telemetry.WrapError("config.invalid", "set valid INITIAL_ADMIN_EMAIL, INITIAL_ADMIN_PASSWORD, and optional INITIAL_ADMIN_NAME/INITIAL_ADMIN_LANGUAGE", "create initial administrator", err)
+		case errors.Is(err, api.ErrInitialAdminRecoveryRequired):
+			return telemetry.WrapError("auth.initial_admin.recovery_required", "restore or enable an existing platform administrator before starting the API", "verify initial administrator state", err)
+		default:
+			return telemetry.WrapError("auth.initial_admin.failed", "verify the database and initial administrator configuration", "create initial administrator", err)
+		}
 	}
 	sqlDB, err := db.DB()
 	if err != nil {
@@ -115,10 +123,10 @@ func run() (runErr error) {
 		httpMetrics = observability.NewHTTPMetrics(metricsRegistry, "api")
 	}
 
-	router := api.NewRouterWithStaticFSAndMetrics(db, webui.FS, httpMetrics)
+	router := api.NewRouterWithStaticFSAndMetricsConfig(db, webui.FS, httpMetrics, cfg)
 
-	slog.Info("API listening", "event.name", "service.started", "server.address", cfg.APIAddr, "telemetry.enabled", telemetryRuntime.Active())
-	return runAPIServer(router, cfg.APIAddr)
+	slog.Info("API listening", "event.name", "service.started", "server.address", cfg.Addr, "telemetry.enabled", telemetryRuntime.Active())
+	return runAPIServer(router, cfg.Addr)
 }
 
 type apiRouter interface {

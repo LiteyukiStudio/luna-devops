@@ -4,8 +4,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"net/http"
-	"os"
-	"strings"
 
 	"github.com/LiteyukiStudio/devops/openapi"
 	"github.com/gin-gonic/gin"
@@ -35,7 +33,7 @@ func (h *Handlers) GetAPIMeta(ctx *gin.Context) {
 	ctx.Header("Cache-Control", "no-store")
 	ctx.JSON(http.StatusOK, apiMetaResponse{
 		APIVersion:        apiVersion,
-		ServerVersion:     serverVersion(),
+		ServerVersion:     h.config.AppVersion,
 		OpenAPIDigest:     openAPIDigest(),
 		MinimumCLIVersion: minimumCLIVersion,
 		Features: apiMetaFeatures{
@@ -45,13 +43,6 @@ func (h *Handlers) GetAPIMeta(ctx *gin.Context) {
 			OpenAPIOperations:  true,
 		},
 	})
-}
-
-func serverVersion() string {
-	if version := strings.TrimSpace(os.Getenv("APP_VERSION")); version != "" {
-		return version
-	}
-	return "dev"
 }
 
 func openAPIDigest() string {

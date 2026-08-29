@@ -15,15 +15,37 @@
 
 ## 安装
 
-在仓库根目录执行：
+数据库全新时，先把首个管理员配置保存到 Kubernetes Secret。下面的文件应设置为仅当前用户可读，用完后安全删除；名称和语言键可以省略，API 会分别回退为邮箱和 `zh-CN`：
 
-```bash
-helm install luna-devops ./charts/luna-devops \
-  --namespace luna-devops \
-  --create-namespace
+```dotenv title="initial-admin.env"
+initial-admin-email=admin@example.com
+initial-admin-password=请替换为8至72字节的强密码
 ```
 
-默认会同时安装 API、Worker、PostgreSQL 和 Redis。AI 助手默认关闭；启用时设置 `ai.enabled=true`，并通过 `ai.existingSecret` 提供稳定的 `ai-internal-secret`。
+然后在仓库根目录执行：
+
+```bash
+kubectl create namespace luna-devops
+kubectl -n luna-devops create secret generic luna-devops-initial-admin \
+  --from-env-file=initial-admin.env
+helm install luna-devops ./charts/luna-devops \
+  --namespace luna-devops \
+  --set api.initialAdmin.existingSecret=luna-devops-initial-admin
+```
+
+默认会同时安装 API、Worker、PostgreSQL 和 Redis。管理员 Secret 只注入 API；API 仅在全新数据库中创建首个管理员，不会在升级或重启时覆盖已有账号。已有有效管理员的数据库可以不设置 `api.initialAdmin`，Chart 仍能正常安装或升级。AI 助手默认关闭；启用时设置 `ai.enabled=true`，并通过 `ai.existingSecret` 提供稳定的 `ai-internal-secret`。
+
+确认可以登录后，可以让 API 脱离初始化 Secret，再删除它：
+
+```bash
+helm upgrade luna-devops ./charts/luna-devops \
+  --namespace luna-devops \
+  --reuse-values \
+  --set-string api.initialAdmin.existingSecret=
+kubectl -n luna-devops delete secret luna-devops-initial-admin
+```
+
+四个 Secret 键引用都是可选的；`existingSecret`、`email`、`name`、`password` 和 `language` 均为空时，Chart 不会创建初始管理员 Secret。Chart 仅在显式提供任一管理员字段时创建受管 Secret，密码和语言也只在非空时校验。
 
 ## 打开控制台
 
@@ -36,7 +58,7 @@ kubectl -n luna-devops port-forward svc/luna-devops-api 8088:80
 然后访问：
 
 ```text
-http://localhost:8088
+http://localhost:8088/login
 ```
 
 ## 使用固定版本
@@ -45,6 +67,7 @@ http://localhost:8088
 helm upgrade --install luna-devops ./charts/luna-devops \
   --namespace luna-devops \
   --create-namespace \
+  --set api.initialAdmin.existingSecret=luna-devops-initial-admin \
   --set api.image.tag=v0.1.0-rc.1 \
   --set worker.image.tag=v0.1.0-rc.1 \
   --set ai.agent.image.tag=v0.1.0-rc.1
@@ -58,6 +81,7 @@ helm upgrade --install luna-devops ./charts/luna-devops \
 helm upgrade --install luna-devops ./charts/luna-devops \
   --namespace luna-devops \
   --create-namespace \
+  --set api.initialAdmin.existingSecret=luna-devops-initial-admin \
   --set app.publicBaseUrl=https://devops.example.com \
   --set ingress.enabled=true \
   --set ingress.className=nginx \
@@ -126,10 +150,16 @@ ai:
 
 | 配置项 | 默认值 | 说明 |
 | --- | --- | --- |
-| `app.publicBaseUrl` | `http://localhost:8088` | 设置用户访问平台的根地址；填写 HTTP(S) URL。 |
+| `app.publicBaseUrl` | `http://localhost:8088` | 设置 API 回调和 Worker 通知详情链接共用的平台根地址；生产环境填写用户实际访问的绝对 HTTP(S) URL。 |
 | `app.secretEncryptionKey` | 自动生成 | 加密平台保存的凭据；填写稳定的非空密钥。 |
+| `api.initialAdmin.existingSecret` | 空 | 指定首个管理员配置 Secret；全新数据库需包含 `initial-admin-email/password`，可选 `initial-admin-name/language`。 |
+| `api.initialAdmin.email` / `password` | 空 | 让 Chart 在显式提供字段时创建首个管理员 Secret；全新数据库分别填写有效邮箱和 8–72 字节密码，生产环境优先使用 `existingSecret`。 |
+| `api.initialAdmin.name` / `language` | 空 / 空 | 设置首个管理员名称和语言；留空时 API 分别使用邮箱和 `zh-CN`，语言非空时可填 `zh-CN` 或 `en-US`。 |
 | `api.image.tag` / `worker.image.tag` | `nightly` | 选择 API 与 Worker 镜像版本；填写镜像标签。 |
+| `api.database.maxOpenConns` / `maxIdleConns` | `20` / `5` | 限制每个 API 副本的 PostgreSQL 打开与空闲连接数；分别填写正整数和不超过前者的非负整数。 |
+| `worker.database.maxOpenConns` / `maxIdleConns` | `20` / `5` | 限制每个 Worker 副本的 PostgreSQL 打开与空闲连接数；分别填写正整数和不超过前者的非负整数。 |
 | `ai.enabled` / `ai.existingSecret` | `false` / 空 | 启用 Agent 并指定内部密钥；分别填写布尔值和 Kubernetes Secret 名称。 |
+| `ai.agent.observabilityCaptureDatabaseSpans` | `false` | 控制是否临时采集逐条 Agent PostgreSQL Span；填写布尔值，常规运行保持关闭。 |
 | `ai.agent.networkPolicy.ingress.enabled` / `egress.enabled` | `true` / `false` | 分别控制 API 到 Agent 的入站隔离和 Agent 出站隔离；填写布尔值，并仅在目的地规则完整时启用出站。 |
 | `ai.agent.networkPolicy.egress.additionalCIDRs` / `additionalRules` | `[]` / `[]` | 补充 Agent 可访问目的地；分别填写 CIDR 列表和 Kubernetes NetworkPolicy egress rule 列表。 |
 | `postgresql.enabled` / `externalDatabase.url` | `true` / 空 | 选择内置或外部 PostgreSQL；分别填写布尔值和 PostgreSQL 连接 URI。 |
