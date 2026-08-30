@@ -32,6 +32,8 @@ type Template struct {
 	DefaultReplicas    int               `json:"defaultReplicas"`
 	DefaultCPU         string            `json:"defaultCPU"`
 	DefaultMemory      string            `json:"defaultMemory"`
+	ContainerCommand   string            `json:"containerCommand"`
+	ContainerArgs      string            `json:"containerArgs"`
 	DataVolumes        []DataVolume      `json:"dataVolumes"`
 	Env                map[string]string `json:"env"`
 	SecretEnv          map[string]string `json:"secretEnv"`
@@ -182,11 +184,14 @@ func Render(template Template, input map[string]string) (RenderedTemplate, error
 		if definition.Required && values[key] == "" {
 			return RenderedTemplate{}, fmt.Errorf("template value %s is required", key)
 		}
+		if definition.Secret && !definition.Required && values[key] == "" {
+			delete(values, key)
+		}
 	}
 	rendered := RenderedTemplate{
 		Values:      values,
 		Env:         renderStringMap(template.Env, values),
-		SecretEnv:   renderStringMap(template.SecretEnv, values),
+		SecretEnv:   renderNonEmptyStringMap(template.SecretEnv, values),
 		ConfigFiles: renderConfigFiles(template.ConfigFiles, values),
 		SecretFiles: renderConfigFiles(template.SecretFiles, values),
 	}
@@ -197,6 +202,16 @@ func renderStringMap(source map[string]string, values map[string]string) map[str
 	output := map[string]string{}
 	for key, value := range source {
 		output[key] = renderTemplateString(value, values)
+	}
+	return output
+}
+
+func renderNonEmptyStringMap(source map[string]string, values map[string]string) map[string]string {
+	output := renderStringMap(source, values)
+	for key, value := range output {
+		if strings.TrimSpace(value) == "" {
+			delete(output, key)
+		}
 	}
 	return output
 }

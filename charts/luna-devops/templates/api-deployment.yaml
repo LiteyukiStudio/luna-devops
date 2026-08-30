@@ -88,6 +88,13 @@ spec:
                   name: {{ include "luna-devops.aiSecretName" . }}
                   key: {{ .Values.ai.internalSecretKey }}
             {{- end }}
+            {{- if .Values.api.browserTrace.existingSecret }}
+            - name: OTEL_EXPORTER_OTLP_TRACES_HEADERS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.api.browserTrace.existingSecret }}
+                  key: {{ .Values.api.browserTrace.headersKey }}
+            {{- end }}
             {{- include "luna-devops.extraEnv" (dict "component" "api" "values" .Values.api.extraEnv) | nindent 12 }}
           envFrom:
             - configMapRef:

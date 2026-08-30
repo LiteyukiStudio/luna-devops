@@ -12,6 +12,8 @@
 
 模板会创建应用和部署配置，并按选择创建首个 Release。Secret 参数只写入密钥存储，不会在页面或安装结果中回显。
 
+Redis 模板的密码是可选项。建议填写较长的随机密码；留空时 Redis 会在不启用密码认证的情况下运行。填写的密码只通过 Secret 注入运行环境，密码明文不会写入普通环境变量或安装参数快照。
+
 安装完成后检查 Release、工作负载、日志和访问方式。模板不会替你完成第三方应用内部配置，例如 Grafana 数据源、数据库业务账号或外部 OAuth。
 
 部署阶段只接受 `dev`、`test`、`staging` 或 `prod`。CLI 使用稳定命令 `luna app-template install`；Agent 与 CLI 会在请求发出前拒绝 `default`、`qa` 等非法值，并返回允许值。平台兜底校验返回 `deployment.stage_invalid`、字段路径和 `retryable: false`；自动化调用方必须修正参数，不能原样重试。

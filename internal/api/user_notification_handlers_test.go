@@ -138,7 +138,7 @@ func TestPersonalNotificationChannelPresetControlsStoredAdapterAndConfig(t *test
 			return db.AutoMigrate(&model.NotificationChannel{}, &model.SecretValue{}, &model.AuditLog{})
 		},
 	})
-	handlers := &Handlers{db: db, secrets: secret.NewStore(db, nil)}
+	handlers := &Handlers{db: db, secrets: secret.NewStore(db, nil, mustTestSecretCodec(t))}
 
 	recorder, ctx := newUserNotificationHandlerContext(
 		http.MethodPost,
@@ -302,7 +302,7 @@ func TestPersonalNotificationChannelLimit(t *testing.T) {
 	if err := db.Create(&channels).Error; err != nil {
 		t.Fatal(err)
 	}
-	handlers := &Handlers{db: db, secrets: secret.NewStore(db, nil)}
+	handlers := &Handlers{db: db, secrets: secret.NewStore(db, nil, mustTestSecretCodec(t))}
 	recorder, ctx := newUserNotificationHandlerContext(
 		http.MethodPost,
 		"/api/v1/me/notification-channels",
@@ -333,7 +333,7 @@ func TestPersonalNotificationChannelLimitIsAtomic(t *testing.T) {
 	if err := db.Create(&channels).Error; err != nil {
 		t.Fatal(err)
 	}
-	handlers := &Handlers{db: db, secrets: secret.NewStore(db, nil)}
+	handlers := &Handlers{db: db, secrets: secret.NewStore(db, nil, mustTestSecretCodec(t))}
 	recorders := make([]*httptest.ResponseRecorder, 2)
 	contexts := make([]*gin.Context, 2)
 	for index := range contexts {

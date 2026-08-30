@@ -22,6 +22,12 @@ api:
     maxIdleConns: 5
     connMaxLifetime: 30m
     connMaxIdleTime: 5m
+  # Optional API-only authentication for the browser Trace Relay. Store the
+  # complete OTEL_EXPORTER_OTLP_TRACES_HEADERS value in this Secret; never put
+  # credentials in api.extraEnv or a values file.
+  browserTrace:
+    existingSecret: ""
+    headersKey: otlp-traces-headers
   # Initial administrator settings are consumed by API only. Leave all values
   # empty after an administrator exists; prefer an existing Secret for a fresh
   # production database so the password never enters Helm values.

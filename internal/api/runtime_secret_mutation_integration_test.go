@@ -141,7 +141,7 @@ func TestDeploymentTargetRuntimeSecretMutationUsesScopedOwner(t *testing.T) {
 	if err := db.Create(&target).Error; err != nil {
 		t.Fatalf("create deployment target: %v", err)
 	}
-	handlers := &Handlers{db: db, secrets: secret.NewStore(db, nil)}
+	handlers := &Handlers{db: db, secrets: secret.NewStore(db, nil, mustTestSecretCodec(t))}
 	user := model.User{ID: "usr_runtime_secret"}
 	owner := deploymentTargetRuntimeSecretMutationOwner(target.ID, target.ProjectID, target.ApplicationID)
 	prepared, err := prepareRuntimeSecretMutation(runtimeSecretMutationInput{Values: map[string]string{"TOKEN": "target-value"}})
@@ -373,7 +373,7 @@ func runtimeSecretMutationFixture(t *testing.T, db *gorm.DB, suffix string) (*Ha
 	if err := db.Create(&set).Error; err != nil {
 		t.Fatalf("create runtime config set: %v", err)
 	}
-	handlers := &Handlers{db: db, secrets: secret.NewStore(db, nil)}
+	handlers := &Handlers{db: db, secrets: secret.NewStore(db, nil, mustTestSecretCodec(t))}
 	return handlers, set, model.User{ID: "usr_runtime_secret"}
 }
 

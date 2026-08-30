@@ -25,7 +25,7 @@ func TestPlatformAdminRoutesOwnAuthorizationInMiddleware(t *testing.T) {
 	}).Error; err != nil {
 		t.Fatal(err)
 	}
-	router := NewRouter(db)
+	router := NewRouter(db, mustTestConfig(t))
 
 	tests := []struct {
 		method string

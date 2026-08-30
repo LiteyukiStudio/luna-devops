@@ -60,16 +60,12 @@ func RequestIDFromContext(ctx context.Context) string {
 
 func Logger() *slog.Logger { return slog.Default() }
 
-func newProcessLogger(serviceName string, otelHandler slog.Handler) *slog.Logger {
-	return newProcessLoggerWithOptions(serviceName, otelHandler, processLoggerOptions{
-		Writer:      os.Stderr,
-		IsTerminal:  term.IsTerminal(int(os.Stderr.Fd())),
-		IsContainer: runningInContainer(),
-		Format:      os.Getenv("LOG_FORMAT"),
-		Color:       os.Getenv("LOG_COLOR"),
-		Level:       os.Getenv("LOG_LEVEL"),
-		NoColor:     envPresent("NO_COLOR"),
-	})
+func osStderr() io.Writer {
+	return os.Stderr
+}
+
+func stderrIsTerminal() bool {
+	return term.IsTerminal(int(os.Stderr.Fd()))
 }
 
 func newProcessLoggerWithOptions(serviceName string, otelHandler slog.Handler, options processLoggerOptions) *slog.Logger {
@@ -133,11 +129,6 @@ func resolveLogColor(value string, isTerminal, noColor bool) bool {
 	default:
 		return isTerminal
 	}
-}
-
-func envPresent(name string) bool {
-	_, ok := os.LookupEnv(name)
-	return ok
 }
 
 func runningInContainer() bool {

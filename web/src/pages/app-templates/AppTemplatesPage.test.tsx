@@ -76,7 +76,15 @@ const template = {
   defaultCPU: '500m',
   defaultMemory: '512Mi',
   dataVolumes: [{ logicalName: 'data', sourceType: 'projectVolume' as const, mountPath: '/data' }],
-  values: [],
+  values: [{
+    key: 'password',
+    label: 'Password',
+    description: 'Optional Redis password',
+    default: '',
+    required: false,
+    secret: true,
+    autoGenerate: false,
+  }],
 }
 
 const createdVolume = {
@@ -118,7 +126,7 @@ describe('app template installation', () => {
   beforeEach(async () => {
     vi.clearAllMocks()
     await i18next.changeLanguage('en-US')
-    mocks.listAppTemplates.mockResolvedValue([{ ...template, valueCount: 0, requiredValueCount: 0 }])
+    mocks.listAppTemplates.mockResolvedValue([{ ...template, valueCount: 1, requiredValueCount: 0 }])
     mocks.getAppTemplate.mockResolvedValue(template)
     mocks.listProjects.mockResolvedValue([{
       id: 'prj_1',
@@ -202,6 +210,42 @@ describe('app template installation', () => {
     await waitFor(() => expect(mocks.installAppTemplate).toHaveBeenCalledWith('prj_1', 'redis', expect.objectContaining({
       clusterId: 'cluster_1',
       projectVolumeId: 'pvol_new',
+    })))
+  })
+
+  it('offers the optional recommended Redis password and submits it as a template value', async () => {
+    const availableVolume = {
+      ...createdVolume,
+      id: 'pvol_existing',
+      displayName: 'Existing Redis data',
+      lifecycleState: 'ready',
+      pendingOperation: '',
+      availability: 'available',
+    }
+    mocks.listProjectVolumes.mockResolvedValue(page([availableVolume]))
+    const user = userEvent.setup()
+    renderPage()
+
+    await user.click(await screen.findByRole('button', { name: i18next.t('appTemplatesPage.install') }))
+    const installDialog = await screen.findByRole('dialog', { name: i18next.t('appTemplatesPage.installDialogTitle', { name: 'Redis' }) })
+    const passwordLabel = i18next.t('appTemplatesPage.valueLabels.password')
+    const passwordInput = within(installDialog).getByPlaceholderText(i18next.t('appTemplatesPage.valuePlaceholders.redisPassword'))
+    expect(passwordInput).toHaveAccessibleName(passwordLabel)
+    expect(passwordInput).toHaveAttribute('type', 'password')
+    expect(passwordInput).toHaveAttribute('autocomplete', 'new-password')
+    expect(passwordInput).not.toBeRequired()
+    expect(passwordInput).toHaveAttribute('placeholder', i18next.t('appTemplatesPage.valuePlaceholders.redisPassword'))
+
+    await user.hover(within(installDialog).getByRole('button', { name: `${passwordLabel}${i18next.t('common.helpSuffix')}` }))
+    expect(await screen.findByRole('tooltip')).toHaveTextContent(i18next.t('appTemplatesPage.valueHints.redisPassword'))
+
+    const volumeOption = await within(installDialog).findByRole('option', { name: 'Existing Redis data · 10Gi' })
+    await user.selectOptions(volumeOption.parentElement as HTMLSelectElement, 'pvol_existing')
+    await user.type(passwordInput, 'redis-test-password')
+    await user.click(within(installDialog).getByRole('button', { name: i18next.t('appTemplatesPage.install') }))
+
+    await waitFor(() => expect(mocks.installAppTemplate).toHaveBeenCalledWith('prj_1', 'redis', expect.objectContaining({
+      values: { password: 'redis-test-password' },
     })))
   })
 

@@ -73,8 +73,8 @@ type taskEnqueuer interface {
 	EnqueueNotificationDeliver(ctx context.Context, payload tasks.NotificationDeliverPayload) (*asynq.TaskInfo, error)
 }
 
-func NewHandlers(db *gorm.DB) *Handlers {
-	return NewHandlersWithConfig(db, mustLoadConfig())
+func NewHandlers(db *gorm.DB, cfg Config) *Handlers {
+	return NewHandlersWithConfig(db, cfg)
 }
 
 func NewHandlersWithConfig(db *gorm.DB, cfg Config) *Handlers {
@@ -89,7 +89,7 @@ func NewHandlersWithConfig(db *gorm.DB, cfg Config) *Handlers {
 	}
 	handlers.secrets = secret.NewStore(db, func(ctx context.Context, userID, action, resource string, success bool, message string) {
 		handlers.auditWithContext(userID, action, resource, success, message, ctx)
-	})
+	}, cfg.SecretCodec)
 	var volumeTasks volumeTaskEnqueuer
 	if candidate, ok := handlers.taskClient.(volumeTaskEnqueuer); ok {
 		volumeTasks = candidate

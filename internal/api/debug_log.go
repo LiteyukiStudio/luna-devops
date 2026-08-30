@@ -23,7 +23,7 @@ func debugLogWithConfig(cfg Config, format string, args ...any) {
 }
 
 func debugLogEnabled(cfg Config) bool {
-	switch strings.ToLower(strings.TrimSpace(cfg.LogLevel)) {
+	switch strings.ToLower(strings.TrimSpace(cfg.Telemetry.LogLevel)) {
 	case "debug":
 		return true
 	}

@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	sharedconfig "github.com/LiteyukiStudio/devops/internal/config"
 	"github.com/LiteyukiStudio/devops/internal/database"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/telemetry"
@@ -20,7 +21,21 @@ import (
 // 此测试仅使用 testdb 创建并销毁的独立 PostgreSQL 数据库。
 func TestAICreditHoldAndAuthoritativeUsageSettlementPostgres(t *testing.T) {
 	if os.Getenv("OTEL_SMOKE") == "true" {
-		runtime, err := telemetry.Setup(t.Context(), telemetry.ServiceConfig{ServiceName: "luna-worker-ai-usage-smoke", ServiceVersion: "test"})
+		startupConfig, err := sharedconfig.LoadTelemetry()
+		if err != nil {
+			t.Fatalf("load OTel smoke configuration: %v", err)
+		}
+		runtime, err := telemetry.Setup(t.Context(), telemetry.ServiceConfig{
+			ServiceName:        "luna-worker-ai-usage-smoke",
+			ServiceVersion:     "test",
+			Endpoint:           startupConfig.Endpoint,
+			Headers:            startupConfig.Headers,
+			ResourceAttributes: startupConfig.ResourceAttributes,
+			LogFormat:          startupConfig.LogFormat,
+			LogColor:           startupConfig.LogColor,
+			LogLevel:           startupConfig.LogLevel,
+			NoColor:            startupConfig.NoColor,
+		})
 		if err != nil {
 			t.Fatalf("setup OTel smoke runtime: %v", err)
 		}

@@ -53,10 +53,7 @@ func TestHTTPClientSignsActorContextAndDoesNotTrustBodyIdentity(t *testing.T) {
 }
 
 func TestConfigDefaultsFailClosed(t *testing.T) {
-	t.Setenv("AI_ASSISTANT_AVAILABLE", "")
-	t.Setenv("AI_AGENT_BASE_URL", "")
-	t.Setenv("AI_INTERNAL_SECRET", "")
-	config, loadErr := LoadConfig()
+	config, loadErr := NewConfig(false, "", 10*time.Second, "")
 	if loadErr != nil {
 		t.Fatal(loadErr)
 	}
@@ -66,35 +63,34 @@ func TestConfigDefaultsFailClosed(t *testing.T) {
 	}
 }
 
-func TestLoadConfigRejectsInvalidExplicitValues(t *testing.T) {
-	for _, test := range []struct {
-		name  string
-		key   string
-		value string
-	}{
-		{name: "availability", key: "AI_ASSISTANT_AVAILABLE", value: "sometimes"},
-		{name: "timeout", key: "AI_AGENT_TIMEOUT", value: "later"},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			t.Setenv(test.key, test.value)
-			if _, err := LoadConfig(); err == nil {
-				t.Fatalf("LoadConfig accepted %s=%q", test.key, test.value)
-			}
-		})
+func TestDisabledConfigKeepsExplicitCallbackIdentitySnapshot(t *testing.T) {
+	config, err := NewConfig(false, "", 10*time.Second, "test-ai-internal-secret-32-bytes-minimum")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.CallbackServiceToken == "" || config.ServiceToken == "" || config.ActorSigningKey == "" {
+		t.Fatal("explicit internal identity was not derived at startup")
+	}
+	client, err := config.Client()
+	if err != nil || client != nil {
+		t.Fatalf("disabled config client = %#v, %v", client, err)
 	}
 }
 
-func TestLoadConfigRequiresTrustMaterialWhenEnabled(t *testing.T) {
-	t.Setenv("AI_ASSISTANT_AVAILABLE", "true")
-	t.Setenv("AI_AGENT_BASE_URL", "http://agent.internal")
-	t.Setenv("AI_INTERNAL_SECRET", "short")
-	if _, err := LoadConfig(); err == nil || !strings.Contains(err.Error(), "AI_INTERNAL_SECRET") {
+func TestNewConfigRejectsNonPositiveTimeout(t *testing.T) {
+	if _, err := NewConfig(false, "", 0, ""); err == nil {
+		t.Fatal("NewConfig accepted a non-positive timeout")
+	}
+}
+
+func TestNewConfigRequiresTrustMaterialWhenEnabled(t *testing.T) {
+	if _, err := NewConfig(true, "http://agent.internal", 10*time.Second, "short"); err == nil || !strings.Contains(err.Error(), "AI_INTERNAL_SECRET") {
 		t.Fatalf("error = %v", err)
 	}
 }
 
 func TestEnabledConfigReportsClientInitializationError(t *testing.T) {
-	config := Config{Available: true, BaseURL: "://invalid", ServiceToken: "service-token", ActorSigningKey: "actor-key"}
+	config := Config{Available: true, BaseURL: "://invalid", ServiceToken: "service-token", ActorSigningKey: "actor-key", Timeout: 10 * time.Second}
 	client, err := config.Client()
 	if client != nil || err == nil || !errors.Is(err, ErrUnavailable) {
 		t.Fatalf("client = %#v, error = %v", client, err)
@@ -109,7 +105,7 @@ func TestHTTPClientRejectsMissingTrustMaterial(t *testing.T) {
 }
 
 func TestConfigClientUsesConfiguredTimeout(t *testing.T) {
-	config := Config{Available: true, BaseURL: "http://agent.internal", ServiceToken: "service-token", ActorSigningKey: "actor-key", Timeout: "23s"}
+	config := Config{Available: true, BaseURL: "http://agent.internal", ServiceToken: "service-token", ActorSigningKey: "actor-key", Timeout: 23 * time.Second}
 	client, err := config.Client()
 	if err != nil {
 		t.Fatal(err)
@@ -121,7 +117,7 @@ func TestConfigClientUsesConfiguredTimeout(t *testing.T) {
 }
 
 func TestConfigClientRejectsInvalidTimeout(t *testing.T) {
-	config := Config{Available: true, BaseURL: "http://agent.internal", ServiceToken: "service-token", ActorSigningKey: "actor-key", Timeout: "later"}
+	config := Config{Available: true, BaseURL: "http://agent.internal", ServiceToken: "service-token", ActorSigningKey: "actor-key", Timeout: 0}
 	_, err := config.Client()
 	if !errors.Is(err, ErrUnavailable) {
 		t.Fatalf("error = %v", err)

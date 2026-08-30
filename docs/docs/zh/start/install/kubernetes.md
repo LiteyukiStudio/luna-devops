@@ -117,6 +117,32 @@ helm upgrade --install luna-devops ./charts/luna-devops \
   -f values-prod.yaml
 ```
 
+## 配置浏览器 Trace Relay 鉴权
+
+API 会代理浏览器 Trace。若这个 Relay 使用与 API、Worker、Agent 通用 Collector 不同的鉴权，先把完整的 `OTEL_EXPORTER_OTLP_TRACES_HEADERS` 值保存到独立 Kubernetes Secret。下面的本地文件只应由当前用户读取，创建 Secret 后请安全删除；空格等特殊字符需按 URL 编码，例如 `%20`：
+
+```text title="browser-trace-headers.txt"
+Authorization=Bearer%20请替换为Relay令牌
+```
+
+```bash
+kubectl -n luna-devops create secret generic luna-devops-browser-trace-auth \
+  --from-file=otlp-traces-headers=browser-trace-headers.txt
+```
+
+在生产 values 中只保存 Secret 名称和键名，不要写入 Header 凭据。独立 Relay 地址不是密钥，可以通过 API 专属 `extraEnv` 配置；省略该地址时，浏览器 Trace 仍使用通用 OTLP 地址，但改用这里的 API 专属鉴权：
+
+```yaml
+api:
+  browserTrace:
+    existingSecret: luna-devops-browser-trace-auth
+    headersKey: otlp-traces-headers
+  extraEnv:
+    OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: https://trace-relay.example.com/v1/traces
+```
+
+若浏览器 Trace 与通用 Collector 使用相同鉴权，请让 `api.browserTrace.existingSecret` 保持为空，API 会继续回退到 `observability.existingSecret`。专属 Secret 只注入 API，不会进入 Worker 或 Agent；Chart 也会拒绝通过 `api.extraEnv.OTEL_EXPORTER_OTLP_TRACES_HEADERS` 写入明文凭据。
+
 ## 配置 Agent 网络策略
 
 Chart 默认启用 API 到 Agent 的入站隔离，但不默认限制 Agent 出站。Agent 需要访问模型 Provider、
@@ -157,11 +183,13 @@ ai:
 | `api.initialAdmin.name` / `language` | 空 / 空 | 设置首个管理员名称和语言；留空时 API 分别使用邮箱和 `zh-CN`，语言非空时可填 `zh-CN` 或 `en-US`。 |
 | `api.image.tag` / `worker.image.tag` | `nightly` | 选择 API 与 Worker 镜像版本；填写镜像标签。 |
 | `api.database.maxOpenConns` / `maxIdleConns` | `20` / `5` | 限制每个 API 副本的 PostgreSQL 打开与空闲连接数；分别填写正整数和不超过前者的非负整数。 |
+| `api.browserTrace.existingSecret` / `headersKey` | 空 / `otlp-traces-headers` | 指定 API 浏览器 Trace Relay 的独立鉴权 Secret 与键；分别填写 Kubernetes Secret 名称和包含完整 Header 列表的键名。 |
 | `worker.database.maxOpenConns` / `maxIdleConns` | `20` / `5` | 限制每个 Worker 副本的 PostgreSQL 打开与空闲连接数；分别填写正整数和不超过前者的非负整数。 |
 | `ai.enabled` / `ai.existingSecret` | `false` / 空 | 启用 Agent 并指定内部密钥；分别填写布尔值和 Kubernetes Secret 名称。 |
 | `ai.agent.observabilityCaptureDatabaseSpans` | `false` | 控制是否临时采集逐条 Agent PostgreSQL Span；填写布尔值，常规运行保持关闭。 |
 | `ai.agent.networkPolicy.ingress.enabled` / `egress.enabled` | `true` / `false` | 分别控制 API 到 Agent 的入站隔离和 Agent 出站隔离；填写布尔值，并仅在目的地规则完整时启用出站。 |
 | `ai.agent.networkPolicy.egress.additionalCIDRs` / `additionalRules` | `[]` / `[]` | 补充 Agent 可访问目的地；分别填写 CIDR 列表和 Kubernetes NetworkPolicy egress rule 列表。 |
+| `observability.otlpEndpoint` / `existingSecret` | 空 / 空 | 设置 API、Worker、Agent 共用的 OTLP/HTTP 地址与鉴权 Secret；分别填写 Collector URL 和包含 `headersKey` 的 Kubernetes Secret 名称。 |
 | `postgresql.enabled` / `externalDatabase.url` | `true` / 空 | 选择内置或外部 PostgreSQL；分别填写布尔值和 PostgreSQL 连接 URI。 |
 | `redis.enabled` / `externalRedis.url` | `true` / 空 | 选择内置或外部 Redis；分别填写布尔值和 `redis://` 或 `rediss://` URI。 |
 | `worker.buildEgressMode` | `restricted` | 设置构建网络出口策略；可填 `restricted` 或 `permissive`。 |

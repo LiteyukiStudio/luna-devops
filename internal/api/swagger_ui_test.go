@@ -12,7 +12,7 @@ import (
 func TestSwaggerUIRoutes(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	router.Use(securityHeaders())
+	router.Use(securityHeaders(mustTestConfig(t)))
 	registerSwaggerUI(router)
 
 	specReq := httptest.NewRequest(http.MethodGet, "/openapi.yaml", nil)

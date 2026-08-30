@@ -87,10 +87,12 @@ const appTemplatesPage = {
     traefikMetricsUrl: 'Traefik Metrics アドレス',
   },
   valueHints: {
+    redisPassword: '任意です。長くランダムなパスワードの設定を推奨します。空欄の場合、Redis のパスワード認証は有効になりません。',
     apiBaseUrl: 'プラットフォームがプローブからアクセス可能なベースアドレスを入力してください。例：https://luna-devops.example.com。/api/v1/billing/gateway-traffic のような具体的なインターフェースパスは入力しないでください。プローブが自動的にレポートインターフェースを付加します。',
     traefikMetricsUrl: 'プローブ Pod がクラスター内でアクセス可能な Traefik Prometheus metrics アドレスを入力してください。空欄の場合、デフォルトで http://traefik.<Gateway 名前空間>.svc.cluster.local:9100/metrics を使用します。',
   },
   valuePlaceholders: {
+    redisPassword: 'ランダムなパスワードを推奨（任意）',
     apiBaseUrl: 'https://luna-devops.example.com',
     traefikMetricsUrl: 'http://traefik.kube-system.svc.cluster.local:9100/metrics',
   },

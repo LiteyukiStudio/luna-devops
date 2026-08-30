@@ -87,7 +87,7 @@ func runAPIStartupHelper(t *testing.T, format, redisAddress, databaseURL string)
 	command := exec.Command(os.Args[0], "-test.run=^TestAPIStartupHelper$")
 	command.Env = append(os.Environ(),
 		"LUNA_TEST_API_STARTUP_HELPER=1",
-		"ENV_FILE=/nonexistent/luna-test.env",
+		"ENV_FILE=",
 		"APP_ENV=development",
 		"LOG_FORMAT="+format,
 		"LOG_COLOR=never",

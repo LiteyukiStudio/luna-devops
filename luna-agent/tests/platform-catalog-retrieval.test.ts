@@ -148,7 +148,7 @@ describe("real PlatformCatalog retrieval", () => {
     })).toThrow("ai.tool_arguments_invalid")
   })
 
-  it("rejects a non-canonical app-template stage before platform execution", () => {
+  it("validates app-template stages and treats dynamic values as string secrets", () => {
     const install = platformCatalog.get("installAppTemplate")
     const input = {
       projectId: "prj_1",
@@ -173,10 +173,16 @@ describe("real PlatformCatalog retrieval", () => {
         allowedValues: ["dev", "test", "staging", "prod"],
       }))
     }
-    expect(validateArguments(install.inputSchema, {
+    const validInput = {
       ...input,
-      body: { ...input.body, stage: "dev" },
-    })).toEqual({ ...input, body: { ...input.body, stage: "dev" } })
+      body: { ...input.body, stage: "dev", values: { password: "redis-test-password" } },
+    }
+    expect(validateArguments(install.inputSchema, validInput)).toEqual(validInput)
+    expect(install.sensitivePaths).toEqual(["body.values"])
+    expect(() => validateArguments(install.inputSchema, {
+      ...validInput,
+      body: { ...validInput.body, values: { password: 1234 } },
+    })).toThrow("ai.tool_arguments_invalid")
   })
 
   it("loads both storage-class discovery and creation for a managed-volume goal", () => {

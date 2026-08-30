@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -263,7 +264,7 @@ func TestOIDCAdmissionEmailHonorsVerifiedRequirement(t *testing.T) {
 
 func TestGitExternalBaseURLPrefersPublicEnv(t *testing.T) {
 	t.Setenv("PUBLIC_BASE_URL", "https://studio.example.com/")
-	h := &Handlers{config: mustLoadConfig()}
+	h := &Handlers{config: mustTestConfig(t)}
 	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
 	ctx.Request = httptest.NewRequest(http.MethodGet, "/api/v1/git/oauth/start", nil)
 
@@ -274,7 +275,7 @@ func TestGitExternalBaseURLPrefersPublicEnv(t *testing.T) {
 
 func TestGitExternalBaseURLReturnsEmptyWhenNotConfigured(t *testing.T) {
 	t.Setenv("PUBLIC_BASE_URL", "")
-	h := &Handlers{config: mustLoadConfig()}
+	h := &Handlers{config: Config{}}
 	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
 	ctx.Request = httptest.NewRequest(http.MethodGet, "/api/v1/git/oauth/start", nil)
 
@@ -288,7 +289,7 @@ func TestConfiguredAllowedOriginsUsesPublicBaseAndEnv(t *testing.T) {
 	t.Setenv("PUBLIC_BASE_URL", "https://studio.example.com/app")
 	t.Setenv("APP_CORS_ORIGINS", "https://admin.example.com, https://studio.example.com")
 
-	origins := configuredAllowedOrigins()
+	origins := configuredAllowedOrigins(mustTestConfig(t))
 	if !containsString(origins, "https://studio.example.com") {
 		t.Fatalf("expected PUBLIC_BASE_URL origin, got %#v", origins)
 	}
@@ -300,17 +301,14 @@ func TestConfiguredAllowedOriginsUsesPublicBaseAndEnv(t *testing.T) {
 	}
 }
 
-func TestConfiguredAllowedOriginsDefaultsToProductionMode(t *testing.T) {
+func TestProductionConfigRequiresPublicBaseURL(t *testing.T) {
 	t.Setenv("APP_ENV", "")
 	t.Setenv("PUBLIC_BASE_URL", "")
 	t.Setenv("APP_CORS_ORIGINS", "")
+	t.Setenv("SECRET_ENCRYPTION_KEY", "test-secret-encryption-key")
 
-	origins := configuredAllowedOrigins()
-	if containsString(origins, "http://localhost:5173") {
-		t.Fatalf("did not expect development origin when APP_ENV is unset, got %#v", origins)
-	}
-	if containsString(origins, "http://127.0.0.1:5173") {
-		t.Fatalf("did not expect development origin when APP_ENV is unset, got %#v", origins)
+	if _, err := LoadConfig(); err == nil || !strings.Contains(err.Error(), "PUBLIC_BASE_URL") {
+		t.Fatalf("LoadConfig() error = %v, want PUBLIC_BASE_URL requirement", err)
 	}
 }
 

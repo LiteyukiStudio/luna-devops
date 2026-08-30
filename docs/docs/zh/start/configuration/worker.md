@@ -1,6 +1,6 @@
 # Worker 配置
 
-源码运行时，Worker 从根目录 `.env` 读取这些变量；Docker Compose 也只读取这一份 `.env`，并按消费者白名单向 Worker 注入公共值和 Worker 专属值。API 首次管理员、CORS、指标监听和 AI Client 等 API 专属配置不会进入 Worker。
+源码运行时，Worker 从根目录 `.env` 读取这些变量；Docker Compose 也只读取这一份 `.env`，并按消费者白名单向 Worker 注入公共值和 Worker 专属值。API 首次管理员、CORS、指标监听和 AI Client 等 API 专属配置不会进入 Worker。Worker 只在启动时读取并校验配置；修改后需要重启，显式配置的 `ENV_FILE` 不存在或无法解析时会拒绝启动。
 
 ## 基础配置
 
@@ -30,7 +30,7 @@
 
 | 配置项名称 | 默认值 | 说明 |
 | --- | --- | --- |
-| `ENV_FILE` | `.env` | 指定 Worker 读取的环境文件；填写文件路径。 |
+| `ENV_FILE` | `.env` | 指定 Worker 读取的环境文件；填写有效文件路径，显式指定后文件缺失或格式错误会导致启动失败。 |
 | `WORKER_DB_MAX_OPEN_CONNS` | `20` | 限制每个 Worker 副本的数据库最大打开连接数；填写正整数。 |
 | `WORKER_DB_MAX_IDLE_CONNS` | `5` | 限制每个 Worker 副本的数据库最大空闲连接数；填写非负整数。 |
 | `WORKER_DB_CONN_MAX_LIFETIME` | `30m` | 限制 Worker 数据库连接总寿命；填写 Go duration，如 `30m`。 |

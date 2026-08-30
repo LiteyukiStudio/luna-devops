@@ -306,7 +306,7 @@ func TestWriteInboxErrorMapsStableSentinels(t *testing.T) {
 
 func TestInboxRoutesAreRegistered(t *testing.T) {
 	db := authIntegrationDB(t)
-	router := NewRouter(db)
+	router := NewRouter(db, mustTestConfig(t))
 	routes := make(map[string]bool)
 	for _, route := range router.Routes() {
 		routes[route.Method+" "+route.Path] = true

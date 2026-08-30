@@ -87,10 +87,12 @@ const appTemplatesPage = {
     traefikMetricsUrl: 'Traefik Metrics 地址',
   },
   valueHints: {
+    redisPassword: '選填。建議設定較長的隨機密碼；留空時 Redis 不啟用密碼驗證。',
     apiBaseUrl: '填寫平臺對探針可訪問的基礎地址，例如 https://luna-devops.example.com；不要填寫 /api/v1/billing/gateway-traffic 這類具體介面路徑，探針會自動拼接上報介面。',
     traefikMetricsUrl: '填寫探針 Pod 在叢集內可訪問的 Traefik Prometheus metrics 地址。留空時預設使用 http://traefik.<Gateway 名稱空間>.svc.cluster.local:9100/metrics。',
   },
   valuePlaceholders: {
+    redisPassword: '建議設定隨機密碼（可留空）',
     apiBaseUrl: 'https://luna-devops.example.com',
     traefikMetricsUrl: 'http://traefik.kube-system.svc.cluster.local:9100/metrics',
   },

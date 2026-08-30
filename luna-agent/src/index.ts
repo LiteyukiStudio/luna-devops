@@ -1,9 +1,12 @@
+import { loadProcessRuntimeStartupConfig } from "./config.js"
 import { errorDiagnostic, initializeTelemetry, shutdownTelemetry, telemetryLog } from "./telemetry.js"
 
 try {
-  initializeTelemetry()
+  const startup = loadProcessRuntimeStartupConfig()
+  initializeTelemetry(startup.telemetry)
+  if (!startup.ok) throw startup.error
   const { startAgent } = await import("./bootstrap.js")
-  await startAgent()
+  await startAgent(startup.config)
 }
 catch (error) {
   telemetryLog("agent.start_failed", "error", {

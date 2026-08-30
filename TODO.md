@@ -1,5 +1,18 @@
 # TODO
 
+## 2026-08-30 Redis 模板可选密码
+
+- [x] 在 Redis 应用市场模板中提供可选密码参数；填写时启用认证，留空时保持无密码认证。
+- [x] 密码只经 Secret Store 和 Kubernetes Secret 注入，安装记录、部署配置、异步任务与 Agent 诊断不保存明文。
+- [x] 同步五语言界面提示、中英文应用市场文档，以及 API、Worker、Kubernetes Provider 和 Agent 契约测试。
+
+## 2026-08-30 启动配置单一入口收口
+
+- [x] 将 Go API、Worker 与 Tasks 的环境变量读取和基础类型校验集中到 `internal/config`，删除业务包中的隐式配置重载。
+- [x] 将日志、OpenTelemetry、Secret Codec 与 AI 内部身份改为显式启动快照注入，请求和任务执行期间不再读取部署环境。
+- [x] 统一 Agent、Compose、Helm 与 Gateway Probe 的必填项、地址和严格校验契约，并同步中英文部署文档与回归测试。
+- [x] 使用 `caarlos0/env/v11` 收口默认值和基础类型解码，按 API、Worker、Tasks、Telemetry 拆分配置装配，并保留 Secret 脱敏与领域校验边界。
+
 ## 2026-08-30 前端组件复用与基础能力收敛
 
 - [x] 审计页面与公共组件的重复实现，统一确认弹窗、复选框、头像、折叠区、列表、描述项、删除状态和运行配置表单等稳定契约。

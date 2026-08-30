@@ -4,6 +4,7 @@ go 1.26.6
 
 require (
 	github.com/alicebob/miniredis/v2 v2.33.0
+	github.com/caarlos0/env/v11 v11.4.1
 	github.com/coreos/go-oidc/v3 v3.18.0
 	github.com/gin-gonic/gin v1.12.0
 	github.com/golang-migrate/migrate/v4 v4.19.1

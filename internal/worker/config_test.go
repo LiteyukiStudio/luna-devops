@@ -55,6 +55,28 @@ func TestLoadConfigUsesIndependentWorkerDatabasePool(t *testing.T) {
 	}
 }
 
+func TestLoadConfigIgnoresAPIEnvironment(t *testing.T) {
+	t.Setenv("APP_ENV", "development")
+	t.Setenv("API_DB_MAX_OPEN_CONNS", "not-an-integer")
+	t.Setenv("METRICS_ENABLED", "not-a-boolean")
+	if _, err := LoadConfig(); err != nil {
+		t.Fatalf("LoadConfig() validated API environment: %v", err)
+	}
+}
+
+func TestLoadConfigReportsPrefixedEnvironmentKeyWithoutRawValue(t *testing.T) {
+	t.Setenv("APP_ENV", "development")
+	rawValue := "must-not-appear-in-worker-error"
+	t.Setenv("WORKER_DB_MAX_OPEN_CONNS", rawValue)
+	_, err := LoadConfig()
+	if err == nil || !strings.Contains(err.Error(), "WORKER_DB_MAX_OPEN_CONNS") {
+		t.Fatalf("error = %v", err)
+	}
+	if strings.Contains(err.Error(), rawValue) {
+		t.Fatalf("configuration error exposed raw value: %q", err)
+	}
+}
+
 func TestLoadConfigAllowsImmediateBuildJobCleanup(t *testing.T) {
 	t.Setenv("APP_ENV", "development")
 	t.Setenv("BUILD_JOB_TTL_SECONDS", "0")
@@ -75,7 +97,7 @@ func TestLoadConfigRejectsInvalidWorkerEnvironment(t *testing.T) {
 	}{
 		{key: "WORKER_DB_MAX_OPEN_CONNS", value: "0", want: "must be positive"},
 		{key: "WORKER_DB_MAX_IDLE_CONNS", value: "21", want: "must be between"},
-		{key: "BUILD_EGRESS_MODE", value: "unexpected", want: "restricted or permissive"},
+		{key: "BUILD_EGRESS_MODE", value: "unexpected", want: "restricted, permissive"},
 		{key: "BUILD_PRIVATE_EGRESS_PORTS", value: "443,bad", want: "ports between"},
 		{key: "BUILD_PRIVATE_EGRESS_CIDRS", value: "not-a-cidr", want: "valid CIDRs"},
 		{key: "BUILD_BLOCKED_EGRESS_CIDRS", value: "10.0.0.0/99", want: "valid CIDRs"},

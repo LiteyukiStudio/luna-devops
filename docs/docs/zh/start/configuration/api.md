@@ -1,6 +1,6 @@
 # API 配置
 
-源码运行时，API 从根目录 `.env` 读取这些变量；Docker Compose 也只读取这一份 `.env`，但会按消费者白名单仅把 API 所需变量注入 API 容器。`PUBLIC_BASE_URL`、日志、OpenTelemetry 和数据卷传输上限等公共值只填写一次，再由 Compose 同步给实际消费者。
+源码运行时，API 从根目录 `.env` 读取这些变量；Docker Compose 也只读取这一份 `.env`，但会按消费者白名单仅把 API 所需变量注入 API 容器。`PUBLIC_BASE_URL`、日志、OpenTelemetry 和数据卷传输上限等公共值只填写一次，再由 Compose 同步给实际消费者。API 只在启动时读取并校验配置；修改后需要重启，显式配置的 `ENV_FILE` 不存在或无法解析时会拒绝启动。
 
 ## 基础配置
 
@@ -8,7 +8,7 @@
 | --- | --- | --- |
 | `APP_ENV` | `production` | 选择 API 运行模式；可填 `production` 或 `development`。 |
 | `API_ADDR` | `:8080` | 设置 API 监听地址；填写 `IP:端口` 或 `:端口`。 |
-| `PUBLIC_BASE_URL` | 空 | 设置用户访问平台的根地址；填写 HTTP(S) URL。 |
+| `PUBLIC_BASE_URL` | 生产环境必填 | 设置用户访问平台的根地址；生产环境填写用户实际访问的绝对 HTTP(S) URL。 |
 | `DATABASE_URL` | 本地 PostgreSQL | 连接 PostgreSQL；填写 PostgreSQL 连接 URI。 |
 | `REDIS_ADDR` | `redis://localhost:6379/0` | 连接 Redis；填写 `redis://` 或 `rediss://` URI。 |
 | `REDIS_PASSWORD` | 空 | 设置 Docker Compose 内置 Redis 的密码；填写密码字符串，未启用认证时留空。 |
@@ -37,7 +37,7 @@
 
 | 配置项名称 | 默认值 | 说明 |
 | --- | --- | --- |
-| `ENV_FILE` | `.env` | 指定 API 读取的环境文件；填写文件路径。 |
+| `ENV_FILE` | `.env` | 指定 API 读取的环境文件；填写有效文件路径，显式指定后文件缺失或格式错误会导致启动失败。 |
 | `APP_ENABLE_HSTS` | 生产为 `true` | 控制 API 是否发送 HSTS Header；可填 `true` 或 `false`。 |
 | `APP_VERSION` | 构建版本 | 设置 API 对外报告的版本；填写版本字符串。 |
 | `LOCAL_ADMIN_FREE_QUOTA_CREDITS` | `1000` | 设置开发模式下首个管理员创建时发放的免费额度；填写非负 Credits 数值。 |

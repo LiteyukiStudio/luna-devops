@@ -67,6 +67,8 @@
     "defaultReplicas": 1,
     "defaultCPU": "500m",
     "defaultMemory": "512Mi",
+    "containerCommand": "/bin/sh\n-ec",
+    "containerArgs": "if [ -n \"${REDIS_PASSWORD:-}\" ]; then exec /usr/local/bin/docker-entrypoint.sh redis-server --requirepass \"$REDIS_PASSWORD\"; else exec /usr/local/bin/docker-entrypoint.sh redis-server; fi",
     "dataVolumes": [
       {
         "logicalName": "data",
@@ -74,7 +76,18 @@
         "mountPath": "/data"
       }
     ],
-    "values": []
+    "secretEnv": {
+      "REDIS_PASSWORD": "{{password}}"
+    },
+    "values": [
+      {
+        "key": "password",
+        "label": "Password",
+        "description": "Optional Redis authentication password. A long, random value is recommended.",
+        "secret": true,
+        "required": false
+      }
+    ]
   },
   {
     "id": "valkey",

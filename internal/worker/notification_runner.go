@@ -11,7 +11,6 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/notification"
 	"github.com/LiteyukiStudio/devops/internal/platformmail"
-	"github.com/LiteyukiStudio/devops/internal/secret"
 	"github.com/LiteyukiStudio/devops/internal/tasks"
 	"github.com/hibiken/asynq"
 	"go.opentelemetry.io/otel/attribute"
@@ -431,7 +430,7 @@ func (r *Runner) handlePersonalEmailDeliveriesLocked(ctx context.Context, tx *go
 		if r.personalEmailSender != nil {
 			return r.personalEmailSender(stageCtx, policy.User.Email, message)
 		}
-		return platformmail.Send(stageCtx, tx, secret.NewStore(tx, nil), policy.User.Email, message)
+		return platformmail.Send(stageCtx, tx, r.secrets.WithDB(tx), policy.User.Email, message)
 	}, attribute.Int("notification.event_count", len(events)))
 	if err != nil {
 		storedError := personalEmailDeliveryError(err).Error()

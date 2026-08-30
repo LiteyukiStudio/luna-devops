@@ -12,16 +12,16 @@ import (
 	"gorm.io/gorm"
 )
 
-func NewRouter(db *gorm.DB) *gin.Engine {
-	return NewRouterWithStaticFS(db, nil)
+func NewRouter(db *gorm.DB, cfg Config) *gin.Engine {
+	return NewRouterWithStaticFS(db, nil, cfg)
 }
 
-func NewRouterWithStaticFS(db *gorm.DB, staticFS fs.FS) *gin.Engine {
-	return NewRouterWithStaticFSAndMetrics(db, staticFS, nil)
+func NewRouterWithStaticFS(db *gorm.DB, staticFS fs.FS, cfg Config) *gin.Engine {
+	return NewRouterWithStaticFSAndMetrics(db, staticFS, nil, cfg)
 }
 
-func NewRouterWithStaticFSAndMetrics(db *gorm.DB, staticFS fs.FS, httpMetrics *observability.HTTPMetrics) *gin.Engine {
-	return NewRouterWithStaticFSAndMetricsConfig(db, staticFS, httpMetrics, mustLoadConfig())
+func NewRouterWithStaticFSAndMetrics(db *gorm.DB, staticFS fs.FS, httpMetrics *observability.HTTPMetrics, cfg Config) *gin.Engine {
+	return NewRouterWithStaticFSAndMetricsConfig(db, staticFS, httpMetrics, cfg)
 }
 
 func NewRouterWithStaticFSAndMetricsConfig(db *gorm.DB, staticFS fs.FS, httpMetrics *observability.HTTPMetrics, cfg Config) *gin.Engine {
@@ -386,8 +386,8 @@ func configureTrustedProxies(router *gin.Engine, cidrs []string) {
 	_ = router.SetTrustedProxies(nil)
 }
 
-func cors(configs ...Config) gin.HandlerFunc {
-	allowedOrigins := configuredAllowedOrigins(configs...)
+func cors(cfg Config) gin.HandlerFunc {
+	allowedOrigins := configuredAllowedOrigins(cfg)
 	return func(ctx *gin.Context) {
 		origin := strings.TrimSpace(ctx.GetHeader("Origin"))
 		if origin != "" && containsString(allowedOrigins, origin) {
@@ -413,7 +413,7 @@ func cors(configs ...Config) gin.HandlerFunc {
 	}
 }
 
-func securityHeaders(configs ...Config) gin.HandlerFunc {
+func securityHeaders(cfg Config) gin.HandlerFunc {
 	csp := strings.Join([]string{
 		"default-src 'self'",
 		"script-src 'self'",
@@ -427,7 +427,7 @@ func securityHeaders(configs ...Config) gin.HandlerFunc {
 		"base-uri 'self'",
 		"form-action 'self'",
 	}, "; ")
-	enableHSTS := hstsEnabled(configs...)
+	enableHSTS := hstsEnabled(cfg)
 	return func(ctx *gin.Context) {
 		ctx.Writer.Header().Set("X-Content-Type-Options", "nosniff")
 		ctx.Writer.Header().Set("X-Frame-Options", "SAMEORIGIN")
@@ -441,12 +441,12 @@ func securityHeaders(configs ...Config) gin.HandlerFunc {
 	}
 }
 
-func hstsEnabled(configs ...Config) bool {
-	return configuredOrLoaded(configs).EnableHSTS
+func hstsEnabled(cfg Config) bool {
+	return cfg.EnableHSTS
 }
 
-func csrfOriginGuard(configs ...Config) gin.HandlerFunc {
-	allowedOrigins := configuredAllowedOrigins(configs...)
+func csrfOriginGuard(cfg Config) gin.HandlerFunc {
+	allowedOrigins := configuredAllowedOrigins(cfg)
 	return func(ctx *gin.Context) {
 		if !requiresCSRForiginCheck(ctx) {
 			ctx.Next()
@@ -498,8 +498,8 @@ func requestOriginAllowed(ctx *gin.Context, allowedOrigins []string) bool {
 	return containsString(allowedOrigins, strings.TrimRight(parsed.Scheme+"://"+parsed.Host, "/"))
 }
 
-func configuredAllowedOrigins(configs ...Config) []string {
-	return append([]string(nil), configuredOrLoaded(configs).AllowedOrigins...)
+func configuredAllowedOrigins(cfg Config) []string {
+	return append([]string(nil), cfg.AllowedOrigins...)
 }
 
 func originFromURL(raw string) string {

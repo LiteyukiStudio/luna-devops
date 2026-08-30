@@ -2,12 +2,14 @@ package worker
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/LiteyukiStudio/devops/internal/appstore"
 	"github.com/LiteyukiStudio/devops/internal/builder"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	kubeprovider "github.com/LiteyukiStudio/devops/internal/provider/kubernetes"
@@ -1328,6 +1330,119 @@ func TestDeleteManagedNamespaceIgnoresKubernetesNotFound(t *testing.T) {
 	}
 	if len(manager.deletions) != 1 {
 		t.Fatalf("deletions = %#v", manager.deletions)
+	}
+}
+
+func TestRedisTemplateResolvedPasswordReachesKubernetesSecretWithoutManifestLeak(t *testing.T) {
+	const password = "redis-contract-secret-marker"
+
+	template, found, err := appstore.Find("redis")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !found {
+		t.Fatal("redis template not found")
+	}
+	rendered, err := appstore.Render(template, map[string]string{"password": password})
+	if err != nil {
+		t.Fatal(err)
+	}
+	plainEnv, err := json.Marshal(rendered.Env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Deploy runner resolves secret-id references before applicationResourcesSpec
+	// merges this JSON into the provider-only SecretData boundary.
+	resolvedSecretRefs, err := json.Marshal(rendered.SecretEnv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec, err := applicationResourcesSpec(
+		model.Release{ID: "rel_redis", ImageRef: template.Image},
+		model.Project{ID: "prj_redis", Identifier: "redis-project"},
+		model.Application{ID: "app_redis", Identifier: "redis"},
+		model.Environment{
+			ID: "env_prod", Slug: "prod", Replicas: 1,
+			CPURequest: template.DefaultCPU, MemoryRequest: template.DefaultMemory,
+		},
+		model.DeploymentTarget{
+			ID: "dplt_redis", KubernetesName: "redis-prod",
+			ContainerCommand: template.ContainerCommand, ContainerArgs: template.ContainerArgs,
+			EnvVars: string(plainEnv), SecretRefs: string(resolvedSecretRefs),
+			ServicePorts: model.EncodeDeploymentServicePorts(
+				[]model.DeploymentServicePort{{Name: "redis", Port: template.ServicePort}}, template.ServicePort,
+			),
+		},
+		nil,
+		nil,
+		"project-redis",
+		120,
+	)
+	if err != nil {
+		t.Fatalf("applicationResourcesSpec returned error: %v", err)
+	}
+	if got := spec.SecretData["REDIS_PASSWORD"]; got != password {
+		t.Fatalf("resolved Redis password = %q, want secret marker", got)
+	}
+	if _, leaked := spec.ConfigData["REDIS_PASSWORD"]; leaked {
+		t.Fatalf("Redis password key leaked into ConfigData: %#v", spec.ConfigData)
+	}
+	if strings.Contains(spec.ContainerArgs, password) {
+		t.Fatalf("Redis password leaked into static container args: %q", spec.ContainerArgs)
+	}
+
+	clientset := fake.NewSimpleClientset()
+	manager := kubeprovider.NewClientForInterface(clientset)
+	if err := manager.ApplyApplicationResources(t.Context(), spec); err != nil {
+		t.Fatalf("ApplyApplicationResources returned error: %v", err)
+	}
+
+	secret, err := clientset.CoreV1().Secrets(spec.Namespace).Get(t.Context(), spec.Name+"-secret", metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("get Redis secret: %v", err)
+	}
+	if got := string(secret.Data["REDIS_PASSWORD"]); got != password {
+		t.Fatalf("Kubernetes Redis password = %q, want secret marker", got)
+	}
+	configMap, err := clientset.CoreV1().ConfigMaps(spec.Namespace).Get(t.Context(), spec.Name+"-config", metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("get Redis config map: %v", err)
+	}
+	if _, leaked := configMap.Data["REDIS_PASSWORD"]; leaked {
+		t.Fatalf("Redis password key leaked into ConfigMap: %#v", configMap.Data)
+	}
+
+	deployment, err := clientset.AppsV1().Deployments(spec.Namespace).Get(t.Context(), spec.Name, metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("get Redis deployment: %v", err)
+	}
+	container := deployment.Spec.Template.Spec.Containers[0]
+	if len(container.Command) != 2 || container.Command[0] != "/bin/sh" || container.Command[1] != "-ec" {
+		t.Fatalf("Redis container command = %#v", container.Command)
+	}
+	if len(container.Args) != 1 || container.Args[0] != template.ContainerArgs || !strings.Contains(container.Args[0], `"$REDIS_PASSWORD"`) {
+		t.Fatalf("Redis container args = %#v", container.Args)
+	}
+	for _, environmentVariable := range container.Env {
+		if environmentVariable.Name == "REDIS_PASSWORD" || environmentVariable.Value == password {
+			t.Fatalf("Redis password leaked into ordinary container env: %#v", container.Env)
+		}
+	}
+	secretEnvFrom := false
+	for _, source := range container.EnvFrom {
+		if source.SecretRef != nil && source.SecretRef.Name == spec.Name+"-secret" {
+			secretEnvFrom = true
+		}
+	}
+	if !secretEnvFrom {
+		t.Fatalf("Redis container does not reference its Kubernetes Secret: %#v", container.EnvFrom)
+	}
+	manifest, err := json.Marshal(deployment)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(manifest), password) {
+		t.Fatalf("Redis password leaked into Deployment manifest: %s", manifest)
 	}
 }
 

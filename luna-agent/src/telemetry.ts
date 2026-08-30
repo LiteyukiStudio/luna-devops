@@ -187,7 +187,7 @@ function deferredHistogram(name: string, description: string, unit?: string, exp
   }
 }
 
-export function initializeTelemetry(config = loadTelemetryConfig()): void {
+export function initializeTelemetry(config: AgentTelemetryConfig): void {
   configureAgentTelemetry(config)
   const endpoint = config.OTEL_EXPORTER_OTLP_ENDPOINT
   if (!endpoint?.trim() || sdk) return
@@ -563,13 +563,7 @@ export function createAgentLogger(options: {
 }
 
 function currentAgentConfig(): AgentTelemetryConfig {
-  if (agentConfig) return agentConfig
-  try {
-    return loadTelemetryConfig()
-  }
-  catch {
-    return safeDefaultConfig
-  }
+  return agentConfig ?? safeDefaultConfig
 }
 
 function singleLineConsoleMessage(value: unknown): string {

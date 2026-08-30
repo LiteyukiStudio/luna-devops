@@ -8,11 +8,9 @@ import (
 	"time"
 
 	"github.com/LiteyukiStudio/devops/internal/api"
-	sharedconfig "github.com/LiteyukiStudio/devops/internal/config"
 	"github.com/LiteyukiStudio/devops/internal/database"
 	"github.com/LiteyukiStudio/devops/internal/observability"
 	"github.com/LiteyukiStudio/devops/internal/redisconfig"
-	"github.com/LiteyukiStudio/devops/internal/secret"
 	"github.com/LiteyukiStudio/devops/internal/telemetry"
 	"github.com/LiteyukiStudio/devops/internal/webui"
 	"github.com/redis/go-redis/v9"
@@ -25,9 +23,19 @@ func main() {
 }
 
 func run() (runErr error) {
-	sharedconfig.LoadEnvironment()
 	ctx := context.Background()
-	telemetryRuntime, err := telemetry.Setup(ctx, telemetry.ServiceConfig{ServiceName: "luna-devops-api"})
+	cfg, configErr := api.LoadConfig()
+	telemetryRuntime, err := telemetry.Setup(ctx, telemetry.ServiceConfig{
+		ServiceName:        "luna-devops-api",
+		ServiceVersion:     cfg.AppVersion,
+		Endpoint:           cfg.Telemetry.Endpoint,
+		Headers:            cfg.Telemetry.Headers,
+		ResourceAttributes: cfg.Telemetry.ResourceAttributes,
+		LogFormat:          cfg.Telemetry.LogFormat,
+		LogColor:           cfg.Telemetry.LogColor,
+		LogLevel:           cfg.Telemetry.LogLevel,
+		NoColor:            cfg.Telemetry.NoColor,
+	})
 	if err != nil {
 		telemetry.LogError(ctx, "API startup failed", "api.startup.failed", "api.startup", "telemetry.initialization.failed",
 			telemetry.WrapError("telemetry.initialization.failed", "verify the OTEL exporter configuration", "initialize telemetry", err))
@@ -42,12 +50,8 @@ func run() (runErr error) {
 				"telemetry.shutdown.failed", err)
 		}
 	}()
-	cfg, err := api.LoadConfig()
-	if err != nil {
-		return telemetry.WrapError("config.invalid", "verify API and shared environment variables", "load API configuration", err)
-	}
-	if err := secret.ValidateEncryptionConfig(); err != nil {
-		return telemetry.WrapError("config.invalid", "set a stable SECRET_ENCRYPTION_KEY", "validate encryption configuration", err)
+	if configErr != nil {
+		return telemetry.WrapError("config.invalid", "verify API and shared environment variables", "load API configuration", configErr)
 	}
 	if err := redisconfig.CheckConnection(ctx, cfg.RedisOptions()); err != nil {
 		return telemetry.WrapError("dependency.redis.unavailable", "start Redis or verify REDIS_ADDR", "connect Redis", err)

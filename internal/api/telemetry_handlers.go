@@ -89,8 +89,8 @@ func browserTraceMediaType(value string) (string, bool) {
 	}
 }
 
-func otlpRelayHeaders(configs ...Config) map[string]string {
-	configured := configuredOrLoaded(configs).BrowserTraceHeaders
+func otlpRelayHeaders(cfg Config) map[string]string {
+	configured := cfg.BrowserTraceHeaders
 	headers := make(map[string]string, len(configured))
 	for key, value := range configured {
 		headers[key] = value
@@ -98,8 +98,8 @@ func otlpRelayHeaders(configs ...Config) map[string]string {
 	return headers
 }
 
-func browserTraceEndpoint(configs ...Config) (string, error) {
-	endpoint := configuredOrLoaded(configs).BrowserTraceEndpoint
+func browserTraceEndpoint(cfg Config) (string, error) {
+	endpoint := cfg.BrowserTraceEndpoint
 	if endpoint == "" {
 		return "", errors.New("OTLP endpoint is empty")
 	}

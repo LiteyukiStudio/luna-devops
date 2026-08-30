@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/LiteyukiStudio/devops/internal/aiagent"
 	"github.com/LiteyukiStudio/devops/internal/aitool"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/gin-gonic/gin"
@@ -59,7 +58,7 @@ func (h *Handlers) aiToolExecutionIdentityMiddleware() gin.HandlerFunc {
 			ctx.Abort()
 			return
 		}
-		if !requireAIAgentService(ctx) {
+		if !h.requireAIAgentService(ctx) {
 			ctx.Abort()
 			return
 		}
@@ -257,15 +256,14 @@ func (h *Handlers) resolveAIToolExecutionBinding(ctx *gin.Context, runID, toolCa
 	return binding, true
 }
 
-func requireAIAgentService(ctx *gin.Context) bool {
+func (h *Handlers) requireAIAgentService(ctx *gin.Context) bool {
 	actual := strings.TrimSpace(strings.TrimPrefix(ctx.GetHeader("Authorization"), "Bearer "))
-	internalKeys, err := aiagent.LoadInternalKeys()
-	if err != nil {
+	expected := strings.TrimSpace(h.config.AIAgent.CallbackServiceToken)
+	if expected == "" {
 		writeErrorCode(ctx, http.StatusServiceUnavailable, "ai.agent_service_not_configured", "Agent service identity is not configured")
 		return false
 	}
-	expected := internalKeys.CallbackServiceToken
-	if expected == "" || len(expected) != len(actual) || subtle.ConstantTimeCompare([]byte(expected), []byte(actual)) != 1 {
+	if len(expected) != len(actual) || subtle.ConstantTimeCompare([]byte(expected), []byte(actual)) != 1 {
 		writeErrorCode(ctx, http.StatusUnauthorized, "ai.agent_service_unauthorized", "Agent service identity is invalid")
 		return false
 	}

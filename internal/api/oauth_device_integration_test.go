@@ -52,7 +52,7 @@ func TestOAuthDeviceAuthorizationAndRevocationFlow(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	router := NewRouter(db)
+	router := NewRouter(db, mustTestConfig(t))
 	start := performFormRequest(router, http.MethodPost, "/api/v1/oauth/device/authorization", url.Values{
 		"client_id": {lunaCLIClientID},
 		"scope":     {"user:read volume:export"},

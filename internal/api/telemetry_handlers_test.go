@@ -17,7 +17,7 @@ import (
 func TestBrowserTraceEndpointUsesGenericOTLPBase(t *testing.T) {
 	t.Setenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "")
 	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://collector:4318/otel")
-	endpoint, err := browserTraceEndpoint()
+	endpoint, err := browserTraceEndpoint(mustTestConfig(t))
 	if err != nil {
 		t.Fatalf("resolve browser trace endpoint: %v", err)
 	}
@@ -26,17 +26,10 @@ func TestBrowserTraceEndpointUsesGenericOTLPBase(t *testing.T) {
 	}
 }
 
-func TestOTLPRelayHeadersDoNotForwardMalformedValues(t *testing.T) {
+func TestOTLPRelayHeadersRejectMalformedValues(t *testing.T) {
 	t.Setenv("OTEL_EXPORTER_OTLP_TRACES_HEADERS", "api-key=secret%20value,bad,nope=x%0D%0Ay")
-	headers := otlpRelayHeaders()
-	if headers["api-key"] != "secret value" {
-		t.Fatalf("expected decoded API key, got %q", headers["api-key"])
-	}
-	if _, exists := headers["bad"]; exists {
-		t.Fatal("malformed header was forwarded")
-	}
-	if _, exists := headers["nope"]; exists {
-		t.Fatal("CRLF header was forwarded")
+	if _, err := LoadConfig(); err == nil {
+		t.Fatal("malformed OTLP relay headers were accepted")
 	}
 }
 
@@ -144,10 +137,7 @@ func TestRelayBrowserTracesRejectsUnsupportedMediaTypeBeforeCollector(t *testing
 func newBrowserTraceRelayTestRouter(t *testing.T) http.Handler {
 	t.Helper()
 	redisServer := miniredis.RunT(t)
-	cfg, err := LoadConfig()
-	if err != nil {
-		t.Fatal(err)
-	}
+	cfg := mustTestConfig(t)
 	handlers := &Handlers{config: cfg, rateLimiter: newRateLimiter(redisServer.Addr())}
 	t.Cleanup(func() {
 		_ = handlers.rateLimiter.redis.Close()

@@ -32,7 +32,7 @@ cp .env.example .env
 
 The root `.env` is the single configuration entry for Compose. Set `SECRET_ENCRYPTION_KEY` to a stable random key and replace the placeholder in `REDIS_PASSWORD`. For a fresh database, also set `INITIAL_ADMIN_EMAIL` and `INITIAL_ADMIN_PASSWORD`; leave them empty when an active administrator already exists. Set the optional administrator name and language with `INITIAL_ADMIN_NAME` and `INITIAL_ADMIN_LANGUAGE`. Set `PUBLIC_BASE_URL` to the HTTP(S) root that users actually open; use `http://localhost:8088` for local-only access. Use URL-safe letters and digits for the Redis password. Compose passes it directly to the built-in Redis server and assembles the complete URI for API and Worker. The complete stack always runs in production mode and includes no fixed administrator credentials.
 
-Compose distributes configuration through a consumer allowlist: logging and common OpenTelemetry settings reach API, Worker, and Agent; `PUBLIC_BASE_URL`, the volume-transfer limit, and the transfer image reach only API and Worker; initial-administrator, CORS, metrics, and AI Client settings reach only API; build and deployment policy reaches only Worker; and Agent database-pool and diagnostic settings reach only Agent. API and Worker connection pools use separate `API_DB_*` and `WORKER_DB_*` budgets.
+Compose distributes configuration through a consumer allowlist: logging and common OpenTelemetry settings reach API, Worker, and Agent; `PUBLIC_BASE_URL`, the volume-transfer limit, and the transfer image reach only API and Worker; initial-administrator, CORS, metrics, and AI Client settings reach only API; build and deployment policy reaches only Worker; and Agent database-pool and diagnostic settings reach only Agent. API and Worker connection pools use separate `API_DB_*` and `WORKER_DB_*` budgets. The source-development `AI_AGENT_BASE_URL` in the root `.env` never enters Compose; API always reaches the containerized Agent at `http://agent:8091`.
 
 Run this from the repository root:
 
@@ -52,7 +52,7 @@ printf 'AI_INTERNAL_SECRET=%s\n' "$(openssl rand -hex 32)" >> .env
 
 The platform isolates and protects the AI assistant's internal credentials. Keep this secret stable and do not reuse another encryption key.
 
-Set `AI_ASSISTANT_AVAILABLE=true` in the same `.env`, then start the profile:
+Set `AI_ASSISTANT_AVAILABLE=true` in the same `.env`, then start the profile. Compose fixes the container-internal Agent address, so the source-development `AI_AGENT_BASE_URL` needs no change:
 
 ```bash
 docker compose --profile ai up -d

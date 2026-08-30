@@ -1,5 +1,5 @@
 import { BffHmacRequestVerifier, DevelopmentRequestVerifier } from "./auth.js"
-import { loadConfig } from "./config.js"
+import type { RuntimeConfig } from "./config.js"
 import { RunExecutor } from "./executor.js"
 import { ContextCompiler } from "./context/compiler.js"
 import { ModelRuntime } from "./model-runtime.js"
@@ -23,8 +23,7 @@ import { getToolDetailsTool } from "./tools/tool-details.js"
 import { InMemoryRunStreamBus } from "./run-stream-bus.js"
 import { runtimeSettingsFromRemote } from "./runtime-settings.js"
 
-export async function startAgent(): Promise<void> {
-  const config = loadConfig()
+export async function startAgent(config: RuntimeConfig): Promise<void> {
   configureAgentTelemetry(config)
   configureAIContentCapture(config.AI_OBSERVABILITY_CAPTURE_CONTENT)
   if (config.AI_OBSERVABILITY_CAPTURE_CONTENT) {
@@ -32,9 +31,7 @@ export async function startAgent(): Promise<void> {
       "luna.ai.content_capture": true,
     })
   }
-  const internalKeys = config.AI_INTERNAL_SECRET ? deriveInternalKeys(config.AI_INTERNAL_SECRET) : undefined
-  if (!config.DATABASE_URL) throw new Error("ai.persistence_database_url_required")
-  if (!config.LUNA_API_BASE_URL || !internalKeys) throw new Error("ai.provider_config_required")
+  const internalKeys = deriveInternalKeys(config.AI_INTERNAL_SECRET)
   const runExecutionSnapshotCipher = new PayloadCipher(
     internalKeys.runExecutionSnapshotEncryptionKey,
     "run-execution-snapshot-v1",

@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"errors"
-	"os"
 	"strings"
 )
 
@@ -18,10 +17,6 @@ type InternalKeys struct {
 	ServiceToken         string
 	ActorSigningKey      string
 	CallbackServiceToken string
-}
-
-func LoadInternalKeys() (InternalKeys, error) {
-	return DeriveInternalKeys(os.Getenv(InternalSecretEnvironment))
 }
 
 func DeriveInternalKeys(secret string) (InternalKeys, error) {

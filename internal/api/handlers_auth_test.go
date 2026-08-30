@@ -310,7 +310,11 @@ func TestBuildVariableSetResponseShowsVariablesWithInspectPermission(t *testing.
 
 func TestAuthProviderFromInputPreservesExistingSecret(t *testing.T) {
 	t.Setenv("SECRET_ENCRYPTION_KEY", "test-key")
-	existingSecretRef := secret.Encrypt("old-secret")
+	codec, err := secret.NewCodec("test-key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	existingSecretRef := codec.Encrypt("old-secret")
 	provider, ok := authProviderFromInput(authProviderInput{
 		Type:      "oidc",
 		Name:      "Casdoor",
@@ -329,9 +333,13 @@ func TestAuthProviderFromInputPreservesExistingSecret(t *testing.T) {
 func TestResolveSecretRejectsNonCanonicalReferences(t *testing.T) {
 	t.Setenv("SECRET_ENCRYPTION_KEY", "test-key")
 	t.Setenv("OIDC_TEST_SECRET", "env-secret")
-	h := &Handlers{}
+	codec, err := secret.NewCodec("test-key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := &Handlers{secrets: secret.NewStore(nil, nil, codec)}
 
-	for _, ref := range []string{secret.Encrypt("inline-secret"), "literal:literal-secret", "plain-secret", "env:OIDC_TEST_SECRET"} {
+	for _, ref := range []string{codec.Encrypt("inline-secret"), "literal:literal-secret", "plain-secret", "env:OIDC_TEST_SECRET"} {
 		if resolved := h.resolveSecretContext(context.Background(), ref); resolved != "" {
 			t.Fatalf("non-canonical ref %q resolved to %q", ref, resolved)
 		}

@@ -1,5 +1,6 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http"
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest"
+import { loadTelemetryConfig } from "../src/config.js"
 import type { ContextCompiler } from "../src/context/compiler.js"
 import { ModelRuntime, type AssistantModelInput } from "../src/model-runtime.js"
 import { OpenAIChatCompletionsProvider } from "../src/provider/openai-chat-completions.js"
@@ -13,7 +14,7 @@ describe("OpenAI Chat Completions real HTTP contract", () => {
   let baseUrl = ""
 
   beforeAll(async () => {
-    if (process.env.OTEL_SMOKE === "true") initializeTelemetry()
+    if (process.env.OTEL_SMOKE === "true") initializeTelemetry(loadTelemetryConfig())
     await new Promise<void>((resolve, reject) => {
       server.once("error", reject)
       server.listen(0, "127.0.0.1", resolve)

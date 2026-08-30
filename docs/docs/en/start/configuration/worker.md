@@ -1,6 +1,6 @@
 # Worker Configuration
 
-When running from source, Worker reads these variables from the root `.env`. Docker Compose reads the same single `.env` and uses a consumer allowlist to inject shared and Worker-only settings. API-only settings such as initial-administrator credentials, CORS, the metrics listener, and the AI Client never enter Worker.
+When running from source, Worker reads these variables from the root `.env`. Docker Compose reads the same single `.env` and uses a consumer allowlist to inject shared and Worker-only settings. API-only settings such as initial-administrator credentials, CORS, the metrics listener, and the AI Client never enter Worker. Worker reads and validates configuration only at startup; restart it after changes, and expect startup to fail when an explicitly selected `ENV_FILE` is missing or malformed.
 
 ## Basic configuration
 
@@ -30,7 +30,7 @@ When running from source, Worker reads these variables from the root `.env`. Doc
 
 | Setting | Default | Description |
 | --- | --- | --- |
-| `ENV_FILE` | `.env` | Selects the environment file read by Worker; use a file path. |
+| `ENV_FILE` | `.env` | Selects the environment file read by Worker; use a valid path, because an explicitly selected missing or malformed file fails startup. |
 | `WORKER_DB_MAX_OPEN_CONNS` | `20` | Limits open database connections per Worker replica; use a positive integer. |
 | `WORKER_DB_MAX_IDLE_CONNS` | `5` | Limits idle database connections per Worker replica; use a non-negative integer. |
 | `WORKER_DB_CONN_MAX_LIFETIME` | `30m` | Limits each Worker database connection's lifetime; use a Go duration such as `30m`. |

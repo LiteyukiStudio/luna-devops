@@ -22,7 +22,7 @@ func TestVolumeTransferManifestRoutesAreRegistered(t *testing.T) {
 	if err := db.AutoMigrate(&model.AppConfig{}); err != nil {
 		t.Fatalf("migrate route config dependency: %v", err)
 	}
-	router := NewRouter(db)
+	router := NewRouter(db, mustTestConfig(t))
 	routes := make(map[string]bool)
 	for _, route := range router.Routes() {
 		routes[route.Method+" "+route.Path] = true

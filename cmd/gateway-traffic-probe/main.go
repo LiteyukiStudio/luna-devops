@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"time"
 
+	sharedconfig "github.com/LiteyukiStudio/devops/internal/config"
 	"github.com/LiteyukiStudio/devops/internal/gatewayprobe"
 	"github.com/LiteyukiStudio/devops/internal/telemetry"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
@@ -21,7 +22,23 @@ func main() {
 
 func runMain() int {
 	ctx := context.Background()
-	runtime, err := telemetry.Setup(ctx, telemetry.ServiceConfig{ServiceName: "luna-gateway-traffic-probe"})
+	startupConfig, err := sharedconfig.LoadTelemetry()
+	if err != nil {
+		telemetry.LogError(ctx, "Gateway traffic probe startup failed", "gateway_probe.startup.failed",
+			"gateway_probe.startup", "config.invalid",
+			telemetry.WrapError("config.invalid", "verify shared telemetry environment variables", "load telemetry configuration", err))
+		return 1
+	}
+	runtime, err := telemetry.Setup(ctx, telemetry.ServiceConfig{
+		ServiceName:        "luna-gateway-traffic-probe",
+		Endpoint:           startupConfig.Endpoint,
+		Headers:            startupConfig.Headers,
+		ResourceAttributes: startupConfig.ResourceAttributes,
+		LogFormat:          startupConfig.LogFormat,
+		LogColor:           startupConfig.LogColor,
+		LogLevel:           startupConfig.LogLevel,
+		NoColor:            startupConfig.NoColor,
+	})
 	if err != nil {
 		telemetry.LogError(ctx, "Gateway traffic probe startup failed", "gateway_probe.startup.failed",
 			"gateway_probe.startup", "telemetry.initialization.failed",

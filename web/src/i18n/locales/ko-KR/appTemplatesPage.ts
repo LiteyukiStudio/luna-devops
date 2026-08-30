@@ -87,10 +87,12 @@ const appTemplatesPage = {
     traefikMetricsUrl: 'Traefik Metrics 주소',
   },
   valueHints: {
+    redisPassword: '선택 사항입니다. 길고 무작위인 비밀번호 설정을 권장합니다. 비워 두면 Redis 비밀번호 인증이 활성화되지 않습니다.',
     apiBaseUrl: '플랫폼이 프로브에서 접근 가능한 기본 주소를 입력하세요. 예: https://luna-devops.example.com. /api/v1/billing/gateway-traffic과 같은 구체적인 인터페이스 경로를 입력하지 마세요. 프로브가 자동으로 보고 인터페이스를 붙입니다.',
     traefikMetricsUrl: '프로브 Pod가 클러스터 내에서 접근 가능한 Traefik Prometheus metrics 주소를 입력하세요. 비워 두면 기본값 http://traefik.<Gateway 네임스페이스>.svc.cluster.local:9100/metrics를 사용합니다.',
   },
   valuePlaceholders: {
+    redisPassword: '무작위 비밀번호 권장(선택 사항)',
     apiBaseUrl: 'https://luna-devops.example.com',
     traefikMetricsUrl: 'http://traefik.kube-system.svc.cluster.local:9100/metrics',
   },

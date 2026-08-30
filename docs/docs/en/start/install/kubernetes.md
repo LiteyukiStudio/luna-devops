@@ -117,6 +117,32 @@ helm upgrade --install luna-devops ./charts/luna-devops \
   -f values-prod.yaml
 ```
 
+## Configure Browser Trace Relay Authentication
+
+API relays browser traces. If that relay uses different authentication from the Collector shared by API, Worker, and Agent, first store the complete `OTEL_EXPORTER_OTLP_TRACES_HEADERS` value in a separate Kubernetes Secret. Keep the local file below readable only by its owner and remove it securely after creating the Secret. URL-encode spaces and other special characters, such as `%20`:
+
+```text title="browser-trace-headers.txt"
+Authorization=Bearer%20replace-with-relay-token
+```
+
+```bash
+kubectl -n luna-devops create secret generic luna-devops-browser-trace-auth \
+  --from-file=otlp-traces-headers=browser-trace-headers.txt
+```
+
+Store only the Secret and key names in production values, never the Header credential. A dedicated relay endpoint is not secret and can use API-scoped `extraEnv`; when it is omitted, browser traces still use the shared OTLP endpoint with the API-only authentication configured here:
+
+```yaml
+api:
+  browserTrace:
+    existingSecret: luna-devops-browser-trace-auth
+    headersKey: otlp-traces-headers
+  extraEnv:
+    OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: https://trace-relay.example.com/v1/traces
+```
+
+When browser traces use the same authentication as the shared Collector, leave `api.browserTrace.existingSecret` empty and API keeps falling back to `observability.existingSecret`. The dedicated Secret is injected only into API, never Worker or Agent. The chart also rejects plaintext credentials supplied through `api.extraEnv.OTEL_EXPORTER_OTLP_TRACES_HEADERS`.
+
 ## Configure The Agent Network Policy
 
 The chart enables API-to-Agent ingress isolation by default but does not restrict Agent egress by default. The
@@ -158,11 +184,13 @@ root filesystem, and disabled ServiceAccount token remain enforced independently
 | `api.initialAdmin.name` / `language` | Empty / empty | Sets the initial administrator name and language; API falls back to the email and `zh-CN`, and a non-empty language may be `zh-CN` or `en-US`. |
 | `api.image.tag` / `worker.image.tag` | `nightly` | Selects the API and Worker image versions; use image tags. |
 | `api.database.maxOpenConns` / `maxIdleConns` | `20` / `5` | Caps open and idle PostgreSQL connections per API replica; use a positive integer and a non-negative integer no greater than the first value. |
+| `api.browserTrace.existingSecret` / `headersKey` | Empty / `otlp-traces-headers` | Selects the API browser Trace Relay authentication Secret and key; use a Kubernetes Secret name and the key containing the complete Header list. |
 | `worker.database.maxOpenConns` / `maxIdleConns` | `20` / `5` | Caps open and idle PostgreSQL connections per Worker replica; use a positive integer and a non-negative integer no greater than the first value. |
 | `ai.enabled` / `ai.existingSecret` | `false` / empty | Enables Agent and selects its internal secret; use a boolean and a Kubernetes Secret name. |
 | `ai.agent.observabilityCaptureDatabaseSpans` | `false` | Controls temporary per-query Agent PostgreSQL spans; use a boolean and keep it disabled during normal operation. |
 | `ai.agent.networkPolicy.ingress.enabled` / `egress.enabled` | `true` / `false` | Controls API-to-Agent ingress isolation and Agent egress isolation; use booleans and enable egress only after its destination rules are complete. |
 | `ai.agent.networkPolicy.egress.additionalCIDRs` / `additionalRules` | `[]` / `[]` | Adds Agent destinations; use a CIDR list and a list of Kubernetes NetworkPolicy egress rules. |
+| `observability.otlpEndpoint` / `existingSecret` | Empty / empty | Sets the OTLP/HTTP endpoint and authentication Secret shared by API, Worker, and Agent; use a Collector URL and a Kubernetes Secret name containing `headersKey`. |
 | `postgresql.enabled` / `externalDatabase.url` | `true` / empty | Selects bundled or external PostgreSQL; use a boolean and a PostgreSQL connection URI. |
 | `redis.enabled` / `externalRedis.url` | `true` / empty | Selects bundled or external Redis; use a boolean and a `redis://` or `rediss://` URI. |
 | `worker.buildEgressMode` | `restricted` | Sets the build-network egress policy; use `restricted` or `permissive`. |

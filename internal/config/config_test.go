@@ -1,8 +1,6 @@
 package config
 
 import (
-	"bytes"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,11 +10,12 @@ import (
 
 func TestLoadSharedFromEnvFile(t *testing.T) {
 	resetEnvLoader(t)
-	for _, key := range []string{"DATABASE_URL", "REDIS_ADDR", "PUBLIC_BASE_URL", "VOLUME_TRANSFER_MAX_BYTES"} {
+	for _, key := range []string{"APP_ENV", "DATABASE_URL", "REDIS_ADDR", "PUBLIC_BASE_URL", "VOLUME_TRANSFER_MAX_BYTES"} {
 		unsetEnv(t, key)
 	}
 	envFile := filepath.Join(t.TempDir(), ".env.local")
 	content := []byte(strings.Join([]string{
+		"APP_ENV=development",
 		"DATABASE_URL=postgres://user:pass@db:5432/app?sslmode=disable",
 		"REDIS_ADDR=redis://redis:6379/0",
 		"PUBLIC_BASE_URL=https://devops.example.com/",
@@ -46,6 +45,7 @@ func TestLoadSharedEnvironmentOverridesEnvFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("ENV_FILE", envFile)
+	t.Setenv("APP_ENV", "development")
 	t.Setenv("PUBLIC_BASE_URL", "https://environment.example.com")
 
 	cfg, err := LoadShared()
@@ -59,6 +59,7 @@ func TestLoadSharedEnvironmentOverridesEnvFile(t *testing.T) {
 
 func TestLoadSharedRedisAuthentication(t *testing.T) {
 	resetEnvLoader(t)
+	t.Setenv("APP_ENV", "development")
 	t.Setenv("REDIS_ADDR", "redis://luna:secret@redis.example.com:6379/4")
 	cfg, err := LoadShared()
 	if err != nil {
@@ -67,6 +68,35 @@ func TestLoadSharedRedisAuthentication(t *testing.T) {
 	options := cfg.RedisOptions()
 	if options.Addr != "redis.example.com:6379" || options.Username != "luna" || options.Password != "secret" || options.DB != 4 {
 		t.Fatalf("RedisOptions() = %#v", options)
+	}
+}
+
+func TestRedisConfigurationErrorsDoNotExposeCredentials(t *testing.T) {
+	resetEnvLoader(t)
+	t.Setenv("APP_ENV", "development")
+	secretValue := "must-not-leak-from-redis-url"
+	t.Setenv("REDIS_ADDR", "redis://user:"+secretValue+"%zz@redis.example.com:6379/0")
+
+	loaders := map[string]func() error{
+		"shared": func() error {
+			_, err := LoadShared()
+			return err
+		},
+		"tasks": func() error {
+			_, err := LoadTasks()
+			return err
+		},
+	}
+	for name, load := range loaders {
+		t.Run(name, func(t *testing.T) {
+			err := load()
+			if err == nil || !strings.Contains(err.Error(), "REDIS_ADDR") {
+				t.Fatalf("error = %v", err)
+			}
+			if strings.Contains(err.Error(), secretValue) {
+				t.Fatalf("configuration error exposed Redis credentials: %q", err)
+			}
+		})
 	}
 }
 
@@ -107,53 +137,208 @@ func TestSharedVolumeTransferEnabledRequiresJobImage(t *testing.T) {
 	}
 }
 
-func TestStrictEnvironmentParsers(t *testing.T) {
-	t.Setenv("TEST_INT", "invalid")
-	if _, err := Int("TEST_INT", 1); err == nil {
-		t.Fatal("Int accepted invalid input")
+func TestEnvironmentDecoderPreservesPrimitiveSemantics(t *testing.T) {
+	type primitiveEnvironment struct {
+		Integer  int           `env:"TEST_INT" envDefault:"1"`
+		Boolean  bool          `env:"TEST_BOOL" envDefault:"false"`
+		Duration time.Duration `env:"TEST_DURATION" envDefault:"1s"`
 	}
-	t.Setenv("TEST_BOOL", "sometimes")
-	if _, err := Bool("TEST_BOOL", false); err == nil {
-		t.Fatal("Bool accepted invalid input")
+
+	decoded, err := decodeEnvironment[primitiveEnvironment](map[string]string{
+		"TEST_INT":      " 8 ",
+		"TEST_BOOL":     " yes ",
+		"TEST_DURATION": "90",
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
-	t.Setenv("TEST_DURATION", "0")
-	if _, err := Duration("TEST_DURATION", time.Second); err == nil {
-		t.Fatal("Duration accepted invalid input")
+	if decoded.Integer != 8 || !decoded.Boolean || decoded.Duration != 90*time.Second {
+		t.Fatalf("decoded primitives = %#v", decoded)
 	}
-	t.Setenv("TEST_PORTS", "443,bad")
-	if _, err := PortList("TEST_PORTS", []int{443}); err == nil {
-		t.Fatal("PortList accepted invalid input")
+
+	defaults, err := decodeEnvironment[primitiveEnvironment](map[string]string{
+		"TEST_INT":      " ",
+		"TEST_BOOL":     "\t",
+		"TEST_DURATION": "\n",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if defaults.Integer != 1 || defaults.Boolean || defaults.Duration != time.Second {
+		t.Fatalf("whitespace defaults = %#v", defaults)
+	}
+}
+
+func TestEnvironmentDecoderReturnsSafeKeyedErrors(t *testing.T) {
+	type primitiveEnvironment struct {
+		Integer  int           `env:"TEST_INT" envDefault:"1"`
+		Boolean  bool          `env:"TEST_BOOL" envDefault:"false"`
+		Duration time.Duration `env:"TEST_DURATION" envDefault:"1s"`
+	}
+
+	secretValue := "must-not-echo-in-startup-errors"
+	_, err := decodeEnvironment[primitiveEnvironment](map[string]string{
+		"TEST_INT":      secretValue,
+		"TEST_BOOL":     secretValue,
+		"TEST_DURATION": secretValue,
+	})
+	if err == nil {
+		t.Fatal("decoder accepted invalid primitives")
+	}
+	for _, key := range []string{"TEST_INT", "TEST_BOOL", "TEST_DURATION"} {
+		if !strings.Contains(err.Error(), key) {
+			t.Fatalf("error = %q, want key %s", err, key)
+		}
+	}
+	if strings.Contains(err.Error(), secretValue) {
+		t.Fatalf("decoder error exposed raw value: %q", err)
+	}
+	if _, err := parsePortList("TEST_PORTS", "443,bad", []int{443}); err == nil {
+		t.Fatal("port parser accepted invalid input")
+	}
+}
+
+func TestEnvironmentDecoderRejectsDurationOverflow(t *testing.T) {
+	type durationEnvironment struct {
+		Timeout time.Duration `env:"TEST_TIMEOUT" envDefault:"1s"`
+	}
+	for _, raw := range []string{"0.5", "10000000000"} {
+		_, err := decodeEnvironment[durationEnvironment](map[string]string{
+			"TEST_TIMEOUT": raw,
+		})
+		if err == nil || !strings.Contains(err.Error(), "TEST_TIMEOUT") {
+			t.Fatalf("decode %q error = %v", raw, err)
+		}
+	}
+
+	for raw, want := range map[string]time.Duration{
+		"1.5s":       1500 * time.Millisecond,
+		"9223372036": time.Duration(9223372036) * time.Second,
+	} {
+		decoded, err := decodeEnvironment[durationEnvironment](map[string]string{
+			"TEST_TIMEOUT": raw,
+		})
+		if err != nil {
+			t.Fatalf("decode %q: %v", raw, err)
+		}
+		if decoded.Timeout != want {
+			t.Fatalf("decode %q = %s, want %s", raw, decoded.Timeout, want)
+		}
+	}
+}
+
+func TestEnvironmentDecoderUsesOnlyProvidedSnapshot(t *testing.T) {
+	type isolatedEnvironment struct {
+		Enabled bool `env:"ISOLATED_ENABLED" envDefault:"false"`
+	}
+	t.Setenv("ISOLATED_ENABLED", "true")
+	decoded, err := decodeEnvironment[isolatedEnvironment](map[string]string{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if decoded.Enabled {
+		t.Fatal("decoder read process environment outside the provided snapshot")
+	}
+}
+
+func TestEnvironmentDecoderRejectsAmbiguousFieldNames(t *testing.T) {
+	type firstEnvironment struct {
+		Enabled bool `env:"FIRST_ENABLED"`
+	}
+	type secondEnvironment struct {
+		Enabled bool `env:"SECOND_ENABLED"`
+	}
+	type ambiguousEnvironment struct {
+		First  firstEnvironment
+		Second secondEnvironment
+	}
+
+	_, err := decodeEnvironment[ambiguousEnvironment](map[string]string{})
+	if err == nil || !strings.Contains(err.Error(), "maps to multiple keys") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestLoadTelemetryUsesNoColorPresenceSemantics(t *testing.T) {
+	resetEnvLoader(t)
+	t.Setenv("NO_COLOR", "")
+	cfg, err := LoadTelemetry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.NoColor {
+		t.Fatal("NO_COLOR must be enabled whenever the variable exists")
+	}
+}
+
+func TestLoadSharedCapturesFreshEnvironmentForEachCall(t *testing.T) {
+	resetEnvLoader(t)
+	t.Setenv("APP_ENV", "development")
+	t.Setenv("PUBLIC_BASE_URL", "https://first.example.com")
+	first, err := LoadShared()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PUBLIC_BASE_URL", "https://second.example.com")
+	second, err := LoadShared()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.PublicBaseURL != "https://first.example.com" || second.PublicBaseURL != "https://second.example.com" {
+		t.Fatalf("snapshots = %q / %q", first.PublicBaseURL, second.PublicBaseURL)
+	}
+}
+
+func TestLoadTasksIgnoresUnownedEnvironment(t *testing.T) {
+	resetEnvLoader(t)
+	t.Setenv("APP_ENV", "not-a-runtime-mode")
+	t.Setenv("DATABASE_URL", "not-a-database-url")
+	t.Setenv("API_DB_MAX_OPEN_CONNS", "not-an-integer")
+	t.Setenv("WORKER_DB_MAX_OPEN_CONNS", "not-an-integer")
+	if _, err := LoadTasks(); err != nil {
+		t.Fatalf("LoadTasks() validated unowned environment: %v", err)
 	}
 }
 
 func TestRuntimeModeDefaultsToProduction(t *testing.T) {
 	unsetEnv(t, "APP_ENV")
-	if got := RuntimeMode(); got != "production" {
-		t.Fatalf("RuntimeMode() = %q", got)
+	if got, err := runtimeModeFromValue(os.Getenv("APP_ENV")); err != nil || got != "production" {
+		t.Fatalf("runtimeModeFromValue() = %q, %v", got, err)
 	}
 }
 
-func TestLoadEnvFileLogsPathInDevelopment(t *testing.T) {
+func TestExplicitEnvFileFailureIsReturned(t *testing.T) {
 	resetEnvLoader(t)
-	envFile := filepath.Join(t.TempDir(), ".env.local")
-	if err := os.WriteFile(envFile, []byte("APP_ENV=development\n"), 0o600); err != nil {
+	envFile := filepath.Join(t.TempDir(), "missing.env")
+	t.Setenv("ENV_FILE", envFile)
+	if err := LoadEnvironment(); err == nil || !strings.Contains(err.Error(), envFile) {
+		t.Fatalf("LoadEnvironment() error = %v, want explicit path", err)
+	}
+}
+
+func TestExplicitEnvFileFailureDoesNotExposeFileContents(t *testing.T) {
+	resetEnvLoader(t)
+	envFile := filepath.Join(t.TempDir(), "malformed.env")
+	content := "INVALID LINE WITHOUT EQUALS\nSECRET_ENCRYPTION_KEY=must-not-leak\nAI_INTERNAL_SECRET=also-must-not-leak\n"
+	if err := os.WriteFile(envFile, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("APP_ENV", "development")
 	t.Setenv("ENV_FILE", envFile)
 
-	var output bytes.Buffer
-	oldLogger := slog.Default()
-	slog.SetDefault(slog.New(slog.NewTextHandler(&output, &slog.HandlerOptions{Level: slog.LevelDebug})))
-	t.Cleanup(func() { slog.SetDefault(oldLogger) })
-	LoadEnvironment()
-	if got := output.String(); !strings.Contains(got, "environment file loaded") || !strings.Contains(got, envFile) {
-		t.Fatalf("log output = %q", got)
+	err := LoadEnvironment()
+	if err == nil {
+		t.Fatal("LoadEnvironment() accepted a malformed explicit file")
+	}
+	for _, secret := range []string{"must-not-leak", "also-must-not-leak", "SECRET_ENCRYPTION_KEY", "AI_INTERNAL_SECRET"} {
+		if strings.Contains(err.Error(), secret) {
+			t.Fatalf("LoadEnvironment() error exposed file contents: %q", err)
+		}
 	}
 }
 
 func TestExplicitEnvFileDoesNotLoadDefaultEnv(t *testing.T) {
 	resetEnvLoader(t)
+	unsetEnv(t, "APP_ENV")
 	unsetEnv(t, "PUBLIC_BASE_URL")
 	workDir := t.TempDir()
 	oldDir, err := os.Getwd()

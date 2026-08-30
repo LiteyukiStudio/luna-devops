@@ -8,6 +8,7 @@ import { PostgresRepository } from "../src/persistence/postgres.js"
 import type { ModelCallOperation } from "../src/persistence/repository.js"
 import { BudgetedModelProvider } from "../src/provider/budgeted.js"
 import { OpenAIChatCompletionsProvider } from "../src/provider/openai-chat-completions.js"
+import { loadTelemetryConfig } from "../src/config.js"
 import { initializeTelemetry, internalSpanOptions, shutdownTelemetry, withSpan } from "../src/telemetry.js"
 
 /** 真 PostgreSQL 测试仅操作独立的可销毁数据库。 */
@@ -33,7 +34,7 @@ suite("Postgres authoritative model usage", () => {
   })
 
   beforeAll(async () => {
-    if (process.env.OTEL_SMOKE === "true") initializeTelemetry()
+    if (process.env.OTEL_SMOKE === "true") initializeTelemetry(loadTelemetryConfig())
     await new Promise<void>((resolve, reject) => {
       providerServer.once("error", reject)
       providerServer.listen(0, "127.0.0.1", resolve)

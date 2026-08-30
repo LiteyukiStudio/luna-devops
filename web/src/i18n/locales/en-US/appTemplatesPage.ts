@@ -87,10 +87,12 @@ const appTemplatesPage = {
     traefikMetricsUrl: 'Traefik Metrics URL',
   },
   valueHints: {
+    redisPassword: 'Optional. A long, random password is recommended; leave blank to run Redis without password authentication.',
     apiBaseUrl: 'Enter the platform base URL reachable from the probe, for example https://luna-devops.example.com. Do not enter a concrete path such as /api/v1/billing/gateway-traffic; the probe appends the reporting endpoint automatically.',
     traefikMetricsUrl: 'Enter the Traefik Prometheus metrics endpoint reachable from the probe Pod. Leave blank to use http://traefik.<Gateway namespace>.svc.cluster.local:9100/metrics.',
   },
   valuePlaceholders: {
+    redisPassword: 'Recommended random password (optional)',
     apiBaseUrl: 'https://luna-devops.example.com',
     traefikMetricsUrl: 'http://traefik.kube-system.svc.cluster.local:9100/metrics',
   },

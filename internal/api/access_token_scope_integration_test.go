@@ -59,7 +59,7 @@ func TestPlatformAdminAccessTokenScopesAuthorizeDashboardAndDataRetention(t *tes
 		t.Fatal(err)
 	}
 
-	router := NewRouter(db)
+	router := NewRouter(db, mustTestConfig(t))
 	for _, path := range []string{"/api/v1/dashboard", "/api/v1/data-retention/catalog"} {
 		t.Run("full scope "+path, func(t *testing.T) {
 			recorder := performBearerRequest(router, http.MethodGet, path, fullToken, "")

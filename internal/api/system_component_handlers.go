@@ -15,7 +15,6 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/observation"
 	"github.com/LiteyukiStudio/devops/internal/resourceidentifier"
-	"github.com/LiteyukiStudio/devops/internal/secret"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -271,7 +270,7 @@ func (h *Handlers) systemComponentApplicationPlan(ctx *gin.Context, user model.U
 
 	secretValue := model.SecretValue{
 		ID:        id.New("sec"),
-		CipherRef: secret.Encrypt(reportToken),
+		CipherRef: h.secrets.Encrypt(reportToken),
 		CreatedBy: user.ID,
 		Resource:  "system_component:" + componentID + ":" + cluster.ID + ":report_token",
 	}

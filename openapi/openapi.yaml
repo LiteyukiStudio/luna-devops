@@ -12216,7 +12216,10 @@ components:
         installNow: { type: boolean }
         values:
           type: object
-          additionalProperties: true
+          writeOnly: true
+          x-luna-sensitive: true
+          additionalProperties: { type: string }
+          description: Dynamic template values. The whole map is treated as sensitive because individual templates may define Secret parameters.
     BuildRunInput:
       type: object
       required: [applicationId, deploymentTargetId]

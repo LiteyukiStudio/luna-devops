@@ -50,7 +50,7 @@ func TestAIProjectListVisibilityDirectExecutionPostgres(t *testing.T) {
 		}
 	}
 
-	router := NewRouter(db)
+	router := NewRouter(db, mustTestConfig(t))
 	defaultItems := executeAIProjectList(t, db, router, admin, session, map[string]any{"page": 1, "pageSize": 20}, "")
 	if !projectItemsContain(defaultItems, related.ID) || projectItemsContain(defaultItems, unrelated.ID) {
 		t.Fatalf("default visibility items = %#v", defaultItems)
@@ -103,7 +103,7 @@ func TestAIProjectVolumeDirectExecutionAndAuthoritativeReadbackPostgres(t *testi
 		}
 	}
 
-	handlers := NewHandlers(db)
+	handlers := NewHandlers(db, mustTestConfig(t))
 	tasks := &volumeTaskEnqueuerStub{}
 	handlers.volumes = volume.NewGormService(db, volumeOperationDispatcher{tasks: tasks})
 	// The readback deliberately exercises the public unavailable observation
@@ -114,10 +114,7 @@ func TestAIProjectVolumeDirectExecutionAndAuthoritativeReadbackPostgres(t *testi
 	router.POST("/api/v1/projects/:projectId/volumes", handlers.CreateProjectVolume)
 	router.GET("/api/v1/projects/:projectId/volumes/:volumeId", handlers.GetProjectVolume)
 
-	keys, err := aiagent.LoadInternalKeys()
-	if err != nil {
-		t.Fatal(err)
-	}
+	keys := mustTestAIKeys(t)
 	runID := "airun_ai_volume"
 	conversationID := "aicnv_ai_volume"
 	turnID := "aitrn_ai_volume"
@@ -202,7 +199,7 @@ func TestAIFetchWebPageDirectExecutionPostgres(t *testing.T) {
 	}))
 	defer target.Close()
 
-	handlers := NewHandlers(db)
+	handlers := NewHandlers(db, mustTestConfig(t))
 	handlers.aiTools = aitool.NewService(db, aitool.WithWebPolicyProvider(func(context.Context, string) (security.EgressPolicy, error) {
 		return security.AdminEgressPolicy(), nil
 	}))
@@ -210,10 +207,7 @@ func TestAIFetchWebPageDirectExecutionPostgres(t *testing.T) {
 	router.Use(handlers.aiToolExecutionIdentityMiddleware())
 	router.POST("/api/v1/ai-tools/fetch-web-page", handlers.ExecuteAIFetchWebPage)
 
-	keys, err := aiagent.LoadInternalKeys()
-	if err != nil {
-		t.Fatal(err)
-	}
+	keys := mustTestAIKeys(t)
 	conversationID := "aicnv_ai_web"
 	turnID := "aitrn_ai_web"
 	runID := "airun_ai_web"
@@ -263,10 +257,7 @@ func TestAIFetchWebPageDirectExecutionPostgres(t *testing.T) {
 
 func executeAIProjectList(t *testing.T, db *gorm.DB, router http.Handler, user model.User, session model.UserSession, arguments map[string]any, conversationProjectID string) []any {
 	t.Helper()
-	keys, err := aiagent.LoadInternalKeys()
-	if err != nil {
-		t.Fatal(err)
-	}
+	keys := mustTestAIKeys(t)
 	visibility := "default"
 	if value, exists := arguments["visibility"]; exists {
 		visibility = fmt.Sprint(value)

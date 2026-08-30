@@ -19,7 +19,7 @@ func TestWorkerStartupRedisUnavailableLogsCompleteDiagnostics(t *testing.T) {
 	command := exec.Command(os.Args[0], "-test.run=^TestWorkerStartupHelper$")
 	command.Env = append(os.Environ(),
 		"LUNA_TEST_WORKER_STARTUP_HELPER=1",
-		"ENV_FILE=/nonexistent/luna-test.env",
+		"ENV_FILE=",
 		"APP_ENV=development",
 		"LOG_FORMAT=console",
 		"LOG_COLOR=never",

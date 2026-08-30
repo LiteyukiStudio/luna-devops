@@ -7,7 +7,6 @@ import (
 	"io"
 	"os"
 
-	"github.com/LiteyukiStudio/devops/internal/config"
 	"github.com/LiteyukiStudio/devops/internal/telemetry"
 	"github.com/hibiken/asynq"
 )
@@ -17,9 +16,18 @@ func main() {
 }
 
 func runMain() int {
-	config.LoadEnvironment()
 	ctx := context.Background()
-	runtime, telemetryErr := telemetry.Setup(ctx, telemetry.ServiceConfig{ServiceName: "luna-tasks"})
+	cfg, configErr := loadTasksConfig()
+	runtime, telemetryErr := telemetry.Setup(ctx, telemetry.ServiceConfig{
+		ServiceName:        "luna-tasks",
+		Endpoint:           cfg.Telemetry.Endpoint,
+		Headers:            cfg.Telemetry.Headers,
+		ResourceAttributes: cfg.Telemetry.ResourceAttributes,
+		LogFormat:          cfg.Telemetry.LogFormat,
+		LogColor:           cfg.Telemetry.LogColor,
+		LogLevel:           cfg.Telemetry.LogLevel,
+		NoColor:            cfg.Telemetry.NoColor,
+	})
 	if telemetryErr != nil {
 		telemetry.LogError(ctx, "Task administration startup failed", "tasks.startup.failed", "tasks.startup",
 			"telemetry.initialization.failed",
@@ -27,7 +35,12 @@ func runMain() int {
 		return 1
 	}
 	defer func() { _ = runtime.Shutdown(context.Background()) }()
-	if err := run(os.Args[1:], os.Stdout); err != nil {
+	if configErr != nil {
+		telemetry.LogError(ctx, "Task administration startup failed", "tasks.startup.failed", "tasks.startup",
+			"config.invalid", telemetry.WrapError("config.invalid", "verify task administration environment variables", "load task configuration", configErr))
+		return 1
+	}
+	if err := run(os.Args[1:], os.Stdout, cfg); err != nil {
 		telemetry.LogError(ctx, "Task administration command failed", "tasks.command.failed", "tasks.command",
 			"tasks.command.failed", err)
 		return 1
@@ -35,7 +48,7 @@ func runMain() int {
 	return 0
 }
 
-func run(args []string, output io.Writer) error {
+func run(args []string, output io.Writer, cfg tasksConfig) error {
 	flags := flag.NewFlagSet("tasks", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	queue := flags.String("queue", "light", "asynq queue name")
@@ -49,10 +62,6 @@ func run(args []string, output io.Writer) error {
 			fmt.Errorf("usage: tasks [list-archived|run|delete] -queue <queue> [-task-id <id>]"))
 	}
 
-	cfg, err := loadTasksConfig()
-	if err != nil {
-		return telemetry.WrapError("config.invalid", "set REDIS_ADDR to a redis:// or rediss:// URI", "validate Redis configuration", err)
-	}
 	inspector := asynq.NewInspector(cfg.Redis.Asynq())
 	defer inspector.Close()
 

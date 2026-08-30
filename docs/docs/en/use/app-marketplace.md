@@ -12,6 +12,8 @@ App Marketplace provides curated templates grouped into seven categories: databa
 
 The template creates an application and deployment and can create its first Release. Secret parameters are written only to the secret store and are never displayed in the page or installation result.
 
+The Redis password is optional. A long, random password is recommended; leaving it blank runs Redis without password authentication. When provided, the password reaches the workload only through a Secret, and its plaintext is not written to ordinary environment settings or the installation-value snapshot.
+
 After installation, check the Release, workload, logs, and access method. A template does not configure every third-party integration, such as Grafana data sources, application database accounts, or external OAuth.
 
 The deployment stage must be `dev`, `test`, `staging`, or `prod`. The CLI exposes the stable `luna app-template install` command. Agent and CLI validation rejects values such as `default` or `qa` before sending the request and reports the allowed values. The platform fallback returns `deployment.stage_invalid`, the argument path, and `retryable: false`; automation must correct the argument instead of replaying it unchanged.

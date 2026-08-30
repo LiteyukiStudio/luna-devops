@@ -200,6 +200,13 @@ func TestAppTemplateInstallCatalogCarriesStrictStageAndSemantics(t *testing.T) {
 	if !reflect.DeepEqual(stage["enum"], []any{"dev", "test", "staging", "prod"}) {
 		t.Fatalf("installAppTemplate stage schema = %#v", stage)
 	}
+	values := mapValue(mapValue(body["properties"])["values"])
+	if !reflect.DeepEqual(values["additionalProperties"], map[string]any{"type": "string"}) {
+		t.Fatalf("installAppTemplate values schema = %#v", values)
+	}
+	if !reflect.DeepEqual(operation.SensitivePaths, []string{"body.values"}) {
+		t.Fatalf("installAppTemplate sensitive paths = %#v", operation.SensitivePaths)
+	}
 }
 
 func TestHighFrequencyOperationsCarryExplicitSemanticMetadata(t *testing.T) {

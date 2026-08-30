@@ -12,7 +12,6 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/resourceidentifier"
-	"github.com/LiteyukiStudio/devops/internal/secret"
 	"github.com/LiteyukiStudio/devops/internal/volume"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -299,7 +298,7 @@ func (h *Handlers) buildTemplateInstallPlan(ctx *gin.Context, user model.User, p
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return templateInstallPlan{}, false
 	}
-	secretRefs, secretEntries, ok := templateSecretRefs(ctx, user.ID, installationID, rendered.SecretEnv)
+	secretRefs, secretEntries, ok := h.templateSecretRefs(ctx, user.ID, installationID, rendered.SecretEnv)
 	if !ok {
 		return templateInstallPlan{}, false
 	}
@@ -452,6 +451,8 @@ func (h *Handlers) buildTemplateInstallPlan(ctx *gin.Context, user model.User, p
 		Replicas:            replicas,
 		CPURequest:          cpuRequest,
 		MemoryRequest:       memoryRequest,
+		ContainerCommand:    strings.TrimSpace(template.ContainerCommand),
+		ContainerArgs:       strings.TrimSpace(template.ContainerArgs),
 		ServicePorts:        model.EncodeDeploymentServicePorts([]model.DeploymentServicePort{{Name: "http", Port: fallbackInt(template.ServicePort, 8080)}}, fallbackInt(template.ServicePort, 8080)),
 		SourceType:          "image",
 		ImageRef:            imageRef,
@@ -521,7 +522,7 @@ func appTemplateDeploymentDataVolumes(template appstore.Template, selectedProjec
 	return dataVolumes
 }
 
-func templateSecretRefs(ctx *gin.Context, userID string, installationID string, values map[string]string) (map[string]string, []model.SecretValue, bool) {
+func (h *Handlers) templateSecretRefs(ctx *gin.Context, userID string, installationID string, values map[string]string) (map[string]string, []model.SecretValue, bool) {
 	output := map[string]string{}
 	entries := []model.SecretValue{}
 	for key, value := range values {
@@ -529,7 +530,7 @@ func templateSecretRefs(ctx *gin.Context, userID string, installationID string, 
 			writeError(ctx, http.StatusBadRequest, "密钥变量名只能使用字母、数字和下划线，且不能以数字开头")
 			return nil, nil, false
 		}
-		cipherRef := secret.Encrypt(value)
+		cipherRef := h.secrets.Encrypt(value)
 		if cipherRef == "" {
 			writeError(ctx, http.StatusInternalServerError, "密钥加密失败")
 			return nil, nil, false
@@ -577,7 +578,7 @@ func (h *Handlers) templateSecretFiles(ctx *gin.Context, userID string, installa
 		if content == "" {
 			continue
 		}
-		cipherRef := secret.Encrypt(content)
+		cipherRef := h.secrets.Encrypt(content)
 		if cipherRef == "" {
 			writeError(ctx, http.StatusInternalServerError, "密钥加密失败")
 			return "", nil, false
@@ -622,7 +623,9 @@ func safeTemplateValues(template appstore.Template, values map[string]string) ma
 	output := map[string]string{}
 	for key, value := range values {
 		if secretKeys[key] {
-			output[key] = "set"
+			if strings.TrimSpace(value) != "" {
+				output[key] = "set"
+			}
 			continue
 		}
 		output[key] = value

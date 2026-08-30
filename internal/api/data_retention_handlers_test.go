@@ -89,7 +89,7 @@ func TestDataRetentionEndpointsRequirePlatformAdmin(t *testing.T) {
 		t.Fatal(err)
 	}
 	handlers := &Handlers{db: db, configs: newConfigCache(db), mode: "development"}
-	router := NewRouter(db)
+	router := NewRouter(db, mustTestConfig(t))
 
 	tests := []struct {
 		method  string
@@ -116,7 +116,7 @@ func TestDataRetentionEndpointsRequirePlatformAdmin(t *testing.T) {
 
 func TestDataRetentionRoutesAreRegistered(t *testing.T) {
 	db := authIntegrationDB(t)
-	router := NewRouter(db)
+	router := NewRouter(db, mustTestConfig(t))
 	routes := make(map[string]bool)
 	for _, route := range router.Routes() {
 		routes[route.Method+" "+route.Path] = true

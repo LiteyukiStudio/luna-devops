@@ -12,7 +12,6 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/resourceidentifier"
-	"github.com/LiteyukiStudio/devops/internal/secret"
 	"github.com/LiteyukiStudio/devops/internal/telemetry"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -266,7 +265,7 @@ func (h *Handlers) materializeDeploymentBundleSecrets(ctx *gin.Context, user mod
 				return nil, nil, nil, nil, false
 			}
 		}
-		cipherRef := secret.Encrypt(item.Value)
+		cipherRef := h.secrets.Encrypt(item.Value)
 		if cipherRef == "" {
 			writeDeploymentBundleCode(ctx, "deployment_bundle.secret_encrypt_failed")
 			return nil, nil, nil, nil, false

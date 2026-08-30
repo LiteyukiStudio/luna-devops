@@ -15,7 +15,7 @@ func TestSecurityHeadersIncludeCSPAndProductionHSTS(t *testing.T) {
 
 	recorder := httptest.NewRecorder()
 	router := gin.New()
-	router.Use(securityHeaders())
+	router.Use(securityHeaders(mustTestConfig(t)))
 	router.GET("/", func(ctx *gin.Context) {
 		ctx.Status(http.StatusNoContent)
 	})
@@ -40,7 +40,7 @@ func TestSecurityHeadersDoNotEnableHSTSInDevelopmentByDefault(t *testing.T) {
 
 	recorder := httptest.NewRecorder()
 	router := gin.New()
-	router.Use(securityHeaders())
+	router.Use(securityHeaders(mustTestConfig(t)))
 	router.GET("/", func(ctx *gin.Context) {
 		ctx.Status(http.StatusNoContent)
 	})

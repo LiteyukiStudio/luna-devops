@@ -103,7 +103,7 @@ pnpm --dir web dev
 ```
 
 Vite 开发服务器会将 `/api/v1` 代理到 `http://localhost:8080`。
-根目录 `.env` 是 API、Worker 和 Agent 联调的单一填写入口；设置 `AI_ASSISTANT_AVAILABLE=true`、`AI_AGENT_BASE_URL=http://localhost:8091` 和一份 `AI_INTERNAL_SECRET` 即可。只有 Agent 专属覆盖才写入 `luna-agent/.env.local`，可参考 [`luna-agent/.env.example`](luna-agent/.env.example)。API 与 Worker 数据库连接池分别使用 `API_DB_*`、`WORKER_DB_*`。
+根目录 `.env` 是 API、Worker 和 Agent 联调的单一填写入口；其中已经包含 API 与 Agent 互访的本地地址和 HMAC 模式，启用时只需设置 `AI_ASSISTANT_AVAILABLE=true` 和一份 `AI_INTERNAL_SECRET`。只有 Agent 专属覆盖才写入 `luna-agent/.env.local`，可参考只包含 Agent 专属项的 [`luna-agent/.env.example`](luna-agent/.env.example)。API 与 Worker 数据库连接池分别使用 `API_DB_*`、`WORKER_DB_*`。
 
 API、Worker、辅助命令和 Agent 默认使用 `LOG_FORMAT=auto`：交互式终端显示便于阅读的 console 日志，重定向或容器中输出无 ANSI 的 JSON。可用 `LOG_LEVEL` 调整级别，或设置 `LOG_COLOR=never` / `NO_COLOR` 关闭颜色；OTel 始终接收与终端渲染无关的结构化记录。
 

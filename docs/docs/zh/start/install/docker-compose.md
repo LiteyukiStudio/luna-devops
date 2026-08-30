@@ -32,7 +32,7 @@ cp .env.example .env
 
 根目录 `.env` 是 Compose 的唯一配置填写入口。为 `SECRET_ENCRYPTION_KEY` 填写稳定随机密钥，并替换 `REDIS_PASSWORD` 中的占位值。数据库全新时还要设置 `INITIAL_ADMIN_EMAIL`、`INITIAL_ADMIN_PASSWORD`；已有有效管理员时可将它们留空。管理员名称和语言可通过 `INITIAL_ADMIN_NAME`、`INITIAL_ADMIN_LANGUAGE` 设置。把 `PUBLIC_BASE_URL` 改成用户实际访问平台的 HTTP(S) 根地址；仅在本机使用时填写 `http://localhost:8088`。Redis 密码请使用字母和数字等 URL-safe 字符；Compose 会直接用它启动内置 Redis，并自动为 API 和 Worker 组装完整连接 URI。完整 Compose 固定以生产模式启动，不包含固定管理员凭据。
 
-Compose 会按消费者白名单下发配置：日志和通用 OpenTelemetry 配置进入 API、Worker、Agent；`PUBLIC_BASE_URL`、数据卷传输上限和传输镜像只进入 API、Worker；首个管理员、CORS、指标和 AI Client 只进入 API；构建与部署策略只进入 Worker；Agent 数据库池和诊断开关只进入 Agent。API、Worker 的连接池分别使用 `API_DB_*`、`WORKER_DB_*`，不会再因共用一组值而互相挤占预算。
+Compose 会按消费者白名单下发配置：日志和通用 OpenTelemetry 配置进入 API、Worker、Agent；`PUBLIC_BASE_URL`、数据卷传输上限和传输镜像只进入 API、Worker；首个管理员、CORS、指标和 AI Client 只进入 API；构建与部署策略只进入 Worker；Agent 数据库池和诊断开关只进入 Agent。API、Worker 的连接池分别使用 `API_DB_*`、`WORKER_DB_*`，不会再因共用一组值而互相挤占预算。根 `.env` 中面向源码联调的 `AI_AGENT_BASE_URL` 不会进入 Compose；API 在容器内固定通过 `http://agent:8091` 访问 Agent。
 
 在仓库根目录执行：
 
@@ -52,7 +52,7 @@ printf 'AI_INTERNAL_SECRET=%s\n' "$(openssl rand -hex 32)" >> .env
 
 平台会隔离并保护 AI 助手的内部凭据。请保持该密钥稳定，并且不要与其他加密密钥共用。
 
-再把同一份 `.env` 中的 `AI_ASSISTANT_AVAILABLE` 改为 `true`，然后启动：
+再把同一份 `.env` 中的 `AI_ASSISTANT_AVAILABLE` 改为 `true`，然后启动。Compose 会固定使用容器内 Agent 地址，不需要改动源码联调使用的 `AI_AGENT_BASE_URL`：
 
 ```bash
 docker compose --profile ai up -d

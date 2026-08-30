@@ -27,7 +27,7 @@ var aiProviderConfigKeys = []string{
 }
 
 func (h *Handlers) GetAIProviderConfigInternal(ctx *gin.Context) {
-	if !requireAIAgentService(ctx) {
+	if !h.requireAIAgentService(ctx) {
 		return
 	}
 	toolCatalog, err := aitool.PlatformCatalog()

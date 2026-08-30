@@ -11,10 +11,8 @@ import (
 	"errors"
 	"io"
 	"math/big"
-	"os"
 	"strings"
 
-	"github.com/LiteyukiStudio/devops/internal/config"
 	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"gorm.io/gorm"
@@ -84,16 +82,32 @@ func randomCharset(charset string, length int) (string, error) {
 	return string(result), nil
 }
 
-func Encrypt(secret string) string {
+type Codec struct {
+	key []byte
+}
+
+func NewCodec(keyMaterial string) (Codec, error) {
+	keyMaterial = strings.TrimSpace(keyMaterial)
+	if keyMaterial == "" {
+		return Codec{}, ErrMissingEncryptionKey
+	}
+	sum := sha256.Sum256([]byte(keyMaterial))
+	return Codec{key: append([]byte(nil), sum[:]...)}, nil
+}
+
+func (c Codec) Available() bool {
+	return len(c.key) == 32
+}
+
+func (c Codec) Encrypt(secret string) string {
 	secret = strings.TrimSpace(secret)
 	if secret == "" {
 		return ""
 	}
-	key, err := secretRefKey()
-	if err != nil {
+	if !c.Available() {
 		return ""
 	}
-	block, err := aes.NewCipher(key)
+	block, err := aes.NewCipher(c.key)
 	if err != nil {
 		return ""
 	}
@@ -109,18 +123,17 @@ func Encrypt(secret string) string {
 	return encryptedSecretRefPrefix + base64.RawURLEncoding.EncodeToString(payload)
 }
 
-func ResolveInline(ref string) string {
+func (c Codec) ResolveInline(ref string) string {
 	ref = strings.TrimSpace(ref)
 	if strings.HasPrefix(ref, encryptedSecretRefPrefix) {
 		payload, err := base64.RawURLEncoding.DecodeString(strings.TrimPrefix(ref, encryptedSecretRefPrefix))
 		if err != nil {
 			return ""
 		}
-		key, err := secretRefKey()
-		if err != nil {
+		if !c.Available() {
 			return ""
 		}
-		block, err := aes.NewCipher(key)
+		block, err := aes.NewCipher(c.key)
 		if err != nil {
 			return ""
 		}
@@ -147,10 +160,24 @@ type ContextAuditFunc func(ctx context.Context, userID, action, resource string,
 type Store struct {
 	db           *gorm.DB
 	auditContext ContextAuditFunc
+	codec        Codec
 }
 
-func NewStore(db *gorm.DB, audit ContextAuditFunc) Store {
-	return Store{db: db, auditContext: audit}
+func NewStore(db *gorm.DB, audit ContextAuditFunc, codec Codec) Store {
+	return Store{db: db, auditContext: audit, codec: codec}
+}
+
+func (s Store) WithDB(db *gorm.DB) Store {
+	s.db = db
+	return s
+}
+
+func (s Store) Available() bool {
+	return s.codec.Available()
+}
+
+func (s Store) Encrypt(plaintext string) string {
+	return s.codec.Encrypt(plaintext)
 }
 
 func (s Store) StoreContext(ctx context.Context, secret, createdBy, resource string) string {
@@ -173,7 +200,7 @@ func (s Store) StoreContextWithDB(ctx context.Context, db *gorm.DB, plaintext, c
 	if db == nil {
 		return "", ErrStoreUnavailable
 	}
-	cipherRef := Encrypt(plaintext)
+	cipherRef := s.codec.Encrypt(plaintext)
 	if cipherRef == "" {
 		return "", ErrStoreUnavailable
 	}
@@ -213,7 +240,7 @@ func (s Store) ResolveContext(ctx context.Context, ref string) string {
 	if err := s.db.WithContext(ctx).First(&value, "id = ?", strings.TrimPrefix(ref, storedSecretIDPrefix)).Error; err != nil {
 		return ""
 	}
-	return ResolveInline(value.CipherRef)
+	return s.codec.ResolveInline(value.CipherRef)
 }
 
 func HasValue(ref string) bool {
@@ -222,21 +249,4 @@ func HasValue(ref string) bool {
 
 func SafeClientSecretRef(ref string) string {
 	return ""
-}
-
-func ValidateEncryptionConfig() error {
-	_, err := secretRefKey()
-	return err
-}
-
-func secretRefKey() ([]byte, error) {
-	keyMaterial := strings.TrimSpace(os.Getenv("SECRET_ENCRYPTION_KEY"))
-	if keyMaterial == "" {
-		if config.RuntimeMode() == "production" {
-			return nil, ErrMissingEncryptionKey
-		}
-		keyMaterial = "luna-devops-local-secret"
-	}
-	sum := sha256.Sum256([]byte(keyMaterial))
-	return sum[:], nil
 }

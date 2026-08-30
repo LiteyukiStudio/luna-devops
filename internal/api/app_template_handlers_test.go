@@ -14,6 +14,7 @@ import (
 
 	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/model"
+	secretstore "github.com/LiteyukiStudio/devops/internal/secret"
 	"github.com/LiteyukiStudio/devops/internal/volume"
 	"github.com/gin-gonic/gin"
 	"gorm.io/driver/postgres"
@@ -60,14 +61,20 @@ func TestInstallAppTemplateAcceptsPendingProvisionAndRejectsPendingImport(t *tes
 	for _, test := range []struct {
 		name              string
 		pendingOperation  string
+		password          string
 		wantStatus        int
 		wantCode          string
 		wantInstallation  bool
 		wantVolumeBinding bool
+		wantSecret        bool
 	}{
 		{
-			name: "pending provision is attachable", pendingOperation: volume.OperationProvision,
+			name: "pending provision is attachable without a password", pendingOperation: volume.OperationProvision,
 			wantStatus: http.StatusCreated, wantInstallation: true, wantVolumeBinding: true,
+		},
+		{
+			name: "pending provision stores an optional password", pendingOperation: volume.OperationProvision,
+			password: "test-password", wantStatus: http.StatusCreated, wantInstallation: true, wantVolumeBinding: true, wantSecret: true,
 		},
 		{
 			name: "pending import is rejected", pendingOperation: volume.OperationImport,
@@ -85,11 +92,16 @@ func TestInstallAppTemplateAcceptsPendingProvisionAndRejectsPendingImport(t *tes
 				VolumeMode: model.ProjectVolumeModeFilesystem, CreatedBy: "usr_template", Revision: 1,
 			}}
 			db := newAppTemplateInstallTestDB(t, observation)
+			codec, err := secretstore.NewCodec("app-template-test-encryption-key")
+			if err != nil {
+				t.Fatal(err)
+			}
 			handlers := &Handlers{
 				db: db,
 				configs: &configCache{values: map[string]string{
 					"billing.blockDeployChangesWhenInsufficient": "false",
 				}},
+				secrets: secretstore.NewStore(db, nil, codec),
 			}
 
 			installNow := false
@@ -97,7 +109,7 @@ func TestInstallAppTemplateAcceptsPendingProvisionAndRejectsPendingImport(t *tes
 				ApplicationName: "Redis", ApplicationIdentifier: "redis-pending-volume",
 				DeploymentName: "default", Stage: "prod", ClusterID: "clu_template",
 				ImageRef: "redis:7-alpine", Replicas: 1, CPURequest: "500m", MemoryRequest: "512Mi",
-				ProjectVolumeID: observation.projectVolume.ID, InstallNow: &installNow, Values: map[string]string{},
+				ProjectVolumeID: observation.projectVolume.ID, InstallNow: &installNow, Values: map[string]string{"password": test.password},
 			})
 			if err != nil {
 				t.Fatal(err)
@@ -130,6 +142,36 @@ func TestInstallAppTemplateAcceptsPendingProvisionAndRejectsPendingImport(t *tes
 				observation.createdMount.ProjectVolumeID == nil || *observation.createdMount.ProjectVolumeID != observation.projectVolume.ID {
 				t.Fatalf("created mount=%#v", observation.createdMount)
 			}
+			if observation.createdTarget == nil || observation.createdTarget.ContainerCommand != "/bin/sh\n-ec" || !strings.Contains(observation.createdTarget.ContainerArgs, "--requirepass") {
+				t.Fatalf("created redis target=%#v", observation.createdTarget)
+			}
+			refs := decodeSecretRefs(observation.createdTarget.SecretRefs)
+			var valuesSnapshot map[string]string
+			if err := json.Unmarshal([]byte(observation.createdInstallation.ValuesSnapshot), &valuesSnapshot); err != nil {
+				t.Fatal(err)
+			}
+			if test.wantSecret {
+				if !strings.HasPrefix(refs["REDIS_PASSWORD"], "secret-id:") || len(observation.createdSecrets) != 1 {
+					t.Fatalf("redis secret refs=%#v secret values=%#v", refs, observation.createdSecrets)
+				}
+				if got := codec.ResolveInline(observation.createdSecrets[0].CipherRef); got != test.password {
+					t.Fatalf("stored redis password = %q", got)
+				}
+				if valuesSnapshot["password"] != "set" {
+					t.Fatalf("redis values snapshot = %#v", valuesSnapshot)
+				}
+				storedMetadata := observation.createdTarget.SecretRefs + observation.createdTarget.ContainerArgs + observation.createdInstallation.ValuesSnapshot
+				if strings.Contains(storedMetadata, test.password) {
+					t.Fatalf("redis password leaked into deployment metadata: %q", storedMetadata)
+				}
+			} else {
+				if _, exists := refs["REDIS_PASSWORD"]; exists || len(observation.createdSecrets) != 0 {
+					t.Fatalf("blank redis password produced secret state: refs=%#v values=%#v", refs, observation.createdSecrets)
+				}
+				if _, exists := valuesSnapshot["password"]; exists {
+					t.Fatalf("blank redis password was marked as set: %#v", valuesSnapshot)
+				}
+			}
 			var response appTemplateInstallResponse
 			if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
 				t.Fatal(err)
@@ -147,6 +189,7 @@ type appTemplateInstallDBObservation struct {
 	createdTarget       *model.DeploymentTarget
 	createdMount        *model.DeploymentVolumeMount
 	createdInstallation *model.AppTemplateInstallation
+	createdSecrets      []model.SecretValue
 }
 
 func newAppTemplateInstallTestDB(t *testing.T, observation *appTemplateInstallDBObservation) *gorm.DB {
@@ -209,6 +252,8 @@ func newAppTemplateInstallTestDB(t *testing.T, observation *appTemplateInstallDB
 		case *model.AppTemplateInstallation:
 			created := *destination
 			observation.createdInstallation = &created
+		case *model.SecretValue:
+			observation.createdSecrets = append(observation.createdSecrets, *destination)
 		}
 		query.RowsAffected = 1
 	}); err != nil {
@@ -368,8 +413,8 @@ func TestGetAppTemplateReturnsSanitizedFullDefinition(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	response := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(response)
-	ctx.Request = httptest.NewRequest(http.MethodGet, "/api/v1/app-templates/mongodb", nil)
-	ctx.Params = gin.Params{{Key: "templateId", Value: "mongodb"}}
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/api/v1/app-templates/redis", nil)
+	ctx.Params = gin.Params{{Key: "templateId", Value: "redis"}}
 	(&Handlers{}).GetAppTemplate(ctx)
 
 	if response.Code != http.StatusOK {
@@ -383,13 +428,17 @@ func TestGetAppTemplateReturnsSanitizedFullDefinition(t *testing.T) {
 	if !ok || len(values) == 0 {
 		t.Fatalf("values = %#v", template["values"])
 	}
+	password := values[0].(map[string]any)
+	if password["key"] != "password" || password["secret"] != true || password["required"] != false || password["autoGenerate"] != false || password["default"] != "" {
+		t.Fatalf("redis password definition = %#v", password)
+	}
 	for _, raw := range values {
 		value := raw.(map[string]any)
 		if value["secret"] == true && value["default"] != "" {
 			t.Fatalf("secret default leaked: %#v", value)
 		}
 	}
-	for _, internal := range []string{"env", "secretEnv", "configFiles", "secretFiles"} {
+	for _, internal := range []string{"env", "secretEnv", "configFiles", "secretFiles", "containerCommand", "containerArgs"} {
 		if _, exists := template[internal]; exists {
 			t.Fatalf("internal rendering field %s leaked", internal)
 		}

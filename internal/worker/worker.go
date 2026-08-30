@@ -72,6 +72,7 @@ type Options struct {
 	BuildBlockedEgressCIDRs     []string
 	VolumeTransferJobImage      string
 	VolumeTransferMaxBytes      int64
+	SecretCodec                 secret.Codec
 }
 
 func Run(redisAddr string, db *gorm.DB, options Options) error {
@@ -152,7 +153,7 @@ func (r *Runner) scoped(ctx context.Context) *Runner {
 	}
 	copy := *r
 	copy.db = r.db.WithContext(ctx)
-	copy.secrets = secret.NewStore(copy.db, nil)
+	copy.secrets = r.secrets.WithDB(copy.db)
 	return &copy
 }
 
@@ -195,7 +196,7 @@ func NewRunner(db *gorm.DB, options Options) *Runner {
 	}
 	return &Runner{
 		db:                          db,
-		secrets:                     secret.NewStore(db, nil),
+		secrets:                     secret.NewStore(db, nil, options.SecretCodec),
 		deployRolloutTimeoutSeconds: deployRolloutTimeoutSeconds,
 		certManagerClusterIssuer:    certManagerClusterIssuer,
 		publicBaseURL:               strings.TrimRight(strings.TrimSpace(options.PublicBaseURL), "/"),

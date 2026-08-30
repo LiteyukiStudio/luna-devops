@@ -1,6 +1,6 @@
 # API Configuration
 
-When running from source, API reads these variables from the root `.env`. Docker Compose reads the same single `.env`, but its consumer allowlist injects only API settings into the API container. Shared values such as `PUBLIC_BASE_URL`, logging, OpenTelemetry, and the volume-transfer limit are authored once and forwarded only to their actual consumers.
+When running from source, API reads these variables from the root `.env`. Docker Compose reads the same single `.env`, but its consumer allowlist injects only API settings into the API container. Shared values such as `PUBLIC_BASE_URL`, logging, OpenTelemetry, and the volume-transfer limit are authored once and forwarded only to their actual consumers. API reads and validates configuration only at startup; restart it after changes, and expect startup to fail when an explicitly selected `ENV_FILE` is missing or malformed.
 
 ## Basic configuration
 
@@ -8,7 +8,7 @@ When running from source, API reads these variables from the root `.env`. Docker
 | --- | --- | --- |
 | `APP_ENV` | `production` | Selects the API runtime mode; use `production` or `development`. |
 | `API_ADDR` | `:8080` | Sets the API listen address; use `IP:port` or `:port`. |
-| `PUBLIC_BASE_URL` | Empty | Sets the user-facing platform root; use an HTTP(S) URL. |
+| `PUBLIC_BASE_URL` | Required in production | Sets the user-facing platform root; in production, use the absolute HTTP(S) URL users actually open. |
 | `DATABASE_URL` | Local PostgreSQL | Connects to PostgreSQL; use a PostgreSQL connection URI. |
 | `REDIS_ADDR` | `redis://localhost:6379/0` | Connects to Redis; use a `redis://` or `rediss://` URI. |
 | `REDIS_PASSWORD` | Empty | Sets the bundled Docker Compose Redis password; use a password string or leave empty when authentication is disabled. |
@@ -37,7 +37,7 @@ When running from source, API reads these variables from the root `.env`. Docker
 
 | Setting | Default | Description |
 | --- | --- | --- |
-| `ENV_FILE` | `.env` | Selects the environment file read by API; use a file path. |
+| `ENV_FILE` | `.env` | Selects the environment file read by API; use a valid path, because an explicitly selected missing or malformed file fails startup. |
 | `APP_ENABLE_HSTS` | `true` in production | Controls whether API sends the HSTS header; use `true` or `false`. |
 | `APP_VERSION` | Build version | Sets the version reported by API; use a version string. |
 | `LOCAL_ADMIN_FREE_QUOTA_CREDITS` | `1000` | Grants free quota when the first administrator is created in development; use a non-negative Credits value. |

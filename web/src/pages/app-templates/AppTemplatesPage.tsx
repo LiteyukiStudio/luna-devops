@@ -647,21 +647,27 @@ function InstallTemplateDialog({
                 <p className="mt-1 text-sm text-muted-foreground">{t('appTemplatesPage.templateParametersDescription')}</p>
               </div>
               <div className="grid gap-4 md:grid-cols-2 md:gap-5">
-                {template.values.map(value => (
-                  <Field
-                    key={value.key}
-                    hint={templateValueHint(value.key, t)}
-                    label={t(`appTemplatesPage.valueLabels.${value.key}`, { defaultValue: value.label || value.key })}
-                    required={value.required && !value.autoGenerate}
-                  >
-                    <Input
-                      placeholder={templateValuePlaceholder(value.key, value.autoGenerate, value.default, t)}
-                      type={value.secret ? 'password' : 'text'}
-                      value={form.values[value.key] ?? ''}
-                      onChange={event => onTemplateValueChange(value.key, event.target.value)}
-                    />
-                  </Field>
-                ))}
+                {template.values.map((value) => {
+                  const label = t(`appTemplatesPage.valueLabels.${value.key}`, { defaultValue: value.label || value.key })
+                  return (
+                    <Field
+                      key={value.key}
+                      hint={templateValueHint(template.id, value.key, t)}
+                      label={label}
+                      required={value.required && !value.autoGenerate}
+                    >
+                      <Input
+                        aria-label={label}
+                        autoComplete={value.secret ? 'new-password' : undefined}
+                        placeholder={templateValuePlaceholder(template.id, value.key, value.autoGenerate, value.default, t)}
+                        required={value.required && !value.autoGenerate}
+                        type={value.secret ? 'password' : 'text'}
+                        value={form.values[value.key] ?? ''}
+                        onChange={event => onTemplateValueChange(value.key, event.target.value)}
+                      />
+                    </Field>
+                  )
+                })}
               </div>
             </div>
           )}
@@ -813,14 +819,18 @@ function TemplateProjectVolumePicker({ canCreate, clusterId, clusterName, disabl
   )
 }
 
-function templateValueHint(key: string, t: ReturnType<typeof useTranslation>['t']) {
+function templateValueHint(templateId: string, key: string, t: ReturnType<typeof useTranslation>['t']) {
+  if (templateId === 'redis' && key === 'password')
+    return t('appTemplatesPage.valueHints.redisPassword')
   if (key === 'apiBaseUrl')
     return t('appTemplatesPage.valueHints.apiBaseUrl')
   if (key === 'traefikMetricsUrl')
     return t('appTemplatesPage.valueHints.traefikMetricsUrl')
 }
 
-function templateValuePlaceholder(key: string, autoGenerate: boolean, defaultValue: string, t: ReturnType<typeof useTranslation>['t']) {
+function templateValuePlaceholder(templateId: string, key: string, autoGenerate: boolean, defaultValue: string, t: ReturnType<typeof useTranslation>['t']) {
+  if (templateId === 'redis' && key === 'password')
+    return t('appTemplatesPage.valuePlaceholders.redisPassword')
   if (key === 'apiBaseUrl')
     return t('appTemplatesPage.valuePlaceholders.apiBaseUrl')
   if (key === 'traefikMetricsUrl')

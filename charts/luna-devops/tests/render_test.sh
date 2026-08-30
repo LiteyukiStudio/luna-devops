@@ -66,6 +66,13 @@ if helm template luna-devops "$chart_dir" --namespace luna-devops \
 fi
 assert_contains "$api_managed_env_error" 'DATABASE_URL is managed by the chart and cannot be set through api.extraEnv' 'api.extraEnv does not reject managed variables'
 
+api_browser_trace_headers_error="$tmp_dir/api-browser-trace-headers.err"
+if helm template luna-devops "$chart_dir" --namespace luna-devops \
+  --set-string api.extraEnv.OTEL_EXPORTER_OTLP_TRACES_HEADERS='Authorization=Bearer%20plaintext' > /dev/null 2> "$api_browser_trace_headers_error"; then
+  fail 'api.extraEnv must not accept browser Trace Relay credentials'
+fi
+assert_contains "$api_browser_trace_headers_error" 'OTEL_EXPORTER_OTLP_TRACES_HEADERS is managed by the chart and cannot be set through api.extraEnv' 'browser Trace Relay credentials can still be stored in plaintext values'
+
 worker_secret_env_error="$tmp_dir/worker-secret-env.err"
 if helm template luna-devops "$chart_dir" --namespace luna-devops \
   --set-string worker.extraEnv.AI_INTERNAL_SECRET=must-not-cross-boundary > /dev/null 2> "$worker_secret_env_error"; then
@@ -119,6 +126,7 @@ for initial_admin_env in INITIAL_ADMIN_EMAIL INITIAL_ADMIN_NAME INITIAL_ADMIN_PA
 done
 assert_count "$default_render" '^[[:space:]]+optional: true$' 4 'all initial administrator Secret references must be optional'
 assert_not_contains "$default_render" 'BOOTSTRAP_TOKEN' 'the removed bootstrap token is still rendered'
+assert_not_contains "$default_render" 'OTEL_EXPORTER_OTLP_TRACES_HEADERS' 'browser Trace Relay headers were rendered without an existing Secret'
 assert_count "$default_render" '^kind: ConfigMap$' 3 'shared, API, and Worker ConfigMaps were not rendered separately'
 assert_contains "$default_render" '^  AI_AGENT_BASE_URL:' 'the canonical Agent base URL is missing'
 assert_not_contains "$default_render" 'AI_AGENT_ADDR' 'the legacy Agent address variable is still rendered'
@@ -233,6 +241,23 @@ assert_contains "$api_extra_env_render" '^[[:space:]]+- name: "API_FEATURE_FLAG"
 assert_not_contains "$api_extra_env_render" 'WORKER_FEATURE_FLAG' 'Worker extraEnv leaked into API'
 assert_contains "$worker_extra_env_render" '^[[:space:]]+- name: "WORKER_FEATURE_FLAG"$' 'Worker-scoped extraEnv is missing from Worker'
 assert_not_contains "$worker_extra_env_render" 'API_FEATURE_FLAG' 'API extraEnv leaked into Worker'
+
+browser_trace_render="$tmp_dir/browser-trace-observability.yaml"
+helm template luna-devops "$chart_dir" --namespace luna-devops \
+  --set ai.enabled=true \
+  --set ai.existingSecret=agent-auth \
+  --set observability.otlpEndpoint=http://otel-collector.observability.svc.cluster.local:4318 \
+  --set observability.existingSecret=collector-auth \
+  --set observability.headersKey=otlp-headers \
+  --set api.browserTrace.existingSecret=browser-trace-auth \
+  --set api.browserTrace.headersKey=browser-trace-headers \
+  --set-string api.extraEnv.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=https://browser-trace.example.com/v1/traces > "$browser_trace_render"
+assert_count "$browser_trace_render" '^[[:space:]]+- name: OTEL_EXPORTER_OTLP_HEADERS$' 3 'the shared OTLP Secret must continue to reach API, Worker, and Agent'
+assert_count "$browser_trace_render" '^[[:space:]]+name: collector-auth$' 3 'the shared OTLP Secret reference changed while browser Trace authentication was enabled'
+assert_count "$browser_trace_render" '^[[:space:]]+- name: OTEL_EXPORTER_OTLP_TRACES_HEADERS$' 1 'browser Trace Relay headers must only be injected into API'
+assert_count "$browser_trace_render" '^[[:space:]]+name: browser-trace-auth$' 1 'the API-only browser Trace Secret reference is missing or leaked to another workload'
+assert_contains "$browser_trace_render" '^[[:space:]]+key: browser-trace-headers$' 'the configured browser Trace Secret key is missing'
+assert_count "$browser_trace_render" '^[[:space:]]+- name: "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"$' 1 'the non-sensitive browser Trace endpoint must remain API-scoped'
 
 stable_rollout_values="$tmp_dir/stable-rollout-values.yaml"
 cat > "$stable_rollout_values" <<'EOF'

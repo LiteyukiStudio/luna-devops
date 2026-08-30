@@ -101,7 +101,7 @@ pnpm --dir web dev
 ```
 
 The Vite dev server proxies `/api/v1` to `http://localhost:8080`.
-The root `.env` is the single authoring entry for API, Worker, and Agent development. Set `AI_ASSISTANT_AVAILABLE=true`, `AI_AGENT_BASE_URL=http://localhost:8091`, and one `AI_INTERNAL_SECRET` there. Use `luna-agent/.env.local` only for Agent-specific overrides; see [`luna-agent/.env.example`](luna-agent/.env.example). API and Worker database pools use separate `API_DB_*` and `WORKER_DB_*` settings.
+The root `.env` is the single authoring entry for API, Worker, and Agent development. It already contains the local API-to-Agent and Agent-to-API addresses plus the HMAC mode, so enable the assistant by setting only `AI_ASSISTANT_AVAILABLE=true` and one `AI_INTERNAL_SECRET`. Use `luna-agent/.env.local` only for Agent-specific overrides; [`luna-agent/.env.example`](luna-agent/.env.example) now contains only Agent-owned settings. API and Worker database pools use separate `API_DB_*` and `WORKER_DB_*` settings.
 
 API, Worker, helper commands, and Agent default to `LOG_FORMAT=auto`: interactive terminals get readable console logs, while redirected output and containers get ANSI-free JSON. Use `LOG_LEVEL` to change verbosity or `LOG_COLOR=never` / `NO_COLOR` to disable color. OTel always receives structured records independently of terminal rendering.
 

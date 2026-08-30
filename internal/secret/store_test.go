@@ -50,40 +50,37 @@ func TestGenerateRejectsInvalidPolicy(t *testing.T) {
 	}
 }
 
-func TestValidateEncryptionConfigRequiresKeyInProduction(t *testing.T) {
-	t.Setenv("APP_ENV", "production")
-	t.Setenv("SECRET_ENCRYPTION_KEY", "")
-
-	if err := ValidateEncryptionConfig(); !errors.Is(err, ErrMissingEncryptionKey) {
-		t.Fatalf("ValidateEncryptionConfig() error = %v, want ErrMissingEncryptionKey", err)
+func TestNewCodecRequiresKey(t *testing.T) {
+	if _, err := NewCodec(""); !errors.Is(err, ErrMissingEncryptionKey) {
+		t.Fatalf("NewCodec() error = %v, want ErrMissingEncryptionKey", err)
 	}
 }
 
-func TestEncryptDoesNotPanicWhenProductionKeyMissing(t *testing.T) {
-	t.Setenv("APP_ENV", "production")
-	t.Setenv("SECRET_ENCRYPTION_KEY", "")
-
-	if got := Encrypt("secret"); got != "" {
-		t.Fatalf("Encrypt() = %q, want empty ref when key is missing", got)
+func TestZeroCodecDoesNotEncrypt(t *testing.T) {
+	if got := (Codec{}).Encrypt("secret"); got != "" {
+		t.Fatalf("Codec.Encrypt() = %q, want empty ref when key is missing", got)
 	}
 }
 
-func TestDevelopmentUsesLocalEncryptionFallback(t *testing.T) {
-	t.Setenv("APP_ENV", "development")
-	t.Setenv("SECRET_ENCRYPTION_KEY", "")
-
-	ref := Encrypt("secret")
+func TestCodecRoundTrip(t *testing.T) {
+	codec, err := NewCodec("runtime-secret-store-test-key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ref := codec.Encrypt("secret")
 	if ref == "" {
-		t.Fatal("Encrypt() returned empty ref in development")
+		t.Fatal("Codec.Encrypt() returned empty ref")
 	}
-	if got := ResolveInline(ref); got != "secret" {
-		t.Fatalf("ResolveInline() = %q, want secret", got)
+	if got := codec.ResolveInline(ref); got != "secret" {
+		t.Fatalf("Codec.ResolveInline() = %q, want secret", got)
 	}
 }
 
 func TestStoreContextWithDBUsesExplicitDatabaseHandle(t *testing.T) {
-	t.Setenv("APP_ENV", "development")
-	t.Setenv("SECRET_ENCRYPTION_KEY", "runtime-secret-store-test-key")
+	codec, err := NewCodec("runtime-secret-store-test-key")
+	if err != nil {
+		t.Fatal(err)
+	}
 	db, err := gorm.Open(postgres.New(postgres.Config{
 		DSN: "host=127.0.0.1 user=test password=test dbname=test port=1 sslmode=disable",
 	}), &gorm.Config{DryRun: true, DisableAutomaticPing: true, SkipDefaultTransaction: true})
@@ -92,7 +89,7 @@ func TestStoreContextWithDBUsesExplicitDatabaseHandle(t *testing.T) {
 	}
 
 	auditCalls := 0
-	store := NewStore(nil, func(context.Context, string, string, string, bool, string) { auditCalls++ })
+	store := NewStore(nil, func(context.Context, string, string, string, bool, string) { auditCalls++ }, codec)
 	ref, err := store.StoreContextWithDB(t.Context(), db, "transaction-secret", "usr_test", "runtime_config:set_test:runtime:TOKEN")
 	if err != nil {
 		t.Fatalf("StoreContextWithDB() error = %v", err)

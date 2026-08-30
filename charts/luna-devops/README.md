@@ -118,7 +118,8 @@ with every process:
 
 Database, Redis, encryption, logging, and OpenTelemetry settings continue to
 use an explicit workload allowlist. Initial administrator values remain API
-only, and the AI internal Secret remains API-and-Agent only.
+only, browser Trace Relay authentication remains API only, and the AI internal
+Secret remains API-and-Agent only.
 
 Use `api.extraEnv` or `worker.extraEnv` only for non-sensitive, workload-local
 variables that the chart does not already manage. The chart rejects attempts
@@ -195,6 +196,38 @@ Collector requires headers, store the complete `key=value` header value in a
 Secret, then set `observability.existingSecret` and
 `observability.headersKey`. See the public observability reference for local
 verification and production Collector guidance.
+
+Browser traces are relayed by API. When that relay requires credentials
+different from the shared Collector credentials, create a separate Secret
+whose selected key contains the complete comma-separated
+`OTEL_EXPORTER_OTLP_TRACES_HEADERS` value. For example, prepare a protected
+local file containing `Authorization=Bearer%20replace-with-relay-token`, then
+create the Secret without placing the credential in Helm values:
+
+```bash
+kubectl -n luna-devops create secret generic luna-devops-browser-trace-auth \
+  --from-file=otlp-traces-headers=browser-trace-headers.txt
+```
+
+Reference it from the API-only browser Trace settings. A dedicated relay
+endpoint is non-sensitive and may be set through `api.extraEnv`; omit it to use
+the shared OTLP endpoint with the API-only credentials:
+
+```yaml
+api:
+  browserTrace:
+    existingSecret: luna-devops-browser-trace-auth
+    headersKey: otlp-traces-headers
+  extraEnv:
+    OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: https://trace-relay.example.com/v1/traces
+```
+
+Leave `api.browserTrace.existingSecret` empty when browser traces use the same
+authentication as the shared Collector. API then keeps its existing fallback
+to `observability.existingSecret`; Worker and Agent never receive the dedicated
+browser Trace Secret. The chart rejects
+`api.extraEnv.OTEL_EXPORTER_OTLP_TRACES_HEADERS` so credentials cannot be stored
+as plaintext Helm values.
 
 The chart defaults API, Worker, and Agent to `app.logFormat=json`,
 `app.logColor=never`, and `app.logLevel=info`. Terminal rendering remains

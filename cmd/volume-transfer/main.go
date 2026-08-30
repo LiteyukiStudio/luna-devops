@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	sharedconfig "github.com/LiteyukiStudio/devops/internal/config"
 	"github.com/LiteyukiStudio/devops/internal/telemetry"
 	"github.com/LiteyukiStudio/devops/internal/transferjob"
 )
@@ -24,7 +25,23 @@ func main() { os.Exit(runMain(os.Args[1:])) }
 
 func runMain(arguments []string) int {
 	ctx := context.Background()
-	runtime, err := telemetry.Setup(ctx, telemetry.ServiceConfig{ServiceName: "luna-volume-transfer"})
+	startupConfig, err := sharedconfig.LoadTelemetry()
+	if err != nil {
+		telemetry.LogError(ctx, "Volume transfer startup failed", "volume_transfer.startup.failed",
+			"volume_transfer.startup", "config.invalid",
+			telemetry.WrapError("config.invalid", "verify shared telemetry environment variables", "load telemetry configuration", err))
+		return 2
+	}
+	runtime, err := telemetry.Setup(ctx, telemetry.ServiceConfig{
+		ServiceName:        "luna-volume-transfer",
+		Endpoint:           startupConfig.Endpoint,
+		Headers:            startupConfig.Headers,
+		ResourceAttributes: startupConfig.ResourceAttributes,
+		LogFormat:          startupConfig.LogFormat,
+		LogColor:           startupConfig.LogColor,
+		LogLevel:           startupConfig.LogLevel,
+		NoColor:            startupConfig.NoColor,
+	})
 	if err != nil {
 		telemetry.LogError(ctx, "Volume transfer startup failed", "volume_transfer.startup.failed",
 			"volume_transfer.startup", "telemetry.initialization.failed",

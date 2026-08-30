@@ -6,11 +6,9 @@ import (
 	"os"
 	"time"
 
-	sharedconfig "github.com/LiteyukiStudio/devops/internal/config"
 	"github.com/LiteyukiStudio/devops/internal/database"
 	"github.com/LiteyukiStudio/devops/internal/observability"
 	"github.com/LiteyukiStudio/devops/internal/redisconfig"
-	"github.com/LiteyukiStudio/devops/internal/secret"
 	"github.com/LiteyukiStudio/devops/internal/tasks"
 	"github.com/LiteyukiStudio/devops/internal/telemetry"
 	"github.com/LiteyukiStudio/devops/internal/worker"
@@ -23,8 +21,17 @@ func main() {
 
 func runMain() int {
 	ctx := context.Background()
-	sharedconfig.LoadEnvironment()
-	runtime, err := telemetry.Setup(ctx, telemetry.ServiceConfig{ServiceName: "luna-worker"})
+	cfg, configErr := worker.LoadConfig()
+	runtime, err := telemetry.Setup(ctx, telemetry.ServiceConfig{
+		ServiceName:        "luna-worker",
+		Endpoint:           cfg.Telemetry.Endpoint,
+		Headers:            cfg.Telemetry.Headers,
+		ResourceAttributes: cfg.Telemetry.ResourceAttributes,
+		LogFormat:          cfg.Telemetry.LogFormat,
+		LogColor:           cfg.Telemetry.LogColor,
+		LogLevel:           cfg.Telemetry.LogLevel,
+		NoColor:            cfg.Telemetry.NoColor,
+	})
 	if err != nil {
 		telemetry.LogError(ctx, "Worker startup failed", "worker.startup.failed", "worker.startup",
 			"telemetry.initialization.failed",
@@ -39,23 +46,20 @@ func runMain() int {
 				"telemetry.shutdown", "telemetry.shutdown.failed", err)
 		}
 	}()
+	if configErr != nil {
+		telemetry.LogError(ctx, "Worker startup failed", "worker.startup.failed", "worker.startup", "config.invalid",
+			telemetry.WrapError("config.invalid", "verify Worker and shared environment variables", "load Worker configuration", configErr))
+		return 1
+	}
 
-	if err := run(ctx); err != nil {
+	if err := run(ctx, cfg); err != nil {
 		telemetry.LogError(ctx, "Worker startup failed", "worker.startup.failed", "worker.startup", "worker.startup.failed", err)
 		return 1
 	}
 	return 0
 }
 
-func run(ctx context.Context) error {
-	cfg, err := worker.LoadConfig()
-	if err != nil {
-		return telemetry.WrapError("config.invalid", "verify Worker and shared environment variables", "load Worker configuration", err)
-	}
-	if err := secret.ValidateEncryptionConfig(); err != nil {
-		return telemetry.WrapError("config.invalid", "set SECRET_ENCRYPTION_KEY or use APP_ENV=development locally", "validate encryption configuration", err)
-	}
-
+func run(ctx context.Context, cfg worker.Config) error {
 	if err := redisconfig.CheckConnection(ctx, cfg.RedisOptions()); err != nil {
 		return telemetry.WrapError("dependency.redis.unavailable", "start Redis or verify REDIS_ADDR", "connect Redis", err)
 	}
@@ -110,6 +114,7 @@ func run(ctx context.Context) error {
 		BuildBlockedEgressCIDRs:     cfg.BuildBlockedEgressCIDRs,
 		VolumeTransferJobImage:      cfg.VolumeTransferJobImage,
 		VolumeTransferMaxBytes:      cfg.VolumeTransferMaxBytes,
+		SecretCodec:                 cfg.SecretCodec,
 	}
 	telemetry.Logger().InfoContext(ctx, "worker service starting",
 		slog.String("event.name", "worker.starting"),

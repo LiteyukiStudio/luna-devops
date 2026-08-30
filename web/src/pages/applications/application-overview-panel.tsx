@@ -90,24 +90,24 @@ export function ApplicationOverviewPanel({ app, buildRuns, deploymentTargets, on
         </div>
         {deployGuideComplete
           ? (
-            <div className="mt-3 flex items-center gap-2 text-sm text-success">
-              <CheckCircle2 className="size-4 shrink-0" />
-              <span>{t('apps.deployGuideCompleteDescription')}</span>
-            </div>
-          )
+              <div className="mt-3 flex items-center gap-2 text-sm text-success">
+                <CheckCircle2 className="size-4 shrink-0" />
+                <span>{t('apps.deployGuideCompleteDescription')}</span>
+              </div>
+            )
           : (
-            <div className="mt-4 grid gap-2 md:grid-cols-5">
-              {deployGuide.steps.map(step => (
-                <div key={step.key} className="min-w-0 rounded-md border border-border bg-muted/30 px-3 py-2">
-                  <div className="flex items-center gap-2">
-                    {step.done ? <CheckCircle2 className="size-4 shrink-0 text-success" /> : step.icon}
-                    <span className="truncate text-sm font-medium">{step.label}</span>
+              <div className="mt-4 grid gap-2 md:grid-cols-5">
+                {deployGuide.steps.map(step => (
+                  <div key={step.key} className="min-w-0 rounded-md border border-border bg-muted/30 px-3 py-2">
+                    <div className="flex items-center gap-2">
+                      {step.done ? <CheckCircle2 className="size-4 shrink-0 text-success" /> : step.icon}
+                      <span className="truncate text-sm font-medium">{step.label}</span>
+                    </div>
+                    <p className="mt-1 truncate text-xs text-muted-foreground" title={step.meta}>{step.meta}</p>
                   </div>
-                  <p className="mt-1 truncate text-xs text-muted-foreground" title={step.meta}>{step.meta}</p>
-                </div>
-              ))}
-            </div>
-          )}
+                ))}
+              </div>
+            )}
       </Card>
       <MetricGroup>
         <MetricItem
@@ -168,11 +168,11 @@ export function ApplicationOverviewPanel({ app, buildRuns, deploymentTargets, on
           <div className="mt-3 grid gap-2">
             {routes.length
               ? routes.slice(0, 4).map(route => (
-                <a key={route.id} className="flex min-w-0 items-center justify-between gap-3 rounded-md border border-border px-3 py-2 text-sm transition hover:border-primary/40 hover:text-primary-text" href={routeDisplayUrl(route)} rel="noreferrer" target="_blank">
-                  <span className="min-w-0 truncate">{routeDisplayUrl(route)}</span>
-                  <StatusValueBadge labelKeyPrefix="gatewayRoutesPage.statuses" value={route.status} />
-                </a>
-              ))
+                  <a key={route.id} className="flex min-w-0 items-center justify-between gap-3 rounded-md border border-border px-3 py-2 text-sm transition hover:border-primary/40 hover:text-primary-text" href={routeDisplayUrl(route)} rel="noreferrer" target="_blank">
+                    <span className="min-w-0 truncate">{routeDisplayUrl(route)}</span>
+                    <StatusValueBadge labelKeyPrefix="gatewayRoutesPage.statuses" value={route.status} />
+                  </a>
+                ))
               : <EmptyState description={t('apps.noAccessRoute')} title={t('apps.noAccessRouteTitle')} variant="plain" />}
           </div>
         </Card>
@@ -188,13 +188,13 @@ export function ApplicationOverviewPanel({ app, buildRuns, deploymentTargets, on
         <div className="mt-3 divide-y divide-border">
           {deploymentTargets.length
             ? deploymentTargets.map(target => (
-              <DeploymentSummary
-                key={target.id}
-                latestRelease={latestReleaseForTarget(releases, target)}
-                target={target}
-                t={t}
-              />
-            ))
+                <DeploymentSummary
+                  key={target.id}
+                  latestRelease={latestReleaseForTarget(releases, target)}
+                  target={target}
+                  t={t}
+                />
+              ))
             : <EmptyState description={t('apps.emptyBuildConfigs')} title={t('apps.emptyBuildConfigs')} variant="plain" />}
         </div>
       </Card>
@@ -203,17 +203,17 @@ export function ApplicationOverviewPanel({ app, buildRuns, deploymentTargets, on
         <div className="mt-3 divide-y divide-border">
           {recentActivities.length
             ? recentActivities.map(item => (
-              <div key={item.id} className="flex min-w-0 items-center justify-between gap-3 py-3">
-                <div className="min-w-0">
-                  <div className="text-sm font-medium">{item.label}</div>
-                  <div className="mt-1 truncate text-xs text-muted-foreground" title={item.meta}>{item.meta}</div>
+                <div key={item.id} className="flex min-w-0 items-center justify-between gap-3 py-3">
+                  <div className="min-w-0">
+                    <div className="text-sm font-medium">{item.label}</div>
+                    <div className="mt-1 truncate text-xs text-muted-foreground" title={item.meta}>{item.meta}</div>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-3">
+                    <StatusValueBadge labelKeyPrefix="buildsPage.statuses" value={item.status} />
+                    {item.time && <span className="text-xs text-muted-foreground">{item.time}</span>}
+                  </div>
                 </div>
-                <div className="flex shrink-0 items-center gap-3">
-                  <StatusValueBadge labelKeyPrefix="buildsPage.statuses" value={item.status} />
-                  {item.time && <span className="text-xs text-muted-foreground">{item.time}</span>}
-                </div>
-              </div>
-            ))
+              ))
             : <EmptyState description={t('apps.noRecentActivityDescription')} title={t('apps.noRecentActivity')} variant="plain" />}
         </div>
       </Card>
