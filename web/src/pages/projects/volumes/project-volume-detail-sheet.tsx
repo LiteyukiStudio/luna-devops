@@ -1,5 +1,5 @@
-import type { ProjectVolumeCapabilities } from './project-volume-capabilities'
 import type { ProjectVolume, ProjectVolumeDeletionPreview, ProjectVolumeUpdateInput, VolumeExportCreateInput, VolumeTransfer } from '@/api'
+import type { ProjectVolumeCapabilities } from '@/lib/project-volume-capabilities'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Download, FileJson, Pencil, RefreshCcw, Trash2 } from 'lucide-react'
@@ -10,6 +10,7 @@ import { toast } from 'sonner'
 import { z } from 'zod'
 import { api } from '@/api'
 import { ConfirmDialog } from '@/components/common/confirm-dialog'
+import { DescriptionListItem } from '@/components/common/description-list-item'
 import { ErrorState } from '@/components/common/error-state'
 import { FormField as Field } from '@/components/common/form-field'
 import { Section } from '@/components/common/section'
@@ -22,7 +23,7 @@ import { Input } from '@/components/ui/input'
 import { NativeSelect } from '@/components/ui/native-select'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
-import { canCancelVolumeTransfer, canRetryProjectVolume, canRetryVolumeTransfer } from './project-volume-capabilities'
+import { canCancelVolumeTransfer, canRetryProjectVolume, canRetryVolumeTransfer } from '@/lib/project-volume-capabilities'
 import { startNativeVolumeTransferDownload } from './volume-transfer-download'
 
 function formatBytes(value: number) {
@@ -37,15 +38,6 @@ function transferProgress(transfer: VolumeTransfer) {
   if (transfer.expectedBytes <= 0)
     return 0
   return Math.min(100, (transfer.transferredBytes / transfer.expectedBytes) * 100)
-}
-
-function DetailValue({ label, value }: { label: string, value: React.ReactNode }) {
-  return (
-    <div className="min-w-0">
-      <dt className="text-xs text-muted-foreground">{label}</dt>
-      <dd className="mt-1 break-words text-sm font-medium">{value || '—'}</dd>
-    </div>
-  )
 }
 
 export function ProjectVolumeDetailSheet({ capabilities, clusterId, onOpenChange, projectId, volumeId }: {
@@ -137,24 +129,25 @@ export function ProjectVolumeDetailSheet({ capabilities, clusterId, onOpenChange
                 </div>
 
                 <Section title={t('projectVolumes.desiredState')} variant="bordered">
-                  <dl className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                    <DetailValue label={t('projectVolumes.claim')} value={`${volume.namespace}/${volume.claimName}`} />
-                    <DetailValue label={t('projectVolumes.capacity')} value={volume.capacity} />
-                    <DetailValue label={t('projectVolumes.storageClass')} value={volume.storageClassName} />
-                    <DetailValue label={t('projectVolumes.accessMode')} value={volume.accessMode} />
-                    <DetailValue label={t('projectVolumes.volumeMode')} value={volume.volumeMode} />
-                    <DetailValue label={t('projectVolumes.cluster')} value={volume.clusterId} />
-                    <DetailValue label={t('projectVolumes.source')} value={t(`projectVolumes.sourceKinds.${volume.sourceKind}`)} />
-                    <DetailValue label={t('projectVolumes.ownership')} value={t(`projectVolumes.ownershipModes.${volume.ownershipMode}`)} />
+                  <dl className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4 [&_[data-slot=description-list-value]]:break-words [&_[data-slot=description-list-value]]:font-medium">
+                    <DescriptionListItem emptyFallback="—" label={t('projectVolumes.claim')} value={`${volume.namespace}/${volume.claimName}`} />
+                    <DescriptionListItem emptyFallback="—" label={t('projectVolumes.capacity')} value={volume.capacity} />
+                    <DescriptionListItem emptyFallback="—" label={t('projectVolumes.storageClass')} value={volume.storageClassName} />
+                    <DescriptionListItem emptyFallback="—" label={t('projectVolumes.accessMode')} value={volume.accessMode} />
+                    <DescriptionListItem emptyFallback="—" label={t('projectVolumes.volumeMode')} value={volume.volumeMode} />
+                    <DescriptionListItem emptyFallback="—" label={t('projectVolumes.cluster')} value={volume.clusterId} />
+                    <DescriptionListItem emptyFallback="—" label={t('projectVolumes.source')} value={t(`projectVolumes.sourceKinds.${volume.sourceKind}`)} />
+                    <DescriptionListItem emptyFallback="—" label={t('projectVolumes.ownership')} value={t(`projectVolumes.ownershipModes.${volume.ownershipMode}`)} />
                   </dl>
                 </Section>
 
                 <Section title={t('projectVolumes.liveState')} variant="bordered">
-                  <dl className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                    <DetailValue label={t('projectVolumes.observation')} value={<StatusValueBadge labelKeyPrefix="projectVolumes.availabilityStates" value={volume.observation.status} />} />
-                    <DetailValue label={t('projectVolumes.capacity')} value={volume.observation.capacity} />
-                    <DetailValue label={t('projectVolumes.storageClass')} value={volume.observation.storageClassName} />
-                    <DetailValue
+                  <dl className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4 [&_[data-slot=description-list-value]]:break-words [&_[data-slot=description-list-value]]:font-medium">
+                    <DescriptionListItem emptyFallback="—" label={t('projectVolumes.observation')} value={<StatusValueBadge labelKeyPrefix="projectVolumes.availabilityStates" value={volume.observation.status} />} />
+                    <DescriptionListItem emptyFallback="—" label={t('projectVolumes.capacity')} value={volume.observation.capacity} />
+                    <DescriptionListItem emptyFallback="—" label={t('projectVolumes.storageClass')} value={volume.observation.storageClassName} />
+                    <DescriptionListItem
+                      emptyFallback="—"
                       label={t('projectVolumes.observationResult')}
                       value={volume.observation.observationCode
                         ? t(`errors.${volume.observation.observationCode}`, { defaultValue: t('errors.request.failed') })

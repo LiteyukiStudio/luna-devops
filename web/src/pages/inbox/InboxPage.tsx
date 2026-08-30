@@ -7,12 +7,12 @@ import { useTranslation } from 'react-i18next'
 import { Link, useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { api } from '@/api'
+import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { DataList } from '@/components/common/data-list'
 import { inboxKeys, invalidateInbox } from '@/components/common/inbox/inbox-query'
 import { inboxMessageText } from '@/components/common/inbox/message-format'
 import { StatusBadge } from '@/components/common/status-badge'
 import { formatAbsoluteDateTime, formatSmartDateTime } from '@/components/common/time-format'
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -222,27 +222,17 @@ function InboxDetail({ decisionPending, message, open, pending, onArchive, onClo
           )}
         </SheetContent>
       </Sheet>
-      <AlertDialog open={decision !== null} onOpenChange={value => !value && setDecision(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t(`inbox.decision.${decision === 'accept' ? 'acceptTitle' : 'rejectTitle'}`)}</AlertDialogTitle>
-            <AlertDialogDescription>{t(`inbox.decision.${decision === 'accept' ? 'acceptDescription' : 'rejectDescription'}`)}</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
-            <AlertDialogAction
-              disabled={decisionPending}
-              onClick={() => {
-                if (message && decision)
-                  void onDecision(message, decision)
-                setDecision(null)
-              }}
-            >
-              {t(decision === 'accept' ? 'inbox.actions.accept' : 'inbox.actions.reject')}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ConfirmDialog
+        cancelText={t('common.cancel')}
+        confirmText={t(decision === 'accept' ? 'inbox.actions.accept' : 'inbox.actions.reject')}
+        confirmVariant="default"
+        description={t(`inbox.decision.${decision === 'accept' ? 'acceptDescription' : 'rejectDescription'}`)}
+        open={decision !== null}
+        pending={decisionPending}
+        title={t(`inbox.decision.${decision === 'accept' ? 'acceptTitle' : 'rejectTitle'}`)}
+        onConfirm={() => message && decision ? onDecision(message, decision) : undefined}
+        onOpenChange={value => !value && setDecision(null)}
+      />
     </>
   )
 }

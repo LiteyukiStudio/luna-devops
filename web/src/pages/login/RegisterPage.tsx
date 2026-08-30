@@ -12,7 +12,7 @@ import { api } from '@/api'
 import { useDocumentTitle } from '@/app/document-title'
 import { usePublicConfig } from '@/app/public-config-context'
 import { useSession } from '@/app/session-context'
-import { CheckboxField } from '@/components/common/checkbox-field'
+import { ControlledCheckboxField } from '@/components/common/checkbox-field'
 import { ErrorState } from '@/components/common/error-state'
 import { FormField as Field } from '@/components/common/form-field'
 import { PageMotion } from '@/components/common/motion'
@@ -142,7 +142,11 @@ export function RegisterPage() {
                 </Button>
               </div>
             </Field>
-            <CheckboxField {...form.register('rememberMe')}>{t('loginPage.rememberMe')}</CheckboxField>
+            <Controller
+              control={form.control}
+              name="rememberMe"
+              render={({ field }) => <ControlledCheckboxField field={field}>{t('loginPage.rememberMe')}</ControlledCheckboxField>}
+            />
             <Button disabled={!challengeId || register.isPending || !form.formState.isValid} type="submit">
               <UserPlus className="size-4" />
               {t('loginPage.registration.submit')}

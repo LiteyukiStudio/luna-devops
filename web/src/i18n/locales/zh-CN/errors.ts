@@ -15,6 +15,18 @@ const errors = {
     identifier_delete_in_progress: '同标识应用正在删除，资源清理完成后才能复用。',
     identifier_delete_failed: '同标识应用上次删除失败，请先完成资源清理。',
   },
+  app_template: {
+    volume_contract_invalid: '该模板的数据卷配置无效，请联系平台管理员修正应用市场模板。',
+    project_volume_required: '安装该模板前，请选择一个可用的项目数据卷。',
+    project_volume_unsupported: '该模板不支持选择项目数据卷。',
+  },
+  project_volume: {
+    not_found: '所选项目数据卷不存在或已被删除。',
+    not_attachable: '所选项目数据卷暂时不可挂载，请选择其他数据卷或等待其变为可用。',
+    cluster_mismatch: '项目数据卷与部署配置必须使用同一个运行集群。',
+    namespace_mismatch: '项目数据卷与部署配置必须使用同一个命名空间。',
+    mode_incompatible: '项目数据卷模式与该模板不兼容，请选择匹配的文件系统卷或块设备卷。',
+  },
   project: {
     identifier_exists: '项目空间标识已存在。',
     identifier_delete_in_progress: '同标识项目空间正在删除，资源清理完成后才能复用。',

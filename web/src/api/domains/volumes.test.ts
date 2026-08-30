@@ -46,6 +46,26 @@ describe('volumes API contract', () => {
     })
   })
 
+  it('uses a caller-provided idempotency key when creating a volume', async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({ id: 'pvol_1' }, 201))
+    vi.stubGlobal('fetch', fetchMock)
+    const payload = {
+      accessMode: 'ReadWriteOnce' as const,
+      capacity: '10Gi',
+      clusterId: 'cluster-1',
+      displayName: 'cache',
+      source: { type: 'blank' as const },
+      storageClassName: 'fast',
+      volumeMode: 'Filesystem' as const,
+    }
+
+    await volumesApi.createProjectVolume('project-1', payload, 'stable-create-key')
+
+    const requestOptions = fetchMock.mock.calls[0]?.[1]
+    expect(requestOptions).toMatchObject({ method: 'POST', body: JSON.stringify(payload) })
+    expect(new Headers(requestOptions?.headers).get('Idempotency-Key')).toBe('stable-create-key')
+  })
+
   it('sends authoritative revision for updates', async () => {
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({ id: 'pvol_1' }))
     vi.stubGlobal('fetch', fetchMock)

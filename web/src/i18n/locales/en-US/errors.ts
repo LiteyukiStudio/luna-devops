@@ -15,6 +15,18 @@ const errors = {
     identifier_delete_in_progress: 'An application with this identifier is being deleted. Wait for cleanup before reusing it.',
     identifier_delete_failed: 'The previous deletion of an application with this identifier failed. Finish cleanup before reusing it.',
   },
+  app_template: {
+    volume_contract_invalid: 'This template has an invalid volume configuration. Ask a platform administrator to correct the marketplace template.',
+    project_volume_required: 'Select an available project volume before installing this template.',
+    project_volume_unsupported: 'This template does not accept a project volume.',
+  },
+  project_volume: {
+    not_found: 'The selected project volume does not exist or has been deleted.',
+    not_attachable: 'The selected project volume is not ready to attach. Choose another volume or wait until it becomes available.',
+    cluster_mismatch: 'The project volume and deployment target must use the same runtime cluster.',
+    namespace_mismatch: 'The project volume and deployment target must use the same namespace.',
+    mode_incompatible: 'The project volume mode is not compatible with this template. Select a matching filesystem or block volume.',
+  },
   project: {
     identifier_exists: 'A project space with this identifier already exists.',
     identifier_delete_in_progress: 'A project space with this identifier is being deleted. Wait for cleanup before reusing it.',

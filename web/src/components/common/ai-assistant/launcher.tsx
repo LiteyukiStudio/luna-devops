@@ -1,23 +1,17 @@
-import type { Ref } from 'react'
+import type { PointerEvent, Ref } from 'react'
 import type { Position } from './layout'
 import { Sparkles } from 'lucide-react'
 import { useRef } from 'react'
-import { Rnd } from 'react-rnd'
 import { Button } from '@/components/ui/button'
 import { aiAssistantLauncherClassName } from './launcher-appearance'
 import { clampAssistantPosition, LAUNCHER_SIZE } from './layout'
 
-interface LauncherTouchPoint {
-  x: number
-  y: number
-}
-
 const LAUNCHER_TAP_MAX_DISTANCE = 8
 
-function isLauncherTap(start: LauncherTouchPoint | undefined, end: LauncherTouchPoint | undefined): boolean {
-  if (!start || !end)
-    return false
-  return Math.hypot(end.x - start.x, end.y - start.y) <= LAUNCHER_TAP_MAX_DISTANCE
+interface DragSession {
+  pointerId: number
+  start: Position
+  origin: Position
 }
 
 interface AIAssistantLauncherProps {
@@ -35,61 +29,65 @@ export function AIAssistantLauncher({
   onOpen,
   onPositionChange,
 }: AIAssistantLauncherProps) {
-  const dragStartRef = useRef<Position | undefined>(undefined)
-  const touchStartRef = useRef<Position | undefined>(undefined)
-  const suppressClickRef = useRef(false)
+  const dragRef = useRef<DragSession | null>(null)
+  const movedRef = useRef(false)
+  const updatePosition = (event: PointerEvent<HTMLButtonElement>) => {
+    const drag = dragRef.current
+    if (!drag || drag.pointerId !== event.pointerId)
+      return
+    const next = clampAssistantPosition({
+      x: drag.origin.x + event.clientX - drag.start.x,
+      y: drag.origin.y + event.clientY - drag.start.y,
+    }, LAUNCHER_SIZE, LAUNCHER_SIZE)
+    movedRef.current = movedRef.current
+      || Math.hypot(event.clientX - drag.start.x, event.clientY - drag.start.y) > LAUNCHER_TAP_MAX_DISTANCE
+    onPositionChange(next)
+  }
+  const releasePointer = (event: PointerEvent<HTMLButtonElement>) => {
+    if (event.currentTarget.hasPointerCapture?.(event.pointerId))
+      event.currentTarget.releasePointerCapture(event.pointerId)
+  }
+  const finishPointer = (event: PointerEvent<HTMLButtonElement>) => {
+    if (dragRef.current?.pointerId !== event.pointerId)
+      return
+    releasePointer(event)
+    dragRef.current = null
+    if (!movedRef.current)
+      onOpen()
+  }
+  const cancelPointer = (event: PointerEvent<HTMLButtonElement>) => {
+    if (dragRef.current?.pointerId !== event.pointerId)
+      return
+    releasePointer(event)
+    dragRef.current = null
+  }
 
   return (
     <div className="pointer-events-none fixed inset-0 z-40">
-      <Rnd
-        bounds="parent"
-        className="pointer-events-auto"
-        enableResizing={false}
-        position={position}
-        size={{ width: LAUNCHER_SIZE, height: LAUNCHER_SIZE }}
-        onDragStart={(_, data) => {
-          dragStartRef.current = { x: data.x, y: data.y }
-          suppressClickRef.current = false
+      <Button
+        ref={ref}
+        aria-label={label}
+        className={`${aiAssistantLauncherClassName} pointer-events-auto fixed`}
+        size="icon"
+        style={{ left: position.x, top: position.y }}
+        onClick={event => event.detail === 0 && onOpen()}
+        onPointerCancel={cancelPointer}
+        onPointerDown={(event) => {
+          if (event.isPrimary === false || event.button !== 0)
+            return
+          movedRef.current = false
+          dragRef.current = {
+            origin: position,
+            pointerId: event.pointerId,
+            start: { x: event.clientX, y: event.clientY },
+          }
+          event.currentTarget.setPointerCapture?.(event.pointerId)
         }}
-        onDragStop={(_, data) => {
-          const start = dragStartRef.current
-          suppressClickRef.current = Boolean(start && (Math.abs(data.x - start.x) > 3 || Math.abs(data.y - start.y) > 3))
-          onPositionChange(clampAssistantPosition({ x: data.x, y: data.y }, LAUNCHER_SIZE, LAUNCHER_SIZE))
-        }}
+        onPointerMove={updatePosition}
+        onPointerUp={finishPointer}
       >
-        <Button
-          ref={ref}
-          aria-label={label}
-          className={aiAssistantLauncherClassName}
-          size="icon"
-          onTouchStart={(event) => {
-            const touch = event.touches[0]
-            touchStartRef.current = touch ? { x: touch.clientX, y: touch.clientY } : undefined
-          }}
-          onTouchCancel={() => {
-            touchStartRef.current = undefined
-          }}
-          onTouchEnd={(event) => {
-            const touch = event.changedTouches[0]
-            const end = touch ? { x: touch.clientX, y: touch.clientY } : undefined
-            const tap = isLauncherTap(touchStartRef.current, end)
-            touchStartRef.current = undefined
-            if (!tap)
-              return
-            suppressClickRef.current = true
-            onOpen()
-          }}
-          onClick={() => {
-            if (suppressClickRef.current) {
-              suppressClickRef.current = false
-              return
-            }
-            onOpen()
-          }}
-        >
-          <Sparkles className="size-5" />
-        </Button>
-      </Rnd>
+        <Sparkles className="size-5" />
+      </Button>
     </div>
   )
 }

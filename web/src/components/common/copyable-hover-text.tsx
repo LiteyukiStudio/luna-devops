@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import { Copy } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 
@@ -41,24 +42,27 @@ export function CopyableHoverText({
     <TooltipProvider>
       <Tooltip>
         <TooltipTrigger asChild>
-          <button
+          <Button
             aria-label={copyLabel ?? t('common.copy')}
-            className={cn('block min-w-0 text-left transition hover:text-primary-text focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring', truncate && 'truncate', className)}
+            className={cn('block h-auto min-w-0 justify-start rounded-sm p-0 text-left font-normal transition hover:bg-transparent hover:text-primary-text focus-visible:ring-2 focus-visible:ring-ring', truncate ? 'truncate' : 'whitespace-normal', className)}
             type="button"
+            variant="ghost"
             onClick={copyValue}
           >
             {visible}
-          </button>
+          </Button>
         </TooltipTrigger>
         <TooltipContent className={cn('flex max-w-96 items-start gap-2 break-all leading-5', contentClassName)} side={side}>
-          <button
+          <Button
             aria-label={copyLabel ?? t('common.copy')}
-            className="mt-0.5 inline-flex size-5 shrink-0 items-center justify-center rounded-sm text-background/80 transition hover:bg-background/15 hover:text-background"
+            className="mt-0.5 size-5 shrink-0 rounded-sm p-0 text-background/80 transition hover:bg-background/15 hover:text-background focus-visible:ring-background/50 [&_svg]:size-3.5"
+            size="icon"
             type="button"
+            variant="ghost"
             onClick={copyValue}
           >
             <Copy className="size-3.5" />
-          </button>
+          </Button>
           <span>{content}</span>
         </TooltipContent>
       </Tooltip>

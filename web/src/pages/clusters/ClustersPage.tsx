@@ -17,18 +17,18 @@ import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
 import { isPlatformAdmin } from '@/lib/roles'
 import { useRuntimeClusterPressure } from '@/lib/runtime-cluster-pressure'
 import { useResultVisibility } from '@/lib/use-result-visibility'
-import { canManageCluster } from './cluster-helpers'
-import { ClusterResourcesPanel } from './cluster-resources-panel'
-import { RuntimeClusterTable } from './runtime-cluster-table'
-import { useClusterResources } from './use-cluster-resources'
+import { canManageCluster } from './management/cluster-helpers'
+import { RuntimeClusterTable } from './management/runtime-cluster-table'
+import { ClusterResourcesPanel } from './resources/cluster-resources-panel'
+import { useClusterResources } from './resources/use-cluster-resources'
 
 const RESOURCE_TABS = ['namespaces', 'workloads', 'services', 'configs', 'storage']
 
 const ClusterFormDialog = lazy(() =>
-  import('./cluster-form-dialog').then(module => ({ default: module.ClusterFormDialog })),
+  import('./management/cluster-form-dialog').then(module => ({ default: module.ClusterFormDialog })),
 )
 const ClusterResourceDialogs = lazy(() =>
-  import('./cluster-resource-dialogs').then(module => ({ default: module.ClusterResourceDialogs })),
+  import('./resources/cluster-resource-dialogs').then(module => ({ default: module.ClusterResourceDialogs })),
 )
 
 export function ClustersPage() {

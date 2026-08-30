@@ -15,6 +15,18 @@ const errors = {
     identifier_delete_in_progress: '同標識應用正在刪除，資源清理完成後才能複用。',
     identifier_delete_failed: '同標識應用上次刪除失敗，請先完成資源清理。',
   },
+  app_template: {
+    volume_contract_invalid: '該模板的資料卷配置無效，請聯絡平台管理員修正應用市場模板。',
+    project_volume_required: '安裝該模板前，請選擇一個可用的專案資料卷。',
+    project_volume_unsupported: '該模板不支援選擇專案資料卷。',
+  },
+  project_volume: {
+    not_found: '所選專案資料卷不存在或已被刪除。',
+    not_attachable: '所選專案資料卷暫時不可掛載，請選擇其他資料卷或等待其變為可用。',
+    cluster_mismatch: '專案資料卷與部署配置必須使用同一個執行叢集。',
+    namespace_mismatch: '專案資料卷與部署配置必須使用同一個命名空間。',
+    mode_incompatible: '專案資料卷模式與該模板不相容，請選擇匹配的檔案系統卷或塊裝置卷。',
+  },
   project: {
     identifier_exists: '專案空間標識已存在。',
     identifier_delete_in_progress: '同標識專案空間正在刪除，資源清理完成後才能複用。',

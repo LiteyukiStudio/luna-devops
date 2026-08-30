@@ -185,10 +185,7 @@ func (service *Service) CreateProjectVolume(ctx context.Context, input CreatePro
 		return CreateProjectVolumeResult{}, err
 	}
 	if existing, findErr := service.repository.FindProjectVolumeByIdempotency(ctx, input.ProjectID, keyHash); findErr == nil {
-		if existing.IdempotencyRequestHash != requestHash {
-			return CreateProjectVolumeResult{}, newDomainError(CodeIdempotencyConflict, "idempotency key was used for a different project volume request")
-		}
-		return CreateProjectVolumeResult{Volume: existing, Replayed: true}, nil
+		return service.replayProjectVolumeCreate(ctx, input, existing, requestHash)
 	} else if !errors.Is(findErr, gorm.ErrRecordNotFound) && ErrorCode(findErr) != CodeNotFound {
 		return CreateProjectVolumeResult{}, normalizeRepositoryError(findErr)
 	}
@@ -256,12 +253,15 @@ func (service *Service) CreateProjectVolume(ctx context.Context, input CreatePro
 		if ErrorCode(err) == CodeIdempotencyConflict {
 			existing, findErr := service.repository.FindProjectVolumeByIdempotency(ctx, input.ProjectID, keyHash)
 			if findErr == nil && existing.IdempotencyRequestHash == requestHash {
-				return CreateProjectVolumeResult{Volume: existing, Replayed: true}, nil
+				return service.replayProjectVolumeCreate(ctx, input, existing, requestHash)
 			}
 		}
 		return CreateProjectVolumeResult{}, err
 	}
-	if result.Replayed || input.SourceKind == model.ProjectVolumeSourceArchiveImport {
+	if result.Replayed {
+		return service.replayProjectVolumeCreate(ctx, input, result.Volume, requestHash)
+	}
+	if input.SourceKind == model.ProjectVolumeSourceArchiveImport {
 		return result, nil
 	}
 	if err = service.dispatch(ctx, VolumeOperation{
@@ -271,6 +271,36 @@ func (service *Service) CreateProjectVolume(ctx context.Context, input CreatePro
 			[]string{model.ProjectVolumeLifecycleProvisioning}, model.ProjectVolumeLifecycleError, CodeTaskEnqueueFailed, err.Error())
 		return result, err
 	}
+	return result, nil
+}
+
+func (service *Service) replayProjectVolumeCreate(ctx context.Context, input CreateProjectVolumeInput, existing model.ProjectVolume, requestHash string) (CreateProjectVolumeResult, error) {
+	if existing.IdempotencyRequestHash != requestHash {
+		return CreateProjectVolumeResult{}, newDomainError(CodeIdempotencyConflict, "idempotency key was used for a different project volume request")
+	}
+	result := CreateProjectVolumeResult{Volume: existing, Replayed: true}
+	if existing.LifecycleState != model.ProjectVolumeLifecycleError ||
+		existing.LastErrorCode != CodeTaskEnqueueFailed || existing.PendingOperation != OperationProvision {
+		return result, nil
+	}
+
+	retrying, err := service.RetryProjectVolumeOperation(ctx, input.ProjectID, existing.ID, input.ActorID, existing.Revision)
+	if err != nil {
+		if ErrorCode(err) == CodeRevisionConflict || ErrorCode(err) == CodeStateConflict {
+			current, findErr := service.repository.FindProjectVolumeByIdempotency(ctx, input.ProjectID, hashValue(input.IdempotencyKey))
+			if findErr == nil && current.IdempotencyRequestHash == requestHash {
+				result.Volume = current
+				if current.LifecycleState == model.ProjectVolumeLifecycleError &&
+					current.LastErrorCode == CodeTaskEnqueueFailed && current.PendingOperation == OperationProvision {
+					return result, newDomainError(CodeTaskEnqueueFailed, "volume operation could not be queued")
+				}
+				return result, nil
+			}
+		}
+		result.Volume = retrying
+		return result, err
+	}
+	result.Volume = retrying
 	return result, nil
 }
 
@@ -492,8 +522,11 @@ func (service *Service) RetryProjectVolumeOperation(ctx context.Context, project
 		return model.ProjectVolume{}, err
 	}
 	if err = service.dispatch(ctx, VolumeOperation{Kind: operation, ProjectID: projectID, VolumeID: volumeID, ActorID: actorID}); err != nil {
-		_, _ = service.repository.TransitionProjectVolume(ctx, projectID, volumeID,
+		failed, transitionErr := service.repository.TransitionProjectVolume(ctx, projectID, volumeID,
 			[]string{result.LifecycleState}, model.ProjectVolumeLifecycleError, CodeTaskEnqueueFailed, err.Error())
+		if transitionErr == nil {
+			result = failed
+		}
 		return result, err
 	}
 	return result, nil

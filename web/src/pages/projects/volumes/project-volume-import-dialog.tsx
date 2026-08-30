@@ -9,12 +9,13 @@ import { toast } from 'sonner'
 import { z } from 'zod'
 import { api } from '@/api'
 import { FormField as Field } from '@/components/common/form-field'
+import { projectVolumeAccessModeOptions, projectVolumeModeOptions } from '@/components/common/project-volumes/project-volume-form-options'
+import { ProjectVolumeClusterSelect, ProjectVolumeStorageClassSelect } from '@/components/common/project-volumes/volume-resource-selectors'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { NativeSelect } from '@/components/ui/native-select'
-import { ProjectVolumeClusterSelect, ProjectVolumeStorageClassSelect } from './volume-resource-selectors'
 import { uploadVolumeImport, waitForVolumeTransferReady } from './volume-transfer-upload'
 
 interface ImportValues {
@@ -221,10 +222,7 @@ export function ProjectVolumeImportDialog({ onOpenChange, open, projectId }: { o
             </Field>
             <Field label={t('projectVolumes.accessMode')} required>
               <NativeSelect {...form.register('accessMode')}>
-                <option value="ReadWriteOnce">ReadWriteOnce</option>
-                <option value="ReadWriteOncePod">ReadWriteOncePod</option>
-                <option value="ReadOnlyMany">ReadOnlyMany</option>
-                <option value="ReadWriteMany">ReadWriteMany</option>
+                {projectVolumeAccessModeOptions(t).map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
               </NativeSelect>
             </Field>
             <Field label={t('projectVolumes.volumeMode')} required>
@@ -237,8 +235,7 @@ export function ProjectVolumeImportDialog({ onOpenChange, open, projectId }: { o
                   form.setValue('format', nextMode === 'Block' ? 'raw_zst' : 'tar_gz', { shouldDirty: true, shouldValidate: true })
                 }}
               >
-                <option value="Filesystem">Filesystem</option>
-                <option value="Block">Block</option>
+                {projectVolumeModeOptions(t).map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
               </NativeSelect>
             </Field>
           </div>

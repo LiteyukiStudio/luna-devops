@@ -1,6 +1,6 @@
 import type { InputHTMLAttributes } from 'react'
-import { ChevronDown } from 'lucide-react'
 import { Input } from '@/components/ui/input'
+import { NativeSelect } from '@/components/ui/native-select'
 import { cn } from '@/lib/utils'
 
 export interface UnitInputUnit {
@@ -42,18 +42,16 @@ export function UnitInput({ className, disabled, inputProps, onChange, unitSelec
         onChange={event => updateAmount(event.target.value)}
       />
       <div className="my-1 w-px bg-border" />
-      <div className="relative h-full shrink-0">
-        <select
-          aria-label={unitSelectLabel}
-          className="h-full appearance-none bg-transparent px-3 pr-8 text-sm font-medium text-muted-foreground outline-none disabled:cursor-not-allowed"
-          disabled={disabled}
-          value={parsed.unit}
-          onChange={event => updateUnit(event.target.value)}
-        >
-          {units.map(unit => <option key={unit.value} value={unit.value}>{unit.label}</option>)}
-        </select>
-        <ChevronDown className="pointer-events-none absolute right-2 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-      </div>
+      <NativeSelect
+        aria-label={unitSelectLabel}
+        className="h-full w-auto rounded-none border-0 bg-transparent px-3 pr-8 text-sm font-medium text-muted-foreground shadow-none disabled:opacity-100 focus-visible:border-transparent focus-visible:ring-0 dark:bg-transparent"
+        containerClassName="h-full shrink-0 [&_svg]:right-2"
+        disabled={disabled}
+        value={parsed.unit}
+        onChange={event => updateUnit(event.target.value)}
+      >
+        {units.map(unit => <option key={unit.value} value={unit.value}>{unit.label}</option>)}
+      </NativeSelect>
     </div>
   )
 }

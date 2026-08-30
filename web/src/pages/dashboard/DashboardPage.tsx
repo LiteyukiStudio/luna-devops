@@ -10,13 +10,13 @@ import { EmptyState } from '@/components/common/empty-state'
 import { ErrorState } from '@/components/common/error-state'
 import { OverviewSkeleton } from '@/components/common/loading-states'
 import { MetricGroup, MetricItem } from '@/components/common/metric-group'
-import { Notice } from '@/components/common/notice'
 import { PageShell } from '@/components/common/page-shell'
 import { ResultVisibilitySelect } from '@/components/common/result-visibility-select'
 import { Section } from '@/components/common/section'
 import { StatusBadge, StatusValueBadge } from '@/components/common/status-badge'
 import { Surface } from '@/components/common/surface'
 import { formatCompactDateTime } from '@/components/common/time-format'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
 import { statusRefetchInterval } from '@/lib/polling'
@@ -220,10 +220,12 @@ function ProjectShortcutCard({ isPinPending, onTogglePin, project, visibility }:
 
 function AttentionPanel({ items, visibility }: { items: DashboardAttentionItem[], visibility: ResultVisibility }) {
   const { t } = useTranslation()
-  const tone = items.some(item => item.severity === 'error') ? 'danger' : 'warning'
+  const hasError = items.some(item => item.severity === 'error')
   return (
-    <Notice icon={<ShieldAlert size={18} />} title={t('dashboardPage.attention')} tone={tone} variant="neutral">
-      <div className="flex min-w-0 flex-wrap gap-2">
+    <Alert className="border-0 bg-surface-raised p-group">
+      <ShieldAlert className={hasError ? 'text-danger' : 'text-warning'} size={18} />
+      <AlertTitle>{t('dashboardPage.attention')}</AlertTitle>
+      <AlertDescription className="mt-1 flex min-w-0 flex-row flex-wrap gap-2">
         {items.slice(0, 4).map(item => (
           <Link key={item.key} className="group flex min-h-8 min-w-0 max-w-full items-center gap-2 rounded-md bg-surface-subtle px-2 py-1.5 transition-colors hover:bg-surface-inset" to={withResultVisibility(activityTarget(item.latest), visibility)}>
             <span className="shrink-0 transition-colors group-hover:text-primary-text">{categoryIcon(item.category)}</span>
@@ -232,8 +234,8 @@ function AttentionPanel({ items, visibility }: { items: DashboardAttentionItem[]
           </Link>
         ))}
         {items.length > 4 && <Link className="flex min-h-8 items-center px-2 text-sm font-medium text-primary-text" to={withResultVisibility('/events?severities=error&severities=warning', visibility)}>{t('dashboardPage.moreAttention', { count: items.length - 4 })}</Link>}
-      </div>
-    </Notice>
+      </AlertDescription>
+    </Alert>
   )
 }
 

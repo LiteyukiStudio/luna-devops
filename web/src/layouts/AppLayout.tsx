@@ -10,8 +10,8 @@ import { useDocumentTitle } from '@/app/document-title'
 import { usePublicConfig } from '@/app/public-config-context'
 import { useSession } from '@/app/session-context'
 import { AccountMenu } from '@/components/common/account-menu'
-import { DeferredAIAssistantLauncher } from '@/components/common/ai-assistant/deferred-launcher'
 import { AIAssistantDesktopHost } from '@/components/common/ai-assistant/desktop-host'
+import { AIAssistantLauncher } from '@/components/common/ai-assistant/launcher'
 import {
   clampAssistantPosition,
   LAUNCHER_SIZE,
@@ -456,7 +456,7 @@ function AIAssistantPageLauncher({ label, onOpen }: { label: string, onOpen: () 
   }, [])
 
   return (
-    <DeferredAIAssistantLauncher
+    <AIAssistantLauncher
       label={label}
       position={position}
       onOpen={onOpen}

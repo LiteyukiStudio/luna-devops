@@ -1,4 +1,5 @@
 import type { ReactElement } from 'react'
+import type { RecentLoginUser } from '@/app/session-context'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -13,6 +14,8 @@ const mocks = vi.hoisted(() => ({
   getAuthRegistrationStatus: vi.fn(),
   listAuthProviders: vi.fn(),
   login: vi.fn(),
+  recentLoginUsers: [] as RecentLoginUser[],
+  resumeLogin: vi.fn(),
 }))
 
 vi.mock('@/api', async (importOriginal) => {
@@ -35,8 +38,9 @@ vi.mock('@/app/session-context', () => ({
     isLoggingIn: false,
     isLoggingOut: false,
     login: mocks.login,
-    recentLoginUsers: [],
+    recentLoginUsers: mocks.recentLoginUsers,
     refreshUser: vi.fn(),
+    resumeLogin: mocks.resumeLogin,
   }),
 }))
 
@@ -73,6 +77,8 @@ describe('authentication form payloads', () => {
     mocks.getAuthRegistrationStatus.mockResolvedValue({ emailRegistrationEnabled: false })
     mocks.listAuthProviders.mockResolvedValue([])
     mocks.login.mockResolvedValue({})
+    mocks.recentLoginUsers.splice(0)
+    mocks.resumeLogin.mockResolvedValue({})
   })
 
   it('submits login with rememberMe disabled by default', async () => {
@@ -94,6 +100,26 @@ describe('authentication form payloads', () => {
       password: 'password',
       rememberMe: false,
     }))
+  })
+
+  it('resumes a recent account from the shared avatar button', async () => {
+    const user = userEvent.setup()
+    mocks.recentLoginUsers.push({
+      avatarUrl: '',
+      email: 'recent@example.test',
+      id: 'usr_recent',
+      lastLoginAt: '2026-08-30T00:00:00Z',
+      name: 'Recent User',
+    })
+    renderPage(<LoginPage />)
+
+    const recentAccount = screen.getByRole('button', {
+      name: i18next.t('loginPage.selectRecentAccount', { email: 'recent@example.test', name: 'Recent User' }),
+    })
+    expect(recentAccount).toHaveClass('size-10', 'rounded-full')
+    await user.click(recentAccount)
+
+    await waitFor(() => expect(mocks.resumeLogin).toHaveBeenCalledWith('usr_recent'))
   })
 
   it('exposes registration as a new password credential form', async () => {

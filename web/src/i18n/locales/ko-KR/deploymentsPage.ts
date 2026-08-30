@@ -334,6 +334,7 @@ const deploymentsPage = {
     None: '세션 유지 안 함',
     ClientIP: '클ライ언트 IP로 유지',
     ReadWriteOnce: '단일 노드 읽기/쓰기(ReadWriteOnce)',
+    ReadWriteOncePod: '단일 Pod 읽기/쓰기(ReadWriteOncePod)',
     ReadWriteMany: '다중 노드 읽기/쓰기(ReadWriteMany)',
     ReadOnlyMany: '다중 노드 읽기 전용(ReadOnlyMany)',
     Filesystem: '파일 시스템',

@@ -2161,7 +2161,7 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "409": { $ref: "#/components/responses/Conflict" }
         "422": { description: Snapshot or volume specification is unsupported, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
-        "503": { description: Direct transfer is not configured or the runtime cluster is unavailable, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+        "503": { description: The volume task queue, quota check, or runtime cluster is temporarily unavailable; retrying with the same idempotency key resumes the durable create request, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
 
   /api/v1/projects/{projectId}/volume-storage-classes:
     get:
@@ -6208,6 +6208,8 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
   /api/v1/projects/{projectId}/member-candidates:
     get:
       operationId: searchProjectMemberCandidates
@@ -12210,7 +12212,7 @@ components:
         memoryRequest: { type: string }
         projectVolumeId:
           type: string
-          description: Existing ready project-volume ID matching the template declaration, project space, cluster, namespace, and volume mode. Required when dataVolumes contains projectVolume; rejected otherwise.
+          description: Existing project-volume ID matching the template declaration, project space, cluster, namespace, and volume mode. A volume is attachable when lifecycleState=ready, or when lifecycleState=provisioning and (pendingOperation=provision or pendingOperation=expand); pendingOperation=import and all other lifecycle/pending-operation combinations are rejected. Required when dataVolumes contains projectVolume; rejected otherwise.
         installNow: { type: boolean }
         values:
           type: object

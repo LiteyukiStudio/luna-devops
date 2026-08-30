@@ -5,13 +5,13 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import i18next from 'i18next'
 import { GitBranch, LinkIcon, Plus, Trash2 } from 'lucide-react'
 import { useImperativeHandle, useMemo, useState } from 'react'
-import { useForm } from 'react-hook-form'
+import { Controller, useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { Link, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { z } from 'zod'
 import { api } from '@/api'
-import { CheckboxField } from '@/components/common/checkbox-field'
+import { ControlledCheckboxField } from '@/components/common/checkbox-field'
 import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { DataList } from '@/components/common/data-list'
 import { EditActionButton } from '@/components/common/edit-action-button'
@@ -383,13 +383,19 @@ export function RepositoryBindingsPage({ applicationId, embedded = false, projec
             </div>
             <div className="grid gap-3 md:grid-cols-2">
               <Field error={form.formState.errors.cloneUrl?.message} label={t('repositories.cloneUrl')}><Input {...form.register('cloneUrl')} aria-invalid={Boolean(form.formState.errors.cloneUrl)} placeholder={t('repositories.cloneUrlPlaceholder')} /></Field>
-              <CheckboxField
-                className="rounded-md border border-border bg-muted/30 p-3"
-                description={t('repositories.autoConfigureWebhookHint')}
-                {...form.register('autoConfigureWebhook')}
-              >
-                {t('repositories.autoConfigureWebhook')}
-              </CheckboxField>
+              <Controller
+                control={form.control}
+                name="autoConfigureWebhook"
+                render={({ field }) => (
+                  <ControlledCheckboxField
+                    className="rounded-md border border-border bg-muted/30 p-3"
+                    description={t('repositories.autoConfigureWebhookHint')}
+                    field={field}
+                  >
+                    {t('repositories.autoConfigureWebhook')}
+                  </ControlledCheckboxField>
+                )}
+              />
             </div>
             <DialogFooter>
               <Button disabled={createBinding.isPending || updateBinding.isPending || (accounts.data ?? []).length === 0 || !form.formState.isValid || Boolean(duplicateBinding)} type="submit">

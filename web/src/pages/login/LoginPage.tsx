@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import i18next from 'i18next'
 import { LogIn, TriangleAlert } from 'lucide-react'
 import { useEffect, useMemo } from 'react'
-import { useForm } from 'react-hook-form'
+import { Controller, useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -12,7 +12,7 @@ import { api, oidcStartUrl } from '@/api'
 import { useDocumentTitle } from '@/app/document-title'
 import { usePublicConfig } from '@/app/public-config-context'
 import { useSession } from '@/app/session-context'
-import { CheckboxField } from '@/components/common/checkbox-field'
+import { ControlledCheckboxField } from '@/components/common/checkbox-field'
 import { FormField as Field } from '@/components/common/form-field'
 import { PageMotion } from '@/components/common/motion'
 import { UserAvatar } from '@/components/common/user-avatar'
@@ -137,14 +137,16 @@ export function LoginPage() {
                         {session.recentLoginUsers.map(user => (
                           <Tooltip key={user.id}>
                             <TooltipTrigger asChild>
-                              <button
+                              <Button
                                 aria-label={t('loginPage.selectRecentAccount', { email: user.email, name: user.name })}
-                                className="group flex size-10 items-center justify-center overflow-hidden rounded-full border border-border bg-muted text-sm font-semibold text-muted-foreground transition hover:border-primary hover:text-primary-text focus-visible:border-primary focus-visible:ring-3 focus-visible:ring-primary/30 focus-visible:outline-none"
+                                className="group size-10 overflow-hidden rounded-full border border-border bg-muted p-0 text-sm font-semibold text-muted-foreground transition hover:border-primary hover:bg-muted hover:text-primary-text focus-visible:border-primary focus-visible:ring-3 focus-visible:ring-primary/30"
+                                size="icon"
                                 type="button"
+                                variant="ghost"
                                 onClick={() => selectRecentUser(user)}
                               >
                                 <UserAvatar className="size-full" user={user} />
-                              </button>
+                              </Button>
                             </TooltipTrigger>
                             <TooltipContent side="top">
                               <div className="grid gap-0.5">
@@ -163,9 +165,15 @@ export function LoginPage() {
                   <Field error={form.formState.errors.password?.message} hint={t('loginPage.passwordHint')} label={t('loginPage.password')} required>
                     <Input {...form.register('password')} aria-invalid={Boolean(form.formState.errors.password)} autoComplete="current-password" type="password" />
                   </Field>
-                  <CheckboxField description={t('loginPage.rememberMeHint')} {...form.register('rememberMe')}>
-                    {t('loginPage.rememberMe')}
-                  </CheckboxField>
+                  <Controller
+                    control={form.control}
+                    name="rememberMe"
+                    render={({ field }) => (
+                      <ControlledCheckboxField description={t('loginPage.rememberMeHint')} field={field}>
+                        {t('loginPage.rememberMe')}
+                      </ControlledCheckboxField>
+                    )}
+                  />
                   <Button disabled={session.isLoggingIn || !form.formState.isValid} type="submit">
                     <LogIn size={16} />
                     {t('login')}

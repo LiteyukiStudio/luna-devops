@@ -2,17 +2,17 @@ import type { ReactNode } from 'react'
 import { AlertTriangle } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Button } from '@/components/ui/button'
 import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog'
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog'
 
 interface ConfirmDialogProps {
   children?: ReactNode
@@ -67,41 +67,50 @@ export function ConfirmDialog({
     try {
       setConfirming(true)
       await onConfirm()
-      if (closeOnConfirm)
-        setOpen(false)
+    }
+    catch {
+      return
     }
     finally {
       setConfirming(false)
     }
+
+    if (closeOnConfirm)
+      setOpen(false)
   }
 
   const busy = pending || confirming
 
   return (
-    <Dialog open={resolvedOpen} onOpenChange={setOpen}>
-      {children && <DialogTrigger asChild>{children}</DialogTrigger>}
-      <DialogContent>
+    <AlertDialog open={resolvedOpen} onOpenChange={setOpen}>
+      {children && <AlertDialogTrigger asChild>{children}</AlertDialogTrigger>}
+      <AlertDialogContent>
         <div className="flex gap-3">
           <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-muted text-danger">
             <AlertTriangle size={18} />
           </span>
-          <DialogHeader>
-            <DialogTitle>{title}</DialogTitle>
-            <DialogDescription>{description}</DialogDescription>
-          </DialogHeader>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{title}</AlertDialogTitle>
+            <AlertDialogDescription>{description}</AlertDialogDescription>
+          </AlertDialogHeader>
         </div>
         {content}
-        <DialogFooter>
-          <DialogClose asChild>
-            <Button disabled={busy} variant={cancelVariant}>
-              {cancelText ?? t('cancel')}
-            </Button>
-          </DialogClose>
-          <Button disabled={busy || confirmDisabled} variant={confirmVariant} onClick={handleConfirm}>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={busy} variant={cancelVariant}>
+            {cancelText ?? t('cancel')}
+          </AlertDialogCancel>
+          <AlertDialogAction
+            disabled={busy || confirmDisabled}
+            variant={confirmVariant}
+            onClick={(event) => {
+              event.preventDefault()
+              void handleConfirm()
+            }}
+          >
             {confirmText ?? t('common.confirm')}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   )
 }

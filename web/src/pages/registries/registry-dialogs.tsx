@@ -2,8 +2,9 @@ import type { UseFormReturn } from 'react-hook-form'
 import type { CredentialForm, ImageForm, RegistryForm } from './registry-form-model'
 import type { ArtifactRegistry, Project, RegistryCredential, RegistryRepositoryItem, RegistryTagItem } from '@/api'
 import { KeyRound, PackagePlus, Plus, Search } from 'lucide-react'
+import { Controller } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
-import { CheckboxField } from '@/components/common/checkbox-field'
+import { ControlledCheckboxField } from '@/components/common/checkbox-field'
 import { EmptyState } from '@/components/common/empty-state'
 import { FormField as Field } from '@/components/common/form-field'
 import { ProgressiveSection } from '@/components/common/progressive-section'
@@ -77,9 +78,15 @@ export function RegistryDialog({ open, editingRegistry, form, projects, pending,
           <Field error={form.formState.errors.capabilitiesText?.message} hint={t('registriesPage.capabilitiesHint')} label={t('registriesPage.capabilities')}>
             <Input {...form.register('capabilitiesText')} aria-invalid={Boolean(form.formState.errors.capabilitiesText)} />
           </Field>
-          <CheckboxField {...form.register('isDefault')}>
-            {t('registriesPage.setAsDefault')}
-          </CheckboxField>
+          <Controller
+            control={form.control}
+            name="isDefault"
+            render={({ field }) => (
+              <ControlledCheckboxField field={field}>
+                {t('registriesPage.setAsDefault')}
+              </ControlledCheckboxField>
+            )}
+          />
           <DialogFooter>
             <Button disabled={pending || !form.formState.isValid} type="submit">
               <Plus size={16} />

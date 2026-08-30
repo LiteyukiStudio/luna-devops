@@ -3,6 +3,7 @@ import i18next from 'i18next'
 import { ChevronDown, CircleHelp } from 'lucide-react'
 import { useId, useState } from 'react'
 import { Button } from '@/components/ui/button'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { safeStorageGet, safeStorageSet } from '@/lib/safe-storage'
 import { cn } from '@/lib/utils'
@@ -30,62 +31,59 @@ export function ProgressiveSection({ children, defaultOpen = false, description,
     return stored === null ? defaultOpen : stored === 'true'
   })
 
-  const toggleOpen = () => {
-    setOpen((value) => {
-      const next = !value
-      if (storageKey)
-        safeStorageSet(storageKey, String(next))
-      return next
-    })
+  const changeOpen = (nextOpen: boolean) => {
+    setOpen(nextOpen)
+    if (storageKey)
+      safeStorageSet(storageKey, String(nextOpen))
   }
 
   return (
-    <section className="min-w-0 rounded-lg border border-border bg-card">
-      <div className="relative min-w-0 rounded-lg px-4 py-3">
-        <Button
-          aria-expanded={open}
-          aria-labelledby={titleId}
-          className="absolute inset-0 z-0 h-full w-full rounded-lg p-0 hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring"
-          type="button"
-          variant="ghost"
-          onClick={toggleOpen}
-        />
-        <div className="pointer-events-none relative z-10 flex min-w-0 items-start justify-between gap-3">
-          <span className="min-w-0 flex-1 text-left">
-            <span className="flex min-w-0 items-center gap-1.5">
-              <span id={titleId} className="min-w-0 text-sm font-semibold break-words text-foreground">{title}</span>
-              {hint && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      aria-label={typeof title === 'string'
-                        ? `${title} ${i18next.t('common.helpSuffix', { defaultValue: 'Help' })}`
-                        : i18next.t('common.helpSuffix', { defaultValue: 'Help' })}
-                      className="pointer-events-auto size-6 shrink-0 text-muted-foreground hover:text-primary-text"
-                      size="icon"
-                      type="button"
-                      variant="ghost"
-                    >
-                      <CircleHelp className="size-3.5" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent className="max-w-72 leading-5" side="top">
-                    {hint}
-                  </TooltipContent>
-                </Tooltip>
-              )}
+    <Collapsible asChild open={open} onOpenChange={changeOpen}>
+      <section className="min-w-0 rounded-lg border border-border bg-card">
+        <div className="relative min-w-0 rounded-lg px-4 py-3">
+          <CollapsibleTrigger asChild>
+            <Button
+              aria-labelledby={titleId}
+              className="absolute inset-0 z-0 h-full w-full rounded-lg p-0 hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring"
+              type="button"
+              variant="ghost"
+            />
+          </CollapsibleTrigger>
+          <div className="pointer-events-none relative z-10 flex min-w-0 items-start justify-between gap-3">
+            <span className="min-w-0 flex-1 text-left">
+              <span className="flex min-w-0 items-center gap-1.5">
+                <span id={titleId} className="min-w-0 text-sm font-semibold break-words text-foreground">{title}</span>
+                {hint && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        aria-label={typeof title === 'string'
+                          ? `${title} ${i18next.t('common.helpSuffix', { defaultValue: 'Help' })}`
+                          : i18next.t('common.helpSuffix', { defaultValue: 'Help' })}
+                        className="pointer-events-auto size-6 shrink-0 text-muted-foreground hover:text-primary-text"
+                        size="icon"
+                        type="button"
+                        variant="ghost"
+                      >
+                        <CircleHelp className="size-3.5" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-72 leading-5" side="top">
+                      {hint}
+                    </TooltipContent>
+                  </Tooltip>
+                )}
+              </span>
+              {summary && <span className="mt-1 block truncate text-xs text-muted-foreground">{summary}</span>}
+              {description && open && <span className="mt-1 block text-xs break-words text-muted-foreground">{description}</span>}
             </span>
-            {summary && <span className="mt-1 block truncate text-xs text-muted-foreground">{summary}</span>}
-            {description && open && <span className="mt-1 block text-xs break-words text-muted-foreground">{description}</span>}
-          </span>
-          <ChevronDown className={cn('size-4 shrink-0 text-muted-foreground transition-transform', open && 'rotate-180')} />
+            <ChevronDown className={cn('size-4 shrink-0 text-muted-foreground transition-transform', open && 'rotate-180')} />
+          </div>
         </div>
-      </div>
-      {open && (
-        <div className="grid min-w-0 gap-4 border-t border-border px-4 py-4 [&>*]:min-w-0">
+        <CollapsibleContent className="grid min-w-0 gap-4 border-t border-border px-4 py-4 [&>*]:min-w-0">
           {children}
-        </div>
-      )}
-    </section>
+        </CollapsibleContent>
+      </section>
+    </Collapsible>
   )
 }

@@ -1,7 +1,7 @@
-import type { BuildsPanelHandle } from './application-builds-panel'
-import type { DeploymentsPanelHandle } from './application-deployments-panel'
-import type { ApplicationGatewayPanelHandle } from './application-gateway-panel'
+import type { ApplicationGatewayPanelHandle } from './gateway/application-gateway-panel'
 import type { Application } from '@/api'
+import type { BuildsPanelHandle } from '@/pages/applications/builds/application-builds-panel'
+import type { DeploymentsPanelHandle } from '@/pages/applications/deployments/application-deployments-panel'
 import type { RepositoryBindingsPageHandle } from '@/pages/repositories/RepositoryBindingsPage'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -29,22 +29,22 @@ import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
 import { statusRefetchInterval, WORKFLOW_STATUS_REFETCH_INTERVAL_MS } from '@/lib/polling'
 import { isPlatformAdmin } from '@/lib/roles'
 import { firstReleaseReadyTarget } from './application-config-utils'
-import { ApplicationOverviewPanel } from './application-overview-panel'
+import { ApplicationOverviewPanel } from './overview/application-overview-panel'
 
 const RepositoryBindingsPage = lazy(() =>
   import('@/pages/repositories/RepositoryBindingsPage').then(module => ({ default: module.RepositoryBindingsPage })),
 )
 const ApplicationBuildsPanel = lazy(() =>
-  import('./application-builds-panel').then(module => ({ default: module.ApplicationBuildsPanel })),
+  import('@/pages/applications/builds/application-builds-panel').then(module => ({ default: module.ApplicationBuildsPanel })),
 )
 const ApplicationDeploymentsPanel = lazy(() =>
-  import('./application-deployments-panel').then(module => ({ default: module.ApplicationDeploymentsPanel })),
+  import('@/pages/applications/deployments/application-deployments-panel').then(module => ({ default: module.ApplicationDeploymentsPanel })),
 )
 const ApplicationGatewayPanel = lazy(() =>
-  import('./application-gateway-panel').then(module => ({ default: module.ApplicationGatewayPanel })),
+  import('./gateway/application-gateway-panel').then(module => ({ default: module.ApplicationGatewayPanel })),
 )
 const ApplicationTopologyPanel = lazy(() =>
-  import('./application-topology-panel').then(module => ({ default: module.ApplicationTopologyPanel })),
+  import('@/pages/applications/runtime/application-topology-panel').then(module => ({ default: module.ApplicationTopologyPanel })),
 )
 
 const schema = z.object({

@@ -334,6 +334,7 @@ const deploymentsPage = {
     None: 'No session affinity',
     ClientIP: 'Client IP affinity',
     ReadWriteOnce: 'Single-node read/write (ReadWriteOnce)',
+    ReadWriteOncePod: 'Single-pod read/write (ReadWriteOncePod)',
     ReadWriteMany: 'Multi-node read/write (ReadWriteMany)',
     ReadOnlyMany: 'Multi-node read-only (ReadOnlyMany)',
     Filesystem: 'Filesystem',

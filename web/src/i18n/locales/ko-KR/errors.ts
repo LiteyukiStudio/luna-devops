@@ -15,6 +15,18 @@ const errors = {
     identifier_delete_in_progress: '같은 식별자의 애플리케이션을 삭제 중입니다. 리소스 정리 완료 후 재사용할 수 있습니다.',
     identifier_delete_failed: '같은 식별자의 애플리케이션의 이전 삭제가 실패했습니다. 먼저 리소스 정리를 완료하세요.',
   },
+  app_template: {
+    volume_contract_invalid: '이 템플릿의 데이터 볼륨 구성이 올바르지 않습니다. 플랫폼 관리자에게 앱 마켓 템플릿 수정을 요청하세요.',
+    project_volume_required: '이 템플릿을 설치하기 전에 사용 가능한 프로젝트 데이터 볼륨을 선택하세요.',
+    project_volume_unsupported: '이 템플릿은 프로젝트 데이터 볼륨 선택을 지원하지 않습니다.',
+  },
+  project_volume: {
+    not_found: '선택한 프로젝트 데이터 볼륨이 존재하지 않거나 삭제되었습니다.',
+    not_attachable: '선택한 프로젝트 데이터 볼륨을 현재 마운트할 수 없습니다. 다른 볼륨을 선택하거나 사용할 수 있을 때까지 기다리세요.',
+    cluster_mismatch: '프로젝트 데이터 볼륨과 배포 구성은 같은 실행 클러스터를 사용해야 합니다.',
+    namespace_mismatch: '프로젝트 데이터 볼륨과 배포 구성은 같은 네임스페이스를 사용해야 합니다.',
+    mode_incompatible: '프로젝트 데이터 볼륨 모드가 이 템플릿과 호환되지 않습니다. 알맞은 파일 시스템 또는 블록 볼륨을 선택하세요.',
+  },
   project: {
     identifier_exists: '프로젝트 스페이스 식별자가 이미 존재합니다.',
     identifier_delete_in_progress: '같은 식별자의 프로젝트 스페이스를 삭제 중입니다. 리소스 정리 완료 후 재사용할 수 있습니다.',

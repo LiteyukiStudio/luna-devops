@@ -2,7 +2,7 @@
 
 来源：<https://ui.shadcn.com/docs/components>
 
-更新时间：2026-06-06
+更新时间：2026-08-30
 
 ## 使用准则
 
@@ -15,6 +15,7 @@
   - 这是业务领域组合组件，例如 ProjectCard、BuildRunTimeline、RegistryCredentialPanel。
   - 这是对 shadcn/ui 组件的薄封装，并且封装能显著减少重复业务代码。
 - 自定义组件必须在注释或文档中说明为什么不能直接使用 shadcn/ui。
+- 只有一个调用方且仅转发基础组件属性的包装不进入 `components/common`；直接组合基础组件，或留在所属页面目录表达明确复杂职责。
 
 ## 视觉语义
 
@@ -97,8 +98,12 @@
 - `Badge`：`web/src/components/ui/badge.tsx` 已替代旧 `status.tsx`。
 - `Input`、`Textarea`、`Native Select`、`Field`、`Label`、`Tooltip`：表单基础组件已拆分到 shadcn 组件文件，业务字段组合改为 `components/common/form-field.tsx`。
 - `Alert Dialog`：`ConfirmDialog` 已改为组合 `web/src/components/ui/alert-dialog.tsx`。
+- `Avatar`：`UserAvatar` 已组合 `web/src/components/ui/avatar.tsx`，并只保留平台头像、Gravatar 与首字母的业务兜底。
+- `Checkbox`：布尔表单统一使用 `CheckboxField` / `ControlledCheckboxField` 组合 `web/src/components/ui/checkbox.tsx`。
+- `Collapsible`：`ProgressiveSection` 已组合 `web/src/components/ui/collapsible.tsx`，保留摘要与持久展开状态。
 - `Empty`、`Alert`：空状态和错误状态已切到底层 shadcn 组件。
 - `Pagination`：`DataList` 内部已改为组合 shadcn Pagination。
+- `Sheet`：构建日志和移动端覆盖层统一组合 shadcn Sheet。
 - `Sidebar`、`Separator`：`AppLayout` 侧边栏已改为组合 shadcn Sidebar/Separator。
 - `Input`：邮箱注册验证码使用普通数字输入框，并保留系统验证码自动填充语义。
 
@@ -108,7 +113,7 @@
 
 中优先级：
 
-- `Avatar`、`Dropdown Menu`：优化侧边栏用户信息和用户操作。
+- `Dropdown Menu`：优化侧边栏用户操作。
 - `Tabs`：用于账号安全、应用详情、镜像站详情等多块内容页面。
 - `Sheet`、`Drawer`：用于移动端导航和编辑侧栏。
 - `Skeleton`、`Spinner`：统一加载状态。

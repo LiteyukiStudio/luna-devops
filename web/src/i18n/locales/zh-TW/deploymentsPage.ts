@@ -334,6 +334,7 @@ const deploymentsPage = {
     None: '不保持會話',
     ClientIP: '按客戶端 IP 保持',
     ReadWriteOnce: '單節點讀寫（ReadWriteOnce）',
+    ReadWriteOncePod: '單一 Pod 讀寫（ReadWriteOncePod）',
     ReadWriteMany: '多節點讀寫（ReadWriteMany）',
     ReadOnlyMany: '多節點只讀（ReadOnlyMany）',
     Filesystem: '檔案系統',

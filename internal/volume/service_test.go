@@ -75,6 +75,22 @@ func (repository *repositoryStub) CreateProjectVolume(ctx context.Context, volum
 	return repository.createErr
 }
 
+func (repository *repositoryStub) GetProjectVolume(ctx context.Context, _, _ string) (model.ProjectVolume, error) {
+	repository.captureContext(ctx)
+	return repository.lockedVolume, nil
+}
+
+func (repository *repositoryStub) UpdateProjectVolume(ctx context.Context, volume *model.ProjectVolume, expectedRevision int64) (bool, error) {
+	repository.captureContext(ctx)
+	if repository.lockedVolume.Revision != expectedRevision {
+		return false, nil
+	}
+	result := *volume
+	result.Revision = expectedRevision + 1
+	repository.lockedVolume = result
+	return true, nil
+}
+
 func (repository *repositoryStub) TransitionProjectVolume(ctx context.Context, projectID, volumeID string, _ []string, to, errorCode, _ string) (model.ProjectVolume, error) {
 	repository.captureContext(ctx)
 	repository.transitionTo = to
@@ -504,6 +520,64 @@ func TestIdempotencyReplaySkipsInspectionAndDispatch(t *testing.T) {
 	}
 	if !result.Replayed || result.Volume.ID != existing.ID || inspector.called || dispatcher.operation.Kind != "" {
 		t.Fatalf("unexpected replay behavior: result=%#v inspector=%t operation=%#v", result, inspector.called, dispatcher.operation)
+	}
+}
+
+func TestIdempotencyReplayRetriesFailedCreateDispatch(t *testing.T) {
+	t.Parallel()
+	input := validBlankVolumeInput()
+	requestHash, err := hashCreateProjectVolumeRequest(normalizeCreateProjectVolumeInput(input))
+	if err != nil {
+		t.Fatalf("hash request: %v", err)
+	}
+	existing := model.ProjectVolume{
+		ID: "pvol_existing", ProjectID: input.ProjectID, SourceKind: model.ProjectVolumeSourceBlank,
+		LifecycleState: model.ProjectVolumeLifecycleError, PendingOperation: OperationProvision,
+		LastErrorCode: CodeTaskEnqueueFailed, IdempotencyRequestHash: requestHash, Revision: 2,
+	}
+	repository := &repositoryStub{findVolume: existing, lockedVolume: existing}
+	dispatcher := &dispatcherStub{}
+	ctx := context.WithValue(context.Background(), contextKey("request"), "replay-create")
+
+	result, err := NewService(repository, dispatcher).CreateProjectVolume(ctx, input)
+	if err != nil {
+		t.Fatalf("retry replay: %v", err)
+	}
+	if !result.Replayed || result.Volume.ID != existing.ID || result.Volume.LifecycleState != model.ProjectVolumeLifecycleProvisioning || result.Volume.LastErrorCode != "" {
+		t.Fatalf("unexpected retry replay result: %#v", result)
+	}
+	if len(dispatcher.operations) != 1 || dispatcher.operation.Kind != OperationProvision || dispatcher.operation.VolumeID != existing.ID {
+		t.Fatalf("unexpected retry dispatch: %#v", dispatcher.operations)
+	}
+	if dispatcher.contextValue != "replay-create" {
+		t.Fatalf("retry dispatch lost request context: %v", dispatcher.contextValue)
+	}
+}
+
+func TestIdempotencyReplayPreservesFailedCreateDispatch(t *testing.T) {
+	t.Parallel()
+	input := validBlankVolumeInput()
+	requestHash, err := hashCreateProjectVolumeRequest(normalizeCreateProjectVolumeInput(input))
+	if err != nil {
+		t.Fatalf("hash request: %v", err)
+	}
+	existing := model.ProjectVolume{
+		ID: "pvol_existing", ProjectID: input.ProjectID, SourceKind: model.ProjectVolumeSourceBlank,
+		LifecycleState: model.ProjectVolumeLifecycleError, PendingOperation: OperationProvision,
+		LastErrorCode: CodeTaskEnqueueFailed, IdempotencyRequestHash: requestHash, Revision: 2,
+	}
+	repository := &repositoryStub{findVolume: existing, lockedVolume: existing}
+	dispatcher := &dispatcherStub{err: errors.New("queue unavailable")}
+
+	result, err := NewService(repository, dispatcher).CreateProjectVolume(context.Background(), input)
+	if ErrorCode(err) != CodeTaskEnqueueFailed {
+		t.Fatalf("retry replay error code = %q, err=%v", ErrorCode(err), err)
+	}
+	if !result.Replayed || result.Volume.LifecycleState != model.ProjectVolumeLifecycleError || result.Volume.LastErrorCode != CodeTaskEnqueueFailed {
+		t.Fatalf("failed retry replay result: %#v", result)
+	}
+	if len(dispatcher.operations) != 1 || repository.transitionTo != model.ProjectVolumeLifecycleError || repository.transitionErrorCode != CodeTaskEnqueueFailed {
+		t.Fatalf("failed retry dispatch = %#v, transition=(%q, %q)", dispatcher.operations, repository.transitionTo, repository.transitionErrorCode)
 	}
 }
 

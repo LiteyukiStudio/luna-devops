@@ -88,9 +88,9 @@ describe('data list behavior', () => {
     expect(screen.getByRole('button', { name: 'Inspect' })).toBeVisible()
   })
 
-  it('reports row and select-all selection changes', () => {
+  it('reports row and select-all selection changes and exposes partial selection', () => {
     const onSelectionChange = vi.fn()
-    render(
+    const { rerender } = render(
       <DataList
         columns={columns}
         emptyTitle="Empty"
@@ -110,6 +110,23 @@ describe('data list behavior', () => {
     expect(onSelectionChange).toHaveBeenLastCalledWith(['one'])
     fireEvent.click(screen.getByLabelText('Select all'))
     expect(onSelectionChange).toHaveBeenLastCalledWith(['one', 'two'])
+
+    rerender(
+      <DataList
+        columns={columns}
+        emptyTitle="Empty"
+        items={[{ id: 'one', name: 'One' }, { id: 'two', name: 'Two' }]}
+        rowKey={item => item.id}
+        selection={{
+          selectedKeys: ['one'],
+          selectAllLabel: 'Select all',
+          selectRowLabel: item => `Select ${item.name}`,
+          selectedLabel: 'Selected',
+          onSelectionChange,
+        }}
+      />,
+    )
+    expect(screen.getByLabelText('Select all')).toHaveAttribute('aria-checked', 'mixed')
   })
 
   it('shows pagination only for non-empty multi-page results and reports navigation', () => {

@@ -50,7 +50,7 @@ function transferListQuery(params: VolumeTransferListParams) {
   return query.toString()
 }
 
-function idempotencyKey() {
+export function createVolumeIdempotencyKey(): string {
   return globalThis.crypto?.randomUUID?.() ?? `volume-${Date.now()}-${Math.random().toString(16).slice(2)}`
 }
 
@@ -141,10 +141,10 @@ function uploadVolumeImportContent(
 export const volumesApi = {
   listProjectVolumes: (projectId: string, params: ProjectVolumeListParams) =>
     request<PaginatedProjectVolumes>(`/projects/${encodeURIComponent(projectId)}/volumes?${volumeListQuery(params)}`),
-  createProjectVolume: (projectId: string, payload: ProjectVolumeCreateInput) =>
+  createProjectVolume: (projectId: string, payload: ProjectVolumeCreateInput, idempotencyKey = createVolumeIdempotencyKey()) =>
     request<ProjectVolume>(`/projects/${encodeURIComponent(projectId)}/volumes`, {
       method: 'POST',
-      headers: { 'Idempotency-Key': idempotencyKey() },
+      headers: { 'Idempotency-Key': idempotencyKey },
       body: JSON.stringify(payload),
     }),
   listProjectVolumeStorageClasses: (projectId: string, clusterId: string, params: { page: number, pageSize: number, sortBy?: 'name' | 'provisioner', sortOrder?: 'asc' | 'desc' }) => {
@@ -186,14 +186,14 @@ export const volumesApi = {
   createVolumeImport: (projectId: string, payload: VolumeImportCreateInput) =>
     request<VolumeImportCreateResponse>(`/projects/${encodeURIComponent(projectId)}/volume-imports`, {
       method: 'POST',
-      headers: { 'Idempotency-Key': idempotencyKey() },
+      headers: { 'Idempotency-Key': createVolumeIdempotencyKey() },
       body: JSON.stringify(payload),
     }),
   uploadVolumeImportContent,
   createVolumeExport: (projectId: string, volumeId: string, payload: VolumeExportCreateInput) =>
     request<VolumeTransfer>(`${volumePath(projectId, volumeId)}/exports`, {
       method: 'POST',
-      headers: { 'Idempotency-Key': idempotencyKey() },
+      headers: { 'Idempotency-Key': createVolumeIdempotencyKey() },
       body: JSON.stringify(payload),
     }),
   listVolumeTransfers: (projectId: string, params: VolumeTransferListParams) =>
@@ -203,7 +203,7 @@ export const volumesApi = {
   retryVolumeTransfer: (projectId: string, transferId: string) =>
     request<VolumeTransfer>(`/projects/${encodeURIComponent(projectId)}/volume-transfers/${encodeURIComponent(transferId)}/retry`, {
       method: 'POST',
-      headers: { 'Idempotency-Key': idempotencyKey() },
+      headers: { 'Idempotency-Key': createVolumeIdempotencyKey() },
     }),
   cancelVolumeTransfer: (projectId: string, transferId: string) =>
     request<VolumeTransfer>(`/projects/${encodeURIComponent(projectId)}/volume-transfers/${encodeURIComponent(transferId)}/cancel`, { method: 'POST' }),

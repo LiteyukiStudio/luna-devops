@@ -59,19 +59,21 @@ export function ApplicationIconPicker({ compact = false, disabled, value, onChan
           {APPLICATION_ICON_NAMES.map((name) => {
             const active = name === selected
             return (
-              <button
+              <Button
                 key={name}
                 aria-label={t(`apps.icons.${name}`)}
                 className={cn(
-                  'flex size-8 items-center justify-center rounded-md border border-transparent text-muted-foreground transition hover:border-border hover:bg-muted hover:text-foreground',
+                  'size-8 rounded-md border border-transparent p-0 text-muted-foreground transition hover:border-border hover:bg-muted hover:text-foreground [&_svg]:size-[18px]',
                   active && 'border-primary bg-primary/10 text-primary-text',
                 )}
+                size="icon"
                 title={t(`apps.icons.${name}`)}
                 type="button"
+                variant="ghost"
                 onClick={() => onChange(name)}
               >
                 <ApplicationIcon name={name} />
-              </button>
+              </Button>
             )
           })}
         </div>

@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 
@@ -24,10 +25,12 @@ export function UsageRing({
     <TooltipProvider>
       <Tooltip>
         <TooltipTrigger asChild>
-          <button
-            type="button"
+          <Button
             aria-label={ariaLabel}
-            className="inline-flex size-7 shrink-0 items-center justify-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="size-7 shrink-0 rounded-full p-0 hover:bg-transparent focus-visible:ring-2 focus-visible:ring-ring [&_svg]:size-5"
+            size="icon"
+            type="button"
+            variant="ghost"
           >
             <svg className="size-5 -rotate-90" viewBox="0 0 18 18" role="img">
               <circle className="text-separator-subtle" cx="9" cy="9" fill="none" r={radius} stroke="currentColor" strokeWidth="2" />
@@ -47,7 +50,7 @@ export function UsageRing({
                 strokeWidth="2"
               />
             </svg>
-          </button>
+          </Button>
         </TooltipTrigger>
         <TooltipContent side="top">{tooltip}</TooltipContent>
       </Tooltip>

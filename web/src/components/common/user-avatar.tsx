@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { cn } from '@/lib/utils'
 
 interface AvatarUser {
@@ -91,7 +92,7 @@ export function UserAvatar({ className, user }: UserAvatarProps) {
   const sourceKey = `${platformAvatarUrl}|${gravatarUrl}`
 
   return (
-    <AvatarImage
+    <UserAvatarContent
       key={sourceKey}
       className={className}
       fallback={initialsFromUser(user)}
@@ -100,7 +101,7 @@ export function UserAvatar({ className, user }: UserAvatarProps) {
   )
 }
 
-function AvatarImage({
+function UserAvatarContent({
   className,
   fallback,
   sources,
@@ -113,23 +114,23 @@ function AvatarImage({
   const source = sources[sourceIndex]
 
   return (
-    <span
+    <Avatar
       className={cn(
-        'flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-primary/10 text-sm font-semibold text-primary-text',
+        'bg-primary/10 text-sm font-semibold text-primary-text',
         className,
       )}
     >
       {source
         ? (
-            <img
+            <AvatarImage
+              key={source}
               alt=""
-              className="size-full object-cover"
               src={source}
-              onError={() => setSourceIndex(current => current + 1)}
+              onLoadingStatusChange={status => status === 'error' && setSourceIndex(current => current + 1)}
             />
           )
-        : fallback}
-    </span>
+        : <AvatarFallback className="bg-transparent">{fallback}</AvatarFallback>}
+    </Avatar>
   )
 }
 

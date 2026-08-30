@@ -3,6 +3,7 @@ import { MoreHorizontal } from 'lucide-react'
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { TableFrame } from '@/components/ui/table-frame'
@@ -403,17 +404,11 @@ export function DataList<T>({
                     <tr>
                       {selectable && (
                         <th className="h-11 w-10 px-3 py-3 text-left align-middle text-sm font-medium whitespace-nowrap text-foreground sm:px-4">
-                          <input
+                          <Checkbox
                             aria-label={selection?.selectAllLabel}
-                            checked={allRowsSelected}
-                            className="size-4 accent-primary"
+                            checked={someRowsSelected && !allRowsSelected ? 'indeterminate' : allRowsSelected}
                             disabled={selectableRowKeys.length === 0}
-                            ref={(element) => {
-                              if (element)
-                                element.indeterminate = someRowsSelected && !allRowsSelected
-                            }}
-                            type="checkbox"
-                            onChange={event => updateAllRowsSelection(event.target.checked)}
+                            onCheckedChange={checked => updateAllRowsSelection(checked === true)}
                           />
                         </th>
                       )}
@@ -454,13 +449,11 @@ export function DataList<T>({
                         >
                           {selectable && (
                             <td className="w-10 px-3 py-3 align-middle sm:px-4">
-                              <input
+                              <Checkbox
                                 aria-label={selection?.selectRowLabel(item)}
                                 checked={selectedKeySet.has(itemKey)}
-                                className="size-4 accent-primary"
                                 disabled={!rowSelectable}
-                                type="checkbox"
-                                onChange={event => updateRowSelection(itemKey, event.target.checked)}
+                                onCheckedChange={checked => updateRowSelection(itemKey, checked === true)}
                               />
                             </td>
                           )}

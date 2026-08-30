@@ -1,6 +1,7 @@
 export type * from './ai-types'
 export { api } from './client'
 export { ApiError } from './core'
+export { createVolumeIdempotencyKey } from './domains/volumes'
 export type * from './topology-types'
 export type * from './types'
 export {

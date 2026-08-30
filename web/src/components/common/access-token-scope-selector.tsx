@@ -102,7 +102,7 @@ export function AccessTokenScopeSelector({ items, loading = false, value, onChan
                   className={cn(scope.requiresAdminRole && 'opacity-60')}
                   description={t(`accessTokens.scopeDescriptions.${accessTokenScopeKey(scope.value)}`)}
                   disabled={scope.requiresAdminRole}
-                  onChange={event => toggleScope(scope.value, event.target.checked)}
+                  onCheckedChange={checked => toggleScope(scope.value, checked === true)}
                 >
                   <span className="flex flex-wrap items-center gap-2">
                     {accessTokenScopeLabel(t, scope.value)}

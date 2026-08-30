@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
-import type { AppTemplate, AppTemplateInstallPayload, AppTemplateSummary, Project, RuntimeCluster } from '@/api'
+import type { AppTemplate, AppTemplateInstallPayload, AppTemplateSummary, Project, ProjectVolume, RuntimeCluster } from '@/api'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowRight, CircleHelp, ExternalLink, PackagePlus, Search, Sparkles } from 'lucide-react'
+import { ArrowRight, ExternalLink, PackagePlus, Plus, Search, Sparkles } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate, useSearchParams } from 'react-router-dom'
@@ -11,20 +11,21 @@ import { useSession } from '@/app/session-context'
 import { CheckboxField } from '@/components/common/checkbox-field'
 import { EmptyState } from '@/components/common/empty-state'
 import { ErrorState } from '@/components/common/error-state'
+import { FormField as Field } from '@/components/common/form-field'
 import { TemplateGridSkeleton } from '@/components/common/loading-states'
 import { PageShell } from '@/components/common/page-shell'
 import { ProjectSpaceSelect } from '@/components/common/project-space-select'
+import { ProjectVolumeCreateDialog } from '@/components/common/project-volumes/project-volume-create-dialog'
 import { StatusBadge } from '@/components/common/status-badge'
 import { Surface } from '@/components/common/surface'
 import { UnitInput } from '@/components/common/unit-input'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { NativeSelect as Select } from '@/components/ui/native-select'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { APPLICATION_IDENTIFIER_MAX_LENGTH, APPLICATION_IDENTIFIER_MIN_LENGTH } from '@/lib/identifier-limits'
 import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
+import { projectVolumeCapabilities } from '@/lib/project-volume-capabilities'
 import { isPlatformAdmin } from '@/lib/roles'
 import { cn } from '@/lib/utils'
 
@@ -50,6 +51,11 @@ export function AppTemplatesPage() {
   const projectId = projectItems.some(project => project.id === selectedProjectId)
     ? selectedProjectId
     : projectItems[0]?.id ?? ''
+  const projectDetail = useQuery({
+    queryKey: ['project', projectId],
+    queryFn: () => api.getProject(projectId),
+    enabled: Boolean(projectId),
+  })
   const requestedTemplate = useMemo(
     () => templates.data?.find(template => template.id === requestedTemplateId) ?? null,
     [requestedTemplateId, templates.data],
@@ -75,7 +81,11 @@ export function AppTemplatesPage() {
     ...liveObservationQueryPolicy,
   })
   const clusterItems = clusters.data ?? []
-  const effectiveClusterId = form.clusterId || clusterItems.find(cluster => cluster.isDefault)?.id || clusterItems[0]?.id || ''
+  const effectiveCluster = clusterItems.find(cluster => cluster.id === form.clusterId)
+    ?? clusterItems.find(cluster => cluster.isDefault)
+    ?? clusterItems[0]
+  const effectiveClusterId = effectiveCluster?.id ?? ''
+  const canWriteProject = projectVolumeCapabilities(user?.role, projectDetail.data?.currentUserRole, user?.id).canWrite
   const selectedProjectVolumeDeclaration = selectedTemplate?.dataVolumes.find(volume => volume.sourceType === 'projectVolume')
   const requiredProjectVolumeMode = selectedProjectVolumeDeclaration?.devicePath ? 'Block' : 'Filesystem'
 
@@ -174,7 +184,7 @@ export function AppTemplatesPage() {
     setFormState(current => ({
       templateId: selectedTemplate.id,
       value: {
-        ...(current?.templateId === selectedTemplate.id ? current.value : payloadFromTemplate(selectedTemplate)),
+        ...(current?.templateId === selectedTemplate.id ? current.value : defaultForm),
         [key]: value,
       },
     }))
@@ -184,7 +194,7 @@ export function AppTemplatesPage() {
     if (!selectedTemplate)
       return
     setFormState((current) => {
-      const currentForm = current?.templateId === selectedTemplate.id ? current.value : payloadFromTemplate(selectedTemplate)
+      const currentForm = current?.templateId === selectedTemplate.id ? current.value : defaultForm
       return {
         templateId: selectedTemplate.id,
         value: { ...currentForm, values: { ...currentForm.values, [key]: value } },
@@ -306,16 +316,20 @@ export function AppTemplatesPage() {
         clusterItems={clusterItems}
         clustersLoading={clusters.isLoading}
         canInstallSystemComponent={canInstallSystemComponent}
+        canInstallProjectTemplate={canWriteProject}
         form={form}
         installing={installTemplate.isPending || installSystemTemplate.isPending}
         projectId={projectId}
         projects={projectItems}
+        canCreateProjectVolume={canWriteProject}
         projectVolumeClusterId={effectiveClusterId}
+        projectVolumeClusterName={effectiveCluster?.name ?? effectiveClusterId}
         projectVolumeMode={requiredProjectVolumeMode}
         template={selectedTemplate}
         onClose={closeInstallDialog}
         onProjectChange={(value) => {
           setSelectedProjectId(value)
+          updateForm('clusterId', '')
           updateForm('projectVolumeId', '')
         }}
         onSubmit={submitInstall}
@@ -428,11 +442,14 @@ function InstallTemplateDialog({
   clusterItems,
   clustersLoading,
   canInstallSystemComponent,
+  canInstallProjectTemplate,
+  canCreateProjectVolume,
   form,
   installing,
   projectId,
   projects,
   projectVolumeClusterId,
+  projectVolumeClusterName,
   projectVolumeMode,
   template,
   onClose,
@@ -444,11 +461,14 @@ function InstallTemplateDialog({
   clusterItems: RuntimeCluster[]
   clustersLoading: boolean
   canInstallSystemComponent: boolean
+  canInstallProjectTemplate: boolean
+  canCreateProjectVolume: boolean
   form: AppTemplateInstallPayload
   installing: boolean
   projectId: string
   projects: Project[]
   projectVolumeClusterId: string
+  projectVolumeClusterName: string
   projectVolumeMode: 'Block' | 'Filesystem'
   template: AppTemplate | null
   onClose: () => void
@@ -462,7 +482,7 @@ function InstallTemplateDialog({
   const requiresProjectVolume = Boolean(template?.dataVolumes.some(volume => volume.sourceType === 'projectVolume'))
   const canSubmit = systemComponent
     ? Boolean(template && canInstallSystemComponent && form.clusterId.trim() && (form.values.apiBaseUrl ?? '').trim() && !installing)
-    : Boolean(template && projectId && form.applicationName.trim() && form.applicationIdentifier.trim().length >= APPLICATION_IDENTIFIER_MIN_LENGTH && form.imageRef.trim()
+    : Boolean(template && canInstallProjectTemplate && projectId && form.applicationName.trim() && form.applicationIdentifier.trim().length >= APPLICATION_IDENTIFIER_MIN_LENGTH && form.imageRef.trim()
       && (!requiresProjectVolume || form.projectVolumeId?.trim()) && !installing)
   return (
     <Dialog open={Boolean(template)} onOpenChange={open => !open && onClose()}>
@@ -561,12 +581,18 @@ function InstallTemplateDialog({
                     <TemplateProjectVolumePicker
                       key={`${projectId}:${projectVolumeClusterId}:${projectVolumeMode}:${template?.id ?? ''}`}
                       clusterId={projectVolumeClusterId}
+                      clusterName={projectVolumeClusterName}
+                      canCreate={canCreateProjectVolume}
                       disabled={installing}
                       mode={projectVolumeMode}
                       projectId={projectId}
                       required={requiresProjectVolume}
                       value={form.projectVolumeId ?? ''}
-                      onChange={value => onUpdate('projectVolumeId', value)}
+                      onChange={(value) => {
+                        if (value)
+                          onUpdate('clusterId', projectVolumeClusterId)
+                        onUpdate('projectVolumeId', value)
+                      }}
                     />
                   </Field>
                 </div>
@@ -607,7 +633,7 @@ function InstallTemplateDialog({
                 className="rounded-lg border border-border p-3 md:col-span-2"
                 description={t('appTemplatesPage.provisionAccessDescription')}
                 disabled={installing}
-                onChange={event => onUpdate('provisionAccess', event.target.checked)}
+                onCheckedChange={checked => onUpdate('provisionAccess', checked === true)}
               >
                 {t('appTemplatesPage.provisionAccess')}
               </CheckboxField>
@@ -646,7 +672,7 @@ function InstallTemplateDialog({
               className="mt-5 rounded-lg border border-border p-3 sm:mt-6 sm:p-4"
               description={t('appTemplatesPage.installNowDescription')}
               disabled={installing}
-              onChange={event => onUpdate('installNow', event.target.checked)}
+              onCheckedChange={checked => onUpdate('installNow', checked === true)}
             >
               {t('appTemplatesPage.installNow')}
             </CheckboxField>
@@ -670,8 +696,10 @@ function InstallTemplateDialog({
   )
 }
 
-function TemplateProjectVolumePicker({ clusterId, disabled, mode, onChange, projectId, required, value }: {
+function TemplateProjectVolumePicker({ canCreate, clusterId, clusterName, disabled, mode, onChange, projectId, required, value }: {
+  canCreate: boolean
   clusterId: string
+  clusterName: string
   disabled: boolean
   mode: 'Block' | 'Filesystem'
   onChange: (value: string) => void
@@ -680,6 +708,9 @@ function TemplateProjectVolumePicker({ clusterId, disabled, mode, onChange, proj
   value: string
 }) {
   const { t } = useTranslation()
+  const queryClient = useQueryClient()
+  const [createOpen, setCreateOpen] = useState(false)
+  const [createdVolume, setCreatedVolume] = useState<ProjectVolume | null>(null)
   const [page, setPage] = useState(1)
   const [search, setSearch] = useState('')
   const volumes = useQuery({
@@ -712,20 +743,30 @@ function TemplateProjectVolumePicker({ clusterId, disabled, mode, onChange, proj
   }
 
   const options = [...(volumes.data?.items ?? [])]
+  if (createdVolume?.clusterId === clusterId && createdVolume.volumeMode === mode && !options.some(item => item.id === createdVolume.id))
+    options.unshift(createdVolume)
   if (current.data?.clusterId === clusterId && current.data.volumeMode === mode && !options.some(item => item.id === current.data?.id))
     options.unshift(current.data)
   const totalPages = volumes.data?.totalPages ?? 0
   return (
     <div className="grid min-w-0 gap-2">
-      <Input
-        disabled={disabled || !clusterId}
-        placeholder={t('projectVolumes.deploymentSelectorPlaceholder')}
-        value={search}
-        onChange={(event) => {
-          setSearch(event.target.value)
-          setPage(1)
-        }}
-      />
+      <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+        <Input
+          disabled={disabled || !clusterId}
+          placeholder={t('projectVolumes.deploymentSelectorPlaceholder')}
+          value={search}
+          onChange={(event) => {
+            setSearch(event.target.value)
+            setPage(1)
+          }}
+        />
+        {canCreate && (
+          <Button disabled={disabled || !clusterId} type="button" variant="outline" onClick={() => setCreateOpen(true)}>
+            <Plus className="size-4" />
+            {t('projectVolumes.create')}
+          </Button>
+        )}
+      </div>
       <Select
         disabled={disabled || !clusterId || volumes.isLoading || volumes.isError}
         value={value}
@@ -754,39 +795,20 @@ function TemplateProjectVolumePicker({ clusterId, disabled, mode, onChange, proj
           </Button>
         </div>
       )}
-    </div>
-  )
-}
-
-function Field({ children, hint, label, required }: { children: React.ReactNode, hint?: string, label: string, required?: boolean }) {
-  const { t } = useTranslation()
-
-  return (
-    <div className="grid gap-2">
-      <Label className="flex w-fit items-center gap-1.5">
-        <span>
-          {label}
-          {required && <span className="ml-1 text-primary-text">*</span>}
-        </span>
-        {hint && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                aria-label={`${label}${t('common.helpSuffix')}`}
-                className="inline-flex shrink-0 text-muted-foreground outline-none hover:text-primary-text focus:text-primary-text"
-                tabIndex={-1}
-                type="button"
-              >
-                <CircleHelp className="size-3.5 transition" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent className="max-w-80 leading-5" side="top">
-              {hint}
-            </TooltipContent>
-          </Tooltip>
-        )}
-      </Label>
-      {children}
+      {canCreate && (
+        <ProjectVolumeCreateDialog
+          key={`${projectId}:${clusterId}:${mode}`}
+          deploymentContext={{ clusterId, clusterName, volumeMode: mode }}
+          open={createOpen}
+          projectId={projectId}
+          onCreated={(volume) => {
+            setCreatedVolume(volume)
+            onChange(volume.id)
+            void queryClient.invalidateQueries({ queryKey: ['app-template-project-volumes', projectId, clusterId, mode] })
+          }}
+          onOpenChange={setCreateOpen}
+        />
+      )}
     </div>
   )
 }

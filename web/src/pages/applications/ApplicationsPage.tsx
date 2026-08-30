@@ -24,7 +24,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { APPLICATION_IDENTIFIER_MAX_LENGTH, APPLICATION_IDENTIFIER_MIN_LENGTH } from '@/lib/identifier-limits'
 import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
-import { ApplicationSummary } from './application-summary'
+import { ApplicationSummary } from './overview/application-summary'
 
 const schema = z.object({
   name: z.string().min(1, i18next.t('apps.nameRequired')),

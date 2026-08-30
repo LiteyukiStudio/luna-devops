@@ -334,6 +334,7 @@ const deploymentsPage = {
     None: 'セッションを保持しない',
     ClientIP: 'クライアント IP で保持',
     ReadWriteOnce: '単一ノード読み書き（ReadWriteOnce）',
+    ReadWriteOncePod: '単一 Pod 読み書き（ReadWriteOncePod）',
     ReadWriteMany: 'マルチノード読み書き（ReadWriteMany）',
     ReadOnlyMany: 'マルチノード読み取り専用（ReadOnlyMany）',
     Filesystem: 'ファイルシステム',

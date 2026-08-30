@@ -127,6 +127,19 @@ describe('app layout ai assistant route', () => {
     expect(assistantMocks.runtime.openAssistant).toHaveBeenCalledOnce()
   })
 
+  it('opens the assistant page from the shared launcher', async () => {
+    const user = userEvent.setup()
+    assistantMocks.presentationMode = 'page'
+    renderAppLayout('/dashboard')
+
+    const launcher = screen.getByRole('button', { name: i18next.t('aiAssistant.open') })
+    launcher.focus()
+    await user.keyboard('{Enter}')
+
+    expect(assistantMocks.runtime.rememberWorkspaceLocation).toHaveBeenCalledWith(expect.objectContaining({ pathname: '/dashboard' }))
+    expect(await screen.findByTestId('assistant-route-outlet')).toHaveTextContent('Assistant page')
+  })
+
   it('renders the assistant outlet without the sidebar or workspace chrome', () => {
     const queryClient = new QueryClient({
       defaultOptions: {

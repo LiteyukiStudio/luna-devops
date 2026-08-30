@@ -179,10 +179,10 @@ export function SearchMultiSelect({
         footer={selectedOptions.length > 0 && (
           <div className="flex items-center justify-between gap-3 border-t border-border px-3 py-2 text-xs text-muted-foreground">
             <span>{t('common.selectedCount', { count: selectedOptions.length })}</span>
-            <button className="inline-flex items-center gap-1 text-foreground hover:text-primary-text" type="button" onClick={() => onValueChange([])}>
+            <Button className="h-auto gap-1 p-0 text-xs font-normal text-foreground hover:bg-transparent hover:text-primary-text [&_svg]:size-3.5" type="button" variant="ghost" onClick={() => onValueChange([])}>
               <X className="size-3.5" />
               {t('common.clearSelection')}
-            </button>
+            </Button>
           </div>
         )}
         isLimited={isLimited}
@@ -285,18 +285,19 @@ function SearchOptionButton({ checked, checkbox, option, size, onSelect }: {
   onSelect: () => void
 }) {
   return (
-    <button
+    <Button
       className={cn(
-        'flex w-full min-w-0 items-center gap-2 rounded-md text-left hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50',
+        'h-auto w-full min-w-0 justify-start gap-2 whitespace-normal rounded-md text-left font-normal hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50',
         size === 'sm' ? 'px-2 py-1.5 text-xs' : 'px-3 py-2 text-sm',
       )}
       disabled={option.disabled}
       type="button"
+      variant="ghost"
       onClick={onSelect}
     >
       {checkbox && (
         <span className={cn('flex shrink-0 items-center justify-center rounded border border-border', size === 'sm' ? 'size-3.5' : 'size-4', checked && 'border-primary bg-primary text-primary-foreground')}>
-          {checked && <Check className={size === 'sm' ? 'size-2.5' : 'size-3'} />}
+          {checked && <Check className={size === 'sm' ? '!size-2.5' : '!size-3'} />}
         </span>
       )}
       {option.icon}
@@ -304,8 +305,8 @@ function SearchOptionButton({ checked, checkbox, option, size, onSelect }: {
         <span className="block truncate font-medium">{option.label}</span>
         {option.description && <span className="block truncate text-xs text-muted-foreground">{option.description}</span>}
       </span>
-      {!checkbox && checked && <Check className={cn(size === 'sm' ? 'size-3.5' : 'size-4', 'shrink-0 text-primary-text')} />}
-    </button>
+      {!checkbox && checked && <Check className={cn(size === 'sm' ? '!size-3.5' : '!size-4', 'shrink-0 text-primary-text')} />}
+    </Button>
   )
 }
 

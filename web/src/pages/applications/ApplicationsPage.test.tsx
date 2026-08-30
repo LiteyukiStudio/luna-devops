@@ -3,7 +3,7 @@ import { render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeAll, describe, expect, it } from 'vitest'
 import i18next from '@/i18n'
-import { ApplicationSummary } from './application-summary'
+import { ApplicationSummary } from './overview/application-summary'
 
 const application: Application = {
   id: 'app-1',
