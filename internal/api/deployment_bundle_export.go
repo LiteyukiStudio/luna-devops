@@ -75,6 +75,8 @@ func deploymentBundleConfiguration(target model.DeploymentTarget, mounts []model
 	for _, key := range []string{
 		"id", "projectId", "applicationId", "environmentId", "kubernetesName", "clusterId", "repositoryBindingId",
 		"buildEnvironmentId", "targetRegistryId", "buildVariableSetIds", "buildHookBindings", "runtimeConfigRefs",
+		"namespace", "allowPrivilegeEscalation", "capabilityAdd", "serviceAccountName",
+		"automountServiceAccountToken", "serviceType", "serviceExternalTrafficPolicy",
 		"secretFilesSet", "status", "observationCode", "lastCheckedAt", "desiredReplicas", "updatedReplicas",
 		"readyReplicas", "availableReplicas", "deleteStatus", "deleteMessage", "deleteStartedAt", "deleteFinishedAt", "createdBy", "createdAt",
 	} {

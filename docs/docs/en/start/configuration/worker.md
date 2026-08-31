@@ -10,7 +10,7 @@ When running from source, Worker reads these variables from the root `.env`. Doc
 | `DATABASE_URL` | Local PostgreSQL | Connects to PostgreSQL; use a PostgreSQL connection URI. |
 | `REDIS_ADDR` | `redis://localhost:6379/0` | Connects to the Redis task queue; use a `redis://` or `rediss://` URI. |
 | `SECRET_ENCRYPTION_KEY`<sup>1</sup> | Empty | Decrypts credentials stored by the platform; use the same stable key as API. |
-| `PUBLIC_BASE_URL` | Required in production | Sets the platform root used in task-notification links; in production, use the absolute HTTP(S) URL users actually open. |
+| `PUBLIC_BASE_URL` | Required in production | Sets the platform root used in task-notification links; in production, use the absolute HTTPS URL users actually open, with HTTP allowed only for localhost or loopback addresses. |
 | `LOG_FORMAT` | `auto` | Selects terminal log rendering; use `auto`, `console`, or `json`, and use `json` in production containers. |
 | `LOG_COLOR` | `auto` | Controls console log colors; use `auto`, `always`, or `never`; `NO_COLOR` always disables colors. |
 | `LOG_LEVEL` | `info` | Sets log verbosity; use `debug`, `info`, `warn`, or `error`. |

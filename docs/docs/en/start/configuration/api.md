@@ -8,7 +8,7 @@ When running from source, API reads these variables from the root `.env`. Docker
 | --- | --- | --- |
 | `APP_ENV` | `production` | Selects the API runtime mode; use `production` or `development`. |
 | `API_ADDR` | `:8080` | Sets the API listen address; use `IP:port` or `:port`. |
-| `PUBLIC_BASE_URL` | Required in production | Sets the user-facing platform root; in production, use the absolute HTTP(S) URL users actually open. |
+| `PUBLIC_BASE_URL` | Required in production | Sets the trusted user-facing platform root and the Server written into kubectl kubeconfig; in production, use the absolute HTTPS URL users actually open, with HTTP allowed only for localhost or loopback addresses. |
 | `DATABASE_URL` | Local PostgreSQL | Connects to PostgreSQL; use a PostgreSQL connection URI. |
 | `REDIS_ADDR` | `redis://localhost:6379/0` | Connects to Redis; use a `redis://` or `rediss://` URI. |
 | `REDIS_PASSWORD` | Empty | Sets the bundled Docker Compose Redis password; use a password string or leave empty when authentication is disabled. |
@@ -18,7 +18,7 @@ When running from source, API reads these variables from the root `.env`. Docker
 | `INITIAL_ADMIN_NAME`<sup>2</sup> | Empty | Sets the first administrator's display name; use a name or leave empty to use the email. |
 | `INITIAL_ADMIN_LANGUAGE`<sup>2</sup> | `zh-CN` | Sets the first administrator's language; use `zh-CN` or `en-US`. |
 | `APP_CORS_ORIGINS` | Empty | Allows browser cross-origin access; use comma-separated HTTP(S) origins. |
-| `TRUSTED_PROXY_CIDRS` | Empty | Identifies trusted reverse proxies; use comma-separated CIDRs. |
+| `TRUSTED_PROXY_CIDRS`<sup>4</sup> | Empty | Establishes the forwarded client-IP trust boundary; use comma-separated egress CIDRs only for proxies allowed to supply forwarded addresses to API, or leave empty for direct traffic. |
 | `LOG_FORMAT` | `auto` | Selects terminal log rendering; use `auto`, `console`, or `json`, and use `json` in production containers. |
 | `LOG_COLOR` | `auto` | Controls console log colors; use `auto`, `always`, or `never`; `NO_COLOR` always disables colors. |
 | `LOG_LEVEL` | `info` | Sets log verbosity; use `debug`, `info`, `warn`, or `error`. |
@@ -30,6 +30,9 @@ When running from source, API reads these variables from the root `.env`. Docker
 1. Note: `SECRET_ENCRYPTION_KEY` is required in production; changing it makes stored encrypted credentials unreadable.
 2. Note: These settings create the first administrator only when the database has never contained a user. They never overwrite an active administrator; API refuses to start if users exist but no active administrator remains.
 3. Note: API and Agent must use the same `AI_INTERNAL_SECRET`.
+4. Note: Enabling the Helm chart Ingress requires the matching `app.trustedProxyCidrs` value. Prefer dedicated Ingress or reverse-proxy source subnets actually seen by API and the proxy egress ranges in the trusted forwarding chain; use a whole Pod CIDR only when network isolation prevents every other Pod from reaching API directly. Do not use client ranges; API rejects `0.0.0.0/0` and `::/0`. Direct requests are limited by their socket peer, and a forwarded client IP is used only when that peer belongs to a trusted proxy CIDR. Public CLI device start, device-code polling, authorization-code, refresh, and revoke flows use independent source buckets.
+
+The kubectl gateway never guesses a kubeconfig Server from the request Host. Restart API after changing `PUBLIC_BASE_URL` and issue replacement kubeconfig files for affected users. The reverse proxy must also preserve `/kube/`, support upgrades, disable stream buffering, and avoid logging raw query strings. See [Kubernetes (Helm) Deployment](/en/start/install/kubernetes#configure-the-kubectl-gateway-reverse-proxy).
 
 ## Advanced configuration
 

@@ -31,6 +31,7 @@ import { AccessTokensPanel } from './access-tokens-panel'
 import { AccountNotificationsPanel } from './account-notifications-panel'
 import { OAuthApplicationsPanel, OAuthGrantsPanel } from './account-oauth-panels'
 import { AccountPasswordPanel } from './account-password-panel'
+import { KubeCredentialsPanel } from './kube-credentials-panel'
 
 const profileSchema = z.object({
   name: z.string().min(1, i18next.t('accountPage.profileNameRequired')),
@@ -45,9 +46,12 @@ type ProfileForm = z.infer<typeof profileSchema>
 export function AccountPage() {
   const { t } = useTranslation()
   const [activeTab, setActiveTab] = useState('profile')
+  const meta = useQuery({ queryKey: ['api-meta'], queryFn: api.getAPIMeta, staleTime: 5 * 60 * 1000 })
+  const kubectlAccessEnabled = meta.data?.features?.kubectlGateway ?? true
+  const effectiveActiveTab = !kubectlAccessEnabled && activeTab === 'kubectl-credentials' ? 'profile' : activeTab
 
   const activeContent = (() => {
-    switch (activeTab) {
+    switch (effectiveActiveTab) {
       case 'security':
         return (
           <div className="grid gap-4">
@@ -57,6 +61,8 @@ export function AccountPage() {
         )
       case 'tokens':
         return <AccessTokensPanel />
+      case 'kubectl-credentials':
+        return <KubeCredentialsPanel featureEnabled={kubectlAccessEnabled} />
       case 'notifications':
         return <AccountNotificationsPanel />
       case 'oauth-applications':
@@ -76,17 +82,18 @@ export function AccountPage() {
         { value: 'security', label: t('accountPage.securityTab') },
         { value: 'notifications', label: t('accountPage.notificationsTab') },
         { value: 'tokens', label: t('accountPage.tokensTab') },
+        ...(kubectlAccessEnabled ? [{ value: 'kubectl-credentials', label: t('kubectlAccess.accountTab') }] : []),
         { value: 'oauth-applications', label: t('oauthApps.applicationsTab') },
         { value: 'oauth-grants', label: t('oauthApps.grantsTab') },
       ]}
-      value={activeTab}
+      value={effectiveActiveTab}
       onValueChange={setActiveTab}
     >
-      <TabsContent value={activeTab}>
+      <TabsContent value={effectiveActiveTab}>
         <motion.div
-          key={activeTab}
+          key={effectiveActiveTab}
           animate={{ opacity: 1, y: 0 }}
-          className={activeTab === 'profile' || activeTab === 'security' ? 'w-full max-w-3xl' : undefined}
+          className={effectiveActiveTab === 'profile' || effectiveActiveTab === 'security' ? 'w-full max-w-3xl' : undefined}
           initial={{ opacity: 0, y: 6 }}
           transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
         >

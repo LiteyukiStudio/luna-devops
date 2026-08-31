@@ -84,6 +84,23 @@ func TestCrossProjectListVisibilityPostgres(t *testing.T) {
 		}
 		assertStringIDs(t, listContainerImageIDs(t, handlers, admin, ""), []string{images[0].ID, images[2].ID})
 		assertStringIDs(t, listContainerImageIDs(t, handlers, admin, "all"), []string{images[0].ID, images[2].ID, images[3].ID})
+
+		formerMember := model.User{ID: "usr_visibility_former_member", Email: "visibility-former-member@example.test", Name: "Visibility Former Member", Role: authz.PlatformRoleUser}
+		formerMembership := model.ProjectMember{ID: "prjm_visibility_former_member", ProjectID: projects[0].ID, UserID: formerMember.ID, Role: authz.ProjectRoleDeveloper}
+		formerMemberImages := []model.ContainerImage{
+			{ID: "img_visibility_former_member_project", ProjectID: projects[0].ID, RegistryID: registry.ID, Repository: "former-member-project", Tag: "latest", ImageRef: "registry.example.test/former-member-project:latest", CreatedBy: formerMember.ID},
+			{ID: "img_visibility_former_member_personal", RegistryID: registry.ID, Repository: "former-member-personal", Tag: "latest", ImageRef: "registry.example.test/former-member-personal:latest", CreatedBy: formerMember.ID},
+		}
+		for _, value := range []any{&formerMember, &formerMembership, &formerMemberImages} {
+			if err := db.Create(value).Error; err != nil {
+				t.Fatalf("seed former member image visibility %T: %v", value, err)
+			}
+		}
+		assertStringIDs(t, listContainerImageIDs(t, handlers, formerMember, ""), []string{images[2].ID, formerMemberImages[0].ID, formerMemberImages[1].ID})
+		if err := db.Delete(&formerMembership).Error; err != nil {
+			t.Fatalf("remove former project membership: %v", err)
+		}
+		assertStringIDs(t, listContainerImageIDs(t, handlers, formerMember, ""), []string{formerMemberImages[1].ID})
 	})
 
 	t.Run("cluster resources include every member role", func(t *testing.T) {

@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/LiteyukiStudio/devops/internal/model"
+	"github.com/LiteyukiStudio/devops/internal/runtimecluster"
 	"github.com/LiteyukiStudio/devops/internal/volume"
 	"gorm.io/gorm"
 )
@@ -137,7 +138,7 @@ func (h *Handlers) deploymentBundleCandidates(ctx context.Context, user model.Us
 
 	case deploymentBundleReferenceRuntimeCluster:
 		var items []model.RuntimeCluster
-		base := h.applyScopedResourceVisibilityForProject(h.dbWithContext(ctx).Model(&model.RuntimeCluster{}), scopedResourceRuntimeCluster, user, project.ID, ctx).
+		base := h.applyScopedResourceVisibilityForProject(runtimecluster.ActiveScope(h.dbWithContext(ctx)).Model(&model.RuntimeCluster{}), scopedResourceRuntimeCluster, user, project.ID, ctx).
 			Where("type in ?", []string{"kubernetes", "k3s"})
 		if query.ID != "" {
 			base = base.Where("runtime_clusters.id = ?", query.ID)
@@ -244,7 +245,7 @@ func (h *Handlers) deploymentBundleCandidates(ctx context.Context, user model.Us
 			ClusterType string `gorm:"column:cluster_type"`
 		}
 		base := h.dbWithContext(ctx).Table("project_volumes").
-			Joins("left join runtime_clusters on runtime_clusters.id = project_volumes.cluster_id and runtime_clusters.deleted_at is null").
+			Joins("join runtime_clusters on runtime_clusters.id = project_volumes.cluster_id and runtime_clusters.deleted_at is null and runtime_clusters.delete_status = ?", "active").
 			Where("project_volumes.project_id = ? and project_volumes.deleted_at is null", project.ID)
 		if query.ID != "" {
 			base = base.Where("project_volumes.id = ?", query.ID)

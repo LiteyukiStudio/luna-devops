@@ -22,7 +22,7 @@ export function redact<T>(value: T): T {
 }
 
 export function redactSensitivePaths<T>(value: T, paths: readonly string[]): T {
-  const result = redact(value)
+  const result = structuredClone(value)
   for (const path of paths) maskPath(result, sensitivePathSegments(path), 0)
   return result
 }

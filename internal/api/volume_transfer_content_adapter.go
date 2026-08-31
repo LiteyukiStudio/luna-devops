@@ -5,8 +5,6 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"strings"
-	"time"
 
 	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/model"
@@ -109,7 +107,11 @@ func (adapter *volumeTransferContentAdapter) CreateImport(ctx context.Context, u
 }
 
 func (adapter *volumeTransferContentAdapter) StreamImport(ctx context.Context, projectID, transferID string, user model.User, body io.Reader, length int64) (model.VolumeTransfer, error) {
-	return adapter.service.StreamImport(ctx, projectID, transferID, adapter.actor(ctx, user, projectID), body, length)
+	actor, err := adapter.actor(ctx, user, projectID)
+	if err != nil {
+		return model.VolumeTransfer{}, err
+	}
+	return adapter.service.StreamImport(ctx, projectID, transferID, actor, body, length)
 }
 
 func (adapter *volumeTransferContentAdapter) CreateExport(ctx context.Context, user model.User, project model.Project, volumeID string, input volumeExportCreateInput, idempotencyKey string) (model.VolumeTransfer, error) {
@@ -120,33 +122,49 @@ func (adapter *volumeTransferContentAdapter) CreateExport(ctx context.Context, u
 }
 
 func (adapter *volumeTransferContentAdapter) RetryTransfer(ctx context.Context, user model.User, project model.Project, transfer model.VolumeTransfer, idempotencyKey string) (model.VolumeTransfer, error) {
-	return adapter.service.RetryTransfer(ctx, adapter.actor(ctx, user, project.ID), transfer, idempotencyKey)
+	actor, err := adapter.actor(ctx, user, project.ID)
+	if err != nil {
+		return model.VolumeTransfer{}, err
+	}
+	return adapter.service.RetryTransfer(ctx, actor, transfer, idempotencyKey)
 }
 
 func (adapter *volumeTransferContentAdapter) AuthorizeDownload(ctx context.Context, user model.User, project model.Project, transfer model.VolumeTransfer, binding volumeDownloadBinding) (volumeDownloadAuthorizationResponse, error) {
-	result, err := adapter.service.AuthorizeDownload(ctx, adapter.actor(ctx, user, project.ID), transfer, coreDownloadBinding(binding))
+	actor, err := adapter.actor(ctx, user, project.ID)
+	if err != nil {
+		return volumeDownloadAuthorizationResponse{}, err
+	}
+	result, err := adapter.service.AuthorizeDownload(ctx, actor, transfer, coreDownloadBinding(binding))
 	return volumeDownloadAuthorizationResponse{Ticket: result.Ticket, ExpiresAt: result.ExpiresAt}, err
 }
 
 func (adapter *volumeTransferContentAdapter) OpenDownload(ctx context.Context, user model.User, project model.Project, transfer model.VolumeTransfer, ticket string, binding volumeDownloadBinding) (volumeDownload, error) {
-	result, err := adapter.service.OpenDownload(ctx, adapter.actor(ctx, user, project.ID), transfer, ticket, coreDownloadBinding(binding))
+	actor, err := adapter.actor(ctx, user, project.ID)
+	if err != nil {
+		return volumeDownload{}, err
+	}
+	result, err := adapter.service.OpenDownload(ctx, actor, transfer, ticket, coreDownloadBinding(binding))
 	return volumeDownload{Body: result.Body, ContentType: result.ContentType}, err
 }
 
 func (adapter *volumeTransferContentAdapter) OpenManifest(ctx context.Context, user model.User, project model.Project, transfer model.VolumeTransfer, ticket string, binding volumeDownloadBinding) (volumeDownload, error) {
-	result, err := adapter.service.OpenManifest(ctx, adapter.actor(ctx, user, project.ID), transfer, ticket, coreDownloadBinding(binding))
+	actor, err := adapter.actor(ctx, user, project.ID)
+	if err != nil {
+		return volumeDownload{}, err
+	}
+	result, err := adapter.service.OpenManifest(ctx, actor, transfer, ticket, coreDownloadBinding(binding))
 	return volumeDownload{Body: result.Body, ContentType: result.ContentType}, err
 }
 
-func (adapter *volumeTransferContentAdapter) actor(ctx context.Context, user model.User, projectID string) volumetransferapi.Actor {
-	actor := volumetransferapi.Actor{UserID: user.ID, CanManage: authz.IsPlatformAdmin(user.Role)}
-	if actor.CanManage || adapter == nil || adapter.handlers == nil || adapter.handlers.db == nil {
-		return actor
+func (adapter *volumeTransferContentAdapter) actor(ctx context.Context, user model.User, projectID string) (volumetransferapi.Actor, error) {
+	if adapter == nil || adapter.handlers == nil {
+		return volumetransferapi.Actor{}, authz.ErrProjectAuthorizationUnavailable
 	}
-	var member model.ProjectMember
-	err := adapter.handlers.db.WithContext(ctx).Select("role").First(&member, "project_id = ? and user_id = ?", projectID, user.ID).Error
-	actor.CanManage = err == nil && (member.Role == authz.ProjectRoleOwner || member.Role == authz.ProjectRoleAdmin)
-	return actor
+	canManage, err := adapter.handlers.projectRoleActionAllowed(ctx, user, projectID, authz.ActionVolumeExport)
+	if err != nil {
+		return volumetransferapi.Actor{}, err
+	}
+	return volumetransferapi.Actor{UserID: user.ID, CanManage: canManage}, nil
 }
 
 func coreDownloadBinding(binding volumeDownloadBinding) volumetransferapi.DownloadBinding {
@@ -154,29 +172,14 @@ func coreDownloadBinding(binding volumeDownloadBinding) volumetransferapi.Downlo
 }
 
 func (h *Handlers) volumeTransferDownloadBinding(ctx *gin.Context, user model.User) (volumeDownloadBinding, bool) {
-	subject, ok := h.currentInteractiveSubject(ctx, user)
+	binding, ok := h.currentInteractiveAuthorizationBinding(ctx, user)
 	if !ok {
-		writeErrorCode(ctx, http.StatusForbidden, "volume.download_session_required", "a browser session or Luna CLI OAuth grant is required for volume downloads")
-		return volumeDownloadBinding{}, false
-	}
-	binding := volumeDownloadBinding{UserID: user.ID, SubjectID: subject}
-	if strings.HasPrefix(subject, "oauth:") {
-		token, tokenOK := currentAccessTokenFromContext(ctx)
-		if !tokenOK || token.UserID != user.ID || token.OAuthGrantID == "" {
-			writeErrorCode(ctx, http.StatusForbidden, "volume.download_session_required", "Luna CLI OAuth grant is invalid")
-			return volumeDownloadBinding{}, false
-		}
-		binding.Deadline = time.Now().Add(time.Hour)
-		if token.ExpiresAt != nil && token.ExpiresAt.Before(binding.Deadline) {
-			binding.Deadline = *token.ExpiresAt
-		}
-	} else {
-		session, sessionOK := h.currentSessionFromCookie(ctx)
-		if !sessionOK || session.UserID != user.ID || session.ID != subject {
+		if requestUsesBearerToken(ctx) {
+			writeErrorCode(ctx, http.StatusForbidden, "volume.download_session_required", "a browser session or Luna CLI OAuth grant is required for volume downloads")
+		} else {
 			writeErrorKey(ctx, http.StatusUnauthorized, requestLanguage(ctx), "auth.session.expired")
-			return volumeDownloadBinding{}, false
 		}
-		binding.Deadline = session.ExpiresAt
+		return volumeDownloadBinding{}, false
 	}
 	return binding, true
 }

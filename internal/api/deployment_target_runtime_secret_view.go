@@ -16,12 +16,7 @@ type deploymentTargetRuntimeSecretsSummary struct {
 
 func (h *Handlers) GetDeploymentTargetRuntimeSecretsSummary(ctx *gin.Context) {
 	setRuntimeSecretNoStoreHeaders(ctx)
-	_, project, ok := h.projectAndCurrentUserWithRoles(ctx,
-		authz.ProjectRoleOwner,
-		authz.ProjectRoleAdmin,
-		authz.ProjectRoleDeveloper,
-		authz.ProjectRoleViewer,
-	)
+	_, project, ok := h.authorizeProject(ctx, authz.ActionSecretReadSummary)
 	if !ok || !h.ensureRuntimeSecretProjectReadable(ctx, project) {
 		return
 	}

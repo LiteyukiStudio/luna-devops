@@ -12,6 +12,12 @@ import (
 	kubeprovider "github.com/LiteyukiStudio/devops/internal/provider/kubernetes"
 	"github.com/LiteyukiStudio/devops/internal/tasks"
 	"github.com/hibiken/asynq"
+	"gorm.io/gorm"
+)
+
+const (
+	trustedGatewayTrafficProbeComponentID    = "gateway-traffic-probe"
+	trustedGatewayTrafficProbeServiceAccount = "luna-gateway-traffic-probe"
 )
 
 func (r *Runner) handleDeployRun(ctx context.Context, task *asynq.Task) error {
@@ -155,13 +161,13 @@ func (r *Runner) handleDeployRun(ctx context.Context, task *asynq.Task) error {
 	return nil
 }
 
-// ensurePlatformApplicationDependencies provisions the optional ServiceAccount and
-// RBAC for a deployment that explicitly opts into a dedicated service account.
-// This is a generic capability driven by target.ServiceAccountName, not a special
-// case for any particular component: users may set a service account on any
-// deployment target to have the platform create the matching access rules.
+// ensurePlatformApplicationDependencies provisions ServiceAccount/RBAC only for
+// a release linked to a trusted system-component installation plan.
 func (r *Runner) ensurePlatformApplicationDependencies(ctx context.Context, release model.Release, project model.Project, application model.Application, target model.DeploymentTarget, namespace string) error {
-	serviceAccountName := strings.TrimSpace(target.ServiceAccountName)
+	serviceAccountName, err := r.trustedPlatformApplicationServiceAccount(ctx, release, target, namespace)
+	if err != nil {
+		return err
+	}
 	if serviceAccountName == "" {
 		return nil
 	}
@@ -174,6 +180,30 @@ func (r *Runner) ensurePlatformApplicationDependencies(ctx context.Context, rele
 		Namespace:        namespace,
 		RuntimeClusterID: strings.TrimSpace(target.ClusterID),
 	})
+}
+
+func (r *Runner) trustedPlatformApplicationServiceAccount(ctx context.Context, release model.Release, target model.DeploymentTarget, namespace string) (string, error) {
+	requested := strings.TrimSpace(target.ServiceAccountName)
+	if requested == "" {
+		return "", nil
+	}
+	var installation model.SystemComponentInstallation
+	err := r.db.WithContext(ctx).First(&installation,
+		"release_id = ? and project_id = ? and application_id = ? and deployment_target_id = ? and runtime_cluster_id = ?",
+		release.ID, release.ProjectID, release.ApplicationID, target.ID, target.ClusterID,
+	).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return "", fmt.Errorf("deployment service account is not authorized by a trusted system component plan")
+	}
+	if err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(installation.ComponentID) != trustedGatewayTrafficProbeComponentID ||
+		requested != trustedGatewayTrafficProbeServiceAccount ||
+		strings.TrimSpace(installation.Namespace) != strings.TrimSpace(namespace) {
+		return "", fmt.Errorf("deployment service account is not authorized by a trusted system component plan")
+	}
+	return requested, nil
 }
 
 func (r *Runner) markSystemComponentDeployment(ctx context.Context, release model.Release, status string, message string) {
@@ -247,6 +277,15 @@ func (r *Runner) applicationResourcesManagerAndSpec(ctx context.Context, release
 	spec, err := applicationResourcesSpec(release, project, application, environment, deploymentTarget, runtimeConfigSets, dataVolumes, namespace, r.deployRolloutTimeoutSeconds)
 	if err != nil {
 		return nil, kubeprovider.ApplicationResourcesSpec{}, err
+	}
+	trustedServiceAccount, err := r.trustedPlatformApplicationServiceAccount(ctx, release, deploymentTarget, namespace)
+	if err != nil {
+		return nil, kubeprovider.ApplicationResourcesSpec{}, err
+	}
+	if trustedServiceAccount != "" {
+		spec.ServiceAccountName = trustedServiceAccount
+		spec.AutomountServiceAccountToken = strings.TrimSpace(deploymentTarget.AutomountServiceAccountToken)
+		spec.TrustedServiceAccounts = []string{trustedServiceAccount}
 	}
 	if err := applyRuntimeClusterResourcePolicy(&spec, cluster); err != nil {
 		return nil, kubeprovider.ApplicationResourcesSpec{}, err

@@ -1,5 +1,6 @@
 [
   { "type": "dir", "name": "workflow", "label": "日常交付" },
+  { "type": "file", "name": "kubectl", "label": "kubectl 访问" },
   { "type": "file", "name": "ai-assistant", "label": "AI 助手" },
   { "type": "file", "name": "app-marketplace", "label": "应用市场" },
   { "type": "file", "name": "notifications", "label": "通知" },

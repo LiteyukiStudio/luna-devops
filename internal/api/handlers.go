@@ -3,10 +3,14 @@ package api
 import (
 	"context"
 	"log/slog"
+	"time"
 
 	"github.com/LiteyukiStudio/devops/internal/aiagent"
 	"github.com/LiteyukiStudio/devops/internal/aitool"
+	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/inbox"
+	"github.com/LiteyukiStudio/devops/internal/kubeaccess"
+	"github.com/LiteyukiStudio/devops/internal/kubeproxy"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/repository"
 	"github.com/LiteyukiStudio/devops/internal/secret"
@@ -23,26 +27,29 @@ const sessionCookieName = "lyd_session"
 const currentProjectRoleContextKey = "currentProjectRole"
 
 type Handlers struct {
-	db                     *gorm.DB
-	config                 Config
-	configs                *configCache
-	mode                   string
-	rateLimiter            *rateLimiter
-	oauthStates            oauthStateStore
-	projects               repository.ProjectRepository
-	secrets                secret.Store
-	taskClient             taskEnqueuer
-	aiAgent                aiagent.Client
-	aiDeploymentEnabled    bool
-	aiActorResolver        func(*gin.Context) (aiagent.ActorContext, string, bool)
-	aiTools                *aitool.Service
-	inbox                  inboxService
-	inboxDecision          inboxDecisionHandler
-	volumes                *volume.Service
-	volumeClusters         projectVolumeClusterService
-	volumeContent          volumeTransferContentService
-	volumeTransferMaxBytes int64
-	volumeTransferEnabled  bool
+	db                              *gorm.DB
+	config                          Config
+	configs                         *configCache
+	mode                            string
+	rateLimiter                     *rateLimiter
+	oauthStates                     oauthStateStore
+	projects                        repository.ProjectRepository
+	secrets                         secret.Store
+	taskClient                      taskEnqueuer
+	aiAgent                         aiagent.Client
+	aiDeploymentEnabled             bool
+	aiActorResolver                 func(*gin.Context) (aiagent.ActorContext, string, bool)
+	aiTools                         *aitool.Service
+	inbox                           inboxService
+	inboxDecision                   inboxDecisionHandler
+	volumes                         *volume.Service
+	volumeClusters                  projectVolumeClusterService
+	volumeContent                   volumeTransferContentService
+	volumeTransferMaxBytes          int64
+	volumeTransferEnabled           bool
+	continuousAuthorizationInterval time.Duration
+	kubeAccess                      *kubeaccess.Service
+	kubeGateway                     *kubeproxy.Gateway
 }
 
 type inboxService interface {
@@ -90,6 +97,13 @@ func NewHandlersWithConfig(db *gorm.DB, cfg Config) *Handlers {
 	handlers.secrets = secret.NewStore(db, func(ctx context.Context, userID, action, resource string, success bool, message string) {
 		handlers.auditWithContext(userID, action, resource, success, message, ctx)
 	}, cfg.SecretCodec)
+	handlers.kubeAccess = kubeaccess.NewService(
+		kubeaccess.NewRepository(db),
+		authz.NewProjectAuthorizer(repository.NewProjectRepository(db)),
+		cfg.PublicBaseURL,
+		apiKubeGatewayReadiness{handlers: handlers},
+	)
+	handlers.kubeGateway = newKubeGateway(handlers)
 	var volumeTasks volumeTaskEnqueuer
 	if candidate, ok := handlers.taskClient.(volumeTaskEnqueuer); ok {
 		volumeTasks = candidate

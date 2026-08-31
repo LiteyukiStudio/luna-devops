@@ -615,7 +615,7 @@ func TestReserveDeploymentVolumeMountAllowsWaitForFirstConsumerProvisioning(t *t
 	t.Parallel()
 	repository := &repositoryStub{
 		lockedTarget: model.DeploymentTarget{
-			ID: "dtgt_demo", ProjectID: "prj_demo", ApplicationID: "app_demo", ClusterID: "rclu_demo", Namespace: "luna-demo",
+			ID: "dtgt_demo", ProjectID: "prj_demo", ApplicationID: "app_demo", ClusterID: "rclu_demo",
 		},
 		lockedVolume: model.ProjectVolume{
 			ID: "pvol_demo", ProjectID: "prj_demo", ClusterID: "rclu_demo", Namespace: "luna-demo", ClaimName: "data",
@@ -639,7 +639,7 @@ func TestReserveDeploymentVolumeMountRejectsIncompleteImport(t *testing.T) {
 	t.Parallel()
 	repository := &repositoryStub{
 		lockedTarget: model.DeploymentTarget{
-			ID: "dtgt_demo", ProjectID: "prj_demo", ApplicationID: "app_demo", ClusterID: "rclu_demo", Namespace: "luna-demo",
+			ID: "dtgt_demo", ProjectID: "prj_demo", ApplicationID: "app_demo", ClusterID: "rclu_demo",
 		},
 		lockedVolume: model.ProjectVolume{
 			ID: "pvol_demo", ProjectID: "prj_demo", ClusterID: "rclu_demo", Namespace: "luna-demo", ClaimName: "data",

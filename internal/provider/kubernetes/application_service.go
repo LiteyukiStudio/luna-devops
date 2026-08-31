@@ -101,29 +101,11 @@ func (c *Client) applyService(ctx context.Context, spec ApplicationResourcesSpec
 }
 
 func applicationServiceType(spec ApplicationResourcesSpec) corev1.ServiceType {
-	switch strings.TrimSpace(spec.ServiceType) {
-	case string(corev1.ServiceTypeNodePort):
-		return corev1.ServiceTypeNodePort
-	case string(corev1.ServiceTypeLoadBalancer):
-		return corev1.ServiceTypeLoadBalancer
-	default:
-		return corev1.ServiceTypeClusterIP
-	}
+	return corev1.ServiceTypeClusterIP
 }
 
 func applicationServiceExternalTrafficPolicy(spec ApplicationResourcesSpec) corev1.ServiceExternalTrafficPolicy {
-	serviceType := applicationServiceType(spec)
-	if serviceType != corev1.ServiceTypeNodePort && serviceType != corev1.ServiceTypeLoadBalancer {
-		return ""
-	}
-	switch strings.TrimSpace(spec.ServiceExternalTrafficPolicy) {
-	case string(corev1.ServiceExternalTrafficPolicyLocal):
-		return corev1.ServiceExternalTrafficPolicyLocal
-	case string(corev1.ServiceExternalTrafficPolicyCluster):
-		return corev1.ServiceExternalTrafficPolicyCluster
-	default:
-		return ""
-	}
+	return ""
 }
 
 func applicationServiceSessionAffinity(spec ApplicationResourcesSpec) corev1.ServiceAffinity {

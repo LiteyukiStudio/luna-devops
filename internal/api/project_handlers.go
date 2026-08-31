@@ -12,7 +12,6 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	projectservice "github.com/LiteyukiStudio/devops/internal/project"
-	"github.com/LiteyukiStudio/devops/internal/tasks"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
@@ -33,11 +32,16 @@ func (h *Handlers) ListProjects(ctx *gin.Context) {
 			return
 		}
 	}
+	readPolicy, exists := authz.ProjectPolicyForAction(authz.ActionProjectRead)
+	if !exists {
+		writeErrorCode(ctx, http.StatusServiceUnavailable, "auth.project_authorization_unavailable", "项目权限服务暂时不可用")
+		return
+	}
 
 	baseQuery := h.dbFor(ctx).
 		Table("projects").
 		Select("projects.*, project_members.dashboard_order, project_members.last_used_at, project_members.use_count").
-		Joins("left join project_members on project_members.project_id = projects.id and project_members.user_id = ?", user.ID).
+		Joins("left join project_members on project_members.project_id = projects.id and project_members.user_id = ? and project_members.role in ?", user.ID, readPolicy.AllowedRoles).
 		Joins("left join project_pins on project_pins.project_id = projects.id and project_pins.user_id = project_members.user_id").
 		Where("projects.deleted_at is null")
 	if projectID := aiConversationProjectID(ctx); projectID != "" {
@@ -109,11 +113,15 @@ func (h *Handlers) CreateProject(ctx *gin.Context) {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
+	if err := h.enqueueEnabledProjectAccessKubeGateways(ctx.Request.Context(), user.ID, true); err != nil {
+		writeKubeGatewayEnqueueError(ctx)
+		return
+	}
 	ctx.JSON(http.StatusCreated, h.projectResponse(project, ctx.Request.Context()))
 }
 
 func (h *Handlers) GetProject(ctx *gin.Context) {
-	user, project, ok := h.projectAndCurrentUser(ctx)
+	user, project, ok := h.authorizeProject(ctx, authz.ActionProjectRead)
 	if !ok {
 		return
 	}
@@ -126,7 +134,7 @@ func (h *Handlers) GetProject(ctx *gin.Context) {
 }
 
 func (h *Handlers) UpdateProject(ctx *gin.Context) {
-	project, ok := h.findProjectForCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin)
+	_, project, ok := h.authorizeProject(ctx, authz.ActionProjectManage)
 	if !ok {
 		return
 	}
@@ -160,11 +168,7 @@ func (h *Handlers) UpdateProject(ctx *gin.Context) {
 }
 
 func (h *Handlers) DeleteProject(ctx *gin.Context) {
-	user, ok := h.currentUser(ctx)
-	if !ok {
-		return
-	}
-	project, ok := h.findProjectForCurrentUserWithRoles(ctx, authz.ProjectRoleOwner)
+	user, project, ok := h.authorizeProject(ctx, authz.ActionProjectDelete)
 	if !ok {
 		return
 	}
@@ -177,25 +181,31 @@ func (h *Handlers) DeleteProject(ctx *gin.Context) {
 		return
 	}
 	if err := markResourceDeleting(h.dbFor(ctx), &model.Project{}, project.ID); err != nil {
+		if errors.Is(err, errResourceDeleteAlreadyStarted) {
+			writeErrorCode(ctx, http.StatusConflict, "project.delete_in_progress", "项目空间正在删除中，请等待资源清理完成")
+			return
+		}
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if !h.enqueueResourceCleanup(ctx.Request.Context(), tasks.ResourceCleanupPayload{
-		ResourceType: "project",
-		ResourceID:   project.ID,
-		ProjectID:    project.ID,
-	}) {
+	if !h.enqueueResourceCleanup(ctx.Request.Context(), "project", project.ID, project.ID, user.ID) {
 		_ = markResourceDeleteFailed(h.dbFor(ctx), &model.Project{}, project.ID, "资源清理任务投递失败，请稍后重试")
+		h.auditWithContext(user.ID, "project.delete", project.ID, false, "cleanup_enqueue_failed", ctx.Request.Context())
 		writeError(ctx, http.StatusServiceUnavailable, "资源清理任务投递失败，请稍后重试")
 		return
 	}
-	h.auditWithContext(user.ID, "project.delete", project.ID, true, project.Name, ctx.Request.Context())
+	h.auditWithContext(user.ID, "project.delete", project.ID, true, "cleanup_queued", ctx.Request.Context())
 	ctx.Status(http.StatusNoContent)
 }
 
 func (h *Handlers) ListProjectPins(ctx *gin.Context) {
 	user, ok := h.currentUser(ctx)
 	if !ok {
+		return
+	}
+	readPolicy, exists := authz.ProjectPolicyForAction(authz.ActionProjectRead)
+	if !exists {
+		writeErrorCode(ctx, http.StatusServiceUnavailable, "auth.project_authorization_unavailable", "项目权限服务暂时不可用")
 		return
 	}
 
@@ -205,7 +215,7 @@ func (h *Handlers) ListProjectPins(ctx *gin.Context) {
 	}, "pinnedAt")
 	query := h.dbFor(ctx).Table("project_pins").
 		Joins("join projects on projects.id = project_pins.project_id and projects.deleted_at is null").
-		Joins("join project_members on project_members.project_id = projects.id and project_members.user_id = project_pins.user_id").
+		Joins("join project_members on project_members.project_id = projects.id and project_members.user_id = project_pins.user_id and project_members.role in ?", readPolicy.AllowedRoles).
 		Where("project_pins.user_id = ?", user.ID)
 	var total int64
 	if err := query.Session(&gorm.Session{}).Count(&total).Error; err != nil {
@@ -232,7 +242,7 @@ func (h *Handlers) ListProjectPins(ctx *gin.Context) {
 }
 
 func (h *Handlers) PinProject(ctx *gin.Context) {
-	user, project, ok := h.projectAndCurrentUser(ctx)
+	user, project, ok := h.authorizeProject(ctx, authz.ActionProjectPin)
 	if !ok {
 		return
 	}
@@ -268,7 +278,7 @@ func (h *Handlers) PinProject(ctx *gin.Context) {
 }
 
 func (h *Handlers) UnpinProject(ctx *gin.Context) {
-	user, project, ok := h.projectAndCurrentUser(ctx)
+	user, project, ok := h.authorizeProject(ctx, authz.ActionProjectPin)
 	if !ok {
 		return
 	}
@@ -299,14 +309,15 @@ func (h *Handlers) UpdateProjectOrder(ctx *gin.Context) {
 		return
 	}
 
-	var accessibleCount int64
-	if err := h.dbFor(ctx).Model(&model.ProjectMember{}).Where("user_id = ? and project_id in ?", user.ID, projectIDs).Count(&accessibleCount).Error; err != nil {
-		writeError(ctx, http.StatusInternalServerError, err.Error())
-		return
-	}
-	if accessibleCount != int64(len(projectIDs)) {
-		writeError(ctx, http.StatusForbidden, "你没有访问部分项目空间的权限")
-		return
+	for _, projectID := range projectIDs {
+		allowed, available := h.projectMemberActionAllowed(ctx, projectID, user.ID, authz.ActionProjectPin)
+		if !available {
+			return
+		}
+		if !allowed {
+			writeError(ctx, http.StatusForbidden, "你没有访问部分项目空间的权限")
+			return
+		}
 	}
 
 	if err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
@@ -326,7 +337,7 @@ func (h *Handlers) UpdateProjectOrder(ctx *gin.Context) {
 }
 
 func (h *Handlers) ListProjectMembers(ctx *gin.Context) {
-	if _, ok := h.findProjectForCurrentUser(ctx); !ok {
+	if _, _, ok := h.authorizeProject(ctx, authz.ActionProjectRead); !ok {
 		return
 	}
 
@@ -357,7 +368,7 @@ func (h *Handlers) ListProjectMembers(ctx *gin.Context) {
 }
 
 func (h *Handlers) SearchProjectMemberCandidates(ctx *gin.Context) {
-	_, project, ok := h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin)
+	_, project, ok := h.authorizeProject(ctx, authz.ActionProjectManage)
 	if !ok {
 		return
 	}
@@ -393,7 +404,7 @@ func (h *Handlers) SearchProjectMemberCandidates(ctx *gin.Context) {
 }
 
 func (h *Handlers) CreateProjectMember(ctx *gin.Context) {
-	actor, project, ok := h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin)
+	actor, project, ok := h.authorizeProject(ctx, authz.ActionProjectManage)
 	if !ok {
 		return
 	}
@@ -426,9 +437,15 @@ func (h *Handlers) CreateProjectMember(ctx *gin.Context) {
 	}
 
 	role := normalizeProjectRole(input.Role)
-	if role == authz.ProjectRoleOwner && !h.currentProjectRoleAllows(ctx, project.ID, actor.ID, authz.ProjectRoleOwner) {
-		writeError(ctx, http.StatusForbidden, "只有项目 owner 可以授予 owner 角色")
-		return
+	if role == authz.ProjectRoleOwner {
+		actorIsOwner, available := h.projectMemberActionAllowed(ctx, project.ID, actor.ID, authz.ActionProjectOwnerOnly)
+		if !available {
+			return
+		}
+		if !actorIsOwner {
+			writeError(ctx, http.StatusForbidden, "只有项目 owner 可以授予 owner 角色")
+			return
+		}
 	}
 
 	member := model.ProjectMember{
@@ -456,6 +473,10 @@ func (h *Handlers) CreateProjectMember(ctx *gin.Context) {
 	}
 	h.auditWithContext(actor.ID, "project_member.create", member.ID, true, member.Role, ctx.Request.Context())
 	defaultInboxBroker.Notify(targetUser.ID, "")
+	if err := h.enqueueEnabledProjectAccessKubeGateways(ctx.Request.Context(), targetUser.ID, false); err != nil {
+		writeKubeGatewayEnqueueError(ctx)
+		return
+	}
 
 	ctx.JSON(http.StatusCreated, projectMemberResponse{
 		ID:        member.ID,
@@ -468,7 +489,7 @@ func (h *Handlers) CreateProjectMember(ctx *gin.Context) {
 }
 
 func (h *Handlers) UpdateProjectMember(ctx *gin.Context) {
-	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin)
+	user, project, ok := h.authorizeProject(ctx, authz.ActionProjectManage)
 	if !ok {
 		return
 	}
@@ -487,7 +508,10 @@ func (h *Handlers) UpdateProjectMember(ctx *gin.Context) {
 		return
 	}
 	nextRole := normalizeProjectRole(input.Role)
-	actorIsOwner := h.currentProjectRoleAllows(ctx, project.ID, user.ID, authz.ProjectRoleOwner)
+	actorIsOwner, available := h.projectMemberActionAllowed(ctx, project.ID, user.ID, authz.ActionProjectOwnerOnly)
+	if !available {
+		return
+	}
 	if (member.Role == authz.ProjectRoleOwner || nextRole == authz.ProjectRoleOwner) && !actorIsOwner {
 		writeError(ctx, http.StatusForbidden, "只有项目 owner 可以修改 owner 角色")
 		return
@@ -520,7 +544,7 @@ func (h *Handlers) UpdateProjectMember(ctx *gin.Context) {
 }
 
 func (h *Handlers) DeleteProjectMember(ctx *gin.Context) {
-	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin)
+	user, project, ok := h.authorizeProject(ctx, authz.ActionProjectManage)
 	if !ok {
 		return
 	}
@@ -538,7 +562,11 @@ func (h *Handlers) DeleteProjectMember(ctx *gin.Context) {
 		return
 	}
 	if member.Role == authz.ProjectRoleOwner {
-		if !h.currentProjectRoleAllows(ctx, project.ID, user.ID, authz.ProjectRoleOwner) {
+		actorIsOwner, available := h.projectMemberActionAllowed(ctx, project.ID, user.ID, authz.ActionProjectOwnerOnly)
+		if !available {
+			return
+		}
+		if !actorIsOwner {
 			writeError(ctx, http.StatusForbidden, "只有项目 owner 可以移除 owner 成员")
 			return
 		}
@@ -562,87 +590,25 @@ func (h *Handlers) DeleteProjectMember(ctx *gin.Context) {
 	}
 	h.auditWithContext(user.ID, "project_member.delete", member.ID, true, member.Role, ctx.Request.Context())
 	defaultInboxBroker.Notify(member.UserID, "")
+	if err := h.enqueueEnabledProjectAccessKubeGateways(ctx.Request.Context(), member.UserID, false); err != nil {
+		writeKubeGatewayEnqueueError(ctx)
+		return
+	}
 	ctx.Status(http.StatusNoContent)
 }
 
 func (h *Handlers) findProject(ctx *gin.Context) (model.Project, bool) {
 	var project model.Project
-	if err := h.dbFor(ctx).First(&project, "id = ?", ctx.Param("projectId")).Error; err != nil {
+	err := h.dbFor(ctx).First(&project, "id = ?", ctx.Param("projectId")).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
 		writeError(ctx, http.StatusNotFound, "project not found")
 		return project, false
 	}
-	return project, true
-}
-
-func (h *Handlers) findProjectForCurrentUser(ctx *gin.Context) (model.Project, bool) {
-	return h.findProjectForCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin, authz.ProjectRoleDeveloper, authz.ProjectRoleViewer)
-}
-
-func (h *Handlers) projectAndCurrentUser(ctx *gin.Context) (model.User, model.Project, bool) {
-	return h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin, authz.ProjectRoleDeveloper, authz.ProjectRoleViewer)
-}
-
-func (h *Handlers) projectAndCurrentUserWithRoles(ctx *gin.Context, allowedRoles ...string) (model.User, model.Project, bool) {
-	user, ok := h.currentUser(ctx)
-	if !ok {
-		return model.User{}, model.Project{}, false
-	}
-	project, ok := h.findProjectForCurrentUserWithRoles(ctx, allowedRoles...)
-	if !ok {
-		return model.User{}, model.Project{}, false
-	}
-	return user, project, true
-}
-
-func (h *Handlers) findProjectForCurrentUserWithRoles(ctx *gin.Context, allowedRoles ...string) (model.Project, bool) {
-	user, ok := h.currentUser(ctx)
-	if !ok {
-		return model.Project{}, false
-	}
-
-	project, ok := h.findProject(ctx)
-	if !ok {
+	if err != nil {
+		writeErrorCode(ctx, http.StatusServiceUnavailable, "project.lookup_unavailable", "project storage is unavailable")
 		return project, false
 	}
-
-	if authz.IsPlatformAdmin(user.Role) {
-		return project, true
-	}
-
-	var member model.ProjectMember
-	err := h.dbFor(ctx).First(&member, "project_id = ? and user_id = ?", project.ID, user.ID).Error
-	if err != nil {
-		writeError(ctx, http.StatusForbidden, "你没有访问该项目的权限")
-		return model.Project{}, false
-	}
-
-	if !projectUserRoleAllowed(user, member.Role, allowedRoles) {
-		writeError(ctx, http.StatusForbidden, "你没有执行该项目操作的权限")
-		return model.Project{}, false
-	}
-	ctx.Set(currentProjectRoleContextKey, member.Role)
-
 	return project, true
-}
-
-func projectUserRoleAllowed(user model.User, memberRole string, allowedRoles []string) bool {
-	if authz.IsPlatformAdmin(user.Role) {
-		return true
-	}
-	return authz.ProjectRoleAllowsLegacyRoles(memberRole, allowedRoles)
-}
-
-func projectRoleAllowed(role string, allowedRoles []string) bool {
-	return authz.ProjectRoleAllowsLegacyRoles(role, allowedRoles)
-}
-
-func (h *Handlers) currentProjectRoleAllows(ctx *gin.Context, projectID, userID string, allowedRoles ...string) bool {
-	var member model.ProjectMember
-	if err := h.dbFor(ctx).First(&member, "project_id = ? and user_id = ?", projectID, userID).Error; err != nil {
-		writeError(ctx, http.StatusForbidden, "你没有访问该项目的权限")
-		return false
-	}
-	return projectRoleAllowed(member.Role, allowedRoles)
 }
 
 func (h *Handlers) projectHasAnotherOwner(ctx context.Context, projectID, memberID string) bool {

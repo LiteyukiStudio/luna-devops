@@ -273,7 +273,10 @@ func TestBuildVariableSetResponseHidesVariablesWithoutInspectPermission(t *testi
 		Variables: `{"PUBLIC_FLAG":"true","API_URL":"https://api.example.com"}`,
 	}
 
-	output := h.buildVariableSetResponseForUser(model.User{ID: "usr_member", Role: authz.PlatformRoleUser}, set, context.Background())
+	output, err := h.buildVariableSetResponseForUser(model.User{ID: "usr_member", Role: authz.PlatformRoleUser}, set, context.Background())
+	if err != nil {
+		t.Fatalf("buildVariableSetResponseForUser() error = %v", err)
+	}
 
 	if output.CanInspectVariables {
 		t.Fatal("expected regular user to be unable to inspect global build variables")
@@ -295,7 +298,10 @@ func TestBuildVariableSetResponseShowsVariablesWithInspectPermission(t *testing.
 		Variables: `{"PUBLIC_FLAG":"true"}`,
 	}
 
-	output := h.buildVariableSetResponseForUser(model.User{ID: "usr_owner", Role: authz.PlatformRoleUser}, set, context.Background())
+	output, err := h.buildVariableSetResponseForUser(model.User{ID: "usr_owner", Role: authz.PlatformRoleUser}, set, context.Background())
+	if err != nil {
+		t.Fatalf("buildVariableSetResponseForUser() error = %v", err)
+	}
 
 	if !output.CanInspectVariables {
 		t.Fatal("expected owner to inspect personal build variables")

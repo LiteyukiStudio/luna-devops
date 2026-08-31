@@ -10,6 +10,9 @@ app:
   logLevel: info
   publicBaseUrl: http://localhost:8088
   corsOrigins: ""
+  # Explicit forwarded-address trust boundary. Required when this chart's
+  # Ingress is enabled; prefer a dedicated Ingress source subnet. Trusting a
+  # whole Pod CIDR also requires network isolation that prevents direct API access.
   trustedProxyCidrs: ""
   secretEncryptionKey: ""
   existingSecret: ""

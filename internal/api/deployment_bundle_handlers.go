@@ -18,7 +18,7 @@ import (
 )
 
 func (h *Handlers) ExportDeploymentTargetBundle(ctx *gin.Context) {
-	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin, authz.ProjectRoleDeveloper, authz.ProjectRoleViewer)
+	user, project, ok := h.authorizeProject(ctx, authz.ActionDeploymentRead)
 	if !ok {
 		return
 	}
@@ -79,7 +79,7 @@ func (h *Handlers) PreviewDeploymentTargetBundleImport(ctx *gin.Context) {
 
 func (h *Handlers) ListDeploymentTargetBundleReferenceCandidates(ctx *gin.Context) {
 	ctx.Header("Cache-Control", "no-store")
-	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin, authz.ProjectRoleDeveloper)
+	user, project, ok := h.authorizeProject(ctx, authz.ActionDeploymentUpdate)
 	if !ok {
 		return
 	}
@@ -221,7 +221,7 @@ func (h *Handlers) ImportDeploymentTargetBundle(ctx *gin.Context) {
 }
 
 func (h *Handlers) prepareDeploymentTargetBundleImport(ctx *gin.Context, commit bool) (model.User, model.Project, model.Application, deploymentTargetBundleImportRequest, bool) {
-	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin, authz.ProjectRoleDeveloper)
+	user, project, ok := h.authorizeProject(ctx, authz.ActionDeploymentUpdate)
 	if !ok {
 		return model.User{}, model.Project{}, model.Application{}, deploymentTargetBundleImportRequest{}, false
 	}

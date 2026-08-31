@@ -38,7 +38,7 @@ OTEL_RESOURCE_ATTRIBUTES=deployment.environment.name=production,k8s.cluster.name
 
 三个地址都填写后开启“Agent 可观测”，逐个执行“测试连接”。查询地址和 Token 只由 Luna API 使用，不会发送到浏览器。配置完成后在“运营面板 → Agent 观测”查看模型用量、工具调用、对话轮和 Trace。
 
-打开某一轮对话详情后，头部会展示该轮完整 Trace ID；点击该信息块即可复制，用于在 Tempo、日志平台或诊断工单中检索同一条调用链。
+打开某一轮对话详情后，头部会展示该轮完整 Trace ID；点击该信息块即可复制，用于在 Tempo、日志平台或诊断工单中检索同一条调用链。Agent 观测页会将 Trace ID 和 Span ID 统一显示为小写十六进制字符串，不受 Tempo 查询响应的传输编码影响。
 
 ### 理解模型 Token 用量
 
@@ -73,7 +73,7 @@ METRICS_PATH=/metrics
 
 ## 高敏内容观测
 
-`AI_OBSERVABILITY_CAPTURE_CONTENT=true` 可能把脱敏后的模型输入输出、工具参数和结果写入受控 Trace；关联日志只记录事件元数据，不记录 Prompt 或工具参数。生产环境应保持关闭；只在受控排障窗口临时开启，并先限制 Tempo 权限和保留时间。结束后恢复为 `false` 并重启 Agent。
+`AI_OBSERVABILITY_CAPTURE_CONTENT=true` 会按原文把模型输入输出、工具参数和结果写入受控 Trace；普通自然语言不会经过关键词或正则猜测式脱敏，工具目录通过 `sensitivePaths` 明确声明的字段仍会替换为 `[REDACTED]`。每个内容字段的 JSON 超过 128 KiB（按 UTF-8 字节计）时会整项省略，并在 Span 上写入 `luna.ai.content.truncated=true` 和 `luna.ai.content.omitted` 事件；关联日志只记录事件元数据，不记录正文。生产环境应保持关闭；只在受控排障窗口临时开启，并先限制 Tempo 权限和保留时间。结束后恢复为 `false` 并重启 Agent。
 
 ## 验证
 

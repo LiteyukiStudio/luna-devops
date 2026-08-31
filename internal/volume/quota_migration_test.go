@@ -60,7 +60,6 @@ func TestProjectVolumeQuotaMigrationUsesDurableTransactionalReservations(t *test
 func TestProjectVolumeQuotaPostgresLifecycleConcurrencyAndCancellation(t *testing.T) {
 	db := openVolumeTestDB(t)
 	installProjectVolumeTestSchema(t, db)
-	installProjectVolumeQuotaTestSchema(t, db)
 	if err := db.Exec(`
 INSERT INTO projects(id, identifier, name) VALUES
   ('prj_quota', 'quota', 'Quota'),
@@ -247,13 +246,6 @@ func quotaReferencedVolume(volumeID, projectID string) model.ProjectVolume {
 		LifecycleState: model.ProjectVolumeLifecycleReady, PendingOperation: "", CapacityRequest: "100Gi", CapacityBytes: 100 * quotaTestGiB,
 		StorageClassName: "standard", AccessMode: model.ProjectVolumeAccessReadWriteOnce, VolumeMode: model.ProjectVolumeModeFilesystem,
 		CreatedBy: "usr_quota", Revision: 1,
-	}
-}
-
-func installProjectVolumeQuotaTestSchema(t *testing.T, db *gorm.DB) {
-	t.Helper()
-	if err := db.Exec(readVolumeMigration(t, "000068_project_volume_quota_billing.up.sql")).Error; err != nil {
-		t.Fatalf("install project volume quota schema: %v", err)
 	}
 }
 

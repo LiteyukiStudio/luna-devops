@@ -1,4 +1,7 @@
 {{- if .Values.ingress.enabled -}}
+{{- if not (trim .Values.app.trustedProxyCidrs) -}}
+{{- fail "app.trustedProxyCidrs is required when ingress.enabled=true; set it to the trusted Ingress/proxy source CIDR(s) seen by the API" -}}
+{{- end -}}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:

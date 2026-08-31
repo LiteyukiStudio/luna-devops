@@ -117,6 +117,17 @@ type RuntimeMetricsOptions struct {
 	DeploymentTargetID string
 	WorkloadName       string
 	WorkloadType       string
+	// ExactPodNames selects one kubectl-created top-level workload. A non-nil
+	// slice, including an empty slice for a scaled-to-zero workload, switches
+	// RuntimeMetrics away from the platform deployment-target selector.
+	ExactPodNames     []string
+	ProjectID         string
+	ApplicationID     string
+	ManagementSource  string
+	DesiredReplicas   int32
+	UpdatedReplicas   int32
+	ReadyReplicas     int32
+	AvailableReplicas int32
 }
 
 type RuntimeMetricsSnapshot struct {

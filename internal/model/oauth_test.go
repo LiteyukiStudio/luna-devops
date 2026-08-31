@@ -34,6 +34,7 @@ func TestOAuthAccessTokenFieldsUseMigrationColumnNames(t *testing.T) {
 	}
 	for fieldName, want := range map[string]string{
 		"OAuthApplicationID": "oauth_application_id",
+		"OAuthFamilyID":      "oauth_family_id",
 		"OAuthGrantID":       "oauth_grant_id",
 	} {
 		field := parsed.LookUpField(fieldName)
@@ -43,5 +44,19 @@ func TestOAuthAccessTokenFieldsUseMigrationColumnNames(t *testing.T) {
 		if field.DBName != want {
 			t.Fatalf("field %q database name = %q, want %q", fieldName, field.DBName, want)
 		}
+	}
+}
+
+func TestOAuthRefreshTokenFamilyUsesMigrationColumnName(t *testing.T) {
+	parsed, err := schema.Parse(&OAuthRefreshToken{}, &sync.Map{}, schema.NamingStrategy{})
+	if err != nil {
+		t.Fatalf("parse refresh token schema: %v", err)
+	}
+	field := parsed.LookUpField("FamilyID")
+	if field == nil {
+		t.Fatal("field FamilyID not found")
+	}
+	if field.DBName != "family_id" {
+		t.Fatalf("FamilyID database name = %q, want family_id", field.DBName)
 	}
 }

@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"sort"
 	"strings"
@@ -95,34 +96,48 @@ func (h *Handlers) canManageScopedResourceByID(ctx *gin.Context, user model.User
 		if authz.IsPlatformAdmin(user.Role) {
 			return true
 		}
-		if h.canManageAllScopedProjects(ctx, user, h.scopedResourceProjectIDs(resourceType, resourceID, ctx.Request.Context())) {
+		projectIDs, err := h.scopedResourceProjectIDsResult(resourceType, resourceID, ctx.Request.Context())
+		if err != nil {
+			writeProjectAuthorizationError(ctx, fmt.Errorf("%w: scoped resource bindings: %v", authz.ErrProjectAuthorizationUnavailable, err))
+			return false
+		}
+		if h.canManageAllScopedProjects(ctx, user, projectIDs) {
 			return true
 		}
+	}
+	if ctx.IsAborted() {
+		return false
 	}
 	writeError(ctx, http.StatusForbidden, errorMessage)
 	return false
 }
 
-func (h *Handlers) canInspectScopedResourceConfigByID(user model.User, scope, ownerRef, resourceType, resourceID string, ctx context.Context) bool {
+func (h *Handlers) canInspectScopedResourceConfigByID(user model.User, scope, ownerRef, resourceType, resourceID string, ctx context.Context) (bool, error) {
 	switch normalizeOwnerScope(scope) {
 	case "global":
-		return authz.IsPlatformAdmin(user.Role)
+		return authz.IsPlatformAdmin(user.Role), nil
 	case "user":
-		return ownerRef == user.ID
+		return ownerRef == user.ID, nil
 	case "project":
 		if authz.IsPlatformAdmin(user.Role) {
-			return true
+			return true, nil
 		}
-		for _, projectID := range h.scopedResourceProjectIDs(resourceType, resourceID, ctx) {
-			var member model.ProjectMember
-			err := h.dbWithContext(ctx).First(&member, "project_id = ? and user_id = ? and role in ?", projectID, user.ID, []string{authz.ProjectRoleOwner, authz.ProjectRoleAdmin}).Error
-			if err == nil {
-				return true
+		projectIDs, err := h.scopedResourceProjectIDsResult(resourceType, resourceID, ctx)
+		if err != nil {
+			return false, fmt.Errorf("%w: scoped resource bindings: %v", authz.ErrProjectAuthorizationUnavailable, err)
+		}
+		for _, projectID := range projectIDs {
+			allowed, err := h.projectRoleActionAllowed(ctx, user, projectID, authz.ActionProjectManage)
+			if err != nil {
+				return false, err
+			}
+			if allowed {
+				return true, nil
 			}
 		}
-		return false
+		return false, nil
 	default:
-		return false
+		return false, nil
 	}
 }
 
@@ -133,11 +148,10 @@ func (h *Handlers) canUseScopedResourceByID(user model.User, scope, ownerRef, re
 	case "user":
 		return ownerRef == user.ID
 	case "project":
-		if authz.IsPlatformAdmin(user.Role) {
-			return true
-		}
+		authorizer := h.projectAuthorizer(ctx)
+		subject := authz.ProjectSubject{UserID: user.ID, PlatformRole: user.Role}
 		for _, projectID := range h.scopedResourceProjectIDs(resourceType, resourceID, ctx) {
-			if h.projects.UserHasProjectContext(ctx, user.ID, projectID) {
+			if _, err := authorizer.AuthorizeProject(ctx, subject, projectID, authz.ActionProjectRead); err == nil {
 				return true
 			}
 		}
@@ -257,15 +271,20 @@ func (h *Handlers) replaceScopedResourceProjectBindings(tx *gorm.DB, resourceTyp
 }
 
 func (h *Handlers) scopedResourceProjectIDs(resourceType, resourceID string, ctx context.Context) []string {
+	result, _ := h.scopedResourceProjectIDsResult(resourceType, resourceID, ctx)
+	return result
+}
+
+func (h *Handlers) scopedResourceProjectIDsResult(resourceType, resourceID string, ctx context.Context) ([]string, error) {
 	var bindings []model.ScopedResourceProjectBinding
 	if err := h.dbWithContext(ctx).Where("resource_type = ? and resource_id = ?", resourceType, resourceID).Order("project_id asc").Find(&bindings).Error; err != nil {
-		return nil
+		return nil, err
 	}
 	result := make([]string, 0, len(bindings))
 	for _, binding := range bindings {
 		result = append(result, binding.ProjectID)
 	}
-	return result
+	return result, nil
 }
 
 func (h *Handlers) scopedResourceProjectIDMap(resourceType string, resourceIDs []string, ctx context.Context) map[string][]string {
@@ -314,7 +333,17 @@ func (h *Handlers) canManageAllScopedProjects(ctx *gin.Context, user model.User,
 			}
 			continue
 		}
-		if _, ok := h.findProjectForCurrentUserWithRolesByID(ctx, projectID, authz.ProjectRoleOwner, authz.ProjectRoleAdmin); !ok {
+		var project model.Project
+		if err := h.dbFor(ctx).First(&project, "id = ?", projectID).Error; err != nil {
+			writeError(ctx, http.StatusNotFound, "project not found")
+			return false
+		}
+		allowed, available := h.projectMemberActionAllowed(ctx, projectID, user.ID, authz.ActionProjectManage)
+		if !available {
+			return false
+		}
+		if !allowed {
+			writeErrorCode(ctx, http.StatusForbidden, "auth.forbidden", "你没有执行该项目操作的权限")
 			return false
 		}
 	}

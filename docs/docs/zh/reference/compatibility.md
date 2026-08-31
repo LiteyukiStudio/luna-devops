@@ -1,6 +1,6 @@
 # 兼容范围
 
-更新时间：2026-07-24。
+更新时间：2026-08-31。
 
 以下版本是当前优先支持和测试的范围。新部署优先选择仍在维护的稳定版本；升级后应完成页面末尾的冒烟测试。
 
@@ -20,6 +20,7 @@
 | 组件 | 支持范围 | 备注 |
 | --- | --- | --- |
 | Kubernetes / K3s | Kubernetes `1.34 ~ 1.36` | K3s 按内置 Kubernetes 版本判断 |
+| kubectl 网关 | 尚未发布独立验证范围 | 当前源码以 Kubernetes / kubectl `1.34 ~ 1.36` 为验收目标，但完整真实集群矩阵尚未完成；不要据此声明正式兼容，最终以当前 Release 说明为准 |
 | Metrics Server | 与集群版本兼容 | 缺失时只影响实时资源指标 |
 | Gateway API | `1.0.0 ~ 1.6.x` | 需要 CRD 和兼容控制器 |
 | Traefik | `3.x` | 需要启用 Kubernetes Gateway Provider |
@@ -43,8 +44,9 @@
 1. Git Provider：完成 OAuth、仓库与分支读取，并创建一次 Webhook。
 2. 镜像站：搜索镜像、读取 Tag、推送构建产物并从运行集群拉取。
 3. Kubernetes：创建构建 Job 和 Deployment，读取状态、日志与终端。
-4. Gateway：确认 Gateway 和 HTTPRoute 均进入已接受、已生效状态。
-5. OIDC：完成一次真实登录并检查回调地址。
-6. 可观测：确认 API、Worker 和 Agent 的遥测可以查询。
+4. kubectl 网关（启用时）：从平台生成新 kubeconfig，验证 Discovery、`auth can-i`、读写、Watch、日志、Exec 和 Port-forward，并在撤销凭据后确认请求和流均停止。
+5. Gateway：确认 Gateway 和 HTTPRoute 均进入已接受、已生效状态。
+6. OIDC：完成一次真实登录并检查回调地址。
+7. 可观测：确认 API、Worker 和 Agent 的遥测可以查询。
 
 更精确的兼容依据以各组件官方支持矩阵及 Luna DevOps 当前 Release 说明为准。

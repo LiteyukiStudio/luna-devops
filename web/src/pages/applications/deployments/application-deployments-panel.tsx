@@ -387,7 +387,6 @@ export function ApplicationDeploymentsPanel({ applicationId, applicationIdentifi
     : t('deploymentsPage.progressiveDataDisabledSummary')
   const targetHasAdvancedConfig = Boolean(
     watchedTargetValues.environmentVariables.length > 0
-    || Object.keys(watchedTargetValues.configRefs ?? {}).length > 0
     || String(watchedTargetValues.configFiles ?? '').trim()
     || String(watchedTargetValues.secretFiles ?? '').trim()
     || runtimeSecretKeys(editingTarget?.environmentVariables).length > 0
@@ -411,17 +410,13 @@ export function ApplicationDeploymentsPanel({ applicationId, applicationIdentifi
     'runAsGroup',
     'fsGroup',
     'fsGroupChangePolicy',
-    'allowPrivilegeEscalation',
-    'capabilityAdd',
     'capabilityDrop',
     'nodeSelector',
     'tolerations',
     'affinity',
     'topologySpreadConstraints',
     'priorityClassName',
-    'serviceType',
     'serviceAnnotations',
-    'serviceExternalTrafficPolicy',
     'serviceSessionAffinity',
     'autoScalingBehavior',
     'autoScalingMinReplicas',

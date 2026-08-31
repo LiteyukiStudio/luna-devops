@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/LiteyukiStudio/devops/internal/model"
+	"github.com/LiteyukiStudio/devops/internal/runtimecluster"
 	"gorm.io/gorm"
 )
 
@@ -425,7 +426,7 @@ func (s *Service) ReadinessResources(ctx context.Context, scope Scope) ([]model.
 	if err != nil {
 		return nil, nil, err
 	}
-	clusterQuery := s.scopedResourceQuery(ctx, scope, projectIDs, "runtime_cluster", &model.RuntimeCluster{})
+	clusterQuery := runtimecluster.ActiveScope(s.scopedResourceQuery(ctx, scope, projectIDs, "runtime_cluster", &model.RuntimeCluster{}))
 	var clusters []model.RuntimeCluster
 	if err := clusterQuery.Find(&clusters).Error; err != nil {
 		return nil, nil, fmt.Errorf("list dashboard clusters: %w", err)

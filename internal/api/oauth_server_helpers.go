@@ -5,6 +5,7 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
+	"net"
 	"net/http"
 	"net/url"
 	"sort"
@@ -15,7 +16,6 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
 )
 
 const (
@@ -23,6 +23,9 @@ const (
 	oauthRefreshTokenTTL      = 365 * 24 * time.Hour
 	oauthDeviceCodeTTL        = 10 * time.Minute
 	oauthDevicePollInterval   = 5 * time.Second
+	oauthCredentialRateLimit  = 30
+	oauthIPRateLimit          = 300
+	oauthRateLimitWindow      = time.Minute
 
 	oauthDeviceCodeGrantType = "urn:ietf:params:oauth:grant-type:device_code"
 	lunaCLIApplicationID     = "oapp_luna_cli"
@@ -31,21 +34,11 @@ const (
 
 var allowedOAuthAccessTokenLifetimeDays = map[int]bool{0: true, 1: true, 7: true, 30: true, 90: true}
 
-type oauthApplicationResponse struct {
-	model.OAuthApplication
-	RedirectURIs []string `json:"redirectUris"`
-}
-
-type oauthGrantResponse struct {
-	ID          string                   `json:"id"`
-	Application oauthApplicationResponse `json:"application"`
-	Scope       string                   `json:"scope"`
-	CreatedAt   time.Time                `json:"createdAt"`
-	UpdatedAt   time.Time                `json:"updatedAt"`
-}
-
-func oauthApplicationToResponse(application model.OAuthApplication) oauthApplicationResponse {
-	return oauthApplicationResponse{OAuthApplication: application, RedirectURIs: decodeStringList(application.RedirectURIs)}
+type oauthClientAuthentication struct {
+	applicationID    string
+	clientID         string
+	clientSecretHash string
+	public           bool
 }
 
 func encodeStringList(values []string) string {
@@ -185,56 +178,53 @@ func (h *Handlers) oauthCookieUser(ctx *gin.Context) (model.User, bool) {
 func oauthError(ctx *gin.Context, status int, code, description string) {
 	ctx.Header("Cache-Control", "no-store")
 	ctx.Header("Pragma", "no-cache")
-	ctx.JSON(status, gin.H{
-		"error":             code,
-		"error_description": description,
-		"requestId":         requestID(ctx),
+	ctx.JSON(status, oauthProtocolErrorResponse{
+		Code:        code,
+		Description: description,
+		RequestID:   requestID(ctx),
 	})
 }
 
-func (h *Handlers) authenticateOAuthClient(ctx *gin.Context) (model.OAuthApplication, bool) {
-	clientID, clientSecret, basicOK := ctx.Request.BasicAuth()
-	if !basicOK {
-		clientID = strings.TrimSpace(ctx.PostForm("client_id"))
-		clientSecret = ctx.PostForm("client_secret")
+func bindOAuthForm(ctx *gin.Context, value any) bool {
+	if err := ctx.ShouldBind(value); err != nil {
+		oauthError(ctx, http.StatusBadRequest, "invalid_request", "OAuth form request is invalid")
+		return false
 	}
-	if !h.allowOAuthClientAttempt(ctx, clientID) {
-		return model.OAuthApplication{}, false
-	}
-	var application model.OAuthApplication
-	if clientID == "" || clientSecret == "" || h.dbFor(ctx).First(&application, "client_id = ? and revoked_at is null", clientID).Error != nil {
-		oauthError(ctx, http.StatusUnauthorized, "invalid_client", "Client authentication failed")
-		return model.OAuthApplication{}, false
-	}
-	if subtle.ConstantTimeCompare([]byte(application.ClientSecretHash), []byte(hashToken(clientSecret))) != 1 {
-		oauthError(ctx, http.StatusUnauthorized, "invalid_client", "Client authentication failed")
-		return model.OAuthApplication{}, false
-	}
-	return application, true
+	return true
 }
 
-func (h *Handlers) authenticateOAuthTokenClient(ctx *gin.Context, allowPublic bool) (model.OAuthApplication, bool) {
+func (h *Handlers) authenticateOAuthTokenClient(
+	ctx *gin.Context,
+	allowPublic bool,
+	flow oauthClientAttemptFlow,
+	formClientID string,
+	formClientSecret string,
+	credential string,
+) (oauthClientAuthentication, bool) {
 	clientID, clientSecret, basicOK := ctx.Request.BasicAuth()
 	if !basicOK {
-		clientID = strings.TrimSpace(ctx.PostForm("client_id"))
-		clientSecret = ctx.PostForm("client_secret")
+		clientID = strings.TrimSpace(formClientID)
+		clientSecret = formClientSecret
 	}
-	if !h.allowOAuthClientAttempt(ctx, clientID) {
-		return model.OAuthApplication{}, false
+	if !h.allowOAuthTokenClientAttempt(ctx, clientID, flow, credential) {
+		return oauthClientAuthentication{}, false
 	}
 	var application model.OAuthApplication
 	if clientID == "" || h.dbFor(ctx).First(&application, "client_id = ? and revoked_at is null", clientID).Error != nil {
 		oauthError(ctx, http.StatusUnauthorized, "invalid_client", "Client authentication failed")
-		return model.OAuthApplication{}, false
+		return oauthClientAuthentication{}, false
 	}
 	if allowPublic && application.ID == lunaCLIApplicationID && application.ClientID == lunaCLIClientID && clientSecret == "" && !basicOK {
-		return application, true
+		return oauthClientAuthentication{applicationID: application.ID, clientID: application.ClientID, public: true}, true
 	}
-	if clientSecret == "" || subtle.ConstantTimeCompare([]byte(application.ClientSecretHash), []byte(hashToken(clientSecret))) != 1 {
+	clientSecretHash := hashToken(clientSecret)
+	if clientSecret == "" || subtle.ConstantTimeCompare([]byte(application.ClientSecretHash), []byte(clientSecretHash)) != 1 {
 		oauthError(ctx, http.StatusUnauthorized, "invalid_client", "Client authentication failed")
-		return model.OAuthApplication{}, false
+		return oauthClientAuthentication{}, false
 	}
-	return application, true
+	return oauthClientAuthentication{
+		applicationID: application.ID, clientID: application.ClientID, clientSecretHash: clientSecretHash,
+	}, true
 }
 
 func recommendedOAuthScope(user model.User) string {
@@ -249,30 +239,120 @@ func userCanAuthorizeOAuthScope(user model.User, scopeText string) bool {
 	return authz.UserCanAuthorizeOAuthScope(user.Role, scopeText)
 }
 
+// allowOAuthClientAttempt is the unauthenticated device-start limiter. Token,
+// refresh, and revoke client authentication must use allowOAuthTokenClientAttempt.
 func (h *Handlers) allowOAuthClientAttempt(ctx *gin.Context, clientID string) bool {
+	return h.allowOAuthClientAttemptForFlow(ctx, clientID, oauthClientAttemptDeviceStart, "")
+}
+
+type oauthClientAttemptFlow string
+
+const (
+	oauthClientAttemptDeviceStart       oauthClientAttemptFlow = "device_start"
+	oauthClientAttemptDeviceCode        oauthClientAttemptFlow = "device_code"
+	oauthClientAttemptAuthorizationCode oauthClientAttemptFlow = "authorization_code"
+	oauthClientAttemptRefresh           oauthClientAttemptFlow = "refresh"
+	oauthClientAttemptRevoke            oauthClientAttemptFlow = "revoke"
+	oauthClientAttemptUnsupported       oauthClientAttemptFlow = "unsupported"
+)
+
+func oauthClientAttemptFlowForGrantType(grantType string) oauthClientAttemptFlow {
+	switch grantType {
+	case oauthDeviceCodeGrantType:
+		return oauthClientAttemptDeviceCode
+	case "authorization_code":
+		return oauthClientAttemptAuthorizationCode
+	case "refresh_token":
+		return oauthClientAttemptRefresh
+	default:
+		return oauthClientAttemptUnsupported
+	}
+}
+
+func (h *Handlers) allowOAuthTokenClientAttempt(ctx *gin.Context, clientID string, flow oauthClientAttemptFlow, credential string) bool {
+	return h.allowOAuthClientAttemptForFlow(ctx, clientID, flow, credential)
+}
+
+func (h *Handlers) allowOAuthClientAttemptForFlow(ctx *gin.Context, clientID string, flow oauthClientAttemptFlow, credential string) bool {
 	if h.rateLimiter == nil {
 		h.rateLimiter = newRateLimiter()
 	}
-	limit := 30
+	credentialLimit := oauthCredentialRateLimit
+	ipLimit := oauthIPRateLimit
 	if h.mode == "development" {
-		limit = developmentRateLimit
+		credentialLimit = developmentRateLimit
+		ipLimit = developmentRateLimit
 	}
-	subjects := []string{
-		"oauth_client_ip:" + ctx.ClientIP(),
-		"oauth_client_id:" + hashToken(strings.TrimSpace(clientID)),
+	type oauthRateLimitAttempt struct {
+		subject string
+		limit   int
 	}
-	for _, subject := range subjects {
-		allowed, err := h.rateLimiter.allow(ctx.Request.Context(), subject, limit, time.Minute)
+	publicClient := strings.TrimSpace(clientID) == lunaCLIClientID
+	attempts := make([]oauthRateLimitAttempt, 0, 2)
+	sourceIP := h.oauthClientSourceIP(ctx)
+	if !publicClient {
+		attempts = append(attempts,
+			oauthRateLimitAttempt{subject: "oauth_client_ip:" + sourceIP, limit: ipLimit},
+			oauthRateLimitAttempt{subject: "oauth_client_id:" + hashToken(strings.TrimSpace(clientID)), limit: credentialLimit},
+		)
+	} else if flow == oauthClientAttemptDeviceStart {
+		attempts = append(attempts, oauthRateLimitAttempt{subject: "oauth_public_device_start_ip:" + sourceIP, limit: ipLimit})
+	} else {
+		flowKey := string(flow)
+		if flowKey == "" {
+			flowKey = string(oauthClientAttemptUnsupported)
+		}
+		attempts = append(attempts, oauthRateLimitAttempt{
+			subject: "oauth_public_" + flowKey + "_ip:" + sourceIP,
+			limit:   ipLimit,
+		})
+		if credential = strings.TrimSpace(credential); credential != "" {
+			attempts = append(attempts, oauthRateLimitAttempt{
+				subject: "oauth_public_" + flowKey + "_credential:" + hashToken(credential),
+				limit:   credentialLimit,
+			})
+		}
+	}
+	for _, attempt := range attempts {
+		allowed, err := h.rateLimiter.allow(ctx.Request.Context(), attempt.subject, attempt.limit, oauthRateLimitWindow)
 		if allowed {
 			continue
 		}
 		if err != nil && h.mode == "development" {
 			continue
 		}
-		oauthError(ctx, http.StatusTooManyRequests, "temporarily_unavailable", "Client authentication is temporarily rate limited")
+		writeOAuthRateLimitError(ctx, "temporarily_unavailable", "Client authentication is temporarily rate limited")
 		return false
 	}
 	return true
+}
+
+func (h *Handlers) oauthClientSourceIP(ctx *gin.Context) string {
+	remoteText := strings.TrimSpace(ctx.RemoteIP())
+	remoteIP := net.ParseIP(remoteText)
+	clientIP := net.ParseIP(ctx.ClientIP())
+	if remoteIP == nil {
+		if remoteText == "" {
+			return "unknown"
+		}
+		return remoteText
+	}
+	if clientIP != nil && !remoteIP.Equal(clientIP) &&
+		ipInCIDRs(remoteIP, h.config.TrustedProxyCIDRs) &&
+		!ipInCIDRs(clientIP, h.config.TrustedProxyCIDRs) {
+		return clientIP.String()
+	}
+	return remoteIP.String()
+}
+
+func ipInCIDRs(ip net.IP, cidrs []string) bool {
+	for _, value := range cidrs {
+		_, network, err := net.ParseCIDR(value)
+		if err == nil && network.Contains(ip) {
+			return true
+		}
+	}
+	return false
 }
 
 func (h *Handlers) allowOAuthDeviceVerificationAttempt(ctx *gin.Context, userID string) bool {
@@ -295,34 +375,14 @@ func (h *Handlers) allowOAuthDeviceVerificationAttempt(ctx *gin.Context, userID 
 		if err != nil && h.mode == "development" {
 			continue
 		}
+		ctx.Header("Retry-After", "60")
 		writeErrorCode(ctx, http.StatusTooManyRequests, "oauth.device.rate_limited", "Device verification is temporarily rate limited")
 		return false
 	}
 	return true
 }
 
-func revokeOAuthGrant(tx *gorm.DB, grantID string, now time.Time) error {
-	if err := tx.Model(&model.OAuthGrant{}).Where("id = ? and revoked_at is null", grantID).Update("revoked_at", now).Error; err != nil {
-		return err
-	}
-	if err := tx.Model(&model.AccessToken{}).Where("oauth_grant_id = ? and revoked_at is null", grantID).Update("revoked_at", now).Error; err != nil {
-		return err
-	}
-	if err := tx.Model(&model.OAuthRefreshToken{}).Where("grant_id = ? and revoked_at is null", grantID).Update("revoked_at", now).Error; err != nil {
-		return err
-	}
-	return nil
-}
-
-func revokeOAuthApplication(tx *gorm.DB, applicationID string, now time.Time) error {
-	var grants []model.OAuthGrant
-	if err := tx.Where("application_id = ? and revoked_at is null", applicationID).Find(&grants).Error; err != nil {
-		return err
-	}
-	for _, grant := range grants {
-		if err := revokeOAuthGrant(tx, grant.ID, now); err != nil {
-			return err
-		}
-	}
-	return nil
+func writeOAuthRateLimitError(ctx *gin.Context, code, description string) {
+	ctx.Header("Retry-After", "60")
+	oauthError(ctx, http.StatusTooManyRequests, code, description)
 }

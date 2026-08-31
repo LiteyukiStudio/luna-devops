@@ -374,22 +374,29 @@ type buildVariableSetResponse struct {
 	CreatedAt           time.Time       `json:"createdAt"`
 }
 
-func (h *Handlers) buildVariableSetResponsesForUser(user model.User, sets []model.BuildVariableSet, ctx context.Context) []buildVariableSetResponse {
+func (h *Handlers) buildVariableSetResponsesForUser(user model.User, sets []model.BuildVariableSet, ctx context.Context) ([]buildVariableSetResponse, error) {
 	output := make([]buildVariableSetResponse, 0, len(sets))
 	for _, set := range sets {
-		output = append(output, h.buildVariableSetResponseForUser(user, set, ctx))
+		response, err := h.buildVariableSetResponseForUser(user, set, ctx)
+		if err != nil {
+			return nil, err
+		}
+		output = append(output, response)
 	}
-	return output
+	return output, nil
 }
 
-func (h *Handlers) buildVariableSetResponseForUser(user model.User, set model.BuildVariableSet, ctx context.Context) buildVariableSetResponse {
+func (h *Handlers) buildVariableSetResponseForUser(user model.User, set model.BuildVariableSet, ctx context.Context) (buildVariableSetResponse, error) {
 	secrets := map[string]bool{}
 	for key, ref := range decodeSecretRefs(set.SecretRefs) {
 		if isBuildEnvKey(key) && strings.TrimSpace(ref) != "" {
 			secrets[key] = true
 		}
 	}
-	canInspectVariables := h.canInspectScopedResourceConfigByID(user, set.Scope, set.OwnerRef, scopedResourceBuildVariableSet, set.ID, ctx)
+	canInspectVariables, err := h.canInspectScopedResourceConfigByID(user, set.Scope, set.OwnerRef, scopedResourceBuildVariableSet, set.ID, ctx)
+	if err != nil {
+		return buildVariableSetResponse{}, err
+	}
 	variables := "{}"
 	if canInspectVariables {
 		variables = set.Variables
@@ -407,7 +414,7 @@ func (h *Handlers) buildVariableSetResponseForUser(user model.User, set model.Bu
 		Enabled:             set.Enabled,
 		CreatedBy:           set.CreatedBy,
 		CreatedAt:           set.CreatedAt,
-	}
+	}, nil
 }
 
 func buildVariableSetVariableCount(raw string) int {

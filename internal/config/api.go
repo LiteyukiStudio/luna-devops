@@ -76,7 +76,7 @@ func buildAPI(raw apiEnvironment, shared Shared, decodeErr error) (APIConfig, er
 	}
 
 	var err error
-	cfg.TrustedProxyCIDRs, err = parseCIDRList("TRUSTED_PROXY_CIDRS", splitList(raw.TrustedProxyCIDRs))
+	cfg.TrustedProxyCIDRs, err = parseTrustedProxyCIDRList(splitList(raw.TrustedProxyCIDRs))
 	errs = appendError(errs, err)
 	configuredOrigins, err := parseOrigins("APP_CORS_ORIGINS", splitList(raw.CORSOrigins))
 	errs = appendError(errs, err)

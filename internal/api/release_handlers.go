@@ -13,7 +13,7 @@ import (
 )
 
 func (h *Handlers) ListReleases(ctx *gin.Context) {
-	if _, ok := h.findProjectForCurrentUser(ctx); !ok {
+	if _, _, ok := h.authorizeProject(ctx, authz.ActionDeploymentRead); !ok {
 		return
 	}
 	pagination := paginationFromQueryWithSort(ctx, map[string]string{"createdAt": "created_at", "status": "status", "revision": "revision"}, "createdAt")
@@ -45,7 +45,7 @@ func (h *Handlers) ListReleases(ctx *gin.Context) {
 }
 
 func (h *Handlers) GetRelease(ctx *gin.Context) {
-	if _, ok := h.findProjectForCurrentUser(ctx); !ok {
+	if _, _, ok := h.authorizeProject(ctx, authz.ActionDeploymentRead); !ok {
 		return
 	}
 	release, ok := h.findRelease(ctx)
@@ -57,7 +57,7 @@ func (h *Handlers) GetRelease(ctx *gin.Context) {
 }
 
 func (h *Handlers) CreateRelease(ctx *gin.Context) {
-	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin, authz.ProjectRoleDeveloper)
+	user, project, ok := h.authorizeProject(ctx, authz.ActionDeploymentRelease)
 	if !ok {
 		return
 	}
@@ -94,7 +94,7 @@ func (h *Handlers) CreateRelease(ctx *gin.Context) {
 }
 
 func (h *Handlers) RollbackRelease(ctx *gin.Context) {
-	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin, authz.ProjectRoleDeveloper)
+	user, project, ok := h.authorizeProject(ctx, authz.ActionDeploymentRollback)
 	if !ok {
 		return
 	}
@@ -145,7 +145,7 @@ func (h *Handlers) RollbackRelease(ctx *gin.Context) {
 }
 
 func (h *Handlers) GetReleaseLogs(ctx *gin.Context) {
-	if _, ok := h.findProjectForCurrentUser(ctx); !ok {
+	if _, _, ok := h.authorizeProject(ctx, authz.ActionDeploymentRead); !ok {
 		return
 	}
 	release, ok := h.findRelease(ctx)

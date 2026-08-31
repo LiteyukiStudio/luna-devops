@@ -13,6 +13,7 @@ import (
 	kubeprovider "github.com/LiteyukiStudio/devops/internal/provider/kubernetes"
 	"github.com/LiteyukiStudio/devops/internal/resourcename"
 	"github.com/LiteyukiStudio/devops/internal/resourcepolicy"
+	"github.com/LiteyukiStudio/devops/internal/runtimecluster"
 	"github.com/LiteyukiStudio/devops/internal/runtimeconfig"
 	"github.com/LiteyukiStudio/devops/internal/variables"
 	"gorm.io/gorm"
@@ -49,7 +50,6 @@ func deploymentTargetEnvironment(target model.DeploymentTarget) model.Environmen
 		Name:          firstNonEmpty(target.Name, target.Stage, target.ID),
 		Slug:          firstNonEmpty(target.Stage, target.Name, model.DefaultDeploymentStage),
 		ClusterID:     strings.TrimSpace(target.ClusterID),
-		Namespace:     strings.TrimSpace(target.Namespace),
 		Replicas:      replicas,
 		CPURequest:    firstNonEmpty(target.CPURequest, "1"),
 		MemoryRequest: firstNonEmpty(target.MemoryRequest, "1Gi"),
@@ -90,15 +90,15 @@ func (r *Runner) runtimeClusterForEnvironment(ctx context.Context, environment m
 	db := r.db.WithContext(ctx)
 	if clusterID := strings.TrimSpace(environment.ClusterID); clusterID != "" {
 		query, args := environmentClusterLookup(clusterID)
-		err := db.First(&cluster, append([]any{query}, args...)...).Error
+		err := runtimecluster.ActiveScope(db).First(&cluster, append([]any{query}, args...)...).Error
 		if err != nil {
 			return cluster, fmt.Errorf("runtime cluster %s not found: %w", clusterID, err)
 		}
 		return cluster, nil
 	}
-	err := db.Where("scope = ? and is_default = ? and type in ?", "global", true, []string{"kubernetes", "k3s"}).First(&cluster).Error
+	err := runtimecluster.ActiveScope(db).Where("scope = ? and is_default = ? and type in ?", "global", true, []string{"kubernetes", "k3s"}).First(&cluster).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		err = db.Where("scope = ? and type in ?", "global", []string{"kubernetes", "k3s"}).Order("created_at asc").First(&cluster).Error
+		err = runtimecluster.ActiveScope(db).Where("scope = ? and type in ?", "global", []string{"kubernetes", "k3s"}).Order("created_at asc").First(&cluster).Error
 	}
 	if err != nil {
 		return cluster, fmt.Errorf("runtime cluster not found: %w", err)
@@ -323,7 +323,7 @@ func gatewayCertificateSpec(route model.GatewayRoute, project model.Project, nam
 }
 
 func applicationResourcesSpec(release model.Release, project model.Project, application model.Application, environment model.Environment, deploymentTarget model.DeploymentTarget, runtimeConfigSets []model.ProjectRuntimeConfigSet, dataVolumes []kubeprovider.ApplicationDataVolume, namespace string, rolloutTimeoutSeconds int64) (kubeprovider.ApplicationResourcesSpec, error) {
-	configValues := make([]string, 0, len(runtimeConfigSets)+4)
+	configValues := make([]string, 0, len(runtimeConfigSets)+2)
 	secretValues := make([]string, 0, len(runtimeConfigSets)+2)
 	configFileValues := make([]string, 0, len(runtimeConfigSets)+1)
 	secretFileValues := make([]string, 0, len(runtimeConfigSets)+1)
@@ -333,7 +333,7 @@ func applicationResourcesSpec(release model.Release, project model.Project, appl
 		configFileValues = append(configFileValues, set.ConfigFiles)
 		secretFileValues = append(secretFileValues, set.SecretFiles)
 	}
-	configValues = append(configValues, environment.EnvVars, environment.ConfigRefs, deploymentTarget.EnvVars, deploymentTarget.ConfigRefs)
+	configValues = append(configValues, environment.EnvVars, deploymentTarget.EnvVars)
 	secretValues = append(secretValues, environment.SecretRefs, deploymentTarget.SecretRefs)
 	configFileValues = append(configFileValues, deploymentTarget.ConfigFiles)
 	secretFileValues = append(secretFileValues, deploymentTarget.SecretFiles)
@@ -406,19 +406,19 @@ func applicationResourcesSpec(release model.Release, project model.Project, appl
 		FSGroup:                      strings.TrimSpace(deploymentTarget.FSGroup),
 		FSGroupChangePolicy:          strings.TrimSpace(deploymentTarget.FSGroupChangePolicy),
 		ReadOnlyRootFilesystem:       deploymentTarget.ReadOnlyRootFilesystem,
-		AllowPrivilegeEscalation:     strings.TrimSpace(deploymentTarget.AllowPrivilegeEscalation),
-		CapabilityAdd:                strings.TrimSpace(deploymentTarget.CapabilityAdd),
+		AllowPrivilegeEscalation:     "false",
+		CapabilityAdd:                "",
 		CapabilityDrop:               strings.TrimSpace(deploymentTarget.CapabilityDrop),
 		NodeSelector:                 strings.TrimSpace(deploymentTarget.NodeSelector),
 		Tolerations:                  strings.TrimSpace(deploymentTarget.Tolerations),
 		Affinity:                     strings.TrimSpace(deploymentTarget.Affinity),
 		TopologySpreadConstraints:    strings.TrimSpace(deploymentTarget.TopologySpreadConstraints),
 		PriorityClassName:            strings.TrimSpace(deploymentTarget.PriorityClassName),
-		ServiceAccountName:           strings.TrimSpace(deploymentTarget.ServiceAccountName),
-		AutomountServiceAccountToken: strings.TrimSpace(deploymentTarget.AutomountServiceAccountToken),
-		ServiceType:                  strings.TrimSpace(deploymentTarget.ServiceType),
+		ServiceAccountName:           "",
+		AutomountServiceAccountToken: "false",
+		ServiceType:                  "ClusterIP",
 		ServiceAnnotations:           strings.TrimSpace(deploymentTarget.ServiceAnnotations),
-		ServiceExternalTrafficPolicy: strings.TrimSpace(deploymentTarget.ServiceExternalTrafficPolicy),
+		ServiceExternalTrafficPolicy: "",
 		ServiceSessionAffinity:       strings.TrimSpace(deploymentTarget.ServiceSessionAffinity),
 		AutoScalingEnabled:           deploymentTarget.AutoScalingEnabled,
 		AutoScalingMinReplicas:       int32(deploymentTarget.AutoScalingMinReplicas),

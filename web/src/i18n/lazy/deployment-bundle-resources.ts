@@ -10,9 +10,7 @@ export const lazyTranslationResources = {
     unsupportedFile: '这不是受支持的 Luna DevOps 部署配置文件。',
     invalidFile: '部署配置 JSON 无法解析。',
     destination: '目标配置',
-    destinationHint: '名称、阶段和命名空间以当前应用为准；阶段必须在当前应用内唯一。',
-    namespace: '命名空间覆盖',
-    namespaceHint: '留空时使用当前项目空间的默认命名空间。跨集群导入时请重新确认该值。',
+    destinationHint: '名称和阶段以当前应用为准；阶段必须在当前应用内唯一。',
     references: '引用映射',
     referencesHint: '平台只会自动匹配当前项目空间和当前应用中可访问、兼容且唯一的资源。',
     noReferences: '该配置没有需要映射的外部资源。',
@@ -59,7 +57,6 @@ export const lazyTranslationResources = {
     warnings: {
       unknown: '部署配置包含无法识别的问题，请重新导出文件或联系管理员。',
       deployment_bundle: {
-        namespace_review_required: '文件包含命名空间覆盖。请确认目标集群中使用该命名空间是预期行为。',
         stage_conflict: '当前应用已存在相同阶段，请选择另一个阶段。',
         repository_binding_missing: '仓库来源必须映射到当前应用已有的仓库绑定。',
         registry_push_credential_required: '仓库来源必须选择当前项目空间可用且带推送凭据的镜像站。',
@@ -82,9 +79,7 @@ export const lazyTranslationResources = {
     unsupportedFile: 'This is not a supported Luna DevOps deploy config file.',
     invalidFile: 'The deploy config JSON could not be parsed.',
     destination: 'Destination config',
-    destinationHint: 'Name, stage, and namespace apply to the current app. The stage must be unique within this app.',
-    namespace: 'Namespace override',
-    namespaceHint: 'Leave empty to use the current project-space namespace. Review this value when importing across clusters.',
+    destinationHint: 'Name and stage apply to the current app. The stage must be unique within this app.',
     references: 'Reference mappings',
     referencesHint: 'The platform auto-matches only unique, compatible resources visible in the current project space and app.',
     noReferences: 'This config has no external resources to map.',
@@ -131,7 +126,6 @@ export const lazyTranslationResources = {
     warnings: {
       unknown: 'The deploy config contains an unrecognized issue. Export it again or contact an administrator.',
       deployment_bundle: {
-        namespace_review_required: 'The file contains a namespace override. Confirm that this namespace is expected in the destination cluster.',
         stage_conflict: 'This app already has the same stage. Choose another stage.',
         repository_binding_missing: 'A repository source must map to a repository already bound to the current app.',
         registry_push_credential_required: 'A repository source requires a destination registry with a push credential available to this project space.',
@@ -154,9 +148,7 @@ export const lazyTranslationResources = {
     unsupportedFile: '這不是支援的 Luna DevOps 部署設定檔案。',
     invalidFile: '無法解析部署設定 JSON。',
     destination: '目標設定',
-    destinationHint: '名稱、階段和命名空間以目前應用為準；階段在目前應用中必須唯一。',
-    namespace: '命名空間覆寫',
-    namespaceHint: '留空時使用目前專案空間的預設命名空間。跨叢集匯入時請重新確認此值。',
+    destinationHint: '名稱和階段以目前應用為準；階段在目前應用中必須唯一。',
     references: '參照映射',
     referencesHint: '平台只會自動匹配目前專案空間和應用中可存取、相容且唯一的資源。',
     noReferences: '此設定沒有需要映射的外部資源。',
@@ -203,7 +195,6 @@ export const lazyTranslationResources = {
     warnings: {
       unknown: '部署設定包含無法識別的問題，請重新匯出檔案或聯絡管理員。',
       deployment_bundle: {
-        namespace_review_required: '檔案包含命名空間覆寫。請確認在目標叢集中使用此命名空間符合預期。',
         stage_conflict: '目前應用已存在相同階段，請選擇其他階段。',
         repository_binding_missing: '倉庫來源必須映射到目前應用既有的倉庫綁定。',
         registry_push_credential_required: '倉庫來源必須選擇目前專案空間可用且具有推送憑據的映像站。',
@@ -226,9 +217,7 @@ export const lazyTranslationResources = {
     unsupportedFile: 'サポートされている Luna DevOps デプロイ設定ファイルではありません。',
     invalidFile: 'デプロイ設定 JSON を解析できません。',
     destination: 'インポート先設定',
-    destinationHint: '名前、ステージ、名前空間は現在のアプリに適用されます。ステージはアプリ内で一意である必要があります。',
-    namespace: '名前空間の上書き',
-    namespaceHint: '空欄の場合は現在のプロジェクトスペースの既定の名前空間を使用します。クラスター間でインポートする場合は確認してください。',
+    destinationHint: '名前とステージは現在のアプリに適用されます。ステージはアプリ内で一意である必要があります。',
     references: '参照のマッピング',
     referencesHint: '現在のプロジェクトスペースとアプリでアクセス可能、互換性があり、一意なリソースだけを自動照合します。',
     noReferences: 'マッピングが必要な外部リソースはありません。',
@@ -275,7 +264,6 @@ export const lazyTranslationResources = {
     warnings: {
       unknown: 'デプロイ設定に認識できない問題があります。再度エクスポートするか、管理者に連絡してください。',
       deployment_bundle: {
-        namespace_review_required: 'ファイルに名前空間の上書きが含まれています。対象クラスターでの使用が意図したものか確認してください。',
         stage_conflict: '現在のアプリに同じステージが存在します。別のステージを選択してください。',
         repository_binding_missing: 'リポジトリソースは現在のアプリに紐づく既存リポジトリへマッピングする必要があります。',
         registry_push_credential_required: 'リポジトリソースには、現在のプロジェクトスペースで利用できるプッシュ認証情報付きレジストリが必要です。',
@@ -298,9 +286,7 @@ export const lazyTranslationResources = {
     unsupportedFile: '지원되는 Luna DevOps 배포 설정 파일이 아닙니다.',
     invalidFile: '배포 설정 JSON을 해석할 수 없습니다.',
     destination: '대상 설정',
-    destinationHint: '이름, 단계 및 네임스페이스는 현재 앱에 적용되며 단계는 앱 내에서 고유해야 합니다.',
-    namespace: '네임스페이스 재정의',
-    namespaceHint: '비워 두면 현재 프로젝트 공간의 기본 네임스페이스를 사용합니다. 클러스터 간 가져오기에서는 이 값을 다시 확인하세요.',
+    destinationHint: '이름과 단계는 현재 앱에 적용되며 단계는 앱 내에서 고유해야 합니다.',
     references: '참조 매핑',
     referencesHint: '현재 프로젝트 공간과 앱에서 접근 가능하고 호환되며 고유한 리소스만 자동으로 일치시킵니다.',
     noReferences: '매핑할 외부 리소스가 없습니다.',
@@ -347,7 +333,6 @@ export const lazyTranslationResources = {
     warnings: {
       unknown: '배포 설정에 알 수 없는 문제가 있습니다. 파일을 다시 내보내거나 관리자에게 문의하세요.',
       deployment_bundle: {
-        namespace_review_required: '파일에 네임스페이스 재정의가 있습니다. 대상 클러스터에서 이 네임스페이스를 사용하는 것이 맞는지 확인하세요.',
         stage_conflict: '현재 앱에 같은 단계가 이미 있습니다. 다른 단계를 선택하세요.',
         repository_binding_missing: '저장소 소스는 현재 앱에 이미 연결된 저장소에 매핑해야 합니다.',
         registry_push_credential_required: '저장소 소스에는 현재 프로젝트 공간에서 사용할 수 있는 푸시 자격 증명 포함 레지스트리가 필요합니다.',

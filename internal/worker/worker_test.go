@@ -1451,7 +1451,7 @@ func TestApplicationResourcesSpecAppliesDefaults(t *testing.T) {
 		model.Release{ImageRef: "registry.example.com/acme/api:v1"},
 		model.Project{ID: "prj_demo", Identifier: "demo"},
 		model.Application{ID: "app_api", Identifier: "api"},
-		model.Environment{ID: "env_dev", Slug: "dev", EnvVars: `{"APP_ENV":"dev"}`, ConfigRefs: `{"LOG_LEVEL":"debug"}`, SecretRefs: `{"TOKEN":"secret"}`},
+		model.Environment{ID: "env_dev", Slug: "dev", EnvVars: `{"APP_ENV":"dev","LOG_LEVEL":"debug"}`, SecretRefs: `{"TOKEN":"secret"}`},
 		model.DeploymentTarget{
 			ID:             "dplt_backend",
 			KubernetesName: "dplt-backend",

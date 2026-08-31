@@ -38,7 +38,7 @@ let sdk: NodeSDK | undefined
 let processLogger: Logger | undefined
 let aiContentCaptureEnabled = false
 let agentConfig: AgentTelemetryConfig | undefined
-const aiContentAttributeLimit = 32_768
+const aiContentAttributeLimitBytes = 128 * 1024
 
 const safeDefaultConfig = loadTelemetryConfig({})
 
@@ -56,15 +56,15 @@ export function isAIContentCaptureEnabled(): boolean {
   return aiContentCaptureEnabled
 }
 
-export function serializeAIContent(value: unknown, limit = aiContentAttributeLimit): { value: string, truncated: boolean } {
+export function serializeAIContent(value: unknown, limitBytes = aiContentAttributeLimitBytes): { value: string, truncated: boolean, byteLength: number } {
   let serialized: string
   try {
-    serialized = JSON.stringify(redact(value), (_key, item: unknown) => typeof item === "bigint" ? item.toString() : item) ?? "null"
+    serialized = JSON.stringify(value, (_key, item: unknown) => typeof item === "bigint" ? item.toString() : item) ?? "null"
   } catch {
     serialized = "[UNSERIALIZABLE]"
   }
-  if (serialized.length <= limit) return { value: serialized, truncated: false }
-  return { value: `${serialized.slice(0, Math.max(0, limit - 1))}…`, truncated: true }
+  const byteLength = Buffer.byteLength(serialized, "utf8")
+  return { value: serialized, truncated: byteLength > limitBytes, byteLength }
 }
 
 export function recordAIContent(
@@ -78,8 +78,16 @@ export function recordAIContent(
   const content = serializeAIContent(value)
   if (content.truncated) {
     span.setAttribute("luna.ai.content.truncated", true)
+    span.addEvent("luna.ai.content.omitted", {
+      "luna.ai.content.field": attributeName,
+      "luna.ai.content.size_bytes": content.byteLength,
+      "luna.ai.content.limit_bytes": aiContentAttributeLimitBytes,
+    })
     telemetryLog(eventName, "debug", {
       ...attributes,
+      "luna.ai.content.field": attributeName,
+      "luna.ai.content.size_bytes": content.byteLength,
+      "luna.ai.content.limit_bytes": aiContentAttributeLimitBytes,
       "luna.ai.content.truncated": true,
     })
     return
@@ -87,10 +95,8 @@ export function recordAIContent(
   const contentAttributes: Attributes = {
     ...activeAICorrelationAttributes(),
     ...attributes,
-    "luna.ai.content.truncated": content.truncated,
   }
   span.setAttribute(attributeName, content.value)
-  span.setAttribute("luna.ai.content.truncated", false)
   telemetryLog(eventName, "debug", contentAttributes)
 }
 

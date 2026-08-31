@@ -19,6 +19,16 @@ type paginationParams struct {
 	SortOrder string
 }
 
+type paginatedResponseBody[T any] struct {
+	Items      []T    `json:"items"`
+	Page       int    `json:"page"`
+	PageSize   int    `json:"pageSize"`
+	SortBy     string `json:"sortBy"`
+	SortOrder  string `json:"sortOrder"`
+	Total      int64  `json:"total"`
+	TotalPages int    `json:"totalPages"`
+}
+
 func (p paginationParams) Offset() int {
 	return (p.Page - 1) * p.PageSize
 }
@@ -49,19 +59,19 @@ func paginationFromQueryWithSort(ctx *gin.Context, allowedFields map[string]stri
 	return pagination
 }
 
-func paginatedResponse[T any](items []T, total int64, pagination paginationParams) gin.H {
+func paginatedResponse[T any](items []T, total int64, pagination paginationParams) paginatedResponseBody[T] {
 	totalPages := 0
 	if total > 0 {
 		totalPages = int((total + int64(pagination.PageSize) - 1) / int64(pagination.PageSize))
 	}
-	return gin.H{
-		"items":      items,
-		"page":       pagination.Page,
-		"pageSize":   pagination.PageSize,
-		"sortBy":     pagination.SortBy,
-		"sortOrder":  pagination.SortOrder,
-		"total":      total,
-		"totalPages": totalPages,
+	return paginatedResponseBody[T]{
+		Items:      items,
+		Page:       pagination.Page,
+		PageSize:   pagination.PageSize,
+		SortBy:     pagination.SortBy,
+		SortOrder:  pagination.SortOrder,
+		Total:      total,
+		TotalPages: totalPages,
 	}
 }
 

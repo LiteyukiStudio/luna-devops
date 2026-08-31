@@ -43,6 +43,7 @@ var scopeCatalog = []scopeDefinition{
 
 	scopeDef(ActionGatewayRead, "gateway", true, true, true),
 	scopeDef(ActionGatewayManage, "gateway", false, false, true),
+	scopeDef(ActionGatewayDelete, "gateway", false, false, true),
 
 	scopeDef(ActionSecretReadSummary, "secret", true, true, true),
 	scopeDef(ActionSecretViewValue, "secret", false, false, true),

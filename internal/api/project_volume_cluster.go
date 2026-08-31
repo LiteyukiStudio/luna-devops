@@ -8,6 +8,7 @@ import (
 
 	"github.com/LiteyukiStudio/devops/internal/model"
 	kubeprovider "github.com/LiteyukiStudio/devops/internal/provider/kubernetes"
+	"github.com/LiteyukiStudio/devops/internal/runtimecluster"
 	"github.com/LiteyukiStudio/devops/internal/secret"
 	"github.com/LiteyukiStudio/devops/internal/telemetry"
 	"github.com/LiteyukiStudio/devops/internal/volume"
@@ -191,7 +192,7 @@ func (adapter *projectVolumeClusterAdapter) clientForCluster(ctx context.Context
 		return nil, errProjectVolumeClusterUnavailable
 	}
 	var cluster model.RuntimeCluster
-	err := adapter.db.WithContext(ctx).
+	err := runtimecluster.ActiveScope(adapter.db.WithContext(ctx)).
 		Where("type in ?", []string{"kubernetes", "k3s"}).
 		First(&cluster, "id = ?", strings.TrimSpace(clusterID)).Error
 	if err != nil || strings.TrimSpace(cluster.KubeconfigRef) == "" {

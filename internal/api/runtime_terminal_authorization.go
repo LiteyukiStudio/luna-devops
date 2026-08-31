@@ -10,58 +10,17 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	kubeprovider "github.com/LiteyukiStudio/devops/internal/provider/kubernetes"
+	"github.com/LiteyukiStudio/devops/internal/runtimecluster"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
 const (
-	runtimeTerminalIdentityCheckInterval = 20 * time.Second
-	runtimeTerminalResourceCheckInterval = 60 * time.Second
-	runtimeTerminalResourceCheckTimeout  = 2 * time.Second
+	runtimeTerminalResourceCheckTimeout = 2 * time.Second
 )
 
-type runtimeTerminalAuthorizationBinding struct {
-	UserID    string
-	SubjectID string
-	Deadline  time.Time
-}
-
-type runtimeTerminalAuthorizationState struct {
-	Session              model.UserSession
-	OAuthGrant           model.OAuthGrant
-	OAuthApplication     model.OAuthApplication
-	User                 model.User
-	AuthorizationAllowed bool
-}
-
-func (state runtimeTerminalAuthorizationState) active(binding runtimeTerminalAuthorizationBinding, now time.Time) bool {
-	return state.AuthorizationAllowed && state.identityActive(binding, now)
-}
-
-func (state runtimeTerminalAuthorizationState) identityActive(binding runtimeTerminalAuthorizationBinding, now time.Time) bool {
-	if !binding.Deadline.After(now) {
-		return false
-	}
-	if grantID, oauth := runtimeTerminalOAuthGrantID(binding.SubjectID); oauth {
-		if state.OAuthGrant.ID != grantID ||
-			state.OAuthGrant.UserID != binding.UserID ||
-			state.OAuthGrant.ApplicationID != lunaCLIApplicationID ||
-			state.OAuthGrant.RevokedAt != nil ||
-			state.OAuthApplication.ID != lunaCLIApplicationID ||
-			state.OAuthApplication.RevokedAt != nil {
-			return false
-		}
-	} else if state.Session.ID != binding.SubjectID || state.Session.UserID != binding.UserID || !state.Session.ExpiresAt.After(now) {
-		return false
-	}
-	if state.User.ID != binding.UserID || state.User.Disabled {
-		return false
-	}
-	return true
-}
-
 func (h *Handlers) requireRuntimeTerminalAuthorization(ctx *gin.Context, user model.User) (runtimeTerminalAuthorizationBinding, bool) {
-	subject, ok := h.currentInteractiveSubject(ctx, user)
+	binding, ok := h.currentInteractiveAuthorizationBinding(ctx, user)
 	if !ok {
 		if requestUsesBearerToken(ctx) {
 			h.auditWithContext(user.ID, "runtime_terminal.session_required", "runtime_terminal", false, "personal access tokens cannot authorize a terminal", ctx.Request.Context())
@@ -71,14 +30,34 @@ func (h *Handlers) requireRuntimeTerminalAuthorization(ctx *gin.Context, user mo
 		}
 		return runtimeTerminalAuthorizationBinding{}, false
 	}
+	return binding, true
+}
 
+func requireRuntimeTerminalTicketForBearer(ctx *gin.Context, ticket string) bool {
+	if strings.TrimSpace(ticket) != "" || !requestUsesBearerToken(ctx) {
+		return true
+	}
+	writeErrorCode(
+		ctx,
+		http.StatusForbidden,
+		"runtime_terminal.ticket_required",
+		"bearer clients must authorize a one-time terminal ticket before opening the WebSocket",
+	)
+	return false
+}
+
+func (h *Handlers) currentInteractiveAuthorizationBinding(ctx *gin.Context, user model.User) (runtimeTerminalAuthorizationBinding, bool) {
+	subject, ok := h.currentInteractiveSubject(ctx, user)
+	if !ok {
+		return runtimeTerminalAuthorizationBinding{}, false
+	}
 	binding := runtimeTerminalAuthorizationBinding{UserID: user.ID, SubjectID: subject}
-	if _, oauth := runtimeTerminalOAuthGrantID(subject); oauth {
+	if requestUsesBearerToken(ctx) {
 		token, tokenOK := currentAccessTokenFromContext(ctx)
-		if !tokenOK || token.UserID != user.ID || token.OAuthGrantID == "" {
-			writeErrorCode(ctx, http.StatusForbidden, "runtime.terminal_session_required", "Luna CLI OAuth 登录状态无效")
+		if !tokenOK || token.UserID != user.ID || token.OAuthGrantID == "" || token.OAuthFamilyID == "" {
 			return runtimeTerminalAuthorizationBinding{}, false
 		}
+		binding = continuousAuthorizationBindingForAccessToken(user.ID, token)
 		binding.Deadline = time.Now().Add(time.Hour)
 		if token.ExpiresAt != nil && token.ExpiresAt.Before(binding.Deadline) {
 			binding.Deadline = *token.ExpiresAt
@@ -86,7 +65,6 @@ func (h *Handlers) requireRuntimeTerminalAuthorization(ctx *gin.Context, user mo
 	} else {
 		session, sessionOK := h.currentSessionFromCookie(ctx)
 		if !sessionOK || session.UserID != user.ID || session.ID != subject {
-			writeErrorKey(ctx, http.StatusUnauthorized, requestLanguage(ctx), "auth.session.expired")
 			return runtimeTerminalAuthorizationBinding{}, false
 		}
 		binding.Deadline = session.ExpiresAt
@@ -97,10 +75,10 @@ func (h *Handlers) requireRuntimeTerminalAuthorization(ctx *gin.Context, user mo
 func (h *Handlers) currentInteractiveSubject(ctx *gin.Context, user model.User) (string, bool) {
 	if requestUsesBearerToken(ctx) {
 		token, ok := currentAccessTokenFromContext(ctx)
-		if !ok || token.UserID != user.ID || token.Source != "oauth" || token.OAuthApplicationID != lunaCLIApplicationID || token.OAuthGrantID == "" {
+		if !ok || token.UserID != user.ID || token.Source != "oauth" || token.OAuthApplicationID != lunaCLIApplicationID || token.OAuthGrantID == "" || token.OAuthFamilyID == "" {
 			return "", false
 		}
-		return oauthGrantSubject(token.OAuthGrantID), true
+		return oauthAccessTokenSubject(token.ID), true
 	}
 	session, ok := h.currentSessionFromCookie(ctx)
 	if !ok || session.UserID != user.ID {
@@ -109,77 +87,8 @@ func (h *Handlers) currentInteractiveSubject(ctx *gin.Context, user model.User) 
 	return session.ID, true
 }
 
-func oauthGrantSubject(grantID string) string {
-	return "oauth:" + strings.TrimSpace(grantID)
-}
-
-func runtimeTerminalOAuthGrantID(subject string) (string, bool) {
-	grantID := strings.TrimSpace(strings.TrimPrefix(subject, "oauth:"))
-	return grantID, strings.HasPrefix(subject, "oauth:") && grantID != ""
-}
-
-func (h *Handlers) monitorRuntimeTerminalAuthorization(
-	ctx context.Context,
-	binding runtimeTerminalAuthorizationBinding,
-	authorizationAllowed func(context.Context, model.User) bool,
-	cancel context.CancelFunc,
-) <-chan struct{} {
-	revoked := make(chan struct{})
-	go func() {
-		identityTicker := time.NewTicker(runtimeTerminalIdentityCheckInterval)
-		resourceTicker := time.NewTicker(runtimeTerminalResourceCheckInterval)
-		defer identityTicker.Stop()
-		defer resourceTicker.Stop()
-		revoke := func() {
-			close(revoked)
-			cancel()
-		}
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-identityTicker.C:
-				if _, ok := h.runtimeTerminalIdentityState(ctx, binding); ok {
-					continue
-				}
-				revoke()
-				return
-			case <-resourceTicker.C:
-				if h.runtimeTerminalAuthorizationActive(ctx, binding, authorizationAllowed) {
-					continue
-				}
-				revoke()
-				return
-			}
-		}
-	}()
-	return revoked
-}
-
-func (h *Handlers) runtimeTerminalAuthorizationActive(
-	ctx context.Context,
-	binding runtimeTerminalAuthorizationBinding,
-	authorizationAllowed func(context.Context, model.User) bool,
-) bool {
-	state, ok := h.runtimeTerminalIdentityState(ctx, binding)
-	if !ok {
-		return false
-	}
-	state.AuthorizationAllowed = authorizationAllowed(ctx, state.User)
-	return state.active(binding, time.Now())
-}
-
-func (h *Handlers) runtimeTerminalIdentityState(ctx context.Context, binding runtimeTerminalAuthorizationBinding) (runtimeTerminalAuthorizationState, bool) {
-	state := runtimeTerminalAuthorizationState{}
-	db := h.dbWithContext(ctx).WithContext(ctx)
-	if grantID, oauth := runtimeTerminalOAuthGrantID(binding.SubjectID); oauth {
-		_ = db.First(&state.OAuthGrant, "id = ? and user_id = ? and application_id = ? and revoked_at is null", grantID, binding.UserID, lunaCLIApplicationID).Error
-		_ = db.First(&state.OAuthApplication, "id = ? and revoked_at is null", lunaCLIApplicationID).Error
-	} else {
-		_ = db.First(&state.Session, "id = ? and user_id = ?", binding.SubjectID, binding.UserID).Error
-	}
-	_ = db.First(&state.User, "id = ? and disabled = ?", binding.UserID, false).Error
-	return state, state.identityActive(binding, time.Now())
+func oauthAccessTokenSubject(tokenID string) string {
+	return continuousAccessTokenSubject(tokenID)
 }
 
 type releaseRuntimeTerminalAuthorizationReference struct {
@@ -198,11 +107,10 @@ func (h *Handlers) releaseRuntimeTerminalAuthorizationAllowed(ctx context.Contex
 	if err := db.First(&project, "id = ?", reference.ProjectID).Error; err != nil || !resourceCanMutateDuringDelete(project.DeleteStatus) {
 		return false
 	}
-	if !authz.IsPlatformAdmin(user.Role) {
-		var member model.ProjectMember
-		if err := db.First(&member, "project_id = ? and user_id = ?", reference.ProjectID, user.ID).Error; err != nil || !projectUserRoleAllowed(user, member.Role, []string{authz.ProjectRoleOwner, authz.ProjectRoleAdmin, authz.ProjectRoleDeveloper}) {
-			return false
-		}
+	if _, err := h.projectAuthorizer(ctx).AuthorizeProject(ctx, authz.ProjectSubject{
+		UserID: user.ID, PlatformRole: user.Role,
+	}, reference.ProjectID, authz.ActionDeploymentExec); err != nil {
+		return false
 	}
 
 	var release model.Release
@@ -249,7 +157,7 @@ func (h *Handlers) runtimeClusterPodTerminalAuthorizationAllowed(ctx context.Con
 		return false
 	}
 	var cluster model.RuntimeCluster
-	if err := h.dbWithContext(ctx).WithContext(ctx).First(&cluster, "id = ? and type in ?", reference.ClusterID, []string{"kubernetes", "k3s"}).Error; err != nil || cluster.KubeconfigRef != reference.ClusterKubeconfig {
+	if err := runtimecluster.ActiveScope(h.dbWithContext(ctx)).First(&cluster, "id = ? and type in ?", reference.ClusterID, []string{"kubernetes", "k3s"}).Error; err != nil || cluster.KubeconfigRef != reference.ClusterKubeconfig {
 		return false
 	}
 	resourceCtx, cancel := context.WithTimeout(ctx, runtimeTerminalResourceCheckTimeout)
@@ -305,13 +213,14 @@ func (h *Handlers) ensureRuntimeClusterPodWebConsoleEnabled(ctx *gin.Context, sn
 
 func runtimeClusterForDeploymentTargetDB(db *gorm.DB, target model.DeploymentTarget) (model.RuntimeCluster, error) {
 	var cluster model.RuntimeCluster
+	query := runtimecluster.ActiveScope(db)
 	if clusterID := strings.TrimSpace(target.ClusterID); clusterID != "" {
-		err := db.First(&cluster, "id = ? and type in ?", clusterID, []string{"kubernetes", "k3s"}).Error
+		err := query.First(&cluster, "id = ? and type in ?", clusterID, []string{"kubernetes", "k3s"}).Error
 		return cluster, err
 	}
-	err := db.Where("scope = ? and is_default = ? and type in ?", "global", true, []string{"kubernetes", "k3s"}).First(&cluster).Error
+	err := query.Where("scope = ? and is_default = ? and type in ?", "global", true, []string{"kubernetes", "k3s"}).First(&cluster).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		err = db.Where("scope = ? and type in ?", "global", []string{"kubernetes", "k3s"}).Order("created_at asc").First(&cluster).Error
+		err = query.Where("scope = ? and type in ?", "global", []string{"kubernetes", "k3s"}).Order("created_at asc").First(&cluster).Error
 	}
 	return cluster, err
 }

@@ -10,6 +10,19 @@ A project space is the **logical isolation boundary** for a team and its resourc
 
 Enter a name and stable identifier, then add members with the minimum required roles. The identifier cannot be changed later.
 
+## Choose member roles
+
+The project-space role and the access credential's scopes are enforced together. An operation is allowed only when both permit it. Platform administrators sit outside the project-member role matrix and retain platform-wide administration, but must still satisfy the current credential's scopes.
+
+- **Owner**: Manages the project space and its members, including project-space deletion and all project operations.
+- **Admin**: Manages members and most project resources. Admins can delete applications, deployments, and routes, but cannot delete the project space.
+- **Developer**: Creates, updates, releases, and restarts workloads. Developers cannot delete applications, deployments, routes, or project volumes.
+- **Viewer**: Reads project resources and runtime status.
+
+Among regular project members, only an Owner can delete a project space. Only Owners and Admins can delete applications, deployments, routes, and project volumes. Resource references, data impact, and in-progress work are still validated before deletion starts.
+
+Build logs, live deployment metrics, AI task progress, and volume transfers continuously revalidate the account, credential scopes, and project role while connected. An active stream stops when the account is disabled, the session or token is revoked, the member is removed, or authorization becomes unavailable. Start a new request after access is restored.
+
 ## Create an application
 
 An application is one independently deployable service, such as a Web frontend, API, or Worker. One repository can supply several applications, and one application can have development, test, staging, and production deployments.

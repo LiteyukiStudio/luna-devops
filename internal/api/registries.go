@@ -49,7 +49,12 @@ func (h *Handlers) ListArtifactRegistries(ctx *gin.Context) {
 		return
 	}
 	h.observeArtifactRegistries(ctx.Request.Context(), user, registries)
-	ctx.JSON(http.StatusOK, paginatedResponse(h.registryResponsesForUser(user, registries, ctx.Request.Context()), total, pagination))
+	responses, err := h.registryResponsesForUser(user, registries, ctx.Request.Context())
+	if err != nil {
+		writeProjectAuthorizationError(ctx, err)
+		return
+	}
+	ctx.JSON(http.StatusOK, paginatedResponse(responses, total, pagination))
 }
 
 func (h *Handlers) CreateArtifactRegistry(ctx *gin.Context) {

@@ -92,9 +92,8 @@ type deploymentTargetBundleImportRequest struct {
 }
 
 type deploymentTargetBundleOverrides struct {
-	Name      string  `json:"name,omitempty"`
-	Stage     string  `json:"stage,omitempty"`
-	Namespace *string `json:"namespace,omitempty"`
+	Name  string `json:"name,omitempty"`
+	Stage string `json:"stage,omitempty"`
 }
 
 type deploymentTargetBundlePreview struct {
@@ -109,7 +108,6 @@ type deploymentTargetBundlePreview struct {
 type deploymentTargetBundlePreviewSummary struct {
 	Name       string `json:"name"`
 	Stage      string `json:"stage"`
-	Namespace  string `json:"namespace"`
 	SourceType string `json:"sourceType"`
 }
 

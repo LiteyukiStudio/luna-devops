@@ -13,7 +13,7 @@ import (
 
 func (h *Handlers) UpdateProjectRuntimeConfigSetRuntimeSecrets(ctx *gin.Context) {
 	setRuntimeSecretNoStoreHeaders(ctx)
-	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin, authz.ProjectRoleDeveloper)
+	user, project, ok := h.authorizeProject(ctx, authz.ActionSecretUpdate)
 	if !ok || !h.ensureProjectCanMutate(ctx, project) {
 		return
 	}

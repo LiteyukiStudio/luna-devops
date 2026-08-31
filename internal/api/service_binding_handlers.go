@@ -20,7 +20,7 @@ func (h *Handlers) dependencyService(ctx context.Context) *dependency.Service {
 }
 
 func (h *Handlers) ListServiceBindings(ctx *gin.Context) {
-	if _, ok := h.findProjectForCurrentUser(ctx); !ok {
+	if _, _, ok := h.authorizeProject(ctx, authz.ActionProjectRead); !ok {
 		return
 	}
 	pagination := dependencyPagination(ctx, map[string]bool{
@@ -35,7 +35,7 @@ func (h *Handlers) ListServiceBindings(ctx *gin.Context) {
 }
 
 func (h *Handlers) CreateServiceBinding(ctx *gin.Context) {
-	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin)
+	user, project, ok := h.authorizeProject(ctx, authz.ActionProjectManage)
 	if !ok {
 		return
 	}
@@ -55,7 +55,7 @@ func (h *Handlers) CreateServiceBinding(ctx *gin.Context) {
 }
 
 func (h *Handlers) UpdateServiceBinding(ctx *gin.Context) {
-	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin)
+	user, project, ok := h.authorizeProject(ctx, authz.ActionProjectManage)
 	if !ok {
 		return
 	}
@@ -76,7 +76,7 @@ func (h *Handlers) UpdateServiceBinding(ctx *gin.Context) {
 }
 
 func (h *Handlers) DeleteServiceBinding(ctx *gin.Context) {
-	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin)
+	user, project, ok := h.authorizeProject(ctx, authz.ActionProjectManage)
 	if !ok {
 		return
 	}
@@ -94,7 +94,7 @@ func (h *Handlers) DeleteServiceBinding(ctx *gin.Context) {
 
 func (h *Handlers) CheckServiceBinding(ctx *gin.Context) {
 	markLiveObservationResponse(ctx)
-	_, project, ok := h.projectAndCurrentUser(ctx)
+	_, project, ok := h.authorizeProject(ctx, authz.ActionProjectRead)
 	if !ok {
 		return
 	}
@@ -170,7 +170,7 @@ func (h *Handlers) CheckServiceBinding(ctx *gin.Context) {
 }
 
 func (h *Handlers) ListProjectTopologyEdges(ctx *gin.Context) {
-	if _, ok := h.findProjectForCurrentUser(ctx); !ok {
+	if _, _, ok := h.authorizeProject(ctx, authz.ActionProjectRead); !ok {
 		return
 	}
 	pagination := dependencyPagination(ctx, map[string]bool{
@@ -185,7 +185,7 @@ func (h *Handlers) ListProjectTopologyEdges(ctx *gin.Context) {
 }
 
 func (h *Handlers) CreateProjectTopologyEdge(ctx *gin.Context) {
-	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin)
+	user, project, ok := h.authorizeProject(ctx, authz.ActionProjectManage)
 	if !ok {
 		return
 	}
@@ -204,7 +204,7 @@ func (h *Handlers) CreateProjectTopologyEdge(ctx *gin.Context) {
 }
 
 func (h *Handlers) UpdateProjectTopologyEdge(ctx *gin.Context) {
-	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin)
+	user, project, ok := h.authorizeProject(ctx, authz.ActionProjectManage)
 	if !ok {
 		return
 	}
@@ -224,7 +224,7 @@ func (h *Handlers) UpdateProjectTopologyEdge(ctx *gin.Context) {
 }
 
 func (h *Handlers) DeleteProjectTopologyEdge(ctx *gin.Context) {
-	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin)
+	user, project, ok := h.authorizeProject(ctx, authz.ActionProjectManage)
 	if !ok {
 		return
 	}

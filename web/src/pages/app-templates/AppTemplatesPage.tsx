@@ -847,7 +847,6 @@ function emptyInstallPayload(): AppTemplateInstallPayload {
     deploymentName: 'default',
     stage: 'dev',
     clusterId: '',
-    namespace: '',
     imageRef: '',
     replicas: 1,
     cpuRequest: '1',

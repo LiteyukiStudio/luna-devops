@@ -163,6 +163,18 @@ func TestLoadConfigRejectsInvalidAPIEnvironment(t *testing.T) {
 	}
 }
 
+func TestLoadConfigRejectsUniversalTrustedProxyCIDRs(t *testing.T) {
+	for _, value := range []string{"0.0.0.0/0", "::/0"} {
+		t.Run(value, func(t *testing.T) {
+			t.Setenv("TRUSTED_PROXY_CIDRS", value)
+			_, err := LoadConfig()
+			if err == nil || !strings.Contains(err.Error(), "must not contain universal CIDRs") {
+				t.Fatalf("LoadConfig() error = %v", err)
+			}
+		})
+	}
+}
+
 func TestLoadConfigIgnoresWorkerEnvironment(t *testing.T) {
 	t.Setenv("APP_ENV", "development")
 	t.Setenv("WORKER_DB_MAX_OPEN_CONNS", "not-an-integer")

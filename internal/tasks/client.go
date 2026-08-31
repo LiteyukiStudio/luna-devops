@@ -71,6 +71,7 @@ type ResourceCleanupPayload struct {
 	ResourceType string `json:"resourceType"`
 	ResourceID   string `json:"resourceId"`
 	ProjectID    string `json:"projectId"`
+	ActorID      string `json:"actorId"`
 }
 
 type NotificationDeliverPayload struct {
@@ -329,6 +330,10 @@ func PolicyForType(taskType string) EnqueuePolicy {
 		return EnqueuePolicy{Queue: QueueLight, MaxRetry: 3, Timeout: 10 * time.Minute, Retention: 24 * time.Hour, Unique: time.Minute}
 	case TypeVolumeTransferCleanup:
 		return EnqueuePolicy{Queue: QueueLight, MaxRetry: 3, Timeout: 15 * time.Minute, Retention: 24 * time.Hour, Unique: 5 * time.Minute}
+	case TypeKubectlGateway:
+		return KubectlGatewayEnqueuePolicy()
+	case TypeKubectlGatewaySweep:
+		return KubectlGatewaySweepEnqueuePolicy()
 	default:
 		return EnqueuePolicy{Queue: QueueLight, MaxRetry: 1, Timeout: 5 * time.Minute, Retention: 24 * time.Hour, Unique: 1 * time.Minute}
 	}
@@ -407,6 +412,9 @@ func NewResourceCleanupTask(payload ResourceCleanupPayload) (*asynq.Task, error)
 	}
 	if strings.TrimSpace(payload.ProjectID) == "" {
 		return nil, errors.New("project id is required")
+	}
+	if strings.TrimSpace(payload.ActorID) == "" {
+		return nil, errors.New("actor id is required")
 	}
 
 	data, err := json.Marshal(payload)

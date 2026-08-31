@@ -14,7 +14,7 @@ func (h *Handlers) GetRegistryImageTemplateDefault(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	project, ok := h.findProjectForCurrentUserWithRolesByID(ctx, strings.TrimSpace(ctx.Query("projectId")), authz.ProjectRoleOwner, authz.ProjectRoleAdmin, authz.ProjectRoleDeveloper)
+	_, project, ok := h.authorizeProjectByID(ctx, strings.TrimSpace(ctx.Query("projectId")), authz.ActionRegistryUse)
 	if !ok {
 		return
 	}

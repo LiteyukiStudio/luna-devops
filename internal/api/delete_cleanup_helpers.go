@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -9,8 +10,11 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/tasks"
 	"github.com/gin-gonic/gin"
+	"github.com/hibiken/asynq"
 	"gorm.io/gorm"
 )
+
+var errResourceDeleteAlreadyStarted = errors.New("resource deletion has already started")
 
 func deleteStatusCanStart(status string) bool {
 	status = strings.TrimSpace(status)
@@ -56,12 +60,19 @@ func (h *Handlers) ensureRuntimeConfigSetCanMutate(ctx *gin.Context, set model.P
 
 func markResourceDeleting(tx *gorm.DB, model any, id string) error {
 	startedAt := time.Now()
-	return tx.Model(model).Where("id = ?", id).Updates(map[string]any{
+	result := tx.Model(model).Where("id = ? and delete_status in ?", id, []string{"", "active", "delete_failed"}).Updates(map[string]any{
 		"delete_status":      "deleting",
 		"delete_message":     "",
 		"delete_started_at":  &startedAt,
 		"delete_finished_at": nil,
-	}).Error
+	})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return errResourceDeleteAlreadyStarted
+	}
+	return nil
 }
 
 func markDeploymentTargetGatewayRoutesDeleting(tx *gorm.DB, target model.DeploymentTarget) error {
@@ -106,10 +117,16 @@ func markDeploymentTargetGatewayRoutesDeleteFailed(db *gorm.DB, target model.Dep
 		}).Error
 }
 
-func (h *Handlers) enqueueResourceCleanup(ctx context.Context, payload tasks.ResourceCleanupPayload) bool {
+func (h *Handlers) enqueueResourceCleanup(ctx context.Context, resourceType, resourceID, projectID, actorID string) bool {
 	if h.taskClient == nil {
 		return false
 	}
+	payload := tasks.ResourceCleanupPayload{
+		ResourceType: resourceType,
+		ResourceID:   resourceID,
+		ProjectID:    projectID,
+		ActorID:      actorID,
+	}
 	_, err := h.taskClient.EnqueueResourceCleanup(ctx, payload)
-	return err == nil
+	return err == nil || errors.Is(err, asynq.ErrDuplicateTask)
 }

@@ -128,6 +128,30 @@ func TestLoadSharedRejectsInvalidValues(t *testing.T) {
 	}
 }
 
+func TestValidateProductionPublicBaseURLRequiresTLSOutsideLoopback(t *testing.T) {
+	tests := []struct {
+		name    string
+		mode    string
+		value   string
+		wantErr bool
+	}{
+		{name: "public HTTP", mode: "production", value: "http://devops.example.com", wantErr: true},
+		{name: "public HTTPS", mode: "production", value: "https://devops.example.com"},
+		{name: "localhost HTTP", mode: "production", value: "http://localhost:8088"},
+		{name: "IPv4 loopback HTTP", mode: "production", value: "http://127.0.0.1:8088"},
+		{name: "IPv6 loopback HTTP", mode: "production", value: "http://[::1]:8088"},
+		{name: "development HTTP", mode: "development", value: "http://devops.local"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateProductionPublicBaseURL(tt.mode, tt.value)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("error = %v, wantErr = %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
 func TestSharedVolumeTransferEnabledRequiresJobImage(t *testing.T) {
 	if (Shared{VolumeTransferJobImage: ""}).VolumeTransferEnabled() {
 		t.Fatal("volume transfer must be disabled without a job image")

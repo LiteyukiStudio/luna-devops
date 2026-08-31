@@ -12,6 +12,14 @@ import (
 )
 
 func (h *Handlers) deploymentTargetFromInput(ctx *gin.Context, user model.User, app model.Application, input deploymentTargetInput, targetID, kubernetesName string, existingSecretFiles map[string]string, existingRuntimeConfigRefs string) (model.DeploymentTarget, []deploymentTargetDataVolumeInput, bool) {
+	_, ok := h.projectNamespaceForDeploymentTarget(ctx, app.ProjectID)
+	if !ok {
+		return model.DeploymentTarget{}, nil, false
+	}
+	if namespace := strings.TrimSpace(input.Namespace); namespace != "" {
+		writeErrorCode(ctx, http.StatusBadRequest, "deployment_target.namespace_forbidden", "deployment target namespace is managed by the project and cannot be overridden")
+		return model.DeploymentTarget{}, nil, false
+	}
 	sourceType := normalizeDeploymentSourceType(input.SourceType)
 	repositoryBindingID := strings.TrimSpace(input.RepositoryBindingID)
 	if sourceType == "repository" {
@@ -129,11 +137,6 @@ func (h *Handlers) deploymentTargetFromInput(ctx *gin.Context, user model.User, 
 		writeErrorCode(ctx, http.StatusBadRequest, "deployment.runtime_config_invalid", "运行时环境变量格式无效")
 		return model.DeploymentTarget{}, nil, false
 	}
-	configRefs, err := runtimeconfig.EncodeKeyValue(input.ConfigRefs)
-	if err != nil {
-		writeErrorCode(ctx, http.StatusBadRequest, "deployment.runtime_config_invalid", "运行时配置引用格式无效")
-		return model.DeploymentTarget{}, nil, false
-	}
 	runtimeConfigRefs, ok := h.runtimeConfigRefsFromInput(ctx, app.ProjectID, input, existingRuntimeConfigRefs)
 	if !ok {
 		return model.DeploymentTarget{}, nil, false
@@ -166,7 +169,6 @@ func (h *Handlers) deploymentTargetFromInput(ctx *gin.Context, user model.User, 
 		Stage:                        stage,
 		KubernetesName:               kubernetesName,
 		ClusterID:                    clusterID,
-		Namespace:                    strings.TrimSpace(input.Namespace),
 		WorkloadType:                 normalizeWorkloadType(input.WorkloadType),
 		Replicas:                     replicas,
 		CPURequest:                   runtimeCPURequest,
@@ -235,7 +237,6 @@ func (h *Handlers) deploymentTargetFromInput(ctx *gin.Context, user model.User, 
 		ConcurrencyPolicy:            normalizeBuildConcurrencyPolicy(input.ConcurrencyPolicy),
 		RuntimeConfigRefs:            model.EncodeDeploymentRuntimeConfigRefs(runtimeConfigRefs),
 		EnvVars:                      envVars,
-		ConfigRefs:                   configRefs,
 		ConfigFiles:                  configFiles,
 		SecretFiles:                  string(secretFilesContent),
 		RequireApproval:              input.RequireApproval,
@@ -243,4 +244,18 @@ func (h *Handlers) deploymentTargetFromInput(ctx *gin.Context, user model.User, 
 		Enabled:                      input.Enabled,
 		CreatedBy:                    user.ID,
 	}, dataVolumes, true
+}
+
+func (h *Handlers) projectNamespaceForDeploymentTarget(ctx *gin.Context, projectID string) (string, bool) {
+	var project model.Project
+	if err := h.dbFor(ctx).Select("id", "kubernetes_namespace").First(&project, "id = ?", strings.TrimSpace(projectID)).Error; err != nil {
+		writeError(ctx, http.StatusNotFound, "project not found")
+		return "", false
+	}
+	namespace := runtimeProjectNamespace(project)
+	if namespace == "" {
+		writeError(ctx, http.StatusBadRequest, "项目空间缺少 Kubernetes Namespace")
+		return "", false
+	}
+	return namespace, true
 }

@@ -8,9 +8,81 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/LiteyukiStudio/devops/internal/authz"
+	"github.com/LiteyukiStudio/devops/internal/openapiscope"
+	"github.com/LiteyukiStudio/devops/internal/service"
 )
 
 var openAPIPathParameterPattern = regexp.MustCompile(`\{([^}]+)\}`)
+
+func TestPlatformCatalogFailsClosedWithoutDeclaredScopes(t *testing.T) {
+	_, err := buildPlatformCatalog([]byte(`
+openapi: 3.1.0
+paths:
+  /api/v1/projects:
+    get:
+      operationId: listProjects
+      tags: [Projects]
+      summary: List projects
+      responses:
+        "200": { description: OK }
+`))
+	if err == nil || !strings.Contains(err.Error(), "x-luna-cli.requiredScopes") {
+		t.Fatalf("missing scope contract error = %v", err)
+	}
+}
+
+func TestPlatformCatalogScopesMatchOpenAPIAndKnownScopeCatalog(t *testing.T) {
+	operations, err := PlatformCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, operation := range operations {
+		declared, err := openapiscope.RequiredScopes(operation.Path, operation.Method)
+		if err != nil {
+			t.Errorf("%s scope contract: %v", operation.OperationID, err)
+			continue
+		}
+		if !reflect.DeepEqual(operation.RequiredScopes, declared) {
+			t.Errorf("%s catalog scopes = %#v, OpenAPI scopes = %#v", operation.OperationID, operation.RequiredScopes, declared)
+		}
+		runtimeScopes, err := service.RequiredAccessTokenScopes(operation.Path, operation.Method)
+		if err != nil {
+			t.Errorf("%s runtime scope contract: %v", operation.OperationID, err)
+		} else if !reflect.DeepEqual(runtimeScopes, declared) {
+			t.Errorf("%s runtime scopes = %#v, OpenAPI scopes = %#v", operation.OperationID, runtimeScopes, declared)
+		}
+		for _, scope := range declared {
+			if scope == "web:read" {
+				continue
+			}
+			if normalized := authz.NormalizeOAuthScope(scope); normalized != scope {
+				t.Errorf("%s declares unknown machine scope %q", operation.OperationID, scope)
+			}
+		}
+	}
+}
+
+func TestCriticalDeliveryDeleteScopesRemainExplicit(t *testing.T) {
+	wantScopes := map[string][]string{
+		"deleteProject":          {"project:delete"},
+		"deleteApplication":      {"application:delete"},
+		"deleteDeploymentTarget": {"deployment:delete"},
+		"deleteBuildRun":         {"build:delete"},
+		"deleteGatewayRoute":     {"gateway:delete"},
+	}
+	for operationID, want := range wantScopes {
+		operation, ok := PlatformOperation(operationID)
+		if !ok {
+			t.Errorf("missing critical operation %s", operationID)
+			continue
+		}
+		if !reflect.DeepEqual(operation.RequiredScopes, want) {
+			t.Errorf("%s scopes = %#v, want %#v", operationID, operation.RequiredScopes, want)
+		}
+	}
+}
 
 func TestPlatformCatalogDefaultsToRegularOpenAPIOperations(t *testing.T) {
 	operations, err := PlatformCatalog()

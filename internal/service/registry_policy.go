@@ -5,33 +5,33 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/model"
 )
 
-func CanUseRegistry(user model.User, registry model.ArtifactRegistry, userHasProject func(userID, projectID string) bool) bool {
+func CanUseRegistry(user model.User, registry model.ArtifactRegistry, projectActionAllows func(projectID string, action authz.Action) bool) bool {
 	switch registry.Scope {
 	case "global":
 		return true
 	case "user":
 		return registry.OwnerRef == user.ID
 	case "project":
-		return user.Role == authz.PlatformRoleAdmin || userHasProject(user.ID, registry.OwnerRef)
+		return user.Role == authz.PlatformRoleAdmin || projectActionAllows(registry.OwnerRef, authz.ActionRegistryUse)
 	default:
 		return false
 	}
 }
 
-func CanManageRegistry(user model.User, registry model.ArtifactRegistry, projectRoleAllows func(projectID string, roles ...string) bool) bool {
+func CanManageRegistry(user model.User, registry model.ArtifactRegistry, projectActionAllows func(projectID string, action authz.Action) bool) bool {
 	switch registry.Scope {
 	case "global":
 		return user.Role == authz.PlatformRoleAdmin
 	case "user":
 		return registry.OwnerRef == user.ID
 	case "project":
-		return user.Role == authz.PlatformRoleAdmin || projectRoleAllows(registry.OwnerRef, authz.ProjectRoleOwner, authz.ProjectRoleAdmin)
+		return user.Role == authz.PlatformRoleAdmin || projectActionAllows(registry.OwnerRef, authz.ActionProjectManage)
 	default:
 		return false
 	}
 }
 
-func CanManageRegistryCredential(user model.User, registry model.ArtifactRegistry, credential model.RegistryCredential, projectRoleAllows func(projectID string, roles ...string) bool) bool {
+func CanManageRegistryCredential(user model.User, registry model.ArtifactRegistry, credential model.RegistryCredential, projectActionAllows func(projectID string, action authz.Action) bool) bool {
 	switch credential.Scope {
 	case "global":
 		return user.Role == authz.PlatformRoleAdmin
@@ -42,7 +42,7 @@ func CanManageRegistryCredential(user model.User, registry model.ArtifactRegistr
 			return true
 		}
 		for _, projectID := range credential.ProjectIDs {
-			if !projectRoleAllows(projectID, authz.ProjectRoleOwner, authz.ProjectRoleAdmin) {
+			if !projectActionAllows(projectID, authz.ActionProjectManage) {
 				return false
 			}
 		}

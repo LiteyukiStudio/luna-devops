@@ -2,6 +2,8 @@ package agentobservability
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -236,11 +238,14 @@ func (c *Client) SearchTraces(ctx context.Context, query string, start, end time
 	if err := c.getJSON(ctx, "tempo.search", "/api/search", params, &response); err != nil {
 		return nil, err
 	}
+	for index := range response.Traces {
+		response.Traces[index].TraceID = normalizeTempoID(response.Traces[index].TraceID)
+	}
 	return response.Traces, nil
 }
 
 func (c *Client) GetTrace(ctx context.Context, traceID string) (TraceDetail, error) {
-	traceID = strings.TrimSpace(traceID)
+	traceID = normalizeTempoID(traceID)
 	if len(traceID) != 32 {
 		return TraceDetail{}, fmt.Errorf("invalid trace ID")
 	}
@@ -464,7 +469,7 @@ func tempoTraceDetail(traceID string, response tempoTraceResponse) TraceDetail {
 					raw = json.RawMessage(`{}`)
 				}
 				detail.Spans = append(detail.Spans, TraceSpan{
-					SpanID: span.SpanID, ParentSpanID: span.ParentSpanID, Name: tempoSpanName(span.Name),
+					SpanID: normalizeTempoID(span.SpanID), ParentSpanID: normalizeTempoID(span.ParentSpanID), Name: tempoSpanName(span.Name),
 					ServiceName: serviceName, Kind: strings.TrimPrefix(strings.ToLower(span.Kind), "span_kind_"),
 					Status: status, StartTimeNanos: span.StartTimeUnixNano, DurationMS: float64(end-start) / 1e6,
 					Attributes: tempoAttributes(span.Attributes, traceAttributeAllowlist),
@@ -481,6 +486,18 @@ func tempoTraceDetail(traceID string, response tempoTraceResponse) TraceDetail {
 	}
 	detail.Usage = aggregateTraceTokenUsage(detail.Spans)
 	return detail
+}
+
+func normalizeTempoID(value string) string {
+	value = strings.TrimSpace(value)
+	if decoded, err := hex.DecodeString(value); err == nil && (len(decoded) == 8 || len(decoded) == 16) {
+		return hex.EncodeToString(decoded)
+	}
+	decoded, err := base64.StdEncoding.DecodeString(value)
+	if err != nil || (len(decoded) != 8 && len(decoded) != 16) {
+		return value
+	}
+	return hex.EncodeToString(decoded)
 }
 
 func tempoSpanName(name string) string {

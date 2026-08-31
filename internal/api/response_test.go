@@ -103,6 +103,36 @@ func TestWriteErrorKeyWithDetailsKeepsStableMachineReadableContext(t *testing.T)
 	}
 }
 
+func TestScopeInsufficientErrorReturnsDedicatedTopLevelField(t *testing.T) {
+	for _, mode := range []string{"development", "production"} {
+		t.Run(mode, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			ctx, _ := gin.CreateTestContext(recorder)
+			setRuntimeMode(ctx, mode)
+			ctx.Request = httptest.NewRequest(http.MethodGet, "/failure", nil)
+
+			writeScopeInsufficientError(ctx, " volume:export ")
+
+			var response map[string]any
+			if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+				t.Fatalf("decode error response: %v", err)
+			}
+			if recorder.Code != http.StatusForbidden || response["code"] != "auth.token.scope_insufficient" {
+				t.Fatalf("scope error response = status %d, body %#v", recorder.Code, response)
+			}
+			if response["requiredScope"] != "volume:export" {
+				t.Fatalf("requiredScope = %#v", response["requiredScope"])
+			}
+			if _, exists := response["details"]; exists {
+				t.Fatalf("scope error exposed generic details: %#v", response)
+			}
+			if _, exists := response["developerDetail"]; exists {
+				t.Fatalf("scope error exposed developer diagnostics: %#v", response)
+			}
+		})
+	}
+}
+
 func TestProductionErrorResponseContainsOnlySafeFields(t *testing.T) {
 	t.Setenv("APP_ENV", "production")
 	router := gin.New()

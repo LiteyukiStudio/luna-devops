@@ -8,15 +8,30 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/LiteyukiStudio/devops/internal/telemetry"
 	"github.com/gin-gonic/gin"
 )
 
-func registerStaticUI(router *gin.Engine, staticFS fs.FS, brandTheme func() string) {
-	if staticFS == nil {
-		return
+func registerStaticUI(router *gin.Engine, staticFS fs.FS, brandTheme func() string, kubeNoRoute gin.HandlerFunc) {
+	var fileServer http.Handler
+	if staticFS != nil {
+		fileServer = http.FileServer(http.FS(staticFS))
 	}
-	fileServer := http.FileServer(http.FS(staticFS))
 	router.NoRoute(func(ctx *gin.Context) {
+		// The Kubernetes protocol boundary always wins over the SPA fallback,
+		// including deployments that do not embed a static filesystem.
+		if telemetry.IsKubeGatewayPath(ctx.Request.URL.Path) {
+			if kubeNoRoute != nil {
+				kubeNoRoute(ctx)
+			} else {
+				kubeGatewayNoRoute(ctx)
+			}
+			return
+		}
+		if staticFS == nil {
+			ctx.Status(http.StatusNotFound)
+			return
+		}
 		if !staticUIRequestAllowed(ctx.Request) {
 			ctx.Status(http.StatusNotFound)
 			return

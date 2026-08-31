@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -183,10 +184,56 @@ func (h *Handlers) auditWithContext(userID, action, resource string, success boo
 	}
 }
 
+type kubeCredentialAuditMetadata struct {
+	BindingCount  int      `json:"bindingCount,omitempty"`
+	Scopes        []string `json:"scopes,omitempty"`
+	ExpiresInDays int      `json:"expiresInDays,omitempty"`
+}
+
+type kubeGatewayAuditMetadata struct {
+	Enabled   bool `json:"enabled"`
+	RuleCount int  `json:"ruleCount"`
+}
+
+// runtimeClusterAuditMetadata is deliberately an allow-list. Runtime cluster
+// endpoints, kubeconfig material, trusted proxy CIDRs and gateway headers must
+// never enter audit metadata.
+type runtimeClusterAuditMetadata struct {
+	Type               string `json:"type"`
+	Scope              string `json:"scope"`
+	IsDefault          bool   `json:"isDefault"`
+	ProjectCount       int    `json:"projectCount"`
+	KubeconfigUpdated  bool   `json:"kubeconfigUpdated"`
+	KubeGatewayEnabled bool   `json:"kubeGatewayEnabled"`
+}
+
+type safeAuditMetadata interface {
+	kubeCredentialAuditMetadata | kubeGatewayAuditMetadata | runtimeClusterAuditMetadata
+}
+
+func auditWithSafeMetadata[T safeAuditMetadata](h *Handlers, userID, action, resource string, success bool, message string, metadata T, ctx context.Context) {
+	encoded, err := json.Marshal(metadata)
+	if err != nil || len(encoded) > 4096 {
+		h.auditWithContext(userID, action, resource, success, message, ctx)
+		return
+	}
+	value := string(encoded)
+	entry := model.AuditLog{
+		ID: id.New("aud"), UserID: strings.TrimSpace(userID), Action: action, Resource: resource,
+		Success: success, Message: message, Metadata: &value, CreatedAt: time.Now(),
+	}
+	if err := h.dbWithContext(ctx).Create(&entry).Error; err != nil {
+		telemetry.LogError(ctx, "Audit write failed", "audit.write.failed",
+			"audit.write", "database.audit_write.failed", errors.New("audit write failed"),
+			slog.String("audit.action", action), slog.String("resource.type", auditResourceType(action)),
+			slog.Bool("audit.operation_succeeded", success))
+	}
+}
+
 func auditResourceType(action string) string {
 	prefix, _, _ := strings.Cut(strings.TrimSpace(action), ".")
 	switch prefix {
-	case "ai", "application", "artifact_registry", "auth", "billing", "build", "build_variable", "deployment", "deployment_bundle", "deployment_volume", "gateway", "git_account", "git_provider", "git_repository", "git_webhook", "oidc", "project", "registry", "release", "runtime_cluster", "runtime_config", "secret", "user", "volume":
+	case "ai", "application", "artifact_registry", "auth", "billing", "build", "build_variable", "deployment", "deployment_bundle", "deployment_volume", "gateway", "git_account", "git_provider", "git_repository", "git_webhook", "kube_credential", "oidc", "project", "registry", "release", "runtime_cluster", "runtime_config", "secret", "user", "volume":
 		return prefix
 	default:
 		return "unknown"

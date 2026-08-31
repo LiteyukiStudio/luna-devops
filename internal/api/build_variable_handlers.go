@@ -47,7 +47,12 @@ func (h *Handlers) ListBuildVariableSets(ctx *gin.Context) {
 		return
 	}
 	h.attachBuildVariableSetProjects(sets, ctx.Request.Context())
-	ctx.JSON(http.StatusOK, paginatedResponse(h.buildVariableSetResponsesForUser(user, sets, ctx.Request.Context()), total, pagination))
+	responses, err := h.buildVariableSetResponsesForUser(user, sets, ctx.Request.Context())
+	if err != nil {
+		writeProjectAuthorizationError(ctx, err)
+		return
+	}
+	ctx.JSON(http.StatusOK, paginatedResponse(responses, total, pagination))
 }
 
 func (h *Handlers) CreateBuildVariableSet(ctx *gin.Context) {
@@ -69,7 +74,12 @@ func (h *Handlers) CreateBuildVariableSet(ctx *gin.Context) {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
-	ctx.JSON(http.StatusCreated, h.buildVariableSetResponseForUser(user, set, ctx.Request.Context()))
+	response, err := h.buildVariableSetResponseForUser(user, set, ctx.Request.Context())
+	if err != nil {
+		writeProjectAuthorizationError(ctx, err)
+		return
+	}
+	ctx.JSON(http.StatusCreated, response)
 }
 
 func (h *Handlers) UpdateBuildVariableSet(ctx *gin.Context) {
@@ -104,7 +114,12 @@ func (h *Handlers) UpdateBuildVariableSet(ctx *gin.Context) {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
-	ctx.JSON(http.StatusOK, h.buildVariableSetResponseForUser(user, existing, ctx.Request.Context()))
+	response, err := h.buildVariableSetResponseForUser(user, existing, ctx.Request.Context())
+	if err != nil {
+		writeProjectAuthorizationError(ctx, err)
+		return
+	}
+	ctx.JSON(http.StatusOK, response)
 }
 
 func (h *Handlers) DeleteBuildVariableSet(ctx *gin.Context) {

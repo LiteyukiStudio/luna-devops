@@ -36,7 +36,7 @@ func (OAuthGrant) TableName() string { return "oauth_grants" }
 type OAuthAuthorizationCode struct {
 	ID                  string     `gorm:"primaryKey" json:"id"`
 	ApplicationID       string     `gorm:"index;not null" json:"applicationId"`
-	GrantID             string     `gorm:"index;not null" json:"grantId"`
+	GrantID             *string    `gorm:"index" json:"grantId,omitempty"`
 	UserID              string     `gorm:"index;not null" json:"userId"`
 	CodeHash            string     `gorm:"uniqueIndex;not null" json:"-"`
 	RedirectURI         string     `gorm:"type:text;not null" json:"-"`
@@ -54,6 +54,7 @@ type OAuthRefreshToken struct {
 	ID            string     `gorm:"primaryKey" json:"id"`
 	ApplicationID string     `gorm:"index;not null" json:"applicationId"`
 	GrantID       string     `gorm:"index;not null" json:"grantId"`
+	FamilyID      string     `gorm:"index;not null;default:''" json:"-"`
 	UserID        string     `gorm:"index;not null" json:"userId"`
 	TokenHash     string     `gorm:"uniqueIndex;not null" json:"-"`
 	Scope         string     `gorm:"type:text;not null" json:"scope"`

@@ -25,6 +25,11 @@ const (
 	defaultMaxStreamDuration = 7 * 24 * time.Hour
 )
 
+// ErrStreamAuthorizationRevoked tells the streaming service to stop without
+// committing either a success or failure terminal state. The HTTP layer uses
+// it only after an authoritative long-lived authorization check fails.
+var ErrStreamAuthorizationRevoked = errors.New("volume import stream authorization revoked")
+
 type volumeDomain interface {
 	CreateProjectVolume(context.Context, volume.CreateProjectVolumeInput) (volume.CreateProjectVolumeResult, error)
 	GetProjectVolume(context.Context, string, string) (model.ProjectVolume, error)
@@ -201,11 +206,20 @@ func (service *Service) StreamImport(ctx context.Context, projectID, transferID 
 	streamResult, streamErr := service.runtime.OpenVolumeTransferImport(streamCtx, projectVolume, claimed, limited)
 	stopHeartbeat()
 	if streamErr != nil {
+		if errors.Is(context.Cause(streamCtx), ErrStreamAuthorizationRevoked) {
+			return model.VolumeTransfer{}, ErrStreamAuthorizationRevoked
+		}
 		return model.VolumeTransfer{}, service.fail(streamCtx, claimed, streamErrorCode(streamErr), "direct import stream failed", streamErr)
+	}
+	if errors.Is(context.Cause(streamCtx), ErrStreamAuthorizationRevoked) {
+		return model.VolumeTransfer{}, ErrStreamAuthorizationRevoked
 	}
 	actualSHA := hex.EncodeToString(hasher.Sum(nil))
 	if limited.N != 1 || streamResult.TransferredBytes != contentLength || !strings.EqualFold(streamResult.SHA256, actualSHA) {
 		return model.VolumeTransfer{}, service.fail(ctx, claimed, volume.CodeTransferChecksumMismatch, "direct import checksum mismatch", nil)
+	}
+	if errors.Is(context.Cause(streamCtx), ErrStreamAuthorizationRevoked) {
+		return model.VolumeTransfer{}, ErrStreamAuthorizationRevoked
 	}
 	result, err = service.volumes.CompleteVolumeTransferStream(ctx, transfer.ProjectID, transfer.ID, volume.TransferCompletion{
 		ExpectedState: model.VolumeTransferStateStreaming, TransferredBytes: streamResult.TransferredBytes,
@@ -314,6 +328,8 @@ type finalizingExportReader struct {
 	stopHeartbeat func()
 	cancelStream  context.CancelFunc
 	finalized     chan struct{}
+	closeOnce     sync.Once
+	closeErr      error
 }
 
 func (reader *finalizingExportReader) Read(buffer []byte) (int, error) {
@@ -330,8 +346,14 @@ func (reader *finalizingExportReader) Read(buffer []byte) (int, error) {
 }
 
 func (reader *finalizingExportReader) Close() error {
+	closeErr := reader.closeStream()
 	finalErr := reader.finish(false, context.Canceled)
-	return errors.Join(finalErr, reader.stream.Close())
+	return errors.Join(finalErr, closeErr)
+}
+
+func (reader *finalizingExportReader) closeStream() error {
+	reader.closeOnce.Do(func() { reader.closeErr = reader.stream.Close() })
+	return reader.closeErr
 }
 
 func (reader *finalizingExportReader) finish(reachedEOF bool, readErr error) error {
@@ -373,7 +395,7 @@ func (reader *finalizingExportReader) watchCancellation() {
 	go func() {
 		select {
 		case <-reader.ctx.Done():
-			_ = reader.stream.Close()
+			_ = reader.closeStream()
 			_ = reader.finish(false, reader.ctx.Err())
 		case <-reader.finalized:
 		}

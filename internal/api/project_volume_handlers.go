@@ -174,7 +174,7 @@ type projectVolumeDeletionPreviewResponse struct {
 
 func (h *Handlers) ListProjectVolumes(ctx *gin.Context) {
 	markLiveObservationResponse(ctx)
-	if _, project, ok := h.projectAndCurrentUserWithRoles(ctx, volumeActionRoles(authz.ActionVolumeRead)...); ok {
+	if _, project, ok := h.authorizeProject(ctx, authz.ActionVolumeRead); ok {
 		pagination, valid := volumePagination(ctx, map[string]bool{
 			"createdAt": true, "updatedAt": true, "displayName": true, "capacity": true,
 		}, "createdAt")
@@ -206,7 +206,7 @@ func (h *Handlers) ListProjectVolumes(ctx *gin.Context) {
 }
 
 func (h *Handlers) CreateProjectVolume(ctx *gin.Context) {
-	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, volumeActionRoles(authz.ActionVolumeWrite)...)
+	user, project, ok := h.authorizeProject(ctx, authz.ActionVolumeWrite)
 	if !ok {
 		return
 	}
@@ -240,7 +240,7 @@ func (h *Handlers) CreateProjectVolume(ctx *gin.Context) {
 
 func (h *Handlers) GetProjectVolume(ctx *gin.Context) {
 	markLiveObservationResponse(ctx)
-	if user, project, ok := h.projectAndCurrentUserWithRoles(ctx, volumeActionRoles(authz.ActionVolumeRead)...); ok {
+	if user, project, ok := h.authorizeProject(ctx, authz.ActionVolumeRead); ok {
 		bindingPage := parsePositiveInt(ctx.Query("bindingPage"), 1)
 		bindingPageSize := parsePositiveInt(ctx.Query("bindingPageSize"), volume.DefaultPageSize)
 		transferPage := parsePositiveInt(ctx.Query("transferPage"), 1)
@@ -250,14 +250,21 @@ func (h *Handlers) GetProjectVolume(ctx *gin.Context) {
 			writeVolumeError(ctx, err)
 			return
 		}
-		privileged := authz.IsPlatformAdmin(user.Role) || h.currentProjectRoleAllows(ctx, project.ID, user.ID, authz.ProjectRoleOwner, authz.ProjectRoleAdmin)
+		privileged := authz.IsPlatformAdmin(user.Role)
+		if !privileged {
+			var available bool
+			privileged, available = h.projectMemberActionAllowed(ctx, project.ID, user.ID, authz.ActionVolumeExport)
+			if !available {
+				return
+			}
+		}
 		observations := h.observeProjectVolumeResponses(ctx.Request.Context(), []model.ProjectVolume{detail.Volume})
 		ctx.JSON(http.StatusOK, projectVolumeDetailResponseFor(detail, observations[detail.Volume.ID], privileged, user.ID))
 	}
 }
 
 func (h *Handlers) UpdateProjectVolume(ctx *gin.Context) {
-	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, volumeActionRoles(authz.ActionVolumeWrite)...)
+	user, project, ok := h.authorizeProject(ctx, authz.ActionVolumeWrite)
 	if !ok {
 		return
 	}
@@ -293,7 +300,7 @@ func (h *Handlers) UpdateProjectVolume(ctx *gin.Context) {
 }
 
 func (h *Handlers) DeleteProjectVolume(ctx *gin.Context) {
-	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, volumeActionRoles(authz.ActionVolumeDelete)...)
+	user, project, ok := h.authorizeProject(ctx, authz.ActionVolumeDelete)
 	if !ok {
 		return
 	}
@@ -319,7 +326,7 @@ func (h *Handlers) DeleteProjectVolume(ctx *gin.Context) {
 }
 
 func (h *Handlers) RetryProjectVolumeOperation(ctx *gin.Context) {
-	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, volumeActionRoles(authz.ActionVolumeRead)...)
+	user, project, ok := h.authorizeProject(ctx, authz.ActionVolumeRead)
 	if !ok {
 		return
 	}
@@ -339,9 +346,15 @@ func (h *Handlers) RetryProjectVolumeOperation(ctx *gin.Context) {
 		writeErrorCode(ctx, http.StatusConflict, volume.CodeStateConflict, "project volume operation cannot be retried")
 		return
 	}
-	if !authz.IsPlatformAdmin(user.Role) && !h.currentProjectRoleAllows(ctx, project.ID, user.ID, volumeActionRoles(retryAction)...) {
-		writeErrorCode(ctx, http.StatusForbidden, "auth.forbidden", "project role does not allow retrying this volume operation")
-		return
+	if !authz.IsPlatformAdmin(user.Role) {
+		allowed, available := h.projectMemberActionAllowed(ctx, project.ID, user.ID, retryAction)
+		if !available {
+			return
+		}
+		if !allowed {
+			writeErrorCode(ctx, http.StatusForbidden, "auth.forbidden", "project role does not allow retrying this volume operation")
+			return
+		}
 	}
 	if token, bearer := currentAccessTokenFromContext(ctx); bearer && !accessTokenAllows(token.Scope, string(retryAction)) {
 		writeErrorCode(ctx, http.StatusForbidden, "auth.token.scope_insufficient", "the original volume operation scope is required")
@@ -377,7 +390,7 @@ func projectVolumeRetryAuthorization(item model.ProjectVolume) (authz.Action, bo
 
 func (h *Handlers) PreviewProjectVolumeDeletion(ctx *gin.Context) {
 	markLiveObservationResponse(ctx)
-	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, volumeActionRoles(authz.ActionVolumeDelete)...)
+	user, project, ok := h.authorizeProject(ctx, authz.ActionVolumeDelete)
 	if !ok {
 		return
 	}
@@ -392,7 +405,7 @@ func (h *Handlers) PreviewProjectVolumeDeletion(ctx *gin.Context) {
 
 func (h *Handlers) ListProjectVolumeStorageClasses(ctx *gin.Context) {
 	markLiveObservationResponse(ctx)
-	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, volumeActionRoles(authz.ActionVolumeRead)...)
+	user, project, ok := h.authorizeProject(ctx, authz.ActionVolumeRead)
 	if !ok {
 		return
 	}
@@ -568,17 +581,6 @@ func projectVolumeDeletionPreviewResponseFor(preview volume.ProjectVolumeDeletio
 	}
 }
 
-func volumeActionRoles(action authz.Action) []string {
-	roles := []string{authz.ProjectRoleOwner, authz.ProjectRoleAdmin, authz.ProjectRoleDeveloper, authz.ProjectRoleViewer}
-	allowed := make([]string, 0, len(roles))
-	for _, role := range roles {
-		if authz.ProjectRoleAllows(role, action) {
-			allowed = append(allowed, role)
-		}
-	}
-	return allowed
-}
-
 func volumePagination(ctx *gin.Context, allowedSort map[string]bool, fallbackSort string) (paginationParams, bool) {
 	pagination := paginationFromQuery(ctx)
 	sortBy := strings.TrimSpace(ctx.Query("sortBy"))
@@ -648,6 +650,10 @@ func volumeAuditErrorCode(err error) string {
 }
 
 func writeVolumeError(ctx *gin.Context, err error) {
+	if errors.Is(err, authz.ErrProjectAuthorizationUnavailable) || errors.Is(err, authz.ErrProjectPolicyUndefined) {
+		writeProjectAuthorizationError(ctx, err)
+		return
+	}
 	code := volume.ErrorCode(err)
 	status := http.StatusInternalServerError
 	switch code {

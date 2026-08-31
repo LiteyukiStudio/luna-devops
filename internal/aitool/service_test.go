@@ -142,6 +142,12 @@ func TestTargetProjectComesOnlyFromBoundToolArguments(t *testing.T) {
 	}
 }
 
+func TestAuthorizeActorFailsClosedWithoutDependencies(t *testing.T) {
+	if NewService(nil).AuthorizeActor(t.Context(), "usr_1", "ses_1", "prj_1", Policy{ProjectAction: authz.ActionProjectRead}) {
+		t.Fatal("authorization without storage or ProjectAuthorizer must fail closed")
+	}
+}
+
 func TestProjectListOptionsDefaultToRelatedAndBoundedPagination(t *testing.T) {
 	for _, platformAdmin := range []bool{false, true} {
 		options, err := resolveProjectListOptions(map[string]any{}, platformAdmin)

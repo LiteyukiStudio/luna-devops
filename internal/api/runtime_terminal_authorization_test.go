@@ -2,12 +2,50 @@ package api
 
 import (
 	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
 	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/model"
+	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
+
+func TestRuntimeTerminalBearerTransportRequiresOneTimeTicket(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/api/v1/runtime/clusters/rcl_test/pods/terminal", nil)
+	ctx.Request.Header.Set("Authorization", "Bearer lyo_test")
+
+	if requireRuntimeTerminalTicketForBearer(ctx, "") {
+		t.Fatal("bearer WebSocket transport without a one-time ticket was accepted")
+	}
+	var response map[string]any
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if recorder.Code != http.StatusForbidden || response["code"] != "runtime_terminal.ticket_required" {
+		t.Fatalf("missing bearer terminal ticket = status %d, body %#v", recorder.Code, response)
+	}
+
+	withTicketRecorder := httptest.NewRecorder()
+	withTicket, _ := gin.CreateTestContext(withTicketRecorder)
+	withTicket.Request = httptest.NewRequest(http.MethodGet, "/api/v1/runtime/clusters/rcl_test/pods/terminal?ticket=ticket_test", nil)
+	withTicket.Request.Header.Set("Authorization", "Bearer lyo_test")
+	if !requireRuntimeTerminalTicketForBearer(withTicket, "ticket_test") {
+		t.Fatal("bearer WebSocket transport with a one-time ticket was rejected")
+	}
+
+	browserRecorder := httptest.NewRecorder()
+	browser, _ := gin.CreateTestContext(browserRecorder)
+	browser.Request = httptest.NewRequest(http.MethodGet, "/api/v1/runtime/clusters/rcl_test/pods/terminal", nil)
+	if !requireRuntimeTerminalTicketForBearer(browser, "") {
+		t.Fatal("browser session-cookie WebSocket flow should remain available without a ticket")
+	}
+}
 
 func TestRuntimeTerminalAuthorizationStateRequiresLiveIdentityAndAuthorization(t *testing.T) {
 	now := time.Now()
@@ -56,8 +94,15 @@ func TestRuntimeTerminalAuthorizationStateRequiresLiveIdentityAndAuthorization(t
 func TestRuntimeTerminalAuthorizationStateSupportsLunaCLIOAuth(t *testing.T) {
 	now := time.Now()
 	grantID := "oagr_test"
-	binding := runtimeTerminalAuthorizationBinding{UserID: "usr_test", SubjectID: oauthGrantSubject(grantID), Deadline: now.Add(time.Hour)}
+	tokenID := "tok_test"
+	token := model.AccessToken{
+		ID: tokenID, UserID: "usr_test", Source: "oauth", OAuthApplicationID: lunaCLIApplicationID,
+		OAuthGrantID: grantID, OAuthFamilyID: "ofam_test",
+	}
+	binding := continuousAuthorizationBindingForAccessToken(token.UserID, token)
+	binding.Deadline = now.Add(time.Hour)
 	state := runtimeTerminalAuthorizationState{
+		AccessToken:      token,
 		OAuthGrant:       model.OAuthGrant{ID: grantID, ApplicationID: lunaCLIApplicationID, UserID: binding.UserID},
 		OAuthApplication: model.OAuthApplication{ID: lunaCLIApplicationID},
 		User:             model.User{ID: binding.UserID}, AuthorizationAllowed: true,
@@ -68,6 +113,70 @@ func TestRuntimeTerminalAuthorizationStateSupportsLunaCLIOAuth(t *testing.T) {
 	state.OAuthGrant.RevokedAt = &now
 	if state.active(binding, now) {
 		t.Fatal("revoked Luna CLI OAuth grant must revoke terminal authorization")
+	}
+}
+
+func TestOAuthFamilyRevocationInvalidatesTerminalAndDownloadIdentity(t *testing.T) {
+	db := authIntegrationDB(t)
+	now := time.Now()
+	plainToken := "lyo_family_bound_identity"
+	user := model.User{ID: "usr_family_bound_identity", Email: "family-bound@example.com", Name: "Family Bound", Role: authz.PlatformRoleAdmin, Language: "en-US"}
+	application := model.OAuthApplication{
+		ID: lunaCLIApplicationID, Name: "Luna CLI", ClientID: lunaCLIClientID, RedirectURIs: "", AllowedScopes: "user:read", AccessTokenLifetimeDays: 30,
+	}
+	grant := model.OAuthGrant{ID: "ogrt_family_bound_identity", ApplicationID: application.ID, UserID: user.ID, Scope: "user:read"}
+	accessToken := model.AccessToken{
+		ID: "tok_family_bound_identity", UserID: user.ID, Name: application.Name, Scope: "user:read", TokenHash: hashToken(plainToken),
+		Source: "oauth", OAuthApplicationID: application.ID, OAuthGrantID: grant.ID, OAuthFamilyID: "ofam_family_bound_identity",
+	}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&application).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&grant).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&accessToken).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	handlers := &Handlers{db: db}
+	binding := continuousAuthorizationBindingForAccessToken(user.ID, accessToken)
+	binding.Deadline = now.Add(time.Hour)
+	if !handlers.continuousAuthorizationActive(t.Context(), binding, func(context.Context, model.User) bool { return true }) {
+		t.Fatal("live OAuth family should authorize the existing terminal")
+	}
+	router := gin.New()
+	router.GET("/api/v1/users/me", func(ctx *gin.Context) {
+		current, ok := handlers.currentUserFromAccessToken(ctx)
+		if !ok {
+			return
+		}
+		subject, ok := handlers.currentInteractiveSubject(ctx, current)
+		if !ok {
+			ctx.Status(http.StatusForbidden)
+			return
+		}
+		ctx.String(http.StatusOK, subject)
+	})
+	liveIdentity := performBearerRequest(router, http.MethodGet, "/api/v1/users/me", plainToken, "")
+	if liveIdentity.Code != http.StatusOK || liveIdentity.Body.String() != binding.SubjectID {
+		t.Fatalf("live download identity = %d %q", liveIdentity.Code, liveIdentity.Body.String())
+	}
+
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		return revokeOAuthFamily(tx, grant.ID, accessToken.OAuthFamilyID, time.Now())
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if handlers.continuousAuthorizationActive(t.Context(), binding, func(context.Context, model.User) bool { return true }) {
+		t.Fatal("revoked OAuth family must stop the existing terminal")
+	}
+	revokedIdentity := performBearerRequest(router, http.MethodGet, "/api/v1/users/me", plainToken, "")
+	if revokedIdentity.Code != http.StatusUnauthorized {
+		t.Fatalf("revoked OAuth family download identity = %d %s", revokedIdentity.Code, revokedIdentity.Body.String())
 	}
 }
 
@@ -126,13 +235,13 @@ func TestRuntimeTerminalAuthorizationRevokesDeletedSession(t *testing.T) {
 	}
 	binding := runtimeTerminalAuthorizationBinding{UserID: user.ID, SubjectID: session.ID, Deadline: session.ExpiresAt}
 	handlers := &Handlers{db: db}
-	if !handlers.runtimeTerminalAuthorizationActive(context.Background(), binding, func(context.Context, model.User) bool { return true }) {
+	if !handlers.continuousAuthorizationActive(context.Background(), binding, func(context.Context, model.User) bool { return true }) {
 		t.Fatal("live session should authorize the terminal")
 	}
 	if err := db.Delete(&session).Error; err != nil {
 		t.Fatal(err)
 	}
-	if handlers.runtimeTerminalAuthorizationActive(context.Background(), binding, func(context.Context, model.User) bool { return true }) {
+	if handlers.continuousAuthorizationActive(context.Background(), binding, func(context.Context, model.User) bool { return true }) {
 		t.Fatal("deleted session must revoke terminal authorization")
 	}
 }

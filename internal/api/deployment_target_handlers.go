@@ -11,7 +11,6 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/resourceidentifier"
-	"github.com/LiteyukiStudio/devops/internal/tasks"
 	"github.com/LiteyukiStudio/devops/internal/volume"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -20,7 +19,7 @@ import (
 
 func (h *Handlers) ListDeploymentTargets(ctx *gin.Context) {
 	markLiveObservationResponse(ctx)
-	_, project, ok := h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin, authz.ProjectRoleDeveloper, authz.ProjectRoleViewer)
+	_, project, ok := h.authorizeProject(ctx, authz.ActionDeploymentRead)
 	if !ok {
 		return
 	}
@@ -62,7 +61,7 @@ func deploymentTargetPageQuery(query *gorm.DB, pagination paginationParams) *gor
 }
 
 func (h *Handlers) CreateDeploymentTarget(ctx *gin.Context) {
-	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin, authz.ProjectRoleDeveloper)
+	user, project, ok := h.authorizeProject(ctx, authz.ActionDeploymentUpdate)
 	if !ok {
 		return
 	}
@@ -132,7 +131,7 @@ func (h *Handlers) CreateDeploymentTarget(ctx *gin.Context) {
 }
 
 func (h *Handlers) UpdateDeploymentTarget(ctx *gin.Context) {
-	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin, authz.ProjectRoleDeveloper)
+	user, project, ok := h.authorizeProject(ctx, authz.ActionDeploymentUpdate)
 	if !ok {
 		return
 	}
@@ -248,7 +247,7 @@ func requireInteractiveSession(ctx *gin.Context) bool {
 }
 
 func (h *Handlers) RestartDeploymentTarget(ctx *gin.Context) {
-	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin, authz.ProjectRoleDeveloper)
+	user, project, ok := h.authorizeProject(ctx, authz.ActionDeploymentRestart)
 	if !ok {
 		return
 	}
@@ -292,7 +291,7 @@ func (h *Handlers) RestartDeploymentTarget(ctx *gin.Context) {
 }
 
 func (h *Handlers) DeleteDeploymentTarget(ctx *gin.Context) {
-	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin, authz.ProjectRoleDeveloper)
+	user, project, ok := h.authorizeProject(ctx, authz.ActionDeploymentDelete)
 	if !ok {
 		return
 	}
@@ -327,6 +326,10 @@ func (h *Handlers) DeleteDeploymentTarget(ctx *gin.Context) {
 		volumeChanges, syncErr = syncDeploymentTargetVolumeMounts(ctx.Request.Context(), tx, target, nil)
 		return syncErr
 	}); err != nil {
+		if errors.Is(err, errResourceDeleteAlreadyStarted) {
+			writeErrorCode(ctx, http.StatusConflict, "deployment_target.delete_in_progress", "部署配置正在删除中，请等待资源清理完成")
+			return
+		}
 		h.auditDeploymentVolumeMountFailure(ctx.Request.Context(), user.ID, volumeChanges, err)
 		if volume.ErrorCode(err) != "" {
 			writeVolumeError(ctx, err)
@@ -336,15 +339,13 @@ func (h *Handlers) DeleteDeploymentTarget(ctx *gin.Context) {
 		return
 	}
 	h.auditDeploymentVolumeMountChanges(ctx.Request.Context(), user.ID, target, volumeChanges)
-	if !h.enqueueResourceCleanup(ctx.Request.Context(), tasks.ResourceCleanupPayload{
-		ResourceType: "deployment_target",
-		ResourceID:   target.ID,
-		ProjectID:    target.ProjectID,
-	}) {
+	if !h.enqueueResourceCleanup(ctx.Request.Context(), "deployment_target", target.ID, target.ProjectID, user.ID) {
 		_ = markResourceDeleteFailed(h.dbFor(ctx), &model.DeploymentTarget{}, target.ID, "资源清理任务投递失败，请稍后重试")
 		_ = markDeploymentTargetGatewayRoutesDeleteFailed(h.dbFor(ctx), target, "资源清理任务投递失败，请稍后重试")
+		h.auditWithContext(user.ID, "deployment.delete", target.ID, false, "cleanup_enqueue_failed", ctx.Request.Context())
 		writeError(ctx, http.StatusServiceUnavailable, "资源清理任务投递失败，请稍后重试")
 		return
 	}
+	h.auditWithContext(user.ID, "deployment.delete", target.ID, true, "cleanup_queued", ctx.Request.Context())
 	ctx.Status(http.StatusNoContent)
 }

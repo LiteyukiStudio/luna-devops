@@ -353,6 +353,7 @@ func assertFreshMigrationState(t *testing.T, db *gorm.DB) {
 		"oauth_grants",
 		"oauth_authorization_codes",
 		"oauth_refresh_tokens",
+		"kube_access_bindings",
 		"auth_registration_settings",
 		"platform_mail_settings",
 		"email_registration_challenges",
@@ -382,7 +383,17 @@ func assertFreshMigrationState(t *testing.T, db *gorm.DB) {
 		{table: "billing_ledger_entries", column: "idempotency_key"},
 		{table: "billing_ledger_entries", column: "user_id"},
 		{table: "access_tokens", column: "oauth_application_id"},
+		{table: "access_tokens", column: "oauth_family_id"},
 		{table: "access_tokens", column: "oauth_grant_id"},
+		{table: "oauth_refresh_tokens", column: "family_id"},
+		{table: "runtime_clusters", column: "kube_gateway_enabled"},
+		{table: "runtime_clusters", column: "kube_gateway_extra_resource_rules"},
+		{table: "runtime_clusters", column: "delete_status"},
+		{table: "runtime_observations", column: "management_source"},
+		{table: "runtime_observations", column: "resource_kind"},
+		{table: "runtime_observations", column: "resource_uid"},
+		{table: "runtime_observations", column: "application_id"},
+		{table: "audit_logs", column: "metadata"},
 		{table: "auth_registration_settings", column: "allow_oidc_registration"},
 		{table: "platform_mail_settings", column: "personal_email_cooldown_seconds"},
 		{table: "notification_channels", column: "owner_user_id"},
@@ -442,6 +453,8 @@ func assertFreshMigrationState(t *testing.T, db *gorm.DB) {
 		{table: "deployment_targets", column: "build_config_id"},
 		{table: "deployment_targets", column: "service_port"},
 		{table: "deployment_targets", column: "runtime_config_set_ids"},
+		{table: "deployment_targets", column: "config_refs"},
+		{table: "deployment_targets", column: "namespace"},
 	} {
 		if db.Migrator().HasColumn(obsolete.table, obsolete.column) {
 			t.Fatalf("fresh database contains obsolete %s.%s", obsolete.table, obsolete.column)
@@ -536,6 +549,8 @@ func assertFreshMigrationState(t *testing.T, db *gorm.DB) {
 		{name: "idx_hook_runs_retention_terminal"},
 		{name: "idx_user_sessions_retention_expiry"},
 		{name: "idx_user_remember_tokens_retention_expiry"},
+		{name: "idx_kube_access_bindings_context", fragments: []string{"UNIQUE INDEX"}},
+		{name: "idx_runtime_observations_resource_period", fragments: []string{"UNIQUE INDEX"}},
 	} {
 		var definition string
 		if err := db.Raw(`SELECT indexdef FROM pg_indexes WHERE schemaname = current_schema() AND indexname = ?`, expected.name).Scan(&definition).Error; err != nil {
@@ -600,6 +615,7 @@ func assertStableModelMigrationCoverage(t *testing.T, db *gorm.DB) {
 		&model.HookRun{},
 		&model.HookRunLog{},
 		&model.AccessToken{},
+		&model.KubeAccessBinding{},
 		&model.AuditLog{},
 		&model.SecretValue{},
 		&model.ScopedResourceProjectBinding{},
@@ -625,6 +641,7 @@ func assertStableModelMigrationCoverage(t *testing.T, db *gorm.DB) {
 		&model.BillingUsageRecord{},
 		&model.BillingLedgerEntry{},
 		&model.RuntimeCluster{},
+		&model.RuntimeObservation{},
 		&model.Release{},
 		&model.ReleaseLog{},
 		&model.ProjectRuntimeConfigSet{},

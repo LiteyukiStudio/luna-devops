@@ -12,6 +12,7 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/resourceidentifier"
+	"github.com/LiteyukiStudio/devops/internal/runtimecluster"
 	"github.com/LiteyukiStudio/devops/internal/volume"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -151,11 +152,7 @@ func appTemplateDetailFrom(template appstore.Template) appTemplateResponse {
 }
 
 func (h *Handlers) InstallAppTemplate(ctx *gin.Context) {
-	user, ok := h.currentUser(ctx)
-	if !ok {
-		return
-	}
-	project, ok := h.findProjectForCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin, authz.ProjectRoleDeveloper)
+	user, project, ok := h.authorizeProject(ctx, authz.ActionProjectWrite)
 	if !ok {
 		return
 	}
@@ -340,7 +337,11 @@ func (h *Handlers) buildTemplateInstallPlan(ctx *gin.Context, user model.User, p
 	if _, ok := h.runtimeClusterForProjectUse(ctx, user, project.ID, clusterID); !ok {
 		return templateInstallPlan{}, false
 	}
-	namespace := strings.TrimSpace(input.Namespace)
+	namespace := runtimeProjectNamespace(project)
+	if requestedNamespace := strings.TrimSpace(input.Namespace); requestedNamespace != "" {
+		writeErrorCode(ctx, http.StatusBadRequest, "deployment_target.namespace_forbidden", "deployment target namespace is managed by the project and cannot be overridden")
+		return templateInstallPlan{}, false
+	}
 	projectVolumeID := strings.TrimSpace(input.ProjectVolumeID)
 	projectVolumeCount := 0
 	var projectVolumeDeclaration *appstore.DataVolume
@@ -373,9 +374,7 @@ func (h *Handlers) buildTemplateInstallPlan(ctx *gin.Context, user model.User, p
 			writeErrorCode(ctx, http.StatusConflict, "project_volume.cluster_mismatch", "项目数据卷与部署目标必须位于同一集群")
 			return templateInstallPlan{}, false
 		}
-		if namespace == "" {
-			namespace = projectVolume.Namespace
-		} else if projectVolume.Namespace != namespace {
+		if projectVolume.Namespace != namespace {
 			writeErrorCode(ctx, http.StatusConflict, "project_volume.namespace_mismatch", "项目数据卷与部署目标必须位于同一命名空间")
 			return templateInstallPlan{}, false
 		}
@@ -447,7 +446,6 @@ func (h *Handlers) buildTemplateInstallPlan(ctx *gin.Context, user model.User, p
 		Stage:               stage,
 		KubernetesName:      resourceidentifier.DeploymentTargetName(applicationIdentifier, stage),
 		ClusterID:           clusterID,
-		Namespace:           namespace,
 		Replicas:            replicas,
 		CPURequest:          cpuRequest,
 		MemoryRequest:       memoryRequest,
@@ -602,11 +600,12 @@ func (h *Handlers) templateSecretFiles(ctx *gin.Context, userID string, installa
 
 func (h *Handlers) defaultRuntimeClusterID(ctx context.Context) string {
 	var cluster model.RuntimeCluster
-	err := h.dbWithContext(ctx).Where("type in ? and is_default = ?", []string{"kubernetes", "k3s"}, true).Order("created_at asc").First(&cluster).Error
+	query := runtimecluster.ActiveScope(h.dbWithContext(ctx))
+	err := query.Where("type in ? and is_default = ?", []string{"kubernetes", "k3s"}, true).Order("created_at asc").First(&cluster).Error
 	if err == nil {
 		return cluster.ID
 	}
-	err = h.dbWithContext(ctx).Where("type in ?", []string{"kubernetes", "k3s"}).Order("created_at asc").First(&cluster).Error
+	err = query.Where("type in ?", []string{"kubernetes", "k3s"}).Order("created_at asc").First(&cluster).Error
 	if err == nil {
 		return cluster.ID
 	}

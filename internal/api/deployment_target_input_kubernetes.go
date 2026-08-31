@@ -9,7 +9,6 @@ import (
 	"github.com/gin-gonic/gin"
 	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/util/validation"
 )
 
 type deploymentKubernetesAdvancedInput struct {
@@ -100,12 +99,31 @@ func normalizeDeploymentKubernetesAdvanced(ctx *gin.Context, input deploymentTar
 	if !ok {
 		return deploymentKubernetesAdvancedInput{}, false
 	}
-	serviceAccountName := strings.TrimSpace(input.ServiceAccountName)
-	if serviceAccountName != "" {
-		if problems := validation.IsDNS1123Subdomain(serviceAccountName); len(problems) > 0 {
-			writeErrorCode(ctx, http.StatusBadRequest, "deployment_target.service_account_invalid", "deployment service account configuration is invalid")
-			return deploymentKubernetesAdvancedInput{}, false
-		}
+	if normalizeTriStateBool(input.AllowPrivilegeEscalation) == "true" {
+		writeErrorCode(ctx, http.StatusBadRequest, "deployment_target.allow_privilege_escalation_forbidden", "deployment workloads must keep allowPrivilegeEscalation disabled")
+		return deploymentKubernetesAdvancedInput{}, false
+	}
+	if strings.TrimSpace(normalizeStringArrayText(input.CapabilityAdd)) != "" {
+		writeErrorCode(ctx, http.StatusBadRequest, "deployment_target.capability_add_forbidden", "deployment workloads cannot add Linux capabilities")
+		return deploymentKubernetesAdvancedInput{}, false
+	}
+	if strings.TrimSpace(input.ServiceAccountName) != "" {
+		writeErrorCode(ctx, http.StatusBadRequest, "deployment_target.service_account_invalid", "deployment workloads cannot choose a custom service account")
+		return deploymentKubernetesAdvancedInput{}, false
+	}
+	if normalizeTriStateBool(input.AutomountServiceAccountToken) == "true" {
+		writeErrorCode(ctx, http.StatusBadRequest, "deployment_target.service_account_token_forbidden", "deployment workloads must keep automountServiceAccountToken disabled")
+		return deploymentKubernetesAdvancedInput{}, false
+	}
+	rawServiceType := strings.TrimSpace(input.ServiceType)
+	serviceType := normalizeServiceType(rawServiceType)
+	if rawServiceType != "" && serviceType != string(corev1.ServiceTypeClusterIP) {
+		writeErrorCode(ctx, http.StatusBadRequest, "deployment_target.service_type_forbidden", "deployment services only support ClusterIP")
+		return deploymentKubernetesAdvancedInput{}, false
+	}
+	if strings.TrimSpace(input.ServiceExternalTrafficPolicy) != "" {
+		writeErrorCode(ctx, http.StatusBadRequest, "deployment_target.service_external_traffic_policy_forbidden", "deployment services cannot configure external traffic policy")
+		return deploymentKubernetesAdvancedInput{}, false
 	}
 	return deploymentKubernetesAdvancedInput{
 		ImagePullPolicy:              normalizeImagePullPolicyValue(input.ImagePullPolicy),
@@ -122,19 +140,19 @@ func normalizeDeploymentKubernetesAdvanced(ctx *gin.Context, input deploymentTar
 		FSGroup:                      fsGroup,
 		FSGroupChangePolicy:          normalizeFSGroupChangePolicy(input.FSGroupChangePolicy),
 		ReadOnlyRootFilesystem:       input.ReadOnlyRootFilesystem,
-		AllowPrivilegeEscalation:     normalizeTriStateBool(input.AllowPrivilegeEscalation),
-		CapabilityAdd:                normalizeStringArrayText(input.CapabilityAdd),
+		AllowPrivilegeEscalation:     "false",
+		CapabilityAdd:                "",
 		CapabilityDrop:               normalizeStringArrayText(input.CapabilityDrop),
 		NodeSelector:                 nodeSelector,
 		Tolerations:                  tolerations,
 		Affinity:                     affinity,
 		TopologySpreadConstraints:    topologySpreadConstraints,
 		PriorityClassName:            strings.TrimSpace(input.PriorityClassName),
-		ServiceAccountName:           serviceAccountName,
-		AutomountServiceAccountToken: normalizeTriStateBool(input.AutomountServiceAccountToken),
-		ServiceType:                  normalizeServiceType(input.ServiceType),
+		ServiceAccountName:           "",
+		AutomountServiceAccountToken: "false",
+		ServiceType:                  string(corev1.ServiceTypeClusterIP),
 		ServiceAnnotations:           serviceAnnotations,
-		ServiceExternalTrafficPolicy: normalizeServiceExternalTrafficPolicy(input.ServiceExternalTrafficPolicy),
+		ServiceExternalTrafficPolicy: "",
 		ServiceSessionAffinity:       normalizeServiceSessionAffinity(input.ServiceSessionAffinity),
 	}, true
 }
@@ -234,10 +252,6 @@ func normalizeTriStateBool(value string) string {
 
 func normalizeServiceType(value string) string {
 	switch strings.TrimSpace(value) {
-	case string(corev1.ServiceTypeNodePort):
-		return string(corev1.ServiceTypeNodePort)
-	case string(corev1.ServiceTypeLoadBalancer):
-		return string(corev1.ServiceTypeLoadBalancer)
 	case string(corev1.ServiceTypeClusterIP):
 		return string(corev1.ServiceTypeClusterIP)
 	default:

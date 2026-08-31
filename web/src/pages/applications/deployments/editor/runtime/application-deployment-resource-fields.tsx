@@ -14,7 +14,7 @@ export function RuntimeResourceFields({ form, priceText }: RuntimeResourceFields
   const { t } = useTranslation()
 
   return (
-    <div className="grid gap-3 md:col-span-2">
+    <div className="grid w-full gap-3">
       <div className="grid gap-3 md:grid-cols-3">
         <Field label={t('deploymentsPage.replicas')} required>
           <Input {...form.register('replicas', { valueAsNumber: true })} min={1} type="number" />

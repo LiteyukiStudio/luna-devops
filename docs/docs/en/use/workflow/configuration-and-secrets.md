@@ -1,10 +1,10 @@
 # Configuration and Secrets
 
-A deployment can combine ordinary environment variables, ConfigMaps, configuration files, runtime Secrets, and secret files.
+A deployment can combine plain configuration, shared configuration, configuration files, runtime Secrets, and secret files.
 
 ## Ordinary configuration
 
-Enter environment variables as one `KEY=VALUE` per line. They are stored as ordinary configuration and may be readable by authorized clients, so **do not place passwords, tokens, or private keys here**.
+Enter plain configuration as one `KEY=VALUE` per line. This is the single deployment-level entry point for non-sensitive key-value pairs. During release, Luna DevOps stores the values in the deployment-managed ConfigMap and injects them as environment variables, so no separate ConfigMap form is needed. Authorized clients may read these values, so **do not place passwords, tokens, or private keys here**.
 
 Build variables can exist at global, project-space, application, and deployment levels. The closest matching value wins. Build arguments and ordinary variables appear in build records and are not suitable for secrets.
 

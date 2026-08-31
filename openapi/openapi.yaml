@@ -20,6 +20,7 @@ tags:
   - name: Deployments
   - name: Builds
   - name: AccessTokens
+  - name: KubectlAccess
   - name: OAuthApplications
   - name: System
   - name: Notifications
@@ -64,12 +65,13 @@ paths:
                   minimumCliVersion: { type: string, example: 0.1.0 }
                   features:
                     type: object
-                    required: [accessToken, deviceCode, oauthAuthorization, openapiOperations]
+                    required: [accessToken, deviceCode, oauthAuthorization, openapiOperations, kubectlGateway]
                     properties:
                       accessToken: { type: boolean }
                       deviceCode: { type: boolean }
                       oauthAuthorization: { type: boolean }
                       openapiOperations: { type: boolean }
+                      kubectlGateway: { type: boolean }
 
   /.well-known/oauth-authorization-server:
     get:
@@ -86,8 +88,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: true
+                $ref: "#/components/schemas/OAuthAuthorizationServerMetadata"
 
   /api/v1/oauth/device/authorization:
     post:
@@ -103,26 +104,14 @@ paths:
         content:
           application/x-www-form-urlencoded:
             schema:
-              type: object
-              required: [client_id]
-              properties:
-                client_id: { type: string }
-                scope: { type: string }
+              $ref: "#/components/schemas/OAuthDeviceAuthorizationInput"
       responses:
         "200":
           description: Device and user codes for the browser verification flow.
           content:
             application/json:
               schema:
-                type: object
-                required: [device_code, user_code, verification_uri, verification_uri_complete, expires_in, interval]
-                properties:
-                  device_code: { type: string }
-                  user_code: { type: string }
-                  verification_uri: { type: string, format: uri }
-                  verification_uri_complete: { type: string, format: uri }
-                  expires_in: { type: integer, minimum: 1 }
-                  interval: { type: integer, minimum: 1 }
+                $ref: "#/components/schemas/OAuthDeviceAuthorizationResponse"
         "400":
           description: OAuth protocol error.
           content:
@@ -149,15 +138,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                required: [application, userCode, scopes, expiresAt]
-                properties:
-                  application: { $ref: "#/components/schemas/OAuthApplication" }
-                  userCode: { type: string }
-                  scopes:
-                    type: array
-                    items: { type: string }
-                  expiresAt: { type: string, format: date-time }
+                $ref: "#/components/schemas/OAuthDeviceVerification"
         "400":
           description: Invalid, expired, or consumed user code.
           content:
@@ -176,21 +157,14 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              required: [userCode, decision]
-              properties:
-                userCode: { type: string }
-                decision: { type: string, enum: [approve, deny] }
+              $ref: "#/components/schemas/OAuthDeviceVerificationDecisionInput"
       responses:
         "200":
           description: Device authorization decision accepted.
           content:
             application/json:
               schema:
-                type: object
-                required: [status]
-                properties:
-                  status: { type: string, enum: [approved, denied] }
+                $ref: "#/components/schemas/OAuthDeviceVerificationResult"
         "400":
           description: Invalid, expired, or consumed user code.
           content:
@@ -211,25 +185,10 @@ paths:
         content:
           application/x-www-form-urlencoded:
             schema:
-              type: object
-              required: [grant_type]
-              properties:
-                grant_type:
-                  type: string
-                  enum:
-                    - authorization_code
-                    - refresh_token
-                    - urn:ietf:params:oauth:grant-type:device_code
-                client_id: { type: string }
-                client_secret: { type: string, writeOnly: true }
-                code: { type: string }
-                code_verifier: { type: string }
-                redirect_uri: { type: string, format: uri }
-                refresh_token: { type: string, writeOnly: true }
-                device_code: { type: string, writeOnly: true }
+              $ref: "#/components/schemas/OAuthTokenInput"
       responses:
         "200":
-          description: OAuth access and refresh tokens.
+          description: OAuth access token and, when the application uses expiring access tokens, a refresh token.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/OAuthTokenResponse" }
@@ -243,7 +202,8 @@ paths:
     post:
       operationId: revokeOAuthToken
       tags: [Auth]
-      summary: Revoke an OAuth access or refresh token
+      summary: Revoke the token family containing an OAuth access or refresh token
+      description: Revokes every access and refresh token issued by the same login family. Other login families and the consent grant remain active.
       x-luna-cli:
         classification: protocol-adapter
         hidden: true
@@ -253,18 +213,10 @@ paths:
         content:
           application/x-www-form-urlencoded:
             schema:
-              type: object
-              required: [token]
-              properties:
-                token: { type: string, writeOnly: true }
-                token_type_hint:
-                  type: string
-                  enum: [access_token, refresh_token]
-                client_id: { type: string }
-                client_secret: { type: string, writeOnly: true }
+              $ref: "#/components/schemas/OAuthTokenRevocationInput"
       responses:
         "200":
-          description: Token is revoked or was already invalid.
+          description: The matching token family is revoked, or the supplied token was already invalid.
 
   /api/v1/public/configs:
     post:
@@ -284,6 +236,8 @@ paths:
   /api/v1/build/templates:
     get:
       operationId: listBuildTemplates
+      x-luna-cli:
+        requiredScopes: ["build:read"]
       tags: [Builds]
       summary: List immutable platform build templates
       responses:
@@ -298,6 +252,8 @@ paths:
   /api/v1/build/templates/{templateId}/preview:
     post:
       operationId: previewBuildTemplate
+      x-luna-cli:
+        requiredScopes: ["build:read"]
       tags: [Builds]
       summary: Validate template parameters and preview the generated Dockerfile
       parameters:
@@ -320,6 +276,8 @@ paths:
   /api/v1/build/environment-config:
     get:
       operationId: getBuildEnvironmentConfig
+      x-luna-cli:
+        requiredScopes: ["secret:read_summary"]
       tags: [Builds]
       summary: Get one global, application, or deployment build environment
       parameters:
@@ -335,6 +293,8 @@ paths:
               schema: { $ref: "#/components/schemas/BuildEnvironmentConfig" }
     put:
       operationId: updateBuildEnvironmentConfig
+      x-luna-cli:
+        requiredScopes: ["secret:update"]
       tags: [Builds]
       summary: Replace one global, application, or deployment build environment
       parameters:
@@ -415,6 +375,8 @@ paths:
   /api/v1/auth/registration:
     get:
       operationId: getAuthRegistrationStatus
+      x-luna-cli:
+        requiredScopes: ["auth:manage"]
       tags: [Auth]
       summary: Get public registration capabilities
       responses:
@@ -455,6 +417,8 @@ paths:
   /api/v1/auth/registration/settings:
     get:
       operationId: getAuthRegistrationSettings
+      x-luna-cli:
+        requiredScopes: ["auth:manage"]
       tags: [Auth]
       summary: Get registration settings
       responses:
@@ -465,6 +429,8 @@ paths:
               schema: { $ref: "#/components/schemas/AuthRegistrationSettings" }
     put:
       operationId: updateAuthRegistrationSettings
+      x-luna-cli:
+        requiredScopes: ["auth:manage"]
       tags: [Auth]
       summary: Update registration settings
       requestBody:
@@ -517,7 +483,7 @@ paths:
       x-luna-cli:
         command: mail.settings.update
         classification: business-command
-        risk: sensitive
+        risk: high
         requiredScopes: ["config:write"]
         agentAllowed: true
       requestBody:
@@ -579,6 +545,8 @@ paths:
   /api/v1/auth/providers:
     get:
       operationId: listAuthProviders
+      x-luna-cli:
+        requiredScopes: ["auth:manage"]
       tags: [Auth]
       summary: List auth providers
       parameters:
@@ -590,6 +558,8 @@ paths:
           description: Auth provider list.
     post:
       operationId: createAuthProvider
+      x-luna-cli:
+        requiredScopes: ["auth:manage"]
       tags: [Auth]
       summary: Create auth provider
       requestBody:
@@ -605,6 +575,8 @@ paths:
   /api/v1/auth/providers/{providerId}:
     put:
       operationId: updateAuthProvider
+      x-luna-cli:
+        requiredScopes: ["auth:manage"]
       tags: [Auth]
       summary: Update auth provider
       parameters:
@@ -622,6 +594,8 @@ paths:
   /api/v1/auth/admission-policy:
     get:
       operationId: getAuthAdmissionPolicy
+      x-luna-cli:
+        requiredScopes: ["auth:manage"]
       tags: [Auth]
       summary: Get auth admission policy
       responses:
@@ -629,6 +603,8 @@ paths:
           description: Auth admission policy.
     put:
       operationId: updateAuthAdmissionPolicy
+      x-luna-cli:
+        requiredScopes: ["auth:manage"]
       tags: [Auth]
       summary: Update auth admission policy
       requestBody:
@@ -684,6 +660,8 @@ paths:
   /api/v1/users/me:
     get:
       operationId: getCurrentUser
+      x-luna-cli:
+        requiredScopes: ["user:read"]
       tags: [Users]
       summary: Get current user
       responses:
@@ -695,6 +673,8 @@ paths:
                 $ref: "#/components/schemas/CurrentUser"
     put:
       operationId: updateCurrentUser
+      x-luna-cli:
+        requiredScopes: ["user:write"]
       tags: [Users]
       summary: Update current user preferences
       requestBody:
@@ -714,6 +694,8 @@ paths:
   /api/v1/users/me/password:
     put:
       operationId: updateMyPassword
+      x-luna-cli:
+        requiredScopes: ["user:write"]
       tags: [Users]
       summary: Set or change the current user's local password
       requestBody:
@@ -728,6 +710,8 @@ paths:
   /api/v1/users/me/external-identities:
     get:
       operationId: listMyExternalIdentities
+      x-luna-cli:
+        requiredScopes: ["user:read"]
       tags: [Users]
       summary: List current user's external identities
       responses:
@@ -737,6 +721,8 @@ paths:
   /api/v1/users/me/external-identities/{identityId}:
     delete:
       operationId: unbindMyExternalIdentity
+      x-luna-cli:
+        requiredScopes: ["user:write"]
       tags: [Users]
       summary: Unbind current user's external identity
       parameters:
@@ -748,6 +734,8 @@ paths:
   /api/v1/users:
     get:
       operationId: listUsers
+      x-luna-cli:
+        requiredScopes: ["user:read"]
       tags: [Users]
       summary: List users
       x-luna-agent:
@@ -774,6 +762,8 @@ paths:
           description: Paginated user list.
     post:
       operationId: createUser
+      x-luna-cli:
+        requiredScopes: ["user:manage"]
       tags: [Users]
       summary: Create local user
       requestBody:
@@ -789,6 +779,8 @@ paths:
   /api/v1/users/{userId}:
     put:
       operationId: updateUser
+      x-luna-cli:
+        requiredScopes: ["user:manage"]
       tags: [Users]
       summary: Update user
       parameters:
@@ -806,6 +798,8 @@ paths:
   /api/v1/configs/definitions:
     get:
       operationId: listConfigDefinitions
+      x-luna-cli:
+        requiredScopes: ["config:read"]
       tags: [Configs]
       summary: List configurable app config definitions
       responses:
@@ -820,6 +814,8 @@ paths:
   /api/v1/configs:
     put:
       operationId: updateConfigs
+      x-luna-cli:
+        requiredScopes: ["config:write"]
       tags: [Configs]
       summary: Update app configs
       requestBody:
@@ -834,6 +830,8 @@ paths:
 
     get:
       operationId: getConfigs
+      x-luna-cli:
+        requiredScopes: ["config:read"]
       tags:
         - Configs
       summary: Get Configs
@@ -956,6 +954,7 @@ paths:
       tags: [Runtime]
       summary: Authorize a runtime-cluster Pod terminal connection
       x-luna-cli:
+        requiredScopes: ["cluster:manage"]
         classification: protocol-adapter
         hidden: true
         exclusionReason: Low-level terminal preflight consumed by the explicit CLI runtime-terminal protocol adapter.
@@ -1008,6 +1007,8 @@ paths:
   /api/v1/runtime/clusters:
     get:
       operationId: listRuntimeClusters
+      x-luna-cli:
+        requiredScopes: ["cluster:manage"]
       tags: [Runtime]
       summary: List runtime clusters for the selected visibility
       description: Defaults to resources related to the caller. Platform administrators may explicitly request all visible resources. When projectId is provided, it is applied as a stronger filter within the selected visibility. Pagination is always applied; omitted pagination parameters use page 1 and pageSize 20.
@@ -1044,6 +1045,8 @@ paths:
 
     post:
       operationId: createRuntimeCluster
+      x-luna-cli:
+        requiredScopes: ["cluster:manage"]
       tags:
         - Runtime
       summary: Create Runtime Cluster
@@ -1070,6 +1073,8 @@ paths:
   /api/v1/runtime/clusters/pressure:
     get:
       operationId: observeRuntimeClusterPressure
+      x-luna-cli:
+        requiredScopes: ["cluster:read"]
       tags: [Runtime]
       summary: Observe current runtime cluster pressure
       description: Returns a current Kubernetes observation for the requested visible clusters. Platform administrators receive exact allocation and usage details; other users receive only the derived pressure level.
@@ -1108,6 +1113,8 @@ paths:
   /api/v1/git/providers:
     get:
       operationId: listGitProviders
+      x-luna-cli:
+        requiredScopes: ["git:read"]
       tags: [Git]
       summary: List Git providers for the selected visibility
       description: Defaults to Git providers related to the caller. Platform administrators may explicitly request all visible providers. When projectId is provided, it is applied as a stronger filter within the selected visibility.
@@ -1141,6 +1148,8 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
     post:
       operationId: createGitProvider
+      x-luna-cli:
+        requiredScopes: ["git:write"]
       tags: [Git]
       summary: Create Git provider
       requestBody:
@@ -1156,6 +1165,8 @@ paths:
   /api/v1/git/providers/{providerId}:
     put:
       operationId: updateGitProvider
+      x-luna-cli:
+        requiredScopes: ["git:write"]
       tags: [Git]
       summary: Update Git provider
       parameters:
@@ -1171,6 +1182,8 @@ paths:
           description: Updated Git provider.
     delete:
       operationId: deleteGitProvider
+      x-luna-cli:
+        requiredScopes: ["git:write"]
       tags: [Git]
       summary: Delete Git provider
       parameters:
@@ -1237,6 +1250,8 @@ paths:
   /api/v1/git/accounts:
     get:
       operationId: listGitAccounts
+      x-luna-cli:
+        requiredScopes: ["git:read"]
       tags: [Git]
       summary: List Git accounts for the selected visibility
       description: Defaults to Git accounts related to the caller. Platform administrators may explicitly request all visible accounts. When projectId is provided, it is applied as a stronger filter within the selected visibility.
@@ -1270,6 +1285,8 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
     post:
       operationId: createGitAccount
+      x-luna-cli:
+        requiredScopes: ["git:write"]
       tags: [Git]
       summary: Create current user Git account manually
       requestBody:
@@ -1285,6 +1302,8 @@ paths:
   /api/v1/git/accounts/{accountId}:
     put:
       operationId: updateGitAccount
+      x-luna-cli:
+        requiredScopes: ["git:write"]
       tags: [Git]
       summary: Update current user Git account
       parameters:
@@ -1300,6 +1319,8 @@ paths:
           description: Updated Git account.
     delete:
       operationId: deleteGitAccount
+      x-luna-cli:
+        requiredScopes: ["git:write"]
       tags: [Git]
       summary: Delete current user Git account
       parameters:
@@ -1311,6 +1332,8 @@ paths:
   /api/v1/git/accounts/{accountId}/refresh:
     post:
       operationId: refreshGitAccount
+      x-luna-cli:
+        requiredScopes: ["git:write"]
       tags: [Git]
       summary: Refresh current user Git account token
       parameters:
@@ -1322,6 +1345,8 @@ paths:
   /api/v1/git/accounts/{accountId}/repositories:
     get:
       operationId: listGitRepositories
+      x-luna-cli:
+        requiredScopes: ["git:read"]
       tags: [Git]
       summary: List repositories visible to a Git account
       parameters:
@@ -1352,6 +1377,8 @@ paths:
   /api/v1/git/accounts/{accountId}/repositories/{owner}/{repo}/branches:
     get:
       operationId: listGitBranches
+      x-luna-cli:
+        requiredScopes: ["git:read"]
       tags: [Git]
       summary: List repository branches
       parameters:
@@ -1371,6 +1398,8 @@ paths:
   /api/v1/git/accounts/{accountId}/repositories/{owner}/{repo}/file:
     get:
       operationId: readGitFile
+      x-luna-cli:
+        requiredScopes: ["git:read"]
       tags: [Git]
       summary: Read repository file content
       parameters:
@@ -1394,6 +1423,8 @@ paths:
   /api/v1/registries:
     get:
       operationId: listArtifactRegistries
+      x-luna-cli:
+        requiredScopes: ["registry:read"]
       tags: [Registries]
       summary: List artifact registries for the selected visibility
       description: Defaults to artifact registries related to the caller. Platform administrators may explicitly request all visible registries. When projectId is provided, it is applied as a stronger filter within the selected visibility.
@@ -1430,6 +1461,8 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
     post:
       operationId: createArtifactRegistry
+      x-luna-cli:
+        requiredScopes: ["registry:write"]
       tags: [Registries]
       summary: Create artifact registry
       requestBody:
@@ -1445,6 +1478,8 @@ paths:
   /api/v1/registries/{registryId}:
     put:
       operationId: updateArtifactRegistry
+      x-luna-cli:
+        requiredScopes: ["registry:write"]
       tags: [Registries]
       summary: Update artifact registry
       parameters:
@@ -1460,6 +1495,8 @@ paths:
           description: Updated artifact registry.
     delete:
       operationId: deleteArtifactRegistry
+      x-luna-cli:
+        requiredScopes: ["registry:write"]
       tags: [Registries]
       summary: Delete artifact registry
       parameters:
@@ -1471,6 +1508,8 @@ paths:
   /api/v1/registries/{registryId}/test:
     post:
       operationId: testArtifactRegistry
+      x-luna-cli:
+        requiredScopes: ["registry:write"]
       tags: [Registries]
       summary: Test artifact registry connectivity
       parameters:
@@ -1482,6 +1521,8 @@ paths:
   /api/v1/registries/{registryId}/credentials:
     get:
       operationId: listRegistryCredentials
+      x-luna-cli:
+        requiredScopes: ["registry:read"]
       tags: [Registries]
       summary: List registry credentials for the selected visibility
       description: Defaults to credentials related to the caller in the selected registry. Platform administrators may explicitly request all visible credentials. When projectId is provided, it is applied as a stronger filter within the selected visibility.
@@ -1521,6 +1562,8 @@ paths:
           $ref: "#/components/responses/NotFound"
     post:
       operationId: createRegistryCredential
+      x-luna-cli:
+        requiredScopes: ["registry:write"]
       tags: [Registries]
       summary: Create registry credential
       parameters:
@@ -1538,6 +1581,8 @@ paths:
   /api/v1/registry-credentials:
     get:
       operationId: listAllRegistryCredentials
+      x-luna-cli:
+        requiredScopes: ["registry:read"]
       tags: [Registries]
       summary: List registry credentials across registries for the selected visibility
       description: Defaults to credentials related to the caller across registries. Platform administrators may explicitly request all visible credentials.
@@ -1570,6 +1615,8 @@ paths:
   /api/v1/registries/{registryId}/credentials/{credentialId}:
     put:
       operationId: updateRegistryCredential
+      x-luna-cli:
+        requiredScopes: ["registry:write"]
       tags: [Registries]
       summary: Update registry credential
       parameters:
@@ -1590,6 +1637,8 @@ paths:
                 $ref: "#/components/schemas/RegistryCredential"
     delete:
       operationId: deleteRegistryCredential
+      x-luna-cli:
+        requiredScopes: ["registry:write"]
       tags: [Registries]
       summary: Delete registry credential
       parameters:
@@ -1602,6 +1651,8 @@ paths:
   /api/v1/container-images:
     get:
       operationId: listContainerImages
+      x-luna-cli:
+        requiredScopes: ["image:read"]
       tags: [Registries]
       summary: List container image records for the selected visibility
       description: Defaults to container image records related to the caller. Platform administrators may explicitly request all visible records. projectId, applicationId, and registryId are stronger filters within the selected visibility.
@@ -1645,6 +1696,8 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
     post:
       operationId: createContainerImage
+      x-luna-cli:
+        requiredScopes: ["image:write"]
       tags: [Registries]
       summary: Create container image record
       requestBody:
@@ -1701,6 +1754,8 @@ paths:
   /api/v1/projects:
     get:
       operationId: listProjects
+      x-luna-cli:
+        requiredScopes: ["project:read"]
       tags: [Projects]
       summary: List project spaces for the selected visibility
       description: Project discovery defaults to project spaces related to the caller. Platform administrators may explicitly request all project spaces. Pagination is always applied; omitted pagination parameters use page 1 and pageSize 20.
@@ -1732,6 +1787,8 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
     post:
       operationId: createProject
+      x-luna-cli:
+        requiredScopes: ["project:write"]
       tags: [Projects]
       summary: Create project
       x-luna-agent:
@@ -1755,6 +1812,8 @@ paths:
   /api/v1/projects/pins:
     get:
       operationId: listProjectPins
+      x-luna-cli:
+        requiredScopes: ["project:read"]
       tags: [Projects]
       summary: List current user's pinned projects
       parameters:
@@ -1774,6 +1833,8 @@ paths:
   /api/v1/projects/{projectId}:
     get:
       operationId: getProject
+      x-luna-cli:
+        requiredScopes: ["project:read"]
       tags: [Projects]
       summary: Get project
       x-luna-agent:
@@ -1789,6 +1850,8 @@ paths:
           description: Project.
     put:
       operationId: updateProject
+      x-luna-cli:
+        requiredScopes: ["project:write"]
       tags: [Projects]
       summary: Update project
       x-luna-agent:
@@ -1810,6 +1873,8 @@ paths:
           description: Updated project.
     delete:
       operationId: deleteProject
+      x-luna-cli:
+        requiredScopes: ["project:delete"]
       tags: [Projects]
       summary: Delete project
       x-luna-agent:
@@ -1817,16 +1882,18 @@ paths:
         aliases: { zh: [删除项目空间, 移除项目空间], en: [delete project, remove project] }
         avoidWhen: { zh: 只需停用、查看或修改项目空间时不要使用。, en: Do not use for viewing or editing a project. }
         preconditions: { zh: [提供真实 projectId, 用户已确认删除影响], en: [Provide an authoritative projectId, The user confirmed deletion impact] }
-        successEvidence: { zh: 返回 204，后续读取不再找到该项目空间。, en: Returns 204 and subsequent reads no longer find the project. }
+        successEvidence: { zh: 返回 204 仅表示删除已受理；继续通过 getProject 或列表权威回读，直到项目空间不再存在。, en: A 204 only confirms the deletion was accepted; use getProject or the list as authoritative readback until the project no longer exists. }
       parameters:
         - $ref: "#/components/parameters/ProjectId"
       responses:
         "204":
-          description: Deleted project.
+          description: Project deletion accepted and queued for asynchronous resource cleanup.
 
   /api/v1/projects/{projectId}/pin:
     put:
       operationId: pinProject
+      x-luna-cli:
+        requiredScopes: ["project:write"]
       tags: [Projects]
       summary: Pin project for current user
       parameters:
@@ -1838,6 +1905,8 @@ paths:
           description: Created pinned project.
     delete:
       operationId: unpinProject
+      x-luna-cli:
+        requiredScopes: ["project:write"]
       tags: [Projects]
       summary: Unpin project for current user
       parameters:
@@ -1849,6 +1918,8 @@ paths:
   /api/v1/projects/{projectId}/registries/default:
     get:
       operationId: getDefaultArtifactRegistry
+      x-luna-cli:
+        requiredScopes: ["registry:read"]
       tags: [Registries]
       summary: Get default artifact registry for a project
       parameters:
@@ -1860,6 +1931,8 @@ paths:
   /api/v1/projects/{projectId}/members:
     get:
       operationId: listProjectMembers
+      x-luna-cli:
+        requiredScopes: ["project:read"]
       tags: [Projects]
       summary: List project members
       parameters:
@@ -1879,6 +1952,8 @@ paths:
               schema: { $ref: "#/components/schemas/PaginatedBusinessObjects" }
     post:
       operationId: createProjectMember
+      x-luna-cli:
+        requiredScopes: ["project:manage"]
       tags: [Projects]
       summary: Create project member
       parameters:
@@ -1900,6 +1975,7 @@ paths:
       summary: Request transfer of a project's future billing ownership
       description: Creates a pending inbox action request for an active project member. Historical usage and ledger entries are not transferred.
       x-luna-cli:
+        requiredScopes: ["project:write"]
         hidden: true
         exclusionReason: Billing-owner transfer is currently completed through the interactive inbox decision workflow.
       security:
@@ -1929,6 +2005,8 @@ paths:
   /api/v1/projects/{projectId}/members/{memberId}:
     put:
       operationId: updateProjectMember
+      x-luna-cli:
+        requiredScopes: ["project:manage"]
       tags: [Projects]
       summary: Update project member
       parameters:
@@ -1945,6 +2023,8 @@ paths:
           description: Updated project member.
     delete:
       operationId: deleteProjectMember
+      x-luna-cli:
+        requiredScopes: ["project:manage"]
       tags: [Projects]
       summary: Delete project member
       parameters:
@@ -1957,6 +2037,8 @@ paths:
   /api/v1/projects/{projectId}/applications:
     get:
       operationId: listApplications
+      x-luna-cli:
+        requiredScopes: ["application:read"]
       tags: [Applications]
       summary: List applications
       x-luna-agent:
@@ -1991,6 +2073,8 @@ paths:
               schema: { $ref: "#/components/schemas/PaginatedApplications" }
     post:
       operationId: createApplication
+      x-luna-cli:
+        requiredScopes: ["application:create"]
       tags: [Applications]
       summary: Create application
       x-luna-agent:
@@ -2016,6 +2100,8 @@ paths:
   /api/v1/projects/{projectId}/applications/{applicationId}:
     get:
       operationId: getApplication
+      x-luna-cli:
+        requiredScopes: ["application:read"]
       tags: [Applications]
       summary: Get application
       x-luna-agent:
@@ -2032,6 +2118,8 @@ paths:
           description: Application.
     put:
       operationId: updateApplication
+      x-luna-cli:
+        requiredScopes: ["application:update"]
       tags: [Applications]
       summary: Update application
       x-luna-agent:
@@ -2054,6 +2142,8 @@ paths:
           description: Updated application.
     delete:
       operationId: deleteApplication
+      x-luna-cli:
+        requiredScopes: ["application:delete"]
       tags: [Applications]
       summary: Delete application
       x-luna-agent:
@@ -2072,6 +2162,8 @@ paths:
   /api/v1/projects/{projectId}/applications/{applicationId}/deletion-preview:
     get:
       operationId: previewApplicationDeletion
+      x-luna-cli:
+        requiredScopes: ["application:read"]
       tags: [Applications]
       summary: Inspect persistent data before deleting an application
       parameters:
@@ -2378,6 +2470,7 @@ paths:
       tags: [Volumes]
       summary: Prepare a direct archive import and provisioning volume
       x-luna-cli:
+        requiredScopes: ["volume:import"]
         classification: protocol-adapter
         hidden: true
         agentAllowed: false
@@ -2410,6 +2503,7 @@ paths:
       summary: Stream one complete archive directly into the prepared runtime Pod
       description: This request is not resumable. Content-Length must match the transfer created earlier; the API and runtime Pod independently calculate and compare the authoritative checksum while streaming.
       x-luna-cli:
+        requiredScopes: ["volume:import"]
         classification: protocol-adapter
         hidden: true
         agentAllowed: false
@@ -2574,6 +2668,7 @@ paths:
       tags: [Volumes]
       summary: Issue a one-time volume export download ticket
       x-luna-cli:
+        requiredScopes: ["volume:export"]
         classification: protocol-adapter
         hidden: true
         agentAllowed: false
@@ -2598,6 +2693,7 @@ paths:
       summary: Stream one authorized export directly from the prepared runtime Pod
       description: The one-time ticket is consumed when the single direct stream opens.
       x-luna-cli:
+        requiredScopes: ["volume:export"]
         classification: protocol-adapter
         hidden: true
         agentAllowed: false
@@ -2625,6 +2721,7 @@ paths:
       tags: [Volumes]
       summary: Download a completed Block export manifest with a one-time ticket
       x-luna-cli:
+        requiredScopes: ["volume:export"]
         classification: protocol-adapter
         hidden: true
         agentAllowed: false
@@ -2643,6 +2740,8 @@ paths:
   /api/v1/projects/{projectId}/applications/{applicationId}/topology:
     get:
       operationId: getApplicationTopology
+      x-luna-cli:
+        requiredScopes: ["application:read"]
       tags: [Applications]
       summary: Compute the current Kubernetes resource topology for an application
       parameters:
@@ -2659,6 +2758,8 @@ paths:
   /api/v1/projects/{projectId}/applications/{applicationId}/deployment-targets:
     get:
       operationId: listDeploymentTargets
+      x-luna-cli:
+        requiredScopes: ["deployment:read"]
       tags: [Deployments]
       summary: List deployment targets for an application
       description: Returns a no-store point-in-time Kubernetes observation for each target. Replica fields and status belong to the same observation; scaled-to-zero means the workload was observed with desiredReplicas=0 and is not serving a runtime instance.
@@ -2686,6 +2787,8 @@ paths:
               schema: { $ref: "#/components/schemas/PaginatedBusinessObjects" }
     post:
       operationId: createDeploymentTarget
+      x-luna-cli:
+        requiredScopes: ["deployment:update"]
       tags: [Deployments]
       summary: Create a deployment target
       x-luna-agent:
@@ -2714,6 +2817,8 @@ paths:
   /api/v1/projects/{projectId}/applications/{applicationId}/deployment-targets/{targetId}:
     put:
       operationId: updateDeploymentTarget
+      x-luna-cli:
+        requiredScopes: ["deployment:update"]
       tags: [Deployments]
       summary: Update a deployment target
       x-luna-agent:
@@ -2739,6 +2844,8 @@ paths:
               schema: { $ref: "#/components/schemas/DeploymentTarget" }
     delete:
       operationId: deleteDeploymentTarget
+      x-luna-cli:
+        requiredScopes: ["deployment:delete"]
       tags: [Deployments]
       summary: Delete a deployment target
       x-luna-agent:
@@ -2746,7 +2853,7 @@ paths:
         aliases: { zh: [删除部署目标, 移除部署环境], en: [delete deployment target, remove deployment] }
         avoidWhen: { zh: 只需停用或修改目标时不要使用。, en: Do not use when the target only needs an update. }
         preconditions: { zh: [用户确认运行实例和网关影响], en: [User confirmed runtime and gateway impact] }
-        successEvidence: { zh: 返回删除结果并通过列表回读目标消失。, en: Returns deletion and list readback confirms absence. }
+        successEvidence: { zh: 返回 204 仅表示删除已受理；继续通过部署目标列表权威回读，直到目标不再存在。, en: A 204 only confirms the deletion was accepted; use the deployment-target list as authoritative readback until the target no longer exists. }
       parameters:
         - $ref: "#/components/parameters/ProjectId"
         - $ref: "#/components/parameters/ApplicationId"
@@ -2761,6 +2868,7 @@ paths:
       tags: [Deployments]
       summary: Get configured runtime secret keys without values
       x-luna-cli:
+        requiredScopes: ["deployment:read"]
         classification: browser-workflow
         agentAllowed: false
         hidden: true
@@ -2783,6 +2891,7 @@ paths:
       tags: [Deployments]
       summary: Securely update deployment target runtime secrets
       x-luna-cli:
+        requiredScopes: ["deployment:update"]
         risk: high
       parameters:
         - $ref: "#/components/parameters/ProjectId"
@@ -2812,6 +2921,7 @@ paths:
       summary: Export one deployment target as a portable JSON bundle
       description: Exports desired deployment configuration and logical dependency descriptors. Resource IDs, credentials, secret values, runtime state, and workflow history are omitted. Importing the bundle never starts a build or release. If an existing target has a stage outside dev, test, staging, or prod, the exported file remains readable but preview requires a legal stage override before import.
       x-luna-cli:
+        requiredScopes: ["deployment:read"]
         classification: protocol-adapter
         hidden: true
         agentAllowed: false
@@ -2837,6 +2947,7 @@ paths:
       summary: Validate a deployment target bundle and resolve destination references
       description: Stateless preview. The destination project and application are authoritative. The effective stage must be dev, test, staging, or prod; production is normalized to prod, and an invalid stage can be repaired with a legal override. Missing, ambiguous, forbidden, or incompatible references must be mapped explicitly before commit. No database record, Secret, build, release, or asynchronous task is created.
       x-luna-cli:
+        requiredScopes: ["deployment:update"]
         classification: protocol-adapter
         hidden: true
         agentAllowed: false
@@ -2868,6 +2979,7 @@ paths:
       summary: List destination candidates for one portable deployment reference
       description: Returns a permission-scoped, searchable and fully paginated candidate page. Invisible and missing mapped resource IDs are intentionally indistinguishable during import validation to prevent resource enumeration. The response uses Cache-Control no-store.
       x-luna-cli:
+        requiredScopes: ["deployment:update"]
         classification: protocol-adapter
         hidden: true
         agentAllowed: false
@@ -2914,6 +3026,7 @@ paths:
       summary: Create a deployment target from a validated portable bundle
       description: Revalidates the bundle digest, destination mappings, permissions, billing gate, public stage invariant, dependency visibility, and Secret requirements. Creates one new deployment target transactionally and does not start a build, release, or deployment. A commit that is not ready, including one with an invalid stage, creates no target, Secret, build environment, or volume mount.
       x-luna-cli:
+        requiredScopes: ["deployment:update"]
         classification: protocol-adapter
         hidden: true
         agentAllowed: false
@@ -2944,6 +3057,7 @@ paths:
       tags: [Deployments]
       summary: Authorize a release Web Console terminal connection
       x-luna-cli:
+        requiredScopes: ["deployment:exec"]
         classification: protocol-adapter
         hidden: true
         exclusionReason: Low-level terminal preflight consumed by the explicit CLI release-terminal protocol adapter.
@@ -2989,6 +3103,8 @@ paths:
   /api/v1/projects/{projectId}/applications/{applicationId}/deployment-targets/{targetId}/release-image-candidates:
     get:
       operationId: listReleaseImageCandidates
+      x-luna-cli:
+        requiredScopes: ["deployment:read"]
       tags: [Applications]
       summary: List release image candidates
       description: Reads tags from the target registry first and falls back to saved build records when the registry is unavailable.
@@ -3007,6 +3123,8 @@ paths:
   /api/v1/projects/{projectId}/repository-bindings:
     get:
       operationId: listRepositoryBindings
+      x-luna-cli:
+        requiredScopes: ["git:read"]
       tags: [Git]
       summary: List repository bindings for a project
       parameters:
@@ -3029,6 +3147,8 @@ paths:
               schema: { $ref: "#/components/schemas/PaginatedBusinessObjects" }
     post:
       operationId: createRepositoryBinding
+      x-luna-cli:
+        requiredScopes: ["git:write"]
       tags: [Git]
       summary: Bind an application to a Git repository
       parameters:
@@ -3046,6 +3166,8 @@ paths:
   /api/v1/projects/{projectId}/repository-bindings/{bindingId}:
     put:
       operationId: updateRepositoryBinding
+      x-luna-cli:
+        requiredScopes: ["git:write"]
       tags: [Git]
       summary: Update repository binding
       parameters:
@@ -3062,6 +3184,8 @@ paths:
           description: Updated repository binding.
     delete:
       operationId: deleteRepositoryBinding
+      x-luna-cli:
+        requiredScopes: ["git:write"]
       tags: [Git]
       summary: Delete repository binding
       parameters:
@@ -3074,6 +3198,8 @@ paths:
   /api/v1/projects/{projectId}/repository-bindings/{bindingId}/webhook:
     post:
       operationId: createRepositoryWebhook
+      x-luna-cli:
+        requiredScopes: ["git:write"]
       tags: [Git]
       summary: Create webhook for a repository binding
       parameters:
@@ -3115,6 +3241,8 @@ paths:
   /api/v1/access-tokens:
     get:
       operationId: listAccessTokens
+      x-luna-cli:
+        requiredScopes: ["token:manage"]
       tags: [AccessTokens]
       summary: List access tokens
       description: Returns only non-revoked access tokens.
@@ -3134,6 +3262,8 @@ paths:
           description: Paginated access token list.
     post:
       operationId: createAccessToken
+      x-luna-cli:
+        requiredScopes: ["token:manage"]
       tags: [AccessTokens]
       summary: Create access token
       requestBody:
@@ -3146,9 +3276,116 @@ paths:
         "201":
           description: Created access token with one-time secret.
 
+  /api/v1/kube-credentials:
+    get:
+      operationId: listKubeCredentials
+      x-luna-cli:
+        requiredScopes: ["token:manage"]
+      tags: [KubectlAccess]
+      summary: List the current user's kubectl credentials
+      description: Returns only credential metadata. Token hashes, plaintext bearer tokens, and kubeconfig content are never returned.
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - $ref: "#/components/parameters/Search"
+        - name: status
+          in: query
+          schema: { type: string, enum: [active, expired, revoked] }
+        - name: sortBy
+          in: query
+          schema: { type: string, enum: [name, createdAt, expiresAt, status], default: createdAt }
+        - $ref: "#/components/parameters/SortOrder"
+      responses:
+        "200":
+          description: Paginated kubectl credential metadata.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PaginatedKubeCredentials" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      operationId: createKubeCredential
+      x-luna-cli:
+        classification: protocol-adapter
+        hidden: true
+        risk: high
+        requiredScopes: ["token:manage"]
+        exclusionReason: The dedicated kubeconfig adapter must protect one-time credential material and must never print it through a generic command.
+      tags: [KubectlAccess]
+      summary: Create a kubectl credential and one-time kubeconfig
+      description: Atomically creates a time-limited kubeconfig credential and one to twenty project or application bindings. The plaintext credential appears only inside the one-time kubeconfig response.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/KubeCredentialCreateInput" }
+      responses:
+        "201":
+          description: Created credential, bounded binding metadata, and one-time kubeconfig.
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/KubeCredentialCreateResult" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503":
+          description: The selected Kubernetes gateway or its authoritative readiness check is unavailable.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /api/v1/kube-credentials/{credentialId}:
+    delete:
+      operationId: revokeKubeCredential
+      x-luna-cli:
+        requiredScopes: ["token:manage"]
+        risk: high
+        idempotent: true
+      tags: [KubectlAccess]
+      summary: Revoke a kubectl credential and every binding it authorizes
+      description: Only the credential owner can revoke it. Repeating the request for the same already-revoked credential remains successful.
+      parameters:
+        - $ref: "#/components/parameters/CredentialId"
+      responses:
+        "204":
+          description: The credential is revoked or was already revoked.
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/v1/kube-credentials/{credentialId}/bindings:
+    get:
+      operationId: listKubeCredentialBindings
+      x-luna-cli:
+        requiredScopes: ["token:manage"]
+      tags: [KubectlAccess]
+      summary: List context bindings for one kubectl credential
+      description: Returns bounded context metadata for a credential owned by the current user. The namespace is resolved from the authoritative project at request time.
+      parameters:
+        - $ref: "#/components/parameters/CredentialId"
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - name: sortBy
+          in: query
+          schema: { type: string, enum: [createdAt, projectId, runtimeClusterId], default: createdAt }
+        - $ref: "#/components/parameters/SortOrder"
+      responses:
+        "200":
+          description: Paginated kubectl context binding metadata.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PaginatedKubeCredentialBindings" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   /api/v1/access-tokens/{tokenId}:
     delete:
       operationId: revokeAccessToken
+      x-luna-cli:
+        requiredScopes: ["token:manage"]
       tags: [AccessTokens]
       summary: Revoke access token
       parameters:
@@ -3179,6 +3416,8 @@ paths:
   /api/v1/oauth/applications:
     get:
       operationId: listOAuthApplications
+      x-luna-cli:
+        requiredScopes: ["token:manage"]
       tags:
         - OAuthApplications
       summary: List OAuth Applications
@@ -3205,6 +3444,8 @@ paths:
           $ref: "#/components/responses/NotFound"
     post:
       operationId: createOAuthApplication
+      x-luna-cli:
+        requiredScopes: ["token:manage"]
       tags:
         - OAuthApplications
       summary: Create OAuth Application
@@ -3220,7 +3461,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/OAuthApplication"
+                $ref: "#/components/schemas/OAuthApplicationSecretResponse"
         "400":
           $ref: "#/components/responses/BadRequest"
         "403":
@@ -3230,6 +3471,8 @@ paths:
   /api/v1/oauth/applications/{applicationId}:
     put:
       operationId: updateOAuthApplication
+      x-luna-cli:
+        requiredScopes: ["token:manage"]
       tags:
         - OAuthApplications
       summary: Update OAuth Application
@@ -3260,6 +3503,8 @@ paths:
           $ref: "#/components/responses/NotFound"
     delete:
       operationId: deleteOAuthApplication
+      x-luna-cli:
+        requiredScopes: ["token:manage"]
       tags:
         - OAuthApplications
       summary: Delete OAuth Application
@@ -3271,7 +3516,7 @@ paths:
             type: string
       responses:
         "204":
-          description: Resource deleted.
+          description: OAuth application and its active grants were revoked.
         "400":
           $ref: "#/components/responses/BadRequest"
         "403":
@@ -3281,6 +3526,8 @@ paths:
   /api/v1/oauth/applications/{applicationId}/rotate-secret:
     post:
       operationId: rotateOAuthApplicationSecret
+      x-luna-cli:
+        requiredScopes: ["token:manage"]
       tags:
         - OAuthApplications
       summary: Rotate OAuth Application Secret
@@ -3306,6 +3553,8 @@ paths:
   /api/v1/oauth/grants:
     get:
       operationId: listMyOAuthGrants
+      x-luna-cli:
+        requiredScopes: ["token:manage"]
       tags:
         - OAuthApplications
       summary: List My OAuth Grants
@@ -3332,6 +3581,8 @@ paths:
   /api/v1/oauth/grants/{grantId}:
     delete:
       operationId: revokeMyOAuthGrant
+      x-luna-cli:
+        requiredScopes: ["token:manage"]
       tags:
         - OAuthApplications
       summary: Revoke My OAuth Grant
@@ -3396,7 +3647,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/BusinessObject"
+                $ref: "#/components/schemas/OAuthAuthorizationRequest"
         "400":
           $ref: "#/components/responses/BadRequest"
         "403":
@@ -3423,7 +3674,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/BusinessObject"
+                $ref: "#/components/schemas/OAuthAuthorizationDecisionResponse"
         "400":
           $ref: "#/components/responses/BadRequest"
         "403":
@@ -3433,6 +3684,8 @@ paths:
   /api/v1/git/accounts/{accountId}/repositories/{owner}/{repo}/build-options:
     get:
       operationId: getGitRepositoryBuildOptions
+      x-luna-cli:
+        requiredScopes: ["git:read"]
       tags:
         - Git
       summary: Get Git Repository Build Options
@@ -3473,6 +3726,8 @@ paths:
   /api/v1/git/accounts/{accountId}/repositories/{owner}/{repo}/contents:
     get:
       operationId: listGitContents
+      x-luna-cli:
+        requiredScopes: ["git:read"]
       tags:
         - Git
       summary: List Git Contents
@@ -3518,6 +3773,8 @@ paths:
   /api/v1/registries/{registryId}/image-template-default:
     get:
       operationId: getRegistryImageTemplateDefault
+      x-luna-cli:
+        requiredScopes: ["registry:read"]
       tags:
         - Registries
       summary: Get Registry Image Template Default
@@ -3563,6 +3820,8 @@ paths:
   /api/v1/registries/{registryId}/repositories/search:
     get:
       operationId: searchRegistryRepositories
+      x-luna-cli:
+        requiredScopes: ["registry:read"]
       tags:
         - Registries
       summary: Search Registry Repositories
@@ -3605,6 +3864,8 @@ paths:
   /api/v1/registries/{registryId}/repository-tags:
     get:
       operationId: listRegistryRepositoryTags
+      x-luna-cli:
+        requiredScopes: ["registry:read"]
       tags:
         - Registries
       summary: List Registry Repository Tags
@@ -3641,6 +3902,8 @@ paths:
   /api/v1/build/variable-sets:
     get:
       operationId: listBuildVariableSets
+      x-luna-cli:
+        requiredScopes: ["secret:read_summary"]
       tags:
         - Builds
       summary: List build variable sets for the selected visibility
@@ -3681,6 +3944,8 @@ paths:
           $ref: "#/components/responses/NotFound"
     post:
       operationId: createBuildVariableSet
+      x-luna-cli:
+        requiredScopes: ["secret:update"]
       tags:
         - Builds
       summary: Create Build Variable Set
@@ -3706,6 +3971,8 @@ paths:
   /api/v1/build/variable-sets/{setId}:
     put:
       operationId: updateBuildVariableSet
+      x-luna-cli:
+        requiredScopes: ["secret:update"]
       tags:
         - Builds
       summary: Update Build Variable Set
@@ -3736,6 +4003,8 @@ paths:
           $ref: "#/components/responses/NotFound"
     delete:
       operationId: deleteBuildVariableSet
+      x-luna-cli:
+        requiredScopes: ["secret:update"]
       tags:
         - Builds
       summary: Delete Build Variable Set
@@ -3757,6 +4026,8 @@ paths:
   /api/v1/runtime/clusters/{clusterId}:
     put:
       operationId: updateRuntimeCluster
+      x-luna-cli:
+        requiredScopes: ["cluster:manage"]
       tags:
         - Runtime
       summary: Update Runtime Cluster
@@ -3785,11 +4056,25 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+        "409":
+          description: An enabled or not-yet-cleaned kubectl gateway prevents replacing kubeconfig or switching away from Kubernetes (`kube_gateway.connection_change_requires_disable`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "503":
+          description: The previous kubectl gateway cleanup cannot be verified, or reconciliation of the committed runtime-cluster update cannot be queued (`kube_gateway.unavailable` or `kube_gateway.enqueue_failed`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
     delete:
       operationId: deleteRuntimeCluster
+      x-luna-cli:
+        requiredScopes: ["cluster:manage"]
+        risk: critical
       tags:
         - Runtime
-      summary: Delete Runtime Cluster
+      summary: Queue recoverable Runtime Cluster deletion
+      description: Marks the cluster as deleting, revokes kubectl bindings, waits for active streams to fail their periodic authorization check, and queues the single resource-cleanup owner. Upstream credentials are retained until gateway resources are confirmed removed.
       parameters:
         - name: clusterId
           in: path
@@ -3798,16 +4083,94 @@ paths:
             type: string
       responses:
         "204":
-          description: Resource deleted.
-        "400":
-          $ref: "#/components/responses/BadRequest"
+          description: Deletion state was recorded and cleanup was queued; no response body is returned.
         "403":
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+        "409":
+          description: The cluster is still referenced (`runtime_cluster.in_use`) or its deletion is already in progress (`runtime_cluster.delete_in_progress`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "503":
+          description: Cleanup could not be queued (`runtime_cluster.cleanup_enqueue_failed`); the cluster is left in `delete_failed` and all kubectl bindings remain revoked while deletion is retried.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /api/v1/runtime/clusters/{clusterId}/kube-gateway:
+    get:
+      operationId: getRuntimeClusterKubeGateway
+      x-luna-cli:
+        requiredScopes: ["cluster:read"]
+      tags: [KubectlAccess, Runtime]
+      summary: Read desired and authoritative live kubectl gateway state
+      description: Platform administrators only. Desired enablement and extra rules come from platform configuration; status, observationCode, and lastCheckedAt are read live from the selected Kubernetes cluster.
+      parameters:
+        - $ref: "#/components/parameters/ClusterId"
+      responses:
+        "200":
+          description: Non-cacheable desired configuration and current gateway observation.
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RuntimeClusterKubeGateway" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503":
+          description: The Kubernetes cluster or authoritative gateway observation is unavailable.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+    put:
+      operationId: updateRuntimeClusterKubeGateway
+      x-luna-cli:
+        requiredScopes: ["cluster:manage"]
+        risk: high
+        idempotent: true
+      tags: [KubectlAccess, Runtime]
+      summary: Replace desired kubectl gateway configuration and queue reconciliation
+      description: Platform administrators only. Extra resources must be discovered as namespaced and pass the fixed-deny catalog. Every accepted request queues reconciliation from the latest stored configuration, including repeated identical requests. If queueing fails, the committed desired state remains pending and the periodic reconciler retries it.
+      parameters:
+        - $ref: "#/components/parameters/ClusterId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RuntimeClusterKubeGatewayInput" }
+      responses:
+        "202":
+          description: Desired configuration was stored and reconciliation was queued.
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RuntimeClusterKubeGateway" }
+        "400":
+          description: An extra resource rule is malformed, cluster-scoped, unknown, or fixed-denied (`kube_gateway.rule_invalid`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503":
+          description: The gateway cannot be validated or reconciliation cannot be queued (`kube_gateway.unavailable` or `kube_gateway.enqueue_failed`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
   /api/v1/runtime/clusters/{clusterId}/test:
     post:
       operationId: testRuntimeCluster
+      x-luna-cli:
+        requiredScopes: ["cluster:use"]
       tags:
         - Runtime
       summary: Test Runtime Cluster
@@ -3833,6 +4196,8 @@ paths:
   /api/v1/runtime/clusters/{clusterId}/resources:
     get:
       operationId: listRuntimeClusterResources
+      x-luna-cli:
+        requiredScopes: ["cluster:read"]
       tags:
         - Runtime
       summary: List runtime cluster resources for the selected visibility
@@ -3902,6 +4267,8 @@ paths:
           $ref: "#/components/responses/NotFound"
     delete:
       operationId: deleteRuntimeClusterResource
+      x-luna-cli:
+        requiredScopes: ["cluster:manage"]
       tags:
         - Runtime
       summary: Delete Runtime Cluster Resource
@@ -3939,6 +4306,8 @@ paths:
   /api/v1/runtime/clusters/{clusterId}/resource-yaml:
     get:
       operationId: getRuntimeClusterResourceYAML
+      x-luna-cli:
+        requiredScopes: ["cluster:read"]
       tags:
         - Runtime
       summary: Get Runtime Cluster Resource YAML
@@ -3980,6 +4349,8 @@ paths:
   /api/v1/runtime/clusters/{clusterId}/resource-events:
     get:
       operationId: listRuntimeClusterResourceEvents
+      x-luna-cli:
+        requiredScopes: ["cluster:read"]
       tags:
         - Runtime
       summary: List Runtime Cluster Resource Events
@@ -4034,6 +4405,7 @@ paths:
       summary: Stream Runtime Cluster Pod Terminal
       description: Opens the Pod terminal WebSocket. Luna CLI passes the short-lived one-time ticket returned by the authorize endpoint in the `ticket` query parameter; browser callers may omit it and continue using the existing session-cookie flow.
       x-luna-cli:
+        requiredScopes: ["cluster:manage"]
         classification: protocol-adapter
         hidden: true
         exclusionReason: WebSocket terminal transport consumed by the explicit CLI runtime-terminal protocol adapter.
@@ -4074,6 +4446,8 @@ paths:
   /api/v1/system-components:
     get:
       operationId: listSystemComponents
+      x-luna-cli:
+        requiredScopes: ["cluster:read"]
       tags:
         - System
       summary: List System Components
@@ -4104,6 +4478,8 @@ paths:
   /api/v1/app-templates/{templateId}/system-install:
     post:
       operationId: installSystemAppTemplate
+      x-luna-cli:
+        requiredScopes: ["cluster:manage"]
       tags:
         - AppTemplates
       summary: Install System App Template
@@ -4270,7 +4646,7 @@ paths:
       x-luna-cli:
         command: notification.channel.create-mine
         classification: business-command
-        risk: sensitive
+        risk: high
         requiredScopes: ["user:write"]
         agentAllowed: true
       requestBody:
@@ -4313,7 +4689,7 @@ paths:
       x-luna-cli:
         command: notification.channel.update-mine
         classification: business-command
-        risk: sensitive
+        risk: high
         requiredScopes: ["user:write"]
         agentAllowed: true
       parameters:
@@ -4450,6 +4826,8 @@ paths:
   /api/v1/notifications/presets:
     get:
       operationId: listNotificationPresets
+      x-luna-cli:
+        requiredScopes: ["config:read"]
       tags:
         - Notifications
       summary: List Notification Presets
@@ -4469,6 +4847,8 @@ paths:
   /api/v1/notifications/presets/{presetId}/channels:
     post:
       operationId: createNotificationChannelFromPreset
+      x-luna-cli:
+        requiredScopes: ["config:write"]
       tags:
         - Notifications
       summary: Create Notification Channel From Preset
@@ -4500,6 +4880,8 @@ paths:
   /api/v1/notifications/channels:
     get:
       operationId: listNotificationChannels
+      x-luna-cli:
+        requiredScopes: ["config:read"]
       tags:
         - Notifications
       summary: List Notification Channels
@@ -4548,6 +4930,8 @@ paths:
           $ref: "#/components/responses/NotFound"
     post:
       operationId: createNotificationChannel
+      x-luna-cli:
+        requiredScopes: ["config:write"]
       tags:
         - Notifications
       summary: Create Notification Channel
@@ -4573,6 +4957,8 @@ paths:
   /api/v1/notifications/channels/{channelId}:
     put:
       operationId: updateNotificationChannel
+      x-luna-cli:
+        requiredScopes: ["config:write"]
       tags:
         - Notifications
       summary: Update Notification Channel
@@ -4603,6 +4989,8 @@ paths:
           $ref: "#/components/responses/NotFound"
     delete:
       operationId: deleteNotificationChannel
+      x-luna-cli:
+        requiredScopes: ["config:write"]
       tags:
         - Notifications
       summary: Delete Notification Channel
@@ -4624,6 +5012,8 @@ paths:
   /api/v1/notifications/channels/{channelId}/test:
     post:
       operationId: testNotificationChannel
+      x-luna-cli:
+        requiredScopes: ["config:write"]
       tags:
         - Notifications
       summary: Test Notification Channel
@@ -4649,6 +5039,8 @@ paths:
   /api/v1/notifications/templates:
     get:
       operationId: listNotificationTemplates
+      x-luna-cli:
+        requiredScopes: ["config:read"]
       tags:
         - Notifications
       summary: List Notification Templates
@@ -4694,6 +5086,8 @@ paths:
           $ref: "#/components/responses/NotFound"
     post:
       operationId: createNotificationTemplate
+      x-luna-cli:
+        requiredScopes: ["config:write"]
       tags:
         - Notifications
       summary: Create Notification Template
@@ -4719,6 +5113,8 @@ paths:
   /api/v1/notifications/templates/{templateId}:
     put:
       operationId: updateNotificationTemplate
+      x-luna-cli:
+        requiredScopes: ["config:write"]
       tags:
         - Notifications
       summary: Update Notification Template
@@ -4749,6 +5145,8 @@ paths:
           $ref: "#/components/responses/NotFound"
     delete:
       operationId: deleteNotificationTemplate
+      x-luna-cli:
+        requiredScopes: ["config:write"]
       tags:
         - Notifications
       summary: Delete Notification Template
@@ -4770,6 +5168,8 @@ paths:
   /api/v1/notifications/rules:
     get:
       operationId: listNotificationRules
+      x-luna-cli:
+        requiredScopes: ["config:read"]
       tags:
         - Notifications
       summary: List Notification Rules
@@ -4810,6 +5210,8 @@ paths:
           $ref: "#/components/responses/NotFound"
     post:
       operationId: createNotificationRule
+      x-luna-cli:
+        requiredScopes: ["config:write"]
       tags:
         - Notifications
       summary: Create Notification Rule
@@ -4835,6 +5237,8 @@ paths:
   /api/v1/notifications/rules/{ruleId}:
     put:
       operationId: updateNotificationRule
+      x-luna-cli:
+        requiredScopes: ["config:write"]
       tags:
         - Notifications
       summary: Update Notification Rule
@@ -4865,6 +5269,8 @@ paths:
           $ref: "#/components/responses/NotFound"
     delete:
       operationId: deleteNotificationRule
+      x-luna-cli:
+        requiredScopes: ["config:write"]
       tags:
         - Notifications
       summary: Delete Notification Rule
@@ -4886,6 +5292,8 @@ paths:
   /api/v1/notifications/deliveries:
     get:
       operationId: listNotificationDeliveries
+      x-luna-cli:
+        requiredScopes: ["event:read"]
       tags:
         - Notifications
       summary: List Notification Deliveries
@@ -4936,6 +5344,7 @@ paths:
       summary: List the current user's inbox messages
       description: Returns non-archived messages owned by the authenticated user. Read state and action-request state are independent.
       x-luna-cli:
+        requiredScopes: ["user:read"]
         hidden: true
         exclusionReason: The first inbox experience is provided by the interactive web message center.
       security:
@@ -4985,6 +5394,7 @@ paths:
       tags: [Inbox]
       summary: Get the current user's unread inbox count
       x-luna-cli:
+        requiredScopes: ["user:read"]
         hidden: true
         exclusionReason: The unread badge is consumed by the interactive web message center.
       security:
@@ -5014,6 +5424,7 @@ paths:
       summary: Stream inbox invalidation hints for the current user
       description: Emits invalidation hints only. Clients must reload the list and unread count from the database-backed endpoints after every event or reconnect.
       x-luna-cli:
+        requiredScopes: ["user:read"]
         hidden: true
         exclusionReason: Browser EventSource transport for the interactive message center.
       security:
@@ -5042,6 +5453,7 @@ paths:
       tags: [Inbox]
       summary: Get one inbox message owned by the current user
       x-luna-cli:
+        requiredScopes: ["user:read"]
         hidden: true
         exclusionReason: Inbox message details are currently provided by the interactive web message center.
       security:
@@ -5074,6 +5486,7 @@ paths:
       tags: [Inbox]
       summary: Mark one current-user inbox message as read
       x-luna-cli:
+        requiredScopes: ["user:write"]
         hidden: true
         exclusionReason: Inbox read state is currently managed by the interactive web message center.
       security:
@@ -5099,6 +5512,7 @@ paths:
       summary: Mark all current-user inbox messages as read
       description: This does not accept, reject, or otherwise mutate linked action requests.
       x-luna-cli:
+        requiredScopes: ["user:write"]
         hidden: true
         exclusionReason: Inbox read state is currently managed by the interactive web message center.
       security:
@@ -5120,6 +5534,7 @@ paths:
       summary: Archive one current-user inbox message
       description: Archiving a message does not mutate its linked action request.
       x-luna-cli:
+        requiredScopes: ["user:write"]
         hidden: true
         exclusionReason: Inbox archive state is currently managed by the interactive web message center.
       security:
@@ -5145,6 +5560,7 @@ paths:
       summary: Accept or reject an inbox action request
       description: Revalidates the recipient, request version, expiry, requester authorization, and current resource state before applying the typed business decision.
       x-luna-cli:
+        requiredScopes: ["user:write"]
         hidden: true
         exclusionReason: Typed action requests currently require the interactive inbox confirmation workflow.
       security:
@@ -5235,6 +5651,8 @@ paths:
   /api/v1/events:
     get:
       operationId: listPlatformEvents
+      x-luna-cli:
+        requiredScopes: ["event:read"]
       tags:
         - Events
       summary: List platform events for the selected visibility
@@ -5363,6 +5781,8 @@ paths:
   /api/v1/events/catalog:
     get:
       operationId: listPlatformEventCatalog
+      x-luna-cli:
+        requiredScopes: ["event:read"]
       tags:
         - Events
       summary: List Platform Event Catalog
@@ -5384,6 +5804,8 @@ paths:
   /api/v1/events/{eventId}:
     get:
       operationId: getPlatformEvent
+      x-luna-cli:
+        requiredScopes: ["event:read"]
       tags:
         - Events
       summary: Get Platform Event
@@ -5409,6 +5831,8 @@ paths:
   /api/v1/app-templates:
     get:
       operationId: listAppTemplates
+      x-luna-cli:
+        requiredScopes: ["application:read"]
       tags:
         - AppTemplates
       summary: List App Templates
@@ -5449,6 +5873,8 @@ paths:
   /api/v1/app-templates/{templateId}:
     get:
       operationId: getAppTemplate
+      x-luna-cli:
+        requiredScopes: ["application:read"]
       tags:
         - AppTemplates
       summary: Get App Template
@@ -5479,6 +5905,8 @@ paths:
   /api/v1/projects/order:
     put:
       operationId: updateProjectOrder
+      x-luna-cli:
+        requiredScopes: ["project:write"]
       tags:
         - Projects
       summary: Update Project Order
@@ -5504,6 +5932,8 @@ paths:
   /api/v1/projects/{projectId}/runtime-config-sets:
     get:
       operationId: listProjectRuntimeConfigSets
+      x-luna-cli:
+        requiredScopes: ["secret:read_summary"]
       tags:
         - Projects
       summary: List Project Runtime Config Sets
@@ -5535,6 +5965,8 @@ paths:
           $ref: "#/components/responses/NotFound"
     post:
       operationId: createProjectRuntimeConfigSet
+      x-luna-cli:
+        requiredScopes: ["secret:update"]
       tags:
         - Projects
       summary: Create Project Runtime Config Set
@@ -5566,6 +5998,8 @@ paths:
   /api/v1/projects/{projectId}/runtime-config-sets/{setId}:
     put:
       operationId: updateProjectRuntimeConfigSet
+      x-luna-cli:
+        requiredScopes: ["secret:update"]
       tags:
         - Projects
       summary: Update Project Runtime Config Set
@@ -5601,6 +6035,8 @@ paths:
           $ref: "#/components/responses/NotFound"
     delete:
       operationId: deleteProjectRuntimeConfigSet
+      x-luna-cli:
+        requiredScopes: ["secret:update"]
       tags:
         - Projects
       summary: Delete Project Runtime Config Set
@@ -5617,7 +6053,7 @@ paths:
             type: string
       responses:
         "204":
-          description: Resource deleted.
+          description: Runtime configuration deletion accepted and queued for asynchronous cleanup; read back the set or list until it no longer exists.
         "400":
           $ref: "#/components/responses/BadRequest"
         "403":
@@ -5630,6 +6066,7 @@ paths:
       tags: [Projects]
       summary: Securely update project runtime config set secrets
       x-luna-cli:
+        requiredScopes: ["secret:update"]
         risk: high
       parameters:
         - name: projectId
@@ -5658,6 +6095,8 @@ paths:
   /api/v1/projects/{projectId}/hooks:
     get:
       operationId: listProjectHookConfigs
+      x-luna-cli:
+        requiredScopes: ["project:read"]
       tags:
         - Projects
       summary: List Project Hook Configs
@@ -5688,6 +6127,8 @@ paths:
           $ref: "#/components/responses/NotFound"
     post:
       operationId: createProjectHookConfig
+      x-luna-cli:
+        requiredScopes: ["project:write"]
       tags:
         - Projects
       summary: Create Project Hook Config
@@ -5719,6 +6160,8 @@ paths:
   /api/v1/projects/{projectId}/hooks/{hookId}:
     put:
       operationId: updateProjectHookConfig
+      x-luna-cli:
+        requiredScopes: ["project:write"]
       tags:
         - Projects
       summary: Update Project Hook Config
@@ -5754,6 +6197,8 @@ paths:
           $ref: "#/components/responses/NotFound"
     delete:
       operationId: deleteProjectHookConfig
+      x-luna-cli:
+        requiredScopes: ["project:write"]
       tags:
         - Projects
       summary: Delete Project Hook Config
@@ -5780,6 +6225,8 @@ paths:
   /api/v1/projects/{projectId}/topology:
     get:
       operationId: getProjectTopology
+      x-luna-cli:
+        requiredScopes: ["project:read"]
       tags:
         - Topology
       summary: Get Project Topology
@@ -5824,6 +6271,8 @@ paths:
   /api/v1/projects/{projectId}/service-bindings:
     get:
       operationId: listServiceBindings
+      x-luna-cli:
+        requiredScopes: ["project:read"]
       tags:
         - Topology
       summary: List Service Bindings
@@ -5848,6 +6297,8 @@ paths:
           $ref: "#/components/responses/NotFound"
     post:
       operationId: createServiceBinding
+      x-luna-cli:
+        requiredScopes: ["project:write"]
       tags:
         - Topology
       summary: Create Service Binding
@@ -5879,6 +6330,8 @@ paths:
   /api/v1/projects/{projectId}/service-bindings/{bindingId}:
     put:
       operationId: updateServiceBinding
+      x-luna-cli:
+        requiredScopes: ["project:write"]
       tags:
         - Topology
       summary: Update Service Binding
@@ -5914,6 +6367,8 @@ paths:
           $ref: "#/components/responses/NotFound"
     delete:
       operationId: deleteServiceBinding
+      x-luna-cli:
+        requiredScopes: ["project:write"]
       tags:
         - Topology
       summary: Delete Service Binding
@@ -5940,6 +6395,8 @@ paths:
   /api/v1/projects/{projectId}/service-bindings/{bindingId}/check:
     post:
       operationId: checkServiceBinding
+      x-luna-cli:
+        requiredScopes: ["project:read"]
       tags:
         - Topology
       summary: Check Service Binding
@@ -5970,6 +6427,8 @@ paths:
   /api/v1/projects/{projectId}/topology-edges:
     get:
       operationId: listProjectTopologyEdges
+      x-luna-cli:
+        requiredScopes: ["project:read"]
       tags:
         - Topology
       summary: List Project Topology Edges
@@ -5994,6 +6453,8 @@ paths:
           $ref: "#/components/responses/NotFound"
     post:
       operationId: createProjectTopologyEdge
+      x-luna-cli:
+        requiredScopes: ["project:write"]
       tags:
         - Topology
       summary: Create Project Topology Edge
@@ -6025,6 +6486,8 @@ paths:
   /api/v1/projects/{projectId}/topology-edges/{edgeId}:
     put:
       operationId: updateProjectTopologyEdge
+      x-luna-cli:
+        requiredScopes: ["project:write"]
       tags:
         - Topology
       summary: Update Project Topology Edge
@@ -6060,6 +6523,8 @@ paths:
           $ref: "#/components/responses/NotFound"
     delete:
       operationId: deleteProjectTopologyEdge
+      x-luna-cli:
+        requiredScopes: ["project:write"]
       tags:
         - Topology
       summary: Delete Project Topology Edge
@@ -6086,6 +6551,8 @@ paths:
   /api/v1/projects/{projectId}/hook-runs:
     get:
       operationId: listProjectHookRuns
+      x-luna-cli:
+        requiredScopes: ["project:read"]
       tags:
         - Projects
       summary: List Project Hook Runs
@@ -6132,6 +6599,8 @@ paths:
   /api/v1/projects/{projectId}/hook-runs/{runId}/logs:
     get:
       operationId: getProjectHookRunLog
+      x-luna-cli:
+        requiredScopes: ["project:read"]
       tags:
         - Projects
       summary: Get Project Hook Run Log
@@ -6213,6 +6682,8 @@ paths:
   /api/v1/projects/{projectId}/member-candidates:
     get:
       operationId: searchProjectMemberCandidates
+      x-luna-cli:
+        requiredScopes: ["project:read"]
       tags:
         - Projects
       summary: Search Project Member Candidates
@@ -6249,6 +6720,8 @@ paths:
   /api/v1/projects/{projectId}/applications/{applicationId}/deployment-targets/{targetId}/restart:
     post:
       operationId: restartDeploymentTarget
+      x-luna-cli:
+        requiredScopes: ["deployment:restart"]
       tags:
         - Deployments
       summary: Restart Deployment Target
@@ -6288,6 +6761,7 @@ paths:
         - Deployments
       summary: Stream Deployment Target Metrics
       x-luna-cli:
+        requiredScopes: ["deployment:read"]
         classification: protocol-adapter
         hidden: true
         exclusionReason: Streaming metrics transport consumed by the explicit CLI deployment-metrics protocol adapter.
@@ -6323,6 +6797,8 @@ paths:
   /api/v1/projects/{projectId}/build-runs:
     get:
       operationId: listBuildRuns
+      x-luna-cli:
+        requiredScopes: ["build:read"]
       tags:
         - Builds
       summary: List Build Runs
@@ -6391,6 +6867,8 @@ paths:
   /api/v1/projects/{projectId}/build-runs/trigger:
     post:
       operationId: triggerBuildRun
+      x-luna-cli:
+        requiredScopes: ["build:trigger"]
       tags:
         - Builds
       summary: Trigger Build Run
@@ -6438,6 +6916,8 @@ paths:
   /api/v1/projects/{projectId}/build-runs/{runId}:
     get:
       operationId: getBuildRun
+      x-luna-cli:
+        requiredScopes: ["build:read"]
       tags:
         - Builds
       summary: Get Build Run
@@ -6473,6 +6953,8 @@ paths:
           $ref: "#/components/responses/NotFound"
     delete:
       operationId: deleteBuildRun
+      x-luna-cli:
+        requiredScopes: ["build:delete"]
       tags:
         - Builds
       summary: Delete Build Run
@@ -6499,6 +6981,8 @@ paths:
   /api/v1/projects/{projectId}/build-runs/{runId}/retry:
     post:
       operationId: retryBuildRun
+      x-luna-cli:
+        requiredScopes: ["build:trigger"]
       tags:
         - Builds
       summary: Retry Build Run
@@ -6545,6 +7029,8 @@ paths:
   /api/v1/projects/{projectId}/build-runs/{runId}/cancel:
     post:
       operationId: cancelBuildRun
+      x-luna-cli:
+        requiredScopes: ["build:cancel"]
       tags:
         - Builds
       summary: Cancel Build Run
@@ -6575,6 +7061,8 @@ paths:
   /api/v1/projects/{projectId}/build-jobs:
     get:
       operationId: listBuildJobs
+      x-luna-cli:
+        requiredScopes: ["build:read"]
       tags:
         - Builds
       summary: List Build Jobs
@@ -6616,6 +7104,8 @@ paths:
   /api/v1/projects/{projectId}/build-jobs/{jobId}:
     get:
       operationId: getBuildJob
+      x-luna-cli:
+        requiredScopes: ["build:read"]
       tags:
         - Builds
       summary: Get Build Job
@@ -6646,6 +7136,8 @@ paths:
   /api/v1/projects/{projectId}/build-jobs/{jobId}/logs:
     get:
       operationId: getBuildJobLogs
+      x-luna-cli:
+        requiredScopes: ["build:read"]
       tags:
         - Builds
       summary: Get Build Job Logs
@@ -6680,6 +7172,7 @@ paths:
         - Builds
       summary: Stream Build Job Logs
       x-luna-cli:
+        requiredScopes: ["build:read"]
         classification: protocol-adapter
         hidden: true
         exclusionReason: Streaming log transport consumed by the explicit CLI build-log protocol adapter.
@@ -6704,6 +7197,8 @@ paths:
   /api/v1/projects/{projectId}/releases:
     get:
       operationId: listReleases
+      x-luna-cli:
+        requiredScopes: ["deployment:read"]
       tags:
         - Releases
       summary: List Releases
@@ -6755,6 +7250,8 @@ paths:
           $ref: "#/components/responses/NotFound"
     post:
       operationId: createRelease
+      x-luna-cli:
+        requiredScopes: ["deployment:release"]
       tags:
         - Releases
       summary: Create Release
@@ -6792,6 +7289,8 @@ paths:
   /api/v1/projects/{projectId}/releases/{releaseId}:
     get:
       operationId: getRelease
+      x-luna-cli:
+        requiredScopes: ["deployment:read"]
       tags: [Releases]
       summary: Get Release
       description: Returns the authoritative persisted workflow state for one release. The response is not cached.
@@ -6824,6 +7323,8 @@ paths:
   /api/v1/projects/{projectId}/releases/{releaseId}/logs:
     get:
       operationId: getReleaseLogs
+      x-luna-cli:
+        requiredScopes: ["deployment:read"]
       tags:
         - Releases
       summary: Get Release Logs
@@ -6854,6 +7355,8 @@ paths:
   /api/v1/projects/{projectId}/releases/{releaseId}/runtime-logs:
     get:
       operationId: getReleaseRuntimeLogs
+      x-luna-cli:
+        requiredScopes: ["deployment:read"]
       tags:
         - Releases
       summary: Get Release Runtime Logs
@@ -6947,6 +7450,7 @@ paths:
       summary: Stream Release Runtime Terminal
       description: Opens the release terminal WebSocket. Luna CLI passes the short-lived one-time ticket returned by the authorize endpoint in the `ticket` query parameter; browser callers may omit it and continue using the existing session-cookie flow.
       x-luna-cli:
+        requiredScopes: ["deployment:exec"]
         classification: protocol-adapter
         hidden: true
         exclusionReason: WebSocket terminal transport consumed by the explicit CLI release-terminal protocol adapter.
@@ -6982,6 +7486,8 @@ paths:
   /api/v1/projects/{projectId}/releases/{releaseId}/rollback:
     post:
       operationId: rollbackRelease
+      x-luna-cli:
+        requiredScopes: ["deployment:rollback"]
       tags:
         - Releases
       summary: Rollback Release
@@ -7012,6 +7518,8 @@ paths:
   /api/v1/projects/{projectId}/gateway-routes:
     get:
       operationId: listGatewayRoutes
+      x-luna-cli:
+        requiredScopes: ["gateway:read"]
       tags:
         - Gateway
       summary: List Gateway Routes
@@ -7054,6 +7562,8 @@ paths:
           $ref: "#/components/responses/NotFound"
     post:
       operationId: createGatewayRoute
+      x-luna-cli:
+        requiredScopes: ["gateway:manage"]
       tags:
         - Gateway
       summary: Create Gateway Route
@@ -7091,6 +7601,8 @@ paths:
   /api/v1/projects/{projectId}/gateway-routes/{routeId}:
     get:
       operationId: getGatewayRoute
+      x-luna-cli:
+        requiredScopes: ["gateway:read"]
       tags: [Gateway]
       summary: Get Gateway Route
       description: Returns one gateway route with a no-store point-in-time Gateway API observation.
@@ -7119,6 +7631,8 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
     put:
       operationId: updateGatewayRoute
+      x-luna-cli:
+        requiredScopes: ["gateway:manage"]
       tags:
         - Gateway
       summary: Update Gateway Route
@@ -7160,6 +7674,8 @@ paths:
           $ref: "#/components/responses/NotFound"
     delete:
       operationId: deleteGatewayRoute
+      x-luna-cli:
+        requiredScopes: ["gateway:delete"]
       tags:
         - Gateway
       summary: Delete Gateway Route
@@ -7168,7 +7684,7 @@ paths:
         aliases: { zh: [删除网关路由, 移除域名访问], en: [delete gateway route, remove domain route] }
         avoidWhen: { zh: 只需更新域名、后端或 TLS 时不要使用。, en: Do not use when domain, backend, or TLS only needs updating. }
         preconditions: { zh: [用户确认外部访问中断影响], en: [User confirmed external-access impact] }
-        successEvidence: { zh: 返回删除结果并通过列表确认路由消失。, en: Returns deletion and list readback confirms absence. }
+        successEvidence: { zh: 返回 204 仅表示删除已受理；继续通过网关路由列表权威回读，直到路由不再存在。, en: A 204 only confirms the deletion was accepted; use the gateway-route list as authoritative readback until the route no longer exists. }
       parameters:
         - name: projectId
           in: path
@@ -7182,7 +7698,7 @@ paths:
             type: string
       responses:
         "204":
-          description: Resource deleted.
+          description: Gateway route deletion accepted and queued for asynchronous runtime cleanup; read back the route or list until it no longer exists.
         "400":
           $ref: "#/components/responses/BadRequest"
         "403":
@@ -7192,6 +7708,8 @@ paths:
   /api/v1/projects/{projectId}/gateway-routes/check-domain:
     get:
       operationId: checkGatewayDomain
+      x-luna-cli:
+        requiredScopes: ["gateway:read"]
       tags:
         - Gateway
       summary: Check Gateway Domain
@@ -7238,6 +7756,8 @@ paths:
   /api/v1/projects/{projectId}/repository-bindings/{bindingId}/webhook/reconfigure:
     post:
       operationId: reconfigureRepositoryWebhook
+      x-luna-cli:
+        requiredScopes: ["git:write"]
       tags:
         - Projects
       summary: Reconfigure Repository Webhook
@@ -7268,6 +7788,8 @@ paths:
   /api/v1/billing/summary:
     get:
       operationId: getBillingSummary
+      x-luna-cli:
+        requiredScopes: ["billing:read"]
       tags:
         - Billing
       summary: Get Billing Summary
@@ -7325,6 +7847,8 @@ paths:
   /api/v1/billing/deployment-spend:
     get:
       operationId: listBillingDeploymentSpend
+      x-luna-cli:
+        requiredScopes: ["billing:read"]
       tags:
         - Billing
       summary: List Billing Deployment Spend
@@ -7385,6 +7909,8 @@ paths:
   /api/v1/billing/ledger:
     get:
       operationId: listBillingLedgerEntries
+      x-luna-cli:
+        requiredScopes: ["billing:read"]
       tags:
         - Billing
       summary: List Billing Ledger Entries
@@ -7450,6 +7976,8 @@ paths:
   /api/v1/billing/usage-records:
     get:
       operationId: listBillingUsageRecords
+      x-luna-cli:
+        requiredScopes: ["billing:read"]
       tags:
         - Billing
       summary: List Billing Usage Records
@@ -7515,6 +8043,8 @@ paths:
   /api/v1/billing/rate-rules:
     get:
       operationId: listBillingRateRules
+      x-luna-cli:
+        requiredScopes: ["billing:read"]
       tags:
         - Billing
       summary: List current billing prices
@@ -7532,6 +8062,8 @@ paths:
           $ref: "#/components/responses/Unauthorized"
     put:
       operationId: updateBillingRateRules
+      x-luna-cli:
+        requiredScopes: ["billing:write"]
       tags:
         - Billing
       summary: Update Billing Rate Rules
@@ -7559,6 +8091,8 @@ paths:
   /api/v1/billing/wallet-transactions:
     post:
       operationId: createBillingWalletTransaction
+      x-luna-cli:
+        requiredScopes: ["billing:write"]
       tags:
         - Billing
       summary: Create Billing Wallet Transaction
@@ -7666,6 +8200,8 @@ paths:
   /api/v1/billing/gateway-traffic-status:
     get:
       operationId: getGatewayTrafficStatus
+      x-luna-cli:
+        requiredScopes: ["billing:read"]
       tags:
         - Billing
       summary: Get Gateway Traffic Status
@@ -7717,6 +8253,7 @@ paths:
         preconditions: { zh: [提供不含凭据的公开信息检索词], en: [Provide a public-information query without credentials] }
         successEvidence: { zh: 返回有界的公开搜索结果；所有内容均视为不可信数据。, en: Returns bounded public search results treated as untrusted data. }
       x-luna-cli:
+        requiredScopes: ["web:read"]
         classification: protocol-adapter
         hidden: true
         agentAllowed: false
@@ -7765,6 +8302,7 @@ paths:
         preconditions: { zh: [提供公开 HTTP 或 HTTPS URL], en: [Provide a public HTTP or HTTPS URL] }
         successEvidence: { zh: 返回截断标记、正文和链接；内容均视为不可信数据。, en: Returns a truncation flag, text, and links treated as untrusted data. }
       x-luna-cli:
+        requiredScopes: ["web:read"]
         classification: protocol-adapter
         hidden: true
         agentAllowed: false
@@ -7801,6 +8339,8 @@ paths:
   /api/v1/configs/ai/models:
     get:
       operationId: listAIModelConfigs
+      x-luna-cli:
+        requiredScopes: ["config:read"]
       tags: [Settings]
       summary: List all platform AI model configurations
       security: [{ SessionCookie: [] }]
@@ -7810,6 +8350,8 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
     post:
       operationId: createAIModel
+      x-luna-cli:
+        requiredScopes: ["config:write"]
       tags: [Settings]
       summary: Create a platform AI model configuration
       description: Creates a catalog entry. If the catalog has no enabled model, the first entry is enabled even when enabled=false so the platform always retains an available model.
@@ -7826,6 +8368,8 @@ paths:
       - { name: id, in: path, required: true, schema: { type: string } }
     put:
       operationId: updateAIModel
+      x-luna-cli:
+        requiredScopes: ["config:write"]
       tags: [Settings]
       summary: Update a platform AI model configuration
       description: Updates a catalog entry. Disabling the final enabled model is rejected atomically with conflict code ai.last_model_cannot_be_disabled, including when administrators mutate the catalog concurrently.
@@ -7840,6 +8384,8 @@ paths:
         "409": { $ref: "#/components/responses/Conflict" }
     delete:
       operationId: deleteAIModel
+      x-luna-cli:
+        requiredScopes: ["config:write"]
       tags: [Settings]
       summary: Delete a platform AI model configuration
       description: Deletes a catalog entry. Historical runs keep their own price snapshots and are unaffected. Deleting the final enabled model is rejected atomically with conflict code ai.last_model_cannot_be_deleted, including when administrators mutate the catalog concurrently.
@@ -9270,6 +9816,9 @@ components:
           type: string
           pattern: "^[0-9a-f]{32}$"
           description: Trace identifier when the request has a valid trace context.
+        requiredScope:
+          type: string
+          description: Stable scope required by an auth.token.scope_insufficient error; omitted for other error codes.
         retryable:
           type: boolean
           description: Whether retrying the same operation without changing arguments may succeed.
@@ -9445,30 +9994,163 @@ components:
           minimum: 0
     OAuthApplication:
       type: object
+      additionalProperties: false
+      required:
+        - id
+        - name
+        - description
+        - homepageUrl
+        - logoUrl
+        - clientId
+        - redirectUris
+        - allowedScopes
+        - accessTokenLifetimeDays
+        - revokedAt
+        - createdAt
+        - updatedAt
       properties:
         id: { type: string }
+        ownerUserId: { type: string }
         name: { type: string }
+        description: { type: string }
+        homepageUrl: { type: string }
+        logoUrl: { type: string }
         clientId: { type: string }
         redirectUris:
           type: array
           items: { type: string, format: uri }
-        scopes:
-          type: array
-          items: { type: string }
-        confidential: { type: boolean }
-        active: { type: boolean }
-      required: [id, name, clientId, redirectUris, scopes, confidential, active]
+        allowedScopes: { type: string }
+        accessTokenLifetimeDays: { type: integer }
+        revokedAt: { type: [string, "null"], format: date-time }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
     OAuthTokenResponse:
       type: object
+      additionalProperties: false
       properties:
-        access_token: { type: string, writeOnly: true }
+        access_token: { type: string, readOnly: true, x-luna-sensitive: true }
         token_type: { type: string, const: Bearer }
         expires_in: { type: integer, minimum: 1 }
-        refresh_token: { type: string, writeOnly: true }
+        refresh_token: { type: string, readOnly: true, x-luna-sensitive: true }
         scope: { type: string }
-      required: [access_token, token_type, expires_in, refresh_token, scope]
+      required: [access_token, token_type, scope]
+    OAuthDeviceAuthorizationInput:
+      type: object
+      required: [client_id]
+      properties:
+        client_id: { type: string }
+        scope: { type: string }
+    OAuthTokenInput:
+      type: object
+      required: [grant_type]
+      properties:
+        grant_type:
+          type: string
+          enum:
+            - authorization_code
+            - refresh_token
+            - urn:ietf:params:oauth:grant-type:device_code
+        client_id: { type: string }
+        client_secret: { type: string, writeOnly: true, x-luna-sensitive: true }
+        code: { type: string, writeOnly: true, x-luna-sensitive: true }
+        code_verifier: { type: string, writeOnly: true, x-luna-sensitive: true }
+        redirect_uri: { type: string, format: uri }
+        refresh_token: { type: string, writeOnly: true, x-luna-sensitive: true }
+        device_code: { type: string, writeOnly: true, x-luna-sensitive: true }
+      allOf:
+        - if:
+            properties:
+              grant_type: { const: authorization_code }
+          then:
+            required: [code, code_verifier, redirect_uri]
+        - if:
+            properties:
+              grant_type: { const: refresh_token }
+          then:
+            required: [refresh_token]
+        - if:
+            properties:
+              grant_type: { const: "urn:ietf:params:oauth:grant-type:device_code" }
+          then:
+            required: [device_code]
+    OAuthTokenRevocationInput:
+      type: object
+      required: [token]
+      properties:
+        token: { type: string, writeOnly: true, x-luna-sensitive: true }
+        token_type_hint:
+          type: string
+          enum: [access_token, refresh_token]
+        client_id: { type: string }
+        client_secret: { type: string, writeOnly: true, x-luna-sensitive: true }
+    OAuthAuthorizationServerMetadata:
+      type: object
+      additionalProperties: false
+      required:
+        - issuer
+        - authorization_endpoint
+        - device_authorization_endpoint
+        - token_endpoint
+        - revocation_endpoint
+        - response_types_supported
+        - grant_types_supported
+        - token_endpoint_auth_methods_supported
+        - code_challenge_methods_supported
+      properties:
+        issuer: { type: string, format: uri }
+        authorization_endpoint: { type: string, format: uri }
+        device_authorization_endpoint: { type: string, format: uri }
+        token_endpoint: { type: string, format: uri }
+        revocation_endpoint: { type: string, format: uri }
+        response_types_supported:
+          type: array
+          items: { type: string }
+        grant_types_supported:
+          type: array
+          items: { type: string }
+        token_endpoint_auth_methods_supported:
+          type: array
+          items: { type: string }
+        code_challenge_methods_supported:
+          type: array
+          items: { type: string }
+    OAuthDeviceAuthorizationResponse:
+      type: object
+      additionalProperties: false
+      required: [device_code, user_code, verification_uri, verification_uri_complete, expires_in, interval]
+      properties:
+        device_code: { type: string, readOnly: true, x-luna-sensitive: true }
+        user_code: { type: string }
+        verification_uri: { type: string, format: uri }
+        verification_uri_complete: { type: string, format: uri }
+        expires_in: { type: integer, format: int64, minimum: 1 }
+        interval: { type: integer, minimum: 1 }
+    OAuthDeviceVerification:
+      type: object
+      additionalProperties: false
+      required: [application, userCode, scope, expiresAt]
+      properties:
+        application: { $ref: "#/components/schemas/OAuthApplication" }
+        userCode: { type: string }
+        scope: { type: string }
+        expiresAt: { type: string, format: date-time }
+    OAuthDeviceVerificationDecisionInput:
+      type: object
+      required: [userCode]
+      properties:
+        userCode: { type: string }
+        approved:
+          type: boolean
+          description: Approves the request when true; omission or false denies it.
+    OAuthDeviceVerificationResult:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status: { type: string, enum: [approved, denied] }
     OAuthProtocolError:
       type: object
+      additionalProperties: false
       properties:
         error:
           type: string
@@ -9483,8 +10165,11 @@ components:
             - slow_down
             - access_denied
             - expired_token
+            - server_error
+            - temporarily_unavailable
         error_description: { type: string }
-      required: [error]
+        requestId: { type: string }
+      required: [error, error_description, requestId]
     DashboardEntityRef:
       type: object
       properties:
@@ -9695,6 +10380,116 @@ components:
         creatableByUser: { type: boolean }
         requiresAdminRole: { type: boolean }
       required: [value, group, recommended, creatableByUser, requiresAdminRole]
+    KubeCredentialContextInput:
+      type: object
+      additionalProperties: false
+      required: [projectId, runtimeClusterId]
+      properties:
+        projectId: { type: string, minLength: 1 }
+        runtimeClusterId: { type: string, minLength: 1, pattern: '^clu_' }
+        applicationId:
+          type: string
+          minLength: 1
+          description: Omit to authorize the whole project namespace; when present, the application must belong to projectId.
+    KubeCredentialCreateInput:
+      type: object
+      additionalProperties: false
+      required: [name, scopes, contexts]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 64 }
+        expiresInDays:
+          type: integer
+          enum: [1, 7, 30]
+          default: 7
+          description: Required credential lifetime in days; permanent kubectl credentials are not supported.
+        scopes:
+          type: array
+          minItems: 1
+          maxItems: 3
+          uniqueItems: true
+          description: Independent Kubernetes transport scopes. kube:write and kube:connect are normalized to include kube:read.
+          items: { type: string, enum: ["kube:read", "kube:write", "kube:connect"] }
+        contexts:
+          type: array
+          minItems: 1
+          maxItems: 20
+          uniqueItems: true
+          items: { $ref: "#/components/schemas/KubeCredentialContextInput" }
+    KubeCredentialSummary:
+      type: object
+      additionalProperties: false
+      required: [id, name, scopes, status, expiresAt, createdAt, bindingCount]
+      properties:
+        id: { type: string, pattern: '^tok_' }
+        name: { type: string }
+        scopes:
+          type: array
+          minItems: 1
+          maxItems: 3
+          uniqueItems: true
+          items: { type: string, enum: ["kube:read", "kube:write", "kube:connect"] }
+        status: { type: string, enum: [active, expired, revoked] }
+        expiresAt: { type: string, format: date-time }
+        createdAt: { type: string, format: date-time }
+        bindingCount: { type: integer, format: int64, minimum: 0 }
+    KubeCredentialBindingSummary:
+      type: object
+      additionalProperties: false
+      required: [id, projectId, runtimeClusterId, namespace, contextName, createdAt]
+      properties:
+        id: { type: string, pattern: '^kbd_' }
+        projectId: { type: string }
+        runtimeClusterId: { type: string, pattern: '^clu_' }
+        applicationId: { type: string }
+        namespace:
+          type: string
+          description: Current authoritative Kubernetes namespace of projectId, resolved at request time.
+        contextName: { type: string }
+        createdAt: { type: string, format: date-time }
+    KubeCredentialCreateResult:
+      type: object
+      additionalProperties: false
+      required: [credential, bindings, kubeconfig]
+      properties:
+        credential: { $ref: "#/components/schemas/KubeCredentialSummary" }
+        bindings:
+          type: array
+          minItems: 1
+          maxItems: 20
+          items: { $ref: "#/components/schemas/KubeCredentialBindingSummary" }
+        kubeconfig:
+          type: string
+          readOnly: true
+          x-luna-sensitive: true
+          description: One-time kubeconfig containing the only plaintext copy of the bearer credential; never returned by list operations.
+    PaginatedKubeCredentials:
+      type: object
+      additionalProperties: false
+      required: [items, page, pageSize, sortBy, sortOrder, total, totalPages]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/KubeCredentialSummary" }
+        page: { type: integer, minimum: 1 }
+        pageSize: { type: integer, minimum: 1, maximum: 100 }
+        sortBy: { type: string, enum: [name, createdAt, expiresAt, status] }
+        sortOrder: { type: string, enum: [asc, desc] }
+        total: { type: integer, format: int64, minimum: 0 }
+        totalPages: { type: integer, minimum: 0 }
+    PaginatedKubeCredentialBindings:
+      type: object
+      additionalProperties: false
+      required: [items, page, pageSize, sortBy, sortOrder, total, totalPages]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/KubeCredentialBindingSummary" }
+        page: { type: integer, minimum: 1 }
+        pageSize: { type: integer, minimum: 1, maximum: 100 }
+        sortBy: { type: string, enum: [createdAt, projectId, runtimeClusterId] }
+        sortOrder: { type: string, enum: [asc, desc] }
+        total: { type: integer, format: int64, minimum: 0 }
+        totalPages: { type: integer, minimum: 0 }
     ApplicationTopology:
       type: object
       properties:
@@ -10456,9 +11251,6 @@ components:
         clusterId:
           type: string
           description: Runtime cluster ID available to the project. Empty selects the platform default cluster.
-        namespace:
-          type: string
-          description: Optional Kubernetes namespace override. Empty uses the project namespace.
         workloadType:
           type: string
           enum: [Deployment, StatefulSet]
@@ -10517,13 +11309,6 @@ components:
         readOnlyRootFilesystem:
           type: boolean
           default: false
-        allowPrivilegeEscalation:
-          type: string
-          enum: ["", "true", "false"]
-          description: Tri-state string; empty inherits the platform default.
-        capabilityAdd:
-          type: string
-          description: JSON string array or line-separated Linux capabilities to add.
         capabilityDrop:
           type: string
           description: JSON string array or line-separated Linux capabilities to drop.
@@ -10541,24 +11326,9 @@ components:
           description: JSON Kubernetes topology spread constraint array.
         priorityClassName:
           type: string
-        serviceAccountName:
-          type: string
-          pattern: "^$|^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$"
-          maxLength: 253
-          description: Optional Kubernetes ServiceAccount name used by the workload Pods.
-        automountServiceAccountToken:
-          type: string
-          enum: ["", "true", "false"]
-          description: Tri-state string controlling ServiceAccount token mounting; empty uses the Kubernetes default.
-        serviceType:
-          type: string
-          enum: [ClusterIP, NodePort, LoadBalancer]
         serviceAnnotations:
           type: string
           description: JSON object or key=value lines.
-        serviceExternalTrafficPolicy:
-          type: string
-          enum: [Cluster, Local]
         serviceSessionAffinity:
           type: string
           enum: [None, ClientIP]
@@ -10710,11 +11480,7 @@ components:
           type: array
           maxItems: 128
           items: { $ref: "#/components/schemas/RuntimeEnvironmentVariableInput" }
-          description: Caller-selected public runtime environment variables. The platform does not infer sensitivity from key names or values. A key may also have a separately managed secret; the secret takes precedence in deployed workloads while both modes remain visible in API state. Choose the dedicated runtime secret action when encrypted storage and non-disclosure are required.
-        configRefs:
-          type: object
-          additionalProperties: { type: string }
-          description: Runtime ConfigMap references.
+          description: Caller-selected public runtime environment variables. The platform does not infer sensitivity from key names or values; it stores these values in the deployment-managed ConfigMap and injects them into the workload. A key may also have a separately managed secret; the secret takes precedence in deployed workloads while both modes remain visible in API state. Choose the dedicated runtime secret action when encrypted storage and non-disclosure are required.
         configFiles:
           type: string
           description: JSON array of runtime configuration file mounts.
@@ -10773,9 +11539,6 @@ components:
         environmentVariables:
           type: array
           items: { $ref: "#/components/schemas/RuntimeEnvironmentVariable" }
-        configRefs:
-          type: object
-          additionalProperties: { type: string }
         dataVolumes:
           type: array
           items: { $ref: "#/components/schemas/DeploymentDataVolume" }
@@ -10933,7 +11696,6 @@ components:
       properties:
         name: { type: string, maxLength: 120 }
         stage: { type: string, enum: [dev, test, staging, prod], description: Public destination stage. Use this to repair a bundle containing a historical or invalid stage. }
-        namespace: { type: [string, "null"] }
     DeploymentTargetBundleImportRequest:
       type: object
       additionalProperties: false
@@ -11552,7 +12314,7 @@ components:
       additionalProperties: true
     OAuthApplicationInput:
       type: object
-      required: [name, redirectUris]
+      required: [name, redirectUris, allowedScopes]
       properties:
         name: { type: string, minLength: 1 }
         description: { type: string }
@@ -11562,72 +12324,92 @@ components:
           type: array
           minItems: 1
           items: { type: string, format: uri }
-        allowedScopes:
-          type: array
-          items: { type: string }
+        allowedScopes: { type: string }
         accessTokenLifetimeDays:
           type: integer
           minimum: 0
           description: Zero configures a non-expiring access token.
+    OAuthAuthorizationRequest:
+      type: object
+      additionalProperties: false
+      required: [application, scope, accessTokenLifetimeDays, previouslyAuthorized]
+      properties:
+        application:
+          $ref: "#/components/schemas/OAuthApplication"
+        scope: { type: string }
+        accessTokenLifetimeDays: { type: integer }
+        previouslyAuthorized: { type: boolean }
     OAuthAuthorizationDecisionInput:
       type: object
-      required: [approved, clientId, redirectUri]
+      required: [clientId, redirectUri, scope, codeChallenge, codeChallengeMethod]
       properties:
-        approved: { type: boolean }
+        approved:
+          type: boolean
+          description: Approves the request when true; omission or false denies it.
         clientId: { type: string }
         redirectUri: { type: string, format: uri }
         scope: { type: string }
         state: { type: string }
         codeChallenge: { type: string }
         codeChallengeMethod: { type: string, enum: [S256] }
+    OAuthAuthorizationDecisionResponse:
+      type: object
+      additionalProperties: false
+      required: [redirectUrl]
+      properties:
+        redirectUrl: { type: string, format: uri }
     OAuthGrant:
       type: object
-      required: [id, applicationId, userId, scopes, createdAt]
+      additionalProperties: false
+      required: [id, application, scope, createdAt, updatedAt]
       properties:
         id: { type: string }
-        applicationId: { type: string }
-        applicationName: { type: string }
-        applicationLogoUrl: { type: string }
-        userId: { type: string }
-        scopes:
-          type: array
-          items: { type: string }
+        application:
+          $ref: "#/components/schemas/OAuthApplication"
+        scope: { type: string }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
-        lastUsedAt: { type: string, format: date-time, nullable: true }
     PaginatedOAuthApplications:
       type: object
-      required: [items, page, pageSize, total, totalPages]
+      additionalProperties: false
+      required: [items, page, pageSize, sortBy, sortOrder, total, totalPages]
       properties:
         items:
           type: array
           items:
             $ref: "#/components/schemas/OAuthApplication"
         page: { type: integer, minimum: 1 }
-        pageSize: { type: integer, minimum: 1 }
-        total: { type: integer, minimum: 0 }
+        pageSize: { type: integer, minimum: 1, maximum: 100 }
+        sortBy: { type: string }
+        sortOrder: { type: string, enum: [asc, desc] }
+        total: { type: integer, format: int64, minimum: 0 }
         totalPages: { type: integer, minimum: 0 }
     PaginatedOAuthGrants:
       type: object
-      required: [items, page, pageSize, total, totalPages]
+      additionalProperties: false
+      required: [items, page, pageSize, sortBy, sortOrder, total, totalPages]
       properties:
         items:
           type: array
           items:
             $ref: "#/components/schemas/OAuthGrant"
         page: { type: integer, minimum: 1 }
-        pageSize: { type: integer, minimum: 1 }
-        total: { type: integer, minimum: 0 }
+        pageSize: { type: integer, minimum: 1, maximum: 100 }
+        sortBy: { type: string }
+        sortOrder: { type: string, enum: [asc, desc] }
+        total: { type: integer, format: int64, minimum: 0 }
         totalPages: { type: integer, minimum: 0 }
     OAuthApplicationSecretResponse:
       type: object
+      additionalProperties: false
       required: [application, clientSecret]
       properties:
         application:
           $ref: "#/components/schemas/OAuthApplication"
         clientSecret:
           type: string
-          writeOnly: true
+          readOnly: true
+          x-luna-sensitive: true
           description: One-time plaintext client secret.
     BuildVariableSetInput:
       type: object
@@ -11698,20 +12480,126 @@ components:
         gatewayTrustedProxyCIDRs: { type: string }
         gatewayDefaultRequestHeaders: { type: string }
         gatewayDefaultResponseHeaders: { type: string }
-        status: { type: string }
     RuntimeCluster:
       allOf:
         - $ref: "#/components/schemas/RuntimeClusterInput"
         - type: object
-          required: [id, kubeconfigSet, createdBy, createdAt]
+          required: [id, kubeconfigSet, kubeGatewayEnabled, deleteStatus, status, createdBy, createdAt]
           properties:
             id: { type: string, pattern: '^clu_' }
             kubeconfigSet: { type: boolean }
+            kubeGatewayEnabled: { type: boolean }
+            deleteStatus: { type: string, enum: [active, deleting, delete_failed, deleted] }
+            deleteStartedAt: { type: string, format: date-time }
+            deleteFinishedAt: { type: string, format: date-time }
+            deleteObservationCode:
+              type: string
+              description: Stable frontend-localized deletion observation code; internal deletion messages and drain or cleanup timestamps are never returned.
+            status: { type: string }
             observationCode: { type: string }
             lastCheckedAt: { type: string, format: date-time }
             createdBy: { type: string }
             createdAt: { type: string, format: date-time }
             updatedAt: { type: string, format: date-time }
+    RuntimeClusterKubeGatewayRule:
+      type: object
+      additionalProperties: false
+      required: [apiGroup, apiVersion, resource, verbs, action]
+      properties:
+        apiGroup:
+          type: string
+          maxLength: 253
+          description: Kubernetes API group; use an empty string only for a discovered core API resource.
+        apiVersion:
+          type: string
+          minLength: 1
+          maxLength: 63
+          pattern: '^[a-z0-9][a-z0-9.-]*$'
+        resource:
+          type: string
+          minLength: 1
+          maxLength: 63
+          pattern: '^[a-z0-9][a-z0-9.-]*$'
+        subresources:
+          type: array
+          maxItems: 16
+          uniqueItems: true
+          items: { type: string, minLength: 1, maxLength: 63, pattern: '^[a-z0-9][a-z0-9.-]*$' }
+        verbs:
+          type: array
+          minItems: 1
+          maxItems: 8
+          uniqueItems: true
+          items: { type: string, enum: [get, list, watch, create, update, patch, delete, deletecollection] }
+        action:
+          type: string
+          description: Existing project authorization action evaluated with the current authoritative project role on every request.
+          enum:
+            - project:read
+            - project:write
+            - project:manage
+            - project:delete
+            - project:owner_only
+            - project:pin
+            - application:read
+            - application:create
+            - application:update
+            - application:delete
+            - deployment:read
+            - deployment:update
+            - deployment:release
+            - deployment:restart
+            - deployment:rollback
+            - deployment:delete
+            - deployment:exec
+            - build:read
+            - build:trigger
+            - build:cancel
+            - build:delete
+            - gateway:read
+            - gateway:manage
+            - gateway:delete
+            - secret:read_summary
+            - secret:view_value
+            - secret:update
+            - cluster:read
+            - cluster:use
+            - cluster:manage
+            - billing:read
+            - billing:write
+            - git:read
+            - git:write
+            - registry:read
+            - registry:use
+            - image:write
+            - volume:read
+            - volume:write
+            - volume:import
+            - volume:export
+            - volume:delete
+    RuntimeClusterKubeGatewayInput:
+      type: object
+      additionalProperties: false
+      required: [enabled, extraResourceRules]
+      properties:
+        enabled: { type: boolean }
+        extraResourceRules:
+          type: array
+          maxItems: 50
+          items: { $ref: "#/components/schemas/RuntimeClusterKubeGatewayRule" }
+    RuntimeClusterKubeGateway:
+      type: object
+      additionalProperties: false
+      required: [enabled, extraResourceRules, status]
+      properties:
+        enabled: { type: boolean }
+        extraResourceRules:
+          type: array
+          maxItems: 50
+          items: { $ref: "#/components/schemas/RuntimeClusterKubeGatewayRule" }
+        status: { type: string, enum: [disabled, reconciling, ready, unavailable] }
+        observationCode: { type: string }
+        lastCheckedAt: { type: string, format: date-time }
     RuntimeClusterPressureLevel:
       type: string
       enum: [idle, light, moderate, heavy, full, unavailable]
@@ -12205,7 +13093,6 @@ components:
           enum: [dev, test, staging, prod]
           description: Canonical deployment stage. Use dev, test, staging, or prod; arbitrary values such as default or qa are rejected before installation.
         clusterId: { type: string }
-        namespace: { type: string }
         imageRef: { type: string }
         replicas: { type: integer, minimum: 0 }
         cpuRequest: { type: string }

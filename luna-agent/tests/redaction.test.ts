@@ -87,10 +87,11 @@ describe("redact", () => {
 })
 
 describe("redactSensitivePaths", () => {
-  it("masks catalog paths without changing the arguments used for approval and execution", () => {
+  it("masks only catalog paths without changing the arguments used for approval and execution", () => {
     const argumentsValue = {
       body: {
         command: "kubectl get secret",
+        note: "Authorization: Bearer raw-token",
         items: [{ name: "PUBLIC_NAME", value: "runtime-secret" }],
       },
     }
@@ -98,6 +99,7 @@ describe("redactSensitivePaths", () => {
     expect(redactSensitivePaths(argumentsValue, ["body.command", "body.items.*.value"])).toEqual({
       body: {
         command: "[REDACTED]",
+        note: "Authorization: Bearer raw-token",
         items: [{ name: "PUBLIC_NAME", value: "[REDACTED]" }],
       },
     })

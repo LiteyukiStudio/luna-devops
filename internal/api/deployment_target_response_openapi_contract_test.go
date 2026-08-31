@@ -19,7 +19,7 @@ func TestDeploymentTargetResponseOpenAPIUsesCanonicalCollections(t *testing.T) {
 			t.Fatalf("DeploymentTarget.%s = %#v, want array", field, property)
 		}
 	}
-	for _, legacy := range []string{"servicePort", "runtimeConfigSetIds"} {
+	for _, legacy := range []string{"servicePort", "runtimeConfigSetIds", "configRefs"} {
 		if properties[legacy] != nil {
 			t.Fatalf("DeploymentTarget response retains legacy field %s", legacy)
 		}

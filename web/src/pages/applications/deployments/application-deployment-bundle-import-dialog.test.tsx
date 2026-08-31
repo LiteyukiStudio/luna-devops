@@ -21,7 +21,6 @@ const bundle = {
   configuration: {
     dataVolumes: [],
     name: 'Imported service',
-    namespace: '',
     runtimeConfigRefs: [],
     buildVariableSetIds: [],
     sourceType: 'image',
@@ -46,7 +45,7 @@ describe('deployment bundle import dialog', () => {
       references: [],
       secretRequirements: [],
       status: 'ready',
-      summary: { name: 'Imported service', namespace: '', sourceType: 'image', stage: 'dev' },
+      summary: { name: 'Imported service', sourceType: 'image', stage: 'dev' },
       warnings: [],
     })
     importDeploymentTargetBundle.mockResolvedValue({ id: 'dplt_imported' })
@@ -99,7 +98,7 @@ describe('deployment bundle import dialog', () => {
         references: [],
         secretRequirements: [],
         status: 'invalid',
-        summary: { name: 'Imported service', namespace: '', sourceType: 'image', stage: 'qa' },
+        summary: { name: 'Imported service', sourceType: 'image', stage: 'qa' },
         warnings: ['deployment.stage_invalid'],
       })
       .mockResolvedValueOnce({
@@ -107,7 +106,7 @@ describe('deployment bundle import dialog', () => {
         references: [],
         secretRequirements: [],
         status: 'ready',
-        summary: { name: 'Imported service', namespace: '', sourceType: 'image', stage: 'dev' },
+        summary: { name: 'Imported service', sourceType: 'image', stage: 'dev' },
         warnings: [],
       })
     const file = Object.assign(new File([JSON.stringify(invalidBundle)], 'legacy.json', { type: 'application/json' }), {
@@ -173,7 +172,7 @@ describe('deployment bundle import dialog', () => {
       }],
       secretRequirements: [],
       status: 'requires_mapping',
-      summary: { name: 'Imported service', namespace: '', sourceType: 'image', stage: 'dev' },
+      summary: { name: 'Imported service', sourceType: 'image', stage: 'dev' },
       warnings: ['deployment_bundle.reference_missing'],
     })
     const file = Object.assign(new File([JSON.stringify(bundle)], 'deployment.json', { type: 'application/json' }), {
@@ -218,7 +217,7 @@ describe('deployment bundle import dialog', () => {
       references: [reference],
       secretRequirements: [],
       status: 'requires_mapping',
-      summary: { name: 'Imported service', namespace: '', sourceType: 'image', stage: 'dev' },
+      summary: { name: 'Imported service', sourceType: 'image', stage: 'dev' },
       warnings: ['deployment_bundle.reference_missing'],
     })
     listDeploymentTargetBundleReferenceCandidates.mockImplementation((_projectId, _applicationId, _payload, params) => {
@@ -276,7 +275,7 @@ describe('deployment bundle import dialog', () => {
       references: [{ ...reference, candidates: [{ compatible: true, id: 'replacement_001', matched: false, name: 'Replacement 001' }] }],
       secretRequirements: [],
       status: 'requires_mapping',
-      summary: { name: 'Imported service', namespace: '', sourceType: 'image', stage: 'dev' },
+      summary: { name: 'Imported service', sourceType: 'image', stage: 'dev' },
       warnings: ['deployment_bundle.reference_missing'],
     })
     const replacementFile = Object.assign(new File([JSON.stringify(bundle)], 'replacement.json', { type: 'application/json' }), {

@@ -1,3 +1,9 @@
+{{- range $cidr := splitList "," .Values.app.trustedProxyCidrs -}}
+{{- $trustedProxyCIDR := trim $cidr -}}
+{{- if hasSuffix "/0" $trustedProxyCIDR -}}
+{{- fail "app.trustedProxyCidrs must not contain universal /0 CIDRs" -}}
+{{- end -}}
+{{- end -}}
 apiVersion: v1
 kind: ConfigMap
 metadata:

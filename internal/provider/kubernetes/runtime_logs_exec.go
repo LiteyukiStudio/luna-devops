@@ -15,6 +15,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/remotecommand"
@@ -80,6 +81,9 @@ func (c *Client) RuntimeMetrics(ctx context.Context, options RuntimeMetricsOptio
 	if deploymentTargetID == "" {
 		return RuntimeMetricsSnapshot{}, fmt.Errorf("deployment target is required")
 	}
+	if options.ExactPodNames != nil {
+		return c.runtimeMetricsForExactPods(ctx, options)
+	}
 	workloadName := strings.TrimSpace(options.WorkloadName)
 	if workloadName == "" {
 		return RuntimeMetricsSnapshot{Available: false, Reason: "workload_unavailable", UpdatedAt: time.Now()}, nil
@@ -132,6 +136,92 @@ func (c *Client) RuntimeMetrics(ctx context.Context, options RuntimeMetricsOptio
 		}
 	}
 	return snapshot, nil
+}
+
+func (c *Client) runtimeMetricsForExactPods(ctx context.Context, options RuntimeMetricsOptions) (RuntimeMetricsSnapshot, error) {
+	now := time.Now().UTC()
+	namespace := strings.TrimSpace(options.Namespace)
+	snapshot := RuntimeMetricsSnapshot{
+		Available:         true,
+		DesiredReplicas:   options.DesiredReplicas,
+		UpdatedReplicas:   options.UpdatedReplicas,
+		ReadyReplicas:     options.ReadyReplicas,
+		AvailableReplicas: options.AvailableReplicas,
+		UpdatedAt:         now,
+	}
+	projectID := strings.TrimSpace(options.ProjectID)
+	managementSource := strings.TrimSpace(options.ManagementSource)
+	if projectID == "" {
+		return RuntimeMetricsSnapshot{}, fmt.Errorf("metrics project ownership is required")
+	}
+	if managementSource != KubectlGatewayManagementSourceValue {
+		return RuntimeMetricsSnapshot{}, fmt.Errorf("unsupported metrics management source")
+	}
+	allowedNames := make(map[string]struct{}, len(options.ExactPodNames))
+	for _, rawName := range options.ExactPodNames {
+		if name := strings.TrimSpace(rawName); name != "" {
+			allowedNames[name] = struct{}{}
+		}
+	}
+	if len(allowedNames) == 0 {
+		return snapshot, nil
+	}
+	ownershipLabels := map[string]string{
+		ManagedByLabel:                      ManagedByValue,
+		ProjectIDLabel:                      projectID,
+		KubectlGatewayManagementSourceLabel: managementSource,
+	}
+	if applicationID := strings.TrimSpace(options.ApplicationID); applicationID != "" {
+		ownershipLabels[ApplicationIDLabel] = applicationID
+	}
+	gvr := schema.GroupVersionResource{Group: "metrics.k8s.io", Version: "v1beta1", Resource: "pods"}
+	list, err := c.dynamic.Resource(gvr).Namespace(namespace).List(ctx, metav1.ListOptions{
+		LabelSelector: labels.Set(ownershipLabels).AsSelector().String(),
+	})
+	if err != nil {
+		snapshot.Available = false
+		snapshot.Reason = "metrics_unavailable"
+		return snapshot, nil
+	}
+	for _, item := range list.Items {
+		if _, allowed := allowedNames[item.GetName()]; !allowed || item.GetNamespace() != namespace ||
+			!runtimeMetricLabelsMatch(item.GetLabels(), ownershipLabels) || item.GetLabels()[ApplicationIDLabel] != strings.TrimSpace(options.ApplicationID) {
+			continue
+		}
+		snapshot.PodCount++
+		containers, _, _ := unstructured.NestedSlice(item.Object, "containers")
+		for _, rawContainer := range containers {
+			container, ok := rawContainer.(map[string]any)
+			if !ok {
+				continue
+			}
+			usage, ok, _ := unstructured.NestedStringMap(container, "usage")
+			if !ok {
+				continue
+			}
+			snapshot.ContainerCount++
+			if value := strings.TrimSpace(usage["cpu"]); value != "" {
+				if quantity, err := resource.ParseQuantity(value); err == nil {
+					snapshot.CPUUsageMilli += quantity.MilliValue()
+				}
+			}
+			if value := strings.TrimSpace(usage["memory"]); value != "" {
+				if quantity, err := resource.ParseQuantity(value); err == nil {
+					snapshot.MemoryUsageBytes += quantity.Value()
+				}
+			}
+		}
+	}
+	return snapshot, nil
+}
+
+func runtimeMetricLabelsMatch(actual, expected map[string]string) bool {
+	for key, value := range expected {
+		if actual[key] != value {
+			return false
+		}
+	}
+	return true
 }
 
 func (c *Client) RuntimePodLogs(ctx context.Context, options RuntimePodLogsOptions) (RuntimePodLogsResult, error) {

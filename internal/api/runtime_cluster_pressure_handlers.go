@@ -13,6 +13,7 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/observation"
 	kubeprovider "github.com/LiteyukiStudio/devops/internal/provider/kubernetes"
+	"github.com/LiteyukiStudio/devops/internal/runtimecluster"
 	"github.com/gin-gonic/gin"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 )
@@ -61,7 +62,7 @@ func (h *Handlers) ObserveRuntimeClusterPressure(ctx *gin.Context) {
 		return
 	}
 
-	query := h.dbFor(ctx).Model(&model.RuntimeCluster{}).Where("id IN ?", clusterIDs)
+	query := runtimecluster.ActiveScope(h.dbFor(ctx)).Model(&model.RuntimeCluster{}).Where("id IN ?", clusterIDs)
 	query, visible := h.applyScopedResourceVisibility(ctx, query, scopedResourceRuntimeCluster, user, strings.TrimSpace(ctx.Query("projectId")))
 	if !visible {
 		return

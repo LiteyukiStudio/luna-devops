@@ -6,10 +6,14 @@ import "time"
 // It is not a cache for current runtime state; live APIs continue to read Kubernetes.
 type RuntimeObservation struct {
 	ID                     string    `gorm:"primaryKey" json:"id"`
-	DeploymentTargetID     string    `gorm:"uniqueIndex:idx_runtime_observations_target_period;index;not null" json:"deploymentTargetId"`
-	RuntimeClusterID       string    `gorm:"index;not null" json:"runtimeClusterId"`
-	ProjectID              string    `gorm:"index;not null" json:"projectId"`
-	PeriodStart            time.Time `gorm:"uniqueIndex:idx_runtime_observations_target_period;not null" json:"periodStart"`
+	ManagementSource       string    `gorm:"index;not null;default:platform" json:"managementSource"`
+	ResourceKind           string    `gorm:"index;not null" json:"resourceKind"`
+	ResourceUID            string    `gorm:"uniqueIndex:idx_runtime_observations_resource_period,priority:3;index;not null" json:"resourceUid"`
+	ApplicationID          *string   `gorm:"index" json:"applicationId,omitempty"`
+	DeploymentTargetID     *string   `gorm:"index" json:"deploymentTargetId,omitempty"`
+	RuntimeClusterID       string    `gorm:"uniqueIndex:idx_runtime_observations_resource_period,priority:1;index;not null" json:"runtimeClusterId"`
+	ProjectID              string    `gorm:"uniqueIndex:idx_runtime_observations_resource_period,priority:2;index;not null" json:"projectId"`
+	PeriodStart            time.Time `gorm:"uniqueIndex:idx_runtime_observations_resource_period,priority:4;not null" json:"periodStart"`
 	PeriodEnd              time.Time `gorm:"not null" json:"periodEnd"`
 	DesiredReplicas        int32     `gorm:"not null" json:"desiredReplicas"`
 	UpdatedReplicas        int32     `gorm:"not null" json:"updatedReplicas"`

@@ -1,9 +1,12 @@
 package service
 
-import "github.com/LiteyukiStudio/devops/internal/authz"
+import (
+	"github.com/LiteyukiStudio/devops/internal/authz"
+	"github.com/LiteyukiStudio/devops/internal/openapiscope"
+)
 
-func RequiredAccessTokenScope(path, method string) string {
-	return authz.RequiredAccessTokenScope(path, method)
+func RequiredAccessTokenScopes(path, method string) ([]string, error) {
+	return openapiscope.RequiredScopes(path, method)
 }
 
 func AccessTokenAllows(scopeText, required string) bool {

@@ -12,7 +12,7 @@ import (
 
 func (h *Handlers) UpdateDeploymentTargetRuntimeSecrets(ctx *gin.Context) {
 	setRuntimeSecretNoStoreHeaders(ctx)
-	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin, authz.ProjectRoleDeveloper)
+	user, project, ok := h.authorizeProject(ctx, authz.ActionDeploymentUpdate)
 	if !ok || !h.ensureProjectCanMutate(ctx, project) {
 		return
 	}

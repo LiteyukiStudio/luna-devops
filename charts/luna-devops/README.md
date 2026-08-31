@@ -82,10 +82,13 @@ helm upgrade --install luna-devops ./charts/luna-devops \
   --create-namespace \
   --set api.initialAdmin.existingSecret=luna-devops-initial-admin \
   --set app.publicBaseUrl=https://devops.example.com \
+  --set-string app.trustedProxyCidrs=10.42.0.0/16 \
   --set ingress.enabled=true \
   --set ingress.className=nginx \
   --set ingress.hosts[0].host=devops.example.com
 ```
+
+Treat `10.42.0.0/16` as a placeholder for a dedicated Ingress or reverse-proxy source subnet, and include any proxy egress ranges in the trusted forwarding chain. Do not trust an entire Pod CIDR unless network isolation prevents every other Pod from reaching API directly. The chart requires this explicit boundary whenever its Ingress is enabled and rejects `0.0.0.0/0` and `::/0`.
 
 ## Use an external database or Redis
 

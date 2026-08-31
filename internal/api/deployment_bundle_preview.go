@@ -7,7 +7,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/buildtemplate"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/resourceidentifier"
@@ -63,9 +62,6 @@ func (h *Handlers) buildDeploymentTargetImportPlan(ctx *gin.Context, user model.
 	if strings.TrimSpace(request.Overrides.Stage) != "" {
 		input.Stage = strings.TrimSpace(request.Overrides.Stage)
 	}
-	if request.Overrides.Namespace != nil {
-		input.Namespace = strings.TrimSpace(*request.Overrides.Namespace)
-	}
 	input.Enabled = true
 	input.EnvironmentID = ""
 	input.BuildEnvironmentID = ""
@@ -74,15 +70,12 @@ func (h *Handlers) buildDeploymentTargetImportPlan(ctx *gin.Context, user model.
 		Digest: digest,
 		Status: deploymentBundleStatusReady,
 		Summary: deploymentTargetBundlePreviewSummary{
-			Name: strings.TrimSpace(input.Name), Stage: normalizeStage(input.Stage), Namespace: strings.TrimSpace(input.Namespace),
+			Name: strings.TrimSpace(input.Name), Stage: normalizeStage(input.Stage),
 			SourceType: normalizeDeploymentSourceType(input.SourceType),
 		},
 		References:         make([]deploymentBundleReferenceResolution, 0, len(request.Bundle.References)),
 		SecretRequirements: append([]deploymentBundleSecretRequirement(nil), request.Bundle.SecretRequirements...),
 		Warnings:           []string{},
-	}
-	if strings.TrimSpace(input.Namespace) != "" {
-		preview.Warnings = append(preview.Warnings, "deployment_bundle.namespace_review_required")
 	}
 
 	stage, validStage := normalizePublicStage(input.Stage)
@@ -129,7 +122,7 @@ func (h *Handlers) buildDeploymentTargetImportPlan(ctx *gin.Context, user model.
 		}
 		preview.Warnings = append(preview.Warnings, deploymentBundleErrorCode(err))
 	}
-	if err := h.validateDeploymentBundleVolumeMappings(ctx.Request.Context(), project.ID, input, &preview); err != nil {
+	if err := h.validateDeploymentBundleVolumeMappings(ctx.Request.Context(), project, input, &preview); err != nil {
 		return deploymentTargetBundleImportPlan{}, err
 	}
 	preview.Warnings = uniqueStrings(preview.Warnings)
@@ -168,6 +161,14 @@ func validateDeploymentTargetBundle(bundle deploymentTargetBundle) error {
 		input.BuildSecrets != nil || len(input.BuildHookBindings) > 0 || len(input.RuntimeConfigRefs) > 0 ||
 		strings.TrimSpace(input.SecretFiles) != "" || input.Enabled {
 		return &deploymentBundleError{Code: "deployment_bundle.invalid_json", Message: "deployment bundle contains a non-portable identifier or secret field"}
+	}
+	if strings.TrimSpace(input.Namespace) != "" || normalizeTriStateBool(input.AllowPrivilegeEscalation) == "true" ||
+		strings.TrimSpace(normalizeStringArrayText(input.CapabilityAdd)) != "" ||
+		strings.TrimSpace(input.ServiceAccountName) != "" ||
+		normalizeTriStateBool(input.AutomountServiceAccountToken) == "true" ||
+		(strings.TrimSpace(input.ServiceType) != "" && normalizeServiceType(input.ServiceType) != "ClusterIP") ||
+		strings.TrimSpace(input.ServiceExternalTrafficPolicy) != "" {
+		return &deploymentBundleError{Code: "deployment_bundle.invalid_json", Message: "deployment bundle contains an unsupported namespace or workload security override"}
 	}
 	for _, volume := range input.DataVolumes {
 		if volume.SourceType == "projectVolume" && strings.TrimSpace(volume.ProjectVolumeID) != "" {
@@ -253,31 +254,31 @@ func validateResolvedDeploymentBundle(input deploymentTargetInput, references []
 	return nil
 }
 
-func (h *Handlers) validateDeploymentBundleVolumeMappings(ctx context.Context, projectID string, input deploymentTargetInput, preview *deploymentTargetBundlePreview) error {
+func (h *Handlers) validateDeploymentBundleVolumeMappings(ctx context.Context, project model.Project, input deploymentTargetInput, preview *deploymentTargetBundlePreview) error {
 	for _, dataVolume := range input.DataVolumes {
 		if dataVolume.SourceType != "projectVolume" || strings.TrimSpace(dataVolume.ProjectVolumeID) == "" {
 			continue
 		}
 		var projectVolume model.ProjectVolume
-		if err := h.dbWithContext(ctx).First(&projectVolume, "id = ? and project_id = ?", dataVolume.ProjectVolumeID, projectID).Error; err != nil {
+		if err := h.dbWithContext(ctx).First(&projectVolume, "id = ? and project_id = ?", dataVolume.ProjectVolumeID, project.ID).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				markDeploymentBundleVolumeResolution(preview, dataVolume.LogicalName, deploymentBundleReferenceForbidden, "deployment_bundle.reference_forbidden")
 				continue
 			}
 			return err
 		}
-		if !deploymentBundleVolumeDestinationCompatible(input, projectVolume) {
+		if !deploymentBundleVolumeDestinationCompatible(runtimeProjectNamespace(project), input, projectVolume) {
 			markDeploymentBundleVolumeResolution(preview, dataVolume.LogicalName, deploymentBundleReferenceIncompatible, "deployment_bundle.reference_incompatible")
 		}
 	}
 	return nil
 }
 
-func deploymentBundleVolumeDestinationCompatible(input deploymentTargetInput, projectVolume model.ProjectVolume) bool {
+func deploymentBundleVolumeDestinationCompatible(projectNamespace string, input deploymentTargetInput, projectVolume model.ProjectVolume) bool {
 	if strings.TrimSpace(input.ClusterID) == "" || strings.TrimSpace(projectVolume.ClusterID) != strings.TrimSpace(input.ClusterID) {
 		return false
 	}
-	return strings.TrimSpace(input.Namespace) == "" || strings.TrimSpace(projectVolume.Namespace) == strings.TrimSpace(input.Namespace)
+	return strings.TrimSpace(projectNamespace) != "" && strings.TrimSpace(projectVolume.Namespace) == strings.TrimSpace(projectNamespace)
 }
 
 func markDeploymentBundleVolumeResolution(preview *deploymentTargetBundlePreview, logicalName, status, code string) {
@@ -422,15 +423,4 @@ func uniqueStrings(values []string) []string {
 	}
 	sort.Strings(result)
 	return result
-}
-
-func deploymentBundleProjectRoleAllowsSecrets(ctx context.Context, db *gorm.DB, user model.User, projectID string) bool {
-	if authz.IsPlatformAdmin(user.Role) {
-		return true
-	}
-	var member model.ProjectMember
-	if err := db.WithContext(ctx).First(&member, "project_id = ? and user_id = ?", projectID, user.ID).Error; err != nil {
-		return false
-	}
-	return projectRoleAllowed(member.Role, []string{authz.ProjectRoleOwner, authz.ProjectRoleAdmin})
 }

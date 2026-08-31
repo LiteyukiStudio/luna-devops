@@ -18,6 +18,7 @@ import { isPlatformAdmin } from '@/lib/roles'
 import { useRuntimeClusterPressure } from '@/lib/runtime-cluster-pressure'
 import { useResultVisibility } from '@/lib/use-result-visibility'
 import { canManageCluster } from './management/cluster-helpers'
+import { ClusterKubeGatewayDialog } from './management/cluster-kube-gateway-dialog'
 import { RuntimeClusterTable } from './management/runtime-cluster-table'
 import { ClusterResourcesPanel } from './resources/cluster-resources-panel'
 import { useClusterResources } from './resources/use-cluster-resources'
@@ -39,9 +40,12 @@ export function ClustersPage() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [dialogRevision, setDialogRevision] = useState(0)
   const [editingCluster, setEditingCluster] = useState<RuntimeCluster | null>(null)
+  const [gatewayCluster, setGatewayCluster] = useState<RuntimeCluster | null>(null)
   const [clusterToDelete, setClusterToDelete] = useState<RuntimeCluster | null>(null)
   const [clusterPage, setClusterPage] = useState(1)
   const [clusterPageSize, setClusterPageSize] = useState(10)
+  const meta = useQuery({ queryKey: ['api-meta'], queryFn: api.getAPIMeta, staleTime: 5 * 60 * 1000 })
+  const kubectlAccessEnabled = meta.data?.features?.kubectlGateway ?? true
   const canViewAll = isPlatformAdmin(user?.role)
   const [effectiveVisibility, setVisibility] = useResultVisibility(canViewAll)
   const projects = useQuery({ queryKey: ['projects', 'options', effectiveVisibility], queryFn: () => api.listProjects(effectiveVisibility) })
@@ -56,7 +60,9 @@ export function ClustersPage() {
     enabled: activeTab === 'clusters',
   })
   const manageableClusters = useMemo(
-    () => (clusterOptions.data ?? []).filter(cluster => canManageCluster(cluster, user?.id, user?.role)),
+    () => (clusterOptions.data ?? [])
+      .filter(cluster => (cluster.deleteStatus ?? 'active') === 'active')
+      .filter(cluster => canManageCluster(cluster, user?.id, user?.role)),
     [clusterOptions.data, user?.id, user?.role],
   )
   const resources = useClusterResources({ activeTab, manageableClusters, user, visibility: effectiveVisibility })
@@ -191,8 +197,10 @@ export function ClustersPage() {
             }}
             projects={projects.data ?? []}
             user={user}
+            kubectlGatewayAvailable={kubectlAccessEnabled && isPlatformAdmin(user?.role)}
             onDelete={setClusterToDelete}
             onEdit={openClusterDialog}
+            onConfigureKubeGateway={setGatewayCluster}
             onTest={clusterId => testCluster.mutate(clusterId)}
           />
         </TabsContent>
@@ -232,6 +240,7 @@ export function ClustersPage() {
           />
         </LazyDialogBoundary>
       )}
+      <ClusterKubeGatewayDialog cluster={gatewayCluster} open={Boolean(gatewayCluster)} onOpenChange={open => !open && setGatewayCluster(null)} />
       <ConfirmDialog
         cancelText={t('common.cancel')}
         confirmText={t('common.delete')}

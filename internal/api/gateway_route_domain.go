@@ -9,13 +9,14 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/gin-gonic/gin"
 )
 
 func (h *Handlers) CheckGatewayDomain(ctx *gin.Context) {
-	if _, ok := h.findProjectForCurrentUser(ctx); !ok {
+	if _, _, ok := h.authorizeProject(ctx, authz.ActionGatewayRead); !ok {
 		return
 	}
 	cluster := h.gatewayClusterForDomainCheck(ctx)

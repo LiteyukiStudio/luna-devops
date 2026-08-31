@@ -7,15 +7,17 @@ import (
 	"strings"
 	"time"
 
+	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/observation"
 	kubeprovider "github.com/LiteyukiStudio/devops/internal/provider/kubernetes"
+	"github.com/LiteyukiStudio/devops/internal/runtimecluster"
 	"github.com/gin-gonic/gin"
 	"k8s.io/apimachinery/pkg/api/resource"
 )
 
 func (h *Handlers) StreamDeploymentTargetMetrics(ctx *gin.Context) {
-	project, ok := h.findProjectForCurrentUser(ctx)
+	user, project, ok := h.authorizeProject(ctx, authz.ActionDeploymentRead)
 	if !ok {
 		return
 	}
@@ -26,6 +28,30 @@ func (h *Handlers) StreamDeploymentTargetMetrics(ctx *gin.Context) {
 	var target model.DeploymentTarget
 	if err := h.dbFor(ctx).First(&target, "id = ? and project_id = ? and application_id = ?", ctx.Param("targetId"), project.ID, app.ID).Error; err != nil {
 		writeError(ctx, http.StatusNotFound, "deployment target not found")
+		return
+	}
+	binding, ok := h.requireContinuousAuthorizationBinding(ctx, user)
+	if !ok {
+		return
+	}
+	streamCtx, cancelStream := context.WithCancel(ctx.Request.Context())
+	defer cancelStream()
+	restoreRequestContext := replaceRequestContext(ctx, streamCtx)
+	defer restoreRequestContext()
+	reference := deploymentMetricsAuthorizationReference{
+		ProjectID: project.ID, ApplicationID: app.ID, TargetID: target.ID,
+		ClusterID: target.ClusterID, Namespace: project.KubernetesNamespace, KubernetesName: target.KubernetesName,
+	}
+	authorizationRevoked, authorizationActive := h.monitorContinuousAuthorization(
+		streamCtx,
+		binding,
+		func(checkCtx context.Context, currentUser model.User) bool {
+			return h.deploymentMetricsAuthorizationAllowed(checkCtx, currentUser, reference)
+		},
+		cancelStream,
+	)
+	if !authorizationActive {
+		writeContinuousAuthorizationRevoked(ctx)
 		return
 	}
 	client, unavailableReason := h.deploymentTargetMetricsClient(target, ctx.Request.Context())
@@ -43,18 +69,62 @@ func (h *Handlers) StreamDeploymentTargetMetrics(ctx *gin.Context) {
 	defer ticker.Stop()
 	sequence := 0
 	for {
+		select {
+		case <-authorizationRevoked:
+			return
+		case <-streamCtx.Done():
+			return
+		default:
+		}
 		sequence++
 		h.writeDeploymentTargetMetricsEvent(ctx, client, unavailableReason, project, target, sequence)
 		flushSSE(writer)
 		select {
-		case <-ctx.Request.Context().Done():
+		case <-streamCtx.Done():
 			return
 		case <-ticker.C:
 		}
 	}
 }
 
+type deploymentMetricsAuthorizationReference struct {
+	ProjectID      string
+	ApplicationID  string
+	TargetID       string
+	ClusterID      string
+	Namespace      string
+	KubernetesName string
+}
+
+func (h *Handlers) deploymentMetricsAuthorizationAllowed(ctx context.Context, user model.User, reference deploymentMetricsAuthorizationReference) bool {
+	if !h.projectContinuousAuthorizationAllowed(ctx, user, reference.ProjectID, authz.ActionDeploymentRead) {
+		return false
+	}
+	db := h.dbWithContext(ctx)
+	if db == nil {
+		return false
+	}
+	var application model.Application
+	if err := db.Select("id").First(&application, "id = ? and project_id = ?", reference.ApplicationID, reference.ProjectID).Error; err != nil {
+		return false
+	}
+	var project model.Project
+	if err := db.Select("id", "kubernetes_namespace").First(&project, "id = ?", reference.ProjectID).Error; err != nil || strings.TrimSpace(project.KubernetesNamespace) != strings.TrimSpace(reference.Namespace) {
+		return false
+	}
+	var target model.DeploymentTarget
+	if err := db.First(&target, "id = ? and project_id = ? and application_id = ?", reference.TargetID, reference.ProjectID, reference.ApplicationID).Error; err != nil {
+		return false
+	}
+	return resourceCanMutateDuringDelete(target.DeleteStatus) &&
+		target.ClusterID == reference.ClusterID &&
+		target.KubernetesName == reference.KubernetesName
+}
+
 func (h *Handlers) writeDeploymentTargetMetricsEvent(ctx *gin.Context, client *kubeprovider.Client, unavailableReason string, project model.Project, target model.DeploymentTarget, sequence int) {
+	if ctx.Request.Context().Err() != nil {
+		return
+	}
 	if client == nil {
 		writeSSE(ctx.Writer, "metrics", strconv.Itoa(sequence), deploymentTargetMetricsResponse{
 			Available: false,
@@ -72,6 +142,9 @@ func (h *Handlers) writeDeploymentTargetMetricsEvent(ctx *gin.Context, client *k
 		WorkloadName:       target.KubernetesName,
 		WorkloadType:       normalizeWorkloadType(target.WorkloadType),
 	})
+	if ctx.Request.Context().Err() != nil {
+		return
+	}
 	if err != nil {
 		writeSSE(ctx.Writer, "metrics", "", deploymentTargetMetricsResponse{
 			Available: false,
@@ -88,10 +161,11 @@ func (h *Handlers) writeDeploymentTargetMetricsEvent(ctx *gin.Context, client *k
 func (h *Handlers) deploymentTargetMetricsClient(target model.DeploymentTarget, ctx context.Context) (*kubeprovider.Client, string) {
 	var cluster model.RuntimeCluster
 	var err error
+	query := runtimecluster.ActiveScope(h.dbWithContext(ctx))
 	if clusterID := strings.TrimSpace(target.ClusterID); clusterID != "" {
-		err = h.dbWithContext(ctx).First(&cluster, "id = ? and type in ?", clusterID, []string{"kubernetes", "k3s"}).Error
+		err = query.First(&cluster, "id = ? and type in ?", clusterID, []string{"kubernetes", "k3s"}).Error
 	} else {
-		err = h.dbWithContext(ctx).Where("scope = ? and type in ?", "global", []string{"kubernetes", "k3s"}).Order("is_default desc, created_at asc").First(&cluster).Error
+		err = query.Where("scope = ? and type in ?", "global", []string{"kubernetes", "k3s"}).Order("is_default desc, created_at asc").First(&cluster).Error
 	}
 	if err != nil {
 		return nil, "cluster_unavailable"

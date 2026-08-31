@@ -42,7 +42,7 @@ Agent 进程内，因此生产部署固定为单副本；进程重启会把未�
 | `OTEL_RESOURCE_ATTRIBUTES` | 空 | 设置 OpenTelemetry 资源属性；填写逗号分隔的 `key=value`。 |
 | `OTEL_EXPORTER_OTLP_HEADERS` | 空 | 鉴权 Collector 请求；填写逗号分隔的 `key=value` Header。 |
 | `OTEL_SERVICE_VERSION` | 空 | 标记 Agent 的遥测版本；填写版本字符串。 |
-| `AI_OBSERVABILITY_CAPTURE_CONTENT` | `false` | 控制是否在受控 Trace 中记录脱敏且限长的模型与工具内容；可填 `true` 或 `false`，日志始终只保留元数据。 |
+| `AI_OBSERVABILITY_CAPTURE_CONTENT` | `false` | 控制是否在受控 Trace 中按原文记录模型与工具内容；可填 `true` 或 `false`，工具目录声明的敏感路径仍会排除，单字段 UTF-8 JSON 超过 128 KiB 时整项省略，日志始终只保留元数据。 |
 | `AI_OBSERVABILITY_CAPTURE_DATABASE_SPANS` | `false` | 控制是否为每条 PostgreSQL 查询生成 Span；可填 `true` 或 `false`。 |
 
 ### 上下文管理

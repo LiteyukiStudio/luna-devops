@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	kubeprovider "github.com/LiteyukiStudio/devops/internal/provider/kubernetes"
 	"github.com/gin-gonic/gin"
@@ -39,7 +40,7 @@ type applicationTopologyResponse struct {
 
 func (h *Handlers) GetApplicationTopology(ctx *gin.Context) {
 	markLiveObservationResponse(ctx)
-	user, project, ok := h.projectAndCurrentUser(ctx)
+	user, project, ok := h.authorizeProject(ctx, authz.ActionApplicationRead)
 	if !ok {
 		return
 	}

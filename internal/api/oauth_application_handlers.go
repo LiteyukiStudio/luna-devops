@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -10,16 +11,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
-
-type oauthApplicationInput struct {
-	Name                    string   `json:"name" binding:"required"`
-	Description             string   `json:"description"`
-	HomepageURL             string   `json:"homepageUrl"`
-	LogoURL                 string   `json:"logoUrl"`
-	RedirectURIs            []string `json:"redirectUris" binding:"required"`
-	AllowedScopes           string   `json:"allowedScopes" binding:"required"`
-	AccessTokenLifetimeDays int      `json:"accessTokenLifetimeDays"`
-}
 
 func (h *Handlers) ListOAuthApplications(ctx *gin.Context) {
 	user, ok := h.oauthCookieUser(ctx)
@@ -70,17 +61,15 @@ func (h *Handlers) CreateOAuthApplication(ctx *gin.Context) {
 		return
 	}
 	h.auditWithContext(user.ID, "oauth_application.create", application.ID, true, application.AllowedScopes, ctx.Request.Context())
-	ctx.JSON(http.StatusCreated, gin.H{"application": oauthApplicationToResponse(application), "clientSecret": plainSecret})
+	ctx.JSON(http.StatusCreated, oauthApplicationSecretResponse{
+		Application:  oauthApplicationToResponse(application),
+		ClientSecret: plainSecret,
+	})
 }
 
 func (h *Handlers) UpdateOAuthApplication(ctx *gin.Context) {
 	user, ok := h.oauthCookieUser(ctx)
 	if !ok {
-		return
-	}
-	var existing model.OAuthApplication
-	if err := h.dbFor(ctx).First(&existing, "id = ? and owner_user_id = ? and revoked_at is null", ctx.Param("applicationId"), user.ID).Error; err != nil {
-		writeError(ctx, http.StatusNotFound, "OAuth application not found")
 		return
 	}
 	var input oauthApplicationInput
@@ -91,23 +80,12 @@ func (h *Handlers) UpdateOAuthApplication(ctx *gin.Context) {
 	if !valid {
 		return
 	}
-	scopesChanged := next.AllowedScopes != existing.AllowedScopes
-	existing.Name = next.Name
-	existing.Description = next.Description
-	existing.HomepageURL = next.HomepageURL
-	existing.LogoURL = next.LogoURL
-	existing.RedirectURIs = next.RedirectURIs
-	existing.AllowedScopes = next.AllowedScopes
-	existing.AccessTokenLifetimeDays = next.AccessTokenLifetimeDays
-	if err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Save(&existing).Error; err != nil {
-			return err
-		}
-		if scopesChanged {
-			return revokeOAuthApplication(tx, existing.ID, time.Now())
-		}
-		return nil
-	}); err != nil {
+	existing, err := updateOwnedOAuthApplication(h.dbFor(ctx), ctx.Param("applicationId"), user.ID, next)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		writeError(ctx, http.StatusNotFound, "OAuth application not found")
+		return
+	}
+	if err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -120,27 +98,21 @@ func (h *Handlers) RotateOAuthApplicationSecret(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	var application model.OAuthApplication
-	if err := h.dbFor(ctx).First(&application, "id = ? and owner_user_id = ? and revoked_at is null", ctx.Param("applicationId"), user.ID).Error; err != nil {
+	plainSecret := "lyo_secret_" + randomHex(32)
+	application, err := rotateOwnedOAuthApplicationSecret(h.dbFor(ctx), ctx.Param("applicationId"), user.ID, hashToken(plainSecret))
+	if errors.Is(err, gorm.ErrRecordNotFound) {
 		writeError(ctx, http.StatusNotFound, "OAuth application not found")
 		return
 	}
-	plainSecret := "lyo_secret_" + randomHex(32)
-	application.ClientSecretHash = hashToken(plainSecret)
-	now := time.Now()
-	if err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Save(&application).Error; err != nil {
-			return err
-		}
-		return tx.Model(&model.OAuthRefreshToken{}).
-			Where("application_id = ? and revoked_at is null", application.ID).
-			Update("revoked_at", now).Error
-	}); err != nil {
+	if err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
 	h.auditWithContext(user.ID, "oauth_application.rotate_secret", application.ID, true, "", ctx.Request.Context())
-	ctx.JSON(http.StatusOK, gin.H{"application": oauthApplicationToResponse(application), "clientSecret": plainSecret})
+	ctx.JSON(http.StatusOK, oauthApplicationSecretResponse{
+		Application:  oauthApplicationToResponse(application),
+		ClientSecret: plainSecret,
+	})
 }
 
 func (h *Handlers) DeleteOAuthApplication(ctx *gin.Context) {
@@ -148,18 +120,12 @@ func (h *Handlers) DeleteOAuthApplication(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	var application model.OAuthApplication
-	if err := h.dbFor(ctx).First(&application, "id = ? and owner_user_id = ? and revoked_at is null", ctx.Param("applicationId"), user.ID).Error; err != nil {
+	application, err := deleteOwnedOAuthApplication(h.dbFor(ctx), ctx.Param("applicationId"), user.ID)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
 		writeError(ctx, http.StatusNotFound, "OAuth application not found")
 		return
 	}
-	now := time.Now()
-	if err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := revokeOAuthApplication(tx, application.ID, now); err != nil {
-			return err
-		}
-		return tx.Model(&application).Update("revoked_at", now).Error
-	}); err != nil {
+	if err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}

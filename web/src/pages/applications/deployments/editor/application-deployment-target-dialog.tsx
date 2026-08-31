@@ -342,13 +342,8 @@ export function ApplicationDeploymentTargetDialog({
                   <Field hint={t('deploymentsPage.runtimeEnvVarsHint')} label={t('deploymentsPage.runtimeEnvVars')}>
                     <KeyValueTextEditor
                       initialValue={publicRuntimeEnvironmentRecord(form.getValues('environmentVariables'))}
+                      placeholder={t('deploymentsPage.runtimeEnvVarsPlaceholder')}
                       onChange={value => form.setValue('environmentVariables', publicRuntimeEnvironmentInputs(value), { shouldDirty: true, shouldValidate: true })}
-                    />
-                  </Field>
-                  <Field hint={t('deploymentsPage.runtimeConfigRefsHint')} label={t('deploymentsPage.runtimeConfigRefs')}>
-                    <KeyValueTextEditor
-                      initialValue={form.getValues('configRefs')}
-                      onChange={value => form.setValue('configRefs', value, { shouldDirty: true, shouldValidate: true })}
                     />
                   </Field>
                   <Field hint={t('deploymentsPage.runtimeConfigFilesHint')} label={t('deploymentsPage.runtimeConfigFiles')}>

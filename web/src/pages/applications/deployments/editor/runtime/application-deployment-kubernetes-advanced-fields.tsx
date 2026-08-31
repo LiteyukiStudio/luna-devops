@@ -124,18 +124,8 @@ export function KubernetesAdvancedFields({ form }: KubernetesAdvancedFieldsProps
               <option value="true">{t('common.enabled')}</option>
             </Select>
           </Field>
-          <Field hint={t('deploymentsPage.allowPrivilegeEscalationHint')} label={t('deploymentsPage.allowPrivilegeEscalation')}>
-            <Select {...form.register('allowPrivilegeEscalation')}>
-              <option value="">{t('deploymentsPage.kubernetesDefault')}</option>
-              <option value="false">{t('common.disabled')}</option>
-              <option value="true">{t('common.enabled')}</option>
-            </Select>
-          </Field>
         </div>
-        <div className="grid gap-3 md:grid-cols-2">
-          <Field hint={t('deploymentsPage.capabilityAddHint')} label={t('deploymentsPage.capabilityAdd')}>
-            <Textarea className="min-h-24" {...form.register('capabilityAdd')} placeholder={t('deploymentsPage.capabilityPlaceholder')} />
-          </Field>
+        <div className="grid gap-3">
           <Field hint={t('deploymentsPage.capabilityDropHint')} label={t('deploymentsPage.capabilityDrop')}>
             <Textarea className="min-h-24" {...form.register('capabilityDrop')} placeholder={t('deploymentsPage.capabilityDropPlaceholder')} />
           </Field>
@@ -162,22 +152,7 @@ export function KubernetesAdvancedFields({ form }: KubernetesAdvancedFieldsProps
 
       <div className="grid gap-3 rounded-md border border-dashed border-border p-3">
         <p className="text-sm font-medium text-foreground">{t('deploymentsPage.kubernetesAdvancedService')}</p>
-        <div className="grid gap-3 md:grid-cols-3">
-          <Field hint={t('deploymentsPage.serviceTypeHint')} label={t('deploymentsPage.serviceType')}>
-            <Select {...form.register('serviceType')}>
-              <option value="">{t('deploymentsPage.kubernetesDefaultClusterIP')}</option>
-              <option value="ClusterIP">{t('deploymentsPage.kubernetesValues.ClusterIP')}</option>
-              <option value="NodePort">{t('deploymentsPage.kubernetesValues.NodePort')}</option>
-              <option value="LoadBalancer">{t('deploymentsPage.kubernetesValues.LoadBalancer')}</option>
-            </Select>
-          </Field>
-          <Field hint={t('deploymentsPage.serviceExternalTrafficPolicyHint')} label={t('deploymentsPage.serviceExternalTrafficPolicy')}>
-            <Select {...form.register('serviceExternalTrafficPolicy')}>
-              <option value="">{t('deploymentsPage.kubernetesDefault')}</option>
-              <option value="Cluster">{t('deploymentsPage.kubernetesValues.Cluster')}</option>
-              <option value="Local">{t('deploymentsPage.kubernetesValues.Local')}</option>
-            </Select>
-          </Field>
+        <div className="grid gap-3">
           <Field hint={t('deploymentsPage.serviceSessionAffinityHint')} label={t('deploymentsPage.serviceSessionAffinity')}>
             <Select {...form.register('serviceSessionAffinity')}>
               <option value="">{t('deploymentsPage.kubernetesDefaultNone')}</option>

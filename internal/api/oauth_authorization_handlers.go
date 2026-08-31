@@ -11,33 +11,7 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
-
-type oauthAuthorizationRequest struct {
-	Application             oauthApplicationResponse `json:"application"`
-	Scope                   string                   `json:"scope"`
-	AccessTokenLifetimeDays int                      `json:"accessTokenLifetimeDays"`
-	PreviouslyAuthorized    bool                     `json:"previouslyAuthorized"`
-}
-
-type oauthAuthorizationDecisionInput struct {
-	Approved            bool   `json:"approved"`
-	ClientID            string `json:"clientId" binding:"required"`
-	RedirectURI         string `json:"redirectUri" binding:"required"`
-	Scope               string `json:"scope" binding:"required"`
-	State               string `json:"state"`
-	CodeChallenge       string `json:"codeChallenge" binding:"required"`
-	CodeChallengeMethod string `json:"codeChallengeMethod" binding:"required"`
-}
-
-type oauthTokenResponse struct {
-	AccessToken  string `json:"access_token"`
-	TokenType    string `json:"token_type"`
-	ExpiresIn    *int64 `json:"expires_in,omitempty"`
-	RefreshToken string `json:"refresh_token,omitempty"`
-	Scope        string `json:"scope"`
-}
 
 func (h *Handlers) GetOAuthAuthorizationRequest(ctx *gin.Context) {
 	user, ok := h.oauthCookieUser(ctx)
@@ -57,13 +31,13 @@ func (h *Handlers) GetOAuthAuthorizationRequest(ctx *gin.Context) {
 		return
 	}
 	var grant model.OAuthGrant
-	previouslyAuthorized := h.dbFor(ctx).First(
+	grantErr := h.dbFor(ctx).First(
 		&grant,
-		"application_id = ? and user_id = ? and scope = ? and revoked_at is null",
+		"application_id = ? and user_id = ? and revoked_at is null",
 		application.ID,
 		user.ID,
-		scope,
-	).Error == nil
+	).Error
+	previouslyAuthorized := grantErr == nil && oauthScopeSubset(scope, grant.Scope)
 	ctx.JSON(http.StatusOK, oauthAuthorizationRequest{
 		Application:             oauthApplicationToResponse(application),
 		Scope:                   scope,
@@ -99,43 +73,26 @@ func (h *Handlers) DecideOAuthAuthorization(ctx *gin.Context) {
 			values.Set("state", input.State)
 		}
 		h.auditWithContext(user.ID, "oauth_grant.deny", application.ID, true, scope, ctx.Request.Context())
-		ctx.JSON(http.StatusOK, gin.H{"redirectUrl": appendOAuthRedirectValues(input.RedirectURI, values)})
+		ctx.JSON(http.StatusOK, oauthAuthorizationDecisionResponse{
+			RedirectURL: appendOAuthRedirectValues(input.RedirectURI, values),
+		})
 		return
 	}
 
 	plainCode := "lyo_code_" + randomHex(32)
-	var grant model.OAuthGrant
+	authorizationCode := model.OAuthAuthorizationCode{
+		ID: id.New("ocod"), ApplicationID: application.ID, UserID: user.ID,
+		CodeHash: hashToken(plainCode), RedirectURI: input.RedirectURI, Scope: scope,
+		CodeChallenge: input.CodeChallenge, CodeChallengeMethod: "S256", ExpiresAt: time.Now().Add(oauthAuthorizationCodeTTL),
+	}
 	err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
-		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(
-			&grant,
-			"application_id = ? and user_id = ? and revoked_at is null",
-			application.ID,
-			user.ID,
-		).Error
-		if err != nil && err != gorm.ErrRecordNotFound {
-			return err
-		}
-		if err == gorm.ErrRecordNotFound {
-			grant = model.OAuthGrant{ID: id.New("ogrt"), ApplicationID: application.ID, UserID: user.ID, Scope: scope}
-			if err := tx.Create(&grant).Error; err != nil {
-				return err
-			}
-		} else if grant.Scope != scope {
-			if err := revokeOAuthGrant(tx, grant.ID, time.Now()); err != nil {
-				return err
-			}
-			grant = model.OAuthGrant{ID: id.New("ogrt"), ApplicationID: application.ID, UserID: user.ID, Scope: scope}
-			if err := tx.Create(&grant).Error; err != nil {
-				return err
-			}
-		}
-		return tx.Create(&model.OAuthAuthorizationCode{
-			ID: id.New("ocod"), ApplicationID: application.ID, GrantID: grant.ID, UserID: user.ID,
-			CodeHash: hashToken(plainCode), RedirectURI: input.RedirectURI, Scope: scope,
-			CodeChallenge: input.CodeChallenge, CodeChallengeMethod: "S256", ExpiresAt: time.Now().Add(oauthAuthorizationCodeTTL),
-		}).Error
+		return recordOAuthAuthorizationConsent(tx, &authorizationCode)
 	})
 	if err != nil {
+		if errors.Is(err, errOAuthInvalidGrant) || errors.Is(err, errOAuthInvalidScope) {
+			writeErrorCode(ctx, http.StatusForbidden, "oauth.scope.forbidden", "OAuth application or user permissions changed before authorization completed")
+			return
+		}
 		writeErrorCode(ctx, http.StatusInternalServerError, "oauth.authorization.failed", "OAuth authorization could not be completed")
 		return
 	}
@@ -143,68 +100,87 @@ func (h *Handlers) DecideOAuthAuthorization(ctx *gin.Context) {
 	if input.State != "" {
 		values.Set("state", input.State)
 	}
-	h.auditWithContext(user.ID, "oauth_grant.authorize", grant.ID, true, scope, ctx.Request.Context())
-	ctx.JSON(http.StatusOK, gin.H{"redirectUrl": appendOAuthRedirectValues(input.RedirectURI, values)})
+	h.auditWithContext(user.ID, "oauth_grant.authorize", authorizationCode.ID, true, scope, ctx.Request.Context())
+	ctx.JSON(http.StatusOK, oauthAuthorizationDecisionResponse{
+		RedirectURL: appendOAuthRedirectValues(input.RedirectURI, values),
+	})
 }
 
 func (h *Handlers) ExchangeOAuthToken(ctx *gin.Context) {
-	grantType := strings.TrimSpace(ctx.PostForm("grant_type"))
+	var input oauthTokenInput
+	if !bindOAuthForm(ctx, &input) {
+		return
+	}
+	grantType := strings.TrimSpace(input.GrantType)
+	flow := oauthClientAttemptFlowForGrantType(grantType)
+	credential := ""
+	switch flow {
+	case oauthClientAttemptAuthorizationCode:
+		credential = input.Code
+	case oauthClientAttemptRefresh:
+		credential = input.RefreshToken
+	case oauthClientAttemptDeviceCode:
+		credential = input.DeviceCode
+	}
 	allowPublicClient := grantType == oauthDeviceCodeGrantType || grantType == "refresh_token"
-	application, ok := h.authenticateOAuthTokenClient(ctx, allowPublicClient)
+	authentication, ok := h.authenticateOAuthTokenClient(
+		ctx,
+		allowPublicClient,
+		flow,
+		input.ClientID,
+		input.ClientSecret,
+		credential,
+	)
 	if !ok {
 		return
 	}
 	switch grantType {
 	case "authorization_code":
-		h.exchangeOAuthAuthorizationCode(ctx, application)
+		h.exchangeOAuthAuthorizationCode(ctx, authentication, input)
 	case "refresh_token":
-		h.exchangeOAuthRefreshToken(ctx, application)
+		h.exchangeOAuthRefreshToken(ctx, authentication, input)
 	case oauthDeviceCodeGrantType:
-		h.exchangeOAuthDeviceCode(ctx, application)
+		h.exchangeOAuthDeviceCode(ctx, authentication, input.DeviceCode)
 	default:
 		oauthError(ctx, http.StatusBadRequest, "unsupported_grant_type", "Supported grant types are authorization_code, refresh_token, and device_code")
 	}
 }
 
 func (h *Handlers) RevokeOAuthToken(ctx *gin.Context) {
-	application, ok := h.authenticateOAuthTokenClient(ctx, true)
+	var input oauthTokenRevocationInput
+	if !bindOAuthForm(ctx, &input) {
+		return
+	}
+	plainToken := strings.TrimSpace(input.Token)
+	if plainToken == "" {
+		oauthError(ctx, http.StatusBadRequest, "invalid_request", "token is required")
+		return
+	}
+	authentication, ok := h.authenticateOAuthTokenClient(
+		ctx,
+		true,
+		oauthClientAttemptRevoke,
+		input.ClientID,
+		input.ClientSecret,
+		plainToken,
+	)
 	if !ok {
 		return
 	}
-	plainToken := strings.TrimSpace(ctx.PostForm("token"))
-	if plainToken != "" {
-		tokenHash := hashToken(plainToken)
-		_ = h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
-			grantID := ""
-			var accessToken model.AccessToken
-			if err := tx.First(
-				&accessToken,
-				"token_hash = ? and oauth_application_id = ?",
-				tokenHash,
-				application.ID,
-			).Error; err == nil {
-				grantID = accessToken.OAuthGrantID
-			} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-				return err
-			}
-			if grantID == "" {
-				var refreshToken model.OAuthRefreshToken
-				if err := tx.First(
-					&refreshToken,
-					"token_hash = ? and application_id = ?",
-					tokenHash,
-					application.ID,
-				).Error; err == nil {
-					grantID = refreshToken.GrantID
-				} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-					return err
-				}
-			}
-			if grantID == "" {
-				return nil
-			}
-			return revokeOAuthGrant(tx, grantID, time.Now())
-		})
+	err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
+		application, err := lockOAuthClientApplication(tx, authentication, true)
+		if err != nil {
+			return err
+		}
+		return revokeOAuthTokenFamily(tx, application.ID, hashToken(plainToken), time.Now())
+	})
+	if err != nil {
+		if errors.Is(err, errOAuthInvalidClient) || errors.Is(err, errOAuthInvalidGrant) {
+			oauthError(ctx, http.StatusUnauthorized, "invalid_client", "Client authentication failed")
+			return
+		}
+		oauthError(ctx, http.StatusInternalServerError, "server_error", "Token revocation failed")
+		return
 	}
 	ctx.Header("Cache-Control", "no-store")
 	ctx.Status(http.StatusOK)
@@ -216,16 +192,16 @@ func (h *Handlers) GetOAuthAuthorizationServerMetadata(ctx *gin.Context) {
 		writeErrorCode(ctx, http.StatusServiceUnavailable, "oauth.public_base_url.required", "PUBLIC_BASE_URL is required")
 		return
 	}
-	ctx.JSON(http.StatusOK, gin.H{
-		"issuer":                                baseURL,
-		"authorization_endpoint":                baseURL + "/oauth/authorize",
-		"device_authorization_endpoint":         baseURL + "/api/v1/oauth/device/authorization",
-		"token_endpoint":                        baseURL + "/api/v1/oauth/token",
-		"revocation_endpoint":                   baseURL + "/api/v1/oauth/revoke",
-		"response_types_supported":              []string{"code"},
-		"grant_types_supported":                 []string{"authorization_code", "refresh_token", oauthDeviceCodeGrantType},
-		"token_endpoint_auth_methods_supported": []string{"client_secret_basic", "client_secret_post", "none"},
-		"code_challenge_methods_supported":      []string{"S256"},
+	ctx.JSON(http.StatusOK, oauthAuthorizationServerMetadataResponse{
+		Issuer:                            baseURL,
+		AuthorizationEndpoint:             baseURL + "/oauth/authorize",
+		DeviceAuthorizationEndpoint:       baseURL + "/api/v1/oauth/device/authorization",
+		TokenEndpoint:                     baseURL + "/api/v1/oauth/token",
+		RevocationEndpoint:                baseURL + "/api/v1/oauth/revoke",
+		ResponseTypesSupported:            []string{"code"},
+		GrantTypesSupported:               []string{"authorization_code", "refresh_token", oauthDeviceCodeGrantType},
+		TokenEndpointAuthMethodsSupported: []string{"client_secret_basic", "client_secret_post", "none"},
+		CodeChallengeMethodsSupported:     []string{"S256"},
 	})
 }
 
@@ -244,7 +220,7 @@ func (h *Handlers) validateOAuthAuthorizationRequest(ctx *gin.Context, clientID,
 		return model.OAuthApplication{}, "", false
 	}
 	scope := normalizeOAuthScope(requestedScope)
-	if strings.TrimSpace(requestedScope) == "" || scope == "" || !oauthScopeSubset(scope, application.AllowedScopes) || !userCanAuthorizeOAuthScope(user, scope) {
+	if strings.TrimSpace(requestedScope) == "" || scope == "" || !oauthApplicationAllowsScope(application, scope) || !userCanAuthorizeOAuthScope(user, scope) {
 		writeErrorCode(ctx, http.StatusForbidden, "oauth.scope.forbidden", "Requested OAuth scope is not allowed")
 		return model.OAuthApplication{}, "", false
 	}
@@ -255,33 +231,21 @@ func (h *Handlers) validateOAuthAuthorizationRequest(ctx *gin.Context, clientID,
 	return application, scope, true
 }
 
-func (h *Handlers) exchangeOAuthAuthorizationCode(ctx *gin.Context, application model.OAuthApplication) {
-	plainCode := strings.TrimSpace(ctx.PostForm("code"))
-	redirectURI := strings.TrimSpace(ctx.PostForm("redirect_uri"))
-	verifier := ctx.PostForm("code_verifier")
-	var response oauthTokenResponse
-	err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
-		var code model.OAuthAuthorizationCode
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&code, "code_hash = ?", hashToken(plainCode)).Error; err != nil {
-			return err
-		}
-		if code.ApplicationID != application.ID || code.ConsumedAt != nil || !code.ExpiresAt.After(time.Now()) || code.RedirectURI != redirectURI || !verifyPKCE(verifier, code.CodeChallenge) {
-			return errOAuthInvalidGrant
-		}
-		var grant model.OAuthGrant
-		if err := tx.First(&grant, "id = ? and application_id = ? and user_id = ? and revoked_at is null", code.GrantID, application.ID, code.UserID).Error; err != nil {
-			return err
-		}
-		now := time.Now()
-		if err := tx.Model(&code).Update("consumed_at", now).Error; err != nil {
-			return err
-		}
-		issued, err := issueOAuthTokens(tx, application, grant, now)
-		if err == nil {
-			response = issued
-		}
-		return err
-	})
+func (h *Handlers) exchangeOAuthAuthorizationCode(ctx *gin.Context, authentication oauthClientAuthentication, input oauthTokenInput) {
+	plainCode := strings.TrimSpace(input.Code)
+	redirectURI := strings.TrimSpace(input.RedirectURI)
+	response, err := exchangeOAuthAuthorizationCodeValue(
+		h.dbFor(ctx),
+		authentication,
+		plainCode,
+		redirectURI,
+		input.CodeVerifier,
+		time.Now(),
+	)
+	if errors.Is(err, errOAuthInvalidClient) {
+		oauthError(ctx, http.StatusUnauthorized, "invalid_client", "Client authentication failed")
+		return
+	}
 	if err != nil {
 		oauthError(ctx, http.StatusBadRequest, "invalid_grant", "Authorization code is invalid, expired, consumed, or does not match the request")
 		return
@@ -289,75 +253,18 @@ func (h *Handlers) exchangeOAuthAuthorizationCode(ctx *gin.Context, application 
 	writeOAuthTokenResponse(ctx, response)
 }
 
-func (h *Handlers) exchangeOAuthRefreshToken(ctx *gin.Context, application model.OAuthApplication) {
-	plainRefreshToken := strings.TrimSpace(ctx.PostForm("refresh_token"))
-	var response oauthTokenResponse
-	reused := false
-	err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
-		var refreshToken model.OAuthRefreshToken
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&refreshToken, "token_hash = ?", hashToken(plainRefreshToken)).Error; err != nil {
-			return err
-		}
-		if refreshToken.ApplicationID != application.ID || refreshToken.RevokedAt != nil || !refreshToken.ExpiresAt.After(time.Now()) {
-			return errOAuthInvalidGrant
-		}
-		if refreshToken.ConsumedAt != nil {
-			if err := revokeOAuthGrant(tx, refreshToken.GrantID, time.Now()); err != nil {
-				return err
-			}
-			reused = true
-			return nil
-		}
-		var grant model.OAuthGrant
-		if err := tx.First(&grant, "id = ? and application_id = ? and user_id = ? and revoked_at is null", refreshToken.GrantID, application.ID, refreshToken.UserID).Error; err != nil {
-			return err
-		}
-		now := time.Now()
-		if err := tx.Model(&refreshToken).Update("consumed_at", now).Error; err != nil {
-			return err
-		}
-		issued, err := issueOAuthTokens(tx, application, grant, now)
-		if err == nil {
-			response = issued
-		}
-		return err
-	})
-	if err != nil || reused {
+func (h *Handlers) exchangeOAuthRefreshToken(ctx *gin.Context, authentication oauthClientAuthentication, input oauthTokenInput) {
+	plainRefreshToken := strings.TrimSpace(input.RefreshToken)
+	response, err := exchangeOAuthRefreshTokenValue(h.dbFor(ctx), authentication, plainRefreshToken, time.Now())
+	if errors.Is(err, errOAuthInvalidClient) {
+		oauthError(ctx, http.StatusUnauthorized, "invalid_client", "Client authentication failed")
+		return
+	}
+	if err != nil {
 		oauthError(ctx, http.StatusBadRequest, "invalid_grant", "Refresh token is invalid, expired, consumed, or revoked")
 		return
 	}
 	writeOAuthTokenResponse(ctx, response)
-}
-
-func issueOAuthTokens(tx *gorm.DB, application model.OAuthApplication, grant model.OAuthGrant, now time.Time) (oauthTokenResponse, error) {
-	plainAccessToken := "lyo_" + randomHex(32)
-	accessToken := model.AccessToken{
-		ID: id.New("tok"), UserID: grant.UserID, Name: application.Name, Scope: grant.Scope,
-		TokenHash: hashToken(plainAccessToken), Source: "oauth", OAuthApplicationID: application.ID, OAuthGrantID: grant.ID,
-	}
-	response := oauthTokenResponse{AccessToken: plainAccessToken, TokenType: "Bearer", Scope: oauthScopeText(grant.Scope)}
-	if application.AccessTokenLifetimeDays > 0 {
-		expiresAt := now.Add(time.Duration(application.AccessTokenLifetimeDays) * 24 * time.Hour)
-		accessToken.ExpiresAt = &expiresAt
-		expiresIn := int64(expiresAt.Sub(now).Seconds())
-		response.ExpiresIn = &expiresIn
-	}
-	if err := tx.Create(&accessToken).Error; err != nil {
-		return oauthTokenResponse{}, err
-	}
-	if application.AccessTokenLifetimeDays == 0 {
-		return response, nil
-	}
-	plainRefreshToken := "lyo_refresh_" + randomHex(32)
-	refreshToken := model.OAuthRefreshToken{
-		ID: id.New("ortk"), ApplicationID: application.ID, GrantID: grant.ID, UserID: grant.UserID,
-		TokenHash: hashToken(plainRefreshToken), Scope: grant.Scope, ExpiresAt: now.Add(oauthRefreshTokenTTL),
-	}
-	if err := tx.Create(&refreshToken).Error; err != nil {
-		return oauthTokenResponse{}, err
-	}
-	response.RefreshToken = plainRefreshToken
-	return response, nil
 }
 
 func writeOAuthTokenResponse(ctx *gin.Context, response oauthTokenResponse) {
@@ -370,4 +277,7 @@ type oauthSentinelError string
 
 func (e oauthSentinelError) Error() string { return string(e) }
 
-const errOAuthInvalidGrant oauthSentinelError = "invalid OAuth grant"
+const (
+	errOAuthInvalidGrant  oauthSentinelError = "invalid OAuth grant"
+	errOAuthInvalidClient oauthSentinelError = "invalid OAuth client"
+)

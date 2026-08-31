@@ -24,7 +24,7 @@ Deleting an application or deployment only unbinds the volume; it does not autom
 
 ## Import and export
 
-An import writes the archive directly into the target volume mounted by a temporary Transfer Pod. It does not pass through object storage, browser-side pre-hashing, or a complete local platform spool. The API and Transfer Pod independently calculate and compare the digest during that same stream. An interrupted connection cannot resume or retry against the same destination. Delete the failed import volume and start a fresh import so old partial data cannot mix with the new archive. Recovery is complete only when both the Transfer and volume reach succeeded and ready terminal states.
+An import writes the archive directly into the target volume mounted by a temporary Transfer Pod. It does not pass through object storage, browser-side pre-hashing, or a complete local platform spool. The API and Transfer Pod independently calculate and compare the digest during that same stream. The account, session or token, scopes, and project role are continuously revalidated; losing any authorization stops the write. An interrupted connection cannot resume or retry against the same destination. Delete the failed import volume and start a fresh import so old partial data cannot mix with the new archive. Recovery is complete only when both the Transfer and volume reach succeeded and ready terminal states.
 
 Export modes are:
 
@@ -32,7 +32,7 @@ Export modes are:
 - **Snapshot**: require a CSI Snapshot. It is crash-consistent, not application-consistent.
 - **Online read**: read an attached Filesystem volume while data may change; Owner/Admin only.
 
-Export content streams directly from the Transfer Pod. Luna DevOps does not retain a server-side archive for repeated downloads, and downloads cannot resume. Authorization uses a short-lived, single-use ticket bound to the current user, session, and Transfer. A backup is complete only after the download finishes and the Transfer is Succeeded; start a new export after an interruption.
+Export content streams directly from the Transfer Pod. Luna DevOps does not retain a server-side archive for repeated downloads, and downloads cannot resume. Authorization uses a short-lived, single-use ticket bound to the current user, session, and Transfer, and output stops if that authorization is revoked during the download. A backup is complete only after the download finishes and the Transfer is Succeeded; start a new export after an interruption.
 
 > Permanently deleting a managed volume deletes the underlying PVC and cannot be undone. Review mounts and transfers and complete any backup first.
 

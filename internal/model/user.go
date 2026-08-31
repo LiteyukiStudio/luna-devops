@@ -76,6 +76,7 @@ type AccessToken struct {
 	Source             string     `gorm:"index;not null;default:personal" json:"source"`
 	OAuthApplicationID string     `gorm:"column:oauth_application_id;index" json:"oauthApplicationId,omitempty"`
 	OAuthGrantID       string     `gorm:"column:oauth_grant_id;index" json:"oauthGrantId,omitempty"`
+	OAuthFamilyID      string     `gorm:"column:oauth_family_id;not null;default:''" json:"-"`
 	ExpiresAt          *time.Time `json:"expiresAt"`
 	RevokedAt          *time.Time `json:"revokedAt"`
 	CreatedAt          time.Time  `json:"createdAt"`

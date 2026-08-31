@@ -1,5 +1,29 @@
 # TODO
 
+## 2026-08-31 权限与 OAuth 契约收口
+
+- [x] 将项目 Action → 角色矩阵集中到 `internal/authz`，API、长连接、数据卷与 Agent 工具统一调用 `ProjectAuthorizer`，删除散落角色数组和旧兼容入口。
+- [x] 将 OpenAPI `x-luna-cli.requiredScopes` 作为 HTTP、CLI 与 Agent 唯一 Scope 契约，运行时在契约缺失时失败关闭。
+- [x] 将 OAuth 登录隔离为独立 Token family，并收口刷新、退出、重放、Grant/应用撤销、旧批准凭据和并发线性化语义。
+- [x] 为异步删除贯穿 Actor 与排队/投递/最终失败审计，并让日志、指标、进度与数据卷长流在身份、Scope/RBAC 或资源授权失效后停止。
+- [x] 同步双语文档，完成 Go、迁移、OpenAPI、Agent、Web、Docs、Helm 全量门禁及独立 P0/P1 复审。
+
+## 2026-08-31 kubectl 兼容网关
+
+- [x] 完成 kubectl 完整兼容范围、Kubernetes API 代理、鉴权授权、安全边界与一次性交付落地方案。
+- [x] 同步中英文 kubectl 操作指南、Luna CLI 安全写入/合并入口、管理员反向代理配置与兼容声明，并通过文档站构建及桌面/窄屏页面验收。
+- [x] 按内部方案一次性交付 kubeconfig、Discovery/OpenAPI、资源 CRUD/Apply、Watch、Logs、Exec、Attach、Port-forward、cp、授权自检、实时撤权、审计与可观测完整调用链；任何功能子集不单独视为完成。
+- [ ] 使用可销毁 PostgreSQL、Redis、Kubernetes 和临时 OTel 栈完成全命令矩阵、跨角色/项目隔离、Credential 撤销、成功/失败/冲突及流式连接端到端验收。
+
+## 2026-08-31 部署普通配置入口收口
+
+- [x] 修复运行配置资源字段遗留跨列导致的隐式 Grid，让公共配置、普通配置和配置文件区域铺满部署配置弹窗。
+- [x] 删除与普通配置写入同一 ConfigMap 的重复 `configRefs` 入口，并将历史键值按原覆盖优先级迁入普通配置。
+- [x] 同步 Web、OpenAPI、API、Worker、数据库迁移、五语言文案和中英文配置文档。
+- [x] 完成 Go、Web、Agent、Docs 全量门禁和真实 PostgreSQL 迁移往返验证。
+- [x] 使用实际表单组件完成部署配置弹窗桌面端、移动端浏览器布局验收；宽屏单列铺满，390px 视口无横向溢出。
+- [ ] 使用有效本地登录会话补充真实部署配置的保存与权威回读验收；当前本地会话停留在登录页。
+
 ## 2026-08-30 Redis 模板可选密码
 
 - [x] 在 Redis 应用市场模板中提供可选密码参数；填写时启用认证，留空时保持无密码认证。

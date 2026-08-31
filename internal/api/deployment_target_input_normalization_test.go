@@ -2,10 +2,13 @@ package api
 
 import (
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"testing"
 
 	"github.com/LiteyukiStudio/devops/internal/model"
+	"github.com/gin-gonic/gin"
 )
 
 func TestDeploymentTargetResponseUsesCanonicalStructuredFields(t *testing.T) {
@@ -91,6 +94,54 @@ func TestRuntimeConfigRefInputs(t *testing.T) {
 
 	if got := runtimeConfigRefInputs(input); !reflect.DeepEqual(got, want) {
 		t.Fatalf("runtimeConfigRefInputs() = %#v, want %#v", got, want)
+	}
+}
+
+func TestNormalizeDeploymentKubernetesAdvancedUsesSafeDefaults(t *testing.T) {
+	t.Parallel()
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	advanced, ok := normalizeDeploymentKubernetesAdvanced(ctx, deploymentTargetInput{})
+	if !ok {
+		t.Fatalf("normalizeDeploymentKubernetesAdvanced() failed: status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if advanced.AllowPrivilegeEscalation != "false" || advanced.CapabilityAdd != "" ||
+		advanced.ServiceAccountName != "" || advanced.AutomountServiceAccountToken != "false" ||
+		advanced.ServiceType != "ClusterIP" || advanced.ServiceExternalTrafficPolicy != "" {
+		t.Fatalf("safe defaults = %#v", advanced)
+	}
+}
+
+func TestNormalizeDeploymentKubernetesAdvancedRejectsHighRiskOverrides(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name   string
+		input  deploymentTargetInput
+		code   string
+		status int
+	}{
+		{name: "allow privilege escalation", input: deploymentTargetInput{AllowPrivilegeEscalation: "true"}, code: "deployment_target.allow_privilege_escalation_forbidden", status: http.StatusBadRequest},
+		{name: "capability add", input: deploymentTargetInput{CapabilityAdd: `["NET_ADMIN"]`}, code: "deployment_target.capability_add_forbidden", status: http.StatusBadRequest},
+		{name: "service account", input: deploymentTargetInput{ServiceAccountName: "custom"}, code: "deployment_target.service_account_invalid", status: http.StatusBadRequest},
+		{name: "automount token", input: deploymentTargetInput{AutomountServiceAccountToken: "true"}, code: "deployment_target.service_account_token_forbidden", status: http.StatusBadRequest},
+		{name: "service type", input: deploymentTargetInput{ServiceType: "NodePort"}, code: "deployment_target.service_type_forbidden", status: http.StatusBadRequest},
+		{name: "external traffic policy", input: deploymentTargetInput{ServiceExternalTrafficPolicy: "Local"}, code: "deployment_target.service_external_traffic_policy_forbidden", status: http.StatusBadRequest},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			ctx, _ := gin.CreateTestContext(recorder)
+			if _, ok := normalizeDeploymentKubernetesAdvanced(ctx, test.input); ok {
+				t.Fatal("normalizeDeploymentKubernetesAdvanced() accepted a high-risk override")
+			}
+			var response map[string]any
+			if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+				t.Fatal(err)
+			}
+			if recorder.Code != test.status || response["code"] != test.code {
+				t.Fatalf("status=%d body=%#v", recorder.Code, response)
+			}
+		})
 	}
 }
 

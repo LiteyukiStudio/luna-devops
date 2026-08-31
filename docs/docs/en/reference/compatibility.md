@@ -1,6 +1,6 @@
 # Compatibility
 
-Updated: 2026-07-24.
+Updated: 2026-08-31.
 
 The following versions are the current priority support and test ranges. Prefer a maintained stable release for new deployments and run the smoke tests at the end after upgrades.
 
@@ -20,6 +20,7 @@ The following versions are the current priority support and test ranges. Prefer 
 | Component | Supported range | Notes |
 | --- | --- | --- |
 | Kubernetes / K3s | Kubernetes `1.34 ~ 1.36` | Evaluate K3s by its embedded Kubernetes version |
+| kubectl gateway | No independently published validation range yet | The current source targets Kubernetes and kubectl `1.34 ~ 1.36`, but the complete real-cluster matrix has not finished; do not treat this as a formal compatibility claim, and use the current Release notes as authority |
 | Metrics Server | A version compatible with the cluster | Absence affects live resource metrics only |
 | Gateway API | `1.0.0 ~ 1.6.x` | Requires CRDs and a compatible controller |
 | Traefik | `3.x` | Enable the Kubernetes Gateway Provider |
@@ -43,8 +44,9 @@ The following versions are the current priority support and test ranges. Prefer 
 1. Git Provider: complete OAuth, read repositories and branches, and create a webhook.
 2. Registry: search images, read tags, push a build, and pull it from a runtime cluster.
 3. Kubernetes: create a build Job and Deployment, then read status, logs, and terminal access.
-4. Gateway: confirm that Gateway and HTTPRoute become accepted and programmed.
-5. OIDC: complete a real sign-in and verify the callback URL.
-6. Observability: confirm that API, Worker, and Agent telemetry is queryable.
+4. kubectl gateway (when enabled): issue a new kubeconfig, verify Discovery, `auth can-i`, reads, writes, watches, logs, Exec, and Port-forward, then revoke the credential and confirm that requests and streams stop.
+5. Gateway: confirm that Gateway and HTTPRoute become accepted and programmed.
+6. OIDC: complete a real sign-in and verify the callback URL.
+7. Observability: confirm that API, Worker, and Agent telemetry is queryable.
 
 Use each component's official support matrix and the current Luna DevOps Release notes when a more exact compatibility decision is required.

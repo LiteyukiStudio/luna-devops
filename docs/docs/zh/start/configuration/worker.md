@@ -10,7 +10,7 @@
 | `DATABASE_URL` | 本地 PostgreSQL | 连接 PostgreSQL；填写 PostgreSQL 连接 URI。 |
 | `REDIS_ADDR` | `redis://localhost:6379/0` | 连接 Redis 任务队列；填写 `redis://` 或 `rediss://` URI。 |
 | `SECRET_ENCRYPTION_KEY`<sup>1</sup> | 空 | 解密平台保存的凭据；填写与 API 相同的稳定密钥。 |
-| `PUBLIC_BASE_URL` | 生产环境必填 | 设置任务通知中链接的平台根地址；生产环境填写用户实际访问的绝对 HTTP(S) URL。 |
+| `PUBLIC_BASE_URL` | 生产环境必填 | 设置任务通知中链接的平台根地址；生产环境填写用户实际访问的绝对 HTTPS URL，仅本机 `localhost` 或回环地址允许 HTTP。 |
 | `LOG_FORMAT` | `auto` | 选择终端日志渲染；可填 `auto`、`console` 或 `json`，生产容器应使用 `json`。 |
 | `LOG_COLOR` | `auto` | 控制 console 日志颜色；可填 `auto`、`always` 或 `never`，`NO_COLOR` 会强制关闭。 |
 | `LOG_LEVEL` | `info` | 设置日志级别；可填 `debug`、`info`、`warn` 或 `error`。 |

@@ -10,6 +10,15 @@ import (
 )
 
 func TestDeploymentTargetAgentSchemaCoversHandlerInput(t *testing.T) {
+	legacyRejectOnlyFields := map[string]struct{}{
+		"allowPrivilegeEscalation":     {},
+		"automountServiceAccountToken": {},
+		"capabilityAdd":                {},
+		"namespace":                    {},
+		"serviceAccountName":           {},
+		"serviceExternalTrafficPolicy": {},
+		"serviceType":                  {},
+	}
 	for _, operationID := range []string{"createDeploymentTarget"} {
 		t.Run(operationID, func(t *testing.T) {
 			operation, ok := aitool.PlatformOperation(operationID)
@@ -29,6 +38,12 @@ func TestDeploymentTargetAgentSchemaCoversHandlerInput(t *testing.T) {
 				field := inputType.Field(index)
 				name := strings.Split(field.Tag.Get("json"), ",")[0]
 				if name != "" && name != "-" {
+					if _, rejectOnly := legacyRejectOnlyFields[name]; rejectOnly {
+						if _, exposed := properties[name]; exposed {
+							t.Fatalf("legacy reject-only field %q is exposed in the Agent schema", name)
+						}
+						continue
+					}
 					want = append(want, name)
 					assertSchemaMatchesGoType(t, name, properties[name], field.Type)
 				}

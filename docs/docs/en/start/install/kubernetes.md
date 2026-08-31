@@ -83,12 +83,43 @@ helm upgrade --install luna-devops ./charts/luna-devops \
   --create-namespace \
   --set api.initialAdmin.existingSecret=luna-devops-initial-admin \
   --set app.publicBaseUrl=https://devops.example.com \
+  --set-string app.trustedProxyCidrs=10.42.0.0/16 \
   --set ingress.enabled=true \
   --set ingress.className=nginx \
   --set ingress.hosts[0].host=devops.example.com
 ```
 
-`app.publicBaseUrl` affects OIDC callbacks, webhook callbacks, and browser origin checks. Do not set it to an internal Service address.
+`app.publicBaseUrl` affects OIDC callbacks, webhook callbacks, and browser origin checks. Do not set it to an internal Service address. The example `10.42.0.0/16` only represents a dedicated Ingress or reverse-proxy source subnet; replace it with the sources actually seen by API and the proxy egress ranges in the trusted forwarding chain. Use a whole Pod CIDR only when network isolation prevents every other Pod from reaching API directly. The chart refuses to render an enabled Ingress without this boundary and always rejects `0.0.0.0/0` and `::/0`.
+
+## Configure the kubectl gateway reverse proxy
+
+The kubectl gateway uses the same API Service and public domain. Its protocol entry point is `/kube/v1/bindings/`; it does not need a separate Service or Ingress. Before enabling a runtime cluster gateway, confirm that the selected Ingress controller or reverse proxy:
+
+- Uses HTTPS and has `app.publicBaseUrl` set to the exact public root users can reach. Generated kubeconfig files use only this trusted address.
+- Preserves the `/kube/` path, query, and escaping without stripping the prefix or applying path-normalizing rewrites.
+- Supports WebSocket and SPDY upgrades, streams request and response bodies, and does not buffer watches, logs, Exec, Attach, Port-forward, or `cp` data.
+- Allows request bodies of at least 16 MiB and read/write idle or total timeouts of at least 2 hours. The gateway still applies its own shorter reauthorization and connection limits by protocol type.
+- Does not log `Authorization`, `Cookie`, or raw query strings for `/kube/`. Exec commands can appear in the query and must not enter proxy access logs.
+
+The chart does not inject controller-specific defaults. For ingress-nginx, configure them explicitly in your own values, for example:
+
+```yaml
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-request-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "7200"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "7200"
+    nginx.ingress.kubernetes.io/proxy-body-size: "16m"
+```
+
+Use semantically equivalent settings for other controllers. After the proxy is ready, a platform administrator enables **kubectl gateway** under **Runtime clusters** and waits for the live state to become Ready before users create kubeconfig files. Leave extra resource rules empty by default. When a custom resource is required, add only a GVR that Discovery confirms is namespaced, explicit verbs, and an existing Luna DevOps project action. Rules cannot use wildcards or override fixed denials for Nodes, RBAC, CRDs, webhooks, and other protected resources.
+
+The stored runtime-cluster credential must be able to create or update the `luna-system` Namespace, ServiceAccounts, ClusterRoles and ClusterRoleBindings, RoleBindings in project Namespaces, and ServiceAccount TokenRequests. Insufficient permissions or a fixed name owned by a non-Luna object keeps the gateway Unavailable; Luna DevOps does not take over that object. Disabling the gateway blocks new kubeconfig issuance and existing requests stop as they reauthorize.
+
+Gateway request and stream concurrency is currently counted per API process. The chart's default single API replica has the most predictable capacity. Before scaling API, budget the aggregate connection limit across replicas and keep routing session-independent; no replica should be treated as a store for current Kubernetes state.
 
 ## Use External PostgreSQL Or Redis
 
@@ -178,6 +209,7 @@ root filesystem, and disabled ServiceAccount token remain enforced independently
 | Value | Default | Notes |
 | --- | --- | --- |
 | `app.publicBaseUrl` | `http://localhost:8088` | Sets the shared platform root for API callbacks and Worker notification detail links; in production, use the absolute HTTP(S) URL users actually open. |
+| `ingress.annotations` | `{}` | Passes kubectl streaming-proxy settings to the selected Ingress controller; use a supported annotation map with at least a 16 MiB request limit, at least 2-hour stream timeouts, and request/response buffering disabled. |
 | `app.secretEncryptionKey` | Generated | Encrypts credentials stored by the platform; use a stable non-empty key. |
 | `api.initialAdmin.existingSecret` | Empty | Selects the initial administrator Secret; a fresh database requires `initial-admin-email/password`, while `initial-admin-name/language` are optional. |
 | `api.initialAdmin.email` / `password` | Empty | Makes the chart create an initial administrator Secret when fields are explicitly supplied; for a fresh database use a valid email and an 8–72 byte password, and prefer `existingSecret` in production. |

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	kubeprovider "github.com/LiteyukiStudio/devops/internal/provider/kubernetes"
 	"github.com/LiteyukiStudio/devops/internal/tasks"
@@ -43,28 +44,35 @@ func (r *Runner) staleResourceCleanupPayloads(ctx context.Context, cutoff time.T
 		return nil, err
 	}
 	for _, project := range projects {
-		payloads = append(payloads, tasks.ResourceCleanupPayload{ResourceType: "project", ResourceID: project.ID, ProjectID: project.ID})
+		payloads = append(payloads, tasks.ResourceCleanupPayload{ResourceType: "project", ResourceID: project.ID, ProjectID: project.ID, ActorID: "system:cleanup-recovery"})
 	}
 	var targets []model.DeploymentTarget
 	if err := r.db.WithContext(ctx).Where("delete_status = ? and delete_started_at < ?", "deleting", cutoff).Limit(50).Find(&targets).Error; err != nil {
 		return nil, err
 	}
 	for _, target := range targets {
-		payloads = append(payloads, tasks.ResourceCleanupPayload{ResourceType: "deployment_target", ResourceID: target.ID, ProjectID: target.ProjectID})
+		payloads = append(payloads, tasks.ResourceCleanupPayload{ResourceType: "deployment_target", ResourceID: target.ID, ProjectID: target.ProjectID, ActorID: "system:cleanup-recovery"})
 	}
 	var routes []model.GatewayRoute
 	if err := r.db.WithContext(ctx).Where("delete_status = ? and delete_started_at < ?", "deleting", cutoff).Limit(50).Find(&routes).Error; err != nil {
 		return nil, err
 	}
 	for _, route := range routes {
-		payloads = append(payloads, tasks.ResourceCleanupPayload{ResourceType: "gateway_route", ResourceID: route.ID, ProjectID: route.ProjectID})
+		payloads = append(payloads, tasks.ResourceCleanupPayload{ResourceType: "gateway_route", ResourceID: route.ID, ProjectID: route.ProjectID, ActorID: "system:cleanup-recovery"})
 	}
 	var sets []model.ProjectRuntimeConfigSet
 	if err := r.db.WithContext(ctx).Where("delete_status = ? and delete_started_at < ?", "deleting", cutoff).Limit(50).Find(&sets).Error; err != nil {
 		return nil, err
 	}
 	for _, set := range sets {
-		payloads = append(payloads, tasks.ResourceCleanupPayload{ResourceType: "runtime_config", ResourceID: set.ID, ProjectID: set.ProjectID})
+		payloads = append(payloads, tasks.ResourceCleanupPayload{ResourceType: "runtime_config", ResourceID: set.ID, ProjectID: set.ProjectID, ActorID: "system:cleanup-recovery"})
+	}
+	var clusters []model.RuntimeCluster
+	if err := r.db.WithContext(ctx).Where("delete_status = ? and delete_started_at < ?", "deleting", cutoff).Limit(20).Find(&clusters).Error; err != nil {
+		return nil, err
+	}
+	for _, cluster := range clusters {
+		payloads = append(payloads, tasks.ResourceCleanupPayload{ResourceType: "runtime_cluster", ResourceID: cluster.ID, ActorID: "system:cleanup-recovery"})
 	}
 	return payloads, nil
 }
@@ -77,8 +85,43 @@ func (r *Runner) handleResourceCleanup(ctx context.Context, task *asynq.Task) er
 	err := r.handleResourceCleanupPayload(ctx, payload)
 	if err != nil && resourceCleanupAttemptExhausted(ctx) {
 		_ = r.markResourceCleanupFailed(payload, err)
+		_ = r.auditResourceCleanupFailure(ctx, payload)
 	}
 	return err
+}
+
+func (r *Runner) auditResourceCleanupFailure(ctx context.Context, payload tasks.ResourceCleanupPayload) error {
+	action := resourceCleanupAuditAction(payload.ResourceType)
+	if action == "" {
+		return nil
+	}
+	auditCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	return r.db.WithContext(auditCtx).Create(&model.AuditLog{
+		ID:       id.New("aud"),
+		UserID:   strings.TrimSpace(payload.ActorID),
+		Action:   action,
+		Resource: strings.TrimSpace(payload.ResourceID),
+		Success:  false,
+		Message:  "cleanup_failed",
+	}).Error
+}
+
+func resourceCleanupAuditAction(resourceType string) string {
+	switch strings.TrimSpace(resourceType) {
+	case "project":
+		return "project.delete"
+	case "deployment_target":
+		return "deployment.delete"
+	case "gateway_route":
+		return "gateway.delete"
+	case "runtime_config":
+		return "runtime_config.delete"
+	case "runtime_cluster":
+		return "runtime_cluster.delete"
+	default:
+		return ""
+	}
 }
 
 func (r *Runner) handleResourceCleanupPayload(ctx context.Context, payload tasks.ResourceCleanupPayload) error {
@@ -91,6 +134,8 @@ func (r *Runner) handleResourceCleanupPayload(ctx context.Context, payload tasks
 		return r.cleanupGatewayRoute(ctx, payload)
 	case "runtime_config":
 		return r.cleanupRuntimeConfigSet(payload)
+	case "runtime_cluster":
+		return r.cleanupRuntimeCluster(ctx, payload)
 	default:
 		return fmt.Errorf("unsupported cleanup resource type: %s", payload.ResourceType)
 	}
@@ -108,6 +153,9 @@ func (r *Runner) cleanupProject(ctx context.Context, payload tasks.ResourceClean
 		return nil
 	}
 	if err := r.cleanupProjectNamespaces(ctx, project); err != nil {
+		return err
+	}
+	if err := r.cleanupProjectKubectlNamespaces(ctx, project); err != nil {
 		return err
 	}
 	return r.finishProjectDelete(project)
@@ -251,6 +299,95 @@ func (r *Runner) cleanupRuntimeConfigSet(payload tasks.ResourceCleanupPayload) e
 	return r.finishRuntimeConfigSetDelete(set)
 }
 
+func (r *Runner) cleanupRuntimeCluster(ctx context.Context, payload tasks.ResourceCleanupPayload) error {
+	clusterID := strings.TrimSpace(payload.ResourceID)
+	if clusterID == "" {
+		return nil
+	}
+	return r.withKubectlGatewayClusterLock(ctx, clusterID, func(lockCtx context.Context) error {
+		var cluster model.RuntimeCluster
+		if err := r.db.WithContext(lockCtx).Unscoped().First(&cluster, "id = ?", clusterID).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil
+			}
+			return err
+		}
+		if !resourceCleanupCanRun(cluster.DeleteStatus) {
+			return nil
+		}
+		if err := waitForKubectlGatewayDrain(lockCtx, cluster.KubeGatewayDrainUntil); err != nil {
+			return err
+		}
+		if cluster.KubeGatewayCleanupCompletedAt == nil {
+			if strings.TrimSpace(cluster.KubeconfigRef) != "" {
+				manager, err := r.kubectlGatewayManagerForCluster(lockCtx, cluster)
+				if err != nil {
+					return err
+				}
+				projects, err := r.listKubectlGatewayProjects(lockCtx, cluster)
+				if err != nil {
+					return err
+				}
+				spec := kubectlGatewayAccessSpec(cluster, projects)
+				if err := manager.CleanupManagedResources(lockCtx, spec); err != nil {
+					return err
+				}
+				if err := manager.CleanupGatewayAccess(lockCtx, spec); err != nil {
+					return err
+				}
+			}
+			completedAt := time.Now().UTC()
+			if err := r.db.WithContext(lockCtx).Model(&model.RuntimeCluster{}).Where("id = ? and delete_status = ?", cluster.ID, "deleting").
+				Update("kube_gateway_cleanup_completed_at", &completedAt).Error; err != nil {
+				return err
+			}
+			cluster.KubeGatewayCleanupCompletedAt = &completedAt
+		}
+		return r.finishRuntimeClusterDelete(lockCtx, cluster)
+	})
+}
+
+func waitForKubectlGatewayDrain(ctx context.Context, drainUntil *time.Time) error {
+	if drainUntil == nil {
+		return nil
+	}
+	delay := time.Until(drainUntil.UTC())
+	if delay <= 0 {
+		return nil
+	}
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
+}
+
+func (r *Runner) finishRuntimeClusterDelete(ctx context.Context, cluster model.RuntimeCluster) error {
+	finishedAt := time.Now().UTC()
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := r.secrets.DeleteRefContextWithDB(ctx, tx, cluster.KubeconfigRef, "runtime_cluster:"+cluster.ID+":kubeconfig"); err != nil {
+			return err
+		}
+		if err := tx.Where("resource_type = ? and resource_id = ?", "runtime_cluster", cluster.ID).
+			Delete(&model.ScopedResourceProjectBinding{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("runtime_cluster_id = ?", cluster.ID).Delete(&model.KubeAccessBinding{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&model.RuntimeCluster{}).Where("id = ?", cluster.ID).Updates(map[string]any{
+			"delete_status": "deleted", "delete_message": "", "delete_finished_at": &finishedAt,
+			"kubeconfig_ref": "", "kube_gateway_enabled": false,
+		}).Error; err != nil {
+			return err
+		}
+		return tx.Delete(&cluster).Error
+	})
+}
+
 func resourceCleanupCanRun(status string) bool {
 	return strings.TrimSpace(status) == "deleting"
 }
@@ -335,6 +472,8 @@ func (r *Runner) markResourceCleanupFailed(payload tasks.ResourceCleanupPayload,
 		return markCleanupFailed(r.db, &model.GatewayRoute{}, payload.ResourceID, err)
 	case "runtime_config":
 		return markCleanupFailed(r.db, &model.ProjectRuntimeConfigSet{}, payload.ResourceID, err)
+	case "runtime_cluster":
+		return markCleanupFailed(r.db, &model.RuntimeCluster{}, payload.ResourceID, err)
 	default:
 		return nil
 	}
@@ -356,6 +495,9 @@ func markCleanupFailed(db *gorm.DB, model any, id string, err error) error {
 func (r *Runner) finishProjectDelete(project model.Project) error {
 	finishedAt := time.Now()
 	return r.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("project_id = ?", project.ID).Delete(&model.KubeAccessBinding{}).Error; err != nil {
+			return err
+		}
 		if err := tx.Model(&model.Project{}).Where("id = ?", project.ID).Updates(map[string]any{
 			"delete_status":      "deleted",
 			"delete_message":     "",

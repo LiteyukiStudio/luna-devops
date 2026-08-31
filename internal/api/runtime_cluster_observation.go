@@ -9,6 +9,7 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/observation"
 	kubeprovider "github.com/LiteyukiStudio/devops/internal/provider/kubernetes"
+	"github.com/LiteyukiStudio/devops/internal/runtimecluster"
 )
 
 func (h *Handlers) observeRuntimeCluster(ctx context.Context, cluster model.RuntimeCluster) model.RuntimeCluster {
@@ -16,6 +17,11 @@ func (h *Handlers) observeRuntimeCluster(ctx context.Context, cluster model.Runt
 	cluster.LastCheckedAt = &observedAt
 	cluster.Status = observation.StatusUnavailable
 	cluster.ObservationCode = "runtime_cluster.upstream_unavailable"
+	if !runtimecluster.IsActive(cluster) {
+		cluster.DeleteObservationCode = "runtime_cluster." + runtimecluster.NormalizeDeleteStatus(cluster.DeleteStatus)
+		cluster.ObservationCode = cluster.DeleteObservationCode
+		return cluster
+	}
 
 	if strings.TrimSpace(cluster.KubeconfigRef) == "" {
 		cluster.Status = observation.StatusNotConfigured

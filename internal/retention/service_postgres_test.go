@@ -137,7 +137,7 @@ CREATE TABLE platform_events (id text PRIMARY KEY, occurred_at timestamptz NOT N
 	for _, dataset := range catalog {
 		value := "0"
 		if dataset.Key == DatasetPlatformEvents {
-			value = "30"
+			value = "90"
 		}
 		if err := db.Exec("INSERT INTO app_configs(key, value) VALUES (?, ?)", dataset.ConfigKey, value).Error; err != nil {
 			t.Fatal(err)

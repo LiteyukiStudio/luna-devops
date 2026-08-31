@@ -195,15 +195,23 @@ func TestGitRepositoryPaginationUsesUnifiedBoundsAndEffectiveSort(t *testing.T) 
 	}
 }
 
-func assertPaginationEnvelope(t *testing.T, response gin.H) {
+func assertPaginationEnvelope(t *testing.T, response any) {
 	t.Helper()
+	encoded, err := json.Marshal(response)
+	if err != nil {
+		t.Fatalf("marshal paginated response: %v", err)
+	}
+	var envelope map[string]any
+	if err := json.Unmarshal(encoded, &envelope); err != nil {
+		t.Fatalf("unmarshal paginated response: %v", err)
+	}
 	for _, key := range []string{"items", "page", "pageSize", "sortBy", "sortOrder", "total", "totalPages"} {
-		if _, exists := response[key]; !exists {
-			t.Fatalf("paginated response is missing %q: %#v", key, response)
+		if _, exists := envelope[key]; !exists {
+			t.Fatalf("paginated response is missing %q: %#v", key, envelope)
 		}
 	}
-	if len(response) != 7 {
-		t.Fatalf("paginated response has unexpected fields: %#v", response)
+	if len(envelope) != 7 {
+		t.Fatalf("paginated response has unexpected fields: %#v", envelope)
 	}
 }
 
@@ -248,14 +256,14 @@ func calledFunctions(node ast.Node) map[string]bool {
 func TestPaginatedResponseCalculatesTotalPages(t *testing.T) {
 	response := paginatedResponse([]string{"a", "b"}, 21, paginationParams{Page: 2, PageSize: 10, SortBy: "name", SortOrder: "asc"})
 
-	if response["totalPages"] != 3 {
-		t.Fatalf("totalPages = %v", response["totalPages"])
+	if response.TotalPages != 3 {
+		t.Fatalf("totalPages = %v", response.TotalPages)
 	}
-	if response["total"] != int64(21) {
-		t.Fatalf("total = %v", response["total"])
+	if response.Total != int64(21) {
+		t.Fatalf("total = %v", response.Total)
 	}
-	if response["sortBy"] != "name" || response["sortOrder"] != "asc" {
-		t.Fatalf("sort response = %v/%v", response["sortBy"], response["sortOrder"])
+	if response.SortBy != "name" || response.SortOrder != "asc" {
+		t.Fatalf("sort response = %v/%v", response.SortBy, response.SortOrder)
 	}
 }
 
@@ -348,19 +356,6 @@ func TestDefaultUserProjectNameUsesLanguage(t *testing.T) {
 	en := defaultUserProjectName(model.User{Name: "Luna", Language: "en-US"})
 	if en != "Luna's Project Space" {
 		t.Fatalf("en project name = %q", en)
-	}
-}
-
-func TestPlatformAdminBypassesProjectMemberRoleChecks(t *testing.T) {
-	allowedRoles := []string{authz.ProjectRoleOwner}
-	if !projectUserRoleAllowed(model.User{Role: authz.PlatformRoleAdmin}, "", allowedRoles) {
-		t.Fatal("expected platform admin to bypass project member role checks")
-	}
-	if projectUserRoleAllowed(model.User{Role: authz.PlatformRoleUser}, authz.ProjectRoleViewer, allowedRoles) {
-		t.Fatal("expected regular viewer to be blocked from owner-only project operation")
-	}
-	if !projectUserRoleAllowed(model.User{Role: authz.PlatformRoleUser}, authz.ProjectRoleOwner, allowedRoles) {
-		t.Fatal("expected project owner to be allowed")
 	}
 }
 

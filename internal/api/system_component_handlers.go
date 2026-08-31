@@ -15,6 +15,7 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/observation"
 	"github.com/LiteyukiStudio/devops/internal/resourceidentifier"
+	"github.com/LiteyukiStudio/devops/internal/runtimecluster"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -103,7 +104,7 @@ func (h *Handlers) InstallSystemAppTemplate(ctx *gin.Context) {
 		return
 	}
 	var cluster model.RuntimeCluster
-	if err := h.dbFor(ctx).First(&cluster, "id = ?", clusterID).Error; err != nil {
+	if err := runtimecluster.ActiveScope(h.dbFor(ctx)).First(&cluster, "id = ?", clusterID).Error; err != nil {
 		writeError(ctx, http.StatusNotFound, "runtime cluster not found")
 		return
 	}
@@ -211,10 +212,8 @@ func (h *Handlers) systemComponentApplicationPlan(ctx *gin.Context, user model.U
 
 	clusterSuffix := shortID(cluster.ID)
 	systemStage := "sys-" + clusterSuffix
-	// provisionAccess lets the platform create a dedicated ServiceAccount plus the
-	// RBAC rules the probe needs to read Gateway API routes. Without it the
-	// workload runs on the namespace default account and users manage RBAC
-	// themselves.
+	// provisionAccess is a trusted internal plan input. The Worker revalidates the
+	// installation record before provisioning the dedicated identity and RBAC.
 	serviceAccountName := ""
 	automountToken := ""
 	if provisionAccess {
@@ -256,12 +255,6 @@ func (h *Handlers) systemComponentApplicationPlan(ctx *gin.Context, user model.U
 		target.KubernetesName = firstNonEmpty(existingTarget.KubernetesName, target.KubernetesName)
 		target.CreatedAt = existingTarget.CreatedAt
 		target.CreatedBy = firstNonEmpty(existingTarget.CreatedBy, user.ID)
-		// A reinstall that does not ask for access provisioning keeps whatever
-		// service account the existing target already uses.
-		if !provisionAccess {
-			target.ServiceAccountName = existingTarget.ServiceAccountName
-			target.AutomountServiceAccountToken = existingTarget.AutomountServiceAccountToken
-		}
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return systemComponentApplicationPlan{}, false

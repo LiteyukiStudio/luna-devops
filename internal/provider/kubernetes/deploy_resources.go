@@ -54,6 +54,7 @@ type ApplicationResourcesSpec struct {
 	PriorityClassName            string
 	ServiceAccountName           string
 	AutomountServiceAccountToken string
+	TrustedServiceAccounts       []string
 	ServiceType                  string
 	ServiceAnnotations           string
 	ServiceExternalTrafficPolicy string
@@ -200,6 +201,29 @@ func validateApplicationResourcesSpec(spec ApplicationResourcesSpec) error {
 	if _, err := applicationContainerSecurityContext(spec); err != nil {
 		return err
 	}
+	capabilityAdd, err := applicationStringList(spec.CapabilityAdd, "capability add")
+	if err != nil {
+		return err
+	}
+	if len(capabilityAdd) > 0 {
+		return fmt.Errorf("application workloads cannot add Linux capabilities")
+	}
+	serviceAccountName := strings.TrimSpace(spec.ServiceAccountName)
+	trustedServiceAccount := applicationServiceAccountTrusted(spec, serviceAccountName)
+	if serviceAccountName != "" && !trustedServiceAccount {
+		return fmt.Errorf("application service account is not approved by a trusted platform plan")
+	}
+	if automount, configured, err := optionalBool(spec.AutomountServiceAccountToken); err != nil {
+		return fmt.Errorf("invalid automountServiceAccountToken: %w", err)
+	} else if configured && automount && !trustedServiceAccount {
+		return fmt.Errorf("application workloads cannot mount a service account token")
+	}
+	if serviceType := strings.TrimSpace(spec.ServiceType); serviceType != "" && serviceType != "ClusterIP" {
+		return fmt.Errorf("application services only support ClusterIP")
+	}
+	if strings.TrimSpace(spec.ServiceExternalTrafficPolicy) != "" {
+		return fmt.Errorf("application services cannot configure external traffic policy")
+	}
 	if _, err := applicationNodeSelector(spec); err != nil {
 		return err
 	}
@@ -236,9 +260,6 @@ func validateApplicationResourcesSpec(spec ApplicationResourcesSpec) error {
 	if _, err := applicationStringList(spec.ContainerArgs, "container args"); err != nil {
 		return err
 	}
-	if _, err := applicationStringList(spec.CapabilityAdd, "capability add"); err != nil {
-		return err
-	}
 	if _, err := applicationStringList(spec.CapabilityDrop, "capability drop"); err != nil {
 		return err
 	}
@@ -257,6 +278,19 @@ func validateApplicationResourcesSpec(spec ApplicationResourcesSpec) error {
 		}
 	}
 	return nil
+}
+
+func applicationServiceAccountTrusted(spec ApplicationResourcesSpec, name string) bool {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return false
+	}
+	for _, candidate := range spec.TrustedServiceAccounts {
+		if strings.TrimSpace(candidate) == name {
+			return true
+		}
+	}
+	return false
 }
 
 func intstrFromInt32(value int32) intstr.IntOrString {

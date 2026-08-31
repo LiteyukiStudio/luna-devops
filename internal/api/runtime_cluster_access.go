@@ -10,23 +10,25 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/model"
 	projectservice "github.com/LiteyukiStudio/devops/internal/project"
 	kubeprovider "github.com/LiteyukiStudio/devops/internal/provider/kubernetes"
+	"github.com/LiteyukiStudio/devops/internal/runtimecluster"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
 func (h *Handlers) runtimeClusterForEnvironment(ctx *gin.Context, environment model.Environment) (model.RuntimeCluster, bool) {
 	var cluster model.RuntimeCluster
+	query := runtimecluster.ActiveScope(h.dbFor(ctx))
 	if clusterID := strings.TrimSpace(environment.ClusterID); clusterID != "" {
-		err := h.dbFor(ctx).First(&cluster, "id = ? and type in ?", clusterID, []string{"kubernetes", "k3s"}).Error
+		err := query.First(&cluster, "id = ? and type in ?", clusterID, []string{"kubernetes", "k3s"}).Error
 		if err != nil {
 			writeError(ctx, http.StatusNotFound, "runtime cluster not found")
 			return cluster, false
 		}
 		return cluster, true
 	}
-	err := h.dbFor(ctx).Where("scope = ? and is_default = ? and type in ?", "global", true, []string{"kubernetes", "k3s"}).First(&cluster).Error
+	err := query.Where("scope = ? and is_default = ? and type in ?", "global", true, []string{"kubernetes", "k3s"}).First(&cluster).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		err = h.dbFor(ctx).Where("scope = ? and type in ?", "global", []string{"kubernetes", "k3s"}).Order("created_at asc").First(&cluster).Error
+		err = query.Where("scope = ? and type in ?", "global", []string{"kubernetes", "k3s"}).Order("created_at asc").First(&cluster).Error
 	}
 	if err != nil {
 		writeError(ctx, http.StatusNotFound, "runtime cluster not found")
@@ -37,17 +39,18 @@ func (h *Handlers) runtimeClusterForEnvironment(ctx *gin.Context, environment mo
 
 func (h *Handlers) runtimeClusterForDeploymentTarget(ctx *gin.Context, target model.DeploymentTarget) (model.RuntimeCluster, bool) {
 	var cluster model.RuntimeCluster
+	query := runtimecluster.ActiveScope(h.dbFor(ctx))
 	if clusterID := strings.TrimSpace(target.ClusterID); clusterID != "" {
-		err := h.dbFor(ctx).First(&cluster, "id = ? and type in ?", clusterID, []string{"kubernetes", "k3s"}).Error
+		err := query.First(&cluster, "id = ? and type in ?", clusterID, []string{"kubernetes", "k3s"}).Error
 		if err != nil {
 			writeError(ctx, http.StatusNotFound, "runtime cluster not found")
 			return cluster, false
 		}
 		return cluster, true
 	}
-	err := h.dbFor(ctx).Where("scope = ? and is_default = ? and type in ?", "global", true, []string{"kubernetes", "k3s"}).First(&cluster).Error
+	err := query.Where("scope = ? and is_default = ? and type in ?", "global", true, []string{"kubernetes", "k3s"}).First(&cluster).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		err = h.dbFor(ctx).Where("scope = ? and type in ?", "global", []string{"kubernetes", "k3s"}).Order("created_at asc").First(&cluster).Error
+		err = query.Where("scope = ? and type in ?", "global", []string{"kubernetes", "k3s"}).Order("created_at asc").First(&cluster).Error
 	}
 	if err != nil {
 		writeError(ctx, http.StatusNotFound, "runtime cluster not found")
@@ -62,7 +65,7 @@ func (h *Handlers) runtimeClusterForProjectUse(ctx *gin.Context, user model.User
 		return model.RuntimeCluster{}, true
 	}
 	var cluster model.RuntimeCluster
-	if err := h.dbFor(ctx).First(&cluster, "id = ? and type in ?", clusterID, []string{"kubernetes", "k3s"}).Error; err != nil {
+	if err := runtimecluster.ActiveScope(h.dbFor(ctx)).First(&cluster, "id = ? and type in ?", clusterID, []string{"kubernetes", "k3s"}).Error; err != nil {
 		writeError(ctx, http.StatusBadRequest, "运行集群不存在")
 		return cluster, false
 	}
@@ -93,22 +96,23 @@ func canUseRuntimeClusterForProject(user model.User, cluster model.RuntimeCluste
 }
 
 func deploymentTargetNamespace(project model.Project, target model.DeploymentTarget) string {
-	if namespace := strings.TrimSpace(target.Namespace); namespace != "" {
-		return namespace
-	}
 	return runtimeProjectNamespace(project)
 }
 
-func (h *Handlers) runtimeClusterResponseForUser(user model.User, cluster model.RuntimeCluster, ctx context.Context) model.RuntimeCluster {
+func (h *Handlers) runtimeClusterResponseForUser(user model.User, cluster model.RuntimeCluster, ctx context.Context) (model.RuntimeCluster, error) {
 	cluster.ProjectIDs = h.scopedResourceProjectIDs(scopedResourceRuntimeCluster, cluster.ID, ctx)
 	cluster.GatewayDomainSuffixes = decodeGatewayDomainSuffixes(cluster.GatewayDomainSuffixesRaw, cluster.GatewayRootDomain, h.legacyGatewayRootDomain())
 	cluster.GatewayRootDomain = cluster.GatewayDomainSuffixes[0]
 	cluster.KubeconfigSet = cluster.KubeconfigRef != ""
 	cluster.Kubeconfig = ""
-	if !h.canInspectScopedResourceConfigByID(user, cluster.Scope, cluster.OwnerRef, scopedResourceRuntimeCluster, cluster.ID, ctx) {
+	canInspect, err := h.canInspectScopedResourceConfigByID(user, cluster.Scope, cluster.OwnerRef, scopedResourceRuntimeCluster, cluster.ID, ctx)
+	if err != nil {
+		return model.RuntimeCluster{}, err
+	}
+	if !canInspect {
 		cluster.Endpoint = ""
 	}
-	return cluster
+	return cluster, nil
 }
 
 func (h *Handlers) canReplaceRuntimeClusterKubeconfig(user model.User, cluster model.RuntimeCluster) bool {
@@ -144,7 +148,7 @@ func (h *Handlers) canManageClusterResourceSnapshot(ctx *gin.Context, user model
 		writeError(ctx, http.StatusForbidden, "无权维护无项目空间归属的集群资源")
 		return false
 	}
-	if _, ok := h.findProjectForCurrentUserWithRolesByID(ctx, item.ProjectID, authz.ProjectRoleOwner, authz.ProjectRoleAdmin); ok {
+	if _, _, ok := h.authorizeProjectByID(ctx, item.ProjectID, authz.ActionClusterManage); ok {
 		return true
 	}
 	return false

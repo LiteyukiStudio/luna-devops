@@ -18,6 +18,9 @@ export type AgentObservabilityRange = '1h' | '6h' | '24h' | '7d' | '30d' | '1y'
 
 export interface APIMeta {
   serverVersion: string
+  features?: {
+    kubectlGateway?: boolean
+  }
 }
 
 export interface AgentObservabilityTestResult {
@@ -389,7 +392,6 @@ export interface AppTemplateInstallPayload {
   deploymentName: string
   stage: string
   clusterId: string
-  namespace: string
   imageRef: string
   replicas: number
   cpuRequest: string
@@ -1237,7 +1239,6 @@ export interface DeploymentTarget {
   stage: string
   kubernetesName: string
   clusterId: string
-  namespace: string
   workloadType: 'Deployment' | 'StatefulSet' | string
   replicas: number
   cpuRequest: string
@@ -1256,19 +1257,13 @@ export interface DeploymentTarget {
   fsGroup: string
   fsGroupChangePolicy: '' | 'OnRootMismatch' | 'Always' | string
   readOnlyRootFilesystem: boolean
-  allowPrivilegeEscalation: '' | 'true' | 'false' | string
-  capabilityAdd: string
   capabilityDrop: string
   nodeSelector: string
   tolerations: string
   affinity: string
   topologySpreadConstraints: string
   priorityClassName: string
-  serviceAccountName?: string
-  automountServiceAccountToken?: string
-  serviceType: '' | 'ClusterIP' | 'NodePort' | 'LoadBalancer' | string
   serviceAnnotations: string
-  serviceExternalTrafficPolicy: '' | 'Cluster' | 'Local' | string
   serviceSessionAffinity: '' | 'None' | 'ClientIP' | string
   autoScalingEnabled: boolean
   autoScalingMinReplicas: number
@@ -1306,7 +1301,6 @@ export interface DeploymentTarget {
   concurrencyPolicy: 'queue' | 'parallel'
   runtimeConfigRefs: DeploymentRuntimeConfigRef[]
   environmentVariables: RuntimeEnvironmentVariable[]
-  configRefs: Record<string, string>
   configFiles: string
   secretFilesSet: boolean
   dataVolumes: DeploymentDataVolume[]
@@ -1456,7 +1450,7 @@ export interface DeploymentBundleReferenceResolution extends DeploymentBundleRef
 export interface DeploymentTargetBundlePreviewRequest {
   bundle: DeploymentTargetBundle
   mappings?: Record<string, string>
-  overrides?: { name?: string, stage?: string, namespace?: string | null }
+  overrides?: { name?: string, stage?: string }
 }
 
 export interface DeploymentTargetBundleImportRequest extends DeploymentTargetBundlePreviewRequest {
@@ -1467,7 +1461,7 @@ export interface DeploymentTargetBundleImportRequest extends DeploymentTargetBun
 export interface DeploymentTargetBundlePreview {
   digest: string
   status: 'ready' | 'requires_mapping' | 'invalid'
-  summary: { name: string, stage: string, namespace: string, sourceType: 'repository' | 'image' }
+  summary: { name: string, stage: string, sourceType: 'repository' | 'image' }
   references: DeploymentBundleReferenceResolution[]
   secretRequirements: DeploymentBundleSecretRequirement[]
   warnings: string[]
@@ -1545,8 +1539,13 @@ export interface RuntimeCluster {
   gatewayTrustedProxyCIDRs: string
   gatewayDefaultRequestHeaders: string
   gatewayDefaultResponseHeaders: string
+  kubeGatewayEnabled?: boolean
   status: string
-  lastCheckedAt?: string
+  deleteStatus?: 'active' | 'deleting' | 'delete_failed' | 'deleted' | string
+  deleteStartedAt?: string | null
+  deleteFinishedAt?: string | null
+  deleteObservationCode?: string
+  lastCheckedAt?: string | null
   createdBy: string
   createdAt: string
 }
@@ -1741,6 +1740,98 @@ export interface AccessToken {
   createdAt: string
 }
 
+export interface KubeCredential {
+  id: string
+  name: string
+  scopes: string[]
+  status: 'active' | 'expired' | 'revoked' | string
+  expiresAt: string
+  createdAt: string
+  bindingCount: number
+}
+
+export interface KubeCredentialBinding {
+  id: string
+  projectId: string
+  runtimeClusterId: string
+  applicationId?: string | null
+  namespace: string
+  contextName: string
+  createdAt?: string
+}
+
+export interface CreateKubeCredentialContextInput {
+  projectId: string
+  runtimeClusterId: string
+  applicationId?: string
+}
+
+export interface CreateKubeCredentialInput {
+  name: string
+  expiresInDays: 1 | 7 | 30
+  scopes: string[]
+  contexts: CreateKubeCredentialContextInput[]
+}
+
+export interface CreateKubeCredentialResponse {
+  credential: KubeCredential
+  bindings: KubeCredentialBinding[]
+  kubeconfig: string
+}
+
+export type KubeGatewayVerb
+  = | 'get'
+    | 'list'
+    | 'watch'
+    | 'create'
+    | 'update'
+    | 'patch'
+    | 'delete'
+    | 'deletecollection'
+    | 'connect'
+    | string
+
+export type KubeGatewayAction
+  = | 'project:read'
+    | 'deployment:read'
+    | 'deployment:update'
+    | 'deployment:restart'
+    | 'deployment:delete'
+    | 'deployment:exec'
+    | 'secret:read_summary'
+    | 'secret:view_value'
+    | 'secret:update'
+    | 'volume:read'
+    | 'volume:write'
+    | 'volume:delete'
+    | 'gateway:read'
+    | 'gateway:manage'
+    | 'cluster:read'
+    | 'cluster:manage'
+    | string
+
+export interface RuntimeClusterKubeGatewayRule {
+  apiGroup: string
+  apiVersion: string
+  resource: string
+  subresources: string[]
+  verbs: KubeGatewayVerb[]
+  action: KubeGatewayAction
+}
+
+export interface RuntimeClusterKubeGateway {
+  enabled: boolean
+  extraResourceRules: RuntimeClusterKubeGatewayRule[]
+  status: 'disabled' | 'reconciling' | 'ready' | 'unavailable' | string
+  observationCode: string
+  lastCheckedAt?: string | null
+}
+
+export interface UpdateRuntimeClusterKubeGatewayInput {
+  enabled: boolean
+  extraResourceRules: RuntimeClusterKubeGatewayRule[]
+}
+
 export interface AccessTokenScopeDefinition {
   value: string
   group: string
@@ -1755,7 +1846,7 @@ export interface AccessTokenScopeCatalog {
 
 export interface OAuthApplication {
   id: string
-  ownerUserId: string
+  ownerUserId?: string
   name: string
   description: string
   homepageUrl: string
@@ -1764,19 +1855,24 @@ export interface OAuthApplication {
   redirectUris: string[]
   allowedScopes: string
   accessTokenLifetimeDays: number
-  revokedAt?: string
+  revokedAt: string | null
   createdAt: string
   updatedAt: string
 }
 
 export interface OAuthApplicationInput {
   name: string
-  description: string
-  homepageUrl: string
-  logoUrl: string
+  description?: string
+  homepageUrl?: string
+  logoUrl?: string
   redirectUris: string[]
   allowedScopes: string
-  accessTokenLifetimeDays: number
+  accessTokenLifetimeDays?: number
+}
+
+export interface OAuthApplicationSecretResponse {
+  application: OAuthApplication
+  clientSecret: string
 }
 
 export interface OAuthGrant {
@@ -1795,13 +1891,23 @@ export interface OAuthAuthorizationRequest {
 }
 
 export interface OAuthAuthorizationDecision {
-  approved: boolean
+  approved?: boolean
   clientId: string
   redirectUri: string
   scope: string
-  state: string
+  state?: string
   codeChallenge: string
   codeChallengeMethod: string
+}
+
+export interface OAuthAuthorizationDecisionResponse {
+  redirectUrl: string
+}
+
+export interface OAuthProtocolError {
+  error: string
+  error_description: string
+  requestId: string
 }
 
 export interface OAuthDeviceVerification {

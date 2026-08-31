@@ -1,13 +1,11 @@
 package api
 
 import (
-	"crypto/rand"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"net/http"
 	"strings"
 
+	"github.com/LiteyukiStudio/devops/internal/credential"
 	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/telemetry"
 	"github.com/gin-gonic/gin"
@@ -125,6 +123,23 @@ func writeErrorKeyWithDetails(
 		response["details"] = details
 	}
 	ctx.JSON(status, response)
+}
+
+func writeScopeInsufficientError(ctx *gin.Context, requiredScope string) {
+	const code = "auth.token.scope_insufficient"
+	telemetry.SetHTTPError(ctx, code, code)
+	response := errorEnvelope(ctx, http.StatusForbidden, code)
+	response["requiredScope"] = strings.TrimSpace(requiredScope)
+	ctx.JSON(http.StatusForbidden, response)
+}
+
+func writeScopeContractUnavailableError(ctx *gin.Context, detail string) {
+	writeErrorCode(
+		ctx,
+		http.StatusServiceUnavailable,
+		"auth.token.scope_contract_unavailable",
+		detail,
+	)
 }
 
 func writeErrorCode(ctx *gin.Context, status int, code, detail string) {
@@ -305,16 +320,11 @@ func fallbackInt(value, defaultValue int) int {
 }
 
 func randomHex(length int) string {
-	bytes := make([]byte, length)
-	if _, err := rand.Read(bytes); err != nil {
-		panic(err)
-	}
-	return hex.EncodeToString(bytes)
+	return credential.RandomHex(length)
 }
 
 func hashToken(token string) string {
-	sum := sha256.Sum256([]byte(token))
-	return hex.EncodeToString(sum[:])
+	return credential.Hash(token)
 }
 
 var localizedMessages = map[string]map[string]string{

@@ -459,18 +459,22 @@ func gitProviderResponses(providers []model.GitProvider) []gin.H {
 	return responses
 }
 
-func (h *Handlers) gitProviderResponsesForUser(user model.User, providers []model.GitProvider, ctx context.Context) []gin.H {
+func (h *Handlers) gitProviderResponsesForUser(user model.User, providers []model.GitProvider, ctx context.Context) ([]gin.H, error) {
 	responses := make([]gin.H, 0, len(providers))
 	for _, provider := range providers {
 		provider.ProjectIDs = h.scopedResourceProjectIDs(scopedResourceGitProvider, provider.ID, ctx)
 		response := gitProviderResponse(provider)
-		if !h.canInspectScopedResourceConfigByID(user, provider.Scope, provider.OwnerRef, scopedResourceGitProvider, provider.ID, ctx) {
+		canInspect, err := h.canInspectScopedResourceConfigByID(user, provider.Scope, provider.OwnerRef, scopedResourceGitProvider, provider.ID, ctx)
+		if err != nil {
+			return nil, err
+		}
+		if !canInspect {
 			response["baseUrl"] = ""
 			response["clientId"] = ""
 		}
 		responses = append(responses, response)
 	}
-	return responses
+	return responses, nil
 }
 
 func gitProviderResponse(provider model.GitProvider) gin.H {

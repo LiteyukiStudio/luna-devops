@@ -27,6 +27,18 @@ luna project get-projects --help
 
 遇到连接、认证或版本问题时先运行 `luna doctor`。
 
+## Scope 与项目角色
+
+CLI 帮助中的“所需 Scope”来自平台发布的 OpenAPI 契约。OAuth 登录签发的 Scope 是凭证能力上限，不会提升账号的平台角色或项目空间角色；普通项目成员访问项目资源时，凭证 Scope 和项目角色必须同时允许，平台管理员也不能绕过凭证 Scope。
+
+同一 OAuth 应用在不同设备或终端上的登录会形成独立会话。退出当前登录或撤销当前 Token 只影响该会话；在账号授权管理中撤销整个应用授权时，该应用的全部会话都会失效。
+
+## kubectl kubeconfig
+
+使用 `luna kubeconfig write` 可以创建 Kube Credential 并以 `0600` 权限原子写入新文件；使用 `luna kubeconfig merge` 可以在检查同名冲突后合并到现有 kubeconfig。这两个专用命令不会把一次性 kubeconfig 或 Token 输出到普通 stdout，且需要当前 OAuth 会话具有 `token:manage`。
+
+命令参数、安全合并方式、Context 规则和 kubectl 权限边界见[使用 kubectl 管理项目资源](/use/kubectl)。
+
 ## 脚本与 Agent
 
 自动化应使用 JSON 输出，并关闭交互：

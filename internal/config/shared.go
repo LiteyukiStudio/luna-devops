@@ -82,6 +82,9 @@ func buildShared(raw sharedEnvironment, snapshot map[string]string) (Shared, err
 	if err := validatePublicBaseURL(shared.PublicBaseURL); err != nil {
 		errs = append(errs, err)
 	}
+	if err := validateProductionPublicBaseURL(shared.Mode, shared.PublicBaseURL); err != nil {
+		errs = append(errs, err)
+	}
 	if err := validateDatabaseURL(shared.DatabaseURL); err != nil {
 		errs = append(errs, err)
 	}

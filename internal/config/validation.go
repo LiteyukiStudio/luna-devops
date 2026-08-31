@@ -25,6 +25,27 @@ func validatePublicBaseURL(value string) error {
 	return validateHTTPURL("PUBLIC_BASE_URL", value)
 }
 
+func validateProductionPublicBaseURL(mode, value string) error {
+	if mode != "production" || strings.TrimSpace(value) == "" {
+		return nil
+	}
+	parsed, err := url.Parse(strings.TrimSpace(value))
+	if err != nil || parsed.Host == "" {
+		return nil
+	}
+	if parsed.Scheme == "https" {
+		return nil
+	}
+	host := strings.TrimSuffix(strings.ToLower(parsed.Hostname()), ".")
+	if host == "localhost" {
+		return nil
+	}
+	if address, parseErr := netip.ParseAddr(host); parseErr == nil && address.IsLoopback() {
+		return nil
+	}
+	return errors.New("PUBLIC_BASE_URL must use https in production except for localhost or loopback addresses")
+}
+
 func validateDatabaseURL(value string) error {
 	parsed, err := url.Parse(value)
 	if err != nil || parsed.Host == "" || (parsed.Scheme != "postgres" && parsed.Scheme != "postgresql") {
@@ -149,6 +170,20 @@ func parseCIDRList(key string, values []string) ([]string, error) {
 		result = append(result, prefix.String())
 	}
 	return result, nil
+}
+
+func parseTrustedProxyCIDRList(values []string) ([]string, error) {
+	cidrs, err := parseCIDRList("TRUSTED_PROXY_CIDRS", values)
+	if err != nil {
+		return nil, err
+	}
+	for _, value := range cidrs {
+		prefix, _ := netip.ParsePrefix(value)
+		if prefix.Bits() == 0 {
+			return nil, errors.New("TRUSTED_PROXY_CIDRS must not contain universal CIDRs")
+		}
+	}
+	return cidrs, nil
 }
 
 func parseOrigins(key string, values []string) ([]string, error) {

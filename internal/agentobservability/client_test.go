@@ -238,7 +238,7 @@ func TestTraceAttributeAllowlistUsesCurrentUsageContract(t *testing.T) {
 }
 
 func TestTempoTraceDetailParsesTempoV2ResourceSpans(t *testing.T) {
-	const payload = `{"trace":{"resourceSpans":[{"resource":{"attributes":[{"key":"service.name","value":{"stringValue":"luna-agent"}}]},"scopeSpans":[{"spans":[{"spanId":"cm9vdA==","name":"handler - async secured => { /* generated handler source */ }","kind":"SPAN_KIND_INTERNAL","startTimeUnixNano":"1000000000","endTimeUnixNano":"2500000000","status":{"code":"STATUS_CODE_OK"}}]}]}]},"metrics":{"inspectedBytes":"1024"}}`
+	const payload = `{"trace":{"resourceSpans":[{"resource":{"attributes":[{"key":"service.name","value":{"stringValue":"luna-agent"}}]},"scopeSpans":[{"spans":[{"spanId":"YWH2nnhwBB4=","parentSpanId":"AQIDBAUGBwg=","name":"handler - async secured => { /* generated handler source */ }","kind":"SPAN_KIND_INTERNAL","startTimeUnixNano":"1000000000","endTimeUnixNano":"2500000000","status":{"code":"STATUS_CODE_OK"}}]}]}]},"metrics":{"inspectedBytes":"1024"}}`
 	var response tempoTraceResponse
 	if err := json.Unmarshal([]byte(payload), &response); err != nil {
 		t.Fatalf("decode Tempo v2 fixture: %v", err)
@@ -249,6 +249,18 @@ func TestTempoTraceDetailParsesTempoV2ResourceSpans(t *testing.T) {
 	}
 	if detail.Spans[0].ServiceName != "luna-agent" || detail.Spans[0].Name != "fastify.handler" {
 		t.Fatalf("Tempo v2 span was not normalized: %+v", detail.Spans[0])
+	}
+	if detail.Spans[0].SpanID != "6161f69e7870041e" || detail.Spans[0].ParentSpanID != "0102030405060708" {
+		t.Fatalf("Tempo v2 span IDs were not normalized: %+v", detail.Spans[0])
+	}
+}
+
+func TestNormalizeTempoID(t *testing.T) {
+	if got := normalizeTempoID("AQIDBAUGBwgJCgsMDQ4PEA=="); got != "0102030405060708090a0b0c0d0e0f10" {
+		t.Fatalf("normalized trace ID = %q", got)
+	}
+	if got := normalizeTempoID("ABCDEFABCDEFABCD"); got != "abcdefabcdefabcd" {
+		t.Fatalf("normalized hexadecimal span ID = %q", got)
 	}
 }
 

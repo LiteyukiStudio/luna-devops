@@ -33,7 +33,7 @@ var buildHookPhases = []string{
 }
 
 func (h *Handlers) ListProjectHookConfigs(ctx *gin.Context) {
-	if _, _, ok := h.projectAndCurrentUser(ctx); !ok {
+	if _, _, ok := h.authorizeProject(ctx, authz.ActionProjectRead); !ok {
 		return
 	}
 	pagination := paginationFromQueryWithSort(ctx, map[string]string{"createdAt": "created_at", "name": "name", "phase": "phase"}, "createdAt")
@@ -56,7 +56,7 @@ func (h *Handlers) ListProjectHookConfigs(ctx *gin.Context) {
 }
 
 func (h *Handlers) CreateProjectHookConfig(ctx *gin.Context) {
-	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin)
+	user, project, ok := h.authorizeProject(ctx, authz.ActionProjectManage)
 	if !ok {
 		return
 	}
@@ -77,7 +77,7 @@ func (h *Handlers) CreateProjectHookConfig(ctx *gin.Context) {
 }
 
 func (h *Handlers) UpdateProjectHookConfig(ctx *gin.Context) {
-	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin)
+	user, project, ok := h.authorizeProject(ctx, authz.ActionProjectManage)
 	if !ok {
 		return
 	}
@@ -105,7 +105,7 @@ func (h *Handlers) UpdateProjectHookConfig(ctx *gin.Context) {
 }
 
 func (h *Handlers) DeleteProjectHookConfig(ctx *gin.Context) {
-	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin)
+	user, project, ok := h.authorizeProject(ctx, authz.ActionProjectManage)
 	if !ok {
 		return
 	}
@@ -128,7 +128,7 @@ func (h *Handlers) DeleteProjectHookConfig(ctx *gin.Context) {
 }
 
 func (h *Handlers) ListProjectHookRuns(ctx *gin.Context) {
-	if _, _, ok := h.projectAndCurrentUser(ctx); !ok {
+	if _, _, ok := h.authorizeProject(ctx, authz.ActionProjectRead); !ok {
 		return
 	}
 	pagination := paginationFromQueryWithSort(ctx, map[string]string{"createdAt": "created_at", "phase": "phase", "status": "status"}, "createdAt")
@@ -160,7 +160,7 @@ func (h *Handlers) ListProjectHookRuns(ctx *gin.Context) {
 }
 
 func (h *Handlers) GetProjectHookRunLog(ctx *gin.Context) {
-	if _, project, ok := h.projectAndCurrentUser(ctx); !ok {
+	if _, project, ok := h.authorizeProject(ctx, authz.ActionProjectRead); !ok {
 		return
 	} else {
 		var run model.HookRun

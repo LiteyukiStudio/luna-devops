@@ -128,11 +128,12 @@ func (h *Handlers) authorizeBuildEnvironmentConfig(ctx *gin.Context, user model.
 }
 
 func (h *Handlers) canManageBuildEnvironmentProject(ctx *gin.Context, user model.User, projectID string) bool {
-	if authz.IsPlatformAdmin(user.Role) {
-		return true
+	allowed, err := h.projectRoleActionAllowed(ctx.Request.Context(), user, projectID, authz.ActionSecretViewValue)
+	if err != nil {
+		writeProjectAuthorizationError(ctx, err)
+		return false
 	}
-	var member model.ProjectMember
-	if err := h.dbFor(ctx).First(&member, "project_id = ? and user_id = ?", projectID, user.ID).Error; err == nil && projectRoleAllowed(member.Role, []string{authz.ProjectRoleOwner, authz.ProjectRoleAdmin}) {
+	if allowed {
 		return true
 	}
 	writeError(ctx, http.StatusForbidden, "只有项目空间所有者或管理员可以维护构建变量和密钥")

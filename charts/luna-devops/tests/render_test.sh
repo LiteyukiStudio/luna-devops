@@ -108,6 +108,29 @@ if helm template luna-devops "$chart_dir" --namespace luna-devops \
 fi
 assert_contains "$worker_database_env_error" 'API_DB_MAX_OPEN_CONNS is managed by the chart and cannot be set through worker.extraEnv' 'Worker accepts API database-pool variables through extraEnv'
 
+missing_ingress_proxy_error="$tmp_dir/missing-ingress-trusted-proxy.err"
+if helm template luna-devops "$chart_dir" --namespace luna-devops \
+  --set ingress.enabled=true > /dev/null 2> "$missing_ingress_proxy_error"; then
+  fail 'Ingress must require an explicit trusted proxy CIDR boundary'
+fi
+assert_contains "$missing_ingress_proxy_error" 'app\.trustedProxyCidrs is required when ingress\.enabled=true' 'Ingress accepts an empty trusted proxy boundary'
+
+trusted_ingress_render="$tmp_dir/trusted-ingress.yaml"
+helm template luna-devops "$chart_dir" --namespace luna-devops \
+  --set ingress.enabled=true \
+  --set-string app.trustedProxyCidrs=10.42.0.0/16 > "$trusted_ingress_render"
+assert_contains "$trusted_ingress_render" '^kind: Ingress$' 'Ingress was not rendered with an explicit trusted proxy boundary'
+assert_contains "$trusted_ingress_render" '^  TRUSTED_PROXY_CIDRS: "10\.42\.0\.0/16"$' 'the trusted proxy CIDR did not reach API configuration'
+
+for universal_proxy_cidr in '0.0.0.0/0' '::/0'; do
+  universal_proxy_error="$tmp_dir/universal-trusted-proxy.err"
+  if helm template luna-devops "$chart_dir" --namespace luna-devops \
+    --set-string app.trustedProxyCidrs="$universal_proxy_cidr" > /dev/null 2> "$universal_proxy_error"; then
+    fail "trusted proxy boundary accepted $universal_proxy_cidr"
+  fi
+  assert_contains "$universal_proxy_error" 'app\.trustedProxyCidrs must not contain universal /0 CIDRs' "trusted proxy boundary did not reject $universal_proxy_cidr"
+done
+
 initial_admin_values="$tmp_dir/initial-admin.yaml"
 cat > "$initial_admin_values" <<'EOF'
 api:

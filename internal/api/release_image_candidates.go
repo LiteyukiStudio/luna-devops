@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	registryprovider "github.com/LiteyukiStudio/devops/internal/provider/registry"
 	"github.com/gin-gonic/gin"
@@ -34,7 +35,7 @@ type releaseImageCandidatesOutput struct {
 }
 
 func (h *Handlers) ListReleaseImageCandidates(ctx *gin.Context) {
-	user, project, ok := h.projectAndCurrentUser(ctx)
+	user, project, ok := h.authorizeProject(ctx, authz.ActionDeploymentRead)
 	if !ok {
 		return
 	}

@@ -18,7 +18,7 @@ type billingOwnerTransferRequestInput struct {
 }
 
 func (h *Handlers) CreateBillingOwnerTransferRequest(ctx *gin.Context) {
-	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner)
+	user, project, ok := h.authorizeProject(ctx, authz.ActionProjectOwnerOnly)
 	if !ok {
 		return
 	}

@@ -182,11 +182,14 @@ func applicationPodTemplate(spec ApplicationResourcesSpec, objectLabels map[stri
 func applicationAutomountServiceAccountToken(spec ApplicationResourcesSpec) *bool {
 	switch strings.ToLower(strings.TrimSpace(spec.AutomountServiceAccountToken)) {
 	case "true":
-		return boolPtr(true)
+		if applicationServiceAccountTrusted(spec, spec.ServiceAccountName) {
+			return boolPtr(true)
+		}
+		return boolPtr(false)
 	case "false":
 		return boolPtr(false)
 	default:
-		return nil
+		return boolPtr(false)
 	}
 }
 
@@ -351,6 +354,11 @@ func applicationAuxContainers(raw string, label string, spec ApplicationResource
 		if err != nil {
 			return nil, err
 		}
+		for _, port := range item.Ports {
+			if port.HostPort != 0 {
+				return nil, fmt.Errorf("%s cannot use host ports", label)
+			}
+		}
 		container := corev1.Container{
 			Name:            name,
 			Image:           strings.TrimSpace(item.Image),
@@ -412,7 +420,7 @@ func allowedAuxEnvVars(input []corev1.EnvVar) []corev1.EnvVar {
 
 func allowedAuxSecurityContext(input *corev1.SecurityContext, label string) (*corev1.SecurityContext, error) {
 	if input == nil {
-		return nil, nil
+		return &corev1.SecurityContext{AllowPrivilegeEscalation: boolPtr(false)}, nil
 	}
 	if input.Privileged != nil && *input.Privileged {
 		return nil, fmt.Errorf("%s cannot enable privileged", label)
@@ -423,8 +431,8 @@ func allowedAuxSecurityContext(input *corev1.SecurityContext, label string) (*co
 	if input.Capabilities != nil && len(input.Capabilities.Add) > 0 {
 		return nil, fmt.Errorf("%s cannot add Linux capabilities", label)
 	}
-	context := &corev1.SecurityContext{}
-	hasValue := false
+	context := &corev1.SecurityContext{AllowPrivilegeEscalation: boolPtr(false)}
+	hasValue := true
 	if input.RunAsUser != nil {
 		context.RunAsUser = input.RunAsUser
 		hasValue = true
@@ -439,10 +447,6 @@ func allowedAuxSecurityContext(input *corev1.SecurityContext, label string) (*co
 	}
 	if input.ReadOnlyRootFilesystem != nil {
 		context.ReadOnlyRootFilesystem = input.ReadOnlyRootFilesystem
-		hasValue = true
-	}
-	if input.AllowPrivilegeEscalation != nil {
-		context.AllowPrivilegeEscalation = input.AllowPrivilegeEscalation
 		hasValue = true
 	}
 	if input.Capabilities != nil && len(input.Capabilities.Drop) > 0 {
@@ -518,8 +522,8 @@ func mustApplicationPodSecurityContext(spec ApplicationResourcesSpec) *corev1.Po
 }
 
 func applicationContainerSecurityContext(spec ApplicationResourcesSpec) (*corev1.SecurityContext, error) {
-	context := &corev1.SecurityContext{}
-	hasValue := false
+	context := &corev1.SecurityContext{AllowPrivilegeEscalation: boolPtr(false)}
+	hasValue := true
 	if spec.ReadOnlyRootFilesystem {
 		context.ReadOnlyRootFilesystem = boolPtr(true)
 		hasValue = true
@@ -527,8 +531,9 @@ func applicationContainerSecurityContext(spec ApplicationResourcesSpec) (*corev1
 	if value, ok, err := optionalBool(spec.AllowPrivilegeEscalation); err != nil {
 		return nil, fmt.Errorf("invalid allowPrivilegeEscalation: %w", err)
 	} else if ok {
-		context.AllowPrivilegeEscalation = &value
-		hasValue = true
+		if value {
+			return nil, fmt.Errorf("application workloads cannot enable privilege escalation")
+		}
 	}
 	add, err := applicationStringList(spec.CapabilityAdd, "capability add")
 	if err != nil {

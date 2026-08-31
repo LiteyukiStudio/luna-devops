@@ -43,7 +43,7 @@ type applicationDeletionPreview struct {
 }
 
 func (h *Handlers) ListApplications(ctx *gin.Context) {
-	project, ok := h.findProjectForCurrentUser(ctx)
+	_, project, ok := h.authorizeProject(ctx, authz.ActionApplicationRead)
 	if !ok {
 		return
 	}
@@ -79,7 +79,7 @@ func (h *Handlers) ListApplications(ctx *gin.Context) {
 }
 
 func (h *Handlers) CreateApplication(ctx *gin.Context) {
-	_, _, ok := h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin, authz.ProjectRoleDeveloper)
+	_, _, ok := h.authorizeProject(ctx, authz.ActionApplicationCreate)
 	if !ok {
 		return
 	}
@@ -116,7 +116,7 @@ func (h *Handlers) CreateApplication(ctx *gin.Context) {
 }
 
 func (h *Handlers) GetApplication(ctx *gin.Context) {
-	if _, ok := h.findProjectForCurrentUser(ctx); !ok {
+	if _, _, ok := h.authorizeProject(ctx, authz.ActionApplicationRead); !ok {
 		return
 	}
 
@@ -128,7 +128,7 @@ func (h *Handlers) GetApplication(ctx *gin.Context) {
 }
 
 func (h *Handlers) UpdateApplication(ctx *gin.Context) {
-	_, _, ok := h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin, authz.ProjectRoleDeveloper)
+	_, _, ok := h.authorizeProject(ctx, authz.ActionApplicationUpdate)
 	if !ok {
 		return
 	}
@@ -162,7 +162,7 @@ func (h *Handlers) UpdateApplication(ctx *gin.Context) {
 }
 
 func (h *Handlers) DeleteApplication(ctx *gin.Context) {
-	user, _, ok := h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin)
+	user, _, ok := h.authorizeProject(ctx, authz.ActionApplicationDelete)
 	if !ok {
 		return
 	}
@@ -238,7 +238,7 @@ func (h *Handlers) DeleteApplication(ctx *gin.Context) {
 }
 
 func (h *Handlers) PreviewApplicationDeletion(ctx *gin.Context) {
-	_, project, ok := h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin)
+	_, project, ok := h.authorizeProject(ctx, authz.ActionApplicationDelete)
 	if !ok {
 		return
 	}

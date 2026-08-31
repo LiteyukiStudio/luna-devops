@@ -14,6 +14,7 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/observation"
 	projectservice "github.com/LiteyukiStudio/devops/internal/project"
+	"github.com/LiteyukiStudio/devops/internal/repository"
 	"github.com/LiteyukiStudio/devops/internal/security"
 	"gorm.io/gorm"
 )
@@ -50,6 +51,7 @@ type Result struct {
 
 type Service struct {
 	db                *gorm.DB
+	projectAuthorizer authz.ProjectAuthorizer
 	webPolicyProvider WebPolicyProvider
 	webProxyProvider  WebProxyProvider
 	webProxyCursor    atomic.Uint64
@@ -72,8 +74,17 @@ func WithWebProxyProvider(provider WebProxyProvider) ServiceOption {
 	}
 }
 
+func WithProjectAuthorizer(authorizer authz.ProjectAuthorizer) ServiceOption {
+	return func(service *Service) {
+		service.projectAuthorizer = authorizer
+	}
+}
+
 func NewService(db *gorm.DB, options ...ServiceOption) *Service {
 	service := &Service{db: db}
+	if db != nil {
+		service.projectAuthorizer = authz.NewProjectAuthorizer(repository.NewProjectRepository(db))
+	}
 	for _, option := range options {
 		option(service)
 	}
@@ -81,6 +92,9 @@ func NewService(db *gorm.DB, options ...ServiceOption) *Service {
 }
 
 func (s *Service) AuthorizeActor(ctx context.Context, userID, sessionID, projectID string, policy Policy) bool {
+	if s == nil || s.db == nil {
+		return false
+	}
 	var user model.User
 	if s.db.WithContext(ctx).First(&user, "id = ? and disabled = ?", userID, false).Error != nil {
 		return false
@@ -92,17 +106,13 @@ func (s *Service) AuthorizeActor(ctx context.Context, userID, sessionID, project
 	if policy.ProjectAction == "" {
 		return true
 	}
-	if authz.IsPlatformAdmin(user.Role) {
-		return true
-	}
-	if projectID == "" {
+	if projectID == "" || s.projectAuthorizer == nil {
 		return false
 	}
-	var member model.ProjectMember
-	if s.db.WithContext(ctx).First(&member, "project_id = ? and user_id = ?", projectID, userID).Error != nil {
-		return false
-	}
-	return authz.ProjectRoleAllows(member.Role, policy.ProjectAction)
+	_, err := s.projectAuthorizer.AuthorizeProject(ctx, authz.ProjectSubject{
+		UserID: user.ID, PlatformRole: user.Role,
+	}, projectID, policy.ProjectAction)
+	return err == nil
 }
 
 func (s *Service) Execute(ctx context.Context, input Request) (Result, error) {
@@ -122,10 +132,14 @@ func (s *Service) Execute(ctx context.Context, input Request) (Result, error) {
 		if err != nil {
 			return Result{}, err
 		}
+		readPolicy, ok := authz.ProjectPolicyForAction(authz.ActionProjectRead)
+		if !ok {
+			return Result{}, fmt.Errorf("%w: %v", ErrStorage, authz.ErrProjectPolicyUndefined)
+		}
 		var projects []map[string]any
 		query := s.db.WithContext(ctx).Table("projects").
 			Select("projects.id, projects.name, projects.identifier").
-			Joins("left join project_members on project_members.project_id = projects.id and project_members.user_id = ?", input.UserID)
+			Joins("left join project_members on project_members.project_id = projects.id and project_members.user_id = ? and project_members.role in ?", input.UserID, readPolicy.AllowedRoles)
 		if visibility == projectservice.ListVisibilityRelated {
 			query = query.Where("project_members.user_id = ?", input.UserID)
 		}
@@ -136,10 +150,14 @@ func (s *Service) Execute(ctx context.Context, input Request) (Result, error) {
 		if err != nil {
 			return Result{}, err
 		}
+		readPolicy, ok := authz.ProjectPolicyForAction(authz.ActionProjectRead)
+		if !ok {
+			return Result{}, fmt.Errorf("%w: %v", ErrStorage, authz.ErrProjectPolicyUndefined)
+		}
 		var projects []map[string]any
 		query := s.db.WithContext(ctx).Table("projects").
 			Select("projects.id, projects.name, projects.identifier, projects.description, project_members.role, projects.created_at, projects.updated_at").
-			Joins("left join project_members on project_members.project_id = projects.id and project_members.user_id = ?", input.UserID)
+			Joins("left join project_members on project_members.project_id = projects.id and project_members.user_id = ? and project_members.role in ?", input.UserID, readPolicy.AllowedRoles)
 		if options.Visibility == projectservice.ListVisibilityRelated {
 			query = query.Where("project_members.user_id = ?", input.UserID)
 		}
@@ -267,6 +285,7 @@ func (s *Service) Execute(ctx context.Context, input Request) (Result, error) {
 		projectResources := s.db.WithContext(ctx).Table("scoped_resource_project_bindings").Select("resource_id").
 			Where("resource_type = ? and project_id = ?", "runtime_cluster", projectID)
 		err := s.db.WithContext(ctx).Table("runtime_clusters").Select("id, name, type, scope, created_at, updated_at").
+			Where("delete_status = ?", "active").
 			Where("scope = 'global' or (scope = 'user' and owner_ref = ?) or (scope = 'project' and id in (?))", input.UserID, projectResources).
 			Order("created_at desc").Limit(limit).Scan(&rows).Error
 		return markObservationUnavailable(

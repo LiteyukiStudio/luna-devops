@@ -58,6 +58,12 @@ func TestApplyApplicationResourcesCreatesWorkloadResources(t *testing.T) {
 	if deployment.Spec.Template.Spec.Containers[0].ImagePullPolicy != corev1.PullIfNotPresent {
 		t.Fatalf("image pull policy = %q", deployment.Spec.Template.Spec.Containers[0].ImagePullPolicy)
 	}
+	if deployment.Spec.Template.Spec.AutomountServiceAccountToken == nil || *deployment.Spec.Template.Spec.AutomountServiceAccountToken {
+		t.Fatalf("automount service account token = %#v", deployment.Spec.Template.Spec.AutomountServiceAccountToken)
+	}
+	if security := deployment.Spec.Template.Spec.Containers[0].SecurityContext; security == nil || security.AllowPrivilegeEscalation == nil || *security.AllowPrivilegeEscalation {
+		t.Fatalf("allow privilege escalation = %#v", security)
+	}
 	if deployment.Spec.ProgressDeadlineSeconds == nil || *deployment.Spec.ProgressDeadlineSeconds != 120 {
 		t.Fatalf("progress deadline = %#v", deployment.Spec.ProgressDeadlineSeconds)
 	}
@@ -322,7 +328,7 @@ func TestApplyApplicationResourcesAppliesAdvancedKubernetesOptions(t *testing.T)
 		ContainerArgs:                "npm run start",
 		Lifecycle:                    `{"preStop":{"exec":{"command":["/bin/sh","-c","sleep 5"]}}}`,
 		InitContainers:               `[{"name":"init-permissions","image":"busybox:1.36","command":["sh","-c","echo init"],"env":[{"name":"MODE","value":"init"},{"name":"FROM_SECRET","valueFrom":{"secretKeyRef":{"name":"other","key":"token"}}}],"envFrom":[{"secretRef":{"name":"other"}}],"volumeMounts":[{"name":"data","mountPath":"/data"}]}]`,
-		SidecarContainers:            `[{"name":"log-agent","image":"busybox:1.36","args":["sleep","3600"],"ports":[{"containerPort":9000,"hostPort":39000}],"securityContext":{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]}}}]`,
+		SidecarContainers:            `[{"name":"log-agent","image":"busybox:1.36","args":["sleep","3600"],"ports":[{"containerPort":9000}],"securityContext":{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]}}}]`,
 		ReadinessProbe:               `{"httpGet":{"path":"/ready","port":8080},"periodSeconds":5}`,
 		RunAsUser:                    "1001",
 		RunAsGroup:                   "1001",
@@ -334,10 +340,10 @@ func TestApplyApplicationResourcesAppliesAdvancedKubernetesOptions(t *testing.T)
 		NodeSelector:                 "kubernetes.io/os=linux",
 		Tolerations:                  `[{"key":"dedicated","operator":"Equal","value":"apps","effect":"NoSchedule"}]`,
 		PriorityClassName:            "high-priority",
-		ServiceType:                  "NodePort",
+		ServiceType:                  "ClusterIP",
 		ServicePorts:                 []ApplicationServicePort{{Name: "http", Port: 8080, AppProtocol: "http"}},
 		ServiceAnnotations:           "example.com/service=true",
-		ServiceExternalTrafficPolicy: "Local",
+		ServiceExternalTrafficPolicy: "",
 		ServiceSessionAffinity:       "ClientIP",
 		AutoScalingEnabled:           true,
 		AutoScalingMinReplicas:       2,
@@ -408,7 +414,7 @@ func TestApplyApplicationResourcesAppliesAdvancedKubernetesOptions(t *testing.T)
 	if err != nil {
 		t.Fatalf("get service: %v", err)
 	}
-	if service.Spec.Type != corev1.ServiceTypeNodePort || service.Spec.ExternalTrafficPolicy != corev1.ServiceExternalTrafficPolicyLocal || service.Spec.SessionAffinity != corev1.ServiceAffinityClientIP {
+	if service.Spec.Type != corev1.ServiceTypeClusterIP || service.Spec.ExternalTrafficPolicy != "" || service.Spec.SessionAffinity != corev1.ServiceAffinityClientIP {
 		t.Fatalf("service spec = %#v", service.Spec)
 	}
 	if service.Annotations["example.com/service"] != "true" {
@@ -539,6 +545,58 @@ func TestApplyApplicationResourcesRejectsRiskyAuxContainerSecurityContext(t *tes
 	}
 	if err := client.ApplyApplicationResources(context.Background(), spec); err == nil {
 		t.Fatal("expected risky sidecar security context to be rejected")
+	}
+}
+
+func TestApplyApplicationResourcesRejectsAuxContainerHostPort(t *testing.T) {
+	client := NewClientForInterface(fake.NewSimpleClientset())
+	spec := ApplicationResourcesSpec{
+		Name:               "api-risky-host-port",
+		Namespace:          "project-demo",
+		ProjectID:          "prj_demo",
+		ApplicationID:      "app_api",
+		Image:              "registry.example.com/acme/api:prod",
+		ServicePort:        8080,
+		SidecarContainers:  `[{"name":"debug","image":"busybox:1.36","ports":[{"containerPort":9000,"hostPort":39000}]}]`,
+		DeploymentTargetID: "dplt_backend",
+	}
+	if err := client.ApplyApplicationResources(context.Background(), spec); err == nil {
+		t.Fatal("expected sidecar hostPort to be rejected")
+	}
+}
+
+func TestValidateApplicationResourcesSpecRejectsPublicHighRiskOptions(t *testing.T) {
+	baseline := ApplicationResourcesSpec{
+		Name: "api-safe", Namespace: "project-demo", ProjectID: "prj_demo", ApplicationID: "app_api",
+		DeploymentTargetID: "dplt_backend", Image: "registry.example.com/acme/api:prod", ServicePort: 8080,
+	}
+	tests := []struct {
+		name   string
+		mutate func(*ApplicationResourcesSpec)
+	}{
+		{name: "privilege escalation", mutate: func(spec *ApplicationResourcesSpec) { spec.AllowPrivilegeEscalation = "true" }},
+		{name: "capability add", mutate: func(spec *ApplicationResourcesSpec) { spec.CapabilityAdd = "NET_ADMIN" }},
+		{name: "untrusted service account", mutate: func(spec *ApplicationResourcesSpec) { spec.ServiceAccountName = "custom" }},
+		{name: "service account token", mutate: func(spec *ApplicationResourcesSpec) { spec.AutomountServiceAccountToken = "true" }},
+		{name: "NodePort", mutate: func(spec *ApplicationResourcesSpec) { spec.ServiceType = "NodePort" }},
+		{name: "external traffic policy", mutate: func(spec *ApplicationResourcesSpec) { spec.ServiceExternalTrafficPolicy = "Local" }},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			spec := baseline
+			test.mutate(&spec)
+			if err := validateApplicationResourcesSpec(spec); err == nil {
+				t.Fatal("expected high-risk option to be rejected")
+			}
+		})
+	}
+
+	trusted := baseline
+	trusted.ServiceAccountName = "luna-gateway-traffic-probe"
+	trusted.AutomountServiceAccountToken = "true"
+	trusted.TrustedServiceAccounts = []string{"luna-gateway-traffic-probe"}
+	if err := validateApplicationResourcesSpec(trusted); err != nil {
+		t.Fatalf("trusted internal service account plan was rejected: %v", err)
 	}
 }
 

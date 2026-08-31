@@ -35,9 +35,9 @@ func (h *Handlers) ListContainerImages(ctx *gin.Context) {
 	} else if visibility == projectservice.ListVisibilityAll {
 		query = query.Where("created_by = ? or project_id <> ''", user.ID)
 	} else if projectIDs := h.projectIDsForUser(ctx.Request.Context(), user.ID); len(projectIDs) > 0 {
-		query = query.Where("created_by = ? or project_id in ?", user.ID, projectIDs)
+		query = query.Where("((project_id = '' and created_by = ?) or project_id in ?)", user.ID, projectIDs)
 	} else {
-		query = query.Where("created_by = ?", user.ID)
+		query = query.Where("project_id = '' and created_by = ?", user.ID)
 	}
 	query = applySearch(ctx, query, "image_ref", "repository", "tag", "digest", "source_commit", "build_run_id", "source_type", "scan_status")
 
@@ -80,7 +80,7 @@ func (h *Handlers) CreateContainerImage(ctx *gin.Context) {
 		return
 	}
 	if input.ProjectID != "" {
-		if _, ok := h.findProjectForCurrentUserWithRolesByID(ctx, input.ProjectID, authz.ProjectRoleOwner, authz.ProjectRoleAdmin, authz.ProjectRoleDeveloper); !ok {
+		if _, _, ok := h.authorizeProjectByID(ctx, input.ProjectID, authz.ActionImageWrite); !ok {
 			return
 		}
 	} else if user.Role != authz.PlatformRoleAdmin {

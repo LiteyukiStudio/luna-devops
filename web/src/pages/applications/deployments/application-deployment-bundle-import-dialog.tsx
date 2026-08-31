@@ -24,14 +24,13 @@ const DEPLOYMENT_BUNDLE_MAX_BYTES = 1024 * 1024
 const importFormSchema = z.object({
   name: z.string().trim().min(1),
   stage: z.enum(['dev', 'test', 'staging', 'prod']),
-  namespace: z.string(),
   mappings: z.record(z.string(), z.string()),
   secretValues: z.record(z.string(), z.string()),
 })
 
 type ImportForm = z.infer<typeof importFormSchema>
 
-const emptyForm: ImportForm = { mappings: {}, name: '', namespace: '', secretValues: {}, stage: 'dev' }
+const emptyForm: ImportForm = { mappings: {}, name: '', secretValues: {}, stage: 'dev' }
 
 export function ApplicationDeploymentBundleImportDialog({ applicationId, onImported, onOpenChange, open, projectId }: {
   applicationId: string
@@ -86,7 +85,6 @@ export function ApplicationDeploymentBundleImportDialog({ applicationId, onImpor
     try {
       const overrides = {
         name: nextValues.name,
-        namespace: nextValues.namespace,
         ...(includeStageOverride ? { stage: nextValues.stage } : {}),
       }
       const result = await api.previewDeploymentTargetBundleImport(projectId, applicationId, {
@@ -130,7 +128,6 @@ export function ApplicationDeploymentBundleImportDialog({ applicationId, onImpor
       const nextValues: ImportForm = {
         mappings: {},
         name: nextBundle.configuration.name || nextBundle.configuration.stage || '',
-        namespace: nextBundle.configuration.namespace || '',
         secretValues: {},
         stage,
       }
@@ -168,7 +165,6 @@ export function ApplicationDeploymentBundleImportDialog({ applicationId, onImpor
         mappings: nextValues.mappings,
         overrides: {
           name: nextValues.name,
-          namespace: nextValues.namespace,
           ...(stageOverrideSet ? { stage: nextValues.stage } : {}),
         },
         secretValues: nextValues.secretValues,
@@ -229,11 +225,6 @@ export function ApplicationDeploymentBundleImportDialog({ applicationId, onImpor
                         {(['dev', 'test', 'staging', 'prod'] as const).map(stage => <SelectItem key={stage} value={stage}>{t(`deploymentsPage.stageLabels.${stage}`)}</SelectItem>)}
                       </SelectContent>
                     </Select>
-                  </div>
-                  <div className="grid gap-2 sm:col-span-2">
-                    <Label htmlFor="deployment-bundle-namespace">{t('deploymentsPage.bundleImport.namespace')}</Label>
-                    <Input id="deployment-bundle-namespace" {...form.register('namespace', { onChange: () => setPreviewStale(true) })} />
-                    <p className="text-xs text-muted-foreground">{t('deploymentsPage.bundleImport.namespaceHint')}</p>
                   </div>
                 </div>
               </section>

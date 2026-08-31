@@ -246,6 +246,7 @@ func TestNewResourceCleanupTaskBuildsTypedPayload(t *testing.T) {
 		ResourceType: "deployment_target",
 		ResourceID:   "dplt_1",
 		ProjectID:    "prj_1",
+		ActorID:      "usr_1",
 	}
 
 	task, err := NewResourceCleanupTask(payload)
@@ -260,8 +261,19 @@ func TestNewResourceCleanupTaskBuildsTypedPayload(t *testing.T) {
 	if err := json.Unmarshal(task.Payload(), &got); err != nil {
 		t.Fatalf("unmarshal payload: %v", err)
 	}
-	if got.ResourceType != payload.ResourceType || got.ResourceID != payload.ResourceID || got.ProjectID != payload.ProjectID {
+	if got.ResourceType != payload.ResourceType || got.ResourceID != payload.ResourceID || got.ProjectID != payload.ProjectID || got.ActorID != payload.ActorID {
 		t.Fatalf("payload = %#v", got)
+	}
+}
+
+func TestNewResourceCleanupTaskRequiresActor(t *testing.T) {
+	_, err := NewResourceCleanupTask(ResourceCleanupPayload{
+		ResourceType: "deployment_target",
+		ResourceID:   "dplt_1",
+		ProjectID:    "prj_1",
+	})
+	if err == nil {
+		t.Fatal("expected missing actor id to fail")
 	}
 }
 

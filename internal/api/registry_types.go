@@ -17,20 +17,24 @@ func registryResponses(registries []model.ArtifactRegistry) []artifactRegistryOu
 	return result
 }
 
-func (h *Handlers) registryResponsesForUser(user model.User, registries []model.ArtifactRegistry, ctx context.Context) []artifactRegistryOutput {
+func (h *Handlers) registryResponsesForUser(user model.User, registries []model.ArtifactRegistry, ctx context.Context) ([]artifactRegistryOutput, error) {
 	result := make([]artifactRegistryOutput, 0, len(registries))
 	for _, registry := range registries {
 		registry.ProjectIDs = h.scopedResourceProjectIDs(scopedResourceArtifactRegistry, registry.ID, ctx)
 		registry.DefaultProjectIDs = h.scopedResourceDefaultProjectIDMap(scopedResourceArtifactRegistry, []string{registry.ID}, ctx)[registry.ID]
 		response := registryResponse(registry)
-		if !h.canInspectScopedResourceConfigByID(user, registry.Scope, registry.OwnerRef, scopedResourceArtifactRegistry, registry.ID, ctx) {
+		canInspect, err := h.canInspectScopedResourceConfigByID(user, registry.Scope, registry.OwnerRef, scopedResourceArtifactRegistry, registry.ID, ctx)
+		if err != nil {
+			return nil, err
+		}
+		if !canInspect {
 			response.Endpoint = ""
 			response.Namespace = ""
 			response.Capabilities = []string{}
 		}
 		result = append(result, response)
 	}
-	return result
+	return result, nil
 }
 
 func registryResponse(registry model.ArtifactRegistry) artifactRegistryOutput {

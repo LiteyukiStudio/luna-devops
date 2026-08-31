@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"path"
 	"strings"
@@ -12,14 +13,13 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/runtimeconfig"
-	"github.com/LiteyukiStudio/devops/internal/tasks"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
 func (h *Handlers) ListProjectRuntimeConfigSets(ctx *gin.Context) {
-	project, ok := h.findProjectForCurrentUser(ctx)
+	_, project, ok := h.authorizeProject(ctx, authz.ActionSecretReadSummary)
 	if !ok {
 		return
 	}
@@ -43,7 +43,7 @@ func (h *Handlers) ListProjectRuntimeConfigSets(ctx *gin.Context) {
 }
 
 func (h *Handlers) CreateProjectRuntimeConfigSet(ctx *gin.Context) {
-	project, ok := h.findProjectForCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin, authz.ProjectRoleDeveloper)
+	_, project, ok := h.authorizeProject(ctx, authz.ActionSecretUpdate)
 	if !ok {
 		return
 	}
@@ -71,7 +71,7 @@ func (h *Handlers) CreateProjectRuntimeConfigSet(ctx *gin.Context) {
 }
 
 func (h *Handlers) UpdateProjectRuntimeConfigSet(ctx *gin.Context) {
-	project, ok := h.findProjectForCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin, authz.ProjectRoleDeveloper)
+	_, project, ok := h.authorizeProject(ctx, authz.ActionSecretUpdate)
 	if !ok {
 		return
 	}
@@ -120,7 +120,7 @@ func (h *Handlers) UpdateProjectRuntimeConfigSet(ctx *gin.Context) {
 }
 
 func (h *Handlers) DeleteProjectRuntimeConfigSet(ctx *gin.Context) {
-	project, ok := h.findProjectForCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin, authz.ProjectRoleDeveloper)
+	user, project, ok := h.authorizeProject(ctx, authz.ActionSecretUpdate)
 	if !ok {
 		return
 	}
@@ -137,18 +137,20 @@ func (h *Handlers) DeleteProjectRuntimeConfigSet(ctx *gin.Context) {
 		return
 	}
 	if err := markResourceDeleting(h.dbFor(ctx), &model.ProjectRuntimeConfigSet{}, set.ID); err != nil {
+		if errors.Is(err, errResourceDeleteAlreadyStarted) {
+			writeErrorCode(ctx, http.StatusConflict, "runtime_config.delete_in_progress", "运行配置正在删除中，请等待资源清理完成")
+			return
+		}
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if !h.enqueueResourceCleanup(ctx.Request.Context(), tasks.ResourceCleanupPayload{
-		ResourceType: "runtime_config",
-		ResourceID:   set.ID,
-		ProjectID:    set.ProjectID,
-	}) {
+	if !h.enqueueResourceCleanup(ctx.Request.Context(), "runtime_config", set.ID, set.ProjectID, user.ID) {
 		_ = markResourceDeleteFailed(h.dbFor(ctx), &model.ProjectRuntimeConfigSet{}, set.ID, "资源清理任务投递失败，请稍后重试")
+		h.auditWithContext(user.ID, "runtime_config.delete", set.ID, false, "cleanup_enqueue_failed", ctx.Request.Context())
 		writeError(ctx, http.StatusServiceUnavailable, "资源清理任务投递失败，请稍后重试")
 		return
 	}
+	h.auditWithContext(user.ID, "runtime_config.delete", set.ID, true, "cleanup_queued", ctx.Request.Context())
 	ctx.Status(http.StatusNoContent)
 }
 

@@ -15,6 +15,7 @@
 | [代码检查流程.md](代码检查流程.md) | 健康检查、重构触发条件、CI 与发布门禁原则 |
 | [11-AI助手与Agent规格.md](11-AI助手与Agent规格.md) | Agent 架构、工具目录、审批、计费与安全边界 |
 | [12-AI声明式交互卡片Schema.md](12-AI声明式交互卡片Schema.md) | Agent 交互卡片协议契约 |
+| [24-kubectl兼容网关与落地方案.md](24-kubectl兼容网关与落地方案.md) | kubectl 完整兼容范围、Kubernetes API 代理、鉴权授权、安全边界与端到端验收方案 |
 | [可观测和插桩规范.md](可观测和插桩规范.md) | Trace、日志、Metric、Context 与遥测安全规范 |
 
 ## 其他入口

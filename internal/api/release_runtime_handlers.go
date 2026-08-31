@@ -12,13 +12,14 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	kubeprovider "github.com/LiteyukiStudio/devops/internal/provider/kubernetes"
+	"github.com/LiteyukiStudio/devops/internal/runtimeaccess"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 )
 
 func (h *Handlers) GetReleaseRuntimeLogs(ctx *gin.Context) {
 	markLiveObservationResponse(ctx)
-	if _, ok := h.findProjectForCurrentUser(ctx); !ok {
+	if _, _, ok := h.authorizeProject(ctx, authz.ActionDeploymentRead); !ok {
 		return
 	}
 	release, ok := h.findRelease(ctx)
@@ -51,7 +52,7 @@ func (h *Handlers) GetReleaseRuntimeLogs(ctx *gin.Context) {
 }
 
 func (h *Handlers) ExecReleaseRuntimeCommand(ctx *gin.Context) {
-	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin, authz.ProjectRoleDeveloper)
+	user, project, ok := h.authorizeProject(ctx, authz.ActionDeploymentExec)
 	if !ok {
 		return
 	}
@@ -105,6 +106,9 @@ func (h *Handlers) ExecReleaseRuntimeCommand(ctx *gin.Context) {
 
 func (h *Handlers) StreamReleaseRuntimeTerminal(ctx *gin.Context) {
 	ticket := strings.TrimSpace(ctx.Query("ticket"))
+	if !requireRuntimeTerminalTicketForBearer(ctx, ticket) {
+		return
+	}
 	var (
 		user          model.User
 		project       model.Project
@@ -113,7 +117,7 @@ func (h *Handlers) StreamReleaseRuntimeTerminal(ctx *gin.Context) {
 		ok            bool
 	)
 	if ticket == "" {
-		user, project, ok = h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin, authz.ProjectRoleDeveloper)
+		user, project, ok = h.authorizeProject(ctx, authz.ActionDeploymentExec)
 		if !ok {
 			return
 		}
@@ -172,7 +176,7 @@ func (h *Handlers) StreamReleaseRuntimeTerminal(ctx *gin.Context) {
 		}
 	} else {
 		if !ticketValue.matches("release", reference) ||
-			!h.runtimeTerminalAuthorizationActive(ctx.Request.Context(), authorization, func(checkCtx context.Context, currentUser model.User) bool {
+			!h.continuousAuthorizationActive(ctx.Request.Context(), authorization, func(checkCtx context.Context, currentUser model.User) bool {
 				return h.releaseRuntimeTerminalAuthorizationAllowed(checkCtx, currentUser, reference)
 			}) {
 			writeErrorCode(ctx, http.StatusUnauthorized, "runtime_terminal.ticket_invalid", "terminal ticket is invalid, expired, revoked, or bound to another resource")
@@ -202,9 +206,13 @@ func (h *Handlers) StreamReleaseRuntimeTerminal(ctx *gin.Context) {
 	defer stdinWriter.Close()
 	sizeQueue := newRuntimeTerminalSizeQueue()
 	wsWriter := &runtimeTerminalWebSocketWriter{conn: conn}
-	authorizationRevoked := h.monitorRuntimeTerminalAuthorization(sessionCtx, authorization, func(checkCtx context.Context, currentUser model.User) bool {
+	authorizationRevoked, authorizationActive := h.monitorContinuousAuthorization(sessionCtx, authorization, func(checkCtx context.Context, currentUser model.User) bool {
 		return h.releaseRuntimeTerminalAuthorizationAllowed(checkCtx, currentUser, reference)
 	}, cancel)
+	if !authorizationActive {
+		h.auditWithContext(user.ID, "release_runtime.terminal", release.ID, false, "authorization expired or was revoked", ctx.Request.Context())
+		return
+	}
 
 	go h.readRuntimeTerminalMessages(conn, stdinWriter, sizeQueue, cancel)
 	err = client.RuntimeTerminal(sessionCtx, kubeprovider.RuntimeTerminalOptions{
@@ -234,7 +242,7 @@ func (h *Handlers) StreamReleaseRuntimeTerminal(ctx *gin.Context) {
 }
 
 func (h *Handlers) AuthorizeReleaseRuntimeTerminal(ctx *gin.Context) {
-	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin, authz.ProjectRoleDeveloper)
+	user, project, ok := h.authorizeProject(ctx, authz.ActionDeploymentExec)
 	if !ok || !h.ensureProjectCanMutate(ctx, project) {
 		return
 	}
@@ -282,15 +290,12 @@ func (h *Handlers) releaseRuntimeTerminalProjectForUser(ctx *gin.Context, user m
 	if !ok {
 		return model.Project{}, false
 	}
-	if projectUserRoleAllowed(user, "", []string{authz.ProjectRoleOwner, authz.ProjectRoleAdmin, authz.ProjectRoleDeveloper}) {
-		return project, true
-	}
-	var member model.ProjectMember
-	if err := h.dbFor(ctx).First(&member, "project_id = ? and user_id = ?", project.ID, user.ID).Error; err != nil {
-		writeError(ctx, http.StatusForbidden, "你没有访问该项目的权限")
+	allowed, err := h.projectRoleActionAllowed(ctx.Request.Context(), user, project.ID, authz.ActionDeploymentExec)
+	if err != nil {
+		writeProjectAuthorizationError(ctx, err)
 		return model.Project{}, false
 	}
-	if !projectUserRoleAllowed(user, member.Role, []string{authz.ProjectRoleOwner, authz.ProjectRoleAdmin, authz.ProjectRoleDeveloper}) {
+	if !allowed {
 		writeError(ctx, http.StatusForbidden, "你没有执行该项目操作的权限")
 		return model.Project{}, false
 	}
@@ -361,14 +366,11 @@ func ensureRuntimeWebConsoleEnabled(ctx *gin.Context, project model.Project, tar
 }
 
 func runtimeWebConsoleEnabled(project model.Project, target model.DeploymentTarget) bool {
-	return project.WebConsoleEnabled && (target.WebConsoleEnabled == nil || *target.WebConsoleEnabled)
+	return runtimeaccess.Enabled(project.WebConsoleEnabled, target.WebConsoleEnabled)
 }
 
 func normalizeWebConsoleOverride(value *bool) *bool {
-	if value == nil || *value {
-		return nil
-	}
-	return value
+	return runtimeaccess.NormalizeOverride(value)
 }
 
 func (h *Handlers) runtimeClientForDeploymentTarget(ctx *gin.Context, project model.Project, target model.DeploymentTarget) (*kubeprovider.Client, string, model.RuntimeCluster, bool) {

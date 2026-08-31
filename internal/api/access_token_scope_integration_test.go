@@ -37,6 +37,7 @@ func TestPlatformAdminAccessTokenScopesAuthorizeDashboardAndDataRetention(t *tes
 
 	fullToken := "pat_scope_full_" + suffix
 	insufficientToken := "pat_scope_limited_" + suffix
+	projectInsufficientToken := "pat_scope_project_limited_" + suffix
 	tokens := []model.AccessToken{
 		{
 			ID:        "pat_scope_full_" + suffix,
@@ -54,12 +55,36 @@ func TestPlatformAdminAccessTokenScopesAuthorizeDashboardAndDataRetention(t *tes
 			TokenHash: hashToken(insufficientToken),
 			Source:    "personal",
 		},
+		{
+			ID:        "pat_scope_project_limited_" + suffix,
+			UserID:    user.ID,
+			Name:      "Project insufficient scope",
+			Scope:     "dashboard:read",
+			TokenHash: hashToken(projectInsufficientToken),
+			Source:    "personal",
+		},
 	}
 	if err := db.Create(&tokens).Error; err != nil {
 		t.Fatal(err)
 	}
 
 	router := NewRouter(db, mustTestConfig(t))
+	project := model.Project{ID: "prj_scope_" + suffix, Identifier: "scope-" + suffix, Name: "Scope Project"}
+	if err := db.Create(&project).Error; err != nil {
+		t.Fatal(err)
+	}
+	t.Run("platform admin still needs the OpenAPI scope before membership bypass", func(t *testing.T) {
+		path := "/api/v1/projects/" + project.ID
+		if recorder := performBearerRequest(router, http.MethodGet, path, fullToken, ""); recorder.Code != http.StatusOK {
+			t.Fatalf("full-scope admin without membership status = %d, body = %s", recorder.Code, recorder.Body.String())
+		}
+		recorder := performBearerRequest(router, http.MethodGet, path, projectInsufficientToken, "")
+		if recorder.Code != http.StatusForbidden {
+			t.Fatalf("insufficient-scope admin status = %d, body = %s", recorder.Code, recorder.Body.String())
+		}
+		assertRequiredScopeError(t, recorder, "project:read")
+	})
+
 	for _, path := range []string{"/api/v1/dashboard", "/api/v1/data-retention/catalog"} {
 		t.Run("full scope "+path, func(t *testing.T) {
 			recorder := performBearerRequest(router, http.MethodGet, path, fullToken, "")
@@ -72,7 +97,7 @@ func TestPlatformAdminAccessTokenScopesAuthorizeDashboardAndDataRetention(t *tes
 			if recorder.Code != http.StatusForbidden {
 				t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body.String())
 			}
-			assertRequiredScopeError(t, recorder, service.RequiredAccessTokenScope(path, http.MethodGet))
+			assertRequiredScopeError(t, recorder, requiredAccessTokenScope(t, path, http.MethodGet))
 		})
 	}
 
@@ -95,7 +120,7 @@ func TestPlatformAdminAccessTokenScopesAuthorizeDashboardAndDataRetention(t *tes
 		if recorder.Code != http.StatusForbidden {
 			t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body.String())
 		}
-		assertRequiredScopeError(t, recorder, service.RequiredAccessTokenScope(path, http.MethodGet))
+		assertRequiredScopeError(t, recorder, requiredAccessTokenScope(t, path, http.MethodGet))
 	})
 
 	retentionBody := `{"datasets":["platform_events"],"startAt":"2026-01-01T00:00:00Z","endAt":"2026-01-02T00:00:00Z"}`
@@ -133,10 +158,9 @@ func assertRequiredScopeError(
 ) {
 	t.Helper()
 	var response struct {
-		Code    string `json:"code"`
-		Details struct {
-			RequiredScope string `json:"requiredScope"`
-		} `json:"details"`
+		Code          string         `json:"code"`
+		RequiredScope string         `json:"requiredScope"`
+		Details       map[string]any `json:"details"`
 	}
 	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
 		t.Fatalf("decode scope error: %v", err)
@@ -144,13 +168,28 @@ func assertRequiredScopeError(
 	if response.Code != "auth.token.scope_insufficient" {
 		t.Fatalf("error code = %q", response.Code)
 	}
-	if response.Details.RequiredScope != requiredScope {
+	if response.RequiredScope != requiredScope {
 		t.Fatalf(
 			"required scope = %q, want %q",
-			response.Details.RequiredScope,
+			response.RequiredScope,
 			requiredScope,
 		)
 	}
+	if response.Details != nil {
+		t.Fatalf("scope error exposed generic details: %#v", response.Details)
+	}
+}
+
+func requiredAccessTokenScope(t *testing.T, path, method string) string {
+	t.Helper()
+	scopes, err := service.RequiredAccessTokenScopes(path, method)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(scopes) != 1 {
+		t.Fatalf("required scopes for %s %s = %#v, want exactly one", method, path, scopes)
+	}
+	return scopes[0]
 }
 
 func performBearerRequest(router http.Handler, method, path, token, body string) *httptest.ResponseRecorder {

@@ -7,11 +7,13 @@ import (
 	"mime"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/volume"
+	"github.com/LiteyukiStudio/devops/internal/volumetransferapi"
 	"github.com/gin-gonic/gin"
 )
 
@@ -74,11 +76,7 @@ type volumeDownloadAuthorizationResponse struct {
 	ExpiresAt time.Time `json:"expiresAt"`
 }
 
-type volumeDownloadBinding struct {
-	UserID    string
-	SubjectID string
-	Deadline  time.Time
-}
+type volumeDownloadBinding = runtimeTerminalAuthorizationBinding
 
 type volumeDownload struct {
 	Body        io.ReadCloser
@@ -86,7 +84,7 @@ type volumeDownload struct {
 }
 
 func (h *Handlers) CreateVolumeImport(ctx *gin.Context) {
-	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, volumeActionRoles(authz.ActionVolumeImport)...)
+	user, project, ok := h.authorizeProject(ctx, authz.ActionVolumeImport)
 	if !ok {
 		return
 	}
@@ -129,7 +127,7 @@ func (h *Handlers) CreateVolumeImport(ctx *gin.Context) {
 }
 
 func (h *Handlers) UploadVolumeImportContent(ctx *gin.Context) {
-	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, volumeActionRoles(authz.ActionVolumeImport)...)
+	user, project, ok := h.authorizeProject(ctx, authz.ActionVolumeImport)
 	if !ok {
 		return
 	}
@@ -141,23 +139,105 @@ func (h *Handlers) UploadVolumeImportContent(ctx *gin.Context) {
 		writeErrorCode(ctx, http.StatusBadRequest, volume.CodeInvalidInput, "Content-Length and application/octet-stream are required")
 		return
 	}
+	binding, ok := h.requireContinuousAuthorizationBinding(ctx, user)
+	if !ok {
+		return
+	}
+	transferID := strings.TrimSpace(ctx.Param("transferId"))
+	streamCtx, cancelStream := context.WithCancelCause(ctx.Request.Context())
+	defer cancelStream(nil)
+	restoreRequestContext := replaceRequestContext(ctx, streamCtx)
+	defer restoreRequestContext()
 	deadlineController := http.NewResponseController(ctx.Writer)
 	defer func() { _ = deadlineController.SetReadDeadline(time.Time{}) }()
-	source := &volumeTransferDeadlineReader{
-		reader: ctx.Request.Body, controller: deadlineController, timeout: volumeTransferHTTPIdleTimeout,
+	rawBody := ctx.Request.Body
+	interruptDone := make(chan struct{})
+	stopBodyInterrupt := context.AfterFunc(streamCtx, func() {
+		defer close(interruptDone)
+		_ = deadlineController.SetReadDeadline(time.Now())
+		_ = rawBody.Close()
+	})
+	defer func() {
+		if !stopBodyInterrupt() {
+			<-interruptDone
+		}
+	}()
+	reference := volumeImportAuthorizationReference{ProjectID: project.ID, TransferID: transferID}
+	authorizationRevoked, authorizationActive := h.monitorContinuousAuthorization(
+		streamCtx,
+		binding,
+		func(checkCtx context.Context, currentUser model.User) bool {
+			return h.volumeImportAuthorizationAllowed(checkCtx, currentUser, reference)
+		},
+		func() { cancelStream(volumetransferapi.ErrStreamAuthorizationRevoked) },
+	)
+	if !authorizationActive {
+		h.auditVolumeTransferStreamOutcome(ctx.Request.Context(), user.ID, "volume_transfer.import_stream", transferID, false, "authorization_revoked")
+		writeContinuousAuthorizationRevoked(ctx)
+		return
 	}
-	transfer, err := h.volumeContent.StreamImport(ctx.Request.Context(), project.ID, ctx.Param("transferId"), user, source, ctx.Request.ContentLength)
+	source := &volumeTransferDeadlineReader{
+		reader: rawBody, controller: deadlineController, timeout: volumeTransferHTTPIdleTimeout,
+	}
+	transfer, err := h.volumeContent.StreamImport(streamCtx, project.ID, transferID, user, source, ctx.Request.ContentLength)
 	if err != nil {
-		h.auditVolumeTransferStreamOutcome(ctx.Request.Context(), user.ID, "volume_transfer.import_stream", ctx.Param("transferId"), false, volumeAuditErrorCode(err))
+		select {
+		case <-authorizationRevoked:
+			h.auditVolumeTransferStreamOutcome(ctx.Request.Context(), user.ID, "volume_transfer.import_stream", transferID, false, "authorization_revoked")
+			writeContinuousAuthorizationRevoked(ctx)
+			return
+		default:
+		}
+		if errors.Is(err, volumetransferapi.ErrStreamAuthorizationRevoked) || errors.Is(context.Cause(streamCtx), volumetransferapi.ErrStreamAuthorizationRevoked) {
+			h.auditVolumeTransferStreamOutcome(ctx.Request.Context(), user.ID, "volume_transfer.import_stream", transferID, false, "authorization_revoked")
+			writeContinuousAuthorizationRevoked(ctx)
+			return
+		}
+		h.auditVolumeTransferStreamOutcome(ctx.Request.Context(), user.ID, "volume_transfer.import_stream", transferID, false, volumeAuditErrorCode(err))
 		writeVolumeError(ctx, err)
 		return
+	}
+	select {
+	case <-authorizationRevoked:
+		h.auditVolumeTransferStreamOutcome(ctx.Request.Context(), user.ID, "volume_transfer.import_stream", transferID, false, "authorization_revoked")
+		writeContinuousAuthorizationRevoked(ctx)
+		return
+	default:
 	}
 	h.auditVolumeTransferStreamOutcome(ctx.Request.Context(), user.ID, "volume_transfer.import_stream", transfer.ID, true, transfer.Format)
 	ctx.JSON(http.StatusOK, volumeTransferResponseFor(transfer, true))
 }
 
+type volumeImportAuthorizationReference struct {
+	ProjectID  string
+	TransferID string
+}
+
+func (h *Handlers) volumeImportAuthorizationAllowed(ctx context.Context, user model.User, reference volumeImportAuthorizationReference) bool {
+	if !h.projectContinuousAuthorizationAllowed(ctx, user, reference.ProjectID, authz.ActionVolumeImport) {
+		return false
+	}
+	db := h.dbWithContext(ctx)
+	if db == nil {
+		return false
+	}
+	var transfer model.VolumeTransfer
+	if err := db.First(&transfer, "id = ? and project_id = ?", reference.TransferID, reference.ProjectID).Error; err != nil ||
+		transfer.Direction != model.VolumeTransferDirectionImport ||
+		(transfer.State != model.VolumeTransferStateReady && transfer.State != model.VolumeTransferStateStreaming && transfer.State != model.VolumeTransferStateSucceeded) {
+		return false
+	}
+	if transfer.State == model.VolumeTransferStateReady && !transfer.ExpiresAt.After(time.Now()) {
+		return false
+	}
+	if transfer.ActorID == user.ID {
+		return true
+	}
+	return h.projectContinuousAuthorizationAllowed(ctx, user, reference.ProjectID, authz.ActionVolumeExport)
+}
+
 func (h *Handlers) CreateVolumeExport(ctx *gin.Context) {
-	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, volumeActionRoles(authz.ActionVolumeExport)...)
+	user, project, ok := h.authorizeProject(ctx, authz.ActionVolumeExport)
 	if !ok {
 		return
 	}
@@ -190,7 +270,7 @@ func (h *Handlers) CreateVolumeExport(ctx *gin.Context) {
 }
 
 func (h *Handlers) ListVolumeTransfers(ctx *gin.Context) {
-	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, volumeActionRoles(authz.ActionVolumeRead)...)
+	user, project, ok := h.authorizeProject(ctx, authz.ActionVolumeRead)
 	if !ok {
 		return
 	}
@@ -208,7 +288,14 @@ func (h *Handlers) ListVolumeTransfers(ctx *gin.Context) {
 		writeVolumeError(ctx, err)
 		return
 	}
-	privileged := authz.IsPlatformAdmin(user.Role) || h.currentProjectRoleAllows(ctx, project.ID, user.ID, authz.ProjectRoleOwner, authz.ProjectRoleAdmin)
+	privileged := authz.IsPlatformAdmin(user.Role)
+	if !privileged {
+		var available bool
+		privileged, available = h.projectMemberActionAllowed(ctx, project.ID, user.ID, authz.ActionVolumeExport)
+		if !available {
+			return
+		}
+	}
 	items := make([]volumeTransferResponse, 0, len(result.Items))
 	for _, item := range result.Items {
 		items = append(items, volumeTransferResponseFor(item, privileged || item.ActorID == user.ID, h.volumeTransferMaxBytes))
@@ -221,7 +308,7 @@ func (h *Handlers) ListVolumeTransfers(ctx *gin.Context) {
 }
 
 func (h *Handlers) GetVolumeTransfer(ctx *gin.Context) {
-	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, volumeActionRoles(authz.ActionVolumeRead)...)
+	user, project, ok := h.authorizeProject(ctx, authz.ActionVolumeRead)
 	if !ok {
 		return
 	}
@@ -230,12 +317,19 @@ func (h *Handlers) GetVolumeTransfer(ctx *gin.Context) {
 		writeVolumeError(ctx, err)
 		return
 	}
-	privileged := authz.IsPlatformAdmin(user.Role) || h.currentProjectRoleAllows(ctx, project.ID, user.ID, authz.ProjectRoleOwner, authz.ProjectRoleAdmin)
+	privileged := authz.IsPlatformAdmin(user.Role)
+	if !privileged {
+		var available bool
+		privileged, available = h.projectMemberActionAllowed(ctx, project.ID, user.ID, authz.ActionVolumeExport)
+		if !available {
+			return
+		}
+	}
 	ctx.JSON(http.StatusOK, volumeTransferResponseFor(transfer, privileged || transfer.ActorID == user.ID, h.volumeTransferMaxBytes))
 }
 
 func (h *Handlers) RetryVolumeTransfer(ctx *gin.Context) {
-	user, project, transfer, ok := h.volumeTransferForRead(ctx)
+	user, project, transfer, ok := h.volumeTransferForAction(ctx, authz.ActionVolumeRead)
 	if !ok {
 		return
 	}
@@ -271,14 +365,20 @@ func (h *Handlers) RetryVolumeTransfer(ctx *gin.Context) {
 }
 
 func (h *Handlers) CancelVolumeTransfer(ctx *gin.Context) {
-	user, project, transfer, ok := h.volumeTransferForRead(ctx)
+	user, project, transfer, ok := h.volumeTransferForAction(ctx, authz.ActionVolumeRead)
 	if !ok {
 		return
 	}
 	if transfer.ActorID != user.ID {
-		if !authz.IsPlatformAdmin(user.Role) && !h.currentProjectRoleAllows(ctx, project.ID, user.ID, authz.ProjectRoleOwner, authz.ProjectRoleAdmin) {
-			writeErrorCode(ctx, http.StatusForbidden, "auth.forbidden", "only the creator or a project Owner/Admin can cancel this transfer")
-			return
+		if !authz.IsPlatformAdmin(user.Role) {
+			allowed, available := h.projectMemberActionAllowed(ctx, project.ID, user.ID, authz.ActionVolumeExport)
+			if !available {
+				return
+			}
+			if !allowed {
+				writeErrorCode(ctx, http.StatusForbidden, "auth.forbidden", "only the creator or a project Owner/Admin can cancel this transfer")
+				return
+			}
 		}
 		if token, bearer := currentAccessTokenFromContext(ctx); bearer && !accessTokenAllows(token.Scope, string(authz.ActionVolumeDelete)) {
 			writeErrorCode(ctx, http.StatusForbidden, "auth.token.scope_insufficient", "volume:delete scope is required to cancel another user's transfer")
@@ -296,7 +396,7 @@ func (h *Handlers) CancelVolumeTransfer(ctx *gin.Context) {
 }
 
 func (h *Handlers) AuthorizeVolumeTransferDownload(ctx *gin.Context) {
-	user, project, transfer, ok := h.volumeTransferForRead(ctx)
+	user, project, transfer, ok := h.volumeTransferForAction(ctx, authz.ActionVolumeExport)
 	if !ok {
 		return
 	}
@@ -338,7 +438,7 @@ func (h *Handlers) DownloadVolumeTransferManifest(ctx *gin.Context) {
 }
 
 func (h *Handlers) serveDirectVolumeTransferDownload(ctx *gin.Context, manifest bool) {
-	user, project, transfer, ok := h.volumeTransferForRead(ctx)
+	user, project, transfer, ok := h.volumeTransferForAction(ctx, authz.ActionVolumeExport)
 	if !ok || transfer.Direction != model.VolumeTransferDirectionExport || !h.authorizeTransferDirection(ctx, user, project, transfer) {
 		return
 	}
@@ -350,18 +450,42 @@ func (h *Handlers) serveDirectVolumeTransferDownload(ctx *gin.Context, manifest 
 	if !ok {
 		return
 	}
+	streamCtx, cancelStream := context.WithDeadline(ctx.Request.Context(), binding.Deadline)
+	defer cancelStream()
 	ticket := strings.TrimSpace(ctx.Query("ticket"))
 	var download volumeDownload
 	var err error
 	filename := volumeTransferArchiveFilename(transfer)
+	action := "volume_transfer.export_stream"
 	if manifest {
-		download, err = h.volumeContent.OpenManifest(ctx.Request.Context(), user, project, transfer, ticket, binding)
+		download, err = h.volumeContent.OpenManifest(streamCtx, user, project, transfer, ticket, binding)
 		filename += ".manifest.json"
+		action = "volume_transfer.export_manifest"
 	} else {
-		download, err = h.volumeContent.OpenDownload(ctx.Request.Context(), user, project, transfer, ticket, binding)
+		download, err = h.volumeContent.OpenDownload(streamCtx, user, project, transfer, ticket, binding)
 	}
 	if err != nil {
+		if reason := volumeDownloadStreamFailureReason(streamCtx, nil, err); reason == "authorization_deadline_reached" || reason == "request_cancelled" {
+			h.auditVolumeTransferStreamOutcome(ctx.Request.Context(), user.ID, action, transfer.ID, false, reason)
+			writeErrorCode(ctx, http.StatusUnauthorized, volume.CodeTransferDownloadUnauthorized, "download authorization expired or was cancelled")
+			return
+		}
 		writeVolumeError(ctx, err)
+		return
+	}
+	reference := volumeTransferDownloadAuthorizationReference{
+		ProjectID: project.ID, TransferID: transfer.ID, Manifest: manifest,
+	}
+	authorizationAllowed := func(checkCtx context.Context, currentUser model.User) bool {
+		return h.volumeTransferDownloadAuthorizationAllowed(checkCtx, currentUser, reference)
+	}
+	authorizationRevoked, authorizationActive := h.monitorContinuousAuthorization(streamCtx, binding, authorizationAllowed, cancelStream)
+	if !authorizationActive {
+		if download.Body != nil {
+			_ = download.Body.Close()
+		}
+		h.auditVolumeTransferStreamOutcome(ctx.Request.Context(), user.ID, action, transfer.ID, false, "authorization_revoked")
+		writeErrorCode(ctx, http.StatusUnauthorized, volume.CodeTransferDownloadUnauthorized, "download authorization expired or was revoked")
 		return
 	}
 	ctx.Header("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": filename}))
@@ -373,18 +497,110 @@ func (h *Handlers) serveDirectVolumeTransferDownload(ctx *gin.Context, manifest 
 	destination := &volumeTransferDeadlineWriter{
 		writer: ctx.Writer, controller: deadlineController, timeout: volumeTransferHTTPIdleTimeout,
 	}
-	_, copyErr := io.Copy(destination, download.Body)
-	closeErr := download.Body.Close()
-	streamErr := errors.Join(copyErr, closeErr)
-	action := "volume_transfer.export_stream"
-	if manifest {
-		action = "volume_transfer.export_manifest"
-	}
-	if streamErr != nil {
-		h.auditVolumeTransferStreamOutcome(ctx.Request.Context(), user.ID, action, transfer.ID, false, volumeAuditErrorCode(streamErr))
+	streamErr := copyVolumeDownloadBody(streamCtx, destination, download.Body, func() {
+		_ = deadlineController.SetWriteDeadline(time.Now())
+	})
+	reason := volumeDownloadStreamFailureReason(streamCtx, authorizationRevoked, streamErr)
+	cancelStream()
+	if reason != "" {
+		h.auditVolumeTransferStreamOutcome(ctx.Request.Context(), user.ID, action, transfer.ID, false, reason)
 		return
 	}
 	h.auditVolumeTransferStreamOutcome(ctx.Request.Context(), user.ID, action, transfer.ID, true, transfer.Format)
+}
+
+type volumeTransferDownloadAuthorizationReference struct {
+	ProjectID  string
+	TransferID string
+	Manifest   bool
+}
+
+func (h *Handlers) volumeTransferDownloadAuthorizationAllowed(ctx context.Context, user model.User, reference volumeTransferDownloadAuthorizationReference) bool {
+	db := h.dbWithContext(ctx)
+	if db == nil {
+		return false
+	}
+	var project model.Project
+	if err := db.First(&project, "id = ?", reference.ProjectID).Error; err != nil || !resourceCanMutateDuringDelete(project.DeleteStatus) {
+		return false
+	}
+	var transfer model.VolumeTransfer
+	if err := db.First(&transfer, "id = ? and project_id = ?", reference.TransferID, reference.ProjectID).Error; err != nil {
+		return false
+	}
+	if transfer.Direction != model.VolumeTransferDirectionExport {
+		return false
+	}
+	if reference.Manifest {
+		if transfer.State != model.VolumeTransferStateSucceeded || transfer.Format != model.VolumeTransferFormatRawZST {
+			return false
+		}
+	} else if transfer.State != model.VolumeTransferStateReady && transfer.State != model.VolumeTransferStateStreaming && transfer.State != model.VolumeTransferStateSucceeded {
+		return false
+	}
+
+	subject := authz.ProjectSubject{UserID: user.ID, PlatformRole: user.Role}
+	_, err := h.projectAuthorizer(ctx).AuthorizeProject(ctx, subject, reference.ProjectID, authz.ActionVolumeExport)
+	return err == nil
+}
+
+type closeOnceReadCloser struct {
+	body io.ReadCloser
+	once sync.Once
+	err  error
+}
+
+func (reader *closeOnceReadCloser) Read(buffer []byte) (int, error) {
+	return reader.body.Read(buffer)
+}
+
+func (reader *closeOnceReadCloser) Close() error {
+	reader.once.Do(func() { reader.err = reader.body.Close() })
+	return reader.err
+}
+
+func copyVolumeDownloadBody(ctx context.Context, destination io.Writer, body io.ReadCloser, interrupt func()) error {
+	if body == nil {
+		return io.ErrUnexpectedEOF
+	}
+	closer := &closeOnceReadCloser{body: body}
+	interruptDone := make(chan struct{})
+	stopInterrupt := context.AfterFunc(ctx, func() {
+		defer close(interruptDone)
+		if interrupt != nil {
+			interrupt()
+		}
+		_ = closer.Close()
+	})
+	_, copyErr := io.Copy(destination, closer)
+	closeErr := closer.Close()
+	if !stopInterrupt() {
+		<-interruptDone
+	}
+	return errors.Join(copyErr, closeErr)
+}
+
+func volumeDownloadStreamFailureReason(ctx context.Context, authorizationRevoked <-chan struct{}, streamErr error) string {
+	if authorizationRevoked != nil {
+		select {
+		case <-authorizationRevoked:
+			return "authorization_revoked"
+		default:
+		}
+	}
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return "authorization_deadline_reached"
+	}
+	if errors.Is(ctx.Err(), context.Canceled) {
+		return "request_cancelled"
+	}
+	if streamErr != nil {
+		if code := volume.ErrorCode(streamErr); code != "" {
+			return code
+		}
+		return "stream_interrupted"
+	}
+	return ""
 }
 
 func (h *Handlers) auditVolumeTransferStreamOutcome(ctx context.Context, userID, action, transferID string, success bool, message string) {
@@ -393,8 +609,8 @@ func (h *Handlers) auditVolumeTransferStreamOutcome(ctx context.Context, userID,
 	h.auditWithContext(userID, action, transferID, success, message, auditCtx)
 }
 
-func (h *Handlers) volumeTransferForRead(ctx *gin.Context) (model.User, model.Project, model.VolumeTransfer, bool) {
-	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, volumeActionRoles(authz.ActionVolumeRead)...)
+func (h *Handlers) volumeTransferForAction(ctx *gin.Context, action authz.Action) (model.User, model.Project, model.VolumeTransfer, bool) {
+	user, project, ok := h.authorizeProject(ctx, action)
 	if !ok {
 		return model.User{}, model.Project{}, model.VolumeTransfer{}, false
 	}
@@ -419,9 +635,15 @@ func (h *Handlers) authorizeTransferDirection(ctx *gin.Context, user model.User,
 	if transfer.Direction == model.VolumeTransferDirectionExport {
 		action = authz.ActionVolumeExport
 	}
-	if !authz.IsPlatformAdmin(user.Role) && !h.currentProjectRoleAllows(ctx, project.ID, user.ID, volumeActionRoles(action)...) {
-		writeErrorCode(ctx, http.StatusForbidden, "auth.forbidden", "project role does not allow this transfer operation")
-		return false
+	if !authz.IsPlatformAdmin(user.Role) {
+		allowed, available := h.projectMemberActionAllowed(ctx, project.ID, user.ID, action)
+		if !available {
+			return false
+		}
+		if !allowed {
+			writeErrorCode(ctx, http.StatusForbidden, "auth.forbidden", "project role does not allow this transfer operation")
+			return false
+		}
 	}
 	if token, bearer := currentAccessTokenFromContext(ctx); bearer && !accessTokenAllows(token.Scope, string(action)) {
 		writeErrorCode(ctx, http.StatusForbidden, "auth.token.scope_insufficient", "the original transfer operation scope is required")

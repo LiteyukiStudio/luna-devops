@@ -156,11 +156,8 @@ func (h *Handlers) GetGitRepositoryBuildOptions(ctx *gin.Context) {
 
 func (h *Handlers) ListRepositoryBindings(ctx *gin.Context) {
 	markLiveObservationResponse(ctx)
-	user, ok := h.currentUser(ctx)
+	user, _, ok := h.authorizeProject(ctx, authz.ActionGitRead)
 	if !ok {
-		return
-	}
-	if _, ok := h.findProjectForCurrentUser(ctx); !ok {
 		return
 	}
 
@@ -201,11 +198,8 @@ func (h *Handlers) ListRepositoryBindings(ctx *gin.Context) {
 }
 
 func (h *Handlers) CreateRepositoryBinding(ctx *gin.Context) {
-	user, ok := h.currentUser(ctx)
+	user, _, ok := h.authorizeProject(ctx, authz.ActionGitWrite)
 	if !ok {
-		return
-	}
-	if _, ok := h.findProjectForCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin, authz.ProjectRoleDeveloper); !ok {
 		return
 	}
 
@@ -237,11 +231,8 @@ func (h *Handlers) CreateRepositoryBinding(ctx *gin.Context) {
 }
 
 func (h *Handlers) UpdateRepositoryBinding(ctx *gin.Context) {
-	user, ok := h.currentUser(ctx)
+	user, _, ok := h.authorizeProject(ctx, authz.ActionGitWrite)
 	if !ok {
-		return
-	}
-	if _, ok := h.findProjectForCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin, authz.ProjectRoleDeveloper); !ok {
 		return
 	}
 
@@ -296,7 +287,7 @@ func (h *Handlers) UpdateRepositoryBinding(ctx *gin.Context) {
 }
 
 func (h *Handlers) DeleteRepositoryBinding(ctx *gin.Context) {
-	if _, ok := h.findProjectForCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin, authz.ProjectRoleDeveloper); !ok {
+	if _, _, ok := h.authorizeProject(ctx, authz.ActionGitWrite); !ok {
 		return
 	}
 
@@ -321,11 +312,8 @@ func (h *Handlers) ReconfigureRepositoryWebhook(ctx *gin.Context) {
 }
 
 func (h *Handlers) configureRepositoryWebhookFromRequest(ctx *gin.Context) {
-	user, ok := h.currentUser(ctx)
+	user, _, ok := h.authorizeProject(ctx, authz.ActionGitWrite)
 	if !ok {
-		return
-	}
-	if _, ok := h.findProjectForCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin, authz.ProjectRoleDeveloper); !ok {
 		return
 	}
 	var binding model.RepositoryBinding

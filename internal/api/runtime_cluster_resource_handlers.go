@@ -11,6 +11,7 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	kubeprovider "github.com/LiteyukiStudio/devops/internal/provider/kubernetes"
+	"github.com/LiteyukiStudio/devops/internal/runtimecluster"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 )
@@ -26,7 +27,7 @@ func (h *Handlers) ListRuntimeClusterResources(ctx *gin.Context) {
 		return
 	}
 	var cluster model.RuntimeCluster
-	if err := h.dbFor(ctx).First(&cluster, "id = ?", ctx.Param("clusterId")).Error; err != nil {
+	if err := runtimecluster.ActiveScope(h.dbFor(ctx)).First(&cluster, "id = ?", ctx.Param("clusterId")).Error; err != nil {
 		writeError(ctx, http.StatusNotFound, "runtime cluster not found")
 		return
 	}
@@ -97,7 +98,7 @@ func (h *Handlers) GetRuntimeClusterResourceYAML(ctx *gin.Context) {
 		return
 	}
 	var cluster model.RuntimeCluster
-	if err := h.dbFor(ctx).First(&cluster, "id = ?", ctx.Param("clusterId")).Error; err != nil {
+	if err := runtimecluster.ActiveScope(h.dbFor(ctx)).First(&cluster, "id = ?", ctx.Param("clusterId")).Error; err != nil {
 		writeError(ctx, http.StatusNotFound, "runtime cluster not found")
 		return
 	}
@@ -146,7 +147,7 @@ func (h *Handlers) ListRuntimeClusterResourceEvents(ctx *gin.Context) {
 		return
 	}
 	var cluster model.RuntimeCluster
-	if err := h.dbFor(ctx).First(&cluster, "id = ?", ctx.Param("clusterId")).Error; err != nil {
+	if err := runtimecluster.ActiveScope(h.dbFor(ctx)).First(&cluster, "id = ?", ctx.Param("clusterId")).Error; err != nil {
 		writeError(ctx, http.StatusNotFound, "runtime cluster not found")
 		return
 	}
@@ -204,6 +205,9 @@ func (h *Handlers) ListRuntimeClusterResourceEvents(ctx *gin.Context) {
 
 func (h *Handlers) StreamRuntimeClusterPodTerminal(ctx *gin.Context) {
 	ticket := strings.TrimSpace(ctx.Query("ticket"))
+	if !requireRuntimeTerminalTicketForBearer(ctx, ticket) {
+		return
+	}
 	var (
 		user          model.User
 		authorization runtimeTerminalAuthorizationBinding
@@ -248,7 +252,7 @@ func (h *Handlers) StreamRuntimeClusterPodTerminal(ctx *gin.Context) {
 		}
 	} else {
 		if !ticketValue.matches("runtime_pod", reference) ||
-			!h.runtimeTerminalAuthorizationActive(ctx.Request.Context(), authorization, func(checkCtx context.Context, currentUser model.User) bool {
+			!h.continuousAuthorizationActive(ctx.Request.Context(), authorization, func(checkCtx context.Context, currentUser model.User) bool {
 				return h.runtimeClusterPodTerminalAuthorizationAllowed(checkCtx, currentUser, client, reference)
 			}) {
 			writeErrorCode(ctx, http.StatusUnauthorized, "runtime_terminal.ticket_invalid", "terminal ticket is invalid, expired, revoked, or bound to another resource")
@@ -278,9 +282,13 @@ func (h *Handlers) StreamRuntimeClusterPodTerminal(ctx *gin.Context) {
 	defer stdinWriter.Close()
 	sizeQueue := newRuntimeTerminalSizeQueue()
 	wsWriter := &runtimeTerminalWebSocketWriter{conn: conn}
-	authorizationRevoked := h.monitorRuntimeTerminalAuthorization(sessionCtx, authorization, func(checkCtx context.Context, currentUser model.User) bool {
+	authorizationRevoked, authorizationActive := h.monitorContinuousAuthorization(sessionCtx, authorization, func(checkCtx context.Context, currentUser model.User) bool {
 		return h.runtimeClusterPodTerminalAuthorizationAllowed(checkCtx, currentUser, client, reference)
 	}, cancel)
+	if !authorizationActive {
+		h.auditWithContext(user.ID, "runtime_cluster.pod_terminal", cluster.ID+":"+snapshot.Namespace+"/"+snapshot.Name, false, "authorization expired or was revoked", ctx.Request.Context())
+		return
+	}
 
 	go h.readRuntimeTerminalMessages(conn, stdinWriter, sizeQueue, cancel)
 	err = client.PodTerminal(sessionCtx, kubeprovider.PodTerminalOptions{
@@ -349,7 +357,7 @@ func (h *Handlers) runtimeClusterPodTerminalTarget(ctx *gin.Context, user model.
 		return model.RuntimeCluster{}, nil, kubeprovider.ResourceSnapshot{}, false
 	}
 	var cluster model.RuntimeCluster
-	if err := h.dbFor(ctx).First(&cluster, "id = ? and type in ?", ctx.Param("clusterId"), []string{"kubernetes", "k3s"}).Error; err != nil {
+	if err := runtimecluster.ActiveScope(h.dbFor(ctx)).First(&cluster, "id = ? and type in ?", ctx.Param("clusterId"), []string{"kubernetes", "k3s"}).Error; err != nil {
 		writeError(ctx, http.StatusNotFound, "runtime cluster not found")
 		return model.RuntimeCluster{}, nil, kubeprovider.ResourceSnapshot{}, false
 	}

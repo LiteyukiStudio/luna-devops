@@ -43,7 +43,7 @@ available from PostgreSQL.
 | `OTEL_RESOURCE_ATTRIBUTES` | Empty | Sets OpenTelemetry resource attributes; use comma-separated `key=value` pairs. |
 | `OTEL_EXPORTER_OTLP_HEADERS` | Empty | Authenticates Collector requests; use comma-separated `key=value` headers. |
 | `OTEL_SERVICE_VERSION` | Empty | Labels Agent telemetry with a version; use a version string. |
-| `AI_OBSERVABILITY_CAPTURE_CONTENT` | `false` | Controls redacted, length-limited model and tool content in controlled traces; use `true` or `false`; logs always retain metadata only. |
+| `AI_OBSERVABILITY_CAPTURE_CONTENT` | `false` | Controls whether controlled traces record model and tool content as provided; use `true` or `false`; tool-catalog sensitive paths remain excluded, UTF-8 JSON fields over 128 KiB are omitted entirely, and logs always retain metadata only. |
 | `AI_OBSERVABILITY_CAPTURE_DATABASE_SPANS` | `false` | Controls whether each PostgreSQL query produces a span; use `true` or `false`. |
 
 ### Context management

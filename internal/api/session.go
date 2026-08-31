@@ -139,23 +139,22 @@ func (h *Handlers) currentUserFromAccessToken(ctx *gin.Context) (model.User, boo
 	var token model.AccessToken
 	err := h.dbFor(ctx).First(
 		&token,
-		"token_hash = ? and revoked_at is null and (expires_at is null or expires_at > ?)",
+		"token_hash = ? and source in ? and revoked_at is null and (expires_at is null or expires_at > ?)",
 		hashToken(plainToken),
+		[]string{model.AccessTokenSourcePersonal, model.AccessTokenSourceOAuth},
 		time.Now(),
 	).Error
 	if err != nil {
 		writeErrorKey(ctx, http.StatusUnauthorized, requestLanguage(ctx), "auth.token.invalid")
 		return model.User{}, false
 	}
-	requiredScope := requiredScopeForRequest(ctx)
-	if !accessTokenAllows(token.Scope, requiredScope) {
-		writeErrorKeyWithDetails(
-			ctx,
-			http.StatusForbidden,
-			requestLanguage(ctx),
-			"auth.token.scope_insufficient",
-			gin.H{"requiredScope": requiredScope},
-		)
+	missingScope, err := missingRequiredAccessTokenScope(token.Scope, ctx.FullPath(), ctx.Request.Method)
+	if err != nil {
+		writeScopeContractUnavailableError(ctx, err.Error())
+		return model.User{}, false
+	}
+	if missingScope != "" {
+		writeScopeInsufficientError(ctx, missingScope)
 		return model.User{}, false
 	}
 	var user model.User
@@ -177,8 +176,17 @@ func currentAccessTokenFromContext(ctx *gin.Context) (model.AccessToken, bool) {
 	return token, ok && token.ID != ""
 }
 
-func requiredScopeForRequest(ctx *gin.Context) string {
-	return service.RequiredAccessTokenScope(ctx.FullPath(), ctx.Request.Method)
+func missingRequiredAccessTokenScope(scopeText, path, method string) (string, error) {
+	requiredScopes, err := service.RequiredAccessTokenScopes(path, method)
+	if err != nil {
+		return "", err
+	}
+	for _, requiredScope := range requiredScopes {
+		if !accessTokenAllows(scopeText, requiredScope) {
+			return requiredScope, nil
+		}
+	}
+	return "", nil
 }
 
 func accessTokenAllows(scopeText, required string) bool {

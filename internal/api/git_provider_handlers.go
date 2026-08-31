@@ -56,7 +56,12 @@ func (h *Handlers) ListGitProviders(ctx *gin.Context) {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
-	ctx.JSON(http.StatusOK, paginatedResponse(h.gitProviderResponsesForUser(user, providers, ctx.Request.Context()), total, pagination))
+	responses, err := h.gitProviderResponsesForUser(user, providers, ctx.Request.Context())
+	if err != nil {
+		writeProjectAuthorizationError(ctx, err)
+		return
+	}
+	ctx.JSON(http.StatusOK, paginatedResponse(responses, total, pagination))
 }
 
 func (h *Handlers) StartGitOAuth(ctx *gin.Context) {

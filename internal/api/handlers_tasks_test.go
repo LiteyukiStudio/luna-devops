@@ -11,12 +11,6 @@ import (
 	"github.com/hibiken/asynq"
 )
 
-func TestAccessTokenUnknownRouteIsDenied(t *testing.T) {
-	if accessTokenAllows("*", "system:unmapped") {
-		t.Fatal("expected unmapped route to be denied even for wildcard legacy token")
-	}
-}
-
 func TestEnqueueDeployRunPassesStablePayload(t *testing.T) {
 	fake := &fakeBuildTaskEnqueuer{}
 	h := &Handlers{taskClient: fake}
@@ -54,6 +48,25 @@ func TestEnqueueGatewayApplyPassesStablePayload(t *testing.T) {
 	}
 	if fake.gatewayPayload != want {
 		t.Fatalf("payload = %#v", fake.gatewayPayload)
+	}
+}
+
+func TestEnqueueResourceCleanupPassesActor(t *testing.T) {
+	fake := &fakeBuildTaskEnqueuer{}
+	h := &Handlers{taskClient: fake}
+
+	if !h.enqueueResourceCleanup(context.Background(), "deployment_target", "dplt_1", "prj_1", "usr_operator") {
+		t.Fatal("expected enqueueResourceCleanup to succeed")
+	}
+
+	want := tasks.ResourceCleanupPayload{
+		ResourceType: "deployment_target",
+		ResourceID:   "dplt_1",
+		ProjectID:    "prj_1",
+		ActorID:      "usr_operator",
+	}
+	if fake.resourceCleanupPayload != want {
+		t.Fatalf("payload = %#v", fake.resourceCleanupPayload)
 	}
 }
 

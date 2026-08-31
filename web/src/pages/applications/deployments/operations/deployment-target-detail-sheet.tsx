@@ -20,7 +20,7 @@ export function DeploymentTargetDetailSheet({ applicationId, item, onOpenChange,
   const { t } = useTranslation()
   const target = item?.target
   const release = item?.release
-  const namespace = item?.internalEndpoint?.namespace || target?.namespace || '-'
+  const namespace = item?.internalEndpoint?.namespace || '-'
   const stage = target ? t(`deploymentsPage.stageLabels.${target.stage}`, { defaultValue: target.stage }) : '-'
   const cluster = item?.runtimeStatus.clusterName || '-'
   const projectRoutes = (item?.routes ?? []).filter(route => route.enabled && route.accessUrl.trim())

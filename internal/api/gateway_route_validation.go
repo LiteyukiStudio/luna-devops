@@ -184,7 +184,14 @@ func (h *Handlers) gatewayRouteAdvancedConfig(ctx *gin.Context, projectID string
 	if !gatewayAdvancedConfigPresent(config) {
 		return config, true
 	}
-	projectAdmin := user.Role == authz.PlatformRoleAdmin || h.currentProjectRoleAllows(ctx, projectID, user.ID, authz.ProjectRoleOwner, authz.ProjectRoleAdmin)
+	projectAdmin := user.Role == authz.PlatformRoleAdmin
+	if !projectAdmin {
+		var available bool
+		projectAdmin, available = h.projectMemberActionAllowed(ctx, projectID, user.ID, authz.ActionProjectManage)
+		if !available {
+			return gatewayRouteAdvancedConfig{}, false
+		}
+	}
 	if gatewayAdvancedConfigRequiresProjectAdmin(config) && !projectAdmin {
 		writeError(ctx, http.StatusForbidden, "只有项目 Owner/Admin 可以维护访问入口高级配置")
 		return gatewayRouteAdvancedConfig{}, false

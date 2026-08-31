@@ -89,6 +89,23 @@ const errors = {
   },
   runtime_cluster: {
     forbidden: 'You do not have permission to view resources in this runtime cluster.',
+    delete_in_progress: 'The runtime cluster is being deleted. Wait for cleanup to finish before trying again.',
+    cleanup_enqueue_failed: 'The runtime cluster cleanup task could not be queued. Try again later.',
+    in_use: 'This runtime cluster is still referenced by active resources. Remove those references before deleting it.',
+    not_found: 'The runtime cluster does not exist or has been deleted.',
+  },
+  kube_credential: {
+    scope_invalid: 'The kubectl credential scopes are invalid. Select a supported scope combination and try again.',
+    context_invalid: 'The kubeconfig context definition is invalid. Check the selected project, cluster, or application scope.',
+    not_found: 'The kubectl credential does not exist or has been revoked.',
+  },
+  kube_gateway: {
+    rule_invalid: 'The kubectl gateway rule is invalid. Check the API group, version, resource, action, and verbs.',
+    disabled: 'The kubectl gateway is disabled for this runtime cluster.',
+    reconciling: 'The kubectl gateway configuration is still reconciling. Wait until it becomes ready and try again.',
+    unavailable: 'The kubectl gateway is temporarily unavailable. Try again later.',
+    enqueue_failed: 'The kubectl gateway update could not be queued. Try again later.',
+    connection_change_requires_disable: 'Disable the kubectl gateway and wait for upstream access cleanup before replacing kubeconfig or changing the cluster type.',
   },
   billing: {
     insufficient_balance: 'The billing owner balance is insufficient. Billing controls blocked this operation. Recharge or contact a platform administrator.',

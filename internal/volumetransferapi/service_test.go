@@ -164,6 +164,52 @@ func TestStreamImportHasAbsoluteDurationLimit(t *testing.T) {
 	}
 }
 
+func TestStreamImportAuthorizationRevocationDoesNotCommitTerminalState(t *testing.T) {
+	content := []byte("direct import archive")
+	domain := &volumeDomainStub{
+		project: model.ProjectVolume{ID: "pvol_revoked", ProjectID: "prj_revoked"},
+		transfer: model.VolumeTransfer{
+			ID: "vtx_revoked", ProjectID: "prj_revoked", ProjectVolumeID: "pvol_revoked",
+			Direction: model.VolumeTransferDirectionImport, State: model.VolumeTransferStateReady,
+			ExpectedBytes: int64(len(content)), ActorID: "usr_revoked", ExpiresAt: time.Now().Add(time.Hour),
+		},
+	}
+	service := NewService(domain, deadlineRuntimeStub{}, ticketStoreStub{}, Options{
+		HeartbeatInterval: time.Hour,
+		MaxStreamDuration: time.Hour,
+	})
+	body := newDeadlineBlockingReader()
+	streamCtx, cancel := context.WithCancelCause(t.Context())
+	result := make(chan error, 1)
+	go func() {
+		_, err := service.StreamImport(streamCtx, "prj_revoked", "vtx_revoked", Actor{UserID: "usr_revoked"}, body, int64(len(content)))
+		result <- err
+	}()
+	select {
+	case <-body.started:
+	case <-time.After(time.Second):
+		t.Fatal("volume import did not begin reading")
+	}
+	cancel(ErrStreamAuthorizationRevoked)
+	select {
+	case err := <-result:
+		if !errors.Is(err, ErrStreamAuthorizationRevoked) {
+			t.Fatalf("revoked import error = %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("revoked volume import did not stop")
+	}
+	if got := domain.completeCalls.Load(); got != 0 {
+		t.Fatalf("revoked import completion calls = %d", got)
+	}
+	if got := domain.failCalls.Load(); got != 0 {
+		t.Fatalf("revoked import failure terminal calls = %d", got)
+	}
+	if !body.closed.Load() {
+		t.Fatal("revoked import did not close its request body")
+	}
+}
+
 func TestExportCancellationClosesBlockedStreamAndFinalizes(t *testing.T) {
 	domain := &volumeDomainStub{}
 	service := &Service{volumes: domain}
@@ -339,22 +385,25 @@ func (deadlineRuntimeStub) OpenVolumeTransferImport(_ context.Context, _ model.P
 }
 
 type deadlineBlockingReader struct {
-	release chan struct{}
-	closed  atomic.Bool
-	once    sync.Once
+	started   chan struct{}
+	release   chan struct{}
+	closed    atomic.Bool
+	readOnce  sync.Once
+	closeOnce sync.Once
 }
 
 func newDeadlineBlockingReader() *deadlineBlockingReader {
-	return &deadlineBlockingReader{release: make(chan struct{})}
+	return &deadlineBlockingReader{started: make(chan struct{}), release: make(chan struct{})}
 }
 
 func (reader *deadlineBlockingReader) Read([]byte) (int, error) {
+	reader.readOnce.Do(func() { close(reader.started) })
 	<-reader.release
 	return 0, context.DeadlineExceeded
 }
 
 func (reader *deadlineBlockingReader) Close() error {
-	reader.once.Do(func() {
+	reader.closeOnce.Do(func() {
 		reader.closed.Store(true)
 		close(reader.release)
 	})

@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 
@@ -15,7 +16,7 @@ import (
 
 func (h *Handlers) ListGatewayRoutes(ctx *gin.Context) {
 	markLiveObservationResponse(ctx)
-	if _, ok := h.findProjectForCurrentUser(ctx); !ok {
+	if _, _, ok := h.authorizeProject(ctx, authz.ActionGatewayRead); !ok {
 		return
 	}
 	query := h.dbFor(ctx).Model(&model.GatewayRoute{}).Where("project_id = ?", ctx.Param("projectId"))
@@ -43,7 +44,7 @@ func (h *Handlers) ListGatewayRoutes(ctx *gin.Context) {
 }
 
 func (h *Handlers) GetGatewayRoute(ctx *gin.Context) {
-	if _, ok := h.findProjectForCurrentUser(ctx); !ok {
+	if _, _, ok := h.authorizeProject(ctx, authz.ActionGatewayRead); !ok {
 		return
 	}
 	route, ok := h.findGatewayRoute(ctx)
@@ -59,7 +60,7 @@ func (h *Handlers) GetGatewayRoute(ctx *gin.Context) {
 }
 
 func (h *Handlers) CreateGatewayRoute(ctx *gin.Context) {
-	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin, authz.ProjectRoleDeveloper)
+	user, project, ok := h.authorizeProject(ctx, authz.ActionGatewayManage)
 	if !ok {
 		return
 	}
@@ -92,7 +93,7 @@ func (h *Handlers) CreateGatewayRoute(ctx *gin.Context) {
 }
 
 func (h *Handlers) UpdateGatewayRoute(ctx *gin.Context) {
-	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin, authz.ProjectRoleDeveloper)
+	user, project, ok := h.authorizeProject(ctx, authz.ActionGatewayManage)
 	if !ok {
 		return
 	}
@@ -153,7 +154,7 @@ func (h *Handlers) UpdateGatewayRoute(ctx *gin.Context) {
 }
 
 func (h *Handlers) DeleteGatewayRoute(ctx *gin.Context) {
-	_, project, ok := h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin)
+	user, project, ok := h.authorizeProject(ctx, authz.ActionGatewayDelete)
 	if !ok {
 		return
 	}
@@ -169,18 +170,20 @@ func (h *Handlers) DeleteGatewayRoute(ctx *gin.Context) {
 		return
 	}
 	if err := markResourceDeleting(h.dbFor(ctx), &model.GatewayRoute{}, route.ID); err != nil {
+		if errors.Is(err, errResourceDeleteAlreadyStarted) {
+			writeErrorCode(ctx, http.StatusConflict, "gateway_route.delete_in_progress", "访问入口正在删除中，请等待资源清理完成")
+			return
+		}
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if !h.enqueueResourceCleanup(ctx.Request.Context(), tasks.ResourceCleanupPayload{
-		ResourceType: "gateway_route",
-		ResourceID:   route.ID,
-		ProjectID:    route.ProjectID,
-	}) {
+	if !h.enqueueResourceCleanup(ctx.Request.Context(), "gateway_route", route.ID, route.ProjectID, user.ID) {
 		_ = markResourceDeleteFailed(h.dbFor(ctx), &model.GatewayRoute{}, route.ID, "资源清理任务投递失败，请稍后重试")
+		h.auditWithContext(user.ID, "gateway.delete", route.ID, false, "cleanup_enqueue_failed", ctx.Request.Context())
 		writeError(ctx, http.StatusServiceUnavailable, "资源清理任务投递失败，请稍后重试")
 		return
 	}
+	h.auditWithContext(user.ID, "gateway.delete", route.ID, true, "cleanup_queued", ctx.Request.Context())
 	ctx.Status(http.StatusNoContent)
 }
 

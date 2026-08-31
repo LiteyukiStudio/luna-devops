@@ -1,12 +1,14 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/gin-gonic/gin"
 	"go.opentelemetry.io/otel/attribute"
@@ -49,7 +51,7 @@ type aiProgressSnapshot struct {
 }
 
 func (h *Handlers) GetAIProgress(ctx *gin.Context) {
-	if _, ok := h.findProjectForCurrentUser(ctx); !ok {
+	if _, _, ok := h.authorizeProject(ctx, authz.ActionProjectRead); !ok {
 		return
 	}
 	snapshot, err := h.resolveAIProgress(ctx)
@@ -62,12 +64,33 @@ func (h *Handlers) GetAIProgress(ctx *gin.Context) {
 }
 
 func (h *Handlers) StreamAIProgress(ctx *gin.Context) {
-	if _, ok := h.findProjectForCurrentUser(ctx); !ok {
+	user, project, ok := h.authorizeProject(ctx, authz.ActionProjectRead)
+	if !ok {
 		return
 	}
 	initial, err := h.resolveAIProgress(ctx)
 	if err != nil {
 		h.writeAIProgressError(ctx, err)
+		return
+	}
+	binding, ok := h.requireContinuousAuthorizationBinding(ctx, user)
+	if !ok {
+		return
+	}
+	streamCtx, cancelStream := context.WithCancel(ctx.Request.Context())
+	defer cancelStream()
+	restoreRequestContext := replaceRequestContext(ctx, streamCtx)
+	defer restoreRequestContext()
+	authorizationRevoked, authorizationActive := h.monitorContinuousAuthorization(
+		streamCtx,
+		binding,
+		func(checkCtx context.Context, currentUser model.User) bool {
+			return h.projectContinuousAuthorizationAllowed(checkCtx, currentUser, project.ID, authz.ActionProjectRead)
+		},
+		cancelStream,
+	)
+	if !authorizationActive {
+		writeContinuousAuthorizationRevoked(ctx)
 		return
 	}
 
@@ -89,13 +112,18 @@ func (h *Handlers) StreamAIProgress(ctx *gin.Context) {
 
 	for {
 		select {
-		case <-ctx.Request.Context().Done():
+		case <-authorizationRevoked:
+			return
+		case <-streamCtx.Done():
 			return
 		case <-ticker.C:
 		}
 
 		snapshot, err := h.resolveAIProgress(ctx)
 		if err != nil {
+			if streamCtx.Err() != nil {
+				return
+			}
 			span := trace.SpanFromContext(ctx.Request.Context())
 			span.SetStatus(codes.Error, "ai progress observation failed")
 			span.SetAttributes(attribute.String("error.code", aiProgressErrorCode(err)))

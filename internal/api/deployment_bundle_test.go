@@ -213,6 +213,16 @@ func TestDeploymentBundleValidationRejectsEmbeddedIdentifiersAndSecrets(t *testi
 	if code := deploymentBundleErrorCode(validateDeploymentTargetBundle(base)); code != "deployment_bundle.invalid_json" {
 		t.Fatalf("embedded secret error code = %q", code)
 	}
+	base.Configuration.SecretFiles = ""
+	base.Configuration.Namespace = "custom-space"
+	if code := deploymentBundleErrorCode(validateDeploymentTargetBundle(base)); code != "deployment_bundle.invalid_json" {
+		t.Fatalf("namespace override error code = %q", code)
+	}
+	base.Configuration.Namespace = ""
+	base.Configuration.ServiceType = "NodePort"
+	if code := deploymentBundleErrorCode(validateDeploymentTargetBundle(base)); code != "deployment_bundle.invalid_json" {
+		t.Fatalf("service type override error code = %q", code)
+	}
 }
 
 func TestDeploymentBundleValidationRejectsDuplicateSecretDestinations(t *testing.T) {
@@ -247,17 +257,17 @@ func TestValidateResolvedDeploymentBundleRequiresProjectVolumeMapping(t *testing
 
 func TestDeploymentBundleVolumeDestinationCompatibility(t *testing.T) {
 	t.Parallel()
-	input := deploymentTargetInput{ClusterID: "cluster_destination", Namespace: "app-space"}
-	if !deploymentBundleVolumeDestinationCompatible(input, model.ProjectVolume{ClusterID: "cluster_destination", Namespace: "app-space"}) {
+	input := deploymentTargetInput{ClusterID: "cluster_destination", Namespace: "stale-override"}
+	if !deploymentBundleVolumeDestinationCompatible("app-space", input, model.ProjectVolume{ClusterID: "cluster_destination", Namespace: "app-space"}) {
 		t.Fatal("matching destination volume was rejected")
 	}
-	if deploymentBundleVolumeDestinationCompatible(input, model.ProjectVolume{ClusterID: "cluster_source", Namespace: "app-space"}) {
+	if deploymentBundleVolumeDestinationCompatible("app-space", input, model.ProjectVolume{ClusterID: "cluster_source", Namespace: "app-space"}) {
 		t.Fatal("cross-cluster destination volume was accepted")
 	}
-	if deploymentBundleVolumeDestinationCompatible(input, model.ProjectVolume{ClusterID: "cluster_destination", Namespace: "other-space"}) {
+	if deploymentBundleVolumeDestinationCompatible("app-space", input, model.ProjectVolume{ClusterID: "cluster_destination", Namespace: "other-space"}) {
 		t.Fatal("cross-namespace destination volume was accepted")
 	}
-	if deploymentBundleVolumeDestinationCompatible(deploymentTargetInput{}, model.ProjectVolume{ClusterID: "cluster_destination"}) {
+	if deploymentBundleVolumeDestinationCompatible("", deploymentTargetInput{}, model.ProjectVolume{ClusterID: "cluster_destination"}) {
 		t.Fatal("project volume without an explicit destination cluster was accepted")
 	}
 }
@@ -642,7 +652,7 @@ func TestDeploymentBundlePreviewAndImportCreatesOnlyDeploymentTarget(t *testing.
 	}
 
 	user := model.User{ID: "usr_bundle", Email: "bundle@example.test", Name: "Bundle User", Role: authz.PlatformRoleUser, Language: "en-US"}
-	project := model.Project{ID: "prj_bundle", Identifier: "bundle-project", Name: "Bundle Project", NamespaceStrategy: "project", DeleteStatus: "active"}
+	project := model.Project{ID: "prj_bundle", Identifier: "bundle-project", Name: "Bundle Project", NamespaceStrategy: "project", KubernetesNamespace: "bundle-project", DeleteStatus: "active"}
 	app := model.Application{ID: "app_bundle", ProjectID: project.ID, Identifier: "empty-app", Name: "Empty App", DeleteStatus: "active"}
 	member := model.ProjectMember{ID: "pm_bundle", ProjectID: project.ID, UserID: user.ID, Role: authz.ProjectRoleDeveloper}
 	if err := db.Create(&user).Error; err != nil {

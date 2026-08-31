@@ -20,7 +20,7 @@ var errBuildRunNotCancelable = errors.New("build run is not cancelable")
 var errBuildQueueUnavailable = errors.New("构建任务队列未配置")
 
 func (h *Handlers) ListBuildRuns(ctx *gin.Context) {
-	if _, ok := h.findProjectForCurrentUser(ctx); !ok {
+	if _, _, ok := h.authorizeProject(ctx, authz.ActionBuildRead); !ok {
 		return
 	}
 	pagination := paginationFromQueryWithSort(ctx, map[string]string{
@@ -72,7 +72,7 @@ func buildRunPageQuery(query *gorm.DB, pagination paginationParams) *gorm.DB {
 }
 
 func (h *Handlers) GetBuildRun(ctx *gin.Context) {
-	if _, ok := h.findProjectForCurrentUser(ctx); !ok {
+	if _, _, ok := h.authorizeProject(ctx, authz.ActionBuildRead); !ok {
 		return
 	}
 	run, ok := h.findBuildRun(ctx)
@@ -109,7 +109,7 @@ func buildRunTriggerAllowed(triggerType string) bool {
 }
 
 func (h *Handlers) TriggerBuildRun(ctx *gin.Context) {
-	user, _, ok := h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin, authz.ProjectRoleDeveloper)
+	user, _, ok := h.authorizeProject(ctx, authz.ActionBuildTrigger)
 	if !ok {
 		return
 	}
@@ -128,7 +128,7 @@ func (h *Handlers) TriggerBuildRun(ctx *gin.Context) {
 }
 
 func (h *Handlers) RetryBuildRun(ctx *gin.Context) {
-	user, _, ok := h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin, authz.ProjectRoleDeveloper)
+	user, _, ok := h.authorizeProject(ctx, authz.ActionBuildTrigger)
 	if !ok {
 		return
 	}
@@ -180,7 +180,7 @@ func (h *Handlers) RetryBuildRun(ctx *gin.Context) {
 }
 
 func (h *Handlers) CancelBuildRun(ctx *gin.Context) {
-	user, _, ok := h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin, authz.ProjectRoleDeveloper)
+	user, _, ok := h.authorizeProject(ctx, authz.ActionBuildCancel)
 	if !ok {
 		return
 	}
@@ -240,7 +240,7 @@ func (h *Handlers) CancelBuildRun(ctx *gin.Context) {
 }
 
 func (h *Handlers) DeleteBuildRun(ctx *gin.Context) {
-	user, _, ok := h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin, authz.ProjectRoleDeveloper)
+	user, _, ok := h.authorizeProject(ctx, authz.ActionBuildDelete)
 	if !ok {
 		return
 	}

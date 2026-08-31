@@ -45,13 +45,20 @@ func MarkHTTPErrorLogged(ctx *gin.Context) {
 
 func GinTracingMiddleware(serviceName string) gin.HandlerFunc {
 	return otelgin.Middleware(serviceName, otelgin.WithFilter(func(request *http.Request) bool {
-		return !IsHealthCheckPath(request.URL.Path)
+		return !IsHealthCheckPath(request.URL.Path) && !IsKubeGatewayPath(request.URL.Path)
 	}))
 }
 
 // IsHealthCheckPath identifies machine probes that should remain metrics-only.
 func IsHealthCheckPath(path string) bool {
 	return path == "/healthz" || path == "/internal/health/live" || path == "/internal/health/ready"
+}
+
+// IsKubeGatewayPath identifies the raw Kubernetes protocol boundary. It owns
+// its server span, access log and low-cardinality metrics in internal/kubeproxy
+// and must not be duplicated by the generic Gin HTTP boundary.
+func IsKubeGatewayPath(path string) bool {
+	return path == "/kube" || strings.HasPrefix(path, "/kube/")
 }
 
 // QueryTraceContextMiddleware bridges W3C context for browser EventSource and
@@ -79,7 +86,7 @@ func QueryTraceContextMiddleware() gin.HandlerFunc {
 // Query strings and request/response bodies are deliberately excluded.
 func GinAccessLogMiddleware() gin.HandlerFunc {
 	return func(ctx *gin.Context) {
-		if IsHealthCheckPath(ctx.Request.URL.Path) {
+		if IsHealthCheckPath(ctx.Request.URL.Path) || IsKubeGatewayPath(ctx.Request.URL.Path) {
 			ctx.Next()
 			return
 		}

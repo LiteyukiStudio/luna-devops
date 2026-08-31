@@ -111,21 +111,25 @@ func flattenKubeconfig(kubeconfig string) (string, error) {
 
 func (h *Handlers) saveRuntimeClusterWithDefault(cluster model.RuntimeCluster, ctx context.Context) error {
 	return h.dbWithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if cluster.IsDefault {
-			if cluster.Scope != "global" {
-				return errors.New("只有全局运行集群可以设为默认集群")
-			}
-			if err := tx.Model(&model.RuntimeCluster{}).Where("scope = ? and id <> ?", "global", cluster.ID).Update("is_default", false).Error; err != nil {
-				return err
-			}
-		} else if cluster.Scope != "global" {
-			cluster.IsDefault = false
+		return h.saveRuntimeClusterWithDefaultTx(tx, cluster)
+	})
+}
+
+func (h *Handlers) saveRuntimeClusterWithDefaultTx(tx *gorm.DB, cluster model.RuntimeCluster) error {
+	if cluster.IsDefault {
+		if cluster.Scope != "global" {
+			return errors.New("只有全局运行集群可以设为默认集群")
 		}
-		if err := tx.Save(&cluster).Error; err != nil {
+		if err := tx.Model(&model.RuntimeCluster{}).Where("scope = ? and id <> ?", "global", cluster.ID).Update("is_default", false).Error; err != nil {
 			return err
 		}
-		return h.replaceScopedResourceProjectBindings(tx, scopedResourceRuntimeCluster, cluster.ID, sortedProjectIDs(cluster.ProjectIDs), nil)
-	})
+	} else if cluster.Scope != "global" {
+		cluster.IsDefault = false
+	}
+	if err := tx.Save(&cluster).Error; err != nil {
+		return err
+	}
+	return h.replaceScopedResourceProjectBindings(tx, scopedResourceRuntimeCluster, cluster.ID, sortedProjectIDs(cluster.ProjectIDs), nil)
 }
 
 func normalizeRuntimeClusterType(value string) string {

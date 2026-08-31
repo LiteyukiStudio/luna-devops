@@ -10,6 +10,7 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/observation"
 	kubeprovider "github.com/LiteyukiStudio/devops/internal/provider/kubernetes"
+	"github.com/LiteyukiStudio/devops/internal/runtimecluster"
 	"gorm.io/gorm"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 )
@@ -71,10 +72,7 @@ func (h *Handlers) observeDeploymentTarget(ctx context.Context, project model.Pr
 		return unavailableDeploymentTarget(target, "deployment_target.invalid_kubeconfig")
 	}
 
-	namespace := strings.TrimSpace(target.Namespace)
-	if namespace == "" {
-		namespace = runtimeProjectNamespace(project)
-	}
+	namespace := runtimeProjectNamespace(project)
 	probeCtx, cancel := context.WithTimeout(ctx, deploymentTargetObservationTimeout)
 	defer cancel()
 	snapshot, err := client.GetWorkloadSnapshot(probeCtx, namespace, target.KubernetesName, normalizeWorkloadType(target.WorkloadType))
@@ -97,7 +95,7 @@ func (h *Handlers) observeDeploymentTarget(ctx context.Context, project model.Pr
 
 func (h *Handlers) deploymentTargetRuntimeCluster(projectID, clusterID string, ctx context.Context) (model.RuntimeCluster, error) {
 	var cluster model.RuntimeCluster
-	query := h.dbWithContext(ctx).Where("type in ?", []string{"kubernetes", "k3s"})
+	query := runtimecluster.ActiveScope(h.dbWithContext(ctx)).Where("type in ?", []string{"kubernetes", "k3s"})
 	if strings.TrimSpace(clusterID) != "" {
 		return cluster, query.First(&cluster, "id = ?", clusterID).Error
 	}

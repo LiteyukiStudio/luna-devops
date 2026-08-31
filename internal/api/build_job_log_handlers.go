@@ -1,20 +1,23 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/LiteyukiStudio/devops/internal/model"
-	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/LiteyukiStudio/devops/internal/authz"
+	"github.com/LiteyukiStudio/devops/internal/model"
+	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 func (h *Handlers) ListBuildJobs(ctx *gin.Context) {
-	if _, ok := h.findProjectForCurrentUser(ctx); !ok {
+	if _, _, ok := h.authorizeProject(ctx, authz.ActionBuildRead); !ok {
 		return
 	}
 	pagination := paginationFromQueryWithSort(ctx, map[string]string{"createdAt": "created_at", "status": "status", "attempts": "attempts"}, "createdAt")
@@ -46,7 +49,7 @@ func (h *Handlers) ListBuildJobs(ctx *gin.Context) {
 }
 
 func (h *Handlers) GetBuildJob(ctx *gin.Context) {
-	if _, ok := h.findProjectForCurrentUser(ctx); !ok {
+	if _, _, ok := h.authorizeProject(ctx, authz.ActionBuildRead); !ok {
 		return
 	}
 	var job model.BuildJob
@@ -58,7 +61,7 @@ func (h *Handlers) GetBuildJob(ctx *gin.Context) {
 }
 
 func (h *Handlers) GetBuildJobLogs(ctx *gin.Context) {
-	if _, ok := h.findProjectForCurrentUser(ctx); !ok {
+	if _, _, ok := h.authorizeProject(ctx, authz.ActionBuildRead); !ok {
 		return
 	}
 	var log model.BuildLog
@@ -70,12 +73,37 @@ func (h *Handlers) GetBuildJobLogs(ctx *gin.Context) {
 }
 
 func (h *Handlers) StreamBuildJobLogs(ctx *gin.Context) {
-	if _, ok := h.findProjectForCurrentUser(ctx); !ok {
+	user, project, ok := h.authorizeProject(ctx, authz.ActionBuildRead)
+	if !ok {
 		return
 	}
 	var job model.BuildJob
 	if err := h.dbFor(ctx).First(&job, "id = ? and project_id = ?", ctx.Param("jobId"), ctx.Param("projectId")).Error; err != nil {
 		writeError(ctx, http.StatusNotFound, "build job not found")
+		return
+	}
+	binding, ok := h.requireContinuousAuthorizationBinding(ctx, user)
+	if !ok {
+		return
+	}
+	streamCtx, cancelStream := context.WithCancel(ctx.Request.Context())
+	defer cancelStream()
+	restoreRequestContext := replaceRequestContext(ctx, streamCtx)
+	defer restoreRequestContext()
+	authorizationRevoked, authorizationActive := h.monitorContinuousAuthorization(
+		streamCtx,
+		binding,
+		func(checkCtx context.Context, currentUser model.User) bool {
+			if !h.projectContinuousAuthorizationAllowed(checkCtx, currentUser, project.ID, authz.ActionBuildRead) {
+				return false
+			}
+			var current model.BuildJob
+			return h.dbWithContext(checkCtx).Select("id").First(&current, "id = ? and project_id = ?", job.ID, project.ID).Error == nil
+		},
+		cancelStream,
+	)
+	if !authorizationActive {
+		writeContinuousAuthorizationRevoked(ctx)
 		return
 	}
 	offset := buildLogStreamOffset(ctx)
@@ -90,8 +118,18 @@ func (h *Handlers) StreamBuildJobLogs(ctx *gin.Context) {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 	for {
+		select {
+		case <-authorizationRevoked:
+			return
+		case <-streamCtx.Done():
+			return
+		default:
+		}
 		nextOffset, sent, err := h.writeBuildLogStreamChunk(ctx, job, offset)
 		if err != nil {
+			if streamCtx.Err() != nil {
+				return
+			}
 			writeSSE(writer, "error", strconv.Itoa(offset), map[string]string{"code": "build.logs.stream_error"})
 			flushSSE(writer)
 			return
@@ -106,7 +144,7 @@ func (h *Handlers) StreamBuildJobLogs(ctx *gin.Context) {
 			flushSSE(writer)
 		}
 		select {
-		case <-ctx.Request.Context().Done():
+		case <-streamCtx.Done():
 			return
 		case <-ticker.C:
 			if err := h.dbFor(ctx).Select("status").First(&job, "id = ? and project_id = ?", job.ID, job.ProjectID).Error; err != nil {

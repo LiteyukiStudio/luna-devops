@@ -9,7 +9,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/LiteyukiStudio/devops/internal/authz"
+	"github.com/LiteyukiStudio/devops/internal/openapiscope"
 	"github.com/LiteyukiStudio/devops/openapi"
 	"sigs.k8s.io/yaml"
 )
@@ -101,6 +101,10 @@ func PlatformOperation(operationID string) (OpenAPIOperation, bool) {
 }
 
 func buildPlatformCatalog(source []byte) ([]OpenAPIOperation, error) {
+	scopeResolver, err := openapiscope.New(source)
+	if err != nil {
+		return nil, err
+	}
 	jsonSource, err := yaml.YAMLToJSON(source)
 	if err != nil {
 		return nil, fmt.Errorf("convert OpenAPI document: %w", err)
@@ -125,7 +129,7 @@ func buildPlatformCatalog(source []byte) ([]OpenAPIOperation, error) {
 			if _, exists := seen[operationID]; exists {
 				return nil, fmt.Errorf("duplicate Agent operationId %q", operationID)
 			}
-			operation, err := catalogOperation(document, path, method, operationID, pathItem, raw)
+			operation, err := catalogOperation(document, scopeResolver, path, method, operationID, pathItem, raw)
 			if err != nil {
 				return nil, err
 			}
@@ -142,7 +146,7 @@ func buildPlatformCatalog(source []byte) ([]OpenAPIOperation, error) {
 	return operations, nil
 }
 
-func catalogOperation(document openAPIDocument, path, method, operationID string, pathItem, raw map[string]any) (OpenAPIOperation, error) {
+func catalogOperation(document openAPIDocument, scopeResolver *openapiscope.Resolver, path, method, operationID string, pathItem, raw map[string]any) (OpenAPIOperation, error) {
 	parameters := make([]OpenAPIParameter, 0)
 	properties := map[string]any{}
 	required := make([]string, 0)
@@ -179,13 +183,14 @@ func catalogOperation(document openAPIDocument, path, method, operationID string
 	if len(tags) > 0 {
 		category = strings.ToLower(tags[0])
 	}
-	scope := authz.RequiredAccessTokenScope(openAPIPathToGin(path), strings.ToUpper(method))
-	if scope == "" || scope == string(authz.ActionSystemUnmapped) {
-		scope = fallbackAgentScope(category, method)
-	}
-	scopes := []string{}
-	if scope != "" && scope != string(authz.ActionSystemUnmapped) {
-		scopes = append(scopes, scope)
+	cliExtension := mapValue(raw["x-luna-cli"])
+	scopes, err := scopeResolver.RequiredScopes(path, method)
+	if err != nil {
+		return OpenAPIOperation{}, fmt.Errorf(
+			"Agent operation %q must declare x-luna-cli.requiredScopes: %w",
+			operationID,
+			err,
+		)
 	}
 	inputSchema := map[string]any{
 		"type":                 "object",
@@ -203,7 +208,7 @@ func catalogOperation(document openAPIDocument, path, method, operationID string
 		summary = operationID
 	}
 	extension := mapValue(raw["x-luna-agent"])
-	requiresApproval := operationRequiresApproval(method, mapValue(raw["x-luna-cli"]), extension)
+	requiresApproval := operationRequiresApproval(method, cliExtension, extension)
 	aliases := operationAliases(operationID, tags, extension)
 	purpose := localizedText(extension["purpose"])
 	if purpose.ZH == "" {
@@ -224,7 +229,7 @@ func catalogOperation(document openAPIDocument, path, method, operationID string
 		Preconditions:    localizedList(extension["preconditions"]),
 		SuccessEvidence:  localizedText(extension["successEvidence"]),
 		RequiresApproval: requiresApproval,
-		Idempotent:       strings.EqualFold(method, http.MethodGet) || boolValue(mapValue(raw["x-luna-cli"])["idempotent"]),
+		Idempotent:       strings.EqualFold(method, http.MethodGet) || boolValue(cliExtension["idempotent"]),
 		Method:           strings.ToUpper(method),
 		Path:             path,
 		RequiredScopes:   scopes,
@@ -346,6 +351,12 @@ var agentDisabledOperations = map[string]string{
 	"getOAuthAuthorizationRequest":     "interactive OAuth protocol",
 	"decideOAuthAuthorization":         "interactive OAuth protocol",
 	"createAccessToken":                "credential material must be created directly by the user",
+	"createKubeCredential":             "kubectl credential material must be created and stored directly by the user",
+	"listKubeCredentials":              "kubectl credentials must be managed directly by the user",
+	"listKubeCredentialBindings":       "kubectl binding metadata must be managed directly by the user",
+	"revokeKubeCredential":             "kubectl credentials must be managed directly by the user",
+	"getRuntimeClusterKubeGateway":     "kubectl gateway configuration is an indirect Kubernetes privilege boundary",
+	"updateRuntimeClusterKubeGateway":  "kubectl gateway configuration can expand indirect Kubernetes privileges",
 	"rotateOAuthApplicationSecret":     "credential material must be rotated directly by the user",
 	"updateMyPassword":                 "credential material must be changed directly by the user",
 	"createGatewayTrafficProbeHello":   "metering ingestion protocol",
@@ -542,97 +553,6 @@ func schemaSensitivePaths(schema map[string]any, prefix string) []string {
 		paths = append(paths, schemaSensitivePaths(items, path)...)
 	}
 	return uniqueStrings(paths)
-}
-
-func fallbackAgentScope(category, method string) string {
-	read := strings.EqualFold(method, http.MethodGet)
-	switch category {
-	case "auth":
-		return string(authz.ActionAuthManage)
-	case "accesstokens", "oauthapplications":
-		return string(authz.ActionTokenManage)
-	case "users":
-		if read {
-			return string(authz.ActionUserRead)
-		}
-		return string(authz.ActionUserManage)
-	case "dashboard":
-		return string(authz.ActionDashboardRead)
-	case "notifications", "events":
-		if read {
-			return string(authz.ActionEventRead)
-		}
-		return string(authz.ActionConfigWrite)
-	case "builds":
-		if read {
-			return string(authz.ActionBuildRead)
-		}
-		return string(authz.ActionBuildTrigger)
-	case "deployments", "releases":
-		if read {
-			return string(authz.ActionDeploymentRead)
-		}
-		return string(authz.ActionDeploymentUpdate)
-	case "gateway":
-		if read {
-			return string(authz.ActionGatewayRead)
-		}
-		return string(authz.ActionGatewayManage)
-	case "runtime":
-		if read {
-			return string(authz.ActionClusterRead)
-		}
-		return string(authz.ActionClusterManage)
-	case "git":
-		if read {
-			return string(authz.ActionGitRead)
-		}
-		return string(authz.ActionGitWrite)
-	case "registries":
-		if read {
-			return string(authz.ActionRegistryRead)
-		}
-		return string(authz.ActionRegistryWrite)
-	case "billing":
-		if read {
-			return string(authz.ActionBillingRead)
-		}
-		return string(authz.ActionBillingAdjust)
-	case "dataretention":
-		if read {
-			return string(authz.ActionDataRetentionRead)
-		}
-		return string(authz.ActionDataRetentionManage)
-	case "apptemplates", "applications":
-		if read {
-			return string(authz.ActionApplicationRead)
-		}
-		return string(authz.ActionApplicationCreate)
-	case "topology", "projects":
-		if read {
-			return string(authz.ActionProjectRead)
-		}
-		return string(authz.ActionProjectWrite)
-	case "system", "configs":
-		if read {
-			return string(authz.ActionConfigRead)
-		}
-		return string(authz.ActionConfigWrite)
-	case "web":
-		return "web:read"
-	default:
-		return ""
-	}
-}
-
-func openAPIPathToGin(path string) string {
-	parts := strings.Split(path, "/")
-	for index, part := range parts {
-		if strings.HasPrefix(part, "{") && strings.HasSuffix(part, "}") {
-			parts[index] = ":" + strings.TrimSuffix(strings.TrimPrefix(part, "{"), "}")
-		}
-	}
-	return strings.Join(parts, "/")
 }
 
 func mapValue(value any) map[string]any {

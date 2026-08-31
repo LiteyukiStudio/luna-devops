@@ -4,12 +4,13 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/dependency"
 	"github.com/gin-gonic/gin"
 )
 
 func (h *Handlers) GetProjectTopology(ctx *gin.Context) {
-	if _, ok := h.findProjectForCurrentUser(ctx); !ok {
+	if _, _, ok := h.authorizeProject(ctx, authz.ActionProjectRead); !ok {
 		return
 	}
 	topology, err := h.dependencyService(ctx.Request.Context()).ProjectTopology(ctx.Request.Context(), ctx.Param("projectId"), dependency.TopologyFilter{

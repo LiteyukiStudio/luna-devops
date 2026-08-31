@@ -10,13 +10,7 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
-
-type oauthDeviceVerificationInput struct {
-	Approved bool   `json:"approved"`
-	UserCode string `json:"userCode" binding:"required"`
-}
 
 func (h *Handlers) StartOAuthDeviceAuthorization(ctx *gin.Context) {
 	baseURL := strings.TrimRight(h.externalBaseURL(ctx), "/")
@@ -24,7 +18,11 @@ func (h *Handlers) StartOAuthDeviceAuthorization(ctx *gin.Context) {
 		oauthError(ctx, http.StatusServiceUnavailable, "temporarily_unavailable", "PUBLIC_BASE_URL is required")
 		return
 	}
-	clientID := strings.TrimSpace(ctx.PostForm("client_id"))
+	var input oauthDeviceAuthorizationInput
+	if !bindOAuthForm(ctx, &input) {
+		return
+	}
+	clientID := strings.TrimSpace(input.ClientID)
 	if !h.allowOAuthClientAttempt(ctx, clientID) {
 		return
 	}
@@ -38,11 +36,11 @@ func (h *Handlers) StartOAuthDeviceAuthorization(ctx *gin.Context) {
 		oauthError(ctx, http.StatusBadRequest, "invalid_client", "The device authorization client is not available")
 		return
 	}
-	requestedScope := strings.TrimSpace(ctx.PostForm("scope"))
+	requestedScope := strings.TrimSpace(input.Scope)
 	scope := ""
 	if requestedScope != "" {
 		scope = normalizeOAuthScope(requestedScope)
-		if scope == "" {
+		if scope == "" || !oauthApplicationAllowsScope(application, scope) {
 			oauthError(ctx, http.StatusBadRequest, "invalid_scope", "Requested scope is invalid")
 			return
 		}
@@ -68,13 +66,13 @@ func (h *Handlers) StartOAuthDeviceAuthorization(ctx *gin.Context) {
 	verificationURI := baseURL + "/oauth/device"
 	ctx.Header("Cache-Control", "no-store")
 	ctx.Header("Pragma", "no-cache")
-	ctx.JSON(http.StatusOK, gin.H{
-		"device_code":               plainDeviceCode,
-		"user_code":                 userCode,
-		"verification_uri":          verificationURI,
-		"verification_uri_complete": verificationURI + "?user_code=" + userCode,
-		"expires_in":                int64(oauthDeviceCodeTTL / time.Second),
-		"interval":                  authorization.IntervalSeconds,
+	ctx.JSON(http.StatusOK, oauthDeviceAuthorizationResponse{
+		DeviceCode:              plainDeviceCode,
+		UserCode:                userCode,
+		VerificationURI:         verificationURI,
+		VerificationURIComplete: verificationURI + "?user_code=" + userCode,
+		ExpiresIn:               int64(oauthDeviceCodeTTL / time.Second),
+		Interval:                authorization.IntervalSeconds,
 	})
 }
 
@@ -91,11 +89,11 @@ func (h *Handlers) GetOAuthDeviceVerification(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	ctx.JSON(http.StatusOK, gin.H{
-		"application": oauthApplicationToResponse(application),
-		"scope":       authorization.Scope,
-		"userCode":    formatOAuthDeviceUserCode(userCode),
-		"expiresAt":   authorization.ExpiresAt,
+	ctx.JSON(http.StatusOK, oauthDeviceVerificationResponse{
+		Application: oauthApplicationToResponse(application),
+		Scope:       authorization.Scope,
+		UserCode:    formatOAuthDeviceUserCode(userCode),
+		ExpiresAt:   authorization.ExpiresAt,
 	})
 }
 
@@ -112,57 +110,16 @@ func (h *Handlers) DecideOAuthDeviceVerification(ctx *gin.Context) {
 		return
 	}
 	userCode := normalizeOAuthDeviceUserCode(input.UserCode)
+	var snapshot model.OAuthDeviceAuthorization
+	if err := h.dbFor(ctx).First(&snapshot, "user_code_hash = ?", hashToken(userCode)).Error; err != nil {
+		writeErrorCode(ctx, http.StatusNotFound, "oauth.device.invalid_code", "Device verification code is invalid or expired")
+		return
+	}
 	var authorization model.OAuthDeviceAuthorization
 	err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(
-			&authorization,
-			"user_code_hash = ?",
-			hashToken(userCode),
-		).Error; err != nil {
-			return err
-		}
-		now := time.Now()
-		if authorization.Status != "pending" || !authorization.ExpiresAt.After(now) {
-			return errOAuthInvalidGrant
-		}
-		var application model.OAuthApplication
-		if err := tx.First(
-			&application,
-			"id = ? and client_id = ? and revoked_at is null",
-			authorization.ApplicationID,
-			lunaCLIClientID,
-		).Error; err != nil {
-			return err
-		}
-		if !input.Approved {
-			return tx.Model(&authorization).Updates(map[string]any{
-				"status":     "denied",
-				"denied_at":  now,
-				"updated_at": now,
-			}).Error
-		}
-		scope := authorization.Scope
-		if scope == "" {
-			scope = recommendedOAuthScope(user)
-		}
-		if scope == "" || !userCanAuthorizeOAuthScope(user, scope) {
-			return errOAuthInvalidScope
-		}
-		grant, err := ensureOAuthGrant(tx, authorization.ApplicationID, user.ID, scope, now)
-		if err != nil {
-			return err
-		}
-		authorization.GrantID = &grant.ID
-		authorization.UserID = &user.ID
-		authorization.Scope = scope
-		return tx.Model(&authorization).Updates(map[string]any{
-			"grant_id":    grant.ID,
-			"user_id":     user.ID,
-			"scope":       scope,
-			"status":      "approved",
-			"approved_at": now,
-			"updated_at":  now,
-		}).Error
+		updated, err := decideOAuthDeviceConsent(tx, snapshot.ID, user.ID, input.Approved)
+		authorization = updated
+		return err
 	})
 	if errors.Is(err, gorm.ErrRecordNotFound) || errors.Is(err, errOAuthInvalidGrant) {
 		writeErrorCode(ctx, http.StatusNotFound, "oauth.device.invalid_code", "Device verification code is invalid or expired")
@@ -181,92 +138,18 @@ func (h *Handlers) DecideOAuthDeviceVerification(ctx *gin.Context) {
 		status = "approved"
 	}
 	h.auditWithContext(user.ID, "oauth_device."+status, authorization.ID, true, authorization.Scope, ctx.Request.Context())
-	ctx.JSON(http.StatusOK, gin.H{"status": status})
+	ctx.JSON(http.StatusOK, oauthDeviceVerificationResult{Status: status})
 }
 
-func (h *Handlers) exchangeOAuthDeviceCode(ctx *gin.Context, application model.OAuthApplication) {
-	plainDeviceCode := strings.TrimSpace(ctx.PostForm("device_code"))
-	if plainDeviceCode == "" {
-		oauthError(ctx, http.StatusBadRequest, "invalid_request", "device_code is required")
+func (h *Handlers) exchangeOAuthDeviceCode(ctx *gin.Context, authentication oauthClientAuthentication, deviceCode string) {
+	plainDeviceCode := strings.TrimSpace(deviceCode)
+	response, protocolError, err := exchangeOAuthDeviceCodeValue(h.dbFor(ctx), authentication, plainDeviceCode, time.Now())
+	if errors.Is(err, errOAuthInvalidClient) {
+		oauthError(ctx, http.StatusUnauthorized, "invalid_client", "Client authentication failed")
 		return
 	}
-	var response oauthTokenResponse
-	protocolError := ""
-	err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
-		var authorization model.OAuthDeviceAuthorization
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(
-			&authorization,
-			"device_code_hash = ?",
-			hashToken(plainDeviceCode),
-		).Error; err != nil {
-			return err
-		}
-		now := time.Now()
-		if authorization.ApplicationID != application.ID || authorization.ConsumedAt != nil {
-			protocolError = "invalid_grant"
-			return nil
-		}
-		if !authorization.ExpiresAt.After(now) {
-			protocolError = "expired_token"
-			return nil
-		}
-		if authorization.LastPolledAt != nil && now.Before(authorization.LastPolledAt.Add(time.Duration(authorization.IntervalSeconds)*time.Second)) {
-			authorization.IntervalSeconds += 5
-			if err := tx.Model(&authorization).Updates(map[string]any{
-				"interval_seconds": authorization.IntervalSeconds,
-				"last_polled_at":   now,
-				"updated_at":       now,
-			}).Error; err != nil {
-				return err
-			}
-			protocolError = "slow_down"
-			return nil
-		}
-		if err := tx.Model(&authorization).Updates(map[string]any{"last_polled_at": now, "updated_at": now}).Error; err != nil {
-			return err
-		}
-		switch authorization.Status {
-		case "pending":
-			protocolError = "authorization_pending"
-			return nil
-		case "denied":
-			protocolError = "access_denied"
-			return nil
-		case "approved":
-		default:
-			protocolError = "invalid_grant"
-			return nil
-		}
-		if authorization.GrantID == nil || authorization.UserID == nil {
-			protocolError = "invalid_grant"
-			return nil
-		}
-		var grant model.OAuthGrant
-		if err := tx.First(
-			&grant,
-			"id = ? and application_id = ? and user_id = ? and revoked_at is null",
-			*authorization.GrantID,
-			application.ID,
-			*authorization.UserID,
-		).Error; err != nil {
-			return err
-		}
-		issued, err := issueOAuthTokens(tx, application, grant, now)
-		if err != nil {
-			return err
-		}
-		if err := tx.Model(&authorization).Updates(map[string]any{
-			"status":      "consumed",
-			"consumed_at": now,
-			"updated_at":  now,
-		}).Error; err != nil {
-			return err
-		}
-		response = issued
-		return nil
-	})
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		oauthError(ctx, http.StatusBadRequest, "invalid_grant", "Device code is invalid")
+	if errors.Is(err, errOAuthInvalidGrant) || errors.Is(err, errOAuthInvalidScope) {
+		oauthError(ctx, http.StatusBadRequest, "invalid_grant", "Device code authorization is no longer valid")
 		return
 	}
 	if err != nil {
@@ -313,36 +196,11 @@ func (h *Handlers) oauthDeviceVerificationRequest(ctx *gin.Context, user model.U
 	if authorization.Scope == "" {
 		authorization.Scope = recommendedOAuthScope(user)
 	}
-	if authorization.Scope == "" || !userCanAuthorizeOAuthScope(user, authorization.Scope) {
+	if authorization.Scope == "" || !oauthApplicationAllowsScope(application, authorization.Scope) || !userCanAuthorizeOAuthScope(user, authorization.Scope) {
 		writeErrorCode(ctx, http.StatusForbidden, "oauth.scope.forbidden", "Requested OAuth scope is not allowed")
 		return model.OAuthDeviceAuthorization{}, model.OAuthApplication{}, false
 	}
 	return authorization, application, true
-}
-
-func ensureOAuthGrant(tx *gorm.DB, applicationID, userID, scope string, now time.Time) (model.OAuthGrant, error) {
-	var grant model.OAuthGrant
-	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(
-		&grant,
-		"application_id = ? and user_id = ? and revoked_at is null",
-		applicationID,
-		userID,
-	).Error
-	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-		return model.OAuthGrant{}, err
-	}
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		grant = model.OAuthGrant{ID: id.New("ogrt"), ApplicationID: applicationID, UserID: userID, Scope: scope}
-		return grant, tx.Create(&grant).Error
-	}
-	if grant.Scope == scope {
-		return grant, nil
-	}
-	if err := revokeOAuthGrant(tx, grant.ID, now); err != nil {
-		return model.OAuthGrant{}, err
-	}
-	grant = model.OAuthGrant{ID: id.New("ogrt"), ApplicationID: applicationID, UserID: userID, Scope: scope}
-	return grant, tx.Create(&grant).Error
 }
 
 func newOAuthDeviceUserCode() string {

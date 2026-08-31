@@ -1,6 +1,7 @@
 package api
 
 import (
+	"github.com/LiteyukiStudio/devops/internal/credential"
 	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/service"
@@ -17,7 +18,7 @@ func (h *Handlers) ListAccessTokens(ctx *gin.Context) {
 
 	pagination := paginationFromQuery(ctx)
 	var tokens []model.AccessToken
-	query := h.dbFor(ctx).Model(&model.AccessToken{}).Where("user_id = ? and source = ? and revoked_at is null", user.ID, "personal")
+	query := h.dbFor(ctx).Model(&model.AccessToken{}).Where("user_id = ? and source = ? and revoked_at is null", user.ID, model.AccessTokenSourcePersonal)
 	query = applySearch(ctx, query, "name", "scope")
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
@@ -73,14 +74,14 @@ func (h *Handlers) CreateAccessToken(ctx *gin.Context) {
 		return
 	}
 
-	plainToken := "lyd_" + randomHex(24)
+	plainToken, tokenHash := credential.Generate("lyd_", 24)
 	token := model.AccessToken{
 		ID:        id.New("tok"),
 		UserID:    user.ID,
 		Name:      input.Name,
 		Scope:     scope,
-		TokenHash: hashToken(plainToken),
-		Source:    "personal",
+		TokenHash: tokenHash,
+		Source:    model.AccessTokenSourcePersonal,
 	}
 
 	if input.ExpiresInDays > 0 {
@@ -107,7 +108,7 @@ func (h *Handlers) RevokeAccessToken(ctx *gin.Context) {
 	}
 
 	var token model.AccessToken
-	if err := h.dbFor(ctx).First(&token, "id = ? and user_id = ? and source = ?", ctx.Param("tokenId"), user.ID, "personal").Error; err != nil {
+	if err := h.dbFor(ctx).First(&token, "id = ? and user_id = ? and source = ?", ctx.Param("tokenId"), user.ID, model.AccessTokenSourcePersonal).Error; err != nil {
 		writeError(ctx, http.StatusNotFound, "token not found")
 		return
 	}

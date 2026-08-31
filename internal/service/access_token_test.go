@@ -25,7 +25,11 @@ func TestRequiredAccessTokenScopeRequiresDeploymentExecForReleaseRuntimeExec(t *
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			required := RequiredAccessTokenScope(test.path, test.method)
+			requiredScopes, err := RequiredAccessTokenScopes(test.path, test.method)
+			if err != nil {
+				t.Fatal(err)
+			}
+			required := requiredScopes[0]
 			if required != "deployment:exec" {
 				t.Fatalf("RequiredAccessTokenScope(%q, %q) = %q, want deployment:exec", test.path, test.method, required)
 			}
@@ -40,7 +44,11 @@ func TestRequiredAccessTokenScopeRequiresDeploymentExecForReleaseRuntimeExec(t *
 }
 
 func TestRequiredAccessTokenScopeKeepsReleaseRuntimeLogsDeploymentReadOnly(t *testing.T) {
-	required := RequiredAccessTokenScope("/api/v1/projects/:projectId/releases/:releaseId/runtime-logs", http.MethodGet)
+	requiredScopes, err := RequiredAccessTokenScopes("/api/v1/projects/:projectId/releases/:releaseId/runtime-logs", http.MethodGet)
+	if err != nil {
+		t.Fatal(err)
+	}
+	required := requiredScopes[0]
 
 	if required != "deployment:read" {
 		t.Fatalf("runtime logs required scope = %q, want deployment:read", required)

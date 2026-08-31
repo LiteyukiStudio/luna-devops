@@ -68,7 +68,18 @@ func splitVolumeMigrationStatements(sql string) []string {
 	statements := make([]string, 0)
 	var current strings.Builder
 	var singleQuoted, doubleQuoted bool
+	var dollarQuote string
 	for index := 0; index < len(sql); index++ {
+		if dollarQuote != "" {
+			if strings.HasPrefix(sql[index:], dollarQuote) {
+				current.WriteString(dollarQuote)
+				index += len(dollarQuote) - 1
+				dollarQuote = ""
+			} else {
+				current.WriteByte(sql[index])
+			}
+			continue
+		}
 		character := sql[index]
 		switch character {
 		case '\'':
@@ -86,8 +97,21 @@ func splitVolumeMigrationStatements(sql string) []string {
 			if !singleQuoted {
 				doubleQuoted = !doubleQuoted
 			}
-		case ';':
+		case '$':
 			if singleQuoted || doubleQuoted {
+				current.WriteByte(character)
+				continue
+			}
+			delimiter := volumeDollarQuoteDelimiter(sql[index:])
+			if delimiter == "" {
+				current.WriteByte(character)
+				continue
+			}
+			current.WriteString(delimiter)
+			index += len(delimiter) - 1
+			dollarQuote = delimiter
+		case ';':
+			if singleQuoted || doubleQuoted || dollarQuote != "" {
 				current.WriteByte(character)
 				continue
 			}
@@ -101,6 +125,38 @@ func splitVolumeMigrationStatements(sql string) []string {
 		statements = append(statements, trailing)
 	}
 	return statements
+}
+
+func volumeDollarQuoteDelimiter(sql string) string {
+	if len(sql) < 2 || sql[0] != '$' {
+		return ""
+	}
+	for index := 1; index < len(sql); index++ {
+		switch character := sql[index]; {
+		case character == '$':
+			return sql[:index+1]
+		case character == '_' || character >= 'a' && character <= 'z' || character >= 'A' && character <= 'Z':
+			continue
+		case index > 1 && character >= '0' && character <= '9':
+			continue
+		default:
+			return ""
+		}
+	}
+	return ""
+}
+
+func TestSplitVolumeMigrationStatementsKeepsDollarQuotedBodies(t *testing.T) {
+	sql := `CREATE FUNCTION sample() RETURNS void AS $$
+BEGIN
+    PERFORM 1;
+END;
+$$ LANGUAGE plpgsql;
+SELECT 2;`
+	statements := splitVolumeMigrationStatements(sql)
+	if len(statements) != 2 || !strings.Contains(statements[0], "PERFORM 1;") || strings.TrimSpace(statements[1]) != "SELECT 2" {
+		t.Fatalf("split statements = %#v", statements)
+	}
 }
 
 func openVolumeTestDB(t *testing.T) *gorm.DB {

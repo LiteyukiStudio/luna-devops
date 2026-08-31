@@ -38,7 +38,7 @@ Open **Global Settings → AI Assistant → Advanced AI Settings** and enter:
 
 Enable **Agent Observability** after all three URLs are present and test each connection. Only Luna API receives these query URLs and tokens; they are not sent to browsers. Use **Operations → Agent Observability** to view model usage, tool calls, turns, and traces.
 
-Open a turn to see its complete Trace ID prominently in the header. Click the Trace ID block to copy it for searching the same request chain in Tempo, a log platform, or a diagnostic ticket.
+Open a turn to see its complete Trace ID prominently in the header. Click the Trace ID block to copy it for searching the same request chain in Tempo, a log platform, or a diagnostic ticket. The Agent observability page displays Trace IDs and Span IDs as lowercase hexadecimal strings regardless of the transport encoding used by Tempo query responses.
 
 ### Interpret model token usage
 
@@ -73,7 +73,7 @@ Expose this listener only to a controlled monitoring network. Worker and Agent m
 
 ## Sensitive content capture
 
-`AI_OBSERVABILITY_CAPTURE_CONTENT=true` may write redacted model inputs, outputs, tool arguments, and results to controlled traces. Correlated logs retain event metadata only and never include prompts or tool arguments. Keep it disabled in production. Enable it only during a controlled diagnostic window after restricting Tempo access and retention, then restore `false` and restart Agent.
+`AI_OBSERVABILITY_CAPTURE_CONTENT=true` writes model inputs, outputs, tool arguments, and results as provided to controlled traces. Ordinary natural-language content is not heuristically redacted by keywords or regular expressions; fields explicitly declared through tool-catalog `sensitivePaths` are still replaced with `[REDACTED]`. If one content field exceeds 128 KiB of UTF-8 JSON, the entire field is omitted and the span receives `luna.ai.content.truncated=true` plus a `luna.ai.content.omitted` event. Correlated logs retain event metadata only, not content. Keep this setting disabled in production. Enable it only during a controlled diagnostic window after restricting Tempo access and retention, then restore `false` and restart Agent.
 
 ## Verify
 

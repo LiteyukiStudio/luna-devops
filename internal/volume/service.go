@@ -637,8 +637,8 @@ func (service *Service) ReserveDeploymentVolumeMount(ctx context.Context, input 
 			if !CanAttachProjectVolume(volume) {
 				return newDomainError(CodeStateConflict, "project volume is not attachable")
 			}
-			if volume.ClusterID != target.ClusterID || (strings.TrimSpace(target.Namespace) != "" && volume.Namespace != target.Namespace) {
-				return newDomainError(CodeIncompatibleCluster, "project volume and deployment target must use the same cluster and namespace")
+			if volume.ClusterID != target.ClusterID {
+				return newDomainError(CodeIncompatibleCluster, "project volume and deployment target must use the same cluster")
 			}
 			if err := applyVolumeMountPolicy(&mount, volume); err != nil {
 				return err

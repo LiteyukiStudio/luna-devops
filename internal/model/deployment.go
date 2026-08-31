@@ -52,6 +52,15 @@ type RuntimeCluster struct {
 	GatewayTrustedProxyCIDRs      string         `gorm:"column:gateway_trusted_proxy_cidrs;type:text;not null;default:''" json:"gatewayTrustedProxyCIDRs"`
 	GatewayDefaultRequestHeaders  string         `gorm:"type:text;not null;default:''" json:"gatewayDefaultRequestHeaders"`
 	GatewayDefaultResponseHeaders string         `gorm:"type:text;not null;default:''" json:"gatewayDefaultResponseHeaders"`
+	KubeGatewayEnabled            bool           `gorm:"not null;default:false" json:"kubeGatewayEnabled"`
+	KubeGatewayExtraResourceRules string         `gorm:"type:jsonb;not null;default:'[]'" json:"kubeGatewayExtraResourceRules"`
+	DeleteStatus                  string         `gorm:"index;not null;default:active" json:"deleteStatus"`
+	DeleteMessage                 string         `gorm:"type:text;not null;default:''" json:"-"`
+	DeleteStartedAt               *time.Time     `json:"deleteStartedAt,omitempty"`
+	DeleteFinishedAt              *time.Time     `json:"deleteFinishedAt,omitempty"`
+	KubeGatewayDrainUntil         *time.Time     `json:"-"`
+	KubeGatewayCleanupCompletedAt *time.Time     `json:"-"`
+	DeleteObservationCode         string         `gorm:"-" json:"deleteObservationCode,omitempty"`
 	Status                        string         `gorm:"-" json:"status"`
 	ObservationCode               string         `gorm:"-" json:"observationCode,omitempty"`
 	LastCheckedAt                 *time.Time     `gorm:"-" json:"lastCheckedAt,omitempty"`
@@ -72,7 +81,6 @@ type Environment struct {
 	CPURequest    string         `json:"cpuRequest"`
 	MemoryRequest string         `json:"memoryRequest"`
 	EnvVars       string         `json:"envVars"`
-	ConfigRefs    string         `json:"configRefs"`
 	SecretRefs    string         `json:"secretRefs"`
 	CreatedBy     string         `gorm:"index" json:"createdBy"`
 	CreatedAt     time.Time      `json:"createdAt"`
@@ -111,7 +119,6 @@ type DeploymentTarget struct {
 	Stage                        string                        `gorm:"uniqueIndex:idx_deployment_targets_application_stage_active,where:deleted_at IS NULL;not null" json:"stage"`
 	KubernetesName               string                        `gorm:"not null;default:''" json:"kubernetesName"`
 	ClusterID                    string                        `gorm:"index;not null;default:''" json:"clusterId"`
-	Namespace                    string                        `gorm:"not null;default:''" json:"namespace"`
 	WorkloadType                 string                        `gorm:"not null;default:Deployment" json:"workloadType"`
 	Replicas                     int                           `gorm:"not null;default:1" json:"replicas"`
 	CPURequest                   string                        `gorm:"not null;default:'1'" json:"cpuRequest"`
@@ -185,7 +192,6 @@ type DeploymentTarget struct {
 	ConcurrencyPolicy            string                        `gorm:"not null;default:queue" json:"concurrencyPolicy"`
 	RuntimeConfigRefs            string                        `gorm:"type:text;not null;default:''" json:"runtimeConfigRefs"`
 	EnvVars                      string                        `gorm:"type:text;not null;default:''" json:"envVars"`
-	ConfigRefs                   string                        `gorm:"type:text;not null;default:''" json:"configRefs"`
 	SecretRefs                   string                        `gorm:"type:text;not null;default:''" json:"-"`
 	ConfigFiles                  string                        `gorm:"type:text;not null;default:''" json:"configFiles"`
 	SecretFiles                  string                        `gorm:"type:text;not null;default:''" json:"-"`
