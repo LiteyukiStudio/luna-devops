@@ -409,12 +409,10 @@ func (h *Handlers) auditWithContext(userID, action, resource string, success boo
 	h.identityAPI().AuditWithContext(userID, action, resource, success, message, ctx)
 }
 
-type kubeCredentialAuditMetadata = identityapi.KubeCredentialAuditMetadata
-type kubeGatewayAuditMetadata = identityapi.KubeGatewayAuditMetadata
 type runtimeClusterAuditMetadata = identityapi.RuntimeClusterAuditMetadata
 
 type safeAuditMetadata interface {
-	kubeCredentialAuditMetadata | kubeGatewayAuditMetadata | runtimeClusterAuditMetadata
+	runtimeClusterAuditMetadata
 }
 
 func auditWithSafeMetadata[T safeAuditMetadata](h *Handlers, userID, action, resource string, success bool, message string, metadata T, ctx context.Context) {

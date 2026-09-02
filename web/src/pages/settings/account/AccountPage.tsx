@@ -31,7 +31,6 @@ import { AccessTokensPanel } from './access-tokens-panel'
 import { AccountNotificationsPanel } from './account-notifications-panel'
 import { OAuthApplicationsPanel, OAuthGrantsPanel } from './account-oauth-panels'
 import { AccountPasswordPanel } from './account-password-panel'
-import { KubeCredentialsPanel } from './kube-credentials-panel'
 
 const profileSchema = z.object({
   name: z.string().min(1, i18next.t('accountPage.profileNameRequired')),
@@ -48,12 +47,9 @@ export function AccountPage() {
   const { t } = useTranslation()
   const [activeTab, setActiveTab] = useState('profile')
   const [createDialog, setCreateDialog] = useState<AccountCreateDialog>(null)
-  const meta = useQuery({ queryKey: ['api-meta'], queryFn: api.getAPIMeta, staleTime: 5 * 60 * 1000 })
-  const kubectlAccessEnabled = meta.data?.features?.kubectlGateway ?? true
-  const effectiveActiveTab = !kubectlAccessEnabled && activeTab === 'kubectl-credentials' ? 'profile' : activeTab
 
   const activeContent = (() => {
-    switch (effectiveActiveTab) {
+    switch (activeTab) {
       case 'security':
         return (
           <div className="grid gap-4">
@@ -68,8 +64,6 @@ export function AccountPage() {
             onCreateDialogOpenChange={open => setCreateDialog(open ? 'access-token' : null)}
           />
         )
-      case 'kubectl-credentials':
-        return <KubeCredentialsPanel featureEnabled={kubectlAccessEnabled} />
       case 'notifications':
         return <AccountNotificationsPanel />
       case 'oauth-applications':
@@ -85,14 +79,14 @@ export function AccountPage() {
         return <ProfilePanel />
     }
   })()
-  const activeTools = effectiveActiveTab === 'tokens'
+  const activeTools = activeTab === 'tokens'
     ? (
         <Button type="button" onClick={() => setCreateDialog('access-token')}>
           <Plus size={16} />
           {t('accessTokens.createTitle')}
         </Button>
       )
-    : effectiveActiveTab === 'oauth-applications'
+    : activeTab === 'oauth-applications'
       ? (
           <Button type="button" onClick={() => setCreateDialog('oauth-application')}>
             <Plus size={16} />
@@ -109,22 +103,21 @@ export function AccountPage() {
         { value: 'security', label: t('accountPage.securityTab') },
         { value: 'notifications', label: t('accountPage.notificationsTab') },
         { value: 'tokens', label: t('accountPage.tokensTab') },
-        ...(kubectlAccessEnabled ? [{ value: 'kubectl-credentials', label: t('kubectlAccess.accountTab') }] : []),
         { value: 'oauth-applications', label: t('oauthApps.applicationsTab') },
         { value: 'oauth-grants', label: t('oauthApps.grantsTab') },
       ]}
       tools={activeTools}
-      value={effectiveActiveTab}
+      value={activeTab}
       onValueChange={(nextTab) => {
         setCreateDialog(null)
         setActiveTab(nextTab)
       }}
     >
-      <TabsContent value={effectiveActiveTab}>
+      <TabsContent value={activeTab}>
         <motion.div
-          key={effectiveActiveTab}
+          key={activeTab}
           animate={{ opacity: 1, y: 0 }}
-          className={effectiveActiveTab === 'profile' || effectiveActiveTab === 'security' ? 'w-full max-w-3xl' : undefined}
+          className={activeTab === 'profile' || activeTab === 'security' ? 'w-full max-w-3xl' : undefined}
           initial={{ opacity: 0, y: 6 }}
           transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
         >

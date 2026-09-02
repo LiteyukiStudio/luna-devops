@@ -6,12 +6,12 @@ import { TooltipProvider } from './components/ui/tooltip'
 import { loadTranslationBundles } from './i18n'
 
 const AppLayout = lazyTranslated(() => import('./layouts/AppLayout'), 'AppLayout', ['nav', 'inbox', 'accountPage', 'aiAssistant', 'projectSpaces', 'apps'])
-const AccountPage = lazyTranslated(() => import('./pages/settings/account/AccountPage'), 'AccountPage', ['accountPage', 'accessTokens', 'kubectlAccess', 'settings', 'usersPage'])
+const AccountPage = lazyTranslated(() => import('./pages/settings/account/AccountPage'), 'AccountPage', ['accountPage', 'accessTokens', 'settings', 'usersPage'])
 const AppTemplatesPage = lazyTranslated(() => import('./pages/app-templates/AppTemplatesPage'), 'AppTemplatesPage', ['appTemplatesPage', 'deploymentsPage', 'projectSpaces', 'projectVolumes'])
 const ApplicationConfigPage = lazyTranslated(() => import('./pages/applications/ApplicationConfigPage'), 'ApplicationConfigPage', ['apps', 'buildTemplates', 'buildsPage', 'deploymentsPage', 'gatewayRoutesPage', 'repositories', 'runtimeConfigSets', 'runtimeConfigFilesEditor', 'clustersPage', 'billingPage', 'projectHooks', 'codeRepositoriesView', 'projectVolumes'])
 const AuthProvidersPage = lazyTranslated(() => import('./pages/settings/identity/AuthProvidersPage'), 'AuthProvidersPage', ['authProvidersPage', 'settings', 'usersPage'])
 const BillingPage = lazyTranslated(() => import('./pages/billing/BillingPage'), 'BillingPage', ['billingPage', 'projectSpaces', 'settings'])
-const ClustersPage = lazyTranslated(() => import('./pages/clusters/ClustersPage'), 'ClustersPage', ['clustersPage', 'codeRepositoriesView', 'deploymentsPage', 'gatewayRoutesPage', 'kubectlAccess', 'projectSpaces'])
+const ClustersPage = lazyTranslated(() => import('./pages/clusters/ClustersPage'), 'ClustersPage', ['clustersPage', 'codeRepositoriesView', 'deploymentsPage', 'gatewayRoutesPage', 'projectSpaces'])
 const CodeRepositoriesPage = lazyTranslated(() => import('./pages/code-repositories/CodeRepositoriesPage'), 'CodeRepositoriesPage', ['codeRepositoriesPage', 'codeRepositoriesView', 'repositories', 'projectSpaces'])
 const DashboardPage = lazyTranslated(() => import('./pages/dashboard/DashboardPage'), 'DashboardPage', ['dashboardPage', 'registriesPage', 'clustersPage', 'eventsPage', 'projectSpaces'])
 const EventsPage = lazyTranslated(() => import('./pages/events/EventsPage'), 'EventsPage', ['eventsPage'])
@@ -23,7 +23,7 @@ const OAuthAuthorizePage = lazyNamed(() => import('./pages/oauth/OAuthAuthorizeP
 const OAuthDevicePage = lazyNamed(() => import('./pages/oauth/OAuthDevicePage'), 'OAuthDevicePage')
 const OperationsDashboardPage = lazyTranslated(() => import('./pages/settings/operations/OperationsDashboardPage'), 'OperationsDashboardPage', ['operationsDashboardPage', 'settings'])
 const ProjectsPage = lazyTranslated(() => import('./pages/projects/overview/ProjectsPage'), 'ProjectsPage', ['projectSpaces'])
-const ProjectWorkspacePage = lazyTranslated(() => import('./pages/projects/overview/ProjectWorkspacePage'), 'ProjectWorkspacePage', ['projectSpaces', 'apps', 'buildsPage', 'kubectlAccess', 'runtimeConfigSets', 'projectHooks', 'projectMembers', 'projectVolumes', 'projectTopology', 'deploymentsPage', 'gatewayRoutesPage', 'billingPage', 'eventsPage', 'runtimeConfigFilesEditor'])
+const ProjectWorkspacePage = lazyTranslated(() => import('./pages/projects/overview/ProjectWorkspacePage'), 'ProjectWorkspacePage', ['projectSpaces', 'apps', 'buildsPage', 'runtimeConfigSets', 'projectHooks', 'projectMembers', 'projectVolumes', 'projectTopology', 'deploymentsPage', 'gatewayRoutesPage', 'billingPage', 'eventsPage', 'runtimeConfigFilesEditor'])
 const RegistriesPage = lazyTranslated(() => import('./pages/registries/RegistriesPage'), 'RegistriesPage', ['registriesPage', 'projectSpaces'])
 const SiteSettingsPage = lazyTranslated(() => import('./pages/settings/site/SiteSettingsPage'), 'SiteSettingsPage', ['settings', 'buildsPage'])
 const UsersPage = lazyTranslated(() => import('./pages/settings/identity/UsersPage'), 'UsersPage', ['usersPage', 'settings'])

@@ -6,7 +6,6 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/LiteyukiStudio/devops/internal/kubeproxy"
 	"github.com/LiteyukiStudio/devops/internal/observability"
 	"github.com/LiteyukiStudio/devops/internal/telemetry"
 	"github.com/gin-gonic/gin"
@@ -51,14 +50,9 @@ func NewRouterWithStaticFSAndMetricsConfig(db *gorm.DB, staticFS fs.FS, httpMetr
 	router.Use(middlewares...)
 
 	handlers := NewHandlersWithConfig(db, cfg)
-	// The raw Kubernetes protocol routes and fallbacks are registered before
-	// platform business middleware. This prevents protocol requests carrying
-	// unrelated platform headers from being converted into JSON API responses.
-	registerKubeGatewayRoutes(router, handlers)
-	router.NoMethod(kubeGatewayNoMethodHandler(handlers))
 	registerStaticUI(router, staticFS, func() string {
 		return handlers.configs.get([]string{siteBrandColorPresetKey})[siteBrandColorPresetKey]
-	}, handlers.HandleKubeGatewayNoRoute)
+	})
 
 	router.GET("/healthz", func(ctx *gin.Context) {
 		ctx.JSON(http.StatusOK, gin.H{"status": "ok"})
@@ -215,14 +209,11 @@ func NewRouterWithStaticFSAndMetricsConfig(db *gorm.DB, staticFS fs.FS, httpMetr
 
 		v1.GET("/runtime/clusters", handlers.ListRuntimeClusters)
 		v1.GET("/runtime/clusters/pressure", handlers.ObserveRuntimeClusterPressure)
-		v1.GET("/runtime/clusters/kube-gateway-status", handlers.platformAdminMiddleware(), handlers.ObserveRuntimeClusterKubeGatewayStatus)
 		v1.POST("/runtime/clusters", handlers.CreateRuntimeCluster)
 		v1.PUT("/runtime/clusters/:clusterId", handlers.UpdateRuntimeCluster)
 		v1.DELETE("/runtime/clusters/:clusterId", handlers.DeleteRuntimeCluster)
 		v1.POST("/runtime/clusters/:clusterId/test", handlers.TestRuntimeCluster)
 		v1.GET("/runtime/clusters/:clusterId/resources", handlers.ListRuntimeClusterResources)
-		v1.GET("/runtime/clusters/:clusterId/kube-gateway", handlers.platformAdminMiddleware(), handlers.GetRuntimeClusterKubeGateway)
-		v1.PUT("/runtime/clusters/:clusterId/kube-gateway", handlers.platformAdminMiddleware(), handlers.UpdateRuntimeClusterKubeGateway)
 		v1.DELETE("/runtime/clusters/:clusterId/resources", handlers.DeleteRuntimeClusterResource)
 		v1.GET("/runtime/clusters/:clusterId/resource-yaml", handlers.GetRuntimeClusterResourceYAML)
 		v1.GET("/runtime/clusters/:clusterId/resource-events", handlers.ListRuntimeClusterResourceEvents)
@@ -380,10 +371,6 @@ func NewRouterWithStaticFSAndMetricsConfig(db *gorm.DB, staticFS fs.FS, httpMetr
 		v1.GET("/access-tokens", handlers.ListAccessTokens)
 		v1.POST("/access-tokens", handlers.CreateAccessToken)
 		v1.DELETE("/access-tokens/:tokenId", handlers.RevokeAccessToken)
-		v1.POST("/kube-credentials", handlers.CreateKubeCredential)
-		v1.GET("/kube-credentials", handlers.ListKubeCredentials)
-		v1.GET("/kube-credentials/:credentialId/bindings", handlers.ListKubeCredentialBindings)
-		v1.DELETE("/kube-credentials/:credentialId", handlers.RevokeKubeCredential)
 	}
 
 	registerSwaggerUI(router)
@@ -399,60 +386,9 @@ func configureTrustedProxies(router *gin.Engine, cidrs []string) {
 	_ = router.SetTrustedProxies(nil)
 }
 
-var kubeGatewayHTTPMethods = []string{
-	http.MethodGet,
-	http.MethodPost,
-	http.MethodPut,
-	http.MethodPatch,
-	http.MethodDelete,
-	http.MethodHead,
-}
-
-func registerKubeGatewayRoutes(router *gin.Engine, handlers *Handlers) {
-	if router == nil || handlers == nil {
-		return
-	}
-	for _, method := range kubeGatewayHTTPMethods {
-		router.Handle(method, "/kube/v1/bindings/:bindingId", handlers.HandleKubeGatewayRequest)
-		router.Handle(method, "/kube/v1/bindings/:bindingId/*kubePath", handlers.HandleKubeGatewayRequest)
-	}
-}
-
-func kubeGatewayNoMethod(ctx *gin.Context) {
-	if telemetry.IsKubeGatewayPath(ctx.Request.URL.Path) {
-		ctx.Header("Allow", strings.Join(kubeGatewayHTTPMethods, ", "))
-		kubeproxy.WriteStatus(ctx.Writer, kubeproxy.MethodNotAllowed())
-		ctx.Abort()
-		return
-	}
-	ctx.Status(http.StatusMethodNotAllowed)
-}
-
-func kubeGatewayNoMethodHandler(handlers *Handlers) gin.HandlerFunc {
-	return func(ctx *gin.Context) {
-		if telemetry.IsKubeGatewayPath(ctx.Request.URL.Path) && handlers != nil {
-			handlers.HandleKubeGatewayNoMethod(ctx)
-			return
-		}
-		kubeGatewayNoMethod(ctx)
-	}
-}
-
-func kubeGatewayNoRoute(ctx *gin.Context) {
-	kubeproxy.WriteStatus(ctx.Writer, kubeGatewayRouteNotFound())
-	ctx.Abort()
-}
-
 func cors(cfg Config) gin.HandlerFunc {
 	allowedOrigins := configuredAllowedOrigins(cfg)
 	return func(ctx *gin.Context) {
-		// Kubernetes protocol methods and errors are handled by the dedicated
-		// gateway. In particular, OPTIONS must reach Gin's 405 responder instead
-		// of being converted into a browser CORS preflight success.
-		if telemetry.IsKubeGatewayPath(ctx.Request.URL.Path) {
-			ctx.Next()
-			return
-		}
 		origin := strings.TrimSpace(ctx.GetHeader("Origin"))
 		if origin != "" && containsString(allowedOrigins, origin) {
 			ctx.Writer.Header().Set("Access-Control-Allow-Origin", origin)

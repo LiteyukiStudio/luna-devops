@@ -45,10 +45,6 @@ func (host projectHost) AIConversationProjectID(ctx *gin.Context) string {
 	return aiConversationProjectID(ctx)
 }
 
-func (host projectHost) EnqueueEnabledProjectAccessKubeGateways(ctx context.Context, userID string, includeGlobal bool) error {
-	return host.handlers.enqueueEnabledProjectAccessKubeGateways(ctx, userID, includeGlobal)
-}
-
 func (host projectHost) EnqueueResourceCleanup(ctx context.Context, resourceType, resourceID, projectID, actorID string) bool {
 	return host.handlers.enqueueResourceCleanup(ctx, resourceType, resourceID, projectID, actorID)
 }

@@ -330,10 +330,6 @@ func PolicyForType(taskType string) EnqueuePolicy {
 		return EnqueuePolicy{Queue: QueueLight, MaxRetry: 3, Timeout: 10 * time.Minute, Retention: 24 * time.Hour, Unique: time.Minute}
 	case TypeVolumeTransferCleanup:
 		return EnqueuePolicy{Queue: QueueLight, MaxRetry: 3, Timeout: 15 * time.Minute, Retention: 24 * time.Hour, Unique: 5 * time.Minute}
-	case TypeKubectlGateway:
-		return KubectlGatewayEnqueuePolicy()
-	case TypeKubectlGatewaySweep:
-		return KubectlGatewaySweepEnqueuePolicy()
 	default:
 		return EnqueuePolicy{Queue: QueueLight, MaxRetry: 1, Timeout: 5 * time.Minute, Retention: 24 * time.Hour, Unique: 1 * time.Minute}
 	}

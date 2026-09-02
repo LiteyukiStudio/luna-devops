@@ -14,33 +14,26 @@ import (
 )
 
 const (
-	ScopedResourceRuntimeCluster            = scopedResourceRuntimeCluster
-	DefaultClusterBuildConcurrency          = defaultClusterBuildConcurrency
-	MaxRuntimeClusterPressureBatch          = maxRuntimeClusterPressureBatch
-	MaxRuntimeClusterKubeGatewayStatusBatch = maxRuntimeClusterKubeGatewayStatusBatch
-	RuntimeEnvironmentValueModePublic       = runtimeEnvironmentValueModePublic
-	RuntimeEnvironmentValueModeSecret       = runtimeEnvironmentValueModeSecret
-	MaxRuntimeEnvironmentVariables          = maxRuntimeEnvironmentVariables
-	MaxRuntimeEnvironmentValueLength        = maxRuntimeEnvironmentValueLength
-	RuntimeTerminalResourceCheckTimeout     = runtimeTerminalResourceCheckTimeout
-	RuntimeTerminalTicketTTL                = runtimeTerminalTicketTTL
-	RuntimeTerminalTicketKeyPrefix          = runtimeTerminalTicketKeyPrefix
-	SystemComponentGatewayTrafficProbe      = systemComponentGatewayTrafficProbe
+	ScopedResourceRuntimeCluster        = scopedResourceRuntimeCluster
+	DefaultClusterBuildConcurrency      = defaultClusterBuildConcurrency
+	MaxRuntimeClusterPressureBatch      = maxRuntimeClusterPressureBatch
+	RuntimeEnvironmentValueModePublic   = runtimeEnvironmentValueModePublic
+	RuntimeEnvironmentValueModeSecret   = runtimeEnvironmentValueModeSecret
+	MaxRuntimeEnvironmentVariables      = maxRuntimeEnvironmentVariables
+	MaxRuntimeEnvironmentValueLength    = maxRuntimeEnvironmentValueLength
+	RuntimeTerminalResourceCheckTimeout = runtimeTerminalResourceCheckTimeout
+	RuntimeTerminalTicketTTL            = runtimeTerminalTicketTTL
+	RuntimeTerminalTicketKeyPrefix      = runtimeTerminalTicketKeyPrefix
+	SystemComponentGatewayTrafficProbe  = systemComponentGatewayTrafficProbe
 )
 
 var (
-	ErrKubeGatewayEnqueue               = errKubeGatewayEnqueue
 	ErrRuntimeSecretMutationUnavailable = errRuntimeSecretMutationUnavailable
 	RuntimeResourceCategories           = append([]string(nil), runtimeResourceCategories...)
 	RuntimeResourceKinds                = append([]string(nil), runtimeResourceKinds...)
 )
 
 type RuntimeClusterInput = runtimeClusterInput
-type RuntimeClusterKubeGatewayRule = runtimeClusterKubeGatewayRule
-type RuntimeClusterKubeGatewayInput = runtimeClusterKubeGatewayInput
-type RuntimeClusterKubeGatewayResponse = runtimeClusterKubeGatewayResponse
-type RuntimeClusterKubeGatewayStatusResponse = runtimeClusterKubeGatewayStatusResponse
-type RuntimeClusterKubeGatewayStatusListResponse = runtimeClusterKubeGatewayStatusListResponse
 type RuntimeClusterPressureResource = runtimeClusterPressureResource
 type RuntimeClusterPressureDetails = runtimeClusterPressureDetails
 type RuntimeClusterPressureResponse = runtimeClusterPressureResponse
@@ -76,8 +69,6 @@ type SystemComponentApplicationPlan = systemComponentApplicationPlan
 type RuntimeClusterAuditMetadata = runtimeClusterAuditMetadata
 
 func RuntimeTerminalMemoryTicketStore() *sync.Map { return &runtimeTerminalMemoryTickets }
-
-func NormalizedKubeCredentialDays(value int) int { return normalizedKubeCredentialDays(value) }
 
 func CanUseRuntimeClusterForProject(user model.User, cluster model.RuntimeCluster, projectID string, boundProjectIDs []string) bool {
 	return canUseRuntimeClusterForProject(user, cluster, projectID, boundProjectIDs)
@@ -138,13 +129,6 @@ func NormalizeGatewayForwardedHeadersMode(value string) string {
 	return normalizeGatewayForwardedHeadersMode(value)
 }
 func ValidateTrustedProxyCIDRs(value string) error { return validateTrustedProxyCIDRs(value) }
-
-func NormalizeRuntimeClusterKubeGatewayRules(input []RuntimeClusterKubeGatewayRule) []RuntimeClusterKubeGatewayRule {
-	return normalizeRuntimeClusterKubeGatewayRules(input)
-}
-func DecodeRuntimeClusterKubeGatewayRules(raw string) ([]RuntimeClusterKubeGatewayRule, error) {
-	return decodeRuntimeClusterKubeGatewayRules(raw)
-}
 
 func RuntimeClusterPressureFromSnapshot(clusterID string, snapshot kubeprovider.ClusterPressureSnapshot, detailed bool) RuntimeClusterPressureResponse {
 	return runtimeClusterPressureFromSnapshot(clusterID, snapshot, detailed)
@@ -278,21 +262,6 @@ func (h *Handler) DefaultRuntimeClusterID(ctx context.Context) string {
 }
 func (h *Handler) ObserveRuntimeClusters(ctx context.Context, clusters []model.RuntimeCluster) {
 	h.observeRuntimeClusters(ctx, clusters)
-}
-func (h *Handler) AllowRuntimeClusterConnectionChange(ctx *gin.Context, existing model.RuntimeCluster, input RuntimeClusterInput) bool {
-	return h.allowRuntimeClusterConnectionChange(ctx, existing, input)
-}
-func (h *Handler) PersistRuntimeClusterKubeGatewayDesired(ctx context.Context, clusterID string, enabled bool, encodedRules string) error {
-	return h.persistRuntimeClusterKubeGatewayDesired(ctx, clusterID, enabled, encodedRules)
-}
-func (h *Handler) EnqueueEnabledProjectAccessKubeGateways(ctx context.Context, userID string, includeGlobal bool) error {
-	return h.enqueueEnabledProjectAccessKubeGateways(ctx, userID, includeGlobal)
-}
-func (h *Handler) RuntimeClusterKubeGatewayManagerAndSpec(ctx context.Context, cluster model.RuntimeCluster) (*kubeprovider.KubectlGatewayManager, kubeprovider.GatewayAccessSpec, error) {
-	return h.runtimeClusterKubeGatewayManagerAndSpec(ctx, cluster)
-}
-func (h *Handler) RequireKubeGatewayReady(ctx context.Context, cluster model.RuntimeCluster, project model.Project) error {
-	return (apiKubeGatewayReadiness{handlers: h}).RequireReady(ctx, cluster, project)
 }
 func (h *Handler) RuntimeSecretFilesFromInput(ctx *gin.Context, user model.User, ownerID, value string, existing map[string]string) (map[string]string, bool) {
 	return h.runtimeSecretFilesFromInput(ctx, user, ownerID, value, existing)

@@ -1,6 +1,6 @@
 import type { CurrentUser, Project, RuntimeCluster, RuntimeClusterPressure } from '@/api'
 import type { DataListColumn } from '@/components/common/data-list'
-import { FlaskConical, MoreHorizontal, Pencil, Shield, Trash2 } from 'lucide-react'
+import { FlaskConical, MoreHorizontal, Pencil, Trash2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { DataList } from '@/components/common/data-list'
 import { RuntimeClusterPressureRings } from '@/components/common/runtime-cluster-pressure'
@@ -9,9 +9,8 @@ import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { canManageCluster, clusterTypeLabel, gatewayDomainSuffixSummary, gatewayPublicPortSummary, scopeLabel } from './cluster-helpers'
 
-export function RuntimeClusterTable({ clusters, kubeGatewayStatusByClusterId, loading, pagination, pressureByClusterId, pressureLoading, projects, user, kubectlGatewayAvailable, onDelete, onEdit, onConfigureKubeGateway, onTest }: {
+export function RuntimeClusterTable({ clusters, loading, pagination, pressureByClusterId, pressureLoading, projects, user, onDelete, onEdit, onTest }: {
   clusters: RuntimeCluster[]
-  kubeGatewayStatusByClusterId: Record<string, string>
   loading: boolean
   pagination: {
     page: number
@@ -25,10 +24,8 @@ export function RuntimeClusterTable({ clusters, kubeGatewayStatusByClusterId, lo
   pressureLoading: boolean
   projects: Project[]
   user?: CurrentUser
-  kubectlGatewayAvailable?: boolean
   onDelete: (cluster: RuntimeCluster) => void
   onEdit: (cluster: RuntimeCluster) => void
-  onConfigureKubeGateway: (cluster: RuntimeCluster) => void
   onTest: (clusterId: string) => void
 }) {
   const { t } = useTranslation()
@@ -50,26 +47,10 @@ export function RuntimeClusterTable({ clusters, kubeGatewayStatusByClusterId, lo
       render: (item) => {
         const deleteStatus = item.deleteStatus ?? 'active'
         if (deleteStatus !== 'active')
-          return <StatusValueBadge labelKeyPrefix="kubectlAccess.clusterDeleteStatuses" value={deleteStatus} />
+          return <StatusValueBadge labelKeyPrefix="clustersPage.deleteStatuses" value={deleteStatus} />
         return <StatusValueBadge value={pressureByClusterId[item.id]?.status ?? item.status} />
       },
     },
-    ...(kubectlGatewayAvailable
-      ? [{
-          key: 'kubeGatewayStatus',
-          header: t('kubectlAccess.gatewayStatusLabel'),
-          minWidth: 144,
-          width: 'status' as const,
-          render: (item: RuntimeCluster) => isKubeGatewayEligible(item)
-            ? (
-                <StatusValueBadge
-                  labelKeyPrefix="kubectlAccess.gatewayStatuses"
-                  value={kubeGatewayStatusByClusterId[item.id]?.trim() || 'checking'}
-                />
-              )
-            : <span className="text-muted-foreground">—</span>,
-        }]
-      : []),
     {
       key: 'actions',
       header: t('common.actions'),
@@ -83,7 +64,7 @@ export function RuntimeClusterTable({ clusters, kubeGatewayStatusByClusterId, lo
 
         const deleteStatus = item.deleteStatus ?? 'active'
         if (deleteStatus === 'deleting')
-          return <span className="text-xs text-muted-foreground">{t('kubectlAccess.clusterDeleteInProgress')}</span>
+          return <span className="text-xs text-muted-foreground">{t('clustersPage.deleteInProgress')}</span>
 
         return (
           <div className="flex justify-end">
@@ -98,7 +79,7 @@ export function RuntimeClusterTable({ clusters, kubeGatewayStatusByClusterId, lo
                   ? (
                       <DropdownMenuItem variant="destructive" onSelect={() => onDelete(item)}>
                         <Trash2 className="size-4" />
-                        {t('kubectlAccess.retryDelete')}
+                        {t('clustersPage.retryDelete')}
                       </DropdownMenuItem>
                     )
                   : (
@@ -107,12 +88,6 @@ export function RuntimeClusterTable({ clusters, kubeGatewayStatusByClusterId, lo
                           <FlaskConical className="size-4" />
                           {t('common.test')}
                         </DropdownMenuItem>
-                        {kubectlGatewayAvailable && isKubeGatewayEligible(item) && (
-                          <DropdownMenuItem onSelect={() => onConfigureKubeGateway(item)}>
-                            <Shield className="size-4" />
-                            {t('kubectlAccess.gatewayAction')}
-                          </DropdownMenuItem>
-                        )}
                         <DropdownMenuItem onSelect={() => onEdit(item)}>
                           <Pencil className="size-4" />
                           {t('common.edit')}
@@ -150,9 +125,4 @@ export function RuntimeClusterTable({ clusters, kubeGatewayStatusByClusterId, lo
       rowKey={item => item.id}
     />
   )
-}
-
-function isKubeGatewayEligible(cluster: RuntimeCluster) {
-  return (cluster.deleteStatus ?? 'active') === 'active'
-    && (cluster.type === 'kubernetes' || cluster.type === 'k3s')
 }

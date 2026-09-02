@@ -9,15 +9,12 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/api/runtimeapi"
 	"github.com/LiteyukiStudio/devops/internal/appstore"
 	"github.com/LiteyukiStudio/devops/internal/authz"
-	"github.com/LiteyukiStudio/devops/internal/kubeaccess"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	projectservice "github.com/LiteyukiStudio/devops/internal/project"
 	kubeprovider "github.com/LiteyukiStudio/devops/internal/provider/kubernetes"
 	"github.com/LiteyukiStudio/devops/internal/resourcepolicy"
 	"github.com/LiteyukiStudio/devops/internal/secret"
-	"github.com/LiteyukiStudio/devops/internal/tasks"
 	"github.com/gin-gonic/gin"
-	"github.com/hibiken/asynq"
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 )
@@ -102,10 +99,6 @@ func (host runtimeHost) AuditWithContext(userID, action, resource string, succes
 }
 func (host runtimeHost) AuditWithSafeMetadata(userID, action, resource string, success bool, message string, metadata any, ctx context.Context) {
 	switch value := metadata.(type) {
-	case kubeCredentialAuditMetadata:
-		auditWithSafeMetadata(host.handlers, userID, action, resource, success, message, value, ctx)
-	case kubeGatewayAuditMetadata:
-		auditWithSafeMetadata(host.handlers, userID, action, resource, success, message, value, ctx)
 	case runtimeClusterAuditMetadata:
 		auditWithSafeMetadata(host.handlers, userID, action, resource, success, message, value, ctx)
 	}
@@ -117,20 +110,6 @@ func (host runtimeHost) EnqueueResourceCleanup(ctx context.Context, resourceType
 	return host.handlers.enqueueResourceCleanup(ctx, resourceType, resourceID, projectID, actorID)
 }
 
-type apiKubectlGatewayTaskEnqueuer interface {
-	EnqueueKubectlGateway(context.Context, tasks.KubectlGatewayPayload) (*asynq.TaskInfo, error)
-}
-
-func (host runtimeHost) EnqueueKubectlGateway(ctx context.Context, clusterID string) error {
-	taskClient, ok := host.handlers.taskClient.(apiKubectlGatewayTaskEnqueuer)
-	if !ok || taskClient == nil {
-		return runtimeapi.ErrKubeGatewayEnqueue
-	}
-	if _, err := taskClient.EnqueueKubectlGateway(ctx, tasks.KubectlGatewayPayload{ClusterID: clusterID}); err != nil {
-		return errors.Join(runtimeapi.ErrKubeGatewayEnqueue, err)
-	}
-	return nil
-}
 func (host runtimeHost) ObserveDeploymentTarget(ctx context.Context, project model.Project, target model.DeploymentTarget) model.DeploymentTarget {
 	return host.handlers.observeDeploymentTarget(ctx, project, target)
 }
@@ -141,9 +120,6 @@ func (host runtimeHost) ContinuousAuthorizationActive(ctx context.Context, bindi
 	return host.handlers.continuousAuthorizationActive(ctx, binding, authorizationAllowed)
 }
 func (host runtimeHost) SecretStore() secret.Store { return host.handlers.secrets }
-func (host runtimeHost) KubeAccessService() *kubeaccess.Service {
-	return host.handlers.kubeAccess
-}
 func (host runtimeHost) RuntimeTerminalRedis() redis.UniversalClient {
 	if host.handlers.rateLimiter == nil {
 		return nil
@@ -171,12 +147,6 @@ func (host runtimeHost) LegacyGatewayRootDomain() string {
 
 func (h *Handlers) runtimeAPI() *runtimeapi.Handler { return runtimeapi.New(runtimeHost{handlers: h}) }
 
-func (h *Handlers) CreateKubeCredential(ctx *gin.Context) { h.runtimeAPI().CreateKubeCredential(ctx) }
-func (h *Handlers) ListKubeCredentials(ctx *gin.Context)  { h.runtimeAPI().ListKubeCredentials(ctx) }
-func (h *Handlers) ListKubeCredentialBindings(ctx *gin.Context) {
-	h.runtimeAPI().ListKubeCredentialBindings(ctx)
-}
-func (h *Handlers) RevokeKubeCredential(ctx *gin.Context) { h.runtimeAPI().RevokeKubeCredential(ctx) }
 func (h *Handlers) ListRuntimeClusters(ctx *gin.Context)  { h.runtimeAPI().ListRuntimeClusters(ctx) }
 func (h *Handlers) CreateRuntimeCluster(ctx *gin.Context) { h.runtimeAPI().CreateRuntimeCluster(ctx) }
 func (h *Handlers) UpdateRuntimeCluster(ctx *gin.Context) { h.runtimeAPI().UpdateRuntimeCluster(ctx) }
@@ -184,15 +154,6 @@ func (h *Handlers) DeleteRuntimeCluster(ctx *gin.Context) { h.runtimeAPI().Delet
 func (h *Handlers) TestRuntimeCluster(ctx *gin.Context)   { h.runtimeAPI().TestRuntimeCluster(ctx) }
 func (h *Handlers) DeleteRuntimeClusterResource(ctx *gin.Context) {
 	h.runtimeAPI().DeleteRuntimeClusterResource(ctx)
-}
-func (h *Handlers) GetRuntimeClusterKubeGateway(ctx *gin.Context) {
-	h.runtimeAPI().GetRuntimeClusterKubeGateway(ctx)
-}
-func (h *Handlers) UpdateRuntimeClusterKubeGateway(ctx *gin.Context) {
-	h.runtimeAPI().UpdateRuntimeClusterKubeGateway(ctx)
-}
-func (h *Handlers) ObserveRuntimeClusterKubeGatewayStatus(ctx *gin.Context) {
-	h.runtimeAPI().ObserveRuntimeClusterKubeGatewayStatus(ctx)
 }
 func (h *Handlers) ObserveRuntimeClusterPressure(ctx *gin.Context) {
 	h.runtimeAPI().ObserveRuntimeClusterPressure(ctx)
@@ -233,11 +194,6 @@ func (h *Handlers) InstallSystemAppTemplate(ctx *gin.Context) {
 }
 
 type runtimeClusterInput = runtimeapi.RuntimeClusterInput
-type runtimeClusterKubeGatewayRule = runtimeapi.RuntimeClusterKubeGatewayRule
-type runtimeClusterKubeGatewayInput = runtimeapi.RuntimeClusterKubeGatewayInput
-type runtimeClusterKubeGatewayResponse = runtimeapi.RuntimeClusterKubeGatewayResponse
-type runtimeClusterKubeGatewayStatusResponse = runtimeapi.RuntimeClusterKubeGatewayStatusResponse
-type runtimeClusterKubeGatewayStatusListResponse = runtimeapi.RuntimeClusterKubeGatewayStatusListResponse
 type runtimeClusterPressureResource = runtimeapi.RuntimeClusterPressureResource
 type runtimeClusterPressureDetails = runtimeapi.RuntimeClusterPressureDetails
 type runtimeClusterPressureResponse = runtimeapi.RuntimeClusterPressureResponse
@@ -287,16 +243,12 @@ const (
 )
 
 var (
-	errKubeGatewayEnqueue               = runtimeapi.ErrKubeGatewayEnqueue
 	errRuntimeSecretMutationUnavailable = runtimeapi.ErrRuntimeSecretMutationUnavailable
 	runtimeResourceCategories           = append([]string(nil), runtimeapi.RuntimeResourceCategories...)
 	runtimeResourceKinds                = append([]string(nil), runtimeapi.RuntimeResourceKinds...)
 	runtimeTerminalMemoryTickets        = runtimeapi.RuntimeTerminalMemoryTicketStore()
 )
 
-func normalizedKubeCredentialDays(value int) int {
-	return runtimeapi.NormalizedKubeCredentialDays(value)
-}
 func runtimeProjectNamespace(project model.Project) string {
 	return runtimeapi.RuntimeProjectNamespace(project)
 }
@@ -434,9 +386,6 @@ func normalizeRuntimeConfigFilesInput(ctx *gin.Context, value string) (string, b
 func normalizeRuntimeConfigFilePathInput(ctx *gin.Context, value string) (string, bool) {
 	return runtimeapi.NormalizeRuntimeConfigFilePathInput(ctx, value)
 }
-func decodeRuntimeClusterKubeGatewayRules(raw string) ([]runtimeClusterKubeGatewayRule, error) {
-	return runtimeapi.DecodeRuntimeClusterKubeGatewayRules(raw)
-}
 func projectRuntimeConfigSetSecretMutationOwner(setID, projectID string) runtimeSecretMutationOwner {
 	return runtimeapi.ProjectRuntimeConfigSetSecretMutationOwner(setID, projectID)
 }
@@ -498,18 +447,6 @@ func (h *Handlers) observeRuntimeClusters(ctx context.Context, clusters []model.
 func (h *Handlers) filterClusterResourceSnapshots(ctx *gin.Context, user model.User, items []kubeprovider.ResourceSnapshot, visibility projectservice.ListVisibility, projectID string) []kubeprovider.ResourceSnapshot {
 	return h.runtimeAPI().FilterClusterResourceSnapshots(ctx, user, items, visibility, projectID)
 }
-func (h *Handlers) allowRuntimeClusterConnectionChange(ctx *gin.Context, existing model.RuntimeCluster, input runtimeClusterInput) bool {
-	return h.runtimeAPI().AllowRuntimeClusterConnectionChange(ctx, existing, input)
-}
-func (h *Handlers) persistRuntimeClusterKubeGatewayDesired(ctx context.Context, clusterID string, enabled bool, encodedRules string) error {
-	return h.runtimeAPI().PersistRuntimeClusterKubeGatewayDesired(ctx, clusterID, enabled, encodedRules)
-}
-func (h *Handlers) enqueueEnabledProjectAccessKubeGateways(ctx context.Context, userID string, includeGlobal bool) error {
-	return h.runtimeAPI().EnqueueEnabledProjectAccessKubeGateways(ctx, userID, includeGlobal)
-}
-func (h *Handlers) runtimeClusterKubeGatewayManagerAndSpec(ctx context.Context, cluster model.RuntimeCluster) (*kubeprovider.KubectlGatewayManager, kubeprovider.GatewayAccessSpec, error) {
-	return h.runtimeAPI().RuntimeClusterKubeGatewayManagerAndSpec(ctx, cluster)
-}
 func (h *Handlers) runtimeSecretFilesFromInput(ctx *gin.Context, user model.User, ownerID, value string, existing map[string]string) (map[string]string, bool) {
 	return h.runtimeAPI().RuntimeSecretFilesFromInput(ctx, user, ownerID, value, existing)
 }
@@ -548,12 +485,4 @@ func (h *Handlers) systemComponentForBearerToken(token, componentID string, ctx 
 }
 func (h *Handlers) observeSystemComponentInstallations(ctx context.Context, items []model.SystemComponentInstallation) {
 	h.runtimeAPI().ObserveSystemComponentInstallations(ctx, items)
-}
-
-type apiKubeGatewayReadiness struct {
-	handlers *Handlers
-}
-
-func (readiness apiKubeGatewayReadiness) RequireReady(ctx context.Context, cluster model.RuntimeCluster, project model.Project) error {
-	return readiness.handlers.runtimeAPI().RequireKubeGatewayReady(ctx, cluster, project)
 }

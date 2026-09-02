@@ -1,5 +1,5 @@
 import type { CurrentUser, RuntimeCluster } from '@/api'
-import { render, screen, within } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import i18next from '@/i18n'
@@ -21,25 +21,6 @@ afterEach(() => {
 })
 
 describe('runtime cluster table', () => {
-  it('shows observed, checking, and unsupported kubectl gateway states', () => {
-    const readyCluster = runtimeCluster({ id: 'cluster-ready', name: 'ready-cluster' })
-    const checkingCluster = runtimeCluster({ id: 'cluster-checking', name: 'checking-cluster', type: 'k3s' })
-    const unsupportedCluster = runtimeCluster({ id: 'cluster-compose', name: 'compose-cluster', type: 'docker-compose' })
-
-    renderTable({
-      clusters: [readyCluster, checkingCluster, unsupportedCluster],
-      kubeGatewayStatusByClusterId: {
-        [readyCluster.id]: 'ready',
-        [unsupportedCluster.id]: 'ready',
-      },
-    })
-
-    expect(screen.getByRole('columnheader', { name: i18next.t('kubectlAccess.gatewayStatusLabel') })).toBeVisible()
-    expect(within(rowFor('ready-cluster')).getByText(i18next.t('kubectlAccess.gatewayStatuses.ready'))).toBeVisible()
-    expect(within(rowFor('checking-cluster')).getByText(i18next.t('kubectlAccess.gatewayStatuses.checking'))).toBeVisible()
-    expect(within(rowFor('compose-cluster')).getByText('—')).toBeVisible()
-  })
-
   it('uses one accessible actions menu and invokes every regular action', async () => {
     const user = userEvent.setup()
     const cluster = runtimeCluster()
@@ -54,10 +35,6 @@ describe('runtime cluster table', () => {
     expect(callbacks.onTest).toHaveBeenCalledWith(cluster.id)
 
     await openActions(user, actionLabel)
-    await user.click(screen.getByRole('menuitem', { name: i18next.t('kubectlAccess.gatewayAction') }))
-    expect(callbacks.onConfigureKubeGateway).toHaveBeenCalledWith(cluster)
-
-    await openActions(user, actionLabel)
     await user.click(screen.getByRole('menuitem', { name: i18next.t('common.edit') }))
     expect(callbacks.onEdit).toHaveBeenCalledWith(cluster)
 
@@ -68,16 +45,6 @@ describe('runtime cluster table', () => {
     expect(callbacks.onDelete).toHaveBeenCalledWith(cluster)
   })
 
-  it('hides the kubectl gateway column and action when the feature is unavailable', async () => {
-    const user = userEvent.setup()
-    const cluster = runtimeCluster()
-    renderTable({ clusters: [cluster], kubectlGatewayAvailable: false })
-
-    expect(screen.queryByRole('columnheader', { name: i18next.t('kubectlAccess.gatewayStatusLabel') })).not.toBeInTheDocument()
-    await openActions(user, i18next.t('clustersPage.clusterActions', { name: cluster.name }))
-    expect(screen.queryByRole('menuitem', { name: i18next.t('kubectlAccess.gatewayAction') })).not.toBeInTheDocument()
-  })
-
   it('keeps a failed deletion behind one destructive retry action', async () => {
     const user = userEvent.setup()
     const cluster = runtimeCluster({ deleteStatus: 'delete_failed' })
@@ -85,10 +52,9 @@ describe('runtime cluster table', () => {
     renderTable({ callbacks, clusters: [cluster] })
 
     await openActions(user, i18next.t('clustersPage.clusterActions', { name: cluster.name }))
-    expect(within(rowFor(cluster.name)).getByText('—')).toBeVisible()
     const menuItems = screen.getAllByRole('menuitem')
     expect(menuItems).toHaveLength(1)
-    expect(menuItems[0]).toHaveTextContent(i18next.t('kubectlAccess.retryDelete'))
+    expect(menuItems[0]).toHaveTextContent(i18next.t('clustersPage.retryDelete'))
     expect(menuItems[0]).toHaveAttribute('data-variant', 'destructive')
 
     await user.click(menuItems[0])
@@ -110,19 +76,13 @@ describe('runtime cluster table', () => {
 function renderTable({
   callbacks = actionCallbacks(),
   clusters = [runtimeCluster()],
-  kubeGatewayStatusByClusterId = { 'cluster-1': 'ready' },
-  kubectlGatewayAvailable = true,
 }: {
   callbacks?: ReturnType<typeof actionCallbacks>
   clusters?: RuntimeCluster[]
-  kubeGatewayStatusByClusterId?: Record<string, string>
-  kubectlGatewayAvailable?: boolean
 } = {}) {
   return render(
     <RuntimeClusterTable
       clusters={clusters}
-      kubeGatewayStatusByClusterId={kubeGatewayStatusByClusterId}
-      kubectlGatewayAvailable={kubectlGatewayAvailable}
       loading={false}
       pagination={{
         page: 1,
@@ -143,7 +103,6 @@ function renderTable({
 
 function actionCallbacks() {
   return {
-    onConfigureKubeGateway: vi.fn(),
     onDelete: vi.fn(),
     onEdit: vi.fn(),
     onTest: vi.fn(),
@@ -152,13 +111,6 @@ function actionCallbacks() {
 
 async function openActions(user: ReturnType<typeof userEvent.setup>, label: string) {
   await user.click(screen.getByRole('button', { name: label }))
-}
-
-function rowFor(name: string) {
-  const row = screen.getByText(name).closest('tr')
-  if (!row)
-    throw new Error(`Missing row for ${name}`)
-  return row
 }
 
 function setMobileViewport() {

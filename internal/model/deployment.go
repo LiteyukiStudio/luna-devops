@@ -52,14 +52,10 @@ type RuntimeCluster struct {
 	GatewayTrustedProxyCIDRs      string         `gorm:"column:gateway_trusted_proxy_cidrs;type:text;not null;default:''" json:"gatewayTrustedProxyCIDRs"`
 	GatewayDefaultRequestHeaders  string         `gorm:"type:text;not null;default:''" json:"gatewayDefaultRequestHeaders"`
 	GatewayDefaultResponseHeaders string         `gorm:"type:text;not null;default:''" json:"gatewayDefaultResponseHeaders"`
-	KubeGatewayEnabled            bool           `gorm:"not null;default:false" json:"kubeGatewayEnabled"`
-	KubeGatewayExtraResourceRules string         `gorm:"type:jsonb;not null;default:'[]'" json:"kubeGatewayExtraResourceRules"`
 	DeleteStatus                  string         `gorm:"index;not null;default:active" json:"deleteStatus"`
 	DeleteMessage                 string         `gorm:"type:text;not null;default:''" json:"-"`
 	DeleteStartedAt               *time.Time     `json:"deleteStartedAt,omitempty"`
 	DeleteFinishedAt              *time.Time     `json:"deleteFinishedAt,omitempty"`
-	KubeGatewayDrainUntil         *time.Time     `json:"-"`
-	KubeGatewayCleanupCompletedAt *time.Time     `json:"-"`
 	DeleteObservationCode         string         `gorm:"-" json:"deleteObservationCode,omitempty"`
 	Status                        string         `gorm:"-" json:"status"`
 	ObservationCode               string         `gorm:"-" json:"observationCode,omitempty"`

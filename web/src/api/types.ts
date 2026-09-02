@@ -18,9 +18,6 @@ export type AgentObservabilityRange = '1h' | '6h' | '24h' | '7d' | '30d' | '1y'
 
 export interface APIMeta {
   serverVersion: string
-  features?: {
-    kubectlGateway?: boolean
-  }
 }
 
 export interface AgentObservabilityTestResult {
@@ -1539,7 +1536,6 @@ export interface RuntimeCluster {
   gatewayTrustedProxyCIDRs: string
   gatewayDefaultRequestHeaders: string
   gatewayDefaultResponseHeaders: string
-  kubeGatewayEnabled?: boolean
   status: string
   deleteStatus?: 'active' | 'deleting' | 'delete_failed' | 'deleted' | string
   deleteStartedAt?: string | null
@@ -1738,106 +1734,6 @@ export interface AccessToken {
   expiresAt?: string
   revokedAt?: string
   createdAt: string
-}
-
-export interface KubeCredential {
-  id: string
-  name: string
-  scopes: string[]
-  status: 'active' | 'expired' | 'revoked' | string
-  expiresAt: string
-  createdAt: string
-  bindingCount: number
-}
-
-export interface KubeCredentialBinding {
-  id: string
-  projectId: string
-  runtimeClusterId: string
-  applicationId?: string | null
-  namespace: string
-  contextName: string
-  createdAt?: string
-}
-
-export interface CreateKubeCredentialContextInput {
-  projectId: string
-  runtimeClusterId: string
-  applicationId?: string
-}
-
-export interface CreateKubeCredentialInput {
-  name: string
-  expiresInDays: 1 | 7 | 30
-  scopes: string[]
-  contexts: CreateKubeCredentialContextInput[]
-}
-
-export interface CreateKubeCredentialResponse {
-  credential: KubeCredential
-  bindings: KubeCredentialBinding[]
-  kubeconfig: string
-}
-
-export type KubeGatewayVerb
-  = | 'get'
-    | 'list'
-    | 'watch'
-    | 'create'
-    | 'update'
-    | 'patch'
-    | 'delete'
-    | 'deletecollection'
-    | 'connect'
-    | string
-
-export type KubeGatewayAction
-  = | 'project:read'
-    | 'deployment:read'
-    | 'deployment:update'
-    | 'deployment:restart'
-    | 'deployment:delete'
-    | 'deployment:exec'
-    | 'secret:read_summary'
-    | 'secret:view_value'
-    | 'secret:update'
-    | 'volume:read'
-    | 'volume:write'
-    | 'volume:delete'
-    | 'gateway:read'
-    | 'gateway:manage'
-    | 'cluster:read'
-    | 'cluster:manage'
-    | string
-
-export interface RuntimeClusterKubeGatewayRule {
-  apiGroup: string
-  apiVersion: string
-  resource: string
-  subresources: string[]
-  verbs: KubeGatewayVerb[]
-  action: KubeGatewayAction
-}
-
-export interface RuntimeClusterKubeGateway {
-  enabled: boolean
-  extraResourceRules: RuntimeClusterKubeGatewayRule[]
-  status: 'disabled' | 'reconciling' | 'ready' | 'unavailable' | string
-  observationCode?: string
-  lastCheckedAt?: string | null
-}
-
-export interface RuntimeClusterKubeGatewayStatus {
-  clusterId: string
-  enabled: boolean
-  status: 'disabled' | 'reconciling' | 'ready' | 'unavailable' | string
-  observationCode: string
-  lastCheckedAt: string
-}
-
-export interface UpdateRuntimeClusterKubeGatewayInput {
-  enabled: boolean
-  extraResourceRules: RuntimeClusterKubeGatewayRule[]
 }
 
 export interface AccessTokenScopeDefinition {

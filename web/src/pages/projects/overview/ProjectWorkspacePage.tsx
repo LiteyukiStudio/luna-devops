@@ -27,7 +27,6 @@ import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
 import { projectVolumeCapabilities } from '@/lib/project-volume-capabilities'
 import { isPlatformAdmin, ProjectRole } from '@/lib/roles'
 import { BillingOwnerTransferDialog } from '@/pages/projects/governance/billing-owner-transfer-dialog'
-import { ProjectKubectlAccessPanel } from '@/pages/projects/kubectl/project-kubectl-access-panel'
 
 const ApplicationsPage = lazy(() => import('@/pages/applications/ApplicationsPage').then(module => ({ default: module.ApplicationsPage })))
 const ProjectBuildVariableSetsPage = lazy(() => import('@/pages/projects/delivery-config/ProjectBuildVariableSetsPage').then(module => ({ default: module.ProjectBuildVariableSetsPage })))
@@ -36,31 +35,23 @@ const ProjectMembersPage = lazy(() => import('@/pages/projects/governance/Projec
 const ProjectRuntimeConfigSetsPage = lazy(() => import('@/pages/projects/delivery-config/ProjectRuntimeConfigSetsPage').then(module => ({ default: module.ProjectRuntimeConfigSetsPage })))
 const ProjectTopologyPanel = lazy(() => import('@/pages/projects/topology/project-topology-panel').then(module => ({ default: module.ProjectTopologyPanel })))
 const ProjectVolumesPage = lazy(() => import('@/pages/projects/volumes/ProjectVolumesPage'))
+const PROJECT_TABS = new Set(['overview', 'apps', 'build-variables', 'runtime-configs', 'hooks', 'volumes', 'members', 'topology'])
 
 export function ProjectWorkspacePage() {
   const { t } = useTranslation()
   const { projectId = '' } = useParams()
   const [searchParams, setSearchParams] = useSearchParams()
   const { user } = useSession()
-  const [activeTab, setActiveTab] = useState(() => searchParams.get('tab') || 'overview')
+  const [activeTab, setActiveTab] = useState(() => normalizeProjectTab(searchParams.get('tab')))
   const applicationsPageRef = useRef<ApplicationsPageHandle>(null)
   const buildVariableSetsPageRef = useRef<ProjectBuildVariableSetsPageHandle>(null)
   const hooksPageRef = useRef<ProjectHooksPageHandle>(null)
   const membersPageRef = useRef<ProjectMembersPageHandle>(null)
   const runtimeConfigSetsPageRef = useRef<ProjectRuntimeConfigSetsPageHandle>(null)
   const volumesPageRef = useRef<ProjectVolumesPageHandle>(null)
-  const meta = useQuery({ queryKey: ['api-meta'], queryFn: api.getAPIMeta, staleTime: 5 * 60 * 1000 })
   const project = useQuery({ queryKey: ['project', projectId], queryFn: () => api.getProject(projectId), enabled: Boolean(projectId) })
-  const kubectlAccessEnabled = meta.data?.features?.kubectlGateway ?? true
-  const effectiveActiveTab = !kubectlAccessEnabled && activeTab === 'kubectl' ? 'overview' : activeTab
-  const isOverview = effectiveActiveTab === 'overview'
-  const applications = useQuery({ queryKey: ['applications', projectId], queryFn: () => api.listApplications(projectId), enabled: Boolean(projectId && (isOverview || effectiveActiveTab === 'topology' || effectiveActiveTab === 'kubectl')) })
-  const runtimeClusters = useQuery({
-    ...liveObservationQueryPolicy,
-    queryKey: ['runtime-clusters', 'project', projectId, 'kubectl'],
-    queryFn: () => api.listRuntimeClusters(projectId),
-    enabled: Boolean(projectId && effectiveActiveTab === 'kubectl'),
-  })
+  const isOverview = activeTab === 'overview'
+  const applications = useQuery({ queryKey: ['applications', projectId], queryFn: () => api.listApplications(projectId), enabled: Boolean(projectId && (isOverview || activeTab === 'topology')) })
   const variableSets = useQuery({ queryKey: ['build-variable-sets', projectId], queryFn: () => api.listBuildVariableSets(projectId), enabled: Boolean(projectId && isOverview) })
   const runtimeConfigSets = useQuery({ queryKey: ['runtime-config-sets', projectId], queryFn: () => api.listProjectRuntimeConfigSets(projectId), enabled: Boolean(projectId && isOverview) })
   const members = useQuery({ queryKey: ['project-members', projectId], queryFn: () => api.listProjectMembers(projectId), enabled: Boolean(projectId && isOverview) })
@@ -81,7 +72,7 @@ export function ProjectWorkspacePage() {
   const canManageTopology = isPlatformAdmin(user?.role) || currentProjectRole === ProjectRole.Owner || currentProjectRole === ProjectRole.Admin
   const volumeCapabilities = projectVolumeCapabilities(user?.role, currentProjectRole, user?.id)
   const activeContent = (() => {
-    switch (effectiveActiveTab) {
+    switch (activeTab) {
       case 'apps':
         return <ApplicationsPage ref={applicationsPageRef} embedded projectId={projectId} projectName={currentProject?.name} />
       case 'build-variables':
@@ -109,15 +100,6 @@ export function ProjectWorkspacePage() {
             />
           </Suspense>
         )
-      case 'kubectl':
-        return (
-          <ProjectKubectlAccessPanel
-            applications={applications.data ?? []}
-            featureEnabled={kubectlAccessEnabled}
-            project={currentProject}
-            runtimeClusters={runtimeClusters.data ?? []}
-          />
-        )
       default:
         return (
           <ProjectOverviewDashboard
@@ -137,7 +119,7 @@ export function ProjectWorkspacePage() {
   })()
 
   const contentTools = (() => {
-    if (effectiveActiveTab === 'apps') {
+    if (activeTab === 'apps') {
       return (
         <Button type="button" onClick={() => applicationsPageRef.current?.openCreateDialog()}>
           <Plus size={16} />
@@ -146,7 +128,7 @@ export function ProjectWorkspacePage() {
       )
     }
 
-    if (effectiveActiveTab === 'members') {
+    if (activeTab === 'members') {
       return (
         <Button type="button" onClick={() => membersPageRef.current?.openAddMemberDialog()}>
           <UserPlus size={16} />
@@ -155,7 +137,7 @@ export function ProjectWorkspacePage() {
       )
     }
 
-    if (effectiveActiveTab === 'build-variables') {
+    if (activeTab === 'build-variables') {
       return (
         <Button type="button" onClick={() => buildVariableSetsPageRef.current?.openCreateDialog()}>
           <KeyRound size={16} />
@@ -164,7 +146,7 @@ export function ProjectWorkspacePage() {
       )
     }
 
-    if (effectiveActiveTab === 'runtime-configs') {
+    if (activeTab === 'runtime-configs') {
       return (
         <Button type="button" onClick={() => runtimeConfigSetsPageRef.current?.openCreateDialog()}>
           <FileCode2 size={16} />
@@ -173,7 +155,7 @@ export function ProjectWorkspacePage() {
       )
     }
 
-    if (effectiveActiveTab === 'hooks') {
+    if (activeTab === 'hooks') {
       return (
         <Button type="button" onClick={() => hooksPageRef.current?.openCreateDialog()}>
           <ScrollText size={16} />
@@ -182,7 +164,7 @@ export function ProjectWorkspacePage() {
       )
     }
 
-    if (effectiveActiveTab === 'volumes') {
+    if (activeTab === 'volumes') {
       if (!volumeCapabilities.canImport && !volumeCapabilities.canWrite)
         return null
       return (
@@ -212,7 +194,6 @@ export function ProjectWorkspacePage() {
         tabs={[
           { value: 'overview', label: t('projectSpaces.overviewTab') },
           { value: 'apps', label: t('projectSpaces.apps') },
-          ...(kubectlAccessEnabled ? [{ value: 'kubectl', label: t('kubectlAccess.projectTab') }] : []),
           { value: 'build-variables', label: t('buildsPage.variablesAndSecrets') },
           { value: 'runtime-configs', label: t('runtimeConfigSets.tab') },
           { value: 'hooks', label: t('projectHooks.tab') },
@@ -221,7 +202,7 @@ export function ProjectWorkspacePage() {
           { value: 'topology', label: t('projectTopology.tab') },
         ]}
         tools={contentTools}
-        value={effectiveActiveTab}
+        value={activeTab}
         onValueChange={(value) => {
           setActiveTab(value)
           setSearchParams((current) => {
@@ -234,9 +215,9 @@ export function ProjectWorkspacePage() {
           }, { replace: true })
         }}
       >
-        <TabsContent value={effectiveActiveTab}>
+        <TabsContent value={activeTab}>
           <motion.div
-            key={`${projectId}-${effectiveActiveTab}`}
+            key={`${projectId}-${activeTab}`}
             animate={{ opacity: 1, y: 0 }}
             initial={{ opacity: 0, y: 6 }}
             transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
@@ -249,6 +230,10 @@ export function ProjectWorkspacePage() {
       </ContentTabs>
     </div>
   )
+}
+
+function normalizeProjectTab(value: string | null) {
+  return value && PROJECT_TABS.has(value) ? value : 'overview'
 }
 
 function ProjectOverviewDashboard({ applications, builds, canTransferBillingOwnership, events, members, project, releases, routes, runtimeConfigSetCount, variableSetCount }: {

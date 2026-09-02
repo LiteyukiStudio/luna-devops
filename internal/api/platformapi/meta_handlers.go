@@ -19,7 +19,6 @@ type apiMetaFeatures struct {
 	DeviceCode         bool `json:"deviceCode"`
 	OAuthAuthorization bool `json:"oauthAuthorization"`
 	OpenAPIOperations  bool `json:"openapiOperations"`
-	KubectlGateway     bool `json:"kubectlGateway"`
 }
 
 type apiMetaResponse struct {
@@ -42,7 +41,6 @@ func (h *Handler) GetAPIMeta(ctx *gin.Context) {
 			DeviceCode:         true,
 			OAuthAuthorization: true,
 			OpenAPIOperations:  true,
-			KubectlGateway:     true,
 		},
 	})
 }

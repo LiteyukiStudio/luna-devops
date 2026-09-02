@@ -11,10 +11,6 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-	"go.opentelemetry.io/otel"
-	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-	"go.opentelemetry.io/otel/sdk/trace/tracetest"
-	"go.opentelemetry.io/otel/trace"
 )
 
 func TestQueryTraceContextMiddlewareMovesPrivateParametersToHeaders(t *testing.T) {
@@ -79,68 +75,5 @@ func TestIsHealthCheckPathOnlyMatchesMachineProbes(t *testing.T) {
 		if IsHealthCheckPath(path) {
 			t.Errorf("did not expect %q to be a health check path", path)
 		}
-	}
-}
-
-func TestIsKubeGatewayPathOnlyMatchesDedicatedPrefix(t *testing.T) {
-	for _, path := range []string{"/kube", "/kube/", "/kube/v1/bindings/kbd_one/version"} {
-		if !IsKubeGatewayPath(path) {
-			t.Errorf("expected %q to be a Kubernetes gateway path", path)
-		}
-	}
-	for _, path := range []string{"/kubectl", "/kubernetes", "/api/v1/kube-credentials", "/KUBE/v1"} {
-		if IsKubeGatewayPath(path) {
-			t.Errorf("did not expect %q to be a Kubernetes gateway path", path)
-		}
-	}
-}
-
-func TestGinKubeGatewayPathSkipsGenericServerSpanAndAccessLog(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	recorder := tracetest.NewSpanRecorder()
-	provider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
-	previousProvider := otel.GetTracerProvider()
-	otel.SetTracerProvider(provider)
-	t.Cleanup(func() {
-		otel.SetTracerProvider(previousProvider)
-		_ = provider.Shutdown(context.Background())
-	})
-
-	var logs bytes.Buffer
-	previousLogger := slog.Default()
-	slog.SetDefault(slog.New(slog.NewJSONHandler(&logs, nil)))
-	t.Cleanup(func() { slog.SetDefault(previousLogger) })
-
-	router := gin.New()
-	router.Use(GinTracingMiddleware("test-api"), GinAccessLogMiddleware())
-	router.GET("/kube/test", func(ctx *gin.Context) { ctx.Status(http.StatusNoContent) })
-	router.GET("/api/test", func(ctx *gin.Context) { ctx.Status(http.StatusNoContent) })
-	for _, path := range []string{"/kube/test", "/api/test"} {
-		response := httptest.NewRecorder()
-		router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
-		if response.Code != http.StatusNoContent {
-			t.Fatalf("GET %s status = %d", path, response.Code)
-		}
-	}
-
-	serverSpans := 0
-	for _, span := range recorder.Ended() {
-		if span.SpanKind() != trace.SpanKindServer {
-			continue
-		}
-		serverSpans++
-		text := span.Name()
-		for _, value := range span.Attributes() {
-			text += string(value.Key) + "=" + value.Value.Emit()
-		}
-		if strings.Contains(text, "/kube/") {
-			t.Fatalf("generic server span captured Kubernetes path: %s", text)
-		}
-	}
-	if serverSpans != 1 {
-		t.Fatalf("generic server span count = %d, want one non-Kubernetes request", serverSpans)
-	}
-	if got := strings.Count(logs.String(), `"event.name":"http.request.completed"`); got != 1 || strings.Contains(logs.String(), "/kube/") {
-		t.Fatalf("generic access logs crossed Kubernetes boundary: count=%d logs=%s", got, logs.String())
 	}
 }

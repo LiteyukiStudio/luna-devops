@@ -113,10 +113,6 @@ func (h *Handler) CreateProject(ctx *gin.Context) {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if err := h.enqueueEnabledProjectAccessKubeGateways(ctx.Request.Context(), user.ID, true); err != nil {
-		writeKubeGatewayEnqueueError(ctx)
-		return
-	}
 	ctx.JSON(http.StatusCreated, h.projectResponse(project, ctx.Request.Context()))
 }
 
@@ -473,11 +469,6 @@ func (h *Handler) CreateProjectMember(ctx *gin.Context) {
 	}
 	h.auditWithContext(actor.ID, "project_member.create", member.ID, true, member.Role, ctx.Request.Context())
 	defaultInboxBroker.Notify(targetUser.ID, "")
-	if err := h.enqueueEnabledProjectAccessKubeGateways(ctx.Request.Context(), targetUser.ID, false); err != nil {
-		writeKubeGatewayEnqueueError(ctx)
-		return
-	}
-
 	ctx.JSON(http.StatusCreated, projectMemberResponse{
 		ID:        member.ID,
 		ProjectID: member.ProjectID,
@@ -590,10 +581,6 @@ func (h *Handler) DeleteProjectMember(ctx *gin.Context) {
 	}
 	h.auditWithContext(user.ID, "project_member.delete", member.ID, true, member.Role, ctx.Request.Context())
 	defaultInboxBroker.Notify(member.UserID, "")
-	if err := h.enqueueEnabledProjectAccessKubeGateways(ctx.Request.Context(), member.UserID, false); err != nil {
-		writeKubeGatewayEnqueueError(ctx)
-		return
-	}
 	ctx.Status(http.StatusNoContent)
 }
 

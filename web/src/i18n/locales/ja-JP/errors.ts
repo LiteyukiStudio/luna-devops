@@ -94,19 +94,6 @@ const errors = {
     in_use: 'このランタイムクラスターはまだアクティブなリソースから参照されています。参照を解除してから削除してください。',
     not_found: 'ランタイムクラスターが存在しないか、すでに削除されています。',
   },
-  kube_credential: {
-    scope_invalid: 'kubectl 資格情報のスコープが無効です。サポートされているスコープの組み合わせを選び直してください。',
-    context_invalid: 'kubeconfig context の定義が無効です。選択したプロジェクトスペース、クラスター、またはアプリケーション範囲を確認してください。',
-    not_found: 'kubectl 資格情報が存在しないか、すでに失効しています。',
-  },
-  kube_gateway: {
-    rule_invalid: 'kubectl ゲートウェイルールが無効です。API Group、Version、Resource、Action、Verb を確認してください。',
-    disabled: 'このランタイムクラスターでは kubectl ゲートウェイが無効です。',
-    reconciling: 'kubectl ゲートウェイ設定をまだ反映中です。利用可能になるまで待ってから再試行してください。',
-    unavailable: 'kubectl ゲートウェイは一時的に利用できません。後でもう一度試してください。',
-    enqueue_failed: 'kubectl ゲートウェイ更新タスクをキューに追加できませんでした。後でもう一度試してください。',
-    connection_change_requires_disable: 'kubectl ゲートウェイを無効にし、上流アクセス権のクリーンアップ完了後に kubeconfig またはクラスター種別を変更してください。',
-  },
   billing: {
     insufficient_balance: '請求帰属者の残高が不足しています。現在の操作は課金リスク管理によってブロックされました。チャージするか、プラットフォーム管理者に連絡して処理してください。',
     wallet_unavailable: '個人ウォレットが一時的に利用できません。今回の AI リクエストは作成されませんでした。後ほど再試行してください。',

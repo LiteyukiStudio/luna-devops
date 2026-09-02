@@ -24,8 +24,6 @@ The Kubernetes scheduler still reserves and schedules capacity from requests. Li
 
 The cluster list reads current Kubernetes state about every 10 seconds. The CPU and memory rings show effective requests from scheduled, non-terminal Pods divided by total Node allocatable capacity. Their tooltips also show actual Node usage when the Metrics API is available. The pressure level combines CPU and memory request allocation with actual usage, gives memory slightly more weight, and prevents one nearly saturated dimension from being hidden by an average: below 20 is **Idle**, 20–44.9 **Light**, 45–69.9 **Moderate**, 70–89.9 **Heavy**, and 90 or above **Full**. This is a capacity overview; Kubernetes still makes the final scheduling decision from taints, affinity, topology, and per-Node headroom.
 
-Platform administrators can also read the kubectl gateway's live **Disabled / Reconciling / Ready / Unavailable** state directly in the list. Connection testing, gateway settings, editing, deletion, and other row actions are grouped in the three-dot menu at the right of each row. Extra resource rules may remain empty; the gateway settings show an empty rule editor until custom resources need to be added.
-
 Before deleting a cluster, migrate or remove every deployment that references it.
 
 ## 2. Add a registry

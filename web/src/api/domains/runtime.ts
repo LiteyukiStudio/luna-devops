@@ -1,4 +1,4 @@
-import type { ClusterResource, ClusterResourceEvent, ClusterResourceYAML, PaginatedResponse, PaginationParams, Release, ReleaseImageCandidates, ReleaseLog, ReleaseRuntimeExecResult, ReleaseRuntimeLog, ResultVisibility, RuntimeCluster, RuntimeClusterKubeGatewayStatus, RuntimeClusterPressure, RuntimeClusterResourceCategory, RuntimeClusterResourceKind, RuntimeClusterResourceListParams } from '../types'
+import type { ClusterResource, ClusterResourceEvent, ClusterResourceYAML, PaginatedResponse, PaginationParams, Release, ReleaseImageCandidates, ReleaseLog, ReleaseRuntimeExecResult, ReleaseRuntimeLog, ResultVisibility, RuntimeCluster, RuntimeClusterPressure, RuntimeClusterResourceCategory, RuntimeClusterResourceKind, RuntimeClusterResourceListParams } from '../types'
 import { paginationWithProjectQuery, request, runtimeClusterResourceListQuery } from '../core'
 import { selectionItems, selectionPageParams } from '../selection-page'
 
@@ -7,13 +7,6 @@ export const runtimeApi = {
     request<PaginatedResponse<RuntimeCluster>>(`/runtime/clusters?${paginationWithProjectQuery({ ...selectionPageParams, projectId, visibility })}`).then(selectionItems),
   listRuntimeClustersPage: (params: PaginationParams & { projectId?: string, visibility?: ResultVisibility }) =>
     request<PaginatedResponse<RuntimeCluster>>(`/runtime/clusters?${paginationWithProjectQuery(params)}`),
-  observeRuntimeClusterKubeGatewayStatuses: (clusterIds: string[]) => {
-    const query = new URLSearchParams()
-    for (const clusterId of clusterIds)
-      query.append('clusterId', clusterId)
-    return request<{ items: RuntimeClusterKubeGatewayStatus[] }>(`/runtime/clusters/kube-gateway-status?${query.toString()}`, { cache: 'no-store' })
-      .then(response => response.items)
-  },
   observeRuntimeClusterPressure: (clusterIds: string[], projectId?: string) => {
     const query = new URLSearchParams()
     for (const clusterId of clusterIds)

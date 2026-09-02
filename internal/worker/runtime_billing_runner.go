@@ -23,10 +23,7 @@ import (
 const runtimeBillingLookbackHours = 6
 
 func (r *Runner) handleBillingRuntime(ctx context.Context, task *asynq.Task) error {
-	now := time.Now()
-	platformErr := r.settleRuntimeUsageWindows(ctx, now)
-	kubectlErr := r.settleKubectlRuntimeUsageWindows(ctx, now)
-	return errors.Join(platformErr, kubectlErr)
+	return r.settleRuntimeUsageWindows(ctx, time.Now())
 }
 
 func (r *Runner) settleRuntimeUsageWindows(ctx context.Context, now time.Time) error {
@@ -227,15 +224,9 @@ func (r *Runner) recordRuntimeObservation(ctx context.Context, target model.Depl
 	if !metrics.Available {
 		observationCode = "runtime.metrics_unavailable"
 	}
-	targetID := target.ID
-	applicationID := target.ApplicationID
 	observation := model.RuntimeObservation{
 		ID:                     id.New("robs"),
-		ManagementSource:       "platform",
-		ResourceKind:           target.WorkloadType,
-		ResourceUID:            target.ID,
-		ApplicationID:          &applicationID,
-		DeploymentTargetID:     &targetID,
+		DeploymentTargetID:     target.ID,
 		RuntimeClusterID:       cluster.ID,
 		ProjectID:              target.ProjectID,
 		PeriodStart:            periodStart,
@@ -259,9 +250,7 @@ func (r *Runner) recordRuntimeObservation(ctx context.Context, target model.Depl
 		ObservedAt:        observedAt,
 	}
 	err = r.db.WithContext(ctx).Clauses(clause.OnConflict{
-		Columns: []clause.Column{
-			{Name: "runtime_cluster_id"}, {Name: "project_id"}, {Name: "resource_uid"}, {Name: "period_start"},
-		},
+		Columns:   []clause.Column{{Name: "deployment_target_id"}, {Name: "period_start"}},
 		DoNothing: true,
 	}).Create(&observation).Error
 	if err == nil {

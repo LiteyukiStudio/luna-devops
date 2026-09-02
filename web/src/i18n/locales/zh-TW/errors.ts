@@ -94,19 +94,6 @@ const errors = {
     in_use: '此執行集群仍被活動資源引用，請先解除引用後再刪除。',
     not_found: '執行集群不存在或已被刪除。',
   },
-  kube_credential: {
-    scope_invalid: 'kubectl 憑證權限範圍無效，請重新選擇受支援的權限組合。',
-    context_invalid: 'kubeconfig context 定義無效，請檢查所選專案空間、集群或應用範圍。',
-    not_found: 'kubectl 憑證不存在或已被撤銷。',
-  },
-  kube_gateway: {
-    rule_invalid: 'kubectl 閘道規則無效，請檢查 API Group、版本、資源、動作與 Verb。',
-    disabled: '此執行集群的 kubectl 閘道已關閉。',
-    reconciling: 'kubectl 閘道設定仍在協調中，請等待就緒後再試。',
-    unavailable: 'kubectl 閘道暫時不可用，請稍後重試。',
-    enqueue_failed: 'kubectl 閘道更新任務排入佇列失敗，請稍後重試。',
-    connection_change_requires_disable: '請先停用 kubectl 閘道並等待上游權限清理完成，再更換 kubeconfig 或集群類型。',
-  },
   billing: {
     insufficient_balance: '計費歸屬人餘額不足，當前操作已被計費風控攔截。請充值或聯絡平臺管理員處理。',
     wallet_unavailable: '個人錢包暫時不可用，本次 AI 請求未建立，請稍後重試。',

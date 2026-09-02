@@ -94,19 +94,6 @@ const errors = {
     in_use: '이 런타임 클러스터는 아직 활성 리소스에서 참조 중입니다. 참조를 해제한 뒤 삭제하세요.',
     not_found: '런타임 클러스터가 없거나 이미 삭제되었습니다.',
   },
-  kube_credential: {
-    scope_invalid: 'kubectl 자격 증명 권한 범위가 잘못되었습니다. 지원되는 권한 조합을 다시 선택하세요.',
-    context_invalid: 'kubeconfig context 정의가 잘못되었습니다. 선택한 프로젝트 스페이스, 클러스터 또는 애플리케이션 범위를 확인하세요.',
-    not_found: 'kubectl 자격 증명이 없거나 이미 폐기되었습니다.',
-  },
-  kube_gateway: {
-    rule_invalid: 'kubectl 게이트웨이 규칙이 잘못되었습니다. API Group, Version, Resource, Action, Verb를 확인하세요.',
-    disabled: '이 런타임 클러스터에서는 kubectl 게이트웨이가 비활성화되어 있습니다.',
-    reconciling: 'kubectl 게이트웨이 구성이 아직 반영 중입니다. 준비 상태가 된 뒤 다시 시도하세요.',
-    unavailable: 'kubectl 게이트웨이를 일시적으로 사용할 수 없습니다. 잠시 후 다시 시도하세요.',
-    enqueue_failed: 'kubectl 게이트웨이 업데이트 작업을 큐에 넣지 못했습니다. 잠시 후 다시 시도하세요.',
-    connection_change_requires_disable: 'kubectl 게이트웨이를 비활성화하고 상위 액세스 정리가 완료된 후 kubeconfig 또는 클러스터 유형을 변경하세요.',
-  },
   billing: {
     insufficient_balance: '청구 귀속자의 잔액이 부족합니다. 현재 작업은 과금 리스크 관리에 의해 차단되었습니다. 충전하거나 플랫폼 관리자에게 문의하여 처리하세요.',
     wallet_unavailable: '개인 지갑을 일시적으로 사용할 수 없습니다. 이번 AI 요청은 생성되지 않았습니다. 잠시 후 다시 시도하세요.',

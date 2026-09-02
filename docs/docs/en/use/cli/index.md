@@ -33,12 +33,6 @@ The required scope shown by CLI help comes from the platform's published OpenAPI
 
 Logins to the same OAuth application from different devices or terminals form independent sessions. Signing out or revoking the current token affects only that session. Revoking the entire application authorization from account authorization settings invalidates every session for that application.
 
-## kubectl kubeconfig
-
-Use `luna kubeconfig write` to create a Kube Credential and atomically write a new file with `0600` permissions. Use `luna kubeconfig merge` to merge into an existing kubeconfig after conflict checks. These dedicated commands never print the one-time kubeconfig or token to normal stdout, and the current OAuth session must have `token:manage`.
-
-See [Manage Project Resources with kubectl](/en/use/kubectl) for command options, safe merge behavior, context rules, and kubectl authorization boundaries.
-
 ## Scripts and Agents
 
 Automation should use JSON output with interaction disabled:

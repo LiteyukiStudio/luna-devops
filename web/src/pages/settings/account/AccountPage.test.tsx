@@ -9,7 +9,6 @@ import { AccountPage } from './AccountPage'
 const mocks = vi.hoisted(() => {
   const updateProfile = vi.fn()
   return {
-    getAPIMeta: vi.fn(),
     session: {
       updateProfile,
       user: {
@@ -77,22 +76,10 @@ vi.mock('@/app/theme-context', () => ({
   useTheme: () => ({ mode: 'system', setMode: vi.fn() }),
 }))
 
-vi.mock('@/api', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@/api')>()
-  return {
-    ...actual,
-    api: {
-      ...actual.api,
-      getAPIMeta: mocks.getAPIMeta,
-    },
-  }
-})
-
 describe('account page tab tools', () => {
   beforeEach(async () => {
     vi.clearAllMocks()
     await i18next.changeLanguage('en-US')
-    mocks.getAPIMeta.mockResolvedValue({ features: { kubectlGateway: true } })
   })
 
   it('places the access token create action in ContentTabs tools', () => {

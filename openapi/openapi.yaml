@@ -20,7 +20,6 @@ tags:
   - name: Deployments
   - name: Builds
   - name: AccessTokens
-  - name: KubectlAccess
   - name: OAuthApplications
   - name: System
   - name: Notifications
@@ -65,13 +64,12 @@ paths:
                   minimumCliVersion: { type: string, example: 0.1.0 }
                   features:
                     type: object
-                    required: [accessToken, deviceCode, oauthAuthorization, openapiOperations, kubectlGateway]
+                    required: [accessToken, deviceCode, oauthAuthorization, openapiOperations]
                     properties:
                       accessToken: { type: boolean }
                       deviceCode: { type: boolean }
                       oauthAuthorization: { type: boolean }
                       openapiOperations: { type: boolean }
-                      kubectlGateway: { type: boolean }
 
   /.well-known/oauth-authorization-server:
     get:
@@ -1110,45 +1108,6 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "403":
           $ref: "#/components/responses/Forbidden"
-
-  /api/v1/runtime/clusters/kube-gateway-status:
-    get:
-      operationId: observeRuntimeClusterKubeGatewayStatus
-      x-luna-cli:
-        requiredScopes: ["cluster:read"]
-      tags: [KubectlAccess, Runtime]
-      summary: Observe current kubectl gateway status for runtime clusters
-      description: Platform administrators only. Returns non-cacheable live kubectl gateway observations for up to 100 active Kubernetes or K3s runtime clusters. Duplicate identifiers are removed while preserving request order; unknown, inactive, or unsupported cluster identifiers are omitted, and an individual observation failure is returned as unavailable without failing the batch.
-      x-luna-agent:
-        purpose: { zh: 批量查询一个或多个运行集群当前的 kubectl 网关实时状态，用于管理员确认网关是否已就绪。, en: Observe the live kubectl gateway status of one or more runtime clusters so a platform administrator can confirm gateway readiness. }
-        aliases: { zh: [查看 kubectl 网关状态, 批量检查集群网关, 查询网关就绪状态], en: [observe kubectl gateway status, check cluster gateways, query gateway readiness] }
-        avoidWhen: { zh: 修改网关配置时不要使用此工具；应使用 updateRuntimeClusterKubeGateway。查询普通集群状态或资源压力时也应使用对应观察接口。, en: Do not use this tool to change gateway configuration; use updateRuntimeClusterKubeGateway. Use the corresponding observation endpoint for general cluster health or resource pressure. }
-        preconditions: { zh: [当前用户是平台管理员, 先用 listRuntimeClusters 获取真实 clusterId, 每次最多传入 100 个 clusterId], en: [The current user is a platform administrator, Resolve authoritative clusterId values with listRuntimeClusters first, Pass at most 100 clusterId values per request] }
-        successEvidence: { zh: 按请求顺序返回每个已找到集群的 enabled、实时状态、稳定观察码和检查时间；单个集群失败时该项为 unavailable。, en: Returns enabled state, live status, a stable observation code, and check time for each found cluster in request order; a failed cluster observation is unavailable. }
-      parameters:
-        - name: clusterId
-          in: query
-          required: true
-          description: One to 100 active Kubernetes or K3s runtime cluster identifiers. Repeat the query parameter for multiple clusters.
-          style: form
-          explode: true
-          schema:
-            type: array
-            minItems: 1
-            maxItems: 100
-            items: { type: string, pattern: '^clu_' }
-      responses:
-        "200":
-          description: Current gateway observations in deduplicated request order; unknown, inactive, and unsupported identifiers are omitted.
-          headers:
-            Cache-Control:
-              schema: { type: string, const: no-store }
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/RuntimeClusterKubeGatewayStatusList" }
-        "400": { $ref: "#/components/responses/BadRequest" }
-        "401": { $ref: "#/components/responses/Unauthorized" }
-        "403": { $ref: "#/components/responses/Forbidden" }
 
   /api/v1/git/providers:
     get:
@@ -3316,111 +3275,6 @@ paths:
         "201":
           description: Created access token with one-time secret.
 
-  /api/v1/kube-credentials:
-    get:
-      operationId: listKubeCredentials
-      x-luna-cli:
-        requiredScopes: ["token:manage"]
-      tags: [KubectlAccess]
-      summary: List the current user's kubectl credentials
-      description: Returns only credential metadata. Token hashes, plaintext bearer tokens, and kubeconfig content are never returned.
-      parameters:
-        - $ref: "#/components/parameters/Page"
-        - $ref: "#/components/parameters/PageSize"
-        - $ref: "#/components/parameters/Search"
-        - name: status
-          in: query
-          schema: { type: string, enum: [active, expired, revoked] }
-        - name: sortBy
-          in: query
-          schema: { type: string, enum: [name, createdAt, expiresAt, status], default: createdAt }
-        - $ref: "#/components/parameters/SortOrder"
-      responses:
-        "200":
-          description: Paginated kubectl credential metadata.
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/PaginatedKubeCredentials" }
-        "400": { $ref: "#/components/responses/BadRequest" }
-        "401": { $ref: "#/components/responses/Unauthorized" }
-    post:
-      operationId: createKubeCredential
-      x-luna-cli:
-        classification: protocol-adapter
-        hidden: true
-        risk: high
-        requiredScopes: ["token:manage"]
-        exclusionReason: The dedicated kubeconfig adapter must protect one-time credential material and must never print it through a generic command.
-      tags: [KubectlAccess]
-      summary: Create a kubectl credential and one-time kubeconfig
-      description: Atomically creates a time-limited kubeconfig credential and one to twenty project or application bindings. The plaintext credential appears only inside the one-time kubeconfig response.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: "#/components/schemas/KubeCredentialCreateInput" }
-      responses:
-        "201":
-          description: Created credential, bounded binding metadata, and one-time kubeconfig.
-          headers:
-            Cache-Control:
-              schema: { type: string, const: no-store }
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/KubeCredentialCreateResult" }
-        "400": { $ref: "#/components/responses/BadRequest" }
-        "401": { $ref: "#/components/responses/Unauthorized" }
-        "403": { $ref: "#/components/responses/Forbidden" }
-        "409": { $ref: "#/components/responses/Conflict" }
-        "503":
-          description: The selected Kubernetes gateway or its authoritative readiness check is unavailable.
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ErrorResponse" }
-
-  /api/v1/kube-credentials/{credentialId}:
-    delete:
-      operationId: revokeKubeCredential
-      x-luna-cli:
-        requiredScopes: ["token:manage"]
-        risk: high
-        idempotent: true
-      tags: [KubectlAccess]
-      summary: Revoke a kubectl credential and every binding it authorizes
-      description: Only the credential owner can revoke it. Repeating the request for the same already-revoked credential remains successful.
-      parameters:
-        - $ref: "#/components/parameters/CredentialId"
-      responses:
-        "204":
-          description: The credential is revoked or was already revoked.
-        "401": { $ref: "#/components/responses/Unauthorized" }
-        "404": { $ref: "#/components/responses/NotFound" }
-
-  /api/v1/kube-credentials/{credentialId}/bindings:
-    get:
-      operationId: listKubeCredentialBindings
-      x-luna-cli:
-        requiredScopes: ["token:manage"]
-      tags: [KubectlAccess]
-      summary: List context bindings for one kubectl credential
-      description: Returns bounded context metadata for a credential owned by the current user. The namespace is resolved from the authoritative project at request time.
-      parameters:
-        - $ref: "#/components/parameters/CredentialId"
-        - $ref: "#/components/parameters/Page"
-        - $ref: "#/components/parameters/PageSize"
-        - name: sortBy
-          in: query
-          schema: { type: string, enum: [createdAt, projectId, runtimeClusterId], default: createdAt }
-        - $ref: "#/components/parameters/SortOrder"
-      responses:
-        "200":
-          description: Paginated kubectl context binding metadata.
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/PaginatedKubeCredentialBindings" }
-        "401": { $ref: "#/components/responses/Unauthorized" }
-        "404": { $ref: "#/components/responses/NotFound" }
-
   /api/v1/access-tokens/{tokenId}:
     delete:
       operationId: revokeAccessToken
@@ -4096,16 +3950,6 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
-        "409":
-          description: An enabled or not-yet-cleaned kubectl gateway prevents replacing kubeconfig or switching away from Kubernetes (`kube_gateway.connection_change_requires_disable`).
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ErrorResponse" }
-        "503":
-          description: The previous kubectl gateway cleanup cannot be verified, or reconciliation of the committed runtime-cluster update cannot be queued (`kube_gateway.unavailable` or `kube_gateway.enqueue_failed`).
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ErrorResponse" }
     delete:
       operationId: deleteRuntimeCluster
       x-luna-cli:
@@ -4114,7 +3958,7 @@ paths:
       tags:
         - Runtime
       summary: Queue recoverable Runtime Cluster deletion
-      description: Marks the cluster as deleting, revokes kubectl bindings, waits for active streams to fail their periodic authorization check, and queues the single resource-cleanup owner. Upstream credentials are retained until gateway resources are confirmed removed.
+      description: Marks the cluster as deleting and queues the single resource-cleanup owner. The upstream credential is retained until cleanup completes.
       parameters:
         - name: clusterId
           in: path
@@ -4134,78 +3978,11 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
         "503":
-          description: Cleanup could not be queued (`runtime_cluster.cleanup_enqueue_failed`); the cluster is left in `delete_failed` and all kubectl bindings remain revoked while deletion is retried.
+          description: Cleanup could not be queued (`runtime_cluster.cleanup_enqueue_failed`); the cluster is left in `delete_failed` while deletion is retried.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
 
-  /api/v1/runtime/clusters/{clusterId}/kube-gateway:
-    get:
-      operationId: getRuntimeClusterKubeGateway
-      x-luna-cli:
-        requiredScopes: ["cluster:read"]
-      tags: [KubectlAccess, Runtime]
-      summary: Read desired and authoritative live kubectl gateway state
-      description: Platform administrators only. Desired enablement and extra rules come from platform configuration; status, observationCode, and lastCheckedAt are read live from the selected Kubernetes cluster.
-      parameters:
-        - $ref: "#/components/parameters/ClusterId"
-      responses:
-        "200":
-          description: Non-cacheable desired configuration and current gateway observation.
-          headers:
-            Cache-Control:
-              schema: { type: string, const: no-store }
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/RuntimeClusterKubeGateway" }
-        "401": { $ref: "#/components/responses/Unauthorized" }
-        "403": { $ref: "#/components/responses/Forbidden" }
-        "404": { $ref: "#/components/responses/NotFound" }
-        "409": { $ref: "#/components/responses/Conflict" }
-        "503":
-          description: The Kubernetes cluster or authoritative gateway observation is unavailable.
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ErrorResponse" }
-    put:
-      operationId: updateRuntimeClusterKubeGateway
-      x-luna-cli:
-        requiredScopes: ["cluster:manage"]
-        risk: high
-        idempotent: true
-      tags: [KubectlAccess, Runtime]
-      summary: Replace desired kubectl gateway configuration and queue reconciliation
-      description: Platform administrators only. Extra resources must be discovered as namespaced and pass the fixed-deny catalog. Every accepted request queues reconciliation from the latest stored configuration, including repeated identical requests. If queueing fails, the committed desired state remains pending and the periodic reconciler retries it.
-      parameters:
-        - $ref: "#/components/parameters/ClusterId"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: "#/components/schemas/RuntimeClusterKubeGatewayInput" }
-      responses:
-        "202":
-          description: Desired configuration was stored and reconciliation was queued.
-          headers:
-            Cache-Control:
-              schema: { type: string, const: no-store }
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/RuntimeClusterKubeGateway" }
-        "400":
-          description: An extra resource rule is malformed, cluster-scoped, unknown, or fixed-denied (`kube_gateway.rule_invalid`).
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ErrorResponse" }
-        "401": { $ref: "#/components/responses/Unauthorized" }
-        "403": { $ref: "#/components/responses/Forbidden" }
-        "404": { $ref: "#/components/responses/NotFound" }
-        "409": { $ref: "#/components/responses/Conflict" }
-        "503":
-          description: The gateway cannot be validated or reconciliation cannot be queued (`kube_gateway.unavailable` or `kube_gateway.enqueue_failed`).
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ErrorResponse" }
   /api/v1/runtime/clusters/{clusterId}/test:
     post:
       operationId: testRuntimeCluster
@@ -10420,116 +10197,6 @@ components:
         creatableByUser: { type: boolean }
         requiresAdminRole: { type: boolean }
       required: [value, group, recommended, creatableByUser, requiresAdminRole]
-    KubeCredentialContextInput:
-      type: object
-      additionalProperties: false
-      required: [projectId, runtimeClusterId]
-      properties:
-        projectId: { type: string, minLength: 1 }
-        runtimeClusterId: { type: string, minLength: 1, pattern: '^clu_' }
-        applicationId:
-          type: string
-          minLength: 1
-          description: Omit to authorize the whole project namespace; when present, the application must belong to projectId.
-    KubeCredentialCreateInput:
-      type: object
-      additionalProperties: false
-      required: [name, scopes, contexts]
-      properties:
-        name: { type: string, minLength: 1, maxLength: 64 }
-        expiresInDays:
-          type: integer
-          enum: [1, 7, 30]
-          default: 7
-          description: Required credential lifetime in days; permanent kubectl credentials are not supported.
-        scopes:
-          type: array
-          minItems: 1
-          maxItems: 3
-          uniqueItems: true
-          description: Independent Kubernetes transport scopes. kube:write and kube:connect are normalized to include kube:read.
-          items: { type: string, enum: ["kube:read", "kube:write", "kube:connect"] }
-        contexts:
-          type: array
-          minItems: 1
-          maxItems: 20
-          uniqueItems: true
-          items: { $ref: "#/components/schemas/KubeCredentialContextInput" }
-    KubeCredentialSummary:
-      type: object
-      additionalProperties: false
-      required: [id, name, scopes, status, expiresAt, createdAt, bindingCount]
-      properties:
-        id: { type: string, pattern: '^tok_' }
-        name: { type: string }
-        scopes:
-          type: array
-          minItems: 1
-          maxItems: 3
-          uniqueItems: true
-          items: { type: string, enum: ["kube:read", "kube:write", "kube:connect"] }
-        status: { type: string, enum: [active, expired, revoked] }
-        expiresAt: { type: string, format: date-time }
-        createdAt: { type: string, format: date-time }
-        bindingCount: { type: integer, format: int64, minimum: 0 }
-    KubeCredentialBindingSummary:
-      type: object
-      additionalProperties: false
-      required: [id, projectId, runtimeClusterId, namespace, contextName, createdAt]
-      properties:
-        id: { type: string, pattern: '^kbd_' }
-        projectId: { type: string }
-        runtimeClusterId: { type: string, pattern: '^clu_' }
-        applicationId: { type: string }
-        namespace:
-          type: string
-          description: Current authoritative Kubernetes namespace of projectId, resolved at request time.
-        contextName: { type: string }
-        createdAt: { type: string, format: date-time }
-    KubeCredentialCreateResult:
-      type: object
-      additionalProperties: false
-      required: [credential, bindings, kubeconfig]
-      properties:
-        credential: { $ref: "#/components/schemas/KubeCredentialSummary" }
-        bindings:
-          type: array
-          minItems: 1
-          maxItems: 20
-          items: { $ref: "#/components/schemas/KubeCredentialBindingSummary" }
-        kubeconfig:
-          type: string
-          readOnly: true
-          x-luna-sensitive: true
-          description: One-time kubeconfig containing the only plaintext copy of the bearer credential; never returned by list operations.
-    PaginatedKubeCredentials:
-      type: object
-      additionalProperties: false
-      required: [items, page, pageSize, sortBy, sortOrder, total, totalPages]
-      properties:
-        items:
-          type: array
-          items: { $ref: "#/components/schemas/KubeCredentialSummary" }
-        page: { type: integer, minimum: 1 }
-        pageSize: { type: integer, minimum: 1, maximum: 100 }
-        sortBy: { type: string, enum: [name, createdAt, expiresAt, status] }
-        sortOrder: { type: string, enum: [asc, desc] }
-        total: { type: integer, format: int64, minimum: 0 }
-        totalPages: { type: integer, minimum: 0 }
-    PaginatedKubeCredentialBindings:
-      type: object
-      additionalProperties: false
-      required: [items, page, pageSize, sortBy, sortOrder, total, totalPages]
-      properties:
-        items:
-          type: array
-          items: { $ref: "#/components/schemas/KubeCredentialBindingSummary" }
-        page: { type: integer, minimum: 1 }
-        pageSize: { type: integer, minimum: 1, maximum: 100 }
-        sortBy: { type: string, enum: [createdAt, projectId, runtimeClusterId] }
-        sortOrder: { type: string, enum: [asc, desc] }
-        total: { type: integer, format: int64, minimum: 0 }
-        totalPages: { type: integer, minimum: 0 }
     ApplicationTopology:
       type: object
       properties:
@@ -12524,11 +12191,10 @@ components:
       allOf:
         - $ref: "#/components/schemas/RuntimeClusterInput"
         - type: object
-          required: [id, kubeconfigSet, kubeGatewayEnabled, deleteStatus, status, createdBy, createdAt]
+          required: [id, kubeconfigSet, deleteStatus, status, createdBy, createdAt]
           properties:
             id: { type: string, pattern: '^clu_' }
             kubeconfigSet: { type: boolean }
-            kubeGatewayEnabled: { type: boolean }
             deleteStatus: { type: string, enum: [active, deleting, delete_failed, deleted] }
             deleteStartedAt: { type: string, format: date-time }
             deleteFinishedAt: { type: string, format: date-time }
@@ -12541,132 +12207,6 @@ components:
             createdBy: { type: string }
             createdAt: { type: string, format: date-time }
             updatedAt: { type: string, format: date-time }
-    RuntimeClusterKubeGatewayRule:
-      type: object
-      additionalProperties: false
-      required: [apiGroup, apiVersion, resource, verbs, action]
-      properties:
-        apiGroup:
-          type: string
-          maxLength: 253
-          description: Kubernetes API group; use an empty string only for a discovered core API resource.
-        apiVersion:
-          type: string
-          minLength: 1
-          maxLength: 63
-          pattern: '^[a-z0-9][a-z0-9.-]*$'
-        resource:
-          type: string
-          minLength: 1
-          maxLength: 63
-          pattern: '^[a-z0-9][a-z0-9.-]*$'
-        subresources:
-          type: array
-          maxItems: 16
-          uniqueItems: true
-          items: { type: string, minLength: 1, maxLength: 63, pattern: '^[a-z0-9][a-z0-9.-]*$' }
-        verbs:
-          type: array
-          minItems: 1
-          maxItems: 8
-          uniqueItems: true
-          items: { type: string, enum: [get, list, watch, create, update, patch, delete, deletecollection] }
-        action:
-          type: string
-          description: Existing project authorization action evaluated with the current authoritative project role on every request.
-          enum:
-            - project:read
-            - project:write
-            - project:manage
-            - project:delete
-            - project:owner_only
-            - project:pin
-            - application:read
-            - application:create
-            - application:update
-            - application:delete
-            - deployment:read
-            - deployment:update
-            - deployment:release
-            - deployment:restart
-            - deployment:rollback
-            - deployment:delete
-            - deployment:exec
-            - build:read
-            - build:trigger
-            - build:cancel
-            - build:delete
-            - gateway:read
-            - gateway:manage
-            - gateway:delete
-            - secret:read_summary
-            - secret:view_value
-            - secret:update
-            - cluster:read
-            - cluster:use
-            - cluster:manage
-            - billing:read
-            - billing:write
-            - git:read
-            - git:write
-            - registry:read
-            - registry:use
-            - image:write
-            - volume:read
-            - volume:write
-            - volume:import
-            - volume:export
-            - volume:delete
-    RuntimeClusterKubeGatewayRuleResponse:
-      allOf:
-        - $ref: "#/components/schemas/RuntimeClusterKubeGatewayRule"
-        - type: object
-          required: [subresources]
-    RuntimeClusterKubeGatewayInput:
-      type: object
-      additionalProperties: false
-      required: [enabled, extraResourceRules]
-      properties:
-        enabled: { type: boolean }
-        extraResourceRules:
-          type: array
-          maxItems: 50
-          items: { $ref: "#/components/schemas/RuntimeClusterKubeGatewayRule" }
-    RuntimeClusterKubeGateway:
-      type: object
-      additionalProperties: false
-      required: [enabled, extraResourceRules, status]
-      properties:
-        enabled: { type: boolean }
-        extraResourceRules:
-          type: array
-          maxItems: 50
-          items: { $ref: "#/components/schemas/RuntimeClusterKubeGatewayRuleResponse" }
-        status: { type: string, enum: [disabled, reconciling, ready, unavailable] }
-        observationCode: { type: string }
-        lastCheckedAt: { type: string, format: date-time }
-    RuntimeClusterKubeGatewayStatus:
-      type: object
-      additionalProperties: false
-      required: [clusterId, enabled, status, observationCode, lastCheckedAt]
-      properties:
-        clusterId: { type: string, pattern: '^clu_' }
-        enabled: { type: boolean, description: Current desired kubectl gateway enablement stored for this runtime cluster. }
-        status: { type: string, enum: [disabled, reconciling, ready, unavailable] }
-        observationCode:
-          type: string
-          enum: ['', kube_gateway.reconciling, kube_gateway.unavailable]
-          description: Stable observation code. Ready and disabled observations use an empty string.
-        lastCheckedAt: { type: string, format: date-time }
-    RuntimeClusterKubeGatewayStatusList:
-      type: object
-      additionalProperties: false
-      required: [items]
-      properties:
-        items:
-          type: array
-          maxItems: 100
-          items: { $ref: "#/components/schemas/RuntimeClusterKubeGatewayStatus" }
     RuntimeClusterPressureLevel:
       type: string
       enum: [idle, light, moderate, heavy, full, unavailable]

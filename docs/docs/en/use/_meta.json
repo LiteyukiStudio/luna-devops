@@ -1,6 +1,5 @@
 [
   { "type": "dir", "name": "workflow", "label": "Daily Delivery" },
-  { "type": "file", "name": "kubectl", "label": "kubectl Access" },
   { "type": "file", "name": "ai-assistant", "label": "AI Assistant" },
   { "type": "file", "name": "app-marketplace", "label": "App Marketplace" },
   { "type": "file", "name": "notifications", "label": "Notifications" },

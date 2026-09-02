@@ -2,7 +2,6 @@ package api
 
 import (
 	"compress/gzip"
-	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -11,7 +10,6 @@ import (
 	"testing/fstest"
 
 	"github.com/gin-gonic/gin"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 func TestStaticUIServesIndexWithoutRedirect(t *testing.T) {
@@ -28,7 +26,7 @@ func TestStaticUIServesIndexWithoutRedirect(t *testing.T) {
 		},
 	}
 	router := gin.New()
-	registerStaticUI(router, files, nil, kubeGatewayNoRoute)
+	registerStaticUI(router, files, nil)
 
 	for _, path := range []string{"/", "/index.html", "/projects/prj_1/apps/app_1"} {
 		req := httptest.NewRequest(http.MethodGet, path, nil)
@@ -59,7 +57,7 @@ func TestStaticUIServesBestPrecompressedAsset(t *testing.T) {
 		"assets/app.js.gz": {Data: gzipBytes(t, []byte("gzip"))},
 	}
 	router := gin.New()
-	registerStaticUI(router, files, nil, kubeGatewayNoRoute)
+	registerStaticUI(router, files, nil)
 
 	for _, test := range []struct {
 		acceptEncoding string
@@ -132,7 +130,7 @@ func TestStaticUIServesAssetsAndSkipsAPI(t *testing.T) {
 		},
 	}
 	router := gin.New()
-	registerStaticUI(router, files, nil, kubeGatewayNoRoute)
+	registerStaticUI(router, files, nil)
 
 	assetReq := httptest.NewRequest(http.MethodGet, "/assets/app.js", nil)
 	assetRec := httptest.NewRecorder()
@@ -183,7 +181,7 @@ func TestStaticUIInjectsValidatedBrandThemeBeforeFirstPaint(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			router := gin.New()
-			registerStaticUI(router, files, func() string { return test.configured }, kubeGatewayNoRoute)
+			registerStaticUI(router, files, func() string { return test.configured })
 			recorder := httptest.NewRecorder()
 			router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/", nil))
 
@@ -195,39 +193,6 @@ func TestStaticUIInjectsValidatedBrandThemeBeforeFirstPaint(t *testing.T) {
 			}
 			if strings.Contains(recorder.Body.String(), brandThemeHTMLPlaceholder) {
 				t.Fatalf("index body still contains theme placeholder: %q", recorder.Body.String())
-			}
-		})
-	}
-}
-
-func TestStaticUINoRouteKeepsKubeProtocolErrorsOutOfSPA(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	for _, test := range []struct {
-		name  string
-		files fstest.MapFS
-	}{
-		{name: "without static filesystem", files: nil},
-		{name: "with static filesystem", files: fstest.MapFS{
-			"index.html": {Data: []byte("<!doctype html><title>Luna DevOps</title>")},
-		}},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			router := gin.New()
-			registerStaticUI(router, test.files, nil, kubeGatewayNoRoute)
-
-			for _, requestPath := range []string{"/kube", "/kube/unknown"} {
-				recorder := httptest.NewRecorder()
-				router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, requestPath, nil))
-				if recorder.Code != http.StatusNotFound {
-					t.Fatalf("GET %s status = %d body=%s", requestPath, recorder.Code, recorder.Body.String())
-				}
-				if !strings.HasPrefix(recorder.Header().Get("Content-Type"), "application/json") || strings.Contains(recorder.Body.String(), "<!doctype html>") {
-					t.Fatalf("GET %s escaped Kubernetes Status boundary: content-type=%q body=%s", requestPath, recorder.Header().Get("Content-Type"), recorder.Body.String())
-				}
-				var status metav1.Status
-				if err := json.Unmarshal(recorder.Body.Bytes(), &status); err != nil || status.Kind != "Status" || status.Reason != metav1.StatusReasonNotFound {
-					t.Fatalf("GET %s response = %#v err=%v", requestPath, status, err)
-				}
 			}
 		})
 	}

@@ -12,7 +12,6 @@ import (
 	transportapi "github.com/LiteyukiStudio/devops/internal/api/transport"
 	"github.com/LiteyukiStudio/devops/internal/appstore"
 	"github.com/LiteyukiStudio/devops/internal/authz"
-	"github.com/LiteyukiStudio/devops/internal/kubeaccess"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	projectservice "github.com/LiteyukiStudio/devops/internal/project"
 	"github.com/LiteyukiStudio/devops/internal/runtimeaccess"
@@ -60,12 +59,10 @@ type Host interface {
 	AuditWithSafeMetadata(userID, action, resource string, success bool, message string, metadata any, ctx context.Context)
 	EnqueueDeployRun(ctx context.Context, release model.Release) bool
 	EnqueueResourceCleanup(ctx context.Context, resourceType, resourceID, projectID, actorID string) bool
-	EnqueueKubectlGateway(ctx context.Context, clusterID string) error
 	ObserveDeploymentTarget(ctx context.Context, project model.Project, target model.DeploymentTarget) model.DeploymentTarget
 	MonitorContinuousAuthorization(ctx context.Context, binding projectapi.ContinuousAuthorizationBinding, authorizationAllowed func(context.Context, model.User) bool, revoke func()) (<-chan struct{}, bool)
 	ContinuousAuthorizationActive(ctx context.Context, binding projectapi.ContinuousAuthorizationBinding, authorizationAllowed func(context.Context, model.User) bool) bool
 	SecretStore() secret.Store
-	KubeAccessService() *kubeaccess.Service
 	RuntimeTerminalRedis() redis.UniversalClient
 	Mode() string
 	AllowedOrigin(origin string) bool
@@ -80,7 +77,6 @@ type Host interface {
 type Handler struct {
 	host        Host
 	secrets     secret.Store
-	kubeAccess  *kubeaccess.Service
 	ticketRedis redis.UniversalClient
 	mode        string
 }
@@ -91,7 +87,6 @@ func New(host Host) *Handler {
 	return &Handler{
 		host:        host,
 		secrets:     host.SecretStore(),
-		kubeAccess:  host.KubeAccessService(),
 		ticketRedis: host.RuntimeTerminalRedis(),
 		mode:        host.Mode(),
 	}
@@ -320,12 +315,10 @@ func containsString(values []string, target string) bool {
 
 const lunaCLIApplicationID = identityapi.LunaCLIApplicationID
 
-type kubeCredentialAuditMetadata = identityapi.KubeCredentialAuditMetadata
-type kubeGatewayAuditMetadata = identityapi.KubeGatewayAuditMetadata
 type runtimeClusterAuditMetadata = identityapi.RuntimeClusterAuditMetadata
 
 type safeAuditMetadata interface {
-	kubeCredentialAuditMetadata | kubeGatewayAuditMetadata | runtimeClusterAuditMetadata
+	runtimeClusterAuditMetadata
 }
 
 func auditWithSafeMetadata[T safeAuditMetadata](h *Handlers, userID, action, resource string, success bool, message string, metadata T, ctx context.Context) {

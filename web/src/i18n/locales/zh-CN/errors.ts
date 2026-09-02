@@ -94,19 +94,6 @@ const errors = {
     in_use: '该运行集群仍被活动资源引用，请先解除引用后再删除。',
     not_found: '运行集群不存在或已被删除。',
   },
-  kube_credential: {
-    scope_invalid: 'kubectl 凭据权限范围无效，请重新选择受支持的权限组合。',
-    context_invalid: 'kubeconfig 上下文定义无效，请检查所选项目空间、集群或应用范围。',
-    not_found: 'kubectl 凭据不存在或已被撤销。',
-  },
-  kube_gateway: {
-    rule_invalid: 'kubectl 网关规则无效，请检查 API Group、版本、资源、动作和 Verb。',
-    disabled: '该运行集群的 kubectl 网关已关闭。',
-    reconciling: 'kubectl 网关配置仍在协调中，请等待就绪后再试。',
-    unavailable: 'kubectl 网关暂时不可用，请稍后重试。',
-    enqueue_failed: 'kubectl 网关更新任务入队失败，请稍后重试。',
-    connection_change_requires_disable: '请先停用 kubectl 网关并等待上游权限清理完成，再更换 kubeconfig 或集群类型。',
-  },
   billing: {
     insufficient_balance: '计费归属人余额不足，当前操作已被计费风控拦截。请充值或联系平台管理员处理。',
     wallet_unavailable: '个人钱包暂时不可用，本次 AI 请求未创建，请稍后重试。',

@@ -58,9 +58,6 @@ func (r *Runner) cleanupApplicationRuntimeResources(ctx context.Context, payload
 	if err := r.db.WithContext(ctx).Where("project_id = ? and application_id = ?", payload.ProjectID, payload.ApplicationID).Find(&targets).Error; err != nil {
 		return err
 	}
-	if err := r.cleanupApplicationKubectlResources(ctx, project, payload.ApplicationID); err != nil {
-		return err
-	}
 	kinds := []string{"services", "workloads", "configs"}
 	for _, target := range targets {
 		environment := deploymentTargetEnvironment(target)
@@ -148,9 +145,6 @@ func (r *Runner) finishApplicationDelete(ctx context.Context, app model.Applicat
 			return err
 		}
 		if err := tx.Where("project_id = ? and application_id = ?", app.ProjectID, app.ID).Delete(&model.RepositoryBinding{}).Error; err != nil {
-			return err
-		}
-		if err := tx.Where("project_id = ? and application_id = ?", app.ProjectID, app.ID).Delete(&model.KubeAccessBinding{}).Error; err != nil {
 			return err
 		}
 		if err := tx.Model(&model.Application{}).Where("id = ?", app.ID).Updates(map[string]any{

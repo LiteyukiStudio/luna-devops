@@ -37,16 +37,11 @@ func periodicTaskSpecs() ([]periodicTaskSpec, error) {
 	if err != nil {
 		return nil, err
 	}
-	kubectlGatewaySpec, err := kubectlGatewayPeriodicTaskSpec()
-	if err != nil {
-		return nil, err
-	}
 	return []periodicTaskSpec{
 		{Cron: "@every 5m", Task: gitRefreshTask, Queue: tasks.QueueLight, Timeout: 10 * time.Minute},
 		periodicTaskSpecWithPolicy("@every 5m", volumeReconcileTask),
 		periodicTaskSpecWithPolicy("@every 15m", volumeTransferCleanupTask),
 		periodicTaskSpecWithPolicy("@every 1m", notificationReconcileTask),
-		kubectlGatewaySpec,
 		{Cron: "@every 1m", Task: asynq.NewTask(tasks.TypeSyncStatus, []byte("{}")), Queue: tasks.QueueLight, Timeout: 5 * time.Minute},
 		{Cron: "@every 1m", Task: asynq.NewTask(tasks.TypeBillingAI, []byte("{}")), Queue: tasks.QueueLight, Timeout: time.Minute},
 		{Cron: "@every 1m", Task: asynq.NewTask(tasks.TypeBillingRuntime, []byte("{}")), Queue: tasks.QueueLight, Timeout: 5 * time.Minute},

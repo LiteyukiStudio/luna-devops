@@ -2,7 +2,6 @@ package runtimeapi
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -83,10 +82,6 @@ func (h *Handlers) CreateRuntimeCluster(ctx *gin.Context) {
 	auditMetadata := runtimeClusterSafeAuditMetadata(cluster, strings.TrimSpace(input.Kubeconfig) != "")
 	if err := h.saveRuntimeClusterWithDefault(cluster, ctx.Request.Context()); err != nil {
 		auditWithSafeMetadata(h, user.ID, "runtime_cluster.create", cluster.ID, false, runtimeClusterPersistenceAuditMessage(err), auditMetadata, ctx.Request.Context())
-		if errors.Is(err, errKubeGatewayEnqueue) {
-			writeKubeGatewayEnqueueError(ctx)
-			return
-		}
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -122,9 +117,6 @@ func (h *Handlers) UpdateRuntimeCluster(ctx *gin.Context) {
 	}
 	if strings.TrimSpace(input.Kubeconfig) != "" && !h.canReplaceRuntimeClusterKubeconfig(user, existing) {
 		writeError(ctx, http.StatusForbidden, "只有创建者或平台管理员可以替换 kubeconfig")
-		return
-	}
-	if !h.allowRuntimeClusterConnectionChange(ctx, existing, input) {
 		return
 	}
 	next, ok := h.runtimeClusterFromInput(ctx, user, input, existing.ID)
@@ -179,13 +171,6 @@ func (h *Handlers) UpdateRuntimeCluster(ctx *gin.Context) {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
-	if existing.KubeGatewayEnabled {
-		if err := h.enqueueKubectlGateway(ctx.Request.Context(), existing.ID); err != nil {
-			auditWithSafeMetadata(h, user.ID, "runtime_cluster.update", existing.ID, false, "enqueue_failed", auditMetadata, ctx.Request.Context())
-			writeKubeGatewayEnqueueError(ctx)
-			return
-		}
-	}
 	auditWithSafeMetadata(h, user.ID, "runtime_cluster.update", existing.ID, true, "", auditMetadata, ctx.Request.Context())
 	existing, err := h.runtimeClusterResponseForUser(user, existing, ctx.Request.Context())
 	if err != nil {
@@ -193,31 +178,6 @@ func (h *Handlers) UpdateRuntimeCluster(ctx *gin.Context) {
 		return
 	}
 	ctx.JSON(http.StatusOK, h.observeRuntimeCluster(ctx.Request.Context(), existing))
-}
-
-func (h *Handlers) allowRuntimeClusterConnectionChange(ctx *gin.Context, existing model.RuntimeCluster, input runtimeClusterInput) bool {
-	replacesKubeconfig := strings.TrimSpace(input.Kubeconfig) != ""
-	leavesKubernetes := normalizeRuntimeClusterType(input.Type) == "docker-compose" && existing.Type != "docker-compose"
-	if !replacesKubeconfig && !leavesKubernetes {
-		return true
-	}
-	if existing.KubeGatewayEnabled {
-		writeErrorCode(ctx, http.StatusConflict, "kube_gateway.connection_change_requires_disable", "disable the kubectl gateway and wait for cleanup before changing the runtime cluster connection")
-		return false
-	}
-	if existing.Type == "docker-compose" || strings.TrimSpace(existing.KubeconfigRef) == "" {
-		return true
-	}
-	observation := h.observeRuntimeClusterKubeGateway(ctx.Request.Context(), existing)
-	switch observation.Status {
-	case "disabled":
-		return true
-	case "unavailable":
-		writeErrorCode(ctx, http.StatusServiceUnavailable, "kube_gateway.unavailable", "kubectl gateway cleanup could not be verified")
-	default:
-		writeErrorCode(ctx, http.StatusConflict, "kube_gateway.connection_change_requires_disable", "wait for kubectl gateway cleanup before changing the runtime cluster connection")
-	}
-	return false
 }
 
 func applyRuntimeClusterSearch(ctx *gin.Context, query *gorm.DB, user model.User) *gorm.DB {
@@ -251,14 +211,10 @@ func runtimeClusterSafeAuditMetadata(cluster model.RuntimeCluster, kubeconfigUpd
 	return runtimeClusterAuditMetadata{
 		Type: cluster.Type, Scope: cluster.Scope, IsDefault: cluster.IsDefault,
 		ProjectCount: len(normalizeStringList(cluster.ProjectIDs)), KubeconfigUpdated: kubeconfigUpdated,
-		KubeGatewayEnabled: cluster.KubeGatewayEnabled,
 	}
 }
 
-func runtimeClusterPersistenceAuditMessage(err error) string {
-	if errors.Is(err, errKubeGatewayEnqueue) {
-		return "enqueue_failed"
-	}
+func runtimeClusterPersistenceAuditMessage(_ error) string {
 	return "persist_failed"
 }
 
@@ -285,27 +241,14 @@ func (h *Handlers) DeleteRuntimeCluster(ctx *gin.Context) {
 		return
 	}
 	if !h.deleteStatusCanStart(cluster.DeleteStatus) {
-		writeErrorCode(ctx, http.StatusConflict, "runtime_cluster.delete_in_progress", "运行集群正在删除中，请等待网关排空和资源清理完成")
+		writeErrorCode(ctx, http.StatusConflict, "runtime_cluster.delete_in_progress", "运行集群正在删除中，请等待资源清理完成")
 		return
 	}
-	now := time.Now().UTC()
-	drainUntil := now.Add(35 * time.Second)
-	if cluster.KubeGatewayCleanupCompletedAt != nil {
-		drainUntil = now
-	}
 	if err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := h.markResourceDeleting(tx, &model.RuntimeCluster{}, cluster.ID); err != nil {
-			return err
-		}
-		if err := tx.Model(&model.RuntimeCluster{}).Where("id = ?", cluster.ID).Updates(map[string]any{
-			"kube_gateway_drain_until": &drainUntil,
-		}).Error; err != nil {
-			return err
-		}
-		return tx.Where("runtime_cluster_id = ?", cluster.ID).Delete(&model.KubeAccessBinding{}).Error
+		return h.markResourceDeleting(tx, &model.RuntimeCluster{}, cluster.ID)
 	}); err != nil {
 		if h.host.ResourceDeleteAlreadyStarted(err) {
-			writeErrorCode(ctx, http.StatusConflict, "runtime_cluster.delete_in_progress", "运行集群正在删除中，请等待网关排空和资源清理完成")
+			writeErrorCode(ctx, http.StatusConflict, "runtime_cluster.delete_in_progress", "运行集群正在删除中，请等待资源清理完成")
 			return
 		}
 		writeError(ctx, http.StatusInternalServerError, err.Error())

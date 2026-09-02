@@ -26,7 +26,6 @@ describe("real PlatformCatalog retrieval", () => {
     ["列出平台用户", "listUsers"],
     ["查看平台账单概览", "getBillingSummary"],
     ["查看集群压力", "observeRuntimeClusterPressure"],
-    ["查看 kubectl 网关状态", "observeRuntimeClusterKubeGatewayStatus"],
     ["查看平台共享通知渠道", "listNotificationChannels"],
     ["列出我的通知渠道", "listMyNotificationChannels"],
     ["查看我的通知投递", "listMyNotificationDeliveries"],
@@ -58,15 +57,6 @@ describe("real PlatformCatalog retrieval", () => {
     expect(write.items[0]).toMatchObject({ operationId: "updateProjectVolume", requiresApproval: true })
   })
 
-  it("keeps sanitized kubectl gateway observation separate from privileged gateway configuration", () => {
-    const matches = platformCatalog.search({ query: "查看 kubectl 网关实时状态", pageSize: 8 })
-    const observation = platformCatalog.get("observeRuntimeClusterKubeGatewayStatus")
-
-    expect(matches.items[0]?.operationId).toBe("observeRuntimeClusterKubeGatewayStatus")
-    expect(observation).toMatchObject({ method: "GET", requiresApproval: false, requiredScopes: ["cluster:read"] })
-    expect(platformCatalog.all().map(operation => operation.operationId)).not.toContain("updateRuntimeClusterKubeGateway")
-  })
-
   it("indexes real parameter names and output semantics", () => {
     expect(platformCatalog.search({ query: "volumeId", pageSize: 8 }).items.map(item => item.operationId))
       .toContain("getProjectVolume")
@@ -82,7 +72,7 @@ describe("real PlatformCatalog retrieval", () => {
       platformCatalog.search({ page: index + 1, pageSize: 100 }).items.map(item => item.operationId)).flat()
 
     // Global mail contributes three operations and personal notification self-service contributes nine.
-    expect(operations).toHaveLength(219)
+    expect(operations).toHaveLength(218)
     expect(new Set(browsed)).toEqual(new Set(operations.map(operation => operation.operationId)))
     for (const operation of operations) {
       expect(platformCatalog.search({ query: operation.operationId, pageSize: 8 }).items[0]?.operationId)

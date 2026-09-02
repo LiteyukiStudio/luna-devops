@@ -1,8 +1,7 @@
 package runtimeaccess
 
 // Enabled applies the project-level ceiling and an optional deployment-level
-// further restriction used by both platform terminals and kubectl connect
-// subresources.
+// further restriction used by interactive runtime subresources.
 func Enabled(projectEnabled bool, deploymentOverride *bool) bool {
 	return projectEnabled && (deploymentOverride == nil || *deploymentOverride)
 }

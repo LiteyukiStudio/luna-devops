@@ -8,7 +8,7 @@
 | --- | --- | --- |
 | `APP_ENV` | `production` | 选择 API 运行模式；可填 `production` 或 `development`。 |
 | `API_ADDR` | `:8080` | 设置 API 监听地址；填写 `IP:端口` 或 `:端口`。 |
-| `PUBLIC_BASE_URL` | 生产环境必填 | 设置用户访问平台及生成 kubectl kubeconfig Server 的可信根地址；生产环境填写用户实际访问的绝对 HTTPS URL，仅本机 `localhost` 或回环地址允许 HTTP。 |
+| `PUBLIC_BASE_URL` | 生产环境必填 | 设置用户访问平台以及 OAuth、Webhook 回调使用的可信根地址；生产环境填写用户实际访问的绝对 HTTPS URL，仅本机 `localhost` 或回环地址允许 HTTP。 |
 | `DATABASE_URL` | 本地 PostgreSQL | 连接 PostgreSQL；填写 PostgreSQL 连接 URI。 |
 | `REDIS_ADDR` | `redis://localhost:6379/0` | 连接 Redis；填写 `redis://` 或 `rediss://` URI。 |
 | `REDIS_PASSWORD` | 空 | 设置 Docker Compose 内置 Redis 的密码；填写密码字符串，未启用认证时留空。 |
@@ -31,8 +31,6 @@
 2. 说明：这些配置只在数据库从未存在用户时创建首个管理员；已有有效管理员时不会覆盖账号或密码，已有用户但没有有效管理员时 API 会拒绝启动并要求先恢复管理员。
 3. 说明：API 与 Agent 必须使用同一个 `AI_INTERNAL_SECRET`。
 4. 说明：启用 Helm Chart 的 Ingress 时必须设置对应的 `app.trustedProxyCidrs`；优先填写 API 实际看到的专用 Ingress/反向代理来源及可信转发链代理出口，只有网络隔离能阻止其他 Pod 直连 API 时才可填写整段 Pod CIDR。不要填写客户端网段；API 会拒绝 `0.0.0.0/0` 和 `::/0`。直连请求按 socket 对端限流，只有实际对端属于可信代理 CIDR 时才采用转发客户端 IP。公共 CLI 的 device start、device-code polling、authorization-code、refresh 和 revoke 分别使用独立来源桶。
-
-kubectl 网关不会根据请求 Host 猜测 kubeconfig Server；修改 `PUBLIC_BASE_URL` 后需要重启 API，并重新签发受影响的 kubeconfig。反向代理还必须原样转发 `/kube/`、支持 Upgrade、关闭流缓冲并避免记录原始查询字符串，具体见 [Kubernetes (Helm) 部署](/start/install/kubernetes#配置-kubectl-网关反向代理)。
 
 ## 高级配置
 

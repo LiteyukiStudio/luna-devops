@@ -91,36 +91,6 @@ helm upgrade --install luna-devops ./charts/luna-devops \
 
 `app.publicBaseUrl` 会影响 OIDC 回调、Webhook 回调和浏览器跨域校验，不要写成集群内 Service 地址。示例中的 `10.42.0.0/16` 仅表示专用的 Ingress/反向代理来源网段；请替换为 API 实际看到的来源及可信转发链代理出口。只有网络隔离能阻止其他 Pod 直连 API 时，才能使用整段 Pod CIDR。Chart 在启用 Ingress 且未显式设置该边界时会拒绝渲染，并始终拒绝 `0.0.0.0/0` 和 `::/0`。
 
-## 配置 kubectl 网关反向代理
-
-kubectl 网关复用同一个 API Service 和公开域名，协议入口位于 `/kube/v1/bindings/`，不需要额外 Service 或 Ingress。启用运行集群的网关前，确认所选 Ingress Controller 或反向代理满足：
-
-- 使用 HTTPS，并让 `app.publicBaseUrl` 精确指向用户可达的公开根地址；生成的 kubeconfig 只使用这个可信地址。
-- 原样转发 `/kube/` 路径、查询参数和转义内容，不移除前缀或做路径归一化重写。
-- 支持 WebSocket 和 SPDY Upgrade；请求与响应正文采用流式转发，不缓冲 Watch、日志、Exec、Attach、Port-forward 或 `cp` 数据。
-- 请求体上限至少为 16 MiB，读写空闲/总超时至少为 2 小时；网关自身仍会按协议类型执行更短的权限复核和连接上限。
-- 访问日志不记录 `Authorization`、`Cookie` 或 `/kube/` 的原始查询字符串。Exec 命令可能位于查询参数中，不能把它写入代理日志。
-
-Chart 不写入控制器专属默认值。使用 ingress-nginx 时可以在自己的 values 中显式配置，例如：
-
-```yaml
-ingress:
-  enabled: true
-  className: nginx
-  annotations:
-    nginx.ingress.kubernetes.io/proxy-buffering: "off"
-    nginx.ingress.kubernetes.io/proxy-request-buffering: "off"
-    nginx.ingress.kubernetes.io/proxy-read-timeout: "7200"
-    nginx.ingress.kubernetes.io/proxy-send-timeout: "7200"
-    nginx.ingress.kubernetes.io/proxy-body-size: "16m"
-```
-
-其他控制器应使用语义等价的配置。配置完成后，由平台管理员在“运行集群”中打开“kubectl 网关”，等待实时状态变为“已就绪”再让用户创建 kubeconfig。额外资源规则默认留空；确需开放自定义资源时，只添加 Discovery 已确认属于 Namespace 的 GVR、明确 Verb 和现有 Luna DevOps 项目 Action。规则不能使用通配符，也不能覆盖 Node、RBAC、CRD、Webhook 等固定拒绝边界。
-
-平台保存的运行集群凭据必须能创建或更新 `luna-system` Namespace、ServiceAccount、ClusterRole/ClusterRoleBinding、项目 Namespace 内的 RoleBinding，并能调用 ServiceAccount TokenRequest；权限不足或固定名称被非 Luna 对象占用时，网关会保持不可用而不会接管对象。关闭网关后，新 kubeconfig 创建会被拒绝，既有请求也会在重新鉴权时停止。
-
-网关的请求和流并发计数当前按 API 进程执行；Chart 默认的单 API 副本是最容易预测的容量配置。增加副本前，应按副本数评估总连接上限并让入口保持会话无关，不能依赖某个副本保存 Kubernetes 当前状态。
-
 ## 使用外部 PostgreSQL 或 Redis
 
 内置数据库适合快速启动。生产环境已经有托管 PostgreSQL 或 Redis 时，可以关闭对应内置组件：
@@ -208,7 +178,7 @@ ai:
 | 配置项 | 默认值 | 说明 |
 | --- | --- | --- |
 | `app.publicBaseUrl` | `http://localhost:8088` | 设置 API 回调和 Worker 通知详情链接共用的平台根地址；生产环境填写用户实际访问的绝对 HTTP(S) URL。 |
-| `ingress.annotations` | `{}` | 向所选 Ingress Controller 传递 kubectl 流式代理配置；填写控制器支持的 annotation map，并保证请求体至少 16 MiB、流超时至少 2 小时且关闭请求/响应缓冲。 |
+| `ingress.annotations` | `{}` | 向所选 Ingress Controller 传递控制器专属配置；填写该控制器支持的 annotation map。 |
 | `app.secretEncryptionKey` | 自动生成 | 加密平台保存的凭据；填写稳定的非空密钥。 |
 | `api.initialAdmin.existingSecret` | 空 | 指定首个管理员配置 Secret；全新数据库需包含 `initial-admin-email/password`，可选 `initial-admin-name/language`。 |
 | `api.initialAdmin.email` / `password` | 空 | 让 Chart 在显式提供字段时创建首个管理员 Secret；全新数据库分别填写有效邮箱和 8–72 字节密码，生产环境优先使用 `existingSecret`。 |

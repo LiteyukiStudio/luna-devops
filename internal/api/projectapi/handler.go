@@ -29,7 +29,6 @@ type Host interface {
 	CurrentUser(ctx *gin.Context) (model.User, bool)
 	EnsurePlatformSystemProject(user model.User, ctx context.Context) (model.Project, error)
 	AIConversationProjectID(ctx *gin.Context) string
-	EnqueueEnabledProjectAccessKubeGateways(ctx context.Context, userID string, includeGlobal bool) error
 	EnqueueResourceCleanup(ctx context.Context, resourceType, resourceID, projectID, actorID string) bool
 	AuditWithContext(userID, action, resource string, success bool, message string, ctx context.Context)
 	ProjectIDsForUser(ctx context.Context, userID string) []string
@@ -62,10 +61,6 @@ func (h *Handler) currentUser(ctx *gin.Context) (model.User, bool) {
 
 func (h *Handler) ensurePlatformSystemProject(user model.User, ctx context.Context) (model.Project, error) {
 	return h.host.EnsurePlatformSystemProject(user, ctx)
-}
-
-func (h *Handler) enqueueEnabledProjectAccessKubeGateways(ctx context.Context, userID string, includeGlobal bool) error {
-	return h.host.EnqueueEnabledProjectAccessKubeGateways(ctx, userID, includeGlobal)
 }
 
 func (h *Handler) enqueueResourceCleanup(ctx context.Context, resourceType, resourceID, projectID, actorID string) bool {
@@ -132,10 +127,6 @@ func markResourceDeleteFailed(db *gorm.DB, resource any, resourceID, message str
 		"delete_message":     strings.TrimSpace(message),
 		"delete_finished_at": &finishedAt,
 	}).Error
-}
-
-func writeKubeGatewayEnqueueError(ctx *gin.Context) {
-	writeErrorCode(ctx, http.StatusServiceUnavailable, "kube_gateway.enqueue_failed", "kubernetes gateway reconciliation could not be queued")
 }
 
 func writeDependencyError(ctx *gin.Context, err error) {

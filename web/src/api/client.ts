@@ -7,7 +7,6 @@ import { eventsApi } from './domains/events'
 import { gatewayApi } from './domains/gateway'
 import { gitApi } from './domains/git'
 import { inboxApi } from './domains/inbox'
-import { kubectlApi } from './domains/kubectl'
 import { metaApi } from './domains/meta'
 import { notificationsApi } from './domains/notifications'
 import { oauthApi } from './domains/oauth'
@@ -26,7 +25,6 @@ type ApiClient = typeof aiApi
   & typeof gatewayApi
   & typeof gitApi
   & typeof inboxApi
-  & typeof kubectlApi
   & typeof metaApi
   & typeof notificationsApi
   & typeof oauthApi
@@ -46,7 +44,6 @@ export const api = {
   ...gatewayApi,
   ...gitApi,
   ...inboxApi,
-  ...kubectlApi,
   ...metaApi,
   ...notificationsApi,
   ...oauthApi,

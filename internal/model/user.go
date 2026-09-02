@@ -67,6 +67,11 @@ type UserRememberToken struct {
 	UpdatedAt  time.Time  `json:"updatedAt"`
 }
 
+const (
+	AccessTokenSourcePersonal = "personal"
+	AccessTokenSourceOAuth    = "oauth"
+)
+
 type AccessToken struct {
 	ID                 string     `gorm:"primaryKey" json:"id"`
 	UserID             string     `gorm:"index" json:"userId"`
