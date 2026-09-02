@@ -21,7 +21,7 @@ Luna DevOps can issue project-space or application-scoped kubeconfig files. `kub
 chmod 600 "$HOME/.kube/luna-project.yaml"
 ```
 
-The console creates one context at a time. To revoke one later, open **Account settings → kubectl credentials**. You can review context metadata there, but cannot recover the token or kubeconfig. Revocation also invalidates files that were already downloaded.
+The console creates one context at a time. To review or revoke one later, open **Account settings → kubectl credentials**. The page lists credentials created by your account, supports name and status filters, and links back to project spaces when no credentials exist. You can review context metadata there, but cannot recover the token or kubeconfig. Revocation also invalidates files that were already downloaded.
 
 ## Write or merge with Luna CLI
 

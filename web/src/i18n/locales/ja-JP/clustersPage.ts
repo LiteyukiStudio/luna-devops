@@ -23,6 +23,7 @@ const clustersPage = {
   defaultCluster: 'デフォルトクラスター',
   runtimeCluster: '実行クラスター',
   runtimeClustersTab: '実行クラスター',
+  clusterActions: '{{name}} の操作',
   resourcePressure: 'リソース割り当て圧力',
   memoryShort: 'メモリ',
   metricsUnavailable: 'メトリクス利用不可',

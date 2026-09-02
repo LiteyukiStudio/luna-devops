@@ -23,6 +23,7 @@ const clustersPage = {
   defaultCluster: '預設叢集',
   runtimeCluster: '執行叢集',
   runtimeClustersTab: '執行叢集',
+  clusterActions: '{{name}} 的操作',
   resourcePressure: '資源分配壓力',
   memoryShort: '記憶體',
   metricsUnavailable: '指標無法使用',

@@ -7,6 +7,7 @@ import (
 
 	"github.com/LiteyukiStudio/devops/internal/aiagent"
 	"github.com/LiteyukiStudio/devops/internal/aitool"
+	"github.com/LiteyukiStudio/devops/internal/api/billingapi"
 	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/inbox"
 	"github.com/LiteyukiStudio/devops/internal/kubeaccess"
@@ -26,6 +27,10 @@ const rememberCookiePrefix = "lyd_remember_"
 const sessionCookieName = "lyd_session"
 const currentProjectRoleContextKey = "currentProjectRole"
 
+// Handlers is the root HTTP composition facade. Business-domain request logic
+// lives in the sibling *api packages and is connected here through narrow Host
+// adapters; this type owns only shared runtime dependencies and route-facing
+// compatibility methods.
 type Handlers struct {
 	db                              *gorm.DB
 	config                          Config
@@ -50,6 +55,7 @@ type Handlers struct {
 	continuousAuthorizationInterval time.Duration
 	kubeAccess                      *kubeaccess.Service
 	kubeGateway                     *kubeproxy.Gateway
+	billingHandlers                 *billingapi.Handler
 }
 
 type inboxService interface {
@@ -136,6 +142,7 @@ func NewHandlersWithConfig(db *gorm.DB, cfg Config) *Handlers {
 	)
 	handlers.inbox = inbox.NewService(db)
 	handlers.inboxDecision = handlers.decideInboxAction
+	handlers.billingHandlers = billingapi.New(billingHost{handlers: handlers})
 	return handlers
 }
 

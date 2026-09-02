@@ -45,12 +45,12 @@ function rulesToFormValues(cluster: RuntimeCluster): ClusterKubeGatewayFormValue
 function gatewayQueryToFormValues(gateway: RuntimeClusterKubeGateway): ClusterKubeGatewayFormValues {
   return {
     enabled: gateway.enabled,
-    extraResourceRules: gateway.extraResourceRules.map(rule => ({
+    extraResourceRules: (gateway.extraResourceRules ?? []).map(rule => ({
       action: rule.action,
       apiGroup: rule.apiGroup,
       apiVersion: rule.apiVersion,
       resource: rule.resource,
-      subresourcesText: rule.subresources.join(', '),
+      subresourcesText: (rule.subresources ?? []).join(', '),
       verbs: rule.verbs,
     })),
   }

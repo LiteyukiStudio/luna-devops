@@ -5,13 +5,11 @@ import { Activity, AppWindow, ArrowRight, Boxes, Container, FileKey2, FolderKanb
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import { api } from '@/api'
-import { useSession } from '@/app/session-context'
 import { EmptyState } from '@/components/common/empty-state'
 import { ErrorState } from '@/components/common/error-state'
 import { OverviewSkeleton } from '@/components/common/loading-states'
 import { MetricGroup, MetricItem } from '@/components/common/metric-group'
 import { PageShell } from '@/components/common/page-shell'
-import { ResultVisibilitySelect } from '@/components/common/result-visibility-select'
 import { Section } from '@/components/common/section'
 import { StatusBadge, StatusValueBadge } from '@/components/common/status-badge'
 import { Surface } from '@/components/common/surface'
@@ -21,19 +19,16 @@ import { Button } from '@/components/ui/button'
 import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
 import { statusRefetchInterval } from '@/lib/polling'
 import { withResultVisibility } from '@/lib/result-visibility'
-import { isPlatformAdmin } from '@/lib/roles'
-import { useResultVisibility } from '@/lib/use-result-visibility'
+
+const dashboardVisibility: ResultVisibility = 'related'
 
 export function DashboardPage() {
   const { t } = useTranslation()
-  const { user } = useSession()
   const queryClient = useQueryClient()
-  const canViewAll = isPlatformAdmin(user?.role)
-  const [effectiveVisibility, setVisibility] = useResultVisibility(canViewAll)
   const dashboard = useQuery({
     ...liveObservationQueryPolicy,
-    queryKey: ['dashboard', effectiveVisibility],
-    queryFn: () => api.getDashboard(effectiveVisibility),
+    queryKey: ['dashboard', dashboardVisibility],
+    queryFn: () => api.getDashboard(dashboardVisibility),
     refetchInterval: query => statusRefetchInterval(Boolean(
       query.state.data
       && (query.state.data.summary.activeBuilds > 0 || query.state.data.summary.activeReleases > 0),
@@ -72,12 +67,7 @@ export function DashboardPage() {
 
   return (
     <PageShell width="full">
-      {canViewAll && (
-        <div className="flex justify-end">
-          <ResultVisibilitySelect canViewAll value={effectiveVisibility} onChange={setVisibility} />
-        </div>
-      )}
-      {overview.attention.length > 0 && <AttentionPanel items={overview.attention} visibility={effectiveVisibility} />}
+      {overview.attention.length > 0 && <AttentionPanel items={overview.attention} visibility={dashboardVisibility} />}
 
       <section className="grid gap-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -96,10 +86,10 @@ export function DashboardPage() {
         <Surface className="overflow-hidden" data-slot="dashboard-overview" variant="bordered">
           <div className="p-4 sm:p-6">
             <MetricGroup>
-              <MetricItem emphasis={overview.summary.activeBuilds > 0} href={withResultVisibility('/events?categories=build&statuses=in_progress', effectiveVisibility)} icon={<Hammer size={18} />} label={t('dashboardPage.activeBuilds')} value={overview.summary.activeBuilds} />
-              <MetricItem emphasis={overview.summary.activeReleases > 0} href={withResultVisibility('/events?categories=release&statuses=in_progress', effectiveVisibility)} icon={<Rocket size={18} />} label={t('dashboardPage.activeReleases')} value={overview.summary.activeReleases} />
-              <MetricItem emphasis={overview.summary.attentionItems > 0} href={withResultVisibility('/events?severities=error&severities=warning', effectiveVisibility)} icon={<ShieldAlert size={18} />} label={t('dashboardPage.attentionItems')} tone={overview.summary.attentionItems ? 'danger' : 'neutral'} value={overview.summary.attentionItems} />
-              <MetricItem emphasis={overview.summary.totalClusters > 0} href={withResultVisibility('/clusters', effectiveVisibility)} icon={<Server size={18} />} label={t('dashboardPage.healthyClusters')} tone={overview.summary.healthyClusters < overview.summary.totalClusters ? 'warning' : 'neutral'} value={`${overview.summary.healthyClusters}/${overview.summary.totalClusters}`} />
+              <MetricItem emphasis={overview.summary.activeBuilds > 0} href={withResultVisibility('/events?categories=build&statuses=in_progress', dashboardVisibility)} icon={<Hammer size={18} />} label={t('dashboardPage.activeBuilds')} value={overview.summary.activeBuilds} />
+              <MetricItem emphasis={overview.summary.activeReleases > 0} href={withResultVisibility('/events?categories=release&statuses=in_progress', dashboardVisibility)} icon={<Rocket size={18} />} label={t('dashboardPage.activeReleases')} value={overview.summary.activeReleases} />
+              <MetricItem emphasis={overview.summary.attentionItems > 0} href={withResultVisibility('/events?severities=error&severities=warning', dashboardVisibility)} icon={<ShieldAlert size={18} />} label={t('dashboardPage.attentionItems')} tone={overview.summary.attentionItems ? 'danger' : 'neutral'} value={overview.summary.attentionItems} />
+              <MetricItem emphasis={overview.summary.totalClusters > 0} href={withResultVisibility('/clusters', dashboardVisibility)} icon={<Server size={18} />} label={t('dashboardPage.healthyClusters')} tone={overview.summary.healthyClusters < overview.summary.totalClusters ? 'warning' : 'neutral'} value={`${overview.summary.healthyClusters}/${overview.summary.totalClusters}`} />
             </MetricGroup>
           </div>
 
@@ -109,7 +99,7 @@ export function DashboardPage() {
               icon={<ScrollText size={18} />}
               title={t('dashboardPage.recentActivity')}
               tools={(
-                <Link className="text-sm font-medium text-muted-foreground transition hover:text-primary-text" to={withResultVisibility('/events', effectiveVisibility)}>
+                <Link className="text-sm font-medium text-muted-foreground transition hover:text-primary-text" to={withResultVisibility('/events', dashboardVisibility)}>
                   {t('dashboardPage.viewAllEvents')}
                 </Link>
               )}
@@ -118,7 +108,7 @@ export function DashboardPage() {
                 {overview.activities.length
                   ? (
                       <div className="divide-y divide-border">
-                        {overview.activities.map(activity => <ActivityRow key={activity.id} activity={activity} visibility={effectiveVisibility} />)}
+                        {overview.activities.map(activity => <ActivityRow key={activity.id} activity={activity} visibility={dashboardVisibility} />)}
                       </div>
                     )
                   : (
@@ -134,8 +124,8 @@ export function DashboardPage() {
 
             <Section className="border-t border-border p-5 sm:p-6 xl:border-l xl:border-t-0" icon={<Boxes size={18} />} title={t('dashboardPage.platformReadiness')}>
               <div className="grid gap-3">
-                <ReadinessRow icon={<Container size={16} />} item={overview.readiness.registries} kind="registries" label={t('registries')} to={withResultVisibility('/registries', effectiveVisibility)} />
-                <ReadinessRow icon={<Server size={16} />} item={overview.readiness.clusters} kind="clusters" label={t('clusters')} to={withResultVisibility('/clusters', effectiveVisibility)} />
+                <ReadinessRow icon={<Container size={16} />} item={overview.readiness.registries} kind="registries" label={t('registries')} to={withResultVisibility('/registries', dashboardVisibility)} />
+                <ReadinessRow icon={<Server size={16} />} item={overview.readiness.clusters} kind="clusters" label={t('clusters')} to={withResultVisibility('/clusters', dashboardVisibility)} />
               </div>
             </Section>
           </div>
@@ -146,7 +136,7 @@ export function DashboardPage() {
         icon={<FolderKanban size={18} />}
         title={t('dashboardPage.projectShortcuts')}
         tools={hasMoreProjects && (
-          <Link className="text-sm font-medium text-muted-foreground transition hover:text-primary-text" to={withResultVisibility('/projects', effectiveVisibility)}>
+          <Link className="text-sm font-medium text-muted-foreground transition hover:text-primary-text" to={withResultVisibility('/projects', dashboardVisibility)}>
             {t('dashboardPage.viewAllProjects')}
           </Link>
         )}
@@ -159,7 +149,7 @@ export function DashboardPage() {
                     key={project.id}
                     isPinPending={toggleProjectPin.isPending}
                     project={project}
-                    visibility={effectiveVisibility}
+                    visibility={dashboardVisibility}
                     onTogglePin={(projectId, pinned) => toggleProjectPin.mutate({ pinned, projectId })}
                   />
                 ))}

@@ -5,7 +5,7 @@ import type { DataListColumn } from '@/components/common/data-list'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import i18next from 'i18next'
-import { Copy, KeyRound, Pencil, Plus, RotateCcwKey, ShieldX, Trash2 } from 'lucide-react'
+import { Copy, KeyRound, Pencil, RotateCcwKey, ShieldX, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
@@ -49,13 +49,15 @@ const DEFAULT_APPLICATION_FORM: OAuthApplicationForm = {
   accessTokenLifetimeDays: 30,
 }
 
-export function OAuthApplicationsPanel() {
+export function OAuthApplicationsPanel({ createDialogOpen, onCreateDialogOpenChange }: {
+  createDialogOpen: boolean
+  onCreateDialogOpenChange: (open: boolean) => void
+}) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
   const [search, setSearch] = useState('')
-  const [dialogOpen, setDialogOpen] = useState(false)
   const [editingApplication, setEditingApplication] = useState<OAuthApplication>()
   const [createdSecret, setCreatedSecret] = useState('')
   const applications = useQuery({
@@ -80,8 +82,9 @@ export function OAuthApplicationsPanel() {
       if (result.clientSecret)
         setCreatedSecret(result.clientSecret)
       toast.success(t(editingApplication ? 'oauthApps.updated' : 'oauthApps.created'))
-      setDialogOpen(false)
+      onCreateDialogOpenChange(false)
       setEditingApplication(undefined)
+      form.reset(DEFAULT_APPLICATION_FORM)
       queryClient.invalidateQueries({ queryKey: ['oauth-applications'] })
     },
     onError: error => toast.error(error.message),
@@ -103,12 +106,8 @@ export function OAuthApplicationsPanel() {
     onError: error => toast.error(error.message),
   })
 
-  const openCreate = () => {
-    setEditingApplication(undefined)
-    form.reset(DEFAULT_APPLICATION_FORM)
-    setDialogOpen(true)
-  }
   const openEdit = (application: OAuthApplication) => {
+    onCreateDialogOpenChange(false)
     setEditingApplication(application)
     form.reset({
       name: application.name,
@@ -119,7 +118,11 @@ export function OAuthApplicationsPanel() {
       scopes: splitAccessTokenScopes(application.allowedScopes),
       accessTokenLifetimeDays: application.accessTokenLifetimeDays,
     })
-    setDialogOpen(true)
+  }
+  const closeDialog = () => {
+    onCreateDialogOpenChange(false)
+    setEditingApplication(undefined)
+    form.reset(DEFAULT_APPLICATION_FORM)
   }
   const copyValue = (value: string) => navigator.clipboard.writeText(value)
     .then(() => toast.success(t('common.copied')))
@@ -191,12 +194,6 @@ export function OAuthApplicationsPanel() {
 
   return (
     <div className="grid gap-4">
-      <div className="flex justify-end">
-        <Button onClick={openCreate}>
-          <Plus size={16} />
-          {t('oauthApps.createApplication')}
-        </Button>
-      </div>
       {createdSecret && (
         <Card className="grid gap-2 border-primary/30 bg-primary/5 p-3">
           <p className="text-sm font-medium">{t('oauthApps.secretOneTime')}</p>
@@ -228,10 +225,10 @@ export function OAuthApplicationsPanel() {
       <OAuthApplicationDialog
         application={editingApplication}
         form={form}
-        open={dialogOpen}
+        open={createDialogOpen || Boolean(editingApplication)}
         pending={save.isPending}
         scopeItems={scopes.data?.items ?? []}
-        onClose={() => setDialogOpen(false)}
+        onClose={closeDialog}
         onSubmit={values => save.mutate(values)}
       />
     </div>

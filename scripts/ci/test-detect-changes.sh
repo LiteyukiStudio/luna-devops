@@ -39,6 +39,13 @@ assert_output "${output}" 'container=true'
 assert_output "${output}" 'container_images=["api"]'
 
 : > "${output}"
+run_case 'internal/api/projectapi/project_handlers.go' "${output}"
+assert_output "${output}" 'go=true'
+assert_output "${output}" 'web=false'
+assert_output "${output}" 'container=true'
+assert_output "${output}" 'container_images=["api"]'
+
+: > "${output}"
 run_case 'web/src/main.tsx' "${output}"
 assert_output "${output}" 'go=false'
 assert_output "${output}" 'web=true'

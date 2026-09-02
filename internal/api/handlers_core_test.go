@@ -9,8 +9,6 @@ import (
 	"go/token"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -123,28 +121,28 @@ func TestHighGrowthListHandlersCannotBypassPaginationContract(t *testing.T) {
 		function string
 	}{
 		{file: "application_handlers.go", function: "ListApplications"},
-		{file: "build_job_log_handlers.go", function: "ListBuildJobs"},
-		{file: "build_run_handlers.go", function: "ListBuildRuns"},
-		{file: "build_variable_handlers.go", function: "ListBuildVariableSets"},
-		{file: "container_image_handlers.go", function: "ListContainerImages"},
-		{file: "deployment_target_handlers.go", function: "ListDeploymentTargets"},
-		{file: "gateway_handlers.go", function: "ListGatewayRoutes"},
-		{file: "git_account_handlers.go", function: "ListGitAccounts"},
-		{file: "git_provider_handlers.go", function: "ListGitProviders"},
-		{file: "git_repository_handlers.go", function: "ListGitRepositories"},
-		{file: "git_repository_handlers.go", function: "ListRepositoryBindings"},
+		{file: "buildapi/build_job_log_handlers.go", function: "ListBuildJobs"},
+		{file: "buildapi/build_run_handlers.go", function: "ListBuildRuns"},
+		{file: "buildapi/build_variable_handlers.go", function: "ListBuildVariableSets"},
+		{file: "registryapi/container_image_handlers.go", function: "ListContainerImages"},
+		{file: "deploymentapi/deployment_target_handlers.go", function: "ListDeploymentTargets"},
+		{file: "gatewayapi/gateway_handlers.go", function: "ListGatewayRoutes"},
+		{file: "gitapi/account_handlers.go", function: "ListGitAccounts"},
+		{file: "gitapi/provider_handlers.go", function: "ListGitProviders"},
+		{file: "gitapi/repository_handlers.go", function: "ListGitRepositories"},
+		{file: "gitapi/repository_handlers.go", function: "ListRepositoryBindings"},
 		{file: "project_handlers.go", function: "ListProjects"},
 		{file: "project_handlers.go", function: "ListProjectPins"},
 		{file: "project_handlers.go", function: "ListProjectMembers"},
 		{file: "project_hook_handlers.go", function: "ListProjectHookConfigs"},
 		{file: "project_hook_handlers.go", function: "ListProjectHookRuns"},
-		{file: "registries.go", function: "ListArtifactRegistries"},
+		{file: "registryapi/registries.go", function: "ListArtifactRegistries"},
 		{file: "registry_credential_handlers.go", function: "listRegistryCredentials"},
-		{file: "release_handlers.go", function: "ListReleases"},
-		{file: "runtime_cluster_handlers.go", function: "ListRuntimeClusters"},
-		{file: "runtime_cluster_resource_handlers.go", function: "ListRuntimeClusterResources"},
-		{file: "runtime_cluster_resource_handlers.go", function: "ListRuntimeClusterResourceEvents"},
-		{file: "runtime_config_handlers.go", function: "ListProjectRuntimeConfigSets"},
+		{file: "deploymentapi/release_handlers.go", function: "ListReleases"},
+		{file: "runtimeapi/runtime_cluster_handlers.go", function: "ListRuntimeClusters"},
+		{file: "runtimeapi/runtime_cluster_resource_handlers.go", function: "ListRuntimeClusterResources"},
+		{file: "runtimeapi/runtime_cluster_resource_handlers.go", function: "ListRuntimeClusterResourceEvents"},
+		{file: "runtimeapi/runtime_config_handlers.go", function: "ListProjectRuntimeConfigSets"},
 	}
 
 	for _, contract := range contracts {
@@ -217,11 +215,7 @@ func assertPaginationEnvelope(t *testing.T, response any) {
 
 func parseAPIFunction(t *testing.T, fileName string, functionName string) *ast.FuncDecl {
 	t.Helper()
-	_, currentFile, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("resolve current test file")
-	}
-	path := filepath.Join(filepath.Dir(currentFile), fileName)
+	path := findAPIProductionGoFile(t, fileName)
 	parsed, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
 	if err != nil {
 		t.Fatalf("parse %s: %v", path, err)

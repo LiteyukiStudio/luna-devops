@@ -4,7 +4,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -27,18 +27,11 @@ func TestAgentEligibleHandlersDeclareConsumedQueryParameters(t *testing.T) {
 		operationByHandler[upperFirst(operation.OperationID)] = operation
 	}
 
-	entries, err := os.ReadDir(".")
-	if err != nil {
-		t.Fatal(err)
-	}
 	files := token.NewFileSet()
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".go") || strings.HasSuffix(entry.Name(), "_test.go") {
-			continue
-		}
-		parsed, parseErr := parser.ParseFile(files, entry.Name(), nil, 0)
+	for _, path := range apiProductionGoFiles(t) {
+		parsed, parseErr := parser.ParseFile(files, path, nil, 0)
 		if parseErr != nil {
-			t.Fatalf("parse %s: %v", entry.Name(), parseErr)
+			t.Fatalf("parse %s: %v", filepath.ToSlash(path), parseErr)
 		}
 		for _, declaration := range parsed.Decls {
 			function, ok := declaration.(*ast.FuncDecl)

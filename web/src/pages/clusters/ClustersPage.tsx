@@ -47,6 +47,7 @@ export function ClustersPage() {
   const meta = useQuery({ queryKey: ['api-meta'], queryFn: api.getAPIMeta, staleTime: 5 * 60 * 1000 })
   const kubectlAccessEnabled = meta.data?.features?.kubectlGateway ?? true
   const canViewAll = isPlatformAdmin(user?.role)
+  const canObserveKubeGatewayStatuses = kubectlAccessEnabled && canViewAll
   const [effectiveVisibility, setVisibility] = useResultVisibility(canViewAll)
   const projects = useQuery({ queryKey: ['projects', 'options', effectiveVisibility], queryFn: () => api.listProjects(effectiveVisibility) })
   const clusters = useQuery({
@@ -55,6 +56,40 @@ export function ClustersPage() {
     queryFn: () => api.listRuntimeClustersPage({ page: clusterPage, pageSize: clusterPageSize, visibility: effectiveVisibility, sortBy: 'createdAt', sortOrder: 'desc' }),
   })
   const clusterOptions = useQuery({ ...liveObservationQueryPolicy, queryKey: ['runtime-clusters', 'options', effectiveVisibility], queryFn: () => api.listRuntimeClusters(undefined, effectiveVisibility) })
+  const kubeGatewayStatusClusterIds = useMemo(
+    () => [...new Set((clusters.data?.items ?? [])
+      .filter(cluster => (cluster.deleteStatus ?? 'active') === 'active' && (cluster.type === 'kubernetes' || cluster.type === 'k3s'))
+      .map(cluster => cluster.id))].sort(),
+    [clusters.data?.items],
+  )
+  const shouldObserveKubeGatewayStatuses = activeTab === 'clusters'
+    && canObserveKubeGatewayStatuses
+    && kubeGatewayStatusClusterIds.length > 0
+  const kubeGatewayStatuses = useQuery({
+    ...liveObservationQueryPolicy,
+    queryKey: ['runtime-cluster-kube-gateway-statuses', kubeGatewayStatusClusterIds],
+    queryFn: () => api.observeRuntimeClusterKubeGatewayStatuses(kubeGatewayStatusClusterIds),
+    enabled: shouldObserveKubeGatewayStatuses,
+    refetchInterval: 10_000,
+    refetchIntervalInBackground: false,
+    retry: false,
+  })
+  const kubeGatewayStatusByClusterId = useMemo<Record<string, string>>(() => {
+    if (!shouldObserveKubeGatewayStatuses)
+      return {}
+
+    const fallbackStatus = kubeGatewayStatuses.isPending ? 'checking' : 'unavailable'
+    const result = Object.fromEntries(kubeGatewayStatusClusterIds.map(clusterId => [clusterId, fallbackStatus]))
+    if (!kubeGatewayStatuses.isSuccess)
+      return result
+
+    const eligibleClusterIds = new Set(kubeGatewayStatusClusterIds)
+    for (const observation of kubeGatewayStatuses.data) {
+      if (eligibleClusterIds.has(observation.clusterId))
+        result[observation.clusterId] = observation.status
+    }
+    return result
+  }, [kubeGatewayStatusClusterIds, kubeGatewayStatuses.data, kubeGatewayStatuses.isPending, kubeGatewayStatuses.isSuccess, shouldObserveKubeGatewayStatuses])
   const clusterPressure = useRuntimeClusterPressure({
     clusterIds: (clusters.data?.items ?? []).map(cluster => cluster.id),
     enabled: activeTab === 'clusters',
@@ -182,8 +217,10 @@ export function ClustersPage() {
         <TabsContent value="clusters">
           <RuntimeClusterTable
             clusters={clusters.data?.items ?? []}
+            loading={clusters.isLoading}
             pressureByClusterId={clusterPressure.byClusterId}
             pressureLoading={clusterPressure.isPending}
+            kubeGatewayStatusByClusterId={kubeGatewayStatusByClusterId}
             pagination={{
               page: clusters.data?.page ?? clusterPage,
               pageSize: clusters.data?.pageSize ?? clusterPageSize,

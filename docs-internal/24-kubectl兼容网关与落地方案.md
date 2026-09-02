@@ -1184,8 +1184,8 @@ type Limiter interface {
 | `internal/provider/kubernetes/kubectl_gateway_token.go` | 使用 TokenRequest 获取短期 ServiceAccount Token；从匿名 `rest.Config` 重建代理身份并重新插桩，确保管理 kubeconfig 凭据不残留 |
 | `internal/provider/kubernetes/kubectl_gateway_cleanup.go` | 按中央 Catalog 与不可变标签清理 kubectl 来源资源；应用清理不触碰项目共享 RoleBinding |
 | `internal/provider/kubernetes/kubectl_runtime_observation.go` | 枚举并归一化 kubectl 来源工作负载，提供观察和计费输入，不缓存实时状态 |
-| `internal/api/kube_credential_handlers.go` | 适配第 5.2 节四个 JSON 接口，负责绑定、分页和响应，不承载业务规则 |
-| `internal/api/runtime_cluster_kube_gateway_handlers.go` | 适配第 5.3 节 GET/PUT，实时观察状态并投递协调任务 |
+| `internal/api/runtimeapi/kube_credential_handlers.go` | 适配第 5.2 节四个 JSON 接口，负责绑定、分页和响应，不承载业务规则 |
+| `internal/api/runtimeapi/runtime_cluster_kube_gateway_handlers.go` | 适配第 5.3 节 GET/PUT，实时观察状态并投递协调任务 |
 | `internal/api/kube_proxy_handler.go` | 把两个特殊协议路由接入 `internal/kubeproxy.Handler`，并向 `router.go/static_ui.go` 提供 Kube NoMethod/NoRoute Status responder；自身不重复注册全局 fallback |
 | `internal/api/kube_proxy_limiter.go` | 把现有 Redis-backed `rateLimiter` 适配为 Kube `Limiter`，并从可信代理配置解析认证前客户端 key |
 | `internal/tasks/kubectl_gateway.go` | 定义只含 `clusterId` 的幂等协调任务与 Trace Context 传播；明确禁用 `asynq.Unique` |
@@ -1205,8 +1205,8 @@ type Limiter interface {
 | `internal/api/router.go` | 注册六个管理接口和两个显式方法集合的协议路由；在通用 CORS `OPTIONS` 短路前处理 `/kube/`，开启并接线 Kube NoMethod |
 | `internal/api/static_ui.go` | 接收 Kube responder 并只注册一个组合 NoRoute：先委派 `/kube/`，非 Kube 请求才继续静态文件与 SPA fallback；`staticFS=nil` 时仍保留 Kube 分支 |
 | `internal/api/handlers.go` | 注入 `kubeaccess.Service`、`kubeproxy.Handler`、`KubectlGatewayManager` 和 `EnqueueKubectlGateway` 窄接口 |
-| `internal/api/meta_handlers.go` | 增加 `features.kubectlGateway` |
-| `internal/api/response.go`、`internal/api/access_token_handlers.go` | 改用 `internal/credential`；普通 PAT 继续固定 `source=personal`，且不展示 `kube:*` |
+| `internal/api/platformapi/meta_handlers.go` | 增加 `features.kubectlGateway` |
+| `internal/api/transport/response.go`、`internal/api/identityapi/access_token_handlers.go` | 改用 `internal/credential`；普通 PAT 继续固定 `source=personal`，且不展示 `kube:*` |
 | `internal/authz/action.go` | 仅在确有缺失时补业务 Action；优先复用现有 `deployment/secret/volume/gateway/cluster` Action |
 | `internal/authz/scope.go` | 保持普通 AccessToken/OAuth Scope Catalog 不包含 Kube 专用 Scope |
 | `openapi/openapi.yaml` | 增加六个管理接口、Schema、分页、Scope、敏感字段、`operationId` 和 Agent 排除；同步 RuntimeCluster 删除状态投影、DELETE 204/409/503 契约，并删除 namespace 与不再允许的高风险部署字段 |
@@ -1225,18 +1225,18 @@ Kube Credential 明文响应和 kubeconfig 必须使用专用 response writer �
 | `internal/model/audit.go` | 增加受控 metadata JSONB |
 | `internal/model/runtime_observation.go` | 支持 management source、资源 Kind/UID、可空 Application/DeploymentTarget 身份 |
 | `internal/model/models.go` | 注册新增模型；不使用 GORM AutoMigrate 代替 SQL migration |
-| `internal/api/admission.go` | 认证只负责身份和基础 Token 有效性；Kube 路由不再按 Gin `FullPath` 落入 `system:unmapped` |
-| `internal/api/runtime_cluster_access.go` | 复用项目、集群、成员和权威 namespace 解析，对“可使用/可管理”回读应用 `runtimecluster.ActiveScope`，并去除 DeploymentTarget namespace 回退 |
-| `internal/api/runtime_cluster_handlers.go`、`internal/api/runtime_cluster_input.go` | 暴露开关摘要和删除状态投影；网关开关、规则或项目 Scope 变化时投递协调任务；DELETE 实现第 5.3 节事务、排空时间和 `resource:cleanup`，不在列表中批量实时探测 |
-| `internal/api/runtime_cluster_resource_handlers.go`、`internal/api/runtime_cluster_pressure_handlers.go`、`internal/api/release_runtime_handlers.go`、`internal/api/system_component_handlers.go`、`internal/api/project_volume_cluster.go` | 回读运行集群时统一使用 `runtimecluster.ActiveScope`，非 active 不产生观察、终端、部署、系统组件或卷副作用 |
-| `internal/api/deployment_target_metrics_handlers.go`、`internal/api/deployment_target_observation.go`、`internal/api/runtime_cluster_observation.go` | 指标与实时观察的 RuntimeCluster 回读必须使用 `ActiveScope`，管理列表遇到非 active 仅投影删除状态，不再并发请求上游 |
-| `internal/api/app_template_handlers.go`、`internal/api/deployment_bundle_candidates.go` | 默认集群解析、模板验证和 Bundle 候选集仅包含 `ActiveScope` 集群，避免新配置继续绑定 delete_failed 资源 |
+| `internal/api/identityapi/admission.go` | 认证只负责身份和基础 Token 有效性；Kube 路由不再按 Gin `FullPath` 落入 `system:unmapped` |
+| `internal/api/runtimeapi/runtime_cluster_access.go` | 复用项目、集群、成员和权威 namespace 解析，对“可使用/可管理”回读应用 `runtimecluster.ActiveScope`，并去除 DeploymentTarget namespace 回退 |
+| `internal/api/runtimeapi/runtime_cluster_handlers.go`、`internal/api/runtimeapi/runtime_cluster_input.go` | 暴露开关摘要和删除状态投影；网关开关、规则或项目 Scope 变化时投递协调任务；DELETE 实现第 5.3 节事务、排空时间和 `resource:cleanup`，不在列表中批量实时探测 |
+| `internal/api/runtimeapi/runtime_cluster_resource_handlers.go`、`internal/api/runtimeapi/runtime_cluster_pressure_handlers.go`、`internal/api/deploymentapi/release_runtime_handlers.go`、`internal/api/runtimeapi/system_component_handlers.go`、`internal/api/volumeapi/project_volume_cluster.go` | 回读运行集群时统一使用 `runtimecluster.ActiveScope`，非 active 不产生观察、终端、部署、系统组件或卷副作用 |
+| `internal/api/deploymentapi/deployment_target_metrics_handlers.go`、`internal/api/deploymentapi/deployment_target_observation.go`、`internal/api/runtimeapi/runtime_cluster_observation.go` | 指标与实时观察的 RuntimeCluster 回读必须使用 `ActiveScope`，管理列表遇到非 active 仅投影删除状态，不再并发请求上游 |
+| `internal/api/applicationapi/app_template_handlers.go`、`internal/api/deploymentapi/deployment_bundle_candidates.go` | 默认集群解析、模板验证和 Bundle 候选集仅包含 `ActiveScope` 集群，避免新配置继续绑定 delete_failed 资源 |
 | `internal/aitool/service.go` | Agent 的 RuntimeCluster 列表与项目关联查询也使用 `ActiveScope`；对原始 `Table("runtime_clusters")` 查询显式套用同一 Where Scope，不依赖 GORM 模型默认 |
-| `internal/api/project_handlers.go` | 项目创建、namespace 变化和删除终态触发相关已启用集群的 RoleBinding 协调与回收 |
-| `internal/api/deployment_target_input.go`、`internal/api/deployment_target_types.go`、`internal/api/deployment_target_observation.go` | 删除 namespace 输入/输出 override；实际观测到的 namespace 字段继续保留 |
-| `internal/api/release_runtime_handlers.go`、`internal/api/runtime_terminal_authorization.go`、`internal/api/runtime_web_console_policy_test.go` | 改用 `internal/runtimeaccess`，保持现有终端与 kubectl 长连接使用同一 Web Console 开关语义；`runtimeClusterForDeploymentTargetDB` 和长连接复核同时强制 `ActiveScope` |
-| `internal/api/deployment_bundle_*.go` | 删除 Bundle 导入、导出、预览和校验中的目标 namespace override |
-| `internal/api/app_template_handlers.go`、`internal/model/app_template.go` | 删除模板中的目标 namespace override |
+| `internal/api/projectapi/project_handlers.go` | 项目创建、namespace 变化和删除终态触发相关已启用集群的 RoleBinding 协调与回收 |
+| `internal/api/deploymentapi/deployment_target_input.go`、`internal/api/deploymentapi/deployment_target_types.go`、`internal/api/deploymentapi/deployment_target_observation.go` | 删除 namespace 输入/输出 override；实际观测到的 namespace 字段继续保留 |
+| `internal/api/deploymentapi/release_runtime_handlers.go`、`internal/api/runtimeapi/runtime_terminal_authorization.go`、`internal/api/runtime_web_console_policy_test.go` | 改用 `internal/runtimeaccess`，保持现有终端与 kubectl 长连接使用同一 Web Console 开关语义；`runtimeClusterForDeploymentTargetDB` 和长连接复核同时强制 `ActiveScope` |
+| `internal/api/deploymentapi/deployment_bundle_*.go` | 删除 Bundle 导入、导出、预览和校验中的目标 namespace override |
+| `internal/api/applicationapi/app_template_handlers.go`、`internal/model/app_template.go` | 删除模板中的目标 namespace override |
 | `internal/volume/service.go` | 卷操作只使用项目权威 namespace，删除 DeploymentTarget namespace 回退 |
 
 项目、应用、集群软删除不会触发数据库级级联，因此它们的业务删除终态必须显式撤销对应 Binding 并
@@ -1252,13 +1252,13 @@ Kube Credential 明文响应和 kubeconfig 必须使用专用 response writer �
 | `internal/provider/kubernetes/runtime_resource_list.go` | 纳入 Job、CronJob、ReplicaSet、Ingress、PDB、NetworkPolicy、GRPCRoute 等 Catalog 资源 |
 | `internal/provider/kubernetes/resources.go` | 同步资源详情、YAML、Event 和删除目录 |
 | `internal/provider/kubernetes/application_topology.go` | 纳入带应用标签的 kubectl 来源对象 |
-| `internal/api/runtime_cluster_resource_contract.go` | 同步受支持 Kind 与前端可见契约 |
+| `internal/api/runtimeapi/runtime_cluster_resource_contract.go` | 同步受支持 Kind 与前端可见契约 |
 | `internal/provider/kubernetes/application_workload.go`、`internal/provider/kubernetes/application_service.go`、`internal/provider/kubernetes/deploy_resources.go` | 平台部署也调用 `kubepolicy`，移除第 10 节列出的绕过路径 |
-| `internal/api/deployment_target_input_kubernetes.go` | 在 API 输入阶段调用同一策略，并删除不再允许的 capability、Service 类型和提权选项 |
+| `internal/api/deploymentapi/deployment_target_input_kubernetes.go` | 在 API 输入阶段调用同一策略，并删除不再允许的 capability、Service 类型和提权选项 |
 | `internal/worker/kube_specs.go` | Worker 在最终渲染后再次调用同一策略，禁止只信任入库时校验 |
 | `internal/worker/kube_specs.go`、`internal/worker/build_capacity.go`、`internal/worker/gateway_runner.go`、`internal/worker/runtime_billing_runner.go`、`internal/dashboard/service.go` | 部署、构建、网关、计费和看板的 RuntimeCluster 查询统一复用 `ActiveScope`；管理列表例外单独写明 |
-| `internal/api/system_component_handlers.go`、`internal/worker/deploy_runner.go` | 仅由可信 SystemComponent 计划授予专用 ServiceAccount/RBAC，删除任意 DeploymentTarget 名称触发授权的通用路径 |
-| `internal/api/gateway_route_domain.go`、`internal/api/gateway_route_validation.go` | 提取并复用 `kubepolicy/gateway.go` 的域名、parent 和 backend 约束，防止平台表单与 kubectl 路由双标准 |
+| `internal/api/runtimeapi/system_component_handlers.go`、`internal/worker/deploy_runner.go` | 仅由可信 SystemComponent 计划授予专用 ServiceAccount/RBAC，删除任意 DeploymentTarget 名称触发授权的通用路径 |
+| `internal/api/gatewayapi/gateway_route_domain.go`、`internal/api/gatewayapi/gateway_route_validation.go` | 提取并复用 `kubepolicy/gateway.go` 的域名、parent 和 backend 约束，防止平台表单与 kubectl 路由双标准 |
 | `internal/worker/application_delete_runner.go` | 清理应用 Binding、流和 `management-source=kubectl` 的应用标签资源，不删除项目共享 RoleBinding |
 | `internal/worker/resource_cleanup.go` | 作为唯一删除 owner 扩展 `runtime_cluster` 分支、失败标记和超时恢复扫描；以 `Unscoped` 回读、drain deadline、上游清理阶段持久化和 Secret 最后删除实现第 5.3 节状态机 |
 | `internal/worker/runtime_billing_runner.go` | 合并 kubectl RuntimeObservation，继续写入现有运行资源计费链路 |
@@ -1419,10 +1419,10 @@ Credential 列出与撤销仍可由生成命令调用。Kube Credential 不写�
 
 ```text
 internal/database/kubectl_gateway_migration_test.go
-internal/api/kube_credential_integration_test.go
+internal/api/runtimeapi/kube_credential_integration_test.go
 internal/api/kube_gateway_openapi_contract_test.go
 internal/api/kube_protocol_route_contract_test.go
-internal/api/kube_gateway_audit_test.go
+internal/api/runtimeapi/kube_gateway_audit_test.go
 
 internal/authz/kube_scope_test.go
 internal/kubeaccess/{repository,service,kubeconfig}_test.go

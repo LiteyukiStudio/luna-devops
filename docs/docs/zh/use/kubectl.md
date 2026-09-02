@@ -21,7 +21,7 @@ Luna DevOps 可以生成项目空间或应用范围的 kubeconfig。`kubectl` �
 chmod 600 "$HOME/.kube/luna-project.yaml"
 ```
 
-控制台一次创建一个 Context。需要撤销时，打开“账号设置 → kubectl 凭据”；可以查看 Context 元数据，但不能找回原 Token 或 kubeconfig。撤销后，已有文件也会失效。
+控制台一次创建一个 Context。需要查看或撤销时，打开“账号设置 → kubectl 凭据”；这里会列出当前账号创建的凭据，可按名称和状态筛选，没有凭据时也可从空状态返回项目空间。可以查看 Context 元数据，但不能找回原 Token 或 kubeconfig；撤销后，已有文件也会失效。
 
 ## 使用 Luna CLI 写入或合并
 

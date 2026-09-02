@@ -286,7 +286,7 @@ func TestHighFrequencyOperationsCarryExplicitSemanticMetadata(t *testing.T) {
 		"listProjects", "createProject", "getProject", "updateProject", "deleteProject",
 		"listProjectVolumes", "createProjectVolume", "getProjectVolume", "updateProjectVolume",
 		"deleteProjectVolume", "retryProjectVolumeOperation", "previewProjectVolumeDeletion",
-		"listRuntimeClusters", "listRuntimeClusterResources", "getDashboard", "listUsers",
+		"listRuntimeClusters", "listRuntimeClusterResources", "observeRuntimeClusterKubeGatewayStatus", "getDashboard", "listUsers",
 		"getBillingSummary", "listNotificationChannels", "webSearch", "fetchWebPage",
 		"listAppTemplates", "getAppTemplate",
 		"installAppTemplate",

@@ -30,6 +30,9 @@ func TestKubectlManagementOpenAPIContract(t *testing.T) {
 			"get": {operationID: "getRuntimeClusterKubeGateway", scopes: []string{"cluster:read"}},
 			"put": {operationID: "updateRuntimeClusterKubeGateway", scopes: []string{"cluster:manage"}},
 		},
+		"/api/v1/runtime/clusters/kube-gateway-status": {
+			"get": {operationID: "observeRuntimeClusterKubeGatewayStatus", scopes: []string{"cluster:read"}},
+		},
 	}
 
 	for path, methods := range want {
@@ -96,6 +99,14 @@ func TestKubectlOpenAPISensitiveAndProtocolBoundaries(t *testing.T) {
 		if _, allowed := PlatformOperation(operationID); allowed {
 			t.Errorf("kubectl boundary operation entered Agent catalog: %s", operationID)
 		}
+	}
+
+	statusOperation, allowed := PlatformOperation("observeRuntimeClusterKubeGatewayStatus")
+	if !allowed {
+		t.Fatal("sanitized read-only kubectl gateway status observation is missing from the Agent catalog")
+	}
+	if statusOperation.RequiresApproval || !reflect.DeepEqual(statusOperation.RequiredScopes, []string{"cluster:read"}) {
+		t.Fatalf("gateway status observation policy = %#v", statusOperation)
 	}
 }
 

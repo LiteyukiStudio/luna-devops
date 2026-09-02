@@ -92,6 +92,9 @@ Python：
 ```text
 cmd/api
 cmd/worker
+internal/api
+internal/api/<domain>api
+internal/api/transport
 internal/auth
 internal/project
 internal/application
@@ -116,6 +119,7 @@ web/src/i18n
 - `cmd/worker` 负责构建、部署、状态同步、证书申请、资源清理等异步任务。
 - 长耗时任务进入 worker，不在 HTTP 请求里同步执行。
 - Handler 只做参数解析、权限入口和响应；业务逻辑放 service；数据访问放 repository；外部系统调用放 provider。
+- `internal/api` 根目录只保留启动装配、全局中间件、路由组合、静态资源与跨领域 HTTP 基础设施；领域 Handler、DTO 和领域测试放入 `internal/api/<domain>api`，全路由/OpenAPI/跨领域集成测试可保留在根包。领域 API 包不得反向导入根 `internal/api`，也不得按 `handlers`、`types`、`helpers` 等技术类型建立无业务含义的目录。
 - 平台角色与项目角色必须复用 `internal/authz`、`web/src/lib/roles.ts` 和 OpenAPI 中的共享角色 schema，禁止在授权判断、输入校验和测试夹具中散落角色字面量。LLM 消息 role、资源 scope、Git owner 等同名字字段属于独立语义，不得混入授权角色常量。
 - 构建/部署阶段的用户配置字符串默认允许使用 GitHub Actions 风格变量；最终执行前必须通过后端统一变量渲染组件处理，禁止在各业务里手写零散替换逻辑。
 - 权限由后端最终判断，前端隐藏按钮只做体验优化。

@@ -88,7 +88,7 @@ func TestOAuthOpenAPITracksRuntimeTransportDTOs(t *testing.T) {
 }
 
 func TestOAuthRevocationOpenAPIDescribesRuntimeFamilyBoundary(t *testing.T) {
-	handlerPath := filepath.Join(apiRepositoryRoot(t), "internal", "api", "oauth_authorization_handlers.go")
+	handlerPath := filepath.Join(apiRepositoryRoot(t), "internal", "api", "identityapi", "oauth_authorization_handlers.go")
 	if !oauthRuntimeFunctionCalls(t, handlerPath, "RevokeOAuthToken", "revokeOAuthTokenFamily") {
 		t.Fatal("RevokeOAuthToken no longer delegates to revokeOAuthTokenFamily")
 	}

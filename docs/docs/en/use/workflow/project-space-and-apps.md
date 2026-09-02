@@ -1,8 +1,8 @@
 # Project Spaces and Applications
 
-## Choose the dashboard and project-space visibility
+## Dashboard and project-space visibility
 
-The dashboard and project-space list default to **Related to me**, aggregating only project spaces where the current account is a member and their related resources. This remains the default for platform administrators. Switch to **All** only for a platform-wide inventory, cross-project troubleshooting, or an explicit search for another project space. **All** never bypasses backend authorization.
+The dashboard is fixed to **Related to me**, aggregating only project spaces where the current account is a member and their related resources; it does not provide a platform-wide range switch. The project-space list also defaults to **Related to me**. Platform administrators switch that list to **All** only for a platform-wide inventory, cross-project troubleshooting, or an explicit search for another project space. **All** never bypasses backend authorization.
 
 ## Create a project space
 

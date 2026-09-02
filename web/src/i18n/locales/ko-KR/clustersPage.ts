@@ -23,6 +23,7 @@ const clustersPage = {
   defaultCluster: '기본 클러스터',
   runtimeCluster: '실행 클러스터',
   runtimeClustersTab: '실행 클러스터',
+  clusterActions: '{{name}} 작업',
   resourcePressure: '리소스 할당 압력',
   memoryShort: '메모리',
   metricsUnavailable: '메트릭 사용 불가',

@@ -1,14 +1,16 @@
 import type { KubeCredential, KubeCredentialBinding } from '@/api'
 import type { DataListColumn } from '@/components/common/data-list'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Eye, ShieldX } from 'lucide-react'
+import { Eye, FolderKanban, KeyRound, SearchX, ShieldX } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
 import { api } from '@/api'
 import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { DataList } from '@/components/common/data-list'
 import { EmptyState } from '@/components/common/empty-state'
+import { ErrorState } from '@/components/common/error-state'
 import { StatusBadge, StatusValueBadge } from '@/components/common/status-badge'
 import { formatAbsoluteDateTime } from '@/components/common/time-format'
 import { Button } from '@/components/ui/button'
@@ -45,6 +47,20 @@ export function KubeCredentialsPanel({ featureEnabled }: { featureEnabled: boole
     return <EmptyState description={t('kubectlAccess.featureDisabledDescription')} title={t('kubectlAccess.featureDisabledTitle')} variant="plain" />
   }
 
+  if (credentials.isError) {
+    return (
+      <div className="grid gap-3">
+        <ErrorState
+          description={t('kubectlAccess.credentials.loadFailedDescription')}
+          title={t('kubectlAccess.credentials.loadFailedTitle')}
+        />
+        <div>
+          <Button variant="outline" onClick={() => void credentials.refetch()}>{t('common.retry')}</Button>
+        </div>
+      </div>
+    )
+  }
+
   const columns: DataListColumn<KubeCredential>[] = [
     {
       key: 'name',
@@ -55,6 +71,7 @@ export function KubeCredentialsPanel({ featureEnabled }: { featureEnabled: boole
     {
       key: 'scopes',
       header: t('kubectlAccess.credentials.scopes'),
+      mobile: 'hidden',
       width: 'secondary',
       render: credential => (
         <div className="flex flex-wrap gap-1">
@@ -67,12 +84,14 @@ export function KubeCredentialsPanel({ featureEnabled }: { featureEnabled: boole
     {
       key: 'bindingCount',
       header: t('kubectlAccess.credentials.bindingCount'),
+      mobile: 'hidden',
       width: 'number',
       render: credential => credential.bindingCount,
     },
     {
       key: 'expiresAt',
       header: t('kubectlAccess.credentials.expiresAt'),
+      mobile: 'hidden',
       width: 'compact',
       render: credential => formatAbsoluteDateTime(credential.expiresAt),
     },
@@ -110,13 +129,34 @@ export function KubeCredentialsPanel({ featureEnabled }: { featureEnabled: boole
     },
   ]
 
+  const hasFilters = search.trim() !== '' || status !== ''
+  const showFilters = hasFilters || (credentials.data?.total ?? 0) > 0
+  const clearFilters = () => {
+    setPage(1)
+    setSearch('')
+    setStatus('')
+  }
+
   return (
     <>
       <DataList
         columns={columns}
-        emptyDescription={t('kubectlAccess.credentials.emptyDescription')}
-        emptyTitle={t('kubectlAccess.credentials.emptyTitle')}
+        emptyActions={hasFilters
+          ? <Button variant="outline" onClick={clearFilters}>{t('kubectlAccess.credentials.clearFilters')}</Button>
+          : (
+              <Button asChild variant="outline">
+                <Link to="/projects">
+                  <FolderKanban className="size-4" />
+                  {t('kubectlAccess.credentials.emptyAction')}
+                </Link>
+              </Button>
+            )}
+        emptyDescription={t(hasFilters ? 'kubectlAccess.credentials.filteredEmptyDescription' : 'kubectlAccess.credentials.emptyDescription')}
+        emptyIcon={hasFilters ? <SearchX className="size-5" /> : <KeyRound className="size-5" />}
+        emptyMode={hasFilters ? 'filtered' : 'actionable'}
+        emptyTitle={t(hasFilters ? 'kubectlAccess.credentials.filteredEmptyTitle' : 'kubectlAccess.credentials.emptyTitle')}
         items={credentials.data?.items ?? []}
+        loading={credentials.isLoading}
         pagination={{
           page: credentials.data?.page ?? page,
           pageSize: credentials.data?.pageSize ?? pageSize,
@@ -135,32 +175,34 @@ export function KubeCredentialsPanel({ featureEnabled }: { featureEnabled: boole
           },
         }}
         rowKey={credential => credential.id}
-        search={{
-          value: search,
-          placeholder: t('kubectlAccess.credentials.searchPlaceholder'),
-          onChange: (value) => {
-            setPage(1)
-            setSearch(value)
-          },
-        }}
-        toolbar={(
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm text-muted-foreground">{t('kubectlAccess.credentials.statusFilter')}</span>
-            <Select
-              className="h-9 w-40"
-              value={status}
-              onChange={(event) => {
+        search={showFilters
+          ? {
+              value: search,
+              placeholder: t('kubectlAccess.credentials.searchPlaceholder'),
+              onChange: (value) => {
                 setPage(1)
-                setStatus(event.target.value)
-              }}
-            >
-              <option value="">{t('kubectlAccess.credentials.statusAll')}</option>
-              <option value="active">{t('kubectlAccess.credentialStatuses.active')}</option>
-              <option value="expired">{t('kubectlAccess.credentialStatuses.expired')}</option>
-              <option value="revoked">{t('kubectlAccess.credentialStatuses.revoked')}</option>
-            </Select>
-          </div>
-        )}
+                setSearch(value)
+              },
+            }
+          : undefined}
+        toolbar={showFilters
+          ? (
+              <Select
+                aria-label={t('kubectlAccess.credentials.statusFilter')}
+                containerClassName="w-full sm:w-40 sm:flex-none"
+                value={status}
+                onChange={(event) => {
+                  setPage(1)
+                  setStatus(event.target.value)
+                }}
+              >
+                <option value="">{t('kubectlAccess.credentials.statusAll')}</option>
+                <option value="active">{t('kubectlAccess.credentialStatuses.active')}</option>
+                <option value="expired">{t('kubectlAccess.credentialStatuses.expired')}</option>
+                <option value="revoked">{t('kubectlAccess.credentialStatuses.revoked')}</option>
+              </Select>
+            )
+          : undefined}
       />
       <KubeCredentialBindingsDialog credential={selectedCredential} onOpenChange={open => !open && setSelectedCredential(null)} />
     </>
@@ -199,24 +241,28 @@ function KubeCredentialBindingsDialog({
     {
       key: 'projectId',
       header: t('kubectlAccess.bindings.project'),
+      mobile: 'hidden',
       width: 'secondary',
       render: binding => <code className="text-xs">{binding.projectId}</code>,
     },
     {
       key: 'runtimeClusterId',
       header: t('kubectlAccess.bindings.runtimeCluster'),
+      mobile: 'hidden',
       width: 'secondary',
       render: binding => <code className="text-xs">{binding.runtimeClusterId}</code>,
     },
     {
       key: 'applicationId',
       header: t('kubectlAccess.bindings.application'),
+      mobile: 'hidden',
       width: 'secondary',
       render: binding => binding.applicationId ? <code className="text-xs">{binding.applicationId}</code> : t('kubectlAccess.form.applicationAll'),
     },
     {
       key: 'createdAt',
       header: t('kubectlAccess.bindings.createdAt'),
+      mobile: 'hidden',
       width: 'compact',
       render: binding => formatAbsoluteDateTime(binding.createdAt),
     },
@@ -239,30 +285,45 @@ function KubeCredentialBindingsDialog({
           <DialogDescription>{t('kubectlAccess.bindings.description')}</DialogDescription>
         </DialogHeader>
         <div className="min-h-0 overflow-y-auto">
-          <DataList
-            columns={columns}
-            emptyDescription={t('kubectlAccess.bindings.emptyDescription')}
-            emptyTitle={t('kubectlAccess.bindings.emptyTitle')}
-            items={bindings.data?.items ?? []}
-            pagination={{
-              page: bindings.data?.page ?? page,
-              pageSize: bindings.data?.pageSize ?? pageSize,
-              pageSizeOptions: PAGE_SIZE_OPTIONS,
-              total: bindings.data?.total ?? 0,
-              totalPages: bindings.data?.totalPages ?? 0,
-              pageInfoLabel: t('pagination.pageInfo', {
-                page: bindings.data?.page ?? page,
-                totalPages: bindings.data?.totalPages ?? 0,
-                total: bindings.data?.total ?? 0,
-              }),
-              onPageChange: setPage,
-              onPageSizeChange: (nextPageSize) => {
-                setPage(1)
-                setPageSize(nextPageSize)
-              },
-            }}
-            rowKey={binding => binding.id}
-          />
+          {bindings.isError
+            ? (
+                <div className="grid gap-3">
+                  <ErrorState
+                    description={t('kubectlAccess.bindings.loadFailedDescription')}
+                    title={t('kubectlAccess.bindings.loadFailedTitle')}
+                  />
+                  <div>
+                    <Button size="sm" variant="outline" onClick={() => void bindings.refetch()}>{t('common.retry')}</Button>
+                  </div>
+                </div>
+              )
+            : (
+                <DataList
+                  columns={columns}
+                  emptyDescription={t('kubectlAccess.bindings.emptyDescription')}
+                  emptyTitle={t('kubectlAccess.bindings.emptyTitle')}
+                  items={bindings.data?.items ?? []}
+                  loading={bindings.isLoading}
+                  pagination={{
+                    page: bindings.data?.page ?? page,
+                    pageSize: bindings.data?.pageSize ?? pageSize,
+                    pageSizeOptions: PAGE_SIZE_OPTIONS,
+                    total: bindings.data?.total ?? 0,
+                    totalPages: bindings.data?.totalPages ?? 0,
+                    pageInfoLabel: t('pagination.pageInfo', {
+                      page: bindings.data?.page ?? page,
+                      totalPages: bindings.data?.totalPages ?? 0,
+                      total: bindings.data?.total ?? 0,
+                    }),
+                    onPageChange: setPage,
+                    onPageSizeChange: (nextPageSize) => {
+                      setPage(1)
+                      setPageSize(nextPageSize)
+                    },
+                  }}
+                  rowKey={binding => binding.id}
+                />
+              )}
         </div>
       </DialogContent>
     </Dialog>

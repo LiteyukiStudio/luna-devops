@@ -23,6 +23,7 @@ const clustersPage = {
   defaultCluster: '默认集群',
   runtimeCluster: '运行集群',
   runtimeClustersTab: '运行集群',
+  clusterActions: '{{name}} 的操作',
   resourcePressure: '资源分配压力',
   memoryShort: '内存',
   metricsUnavailable: '指标不可用',

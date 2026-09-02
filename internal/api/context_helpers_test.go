@@ -6,9 +6,7 @@ import (
 	"go/parser"
 	"go/token"
 	"net/http/httptest"
-	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -43,19 +41,11 @@ func TestRequestContextRejectsMissingContext(t *testing.T) {
 }
 
 func TestBusinessMethodsDoNotExposeOptionalContext(t *testing.T) {
-	entries, err := os.ReadDir(".")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, entry := range entries {
-		name := entry.Name()
-		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
-			continue
-		}
+	for _, path := range apiProductionGoFiles(t) {
 		fset := token.NewFileSet()
-		file, err := parser.ParseFile(fset, filepath.Clean(name), nil, 0)
+		file, err := parser.ParseFile(fset, filepath.Clean(path), nil, 0)
 		if err != nil {
-			t.Fatalf("parse %s: %v", name, err)
+			t.Fatalf("parse %s: %v", path, err)
 		}
 		for _, declaration := range file.Decls {
 			function, ok := declaration.(*ast.FuncDecl)

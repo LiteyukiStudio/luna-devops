@@ -215,6 +215,7 @@ func NewRouterWithStaticFSAndMetricsConfig(db *gorm.DB, staticFS fs.FS, httpMetr
 
 		v1.GET("/runtime/clusters", handlers.ListRuntimeClusters)
 		v1.GET("/runtime/clusters/pressure", handlers.ObserveRuntimeClusterPressure)
+		v1.GET("/runtime/clusters/kube-gateway-status", handlers.platformAdminMiddleware(), handlers.ObserveRuntimeClusterKubeGatewayStatus)
 		v1.POST("/runtime/clusters", handlers.CreateRuntimeCluster)
 		v1.PUT("/runtime/clusters/:clusterId", handlers.UpdateRuntimeCluster)
 		v1.DELETE("/runtime/clusters/:clusterId", handlers.DeleteRuntimeCluster)

@@ -1110,6 +1110,46 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "403":
           $ref: "#/components/responses/Forbidden"
+
+  /api/v1/runtime/clusters/kube-gateway-status:
+    get:
+      operationId: observeRuntimeClusterKubeGatewayStatus
+      x-luna-cli:
+        requiredScopes: ["cluster:read"]
+      tags: [KubectlAccess, Runtime]
+      summary: Observe current kubectl gateway status for runtime clusters
+      description: Platform administrators only. Returns non-cacheable live kubectl gateway observations for up to 100 active Kubernetes or K3s runtime clusters. Duplicate identifiers are removed while preserving request order; unknown, inactive, or unsupported cluster identifiers are omitted, and an individual observation failure is returned as unavailable without failing the batch.
+      x-luna-agent:
+        purpose: { zh: 批量查询一个或多个运行集群当前的 kubectl 网关实时状态，用于管理员确认网关是否已就绪。, en: Observe the live kubectl gateway status of one or more runtime clusters so a platform administrator can confirm gateway readiness. }
+        aliases: { zh: [查看 kubectl 网关状态, 批量检查集群网关, 查询网关就绪状态], en: [observe kubectl gateway status, check cluster gateways, query gateway readiness] }
+        avoidWhen: { zh: 修改网关配置时不要使用此工具；应使用 updateRuntimeClusterKubeGateway。查询普通集群状态或资源压力时也应使用对应观察接口。, en: Do not use this tool to change gateway configuration; use updateRuntimeClusterKubeGateway. Use the corresponding observation endpoint for general cluster health or resource pressure. }
+        preconditions: { zh: [当前用户是平台管理员, 先用 listRuntimeClusters 获取真实 clusterId, 每次最多传入 100 个 clusterId], en: [The current user is a platform administrator, Resolve authoritative clusterId values with listRuntimeClusters first, Pass at most 100 clusterId values per request] }
+        successEvidence: { zh: 按请求顺序返回每个已找到集群的 enabled、实时状态、稳定观察码和检查时间；单个集群失败时该项为 unavailable。, en: Returns enabled state, live status, a stable observation code, and check time for each found cluster in request order; a failed cluster observation is unavailable. }
+      parameters:
+        - name: clusterId
+          in: query
+          required: true
+          description: One to 100 active Kubernetes or K3s runtime cluster identifiers. Repeat the query parameter for multiple clusters.
+          style: form
+          explode: true
+          schema:
+            type: array
+            minItems: 1
+            maxItems: 100
+            items: { type: string, pattern: '^clu_' }
+      responses:
+        "200":
+          description: Current gateway observations in deduplicated request order; unknown, inactive, and unsupported identifiers are omitted.
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RuntimeClusterKubeGatewayStatusList" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
   /api/v1/git/providers:
     get:
       operationId: listGitProviders
@@ -12577,6 +12617,11 @@ components:
             - volume:import
             - volume:export
             - volume:delete
+    RuntimeClusterKubeGatewayRuleResponse:
+      allOf:
+        - $ref: "#/components/schemas/RuntimeClusterKubeGatewayRule"
+        - type: object
+          required: [subresources]
     RuntimeClusterKubeGatewayInput:
       type: object
       additionalProperties: false
@@ -12596,10 +12641,32 @@ components:
         extraResourceRules:
           type: array
           maxItems: 50
-          items: { $ref: "#/components/schemas/RuntimeClusterKubeGatewayRule" }
+          items: { $ref: "#/components/schemas/RuntimeClusterKubeGatewayRuleResponse" }
         status: { type: string, enum: [disabled, reconciling, ready, unavailable] }
         observationCode: { type: string }
         lastCheckedAt: { type: string, format: date-time }
+    RuntimeClusterKubeGatewayStatus:
+      type: object
+      additionalProperties: false
+      required: [clusterId, enabled, status, observationCode, lastCheckedAt]
+      properties:
+        clusterId: { type: string, pattern: '^clu_' }
+        enabled: { type: boolean, description: Current desired kubectl gateway enablement stored for this runtime cluster. }
+        status: { type: string, enum: [disabled, reconciling, ready, unavailable] }
+        observationCode:
+          type: string
+          enum: ['', kube_gateway.reconciling, kube_gateway.unavailable]
+          description: Stable observation code. Ready and disabled observations use an empty string.
+        lastCheckedAt: { type: string, format: date-time }
+    RuntimeClusterKubeGatewayStatusList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items: { $ref: "#/components/schemas/RuntimeClusterKubeGatewayStatus" }
     RuntimeClusterPressureLevel:
       type: string
       enum: [idle, light, moderate, heavy, full, unavailable]

@@ -6,9 +6,27 @@ import type {
   PaginatedResponse,
   PaginationParams,
   RuntimeClusterKubeGateway,
+  RuntimeClusterKubeGatewayRule,
   UpdateRuntimeClusterKubeGatewayInput,
 } from '../types'
 import { paginationQuery, request } from '../core'
+
+type RuntimeClusterKubeGatewayWire = Omit<RuntimeClusterKubeGateway, 'extraResourceRules'> & {
+  extraResourceRules?: Array<Omit<RuntimeClusterKubeGatewayRule, 'subresources'> & {
+    subresources?: string[] | null
+  }> | null
+}
+
+function normalizeRuntimeClusterKubeGateway(response: RuntimeClusterKubeGatewayWire): RuntimeClusterKubeGateway {
+  const rules = Array.isArray(response.extraResourceRules) ? response.extraResourceRules : []
+  return {
+    ...response,
+    extraResourceRules: rules.map(rule => ({
+      ...rule,
+      subresources: Array.isArray(rule.subresources) ? rule.subresources : [],
+    })),
+  }
+}
 
 export const kubectlApi = {
   createKubeCredential: (payload: CreateKubeCredentialInput) =>
@@ -24,7 +42,9 @@ export const kubectlApi = {
   revokeKubeCredential: (credentialId: string) =>
     request<void>(`/kube-credentials/${encodeURIComponent(credentialId)}`, { method: 'DELETE' }),
   getRuntimeClusterKubeGateway: (clusterId: string) =>
-    request<RuntimeClusterKubeGateway>(`/runtime/clusters/${encodeURIComponent(clusterId)}/kube-gateway`, { cache: 'no-store' }),
+    request<RuntimeClusterKubeGatewayWire>(`/runtime/clusters/${encodeURIComponent(clusterId)}/kube-gateway`, { cache: 'no-store' })
+      .then(normalizeRuntimeClusterKubeGateway),
   updateRuntimeClusterKubeGateway: (clusterId: string, payload: UpdateRuntimeClusterKubeGatewayInput) =>
-    request<RuntimeClusterKubeGateway>(`/runtime/clusters/${encodeURIComponent(clusterId)}/kube-gateway`, { method: 'PUT', body: JSON.stringify(payload) }),
+    request<RuntimeClusterKubeGatewayWire>(`/runtime/clusters/${encodeURIComponent(clusterId)}/kube-gateway`, { method: 'PUT', body: JSON.stringify(payload) })
+      .then(normalizeRuntimeClusterKubeGateway),
 }

@@ -37,11 +37,13 @@ const DEFAULT_TOKEN_FORM: TokenFormInput = {
   expiresInDays: 30,
 }
 
-export function AccessTokensPanel() {
+export function AccessTokensPanel({ createDialogOpen, onCreateDialogOpenChange }: {
+  createDialogOpen: boolean
+  onCreateDialogOpenChange: (open: boolean) => void
+}) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const [createdToken, setCreatedToken] = useState('')
-  const [dialogOpen, setDialogOpen] = useState(false)
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
   const [search, setSearch] = useState('')
@@ -72,7 +74,7 @@ export function AccessTokensPanel() {
       setCreatedToken(result.accessToken)
       toast.success(t('accessTokens.created'))
       form.reset(DEFAULT_TOKEN_FORM)
-      setDialogOpen(false)
+      onCreateDialogOpenChange(false)
       setPage(1)
       queryClient.invalidateQueries({ queryKey: ['access-tokens'] })
     },
@@ -147,17 +149,6 @@ export function AccessTokensPanel() {
 
   return (
     <div className="grid items-start gap-4">
-      <div className="flex justify-end">
-        <Button
-          onClick={() => {
-            form.reset(DEFAULT_TOKEN_FORM)
-            setDialogOpen(true)
-          }}
-        >
-          <Plus size={16} />
-          {t('accessTokens.createTitle')}
-        </Button>
-      </div>
       {createdToken && (
         <Card className="rounded-md border border-border bg-muted p-3">
           <p className="mb-2 text-xs font-medium text-muted-foreground">{t('accessTokens.oneTime')}</p>
@@ -201,9 +192,9 @@ export function AccessTokensPanel() {
         }}
       />
       <Dialog
-        open={dialogOpen}
+        open={createDialogOpen}
         onOpenChange={(open) => {
-          setDialogOpen(open)
+          onCreateDialogOpenChange(open)
           if (!open)
             form.reset(DEFAULT_TOKEN_FORM)
         }}

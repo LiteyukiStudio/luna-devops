@@ -65,6 +65,7 @@ describe('data list behavior', () => {
       />,
     )
 
+    expect(screen.getByRole('textbox', { name: 'Search projects' })).toBeVisible()
     fireEvent.change(screen.getByPlaceholderText('Search projects'), { target: { value: 'demo' } })
     expect(onSearch).toHaveBeenCalledWith('demo')
     expect(screen.getByRole('button', { name: 'Sort projects' })).toBeVisible()

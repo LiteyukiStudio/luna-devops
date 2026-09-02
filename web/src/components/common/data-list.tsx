@@ -357,6 +357,7 @@ export function DataList<T>({
             >
               {search && (
                 <Input
+                  aria-label={search.placeholder}
                   className="h-9 w-full sm:w-64"
                   placeholder={search.placeholder}
                   value={search.value}

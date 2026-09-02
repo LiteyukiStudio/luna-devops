@@ -4,26 +4,19 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
 func TestRequestDatabaseCallsRequireContext(t *testing.T) {
-	entries, err := os.ReadDir(".")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, entry := range entries {
-		name := entry.Name()
-		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") || name == "handlers.go" {
+	for _, path := range apiProductionGoFiles(t) {
+		if filepath.Base(path) == "handlers.go" && filepath.Dir(path) == apiSourceRoot(t) {
 			continue
 		}
 		fset := token.NewFileSet()
-		file, err := parser.ParseFile(fset, filepath.Clean(name), nil, 0)
+		file, err := parser.ParseFile(fset, filepath.Clean(path), nil, 0)
 		if err != nil {
-			t.Fatalf("parse %s: %v", name, err)
+			t.Fatalf("parse %s: %v", path, err)
 		}
 		ast.Inspect(file, func(node ast.Node) bool {
 			switch value := node.(type) {

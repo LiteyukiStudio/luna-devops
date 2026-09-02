@@ -1,7 +1,7 @@
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import i18next from 'i18next'
-import { Link2, Save, Unlink } from 'lucide-react'
+import { Link2, Plus, Save, Unlink } from 'lucide-react'
 import { motion } from 'motion/react'
 import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
@@ -42,10 +42,12 @@ const profileSchema = z.object({
 })
 
 type ProfileForm = z.infer<typeof profileSchema>
+type AccountCreateDialog = 'access-token' | 'oauth-application' | null
 
 export function AccountPage() {
   const { t } = useTranslation()
   const [activeTab, setActiveTab] = useState('profile')
+  const [createDialog, setCreateDialog] = useState<AccountCreateDialog>(null)
   const meta = useQuery({ queryKey: ['api-meta'], queryFn: api.getAPIMeta, staleTime: 5 * 60 * 1000 })
   const kubectlAccessEnabled = meta.data?.features?.kubectlGateway ?? true
   const effectiveActiveTab = !kubectlAccessEnabled && activeTab === 'kubectl-credentials' ? 'profile' : activeTab
@@ -60,19 +62,44 @@ export function AccountPage() {
           </div>
         )
       case 'tokens':
-        return <AccessTokensPanel />
+        return (
+          <AccessTokensPanel
+            createDialogOpen={createDialog === 'access-token'}
+            onCreateDialogOpenChange={open => setCreateDialog(open ? 'access-token' : null)}
+          />
+        )
       case 'kubectl-credentials':
         return <KubeCredentialsPanel featureEnabled={kubectlAccessEnabled} />
       case 'notifications':
         return <AccountNotificationsPanel />
       case 'oauth-applications':
-        return <OAuthApplicationsPanel />
+        return (
+          <OAuthApplicationsPanel
+            createDialogOpen={createDialog === 'oauth-application'}
+            onCreateDialogOpenChange={open => setCreateDialog(open ? 'oauth-application' : null)}
+          />
+        )
       case 'oauth-grants':
         return <OAuthGrantsPanel />
       default:
         return <ProfilePanel />
     }
   })()
+  const activeTools = effectiveActiveTab === 'tokens'
+    ? (
+        <Button type="button" onClick={() => setCreateDialog('access-token')}>
+          <Plus size={16} />
+          {t('accessTokens.createTitle')}
+        </Button>
+      )
+    : effectiveActiveTab === 'oauth-applications'
+      ? (
+          <Button type="button" onClick={() => setCreateDialog('oauth-application')}>
+            <Plus size={16} />
+            {t('oauthApps.createApplication')}
+          </Button>
+        )
+      : null
 
   return (
     <ContentTabs
@@ -86,8 +113,12 @@ export function AccountPage() {
         { value: 'oauth-applications', label: t('oauthApps.applicationsTab') },
         { value: 'oauth-grants', label: t('oauthApps.grantsTab') },
       ]}
+      tools={activeTools}
       value={effectiveActiveTab}
-      onValueChange={setActiveTab}
+      onValueChange={(nextTab) => {
+        setCreateDialog(null)
+        setActiveTab(nextTab)
+      }}
     >
       <TabsContent value={effectiveActiveTab}>
         <motion.div

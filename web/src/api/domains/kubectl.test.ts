@@ -81,4 +81,31 @@ describe('kubectl API contract', () => {
       body: JSON.stringify({ enabled: true, extraResourceRules: [] }),
     })
   })
+
+  it('normalizes nullable gateway rule arrays at the API boundary', async () => {
+    const fetchMock = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({ enabled: false, extraResourceRules: null, status: 'disabled', observationCode: '' }))
+      .mockResolvedValueOnce(jsonResponse({
+        enabled: true,
+        extraResourceRules: [{
+          action: 'project:read',
+          apiGroup: 'example.io',
+          apiVersion: 'v1',
+          resource: 'widgets',
+          verbs: ['get'],
+        }],
+        status: 'reconciling',
+        observationCode: '',
+      }, 202))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const emptyGateway = await kubectlApi.getRuntimeClusterKubeGateway('clu_empty')
+    const gatewayWithoutSubresources = await kubectlApi.updateRuntimeClusterKubeGateway('clu_rule', {
+      enabled: true,
+      extraResourceRules: [],
+    })
+
+    expect(emptyGateway.extraResourceRules).toEqual([])
+    expect(gatewayWithoutSubresources.extraResourceRules[0]?.subresources).toEqual([])
+  })
 })

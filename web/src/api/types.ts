@@ -1823,8 +1823,16 @@ export interface RuntimeClusterKubeGateway {
   enabled: boolean
   extraResourceRules: RuntimeClusterKubeGatewayRule[]
   status: 'disabled' | 'reconciling' | 'ready' | 'unavailable' | string
-  observationCode: string
+  observationCode?: string
   lastCheckedAt?: string | null
+}
+
+export interface RuntimeClusterKubeGatewayStatus {
+  clusterId: string
+  enabled: boolean
+  status: 'disabled' | 'reconciling' | 'ready' | 'unavailable' | string
+  observationCode: string
+  lastCheckedAt: string
 }
 
 export interface UpdateRuntimeClusterKubeGatewayInput {

@@ -1,7 +1,6 @@
 import type { DashboardOverview } from '@/api'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import i18next from '@/i18n'
@@ -9,11 +8,6 @@ import { DashboardPage } from './DashboardPage'
 
 const mocks = vi.hoisted(() => ({
   getDashboard: vi.fn(),
-  session: { user: { role: 'user' } },
-}))
-
-vi.mock('@/app/session-context', () => ({
-  useSession: () => mocks.session,
 }))
 
 vi.mock('@/api', async (importOriginal) => {
@@ -30,7 +24,6 @@ vi.mock('@/api', async (importOriginal) => {
 describe('dashboard page', () => {
   beforeEach(async () => {
     vi.clearAllMocks()
-    mocks.session.user.role = 'user'
     await i18next.changeLanguage('en-US')
     mocks.getDashboard.mockResolvedValue(dashboardOverviewFixture())
   })
@@ -66,19 +59,13 @@ describe('dashboard page', () => {
     expect(screen.getByText('Create or join a project space to continue work from here.')).toBeInTheDocument()
   })
 
-  it('loads an explicit all range for administrators and preserves it across dashboard links', async () => {
-    const user = userEvent.setup()
-    mocks.session.user.role = 'platform_admin'
-
+  it('keeps the dashboard related when a legacy all range remains in the URL', async () => {
     renderPage(['/dashboard?visibility=all'])
 
-    await waitFor(() => expect(mocks.getDashboard).toHaveBeenCalledWith('all'))
-    expect(await screen.findByRole('combobox', { name: 'View range' })).toHaveValue('all')
-    expect(screen.getByRole('link', { name: 'View all events' })).toHaveAttribute('href', '/events?visibility=all')
-    expect(screen.getByRole('link', { name: /^Registries/ })).toHaveAttribute('href', '/registries?visibility=all')
-
-    await user.selectOptions(screen.getByRole('combobox', { name: 'View range' }), 'related')
     await waitFor(() => expect(mocks.getDashboard).toHaveBeenCalledWith('related'))
+    expect(screen.queryByRole('combobox', { name: 'View range' })).not.toBeInTheDocument()
+    expect(await screen.findByRole('link', { name: 'View all events' })).toHaveAttribute('href', '/events?visibility=related')
+    expect(screen.getByRole('link', { name: /^Registries/ })).toHaveAttribute('href', '/registries?visibility=related')
   })
 })
 

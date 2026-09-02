@@ -4,6 +4,8 @@ import (
 	"time"
 )
 
+const SystemComponentGatewayTrafficProbe = "gateway-traffic-probe"
+
 type SystemComponentInstallation struct {
 	ID                 string     `gorm:"primaryKey" json:"id"`
 	ComponentID        string     `gorm:"uniqueIndex:idx_system_component_cluster;index;not null" json:"componentId"`

@@ -23,6 +23,7 @@ const clustersPage = {
   defaultCluster: 'Default cluster',
   runtimeCluster: 'Runtime cluster',
   runtimeClustersTab: 'Runtime clusters',
+  clusterActions: 'Actions for {{name}}',
   resourcePressure: 'Resource pressure',
   memoryShort: 'Memory',
   metricsUnavailable: 'Unavailable',
