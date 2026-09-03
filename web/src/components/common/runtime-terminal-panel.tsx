@@ -5,6 +5,11 @@ import { useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { releaseRuntimeTerminalUrl } from '@/api'
 import { createTracedWebSocket } from '@/lib/telemetry'
+import {
+  encodeRuntimeTerminalInput,
+  parseRuntimeTerminalControl,
+  RUNTIME_TERMINAL_WEBSOCKET_SUBPROTOCOL,
+} from './runtime-terminal-protocol'
 import '@xterm/xterm/css/xterm.css'
 
 export function RuntimeTerminalPanel({
@@ -80,7 +85,7 @@ export function RuntimeTerminalPanel({
 
     const dataSubscription = terminal.onData((data) => {
       if (socket?.readyState === WebSocket.OPEN)
-        socket.send(data)
+        socket.send(encodeRuntimeTerminalInput(data))
     })
     const resizeObserver = new ResizeObserver(fitAndResize)
     resizeObserver.observe(terminalRef.current)
@@ -91,7 +96,10 @@ export function RuntimeTerminalPanel({
     }
     const handleMessage = (event: MessageEvent) => {
       if (typeof event.data === 'string') {
-        terminal.write(event.data)
+        const control = parseRuntimeTerminalControl(event.data)
+        terminal.options.disableStdin = true
+        if (!control)
+          socket?.close(1002, 'invalid terminal control message')
         return
       }
       terminal.write(new Uint8Array(event.data))
@@ -105,7 +113,7 @@ export function RuntimeTerminalPanel({
       terminal.writeln(t('deploymentsPage.webConsoleConnectionFailed'))
     }
 
-    socket = createTracedWebSocket(terminalSocketUrl, undefined, 'runtime.terminal.websocket')
+    socket = createTracedWebSocket(terminalSocketUrl, RUNTIME_TERMINAL_WEBSOCKET_SUBPROTOCOL, 'runtime.terminal.websocket')
     socket.binaryType = 'arraybuffer'
     socket.addEventListener('open', handleOpen)
     socket.addEventListener('message', handleMessage)

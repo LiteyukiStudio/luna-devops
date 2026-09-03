@@ -27,6 +27,22 @@ luna project get-projects --help
 
 遇到连接、认证或版本问题时先运行 `luna doctor`。
 
+## 进入 Release 交互终端
+
+需要在运行容器中交互排障时，使用 OAuth 登录并执行：
+
+```bash
+luna release exec projectId=prj_example releaseId=rel_example
+luna release exec projectId=prj_example releaseId=rel_example container=api
+```
+
+连接建立后，本地终端会直接进入 Release 当前工作负载容器的 Shell。执行 `exit`
+或按 `Ctrl-D` 会结束远端会话并恢复本地终端。`release terminal` 是同一人工命令的
+别名。
+
+该命令需要交互式 TTY、`deployment:exec` Scope、相应项目角色，并要求项目空间和
+部署配置允许运行终端访问。它不会下发集群凭据，也不能在脚本或 Agent 模式中运行。
+
 ## Scope 与项目角色
 
 CLI 帮助中的“所需 Scope”来自平台发布的 OpenAPI 契约。OAuth 登录签发的 Scope 是凭证能力上限，不会提升账号的平台角色或项目空间角色；普通项目成员访问项目资源时，凭证 Scope 和项目角色必须同时允许，平台管理员也不能绕过凭证 Scope。

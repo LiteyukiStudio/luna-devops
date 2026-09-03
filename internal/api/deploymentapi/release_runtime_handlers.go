@@ -2,19 +2,19 @@ package deploymentapi
 
 import (
 	"context"
-	"encoding/json"
 	"io"
 	"net/http"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
+	transportapi "github.com/LiteyukiStudio/devops/internal/api/transport"
 	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	kubeprovider "github.com/LiteyukiStudio/devops/internal/provider/kubernetes"
 	"github.com/LiteyukiStudio/devops/internal/runtimeaccess"
 	"github.com/gin-gonic/gin"
-	"github.com/gorilla/websocket"
 )
 
 func (h *Handlers) GetReleaseRuntimeLogs(ctx *gin.Context) {
@@ -105,6 +105,10 @@ func (h *Handlers) ExecReleaseRuntimeCommand(ctx *gin.Context) {
 }
 
 func (h *Handlers) StreamReleaseRuntimeTerminal(ctx *gin.Context) {
+	if !transportapi.RuntimeTerminalSubprotocolRequested(ctx.Request) {
+		writeErrorCode(ctx, http.StatusBadRequest, "runtime_terminal.protocol_required", "terminal WebSocket requires the luna.devops.terminal.v1 subprotocol")
+		return
+	}
 	ticket := strings.TrimSpace(ctx.Query("ticket"))
 	if !requireRuntimeTerminalTicketForBearer(ctx, ticket) {
 		return
@@ -183,15 +187,7 @@ func (h *Handlers) StreamReleaseRuntimeTerminal(ctx *gin.Context) {
 			return
 		}
 	}
-	upgrader := websocket.Upgrader{
-		CheckOrigin: func(request *http.Request) bool {
-			origin := strings.TrimSpace(request.Header.Get("Origin"))
-			if origin == "" {
-				return true
-			}
-			return h.host.AllowedOrigin(origin)
-		},
-	}
+	upgrader := transportapi.RuntimeTerminalUpgrader(h.host.AllowedOrigin)
 	conn, err := upgrader.Upgrade(ctx.Writer, ctx.Request, nil)
 	if err != nil {
 		h.auditWithContext(user.ID, "release_runtime.terminal", release.ID, false, err.Error(), ctx.Request.Context())
@@ -204,38 +200,47 @@ func (h *Handlers) StreamReleaseRuntimeTerminal(ctx *gin.Context) {
 	stdinReader, stdinWriter := io.Pipe()
 	defer stdinReader.Close()
 	defer stdinWriter.Close()
-	sizeQueue := newRuntimeTerminalSizeQueue()
-	wsWriter := &runtimeTerminalWebSocketWriter{conn: conn}
-	authorizationRevoked, authorizationActive := h.monitorContinuousAuthorization(sessionCtx, authorization, func(checkCtx context.Context, currentUser model.User) bool {
+	sizeQueue := transportapi.NewRuntimeTerminalSizeQueue()
+	defer sizeQueue.Close()
+	terminalSocket := transportapi.NewRuntimeTerminalWebSocket(conn)
+	var authorizationRevoked atomic.Bool
+	_, authorizationActive := h.monitorContinuousAuthorization(sessionCtx, authorization, func(checkCtx context.Context, currentUser model.User) bool {
 		return h.releaseRuntimeTerminalAuthorizationAllowed(checkCtx, currentUser, reference)
-	}, cancel)
+	}, func() {
+		authorizationRevoked.Store(true)
+		cancel()
+	})
 	if !authorizationActive {
+		_ = terminalSocket.CloseAuthorizationRevoked()
 		h.auditWithContext(user.ID, "release_runtime.terminal", release.ID, false, "authorization expired or was revoked", ctx.Request.Context())
 		return
 	}
 
-	go h.readRuntimeTerminalMessages(conn, stdinWriter, sizeQueue, cancel)
-	err = client.RuntimeTerminal(sessionCtx, kubeprovider.RuntimeTerminalOptions{
+	inputDone := terminalSocket.PumpInput(stdinWriter, sizeQueue, cancel)
+	result, streamErr := client.RuntimeTerminal(sessionCtx, kubeprovider.RuntimeTerminalOptions{
 		Namespace:          namespace,
 		DeploymentTargetID: target.ID,
 		Container:          strings.TrimSpace(ctx.Query("container")),
 		Stdin:              stdinReader,
-		Stdout:             wsWriter,
+		Stdout:             terminalSocket,
 		SizeQueue:          sizeQueue,
 	})
-	if err != nil && sessionCtx.Err() == nil {
-		_, _ = wsWriter.Write(terminalDisconnectedMessage(ctx, err.Error()))
-		h.auditWithContext(user.ID, "release_runtime.terminal", release.ID, false, err.Error(), ctx.Request.Context())
-		return
-	}
-	select {
-	case <-authorizationRevoked:
+	end := transportapi.FinishRuntimeTerminal(terminalSocket, result.ExitCode, streamErr, sessionCtx.Err(), authorizationRevoked.Load(), inputDone)
+	switch end {
+	case transportapi.RuntimeTerminalEndAuthorizationLost:
 		h.auditWithContext(user.ID, "release_runtime.terminal", release.ID, false, "authorization expired or was revoked", ctx.Request.Context())
 		return
-	default:
-	}
-	if sessionCtx.Err() == context.DeadlineExceeded {
+	case transportapi.RuntimeTerminalEndAuthorizationExpiry:
 		h.auditWithContext(user.ID, "release_runtime.terminal", release.ID, false, "authorization deadline reached", ctx.Request.Context())
+		return
+	case transportapi.RuntimeTerminalEndInternalError:
+		h.auditWithContext(user.ID, "release_runtime.terminal", release.ID, false, streamErr.Error(), ctx.Request.Context())
+		return
+	case transportapi.RuntimeTerminalEndProtocolError:
+		h.auditWithContext(user.ID, "release_runtime.terminal", release.ID, false, "terminal protocol error", ctx.Request.Context())
+		return
+	case transportapi.RuntimeTerminalEndClientDisconnected:
+		h.auditWithContext(user.ID, "release_runtime.terminal", release.ID, false, "terminal client disconnected", ctx.Request.Context())
 		return
 	}
 	h.auditWithContext(user.ID, "release_runtime.terminal", release.ID, true, strings.TrimSpace(ctx.Query("container")), ctx.Request.Context())
@@ -300,38 +305,6 @@ func (h *Handlers) releaseRuntimeTerminalProjectForUser(ctx *gin.Context, user m
 		return model.Project{}, false
 	}
 	return project, true
-}
-
-func (h *Handlers) readRuntimeTerminalMessages(conn *websocket.Conn, stdin *io.PipeWriter, sizeQueue *runtimeTerminalSizeQueue, cancel context.CancelFunc) {
-	defer cancel()
-	defer stdin.Close()
-	for {
-		messageType, data, err := conn.ReadMessage()
-		if err != nil {
-			return
-		}
-		data, isInput := runtimeTerminalInputPayload(messageType, data, sizeQueue)
-		if !isInput {
-			continue
-		}
-		if _, err := stdin.Write(data); err != nil {
-			return
-		}
-	}
-}
-
-func runtimeTerminalInputPayload(messageType int, data []byte, sizeQueue *runtimeTerminalSizeQueue) ([]byte, bool) {
-	if len(data) == 0 || (messageType != websocket.TextMessage && messageType != websocket.BinaryMessage) {
-		return nil, false
-	}
-	if messageType == websocket.TextMessage {
-		var message runtimeTerminalClientMessage
-		if err := json.Unmarshal(data, &message); err == nil && message.Type == "resize" {
-			sizeQueue.Push(message.Cols, message.Rows)
-			return nil, false
-		}
-	}
-	return data, true
 }
 
 func (h *Handlers) releaseRuntimeClient(ctx *gin.Context, release model.Release) (*kubeprovider.Client, string, model.DeploymentTarget, bool) {

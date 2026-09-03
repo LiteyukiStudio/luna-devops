@@ -218,16 +218,16 @@ func runtimeExecExitCode(err error) (int, bool) {
 	return exitError.ExitStatus(), true
 }
 
-func (c *Client) RuntimeTerminal(ctx context.Context, options RuntimeTerminalOptions) error {
+func (c *Client) RuntimeTerminal(ctx context.Context, options RuntimeTerminalOptions) (RuntimeTerminalResult, error) {
 	if c.restConfig == nil {
-		return fmt.Errorf("runtime terminal requires a REST config")
+		return RuntimeTerminalResult{}, fmt.Errorf("runtime terminal requires a REST config")
 	}
 	if options.Stdin == nil || options.Stdout == nil {
-		return fmt.Errorf("runtime terminal streams are required")
+		return RuntimeTerminalResult{}, fmt.Errorf("runtime terminal streams are required")
 	}
 	pod, container, err := c.runtimePod(ctx, options.Namespace, options.DeploymentTargetID, options.Container)
 	if err != nil {
-		return err
+		return RuntimeTerminalResult{}, err
 	}
 	req := c.client.CoreV1().RESTClient().Post().
 		Resource("pods").
@@ -244,27 +244,28 @@ func (c *Client) RuntimeTerminal(ctx context.Context, options RuntimeTerminalOpt
 		}, scheme.ParameterCodec)
 	executor, err := remotecommand.NewSPDYExecutor(c.restConfig, "POST", req.URL())
 	if err != nil {
-		return err
+		return RuntimeTerminalResult{}, err
 	}
-	return executor.StreamWithContext(ctx, remotecommand.StreamOptions{
+	streamErr := executor.StreamWithContext(ctx, remotecommand.StreamOptions{
 		Stdin:             options.Stdin,
 		Stdout:            options.Stdout,
 		Stderr:            options.Stdout,
 		Tty:               true,
 		TerminalSizeQueue: options.SizeQueue,
 	})
+	return runtimeTerminalResult(streamErr)
 }
 
-func (c *Client) PodTerminal(ctx context.Context, options PodTerminalOptions) error {
+func (c *Client) PodTerminal(ctx context.Context, options PodTerminalOptions) (RuntimeTerminalResult, error) {
 	if c.restConfig == nil {
-		return fmt.Errorf("pod terminal requires a REST config")
+		return RuntimeTerminalResult{}, fmt.Errorf("pod terminal requires a REST config")
 	}
 	if options.Stdin == nil || options.Stdout == nil {
-		return fmt.Errorf("pod terminal streams are required")
+		return RuntimeTerminalResult{}, fmt.Errorf("pod terminal streams are required")
 	}
 	pod, container, err := c.namedPod(ctx, options.Namespace, options.PodName, options.Container)
 	if err != nil {
-		return err
+		return RuntimeTerminalResult{}, err
 	}
 	req := c.client.CoreV1().RESTClient().Post().
 		Resource("pods").
@@ -281,15 +282,27 @@ func (c *Client) PodTerminal(ctx context.Context, options PodTerminalOptions) er
 		}, scheme.ParameterCodec)
 	executor, err := remotecommand.NewSPDYExecutor(c.restConfig, "POST", req.URL())
 	if err != nil {
-		return err
+		return RuntimeTerminalResult{}, err
 	}
-	return executor.StreamWithContext(ctx, remotecommand.StreamOptions{
+	streamErr := executor.StreamWithContext(ctx, remotecommand.StreamOptions{
 		Stdin:             options.Stdin,
 		Stdout:            options.Stdout,
 		Stderr:            options.Stdout,
 		Tty:               true,
 		TerminalSizeQueue: options.SizeQueue,
 	})
+	return runtimeTerminalResult(streamErr)
+}
+
+func runtimeTerminalResult(err error) (RuntimeTerminalResult, error) {
+	if err == nil {
+		return RuntimeTerminalResult{ExitCode: 0}, nil
+	}
+	exitCode, exited := runtimeExecExitCode(err)
+	if exited {
+		return RuntimeTerminalResult{ExitCode: exitCode}, nil
+	}
+	return RuntimeTerminalResult{}, err
 }
 
 func (c *Client) namedPod(ctx context.Context, namespace string, podName string, container string) (corev1.Pod, string, error) {

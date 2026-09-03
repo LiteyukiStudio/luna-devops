@@ -6,14 +6,15 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"time"
 
+	transportapi "github.com/LiteyukiStudio/devops/internal/api/transport"
 	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	kubeprovider "github.com/LiteyukiStudio/devops/internal/provider/kubernetes"
 	"github.com/LiteyukiStudio/devops/internal/runtimecluster"
 	"github.com/gin-gonic/gin"
-	"github.com/gorilla/websocket"
 )
 
 func (h *Handlers) ListRuntimeClusterResources(ctx *gin.Context) {
@@ -204,6 +205,10 @@ func (h *Handlers) ListRuntimeClusterResourceEvents(ctx *gin.Context) {
 }
 
 func (h *Handlers) StreamRuntimeClusterPodTerminal(ctx *gin.Context) {
+	if !transportapi.RuntimeTerminalSubprotocolRequested(ctx.Request) {
+		writeErrorCode(ctx, http.StatusBadRequest, "runtime_terminal.protocol_required", "terminal WebSocket requires the luna.devops.terminal.v1 subprotocol")
+		return
+	}
 	ticket := strings.TrimSpace(ctx.Query("ticket"))
 	if !requireRuntimeTerminalTicketForBearer(ctx, ticket) {
 		return
@@ -259,15 +264,7 @@ func (h *Handlers) StreamRuntimeClusterPodTerminal(ctx *gin.Context) {
 			return
 		}
 	}
-	upgrader := websocket.Upgrader{
-		CheckOrigin: func(request *http.Request) bool {
-			origin := strings.TrimSpace(request.Header.Get("Origin"))
-			if origin == "" {
-				return true
-			}
-			return h.host.AllowedOrigin(origin)
-		},
-	}
+	upgrader := transportapi.RuntimeTerminalUpgrader(h.host.AllowedOrigin)
 	conn, err := upgrader.Upgrade(ctx.Writer, ctx.Request, nil)
 	if err != nil {
 		h.auditWithContext(user.ID, "runtime_cluster.pod_terminal", cluster.ID+":"+snapshot.Namespace+"/"+snapshot.Name, false, err.Error(), ctx.Request.Context())
@@ -280,39 +277,48 @@ func (h *Handlers) StreamRuntimeClusterPodTerminal(ctx *gin.Context) {
 	stdinReader, stdinWriter := io.Pipe()
 	defer stdinReader.Close()
 	defer stdinWriter.Close()
-	sizeQueue := newRuntimeTerminalSizeQueue()
-	wsWriter := &runtimeTerminalWebSocketWriter{conn: conn}
-	authorizationRevoked, authorizationActive := h.monitorContinuousAuthorization(sessionCtx, authorization, func(checkCtx context.Context, currentUser model.User) bool {
+	sizeQueue := transportapi.NewRuntimeTerminalSizeQueue()
+	defer sizeQueue.Close()
+	terminalSocket := transportapi.NewRuntimeTerminalWebSocket(conn)
+	var authorizationRevoked atomic.Bool
+	_, authorizationActive := h.monitorContinuousAuthorization(sessionCtx, authorization, func(checkCtx context.Context, currentUser model.User) bool {
 		return h.runtimeClusterPodTerminalAuthorizationAllowed(checkCtx, currentUser, client, reference)
-	}, cancel)
+	}, func() {
+		authorizationRevoked.Store(true)
+		cancel()
+	})
 	if !authorizationActive {
+		_ = terminalSocket.CloseAuthorizationRevoked()
 		h.auditWithContext(user.ID, "runtime_cluster.pod_terminal", cluster.ID+":"+snapshot.Namespace+"/"+snapshot.Name, false, "authorization expired or was revoked", ctx.Request.Context())
 		return
 	}
 
-	go h.readRuntimeTerminalMessages(conn, stdinWriter, sizeQueue, cancel)
-	err = client.PodTerminal(sessionCtx, kubeprovider.PodTerminalOptions{
+	inputDone := terminalSocket.PumpInput(stdinWriter, sizeQueue, cancel)
+	result, streamErr := client.PodTerminal(sessionCtx, kubeprovider.PodTerminalOptions{
 		Namespace: snapshot.Namespace,
 		PodName:   snapshot.Name,
 		Container: strings.TrimSpace(ctx.Query("container")),
 		Stdin:     stdinReader,
-		Stdout:    wsWriter,
+		Stdout:    terminalSocket,
 		SizeQueue: sizeQueue,
 	})
 	resourceID := cluster.ID + ":" + snapshot.Namespace + "/" + snapshot.Name
-	if err != nil && sessionCtx.Err() == nil {
-		_, _ = wsWriter.Write(terminalDisconnectedMessage(ctx, err.Error()))
-		h.auditWithContext(user.ID, "runtime_cluster.pod_terminal", resourceID, false, err.Error(), ctx.Request.Context())
-		return
-	}
-	select {
-	case <-authorizationRevoked:
+	end := transportapi.FinishRuntimeTerminal(terminalSocket, result.ExitCode, streamErr, sessionCtx.Err(), authorizationRevoked.Load(), inputDone)
+	switch end {
+	case transportapi.RuntimeTerminalEndAuthorizationLost:
 		h.auditWithContext(user.ID, "runtime_cluster.pod_terminal", resourceID, false, "authorization expired or was revoked", ctx.Request.Context())
 		return
-	default:
-	}
-	if sessionCtx.Err() == context.DeadlineExceeded {
+	case transportapi.RuntimeTerminalEndAuthorizationExpiry:
 		h.auditWithContext(user.ID, "runtime_cluster.pod_terminal", resourceID, false, "authorization deadline reached", ctx.Request.Context())
+		return
+	case transportapi.RuntimeTerminalEndInternalError:
+		h.auditWithContext(user.ID, "runtime_cluster.pod_terminal", resourceID, false, streamErr.Error(), ctx.Request.Context())
+		return
+	case transportapi.RuntimeTerminalEndProtocolError:
+		h.auditWithContext(user.ID, "runtime_cluster.pod_terminal", resourceID, false, "terminal protocol error", ctx.Request.Context())
+		return
+	case transportapi.RuntimeTerminalEndClientDisconnected:
+		h.auditWithContext(user.ID, "runtime_cluster.pod_terminal", resourceID, false, "terminal client disconnected", ctx.Request.Context())
 		return
 	}
 	h.auditWithContext(user.ID, "runtime_cluster.pod_terminal", resourceID, true, strings.TrimSpace(ctx.Query("container")), ctx.Request.Context())

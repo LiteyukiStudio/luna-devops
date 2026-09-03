@@ -40,6 +40,20 @@ func TestRuntimeExecExitCodeRejectsTransportFailure(t *testing.T) {
 	}
 }
 
+func TestRuntimeTerminalResultTreatsRemoteExitAsCompletedSession(t *testing.T) {
+	result, err := runtimeTerminalResult(clientexec.CodeExitError{Err: errors.New("command failed"), Code: 37})
+	if err != nil || result.ExitCode != 37 {
+		t.Fatalf("runtime terminal result = (%#v, %v), want exit code 37 without transport error", result, err)
+	}
+}
+
+func TestRuntimeTerminalResultPreservesTransportFailure(t *testing.T) {
+	transportErr := errors.New("transport unavailable")
+	if _, err := runtimeTerminalResult(transportErr); !errors.Is(err, transportErr) {
+		t.Fatalf("runtime terminal transport error = %v, want %v", err, transportErr)
+	}
+}
+
 func TestSelectPodContainer(t *testing.T) {
 	pod := corev1.Pod{
 		Spec: corev1.PodSpec{

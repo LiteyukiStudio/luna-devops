@@ -1,5 +1,11 @@
 # TODO
 
+## 2026-09-03 Luna CLI Release 交互执行
+
+- [x] 提供 `luna release exec` 交互会话，并保留 `release terminal` 人工别名。
+- [x] 统一 CLI、Web 与 API 的版本化终端协议，保证终端负载字节透明、控制帧隔离、退出码明确和异常断连失败关闭。
+- [x] 参考 kubectl / Docker 的 TTY 生命周期补齐 raw mode 恢复、窗口 resize、输出背压和会话清理，并完成双语文档与全链路验证。
+
 ## 2026-09-02 终端用户 kubectl 支持下线
 
 - [x] 删除终端用户 kubeconfig 凭据、Kubernetes API 兼容代理、集群 kubectl 网关配置与协调链路，并重写未发布迁移，确保新安装从未创建相关结构。

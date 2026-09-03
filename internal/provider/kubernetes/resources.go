@@ -103,6 +103,10 @@ type RuntimeTerminalOptions struct {
 	SizeQueue          remotecommand.TerminalSizeQueue
 }
 
+type RuntimeTerminalResult struct {
+	ExitCode int
+}
+
 type PodTerminalOptions struct {
 	Namespace string
 	PodName   string
