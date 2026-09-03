@@ -32,5 +32,5 @@ The companion Agent Skill must match the CLI version. Download `luna-devops-<ver
 You can also send this prompt to an AI that supports Skills:
 
 ```plaintext
-Run luna --version, then install skills/luna-devops from the matching Git tag at https://github.com/LiteyukiStudio/luna-cli. If Luna CLI is not installed, ask whether I want to install it first. Installation priority: pnpm > npm > GitHub Releases
+Use luna version show output=json interactive=false agent=true to check the installed Luna CLI version, then install the matching luna-devops-<version>.skill from https://github.com/LiteyukiStudio/luna-cli/releases. If luna is not detected, explain the issue and ask whether I want to install it; after approval, install the CLI using pnpm, npm, or a GitHub Release in that order, then continue.
 ```

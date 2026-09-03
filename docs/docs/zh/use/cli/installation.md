@@ -32,5 +32,5 @@ npm uninstall --global @liteyuki/luna-cli
 也可以将下面的提示词发送给支持 Skills 的 AI：
 
 ```plaintext
-请先运行 luna --version，然后从 https://github.com/LiteyukiStudio/luna-cli 对应版本的 Git tag 安装 skills/luna-devops。若尚未安装 Luna CLI，请先询问我是否愿意安装。安装方式优先级：pnpm > npm > GitHub Releases
+请用 luna version show output=json interactive=false agent=true 检查本机 Luna CLI 版本，并从 https://github.com/LiteyukiStudio/luna-cli/releases 安装同版本的 luna-devops-<version>.skill；若未检测到 luna，请先说明情况并询问我是否愿意安装，获得同意后按 pnpm、npm、GitHub Release 的优先级安装 CLI，再继续。
 ```
