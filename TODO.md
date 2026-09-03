@@ -1,5 +1,11 @@
 # TODO
 
+## 2026-09-03 Luna CLI Skill 安装引导
+
+- [x] 在 CLI 安装页提供可复制给 AI 的同版本 Luna DevOps Skill 安装提示词，并同步中英文文档。
+- [x] 调整配套 Luna DevOps Skill，在未检测到 CLI 时先说明依赖、提供安装入口并征求用户意愿，未获同意不继续。
+- [x] 完成文档构建、Skill 命令目录同步和 Skill 格式校验。
+
 ## 2026-09-03 Luna CLI Release 交互执行
 
 - [x] 提供 `luna release exec` 交互会话，并保留 `release terminal` 人工别名。

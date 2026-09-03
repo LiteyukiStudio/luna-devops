@@ -28,3 +28,9 @@ npm uninstall --global @liteyuki/luna-cli
 使用 pnpm 时将 `npm` 命令替换为 `pnpm update --global` 或 `pnpm remove --global`。卸载前建议运行 `luna logout` 撤销登录；卸载不会自动删除 `~/.luna/` 配置。
 
 配套 Agent Skill 与 CLI 必须使用同一版本，可从 [Luna CLI Releases](https://github.com/LiteyukiStudio/luna-cli/releases) 下载对应的 `luna-devops-<version>.skill`。
+
+也可以将下面的提示词发送给支持 Skills 的 AI：
+
+```plaintext
+请先运行 luna --version，然后从 https://github.com/LiteyukiStudio/luna-cli 对应版本的 Git tag 安装 skills/luna-devops。若尚未安装 Luna CLI，请先询问我是否愿意安装。安装方式优先级：pnpm > npm > GitHub Releases
+```
