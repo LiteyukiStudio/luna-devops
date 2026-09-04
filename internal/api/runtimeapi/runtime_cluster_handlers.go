@@ -37,7 +37,7 @@ func (h *Handlers) ListRuntimeClusters(ctx *gin.Context) {
 	}
 	query = applyRuntimeClusterSearch(ctx, query, user)
 	pagination := paginationFromQueryWithSort(ctx, map[string]string{
-		"name": "name", "type": "type", "scope": "scope", "createdAt": "created_at",
+		"name": "name", "scope": "scope", "createdAt": "created_at",
 	}, "createdAt")
 	var total int64
 	if err := query.Session(&gorm.Session{}).Count(&total).Error; err != nil {
@@ -46,7 +46,6 @@ func (h *Handlers) ListRuntimeClusters(ctx *gin.Context) {
 	}
 	if err := query.Order(orderByClause(pagination, map[string]string{
 		"name":      "name",
-		"type":      "type",
 		"scope":     "scope",
 		"createdAt": "created_at",
 	}, "created_at")).Limit(pagination.PageSize).Offset(pagination.Offset()).Find(&clusters).Error; err != nil {
@@ -124,7 +123,6 @@ func (h *Handlers) UpdateRuntimeCluster(ctx *gin.Context) {
 		return
 	}
 	existing.Name = next.Name
-	existing.Type = next.Type
 	existing.Endpoint = next.Endpoint
 	existing.Scope = next.Scope
 	existing.OwnerRef = next.OwnerRef
@@ -138,8 +136,6 @@ func (h *Handlers) UpdateRuntimeCluster(ctx *gin.Context) {
 	existing.MemoryRequestPercent = next.MemoryRequestPercent
 	existing.CPULimitPercent = next.CPULimitPercent
 	existing.MemoryLimitPercent = next.MemoryLimitPercent
-	existing.GatewayProvider = next.GatewayProvider
-	existing.GatewayRootDomain = next.GatewayRootDomain
 	existing.GatewayDomainSuffixesRaw = next.GatewayDomainSuffixesRaw
 	existing.GatewayDomainSuffixes = next.GatewayDomainSuffixes
 	existing.GatewayPublicScheme = next.GatewayPublicScheme
@@ -209,7 +205,7 @@ func applyRuntimeClusterSearch(ctx *gin.Context, query *gorm.DB, user model.User
 
 func runtimeClusterSafeAuditMetadata(cluster model.RuntimeCluster, kubeconfigUpdated bool) runtimeClusterAuditMetadata {
 	return runtimeClusterAuditMetadata{
-		Type: cluster.Type, Scope: cluster.Scope, IsDefault: cluster.IsDefault,
+		Scope: cluster.Scope, IsDefault: cluster.IsDefault,
 		ProjectCount: len(normalizeStringList(cluster.ProjectIDs)), KubeconfigUpdated: kubeconfigUpdated,
 	}
 }

@@ -1,5 +1,6 @@
 import type { AIToolVisibility } from '@luna-devops/ai-interaction-card-contract'
 import type { AIContextUsage, AIEvent, AIMessagePart, AITimeline, AITimelineItem, AIToolDisplayResult, AIToolStatus, AIUIAction } from '@/api'
+import { z } from 'zod'
 
 export type AIBlock
   = | { id: string, turnId: string, runId?: string, index: number, type: 'thinking', status: string, display: 'summary' | 'progress', text: string }
@@ -33,12 +34,56 @@ export interface AIAssistantState {
 
 const TURN_ORDER_STRIDE = 1_000_000
 
+const aiToolDisplayResultSchema = z.object({
+  summaryKey: z.string(),
+  summaryParams: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).optional(),
+  requestId: z.string().optional(),
+  errorCode: z.string().optional(),
+  errorMessage: z.string().optional(),
+  generationId: z.string().optional(),
+  attempt: z.number().optional(),
+  maxAttempts: z.number().optional(),
+  data: z.unknown().optional(),
+  issues: z.array(z.object({
+    code: z.string(),
+    path: z.string(),
+    message: z.string(),
+    expected: z.string().optional(),
+    received: z.string().optional(),
+  })).optional(),
+  fields: z.array(z.object({
+    labelKey: z.string(),
+    value: z.union([z.string(), z.number(), z.boolean(), z.null()]),
+    tone: z.enum(['neutral', 'success', 'warning', 'danger']).optional(),
+  })).optional(),
+  presentation: z.object({
+    component: z.enum(['key_value', 'status_list', 'resource_link', 'log_excerpt']),
+    version: z.literal(1),
+  }).optional(),
+})
+
 function blockIndex(turnIndex: number, itemIndex: number): number {
   return turnIndex * TURN_ORDER_STRIDE + itemIndex
 }
 
 function isOptionalTokenCount(value: unknown) {
   return value === undefined || (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0)
+}
+
+export function isValidAITimelineItem(value: unknown): value is AITimelineItem {
+  if (!value || typeof value !== 'object' || Array.isArray(value))
+    return false
+  const item = value as Partial<AITimelineItem>
+  if (typeof item.id !== 'string' || typeof item.timelineIndex !== 'number' || typeof item.revision !== 'number' || typeof item.createdAt !== 'string' || !Array.isArray(item.parts))
+    return false
+  if (item.type !== 'tool_call')
+    return true
+  const toolCall = item.toolCall
+  return Boolean(toolCall)
+    && typeof toolCall?.id === 'string'
+    && typeof toolCall.operationId === 'string'
+    && typeof toolCall.callIndex === 'number'
+    && (toolCall.result === undefined || aiToolDisplayResultSchema.safeParse(toolCall.result).success)
 }
 
 function hasCompleteReportedUsage(run: NonNullable<AITimeline['turns'][number]['selectedRun']>) {
@@ -103,7 +148,7 @@ export function isValidAITimeline(value: unknown): value is AITimeline {
           && turn.selectedRun.latestUsageModelId === undefined
           && turn.selectedRun.latestUsageMaxContextTokensSnapshot === undefined))
         && Array.isArray(turn.selectedRun.items)
-        && turn.selectedRun.items.every(item => Boolean(item) && typeof item.id === 'string' && typeof item.timelineIndex === 'number' && typeof item.revision === 'number' && typeof item.createdAt === 'string' && Array.isArray(item.parts)))),
+        && turn.selectedRun.items.every(isValidAITimelineItem))),
   ) && candidate.eventCursors.every(cursor => Boolean(cursor) && typeof cursor.runId === 'string' && typeof cursor.after === 'number')
 }
 
@@ -124,7 +169,6 @@ export function stateFromTimeline(timeline: AITimeline): AIAssistantState {
       text: textFromParts(turn.input.parts),
       createdAt: turn.input.createdAt,
     })
-    const results = new Map(turn.selectedRun?.items.filter(item => item.type === 'tool_result' && item.relatedItemId).map(item => [item.relatedItemId!, item]) ?? [])
     for (const item of [...(turn.selectedRun?.items ?? [])].sort((a, b) => a.timelineIndex - b.timelineIndex)) {
       if (item.type === 'assistant_message') {
         blocks.push({ id: item.id, turnId: turn.id, runId: turn.selectedRun?.id, index: blockIndex(turn.turnIndex, item.timelineIndex), type: 'message', role: 'assistant', status: item.status, text: textFromParts(item.parts), createdAt: item.createdAt })
@@ -136,8 +180,6 @@ export function stateFromTimeline(timeline: AITimeline): AIAssistantState {
         blocks.push({ id: item.id, turnId: turn.id, runId: turn.selectedRun?.id, index: blockIndex(turn.turnIndex, item.timelineIndex), type: 'context_compacted', status: item.status })
       }
       else if (item.type === 'tool_call' && item.toolCall) {
-        const resultItem = results.get(item.id)
-        const structuredResult = resultItem?.parts.find(part => part.type === 'structured_data')?.data as AIToolDisplayResult | undefined
         blocks.push({
           id: item.id,
           turnId: turn.id,
@@ -151,7 +193,7 @@ export function stateFromTimeline(timeline: AITimeline): AIAssistantState {
           errorCode: item.toolCall.errorCode,
           status: item.toolCall.status ?? (item.status === 'completed' ? 'succeeded' : 'running'),
           arguments: item.toolCall.arguments ?? {},
-          result: normalizeToolResult(item.toolCall.result ?? structuredResult),
+          result: item.toolCall.result,
           uiActions: item.toolCall.uiActions ?? [],
           durationMs: item.toolCall.durationMs,
           traceId: item.toolCall.traceId,
@@ -395,7 +437,7 @@ function blockFromTimelineItem(item: AITimelineItem, turnId: string, runId: stri
     errorCode: item.toolCall.errorCode,
     status: item.toolCall.status ?? (item.status === 'completed' ? 'succeeded' : item.status === 'failed' ? 'failed' : 'running'),
     arguments: item.toolCall.arguments ?? {},
-    result: normalizeToolResult(item.toolCall.result),
+    result: item.toolCall.result,
     uiActions: item.toolCall.uiActions ?? [],
     durationMs: item.toolCall.durationMs,
     traceId: item.toolCall.traceId,
@@ -636,41 +678,6 @@ export function reduceAIEvent(state: AIAssistantState, event: AIEvent): AIAssist
     }
   }
   return next
-}
-
-function normalizeToolResult(value: unknown): AIToolDisplayResult | undefined {
-  if (!value || typeof value !== 'object' || Array.isArray(value))
-    return undefined
-  const result = value as Record<string, unknown>
-  return {
-    summaryKey: typeof result.summaryKey === 'string' ? result.summaryKey : 'ai.tool.result.completed',
-    ...(result.summaryParams && typeof result.summaryParams === 'object' ? { summaryParams: result.summaryParams as Record<string, string | number | boolean> } : {}),
-    ...(typeof result.requestId === 'string' ? { requestId: result.requestId } : {}),
-    ...(typeof result.errorCode === 'string' ? { errorCode: result.errorCode } : {}),
-    ...(typeof result.errorMessage === 'string' ? { errorMessage: result.errorMessage } : {}),
-    ...(typeof result.generationId === 'string' ? { generationId: result.generationId } : {}),
-    ...(typeof result.attempt === 'number' ? { attempt: result.attempt } : {}),
-    ...(typeof result.maxAttempts === 'number' ? { maxAttempts: result.maxAttempts } : {}),
-    ...('data' in result ? { data: result.data } : {}),
-    ...(Array.isArray(result.issues)
-      ? {
-          issues: result.issues
-            .filter(issue => issue && typeof issue === 'object' && !Array.isArray(issue))
-            .map((issue) => {
-              const candidate = issue as Record<string, unknown>
-              return {
-                code: typeof candidate.code === 'string' ? candidate.code : 'invalid',
-                path: typeof candidate.path === 'string' ? candidate.path : '',
-                message: typeof candidate.message === 'string' ? candidate.message : '',
-                ...(typeof candidate.expected === 'string' ? { expected: candidate.expected } : {}),
-                ...(typeof candidate.received === 'string' ? { received: candidate.received } : {}),
-              }
-            }),
-        }
-      : {}),
-    ...(Array.isArray(result.fields) ? { fields: result.fields as AIToolDisplayResult['fields'] } : {}),
-    ...(result.presentation && typeof result.presentation === 'object' ? { presentation: result.presentation as AIToolDisplayResult['presentation'] } : {}),
-  }
 }
 
 export const emptyAIAssistantState: AIAssistantState = {

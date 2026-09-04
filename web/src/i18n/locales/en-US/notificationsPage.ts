@@ -1,6 +1,5 @@
 const notificationsPage = {
   title: 'Notifications',
-  description: 'Manage platform event notification channels, templates, rules, and delivery records.',
   channels: 'Channels',
   templates: 'Templates',
   rules: 'Rules',
@@ -25,8 +24,6 @@ const notificationsPage = {
   eventType: 'Event type',
   pageInfo: 'Page {{page}} / {{totalPages}}, {{total}} total',
   emptyChannels: 'No notification channels yet',
-  emptyChannelsDescription: 'Start from a built-in channel template to generate a platform-ready Webhook config and default message template.',
-  emptyChannelsAction: 'Create from template',
   emptyTemplates: 'No notification templates yet',
   emptyRules: 'No notification rules yet',
   emptyDeliveries: 'No delivery records yet',

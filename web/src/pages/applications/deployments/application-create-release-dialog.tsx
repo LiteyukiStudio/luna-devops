@@ -70,7 +70,6 @@ export function ApplicationCreateReleaseDialog({
     form.setValue('applicationId', applicationId, { shouldDirty: true, shouldValidate: true })
     if (selectedTarget) {
       form.setValue('deploymentTargetId', selectedTarget.id, { shouldDirty: true, shouldValidate: true })
-      form.setValue('environmentId', selectedTarget.environmentId, { shouldDirty: true, shouldValidate: true })
     }
   }
 

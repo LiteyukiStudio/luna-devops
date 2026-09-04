@@ -5,7 +5,6 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/LiteyukiStudio/devops/internal/model"
 	kubeprovider "github.com/LiteyukiStudio/devops/internal/provider/kubernetes"
 )
 
@@ -20,10 +19,7 @@ func (r *Runner) projectVolumeProvider(ctx context.Context, clusterID string) (k
 	if r.projectVolumeProviderFactory != nil {
 		return r.projectVolumeProviderFactory(ctx, clusterID)
 	}
-	if r.db == nil {
-		return nil, errors.New("worker database is not configured")
-	}
-	kubeconfig, err := r.kubeconfigForEnvironment(ctx, model.Environment{ClusterID: clusterID})
+	kubeconfig, err := r.kubeconfigForRuntimeClusterID(ctx, clusterID)
 	if err != nil {
 		return nil, err
 	}
@@ -38,8 +34,8 @@ func (r *Runner) volumeTransferProvider(ctx context.Context, clusterID string) (
 	if ctx == nil {
 		panic("volume transfer job provider context is required")
 	}
-	if r.volumeTransferJobFactory != nil {
-		return r.volumeTransferJobFactory(ctx, strings.TrimSpace(clusterID))
+	if r.volumeTransferProviderFactory != nil {
+		return r.volumeTransferProviderFactory(ctx, strings.TrimSpace(clusterID))
 	}
 	provider, err := r.projectVolumeProvider(ctx, clusterID)
 	if err != nil {

@@ -1,5 +1,6 @@
 import type { AIEvent } from '@/api'
 import { useEffect, useRef, useState } from 'react'
+import { isValidAITimelineItem } from './state'
 import { createAIEventSource } from './stream'
 
 export const AI_EVENT_TYPES = [
@@ -105,7 +106,8 @@ function parseAIEvent(data: string): AIEvent {
     || typeof event.occurredAt !== 'string'
     || !event.payload
     || typeof event.payload !== 'object'
-    || Array.isArray(event.payload)) {
+    || Array.isArray(event.payload)
+    || (event.item !== undefined && !isValidAITimelineItem(event.item))) {
     throw new Error('ai_invalid_stream_event')
   }
   return event as AIEvent

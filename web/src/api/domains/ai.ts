@@ -1,16 +1,16 @@
 import type {
-  AICapabilities,
+  AIAssistantAccess,
   AIConversation,
+  AIConversationPage,
   AIModelConfig,
   AIModelOption,
-  AIPaginatedResponse,
   AITimeline,
   AITurnCreated,
 } from '../ai-types'
 import { paginationQuery, request } from '../core'
 
 export const aiApi = {
-  getAICapabilities: () => request<AICapabilities>('/ai/capabilities'),
+  getAICapabilities: () => request<AIAssistantAccess>('/ai/capabilities'),
   listAIModels: () => request<AIModelOption[]>('/ai/models'),
   listAIModelConfigs: () => request<AIModelConfig[]>('/configs/ai/models'),
   createAIModel: (payload: { name: string, maxContextTokens: number, maxOutputTokens: number, inputCreditsPerMillion: string, outputCreditsPerMillion: string, cachedInputCreditsPerMillion: string, enabled?: boolean }) =>
@@ -20,7 +20,7 @@ export const aiApi = {
   deleteAIModel: (id: string) =>
     request<void>(`/configs/ai/models/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   listAIConversations: (params: { page: number, pageSize: number, search?: string }) =>
-    request<AIPaginatedResponse<AIConversation>>(`/ai/conversations?${paginationQuery({ ...params, sortBy: 'updatedAt', sortOrder: 'desc' })}`),
+    request<AIConversationPage>(`/ai/conversations?${paginationQuery({ ...params, sortBy: 'updatedAt', sortOrder: 'desc' })}`),
   createAIConversation: (payload: { modelId: string, projectId?: string, title?: string }) =>
     request<AIConversation>('/ai/conversations', { method: 'POST', body: JSON.stringify(payload) }),
   updateAIConversation: (conversationId: string, payload: { title?: string, modelId?: string }) =>

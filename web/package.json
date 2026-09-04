@@ -6,12 +6,17 @@
   "packageManager": "pnpm@11.1.0",
   "license": "MIT",
   "scripts": {
+    "generate:api-types": "openapi-typescript ../openapi/openapi.yaml -o src/api/generated/openapi.ts",
+    "predev": "pnpm generate:api-types",
     "dev": "vite",
+    "prebuild": "pnpm generate:api-types",
     "build": "tsc -b && vite build && node scripts/optimize-dist.mjs",
     "check:singletons": "node scripts/check-singleton-dependencies.mjs",
     "check:i18n": "node scripts/check-i18n.mjs",
+    "prelint": "pnpm generate:api-types",
     "lint": "eslint . && node scripts/check-i18n.mjs",
     "preview": "vite preview",
+    "pretest": "pnpm generate:api-types",
     "test": "vitest run"
   },
   "dependencies": {
@@ -54,7 +59,6 @@
   "devDependencies": {
     "@antfu/eslint-config": "^9.1.0",
     "@eslint-react/eslint-plugin": "^5.8.12",
-    "@eslint/js": "^10.0.1",
     "@luna-devops/ai-interaction-card-contract": "file:../packages/ai-interaction-card-contract",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
@@ -65,12 +69,10 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
     "eslint": "^10.3.0",
-    "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.2",
-    "globals": "^17.6.0",
     "jsdom": "^29.1.1",
+    "openapi-typescript": "^7.13.0",
     "typescript": "~6.0.2",
-    "typescript-eslint": "^8.59.2",
     "vite": "^8.0.12",
     "vitest": "^4.1.10"
   }

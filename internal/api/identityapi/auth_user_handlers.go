@@ -423,7 +423,6 @@ func createDefaultUserProject(tx *gorm.DB, user model.User) error {
 		KubernetesNamespace: resourceidentifier.ProjectNamespace(identifier),
 		Name:                defaultUserProjectName(user),
 		Description:         defaultUserProjectDescription(user),
-		NamespaceStrategy:   "project",
 	}
 	if err := tx.Create(&project).Error; err != nil {
 		return err

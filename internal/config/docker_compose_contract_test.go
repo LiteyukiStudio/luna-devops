@@ -108,7 +108,6 @@ func TestDockerComposeApplicationEnvironmentAllowlist(t *testing.T) {
 	for _, removed := range []string{
 		"BOOTSTRAP_TOKEN",
 		"DB_MAX_OPEN_CONNS", "DB_MAX_IDLE_CONNS", "DB_CONN_MAX_LIFETIME", "DB_CONN_MAX_IDLE_TIME",
-		"AI_AGENT_ADDR",
 	} {
 		for _, serviceName := range applicationServices {
 			if _, exists := services[serviceName].Environment[removed]; exists {

@@ -26,18 +26,6 @@ export const PROJECT_ROLES = [
   ProjectRole.Viewer,
 ] as const
 
-function includesString<T extends string>(values: readonly T[], value: string): value is T {
-  return (values as readonly string[]).includes(value)
-}
-
-export function isPlatformRole(role: string | null | undefined): role is PlatformRoleValue {
-  return Boolean(role && includesString(PLATFORM_ROLES, role))
-}
-
 export function isPlatformAdmin(role: string | null | undefined): boolean {
   return role === PlatformRole.Admin
-}
-
-export function isProjectRole(role: string | null | undefined): role is ProjectRoleValue {
-  return Boolean(role && includesString(PROJECT_ROLES, role))
 }

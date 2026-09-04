@@ -9,12 +9,14 @@ import ts from 'typescript'
 
 const startedAt = performance.now()
 const webRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+const repositoryRoot = path.resolve(webRoot, '..')
 const srcRoot = path.join(webRoot, 'src')
 const localesRoot = path.join(srcRoot, 'i18n', 'locales')
 const appEntryPath = path.join(srcRoot, 'App.tsx')
 const configModule = await import(pathToFileURL(path.join(srcRoot, 'i18n', 'config.ts')).href)
 const dynamicKeyAllowlistModule = await import(pathToFileURL(path.join(webRoot, 'scripts', 'i18n-dynamic-key-allowlist.mjs')).href)
 const auditedDynamicTranslationCalls = dynamicKeyAllowlistModule.auditedDynamicTranslationCalls
+const auditedExternalTranslationKeys = dynamicKeyAllowlistModule.auditedExternalTranslationKeys
 const supportedLanguages = [...configModule.supportedLanguages]
 const coreTranslationBundles = new Set(configModule.coreTranslationBundles)
 const spreadFeatureBundles = new Set(configModule.spreadFeatureBundles)
@@ -251,10 +253,17 @@ function scanSourceFile(filePath, sourceText) {
     filePath.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
   )
   const imports = []
+  const literalKeys = new Set()
+  const literalPrefixes = new Set()
   const references = []
   const declaredBundles = new Set()
 
   function visit(node) {
+    if (ts.isStringLiteralLike(node))
+      literalKeys.add(node.text)
+    if (ts.isTemplateExpression(node) && node.head.text)
+      literalPrefixes.add(node.head.text)
+
     if ((ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) && node.moduleSpecifier && ts.isStringLiteralLike(node.moduleSpecifier))
       imports.push(node.moduleSpecifier.text)
 
@@ -282,12 +291,14 @@ function scanSourceFile(filePath, sourceText) {
 
     if (ts.isJsxAttribute(node) && node.name.getText(sourceFile) === 'i18nKey' && node.initializer && ts.isStringLiteral(node.initializer))
       references.push({ kind: 'exact', value: node.initializer.text, location: sourceLocation(sourceFile, node) })
+    if (ts.isJsxAttribute(node) && node.name.getText(sourceFile) === 'labelKeyPrefix' && node.initializer && ts.isStringLiteral(node.initializer))
+      literalPrefixes.add(`${node.initializer.text}.`)
 
     ts.forEachChild(node, visit)
   }
 
   visit(sourceFile)
-  return { declaredBundles, imports, references, sourceFile }
+  return { declaredBundles, imports, literalKeys, literalPrefixes, references, sourceFile }
 }
 
 async function listSourceFiles(directory) {
@@ -339,6 +350,59 @@ function checkReferencedKeys(scans, catalogs) {
       `${label} "${reference.value}" used at ${reference.location} is missing from: ${missingLanguages.join(', ')}.`,
       `missing-key:${reference.location}:${reference.value}`,
     )
+  }
+}
+
+async function checkUnusedKeys(scans, catalogs) {
+  const exactKeys = new Set()
+  const prefixes = new Set()
+  for (const scan of scans.values()) {
+    for (const key of scan.literalKeys)
+      exactKeys.add(key)
+    for (const prefix of scan.literalPrefixes)
+      prefixes.add(prefix)
+    for (const reference of scan.references) {
+      if (reference.kind === 'exact')
+        exactKeys.add(reference.value)
+      else
+        prefixes.add(reference.value)
+    }
+  }
+
+  const catalog = catalogs.get(baseLanguage) ?? new Map()
+  for (const [sourcePath, keys] of Object.entries(auditedExternalTranslationKeys)) {
+    const filePath = path.join(repositoryRoot, sourcePath)
+    let sourceText
+    try {
+      sourceText = await readFile(filePath, 'utf8')
+    }
+    catch (error) {
+      addIssue('missing-external-key-source', `External translation key source "${sourcePath}" cannot be read: ${error instanceof Error ? error.message : String(error)}`)
+      continue
+    }
+    const sourceFile = ts.createSourceFile(filePath, sourceText, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
+    const sourceKeys = new Set()
+    function collectStringLiterals(node) {
+      if (ts.isStringLiteralLike(node))
+        sourceKeys.add(node.text)
+      ts.forEachChild(node, collectStringLiterals)
+    }
+    collectStringLiterals(sourceFile)
+    for (const key of keys) {
+      if (!sourceKeys.has(key)) {
+        addIssue('stale-external-key', `External translation key "${key}" is not produced by ${sourcePath}.`)
+        continue
+      }
+      exactKeys.add(key)
+      if (!catalog.has(key))
+        addIssue('missing-external-key', `Externally produced key "${key}" is missing from the locale catalog.`)
+    }
+  }
+
+  for (const key of [...catalog.keys()].sort()) {
+    if (exactKeys.has(key) || [...prefixes].some(prefix => key.startsWith(prefix)))
+      continue
+    addIssue('unused-key', `Key "${key}" is defined but has no audited production reference.`)
   }
 }
 
@@ -487,7 +551,7 @@ function printDiagnostics() {
 
   if (warnings.length > 0)
     console.log(`${warnings.length} audited dynamic translation call(s) use an explicit allowlist.`)
-  console.log('Diagnostic categories: missing-bundle = resource exists but is not loaded; missing-key = referenced key does not exist; locale-key-mismatch = locales disagree.')
+  console.log('Diagnostic categories: missing-bundle = resource exists but is not loaded; missing-key = referenced key does not exist; unused-key = resource has no audited production reference; locale-key-mismatch = locales disagree.')
   if (issues.length > 0)
     process.exitCode = 1
 }
@@ -505,6 +569,7 @@ for (const signature of Object.keys(auditedDynamicTranslationCalls)) {
     addIssue('stale-dynamic-key-allowlist', `Remove or update unused dynamic translation audit entry: ${signature}`)
 }
 checkReferencedKeys(scans, catalogs)
+await checkUnusedKeys(scans, catalogs)
 const featureBundles = new Set(baseFiles.filter(bundleName => !coreTranslationBundles.has(bundleName)))
 checkRouteBundles(scans, featureBundles)
 printDiagnostics()

@@ -1,4 +1,4 @@
-import type { GitAccount, GitBranch, GitContentItem, GitFileContent, GitProvider, GitRepository, GitRepositoryBuildOptions, PaginatedResponse, PaginationParams, ResultVisibility } from '../types'
+import type { GitAccount, GitBranch, GitProvider, GitRepository, GitRepositoryBuildOptions, PaginatedResponse, PaginationParams, ResultVisibility } from '../types'
 import { paginationWithProjectQuery, request } from '../core'
 import { selectionItems, selectionPageParams } from '../selection-page'
 
@@ -51,20 +51,6 @@ export const gitApi = {
       search.set('limit', String(params.limit))
     const suffix = search.toString() ? `?${search.toString()}` : ''
     return request<{ items: GitBranch[], total: number, matchedTotal: number, limited: boolean }>(`/git/accounts/${accountId}/repositories/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/branches${suffix}`)
-  },
-  readGitFile: (accountId: string, owner: string, repo: string, path: string, ref?: string) => {
-    const search = new URLSearchParams({ path })
-    if (ref)
-      search.set('ref', ref)
-    return request<GitFileContent>(`/git/accounts/${accountId}/repositories/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/file?${search.toString()}`)
-  },
-  listGitContents: (accountId: string, owner: string, repo: string, path = '', ref?: string) => {
-    const search = new URLSearchParams()
-    if (path)
-      search.set('path', path)
-    if (ref)
-      search.set('ref', ref)
-    return request<GitContentItem[]>(`/git/accounts/${accountId}/repositories/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents?${search.toString()}`)
   },
   getGitRepositoryBuildOptions: (accountId: string, owner: string, repo: string, ref?: string) => {
     const search = new URLSearchParams()

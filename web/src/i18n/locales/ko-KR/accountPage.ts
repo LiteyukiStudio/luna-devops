@@ -1,5 +1,4 @@
 const accountPage = {
-  description: '개인 프로필, 타사 로그인 바인딩, API 호출용 개인 토큰을 관리합니다.',
   profileTab: '개인 설정',
   securityTab: '보안 설정',
   notificationsTab: '알림',

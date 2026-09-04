@@ -6,9 +6,8 @@ import type {
   ModelProvider,
   ModelResponse,
   ModelToolCall,
-  ModelToolDefinition,
   ModelToolDetailsResult,
-  ModelToolResolver,
+  ModelToolRegistry,
   ModelToolSearchResult,
 } from "./provider/provider.js"
 import { systemPromptFor } from "./prompt/system.js"
@@ -26,7 +25,6 @@ export type ModelRuntimeEvent = ModelEvent
       trigger: "fixed_threshold" | "context_error"
     }
 import { defaultRuntimeSettings, runtimeSettingsSnapshot, type RuntimeSettings } from "./runtime-settings.js"
-import { modelVisibleHistory } from "./model-history.js"
 import { boundContinuationMessages, boundHistoryMessages, turnPromptMessages } from "./context/model-messages.js"
 
 export type ConversationPromptContext = {
@@ -60,34 +58,11 @@ export type AssistantModelInput = {
  * Agent 循环、工具执行和暂停/恢复都由 RunExecutor 统一编排。
  */
 export class ModelRuntime {
-  private readonly resolveTools: (
-    pageContext: Record<string, unknown>,
-    userInput: string,
-    loadedOperationIds: string[],
-    signal?: AbortSignal,
-    toolCatalogDigest?: string,
-  ) => ModelToolDefinition[] | Promise<ModelToolDefinition[]>
-  private readonly searchTools?: (
-    input: { query?: string, page?: number, pageSize?: number },
-    pageContext: Record<string, unknown>,
-    signal?: AbortSignal,
-    toolCatalogDigest?: string,
-  ) => ModelToolSearchResult | Promise<ModelToolSearchResult>
-  private readonly getToolDetails?: (operationIds: string[], toolCatalogDigest?: string) => ModelToolDetailsResult | Promise<ModelToolDetailsResult>
-
   constructor(
     private readonly provider: ModelProvider,
-    tools: ModelToolResolver = [],
+    private readonly tools: ModelToolRegistry,
     private readonly contextCompiler?: ContextCompiler,
-  ) {
-    if (Array.isArray(tools)) this.resolveTools = () => tools
-    else if (typeof tools === "function") this.resolveTools = tools
-    else {
-      this.resolveTools = tools.resolve
-      this.searchTools = tools.search
-      this.getToolDetails = tools.details
-    }
-  }
+  ) {}
 
   async *stream(input: AssistantModelInput, signal?: AbortSignal): AsyncIterable<ModelRuntimeEvent> {
     const requestInput = modelInputSnapshot(input)
@@ -123,27 +98,11 @@ export class ModelRuntime {
     signal?: AbortSignal,
     toolCatalogDigest?: string,
   ): Promise<ModelToolSearchResult> {
-    if (!this.searchTools) {
-      return {
-        query: input.query?.trim() ?? "",
-        items: [],
-        page: input.page ?? 1,
-        pageSize: input.pageSize ?? 20,
-        total: 0,
-        totalPages: 0,
-        loadedOperationIds: [],
-        missingOperationIds: [],
-        catalogDigest: toolCatalogDigest ?? "",
-        duplicate: false,
-        cacheHit: false,
-      }
-    }
-    return this.searchTools(input, pageContext, signal, toolCatalogDigest)
+    return this.tools.search(input, pageContext, signal, toolCatalogDigest)
   }
 
   async getAvailableToolDetails(operationIds: string[], toolCatalogDigest?: string): Promise<ModelToolDetailsResult> {
-    if (!this.getToolDetails) return { items: [], loadedOperationIds: [], alreadySelectedOperationIds: [], missingOperationIds: operationIds, catalogDigest: toolCatalogDigest ?? "", duplicate: false, cacheHit: false }
-    return this.getToolDetails(operationIds, toolCatalogDigest)
+    return this.tools.details(operationIds, toolCatalogDigest)
   }
 
   async generateConversationTitle(
@@ -188,10 +147,8 @@ export class ModelRuntime {
       input.input,
       input.pageContext,
       input.conversation,
-      tools.map(tool => tool.operationId),
-      input.history,
     )
-    const history = modelVisibleHistory(input.history)
+    const history = input.history
     const compiled = this.contextCompiler
       ? await this.contextCompiler.compile({
           conversationId: input.conversationId,
@@ -245,7 +202,7 @@ export class ModelRuntime {
     toolCatalogDigest?: string,
   ) {
     return [
-      ...await this.resolveTools(pageContext, userInput, loadedOperationIds, signal, toolCatalogDigest),
+      ...await this.tools.resolve(pageContext, userInput, loadedOperationIds, signal, toolCatalogDigest),
       ...(conversation.titleSource === "user" ? [] : [renameConversationTool]),
     ].sort((left, right) => left.operationId < right.operationId ? -1 : left.operationId > right.operationId ? 1 : 0)
   }
@@ -256,15 +213,13 @@ function modelMessageParts(
   input: string,
   pageContext: Record<string, unknown>,
   conversation: ConversationPromptContext,
-  loadedOperationIds: string[],
-  history: ConversationHistoryEntry[],
 ) {
   return {
     systemMessages: [{
       role: "system" as const,
       content: systemPromptFor(promptVersion),
     }],
-    currentMessages: turnPromptMessages(input, pageContext, conversation.turnIndex, loadedOperationIds, history),
+    currentMessages: turnPromptMessages(input, pageContext, conversation.turnIndex),
   }
 }
 

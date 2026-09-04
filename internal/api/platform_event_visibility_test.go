@@ -21,16 +21,17 @@ func TestPlatformEventVisibilityDoesNotExpandForAdministratorByDefault(t *testin
 		t.Fatalf("open dry-run database: %v", err)
 	}
 	handlers := &Handlers{db: db, projects: repository.NewProjectRepository(db)}
+	handlers.domains = newDomainHandlers(handlers)
 	admin := model.User{ID: "usr_admin", Role: authz.PlatformRoleAdmin}
 
 	var events []model.PlatformEvent
-	related := handlers.platformEventsVisibleTo(admin, projectservice.ListVisibilityRelated, context.Background()).Find(&events).Statement
+	related := handlers.domains.platform.PlatformEventsVisibleTo(admin, projectservice.ListVisibilityRelated, context.Background()).Find(&events).Statement
 	relatedSQL := db.Dialector.Explain(related.SQL.String(), related.Vars...)
 	if !strings.Contains(relatedSQL, "actor_id = 'usr_admin'") {
 		t.Fatalf("related event query is not caller-scoped: %s", relatedSQL)
 	}
 
-	all := handlers.platformEventsVisibleTo(admin, projectservice.ListVisibilityAll, context.Background()).Find(&events).Statement
+	all := handlers.domains.platform.PlatformEventsVisibleTo(admin, projectservice.ListVisibilityAll, context.Background()).Find(&events).Statement
 	allSQL := db.Dialector.Explain(all.SQL.String(), all.Vars...)
 	if strings.Contains(allSQL, "actor_id") || strings.Contains(allSQL, "project_id in") {
 		t.Fatalf("all event query remained related-scoped: %s", allSQL)

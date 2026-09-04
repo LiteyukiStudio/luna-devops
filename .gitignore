@@ -48,6 +48,7 @@ web/dist-ssr/
 release/
 web/.vite/
 web/*.local
+web/src/api/generated/openapi.ts
 
 # Package manager temporary files
 npm-debug.log*

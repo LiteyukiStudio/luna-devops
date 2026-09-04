@@ -1,7 +1,6 @@
 export default {
   inbox: {
     title: '메시지함',
-    description: '나와 관련된 플랫폼 메시지와 처리 대기 요청을 확인합니다.',
     open: '메시지함 열기',
     unreadCount: '읽지 않은 메시지 {{count}}개',
     unreadCountOverflow: '읽지 않은 메시지 99개 이상',
@@ -40,7 +39,7 @@ export default {
       system: '시스템',
     },
     priority: { critical: '긴급', high: '중요' },
-    detail: { title: '메시지 상세', requestStatus: '요청 상태', expiresAt: '만료 시간' },
+    detail: { title: '메시지 상세', expiresAt: '만료 시간' },
     decision: {
       acceptTitle: '이 요청을 수락하시겠습니까?',
       acceptDescription: '플랫폼은 권한과 리소스 상태를 다시 검증한 후 이 작업을 실행합니다.',

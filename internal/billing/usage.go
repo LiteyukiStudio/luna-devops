@@ -28,10 +28,10 @@ const (
 )
 
 type BuildUsageInput struct {
-	Run         model.BuildRun
-	Job         model.BuildJob
-	Environment model.Environment
-	FinishedAt  time.Time
+	Run              model.BuildRun
+	Job              model.BuildJob
+	DeploymentTarget model.DeploymentTarget
+	FinishedAt       time.Time
 }
 
 type RuntimeUsageInput struct {
@@ -39,7 +39,7 @@ type RuntimeUsageInput struct {
 	ProjectID          string
 	ApplicationID      string
 	DeploymentTargetID string
-	EnvironmentID      string
+	Stage              string
 	DesiredReplicas    int32
 	CPURequest         string
 	MemoryRequest      string
@@ -53,7 +53,7 @@ type RuntimeAggregatedUsageInput struct {
 	ProjectID                     string
 	ApplicationID                 string
 	DeploymentTargetID            string
-	EnvironmentID                 string
+	Stage                         string
 	PeriodStart                   time.Time
 	PeriodEnd                     time.Time
 	CPUCoreHours                  decimal.Decimal
@@ -127,8 +127,9 @@ func (s Service) SettleBuildRun(input BuildUsageInput) error {
 		"cpuCredits":         cpuAmount.String(),
 		"memoryCredits":      memoryAmount.String(),
 		"buildStatus":        input.Run.Status,
-		"environmentId":      input.Environment.ID,
-		"buildEnvironmentId": input.Environment.ID,
+		"deploymentTargetId": input.DeploymentTarget.ID,
+		"stage":              input.DeploymentTarget.Stage,
+		"buildEnvironmentId": input.Run.BuildEnvironmentID,
 		"buildCPU":           input.Run.BuildCPURequest,
 		"buildMemory":        input.Run.BuildMemoryRequest,
 	})
@@ -181,7 +182,7 @@ func (s Service) SettleRuntimeTargetWindow(input RuntimeUsageInput) error {
 	resourceID := runtimeUsageResourceID(input.DeploymentTargetID, input.PeriodStart)
 	metadata, _ := json.Marshal(map[string]string{
 		"deploymentTargetId": input.DeploymentTargetID,
-		"environmentId":      input.EnvironmentID,
+		"stage":              input.Stage,
 		"replicas":           decimal.NewFromInt(int64(input.DesiredReplicas)).String(),
 		"durationHours":      durationHours.String(),
 		"cpuCores":           cpuCoresFromQuantity(input.CPURequest).String(),
@@ -244,7 +245,7 @@ func (s Service) SettleRuntimeTargetAggregation(input RuntimeAggregatedUsageInpu
 	now := time.Now().UTC()
 	metadata := func(requestFloor, actualObserved, billed decimal.Decimal) string {
 		payload, _ := json.Marshal(map[string]any{
-			"deploymentTargetId": input.DeploymentTargetID, "environmentId": input.EnvironmentID,
+			"deploymentTargetId": input.DeploymentTargetID, "stage": input.Stage,
 			"formula": "max_request_actual", "sampleCount": input.SampleCount,
 			"metricsSampleCount": input.MetricsSampleCount, "observedDurationSeconds": input.ObservedDurationSeconds,
 			"expectedDurationSeconds": input.ExpectedDurationSeconds, "coverageRatio": coverage.String(),

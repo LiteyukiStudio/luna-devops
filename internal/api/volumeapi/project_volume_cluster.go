@@ -193,7 +193,6 @@ func (adapter *projectVolumeClusterAdapter) clientForCluster(ctx context.Context
 	}
 	var cluster model.RuntimeCluster
 	err := runtimecluster.ActiveScope(adapter.db.WithContext(ctx)).
-		Where("type in ?", []string{"kubernetes", "k3s"}).
 		First(&cluster, "id = ?", strings.TrimSpace(clusterID)).Error
 	if err != nil || strings.TrimSpace(cluster.KubeconfigRef) == "" {
 		return nil, errProjectVolumeClusterUnavailable

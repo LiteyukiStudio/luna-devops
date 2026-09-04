@@ -7,7 +7,6 @@ import (
 
 	"github.com/LiteyukiStudio/devops/internal/aiagent"
 	"github.com/LiteyukiStudio/devops/internal/aitool"
-	"github.com/LiteyukiStudio/devops/internal/api/billingapi"
 	"github.com/LiteyukiStudio/devops/internal/inbox"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/repository"
@@ -24,10 +23,8 @@ const rememberCookiePrefix = "lyd_remember_"
 const sessionCookieName = "lyd_session"
 const currentProjectRoleContextKey = "currentProjectRole"
 
-// Handlers is the root HTTP composition facade. Business-domain request logic
-// lives in the sibling *api packages and is connected here through narrow Host
-// adapters; this type owns only shared runtime dependencies and route-facing
-// compatibility methods.
+// Handlers owns the shared runtime dependencies exposed to the domain handlers
+// through their narrow Host adapters.
 type Handlers struct {
 	db                              *gorm.DB
 	config                          Config
@@ -50,7 +47,7 @@ type Handlers struct {
 	volumeTransferMaxBytes          int64
 	volumeTransferEnabled           bool
 	continuousAuthorizationInterval time.Duration
-	billingHandlers                 *billingapi.Handler
+	domains                         *domainHandlers
 }
 
 type inboxService interface {
@@ -130,7 +127,7 @@ func NewHandlersWithConfig(db *gorm.DB, cfg Config) *Handlers {
 	)
 	handlers.inbox = inbox.NewService(db)
 	handlers.inboxDecision = handlers.decideInboxAction
-	handlers.billingHandlers = billingapi.New(billingHost{handlers: handlers})
+	handlers.domains = newDomainHandlers(handlers)
 	return handlers
 }
 

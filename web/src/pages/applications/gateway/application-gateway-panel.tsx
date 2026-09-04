@@ -33,7 +33,6 @@ const routeDefaults: RouteForm = {
   dnsStatus: 'pending',
   domainSuffix: '',
   enabled: true,
-  environmentId: '',
   host: '',
   hostnameAliases: '',
   isDefault: false,
@@ -57,7 +56,7 @@ const gatewayRouteTlsModeLabels: Record<GatewayRoute['tlsMode'], string> = {
 }
 
 export interface ApplicationGatewayPanelHandle {
-  openCreateDialog: (environmentId?: string, deploymentTargetId?: string) => void
+  openCreateDialog: () => void
 }
 export function ApplicationGatewayPanel({ applicationId, applicationIdentifier, deploymentTargets, projectId, projectIdentifier, ref, routes }: {
   applicationId: string
@@ -107,7 +106,6 @@ export function ApplicationGatewayPanel({ applicationId, applicationIdentifier, 
         ...values,
         applicationId,
         domainSuffix,
-        environmentId: target?.environmentId ?? values.environmentId,
         sectionName: '',
         servicePort: Number(values.servicePort) || deploymentTargetPrimaryServicePort(target),
       }
@@ -149,14 +147,12 @@ export function ApplicationGatewayPanel({ applicationId, applicationIdentifier, 
   function openRouteDialog(route?: GatewayRoute) {
     setEditingRoute(route ?? null)
     const defaultTarget = deploymentTargets[0]
-    const matchedTarget = route?.deploymentTargetId
-      ? deploymentTargets.find(target => target.id === route.deploymentTargetId)
-      : deploymentTargets.find(target => target.environmentId === route?.environmentId)
+    const matchedTarget = deploymentTargets.find(target => target.id === route?.deploymentTargetId)
     const target = matchedTarget ?? defaultTarget
     const domainSuffix = route?.domainSuffix || firstGatewayDomainSuffix(target, runtimeClusters.data ?? [])
     form.reset(route
-      ? { ...route, deploymentTargetId: route.deploymentTargetId || target?.id || '', domainSuffix, environmentId: target?.environmentId ?? route.environmentId }
-      : { ...routeDefaults, applicationId, deploymentTargetId: defaultTarget?.id ?? '', domainSuffix, environmentId: defaultTarget?.environmentId ?? '', servicePort: deploymentTargetPrimaryServicePort(defaultTarget) })
+      ? { ...route, deploymentTargetId: route.deploymentTargetId || target?.id || '', domainSuffix }
+      : { ...routeDefaults, applicationId, deploymentTargetId: defaultTarget?.id ?? '', domainSuffix, servicePort: deploymentTargetPrimaryServicePort(defaultTarget) })
     setDialogOpen(true)
   }
   useImperativeHandle(ref, () => ({ openCreateDialog: () => openRouteDialog() }))
@@ -212,7 +208,6 @@ export function ApplicationGatewayPanel({ applicationId, applicationIdentifier, 
                   required: true,
                   onChange: (event) => {
                     const target = deploymentTargets.find(item => item.id === event.target.value)
-                    form.setValue('environmentId', target?.environmentId ?? '', { shouldDirty: true, shouldValidate: true })
                     form.setValue('servicePort', deploymentTargetPrimaryServicePort(target), { shouldDirty: true, shouldValidate: true })
                     form.setValue('domainSuffix', firstGatewayDomainSuffix(target, runtimeClusters.data ?? []), { shouldDirty: true, shouldValidate: true })
                   },
@@ -381,9 +376,7 @@ function runtimeClusterForDeploymentTarget(target: DeploymentTarget | undefined,
 }
 
 function runtimeClusterDomainSuffixes(cluster?: RuntimeCluster) {
-  const candidates = cluster?.gatewayDomainSuffixes?.length
-    ? cluster.gatewayDomainSuffixes
-    : [cluster?.gatewayRootDomain ?? '']
+  const candidates = cluster?.gatewayDomainSuffixes ?? []
   const seen = new Set<string>()
   const suffixes: string[] = []
   for (const candidate of candidates) {

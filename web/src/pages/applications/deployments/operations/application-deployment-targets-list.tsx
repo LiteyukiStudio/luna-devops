@@ -54,7 +54,7 @@ export function ApplicationDeploymentTargetsList({
   items: DeploymentTargetRow[]
   onDeleteTarget: (target: DeploymentTarget) => void
   onOpenConsole: (release: Release) => void
-  onOpenReleaseDialog: (environmentId: string, deploymentTargetId: string) => void
+  onOpenReleaseDialog: (deploymentTargetId: string) => void
   onOpenTargetDialog: (target: DeploymentTarget) => void
   onPullLatestImageDeploy: (target: DeploymentTarget) => void
   onRestart: (target: DeploymentTarget) => void
@@ -216,7 +216,7 @@ function DeploymentTargetActions({
   onDeleteTarget: (target: DeploymentTarget) => void
   onExportTarget: (target: DeploymentTarget) => void
   onOpenConsole: (release: Release) => void
-  onOpenReleaseDialog: (environmentId: string, deploymentTargetId: string) => void
+  onOpenReleaseDialog: (deploymentTargetId: string) => void
   onOpenTargetDialog: (target: DeploymentTarget) => void
   onPullLatestImageDeploy: (target: DeploymentTarget) => void
   onRestart: (target: DeploymentTarget) => void
@@ -243,7 +243,7 @@ function DeploymentTargetActions({
             {t('deploymentsPage.deploymentDetails')}
           </DropdownMenuItem>
           <DropdownMenuSeparator />
-          <DropdownMenuItem disabled={deleting || !deploymentTargetCanRelease(item.target, deployableBuildRuns) || createReleasePending} onSelect={() => onOpenReleaseDialog(item.target.environmentId, item.target.id)}>
+          <DropdownMenuItem disabled={deleting || !deploymentTargetCanRelease(item.target, deployableBuildRuns) || createReleasePending} onSelect={() => onOpenReleaseDialog(item.target.id)}>
             <Package className="size-4" />
             {item.release ? t('deploymentsPage.createRelease') : t('deploymentsPage.deployToEnvironment')}
           </DropdownMenuItem>
@@ -383,7 +383,7 @@ function MobileDeploymentTargetCard({
   onDeleteTarget: (target: DeploymentTarget) => void
   onExportTarget: (target: DeploymentTarget) => void
   onOpenConsole: (release: Release) => void
-  onOpenReleaseDialog: (environmentId: string, deploymentTargetId: string) => void
+  onOpenReleaseDialog: (deploymentTargetId: string) => void
   onOpenTargetDialog: (target: DeploymentTarget) => void
   onPullLatestImageDeploy: (target: DeploymentTarget) => void
   onRestart: (target: DeploymentTarget) => void

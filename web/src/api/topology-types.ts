@@ -1,4 +1,8 @@
+import type { components, operations } from './generated/openapi.js'
 import type { PaginatedResponse, PaginationParams } from './types'
+
+type TopologySchemas = components['schemas']
+type ProjectTopologyHTTPQuery = NonNullable<operations['getProjectTopology']['parameters']['query']>
 
 export type ProjectTopologyOrigin = 'service_binding' | 'manual'
 export type ProjectTopologyRelationType = 'depends_on' | 'calls' | 'reads_writes' | 'publishes_to' | 'consumes_from'
@@ -53,10 +57,8 @@ export interface ProjectTopology {
   warnings: ProjectTopologyWarning[]
 }
 
-export interface ProjectTopologyQuery {
-  applicationId?: string
+export type ProjectTopologyQuery = Omit<ProjectTopologyHTTPQuery, 'origins'> & {
   origins?: ProjectTopologyOrigin[]
-  stage?: string
 }
 
 export interface ProjectTopologyListParams extends PaginationParams {
@@ -88,18 +90,7 @@ export interface ServiceBinding {
   updatedAt: string
 }
 
-export type ServiceBindingPayload = Pick<ServiceBinding, | 'sourceApplicationId'
-  | 'sourceDeploymentTargetId'
-  | 'targetApplicationId'
-  | 'targetDeploymentTargetId'
-  | 'targetPortName'
-  | 'protocol'
-  | 'path'
-  | 'injectionMode'
-  | 'urlEnvVar'
-  | 'hostEnvVar'
-  | 'portEnvVar'
-  | 'enabled'>
+export type ServiceBindingPayload = TopologySchemas['ServiceBindingInput']
 
 export interface ServiceBindingMutationResult {
   item?: ServiceBinding
@@ -135,20 +126,8 @@ export type ProjectTopologyManualEdgePayload = Pick<ProjectTopologyManualEdge, |
   | 'port'
   | 'description'>
 
-export interface ServiceBindingCheckItem {
-  code: string
-  status: 'passed' | 'warning' | 'failed' | 'unavailable'
-  resource?: string
-  detail?: string
-}
-
-export interface ServiceBindingCheckResult {
-  bindingId: string
-  checkedAt?: string
-  status: ProjectTopologyStatus
-  observationCode?: string
-  checks: ServiceBindingCheckItem[]
-}
+export type ServiceBindingCheckItem = TopologySchemas['ServiceBindingCheckItem']
+export type ServiceBindingCheckResult = TopologySchemas['ServiceBindingCheckResult']
 
 export type ServiceBindingPage = PaginatedResponse<ServiceBinding>
 export type ProjectTopologyManualEdgePage = PaginatedResponse<ProjectTopologyManualEdge>

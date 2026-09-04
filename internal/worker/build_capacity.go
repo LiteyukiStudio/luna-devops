@@ -17,7 +17,7 @@ const (
 
 var errBuildCapacityUnavailable = errors.New("build capacity unavailable")
 
-func (r *Runner) ensureBuildCapacity(project model.Project, cluster model.RuntimeCluster, environment model.Environment) error {
+func (r *Runner) ensureBuildCapacity(project model.Project, cluster model.RuntimeCluster, target model.DeploymentTarget) error {
 	projectLimit := normalizeBuildConcurrency(project.MaxConcurrentBuilds, defaultProjectBuildConcurrency)
 	clusterLimit := normalizeBuildConcurrency(cluster.MaxConcurrentBuilds, defaultClusterBuildConcurrency)
 
@@ -29,7 +29,7 @@ func (r *Runner) ensureBuildCapacity(project model.Project, cluster model.Runtim
 		return fmt.Errorf("%w: project %s running builds %d/%d", errBuildCapacityUnavailable, project.ID, projectRunning, projectLimit)
 	}
 
-	clusterRunning, err := r.runningClusterBuilds(cluster.ID, environment)
+	clusterRunning, err := r.runningClusterBuilds(cluster.ID, target)
 	if err != nil {
 		return err
 	}
@@ -47,7 +47,7 @@ func (r *Runner) runningProjectBuilds(projectID string) (int64, error) {
 	return count, err
 }
 
-func (r *Runner) runningClusterBuilds(clusterID string, environment model.Environment) (int64, error) {
+func (r *Runner) runningClusterBuilds(clusterID string, target model.DeploymentTarget) (int64, error) {
 	clusterID = strings.TrimSpace(clusterID)
 	if clusterID == "" {
 		return 0, nil
@@ -56,7 +56,7 @@ func (r *Runner) runningClusterBuilds(clusterID string, environment model.Enviro
 		Joins("join build_runs on build_runs.id = build_jobs.build_run_id and build_runs.project_id = build_jobs.project_id").
 		Joins("join deployment_targets on deployment_targets.id = build_runs.deployment_target_id and deployment_targets.project_id = build_runs.project_id and deployment_targets.application_id = build_runs.application_id").
 		Where("build_jobs.status = ?", "running")
-	if strings.TrimSpace(environment.ClusterID) == "" {
+	if strings.TrimSpace(target.ClusterID) == "" {
 		query = query.Where("deployment_targets.cluster_id = '' or deployment_targets.cluster_id = ?", clusterID)
 	} else {
 		query = query.Where("deployment_targets.cluster_id = ?", clusterID)

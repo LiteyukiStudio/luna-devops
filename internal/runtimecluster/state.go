@@ -14,15 +14,8 @@ const (
 	DeleteStatusDeleted      = "deleted"
 )
 
-// NormalizeDeleteStatus treats an empty in-memory value as active so legacy
-// fixtures match the database default. Persisted rows are backfilled by the
-// versioned migration and never rely on this compatibility rule.
 func NormalizeDeleteStatus(value string) string {
-	value = strings.ToLower(strings.TrimSpace(value))
-	if value == "" {
-		return DeleteStatusActive
-	}
-	return value
+	return strings.ToLower(strings.TrimSpace(value))
 }
 
 func IsActive(cluster model.RuntimeCluster) bool {
@@ -32,8 +25,5 @@ func IsActive(cluster model.RuntimeCluster) bool {
 // ActiveScope is the only reusable availability predicate for runtime
 // clusters outside management and cleanup flows.
 func ActiveScope(db *gorm.DB) *gorm.DB {
-	if db == nil {
-		return nil
-	}
 	return db.Where("delete_status = ?", DeleteStatusActive)
 }

@@ -108,10 +108,6 @@ func (h *Handlers) InstallSystemAppTemplate(ctx *gin.Context) {
 		writeError(ctx, http.StatusNotFound, "runtime cluster not found")
 		return
 	}
-	if cluster.Type != "kubernetes" && cluster.Type != "k3s" {
-		writeErrorCode(ctx, http.StatusBadRequest, "runtime_cluster.unsupported", "only kubernetes/k3s runtime clusters are supported")
-		return
-	}
 	if !h.host.TaskQueueAvailable() {
 		writeError(ctx, http.StatusServiceUnavailable, "task queue is not configured")
 		return
@@ -224,7 +220,6 @@ func (h *Handlers) systemComponentApplicationPlan(ctx *gin.Context, user model.U
 		ID:             id.New("dplt"),
 		ProjectID:      project.ID,
 		ApplicationID:  application.ID,
-		EnvironmentID:  "",
 		Name:           "cluster-" + h.host.ShortID(cluster.ID),
 		Stage:          systemStage,
 		KubernetesName: resourceidentifier.DeploymentTargetName(applicationIdentifier, "system-"+clusterSuffix),
@@ -259,8 +254,6 @@ func (h *Handlers) systemComponentApplicationPlan(ctx *gin.Context, user model.U
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return systemComponentApplicationPlan{}, false
 	}
-	target.EnvironmentID = target.ID
-
 	secretValue := model.SecretValue{
 		ID:        id.New("sec"),
 		CipherRef: h.secrets.Encrypt(reportToken),
@@ -282,7 +275,6 @@ func (h *Handlers) systemComponentApplicationPlan(ctx *gin.Context, user model.U
 		ID:                 id.New("rel"),
 		ProjectID:          project.ID,
 		ApplicationID:      application.ID,
-		EnvironmentID:      target.ID,
 		DeploymentTargetID: target.ID,
 		ImageRef:           target.ImageRef,
 		Type:               "deploy",

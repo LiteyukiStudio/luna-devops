@@ -341,6 +341,7 @@ func assertFreshMigrationState(t *testing.T, db *gorm.DB) {
 	if migrationState.Version != latestVersion {
 		t.Fatalf("migration version = %d, want %d", migrationState.Version, latestVersion)
 	}
+	assertSlimmingMigrationRemovals(t, db)
 
 	for _, table := range []string{
 		"billing_rate_rules",
@@ -586,6 +587,66 @@ func assertFreshMigrationState(t *testing.T, db *gorm.DB) {
 
 }
 
+func assertSlimmingMigrationRemovals(t *testing.T, db *gorm.DB) {
+	t.Helper()
+
+	for _, obsolete := range []struct {
+		table  string
+		column string
+	}{
+		{table: "projects", column: "namespace_strategy"},
+		{table: "runtime_clusters", column: "type"},
+		{table: "runtime_clusters", column: "gateway_provider"},
+		{table: "runtime_clusters", column: "gateway_root_domain"},
+		{table: "deployment_targets", column: "environment_id"},
+		{table: "gateway_routes", column: "environment_id"},
+		{table: "hook_runs", column: "environment_id"},
+		{table: "releases", column: "environment_id"},
+		{table: "deployment_targets", column: "build_labels"},
+		{table: "build_runs", column: "build_labels"},
+		{table: "build_runs", column: "cache_config"},
+		{table: "build_runs", column: "cpu_core_seconds"},
+		{table: "build_runs", column: "memory_mb_seconds"},
+		{table: "build_runs", column: "credit_cost"},
+		{table: "build_jobs", column: "type"},
+		{table: "build_jobs", column: "builder_id"},
+		{table: "build_jobs", column: "lease_token"},
+		{table: "build_jobs", column: "lease_until"},
+		{table: "build_jobs", column: "last_heartbeat_at"},
+	} {
+		if db.Migrator().HasColumn(obsolete.table, obsolete.column) {
+			t.Fatalf("fresh database contains slimming-migration column %s.%s", obsolete.table, obsolete.column)
+		}
+	}
+
+	for _, obsolete := range []struct {
+		table string
+		name  string
+	}{
+		{table: "deployment_targets", name: "idx_deployment_targets_app_env_name_active"},
+		{table: "deployment_targets", name: "idx_deployment_targets_environment_id"},
+		{table: "gateway_routes", name: "idx_gateway_routes_environment_id"},
+		{table: "hook_runs", name: "idx_hook_runs_environment_id"},
+		{table: "releases", name: "idx_releases_environment_id"},
+		{table: "build_jobs", name: "idx_build_jobs_builder_id"},
+		{table: "build_jobs", name: "idx_build_jobs_lease_token"},
+		{table: "build_jobs", name: "idx_build_jobs_lease_until"},
+		{table: "build_jobs", name: "idx_build_jobs_last_heartbeat_at"},
+	} {
+		if db.Migrator().HasIndex(obsolete.table, obsolete.name) {
+			t.Fatalf("fresh database contains slimming-migration index %s", obsolete.name)
+		}
+	}
+
+	var obsoleteGatewayConfigCount int64
+	if err := db.Table("app_configs").Where("key IN ?", []string{"gateway.rootDomain", "gateway.publicScheme"}).Count(&obsoleteGatewayConfigCount).Error; err != nil {
+		t.Fatalf("count obsolete gateway app configs: %v", err)
+	}
+	if obsoleteGatewayConfigCount != 0 {
+		t.Fatalf("fresh database contains %d obsolete gateway app configs", obsoleteGatewayConfigCount)
+	}
+}
+
 func assertStableModelMigrationCoverage(t *testing.T, db *gorm.DB) {
 	t.Helper()
 
@@ -755,8 +816,8 @@ func assertRunnerMigrationVersion(t *testing.T, runner *migrate.Migrate, expecte
 func assertActiveDeploymentStageUniqueness(t *testing.T, db *gorm.DB) {
 	t.Helper()
 	now := time.Now()
-	if err := db.Exec(`INSERT INTO projects (id, identifier, kubernetes_namespace, name, namespace_strategy, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		"prj_stage_test", "stage-test", "luna-stage-test", "Stage Test", "project", now, now).Error; err != nil {
+	if err := db.Exec(`INSERT INTO projects (id, identifier, kubernetes_namespace, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
+		"prj_stage_test", "stage-test", "luna-stage-test", "Stage Test", now, now).Error; err != nil {
 		t.Fatalf("insert stage test project: %v", err)
 	}
 	if err := db.Exec(`INSERT INTO applications (id, project_id, identifier, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
@@ -764,8 +825,8 @@ func assertActiveDeploymentStageUniqueness(t *testing.T, db *gorm.DB) {
 		t.Fatalf("insert stage test application: %v", err)
 	}
 	insertTarget := func(id string) error {
-		return db.Exec(`INSERT INTO deployment_targets (id, project_id, application_id, environment_id, name, stage, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-			id, "prj_stage_test", "app_stage_test", "", id, "prod", now, now).Error
+		return db.Exec(`INSERT INTO deployment_targets (id, project_id, application_id, name, stage, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+			id, "prj_stage_test", "app_stage_test", id, "prod", now, now).Error
 	}
 	if err := insertTarget("dplt_stage_first"); err != nil {
 		t.Fatalf("insert first active deployment stage: %v", err)

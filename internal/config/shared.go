@@ -37,29 +37,6 @@ func loadSharedFrom(snapshot map[string]string, environmentErr error) (Shared, e
 	return shared, errors.Join(decodeErr, validationErr)
 }
 
-// LoadTasks loads the small contract required by the task administration CLI.
-func LoadTasks() (TasksConfig, error) {
-	snapshot, environmentErr := loadEnvironmentSnapshot()
-	if environmentErr != nil {
-		return TasksConfig{}, environmentErr
-	}
-	raw, decodeErr := decodeEnvironment[tasksEnvironment](snapshot)
-	telemetryRaw, telemetryDecodeErr := decodeEnvironment[telemetryEnvironment](snapshot)
-	telemetry, telemetryErr := buildTelemetry(telemetryRaw, snapshot)
-
-	address := strings.TrimSpace(raw.RedisAddr)
-	redisOptions, redisErr := redisconfig.Parse(address)
-	if redisErr != nil {
-		redisErr = errors.New("REDIS_ADDR is invalid")
-	}
-	return TasksConfig{Redis: redisOptions, Telemetry: telemetry}, errors.Join(
-		decodeErr,
-		telemetryDecodeErr,
-		telemetryErr,
-		redisErr,
-	)
-}
-
 func buildShared(raw sharedEnvironment, snapshot map[string]string) (Shared, error) {
 	mode, modeErr := runtimeModeFromValue(raw.Mode)
 	telemetry, telemetryErr := buildTelemetry(raw.Telemetry, snapshot)

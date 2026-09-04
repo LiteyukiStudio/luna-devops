@@ -12,10 +12,6 @@ env:
   CONTAINER_PLATFORMS: linux/amd64
   DOCKERHUB_REGISTRY: docker.io
   DOCKERHUB_NAMESPACE: liteyukistudio
-  IMAGE_API: luna-devops
-  IMAGE_WORKER: luna-worker
-  IMAGE_AGENT: luna-agent
-  IMAGE_GATEWAY_TRAFFIC_PROBE: devops-gateway-traffic-probe
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}

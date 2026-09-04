@@ -7,10 +7,11 @@ import { createId } from "../id.js"
 import type { Repository } from "../persistence/repository.js"
 import type { ModelToolCall } from "../provider/provider.js"
 import { agentMetrics, telemetryLog } from "../telemetry.js"
+import type { BusinessCardToolOperationId } from "../tools/business-card-tools.js"
 import { createInteractionCardsInput } from "../tools/ui-cards.js"
 
 export type CardGeneration = {
-  operationId: string
+  operationId: BusinessCardToolOperationId
   itemId: string
   toolCallId: string
   timelineIndex: number
@@ -28,9 +29,8 @@ export type CardGeneration = {
   issues?: InteractionCardValidationIssue[]
 }
 
-// 交互卡片生成器：窄模型工具在这里统一投影为 create_interaction_cards
-// 稳定 Timeline 协议，并管理占位、schema 校验、修复重试与终态。
-// 每次失败都按真实模型 operationId 隔离，在同一占位项推进 attempt。
+// 交互卡片生成器直接用模型调用的业务卡片工具标识写入 Timeline，
+// 并管理占位、schema 校验、修复重试与终态。
 export class CardGenerationService {
   constructor(private readonly repository: Repository) {}
 
@@ -39,7 +39,7 @@ export class CardGenerationService {
     turnId: string,
     raw: unknown,
     maxAttempts: number,
-    operationId = "create_interaction_cards",
+    operationId: BusinessCardToolOperationId,
   ): Promise<CardGeneration> {
     const rawObject = raw && typeof raw === "object" && !Array.isArray(raw) ? raw as Record<string, unknown> : {}
     const title = typeof rawObject.title === "string" && rawObject.title.trim()
@@ -67,8 +67,7 @@ export class CardGenerationService {
       status: "streaming",
       content: {
         toolCallId,
-        operationId: "create_interaction_cards",
-        modelOperationId: operationId,
+        operationId,
         titleKey: "aiAssistant.cards.preparingToolTitle",
         status: "running",
         arguments: placeholderArguments,
@@ -82,8 +81,7 @@ export class CardGenerationService {
     }, "tool.started", {
       itemId,
       toolCallId,
-      operationId: "create_interaction_cards",
-      modelOperationId: operationId,
+      operationId,
       titleKey: "aiAssistant.cards.preparingToolTitle",
       arguments: placeholderArguments,
     })
@@ -142,8 +140,7 @@ export class CardGenerationService {
     }
     await this.repository.updateItemWithEvent(itemId, "completed", {
       toolCallId,
-      operationId: "create_interaction_cards",
-      modelOperationId: generation.operationId,
+      operationId: generation.operationId,
       titleKey: "aiAssistant.cards.toolTitle",
       status: "succeeded",
       arguments: input,
@@ -151,8 +148,7 @@ export class CardGenerationService {
     }, "tool.completed", {
       itemId,
       toolCallId,
-      operationId: "create_interaction_cards",
-      modelOperationId: generation.operationId,
+      operationId: generation.operationId,
       titleKey: "aiAssistant.cards.toolTitle",
       arguments: input,
       result,
@@ -184,8 +180,7 @@ export class CardGenerationService {
     }
     await this.repository.updateItemWithEvent(generation.itemId, "streaming", {
       toolCallId: generation.toolCallId,
-      operationId: "create_interaction_cards",
-      modelOperationId: generation.operationId,
+      operationId: generation.operationId,
       titleKey: "aiAssistant.cards.preparingToolTitle",
       status: "running",
       arguments: generation.placeholderArguments,
@@ -199,8 +194,7 @@ export class CardGenerationService {
     }, "tool.progress", {
       itemId: generation.itemId,
       toolCallId: generation.toolCallId,
-      operationId: "create_interaction_cards",
-      modelOperationId: generation.operationId,
+      operationId: generation.operationId,
       timelineIndex: generation.timelineIndex,
       result: cardValidationFailure("create", issues, attempt, generation.maxAttempts, generation.generationId, errorCode, generation.operationId),
     })
@@ -235,8 +229,7 @@ export class CardGenerationService {
     }
     await this.repository.updateItemWithEvent(generation.itemId, "failed", {
       toolCallId: generation.toolCallId,
-      operationId: "create_interaction_cards",
-      modelOperationId: generation.operationId,
+      operationId: generation.operationId,
       titleKey: "aiAssistant.cards.preparingToolTitle",
       status: "failed",
       arguments: generation.placeholderArguments,
@@ -245,8 +238,7 @@ export class CardGenerationService {
     }, "tool.failed", {
       itemId: generation.itemId,
       toolCallId: generation.toolCallId,
-      operationId: "create_interaction_cards",
-      modelOperationId: generation.operationId,
+      operationId: generation.operationId,
       titleKey: "aiAssistant.cards.preparingToolTitle",
       errorCode,
       result,
@@ -274,9 +266,9 @@ export function cardValidationFailure(
   issues: InteractionCardValidationIssue[],
   attempt: number,
   maxAttempts: number,
-  generationId?: string,
-  errorCode: InteractionCardValidationFailure["errorCode"] = "ai.interaction_card_schema_invalid",
-  operationId = "create_interaction_cards",
+  generationId: string | undefined,
+  errorCode: InteractionCardValidationFailure["errorCode"],
+  operationId: string,
 ): InteractionCardValidationFailure {
   const retryable = attempt < maxAttempts
   return {
@@ -298,8 +290,8 @@ export function providerArgumentFailure(
   error: NonNullable<ModelToolCall["argumentError"]>,
   attempt: number,
   maxAttempts: number,
-  generationId?: string,
-  operationId = "create_interaction_cards",
+  generationId: string | undefined,
+  operationId: string,
 ): InteractionCardValidationFailure {
   const failure = cardValidationFailure("provider", [{
     code: error.code,

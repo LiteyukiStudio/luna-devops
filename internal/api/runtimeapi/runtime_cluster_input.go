@@ -12,6 +12,7 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/model"
 	kubeprovider "github.com/LiteyukiStudio/devops/internal/provider/kubernetes"
 	"github.com/LiteyukiStudio/devops/internal/resourcepolicy"
+	"github.com/LiteyukiStudio/devops/internal/runtimecluster"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
@@ -49,7 +50,7 @@ func (h *Handlers) runtimeClusterFromInput(ctx *gin.Context, user model.User, in
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return model.RuntimeCluster{}, false
 	}
-	gatewayDomainSuffixes := normalizeGatewayDomainSuffixes(input.GatewayDomainSuffixes, input.GatewayRootDomain, h.legacyGatewayRootDomain())
+	gatewayDomainSuffixes := runtimecluster.NormalizeGatewayDomainSuffixes(input.GatewayDomainSuffixes)
 	policy := runtimeClusterResourcePolicy(input)
 	if err := policy.Validate(); err != nil {
 		writeErrorCode(ctx, http.StatusBadRequest, "runtime.resource_policy_invalid", err.Error())
@@ -58,7 +59,6 @@ func (h *Handlers) runtimeClusterFromInput(ctx *gin.Context, user model.User, in
 	return model.RuntimeCluster{
 		ID:                            clusterID,
 		Name:                          strings.TrimSpace(input.Name),
-		Type:                          normalizeRuntimeClusterType(input.Type),
 		Endpoint:                      strings.TrimSpace(input.Endpoint),
 		Scope:                         scope,
 		OwnerRef:                      ownerRef,
@@ -70,9 +70,7 @@ func (h *Handlers) runtimeClusterFromInput(ctx *gin.Context, user model.User, in
 		MemoryRequestPercent:          policy.MemoryRequestPercent,
 		CPULimitPercent:               policy.CPULimitPercent,
 		MemoryLimitPercent:            policy.MemoryLimitPercent,
-		GatewayProvider:               normalizeGatewayProvider(input.GatewayProvider),
-		GatewayRootDomain:             gatewayDomainSuffixes[0],
-		GatewayDomainSuffixesRaw:      encodeGatewayDomainSuffixes(gatewayDomainSuffixes),
+		GatewayDomainSuffixesRaw:      runtimecluster.EncodeGatewayDomainSuffixes(gatewayDomainSuffixes),
 		GatewayDomainSuffixes:         gatewayDomainSuffixes,
 		GatewayPublicScheme:           normalizeGatewayPublicScheme(input.GatewayPublicScheme),
 		GatewayPublicPort:             normalizeGatewayPublicPort(input.GatewayPublicPort, input.GatewayPublicScheme),
@@ -90,7 +88,7 @@ func (h *Handlers) runtimeClusterFromInput(ctx *gin.Context, user model.User, in
 		GatewayCertIssuerName:         dnsLabelName(input.GatewayCertIssuerName),
 		GatewayCertificateNamespace:   dnsLabelName(input.GatewayCertificateNamespace),
 		GatewayWildcardCertEnabled:    input.GatewayWildcardCertEnabled,
-		GatewayWildcardCertDomain:     normalizeGatewayDomainSuffixValue(input.GatewayWildcardCertDomain),
+		GatewayWildcardCertDomain:     runtimecluster.NormalizeGatewayDomainSuffix(input.GatewayWildcardCertDomain),
 		GatewayWildcardCertSecretName: dnsLabelName(input.GatewayWildcardCertSecretName),
 		GatewayExternalTLSMode:        normalizeGatewayExternalTLSMode(input.GatewayExternalTLSMode),
 		GatewayForwardedHeadersMode:   normalizeGatewayForwardedHeadersMode(input.GatewayForwardedHeadersMode),
@@ -132,18 +130,8 @@ func (h *Handlers) saveRuntimeClusterWithDefaultTx(tx *gorm.DB, cluster model.Ru
 	return h.replaceScopedResourceProjectBindings(tx, scopedResourceRuntimeCluster, cluster.ID, sortedProjectIDs(cluster.ProjectIDs), nil)
 }
 
-func normalizeRuntimeClusterType(value string) string {
-	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "docker-compose":
-		return strings.ToLower(strings.TrimSpace(value))
-	default:
-		return "kubernetes"
-	}
-}
-
 type runtimeClusterInput struct {
 	Name                          string   `json:"name" binding:"required"`
-	Type                          string   `json:"type"`
 	Endpoint                      string   `json:"endpoint"`
 	Scope                         string   `json:"scope"`
 	OwnerRef                      string   `json:"ownerRef"`
@@ -155,8 +143,6 @@ type runtimeClusterInput struct {
 	MemoryRequestPercent          *int     `json:"memoryRequestPercent"`
 	CPULimitPercent               *int     `json:"cpuLimitPercent"`
 	MemoryLimitPercent            *int     `json:"memoryLimitPercent"`
-	GatewayProvider               string   `json:"gatewayProvider"`
-	GatewayRootDomain             string   `json:"gatewayRootDomain"`
 	GatewayDomainSuffixes         []string `json:"gatewayDomainSuffixes"`
 	GatewayPublicScheme           string   `json:"gatewayPublicScheme"`
 	GatewayPublicPort             int      `json:"gatewayPublicPort"`
@@ -200,56 +186,6 @@ func runtimeClusterResourcePolicy(input runtimeClusterInput) resourcepolicy.Poli
 	return defaults
 }
 
-func normalizeGatewayRootDomain(value string, fallbackValue string) string {
-	rootDomain := strings.Trim(strings.ToLower(strings.TrimSpace(value)), ".")
-	if rootDomain == "" {
-		rootDomain = strings.Trim(strings.ToLower(strings.TrimSpace(fallbackValue)), ".")
-	}
-	if rootDomain == "" {
-		return "apps.local"
-	}
-	return rootDomain
-}
-
-func normalizeGatewayDomainSuffixes(values []string, legacyValue string, fallbackValue string) []string {
-	if output := normalizeGatewayDomainSuffixList(values); len(output) > 0 {
-		return output
-	}
-	output := normalizeGatewayDomainSuffixList([]string{legacyValue, fallbackValue, "apps.local"})
-	if len(output) == 0 {
-		return []string{"apps.local"}
-	}
-	return output
-}
-
-func normalizeGatewayDomainSuffixList(values []string) []string {
-	seen := map[string]bool{}
-	output := make([]string, 0, len(values))
-	for _, value := range values {
-		suffix := normalizeGatewayDomainSuffixValue(value)
-		if suffix == "" || seen[suffix] {
-			continue
-		}
-		seen[suffix] = true
-		output = append(output, suffix)
-	}
-	return output
-}
-
-func normalizeGatewayDomainSuffixValue(value string) string {
-	return strings.Trim(strings.ToLower(strings.TrimSpace(value)), ".")
-}
-
-func encodeGatewayDomainSuffixes(values []string) string {
-	return strings.Join(normalizeGatewayDomainSuffixList(values), "\n")
-}
-
-func decodeGatewayDomainSuffixes(raw string, legacyValue string, fallbackValue string) []string {
-	return normalizeGatewayDomainSuffixes(strings.FieldsFunc(raw, func(char rune) bool {
-		return char == '\n' || char == ',' || char == ';'
-	}), legacyValue, fallbackValue)
-}
-
 func normalizeGatewayPublicScheme(value string) string {
 	if strings.ToLower(strings.TrimSpace(value)) == "https" {
 		return "https"
@@ -269,15 +205,6 @@ func normalizeGatewayPublicPort(value int, scheme string) int {
 		return normalizePort(value, 443)
 	}
 	return normalizePort(value, 80)
-}
-
-func normalizeGatewayProvider(value string) string {
-	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "", "gateway-api":
-		return "gateway-api"
-	default:
-		return "gateway-api"
-	}
 }
 
 func normalizeGatewayControllerType(value string) string {

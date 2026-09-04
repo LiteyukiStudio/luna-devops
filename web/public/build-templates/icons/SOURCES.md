@@ -9,7 +9,6 @@ These files are local copies of the official project marks used by the build-tem
 | `nextjs.svg` | Next.js | <https://github.com/vercel/next.js/blob/canary/examples/with-docker/public/next.svg> |
 | `bun.svg` | Bun | <https://bun.sh/logo.svg> |
 | `python.png` | Python icon | <https://github.com/python/pythondotorg/blob/main/static/img/python-logo-large.png> |
-| `python.svg` | Python wordmark | <https://github.com/python/pythondotorg/blob/main/static/community_logos/python-logo-generic.svg> |
 | `rust.svg` | Rust | <https://rust-lang.org/static/images/rust-logo-blk.svg> |
 | `ruby.svg` | Ruby | <https://www.ruby-lang.org/images/header-ruby-logo.svg> |
 | `dotnet.svg` | .NET | <https://github.com/dotnet/brand/blob/main/logo/dotnet-logo.svg> |

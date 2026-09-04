@@ -13,6 +13,17 @@ import (
 	"gorm.io/gorm"
 )
 
+func newDryRunWorkerTestRunner(t *testing.T, options Options) *Runner {
+	t.Helper()
+	db, err := gorm.Open(postgres.New(postgres.Config{
+		DSN: "host=127.0.0.1 port=1 user=worker_test dbname=worker_test sslmode=disable",
+	}), &gorm.Config{DryRun: true, DisableAutomaticPing: true})
+	if err != nil {
+		t.Fatalf("open dry-run worker database: %v", err)
+	}
+	return newRunner(db, options)
+}
+
 func TestDeploymentDatabaseOperationsPreserveTraceAndCancellationContext(t *testing.T) {
 	db, err := gorm.Open(postgres.New(postgres.Config{
 		DSN: "host=127.0.0.1 port=1 user=context_test dbname=context_test sslmode=disable",

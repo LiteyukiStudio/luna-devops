@@ -4,12 +4,13 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/LiteyukiStudio/devops/internal/api/aiapi"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/shopspring/decimal"
 )
 
 func TestAIProviderModelsIncludeAgentRequiredTokenLimits(t *testing.T) {
-	encoded, err := json.Marshal(aiProviderModels([]model.AIModel{{
+	encoded, err := json.Marshal(aiapi.ProviderModels([]model.AIModel{{
 		ID:                           "aimod_test",
 		Name:                         "test-model",
 		MaxContextTokens:             524_288,
@@ -102,7 +103,7 @@ func TestAIProviderInternalOpenAPIRequiresCapabilityPolicies(t *testing.T) {
 	if len(runtimeProperties) != len(runtimeFields) {
 		t.Fatalf("AIProviderInternalConfig.runtime properties = %#v, want exactly %d fields", runtimeProperties, len(runtimeFields))
 	}
-	mappedRuntime := aiProviderRuntimeConfig(aiConfigDefaults())
+	mappedRuntime := aiapi.ProviderRuntimeConfig(aiConfigDefaults(), aiConfigDefinition)
 	if len(mappedRuntime) != len(runtimeFields) {
 		t.Fatalf("AI Provider runtime response = %#v, want exactly %d fields", mappedRuntime, len(runtimeFields))
 	}
@@ -135,24 +136,24 @@ func TestAIProviderConfigVersionIncludesRuntimePolicy(t *testing.T) {
 		"ai.runtime.run_timeout_seconds":       "300",
 		"ai.runtime.agent_concurrent_runs":     "2",
 	}
-	initial := aiProviderConfigVersion(values, "secret-v1")
+	initial := aiapi.ProviderConfigVersion(values, "secret-v1")
 	values["ai.runtime.agent_concurrent_runs"] = "3"
-	updated := aiProviderConfigVersion(values, "secret-v1")
+	updated := aiapi.ProviderConfigVersion(values, "secret-v1")
 	if initial == updated {
 		t.Fatal("runtime policy change did not update Provider config version")
 	}
 	values["ai.provider.channel_affinity_enabled"] = "false"
-	withoutAffinity := aiProviderConfigVersion(values, "secret-v1")
+	withoutAffinity := aiapi.ProviderConfigVersion(values, "secret-v1")
 	if updated == withoutAffinity {
 		t.Fatal("channel affinity policy change did not update Provider config version")
 	}
 	values["ai.provider.compatibility"] = "deepseek"
-	withExplicitCompatibility := aiProviderConfigVersion(values, "secret-v1")
+	withExplicitCompatibility := aiapi.ProviderConfigVersion(values, "secret-v1")
 	if withoutAffinity == withExplicitCompatibility {
 		t.Fatal("Provider compatibility change did not update Provider config version")
 	}
 	values["ai.provider.prompt_cache_key_mode"] = "enabled"
-	withPromptCacheKey := aiProviderConfigVersion(values, "secret-v1")
+	withPromptCacheKey := aiapi.ProviderConfigVersion(values, "secret-v1")
 	if withExplicitCompatibility == withPromptCacheKey {
 		t.Fatal("prompt cache key policy change did not update Provider config version")
 	}
@@ -162,14 +163,14 @@ func TestAIProviderSelectConfigPreservesValidValuesAndDefaultsInvalidStorage(t *
 	values := aiConfigDefaults()
 	values["ai.provider.compatibility"] = "deepseek"
 	values["ai.provider.prompt_cache_key_mode"] = "enabled"
-	if got := aiProviderSelectConfig(values, "ai.provider.compatibility"); got != "deepseek" {
+	if got := aiapi.ProviderSelectConfig(values, "ai.provider.compatibility", aiConfigDefinition); got != "deepseek" {
 		t.Fatalf("Provider compatibility = %q, want deepseek", got)
 	}
-	if got := aiProviderSelectConfig(values, "ai.provider.prompt_cache_key_mode"); got != "enabled" {
+	if got := aiapi.ProviderSelectConfig(values, "ai.provider.prompt_cache_key_mode", aiConfigDefinition); got != "enabled" {
 		t.Fatalf("prompt cache key mode = %q, want enabled", got)
 	}
 	values["ai.provider.compatibility"] = "legacy-invalid"
-	if got := aiProviderSelectConfig(values, "ai.provider.compatibility"); got != "auto" {
+	if got := aiapi.ProviderSelectConfig(values, "ai.provider.compatibility", aiConfigDefinition); got != "auto" {
 		t.Fatalf("invalid Provider compatibility = %q, want auto", got)
 	}
 }
@@ -179,7 +180,7 @@ func TestAIProviderRuntimeConfigKeepsValidValues(t *testing.T) {
 	values["ai.runtime.provider_timeout_seconds"] = "45"
 	values["ai.quota.user_concurrent_runs"] = "20"
 
-	runtime := aiProviderRuntimeConfig(values)
+	runtime := aiapi.ProviderRuntimeConfig(values, aiConfigDefinition)
 	if got := runtime["providerTimeoutMs"]; got != 45_000 {
 		t.Fatalf("providerTimeoutMs = %v, want 45000", got)
 	}
@@ -193,7 +194,7 @@ func TestAIProviderRuntimeConfigNormalizesInvalidStoredValues(t *testing.T) {
 	values["ai.runtime.provider_timeout_seconds"] = "0"
 	values["ai.runtime.max_request_retries"] = "not-a-number"
 
-	runtime := aiProviderRuntimeConfig(values)
+	runtime := aiapi.ProviderRuntimeConfig(values, aiConfigDefinition)
 	wants := map[string]any{
 		"providerTimeoutMs": 300_000,
 		"maxRequestRetries": 5,
@@ -207,7 +208,7 @@ func TestAIProviderRuntimeConfigNormalizesInvalidStoredValues(t *testing.T) {
 
 func TestAIProviderRuntimeConfigOmitsAgentLocalContextPolicy(t *testing.T) {
 	values := aiConfigDefaults()
-	runtime := aiProviderRuntimeConfig(values)
+	runtime := aiapi.ProviderRuntimeConfig(values, aiConfigDefinition)
 	for _, key := range []string{
 		"toolResultPayloadBudget",
 		"contextCompressionTriggerRatio",
@@ -230,7 +231,7 @@ func TestAIProviderRuntimeConfigOmitsAgentLocalContextPolicy(t *testing.T) {
 func TestAIProviderRuntimeConfigDefaultsHaveValidationContracts(t *testing.T) {
 	// Calling the complete mapper proves every runtime key has a definition,
 	// a parseable default and a shared read/write range contract.
-	runtime := aiProviderRuntimeConfig(aiConfigDefaults())
+	runtime := aiapi.ProviderRuntimeConfig(aiConfigDefaults(), aiConfigDefinition)
 	if len(runtime) != 5 {
 		t.Fatalf("runtime field count = %d, want 5", len(runtime))
 	}

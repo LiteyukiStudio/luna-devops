@@ -26,7 +26,7 @@ func TestBillingOwnerTransferCompletesExactlyOnce(t *testing.T) {
 	if err := db.Create(&users).Error; err != nil {
 		t.Fatalf("create users: %v", err)
 	}
-	project := model.Project{ID: "prj_transfer", Identifier: "transfer", Name: "Transfer Project", NamespaceStrategy: "project", BillingOwnerUserID: users[0].ID}
+	project := model.Project{ID: "prj_transfer", Identifier: "transfer", Name: "Transfer Project", BillingOwnerUserID: users[0].ID}
 	if err := db.Create(&project).Error; err != nil {
 		t.Fatalf("create project: %v", err)
 	}
@@ -92,7 +92,7 @@ func TestBillingOwnerTransferRejectsNonOwner(t *testing.T) {
 	if err := db.Create(&users).Error; err != nil {
 		t.Fatalf("create users: %v", err)
 	}
-	project := model.Project{ID: "prj_forbidden", Identifier: "forbidden", Name: "Forbidden", NamespaceStrategy: "project", BillingOwnerUserID: users[0].ID}
+	project := model.Project{ID: "prj_forbidden", Identifier: "forbidden", Name: "Forbidden", BillingOwnerUserID: users[0].ID}
 	if err := db.Create(&project).Error; err != nil {
 		t.Fatalf("create project: %v", err)
 	}

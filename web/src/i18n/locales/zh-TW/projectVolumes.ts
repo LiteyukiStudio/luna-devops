@@ -50,7 +50,6 @@ const projectVolumes = {
   noTransfers: '當前沒有匯入或匯出任務',
   bindingTarget: '應用 {{applicationId}} · 部署 {{targetId}}',
   bindingPath: '掛載到 {{path}}',
-  sourceApplication: '來源應用：{{name}}',
   edit: '修改資料卷',
   editDescription: '可修改顯示名稱；僅支援擴容，不支援縮容。',
   updateSucceeded: '資料卷已更新',
@@ -73,7 +72,6 @@ const projectVolumes = {
   sourceExistingReferenced: '引用現有 PVC',
   sourceExistingManaged: '納管現有 PVC',
   sourceSnapshot: '從 VolumeSnapshot 恢復',
-  sourceArchiveImport: '歸檔匯入',
   sourceKinds: {
     blank: '空白卷',
     managed: '平臺管理',

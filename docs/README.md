@@ -1,9 +1,5 @@
 # Luna DevOps Docs
 
-## Guides
-
-- [Billing system](./billing.md)
-
 ## Setup
 
 Install the dependencies:

@@ -32,14 +32,10 @@ api:
     existingSecret: ""
     headersKey: otlp-traces-headers
   # Initial administrator settings are consumed by API only. Leave all values
-  # empty after an administrator exists; prefer an existing Secret for a fresh
-  # production database so the password never enters Helm values.
+  # empty after an administrator exists. A fresh database must use an existing
+  # Secret so the password never enters Helm values or release history.
   initialAdmin:
     existingSecret: ""
-    email: ""
-    name: ""
-    password: ""
-    language: ""
     emailKey: initial-admin-email
     nameKey: initial-admin-name
     passwordKey: initial-admin-password

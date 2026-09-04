@@ -73,7 +73,6 @@ const aiAssistant = {
     runId: '运行标识',
     traceId: 'Trace ID',
     noArguments: '无需参数',
-    result: '结果',
     returnValue: '返回',
     summary: '摘要',
     duration: '耗时',
@@ -147,8 +146,6 @@ const aiAssistant = {
       title: '选项',
       description: '说明',
       suggested: '建议下一步',
-      selected: '已选择',
-      unavailable: '这些建议已失效或当前版本不支持，请重新询问助手。',
       position: '第 {{current}} 项，共 {{total}} 项',
       presets: {
         dashboard: {
@@ -499,7 +496,9 @@ const aiAssistant = {
         webSearch: '搜索互联网',
         fetchWebPage: '读取网页',
         createOptions: '生成快捷选项',
-        createInteractionCards: '生成交互卡片',
+        presentCard: '展示信息卡片',
+        requestInput: '请求结构化输入',
+        requestChoice: '请求选择',
         navigateToRoute: '打开页面',
         renameConversation: '更新会话名称',
       },

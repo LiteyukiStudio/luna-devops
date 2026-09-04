@@ -2,6 +2,7 @@ package runtimeapi
 
 import (
 	"context"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -71,7 +72,6 @@ type Host interface {
 	ShortID(value string) string
 	NextReleaseRevision(tx *gorm.DB, projectID, applicationID, deploymentTargetID string) (int, error)
 	DeploymentTargetResponse(target model.DeploymentTarget) any
-	LegacyGatewayRootDomain() string
 }
 
 type Handler struct {
@@ -126,7 +126,6 @@ func (h *Handler) markResourceDeleting(tx *gorm.DB, resource any, resourceID str
 func (h *Handler) markResourceDeleteFailed(db *gorm.DB, resource any, resourceID, message string) error {
 	return h.host.MarkResourceDeleteFailed(db, resource, resourceID, message)
 }
-func (h *Handler) legacyGatewayRootDomain() string { return h.host.LegacyGatewayRootDomain() }
 func (h *Handler) findProjectForCurrentUserByID(ctx *gin.Context, projectID string) (model.Project, bool) {
 	return h.host.FindProjectForCurrentUserByID(ctx, projectID)
 }
@@ -297,7 +296,7 @@ func setRuntimeSecretNoStoreHeaders(ctx *gin.Context) {
 
 const defaultClusterBuildConcurrency = buildapi.DefaultClusterBuildConcurrency
 
-var gatewayHostSegmentPattern = gatewayapi.GatewayHostSegmentPattern
+var gatewayHostSegmentPattern = regexp.MustCompile(`[^a-z0-9-]+`)
 
 func continuousAuthorizationBindingForAccessToken(userID string, token model.AccessToken) continuousAuthorizationBinding {
 	return projectapi.ContinuousAuthorizationBindingForAccessToken(userID, token)

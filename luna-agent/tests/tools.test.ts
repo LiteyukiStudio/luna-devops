@@ -2,15 +2,18 @@ import { describe, expect, it } from "vitest"
 import { ToolCatalog } from "../src/tools/catalog.js"
 import { DeterministicLunaApiClient } from "../src/tools/luna-api-client.js"
 import { MemoryToolCallStore, ToolOrchestrator, type ToolInterruption } from "../src/tools/orchestrator.js"
+import { testToolOperation } from "./support/tool-catalog.js"
 
 const catalog = ToolCatalog.load([
   {
+    ...testToolOperation("getBuildRun"),
     operationId: "getBuildRun", name: "读取构建", summary: "读取构建状态。", method: "GET", path: "/api/v1/builds/{buildId}", category: "build",
     requiredScopes: ["build:read"], requiresApproval: false, idempotent: true,
     parameters: [{ inputName: "buildId", wireName: "buildId", in: "path", required: true }],
     inputSchema: { type: "object", properties: { buildId: { type: "string", maxLength: 64 } }, required: ["buildId"], additionalProperties: false },
   },
   {
+    ...testToolOperation("restartRelease"),
     operationId: "restartRelease", name: "重启发布", summary: "重启指定发布。", method: "POST", path: "/api/v1/releases/{releaseId}/restart", category: "deployment",
     requiredScopes: ["deployment:write"], requiresApproval: true, idempotent: true,
     parameters: [{ inputName: "releaseId", wireName: "releaseId", in: "path", required: true }],
@@ -95,6 +98,7 @@ describe("tool catalog and orchestration", () => {
 
   it("allows model tools to submit schema-sensitive input through the normal approval flow", async () => {
     const sensitive = ToolCatalog.load([{
+      ...testToolOperation("updateRuntimeSecret"),
       operationId: "updateRuntimeSecret", name: "更新密钥", summary: "更新运行密钥。", method: "PUT", path: "/api/v1/runtime-secrets", category: "deployment",
       requiredScopes: ["deployment:update"], requiresApproval: true, idempotent: true, requestBody: true,
       inputSchema: {

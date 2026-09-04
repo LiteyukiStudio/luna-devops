@@ -46,13 +46,17 @@ export class HttpLunaApiToolClient implements LunaApiToolClient {
     const response = await this.fetchWithRetry(transport.url, init, "tool_execute", request.signal, request.operation.idempotent)
     const requestId = response.headers.get("x-request-id")
     span.setAttribute("http.response.status_code", response.status)
-    agentMetrics.externalRequests.add(1, {
-      target: "luna_api",
-      operation: "tool_execute",
-      outcome: response.ok ? "success" : String(response.status),
-    })
+    let body: unknown
+    try {
+      body = await responseJSON(response)
+    }
+    catch (error) {
+      agentMetrics.externalRequests.add(1, { target: "luna_api", operation: "tool_execute", outcome: "invalid_response" })
+      throw error
+    }
+    agentMetrics.externalRequests.add(1, { target: "luna_api", operation: "tool_execute", outcome: response.ok ? "success" : String(response.status) })
     span.setAttribute("luna.external.duration_ms", performance.now() - startedAt)
-    return { status: response.status, body: await safeJson(response), ...(requestId ? { requestId } : {}) }
+    return { status: response.status, body, ...(requestId ? { requestId } : {}) }
     })
   }
 
@@ -175,9 +179,18 @@ function appendQueryValue(query: URLSearchParams, name: string, value: unknown):
   query.append(name, String(value))
 }
 
-async function safeJson(response: Response): Promise<unknown> {
+async function responseJSON(response: Response): Promise<unknown> {
   const text = await response.text()
-  try { return JSON.parse(text) } catch { return { code: "invalid_json_response" } }
+  if (response.status === 204) return undefined
+  if (text.trim() === "") {
+    if (response.ok) throw new Error("ai.tool_response_invalid_json")
+    return undefined
+  }
+  try { return JSON.parse(text) }
+  catch {
+    if (response.ok) throw new Error("ai.tool_response_invalid_json")
+    return undefined
+  }
 }
 
 export class DeterministicLunaApiClient implements LunaApiToolClient {

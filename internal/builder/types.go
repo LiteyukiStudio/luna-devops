@@ -1,7 +1,5 @@
 package builder
 
-import "time"
-
 const (
 	ResultMarkerPrefix = "::luna-devops-build-result::"
 
@@ -33,11 +31,7 @@ type Progress struct {
 }
 
 type Task struct {
-	StreamID           string            `json:"-"`
 	JobID              string            `json:"jobId"`
-	LeaseToken         string            `json:"leaseToken"`
-	LeaseUntil         time.Time         `json:"leaseUntil"`
-	TargetBuilder      string            `json:"targetBuilder"`
 	BuildRunID         string            `json:"buildRunId"`
 	ProjectID          string            `json:"projectId"`
 	ApplicationID      string            `json:"applicationId"`

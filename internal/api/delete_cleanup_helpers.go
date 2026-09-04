@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"errors"
+	transportapi "github.com/LiteyukiStudio/devops/internal/api/transport"
 	"net/http"
 	"strings"
 	"time"
@@ -30,7 +31,7 @@ func (h *Handlers) ensureProjectCanMutate(ctx *gin.Context, project model.Projec
 	if resourceCanMutateDuringDelete(project.DeleteStatus) {
 		return true
 	}
-	writeErrorCode(ctx, http.StatusConflict, "project.delete_in_progress", "项目空间正在删除中，请等待资源清理完成")
+	transportapi.WriteErrorCode(ctx, http.StatusConflict, "project.delete_in_progress", "项目空间正在删除中，请等待资源清理完成")
 	return false
 }
 
@@ -38,7 +39,7 @@ func (h *Handlers) ensureDeploymentTargetCanMutate(ctx *gin.Context, target mode
 	if resourceCanMutateDuringDelete(target.DeleteStatus) {
 		return true
 	}
-	writeErrorCode(ctx, http.StatusConflict, "deployment_target.delete_in_progress", "部署配置正在删除中，请等待资源清理完成")
+	transportapi.WriteErrorCode(ctx, http.StatusConflict, "deployment_target.delete_in_progress", "部署配置正在删除中，请等待资源清理完成")
 	return false
 }
 
@@ -46,7 +47,7 @@ func (h *Handlers) ensureGatewayRouteCanMutate(ctx *gin.Context, route model.Gat
 	if resourceCanMutateDuringDelete(route.DeleteStatus) {
 		return true
 	}
-	writeErrorCode(ctx, http.StatusConflict, "gateway_route.delete_in_progress", "访问入口正在删除中，请等待资源清理完成")
+	transportapi.WriteErrorCode(ctx, http.StatusConflict, "gateway_route.delete_in_progress", "访问入口正在删除中，请等待资源清理完成")
 	return false
 }
 
@@ -54,7 +55,7 @@ func (h *Handlers) ensureRuntimeConfigSetCanMutate(ctx *gin.Context, set model.P
 	if resourceCanMutateDuringDelete(set.DeleteStatus) {
 		return true
 	}
-	writeErrorCode(ctx, http.StatusConflict, "runtime_config.delete_in_progress", "运行配置正在删除中，请等待资源清理完成")
+	transportapi.WriteErrorCode(ctx, http.StatusConflict, "runtime_config.delete_in_progress", "运行配置正在删除中，请等待资源清理完成")
 	return false
 }
 

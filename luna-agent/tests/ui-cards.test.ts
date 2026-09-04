@@ -89,7 +89,7 @@ describe("interaction card tool", () => {
     }
     cardWithDuplicateSections.cards[0]!.form.sections.push({
       id: "target",
-      fields: [{ id: "environmentId", type: "text", label: "环境" }],
+      fields: [{ id: "stage", type: "text", label: "阶段" }],
     })
 
     const cardWithDuplicateOptions = structuredClone(databaseCard) as unknown as {

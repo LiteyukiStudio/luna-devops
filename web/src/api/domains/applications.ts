@@ -25,8 +25,6 @@ export const applicationsApi = {
     request<Application>(`/projects/${projectId}/applications/${applicationId}`, { method: 'DELETE' }),
   listDeploymentTargets: (projectId: string, applicationId: string) =>
     request<PaginatedResponse<DeploymentTarget>>(`/projects/${projectId}/applications/${applicationId}/deployment-targets?${paginationQuery(selectionPageParams)}`).then(selectionItems),
-  listDeploymentTargetsPage: (projectId: string, applicationId: string, params: PaginationParams) =>
-    request<PaginatedResponse<DeploymentTarget>>(`/projects/${projectId}/applications/${applicationId}/deployment-targets?${paginationQuery(params)}`),
   createDeploymentTarget: (projectId: string, applicationId: string, payload: DeploymentTargetPayload) =>
     request<DeploymentTarget>(`/projects/${projectId}/applications/${applicationId}/deployment-targets`, { method: 'POST', body: JSON.stringify(payload) }),
   updateDeploymentTarget: (projectId: string, applicationId: string, targetId: string, payload: DeploymentTargetPayload) =>
@@ -67,6 +65,4 @@ export const applicationsApi = {
     request<void>(`/projects/${projectId}/repository-bindings/${bindingId}`, { method: 'DELETE' }),
   createRepositoryWebhook: (projectId: string, bindingId: string) =>
     request<RepositoryBinding>(`/projects/${projectId}/repository-bindings/${bindingId}/webhook`, { method: 'POST' }),
-  reconfigureRepositoryWebhook: (projectId: string, bindingId: string) =>
-    request<RepositoryBinding>(`/projects/${projectId}/repository-bindings/${bindingId}/webhook/reconfigure`, { method: 'POST' }),
 }

@@ -8,10 +8,10 @@ import (
 )
 
 func TestIsActive(t *testing.T) {
-	if !IsActive(model.RuntimeCluster{}) || !IsActive(model.RuntimeCluster{DeleteStatus: DeleteStatusActive}) {
-		t.Fatal("active and legacy empty clusters must be active")
+	if !IsActive(model.RuntimeCluster{DeleteStatus: DeleteStatusActive}) {
+		t.Fatal("active cluster was not active")
 	}
-	for _, status := range []string{DeleteStatusDeleting, DeleteStatusDeleteFailed, DeleteStatusDeleted} {
+	for _, status := range []string{"", DeleteStatusDeleting, DeleteStatusDeleteFailed, DeleteStatusDeleted} {
 		if IsActive(model.RuntimeCluster{DeleteStatus: status}) {
 			t.Fatalf("cluster status %q was active", status)
 		}

@@ -1,7 +1,5 @@
 const eventsPage = {
   title: '事件',
-  description: '按时间查看构建、发布、部署钩子、访问入口和证书的状态变化。',
-  listTitle: '事件记录',
   searchPlaceholder: '搜索事件、消息或资源 ID',
   emptyTitle: '当前范围内没有事件',
   emptyDescription: '事件会在构建、发布、部署钩子、访问入口或证书状态发生变化后出现在这里。',
@@ -26,7 +24,6 @@ const eventsPage = {
     selectedCount: '当前已选择 {{count}} 项筛选条件',
     clearAll: '清除全部',
     apply: '应用筛选',
-    scope: '查看范围',
     project: '项目空间',
     application: '应用',
     deploymentTarget: '部署配置',
@@ -45,8 +42,6 @@ const eventsPage = {
     allStatuses: '全部结果',
   },
   scopes: {
-    mine: '与我相关',
-    all: '全部事件',
   },
   categories: {
     build: '构建',

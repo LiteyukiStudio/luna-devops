@@ -1,7 +1,6 @@
 const oauthApps = {
   applicationsTab: '开发者应用',
   grantsTab: '已授权应用',
-  applicationsTitle: 'OAuth 应用',
   grantsTitle: '应用授权',
   application: '应用',
   createApplication: '创建应用',

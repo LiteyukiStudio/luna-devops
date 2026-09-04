@@ -8,6 +8,8 @@ A build reads the bound repository, creates an image from the Dockerfile, and pu
 - The registry credential includes push permission.
 - Build arguments do not contain plaintext Secrets; use secret variables instead.
 
+If an explicitly referenced push credential or the build's deployment target no longer exists, is unavailable to the current user, or cannot be queried, the build fails instead of selecting another credential or a default target. Repair the reference before rebuilding.
+
 Read the build log until the task reaches a succeeded or failed terminal state. Use unique, traceable image tags for production.
 
 ## Release

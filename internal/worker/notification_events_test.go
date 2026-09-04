@@ -10,7 +10,7 @@ import (
 )
 
 func TestNotificationLinksPointToApplicationTabs(t *testing.T) {
-	runner := NewRunner(nil, Options{PublicBaseURL: "https://devops.example.com/"})
+	runner := newDryRunWorkerTestRunner(t, Options{PublicBaseURL: "https://devops.example.com/"})
 
 	links := runner.notificationLinks("prj_1", "app_1", "deployments", "release", "", "")
 
@@ -29,7 +29,7 @@ func TestNotificationLinksPointToApplicationTabs(t *testing.T) {
 }
 
 func TestNotificationLinksStayEmptyWithoutPublicBaseURL(t *testing.T) {
-	runner := NewRunner(nil, Options{})
+	runner := newDryRunWorkerTestRunner(t, Options{})
 
 	if links := runner.notificationLinks("prj_1", "app_1", "builds", "build", "buildRunId", "brn_1"); links != nil {
 		t.Fatalf("links = %#v", links)
@@ -37,7 +37,7 @@ func TestNotificationLinksStayEmptyWithoutPublicBaseURL(t *testing.T) {
 }
 
 func TestNotificationBuildLinkFocusesTheBuildRun(t *testing.T) {
-	runner := NewRunner(nil, Options{PublicBaseURL: "https://devops.example.com"})
+	runner := newDryRunWorkerTestRunner(t, Options{PublicBaseURL: "https://devops.example.com"})
 
 	links := runner.notificationLinks("prj_1", "app_1", "builds", "build", "buildRunId", "brn_1")
 
@@ -96,7 +96,7 @@ func TestNotificationEntityRefsRetainIDsForSoftDeletedLookups(t *testing.T) {
 		},
 	})
 	deletedAt := gorm.DeletedAt{Time: time.Now(), Valid: true}
-	project := model.Project{ID: "prj_deleted", Identifier: "deleted", Name: "Deleted project", NamespaceStrategy: "project", DeletedAt: deletedAt}
+	project := model.Project{ID: "prj_deleted", Identifier: "deleted", Name: "Deleted project", DeletedAt: deletedAt}
 	application := model.Application{ID: "app_deleted", ProjectID: project.ID, Identifier: "deleted-app", Name: "Deleted app", DeletedAt: deletedAt}
 	target := model.DeploymentTarget{ID: "target_deleted", ProjectID: project.ID, ApplicationID: application.ID, Name: "Deleted target", Stage: "prod", CreatedBy: "usr_deleted_owner", DeletedAt: deletedAt}
 	for _, item := range []any{&project, &application, &target} {
@@ -173,7 +173,7 @@ func TestNotificationDeploymentTargetOwnerReusesScopedLoadedTarget(t *testing.T)
 	target := model.DeploymentTarget{
 		ID: "target_loaded_owner", ProjectID: "prj_loaded_owner", ApplicationID: "app_loaded_owner", CreatedBy: "usr_loaded_owner",
 	}
-	runner := &Runner{}
+	runner := newDryRunWorkerTestRunner(t, Options{})
 	if got := runner.notificationDeploymentTargetOwnerUserID(t.Context(), target.ProjectID, target.ApplicationID, target.ID, target); got != target.CreatedBy {
 		t.Fatalf("loaded target owner = %q, want %q", got, target.CreatedBy)
 	}
@@ -235,7 +235,6 @@ func TestNotificationHookActorUsesInternalBuildOrReleaseCreator(t *testing.T) {
 		ID:            "rel_hook_actor",
 		ProjectID:     "prj_hook_actor",
 		ApplicationID: "app_hook_actor",
-		EnvironmentID: "env_hook_actor",
 		ImageRef:      "example.invalid/app:test",
 		CreatedBy:     "usr_release",
 	}).Error; err != nil {

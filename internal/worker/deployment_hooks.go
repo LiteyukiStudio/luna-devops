@@ -14,7 +14,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func (r *Runner) runDeploymentHooks(ctx context.Context, phase string, release model.Release, project model.Project, application model.Application, environment model.Environment, deploymentTarget model.DeploymentTarget, namespace string) error {
+func (r *Runner) runDeploymentHooks(ctx context.Context, phase string, release model.Release, project model.Project, application model.Application, deploymentTarget model.DeploymentTarget, namespace string) error {
 	var bindings []model.DeploymentTargetHookBinding
 	if err := r.db.WithContext(ctx).Where("project_id = ? and application_id = ? and target_id = ? and phase = ?", project.ID, application.ID, deploymentTarget.ID, phase).
 		Order("run_order asc, created_at asc").
@@ -36,13 +36,13 @@ func (r *Runner) runDeploymentHooks(ctx context.Context, phase string, release m
 	for _, config := range configs {
 		configsByID[config.ID] = config
 	}
-	manager, err := r.kubernetesManager(ctx, environment)
+	manager, err := r.kubernetesManager(ctx, deploymentTarget)
 	if err != nil {
 		return err
 	}
 	resourceName := applicationResourceName(deploymentTarget)
 	buildContext := r.releaseBuildContext(ctx, release)
-	sensitiveValues := r.deploymentHookSensitiveValues(ctx, project.ID, environment, deploymentTarget)
+	sensitiveValues := r.deploymentHookSensitiveValues(ctx, project.ID, deploymentTarget)
 	for _, binding := range bindings {
 		config, ok := configsByID[binding.HookConfigID]
 		if !ok {
@@ -54,7 +54,6 @@ func (r *Runner) runDeploymentHooks(ctx context.Context, phase string, release m
 			HookConfigID:       config.ID,
 			ReleaseID:          release.ID,
 			ApplicationID:      application.ID,
-			EnvironmentID:      environment.ID,
 			DeploymentTargetID: deploymentTarget.ID,
 			Name:               config.Name,
 			Phase:              binding.Phase,
@@ -77,8 +76,8 @@ func (r *Runner) runDeploymentHooks(ctx context.Context, phase string, release m
 			ProjectID:          project.ID,
 			ApplicationID:      application.ID,
 			BuildRunID:         release.BuildRunID,
-			EnvironmentID:      environment.ID,
 			DeploymentTargetID: deploymentTarget.ID,
+			Stage:              deploymentTarget.Stage,
 			ReleaseID:          release.ID,
 			HookRunID:          hookRun.ID,
 			Phase:              phase,
@@ -128,9 +127,6 @@ func (r *Runner) runDeploymentHooks(ctx context.Context, phase string, release m
 }
 
 func (r *Runner) appendReleaseLog(ctx context.Context, release model.Release, content string) {
-	if r.db == nil {
-		return
-	}
 	content = trimReleaseLogContent(content)
 	if content == "" {
 		return
@@ -154,9 +150,6 @@ func (r *Runner) appendReleaseLog(ctx context.Context, release model.Release, co
 }
 
 func (r *Runner) appendHookRunLog(ctx context.Context, run model.HookRun, content string, sensitiveValues []string) {
-	if r.db == nil {
-		return
-	}
 	content = trimReleaseLogContent(redactSensitiveLogContent(content, sensitiveValues))
 	if content == "" {
 		return
@@ -179,9 +172,9 @@ func (r *Runner) appendHookRunLog(ctx context.Context, run model.HookRun, conten
 	_ = r.db.WithContext(ctx).Save(&existing).Error
 }
 
-func (r *Runner) deploymentHookSensitiveValues(ctx context.Context, projectID string, environment model.Environment, target model.DeploymentTarget) []string {
+func (r *Runner) deploymentHookSensitiveValues(ctx context.Context, projectID string, target model.DeploymentTarget) []string {
 	values := make([]string, 0, 8)
-	values = append(values, r.resolveSecretValues(ctx, environment.SecretRefs, target.SecretRefs, target.SecretFiles)...)
+	values = append(values, r.resolveSecretValues(ctx, target.SecretRefs, target.SecretFiles)...)
 	sets, err := r.runtimeConfigSetsForTarget(ctx, projectID, target)
 	if err != nil {
 		return values

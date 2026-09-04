@@ -79,12 +79,10 @@ type DeploymentBundleCandidate = deploymentBundleCandidate
 
 type DeploymentKubernetesAdvancedInput = deploymentKubernetesAdvancedInput
 type DeploymentAutoScalingInput = deploymentAutoScalingInput
-type DeploymentTargetRuntimeSecretsSummary = deploymentTargetRuntimeSecretsSummary
-type DeploymentMetricsAuthorizationReference = deploymentMetricsAuthorizationReference
+
 type DeploymentTargetMetricsResponse = deploymentTargetMetricsResponse
 type ReleaseInput = releaseInput
-type ReleaseImageCandidateOutput = releaseImageCandidateOutput
-type ReleaseImageCandidatesOutput = releaseImageCandidatesOutput
+
 type ReleaseRuntimeExecInput = releaseRuntimeExecInput
 
 func NormalizeStage(value string) string               { return normalizeStage(value) }
@@ -98,10 +96,7 @@ func WriteDeploymentStageConflict(ctx *gin.Context, deleteStatus string) {
 func NormalizeDataVolumes(ctx *gin.Context, raw []DeploymentTargetDataVolumeInput) ([]DeploymentTargetDataVolumeInput, bool) {
 	return normalizeDataVolumes(ctx, raw)
 }
-func RuntimeConfigFilePaths(value string) []string { return runtimeConfigFilePaths(value) }
-func RuntimeDataPathConflicts(mountPath string, configValues ...string) bool {
-	return runtimeDataPathConflicts(mountPath, configValues...)
-}
+
 func NormalizeDeploymentSourceType(value string) string { return normalizeDeploymentSourceType(value) }
 func NormalizeBuildTimeoutSeconds(ctx *gin.Context, value int) (int, bool) {
 	return normalizeBuildTimeoutSeconds(ctx, value)
@@ -109,9 +104,7 @@ func NormalizeBuildTimeoutSeconds(ctx *gin.Context, value int) (int, bool) {
 func NormalizeBuildTimeoutSecondsValue(value int) int {
 	return normalizeBuildTimeoutSecondsValue(value)
 }
-func NormalizeDeploymentServicePorts(ctx *gin.Context, input []model.DeploymentServicePort, fallbackPort int) ([]model.DeploymentServicePort, bool) {
-	return normalizeDeploymentServicePorts(ctx, input, fallbackPort)
-}
+
 func NormalizeDeploymentServicePortName(value string, port, index int) string {
 	return normalizeDeploymentServicePortName(value, port, index)
 }
@@ -128,9 +121,7 @@ func RuntimeConfigRefInputs(input DeploymentTargetInput) []DeploymentRuntimeConf
 	return runtimeConfigRefInputs(input)
 }
 func NormalizeSecretRefsInput(value string) string { return normalizeSecretRefsInput(value) }
-func NormalizeDeploymentAutoScaling(ctx *gin.Context, input DeploymentTargetInput, replicas int) (DeploymentAutoScalingInput, bool) {
-	return normalizeDeploymentAutoScaling(ctx, input, replicas)
-}
+
 func NormalizeWebConsoleOverride(value *bool) *bool { return normalizeWebConsoleOverride(value) }
 func RuntimeWebConsoleEnabled(project model.Project, target model.DeploymentTarget) bool {
 	return runtimeWebConsoleEnabled(project, target)
@@ -148,16 +139,13 @@ func DeploymentTargetPageQuery(query *gorm.DB, pagination paginationParams) *gor
 func DeploymentTargetResponseFromModel(target model.DeploymentTarget, mounts ...[]model.DeploymentVolumeMount) DeploymentTargetResponse {
 	return deploymentTargetResponseFromModel(target, mounts...)
 }
-func DeploymentTargetEnvironmentProfile(target model.DeploymentTarget) model.Environment {
-	return deploymentTargetEnvironmentProfile(target)
-}
 func DeploymentTargetDataVolumeResponses(mounts []model.DeploymentVolumeMount) []DeploymentTargetDataVolumeResponse {
 	return deploymentTargetDataVolumeResponses(mounts)
 }
 func DeploymentRuntimeConfigRefsResponse(target model.DeploymentTarget) []DeploymentRuntimeConfigRefResponse {
 	return deploymentRuntimeConfigRefsResponse(target)
 }
-func RuntimeProjectNamespace(project model.Project) string { return runtimeProjectNamespace(project) }
+
 func DeploymentTargetResourceName(target model.DeploymentTarget) string {
 	return deploymentTargetResourceName(target)
 }
@@ -217,19 +205,14 @@ func DeploymentBundleErrorSpecFor(code string) (DeploymentBundleErrorSpec, bool)
 	return deploymentBundleErrorSpecFor(code)
 }
 func WriteDeploymentBundleError(ctx *gin.Context, err error) { writeDeploymentBundleError(ctx, err) }
-func DeploymentBundleOperationError(err error) error         { return deploymentBundleOperationError(err) }
-func DeploymentBundleFilenamePart(value string) string       { return deploymentBundleFilenamePart(value) }
-func EncodeStringMap(values map[string]string) string        { return encodeStringMap(values) }
-func DeploymentBundleSecretValues(requirements []DeploymentBundleSecretRequirement, values map[string]string, required bool) ([]DeploymentBundleSecretValue, error) {
-	return deploymentBundleSecretValues(requirements, values, required)
-}
+
+func DeploymentBundleFilenamePart(value string) string { return deploymentBundleFilenamePart(value) }
+func EncodeStringMap(values map[string]string) string  { return encodeStringMap(values) }
+
 func DeploymentBundleReferenceDescriptorMatches(source, candidate DeploymentBundleReferenceDescriptor) bool {
 	return deploymentBundleReferenceDescriptorMatches(source, candidate)
 }
-func ApplyDeploymentBundleResolution(input *DeploymentTargetInput, reference DeploymentBundleReference, resolvedID string) error {
-	return applyDeploymentBundleResolution(input, reference, resolvedID)
-}
-func UniqueStrings(values []string) []string { return uniqueStrings(values) }
+
 func NormalizeDeploymentBundleCandidateQuery(query DeploymentBundleCandidateQuery) DeploymentBundleCandidateQuery {
 	return normalizeDeploymentBundleCandidateQuery(query)
 }
@@ -240,17 +223,9 @@ func AppendCompatibleDeploymentBundleMatches(matches, candidates []DeploymentBun
 func DeploymentTargetMetricsResponseFromSnapshot(snapshot kubeprovider.RuntimeMetricsSnapshot, target model.DeploymentTarget) DeploymentTargetMetricsResponse {
 	return deploymentTargetMetricsResponseFromSnapshot(snapshot, target)
 }
-func DeploymentTargetMetricsStatus(available bool) string {
-	return deploymentTargetMetricsStatus(available)
-}
-func QuantityMilliValue(value string) int64      { return quantityMilliValue(value) }
-func QuantityValue(value string) int64           { return quantityValue(value) }
-func UsagePercent(usage, capacity int64) float64 { return usagePercent(usage, capacity) }
+
 func DeploymentObservationFromSnapshot(snapshot kubeprovider.DeploymentSnapshot) string {
 	return deploymentObservationFromSnapshot(snapshot)
-}
-func UnavailableDeploymentTarget(target model.DeploymentTarget, code string) model.DeploymentTarget {
-	return unavailableDeploymentTarget(target, code)
 }
 
 func (h *Handler) CreateDeploymentTargetModel(target model.DeploymentTarget, dataVolumes []DeploymentTargetDataVolumeInput, hookInputs []DeploymentTargetHookBindingInput, buildEnvironment *model.BuildEnvironmentConfig, ctx context.Context) (DeploymentVolumeMountChanges, error) {
@@ -283,9 +258,7 @@ func (h *Handler) ObserveDeploymentTarget(ctx context.Context, project model.Pro
 func (h *Handler) KubernetesClientForDeploymentTargetObservation(project model.Project, target model.DeploymentTarget, ctx context.Context) (*kubeprovider.Client, string, string) {
 	return h.kubernetesClientForDeploymentTargetObservation(project, target, ctx)
 }
-func (h *Handler) BuildDeploymentTargetBundle(ctx context.Context, project model.Project, application model.Application, target model.DeploymentTarget) (DeploymentTargetBundle, error) {
-	return h.buildDeploymentTargetBundle(ctx, project, application, target)
-}
+
 func (h *Handler) BuildDeploymentTargetImportPlan(ctx *gin.Context, user model.User, project model.Project, application model.Application, request DeploymentTargetBundleImportRequest, requireSecrets bool) (DeploymentTargetBundleImportPlan, error) {
 	return h.buildDeploymentTargetImportPlan(ctx, user, project, application, request, requireSecrets)
 }

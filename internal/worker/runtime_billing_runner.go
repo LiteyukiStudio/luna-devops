@@ -27,9 +27,6 @@ func (r *Runner) handleBillingRuntime(ctx context.Context, task *asynq.Task) err
 }
 
 func (r *Runner) settleRuntimeUsageWindows(ctx context.Context, now time.Time) error {
-	if r.db == nil {
-		return nil
-	}
 	windows := completedHourlyWindows(now, runtimeBillingLookbackHours)
 	if len(windows) == 0 {
 		return nil
@@ -63,7 +60,7 @@ func (r *Runner) settleRuntimeUsageWindows(ctx context.Context, now time.Time) e
 		}, attribute.String("deployment_target.id", target.ID))
 		runtimeErr = errors.Join(runtimeErr, settlementErr)
 		manager, err := workerStageValue(ctx, "billing.connect_runtime", func(stageCtx context.Context) (kubeprovider.NamespaceManager, error) {
-			return r.kubernetesManager(stageCtx, deploymentTargetEnvironment(target))
+			return r.kubernetesManager(stageCtx, target)
 		}, attribute.String("deployment_target.id", target.ID))
 		if err != nil {
 			telemetry.LogError(ctx, "Runtime resource observation failed to connect to the cluster", "runtime.resource_observation.failed", "runtime.resource_observe", "runtime.cluster_unavailable", err,
@@ -72,7 +69,7 @@ func (r *Runner) settleRuntimeUsageWindows(ctx context.Context, now time.Time) e
 				slog.Int("sample_count", 0), slog.Int("metrics_sample_count", 0))
 			continue
 		}
-		cluster, err := r.runtimeClusterForEnvironment(ctx, deploymentTargetEnvironment(target))
+		cluster, err := r.runtimeClusterForDeploymentTarget(ctx, target)
 		if err != nil {
 			telemetry.LogError(ctx, "Runtime resource observation failed to resolve the cluster", "runtime.resource_observation.failed", "runtime.resource_observe", "runtime.cluster_unavailable", err,
 				slog.String("resource.type", "deployment_target"), slog.String("resource.id", target.ID), slog.String("runtime_cluster_id", target.ClusterID), slog.String("deployment_target_id", target.ID),
@@ -170,7 +167,7 @@ func (r *Runner) settleRuntimeUsageForTarget(ctx context.Context, service billin
 			ProjectID:          target.ProjectID,
 			ApplicationID:      target.ApplicationID,
 			DeploymentTargetID: target.ID,
-			EnvironmentID:      target.EnvironmentID,
+			Stage:              target.Stage,
 			PeriodStart:        window.Start, PeriodEnd: window.End,
 			CPUCoreHours: aggregation.cpuBilled, MemoryGiBHours: aggregation.memoryBilled,
 			CPURequestFloorCoreHours: aggregation.cpuRequest, MemoryRequestFloorGiBHours: aggregation.memoryRequest,
@@ -390,7 +387,7 @@ func quantityValue(value string) int64 {
 }
 
 func (r *Runner) settleProjectVolumeStorageWindows(ctx context.Context, service billing.Service, windows []hourlyWindow) error {
-	if r.db == nil || len(windows) == 0 {
+	if len(windows) == 0 {
 		return nil
 	}
 	const pageSize = 100

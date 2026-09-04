@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"errors"
+	transportapi "github.com/LiteyukiStudio/devops/internal/api/transport"
 	"io"
 	"sync"
 	"time"
@@ -28,104 +29,17 @@ const (
 var errProjectVolumeClusterUnavailable = volumeapi.ErrProjectVolumeClusterUnavailable
 
 type volumeHost struct {
-	handlers *Handlers
+	domainHost
 }
 
-func (host volumeHost) DBWithContext(ctx context.Context) *gorm.DB {
-	return host.handlers.dbWithContext(ctx)
-}
-func (host volumeHost) AuthorizeProject(ctx *gin.Context, action authz.Action) (model.User, model.Project, bool) {
-	return host.handlers.authorizeProject(ctx, action)
-}
-func (host volumeHost) ProjectMemberActionAllowed(ctx *gin.Context, projectID, userID string, action authz.Action) (bool, bool) {
-	return host.handlers.projectMemberActionAllowed(ctx, projectID, userID, action)
-}
-func (host volumeHost) ProjectRoleActionAllowed(ctx context.Context, user model.User, projectID string, action authz.Action) (bool, error) {
-	return host.handlers.projectRoleActionAllowed(ctx, user, projectID, action)
-}
-func (host volumeHost) ProjectAuthorizer(ctx context.Context) authz.ProjectAuthorizer {
-	return host.handlers.projectAuthorizer(ctx)
-}
-func (host volumeHost) RuntimeClusterForProjectUse(ctx *gin.Context, user model.User, projectID, clusterID string) (model.RuntimeCluster, bool) {
-	return host.handlers.runtimeClusterForProjectUse(ctx, user, projectID, clusterID)
-}
-func (host volumeHost) EnsureBillingAllowsDeployChange(ctx *gin.Context, projectID string) bool {
-	return host.handlers.ensureBillingAllowsDeployChange(ctx, projectID)
-}
 func (host volumeHost) EnsureBillingAllowsManagedVolumeChange(ctx *gin.Context, projectID string) bool {
 	return host.handlers.ensureBillingAllowsManagedVolumeChange(ctx, projectID)
-}
-func (host volumeHost) AuditWithContext(userID, action, resource string, success bool, message string, ctx context.Context) {
-	host.handlers.auditWithContext(userID, action, resource, success, message, ctx)
-}
-func (host volumeHost) CurrentAccessTokenFromContext(ctx *gin.Context) (model.AccessToken, bool) {
-	return currentAccessTokenFromContext(ctx)
 }
 func (host volumeHost) AccessTokenAllows(scopeText, required string) bool {
 	return accessTokenAllows(scopeText, required)
 }
-func (host volumeHost) RequestUsesBearerToken(ctx *gin.Context) bool {
-	return requestUsesBearerToken(ctx)
-}
-func (host volumeHost) RequireContinuousAuthorizationBinding(ctx *gin.Context, user model.User) (projectapi.ContinuousAuthorizationBinding, bool) {
-	return host.handlers.requireContinuousAuthorizationBinding(ctx, user)
-}
 func (host volumeHost) CurrentInteractiveAuthorizationBinding(ctx *gin.Context, user model.User) (projectapi.ContinuousAuthorizationBinding, bool) {
-	return host.handlers.currentInteractiveAuthorizationBinding(ctx, user)
-}
-func (host volumeHost) MonitorContinuousAuthorization(ctx context.Context, binding projectapi.ContinuousAuthorizationBinding, authorizationAllowed func(context.Context, model.User) bool, revoke func()) (<-chan struct{}, bool) {
-	return host.handlers.monitorContinuousAuthorization(ctx, binding, authorizationAllowed, revoke)
-}
-func (host volumeHost) ProjectContinuousAuthorizationAllowed(ctx context.Context, user model.User, projectID string, action authz.Action) bool {
-	return host.handlers.projectContinuousAuthorizationAllowed(ctx, user, projectID, action)
-}
-func (host volumeHost) ResourceCanMutateDuringDelete(status string) bool {
-	return resourceCanMutateDuringDelete(status)
-}
-
-func (h *Handlers) volumeAPI() *volumeapi.Handler {
-	return volumeapi.New(volumeHost{handlers: h}, volumeapi.Dependencies{
-		Volumes:          h.volumes,
-		Clusters:         h.volumeClusters,
-		Content:          h.volumeContent,
-		TransferMaxBytes: h.volumeTransferMaxBytes,
-		TransferEnabled:  h.volumeTransferEnabled,
-	})
-}
-
-func (h *Handlers) ListProjectVolumes(ctx *gin.Context)  { h.volumeAPI().ListProjectVolumes(ctx) }
-func (h *Handlers) CreateProjectVolume(ctx *gin.Context) { h.volumeAPI().CreateProjectVolume(ctx) }
-func (h *Handlers) GetProjectVolume(ctx *gin.Context)    { h.volumeAPI().GetProjectVolume(ctx) }
-func (h *Handlers) UpdateProjectVolume(ctx *gin.Context) { h.volumeAPI().UpdateProjectVolume(ctx) }
-func (h *Handlers) DeleteProjectVolume(ctx *gin.Context) { h.volumeAPI().DeleteProjectVolume(ctx) }
-func (h *Handlers) RetryProjectVolumeOperation(ctx *gin.Context) {
-	h.volumeAPI().RetryProjectVolumeOperation(ctx)
-}
-func (h *Handlers) PreviewProjectVolumeDeletion(ctx *gin.Context) {
-	h.volumeAPI().PreviewProjectVolumeDeletion(ctx)
-}
-func (h *Handlers) ListProjectVolumeStorageClasses(ctx *gin.Context) {
-	h.volumeAPI().ListProjectVolumeStorageClasses(ctx)
-}
-func (h *Handlers) CreateVolumeImport(ctx *gin.Context) { h.volumeAPI().CreateVolumeImport(ctx) }
-func (h *Handlers) UploadVolumeImportContent(ctx *gin.Context) {
-	h.volumeAPI().UploadVolumeImportContent(ctx)
-}
-func (h *Handlers) CreateVolumeExport(ctx *gin.Context)  { h.volumeAPI().CreateVolumeExport(ctx) }
-func (h *Handlers) ListVolumeTransfers(ctx *gin.Context) { h.volumeAPI().ListVolumeTransfers(ctx) }
-func (h *Handlers) GetVolumeTransfer(ctx *gin.Context)   { h.volumeAPI().GetVolumeTransfer(ctx) }
-func (h *Handlers) RetryVolumeTransfer(ctx *gin.Context) { h.volumeAPI().RetryVolumeTransfer(ctx) }
-func (h *Handlers) CancelVolumeTransfer(ctx *gin.Context) {
-	h.volumeAPI().CancelVolumeTransfer(ctx)
-}
-func (h *Handlers) AuthorizeVolumeTransferDownload(ctx *gin.Context) {
-	h.volumeAPI().AuthorizeVolumeTransferDownload(ctx)
-}
-func (h *Handlers) DownloadVolumeTransferContent(ctx *gin.Context) {
-	h.volumeAPI().DownloadVolumeTransferContent(ctx)
-}
-func (h *Handlers) DownloadVolumeTransferManifest(ctx *gin.Context) {
-	h.volumeAPI().DownloadVolumeTransferManifest(ctx)
+	return host.handlers.domains.runtime.CurrentInteractiveAuthorizationBinding(ctx, user)
 }
 
 type projectVolumeStorageClass = volumeapi.ProjectVolumeStorageClass
@@ -174,7 +88,7 @@ func newVolumeTransferContentAdapter(handlers *Handlers, cfg Config) (*volumeTra
 		return nil, errors.New("volume transfer runtime streaming is unavailable")
 	}
 	return volumeapi.NewVolumeTransferContentAdapter(
-		volumeHost{handlers: handlers}, handlers.volumes, clusterAdapter,
+		volumeHost{domainHost: domainHost{handlers: handlers}}, handlers.volumes, clusterAdapter,
 		handlers.rateLimiter.redis, cfg.VolumeTransferMaxBytes,
 	)
 }
@@ -199,7 +113,7 @@ func projectVolumeResponseForObservation(item model.ProjectVolume, observation p
 	return volumeapi.ProjectVolumeResponseForObservation(item, observation)
 }
 func (h *Handlers) observeProjectVolumeResponses(ctx context.Context, items []model.ProjectVolume) map[string]projectVolumeObservationResponse {
-	return h.volumeAPI().ObserveProjectVolumeResponses(ctx, items)
+	return h.domains.volume.ObserveProjectVolumeResponses(ctx, items)
 }
 func projectVolumeBindingResponseFor(item model.DeploymentVolumeMount) projectVolumeBindingResponse {
 	return volumeapi.ProjectVolumeBindingResponseFor(item)
@@ -210,7 +124,7 @@ func projectVolumeDetailResponseFor(detail volume.ProjectVolumeDetail, observati
 func projectVolumeDeletionPreviewResponseFor(preview volume.ProjectVolumeDeletionPreview, observation projectVolumeObservationResponse, userID string) projectVolumeDeletionPreviewResponse {
 	return volumeapi.ProjectVolumeDeletionPreviewResponseFor(preview, observation, userID)
 }
-func volumePagination(ctx *gin.Context, allowedSort map[string]bool, fallbackSort string) (paginationParams, bool) {
+func volumePagination(ctx *gin.Context, allowedSort map[string]bool, fallbackSort string) (transportapi.PaginationParams, bool) {
 	return volumeapi.VolumePagination(ctx, allowedSort, fallbackSort)
 }
 func volumeIdempotencyKey(ctx *gin.Context) (string, bool) {
@@ -243,19 +157,19 @@ func coreDownloadBinding(binding volumeDownloadBinding) volumetransferapi.Downlo
 	return volumeapi.CoreDownloadBinding(binding)
 }
 func (h *Handlers) volumeTransferDownloadBinding(ctx *gin.Context, user model.User) (volumeDownloadBinding, bool) {
-	return h.volumeAPI().VolumeTransferDownloadBinding(ctx, user)
+	return h.domains.volume.VolumeTransferDownloadBinding(ctx, user)
 }
 func (h *Handlers) volumeImportAuthorizationAllowed(ctx context.Context, user model.User, reference volumeImportAuthorizationReference) bool {
-	return h.volumeAPI().VolumeImportAuthorizationAllowed(ctx, user, reference)
+	return h.domains.volume.VolumeImportAuthorizationAllowed(ctx, user, reference)
 }
 func volumeTransferArchiveFilename(transfer model.VolumeTransfer) string {
 	return volumeapi.VolumeTransferArchiveFilename(transfer)
 }
 func (h *Handlers) serveDirectVolumeTransferDownload(ctx *gin.Context, manifest bool) {
-	h.volumeAPI().ServeDirectVolumeTransferDownload(ctx, manifest)
+	h.domains.volume.ServeDirectVolumeTransferDownload(ctx, manifest)
 }
 func (h *Handlers) volumeTransferDownloadAuthorizationAllowed(ctx context.Context, user model.User, reference volumeTransferDownloadAuthorizationReference) bool {
-	return h.volumeAPI().VolumeTransferDownloadAuthorizationAllowed(ctx, user, reference)
+	return h.domains.volume.VolumeTransferDownloadAuthorizationAllowed(ctx, user, reference)
 }
 func copyVolumeDownloadBody(ctx context.Context, destination io.Writer, body io.ReadCloser, interrupt func()) error {
 	return volumeapi.CopyVolumeDownloadBody(ctx, destination, body, interrupt)
@@ -264,16 +178,16 @@ func volumeDownloadStreamFailureReason(ctx context.Context, authorizationRevoked
 	return volumeapi.VolumeDownloadStreamFailureReason(ctx, authorizationRevoked, streamErr)
 }
 func (h *Handlers) auditVolumeTransferStreamOutcome(ctx context.Context, userID, action, transferID string, success bool, message string) {
-	h.volumeAPI().AuditVolumeTransferStreamOutcome(ctx, userID, action, transferID, success, message)
+	h.domains.volume.AuditVolumeTransferStreamOutcome(ctx, userID, action, transferID, success, message)
 }
 func (h *Handlers) volumeTransferForAction(ctx *gin.Context, action authz.Action) (model.User, model.Project, model.VolumeTransfer, bool) {
-	return h.volumeAPI().VolumeTransferForAction(ctx, action)
+	return h.domains.volume.VolumeTransferForAction(ctx, action)
 }
 func (h *Handlers) ensureVolumeTransferConfigured(ctx *gin.Context) bool {
-	return h.volumeAPI().EnsureVolumeTransferConfigured(ctx)
+	return h.domains.volume.EnsureVolumeTransferConfigured(ctx)
 }
 func (h *Handlers) authorizeTransferDirection(ctx *gin.Context, user model.User, project model.Project, transfer model.VolumeTransfer) bool {
-	return h.volumeAPI().AuthorizeTransferDirection(ctx, user, project, transfer)
+	return h.domains.volume.AuthorizeTransferDirection(ctx, user, project, transfer)
 }
 func volumeTransferResponseFor(item model.VolumeTransfer, includeFilename bool, maxBytes ...int64) volumeTransferResponse {
 	return volumeapi.VolumeTransferResponseFor(item, includeFilename, maxBytes...)

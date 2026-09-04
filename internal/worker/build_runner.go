@@ -52,14 +52,13 @@ func (r *Runner) handleBuildRun(ctx context.Context, task *asynq.Task) error {
 	if err := r.db.First(&target, "id = ? and project_id = ? and application_id = ?", run.DeploymentTargetID, run.ProjectID, run.ApplicationID).Error; err != nil {
 		return err
 	}
-	environment := deploymentTargetEnvironment(target)
-	cluster, err := r.runtimeClusterForEnvironment(ctx, environment)
+	cluster, err := r.runtimeClusterForDeploymentTarget(ctx, target)
 	if err != nil {
 		_ = r.failBuildJob(ctx, job, run, err.Error())
 		return err
 	}
 	if err := workerStage(ctx, "build.ensure_capacity", func(context.Context) error {
-		return r.ensureBuildCapacity(project, cluster, environment)
+		return r.ensureBuildCapacity(project, cluster, target)
 	}); err != nil {
 		if errors.Is(err, errBuildCapacityUnavailable) {
 			_ = r.db.Model(&model.BuildJob{}).Where("id = ? and status = ?", job.ID, "queued").Update("message", buildCapacityMessage(err)).Error
@@ -72,14 +71,14 @@ func (r *Runner) handleBuildRun(ctx context.Context, task *asynq.Task) error {
 		}
 		return err
 	}
-	namespace := deploymentNamespace(project, environment)
+	namespace := deploymentNamespace(project)
 	if err := workerStage(ctx, "build.ensure_namespace", func(stageCtx context.Context) error {
-		return r.ensureProjectNamespace(stageCtx, namespace, project, environment)
+		return r.ensureProjectNamespace(stageCtx, namespace, project, target)
 	}); err != nil {
 		_ = r.failBuildJob(ctx, job, run, "namespace prepare failed: "+err.Error())
 		return err
 	}
-	client, err := r.kubernetesClient(ctx, environment)
+	client, err := r.kubernetesClient(ctx, target)
 	if err != nil {
 		_ = r.failBuildJob(ctx, job, run, err.Error())
 		return err
@@ -96,7 +95,7 @@ func (r *Runner) handleBuildRun(ctx context.Context, task *asynq.Task) error {
 	jobName := buildKubernetesJobName(job.ID)
 	secretName := jobName + "-secret"
 	if err := workerStage(ctx, "build.start_job", func(stageCtx context.Context) error {
-		return r.startBuildJob(stageCtx, client, namespace, secretName, jobName, environment, run, taskPayload)
+		return r.startBuildJob(stageCtx, client, namespace, secretName, jobName, run, taskPayload)
 	}); err != nil {
 		_ = r.failBuildJob(ctx, job, run, err.Error())
 		return err
@@ -104,14 +103,13 @@ func (r *Runner) handleBuildRun(ctx context.Context, task *asynq.Task) error {
 	defer r.cleanupBuildJobSecrets(context.WithoutCancel(ctx), client, namespace, secretName)
 	now := time.Now()
 	if err := r.db.Model(&model.BuildJob{}).Where("id = ? and status = ?", job.ID, "queued").Updates(map[string]any{
-		"status":            "running",
-		"message":           "kubernetes_job_started",
-		"executor_id":       jobName,
-		"executor_name":     "kubernetes job",
-		"log_ref":           "kubernetes-job:" + namespace + "/" + jobName,
-		"attempts":          gorm.Expr("attempts + 1"),
-		"started_at":        &now,
-		"last_heartbeat_at": &now,
+		"status":        "running",
+		"message":       "kubernetes_job_started",
+		"executor_id":   jobName,
+		"executor_name": "kubernetes job",
+		"log_ref":       "kubernetes-job:" + namespace + "/" + jobName,
+		"attempts":      gorm.Expr("attempts + 1"),
+		"started_at":    &now,
 	}).Error; err != nil {
 		return err
 	}
@@ -132,11 +130,11 @@ func (r *Runner) handleBuildRun(ctx context.Context, task *asynq.Task) error {
 	})
 	if err != nil {
 		if errors.Is(err, errBuildRunCanceled) {
-			_ = r.settleBuildUsage(ctx, job.ID, run.ID, run.ProjectID, environment)
+			_ = r.settleBuildUsage(ctx, job.ID, run.ID, run.ProjectID, target)
 			return nil
 		}
 		_ = r.failBuildJob(ctx, job, run, err.Error())
-		_ = r.settleBuildUsage(ctx, job.ID, run.ID, run.ProjectID, environment)
+		_ = r.settleBuildUsage(ctx, job.ID, run.ID, run.ProjectID, target)
 		return err
 	}
 	if strings.TrimSpace(result.ImageRef) == "" {
@@ -148,7 +146,7 @@ func (r *Runner) handleBuildRun(ctx context.Context, task *asynq.Task) error {
 	if err != nil {
 		return err
 	}
-	_ = r.settleBuildUsage(ctx, job.ID, run.ID, run.ProjectID, environment)
+	_ = r.settleBuildUsage(ctx, job.ID, run.ID, run.ProjectID, target)
 	if completedRun.ID != "" {
 		r.emitBuildEvent(ctx, completedRun, "succeeded", "Build succeeded")
 		r.enqueueAutoDeploymentsForBuildRun(ctx, completedRun)
@@ -156,7 +154,7 @@ func (r *Runner) handleBuildRun(ctx context.Context, task *asynq.Task) error {
 	return nil
 }
 
-func (r *Runner) settleBuildUsage(ctx context.Context, jobID string, runID string, projectID string, environment model.Environment) (err error) {
+func (r *Runner) settleBuildUsage(ctx context.Context, jobID string, runID string, projectID string, target model.DeploymentTarget) (err error) {
 	ctx, end := telemetry.StartOperation(ctx, "worker", "build.settle_usage")
 	defer func() { end(err) }()
 	var run model.BuildRun
@@ -171,12 +169,11 @@ func (r *Runner) settleBuildUsage(ctx context.Context, jobID string, runID strin
 	if run.FinishedAt != nil {
 		finishedAt = *run.FinishedAt
 	}
-	buildEnvironment := environment
 	err = (billing.Service{DB: r.db}).SettleBuildRun(billing.BuildUsageInput{
-		Run:         run,
-		Job:         job,
-		Environment: buildEnvironment,
-		FinishedAt:  finishedAt,
+		Run:              run,
+		Job:              job,
+		DeploymentTarget: target,
+		FinishedAt:       finishedAt,
 	})
 	if err != nil && !errors.Is(err, billing.ErrAlreadySettled) {
 		message := strings.TrimSpace(job.Message)
@@ -194,8 +191,8 @@ func buildJobCanStart(status string) bool {
 	return status == "queued"
 }
 
-func (r *Runner) kubernetesClient(ctx context.Context, environment model.Environment) (kubernetes.Interface, error) {
-	kubeconfig, err := r.kubeconfigForEnvironment(ctx, environment)
+func (r *Runner) kubernetesClient(ctx context.Context, target model.DeploymentTarget) (kubernetes.Interface, error) {
+	kubeconfig, err := r.kubeconfigForDeploymentTarget(ctx, target)
 	if err != nil {
 		return nil, err
 	}

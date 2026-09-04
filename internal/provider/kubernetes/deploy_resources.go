@@ -16,7 +16,6 @@ type ApplicationResourcesSpec struct {
 	WorkloadType                 string
 	ProjectID                    string
 	ApplicationID                string
-	EnvironmentID                string
 	DeploymentTargetID           string
 	ReleaseID                    string
 	BuildRunID                   string
@@ -104,8 +103,8 @@ type HookJobSpec struct {
 	ProjectID          string
 	ApplicationID      string
 	BuildRunID         string
-	EnvironmentID      string
 	DeploymentTargetID string
+	Stage              string
 	ReleaseID          string
 	HookRunID          string
 	Phase              string

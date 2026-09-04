@@ -12,6 +12,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/LiteyukiStudio/devops/internal/api/applicationapi"
+	"github.com/LiteyukiStudio/devops/internal/api/buildapi"
+	"github.com/LiteyukiStudio/devops/internal/api/deploymentapi"
 	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	secretstore "github.com/LiteyukiStudio/devops/internal/secret"
@@ -103,9 +106,10 @@ func TestInstallAppTemplateAcceptsPendingProvisionAndRejectsPendingImport(t *tes
 				}},
 				secrets: secretstore.NewStore(db, nil, codec),
 			}
+			handlers.domains = newDomainHandlers(handlers)
 
 			installNow := false
-			body, err := json.Marshal(appTemplateInstallInput{
+			body, err := json.Marshal(applicationapi.AppTemplateInstallInput{
 				ApplicationName: "Redis", ApplicationIdentifier: "redis-pending-volume",
 				DeploymentName: "default", Stage: "prod", ClusterID: "clu_template",
 				ImageRef: "redis:7-alpine", Replicas: 1, CPURequest: "500m", MemoryRequest: "512Mi",
@@ -121,7 +125,7 @@ func TestInstallAppTemplateAcceptsPendingProvisionAndRejectsPendingImport(t *tes
 			ctx.Params = gin.Params{{Key: "projectId", Value: "prj_template"}, {Key: "templateId", Value: "redis"}}
 			ctx.Set(currentUserContextKey, model.User{ID: "usr_template", Role: authz.PlatformRoleAdmin})
 
-			handlers.InstallAppTemplate(ctx)
+			handlers.domains.application.InstallAppTemplate(ctx)
 
 			if recorder.Code != test.wantStatus {
 				t.Fatalf("status=%d want=%d body=%s", recorder.Code, test.wantStatus, recorder.Body.String())
@@ -145,7 +149,7 @@ func TestInstallAppTemplateAcceptsPendingProvisionAndRejectsPendingImport(t *tes
 			if observation.createdTarget == nil || observation.createdTarget.ContainerCommand != "/bin/sh\n-ec" || !strings.Contains(observation.createdTarget.ContainerArgs, "--requirepass") {
 				t.Fatalf("created redis target=%#v", observation.createdTarget)
 			}
-			refs := decodeSecretRefs(observation.createdTarget.SecretRefs)
+			refs := buildapi.DecodeSecretRefs(observation.createdTarget.SecretRefs)
 			var valuesSnapshot map[string]string
 			if err := json.Unmarshal([]byte(observation.createdInstallation.ValuesSnapshot), &valuesSnapshot); err != nil {
 				t.Fatal(err)
@@ -172,7 +176,10 @@ func TestInstallAppTemplateAcceptsPendingProvisionAndRejectsPendingImport(t *tes
 					t.Fatalf("blank redis password was marked as set: %#v", valuesSnapshot)
 				}
 			}
-			var response appTemplateInstallResponse
+			var response struct {
+				Installation     model.AppTemplateInstallation          `json:"installation"`
+				DeploymentTarget deploymentapi.DeploymentTargetResponse `json:"deploymentTarget"`
+			}
 			if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
 				t.Fatal(err)
 			}
@@ -214,7 +221,7 @@ func newAppTemplateInstallTestDB(t *testing.T, observation *appTemplateInstallDB
 		case *model.Application:
 			query.AddError(gorm.ErrRecordNotFound)
 		case *model.RuntimeCluster:
-			*destination = model.RuntimeCluster{ID: "clu_template", Name: "Primary", Type: "kubernetes", Scope: "global"}
+			*destination = model.RuntimeCluster{ID: "clu_template", Name: "Primary", Scope: "global"}
 			query.RowsAffected = 1
 		case *[]model.ScopedResourceProjectBinding:
 			*destination = []model.ScopedResourceProjectBinding{}
@@ -357,11 +364,12 @@ func TestDeploymentStageInvalidErrorIsStructuredAndNotRetryable(t *testing.T) {
 func TestListAppTemplatesFiltersSummariesByQueryAndCategory(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	handlers := &Handlers{}
+	handlers.domains = newDomainHandlers(handlers)
 
 	response := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(response)
 	ctx.Request = httptest.NewRequest(http.MethodGet, "/api/v1/app-templates?query=transactional&category=database", nil)
-	handlers.ListAppTemplates(ctx)
+	handlers.domains.application.ListAppTemplates(ctx)
 
 	if response.Code != http.StatusOK {
 		t.Fatalf("status = %d body=%s", response.Code, response.Body.String())
@@ -383,7 +391,7 @@ func TestListAppTemplatesFiltersSummariesByQueryAndCategory(t *testing.T) {
 	response = httptest.NewRecorder()
 	ctx, _ = gin.CreateTestContext(response)
 	ctx.Request = httptest.NewRequest(http.MethodGet, "/api/v1/app-templates?query=Dify", nil)
-	handlers.ListAppTemplates(ctx)
+	handlers.domains.application.ListAppTemplates(ctx)
 	if response.Code != http.StatusOK || response.Body.String() != "[]" {
 		t.Fatalf("Dify no-match response = %d %s", response.Code, response.Body.String())
 	}
@@ -391,7 +399,7 @@ func TestListAppTemplatesFiltersSummariesByQueryAndCategory(t *testing.T) {
 	response = httptest.NewRecorder()
 	ctx, _ = gin.CreateTestContext(response)
 	ctx.Request = httptest.NewRequest(http.MethodGet, "/api/v1/app-templates?category=storage", nil)
-	handlers.ListAppTemplates(ctx)
+	handlers.domains.application.ListAppTemplates(ctx)
 	if response.Code != http.StatusOK {
 		t.Fatalf("storage status = %d body=%s", response.Code, response.Body.String())
 	}
@@ -415,7 +423,9 @@ func TestGetAppTemplateReturnsSanitizedFullDefinition(t *testing.T) {
 	ctx, _ := gin.CreateTestContext(response)
 	ctx.Request = httptest.NewRequest(http.MethodGet, "/api/v1/app-templates/redis", nil)
 	ctx.Params = gin.Params{{Key: "templateId", Value: "redis"}}
-	(&Handlers{}).GetAppTemplate(ctx)
+	handlers := &Handlers{}
+	handlers.domains = newDomainHandlers(handlers)
+	handlers.domains.application.GetAppTemplate(ctx)
 
 	if response.Code != http.StatusOK {
 		t.Fatalf("status = %d body=%s", response.Code, response.Body.String())

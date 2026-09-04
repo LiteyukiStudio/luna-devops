@@ -1,0 +1,2503 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Luna DevOps 全项目冗余与过度设计审计</title>
+  <style>
+    :root {
+      --canvas: #f3f7f9;
+      --surface: #ffffff;
+      --surface-muted: #edf4f6;
+      --text: #172126;
+      --muted: #5f7078;
+      --line: #d9e4e8;
+      --brand: #087f8c;
+      --brand-strong: #086470;
+      --brand-soft: #dff4f5;
+      --remove: #08784e;
+      --remove-soft: #e1f6ec;
+      --consolidate: #0b7197;
+      --consolidate-soft: #e0f2fa;
+      --redesign: #6652a3;
+      --redesign-soft: #eee9fb;
+      --gate: #9a6510;
+      --gate-soft: #fff1d2;
+      --code: #152327;
+      --code-text: #d8eef0;
+      --shadow: 0 18px 48px rgb(20 52 62 / 9%);
+      --radius-lg: 22px;
+      --radius-md: 14px;
+      --content: 980px;
+    }
+
+    * { box-sizing: border-box; }
+
+    html {
+      scroll-behavior: smooth;
+      scroll-padding-top: 28px;
+    }
+
+    body {
+      margin: 0;
+      color: var(--text);
+      background: var(--canvas);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+        "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+      font-size: 16px;
+      line-height: 1.78;
+      text-rendering: optimizeLegibility;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    a { color: var(--brand-strong); text-underline-offset: 3px; }
+    a:hover { color: var(--brand); }
+
+    .skip-link {
+      position: fixed;
+      top: 10px;
+      left: 10px;
+      z-index: 100;
+      padding: 8px 12px;
+      color: #fff;
+      background: var(--brand-strong);
+      border-radius: 8px;
+      transform: translateY(-160%);
+    }
+
+    .skip-link:focus { transform: translateY(0); }
+
+    .hero {
+      position: relative;
+      overflow: hidden;
+      color: #f6ffff;
+      background:
+        radial-gradient(circle at 88% 10%, rgb(96 218 220 / 24%), transparent 30%),
+        linear-gradient(118deg, #10292f 0%, #104c55 58%, #087f8c 100%);
+    }
+
+    .hero::after {
+      content: "";
+      position: absolute;
+      inset: auto -12vw -170px auto;
+      width: 420px;
+      height: 420px;
+      border: 1px solid rgb(255 255 255 / 14%);
+      border-radius: 50%;
+      box-shadow: 0 0 0 52px rgb(255 255 255 / 4%), 0 0 0 104px rgb(255 255 255 / 3%);
+      pointer-events: none;
+    }
+
+    .hero-inner {
+      position: relative;
+      z-index: 1;
+      width: min(1320px, calc(100% - 64px));
+      margin: 0 auto;
+      padding: 64px 0 54px;
+    }
+
+    .eyebrow {
+      margin: 0 0 14px;
+      color: #9ce7e9;
+      font-size: 12px;
+      font-weight: 750;
+      letter-spacing: .16em;
+      text-transform: uppercase;
+    }
+
+    .hero h1 {
+      max-width: 900px;
+      margin: 0;
+      font-size: clamp(34px, 5vw, 62px);
+      line-height: 1.16;
+      letter-spacing: -.035em;
+    }
+
+    .hero-copy {
+      max-width: 820px;
+      margin: 18px 0 0;
+      color: #cce7e9;
+      font-size: 17px;
+      overflow-wrap: anywhere;
+    }
+
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      max-width: 880px;
+      margin-top: 34px;
+    }
+
+    .metric {
+      padding: 15px 17px;
+      border: 1px solid rgb(255 255 255 / 15%);
+      border-radius: 14px;
+      background: rgb(255 255 255 / 8%);
+      backdrop-filter: blur(8px);
+    }
+
+    .metric strong {
+      display: block;
+      font-size: 24px;
+      line-height: 1.15;
+    }
+
+    .metric span {
+      display: block;
+      margin-top: 5px;
+      color: #b9dfe2;
+      font-size: 12px;
+    }
+
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 20px;
+    }
+
+    .legend span,
+    .kind-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+      line-height: 1;
+    }
+
+    .legend span { flex: 0 0 auto; padding: 7px 10px; background: rgb(255 255 255 / 10%); white-space: nowrap; }
+    .legend i { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+    .legend .d { color: #8be8bd; }
+    .legend .c { color: #8eddf2; }
+    .legend .r { color: #c9bbff; }
+    .legend .g { color: #ffd98b; }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 280px minmax(0, var(--content));
+      justify-content: center;
+      gap: 38px;
+      width: min(1380px, calc(100% - 48px));
+      margin: 36px auto 80px;
+      align-items: start;
+    }
+
+    .sidebar {
+      position: sticky;
+      top: 20px;
+      max-height: calc(100vh - 40px);
+      overflow: auto;
+      padding: 18px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-md);
+      background: color-mix(in srgb, var(--surface) 94%, transparent);
+      box-shadow: 0 8px 28px rgb(20 52 62 / 6%);
+      scrollbar-width: thin;
+    }
+
+    .sidebar-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      min-width: 0;
+      padding: 0 4px 12px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .sidebar-title {
+      margin: 0;
+      font-size: 14px;
+      font-weight: 750;
+    }
+
+    .print-button {
+      flex: 0 0 auto;
+      padding: 5px 8px;
+      color: var(--brand-strong);
+      border: 0;
+      border-radius: 7px;
+      background: var(--brand-soft);
+      font: inherit;
+      font-size: 12px;
+      cursor: pointer;
+    }
+
+    #TOC { margin-top: 12px; font-size: 13px; line-height: 1.48; }
+    #TOC ul { margin: 0; padding: 0; list-style: none; }
+    #TOC ul ul { margin: 5px 0 8px 9px; padding-left: 11px; border-left: 1px solid var(--line); }
+    #TOC li { margin: 1px 0; }
+    #TOC a {
+      display: block;
+      padding: 5px 7px;
+      color: var(--muted);
+      border-radius: 7px;
+      text-decoration: none;
+      transition: color .15s ease, background .15s ease;
+    }
+    #TOC a:hover { color: var(--text); background: var(--surface-muted); }
+    #TOC a.active { color: var(--brand-strong); background: var(--brand-soft); font-weight: 700; }
+
+    main {
+      min-width: 0;
+      padding: clamp(30px, 4vw, 58px);
+      border-radius: var(--radius-lg);
+      background: var(--surface);
+      box-shadow: var(--shadow);
+    }
+
+    main > :first-child { margin-top: 0; }
+    main > :last-child { margin-bottom: 0; }
+
+    h2, h3 { scroll-margin-top: 24px; }
+
+    h2 {
+      margin: 58px 0 20px;
+      padding-top: 8px;
+      color: var(--text);
+      font-size: clamp(25px, 3vw, 34px);
+      line-height: 1.28;
+      letter-spacing: -.025em;
+    }
+
+    h2::after {
+      content: "";
+      display: block;
+      width: 52px;
+      height: 4px;
+      margin-top: 12px;
+      border-radius: 999px;
+      background: var(--brand);
+    }
+
+    h3 {
+      margin: 42px 0 16px;
+      padding: 15px 18px;
+      border-left: 4px solid var(--brand);
+      border-radius: 0 11px 11px 0;
+      background: var(--surface-muted);
+      font-size: 20px;
+      line-height: 1.4;
+    }
+
+    h3[data-kind="D"] { border-color: var(--remove); background: var(--remove-soft); }
+    h3[data-kind="C"] { border-color: var(--consolidate); background: var(--consolidate-soft); }
+    h3[data-kind="R"] { border-color: var(--redesign); background: var(--redesign-soft); }
+    h3[data-kind="G"] { border-color: var(--gate); background: var(--gate-soft); }
+
+    .kind-badge {
+      margin-right: 10px;
+      padding: 6px 8px;
+      color: #fff;
+      vertical-align: 2px;
+    }
+    h3[data-kind="D"] .kind-badge { background: var(--remove); }
+    h3[data-kind="C"] .kind-badge { background: var(--consolidate); }
+    h3[data-kind="R"] .kind-badge { background: var(--redesign); }
+    h3[data-kind="G"] .kind-badge { background: var(--gate); }
+
+    p { margin: 12px 0; }
+    ul, ol { margin: 12px 0; padding-left: 1.35em; }
+    li { margin: 5px 0; }
+    li::marker { color: var(--brand); }
+
+    strong { font-weight: 720; }
+
+    code {
+      padding: .16em .4em;
+      color: #075b66;
+      border: 1px solid #d7e9ec;
+      border-radius: 5px;
+      background: #eef7f8;
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      font-size: .88em;
+      overflow-wrap: anywhere;
+    }
+
+    pre {
+      overflow: auto;
+      margin: 16px 0 24px;
+      padding: 18px 20px;
+      color: var(--code-text);
+      border-radius: 12px;
+      background: var(--code);
+      line-height: 1.58;
+      scrollbar-width: thin;
+    }
+
+    pre code {
+      padding: 0;
+      color: inherit;
+      border: 0;
+      background: transparent;
+      font-size: 13px;
+      overflow-wrap: normal;
+    }
+
+    table {
+      display: block;
+      width: 100%;
+      overflow-x: auto;
+      margin: 20px 0 28px;
+      border-spacing: 0;
+      border-collapse: separate;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      font-size: 14px;
+      white-space: normal;
+    }
+
+    thead { background: var(--surface-muted); }
+    th, td { min-width: 130px; padding: 11px 14px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--line); }
+    th { font-weight: 720; }
+    tr:last-child td { border-bottom: 0; }
+    tbody tr:hover { background: color-mix(in srgb, var(--brand-soft) 42%, transparent); }
+
+    hr { height: 1px; margin: 40px 0; border: 0; background: var(--line); }
+
+    .back-top {
+      position: fixed;
+      right: 22px;
+      bottom: 22px;
+      z-index: 20;
+      display: grid;
+      width: 42px;
+      height: 42px;
+      place-items: center;
+      color: #fff;
+      border: 0;
+      border-radius: 50%;
+      background: var(--brand-strong);
+      box-shadow: 0 10px 24px rgb(8 100 112 / 28%);
+      cursor: pointer;
+      opacity: 0;
+      transform: translateY(10px);
+      transition: opacity .2s ease, transform .2s ease;
+    }
+
+    .back-top.visible { opacity: 1; transform: translateY(0); }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --canvas: #0f171a;
+        --surface: #172226;
+        --surface-muted: #202e33;
+        --text: #e7f0f2;
+        --muted: #a8b8be;
+        --line: #314248;
+        --brand: #57cdd1;
+        --brand-strong: #8be7e9;
+        --brand-soft: #183c41;
+        --remove-soft: #173a2d;
+        --consolidate-soft: #173644;
+        --redesign-soft: #2a2741;
+        --gate-soft: #3b301c;
+        --shadow: 0 18px 48px rgb(0 0 0 / 28%);
+      }
+      code { color: #9de9eb; border-color: #294b50; background: #173238; }
+      .print-button { color: var(--brand-strong); }
+    }
+
+    @media (max-width: 980px) {
+      .hero-inner { width: min(100% - 40px, 820px); padding: 46px 0 40px; }
+      .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .layout { display: block; width: min(100% - 28px, 860px); margin-top: 20px; }
+      .sidebar { position: relative; top: 0; max-height: none; margin-bottom: 16px; }
+      #TOC > ul { columns: 2; column-gap: 22px; }
+      #TOC ul ul { display: none; }
+      main { padding: clamp(24px, 5vw, 46px); }
+    }
+
+    @media (max-width: 600px) {
+      body { font-size: 15px; }
+      .hero-inner { width: calc(100% - 30px); padding: 36px 0 32px; }
+      .hero h1 { font-size: 34px; }
+      .hero-copy { font-size: 15px; }
+      .metrics { grid-template-columns: 1fr 1fr; gap: 8px; }
+      .metric { padding: 12px; }
+      .metric strong { font-size: 20px; }
+      .layout { width: calc(100% - 16px); margin-bottom: 40px; }
+      #TOC > ul { columns: 1; }
+      main { padding: 22px 18px 34px; border-radius: 16px; }
+      h2 { margin-top: 44px; font-size: 26px; }
+      h3 { margin-top: 34px; padding: 13px 14px; font-size: 18px; }
+      .back-top { right: 12px; bottom: 12px; }
+    }
+
+    @media print {
+      :root { --canvas: #fff; --surface: #fff; --text: #111; --muted: #444; --line: #ccc; }
+      body { background: #fff; font-size: 10.5pt; line-height: 1.55; }
+      .hero { color: #111; background: #fff; border-bottom: 2px solid #0a7580; }
+      .hero::after, .legend, .sidebar, .back-top, .print-button { display: none !important; }
+      .hero-inner { width: 100%; padding: 20mm 18mm 10mm; }
+      .hero h1 { font-size: 28pt; }
+      .eyebrow, .hero-copy, .metric span { color: #444; }
+      .metrics { grid-template-columns: repeat(4, 1fr); margin-top: 8mm; }
+      .metric { border-color: #bbb; background: #fff; }
+      .layout { display: block; width: 100%; margin: 0; }
+      main { padding: 10mm 18mm 20mm; box-shadow: none; }
+      h2 { break-after: avoid; }
+      h3 { break-after: avoid; color: #111; border-color: #555 !important; background: #f3f3f3 !important; }
+      pre, table { break-inside: avoid; }
+      pre { color: #111; border: 1px solid #ccc; background: #f6f6f6; }
+      code { color: #111; border-color: #ddd; background: #f4f4f4; }
+      a { color: #111; text-decoration: none; }
+      @page { size: A4; margin: 10mm 0; }
+    }
+  </style>
+</head>
+<body>
+  <a class="skip-link" href="#content">跳到正文</a>
+  <header class="hero" id="top">
+    <div class="hero-inner">
+      <p class="eyebrow">Luna DevOps · Architecture Audit · 2026-09-04</p>
+      <h1>Luna DevOps 全项目<br>冗余与过度设计审计</h1>
+      <p class="hero-copy">覆盖 Go API、Worker、Web、Agent、CLI、文档与交付工具链，并补充代码过度防御专项检查。结论按直接清理、能力收敛、结构重构和数据门禁分级。</p>
+      <div class="metrics" aria-label="报告摘要">
+        <div class="metric"><strong>54</strong><span>个处置项</span></div>
+        <div class="metric"><strong>294</strong><span>个失效 i18n key</span></div>
+        <div class="metric"><strong>18</strong><span>个未使用 API 方法</span></div>
+        <div class="metric"><strong>4,660</strong><span>行显式 API 兼容桥</span></div>
+      </div>
+      <div class="legend" aria-label="处置分类">
+        <span class="d"><i></i>D · 直接删除</span>
+        <span class="c"><i></i>C · 收敛能力</span>
+        <span class="r"><i></i>R · 重构后删除</span>
+        <span class="g"><i></i>G · 门禁后删除</span>
+      </div>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar" aria-label="报告目录">
+      <div class="sidebar-header">
+        <p class="sidebar-title">报告目录</p>
+        <button class="print-button" type="button" onclick="window.print()">打印 / PDF</button>
+      </div>
+      <nav id="TOC" aria-label="报告章节">
+      <ul>
+      <li><a href="#1-结论" id="toc-1-结论">1. 结论</a></li>
+      <li><a href="#2-范围与方法" id="toc-2-范围与方法">2.
+      范围与方法</a>
+      <ul>
+      <li><a href="#21-代码过度防御专项检查"
+      id="toc-21-代码过度防御专项检查">2.1 代码过度防御专项检查</a></li>
+      </ul></li>
+      <li><a href="#3-建议执行顺序" id="toc-3-建议执行顺序">3.
+      建议执行顺序</a></li>
+      <li><a href="#4-高置信直接清理" id="toc-4-高置信直接清理">4.
+      高置信直接清理</a>
+      <ul>
+      <li><a href="#d01-删除重复的应用概览页面"
+      id="toc-d01-删除重复的应用概览页面">D01.
+      删除重复的应用概览页面</a></li>
+      <li><a href="#d02-删除-internalservice-转发空壳"
+      id="toc-d02-删除-internalservice-转发空壳">D02. 删除
+      <code>internal/service</code> 转发空壳</a></li>
+      <li><a href="#d03-给-i18n-增加反向门禁并删除-294-个失效-key"
+      id="toc-d03-给-i18n-增加反向门禁并删除-294-个失效-key">D03. 给
+      i18n 增加反向门禁并删除 294 个失效 key</a></li>
+      <li><a href="#d04-删除-18-个无生产调用的-web-api-方法及专属类型"
+      id="toc-d04-删除-18-个无生产调用的-web-api-方法及专属类型">D04.
+      删除 18 个无生产调用的 Web API 方法及专属类型</a></li>
+      <li><a
+      href="#d05-删除沿生产入口不可达的-web-声明和不可能状态-fallback"
+      id="toc-d05-删除沿生产入口不可达的-web-声明和不可能状态-fallback">D05.
+      删除沿生产入口不可达的 Web 声明和不可能状态 fallback</a></li>
+      <li><a href="#d06-删除-8-个未引用-web-静态资源"
+      id="toc-d06-删除-8-个未引用-web-静态资源">D06. 删除 8 个未引用 Web
+      静态资源</a></li>
+      <li><a href="#d07-删除-6-个未引用旧教程-svg"
+      id="toc-d07-删除-6-个未引用旧教程-svg">D07. 删除 6 个未引用旧教程
+      SVG</a></li>
+      <li><a href="#d08-删除孤儿且口径错误的-docsbillingmd"
+      id="toc-d08-删除孤儿且口径错误的-docsbillingmd">D08.
+      删除孤儿且口径错误的 <code>docs/billing.md</code></a></li>
+      <li><a href="#d09-把-todomd-恢复为真实未完成清单"
+      id="toc-d09-把-todomd-恢复为真实未完成清单">D09. 把
+      <code>TODO.md</code> 恢复为真实未完成清单</a></li>
+      <li><a href="#d10-修复未被-vitest-收集的-agent-测试"
+      id="toc-d10-修复未被-vitest-收集的-agent-测试">D10. 修复未被
+      Vitest 收集的 Agent 测试</a></li>
+      <li><a href="#d11-删除-agent-的内部导入与错误体兼容层"
+      id="toc-d11-删除-agent-的内部导入与错误体兼容层">D11. 删除 Agent
+      的内部导入与错误体兼容层</a></li>
+      <li><a href="#d12-删除两个零调用-router-构造重载"
+      id="toc-d12-删除两个零调用-router-构造重载">D12. 删除两个零调用
+      Router 构造重载</a></li>
+      <li><a
+      href="#d13-收紧-ci-的过宽-fail-safe并删除死声明和虚假前置工具"
+      id="toc-d13-收紧-ci-的过宽-fail-safe并删除死声明和虚假前置工具">D13.
+      收紧 CI 的过宽 fail-safe，并删除死声明和虚假前置工具</a></li>
+      <li><a href="#d14-删除或修正-6-条重定向后仍-404-的规则"
+      id="toc-d14-删除或修正-6-条重定向后仍-404-的规则">D14. 删除或修正
+      6 条重定向后仍 404 的规则</a></li>
+      <li><a href="#d15-保持-release-compatibilityjson-已删除状态"
+      id="toc-d15-保持-release-compatibilityjson-已删除状态">D15. 保持
+      <code>release-compatibility.json</code> 已删除状态</a></li>
+      <li><a href="#d16-删除-4-个未接入配置的-web-eslint-直接依赖"
+      id="toc-d16-删除-4-个未接入配置的-web-eslint-直接依赖">D16. 删除 4
+      个未接入配置的 Web ESLint 直接依赖</a></li>
+      <li><a href="#d17-删除-cli-的-authorization_code_pkce-死类型分支"
+      id="toc-d17-删除-cli-的-authorization_code_pkce-死类型分支">D17.
+      删除 CLI 的 <code>authorization_code_pkce</code>
+      死类型分支</a></li>
+      </ul></li>
+      <li><a href="#5-小范围能力契约与入口收敛"
+      id="toc-5-小范围能力契约与入口收敛">5.
+      小范围能力、契约与入口收敛</a>
+      <ul>
+      <li><a href="#c01-删除未发布未文档化的-cmdtasks"
+      id="toc-c01-删除未发布未文档化的-cmdtasks">C01.
+      删除未发布、未文档化的 <code>cmd/tasks</code></a></li>
+      <li><a href="#c02-删除配置定义死文案和-3-个无效计费开关"
+      id="toc-c02-删除配置定义死文案和-3-个无效计费开关">C02.
+      删除配置定义死文案和 3 个无效计费开关</a></li>
+      <li><a
+      href="#c03-删除-cli-api-request-的假开关再决定是否保留诊断入口"
+      id="toc-c03-删除-cli-api-request-的假开关再决定是否保留诊断入口">C03.
+      删除 CLI <code>api request</code>
+      的假开关，再决定是否保留诊断入口</a></li>
+      <li><a href="#c04-精简-agent-readme"
+      id="toc-c04-精简-agent-readme">C04. 精简 Agent README</a></li>
+      <li><a href="#c05-精简-cli-readme-与-1964-行规格文档"
+      id="toc-c05-精简-cli-readme-与-1964-行规格文档">C05. 精简 CLI
+      README 与 1,964 行规格文档</a></li>
+      <li><a href="#c06-合并-5-份完全相同的语言名称表"
+      id="toc-c06-合并-5-份完全相同的语言名称表">C06. 合并 5
+      份完全相同的语言名称表</a></li>
+      <li><a href="#c07-移除测试-fixture-专用的空删除状态兼容"
+      id="toc-c07-移除测试-fixture-专用的空删除状态兼容">C07. 移除测试
+      fixture 专用的空删除状态兼容</a></li>
+      <li><a href="#c08-把-readme-专用大图移出-webpublic"
+      id="toc-c08-把-readme-专用大图移出-webpublic">C08. 把 README
+      专用大图移出 <code>web/public</code></a></li>
+      <li><a
+      href="#c09-用-worker-装配不变量替代-nil-db-no-op-和二次默认化"
+      id="toc-c09-用-worker-装配不变量替代-nil-db-no-op-和二次默认化">C09.
+      用 Worker 装配不变量替代 nil DB no-op 和二次默认化</a></li>
+      <li><a href="#c10-显式构建引用失败时停止静默换对象"
+      id="toc-c10-显式构建引用失败时停止静默换对象">C10.
+      显式构建引用失败时停止静默换对象</a></li>
+      <li><a href="#c11-webhook-自动配置不能吞错后报告启用成功"
+      id="toc-c11-webhook-自动配置不能吞错后报告启用成功">C11. Webhook
+      自动配置不能吞错后报告启用成功</a></li>
+      <li><a href="#c12-2xx-非-json-响应不能被-agent-记为工具成功"
+      id="toc-c12-2xx-非-json-响应不能被-agent-记为工具成功">C12. 2xx 非
+      JSON 响应不能被 Agent 记为工具成功</a></li>
+      <li><a href="#c13-helm-只在真正托管连接串时创建-connection-secret"
+      id="toc-c13-helm-只在真正托管连接串时创建-connection-secret">C13.
+      Helm 只在真正托管连接串时创建 connection Secret</a></li>
+      </ul></li>
+      <li><a href="#6-结构性过度设计先替换再删除"
+      id="toc-6-结构性过度设计先替换再删除">6.
+      结构性过度设计：先替换，再删除</a>
+      <ul>
+      <li><a href="#r01-api-领域拆分留下了第二套-facade"
+      id="toc-r01-api-领域拆分留下了第二套-facade">R01. API
+      领域拆分留下了第二套 facade</a></li>
+      <li><a
+      href="#r02-删除不存在的-environment-领域和重复-environmentid"
+      id="toc-r02-删除不存在的-environment-领域和重复-environmentid">R02.
+      删除不存在的 Environment 领域和重复
+      <code>environmentId</code></a></li>
+      <li><a href="#r03-删除只有一个真实实现的策略provider-字段"
+      id="toc-r03-删除只有一个真实实现的策略provider-字段">R03.
+      删除只有一个真实实现的策略/Provider 字段</a></li>
+      <li><a href="#r04-收敛网关域名的三层事实源"
+      id="toc-r04-收敛网关域名的三层事实源">R04.
+      收敛网关域名的三层事实源</a></li>
+      <li><a href="#r05-删除半实现的多-builderlease缓存计量脚手架"
+      id="toc-r05-删除半实现的多-builderlease缓存计量脚手架">R05.
+      删除半实现的多 Builder/Lease/缓存/计量脚手架</a></li>
+      <li><a href="#r06-web-与-openapi-双维护-2743-行-dto"
+      id="toc-r06-web-与-openapi-双维护-2743-行-dto">R06. Web 与 OpenAPI
+      双维护 2,743 行 DTO</a></li>
+      <li><a href="#r07-agent-同时维护两套交互卡片-operation-id"
+      id="toc-r07-agent-同时维护两套交互卡片-operation-id">R07. Agent
+      同时维护两套交互卡片 operation ID</a></li>
+      <li><a href="#r08-agent-手写关键词路由重复工具检索机制"
+      id="toc-r08-agent-手写关键词路由重复工具检索机制">R08. Agent
+      手写关键词路由重复工具检索机制</a></li>
+      <li><a href="#r09-cli-生成契约的跟踪策略只能在重做构建链后调整"
+      id="toc-r09-cli-生成契约的跟踪策略只能在重做构建链后调整">R09. CLI
+      生成契约的跟踪策略只能在重做构建链后调整</a></li>
+      <li><a
+      href="#r10-从-cli-运行时-catalog-去掉无消费者的完整-responses"
+      id="toc-r10-从-cli-运行时-catalog-去掉无消费者的完整-responses">R10.
+      从 CLI 运行时 catalog 去掉无消费者的完整
+      <code>responses</code></a></li>
+      <li><a href="#r11-cli-运行时快照不应复制已经忽略的-requiredscopes"
+      id="toc-r11-cli-运行时快照不应复制已经忽略的-requiredscopes">R11.
+      CLI 运行时快照不应复制已经忽略的
+      <code>requiredScopes</code></a></li>
+      <li><a href="#r12-删除私有-workspace-contract-的虚构多形态兼容"
+      id="toc-r12-删除私有-workspace-contract-的虚构多形态兼容">R12.
+      删除私有 workspace contract 的虚构多形态兼容</a></li>
+      <li><a href="#r13-规范readmesop-形成多重事实源"
+      id="toc-r13-规范readmesop-形成多重事实源">R13. 规范、README、SOP
+      形成多重事实源</a></li>
+      <li><a href="#r14-shadcn_componentsmd-是人工复制目录和愿望单"
+      id="toc-r14-shadcn_componentsmd-是人工复制目录和愿望单">R14.
+      <code>SHADCN_COMPONENTS.md</code> 是人工复制目录和愿望单</a></li>
+      <li><a href="#r15-helm-首管同时支持-secret-和-inline-密码"
+      id="toc-r15-helm-首管同时支持-secret-和-inline-密码">R15. Helm
+      首管同时支持 Secret 和 inline 密码</a></li>
+      <li><a href="#r16-删除未发布-helm-字段的反向兼容守卫"
+      id="toc-r16-删除未发布-helm-字段的反向兼容守卫">R16. 删除未发布
+      Helm 字段的反向兼容守卫</a></li>
+      <li><a href="#r17-更新日志镜像和自动写回链只复制-github-release"
+      id="toc-r17-更新日志镜像和自动写回链只复制-github-release">R17.
+      更新日志镜像和自动写回链只复制 GitHub Release</a></li>
+      <li><a href="#r18-两份-grafana-dashboard-没有交付链"
+      id="toc-r18-两份-grafana-dashboard-没有交付链">R18. 两份 Grafana
+      Dashboard 没有交付链</a></li>
+      <li><a href="#r19-完成第一方-cli-scope-元数据和文案的移除"
+      id="toc-r19-完成第一方-cli-scope-元数据和文案的移除">R19.
+      完成第一方 CLI Scope 元数据和文案的移除</a></li>
+      <li><a
+      href="#r20-agent-工具目录对内部契约应-fail-closed并且只构建一次"
+      id="toc-r20-agent-工具目录对内部契约应-fail-closed并且只构建一次">R20.
+      Agent 工具目录对内部契约应 fail closed，并且只构建一次</a></li>
+      <li><a
+      href="#r21-tool-result-只在协议入口校验一次删除前端二次修复和旧回捞"
+      id="toc-r21-tool-result-只在协议入口校验一次删除前端二次修复和旧回捞">R21.
+      Tool result
+      只在协议入口校验一次，删除前端二次修复和旧回捞</a></li>
+      <li><a
+      href="#r22-agent-生产依赖不应为了测试被设计成三种-resolver-和多组-optional"
+      id="toc-r22-agent-生产依赖不应为了测试被设计成三种-resolver-和多组-optional">R22.
+      Agent 生产依赖不应为了测试被设计成三种 resolver 和多组
+      optional</a></li>
+      </ul></li>
+      <li><a href="#7-门禁满足后再删除" id="toc-7-门禁满足后再删除">7.
+      门禁满足后再删除</a>
+      <ul>
+      <li><a href="#g01-retained_volumes-与部署旧存储列"
+      id="toc-g01-retained_volumes-与部署旧存储列">G01.
+      <code>retained_volumes</code> 与部署旧存储列</a></li>
+      <li><a href="#g02-是否重做迁移-baseline"
+      id="toc-g02-是否重做迁移-baseline">G02. 是否重做迁移
+      baseline</a></li>
+      </ul></li>
+      <li><a href="#8-本地忽略产物与独立工作树"
+      id="toc-8-本地忽略产物与独立工作树">8.
+      本地忽略产物与独立工作树</a></li>
+      <li><a href="#9-明确保留避免误删" id="toc-9-明确保留避免误删">9.
+      明确保留，避免误删</a></li>
+      <li><a href="#10-验证矩阵" id="toc-10-验证矩阵">10.
+      验证矩阵</a></li>
+      <li><a href="#附录-a294-个高置信未使用-i18n-key"
+      id="toc-附录-a294-个高置信未使用-i18n-key">附录 A：294
+      个高置信未使用 i18n key</a>
+      <ul>
+      <li><a href="#accesstokens2"
+      id="toc-accesstokens2">accessTokens（2）</a></li>
+      <li><a href="#accountpage1"
+      id="toc-accountpage1">accountPage（1）</a></li>
+      <li><a href="#aiassistant2"
+      id="toc-aiassistant2">aiAssistant（2）</a></li>
+      <li><a href="#apptemplatespage4"
+      id="toc-apptemplatespage4">appTemplatesPage（4）</a></li>
+      <li><a href="#apps49" id="toc-apps49">apps（49）</a></li>
+      <li><a href="#auth1" id="toc-auth1">auth（1）</a></li>
+      <li><a href="#billingpage12"
+      id="toc-billingpage12">billingPage（12）</a></li>
+      <li><a href="#buildspage46"
+      id="toc-buildspage46">buildsPage（46）</a></li>
+      <li><a href="#coderepositoriespage1"
+      id="toc-coderepositoriespage1">codeRepositoriesPage（1）</a></li>
+      <li><a href="#dashboardpage18"
+      id="toc-dashboardpage18">dashboardPage（18）</a></li>
+      <li><a href="#deploymentspage51"
+      id="toc-deploymentspage51">deploymentsPage（51）</a></li>
+      <li><a href="#eventspage5"
+      id="toc-eventspage5">eventsPage（5）</a></li>
+      <li><a href="#gatewayroutespage6"
+      id="toc-gatewayroutespage6">gatewayRoutesPage（6）</a></li>
+      <li><a href="#inbox2" id="toc-inbox2">inbox（2）</a></li>
+      <li><a href="#notificationspage1"
+      id="toc-notificationspage1">notificationsPage（1）</a></li>
+      <li><a href="#projecthooks3"
+      id="toc-projecthooks3">projectHooks（3）</a></li>
+      <li><a href="#projectmembers3"
+      id="toc-projectmembers3">projectMembers（3）</a></li>
+      <li><a href="#projectspaces24"
+      id="toc-projectspaces24">projectSpaces（24）</a></li>
+      <li><a href="#projecttopology8"
+      id="toc-projecttopology8">projectTopology（8）</a></li>
+      <li><a href="#registriespage2"
+      id="toc-registriespage2">registriesPage（2）</a></li>
+      <li><a href="#repositories48"
+      id="toc-repositories48">repositories（48）</a></li>
+      <li><a href="#settings3" id="toc-settings3">settings（3）</a></li>
+      <li><a href="#userspage1"
+      id="toc-userspage1">usersPage（1）</a></li>
+      <li><a href="#顶层-key1" id="toc-顶层-key1">顶层 key（1）</a></li>
+      </ul></li>
+      <li><a href="#附录-b18-个无生产调用-web-api-方法"
+      id="toc-附录-b18-个无生产调用-web-api-方法">附录 B：18
+      个无生产调用 Web API 方法</a></li>
+      <li><a href="#附录-c报告交付状态" id="toc-附录-c报告交付状态">附录
+      C：报告交付状态</a></li>
+      </ul>
+      </nav>
+    </aside>
+    <main id="content">
+<h2 id="1-结论">1. 结论</h2>
+<p>当前最值得处理的不是依赖升级或零散格式问题，而是四类已经产生维护成本的结构：</p>
+<ol type="1">
+<li><code>internal/api</code> 的领域拆分主要移动了文件，却保留了根包
+facade、14 组 bridge、导出别名和胖 <code>Host</code>
+接口。引入拆分的提交在 bridge/handler/exports/compat 文件组新增了 10,040
+行，当前仍有 4,660 行显式兼容桥。</li>
+<li>前端存在可确认的死代码：一个 448 行整文件副本、294 个失效 i18n
+key、18 个无生产调用的 API Client 方法、约 100 行零引用声明，以及约 429
+KiB 未引用静态资源。</li>
+<li>后端模型中保留了不存在的 Environment
+领域、只有一个实现的策略字段、三层网关域名来源和半实现的多
+Builder/Lease/缓存脚手架。这些字段让 API、数据库、CLI 和 Web
+都承担了不存在的产品能力。</li>
+<li>文档和流程同时维护事实、历史和未来构想：<code>TODO.md</code>、CLI
+规格、Agent README、两套 AGENTS、检查 SOP、更新日志镜像分别复制代码或
+GitHub 已经拥有的事实，并且已经发生漂移。</li>
+<li>补充的代码过度防御专项检查确认了三种会掩盖错误的模式：内部不变量被测试专用的
+nil/optional 分支稀释、私有契约被多形态 fallback 重复“修复”、明确引用或
+2xx
+响应失败后仍被转换成成功。它们不是可靠性增强，而是在延迟暴露装配或契约错误。</li>
+</ol>
+<p>建议先做不改变产品行为的直接删除，再分别立项处理 API
+facade、伪领域模型、OpenAPI 类型单源化和 Agent/CLI
+协议兼容层。不要把它们塞进一个“大清理”提交。</p>
+<p>报告现列出 54 个编号处置项；其中本次过度防御专项新增 8
+项，并对已有相关项补充了生产调用链证据。</p>
+<p>保守估算：</p>
+<ul>
+<li>高置信直接清理可减少约 4,000～5,500 行跟踪文本和约 453 KiB
+静态资产；其中大头是失效翻译和过期 CLI 规格，不是产品代码。</li>
+<li>API facade 重构预计再净减 2,500～3,500 行生产胶水。</li>
+<li>Web OpenAPI 类型单源化预计再净减 1,500～2,200 行手写契约。</li>
+<li>如果确认不交付两份 Grafana Dashboard，可再删除 3,035 行 JSON。</li>
+<li>CLI 的两个生成 TypeScript 文件合计 135,212
+行，但当前都有真实消费者且 release
+流程要求它们预先存在；停止跟踪只是待设计的构建策略，不应算作当前可删代码。更直接的收益是先从运行时
+catalog 去掉无消费者的 <code>responses</code>，预计减小约 2.31 MB。</li>
+<li>过度防御专项新增项预计可再净减约 200～350 行生产/测试胶水；其中
+Worker、Agent 依赖装配和第一方 CLI Scope
+残留是主要代码收益，构建引用、Webhook 和 HTTP
+响应项的首要收益则是停止伪成功，不能只按行数衡量。</li>
+</ul>
+<p>上述区间存在交叉，不能简单相加。</p>
+<h2 id="2-范围与方法">2. 范围与方法</h2>
+<p>审计覆盖：</p>
+<ul>
+<li>Go API、Worker、模型、Provider、配置、迁移和命令入口；</li>
+<li><code>web/</code> 页面、组件、API
+Client、类型、i18n、依赖和静态资源；</li>
+<li><code>luna-agent/</code>
+执行器、Prompt、Skill、Provider、测试和协议投影；</li>
+<li><code>docs/</code>、<code>docs-internal/</code>、<code>TODO.md</code>、贡献规范和组件清单；</li>
+<li>Helm、Compose、GitHub Actions、CI/release 脚本、Grafana 资产；</li>
+<li>相邻仓库
+<code>/Users/sfkm/Developer/liteyuki-studio/luna-cli</code>，以及主仓忽略目录
+<code>cli/luna-cli</code> 中尚未合并的源码、契约、Skill 和文档。</li>
+</ul>
+<p>快照口径：主仓索引有 1,866 个路径，其中 2
+个处于删除状态；当前仍存在的跟踪内容为 318,222 行，另有 2 个未跟踪迁移共
+35 行。相邻 CLI 索引有 188 个路径，其中 2 个处于删除状态；186
+个当前存在的跟踪文件共 182,391 行。主仓、相邻 CLI 与忽略目录中的独立 CLI
+工作树在审计前都已有改动，本报告按当前工作树判断，没有覆盖或整理这些改动。</p>
+<p>证据方法包括：静态 import/route 图、符号和路径反向引用、Git
+变更统计、OpenAPI/模型/迁移交叉核对、Vitest
+收集列表、依赖来源、文档站根和部署入口核对。<code>go mod tidy -diff</code>
+无差异，未发现可直接删除的 Go module 依赖。</p>
+<p>处置含义：</p>
+<ul>
+<li><strong>删除</strong>：无生产消费者，或只是无效/重复入口，可独立清理。</li>
+<li><strong>收敛</strong>：保留能力，但合并重复事实源或只保留一个有效实现。</li>
+<li><strong>重构后删除</strong>：当前有调用，不能直接删；先替换结构，再删兼容层。</li>
+<li><strong>门禁后删除</strong>：代码已死，但涉及数据、外部调用或未确认的运维习惯。</li>
+<li><strong>保留</strong>：审计过但有明确职责，不能因体积或相似度删除。</li>
+</ul>
+<p>风险分级：低＝无用户可见行为；中＝开发/运维入口或局部契约改变；高＝公开
+API、数据库、认证、跨进程或核心流程改变。</p>
+<h3 id="21-代码过度防御专项检查">2.1 代码过度防御专项检查</h3>
+<p>原审计虽然在 C03、C07、R03、R04、R07、R12、R16
+等条目中零散识别了假安全开关、fixture
+兼容、静默默认化和历史协议投影，但没有把“过度防御”作为独立维度沿生产调用链系统检查；因此此前不能视为已经完整覆盖。本次补查
+Go API/Worker、Web、Agent、CLI、Helm 和 CI，并使用以下判据：</p>
+<ol type="1">
+<li>输入来自仓内唯一、强类型或受 schema
+约束的生产者，却仍猜测多种历史形态；</li>
+<li>启动装配已经保证依赖存在，业务方法仍允许
+nil/缺能力并返回空成功；</li>
+<li>明确指定的对象、凭据或响应解析失败后，代码静默换值、回退或标记成功；</li>
+<li>同一配置在受控内部边界被重复默认化，导致非法值在更深层被“修好”；</li>
+<li>保护分支只有测试
+fixture、未发布旧字段或无消费者元数据能够触发。</li>
+</ol>
+<p>专项结果落入新增 C09～C13、R20～R22，并补强
+D05、D11、D13、R03、R12、R16、R17、R19。主要模式如下：</p>
+<table>
+<thead>
+<tr>
+<th>模式</th>
+<th>高置信证据</th>
+<th>处置项</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>测试便利泄漏到生产装配</td>
+<td>Worker 允许 nil DB；Agent runtime/executor 把生产必有依赖做成
+optional</td>
+<td>C09、R22</td>
+</tr>
+<tr>
+<td>内部契约多形态猜测</td>
+<td>CLI 私有 workspace contract、Agent 工具错误体和前端 tool result
+被逐层归一化</td>
+<td>D11、R12、R21</td>
+</tr>
+<tr>
+<td>静默 fallback / 伪成功</td>
+<td>显式构建凭据/目标查询失败后换值，Webhook 配置失败仍成功，2xx 非 JSON
+被记为成功</td>
+<td>C10～C12</td>
+</tr>
+<tr>
+<td>重复默认和无效元数据</td>
+<td>Worker 配置二次默认化；CLI Scope 被大量写入后统一清空</td>
+<td>C09、R19</td>
+</tr>
+<tr>
+<td>fail-safe 范围失控</td>
+<td>已知 README/内部文档/报告变更触发全部质量门禁和 4 个镜像构建</td>
+<td>D13</td>
+</tr>
+<tr>
+<td>未发布兼容残留</td>
+<td>空删除状态、旧 Helm guard、双 interaction operation ID</td>
+<td>C07、R07、R16</td>
+</tr>
+</tbody>
+</table>
+<p>以下分支被逐项复核后明确排除，不能按“过度防御”删除：鉴权失败关闭、Secret/遥测脱敏、SSRF
+与 DNS rebinding 防护、用户输入及外部网络 schema 校验、Kubernetes
+resourceVersion/NotFound 处理、卷
+CAS/lease/事务、SSE/终端字节协议、超时与取消、原子文件写入、资源清理、外部协议版本兼容和有界重试。它们处理的是真实安全、并发、资源或不可信边界，详见第
+9 节。</p>
+<h2 id="3-建议执行顺序">3. 建议执行顺序</h2>
+<table>
+<thead>
+<tr>
+<th>批次</th>
+<th>目标</th>
+<th>原因</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>A</td>
+<td>死文件、死符号、坏重定向、死 CI 声明、未收集测试</td>
+<td>证据闭合，产品行为不变</td>
+</tr>
+<tr>
+<td>B</td>
+<td>失效 i18n、无调用 Web API、无效配置项、过期文档</td>
+<td>需要一次完整 Web/文档验证，但无需架构迁移</td>
+</tr>
+<tr>
+<td>C</td>
+<td><code>internal/service</code>、<code>cmd/tasks</code>、Worker/构建错误语义、Agent/Helm
+小兼容层</td>
+<td>会改变内部入口或失败终态，应各自单独提交</td>
+</tr>
+<tr>
+<td>D</td>
+<td>API facade、Environment、网关域名、Builder 脚手架</td>
+<td>跨 API/DB/Worker/Web/CLI，必须端到端重构</td>
+</tr>
+<tr>
+<td>E</td>
+<td>Web 类型生成、Agent 工作流检索、CLI 生成物策略</td>
+<td>先做小领域试点或构建方案，再决定全量迁移</td>
+</tr>
+</tbody>
+</table>
+<h2 id="4-高置信直接清理">4. 高置信直接清理</h2>
+<h3 id="d01-删除重复的应用概览页面">D01. 删除重复的应用概览页面</h3>
+<ul>
+<li>证据：<code>web/src/pages/applications/application-overview-panel.tsx</code>
+与
+<code>web/src/pages/applications/overview/application-overview-panel.tsx</code>
+均为 448 行，除一条相对 import 外相同。唯一生产入口
+<code>web/src/pages/applications/ApplicationConfigPage.tsx:32</code>
+只导入 <code>overview/</code> 版本。</li>
+<li>动作：删除根目录副本。</li>
+<li>收益：448 行、1 个文件；避免未来只修改其中一份。</li>
+<li>影响：无运行时变化；风险低。</li>
+<li>验证：全仓符号检索、Web lint/test/build。</li>
+</ul>
+<h3 id="d02-删除-internalservice-转发空壳">D02. 删除
+<code>internal/service</code> 转发空壳</h3>
+<ul>
+<li>证据：<code>internal/service/git_policy.go</code>、<code>registry_policy.go</code>
+的 5 个导出策略函数零调用；<code>common.go</code>
+只服务这些死函数。<code>access_token.go</code> 的 5 个函数只转发
+<code>internal/authz</code> 或
+<code>internal/openapiscope</code>；生产调用位于
+<code>internal/api/identityapi/session.go:179,192</code> 和
+<code>access_token_handlers.go:48,132,136</code>，另有两个测试消费者，均可直连权威包。</li>
+<li>动作：生产调用直连权威包，删除整个 <code>internal/service</code>
+及重复包装测试。</li>
+<li>收益：预计净减 150～190 行；消除第二套权限策略入口。</li>
+<li>影响：无业务、权限或数据变化；风险低。</li>
+<li>验证：<code>internal/authz</code>、<code>internal/openapiscope</code>、<code>identityapi</code>、<code>aitool</code>
+和全量 Go 测试。</li>
+</ul>
+<h3 id="d03-给-i18n-增加反向门禁并删除-294-个失效-key">D03. 给 i18n
+增加反向门禁并删除 294 个失效 key</h3>
+<ul>
+<li>证据：<code>web/scripts/check-i18n.mjs:323</code>
+只检查“引用缺失”和多语言一致性，没有检查“定义后未使用”。审计覆盖
+<code>t()</code>、<code>i18next.t()</code>、<code>i18nKey</code>、模板前缀、动态
+key 白名单及服务端/Agent key 生产者后，仍有 294 个高置信无引用
+key。</li>
+<li>主要分布：<code>deploymentsPage</code> 51、<code>apps</code>
+49、<code>repositories</code> 48、<code>buildsPage</code>
+46、<code>projectSpaces</code> 24、<code>dashboardPage</code>
+18、<code>billingPage</code> 12，其余 46。</li>
+<li>代表残留：<code>apps.ts:62</code> 的旧
+Dockerfile/构建文案、<code>buildsPage.ts:3</code> 的旧 Build Provider
+CRUD、<code>repositories.ts:95</code> 的旧 Webhook 面板，以及
+<code>accessTokens.title</code>、<code>accessTokens.listTitle</code>
+等零散旧文案。</li>
+<li>动作：先让检查器报告未使用 key，并只对白名单中的动态前缀放行；再按
+namespace 分批删除。完整 key 清单见附录 A。</li>
+<li>收益：五个 locale 至少 1,470 个叶子项，约 1,500 行。</li>
+<li>影响：当前 UI 无变化；风险中，主要风险是漏掉运行时拼接 key。</li>
+<li>验证：i18n 检查、Web lint/test/build、Agent interaction-card
+契约测试。</li>
+</ul>
+<h3 id="d04-删除-18-个无生产调用的-web-api-方法及专属类型">D04. 删除 18
+个无生产调用的 Web API 方法及专属类型</h3>
+<ul>
+<li>证据：从应用入口构建调用图并排除 API
+对象动态索引后，方法只在声明处出现；一个陈旧 test mock
+不构成产品消费者。</li>
+<li>分布：<code>web/src/api/domains/applications.ts</code> 2
+个、<code>builds.ts</code> 4 个、<code>gateway.ts</code> 1
+个、<code>git.ts</code> 2 个、<code>projects.ts</code> 4
+个、<code>registries.ts</code> 2 个、<code>runtime.ts</code> 2
+个、<code>volumes.ts</code> 1 个。完整方法名见附录 B。</li>
+<li>连带类型：<code>HookRun</code>、<code>HookRunLog</code>、<code>BuildLog</code>、<code>GitFileContent</code>、<code>GitContentItem</code>、<code>ReleaseRuntimeExecResult</code>、流量结算类型和
+transfer 查询 helper，集中于 <code>web/src/api/types.ts:450-1902</code>
+与 <code>volume-types.ts:163</code>。</li>
+<li>收益：预计净减 175～190 行。</li>
+<li>影响：只删除 Web 未使用的封装；后端路由若仍供 CLI/Agent
+使用必须保留。风险低至中。</li>
+<li>验证：逐符号检索、API Client 测试、TypeScript
+构建和相关页面测试。</li>
+</ul>
+<h3 id="d05-删除沿生产入口不可达的-web-声明和不可能状态-fallback">D05.
+删除沿生产入口不可达的 Web 声明和不可能状态 fallback</h3>
+<ul>
+<li>不可达位置：<code>web/src/api/ai-types.ts:162</code>、<code>web/src/api/types.ts:31,1811</code>、<code>web/src/api/core.ts:38</code>、<code>web/src/lib/identifier-limits.ts:5</code>、<code>web/src/lib/telemetry.ts:155</code>、<code>web/src/pages/applications/deployments/application-deployments-panel-utils.ts:105</code>、<code>web/src/pages/code-repositories/code-repositories-form-model.ts:76</code>。其中部分类型会被另一条不可达声明引用，因此判据是“从生产入口不可达”，不是字面零引用。</li>
+<li>只被自身测试调用：<code>brandThemeIsComposite</code>、<code>findSuggestedModelPrice</code>、<code>isPlatformRole</code>、<code>isProjectRole</code>。</li>
+<li>不可能状态 fallback：<code>BuildVariableSet.variableCount</code> 在
+<code>web/src/api/types.ts:1030</code> 被误写为 optional，页面再用
+<code>item.variableCount ?? buildVariableCount(item.variables)</code>；但
+Go 响应字段无 <code>omitempty</code>
+且所有返回路径都赋值。<code>buildVariableCount</code>
+为此甚至兼容服务端不再返回的旧式 <code>KEY=VALUE</code> 文本。</li>
+<li>动作：删除声明及只验证这些死导出的测试；若内部实现仍被生产逻辑使用，只取消导出。把
+<code>variableCount</code> 改为必填并直接渲染，删除仅服务该 fallback
+的计数 helper；<code>buildVariableRecord</code>
+仍有真实消费者，应保留。</li>
+<li>收益：约 105～125 行。</li>
+<li>影响：无产品行为；风险低。</li>
+<li>验证：符号检索、Web lint/test/build。</li>
+</ul>
+<h3 id="d06-删除-8-个未引用-web-静态资源">D06. 删除 8 个未引用 Web
+静态资源</h3>
+<ul>
+<li>文件：<code>sso-platform-favicon.{png,svg}</code>、<code>sso-platform-illustration.{png,svg}</code>、<code>yuki-id-logo.{png,svg}</code>、<code>icons.svg</code>、<code>build-templates/icons/python.svg</code>。</li>
+<li>证据：全仓无文件名或路径引用；当前 favicon 是
+<code>web/index.html:5</code> 的
+<code>luna-devops-logo.svg</code>，Python 选择器使用
+<code>python.png</code>。删除 Python SVG 时同步删
+<code>web/public/build-templates/icons/SOURCES.md:12</code>
+的来源记录。</li>
+<li>收益：439,545 bytes，约 429 KiB。</li>
+<li>影响：当前 UI、README、文档无变化；仓库外直接访问裸静态 URL
+的消费者不可由源码证明。风险低至中。</li>
+<li>验证：逐 basename 检索、静态资源访问日志/发布约定核对和 Web
+构建。</li>
+</ul>
+<h3 id="d07-删除-6-个未引用旧教程-svg">D07. 删除 6 个未引用旧教程
+SVG</h3>
+<ul>
+<li>文件：<code>docs/docs/public/guide/deploy-web-project/01-project-space.svg</code>
+至 <code>06-gateway.svg</code>。</li>
+<li>证据：均被跟踪，但全仓无 basename 引用。</li>
+<li>收益：6 个文件、23,809 bytes。</li>
+<li>影响：当前文档页面无变化；风险低。</li>
+<li>验证：逐 basename 检索和文档构建。</li>
+</ul>
+<h3 id="d08-删除孤儿且口径错误的-docsbillingmd">D08.
+删除孤儿且口径错误的 <code>docs/billing.md</code></h3>
+<ul>
+<li>证据：该文件 169 行，只由 <code>docs/README.md:5</code>
+引用；Rspress 根是 <code>docs/rspress.config.ts:5</code> 指定的
+<code>docs/docs</code>，因此它不发布。文件第 52～76
+行仍按部署规格估算运行费用，与现行公开计费文档冲突。</li>
+<li>动作：删除文件和 <code>docs/README.md</code>
+链接；现行中英文计费页继续保留。</li>
+<li>收益：约 172 行。</li>
+<li>影响：不删除任何已发布页面，避免开发者读到错误口径；风险低。</li>
+<li>验证：反向链接检索和文档构建。</li>
+</ul>
+<h3 id="d09-把-todomd-恢复为真实未完成清单">D09. 把 <code>TODO.md</code>
+恢复为真实未完成清单</h3>
+<ul>
+<li>证据：<code>docs-internal/README.md:7-8</code> 和
+<code>代码检查流程.md:77</code> 都规定完成记录由 Git
+历史保存；<code>TODO.md</code> 453 行中至少有 35 个全完成章节、216
+行纯历史。</li>
+<li>漂移实例：<code>TODO.md:317</code>
+把已实现的运行计费列为待办；<code>:345</code>
+把已存在的构建镜像结果处理列为待办；<code>:394</code>
+把已接入的实时日志列为待办；<code>:441</code> 仍规划 CLI PKCE，而当前
+CLI 只支持 Device Code。</li>
+<li>无承诺的未来构想：Temporal、Service Mesh 推断、外部
+CI、长期记忆/外部 MCP，以及“这样的场景还有很多”等开放式愿望。</li>
+<li>动作：删除完成历史、已实现/已替代项和没有负责人、入口、验收的
+someday 条目；真实产品计划迁 Issue 或留下短期可验收 TODO。</li>
+<li>收益：预计从 453 行压到 80～150 行，净减约 300 行。</li>
+<li>影响：无运行时变化；会失去单文件历史浏览，但 Git
+已保存。风险低。</li>
+<li>验证：每个保留的 <code>[ ]</code> 都应有明确消费者和验收条件。</li>
+</ul>
+<h3 id="d10-修复未被-vitest-收集的-agent-测试">D10. 修复未被 Vitest
+收集的 Agent 测试</h3>
+<ul>
+<li>证据：<code>luna-agent/src/internal-secret.test.ts</code> 共 23
+行；<code>luna-agent/vitest.config.ts:9</code> 只收集
+<code>tests/**/*.test.ts</code>，<code>vitest list --filesOnly</code>
+不包含该文件。</li>
+<li>动作：将测试移入
+<code>luna-agent/tests/</code>，而不是删除测试内容。</li>
+<li>收益：不以减行数为目标；删除一个“看似有覆盖、实际不运行”的假象。</li>
+<li>影响：CI
+会新增一条真实执行的密钥派生契约；风险低，可能暴露已经存在的失败。</li>
+<li>验证：Vitest 收集列表和 Agent test。</li>
+</ul>
+<h3 id="d11-删除-agent-的内部导入与错误体兼容层">D11. 删除 Agent
+的内部导入与错误体兼容层</h3>
+<ul>
+<li>证据：<code>luna-agent/src/executor.ts</code> 只 re-export
+<code>executor/</code>；注释明确写着可移除。仅
+<code>src/bootstrap.ts:3</code> 和一个测试仍使用旧入口。</li>
+<li>同类证据：<code>luna-agent/src/tools/orchestrator.ts:438-453</code>
+同时猜测 Luna API 错误体的 <code>body.code/retryable</code> 与
+<code>body.error.code/retryable</code>。生产 client 只调用本仓 Go
+API，而 <code>internal/api/transport/response.go:164-205</code> 和
+OpenAPI 都定义为平铺结构；Agent
+自身嵌套错误体属于另一个服务器边界，不会进入这里。</li>
+<li>动作：改两个 import 后删除
+barrel；错误解析只接受权威平铺契约，并以契约测试锁定。不要把 Agent
+自己的 HTTP 响应形态误当成 Luna API tool client 的兼容需求。</li>
+<li>收益：约 8～10 行和两个历史分支。</li>
+<li>影响：内部 import 路径改变；伪造嵌套 Luna API
+错误体的仓外测试不再工作。风险低。</li>
+<li>验证：Agent typecheck/test/build、Go error envelope → Agent tool
+client 契约测试。</li>
+</ul>
+<h3 id="d12-删除两个零调用-router-构造重载">D12. 删除两个零调用 Router
+构造重载</h3>
+<ul>
+<li>证据：<code>internal/api/router.go:19-25</code> 的
+<code>NewRouterWithStaticFS</code>、<code>NewRouterWithStaticFSAndMetrics</code>
+无调用；测试使用 <code>NewRouter</code>，生产使用完整 config 版本。</li>
+<li>动作：保留 <code>NewRouter</code> 和
+<code>NewRouterWithStaticFSAndMetricsConfig</code>，删除中间两层。</li>
+<li>收益：约 8 行。</li>
+<li>影响：仓库内无影响；风险低。若它们被作为外部 Go library API
+使用则会破坏外部编译，但当前项目不是对外 Go SDK。</li>
+<li>验证：全仓符号检索和 Go test。</li>
+</ul>
+<h3 id="d13-收紧-ci-的过宽-fail-safe并删除死声明和虚假前置工具">D13.
+收紧 CI 的过宽 fail-safe，并删除死声明和虚假前置工具</h3>
+<ul>
+<li>证据：<code>.github/workflows/build-publish.yml:15-18</code> 的 4 个
+<code>IMAGE_*</code> 全仓只有定义，镜像矩阵在第 241～264
+行另行声明；<code>scripts/ci/detect-changes.sh:170-178</code>
+匹配不存在的 <code>Dockerfile.api/worker/web/agent</code>，第 218
+行匹配不存在的 <code>helm/</code>。</li>
+<li>过宽 fail-safe：<code>detect-changes.sh:235-238</code>
+对任何未匹配路径调用 <code>mark_all</code>；只读 dry-run 已确认
+<code>README.md</code>、<code>docs-internal/README.md</code>、<code>reports/example.md</code>
+都会打开 6 类质量门禁并构建 API、Worker、Agent、Gateway Probe
+四个镜像。它把“真正未知路径”和“已知纯文本”混成一类。</li>
+<li>虚假环境阻断：<code>scripts/release-check.sh:30-32</code> 强制要求
+<code>rg</code>、<code>zip</code>、<code>unzip</code>，但完整 release
+调用链没有使用这三个命令。</li>
+<li>动作：删除死
+env、旧路径和无调用工具要求；显式分类根说明、内部文档与报告，把“全部检查”和“全部镜像”拆开，只对真正未知的新根路径保留
+fail-safe <code>mark_all</code>。真实入口
+<code>Dockerfile</code>、<code>luna-agent/Dockerfile</code>、<code>charts/*</code>
+必须保留。</li>
+<li>收益：直接行数很小，但每次纯文本改动可避免最多 6 个无关质量 job 和 4
+个镜像构建，同时减少虚假 release 环境阻断。</li>
+<li>影响：CI 触发矩阵会改变；风险中，需防止未来的 embed/codegen
+输入被误归为纯文本。</li>
+<li>验证：为 README、内部文档、报告、未知根文件增加表驱动用例；运行
+<code>bash scripts/ci/test-detect-changes.sh</code> 和 Workflow YAML
+解析。</li>
+</ul>
+<h3 id="d14-删除或修正-6-条重定向后仍-404-的规则">D14. 删除或修正 6
+条重定向后仍 404 的规则</h3>
+<ul>
+<li>证据：<code>docs/vercel.json</code> 的中英文规则分别指向不存在的
+<code>start/first-project</code>、<code>download/installation</code>、<code>reference/configuration</code>。</li>
+<li>动作：如果旧 URL 不再承诺兼容，删除 6
+条；如果仍承诺，改到当前真实页面。不能继续保留“重定向成功、落点
+404”。</li>
+<li>收益：删除时约 30 行。</li>
+<li>影响：删除会让旧地址直接 404，修正则恢复兼容；风险低。</li>
+<li>验证：JSON 解析，逐项确认 destination 存在。</li>
+</ul>
+<h3 id="d15-保持-release-compatibilityjson-已删除状态">D15. 保持
+<code>release-compatibility.json</code> 已删除状态</h3>
+<ul>
+<li>证据：HEAD 中只有 8 行静态 CLI Skill
+版本策略，全仓无引用；当前工作树已经删除。</li>
+<li>动作：不要恢复。若仓库外发布系统消费它，应把契约接入仓内检查后再恢复，而不是保留不可验证文件。</li>
+<li>影响：仓内无变化；外部消费者未知，风险低至中。</li>
+</ul>
+<h3 id="d16-删除-4-个未接入配置的-web-eslint-直接依赖">D16. 删除 4
+个未接入配置的 Web ESLint 直接依赖</h3>
+<ul>
+<li>证据：<code>web/package.json:57,68,70,73</code> 直接声明
+<code>@eslint/js</code>、<code>eslint-plugin-react-hooks</code>、<code>globals</code>、<code>typescript-eslint</code>；<code>web/eslint.config.js</code>
+只使用 <code>@antfu/eslint-config</code>，没有 import
+这四个包。<code>pnpm why</code> 显示 Antfu 已带所需 globals 和
+TypeScript ESLint parser/plugin，直接声明还引入了另一组版本。</li>
+<li>动作：删除四个直接依赖并重新生成 lockfile；先后对比
+<code>eslint --print-config</code>，确认规则集没有变化。</li>
+<li>收益：manifest 4 行及 lockfile 中可达性消失的 Babel/Hermes/重复
+ESLint 依赖树。</li>
+<li>影响：按当前配置 lint 行为不变；风险低至中。</li>
+<li>验证：clean install、print-config diff、lint、singleton
+check、test、build。</li>
+</ul>
+<h3 id="d17-删除-cli-的-authorization_code_pkce-死类型分支">D17. 删除
+CLI 的 <code>authorization_code_pkce</code> 死类型分支</h3>
+<ul>
+<li>证据：<code>src/auth/oauth.ts:29</code> 的
+<code>OAuthLoginMode</code> 仍声明
+<code>authorization_code_pkce | device_code</code>；唯一生产调用
+<code>src/commands/local.ts:104</code> 固定传
+<code>device_code</code>，<code>beginOAuthLogin</code> 在
+<code>oauth.ts:91-95</code> 对任何其他值直接报
+<code>oauth_login_mode_unsupported</code>。</li>
+<li>动作：删除 union 中的 PKCE 成员；如果 mode
+不再有第二个实现，进一步删除内部 request 的 mode 字段。</li>
+<li>收益：行数很小，但消除类型层“已支持浏览器 PKCE”的错误能力暗示。</li>
+<li>影响：无现行行为；风险低。</li>
+<li>验证：CLI auth typecheck/test/build。</li>
+</ul>
+<h2 id="5-小范围能力契约与入口收敛">5. 小范围能力、契约与入口收敛</h2>
+<h3 id="c01-删除未发布未文档化的-cmdtasks">C01. 删除未发布、未文档化的
+<code>cmd/tasks</code></h3>
+<ul>
+<li>证据：<code>cmd/tasks/main.go</code> 只提供 Asynq
+<code>list-archived/run/delete</code>，目录 139
+行；Dockerfile、Helm、Compose、Workflow、脚本和公开文档均无构建或使用入口。它还单独带出
+<code>LoadTasks</code>、<code>TasksConfig</code>、<code>tasksEnvironment</code>
+和测试。</li>
+<li>动作：删除 <code>cmd/tasks/</code> 和专用配置链。</li>
+<li>收益：预计净减 160～200 行。</li>
+<li>影响：失去“从源码手工运行隐藏二进制来删除/重跑归档任务”的能力；正常
+API/Worker 不受影响。风险中。</li>
+<li>决策：如果运维实际依赖它，就正式发布、授权、审计并写文档；否则删除，不维持隐形破坏入口。</li>
+<li>验证：Go test、API/Worker 镜像构建、Helm/Compose smoke。</li>
+</ul>
+<h3 id="c02-删除配置定义死文案和-3-个无效计费开关">C02.
+删除配置定义死文案和 3 个无效计费开关</h3>
+<ul>
+<li>证据：<code>internal/api/configs.go:25</code> 的
+<code>Label</code>、<code>Description</code> 为
+<code>json:"-"</code>；<code>ListConfigDefinitions</code> 只从 key 生成
+i18n
+key，从不读取这些文案。<code>billing.freeQuotaCredits</code>、<code>billing.overdueGracePeriodHours</code>、<code>billing.allowNegativeBalance</code>
+各自没有任何业务消费者；<code>billing.lowBalanceThresholdCredits</code>
+有消费者，应保留。</li>
+<li>动作：删除死字段/字面量；删除 3 个无效定义、五语言文案和数据库旧
+key。</li>
+<li>收益：约 100～160 行。</li>
+<li>影响：管理员不再看到“可以保存但完全不生效”的设置；现行业务不变。风险中，因为配置
+API/UI 会缩减。</li>
+<li>验证：配置定义/更新 API、站点设置页、余额和构建/部署拦截测试。</li>
+</ul>
+<h3 id="c03-删除-cli-api-request-的假开关再决定是否保留诊断入口">C03.
+删除 CLI <code>api request</code> 的假开关，再决定是否保留诊断入口</h3>
+<ul>
+<li>证据：CLI 已宣称公开业务 API 由高层命令/协议命令覆盖，但仍在
+<code>src/commands/local.ts:686-728</code> 注册任意同源
+<code>/api/</code> 请求，并在 <code>src/commands/api.ts:169-202</code>
+实现。文档和 Skill 又反复警告 Agent 不得使用它。</li>
+<li>额外问题：<code>allowDiagnostic=true</code>
+被元数据、示例和帮助描述成显式开关，但 handler 在
+<code>local.ts:719</code> 直接丢弃 <code>_allow</code>，从未要求其为
+true，属于无效安全仪式。</li>
+<li>高置信动作：删除 <code>allowDiagnostic</code>
+参数、文案和示例，或者真正要求其值为
+<code>true</code>；当前状态不能保留。</li>
+<li>产品决策：整个命令在 README 和 CLI spec 中被明确设计为 human-only
+的新接口诊断入口，<code>agentAllowed:false</code>，限制同源
+<code>/api/</code> 且仍经过后端
+RBAC，因此不能判成死代码。如果产品决定不需要该入口，再删除命令、<code>ApiDiagnosticRequest</code>/<code>ApiPort.request</code>
+和仅为 <code>additionalProperties:true</code>
+服务的第二套参数解析分支。</li>
+<li>收益：删除假开关很小；删除整个诊断能力预计超过 80～150
+行源码/类型/测试/文档。</li>
+<li>影响：只有删除整个命令时，人类才会失去 CLI
+内的临时原始端点调试。风险中。</li>
+<li>验证：CLI command catalog、帮助快照、覆盖率检查、test/build。</li>
+</ul>
+<h3 id="c04-精简-agent-readme">C04. 精简 Agent README</h3>
+<ul>
+<li>证据：<code>luna-agent/README.md</code> 173 行中，第 3～14
+行长期辩护框架选择，第 32～92 行镜像目录，第 94～161
+行重复内部规格、根规范和 roadmap。第 62 行还指向不存在的
+<code>openai-compatible.ts</code>，真实文件是
+<code>openai-chat-completions.ts</code>。</li>
+<li>动作：缩为用途、启动、测试、内部规格链接，约 30～50 行。</li>
+<li>收益：约 110～140 行。</li>
+<li>影响：丢失方便但易漂移的架构镜像；权威代码和内部规格保留。风险低。</li>
+</ul>
+<h3 id="c05-精简-cli-readme-与-1964-行规格文档">C05. 精简 CLI README 与
+1,964 行规格文档</h3>
+<ul>
+<li>证据：CLI <code>README.md:215</code> 开始再放一份不完整英文说明，而
+<code>README_EN.md</code> 已单独存在。<code>docs/cli-spec.md</code>
+同时保存架构、实现快照、分期计划、发布 SOP 和验收历史；第 49 行说 Device
+Code 已实现，第 70 行又说未实现；第
+47、85、101、992～1009、1384～1386、1460、1746、1841 行继续把
+PKCE/loopback 写成支持目标或验收，而当前
+<code>src/auth/oauth.ts:91-95</code> 明确只接受
+<code>device_code</code>。第 1808～1868 行的 Phase 0～4
+大量已完成事项仍以未来计划存在。</li>
+<li>动作：中文 README 只链接 <code>README_EN.md</code>；CLI spec
+只保留稳定架构与协议决策，命令参数以帮助为准、API 以 OpenAPI
+为准、发布过程放贡献/发布文档，删除已完成 phase 和过期快照。</li>
+<li>收益：README 约 94 行，CLI spec 预计超过 1,000 行。</li>
+<li>影响：无运行时变化；降低新贡献者按过期设计实现 PKCE/Scope
+的风险。风险低至中。</li>
+</ul>
+<h3 id="c06-合并-5-份完全相同的语言名称表">C06. 合并 5
+份完全相同的语言名称表</h3>
+<ul>
+<li>证据：<code>web/src/i18n/locales/*/languages.ts</code>
+五份内容完全相同，语言名使用 endonym，不需要按 UI locale 翻译。</li>
+<li>动作：改为一个共享资源或共享常量，保留 i18n namespace 接口。</li>
+<li>收益：约 36 行。</li>
+<li>影响：无 UI 变化；风险低。收益很小，排在结构清理之后。</li>
+</ul>
+<h3 id="c07-移除测试-fixture-专用的空删除状态兼容">C07. 移除测试 fixture
+专用的空删除状态兼容</h3>
+<ul>
+<li>证据：<code>internal/runtimecluster/state.go:17-24</code> 只为
+legacy 内存 fixture 把空值当
+<code>active</code>；注释明确持久化行已由迁移回填，不依赖该规则。</li>
+<li>动作：所有 fixture 显式设置
+<code>DeleteStatusActive</code>，然后删除空值 fallback
+和对应兼容断言。</li>
+<li>收益：少量代码，但收紧状态不变量。</li>
+<li>影响：可能暴露遗漏初始化的测试或非数据库构造路径；风险低至中。</li>
+</ul>
+<h3 id="c08-把-readme-专用大图移出-webpublic">C08. 把 README
+专用大图移出 <code>web/public</code></h3>
+<ul>
+<li>证据：<code>web/public/brand/mascot-luna-devops.png</code> 约 2.2
+MB、<code>web/public/images/luna-devops-banner-v4.png</code> 约 2.0
+MB，只被根中英文 README 引用。Vite 会复制整个 public，因此
+<code>web/scripts/optimize-dist.mjs:10-17</code>
+又专门在每次构建后删除它们。</li>
+<li>动作：把两张 README 资产迁到不参与 Web public copy 的仓库位置，例如
+<code>.github/assets/</code>，更新 README 引用，删除 post-build
+专用排除项。</li>
+<li>收益：仓库字节基本不变，但删掉一条“先复制再删除”的构建特殊分支，Web
+构建输入边界更准确。</li>
+<li>影响：README 图片路径改变；Web 产品无变化。风险低。</li>
+</ul>
+<h3 id="c09-用-worker-装配不变量替代-nil-db-no-op-和二次默认化">C09. 用
+Worker 装配不变量替代 nil DB no-op 和二次默认化</h3>
+<ul>
+<li>生产调用链：<code>cmd/worker/main.go:62-122</code>
+先成功打开数据库，再把非空 DB 传给
+<code>NewRunner</code>；<code>NewRunner(nil, ...)</code> 只出现在 Worker
+测试和通知测试。生产入口不存在“无数据库继续运行”的合法模式。</li>
+<li>过度防御：<code>internal/worker/worker.go:150-221</code> 仍允许 nil
+DB，多个账单、重协调、过期构建、通知和资源清理 handler 又在 DB
+为空时直接返回
+<code>nil</code>。这会把装配错误记录成任务成功，而不是提高可用性。<code>internal/runtimecluster/state.go:34-38</code>
+的 <code>ActiveScope(nil)</code> 也没有实际保护作用，调用者随后继续
+<code>.Where(...)</code> 仍会 panic。</li>
+<li>重复默认：<code>internal/config/schema.go:61-70</code>
+已声明环境默认，<code>internal/config/worker.go:17-74</code>
+再完成校验；<code>NewRunner</code> 又为镜像、egress、cache
+tag、构建超时/TTL、部署超时和传输上限补第二套默认。尤其配置层允许 TTL 为
+0，构造层却静默改成 3600，语义相互冲突。</li>
+<li>相邻兼容残留：<code>internal/provider/kubernetes/volume_transfer_job.go:73-75</code>
+仍导出旧名 <code>VolumeTransferJobProvider</code>；生产仅 Runner
+字段使用旧名，当前实现和其他生产调用都已使用
+<code>VolumeTransferProvider</code>。</li>
+<li>动作：在构造/启动边界拒绝空核心依赖；测试注入最小真实依赖或显式
+fake，不让测试便利形成生产降级态。配置默认值和合法性只由
+<code>internal/config</code> 负责，Runner
+接收已验证值；真正独立可选的能力使用窄依赖表达，不用 nil DB 控制。Runner
+改用当前 provider 类型并删除旧 alias。</li>
+<li>收益：预计净减 60～90
+行，并把“任务伪成功”改为可观测的启动或执行失败。</li>
+<li>影响：约 9 处 nil Runner 测试需要调整；TTL=0
+必须先明确为“禁用”还是“非法”。风险中。</li>
+<li>验证：Worker 构造测试、各 task
+成功/失败终态、配置边界表格测试、Asynq 失败与重试 smoke。</li>
+</ul>
+<h3 id="c10-显式构建引用失败时停止静默换对象">C10.
+显式构建引用失败时停止静默换对象</h3>
+<ul>
+<li>凭据链路：<code>worker.handleBuildRun</code> →
+<code>ResolveBuildTask</code> →
+<code>registryCredentialForBuild</code>。<code>internal/buildruntime/runtime.go:177-185</code>
+在显式 <code>CredentialRef</code> 查询失败后，会改选另一个
+user/project/global push
+credential；不存在、不可见和数据库错误都被吞掉，可能以非预期身份推送镜像。</li>
+<li>目标链路：同文件 <code>:79-85</code> 在非空
+<code>DeploymentTargetID</code> 查询失败后忽略错误，再用零值 target
+生成默认 stage/仓库地址，可能把镜像推到另一个位置。</li>
+<li>动作：只有未指定 credential 时才执行自动选择；显式 credential 或
+deployment target 查询失败必须返回稳定错误，并区分 not
+found/forbidden/数据库故障。删除零值对象 fallback。</li>
+<li>收益：净减行数很小，但消除两个错误身份/错误目标的成功路径。</li>
+<li>影响：此前依赖备用凭据或孤儿 target 侥幸成功的 BuildRun
+会明确失败；风险中。</li>
+<li>验证：显式引用不存在、无权限和 DB 错误契约；断言没有 registry push
+副作用。</li>
+</ul>
+<h3 id="c11-webhook-自动配置不能吞错后报告启用成功">C11. Webhook
+自动配置不能吞错后报告启用成功</h3>
+<ul>
+<li>证据：<code>internal/api/gitapi/repository_handlers.go:200-230,233-286</code>
+先保存 <code>WebhookEnabled=true</code> 的绑定，再调用
+<code>tryConfigureRepositoryWebhook</code>；<code>:567-595</code> 的
+wrapper 直接丢弃 Git client、上游创建、Secret 存储或二次保存错误，随后
+API 仍返回 201/200。</li>
+<li>动作：删除无信息的 <code>try*</code>
+包装并明确一种产品语义：要么创建/补偿失败后返回失败，要么保存稳定的
+<code>configuration_failed</code> 状态并向前端返回该状态。不能继续用布尔
+<code>enabled</code> 表示尚未成功的外部副作用。</li>
+<li>收益：包装本身约 3
+行；正确的状态或补偿实现可能净增少量代码，但会删除“配置成功”的假象。</li>
+<li>影响：涉及数据库与 Git Provider 双写；风险中。</li>
+<li>验证：成功、Provider 失败、Secret 失败、DB
+保存失败和补偿失败链路；检查响应、权威回读、审计与外部 webhook
+副作用一致。</li>
+</ul>
+<h3 id="c12-2xx-非-json-响应不能被-agent-记为工具成功">C12. 2xx 非 JSON
+响应不能被 Agent 记为工具成功</h3>
+<ul>
+<li>证据：<code>luna-agent/src/tools/luna-api-client.ts:46-55,178-180</code>
+捕获任何 JSON 解析错误并返回
+<code>{code: "invalid_json_response"}</code>；<code>tools/orchestrator.ts:335-352</code>
+只按 HTTP status 判定终态。因此 200 HTML/截断 JSON 会带着错误对象进入
+<code>succeeded</code>，合法 204/空正文也得到相同伪错误对象。</li>
+<li>动作：先核对 OpenAPI 中允许无正文的成功操作；204/约定空正文映射为
+<code>undefined</code>，其他 2xx 解析失败必须以稳定契约错误失败。非 2xx
+仍可保留基于状态码的通用错误。</li>
+<li>收益：行数约持平，但消除错误终态和污染模型上下文的伪结果。</li>
+<li>影响：若某个现有 API 错误返回 2xx 非
+JSON，将从假成功变为明确失败；风险中。</li>
+<li>验证：补 200 malformed、200 HTML、204 和非 2xx malformed；断言 tool
+call 终态、审计和 trace status。</li>
+</ul>
+<h3 id="c13-helm-只在真正托管连接串时创建-connection-secret">C13. Helm
+只在真正托管连接串时创建 connection Secret</h3>
+<ul>
+<li>证据：<code>charts/luna-devops/templates/secret.yaml:85-106</code>
+的外层条件只要启用内置 Redis 就创建 connection Secret；当数据库使用
+<code>externalDatabase.existingSecret</code>，Redis 同时使用
+<code>redis.auth.existingSecret</code> 时，模板仍产出
+<code>stringData</code> 为空的 Secret。实际 workload 又通过
+<code>_helpers.tpl:121-147</code> 直接引用两个外部
+Secret，因此该空对象没有消费者。</li>
+<li>动作：先计算是否需要 chart 托管 database URL 或 Redis
+URL，至少一项为真才渲染 connection
+Secret；不要为穷举真值表再增加空对象兜底。</li>
+<li>收益：代码约持平，但删除一个无消费者的 Kubernetes 对象并缩小 Secret
+分支矩阵。</li>
+<li>影响：只影响“两侧都由 existingSecret 提供”的组合；风险低。</li>
+<li>验证：为内置/外置数据库与 Redis 的组合补 render matrix，并断言
+workload 引用的 key 均存在。</li>
+</ul>
+<h2 id="6-结构性过度设计先替换再删除">6.
+结构性过度设计：先替换，再删除</h2>
+<h3 id="r01-api-领域拆分留下了第二套-facade">R01. API
+领域拆分留下了第二套 facade</h3>
+<ul>
+<li>规模：14 个 <code>internal/api/*_bridge.go</code> 共 4,566
+行，<code>transport_compat.go</code> 94 行；bridge 内有 143 个 type
+alias，加上 transport compat 共 145 个；另有 357 个接收
+<code>*gin.Context</code> 的 handler wrapper 和 14 个领域 Handler
+工厂。路由表约 283 条，不能与 wrapper 数量混为一谈。</li>
+<li>Git 证据：引入领域拆分的提交 <code>0c21d0e9</code> 在
+<code>internal/api</code> 改 245 个文件，新增 11,986 行、删除 1,159
+行，净增 10,827 行；其中 bridge/handler/exports/compat 44 个文件一次新增
+10,040 行。</li>
+<li>结构问题：路由仍注册根 <code>Handlers</code> facade；转发时反复调用
+<code>h.applicationAPI()</code>、<code>h.buildAPI()</code> 等构造领域
+Handler。领域 <code>Host</code>
+接口反向暴露根对象能力，<code>deploymentapi.Host</code> 44
+个方法、<code>runtimeapi.Host</code> 42 个方法，已经不是窄依赖。</li>
+<li>测试问题：根 <code>internal/api</code> 仍约 15,337
+行测试，子领域包测试约 2,287
+行，与“领域测试共置”的完成声明不一致。<code>source_files_test.go</code>
+只禁止子包 import 根包，却通过 Host adapter/export alias
+绕开真正边界。</li>
+<li>目标结构：启动装配时每个领域 Handler 只构造一次；每个领域提供 route
+registrar 并直接注册；Handler 依赖窄业务
+service/repository/provider，不依赖根 god object；根包只留全局
+middleware、静态资源、跨域集成测试。</li>
+<li>可删除边界：纯 route wrapper、测试 alias、<code>exports.go</code>
+兼容导出、<code>transport_compat.go</code> 和不再需要的 Host
+adapter。</li>
+<li>收益：保守预计净减 2,500～3,500
+行生产胶水，并恢复真实领域边界。</li>
+<li>影响：用户行为应不变，但回归面覆盖全部
+HTTP、OAuth/RBAC、审计、SSE/WebSocket、OpenAPI；风险高。</li>
+<li>验证：路由表与 OpenAPI operation 对齐、全量 Go
+测试，以及认证、构建、部署、运行终端、卷和流式接口真实链路。</li>
+</ul>
+<h3 id="r02-删除不存在的-environment-领域和重复-environmentid">R02.
+删除不存在的 Environment 领域和重复 <code>environmentId</code></h3>
+<ul>
+<li>证据：<code>internal/model/deployment.go:69</code> 定义完整 GORM
+<code>Environment</code>，但迁移没有 <code>environments</code>
+表，API/OpenAPI 没有 Environment CRUD/schema。运行对象只是从
+<code>DeploymentTarget</code> 临时复制成
+Environment；<code>worker/kube_specs.go:134</code> 的
+<code>deploymentNamespace(project, _ model.Environment)</code>
+完全忽略它。</li>
+<li>重复数据：<code>environment_id</code> 与已有
+<code>deployment_target_id</code>/<code>stage</code> 并存于 deployment
+targets、gateway routes、hook runs、releases 四表和四个索引；空值时
+Kubernetes label 又回退为 target ID，API 返回仍为空。</li>
+<li>动作：API/Worker 直接传 <code>DeploymentTarget</code>；用
+<code>deploymentTargetId</code>/<code>stage</code> 取代
+<code>environmentId</code>；删除模型、转换器、桥方法、列、索引和重复
+label。</li>
+<li>收益：预计 200～400 行、4 列、4 索引和一个伪领域。</li>
+<li>影响：公开 API、数据库和 Kubernetes label
+改变；历史非空值需审计，现存资源需要重协调或短读取兼容期。风险高。</li>
+</ul>
+<h3 id="r03-删除只有一个真实实现的策略provider-字段">R03.
+删除只有一个真实实现的策略/Provider 字段</h3>
+<ul>
+<li><code>Project.NamespaceStrategy</code> 只存储/展示，OpenAPI 唯一值是
+<code>project</code>，没有命名空间决策消费者。</li>
+<li><code>RuntimeCluster.GatewayProvider</code> 唯一值是
+<code>gateway-api</code>，normalizer
+对任何输入都返回该值，Worker/Provider 不读取。</li>
+<li><code>RuntimeCluster.Type</code> 声明 Kubernetes/K3s，但 normalizer
+把 K3s 存为 Kubernetes，同时暗中接受 OpenAPI 未声明、系统无 Provider 的
+<code>docker-compose</code>；运行路径再重复过滤 Kubernetes/K3s。</li>
+<li>动作：固定“一项目一 Namespace”、Kubernetes-compatible 集群和 Gateway
+API；K3s 作为发行版信息，不作为策略类型。删除 3 列/API 字段/单选
+UI/重复分支。</li>
+<li>收益：预计 80～160 行。</li>
+<li>影响：破坏性 API/DB 简化；迁移前统计现有值，处理任何
+<code>docker-compose</code> 异常行。风险高。</li>
+</ul>
+<h3 id="r04-收敛网关域名的三层事实源">R04. 收敛网关域名的三层事实源</h3>
+<ul>
+<li>证据：<code>runtime_clusters</code> 同时保存
+<code>gateway_root_domain</code> 和
+<code>gateway_domain_suffixes</code>；写入时
+<code>runtime_cluster_input.go:52</code> 混合多值、单值和隐藏全局
+fallback，并把首项回写单值；Web
+表单也提交两份相同事实。<code>gateway_route_domain.go:141</code>
+再读取三层来源。</li>
+<li>隐蔽行为：历史
+<code>gateway.rootDomain</code>/<code>gateway.publicScheme</code>
+并不在配置定义中，但 config cache 会把数据库未知 key
+载入，仍可暗中改变行为。</li>
+<li>动作：只保留
+<code>gatewayDomainSuffixes</code>；多值为空时用旧单值一次回填，然后删除单值列和隐藏
+config 行；证书默认后缀规则显式化。</li>
+<li>收益：预计 80～150 行。</li>
+<li>影响：域名和证书选择敏感；必须逐集群对比迁移前后的首选后缀。风险高。</li>
+</ul>
+<h3 id="r05-删除半实现的多-builderlease缓存计量脚手架">R05.
+删除半实现的多 Builder/Lease/缓存/计量脚手架</h3>
+<ul>
+<li>证据：Builder task 的
+<code>StreamID</code>、<code>LeaseToken</code>、<code>LeaseUntil</code>、<code>TargetBuilder</code>
+无读写；BuildJob <code>Type</code> 永远为
+<code>build</code>，<code>BuilderID</code> 无写入，lease
+无获取/续租生产者，<code>LastHeartbeatAt</code> 只写不读。</li>
+<li><code>BuildLabels</code>
+只复制不参与调度；前端直接称其“为后续多构建能力预留”。<code>CacheConfig</code>
+存储但 BuildKit
+不消费。<code>CPUCoreSeconds</code>、<code>MemoryMBSeconds</code>、<code>CreditCost</code>
+只存在于模型/Schema/TS，现值恒为零。</li>
+<li>动作：删除未生效字段、索引、OpenAPI/TS/i18n；超时只使用
+<code>started_at + build_timeout</code>。保留真实 attempts、BuildKit
+Job、日志和结果。</li>
+<li>收益：预计 80～150 行和约 10 个列/索引。</li>
+<li>影响：公开 API/DB
+简化；先确认没有外部程序直接写这些列。风险高。</li>
+</ul>
+<h3 id="r06-web-与-openapi-双维护-2743-行-dto">R06. Web 与 OpenAPI
+双维护 2,743 行 DTO</h3>
+<ul>
+<li>证据：<code>web/src/api/types.ts</code>、<code>ai-types.ts</code>、<code>topology-types.ts</code>、<code>volume-types.ts</code>
+共 2,743 行、280 个导出声明；OpenAPI 同时维护 287 个
+schema。<code>web/AGENTS.md:136</code> 要求人肉同步，仓库没有 Web
+TypeScript OpenAPI generator。</li>
+<li>动作：先选择一个领域，从根 OpenAPI 生成不入库的 transport schema
+types；只保留 UI view model 和显式 adapter。通过 CI
+生成/漂移检查维持契约。</li>
+<li>收益：试点后预计净减 1,500～2,200 行手写类型。</li>
+<li>影响：会暴露 OpenAPI 中的 nullable/union/缺失
+schema，产生广泛类型改动；风险高。</li>
+<li>验证：OpenAPI 校验、领域契约测试、全量 TypeScript test/build。</li>
+</ul>
+<h3 id="r07-agent-同时维护两套交互卡片-operation-id">R07. Agent
+同时维护两套交互卡片 operation ID</h3>
+<ul>
+<li>证据：模型使用
+<code>present_card</code>、<code>request_input</code>、<code>request_choice</code>，但
+<code>luna-agent/src/executor/cards.ts</code> 为兼容 Web
+全部持久化成已下线的 <code>create_interaction_cards</code>，并另存
+<code>modelOperationId</code>。<code>model-history.ts:3-25</code>
+又在模型历史中反向恢复真实 ID；Web 的 turns/timeline/display/state
+和测试继续分支处理旧 ID。</li>
+<li>动作：时间线直接保存真实 operation ID，或保存稳定
+<code>interactionKind</code>；Web 直接识别三类当前操作。删除
+<code>modelOperationId</code>、反投影和旧 ID 测试夹具。</li>
+<li>收益：预计数十到一百余行，更重要的是删除双协议语义。</li>
+<li>影响：Agent、Web、数据库历史共同改变；未发布历史卡片需要迁移或明确丢弃。风险高。</li>
+</ul>
+<h3 id="r08-agent-手写关键词路由重复工具检索机制">R08. Agent
+手写关键词路由重复工具检索机制</h3>
+<ul>
+<li>证据：<code>luna-agent/src/prompt/system.ts:22-36</code> 手工维护 13
+组中英关键词、operation/route 信号；第 76～166 行自制打分，只加载最多 3
+篇参考。与此同时系统 Prompt 已要求通过
+<code>search_tools</code>/<code>get_tool_details</code> 的 Unicode/BM25
+目录发现真实能力。</li>
+<li>维护面：<code>luna-agent/skills</code> 有 1,631 行
+Markdown；<code>system-prompt.test.ts</code>
+对参考文案原句做断言，把测试耦合到说明文字。</li>
+<li>动作：不要整包删除 Skill。先区分“工具 schema
+可推导事实”和“跨工具流程不变量”；前者交给工具目录/详情，后者压缩成少量稳定参考或由同一检索器检索，删除关键词表和原句快照测试。</li>
+<li>收益：可能减少数百至一千余行
+Prompt/测试，并降低关键词漏匹配与文档漂移。</li>
+<li>影响：可能降低复杂交付/诊断编排质量；先建立场景 eval
+对照再切换。风险高。</li>
+</ul>
+<h3 id="r09-cli-生成契约的跟踪策略只能在重做构建链后调整">R09. CLI
+生成契约的跟踪策略只能在重做构建链后调整</h3>
+<ul>
+<li>证据：<code>packages/api-contract/src/generated/operations.ts</code>
+118,996 行、约 3.80 MB，是 <code>catalog.ts</code>
+的运行时命令目录；<code>generated/schema.ts</code> 16,216 行、约 0.55
+MB，是 <code>api-types.ts</code> 的编译期 <code>paths</code>
+类型。两者都有真实消费者。</li>
+<li>当前门禁：<code>verify-contract-drift.mjs</code>
+会先读取两文件再生成；release quality gate 先做 drift 再
+typecheck/test；binary job 直接 build 而不 generate。因此当前 fresh
+checkout/release 不能缺少它们。</li>
+<li>动作：这是未来仓库策略，不是当前删除项。只有先改为 prepare/build/CI
+确定生成并验证 fresh
+checkout、离线构建和发布后，才能停止跟踪；也可只跟踪紧凑 runtime catalog
+与必要声明。</li>
+<li>收益：减少 135,212 行代码审查噪声和约 4.35 MB 工作树文本。</li>
+<li>影响：构建更依赖 codegen，IDE 在 bootstrap
+前没有类型；离线构建和发布可重复性必须先解决。风险中至高。</li>
+</ul>
+<h3 id="r10-从-cli-运行时-catalog-去掉无消费者的完整-responses">R10. 从
+CLI 运行时 catalog 去掉无消费者的完整 <code>responses</code></h3>
+<ul>
+<li>证据：<code>packages/api-contract/scripts/generate-operations.mjs:33-55</code>
+先生成 <code>responses</code>，再从中派生
+<code>outputSchema</code>/<code>errorSchema</code>；成品
+<code>responses</code> 只在类型声明和测试 fixture 出现。CLI
+<code>src/commands/openapi.ts:100-166</code> 只消费
+parameters、requestBody、inputSchema、outputSchema、errorSchema，从不读取完整
+responses。</li>
+<li>体积：当前 302 项 operations JSON 约 3,800,631 bytes；生成阶段派生
+schema 后不落 <code>responses</code>，估算降至 1,494,186 bytes，净减
+2,306,445 bytes，约 61%。它当前还参与 <code>OPERATION_CATALOG</code>
+digest 并被 tsup 打入约 4 MiB 的 CLI dist。</li>
+<li>动作：生成阶段仍读取 OpenAPI responses，用它派生必要输出/错误
+schema，但不把完整 responses 写入运行时 operation
+entry；同步调整类型、digest fixture 和契约测试。</li>
+<li>收益：是真实发布体积、启动解析和审查噪声降低，不只是停止跟踪生成文件。</li>
+<li>影响：catalog digest 会改变；依赖 digest 的
+Skill/版本检查需同步。风险中。</li>
+</ul>
+<h3 id="r11-cli-运行时快照不应复制已经忽略的-requiredscopes">R11. CLI
+运行时快照不应复制已经忽略的 <code>requiredScopes</code></h3>
+<ul>
+<li>证据：Scope 简化后，CLI 已从 catalog、OpenAPI
+command、help、registry 和 preflight 删除 scope 消费，但
+<code>packages/api-contract/src/types.ts:122</code> 和 generator
+仍把平台 OpenAPI 的 256 处 <code>x-luna-cli.requiredScopes</code>
+原样写入运行时快照，约 15,689 bytes。</li>
+<li>动作：平台 OpenAPI 中的 <code>requiredScopes</code>
+必须保留，PAT、Agent tool catalog 和服务端授权仍使用它；只在 CLI
+generator 的投影白名单中排除该字段。</li>
+<li>收益：完成第一方 CLI scope 简化闭环，缩小运行时 catalog
+和错误概念面。</li>
+<li>影响：CLI catalog digest 改变；平台授权契约不变。风险低至中。</li>
+</ul>
+<h3 id="r12-删除私有-workspace-contract-的虚构多形态兼容">R12. 删除私有
+workspace contract 的虚构多形态兼容</h3>
+<ul>
+<li>证据：忽略目录 <code>cli/luna-cli</code>
+中，<code>src/entry.ts</code> 始终把静态 <code>* as apiContract</code>
+传入 command registration；<code>src/commands/openapi.ts:29-178</code>
+却兼容
+<code>OPERATION_CATALOG</code>、<code>commandCatalog</code>、<code>COMMAND_CATALOG</code>、<code>cliCommandCatalog</code>、<code>default</code>，函数/数组、<code>commands</code>/<code>entries</code>，三处
+metadata，以及 command/<code>xLunaCli</code>/<code>x-luna-cli</code>/cli
+多层字段。<code>@luna-devops/api-contract</code> 是 private workspace
+包，固定导出
+<code>OPERATION_CATALOG</code>/<code>OPERATION_CATALOG_METADATA</code>，并被根
+build 直接打包，没有第二个生产实现；现有测试也只构造 canonical
+形态。</li>
+<li>动作：以强类型直接消费唯一权威导出；保留真正必要的 OpenAPI→CLI
+normalization，删除模块形态猜测和固化虚构形态的测试。</li>
+<li>收益：预计净减 30～50 行和约 20 个 fallback
+分支，让契约不匹配在编译/启动时直接失败。</li>
+<li>影响：若仓外有人直接导入未发布的 private API
+会受影响；仓内风险低至中。</li>
+</ul>
+<h3 id="r13-规范readmesop-形成多重事实源">R13. 规范、README、SOP
+形成多重事实源</h3>
+<ul>
+<li>证据：根 <code>AGENTS.md</code> 250 行、<code>web/AGENTS.md</code>
+427 行、<code>docs-internal/代码检查流程.md</code> 279 行，加上 Web
+README/CONTRIBUTING 合计超过千行。<code>@/</code>
+import、单例检查、i18n、DataList、验证命令等同一规则出现 3～5 次；Web
+README 与 Web AGENTS 还互相要求必读。</li>
+<li>动作：根 AGENTS 只留跨域硬约束；Web AGENTS 只留前端增量；SOP
+只留审计频率、分类和报告模板；README 只留运行入口；CONTRIBUTING
+链接权威规则。先做规则账本，再逐条合并，不能整文件粗删。</li>
+<li>收益：预计 300～450 行。</li>
+<li>影响：无运行时变化，但误删唯一安全/验收约束会影响后续工程质量；风险中。</li>
+</ul>
+<h3 id="r14-shadcn_componentsmd-是人工复制目录和愿望单">R14.
+<code>SHADCN_COMPONENTS.md</code> 是人工复制目录和愿望单</h3>
+<ul>
+<li>证据：第 28～90 行复制官网组件清单，第 94～120
+行保存完成历史和未来优先级，第 133～145
+行列尚无消费者的愿望；真实已安装组件由
+<code>web/src/components/ui</code> 和 <code>components.json</code>
+决定。</li>
+<li>动作：把第 7～27、122～131 行中项目独有规则合入 Web
+AGENTS，随后删文件和引用。</li>
+<li>收益：约 120～150 行。</li>
+<li>影响：丢失人工 roadmap，不丢产品能力；风险低至中。</li>
+</ul>
+<h3 id="r15-helm-首管同时支持-secret-和-inline-密码">R15. Helm
+首管同时支持 Secret 和 inline 密码</h3>
+<ul>
+<li>证据：<code>charts/luna-devops/values.yaml:34-46</code> 同时提供
+<code>existingSecret</code> 与 email/name/password；README 明示 inline
+密码会进入 Helm values/release history。<code>secret.yaml</code>、render
+tests 和中英文文档为两条路径维护大量分支。</li>
+<li>动作：只保留 <code>existingSecret</code>，安装文档先展示创建
+Secret，再安装 Chart。</li>
+<li>收益：约 80～100 行，并删除一条不安全配置路径。</li>
+<li>影响：首次安装多一步创建 Secret；旧 values 不再工作。风险中。</li>
+</ul>
+<h3 id="r16-删除未发布-helm-字段的反向兼容守卫">R16. 删除未发布 Helm
+字段的反向兼容守卫</h3>
+<ul>
+<li>证据：<code>charts/luna-devops/templates/_helpers.tpl:159-162</code>
+专门拒绝已不存在的 <code>app.extraEnv</code>；render test 和 README
+继续维护该历史。</li>
+<li>相邻残留：同文件 managed env 列表中的 <code>AI_AGENT_ADDR</code>
+没有现行配置或应用消费者，只有 render test 与 Go
+配置契约的“必须不存在”断言为它自证。</li>
+<li>动作：按项目“不保留未发布兼容层”的规则，删除
+<code>app.extraEnv</code> guard、文档和测试；同时删除无消费者的
+<code>AI_AGENT_ADDR</code> managed-list
+项及空断言。数据库、Redis、OTel、Secret
+和首管配置的覆盖保护有真实安全职责，必须保留。</li>
+<li>收益：约 10～15 行。</li>
+<li>影响：旧 values 中该字段会被 Helm
+忽略，不再得到定制错误；风险低至中。</li>
+</ul>
+<h3 id="r17-更新日志镜像和自动写回链只复制-github-release">R17.
+更新日志镜像和自动写回链只复制 GitHub Release</h3>
+<ul>
+<li>证据：中英文 changelog 页面自己声明 GitHub Release 是事实源，顶级
+<code>_nav.json</code> 没有入口；<code>changelog-sync.yml</code>
+仍在任意 main/dev/tag Build &amp; Publish 成功后申请写 token、fetch
+tags、生成页面、提交并 push main，再手动触发 build
+workflow。生成器唯一输入是 Git tags，所以普通 push
+多数只完成一轮有权限的 no-op。</li>
+<li>放大链：真正写回时，App token push 本身会触发 main
+workflow，随后手动 dispatch 又让 change detector 强制
+<code>mark_all</code>；结果可能重复全量门禁、构建四个镜像，并再触发两次
+changelog no-op。<code>release-check.sh</code> 还在生成 changelog 后只
+build、不检查 Git diff，陈旧页面可被悄悄改写后仍显示检查通过。</li>
+<li>动作：如果产品不需要站内更新日志，删除整链并直接链接 GitHub
+Releases；如果需要，构建时读取 release
+feed，不把生成结果反向提交主分支。</li>
+<li>收益：直接删除约 222 行和一个有写权限的 Workflow，同时移除普通 push
+的无效特权 job 与写回后的重复全量构建。</li>
+<li>影响：站内直达 URL
+消失或改为外链；风险中，需确认是否已有外部链接。</li>
+</ul>
+<h3 id="r18-两份-grafana-dashboard-没有交付链">R18. 两份 Grafana
+Dashboard 没有交付链</h3>
+<ul>
+<li>证据：<code>grafana/dashboards/luna-agent-llm-observability.json</code>
+793 行、<code>luna-devops-overview.json</code> 2,242 行；没有
+provisioning、Compose/Helm
+mount、公开导入说明或文件名引用。它们只是随根目录进入 Docker source
+context。</li>
+<li>动作：二选一：正式提供
+provisioning/导入文档并验证查询；否则删除，不保留隐藏资产。</li>
+<li>收益：删除时 3,035 行、约 77.5 KiB。</li>
+<li>影响：不再提供仓库内手工导入
+Dashboard；现有运行/部署不变。风险中。</li>
+</ul>
+<h3 id="r19-完成第一方-cli-scope-元数据和文案的移除">R19. 完成第一方 CLI
+Scope 元数据和文案的移除</h3>
+<ul>
+<li>证据：当前产品和 CLI 文档已规定第一方 CLI
+登录后与用户权限对等，不再请求独立 Scope；但忽略目录
+<code>cli/luna-cli</code> 中的
+<code>CommandMetadata</code>/<code>NormalizedCommandMetadata</code>
+仍定义 <code>scopes</code>，协议与卷传输 helper 继续写入几十处
+Scope，<code>config/resolve.ts</code> 还为 token 填
+<code>scopes: []</code>。生产侧没有任何 <code>.scopes</code>
+读取者，<code>registry.ts:159-170</code> 反而在 normalize
+时无条件把它覆盖为空；只有测试继续读取并证明这些无效元数据。CLI
+README、Skill security reference 和公开 workflow 文档仍要求扩 Scope
+后重登。</li>
+<li>动作：从 CLI metadata、protocol wrapper、volume
+helper、测试自证、帮助/i18n、README/Skill 和公开文档移除第一方 CLI
+Scope。平台 OpenAPI 的 <code>requiredScopes</code>、PAT、第三方
+OAuth、Agent 工具与服务身份授权仍有真实消费者，必须保留；外部 OAuth 标准
+<code>invalid_scope</code> 错误映射也不在删除范围。</li>
+<li>收益：预计净减 50～80 行并消除约 80 个误导性 Scope 命中。</li>
+<li>影响：第一方 CLI 行为不变，测试与帮助契约会缩小；风险低至中。</li>
+</ul>
+<h3 id="r20-agent-工具目录对内部契约应-fail-closed并且只构建一次">R20.
+Agent 工具目录对内部契约应 fail closed，并且只构建一次</h3>
+<ul>
+<li>契约证据：Go <code>internal/aitool/openapi_catalog.go:17-40</code>
+对
+<code>name</code>、<code>summary</code>、<code>tags</code>、语义说明、<code>requiresApproval</code>、请求和输出
+schema 等字段都有唯一生产逻辑并稳定序列化；JSON
+契约测试也要求这些字段存在。Agent
+<code>luna-agent/src/tools/catalog.ts:27-62</code> 却把其中大量字段设为
+optional/default，并再次生成 name、summary、tags、purpose，甚至把缺失的
+<code>requiresApproval</code> 默认为 <code>false</code>。</li>
+<li>风险：如果权威 producer 漏字段，Agent
+不会拒绝配置，而会继续用自己推测的语义；<code>requiresApproval=false</code>
+还可能把契约破坏降级为无需审批，属于危险的内部 fail-open。</li>
+<li>重复构建：<code>bootstrap.ts:47-66</code> 先在
+<code>RemoteConfigSnapshot</code> validator 中
+<code>ToolCatalog.load</code>，随后立即再次 load；每次 refresh
+也先校验，再由 <code>ToolCatalogRegistry.refresh</code> 重新
+parse、排序、计算 digest 并构建 BM25 索引。</li>
+<li>动作：Go producer 明确拥有默认化，Agent
+对安全和语义必填字段严格校验；真正允许省略的字段保持窄
+optional。把一次解析得到的不可变 <code>ToolCatalog</code>
+作为候选配置的一部分原子发布，不在 validator 与 registry
+中构建两次。</li>
+<li>收益：预计净减 15～30 行
+fallback，并避免每次配置刷新重复构建完整检索索引。</li>
+<li>影响：旧或损坏的配置会在初始化/刷新时被拒绝并保留最后有效快照；风险中。</li>
+<li>验证：Go JSON → Agent schema 契约、缺
+<code>requiresApproval</code>/语义字段必须失败、刷新原子性、digest
+snapshot 与在途 run catalog 保留测试。</li>
+</ul>
+<h3
+id="r21-tool-result-只在协议入口校验一次删除前端二次修复和旧回捞">R21.
+Tool result 只在协议入口校验一次，删除前端二次修复和旧回捞</h3>
+<ul>
+<li>证据：Agent <code>timeline-presenter.ts:135-205</code>
+已把工具结果稳定投影为 <code>AIToolDisplayResult</code>；前端
+<code>api/ai-types.ts:56-113</code> 也声明了同一结构。但
+<code>web/src/components/common/ai-assistant/state.ts:641-674</code>
+又从 <code>unknown</code> 逐字段归一，缺 <code>summaryKey</code> 时伪造
+completed；<code>:127-154</code> 还从独立
+<code>tool_result.parts.structured_data</code> 回捞旧结果。</li>
+<li>生产链路：<code>luna-agent/src/tools/postgres-store.ts:55-83</code>
+把 result 写进 <code>tool_call</code> 内容；当前 presenter 会随
+<code>toolCall.result</code> 返回。Agent 源码没有
+<code>structured_data</code> 生产者，旧回捞只由前端测试 fixture
+触发。</li>
+<li>动作：在 SSE/HTTP ingress 用一次 schema
+校验约束不可信网络数据，reducer 接收已验证的 typed result；删除
+<code>normalizeToolResult</code>、<code>results</code>
+map、<code>structuredResult</code> fallback 和只证明旧形态的
+fixture。不要删除模型输入、UI action 或敏感字段本身的校验。</li>
+<li>收益：预计净减 32～42 行生产代码及旧 fixture，消除“Agent
+投影一次、Web 再猜一次”的双协议。</li>
+<li>影响：损坏 payload 会在协议入口进入明确错误/重同步，而不是被 reducer
+修成完成结果；风险低至中。</li>
+<li>验证：用 presenter 真实 fixture 驱动 timeline 与 SSE reducer；覆盖
+malformed payload、重放和重同步。</li>
+</ul>
+<h3
+id="r22-agent-生产依赖不应为了测试被设计成三种-resolver-和多组-optional">R22.
+Agent 生产依赖不应为了测试被设计成三种 resolver 和多组 optional</h3>
+<ul>
+<li>证据：生产 <code>bootstrap.ts:135-158</code> 始终给
+<code>ModelRuntime</code> 传完整 <code>{resolve, search, details}</code>
+registry，并给 <code>RunExecutor</code>/<code>buildServer</code> 传
+tools、remote config、catalog registry、stream bus、cancel 与
+digest。<code>provider/provider.ts:47-71</code> 和
+<code>model-runtime.ts:62-146</code> 仍兼容数组、函数、registry 三种
+resolver；缺少 search/details
+时返回空结果，把误装配伪装成“没有工具”。</li>
+<li>同类问题：<code>executor/index.ts:38-54</code> 与
+<code>server.ts:44-70</code> 把同一组生产必需依赖声明为
+optional/default；readiness 在完全没有 remote config 时反而视 provider
+为可用。<code>RunExecutor</code> 的 <code>Config</code> 参数只被
+<code>void config</code>
+消耗。这些分支主要服务单元测试构造，不是产品运行模式。</li>
+<li>动作：生产构造只接受完整 <code>ModelToolRegistry</code>
+和明确的必需依赖；测试通过统一 <code>testRegistry</code>/server fixture
+注入 fake。删除空工具、无 remote config 的伪降级态和未使用 Config
+参数；若确需测试无配置 readiness，应直接测试启动失败契约。</li>
+<li>收益：预计净减 45～75 行生产分支，测试 fixture 可能增加 10～20
+行，但依赖图更真实。</li>
+<li>影响：Agent
+内部构造签名和大量测试会调整；生产行为只会从静默降级改为启动失败。风险中。</li>
+<li>验证：Agent
+typecheck/test/build，启动装配、readiness、cancel、SSE、工具
+search/details 和无效配置失败链路。</li>
+</ul>
+<h2 id="7-门禁满足后再删除">7. 门禁满足后再删除</h2>
+<h3 id="g01-retained_volumes-与部署旧存储列">G01.
+<code>retained_volumes</code> 与部署旧存储列</h3>
+<ul>
+<li>证据：<code>internal/model/retained_volume.go</code> 明确仅供旧
+backfill；生产 API/Worker/Provider 不使用。Deployment 上 7
+个旧存储字段同样只为回填保留。</li>
+<li>当前不能删的原因：不可逆数据删除，可能仍有未映射到
+<code>project_volumes</code>/<code>deployment_volume_mounts</code> 的
+PVC 历史或归属。</li>
+<li>动作：完成真实数据快照、逐行映射、备份恢复演练后，一次 migration
+删除旧表/列，再删模型和负向兼容测试。</li>
+<li>收益：约 60～120 行；如果未发布环境允许重写 baseline，约 120～180
+行。</li>
+<li>影响：数据风险高。</li>
+</ul>
+<h3 id="g02-是否重做迁移-baseline">G02. 是否重做迁移 baseline</h3>
+<ul>
+<li>现状：迁移 67 是项目文档明确的最早支持版本；68～97
+包含多轮未发布功能增删，包括卷、AI budget、delivery queue、kubectl 与
+CLI scope。</li>
+<li>判断：它看起来冗长，但当前是已声明的升级契约，不是垃圾。只有在确认所有持久环境可重建、正式抬高最早支持版本后，才能把最新
+schema 重新 baseline。</li>
+<li>收益：可显著缩短迁移和兼容测试；不代表生产代码减少。</li>
+<li>影响：旧数据库不能原地升级，风险高。</li>
+</ul>
+<h2 id="8-本地忽略产物与独立工作树">8. 本地忽略产物与独立工作树</h2>
+<p>这些都被主仓忽略，但“被忽略”不等于“可删除”。本报告未删除任何一项：</p>
+<table>
+<thead>
+<tr>
+<th>路径</th>
+<th style="text-align: right;">体积/状态</th>
+<th>影响</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>cli/luna-cli</code></td>
+<td style="text-align: right;">约 217 MB</td>
+<td><strong>不可直接删除</strong>：该独立仓库 <code>main</code> 比
+<code>origin/main</code> 领先 1
+个唯一提交（<code>7b6d8d1</code>），当前还有 39 个工作树路径变更；相邻
+<code>../luna-cli</code> 停在
+<code>8d71f9e</code>，尚不包含这些内容。必须先合并/迁移提交和未提交改动，再决定删除
+clone</td>
+</tr>
+<tr>
+<td><code>cli/luna-cli/node_modules</code></td>
+<td style="text-align: right;">约 206 MB</td>
+<td>可由 lockfile 重新安装；只清该依赖目录不会丢失 CLI 源码改动</td>
+</tr>
+<tr>
+<td><code>web/dist</code></td>
+<td style="text-align: right;">约 12 MB</td>
+<td>可再生成构建产物</td>
+</tr>
+<tr>
+<td><code>luna-agent/dist</code></td>
+<td style="text-align: right;">约 2.4 MB</td>
+<td>可再生成构建产物</td>
+</tr>
+<tr>
+<td><code>docs/doc_build</code></td>
+<td style="text-align: right;">约 3.5 MB</td>
+<td>可再生成文档产物</td>
+</tr>
+<tr>
+<td><code>.local/builder-workspace</code></td>
+<td style="text-align: right;">空目录</td>
+<td>本地残留</td>
+</tr>
+<tr>
+<td><code>internal/kubeaccess</code>、<code>kubecatalog</code>、<code>kubepolicy</code>、<code>kubeproxy</code>、<code>runtimecommand</code></td>
+<td style="text-align: right;">空目录</td>
+<td>已删除功能留下的目录壳</td>
+</tr>
+<tr>
+<td><code>web/src/pages/access-tokens</code>、<code>web/src/pages/projects/kubectl</code></td>
+<td style="text-align: right;">空目录</td>
+<td>页面迁移/功能删除残留</td>
+</tr>
+<tr>
+<td><code>luna-agent/sql</code>、<code>src/tools/generated</code>、<code>tests/fixtures</code></td>
+<td style="text-align: right;">空目录</td>
+<td>本地目录壳</td>
+</tr>
+</tbody>
+</table>
+<h2 id="9-明确保留避免误删">9. 明确保留，避免误删</h2>
+<ul>
+<li>根 OpenAPI、各 pnpm lockfile、应用市场模板和 AI interaction-card
+contract：都有真实生成、发布或跨进程消费者。</li>
+<li><code>luna-agent/src/run-stream-bus.ts</code> 与
+<code>run-stream-hub.ts</code>：前者负责生产/持久提交，后者负责读取/PG
+观察/SSE fanout/backpressure，不是重复实现。</li>
+<li>Agent 写库与 Go <code>agentobservability</code>
+读模型：分别服务权威写入和管理端聚合读取；除非删除整个 Operations
+可观测产品，不应按文件相似度合并。</li>
+<li>文档站和 Web 各自的 logo/mascot：属于两个独立静态构建根；为约 164
+KiB 再引入复制脚本不划算。</li>
+<li>鉴权与网络安全：<code>internal/authz</code>
+的失败关闭、Secret/Audit/RBAC、SSRF/DNS
+rebinding、受信代理、敏感遥测脱敏都必须保留；这些分支面对不可信输入或权限边界，不是内部兼容胶水。</li>
+<li>Kubernetes 与卷：kubeconfig 写入和使用前的双边校验、动态对象
+type/nil guard、resourceVersion 冲突、NotFound 幂等删除、卷
+CAS/lease/事务、单调进度和流传输终态唯一提交都有真实并发或外部状态职责。</li>
+<li>Web 实时与模型边界：SSE
+envelope/sequence/replay、终端字节和控制帧、模型生成 UI action/内部 URL
+白名单、浏览器存储异常与用户 kubeconfig YAML 校验必须保留。</li>
+<li>Agent：取消、CAS 终态、stream cleanup、敏感工具参数、外部
+Provider/config
+schema、超时、有界重试，以及刷新失败时保留最后有效配置都必须保留；Tempo
+v1/v2 兼容也对应真实外部协议。</li>
+<li>CLI 卷传输：checksum/byte
+limit、<code>O_NOFOLLOW</code>、<code>.part</code> 原子
+rename、AbortSignal、finally/close/cancel，以及 OAuth refresh
+并发控制和禁止 redirect
+转发凭据均是文件、网络和中断边界的必要防御。</li>
+<li>Helm/Compose/CI：Secret/数据库/Redis/OTel env
+覆盖保护、首管输入约束、随机密钥复用、checksum
+rollout、NetworkPolicy/securityContext、readiness/healthcheck、数据库隔离、race
+检查和发布幂等应保留。</li>
+<li><code>scripts/ci/*.sh</code> 整体：除了本报告点名的死分支，其余均有
+Workflow/release 脚本调用。</li>
+<li><code>.env.example</code>：是 Compose
+和本地启动的可执行配置入口，变量均有消费者。</li>
+<li>当前公开文档中的
+<code>kubectl</code>/<code>kubeconfig</code>：剩余内容用于平台安装、管理员配置运行集群或安全警告，不等于已删除的终端用户
+kubectl 兼容功能。</li>
+</ul>
+<h2 id="10-验证矩阵">10. 验证矩阵</h2>
+<table>
+<thead>
+<tr>
+<th>改动类型</th>
+<th>最小验证</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Web 死代码/i18n/API Client</td>
+<td>i18n 反向检查、lint、test、build、singleton check</td>
+</tr>
+<tr>
+<td>Go 空壳/Router/config/cmd</td>
+<td>相关包测试 + <code>go test ./...</code>；配置/权限项需真实 API
+回读</td>
+</tr>
+<tr>
+<td>Worker 装配/默认值</td>
+<td>非空依赖构造、配置边界表格测试、Asynq
+成功/失败/重试终态、关键任务不得 nil-success</td>
+</tr>
+<tr>
+<td>内部契约 fail-closed</td>
+<td>producer JSON → consumer schema 契约；缺安全字段、malformed
+2xx、显式引用失效均必须失败且无副作用</td>
+</tr>
+<tr>
+<td>API facade</td>
+<td>路由/OpenAPI 契约 + 全量 Go + OAuth/RBAC/审计/SSE/WebSocket/业务
+E2E</td>
+</tr>
+<tr>
+<td>数据模型/迁移</td>
+<td>67→最新、fresh schema、非空 fixture、备份恢复、API/Worker/Web/CLI
+契约</td>
+</tr>
+<tr>
+<td>Agent 协议/Prompt</td>
+<td>lint/typecheck/test/build、交互卡片 E2E、复杂场景
+eval、历史回放</td>
+</tr>
+<tr>
+<td>文档/redirect/changelog</td>
+<td>中英文导航与链接、<code>pnpm --dir docs build</code>、Vercel route
+smoke、Workflow YAML</td>
+</tr>
+<tr>
+<td>Helm</td>
+<td>render tests、敏感值不进入 release history、安装/升级 smoke</td>
+</tr>
+<tr>
+<td>CLI</td>
+<td>contract generation/coverage、help/catalog
+snapshot、test/build、fresh checkout release</td>
+</tr>
+</tbody>
+</table>
+<h2 id="附录-a294-个高置信未使用-i18n-key">附录 A：294 个高置信未使用
+i18n key</h2>
+<p>删除前仍应由新增反向检查器在当时的工作树重新生成，避免并行改动使清单过时。</p>
+<h3 id="accesstokens2">accessTokens（2）</h3>
+<pre class="text"><code>accessTokens.title
+accessTokens.listTitle</code></pre>
+<h3 id="accountpage1">accountPage（1）</h3>
+<pre class="text"><code>accountPage.description</code></pre>
+<h3 id="aiassistant2">aiAssistant（2）</h3>
+<pre class="text"><code>aiAssistant.options.selected
+aiAssistant.options.unavailable</code></pre>
+<h3 id="apptemplatespage4">appTemplatesPage（4）</h3>
+<pre class="text"><code>appTemplatesPage.description
+appTemplatesPage.loading
+appTemplatesPage.port
+appTemplatesPage.resources</code></pre>
+<h3 id="apps49">apps（49）</h3>
+<pre class="text"><code>apps.dockerfile
+apps.dockerfileHint
+apps.dockerfileRequired
+apps.dockerfilePlaceholder
+apps.selectDockerfile
+apps.noDockerfilesDetected
+apps.buildContext
+apps.buildContextHint
+apps.buildContextRequired
+apps.buildContextPlaceholder
+apps.selectBuildContext
+apps.targetImageRef
+apps.targetImageRefHint
+apps.targetImageRefPlaceholder
+apps.buildConfigsDescription
+apps.deploymentTargetEntries
+apps.deploymentTargetEntriesDescription
+apps.createBuildConfig
+apps.editBuildConfig
+apps.buildConfigDialogDescription
+apps.buildConfigCreated
+apps.buildConfigUpdated
+apps.buildConfigDeleted
+apps.deleteBuildConfigTitle
+apps.deleteBuildConfigDescription
+apps.manageInApplication
+apps.templateVariablesTitle
+apps.templateDocs
+apps.templateVariablesDescription
+apps.templateVariablesColumn
+apps.templateVariableUsageColumn
+apps.templateVariableExampleColumn
+apps.templateVariables.fullSha
+apps.templateVariables.shortSha
+apps.templateVariables.refName
+apps.templateVariables.refType
+apps.templateVariables.ref
+apps.buildLabels
+apps.buildLabelsHint
+apps.buildLabelsPlaceholder
+apps.buildHooksEnabled
+apps.buildRepositoryBinding
+apps.buildRepositoryBindingHint
+apps.integerPort
+apps.positivePort
+apps.deleted
+apps.openConfigAria
+apps.bindRepository
+apps.detailDescription</code></pre>
+<h3 id="auth1">auth（1）</h3>
+<pre class="text"><code>auth.backToLogin</code></pre>
+<h3 id="billingpage12">billingPage（12）</h3>
+<pre class="text"><code>billingPage.monthSpend
+billingPage.monthlyCategoriesTitle
+billingPage.monthlyCategoriesDescription
+billingPage.emptyMonthlyCategories
+billingPage.periodCategoriesDescription
+billingPage.selectedPeriod
+billingPage.filters
+billingPage.scopeTitle
+billingPage.selectProject
+billingPage.allRelatedProjects
+billingPage.allProjectSpaces
+billingPage.selectedProjects</code></pre>
+<h3 id="buildspage46">buildsPage（46）</h3>
+<pre class="text"><code>buildsPage.description
+buildsPage.providers
+buildsPage.providerNameRequired
+buildsPage.providerSlugRequired
+buildsPage.providerSlug
+buildsPage.providerSlugHint
+buildsPage.providerDisplayName
+buildsPage.providerDisplayNameHint
+buildsPage.variableSets
+buildsPage.runs
+buildsPage.jobs
+buildsPage.createProvider
+buildsPage.editProvider
+buildsPage.providerDialogDescription
+buildsPage.providerCreated
+buildsPage.providerUpdated
+buildsPage.providerDeleted
+buildsPage.deleteProviderTitle
+buildsPage.deleteProviderDescription
+buildsPage.emptyProviders
+buildsPage.variableSetsHint
+buildsPage.selectProject
+buildsPage.commitLabel
+buildsPage.pushedBy
+buildsPage.currentStep
+buildsPage.relativeHoursMinutesAgo
+buildsPage.relativeMinutesAgo
+buildsPage.relativeJustNow
+buildsPage.durationHoursMinutesSeconds
+buildsPage.durationMinutesSeconds
+buildsPage.emptyJobs
+buildsPage.provider
+buildsPage.targetRepository
+buildsPage.targetTag
+buildsPage.targetTagPlaceholder
+buildsPage.targetTagTemplateHint
+buildsPage.targetImagePreview
+buildsPage.targetImagePreviewHint
+buildsPage.sourceCommit
+buildsPage.inheritedBuildConfigHint
+buildsPage.buildRun
+buildsPage.attempts
+buildsPage.buildLogs
+buildsPage.emptyLogs
+buildsPage.config
+buildsPage.typePlatform</code></pre>
+<h3 id="coderepositoriespage1">codeRepositoriesPage（1）</h3>
+<pre class="text"><code>codeRepositoriesPage.description</code></pre>
+<h3 id="dashboardpage18">dashboardPage（18）</h3>
+<pre class="text"><code>dashboardPage.description
+dashboardPage.heading
+dashboardPage.subtitle
+dashboardPage.workOverview
+dashboardPage.projectSample
+dashboardPage.projects
+dashboardPage.applications
+dashboardPage.failedBuilds
+dashboardPage.unhealthyClusters
+dashboardPage.noIssues
+dashboardPage.recentBuilds
+dashboardPage.recentBuildsDescription
+dashboardPage.buildMeta
+dashboardPage.noBuilds
+dashboardPage.availableGlobalAndScoped
+dashboardPage.projectOverview
+dashboardPage.projectOverviewDescription
+dashboardPage.noBuild</code></pre>
+<h3 id="deploymentspage51">deploymentsPage（51）</h3>
+<pre class="text"><code>deploymentsPage.description
+deploymentsPage.clusters
+deploymentsPage.releases
+deploymentsPage.clusterDialogDescription
+deploymentsPage.emptyReleases
+deploymentsPage.buildRun
+deploymentsPage.buildRunHint
+deploymentsPage.deploymentTargets
+deploymentsPage.deploymentTargetsDescription
+deploymentsPage.bundleImport.invalidStage
+deploymentsPage.deploymentConfigs
+deploymentsPage.deploymentConfigsDescription
+deploymentsPage.saveBuildConfigBeforeDeploymentConfig
+deploymentsPage.saveModuleBeforeDeploymentConfig
+deploymentsPage.createDeploymentConfig
+deploymentsPage.editDeploymentConfig
+deploymentsPage.deploymentConfigDialogDescription
+deploymentsPage.environmentSlugHint
+deploymentsPage.deleteDeploymentTargetTitle
+deploymentsPage.deleteDeploymentTargetDescription
+deploymentsPage.emptyDeploymentConfigs
+deploymentsPage.emptyDeploymentConfigsDescription
+deploymentsPage.emptyDeploymentTargets
+deploymentsPage.targetCount
+deploymentsPage.requireApproval
+deploymentsPage.servicePortHint
+deploymentsPage.runtimeSecretValueRequired
+deploymentsPage.sourceBranch
+deploymentsPage.internalEndpoint
+deploymentsPage.internalEndpointHint
+deploymentsPage.terminalStdout
+deploymentsPage.terminalStderr
+deploymentsPage.command
+deploymentsPage.runCommand
+deploymentsPage.emptyStdout
+deploymentsPage.metricsUnavailable
+deploymentsPage.runtimeProfile
+deploymentsPage.cpuUnits.m
+deploymentsPage.kubernetesAdvancedStorage
+deploymentsPage.kubernetesValues.ClusterIP
+deploymentsPage.kubernetesValues.NodePort
+deploymentsPage.kubernetesValues.LoadBalancer
+deploymentsPage.kubernetesValues.Cluster
+deploymentsPage.kubernetesValues.Local
+deploymentsPage.dataVolumeSourceProjectVolume
+deploymentsPage.clusterHint
+deploymentsPage.defaultCluster
+deploymentsPage.autoNamespace
+deploymentsPage.endpoint
+deploymentsPage.typeK3s
+deploymentsPage.typeDockerCompose</code></pre>
+<h3 id="eventspage5">eventsPage（5）</h3>
+<pre class="text"><code>eventsPage.description
+eventsPage.listTitle
+eventsPage.filters.scope
+eventsPage.scopes.mine
+eventsPage.scopes.all</code></pre>
+<h3 id="gatewayroutespage6">gatewayRoutesPage（6）</h3>
+<pre class="text"><code>gatewayRoutesPage.description
+gatewayRoutesPage.cnameTarget
+gatewayRoutesPage.optionalGatewayConfig
+gatewayRoutesPage.optionalGatewayConfigDescription
+gatewayRoutesPage.enableGatewayConfig
+gatewayRoutesPage.gatewayRouteWillUpdate</code></pre>
+<h3 id="inbox2">inbox（2）</h3>
+<pre class="text"><code>inbox.description
+inbox.detail.requestStatus</code></pre>
+<h3 id="notificationspage1">notificationsPage（1）</h3>
+<pre class="text"><code>notificationsPage.description</code></pre>
+<h3 id="projecthooks3">projectHooks（3）</h3>
+<pre class="text"><code>projectHooks.runOrder
+projectHooks.dragHint
+projectHooks.orderUpdated</code></pre>
+<h3 id="projectmembers3">projectMembers（3）</h3>
+<pre class="text"><code>projectMembers.searchingUsers
+projectMembers.selectedUsers
+projectMembers.removeSelectedUser</code></pre>
+<h3 id="projectspaces24">projectSpaces（24）</h3>
+<pre class="text"><code>projectSpaces.listTitle
+projectSpaces.editAria
+projectSpaces.deleteAria
+projectSpaces.repositories
+projectSpaces.workspaceDescription
+projectSpaces.repositoryBindingsEntry
+projectSpaces.quickActions
+projectSpaces.repositoriesPreviewDescription
+projectSpaces.demoPanelTitle
+projectSpaces.demoPanelDescription
+projectSpaces.openFullPage
+projectSpaces.allProjects
+projectSpaces.selectedProjectCount
+projectSpaces.expandProjects
+projectSpaces.collapseProjects
+projectSpaces.expandProjectApps
+projectSpaces.collapseProjectApps
+projectSpaces.pinProject
+projectSpaces.unpinProject
+projectSpaces.emptyCompact
+projectSpaces.scope
+projectSpaces.scopeOptions.related
+projectSpaces.scopeOptions.all
+projectSpaces.neverUsed</code></pre>
+<h3 id="projecttopology8">projectTopology（8）</h3>
+<pre class="text"><code>projectTopology.graphView
+projectTopology.fit
+projectTopology.generatedAt
+projectTopology.deploymentTarget
+projectTopology.unknownDeploymentTarget
+projectTopology.chart.focusRelation
+projectTopology.form.serviceBindingDescription
+projectTopology.form.sameApplicationAllowed</code></pre>
+<h3 id="registriespage2">registriesPage（2）</h3>
+<pre class="text"><code>registriesPage.selectProject
+registriesPage.listTitle</code></pre>
+<h3 id="repositories48">repositories（48）</h3>
+<pre class="text"><code>repositories.title
+repositories.description
+repositories.providerCreated
+repositories.accountCreated
+repositories.accountRefreshed
+repositories.webhookReconfigured
+repositories.providerNameRequired
+repositories.providerRequired
+repositories.usernameRequired
+repositories.providerTitle
+repositories.name
+repositories.type
+repositories.github
+repositories.gitea
+repositories.gitlab
+repositories.serviceUrl
+repositories.serviceUrlPlaceholder
+repositories.authType
+repositories.oauth
+repositories.githubApp
+repositories.clientId
+repositories.scopes
+repositories.patFallback
+repositories.createProvider
+repositories.providerNamePlaceholder
+repositories.connectAccount
+repositories.oauthConnect
+repositories.provider
+repositories.selectProvider
+repositories.username
+repositories.externalUserId
+repositories.status
+repositories.saveAccount
+repositories.refreshAccount
+repositories.saveBeforeWebhook
+repositories.reconfigureWebhook
+repositories.webhookConfigTitle
+repositories.webhookConfigDescription
+repositories.webhookConfigNoBinding
+repositories.webhookCallbackUrl
+repositories.webhookCallbackWarningTitle
+repositories.webhookCallbackMissingPublicUrl
+repositories.webhookCallbackLocalhostWarning
+repositories.webhookId
+repositories.webhookLastEvent
+repositories.webhookLastCommit
+repositories.webhookLastReceivedAt
+repositories.webhookRecentActivity</code></pre>
+<h3 id="settings3">settings（3）</h3>
+<pre class="text"><code>settings.ai.modelRequired
+settings.billingRateRulesDescription
+settings.securityDescription</code></pre>
+<h3 id="userspage1">usersPage（1）</h3>
+<pre class="text"><code>usersPage.listTitle</code></pre>
+<h3 id="顶层-key1">顶层 key（1）</h3>
+<pre class="text"><code>backToProjectWorkspace</code></pre>
+<h2 id="附录-b18-个无生产调用-web-api-方法">附录 B：18 个无生产调用 Web
+API 方法</h2>
+<pre class="text"><code>applicationsApi
+  listDeploymentTargetsPage
+  reconfigureRepositoryWebhook
+
+buildsApi
+  listProjectHookRuns
+  getProjectHookRunLogs
+  listBuildJobsPage
+  getBuildJobLogs
+
+gatewayApi
+  listGatewayRoutesPage
+
+gitApi
+  readGitFile
+  listGitContents
+
+projectsApi
+  listSystemComponents
+  createGatewayTrafficUsage
+  listProjectPins
+  updateProjectOrder
+
+registriesApi
+  getDefaultRegistry
+  listRegistryCredentials
+
+runtimeApi
+  listReleasesPage
+  execReleaseRuntimeCommand
+
+volumesApi
+  listVolumeTransfers</code></pre>
+<p>删除前必须逐符号复查，以当时的工作树为准。</p>
+<h2 id="附录-c报告交付状态">附录 C：报告交付状态</h2>
+<p>本报告只做审计，没有删除或重构任何业务文件，也没有执行提交或推送。仓库
+<code>.gitignore:39</code> 忽略
+<code>/reports/</code>，所以本文件默认是本地交付物；如需纳入版本控制，应显式调整忽略策略或单独强制添加。</p>
+    </main>
+  </div>
+
+  <button class="back-top" type="button" aria-label="回到顶部" title="回到顶部">↑</button>
+
+  <script>
+    (function () {
+      var labels = { D: "直接删除", C: "能力收敛", R: "重构", G: "数据门禁" };
+      var headings = Array.from(document.querySelectorAll("main h3"));
+      headings.forEach(function (heading) {
+        var match = heading.textContent.trim().match(/^([DCRG][0-9]{2})[.]\s*/);
+        if (!match) return;
+        var code = match[1];
+        var kind = code.charAt(0);
+        heading.dataset.kind = kind;
+        var original = heading.textContent.replace(match[0], "");
+        heading.textContent = "";
+        var badge = document.createElement("span");
+        badge.className = "kind-badge";
+        badge.textContent = code;
+        badge.title = labels[kind];
+        heading.appendChild(badge);
+        heading.appendChild(document.createTextNode(original));
+      });
+
+      var tocLinks = Array.from(document.querySelectorAll("#TOC a"));
+      var linkById = new Map(tocLinks.map(function (link) {
+        return [decodeURIComponent(link.hash.slice(1)), link];
+      }));
+      var observed = Array.from(document.querySelectorAll("main h2, main h3"));
+      if ("IntersectionObserver" in window) {
+        var observer = new IntersectionObserver(function (entries) {
+          entries.forEach(function (entry) {
+            if (!entry.isIntersecting) return;
+            tocLinks.forEach(function (link) { link.classList.remove("active"); });
+            var active = linkById.get(entry.target.id);
+            if (active) {
+              active.classList.add("active");
+              active.scrollIntoView({ block: "nearest" });
+            }
+          });
+        }, { rootMargin: "-12% 0px -76% 0px" });
+        observed.forEach(function (heading) { observer.observe(heading); });
+      }
+
+      var backTop = document.querySelector(".back-top");
+      window.addEventListener("scroll", function () {
+        backTop.classList.toggle("visible", window.scrollY > 640);
+      }, { passive: true });
+      backTop.addEventListener("click", function () {
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      });
+    }());
+  </script>
+</body>
+</html>

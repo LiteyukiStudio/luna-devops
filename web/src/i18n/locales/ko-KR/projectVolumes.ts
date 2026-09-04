@@ -50,7 +50,6 @@ const projectVolumes = {
   noTransfers: '현재 가져오기 또는 낚수하기 작업이 없습니다',
   bindingTarget: '앱 {{applicationId}} · 배포 {{targetId}}',
   bindingPath: '{{path}}에 마운트',
-  sourceApplication: '소스 앱: {{name}}',
   edit: '데이터 볼륨 수정',
   editDescription: '표시 이름을 수정할 수 있습니다. 확장만 지원하고 축소는 지원하지 않습니다.',
   updateSucceeded: '데이터 볼륨이 업데이트되었습니다',
@@ -73,7 +72,6 @@ const projectVolumes = {
   sourceExistingReferenced: '기존 PVC 참조',
   sourceExistingManaged: '기존 PVC 관리 하에 두기',
   sourceSnapshot: 'VolumeSnapshot에서 복원',
-  sourceArchiveImport: '아카이브 가져오기',
   sourceKinds: {
     blank: '빈 볼륨',
     managed: '플랫폼 관리',

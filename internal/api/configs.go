@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	transportapi "github.com/LiteyukiStudio/devops/internal/api/transport"
 	"net/http"
 	"strconv"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/LiteyukiStudio/devops/internal/aitool"
+	"github.com/LiteyukiStudio/devops/internal/api/aiapi"
 	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/model"
@@ -23,13 +25,11 @@ import (
 )
 
 type configDefinition struct {
-	Key         string   `json:"key"`
-	Label       string   `json:"-"`
-	Description string   `json:"-"`
-	Type        string   `json:"type"`
-	Public      bool     `json:"public"`
-	Default     string   `json:"default"`
-	Options     []string `json:"options,omitempty"`
+	Key     string   `json:"key"`
+	Type    string   `json:"type"`
+	Public  bool     `json:"public"`
+	Default string   `json:"default"`
+	Options []string `json:"options,omitempty"`
 }
 
 type configDefinitionResponse struct {
@@ -44,282 +44,199 @@ type configDefinitionResponse struct {
 
 var configDefinitions = []configDefinition{
 	{
-		Key:         aiAssistantEnabledConfigKey,
-		Label:       "启用内嵌 AI 助手",
-		Description: "部署级 AI 功能可用时，允许访问范围内的已登录用户使用内嵌助手。",
-		Type:        "boolean",
-		Public:      false,
-		Default:     "false",
+		Key:     aiapi.AssistantEnabledConfigKey,
+		Type:    "boolean",
+		Public:  false,
+		Default: "false",
 	},
-	{Key: "ai.provider.base_url", Label: "AI API 地址", Type: "string", Default: ""},
-	{Key: "ai.provider.api_key", Label: "AI API Key", Type: "secret", Default: ""},
+	{Key: "ai.provider.base_url", Type: "string", Default: ""},
+	{Key: "ai.provider.api_key", Type: "secret", Default: ""},
 	{
-		Key:         "ai.provider.compatibility",
-		Label:       "Provider 兼容类型",
-		Description: "选择 Agent 使用的请求与用量适配器；auto 仅对官方 DeepSeek 地址自动识别，网关地址应显式选择。",
-		Type:        "select",
-		Default:     "auto",
-		Options:     []string{"auto", "openai", "deepseek"},
+		Key:     "ai.provider.compatibility",
+		Type:    "select",
+		Default: "auto",
+		Options: []string{"auto", "openai", "deepseek"},
 	},
 	{
-		Key:         "ai.provider.prompt_cache_key_mode",
-		Label:       "Prompt 缓存键",
-		Description: "控制是否为会话内助手请求发送匿名 prompt_cache_key；auto 仅向 OpenAI 官方地址发送。",
-		Type:        "select",
-		Default:     "auto",
-		Options:     []string{"auto", "enabled", "disabled"},
+		Key:     "ai.provider.prompt_cache_key_mode",
+		Type:    "select",
+		Default: "auto",
+		Options: []string{"auto", "enabled", "disabled"},
 	},
 	{
-		Key:         "ai.provider.channel_affinity_enabled",
-		Label:       "渠道亲和性",
-		Description: "启用后，Agent 为会话内模型请求发送匿名亲和键；关闭后不发送，默认启用。",
-		Type:        "boolean",
-		Default:     "true",
+		Key:     "ai.provider.channel_affinity_enabled",
+		Type:    "boolean",
+		Default: "true",
 	},
-	{Key: "ai.web.proxy_enabled", Label: "AI 外网工具代理池", Type: "boolean", Default: "false"},
-	{Key: "ai.web.proxy_pool", Label: "AI 外网工具代理地址", Type: "secret", Default: ""},
-	{Key: "ai.runtime.provider_timeout_seconds", Label: "模型请求超时", Type: "number", Default: "300"},
-	{Key: "ai.runtime.max_request_retries", Label: "瞬时故障重试次数", Type: "number", Default: "5"},
-	{Key: "ai.runtime.run_timeout_seconds", Label: "单次 Run 超时", Type: "number", Default: "3600"},
-	{Key: "ai.runtime.agent_concurrent_runs", Label: "Agent 实例并发 Run", Type: "number", Default: "10"},
-	{Key: "ai.observability.enabled", Label: "启用 Agent 可观测", Type: "boolean", Default: "false"},
-	{Key: "ai.observability.prometheus_url", Label: "Prometheus 查询地址", Type: "string", Default: ""},
-	{Key: "ai.observability.prometheus_token", Label: "Prometheus 访问令牌", Type: "secret", Default: ""},
-	{Key: "ai.observability.loki_url", Label: "Loki 查询地址", Type: "string", Default: ""},
-	{Key: "ai.observability.loki_tenant_id", Label: "Loki Tenant ID", Type: "string", Default: ""},
-	{Key: "ai.observability.loki_token", Label: "Loki 访问令牌", Type: "secret", Default: ""},
-	{Key: "ai.observability.tempo_url", Label: "Tempo 查询地址", Type: "string", Default: ""},
-	{Key: "ai.observability.tempo_tenant_id", Label: "Tempo Tenant ID", Type: "string", Default: ""},
-	{Key: "ai.observability.tempo_token", Label: "Tempo 访问令牌", Type: "secret", Default: ""},
-	{Key: "ai.access.mode", Label: "AI 访问范围", Type: "select", Default: "all_authenticated", Options: []string{"all_authenticated", "admins"}},
-	{Key: "ai.quota.user_concurrent_runs", Label: "用户并发 Run", Type: "number", Default: "10"},
+	{Key: "ai.web.proxy_enabled", Type: "boolean", Default: "false"},
+	{Key: "ai.web.proxy_pool", Type: "secret", Default: ""},
+	{Key: "ai.runtime.provider_timeout_seconds", Type: "number", Default: "300"},
+	{Key: "ai.runtime.max_request_retries", Type: "number", Default: "5"},
+	{Key: "ai.runtime.run_timeout_seconds", Type: "number", Default: "3600"},
+	{Key: "ai.runtime.agent_concurrent_runs", Type: "number", Default: "10"},
+	{Key: "ai.observability.enabled", Type: "boolean", Default: "false"},
+	{Key: "ai.observability.prometheus_url", Type: "string", Default: ""},
+	{Key: "ai.observability.prometheus_token", Type: "secret", Default: ""},
+	{Key: "ai.observability.loki_url", Type: "string", Default: ""},
+	{Key: "ai.observability.loki_tenant_id", Type: "string", Default: ""},
+	{Key: "ai.observability.loki_token", Type: "secret", Default: ""},
+	{Key: "ai.observability.tempo_url", Type: "string", Default: ""},
+	{Key: "ai.observability.tempo_tenant_id", Type: "string", Default: ""},
+	{Key: "ai.observability.tempo_token", Type: "secret", Default: ""},
+	{Key: "ai.access.mode", Type: "select", Default: "all_authenticated", Options: []string{"all_authenticated", "admins"}},
+	{Key: "ai.quota.user_concurrent_runs", Type: "number", Default: "10"},
 	{
-		Key:         "site.title",
-		Label:       "网站标题",
-		Description: "浏览器标题和控制台品牌名称。",
-		Type:        "string",
-		Public:      true,
-		Default:     "Luna DevOps",
+		Key:     "site.title",
+		Type:    "string",
+		Public:  true,
+		Default: "Luna DevOps",
 	},
 	{
-		Key:         "site.logoUrl",
-		Label:       "Logo 地址",
-		Description: "控制台左上角 Logo 图片地址，留空时使用默认图标。",
-		Type:        "string",
-		Public:      true,
-		Default:     "",
+		Key:     "site.logoUrl",
+		Type:    "string",
+		Public:  true,
+		Default: "",
 	},
 	{
-		Key:         "site.faviconUrl",
-		Label:       "Favicon 地址",
-		Description: "浏览器标签页图标地址，留空时使用默认 favicon。",
-		Type:        "string",
-		Public:      true,
-		Default:     "",
+		Key:     "site.faviconUrl",
+		Type:    "string",
+		Public:  true,
+		Default: "",
 	},
 	{
-		Key:         "site.loginSubtitle",
-		Label:       "登录页副标题",
-		Description: "登录页品牌下方的短说明。",
-		Type:        "string",
-		Public:      true,
-		Default:     "使用本地账号登录控制台",
+		Key:     "site.loginSubtitle",
+		Type:    "string",
+		Public:  true,
+		Default: "使用本地账号登录控制台",
 	},
 	{
-		Key:         siteBrandColorPresetKey,
-		Label:       "默认品牌主题色",
-		Description: "控制台按钮、链接、选中态和焦点环使用的默认主题色。没有个人主题色偏好的用户会持续跟随此设置。",
-		Type:        "select",
-		Public:      true,
-		Default:     defaultBrandColorPreset,
-		Options:     brandColorPresetOptions,
+		Key:     siteBrandColorPresetKey,
+		Type:    "select",
+		Public:  true,
+		Default: defaultBrandColorPreset,
+		Options: brandColorPresetOptions,
 	},
 	{
-		Key:         siteMinimalModeDefaultKey,
-		Label:       "默认启用简约模式",
-		Description: "启用后，未设置个人界面风格的用户默认使用中性画布；用户可以在个人资料中覆盖。",
-		Type:        "boolean",
-		Public:      true,
-		Default:     "false",
+		Key:     siteMinimalModeDefaultKey,
+		Type:    "boolean",
+		Public:  true,
+		Default: "false",
 	},
 	{
-		Key:         "site.operationsDashboardUrl",
-		Label:       "运营面板地址",
-		Description: "用于平台管理员查看运营大盘的 Grafana dashboard 或 panel iframe 地址。留空时不展示运营面板内容。",
-		Type:        "string",
-		Public:      false,
-		Default:     "",
+		Key:     "site.operationsDashboardUrl",
+		Type:    "string",
+		Public:  false,
+		Default: "",
 	},
 	{
-		Key:         "security.egress.domainAllowList",
-		Label:       "SSRF 域名特许白名单",
-		Description: "每行一个域名或通配符域名。命中后直接允许该域名，适合本地 FakeIP、内网镜像站等明确可信目标。",
-		Type:        "textarea",
-		Public:      false,
-		Default:     "",
+		Key:     "security.egress.domainAllowList",
+		Type:    "textarea",
+		Public:  false,
+		Default: "",
 	},
 	{
-		Key:         "security.egress.domainBlockList",
-		Label:       "SSRF 域名黑名单",
-		Description: "每行一个域名或通配符域名。命中后直接拒绝访问。",
-		Type:        "textarea",
-		Public:      false,
-		Default:     "",
+		Key:     "security.egress.domainBlockList",
+		Type:    "textarea",
+		Public:  false,
+		Default: "",
 	},
 	{
-		Key:         "security.egress.ipAllowList",
-		Label:       "SSRF IP 白名单",
-		Description: "每行一个 IP 或 CIDR。用于允许直连或解析结果命中的私网/保留地址。",
-		Type:        "textarea",
-		Public:      false,
-		Default:     "",
+		Key:     "security.egress.ipAllowList",
+		Type:    "textarea",
+		Public:  false,
+		Default: "",
 	},
 	{
-		Key:         "security.egress.ipBlockList",
-		Label:       "SSRF IP 黑名单",
-		Description: "每行一个 IP 或 CIDR。用于拦截直连 IP 或非白名单域名的解析结果；域名白名单命中时不再二次检查 IP 黑名单。",
-		Type:        "textarea",
-		Public:      false,
-		Default:     security.ReservedIPBlockListText(),
+		Key:     "security.egress.ipBlockList",
+		Type:    "textarea",
+		Public:  false,
+		Default: security.ReservedIPBlockListText(),
 	},
 	{
-		Key:         "security.egress.allowedPorts",
-		Label:       "SSRF 允许端口",
-		Description: "可选。留空表示不限制端口；填写后每行一个端口，只允许这些端口。",
-		Type:        "textarea",
-		Public:      false,
-		Default:     "",
+		Key:     "security.egress.allowedPorts",
+		Type:    "textarea",
+		Public:  false,
+		Default: "",
 	},
 	{
-		Key:         "retention.platformEventsDays",
-		Label:       "平台事件保留天数",
-		Description: "平台事件明细的保留天数，0 表示不自动清理。",
-		Type:        "number",
-		Public:      false,
-		Default:     "90",
+		Key:     "retention.platformEventsDays",
+		Type:    "number",
+		Public:  false,
+		Default: "90",
 	},
 	{
-		Key:         "retention.notificationDeliveriesDays",
-		Label:       "通知投递记录保留天数",
-		Description: "通知投递记录的保留天数，0 表示不自动清理。",
-		Type:        "number",
-		Public:      false,
-		Default:     "90",
+		Key:     "retention.notificationDeliveriesDays",
+		Type:    "number",
+		Public:  false,
+		Default: "90",
 	},
 	{
-		Key:         "retention.buildLogsDays",
-		Label:       "构建日志保留天数",
-		Description: "构建日志内容的保留天数，0 表示不自动清理。",
-		Type:        "number",
-		Public:      false,
-		Default:     "30",
+		Key:     "retention.buildLogsDays",
+		Type:    "number",
+		Public:  false,
+		Default: "30",
 	},
 	{
-		Key:         "retention.releaseLogsDays",
-		Label:       "发布日志保留天数",
-		Description: "发布日志内容的保留天数，0 表示不自动清理。",
-		Type:        "number",
-		Public:      false,
-		Default:     "90",
+		Key:     "retention.releaseLogsDays",
+		Type:    "number",
+		Public:  false,
+		Default: "90",
 	},
 	{
-		Key:         "retention.hookRunLogsDays",
-		Label:       "Hook 运行日志保留天数",
-		Description: "Hook 运行日志内容的保留天数，0 表示不自动清理。",
-		Type:        "number",
-		Public:      false,
-		Default:     "90",
+		Key:     "retention.hookRunLogsDays",
+		Type:    "number",
+		Public:  false,
+		Default: "90",
 	},
 	{
-		Key:         "retention.expiredAuthDataDays",
-		Label:       "过期认证数据保留天数",
-		Description: "过期认证会话与临时数据的保留天数，0 表示不自动清理。",
-		Type:        "number",
-		Public:      false,
-		Default:     "30",
+		Key:     "retention.expiredAuthDataDays",
+		Type:    "number",
+		Public:  false,
+		Default: "30",
 	},
 	{
-		Key:         "billing.creditsDisplayName",
-		Label:       "Credits 展示名称",
-		Description: "控制台展示平台内部 credits 时使用的名称。底层仍统一按 credits 存储和结算。",
-		Type:        "string",
-		Public:      true,
-		Default:     "Credits",
+		Key:     "billing.creditsDisplayName",
+		Type:    "string",
+		Public:  true,
+		Default: "Credits",
 	},
 	{
-		Key:         "billing.fiatCurrencyUnit",
-		Label:       "现实货币单位",
-		Description: "平台管理员在账单概览中查看 credits 折算金额时使用的现实货币单位，例如 CNY、USD 或 元。",
-		Type:        "string",
-		Public:      true,
-		Default:     "CNY",
+		Key:     "billing.fiatCurrencyUnit",
+		Type:    "string",
+		Public:  true,
+		Default: "CNY",
 	},
 	{
-		Key:         "billing.creditsPerFiatUnit",
-		Label:       "每 1 现实货币对应 Credits",
-		Description: "用于管理员账单概览展示换算金额。例：1000 表示 1 个现实货币单位可兑换 1000 credits。",
-		Type:        "string",
-		Public:      true,
-		Default:     "1000",
+		Key:     "billing.creditsPerFiatUnit",
+		Type:    "string",
+		Public:  true,
+		Default: "1000",
 	},
 	{
-		Key:         "billing.freeQuotaCredits",
-		Label:       "默认免费额度",
-		Description: "新用户钱包可获得的默认 credits 额度。当前用于后续充值与额度策略，已创建用户不会自动补发。",
-		Type:        "string",
-		Public:      false,
-		Default:     "0",
+		Key:     "billing.lowBalanceThresholdCredits",
+		Type:    "string",
+		Public:  false,
+		Default: "100",
 	},
 	{
-		Key:         "billing.lowBalanceThresholdCredits",
-		Label:       "低余额提醒阈值",
-		Description: "计费归属人余额低于该 credits 数值时，后续可用于展示提醒或触发通知。",
-		Type:        "string",
-		Public:      false,
-		Default:     "100",
+		Key:     "billing.blockNewBuildsWhenInsufficient",
+		Type:    "select",
+		Public:  false,
+		Default: "false",
+		Options: []string{"true", "false"},
 	},
 	{
-		Key:         "billing.overdueGracePeriodHours",
-		Label:       "欠费宽限期",
-		Description: "计费归属人余额不足后允许继续运行的小时数。限制策略启用后会使用该值。",
-		Type:        "string",
-		Public:      false,
-		Default:     "72",
+		Key:     "billing.blockDeployChangesWhenInsufficient",
+		Type:    "select",
+		Public:  false,
+		Default: "false",
+		Options: []string{"true", "false"},
 	},
 	{
-		Key:         "billing.allowNegativeBalance",
-		Label:       "允许欠费余额",
-		Description: "是否允许账本扣到负余额。关闭后，后续限制策略会阻止新的付费操作。",
-		Type:        "select",
-		Public:      false,
-		Default:     "true",
-		Options:     []string{"true", "false"},
-	},
-	{
-		Key:         "billing.blockNewBuildsWhenInsufficient",
-		Label:       "余额不足阻止新构建",
-		Description: "开启后，计费归属人余额不足时不再接受新的构建任务。已经开始的任务仍会完成结算。",
-		Type:        "select",
-		Public:      false,
-		Default:     "false",
-		Options:     []string{"true", "false"},
-	},
-	{
-		Key:         "billing.blockDeployChangesWhenInsufficient",
-		Label:       "余额不足阻止部署变更",
-		Description: "开启后，计费归属人余额不足时会阻止新发布、扩容和新增数据卷等付费变更。",
-		Type:        "select",
-		Public:      false,
-		Default:     "false",
-		Options:     []string{"true", "false"},
-	},
-	{
-		Key:         volume.ProjectManagedCapacityLimitConfigKey,
-		Label:       "项目空间托管数据卷容量上限（GiB）",
-		Description: "每个项目空间可预留的托管数据卷总容量；0 表示不限制。已存在的超额卷不会被截断，但新增和扩容会被拒绝。",
-		Type:        "number",
-		Public:      false,
-		Default:     "0",
+		Key:     volume.ProjectManagedCapacityLimitConfigKey,
+		Type:    "number",
+		Public:  false,
+		Default: "0",
 	},
 }
 
@@ -378,7 +295,7 @@ func (c *configCache) set(key, value string) {
 
 func (h *Handlers) GetPublicConfigs(ctx *gin.Context) {
 	var input configKeysInput
-	if !bindJSON(ctx, &input) {
+	if !transportapi.BindJSON(ctx, &input) {
 		return
 	}
 	ctx.JSON(http.StatusOK, h.configs.get(publicConfigKeys(input.Keys)))
@@ -390,7 +307,7 @@ func (h *Handlers) GetConfigs(ctx *gin.Context) {
 		return
 	}
 	if user.Role != authz.PlatformRoleAdmin {
-		writeErrorKey(ctx, http.StatusForbidden, user.Language, "config.admin.required")
+		transportapi.WriteErrorKey(ctx, http.StatusForbidden, user.Language, "config.admin.required")
 		return
 	}
 
@@ -424,16 +341,16 @@ func (h *Handlers) UpdateConfigs(ctx *gin.Context) {
 		return
 	}
 	if user.Role != authz.PlatformRoleAdmin {
-		writeErrorKey(ctx, http.StatusForbidden, user.Language, "config.admin.required")
+		transportapi.WriteErrorKey(ctx, http.StatusForbidden, user.Language, "config.admin.required")
 		return
 	}
 
 	var input updateConfigsInput
-	if !bindJSON(ctx, &input) {
+	if !transportapi.BindJSON(ctx, &input) {
 		return
 	}
-	if err := validateAIConfigInputTypes(input.Values); err != nil {
-		writeErrorCode(ctx, http.StatusBadRequest, "ai.config_invalid", err.Error())
+	if err := aiapi.ValidateAIConfigInputTypes(input.Values, aiConfigDefinition); err != nil {
+		transportapi.WriteErrorCode(ctx, http.StatusBadRequest, "ai.config_invalid", err.Error())
 		return
 	}
 	apiKeyInput := ""
@@ -451,7 +368,7 @@ func (h *Handlers) UpdateConfigs(ctx *gin.Context) {
 		delete(input.Values, "ai.web.proxy_pool")
 		if proxyPoolInput != "" {
 			if _, err := aitool.ParseWebProxyPool(splitProxyPool(proxyPoolInput)); err != nil {
-				writeErrorCode(ctx, http.StatusBadRequest, "ai.config_invalid", "ai.web.proxy_pool is invalid")
+				transportapi.WriteErrorCode(ctx, http.StatusBadRequest, "ai.config_invalid", "ai.web.proxy_pool is invalid")
 				return
 			}
 		}
@@ -471,7 +388,7 @@ func (h *Handlers) UpdateConfigs(ctx *gin.Context) {
 	}
 	values, err := validateConfigValues(input.Values)
 	if err != nil {
-		writeError(ctx, http.StatusBadRequest, err.Error())
+		transportapi.WriteError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
 	if proxyPoolInput != "" {
@@ -482,14 +399,14 @@ func (h *Handlers) UpdateConfigs(ctx *gin.Context) {
 			values[key] = "true"
 		}
 	}
-	if err := h.validateAIConfigValues(values); err != nil {
-		writeErrorCode(ctx, http.StatusBadRequest, "ai.config_invalid", err.Error())
+	if err := h.domains.ai.ValidateAIConfigValues(values); err != nil {
+		transportapi.WriteErrorCode(ctx, http.StatusBadRequest, "ai.config_invalid", err.Error())
 		return
 	}
 	if apiKeyInput != "" {
 		ref := h.secrets.StoreContext(ctx.Request.Context(), apiKeyInput, user.ID, "ai_provider:api_key")
 		if ref == "" {
-			writeErrorCode(ctx, http.StatusInternalServerError, "ai.secret_store_failed", "AI Provider API key could not be stored")
+			transportapi.WriteErrorCode(ctx, http.StatusInternalServerError, "ai.secret_store_failed", "AI Provider API key could not be stored")
 			return
 		}
 		values["ai.provider.api_key"] = ref
@@ -497,7 +414,7 @@ func (h *Handlers) UpdateConfigs(ctx *gin.Context) {
 	if proxyPoolInput != "" {
 		ref := h.secrets.StoreContext(ctx.Request.Context(), proxyPoolInput, user.ID, "ai_web:proxy_pool")
 		if ref == "" {
-			writeErrorCode(ctx, http.StatusInternalServerError, "ai.secret_store_failed", "AI web proxy pool could not be stored")
+			transportapi.WriteErrorCode(ctx, http.StatusInternalServerError, "ai.secret_store_failed", "AI web proxy pool could not be stored")
 			return
 		}
 		values["ai.web.proxy_pool"] = ref
@@ -508,12 +425,12 @@ func (h *Handlers) UpdateConfigs(ctx *gin.Context) {
 		}
 		ref := h.secrets.StoreContext(ctx.Request.Context(), value, user.ID, strings.ReplaceAll(key, ".", ":"))
 		if ref == "" {
-			writeErrorCode(ctx, http.StatusInternalServerError, "ai.secret_store_failed", "Agent observability credential could not be stored")
+			transportapi.WriteErrorCode(ctx, http.StatusInternalServerError, "ai.secret_store_failed", "Agent observability credential could not be stored")
 			return
 		}
 		values[key] = ref
 	}
-	aiSecurityChanged := containsAIConfig(values)
+	aiSecurityChanged := aiapi.ContainsAIConfig(values)
 
 	err = h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
 		if _, err := lockActiveUserRole(tx, user.ID, authz.PlatformRoleAdmin); err != nil {
@@ -531,7 +448,7 @@ func (h *Handlers) UpdateConfigs(ctx *gin.Context) {
 		return nil
 	})
 	if err != nil {
-		writeErrorCode(ctx, http.StatusInternalServerError, "config.update_failed", "configuration update failed")
+		transportapi.WriteErrorCode(ctx, http.StatusInternalServerError, "config.update_failed", "configuration update failed")
 		return
 	}
 	h.configs.reload(h.dbFor(ctx))

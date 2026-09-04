@@ -33,9 +33,7 @@ const root = {
   create: '建立',
   edit: '編輯',
   delete: '刪除',
-  remove: '移除',
   backToProjectSpaces: '返回專案空間',
-  backToProjectWorkspace: '返回專案空間工作臺',
   backToApps: '返回應用列表',
 }
 

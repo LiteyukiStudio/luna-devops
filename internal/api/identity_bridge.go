@@ -8,7 +8,6 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/notification"
 	"github.com/LiteyukiStudio/devops/internal/redisconfig"
-	"github.com/LiteyukiStudio/devops/internal/secret"
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
 	"github.com/shopspring/decimal"
@@ -137,21 +136,15 @@ func newOAuthStateStoreWithRedis(options redisconfig.Options) oauthStateStore {
 }
 
 type identityHost struct {
-	handlers *Handlers
-}
-
-func (host identityHost) DBFor(ctx *gin.Context) *gorm.DB { return host.handlers.dbFor(ctx) }
-
-func (host identityHost) DBWithContext(ctx context.Context) *gorm.DB {
-	return host.handlers.dbWithContext(ctx)
+	domainHost
 }
 
 func (host identityHost) CurrentAIPlatformUser(ctx *gin.Context) (model.User, bool) {
-	return host.handlers.currentAIPlatformUser(ctx)
+	return host.handlers.domains.ai.CurrentAIPlatformUser(ctx)
 }
 
 func (host identityHost) CurrentAIPlatformSession(ctx *gin.Context) (string, string, bool) {
-	return host.handlers.currentAIPlatformSession(ctx)
+	return host.handlers.domains.ai.AIPlatformSession(ctx.Request.Context())
 }
 
 func (host identityHost) ExternalBaseURL(ctx *gin.Context) string {
@@ -170,10 +163,6 @@ func (host identityHost) NormalizeUserInterfaceStyle(value string) (string, bool
 	return normalizeUserInterfaceStyle(value)
 }
 
-func (host identityHost) Mode() string { return host.handlers.mode }
-
-func (host identityHost) PublicBaseURL() string { return host.handlers.config.PublicBaseURL }
-
 func (host identityHost) TrustedProxyCIDRs() []string {
 	return host.handlers.config.TrustedProxyCIDRs
 }
@@ -189,124 +178,20 @@ func (host identityHost) OAuthStateStore() identityapi.OAuthStateStore {
 	return host.handlers.oauthStates
 }
 
-func (host identityHost) SecretStore() secret.Store { return host.handlers.secrets }
-
-func (h *Handlers) identityAPI() *identityapi.Handler {
-	return identityapi.New(identityHost{handlers: h})
-}
-
-func (h *Handlers) ListAccessTokens(ctx *gin.Context) { h.identityAPI().ListAccessTokens(ctx) }
-func (h *Handlers) ListAccessTokenScopes(ctx *gin.Context) {
-	h.identityAPI().ListAccessTokenScopes(ctx)
-}
-func (h *Handlers) CreateAccessToken(ctx *gin.Context) { h.identityAPI().CreateAccessToken(ctx) }
-func (h *Handlers) RevokeAccessToken(ctx *gin.Context) { h.identityAPI().RevokeAccessToken(ctx) }
-func (h *Handlers) GetAuthAdmissionPolicy(ctx *gin.Context) {
-	h.identityAPI().GetAuthAdmissionPolicy(ctx)
-}
-func (h *Handlers) UpdateAuthAdmissionPolicy(ctx *gin.Context) {
-	h.identityAPI().UpdateAuthAdmissionPolicy(ctx)
-}
-func (h *Handlers) ListAuthProviders(ctx *gin.Context)  { h.identityAPI().ListAuthProviders(ctx) }
-func (h *Handlers) GetOIDCCallbackURL(ctx *gin.Context) { h.identityAPI().GetOIDCCallbackURL(ctx) }
-func (h *Handlers) CreateAuthProvider(ctx *gin.Context) { h.identityAPI().CreateAuthProvider(ctx) }
-func (h *Handlers) UpdateAuthProvider(ctx *gin.Context) { h.identityAPI().UpdateAuthProvider(ctx) }
-func (h *Handlers) ListMyExternalIdentities(ctx *gin.Context) {
-	h.identityAPI().ListMyExternalIdentities(ctx)
-}
-func (h *Handlers) UnbindMyExternalIdentity(ctx *gin.Context) {
-	h.identityAPI().UnbindMyExternalIdentity(ctx)
-}
-func (h *Handlers) GetAuthRegistrationStatus(ctx *gin.Context) {
-	h.identityAPI().GetAuthRegistrationStatus(ctx)
-}
-func (h *Handlers) GetAuthRegistrationSettings(ctx *gin.Context) {
-	h.identityAPI().GetAuthRegistrationSettings(ctx)
-}
-func (h *Handlers) UpdateAuthRegistrationSettings(ctx *gin.Context) {
-	h.identityAPI().UpdateAuthRegistrationSettings(ctx)
-}
-func (h *Handlers) RequestEmailRegistrationCode(ctx *gin.Context) {
-	h.identityAPI().RequestEmailRegistrationCode(ctx)
-}
-func (h *Handlers) CompleteEmailRegistration(ctx *gin.Context) {
-	h.identityAPI().CompleteEmailRegistration(ctx)
-}
-func (h *Handlers) UpdateMyPassword(ctx *gin.Context) { h.identityAPI().UpdateMyPassword(ctx) }
-func (h *Handlers) Login(ctx *gin.Context)            { h.identityAPI().Login(ctx) }
-func (h *Handlers) ResumeLogin(ctx *gin.Context)      { h.identityAPI().ResumeLogin(ctx) }
-func (h *Handlers) Logout(ctx *gin.Context)           { h.identityAPI().Logout(ctx) }
-func (h *Handlers) GetCurrentUser(ctx *gin.Context)   { h.identityAPI().GetCurrentUser(ctx) }
-func (h *Handlers) UpdateCurrentUser(ctx *gin.Context) {
-	h.identityAPI().UpdateCurrentUser(ctx)
-}
-func (h *Handlers) ListUsers(ctx *gin.Context)  { h.identityAPI().ListUsers(ctx) }
-func (h *Handlers) CreateUser(ctx *gin.Context) { h.identityAPI().CreateUser(ctx) }
-func (h *Handlers) UpdateUser(ctx *gin.Context) { h.identityAPI().UpdateUser(ctx) }
-func (h *Handlers) StartOIDC(ctx *gin.Context)  { h.identityAPI().StartOIDC(ctx) }
-func (h *Handlers) CompleteOIDC(ctx *gin.Context) {
-	h.identityAPI().CompleteOIDC(ctx)
-}
-func (h *Handlers) ListOAuthApplications(ctx *gin.Context) {
-	h.identityAPI().ListOAuthApplications(ctx)
-}
-func (h *Handlers) CreateOAuthApplication(ctx *gin.Context) {
-	h.identityAPI().CreateOAuthApplication(ctx)
-}
-func (h *Handlers) UpdateOAuthApplication(ctx *gin.Context) {
-	h.identityAPI().UpdateOAuthApplication(ctx)
-}
-func (h *Handlers) RotateOAuthApplicationSecret(ctx *gin.Context) {
-	h.identityAPI().RotateOAuthApplicationSecret(ctx)
-}
-func (h *Handlers) DeleteOAuthApplication(ctx *gin.Context) {
-	h.identityAPI().DeleteOAuthApplication(ctx)
-}
-func (h *Handlers) ListMyOAuthGrants(ctx *gin.Context) {
-	h.identityAPI().ListMyOAuthGrants(ctx)
-}
-func (h *Handlers) RevokeMyOAuthGrant(ctx *gin.Context) {
-	h.identityAPI().RevokeMyOAuthGrant(ctx)
-}
-func (h *Handlers) GetOAuthAuthorizationRequest(ctx *gin.Context) {
-	h.identityAPI().GetOAuthAuthorizationRequest(ctx)
-}
-func (h *Handlers) DecideOAuthAuthorization(ctx *gin.Context) {
-	h.identityAPI().DecideOAuthAuthorization(ctx)
-}
-func (h *Handlers) ExchangeOAuthToken(ctx *gin.Context) { h.identityAPI().ExchangeOAuthToken(ctx) }
-func (h *Handlers) RevokeOAuthToken(ctx *gin.Context)   { h.identityAPI().RevokeOAuthToken(ctx) }
-func (h *Handlers) GetOAuthAuthorizationServerMetadata(ctx *gin.Context) {
-	h.identityAPI().GetOAuthAuthorizationServerMetadata(ctx)
-}
-func (h *Handlers) StartOAuthDeviceAuthorization(ctx *gin.Context) {
-	h.identityAPI().StartOAuthDeviceAuthorization(ctx)
-}
-func (h *Handlers) GetOAuthDeviceVerification(ctx *gin.Context) {
-	h.identityAPI().GetOAuthDeviceVerification(ctx)
-}
-func (h *Handlers) DecideOAuthDeviceVerification(ctx *gin.Context) {
-	h.identityAPI().DecideOAuthDeviceVerification(ctx)
-}
-
 func (h *Handlers) currentUser(ctx *gin.Context) (model.User, bool) {
-	return h.identityAPI().CurrentUser(ctx)
+	return h.domains.identity.CurrentUser(ctx)
 }
 
 func currentUserFromContext(ctx *gin.Context) (model.User, bool) {
 	return identityapi.CurrentUserFromContext(ctx)
 }
 
-func (h *Handlers) platformAdminMiddleware() gin.HandlerFunc {
-	return h.identityAPI().PlatformAdminMiddleware()
-}
-
 func (h *Handlers) currentSessionFromCookie(ctx *gin.Context) (model.UserSession, bool) {
-	return h.identityAPI().CurrentSessionFromCookie(ctx)
+	return h.domains.identity.CurrentSessionFromCookie(ctx)
 }
 
 func (h *Handlers) currentUserFromAccessToken(ctx *gin.Context) (model.User, bool) {
-	return h.identityAPI().CurrentUserFromAccessToken(ctx)
+	return h.domains.identity.CurrentUserFromAccessToken(ctx)
 }
 
 func currentAccessTokenFromContext(ctx *gin.Context) (model.AccessToken, bool) {
@@ -322,15 +207,15 @@ func accessTokenAllows(scopeText, required string) bool {
 }
 
 func (h *Handlers) requirePlatformAdmin(ctx *gin.Context) bool {
-	return h.identityAPI().RequirePlatformAdmin(ctx)
+	return h.domains.identity.RequirePlatformAdmin(ctx)
 }
 
 func (h *Handlers) allowLoginAccountAttempt(ctx *gin.Context, account string, limit int, window time.Duration) bool {
-	return h.identityAPI().AllowLoginAccountAttempt(ctx, account, limit, window)
+	return h.domains.identity.AllowLoginAccountAttempt(ctx, account, limit, window)
 }
 
 func (h *Handlers) allowOAuthClientAttempt(ctx *gin.Context, clientID string) bool {
-	return h.identityAPI().AllowOAuthClientAttempt(ctx, clientID)
+	return h.domains.identity.AllowOAuthClientAttempt(ctx, clientID)
 }
 
 func oauthClientAttemptFlowForGrantType(grantType string) oauthClientAttemptFlow {
@@ -338,19 +223,19 @@ func oauthClientAttemptFlowForGrantType(grantType string) oauthClientAttemptFlow
 }
 
 func (h *Handlers) allowOAuthTokenClientAttempt(ctx *gin.Context, clientID string, flow oauthClientAttemptFlow, credential string) bool {
-	return h.identityAPI().AllowOAuthTokenClientAttempt(ctx, clientID, flow, credential)
+	return h.domains.identity.AllowOAuthTokenClientAttempt(ctx, clientID, flow, credential)
 }
 
 func (h *Handlers) allowOAuthDeviceVerificationAttempt(ctx *gin.Context, userID string) bool {
-	return h.identityAPI().AllowOAuthDeviceVerificationAttempt(ctx, userID)
+	return h.domains.identity.AllowOAuthDeviceVerificationAttempt(ctx, userID)
 }
 
 func (h *Handlers) ensureAdmissionPolicy(ctx context.Context) (model.AuthAdmissionPolicy, error) {
-	return h.identityAPI().EnsureAdmissionPolicy(ctx)
+	return h.domains.identity.EnsureAdmissionPolicy(ctx)
 }
 
 func (h *Handlers) rotateRememberLogin(userID, plainToken string, ctx context.Context) (model.User, string, string, error) {
-	return h.identityAPI().RotateRememberLogin(userID, plainToken, ctx)
+	return h.domains.identity.RotateRememberLogin(userID, plainToken, ctx)
 }
 
 func newUserSession(userID, impersonatorID string, now time.Time) (model.UserSession, string) {
@@ -374,11 +259,11 @@ func newUserRememberTokenInFamily(userID, familyID string, expiresAt time.Time) 
 }
 
 func (h *Handlers) revokeCurrentSessionAndRememberTokens(plainToken string, ctx context.Context) (string, error) {
-	return h.identityAPI().RevokeCurrentSessionAndRememberTokens(plainToken, ctx)
+	return h.domains.identity.RevokeCurrentSessionAndRememberTokens(plainToken, ctx)
 }
 
 func (h *Handlers) cleanupExpiredRememberTokenFamilies(userID string, now time.Time, ctx context.Context) error {
-	return h.identityAPI().CleanupExpiredRememberTokenFamilies(userID, now, ctx)
+	return h.domains.identity.CleanupExpiredRememberTokenFamilies(userID, now, ctx)
 }
 
 func revokeUserAuthentication(tx *gorm.DB, userID string) error {
@@ -386,27 +271,27 @@ func revokeUserAuthentication(tx *gorm.DB, userID string) error {
 }
 
 func (h *Handlers) findOrCreateOIDCUser(provider model.AuthProvider, claims oidcIdentityClaims, ctx context.Context) (model.User, error) {
-	return h.identityAPI().FindOrCreateOIDCUser(provider, claims, ctx)
+	return h.domains.identity.FindOrCreateOIDCUser(provider, claims, ctx)
 }
 
 func (h *Handlers) resolveSecretContext(ctx context.Context, ref string) string {
-	return h.identityAPI().ResolveSecretContext(ctx, ref)
+	return h.domains.identity.ResolveSecretContext(ctx, ref)
 }
 
 func (h *Handlers) createSession(ctx *gin.Context, userID string) bool {
-	return h.identityAPI().CreateSession(ctx, userID)
+	return h.domains.identity.CreateSession(ctx, userID)
 }
 
 func (h *Handlers) createLoginCredentials(ctx *gin.Context, userID string, remember bool) bool {
-	return h.identityAPI().CreateLoginCredentials(ctx, userID, remember)
+	return h.domains.identity.CreateLoginCredentials(ctx, userID, remember)
 }
 
 func (h *Handlers) createRememberToken(ctx *gin.Context, userID string, requested ...bool) bool {
-	return h.identityAPI().CreateRememberToken(ctx, userID, requested...)
+	return h.domains.identity.CreateRememberToken(ctx, userID, requested...)
 }
 
 func (h *Handlers) auditWithContext(userID, action, resource string, success bool, message string, ctx context.Context) {
-	h.identityAPI().AuditWithContext(userID, action, resource, success, message, ctx)
+	h.domains.identity.AuditWithContext(userID, action, resource, success, message, ctx)
 }
 
 type runtimeClusterAuditMetadata = identityapi.RuntimeClusterAuditMetadata
@@ -416,7 +301,7 @@ type safeAuditMetadata interface {
 }
 
 func auditWithSafeMetadata[T safeAuditMetadata](h *Handlers, userID, action, resource string, success bool, message string, metadata T, ctx context.Context) {
-	h.identityAPI().AuditWithSafeMetadata(userID, action, resource, success, message, metadata, ctx)
+	h.domains.identity.AuditWithSafeMetadata(userID, action, resource, success, message, metadata, ctx)
 }
 
 func configBool(value string) bool { return identityapi.ConfigBool(value) }

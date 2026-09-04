@@ -1,5 +1,4 @@
 const appTemplatesPage = {
-  description: '프리셋 템플릿에서 데이터베이스, 캐시, 모니터링, 도구, 경량 협업 앱을 원클릭으로 설치합니다.',
   heroEyebrow: 'Luna DevOps 템플릿 라이브러리',
   heroTitle: '서비스를 발견하고 더 빠르게 배포 시작',
   templateCount: '사용 가능한 템플릿',
@@ -15,7 +14,6 @@ const appTemplatesPage = {
   sortOrder: '정렬 순서',
   sortDesc: '내림차순',
   sortAsc: '오름차순',
-  loading: '앱 템플릿 로드 중...',
   emptyTitle: '템플릿을 찾을 수 없습니다',
   emptyDescription: '다른 키워드를 시도하거나 관리자가 더 많은 템플릿을 추가할 때까지 기다리세요.',
   install: '설치',
@@ -50,11 +48,8 @@ const appTemplatesPage = {
   autoGeneratePlaceholder: '비워 두면 자동 생성',
   installNow: '설치 후 즉시 배포',
   installNowDescription: '비활성화하면 애플리케이션과 배포 구성만 생성되고 나중에 애플리케이션 배포 페이지에서 수동으로 릴리스할 수 있습니다.',
-  image: '이미지',
   officialWebsite: '공식 웹사이트',
   officialRepository: '공식 리포지토리',
-  port: '포트',
-  resources: '리소스',
   categories: {
     collaboration: '협업 및 콘텐츠',
     database: '데이터베이스',

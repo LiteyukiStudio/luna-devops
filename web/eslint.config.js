@@ -3,7 +3,7 @@ import antfu from '@antfu/eslint-config'
 export default antfu({
   react: true,
   typescript: true,
-  ignores: ['dist'],
+  ignores: ['dist', 'src/api/generated/**'],
 }, {
   files: ['src/**/*.{ts,tsx}'],
   rules: {

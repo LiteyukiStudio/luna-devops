@@ -41,7 +41,9 @@ func TestGetDashboardValidatesListVisibilityBeforeLoadingData(t *testing.T) {
 			ctx.Request = httptest.NewRequest(http.MethodGet, testCase.path, nil)
 			ctx.Set(currentUserContextKey, model.User{ID: "usr_dashboard", Role: testCase.role})
 
-			(&Handlers{}).GetDashboard(ctx)
+			handlers := &Handlers{}
+			handlers.domains = newDomainHandlers(handlers)
+			handlers.domains.platform.GetDashboard(ctx)
 
 			if recorder.Code != testCase.wantStatus {
 				t.Fatalf("status = %d, want %d; body = %s", recorder.Code, testCase.wantStatus, recorder.Body.String())

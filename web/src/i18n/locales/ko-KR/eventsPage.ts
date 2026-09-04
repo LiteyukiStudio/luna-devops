@@ -1,7 +1,5 @@
 const eventsPage = {
   title: '이벤트',
-  description: '빌드, 릴리스, 배포 훅, 접근 진입점, 인증서의 상태 변화를 시간순으로 확인합니다.',
-  listTitle: '이벤트 기록',
   searchPlaceholder: '이벤트, 메시지 또는 리소스 ID 검색',
   emptyTitle: '현재 범위에 이벤트가 없습니다',
   emptyDescription: '빌드, 릴리스, 배포 훅, 접근 진입점 또는 인증서 상태가 변경되면 여기에 이벤트가 표시됩니다.',
@@ -26,7 +24,6 @@ const eventsPage = {
     selectedCount: '현재 {{count}}개의 필터 조건이 선택됨',
     clearAll: '모두 지우기',
     apply: '필터 적용',
-    scope: '보기 범위',
     project: '프로젝트 스페이스',
     application: '애플리케이션',
     deploymentTarget: '배포 구성',
@@ -45,8 +42,6 @@ const eventsPage = {
     allStatuses: '모든 결과',
   },
   scopes: {
-    mine: '나와 관련됨',
-    all: '모든 이벤트',
   },
   categories: {
     build: '빌드',

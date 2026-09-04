@@ -20,7 +20,7 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
-import { buildVariableCount, buildVariableRecordToRows, buildVariableRowsToRecord, emptyKeyValueRow, secretStateToRows } from '@/lib/build-variables'
+import { buildVariableRecordToRows, buildVariableRowsToRecord, emptyKeyValueRow, secretStateToRows } from '@/lib/build-variables'
 
 interface VariableSetForm {
   name: string
@@ -119,7 +119,7 @@ export function ProjectBuildVariableSetsPage({ projectId, ref }: { projectId: st
       <DataList
         columns={[
           { key: 'name', header: t('common.name'), className: 'min-w-40 px-4 py-3 align-middle', render: item => <span className="block truncate whitespace-nowrap" title={item.name}>{item.name}</span> },
-          { key: 'variables', header: t('buildsPage.variables'), className: 'w-32 whitespace-nowrap px-4 py-3 align-middle', render: item => t('buildsPage.variableCount', { count: item.variableCount ?? buildVariableCount(item.variables) }) },
+          { key: 'variables', header: t('buildsPage.variables'), className: 'w-32 whitespace-nowrap px-4 py-3 align-middle', render: item => t('buildsPage.variableCount', { count: item.variableCount }) },
           { key: 'secrets', header: t('buildsPage.secrets'), className: 'w-32 whitespace-nowrap px-4 py-3 align-middle', render: item => t('buildsPage.secretCount', { count: Object.keys(item.secrets ?? {}).length }) },
           { key: 'enabled', header: t('common.status'), className: 'w-28 whitespace-nowrap px-4 py-3 align-middle', render: item => <StatusValueBadge value={item.enabled ? 'enabled' : 'disabled'} /> },
           { key: 'actions', header: t('common.actions'), className: 'w-[1%] whitespace-nowrap px-4 py-3 text-right align-middle', render: item => (

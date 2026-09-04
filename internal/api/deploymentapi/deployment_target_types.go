@@ -14,7 +14,6 @@ type deploymentTargetResponse struct {
 	ID                        string                               `json:"id"`
 	ProjectID                 string                               `json:"projectId"`
 	ApplicationID             string                               `json:"applicationId"`
-	EnvironmentID             string                               `json:"environmentId"`
 	Name                      string                               `json:"name"`
 	Stage                     string                               `json:"stage"`
 	KubernetesName            string                               `json:"kubernetesName"`
@@ -70,7 +69,6 @@ type deploymentTargetResponse struct {
 	TargetRepository          string                               `json:"targetRepository"`
 	TargetTag                 string                               `json:"targetTag"`
 	ImageRef                  string                               `json:"imageRef"`
-	BuildLabels               string                               `json:"buildLabels"`
 	BuildVariableSetIDs       []string                             `json:"buildVariableSetIds"`
 	BuildHooksEnabled         bool                                 `json:"buildHooksEnabled"`
 	BuildHookBindings         []model.DeploymentTargetHookBinding  `json:"buildHookBindings"`
@@ -122,7 +120,6 @@ func deploymentTargetResponseFromModel(target model.DeploymentTarget, mounts ...
 		ID:                        target.ID,
 		ProjectID:                 target.ProjectID,
 		ApplicationID:             target.ApplicationID,
-		EnvironmentID:             target.EnvironmentID,
 		Name:                      target.Name,
 		Stage:                     fallback(strings.TrimSpace(target.Stage), model.DefaultDeploymentStage),
 		KubernetesName:            strings.TrimSpace(target.KubernetesName),
@@ -178,7 +175,6 @@ func deploymentTargetResponseFromModel(target model.DeploymentTarget, mounts ...
 		TargetRepository:          target.TargetRepository,
 		TargetTag:                 target.TargetTag,
 		ImageRef:                  target.ImageRef,
-		BuildLabels:               target.BuildLabels,
 		BuildVariableSetIDs:       buildVariableSetIDs(target.BuildVariableSetIDs),
 		BuildHooksEnabled:         target.BuildHooksEnabled,
 		BuildHookBindings:         target.BuildHookBindings,
@@ -227,30 +223,8 @@ func buildArgsResponseText(raw string) string {
 	return strings.Join(lines, "\n")
 }
 
-func deploymentTargetEnvironmentProfile(target model.DeploymentTarget) model.Environment {
-	environmentID := strings.TrimSpace(target.EnvironmentID)
-	if environmentID == "" {
-		environmentID = target.ID
-	}
-	replicas := target.Replicas
-	if replicas <= 0 {
-		replicas = 1
-	}
-	return model.Environment{
-		ID:            environmentID,
-		ProjectID:     target.ProjectID,
-		Name:          firstNonEmpty(strings.TrimSpace(target.Name), strings.TrimSpace(target.Stage), target.ID),
-		Slug:          firstNonEmpty(strings.TrimSpace(target.Stage), strings.TrimSpace(target.Name), model.DefaultDeploymentStage),
-		ClusterID:     strings.TrimSpace(target.ClusterID),
-		Replicas:      replicas,
-		CPURequest:    fallback(strings.TrimSpace(target.CPURequest), "1"),
-		MemoryRequest: fallback(strings.TrimSpace(target.MemoryRequest), "1Gi"),
-	}
-}
-
 type deploymentTargetInput struct {
 	Name                         string                             `json:"name"`
-	EnvironmentID                string                             `json:"environmentId"`
 	Stage                        string                             `json:"stage"`
 	ClusterID                    string                             `json:"clusterId"`
 	Namespace                    string                             `json:"namespace"`
@@ -312,7 +286,6 @@ type deploymentTargetInput struct {
 	TargetRepository             string                             `json:"targetRepository"`
 	TargetTag                    string                             `json:"targetTag"`
 	ImageRef                     string                             `json:"imageRef"`
-	BuildLabels                  string                             `json:"buildLabels"`
 	BuildVariableSetIDs          []string                           `json:"buildVariableSetIds"`
 	BuildVariables               *map[string]string                 `json:"buildVariables"`
 	BuildSecrets                 *map[string]string                 `json:"buildSecrets"`

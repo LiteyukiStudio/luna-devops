@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	transportapi "github.com/LiteyukiStudio/devops/internal/api/transport"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -28,7 +29,7 @@ func TestListBillingRateRulesAllowsAuthenticatedUser(t *testing.T) {
 	}
 	plainSessionToken := "sess_billing_reader"
 	session := model.UserSession{
-		ID: "ses_billing_reader", UserID: user.ID, TokenHash: hashToken(plainSessionToken),
+		ID: "ses_billing_reader", UserID: user.ID, TokenHash: transportapi.HashToken(plainSessionToken),
 		ExpiresAt: time.Now().Add(time.Hour),
 	}
 	if err := db.Create(&session).Error; err != nil {
@@ -40,7 +41,9 @@ func TestListBillingRateRulesAllowsAuthenticatedUser(t *testing.T) {
 	ctx.Request = httptest.NewRequest(http.MethodGet, "/api/v1/billing/rate-rules", nil)
 	ctx.Request.AddCookie(&http.Cookie{Name: sessionCookieName, Value: plainSessionToken})
 
-	(&Handlers{db: db, mode: "production"}).ListBillingRateRules(ctx)
+	handlers := &Handlers{db: db, mode: "production"}
+	handlers.domains = newDomainHandlers(handlers)
+	handlers.domains.billing.ListBillingRateRules(ctx)
 
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body.String())
@@ -78,7 +81,9 @@ func TestUpdateBillingRateRulesKeepsAdministratorPermission(t *testing.T) {
 	)
 	ctx.Set(currentUserContextKey, model.User{ID: "usr_billing_reader", Role: authz.PlatformRoleUser, Language: "zh-CN"})
 
-	(&Handlers{mode: "production"}).UpdateBillingRateRules(ctx)
+	handlers := &Handlers{mode: "production"}
+	handlers.domains = newDomainHandlers(handlers)
+	handlers.domains.billing.UpdateBillingRateRules(ctx)
 
 	if recorder.Code != http.StatusForbidden {
 		t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body.String())

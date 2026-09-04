@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/LiteyukiStudio/devops/internal/api/applicationapi"
+	transportapi "github.com/LiteyukiStudio/devops/internal/api/transport"
 	"github.com/gin-gonic/gin"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -15,7 +17,7 @@ import (
 func TestInternalErrorCodeUsesStableRouteTemplate(t *testing.T) {
 	router := gin.New()
 	router.GET("/api/v1/projects/:projectId", func(ctx *gin.Context) {
-		if code := internalErrorCode(ctx); code != "internal_error.get_api_v1_projects_projectid" {
+		if code := transportapi.InternalErrorCode(ctx); code != "internal_error.get_api_v1_projects_projectid" {
 			t.Fatalf("code = %q", code)
 		}
 		ctx.Status(http.StatusNoContent)
@@ -31,9 +33,9 @@ func TestInternalErrorCodeUsesStableRouteTemplate(t *testing.T) {
 
 func TestErrorResponseIncludesGeneratedRequestID(t *testing.T) {
 	router := gin.New()
-	router.Use(requestIDMiddleware())
+	router.Use(transportapi.RequestIDMiddleware())
 	router.GET("/failure", func(ctx *gin.Context) {
-		writeErrorCode(ctx, http.StatusServiceUnavailable, "ai.tool_storage_unavailable", "database detail")
+		transportapi.WriteErrorCode(ctx, http.StatusServiceUnavailable, "ai.tool_storage_unavailable", "database detail")
 	})
 
 	request := httptest.NewRequest(http.MethodGet, "/failure", nil)
@@ -68,7 +70,7 @@ func TestErrorResponseIncludesGeneratedRequestID(t *testing.T) {
 func TestInternalErrorCodeFallsBackWithoutRegisteredRoute(t *testing.T) {
 	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
 	ctx.Request = httptest.NewRequest(http.MethodGet, "/unknown", nil)
-	if code := internalErrorCode(ctx); code != "internal_error" {
+	if code := transportapi.InternalErrorCode(ctx); code != "internal_error" {
 		t.Fatalf("code = %q", code)
 	}
 }
@@ -76,9 +78,9 @@ func TestInternalErrorCodeFallsBackWithoutRegisteredRoute(t *testing.T) {
 func TestWriteErrorKeyWithDetailsKeepsStableMachineReadableContext(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)
-	setRuntimeMode(ctx, "development")
+	transportapi.SetRuntimeMode(ctx, "development")
 
-	writeErrorKeyWithDetails(
+	transportapi.WriteErrorKeyWithDetails(
 		ctx,
 		http.StatusForbidden,
 		"en-US",
@@ -108,10 +110,10 @@ func TestScopeInsufficientErrorReturnsDedicatedTopLevelField(t *testing.T) {
 		t.Run(mode, func(t *testing.T) {
 			recorder := httptest.NewRecorder()
 			ctx, _ := gin.CreateTestContext(recorder)
-			setRuntimeMode(ctx, mode)
+			transportapi.SetRuntimeMode(ctx, mode)
 			ctx.Request = httptest.NewRequest(http.MethodGet, "/failure", nil)
 
-			writeScopeInsufficientError(ctx, " volume:export ")
+			transportapi.WriteScopeInsufficientError(ctx, " volume:export ")
 
 			var response map[string]any
 			if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
@@ -136,9 +138,9 @@ func TestScopeInsufficientErrorReturnsDedicatedTopLevelField(t *testing.T) {
 func TestProductionErrorResponseContainsOnlySafeFields(t *testing.T) {
 	t.Setenv("APP_ENV", "production")
 	router := gin.New()
-	router.Use(requestIDMiddleware())
+	router.Use(transportapi.RequestIDMiddleware())
 	router.GET("/failure", func(ctx *gin.Context) {
-		writeErrorCode(
+		transportapi.WriteErrorCode(
 			ctx,
 			http.StatusInternalServerError,
 			"provider.request_failed",
@@ -175,10 +177,10 @@ func TestProductionErrorResponseContainsOnlySafeFields(t *testing.T) {
 func TestDevelopmentErrorResponseKeepsDiagnosticDetail(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)
-	setRuntimeMode(ctx, "development")
+	transportapi.SetRuntimeMode(ctx, "development")
 	ctx.Request = httptest.NewRequest(http.MethodGet, "/failure", nil)
 
-	writeErrorCode(ctx, http.StatusInternalServerError, "provider.request_failed", "provider connection refused")
+	transportapi.WriteErrorCode(ctx, http.StatusInternalServerError, "provider.request_failed", "provider connection refused")
 
 	var response map[string]any
 	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
@@ -195,10 +197,10 @@ func TestDevelopmentErrorResponseKeepsDiagnosticDetail(t *testing.T) {
 func TestDevelopmentErrorResponseRedactsCredentials(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)
-	setRuntimeMode(ctx, "development")
+	transportapi.SetRuntimeMode(ctx, "development")
 	ctx.Request = httptest.NewRequest(http.MethodGet, "/failure", nil)
 
-	writeErrorCode(ctx, http.StatusInternalServerError, "provider.request_failed",
+	transportapi.WriteErrorCode(ctx, http.StatusInternalServerError, "provider.request_failed",
 		"dial tcp internal-provider.local:443: connection refused; token=developer-secret")
 
 	if strings.Contains(recorder.Body.String(), "developer-secret") ||
@@ -211,7 +213,7 @@ func TestDevelopmentErrorResponseRedactsCredentials(t *testing.T) {
 func TestProductionUnknownMiddlewareErrorUsesStableFallback(t *testing.T) {
 	t.Setenv("APP_ENV", "production")
 	router := gin.New()
-	router.Use(requestIDMiddleware(), errorResponseMiddleware())
+	router.Use(transportapi.RequestIDMiddleware(), transportapi.ErrorResponseMiddleware())
 	router.GET("/failure", func(ctx *gin.Context) {
 		_ = ctx.Error(fmt.Errorf("token=secret provider url=http://internal-provider.local"))
 	})
@@ -237,7 +239,7 @@ func TestProductionKeyDetailsAreOmitted(t *testing.T) {
 	ctx, _ := gin.CreateTestContext(recorder)
 	ctx.Request = httptest.NewRequest(http.MethodGet, "/failure", nil)
 
-	writeErrorKeyWithDetails(
+	transportapi.WriteErrorKeyWithDetails(
 		ctx,
 		http.StatusForbidden,
 		"en-US",
@@ -268,7 +270,7 @@ func TestDirectErrorMessagesAreLocalized(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.language+"/"+test.key, func(t *testing.T) {
-			if got := messageFor(test.language, test.key); got != test.want {
+			if got := transportapi.MessageFor(test.language, test.key); got != test.want {
 				t.Fatalf("messageFor(%q, %q) = %q, want %q", test.language, test.key, got, test.want)
 			}
 		})
@@ -281,13 +283,13 @@ func TestProductionTerminalDisconnectMessageIsSafe(t *testing.T) {
 	ctx.Request = httptest.NewRequest(http.MethodGet, "/terminal", nil)
 	ctx.Request.Header.Set("Accept-Language", "en-US")
 
-	message := string(terminalDisconnectedMessage(
+	message := string(transportapi.TerminalDisconnectedMessage(
 		ctx,
 		"dial tcp https://internal-provider.local: token=secret connection refused",
 	))
 
 	if !strings.Contains(message, "The terminal connection was closed.") ||
-		!strings.Contains(message, "code="+terminalDisconnectedErrorCode) ||
+		!strings.Contains(message, "code="+transportapi.TerminalDisconnectedErrorCode) ||
 		!strings.Contains(message, "requestId=req_") {
 		t.Fatalf("production terminal error omitted safe context: %q", message)
 	}
@@ -298,11 +300,11 @@ func TestProductionTerminalDisconnectMessageIsSafe(t *testing.T) {
 
 func TestDevelopmentTerminalDisconnectMessageKeepsDetail(t *testing.T) {
 	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
-	setRuntimeMode(ctx, "development")
+	transportapi.SetRuntimeMode(ctx, "development")
 	ctx.Request = httptest.NewRequest(http.MethodGet, "/terminal", nil)
 	detail := "provider connection refused"
 
-	message := string(terminalDisconnectedMessage(ctx, detail))
+	message := string(transportapi.TerminalDisconnectedMessage(ctx, detail))
 
 	if !strings.Contains(message, detail) {
 		t.Fatalf("development terminal error lost diagnostic detail: %q", message)
@@ -315,7 +317,7 @@ func TestServiceBindingConflictOmitsAffectedSourcesInProduction(t *testing.T) {
 	ctx, _ := gin.CreateTestContext(recorder)
 	ctx.Request = httptest.NewRequest(http.MethodDelete, "/service-binding-target", nil)
 
-	writeServiceBindingInUse(ctx, []serviceBindingUsage{{
+	applicationapi.WriteServiceBindingInUse(ctx, []applicationapi.ServiceBindingUsage{{
 		BindingID: "svb_1", SourceApplicationName: "private-application",
 	}})
 
@@ -334,15 +336,15 @@ func TestServiceBindingConflictOmitsAffectedSourcesInProduction(t *testing.T) {
 func TestServiceBindingConflictKeepsAffectedSourcesInDevelopment(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)
-	setRuntimeMode(ctx, "development")
+	transportapi.SetRuntimeMode(ctx, "development")
 	ctx.Request = httptest.NewRequest(http.MethodDelete, "/service-binding-target", nil)
 
-	writeServiceBindingInUse(ctx, []serviceBindingUsage{{
+	applicationapi.WriteServiceBindingInUse(ctx, []applicationapi.ServiceBindingUsage{{
 		BindingID: "svb_1", SourceApplicationName: "debug-application",
 	}})
 
 	var body struct {
-		AffectedSources []serviceBindingUsage `json:"affectedSources"`
+		AffectedSources []applicationapi.ServiceBindingUsage `json:"affectedSources"`
 	}
 	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
 		t.Fatalf("decode development conflict: %v", err)

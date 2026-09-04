@@ -28,17 +28,13 @@ type Host interface {
 	EnqueueGatewayApply(ctx context.Context, route model.GatewayRoute, actorID string) bool
 	AuditWithContext(userID, action, resource string, success bool, message string, ctx context.Context)
 	ProjectMemberActionAllowed(ctx *gin.Context, projectID, userID string, action authz.Action) (bool, bool)
-	ConfigValue(key string) string
 	SecretStore() secret.Store
 	NormalizeStage(value string) string
-	NormalizeGatewayDomainSuffixValue(value string) string
-	DecodeGatewayDomainSuffixes(raw, legacyValue, fallbackValue string) []string
 	NormalizeGatewayPublicScheme(value string) string
 	NormalizePort(value, fallbackValue int) int
 	ApplicationCanMutate(application model.Application) bool
 	RuntimeProjectNamespace(project model.Project) string
 	DeploymentTargetResourceName(target model.DeploymentTarget) string
-	DeploymentTargetEnvironmentProfile(target model.DeploymentTarget) model.Environment
 	RuntimeClusterForDeploymentTarget(ctx context.Context, target model.DeploymentTarget) (model.RuntimeCluster, error)
 }
 
@@ -101,14 +97,6 @@ func (h *Handler) normalizeStage(value string) string {
 	return h.host.NormalizeStage(value)
 }
 
-func (h *Handler) normalizeGatewayDomainSuffixValue(value string) string {
-	return h.host.NormalizeGatewayDomainSuffixValue(value)
-}
-
-func (h *Handler) decodeGatewayDomainSuffixes(raw, legacyValue, fallbackValue string) []string {
-	return h.host.DecodeGatewayDomainSuffixes(raw, legacyValue, fallbackValue)
-}
-
 func (h *Handler) normalizeGatewayPublicScheme(value string) string {
 	return h.host.NormalizeGatewayPublicScheme(value)
 }
@@ -127,10 +115,6 @@ func (h *Handler) runtimeProjectNamespace(project model.Project) string {
 
 func (h *Handler) deploymentTargetResourceName(target model.DeploymentTarget) string {
 	return h.host.DeploymentTargetResourceName(target)
-}
-
-func (h *Handler) deploymentTargetEnvironmentProfile(target model.DeploymentTarget) model.Environment {
-	return h.host.DeploymentTargetEnvironmentProfile(target)
 }
 
 type paginationParams = transportapi.PaginationParams

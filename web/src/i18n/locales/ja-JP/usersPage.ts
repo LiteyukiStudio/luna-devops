@@ -3,7 +3,6 @@ const usersPage = {
   description: 'プラットフォームユーザーと、ユーザーが使用できるログイン方法を作成・管理します。',
   createTitle: 'ユーザーを作成',
   editTitle: 'ユーザーを編集',
-  listTitle: 'ユーザー一覧',
   searchPlaceholder: 'ユーザーのメールアドレスまたは名前で検索',
   email: 'メールアドレス',
   emailHint: 'ユーザーログインと OIDC メールバインディングの主識別子です。OIDC ログイン時は空でないメールアドレスで既存ユーザーを検索してバインドします。',

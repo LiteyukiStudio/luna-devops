@@ -1,8 +1,6 @@
 const accessTokens = {
-  title: 'Access Token',
   description: 'API 트리거 빌드 또는 배포에 사용됩니다. JWT를 사용하지 않고 백엔드는 hash만 저장합니다.',
   createTitle: 'Token 생성',
-  listTitle: 'Token 목록',
   searchPlaceholder: 'Token 이름 또는 권한 범위 검색',
   name: '이름',
   scope: '권한 범위',
@@ -204,7 +202,6 @@ const accessTokens = {
   create: 'Token 생성',
   oneTime: '한 번만 표시',
   empty: 'Token이 아직 없습니다.',
-  emptyDescription: '생성된 Token은 페이지네이션 목록으로 표시됩니다. Token 평문은 생성 후 한 번만 표시됩니다.',
   createdAt: '생성 시간',
   expiresAt: '만료 시간',
   neverExpires: '만료 없음',

@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	transportapi "github.com/LiteyukiStudio/devops/internal/api/transport"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -265,6 +266,7 @@ func TestOIDCAdmissionEmailHonorsVerifiedRequirement(t *testing.T) {
 func TestGitExternalBaseURLPrefersPublicEnv(t *testing.T) {
 	t.Setenv("PUBLIC_BASE_URL", "https://studio.example.com/")
 	h := &Handlers{config: mustTestConfig(t)}
+	h.domains = newDomainHandlers(h)
 	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
 	ctx.Request = httptest.NewRequest(http.MethodGet, "/api/v1/git/oauth/start", nil)
 
@@ -276,6 +278,7 @@ func TestGitExternalBaseURLPrefersPublicEnv(t *testing.T) {
 func TestGitExternalBaseURLReturnsEmptyWhenNotConfigured(t *testing.T) {
 	t.Setenv("PUBLIC_BASE_URL", "")
 	h := &Handlers{config: Config{}}
+	h.domains = newDomainHandlers(h)
 	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
 	ctx.Request = httptest.NewRequest(http.MethodGet, "/api/v1/git/oauth/start", nil)
 
@@ -375,7 +378,7 @@ func TestWriteErrorCodeHidesDetailInProduction(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)
 
-	writeError(ctx, http.StatusBadRequest, "duplicate key value violates unique constraint users_email_key")
+	transportapi.WriteError(ctx, http.StatusBadRequest, "duplicate key value violates unique constraint users_email_key")
 
 	var body map[string]string
 	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
@@ -392,9 +395,9 @@ func TestWriteErrorCodeHidesDetailInProduction(t *testing.T) {
 func TestWriteErrorCodeIncludesDetailInDevelopment(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)
-	setRuntimeMode(ctx, "development")
+	transportapi.SetRuntimeMode(ctx, "development")
 
-	writeError(ctx, http.StatusBadRequest, "validation detail")
+	transportapi.WriteError(ctx, http.StatusBadRequest, "validation detail")
 
 	var body map[string]string
 	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
@@ -407,6 +410,7 @@ func TestWriteErrorCodeIncludesDetailInDevelopment(t *testing.T) {
 
 func TestUserScopedGitAccountIsOnlyUsableByOwner(t *testing.T) {
 	h := &Handlers{}
+	h.domains = newDomainHandlers(h)
 	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
 	ctx.Request = httptest.NewRequest(http.MethodGet, "/api/v1/git/accounts", nil)
 	account := model.GitAccount{

@@ -35,9 +35,6 @@ func (r *Runner) recoverStaleResourceCleanups(ctx context.Context) error {
 }
 
 func (r *Runner) staleResourceCleanupPayloads(ctx context.Context, cutoff time.Time) ([]tasks.ResourceCleanupPayload, error) {
-	if r.db == nil {
-		return nil, nil
-	}
 	payloads := make([]tasks.ResourceCleanupPayload, 0)
 	var projects []model.Project
 	if err := r.db.WithContext(ctx).Where("delete_status = ? and delete_started_at < ?", "deleting", cutoff).Limit(20).Find(&projects).Error; err != nil {
@@ -173,13 +170,12 @@ func (r *Runner) cleanupProjectNamespacesForDeploymentTargets(ctx context.Contex
 	}
 	seen := map[string]bool{}
 	for _, target := range targets {
-		environment := deploymentTargetEnvironment(target)
-		key := projectCleanupEnvironmentKey(environment)
+		key := projectCleanupClusterKey(target)
 		if seen[key] {
 			continue
 		}
 		seen[key] = true
-		manager, err := r.kubernetesManager(ctx, environment)
+		manager, err := r.kubernetesManager(ctx, target)
 		if err != nil {
 			return err
 		}
@@ -198,8 +194,8 @@ func (r *Runner) projectCleanupDeploymentTargets(projectID string) ([]model.Depl
 	return targets, nil
 }
 
-func projectCleanupEnvironmentKey(environment model.Environment) string {
-	clusterID := strings.TrimSpace(environment.ClusterID)
+func projectCleanupClusterKey(target model.DeploymentTarget) string {
+	clusterID := strings.TrimSpace(target.ClusterID)
 	if clusterID == "" {
 		return "default"
 	}
@@ -343,12 +339,11 @@ func (r *Runner) cleanupDeploymentTargetRuntimeResources(ctx context.Context, ta
 	if err := r.db.First(&project, "id = ?", target.ProjectID).Error; err != nil {
 		return fmt.Errorf("project not found: %w", err)
 	}
-	environment := deploymentTargetEnvironment(target)
-	manager, err := r.kubernetesManager(ctx, environment)
+	manager, err := r.kubernetesManager(ctx, target)
 	if err != nil {
 		return err
 	}
-	namespace := deploymentNamespace(project, environment)
+	namespace := deploymentNamespace(project)
 	kinds := []string{"services", "workloads", "configs"}
 	for _, kind := range kinds {
 		items, err := manager.ListManagedResources(ctx, kubeprovider.ResourceListOptions{
@@ -356,7 +351,6 @@ func (r *Runner) cleanupDeploymentTargetRuntimeResources(ctx context.Context, ta
 			Namespace:          namespace,
 			ProjectID:          target.ProjectID,
 			ApplicationID:      target.ApplicationID,
-			EnvironmentID:      target.EnvironmentID,
 			DeploymentTargetID: target.ID,
 		})
 		if err != nil {
@@ -386,12 +380,11 @@ func (r *Runner) cleanupGatewayRuntimeResources(ctx context.Context, route model
 		}
 		return fmt.Errorf("deployment target not found: %w", err)
 	}
-	environment := deploymentTargetEnvironment(target)
-	manager, err := r.kubernetesManager(ctx, environment)
+	manager, err := r.kubernetesManager(ctx, target)
 	if err != nil {
 		return err
 	}
-	namespace := deploymentNamespace(project, environment)
+	namespace := deploymentNamespace(project)
 	if err := manager.DeleteHTTPRoute(ctx, namespace, gatewayRuntimeName(route)); err != nil && !isKubernetesNotFound(err) {
 		return fmt.Errorf("delete HTTPRoute %s/%s: %w", namespace, gatewayRuntimeName(route), err)
 	}

@@ -1,5 +1,4 @@
 const appTemplatesPage = {
-  description: 'Install databases, caches, observability tools, developer tools, and lightweight collaboration apps from presets.',
   heroEyebrow: 'Luna DevOps template library',
   heroTitle: 'Discover services. Deploy faster.',
   templateCount: 'Templates',
@@ -15,7 +14,6 @@ const appTemplatesPage = {
   sortOrder: 'Sort Order',
   sortDesc: 'Descending',
   sortAsc: 'Ascending',
-  loading: 'Loading app templates...',
   emptyTitle: 'No templates found',
   emptyDescription: 'Try another keyword, or wait for administrators to add more templates.',
   install: 'Install',
@@ -50,11 +48,8 @@ const appTemplatesPage = {
   autoGeneratePlaceholder: 'Leave empty to auto-generate',
   installNow: 'Deploy after install',
   installNowDescription: 'When disabled, the application and deployment target are created only. You can release manually from the application deployment page.',
-  image: 'Image',
   officialWebsite: 'Official Website',
   officialRepository: 'Official Repository',
-  port: 'Port',
-  resources: 'Resources',
   categories: {
     collaboration: 'Collaboration & Content',
     database: 'Database',

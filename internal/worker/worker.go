@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"time"
 
@@ -19,36 +20,36 @@ import (
 )
 
 type Runner struct {
-	db                           *gorm.DB
-	secrets                      secret.Store
-	deployRolloutTimeoutSeconds  int64
-	certManagerClusterIssuer     string
-	publicBaseURL                string
-	buildExecutorImage           string
-	buildEgressMode              string
-	buildCacheEnabled            bool
-	buildCacheTag                string
-	buildJobTimeoutSeconds       int64
-	buildJobTTLSeconds           int64
-	buildPrivateEgressCIDRs      []string
-	buildPrivateEgressPorts      []int
-	buildBlockedEgressCIDRs      []string
-	dnsResolver                  dnsprovider.Resolver
-	taskClient                   *tasks.Client
-	runAutomaticRetention        func(context.Context, time.Time) error
-	namespaceFactory             func(kubeconfig string) (kubeprovider.NamespaceManager, error)
-	kubernetesManagerFactory     func(environment model.Environment) (kubeprovider.NamespaceManager, error)
-	projectVolumeProviderFactory func(context.Context, string) (kubeprovider.ProjectVolumeProvider, error)
-	volumeTransferJobFactory     func(context.Context, string) (kubeprovider.VolumeTransferJobProvider, error)
-	volumeService                volumeWorkerService
-	volumeTaskEnqueuer           volumeTaskEnqueuer
-	volumeTransferJobImage       string
-	volumeTransferMaxBytes       int64
-	workerMetrics                *observability.WorkerMetrics
-	personalEmailSender          func(context.Context, string, notification.RenderedMessage) (notification.SendResult, error)
-	personalEmailCooldown        func(context.Context, *gorm.DB) (time.Duration, error)
-	enqueueEmailDigest           func(context.Context, tasks.NotificationEmailDigestPayload) (*asynq.TaskInfo, error)
-	notificationDeliveryEnqueuer notification.DeliveryEnqueuer
+	db                            *gorm.DB
+	secrets                       secret.Store
+	deployRolloutTimeoutSeconds   int64
+	certManagerClusterIssuer      string
+	publicBaseURL                 string
+	buildExecutorImage            string
+	buildEgressMode               string
+	buildCacheEnabled             bool
+	buildCacheTag                 string
+	buildJobTimeoutSeconds        int64
+	buildJobTTLSeconds            int64
+	buildPrivateEgressCIDRs       []string
+	buildPrivateEgressPorts       []int
+	buildBlockedEgressCIDRs       []string
+	dnsResolver                   dnsprovider.Resolver
+	taskClient                    *tasks.Client
+	runAutomaticRetention         func(context.Context, time.Time) error
+	namespaceFactory              func(kubeconfig string) (kubeprovider.NamespaceManager, error)
+	kubernetesManagerFactory      func(target model.DeploymentTarget) (kubeprovider.NamespaceManager, error)
+	projectVolumeProviderFactory  func(context.Context, string) (kubeprovider.ProjectVolumeProvider, error)
+	volumeTransferProviderFactory func(context.Context, string) (kubeprovider.VolumeTransferProvider, error)
+	volumeService                 volumeWorkerService
+	volumeTaskEnqueuer            volumeTaskEnqueuer
+	volumeTransferJobImage        string
+	volumeTransferMaxBytes        int64
+	workerMetrics                 *observability.WorkerMetrics
+	personalEmailSender           func(context.Context, string, notification.RenderedMessage) (notification.SendResult, error)
+	personalEmailCooldown         func(context.Context, *gorm.DB) (time.Duration, error)
+	enqueueEmailDigest            func(context.Context, tasks.NotificationEmailDigestPayload) (*asynq.TaskInfo, error)
+	notificationDeliveryEnqueuer  notification.DeliveryEnqueuer
 }
 
 const (
@@ -80,7 +81,10 @@ func Run(redisAddr string, db *gorm.DB, options Options) error {
 }
 
 func RunWithRedis(redisOptions redisconfig.Options, db *gorm.DB, options Options) error {
-	runner := NewRunner(db, options)
+	if db == nil {
+		return errors.New("worker database is required")
+	}
+	runner := newRunner(db, options)
 	scheduler, err := startSchedulerWithRedis(redisOptions)
 	if err != nil {
 		return err
@@ -148,73 +152,34 @@ func (r *Runner) withTaskContext(handler func(*Runner, context.Context, *asynq.T
 }
 
 func (r *Runner) scoped(ctx context.Context) *Runner {
-	if r == nil || r.db == nil {
-		return r
-	}
 	copy := *r
 	copy.db = r.db.WithContext(ctx)
 	copy.secrets = r.secrets.WithDB(copy.db)
 	return &copy
 }
 
-func NewRunner(db *gorm.DB, options Options) *Runner {
-	deployRolloutTimeoutSeconds := options.DeployRolloutTimeoutSeconds
-	if deployRolloutTimeoutSeconds <= 0 {
-		deployRolloutTimeoutSeconds = 600
-	}
-	certManagerClusterIssuer := strings.TrimSpace(options.CertManagerClusterIssuer)
-	if certManagerClusterIssuer == "" {
-		certManagerClusterIssuer = "letsencrypt-http01"
-	}
-	buildExecutorImage := strings.TrimSpace(options.BuildExecutorImage)
-	if buildExecutorImage == "" {
-		buildExecutorImage = "moby/buildkit:v0.24.0-rootless"
-	}
-	buildCacheTag := strings.TrimSpace(options.BuildCacheTag)
-	if buildCacheTag == "" {
-		buildCacheTag = "buildcache"
-	}
-	buildEgressMode := strings.ToLower(strings.TrimSpace(options.BuildEgressMode))
-	if buildEgressMode != "permissive" {
-		buildEgressMode = "restricted"
-	}
-	buildJobTimeoutSeconds := options.BuildJobTimeoutSeconds
-	if buildJobTimeoutSeconds <= 0 {
-		buildJobTimeoutSeconds = 1800
-	}
-	buildJobTTLSeconds := options.BuildJobTTLSeconds
-	if buildJobTTLSeconds <= 0 {
-		buildJobTTLSeconds = 3600
-	}
-	volumeTransferMaxBytes := options.VolumeTransferMaxBytes
-	if volumeTransferMaxBytes <= 0 {
-		volumeTransferMaxBytes = 100 * 1024 * 1024 * 1024
-	}
-	var volumeService volumeWorkerService
-	if db != nil {
-		volumeService = volume.NewGormService(db)
-	}
+func newRunner(db *gorm.DB, options Options) *Runner {
 	return &Runner{
 		db:                          db,
 		secrets:                     secret.NewStore(db, nil, options.SecretCodec),
-		deployRolloutTimeoutSeconds: deployRolloutTimeoutSeconds,
-		certManagerClusterIssuer:    certManagerClusterIssuer,
+		deployRolloutTimeoutSeconds: options.DeployRolloutTimeoutSeconds,
+		certManagerClusterIssuer:    options.CertManagerClusterIssuer,
 		publicBaseURL:               strings.TrimRight(strings.TrimSpace(options.PublicBaseURL), "/"),
-		buildExecutorImage:          buildExecutorImage,
-		buildEgressMode:             buildEgressMode,
+		buildExecutorImage:          options.BuildExecutorImage,
+		buildEgressMode:             options.BuildEgressMode,
 		buildCacheEnabled:           options.BuildCacheEnabled,
-		buildCacheTag:               buildCacheTag,
-		buildJobTimeoutSeconds:      buildJobTimeoutSeconds,
-		buildJobTTLSeconds:          buildJobTTLSeconds,
+		buildCacheTag:               options.BuildCacheTag,
+		buildJobTimeoutSeconds:      options.BuildJobTimeoutSeconds,
+		buildJobTTLSeconds:          options.BuildJobTTLSeconds,
 		buildPrivateEgressCIDRs:     append([]string(nil), options.BuildPrivateEgressCIDRs...),
 		buildPrivateEgressPorts:     append([]int(nil), options.BuildPrivateEgressPorts...),
 		buildBlockedEgressCIDRs:     append([]string(nil), options.BuildBlockedEgressCIDRs...),
 		dnsResolver:                 dnsprovider.NewNetResolver(),
 		workerMetrics:               options.WorkerMetrics,
 		runAutomaticRetention:       newAutomaticRetentionRunner(db),
-		volumeService:               volumeService,
+		volumeService:               volume.NewGormService(db),
 		volumeTransferJobImage:      strings.TrimSpace(options.VolumeTransferJobImage),
-		volumeTransferMaxBytes:      volumeTransferMaxBytes,
+		volumeTransferMaxBytes:      options.VolumeTransferMaxBytes,
 		namespaceFactory: func(kubeconfig string) (kubeprovider.NamespaceManager, error) {
 			return kubeprovider.NewClientFromKubeconfig(kubeconfig)
 		},

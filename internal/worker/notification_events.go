@@ -16,9 +16,6 @@ import (
 )
 
 func (r *Runner) emitNotificationEvent(ctx context.Context, event notification.Event) {
-	if r.db == nil {
-		return
-	}
 	if _, err := (notification.Service{DB: r.db, Enqueuer: r.taskClient}).Emit(ctx, event); err != nil {
 		telemetry.RecordError(ctx, "notification.event_emit_failed", err,
 			slog.String("notification.event_type", event.Type))
@@ -207,7 +204,7 @@ func (r *Runner) notificationHookOwnerUserID(ctx context.Context, run model.Hook
 	if targetID := strings.TrimSpace(run.DeploymentTargetID); targetID != "" {
 		return r.notificationDeploymentTargetOwnerUserID(ctx, run.ProjectID, run.ApplicationID, targetID, target)
 	}
-	if r.db == nil || strings.TrimSpace(run.HookConfigID) == "" {
+	if strings.TrimSpace(run.HookConfigID) == "" {
 		return ""
 	}
 	var config model.ProjectHookConfig
@@ -235,10 +232,6 @@ func (r *Runner) notificationDeploymentTargetOwnerUserID(
 		strings.TrimSpace(target.ApplicationID) == applicationID {
 		return strings.TrimSpace(target.CreatedBy)
 	}
-	if r.db == nil {
-		return ""
-	}
-
 	var owner struct {
 		CreatedBy string
 	}
@@ -252,9 +245,6 @@ func (r *Runner) notificationDeploymentTargetOwnerUserID(
 }
 
 func (r *Runner) notificationHookActor(ctx context.Context, run model.HookRun) notification.ActorContext {
-	if r.db == nil {
-		return notification.ActorContext{}
-	}
 	if buildRunID := strings.TrimSpace(run.BuildRunID); buildRunID != "" {
 		var buildRun model.BuildRun
 		if err := r.db.WithContext(ctx).First(&buildRun, "id = ? and project_id = ?", buildRunID, run.ProjectID).Error; err == nil {
@@ -272,7 +262,7 @@ func (r *Runner) notificationHookActor(ctx context.Context, run model.HookRun) n
 
 func (r *Runner) notificationActor(ctx context.Context, userID string, name string, email string) notification.ActorContext {
 	actor := notification.ActorContext{ID: strings.TrimSpace(userID), Name: strings.TrimSpace(name), Email: strings.TrimSpace(email)}
-	if actor.ID == "" || r.db == nil || (actor.Name != "" && actor.Email != "") {
+	if actor.ID == "" || (actor.Name != "" && actor.Email != "") {
 		return actor
 	}
 	var user model.User

@@ -60,15 +60,6 @@ export type ModelToolRegistry = {
   ) => Awaitable<ModelToolSearchResult>
   details: (operationIds: string[], toolCatalogDigest?: string) => Awaitable<ModelToolDetailsResult>
 }
-export type ModelToolResolver = ModelToolDefinition[]
-  | ((
-    pageContext: Record<string, unknown>,
-    userInput: string,
-    loadedOperationIds: string[],
-    signal?: AbortSignal,
-    toolCatalogDigest?: string,
-  ) => Awaitable<ModelToolDefinition[]>)
-  | ModelToolRegistry
 export type ModelToolChoice = "auto" | "required" | { operationId: string }
 export type ModelRequest = {
   messages: ModelMessage[]

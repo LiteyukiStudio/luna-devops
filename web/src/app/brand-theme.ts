@@ -26,7 +26,6 @@ export type BrandColorPreset = typeof brandColorPresets[number]
 export type UserBrandColorPreference = BrandColorPreset | ''
 
 const brandColorPresetSet = new Set<string>(brandColorPresets)
-const compositeBrandColorPresetSet = new Set<string>(compositeBrandColorPresets)
 
 export function normalizeBrandColorPreset(value: unknown): BrandColorPreset {
   const normalized = String(value ?? '').trim().toLowerCase()
@@ -76,10 +75,6 @@ export function userBrandColorPresetStorageKey(userId: string) {
 
 export function brandColorUsesDarkForeground(preset: BrandColorPreset) {
   return preset === 'lime'
-}
-
-export function brandThemeIsComposite(preset: BrandColorPreset) {
-  return compositeBrandColorPresetSet.has(preset)
 }
 
 export function brandThemeSwatchColors(preset: BrandColorPreset): readonly [string, string, string, string] | null {

@@ -3,7 +3,6 @@ const usersPage = {
   description: '建立和維護平臺使用者，以及使用者可使用的登入方式。',
   createTitle: '建立使用者',
   editTitle: '編輯使用者',
-  listTitle: '使用者列表',
   searchPlaceholder: '搜尋使用者郵箱或名稱',
   email: '郵箱',
   emailHint: '使用者登入和 OIDC 郵箱繫結的主標識。OIDC 登入時會用非空郵箱查詢並繫結已有使用者。',

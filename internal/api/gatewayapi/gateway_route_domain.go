@@ -2,6 +2,7 @@ package gatewayapi
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -12,14 +13,22 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/model"
+	"github.com/LiteyukiStudio/devops/internal/runtimecluster"
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
+
+var errGatewayDomainRuntimeReferenceRequired = errors.New("routeId or deploymentTargetId is required")
 
 func (h *Handlers) CheckGatewayDomain(ctx *gin.Context) {
 	if _, _, ok := h.authorizeProject(ctx, authz.ActionGatewayRead); !ok {
 		return
 	}
-	cluster := h.gatewayClusterForDomainCheck(ctx)
+	cluster, err := h.gatewayClusterForDomainCheck(ctx)
+	if err != nil {
+		h.writeGatewayRuntimeClusterError(ctx, err)
+		return
+	}
 	domainSuffix, ok := h.gatewayRouteDomainSuffix(ctx, ctx.Query("domainSuffix"), cluster)
 	if !ok {
 		return
@@ -51,24 +60,30 @@ func (h *Handlers) CheckGatewayDomain(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, gin.H{"available": available, "host": host, "status": status})
 }
 
-func (h *Handlers) gatewayClusterForDomainCheck(ctx *gin.Context) model.RuntimeCluster {
+func (h *Handlers) gatewayClusterForDomainCheck(ctx *gin.Context) (model.RuntimeCluster, error) {
 	if routeID := strings.TrimSpace(ctx.Query("routeId")); routeID != "" {
 		var route model.GatewayRoute
-		if err := h.dbFor(ctx).First(&route, "id = ? and project_id = ?", routeID, ctx.Param("projectId")).Error; err == nil {
-			if cluster, err := h.runtimeClusterForGatewayRoute(route, ctx.Request.Context()); err == nil {
-				return cluster
-			}
+		if err := h.dbFor(ctx).First(&route, "id = ? and project_id = ?", routeID, ctx.Param("projectId")).Error; err != nil {
+			return model.RuntimeCluster{}, fmt.Errorf("load gateway route for domain check: %w", err)
 		}
+		cluster, err := h.runtimeClusterForGatewayRoute(route, ctx.Request.Context())
+		if err != nil {
+			return model.RuntimeCluster{}, fmt.Errorf("resolve gateway route runtime cluster: %w", err)
+		}
+		return cluster, nil
 	}
 	if targetID := strings.TrimSpace(ctx.Query("deploymentTargetId")); targetID != "" {
 		var target model.DeploymentTarget
-		if err := h.dbFor(ctx).First(&target, "id = ? and project_id = ?", targetID, ctx.Param("projectId")).Error; err == nil {
-			if cluster, err := h.runtimeClusterForDeploymentTargetValue(target, ctx.Request.Context()); err == nil {
-				return cluster
-			}
+		if err := h.dbFor(ctx).First(&target, "id = ? and project_id = ?", targetID, ctx.Param("projectId")).Error; err != nil {
+			return model.RuntimeCluster{}, fmt.Errorf("load deployment target for domain check: %w", err)
 		}
+		cluster, err := h.runtimeClusterForDeploymentTargetValue(target, ctx.Request.Context())
+		if err != nil {
+			return model.RuntimeCluster{}, fmt.Errorf("resolve deployment target runtime cluster: %w", err)
+		}
+		return cluster, nil
 	}
-	return model.RuntimeCluster{}
+	return model.RuntimeCluster{}, errGatewayDomainRuntimeReferenceRequired
 }
 
 func (h *Handlers) defaultGatewayHost(project model.Project, stage, applicationIdentifier string, cluster model.RuntimeCluster, domainSuffix string, ctx context.Context) string {
@@ -120,12 +135,8 @@ func (h *Handlers) normalizeGatewayHost(value string, cluster model.RuntimeClust
 	return host
 }
 
-func (h *Handlers) gatewayRootDomain(cluster model.RuntimeCluster) string {
-	return h.gatewayDomainSuffix(cluster, "")
-}
-
 func (h *Handlers) gatewayDomainSuffix(cluster model.RuntimeCluster, selected string) string {
-	selected = h.normalizeGatewayDomainSuffixValue(selected)
+	selected = runtimecluster.NormalizeGatewayDomainSuffix(selected)
 	for _, suffix := range h.gatewayDomainSuffixes(cluster) {
 		if selected != "" && suffix == selected {
 			return suffix
@@ -139,11 +150,11 @@ func (h *Handlers) gatewayDomainSuffix(cluster model.RuntimeCluster, selected st
 }
 
 func (h *Handlers) gatewayDomainSuffixes(cluster model.RuntimeCluster) []string {
-	return h.decodeGatewayDomainSuffixes(cluster.GatewayDomainSuffixesRaw, cluster.GatewayRootDomain, h.legacyGatewayRootDomain())
+	return runtimecluster.DecodeGatewayDomainSuffixes(cluster.GatewayDomainSuffixesRaw)
 }
 
 func (h *Handlers) gatewayRouteDomainSuffix(ctx *gin.Context, selected string, cluster model.RuntimeCluster) (string, bool) {
-	selected = h.normalizeGatewayDomainSuffixValue(selected)
+	selected = runtimecluster.NormalizeGatewayDomainSuffix(selected)
 	suffixes := h.gatewayDomainSuffixes(cluster)
 	if len(suffixes) == 0 {
 		writeError(ctx, http.StatusBadRequest, "运行集群未配置可用域名后缀")
@@ -172,26 +183,48 @@ func (h *Handlers) gatewayPublicPort(cluster model.RuntimeCluster) int {
 	return h.normalizePort(cluster.GatewayPublicPort, 80)
 }
 
-func (h *Handlers) legacyGatewayRootDomain() string {
-	return strings.Trim(strings.ToLower(strings.TrimSpace(h.configValue("gateway.rootDomain"))), ".")
-}
-
-func (h *Handlers) gatewayRouteWithAccessURL(route model.GatewayRoute, ctx context.Context) model.GatewayRoute {
+func (h *Handlers) gatewayRouteWithAccessURL(route model.GatewayRoute, ctx context.Context) (model.GatewayRoute, error) {
+	route.AccessURL = ""
 	cluster, err := h.runtimeClusterForGatewayRoute(route, ctx)
 	if err != nil {
-		route.AccessURL = gatewayRouteAccessURL(route, h.normalizeGatewayPublicScheme(h.configValue("gateway.publicScheme")), 0)
-		return route
+		return route, fmt.Errorf("resolve gateway route access URL runtime cluster: %w", err)
 	}
 	route.AccessURL = gatewayRouteAccessURL(route, h.gatewayPublicScheme(cluster), h.gatewayPublicPort(cluster))
-	return route
+	return route, nil
 }
 
 func (h *Handlers) gatewayRoutesWithAccessURL(routes []model.GatewayRoute, ctx context.Context) []model.GatewayRoute {
 	result := make([]model.GatewayRoute, len(routes))
 	for index, route := range routes {
-		result[index] = h.gatewayRouteWithAccessURL(route, ctx)
+		resolved, err := h.gatewayRouteWithAccessURL(route, ctx)
+		if err != nil {
+			result[index] = unavailableGatewayRoute(resolved, gatewayRouteRuntimeClusterObservationCode(err))
+			continue
+		}
+		result[index] = resolved
 	}
 	return result
+}
+
+func (h *Handlers) writeGatewayRuntimeClusterError(ctx *gin.Context, err error) {
+	switch {
+	case errors.Is(err, errGatewayDomainRuntimeReferenceRequired):
+		writeErrorCode(ctx, http.StatusBadRequest, "gateway_route.runtime_cluster_reference_required", "routeId or deploymentTargetId is required")
+	case errors.Is(err, gorm.ErrRecordNotFound):
+		writeErrorCode(ctx, http.StatusNotFound, "gateway_route.runtime_cluster_missing", "gateway route, deployment target, or runtime cluster reference was not found")
+	default:
+		writeErrorCode(ctx, http.StatusServiceUnavailable, "gateway_route.runtime_cluster_unavailable", "gateway route runtime cluster lookup is unavailable")
+	}
+}
+
+func gatewayRouteRuntimeClusterObservationCode(err error) string {
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return "gateway_route.observation_cancelled"
+	}
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return "gateway_route.runtime_cluster_not_configured"
+	}
+	return "gateway_route.runtime_cluster_unavailable"
 }
 
 func gatewayRouteAccessURL(route model.GatewayRoute, scheme string, publicPort int) string {

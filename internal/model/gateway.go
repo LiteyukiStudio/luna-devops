@@ -10,7 +10,6 @@ type GatewayRoute struct {
 	ID                     string           `gorm:"primaryKey" json:"id"`
 	ProjectID              string           `gorm:"index;not null" json:"projectId"`
 	ApplicationID          string           `gorm:"index;not null" json:"applicationId"`
-	EnvironmentID          string           `gorm:"index" json:"environmentId"`
 	DeploymentTargetID     string           `gorm:"index;not null;default:''" json:"deploymentTargetId"`
 	Host                   string           `gorm:"index;not null" json:"host"`
 	DomainSuffix           string           `gorm:"not null;default:''" json:"domainSuffix"`

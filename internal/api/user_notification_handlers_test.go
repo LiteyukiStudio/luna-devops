@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	"github.com/LiteyukiStudio/devops/internal/api/notificationapi"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -33,7 +34,7 @@ func TestPersonalNotificationInputsRejectInvalidPresetSecretsAndPreferences(t *t
 			method: http.MethodPost,
 			target: "/api/v1/me/notification-channels",
 			body:   `{"name":"unknown","presetId":"unknown","secrets":{}}`,
-			handle: func(h *Handlers, ctx *gin.Context) { h.CreateMyNotificationChannel(ctx) },
+			handle: func(h *Handlers, ctx *gin.Context) { h.domains.notification.CreateMyNotificationChannel(ctx) },
 			code:   "notification.preset_not_found",
 		},
 		{
@@ -41,7 +42,7 @@ func TestPersonalNotificationInputsRejectInvalidPresetSecretsAndPreferences(t *t
 			method: http.MethodPost,
 			target: "/api/v1/me/notification-channels",
 			body:   `{"name":"private smtp","presetId":"feishu-bot","secrets":{"WebhookToken":"token"},"adapterKind":"smtp","config":{}}`,
-			handle: func(h *Handlers, ctx *gin.Context) { h.CreateMyNotificationChannel(ctx) },
+			handle: func(h *Handlers, ctx *gin.Context) { h.domains.notification.CreateMyNotificationChannel(ctx) },
 			code:   "request.invalid_json",
 		},
 		{
@@ -49,7 +50,7 @@ func TestPersonalNotificationInputsRejectInvalidPresetSecretsAndPreferences(t *t
 			method: http.MethodPost,
 			target: "/api/v1/me/notification-channels",
 			body:   `{"name":"Feishu","presetId":"feishu-bot","secrets":{}}`,
-			handle: func(h *Handlers, ctx *gin.Context) { h.CreateMyNotificationChannel(ctx) },
+			handle: func(h *Handlers, ctx *gin.Context) { h.domains.notification.CreateMyNotificationChannel(ctx) },
 			code:   "notification.secret_required",
 		},
 		{
@@ -57,7 +58,7 @@ func TestPersonalNotificationInputsRejectInvalidPresetSecretsAndPreferences(t *t
 			method: http.MethodPut,
 			target: "/api/v1/me/notification-preferences",
 			body:   `{"emailEnabled":true,"eventTypes":["build.failed","custom.failed"]}`,
-			handle: func(h *Handlers, ctx *gin.Context) { h.UpdateMyNotificationPreferences(ctx) },
+			handle: func(h *Handlers, ctx *gin.Context) { h.domains.notification.UpdateMyNotificationPreferences(ctx) },
 			code:   "notification.preference_event_types_invalid",
 		},
 		{
@@ -65,7 +66,7 @@ func TestPersonalNotificationInputsRejectInvalidPresetSecretsAndPreferences(t *t
 			method: http.MethodPut,
 			target: "/api/v1/me/notification-preferences",
 			body:   `{}`,
-			handle: func(h *Handlers, ctx *gin.Context) { h.UpdateMyNotificationPreferences(ctx) },
+			handle: func(h *Handlers, ctx *gin.Context) { h.domains.notification.UpdateMyNotificationPreferences(ctx) },
 			code:   "notification.preference_required",
 		},
 		{
@@ -73,7 +74,7 @@ func TestPersonalNotificationInputsRejectInvalidPresetSecretsAndPreferences(t *t
 			method: http.MethodPut,
 			target: "/api/v1/me/notification-preferences",
 			body:   `{"eventTypes":[]}`,
-			handle: func(h *Handlers, ctx *gin.Context) { h.UpdateMyNotificationPreferences(ctx) },
+			handle: func(h *Handlers, ctx *gin.Context) { h.domains.notification.UpdateMyNotificationPreferences(ctx) },
 			code:   "notification.preference_required",
 		},
 		{
@@ -81,7 +82,7 @@ func TestPersonalNotificationInputsRejectInvalidPresetSecretsAndPreferences(t *t
 			method: http.MethodPut,
 			target: "/api/v1/me/notification-preferences",
 			body:   `{"emailEnabled":false}`,
-			handle: func(h *Handlers, ctx *gin.Context) { h.UpdateMyNotificationPreferences(ctx) },
+			handle: func(h *Handlers, ctx *gin.Context) { h.domains.notification.UpdateMyNotificationPreferences(ctx) },
 			code:   "notification.preference_required",
 		},
 		{
@@ -89,7 +90,7 @@ func TestPersonalNotificationInputsRejectInvalidPresetSecretsAndPreferences(t *t
 			method: http.MethodPut,
 			target: "/api/v1/me/notification-preferences",
 			body:   `{"emailEnabled":true,"eventTypes":[],"unexpected":true}`,
-			handle: func(h *Handlers, ctx *gin.Context) { h.UpdateMyNotificationPreferences(ctx) },
+			handle: func(h *Handlers, ctx *gin.Context) { h.domains.notification.UpdateMyNotificationPreferences(ctx) },
 			code:   "request.invalid_json",
 		},
 		{
@@ -97,15 +98,15 @@ func TestPersonalNotificationInputsRejectInvalidPresetSecretsAndPreferences(t *t
 			method: http.MethodPut,
 			target: "/api/v1/me/notification-preferences",
 			body:   `{"emailEnabled":true,"eventTypes":[]} {}`,
-			handle: func(h *Handlers, ctx *gin.Context) { h.UpdateMyNotificationPreferences(ctx) },
+			handle: func(h *Handlers, ctx *gin.Context) { h.domains.notification.UpdateMyNotificationPreferences(ctx) },
 			code:   "request.invalid_json",
 		},
 		{
 			name:   "request body over 64 KiB",
 			method: http.MethodPost,
 			target: "/api/v1/me/notification-channels",
-			body:   `{"name":"` + strings.Repeat("a", personalNotificationRequestMaxBytes) + `","presetId":"feishu-bot","secrets":{"WebhookToken":"token"}}`,
-			handle: func(h *Handlers, ctx *gin.Context) { h.CreateMyNotificationChannel(ctx) },
+			body:   `{"name":"` + strings.Repeat("a", notificationapi.PersonalNotificationRequestMaxBytes) + `","presetId":"feishu-bot","secrets":{"WebhookToken":"token"}}`,
+			handle: func(h *Handlers, ctx *gin.Context) { h.domains.notification.CreateMyNotificationChannel(ctx) },
 			code:   "notification.request_too_large",
 			status: http.StatusRequestEntityTooLarge,
 		},
@@ -114,7 +115,9 @@ func TestPersonalNotificationInputsRejectInvalidPresetSecretsAndPreferences(t *t
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			recorder, ctx := newUserNotificationHandlerContext(tt.method, tt.target, "usr_current", tt.body)
-			tt.handle(&Handlers{}, ctx)
+			handlers := &Handlers{}
+			handlers.domains = newDomainHandlers(handlers)
+			tt.handle(handlers, ctx)
 
 			wantStatus := tt.status
 			if wantStatus == 0 {
@@ -139,6 +142,7 @@ func TestPersonalNotificationChannelPresetControlsStoredAdapterAndConfig(t *test
 		},
 	})
 	handlers := &Handlers{db: db, secrets: secret.NewStore(db, nil, mustTestSecretCodec(t))}
+	handlers.domains = newDomainHandlers(handlers)
 
 	recorder, ctx := newUserNotificationHandlerContext(
 		http.MethodPost,
@@ -146,7 +150,7 @@ func TestPersonalNotificationChannelPresetControlsStoredAdapterAndConfig(t *test
 		"usr_current",
 		`{"name":"My Feishu","presetId":"feishu-bot","secrets":{"WebhookToken":"token-value"},"enabled":true}`,
 	)
-	handlers.CreateMyNotificationChannel(ctx)
+	handlers.domains.notification.CreateMyNotificationChannel(ctx)
 	if recorder.Code != http.StatusCreated {
 		t.Fatalf("create status = %d, body = %s", recorder.Code, recorder.Body.String())
 	}
@@ -158,7 +162,7 @@ func TestPersonalNotificationChannelPresetControlsStoredAdapterAndConfig(t *test
 	if channel.AdapterKind != notification.AdapterKindWebhook || !strings.Contains(channel.ConfigJSON, "open.feishu.cn") || strings.Contains(channel.ConfigJSON, "attacker.example") {
 		t.Fatalf("stored channel escaped preset: adapter=%q config=%s", channel.AdapterKind, channel.ConfigJSON)
 	}
-	secretRefs := decodeStringMap(channel.SecretRefsJSON)
+	secretRefs := notificationapi.DecodeStringMap(channel.SecretRefsJSON)
 	if len(secretRefs) != 1 || secretRefs["WebhookToken"] == "" {
 		t.Fatalf("stored secret refs = %#v, want only preset fields", secretRefs)
 	}
@@ -172,7 +176,7 @@ func TestPersonalNotificationChannelPresetControlsStoredAdapterAndConfig(t *test
 		`{"name":"Renamed Feishu","secrets":{},"enabled":false}`,
 	)
 	updateCtx.Params = gin.Params{{Key: "channelId", Value: channel.ID}}
-	handlers.UpdateMyNotificationChannel(updateCtx)
+	handlers.domains.notification.UpdateMyNotificationChannel(updateCtx)
 	if updateRecorder.Code != http.StatusOK {
 		t.Fatalf("update status = %d, body = %s", updateRecorder.Code, updateRecorder.Body.String())
 	}
@@ -182,7 +186,7 @@ func TestPersonalNotificationChannelPresetControlsStoredAdapterAndConfig(t *test
 	if channel.Name != "Renamed Feishu" || channel.Enabled || channel.AdapterKind != notification.AdapterKindWebhook || channel.ConfigJSON != originalConfig {
 		t.Fatalf("updated channel = %#v", channel)
 	}
-	if got := decodeStringMap(channel.SecretRefsJSON)["WebhookToken"]; got != originalSecretRef {
+	if got := notificationapi.DecodeStringMap(channel.SecretRefsJSON)["WebhookToken"]; got != originalSecretRef {
 		t.Fatalf("empty secret update replaced existing reference: got %q want %q", got, originalSecretRef)
 	}
 
@@ -193,14 +197,14 @@ func TestPersonalNotificationChannelPresetControlsStoredAdapterAndConfig(t *test
 		`{"name":"Renamed Feishu","secrets":{"WebhookToken":"rotated-token"},"enabled":false}`,
 	)
 	rotateCtx.Params = gin.Params{{Key: "channelId", Value: channel.ID}}
-	handlers.UpdateMyNotificationChannel(rotateCtx)
+	handlers.domains.notification.UpdateMyNotificationChannel(rotateCtx)
 	if rotateRecorder.Code != http.StatusOK {
 		t.Fatalf("rotate status = %d, body = %s", rotateRecorder.Code, rotateRecorder.Body.String())
 	}
 	if err := db.First(&channel, "id = ?", channel.ID).Error; err != nil {
 		t.Fatal(err)
 	}
-	rotatedRef := decodeStringMap(channel.SecretRefsJSON)["WebhookToken"]
+	rotatedRef := notificationapi.DecodeStringMap(channel.SecretRefsJSON)["WebhookToken"]
 	if rotatedRef == "" || rotatedRef == originalSecretRef || handlers.secrets.ResolveContext(ctx.Request.Context(), originalSecretRef) != "" || handlers.secrets.ResolveContext(ctx.Request.Context(), rotatedRef) != "rotated-token" {
 		t.Fatalf("secret rotation did not replace and remove the old ref: old=%q new=%q", originalSecretRef, rotatedRef)
 	}
@@ -211,7 +215,7 @@ func TestPersonalNotificationChannelPresetControlsStoredAdapterAndConfig(t *test
 
 	deleteRecorder, deleteCtx := newUserNotificationHandlerContext(http.MethodDelete, "/api/v1/me/notification-channels/"+channel.ID, "usr_current", "")
 	deleteCtx.Params = gin.Params{{Key: "channelId", Value: channel.ID}}
-	handlers.DeleteMyNotificationChannel(deleteCtx)
+	handlers.domains.notification.DeleteMyNotificationChannel(deleteCtx)
 	if deleteCtx.Writer.Status() != http.StatusNoContent {
 		t.Fatalf("delete status = %d, body = %s", deleteCtx.Writer.Status(), deleteRecorder.Body.String())
 	}
@@ -221,19 +225,19 @@ func TestPersonalNotificationChannelPresetControlsStoredAdapterAndConfig(t *test
 }
 
 func TestPersonalNotificationSecretAndNameLimits(t *testing.T) {
-	if _, code := personalNotificationPresetSecrets(
+	if _, code := notificationapi.PersonalNotificationPresetSecrets(
 		map[string]string{"WebhookToken": "token", "Unexpected": "value"},
 		[]string{"WebhookToken"},
 	); code != "notification.secret_field_invalid" {
 		t.Fatalf("extra secret code = %q", code)
 	}
-	if _, code := personalNotificationPresetSecrets(
-		map[string]string{"WebhookToken": strings.Repeat("x", personalNotificationSecretMaxLength+1)},
+	if _, code := notificationapi.PersonalNotificationPresetSecrets(
+		map[string]string{"WebhookToken": strings.Repeat("x", notificationapi.PersonalNotificationSecretMaxLength+1)},
 		[]string{"WebhookToken"},
 	); code != "notification.secret_too_long" {
 		t.Fatalf("long secret code = %q", code)
 	}
-	if _, code := personalNotificationExistingSecrets(
+	if _, code := notificationapi.PersonalNotificationExistingSecrets(
 		map[string]string{"Unexpected": "value"},
 		`{"WebhookToken":"secret-ref"}`,
 	); code != "notification.secret_field_invalid" {
@@ -241,7 +245,7 @@ func TestPersonalNotificationSecretAndNameLimits(t *testing.T) {
 	}
 
 	recorder, ctx := newUserNotificationHandlerContext(http.MethodPost, "/api/v1/me/notification-channels", "usr_current", "")
-	if validatePersonalNotificationChannelName(ctx, strings.Repeat("名", personalNotificationNameMaxLength+1)) {
+	if notificationapi.ValidatePersonalNotificationChannelName(ctx, strings.Repeat("名", notificationapi.PersonalNotificationNameMaxLength+1)) {
 		t.Fatal("overlong personal channel name was accepted")
 	}
 	if recorder.Code != http.StatusBadRequest || !strings.Contains(recorder.Body.String(), "notification.channel_name_invalid") {
@@ -251,7 +255,9 @@ func TestPersonalNotificationSecretAndNameLimits(t *testing.T) {
 
 func TestPersonalNotificationPresetsExcludeGotify(t *testing.T) {
 	recorder, ctx := newUserNotificationHandlerContext(http.MethodGet, "/api/v1/me/notification-presets", "usr_current", "")
-	(&Handlers{}).ListMyNotificationPresets(ctx)
+	handlers := &Handlers{}
+	handlers.domains = newDomainHandlers(handlers)
+	handlers.domains.notification.ListMyNotificationPresets(ctx)
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body.String())
 	}
@@ -265,10 +271,10 @@ func TestPersonalNotificationTestRateLimitIsPerUserAndStable(t *testing.T) {
 	handlers := &Handlers{mode: "production", rateLimiter: newRateLimiter(server.Addr())}
 	t.Cleanup(func() { _ = handlers.rateLimiter.redis.Close() })
 
-	for attempt := 1; attempt <= personalNotificationTestRateLimit+1; attempt++ {
+	for attempt := 1; attempt <= notificationapi.PersonalNotificationTestRateLimit+1; attempt++ {
 		recorder, ctx := newUserNotificationHandlerContext(http.MethodPost, "/api/v1/me/notification-channels/nch_test/test", "usr_sensitive", "")
 		allowed := handlers.allowPersonalNotificationTest(ctx, "usr_sensitive")
-		if attempt <= personalNotificationTestRateLimit {
+		if attempt <= notificationapi.PersonalNotificationTestRateLimit {
 			if !allowed {
 				t.Fatalf("attempt %d was unexpectedly denied: %s", attempt, recorder.Body.String())
 			}
@@ -292,8 +298,8 @@ func TestPersonalNotificationChannelLimit(t *testing.T) {
 			return db.AutoMigrate(&model.NotificationChannel{}, &model.SecretValue{}, &model.AuditLog{})
 		},
 	})
-	channels := make([]model.NotificationChannel, 0, personalNotificationChannelLimit)
-	for index := int64(0); index < personalNotificationChannelLimit; index++ {
+	channels := make([]model.NotificationChannel, 0, notificationapi.PersonalNotificationChannelLimit)
+	for index := int64(0); index < notificationapi.PersonalNotificationChannelLimit; index++ {
 		channels = append(channels, model.NotificationChannel{
 			ID: "nch_limit_" + string(rune('a'+index)), OwnerUserID: "usr_current", Name: "channel",
 			AdapterKind: notification.AdapterKindWebhook, ConfigJSON: `{}`, SecretRefsJSON: `{}`, Enabled: true,
@@ -303,13 +309,14 @@ func TestPersonalNotificationChannelLimit(t *testing.T) {
 		t.Fatal(err)
 	}
 	handlers := &Handlers{db: db, secrets: secret.NewStore(db, nil, mustTestSecretCodec(t))}
+	handlers.domains = newDomainHandlers(handlers)
 	recorder, ctx := newUserNotificationHandlerContext(
 		http.MethodPost,
 		"/api/v1/me/notification-channels",
 		"usr_current",
 		`{"name":"extra","presetId":"feishu-bot","secrets":{"WebhookToken":"token"}}`,
 	)
-	handlers.CreateMyNotificationChannel(ctx)
+	handlers.domains.notification.CreateMyNotificationChannel(ctx)
 	if recorder.Code != http.StatusConflict || !strings.Contains(recorder.Body.String(), "notification.channel_limit_reached") {
 		t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body.String())
 	}
@@ -323,8 +330,8 @@ func TestPersonalNotificationChannelLimitIsAtomic(t *testing.T) {
 			return db.AutoMigrate(&model.NotificationChannel{}, &model.SecretValue{}, &model.AuditLog{})
 		},
 	})
-	channels := make([]model.NotificationChannel, 0, personalNotificationChannelLimit-1)
-	for index := int64(0); index < personalNotificationChannelLimit-1; index++ {
+	channels := make([]model.NotificationChannel, 0, notificationapi.PersonalNotificationChannelLimit-1)
+	for index := int64(0); index < notificationapi.PersonalNotificationChannelLimit-1; index++ {
 		channels = append(channels, model.NotificationChannel{
 			ID: "nch_atomic_" + string(rune('a'+index)), OwnerUserID: "usr_current", Name: "channel",
 			AdapterKind: notification.AdapterKindWebhook, ConfigJSON: `{}`, SecretRefsJSON: `{}`, Enabled: true,
@@ -334,6 +341,7 @@ func TestPersonalNotificationChannelLimitIsAtomic(t *testing.T) {
 		t.Fatal(err)
 	}
 	handlers := &Handlers{db: db, secrets: secret.NewStore(db, nil, mustTestSecretCodec(t))}
+	handlers.domains = newDomainHandlers(handlers)
 	recorders := make([]*httptest.ResponseRecorder, 2)
 	contexts := make([]*gin.Context, 2)
 	for index := range contexts {
@@ -349,7 +357,7 @@ func TestPersonalNotificationChannelLimitIsAtomic(t *testing.T) {
 		workers.Add(1)
 		go func(index int) {
 			defer workers.Done()
-			handlers.CreateMyNotificationChannel(contexts[index])
+			handlers.domains.notification.CreateMyNotificationChannel(contexts[index])
 		}(index)
 	}
 	workers.Wait()
@@ -372,10 +380,10 @@ func TestPersonalNotificationChannelLimitIsAtomic(t *testing.T) {
 		t.Fatalf("created = %d, limited = %d", created, limited)
 	}
 	var channelCount int64
-	if err := personalNotificationChannels(db.Model(&model.NotificationChannel{}), "usr_current").Count(&channelCount).Error; err != nil {
+	if err := notificationapi.PersonalNotificationChannels(db.Model(&model.NotificationChannel{}), "usr_current").Count(&channelCount).Error; err != nil {
 		t.Fatal(err)
 	}
-	if channelCount != personalNotificationChannelLimit {
+	if channelCount != notificationapi.PersonalNotificationChannelLimit {
 		t.Fatalf("channel count = %d", channelCount)
 	}
 	var secretCount int64
@@ -395,8 +403,9 @@ func TestPersonalNotificationTestFailureUsesStableAuditMessage(t *testing.T) {
 		},
 	})
 	handlers := &Handlers{db: db}
+	handlers.domains = newDomainHandlers(handlers)
 	recorder, ctx := newUserNotificationHandlerContext(http.MethodPost, "/api/v1/me/notification-channels/nch_test/test", "usr_current", "")
-	handlers.writePersonalNotificationTestFailure(
+	notificationapi.New(notificationHost{domainHost: domainHost{handlers: handlers}}).WritePersonalNotificationTestFailure(
 		ctx,
 		"usr_current",
 		"nch_test",
@@ -422,13 +431,14 @@ func TestUpdatePersonalNotificationPreferencesAllowsEmptyEventsAndPersistsFalse(
 		},
 	})
 	handlers := &Handlers{db: db}
+	handlers.domains = newDomainHandlers(handlers)
 	recorder, ctx := newUserNotificationHandlerContext(
 		http.MethodPut,
 		"/api/v1/me/notification-preferences",
 		"usr_current",
 		`{"emailEnabled":false,"eventTypes":[]}`,
 	)
-	handlers.UpdateMyNotificationPreferences(ctx)
+	handlers.domains.notification.UpdateMyNotificationPreferences(ctx)
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body.String())
 	}
@@ -458,9 +468,10 @@ func TestPersonalNotificationChannelsAreOwnerScoped(t *testing.T) {
 		t.Fatalf("create notification channels: %v", err)
 	}
 	handlers := &Handlers{db: db}
+	handlers.domains = newDomainHandlers(handlers)
 
 	recorder, ctx := newUserNotificationHandlerContext(http.MethodGet, "/api/v1/me/notification-channels", "usr_current", "")
-	handlers.ListMyNotificationChannels(ctx)
+	handlers.domains.notification.ListMyNotificationChannels(ctx)
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("list status = %d, body = %s", recorder.Code, recorder.Body.String())
 	}
@@ -485,10 +496,10 @@ func TestPersonalNotificationChannelsAreOwnerScoped(t *testing.T) {
 			name:   "update",
 			method: http.MethodPut,
 			body:   `{"name":"changed","secrets":{},"enabled":true}`,
-			handle: handlers.UpdateMyNotificationChannel,
+			handle: handlers.domains.notification.UpdateMyNotificationChannel,
 		},
-		{name: "delete", method: http.MethodDelete, handle: handlers.DeleteMyNotificationChannel},
-		{name: "test", method: http.MethodPost, handle: handlers.TestMyNotificationChannel},
+		{name: "delete", method: http.MethodDelete, handle: handlers.domains.notification.DeleteMyNotificationChannel},
+		{name: "test", method: http.MethodPost, handle: handlers.domains.notification.TestMyNotificationChannel},
 	}
 	for _, mutation := range mutations {
 		t.Run("cannot "+mutation.name+" another user's channel", func(t *testing.T) {

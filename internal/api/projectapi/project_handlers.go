@@ -86,8 +86,8 @@ func (h *Handler) CreateProject(ctx *gin.Context) {
 	}
 	project, err := projectservice.NewService(h.dbFor(ctx)).Create(ctx.Request.Context(), user.ID, projectservice.CreateInput{
 		Identifier: input.Identifier, Name: input.Name, Description: input.Description,
-		NamespaceStrategy: input.NamespaceStrategy, MaxConcurrentBuilds: input.MaxConcurrentBuilds,
-		WebConsoleEnabled: input.WebConsoleEnabled,
+		MaxConcurrentBuilds: input.MaxConcurrentBuilds,
+		WebConsoleEnabled:   input.WebConsoleEnabled,
 	})
 	if errors.Is(err, projectservice.ErrIdentifierInvalid) {
 		writeErrorCode(ctx, http.StatusBadRequest, "project.identifier_invalid", err.Error())
@@ -150,7 +150,6 @@ func (h *Handler) UpdateProject(ctx *gin.Context) {
 
 	project.Name = input.Name
 	project.Description = input.Description
-	project.NamespaceStrategy = fallback(input.NamespaceStrategy, "project")
 	project.MaxConcurrentBuilds = normalizeBuildConcurrency(input.MaxConcurrentBuilds, defaultProjectBuildConcurrency)
 	if input.WebConsoleEnabled != nil {
 		project.WebConsoleEnabled = *input.WebConsoleEnabled
@@ -220,7 +219,7 @@ func (h *Handler) ListProjectPins(ctx *gin.Context) {
 	}
 	var rows []projectPinResponse
 	err := query.
-		Select("projects.id, projects.identifier, projects.kubernetes_namespace, projects.name, projects.description, projects.namespace_strategy, projects.created_at, project_members.dashboard_order, project_members.last_used_at, project_members.use_count, project_pins.pinned_at").
+		Select("projects.id, projects.identifier, projects.kubernetes_namespace, projects.name, projects.description, projects.created_at, project_members.dashboard_order, project_members.last_used_at, project_members.use_count, project_pins.pinned_at").
 		Order(orderByClause(pagination, map[string]string{
 			"pinnedAt":   "project_pins.pinned_at",
 			"lastUsedAt": "project_members.last_used_at",
@@ -606,7 +605,6 @@ type projectInput struct {
 	Identifier          string `json:"identifier" binding:"required"`
 	Name                string `json:"name" binding:"required"`
 	Description         string `json:"description"`
-	NamespaceStrategy   string `json:"namespaceStrategy"`
 	MaxConcurrentBuilds int    `json:"maxConcurrentBuilds"`
 	WebConsoleEnabled   *bool  `json:"webConsoleEnabled"`
 }
@@ -616,16 +614,15 @@ type projectOrderInput struct {
 }
 
 type projectPinResponse struct {
-	ID                string     `json:"id"`
-	Identifier        string     `json:"identifier"`
-	Name              string     `json:"name"`
-	Description       string     `json:"description"`
-	NamespaceStrategy string     `json:"namespaceStrategy"`
-	CreatedAt         time.Time  `json:"createdAt"`
-	DashboardOrder    int        `json:"dashboardOrder"`
-	LastUsedAt        *time.Time `json:"lastUsedAt"`
-	UseCount          int        `json:"useCount"`
-	PinnedAt          time.Time  `json:"pinnedAt"`
+	ID             string     `json:"id"`
+	Identifier     string     `json:"identifier"`
+	Name           string     `json:"name"`
+	Description    string     `json:"description"`
+	CreatedAt      time.Time  `json:"createdAt"`
+	DashboardOrder int        `json:"dashboardOrder"`
+	LastUsedAt     *time.Time `json:"lastUsedAt"`
+	UseCount       int        `json:"useCount"`
+	PinnedAt       time.Time  `json:"pinnedAt"`
 }
 
 type projectResponse struct {
@@ -662,16 +659,15 @@ func (h *Handler) projectResponse(project model.Project, ctx context.Context) pr
 
 func projectPinResponseFrom(project model.Project, pin model.ProjectPin, dashboardOrder int) projectPinResponse {
 	return projectPinResponse{
-		ID:                project.ID,
-		Identifier:        project.Identifier,
-		Name:              project.Name,
-		Description:       project.Description,
-		NamespaceStrategy: project.NamespaceStrategy,
-		CreatedAt:         project.CreatedAt,
-		DashboardOrder:    dashboardOrder,
-		LastUsedAt:        project.LastUsedAt,
-		UseCount:          project.UseCount,
-		PinnedAt:          pin.PinnedAt,
+		ID:             project.ID,
+		Identifier:     project.Identifier,
+		Name:           project.Name,
+		Description:    project.Description,
+		CreatedAt:      project.CreatedAt,
+		DashboardOrder: dashboardOrder,
+		LastUsedAt:     project.LastUsedAt,
+		UseCount:       project.UseCount,
+		PinnedAt:       pin.PinnedAt,
 	}
 }
 

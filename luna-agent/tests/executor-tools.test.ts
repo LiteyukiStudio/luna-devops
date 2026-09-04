@@ -1,6 +1,4 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { loadConfig } from "../src/config.js"
-import { RunExecutor } from "../src/executor.js"
 import { ModelRuntime } from "../src/model-runtime.js"
 import { TestRepository } from "./support/test-repository.js"
 import { DeterministicProvider } from "../src/provider/deterministic.js"
@@ -11,9 +9,13 @@ import { MemoryToolCallStore, ProjectingToolCallStore, ToolOrchestrator } from "
 import { getToolDetailsTool } from "../src/tools/tool-details.js"
 import { searchToolsTool } from "../src/tools/tool-search.js"
 import { InMemoryRunStreamBus } from "../src/run-stream-bus.js"
-import { defaultRuntimeSettings, type RemoteRuntimeSettings } from "../src/runtime-settings.js"
+import { defaultRuntimeSettings } from "../src/runtime-settings.js"
 import { ManagedProvider } from "../src/provider/managed.js"
-import type { RemoteConfigSnapshot, RemoteProviderConfig } from "../src/provider/config-client.js"
+import type { RemoteProviderConfig } from "../src/provider/config-client.js"
+import { testRegistry } from "./support/model-tool-registry.js"
+import { testExecutor } from "./support/run-executor.js"
+import { testRemoteConfigSource, testRemoteProviderConfig } from "./support/remote-config.js"
+import { testToolOperation } from "./support/tool-catalog.js"
 
 afterEach(() => {
   vi.useRealTimers()
@@ -25,10 +27,8 @@ describe("RunExecutor slim lifecycle", () => {
     class FailingClaimRepository extends TestRepository {
       override async claimNextQueuedRun(): Promise<never> { throw new Error("dependency.postgres.unavailable") }
     }
-    const executor = new RunExecutor(
-      new FailingClaimRepository(), new ModelRuntime(new DeterministicProvider()),
-      loadConfig({ NODE_ENV: "test" }),
-    )
+    const repository = new FailingClaimRepository()
+    const executor = testExecutor(repository, new ModelRuntime(new DeterministicProvider(), testRegistry()))
     executor.start()
     await new Promise(resolve => setTimeout(resolve, 10))
     await expect(executor.stop()).resolves.toBeUndefined()
@@ -49,11 +49,7 @@ describe("RunExecutor slim lifecycle", () => {
     if (!run) throw new Error("missing run")
     run.startedAt = new Date(Date.now() - 60_000).toISOString()
     const streamBus = new CleanupBus(repository)
-    const executor = new RunExecutor(
-      repository, new ModelRuntime(new DeterministicProvider()),
-      loadConfig({ NODE_ENV: "test" }),
-      undefined, undefined, defaultRuntimeSettings, undefined, streamBus,
-    )
+    const executor = testExecutor(repository, new ModelRuntime(new DeterministicProvider(), testRegistry()), { streamBus })
 
     await expect((executor as unknown as { interruptOrphanedRuns(): Promise<boolean> }).interruptOrphanedRuns()).resolves.toBe(true)
 
@@ -79,10 +75,7 @@ describe("RunExecutor slim lifecycle", () => {
       }
     }
     const repository = new FlakyReconcileRepository()
-    const executor = new RunExecutor(
-      repository, new ModelRuntime(new DeterministicProvider()),
-      loadConfig({ NODE_ENV: "test" }),
-    )
+    const executor = testExecutor(repository, new ModelRuntime(new DeterministicProvider(), testRegistry()))
 
     executor.start()
     await vi.advanceTimersByTimeAsync(0)
@@ -122,10 +115,7 @@ describe("RunExecutor slim lifecycle", () => {
       return interrupt(runId, rowVersion)
     })
     const claim = vi.spyOn(repository, "claimNextQueuedRun")
-    const executor = new RunExecutor(
-      repository, new ModelRuntime(new DeterministicProvider()),
-      loadConfig({ NODE_ENV: "test" }),
-    )
+    const executor = testExecutor(repository, new ModelRuntime(new DeterministicProvider(), testRegistry()))
 
     executor.start()
     await vi.advanceTimersByTimeAsync(0)
@@ -144,19 +134,8 @@ describe("RunExecutor slim lifecycle", () => {
   it("keeps one immutable provider and runtime snapshot across a refresh between model steps", async () => {
     const oldConfig = remoteConfig("cfg-old", "https://old-provider.example/v1/")
     const newConfig = remoteConfig("cfg-new", "https://new-provider.example/v1/")
-    let current = oldConfig
-    const listeners = new Set<(config: RemoteProviderConfig) => void>()
-    const remoteSnapshot = {
-      current: () => current,
-      subscribe: (listener: (config: RemoteProviderConfig) => void) => {
-        listeners.add(listener)
-        return () => listeners.delete(listener)
-      },
-    } as unknown as RemoteConfigSnapshot
-    const publish = (config: RemoteProviderConfig) => {
-      current = config
-      for (const listener of listeners) listener(config)
-    }
+    const remote = testRemoteConfigSource(oldConfig)
+    const remoteSnapshot = remote.source
     const observed: Array<{ runId: string, configVersion: string, baseUrl: string, maxOutputTokens: number }> = []
     const modelAttempts = new Map<string, number>()
     let firstRunId = ""
@@ -190,14 +169,14 @@ describe("RunExecutor slim lifecycle", () => {
     let notifySecondStep!: () => void
     const secondStepStarted = new Promise<void>(resolve => { notifySecondStep = resolve })
     let toolResolutionCount = 0
-    const runtime = new ModelRuntime(managedProvider, async () => {
+    const runtime = new ModelRuntime(managedProvider, testRegistry({ resolve: async () => {
       toolResolutionCount += 1
       if (toolResolutionCount === 2) {
         notifySecondStep()
         await secondStepReleased
       }
       return []
-    })
+    } }))
     const repository = new TestRepository()
     const conversation = await repository.createConversation("usr_snapshot", "snapshot")
     const first = await repository.createTurn("usr_snapshot", {
@@ -205,18 +184,14 @@ describe("RunExecutor slim lifecycle", () => {
       idempotencyKey: "runtime-snapshot-first", actorSessionId: "ses_snapshot",
     })
     firstRunId = first.run.id
-    const executor = new RunExecutor(
-      repository,
-      runtime,
-      loadConfig({ NODE_ENV: "test" }),
-      undefined,
-      remoteSnapshot,
-      { ...defaultRuntimeSettings, ...oldConfig.runtime },
-    )
+    const executor = testExecutor(repository, runtime, {
+      runtimeConfig: remoteSnapshot,
+      initialRuntimeSettings: { ...defaultRuntimeSettings, ...oldConfig.runtime },
+    })
 
     const firstExecution = executor.runOnce()
     await secondStepStarted
-    publish(newConfig)
+    remote.publish(newConfig)
     releaseSecondStep()
     await expect(firstExecution).resolves.toBe(true)
 
@@ -238,30 +213,16 @@ describe("RunExecutor slim lifecycle", () => {
       { runId: secondRunId, configVersion: "cfg-new", baseUrl: "https://new-provider.example/v1/", maxOutputTokens: defaultRuntimeSettings.assistantMaxOutputTokens },
     ])
     const firstCard = (await repository.getExecutionInput(firstRunId))?.toolInteractions
-      .find(item => item.content.operationId === "create_interaction_cards")
+      .find(item => item.content.operationId === "present_card")
     const secondCard = (await repository.getExecutionInput(secondRunId))?.toolInteractions
-      .find(item => item.content.operationId === "create_interaction_cards")
+      .find(item => item.content.operationId === "present_card")
     expect(firstCard?.content.result).toMatchObject({ maxAttempts: 2 })
     expect(secondCard?.content.result).toMatchObject({ maxAttempts: 2 })
   })
 
   it("restores the first-claim configuration after approval while new Runs use the refresh", async () => {
-    const oldConfig = remoteConfig("cfg-approval-old", "https://old-approval.example/v1/")
-    const newConfig = remoteConfig("cfg-approval-new", "https://new-approval.example/v1/")
-    let current = oldConfig
-    const listeners = new Set<(config: RemoteProviderConfig) => void>()
-    const remoteSnapshot = {
-      current: () => current,
-      subscribe: (listener: (config: RemoteProviderConfig) => void) => {
-        listeners.add(listener)
-        return () => listeners.delete(listener)
-      },
-    } as unknown as RemoteConfigSnapshot
-    const publish = (config: RemoteProviderConfig) => {
-      current = config
-      for (const listener of listeners) listener(config)
-    }
     const catalog = ToolCatalog.load([{
+      ...testToolOperation("restartRelease"),
       operationId: "restartRelease",
       name: "重启发布",
       summary: "重启指定发布。",
@@ -274,6 +235,10 @@ describe("RunExecutor slim lifecycle", () => {
       parameters: [{ inputName: "releaseId", wireName: "releaseId", in: "path", required: true }],
       inputSchema: { type: "object", properties: { releaseId: { type: "string" } }, required: ["releaseId"], additionalProperties: false },
     }])
+    const oldConfig = remoteConfig("cfg-approval-old", "https://old-approval.example/v1/", catalog.all())
+    const newConfig = remoteConfig("cfg-approval-new", "https://new-approval.example/v1/", catalog.all())
+    const remote = testRemoteConfigSource(oldConfig)
+    const remoteSnapshot = remote.source
     const observed: Array<{ runId: string, configVersion: string, maxOutputTokens: number }> = []
     const attempts = new Map<string, number>()
     let approvalRunId = ""
@@ -314,19 +279,21 @@ describe("RunExecutor slim lifecycle", () => {
       new ProjectingToolCallStore(store, repository),
     )
     const runLimit = vi.spyOn(tools, "setRunMaxToolCallsForRun")
-    const executor = new RunExecutor(
+    const executor = testExecutor(
       repository,
-      new ModelRuntime(provider, catalog.modelTools(["restartRelease"])),
-      loadConfig({ NODE_ENV: "test" }),
-      tools,
-      remoteSnapshot,
-      { ...defaultRuntimeSettings, ...oldConfig.runtime },
+      new ModelRuntime(provider, testRegistry({ resolve: () => catalog.modelTools(["restartRelease"]) })),
+      {
+        catalog,
+        tools,
+        runtimeConfig: remoteSnapshot,
+        initialRuntimeSettings: { ...defaultRuntimeSettings, ...oldConfig.runtime },
+      },
     )
 
     await expect(executor.runOnce()).resolves.toBe(true)
     expect((await repository.getRun("usr_claim_snapshot", approvalRunId))?.status).toBe("waiting_approval")
     expect(await repository.getRun("usr_claim_snapshot", approvalRunId)).not.toHaveProperty("executionSnapshot")
-    publish(newConfig)
+    remote.publish(newConfig)
     const pending = [...store.records.values()][0]!
     await tools.resolveApproval(pending.id, "approve")
     await repository.updateRun(approvalRunId, "waiting_approval", "queued")
@@ -363,11 +330,7 @@ describe("RunExecutor slim lifecycle", () => {
       idempotencyKey: "run-complete",
       actorSessionId: "ses_a",
     })
-    const executor = new RunExecutor(
-      repository,
-      new ModelRuntime(new DeterministicProvider()),
-      loadConfig({ NODE_ENV: "test" }),
-    )
+    const executor = testExecutor(repository, new ModelRuntime(new DeterministicProvider(), testRegistry()))
 
     expect(await executor.runOnce()).toBe(true)
     expect((await repository.getRun("usr_a", created.run.id))?.status).toBe("completed")
@@ -384,11 +347,7 @@ describe("RunExecutor slim lifecycle", () => {
       idempotencyKey: "terminal-persistence-failure",
     })
     repository.persistRunStreamBatch = async () => { throw new Error("database unavailable") }
-    const executor = new RunExecutor(
-      repository,
-      new ModelRuntime(new DeterministicProvider()),
-      loadConfig({ NODE_ENV: "test" }),
-    )
+    const executor = testExecutor(repository, new ModelRuntime(new DeterministicProvider(), testRegistry()))
 
     expect(await executor.runOnce()).toBe(true)
     expect(await repository.getRun("usr_terminal_failure", created.run.id)).toMatchObject({
@@ -425,7 +384,7 @@ describe("RunExecutor slim lifecycle", () => {
       health: async () => ({ ok: true }),
     }
 
-    await new RunExecutor(repository, new ModelRuntime(provider), loadConfig({ NODE_ENV: "test" })).runOnce()
+    await testExecutor(repository, new ModelRuntime(provider, testRegistry())).runOnce()
 
     const completed = (await repository.getEvents("usr_usage_event", created.run.id, 0))
       .find(event => event.type === "model.completed")
@@ -461,7 +420,7 @@ describe("RunExecutor slim lifecycle", () => {
       capabilities: () => ({ streaming: true, toolCalling: true, structuredOutput: true }),
       health: async () => ({ ok: true }),
     }
-    const executor = new RunExecutor(repository, new ModelRuntime(provider), loadConfig({ NODE_ENV: "test" }))
+    const executor = testExecutor(repository, new ModelRuntime(provider, testRegistry()))
     const executing = executor.runOnce()
     await started
     await executor.stop()
@@ -495,10 +454,7 @@ describe("RunExecutor slim lifecycle", () => {
       health: async () => ({ ok: true }),
     }
     const bus = new InMemoryRunStreamBus(repository)
-    const executor = new RunExecutor(
-      repository, new ModelRuntime(provider), loadConfig({ NODE_ENV: "test" }),
-      undefined, undefined, defaultRuntimeSettings, undefined, bus,
-    )
+    const executor = testExecutor(repository, new ModelRuntime(provider, testRegistry()), { streamBus: bus })
     const executing = executor.runOnce()
     await deltaPublished
     expect(await executor.cancel(created.run.id)).toBe(true)
@@ -525,6 +481,7 @@ describe("RunExecutor slim lifecycle", () => {
       actorSessionId: "ses_tool_cancel",
     })
     const catalog = ToolCatalog.load([{
+      ...testToolOperation("getProject"),
       operationId: "getProject",
       name: "读取项目空间",
       summary: "读取指定项目空间。",
@@ -567,11 +524,10 @@ describe("RunExecutor slim lifecycle", () => {
     }))
     const store = new MemoryToolCallStore()
     const tools = new ToolOrchestrator(catalog, client, new ProjectingToolCallStore(store, repository))
-    const executor = new RunExecutor(
+    const executor = testExecutor(
       repository,
-      new ModelRuntime(provider, catalog.modelTools(["getProject"])),
-      loadConfig({ NODE_ENV: "test" }),
-      tools,
+      new ModelRuntime(provider, testRegistry({ resolve: () => catalog.modelTools(["getProject"]) })),
+      { catalog, tools },
     )
 
     const executing = executor.runOnce()
@@ -595,6 +551,7 @@ describe("RunExecutor slim lifecycle", () => {
       actorSessionId: "ses_a",
     })
     const catalog = ToolCatalog.load([{
+      ...testToolOperation("restartRelease"),
       operationId: "restartRelease",
       name: "重启发布",
       summary: "重启指定发布。",
@@ -632,15 +589,10 @@ describe("RunExecutor slim lifecycle", () => {
       new DeterministicLunaApiClient(() => ({ status: 200, body: { restarted: true } })),
       new ProjectingToolCallStore(store, repository),
     )
-    const executor = new RunExecutor(
+    const executor = testExecutor(
       repository,
-      new ModelRuntime(provider, catalog.modelTools(["restartRelease"])),
-      loadConfig({ NODE_ENV: "test" }),
-      tools,
-      undefined,
-      defaultRuntimeSettings,
-      undefined,
-      streamBus,
+      new ModelRuntime(provider, testRegistry({ resolve: () => catalog.modelTools(["restartRelease"]) })),
+      { catalog, tools, streamBus },
     )
 
     await executor.runOnce()
@@ -675,6 +627,7 @@ describe("RunExecutor slim lifecycle", () => {
       actorSessionId: "ses_a",
     })
     const catalog = ToolCatalog.load([{
+      ...testToolOperation("getProject"),
       operationId: "getProject",
       name: "读取项目空间",
       summary: "读取指定项目空间。",
@@ -726,7 +679,7 @@ describe("RunExecutor slim lifecycle", () => {
       new DeterministicLunaApiClient(() => ({ status: 200, body: { id: "prj_a" } })),
       new ProjectingToolCallStore(new MemoryToolCallStore(), repository),
     )
-    const executor = new RunExecutor(repository, runtime, loadConfig({ NODE_ENV: "test" }), tools)
+    const executor = testExecutor(repository, runtime, { catalog, tools })
 
     await executor.runOnce()
 
@@ -748,6 +701,7 @@ describe("RunExecutor slim lifecycle", () => {
       actorSessionId: "ses_a",
     })
     const catalog = ToolCatalog.load([{
+      ...testToolOperation("getProject"),
       operationId: "getProject",
       name: "读取项目空间",
       summary: "按 projectId 读取项目空间详情。",
@@ -814,7 +768,7 @@ describe("RunExecutor slim lifecycle", () => {
       new ProjectingToolCallStore(new MemoryToolCallStore(), repository),
     )
 
-    await new RunExecutor(repository, runtime, loadConfig({ NODE_ENV: "test" }), tools).runOnce()
+    await testExecutor(repository, runtime, { catalog, tools }).runOnce()
 
     expect(executed).toEqual(["prj_a", "prj_b"])
     expect(observedTools[0]).not.toContain("getProject")
@@ -835,6 +789,7 @@ describe("RunExecutor slim lifecycle", () => {
       conversationId: conversation.id, input: "确认项目工具", pageContext: {}, idempotencyKey: "details-cache-run", actorSessionId: "ses_a",
     })
     const catalog = ToolCatalog.load([{
+      ...testToolOperation("getProject"),
       operationId: "getProject", name: "查看项目空间", summary: "读取项目空间", category: "projects", tags: ["Projects"],
       aliases: { zh: ["项目空间详情"], en: ["project details"] }, purpose: { zh: "读取项目空间。", en: "Get project." },
       avoidWhen: { zh: "", en: "" }, preconditions: { zh: [], en: [] }, successEvidence: { zh: "返回项目空间。", en: "Returns project." },
@@ -868,7 +823,7 @@ describe("RunExecutor slim lifecycle", () => {
       },
     })
 
-    await new RunExecutor(repository, runtime, loadConfig({ NODE_ENV: "test" })).runOnce()
+    await testExecutor(repository, runtime, { catalog }).runOnce()
 
     const records = (await repository.getExecutionInput(created.run.id))!.toolInteractions.filter(item => item.content.operationId === "get_tool_details")
     expect(records).toHaveLength(2)
@@ -881,34 +836,7 @@ describe("RunExecutor slim lifecycle", () => {
 function remoteConfig(
   version: string,
   baseUrl: string,
+  toolCatalog?: unknown[],
 ): RemoteProviderConfig {
-  const runtime: RemoteRuntimeSettings = {
-    providerTimeoutMs: defaultRuntimeSettings.providerTimeoutMs,
-    maxRequestRetries: defaultRuntimeSettings.maxRequestRetries,
-    runTimeoutMs: defaultRuntimeSettings.runTimeoutMs,
-    agentConcurrentRuns: defaultRuntimeSettings.agentConcurrentRuns,
-    userConcurrentRuns: defaultRuntimeSettings.userConcurrentRuns,
-  }
-  return {
-    version,
-    provider: {
-      baseUrl,
-      apiKey: `${version}-secret`,
-      providerCompatibility: "openai",
-      promptCacheKeyMode: "disabled",
-      channelAffinityEnabled: false,
-      configured: true,
-      models: [{
-        id: "aimod_snapshot",
-        name: "snapshot-model",
-        maxContextTokens: 32_000,
-        maxOutputTokens: 8_000,
-        inputCreditsPerMillion: "1",
-        outputCreditsPerMillion: "2",
-        cachedInputCreditsPerMillion: "0.5",
-      }],
-    },
-    runtime,
-    toolCatalog: [],
-  }
+  return testRemoteProviderConfig({ version, baseUrl, ...(toolCatalog ? { toolCatalog } : {}) })
 }

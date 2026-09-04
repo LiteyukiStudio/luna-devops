@@ -22,3 +22,26 @@ export const auditedDynamicTranslationCalls = {
   'src/pages/settings/identity/UsersPage.tsx|languageKeys[user.language] ?? \'languages.zhCN\'': 'Language keys come from a local supported-language map with a zh-CN fallback.',
   'src/pages/settings/ai/ai-assistant-settings.ts|messageKey': 'boundedInt callers pass literal settings.ai validation keys.',
 }
+
+// The Agent emits these keys in interaction-card/timeline payloads consumed by the Web UI.
+// They are listed exactly so unrelated aiAssistant resources remain subject to the unused-key gate.
+export const auditedExternalTranslationKeys = {
+  'luna-agent/src/executor/cards.ts': [
+    'aiAssistant.cards.created',
+    'aiAssistant.cards.failed',
+    'aiAssistant.cards.preparing',
+    'aiAssistant.cards.preparingToolTitle',
+    'aiAssistant.cards.toolTitle',
+  ],
+  'luna-agent/src/executor/internal-tools.ts': [
+    'aiAssistant.tools.navigateToRoute',
+    'aiAssistant.tools.navigateToRouteReady',
+    'aiAssistant.tools.renameConversation',
+    'aiAssistant.tools.renameConversationCompleted',
+    'aiAssistant.tools.renameConversationLocked',
+  ],
+  'luna-agent/src/timeline-presenter.ts': [
+    'aiAssistant.options.description',
+    'aiAssistant.options.title',
+  ],
+}

@@ -1,7 +1,6 @@
 export default {
   inbox: {
     title: 'Inbox',
-    description: 'Review platform messages and requests that need your attention.',
     open: 'Open inbox',
     unreadCount: '{{count}} unread messages',
     unreadCountOverflow: 'More than 99 unread messages',
@@ -40,7 +39,7 @@ export default {
       system: 'System',
     },
     priority: { critical: 'Critical', high: 'Important' },
-    detail: { title: 'Message details', requestStatus: 'Request status', expiresAt: 'Expires at' },
+    detail: { title: 'Message details', expiresAt: 'Expires at' },
     decision: {
       acceptTitle: 'Accept this request?',
       acceptDescription: 'The platform will revalidate permissions and resource state before applying the change.',

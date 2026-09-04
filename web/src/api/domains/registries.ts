@@ -26,10 +26,6 @@ export const registriesApi = {
       search.set('targetName', params.targetName)
     return request<RegistryImageTemplateDefault>(`/registries/${registryId}/image-template-default?${search.toString()}`)
   },
-  getDefaultRegistry: (projectId: string) =>
-    request<ArtifactRegistry>(`/projects/${projectId}/registries/default`),
-  listRegistryCredentials: (registryId: string, visibility?: ResultVisibility) =>
-    request<PaginatedResponse<RegistryCredential>>(`/registries/${registryId}/credentials?${paginationQuery({ ...selectionPageParams, visibility })}`).then(selectionItems),
   listRegistryCredentialsPage: (registryId: string, params: PaginationParams & { visibility?: ResultVisibility }) =>
     request<PaginatedResponse<RegistryCredential>>(`/registries/${registryId}/credentials?${paginationQuery(params)}`),
   listAllRegistryCredentialsPage: (params: PaginationParams & { visibility?: ResultVisibility }) =>

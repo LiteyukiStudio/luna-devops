@@ -16,7 +16,7 @@ func TestRuntimeClusterExplicitZeroPolicyPersistsOnCreate(t *testing.T) {
 		},
 	})
 	cluster := model.RuntimeCluster{
-		ID: "clu_zero_policy", Name: "Zero Policy", Type: "kubernetes", Scope: "global",
+		ID: "clu_zero_policy", Name: "Zero Policy", Scope: "global",
 		CPURequestPercent: 0, MemoryRequestPercent: 0, CPULimitPercent: 0, MemoryLimitPercent: 0,
 	}
 	if err := db.Create(&cluster).Error; err != nil {

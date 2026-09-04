@@ -2,6 +2,8 @@ package api
 
 import (
 	"context"
+	"github.com/LiteyukiStudio/devops/internal/api/projectapi"
+	transportapi "github.com/LiteyukiStudio/devops/internal/api/transport"
 	"net/http"
 	"testing"
 	"time"
@@ -15,30 +17,30 @@ import (
 func TestRuntimeTerminalAuthorizationStateRequiresLiveIdentityAndAuthorization(t *testing.T) {
 	now := time.Now()
 	binding := runtimeTerminalAuthorizationBinding{UserID: "usr_test", SubjectID: "ses_test", Deadline: now.Add(time.Hour)}
-	active := runtimeTerminalAuthorizationState{
+	active := projectapi.ContinuousAuthorizationState{
 		Session:              model.UserSession{ID: binding.SubjectID, UserID: binding.UserID, ExpiresAt: now.Add(time.Hour)},
 		User:                 model.User{ID: binding.UserID},
 		AuthorizationAllowed: true,
 	}
 	tests := []struct {
 		name   string
-		mutate func(*runtimeTerminalAuthorizationState, *runtimeTerminalAuthorizationBinding)
+		mutate func(*projectapi.ContinuousAuthorizationState, *runtimeTerminalAuthorizationBinding)
 		want   bool
 	}{
 		{name: "active", want: true},
-		{name: "session removed", mutate: func(state *runtimeTerminalAuthorizationState, _ *runtimeTerminalAuthorizationBinding) {
+		{name: "session removed", mutate: func(state *projectapi.ContinuousAuthorizationState, _ *runtimeTerminalAuthorizationBinding) {
 			state.Session = model.UserSession{}
 		}},
-		{name: "session expired", mutate: func(state *runtimeTerminalAuthorizationState, _ *runtimeTerminalAuthorizationBinding) {
+		{name: "session expired", mutate: func(state *projectapi.ContinuousAuthorizationState, _ *runtimeTerminalAuthorizationBinding) {
 			state.Session.ExpiresAt = now
 		}},
-		{name: "user disabled", mutate: func(state *runtimeTerminalAuthorizationState, _ *runtimeTerminalAuthorizationBinding) {
+		{name: "user disabled", mutate: func(state *projectapi.ContinuousAuthorizationState, _ *runtimeTerminalAuthorizationBinding) {
 			state.User.Disabled = true
 		}},
-		{name: "authorization removed", mutate: func(state *runtimeTerminalAuthorizationState, _ *runtimeTerminalAuthorizationBinding) {
+		{name: "authorization removed", mutate: func(state *projectapi.ContinuousAuthorizationState, _ *runtimeTerminalAuthorizationBinding) {
 			state.AuthorizationAllowed = false
 		}},
-		{name: "ticket deadline reached", mutate: func(_ *runtimeTerminalAuthorizationState, binding *runtimeTerminalAuthorizationBinding) {
+		{name: "ticket deadline reached", mutate: func(_ *projectapi.ContinuousAuthorizationState, binding *runtimeTerminalAuthorizationBinding) {
 			binding.Deadline = now
 		}},
 	}
@@ -49,7 +51,7 @@ func TestRuntimeTerminalAuthorizationStateRequiresLiveIdentityAndAuthorization(t
 			if test.mutate != nil {
 				test.mutate(&state, &currentBinding)
 			}
-			if got := state.active(currentBinding, now); got != test.want {
+			if got := projectapi.ContinuousAuthorizationStateActive(state, currentBinding, now); got != test.want {
 				t.Fatalf("active() = %v, want %v", got, test.want)
 			}
 		})
@@ -66,17 +68,17 @@ func TestRuntimeTerminalAuthorizationStateSupportsLunaCLIOAuth(t *testing.T) {
 	}
 	binding := continuousAuthorizationBindingForAccessToken(token.UserID, token)
 	binding.Deadline = now.Add(time.Hour)
-	state := runtimeTerminalAuthorizationState{
+	state := projectapi.ContinuousAuthorizationState{
 		AccessToken:      token,
 		OAuthGrant:       model.OAuthGrant{ID: grantID, ApplicationID: lunaCLIApplicationID, UserID: binding.UserID},
 		OAuthApplication: model.OAuthApplication{ID: lunaCLIApplicationID},
 		User:             model.User{ID: binding.UserID}, AuthorizationAllowed: true,
 	}
-	if !state.active(binding, now) {
+	if !projectapi.ContinuousAuthorizationStateActive(state, binding, now) {
 		t.Fatal("active Luna CLI OAuth grant should authorize the terminal")
 	}
 	state.OAuthGrant.RevokedAt = &now
-	if state.active(binding, now) {
+	if projectapi.ContinuousAuthorizationStateActive(state, binding, now) {
 		t.Fatal("revoked Luna CLI OAuth grant must revoke terminal authorization")
 	}
 }
@@ -91,7 +93,7 @@ func TestOAuthFamilyRevocationInvalidatesTerminalAndDownloadIdentity(t *testing.
 	}
 	grant := model.OAuthGrant{ID: "ogrt_family_bound_identity", ApplicationID: application.ID, UserID: user.ID, Scope: "user:read"}
 	accessToken := model.AccessToken{
-		ID: "tok_family_bound_identity", UserID: user.ID, Name: application.Name, Scope: "user:read", TokenHash: hashToken(plainToken),
+		ID: "tok_family_bound_identity", UserID: user.ID, Name: application.Name, Scope: "user:read", TokenHash: transportapi.HashToken(plainToken),
 		Source: "oauth", OAuthApplicationID: application.ID, OAuthGrantID: grant.ID, OAuthFamilyID: "ofam_family_bound_identity",
 	}
 	if err := db.Create(&user).Error; err != nil {
@@ -108,6 +110,7 @@ func TestOAuthFamilyRevocationInvalidatesTerminalAndDownloadIdentity(t *testing.
 	}
 
 	handlers := &Handlers{db: db}
+	handlers.domains = newDomainHandlers(handlers)
 	binding := continuousAuthorizationBindingForAccessToken(user.ID, accessToken)
 	binding.Deadline = now.Add(time.Hour)
 	if !handlers.continuousAuthorizationActive(t.Context(), binding, func(context.Context, model.User) bool { return true }) {
@@ -119,7 +122,7 @@ func TestOAuthFamilyRevocationInvalidatesTerminalAndDownloadIdentity(t *testing.
 		if !ok {
 			return
 		}
-		subject, ok := handlers.currentInteractiveSubject(ctx, current)
+		subject, ok := handlers.domains.runtime.CurrentInteractiveSubject(ctx, current)
 		if !ok {
 			ctx.Status(http.StatusForbidden)
 			return
@@ -149,7 +152,7 @@ func TestRuntimeTerminalAuthorizationRevokesDeletedSession(t *testing.T) {
 	db := authIntegrationDB(t)
 	now := time.Now()
 	user := model.User{ID: "usr_terminal_monitor", Email: "terminal-monitor@example.com", Name: "Terminal Monitor", Role: authz.PlatformRoleAdmin, Language: "en-US"}
-	session := model.UserSession{ID: "ses_terminal_monitor", UserID: user.ID, TokenHash: hashToken("terminal-monitor"), ExpiresAt: now.Add(time.Hour)}
+	session := model.UserSession{ID: "ses_terminal_monitor", UserID: user.ID, TokenHash: transportapi.HashToken("terminal-monitor"), ExpiresAt: now.Add(time.Hour)}
 	if err := db.Create(&user).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -158,6 +161,7 @@ func TestRuntimeTerminalAuthorizationRevokesDeletedSession(t *testing.T) {
 	}
 	binding := runtimeTerminalAuthorizationBinding{UserID: user.ID, SubjectID: session.ID, Deadline: session.ExpiresAt}
 	handlers := &Handlers{db: db}
+	handlers.domains = newDomainHandlers(handlers)
 	if !handlers.continuousAuthorizationActive(context.Background(), binding, func(context.Context, model.User) bool { return true }) {
 		t.Fatal("live session should authorize the terminal")
 	}

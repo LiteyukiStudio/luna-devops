@@ -11,7 +11,6 @@ type BuildRun struct {
 	ProjectID               string         `gorm:"index;not null" json:"projectId"`
 	ApplicationID           string         `gorm:"index" json:"applicationId"`
 	DeploymentTargetID      string         `gorm:"index" json:"deploymentTargetId"`
-	BuildLabels             string         `json:"buildLabels"`
 	BuildVariableSetIDs     string         `gorm:"type:text" json:"buildVariableSetIds"`
 	BuildVariablesSnapshot  string         `gorm:"type:text;not null;default:'{}'" json:"-"`
 	BuildSecretRefsSnapshot string         `gorm:"type:text;not null;default:'{}'" json:"-"`
@@ -39,10 +38,6 @@ type BuildRun struct {
 	TargetTag               string         `json:"targetTag"`
 	ImageRef                string         `json:"imageRef"`
 	ImageDigest             string         `json:"imageDigest"`
-	CacheConfig             string         `json:"cacheConfig"`
-	CPUCoreSeconds          int64          `json:"cpuCoreSeconds"`
-	MemoryMBSeconds         int64          `json:"memoryMbSeconds"`
-	CreditCost              int64          `json:"creditCost"`
 	StartedAt               *time.Time     `json:"startedAt"`
 	FinishedAt              *time.Time     `json:"finishedAt"`
 	CreatedBy               string         `gorm:"index" json:"createdBy"`
@@ -101,25 +96,20 @@ type BuildVariableSet struct {
 }
 
 type BuildJob struct {
-	ID              string         `gorm:"primaryKey" json:"id"`
-	BuildRunID      string         `gorm:"index;not null" json:"buildRunId"`
-	ProjectID       string         `gorm:"index;not null" json:"projectId"`
-	Type            string         `gorm:"not null;default:build" json:"type"`
-	Status          string         `gorm:"index;not null;default:queued" json:"status"`
-	BuilderID       string         `gorm:"index" json:"builderId"`
-	LeaseToken      string         `gorm:"index" json:"-"`
-	LeaseUntil      *time.Time     `gorm:"index" json:"leaseUntil"`
-	LastHeartbeatAt *time.Time     `gorm:"index" json:"lastHeartbeatAt"`
-	ExecutorID      string         `json:"executorId"`
-	ExecutorName    string         `json:"executorName"`
-	Message         string         `json:"message"`
-	LogRef          string         `json:"logRef"`
-	Attempts        int            `gorm:"not null;default:0" json:"attempts"`
-	StartedAt       *time.Time     `json:"startedAt"`
-	FinishedAt      *time.Time     `json:"finishedAt"`
-	CreatedAt       time.Time      `json:"createdAt"`
-	UpdatedAt       time.Time      `json:"updatedAt"`
-	DeletedAt       gorm.DeletedAt `gorm:"index" json:"-"`
+	ID           string         `gorm:"primaryKey" json:"id"`
+	BuildRunID   string         `gorm:"index;not null" json:"buildRunId"`
+	ProjectID    string         `gorm:"index;not null" json:"projectId"`
+	Status       string         `gorm:"index;not null;default:queued" json:"status"`
+	ExecutorID   string         `json:"executorId"`
+	ExecutorName string         `json:"executorName"`
+	Message      string         `json:"message"`
+	LogRef       string         `json:"logRef"`
+	Attempts     int            `gorm:"not null;default:0" json:"attempts"`
+	StartedAt    *time.Time     `json:"startedAt"`
+	FinishedAt   *time.Time     `json:"finishedAt"`
+	CreatedAt    time.Time      `json:"createdAt"`
+	UpdatedAt    time.Time      `json:"updatedAt"`
+	DeletedAt    gorm.DeletedAt `gorm:"index" json:"-"`
 }
 
 type BuildLog struct {

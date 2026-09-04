@@ -21,7 +21,7 @@ func TestVolumeTransferBillingReconcilerSettlesTerminalBytesOnce(t *testing.T) {
 		t.Fatalf("migrate worker transfer billing tables: %v", err)
 	}
 	project := model.Project{
-		ID: "prj_worker_transfer", Identifier: "worker-transfer", Name: "Worker transfer", NamespaceStrategy: "project",
+		ID: "prj_worker_transfer", Identifier: "worker-transfer", Name: "Worker transfer",
 		BillingOwnerUserID: "usr_worker_transfer", DeleteStatus: "active",
 	}
 	if err := db.Create(&project).Error; err != nil {

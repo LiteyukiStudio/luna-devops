@@ -441,7 +441,6 @@ func (h *Handlers) buildTemplateInstallPlan(ctx *gin.Context, user model.User, p
 		ID:                  targetID,
 		ProjectID:           project.ID,
 		ApplicationID:       applicationID,
-		EnvironmentID:       targetID,
 		Name:                deploymentName,
 		Stage:               stage,
 		KubernetesName:      resourceidentifier.DeploymentTargetName(applicationIdentifier, stage),
@@ -483,7 +482,6 @@ func (h *Handlers) buildTemplateInstallPlan(ctx *gin.Context, user model.User, p
 			ID:                 id.New("rel"),
 			ProjectID:          project.ID,
 			ApplicationID:      applicationID,
-			EnvironmentID:      targetID,
 			DeploymentTargetID: targetID,
 			ImageRef:           target.ImageRef,
 			Type:               "deploy",
@@ -601,11 +599,11 @@ func (h *Handlers) templateSecretFiles(ctx *gin.Context, userID string, installa
 func (h *Handlers) defaultRuntimeClusterID(ctx context.Context) string {
 	var cluster model.RuntimeCluster
 	query := runtimecluster.ActiveScope(h.dbWithContext(ctx))
-	err := query.Where("type in ? and is_default = ?", []string{"kubernetes", "k3s"}, true).Order("created_at asc").First(&cluster).Error
+	err := query.Where("is_default = ?", true).Order("created_at asc").First(&cluster).Error
 	if err == nil {
 		return cluster.ID
 	}
-	err = query.Where("type in ?", []string{"kubernetes", "k3s"}).Order("created_at asc").First(&cluster).Error
+	err = query.Order("created_at asc").First(&cluster).Error
 	if err == nil {
 		return cluster.ID
 	}

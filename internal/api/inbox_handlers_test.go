@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"github.com/LiteyukiStudio/devops/internal/api/notificationapi"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -80,9 +81,10 @@ func TestListInboxMessagesNormalizesFiltersAndPagination(t *testing.T) {
 		TotalPages: 0,
 	}}
 	handlers := &Handlers{inbox: service}
+	handlers.domains = newDomainHandlers(handlers)
 	recorder, ctx := newInboxHandlerContext(http.MethodGet, "/api/v1/inbox?page=2&pageSize=500&sortBy=unsafe&sortOrder=asc&filter=unread&category=billing", "usr_current", nil)
 
-	handlers.ListInboxMessages(ctx)
+	handlers.domains.notification.ListInboxMessages(ctx)
 
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body.String())
@@ -102,7 +104,7 @@ func TestListInboxMessagesNormalizesFiltersAndPagination(t *testing.T) {
 }
 
 func TestInboxMessageResponseExposesParsedParamsWithoutStorageFields(t *testing.T) {
-	response := inboxMessageResponseFor(model.InboxMessage{
+	response := notificationapi.InboxMessageResponseFor(model.InboxMessage{
 		ID:              "imsg_1",
 		RecipientUserID: "usr_private",
 		ParamsJSON:      `{"actorName":"Snowy","count":2}`,
@@ -120,7 +122,7 @@ func TestInboxMessageResponseExposesParsedParamsWithoutStorageFields(t *testing.
 		}
 	}
 
-	invalid := inboxMessageResponseFor(model.InboxMessage{ParamsJSON: "invalid"})
+	invalid := notificationapi.InboxMessageResponseFor(model.InboxMessage{ParamsJSON: "invalid"})
 	if invalid.Params == nil || len(invalid.Params) != 0 {
 		t.Fatalf("invalid params = %#v, want empty object", invalid.Params)
 	}
@@ -129,9 +131,10 @@ func TestInboxMessageResponseExposesParsedParamsWithoutStorageFields(t *testing.
 func TestListInboxMessagesRejectsUnknownFilterBeforeQuery(t *testing.T) {
 	service := &fakeInboxService{}
 	handlers := &Handlers{inbox: service}
+	handlers.domains = newDomainHandlers(handlers)
 	recorder, ctx := newInboxHandlerContext(http.MethodGet, "/api/v1/inbox?filter=everything", "usr_current", nil)
 
-	handlers.ListInboxMessages(ctx)
+	handlers.domains.notification.ListInboxMessages(ctx)
 
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body.String())
@@ -144,17 +147,18 @@ func TestListInboxMessagesRejectsUnknownFilterBeforeQuery(t *testing.T) {
 func TestInboxMutationsAlwaysUseCurrentUser(t *testing.T) {
 	service := &fakeInboxService{}
 	handlers := &Handlers{inbox: service}
+	handlers.domains = newDomainHandlers(handlers)
 
 	readRecorder, readContext := newInboxHandlerContext(http.MethodPost, "/api/v1/inbox/imsg_other/read", "usr_current", nil)
 	readContext.Params = gin.Params{{Key: "messageId", Value: "imsg_other"}}
-	handlers.MarkInboxMessageRead(readContext)
+	handlers.domains.notification.MarkInboxMessageRead(readContext)
 	if readRecorder.Code != http.StatusNoContent || service.markReadUserID != "usr_current" || service.markReadMessageID != "imsg_other" {
 		t.Fatalf("read status=%d user=%q message=%q", readRecorder.Code, service.markReadUserID, service.markReadMessageID)
 	}
 
 	archiveRecorder, archiveContext := newInboxHandlerContext(http.MethodPost, "/api/v1/inbox/imsg_other/archive", "usr_current", nil)
 	archiveContext.Params = gin.Params{{Key: "messageId", Value: "imsg_other"}}
-	handlers.ArchiveInboxMessage(archiveContext)
+	handlers.domains.notification.ArchiveInboxMessage(archiveContext)
 	if archiveRecorder.Code != http.StatusNoContent || service.archiveUserID != "usr_current" || service.archiveMessageID != "imsg_other" {
 		t.Fatalf("archive status=%d user=%q message=%q", archiveRecorder.Code, service.archiveUserID, service.archiveMessageID)
 	}
@@ -179,11 +183,12 @@ func TestDecideInboxActionRequestUsesInjectedBusinessHook(t *testing.T) {
 			return nil
 		},
 	}
+	handlers.domains = newDomainHandlers(handlers)
 	body := strings.NewReader(`{"decision":"accept","expectedVersion":1}`)
 	recorder, ctx := newInboxHandlerContext(http.MethodPost, "/api/v1/inbox/action-requests/iar_1/decision", "usr_current", body)
 	ctx.Params = gin.Params{{Key: "requestId", Value: "iar_1"}}
 
-	handlers.DecideInboxActionRequest(ctx)
+	handlers.domains.notification.DecideInboxActionRequest(ctx)
 
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body.String())
@@ -205,10 +210,11 @@ func TestDecideInboxActionRequestRejectsInvalidInput(t *testing.T) {
 			return nil
 		},
 	}
+	handlers.domains = newDomainHandlers(handlers)
 	recorder, ctx := newInboxHandlerContext(http.MethodPost, "/api/v1/inbox/action-requests/iar_1/decision", "usr_current", strings.NewReader(`{"decision":"approve","expectedVersion":0}`))
 	ctx.Params = gin.Params{{Key: "requestId", Value: "iar_1"}}
 
-	handlers.DecideInboxActionRequest(ctx)
+	handlers.domains.notification.DecideInboxActionRequest(ctx)
 
 	if recorder.Code != http.StatusBadRequest || called {
 		t.Fatalf("status=%d called=%t body=%s", recorder.Code, called, recorder.Body.String())
@@ -216,7 +222,7 @@ func TestDecideInboxActionRequestRejectsInvalidInput(t *testing.T) {
 }
 
 func TestInboxChangeBrokerIsolatesUsersAndUnsubscribes(t *testing.T) {
-	broker := newInboxChangeBroker()
+	broker := notificationapi.NewInboxChangeBroker()
 	userOne, unsubscribeOne := broker.Subscribe("usr_one")
 	userTwo, unsubscribeTwo := broker.Subscribe("usr_two")
 	defer unsubscribeTwo()
@@ -248,12 +254,13 @@ func TestInboxChangeBrokerIsolatesUsersAndUnsubscribes(t *testing.T) {
 func TestStreamInboxChangesStartsWithDatabaseUnreadCount(t *testing.T) {
 	service := &fakeInboxService{unreadCount: 4}
 	handlers := &Handlers{inbox: service}
+	handlers.domains = newDomainHandlers(handlers)
 	recorder, ctx := newInboxHandlerContext(http.MethodGet, "/api/v1/inbox/stream", "usr_current", nil)
 	requestContext, cancel := context.WithCancel(ctx.Request.Context())
 	cancel()
 	ctx.Request = ctx.Request.WithContext(requestContext)
 
-	handlers.StreamInboxChanges(ctx)
+	handlers.domains.notification.StreamInboxChanges(ctx)
 
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body.String())
@@ -271,7 +278,7 @@ func TestStreamInboxChangesStartsWithDatabaseUnreadCount(t *testing.T) {
 
 func TestWriteInboxChangedEventUsesStableSSEEnvelope(t *testing.T) {
 	var output bytes.Buffer
-	if err := writeInboxChangedEvent(&output, inboxChangedEvent{UnreadCount: 3, MessageID: "imsg_1"}); err != nil {
+	if err := notificationapi.WriteInboxChangedEvent(&output, notificationapi.InboxChangedEvent{UnreadCount: 3, MessageID: "imsg_1"}); err != nil {
 		t.Fatal(err)
 	}
 	want := "event: inbox.changed\ndata: {\"unreadCount\":3,\"messageId\":\"imsg_1\"}\n\n"
@@ -297,7 +304,7 @@ func TestWriteInboxErrorMapsStableSentinels(t *testing.T) {
 		{err: errors.New("database unavailable"), status: http.StatusInternalServerError, code: "inbox.operation_failed"},
 	} {
 		recorder, ctx := newInboxHandlerContext(http.MethodGet, "/api/v1/inbox", "usr_current", nil)
-		writeInboxError(ctx, test.err)
+		notificationapi.WriteInboxError(ctx, test.err)
 		if recorder.Code != test.status || jsonString(t, recorder.Body.Bytes(), "code") != test.code {
 			t.Fatalf("error=%v status=%d body=%s", test.err, recorder.Code, recorder.Body.String())
 		}

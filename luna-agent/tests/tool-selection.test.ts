@@ -25,12 +25,13 @@ describe("Run tool selection and catalog snapshots", () => {
   it("builds a new catalog before atomic publication and preserves old snapshots", () => {
     const oldCatalog = ToolCatalog.load([operation("getProject")])
     const registry = new ToolCatalogRegistry(oldCatalog, "cfg-old")
-    const refresh = registry.refresh([operation("listProjects")], "cfg-new")
+    const nextCatalog = ToolCatalog.load([operation("listProjects")])
+    const refresh = registry.refresh(nextCatalog, "cfg-new")
 
     expect(refresh.changed).toBe(true)
     expect(registry.current().get("listProjects").operationId).toBe("listProjects")
     expect(registry.get(oldCatalog.digest).get("getProject").operationId).toBe("getProject")
-    expect(() => registry.refresh([{ invalid: true }], "cfg-invalid")).toThrow()
+    expect(() => ToolCatalog.load([{ invalid: true }])).toThrow()
     expect(registry.current().get("listProjects").operationId).toBe("listProjects")
   })
 
@@ -55,7 +56,7 @@ describe("Run tool selection and catalog snapshots", () => {
       conversationId: conversation.id, input: "old", pageContext: {}, idempotencyKey: "catalog-old-run",
       actorSessionId: "ses_a", toolCatalogDigest: oldCatalog.digest,
     })
-    registry.refresh([operation("listProjects")], "cfg-new")
+    registry.refresh(ToolCatalog.load([operation("listProjects")]), "cfg-new")
     const newRun = await repository.createTurn("usr_a", {
       conversationId: conversation.id, input: "new", pageContext: {}, idempotencyKey: "catalog-new-run",
       actorSessionId: "ses_a", toolCatalogDigest: registry.digest(),

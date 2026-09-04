@@ -41,7 +41,9 @@ func TestListRegistryCredentialsUsesUnifiedProjectVisibility(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open dry-run database: %v", err)
 	}
-	query := (&Handlers{db: db}).applyScopedResourceVisibilityForProject(
+	handlers := &Handlers{db: db}
+	handlers.domains = newDomainHandlers(handlers)
+	query := handlers.applyScopedResourceVisibilityForProject(
 		db.WithContext(context.Background()).Model(&model.RegistryCredential{}),
 		scopedResourceRegistryCredential,
 		model.User{ID: "usr_current"},

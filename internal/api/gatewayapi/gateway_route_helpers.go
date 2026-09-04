@@ -23,7 +23,3 @@ func dnsLabelName(value string) string {
 	value = strings.Join(strings.FieldsFunc(value, func(char rune) bool { return char == '-' }), "-")
 	return strings.Trim(value, "-")
 }
-
-func (h *Handlers) configValue(key string) string {
-	return h.host.ConfigValue(key)
-}

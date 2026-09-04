@@ -32,10 +32,6 @@ func (r *Runner) reconcileNotificationDeliveries(ctx context.Context, now time.T
 	if r.notificationDeliveryEnqueuer == nil {
 		return errors.New("notification delivery queue is unavailable")
 	}
-	if r.db == nil {
-		return errors.New("notification delivery database is unavailable")
-	}
-
 	db := r.db.WithContext(ctx)
 	service := notification.Service{DB: r.db, Enqueuer: r.notificationDeliveryEnqueuer}
 	fanoutErr := r.reconcileNotificationFanoutEvents(ctx, service)

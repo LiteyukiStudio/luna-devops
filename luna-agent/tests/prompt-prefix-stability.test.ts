@@ -4,13 +4,12 @@ import {
   boundHistoryMessages,
   canonicalUserMessage,
   fixedTurnPromptPayloadBytes,
-  fixedWorkflowReferencePayloadBytes,
-  isPureWorkflowContinuation,
   turnPromptMessages,
 } from "../src/context/model-messages.js"
 import type { ConversationHistoryEntry } from "../src/domain.js"
 import { ModelRuntime, type AssistantModelInput } from "../src/model-runtime.js"
 import type { ModelMessage, ModelProvider, ModelRequest } from "../src/provider/provider.js"
+import { testRegistry } from "./support/model-tool-registry.js"
 
 const reported = { status: "reported" as const, value: { inputTokens: 20, outputTokens: 5, totalTokens: 25 } }
 
@@ -25,7 +24,7 @@ describe("Provider prompt prefix stability", () => {
 
   it("replays a prior current user message byte-for-byte from persisted history", async () => {
     const requests: ModelRequest[] = []
-    const runtime = new ModelRuntime(capturingProvider(requests))
+    const runtime = new ModelRuntime(capturingProvider(requests), testRegistry())
     await runtime.complete(runtimeInput({
       input: "检查这个构建",
       pageContext: { z: 1, nested: { b: 2, a: 1 } },
@@ -49,15 +48,14 @@ describe("Provider prompt prefix stability", () => {
     expect(firstCurrent?.content).not.toContain("初始标题")
     expect(replayed?.content).not.toContain("已经变化的标题")
     expect(firstCurrent?.content).toContain('"页面上下文":{"nested":{"a":1,"b":2},"z":1}')
-    expect(requests[0]!.messages.filter(isWorkflowReferenceMessage)).toHaveLength(1)
-    expect(requests[1]!.messages.filter(isWorkflowReferenceMessage)).toHaveLength(1)
-    expect(requests[1]!.messages.filter(message => message.content.includes("<LUNA_DEVOPS_REFERENCE"))).toHaveLength(1)
   })
 
-  it("keeps workflow references stable for the same resolved tools and Provider tool order independent from LRU order", async () => {
+  it("keeps the system prefix and Provider tool order independent from LRU order", async () => {
     const requests: ModelRequest[] = []
-    const runtime = new ModelRuntime(capturingProvider(requests), (_pageContext, _userInput, operationIds) =>
-      operationIds.map(operationId => ({ operationId, description: operationId, inputSchema: { type: "object" } })))
+    const runtime = new ModelRuntime(capturingProvider(requests), testRegistry({
+      resolve: (_pageContext, _userInput, operationIds) =>
+        operationIds.map(operationId => ({ operationId, description: operationId, inputSchema: { type: "object" } })),
+    }))
     const base = runtimeInput({ input: "继续", conversation: { title: "用户标题", titleSource: "user", turnIndex: 0 } })
 
     await runtime.complete({ ...base, loadedOperationIds: [] })
@@ -67,83 +65,9 @@ describe("Provider prompt prefix stability", () => {
     await runtime.complete({ ...base, loadedOperationIds: ["alphaTool", "zetaTool"] })
 
     const systemMessages = (request: ModelRequest) => request.messages.filter(message => message.role === "system")
-    const workflowMessages = (request: ModelRequest) => request.messages.filter(isWorkflowReferenceMessage)
     expect(systemMessages(requests[1]!)).toEqual(systemMessages(requests[0]!))
-    expect(workflowMessages(requests[2]!)).toEqual(workflowMessages(requests[1]!))
     expect(requests[3]!.tools?.map(tool => tool.operationId)).toEqual(["alphaTool", "zetaTool"])
     expect(requests[4]!.tools).toEqual(requests[3]!.tools)
-  })
-
-  it("inherits the prior domain for a pure continuation without treating internal navigation as gateway intent", async () => {
-    const requests: ModelRequest[] = []
-    const runtime = new ModelRuntime(capturingProvider(requests), [
-      { operationId: "navigate_to_route", description: "导航", inputSchema: { type: "object" } },
-      { operationId: "search_tools", description: "检索", inputSchema: { type: "object" } },
-      { operationId: "createApplication", description: "创建应用", inputSchema: { type: "object" } },
-    ])
-    const first = runtimeInput({
-      input: "部署 GitHub 项目并完成验收",
-      pageContext: { routeName: "application.detail" },
-      conversation: { title: "部署", titleSource: "user", turnIndex: 0 },
-    })
-    await runtime.complete(first)
-    await runtime.complete(runtimeInput({
-      input: "继续",
-      pageContext: {},
-      history: [{
-        turnIndex: 0,
-        user: first.input,
-        assistant: "已创建应用，下一步核对发布状态。",
-        pageContext: first.pageContext,
-      }],
-      conversation: { title: "部署", titleSource: "user", turnIndex: 1 },
-    }))
-    await runtime.complete(runtimeInput({
-      input: "配置网关域名",
-      pageContext: { routeName: "gateway.routes" },
-      history: [{
-        turnIndex: 0,
-        user: first.input,
-        assistant: "已创建应用，下一步核对发布状态。",
-        pageContext: first.pageContext,
-      }],
-      conversation: { title: "部署", titleSource: "user", turnIndex: 1 },
-    }))
-
-    const continuedReference = requests[1]!.messages.find(isWorkflowReferenceMessage)?.content ?? ""
-    const switchedReference = requests[2]!.messages.find(isWorkflowReferenceMessage)?.content ?? ""
-    expect(continuedReference).toContain('name="delivery-orchestration"')
-    expect(continuedReference).not.toContain('name="gateway-networking"')
-    expect(switchedReference).toContain('name="gateway-networking"')
-    expect(switchedReference).not.toContain('name="delivery-orchestration"')
-  })
-
-  it.each(["继续", "繼續", "請繼續！", "continue", "続けて", "계속"])(
-    "recognizes %s as a pure workflow continuation",
-    (input) => {
-      expect(isPureWorkflowContinuation(input)).toBe(true)
-    },
-  )
-
-  it("keeps selected workflow guidance current-only and within its fixed bound", () => {
-    const current = turnPromptMessages(
-      "打开应用页面并部署修复这个失败的 GitHub 项目，完成后验收",
-      { routeName: "application.detail" },
-      0,
-      ["fetchWebPage", "createApplication", "createRelease"],
-    )
-    const history = boundHistoryMessages([{
-      turnIndex: 0,
-      user: "打开应用页面并部署修复这个失败的 GitHub 项目，完成后验收",
-      assistant: "已完成",
-      pageContext: { routeName: "application.detail" },
-    }], fixedTurnPromptPayloadBytes + 64 * 1024)
-    const workflow = current.find(isWorkflowReferenceMessage)
-
-    expect(workflow).toBeDefined()
-    expect(Buffer.byteLength(workflow!.content, "utf8")).toBeLessThanOrEqual(fixedWorkflowReferencePayloadBytes)
-    expect(history.some(isWorkflowReferenceMessage)).toBe(false)
-    expect(history.map(message => message.content).join("\n")).not.toContain("<LUNA_DEVOPS_REFERENCE")
   })
 
   it("does not redistribute old history or continuation item bytes when a new item is appended", () => {
@@ -295,8 +219,4 @@ function parseTurnEnvelope(message: ModelMessage): Record<string, unknown> {
 function recordValue(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("expected record")
   return value as Record<string, unknown>
-}
-
-function isWorkflowReferenceMessage(message: ModelMessage): boolean {
-  return message.content.startsWith("平台当前轮工作流参考")
 }

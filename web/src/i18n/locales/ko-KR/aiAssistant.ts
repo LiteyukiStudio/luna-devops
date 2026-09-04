@@ -73,7 +73,6 @@ const aiAssistant = {
     runId: '실행 식별자',
     traceId: 'Trace ID',
     noArguments: '파라미터 없음',
-    result: '결과',
     returnValue: '반환값',
     summary: '요약',
     duration: '시간',
@@ -147,8 +146,6 @@ const aiAssistant = {
       title: '옵션',
       description: '설명',
       suggested: '권장 다음 단계',
-      selected: '선택됨',
-      unavailable: '이러한 제안은 무효화되었거나 현재 버전에서 지원되지 않습니다. 어시스턴트에게 다시 질문하세요.',
       position: '{{current}} / {{total}} 항목',
       presets: {
         dashboard: {
@@ -499,7 +496,9 @@ const aiAssistant = {
         webSearch: '인터넷 검색',
         fetchWebPage: '웹 페이지 읽기',
         createOptions: '빠른 옵션 생성',
-        createInteractionCards: '대화형 카드 생성',
+        presentCard: '정보 카드 표시',
+        requestInput: '구조화된 입력 요청',
+        requestChoice: '선택 요청',
         navigateToRoute: '페이지 열기',
         renameConversation: '세션 이름 업데이트',
       },

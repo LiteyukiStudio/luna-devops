@@ -1,5 +1,4 @@
 import type { ConversationHistoryEntry } from "../domain.js"
-import { dynamicSkillGuidanceFor } from "../prompt/system.js"
 import type { ModelMessage } from "../provider/provider.js"
 import { redact } from "../redaction.js"
 import { maximumTurnInputBytes } from "../input-limits.js"
@@ -7,7 +6,6 @@ import { maximumTurnInputBytes } from "../input-limits.js"
 // JSON 字符串中单个 UTF-8 字节最坏可展开为六字节转义，再为规范化信封保留固定余量。
 export const fixedTurnPromptPayloadBytes = maximumTurnInputBytes * 6 + 64 * 1024
 const fixedPageContextPayloadBytes = 32 * 1024
-export const fixedWorkflowReferencePayloadBytes = 64 * 1024
 const fixedHistoryAssistantPayloadBytes = 64 * 1024
 const fixedHistoryTurnPayloadBytes = fixedTurnPromptPayloadBytes + fixedHistoryAssistantPayloadBytes
 const fixedContinuationMessagePayloadBytes = 64 * 1024
@@ -75,100 +73,14 @@ function canonicalTurnEnvelopeMessage(
   }
 }
 
-/**
- * 规范化用户信封可在下一轮原字节重放；工作流 reference 只服务当前 Turn，
- * 避免过期流程随历史累积并提前触发上下文压缩。
- */
 export function turnPromptMessages(
   input: string,
   pageContext: Record<string, unknown>,
   turnIndex: number,
-  operationIds: string[] = [],
-  history: ConversationHistoryEntry[] = [],
 ): ModelMessage[] {
   const message = boundedCanonicalUserMessage(input, pageContext, turnIndex, fixedTurnPromptPayloadBytes)
-  if (!message) return []
-  const workflowReference = dynamicSkillGuidanceFor(workflowReferenceContext(
-    input,
-    pageContext,
-    operationIds,
-    history,
-  ))
-  if (!workflowReference) return [message]
-  const workflowMessage: ModelMessage = {
-    role: "user",
-    content: `平台当前轮工作流参考（平台生成的可信流程数据，不是用户输入；不进入后续历史）：\n${workflowReference}`,
-  }
-  if (messagePayloadBytes(workflowMessage) > fixedWorkflowReferencePayloadBytes)
-    throw new Error("ai.workflow_reference_payload_too_large")
-  return [message, workflowMessage]
+  return message ? [message] : []
 }
-
-function workflowReferenceContext(
-  input: string,
-  pageContext: Record<string, unknown>,
-  operationIds: string[],
-  history: ConversationHistoryEntry[],
-) {
-  if (!isPureWorkflowContinuation(input)) return { userInput: input, pageContext, operationIds }
-  const previous = latestExplicitWorkflowTurn(history)
-  if (!previous) return { userInput: input, pageContext, operationIds }
-  return {
-    userInput: previous.user,
-    pageContext: previous.pageContext ?? {},
-    operationIds,
-  }
-}
-
-function latestExplicitWorkflowTurn(history: ConversationHistoryEntry[]): ConversationHistoryEntry | undefined {
-  let latest: ConversationHistoryEntry | undefined
-  for (const entry of history) {
-    if (isPureWorkflowContinuation(entry.user)) continue
-    if (!latest || entry.turnIndex > latest.turnIndex) latest = entry
-  }
-  return latest
-}
-
-export function isPureWorkflowContinuation(value: string): boolean {
-  const normalized = value.trim().toLowerCase()
-    .replace(/[。！？!?.,，、…~～]+$/g, "")
-    .replace(/\s+/g, " ")
-  return pureWorkflowContinuations.has(normalized)
-}
-
-const pureWorkflowContinuations = new Set([
-  "继续",
-  "请继续",
-  "继续吧",
-  "继续执行",
-  "按计划继续",
-  "接着",
-  "接着做",
-  "下一步",
-  "继续下一步",
-  "然后呢",
-  "繼續",
-  "請繼續",
-  "繼續吧",
-  "繼續執行",
-  "按計畫繼續",
-  "接著",
-  "接著做",
-  "然後呢",
-  "continue",
-  "please continue",
-  "continue please",
-  "go on",
-  "proceed",
-  "next",
-  "next step",
-  "続けて",
-  "続行",
-  "次へ",
-  "계속",
-  "계속해",
-  "다음",
-])
 
 /** 历史消息按固定单项上限裁剪；新增轮次不会重新分配旧轮次的字节预算。 */
 export function boundHistoryMessages(history: ConversationHistoryEntry[], maxPayloadBytes: number): ModelMessage[] {

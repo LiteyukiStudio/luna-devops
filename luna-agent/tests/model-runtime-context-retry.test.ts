@@ -3,6 +3,7 @@ import type { ContextCompiler } from "../src/context/compiler.js"
 import { ModelRuntime, type AssistantModelInput } from "../src/model-runtime.js"
 import { ProviderRequestError } from "../src/provider/provider-error.js"
 import type { ModelProvider } from "../src/provider/provider.js"
+import { testRegistry } from "./support/model-tool-registry.js"
 
 const reported = { status: "reported" as const, value: { inputTokens: 20, outputTokens: 5, totalTokens: 25 } }
 
@@ -19,7 +20,7 @@ describe("ModelRuntime structured context retry", () => {
     })
 
     const events: Array<{ type: string }> = []
-    for await (const event of new ModelRuntime(provider, [], { compile, setOptions: vi.fn() } as unknown as ContextCompiler).stream(input())) events.push(event)
+    for await (const event of new ModelRuntime(provider, testRegistry(), { compile, setOptions: vi.fn() } as unknown as ContextCompiler).stream(input())) events.push(event)
 
     expect(attempt).toBe(2)
     expect(compile).toHaveBeenCalledTimes(2)
@@ -35,7 +36,7 @@ describe("ModelRuntime structured context retry", () => {
       throw contextError()
     })
     const consume = async () => {
-      for await (const _event of new ModelRuntime(provider, [], { compile, setOptions: vi.fn() } as unknown as ContextCompiler).stream(input())) void _event
+      for await (const _event of new ModelRuntime(provider, testRegistry(), { compile, setOptions: vi.fn() } as unknown as ContextCompiler).stream(input())) void _event
     }
 
     await expect(consume()).rejects.toThrow("ai.model_context_insufficient")

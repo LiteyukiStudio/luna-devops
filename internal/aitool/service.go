@@ -231,7 +231,6 @@ func (s *Service) Execute(ctx context.Context, input Request) (Result, error) {
 			Identifier:          stringArgument(input.Arguments, "identifier"),
 			Name:                stringArgument(input.Arguments, "name"),
 			Description:         stringArgument(input.Arguments, "description"),
-			NamespaceStrategy:   stringArgument(input.Arguments, "namespaceStrategy"),
 			MaxConcurrentBuilds: intArgument(input.Arguments, "maxConcurrentBuilds"),
 			WebConsoleEnabled:   webConsole,
 		})
@@ -284,7 +283,7 @@ func (s *Service) Execute(ctx context.Context, input Request) (Result, error) {
 		var rows []map[string]any
 		projectResources := s.db.WithContext(ctx).Table("scoped_resource_project_bindings").Select("resource_id").
 			Where("resource_type = ? and project_id = ?", "runtime_cluster", projectID)
-		err := s.db.WithContext(ctx).Table("runtime_clusters").Select("id, name, type, scope, created_at, updated_at").
+		err := s.db.WithContext(ctx).Table("runtime_clusters").Select("id, name, scope, created_at, updated_at").
 			Where("delete_status = ?", "active").
 			Where("scope = 'global' or (scope = 'user' and owner_ref = ?) or (scope = 'project' and id in (?))", input.UserID, projectResources).
 			Order("created_at desc").Limit(limit).Scan(&rows).Error

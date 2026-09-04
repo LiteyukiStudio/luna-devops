@@ -17,7 +17,7 @@ import { useSession } from '@/app/session-context'
 import { ContentTabs } from '@/components/common/content-tabs'
 import { ErrorState } from '@/components/common/error-state'
 import { ToolViewportSkeleton } from '@/components/common/loading-states'
-import { StatusBadge, StatusValueBadge } from '@/components/common/status-badge'
+import { StatusValueBadge } from '@/components/common/status-badge'
 import { formatSmartDateTime } from '@/components/common/time-format'
 import { UserAvatar } from '@/components/common/user-avatar'
 import { Button } from '@/components/ui/button'
@@ -265,7 +265,6 @@ function ProjectOverviewDashboard({ applications, builds, canTransferBillingOwne
             <h2 className="truncate text-lg font-semibold">{project?.name ?? t('projectSpaces.title')}</h2>
             <p className="mt-1 text-sm text-muted-foreground">{project?.description || t('common.noDescription')}</p>
           </div>
-          <StatusBadge>{project?.namespaceStrategy === 'project' ? t('projectSpaces.namespaceProject') : project?.namespaceStrategy ?? t('projectSpaces.namespaceProject')}</StatusBadge>
         </div>
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <ProjectMetric icon={<Package className="size-4" />} label={t('projectSpaces.apps')} meta={t('projectSpaces.projectAppsMeta', { count: applications.length })} value={applications.length} />

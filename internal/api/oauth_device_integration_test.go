@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	transportapi "github.com/LiteyukiStudio/devops/internal/api/transport"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -19,7 +20,7 @@ func TestOAuthDeviceAuthorizationAndRevocationFlow(t *testing.T) {
 	t.Setenv("PUBLIC_BASE_URL", "https://devops.example.com")
 	t.Setenv("SECRET_ENCRYPTION_KEY", "oauth-device-integration-key")
 
-	suffix := randomHex(4)
+	suffix := transportapi.RandomHex(4)
 	user := model.User{
 		ID:       "usr_device_" + suffix,
 		Email:    "device-" + suffix + "@example.com",
@@ -34,7 +35,7 @@ func TestOAuthDeviceAuthorizationAndRevocationFlow(t *testing.T) {
 	if err := db.Create(&model.UserSession{
 		ID:        "ses_device_" + suffix,
 		UserID:    user.ID,
-		TokenHash: hashToken(sessionToken),
+		TokenHash: transportapi.HashToken(sessionToken),
 		ExpiresAt: time.Now().Add(time.Hour),
 		CreatedAt: time.Now(),
 	}).Error; err != nil {
@@ -56,8 +57,8 @@ func TestOAuthDeviceAuthorizationAndRevocationFlow(t *testing.T) {
 	if err := db.Create(&model.OAuthDeviceAuthorization{
 		ID:              "odev_legacy_" + suffix,
 		ApplicationID:   lunaCLIApplicationID,
-		DeviceCodeHash:  hashToken(legacyDeviceCode),
-		UserCodeHash:    hashToken("legacy-user-" + suffix),
+		DeviceCodeHash:  transportapi.HashToken(legacyDeviceCode),
+		UserCodeHash:    transportapi.HashToken("legacy-user-" + suffix),
 		Status:          "denied",
 		IntervalSeconds: 5,
 		ExpiresAt:       legacyInvalidatedAt.Add(time.Hour),
@@ -103,7 +104,7 @@ func TestOAuthDeviceAuthorizationAndRevocationFlow(t *testing.T) {
 	if err := db.First(
 		&pendingAuthorization,
 		"device_code_hash = ?",
-		hashToken(device.DeviceCode),
+		transportapi.HashToken(device.DeviceCode),
 	).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -127,7 +128,7 @@ func TestOAuthDeviceAuthorizationAndRevocationFlow(t *testing.T) {
 		t.Fatalf("approve device authorization = %d %s", verify.Code, verify.Body.String())
 	}
 	if err := db.Model(&model.OAuthDeviceAuthorization{}).
-		Where("device_code_hash = ?", hashToken(device.DeviceCode)).
+		Where("device_code_hash = ?", transportapi.HashToken(device.DeviceCode)).
 		Update("last_polled_at", nil).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -148,11 +149,11 @@ func TestOAuthDeviceAuthorizationAndRevocationFlow(t *testing.T) {
 		t.Fatalf("invalid CLI OAuth token response: %#v", tokens)
 	}
 	var accessToken model.AccessToken
-	if err := db.First(&accessToken, "token_hash = ?", hashToken(tokens.AccessToken)).Error; err != nil {
+	if err := db.First(&accessToken, "token_hash = ?", transportapi.HashToken(tokens.AccessToken)).Error; err != nil {
 		t.Fatal(err)
 	}
 	var refreshToken model.OAuthRefreshToken
-	if err := db.First(&refreshToken, "token_hash = ?", hashToken(tokens.RefreshToken)).Error; err != nil {
+	if err := db.First(&refreshToken, "token_hash = ?", transportapi.HashToken(tokens.RefreshToken)).Error; err != nil {
 		t.Fatal(err)
 	}
 	var grant model.OAuthGrant

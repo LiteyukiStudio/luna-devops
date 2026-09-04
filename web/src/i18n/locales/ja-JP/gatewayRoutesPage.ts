@@ -1,5 +1,4 @@
 const gatewayRoutesPage = {
-  description: 'アプリケーションのアクセスドメイン、CNAME ガイド、証明書状態を管理します。現在の段階では CRUD のみ完了しています。',
   createRoute: 'ドメインを作成',
   editRoute: 'ドメインを編集',
   routeDialogDescription: '公開するデプロイ設定を選択します。ドメインを空欄にすると、プロジェクトスペース、アプリケーション、デプロイ環境に基づいて一意のデフォルトドメインが自動生成されます。短いプレフィックスまたは完全なカスタムドメインを入力することもできます。',
@@ -52,11 +51,6 @@ const gatewayRoutesPage = {
   tlsMode: 'TLS モード',
   enabled: 'アクセスを有効化',
   enabledHint: '無効にするとドメイン設定は保持されますが、対応するアクセスエントリは取り消されます。再度有効にするとプラットフォームが再配信します。',
-  cnameTarget: 'CNAME ターゲット',
-  optionalGatewayConfig: 'アクセスエントリ',
-  optionalGatewayConfigDescription: '現在のアプリケーションのアクセスエントリをオプションで設定します。ドメインを空欄にすると、プラットフォームがプロジェクトスペース、アプリケーション、デプロイ環境に基づいて一意のデフォルトドメインを自動生成します。',
-  enableGatewayConfig: 'アクセスエントリを設定',
-  gatewayRouteWillUpdate: '現在のデプロイ設定には既にドメインルートがあります。保存するとそのルートが更新されます。',
   checkDomain: 'ドメインを確認',
   domainAvailable: 'ドメインは利用可能です',
   domainCurrent: '現在のドメインはこのアクセスエントリに属しています',

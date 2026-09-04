@@ -23,7 +23,6 @@ type clusterResourceResponse struct {
 	Summary              string                    `json:"summary"`
 	ProjectID            string                    `json:"projectId"`
 	ApplicationID        string                    `json:"applicationId"`
-	EnvironmentID        string                    `json:"environmentId"`
 	DeploymentTargetID   string                    `json:"deploymentTargetId"`
 	ReleaseID            string                    `json:"releaseId"`
 	RouteID              string                    `json:"routeId"`
@@ -50,7 +49,6 @@ func (h *Handlers) clusterResourceResponses(items []kubeprovider.ResourceSnapsho
 			Summary:            item.Summary,
 			ProjectID:          item.ProjectID,
 			ApplicationID:      item.ApplicationID,
-			EnvironmentID:      item.EnvironmentID,
 			DeploymentTargetID: item.DeploymentTargetID,
 			ReleaseID:          item.ReleaseID,
 			RouteID:            item.RouteID,
@@ -92,9 +90,6 @@ func (h *Handlers) clusterResourceResponses(items []kubeprovider.ResourceSnapsho
 				response.DeploymentTargetID = strings.TrimSpace(route.DeploymentTargetID)
 			}
 			fillResourceOwnerIDs(response, route.ProjectID, route.ApplicationID)
-			if strings.TrimSpace(response.EnvironmentID) == "" {
-				response.EnvironmentID = strings.TrimSpace(route.EnvironmentID)
-			}
 		}
 		if release, ok := releasesByID[response.ReleaseID]; ok {
 			if strings.TrimSpace(response.DeploymentTargetID) == "" {

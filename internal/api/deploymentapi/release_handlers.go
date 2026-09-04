@@ -21,8 +21,10 @@ func (h *Handlers) ListReleases(ctx *gin.Context) {
 	if applicationID := strings.TrimSpace(ctx.Query("applicationId")); applicationID != "" {
 		query = query.Where("application_id = ?", applicationID)
 	}
-	if environmentID := strings.TrimSpace(ctx.Query("environmentId")); environmentID != "" {
-		query = query.Where("environment_id = ?", environmentID)
+	if stage := strings.TrimSpace(ctx.Query("stage")); stage != "" {
+		query = query.Joins("join deployment_targets on deployment_targets.id = releases.deployment_target_id").
+			Where("deployment_targets.stage = ?", stage).
+			Select("releases.*")
 	}
 	if targetID := strings.TrimSpace(ctx.Query("deploymentTargetId")); targetID != "" {
 		query = query.Where("deployment_target_id = ?", targetID)

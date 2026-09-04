@@ -80,11 +80,6 @@ type WorkerConfig struct {
 	CertManagerClusterIssuer    string
 }
 
-type TasksConfig struct {
-	Redis     redisconfig.Options
-	Telemetry TelemetryConfig
-}
-
 func (c Shared) RedisOptions() redisconfig.Options {
 	return redisconfig.MustParse(c.RedisAddr)
 }

@@ -36,11 +36,9 @@ const clusterDefaults: ClusterForm = {
   gatewayForwardedHeadersMode: 'preserve',
   gatewayName: 'luna-gateway',
   gatewayNamespace: 'kube-system',
-  gatewayProvider: 'gateway-api',
   gatewayDomainSuffixesText: 'apps.local',
   gatewayPublicPort: 80,
   gatewayPublicScheme: 'http',
-  gatewayRootDomain: 'apps.local',
   gatewayHttpListenerName: 'web',
   gatewayHttpListenerPort: 8080,
   gatewayHttpsListenerName: 'websecure',
@@ -64,7 +62,6 @@ const clusterDefaults: ClusterForm = {
   projectIds: [],
   scope: 'global',
   status: 'unknown',
-  type: 'kubernetes',
 }
 
 export function ClusterFormDialog({ editingCluster, open, projects, user, onOpenChange, onSaved }: {
@@ -119,7 +116,6 @@ export function ClusterFormDialog({ editingCluster, open, projects, user, onOpen
       const payload = {
         ...clusterValues,
         gatewayDomainSuffixes,
-        gatewayRootDomain: gatewayDomainSuffixes[0] ?? values.gatewayRootDomain,
         ownerRef: '',
         projectIds: values.scope === 'project' ? values.projectIds : [],
       }
@@ -165,7 +161,6 @@ export function ClusterFormDialog({ editingCluster, open, projects, user, onOpen
       ...values,
       gatewayHttpListenerPort: normalizeFormPort(values.gatewayHttpListenerPort, 8080),
       gatewayHttpsListenerPort: normalizeFormPort(values.gatewayHttpsListenerPort, 8443),
-      gatewayRootDomain: parseGatewayDomainSuffixes(values.gatewayDomainSuffixesText)[0] ?? values.gatewayRootDomain,
       gatewayPublicPort: normalizeFormPort(values.gatewayPublicPort, defaultGatewayPublicPort(values.gatewayPublicScheme)),
       kubeconfig,
       maxConcurrentBuilds,
@@ -196,9 +191,6 @@ export function ClusterFormDialog({ editingCluster, open, projects, user, onOpen
                     <ProjectSpaceMultiSelect projects={projects} value={form.watch('projectIds')} onChange={value => form.setValue('projectIds', value, { shouldDirty: true, shouldValidate: true })} />
                   </Field>
                 )}
-                <Field label={t('common.type')}>
-                  <Select {...form.register('type')}><option value="kubernetes">{t('deploymentsPage.typeKubernetes')}</option></Select>
-                </Field>
                 <Field hint={t('clustersPage.maxConcurrentBuildsHint')} label={t('clustersPage.maxConcurrentBuilds')} required>
                   <Input {...form.register('maxConcurrentBuilds', { min: 1, required: true, valueAsNumber: true })} inputMode="numeric" min={1} placeholder={t('clustersPage.maxConcurrentBuildsPlaceholder')} type="number" />
                 </Field>
@@ -270,7 +262,6 @@ export function ClusterFormDialog({ editingCluster, open, projects, user, onOpen
                       <option value="generic">{t('clustersPage.gatewayControllerGeneric')}</option>
                     </Select>
                   </Field>
-                  <Field hint={t('clustersPage.gatewayProviderHint')} label={t('clustersPage.gatewayProvider')}><Select {...form.register('gatewayProvider')}><option value="gateway-api">{t('clustersPage.gatewayProviderGatewayAPI')}</option></Select></Field>
                   <Field hint={t('clustersPage.gatewayClassNameHint')} label={t('clustersPage.gatewayClassName')}><Input {...form.register('gatewayClassName')} placeholder={t('clustersPage.gatewayClassNamePlaceholder')} /></Field>
                   <Field hint={t('clustersPage.gatewayNameHint')} label={t('clustersPage.gatewayName')}><Input {...form.register('gatewayName')} placeholder={t('clustersPage.gatewayNamePlaceholder')} /></Field>
                   <Field hint={t('clustersPage.gatewayNamespaceHint')} label={t('clustersPage.gatewayNamespace')}><Input {...form.register('gatewayNamespace')} placeholder={t('clustersPage.gatewayNamespacePlaceholder')} /></Field>
@@ -353,11 +344,9 @@ function formValuesFromCluster(cluster: RuntimeCluster): ClusterForm {
     gatewayForwardedHeadersMode: cluster.gatewayForwardedHeadersMode || 'preserve',
     gatewayName: cluster.gatewayName || 'luna-gateway',
     gatewayNamespace: cluster.gatewayNamespace || 'kube-system',
-    gatewayProvider: cluster.gatewayProvider || 'gateway-api',
     gatewayDomainSuffixesText: formatGatewayDomainSuffixes(cluster),
     gatewayPublicPort: cluster.gatewayPublicPort || defaultGatewayPublicPort(cluster.gatewayPublicScheme || 'http'),
     gatewayPublicScheme: cluster.gatewayPublicScheme || 'http',
-    gatewayRootDomain: cluster.gatewayRootDomain || 'apps.local',
     gatewayHttpListenerName: cluster.gatewayHttpListenerName || 'web',
     gatewayHttpListenerPort: cluster.gatewayHttpListenerPort || 8080,
     gatewayHttpsListenerName: cluster.gatewayHttpsListenerName || 'websecure',
@@ -381,6 +370,5 @@ function formValuesFromCluster(cluster: RuntimeCluster): ClusterForm {
     projectIds: cluster.projectIds ?? [],
     scope: cluster.scope,
     status: cluster.status,
-    type: cluster.type,
   }
 }

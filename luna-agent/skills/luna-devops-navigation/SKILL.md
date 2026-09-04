@@ -24,5 +24,3 @@ description: 指导 Luna DevOps 助手为平台页面和资源生成显式导航
 - 拒绝 `javascript:`、`data:`、协议相对地址、外部地址和未注册 URL。
 - 链接只表示导航，绝不授予访问权限、确认操作或证明资源存在。
 - 只有查询参数和 Hash 与已注册 Tab 或资源选择器匹配时才保留。
-
-仅在生成 Markdown 链接、`navigate` 选项或 `navigate_to_route` 调用时读取 [routes.md](references/routes.md)。

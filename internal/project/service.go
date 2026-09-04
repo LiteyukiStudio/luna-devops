@@ -25,7 +25,6 @@ type CreateInput struct {
 	Identifier          string
 	Name                string
 	Description         string
-	NamespaceStrategy   string
 	MaxConcurrentBuilds int
 	WebConsoleEnabled   *bool
 }
@@ -53,13 +52,9 @@ func (s *Service) Create(ctx context.Context, userID string, input CreateInput) 
 		KubernetesNamespace: resourceidentifier.ProjectNamespace(input.Identifier),
 		Name:                input.Name,
 		Description:         input.Description,
-		NamespaceStrategy:   input.NamespaceStrategy,
 		MaxConcurrentBuilds: input.MaxConcurrentBuilds,
 		WebConsoleEnabled:   true,
 		BillingOwnerUserID:  userID,
-	}
-	if project.NamespaceStrategy == "" {
-		project.NamespaceStrategy = "project"
 	}
 	if project.MaxConcurrentBuilds <= 0 {
 		project.MaxConcurrentBuilds = 2

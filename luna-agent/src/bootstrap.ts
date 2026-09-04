@@ -1,17 +1,16 @@
 import { BffHmacRequestVerifier, DevelopmentRequestVerifier } from "./auth.js"
 import type { RuntimeConfig } from "./config.js"
-import { RunExecutor } from "./executor.js"
+import { RunExecutor } from "./executor/index.js"
 import { ContextCompiler } from "./context/compiler.js"
 import { ModelRuntime } from "./model-runtime.js"
 import { PayloadCipher } from "./payload-cipher.js"
 import { deriveInternalKeys } from "./internal-secret.js"
 import { PostgresRepository } from "./persistence/postgres.js"
 import { RemoteConfigSnapshot } from "./provider/config-client.js"
-import { createRuntimeProvider } from "./provider/runtime.js"
+import { ManagedProvider } from "./provider/managed.js"
 import { BudgetedModelProvider } from "./provider/budgeted.js"
 import { buildServer } from "./server.js"
 import { agentMetrics, configureAgentTelemetry, configureAIContentCapture, internalSpanOptions, shutdownTelemetry, telemetryLog, withSpan } from "./telemetry.js"
-import { ToolCatalog } from "./tools/catalog.js"
 import { ToolCatalogRegistry } from "./tools/catalog-registry.js"
 import { HttpLunaApiToolClient } from "./tools/luna-api-client.js"
 import { ToolOrchestrator } from "./tools/orchestrator.js"
@@ -47,12 +46,11 @@ export async function startAgent(config: RuntimeConfig): Promise<void> {
   const remoteConfig = new RemoteConfigSnapshot(
     config.LUNA_API_BASE_URL,
     internalKeys.callbackServiceToken,
-    candidate => { ToolCatalog.load(candidate.toolCatalog) },
   )
   // Provider、运行时调度参数和工具目录接受 Luna API 的同一份权威配置。
   // 输入、模型循环、工具、卡片和上下文预算是 Agent 内部固定不变量。
   const initialRemoteConfig = await remoteConfig.initialize()
-  const rawProvider = createRuntimeProvider(config, remoteConfig)
+  const rawProvider = new ManagedProvider(remoteConfig)
   const provider = new BudgetedModelProvider(rawProvider, repository)
   const requestVerifier = config.AUTH_MODE === "bff-hmac"
     ? new BffHmacRequestVerifier(internalKeys.serviceToken, internalKeys.actorSigningKey)
@@ -62,7 +60,8 @@ export async function startAgent(config: RuntimeConfig): Promise<void> {
     "tool-arguments-v1",
     "ai.tool_arguments_key_unavailable",
   )
-  const catalog = ToolCatalog.load(initialRemoteConfig.toolCatalog)
+  const catalog = remoteConfig.currentCatalog()
+  if (!catalog) throw new Error("ai.provider_config_unavailable")
   const catalogRegistry = new ToolCatalogRegistry(catalog, initialRemoteConfig.version)
   const toolStore = new PostgresToolCallStore(repository.pool, repository, toolArgumentsCipher)
   const runtime = runtimeSettingsFromRemote(initialRemoteConfig.runtime)
@@ -73,7 +72,11 @@ export async function startAgent(config: RuntimeConfig): Promise<void> {
   }, new HttpLunaApiToolClient(
     config.LUNA_API_BASE_URL,
     internalKeys.callbackServiceToken,
-    () => remoteConfig.current()?.runtime.maxRequestRetries ?? runtime.maxRequestRetries,
+    () => {
+      const current = remoteConfig.current()
+      if (!current) throw new Error("ai.provider_config_unavailable")
+      return current.runtime.maxRequestRetries
+    },
   ), toolStore)
   tools.setRunMaxToolCalls(runtime.runMaxToolCalls)
   const contextCompiler = new ContextCompiler(repository, provider, {
@@ -147,7 +150,15 @@ export async function startAgent(config: RuntimeConfig): Promise<void> {
       }
     },
   }, contextCompiler)
-  const executor = new RunExecutor(repository, modelRuntime, config, tools, remoteConfig, runtime, catalogRegistry, streamBus)
+  const executor = new RunExecutor({
+    repository,
+    modelRuntime,
+    tools,
+    runtimeConfig: remoteConfig,
+    initialRuntimeSettings: runtime,
+    catalogRegistry,
+    streamBus,
+  })
   const server = buildServer({
     config, repository, requestVerifier,
     cancelRun: runId => executor.cancel(runId),

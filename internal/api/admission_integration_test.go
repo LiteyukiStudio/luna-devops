@@ -13,6 +13,7 @@ import (
 func TestEnsureAdmissionPolicyInitializesDefault(t *testing.T) {
 	db := authIntegrationDB(t)
 	h := &Handlers{db: db, mode: "production"}
+	h.domains = newDomainHandlers(h)
 
 	policy, err := h.ensureAdmissionPolicy(context.Background())
 	if err != nil {
@@ -33,6 +34,7 @@ func TestEnsureAdmissionPolicyFailsClosedOnDatabaseError(t *testing.T) {
 		t.Fatalf("drop admission policy table: %v", err)
 	}
 	h := &Handlers{db: db, mode: "production"}
+	h.domains = newDomainHandlers(h)
 
 	policy, err := h.ensureAdmissionPolicy(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "load authentication admission policy") {
@@ -53,6 +55,7 @@ func TestEnsureAdmissionPolicyReturnsInitializationError(t *testing.T) {
 		_ = tx.Rollback().Error
 	})
 	h := &Handlers{db: tx, mode: "production"}
+	h.domains = newDomainHandlers(h)
 
 	policy, err := h.ensureAdmissionPolicy(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "initialize authentication admission policy") {

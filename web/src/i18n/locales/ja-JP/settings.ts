@@ -1,5 +1,4 @@
 const settings = {
-  siteDescription: '公開サイト設定、セキュリティポリシー、課金、データ保持を管理します。',
   siteSaved: 'サイト設定を保存しました',
   siteConfigTitle: 'ブランド情報',
   buildConfigTitle: 'ビルド設定',
@@ -19,7 +18,6 @@ const settings = {
     accessModeHint: 'デフォルトですべてのログインユーザーに許可します。Agent がツールを実行する際は現在のユーザー権限を厳密に継承します。',
     accessModeAllAuthenticated: 'すべてのログインユーザー',
     accessModeAdmins: 'プラットフォーム管理者のみ',
-    model: 'モデル名',
     models: {
       title: 'AI モデルカタログ',
       description: '各モデルには独立した Token 価格があります。Run 作成時に価格スナップショットが保存され、後でモデル価格を変更しても過去の Run には影響しません。',
@@ -139,7 +137,6 @@ const settings = {
     saveFailed: 'AI アシスタント設定の保存に失敗しました',
     baseUrlRequired: 'アシスタントを有効にする前に API アドレスを入力してください。',
     apiKeyRequired: 'アシスタントを有効にする前に API Key を入力してください。',
-    modelRequired: 'アシスタントを有効にする前にモデル名を入力してください。',
   },
   registration: {
     tab: '登録とログイン',
@@ -212,10 +209,7 @@ const settings = {
       creditsDisplayName: { label: 'Credits 表示名', description: 'コンソールがプラットフォーム内部 credits を表示する際に使用する名前。基盤は引き続き credits で統一保存・決済されます。' },
       fiatCurrencyUnit: { label: '現実通貨単位', description: '管理者が credits 換算金額を確認する際に使用する単位。例：CNY、USD、元。' },
       creditsPerFiatUnit: { label: '1 現実通貨あたりの Credits', description: '例：1000 は 1 現実通貨単位が 1000 credits に交換できることを意味します。' },
-      freeQuotaCredits: { label: 'デフォルト無料クォータ', description: '新規ユーザーウォレットがデフォルトで取得する credits クォータ。作成済みユーザーには自動補填されません。' },
       lowBalanceThresholdCredits: { label: '低残高リマインダー閾値', description: '請求帰属者の残高がこの credits 値を下回った場合、リマインダー表示または通知トリガーに使用されます。' },
-      overdueGracePeriodHours: { label: '延滞猶予期間', description: '残高不足後に実行を継続できる時間数。制限ポリシー有効後に有効になります。' },
-      allowNegativeBalance: { label: '負残高を許可', description: '台帳を負残高まで引き落とすことを許可します。無効にすると制限ポリシーで新しい有料操作をブロックできます。' },
       blockNewBuildsWhenInsufficient: { label: '残高不足で新規ビルドをブロック', description: '残高不足時に新しいビルドタスクを受け付けなくなります。開始済みのタスクは引き続き決済が完了します。' },
       blockDeployChangesWhenInsufficient: { label: '残高不足でデプロイ変更をブロック', description: '残高不足時に新規リリース、スケールアップ、新規データボリュームなどの有料変更をブロックします。' },
     },
@@ -292,7 +286,6 @@ const settings = {
     expired_auth_data: '期限切れ認証データ',
   },
   billingRateRulesTitle: '課金ルール',
-  billingRateRulesDescription: 'プラットフォーム組み込み meter の credits 単価と有効/無効状態を調整します。過去の請求は価格変更によって変化しません。',
   billingRateRulesFailedTitle: '課金ルールの読み込みに失敗しました',
   billingRateRulesFailedDescription: '現在のアカウントにプラットフォーム管理者権限があることを確認するか、後ほど再試行してください。',
   billingRateRulesSaved: '課金ルールを保存しました',
@@ -323,7 +316,6 @@ const settings = {
     'gateway.egress_gib': 'ゲートウェイ応答送信流量。実際に転送された GiB で課金されます。',
     'gateway.requests_1000': 'ゲートウェイリクエスト回数。1 千リクエストは 1,000 回のリクエストを意味します。',
   },
-  securityDescription: 'サードパーティログインバインディングと API 呼び出し用の個人 Access Token を管理します。',
   boundIdentities: 'バインド済み ID',
   identityLoadFailedTitle: 'ID の読み込みに失敗しました',
   identityLoadFailedDescription: 'ページを更新して再試行してください。',
@@ -334,7 +326,6 @@ const settings = {
   bindProviderTitle: '新しい ID プロバイダーをバインド',
   providerLoadFailedTitle: 'ID プロバイダーの読み込みに失敗しました',
   providerLoadFailedDescription: '後ほど再試行してください。',
-  bind: 'バインド',
   bindProvider: '{{provider}} をバインド',
 }
 

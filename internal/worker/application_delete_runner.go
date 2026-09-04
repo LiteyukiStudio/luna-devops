@@ -60,12 +60,11 @@ func (r *Runner) cleanupApplicationRuntimeResources(ctx context.Context, payload
 	}
 	kinds := []string{"services", "workloads", "configs"}
 	for _, target := range targets {
-		environment := deploymentTargetEnvironment(target)
-		manager, err := r.kubernetesManager(ctx, environment)
+		manager, err := r.kubernetesManager(ctx, target)
 		if err != nil {
 			return err
 		}
-		namespace := deploymentNamespace(project, environment)
+		namespace := deploymentNamespace(project)
 		for _, kind := range kinds {
 			items, err := manager.ListManagedResources(ctx, kubeprovider.ResourceListOptions{
 				Kind:          kind,

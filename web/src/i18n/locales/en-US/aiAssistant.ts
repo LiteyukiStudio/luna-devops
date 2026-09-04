@@ -73,7 +73,6 @@ const aiAssistant = {
     runId: 'Run ID',
     traceId: 'Trace ID',
     noArguments: 'No arguments',
-    result: 'Result',
     returnValue: 'Return value',
     summary: 'Summary',
     duration: 'Duration',
@@ -147,8 +146,6 @@ const aiAssistant = {
       title: 'Options',
       description: 'Description',
       suggested: 'Suggested next steps',
-      selected: 'Selected',
-      unavailable: 'These suggestions have expired or are not supported by this version. Ask the assistant again.',
       position: 'Option {{current}} of {{total}}',
       presets: {
         dashboard: {
@@ -499,7 +496,9 @@ const aiAssistant = {
         webSearch: 'Search the web',
         fetchWebPage: 'Read web page',
         createOptions: 'Create quick options',
-        createInteractionCards: 'Create interaction cards',
+        presentCard: 'Present information card',
+        requestInput: 'Request structured input',
+        requestChoice: 'Request choice',
         navigateToRoute: 'Open page',
         renameConversation: 'Update conversation title',
       },

@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/LiteyukiStudio/devops/internal/api/projectapi"
+	transportapi "github.com/LiteyukiStudio/devops/internal/api/transport"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -12,6 +14,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/LiteyukiStudio/devops/internal/api/buildapi"
 	"github.com/gin-gonic/gin"
 
 	"github.com/LiteyukiStudio/devops/internal/authz"
@@ -27,7 +30,7 @@ func TestPaginationFromQueryDefaultsAndCapsPageSize(t *testing.T) {
 	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
 	ctx.Request = httptest.NewRequest(http.MethodGet, "/access-tokens?page=0&pageSize=999&sortBy=name&sortOrder=asc", nil)
 
-	pagination := paginationFromQuery(ctx)
+	pagination := transportapi.PaginationFromQuery(ctx)
 
 	if pagination.Page != 1 {
 		t.Fatalf("Page = %d", pagination.Page)
@@ -58,7 +61,7 @@ func TestPaginationFromQueryWithSortReturnsEffectiveWhitelistValue(t *testing.T)
 	} {
 		ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
 		ctx.Request = httptest.NewRequest(http.MethodGet, "/"+testCase.query, nil)
-		if got := paginationFromQueryWithSort(ctx, allowed, "createdAt").SortBy; got != testCase.want {
+		if got := transportapi.PaginationFromQueryWithSort(ctx, allowed, "createdAt").SortBy; got != testCase.want {
 			t.Fatalf("sortBy = %q, want %q", got, testCase.want)
 		}
 	}
@@ -72,11 +75,11 @@ func TestPriorityListPageQueriesApplyNormalizedLimitAndOffset(t *testing.T) {
 		t.Fatalf("open dry-run database: %v", err)
 	}
 
-	builders := map[string]func(*gorm.DB, paginationParams) *gorm.DB{
-		"build-runs":         buildRunPageQuery,
+	builders := map[string]func(*gorm.DB, transportapi.PaginationParams) *gorm.DB{
+		"build-runs":         buildapi.BuildRunPageQuery,
 		"container-images":   containerImagePageQuery,
 		"deployment-targets": deploymentTargetPageQuery,
-		"projects":           projectPageQuery,
+		"projects":           projectapi.ProjectPageQuery,
 	}
 	cases := []struct {
 		name       string
@@ -85,9 +88,9 @@ func TestPriorityListPageQueriesApplyNormalizedLimitAndOffset(t *testing.T) {
 		wantLimit  int
 		wantOffset int
 	}{
-		{name: "defaults", query: "", wantPage: 1, wantLimit: defaultPageSize, wantOffset: 0},
-		{name: "maximum cap", query: "?page=2&pageSize=101", wantPage: 2, wantLimit: maxPageSize, wantOffset: maxPageSize},
-		{name: "invalid fallback", query: "?page=-2&pageSize=0", wantPage: 1, wantLimit: defaultPageSize, wantOffset: 0},
+		{name: "defaults", query: "", wantPage: 1, wantLimit: transportapi.DefaultPageSize, wantOffset: 0},
+		{name: "maximum cap", query: "?page=2&pageSize=101", wantPage: 2, wantLimit: transportapi.MaxPageSize, wantOffset: transportapi.MaxPageSize},
+		{name: "invalid fallback", query: "?page=-2&pageSize=0", wantPage: 1, wantLimit: transportapi.DefaultPageSize, wantOffset: 0},
 	}
 
 	for name, build := range builders {
@@ -95,7 +98,7 @@ func TestPriorityListPageQueriesApplyNormalizedLimitAndOffset(t *testing.T) {
 			t.Run(name+"/"+testCase.name, func(t *testing.T) {
 				ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
 				ctx.Request = httptest.NewRequest(http.MethodGet, "/"+testCase.query, nil)
-				pagination := paginationFromQuery(ctx)
+				pagination := transportapi.PaginationFromQuery(ctx)
 				if pagination.Page != testCase.wantPage {
 					t.Fatalf("page = %d, want %d", pagination.Page, testCase.wantPage)
 				}
@@ -109,7 +112,7 @@ func TestPriorityListPageQueriesApplyNormalizedLimitAndOffset(t *testing.T) {
 					t.Fatalf("LIMIT/OFFSET = %d/%d, want %d/%d", *limit.Limit, limit.Offset, testCase.wantLimit, testCase.wantOffset)
 				}
 
-				assertPaginationEnvelope(t, paginatedResponse([]string{"item"}, 101, pagination))
+				assertPaginationEnvelope(t, transportapi.PaginatedResponse([]string{"item"}, 101, pagination))
 			})
 		}
 	}
@@ -175,9 +178,9 @@ func TestGitRepositoryPaginationUsesUnifiedBoundsAndEffectiveSort(t *testing.T) 
 		wantSize   int
 		wantOffset int
 	}{
-		{query: "", wantPage: 1, wantSize: defaultPageSize, wantOffset: 0},
-		{query: "?page=2&pageSize=101&sortBy=unknown&sortOrder=asc", wantPage: 2, wantSize: maxPageSize, wantOffset: maxPageSize},
-		{query: "?page=-1&pageSize=0", wantPage: 1, wantSize: defaultPageSize, wantOffset: 0},
+		{query: "", wantPage: 1, wantSize: transportapi.DefaultPageSize, wantOffset: 0},
+		{query: "?page=2&pageSize=101&sortBy=unknown&sortOrder=asc", wantPage: 2, wantSize: transportapi.MaxPageSize, wantOffset: transportapi.MaxPageSize},
+		{query: "?page=-1&pageSize=0", wantPage: 1, wantSize: transportapi.DefaultPageSize, wantOffset: 0},
 	}
 	for _, testCase := range cases {
 		ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
@@ -189,7 +192,7 @@ func TestGitRepositoryPaginationUsesUnifiedBoundsAndEffectiveSort(t *testing.T) 
 		if pagination.SortBy != "updatedAt" || pagination.SortOrder != "desc" {
 			t.Fatalf("effective sort = %s/%s", pagination.SortBy, pagination.SortOrder)
 		}
-		assertPaginationEnvelope(t, paginatedResponse([]string{"repository"}, remotePageTotal(pagination, 1), pagination))
+		assertPaginationEnvelope(t, transportapi.PaginatedResponse([]string{"repository"}, remotePageTotal(pagination, 1), pagination))
 	}
 }
 
@@ -248,7 +251,7 @@ func calledFunctions(node ast.Node) map[string]bool {
 }
 
 func TestPaginatedResponseCalculatesTotalPages(t *testing.T) {
-	response := paginatedResponse([]string{"a", "b"}, 21, paginationParams{Page: 2, PageSize: 10, SortBy: "name", SortOrder: "asc"})
+	response := transportapi.PaginatedResponse([]string{"a", "b"}, 21, transportapi.PaginationParams{Page: 2, PageSize: 10, SortBy: "name", SortOrder: "asc"})
 
 	if response.TotalPages != 3 {
 		t.Fatalf("totalPages = %v", response.TotalPages)
@@ -262,31 +265,31 @@ func TestPaginatedResponseCalculatesTotalPages(t *testing.T) {
 }
 
 func TestOrderByClauseUsesWhitelist(t *testing.T) {
-	pagination := paginationParams{SortBy: "name", SortOrder: "asc"}
-	orderBy := orderByClause(pagination, map[string]string{"name": "name"}, "created_at")
+	pagination := transportapi.PaginationParams{SortBy: "name", SortOrder: "asc"}
+	orderBy := transportapi.OrderByClause(pagination, map[string]string{"name": "name"}, "created_at")
 	if orderBy != "name asc" {
 		t.Fatalf("orderBy = %q", orderBy)
 	}
 
-	pagination = paginationParams{SortBy: "name;drop table users", SortOrder: "wat"}
-	orderBy = orderByClause(pagination, map[string]string{"name": "name"}, "created_at")
+	pagination = transportapi.PaginationParams{SortBy: "name;drop table users", SortOrder: "wat"}
+	orderBy = transportapi.OrderByClause(pagination, map[string]string{"name": "name"}, "created_at")
 	if orderBy != "created_at desc" {
 		t.Fatalf("fallback orderBy = %q", orderBy)
 	}
 }
 
 func TestOrderByClauseToleratesDefaultColumnWithDirection(t *testing.T) {
-	pagination := paginationParams{SortBy: "", SortOrder: "desc"}
-	if got := orderByClause(pagination, map[string]string{"occurredAt": "occurred_at"}, "occurred_at desc"); got != "occurred_at desc" {
+	pagination := transportapi.PaginationParams{SortBy: "", SortOrder: "desc"}
+	if got := transportapi.OrderByClause(pagination, map[string]string{"occurredAt": "occurred_at"}, "occurred_at desc"); got != "occurred_at desc" {
 		t.Fatalf("orderBy = %q", got)
 	}
-	if got := orderByClause(pagination, map[string]string{}, "occurred_at asc"); got != "occurred_at desc" {
+	if got := transportapi.OrderByClause(pagination, map[string]string{}, "occurred_at asc"); got != "occurred_at desc" {
 		t.Fatalf("orderBy = %q", got)
 	}
 }
 
 func TestNormalizedProjectOrderIDsDeduplicatesAndTrims(t *testing.T) {
-	got := normalizedProjectOrderIDs([]string{" prj_1 ", "", "prj_2", "prj_1"})
+	got := projectapi.NormalizedProjectOrderIDs([]string{" prj_1 ", "", "prj_2", "prj_1"})
 	if len(got) != 2 || got[0] != "prj_1" || got[1] != "prj_2" {
 		t.Fatalf("ids = %#v", got)
 	}
@@ -335,7 +338,7 @@ func TestResourceCanMutateDuringDeleteAllowsOnlyStableStates(t *testing.T) {
 func TestProjectPinResponseIncludesDashboardOrder(t *testing.T) {
 	project := model.Project{ID: "prj_1", Identifier: "demo", Name: "Demo"}
 	pin := model.ProjectPin{ProjectID: "prj_1"}
-	response := projectPinResponseFrom(project, pin, 3)
+	response := projectapi.ProjectPinResponseFrom(project, pin, 3)
 	if response.DashboardOrder != 3 {
 		t.Fatalf("dashboardOrder = %d", response.DashboardOrder)
 	}
@@ -369,13 +372,13 @@ func TestBuildImageRefOmitsDockerHubDomainAndRendersTagTemplate(t *testing.T) {
 	project := model.Project{Identifier: "demo"}
 	application := model.Application{Identifier: "blog"}
 	run := model.BuildRun{
-		TargetRepository: buildTargetImageRepository(registry, project, application),
+		TargetRepository: buildapi.BuildTargetImageRepository(registry, project, application),
 		TargetTag:        "${{ github.ref_name }}-{short_sha}",
 		SourceBranch:     "main",
 		SourceCommit:     "1234567890abcdef",
 	}
 
-	if ref := buildImageRef(registry, run); ref != "snowykami/demo-blog:main-1234567890ab" {
+	if ref := buildapi.BuildImageRef(registry, run); ref != "snowykami/demo-blog:main-1234567890ab" {
 		t.Fatalf("dockerhub image ref = %q", ref)
 	}
 }
@@ -385,12 +388,12 @@ func TestBuildImageRefAddsNonDockerHubDomainPrefix(t *testing.T) {
 	project := model.Project{Identifier: "demo"}
 	application := model.Application{Identifier: "api"}
 	run := model.BuildRun{
-		TargetRepository: buildTargetImageRepository(registry, project, application),
+		TargetRepository: buildapi.BuildTargetImageRepository(registry, project, application),
 		TargetTag:        "release/${{ github.ref_name }}",
 		SourceBranch:     "feature/login",
 	}
 
-	if ref := buildImageRef(registry, run); ref != "harbor.example.com/team/demo-api:release-feature-login" {
+	if ref := buildapi.BuildImageRef(registry, run); ref != "harbor.example.com/team/demo-api:release-feature-login" {
 		t.Fatalf("harbor image ref = %q", ref)
 	}
 }
@@ -400,7 +403,7 @@ func TestBuildTargetImageRepositoryFallsBackToProjectIdentifierNamespace(t *test
 	project := model.Project{Identifier: "demo"}
 	application := model.Application{Identifier: "api"}
 
-	if repository := buildTargetImageRepository(registry, project, application); repository != "harbor.example.com/demo/demo-api" {
+	if repository := buildapi.BuildTargetImageRepository(registry, project, application); repository != "harbor.example.com/demo/demo-api" {
 		t.Fatalf("repository = %q", repository)
 	}
 }
@@ -412,7 +415,7 @@ func TestCredentialRepositoryTemplateUsesStage(t *testing.T) {
 	application := model.Application{Identifier: "frontend"}
 	target := model.DeploymentTarget{Name: "prod", Stage: "production"}
 
-	repository, tag := splitTargetImageRef(buildTargetImageRepositoryForCredential(registry, credential, project, application, target) + ":" + buildTargetImageTagTemplateForCredential(credential))
+	repository, tag := buildapi.SplitTargetImageRef(buildapi.BuildTargetImageRepositoryForCredential(registry, credential, project, application, target) + ":" + buildapi.BuildTargetImageTagTemplateForCredential(credential))
 	if repository != "devopsns/neo-blog-frontend-production" || tag != "{commit}" {
 		t.Fatalf("templated image = %q:%q", repository, tag)
 	}
@@ -425,12 +428,12 @@ func TestCredentialStaticTagTemplateOnlyUsesDeploymentContext(t *testing.T) {
 	target := model.DeploymentTarget{Name: "prod-web", Stage: "prod"}
 
 	staticCredential := model.RegistryCredential{TagTemplate: "{projectIdentifier}-{appIdentifier}-{stage}"}
-	if tag := buildStaticTargetImageTagForCredential(registry, staticCredential, project, application, target); tag != "neo-blog-frontend-prod" {
+	if tag := buildapi.BuildStaticTargetImageTagForCredential(registry, staticCredential, project, application, target); tag != "neo-blog-frontend-prod" {
 		t.Fatalf("static tag = %q", tag)
 	}
 
 	buildVariableCredential := model.RegistryCredential{TagTemplate: "{commit}"}
-	if tag := buildStaticTargetImageTagForCredential(registry, buildVariableCredential, project, application, target); tag != "latest" {
+	if tag := buildapi.BuildStaticTargetImageTagForCredential(registry, buildVariableCredential, project, application, target); tag != "latest" {
 		t.Fatalf("build variable tag = %q", tag)
 	}
 }
@@ -440,13 +443,13 @@ func TestDefaultImageRepositoryAcceptsHostlessInput(t *testing.T) {
 	project := model.Project{Identifier: "demo"}
 	application := model.Application{Identifier: "api"}
 
-	if !isDefaultImageRepository(registry, project, application, "demo/demo-api") {
+	if !buildapi.IsDefaultImageRepository(registry, project, application, "demo/demo-api") {
 		t.Fatal("expected hostless default repository to be recognized")
 	}
 }
 
 func TestBuildTagTemplateSupportsFriendlyVariables(t *testing.T) {
-	got := renderBuildTagTemplate("{branchSlug}-{shortSha}-{commit}", variables.Context{
+	got := buildapi.RenderBuildTagTemplate("{branchSlug}-{shortSha}-{commit}", variables.Context{
 		SourceBranch: "feature/Login Page",
 		SourceCommit: "1234567890abcdef",
 	})
@@ -470,9 +473,9 @@ func TestSplitTargetImageRef(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			repository, tag := splitTargetImageRef(test.value)
+			repository, tag := buildapi.SplitTargetImageRef(test.value)
 			if repository != test.repository || tag != test.tag {
-				t.Fatalf("splitTargetImageRef(%q) = %q/%q", test.value, repository, tag)
+				t.Fatalf("buildapi.SplitTargetImageRef(%q) = %q/%q", test.value, repository, tag)
 			}
 		})
 	}

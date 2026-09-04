@@ -57,6 +57,20 @@ describe('aI assistant state', () => {
   it('rejects incomplete timeline snapshots fail closed', () => {
     expect(isValidAITimeline({ conversation: { id: 'c' }, turns: [] })).toBe(false)
     expect(isValidAITimeline({ conversation: { id: 'c' }, turns: [], eventCursors: [], pageInfo: { hasOlder: false } })).toBe(true)
+    expect(isValidAITimeline({
+      conversation: { id: 'c' },
+      eventCursors: [],
+      pageInfo: { hasOlder: false },
+      turns: [{
+        id: 'turn',
+        turnIndex: 0,
+        input: messageItem(),
+        selectedRun: {
+          id: 'run',
+          items: [toolItem({ toolCall: { id: 'tool', operationId: 'runtime.read', callIndex: 0, result: {} as never } })],
+        },
+      }],
+    })).toBe(false)
   })
 
   it('merges streaming deltas and ignores duplicate or stale events', () => {
@@ -315,8 +329,8 @@ describe('aI assistant state', () => {
           runIndex: 0,
           status: 'completed',
           items: [
-            { id: 'call', timelineIndex: 0, revision: 1, createdAt: '2026-07-28T00:00:01Z', type: 'tool_call', status: 'completed', parts: [], toolCall: { id: 'tool', operationId: 'runtime.read', callIndex: 0 } },
-            { id: 'result', timelineIndex: 1, revision: 1, createdAt: '2026-07-28T00:00:02Z', type: 'tool_result', status: 'completed', relatedItemId: 'call', parts: [{ id: 'r', partIndex: 0, type: 'structured_data', data: { summaryKey: 'aiAssistant.resultAvailable' } }] },
+            { id: 'call', timelineIndex: 0, revision: 1, createdAt: '2026-07-28T00:00:01Z', type: 'tool_call', status: 'completed', parts: [], toolCall: { id: 'tool', operationId: 'runtime.read', callIndex: 0, result: { summaryKey: 'aiAssistant.resultAvailable' } } },
+            { id: 'result', timelineIndex: 1, revision: 1, createdAt: '2026-07-28T00:00:02Z', type: 'tool_result', status: 'completed', relatedItemId: 'call', parts: [] },
           ],
         },
       }],
@@ -360,14 +374,14 @@ describe('aI assistant state', () => {
       type: 'tool.started',
       toolCallId: 'card-generation',
       payload: {
-        operationId: 'create_interaction_cards',
+        operationId: 'request_choice',
         arguments: { schemaVersion: 1, generationId: 'database-list', title: '正在整理数据库候选' },
         timelineIndex: 2,
       },
       item: toolItem({
         id: 'card-item',
         timelineIndex: 2,
-        toolCall: { id: 'card-generation', operationId: 'create_interaction_cards', callIndex: 2, status: 'running', arguments: { schemaVersion: 1, generationId: 'database-list', title: '正在整理数据库候选' } },
+        toolCall: { id: 'card-generation', operationId: 'request_choice', callIndex: 2, status: 'running', arguments: { schemaVersion: 1, generationId: 'database-list', title: '正在整理数据库候选' } },
       }),
     }))
     const completed = reduceAIEvent(started, event({
@@ -376,7 +390,7 @@ describe('aI assistant state', () => {
       type: 'tool.completed',
       toolCallId: 'card-generation',
       payload: {
-        operationId: 'create_interaction_cards',
+        operationId: 'request_choice',
         arguments: {
           schemaVersion: 1,
           generationId: 'database-list',
@@ -393,7 +407,7 @@ describe('aI assistant state', () => {
         status: 'completed',
         toolCall: {
           id: 'card-generation',
-          operationId: 'create_interaction_cards',
+          operationId: 'request_choice',
           callIndex: 2,
           status: 'succeeded',
           arguments: { schemaVersion: 1, generationId: 'database-list', title: '数据库候选', template: 'candidates', cards: [] },
@@ -404,7 +418,7 @@ describe('aI assistant state', () => {
     expect(completed.blocks).toHaveLength(1)
     expect(completed.blocks[0]).toMatchObject({
       type: 'tool_call',
-      operationId: 'create_interaction_cards',
+      operationId: 'request_choice',
       status: 'succeeded',
       arguments: expect.objectContaining({ generationId: 'database-list', title: '数据库候选' }),
     })

@@ -2,13 +2,15 @@ import { describe, expect, it } from "vitest"
 import { DevelopmentRequestVerifier } from "../src/auth.js"
 import { loadConfig } from "../src/config.js"
 import { TestRepository } from "./support/test-repository.js"
-import { buildServer } from "../src/server.js"
 import { ToolCatalog } from "../src/tools/catalog.js"
 import { DeterministicLunaApiClient, type ToolExecutionResult } from "../src/tools/luna-api-client.js"
 import { ProjectingToolCallStore, ToolOrchestrator } from "../src/tools/orchestrator.js"
 import { presentTimeline } from "../src/timeline-presenter.js"
+import { testToolOperation } from "./support/tool-catalog.js"
+import { buildTestServer } from "./support/server.js"
 
 const approvalCatalog = ToolCatalog.load([{
+  ...testToolOperation("updateThing"),
   operationId: "updateThing",
   method: "POST",
   path: "/api/v1/things",
@@ -36,7 +38,7 @@ async function approvalFixture(
     client,
     new ProjectingToolCallStore(store, repository),
   )
-  const app = buildServer({
+  const app = buildTestServer({
     config: loadConfig({ NODE_ENV: "test" }),
     repository,
     requestVerifier: new DevelopmentRequestVerifier(),

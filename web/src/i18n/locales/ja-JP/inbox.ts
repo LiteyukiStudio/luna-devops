@@ -1,7 +1,6 @@
 export default {
   inbox: {
     title: 'メッセージボックス',
-    description: 'あなたに関連するプラットフォームメッセージと対応待ちリクエストを確認します。',
     open: 'メッセージボックスを開く',
     unreadCount: '{{count}} 件の未読メッセージ',
     unreadCountOverflow: '99 件以上の未読メッセージ',
@@ -40,7 +39,7 @@ export default {
       system: 'システム',
     },
     priority: { critical: '緊急', high: '重要' },
-    detail: { title: 'メッセージ詳細', requestStatus: 'リクエスト状態', expiresAt: '有効期限' },
+    detail: { title: 'メッセージ詳細', expiresAt: '有効期限' },
     decision: {
       acceptTitle: 'このリクエストを承認しますか？',
       acceptDescription: 'プラットフォームは権限とリソース状態を再検証してからこの操作を実行します。',

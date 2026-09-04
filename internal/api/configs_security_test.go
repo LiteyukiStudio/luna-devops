@@ -1,6 +1,7 @@
 package api
 
 import (
+	transportapi "github.com/LiteyukiStudio/devops/internal/api/transport"
 	"net/http"
 	"testing"
 	"time"
@@ -18,7 +19,7 @@ func TestFullConfigPayloadUpdatesKnownValues(t *testing.T) {
 		t.Fatal(err)
 	}
 	sessionToken := "sess_config_admin"
-	if err := db.Create(&model.UserSession{ID: "ses_config_admin", UserID: user.ID, TokenHash: hashToken(sessionToken), ExpiresAt: now.Add(time.Hour)}).Error; err != nil {
+	if err := db.Create(&model.UserSession{ID: "ses_config_admin", UserID: user.ID, TokenHash: transportapi.HashToken(sessionToken), ExpiresAt: now.Add(time.Hour)}).Error; err != nil {
 		t.Fatal(err)
 	}
 	handlers := &Handlers{db: db, configs: newConfigCache(db), mode: "development"}
@@ -40,7 +41,7 @@ func TestAIConfigUpdatePersistsTransactionAudit(t *testing.T) {
 		t.Fatal(err)
 	}
 	sessionToken := "sess_ai_config_admin"
-	if err := db.Create(&model.UserSession{ID: "ses_ai_config_admin", UserID: user.ID, TokenHash: hashToken(sessionToken), ExpiresAt: now.Add(time.Hour)}).Error; err != nil {
+	if err := db.Create(&model.UserSession{ID: "ses_ai_config_admin", UserID: user.ID, TokenHash: transportapi.HashToken(sessionToken), ExpiresAt: now.Add(time.Hour)}).Error; err != nil {
 		t.Fatal(err)
 	}
 	handlers := &Handlers{db: db, configs: newConfigCache(db), mode: "development"}

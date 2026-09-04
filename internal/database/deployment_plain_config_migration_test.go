@@ -51,16 +51,16 @@ func TestUnifyDeploymentPlainConfigMigrationPreservesPrecedence(t *testing.T) {
 	assertRunnerMigrationVersion(t, runner, 92)
 
 	now := time.Now()
-	if err := db.Exec(`INSERT INTO projects (id, identifier, kubernetes_namespace, name, namespace_strategy, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		"prj_plain_config", "plain-config", "luna-plain-config", "Plain Config", "project", now, now).Error; err != nil {
+	if err := db.Exec(`INSERT INTO projects (id, identifier, kubernetes_namespace, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
+		"prj_plain_config", "plain-config", "luna-plain-config", "Plain Config", now, now).Error; err != nil {
 		t.Fatalf("insert project: %v", err)
 	}
 	if err := db.Exec(`INSERT INTO applications (id, project_id, identifier, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
 		"app_plain_config", "prj_plain_config", "api", "API", now, now).Error; err != nil {
 		t.Fatalf("insert application: %v", err)
 	}
-	if err := db.Exec(`INSERT INTO deployment_targets (id, project_id, application_id, environment_id, name, stage, env_vars, config_refs, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		"dplt_plain_config", "prj_plain_config", "app_plain_config", "", "Production", "prod", `{"KEEP":"plain","OVERRIDE":"plain"}`, `{"OVERRIDE":"config-map","MIGRATED":"true"}`, now, now).Error; err != nil {
+	if err := db.Exec(`INSERT INTO deployment_targets (id, project_id, application_id, name, stage, env_vars, config_refs, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"dplt_plain_config", "prj_plain_config", "app_plain_config", "Production", "prod", `{"KEEP":"plain","OVERRIDE":"plain"}`, `{"OVERRIDE":"config-map","MIGRATED":"true"}`, now, now).Error; err != nil {
 		t.Fatalf("insert deployment target: %v", err)
 	}
 

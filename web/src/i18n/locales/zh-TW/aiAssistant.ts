@@ -73,7 +73,6 @@ const aiAssistant = {
     runId: '執行標識',
     traceId: 'Trace ID',
     noArguments: '無需引數',
-    result: '結果',
     returnValue: '返回',
     summary: '摘要',
     duration: '耗時',
@@ -147,8 +146,6 @@ const aiAssistant = {
       title: '選項',
       description: '說明',
       suggested: '建議下一步',
-      selected: '已選擇',
-      unavailable: '這些建議已失效或當前版本不支援，請重新詢問助手。',
       position: '第 {{current}} 項，共 {{total}} 項',
       presets: {
         dashboard: {
@@ -499,7 +496,9 @@ const aiAssistant = {
         webSearch: '搜尋網際網路',
         fetchWebPage: '讀取網頁',
         createOptions: '生成快捷選項',
-        createInteractionCards: '生成互動卡片',
+        presentCard: '展示資訊卡片',
+        requestInput: '請求結構化輸入',
+        requestChoice: '請求選擇',
         navigateToRoute: '開啟頁面',
         renameConversation: '更新會話名稱',
       },

@@ -33,9 +33,7 @@ const root = {
   create: 'Create',
   edit: 'Edit',
   delete: 'Delete',
-  remove: 'Remove',
   backToProjectSpaces: 'Back to project spaces',
-  backToProjectWorkspace: 'Back to project workspace',
   backToApps: 'Back to applications',
 }
 

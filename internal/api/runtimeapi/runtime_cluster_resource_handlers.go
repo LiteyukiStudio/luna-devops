@@ -52,12 +52,12 @@ func (h *Handlers) ListRuntimeClusterResources(ctx *gin.Context) {
 		return
 	}
 	options := kubeprovider.ResourceListOptions{
-		Kind:          strings.TrimSpace(ctx.Query("resourceCategory")),
-		Namespace:     strings.TrimSpace(ctx.Query("namespace")),
-		ProjectID:     strings.TrimSpace(ctx.Query("projectId")),
-		ApplicationID: strings.TrimSpace(ctx.Query("applicationId")),
-		EnvironmentID: strings.TrimSpace(ctx.Query("environmentId")),
-		Limit:         int64(pagination.PageSize),
+		Kind:               strings.TrimSpace(ctx.Query("resourceCategory")),
+		Namespace:          strings.TrimSpace(ctx.Query("namespace")),
+		ProjectID:          strings.TrimSpace(ctx.Query("projectId")),
+		ApplicationID:      strings.TrimSpace(ctx.Query("applicationId")),
+		DeploymentTargetID: strings.TrimSpace(ctx.Query("deploymentTargetId")),
+		Limit:              int64(pagination.PageSize),
 	}
 	if !validRuntimeResourceCategory(options.Kind) {
 		writeRuntimeResourceArgumentError(ctx, "cluster.resource_category_invalid", "resourceCategory", runtimeResourceCategories)
@@ -363,7 +363,7 @@ func (h *Handlers) runtimeClusterPodTerminalTarget(ctx *gin.Context, user model.
 		return model.RuntimeCluster{}, nil, kubeprovider.ResourceSnapshot{}, false
 	}
 	var cluster model.RuntimeCluster
-	if err := runtimecluster.ActiveScope(h.dbFor(ctx)).First(&cluster, "id = ? and type in ?", ctx.Param("clusterId"), []string{"kubernetes", "k3s"}).Error; err != nil {
+	if err := runtimecluster.ActiveScope(h.dbFor(ctx)).First(&cluster, "id = ?", ctx.Param("clusterId")).Error; err != nil {
 		writeError(ctx, http.StatusNotFound, "runtime cluster not found")
 		return model.RuntimeCluster{}, nil, kubeprovider.ResourceSnapshot{}, false
 	}

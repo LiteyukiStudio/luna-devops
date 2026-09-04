@@ -52,7 +52,6 @@ func (h *Handlers) validateReleaseForCreate(ctx *gin.Context, release *model.Rel
 	if !h.ensureDeploymentTargetCanMutate(ctx, target) {
 		return false
 	}
-	release.EnvironmentID = target.EnvironmentID
 	if strings.TrimSpace(release.BuildRunID) == "" {
 		if strings.TrimSpace(release.ImageRef) == "" {
 			release.ImageRef = strings.TrimSpace(target.ImageRef)
@@ -109,7 +108,6 @@ func releaseFromInput(projectID, userID string, input releaseInput, releaseID st
 		ID:                 releaseID,
 		ProjectID:          projectID,
 		ApplicationID:      strings.TrimSpace(input.ApplicationID),
-		EnvironmentID:      strings.TrimSpace(input.EnvironmentID),
 		DeploymentTargetID: strings.TrimSpace(input.DeploymentTargetID),
 		BuildRunID:         strings.TrimSpace(input.BuildRunID),
 		ImageRef:           strings.TrimSpace(input.ImageRef),
@@ -126,7 +124,6 @@ func rollbackReleaseFromTarget(source model.Release, target model.Release, userI
 	return model.Release{
 		ProjectID:          source.ProjectID,
 		ApplicationID:      source.ApplicationID,
-		EnvironmentID:      source.EnvironmentID,
 		DeploymentTargetID: source.DeploymentTargetID,
 		BuildRunID:         target.BuildRunID,
 		ImageRef:           target.ImageRef,
@@ -147,7 +144,6 @@ func normalizeReleaseType(value string) string {
 
 type releaseInput struct {
 	ApplicationID      string `json:"applicationId" binding:"required"`
-	EnvironmentID      string `json:"environmentId"`
 	DeploymentTargetID string `json:"deploymentTargetId" binding:"required"`
 	BuildRunID         string `json:"buildRunId"`
 	ImageRef           string `json:"imageRef"`

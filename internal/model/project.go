@@ -12,7 +12,6 @@ type Project struct {
 	KubernetesNamespace string         `gorm:"not null;default:''" json:"kubernetesNamespace"`
 	Name                string         `gorm:"not null" json:"name"`
 	Description         string         `json:"description"`
-	NamespaceStrategy   string         `gorm:"not null" json:"namespaceStrategy"`
 	MaxConcurrentBuilds int            `gorm:"not null;default:2" json:"maxConcurrentBuilds"`
 	WebConsoleEnabled   bool           `gorm:"not null;default:true" json:"webConsoleEnabled"`
 	BillingOwnerUserID  string         `gorm:"index;not null;default:''" json:"billingOwnerUserId"`
@@ -72,7 +71,6 @@ type HookRun struct {
 	BuildJobID         string     `gorm:"index" json:"buildJobId"`
 	ReleaseID          string     `gorm:"index" json:"releaseId"`
 	ApplicationID      string     `gorm:"index" json:"applicationId"`
-	EnvironmentID      string     `gorm:"index" json:"environmentId"`
 	DeploymentTargetID string     `gorm:"index" json:"deploymentTargetId"`
 	Name               string     `gorm:"not null" json:"name"`
 	Phase              string     `gorm:"index;not null" json:"phase"`

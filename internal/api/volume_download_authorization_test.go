@@ -75,7 +75,9 @@ func newVolumeDownloadAuthorizationTestHandlers(t *testing.T) (*Handlers, *volum
 	}); err != nil {
 		t.Fatalf("replace query callback: %v", err)
 	}
-	return &Handlers{db: db}, state
+	handlers := &Handlers{db: db}
+	handlers.domains = newDomainHandlers(handlers)
+	return handlers, state
 }
 
 func TestContinuousAuthorizationPersonalTokenRevocationCancelsReadBarrier(t *testing.T) {
@@ -206,6 +208,7 @@ func TestVolumeImportManagerDowngradeInterruptsBodyWithoutCommit(t *testing.T) {
 	handlers.continuousAuthorizationInterval = 5 * time.Millisecond
 	content := newBlockingVolumeImportContentService()
 	handlers.volumeContent = content
+	handlers.domains = newDomainHandlers(handlers)
 	body := newBlockingImportRequestBody()
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)
@@ -218,7 +221,7 @@ func TestVolumeImportManagerDowngradeInterruptsBodyWithoutCommit(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		handlers.UploadVolumeImportContent(ctx)
+		handlers.domains.volume.UploadVolumeImportContent(ctx)
 		close(done)
 	}()
 	select {

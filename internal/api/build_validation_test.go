@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	transportapi "github.com/LiteyukiStudio/devops/internal/api/transport"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
+	"github.com/LiteyukiStudio/devops/internal/api/buildapi"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/gin-gonic/gin"
 	"go.opentelemetry.io/otel/trace"
@@ -88,22 +90,23 @@ func TestPrepareBuildRunRequestReturnsCredentialRequiredConflictAndPreservesCont
 	db, observation := newMissingPushCredentialValidationDB(t, parentSpanContext)
 
 	handlers := &Handlers{db: db}
+	handlers.domains = newDomainHandlers(handlers)
 	run := model.BuildRun{
 		ProjectID:          "prj_test",
 		ApplicationID:      "app_test",
 		DeploymentTargetID: "dplt_test",
 		TargetRegistryID:   "areg_test",
 	}
-	err := handlers.prepareBuildRunRequest(model.User{ID: "usr_test"}, &run, requestContext)
+	err := handlers.domains.build.PrepareBuildRunRequest(model.User{ID: "usr_test"}, &run, requestContext)
 	if err == nil {
 		t.Fatal("expected missing registry push credential to reject the build run")
 	}
-	var requestErr buildRunRequestError
+	var requestErr buildapi.BuildRunRequestError
 	if !errors.As(err, &requestErr) {
-		t.Fatalf("error type = %T, want buildRunRequestError", err)
+		t.Fatalf("error type = %T, want buildapi.BuildRunRequestError", err)
 	}
-	if requestErr.status != http.StatusConflict || requestErr.code != buildPushCredentialRequiredCode {
-		t.Fatalf("error status/code = %d/%q", requestErr.status, requestErr.code)
+	if requestErr.Status() != http.StatusConflict || requestErr.Code() != buildapi.BuildPushCredentialRequiredCode {
+		t.Fatalf("error status/code = %d/%q", requestErr.Status(), requestErr.Code())
 	}
 	if observation.queryCount == 0 {
 		t.Fatal("expected build validation to query through the request context")
@@ -123,11 +126,12 @@ func TestCreateQueuedBuildRunRejectsMissingPushCredentialWithoutSideEffects(t *t
 			db, observation := newMissingPushCredentialValidationDB(t, trace.SpanContext{})
 			taskClient := &fakeBuildTaskEnqueuer{}
 			handlers := &Handlers{db: db, taskClient: taskClient}
+			handlers.domains = newDomainHandlers(handlers)
 			recorder := httptest.NewRecorder()
 			ctx, _ := gin.CreateTestContext(recorder)
 			ctx.Request = httptest.NewRequest(http.MethodPost, "/api/v1/projects/prj_test/build-runs", nil)
 
-			handlers.createQueuedBuildRun(ctx, model.User{ID: "usr_test"}, model.BuildRun{
+			handlers.domains.build.CreateQueuedBuildRun(ctx, model.User{ID: "usr_test"}, model.BuildRun{
 				ID:                  "bldr_" + test.name,
 				ProjectID:           "prj_test",
 				ApplicationID:       "app_test",
@@ -141,7 +145,7 @@ func TestCreateQueuedBuildRunRejectsMissingPushCredentialWithoutSideEffects(t *t
 			if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
 				t.Fatalf("decode response: %v", err)
 			}
-			if recorder.Code != http.StatusConflict || body["code"] != buildPushCredentialRequiredCode {
+			if recorder.Code != http.StatusConflict || body["code"] != buildapi.BuildPushCredentialRequiredCode {
 				t.Fatalf("status/code = %d/%#v", recorder.Code, body["code"])
 			}
 			if observation.createCount != 0 {
@@ -167,14 +171,14 @@ func TestBuildRegistryPushCredentialRequiredResponseBoundary(t *testing.T) {
 			name:          "production Chinese",
 			mode:          "production",
 			language:      "zh-CN",
-			wantMessage:   "errors." + buildPushCredentialRequiredCode,
+			wantMessage:   "errors." + buildapi.BuildPushCredentialRequiredCode,
 			forbidDetails: true,
 		},
 		{
 			name:          "production English",
 			mode:          "production",
 			language:      "en-US",
-			wantMessage:   "errors." + buildPushCredentialRequiredCode,
+			wantMessage:   "errors." + buildapi.BuildPushCredentialRequiredCode,
 			forbidDetails: true,
 		},
 		{
@@ -190,12 +194,12 @@ func TestBuildRegistryPushCredentialRequiredResponseBoundary(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			recorder := httptest.NewRecorder()
 			ctx, _ := gin.CreateTestContext(recorder)
-			setRuntimeMode(ctx, test.mode)
+			transportapi.SetRuntimeMode(ctx, test.mode)
 			ctx.Request = httptest.NewRequest(http.MethodPost, "/api/v1/projects/prj_test/build-runs/trigger", nil)
 			ctx.Request.Header.Set("Accept-Language", test.language)
 
-			writeBuildRunRequestError(ctx, buildRunPublicConflict(
-				buildPushCredentialRequiredCode,
+			buildapi.WriteBuildRunRequestError(ctx, buildapi.BuildRunPublicConflict(
+				buildapi.BuildPushCredentialRequiredCode,
 				"目标镜像站缺少可用推送凭据",
 			))
 
@@ -206,7 +210,7 @@ func TestBuildRegistryPushCredentialRequiredResponseBoundary(t *testing.T) {
 			if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
 				t.Fatalf("decode response: %v", err)
 			}
-			if body["code"] != buildPushCredentialRequiredCode {
+			if body["code"] != buildapi.BuildPushCredentialRequiredCode {
 				t.Fatalf("code = %#v", body["code"])
 			}
 			if body["message"] != test.wantMessage {
@@ -232,7 +236,7 @@ func TestWriteBuildRunRequestErrorKeepsGenericValidationSemantics(t *testing.T) 
 	ctx, _ := gin.CreateTestContext(recorder)
 	ctx.Request = httptest.NewRequest(http.MethodPost, "/api/v1/projects/prj_test/build-runs/trigger", nil)
 
-	writeBuildRunRequestError(ctx, buildRunBadRequest("部署配置不存在或不可用"))
+	buildapi.WriteBuildRunRequestError(ctx, buildapi.BuildRunBadRequest("部署配置不存在或不可用"))
 
 	var body map[string]any
 	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
@@ -249,7 +253,7 @@ func TestWriteLocalizedErrorCodeKeepsStableCodeIndependentFromMessageKey(t *test
 	ctx, _ := gin.CreateTestContext(recorder)
 	ctx.Request = httptest.NewRequest(http.MethodPost, "/api/v1/projects/prj_test/build-runs/trigger", nil)
 
-	writeLocalizedErrorCode(ctx, http.StatusConflict, "build.test_conflict", "development detail", buildPushCredentialRequiredCode)
+	transportapi.WriteLocalizedErrorCode(ctx, http.StatusConflict, "build.test_conflict", "development detail", buildapi.BuildPushCredentialRequiredCode)
 
 	var body map[string]any
 	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
@@ -258,7 +262,7 @@ func TestWriteLocalizedErrorCodeKeepsStableCodeIndependentFromMessageKey(t *test
 	if body["code"] != "build.test_conflict" {
 		t.Fatalf("code = %#v, want stable caller-provided code", body["code"])
 	}
-	if body["message"] != "errors."+buildPushCredentialRequiredCode {
+	if body["message"] != "errors."+buildapi.BuildPushCredentialRequiredCode {
 		t.Fatalf("message = %#v, want stable frontend localization key", body["message"])
 	}
 	if _, exists := body["detail"]; exists {

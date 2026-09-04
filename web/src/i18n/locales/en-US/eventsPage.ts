@@ -1,7 +1,5 @@
 const eventsPage = {
   title: 'Events',
-  description: 'Follow state changes across builds, releases, deployment hooks, access routes, and certificates.',
-  listTitle: 'Event history',
   searchPlaceholder: 'Search events, messages, or resource IDs',
   emptyTitle: 'No events in this range',
   emptyDescription: 'Events appear here when builds, releases, deployment hooks, access routes, or certificates change state.',
@@ -26,7 +24,6 @@ const eventsPage = {
     selectedCount: '{{count}} filter selections active',
     clearAll: 'Clear all',
     apply: 'Apply filters',
-    scope: 'Scope',
     project: 'Project space',
     application: 'Application',
     deploymentTarget: 'Deployment target',
@@ -45,8 +42,6 @@ const eventsPage = {
     allStatuses: 'All results',
   },
   scopes: {
-    mine: 'Related to me',
-    all: 'All events',
   },
   categories: {
     build: 'Build',

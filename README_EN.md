@@ -13,7 +13,7 @@
 </p>
 
 <p align="center">
-  <img src="web/public/images/luna-devops-banner-v4.png" alt="Luna DevOps automated delivery pipeline banner" />
+  <img src=".github/assets/luna-devops-banner-v4.png" alt="Luna DevOps automated delivery pipeline banner" />
 </p>
 
 <p align="center">
@@ -214,7 +214,7 @@ Project conventions:
 ## Assets
 
 - Logo / favicon: [`web/public/luna-devops-logo.svg`](web/public/luna-devops-logo.svg)
-- Mascot: [`web/public/brand/mascot-luna-devops.png`](web/public/brand/mascot-luna-devops.png)
+- Mascot: [`.github/assets/mascot-luna-devops.png`](.github/assets/mascot-luna-devops.png)
 
 ## Documentation
 

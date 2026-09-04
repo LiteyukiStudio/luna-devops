@@ -1,20 +1,20 @@
 import { z } from "zod"
 
 export const toolAliasesSchema = z.object({
-  zh: z.array(z.string().trim().min(1).max(120)).default([]),
-  en: z.array(z.string().trim().min(1).max(120)).default([]),
+  zh: z.array(z.string().trim().min(1).max(120)),
+  en: z.array(z.string().trim().min(1).max(120)),
 }).strict()
 
 export type ToolAliases = z.infer<typeof toolAliasesSchema>
 
 export const toolLocalizedTextSchema = z.object({
-  zh: z.string().trim().max(1000).default(""),
-  en: z.string().trim().max(1000).default(""),
+  zh: z.string().trim().max(1000),
+  en: z.string().trim().max(1000),
 }).strict()
 
 export const toolLocalizedListSchema = z.object({
-  zh: z.array(z.string().trim().min(1).max(500)).max(20).default([]),
-  en: z.array(z.string().trim().min(1).max(500)).max(20).default([]),
+  zh: z.array(z.string().trim().min(1).max(500)).max(20),
+  en: z.array(z.string().trim().min(1).max(500)).max(20),
 }).strict()
 
 export type ToolLocalizedText = z.infer<typeof toolLocalizedTextSchema>

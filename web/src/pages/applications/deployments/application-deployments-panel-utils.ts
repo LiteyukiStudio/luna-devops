@@ -7,11 +7,10 @@ import { normalizeWebConsoleOverride } from '@/pages/applications/runtime/web-co
 
 export type ReleaseForm = Omit<Release, 'id' | 'projectId' | 'createdBy' | 'createdAt' | 'rollbackFromId'>
 
-export const releaseDefaults: ReleaseForm = { applicationId: '', buildRunId: '', deploymentTargetId: '', environmentId: '', forceImagePull: false, imageRef: '', message: '', revision: 1, status: 'pending', type: 'deploy' }
+export const releaseDefaults: ReleaseForm = { applicationId: '', buildRunId: '', deploymentTargetId: '', forceImagePull: false, imageRef: '', message: '', revision: 1, status: 'pending', type: 'deploy' }
 
 export const deploymentTargetDefaults: DeploymentTargetPayload = {
   name: '',
-  environmentId: '',
   stage: 'dev',
   clusterId: '',
   workloadType: 'Deployment',
@@ -66,7 +65,6 @@ export const deploymentTargetDefaults: DeploymentTargetPayload = {
   targetTag: 'latest',
   targetImageRef: '',
   imageRef: '',
-  buildLabels: '',
   buildVariableSetIds: [],
   buildHooksEnabled: true,
   buildHookBindings: [],
@@ -102,19 +100,6 @@ export function shortImageRef(imageRef: string) {
   return tag ? `${compactRepository}:${tag}` : compactRepository
 }
 
-export function compactReleaseMessage(message?: string) {
-  const value = message?.trim()
-  if (!value)
-    return '-'
-  if (value.startsWith('invalid configuration'))
-    return 'config invalid'
-  if (value.includes('timed out'))
-    return 'rollout timeout'
-  if (value.includes('Deployment/Service/ConfigMap/Secret'))
-    return 'resources applied'
-  return value
-}
-
 export function formatTargetRuntimeSize(target: DeploymentTarget, t: (key: string, options?: Record<string, unknown>) => string) {
   return t('deploymentsPage.runtimeSizeValue', {
     cpu: formatCPU(target.cpuRequest),
@@ -134,7 +119,6 @@ export function redeployReleasePayload(target: DeploymentTarget, latestRelease?:
     applicationId: target.applicationId,
     buildRunId,
     deploymentTargetId: target.id,
-    environmentId: target.environmentId,
     forceImagePull: options.forceImagePull ?? false,
     imageRef,
     revision: (latestRelease?.revision ?? 0) + 1,

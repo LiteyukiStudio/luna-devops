@@ -64,7 +64,7 @@ func (r *Runner) deploymentTargetDataVolumes(ctx context.Context, target model.D
 	return resolved, nil
 }
 
-func (r *Runner) reconcileDeploymentVolumeMounts(ctx context.Context, target model.DeploymentTarget, environment model.Environment, namespace string) error {
+func (r *Runner) reconcileDeploymentVolumeMounts(ctx context.Context, target model.DeploymentTarget, namespace string) error {
 	service, err := r.projectVolumeService()
 	if err != nil {
 		return err
@@ -73,7 +73,7 @@ func (r *Runner) reconcileDeploymentVolumeMounts(ctx context.Context, target mod
 	if err != nil || len(mounts) == 0 {
 		return err
 	}
-	manager, err := r.kubernetesManager(ctx, environment)
+	manager, err := r.kubernetesManager(ctx, target)
 	if err != nil {
 		return err
 	}

@@ -77,26 +77,12 @@ func TestRedisConfigurationErrorsDoNotExposeCredentials(t *testing.T) {
 	secretValue := "must-not-leak-from-redis-url"
 	t.Setenv("REDIS_ADDR", "redis://user:"+secretValue+"%zz@redis.example.com:6379/0")
 
-	loaders := map[string]func() error{
-		"shared": func() error {
-			_, err := LoadShared()
-			return err
-		},
-		"tasks": func() error {
-			_, err := LoadTasks()
-			return err
-		},
+	_, err := LoadShared()
+	if err == nil || !strings.Contains(err.Error(), "REDIS_ADDR") {
+		t.Fatalf("error = %v", err)
 	}
-	for name, load := range loaders {
-		t.Run(name, func(t *testing.T) {
-			err := load()
-			if err == nil || !strings.Contains(err.Error(), "REDIS_ADDR") {
-				t.Fatalf("error = %v", err)
-			}
-			if strings.Contains(err.Error(), secretValue) {
-				t.Fatalf("configuration error exposed Redis credentials: %q", err)
-			}
-		})
+	if strings.Contains(err.Error(), secretValue) {
+		t.Fatalf("configuration error exposed Redis credentials: %q", err)
 	}
 }
 
@@ -310,17 +296,6 @@ func TestLoadSharedCapturesFreshEnvironmentForEachCall(t *testing.T) {
 	}
 	if first.PublicBaseURL != "https://first.example.com" || second.PublicBaseURL != "https://second.example.com" {
 		t.Fatalf("snapshots = %q / %q", first.PublicBaseURL, second.PublicBaseURL)
-	}
-}
-
-func TestLoadTasksIgnoresUnownedEnvironment(t *testing.T) {
-	resetEnvLoader(t)
-	t.Setenv("APP_ENV", "not-a-runtime-mode")
-	t.Setenv("DATABASE_URL", "not-a-database-url")
-	t.Setenv("API_DB_MAX_OPEN_CONNS", "not-an-integer")
-	t.Setenv("WORKER_DB_MAX_OPEN_CONNS", "not-an-integer")
-	if _, err := LoadTasks(); err != nil {
-		t.Fatalf("LoadTasks() validated unowned environment: %v", err)
 	}
 }
 

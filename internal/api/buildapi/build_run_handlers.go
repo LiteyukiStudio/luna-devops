@@ -169,7 +169,6 @@ func (h *Handlers) RetryBuildRun(ctx *gin.Context) {
 		TargetRegistryID:        previous.TargetRegistryID,
 		TargetRepository:        previous.TargetRepository,
 		TargetTag:               previous.TargetTag,
-		CacheConfig:             previous.CacheConfig,
 		CreatedBy:               user.ID,
 		TriggeredByName:         buildRunActorName(user),
 		TriggeredByEmail:        strings.TrimSpace(user.Email),
@@ -211,7 +210,6 @@ func (h *Handlers) CancelBuildRun(ctx *gin.Context) {
 			Updates(map[string]any{
 				"status":      "canceled",
 				"message":     "canceled by user",
-				"lease_until": nil,
 				"finished_at": &finishedAt,
 			}).Error; err != nil {
 			return err
@@ -306,7 +304,6 @@ func (h *Handlers) queueBuildRun(ctx context.Context, user model.User, run model
 		ID:         id.New("bldj"),
 		BuildRunID: run.ID,
 		ProjectID:  run.ProjectID,
-		Type:       "build",
 		Status:     "queued",
 	}
 	if err := h.dbWithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -381,7 +378,6 @@ func (h *Handlers) buildRunFromInput(projectID string, user model.User, input bu
 		TargetRepository:    targetRepository,
 		TargetTag:           fallback(targetTag, "latest"),
 		ImageRef:            "",
-		CacheConfig:         strings.TrimSpace(input.CacheConfig),
 		CreatedBy:           user.ID,
 		TriggeredByName:     buildRunActorName(user),
 		TriggeredByEmail:    strings.TrimSpace(user.Email),
@@ -428,5 +424,4 @@ type buildRunInput struct {
 	TargetRepository    string   `json:"targetRepository"`
 	TargetTag           string   `json:"targetTag"`
 	ImageRef            string   `json:"imageRef"`
-	CacheConfig         string   `json:"cacheConfig"`
 }

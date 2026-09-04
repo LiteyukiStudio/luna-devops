@@ -1,5 +1,4 @@
 const settings = {
-  siteDescription: 'Manage public site settings, security policy, billing, and data retention.',
   siteSaved: 'Site settings saved',
   siteConfigTitle: 'Branding',
   buildConfigTitle: 'Build configuration',
@@ -19,7 +18,6 @@ const settings = {
     accessModeHint: 'All signed-in users can use the assistant by default. Agent tools still inherit the current user’s permissions.',
     accessModeAllAuthenticated: 'All signed-in users',
     accessModeAdmins: 'Platform administrators only',
-    model: 'Model name',
     models: {
       title: 'AI model catalog',
       description: 'Each model has its own token prices. Prices are snapshotted when a Run starts and are not changed by later edits.',
@@ -139,7 +137,6 @@ const settings = {
     saveFailed: 'Could not save AI assistant settings',
     baseUrlRequired: 'Enter the API URL before enabling the assistant.',
     apiKeyRequired: 'Enter the API key before enabling the assistant.',
-    modelRequired: 'Enter the model name before enabling the assistant.',
   },
   registration: {
     tab: 'Registration & sign-in',
@@ -212,10 +209,7 @@ const settings = {
       creditsDisplayName: { label: 'Credits display name', description: 'Name shown for platform credits in the console. Storage and settlement continue to use credits internally.' },
       fiatCurrencyUnit: { label: 'Fiat currency unit', description: 'Unit used by administrators for converted credit values, such as CNY, USD, or yuan.' },
       creditsPerFiatUnit: { label: 'Credits per fiat unit', description: 'For example, 1000 means one fiat currency unit can be exchanged for 1000 credits.' },
-      freeQuotaCredits: { label: 'Default free quota', description: 'Credits granted to new user wallets. Existing users are not credited automatically.' },
       lowBalanceThresholdCredits: { label: 'Low balance threshold', description: 'Balance threshold used to show warnings or trigger notifications for billing owners.' },
-      overdueGracePeriodHours: { label: 'Overdue grace period', description: 'Hours that workloads may continue after the balance becomes insufficient, once restriction policies are enabled.' },
-      allowNegativeBalance: { label: 'Allow negative balance', description: 'Allow ledger deductions below zero. When disabled, restriction policies can block new paid operations.' },
       blockNewBuildsWhenInsufficient: { label: 'Block new builds when balance is insufficient', description: 'Reject new build jobs while allowing already-started jobs to finish settlement.' },
       blockDeployChangesWhenInsufficient: { label: 'Block deployment changes when balance is insufficient', description: 'Block paid changes such as releases, scaling, and new data volumes.' },
     },
@@ -292,7 +286,6 @@ const settings = {
     expired_auth_data: 'Expired authentication data',
   },
   billingRateRulesTitle: 'Billing rules',
-  billingRateRulesDescription: 'Adjust credits pricing and enabled state for built-in platform meters. Historical ledger entries are not changed by future price edits.',
   billingRateRulesFailedTitle: 'Billing rules failed to load',
   billingRateRulesFailedDescription: 'Confirm the current account has platform administrator permissions, or try again later.',
   billingRateRulesSaved: 'Billing rules saved',
@@ -334,8 +327,6 @@ const settings = {
   providerLoadFailedTitle: 'Provider loading failed',
   providerLoadFailedDescription: 'Try again later.',
   bindProvider: 'Bind {{provider}}',
-  securityDescription: 'Manage third-party login bindings and personal Access Tokens for API calls.',
-  bind: 'Bind',
 }
 
 export default settings

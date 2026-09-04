@@ -19,7 +19,6 @@ type ResourceListOptions struct {
 	Namespace          string
 	ProjectID          string
 	ApplicationID      string
-	EnvironmentID      string
 	DeploymentTargetID string
 	RouteID            string
 	Limit              int64
@@ -44,7 +43,6 @@ type ResourceSnapshot struct {
 	Summary            string            `json:"summary"`
 	ProjectID          string            `json:"projectId"`
 	ApplicationID      string            `json:"applicationId"`
-	EnvironmentID      string            `json:"environmentId"`
 	DeploymentTargetID string            `json:"deploymentTargetId"`
 	ReleaseID          string            `json:"releaseId"`
 	RouteID            string            `json:"routeId"`

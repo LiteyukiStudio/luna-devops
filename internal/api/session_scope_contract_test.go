@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	transportapi "github.com/LiteyukiStudio/devops/internal/api/transport"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -82,10 +83,10 @@ func TestDestructiveAndInteractiveScopesUseLeastPrivilegeContracts(t *testing.T)
 func TestScopeContractFailureReturnsStableSafeServiceUnavailable(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)
-	setRuntimeMode(ctx, "production")
+	transportapi.SetRuntimeMode(ctx, "production")
 	ctx.Request = httptest.NewRequest(http.MethodGet, "/api/v1/contract-is-not-declared", nil)
 
-	writeScopeContractUnavailableError(ctx, "OpenAPI parser diagnostic")
+	transportapi.WriteScopeContractUnavailableError(ctx, "OpenAPI parser diagnostic")
 
 	var response map[string]any
 	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {

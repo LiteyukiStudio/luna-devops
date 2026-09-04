@@ -1,7 +1,6 @@
 import type {
   PaginatedProjectVolumes,
   PaginatedProjectVolumeStorageClasses,
-  PaginatedVolumeTransfers,
   ProjectVolume,
   ProjectVolumeCreateInput,
   ProjectVolumeDeletionPreview,
@@ -14,7 +13,6 @@ import type {
   VolumeImportCreateResponse,
   VolumeTransfer,
   VolumeTransferDownloadAuthorization,
-  VolumeTransferListParams,
 } from '../volume-types'
 import i18next from '@/i18n'
 import { startAPIRequestSpan } from '@/lib/telemetry'
@@ -34,19 +32,6 @@ function volumeListQuery(params: ProjectVolumeListParams) {
     query.set('ownershipMode', params.ownershipMode)
   if (params.volumeMode)
     query.set('volumeMode', params.volumeMode)
-  return query.toString()
-}
-
-function transferListQuery(params: VolumeTransferListParams) {
-  const query = new URLSearchParams(paginationQuery(params))
-  if (params.createdBy)
-    query.set('createdBy', params.createdBy)
-  if (params.direction)
-    query.set('direction', params.direction)
-  if (params.state)
-    query.set('state', params.state)
-  if (params.volumeId)
-    query.set('volumeId', params.volumeId)
   return query.toString()
 }
 
@@ -196,8 +181,6 @@ export const volumesApi = {
       headers: { 'Idempotency-Key': createVolumeIdempotencyKey() },
       body: JSON.stringify(payload),
     }),
-  listVolumeTransfers: (projectId: string, params: VolumeTransferListParams) =>
-    request<PaginatedVolumeTransfers>(`/projects/${encodeURIComponent(projectId)}/volume-transfers?${transferListQuery(params)}`),
   getVolumeTransfer: (projectId: string, transferId: string, signal?: AbortSignal) =>
     request<VolumeTransfer>(`/projects/${encodeURIComponent(projectId)}/volume-transfers/${encodeURIComponent(transferId)}`, { signal }),
   retryVolumeTransfer: (projectId: string, transferId: string) =>

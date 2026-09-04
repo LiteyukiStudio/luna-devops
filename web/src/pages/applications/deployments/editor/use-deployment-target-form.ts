@@ -58,7 +58,6 @@ export function deploymentTargetFormValues({
     ...deploymentTargetDefaults,
     ...target,
     sourceType: target?.sourceType ?? 'repository',
-    environmentId: target?.environmentId ?? '',
     clusterId: target?.clusterId ?? defaultRuntimeCluster?.id ?? '',
     replicas: target?.replicas ?? 1,
     cpuRequest: target?.cpuRequest || '1',

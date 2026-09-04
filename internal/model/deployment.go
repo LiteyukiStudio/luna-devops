@@ -11,7 +11,6 @@ import (
 type RuntimeCluster struct {
 	ID                            string         `gorm:"primaryKey" json:"id"`
 	Name                          string         `gorm:"not null" json:"name"`
-	Type                          string         `gorm:"not null;default:kubernetes" json:"type"`
 	Endpoint                      string         `json:"endpoint"`
 	Scope                         string         `gorm:"index;not null;default:global" json:"scope"`
 	OwnerRef                      string         `gorm:"index" json:"ownerRef"`
@@ -25,8 +24,6 @@ type RuntimeCluster struct {
 	MemoryRequestPercent          int            `gorm:"not null" json:"memoryRequestPercent"`
 	CPULimitPercent               int            `gorm:"not null" json:"cpuLimitPercent"`
 	MemoryLimitPercent            int            `gorm:"not null" json:"memoryLimitPercent"`
-	GatewayProvider               string         `gorm:"not null;default:gateway-api" json:"gatewayProvider"`
-	GatewayRootDomain             string         `gorm:"not null;default:apps.local" json:"gatewayRootDomain"`
 	GatewayDomainSuffixesRaw      string         `gorm:"column:gateway_domain_suffixes;type:text;not null;default:''" json:"-"`
 	GatewayDomainSuffixes         []string       `gorm:"-" json:"gatewayDomainSuffixes"`
 	GatewayPublicScheme           string         `gorm:"not null;default:http" json:"gatewayPublicScheme"`
@@ -66,29 +63,10 @@ type RuntimeCluster struct {
 	DeletedAt                     gorm.DeletedAt `gorm:"index" json:"-"`
 }
 
-type Environment struct {
-	ID            string         `gorm:"primaryKey" json:"id"`
-	ProjectID     string         `gorm:"index;not null" json:"projectId"`
-	Name          string         `gorm:"not null" json:"name"`
-	Slug          string         `gorm:"index;not null" json:"slug"`
-	ClusterID     string         `gorm:"index" json:"clusterId"`
-	Namespace     string         `json:"namespace"`
-	Replicas      int            `gorm:"not null;default:1" json:"replicas"`
-	CPURequest    string         `json:"cpuRequest"`
-	MemoryRequest string         `json:"memoryRequest"`
-	EnvVars       string         `json:"envVars"`
-	SecretRefs    string         `json:"secretRefs"`
-	CreatedBy     string         `gorm:"index" json:"createdBy"`
-	CreatedAt     time.Time      `json:"createdAt"`
-	UpdatedAt     time.Time      `json:"updatedAt"`
-	DeletedAt     gorm.DeletedAt `gorm:"index" json:"-"`
-}
-
 type Release struct {
 	ID                 string         `gorm:"primaryKey" json:"id"`
 	ProjectID          string         `gorm:"index;not null" json:"projectId"`
 	ApplicationID      string         `gorm:"index;not null" json:"applicationId"`
-	EnvironmentID      string         `gorm:"index;not null" json:"environmentId"`
 	DeploymentTargetID string         `gorm:"index;not null;default:''" json:"deploymentTargetId"`
 	BuildRunID         string         `gorm:"index" json:"buildRunId"`
 	ImageRef           string         `gorm:"not null" json:"imageRef"`
@@ -110,7 +88,6 @@ type DeploymentTarget struct {
 	ID                           string                        `gorm:"primaryKey" json:"id"`
 	ProjectID                    string                        `gorm:"index;not null" json:"projectId"`
 	ApplicationID                string                        `gorm:"index;uniqueIndex:idx_deployment_targets_application_stage_active,where:deleted_at IS NULL;not null" json:"applicationId"`
-	EnvironmentID                string                        `gorm:"index;not null;default:''" json:"environmentId"`
 	Name                         string                        `gorm:"not null" json:"name"`
 	Stage                        string                        `gorm:"uniqueIndex:idx_deployment_targets_application_stage_active,where:deleted_at IS NULL;not null" json:"stage"`
 	KubernetesName               string                        `gorm:"not null;default:''" json:"kubernetesName"`
@@ -178,7 +155,6 @@ type DeploymentTarget struct {
 	TargetRepository             string                        `json:"targetRepository"`
 	TargetTag                    string                        `json:"targetTag"`
 	ImageRef                     string                        `json:"imageRef"`
-	BuildLabels                  string                        `json:"buildLabels"`
 	BuildVariableSetIDs          string                        `gorm:"type:text" json:"buildVariableSetIds"`
 	BuildHooksEnabled            bool                          `gorm:"not null;default:true" json:"buildHooksEnabled"`
 	BuildHookBindings            []DeploymentTargetHookBinding `gorm:"-" json:"buildHookBindings"`

@@ -24,7 +24,6 @@ func TestApplyApplicationResourcesCreatesWorkloadResources(t *testing.T) {
 		Namespace:             "project-demo",
 		ProjectID:             "prj_demo",
 		ApplicationID:         "app_api",
-		EnvironmentID:         "env_dev",
 		DeploymentTargetID:    "dplt_backend",
 		ReleaseID:             "rel_1",
 		ServiceBindingsDigest: "binding-digest",
@@ -73,9 +72,9 @@ func TestApplyApplicationResourcesCreatesWorkloadResources(t *testing.T) {
 	if len(deployment.Spec.Template.Spec.Containers[0].VolumeMounts) != 1 || deployment.Spec.Template.Spec.Containers[0].VolumeMounts[0].MountPath != "/data" {
 		t.Fatalf("deployment data mount = %#v", deployment.Spec.Template.Spec.Containers[0].VolumeMounts)
 	}
-	assertManagedLabels(t, deployment.Labels, spec.Name, spec.ProjectID, spec.ApplicationID, spec.EnvironmentID, spec.DeploymentTargetID, spec.ReleaseID)
+	assertManagedLabels(t, deployment.Labels, spec.Name, spec.ProjectID, spec.ApplicationID, spec.DeploymentTargetID, spec.ReleaseID)
 	assertSelectorLabels(t, deployment.Spec.Selector.MatchLabels, spec.Name, spec.DeploymentTargetID)
-	assertManagedLabels(t, deployment.Spec.Template.Labels, spec.Name, spec.ProjectID, spec.ApplicationID, spec.EnvironmentID, spec.DeploymentTargetID, spec.ReleaseID)
+	assertManagedLabels(t, deployment.Spec.Template.Labels, spec.Name, spec.ProjectID, spec.ApplicationID, spec.DeploymentTargetID, spec.ReleaseID)
 	if deployment.Spec.Template.Annotations[ReleaseIDLabel] != spec.ReleaseID {
 		t.Fatalf("template release annotation = %q", deployment.Spec.Template.Annotations[ReleaseIDLabel])
 	}
@@ -90,7 +89,7 @@ func TestApplyApplicationResourcesCreatesWorkloadResources(t *testing.T) {
 	if service.Spec.Ports[0].Port != 8080 {
 		t.Fatalf("service port = %d", service.Spec.Ports[0].Port)
 	}
-	assertManagedLabels(t, service.Labels, spec.Name, spec.ProjectID, spec.ApplicationID, spec.EnvironmentID, spec.DeploymentTargetID, spec.ReleaseID)
+	assertManagedLabels(t, service.Labels, spec.Name, spec.ProjectID, spec.ApplicationID, spec.DeploymentTargetID, spec.ReleaseID)
 
 	configMap, err := client.client.CoreV1().ConfigMaps(spec.Namespace).Get(context.Background(), spec.Name+"-config", metav1.GetOptions{})
 	if err != nil {
@@ -99,7 +98,7 @@ func TestApplyApplicationResourcesCreatesWorkloadResources(t *testing.T) {
 	if configMap.Data["APP_ENV"] != "dev" {
 		t.Fatalf("config data = %#v", configMap.Data)
 	}
-	assertManagedLabels(t, configMap.Labels, spec.Name, spec.ProjectID, spec.ApplicationID, spec.EnvironmentID, spec.DeploymentTargetID, spec.ReleaseID)
+	assertManagedLabels(t, configMap.Labels, spec.Name, spec.ProjectID, spec.ApplicationID, spec.DeploymentTargetID, spec.ReleaseID)
 
 	secret, err := client.client.CoreV1().Secrets(spec.Namespace).Get(context.Background(), spec.Name+"-secret", metav1.GetOptions{})
 	if err != nil {
@@ -108,7 +107,7 @@ func TestApplyApplicationResourcesCreatesWorkloadResources(t *testing.T) {
 	if string(secret.Data["TOKEN"]) != "secret" {
 		t.Fatalf("secret data = %#v", secret.Data)
 	}
-	assertManagedLabels(t, secret.Labels, spec.Name, spec.ProjectID, spec.ApplicationID, spec.EnvironmentID, spec.DeploymentTargetID, spec.ReleaseID)
+	assertManagedLabels(t, secret.Labels, spec.Name, spec.ProjectID, spec.ApplicationID, spec.DeploymentTargetID, spec.ReleaseID)
 
 	observedClaim, err := client.client.CoreV1().PersistentVolumeClaims(spec.Namespace).Get(context.Background(), claim.Name, metav1.GetOptions{})
 	if err != nil {
@@ -126,7 +125,6 @@ func TestApplyApplicationResourcesKeepsDeploymentSelectorStableAcrossReleases(t 
 		Namespace:          "project-demo",
 		ProjectID:          "prj_demo",
 		ApplicationID:      "app_api",
-		EnvironmentID:      "env_dev",
 		DeploymentTargetID: "dplt_backend",
 		ReleaseID:          "rel_1",
 		Image:              "registry.example.com/acme/api:v1",
@@ -175,7 +173,6 @@ func TestApplyApplicationResourcesRejectsForeignOwnerBeforeMutation(t *testing.T
 		Namespace:          existing.Namespace,
 		ProjectID:          "prj_demo",
 		ApplicationID:      "app_new",
-		EnvironmentID:      "env_dev",
 		DeploymentTargetID: "dplt_new",
 		ReleaseID:          "rel_new",
 		Image:              "registry.example.com/acme/api:new",
@@ -201,7 +198,6 @@ func TestApplyApplicationResourcesRejectsUnmanagedService(t *testing.T) {
 		Namespace:          service.Namespace,
 		ProjectID:          "prj_demo",
 		ApplicationID:      "app_api",
-		EnvironmentID:      "env_dev",
 		DeploymentTargetID: "dplt_backend",
 		ReleaseID:          "rel_1",
 		Image:              "registry.example.com/acme/api:v1",
@@ -239,7 +235,6 @@ func TestApplyApplicationResourcesPreservesExistingDeploymentSelector(t *testing
 		Namespace:          "project-demo",
 		ProjectID:          "prj_new",
 		ApplicationID:      "app_api",
-		EnvironmentID:      "env_dev",
 		DeploymentTargetID: "dplt_backend",
 		ReleaseID:          "rel_2",
 		BuildRunID:         "bldr_2",
@@ -286,7 +281,6 @@ func TestApplyApplicationResourcesCanForceImagePull(t *testing.T) {
 		Namespace:          "project-demo",
 		ProjectID:          "prj_demo",
 		ApplicationID:      "app_api",
-		EnvironmentID:      "env_dev",
 		DeploymentTargetID: "dplt_backend",
 		ReleaseID:          "rel_1",
 		Image:              "registry.example.com/acme/api:prod",
@@ -313,7 +307,6 @@ func TestApplyApplicationResourcesAppliesAdvancedKubernetesOptions(t *testing.T)
 		Namespace:                    "project-demo",
 		ProjectID:                    "prj_demo",
 		ApplicationID:                "app_api",
-		EnvironmentID:                "env_dev",
 		DeploymentTargetID:           "dplt_backend",
 		ReleaseID:                    "rel_1",
 		Image:                        "registry.example.com/acme/api:prod",
@@ -448,7 +441,6 @@ func TestApplyApplicationResourcesSupportsStatefulSetAndHPABehavior(t *testing.T
 		Namespace:              "project-demo",
 		ProjectID:              "prj_demo",
 		ApplicationID:          "app_api",
-		EnvironmentID:          "env_dev",
 		DeploymentTargetID:     "dplt_backend",
 		ReleaseID:              "rel_1",
 		Image:                  "registry.example.com/acme/api:prod",
@@ -497,7 +489,6 @@ func TestApplyApplicationResourcesSupportsProjectVolumeAndEmptyDirDataVolumes(t 
 		Namespace:          "project-demo",
 		ProjectID:          "prj_demo",
 		ApplicationID:      "app_api",
-		EnvironmentID:      "env_dev",
 		DeploymentTargetID: "dplt_backend",
 		ReleaseID:          "rel_1",
 		Image:              "registry.example.com/acme/api:prod",
@@ -650,14 +641,13 @@ func TestAttachHookScriptOwner(t *testing.T) {
 	}
 }
 
-func assertManagedLabels(t *testing.T, labels map[string]string, name string, projectID string, applicationID string, environmentID string, deploymentTargetID string, releaseID string) {
+func assertManagedLabels(t *testing.T, labels map[string]string, name string, projectID string, applicationID string, deploymentTargetID string, releaseID string) {
 	t.Helper()
 	expected := map[string]string{
 		ManagedByLabel:          ManagedByValue,
 		ApplicationNameKey:      name,
 		ProjectIDLabel:          projectID,
 		ApplicationIDLabel:      applicationID,
-		EnvironmentIDLabel:      environmentID,
 		DeploymentTargetIDLabel: deploymentTargetID,
 		ReleaseIDLabel:          releaseID,
 	}
@@ -665,6 +655,9 @@ func assertManagedLabels(t *testing.T, labels map[string]string, name string, pr
 		if labels[key] != value {
 			t.Fatalf("label %s = %q, want %q in %#v", key, labels[key], value, labels)
 		}
+	}
+	if _, exists := labels["luna.devops/environment-id"]; exists {
+		t.Fatalf("obsolete environment label remains in %#v", labels)
 	}
 }
 
@@ -683,7 +676,7 @@ func assertSelectorLabels(t *testing.T, labels map[string]string, name string, d
 	if labels[ReleaseIDLabel] != "" {
 		t.Fatalf("selector labels must not include release id: %#v", labels)
 	}
-	for _, key := range []string{ProjectIDLabel, ApplicationIDLabel, EnvironmentIDLabel} {
+	for _, key := range []string{ProjectIDLabel, ApplicationIDLabel} {
 		if labels[key] != "" {
 			t.Fatalf("selector labels must not include ownership label %s: %#v", key, labels)
 		}

@@ -9,10 +9,16 @@ export interface AIAssistantTurn {
   responseBlocks: AIBlock[]
 }
 
+const interactionCardOperationIds = new Set(['present_card', 'request_input', 'request_choice'])
+
+export function isInteractionCardOperationId(operationId: string): boolean {
+  return interactionCardOperationIds.has(operationId)
+}
+
 function isTurnEndInteractionCard(block: AIBlock): boolean {
   if (block.type !== 'tool_call')
     return false
-  return block.operationId === 'create_interaction_cards'
+  return isInteractionCardOperationId(block.operationId)
     && (block.status === 'running' || block.status === 'succeeded')
     && block.arguments.placement === 'turn_end'
 }

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/LiteyukiStudio/devops/internal/api/platformapi"
 	"github.com/LiteyukiStudio/devops/openapi"
 	"github.com/gin-gonic/gin"
 )
@@ -16,8 +17,9 @@ func TestGetAPIMeta(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	handlers := &Handlers{config: mustTestConfig(t)}
+	handlers.domains = newDomainHandlers(handlers)
 	router := gin.New()
-	router.GET("/api/v1/meta", handlers.GetAPIMeta)
+	router.GET("/api/v1/meta", handlers.domains.platform.GetAPIMeta)
 
 	request := httptest.NewRequest(http.MethodGet, "/api/v1/meta", nil)
 	recorder := httptest.NewRecorder()
@@ -30,7 +32,7 @@ func TestGetAPIMeta(t *testing.T) {
 		t.Fatalf("Cache-Control = %q, want no-store", got)
 	}
 
-	var response apiMetaResponse
+	var response platformapi.APIMetaResponse
 	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
@@ -43,8 +45,8 @@ func TestGetAPIMeta(t *testing.T) {
 	if !strings.HasPrefix(response.OpenAPIDigest, "sha256:") || len(response.OpenAPIDigest) != len("sha256:")+64 {
 		t.Fatalf("unexpected openapiDigest %q", response.OpenAPIDigest)
 	}
-	if response.MinimumCLIVersion != minimumCLIVersion {
-		t.Fatalf("minimumCliVersion = %q, want %q", response.MinimumCLIVersion, minimumCLIVersion)
+	if response.MinimumCLIVersion != platformapi.MinimumCLIVersion {
+		t.Fatalf("minimumCliVersion = %q, want %q", response.MinimumCLIVersion, platformapi.MinimumCLIVersion)
 	}
 	if !response.Features.AccessToken ||
 		!response.Features.OAuthAuthorization ||

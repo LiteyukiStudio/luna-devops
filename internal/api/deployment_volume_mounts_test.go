@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/LiteyukiStudio/devops/internal/api/applicationapi"
 	"github.com/LiteyukiStudio/devops/internal/appstore"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/volume"
@@ -16,9 +17,9 @@ func TestAppTemplateDataVolumesBindExplicitSelectedProjectVolume(t *testing.T) {
 		LogicalName: "data", SourceType: "projectVolume", MountPath: "/var/lib/postgresql/data",
 	}}}
 	selected := model.ProjectVolume{ID: "pvol_database"}
-	inputs := appTemplateDeploymentDataVolumes(template, &selected)
+	inputs := applicationapi.AppTemplateDeploymentDataVolumes(template, &selected)
 	ctx, recorder := volumeTestContext(http.MethodPost, "/api/v1/projects/prj_1/app-templates/postgresql/install")
-	normalized, ok := normalizeDataVolumes(ctx, inputs)
+	normalized, ok := (applicationHost{}).NormalizeDataVolumes(ctx, inputs)
 	if !ok || recorder.Code != http.StatusOK {
 		t.Fatalf("typed template volume rejected: ok=%t status=%d body=%s", ok, recorder.Code, recorder.Body.String())
 	}
@@ -27,7 +28,7 @@ func TestAppTemplateDataVolumesBindExplicitSelectedProjectVolume(t *testing.T) {
 	}
 
 	ctx, recorder = volumeTestContext(http.MethodPost, "/api/v1/projects/prj_1/app-templates/postgresql/install")
-	if _, ok := normalizeDataVolumes(ctx, appTemplateDeploymentDataVolumes(template, nil)); ok || recorder.Code != http.StatusBadRequest {
+	if _, ok := (applicationHost{}).NormalizeDataVolumes(ctx, applicationapi.AppTemplateDeploymentDataVolumes(template, nil)); ok || recorder.Code != http.StatusBadRequest {
 		t.Fatalf("template mount without an explicit projectVolumeId was accepted: status=%d body=%s", recorder.Code, recorder.Body.String())
 	}
 }

@@ -38,27 +38,11 @@ Secret uses different key names. The password must contain 8 to 72 bytes, and
 the language must be `zh-CN` or `en-US`. These values are injected into API
 only; Worker and Agent never receive them.
 
-For a controlled non-production install, the chart creates its own Secret when
-any `api.initialAdmin.email`, `name`, `password`, or `language` value is set.
-For a fresh database, provide at least `email` and `password`. Avoid this path
-in production because the password becomes part of Helm values and release
-history. No default initial administrator Secret or credentials are generated.
-
-```yaml
-api:
-  initialAdmin:
-    email: admin@example.com
-    name: Platform Admin
-    password: replace-with-a-strong-password
-    language: zh-CN
-```
-
 Once an active administrator exists, API no longer requires these settings and
 never uses them to reconcile or reset the account. You may clear
-`api.initialAdmin.existingSecret`, `email`, `name`, `password`, and `language`,
-then remove the external Secret after a successful login. An upgrade with none
-of those initial administrator values renders no chart-managed Secret; all
-four API Secret references are optional so the deployment remains valid.
+`api.initialAdmin.existingSecret`, then remove the external Secret after a
+successful login. All four API Secret references are optional so the
+deployment remains valid afterward.
 
 Open the console:
 
@@ -126,9 +110,7 @@ Secret remains API-and-Agent only.
 
 Use `api.extraEnv` or `worker.extraEnv` only for non-sensitive, workload-local
 variables that the chart does not already manage. The chart rejects attempts
-to override managed configuration or Secret-backed variables. The former
-shared `app.extraEnv` value is no longer accepted because it crossed process
-and Secret boundaries.
+to override managed configuration or Secret-backed variables.
 
 Managed ConfigMap and Secret content is hashed into the consuming Pod template,
 so a Helm upgrade rolls out affected workloads. API-only and Worker-only

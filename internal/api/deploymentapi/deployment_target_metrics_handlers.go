@@ -163,9 +163,9 @@ func (h *Handlers) deploymentTargetMetricsClient(target model.DeploymentTarget, 
 	var err error
 	query := runtimecluster.ActiveScope(h.dbWithContext(ctx))
 	if clusterID := strings.TrimSpace(target.ClusterID); clusterID != "" {
-		err = query.First(&cluster, "id = ? and type in ?", clusterID, []string{"kubernetes", "k3s"}).Error
+		err = query.First(&cluster, "id = ?", clusterID).Error
 	} else {
-		err = query.Where("scope = ? and type in ?", "global", []string{"kubernetes", "k3s"}).Order("is_default desc, created_at asc").First(&cluster).Error
+		err = query.Where("scope = ?", "global").Order("is_default desc, created_at asc").First(&cluster).Error
 	}
 	if err != nil {
 		return nil, "cluster_unavailable"

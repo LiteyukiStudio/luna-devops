@@ -1,6 +1,7 @@
 package api
 
 import (
+	transportapi "github.com/LiteyukiStudio/devops/internal/api/transport"
 	"net/http"
 	"testing"
 	"time"
@@ -21,7 +22,7 @@ func TestPlatformAdminRoutesOwnAuthorizationInMiddleware(t *testing.T) {
 	sessionToken := "sess_platform_admin_middleware"
 	if err := db.Create(&model.UserSession{
 		ID: "ses_platform_admin_middleware", UserID: user.ID,
-		TokenHash: hashToken(sessionToken), ExpiresAt: time.Now().Add(time.Hour),
+		TokenHash: transportapi.HashToken(sessionToken), ExpiresAt: time.Now().Add(time.Hour),
 	}).Error; err != nil {
 		t.Fatal(err)
 	}

@@ -71,7 +71,6 @@ describe("ManagedProvider", () => {
     expect((await provider.complete(request)).text).toBe("model-1")
     config = configForVersion(2)
     expect((await provider.complete(request)).text).toBe("model-2")
-    expect(provider.currentVersion()).toBe("cfg-2")
   })
 
   it("reuses the provider for concurrent requests without persisting provider secrets", async () => {

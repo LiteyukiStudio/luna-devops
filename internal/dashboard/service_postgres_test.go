@@ -30,8 +30,8 @@ func TestDashboardVisibilityControlsOverviewAndReadinessRange(t *testing.T) {
 	}
 
 	now := time.Date(2026, 7, 16, 12, 0, 0, 0, time.UTC)
-	project := model.Project{ID: "prj_visible", Name: "Visible", Identifier: "visible", NamespaceStrategy: "project", MaxConcurrentBuilds: 2, WebConsoleEnabled: true, CreatedAt: now.Add(-time.Hour)}
-	hiddenProject := model.Project{ID: "prj_hidden", Name: "Hidden", Identifier: "hidden", NamespaceStrategy: "project", MaxConcurrentBuilds: 2, WebConsoleEnabled: true, CreatedAt: now}
+	project := model.Project{ID: "prj_visible", Name: "Visible", Identifier: "visible", MaxConcurrentBuilds: 2, WebConsoleEnabled: true, CreatedAt: now.Add(-time.Hour)}
+	hiddenProject := model.Project{ID: "prj_hidden", Name: "Hidden", Identifier: "hidden", MaxConcurrentBuilds: 2, WebConsoleEnabled: true, CreatedAt: now}
 	if err := db.Create(&[]model.Project{project, hiddenProject}).Error; err != nil {
 		t.Fatalf("create projects: %v", err)
 	}

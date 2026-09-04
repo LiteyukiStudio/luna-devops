@@ -1,5 +1,4 @@
 const accountPage = {
-  description: 'Manage profile, third-party login bindings, and personal API tokens.',
   profileTab: 'Personal settings',
   securityTab: 'Security',
   notificationsTab: 'Notifications',

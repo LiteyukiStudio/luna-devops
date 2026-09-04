@@ -19,7 +19,6 @@ import { PageShell } from '@/components/common/page-shell'
 import { ProgressiveSection } from '@/components/common/progressive-section'
 import { ResourceDeletionStatus } from '@/components/common/resource-deletion-status'
 import { ResultVisibilitySelect } from '@/components/common/result-visibility-select'
-import { StatusBadge } from '@/components/common/status-badge'
 import { formatSmartDateTime } from '@/components/common/time-format'
 import { Button } from '@/components/ui/button'
 import { buttonVariants } from '@/components/ui/button-variants'
@@ -155,18 +154,6 @@ export function ProjectsPage() {
             mobile: 'hidden',
             width: 'secondary',
             render: project => <code className="rounded bg-background px-2 py-1 text-xs">{project.identifier}</code>,
-          },
-          {
-            key: 'namespaceStrategy',
-            header: t('projectSpaces.namespaceStrategy'),
-            className: 'px-4 py-3 align-middle',
-            mobile: 'hidden',
-            width: 'status',
-            render: project => (
-              project.namespaceStrategy === 'project'
-                ? <StatusBadge>{t('projectSpaces.namespaceProject')}</StatusBadge>
-                : <span className="text-muted-foreground">—</span>
-            ),
           },
           {
             key: 'usage',

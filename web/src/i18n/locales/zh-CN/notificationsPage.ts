@@ -1,6 +1,5 @@
 const notificationsPage = {
   title: '通知',
-  description: '管理平台事件通知渠道、模板、规则和投递记录。',
   channels: '渠道',
   templates: '模板',
   rules: '规则',
@@ -25,8 +24,6 @@ const notificationsPage = {
   eventType: '事件类型',
   pageInfo: '第 {{page}} / {{totalPages}} 页，共 {{total}} 条',
   emptyChannels: '还没有通知渠道',
-  emptyChannelsDescription: '可以先从内置模板创建渠道，系统会自动生成平台匹配的 Webhook 配置和默认模板。',
-  emptyChannelsAction: '去从模板创建',
   emptyTemplates: '还没有通知模板',
   emptyRules: '还没有通知规则',
   emptyDeliveries: '还没有投递记录',

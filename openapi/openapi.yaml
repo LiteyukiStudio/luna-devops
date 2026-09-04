@@ -1029,7 +1029,7 @@ paths:
           in: query
           schema:
             type: string
-            enum: [name, type, scope, status, createdAt]
+            enum: [name, scope, status, createdAt]
             default: createdAt
         - $ref: "#/components/parameters/SortOrder"
       responses:
@@ -4018,11 +4018,11 @@ paths:
       tags:
         - Runtime
       summary: List runtime cluster resources for the selected visibility
-      description: Lists live resources in the selected cluster. Results default to resources related to the caller; platform administrators may explicitly request all visible resources. projectId, applicationId, and environmentId are stronger filters within the selected visibility.
+      description: Lists live resources in the selected cluster. Results default to resources related to the caller; platform administrators may explicitly request all visible resources. projectId, applicationId, and deploymentTargetId are stronger filters within the selected visibility.
       x-luna-agent:
         purpose: { zh: 默认按资源类别读取指定集群中与当前用户相关的实时资源；仅当平台管理员明确盘点集群全局资源时使用 visibility=all。, en: List live resources related to the caller in a runtime cluster by category by default; use visibility=all only for an explicit platform-administrator cluster inventory. }
         aliases: { zh: [列出集群资源, 查看运行时资源, 查询工作负载和服务], en: [list runtime cluster resources, list cluster workloads, inspect cluster resources] }
-        avoidWhen: { zh: 不知道 clusterId 时先使用 listRuntimeClusters；已知项目空间、应用或环境时应传对应 ID，不要用 all 扩大候选。, en: Use listRuntimeClusters first when clusterId is unknown; pass known project, application, or environment identifiers instead of widening candidates with all. }
+        avoidWhen: { zh: 不知道 clusterId 时先使用 listRuntimeClusters；已知项目空间、应用或部署配置时应传对应 ID，不要用 all 扩大候选。, en: Use listRuntimeClusters first when clusterId is unknown; pass known project, application, or deployment-target identifiers instead of widening candidates with all. }
         preconditions: { zh: [提供真实 clusterId 和 resourceCategory, visibility=all 仅由平台管理员显式使用], en: [Provide an authoritative clusterId and resourceCategory, visibility=all is explicitly used only by platform administrators] }
         successEvidence: { zh: 返回符合 visibility 及资源 ID 强过滤的实时分页资源；上游不可达时返回 unavailable 语义。, en: Returns live paginated resources matching visibility and the stronger resource filters, or an unavailable observation when upstream is unreachable. }
       parameters:
@@ -4055,10 +4055,10 @@ paths:
           description: Stronger application filter applied within the selected visibility.
           schema:
             type: string
-        - name: environmentId
+        - name: deploymentTargetId
           in: query
           required: false
-          description: Stronger environment filter applied within the selected visibility.
+          description: Stronger deployment-target filter applied within the selected visibility.
           schema:
             type: string
         - name: page
@@ -7043,11 +7043,10 @@ paths:
           required: true
           schema:
             type: string
-        - name: environmentId
+        - name: stage
           in: query
           required: false
-          schema:
-            type: string
+          schema: { type: string, pattern: '^(dev|test|staging|prod|sys-[a-z0-9-]+)$' }
         - name: applicationId
           in: query
           required: false
@@ -7438,6 +7437,8 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /api/v1/projects/{projectId}/gateway-routes/{routeId}:
     get:
       operationId: getGatewayRoute
@@ -7469,6 +7470,7 @@ paths:
               schema: { $ref: "#/components/schemas/AgentGatewayRouteResult" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
     put:
       operationId: updateGatewayRoute
       x-luna-cli:
@@ -7512,6 +7514,8 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
     delete:
       operationId: deleteGatewayRoute
       x-luna-cli:
@@ -7557,7 +7561,7 @@ paths:
         purpose: { zh: 检查域名是否可用于项目空间网关路由，并读取当前占用与证书适配状态。, en: Check whether a domain can be used by a project gateway route and read its current occupancy and certificate compatibility. }
         aliases: { zh: [检查网关域名, 校验域名可用性, 检查 TLS 证书域名], en: [check gateway domain, validate domain availability, check TLS certificate domain] }
         avoidWhen: { zh: 已有路由详情或需要实际创建、更新路由时不要使用。, en: Do not use when route details are already known or a route must actually be created or updated. }
-        preconditions: { zh: [提供真实 projectId 和 host, 需要时提供 domainSuffix 或排除的 routeId], en: [Provide authoritative projectId and host, Provide domainSuffix or an excluded routeId when needed] }
+        preconditions: { zh: [提供真实 projectId 和 host, 已有路由提供 routeId；新路由提供 deploymentTargetId, 需要时提供 domainSuffix], en: [Provide authoritative projectId and host, Provide routeId for an existing route or deploymentTargetId for a new route, Provide domainSuffix when needed] }
         successEvidence: { zh: 返回当前域名可用性、冲突与证书相关事实；不会修改网关路由。, en: Returns current availability, conflicts, and certificate-related facts without changing a gateway route. }
       parameters:
         - name: projectId
@@ -7568,6 +7572,12 @@ paths:
         - name: domainSuffix
           in: query
           required: false
+          schema:
+            type: string
+        - name: deploymentTargetId
+          in: query
+          required: false
+          description: Deployment target whose runtime cluster supplies the authoritative gateway domain suffixes. Required when routeId is omitted.
           schema:
             type: string
         - name: host
@@ -7593,6 +7603,8 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /api/v1/projects/{projectId}/repository-bindings/{bindingId}/webhook/reconfigure:
     post:
       operationId: reconfigureRepositoryWebhook
@@ -8852,6 +8864,12 @@ components:
             $ref: "#/components/schemas/ErrorResponse"
     NotFound:
       description: The requested resource was not found.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    ServiceUnavailable:
+      description: A required storage or external provider dependency is temporarily unavailable.
       content:
         application/json:
           schema:
@@ -10878,7 +10896,6 @@ components:
           pattern: "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$"
           description: Human-readable identifier that is immutable while the project space exists and unique among active project spaces. It may be reused after deletion cleanup; the internal project ID is generated independently and the identifier derives the Kubernetes Namespace.
         description: { type: string }
-        namespaceStrategy: { type: string, enum: [project] }
         maxConcurrentBuilds: { type: integer, minimum: 1 }
         webConsoleEnabled:
           type: boolean
@@ -10893,7 +10910,6 @@ components:
         identifier: { type: string }
         kubernetesNamespace: { type: string }
         description: { type: string }
-        namespaceStrategy: { type: string, enum: [project] }
         maxConcurrentBuilds: { type: integer }
         webConsoleEnabled:
           type: boolean
@@ -10903,7 +10919,7 @@ components:
             - $ref: "#/components/schemas/ProjectRole"
           description: Role of the current authenticated user in this project space. Omitted for platform administrators.
         createdAt: { type: string, format: date-time }
-      required: [id, name, identifier, kubernetesNamespace, namespaceStrategy, maxConcurrentBuilds, webConsoleEnabled, createdAt]
+      required: [id, name, identifier, kubernetesNamespace, maxConcurrentBuilds, webConsoleEnabled, createdAt]
     DeploymentEmptyDirInput:
       type: object
       additionalProperties: false
@@ -10969,9 +10985,6 @@ components:
           type: string
           maxLength: 120
           description: Display name. Defaults to the normalized stage.
-        environmentId:
-          type: string
-          description: Optional project environment reference.
         stage:
           type: string
           pattern: '^(dev|test|staging|prod|sys-[a-z0-9-]+)$'
@@ -11155,9 +11168,6 @@ components:
         imageRef:
           type: string
           description: Existing OCI image reference used when sourceType is image.
-        buildLabels:
-          type: string
-          description: Comma-separated build selector labels.
         buildVariableSetIds:
           type: array
           items: { type: string }
@@ -11399,7 +11409,6 @@ components:
         volumeMode: { type: string }
         storageClassName: { type: string }
         clusterName: { type: string }
-        clusterType: { type: string }
     DeploymentBundleReference:
       type: object
       additionalProperties: false
@@ -11669,7 +11678,6 @@ components:
         name: { type: string }
         identifier: { type: string }
         description: { type: string }
-        namespaceStrategy: { type: string, enum: [project] }
         createdAt: { type: string, format: date-time }
         pinnedAt: { type: string, format: date-time }
     ProjectMemberInput:
@@ -12161,10 +12169,9 @@ components:
     RuntimeClusterInput:
       type: object
       description: Runtime cluster configuration. Resource percentages are 0-100; zero omits that Kubernetes field. When the corresponding limit is non-zero, request percent must not exceed limit percent. Policy changes apply only after a later workload render or redeploy.
-      required: [name, type, endpoint, scope]
+      required: [name, endpoint, scope]
       properties:
         name: { type: string, minLength: 1 }
-        type: { type: string, enum: [kubernetes, k3s] }
         endpoint: { type: string }
         scope: { type: string, enum: [global, project, user] }
         ownerRef: { type: string }
@@ -12181,10 +12188,10 @@ components:
         memoryRequestPercent: { type: integer, minimum: 0, maximum: 100, default: 25, description: Percentage of the per-replica memory quota written as requests.memory; 0 omits the field. }
         cpuLimitPercent: { type: integer, minimum: 0, maximum: 100, default: 100, description: Percentage of the per-replica CPU quota written as limits.cpu; 0 omits the field. }
         memoryLimitPercent: { type: integer, minimum: 0, maximum: 100, default: 100, description: Percentage of the per-replica memory quota written as limits.memory; 0 omits the field. }
-        gatewayProvider: { type: string, enum: [gateway-api] }
-        gatewayRootDomain: { type: string }
         gatewayDomainSuffixes:
           type: array
+          default: [apps.local]
+          description: Ordered domain suffixes available to routes on this cluster. Empty input uses apps.local; when no explicit wildcard certificate domain is set, the first suffix is used.
           items: { type: string }
         gatewayPublicScheme: { type: string, enum: [http, https] }
         gatewayPublicPort: { type: integer, minimum: 1, maximum: 65535 }
@@ -12202,7 +12209,9 @@ components:
         gatewayCertIssuerName: { type: string }
         gatewayCertificateNamespace: { type: string }
         gatewayWildcardCertEnabled: { type: boolean }
-        gatewayWildcardCertDomain: { type: string }
+        gatewayWildcardCertDomain:
+          type: string
+          description: Domain covered by the managed wildcard certificate. Empty input uses the first gatewayDomainSuffixes value.
         gatewayWildcardCertSecretName: { type: string }
         gatewayExternalTLSMode: { type: string, enum: [none, gateway, upstream] }
         gatewayForwardedHeadersMode: { type: string, enum: [preserve, overwrite, none] }
@@ -12766,9 +12775,6 @@ components:
         targetRepository: { type: string }
         targetTag: { type: string }
         imageRef: { type: string }
-        cacheConfig:
-          type: object
-          additionalProperties: true
     AgentBuildRunResult:
       type: object
       additionalProperties: true
@@ -12801,7 +12807,6 @@ components:
       required: [applicationId, deploymentTargetId]
       properties:
         applicationId: { type: string }
-        environmentId: { type: string }
         deploymentTargetId: { type: string }
         buildRunId: { type: string }
         imageRef: { type: string }
@@ -12812,12 +12817,11 @@ components:
     Release:
       type: object
       additionalProperties: false
-      required: [id, projectId, applicationId, environmentId, deploymentTargetId, imageRef, forceImagePull, type, status, revision, createdBy, createdAt, updatedAt]
+      required: [id, projectId, applicationId, deploymentTargetId, imageRef, forceImagePull, type, status, revision, createdBy, createdAt, updatedAt]
       properties:
         id: { type: string }
         projectId: { type: string }
         applicationId: { type: string }
-        environmentId: { type: string }
         deploymentTargetId: { type: string }
         buildRunId: { type: string }
         imageRef: { type: string }
@@ -12860,7 +12864,6 @@ components:
       required: [applicationId, deploymentTargetId]
       properties:
         applicationId: { type: string }
-        environmentId: { type: string }
         deploymentTargetId: { type: string }
         host: { type: string }
         domainSuffix: { type: string }

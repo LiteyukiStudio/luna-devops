@@ -1,6 +1,7 @@
 import type { Attributes, Span, SpanOptions } from "@opentelemetry/api"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { ToolCatalog } from "../src/tools/catalog.js"
+import { testToolOperation } from "./support/tool-catalog.js"
 
 const telemetryState = vi.hoisted(() => ({
   spans: [] as Array<{ attributes: Record<string, unknown>, events: unknown[], ended: boolean }>,
@@ -133,6 +134,7 @@ describe("OpenAI Chat Completions spans", () => {
     const operationId = "executeRuntimeCommand"
     const argumentsValue = { body: { command: rawCommand, container: "api" } }
     const catalog = ToolCatalog.load([{
+      ...testToolOperation(operationId),
       operationId,
       category: "runtime",
       idempotent: false,

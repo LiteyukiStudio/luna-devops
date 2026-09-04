@@ -438,19 +438,13 @@ export class ToolOrchestrator {
 function extractCode(body: unknown): string | undefined {
   if (!body || typeof body !== "object") return undefined
   const object = body as Record<string, unknown>
-  return typeof object.code === "string"
-    ? object.code
-    : typeof (object.error as Record<string, unknown> | undefined)?.code === "string"
-      ? (object.error as { code: string }).code
-      : undefined
+  return typeof object.code === "string" ? object.code : undefined
 }
 
 function isExplicitlyNonRetryable(body: unknown): boolean {
   if (!body || typeof body !== "object" || Array.isArray(body)) return false
   const value = body as Record<string, unknown>
-  if (value.retryable === false) return true
-  const nested = value.error
-  return Boolean(nested && typeof nested === "object" && !Array.isArray(nested) && (nested as Record<string, unknown>).retryable === false)
+  return value.retryable === false
 }
 
 function withRequestId(body: unknown, requestId: string | undefined): unknown {

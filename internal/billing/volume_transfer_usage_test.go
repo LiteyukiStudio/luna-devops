@@ -46,7 +46,7 @@ func TestSettleVolumeTransferUsageIsCrossReplicaIdempotent(t *testing.T) {
 		t.Fatalf("migrate transfer billing tables: %v", err)
 	}
 	project := model.Project{
-		ID: "prj_transfer_billing", Identifier: "transfer-billing", Name: "Transfer Billing", NamespaceStrategy: "project",
+		ID: "prj_transfer_billing", Identifier: "transfer-billing", Name: "Transfer Billing",
 		BillingOwnerUserID: "usr_transfer_owner", DeleteStatus: "active",
 	}
 	if err := db.Create(&project).Error; err != nil {

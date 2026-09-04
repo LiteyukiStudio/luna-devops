@@ -45,7 +45,7 @@ helm upgrade luna-devops ./charts/luna-devops \
 kubectl -n luna-devops delete secret luna-devops-initial-admin
 ```
 
-四个 Secret 键引用都是可选的；`existingSecret`、`email`、`name`、`password` 和 `language` 均为空时，Chart 不会创建初始管理员 Secret。Chart 仅在显式提供任一管理员字段时创建受管 Secret，密码和语言也只在非空时校验。
+四个 Secret 键引用都是可选的；`existingSecret` 为空时，Chart 不会创建或引用初始管理员 Secret。首管密码只允许通过外部 Secret 提供，不进入 Helm values 或 release history。
 
 ## 打开控制台
 
@@ -181,8 +181,6 @@ ai:
 | `ingress.annotations` | `{}` | 向所选 Ingress Controller 传递控制器专属配置；填写该控制器支持的 annotation map。 |
 | `app.secretEncryptionKey` | 自动生成 | 加密平台保存的凭据；填写稳定的非空密钥。 |
 | `api.initialAdmin.existingSecret` | 空 | 指定首个管理员配置 Secret；全新数据库需包含 `initial-admin-email/password`，可选 `initial-admin-name/language`。 |
-| `api.initialAdmin.email` / `password` | 空 | 让 Chart 在显式提供字段时创建首个管理员 Secret；全新数据库分别填写有效邮箱和 8–72 字节密码，生产环境优先使用 `existingSecret`。 |
-| `api.initialAdmin.name` / `language` | 空 / 空 | 设置首个管理员名称和语言；留空时 API 分别使用邮箱和 `zh-CN`，语言非空时可填 `zh-CN` 或 `en-US`。 |
 | `api.image.tag` / `worker.image.tag` | `nightly` | 选择 API 与 Worker 镜像版本；填写镜像标签。 |
 | `api.database.maxOpenConns` / `maxIdleConns` | `20` / `5` | 限制每个 API 副本的 PostgreSQL 打开与空闲连接数；分别填写正整数和不超过前者的非负整数。 |
 | `api.browserTrace.existingSecret` / `headersKey` | 空 / `otlp-traces-headers` | 指定 API 浏览器 Trace Relay 的独立鉴权 Secret 与键；分别填写 Kubernetes Secret 名称和包含完整 Header 列表的键名。 |

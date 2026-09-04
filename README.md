@@ -13,7 +13,7 @@
 </p>
 
 <p align="center">
-  <img src="web/public/images/luna-devops-banner-v4.png" alt="Luna DevOps 自动化交付流水线" />
+  <img src=".github/assets/luna-devops-banner-v4.png" alt="Luna DevOps 自动化交付流水线" />
 </p>
 
 <p align="center">
@@ -217,7 +217,7 @@ pnpm --dir web build
 ## 品牌资源
 
 - 标志 / favicon：[`web/public/luna-devops-logo.svg`](web/public/luna-devops-logo.svg)
-- 吉祥物：[`web/public/brand/mascot-luna-devops.png`](web/public/brand/mascot-luna-devops.png)
+- 吉祥物：[`.github/assets/mascot-luna-devops.png`](.github/assets/mascot-luna-devops.png)
 
 ## 文档
 

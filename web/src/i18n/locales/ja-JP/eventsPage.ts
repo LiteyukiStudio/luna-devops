@@ -1,7 +1,5 @@
 const eventsPage = {
   title: 'イベント',
-  description: 'ビルド、リリース、デプロイフック、アクセスエントリ、証明書の状態変化を時系列で確認します。',
-  listTitle: 'イベント記録',
   searchPlaceholder: 'イベント、メッセージ、リソース ID を検索',
   emptyTitle: '現在の範囲にイベントがありません',
   emptyDescription: 'ビルド、リリース、デプロイフック、アクセスエントリ、または証明書の状態が変化すると、ここにイベントが表示されます。',
@@ -26,7 +24,6 @@ const eventsPage = {
     selectedCount: '現在 {{count}} 件のフィルター条件を選択中',
     clearAll: 'すべてクリア',
     apply: 'フィルターを適用',
-    scope: '表示範囲',
     project: 'プロジェクトスペース',
     application: 'アプリケーション',
     deploymentTarget: 'デプロイ設定',
@@ -45,8 +42,6 @@ const eventsPage = {
     allStatuses: 'すべての結果',
   },
   scopes: {
-    mine: '自分に関連',
-    all: 'すべてのイベント',
   },
   categories: {
     build: 'ビルド',

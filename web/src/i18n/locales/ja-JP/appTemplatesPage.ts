@@ -1,5 +1,4 @@
 const appTemplatesPage = {
-  description: 'プリセットテンプレートからデータベース、キャッシュ、監視、ツール、軽量コラボレーションアプリをワンクリックでインストールします。',
   heroEyebrow: 'Luna DevOps テンプレートライブラリ',
   heroTitle: 'サービスを発見して、より早くデプロイを開始',
   templateCount: '利用可能なテンプレート',
@@ -15,7 +14,6 @@ const appTemplatesPage = {
   sortOrder: 'ソート順',
   sortDesc: '降順',
   sortAsc: '昇順',
-  loading: 'アプリテンプレートを読み込み中...',
   emptyTitle: 'テンプレートが見つかりませんでした',
   emptyDescription: '別のキーワードを試すか、管理者がさらにテンプレートを追加するのをお待ちください。',
   install: 'インストール',
@@ -50,11 +48,8 @@ const appTemplatesPage = {
   autoGeneratePlaceholder: '空欄で自動生成',
   installNow: 'インストール後すぐにデプロイ',
   installNowDescription: '無効にするとアプリケーションとデプロイ設定のみ作成され、後でアプリケーションデプロイページで手動リリースできます。',
-  image: 'イメージ',
   officialWebsite: '公式サイト',
   officialRepository: '公式リポジトリ',
-  port: 'ポート',
-  resources: 'リソース',
   categories: {
     collaboration: 'コラボレーション・コンテンツ',
     database: 'データベース',

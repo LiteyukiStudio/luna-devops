@@ -383,7 +383,6 @@ func snapshotFromMeta(kind string, meta metav1.ObjectMeta, namespace string, sta
 		Summary:            summary,
 		ProjectID:          labels[ProjectIDLabel],
 		ApplicationID:      labels[ApplicationIDLabel],
-		EnvironmentID:      labels[EnvironmentIDLabel],
 		DeploymentTargetID: labels[DeploymentTargetIDLabel],
 		ReleaseID:          labels[ReleaseIDLabel],
 		RouteID:            labels[GatewayRouteIDLabel],
@@ -414,9 +413,6 @@ func managedResourceSelector(options ResourceListOptions) string {
 	if options.ApplicationID != "" {
 		parts = append(parts, ApplicationIDLabel+"="+options.ApplicationID)
 	}
-	if options.EnvironmentID != "" {
-		parts = append(parts, EnvironmentIDLabel+"="+options.EnvironmentID)
-	}
 	if options.DeploymentTargetID != "" {
 		parts = append(parts, DeploymentTargetIDLabel+"="+options.DeploymentTargetID)
 	}
@@ -439,9 +435,6 @@ func matchesResourceOptions(labels map[string]string, options ResourceListOption
 		return false
 	}
 	if options.ApplicationID != "" && labels[ApplicationIDLabel] != options.ApplicationID {
-		return false
-	}
-	if options.EnvironmentID != "" && labels[EnvironmentIDLabel] != options.EnvironmentID {
 		return false
 	}
 	if options.DeploymentTargetID != "" && labels[DeploymentTargetIDLabel] != options.DeploymentTargetID {

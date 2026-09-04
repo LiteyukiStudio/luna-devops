@@ -20,11 +20,11 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 )
 
-func (r *Runner) kubernetesManager(ctx context.Context, environment model.Environment) (kubeprovider.NamespaceManager, error) {
+func (r *Runner) kubernetesManager(ctx context.Context, target model.DeploymentTarget) (kubeprovider.NamespaceManager, error) {
 	if r.kubernetesManagerFactory != nil {
-		return r.kubernetesManagerFactory(environment)
+		return r.kubernetesManagerFactory(target)
 	}
-	kubeconfig, err := r.kubeconfigForEnvironment(ctx, environment)
+	kubeconfig, err := r.kubeconfigForDeploymentTarget(ctx, target)
 	if err != nil {
 		return nil, err
 	}
@@ -33,27 +33,6 @@ func (r *Runner) kubernetesManager(ctx context.Context, environment model.Enviro
 		return nil, runtimeClusterKubeconfigError(err)
 	}
 	return manager, nil
-}
-
-func deploymentTargetEnvironment(target model.DeploymentTarget) model.Environment {
-	environmentID := strings.TrimSpace(target.EnvironmentID)
-	if environmentID == "" {
-		environmentID = target.ID
-	}
-	replicas := target.Replicas
-	if replicas <= 0 {
-		replicas = 1
-	}
-	return model.Environment{
-		ID:            environmentID,
-		ProjectID:     target.ProjectID,
-		Name:          firstNonEmpty(target.Name, target.Stage, target.ID),
-		Slug:          firstNonEmpty(target.Stage, target.Name, model.DefaultDeploymentStage),
-		ClusterID:     strings.TrimSpace(target.ClusterID),
-		Replicas:      replicas,
-		CPURequest:    firstNonEmpty(target.CPURequest, "1"),
-		MemoryRequest: firstNonEmpty(target.MemoryRequest, "1Gi"),
-	}
 }
 
 func applyRuntimeClusterResourcePolicy(spec *kubeprovider.ApplicationResourcesSpec, cluster model.RuntimeCluster) error {
@@ -72,8 +51,12 @@ func applyRuntimeClusterResourcePolicy(spec *kubeprovider.ApplicationResourcesSp
 	return nil
 }
 
-func (r *Runner) kubeconfigForEnvironment(ctx context.Context, environment model.Environment) (string, error) {
-	cluster, err := r.runtimeClusterForEnvironment(ctx, environment)
+func (r *Runner) kubeconfigForDeploymentTarget(ctx context.Context, target model.DeploymentTarget) (string, error) {
+	return r.kubeconfigForRuntimeClusterID(ctx, target.ClusterID)
+}
+
+func (r *Runner) kubeconfigForRuntimeClusterID(ctx context.Context, clusterID string) (string, error) {
+	cluster, err := r.runtimeClusterForClusterID(ctx, clusterID)
 	if err != nil {
 		return "", err
 	}
@@ -85,20 +68,24 @@ func (r *Runner) kubeconfigForEnvironment(ctx context.Context, environment model
 	return kubeconfig, nil
 }
 
-func (r *Runner) runtimeClusterForEnvironment(ctx context.Context, environment model.Environment) (model.RuntimeCluster, error) {
+func (r *Runner) runtimeClusterForDeploymentTarget(ctx context.Context, target model.DeploymentTarget) (model.RuntimeCluster, error) {
+	return r.runtimeClusterForClusterID(ctx, target.ClusterID)
+}
+
+func (r *Runner) runtimeClusterForClusterID(ctx context.Context, clusterID string) (model.RuntimeCluster, error) {
 	var cluster model.RuntimeCluster
 	db := r.db.WithContext(ctx)
-	if clusterID := strings.TrimSpace(environment.ClusterID); clusterID != "" {
-		query, args := environmentClusterLookup(clusterID)
+	if clusterID = strings.TrimSpace(clusterID); clusterID != "" {
+		query, args := runtimeClusterLookup(clusterID)
 		err := runtimecluster.ActiveScope(db).First(&cluster, append([]any{query}, args...)...).Error
 		if err != nil {
 			return cluster, fmt.Errorf("runtime cluster %s not found: %w", clusterID, err)
 		}
 		return cluster, nil
 	}
-	err := runtimecluster.ActiveScope(db).Where("scope = ? and is_default = ? and type in ?", "global", true, []string{"kubernetes", "k3s"}).First(&cluster).Error
+	err := runtimecluster.ActiveScope(db).Where("scope = ? and is_default = ?", "global", true).First(&cluster).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		err = runtimecluster.ActiveScope(db).Where("scope = ? and type in ?", "global", []string{"kubernetes", "k3s"}).Order("created_at asc").First(&cluster).Error
+		err = runtimecluster.ActiveScope(db).Where("scope = ?", "global").Order("created_at asc").First(&cluster).Error
 	}
 	if err != nil {
 		return cluster, fmt.Errorf("runtime cluster not found: %w", err)
@@ -123,15 +110,15 @@ func isKubernetesNotFound(err error) bool {
 	return apierrors.IsNotFound(err)
 }
 
-func environmentClusterLookup(clusterID string) (string, []any) {
-	return "id = ? and type in ?", []any{strings.TrimSpace(clusterID), []string{"kubernetes", "k3s"}}
+func runtimeClusterLookup(clusterID string) (string, []any) {
+	return "id = ?", []any{strings.TrimSpace(clusterID)}
 }
 
 func projectNamespace(project model.Project) string {
 	return strings.TrimSpace(project.KubernetesNamespace)
 }
 
-func deploymentNamespace(project model.Project, _ model.Environment) string {
+func deploymentNamespace(project model.Project) string {
 	return projectNamespace(project)
 }
 
@@ -213,7 +200,7 @@ func gatewayCertificateIssuerName(cluster model.RuntimeCluster, fallbackIssuer s
 }
 
 func gatewayWildcardCertificateDomain(cluster model.RuntimeCluster) string {
-	return firstNonEmpty(cluster.GatewayWildcardCertDomain, cluster.GatewayRootDomain)
+	return firstNonEmpty(cluster.GatewayWildcardCertDomain, runtimecluster.DecodeGatewayDomainSuffixes(cluster.GatewayDomainSuffixesRaw)[0])
 }
 
 func gatewayWildcardCertificateSecretName(cluster model.RuntimeCluster) string {
@@ -249,7 +236,7 @@ func gatewayWildcardCertificateSpec(cluster model.RuntimeCluster, project model.
 	}, true
 }
 
-func httpRouteSpec(route model.GatewayRoute, project model.Project, application model.Application, environment model.Environment, cluster model.RuntimeCluster, namespace string, serviceName string) (kubeprovider.HTTPRouteSpec, error) {
+func httpRouteSpec(route model.GatewayRoute, project model.Project, application model.Application, cluster model.RuntimeCluster, namespace string, serviceName string) (kubeprovider.HTTPRouteSpec, error) {
 	servicePort := route.ServicePort
 	if servicePort <= 0 {
 		servicePort = 80
@@ -270,7 +257,6 @@ func httpRouteSpec(route model.GatewayRoute, project model.Project, application 
 		Namespace:              namespace,
 		ProjectID:              project.ID,
 		ApplicationID:          application.ID,
-		EnvironmentID:          environment.ID,
 		DeploymentTargetID:     route.DeploymentTargetID,
 		RouteID:                route.ID,
 		Host:                   strings.TrimSpace(route.Host),
@@ -322,7 +308,7 @@ func gatewayCertificateSpec(route model.GatewayRoute, project model.Project, nam
 	}
 }
 
-func applicationResourcesSpec(release model.Release, project model.Project, application model.Application, environment model.Environment, deploymentTarget model.DeploymentTarget, runtimeConfigSets []model.ProjectRuntimeConfigSet, dataVolumes []kubeprovider.ApplicationDataVolume, namespace string, rolloutTimeoutSeconds int64) (kubeprovider.ApplicationResourcesSpec, error) {
+func applicationResourcesSpec(release model.Release, project model.Project, application model.Application, deploymentTarget model.DeploymentTarget, runtimeConfigSets []model.ProjectRuntimeConfigSet, dataVolumes []kubeprovider.ApplicationDataVolume, namespace string, rolloutTimeoutSeconds int64) (kubeprovider.ApplicationResourcesSpec, error) {
 	configValues := make([]string, 0, len(runtimeConfigSets)+2)
 	secretValues := make([]string, 0, len(runtimeConfigSets)+2)
 	configFileValues := make([]string, 0, len(runtimeConfigSets)+1)
@@ -333,8 +319,8 @@ func applicationResourcesSpec(release model.Release, project model.Project, appl
 		configFileValues = append(configFileValues, set.ConfigFiles)
 		secretFileValues = append(secretFileValues, set.SecretFiles)
 	}
-	configValues = append(configValues, environment.EnvVars, deploymentTarget.EnvVars)
-	secretValues = append(secretValues, environment.SecretRefs, deploymentTarget.SecretRefs)
+	configValues = append(configValues, deploymentTarget.EnvVars)
+	secretValues = append(secretValues, deploymentTarget.SecretRefs)
 	configFileValues = append(configFileValues, deploymentTarget.ConfigFiles)
 	secretFileValues = append(secretFileValues, deploymentTarget.SecretFiles)
 	configData, err := mergeKeyValueMaps(configValues...)
@@ -370,7 +356,7 @@ func applicationResourcesSpec(release model.Release, project model.Project, appl
 	}
 	servicePort := configuredServicePorts[0].Port
 	servicePorts := deploymentTargetApplicationServicePorts(deploymentTarget)
-	replicas := environment.Replicas
+	replicas := deploymentTarget.Replicas
 	if replicas <= 0 {
 		replicas = 1
 	}
@@ -379,7 +365,6 @@ func applicationResourcesSpec(release model.Release, project model.Project, appl
 		Namespace:                    namespace,
 		ProjectID:                    project.ID,
 		ApplicationID:                application.ID,
-		EnvironmentID:                environment.ID,
 		DeploymentTargetID:           deploymentTarget.ID,
 		ReleaseID:                    release.ID,
 		BuildRunID:                   release.BuildRunID,
@@ -388,8 +373,8 @@ func applicationResourcesSpec(release model.Release, project model.Project, appl
 		Replicas:                     int32(replicas),
 		ServicePort:                  int32(servicePort),
 		ServicePorts:                 servicePorts,
-		CPURequest:                   strings.TrimSpace(environment.CPURequest),
-		MemoryRequest:                strings.TrimSpace(environment.MemoryRequest),
+		CPURequest:                   strings.TrimSpace(deploymentTarget.CPURequest),
+		MemoryRequest:                strings.TrimSpace(deploymentTarget.MemoryRequest),
 		CPULimit:                     "",
 		MemoryLimit:                  "",
 		ImagePullPolicy:              strings.TrimSpace(deploymentTarget.ImagePullPolicy),

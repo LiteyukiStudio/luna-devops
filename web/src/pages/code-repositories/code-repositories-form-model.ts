@@ -1,4 +1,3 @@
-import type { GitAccount, GitProvider } from '@/api'
 import i18next from 'i18next'
 import { z } from 'zod'
 
@@ -71,18 +70,4 @@ export const credentialDefaults: CredentialForm = {
   scope: 'user',
   scopesText: 'repo,read:user',
   username: '',
-}
-
-export type ProviderPayload = Omit<GitProvider, 'id' | 'createdAt' | 'clientSecretSet'> & {
-  scope?: GitProvider['scope']
-  ownerRef?: string
-  clientSecret?: string
-}
-
-export type CredentialPayload = Omit<GitAccount, 'id' | 'userId' | 'scopes' | 'createdAt' | 'accessTokenSet' | 'refreshTokenSet' | 'status' | 'observationCode' | 'observedAt'> & {
-  scope?: GitAccount['scope']
-  ownerRef?: string
-  scopes: string[]
-  accessToken?: string
-  refreshToken?: string
 }

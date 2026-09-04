@@ -1,13 +1,13 @@
-import type { Config } from "../config.js"
 import type { InteractionCardValidationIssue } from "@luna-devops/ai-interaction-card-contract"
 import type { AssistantModelInput, ModelRuntime } from "../model-runtime.js"
 import type { ConversationToolInteraction, RunExecutionSnapshot } from "../domain.js"
 import type { ModelToolDetailsResult, ModelToolSearchResult } from "../provider/provider.js"
 import { RunStateConflictError, type Repository } from "../persistence/repository.js"
-import type { RemoteConfigSnapshot, RemoteProviderConfig } from "../provider/config-client.js"
+import type { RemoteConfigSource, RemoteProviderConfig } from "../provider/config-client.js"
 import type { ToolCatalogRegistry } from "../tools/catalog-registry.js"
+import type { ToolCatalog } from "../tools/catalog.js"
 import { genAIAgentName, genAIAgentSpanAttributes, genAIInputMessages, genAIOutputMessages, genAIToolCallObject, genAIToolSpanAttributes } from "../genai-semconv.js"
-import { agentRuntimeInternals, defaultRuntimeSettings, runtimeSettingsFromRemote, runtimeSettingsSnapshot, type RuntimeSettings } from "../runtime-settings.js"
+import { agentRuntimeInternals, runtimeSettingsFromRemote, runtimeSettingsSnapshot, type RuntimeSettings } from "../runtime-settings.js"
 import { agentMetrics, errorDiagnostic, extractTraceContext, internalSpanOptions, recordAIContent, recordSpanError, stableErrorCode, telemetryLog, withSpan } from "../telemetry.js"
 import { ToolInterruption, type ToolOrchestrator } from "../tools/orchestrator.js"
 import { ToolLoopStoppedError } from "../tools/loop-guard.js"
@@ -16,13 +16,24 @@ import { searchToolsInput } from "../tools/tool-search.js"
 import { getToolDetailsInput } from "../tools/tool-details.js"
 import { CardGenerationService, cardValidationFailure, providerArgumentFailure, validationIssues, type CardGeneration } from "./cards.js"
 import { InternalToolHandlers } from "./internal-tools.js"
-import { internalToolOperationIds, cardToolOperationIds, normalizeToolSearchQuery, resumedToolMessages } from "./resume.js"
+import { internalToolOperationIds, normalizeToolSearchQuery, resumedToolMessages } from "./resume.js"
 import { StreamModelFinalizationError, streamModel } from "./streaming.js"
 import { stableError, toolResultMessage } from "./tool-results.js"
-import { InMemoryRunStreamBus, TerminalPersistenceExhaustedError, type RunStreamBus } from "../run-stream-bus.js"
+import { TerminalPersistenceExhaustedError, type RunStreamBus } from "../run-stream-bus.js"
 
 const selectedOperationLimit = 16
 const searchAutoLoadLimit = 5
+
+export type RunExecutorDependencies = {
+  repository: Repository
+  modelRuntime: ModelRuntime
+  tools: ToolOrchestrator
+  runtimeConfig: RemoteConfigSource
+  initialRuntimeSettings: RuntimeSettings
+  catalogRegistry: ToolCatalogRegistry
+  streamBus: RunStreamBus
+}
+
 export class RunExecutor {
   private timer?: NodeJS.Timeout
   private stopping = false
@@ -30,28 +41,32 @@ export class RunExecutor {
   private readonly controllers = new Map<string, AbortController>()
   private readonly settlements = new Map<string, Promise<void>>()
   private runtimeSettings: RuntimeSettings
-  private providerConfig: RemoteProviderConfig | undefined
+  private providerConfig!: RemoteProviderConfig
   private unsubscribeRemoteConfig: (() => void) | undefined
   private readonly cards: CardGenerationService
   private readonly internalTools: InternalToolHandlers
+  private readonly repository: Repository
+  private readonly modelRuntime: ModelRuntime
+  private readonly tools: ToolOrchestrator
+  private readonly runtimeConfig: RemoteConfigSource
+  private readonly catalogRegistry: ToolCatalogRegistry
+  private readonly streamBus: RunStreamBus
 
-  constructor(
-    private readonly repository: Repository,
-    private readonly modelRuntime: ModelRuntime,
-    config: Config,
-    private readonly tools?: ToolOrchestrator,
-    private readonly runtimeConfig?: RemoteConfigSnapshot,
-    initialRuntimeSettings: RuntimeSettings = defaultRuntimeSettings,
-    private readonly catalogRegistry?: ToolCatalogRegistry,
-    private readonly streamBus: RunStreamBus = new InMemoryRunStreamBus(repository),
-  ) {
-    void config
-    this.runtimeSettings = runtimeSettingsSnapshot(initialRuntimeSettings)
-    this.cards = new CardGenerationService(repository)
-    this.internalTools = new InternalToolHandlers(repository)
-    const currentConfig = this.runtimeConfig?.current()
-    if (currentConfig) this.applyRemoteConfig(currentConfig)
-    this.unsubscribeRemoteConfig = this.runtimeConfig?.subscribe(candidate => this.applyRemoteConfig(candidate))
+  constructor(input: RunExecutorDependencies) {
+    this.repository = input.repository
+    this.modelRuntime = input.modelRuntime
+    this.tools = input.tools
+    this.runtimeConfig = input.runtimeConfig
+    this.catalogRegistry = input.catalogRegistry
+    this.streamBus = input.streamBus
+    this.runtimeSettings = runtimeSettingsSnapshot(input.initialRuntimeSettings)
+    this.cards = new CardGenerationService(input.repository)
+    this.internalTools = new InternalToolHandlers(input.repository)
+    const currentConfig = this.runtimeConfig.current()
+    const currentCatalog = this.runtimeConfig.currentCatalog()
+    if (!currentConfig || !currentCatalog) throw new Error("ai.provider_config_unavailable")
+    this.applyRemoteConfig(currentConfig, currentCatalog)
+    this.unsubscribeRemoteConfig = this.runtimeConfig.subscribe((candidate, catalog) => this.applyRemoteConfig(candidate, catalog))
   }
 
   start(): void {
@@ -91,14 +106,14 @@ export class RunExecutor {
     this.unsubscribeRemoteConfig = undefined
     const reason = new Error("ai.agent_stopping")
     this.controllers.forEach(controller => controller.abort(reason))
-    this.tools?.cancelAll(reason)
+    this.tools.cancelAll(reason)
     await Promise.allSettled([...this.active])
   }
 
   async cancel(runId: string): Promise<boolean> {
     const controller = this.controllers.get(runId)
     const reason = new Error("ai.run_canceled")
-    const toolCanceled = this.tools?.cancelRun(runId, reason) ?? false
+    const toolCanceled = this.tools.cancelRun(runId, reason)
     if (!controller && !toolCanceled) return false
     controller?.abort(reason)
     if (controller) {
@@ -108,7 +123,7 @@ export class RunExecutor {
         new Promise<void>(resolve => setTimeout(resolve, 2_000)),
       ])
     }
-    this.tools?.clearRunLoopState(runId)
+    this.tools.clearRunLoopState(runId)
     return true
   }
 
@@ -119,19 +134,18 @@ export class RunExecutor {
   private async claimAndExecute(): Promise<boolean> {
     const candidateExecutionSnapshot: RunExecutionSnapshot = Object.freeze({
       runtimeSettings: this.runtimeSettings,
-      ...(this.providerConfig ? { providerConfig: this.providerConfig } : {}),
-      ...(this.catalogRegistry ? { toolCatalogDigest: this.catalogRegistry.digest() } : {}),
+      providerConfig: this.providerConfig,
+      toolCatalogDigest: this.catalogRegistry.digest(),
     })
     const run = await this.repository.claimNextQueuedRun(candidateExecutionSnapshot)
     if (!run) return false
     const executionSnapshot = run.executionSnapshot ?? candidateExecutionSnapshot
     const runtimeSettings = executionSnapshot.runtimeSettings
     const providerConfig = executionSnapshot.providerConfig
-    if (providerConfig && executionSnapshot.toolCatalogDigest && this.catalogRegistry) {
-      if (executionSnapshot.toolCatalogDigest !== run.toolCatalogDigest)
-        throw new Error("ai.tool_catalog_snapshot_invalid")
-      this.catalogRegistry.restore(providerConfig.toolCatalog, executionSnapshot.toolCatalogDigest)
-    }
+    const toolCatalogDigest = executionSnapshot.toolCatalogDigest
+    if (!providerConfig || !toolCatalogDigest || toolCatalogDigest !== run.toolCatalogDigest)
+      throw new Error("ai.tool_catalog_snapshot_invalid")
+    this.catalogRegistry.restore(providerConfig.toolCatalog, toolCatalogDigest)
 
     const activeCount = await this.repository.countActiveUserRuns(run.ownerUserId)
     if (activeCount > runtimeSettings.userConcurrentRuns) {
@@ -149,7 +163,7 @@ export class RunExecutor {
       try { await this.repository.updateRun(run.id, "running", "failed", { completedAt: new Date().toISOString(), errorCode: "ai.quota.user_concurrent_runs_exceeded" }) } catch { /* state may have changed */ }
       return true
     }
-    this.tools?.setRunMaxToolCallsForRun(run.id, runtimeSettings.runMaxToolCalls)
+    this.tools.setRunMaxToolCallsForRun(run.id, runtimeSettings.runMaxToolCalls)
     const runToolResultMessage = (
       toolCall: Parameters<typeof toolResultMessage>[0],
       result: Parameters<typeof toolResultMessage>[1],
@@ -262,13 +276,13 @@ export class RunExecutor {
           let platformToolCalled = false
           let toolDetailsCalled = false
           let searchToolsCalled = false
-          let createInteractionCardsCalled = false
+          let businessCardCalled = false
           let createdInteractionCardMode: "presentation" | "interactive" | undefined
           let recoverableToolError = false
           const hasPlatformTool = toolCalls.some(call => !internalToolOperationIds.has(call.operationId))
           for (const toolCall of toolCalls) {
             if (toolCall.argumentError) {
-              if (cardToolOperationIds.has(toolCall.operationId) && !hasPlatformTool) {
+              if (isBusinessCardToolOperationId(toolCall.operationId) && !hasPlatformTool) {
                 if (cardGeneration && cardGeneration.operationId !== toolCall.operationId) {
                   await this.cards.fail(run.id, cardGeneration, "ai.interaction_card_schema_invalid")
                   cardGeneration = undefined
@@ -284,44 +298,42 @@ export class RunExecutor {
                 message: toolCall.argumentError.message,
                 expected: "完整 JSON 对象",
               }]
-              if (cardToolOperationIds.has(toolCall.operationId) && cardGeneration?.operationId === toolCall.operationId) {
+              if (isBusinessCardToolOperationId(toolCall.operationId) && cardGeneration?.operationId === toolCall.operationId) {
                 attempt = await this.cards.recordRepairFailure(run.id, cardGeneration, issues, "ai.tool_arguments_json_invalid")
               }
               const failure = providerArgumentFailure(toolCall.argumentError, attempt, runtimeSettings.maxCardRepairAttempts, cardGeneration?.generationId, toolCall.operationId)
               recoverableToolError ||= failure.retryable
-              cardRepairExhausted ||= !failure.retryable && cardToolOperationIds.has(toolCall.operationId)
+              cardRepairExhausted ||= !failure.retryable && isBusinessCardToolOperationId(toolCall.operationId)
               continuationMessages.push(runToolResultMessage(toolCall, { ...failure }))
               continue
             }
-            if (cardToolOperationIds.has(toolCall.operationId)) {
+            if (isBusinessCardToolOperationId(toolCall.operationId)) {
               if (!hasPlatformTool) {
                 if (cardGeneration && cardGeneration.operationId !== toolCall.operationId) {
                   await this.cards.fail(run.id, cardGeneration, "ai.interaction_card_schema_invalid")
                   cardGeneration = undefined
                 }
                 let cardInput: unknown = toolCall.arguments
-                if (isBusinessCardToolOperationId(toolCall.operationId)) {
-                  const parsed = businessCardToolInputs[toolCall.operationId].safeParse(toolCall.arguments)
-                  if (!parsed.success) {
-                    cardGeneration ??= await this.cards.start(run.id, run.turnId, toolCall.arguments, runtimeSettings.maxCardRepairAttempts, toolCall.operationId)
-                    const issues = validationIssues(parsed.error.issues)
-                    const attempt = await this.cards.recordRepairFailure(run.id, cardGeneration, issues, "ai.interaction_card_schema_invalid")
-                    const failure = cardValidationFailure(
-                      "create",
-                      issues,
-                      attempt,
-                      runtimeSettings.maxCardRepairAttempts,
-                      cardGeneration.generationId,
-                      "ai.interaction_card_schema_invalid",
-                      toolCall.operationId,
-                    )
-                    recoverableToolError ||= failure.retryable
-                    cardRepairExhausted ||= !failure.retryable
-                    continuationMessages.push(runToolResultMessage(toolCall, { ...failure }))
-                    continue
-                  }
-                  cardInput = compileBusinessCardToolInput(toolCall.operationId, parsed.data)
+                const parsed = businessCardToolInputs[toolCall.operationId].safeParse(toolCall.arguments)
+                if (!parsed.success) {
+                  cardGeneration ??= await this.cards.start(run.id, run.turnId, toolCall.arguments, runtimeSettings.maxCardRepairAttempts, toolCall.operationId)
+                  const issues = validationIssues(parsed.error.issues)
+                  const attempt = await this.cards.recordRepairFailure(run.id, cardGeneration, issues, "ai.interaction_card_schema_invalid")
+                  const failure = cardValidationFailure(
+                    "create",
+                    issues,
+                    attempt,
+                    runtimeSettings.maxCardRepairAttempts,
+                    cardGeneration.generationId,
+                    "ai.interaction_card_schema_invalid",
+                    toolCall.operationId,
+                  )
+                  recoverableToolError ||= failure.retryable
+                  cardRepairExhausted ||= !failure.retryable
+                  continuationMessages.push(runToolResultMessage(toolCall, { ...failure }))
+                  continue
                 }
+                cardInput = compileBusinessCardToolInput(toolCall.operationId, parsed.data)
                 cardGeneration ??= await this.cards.start(run.id, run.turnId, cardInput, runtimeSettings.maxCardRepairAttempts, toolCall.operationId)
                 const creation = await this.traceInternalTool(toolCall.operationId, run.id, toolCall.arguments, () => this.cards.create(run.id, cardInput, cardGeneration!), toolCall.id)
                 if (!creation.accepted) {
@@ -330,7 +342,7 @@ export class RunExecutor {
                   continuationMessages.push(runToolResultMessage(toolCall, { ...creation.failure }))
                   continue
                 }
-                createInteractionCardsCalled = true
+                businessCardCalled = true
                 createdInteractionCardMode = creation.mode
                 cardGeneration = undefined
               }
@@ -584,7 +596,7 @@ export class RunExecutor {
           if (cardRepairExhausted) continue
           // 目录浏览和语义检索都只完成能力发现；无论模型是否附带文本，都必须把结果送入下一模型步。
           if (toolDetailsCalled || searchToolsCalled) continue
-          if (!platformToolCalled && createInteractionCardsCalled) {
+          if (!platformToolCalled && businessCardCalled) {
             if (createdInteractionCardMode === "presentation") continue
             completed = true
             break
@@ -728,7 +740,7 @@ export class RunExecutor {
         clearTimeout(timeout)
         this.controllers.delete(run.id)
 		if (!["waiting_approval", "waiting_input"].includes(outcome))
-          this.tools?.clearRunLoopState(run.id)
+          this.tools.clearRunLoopState(run.id)
         const metricAttributes = { outcome }
         agentMetrics.activeRuns.add(-1)
         agentMetrics.runs.add(1, metricAttributes)
@@ -789,24 +801,22 @@ export class RunExecutor {
     }
   }
 
-  private applyRemoteConfig(candidate: RemoteProviderConfig): void {
-    if (this.catalogRegistry) {
-      const refresh = this.catalogRegistry.refresh(candidate.toolCatalog, candidate.version)
-      const outcome = refresh.changed ? "updated" : "unchanged"
-      agentMetrics.toolCatalogRefreshes.add(1, { outcome })
-      telemetryLog("agent.tool_catalog.refreshed", "info", {
-        "luna.tool_catalog.refresh.outcome": outcome,
-        "luna.tool_catalog.operation_count": this.catalogRegistry.current().all().length,
-      })
-      void this.repository.listActiveToolCatalogDigests()
-        .then(digests => this.catalogRegistry!.retain(digests))
-        .catch(error => telemetryLog("agent.tool_catalog.retain_failed", "warn", {
-          operation: "agent.tool_catalog.retain", outcome: "failed",
-          ...errorDiagnostic(error, "ai.persistence_unavailable"),
-        }))
-    }
+  private applyRemoteConfig(candidate: RemoteProviderConfig, catalog: ToolCatalog): void {
+    const refresh = this.catalogRegistry.refresh(catalog, candidate.version)
+    const outcome = refresh.changed ? "updated" : "unchanged"
+    agentMetrics.toolCatalogRefreshes.add(1, { outcome })
+    telemetryLog("agent.tool_catalog.refreshed", "info", {
+      "luna.tool_catalog.refresh.outcome": outcome,
+      "luna.tool_catalog.operation_count": this.catalogRegistry.current().all().length,
+    })
+    void this.repository.listActiveToolCatalogDigests()
+      .then(digests => this.catalogRegistry.retain(digests))
+      .catch(error => telemetryLog("agent.tool_catalog.retain_failed", "warn", {
+        operation: "agent.tool_catalog.retain", outcome: "failed",
+        ...errorDiagnostic(error, "ai.persistence_unavailable"),
+      }))
     const runtimeSettings = runtimeSettingsFromRemote(candidate.runtime)
-    this.tools?.setRunMaxToolCalls(runtimeSettings.runMaxToolCalls)
+    this.tools.setRunMaxToolCalls(runtimeSettings.runMaxToolCalls)
     this.runtimeSettings = runtimeSettingsSnapshot(runtimeSettings)
     this.providerConfig = candidate
   }

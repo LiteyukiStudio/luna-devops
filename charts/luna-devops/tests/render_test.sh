@@ -35,30 +35,6 @@ assert_count() {
   [ "$actual" -eq "$expected" ] || fail "$message (got $actual, want $expected)"
 }
 
-short_password_error="$tmp_dir/short-initial-admin-password.err"
-if helm template luna-devops "$chart_dir" --namespace luna-devops \
-  --set-string api.initialAdmin.email=admin@example.com \
-  --set-string api.initialAdmin.password=short > /dev/null 2> "$short_password_error"; then
-  fail 'a chart-managed initial administrator password shorter than eight bytes must fail'
-fi
-assert_contains "$short_password_error" 'api\.initialAdmin\.password must contain 8 to 72 bytes' 'the initial administrator password constraint is not enforced'
-
-invalid_language_error="$tmp_dir/invalid-initial-admin-language.err"
-if helm template luna-devops "$chart_dir" --namespace luna-devops \
-  --set-string api.initialAdmin.email=admin@example.com \
-  --set-string api.initialAdmin.password=correct-horse-battery-staple \
-  --set-string api.initialAdmin.language=fr-FR > /dev/null 2> "$invalid_language_error"; then
-  fail 'an unsupported initial administrator language must fail'
-fi
-assert_contains "$invalid_language_error" 'api\.initialAdmin\.language must be zh-CN or en-US' 'the initial administrator language constraint is not enforced'
-
-legacy_extra_env_error="$tmp_dir/legacy-extra-env.err"
-if helm template luna-devops "$chart_dir" --namespace luna-devops \
-  --set-string app.extraEnv.LEGACY_VALUE=must-migrate > /dev/null 2> "$legacy_extra_env_error"; then
-  fail 'the removed shared app.extraEnv must fail'
-fi
-assert_contains "$legacy_extra_env_error" 'app.extraEnv has been removed' 'shared app.extraEnv does not require workload-scoped migration'
-
 api_managed_env_error="$tmp_dir/api-managed-env.err"
 if helm template luna-devops "$chart_dir" --namespace luna-devops \
   --set-string api.extraEnv.DATABASE_URL=postgres://must-not-override > /dev/null 2> "$api_managed_env_error"; then
@@ -131,16 +107,6 @@ for universal_proxy_cidr in '0.0.0.0/0' '::/0'; do
   assert_contains "$universal_proxy_error" 'app\.trustedProxyCidrs must not contain universal /0 CIDRs' "trusted proxy boundary did not reject $universal_proxy_cidr"
 done
 
-initial_admin_values="$tmp_dir/initial-admin.yaml"
-cat > "$initial_admin_values" <<'EOF'
-api:
-  initialAdmin:
-    email: admin@example.com
-    name: Platform Admin
-    password: correct-horse-battery-staple
-    language: en-US
-EOF
-
 default_render="$tmp_dir/default.yaml"
 helm template luna-devops "$chart_dir" --namespace luna-devops > "$default_render"
 assert_not_contains "$default_render" '^  name: luna-devops-initial-admin$' 'an unused chart-managed initial administrator Secret was rendered'
@@ -152,7 +118,6 @@ assert_not_contains "$default_render" 'BOOTSTRAP_TOKEN' 'the removed bootstrap t
 assert_not_contains "$default_render" 'OTEL_EXPORTER_OTLP_TRACES_HEADERS' 'browser Trace Relay headers were rendered without an existing Secret'
 assert_count "$default_render" '^kind: ConfigMap$' 3 'shared, API, and Worker ConfigMaps were not rendered separately'
 assert_contains "$default_render" '^  AI_AGENT_BASE_URL:' 'the canonical Agent base URL is missing'
-assert_not_contains "$default_render" 'AI_AGENT_ADDR' 'the legacy Agent address variable is still rendered'
 assert_contains "$default_render" '^  redis-url: "redis://default:[[:alnum:]]{32}@luna-devops-redis:6379/0"$' 'the built-in Redis URI was not generated'
 assert_contains "$default_render" '^  redis-password: "[[:alnum:]]{32}"$' 'the built-in Redis password was not generated'
 assert_contains "$default_render" '^[[:space:]]+- name: REDIS_ADDR$' 'REDIS_ADDR is missing'
@@ -162,23 +127,6 @@ redis_password=$(sed -n 's/^  redis-password: "\([[:alnum:]]\{32\}\)"$/\1/p' "$d
 redis_url_password=$(sed -n 's#^  redis-url: "redis://default:\([[:alnum:]]\{32\}\)@luna-devops-redis:6379/0"$#\1#p' "$default_render")
 [ "$redis_password" = "$redis_url_password" ] || fail 'the built-in Redis password and URI do not match'
 
-managed_admin_render="$tmp_dir/managed-initial-admin.yaml"
-helm template luna-devops "$chart_dir" --namespace luna-devops \
-  --values "$initial_admin_values" > "$managed_admin_render"
-assert_contains "$managed_admin_render" '^  name: luna-devops-initial-admin$' 'the requested chart-managed initial administrator Secret is missing'
-assert_contains "$managed_admin_render" '^  initial-admin-email: "admin@example\.com"$' 'the initial administrator email is missing'
-assert_contains "$managed_admin_render" '^  initial-admin-name: "Platform Admin"$' 'the initial administrator name is missing'
-assert_contains "$managed_admin_render" '^  initial-admin-password: "correct-horse-battery-staple"$' 'the initial administrator password is missing'
-assert_contains "$managed_admin_render" '^  initial-admin-language: "en-US"$' 'the initial administrator language is missing'
-
-partial_admin_render="$tmp_dir/partial-initial-admin.yaml"
-helm template luna-devops "$chart_dir" --namespace luna-devops \
-  --set-string api.initialAdmin.name='Platform Admin' \
-  --show-only templates/secret.yaml > "$partial_admin_render"
-assert_contains "$partial_admin_render" '^  name: luna-devops-initial-admin$' 'an explicitly provided optional administrator field did not create the managed Secret'
-assert_contains "$partial_admin_render" '^  initial-admin-name: "Platform Admin"$' 'the provided optional administrator name is missing'
-assert_not_contains "$partial_admin_render" '^  initial-admin-(email|password|language):' 'unset initial administrator keys must be omitted from the managed Secret'
-
 internal_secret_render="$tmp_dir/internal-existing-secret.yaml"
 helm template luna-devops "$chart_dir" --namespace luna-devops \
   --set redis.auth.existingSecret=redis-auth > "$internal_secret_render"
@@ -186,6 +134,14 @@ assert_contains "$internal_secret_render" '^[[:space:]]+name: redis-auth$' 'the 
 assert_contains "$internal_secret_render" '^[[:space:]]+key: redis-url$' 'the built-in Redis URL key is not referenced'
 assert_contains "$internal_secret_render" '^[[:space:]]+key: redis-password$' 'the built-in Redis password key is not referenced'
 assert_not_contains "$internal_secret_render" '^  redis-url:' 'a Redis URI must not be generated when redis.auth.existingSecret is set'
+
+fully_external_connection_render="$tmp_dir/fully-external-connection.yaml"
+helm template luna-devops "$chart_dir" --namespace luna-devops \
+  --set postgresql.enabled=false \
+  --set externalDatabase.existingSecret=database-auth \
+  --set redis.auth.existingSecret=redis-auth \
+  --show-only templates/secret.yaml > "$fully_external_connection_render"
+assert_not_contains "$fully_external_connection_render" '^  name: luna-devops-connection$' 'an empty chart-managed connection Secret was rendered when both connection URLs come from existing Secrets'
 
 external_secret_render="$tmp_dir/external-existing-secret.yaml"
 helm template luna-devops "$chart_dir" --namespace luna-devops \
@@ -206,11 +162,10 @@ assert_count "$external_admin_render" '^[[:space:]]+optional: true$' 4 'external
 
 notes_render="$tmp_dir/notes.txt"
 helm install luna-devops-notes "$chart_dir" --namespace luna-devops \
-  --values "$initial_admin_values" \
+  --set api.initialAdmin.existingSecret=platform-initial-admin \
   --dry-run=client \
   --hide-secret > "$notes_render"
 assert_contains "$notes_render" 'http://localhost:8088/login' 'the install notes do not point to the login page'
-assert_not_contains "$notes_render" 'correct-horse-battery-staple' 'the install notes expose the initial administrator password'
 
 assert_contains "$default_render" '^  VOLUME_TRANSFER_MAX_BYTES: "100Gi"$' 'the direct transfer size limit is missing'
 assert_contains "$default_render" '^  VOLUME_TRANSFER_JOB_IMAGE: "liteyukistudio/luna-worker:' 'the direct transfer image does not follow the Worker image'

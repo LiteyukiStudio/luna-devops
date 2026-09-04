@@ -45,7 +45,7 @@ helm upgrade luna-devops ./charts/luna-devops \
 kubectl -n luna-devops delete secret luna-devops-initial-admin
 ```
 
-All four Secret key references are optional. When `existingSecret`, `email`, `name`, `password`, and `language` are empty, the chart creates no initial administrator Secret. It creates a managed Secret only when at least one administrator field is explicitly supplied, and validates the password and language only when they are non-empty.
+All four Secret key references are optional. When `existingSecret` is empty, the chart neither creates nor references an initial administrator Secret. The initial password can only be provided through an external Secret, so it never enters Helm values or release history.
 
 ## Open The Console
 
@@ -182,8 +182,6 @@ root filesystem, and disabled ServiceAccount token remain enforced independently
 | `ingress.annotations` | `{}` | Passes controller-specific settings to the selected Ingress controller; use an annotation map supported by that controller. |
 | `app.secretEncryptionKey` | Generated | Encrypts credentials stored by the platform; use a stable non-empty key. |
 | `api.initialAdmin.existingSecret` | Empty | Selects the initial administrator Secret; a fresh database requires `initial-admin-email/password`, while `initial-admin-name/language` are optional. |
-| `api.initialAdmin.email` / `password` | Empty | Makes the chart create an initial administrator Secret when fields are explicitly supplied; for a fresh database use a valid email and an 8–72 byte password, and prefer `existingSecret` in production. |
-| `api.initialAdmin.name` / `language` | Empty / empty | Sets the initial administrator name and language; API falls back to the email and `zh-CN`, and a non-empty language may be `zh-CN` or `en-US`. |
 | `api.image.tag` / `worker.image.tag` | `nightly` | Selects the API and Worker image versions; use image tags. |
 | `api.database.maxOpenConns` / `maxIdleConns` | `20` / `5` | Caps open and idle PostgreSQL connections per API replica; use a positive integer and a non-negative integer no greater than the first value. |
 | `api.browserTrace.existingSecret` / `headersKey` | Empty / `otlp-traces-headers` | Selects the API browser Trace Relay authentication Secret and key; use a Kubernetes Secret name and the key containing the complete Header list. |

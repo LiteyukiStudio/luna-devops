@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/LiteyukiStudio/devops/internal/api/runtimeapi"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/tasks"
 	"github.com/hibiken/asynq"
@@ -14,6 +15,7 @@ import (
 func TestEnqueueDeployRunPassesStablePayload(t *testing.T) {
 	fake := &fakeBuildTaskEnqueuer{}
 	h := &Handlers{taskClient: fake}
+	h.domains = newDomainHandlers(h)
 	release := model.Release{ID: "rel_1", ProjectID: "prj_1", CreatedBy: "usr_1"}
 
 	if !h.enqueueDeployRun(context.Background(), release) {
@@ -33,11 +35,12 @@ func TestEnqueueDeployRunPassesStablePayload(t *testing.T) {
 func TestEnqueueGatewayApplyPassesStablePayload(t *testing.T) {
 	fake := &fakeBuildTaskEnqueuer{}
 	h := &Handlers{taskClient: fake}
+	h.domains = newDomainHandlers(h)
 	updatedAt := time.Date(2026, time.August, 28, 7, 8, 9, 123456000, time.FixedZone("test", 8*60*60))
 	route := model.GatewayRoute{ID: "gwr_1", ProjectID: "prj_1", CreatedBy: "usr_owner", UpdatedAt: updatedAt}
 
-	if !h.enqueueGatewayApply(context.Background(), route, "usr_operator") {
-		t.Fatal("expected enqueueGatewayApply to succeed")
+	if !h.domains.gateway.EnqueueGatewayApply(context.Background(), route, "usr_operator") {
+		t.Fatal("expected gateway handler to enqueue the apply task")
 	}
 
 	want := tasks.GatewayApplyPayload{
@@ -54,6 +57,7 @@ func TestEnqueueGatewayApplyPassesStablePayload(t *testing.T) {
 func TestEnqueueResourceCleanupPassesActor(t *testing.T) {
 	fake := &fakeBuildTaskEnqueuer{}
 	h := &Handlers{taskClient: fake}
+	h.domains = newDomainHandlers(h)
 
 	if !h.enqueueResourceCleanup(context.Background(), "deployment_target", "dplt_1", "prj_1", "usr_operator") {
 		t.Fatal("expected enqueueResourceCleanup to succeed")
@@ -75,7 +79,6 @@ func TestRollbackReleaseFromTargetUsesPreviousSuccessfulRelease(t *testing.T) {
 		ID:            "rel_current",
 		ProjectID:     "prj_1",
 		ApplicationID: "app_1",
-		EnvironmentID: "env_1",
 		ImageRef:      "registry.example.com/acme/api:v3",
 		Revision:      3,
 	}
@@ -135,8 +138,8 @@ contexts:
 current-context: local
 `
 
-	if _, err := flattenKubeconfig(input); err == nil || !strings.Contains(err.Error(), "kubeconfig 不安全") {
-		t.Fatalf("flattenKubeconfig error = %v, want unsafe kubeconfig error", err)
+	if _, err := runtimeapi.FlattenKubeconfig(input); err == nil || !strings.Contains(err.Error(), "kubeconfig 不安全") {
+		t.Fatalf("runtimeapi.FlattenKubeconfig error = %v, want unsafe kubeconfig error", err)
 	}
 }
 
@@ -162,8 +165,8 @@ contexts:
 current-context: local
 `
 
-	if _, err := flattenKubeconfig(input); err == nil || !strings.Contains(err.Error(), "kubeconfig 不安全") {
-		t.Fatalf("flattenKubeconfig error = %v, want unsafe kubeconfig error", err)
+	if _, err := runtimeapi.FlattenKubeconfig(input); err == nil || !strings.Contains(err.Error(), "kubeconfig 不安全") {
+		t.Fatalf("runtimeapi.FlattenKubeconfig error = %v, want unsafe kubeconfig error", err)
 	}
 }
 
@@ -187,12 +190,12 @@ contexts:
 current-context: local
 `
 
-	output, err := flattenKubeconfig(input)
+	output, err := runtimeapi.FlattenKubeconfig(input)
 	if err != nil {
-		t.Fatalf("flattenKubeconfig returned error: %v", err)
+		t.Fatalf("runtimeapi.FlattenKubeconfig returned error: %v", err)
 	}
 	if !strings.Contains(output, "https://kubernetes.example.com:6443") || !strings.Contains(output, "inline-token") {
-		t.Fatalf("flattenKubeconfig output = %s", output)
+		t.Fatalf("runtimeapi.FlattenKubeconfig output = %s", output)
 	}
 }
 

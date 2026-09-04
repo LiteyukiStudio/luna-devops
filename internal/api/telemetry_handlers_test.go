@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/LiteyukiStudio/devops/internal/api/platformapi"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/alicebob/miniredis/v2"
 	"github.com/gin-gonic/gin"
@@ -17,7 +18,7 @@ import (
 func TestBrowserTraceEndpointUsesGenericOTLPBase(t *testing.T) {
 	t.Setenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "")
 	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://collector:4318/otel")
-	endpoint, err := browserTraceEndpoint(mustTestConfig(t))
+	endpoint, err := platformapi.BrowserTraceEndpoint(mustTestConfig(t))
 	if err != nil {
 		t.Fatalf("resolve browser trace endpoint: %v", err)
 	}
@@ -49,7 +50,7 @@ func TestBrowserTraceMediaTypeAcceptsStandardOTLPHTTPEncodings(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			got, allowed := browserTraceMediaType(test.input)
+			got, allowed := platformapi.BrowserTraceMediaType(test.input)
 			if got != test.want || allowed != test.allowed {
 				t.Fatalf("browserTraceMediaType(%q) = (%q, %v), want (%q, %v)", test.input, got, allowed, test.want, test.allowed)
 			}
@@ -139,6 +140,7 @@ func newBrowserTraceRelayTestRouter(t *testing.T) http.Handler {
 	redisServer := miniredis.RunT(t)
 	cfg := mustTestConfig(t)
 	handlers := &Handlers{config: cfg, rateLimiter: newRateLimiter(redisServer.Addr())}
+	handlers.domains = newDomainHandlers(handlers)
 	t.Cleanup(func() {
 		_ = handlers.rateLimiter.redis.Close()
 	})
@@ -147,6 +149,6 @@ func newBrowserTraceRelayTestRouter(t *testing.T) http.Handler {
 		ctx.Set(currentUserContextKey, model.User{ID: "usr_browser_telemetry_test"})
 		ctx.Next()
 	})
-	router.POST("/api/v1/telemetry/v1/traces", handlers.RelayBrowserTraces)
+	router.POST("/api/v1/telemetry/v1/traces", handlers.domains.platform.RelayBrowserTraces)
 	return router
 }

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { RemoteConfigSnapshot } from "../src/provider/config-client.js"
 import { agentRuntimeInternals, defaultRuntimeSettings, type RemoteRuntimeSettings } from "../src/runtime-settings.js"
+import { testToolOperation } from "./support/tool-catalog.js"
 
 afterEach(() => {
   vi.useRealTimers()
@@ -15,11 +16,13 @@ describe("RemoteConfigSnapshot", () => {
     })
     vi.stubGlobal("fetch", fetchMock)
 
-    const config = await client().initialize()
+    const configClient = client()
+    const config = await configClient.initialize()
     expect(config.version).toBe("cfg-1")
     expect(config.provider.models[0]).toMatchObject({ id: "aimod_test", name: "model-a" })
     expect(config.runtime).toEqual(authoritativePayload().runtime)
-    expect(config.toolCatalog).toEqual([{ operationId: "listProjects" }])
+    expect(config.toolCatalog).toEqual([expect.objectContaining({ operationId: "listProjects" })])
+    expect(configClient.currentCatalog()?.get("listProjects").operationId).toBe("listProjects")
     expect(fetchMock).toHaveBeenCalledOnce()
   })
 
@@ -76,7 +79,6 @@ describe("RemoteConfigSnapshot", () => {
     const snapshot = new RemoteConfigSnapshot(
       "https://luna-api.internal",
       "callback-token-value",
-      () => undefined,
       50,
     )
     await snapshot.initialize()
@@ -98,19 +100,19 @@ describe("RemoteConfigSnapshot", () => {
   })
 
   it("keeps the last valid snapshot when a semantic candidate is rejected", async () => {
+    const invalidOperation = { ...testToolOperation("listProjects") }
+    Reflect.deleteProperty(invalidOperation, "requiresApproval")
     const fetchMock = vi.fn<typeof fetch>()
       .mockResolvedValueOnce(response(authoritativePayload()))
-      .mockResolvedValueOnce(response({ ...authoritativePayload(), version: "cfg-2" }))
+      .mockResolvedValueOnce(response({ ...authoritativePayload(), version: "cfg-2", toolCatalog: [invalidOperation] }))
     vi.stubGlobal("fetch", fetchMock)
-    const snapshot = new RemoteConfigSnapshot(
-      "https://luna-api.internal",
-      "callback-token-value",
-      candidate => { if (candidate.version === "cfg-2") throw new Error("invalid catalog") },
-    )
+    const snapshot = new RemoteConfigSnapshot("https://luna-api.internal", "callback-token-value")
     await snapshot.initialize()
+    const oldCatalogDigest = snapshot.currentCatalog()?.digest
 
-    await expect(snapshot.refresh()).rejects.toThrow("invalid catalog")
+    await expect(snapshot.refresh()).rejects.toThrow("ai.provider_config_invalid")
     expect(snapshot.current()?.version).toBe("cfg-1")
+    expect(snapshot.currentCatalog()?.digest).toBe(oldCatalogDigest)
   })
 
   it("keeps serving the last valid snapshot during a short authority outage", async () => {
@@ -226,7 +228,7 @@ function authoritativePayload(runtimeOverrides: Partial<RemoteRuntimeSettings> =
       }],
     },
     runtime: { ...remoteRuntimeDefaults, providerTimeoutMs: 45_000, ...runtimeOverrides },
-    toolCatalog: [{ operationId: "listProjects" }],
+    toolCatalog: [testToolOperation("listProjects")],
   }
 }
 

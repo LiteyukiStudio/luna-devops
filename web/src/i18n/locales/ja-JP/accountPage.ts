@@ -1,5 +1,4 @@
 const accountPage = {
-  description: '個人プロフィール、サードパーティログインバインディング、API 呼び出し用の個人トークンを管理します。',
   profileTab: '個人設定',
   securityTab: 'セキュリティ設定',
   notificationsTab: '通知',

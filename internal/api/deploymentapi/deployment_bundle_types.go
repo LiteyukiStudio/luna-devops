@@ -73,7 +73,6 @@ type deploymentBundleReferenceDescriptor struct {
 	VolumeMode       string `json:"volumeMode,omitempty"`
 	StorageClassName string `json:"storageClassName,omitempty"`
 	ClusterName      string `json:"clusterName,omitempty"`
-	ClusterType      string `json:"clusterType,omitempty"`
 }
 
 type deploymentBundleSecretRequirement struct {

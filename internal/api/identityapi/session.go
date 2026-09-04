@@ -10,8 +10,8 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/model"
+	"github.com/LiteyukiStudio/devops/internal/openapiscope"
 	"github.com/LiteyukiStudio/devops/internal/redisconfig"
-	"github.com/LiteyukiStudio/devops/internal/service"
 	"github.com/LiteyukiStudio/devops/internal/telemetry"
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
@@ -176,20 +176,16 @@ func currentAccessTokenFromContext(ctx *gin.Context) (model.AccessToken, bool) {
 }
 
 func missingRequiredAccessTokenScope(scopeText, path, method string) (string, error) {
-	requiredScopes, err := service.RequiredAccessTokenScopes(path, method)
+	requiredScopes, err := openapiscope.RequiredScopes(path, method)
 	if err != nil {
 		return "", err
 	}
 	for _, requiredScope := range requiredScopes {
-		if !accessTokenAllows(scopeText, requiredScope) {
+		if !authz.AccessTokenAllows(scopeText, requiredScope) {
 			return requiredScope, nil
 		}
 	}
 	return "", nil
-}
-
-func accessTokenAllows(scopeText, required string) bool {
-	return service.AccessTokenAllows(scopeText, required)
 }
 
 func platformAdminExists(db *gorm.DB) (bool, error) {

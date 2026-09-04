@@ -1,5 +1,4 @@
 const settings = {
-  siteDescription: '管理公开站点配置、安全策略、计费和数据保留。',
   siteSaved: '站点配置已保存',
   siteConfigTitle: '品牌信息',
   buildConfigTitle: '构建配置',
@@ -19,7 +18,6 @@ const settings = {
     accessModeHint: '默认允许所有已登录用户使用；Agent 执行工具时仍严格继承当前用户权限。',
     accessModeAllAuthenticated: '所有已登录用户',
     accessModeAdmins: '仅平台管理员',
-    model: '模型名称',
     models: {
       title: 'AI 模型目录',
       description: '每个模型都有独立的 Token 价格。Run 创建时会保存价格快照，之后修改模型价格不会影响历史 Run。',
@@ -139,7 +137,6 @@ const settings = {
     saveFailed: 'AI 助手配置保存失败',
     baseUrlRequired: '启用助手前请填写 API 地址。',
     apiKeyRequired: '启用助手前请填写 API Key。',
-    modelRequired: '启用助手前请填写模型名称。',
   },
   registration: {
     tab: '注册与登录',
@@ -212,10 +209,7 @@ const settings = {
       creditsDisplayName: { label: 'Credits 展示名称', description: '控制台显示平台内部 credits 时使用的名称，底层仍统一按 credits 存储和结算。' },
       fiatCurrencyUnit: { label: '现实货币单位', description: '管理员查看 credits 折算金额时使用的单位，例如 CNY、USD 或元。' },
       creditsPerFiatUnit: { label: '每 1 现实货币对应 Credits', description: '例如 1000 表示 1 个现实货币单位可以兑换 1000 credits。' },
-      freeQuotaCredits: { label: '默认免费额度', description: '新用户钱包默认获得的 credits 额度，已创建用户不会自动补发。' },
       lowBalanceThresholdCredits: { label: '低余额提醒阈值', description: '计费归属人余额低于该 credits 数值时，用于展示提醒或触发通知。' },
-      overdueGracePeriodHours: { label: '欠费宽限期', description: '余额不足后允许继续运行的小时数，限制策略启用后生效。' },
-      allowNegativeBalance: { label: '允许欠费余额', description: '允许账本扣到负余额；关闭后可由限制策略阻止新的付费操作。' },
       blockNewBuildsWhenInsufficient: { label: '余额不足阻止新构建', description: '余额不足时不再接受新构建任务，已经开始的任务仍会完成结算。' },
       blockDeployChangesWhenInsufficient: { label: '余额不足阻止部署变更', description: '余额不足时阻止新发布、扩容和新增数据卷等付费变更。' },
     },
@@ -292,7 +286,6 @@ const settings = {
     expired_auth_data: '过期认证数据',
   },
   billingRateRulesTitle: '计费规则',
-  billingRateRulesDescription: '调整平台内置 meter 的 credits 单价和启停状态。历史账单不会因为调价而变化。',
   billingRateRulesFailedTitle: '计费规则加载失败',
   billingRateRulesFailedDescription: '请确认当前账号具有平台管理员权限，或稍后重试。',
   billingRateRulesSaved: '计费规则已保存',
@@ -323,7 +316,6 @@ const settings = {
     'gateway.egress_gib': '网关响应出站流量；按实际传输的 GiB 计费。',
     'gateway.requests_1000': '网关请求次数；1 千请求表示 1,000 次请求。',
   },
-  securityDescription: '管理第三方登录绑定和用于 API 调用的个人 Access Token。',
   boundIdentities: '已绑定身份',
   identityLoadFailedTitle: '身份加载失败',
   identityLoadFailedDescription: '请刷新页面后重试。',
@@ -334,7 +326,6 @@ const settings = {
   bindProviderTitle: '绑定新身份源',
   providerLoadFailedTitle: '身份源加载失败',
   providerLoadFailedDescription: '请稍后重试。',
-  bind: '绑定',
   bindProvider: '绑定 {{provider}}',
 }
 

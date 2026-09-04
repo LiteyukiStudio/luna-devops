@@ -11,6 +11,6 @@ describe('translation bundles', () => {
   it('loads a feature bundle on demand', async () => {
     await i18next.changeLanguage('zh-CN')
     await loadTranslationBundles(['billingPage'])
-    expect(i18next.t('billingPage.description')).toContain('账单流水')
+    expect(i18next.t('billingPage.balance')).toBe('余额')
   })
 })

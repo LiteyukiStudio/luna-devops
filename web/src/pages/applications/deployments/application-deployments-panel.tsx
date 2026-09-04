@@ -28,7 +28,7 @@ import { applyDockerfileBuildDefaults, deploymentTargetHasRunningInstances, depl
 
 export interface DeploymentsPanelHandle {
   openImportDialog: () => void
-  openReleaseDialog: (environmentId?: string, deploymentTargetId?: string) => void
+  openReleaseDialog: (deploymentTargetId?: string) => void
   openTargetDialog: () => void
 }
 
@@ -454,7 +454,7 @@ export function ApplicationDeploymentsPanel({ applicationId, applicationIdentifi
     resetRepositoryBindingForm()
     setRepositoryBindingDialogOpen(true)
   }
-  const openReleaseDialog = (_environmentId = '', deploymentTargetId = '') => {
+  const openReleaseDialog = (deploymentTargetId = '') => {
     const defaultTarget = deploymentTargetId
       ? deploymentTargets.find(target => target.id === deploymentTargetId)
       : releaseReadyTargets[0]
@@ -465,7 +465,6 @@ export function ApplicationDeploymentsPanel({ applicationId, applicationIdentifi
       applicationId: matchedRun?.applicationId ?? applicationId,
       deploymentTargetId: targetId ?? '',
       buildRunId: matchedRun?.id ?? '',
-      environmentId: defaultTarget?.environmentId ?? '',
       imageRef: matchedRun ? buildRunImageRef(matchedRun) : defaultTarget?.imageRef ?? '',
     })
     setDialogOpen(true)
@@ -481,7 +480,6 @@ export function ApplicationDeploymentsPanel({ applicationId, applicationIdentifi
   useEffect(() => {
     if (!selectedReleaseTarget || selectedBuildRun)
       return
-    form.setValue('environmentId', selectedReleaseTarget.environmentId, { shouldDirty: true, shouldValidate: true })
     form.setValue('applicationId', applicationId, { shouldDirty: true, shouldValidate: true })
     if (selectedReleaseTarget.sourceType === 'image')
       form.setValue('imageRef', selectedReleaseTarget.imageRef, { shouldDirty: true, shouldValidate: true })

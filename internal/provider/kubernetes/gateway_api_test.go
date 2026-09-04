@@ -32,7 +32,6 @@ func TestApplyGatewayAPIResourcesCreatesGatewayAndHTTPRoute(t *testing.T) {
 		Namespace:              "ns-demo",
 		ProjectID:              "prj_demo",
 		ApplicationID:          "app_api",
-		EnvironmentID:          "env_prod",
 		DeploymentTargetID:     "dplt_api",
 		RouteID:                "gwr_demo",
 		Host:                   "api.example.com",

@@ -23,7 +23,7 @@ func TestVolumeTransferMutationsStopBeforeContentWhenBalanceIsInsufficient(t *te
 	}
 	project := model.Project{
 		ID: "prj_volume_billing", Identifier: "volume-billing", Name: "Volume billing",
-		NamespaceStrategy: "isolated", BillingOwnerUserID: user.ID,
+		BillingOwnerUserID: user.ID,
 	}
 	if err := db.Create(&user).Error; err != nil {
 		t.Fatalf("create user: %v", err)
@@ -42,14 +42,15 @@ func TestVolumeTransferMutationsStopBeforeContentWhenBalanceIsInsufficient(t *te
 	handlers := &Handlers{db: db, mode: "production", configs: &configCache{values: map[string]string{
 		"billing.blockDeployChangesWhenInsufficient": "true",
 	}}, volumes: volume.NewGormService(db)}
+	handlers.domains = newDomainHandlers(handlers)
 
 	for _, test := range []struct {
 		name   string
 		method func(*gin.Context)
 	}{
-		{name: "import", method: handlers.CreateVolumeImport},
-		{name: "export", method: handlers.CreateVolumeExport},
-		{name: "retry", method: handlers.RetryVolumeTransfer},
+		{name: "import", method: handlers.domains.volume.CreateVolumeImport},
+		{name: "export", method: handlers.domains.volume.CreateVolumeExport},
+		{name: "retry", method: handlers.domains.volume.RetryVolumeTransfer},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			recorder := httptest.NewRecorder()
@@ -74,6 +75,7 @@ func TestVolumeTransferBillingGuardKeepsAdministratorOptOut(t *testing.T) {
 	handlers := &Handlers{configs: &configCache{values: map[string]string{
 		"billing.blockDeployChangesWhenInsufficient": "false",
 	}}}
+	handlers.domains = newDomainHandlers(handlers)
 	if !handlers.ensureBillingAllowsDeployChange(ctx, "prj_demo") {
 		t.Fatal("disabled billing guard unexpectedly blocked the transfer")
 	}

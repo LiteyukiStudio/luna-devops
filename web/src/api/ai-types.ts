@@ -1,56 +1,19 @@
 import type { AIOptionVisual, AIToolVisibility } from '@luna-devops/ai-interaction-card-contract'
+import type { components } from './generated/openapi.js'
 
-export interface AICapabilities {
-  enabled: boolean
-  maxInputBytes: number
-}
+type AISchemas = components['schemas']
+type AITimelineItemTransport = AISchemas['AITimelineItem']
+type AITimelineTurnTransport = AISchemas['AITimelineTurn']
+type AISelectedRunTransport = NonNullable<AITimelineTurnTransport['selectedRun']>
 
-export interface AIModelOption {
-  id: string
-  name: string
-  maxContextTokens: number
-  maxOutputTokens: number
-}
-
-export interface AIModelConfig extends AIModelOption {
-  inputCreditsPerMillion: string
-  outputCreditsPerMillion: string
-  cachedInputCreditsPerMillion: string
-  enabled: boolean
-  createdAt: string
-  updatedAt: string
-}
-
-export interface AIConversation {
-  id: string
-  title: string
-  titleSource: 'default' | 'assistant' | 'user'
-  status: string
-  projectId?: string
-  modelId?: string
-  createdAt: string
-  updatedAt: string
-}
-
-export interface AIPaginatedResponse<T> {
-  items: T[]
-  page: number
-  pageSize: number
-  sortBy: string
-  sortOrder: 'asc' | 'desc'
-  total: number
-  totalPages: number
-}
-
-export interface AIMessagePart {
-  id: string
-  partIndex: number
-  type: 'text' | 'structured_data'
-  text?: string
-  data?: Record<string, unknown>
-}
-
-export type AIRunStatus = 'queued' | 'running' | 'waiting_approval' | 'waiting_input' | 'completed' | 'failed' | 'canceled' | 'interrupted'
+export type AIAssistantAccess = AISchemas['AIAssistantAccess']
+export type AICapabilities = Omit<AIAssistantAccess, 'maxInputBytes'> & { maxInputBytes: number }
+export type AIModelOption = AISchemas['AIModelOption']
+export type AIModelConfig = AISchemas['AIModelConfig']
+export type AIConversation = AISchemas['AIConversation']
+export type AIConversationPage = AISchemas['AIConversationPage']
+export type AIMessagePart = AISchemas['AIMessagePart']
+export type AIRunStatus = AISelectedRunTransport['status']
 export type AIToolStatus = 'proposed' | 'awaiting_approval' | 'running' | 'succeeded' | 'failed' | 'rejected' | 'canceled' | 'skipped'
 
 export interface AIToolDisplayResult {
@@ -86,15 +49,7 @@ export type AIUIAction
     | { version: 1, id?: string, repeatable?: boolean, activation?: 'manual', type: 'send_message', label?: string, description?: string, tone?: 'default' | 'primary' | 'danger', visual?: AIOptionVisual, payload: { message: string } }
     | { version: 1, id?: string, repeatable?: boolean, activation?: 'manual', type: 'request_tool', label?: string, description?: string, tone?: 'default' | 'primary' | 'danger', visual?: AIOptionVisual, payload: { operationId: string, arguments?: Record<string, unknown>, message: string } }
 
-export interface AITimelineItem {
-  id: string
-  timelineIndex: number
-  revision: number
-  createdAt: string
-  type: 'user_message' | 'reasoning_summary' | 'progress' | 'assistant_message' | 'tool_call' | 'tool_result' | 'system_notice'
-  status: string
-  relatedItemId?: string
-  parts: AIMessagePart[]
+export type AITimelineItem = Omit<AITimelineItemTransport, 'toolCall'> & {
   display?: 'summary' | 'progress'
   notice?: string
   toolCall?: {
@@ -113,89 +68,19 @@ export interface AITimelineItem {
   }
 }
 
-export interface AITimelineTurn {
-  id: string
-  turnIndex: number
-  status: string
-  input: {
-    id: string
-    type: 'user_message'
-    createdAt: string
-    parts: AIMessagePart[]
-  }
-  selectedRun?: {
-    id: string
-    runIndex: number
-    status: AIRunStatus
-    expectedVersion?: number
-    errorCode?: string
-    /** 当前 Run 最近一次主回答模型调用的官方 prompt_tokens。 */
-    latestPromptTokens?: number
-    latestUsageModelId?: string
-    latestUsageMaxContextTokensSnapshot?: number
+export type AITimelineTurn = Omit<AITimelineTurnTransport, 'selectedRun'> & {
+  selectedRun?: Omit<AISelectedRunTransport, 'items'> & {
     items: AITimelineItem[]
   }
 }
 
-export interface AIContextUsage {
-  status: 'reported'
-  runId: string
-  modelId: string
-  /** 最近一次主回答完成后的官方 total_tokens。 */
-  usedTokens: number
-  maxContextTokensSnapshot: number
-  recordedAt: string
-}
-
-export interface AITimeline {
-  conversation: Pick<AIConversation, 'id' | 'title' | 'titleSource' | 'status' | 'modelId'>
-  /** 会话最近一次已确认的上下文大小；新 Run 启动时不会清零。 */
-  contextUsage?: AIContextUsage
+export type AIContextUsage = AISchemas['AIContextUsage']
+export type AITimeline = Omit<AISchemas['AITimelinePage'], 'turns'> & {
   turns: AITimelineTurn[]
-  eventCursors: Array<{ runId: string, after: number }>
-  pageInfo: {
-    olderCursor?: string
-    hasOlder: boolean
-  }
 }
 
-export type AIProviderUsage
-  = | {
-    status: 'reported'
-    inputTokens: number
-    outputTokens: number
-    totalTokens: number
-    cacheReadInputTokens?: number | null
-    cacheWriteInputTokens?: number | null
-    reasoningOutputTokens?: number | null
-  }
-  | { status: 'unavailable', reason: 'missing_usage' | 'invalid_usage' | 'stream_ended_without_usage' }
-  | { status: 'reconciliation_required', reason: 'missing_usage' | 'invalid_usage' | 'stream_ended_without_usage' | 'request_outcome_unknown' | 'hold_deficit' }
-
-export interface AIModelCompletedPayload {
-  usage: AIProviderUsage
-  modelId?: string
-  maxContextTokensSnapshot?: number
-  creditHoldId?: string
-  providerRequestId?: string
-  responseId?: string
-  responseModel?: string
-  finishReason?: string
-}
-
-export interface AIEvent {
-  version: 2
-  eventId: string
-  eventSequence: number
-  type: string
-  conversationId: string
-  turnId: string
-  runId: string
-  itemId?: string
-  contentPartId?: string
-  toolCallId?: string
+export type AIEvent = Omit<AISchemas['AIEvent'], 'item' | 'payload'> & {
   item?: AITimelineItem
-  occurredAt: string
   payload: Record<string, unknown>
 }
 

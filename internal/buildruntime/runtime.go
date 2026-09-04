@@ -77,9 +77,9 @@ func (r Resolver) ResolveBuildTask(ctx context.Context, tx *gorm.DB, run model.B
 		return ResolvedTask{}, fmt.Errorf("application not found: %w", err)
 	}
 	if strings.TrimSpace(run.TargetRepository) == "" {
-		var target model.DeploymentTarget
-		if strings.TrimSpace(run.DeploymentTargetID) != "" {
-			_ = tx.First(&target, "id = ? and project_id = ? and application_id = ?", run.DeploymentTargetID, run.ProjectID, run.ApplicationID).Error
+		target, err := deploymentTargetForBuild(tx, run)
+		if err != nil {
+			return ResolvedTask{}, err
 		}
 		run.TargetRepository = BuildTargetImageRepositoryForCredential(registry, credential, project, application, target)
 	}
@@ -143,6 +143,17 @@ func (r Resolver) ResolveBuildTask(ctx context.Context, tx *gorm.DB, run model.B
 	}, nil
 }
 
+func deploymentTargetForBuild(tx *gorm.DB, run model.BuildRun) (model.DeploymentTarget, error) {
+	if strings.TrimSpace(run.DeploymentTargetID) == "" {
+		return model.DeploymentTarget{}, nil
+	}
+	var target model.DeploymentTarget
+	if err := tx.First(&target, "id = ? and project_id = ? and application_id = ?", run.DeploymentTargetID, run.ProjectID, run.ApplicationID).Error; err != nil {
+		return model.DeploymentTarget{}, fmt.Errorf("deployment target not found: %w", err)
+	}
+	return target, nil
+}
+
 func (r Resolver) repositoryBindingForRun(tx *gorm.DB, run model.BuildRun) (model.RepositoryBinding, error) {
 	var binding model.RepositoryBinding
 	query := tx.Where("project_id = ? and application_id = ?", run.ProjectID, run.ApplicationID)
@@ -177,9 +188,10 @@ func (r Resolver) registryCredentialForBuild(tx *gorm.DB, actorID, projectID str
 	if strings.TrimSpace(registry.CredentialRef) != "" {
 		err := visible(tx.Model(&model.RegistryCredential{})).First(&credential, "id = ? and registry_id = ? and usage in ?",
 			registry.CredentialRef, registry.ID, []string{"push", "push-pull"}).Error
-		if err == nil {
-			return credential, nil
+		if err != nil {
+			return model.RegistryCredential{}, fmt.Errorf("configured registry credential not found: %w", err)
 		}
+		return credential, nil
 	}
 	err := visible(tx.Model(&model.RegistryCredential{})).Where("registry_id = ? and usage in ?", registry.ID, []string{"push", "push-pull"}).
 		Order("case scope when 'user' then 0 when 'project' then 1 else 2 end, created_at desc").First(&credential).Error

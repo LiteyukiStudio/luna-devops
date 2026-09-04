@@ -17,12 +17,6 @@ export const gatewayApi = {
       search.set('applicationId', applicationId)
     return request<PaginatedResponse<GatewayRoute>>(`/projects/${projectId}/gateway-routes?${search.toString()}`).then(selectionItems)
   },
-  listGatewayRoutesPage: (projectId: string, params: PaginationParams & { applicationId?: string }) => {
-    const search = new URLSearchParams(paginationQuery(params))
-    if (params.applicationId)
-      search.set('applicationId', params.applicationId)
-    return request<PaginatedResponse<GatewayRoute>>(`/projects/${projectId}/gateway-routes?${search.toString()}`)
-  },
   createGatewayRoute: (projectId: string, payload: GatewayRoutePayload) =>
     request<GatewayRoute>(`/projects/${projectId}/gateway-routes`, { method: 'POST', body: JSON.stringify(payload) }),
   updateGatewayRoute: (projectId: string, routeId: string, payload: GatewayRoutePayload) =>

@@ -29,7 +29,7 @@ export class ToolCatalogRegistry {
     return catalog
   }
 
-  refresh(input: unknown, version: string): ToolCatalogRefresh {
+  refresh(prepared: ToolCatalog, version: string): ToolCatalogRefresh {
     if (version === this.currentVersion) {
       return {
         changed: false,
@@ -38,7 +38,6 @@ export class ToolCatalogRegistry {
         version,
       }
     }
-    const prepared = ToolCatalog.load(input)
     const previousDigest = this.currentCatalog.digest
     this.snapshots.set(prepared.digest, prepared)
     this.currentCatalog = prepared

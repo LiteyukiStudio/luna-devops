@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"github.com/LiteyukiStudio/devops/internal/api/notificationapi"
 	"strings"
 	"testing"
 
@@ -10,7 +11,7 @@ import (
 )
 
 func TestPlatformMailSettingsResponseDoesNotExposePassword(t *testing.T) {
-	response := platformMailSettingsResponseFor(model.PlatformMailSettings{
+	response := notificationapi.PlatformMailSettingsResponseFor(model.PlatformMailSettings{
 		Host:                         "smtp.example.com",
 		Port:                         587,
 		Security:                     "starttls",
@@ -37,7 +38,7 @@ func TestPlatformMailSettingsResponseDoesNotExposePassword(t *testing.T) {
 func TestPlatformMailSettingsBlankPasswordPreservesStoredReference(t *testing.T) {
 	existing := model.PlatformMailSettings{PasswordRef: "secret:stored"}
 	cooldown := 0
-	settings, password := platformMailSettingsFromInput(existing, platformMailSettingsInput{
+	settings, password := notificationapi.PlatformMailSettingsFromInput(existing, notificationapi.PlatformMailSettingsInput{
 		Host:                         "smtp.example.com",
 		Port:                         587,
 		Security:                     "starttls",
@@ -60,7 +61,7 @@ func TestPlatformMailSettingsBlankPasswordPreservesStoredReference(t *testing.T)
 
 func TestPlatformMailSettingsSeparatesNewPasswordFromPersistedModel(t *testing.T) {
 	cooldown := 60
-	settings, password := platformMailSettingsFromInput(model.PlatformMailSettings{}, platformMailSettingsInput{
+	settings, password := notificationapi.PlatformMailSettingsFromInput(model.PlatformMailSettings{}, notificationapi.PlatformMailSettingsInput{
 		Host:                         "smtp.example.com",
 		Port:                         587,
 		Security:                     "starttls",
@@ -78,11 +79,11 @@ func TestPlatformMailSettingsSeparatesNewPasswordFromPersistedModel(t *testing.T
 }
 
 func TestPlatformMailSettingsInputRequiresCooldownWhileAllowingZero(t *testing.T) {
-	if err := binding.Validator.ValidateStruct(platformMailSettingsInput{}); err == nil {
+	if err := binding.Validator.ValidateStruct(notificationapi.PlatformMailSettingsInput{}); err == nil {
 		t.Fatal("mail settings input accepted a missing personalEmailCooldownSeconds")
 	}
 	zero := 0
-	if err := binding.Validator.ValidateStruct(platformMailSettingsInput{PersonalEmailCooldownSeconds: &zero}); err != nil {
+	if err := binding.Validator.ValidateStruct(notificationapi.PlatformMailSettingsInput{PersonalEmailCooldownSeconds: &zero}); err != nil {
 		t.Fatalf("mail settings input rejected an explicit zero cooldown: %v", err)
 	}
 }

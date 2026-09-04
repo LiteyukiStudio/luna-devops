@@ -21,7 +21,7 @@ import { AINavigationEvent } from './navigation-event'
 import { AIOptionsBar } from './options'
 import { shouldShowTypingIndicator } from './timeline-stream-state'
 import { AIToolCallCard } from './tool-call'
-import { groupAIAssistantBlocksByTurn } from './turns'
+import { groupAIAssistantBlocksByTurn, isInteractionCardOperationId } from './turns'
 
 interface AIAssistantTimelineProps {
   activeTurnId?: string
@@ -52,6 +52,8 @@ const latestPositionThreshold = {
 } as const
 
 function isVisibleResponseBlock(block: AIBlock, showInternalTools: boolean): boolean {
+  if (block.type === 'tool_call' && isInteractionCardOperationId(block.operationId))
+    return true
   if (block.type === 'tool_call' && block.operationId === 'create_options')
     return block.status === 'succeeded' && parseAIOptionActions(block.uiActions).length > 0 ? true : showInternalTools
   if (block.type === 'tool_call' && block.operationId === 'navigate_to_route')
@@ -343,7 +345,7 @@ function AssistantReply({ generating, responseBlocks, surface, onAction, onAppro
   const page = surface === 'page'
   const hasWideContent = responseBlocks.some(block =>
     block.type === 'tool_call'
-    && block.operationId === 'create_interaction_cards')
+    && isInteractionCardOperationId(block.operationId))
   const assistantMessages = responseBlocks.filter((block): block is MessageBlock => block.type === 'message' && block.role === 'assistant' && Boolean(block.text.trim()))
   const copyText = assistantMessages.map(block => block.text).join('\n\n')
   const createdAt = assistantMessages.at(-1)?.createdAt
@@ -384,9 +386,9 @@ function ResponseBlock({ block, surface, onAction, onApproval }: { block: AIBloc
   const page = surface === 'page'
   if (block.type === 'thinking')
     return <ThinkingBlock block={block} surface={surface} />
-  if (block.type === 'tool_call' && block.operationId === 'create_interaction_cards' && block.status === 'running')
+  if (block.type === 'tool_call' && isInteractionCardOperationId(block.operationId) && block.status === 'running')
     return <AIInteractionCardPlaceholder arguments={block.arguments} result={block.result} />
-  if (block.type === 'tool_call' && block.operationId === 'create_interaction_cards' && block.status === 'succeeded')
+  if (block.type === 'tool_call' && isInteractionCardOperationId(block.operationId) && block.status === 'succeeded')
     return <AIInteractionCards arguments={block.arguments} onAction={onAction} />
   if (block.type === 'tool_call' && block.operationId === 'create_options' && block.status === 'succeeded' && parseAIOptionActions(block.uiActions).length > 0) {
     return (

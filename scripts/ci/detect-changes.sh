@@ -160,6 +160,9 @@ else
         mark_all
         continue
         ;;
+      README.md|README_EN.md|AGENTS.md|CONTRIBUTING.md|TODO.md|docs-internal/*|reports/*|LICENSE)
+        continue
+        ;;
       go.mod|go.sum)
         go_changed=true
         api_image=true
@@ -167,7 +170,7 @@ else
         probe_image=true
         continue
         ;;
-      Dockerfile|Dockerfile.api|Dockerfile.worker|Dockerfile.web)
+      Dockerfile)
         go_changed=true
         web_changed=true
         api_image=true
@@ -175,7 +178,7 @@ else
         probe_image=true
         continue
         ;;
-      Dockerfile.agent|luna-agent/Dockerfile)
+      luna-agent/Dockerfile)
         agent_changed=true
         agent_image=true
         continue
@@ -215,12 +218,8 @@ else
         docs_changed=true
         continue
         ;;
-      charts/*|helm/*)
+      charts/*)
         helm_changed=true
-        continue
-        ;;
-      scripts/generate-changelog.sh|scripts/generate-changelog.mjs)
-        docs_changed=true
         continue
         ;;
       *.go|*/*.go)
@@ -232,9 +231,8 @@ else
         ;;
     esac
 
-    # Root configuration, shared tooling, internal documentation, and any new
-    # path without an explicit ownership rule run every gate rather than risk a
-    # false skip.
+    # Root configuration, shared tooling, and any new path without an explicit
+    # ownership rule run every gate rather than risk a false skip.
     mark_all
   done <<< "${changed_files}"
 fi

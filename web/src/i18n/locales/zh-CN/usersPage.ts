@@ -3,7 +3,6 @@ const usersPage = {
   description: '创建和维护平台用户，以及用户可使用的登录方式。',
   createTitle: '创建用户',
   editTitle: '编辑用户',
-  listTitle: '用户列表',
   searchPlaceholder: '搜索用户邮箱或名称',
   email: '邮箱',
   emailHint: '用户登录和 OIDC 邮箱绑定的主标识。OIDC 登录时会用非空邮箱查找并绑定已有用户。',

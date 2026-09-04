@@ -152,10 +152,6 @@ function withStreamTraceContext(url: string, span: Span) {
   return parsed.toString()
 }
 
-export function startUserOperation(operation: string) {
-  return startSpan(operation)
-}
-
 export function recordInteractionCardRenderError(scope: 'group' | 'card' | 'content' | 'field' | 'action', error: unknown) {
   const span = startSpan('ai.interaction_card.render', {
     attributes: {

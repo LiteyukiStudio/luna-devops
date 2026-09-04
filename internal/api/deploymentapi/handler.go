@@ -55,7 +55,6 @@ type Host interface {
 	EnqueueResourceCleanup(ctx context.Context, resourceType, resourceID, projectID, actorID string) bool
 	RuntimeClusterForProjectUse(ctx *gin.Context, user model.User, projectID, clusterID string) (model.RuntimeCluster, bool)
 	RuntimeSecretFilesFromInput(ctx *gin.Context, user model.User, ownerID, value string, existing map[string]string) (map[string]string, bool)
-	RuntimeClusterForEnvironment(ctx *gin.Context, environment model.Environment) (model.RuntimeCluster, bool)
 	RuntimeClusterForDeploymentTarget(ctx *gin.Context, target model.DeploymentTarget) (model.RuntimeCluster, bool)
 	RuntimeClusterForDeploymentTargetValue(target model.DeploymentTarget, ctx context.Context) (model.RuntimeCluster, error)
 	RequireContinuousAuthorizationBinding(ctx *gin.Context, user model.User) (projectapi.ContinuousAuthorizationBinding, bool)
@@ -227,10 +226,6 @@ func (h *Handler) runtimeSecretFilesFromInput(ctx *gin.Context, user model.User,
 	return h.host.RuntimeSecretFilesFromInput(ctx, user, ownerID, value, existing)
 }
 
-func (h *Handler) runtimeClusterForEnvironment(ctx *gin.Context, environment model.Environment) (model.RuntimeCluster, bool) {
-	return h.host.RuntimeClusterForEnvironment(ctx, environment)
-}
-
 func (h *Handler) runtimeClusterForDeploymentTarget(ctx *gin.Context, target model.DeploymentTarget) (model.RuntimeCluster, bool) {
 	return h.host.RuntimeClusterForDeploymentTarget(ctx, target)
 }
@@ -337,9 +332,6 @@ func fallback(value, fallbackValue string) string {
 }
 func fallbackInt(value, fallbackValue int) int {
 	return transportapi.FallbackInt(value, fallbackValue)
-}
-func normalizeBuildSelectorList(values []string) []string {
-	return buildapi.NormalizeBuildSelectorList(values)
 }
 func encodeBuildVariableSetIDs(ids []string) string { return buildapi.EncodeBuildVariableSetIDs(ids) }
 func normalizeBuildConcurrencyPolicy(value string) string {

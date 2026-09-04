@@ -95,7 +95,7 @@ func (h *Handlers) observeDeploymentTarget(ctx context.Context, project model.Pr
 
 func (h *Handlers) deploymentTargetRuntimeCluster(projectID, clusterID string, ctx context.Context) (model.RuntimeCluster, error) {
 	var cluster model.RuntimeCluster
-	query := runtimecluster.ActiveScope(h.dbWithContext(ctx)).Where("type in ?", []string{"kubernetes", "k3s"})
+	query := runtimecluster.ActiveScope(h.dbWithContext(ctx))
 	if strings.TrimSpace(clusterID) != "" {
 		return cluster, query.First(&cluster, "id = ?", clusterID).Error
 	}

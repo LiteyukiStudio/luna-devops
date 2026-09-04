@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	transportapi "github.com/LiteyukiStudio/devops/internal/api/transport"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -101,7 +102,7 @@ func TestExpiredOAuthDeviceAuthorizationLeavesExistingGrantAndTokenActive(t *tes
 	approveOAuthDeviceAuthorization(t, fixture, pending.userCode)
 
 	var authorization model.OAuthDeviceAuthorization
-	if err := fixture.db.First(&authorization, "device_code_hash = ?", hashToken(pending.deviceCode)).Error; err != nil {
+	if err := fixture.db.First(&authorization, "device_code_hash = ?", transportapi.HashToken(pending.deviceCode)).Error; err != nil {
 		t.Fatal(err)
 	}
 	if authorization.GrantID != nil {
@@ -233,7 +234,7 @@ func TestOAuthRefreshRotationLinearizesWithRevocation(t *testing.T) {
 			var releaseBarrier sync.Once
 			release := func() { releaseBarrier.Do(func() { close(releaseCreate) }) }
 			defer release()
-			callbackName := "test:oauth_refresh_rotation_" + test.name + "_" + randomHex(4)
+			callbackName := "test:oauth_refresh_rotation_" + test.name + "_" + transportapi.RandomHex(4)
 			if err := fixture.db.Callback().Create().After("gorm:create").Register(callbackName, func(tx *gorm.DB) {
 				if tx.Statement == nil || tx.Statement.Schema == nil || tx.Statement.Schema.Name != "AccessToken" {
 					return
@@ -323,10 +324,10 @@ func TestOAuthGrantRevocationInvalidatesApprovedPendingArtifacts(t *testing.T) {
 
 	verifier := strings.Repeat("p", 64)
 	digest := sha256.Sum256([]byte(verifier))
-	plainCode := "lyo_code_pending_" + randomHex(8)
+	plainCode := "lyo_code_pending_" + transportapi.RandomHex(8)
 	pendingCode := model.OAuthAuthorizationCode{
-		ID: "ocod_pending_" + randomHex(4), ApplicationID: lunaCLIApplicationID, UserID: fixture.user.ID,
-		CodeHash: hashToken(plainCode), RedirectURI: "https://client.example.com/callback", Scope: "user:read",
+		ID: "ocod_pending_" + transportapi.RandomHex(4), ApplicationID: lunaCLIApplicationID, UserID: fixture.user.ID,
+		CodeHash: transportapi.HashToken(plainCode), RedirectURI: "https://client.example.com/callback", Scope: "user:read",
 		CodeChallenge: base64.RawURLEncoding.EncodeToString(digest[:]), CodeChallengeMethod: "S256",
 		ExpiresAt: time.Now().Add(time.Minute), CreatedAt: time.Now(),
 	}
@@ -352,7 +353,7 @@ func TestOAuthGrantRevocationInvalidatesApprovedPendingArtifacts(t *testing.T) {
 		t.Fatal("grant revoke left approved authorization code pending")
 	}
 	var storedDevice model.OAuthDeviceAuthorization
-	if err := fixture.db.First(&storedDevice, "device_code_hash = ?", hashToken(pendingDevice.deviceCode)).Error; err != nil {
+	if err := fixture.db.First(&storedDevice, "device_code_hash = ?", transportapi.HashToken(pendingDevice.deviceCode)).Error; err != nil {
 		t.Fatal(err)
 	}
 	if storedDevice.ConsumedAt == nil || storedDevice.Status != "denied" {
@@ -587,11 +588,11 @@ func TestOAuthTokenRevocationFailureReturnsServerErrorAndRollsBack(t *testing.T)
 
 func TestOAuthAuthorizationCodeCreatesConsentAndFamilyAtExchange(t *testing.T) {
 	fixture := newOAuthFamilyTestFixture(t)
-	clientID := "oauth-code-client-" + randomHex(4)
+	clientID := "oauth-code-client-" + transportapi.RandomHex(4)
 	clientSecret := "oauth-code-secret"
 	redirectURI := "https://client.example.com/callback"
 	application := model.OAuthApplication{
-		ID: "oapp_code_" + randomHex(4), Name: "Code Client", ClientID: clientID, ClientSecretHash: hashToken(clientSecret),
+		ID: "oapp_code_" + transportapi.RandomHex(4), Name: "Code Client", ClientID: clientID, ClientSecretHash: transportapi.HashToken(clientSecret),
 		RedirectURIs: encodeStringList([]string{redirectURI}), AllowedScopes: "user:read", AccessTokenLifetimeDays: 30,
 	}
 	if err := fixture.db.Create(&application).Error; err != nil {
@@ -621,7 +622,7 @@ func TestOAuthAuthorizationCodeCreatesConsentAndFamilyAtExchange(t *testing.T) {
 		t.Fatal("authorization response has no code")
 	}
 	var code model.OAuthAuthorizationCode
-	if err := fixture.db.First(&code, "code_hash = ?", hashToken(plainCode)).Error; err != nil {
+	if err := fixture.db.First(&code, "code_hash = ?", transportapi.HashToken(plainCode)).Error; err != nil {
 		t.Fatal(err)
 	}
 	if code.GrantID != nil {
@@ -654,7 +655,7 @@ func TestOAuthAuthorizationCodeCreatesConsentAndFamilyAtExchange(t *testing.T) {
 		t.Fatalf("third-party token response scope = %q", tokens.Scope)
 	}
 	var accessToken model.AccessToken
-	if err := fixture.db.First(&accessToken, "token_hash = ?", hashToken(tokens.AccessToken)).Error; err != nil {
+	if err := fixture.db.First(&accessToken, "token_hash = ?", transportapi.HashToken(tokens.AccessToken)).Error; err != nil {
 		t.Fatal(err)
 	}
 	if accessToken.OAuthGrantID == "" || accessToken.OAuthFamilyID == "" {
@@ -674,7 +675,7 @@ func newOAuthFamilyTestFixture(t *testing.T) oauthFamilyTestFixture {
 	t.Setenv("APP_ENV", "development")
 	t.Setenv("PUBLIC_BASE_URL", "https://devops.example.com")
 	t.Setenv("SECRET_ENCRYPTION_KEY", "oauth-family-integration-key")
-	suffix := randomHex(4)
+	suffix := transportapi.RandomHex(4)
 	user := model.User{
 		ID: "usr_oauth_family_" + suffix, Email: "oauth-family-" + suffix + "@example.com", Name: "OAuth Family", Role: authz.PlatformRoleAdmin, Language: "zh-CN",
 	}
@@ -683,13 +684,13 @@ func newOAuthFamilyTestFixture(t *testing.T) oauthFamilyTestFixture {
 	}
 	sessionToken := "sess_oauth_family_" + suffix
 	if err := db.Create(&model.UserSession{
-		ID: "ses_oauth_family_" + suffix, UserID: user.ID, TokenHash: hashToken(sessionToken), ExpiresAt: time.Now().Add(time.Hour),
+		ID: "ses_oauth_family_" + suffix, UserID: user.ID, TokenHash: transportapi.HashToken(sessionToken), ExpiresAt: time.Now().Add(time.Hour),
 	}).Error; err != nil {
 		t.Fatal(err)
 	}
 	application := model.OAuthApplication{
 		ID: lunaCLIApplicationID, Name: "Luna CLI", ClientID: lunaCLIClientID, RedirectURIs: "", AllowedScopes: "*", AccessTokenLifetimeDays: 30,
-		ClientSecretHash: hashToken("oauth-family-client-secret-" + suffix),
+		ClientSecretHash: transportapi.HashToken("oauth-family-client-secret-" + suffix),
 	}
 	if err := db.Create(&application).Error; err != nil {
 		t.Fatal(err)
@@ -710,11 +711,11 @@ func issueOAuthDeviceFamily(t *testing.T, fixture oauthFamilyTestFixture) issued
 		t.Fatal(err)
 	}
 	var accessToken model.AccessToken
-	if err := fixture.db.First(&accessToken, "token_hash = ?", hashToken(tokens.AccessToken)).Error; err != nil {
+	if err := fixture.db.First(&accessToken, "token_hash = ?", transportapi.HashToken(tokens.AccessToken)).Error; err != nil {
 		t.Fatal(err)
 	}
 	var refreshToken model.OAuthRefreshToken
-	if err := fixture.db.First(&refreshToken, "token_hash = ?", hashToken(tokens.RefreshToken)).Error; err != nil {
+	if err := fixture.db.First(&refreshToken, "token_hash = ?", transportapi.HashToken(tokens.RefreshToken)).Error; err != nil {
 		t.Fatal(err)
 	}
 	if tokens.Scope != "" {
@@ -765,7 +766,7 @@ func exchangeOAuthDeviceAuthorization(fixture oauthFamilyTestFixture, deviceCode
 
 func startOAuthAuthorizationCode(t *testing.T, fixture oauthFamilyTestFixture, scope string) pendingOAuthAuthorizationCode {
 	t.Helper()
-	suffix := randomHex(4)
+	suffix := transportapi.RandomHex(4)
 	pending := pendingOAuthAuthorizationCode{
 		application: model.OAuthApplication{
 			ID: "oapp_pending_code_" + suffix, Name: "Pending Code Client", ClientID: "pending-code-client-" + suffix,
@@ -775,7 +776,7 @@ func startOAuthAuthorizationCode(t *testing.T, fixture oauthFamilyTestFixture, s
 		redirectURI:  "https://client.example.com/callback",
 		verifier:     strings.Repeat("v", 64),
 	}
-	pending.application.ClientSecretHash = hashToken(pending.clientSecret)
+	pending.application.ClientSecretHash = transportapi.HashToken(pending.clientSecret)
 	if err := fixture.db.Create(&pending.application).Error; err != nil {
 		t.Fatal(err)
 	}

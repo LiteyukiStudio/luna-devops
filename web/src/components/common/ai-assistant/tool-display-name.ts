@@ -187,7 +187,9 @@ const exactNames: Record<string, string> = {
   webSearch: 'webSearch',
   fetchWebPage: 'fetchWebPage',
   create_options: 'createOptions',
-  create_interaction_cards: 'createInteractionCards',
+  present_card: 'presentCard',
+  request_input: 'requestInput',
+  request_choice: 'requestChoice',
   navigate_to_route: 'navigateToRoute',
   rename_conversation: 'renameConversation',
 }

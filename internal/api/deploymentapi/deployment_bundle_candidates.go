@@ -82,7 +82,7 @@ func applyDeploymentBundleSourceMatch(query *gorm.DB, source deploymentBundleRef
 		"name": source.Name, "type": source.Type, "scope": source.Scope,
 		"owner": source.Owner, "repository": source.Repository, "namespace": source.Namespace,
 		"accessMode": source.AccessMode, "volumeMode": source.VolumeMode,
-		"storageClassName": source.StorageClassName, "clusterName": source.ClusterName, "clusterType": source.ClusterType,
+		"storageClassName": source.StorageClassName, "clusterName": source.ClusterName,
 	}
 	for key, column := range columns {
 		if value := strings.TrimSpace(values[key]); value != "" {
@@ -138,14 +138,13 @@ func (h *Handlers) deploymentBundleCandidates(ctx context.Context, user model.Us
 
 	case deploymentBundleReferenceRuntimeCluster:
 		var items []model.RuntimeCluster
-		base := h.applyScopedResourceVisibilityForProject(runtimecluster.ActiveScope(h.dbWithContext(ctx)).Model(&model.RuntimeCluster{}), scopedResourceRuntimeCluster, user, project.ID, ctx).
-			Where("type in ?", []string{"kubernetes", "k3s"})
+		base := h.applyScopedResourceVisibilityForProject(runtimecluster.ActiveScope(h.dbWithContext(ctx)).Model(&model.RuntimeCluster{}), scopedResourceRuntimeCluster, user, project.ID, ctx)
 		if query.ID != "" {
 			base = base.Where("runtime_clusters.id = ?", query.ID)
 		}
-		base = applyDeploymentBundleCandidateSearch(base, query.Search, "runtime_clusters.name", "runtime_clusters.type")
+		base = applyDeploymentBundleCandidateSearch(base, query.Search, "runtime_clusters.name")
 		if query.MatchSource {
-			base = applyDeploymentBundleSourceMatch(base, reference.Source, map[string]string{"name": "runtime_clusters.name", "type": "runtime_clusters.type"})
+			base = applyDeploymentBundleSourceMatch(base, reference.Source, map[string]string{"name": "runtime_clusters.name"})
 		}
 		if err := base.Count(&total).Error; err != nil {
 			return deploymentBundleReferenceCandidatePage{}, nil, err
@@ -154,7 +153,7 @@ func (h *Handlers) deploymentBundleCandidates(ctx context.Context, user model.Us
 			return deploymentBundleReferenceCandidatePage{}, nil, err
 		}
 		for _, item := range items {
-			appendCandidate(item.ID, item.Name, item.Type, deploymentBundleReferenceDescriptor{Name: item.Name, Type: item.Type}, true)
+			appendCandidate(item.ID, item.Name, "", deploymentBundleReferenceDescriptor{Name: item.Name}, true)
 		}
 
 	case deploymentBundleReferenceArtifactRegistry:
@@ -242,7 +241,6 @@ func (h *Handlers) deploymentBundleCandidates(ctx context.Context, user model.Us
 		var items []struct {
 			model.ProjectVolume
 			ClusterName string `gorm:"column:cluster_name"`
-			ClusterType string `gorm:"column:cluster_type"`
 		}
 		base := h.dbWithContext(ctx).Table("project_volumes").
 			Joins("join runtime_clusters on runtime_clusters.id = project_volumes.cluster_id and runtime_clusters.deleted_at is null and runtime_clusters.delete_status = ?", "active").
@@ -254,20 +252,20 @@ func (h *Handlers) deploymentBundleCandidates(ctx context.Context, user model.Us
 		if query.MatchSource {
 			base = applyDeploymentBundleSourceMatch(base, reference.Source, map[string]string{
 				"name": "project_volumes.display_name", "accessMode": "project_volumes.access_mode", "volumeMode": "project_volumes.volume_mode",
-				"clusterName": "runtime_clusters.name", "clusterType": "runtime_clusters.type",
+				"clusterName": "runtime_clusters.name",
 			})
 		}
 		if err := base.Count(&total).Error; err != nil {
 			return deploymentBundleReferenceCandidatePage{}, nil, err
 		}
-		if err := base.Select("project_volumes.*, runtime_clusters.name as cluster_name, runtime_clusters.type as cluster_type").
+		if err := base.Select("project_volumes.*, runtime_clusters.name as cluster_name").
 			Order(deploymentBundleCandidateOrder(query, "project_volumes.display_name", "project_volumes.created_at", "project_volumes.id")).Offset(offset).Limit(query.Pagination.PageSize).Scan(&items).Error; err != nil {
 			return deploymentBundleReferenceCandidatePage{}, nil, err
 		}
 		for _, item := range items {
 			descriptor := deploymentBundleReferenceDescriptor{
 				Name: item.DisplayName, AccessMode: item.AccessMode, VolumeMode: item.VolumeMode, StorageClassName: item.StorageClassName,
-				ClusterName: item.ClusterName, ClusterType: item.ClusterType,
+				ClusterName: item.ClusterName,
 			}
 			compatible := volume.CanAttachProjectVolume(item.ProjectVolume)
 			appendCandidate(item.ID, item.DisplayName, item.VolumeMode+" · "+item.ClusterName, descriptor, compatible)

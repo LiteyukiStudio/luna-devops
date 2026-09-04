@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	transportapi "github.com/LiteyukiStudio/devops/internal/api/transport"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -124,6 +125,7 @@ func TestCreateRememberTokenDefaultsToNoOp(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)
 	h := &Handlers{}
+	h.domains = newDomainHandlers(h)
 
 	if !h.createRememberToken(ctx, "usr_test") {
 		t.Fatal("omitted remember choice should succeed without issuing a token")
@@ -138,13 +140,13 @@ func TestGeneratedSessionCredentialsUseExpectedLifetimeAndHash(t *testing.T) {
 	session, sessionToken := newUserSession("usr_test", "", now)
 	remember, rememberToken := newUserRememberToken("usr_test", now)
 
-	if !strings.HasPrefix(sessionToken, "sess_") || session.TokenHash != hashToken(sessionToken) {
+	if !strings.HasPrefix(sessionToken, "sess_") || session.TokenHash != transportapi.HashToken(sessionToken) {
 		t.Fatalf("invalid session token metadata: token=%q hash=%q", sessionToken, session.TokenHash)
 	}
 	if !session.ExpiresAt.Equal(now.Add(sessionDuration)) {
 		t.Fatalf("session expiry = %v", session.ExpiresAt)
 	}
-	if !strings.HasPrefix(rememberToken, "rem_") || remember.TokenHash != hashToken(rememberToken) {
+	if !strings.HasPrefix(rememberToken, "rem_") || remember.TokenHash != transportapi.HashToken(rememberToken) {
 		t.Fatalf("invalid remember token metadata: token=%q hash=%q", rememberToken, remember.TokenHash)
 	}
 	if remember.FamilyID == "" {
@@ -267,13 +269,14 @@ func TestAuthProviderResponseHidesStoredClientSecret(t *testing.T) {
 
 func TestBuildVariableSetResponseHidesVariablesWithoutInspectPermission(t *testing.T) {
 	h := &Handlers{}
+	h.domains = newDomainHandlers(h)
 	set := model.BuildVariableSet{
 		ID:        "bvs_test",
 		Scope:     "global",
 		Variables: `{"PUBLIC_FLAG":"true","API_URL":"https://api.example.com"}`,
 	}
 
-	output, err := h.buildVariableSetResponseForUser(model.User{ID: "usr_member", Role: authz.PlatformRoleUser}, set, context.Background())
+	output, err := h.domains.build.BuildVariableSetResponseForUser(model.User{ID: "usr_member", Role: authz.PlatformRoleUser}, set, context.Background())
 	if err != nil {
 		t.Fatalf("buildVariableSetResponseForUser() error = %v", err)
 	}
@@ -291,6 +294,7 @@ func TestBuildVariableSetResponseHidesVariablesWithoutInspectPermission(t *testi
 
 func TestBuildVariableSetResponseShowsVariablesWithInspectPermission(t *testing.T) {
 	h := &Handlers{}
+	h.domains = newDomainHandlers(h)
 	set := model.BuildVariableSet{
 		ID:        "bvs_test",
 		Scope:     "user",
@@ -298,7 +302,7 @@ func TestBuildVariableSetResponseShowsVariablesWithInspectPermission(t *testing.
 		Variables: `{"PUBLIC_FLAG":"true"}`,
 	}
 
-	output, err := h.buildVariableSetResponseForUser(model.User{ID: "usr_owner", Role: authz.PlatformRoleUser}, set, context.Background())
+	output, err := h.domains.build.BuildVariableSetResponseForUser(model.User{ID: "usr_owner", Role: authz.PlatformRoleUser}, set, context.Background())
 	if err != nil {
 		t.Fatalf("buildVariableSetResponseForUser() error = %v", err)
 	}
@@ -344,6 +348,7 @@ func TestResolveSecretRejectsNonCanonicalReferences(t *testing.T) {
 		t.Fatal(err)
 	}
 	h := &Handlers{secrets: secret.NewStore(nil, nil, codec)}
+	h.domains = newDomainHandlers(h)
 
 	for _, ref := range []string{codec.Encrypt("inline-secret"), "literal:literal-secret", "plain-secret", "env:OIDC_TEST_SECRET"} {
 		if resolved := h.resolveSecretContext(context.Background(), ref); resolved != "" {

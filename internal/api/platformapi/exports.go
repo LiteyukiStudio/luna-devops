@@ -2,7 +2,6 @@ package platformapi
 
 import (
 	"context"
-	"time"
 
 	sharedconfig "github.com/LiteyukiStudio/devops/internal/config"
 	"github.com/LiteyukiStudio/devops/internal/model"
@@ -17,7 +16,6 @@ const MinimumCLIVersion = minimumCLIVersion
 type APIMetaResponse = apiMetaResponse
 type DataRetentionRequest = dataRetentionRequest
 type DataRetentionRange = dataRetentionRange
-type PlatformEventResponse = platformEventResponse
 
 func OpenAPIDigest() string { return openAPIDigest() }
 
@@ -41,32 +39,4 @@ func BrowserTraceEndpoint(cfg sharedconfig.APIConfig) (string, error) {
 
 func (h *Handler) PlatformEventsVisibleTo(user model.User, visibility projectservice.ListVisibility, ctx context.Context) *gorm.DB {
 	return h.platformEventsVisibleTo(user, visibility, ctx)
-}
-
-func (h *Handler) CanReadPlatformEvent(ctx context.Context, user model.User, event model.PlatformEvent) bool {
-	return h.canReadPlatformEvent(ctx, user, event)
-}
-
-func CanReadPlatformEventForUser(user model.User, event model.PlatformEvent, projectIDs []string) bool {
-	return canReadPlatformEventForUser(user, event, projectIDs)
-}
-
-func ApplyPlatformEventFilters(ctx *gin.Context, query *gorm.DB) *gorm.DB {
-	return applyPlatformEventFilters(ctx, query)
-}
-
-func PlatformEventFilterValues(ctx *gin.Context, singular, plural string) []string {
-	return platformEventFilterValues(ctx, singular, plural)
-}
-
-func ParsePlatformEventTime(raw string, endOfDay bool) (time.Time, bool) {
-	return parsePlatformEventTime(raw, endOfDay)
-}
-
-func PlatformEventResponseFor(event model.PlatformEvent, deliveryCount int64) PlatformEventResponse {
-	return platformEventResponseFor(event, deliveryCount)
-}
-
-func PlatformEventLinks(event model.PlatformEvent, links map[string]string) map[string]string {
-	return platformEventLinks(event, links)
 }

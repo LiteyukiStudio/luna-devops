@@ -70,10 +70,6 @@ type VolumeTransferProvider interface {
 	CleanupVolumeTransfer(context.Context, string, string) error
 }
 
-// VolumeTransferJobProvider remains a source-compatible type name while the
-// worker/API call sites move from Job terminology to the direct Pod protocol.
-type VolumeTransferJobProvider = VolumeTransferProvider
-
 type VolumeTransferSpec struct {
 	TransferID      string
 	ProjectID       string

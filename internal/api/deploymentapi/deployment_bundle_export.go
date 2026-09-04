@@ -73,7 +73,7 @@ func deploymentBundleConfiguration(target model.DeploymentTarget, mounts []model
 		return deploymentTargetInput{}, err
 	}
 	for _, key := range []string{
-		"id", "projectId", "applicationId", "environmentId", "kubernetesName", "clusterId", "repositoryBindingId",
+		"id", "projectId", "applicationId", "kubernetesName", "clusterId", "repositoryBindingId",
 		"buildEnvironmentId", "targetRegistryId", "buildVariableSetIds", "buildHookBindings", "runtimeConfigRefs",
 		"namespace", "allowPrivilegeEscalation", "capabilityAdd", "serviceAccountName",
 		"automountServiceAccountToken", "serviceType", "serviceExternalTrafficPolicy",
@@ -122,7 +122,6 @@ func deploymentBundleConfiguration(target model.DeploymentTarget, mounts []model
 		return deploymentTargetInput{}, err
 	}
 	configuration.Enabled = false
-	configuration.EnvironmentID = ""
 	configuration.ClusterID = ""
 	configuration.RepositoryBindingID = ""
 	configuration.BuildEnvironmentID = ""
@@ -159,7 +158,6 @@ func (h *Handlers) deploymentBundleReferences(ctx context.Context, target model.
 		var cluster model.RuntimeCluster
 		if err := h.dbWithContext(ctx).First(&cluster, "id = ?", target.ClusterID).Error; err == nil {
 			descriptor.Name = cluster.Name
-			descriptor.Type = cluster.Type
 		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, err
 		}
@@ -232,7 +230,6 @@ func (h *Handlers) deploymentBundleReferences(ctx context.Context, target model.
 			var cluster model.RuntimeCluster
 			if clusterErr := h.dbWithContext(ctx).First(&cluster, "id = ?", projectVolume.ClusterID).Error; clusterErr == nil {
 				descriptor.ClusterName = cluster.Name
-				descriptor.ClusterType = cluster.Type
 			}
 		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, err

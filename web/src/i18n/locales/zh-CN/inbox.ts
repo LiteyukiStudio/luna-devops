@@ -1,7 +1,6 @@
 export default {
   inbox: {
     title: '消息盒子',
-    description: '查看与你相关的平台消息和待处理请求。',
     open: '打开消息盒子',
     unreadCount: '{{count}} 条未读消息',
     unreadCountOverflow: '99 条以上未读消息',
@@ -40,7 +39,7 @@ export default {
       system: '系统',
     },
     priority: { critical: '紧急', high: '重要' },
-    detail: { title: '消息详情', requestStatus: '请求状态', expiresAt: '过期时间' },
+    detail: { title: '消息详情', expiresAt: '过期时间' },
     decision: {
       acceptTitle: '确认接受此请求？',
       acceptDescription: '平台会重新校验权限和资源状态后执行该操作。',

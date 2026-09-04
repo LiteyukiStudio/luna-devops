@@ -195,6 +195,36 @@ func TestCreateGitHubWebhookSendsEventsAndSecret(t *testing.T) {
 	}
 }
 
+func TestDeleteGitHubWebhookUsesRepositoryHookEndpoint(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodDelete {
+			t.Fatalf("method = %s", r.Method)
+		}
+		if r.URL.Path != "/api/v3/repos/snowykami/neo-blog/hooks/42" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	client := NewClientWithPolicy(model.GitProvider{Type: "github", BaseURL: server.URL}, "token", security.AdminEgressPolicy())
+	if err := client.DeleteWebhook(context.Background(), "snowykami", "neo-blog", "42"); err != nil {
+		t.Fatalf("DeleteWebhook() error = %v", err)
+	}
+}
+
+func TestDeleteGitHubWebhookTreatsMissingHookAsAlreadyDeleted(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, `{"message":"Not Found"}`, http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	client := NewClientWithPolicy(model.GitProvider{Type: "github", BaseURL: server.URL}, "token", security.AdminEgressPolicy())
+	if err := client.DeleteWebhook(context.Background(), "snowykami", "neo-blog", "42"); err != nil {
+		t.Fatalf("DeleteWebhook() error = %v", err)
+	}
+}
+
 func TestCreateGitHubWebhookValidationErrorIsStructured(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/v3/repos/snowykami/neo-blog/hooks" {

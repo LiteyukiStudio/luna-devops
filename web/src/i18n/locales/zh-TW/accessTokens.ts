@@ -1,8 +1,6 @@
 const accessTokens = {
-  title: 'Access Token',
   description: '用於 API 觸發構建或部署，不使用 JWT，後端只儲存 hash。',
   createTitle: '建立 Token',
-  listTitle: 'Token 列表',
   searchPlaceholder: '搜尋 Token 名稱或許可權範圍',
   name: '名稱',
   scope: '許可權範圍',
@@ -204,7 +202,6 @@ const accessTokens = {
   create: '建立 Token',
   oneTime: '僅展示一次',
   empty: '還沒有 Token。',
-  emptyDescription: '建立的 Token 會以分頁列表展示。Token 明文只在建立後展示一次。',
   createdAt: '建立於',
   expiresAt: '過期時間',
   neverExpires: '不過期',

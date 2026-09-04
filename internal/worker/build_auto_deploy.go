@@ -74,7 +74,6 @@ func (r *Runner) createAutoDeployRelease(run model.BuildRun, target model.Deploy
 			ID:                 id.New("rel"),
 			ProjectID:          run.ProjectID,
 			ApplicationID:      run.ApplicationID,
-			EnvironmentID:      target.EnvironmentID,
 			DeploymentTargetID: target.ID,
 			BuildRunID:         run.ID,
 			ImageRef:           run.ImageRef,

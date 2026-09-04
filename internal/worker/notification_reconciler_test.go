@@ -166,7 +166,7 @@ func TestNotificationReconcileHandlerIsRegistered(t *testing.T) {
 		t.Fatalf("create notification reconcile task: %v", err)
 	}
 	mux := asynq.NewServeMux()
-	registerTaskHandlers(mux, &Runner{})
+	registerTaskHandlers(mux, newDryRunWorkerTestRunner(t, Options{}))
 	err = mux.ProcessTask(t.Context(), task)
 	if err == nil || !strings.Contains(err.Error(), "queue is unavailable") {
 		t.Fatalf("registered reconcile handler error = %v", err)

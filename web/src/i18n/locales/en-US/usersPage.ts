@@ -3,7 +3,6 @@ const usersPage = {
   description: 'Create and maintain platform users and the sign-in methods available to them.',
   createTitle: 'Create user',
   editTitle: 'Edit user',
-  listTitle: 'User list',
   email: 'Email',
   emailHint: 'Primary identifier for login and OIDC email binding. OIDC login uses a non-empty email to find and bind an existing user.',
   name: 'Name',

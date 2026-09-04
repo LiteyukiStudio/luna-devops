@@ -145,7 +145,6 @@ func (h *Handlers) prepareBuildRunRequest(user model.User, run *model.BuildRun, 
 		return buildRunBadRequest("构建超时时间必须在 1 分钟到 24 小时之间")
 	}
 	run.BuildTimeoutSeconds = buildTimeoutSeconds
-	run.BuildLabels = strings.Join(normalizeBuildSelectorList(strings.Split(config.BuildLabels, ",")), ",")
 	if strings.TrimSpace(config.RepositoryBindingID) != "" {
 		var binding model.RepositoryBinding
 		if err := h.dbWithContext(ctx).First(&binding, "id = ? and project_id = ? and application_id = ?", config.RepositoryBindingID, run.ProjectID, run.ApplicationID).Error; err != nil {

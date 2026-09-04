@@ -153,7 +153,7 @@ export interface InteractionCard {
 
 export interface InteractionCardGroup {
   schemaVersion: 1
-  /** 由 Agent 在单次 create_interaction_cards 调用进入执行链后签发，模型无需提供。 */
+  /** 由 Agent 在单次业务卡片工具调用进入执行链后签发，模型无需提供。 */
   generationId: string
   title: string
   description?: string

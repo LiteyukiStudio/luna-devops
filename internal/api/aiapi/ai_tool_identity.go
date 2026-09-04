@@ -189,11 +189,6 @@ func appendNonEmptyProjectID(projectIDs []string, value string) []string {
 	return projectIDs
 }
 
-func (h *Handler) aiConversationProjectID(ctx *gin.Context) string {
-	actor, _ := h.host.AIPlatformActor(ctx.Request.Context())
-	return actor.ProjectID
-}
-
 func aiOperationForRequest(ctx *gin.Context) (aitool.OpenAPIOperation, bool) {
 	operations, err := aitool.PlatformCatalog()
 	if err != nil {

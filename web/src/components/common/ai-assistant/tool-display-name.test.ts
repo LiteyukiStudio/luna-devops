@@ -9,7 +9,9 @@ describe('ai tool display names', () => {
     expect(toolDisplayName(i18next.t, 'listApplications')).toBe('查询应用列表')
     expect(toolDisplayName(i18next.t, 'createRelease')).toBe('创建发布')
     expect(toolDisplayName(i18next.t, 'fetchWebPage')).toBe('读取网页')
-    expect(toolDisplayName(i18next.t, 'create_interaction_cards')).toBe('生成交互卡片')
+    expect(toolDisplayName(i18next.t, 'present_card')).toBe('展示信息卡片')
+    expect(toolDisplayName(i18next.t, 'request_input')).toBe('请求结构化输入')
+    expect(toolDisplayName(i18next.t, 'request_choice')).toBe('请求选择')
   })
 
   it('uses a localized safe fallback for newly registered operations', async () => {

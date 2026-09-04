@@ -1,13 +1,14 @@
 package identityapi
 
 import (
+	"net/http"
+	"time"
+
+	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/credential"
 	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/model"
-	"github.com/LiteyukiStudio/devops/internal/service"
 	"github.com/gin-gonic/gin"
-	"net/http"
-	"time"
 )
 
 func (h *Handlers) ListAccessTokens(ctx *gin.Context) {
@@ -45,7 +46,7 @@ func (h *Handlers) ListAccessTokenScopes(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, gin.H{
-		"items": service.AccessTokenScopeCatalog(user.Role),
+		"items": authz.AccessTokenScopeCatalog(user.Role),
 	})
 }
 
@@ -60,12 +61,12 @@ func (h *Handlers) CreateAccessToken(ctx *gin.Context) {
 		return
 	}
 
-	scope := normalizeAccessTokenScope(input.Scope)
+	scope := authz.NormalizeAccessTokenScope(input.Scope)
 	if scope == "" {
 		writeError(ctx, http.StatusBadRequest, "Access Token scope 不受支持")
 		return
 	}
-	if !userCanCreateAccessTokenScope(user, scope) {
+	if !authz.UserCanCreateAccessTokenScope(user.Role, scope) {
 		writeError(ctx, http.StatusForbidden, "无权创建该 Access Token scope")
 		return
 	}
@@ -126,14 +127,6 @@ type accessTokenInput struct {
 	Name          string `json:"name" binding:"required"`
 	Scope         string `json:"scope"`
 	ExpiresInDays int    `json:"expiresInDays"`
-}
-
-func normalizeAccessTokenScope(scopeText string) string {
-	return service.NormalizeAccessTokenScope(scopeText)
-}
-
-func userCanCreateAccessTokenScope(user model.User, scopeText string) bool {
-	return service.UserCanCreateAccessTokenScope(user.Role, scopeText)
 }
 
 func validAccessTokenLifetimeDays(days int) bool {

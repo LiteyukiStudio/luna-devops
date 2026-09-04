@@ -73,7 +73,6 @@ const aiAssistant = {
     runId: '実行識別子',
     traceId: 'Trace ID',
     noArguments: 'パラメータなし',
-    result: '結果',
     returnValue: '戻り値',
     summary: 'サマリ',
     duration: '時間',
@@ -147,8 +146,6 @@ const aiAssistant = {
       title: 'オプション',
       description: '説明',
       suggested: '推奨次のステップ',
-      selected: '選択済み',
-      unavailable: 'これらの提案は無効になったか、現在のバージョンではサポートされていません。アシスタントに再質問してください。',
       position: '{{current}} / {{total}} 項目',
       presets: {
         dashboard: {
@@ -499,7 +496,9 @@ const aiAssistant = {
         webSearch: 'インターネットを検索',
         fetchWebPage: 'Web ページを読み取る',
         createOptions: 'クイックオプションを生成',
-        createInteractionCards: '対話カードを生成',
+        presentCard: '情報カードを表示',
+        requestInput: '構造化入力を要求',
+        requestChoice: '選択を要求',
         navigateToRoute: 'ページを開く',
         renameConversation: 'セッション名を更新',
       },

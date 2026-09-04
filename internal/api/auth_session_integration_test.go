@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	transportapi "github.com/LiteyukiStudio/devops/internal/api/transport"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -113,7 +114,9 @@ func TestConfiguredInitialAdministratorCanLogin(t *testing.T) {
 	ctx.Request = httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", bytes.NewBufferString(`{"email":"login-admin@example.com","password":"secure-password","rememberMe":false}`))
 	ctx.Request.Header.Set("Content-Type", "application/json")
 
-	(&Handlers{db: db, mode: "production", rateLimiter: newRateLimiter(redisServer.Addr())}).Login(ctx)
+	handlers := &Handlers{db: db, mode: "production", rateLimiter: newRateLimiter(redisServer.Addr())}
+	handlers.domains = newDomainHandlers(handlers)
+	handlers.domains.identity.Login(ctx)
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("login status = %d, body = %s", recorder.Code, recorder.Body.String())
 	}
@@ -182,13 +185,14 @@ func TestRotateRememberLoginConsumesTokenOnce(t *testing.T) {
 		ID:        "rem_original",
 		UserID:    user.ID,
 		FamilyID:  "remf_concurrent",
-		TokenHash: hashToken(plainToken),
+		TokenHash: transportapi.HashToken(plainToken),
 		ExpiresAt: time.Now().Add(time.Hour),
 	}
 	if err := db.Create(&original).Error; err != nil {
 		t.Fatalf("create remember token: %v", err)
 	}
 	h := &Handlers{db: db, mode: "production"}
+	h.domains = newDomainHandlers(h)
 
 	start := make(chan struct{})
 	errorsByAttempt := make(chan error, 2)
@@ -254,6 +258,7 @@ func TestOIDCRegistrationToggleOnlyBlocksNewUsers(t *testing.T) {
 		t.Fatalf("create provider: %v", err)
 	}
 	h := &Handlers{db: db, mode: "production"}
+	h.domains = newDomainHandlers(h)
 
 	newClaims := oidcIdentityClaims{Subject: "new-subject", Email: "new-oidc@example.com", EmailVerified: true, Name: "New OIDC User"}
 	if _, err := h.findOrCreateOIDCUser(provider, newClaims, context.Background()); !errors.Is(err, errOIDCRegistrationDisabled) {
@@ -286,7 +291,7 @@ func TestRememberTokenReplayRevokesCompromisedFamilyOnly(t *testing.T) {
 		ID:        "rem_replay_original",
 		UserID:    user.ID,
 		FamilyID:  "remf_compromised",
-		TokenHash: hashToken(plainToken),
+		TokenHash: transportapi.HashToken(plainToken),
 		ExpiresAt: now.Add(time.Hour),
 	}
 	unrelatedToken, _ := newUserRememberTokenInFamily(user.ID, "remf_unrelated", now.Add(time.Hour))
@@ -299,6 +304,7 @@ func TestRememberTokenReplayRevokesCompromisedFamilyOnly(t *testing.T) {
 	}
 
 	h := &Handlers{db: db, mode: "production"}
+	h.domains = newDomainHandlers(h)
 	if _, _, _, err := h.rotateRememberLogin(user.ID, plainToken, context.Background()); err != nil {
 		t.Fatalf("rotate remember token: %v", err)
 	}
@@ -333,6 +339,7 @@ func TestRememberRotationPreservesPrimaryAuthenticationAndSingleSession(t *testi
 		t.Fatalf("create old session: %v", err)
 	}
 	h := &Handlers{db: db, mode: "production"}
+	h.domains = newDomainHandlers(h)
 	_, _, rotatedRememberToken, err := h.rotateRememberLogin(user.ID, rememberPlainToken, context.Background())
 	if err != nil {
 		t.Fatalf("first rotation: %v", err)
@@ -379,6 +386,7 @@ func TestLogoutNonRememberedSessionLeavesRememberFamiliesAlone(t *testing.T) {
 		t.Fatalf("create remember tokens: %v", err)
 	}
 	h := &Handlers{db: db}
+	h.domains = newDomainHandlers(h)
 	userID, err := h.revokeCurrentSessionAndRememberTokens(currentPlainToken, context.Background())
 	if err != nil {
 		t.Fatalf("revoke logout credentials: %v", err)
@@ -411,6 +419,7 @@ func TestLogoutRememberedSessionRevokesOnlyCurrentFamily(t *testing.T) {
 		t.Fatalf("create sessions: %v", err)
 	}
 	h := &Handlers{db: db}
+	h.domains = newDomainHandlers(h)
 	if _, err := h.revokeCurrentSessionAndRememberTokens(currentPlainToken, context.Background()); err != nil {
 		t.Fatalf("logout remembered session: %v", err)
 	}
@@ -440,6 +449,7 @@ func TestExpiredRememberTombstonesAreDeletedOnlyAfterWholeFamilyExpires(t *testi
 		t.Fatalf("create family sessions: %v", err)
 	}
 	h := &Handlers{db: db}
+	h.domains = newDomainHandlers(h)
 	if err := h.cleanupExpiredRememberTokenFamilies(user.ID, now, context.Background()); err != nil {
 		t.Fatalf("cleanup expired families: %v", err)
 	}

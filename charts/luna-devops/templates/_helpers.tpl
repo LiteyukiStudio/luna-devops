@@ -157,9 +157,6 @@ redis-url
 {{- end -}}
 
 {{- define "luna-devops.commonEnv" -}}
-{{- if .Values.app.extraEnv -}}
-{{- fail "app.extraEnv has been removed; use api.extraEnv or worker.extraEnv" -}}
-{{- end -}}
 - name: APP_ENV
   value: {{ .Values.app.env | quote }}
 - name: LOG_FORMAT
@@ -230,7 +227,6 @@ redis-url
   "METRICS_PATH"
   "AI_ASSISTANT_AVAILABLE"
   "AI_AGENT_BASE_URL"
-  "AI_AGENT_ADDR"
   "AI_AGENT_TIMEOUT"
   "API_DB_MAX_OPEN_CONNS"
   "API_DB_MAX_IDLE_CONNS"

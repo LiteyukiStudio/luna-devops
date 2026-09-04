@@ -49,8 +49,6 @@ func (r *Runner) handleDeployRun(ctx context.Context, task *asynq.Task) error {
 		r.appendReleaseLog(ctx, release, message)
 		return r.finishDeployRelease(ctx, release, "failed", message)
 	}
-	environment := deploymentTargetEnvironment(deploymentTarget)
-
 	now := time.Now()
 	if release.StartedAt == nil {
 		if err := r.db.WithContext(ctx).Model(&release).Updates(map[string]any{"status": "running", "started_at": &now}).Error; err != nil {
@@ -62,10 +60,10 @@ func (r *Runner) handleDeployRun(ctx context.Context, task *asynq.Task) error {
 	}
 	r.appendReleaseLog(ctx, release, fmt.Sprintf("开始部署 release=%s application=%s target=%s image=%s", release.ID, application.Identifier, deploymentTarget.Name, release.ImageRef))
 
-	namespace := deploymentNamespace(project, environment)
+	namespace := deploymentNamespace(project)
 	r.appendReleaseLog(ctx, release, fmt.Sprintf("确保命名空间 %s 存在", namespace))
 	if err := workerStage(ctx, "deploy.ensure_namespace", func(stageCtx context.Context) error {
-		return r.ensureProjectNamespace(stageCtx, namespace, project, environment)
+		return r.ensureProjectNamespace(stageCtx, namespace, project, deploymentTarget)
 	}); err != nil {
 		_ = r.finishDeployRelease(ctx, release, "failed", err.Error())
 		r.appendReleaseLog(ctx, release, "命名空间准备失败: "+err.Error())
@@ -84,7 +82,7 @@ func (r *Runner) handleDeployRun(ctx context.Context, task *asynq.Task) error {
 		r.appendReleaseLog(ctx, release, fmt.Sprintf("已解析 %d 个服务引用", serviceBindings.Count))
 	}
 	if err := workerStage(ctx, "deploy.preflight_resources", func(stageCtx context.Context) error {
-		return r.preflightApplicationResources(stageCtx, release, project, application, environment, deploymentTarget, namespace, serviceBindings)
+		return r.preflightApplicationResources(stageCtx, release, project, application, deploymentTarget, namespace, serviceBindings)
 	}); err != nil {
 		_ = r.finishDeployRelease(ctx, release, "failed", err.Error())
 		r.appendReleaseLog(ctx, release, "资源归属预检失败: "+err.Error())
@@ -92,14 +90,14 @@ func (r *Runner) handleDeployRun(ctx context.Context, task *asynq.Task) error {
 		return err
 	}
 	if err := workerStage(ctx, "deploy.apply_runtime_config", func(stageCtx context.Context) error {
-		return r.applyApplicationRuntimeConfig(stageCtx, release, project, application, environment, deploymentTarget, namespace, serviceBindings)
+		return r.applyApplicationRuntimeConfig(stageCtx, release, project, application, deploymentTarget, namespace, serviceBindings)
 	}); err != nil {
 		_ = r.finishDeployRelease(ctx, release, "failed", err.Error())
 		r.appendReleaseLog(ctx, release, "运行配置下发失败: "+err.Error())
 		return err
 	}
 	if err := workerStage(ctx, "deploy.run_pre_hook", func(stageCtx context.Context) error {
-		return r.runDeploymentHooks(stageCtx, hookPhasePreDeployment, release, project, application, environment, deploymentTarget, namespace)
+		return r.runDeploymentHooks(stageCtx, hookPhasePreDeployment, release, project, application, deploymentTarget, namespace)
 	}); err != nil {
 		_ = r.finishDeployRelease(ctx, release, "failed", err.Error())
 		r.appendReleaseLog(ctx, release, "preDeployment Hook 失败: "+err.Error())
@@ -115,7 +113,7 @@ func (r *Runner) handleDeployRun(ctx context.Context, task *asynq.Task) error {
 		return err
 	}
 	if err := workerStage(ctx, "deploy.apply_resources", func(stageCtx context.Context) error {
-		return r.applyApplicationResources(stageCtx, release, project, application, environment, deploymentTarget, namespace, serviceBindings)
+		return r.applyApplicationResources(stageCtx, release, project, application, deploymentTarget, namespace, serviceBindings)
 	}); err != nil {
 		_ = r.finishDeployRelease(ctx, release, "failed", err.Error())
 		r.appendReleaseLog(ctx, release, "资源下发失败: "+err.Error())
@@ -130,7 +128,7 @@ func (r *Runner) handleDeployRun(ctx context.Context, task *asynq.Task) error {
 	}
 	r.appendReleaseLog(ctx, release, "等待 Deployment rollout 完成")
 	message, err := workerStageValue(ctx, "deploy.wait_rollout", func(stageCtx context.Context) (string, error) {
-		return r.waitForDeploymentRollout(stageCtx, release, application, environment, deploymentTarget, namespace)
+		return r.waitForDeploymentRollout(stageCtx, release, application, deploymentTarget, namespace)
 	})
 	if err != nil {
 		_ = r.finishDeployRelease(ctx, release, "failed", err.Error())
@@ -140,14 +138,14 @@ func (r *Runner) handleDeployRun(ctx context.Context, task *asynq.Task) error {
 	}
 	r.appendReleaseLog(ctx, release, firstNonEmpty(message, "Deployment rollout completed"))
 	if err := workerStage(ctx, "deploy.reconcile_volume_mounts", func(stageCtx context.Context) error {
-		return r.reconcileDeploymentVolumeMounts(stageCtx, deploymentTarget, environment, namespace)
+		return r.reconcileDeploymentVolumeMounts(stageCtx, deploymentTarget, namespace)
 	}); err != nil {
 		_ = r.finishDeployRelease(ctx, release, "failed", err.Error())
 		r.appendReleaseLog(ctx, release, "数据卷绑定确认失败: "+err.Error())
 		return err
 	}
 	if err := workerStage(ctx, "deploy.run_post_hook", func(stageCtx context.Context) error {
-		return r.runDeploymentHooks(stageCtx, hookPhasePostDeployment, release, project, application, environment, deploymentTarget, namespace)
+		return r.runDeploymentHooks(stageCtx, hookPhasePostDeployment, release, project, application, deploymentTarget, namespace)
 	}); err != nil {
 		_ = r.finishDeployRelease(ctx, release, "failed", err.Error())
 		r.appendReleaseLog(ctx, release, "postDeployment Hook 失败: "+err.Error())
@@ -171,7 +169,7 @@ func (r *Runner) ensurePlatformApplicationDependencies(ctx context.Context, rele
 	if serviceAccountName == "" {
 		return nil
 	}
-	manager, err := r.kubernetesManager(ctx, deploymentTargetEnvironment(target))
+	manager, err := r.kubernetesManager(ctx, target)
 	if err != nil {
 		return err
 	}
@@ -227,8 +225,8 @@ func systemComponentLastError(status string, message string) string {
 	return ""
 }
 
-func (r *Runner) applyApplicationResources(ctx context.Context, release model.Release, project model.Project, application model.Application, environment model.Environment, deploymentTarget model.DeploymentTarget, namespace string, serviceBindings resolvedServiceBindingConfig) error {
-	manager, spec, err := r.applicationResourcesManagerAndSpec(ctx, release, project, application, environment, deploymentTarget, namespace, serviceBindings)
+func (r *Runner) applyApplicationResources(ctx context.Context, release model.Release, project model.Project, application model.Application, deploymentTarget model.DeploymentTarget, namespace string, serviceBindings resolvedServiceBindingConfig) error {
+	manager, spec, err := r.applicationResourcesManagerAndSpec(ctx, release, project, application, deploymentTarget, namespace, serviceBindings)
 	if err != nil {
 		return err
 	}
@@ -239,28 +237,28 @@ func (r *Runner) applyApplicationResources(ctx context.Context, release model.Re
 	return nil
 }
 
-func (r *Runner) applyApplicationRuntimeConfig(ctx context.Context, release model.Release, project model.Project, application model.Application, environment model.Environment, deploymentTarget model.DeploymentTarget, namespace string, serviceBindings resolvedServiceBindingConfig) error {
-	manager, spec, err := r.applicationResourcesManagerAndSpec(ctx, release, project, application, environment, deploymentTarget, namespace, serviceBindings)
+func (r *Runner) applyApplicationRuntimeConfig(ctx context.Context, release model.Release, project model.Project, application model.Application, deploymentTarget model.DeploymentTarget, namespace string, serviceBindings resolvedServiceBindingConfig) error {
+	manager, spec, err := r.applicationResourcesManagerAndSpec(ctx, release, project, application, deploymentTarget, namespace, serviceBindings)
 	if err != nil {
 		return err
 	}
 	return manager.ApplyApplicationRuntimeConfig(ctx, spec)
 }
 
-func (r *Runner) preflightApplicationResources(ctx context.Context, release model.Release, project model.Project, application model.Application, environment model.Environment, deploymentTarget model.DeploymentTarget, namespace string, serviceBindings resolvedServiceBindingConfig) error {
-	manager, spec, err := r.applicationResourcesManagerAndSpec(ctx, release, project, application, environment, deploymentTarget, namespace, serviceBindings)
+func (r *Runner) preflightApplicationResources(ctx context.Context, release model.Release, project model.Project, application model.Application, deploymentTarget model.DeploymentTarget, namespace string, serviceBindings resolvedServiceBindingConfig) error {
+	manager, spec, err := r.applicationResourcesManagerAndSpec(ctx, release, project, application, deploymentTarget, namespace, serviceBindings)
 	if err != nil {
 		return err
 	}
 	return manager.PreflightApplicationResources(ctx, spec)
 }
 
-func (r *Runner) applicationResourcesManagerAndSpec(ctx context.Context, release model.Release, project model.Project, application model.Application, environment model.Environment, deploymentTarget model.DeploymentTarget, namespace string, serviceBindings resolvedServiceBindingConfig) (kubeprovider.NamespaceManager, kubeprovider.ApplicationResourcesSpec, error) {
-	cluster, err := r.runtimeClusterForEnvironment(ctx, environment)
+func (r *Runner) applicationResourcesManagerAndSpec(ctx context.Context, release model.Release, project model.Project, application model.Application, deploymentTarget model.DeploymentTarget, namespace string, serviceBindings resolvedServiceBindingConfig) (kubeprovider.NamespaceManager, kubeprovider.ApplicationResourcesSpec, error) {
+	cluster, err := r.runtimeClusterForDeploymentTarget(ctx, deploymentTarget)
 	if err != nil {
 		return nil, kubeprovider.ApplicationResourcesSpec{}, err
 	}
-	manager, err := r.kubernetesManager(ctx, environment)
+	manager, err := r.kubernetesManager(ctx, deploymentTarget)
 	if err != nil {
 		return nil, kubeprovider.ApplicationResourcesSpec{}, err
 	}
@@ -274,7 +272,7 @@ func (r *Runner) applicationResourcesManagerAndSpec(ctx context.Context, release
 	if err != nil {
 		return nil, kubeprovider.ApplicationResourcesSpec{}, err
 	}
-	spec, err := applicationResourcesSpec(release, project, application, environment, deploymentTarget, runtimeConfigSets, dataVolumes, namespace, r.deployRolloutTimeoutSeconds)
+	spec, err := applicationResourcesSpec(release, project, application, deploymentTarget, runtimeConfigSets, dataVolumes, namespace, r.deployRolloutTimeoutSeconds)
 	if err != nil {
 		return nil, kubeprovider.ApplicationResourcesSpec{}, err
 	}
@@ -412,8 +410,8 @@ func (r *Runner) resolveRuntimeSecretFileRefsRaw(ctx context.Context, raw string
 	return string(content)
 }
 
-func (r *Runner) waitForDeploymentRollout(ctx context.Context, release model.Release, application model.Application, environment model.Environment, deploymentTarget model.DeploymentTarget, namespace string) (string, error) {
-	manager, err := r.kubernetesManager(ctx, environment)
+func (r *Runner) waitForDeploymentRollout(ctx context.Context, release model.Release, application model.Application, deploymentTarget model.DeploymentTarget, namespace string) (string, error) {
+	manager, err := r.kubernetesManager(ctx, deploymentTarget)
 	if err != nil {
 		return "", err
 	}

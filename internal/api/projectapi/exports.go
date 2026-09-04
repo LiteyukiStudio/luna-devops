@@ -51,10 +51,6 @@ func ProjectPinResponseFrom(project model.Project, pin model.ProjectPin, dashboa
 	return projectPinResponseFrom(project, pin, dashboardOrder)
 }
 
-func ProjectListOrderClause(sortBy, sortOrder string) string {
-	return projectListOrderClause(sortBy, sortOrder)
-}
-
 func NormalizedProjectOrderIDs(values []string) []string {
 	return normalizedProjectOrderIDs(values)
 }
@@ -65,10 +61,6 @@ func ContinuousAuthorizationBindingForAccessToken(userID string, token model.Acc
 
 func ContinuousAuthorizationStateActive(state ContinuousAuthorizationState, binding ContinuousAuthorizationBinding, now time.Time) bool {
 	return state.active(binding, now)
-}
-
-func ContinuousAuthorizationStateIdentityActive(state ContinuousAuthorizationState, binding ContinuousAuthorizationBinding, now time.Time) bool {
-	return state.identityActive(binding, now)
 }
 
 func ContinuousAccessTokenSubject(tokenID string) string {
@@ -109,10 +101,6 @@ func (h *Handler) MonitorContinuousAuthorizationWithInterval(ctx context.Context
 
 func (h *Handler) ContinuousAuthorizationActive(ctx context.Context, binding ContinuousAuthorizationBinding, authorizationAllowed func(context.Context, model.User) bool) bool {
 	return h.continuousAuthorizationActive(ctx, binding, authorizationAllowed)
-}
-
-func (h *Handler) ContinuousAuthorizationIdentityState(ctx context.Context, binding ContinuousAuthorizationBinding) (ContinuousAuthorizationState, bool) {
-	return h.continuousAuthorizationIdentityState(ctx, binding)
 }
 
 func (h *Handler) ProjectContinuousAuthorizationAllowed(ctx context.Context, user model.User, projectID string, action authz.Action) bool {

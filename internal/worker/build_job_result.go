@@ -160,12 +160,9 @@ func (r *Runner) completeBuildJob(ctx context.Context, job model.BuildJob, run m
 		sourceAuthorName := firstNonEmpty(result.SourceAuthorName, lockedRun.SourceAuthorName)
 		sourceAuthorEmail := firstNonEmpty(result.SourceAuthorEmail, lockedRun.SourceAuthorEmail)
 		if err := tx.Model(&model.BuildJob{}).Where("id = ?", lockedJob.ID).Updates(map[string]any{
-			"status":            "succeeded",
-			"message":           firstNonEmpty(result.Message, "builder task succeeded"),
-			"lease_token":       "",
-			"lease_until":       nil,
-			"last_heartbeat_at": &finishedAt,
-			"finished_at":       &finishedAt,
+			"status":      "succeeded",
+			"message":     firstNonEmpty(result.Message, "builder task succeeded"),
+			"finished_at": &finishedAt,
 		}).Error; err != nil {
 			return err
 		}
@@ -210,8 +207,6 @@ func (r *Runner) failBuildJob(ctx context.Context, job model.BuildJob, run model
 		if err := tx.Model(&model.BuildJob{}).Where("id = ? and project_id = ? and status in ?", job.ID, job.ProjectID, []string{"queued", "running"}).Updates(map[string]any{
 			"status":      "failed",
 			"message":     firstNonEmpty(message, "builder task failed"),
-			"lease_token": "",
-			"lease_until": nil,
 			"finished_at": &finishedAt,
 		}).Error; err != nil {
 			return err

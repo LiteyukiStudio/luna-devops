@@ -1,5 +1,4 @@
 const gatewayRoutesPage = {
-  description: '애플리케이션 접근 도메인, CNAME 안내, 인증서 상태를 관리합니다. 현재 단계에서는 CRUD만 완료됩니다.',
   createRoute: '도메인 생성',
   editRoute: '도메인 편집',
   routeDialogDescription: '노출할 배포 구성을 선택하세요. 도메인을 비워 두면 프로젝트 스페이스, 애플리케이션, 배포 환경에 따라 고유한 기본 도메인이 자동 생성됩니다. 짧은 접두사나 전체 사용자 정의 도메인을 입력할 수도 있습니다.',
@@ -52,11 +51,6 @@ const gatewayRoutesPage = {
   tlsMode: 'TLS 모드',
   enabled: '접근 활성화',
   enabledHint: '비활성화하면 도메인 설정은 유지되지만 해당 접근 진입점은 철회됩니다. 다시 활성화하면 플랫폼이 다시 배포합니다.',
-  cnameTarget: 'CNAME 대상',
-  optionalGatewayConfig: '접근 진입점',
-  optionalGatewayConfigDescription: '현재 애플리케이션의 접근 진입점을 선택적으로 설정합니다. 도메인을 비워 두면 플랫폼이 프로젝트 스페이스, 애플리케이션, 배포 환경에 따라 고유한 기본 도메인을 자동 생성합니다.',
-  enableGatewayConfig: '접근 진입점 설정',
-  gatewayRouteWillUpdate: '현재 배포 구성에 이미 도메인 라우트가 있습니다. 저장하면 해당 라우트가 업데이트됩니다.',
   checkDomain: '도메인 확인',
   domainAvailable: '도메인 사용 가능',
   domainCurrent: '현재 도메인은 이 접근 진입점에 속합니다',

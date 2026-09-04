@@ -1,8 +1,6 @@
 const accessTokens = {
-  title: 'Access Token',
   description: 'API トリガービルドまたはデプロイに使用します。JWT は使用せず、バックエンドは hash のみ保存します。',
   createTitle: 'Token を作成',
-  listTitle: 'Token 一覧',
   searchPlaceholder: 'Token 名または権限範囲で検索',
   name: '名前',
   scope: '権限範囲',
@@ -204,7 +202,6 @@ const accessTokens = {
   create: 'Token を作成',
   oneTime: '一度だけ表示',
   empty: 'Token がまだありません。',
-  emptyDescription: '作成した Token はページネーション付きリストで表示されます。Token の平文は作成後一度だけ表示されます。',
   createdAt: '作成日時',
   expiresAt: '有効期限',
   neverExpires: '期限なし',

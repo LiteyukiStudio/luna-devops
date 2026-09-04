@@ -42,8 +42,7 @@ export function formatGatewayDomainSuffixes(cluster: RuntimeCluster) {
 }
 
 export function runtimeClusterDomainSuffixes(cluster: RuntimeCluster) {
-  const values = cluster.gatewayDomainSuffixes?.length ? cluster.gatewayDomainSuffixes : [cluster.gatewayRootDomain]
-  return parseGatewayDomainSuffixes(values.join('\n'))
+  return parseGatewayDomainSuffixes(cluster.gatewayDomainSuffixes.join('\n'))
 }
 
 export function parseGatewayDomainSuffixes(value: string) {
@@ -64,12 +63,6 @@ export function parseGatewayDomainSuffixes(value: string) {
 export function kubeconfigContextOptionLabel(context: { cluster: string, name: string, namespace: string, server: string }) {
   const details = [context.cluster, context.server, context.namespace].filter(Boolean).join(' · ')
   return details ? `${context.name} (${details})` : context.name
-}
-
-export function clusterTypeLabel(type: RuntimeCluster['type'], t: (key: string, options?: Record<string, unknown>) => string) {
-  if (type === 'k3s')
-    return t('deploymentsPage.typeKubernetes')
-  return t(`deploymentsPage.typeLabels.${type}`, { defaultValue: type })
 }
 
 export function scopeLabel(cluster: RuntimeCluster, projectMap: Record<string, { name: string }>, t: (key: string, options?: Record<string, unknown>) => string) {

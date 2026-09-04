@@ -188,7 +188,6 @@ func (h *Handlers) auditWithContext(userID, action, resource string, success boo
 // endpoints, kubeconfig material, trusted proxy CIDRs and gateway headers must
 // never enter audit metadata.
 type runtimeClusterAuditMetadata struct {
-	Type              string `json:"type"`
 	Scope             string `json:"scope"`
 	IsDefault         bool   `json:"isDefault"`
 	ProjectCount      int    `json:"projectCount"`

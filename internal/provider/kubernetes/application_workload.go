@@ -211,7 +211,6 @@ func appObjectLabels(spec ApplicationResourcesSpec) map[string]string {
 	labels := appSelectorLabels(spec)
 	setLabel(labels, ProjectIDLabel, spec.ProjectID)
 	setLabel(labels, ApplicationIDLabel, spec.ApplicationID)
-	setLabel(labels, EnvironmentIDLabel, spec.EnvironmentID)
 	setLabel(labels, DeploymentTargetIDLabel, spec.DeploymentTargetID)
 	setLabel(labels, ReleaseIDLabel, spec.ReleaseID)
 	return labels

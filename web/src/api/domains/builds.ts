@@ -1,4 +1,4 @@
-import type { BuildEnvironmentConfig, BuildEnvironmentConfigParams, BuildEnvironmentConfigPayload, BuildJob, BuildLog, BuildRun, BuildRunListParams, BuildTemplate, BuildTemplatePreview, BuildVariableSet, BuildVariableSetPayload, DeploymentTargetRuntimeSecretsPayload, HookRun, HookRunLog, PaginatedResponse, PaginationParams, ProjectHookConfig, ProjectHookConfigPayload, ProjectRuntimeConfigSet, ProjectRuntimeConfigSetPayload, ResultVisibility, RuntimeSecretMutationResponse } from '../types'
+import type { BuildEnvironmentConfig, BuildEnvironmentConfigParams, BuildEnvironmentConfigPayload, BuildJob, BuildRun, BuildRunListParams, BuildTemplate, BuildTemplatePreview, BuildVariableSet, BuildVariableSetPayload, DeploymentTargetRuntimeSecretsPayload, PaginatedResponse, PaginationParams, ProjectHookConfig, ProjectHookConfigPayload, ProjectRuntimeConfigSet, ProjectRuntimeConfigSetPayload, ResultVisibility, RuntimeSecretMutationResponse } from '../types'
 import { buildRunListQuery, paginationQuery, paginationWithProjectQuery, request } from '../core'
 import { selectionItems, selectionPageParams } from '../selection-page'
 
@@ -42,19 +42,6 @@ export const buildsApi = {
     request<ProjectHookConfig>(`/projects/${projectId}/hooks/${hookId}`, { method: 'PUT', body: JSON.stringify(payload) }),
   deleteProjectHook: (projectId: string, hookId: string) =>
     request<void>(`/projects/${projectId}/hooks/${hookId}`, { method: 'DELETE' }),
-  listProjectHookRuns: (projectId: string, params: { phase?: string, buildRunId?: string, releaseId?: string } = {}) => {
-    const search = new URLSearchParams(paginationQuery(selectionPageParams))
-    if (params.phase)
-      search.set('phase', params.phase)
-    if (params.buildRunId)
-      search.set('buildRunId', params.buildRunId)
-    if (params.releaseId)
-      search.set('releaseId', params.releaseId)
-    const query = search.toString()
-    return request<PaginatedResponse<HookRun>>(`/projects/${projectId}/hook-runs?${query}`).then(selectionItems)
-  },
-  getProjectHookRunLogs: (projectId: string, runId: string) =>
-    request<HookRunLog>(`/projects/${projectId}/hook-runs/${runId}/logs`),
   listBuildRuns: (projectId: string, applicationId?: string) =>
     request<PaginatedResponse<BuildRun>>(`/projects/${projectId}/build-runs?${buildRunListQuery({ ...selectionPageParams, applicationId })}`).then(selectionItems),
   listBuildRunsPage: (projectId: string, params: BuildRunListParams) =>
@@ -75,16 +62,6 @@ export const buildsApi = {
       query.set('applicationId', applicationId)
     return request<PaginatedResponse<BuildJob>>(`/projects/${projectId}/build-jobs?${query.toString()}`).then(selectionItems)
   },
-  listBuildJobsPage: (projectId: string, params: PaginationParams, buildRunId?: string, applicationId?: string) => {
-    const query = new URLSearchParams(paginationQuery(params))
-    if (buildRunId)
-      query.set('buildRunId', buildRunId)
-    if (applicationId)
-      query.set('applicationId', applicationId)
-    return request<PaginatedResponse<BuildJob>>(`/projects/${projectId}/build-jobs?${query.toString()}`)
-  },
-  getBuildJobLogs: (projectId: string, jobId: string) =>
-    request<BuildLog>(`/projects/${projectId}/build-jobs/${jobId}/logs`),
 }
 
 function buildEnvironmentConfigQuery(params: BuildEnvironmentConfigParams) {

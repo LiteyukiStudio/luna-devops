@@ -14,7 +14,6 @@ const mocks = vi.hoisted(() => ({
   listRegistries: vi.fn(),
   listRegistriesPage: vi.fn(),
   listAllRegistryCredentialsPage: vi.fn(),
-  listRegistryCredentials: vi.fn(),
   listRegistryCredentialsPage: vi.fn(),
   session: { user: { role: 'user' } },
 }))
@@ -34,7 +33,6 @@ vi.mock('@/api', async (importOriginal) => {
       listRegistries: mocks.listRegistries,
       listRegistriesPage: mocks.listRegistriesPage,
       listAllRegistryCredentialsPage: mocks.listAllRegistryCredentialsPage,
-      listRegistryCredentials: mocks.listRegistryCredentials,
       listRegistryCredentialsPage: mocks.listRegistryCredentialsPage,
     },
   }
@@ -66,8 +64,6 @@ describe('registry credentials', () => {
     mocks.listRegistriesPage.mockResolvedValue(page(registries))
     mocks.listContainerImages.mockResolvedValue(page([]))
     mocks.listAllRegistryCredentialsPage.mockResolvedValue(page(credentials))
-    mocks.listRegistryCredentials.mockImplementation(async (registryId: string) =>
-      credentials.filter(item => item.registryId === registryId))
     mocks.listRegistryCredentialsPage.mockImplementation(async (registryId: string) =>
       page(credentials.filter(item => item.registryId === registryId)))
   })

@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/LiteyukiStudio/devops/internal/api/applicationapi"
 	"github.com/gin-gonic/gin"
 )
 
@@ -26,7 +27,7 @@ func TestApplicationIdentifierConflictCodes(t *testing.T) {
 			ctx, _ := gin.CreateTestContext(recorder)
 			ctx.Request = httptest.NewRequest(http.MethodPost, "/applications", nil)
 
-			writeApplicationIdentifierConflict(ctx, test.status)
+			applicationapi.WriteApplicationIdentifierConflict(ctx, test.status)
 
 			assertConflictCode(t, recorder, test.expected)
 		})

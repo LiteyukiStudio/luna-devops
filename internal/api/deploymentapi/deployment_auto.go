@@ -69,7 +69,6 @@ func (h *Handlers) createAutoDeployRelease(ctx context.Context, run model.BuildR
 			ID:                 id.New("rel"),
 			ProjectID:          run.ProjectID,
 			ApplicationID:      run.ApplicationID,
-			EnvironmentID:      target.EnvironmentID,
 			DeploymentTargetID: target.ID,
 			BuildRunID:         run.ID,
 			ImageRef:           run.ImageRef,

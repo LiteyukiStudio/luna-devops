@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	transportapi "github.com/LiteyukiStudio/devops/internal/api/transport"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -146,7 +147,7 @@ func TestAuditWriteFailureTelemetryOmitsResourceAndMessage(t *testing.T) {
 func TestDeploymentBundleConfigurationOmitsDestinationIdentifiersAndSecrets(t *testing.T) {
 	t.Parallel()
 	target := model.DeploymentTarget{
-		ID: "dplt_source", ProjectID: "prj_source", ApplicationID: "app_source", EnvironmentID: "env_source",
+		ID: "dplt_source", ProjectID: "prj_source", ApplicationID: "app_source",
 		Name: "Production", Stage: "prod", KubernetesName: "source-prod", ClusterID: "cluster_source",
 		SourceType: "repository", RepositoryBindingID: "binding_source", TargetRegistryID: "registry_source",
 		BuildVariableSetIDs: `["vars_source"]`, RuntimeConfigRefs: `[{"setId":"runtime_source","mode":"live"}]`,
@@ -164,7 +165,7 @@ func TestDeploymentBundleConfigurationOmitsDestinationIdentifiersAndSecrets(t *t
 	if err != nil {
 		t.Fatalf("deploymentBundleConfiguration() error = %v", err)
 	}
-	if configuration.EnvironmentID != "" || configuration.ClusterID != "" || configuration.RepositoryBindingID != "" || configuration.TargetRegistryID != "" {
+	if configuration.ClusterID != "" || configuration.RepositoryBindingID != "" || configuration.TargetRegistryID != "" {
 		t.Fatalf("portable configuration contains destination identifiers: %#v", configuration)
 	}
 	if configuration.SecretFiles != "" || configuration.BuildSecrets != nil || configuration.Enabled {
@@ -275,6 +276,7 @@ func TestDeploymentBundleVolumeDestinationCompatibility(t *testing.T) {
 func TestBuildDeploymentTargetImportPlanRejectsOversizedSecretValue(t *testing.T) {
 	t.Parallel()
 	handlers := &Handlers{}
+	handlers.domains = newDomainHandlers(handlers)
 	request := deploymentTargetBundleImportRequest{
 		Bundle: deploymentTargetBundle{
 			SchemaVersion: 1,
@@ -301,6 +303,7 @@ func TestBuildDeploymentTargetImportPlanRejectsOversizedSecretValue(t *testing.T
 func TestBuildDeploymentTargetImportPlanRequiresPreviewDigestAndKnownKeys(t *testing.T) {
 	t.Parallel()
 	handlers := &Handlers{}
+	handlers.domains = newDomainHandlers(handlers)
 	bundle := deploymentTargetBundle{
 		SchemaVersion: 1,
 		Kind:          deploymentBundleKind,
@@ -334,9 +337,9 @@ func TestDeploymentBundleFilenamePart(t *testing.T) {
 func TestNormalizeDeploymentBundleCandidateQuery(t *testing.T) {
 	t.Parallel()
 	query := normalizeDeploymentBundleCandidateQuery(deploymentBundleCandidateQuery{
-		Pagination: paginationParams{Page: -1, PageSize: 1000, SortBy: "unsafe", SortOrder: "sideways"},
+		Pagination: transportapi.PaginationParams{Page: -1, PageSize: 1000, SortBy: "unsafe", SortOrder: "sideways"},
 	})
-	if query.Pagination.Page != 1 || query.Pagination.PageSize != maxPageSize || query.Pagination.SortBy != "name" || query.Pagination.SortOrder != "asc" {
+	if query.Pagination.Page != 1 || query.Pagination.PageSize != transportapi.MaxPageSize || query.Pagination.SortBy != "name" || query.Pagination.SortOrder != "asc" {
 		t.Fatalf("normalized query = %#v", query)
 	}
 }
@@ -411,8 +414,8 @@ func TestDeploymentBundleCandidatePaginationAndScopedMapping(t *testing.T) {
 		t.Fatalf("migrate candidate integration schema: %v", err)
 	}
 	user := model.User{ID: "usr_candidate", Email: "candidate@example.test", Name: "Candidate User", Role: authz.PlatformRoleUser, Language: "en-US"}
-	project := model.Project{ID: "prj_candidate", Identifier: "candidate-project", Name: "Candidate Project", NamespaceStrategy: "project", DeleteStatus: "active"}
-	otherProject := model.Project{ID: "prj_candidate_other", Identifier: "candidate-other", Name: "Other Project", NamespaceStrategy: "project", DeleteStatus: "active"}
+	project := model.Project{ID: "prj_candidate", Identifier: "candidate-project", Name: "Candidate Project", DeleteStatus: "active"}
+	otherProject := model.Project{ID: "prj_candidate_other", Identifier: "candidate-other", Name: "Other Project", DeleteStatus: "active"}
 	app := model.Application{ID: "app_candidate", ProjectID: project.ID, Identifier: "candidate-app", Name: "Candidate App", DeleteStatus: "active"}
 	member := model.ProjectMember{ID: "pm_candidate", ProjectID: project.ID, UserID: user.ID, Role: authz.ProjectRoleDeveloper}
 	for _, value := range []any{&user, &project, &otherProject, &app, &member} {
@@ -434,7 +437,7 @@ func TestDeploymentBundleCandidatePaginationAndScopedMapping(t *testing.T) {
 	if err := db.Create(&otherSet).Error; err != nil {
 		t.Fatal(err)
 	}
-	wrongType := model.RuntimeCluster{ID: "clu_candidate_wrong_type", Name: "Config 120", Type: "kubernetes", Scope: "global", CreatedBy: user.ID}
+	wrongType := model.RuntimeCluster{ID: "clu_candidate_wrong_type", Name: "Config 120", Scope: "global", CreatedBy: user.ID}
 	if err := db.Create(&wrongType).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -448,9 +451,10 @@ func TestDeploymentBundleCandidatePaginationAndScopedMapping(t *testing.T) {
 	}
 
 	handlers := &Handlers{db: db, mode: "production"}
+	handlers.domains = newDomainHandlers(handlers)
 	reference := deploymentBundleReference{Key: "runtimeConfigSet:0", Kind: deploymentBundleReferenceRuntimeConfigSet, Required: true, Usage: "runtimeConfig", Source: deploymentBundleReferenceDescriptor{Name: "Config 120"}}
 	page, candidates, err := handlers.deploymentBundleCandidates(context.Background(), user, project, app, reference, deploymentBundleCandidateQuery{
-		Pagination: paginationParams{Page: 6, PageSize: 20, SortBy: "name", SortOrder: "asc"},
+		Pagination: transportapi.PaginationParams{Page: 6, PageSize: 20, SortBy: "name", SortOrder: "asc"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -459,14 +463,14 @@ func TestDeploymentBundleCandidatePaginationAndScopedMapping(t *testing.T) {
 		t.Fatalf("candidate page = %#v, first/last = %#v/%#v", page, candidates[0].Public, candidates[len(candidates)-1].Public)
 	}
 	searchPage, searchCandidates, err := handlers.deploymentBundleCandidates(context.Background(), user, project, app, reference, deploymentBundleCandidateQuery{
-		Pagination: paginationParams{Page: 1, PageSize: 20, SortBy: "createdAt", SortOrder: "desc"}, Search: "120",
+		Pagination: transportapi.PaginationParams{Page: 1, PageSize: 20, SortBy: "createdAt", SortOrder: "desc"}, Search: "120",
 	})
 	if err != nil || searchPage.Total != 1 || len(searchCandidates) != 1 || searchCandidates[0].Public.ID != "prcs_candidate_120" {
 		t.Fatalf("search page = %#v candidates = %#v err = %v", searchPage, searchCandidates, err)
 	}
 	repositoryReference := deploymentBundleReference{Key: "repository", Kind: deploymentBundleReferenceRepositoryBinding, Required: true, Usage: "source", Source: deploymentBundleReferenceDescriptor{Name: "foo/bar", Owner: "foo", Repository: "bar", Type: "github"}}
 	repositoryPage, repositoryCandidates, err := handlers.deploymentBundleCandidates(context.Background(), user, project, app, repositoryReference, deploymentBundleCandidateQuery{
-		Pagination: paginationParams{Page: 1, PageSize: 20, SortBy: "name", SortOrder: "asc"}, Search: "foo/bar",
+		Pagination: transportapi.PaginationParams{Page: 1, PageSize: 20, SortBy: "name", SortOrder: "asc"}, Search: "foo/bar",
 	})
 	if err != nil || repositoryPage.Total != 1 || len(repositoryCandidates) != 1 || repositoryCandidates[0].Public.Name != "foo/bar" {
 		t.Fatalf("repository display-name search page = %#v candidates = %#v err = %v", repositoryPage, repositoryCandidates, err)
@@ -489,7 +493,7 @@ func TestDeploymentBundleCandidatePaginationAndScopedMapping(t *testing.T) {
 		t.Fatal(err)
 	}
 	handlerContext, recorder := deploymentBundleRequestContext(http.MethodPost, "/reference-candidates?page=2&pageSize=50&search=Config&sortBy=name&sortOrder=asc", payload, user, project.ID, app.ID)
-	handlers.ListDeploymentTargetBundleReferenceCandidates(handlerContext)
+	handlers.domains.deployment.ListDeploymentTargetBundleReferenceCandidates(handlerContext)
 	if recorder.Code != http.StatusOK || recorder.Header().Get("Cache-Control") != "no-store" {
 		t.Fatalf("candidate handler status/header = %d/%q body=%s", recorder.Code, recorder.Header().Get("Cache-Control"), recorder.Body.String())
 	}
@@ -525,7 +529,7 @@ func TestDeploymentBundleUnknownDatabaseFailureIsSafeInResponseAuditAndSpan(t *t
 		t.Fatal(err)
 	}
 	user := model.User{ID: "usr_bundle_db_failure", Email: "bundle-db-failure@example.test", Role: authz.PlatformRoleUser}
-	project := model.Project{ID: "prj_bundle_db_failure", Identifier: "bundle-db-failure", Name: "Bundle DB Failure", NamespaceStrategy: "project", DeleteStatus: "active"}
+	project := model.Project{ID: "prj_bundle_db_failure", Identifier: "bundle-db-failure", Name: "Bundle DB Failure", DeleteStatus: "active"}
 	app := model.Application{ID: "app_bundle_db_failure", ProjectID: project.ID, Identifier: "bundle-db-failure", Name: "Bundle DB Failure", DeleteStatus: "active"}
 	member := model.ProjectMember{ID: "pm_bundle_db_failure", ProjectID: project.ID, UserID: user.ID, Role: authz.ProjectRoleDeveloper}
 	for _, value := range []any{&user, &project, &app, &member} {
@@ -551,7 +555,9 @@ func TestDeploymentBundleUnknownDatabaseFailureIsSafeInResponseAuditAndSpan(t *t
 	}
 	ctx, response := deploymentBundleRequestContext(http.MethodPost, "/preview", payload, user, project.ID, app.ID)
 	ctx.Request = ctx.Request.WithContext(parentContext)
-	(&Handlers{db: db, mode: "production"}).PreviewDeploymentTargetBundleImport(ctx)
+	handlers := &Handlers{db: db, mode: "production"}
+	handlers.domains = newDomainHandlers(handlers)
+	handlers.domains.deployment.PreviewDeploymentTargetBundleImport(ctx)
 	parentSpan.End()
 	if response.Code != http.StatusInternalServerError || !strings.Contains(response.Body.String(), "deployment_bundle.internal_error") || strings.Contains(response.Body.String(), marker) {
 		t.Fatalf("database failure response = %d %s", response.Code, response.Body.String())
@@ -588,7 +594,7 @@ func TestDeploymentBundleExportFailureDoesNotExposeDatabaseDiagnostic(t *testing
 		t.Fatal(err)
 	}
 	user := model.User{ID: "usr_bundle_export_failure", Email: "bundle-export-failure@example.test", Role: authz.PlatformRoleUser}
-	project := model.Project{ID: "prj_bundle_export_failure", Identifier: "bundle-export-failure", Name: "Bundle Export Failure", NamespaceStrategy: "project", DeleteStatus: "active"}
+	project := model.Project{ID: "prj_bundle_export_failure", Identifier: "bundle-export-failure", Name: "Bundle Export Failure", DeleteStatus: "active"}
 	app := model.Application{ID: "app_bundle_export_failure", ProjectID: project.ID, Identifier: "bundle-export-failure", Name: "Bundle Export Failure", DeleteStatus: "active"}
 	member := model.ProjectMember{ID: "pm_bundle_export_failure", ProjectID: project.ID, UserID: user.ID, Role: authz.ProjectRoleDeveloper}
 	target := model.DeploymentTarget{ID: "dplt_bundle_export_failure", ProjectID: project.ID, ApplicationID: app.ID, Name: "Export failure", Stage: "qa", SourceType: "image", ImageRef: "example.test/export:v1"}
@@ -610,7 +616,9 @@ func TestDeploymentBundleExportFailureDoesNotExposeDatabaseDiagnostic(t *testing
 
 	ctx, response := deploymentBundleRequestContext(http.MethodGet, "/export", nil, user, project.ID, app.ID)
 	ctx.Params = append(ctx.Params, gin.Param{Key: "targetId", Value: target.ID})
-	(&Handlers{db: db, mode: "production"}).ExportDeploymentTargetBundle(ctx)
+	handlers := &Handlers{db: db, mode: "production"}
+	handlers.domains = newDomainHandlers(handlers)
+	handlers.domains.deployment.ExportDeploymentTargetBundle(ctx)
 	if response.Code != http.StatusInternalServerError || !strings.Contains(response.Body.String(), "deployment_bundle.export_failed") || strings.Contains(response.Body.String(), marker) {
 		t.Fatalf("export failure response = %d %s", response.Code, response.Body.String())
 	}
@@ -652,7 +660,7 @@ func TestDeploymentBundlePreviewAndImportCreatesOnlyDeploymentTarget(t *testing.
 	}
 
 	user := model.User{ID: "usr_bundle", Email: "bundle@example.test", Name: "Bundle User", Role: authz.PlatformRoleUser, Language: "en-US"}
-	project := model.Project{ID: "prj_bundle", Identifier: "bundle-project", Name: "Bundle Project", NamespaceStrategy: "project", KubernetesNamespace: "bundle-project", DeleteStatus: "active"}
+	project := model.Project{ID: "prj_bundle", Identifier: "bundle-project", Name: "Bundle Project", KubernetesNamespace: "bundle-project", DeleteStatus: "active"}
 	app := model.Application{ID: "app_bundle", ProjectID: project.ID, Identifier: "empty-app", Name: "Empty App", DeleteStatus: "active"}
 	member := model.ProjectMember{ID: "pm_bundle", ProjectID: project.ID, UserID: user.ID, Role: authz.ProjectRoleDeveloper}
 	if err := db.Create(&user).Error; err != nil {
@@ -679,6 +687,7 @@ func TestDeploymentBundlePreviewAndImportCreatesOnlyDeploymentTarget(t *testing.
 		}},
 		mode: "production",
 	}
+	handlers.domains = newDomainHandlers(handlers)
 	bundle := deploymentTargetBundle{
 		SchemaVersion: deploymentBundleSchemaVersion,
 		Kind:          deploymentBundleKind,
@@ -705,7 +714,7 @@ func TestDeploymentBundlePreviewAndImportCreatesOnlyDeploymentTarget(t *testing.
 	}
 	invalidPreviewCtx, invalidPreviewRecorder := deploymentBundleRequestContext(http.MethodPost, "/preview", invalidPreviewPayload, user, project.ID, app.ID)
 	invalidPreviewCtx.Request = invalidPreviewCtx.Request.WithContext(parentContext)
-	handlers.PreviewDeploymentTargetBundleImport(invalidPreviewCtx)
+	handlers.domains.deployment.PreviewDeploymentTargetBundleImport(invalidPreviewCtx)
 	if invalidPreviewRecorder.Code != http.StatusOK {
 		t.Fatalf("invalid-stage preview status = %d body=%s", invalidPreviewRecorder.Code, invalidPreviewRecorder.Body.String())
 	}
@@ -725,7 +734,7 @@ func TestDeploymentBundlePreviewAndImportCreatesOnlyDeploymentTarget(t *testing.
 	}
 	invalidImportCtx, invalidImportRecorder := deploymentBundleRequestContext(http.MethodPost, "/imports", invalidImportPayload, user, project.ID, app.ID)
 	invalidImportCtx.Request = invalidImportCtx.Request.WithContext(parentContext)
-	handlers.ImportDeploymentTargetBundle(invalidImportCtx)
+	handlers.domains.deployment.ImportDeploymentTargetBundle(invalidImportCtx)
 	if invalidImportRecorder.Code != http.StatusConflict || !strings.Contains(invalidImportRecorder.Body.String(), "deployment_bundle.not_ready") {
 		t.Fatalf("invalid-stage import = %d %s", invalidImportRecorder.Code, invalidImportRecorder.Body.String())
 	}
@@ -735,7 +744,7 @@ func TestDeploymentBundlePreviewAndImportCreatesOnlyDeploymentTarget(t *testing.
 		t.Fatal(err)
 	}
 	invalidOverrideCtx, invalidOverrideRecorder := deploymentBundleRequestContext(http.MethodPost, "/preview", invalidOverridePayload, user, project.ID, app.ID)
-	handlers.PreviewDeploymentTargetBundleImport(invalidOverrideCtx)
+	handlers.domains.deployment.PreviewDeploymentTargetBundleImport(invalidOverrideCtx)
 	if invalidOverrideRecorder.Code != http.StatusOK || !strings.Contains(invalidOverrideRecorder.Body.String(), "deployment.stage_invalid") {
 		t.Fatalf("invalid override preview = %d %s", invalidOverrideRecorder.Code, invalidOverrideRecorder.Body.String())
 	}
@@ -746,7 +755,7 @@ func TestDeploymentBundlePreviewAndImportCreatesOnlyDeploymentTarget(t *testing.
 	}
 	previewCtx, previewRecorder := deploymentBundleRequestContext(http.MethodPost, "/preview", previewPayload, user, project.ID, app.ID)
 	previewCtx.Request = previewCtx.Request.WithContext(parentContext)
-	handlers.PreviewDeploymentTargetBundleImport(previewCtx)
+	handlers.domains.deployment.PreviewDeploymentTargetBundleImport(previewCtx)
 	if previewRecorder.Code != http.StatusOK {
 		t.Fatalf("preview status = %d, body = %s", previewRecorder.Code, previewRecorder.Body.String())
 	}
@@ -766,7 +775,7 @@ func TestDeploymentBundlePreviewAndImportCreatesOnlyDeploymentTarget(t *testing.
 	}
 	repairPreviewCtx, repairPreviewRecorder := deploymentBundleRequestContext(http.MethodPost, "/preview", repairPreviewPayload, user, project.ID, app.ID)
 	repairPreviewCtx.Request = repairPreviewCtx.Request.WithContext(parentContext)
-	handlers.PreviewDeploymentTargetBundleImport(repairPreviewCtx)
+	handlers.domains.deployment.PreviewDeploymentTargetBundleImport(repairPreviewCtx)
 	if repairPreviewRecorder.Code != http.StatusOK {
 		t.Fatalf("repair preview status = %d body=%s", repairPreviewRecorder.Code, repairPreviewRecorder.Body.String())
 	}
@@ -783,7 +792,7 @@ func TestDeploymentBundlePreviewAndImportCreatesOnlyDeploymentTarget(t *testing.
 	}
 	importCtx, importRecorder := deploymentBundleRequestContext(http.MethodPost, "/imports", importPayload, user, project.ID, app.ID)
 	importCtx.Request = importCtx.Request.WithContext(parentContext)
-	handlers.ImportDeploymentTargetBundle(importCtx)
+	handlers.domains.deployment.ImportDeploymentTargetBundle(importCtx)
 	if importRecorder.Code != http.StatusCreated {
 		t.Fatalf("import status = %d, body = %s", importRecorder.Code, importRecorder.Body.String())
 	}
@@ -823,7 +832,7 @@ func TestDeploymentBundlePreviewAndImportCreatesOnlyDeploymentTarget(t *testing.
 	}
 	failedCtx, failedRecorder := deploymentBundleRequestContext(http.MethodPost, "/imports", failedPayload, user, project.ID, app.ID)
 	failedCtx.Request = failedCtx.Request.WithContext(parentContext)
-	handlers.ImportDeploymentTargetBundle(failedCtx)
+	handlers.domains.deployment.ImportDeploymentTargetBundle(failedCtx)
 	if failedRecorder.Code != http.StatusConflict {
 		t.Fatalf("failed import status = %d, body = %s", failedRecorder.Code, failedRecorder.Body.String())
 	}

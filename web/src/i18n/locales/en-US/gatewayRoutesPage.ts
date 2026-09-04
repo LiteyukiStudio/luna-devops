@@ -1,5 +1,4 @@
 const gatewayRoutesPage = {
-  description: 'Manage application domains, CNAME guidance, and certificate status. This phase only covers CRUD.',
   createRoute: 'Create domain',
   editRoute: 'Edit domain',
   routeDialogDescription: 'Choose the deploy config to expose. Leave the domain empty to generate a unique default domain from project, app, and deploy environment. You can also enter a short prefix or a full custom domain.',
@@ -52,11 +51,6 @@ const gatewayRoutesPage = {
   tlsMode: 'TLS mode',
   enabled: 'Enable access',
   enabledHint: 'When disabled, the domain config stays but the runtime entrypoint is removed. Re-enable it to apply the route again.',
-  cnameTarget: 'CNAME target',
-  optionalGatewayConfig: 'Gateway route',
-  optionalGatewayConfigDescription: 'Optionally configure the application entrypoint. Leaving the domain empty generates a unique default domain from project, app, and deploy environment.',
-  enableGatewayConfig: 'Configure entrypoint',
-  gatewayRouteWillUpdate: 'This deploy config already has a gateway route. Saving will update that route.',
   checkDomain: 'Check domain',
   domainAvailable: 'Domain is available',
   domainCurrent: 'This domain belongs to this access route',

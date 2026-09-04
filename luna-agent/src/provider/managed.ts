@@ -16,7 +16,7 @@ export class ManagedProvider implements ModelProvider {
   ) {}
 
   capabilities(): ModelCapabilities {
-    return this.#cached.values().next().value?.provider.capabilities() ?? { streaming: true, toolCalling: true, structuredOutput: true }
+    return { streaming: true, toolCalling: true, structuredOutput: true }
   }
 
   async complete(request: ModelRequest): Promise<ModelResponse> {
@@ -31,15 +31,6 @@ export class ManagedProvider implements ModelProvider {
     return this.resolve({ messages: [], maxOutputTokens: 1 }).provider.health()
   }
 
-  invalidate(): void {
-    this.#cached.clear()
-    this.#cacheVersion = undefined
-  }
-
-  currentVersion(): string | undefined {
-    return this.snapshot.current()?.version
-  }
-
   private resolve(request: ModelRequest): ResolvedProvider {
     const config = request.providerConfig ?? this.snapshot.current()
     if (!config) throw new Error("ai.provider_config_unavailable")
@@ -47,7 +38,7 @@ export class ManagedProvider implements ModelProvider {
     if (!config.provider.configured || !config.provider.apiKey || !config.provider.baseUrl) {
       throw new Error("ai.not_configured")
     }
-    const modelKey = selected.id || selected.name
+    const modelKey = selected.id
     if (this.#cacheVersion !== config.version) {
       this.#cached.clear()
       this.#cacheVersion = config.version

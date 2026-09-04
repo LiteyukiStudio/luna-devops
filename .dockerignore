@@ -53,6 +53,7 @@ web/.vite/
 web/.cache/
 web/.turbo/
 web/coverage/
+web/src/api/generated/openapi.ts
 web/playwright-report/
 web/test-results/
 web/*.local

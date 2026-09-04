@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { ToolCatalog, type ToolOperation } from "../src/tools/catalog.js"
 import { buildToolRequest, HttpLunaApiToolClient } from "../src/tools/luna-api-client.js"
+import { testToolOperation } from "./support/tool-catalog.js"
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -76,6 +77,30 @@ describe("Luna API tool client", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
+  it("returns no result for a successful no-content response", async () => {
+    vi.stubGlobal("fetch", vi.fn<typeof fetch>().mockResolvedValueOnce(new Response(null, { status: 204 })))
+
+    const result = await new HttpLunaApiToolClient("http://api:8080", "service-token").execute({
+      runId: "airun_1",
+      toolCallId: "aitool_1",
+      operation: toolOperation({ operationId: "deleteThing", method: "DELETE", path: "/api/v1/things/{thingId}", parameters: [{ inputName: "thingId", wireName: "thingId", in: "path", required: true }] }),
+      arguments: { thingId: "thing_1" },
+    })
+
+    expect(result).toMatchObject({ status: 204, body: undefined })
+  })
+
+  it("rejects a successful response that violates the JSON contract", async () => {
+    vi.stubGlobal("fetch", vi.fn<typeof fetch>().mockResolvedValueOnce(new Response("<html>upstream proxy error</html>", { status: 200 })))
+
+    await expect(new HttpLunaApiToolClient("http://api:8080", "service-token").execute({
+      runId: "airun_1",
+      toolCallId: "aitool_1",
+      operation: toolOperation({ operationId: "getThing", method: "GET", path: "/api/v1/things" }),
+      arguments: {},
+    })).rejects.toThrow("ai.tool_response_invalid_json")
+  })
+
   it("unwraps the OpenAPI request body envelope before calling the platform route", () => {
     const operation = toolOperation({ operationId: "webSearch", method: "POST", path: "/api/v1/ai-tools/web-search", requestBody: true })
 
@@ -106,16 +131,10 @@ describe("Luna API tool client", () => {
 
 function toolOperation(overrides: Partial<ToolOperation>): ToolOperation {
   return ToolCatalog.load([{
-    operationId: "getThing",
+    ...testToolOperation("getThing"),
     name: "测试工具",
     summary: "测试真实平台路由调用。",
-    category: "test",
-    requiredScopes: [],
-    requiresApproval: false,
-    idempotent: true,
-    method: "GET",
     path: "/api/v1/things",
-    inputSchema: { type: "object", properties: {}, required: [], additionalProperties: false },
     ...overrides,
   }]).all()[0]!
 }

@@ -1,6 +1,5 @@
 const notificationsPage = {
   title: '알림',
-  description: '플랫폼 이벤트 알림 채널, 템플릿, 규칙, 전송 기록을 관리합니다.',
   channels: '채널',
   templates: '템플릿',
   rules: '규칙',
@@ -25,8 +24,6 @@ const notificationsPage = {
   eventType: '이벤트 유형',
   pageInfo: '{{page}} / {{totalPages}}페이지, 총 {{total}}개',
   emptyChannels: '아직 알림 채널이 없습니다',
-  emptyChannelsDescription: '내장 템플릿에서 채널을 생성할 수 있습니다. 시스템이 플랫폼에 맞는 Webhook 설정과 기본 템플릿을 자동으로 생성합니다.',
-  emptyChannelsAction: '템플릿에서 생성하기',
   emptyTemplates: '아직 알림 템플릿이 없습니다',
   emptyRules: '아직 알림 규칙이 없습니다',
   emptyDeliveries: '아직 전송 기록이 없습니다',

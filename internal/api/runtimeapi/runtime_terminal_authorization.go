@@ -157,7 +157,7 @@ func (h *Handlers) runtimeClusterPodTerminalAuthorizationAllowed(ctx context.Con
 		return false
 	}
 	var cluster model.RuntimeCluster
-	if err := runtimecluster.ActiveScope(h.dbWithContext(ctx)).First(&cluster, "id = ? and type in ?", reference.ClusterID, []string{"kubernetes", "k3s"}).Error; err != nil || cluster.KubeconfigRef != reference.ClusterKubeconfig {
+	if err := runtimecluster.ActiveScope(h.dbWithContext(ctx)).First(&cluster, "id = ?", reference.ClusterID).Error; err != nil || cluster.KubeconfigRef != reference.ClusterKubeconfig {
 		return false
 	}
 	resourceCtx, cancel := context.WithTimeout(ctx, runtimeTerminalResourceCheckTimeout)
@@ -215,12 +215,12 @@ func runtimeClusterForDeploymentTargetDB(db *gorm.DB, target model.DeploymentTar
 	var cluster model.RuntimeCluster
 	query := runtimecluster.ActiveScope(db)
 	if clusterID := strings.TrimSpace(target.ClusterID); clusterID != "" {
-		err := query.First(&cluster, "id = ? and type in ?", clusterID, []string{"kubernetes", "k3s"}).Error
+		err := query.First(&cluster, "id = ?", clusterID).Error
 		return cluster, err
 	}
-	err := query.Where("scope = ? and is_default = ? and type in ?", "global", true, []string{"kubernetes", "k3s"}).First(&cluster).Error
+	err := query.Where("scope = ? and is_default = ?", "global", true).First(&cluster).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		err = query.Where("scope = ? and type in ?", "global", []string{"kubernetes", "k3s"}).Order("created_at asc").First(&cluster).Error
+		err = query.Where("scope = ?", "global").Order("created_at asc").First(&cluster).Error
 	}
 	return cluster, err
 }

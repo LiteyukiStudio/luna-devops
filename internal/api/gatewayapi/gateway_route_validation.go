@@ -14,7 +14,6 @@ import (
 
 type GatewayRouteInput struct {
 	ApplicationID          string `json:"applicationId" binding:"required"`
-	EnvironmentID          string `json:"environmentId"`
 	DeploymentTargetID     string `json:"deploymentTargetId" binding:"required"`
 	Host                   string `json:"host"`
 	DomainSuffix           string `json:"domainSuffix"`
@@ -53,7 +52,7 @@ type GatewayRouteAdvancedConfig struct {
 type gatewayRouteAdvancedConfig = GatewayRouteAdvancedConfig
 
 func (h *Handlers) gatewayRouteFromInput(ctx *gin.Context, project model.Project, user model.User, creatorID string, input gatewayRouteInput, routeID string) (model.GatewayRoute, bool) {
-	target, application, environment, cluster, ok := h.gatewayRouteTargetContext(ctx, project.ID, input)
+	target, application, cluster, ok := h.gatewayRouteTargetContext(ctx, project.ID, input)
 	if !ok {
 		return model.GatewayRoute{}, false
 	}
@@ -91,7 +90,6 @@ func (h *Handlers) gatewayRouteFromInput(ctx *gin.Context, project model.Project
 		ID:                     routeID,
 		ProjectID:              project.ID,
 		ApplicationID:          application.ID,
-		EnvironmentID:          environment.ID,
 		DeploymentTargetID:     target.ID,
 		Host:                   host,
 		DomainSuffix:           domainSuffix,
@@ -286,31 +284,31 @@ func deploymentTargetHasServicePort(target model.DeploymentTarget, port int) boo
 	return false
 }
 
-func (h *Handlers) gatewayRouteTargetContext(ctx *gin.Context, projectID string, input gatewayRouteInput) (model.DeploymentTarget, model.Application, model.Environment, model.RuntimeCluster, bool) {
+func (h *Handlers) gatewayRouteTargetContext(ctx *gin.Context, projectID string, input gatewayRouteInput) (model.DeploymentTarget, model.Application, model.RuntimeCluster, bool) {
 	var target model.DeploymentTarget
 	if err := h.dbFor(ctx).First(&target, "id = ? and project_id = ? and enabled = ?", strings.TrimSpace(input.DeploymentTargetID), projectID, true).Error; err != nil {
 		writeError(ctx, http.StatusBadRequest, "部署配置不存在或不属于当前项目空间")
-		return model.DeploymentTarget{}, model.Application{}, model.Environment{}, model.RuntimeCluster{}, false
+		return model.DeploymentTarget{}, model.Application{}, model.RuntimeCluster{}, false
 	}
 	if applicationID := strings.TrimSpace(input.ApplicationID); applicationID != "" && applicationID != target.ApplicationID {
 		writeError(ctx, http.StatusBadRequest, "部署配置不属于当前应用")
-		return model.DeploymentTarget{}, model.Application{}, model.Environment{}, model.RuntimeCluster{}, false
+		return model.DeploymentTarget{}, model.Application{}, model.RuntimeCluster{}, false
 	}
 	var application model.Application
 	if err := h.dbFor(ctx).First(&application, "id = ? and project_id = ?", target.ApplicationID, projectID).Error; err != nil {
 		writeError(ctx, http.StatusBadRequest, "应用不存在或不属于当前项目空间")
-		return model.DeploymentTarget{}, model.Application{}, model.Environment{}, model.RuntimeCluster{}, false
+		return model.DeploymentTarget{}, model.Application{}, model.RuntimeCluster{}, false
 	}
 	if !h.applicationCanMutate(application) {
 		writeErrorCode(ctx, http.StatusConflict, "application.delete_in_progress", "应用正在删除中，不能维护访问入口")
-		return model.DeploymentTarget{}, model.Application{}, model.Environment{}, model.RuntimeCluster{}, false
+		return model.DeploymentTarget{}, model.Application{}, model.RuntimeCluster{}, false
 	}
 	cluster, err := h.runtimeClusterForDeploymentTargetValue(target, ctx.Request.Context())
 	if err != nil {
 		writeError(ctx, http.StatusBadRequest, "部署配置运行集群不存在，不能创建访问入口")
-		return model.DeploymentTarget{}, model.Application{}, model.Environment{}, model.RuntimeCluster{}, false
+		return model.DeploymentTarget{}, model.Application{}, model.RuntimeCluster{}, false
 	}
-	return target, application, h.deploymentTargetEnvironmentProfile(target), cluster, true
+	return target, application, cluster, true
 }
 
 func (h *Handlers) runtimeClusterForGatewayRoute(route model.GatewayRoute, ctx context.Context) (model.RuntimeCluster, error) {

@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	transportapi "github.com/LiteyukiStudio/devops/internal/api/transport"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -10,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/LiteyukiStudio/devops/internal/aiagent"
+	"github.com/LiteyukiStudio/devops/internal/api/aiapi"
 	"github.com/gin-gonic/gin"
 )
 
@@ -38,7 +40,7 @@ func TestAIProxyUsesSessionActorAndForwardsIdempotencyKey(t *testing.T) {
 	}}
 	handler := aiTestHandlers(fake, true)
 	router := gin.New()
-	router.POST("/api/v1/ai/conversations/:conversationId/turns", handler.ProxyAIRequest)
+	router.POST("/api/v1/ai/conversations/:conversationId/turns", handler.domains.ai.ProxyAIRequest)
 
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/ai/conversations/aicnv_owned/turns", strings.NewReader(
 		`{"modelId":"aimod_test","input":{"parts":[{"type":"text","text":"diagnose"}]},"pageContext":{"projectId":"prj_visible"}}`,
@@ -89,7 +91,7 @@ func TestAIProxyForwardsInteractionCardToolActionWithoutConvertingArgumentsToCha
 	}}
 	handler := aiTestHandlers(fake, true)
 	router := gin.New()
-	router.POST("/api/v1/ai/conversations/:conversationId/tool-actions", handler.ProxyAIRequest)
+	router.POST("/api/v1/ai/conversations/:conversationId/tool-actions", handler.domains.ai.ProxyAIRequest)
 
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/ai/conversations/aicnv_owned/tool-actions", strings.NewReader(
 		`{"operationId":"saveConfig","arguments":{"environment":[{"key":"DATABASE_PASSWORD","value":"database-password"}]},"message":"提交配置"}`,
@@ -131,7 +133,7 @@ func TestAIProxyForwardsTimelineCursorPagination(t *testing.T) {
 	}}
 	handler := aiTestHandlers(fake, true)
 	router := gin.New()
-	router.GET("/api/v1/ai/conversations/:conversationId/timeline", handler.ProxyAIRequest)
+	router.GET("/api/v1/ai/conversations/:conversationId/timeline", handler.domains.ai.ProxyAIRequest)
 
 	request := httptest.NewRequest(
 		http.MethodGet,
@@ -167,7 +169,7 @@ func TestAIProxyForwardsConversationDirectorySearchAndSort(t *testing.T) {
 	}}
 	handler := aiTestHandlers(fake, true)
 	router := gin.New()
-	router.GET("/api/v1/ai/conversations", handler.ProxyAIRequest)
+	router.GET("/api/v1/ai/conversations", handler.domains.ai.ProxyAIRequest)
 
 	request := httptest.NewRequest(
 		http.MethodGet,
@@ -196,7 +198,7 @@ func TestAIProxyForwardsConversationScopedModelUpdate(t *testing.T) {
 	}}
 	handler := aiTestHandlers(fake, true)
 	router := gin.New()
-	router.PATCH("/api/v1/ai/conversations/:conversationId", handler.ProxyAIRequest)
+	router.PATCH("/api/v1/ai/conversations/:conversationId", handler.domains.ai.ProxyAIRequest)
 
 	request := httptest.NewRequest(http.MethodPatch, "/api/v1/ai/conversations/aicnv_owned", strings.NewReader(`{"modelId":"aimod_deep"}`))
 	request.Header.Set("Content-Type", "application/json")
@@ -216,7 +218,7 @@ func TestAIProxyRequiresInitialConversationModel(t *testing.T) {
 	fake := &fakeAIAgentClient{}
 	handler := aiTestHandlers(fake, true)
 	router := gin.New()
-	router.POST("/api/v1/ai/conversations", handler.ProxyAIRequest)
+	router.POST("/api/v1/ai/conversations", handler.domains.ai.ProxyAIRequest)
 
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/ai/conversations", strings.NewReader(`{"title":"Missing model"}`))
 	request.Header.Set("Content-Type", "application/json")
@@ -236,7 +238,7 @@ func TestAIProxyKeepsSessionActorWhenPayloadContainsIdentityShapedData(t *testin
 	}}
 	handler := aiTestHandlers(fake, true)
 	router := gin.New()
-	router.POST("/api/v1/ai/conversations", handler.ProxyAIRequest)
+	router.POST("/api/v1/ai/conversations", handler.domains.ai.ProxyAIRequest)
 
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/ai/conversations", strings.NewReader(
 		`{"title":"identity data","modelId":"aimod_test","metadata":{"userId":"usr_other"}}`,
@@ -262,7 +264,7 @@ func TestAIProxyTreatsPageProjectAsContextInsteadOfAuthorizationBoundary(t *test
 	}}
 	handler := aiTestHandlers(fake, true)
 	router := gin.New()
-	router.POST("/api/v1/ai/conversations/:conversationId/turns", handler.ProxyAIRequest)
+	router.POST("/api/v1/ai/conversations/:conversationId/turns", handler.domains.ai.ProxyAIRequest)
 
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/ai/conversations/aicnv_old/turns", strings.NewReader(
 		`{"modelId":"aimod_test","input":{"parts":[{"type":"text","text":"read another project"}]},"pageContext":{"projectId":"prj_hidden"}}`,
@@ -287,7 +289,7 @@ func TestAICapabilitiesDependOnPlatformConfigurationNotAgentHealth(t *testing.T)
 	fake := &fakeAIAgentClient{err: aiagent.ErrUnavailable}
 	handler := aiTestHandlers(fake, true)
 	router := gin.New()
-	router.GET("/api/v1/ai/capabilities", handler.GetAICapabilities)
+	router.GET("/api/v1/ai/capabilities", handler.domains.ai.GetAICapabilities)
 
 	response := httptest.NewRecorder()
 	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/ai/capabilities", nil))
@@ -301,14 +303,14 @@ func TestAICapabilitiesDependOnPlatformConfigurationNotAgentHealth(t *testing.T)
 		t.Fatalf("cache control = %q", response.Header().Get("Cache-Control"))
 	}
 
-	handler.configs.set(aiAssistantEnabledConfigKey, "false")
+	handler.configs.set(aiapi.AssistantEnabledConfigKey, "false")
 	response = httptest.NewRecorder()
 	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/ai/capabilities", nil))
 	if response.Code != http.StatusOK || response.Body.String() != `{"enabled":false,"maxInputBytes":131072}` {
 		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
 	}
 
-	handler.configs.set(aiAssistantEnabledConfigKey, "true")
+	handler.configs.set(aiapi.AssistantEnabledConfigKey, "true")
 	handler.aiDeploymentEnabled = false
 	response = httptest.NewRecorder()
 	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/ai/capabilities", nil))
@@ -321,21 +323,21 @@ func TestAIProxyUsesFixedEnvelopeBodyLimit(t *testing.T) {
 	handler := aiTestHandlers(nil, true)
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)
-	ctx.Request = httptest.NewRequest(http.MethodPost, "/api/v1/ai/conversations", strings.NewReader(strings.Repeat("x", aiRequestBodyLimitBytes)))
-	if _, ok := handler.readAIBody(ctx); !ok {
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/api/v1/ai/conversations", strings.NewReader(strings.Repeat("x", aiapi.RequestBodyLimitBytes)))
+	if _, ok := handler.domains.ai.ReadAIBody(ctx); !ok {
 		t.Fatalf("body at transport limit rejected: status = %d, body = %s", recorder.Code, recorder.Body.String())
 	}
 
 	recorder = httptest.NewRecorder()
 	ctx, _ = gin.CreateTestContext(recorder)
-	ctx.Request = httptest.NewRequest(http.MethodPost, "/api/v1/ai/conversations", strings.NewReader(strings.Repeat("x", aiRequestBodyLimitBytes+1)))
-	if _, ok := handler.readAIBody(ctx); ok || recorder.Code != http.StatusRequestEntityTooLarge {
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/api/v1/ai/conversations", strings.NewReader(strings.Repeat("x", aiapi.RequestBodyLimitBytes+1)))
+	if _, ok := handler.domains.ai.ReadAIBody(ctx); ok || recorder.Code != http.StatusRequestEntityTooLarge {
 		t.Fatalf("oversized body accepted: status = %d, body = %s", recorder.Code, recorder.Body.String())
 	}
 }
 
 func TestAIProxyRejectsOversizedTextInsideAllowedEnvelope(t *testing.T) {
-	oversized := strings.Repeat("x", aiTextInputLimitBytes+1)
+	oversized := strings.Repeat("x", aiapi.TextInputLimitBytes+1)
 	tests := []struct {
 		name         string
 		routePattern string
@@ -347,7 +349,7 @@ func TestAIProxyRejectsOversizedTextInsideAllowedEnvelope(t *testing.T) {
 		}},
 		{name: "turn part separator", routePattern: "/api/v1/ai/conversations/:conversationId/turns", path: "/api/v1/ai/conversations/aicnv_1/turns", body: map[string]any{
 			"modelId": "aimod_test", "input": map[string]any{"parts": []any{
-				map[string]any{"type": "text", "text": strings.Repeat("x", aiTextInputLimitBytes-1)},
+				map[string]any{"type": "text", "text": strings.Repeat("x", aiapi.TextInputLimitBytes-1)},
 				map[string]any{"type": "text", "text": "y"},
 			}},
 		}},
@@ -367,7 +369,7 @@ func TestAIProxyRejectsOversizedTextInsideAllowedEnvelope(t *testing.T) {
 			fake := &fakeAIAgentClient{}
 			handler := aiTestHandlers(fake, true)
 			router := gin.New()
-			router.POST(tt.routePattern, handler.ProxyAIRequest)
+			router.POST(tt.routePattern, handler.domains.ai.ProxyAIRequest)
 			request := httptest.NewRequest(http.MethodPost, tt.path, strings.NewReader(string(encoded)))
 			request.Header.Set("Content-Type", "application/json")
 			request.Header.Set("Idempotency-Key", "input-limit-test")
@@ -383,7 +385,7 @@ func TestAIProxyRejectsOversizedTextInsideAllowedEnvelope(t *testing.T) {
 func TestAIProxyStillReportsUnavailableAgentWhenEnabled(t *testing.T) {
 	handler := aiTestHandlers(nil, true)
 	router := gin.New()
-	router.GET("/api/v1/ai/conversations", handler.ProxyAIRequest)
+	router.GET("/api/v1/ai/conversations", handler.domains.ai.ProxyAIRequest)
 
 	response := httptest.NewRecorder()
 	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/ai/conversations", nil))
@@ -399,18 +401,18 @@ func TestAIAccessModeDefaultsToAuthenticatedUsersAndCanRestrictAdmins(t *testing
 		Body:       io.NopCloser(strings.NewReader(`{"enabled":true}`)),
 	}}
 	handler := aiTestHandlers(fake, true)
-	if !handler.aiAccessAllowed("user") || !handler.aiAccessAllowed("platform_admin") {
+	if !handler.domains.ai.AIAccessAllowed("user") || !handler.domains.ai.AIAccessAllowed("platform_admin") {
 		t.Fatal("default authenticated access did not allow valid platform roles")
 	}
 
-	handler.configs.set(aiAccessModeConfigKey, "admins")
-	if handler.aiAccessAllowed("user") || !handler.aiAccessAllowed("platform_admin") {
+	handler.configs.set(aiapi.AccessModeConfigKey, "admins")
+	if handler.domains.ai.AIAccessAllowed("user") || !handler.domains.ai.AIAccessAllowed("platform_admin") {
 		t.Fatal("admin-only access mode was not enforced")
 	}
 
 	router := gin.New()
-	router.GET("/api/v1/ai/capabilities", handler.GetAICapabilities)
-	router.GET("/api/v1/ai/conversations", handler.ProxyAIRequest)
+	router.GET("/api/v1/ai/capabilities", handler.domains.ai.GetAICapabilities)
+	router.GET("/api/v1/ai/conversations", handler.domains.ai.ProxyAIRequest)
 	response := httptest.NewRecorder()
 	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/ai/capabilities", nil))
 	if response.Code != http.StatusOK || response.Body.String() != `{"enabled":false,"maxInputBytes":131072}` || fake.calls != 0 {
@@ -434,7 +436,7 @@ func TestAIProxyFlushesSSEChunks(t *testing.T) {
 	}}
 	handler := aiTestHandlers(fake, true)
 	router := gin.New()
-	router.GET("/api/v1/ai/runs/:runId/events", handler.ProxyAIRequest)
+	router.GET("/api/v1/ai/runs/:runId/events", handler.domains.ai.ProxyAIRequest)
 	request := httptest.NewRequest(http.MethodGet, "/api/v1/ai/runs/airun_stream/events", nil)
 	request.Header.Set("Accept", "text/event-stream")
 	response := httptest.NewRecorder()
@@ -461,7 +463,7 @@ func TestAIProxySanitizesNonSuccessSSEBeforeStreamingInProduction(t *testing.T) 
 	}}
 	handler := aiTestHandlers(fake, true)
 	router := gin.New()
-	router.GET("/api/v1/ai/conversations", handler.ProxyAIRequest)
+	router.GET("/api/v1/ai/conversations", handler.domains.ai.ProxyAIRequest)
 	response := httptest.NewRecorder()
 	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/ai/conversations", nil))
 
@@ -492,8 +494,8 @@ func TestAIProxyKeepsNonSuccessBodyInDevelopment(t *testing.T) {
 	}}
 	handler := aiTestHandlers(fake, true)
 	router := gin.New()
-	router.Use(runtimeModeMiddleware("development"))
-	router.GET("/api/v1/ai/conversations", handler.ProxyAIRequest)
+	router.Use(transportapi.RuntimeModeMiddleware("development"))
+	router.GET("/api/v1/ai/conversations", handler.domains.ai.ProxyAIRequest)
 	response := httptest.NewRecorder()
 	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/ai/conversations", nil))
 
@@ -513,7 +515,9 @@ func TestAIProviderConnectionResponseSanitizesExternalErrorInProduction(t *testi
 	ctx, _ := gin.CreateTestContext(recorder)
 	ctx.Request = httptest.NewRequest(http.MethodPost, "/api/v1/configs/ai/provider/test", nil)
 
-	(&Handlers{}).copyAIResponse(ctx, response, http.StatusOK, "ai.provider_unavailable")
+	handlers := &Handlers{}
+	handlers.domains = newDomainHandlers(handlers)
+	handlers.domains.ai.CopyAIResponse(ctx, response, http.StatusOK, "ai.provider_unavailable")
 
 	var body map[string]string
 	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
@@ -537,7 +541,7 @@ func TestAIProxyDropsJSONContentTypeForBodylessCancel(t *testing.T) {
 	}}
 	handler := aiTestHandlers(fake, true)
 	router := gin.New()
-	router.POST("/api/v1/ai/runs/:runId/cancel", handler.ProxyAIRequest)
+	router.POST("/api/v1/ai/runs/:runId/cancel", handler.domains.ai.ProxyAIRequest)
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/ai/runs/airun_cancel/cancel", nil)
 	request.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
@@ -552,6 +556,10 @@ func TestAIProxyDropsJSONContentTypeForBodylessCancel(t *testing.T) {
 }
 
 func TestAIRouteContractContainsP0Endpoints(t *testing.T) {
+	routes := make(map[string]struct{}, len(aiapi.ProxyRouteKeys()))
+	for _, key := range aiapi.ProxyRouteKeys() {
+		routes[key] = struct{}{}
+	}
 	expected := []string{
 		"GET /api/v1/ai/conversations",
 		"POST /api/v1/ai/conversations",
@@ -563,15 +571,15 @@ func TestAIRouteContractContainsP0Endpoints(t *testing.T) {
 		"POST /api/v1/ai/runs/:runId/cancel",
 	}
 	for _, operation := range expected {
-		if _, ok := aiProxyRoutes[operation]; !ok {
+		if _, ok := routes[operation]; !ok {
 			t.Errorf("missing AI proxy contract %s", operation)
 		}
 	}
 }
 
 func aiTestHandlers(client aiagent.Client, enabled bool) *Handlers {
-	return &Handlers{
-		configs:             &configCache{values: map[string]string{aiAssistantEnabledConfigKey: "true", aiAccessModeConfigKey: "all_authenticated"}},
+	handlers := &Handlers{
+		configs:             &configCache{values: map[string]string{aiapi.AssistantEnabledConfigKey: "true", aiapi.AccessModeConfigKey: "all_authenticated"}},
 		aiAgent:             client,
 		aiDeploymentEnabled: enabled,
 		aiActorResolver: func(*gin.Context) (aiagent.ActorContext, string, bool) {
@@ -580,4 +588,6 @@ func aiTestHandlers(client aiagent.Client, enabled bool) *Handlers {
 			}, "user", true
 		},
 	}
+	handlers.domains = newDomainHandlers(handlers)
+	return handlers
 }

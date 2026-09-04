@@ -184,14 +184,6 @@ function toPreset(item: SuggestedModelEntry): SuggestedModelPreset {
 }
 
 /**
- * 按 Provider 模型名查找建议价格。先精确匹配，再按前缀匹配带日期/版本
- * 后缀的型号；未收录时返回 `undefined`。
- */
-export function findSuggestedModelPrice(name: string): SuggestedModelPrice | undefined {
-  return matchPreset(normalizeModelName(name))?.prices
-}
-
-/**
  * 按 Provider 模型名查找完整建议预设（价格 + 上下文/输出上限）。
  */
 export function findSuggestedModelPreset(name: string): SuggestedModelPreset | undefined {

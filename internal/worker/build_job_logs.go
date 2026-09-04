@@ -58,7 +58,6 @@ func (r *Runner) followBuildJob(ctx context.Context, client kubernetes.Interface
 				_ = r.deleteKubernetesBuildJob(context.WithoutCancel(ctx), client, namespace, jobName)
 				return result, errBuildRunCanceled
 			}
-			_ = r.db.Model(&model.BuildJob{}).Where("id = ? and status = ?", job.ID, "running").Update("last_heartbeat_at", time.Now()).Error
 			kubeJob, err := client.BatchV1().Jobs(namespace).Get(ctx, jobName, metav1.GetOptions{})
 			if err != nil {
 				return result, err

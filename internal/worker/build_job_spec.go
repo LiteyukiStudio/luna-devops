@@ -15,7 +15,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 )
 
-func (r *Runner) startBuildJob(ctx context.Context, client kubernetes.Interface, namespace string, secretName string, jobName string, environment model.Environment, run model.BuildRun, task builder.Task) error {
+func (r *Runner) startBuildJob(ctx context.Context, client kubernetes.Interface, namespace string, secretName string, jobName string, run model.BuildRun, task builder.Task) error {
 	if err := ensureBuildJobServiceAccount(ctx, client, namespace); err != nil {
 		return err
 	}
@@ -36,7 +36,7 @@ func (r *Runner) startBuildJob(ctx context.Context, client kubernetes.Interface,
 		_ = secrets.Delete(context.WithoutCancel(ctx), secretName, metav1.DeleteOptions{})
 	}
 	timeoutSeconds := effectiveBuildTimeoutSeconds(run.BuildTimeoutSeconds, r.buildJobTimeoutSeconds)
-	job := buildJobSpec(jobName, secretName, environment, run, task, r.buildExecutorImage, r.buildCacheEnabled, r.buildCacheTag, timeoutSeconds, r.buildJobTTLSeconds)
+	job := buildJobSpec(jobName, secretName, run, task, r.buildExecutorImage, r.buildCacheEnabled, r.buildCacheTag, timeoutSeconds, r.buildJobTTLSeconds)
 	jobs := client.BatchV1().Jobs(namespace)
 	if _, err := jobs.Create(ctx, job, metav1.CreateOptions{}); err != nil {
 		if !apierrors.IsAlreadyExists(err) {
@@ -104,7 +104,7 @@ func buildJobBaseLabels() map[string]string {
 		kubeprovider.ScopeLabel:         buildJobScope,
 	}
 }
-func buildJobSpec(jobName string, secretName string, environment model.Environment, run model.BuildRun, task builder.Task, image string, cacheEnabled bool, cacheTag string, timeoutSeconds int64, ttlSeconds int64) *batchv1.Job {
+func buildJobSpec(jobName string, secretName string, run model.BuildRun, task builder.Task, image string, cacheEnabled bool, cacheTag string, timeoutSeconds int64, ttlSeconds int64) *batchv1.Job {
 	backoffLimit := int32(0)
 	ttl := int32(ttlSeconds)
 	activeDeadlineSeconds := timeoutSeconds
@@ -116,7 +116,6 @@ func buildJobSpec(jobName string, secretName string, environment model.Environme
 	labels := buildJobBaseLabels()
 	labels[kubeprovider.ProjectIDLabel] = task.ProjectID
 	labels[kubeprovider.ApplicationIDLabel] = task.ApplicationID
-	labels[kubeprovider.EnvironmentIDLabel] = environment.ID
 	labels[kubeprovider.DeploymentTargetIDLabel] = task.DeploymentTargetID
 	labels["luna.devops/build-run-id"] = task.BuildRunID
 	labels["luna.devops/build-job-id"] = task.JobID

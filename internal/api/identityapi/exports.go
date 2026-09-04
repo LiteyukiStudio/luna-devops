@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/notification"
 	"github.com/gin-gonic/gin"
@@ -113,7 +114,7 @@ func MissingRequiredAccessTokenScope(scopeText, path, method string) (string, er
 }
 
 func AccessTokenAllows(scopeText, required string) bool {
-	return accessTokenAllows(scopeText, required)
+	return authz.AccessTokenAllows(scopeText, required)
 }
 
 func (h *Handler) RequirePlatformAdmin(ctx *gin.Context) bool {
@@ -186,10 +187,6 @@ func (h *Handler) AuditWithContext(userID, action, resource string, success bool
 
 func (h *Handler) AuditWithSafeMetadata(userID, action, resource string, success bool, message string, metadata any, ctx context.Context) {
 	h.auditWithSafeMetadata(userID, action, resource, success, message, metadata, ctx)
-}
-
-func (h *Handler) AllowSensitiveAuthAttempt(ctx *gin.Context, action string, limit int, window time.Duration) bool {
-	return h.allowSensitiveAuthAttempt(ctx, action, limit, window)
 }
 
 func (h *Handler) AllowLoginAccountAttempt(ctx *gin.Context, account string, limit int, window time.Duration) bool {
@@ -279,11 +276,11 @@ func SlugWithNumericSuffix(base string, index int) string {
 }
 
 func NormalizeAccessTokenScope(scopeText string) string {
-	return normalizeAccessTokenScope(scopeText)
+	return authz.NormalizeAccessTokenScope(scopeText)
 }
 
 func UserCanCreateAccessTokenScope(user model.User, scopeText string) bool {
-	return userCanCreateAccessTokenScope(user, scopeText)
+	return authz.UserCanCreateAccessTokenScope(user.Role, scopeText)
 }
 
 func ValidAccessTokenLifetimeDays(days int) bool { return validAccessTokenLifetimeDays(days) }

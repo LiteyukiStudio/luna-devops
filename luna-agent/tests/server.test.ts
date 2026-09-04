@@ -4,15 +4,16 @@ import { DevelopmentRequestVerifier } from "../src/auth.js"
 import { loadConfig } from "../src/config.js"
 import { TestRepository } from "./support/test-repository.js"
 import { RemoteConfigSnapshot } from "../src/provider/config-client.js"
-import { buildServer, writeSSE } from "../src/server.js"
+import { writeSSE } from "../src/server.js"
 import type { AIEvent, AITimeline, AITurnCreated } from "../../web/src/api/ai-types.js"
 import { presentTimeline } from "../src/timeline-presenter.js"
 import { InMemoryRunStreamBus } from "../src/run-stream-bus.js"
 import { maximumRequestBodyBytes, maximumTurnInputBytes } from "../src/input-limits.js"
+import { buildTestServer } from "./support/server.js"
 
 function fixture() {
   const repository = new TestRepository()
-  const app = buildServer({ config: loadConfig({ NODE_ENV: "test" }), repository, requestVerifier: new DevelopmentRequestVerifier() })
+  const app = buildTestServer({ config: loadConfig({ NODE_ENV: "test" }), repository, requestVerifier: new DevelopmentRequestVerifier() })
   return { app, repository }
 }
 
@@ -53,7 +54,7 @@ describe("internal API", () => {
       pageContext: {},
       idempotencyKey: "replay-failure-slot",
     })
-    const app = buildServer({
+    const app = buildTestServer({
       config: loadConfig({ NODE_ENV: "test" }), repository,
       requestVerifier: new DevelopmentRequestVerifier(),
       streamBus: new ReplayFailureBus(repository),
@@ -84,7 +85,7 @@ describe("internal API", () => {
     class SchemaMismatchRepository extends TestRepository {
       override async readiness() { return { database: true, schema: false } }
     }
-    const schemaApp = buildServer({
+    const schemaApp = buildTestServer({
       config: loadConfig({ NODE_ENV: "test" }),
       repository: new SchemaMismatchRepository(),
       requestVerifier: new DevelopmentRequestVerifier(),
@@ -94,7 +95,7 @@ describe("internal API", () => {
     expect(schemaResponse.json()).toMatchObject({ errorCode: "ai.database_schema_mismatch" })
     await schemaApp.close()
 
-    const configApp = buildServer({
+    const configApp = buildTestServer({
       config: loadConfig({ NODE_ENV: "test" }),
       repository: new TestRepository(),
       requestVerifier: new DevelopmentRequestVerifier(),
@@ -334,7 +335,7 @@ describe("internal API", () => {
   })
   it("keeps a durable cancellation successful when the local abort hook fails", async () => {
     const repository = new TestRepository()
-    const app = buildServer({
+    const app = buildTestServer({
       config: loadConfig({ NODE_ENV: "test" }),
       repository,
       requestVerifier: new DevelopmentRequestVerifier(),
@@ -358,7 +359,7 @@ describe("internal API", () => {
   it("cancels a waiting Run directly without a live executor", async () => {
     const repository = new TestRepository()
     const bus = new InMemoryRunStreamBus(repository)
-    const app = buildServer({
+    const app = buildTestServer({
       config: loadConfig({ NODE_ENV: "test" }), repository,
       requestVerifier: new DevelopmentRequestVerifier(),
       streamBus: bus,

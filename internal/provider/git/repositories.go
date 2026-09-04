@@ -234,6 +234,22 @@ func (c Client) GetWebhook(ctx context.Context, owner, repo, webhookID string) (
 	}
 }
 
+// DeleteWebhook removes a webhook created by CreateWebhook. GitHub and Gitea
+// use the same repository hook endpoint for deletion.
+func (c Client) DeleteWebhook(ctx context.Context, owner, repo, webhookID string) error {
+	webhookID = strings.TrimSpace(webhookID)
+	if webhookID == "" {
+		return fmt.Errorf("webhook ID is required")
+	}
+	switch c.provider.Type {
+	case "github", "gitea":
+		path := fmt.Sprintf("/repos/%s/%s/hooks/%s", pathEscape(owner), pathEscape(repo), pathEscape(webhookID))
+		return c.delete(ctx, c.apiURL(path, nil))
+	default:
+		return fmt.Errorf("git provider type %q is not supported", c.provider.Type)
+	}
+}
+
 func FilterRepositories(repos []Repository, search string) []Repository {
 	search = strings.ToLower(strings.TrimSpace(search))
 	if search == "" {

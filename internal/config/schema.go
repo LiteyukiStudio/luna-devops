@@ -70,7 +70,3 @@ type workerEnvironment struct {
 	DeployRolloutTimeout     int                     `env:"DEPLOY_ROLLOUT_TIMEOUT_SECONDS" envDefault:"600"`
 	CertManagerClusterIssuer string                  `env:"CERT_MANAGER_CLUSTER_ISSUER" envDefault:"letsencrypt-http01"`
 }
-
-type tasksEnvironment struct {
-	RedisAddr string `env:"REDIS_ADDR" envDefault:"redis://localhost:6379/0"`
-}

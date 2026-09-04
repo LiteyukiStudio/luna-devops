@@ -150,7 +150,7 @@ func TestSettleRuntimeTargetAggregationCreatesOneHourlyBatchAndIsIdempotent(t *t
 	periodStart := time.Date(2026, 8, 22, 12, 0, 0, 0, time.UTC)
 	input := RuntimeAggregatedUsageInput{
 		Context: t.Context(), ProjectID: project.ID, ApplicationID: "app_runtime",
-		DeploymentTargetID: "dplt_runtime", EnvironmentID: "env_runtime",
+		DeploymentTargetID: "dplt_runtime", Stage: "prod",
 		PeriodStart: periodStart, PeriodEnd: periodStart.Add(time.Hour),
 		CPUCoreHours: decimal.RequireFromString("0.25"), MemoryGiBHours: decimal.RequireFromString("0.5"),
 		CPURequestFloorCoreHours: decimal.RequireFromString("0.1"), MemoryRequestFloorGiBHours: decimal.RequireFromString("0.4"),

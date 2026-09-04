@@ -11,7 +11,6 @@ import (
 
 	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/openapiscope"
-	"github.com/LiteyukiStudio/devops/internal/service"
 )
 
 var openAPIPathParameterPattern = regexp.MustCompile(`\{([^}]+)\}`)
@@ -47,7 +46,7 @@ func TestPlatformCatalogScopesMatchOpenAPIAndKnownScopeCatalog(t *testing.T) {
 		if !reflect.DeepEqual(operation.RequiredScopes, declared) {
 			t.Errorf("%s catalog scopes = %#v, OpenAPI scopes = %#v", operation.OperationID, operation.RequiredScopes, declared)
 		}
-		runtimeScopes, err := service.RequiredAccessTokenScopes(operation.Path, operation.Method)
+		runtimeScopes, err := openapiscope.RequiredScopes(operation.Path, operation.Method)
 		if err != nil {
 			t.Errorf("%s runtime scope contract: %v", operation.OperationID, err)
 		} else if !reflect.DeepEqual(runtimeScopes, declared) {
@@ -307,6 +306,22 @@ func TestHighFrequencyOperationsCarryExplicitSemanticMetadata(t *testing.T) {
 			strings.TrimSpace(operation.SuccessEvidence.ZH) == "" {
 			t.Errorf("%s semantic metadata is incomplete: %#v", operationID, operation)
 		}
+	}
+}
+
+func TestCheckGatewayDomainCatalogCarriesDeploymentTargetReference(t *testing.T) {
+	operation, ok := PlatformOperation("checkGatewayDomain")
+	if !ok {
+		t.Fatal("missing checkGatewayDomain")
+	}
+	properties := mapValue(operation.InputSchema["properties"])
+	deploymentTarget := mapValue(properties["deploymentTargetId"])
+	if deploymentTarget["type"] != "string" {
+		t.Fatalf("deploymentTargetId schema = %#v", deploymentTarget)
+	}
+	if !strings.Contains(strings.Join(operation.Preconditions.ZH, " "), "deploymentTargetId") ||
+		!strings.Contains(strings.Join(operation.Preconditions.EN, " "), "deploymentTargetId") {
+		t.Fatalf("checkGatewayDomain preconditions do not explain the deployment target reference: %#v", operation.Preconditions)
 	}
 }
 

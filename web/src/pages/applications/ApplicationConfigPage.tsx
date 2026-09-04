@@ -186,7 +186,7 @@ export function ApplicationConfigPage() {
   const openBuildTask = () => runAfterTabChange('builds', () => buildsPanelRef.current?.openTriggerDrawer())
   const openReleaseTask = () => {
     const target = firstReleaseReadyTarget(deploymentTargetRows, appBuildRuns)
-    runAfterTabChange('deployments', () => target && deploymentsPanelRef.current?.openReleaseDialog('', target.id))
+    runAfterTabChange('deployments', () => target && deploymentsPanelRef.current?.openReleaseDialog(target.id))
   }
   const openGatewayTask = () => runAfterTabChange('gateway', () => gatewayPanelRef.current?.openCreateDialog())
   if (application.isError)
@@ -216,7 +216,7 @@ export function ApplicationConfigPage() {
                   <Plus size={16} />
                   {t('deploymentsPage.createDeploymentTarget')}
                 </Button>
-                <Button disabled={!releaseReadyTarget} onClick={() => releaseReadyTarget && deploymentsPanelRef.current?.openReleaseDialog('', releaseReadyTarget.id)}>
+                <Button disabled={!releaseReadyTarget} onClick={() => releaseReadyTarget && deploymentsPanelRef.current?.openReleaseDialog(releaseReadyTarget.id)}>
                   <Package size={16} />
                   {t('deploymentsPage.createRelease')}
                 </Button>

@@ -1,5 +1,4 @@
 const accountPage = {
-  description: '管理個人資料、第三方登入繫結和用於 API 呼叫的個人令牌。',
   profileTab: '個人設定',
   securityTab: '安全設定',
   notificationsTab: '通知',

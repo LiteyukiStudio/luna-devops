@@ -62,7 +62,6 @@ func (r *Runner) handleGatewayApply(ctx context.Context, task *asynq.Task) (err 
 	if err := r.db.First(&target, "id = ? and project_id = ?", route.DeploymentTargetID, payload.ProjectID).Error; err != nil {
 		return err
 	}
-	environment := deploymentTargetEnvironment(target)
 	if !route.Enabled {
 		operation = "disable"
 		if err := r.cleanupGatewayRuntimeResources(ctx, route); err != nil {
@@ -73,14 +72,14 @@ func (r *Runner) handleGatewayApply(ctx context.Context, task *asynq.Task) (err 
 		return nil
 	}
 
-	namespace := deploymentNamespace(project, environment)
+	namespace := deploymentNamespace(project)
 	if err := workerStage(ctx, "gateway.ensure_namespace", func(stageCtx context.Context) error {
-		return r.ensureProjectNamespace(stageCtx, namespace, project, environment)
+		return r.ensureProjectNamespace(stageCtx, namespace, project, target)
 	}); err != nil {
 		return err
 	}
 	if err := workerStage(ctx, "gateway.apply_resources", func(stageCtx context.Context) error {
-		return r.applyGatewayAPIResources(stageCtx, route, project, application, environment, namespace)
+		return r.applyGatewayAPIResources(stageCtx, route, project, application, target, namespace)
 	}); err != nil {
 		return err
 	}
@@ -89,7 +88,7 @@ func (r *Runner) handleGatewayApply(ctx context.Context, task *asynq.Task) (err 
 		configured bool
 	}
 	certificate, err := workerStageValue(ctx, "gateway.observe_certificate", func(stageCtx context.Context) (certificateResult, error) {
-		snapshot, configured, observeErr := r.gatewayCertificateSnapshot(stageCtx, route, project, environment, namespace)
+		snapshot, configured, observeErr := r.gatewayCertificateSnapshot(stageCtx, route, project, target, namespace)
 		return certificateResult{snapshot: snapshot, configured: configured}, observeErr
 	})
 	if err != nil {
@@ -103,7 +102,7 @@ func (r *Runner) handleGatewayApply(ctx context.Context, task *asynq.Task) (err 
 	certificateConfigured := certificate.configured
 	route.DNSStatus = r.gatewayDNSStatus(ctx, route)
 	if certificateConfigured {
-		cluster, clusterErr := r.runtimeClusterForEnvironment(ctx, environment)
+		cluster, clusterErr := r.runtimeClusterForDeploymentTarget(ctx, target)
 		if clusterErr != nil {
 			return clusterErr
 		}
@@ -127,8 +126,8 @@ func gatewayApplyPayloadMatchesRoute(payload tasks.GatewayApplyPayload, route mo
 		payload.RouteUpdatedAtUnixMicro == route.UpdatedAt.UTC().UnixMicro()
 }
 
-func (r *Runner) ensureProjectNamespace(ctx context.Context, namespace string, project model.Project, environment model.Environment) error {
-	manager, err := r.kubernetesManager(ctx, environment)
+func (r *Runner) ensureProjectNamespace(ctx context.Context, namespace string, project model.Project, target model.DeploymentTarget) error {
+	manager, err := r.kubernetesManager(ctx, target)
 	if err != nil {
 		return err
 	}
@@ -141,16 +140,16 @@ func (r *Runner) ensureProjectNamespace(ctx context.Context, namespace string, p
 	return manager.EnsureBuildPolicy(ctx, networkpolicy.BuildPolicyWithEgressControlsAndPorts(namespace, r.buildPrivateEgressCIDRs, r.buildPrivateEgressPorts, r.buildBlockedEgressCIDRs))
 }
 
-func (r *Runner) applyGatewayAPIResources(ctx context.Context, route model.GatewayRoute, project model.Project, application model.Application, environment model.Environment, namespace string) error {
-	manager, err := r.kubernetesManager(ctx, environment)
+func (r *Runner) applyGatewayAPIResources(ctx context.Context, route model.GatewayRoute, project model.Project, application model.Application, target model.DeploymentTarget, namespace string) error {
+	manager, err := r.kubernetesManager(ctx, target)
 	if err != nil {
 		return err
 	}
-	cluster, err := r.runtimeClusterForEnvironment(ctx, environment)
+	cluster, err := r.runtimeClusterForDeploymentTarget(ctx, target)
 	if err != nil {
 		return err
 	}
-	spec, err := httpRouteSpec(route, project, application, environment, cluster, namespace, r.gatewayServiceName(route, application, environment))
+	spec, err := httpRouteSpec(route, project, application, cluster, namespace, r.gatewayServiceName(route, application))
 	if err != nil {
 		return err
 	}
@@ -253,7 +252,7 @@ func routeConditionSummary(conditions []kubeprovider.RouteConditionSnapshot) str
 	return strings.Join(parts, "; ")
 }
 
-func (r *Runner) gatewayServiceName(route model.GatewayRoute, application model.Application, environment model.Environment) string {
+func (r *Runner) gatewayServiceName(route model.GatewayRoute, application model.Application) string {
 	var target model.DeploymentTarget
 	query := r.db.Where("project_id = ? and application_id = ? and enabled = ?", route.ProjectID, application.ID, true)
 	if strings.TrimSpace(route.DeploymentTargetID) != "" {
@@ -295,15 +294,15 @@ func (r *Runner) ensureGatewayCertificate(ctx context.Context, manager kubeprovi
 	return spec, true, nil
 }
 
-func (r *Runner) gatewayCertificateSnapshot(ctx context.Context, route model.GatewayRoute, project model.Project, environment model.Environment, namespace string) (kubeprovider.CertificateSnapshot, bool, error) {
+func (r *Runner) gatewayCertificateSnapshot(ctx context.Context, route model.GatewayRoute, project model.Project, target model.DeploymentTarget, namespace string) (kubeprovider.CertificateSnapshot, bool, error) {
 	if strings.TrimSpace(route.TLSMode) != "http-challenge" {
 		return kubeprovider.CertificateSnapshot{}, false, nil
 	}
-	manager, err := r.kubernetesManager(ctx, environment)
+	manager, err := r.kubernetesManager(ctx, target)
 	if err != nil {
 		return kubeprovider.CertificateSnapshot{}, true, err
 	}
-	cluster, err := r.runtimeClusterForEnvironment(ctx, environment)
+	cluster, err := r.runtimeClusterForDeploymentTarget(ctx, target)
 	if err != nil {
 		return kubeprovider.CertificateSnapshot{}, true, err
 	}

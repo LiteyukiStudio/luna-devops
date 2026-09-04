@@ -1,4 +1,4 @@
-import type { AppTemplate, AppTemplateInstallPayload, AppTemplateInstallResponse, AppTemplateSummary, BillingDeploymentSpend, BillingLedgerEntry, BillingListParams, BillingPeriodParams, BillingRateRule, BillingRateRulePayload, BillingSummary, BillingUsageRecord, BillingUsageSettlementResult, BillingWalletTransactionPayload, GatewayTrafficStatus, GatewayTrafficUsagePayload, InboxActionRequest, PaginatedResponse, PaginationParams, Project, ProjectListParams, ProjectMember, ProjectMemberCandidate, ProjectPin, ResultVisibility, SystemComponentInstallPayload, SystemComponentInstallResponse, SystemComponentStatusResponse } from '../types'
+import type { AppTemplate, AppTemplateInstallPayload, AppTemplateInstallResponse, AppTemplateSummary, BillingDeploymentSpend, BillingLedgerEntry, BillingListParams, BillingPeriodParams, BillingRateRule, BillingRateRulePayload, BillingSummary, BillingUsageRecord, BillingWalletTransactionPayload, GatewayTrafficStatus, InboxActionRequest, PaginatedResponse, PaginationParams, Project, ProjectListParams, ProjectMember, ProjectMemberCandidate, ProjectPin, ResultVisibility, SystemComponentInstallPayload, SystemComponentInstallResponse } from '../types'
 import { billingQuery, billingSummaryQuery, paginationQuery, request } from '../core'
 import { selectionItems, selectionPageParams } from '../selection-page'
 
@@ -18,15 +18,6 @@ export const projectsApi = {
   getAppTemplate: (templateId: string) => request<AppTemplate>(`/app-templates/${encodeURIComponent(templateId)}`),
   installAppTemplate: (projectId: string, templateId: string, payload: AppTemplateInstallPayload) =>
     request<AppTemplateInstallResponse>(`/projects/${projectId}/app-templates/${encodeURIComponent(templateId)}/install`, { method: 'POST', body: JSON.stringify(payload) }),
-  listSystemComponents: (params?: { componentId?: string, clusterId?: string }) => {
-    const search = new URLSearchParams()
-    if (params?.componentId)
-      search.set('componentId', params.componentId)
-    if (params?.clusterId)
-      search.set('clusterId', params.clusterId)
-    const suffix = search.toString() ? `?${search.toString()}` : ''
-    return request<SystemComponentStatusResponse>(`/system-components${suffix}`)
-  },
   installSystemAppTemplate: (templateId: string, payload: SystemComponentInstallPayload) =>
     request<SystemComponentInstallResponse>(`/app-templates/${encodeURIComponent(templateId)}/system-install`, { method: 'POST', body: JSON.stringify(payload) }),
   getBillingSummary: (projectIds?: string[], period?: BillingPeriodParams) =>
@@ -43,11 +34,6 @@ export const projectsApi = {
     request<BillingRateRule[]>('/billing/rate-rules', { method: 'PUT', body: JSON.stringify({ rules }) }),
   createBillingWalletTransaction: (payload: BillingWalletTransactionPayload) =>
     request<BillingLedgerEntry>('/billing/wallet-transactions', { method: 'POST', body: JSON.stringify(payload) }),
-  createGatewayTrafficUsage: (payload: GatewayTrafficUsagePayload) =>
-    request<BillingUsageSettlementResult>('/billing/gateway-traffic', { method: 'POST', body: JSON.stringify(payload) }),
-  listProjectPins: () => request<PaginatedResponse<ProjectPin>>(`/projects/pins?${paginationQuery(selectionPageParams)}`).then(selectionItems),
-  updateProjectOrder: (projectIds: string[]) =>
-    request<{ projectIds: string[] }>('/projects/order', { method: 'PUT', body: JSON.stringify({ projectIds }) }),
   createProject: (payload: Pick<Project, 'identifier' | 'name' | 'description' | 'maxConcurrentBuilds' | 'webConsoleEnabled'>) =>
     request<Project>('/projects', { method: 'POST', body: JSON.stringify(payload) }),
   getProject: (projectId: string) => request<Project>(`/projects/${projectId}`),

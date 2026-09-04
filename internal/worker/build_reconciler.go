@@ -31,9 +31,6 @@ func (r *Runner) syncBuildJobStatus(ctx context.Context) {
 }
 
 func (r *Runner) markExpiredBuildJobsLost(ctx context.Context) error {
-	if r.db == nil {
-		return nil
-	}
 	now := time.Now()
 	var lostRuns []model.BuildRun
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -42,12 +39,11 @@ func (r *Runner) markExpiredBuildJobsLost(ctx context.Context) error {
 			Joins("join build_runs on build_runs.id = build_jobs.build_run_id").
 			Where("build_jobs.status = ?", "running").
 			Where(
-				"(build_jobs.lease_until is not null and build_jobs.lease_until < ?) or (build_jobs.lease_until is null and build_jobs.started_at is not null and build_jobs.started_at < (?::timestamptz - (coalesce(nullif(build_runs.build_timeout_seconds, 0), ?) * interval '1 second')))",
-				now,
+				"build_jobs.started_at is not null and build_jobs.started_at < (?::timestamptz - (coalesce(nullif(build_runs.build_timeout_seconds, 0), ?) * interval '1 second'))",
 				now,
 				effectiveBuildTimeoutSeconds(0, r.buildJobTimeoutSeconds),
 			).
-			Order("build_jobs.started_at asc, build_jobs.lease_until asc").
+			Order("build_jobs.started_at asc").
 			Limit(50).
 			Find(&jobs).Error; err != nil {
 			return err
@@ -93,9 +89,6 @@ func (r *Runner) handleSyncStatus(ctx context.Context, task *asynq.Task) error {
 }
 
 func (r *Runner) syncReleaseRuntimeStatus(ctx context.Context) error {
-	if r.db == nil {
-		return nil
-	}
 	var releases []model.Release
 	if err := r.db.WithContext(ctx).
 		Where("status in ?", []string{"pending", "running"}).
@@ -125,12 +118,11 @@ func (r *Runner) syncReleaseRuntimeSnapshot(ctx context.Context, release model.R
 	if err != nil {
 		return err
 	}
-	environment := deploymentTargetEnvironment(deploymentTarget)
-	manager, err := r.kubernetesManager(ctx, environment)
+	manager, err := r.kubernetesManager(ctx, deploymentTarget)
 	if err != nil {
 		return err
 	}
-	namespace := deploymentNamespace(project, environment)
+	namespace := deploymentNamespace(project)
 	resourceName := applicationResourceName(deploymentTarget)
 	snapshot, err := manager.GetDeploymentSnapshot(ctx, namespace, resourceName)
 	if err != nil {
@@ -174,9 +166,7 @@ func (r *Runner) markReleaseRolloutFailed(ctx context.Context, release model.Rel
 func expiredBuildJobUpdates(finishedAt time.Time) map[string]any {
 	return map[string]any{
 		"status":      "lost",
-		"message":     "lease_expired",
-		"lease_token": "",
-		"lease_until": nil,
+		"message":     "build_timeout_expired",
 		"finished_at": &finishedAt,
 	}
 }

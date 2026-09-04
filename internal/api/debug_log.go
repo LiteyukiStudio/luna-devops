@@ -1,6 +1,7 @@
 package api
 
 import (
+	transportapi "github.com/LiteyukiStudio/devops/internal/api/transport"
 	"log/slog"
 	"strings"
 
@@ -34,7 +35,7 @@ func shortDebugHash(value string) string {
 	if value == "" {
 		return ""
 	}
-	hashed := hashToken(value)
+	hashed := transportapi.HashToken(value)
 	if len(hashed) <= 12 {
 		return hashed
 	}

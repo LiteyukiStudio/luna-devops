@@ -1,5 +1,4 @@
 const settings = {
-  siteDescription: '管理公開站點配置、安全策略、計費和資料保留。',
   siteSaved: '站點配置已儲存',
   siteConfigTitle: '品牌資訊',
   buildConfigTitle: '構建配置',
@@ -19,7 +18,6 @@ const settings = {
     accessModeHint: '預設允許所有已登入使用者使用；Agent 執行工具時仍嚴格繼承當前使用者許可權。',
     accessModeAllAuthenticated: '所有已登入使用者',
     accessModeAdmins: '僅平臺管理員',
-    model: '模型名稱',
     models: {
       title: 'AI 模型目錄',
       description: '每個模型都有獨立的 Token 價格。Run 建立時會儲存價格快照，之後修改模型價格不會影響歷史 Run。',
@@ -139,7 +137,6 @@ const settings = {
     saveFailed: 'AI 助手配置儲存失敗',
     baseUrlRequired: '啟用助手前請填寫 API 地址。',
     apiKeyRequired: '啟用助手前請填寫 API Key。',
-    modelRequired: '啟用助手前請填寫模型名稱。',
   },
   registration: {
     tab: '註冊與登入',
@@ -212,10 +209,7 @@ const settings = {
       creditsDisplayName: { label: 'Credits 展示名稱', description: '控制檯顯示平臺內部 credits 時使用的名稱，底層仍統一按 credits 儲存和結算。' },
       fiatCurrencyUnit: { label: '現實貨幣單位', description: '管理員檢視 credits 折算金額時使用的單位，例如 CNY、USD 或元。' },
       creditsPerFiatUnit: { label: '每 1 現實貨幣對應 Credits', description: '例如 1000 表示 1 個現實貨幣單位可以兌換 1000 credits。' },
-      freeQuotaCredits: { label: '預設免費額度', description: '新使用者錢包預設獲得的 credits 額度，已建立使用者不會自動補發。' },
       lowBalanceThresholdCredits: { label: '低餘額提醒閾值', description: '計費歸屬人餘額低於該 credits 數值時，用於展示提醒或觸發通知。' },
-      overdueGracePeriodHours: { label: '欠費寬限期', description: '餘額不足後允許繼續執行的小時數，限制策略啟用後生效。' },
-      allowNegativeBalance: { label: '允許欠費餘額', description: '允許賬本扣到負餘額；關閉後可由限制策略阻止新的付費操作。' },
       blockNewBuildsWhenInsufficient: { label: '餘額不足阻止新構建', description: '餘額不足時不再接受新構建任務，已經開始的任務仍會完成結算。' },
       blockDeployChangesWhenInsufficient: { label: '餘額不足阻止部署變更', description: '餘額不足時阻止新發布、擴容和新增資料卷等付費變更。' },
     },
@@ -292,7 +286,6 @@ const settings = {
     expired_auth_data: '過期認證資料',
   },
   billingRateRulesTitle: '計費規則',
-  billingRateRulesDescription: '調整平臺內建 meter 的 credits 單價和啟停狀態。歷史賬單不會因為調價而變化。',
   billingRateRulesFailedTitle: '計費規則載入失敗',
   billingRateRulesFailedDescription: '請確認當前賬號具有平臺管理員許可權，或稍後重試。',
   billingRateRulesSaved: '計費規則已儲存',
@@ -323,7 +316,6 @@ const settings = {
     'gateway.egress_gib': '閘道器響應出站流量；按實際傳輸的 GiB 計費。',
     'gateway.requests_1000': '閘道器請求次數；1 千請求表示 1,000 次請求。',
   },
-  securityDescription: '管理第三方登入繫結和用於 API 呼叫的個人 Access Token。',
   boundIdentities: '已繫結身份',
   identityLoadFailedTitle: '身份載入失敗',
   identityLoadFailedDescription: '請重新整理頁面後重試。',
@@ -334,7 +326,6 @@ const settings = {
   bindProviderTitle: '繫結新身份源',
   providerLoadFailedTitle: '身份源載入失敗',
   providerLoadFailedDescription: '請稍後重試。',
-  bind: '繫結',
   bindProvider: '繫結 {{provider}}',
 }
 

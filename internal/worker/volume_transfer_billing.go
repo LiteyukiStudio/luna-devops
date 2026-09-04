@@ -15,9 +15,6 @@ const volumeTransferBillingBatchSize = 100
 // ledger. The NOT EXISTS query is only an optimization: the billing service's
 // unique resource/meter key remains the cross-replica idempotency authority.
 func (r *Runner) settleVolumeTransferUsage(ctx context.Context, service billing.Service, now time.Time) error {
-	if r == nil || r.db == nil {
-		return nil
-	}
 	for {
 		if err := ctx.Err(); err != nil {
 			return err

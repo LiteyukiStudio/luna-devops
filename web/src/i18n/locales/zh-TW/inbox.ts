@@ -1,7 +1,6 @@
 export default {
   inbox: {
     title: '訊息盒子',
-    description: '檢視與你相關的平臺訊息和待處理請求。',
     open: '開啟訊息盒子',
     unreadCount: '{{count}} 條未讀訊息',
     unreadCountOverflow: '99 條以上未讀訊息',
@@ -40,7 +39,7 @@ export default {
       system: '系統',
     },
     priority: { critical: '緊急', high: '重要' },
-    detail: { title: '訊息詳情', requestStatus: '請求狀態', expiresAt: '過期時間' },
+    detail: { title: '訊息詳情', expiresAt: '過期時間' },
     decision: {
       acceptTitle: '確認接受此請求？',
       acceptDescription: '平臺會重新校驗許可權和資源狀態後執行該操作。',

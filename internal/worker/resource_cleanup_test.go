@@ -35,7 +35,7 @@ func TestStaleResourceCleanupPayloadsOnlyRecoverTimedOutDeletingRows(t *testing.
 		t.Fatalf("create cleanup fixtures: %v", err)
 	}
 	if err := db.Create(&model.RuntimeCluster{
-		ID: "rcl_stale", Name: "Stale cluster", Type: "kubernetes", DeleteStatus: "deleting", DeleteStartedAt: &oldStartedAt,
+		ID: "rcl_stale", Name: "Stale cluster", DeleteStatus: "deleting", DeleteStartedAt: &oldStartedAt,
 	}).Error; err != nil {
 		t.Fatalf("create stale runtime cluster: %v", err)
 	}

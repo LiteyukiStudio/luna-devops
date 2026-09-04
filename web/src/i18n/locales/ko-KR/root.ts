@@ -33,9 +33,7 @@ const root = {
   create: '생성',
   edit: '편집',
   delete: '삭제',
-  remove: '제거',
   backToProjectSpaces: '프로젝트 스페이스로 돌아가기',
-  backToProjectWorkspace: '프로젝트 스페이스 워크벤치로 돌아가기',
   backToApps: '애플리케이션 목록으로 돌아가기',
 }
 

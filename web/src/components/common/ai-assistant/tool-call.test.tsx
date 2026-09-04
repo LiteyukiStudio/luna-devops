@@ -172,7 +172,7 @@ describe('ai assistant tool status icon', () => {
       <AIToolCallCard
         block={{
           ...toolBlock('failed'),
-          operationId: 'create_interaction_cards',
+          operationId: 'present_card',
           errorCode: 'ai.provider_invalid_tool_arguments',
           result: {
             summaryKey: 'aiAssistant.cards.failed',
@@ -190,7 +190,7 @@ describe('ai assistant tool status icon', () => {
       />,
     )
 
-    fireEvent.click(screen.getByText('生成交互卡片'))
+    fireEvent.click(screen.getByText('展示信息卡片'))
     expect(screen.getByText('模型生成的工具参数不符合要求，请查看校验详情。')).toBeInTheDocument()
     expect(screen.getByText('cards.0.sections')).toBeInTheDocument()
     expect(screen.getByText('Too small: expected array to have >=1 items')).toBeInTheDocument()

@@ -3,6 +3,8 @@ package api
 import (
 	"strings"
 	"testing"
+
+	"github.com/LiteyukiStudio/devops/internal/api/aiapi"
 )
 
 func aiConfigDefaults() map[string]string {
@@ -46,7 +48,7 @@ func TestAINumericConfigDefinitionsHaveStrictWriteBounds(t *testing.T) {
 		if !strings.HasPrefix(definition.Key, "ai.") || definition.Type != "number" {
 			continue
 		}
-		if _, bounded := aiIntegerConfigBounds[definition.Key]; !bounded {
+		if _, bounded := aiapi.IntegerConfigBounds()[definition.Key]; !bounded {
 			t.Errorf("AI numeric config %s has no strict write contract", definition.Key)
 		}
 	}
@@ -67,8 +69,9 @@ func TestAIProviderAPIKeyIsMaskedByConfigCache(t *testing.T) {
 
 func TestAIConfigRejectsUnsafeProviderURLBeforeSaving(t *testing.T) {
 	h := &Handlers{configs: &configCache{values: aiConfigDefaults()}}
+	h.domains = newDomainHandlers(h)
 	for _, raw := range []string{"http://api.example.com/v1", "https://user:pass@api.example.com/v1"} {
-		if err := h.validateAIConfigValues(map[string]string{"ai.provider.base_url": raw}); err == nil {
+		if err := h.domains.ai.ValidateAIConfigValues(map[string]string{"ai.provider.base_url": raw}); err == nil {
 			t.Fatalf("unsafe URL accepted: %s", raw)
 		}
 	}
@@ -102,7 +105,7 @@ func TestAIConfigInputTypesAreStrictOnlyForSubmittedValues(t *testing.T) {
 		"numeric tenant":         {"ai.observability.loki_tenant_id": 123},
 		"numeric text setting":   {"ai.observability.loki_tenant_id": 100},
 	} {
-		if err := validateAIConfigInputTypes(values); err == nil {
+		if err := aiapi.ValidateAIConfigInputTypes(values, aiConfigDefinition); err == nil {
 			t.Errorf("invalid submitted AI config type accepted: %s", name)
 		}
 	}
@@ -112,7 +115,7 @@ func TestAIConfigInputTypesAreStrictOnlyForSubmittedValues(t *testing.T) {
 		"secret string":            {"ai.provider.api_key": "secret"},
 		"text setting":             {"ai.observability.loki_tenant_id": "tenant-a"},
 	} {
-		if err := validateAIConfigInputTypes(values); err != nil {
+		if err := aiapi.ValidateAIConfigInputTypes(values, aiConfigDefinition); err != nil {
 			t.Errorf("valid submitted AI config type rejected for %s: %v", name, err)
 		}
 	}
@@ -120,7 +123,8 @@ func TestAIConfigInputTypesAreStrictOnlyForSubmittedValues(t *testing.T) {
 
 func TestAIConfigAcceptsSafePublicProviderWithoutManualDomainAllowlist(t *testing.T) {
 	h := &Handlers{configs: &configCache{values: aiConfigDefaults()}}
-	if err := h.validateAIConfigValues(map[string]string{"ai.provider.base_url": "https://1.1.1.1/v1"}); err != nil {
+	h.domains = newDomainHandlers(h)
+	if err := h.domains.ai.ValidateAIConfigValues(map[string]string{"ai.provider.base_url": "https://1.1.1.1/v1"}); err != nil {
 		t.Fatalf("safe public Provider URL rejected: %v", err)
 	}
 }
@@ -134,7 +138,8 @@ func TestAIConfigRejectsUnsafeRuntimeBounds(t *testing.T) {
 		"ai.quota.user_concurrent_runs":       "0",
 	} {
 		h := &Handlers{configs: &configCache{values: aiConfigDefaults()}}
-		if err := h.validateAIConfigValues(map[string]string{key: value}); err == nil {
+		h.domains = newDomainHandlers(h)
+		if err := h.domains.ai.ValidateAIConfigValues(map[string]string{key: value}); err == nil {
 			t.Errorf("unsafe runtime setting accepted: %s=%s", key, value)
 		}
 	}
@@ -148,17 +153,19 @@ func TestAIConfigEditingUnrelatedFieldDoesNotRevalidateStoredBaseURL(t *testing.
 	defaults := aiConfigDefaults()
 	defaults["ai.provider.base_url"] = "https://api.internal-only.example/v1"
 	h := &Handlers{configs: &configCache{values: defaults}}
-	if err := h.validateAIConfigValues(map[string]string{"ai.runtime.max_request_retries": "4"}); err != nil {
+	h.domains = newDomainHandlers(h)
+	if err := h.domains.ai.ValidateAIConfigValues(map[string]string{"ai.runtime.max_request_retries": "4"}); err != nil {
 		t.Fatalf("editing unrelated setting revalidated stored base_url: %v", err)
 	}
 }
 
 func TestAIConfigRequiresProxyPoolWhenEnabled(t *testing.T) {
 	h := &Handlers{configs: &configCache{values: aiConfigDefaults()}}
-	if err := h.validateAIConfigValues(map[string]string{"ai.web.proxy_enabled": "true"}); err == nil {
+	h.domains = newDomainHandlers(h)
+	if err := h.domains.ai.ValidateAIConfigValues(map[string]string{"ai.web.proxy_enabled": "true"}); err == nil {
 		t.Fatal("enabled proxy pool without a configured secret was accepted")
 	}
-	if err := h.validateAIConfigValues(map[string]string{
+	if err := h.domains.ai.ValidateAIConfigValues(map[string]string{
 		"ai.web.proxy_enabled": "true",
 		"ai.web.proxy_pool":    "true",
 	}); err != nil {
@@ -168,10 +175,11 @@ func TestAIConfigRequiresProxyPoolWhenEnabled(t *testing.T) {
 
 func TestAIConfigRequiresAllObservabilitySourcesWhenEnabled(t *testing.T) {
 	h := &Handlers{configs: &configCache{values: aiConfigDefaults()}}
-	if err := h.validateAIConfigValues(map[string]string{"ai.observability.enabled": "true"}); err == nil {
+	h.domains = newDomainHandlers(h)
+	if err := h.domains.ai.ValidateAIConfigValues(map[string]string{"ai.observability.enabled": "true"}); err == nil {
 		t.Fatal("Agent observability without query sources was accepted")
 	}
-	if err := h.validateAIConfigValues(map[string]string{
+	if err := h.domains.ai.ValidateAIConfigValues(map[string]string{
 		"ai.observability.enabled":        "true",
 		"ai.observability.prometheus_url": "http://prometheus:9090",
 		"ai.observability.loki_url":       "http://loki:3100",
@@ -187,10 +195,11 @@ func TestAIConfigDefaultsToAuthenticatedUsersAndAcceptsAdminRestriction(t *testi
 		t.Fatalf("AI access default = %#v", definition)
 	}
 	h := &Handlers{configs: &configCache{values: aiConfigDefaults()}}
-	if err := h.validateAIConfigValues(map[string]string{"ai.access.mode": "admins"}); err != nil {
+	h.domains = newDomainHandlers(h)
+	if err := h.domains.ai.ValidateAIConfigValues(map[string]string{"ai.access.mode": "admins"}); err != nil {
 		t.Fatalf("admin-only access mode rejected: %v", err)
 	}
-	if err := h.validateAIConfigValues(map[string]string{"ai.access.mode": "allowlist"}); err == nil {
+	if err := h.domains.ai.ValidateAIConfigValues(map[string]string{"ai.access.mode": "allowlist"}); err == nil {
 		t.Fatal("unsupported access mode accepted")
 	}
 }

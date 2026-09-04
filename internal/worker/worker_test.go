@@ -14,6 +14,7 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/model"
 	kubeprovider "github.com/LiteyukiStudio/devops/internal/provider/kubernetes"
 	"github.com/LiteyukiStudio/devops/internal/provider/networkpolicy"
+	"github.com/LiteyukiStudio/devops/internal/redisconfig"
 	"github.com/LiteyukiStudio/devops/internal/tasks"
 	"github.com/LiteyukiStudio/devops/internal/telemetry"
 	"github.com/LiteyukiStudio/devops/internal/testdb"
@@ -117,22 +118,34 @@ func TestAIBillingStageFailurePreservesParentAndRedactedDiagnosticText(t *testin
 	}
 }
 
-func TestNewRunnerBuildJobOptions(t *testing.T) {
-	for _, test := range []struct {
-		name    string
-		options Options
-		timeout int64
-		issuer  string
-	}{
-		{name: "defaults", timeout: 600, issuer: "letsencrypt-http01"},
-		{name: "custom", options: Options{DeployRolloutTimeoutSeconds: 120, CertManagerClusterIssuer: "letsencrypt-staging"}, timeout: 120, issuer: "letsencrypt-staging"},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			runner := NewRunner(nil, test.options)
-			if runner.deployRolloutTimeoutSeconds != test.timeout || runner.certManagerClusterIssuer != test.issuer {
-				t.Fatalf("runner options = %d/%q, want %d/%q", runner.deployRolloutTimeoutSeconds, runner.certManagerClusterIssuer, test.timeout, test.issuer)
-			}
-		})
+func TestNewRunnerUsesValidatedOptionsWithoutApplyingDefaults(t *testing.T) {
+	options := Options{
+		DeployRolloutTimeoutSeconds: 120,
+		CertManagerClusterIssuer:    "letsencrypt-staging",
+		BuildExecutorImage:          "example.test/buildkit:latest",
+		BuildEgressMode:             "permissive",
+		BuildCacheTag:               "cache-v2",
+		BuildJobTimeoutSeconds:      900,
+		BuildJobTTLSeconds:          0,
+		VolumeTransferMaxBytes:      1024,
+	}
+	runner := newDryRunWorkerTestRunner(t, options)
+	if runner.deployRolloutTimeoutSeconds != options.DeployRolloutTimeoutSeconds ||
+		runner.certManagerClusterIssuer != options.CertManagerClusterIssuer ||
+		runner.buildExecutorImage != options.BuildExecutorImage ||
+		runner.buildEgressMode != options.BuildEgressMode ||
+		runner.buildCacheTag != options.BuildCacheTag ||
+		runner.buildJobTimeoutSeconds != options.BuildJobTimeoutSeconds ||
+		runner.buildJobTTLSeconds != 0 ||
+		runner.volumeTransferMaxBytes != options.VolumeTransferMaxBytes {
+		t.Fatalf("runner changed validated options: %#v", runner)
+	}
+}
+
+func TestRunWithRedisRejectsNilDatabaseBeforeStartingDependencies(t *testing.T) {
+	err := RunWithRedis(redisconfig.Options{}, nil, Options{})
+	if err == nil || !strings.Contains(err.Error(), "worker database is required") {
+		t.Fatalf("RunWithRedis error = %v", err)
 	}
 }
 
@@ -191,7 +204,7 @@ func TestPeriodicTaskOptionsPreserveZeroMaxRetry(t *testing.T) {
 }
 
 func TestRetentionHandlerIsRegistered(t *testing.T) {
-	runner := NewRunner(nil, Options{})
+	runner := newDryRunWorkerTestRunner(t, Options{})
 	called := false
 	runner.runAutomaticRetention = func(_ context.Context, _ time.Time) error {
 		called = true
@@ -210,7 +223,7 @@ func TestRetentionHandlerIsRegistered(t *testing.T) {
 
 func TestRetentionHandlerReturnsRunnerError(t *testing.T) {
 	wantErr := errors.New("retention failed")
-	runner := NewRunner(nil, Options{})
+	runner := newDryRunWorkerTestRunner(t, Options{})
 	runner.runAutomaticRetention = func(_ context.Context, _ time.Time) error {
 		return wantErr
 	}
@@ -223,7 +236,7 @@ func TestRetentionHandlerReturnsRunnerError(t *testing.T) {
 }
 
 func TestSyncStatusDoesNotRunAutomaticRetention(t *testing.T) {
-	runner := NewRunner(nil, Options{})
+	runner := newDryRunWorkerTestRunner(t, Options{})
 	runner.runAutomaticRetention = func(_ context.Context, _ time.Time) error {
 		return errors.New("retention failed")
 	}
@@ -289,9 +302,9 @@ func TestApplicationResourcesSpecIgnoresLegacyTargetLimitsAndAppliesCustomPolicy
 		model.Release{ID: "rel_policy", ImageRef: "example.invalid/app:test"},
 		model.Project{ID: "prj_policy"},
 		model.Application{ID: "app_policy"},
-		model.Environment{ID: "env_policy", Replicas: 1, CPURequest: "2", MemoryRequest: "2Gi"},
 		model.DeploymentTarget{
-			ID: "dplt_policy", KubernetesName: "dplt-policy", WorkloadType: "Deployment", CPULimit: "9", MemoryLimit: "9Gi",
+			ID: "dplt_policy", KubernetesName: "dplt-policy", WorkloadType: "Deployment", Replicas: 1,
+			CPURequest: "2", MemoryRequest: "2Gi", CPULimit: "9", MemoryLimit: "9Gi",
 			ServicePorts: model.EncodeDeploymentServicePorts([]model.DeploymentServicePort{{Name: "http", Port: 8080}}, 8080),
 		},
 		nil, nil, "policy-test", 60,
@@ -445,10 +458,10 @@ func TestStorageBillingEffectivePeriodDoesNotPrecedeClaimCreation(t *testing.T) 
 	}
 }
 
-func TestExpiredBuildJobUpdatesClearLease(t *testing.T) {
+func TestExpiredBuildJobUpdatesRecordTimeout(t *testing.T) {
 	finishedAt := time.Date(2026, 6, 9, 12, 0, 0, 0, time.UTC)
 	updates := expiredBuildJobUpdates(finishedAt)
-	if updates["status"] != "lost" || updates["message"] != "lease_expired" || updates["lease_token"] != "" || updates["lease_until"] != nil {
+	if updates["status"] != "lost" || updates["message"] != "build_timeout_expired" {
 		t.Fatalf("updates = %#v", updates)
 	}
 	gotFinishedAt, ok := updates["finished_at"].(*time.Time)
@@ -476,9 +489,7 @@ func TestProjectNamespaceSelection(t *testing.T) {
 	}{
 		{name: "persisted name", project: model.Project{ID: "prj_payments", Identifier: "payments", KubernetesNamespace: "luna-payments"}, resolve: projectNamespace, want: "luna-payments"},
 		{name: "missing persisted name fails closed", project: model.Project{ID: "prj_abcdef1234567890", Identifier: "Demo_App"}, resolve: projectNamespace, want: ""},
-		{name: "deployment ignores environment namespace", project: model.Project{ID: "prj_abcdef1234567890", Identifier: "demo", KubernetesNamespace: "luna-demo"}, resolve: func(project model.Project) string {
-			return deploymentNamespace(project, model.Environment{Namespace: " Prod_App "})
-		}, want: "luna-demo"},
+		{name: "deployment uses project namespace", project: model.Project{ID: "prj_abcdef1234567890", Identifier: "demo", KubernetesNamespace: "luna-demo"}, resolve: deploymentNamespace, want: "luna-demo"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			got := test.resolve(test.project)
@@ -489,12 +500,12 @@ func TestProjectNamespaceSelection(t *testing.T) {
 	}
 }
 
-func TestEnvironmentClusterLookupUsesEnvironmentClusterID(t *testing.T) {
-	query, args := environmentClusterLookup(" rcl_env ")
-	if query != "id = ? and type in ?" {
+func TestRuntimeClusterLookupTrimsClusterID(t *testing.T) {
+	query, args := runtimeClusterLookup(" rcl_target ")
+	if query != "id = ?" {
 		t.Fatalf("query = %q", query)
 	}
-	if args[0] != "rcl_env" {
+	if args[0] != "rcl_target" {
 		t.Fatalf("cluster id arg = %#v", args[0])
 	}
 }
@@ -527,7 +538,6 @@ func TestBuildJobSpecUsesRestrictedServiceAccountAndBuildScope(t *testing.T) {
 	spec := buildJobSpec(
 		"build-job-1",
 		"build-job-1-secret",
-		model.Environment{ID: "env_dev"},
 		model.BuildRun{BuildCPURequest: "750m", BuildMemoryRequest: "768Mi"},
 		builder.Task{ProjectID: "prj_demo", ApplicationID: "app_api", DeploymentTargetID: "dplt_api", BuildRunID: "brn_1", JobID: "bjb_1"},
 		"moby/buildkit:v0.24.0-rootless",
@@ -635,7 +645,7 @@ func TestBuildJobUsesRenderedTemplateDockerfile(t *testing.T) {
 		t.Fatalf("template.Dockerfile = %q", secret.StringData["template.Dockerfile"])
 	}
 
-	spec := buildJobSpec("build-job", "build-secret", model.Environment{}, model.BuildRun{}, task, "executor", false, "buildcache", 1800, 3600)
+	spec := buildJobSpec("build-job", "build-secret", model.BuildRun{}, task, "executor", false, "buildcache", 1800, 3600)
 	found := false
 	for _, volume := range spec.Spec.Template.Spec.Volumes {
 		if volume.Name != "executor-files" || volume.Secret == nil {
@@ -660,7 +670,6 @@ func TestBuildJobSpecCopiesOnlyProjectedExecutorFiles(t *testing.T) {
 	spec := buildJobSpec(
 		"build-job-1",
 		"build-job-1-secret",
-		model.Environment{ID: "env_dev"},
 		model.BuildRun{},
 		builder.Task{
 			ProjectID:          "prj_demo",
@@ -825,7 +834,7 @@ func TestBuildKubernetesJobFailureMessageIncludesPodTerminationAndEvent(t *testi
 			LastTimestamp: now,
 		},
 	)
-	runner := NewRunner(nil, Options{})
+	runner := newDryRunWorkerTestRunner(t, Options{})
 
 	message := runner.buildKubernetesJobFailureMessage(context.Background(), client, "ns-demo", "build-job", "kubernetes build job failed")
 
@@ -841,7 +850,6 @@ func TestHTTPRouteSpecTargetsApplicationService(t *testing.T) {
 		model.GatewayRoute{ID: "gwr_ABC_123", Host: "api.example.com", Path: "api", ServicePort: 8080, TLSMode: "http-challenge"},
 		model.Project{ID: "prj_demo"},
 		model.Application{Identifier: "api"},
-		model.Environment{Slug: "dev"},
 		model.RuntimeCluster{GatewayName: "luna-gateway", GatewayNamespace: "kube-system", GatewayClassName: "traefik"},
 		"project-demo",
 		"dplt-backend",
@@ -865,7 +873,6 @@ func TestHTTPRouteSpecUsesHTTPSSectionNameWhenGatewayTerminatesTLS(t *testing.T)
 		model.GatewayRoute{ID: "gwr_1", Host: "api.example.com", ServicePort: 3000},
 		model.Project{ID: "prj_demo"},
 		model.Application{Identifier: "api"},
-		model.Environment{Slug: "dev"},
 		model.RuntimeCluster{GatewayPublicScheme: "https", GatewayExternalTLSMode: "gateway", GatewayHTTPSListenerName: "secure-internal"},
 		"project-demo",
 		"",
@@ -883,7 +890,6 @@ func TestHTTPRouteSpecUsesHTTPSectionNameWhenTLSTerminatesUpstream(t *testing.T)
 		model.GatewayRoute{ID: "gwr_1", Host: "api.example.com", ServicePort: 3000},
 		model.Project{ID: "prj_demo"},
 		model.Application{Identifier: "api"},
-		model.Environment{Slug: "dev"},
 		model.RuntimeCluster{GatewayPublicScheme: "https", GatewayExternalTLSMode: "upstream", GatewayHTTPListenerName: "internal-web", GatewayHTTPSListenerName: "secure-internal"},
 		"project-demo",
 		"",
@@ -913,7 +919,6 @@ func TestHTTPRouteSpecDefaultsBackendWeight(t *testing.T) {
 		model.GatewayRoute{ID: "gwr_1", Host: "api.example.com", ServicePort: 3000, TLSMode: "http-only"},
 		model.Project{ID: "prj_demo"},
 		model.Application{Identifier: "api"},
-		model.Environment{Slug: "dev"},
 		model.RuntimeCluster{},
 		"project-demo",
 		"",
@@ -942,7 +947,6 @@ func TestHTTPRouteSpecMergesGatewayAdvancedConfig(t *testing.T) {
 		},
 		model.Project{ID: "prj_demo"},
 		model.Application{Identifier: "api"},
-		model.Environment{Slug: "dev"},
 		model.RuntimeCluster{
 			GatewayExternalTLSMode:        "upstream",
 			GatewayForwardedHeadersMode:   "overwrite",
@@ -1001,7 +1005,7 @@ func TestGatewayCertificateSpecUsesRuntimeClusterIssuerConfig(t *testing.T) {
 func TestGatewayWildcardCertificateSpecUsesClusterDomain(t *testing.T) {
 	spec, ok := gatewayWildcardCertificateSpec(
 		model.RuntimeCluster{
-			GatewayRootDomain:             "apps.example.com",
+			GatewayDomainSuffixesRaw:      "apps.example.com",
 			GatewayWildcardCertEnabled:    true,
 			GatewayWildcardCertSecretName: "apps-wildcard-tls",
 			GatewayCertificateNamespace:   "certs",
@@ -1029,7 +1033,7 @@ func TestGatewayDNSStatus(t *testing.T) {
 		{name: "lookup failure", resolver: fakeCNameResolver{err: fmt.Errorf("not found")}, want: "failed"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			runner := NewRunner(nil, Options{})
+			runner := newDryRunWorkerTestRunner(t, Options{})
 			runner.dnsResolver = test.resolver
 			if got := runner.gatewayDNSStatus(context.Background(), model.GatewayRoute{Host: "app.example.com", CNAMETarget: "gateway.example.com"}); got != test.want {
 				t.Fatalf("status = %q, want %q", got, test.want)
@@ -1179,12 +1183,12 @@ func (m *recordingNamespaceManager) EnsureBuildPolicy(_ context.Context, policy 
 
 func TestEnsureProjectNamespaceDefaultsToRestrictedBuildEgressPolicy(t *testing.T) {
 	manager := &recordingNamespaceManager{}
-	runner := NewRunner(nil, Options{})
-	runner.kubernetesManagerFactory = func(model.Environment) (kubeprovider.NamespaceManager, error) {
+	runner := newDryRunWorkerTestRunner(t, Options{BuildEgressMode: "restricted"})
+	runner.kubernetesManagerFactory = func(model.DeploymentTarget) (kubeprovider.NamespaceManager, error) {
 		return manager, nil
 	}
 
-	if err := runner.ensureProjectNamespace(context.Background(), "ns-demo", model.Project{ID: "prj_demo"}, model.Environment{}); err != nil {
+	if err := runner.ensureProjectNamespace(context.Background(), "ns-demo", model.Project{ID: "prj_demo"}, model.DeploymentTarget{}); err != nil {
 		t.Fatalf("ensureProjectNamespace returned error: %v", err)
 	}
 	if len(manager.policies) != 1 {
@@ -1209,12 +1213,12 @@ func TestEnsureProjectNamespaceDefaultsToRestrictedBuildEgressPolicy(t *testing.
 
 func TestEnsureProjectNamespaceSupportsExplicitPermissiveBuildEgressPolicy(t *testing.T) {
 	manager := &recordingNamespaceManager{}
-	runner := NewRunner(nil, Options{BuildEgressMode: "permissive"})
-	runner.kubernetesManagerFactory = func(model.Environment) (kubeprovider.NamespaceManager, error) {
+	runner := newDryRunWorkerTestRunner(t, Options{BuildEgressMode: "permissive"})
+	runner.kubernetesManagerFactory = func(model.DeploymentTarget) (kubeprovider.NamespaceManager, error) {
 		return manager, nil
 	}
 
-	if err := runner.ensureProjectNamespace(context.Background(), "ns-demo", model.Project{ID: "prj_demo"}, model.Environment{}); err != nil {
+	if err := runner.ensureProjectNamespace(context.Background(), "ns-demo", model.Project{ID: "prj_demo"}, model.DeploymentTarget{}); err != nil {
 		t.Fatalf("ensureProjectNamespace returned error: %v", err)
 	}
 	if len(manager.policies) != 1 {
@@ -1228,17 +1232,17 @@ func TestEnsureProjectNamespaceSupportsExplicitPermissiveBuildEgressPolicy(t *te
 
 func TestEnsureProjectNamespaceAppliesRestrictedBuildEgressPolicy(t *testing.T) {
 	manager := &recordingNamespaceManager{}
-	runner := NewRunner(nil, Options{
+	runner := newDryRunWorkerTestRunner(t, Options{
 		BuildEgressMode:         "restricted",
 		BuildPrivateEgressCIDRs: []string{"10.20.0.0/16"},
 		BuildPrivateEgressPorts: []int{443, 5000},
 		BuildBlockedEgressCIDRs: []string{"169.254.169.254/32", "10.96.0.0/12"},
 	})
-	runner.kubernetesManagerFactory = func(model.Environment) (kubeprovider.NamespaceManager, error) {
+	runner.kubernetesManagerFactory = func(model.DeploymentTarget) (kubeprovider.NamespaceManager, error) {
 		return manager, nil
 	}
 
-	if err := runner.ensureProjectNamespace(context.Background(), "ns-demo", model.Project{ID: "prj_demo"}, model.Environment{}); err != nil {
+	if err := runner.ensureProjectNamespace(context.Background(), "ns-demo", model.Project{ID: "prj_demo"}, model.DeploymentTarget{}); err != nil {
 		t.Fatalf("ensureProjectNamespace returned error: %v", err)
 	}
 	if len(manager.policies) != 1 {
@@ -1269,10 +1273,10 @@ func TestResourceCleanupCanRunOnlyAllowsDeleting(t *testing.T) {
 }
 
 func TestCleanupProjectNamespacesCoversDistinctClusters(t *testing.T) {
-	runner := NewRunner(nil, Options{})
+	runner := newDryRunWorkerTestRunner(t, Options{})
 	managers := map[string]*recordingNamespaceManager{}
-	runner.kubernetesManagerFactory = func(environment model.Environment) (kubeprovider.NamespaceManager, error) {
-		key := projectCleanupEnvironmentKey(environment)
+	runner.kubernetesManagerFactory = func(target model.DeploymentTarget) (kubeprovider.NamespaceManager, error) {
+		key := projectCleanupClusterKey(target)
 		manager := managers[key]
 		if manager == nil {
 			manager = &recordingNamespaceManager{}
@@ -1304,9 +1308,9 @@ func TestCleanupProjectNamespacesCoversDistinctClusters(t *testing.T) {
 }
 
 func TestCleanupProjectNamespacesWithoutDeploymentTargetsDoesNotRequireCluster(t *testing.T) {
-	runner := NewRunner(nil, Options{})
+	runner := newDryRunWorkerTestRunner(t, Options{})
 	managerCalls := 0
-	runner.kubernetesManagerFactory = func(model.Environment) (kubeprovider.NamespaceManager, error) {
+	runner.kubernetesManagerFactory = func(model.DeploymentTarget) (kubeprovider.NamespaceManager, error) {
 		managerCalls++
 		return nil, errors.New("unexpected manager call")
 	}
@@ -1361,12 +1365,9 @@ func TestRedisTemplateResolvedPasswordReachesKubernetesSecretWithoutManifestLeak
 		model.Release{ID: "rel_redis", ImageRef: template.Image},
 		model.Project{ID: "prj_redis", Identifier: "redis-project"},
 		model.Application{ID: "app_redis", Identifier: "redis"},
-		model.Environment{
-			ID: "env_prod", Slug: "prod", Replicas: 1,
-			CPURequest: template.DefaultCPU, MemoryRequest: template.DefaultMemory,
-		},
 		model.DeploymentTarget{
-			ID: "dplt_redis", KubernetesName: "redis-prod",
+			ID: "dplt_redis", Stage: "prod", KubernetesName: "redis-prod", Replicas: 1,
+			CPURequest: template.DefaultCPU, MemoryRequest: template.DefaultMemory,
 			ContainerCommand: template.ContainerCommand, ContainerArgs: template.ContainerArgs,
 			EnvVars: string(plainEnv), SecretRefs: string(resolvedSecretRefs),
 			ServicePorts: model.EncodeDeploymentServicePorts(
@@ -1451,10 +1452,11 @@ func TestApplicationResourcesSpecAppliesDefaults(t *testing.T) {
 		model.Release{ImageRef: "registry.example.com/acme/api:v1"},
 		model.Project{ID: "prj_demo", Identifier: "demo"},
 		model.Application{ID: "app_api", Identifier: "api"},
-		model.Environment{ID: "env_dev", Slug: "dev", EnvVars: `{"APP_ENV":"dev","LOG_LEVEL":"debug"}`, SecretRefs: `{"TOKEN":"secret"}`},
 		model.DeploymentTarget{
 			ID:             "dplt_backend",
 			KubernetesName: "dplt-backend",
+			EnvVars:        `{"APP_ENV":"dev","LOG_LEVEL":"debug"}`,
+			SecretRefs:     `{"TOKEN":"secret"}`,
 			ServicePorts:   model.EncodeDeploymentServicePorts([]model.DeploymentServicePort{{Name: "http", Port: 8080}}, 8080),
 		},
 		nil,
@@ -1478,7 +1480,6 @@ func TestApplicationResourcesSpecUsesSecretAsSingleAuthoritativeMode(t *testing.
 		model.Release{ImageRef: "registry.example.com/acme/api:v1"},
 		model.Project{ID: "prj_demo", Identifier: "demo"},
 		model.Application{ID: "app_api", Identifier: "api"},
-		model.Environment{ID: "env_dev", Slug: "dev"},
 		model.DeploymentTarget{
 			ID: "dplt_backend", KubernetesName: "dplt-backend", EnvVars: `{"TOKEN":"must-not-render"}`, SecretRefs: `{"TOKEN":"secret-value"}`,
 			ServicePorts: model.EncodeDeploymentServicePorts([]model.DeploymentServicePort{{Name: "http", Port: 8080}}, 8080),
@@ -1504,7 +1505,6 @@ func TestApplicationResourcesSpecMergesRuntimeConfigFiles(t *testing.T) {
 		model.Release{ImageRef: "registry.example.com/acme/api:v1"},
 		model.Project{ID: "prj_demo"},
 		model.Application{ID: "app_api"},
-		model.Environment{ID: "env_dev"},
 		model.DeploymentTarget{
 			ID: "dplt_backend", KubernetesName: "dplt-backend", ConfigFiles: `[{"path":"/app/config.yaml","content":"port: 3000"}]`,
 			ServicePorts: model.EncodeDeploymentServicePorts([]model.DeploymentServicePort{{Name: "http", Port: 8080}}, 8080),

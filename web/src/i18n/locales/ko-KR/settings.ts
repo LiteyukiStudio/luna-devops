@@ -1,5 +1,4 @@
 const settings = {
-  siteDescription: '공개 사이트 설정, 보안 정책, 과금, 데이터 보존을 관리합니다.',
   siteSaved: '사이트 설정이 저장되었습니다',
   siteConfigTitle: '브랜드 정보',
   buildConfigTitle: '빌드 설정',
@@ -19,7 +18,6 @@ const settings = {
     accessModeHint: '기본적으로 모든 로그인 사용자에게 허용됩니다. Agent가 도구를 실행할 때는 현재 사용자 권한을 엄격히 상속합니다.',
     accessModeAllAuthenticated: '모든 로그인 사용자',
     accessModeAdmins: '플랫폼 관리자만',
-    model: '모델 이름',
     models: {
       title: 'AI 모델 카탈로그',
       description: '각 모델에는 독립적인 Token 가격이 있습니다. Run 생성 시 가격 스냅샷이 저장되고 이후 모델 가격을 변경필요 과거 Run에는 영향을 주지 않습니다.',
@@ -139,7 +137,6 @@ const settings = {
     saveFailed: 'AI 어시스턴트 설정 저장에 실패했습니다',
     baseUrlRequired: '어시스턴트를 활성화하기 전에 API 주소를 입력하세요.',
     apiKeyRequired: '어시스턴트를 활성화하기 전에 API Key를 입력하세요.',
-    modelRequired: '어시스턴트를 활성화하기 전에 모델 이름을 입력하세요.',
   },
   registration: {
     tab: '등록 및 로그인',
@@ -212,10 +209,7 @@ const settings = {
       creditsDisplayName: { label: 'Credits 표시 이름', description: '콘솔이 플랫폼 남부 credits를 표시할 때 사용하는 이름. 기반은 계속 credits로 통일 저장 및 결산됩니다.' },
       fiatCurrencyUnit: { label: '현실 통화 단위', description: '관리자가 credits 환산 금액을 확인할 때 사용하는 단위. 예: CNY, USD, 원.' },
       creditsPerFiatUnit: { label: '1 현실 통화당 Credits', description: '예: 1000은 1 현실 통화 단위가 1000 credits로 교환될 수 있음을 의미합니다.' },
-      freeQuotaCredits: { label: '기본 물료 쿼터', description: '신규 사용자 지갑이 기본적으로 얻는 credits 쿼터. 생성된 사용자에게는 자동 보충되지 않습니다.' },
       lowBalanceThresholdCredits: { label: '저잔액 알림 임계값', description: '청구 귀속자의 잔액이 이 credits 값 아래로 떨어지면 알림 표시 또는 알림 트리거에 사용됩니다.' },
-      overdueGracePeriodHours: { label: '연체 유예 기간', description: '잔액 부족 후 실행을 계속할 수 있는 시간 수. 제한 정책 활성화 후 적용됩니다.' },
-      allowNegativeBalance: { label: '음수 잔액 허용', description: '원장을 음수 잔액까지 차감하는 것을 허용합니다. 비활성화하면 제한 정책으로 새로운 유료 작업을 차단할 수 있습니다.' },
       blockNewBuildsWhenInsufficient: { label: '잔액 부족 시 신규 빌드 차단', description: '잔액 부족 시 새로운 빌드 작업을 받지 않습니다. 시작된 작업은 계속 결산이 완료됩니다.' },
       blockDeployChangesWhenInsufficient: { label: '잔액 부족 시 배포 변경 차단', description: '잔액 부족 시 신규 릴리스, 스케일 업, 신규 데이터 볼륨 등 유료 변경을 차단합니다.' },
     },
@@ -292,7 +286,6 @@ const settings = {
     expired_auth_data: '만료된 인증 데이터',
   },
   billingRateRulesTitle: '과금 규칙',
-  billingRateRulesDescription: '플랫폼 내장 meter의 credits 단가와 활성/비활성 상태를 조정합니다. 과거 청구는 가격 변경으로 변화하지 않습니다.',
   billingRateRulesFailedTitle: '과금 규칙 로드 실패',
   billingRateRulesFailedDescription: '현재 계정에 플랫폼 관리자 권한이 있는지 확인하거나 잠시 후 다시 시도하세요.',
   billingRateRulesSaved: '과금 규칙이 저장되었습니다',
@@ -323,7 +316,6 @@ const settings = {
     'gateway.egress_gib': '게이트웨이 응답 송신 트래픽. 실제 전송된 GiB로 과금됩니다.',
     'gateway.requests_1000': '게이트웨이 요청 횟수. 1 천 요청은 1,000회 요청을 의미합니다.',
   },
-  securityDescription: '타사 로그인 바인딩과 API 호출용 개인 Access Token을 관리합니다.',
   boundIdentities: '바인딩된 ID',
   identityLoadFailedTitle: 'ID 로드 실패',
   identityLoadFailedDescription: '페이지를 새로고침한 후 다시 시도하세요.',
@@ -334,7 +326,6 @@ const settings = {
   bindProviderTitle: '새 ID 공급자 바인딩',
   providerLoadFailedTitle: 'ID 공급자 로드 실패',
   providerLoadFailedDescription: '잠시 후 다시 시도하세요.',
-  bind: '바인딩',
   bindProvider: '{{provider}} 바인딩',
 }
 

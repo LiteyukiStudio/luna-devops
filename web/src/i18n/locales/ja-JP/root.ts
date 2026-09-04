@@ -33,9 +33,7 @@ const root = {
   create: '作成',
   edit: '編集',
   delete: '削除',
-  remove: '削除',
   backToProjectSpaces: 'プロジェクトスペースに戻る',
-  backToProjectWorkspace: 'プロジェクトスペースワークベンチに戻る',
   backToApps: 'アプリケーション一覧に戻る',
 }
 

@@ -1,4 +1,4 @@
-import type { ClusterResource, ClusterResourceEvent, ClusterResourceYAML, PaginatedResponse, PaginationParams, Release, ReleaseImageCandidates, ReleaseLog, ReleaseRuntimeExecResult, ReleaseRuntimeLog, ResultVisibility, RuntimeCluster, RuntimeClusterPressure, RuntimeClusterResourceCategory, RuntimeClusterResourceKind, RuntimeClusterResourceListParams } from '../types'
+import type { ClusterResource, ClusterResourceEvent, ClusterResourceYAML, PaginatedResponse, PaginationParams, Release, ReleaseImageCandidates, ReleaseLog, ReleaseRuntimeLog, ResultVisibility, RuntimeCluster, RuntimeClusterPressure, RuntimeClusterResourceCategory, RuntimeClusterResourceKind, RuntimeClusterResourceListParams } from '../types'
 import { paginationWithProjectQuery, request, runtimeClusterResourceListQuery } from '../core'
 import { selectionItems, selectionPageParams } from '../selection-page'
 
@@ -23,7 +23,7 @@ export const runtimeApi = {
     request<void>(`/runtime/clusters/${clusterId}`, { method: 'DELETE' }),
   testRuntimeCluster: (clusterId: string) =>
     request<RuntimeCluster>(`/runtime/clusters/${clusterId}/test`, { method: 'POST' }),
-  listRuntimeClusterResources: (clusterId: string, params: { resourceCategory: RuntimeClusterResourceCategory, namespace?: string, projectId?: string, visibility?: ResultVisibility, applicationId?: string, environmentId?: string }) => {
+  listRuntimeClusterResources: (clusterId: string, params: { resourceCategory: RuntimeClusterResourceCategory, namespace?: string, projectId?: string, visibility?: ResultVisibility, applicationId?: string, deploymentTargetId?: string }) => {
     const query = runtimeClusterResourceListQuery({ ...selectionPageParams, ...params })
     return request<PaginatedResponse<ClusterResource>>(`/runtime/clusters/${clusterId}/resources?${query}`).then(selectionItems)
   },
@@ -58,12 +58,6 @@ export const runtimeApi = {
       search.set('applicationId', applicationId)
     return request<PaginatedResponse<Release>>(`/projects/${projectId}/releases?${search.toString()}`).then(selectionItems)
   },
-  listReleasesPage: (projectId: string, params: PaginationParams & { applicationId?: string }) => {
-    const search = new URLSearchParams(paginationWithProjectQuery(params))
-    if (params.applicationId)
-      search.set('applicationId', params.applicationId)
-    return request<PaginatedResponse<Release>>(`/projects/${projectId}/releases?${search.toString()}`)
-  },
   listReleaseImageCandidates: (projectId: string, applicationId: string, targetId: string) =>
     request<ReleaseImageCandidates>(`/projects/${projectId}/applications/${applicationId}/deployment-targets/${targetId}/release-image-candidates`),
   createRelease: (projectId: string, payload: Omit<Release, 'id' | 'projectId' | 'createdBy' | 'createdAt' | 'rollbackFromId'>) =>
@@ -79,8 +73,6 @@ export const runtimeApi = {
     const query = search.toString()
     return request<ReleaseRuntimeLog>(`/projects/${projectId}/releases/${releaseId}/runtime-logs${query ? `?${query}` : ''}`)
   },
-  execReleaseRuntimeCommand: (projectId: string, releaseId: string, payload: { command: string, container?: string }) =>
-    request<ReleaseRuntimeExecResult>(`/projects/${projectId}/releases/${releaseId}/exec`, { method: 'POST', body: JSON.stringify(payload) }),
   rollbackRelease: (projectId: string, releaseId: string) =>
     request<Release>(`/projects/${projectId}/releases/${releaseId}/rollback`, { method: 'POST' }),
 }

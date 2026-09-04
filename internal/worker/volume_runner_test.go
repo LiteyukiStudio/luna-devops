@@ -325,7 +325,7 @@ func TestHandleVolumeImportPreparesPodAndStopsAtReady(t *testing.T) {
 	runner := &Runner{volumeService: service, volumeTransferJobImage: "worker:test",
 		volumeTransferMaxBytes:       1 << 30,
 		projectVolumeProviderFactory: func(context.Context, string) (kubeprovider.ProjectVolumeProvider, error) { return claimProvider, nil },
-		volumeTransferJobFactory: func(context.Context, string) (kubeprovider.VolumeTransferJobProvider, error) {
+		volumeTransferProviderFactory: func(context.Context, string) (kubeprovider.VolumeTransferProvider, error) {
 			return streamProvider, nil
 		}}
 	task, _ := tasks.NewVolumeImportTask(tasks.VolumeTransferPayload{ProjectID: transfer.ProjectID, VolumeID: transfer.ProjectVolumeID, TransferID: transfer.ID})
@@ -419,7 +419,7 @@ func TestVolumeTransferCleanupExpiresReadySessionAndRemovesPod(t *testing.T) {
 		},
 	}
 	provider := &volumeTransferProviderStub{cleanupFn: func(context.Context, string, string) error { return nil }}
-	runner := &Runner{volumeService: service, volumeTransferJobFactory: func(context.Context, string) (kubeprovider.VolumeTransferJobProvider, error) { return provider, nil }}
+	runner := &Runner{volumeService: service, volumeTransferProviderFactory: func(context.Context, string) (kubeprovider.VolumeTransferProvider, error) { return provider, nil }}
 	task, _ := tasks.NewVolumeTransferCleanupTask(tasks.VolumeTransferCleanupPayload{})
 	if err := runner.handleVolumeTransferCleanup(context.Background(), task); err != nil || !cleaned {
 		t.Fatalf("cleanup error=%v cleaned=%t", err, cleaned)
@@ -445,7 +445,7 @@ func TestTargetedCleanupImmediatelyRemovesSucceededExportRuntime(t *testing.T) {
 		runtimeCleaned = true
 		return nil
 	}}
-	runner := &Runner{volumeService: service, volumeTransferJobFactory: func(context.Context, string) (kubeprovider.VolumeTransferJobProvider, error) {
+	runner := &Runner{volumeService: service, volumeTransferProviderFactory: func(context.Context, string) (kubeprovider.VolumeTransferProvider, error) {
 		return provider, nil
 	}}
 	task, _ := tasks.NewVolumeTransferCleanupTask(tasks.VolumeTransferCleanupPayload{TransferID: transfer.ID})
@@ -478,7 +478,7 @@ func TestTargetedCleanupImmediatelyRemovesFailedImportClaim(t *testing.T) {
 	}}
 	runner := &Runner{
 		volumeService: service,
-		volumeTransferJobFactory: func(context.Context, string) (kubeprovider.VolumeTransferJobProvider, error) {
+		volumeTransferProviderFactory: func(context.Context, string) (kubeprovider.VolumeTransferProvider, error) {
 			return streamProvider, nil
 		},
 		projectVolumeProviderFactory: func(context.Context, string) (kubeprovider.ProjectVolumeProvider, error) {
@@ -573,7 +573,7 @@ func TestFailStaleStreamingImportCleansRuntimeAndPartialClaim(t *testing.T) {
 	}}
 	runner := &Runner{
 		volumeService: service,
-		volumeTransferJobFactory: func(context.Context, string) (kubeprovider.VolumeTransferJobProvider, error) {
+		volumeTransferProviderFactory: func(context.Context, string) (kubeprovider.VolumeTransferProvider, error) {
 			return streamProvider, nil
 		},
 		projectVolumeProviderFactory: func(context.Context, string) (kubeprovider.ProjectVolumeProvider, error) {
@@ -596,7 +596,7 @@ func TestFailStaleStreamingHeartbeatCASConflictDoesNotCleanup(t *testing.T) {
 	}}
 	runner := &Runner{
 		volumeService: service,
-		volumeTransferJobFactory: func(context.Context, string) (kubeprovider.VolumeTransferJobProvider, error) {
+		volumeTransferProviderFactory: func(context.Context, string) (kubeprovider.VolumeTransferProvider, error) {
 			t.Fatal("provider cleanup ran after stale CAS conflict")
 			return nil, nil
 		},
@@ -625,7 +625,7 @@ func TestPreparationLeaseConflictDoesNotCreateSecondPod(t *testing.T) {
 		projectVolumeProviderFactory: func(context.Context, string) (kubeprovider.ProjectVolumeProvider, error) {
 			return &projectVolumeProviderStub{}, nil
 		},
-		volumeTransferJobFactory: func(context.Context, string) (kubeprovider.VolumeTransferJobProvider, error) { return provider, nil }}
+		volumeTransferProviderFactory: func(context.Context, string) (kubeprovider.VolumeTransferProvider, error) { return provider, nil }}
 	task, _ := tasks.NewVolumeExportTask(tasks.VolumeTransferPayload{ProjectID: transfer.ProjectID, VolumeID: transfer.ProjectVolumeID, TransferID: transfer.ID})
 	if err := runner.handleVolumeExport(context.Background(), task); err == nil || created {
 		t.Fatalf("error=%v second Pod created=%t", err, created)

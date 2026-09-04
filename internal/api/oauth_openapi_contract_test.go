@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	transportapi "github.com/LiteyukiStudio/devops/internal/api/transport"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -48,13 +49,13 @@ func TestOAuthOpenAPITracksRuntimeTransportDTOs(t *testing.T) {
 		{name: "token input", path: "/api/v1/oauth/token", method: "post", request: true, contentType: "application/x-www-form-urlencoded", runtimeType: reflect.TypeOf(oauthTokenInput{}), mode: oauthTransportInput, fieldTag: "form"},
 		{name: "token response", path: "/api/v1/oauth/token", method: "post", status: "200", runtimeType: reflect.TypeOf(oauthTokenResponse{}), mode: oauthTransportOutput},
 		{name: "token revocation input", path: "/api/v1/oauth/revoke", method: "post", request: true, contentType: "application/x-www-form-urlencoded", runtimeType: reflect.TypeOf(oauthTokenRevocationInput{}), mode: oauthTransportInput, fieldTag: "form"},
-		{name: "application page", path: "/api/v1/oauth/applications", method: "get", status: "200", runtimeType: reflect.TypeOf(paginatedResponseBody[oauthApplicationResponse]{}), mode: oauthTransportOutput},
+		{name: "application page", path: "/api/v1/oauth/applications", method: "get", status: "200", runtimeType: reflect.TypeOf(transportapi.PaginatedResponseBody[oauthApplicationResponse]{}), mode: oauthTransportOutput},
 		{name: "create application input", path: "/api/v1/oauth/applications", method: "post", request: true, contentType: "application/json", runtimeType: reflect.TypeOf(oauthApplicationInput{}), mode: oauthTransportInput},
 		{name: "create application response", path: "/api/v1/oauth/applications", method: "post", status: "201", runtimeType: reflect.TypeOf(oauthApplicationSecretResponse{}), mode: oauthTransportOutput},
 		{name: "update application input", path: "/api/v1/oauth/applications/{applicationId}", method: "put", request: true, contentType: "application/json", runtimeType: reflect.TypeOf(oauthApplicationInput{}), mode: oauthTransportInput},
 		{name: "update application response", path: "/api/v1/oauth/applications/{applicationId}", method: "put", status: "200", runtimeType: reflect.TypeOf(oauthApplicationResponse{}), mode: oauthTransportOutput},
 		{name: "rotate application response", path: "/api/v1/oauth/applications/{applicationId}/rotate-secret", method: "post", status: "200", runtimeType: reflect.TypeOf(oauthApplicationSecretResponse{}), mode: oauthTransportOutput},
-		{name: "grant page", path: "/api/v1/oauth/grants", method: "get", status: "200", runtimeType: reflect.TypeOf(paginatedResponseBody[oauthGrantResponse]{}), mode: oauthTransportOutput},
+		{name: "grant page", path: "/api/v1/oauth/grants", method: "get", status: "200", runtimeType: reflect.TypeOf(transportapi.PaginatedResponseBody[oauthGrantResponse]{}), mode: oauthTransportOutput},
 		{name: "authorization request", path: "/api/v1/oauth/authorize", method: "get", status: "200", runtimeType: reflect.TypeOf(oauthAuthorizationRequest{}), mode: oauthTransportOutput},
 		{name: "authorization decision input", path: "/api/v1/oauth/authorize", method: "post", request: true, contentType: "application/json", runtimeType: reflect.TypeOf(oauthAuthorizationDecisionInput{}), mode: oauthTransportInput},
 		{name: "authorization decision response", path: "/api/v1/oauth/authorize", method: "post", status: "200", runtimeType: reflect.TypeOf(oauthAuthorizationDecisionResponse{}), mode: oauthTransportOutput},

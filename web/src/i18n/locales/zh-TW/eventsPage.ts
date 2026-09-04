@@ -1,7 +1,5 @@
 const eventsPage = {
   title: '事件',
-  description: '按時間檢視構建、釋出、部署鉤子、訪問入口和證書的狀態變化。',
-  listTitle: '事件記錄',
   searchPlaceholder: '搜尋事件、訊息或資源 ID',
   emptyTitle: '當前範圍內沒有事件',
   emptyDescription: '事件會在構建、釋出、部署鉤子、訪問入口或證書狀態發生變化後出現在這裡。',
@@ -26,7 +24,6 @@ const eventsPage = {
     selectedCount: '當前已選擇 {{count}} 項篩選條件',
     clearAll: '清除全部',
     apply: '應用篩選',
-    scope: '檢視範圍',
     project: '專案空間',
     application: '應用',
     deploymentTarget: '部署配置',
@@ -45,8 +42,6 @@ const eventsPage = {
     allStatuses: '全部結果',
   },
   scopes: {
-    mine: '與我相關',
-    all: '全部事件',
   },
   categories: {
     build: '構建',

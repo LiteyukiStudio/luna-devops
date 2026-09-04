@@ -6,6 +6,7 @@ import { ModelRuntime, type AssistantModelInput } from "../src/model-runtime.js"
 import { OpenAIChatCompletionsProvider } from "../src/provider/openai-chat-completions.js"
 import { ProviderRequestError } from "../src/provider/provider-error.js"
 import { initializeTelemetry, shutdownTelemetry } from "../src/telemetry.js"
+import { testRegistry } from "./support/model-tool-registry.js"
 
 describe("OpenAI Chat Completions real HTTP contract", () => {
   const server = createServer((request, response) => {
@@ -125,7 +126,7 @@ describe("OpenAI Chat Completions real HTTP contract", () => {
     const events = []
     for await (const event of new ModelRuntime(
       provider(baseUrl),
-      [],
+      testRegistry(),
       { compile, setOptions: vi.fn() } as unknown as ContextCompiler,
     ).stream(runtimeInput())) events.push(event)
 

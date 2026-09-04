@@ -63,7 +63,6 @@ func (h *Handlers) buildDeploymentTargetImportPlan(ctx *gin.Context, user model.
 		input.Stage = strings.TrimSpace(request.Overrides.Stage)
 	}
 	input.Enabled = true
-	input.EnvironmentID = ""
 	input.BuildEnvironmentID = ""
 
 	preview := deploymentTargetBundlePreview{
@@ -156,7 +155,7 @@ func validateDeploymentTargetBundle(bundle deploymentTargetBundle) error {
 		return &deploymentBundleError{Code: "deployment_bundle.invalid_json", Message: "deployment bundle contains too many references or secret requirements"}
 	}
 	input := bundle.Configuration
-	if strings.TrimSpace(input.EnvironmentID) != "" || strings.TrimSpace(input.ClusterID) != "" || strings.TrimSpace(input.RepositoryBindingID) != "" ||
+	if strings.TrimSpace(input.ClusterID) != "" || strings.TrimSpace(input.RepositoryBindingID) != "" ||
 		strings.TrimSpace(input.BuildEnvironmentID) != "" || strings.TrimSpace(input.TargetRegistryID) != "" || len(input.BuildVariableSetIDs) > 0 ||
 		input.BuildSecrets != nil || len(input.BuildHookBindings) > 0 || len(input.RuntimeConfigRefs) > 0 ||
 		strings.TrimSpace(input.SecretFiles) != "" || input.Enabled {
@@ -372,7 +371,7 @@ func deploymentBundleReferenceDescriptorMatches(source, candidate deploymentBund
 		{source.Name, candidate.Name}, {source.Type, candidate.Type}, {source.Scope, candidate.Scope},
 		{source.Owner, candidate.Owner}, {source.Repository, candidate.Repository}, {source.Namespace, candidate.Namespace},
 		{source.AccessMode, candidate.AccessMode}, {source.VolumeMode, candidate.VolumeMode},
-		{source.ClusterName, candidate.ClusterName}, {source.ClusterType, candidate.ClusterType},
+		{source.ClusterName, candidate.ClusterName},
 	}
 	for _, check := range checks {
 		if strings.TrimSpace(check[0]) != "" && !equal(check[0], check[1]) {

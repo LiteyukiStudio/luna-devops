@@ -15,6 +15,7 @@ import (
 
 	"github.com/LiteyukiStudio/devops/internal/aiagent"
 	"github.com/LiteyukiStudio/devops/internal/aitool"
+	"github.com/LiteyukiStudio/devops/internal/api/aiapi"
 	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/database"
 	"github.com/LiteyukiStudio/devops/internal/model"
@@ -38,10 +39,10 @@ func TestAIProjectListVisibilityDirectExecutionPostgres(t *testing.T) {
 		ID: "ses_ai_scope_admin", UserID: admin.ID, TokenHash: "ai-project-scope-session-token", ExpiresAt: now.Add(time.Hour),
 	}
 	related := model.Project{
-		ID: "prj_ai_scope_related", Identifier: "ai-scope-related", Name: "Related", NamespaceStrategy: "project", DeleteStatus: "active",
+		ID: "prj_ai_scope_related", Identifier: "ai-scope-related", Name: "Related", DeleteStatus: "active",
 	}
 	unrelated := model.Project{
-		ID: "prj_ai_scope_unrelated", Identifier: "ai-scope-unrelated", Name: "Unrelated", NamespaceStrategy: "project", DeleteStatus: "active",
+		ID: "prj_ai_scope_unrelated", Identifier: "ai-scope-unrelated", Name: "Unrelated", DeleteStatus: "active",
 	}
 	member := model.ProjectMember{ID: "prjm_ai_scope_admin", ProjectID: related.ID, UserID: admin.ID, Role: authz.ProjectRoleOwner}
 	for _, value := range []any{&admin, &session, &related, &unrelated, &member} {
@@ -91,11 +92,11 @@ func TestAIProjectVolumeDirectExecutionAndAuthoritativeReadbackPostgres(t *testi
 	user := model.User{ID: "usr_ai_volume_owner", Email: "ai-volume-owner@example.test", Name: "AI Volume Owner", Role: authz.PlatformRoleAdmin}
 	session := model.UserSession{ID: "ses_ai_volume_owner", UserID: user.ID, TokenHash: "ai-volume-session-token", ExpiresAt: now.Add(time.Hour)}
 	project := model.Project{
-		ID: "prj_ai_volume", Identifier: "ai-volume", Name: "AI Volume", NamespaceStrategy: "project",
+		ID: "prj_ai_volume", Identifier: "ai-volume", Name: "AI Volume",
 		KubernetesNamespace: "luna-ai-volume", BillingOwnerUserID: user.ID, DeleteStatus: "active",
 	}
 	member := model.ProjectMember{ID: "prjm_ai_volume_owner", ProjectID: project.ID, UserID: user.ID, Role: authz.ProjectRoleOwner}
-	cluster := model.RuntimeCluster{ID: "rcl_ai_volume", Name: "AI Volume Cluster", Type: "kubernetes", Scope: "global", CreatedBy: user.ID}
+	cluster := model.RuntimeCluster{ID: "rcl_ai_volume", Name: "AI Volume Cluster", Scope: "global", CreatedBy: user.ID}
 	wallet := model.UserWallet{ID: "wlt_ai_volume_owner", UserID: user.ID, BalanceCredits: decimal.NewFromInt(100)}
 	for _, value := range []any{&user, &session, &project, &member, &cluster, &wallet} {
 		if err := db.Create(value).Error; err != nil {
@@ -109,10 +110,11 @@ func TestAIProjectVolumeDirectExecutionAndAuthoritativeReadbackPostgres(t *testi
 	// The readback deliberately exercises the public unavailable observation
 	// contract without requiring a test Kubernetes credential.
 	handlers.volumeClusters = nil
+	handlers.domains = newDomainHandlers(handlers)
 	router := gin.New()
-	router.Use(handlers.aiToolExecutionIdentityMiddleware())
-	router.POST("/api/v1/projects/:projectId/volumes", handlers.CreateProjectVolume)
-	router.GET("/api/v1/projects/:projectId/volumes/:volumeId", handlers.GetProjectVolume)
+	router.Use(handlers.domains.ai.AIToolExecutionIdentityMiddleware())
+	router.POST("/api/v1/projects/:projectId/volumes", handlers.domains.volume.CreateProjectVolume)
+	router.GET("/api/v1/projects/:projectId/volumes/:volumeId", handlers.domains.volume.GetProjectVolume)
 
 	keys := mustTestAIKeys(t)
 	runID := "airun_ai_volume"
@@ -138,8 +140,8 @@ func TestAIProjectVolumeDirectExecutionAndAuthoritativeReadbackPostgres(t *testi
 	createRequest.Header.Set("Authorization", "Bearer "+keys.CallbackServiceToken)
 	createRequest.Header.Set("Content-Type", "application/json")
 	createRequest.Header.Set("Idempotency-Key", createToolCallID)
-	createRequest.Header.Set(aiRunIDHeader, runID)
-	createRequest.Header.Set(aiToolCallIDHeader, createToolCallID)
+	createRequest.Header.Set(aiapi.RunIDHeader, runID)
+	createRequest.Header.Set(aiapi.ToolCallIDHeader, createToolCallID)
 	createRecorder := httptest.NewRecorder()
 	router.ServeHTTP(createRecorder, createRequest)
 	if createRecorder.Code != http.StatusAccepted {
@@ -159,8 +161,8 @@ func TestAIProjectVolumeDirectExecutionAndAuthoritativeReadbackPostgres(t *testi
 	}
 	getRequest := httptest.NewRequest(http.MethodGet, "/api/v1/projects/"+project.ID+"/volumes/"+created.ID, nil)
 	getRequest.Header.Set("Authorization", "Bearer "+keys.CallbackServiceToken)
-	getRequest.Header.Set(aiRunIDHeader, runID)
-	getRequest.Header.Set(aiToolCallIDHeader, getToolCallID)
+	getRequest.Header.Set(aiapi.RunIDHeader, runID)
+	getRequest.Header.Set(aiapi.ToolCallIDHeader, getToolCallID)
 	getRecorder := httptest.NewRecorder()
 	router.ServeHTTP(getRecorder, getRequest)
 	if getRecorder.Code != http.StatusOK {
@@ -204,8 +206,8 @@ func TestAIFetchWebPageDirectExecutionPostgres(t *testing.T) {
 		return security.AdminEgressPolicy(), nil
 	}))
 	router := gin.New()
-	router.Use(handlers.aiToolExecutionIdentityMiddleware())
-	router.POST("/api/v1/ai-tools/fetch-web-page", handlers.ExecuteAIFetchWebPage)
+	router.Use(handlers.domains.ai.AIToolExecutionIdentityMiddleware())
+	router.POST("/api/v1/ai-tools/fetch-web-page", handlers.domains.ai.ExecuteAIFetchWebPage)
 
 	keys := mustTestAIKeys(t)
 	conversationID := "aicnv_ai_web"
@@ -229,8 +231,8 @@ func TestAIFetchWebPageDirectExecutionPostgres(t *testing.T) {
 	execute := httptest.NewRequest(http.MethodPost, "/api/v1/ai-tools/fetch-web-page", bytes.NewBufferString(`{"url":"`+target.URL+`","maxCharacters":2000}`))
 	execute.Header.Set("Authorization", "Bearer "+keys.CallbackServiceToken)
 	execute.Header.Set("Content-Type", "application/json")
-	execute.Header.Set(aiRunIDHeader, runID)
-	execute.Header.Set(aiToolCallIDHeader, toolCallID)
+	execute.Header.Set(aiapi.RunIDHeader, runID)
+	execute.Header.Set(aiapi.ToolCallIDHeader, toolCallID)
 	recorder := httptest.NewRecorder()
 	router.ServeHTTP(recorder, execute)
 	if recorder.Code != http.StatusOK {
@@ -296,8 +298,8 @@ func executeAIProjectList(t *testing.T, db *gorm.DB, router http.Handler, user m
 	target := "/api/v1/projects?" + query.Encode()
 	execute := httptest.NewRequest(http.MethodGet, target, nil)
 	execute.Header.Set("Authorization", "Bearer "+keys.CallbackServiceToken)
-	execute.Header.Set(aiRunIDHeader, runID)
-	execute.Header.Set(aiToolCallIDHeader, toolCallID)
+	execute.Header.Set(aiapi.RunIDHeader, runID)
+	execute.Header.Set(aiapi.ToolCallIDHeader, toolCallID)
 	executeRecorder := httptest.NewRecorder()
 	router.ServeHTTP(executeRecorder, execute)
 	if executeRecorder.Code != http.StatusOK {

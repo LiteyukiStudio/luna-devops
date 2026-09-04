@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	transportapi "github.com/LiteyukiStudio/devops/internal/api/transport"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -89,6 +90,7 @@ func TestRateLimiterResetClearsCounter(t *testing.T) {
 func TestLoginAccountRateLimitKeyDoesNotExposeAccount(t *testing.T) {
 	server := miniredis.RunT(t)
 	h := &Handlers{mode: "production", rateLimiter: newRateLimiter(server.Addr())}
+	h.domains = newDomainHandlers(h)
 	t.Cleanup(func() { _ = h.rateLimiter.redis.Close() })
 	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
 	ctx.Request = httptest.NewRequest("POST", "/api/v1/auth/login", nil)
@@ -106,7 +108,7 @@ func TestLoginAccountRateLimitKeyDoesNotExposeAccount(t *testing.T) {
 	if len(keys) != 1 || strings.Contains(keys[0], "user@example.com") {
 		t.Fatalf("rate limit keys = %#v", keys)
 	}
-	wantSuffix := hashToken("user@example.com")
+	wantSuffix := transportapi.HashToken("user@example.com")
 	if !strings.HasSuffix(keys[0], wantSuffix) {
 		t.Fatalf("rate limit key = %q, want hash suffix %q", keys[0], wantSuffix)
 	}
@@ -115,6 +117,7 @@ func TestLoginAccountRateLimitKeyDoesNotExposeAccount(t *testing.T) {
 func TestOAuthClientRateLimitUsesIPAndHashedClientID(t *testing.T) {
 	server := miniredis.RunT(t)
 	h := &Handlers{mode: "production", rateLimiter: newRateLimiter(server.Addr())}
+	h.domains = newDomainHandlers(h)
 	t.Cleanup(func() { _ = h.rateLimiter.redis.Close() })
 
 	for attempt := 0; attempt < 31; attempt++ {
@@ -158,6 +161,7 @@ func TestOAuthPublicClientRateLimitBindsCredentialAndDirectSource(t *testing.T) 
 	t.Run("irrelevant field cannot change refresh credential bucket", func(t *testing.T) {
 		server := miniredis.RunT(t)
 		h := &Handlers{mode: "production", rateLimiter: newRateLimiter(server.Addr())}
+		h.domains = newDomainHandlers(h)
 		t.Cleanup(func() { _ = h.rateLimiter.redis.Close() })
 
 		for index := 0; index < oauthCredentialRateLimit; index++ {
@@ -195,6 +199,7 @@ func TestOAuthPublicClientRateLimitBindsCredentialAndDirectSource(t *testing.T) 
 	t.Run("direct peer always has a source bucket", func(t *testing.T) {
 		server := miniredis.RunT(t)
 		h := &Handlers{mode: "production", rateLimiter: newRateLimiter(server.Addr())}
+		h.domains = newDomainHandlers(h)
 		t.Cleanup(func() { _ = h.rateLimiter.redis.Close() })
 
 		for index := 0; index < oauthIPRateLimit; index++ {
@@ -219,6 +224,7 @@ func TestOAuthPublicClientRateLimitBindsCredentialAndDirectSource(t *testing.T) 
 func TestOAuthPublicClientRateLimitSeparatesTokenFlows(t *testing.T) {
 	server := miniredis.RunT(t)
 	h := &Handlers{mode: "production", rateLimiter: newRateLimiter(server.Addr())}
+	h.domains = newDomainHandlers(h)
 	t.Cleanup(func() { _ = h.rateLimiter.redis.Close() })
 
 	attempt := func(flow oauthClientAttemptFlow, field, value string) bool {
@@ -273,6 +279,7 @@ func TestOAuthPublicClientRateLimitIgnoresForwardedIPFromUntrustedPeer(t *testin
 		mode:        "production",
 		rateLimiter: newRateLimiter(server.Addr()),
 	}
+	h.domains = newDomainHandlers(h)
 	t.Cleanup(func() { _ = h.rateLimiter.redis.Close() })
 
 	router := gin.New()
@@ -309,6 +316,7 @@ func TestOAuthPublicClientRateLimitResolvesTrustedProxyChain(t *testing.T) {
 		mode:        "production",
 		rateLimiter: newRateLimiter(server.Addr()),
 	}
+	h.domains = newDomainHandlers(h)
 	t.Cleanup(func() { _ = h.rateLimiter.redis.Close() })
 
 	router := gin.New()
@@ -345,6 +353,7 @@ func TestOAuthPublicClientRateLimitsUseTrustedForwardedIPAndSeparateFlowBuckets(
 		mode:        "production",
 		rateLimiter: newRateLimiter(server.Addr()),
 	}
+	h.domains = newDomainHandlers(h)
 	t.Cleanup(func() { _ = h.rateLimiter.redis.Close() })
 
 	router := gin.New()
@@ -408,6 +417,7 @@ func TestOAuthPublicClientRateLimitsUseTrustedForwardedIPAndSeparateFlowBuckets(
 func TestOAuthDeviceVerificationRateLimitUsesIPAndHashedUserID(t *testing.T) {
 	server := miniredis.RunT(t)
 	h := &Handlers{mode: "production", rateLimiter: newRateLimiter(server.Addr())}
+	h.domains = newDomainHandlers(h)
 	t.Cleanup(func() { _ = h.rateLimiter.redis.Close() })
 
 	for attempt := 0; attempt < 31; attempt++ {

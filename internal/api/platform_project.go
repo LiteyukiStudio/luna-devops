@@ -34,7 +34,6 @@ func (h *Handlers) ensurePlatformSystemProject(user model.User, ctx context.Cont
 		KubernetesNamespace: resourceidentifier.ProjectNamespace(platformSystemProjectIdentifier),
 		Name:                "Luna Platform",
 		Description:         "Platform-owned applications and probes managed by Luna DevOps.",
-		NamespaceStrategy:   "project",
 		MaxConcurrentBuilds: 1,
 		BillingOwnerUserID:  strings.TrimSpace(user.ID),
 		SystemKey:           platformSystemProjectKey,

@@ -1,6 +1,5 @@
 const notificationsPage = {
   title: '通知',
-  description: 'プラットフォームイベントの通知チャネル、テンプレート、ルール、配信記録を管理します。',
   channels: 'チャネル',
   templates: 'テンプレート',
   rules: 'ルール',
@@ -25,8 +24,6 @@ const notificationsPage = {
   eventType: 'イベントタイプ',
   pageInfo: '{{page}} / {{totalPages}} ページ、全 {{total}} 件',
   emptyChannels: '通知チャネルがまだありません',
-  emptyChannelsDescription: '組み込みテンプレートからチャネルを作成できます。システムがプラットフォームに適合する Webhook 設定とデフォルトテンプレートを自動生成します。',
-  emptyChannelsAction: 'テンプレートから作成へ',
   emptyTemplates: '通知テンプレートがまだありません',
   emptyRules: '通知ルールがまだありません',
   emptyDeliveries: '配信記録がまだありません',

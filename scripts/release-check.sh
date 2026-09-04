@@ -27,7 +27,7 @@ if [[ -n "${worktree_status}" ]]; then
   exit 1
 fi
 
-for command_name in go pnpm node helm psql rg zip unzip; do
+for command_name in go pnpm node helm psql; do
   require_command "${command_name}"
 done
 
@@ -97,7 +97,6 @@ section "Linting and building the frontend"
 bash "${ROOT_DIR}/scripts/ci/check-web.sh"
 
 section "Building the documentation site"
-"${ROOT_DIR}/scripts/generate-changelog.sh"
 bash "${ROOT_DIR}/scripts/ci/check-docs.sh"
 
 section "Auditing dependency vulnerabilities"

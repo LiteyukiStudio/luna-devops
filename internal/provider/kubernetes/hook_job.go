@@ -19,7 +19,6 @@ func (c *Client) RunHookJob(ctx context.Context, spec HookJobSpec) (HookJobResul
 	labels := baseManagedLabels(spec.Name)
 	setLabel(labels, ProjectIDLabel, spec.ProjectID)
 	setLabel(labels, ApplicationIDLabel, spec.ApplicationID)
-	setLabel(labels, EnvironmentIDLabel, spec.EnvironmentID)
 	setLabel(labels, DeploymentTargetIDLabel, spec.DeploymentTargetID)
 	setLabel(labels, ReleaseIDLabel, spec.ReleaseID)
 	setLabel(labels, HookRunIDLabel, spec.HookRunID)
@@ -65,8 +64,8 @@ func (c *Client) RunHookJob(ctx context.Context, spec HookJobSpec) (HookJobResul
 							{Name: "LITEYUKI_PROJECT_ID", Value: spec.ProjectID},
 							{Name: "LITEYUKI_APPLICATION_ID", Value: spec.ApplicationID},
 							{Name: "LITEYUKI_BUILD_RUN_ID", Value: spec.BuildRunID},
-							{Name: "LITEYUKI_ENVIRONMENT_ID", Value: spec.EnvironmentID},
 							{Name: "LITEYUKI_DEPLOYMENT_TARGET_ID", Value: spec.DeploymentTargetID},
+							{Name: "LUNA_DEPLOYMENT_STAGE", Value: spec.Stage},
 							{Name: "LITEYUKI_RELEASE_ID", Value: spec.ReleaseID},
 							{Name: "LITEYUKI_HOOK_RUN_ID", Value: spec.HookRunID},
 							{Name: "LITEYUKI_HOOK_PHASE", Value: spec.Phase},

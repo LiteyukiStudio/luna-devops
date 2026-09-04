@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"github.com/LiteyukiStudio/devops/internal/api/notificationapi"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -21,7 +22,7 @@ func TestNotificationRuleInputRequiresExplicitExistingProjectScope(t *testing.T)
 			return db.AutoMigrate(&model.Project{}, &model.NotificationChannel{})
 		},
 	})
-	project := model.Project{ID: "prj_notification_scope", Identifier: "notification-scope", Name: "Notification scope", NamespaceStrategy: "shared"}
+	project := model.Project{ID: "prj_notification_scope", Identifier: "notification-scope", Name: "Notification scope"}
 	channel := model.NotificationChannel{ID: "nch_notification_scope", Name: "Shared", AdapterKind: notification.AdapterKindWebhook, ConfigJSON: `{}`, SecretRefsJSON: `{}`, Enabled: true}
 	if err := db.Create(&project).Error; err != nil {
 		t.Fatalf("create project: %v", err)
@@ -32,38 +33,38 @@ func TestNotificationRuleInputRequiresExplicitExistingProjectScope(t *testing.T)
 
 	tests := []struct {
 		name     string
-		input    notificationRuleInput
+		input    notificationapi.NotificationRuleInput
 		wantOK   bool
 		wantCode string
 	}{
 		{
 			name:   "selected project",
-			input:  notificationRuleInput{Name: "Project failures", EventTypes: []string{"build.failed", "build.failed"}, Filter: json.RawMessage(`{"scope":"projects","projectIds":["prj_notification_scope"]}`), ChannelIDs: []string{channel.ID, channel.ID}},
+			input:  notificationapi.NotificationRuleInput{Name: "Project failures", EventTypes: []string{"build.failed", "build.failed"}, Filter: json.RawMessage(`{"scope":"projects","projectIds":["prj_notification_scope"]}`), ChannelIDs: []string{channel.ID, channel.ID}},
 			wantOK: true,
 		},
 		{
 			name:   "explicit all",
-			input:  notificationRuleInput{Name: "All failures", EventTypes: []string{"build.failed"}, Filter: json.RawMessage(`{"scope":"all"}`), ChannelIDs: []string{channel.ID}},
+			input:  notificationapi.NotificationRuleInput{Name: "All failures", EventTypes: []string{"build.failed"}, Filter: json.RawMessage(`{"scope":"all"}`), ChannelIDs: []string{channel.ID}},
 			wantOK: true,
 		},
 		{
 			name:     "legacy empty filter",
-			input:    notificationRuleInput{Name: "Legacy", EventTypes: []string{"build.failed"}, Filter: json.RawMessage(`{}`), ChannelIDs: []string{channel.ID}},
+			input:    notificationapi.NotificationRuleInput{Name: "Legacy", EventTypes: []string{"build.failed"}, Filter: json.RawMessage(`{}`), ChannelIDs: []string{channel.ID}},
 			wantCode: "notification.rule_filter_invalid",
 		},
 		{
 			name:     "unknown filter field",
-			input:    notificationRuleInput{Name: "Unknown", EventTypes: []string{"build.failed"}, Filter: json.RawMessage(`{"scope":"all","unknown":true}`), ChannelIDs: []string{channel.ID}},
+			input:    notificationapi.NotificationRuleInput{Name: "Unknown", EventTypes: []string{"build.failed"}, Filter: json.RawMessage(`{"scope":"all","unknown":true}`), ChannelIDs: []string{channel.ID}},
 			wantCode: "notification.rule_filter_invalid",
 		},
 		{
 			name:     "missing project",
-			input:    notificationRuleInput{Name: "Missing", EventTypes: []string{"build.failed"}, Filter: json.RawMessage(`{"scope":"projects","projectIds":["prj_missing"]}`), ChannelIDs: []string{channel.ID}},
+			input:    notificationapi.NotificationRuleInput{Name: "Missing", EventTypes: []string{"build.failed"}, Filter: json.RawMessage(`{"scope":"projects","projectIds":["prj_missing"]}`), ChannelIDs: []string{channel.ID}},
 			wantCode: "notification.rule_project_not_found",
 		},
 		{
 			name:     "empty event types",
-			input:    notificationRuleInput{Name: "No events", Filter: json.RawMessage(`{"scope":"all"}`), ChannelIDs: []string{channel.ID}},
+			input:    notificationapi.NotificationRuleInput{Name: "No events", Filter: json.RawMessage(`{"scope":"all"}`), ChannelIDs: []string{channel.ID}},
 			wantCode: "notification.rule_required",
 		},
 	}
@@ -73,7 +74,7 @@ func TestNotificationRuleInputRequiresExplicitExistingProjectScope(t *testing.T)
 			recorder := httptest.NewRecorder()
 			ctx, _ := gin.CreateTestContext(recorder)
 			ctx.Request = httptest.NewRequest(http.MethodPost, "/api/v1/notifications/rules", nil)
-			rule, ok := (&Handlers{db: db}).notificationRuleFromInput(ctx, tt.input, model.NotificationRule{ID: "nrl_test"})
+			rule, ok := notificationapi.New(notificationHost{domainHost: domainHost{handlers: &Handlers{db: db}}}).NotificationRuleFromInput(ctx, tt.input, model.NotificationRule{ID: "nrl_test"})
 			if ok != tt.wantOK {
 				t.Fatalf("ok = %t, status=%d body=%s", ok, recorder.Code, recorder.Body.String())
 			}

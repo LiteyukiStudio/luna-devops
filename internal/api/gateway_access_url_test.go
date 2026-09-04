@@ -3,13 +3,15 @@ package api
 import (
 	"testing"
 
+	"github.com/LiteyukiStudio/devops/internal/api/gatewayapi"
 	"github.com/LiteyukiStudio/devops/internal/model"
+	"github.com/LiteyukiStudio/devops/internal/runtimecluster"
 )
 
 func TestGatewayRouteAccessURLUsesPublicScheme(t *testing.T) {
 	route := model.GatewayRoute{Host: "app.example.com", Path: "/admin", TLSMode: "http-only"}
 
-	if got := gatewayRouteAccessURL(route, "https", 443); got != "https://app.example.com/admin" {
+	if got := gatewayapi.GatewayRouteAccessURL(route, "https", 443); got != "https://app.example.com/admin" {
 		t.Fatalf("access url = %q", got)
 	}
 }
@@ -17,7 +19,7 @@ func TestGatewayRouteAccessURLUsesPublicScheme(t *testing.T) {
 func TestGatewayRouteAccessURLNormalizesPathAndScheme(t *testing.T) {
 	route := model.GatewayRoute{Host: "app.example.com", Path: "admin"}
 
-	if got := gatewayRouteAccessURL(route, "ftp", 80); got != "http://app.example.com/admin" {
+	if got := gatewayapi.GatewayRouteAccessURL(route, "ftp", 80); got != "http://app.example.com/admin" {
 		t.Fatalf("access url = %q", got)
 	}
 }
@@ -25,7 +27,7 @@ func TestGatewayRouteAccessURLNormalizesPathAndScheme(t *testing.T) {
 func TestGatewayRouteAccessURLOmitsRootPath(t *testing.T) {
 	route := model.GatewayRoute{Host: "app.example.com", Path: "/"}
 
-	if got := gatewayRouteAccessURL(route, "https", 443); got != "https://app.example.com" {
+	if got := gatewayapi.GatewayRouteAccessURL(route, "https", 443); got != "https://app.example.com" {
 		t.Fatalf("access url = %q", got)
 	}
 }
@@ -33,42 +35,36 @@ func TestGatewayRouteAccessURLOmitsRootPath(t *testing.T) {
 func TestGatewayRouteAccessURLShowsNonStandardPublicPort(t *testing.T) {
 	route := model.GatewayRoute{Host: "app.example.com", Path: "/"}
 
-	if got := gatewayRouteAccessURL(route, "https", 9443); got != "https://app.example.com:9443" {
+	if got := gatewayapi.GatewayRouteAccessURL(route, "https", 9443); got != "https://app.example.com:9443" {
 		t.Fatalf("access url = %q", got)
 	}
-	if got := gatewayRouteAccessURL(route, "http", 8080); got != "http://app.example.com:8080" {
+	if got := gatewayapi.GatewayRouteAccessURL(route, "http", 8080); got != "http://app.example.com:8080" {
 		t.Fatalf("access url = %q", got)
 	}
 }
 
-func TestNormalizeGatewayHostUsesClusterRootDomain(t *testing.T) {
-	h := &Handlers{configs: &configCache{values: map[string]string{}}}
-	cluster := model.RuntimeCluster{GatewayRootDomain: "Apps.Example.Com."}
+func TestNormalizeGatewayHostUsesFirstClusterDomainSuffix(t *testing.T) {
+	h := &Handlers{}
+	handler := gatewayapi.New(gatewayHost{domainHost: domainHost{handlers: h}})
+	cluster := model.RuntimeCluster{GatewayDomainSuffixesRaw: "Apps.Example.Com."}
 
-	if got := h.normalizeGatewayHost("demo", cluster, ""); got != "demo.apps.example.com" {
+	if got := handler.NormalizeGatewayHost("demo", cluster, ""); got != "demo.apps.example.com" {
 		t.Fatalf("host = %q", got)
 	}
 }
 
 func TestNormalizeGatewayHostUsesSelectedDomainSuffix(t *testing.T) {
-	h := &Handlers{configs: &configCache{values: map[string]string{}}}
+	h := &Handlers{}
+	handler := gatewayapi.New(gatewayHost{domainHost: domainHost{handlers: h}})
 	cluster := model.RuntimeCluster{GatewayDomainSuffixesRaw: "apps.example.com\ninternal.example.com"}
 
-	if got := h.normalizeGatewayHost("demo", cluster, "internal.example.com"); got != "demo.internal.example.com" {
+	if got := handler.NormalizeGatewayHost("demo", cluster, "internal.example.com"); got != "demo.internal.example.com" {
 		t.Fatalf("host = %q", got)
 	}
 }
 
-func TestGatewayRootDomainFallsBackToLegacyConfig(t *testing.T) {
-	h := &Handlers{configs: &configCache{values: map[string]string{"gateway.rootDomain": "legacy.example.com"}}}
-
-	if got := h.gatewayRootDomain(model.RuntimeCluster{}); got != "legacy.example.com" {
-		t.Fatalf("root domain = %q", got)
-	}
-}
-
 func TestNormalizeGatewayDomainSuffixesUsesExplicitValuesOnly(t *testing.T) {
-	got := normalizeGatewayDomainSuffixes([]string{"Apps.Example.Com.", "internal.example.com", "apps.example.com"}, "legacy.example.com", "fallback.example.com")
+	got := runtimecluster.DecodeGatewayDomainSuffixes("Apps.Example.Com.\ninternal.example.com\napps.example.com")
 	want := []string{"apps.example.com", "internal.example.com"}
 	if len(got) != len(want) {
 		t.Fatalf("suffixes = %#v", got)

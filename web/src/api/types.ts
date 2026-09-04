@@ -28,9 +28,6 @@ export interface AgentObservabilityTestResult {
   code: string
 }
 
-export interface AgentObservabilityPoint { timestamp: number, value: number }
-export interface AgentObservabilitySeries { labels: Record<string, string>, points: AgentObservabilityPoint[] }
-export interface AgentObservabilityLog { timestamp: string, line: string, labels: Record<string, string> }
 export interface AgentObservabilityTrace {
   traceId: string
   rootServiceName: string
@@ -192,7 +189,6 @@ export interface Project {
   kubernetesNamespace: string
   name: string
   description: string
-  namespaceStrategy: string
   maxConcurrentBuilds: number
   webConsoleEnabled: boolean
   currentUserRole?: ProjectRoleValue
@@ -445,11 +441,6 @@ export interface SystemComponentInstallation {
   installedBy: string
   createdAt: string
   updatedAt: string
-}
-
-export interface SystemComponentStatusResponse {
-  items: SystemComponentInstallation[]
-  gatewayTrafficProbeEnabled: boolean
 }
 
 export interface SystemComponentInstallPayload {
@@ -873,22 +864,6 @@ export interface GitBranch {
   sha: string
 }
 
-export interface GitFileContent {
-  path: string
-  name: string
-  ref: string
-  sha: string
-  content: string
-  encoding: string
-}
-
-export interface GitContentItem {
-  path: string
-  name: string
-  type: 'file' | 'dir' | string
-  sha: string
-}
-
 export interface GitRepositoryBuildOptions {
   dockerfiles: string[]
   directories: string[]
@@ -1027,7 +1002,7 @@ export interface BuildVariableSet {
   ownerRef: string
   projectIds: string[]
   variables: string | Record<string, string>
-  variableCount?: number
+  variableCount: number
   canInspectVariables?: boolean
   secrets: Record<string, boolean>
   enabled: boolean
@@ -1117,46 +1092,11 @@ export interface ProjectHookConfig {
 
 export type ProjectHookConfigPayload = Omit<ProjectHookConfig, 'id' | 'projectId' | 'createdBy' | 'createdAt' | 'updatedAt'>
 
-export interface HookRun {
-  id: string
-  projectId: string
-  hookConfigId: string
-  buildRunId: string
-  buildJobId: string
-  releaseId: string
-  applicationId: string
-  environmentId: string
-  deploymentTargetId: string
-  name: string
-  phase: HookPhase
-  status: 'queued' | 'running' | 'succeeded' | 'failed' | 'timeout' | 'skipped' | string
-  scriptSnapshot: string
-  shell: ProjectHookConfig['shell']
-  imageRef: string
-  timeoutSeconds: number
-  failurePolicy: ProjectHookConfig['failurePolicy']
-  exitCode: number
-  message: string
-  startedAt?: string | null
-  finishedAt?: string | null
-  createdAt: string
-}
-
-export interface HookRunLog {
-  id?: string
-  hookRunId: string
-  projectId: string
-  content: string
-  createdAt?: string
-  updatedAt?: string
-}
-
 export interface BuildRun {
   id: string
   projectId: string
   applicationId: string
   deploymentTargetId: string
-  buildLabels: string
   buildVariableSetIds: string | string[]
   status: 'queued' | 'running' | 'succeeded' | 'failed' | 'canceled' | 'lost' | 'timeout'
   triggerType: 'manual' | 'webhook' | 'push' | 'tag' | 'api' | 'retry'
@@ -1182,10 +1122,6 @@ export interface BuildRun {
   targetTag: string
   imageRef: string
   imageDigest: string
-  cacheConfig: string
-  cpuCoreSeconds: number
-  memoryMbSeconds: number
-  creditCost: number
   startedAt?: string
   finishedAt?: string
   createdBy: string
@@ -1231,7 +1167,6 @@ export interface DeploymentTarget {
   id: string
   projectId: string
   applicationId: string
-  environmentId: string
   name: string
   stage: string
   kubernetesName: string
@@ -1288,7 +1223,6 @@ export interface DeploymentTarget {
   targetTag: string
   targetImageRef?: string
   imageRef: string
-  buildLabels: string
   buildVariableSetIds: string[]
   buildHooksEnabled: boolean
   buildHookBindings: DeploymentTargetHookBinding[]
@@ -1393,7 +1327,6 @@ export interface DeploymentBundleReferenceDescriptor {
   volumeMode?: string
   storageClassName?: string
   clusterName?: string
-  clusterType?: string
 }
 
 export interface DeploymentBundleReference {
@@ -1470,13 +1403,10 @@ export interface BuildJob {
   id: string
   buildRunId: string
   projectId: string
-  type: string
   status: string
   message: string
   logRef: string
   attempts: number
-  leaseUntil?: string | null
-  lastHeartbeatAt?: string | null
   executorId?: string
   executorName?: string
   startedAt?: string
@@ -1484,20 +1414,9 @@ export interface BuildJob {
   createdAt: string
 }
 
-export interface BuildLog {
-  id: string
-  buildRunId: string
-  buildJobId: string
-  projectId: string
-  content: string
-  createdAt: string
-  updatedAt: string
-}
-
 export interface RuntimeCluster {
   id: string
   name: string
-  type: 'kubernetes' | 'k3s' | 'docker-compose'
   endpoint: string
   scope: 'global' | 'project' | 'user'
   ownerRef: string
@@ -1510,11 +1429,9 @@ export interface RuntimeCluster {
   memoryRequestPercent: number
   cpuLimitPercent: number
   memoryLimitPercent: number
-  gatewayRootDomain: string
   gatewayDomainSuffixes: string[]
   gatewayPublicScheme: 'http' | 'https'
   gatewayPublicPort: number
-  gatewayProvider: 'gateway-api'
   gatewayControllerType: 'traefik' | 'generic'
   gatewayClassName: string
   gatewayName: string
@@ -1596,7 +1513,6 @@ export interface ClusterResource {
   summary: string
   projectId: string
   applicationId: string
-  environmentId: string
   deploymentTargetId: string
   releaseId: string
   routeId: string
@@ -1630,14 +1546,13 @@ export interface RuntimeClusterResourceListParams extends PaginationParams {
   projectId?: string
   visibility?: ResultVisibility
   applicationId?: string
-  environmentId?: string
+  deploymentTargetId?: string
 }
 
 export interface Release {
   id: string
   projectId: string
   applicationId: string
-  environmentId: string
   deploymentTargetId: string
   buildRunId: string
   imageRef: string
@@ -1668,21 +1583,10 @@ export interface ReleaseRuntimeLog {
   content: string
 }
 
-export interface ReleaseRuntimeExecResult {
-  pod: string
-  container: string
-  stdout: string
-  stderr: string
-  exitCode: number
-  truncated: boolean
-  durationMs: number
-}
-
 export interface GatewayRoute {
   id: string
   projectId: string
   applicationId: string
-  environmentId: string
   deploymentTargetId: string
   host: string
   domainSuffix: string
@@ -1808,12 +1712,6 @@ export interface OAuthAuthorizationDecisionResponse {
   redirectUrl: string
 }
 
-export interface OAuthProtocolError {
-  error: string
-  error_description: string
-  requestId: string
-}
-
 export interface OAuthDeviceVerification {
   application: OAuthApplication
   userCode: string
@@ -1887,18 +1785,6 @@ export interface BillingWalletTransactionPayload {
   type: 'credit' | 'adjustment'
   description: string
   userId: string
-}
-
-export interface GatewayTrafficUsagePayload {
-  routeId: string
-  responseBytes: number
-  requestCount?: number
-  periodStart: string
-  periodEnd: string
-}
-
-export interface BillingUsageSettlementResult {
-  status: 'settled' | 'already_settled' | string
 }
 
 export interface BillingLedgerEntry {

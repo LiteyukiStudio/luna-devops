@@ -5,6 +5,7 @@ import { agentMetrics, clientSpanOptions, errorDiagnostic, telemetryLog, withSpa
 import { isRetryableHTTPStatus, parseRetryAfter, waitForRetry } from "../retry.js"
 import { agentRuntimeInternals, defaultRuntimeSettings } from "../runtime-settings.js"
 import type { AIModelSnapshot } from "../domain.js"
+import { ToolCatalog } from "../tools/catalog.js"
 
 export type RemoteAIModel = AIModelSnapshot
 
@@ -24,6 +25,19 @@ export type RemoteProviderConfig = {
   }
   runtime: RemoteRuntimeSettings
   toolCatalog: unknown[]
+}
+
+type PreparedRemoteConfig = Readonly<{
+  config: RemoteProviderConfig
+  catalog: ToolCatalog
+}>
+
+export type RemoteConfigListener = (config: RemoteProviderConfig, catalog: ToolCatalog) => void
+
+export interface RemoteConfigSource {
+  current(): RemoteProviderConfig | undefined
+  currentCatalog(): ToolCatalog | undefined
+  subscribe(listener: RemoteConfigListener): () => void
 }
 
 const runtimeSettingsSchema = z.object({
@@ -55,9 +69,9 @@ const remoteProviderConfigSchema = z.object({
   toolCatalog: z.array(z.record(z.string(), z.unknown())),
 })
 
-export class RemoteConfigSnapshot {
-  private currentConfig?: RemoteProviderConfig
-  private readonly listeners = new Set<(config: RemoteProviderConfig) => void>()
+export class RemoteConfigSnapshot implements RemoteConfigSource {
+  private currentSnapshot?: PreparedRemoteConfig
+  private readonly listeners = new Set<RemoteConfigListener>()
   private timer: ReturnType<typeof setTimeout> | undefined
   private refreshInFlight: Promise<RemoteProviderConfig> | undefined
   private polling = false
@@ -65,12 +79,15 @@ export class RemoteConfigSnapshot {
   constructor(
     private readonly baseUrl: string,
     private readonly serviceToken: string,
-    private readonly validateCandidate: (config: RemoteProviderConfig) => void | Promise<void> = () => undefined,
     private readonly refreshMs: number = agentRuntimeInternals.configRefreshMs,
   ) {}
 
   current(): RemoteProviderConfig | undefined {
-    return this.currentConfig
+    return this.currentSnapshot?.config
+  }
+
+  currentCatalog(): ToolCatalog | undefined {
+    return this.currentSnapshot?.catalog
   }
 
   async initialize(signal?: AbortSignal): Promise<RemoteProviderConfig> {
@@ -89,14 +106,12 @@ export class RemoteConfigSnapshot {
 
   private async refreshOnce(): Promise<RemoteProviderConfig> {
     const candidate = await this.fetchCandidate()
-    await this.validateCandidate(candidate)
-    const config = immutableRemoteProviderConfig(candidate)
-    this.currentConfig = config
-    for (const listener of this.listeners) listener(config)
-    return config
+    this.currentSnapshot = candidate
+    for (const listener of this.listeners) listener(candidate.config, candidate.catalog)
+    return candidate.config
   }
 
-  subscribe(listener: (config: RemoteProviderConfig) => void): () => void {
+  subscribe(listener: RemoteConfigListener): () => void {
     this.listeners.add(listener)
     return () => this.listeners.delete(listener)
   }
@@ -122,7 +137,7 @@ export class RemoteConfigSnapshot {
     this.timer = undefined
   }
 
-  private async fetchCandidate(): Promise<RemoteProviderConfig> {
+  private async fetchCandidate(): Promise<PreparedRemoteConfig> {
     return withSpan("luna_api.provider_config.get", clientSpanOptions({
       "server.address": new URL(this.baseUrl).hostname,
     }), async span => {
@@ -166,14 +181,26 @@ export class RemoteConfigSnapshot {
       )
       throw new Error("ai.provider_config_invalid")
     }
-    const config = parsed.data
+    const config = immutableRemoteProviderConfig(parsed.data)
+    let catalog: ToolCatalog
+    try {
+      catalog = ToolCatalog.load(config.toolCatalog)
+    }
+    catch (error) {
+      const issues = error instanceof z.ZodError ? error.issues : []
+      logInvalidProviderConfig(
+        issues.length ? issues.map(issue => stableConfigIssuePath(["toolCatalog", ...issue.path])) : ["toolCatalog"],
+        issues.length ? issues.map(issue => issue.code) : ["invalid_catalog"],
+      )
+      throw new Error("ai.provider_config_invalid", { cause: error })
+    }
     span.setAttribute("luna.provider.config_version", config.version)
-    return config
+    return Object.freeze({ config, catalog })
     })
   }
 
   private async fetchConfig(): Promise<Response> {
-    const maxRetries = this.currentConfig?.runtime.maxRequestRetries ?? defaultRuntimeSettings.maxRequestRetries
+    const maxRetries = this.currentSnapshot?.config.runtime.maxRequestRetries ?? defaultRuntimeSettings.maxRequestRetries
     const request = configFetchSignal()
     try {
       for (let retry = 0; ; retry += 1) {
@@ -242,13 +269,7 @@ function abortReason(signal: AbortSignal): Error {
 }
 
 export function immutableRemoteProviderConfig(config: RemoteProviderConfig): RemoteProviderConfig {
-  for (const model of config.provider.models) Object.freeze(model)
-  Object.freeze(config.provider.models)
-  Object.freeze(config.provider)
-  Object.freeze(config.runtime)
-  for (const operation of config.toolCatalog) Object.freeze(operation)
-  Object.freeze(config.toolCatalog)
-  return Object.freeze(config)
+  return deepFreeze(config)
 }
 
 export function parseRemoteProviderConfig(input: unknown): RemoteProviderConfig {
@@ -272,4 +293,10 @@ function logInvalidProviderConfig(paths: string[], issueCodes: string[]): void {
     "luna.provider_config.invalid_fields": [...new Set(paths)].slice(0, 20),
     "luna.provider_config.issue_codes": [...new Set(issueCodes)].slice(0, 20),
   })
+}
+
+function deepFreeze<T>(value: T): T {
+  if (!value || typeof value !== "object" || Object.isFrozen(value)) return value
+  for (const child of Object.values(value)) deepFreeze(child)
+  return Object.freeze(value)
 }

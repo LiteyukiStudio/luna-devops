@@ -1,6 +1,6 @@
 import type { ConversationToolInteraction } from "../domain.js"
 import type { ModelMessage } from "../provider/provider.js"
-export { cardToolOperationIds, internalToolOperationIds } from "../tools/internal-operation-ids.js"
+export { internalToolOperationIds } from "../tools/internal-operation-ids.js"
 
 // 审批恢复后，把已完成的工具调用重建为 assistant + tool 消息对，
 // 让模型在断点续跑时看到暂停前的工具结果。只重建有结果的调用。

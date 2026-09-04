@@ -50,7 +50,6 @@ const projectVolumes = {
   noTransfers: '現在インポートまたはエクスポートタスクがありません',
   bindingTarget: 'アプリ {{applicationId}} · デプロイ {{targetId}}',
   bindingPath: '{{path}} にマウント',
-  sourceApplication: 'ソースアプリ：{{name}}',
   edit: 'データボリュームを変更',
   editDescription: '表示名を変更できます。拡張のみサポートし、縮小はサポートしません。',
   updateSucceeded: 'データボリュームを更新しました',
@@ -73,7 +72,6 @@ const projectVolumes = {
   sourceExistingReferenced: '既存 PVC を参照',
   sourceExistingManaged: '既存 PVC を管理下に置く',
   sourceSnapshot: 'VolumeSnapshot から復元',
-  sourceArchiveImport: 'アーカイブインポート',
   sourceKinds: {
     blank: '空のボリューム',
     managed: 'プラットフォーム管理',

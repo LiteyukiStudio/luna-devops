@@ -17,8 +17,8 @@ import { UnicodeLexicalTokenizer } from "./retrieval/tokenizer.js"
 
 const inputSchema = z.object({
   type: z.literal("object"),
-  properties: z.record(z.string(), z.record(z.string(), z.unknown())).default({}),
-  required: z.array(z.string()).default([]),
+  properties: z.record(z.string(), z.record(z.string(), z.unknown())),
+  required: z.array(z.string()),
   additionalProperties: z.literal(false),
 }).passthrough()
 
@@ -26,40 +26,28 @@ const outputSchema = z.record(z.string(), z.unknown())
 
 const operationSchema = z.object({
   operationId: z.string().regex(/^[A-Za-z][A-Za-z0-9._-]{2,100}$/),
-  name: z.string().trim().min(1).max(160).optional(),
-  summary: z.string().trim().min(1).max(1000).optional(),
+  name: z.string().trim().min(1).max(160),
+  summary: z.string().trim().min(1).max(1000),
   category: z.string().trim().min(1).max(120),
-  tags: z.array(z.string().trim().min(1).max(120)).max(30).default([]),
-  aliases: toolAliasesSchema.default({ zh: [], en: [] }),
-  purpose: toolLocalizedTextSchema.default({ zh: "", en: "" }),
-  avoidWhen: toolLocalizedTextSchema.default({ zh: "", en: "" }),
-  preconditions: toolLocalizedListSchema.default({ zh: [], en: [] }),
-  successEvidence: toolLocalizedTextSchema.default({ zh: "", en: "" }),
-  requiresApproval: z.boolean().default(false),
+  tags: z.array(z.string().trim().min(1).max(120)).max(30),
+  aliases: toolAliasesSchema,
+  purpose: toolLocalizedTextSchema,
+  avoidWhen: toolLocalizedTextSchema,
+  preconditions: toolLocalizedListSchema,
+  successEvidence: toolLocalizedTextSchema,
+  requiresApproval: z.boolean(),
   idempotent: z.boolean(),
   method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]),
   path: z.string().startsWith("/api/v1/"),
   requiredScopes: z.array(z.string().trim().min(1).max(120)).max(20),
   inputSchema,
-  outputSchema: outputSchema.default({}),
+  outputSchema,
   sensitivePaths: z.array(z.string().trim().min(1).max(240)).max(100).default([]),
   parameters: z.array(toolRouteParameterSchema).max(100).default([]),
-  requestBody: z.boolean().default(false),
-  requestRequired: z.boolean().default(false),
+  requestBody: z.boolean(),
+  requestRequired: z.boolean(),
   requestType: z.string().trim().max(120).default(""),
-}).transform(value => ({
-  ...value,
-  name: value.name ?? value.operationId,
-  summary: value.summary ?? value.name ?? value.operationId,
-  tags: value.tags.length ? unique(value.tags) : [value.category],
-  aliases: {
-    zh: unique(value.aliases.zh),
-    en: unique(value.aliases.en),
-  },
-  purpose: localizedText(value.purpose, conservativePurpose(value.operationId, value.summary ?? value.name ?? value.operationId)),
-  avoidWhen: localizedText(value.avoidWhen),
-  successEvidence: localizedText(value.successEvidence),
-}))
+})
 
 export type ToolOperation = z.infer<typeof operationSchema>
 
@@ -79,9 +67,10 @@ export class ToolCatalog {
   readonly digest: string
 
   private constructor(values: ToolOperation[]) {
-    this.operations = new Map(values.map(value => [value.operationId, value]))
+    const immutableValues = values.map(deepFreeze)
+    this.operations = new Map(immutableValues.map(value => [value.operationId, value]))
     if (this.operations.size !== values.length) throw new Error("ai.tool_catalog_duplicate_operation")
-    this.orderedOperations = [...values].sort(compareOperations)
+    this.orderedOperations = Object.freeze([...immutableValues].sort(compareOperations)) as ToolOperation[]
     const tokenizer = new UnicodeLexicalTokenizer()
     this.bm25 = new BM25FIndex(this.orderedOperations.map(operation => ({
       operationId: operation.operationId,
@@ -268,14 +257,6 @@ function splitIdentifier(value: string): string[] {
   return value.replace(/([a-z0-9])([A-Z])/g, "$1 $2").split(/[._\-/\s]+/).map(part => part.toLowerCase()).filter(Boolean)
 }
 
-function localizedText(value: { zh: string, en: string }, fallback = "") {
-  return { zh: value.zh || fallback, en: value.en }
-}
-
-function conservativePurpose(operationId: string, summary: string): string {
-  return `用于调用 ${operationId} 对应的平台能力。${summary ? `平台摘要：${summary}` : ""}`
-}
-
 function compareOperations(left: ToolOperation, right: ToolOperation): number {
   return compareOperationsById(left.operationId, right.operationId)
 }
@@ -294,6 +275,12 @@ function bounded(value: string, maximumCharacters: number): string {
 
 function unique<T>(input: T[]): T[] {
   return [...new Set(input)]
+}
+
+function deepFreeze<T>(value: T): T {
+  if (!value || typeof value !== "object" || Object.isFrozen(value)) return value
+  for (const child of Object.values(value)) deepFreeze(child)
+  return Object.freeze(value)
 }
 
 export function validateArguments(schema: ToolOperation["inputSchema"], input: unknown): Record<string, unknown> {

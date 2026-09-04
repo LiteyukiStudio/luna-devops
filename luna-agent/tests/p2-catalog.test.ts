@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import { ToolCatalog, validateArguments, type ToolOperation } from "../src/tools/catalog.js"
 import { getToolDetailsInput } from "../src/tools/tool-details.js"
 import { searchToolsInput } from "../src/tools/tool-search.js"
+import { testToolOperation } from "./support/tool-catalog.js"
 
 const emptyInputSchema = {
   type: "object" as const,
@@ -105,6 +106,30 @@ const broadOperations = [
 ]
 
 describe("ToolCatalog", () => {
+  it.each([
+    "name", "summary", "tags", "aliases", "purpose", "avoidWhen", "preconditions",
+    "successEvidence", "requiresApproval", "inputSchema", "outputSchema", "requestBody", "requestRequired",
+  ] as const)("rejects a catalog operation without authority-owned %s", (field) => {
+    const invalid = structuredClone(testToolOperation("getProject"))
+    Reflect.deleteProperty(invalid, field)
+
+    expect(() => ToolCatalog.load([invalid])).toThrow()
+  })
+
+  it("normalizes only fields omitted by the Go catalog contract and freezes nested values", () => {
+    const input = structuredClone(testToolOperation("getProject"))
+    Reflect.deleteProperty(input, "sensitivePaths")
+    Reflect.deleteProperty(input, "parameters")
+    Reflect.deleteProperty(input, "requestType")
+
+    const operation = ToolCatalog.load([input]).get("getProject")
+
+    expect(operation).toMatchObject({ sensitivePaths: [], parameters: [], requestType: "" })
+    expect(Object.isFrozen(operation)).toBe(true)
+    expect(Object.isFrozen(operation.aliases.zh)).toBe(true)
+    expect(Object.isFrozen(operation.inputSchema)).toBe(true)
+  })
+
   it("browses the complete summary directory with an empty query and stable pagination", () => {
     const catalog = ToolCatalog.load(projectVolumeOperations)
     const first = catalog.search({ page: 1, pageSize: 2 })

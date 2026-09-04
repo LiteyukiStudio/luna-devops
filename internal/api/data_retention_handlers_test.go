@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/LiteyukiStudio/devops/internal/api/platformapi"
+	transportapi "github.com/LiteyukiStudio/devops/internal/api/transport"
 	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/retention"
@@ -14,12 +16,12 @@ import (
 )
 
 func TestParseDataRetentionRangeRequiresRFC3339OrderedBounds(t *testing.T) {
-	input := dataRetentionRequest{
+	input := platformapi.DataRetentionRequest{
 		Datasets: []string{"platform_events"},
 		StartAt:  "2026-07-01T00:00:00Z",
 		EndAt:    "2026-07-02T00:00:00+08:00",
 	}
-	parsed, err := parseDataRetentionRange(input)
+	parsed, err := platformapi.ParseDataRetentionRange(input)
 	if err != nil {
 		t.Fatalf("parse valid range: %v", err)
 	}
@@ -30,13 +32,13 @@ func TestParseDataRetentionRangeRequiresRFC3339OrderedBounds(t *testing.T) {
 		t.Fatalf("startAt = %s", parsed.StartAt)
 	}
 
-	for _, invalid := range []dataRetentionRequest{
+	for _, invalid := range []platformapi.DataRetentionRequest{
 		{StartAt: "2026-07-01", EndAt: "2026-07-02T00:00:00Z"},
 		{StartAt: "2026-07-01T00:00:00Z", EndAt: "not-a-time"},
 		{StartAt: "2026-07-02T00:00:00Z", EndAt: "2026-07-01T00:00:00Z"},
 		{StartAt: "2026-07-01T00:00:00Z", EndAt: "2026-07-01T00:00:00Z"},
 	} {
-		if _, err := parseDataRetentionRange(invalid); err == nil {
+		if _, err := platformapi.ParseDataRetentionRange(invalid); err == nil {
 			t.Fatalf("expected range to be rejected: %#v", invalid)
 		}
 	}
@@ -56,7 +58,7 @@ func TestDataRetentionErrorsUseStableCodes(t *testing.T) {
 	for _, test := range tests {
 		recorder := httptest.NewRecorder()
 		ctx, _ := gin.CreateTestContext(recorder)
-		writeDataRetentionError(ctx, test.err)
+		platformapi.WriteDataRetentionError(ctx, test.err)
 		if code := jsonString(t, recorder.Body.Bytes(), "code"); code != test.code {
 			t.Fatalf("error %v code = %q, want %q", test.err, code, test.code)
 		}
@@ -65,14 +67,14 @@ func TestDataRetentionErrorsUseStableCodes(t *testing.T) {
 
 func TestDataRetentionAuditSummariesDoNotIncludeServiceErrors(t *testing.T) {
 	secret := errors.New("raw build log content must not be audited")
-	if summary := dataRetentionFailureSummary(secret); summary != "cleanup failed" {
+	if summary := platformapi.DataRetentionFailureSummary(secret); summary != "cleanup failed" {
 		t.Fatalf("failure summary = %q", summary)
 	}
 	items := []retention.Result{
 		{Dataset: retention.DatasetBuildLogs, Matched: 12, Deleted: 10},
 		{Dataset: retention.DatasetReleaseLogs, Matched: 3, Deleted: 3},
 	}
-	if summary := dataRetentionResultSummary(items); summary != "datasets=2 matched=15 deleted=13" {
+	if summary := platformapi.DataRetentionResultSummary(items); summary != "datasets=2 matched=15 deleted=13" {
 		t.Fatalf("result summary = %q", summary)
 	}
 }
@@ -85,10 +87,11 @@ func TestDataRetentionEndpointsRequirePlatformAdmin(t *testing.T) {
 		t.Fatal(err)
 	}
 	sessionToken := "sess_retention_guard"
-	if err := db.Create(&model.UserSession{ID: "ses_retention_guard", UserID: user.ID, TokenHash: hashToken(sessionToken), ExpiresAt: now.Add(time.Hour)}).Error; err != nil {
+	if err := db.Create(&model.UserSession{ID: "ses_retention_guard", UserID: user.ID, TokenHash: transportapi.HashToken(sessionToken), ExpiresAt: now.Add(time.Hour)}).Error; err != nil {
 		t.Fatal(err)
 	}
 	handlers := &Handlers{db: db, configs: newConfigCache(db), mode: "development"}
+	handlers.domains = newDomainHandlers(handlers)
 	router := NewRouter(db, mustTestConfig(t))
 
 	tests := []struct {
@@ -96,8 +99,8 @@ func TestDataRetentionEndpointsRequirePlatformAdmin(t *testing.T) {
 		path    string
 		handler func(ctx *gin.Context)
 	}{
-		{method: http.MethodGet, path: "/api/v1/data-retention/catalog", handler: handlers.ListDataRetentionCatalog},
-		{method: http.MethodPost, path: "/api/v1/data-retention/preview", handler: handlers.PreviewDataRetention},
+		{method: http.MethodGet, path: "/api/v1/data-retention/catalog", handler: handlers.domains.platform.ListDataRetentionCatalog},
+		{method: http.MethodPost, path: "/api/v1/data-retention/preview", handler: handlers.domains.platform.PreviewDataRetention},
 	}
 	for _, test := range tests {
 		t.Run(test.path, func(t *testing.T) {

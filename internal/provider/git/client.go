@@ -76,6 +76,26 @@ func (c Client) postJSON(ctx context.Context, requestURL string, input, output a
 	return decodeGitResponse(resp, output)
 }
 
+func (c Client) delete(ctx context.Context, requestURL string) error {
+	if _, err := c.policy.ValidateURL(requestURL); err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, requestURL, nil)
+	if err != nil {
+		return err
+	}
+	c.authorize(req)
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return nil
+	}
+	return decodeGitResponse(resp, nil)
+}
+
 func (c Client) authorize(req *http.Request) {
 	req.Header.Set("Accept", "application/json")
 	if c.provider.Type == "github" {

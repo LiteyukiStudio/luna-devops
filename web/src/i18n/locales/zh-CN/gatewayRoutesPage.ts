@@ -1,5 +1,4 @@
 const gatewayRoutesPage = {
-  description: '管理应用访问域名、CNAME 指引和证书状态。当前阶段只完成 CRUD。',
   createRoute: '创建域名',
   editRoute: '编辑域名',
   routeDialogDescription: '选择要暴露的部署配置。留空域名时会按项目空间、应用和部署环境自动生成唯一默认域名；也可以填写短前缀或完整自定义域名。',
@@ -52,11 +51,6 @@ const gatewayRoutesPage = {
   tlsMode: 'TLS 模式',
   enabled: '启用访问',
   enabledHint: '关闭后会保留域名配置，但会撤销对应访问入口；重新启用后平台会再次下发。',
-  cnameTarget: 'CNAME 目标',
-  optionalGatewayConfig: '访问入口',
-  optionalGatewayConfigDescription: '可选配置当前应用的访问入口；留空域名时平台会按项目空间、应用和部署环境自动生成唯一默认域名。',
-  enableGatewayConfig: '配置访问入口',
-  gatewayRouteWillUpdate: '当前部署配置已有域名路由，保存后会更新该路由。',
   checkDomain: '检查域名',
   domainAvailable: '域名可用',
   domainCurrent: '当前域名属于此访问入口',

@@ -99,6 +99,19 @@ assert_output "${output}" 'go=false'
 assert_output "${output}" 'container=false'
 assert_output "${output}" 'container_images=[]'
 
+for documentation_path in README.md docs-internal/README.md reports/audit.html; do
+  : > "${output}"
+  run_case "${documentation_path}" "${output}"
+  assert_output "${output}" 'go=false'
+  assert_output "${output}" 'web=false'
+  assert_output "${output}" 'agent=false'
+  assert_output "${output}" 'docs=false'
+  assert_output "${output}" 'helm=false'
+  assert_output "${output}" 'dependencies=false'
+  assert_output "${output}" 'container=false'
+  assert_output "${output}" 'container_images=[]'
+done
+
 : > "${output}"
 run_case '.github/workflows/build-publish.yml' "${output}"
 assert_output "${output}" 'go=true'

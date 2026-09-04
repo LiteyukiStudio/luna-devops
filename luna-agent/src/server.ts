@@ -4,7 +4,7 @@ import type { RequestVerifier } from "./auth.js"
 import type { Config } from "./config.js"
 import type { AIModelSnapshot, ActorContext, Run, RunEvent } from "./domain.js"
 import { RunStateConflictError, type Repository } from "./persistence/repository.js"
-import type { RemoteConfigSnapshot } from "./provider/config-client.js"
+import type { RemoteConfigSource } from "./provider/config-client.js"
 import { createConfiguredProvider } from "./provider/managed.js"
 import { redact } from "./redaction.js"
 import type { ToolOrchestrator } from "./tools/orchestrator.js"
@@ -41,18 +41,19 @@ const aiModelSnapshot = z.object({
   outputCreditsPerMillion: z.string(),
   cachedInputCreditsPerMillion: z.string(),
 }).refine(snapshot => snapshot.maxOutputTokens < snapshot.maxContextTokens, { path: ["maxOutputTokens"] }) satisfies z.ZodType<AIModelSnapshot>
-export function buildServer(input: {
+export type BuildServerDependencies = {
   config: Config
   repository: Repository
   requestVerifier: RequestVerifier
-  tools?: ToolOrchestrator
-  remoteConfig?: RemoteConfigSnapshot
-  cancelRun?: (runId: string) => boolean | Promise<boolean>
-  toolCatalogDigest?: string | (() => string)
-  streamBus?: RunStreamBus
+  tools: ToolOrchestrator
+  remoteConfig: Pick<RemoteConfigSource, "current">
+  cancelRun: (runId: string) => boolean | Promise<boolean>
+  toolCatalogDigest: () => string
+  streamBus: RunStreamBus
   streamHubLimits?: { perRun: number, perInstance: number, pendingEvents?: number, pendingBytes?: number }
-}): FastifyInstance {
-  const toolCatalogDigest = () => typeof input.toolCatalogDigest === "function" ? input.toolCatalogDigest() : input.toolCatalogDigest
+}
+
+export function buildServer(input: BuildServerDependencies): FastifyInstance {
   const app = Fastify({
     ...(input.config.NODE_ENV === "test" ? { logger: false as const } : { loggerInstance: agentLogger() as unknown as FastifyBaseLogger }),
     bodyLimit: maximumRequestBodyBytes,
@@ -65,9 +66,9 @@ export function buildServer(input: {
   app.get("/internal/health/live", { logLevel: "silent" }, async () => ({ status: "ok" }))
   app.get("/internal/health/ready", { logLevel: "silent" }, async (_request, reply) => {
     const persistence = await input.repository.readiness()
-    const remoteConfig = input.remoteConfig?.current()
-    const providerConfigAvailable = !input.remoteConfig || remoteConfig !== undefined
-    const providerConfigured = input.remoteConfig ? remoteConfig?.provider.configured === true : true
+    const remoteConfig = input.remoteConfig.current()
+    const providerConfigAvailable = remoteConfig !== undefined
+    const providerConfigured = remoteConfig?.provider.configured === true
     if (!persistence.database || !persistence.schema || !providerConfigAvailable) {
       const errorCode = !persistence.database
         ? "ai.persistence_unavailable"
@@ -95,7 +96,6 @@ export function buildServer(input: {
     })
 
     secured.post("/internal/v1/provider/test", async (_request, reply) => {
-      if (!input.remoteConfig) return reply.code(503).send(errorBody("ai.provider_config_unavailable", _request.id))
       reply.header("cache-control", "no-store")
       const config = input.remoteConfig.current()
       if (!config) return reply.code(503).send(errorBody("ai.provider_config_unavailable", _request.id))
@@ -193,7 +193,7 @@ export function buildServer(input: {
         pageContext: z.record(z.string(), z.unknown()).default({}),
         runId: id.optional(),
       }).parse(request.body)
-      const catalogDigest = toolCatalogDigest()
+      const catalogDigest = input.toolCatalogDigest()
       const created = await withSpan("agent.turn.accept", internalSpanOptions({
         "luna.operation.name": "create_turn",
         "gen_ai.conversation.id": conversationId,
@@ -203,7 +203,7 @@ export function buildServer(input: {
           traceContext: captureTraceContext(request.headers),
           actorSessionId: request.actor.sessionId,
           idempotencyKey: key, ...(body.runId ? { preallocatedRunId: body.runId } : {}),
-          ...(catalogDigest ? { toolCatalogDigest: catalogDigest } : {}),
+          toolCatalogDigest: catalogDigest,
           modelId: body.modelId,
           ...(body.modelSnapshot ? { modelSnapshot: body.modelSnapshot } : {}),
         })
@@ -214,7 +214,6 @@ export function buildServer(input: {
       return reply.code(202).send({ turnId: created.turn.id, turnIndex: created.turn.turnIndex, runId: created.run.id, state: created.run.status, eventsUrl: `/api/v1/ai/runs/${created.run.id}/events` })
     })
     secured.post("/internal/v1/conversations/:conversationId/tool-actions", async (request, reply) => {
-      if (!input.tools) return reply.code(503).send(errorBody("ai.tool_not_available", request.id))
       const { conversationId } = z.object({ conversationId: id }).parse(request.params)
       const key = request.headers["idempotency-key"]
       if (typeof key !== "string" || key.length < 8 || key.length > 128) return reply.code(400).send(errorBody("idempotency_key_required", request.id))
@@ -225,7 +224,7 @@ export function buildServer(input: {
         runId: id,
       }).parse(request.body)
       if (body.runId !== request.actor.runId) return reply.code(409).send(errorBody("ai.run_state_conflict", request.id))
-      const catalogDigest = toolCatalogDigest()
+      const catalogDigest = input.toolCatalogDigest()
       const created = await withSpan("agent.tool_action.accept", internalSpanOptions({
         "luna.operation.name": "create_tool_action",
         "gen_ai.conversation.id": conversationId,
@@ -238,7 +237,7 @@ export function buildServer(input: {
           actorSessionId: request.actor.sessionId,
           idempotencyKey: key,
           preallocatedRunId: body.runId,
-          ...(catalogDigest ? { toolCatalogDigest: catalogDigest } : {}),
+          toolCatalogDigest: catalogDigest,
         })
         span.setAttribute("luna.turn.id", value.turn.id)
         span.setAttribute("luna.run.id", value.run.id)
@@ -273,13 +272,12 @@ export function buildServer(input: {
         : await input.repository.cancelRun(request.actor.userId, runId)
       if (!value) return reply.code(404).send(errorBody("ai.run_not_found", request.id))
       if (!wasTerminal && value.status === "canceled") {
-        try { await input.cancelRun?.(runId) } catch { /* 权威 canceled 已持久化，本地中止仅为 best effort。 */ }
+        try { await input.cancelRun(runId) } catch { /* 权威 canceled 已持久化，本地中止仅为 best effort。 */ }
       }
-      if (isTerminalRun(value)) await input.streamBus?.cleanup(runId).catch(() => undefined)
+      if (isTerminalRun(value)) await input.streamBus.cleanup(runId).catch(() => undefined)
       return reply.code(202).send(presentRun(value))
     })
     secured.post("/internal/v1/runs/:runId/approvals/:toolCallId/decision", async (request, reply) => {
-      if (!input.tools) return reply.code(503).send(errorBody("ai.tool_not_available", request.id))
       const { runId, toolCallId } = z.object({ runId: id, toolCallId: id }).parse(request.params)
       const body = z.object({
 		decision: z.enum(["reject", "approve"]),
@@ -369,7 +367,7 @@ export function buildServer(input: {
       }
       let liveEvents: typeof durableEvents = []
       let liveReplayFailed = false
-      try { liveEvents = input.streamBus ? await input.streamBus.read(runId, after) : [] }
+      try { liveEvents = await input.streamBus.read(runId, after) }
       catch (error) {
         liveReplayFailed = true
         telemetryLog("agent.stream.replay_failed", "warn", {

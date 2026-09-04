@@ -10,6 +10,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/LiteyukiStudio/devops/internal/api/buildapi"
+	"github.com/LiteyukiStudio/devops/internal/api/deploymentapi"
+	"github.com/LiteyukiStudio/devops/internal/api/runtimeapi"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/secret"
 	"gorm.io/driver/postgres"
@@ -19,27 +22,27 @@ import (
 func TestRuntimeSecretMutationReplacesAndClearsAtomically(t *testing.T) {
 	db := runtimeSecretMutationIntegrationDB(t)
 	handlers, set, user := runtimeSecretMutationFixture(t, db, "replace")
-	owner := projectRuntimeConfigSetSecretMutationOwner(set.ID, set.ProjectID)
+	owner := runtimeapi.ProjectRuntimeConfigSetSecretMutationOwner(set.ID, set.ProjectID)
 
 	passwordRef := storeRuntimeSecretFixture(t, handlers, db, "old-password", user.ID, owner.ResourcePrefix+":PASSWORD")
 	tokenRef := storeRuntimeSecretFixture(t, handlers, db, "old-token", user.ID, owner.ResourcePrefix+":TOKEN")
-	set.SecretRefs = encodeStringMap(map[string]string{"PASSWORD": passwordRef, "TOKEN": tokenRef})
+	set.SecretRefs = deploymentapi.EncodeStringMap(map[string]string{"PASSWORD": passwordRef, "TOKEN": tokenRef})
 	if err := db.Model(&model.ProjectRuntimeConfigSet{}).Where("id = ?", set.ID).Update("secret_refs", set.SecretRefs).Error; err != nil {
 		t.Fatalf("seed secret refs: %v", err)
 	}
 
-	prepared, err := prepareRuntimeSecretMutation(runtimeSecretMutationInput{
+	prepared, err := runtimeapi.PrepareRuntimeSecretMutation(runtimeapi.RuntimeSecretMutationInput{
 		Values: map[string]string{"PASSWORD": "new-password"},
 		Clear:  []string{"TOKEN"},
 	})
 	if err != nil {
 		t.Fatalf("prepare mutation: %v", err)
 	}
-	response, err := handlers.mutateRuntimeSecrets(t.Context(), user, prepared, owner)
+	response, err := handlers.domains.runtime.MutateRuntimeSecrets(t.Context(), user, prepared, owner)
 	if err != nil {
 		t.Fatalf("mutate runtime secrets: %v", err)
 	}
-	if len(response.EnvironmentVariables) != 1 || response.EnvironmentVariables[0].Key != "PASSWORD" || response.EnvironmentVariables[0].ValueMode != runtimeEnvironmentValueModeSecret || !response.EnvironmentVariables[0].Configured {
+	if len(response.EnvironmentVariables) != 1 || response.EnvironmentVariables[0].Key != "PASSWORD" || response.EnvironmentVariables[0].ValueMode != runtimeapi.RuntimeEnvironmentValueModeSecret || !response.EnvironmentVariables[0].Configured {
 		t.Fatalf("response variables = %#v, want configured PASSWORD secret", response.EnvironmentVariables)
 	}
 
@@ -47,7 +50,7 @@ func TestRuntimeSecretMutationReplacesAndClearsAtomically(t *testing.T) {
 	if err := db.First(&reloaded, "id = ?", set.ID).Error; err != nil {
 		t.Fatalf("reload config set: %v", err)
 	}
-	refs := decodeSecretRefs(reloaded.SecretRefs)
+	refs := buildapi.DecodeSecretRefs(reloaded.SecretRefs)
 	if got := handlers.secrets.ResolveContext(t.Context(), refs["PASSWORD"]); got != "new-password" {
 		t.Fatalf("resolved replacement = %q, want new-password", got)
 	}
@@ -67,11 +70,11 @@ func TestRuntimeSecretMutationAllowsPublicValueAndSecretToOverlap(t *testing.T) 
 		t.Fatalf("store public runtime fixture: %v", err)
 	}
 
-	prepared, err := prepareRuntimeSecretMutation(runtimeSecretMutationInput{Values: map[string]string{"TOKEN": "secret-value"}})
+	prepared, err := runtimeapi.PrepareRuntimeSecretMutation(runtimeapi.RuntimeSecretMutationInput{Values: map[string]string{"TOKEN": "secret-value"}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	response, err := handlers.mutateRuntimeSecrets(t.Context(), user, prepared, projectRuntimeConfigSetSecretMutationOwner(set.ID, set.ProjectID))
+	response, err := handlers.domains.runtime.MutateRuntimeSecrets(t.Context(), user, prepared, runtimeapi.ProjectRuntimeConfigSetSecretMutationOwner(set.ID, set.ProjectID))
 	if err != nil {
 		t.Fatalf("mutate runtime secrets: %v", err)
 	}
@@ -83,15 +86,15 @@ func TestRuntimeSecretMutationAllowsPublicValueAndSecretToOverlap(t *testing.T) 
 	if stored.EnvVars != set.EnvVars {
 		t.Fatalf("public value changed: env=%q, want %q", stored.EnvVars, set.EnvVars)
 	}
-	refs := decodeSecretRefs(stored.SecretRefs)
+	refs := buildapi.DecodeSecretRefs(stored.SecretRefs)
 	if got := handlers.secrets.ResolveContext(t.Context(), refs["TOKEN"]); got != "secret-value" {
 		t.Fatalf("resolved secret = %q, want secret-value", got)
 	}
-	if len(response.EnvironmentVariables) != 1 || response.EnvironmentVariables[0].Key != "TOKEN" || response.EnvironmentVariables[0].ValueMode != runtimeEnvironmentValueModeSecret {
+	if len(response.EnvironmentVariables) != 1 || response.EnvironmentVariables[0].Key != "TOKEN" || response.EnvironmentVariables[0].ValueMode != runtimeapi.RuntimeEnvironmentValueModeSecret {
 		t.Fatalf("mutation response = %#v, want configured TOKEN secret", response.EnvironmentVariables)
 	}
-	combined := runtimeEnvironmentVariables(stored.EnvVars, stored.SecretRefs)
-	if len(combined) != 2 || combined[0].ValueMode != runtimeEnvironmentValueModePublic || combined[1].ValueMode != runtimeEnvironmentValueModeSecret {
+	combined := runtimeapi.RuntimeEnvironmentVariables(stored.EnvVars, stored.SecretRefs)
+	if len(combined) != 2 || combined[0].ValueMode != runtimeapi.RuntimeEnvironmentValueModePublic || combined[1].ValueMode != runtimeapi.RuntimeEnvironmentValueModeSecret {
 		t.Fatalf("combined variables = %#v, want both modes with secret rendered separately", combined)
 	}
 }
@@ -99,19 +102,19 @@ func TestRuntimeSecretMutationAllowsPublicValueAndSecretToOverlap(t *testing.T) 
 func TestRuntimeSecretMutationRollsBackSecretWhenOwnerUpdateFails(t *testing.T) {
 	db := runtimeSecretMutationIntegrationDB(t)
 	handlers, set, user := runtimeSecretMutationFixture(t, db, "rollback")
-	owner := projectRuntimeConfigSetSecretMutationOwner(set.ID, set.ProjectID)
+	owner := runtimeapi.ProjectRuntimeConfigSetSecretMutationOwner(set.ID, set.ProjectID)
 	oldRef := storeRuntimeSecretFixture(t, handlers, db, "old-value", user.ID, owner.ResourcePrefix+":TOKEN")
-	set.SecretRefs = encodeStringMap(map[string]string{"TOKEN": oldRef})
+	set.SecretRefs = deploymentapi.EncodeStringMap(map[string]string{"TOKEN": oldRef})
 	if err := db.Model(&model.ProjectRuntimeConfigSet{}).Where("id = ?", set.ID).Update("secret_refs", set.SecretRefs).Error; err != nil {
 		t.Fatalf("seed secret refs: %v", err)
 	}
 	owner.SaveRefs = func(*gorm.DB, string) error { return errors.New("forced owner update failure") }
 
-	prepared, err := prepareRuntimeSecretMutation(runtimeSecretMutationInput{Values: map[string]string{"TOKEN": "new-value"}})
+	prepared, err := runtimeapi.PrepareRuntimeSecretMutation(runtimeapi.RuntimeSecretMutationInput{Values: map[string]string{"TOKEN": "new-value"}})
 	if err != nil {
 		t.Fatalf("prepare mutation: %v", err)
 	}
-	if _, err := handlers.mutateRuntimeSecrets(t.Context(), user, prepared, owner); err == nil {
+	if _, err := handlers.domains.runtime.MutateRuntimeSecrets(t.Context(), user, prepared, owner); err == nil {
 		t.Fatal("mutateRuntimeSecrets() error = nil, want rollback")
 	}
 
@@ -119,7 +122,7 @@ func TestRuntimeSecretMutationRollsBackSecretWhenOwnerUpdateFails(t *testing.T) 
 	if err := db.First(&reloaded, "id = ?", set.ID).Error; err != nil {
 		t.Fatalf("reload config set: %v", err)
 	}
-	if refs := decodeSecretRefs(reloaded.SecretRefs); refs["TOKEN"] != oldRef {
+	if refs := buildapi.DecodeSecretRefs(reloaded.SecretRefs); refs["TOKEN"] != oldRef {
 		t.Fatalf("refs after rollback = %#v, want original ref", refs)
 	}
 	var count int64
@@ -142,20 +145,21 @@ func TestDeploymentTargetRuntimeSecretMutationUsesScopedOwner(t *testing.T) {
 		t.Fatalf("create deployment target: %v", err)
 	}
 	handlers := &Handlers{db: db, secrets: secret.NewStore(db, nil, mustTestSecretCodec(t))}
+	handlers.domains = newDomainHandlers(handlers)
 	user := model.User{ID: "usr_runtime_secret"}
 	owner := deploymentTargetRuntimeSecretMutationOwner(target.ID, target.ProjectID, target.ApplicationID)
-	prepared, err := prepareRuntimeSecretMutation(runtimeSecretMutationInput{Values: map[string]string{"TOKEN": "target-value"}})
+	prepared, err := runtimeapi.PrepareRuntimeSecretMutation(runtimeapi.RuntimeSecretMutationInput{Values: map[string]string{"TOKEN": "target-value"}})
 	if err != nil {
 		t.Fatalf("prepare mutation: %v", err)
 	}
-	if _, err := handlers.mutateRuntimeSecrets(t.Context(), user, prepared, owner); err != nil {
+	if _, err := handlers.domains.runtime.MutateRuntimeSecrets(t.Context(), user, prepared, owner); err != nil {
 		t.Fatalf("mutate deployment target secrets: %v", err)
 	}
 	var reloaded model.DeploymentTarget
 	if err := db.First(&reloaded, "id = ?", target.ID).Error; err != nil {
 		t.Fatalf("reload deployment target: %v", err)
 	}
-	refs := decodeSecretRefs(reloaded.SecretRefs)
+	refs := buildapi.DecodeSecretRefs(reloaded.SecretRefs)
 	if got := handlers.secrets.ResolveContext(t.Context(), refs["TOKEN"]); got != "target-value" {
 		t.Fatalf("deployment target TOKEN = %q, want target-value", got)
 	}
@@ -168,12 +172,12 @@ func TestRuntimeSecretMutationRejectsCorruptRefsWithoutWriting(t *testing.T) {
 	if err := db.Model(&model.ProjectRuntimeConfigSet{}).Where("id = ?", set.ID).Update("secret_refs", "{invalid").Error; err != nil {
 		t.Fatalf("seed corrupt refs: %v", err)
 	}
-	owner := projectRuntimeConfigSetSecretMutationOwner(set.ID, set.ProjectID)
-	prepared, err := prepareRuntimeSecretMutation(runtimeSecretMutationInput{Values: map[string]string{"TOKEN": "new-value"}})
+	owner := runtimeapi.ProjectRuntimeConfigSetSecretMutationOwner(set.ID, set.ProjectID)
+	prepared, err := runtimeapi.PrepareRuntimeSecretMutation(runtimeapi.RuntimeSecretMutationInput{Values: map[string]string{"TOKEN": "new-value"}})
 	if err != nil {
 		t.Fatalf("prepare mutation: %v", err)
 	}
-	if _, err := handlers.mutateRuntimeSecrets(t.Context(), user, prepared, owner); err == nil {
+	if _, err := handlers.domains.runtime.MutateRuntimeSecrets(t.Context(), user, prepared, owner); err == nil {
 		t.Fatal("mutateRuntimeSecrets() error = nil, want corrupt-state rejection")
 	}
 	var reloaded model.ProjectRuntimeConfigSet
@@ -196,8 +200,8 @@ func TestRuntimeSecretMutationRejectsCorruptRefsWithoutWriting(t *testing.T) {
 func TestRuntimeSecretMutationSerializesConcurrentDifferentKeys(t *testing.T) {
 	db := runtimeSecretMutationIntegrationDB(t)
 	handlers, set, user := runtimeSecretMutationFixture(t, db, "concurrent")
-	firstOwner := projectRuntimeConfigSetSecretMutationOwner(set.ID, set.ProjectID)
-	secondOwner := projectRuntimeConfigSetSecretMutationOwner(set.ID, set.ProjectID)
+	firstOwner := runtimeapi.ProjectRuntimeConfigSetSecretMutationOwner(set.ID, set.ProjectID)
+	secondOwner := runtimeapi.ProjectRuntimeConfigSetSecretMutationOwner(set.ID, set.ProjectID)
 	firstOriginalSave := firstOwner.SaveRefs
 	firstReachedSave := make(chan struct{})
 	releaseFirstSave := make(chan struct{})
@@ -209,18 +213,18 @@ func TestRuntimeSecretMutationSerializesConcurrentDifferentKeys(t *testing.T) {
 		<-releaseFirstSave
 		return firstOriginalSave(tx, encoded)
 	}
-	firstPrepared, err := prepareRuntimeSecretMutation(runtimeSecretMutationInput{Values: map[string]string{"FIRST_TOKEN": "first"}})
+	firstPrepared, err := runtimeapi.PrepareRuntimeSecretMutation(runtimeapi.RuntimeSecretMutationInput{Values: map[string]string{"FIRST_TOKEN": "first"}})
 	if err != nil {
 		t.Fatalf("prepare first mutation: %v", err)
 	}
-	secondPrepared, err := prepareRuntimeSecretMutation(runtimeSecretMutationInput{Values: map[string]string{"SECOND_TOKEN": "second"}})
+	secondPrepared, err := runtimeapi.PrepareRuntimeSecretMutation(runtimeapi.RuntimeSecretMutationInput{Values: map[string]string{"SECOND_TOKEN": "second"}})
 	if err != nil {
 		t.Fatalf("prepare second mutation: %v", err)
 	}
 	firstDone := make(chan error, 1)
 	secondDone := make(chan error, 1)
 	go func() {
-		_, err := handlers.mutateRuntimeSecrets(t.Context(), user, firstPrepared, firstOwner)
+		_, err := handlers.domains.runtime.MutateRuntimeSecrets(t.Context(), user, firstPrepared, firstOwner)
 		firstDone <- err
 	}()
 	select {
@@ -229,7 +233,7 @@ func TestRuntimeSecretMutationSerializesConcurrentDifferentKeys(t *testing.T) {
 		t.Fatal("first mutation did not reach save while holding the owner row lock")
 	}
 	go func() {
-		_, err := handlers.mutateRuntimeSecrets(t.Context(), user, secondPrepared, secondOwner)
+		_, err := handlers.domains.runtime.MutateRuntimeSecrets(t.Context(), user, secondPrepared, secondOwner)
 		secondDone <- err
 	}()
 	select {
@@ -249,7 +253,7 @@ func TestRuntimeSecretMutationSerializesConcurrentDifferentKeys(t *testing.T) {
 	if err := db.First(&reloaded, "id = ?", set.ID).Error; err != nil {
 		t.Fatalf("reload config set: %v", err)
 	}
-	refs := decodeSecretRefs(reloaded.SecretRefs)
+	refs := buildapi.DecodeSecretRefs(reloaded.SecretRefs)
 	if len(refs) != 2 {
 		t.Fatalf("refs after concurrent mutations = %#v, want both keys", refs)
 	}
@@ -265,9 +269,9 @@ func TestRuntimeSecretMutationSerializesConcurrentDifferentKeys(t *testing.T) {
 func TestRuntimeSecretMutationRollsBackOwnerUpdateWhenDeleteFails(t *testing.T) {
 	db := runtimeSecretMutationIntegrationDB(t)
 	handlers, set, user := runtimeSecretMutationFixture(t, db, "delete_failure")
-	owner := projectRuntimeConfigSetSecretMutationOwner(set.ID, set.ProjectID)
+	owner := runtimeapi.ProjectRuntimeConfigSetSecretMutationOwner(set.ID, set.ProjectID)
 	oldRef := storeRuntimeSecretFixture(t, handlers, db, "old-value", user.ID, owner.ResourcePrefix+":TOKEN")
-	set.SecretRefs = encodeStringMap(map[string]string{"TOKEN": oldRef})
+	set.SecretRefs = deploymentapi.EncodeStringMap(map[string]string{"TOKEN": oldRef})
 	if err := db.Model(&model.ProjectRuntimeConfigSet{}).Where("id = ?", set.ID).Update("secret_refs", set.SecretRefs).Error; err != nil {
 		t.Fatalf("seed secret refs: %v", err)
 	}
@@ -281,11 +285,11 @@ func TestRuntimeSecretMutationRollsBackOwnerUpdateWhenDeleteFails(t *testing.T) 
 	}
 	t.Cleanup(func() { _ = db.Callback().Delete().Remove(callbackName) })
 
-	prepared, err := prepareRuntimeSecretMutation(runtimeSecretMutationInput{Clear: []string{"TOKEN"}})
+	prepared, err := runtimeapi.PrepareRuntimeSecretMutation(runtimeapi.RuntimeSecretMutationInput{Clear: []string{"TOKEN"}})
 	if err != nil {
 		t.Fatalf("prepare mutation: %v", err)
 	}
-	if _, err := handlers.mutateRuntimeSecrets(t.Context(), user, prepared, owner); err == nil {
+	if _, err := handlers.domains.runtime.MutateRuntimeSecrets(t.Context(), user, prepared, owner); err == nil {
 		t.Fatal("mutateRuntimeSecrets() error = nil, want delete rollback")
 	}
 	assertRuntimeSecretOwnerAndRowUnchanged(t, db, set.ID, oldRef)
@@ -295,9 +299,9 @@ func TestRuntimeSecretMutationRollsBackOwnerUpdateWhenDeleteFails(t *testing.T) 
 func TestRuntimeSecretMutationRollsBackWhenAuditFails(t *testing.T) {
 	db := runtimeSecretMutationIntegrationDB(t)
 	handlers, set, user := runtimeSecretMutationFixture(t, db, "audit_failure")
-	owner := projectRuntimeConfigSetSecretMutationOwner(set.ID, set.ProjectID)
+	owner := runtimeapi.ProjectRuntimeConfigSetSecretMutationOwner(set.ID, set.ProjectID)
 	oldRef := storeRuntimeSecretFixture(t, handlers, db, "old-value", user.ID, owner.ResourcePrefix+":TOKEN")
-	set.SecretRefs = encodeStringMap(map[string]string{"TOKEN": oldRef})
+	set.SecretRefs = deploymentapi.EncodeStringMap(map[string]string{"TOKEN": oldRef})
 	if err := db.Model(&model.ProjectRuntimeConfigSet{}).Where("id = ?", set.ID).Update("secret_refs", set.SecretRefs).Error; err != nil {
 		t.Fatalf("seed secret refs: %v", err)
 	}
@@ -311,11 +315,11 @@ func TestRuntimeSecretMutationRollsBackWhenAuditFails(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = db.Callback().Create().Remove(callbackName) })
 
-	prepared, err := prepareRuntimeSecretMutation(runtimeSecretMutationInput{Values: map[string]string{"TOKEN": "new-value"}})
+	prepared, err := runtimeapi.PrepareRuntimeSecretMutation(runtimeapi.RuntimeSecretMutationInput{Values: map[string]string{"TOKEN": "new-value"}})
 	if err != nil {
 		t.Fatalf("prepare mutation: %v", err)
 	}
-	if _, err := handlers.mutateRuntimeSecrets(t.Context(), user, prepared, owner); err == nil {
+	if _, err := handlers.domains.runtime.MutateRuntimeSecrets(t.Context(), user, prepared, owner); err == nil {
 		t.Fatal("mutateRuntimeSecrets() error = nil, want audit rollback")
 	}
 	assertRuntimeSecretOwnerAndRowUnchanged(t, db, set.ID, oldRef)
@@ -374,6 +378,7 @@ func runtimeSecretMutationFixture(t *testing.T, db *gorm.DB, suffix string) (*Ha
 		t.Fatalf("create runtime config set: %v", err)
 	}
 	handlers := &Handlers{db: db, secrets: secret.NewStore(db, nil, mustTestSecretCodec(t))}
+	handlers.domains = newDomainHandlers(handlers)
 	return handlers, set, model.User{ID: "usr_runtime_secret"}
 }
 
@@ -422,7 +427,7 @@ func assertRuntimeSecretOwnerAndRowUnchanged(t *testing.T, db *gorm.DB, setID, o
 	if err := db.First(&reloaded, "id = ?", setID).Error; err != nil {
 		t.Fatalf("reload config set: %v", err)
 	}
-	if refs := decodeSecretRefs(reloaded.SecretRefs); refs["TOKEN"] != oldRef {
+	if refs := buildapi.DecodeSecretRefs(reloaded.SecretRefs); refs["TOKEN"] != oldRef {
 		t.Fatalf("refs after rollback = %#v, want original ref", refs)
 	}
 	var count int64

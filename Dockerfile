@@ -14,6 +14,7 @@ COPY web/package.json web/pnpm-lock.yaml web/pnpm-workspace.yaml ./web/
 RUN pnpm --dir web install --frozen-lockfile
 
 COPY web/ ./web/
+COPY openapi/openapi.yaml ./openapi/openapi.yaml
 RUN pnpm --dir web build
 
 # 准备 Go 源码和依赖缓存，后续普通构建与内嵌前端构建共用该阶段。

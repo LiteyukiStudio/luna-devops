@@ -15,42 +15,20 @@ import (
 	"gorm.io/gorm"
 )
 
-func (h *Handlers) runtimeClusterForEnvironment(ctx *gin.Context, environment model.Environment) (model.RuntimeCluster, bool) {
-	var cluster model.RuntimeCluster
-	query := runtimecluster.ActiveScope(h.dbFor(ctx))
-	if clusterID := strings.TrimSpace(environment.ClusterID); clusterID != "" {
-		err := query.First(&cluster, "id = ? and type in ?", clusterID, []string{"kubernetes", "k3s"}).Error
-		if err != nil {
-			writeError(ctx, http.StatusNotFound, "runtime cluster not found")
-			return cluster, false
-		}
-		return cluster, true
-	}
-	err := query.Where("scope = ? and is_default = ? and type in ?", "global", true, []string{"kubernetes", "k3s"}).First(&cluster).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		err = query.Where("scope = ? and type in ?", "global", []string{"kubernetes", "k3s"}).Order("created_at asc").First(&cluster).Error
-	}
-	if err != nil {
-		writeError(ctx, http.StatusNotFound, "runtime cluster not found")
-		return cluster, false
-	}
-	return cluster, true
-}
-
 func (h *Handlers) runtimeClusterForDeploymentTarget(ctx *gin.Context, target model.DeploymentTarget) (model.RuntimeCluster, bool) {
 	var cluster model.RuntimeCluster
 	query := runtimecluster.ActiveScope(h.dbFor(ctx))
 	if clusterID := strings.TrimSpace(target.ClusterID); clusterID != "" {
-		err := query.First(&cluster, "id = ? and type in ?", clusterID, []string{"kubernetes", "k3s"}).Error
+		err := query.First(&cluster, "id = ?", clusterID).Error
 		if err != nil {
 			writeError(ctx, http.StatusNotFound, "runtime cluster not found")
 			return cluster, false
 		}
 		return cluster, true
 	}
-	err := query.Where("scope = ? and is_default = ? and type in ?", "global", true, []string{"kubernetes", "k3s"}).First(&cluster).Error
+	err := query.Where("scope = ? and is_default = ?", "global", true).First(&cluster).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		err = query.Where("scope = ? and type in ?", "global", []string{"kubernetes", "k3s"}).Order("created_at asc").First(&cluster).Error
+		err = query.Where("scope = ?", "global").Order("created_at asc").First(&cluster).Error
 	}
 	if err != nil {
 		writeError(ctx, http.StatusNotFound, "runtime cluster not found")
@@ -65,7 +43,7 @@ func (h *Handlers) runtimeClusterForProjectUse(ctx *gin.Context, user model.User
 		return model.RuntimeCluster{}, true
 	}
 	var cluster model.RuntimeCluster
-	if err := runtimecluster.ActiveScope(h.dbFor(ctx)).First(&cluster, "id = ? and type in ?", clusterID, []string{"kubernetes", "k3s"}).Error; err != nil {
+	if err := runtimecluster.ActiveScope(h.dbFor(ctx)).First(&cluster, "id = ?", clusterID).Error; err != nil {
 		writeError(ctx, http.StatusBadRequest, "运行集群不存在")
 		return cluster, false
 	}
@@ -79,11 +57,11 @@ func (h *Handlers) runtimeClusterForProjectUse(ctx *gin.Context, user model.User
 func (h *Handlers) defaultRuntimeClusterID(ctx context.Context) string {
 	var cluster model.RuntimeCluster
 	query := runtimecluster.ActiveScope(h.dbWithContext(ctx))
-	err := query.Where("type in ? and is_default = ?", []string{"kubernetes", "k3s"}, true).Order("created_at asc").First(&cluster).Error
+	err := query.Where("is_default = ?", true).Order("created_at asc").First(&cluster).Error
 	if err == nil {
 		return cluster.ID
 	}
-	err = query.Where("type in ?", []string{"kubernetes", "k3s"}).Order("created_at asc").First(&cluster).Error
+	err = query.Order("created_at asc").First(&cluster).Error
 	if err == nil {
 		return cluster.ID
 	}
@@ -119,8 +97,7 @@ func runtimeProjectNamespace(project model.Project) string {
 
 func (h *Handlers) runtimeClusterResponseForUser(user model.User, cluster model.RuntimeCluster, ctx context.Context) (model.RuntimeCluster, error) {
 	cluster.ProjectIDs = h.scopedResourceProjectIDs(scopedResourceRuntimeCluster, cluster.ID, ctx)
-	cluster.GatewayDomainSuffixes = decodeGatewayDomainSuffixes(cluster.GatewayDomainSuffixesRaw, cluster.GatewayRootDomain, h.host.LegacyGatewayRootDomain())
-	cluster.GatewayRootDomain = cluster.GatewayDomainSuffixes[0]
+	cluster.GatewayDomainSuffixes = runtimecluster.DecodeGatewayDomainSuffixes(cluster.GatewayDomainSuffixesRaw)
 	cluster.KubeconfigSet = cluster.KubeconfigRef != ""
 	cluster.Kubeconfig = ""
 	canInspect, err := h.canInspectScopedResourceConfigByID(user, cluster.Scope, cluster.OwnerRef, scopedResourceRuntimeCluster, cluster.ID, ctx)

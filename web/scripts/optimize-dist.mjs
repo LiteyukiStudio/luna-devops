@@ -7,15 +7,8 @@ import { createBrotliCompress, createGzip, constants as zlibConstants } from 'no
 
 const webRoot = resolve(import.meta.dirname, '..')
 const distRoot = resolve(webRoot, process.argv[2] ?? 'dist')
-const excludedPublicAssets = [
-  'brand/mascot-luna-devops.png',
-  'images/luna-devops-banner-v4.png',
-]
 const compressibleExtensions = new Set(['.css', '.js', '.json', '.svg', '.txt', '.xml'])
 const minimumCompressionSize = 1024
-
-for (const asset of excludedPublicAssets)
-  await rm(join(distRoot, asset), { force: true })
 
 const files = await listFiles(distRoot)
 let compressedFiles = 0

@@ -35,13 +35,6 @@ export class ApiError extends Error {
   }
 }
 
-export function optionalProjectQuery(projectId?: unknown) {
-  if (typeof projectId !== 'string')
-    return ''
-  const normalized = projectId.trim()
-  return normalized ? `?projectId=${encodeURIComponent(normalized)}` : ''
-}
-
 export function paginationQuery(params: PaginationParams & { visibility?: ResultVisibility }) {
   const search = new URLSearchParams({
     page: String(params.page),
@@ -91,8 +84,8 @@ export function runtimeClusterResourceListQuery(params: RuntimeClusterResourceLi
     search.set('projectId', params.projectId)
   if (params.applicationId)
     search.set('applicationId', params.applicationId)
-  if (params.environmentId)
-    search.set('environmentId', params.environmentId)
+  if (params.deploymentTargetId)
+    search.set('deploymentTargetId', params.deploymentTargetId)
   return search.toString()
 }
 

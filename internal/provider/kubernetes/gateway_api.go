@@ -45,7 +45,6 @@ type HTTPRouteSpec struct {
 	Namespace              string
 	ProjectID              string
 	ApplicationID          string
-	EnvironmentID          string
 	DeploymentTargetID     string
 	RouteID                string
 	Host                   string
@@ -185,7 +184,7 @@ func gatewayObject(spec GatewaySpec) *gatewayv1.Gateway {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      spec.Name,
 			Namespace: spec.Namespace,
-			Labels:    gatewayLabelsForSpec(spec.ProjectID, "", "", "", "", ""),
+			Labels:    gatewayLabelsForSpec(spec.ProjectID, "", "", "", ""),
 		},
 		Spec: gatewayv1.GatewaySpec{
 			GatewayClassName: gatewayv1.ObjectName(spec.GatewayClassName),
@@ -267,7 +266,7 @@ func httpRouteObject(spec HTTPRouteSpec) (*gatewayv1.HTTPRoute, error) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      spec.Name,
 			Namespace: spec.Namespace,
-			Labels:    gatewayLabelsForSpec(spec.ProjectID, spec.ApplicationID, spec.EnvironmentID, spec.DeploymentTargetID, spec.RouteID, spec.ServiceName),
+			Labels:    gatewayLabelsForSpec(spec.ProjectID, spec.ApplicationID, spec.DeploymentTargetID, spec.RouteID, spec.ServiceName),
 		},
 		Spec: gatewayv1.HTTPRouteSpec{
 			CommonRouteSpec: gatewayv1.CommonRouteSpec{ParentRefs: []gatewayv1.ParentReference{parent}},
@@ -488,11 +487,10 @@ func toUnstructured(item any) (*unstructured.Unstructured, error) {
 	return &unstructured.Unstructured{Object: raw}, nil
 }
 
-func gatewayLabelsForSpec(projectID, applicationID, environmentID, deploymentTargetID, routeID, serviceName string) map[string]string {
+func gatewayLabelsForSpec(projectID, applicationID, deploymentTargetID, routeID, serviceName string) map[string]string {
 	labels := baseManagedLabels(serviceName)
 	setLabel(labels, ProjectIDLabel, projectID)
 	setLabel(labels, ApplicationIDLabel, applicationID)
-	setLabel(labels, EnvironmentIDLabel, environmentID)
 	setLabel(labels, DeploymentTargetIDLabel, deploymentTargetID)
 	setLabel(labels, GatewayRouteIDLabel, routeID)
 	return labels

@@ -33,16 +33,3 @@ function buildVariableRecord(value: BuildVariableSet['variables']) {
   }
   return Object.fromEntries(Object.entries(value ?? {}).map(([key, raw]) => [key, String(raw)]))
 }
-
-export function buildVariableCount(value: BuildVariableSet['variables']) {
-  if (typeof value === 'string') {
-    try {
-      const parsed = JSON.parse(value)
-      return parsed && typeof parsed === 'object' ? Object.keys(parsed).length : 0
-    }
-    catch {
-      return value.split('\n').filter(line => line.includes('=')).length
-    }
-  }
-  return Object.keys(value ?? {}).length
-}

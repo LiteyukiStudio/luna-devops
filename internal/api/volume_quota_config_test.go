@@ -38,7 +38,7 @@ func TestManagedVolumeBillingAdmissionDoesNotUseOptionalDeployFlag(t *testing.T)
 	}
 	project := model.Project{
 		ID: "prj_managed_volume_billing", Identifier: "managed-volume-billing", Name: "Managed volume billing",
-		NamespaceStrategy: "project", BillingOwnerUserID: "usr_managed_volume_billing",
+		BillingOwnerUserID: "usr_managed_volume_billing",
 	}
 	if err := db.Create(&project).Error; err != nil {
 		t.Fatalf("create managed volume billing project: %v", err)
@@ -46,6 +46,7 @@ func TestManagedVolumeBillingAdmissionDoesNotUseOptionalDeployFlag(t *testing.T)
 	handlers := &Handlers{db: db, configs: &configCache{values: map[string]string{
 		"billing.blockDeployChangesWhenInsufficient": "false",
 	}}}
+	handlers.domains = newDomainHandlers(handlers)
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)
 	ctx.Request = httptest.NewRequest(http.MethodPost, "/api/v1/projects/"+project.ID+"/volumes", nil)

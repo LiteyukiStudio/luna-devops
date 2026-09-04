@@ -3,7 +3,6 @@ const usersPage = {
   description: '플랫폼 사용자와 사용자가 사용할 수 있는 로그인 방식을 생성하고 관리합니다.',
   createTitle: '사용자 생성',
   editTitle: '사용자 편집',
-  listTitle: '사용자 목록',
   searchPlaceholder: '사용자 이메일 또는 이름 검색',
   email: '이메일',
   emailHint: '사용자 로그인과 OIDC 이메일 바인딩의 주 식별자입니다. OIDC 로그인 시 비어 있지 않은 이메일로 기존 사용자를 찾아 바인딩합니다.',

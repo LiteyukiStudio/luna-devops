@@ -82,7 +82,9 @@ func TestProjectLookupDatabaseFailureIsUnavailable(t *testing.T) {
 	ctx.Request = httptest.NewRequest(http.MethodGet, "/api/v1/projects/prj_authz", nil)
 	ctx.Params = gin.Params{{Key: "projectId", Value: "prj_authz"}}
 
-	if _, ok := (&Handlers{db: db}).findProject(ctx); ok {
+	handlers := &Handlers{db: db}
+	handlers.domains = newDomainHandlers(handlers)
+	if _, ok := handlers.findProject(ctx); ok {
 		t.Fatal("project lookup unexpectedly succeeded")
 	}
 	if recorder.Code != http.StatusServiceUnavailable || !strings.Contains(recorder.Body.String(), `"code":"project.lookup_unavailable"`) {
@@ -118,7 +120,9 @@ func TestAuthorizeProjectByIDReplacesExistingProjectParam(t *testing.T) {
 	ctx.Params = gin.Params{{Key: "projectId", Value: "prj_original"}}
 	ctx.Set(currentUserContextKey, model.User{ID: "usr_authz", Role: authz.PlatformRoleUser})
 
-	_, project, ok := (&Handlers{db: db}).authorizeProjectByID(ctx, "prj_requested", authz.ActionProjectRead)
+	handlers := &Handlers{db: db}
+	handlers.domains = newDomainHandlers(handlers)
+	_, project, ok := handlers.authorizeProjectByID(ctx, "prj_requested", authz.ActionProjectRead)
 	if !ok {
 		t.Fatalf("authorization failed: %d %s", recorder.Code, recorder.Body.String())
 	}
@@ -143,7 +147,9 @@ func TestDeleteDeploymentTargetDeveloperDeniedBeforeSideEffects(t *testing.T) {
 	}
 	ctx.Set(currentUserContextKey, model.User{ID: "usr_authz", Role: authz.PlatformRoleUser})
 
-	(&Handlers{db: db}).DeleteDeploymentTarget(ctx)
+	handlers := &Handlers{db: db}
+	handlers.domains = newDomainHandlers(handlers)
+	handlers.domains.deployment.DeleteDeploymentTarget(ctx)
 
 	if recorder.Code != http.StatusForbidden || !strings.Contains(recorder.Body.String(), `"code":"auth.forbidden"`) {
 		t.Fatalf("response = %d %s", recorder.Code, recorder.Body.String())
@@ -165,7 +171,9 @@ func TestProjectAuthorizationDatabaseFailureIsUnavailable(t *testing.T) {
 	ctx.Params = gin.Params{{Key: "projectId", Value: "prj_authz"}}
 	ctx.Set(currentUserContextKey, model.User{ID: "usr_authz", Role: authz.PlatformRoleUser})
 
-	_, _, ok := (&Handlers{db: db}).authorizeProject(ctx, authz.ActionProjectRead)
+	handlers := &Handlers{db: db}
+	handlers.domains = newDomainHandlers(handlers)
+	_, _, ok := handlers.authorizeProject(ctx, authz.ActionProjectRead)
 	if ok {
 		t.Fatal("authorization unexpectedly succeeded")
 	}

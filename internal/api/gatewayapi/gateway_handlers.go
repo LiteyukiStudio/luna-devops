@@ -54,7 +54,12 @@ func (h *Handlers) GetGatewayRoute(ctx *gin.Context) {
 	if len(routes) == 1 {
 		route = routes[0]
 	}
-	ctx.JSON(http.StatusOK, h.gatewayRouteWithAccessURL(route, ctx.Request.Context()))
+	route, err := h.gatewayRouteWithAccessURL(route, ctx.Request.Context())
+	if err != nil {
+		h.writeGatewayRuntimeClusterError(ctx, err)
+		return
+	}
+	ctx.JSON(http.StatusOK, route)
 }
 
 func (h *Handlers) CreateGatewayRoute(ctx *gin.Context) {
@@ -77,6 +82,12 @@ func (h *Handlers) CreateGatewayRoute(ctx *gin.Context) {
 	if !h.ensureGatewayRouteBackendAvailable(ctx, route) {
 		return
 	}
+	var err error
+	route, err = h.gatewayRouteWithAccessURL(route, ctx.Request.Context())
+	if err != nil {
+		h.writeGatewayRuntimeClusterError(ctx, err)
+		return
+	}
 	if err := h.dbFor(ctx).Create(&route).Error; err != nil {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
@@ -87,7 +98,7 @@ func (h *Handlers) CreateGatewayRoute(ctx *gin.Context) {
 	}
 	route.Status = "progressing"
 	route.ObservationCode = "gateway_route.apply_queued"
-	ctx.JSON(http.StatusCreated, h.gatewayRouteWithAccessURL(route, ctx.Request.Context()))
+	ctx.JSON(http.StatusCreated, route)
 }
 
 func (h *Handlers) UpdateGatewayRoute(ctx *gin.Context) {
@@ -116,8 +127,13 @@ func (h *Handlers) UpdateGatewayRoute(ctx *gin.Context) {
 	if !h.ensureGatewayRouteBackendAvailable(ctx, next) {
 		return
 	}
+	var err error
+	next, err = h.gatewayRouteWithAccessURL(next, ctx.Request.Context())
+	if err != nil {
+		h.writeGatewayRuntimeClusterError(ctx, err)
+		return
+	}
 	route.ApplicationID = next.ApplicationID
-	route.EnvironmentID = next.EnvironmentID
 	route.DeploymentTargetID = next.DeploymentTargetID
 	route.Host = next.Host
 	route.DomainSuffix = next.DomainSuffix
@@ -138,6 +154,7 @@ func (h *Handlers) UpdateGatewayRoute(ctx *gin.Context) {
 	route.RequestRedirect = next.RequestRedirect
 	route.BackendWeight = next.BackendWeight
 	route.HostnameAliases = next.HostnameAliases
+	route.AccessURL = next.AccessURL
 	if err := h.dbFor(ctx).Save(&route).Error; err != nil {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
@@ -148,7 +165,7 @@ func (h *Handlers) UpdateGatewayRoute(ctx *gin.Context) {
 	}
 	route.Status = "progressing"
 	route.ObservationCode = "gateway_route.apply_queued"
-	ctx.JSON(http.StatusOK, h.gatewayRouteWithAccessURL(route, ctx.Request.Context()))
+	ctx.JSON(http.StatusOK, route)
 }
 
 func (h *Handlers) DeleteGatewayRoute(ctx *gin.Context) {

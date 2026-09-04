@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"errors"
+	transportapi "github.com/LiteyukiStudio/devops/internal/api/transport"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -74,7 +75,7 @@ func TestOAuthApplicationRotateCannotReviveCompletedDelete(t *testing.T) {
 	}()
 	waitForOAuthApplicationBarrier(t, deleteLocked, "delete")
 
-	rotatedHash := hashToken("rotated-after-delete")
+	rotatedHash := transportapi.HashToken("rotated-after-delete")
 	rotateDone := make(chan oauthApplicationMutationResult, 1)
 	go func() {
 		rotated, err := rotateOwnedOAuthApplicationSecret(fixture.db, application.ID, fixture.user.ID, rotatedHash)
@@ -103,7 +104,7 @@ func TestOAuthApplicationScopeUpdatePreservesConcurrentRotatedSecret(t *testing.
 	rotateCtx, rotateLocked, releaseRotate := installOAuthApplicationQueryBarrier(t, fixture.db)
 	defer releaseRotate()
 
-	rotatedHash := hashToken("new-authoritative-client-secret")
+	rotatedHash := transportapi.HashToken("new-authoritative-client-secret")
 	rotateDone := make(chan oauthApplicationMutationResult, 1)
 	go func() {
 		rotated, err := rotateOwnedOAuthApplicationSecret(fixture.db.WithContext(rotateCtx), application.ID, fixture.user.ID, rotatedHash)
@@ -180,8 +181,8 @@ func TestOAuthAuthorizationCodeRevalidatesSecretAfterConcurrentRotation(t *testi
 	}()
 	waitForOAuthApplicationBarrier(t, authenticationRead, "client authentication")
 
-	newSecret := "new-client-secret-" + randomHex(8)
-	if _, err := rotateOwnedOAuthApplicationSecret(fixture.db, application.ID, fixture.user.ID, hashToken(newSecret)); err != nil {
+	newSecret := "new-client-secret-" + transportapi.RandomHex(8)
+	if _, err := rotateOwnedOAuthApplicationSecret(fixture.db, application.ID, fixture.user.ID, transportapi.HashToken(newSecret)); err != nil {
 		t.Fatalf("rotate OAuth application secret: %v", err)
 	}
 	releaseAuthentication()
@@ -191,7 +192,7 @@ func TestOAuthAuthorizationCodeRevalidatesSecretAfterConcurrentRotation(t *testi
 		t.Fatalf("old-secret exchange after rotation = %d %s", oldExchange.Code, oldExchange.Body.String())
 	}
 	var code model.OAuthAuthorizationCode
-	if err := fixture.db.First(&code, "code_hash = ?", hashToken(plainCode)).Error; err != nil {
+	if err := fixture.db.First(&code, "code_hash = ?", transportapi.HashToken(plainCode)).Error; err != nil {
 		t.Fatal(err)
 	}
 	if code.ConsumedAt != nil || code.GrantID != nil {
@@ -231,8 +232,8 @@ func TestOAuthTokenRevokeRevalidatesSecretAfterConcurrentRotation(t *testing.T) 
 	}()
 	waitForOAuthApplicationBarrier(t, authenticationRead, "revocation client authentication")
 
-	newSecret := "new-revocation-secret-" + randomHex(8)
-	if _, err := rotateOwnedOAuthApplicationSecret(fixture.db, application.ID, fixture.user.ID, hashToken(newSecret)); err != nil {
+	newSecret := "new-revocation-secret-" + transportapi.RandomHex(8)
+	if _, err := rotateOwnedOAuthApplicationSecret(fixture.db, application.ID, fixture.user.ID, transportapi.HashToken(newSecret)); err != nil {
 		t.Fatalf("rotate OAuth application secret: %v", err)
 	}
 	releaseAuthentication()
@@ -256,12 +257,12 @@ func TestOAuthTokenRevokeRevalidatesSecretAfterConcurrentRotation(t *testing.T) 
 
 func createOwnedOAuthApplicationFixture(t *testing.T, fixture oauthFamilyTestFixture, allowedScopes string) (model.OAuthApplication, string) {
 	t.Helper()
-	suffix := randomHex(4)
+	suffix := transportapi.RandomHex(4)
 	ownerUserID := fixture.user.ID
 	clientSecret := "oauth-application-secret-" + suffix
 	application := model.OAuthApplication{
 		ID: "oapp_concurrency_" + suffix, OwnerUserID: &ownerUserID, Name: "Concurrency Client",
-		ClientID: "oauth-concurrency-client-" + suffix, ClientSecretHash: hashToken(clientSecret),
+		ClientID: "oauth-concurrency-client-" + suffix, ClientSecretHash: transportapi.HashToken(clientSecret),
 		RedirectURIs:  encodeStringList([]string{"https://client.example.com/callback"}),
 		AllowedScopes: allowedScopes, AccessTokenLifetimeDays: 30,
 	}
@@ -282,14 +283,14 @@ func createOAuthApplicationCredentialFamily(t *testing.T, fixture oauthFamilyTes
 	}
 	if err := fixture.db.Create(&model.AccessToken{
 		ID: id.New("tok"), UserID: fixture.user.ID, Name: application.Name, Scope: application.AllowedScopes,
-		TokenHash: hashToken("access-" + familyID), Source: "oauth", OAuthApplicationID: application.ID,
+		TokenHash: transportapi.HashToken("access-" + familyID), Source: "oauth", OAuthApplicationID: application.ID,
 		OAuthGrantID: grant.ID, OAuthFamilyID: familyID,
 	}).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := fixture.db.Create(&model.OAuthRefreshToken{
 		ID: id.New("ortk"), ApplicationID: application.ID, GrantID: grant.ID, FamilyID: familyID,
-		UserID: fixture.user.ID, TokenHash: hashToken("refresh-" + familyID), Scope: application.AllowedScopes,
+		UserID: fixture.user.ID, TokenHash: transportapi.HashToken("refresh-" + familyID), Scope: application.AllowedScopes,
 		ExpiresAt: time.Now().Add(time.Hour),
 	}).Error; err != nil {
 		t.Fatal(err)
@@ -299,12 +300,12 @@ func createOAuthApplicationCredentialFamily(t *testing.T, fixture oauthFamilyTes
 
 func createOAuthApplicationAuthorizationCode(t *testing.T, fixture oauthFamilyTestFixture, application model.OAuthApplication) (string, string) {
 	t.Helper()
-	plainCode := "lyo_code_" + randomHex(16)
+	plainCode := "lyo_code_" + transportapi.RandomHex(16)
 	verifier := strings.Repeat("v", 64)
 	digest := sha256.Sum256([]byte(verifier))
 	code := model.OAuthAuthorizationCode{
 		ID: id.New("ocod"), ApplicationID: application.ID, UserID: fixture.user.ID,
-		CodeHash: hashToken(plainCode), RedirectURI: decodeStringList(application.RedirectURIs)[0], Scope: "user:read",
+		CodeHash: transportapi.HashToken(plainCode), RedirectURI: decodeStringList(application.RedirectURIs)[0], Scope: "user:read",
 		CodeChallenge: base64.RawURLEncoding.EncodeToString(digest[:]), CodeChallengeMethod: "S256",
 		ExpiresAt: time.Now().Add(time.Minute),
 	}
@@ -316,7 +317,7 @@ func createOAuthApplicationAuthorizationCode(t *testing.T, fixture oauthFamilyTe
 
 func installOAuthApplicationQueryBarrier(t *testing.T, db *gorm.DB) (context.Context, <-chan struct{}, func()) {
 	t.Helper()
-	marker := "oauth-application-barrier-" + randomHex(4)
+	marker := "oauth-application-barrier-" + transportapi.RandomHex(4)
 	reached := make(chan struct{})
 	releaseChannel := make(chan struct{})
 	var reachedOnce sync.Once

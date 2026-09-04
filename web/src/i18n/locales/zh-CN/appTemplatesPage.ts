@@ -1,5 +1,4 @@
 const appTemplatesPage = {
-  description: '从预设模板一键安装数据库、缓存、监控、工具和轻量协作应用。',
   heroEyebrow: 'Luna DevOps 模板库',
   heroTitle: '发现服务，更快开始部署',
   templateCount: '可用模板',
@@ -15,7 +14,6 @@ const appTemplatesPage = {
   sortOrder: '排序顺序',
   sortDesc: '倒序',
   sortAsc: '顺序',
-  loading: '正在加载应用模板...',
   emptyTitle: '没有找到模板',
   emptyDescription: '换个关键词试试，或等待管理员添加更多模板。',
   install: '安装',
@@ -50,11 +48,8 @@ const appTemplatesPage = {
   autoGeneratePlaceholder: '留空自动生成',
   installNow: '安装后立即部署',
   installNowDescription: '关闭后只创建应用和部署配置，之后可在应用部署页手动发布。',
-  image: '镜像',
   officialWebsite: '官方网站',
   officialRepository: '官方仓库',
-  port: '端口',
-  resources: '资源',
   categories: {
     collaboration: '协作与内容',
     database: '数据库',

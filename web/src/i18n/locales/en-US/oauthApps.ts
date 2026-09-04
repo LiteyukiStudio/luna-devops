@@ -1,7 +1,6 @@
 const oauthApps = {
   applicationsTab: 'Developer apps',
   grantsTab: 'Authorized apps',
-  applicationsTitle: 'OAuth applications',
   grantsTitle: 'Application authorizations',
   application: 'Application',
   createApplication: 'Create application',

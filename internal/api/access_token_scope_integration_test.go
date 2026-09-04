@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	transportapi "github.com/LiteyukiStudio/devops/internal/api/transport"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -15,7 +16,7 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/database"
 	"github.com/LiteyukiStudio/devops/internal/model"
-	"github.com/LiteyukiStudio/devops/internal/service"
+	"github.com/LiteyukiStudio/devops/internal/openapiscope"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -23,7 +24,7 @@ import (
 func TestPlatformAdminAccessTokenScopesAuthorizeDashboardAndDataRetention(t *testing.T) {
 	t.Setenv("APP_ENV", "development")
 	db := newAccessTokenScopeIntegrationDB(t)
-	suffix := randomHex(4)
+	suffix := transportapi.RandomHex(4)
 	user := model.User{
 		ID:       "usr_scope_" + suffix,
 		Email:    "scope-" + suffix + "@example.com",
@@ -44,7 +45,7 @@ func TestPlatformAdminAccessTokenScopesAuthorizeDashboardAndDataRetention(t *tes
 			UserID:    user.ID,
 			Name:      "Full scope",
 			Scope:     "*",
-			TokenHash: hashToken(fullToken),
+			TokenHash: transportapi.HashToken(fullToken),
 			Source:    "personal",
 		},
 		{
@@ -52,7 +53,7 @@ func TestPlatformAdminAccessTokenScopesAuthorizeDashboardAndDataRetention(t *tes
 			UserID:    user.ID,
 			Name:      "Insufficient scope",
 			Scope:     "project:read",
-			TokenHash: hashToken(insufficientToken),
+			TokenHash: transportapi.HashToken(insufficientToken),
 			Source:    "personal",
 		},
 		{
@@ -60,7 +61,7 @@ func TestPlatformAdminAccessTokenScopesAuthorizeDashboardAndDataRetention(t *tes
 			UserID:    user.ID,
 			Name:      "Project insufficient scope",
 			Scope:     "dashboard:read",
-			TokenHash: hashToken(projectInsufficientToken),
+			TokenHash: transportapi.HashToken(projectInsufficientToken),
 			Source:    "personal",
 		},
 	}
@@ -182,7 +183,7 @@ func assertRequiredScopeError(
 
 func requiredAccessTokenScope(t *testing.T, path, method string) string {
 	t.Helper()
-	scopes, err := service.RequiredAccessTokenScopes(path, method)
+	scopes, err := openapiscope.RequiredScopes(path, method)
 	if err != nil {
 		t.Fatal(err)
 	}
