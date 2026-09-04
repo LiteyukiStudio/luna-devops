@@ -6,7 +6,7 @@ overrides:
   '@codemirror/commands': 6.10.4
   '@codemirror/state': 6.7.1
   brace-expansion@>=4.0.0 <5.0.9: 5.0.9
-  nanoid@>=3.0.0 <3.3.17: 3.3.17
+  nanoid@>=3.0.0 <3.3.18: 3.3.18
   postcss@>=8.0.0 <8.5.23: 8.5.23
   undici@>=7.0.0 <7.29.0: 7.29.0
 auditConfig:
