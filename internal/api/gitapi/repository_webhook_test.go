@@ -175,7 +175,9 @@ func TestConfigureRepositoryWebhookCompensatesDatabaseFailure(t *testing.T) {
 				t.Fatalf("binding count = %d, failed create must not persist", bindingCount)
 			}
 			var secretCount int64
-			if err := db.Model(&model.SecretValue{}).Count(&secretCount).Error; err != nil {
+			if err := db.Model(&model.SecretValue{}).
+				Where("resource = ?", "repository_binding:"+binding.ID+":webhook").
+				Count(&secretCount).Error; err != nil {
 				t.Fatal(err)
 			}
 			if secretCount != 0 {
@@ -294,7 +296,11 @@ func newRepositoryWebhookIntegrationFixture(t *testing.T, providerURL string) (*
 	host := &repositoryWebhookTestHost{db: db, store: store, publicBaseURL: "https://luna.example.test"}
 	handler := &Handler{host: host, secrets: store}
 	provider := model.GitProvider{ID: "gitp_test", Type: "github", Name: "GitHub", BaseURL: providerURL, Scope: "user", OwnerRef: "usr_test", Enabled: true}
-	account := model.GitAccount{ID: "gita_test", UserID: "usr_test", ProviderID: provider.ID, Scope: "user", OwnerRef: "usr_test", Username: "snowykami", AccessTokenRef: codec.Encrypt("token")}
+	account := model.GitAccount{ID: "gita_test", UserID: "usr_test", ProviderID: provider.ID, Scope: "user", OwnerRef: "usr_test", Username: "snowykami"}
+	account.AccessTokenRef, err = store.StoreContextWithDB(t.Context(), db, "token", account.UserID, "git_account:"+account.ID+":access")
+	if err != nil {
+		t.Fatalf("store Git account access token: %v", err)
+	}
 	if err := db.Create(&provider).Error; err != nil {
 		t.Fatal(err)
 	}

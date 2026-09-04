@@ -129,7 +129,9 @@ func TestAuditWriteFailureTelemetryOmitsResourceAndMessage(t *testing.T) {
 	t.Cleanup(func() { slog.SetDefault(previousLogger) })
 	resourceMarker := "dplt-private-resource-id"
 	messageMarker := "sha256-private-bundle-digest"
-	(&Handlers{db: db}).auditWithContext("usr_audit", "deployment_bundle.import", resourceMarker, false, messageMarker, context.Background())
+	handlers := &Handlers{db: db}
+	handlers.domains = newDomainHandlers(handlers)
+	handlers.auditWithContext("usr_audit", "deployment_bundle.import", resourceMarker, false, messageMarker, context.Background())
 
 	output := logs.String()
 	for _, forbidden := range []string{resourceMarker, messageMarker, marker} {

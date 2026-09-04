@@ -23,6 +23,7 @@ func TestFullConfigPayloadUpdatesKnownValues(t *testing.T) {
 		t.Fatal(err)
 	}
 	handlers := &Handlers{db: db, configs: newConfigCache(db), mode: "development"}
+	handlers.domains = newDomainHandlers(handlers)
 	recorder, ctx := newAPIIntegrationContext(http.MethodPut, "/api/v1/configs", map[string]any{"values": map[string]any{
 		"site.title": "Updated Luna DevOps",
 	}}, sessionToken)
@@ -45,6 +46,7 @@ func TestAIConfigUpdatePersistsTransactionAudit(t *testing.T) {
 		t.Fatal(err)
 	}
 	handlers := &Handlers{db: db, configs: newConfigCache(db), mode: "development"}
+	handlers.domains = newDomainHandlers(handlers)
 	recorder, ctx := newAPIIntegrationContext(http.MethodPut, "/api/v1/configs", map[string]any{"values": map[string]any{
 		"ai.assistant.enabled": true,
 	}}, sessionToken)

@@ -5,11 +5,20 @@ import { loadConfig } from "../src/config.js"
 import { TestRepository } from "./support/test-repository.js"
 import { RemoteConfigSnapshot } from "../src/provider/config-client.js"
 import { writeSSE } from "../src/server.js"
-import type { AIEvent, AITimeline, AITurnCreated } from "../../web/src/api/ai-types.js"
-import { presentTimeline } from "../src/timeline-presenter.js"
+import { type presentEventForRun, presentTimeline } from "../src/timeline-presenter.js"
 import { InMemoryRunStreamBus } from "../src/run-stream-bus.js"
 import { maximumRequestBodyBytes, maximumTurnInputBytes } from "../src/input-limits.js"
 import { buildTestServer } from "./support/server.js"
+
+type AIEvent = ReturnType<typeof presentEventForRun>
+type AITimeline = NonNullable<Awaited<ReturnType<typeof presentTimeline>>>
+type AITurnCreated = {
+  turnId: string
+  turnIndex: number
+  runId: string
+  state: string
+  eventsUrl: string
+}
 
 function fixture() {
   const repository = new TestRepository()
@@ -382,7 +391,7 @@ describe("internal API", () => {
     expect((await repository.getEvents(ownerUserId, created.run.id, 0)).at(-1)?.type).toBe("run.canceled")
     await app.close()
   })
-  it("presents a created turn as the strict Web timeline contract", async () => {
+  it("presents a created turn as the strict timeline contract", async () => {
     const { app, repository } = fixture()
     const headers = { "x-luna-dev-user": "usr_timeline" }
     const conversation = await app.inject({ method: "POST", url: "/internal/v1/conversations", headers, payload: { title: "Timeline", modelId: "aimod_test" } })
@@ -413,7 +422,7 @@ describe("internal API", () => {
       pageInfo: { hasOlder: false },
     })
     expect(Array.isArray(timeline.eventCursors)).toBe(true)
-    const directlyTyped = await presentTimeline(repository, "usr_timeline", conversationId) as AITimeline | undefined
+    const directlyTyped = await presentTimeline(repository, "usr_timeline", conversationId)
     expect(directlyTyped?.turns[0]?.selectedRun?.id).toBe(runId)
     const eventsResponse = await app.inject({ method: "GET", url: `/internal/v1/runs/${runId}/events?after=0&stream=false`, headers })
     const events = eventsResponse.json<{ items: AIEvent[], cursor: number }>()
