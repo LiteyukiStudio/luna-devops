@@ -39,8 +39,9 @@
 - 数据卷删除必须先调用 `previewProjectVolumeDeletion`。托管卷使用 `dataAction=delete`，引用卷
   使用 `dataAction=detach`；存在挂载或运行中 Transfer 时不得绕过阻断。
 - 导出前确认数据卷状态、一致性模式、用户角色和当前会话权限。任务进入 `queued/running`
-  不代表完成，必须用 `getVolumeTransfer` 回读到 `succeeded`。下载票据、Range 会话和本地文件
-  传输由 Web/CLI 处理，Agent 不调用上传/下载协议端点。
+  不代表完成，必须用 `getVolumeTransfer` 回读到 `succeeded`。内容与 Block manifest 各自使用
+  一次性票据直接流式下载，连接中断后不能续传；本地文件传输由 Web/CLI 处理，Agent 不调用
+  上传或下载协议端点。
 - 导入本地 `tar.gz` 或 `raw.zst` 时，引导用户通过 Web 或 Luna CLI 选择文件；不要读取本地
   文件、把文件内容编码到工具参数，或声称仅创建 Import 记录就已导入成功。
 - Web Console 和命令执行必须遵守项目开关、实时会话、角色与审计，不把终端当普通读工具。

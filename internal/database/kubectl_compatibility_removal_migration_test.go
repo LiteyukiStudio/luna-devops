@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/testdb"
 	sqlmigrations "github.com/LiteyukiStudio/devops/migrations"
 	"gorm.io/gorm"
@@ -38,6 +39,30 @@ func TestKubectlCompatibilityRemovalMigrationContract(t *testing.T) {
 			name:     "000096_remove_kubectl_compatibility.down.sql",
 			required: []string{"Intentionally irreversible"},
 		},
+		{
+			name: "000097_remove_luna_cli_scopes.up.sql",
+			required: []string{
+				"LOCK TABLE oauth_device_authorizations IN ACCESS EXCLUSIVE MODE",
+				"device_authorization.consumed_at IS NULL",
+				"DROP COLUMN IF EXISTS scope",
+			},
+		},
+		{
+			name:     "000097_remove_luna_cli_scopes.down.sql",
+			required: []string{"Intentionally irreversible"},
+		},
+		{
+			name: "000098_enable_luna_cli_account_permissions.up.sql",
+			required: []string{
+				"SET allowed_scopes = '*'",
+				"oauth_grant.revoked_at IS NULL",
+				"access_token.source = 'oauth'",
+			},
+		},
+		{
+			name:     "000098_enable_luna_cli_account_permissions.down.sql",
+			required: []string{"Intentionally irreversible"},
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			content, err := sqlmigrations.FS.ReadFile(test.name)
@@ -56,7 +81,34 @@ func TestKubectlCompatibilityRemovalMigrationContract(t *testing.T) {
 					}
 				}
 			}
+			if test.name == "000097_remove_luna_cli_scopes.up.sql" {
+				migration := string(content)
+				assertMigrationTransactionBoundary(t, migration)
+				deviceLock := strings.Index(migration, "LOCK TABLE oauth_device_authorizations")
+				deviceInvalidation := strings.Index(migration, "UPDATE oauth_device_authorizations")
+				deviceColumnDrop := strings.Index(migration, "DROP COLUMN IF EXISTS scope")
+				if deviceLock < 0 || deviceInvalidation <= deviceLock || deviceColumnDrop <= deviceInvalidation {
+					t.Error("migration must lock the device table before invalidating legacy codes and dropping the scope column")
+				}
+				if strings.Contains(migration, "UPDATE oauth_applications") {
+					t.Error("device scope migration must not lock the OAuth application transaction")
+				}
+			}
+			if test.name == "000098_enable_luna_cli_account_permissions.up.sql" {
+				assertMigrationTransactionBoundary(t, string(content))
+				if strings.Contains(string(content), "oauth_device_authorizations") {
+					t.Error("credential migration must not lock or update device authorizations")
+				}
+			}
 		})
+	}
+}
+
+func assertMigrationTransactionBoundary(t *testing.T, migration string) {
+	t.Helper()
+	trimmed := strings.TrimSpace(migration)
+	if !strings.HasPrefix(trimmed, "BEGIN;") || !strings.HasSuffix(trimmed, "COMMIT;") {
+		t.Error("migration must keep its locks and mutations in an explicit transaction")
 	}
 }
 
@@ -148,7 +200,106 @@ func TestKubectlCompatibilityRemovalMigrationCleansLegacySchemaAndScopes(t *test
 	assertRunnerMigrationVersion(t, runner, 96)
 	assertKubectlCompatibilityRemoved(t, db)
 
+	if err := db.Model(&model.OAuthApplication{}).Where("id = ?", "oapp_luna_cli").Updates(map[string]any{"allowed_scopes": "user:read", "revoked_at": nil}).Error; err != nil {
+		t.Fatalf("prepare legacy Luna CLI application: %v", err)
+	}
+	for _, row := range []any{
+		&model.OAuthGrant{ID: "ogrt_luna_cli", ApplicationID: "oapp_luna_cli", UserID: "usr_removed_kubectl", Scope: "user:read"},
+		&model.AccessToken{ID: "tok_luna_cli", UserID: "usr_removed_kubectl", Name: "Luna CLI", Scope: "user:read", TokenHash: "luna-cli-access", Source: model.AccessTokenSourceOAuth, OAuthApplicationID: "oapp_luna_cli", OAuthGrantID: "ogrt_luna_cli", OAuthFamilyID: "ofam_luna_cli"},
+		&model.OAuthRefreshToken{ID: "ortk_luna_cli", ApplicationID: "oapp_luna_cli", GrantID: "ogrt_luna_cli", FamilyID: "ofam_luna_cli", UserID: "usr_removed_kubectl", TokenHash: "luna-cli-refresh", Scope: "user:read", ExpiresAt: now.Add(time.Hour)},
+	} {
+		if err := db.Create(row).Error; err != nil {
+			t.Fatalf("insert legacy Luna CLI credential: %v", err)
+		}
+	}
+	if err := db.Exec(`INSERT INTO oauth_device_authorizations (
+    id, application_id, grant_id, user_id, device_code_hash, user_code_hash,
+    scope, status, interval_seconds, expires_at, approved_at, created_at, updated_at
+) VALUES
+    (?, ?, NULL, NULL, ?, ?, ?, 'pending', 5, ?, NULL, ?, ?),
+    (?, ?, ?, ?, ?, ?, ?, 'approved', 5, ?, ?, ?, ?)`,
+		"odev_luna_cli_pending", "oapp_luna_cli", "luna-cli-device-pending", "luna-cli-user-pending", "user:read", now.Add(time.Hour), now, now,
+		"odev_luna_cli_approved", "oapp_luna_cli", "ogrt_luna_cli", "usr_removed_kubectl", "luna-cli-device-approved", "luna-cli-user-approved", "user:read", now.Add(time.Hour), now, now, now,
+	).Error; err != nil {
+		t.Fatalf("insert legacy Luna CLI device authorizations: %v", err)
+	}
+	if err := runner.Steps(1); err != nil {
+		t.Fatalf("apply Luna CLI device scope removal migration: %v", err)
+	}
+	assertRunnerMigrationVersion(t, runner, 97)
+	if db.Migrator().HasColumn("oauth_device_authorizations", "scope") {
+		t.Fatal("Luna CLI scope removal retained the device scope column")
+	}
+	assertMigrationStringValue(t, db, "oauth_applications", "id", "oapp_luna_cli", "allowed_scopes", "user:read")
+	assertMigrationTimestampState(t, db, "oauth_applications", "oapp_luna_cli", "revoked_at", false)
+	for _, row := range []struct{ table, id string }{{"oauth_grants", "ogrt_luna_cli"}, {"access_tokens", "tok_luna_cli"}, {"oauth_refresh_tokens", "ortk_luna_cli"}} {
+		assertMigrationStringValue(t, db, row.table, "id", row.id, "scope", "user:read")
+		assertMigrationTimestampState(t, db, row.table, row.id, "revoked_at", false)
+	}
+	for _, id := range []string{"odev_luna_cli_pending", "odev_luna_cli_approved"} {
+		assertMigrationStringValue(t, db, "oauth_device_authorizations", "id", id, "status", "denied")
+		assertMigrationTimestampState(t, db, "oauth_device_authorizations", id, "denied_at", true)
+		assertMigrationTimestampState(t, db, "oauth_device_authorizations", id, "consumed_at", true)
+	}
+	if err := runner.Steps(1); err != nil {
+		t.Fatalf("enable Luna CLI account permissions: %v", err)
+	}
+	assertRunnerMigrationVersion(t, runner, 98)
+	assertMigrationStringValue(t, db, "oauth_applications", "id", "oapp_luna_cli", "allowed_scopes", "*")
+	for _, row := range []struct{ table, id string }{{"oauth_grants", "ogrt_luna_cli"}, {"access_tokens", "tok_luna_cli"}, {"oauth_refresh_tokens", "ortk_luna_cli"}} {
+		assertMigrationTimestampState(t, db, row.table, row.id, "revoked_at", true)
+	}
+
 	if err := runner.Steps(-2); err != nil {
+		t.Fatalf("step over irreversible Luna CLI migrations: %v", err)
+	}
+	assertRunnerMigrationVersion(t, runner, 96)
+	if err := db.Exec(`ALTER TABLE oauth_device_authorizations ADD COLUMN scope text NOT NULL DEFAULT ''`).Error; err != nil {
+		t.Fatalf("restore legacy Luna CLI device scope fixture: %v", err)
+	}
+	if err := db.Model(&model.OAuthApplication{}).Where("id = ?", "oapp_luna_cli").Updates(map[string]any{"allowed_scopes": "user:read", "revoked_at": now}).Error; err != nil {
+		t.Fatalf("revoke legacy Luna CLI application: %v", err)
+	}
+	for _, target := range []struct{ table, applicationColumn string }{{"oauth_grants", "application_id"}, {"access_tokens", "oauth_application_id"}, {"oauth_refresh_tokens", "application_id"}} {
+		if err := db.Table(target.table).Where(target.applicationColumn+" = ?", "oapp_luna_cli").Updates(map[string]any{"scope": "user:read", "revoked_at": nil}).Error; err != nil {
+			t.Fatalf("reset %s fixture: %v", target.table, err)
+		}
+	}
+	revokedApplicationGrantID := "ogrt_luna_cli"
+	revokedApplicationUserID := "usr_removed_kubectl"
+	if err := db.Create(&model.OAuthDeviceAuthorization{
+		ID:              "odev_luna_cli_revoked_app",
+		ApplicationID:   "oapp_luna_cli",
+		GrantID:         &revokedApplicationGrantID,
+		UserID:          &revokedApplicationUserID,
+		DeviceCodeHash:  "luna-cli-device-revoked-app",
+		UserCodeHash:    "luna-cli-user-revoked-app",
+		Status:          "approved",
+		IntervalSeconds: 5,
+		ExpiresAt:       now.Add(time.Hour),
+		ApprovedAt:      &now,
+	}).Error; err != nil {
+		t.Fatalf("insert revoked Luna CLI application device authorization: %v", err)
+	}
+	if err := db.Table("oauth_device_authorizations").Where("id = ?", "odev_luna_cli_revoked_app").Update("scope", "user:read").Error; err != nil {
+		t.Fatalf("set revoked Luna CLI application device scope: %v", err)
+	}
+	if err := runner.Steps(2); err != nil {
+		t.Fatalf("reapply Luna CLI migrations: %v", err)
+	}
+	assertRunnerMigrationVersion(t, runner, 98)
+	assertMigrationStringValue(t, db, "oauth_applications", "id", "oapp_luna_cli", "allowed_scopes", "user:read")
+	for _, row := range []struct{ table, id string }{{"oauth_applications", "oapp_luna_cli"}, {"oauth_grants", "ogrt_luna_cli"}, {"access_tokens", "tok_luna_cli"}, {"oauth_refresh_tokens", "ortk_luna_cli"}} {
+		assertMigrationTimestampState(t, db, row.table, row.id, "revoked_at", true)
+	}
+	for _, row := range []struct{ table, id string }{{"oauth_grants", "ogrt_luna_cli"}, {"access_tokens", "tok_luna_cli"}, {"oauth_refresh_tokens", "ortk_luna_cli"}} {
+		assertMigrationStringValue(t, db, row.table, "id", row.id, "scope", "user:read")
+	}
+	assertMigrationStringValue(t, db, "oauth_device_authorizations", "id", "odev_luna_cli_revoked_app", "status", "denied")
+	assertMigrationTimestampState(t, db, "oauth_device_authorizations", "odev_luna_cli_revoked_app", "denied_at", true)
+	assertMigrationTimestampState(t, db, "oauth_device_authorizations", "odev_luna_cli_revoked_app", "consumed_at", true)
+
+	if err := runner.Steps(-4); err != nil {
 		t.Fatalf("roll back removal and rewritten version 95 migrations: %v", err)
 	}
 	assertRunnerMigrationVersion(t, runner, 94)
@@ -181,6 +332,7 @@ func assertRewrittenVersion95Schema(t *testing.T, db *gorm.DB) {
 func installLegacyKubectlCompatibilitySchema(t *testing.T, db *gorm.DB) {
 	t.Helper()
 	statements := []string{
+		`ALTER TABLE oauth_device_authorizations ADD COLUMN scope text NOT NULL DEFAULT ''`,
 		`CREATE TABLE kube_access_bindings (
     id text PRIMARY KEY,
     access_token_id text NOT NULL REFERENCES access_tokens(id) ON DELETE CASCADE,
@@ -325,7 +477,6 @@ WHERE schemaname = current_schema()
 	assertMigrationStringValue(t, db, "oauth_grants", "id", "ogrt_removed_kubectl", "scope", "user:read")
 	assertMigrationStringValue(t, db, "oauth_refresh_tokens", "id", "ortk_removed_kubectl", "scope", "user:read")
 	assertMigrationStringValue(t, db, "oauth_authorization_codes", "id", "ocod_removed_kubectl", "scope", "user:read")
-	assertMigrationStringValue(t, db, "oauth_device_authorizations", "id", "odev_removed_kubectl", "scope", "user:read")
 	for _, retired := range []struct {
 		table string
 		id    string
@@ -398,5 +549,18 @@ func assertMigrationStringValue(t *testing.T, db *gorm.DB, table, keyColumn, key
 	}
 	if got, _ := row[valueColumn].(string); got != want {
 		t.Fatalf("%s.%s for %s = %q, want %q", table, valueColumn, keyValue, got, want)
+	}
+}
+
+func assertMigrationTimestampState(t *testing.T, db *gorm.DB, table, id, column string, wantSet bool) {
+	t.Helper()
+	var row struct {
+		Value *time.Time `gorm:"column:value"`
+	}
+	if err := db.Table(table).Select(column+" AS value").Where("id = ?", id).Take(&row).Error; err != nil {
+		t.Fatalf("read %s.%s for %s: %v", table, column, id, err)
+	}
+	if gotSet := row.Value != nil; gotSet != wantSet {
+		t.Fatalf("%s.%s for %s set = %t, want %t", table, column, id, gotSet, wantSet)
 	}
 }

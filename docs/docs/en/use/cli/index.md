@@ -17,7 +17,7 @@ luna project use project=prj_example
 
 List commands default to `visibility=related`. Platform administrators pass `visibility=all` only when they explicitly need platform-wide results, for example `luna project get-projects visibility=all`. Resource queries with a known project space should still pass its project ID to narrow the result.
 
-Use layered help to find arguments, permissions, and examples:
+Use layered help to find arguments and examples:
 
 ```bash
 luna --help
@@ -41,14 +41,14 @@ current workload container. Run `exit` or press `Ctrl-D` to end the remote sessi
 and restore the local terminal. `release terminal` is an alias for the same human
 command.
 
-The command requires an interactive TTY, the `deployment:exec` scope, a permitted
-project role, and runtime-terminal access enabled for the project space and
+The command requires an interactive TTY, sufficient project permissions for the
+current account, and runtime-terminal access enabled for the project space and
 deployment target. It does not expose cluster credentials and cannot run in a
 script or Agent mode.
 
-## Scopes and project roles
+## Permissions and sessions
 
-The required scope shown by CLI help comes from the platform's published OpenAPI contract. Scopes issued by OAuth login are the credential's capability ceiling; they do not elevate the account's platform role or project-space role. For a regular project member, both the credential scope and project role must allow access; a platform administrator cannot bypass the credential scope either.
+After sign-in, Luna CLI has the same permissions as the current account and does not require a separate scope selection. The platform re-evaluates the account's platform role, project-space membership, and resource policy on every request; CLI neither expands nor caches those permissions. Personal tokens and third-party OAuth applications retain their own authorization scopes.
 
 Logins to the same OAuth application from different devices or terminals form independent sessions. Signing out or revoking the current token affects only that session. Revoking the entire application authorization from account authorization settings invalidates every session for that application.
 

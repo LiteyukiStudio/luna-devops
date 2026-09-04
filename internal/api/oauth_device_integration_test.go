@@ -51,11 +51,40 @@ func TestOAuthDeviceAuthorizationAndRevocationFlow(t *testing.T) {
 	}).Error; err != nil {
 		t.Fatal(err)
 	}
+	legacyDeviceCode := "legacy-device-" + suffix
+	legacyInvalidatedAt := time.Now()
+	if err := db.Create(&model.OAuthDeviceAuthorization{
+		ID:              "odev_legacy_" + suffix,
+		ApplicationID:   lunaCLIApplicationID,
+		DeviceCodeHash:  hashToken(legacyDeviceCode),
+		UserCodeHash:    hashToken("legacy-user-" + suffix),
+		Status:          "denied",
+		IntervalSeconds: 5,
+		ExpiresAt:       legacyInvalidatedAt.Add(time.Hour),
+		DeniedAt:        &legacyInvalidatedAt,
+		ConsumedAt:      &legacyInvalidatedAt,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
 
 	router := NewRouter(db, mustTestConfig(t))
+	legacyScopedStart := performFormRequest(router, http.MethodPost, "/api/v1/oauth/device/authorization", url.Values{
+		"client_id": {lunaCLIClientID},
+		"scope":     {"user:read"},
+	})
+	if legacyScopedStart.Code != http.StatusBadRequest || jsonString(t, legacyScopedStart.Body.Bytes(), "error") != "invalid_scope" {
+		t.Fatalf("legacy scoped device authorization = %d %s", legacyScopedStart.Code, legacyScopedStart.Body.String())
+	}
+	invalidatedLegacyExchange := performFormRequest(router, http.MethodPost, "/api/v1/oauth/token", url.Values{
+		"client_id":   {lunaCLIClientID},
+		"grant_type":  {oauthDeviceCodeGrantType},
+		"device_code": {legacyDeviceCode},
+	})
+	if invalidatedLegacyExchange.Code != http.StatusBadRequest || jsonString(t, invalidatedLegacyExchange.Body.Bytes(), "error") != "invalid_grant" {
+		t.Fatalf("invalidated legacy device exchange = %d %s", invalidatedLegacyExchange.Code, invalidatedLegacyExchange.Body.String())
+	}
 	start := performFormRequest(router, http.MethodPost, "/api/v1/oauth/device/authorization", url.Values{
 		"client_id": {lunaCLIClientID},
-		"scope":     {"user:read volume:export"},
 	})
 	if start.Code != http.StatusOK {
 		t.Fatalf("start device authorization = %d %s", start.Code, start.Body.String())
@@ -81,10 +110,6 @@ func TestOAuthDeviceAuthorizationAndRevocationFlow(t *testing.T) {
 	if pendingAuthorization.GrantID != nil || pendingAuthorization.UserID != nil {
 		t.Fatalf("pending authorization unexpectedly has an owner or grant: %#v", pendingAuthorization)
 	}
-	if pendingAuthorization.Scope != "user:read,volume:export" {
-		t.Fatalf("pending authorization scope = %q", pendingAuthorization.Scope)
-	}
-
 	pending := performFormRequest(router, http.MethodPost, "/api/v1/oauth/token", url.Values{
 		"client_id":   {lunaCLIClientID},
 		"grant_type":  {oauthDeviceCodeGrantType},
@@ -119,13 +144,44 @@ func TestOAuthDeviceAuthorizationAndRevocationFlow(t *testing.T) {
 	if err := json.Unmarshal(exchange.Body.Bytes(), &tokens); err != nil {
 		t.Fatal(err)
 	}
-	if tokens.AccessToken == "" || tokens.RefreshToken == "" {
-		t.Fatalf("incomplete OAuth token response: %#v", tokens)
+	if tokens.AccessToken == "" || tokens.RefreshToken == "" || tokens.Scope != "" || strings.Contains(exchange.Body.String(), `"scope"`) {
+		t.Fatalf("invalid CLI OAuth token response: %#v", tokens)
+	}
+	var accessToken model.AccessToken
+	if err := db.First(&accessToken, "token_hash = ?", hashToken(tokens.AccessToken)).Error; err != nil {
+		t.Fatal(err)
+	}
+	var refreshToken model.OAuthRefreshToken
+	if err := db.First(&refreshToken, "token_hash = ?", hashToken(tokens.RefreshToken)).Error; err != nil {
+		t.Fatal(err)
+	}
+	var grant model.OAuthGrant
+	if err := db.First(&grant, "id = ?", accessToken.OAuthGrantID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if accessToken.Scope != lunaCLITestFullAccessScope || refreshToken.Scope != lunaCLITestFullAccessScope || grant.Scope != lunaCLITestFullAccessScope {
+		t.Fatalf("stored CLI scopes: access=%q refresh=%q grant=%q", accessToken.Scope, refreshToken.Scope, grant.Scope)
 	}
 
 	currentUser := performBearerRequest(router, http.MethodGet, "/api/v1/users/me", tokens.AccessToken, "")
 	if currentUser.Code != http.StatusOK || jsonString(t, currentUser.Body.Bytes(), "id") != user.ID {
 		t.Fatalf("OAuth bearer current user = %d %s", currentUser.Code, currentUser.Body.String())
+	}
+	configs := performBearerRequest(router, http.MethodGet, "/api/v1/configs", tokens.AccessToken, "")
+	if configs.Code != http.StatusOK {
+		t.Fatalf("CLI bearer did not inherit administrator permissions = %d %s", configs.Code, configs.Body.String())
+	}
+	grants := performCookieJSONRequest(router, http.MethodGet, "/api/v1/oauth/grants", sessionToken, "")
+	if grants.Code != http.StatusOK || strings.Contains(grants.Body.String(), `"scope":"*"`) || strings.Contains(grants.Body.String(), `"allowedScopes":"*"`) {
+		t.Fatalf("authorized applications exposed the internal CLI wildcard = %d %s", grants.Code, grants.Body.String())
+	}
+	if err := db.Model(&model.User{}).Where("id = ?", user.ID).Update("role", authz.PlatformRoleUser).Error; err != nil {
+		t.Fatal(err)
+	}
+	cliConfigs := performBearerRequest(router, http.MethodGet, "/api/v1/configs", tokens.AccessToken, "")
+	webConfigs := performCookieJSONRequest(router, http.MethodGet, "/api/v1/configs", sessionToken, "")
+	if cliConfigs.Code != http.StatusForbidden || cliConfigs.Code != webConfigs.Code {
+		t.Fatalf("CLI and browser role authorization diverged: CLI=%d Web=%d", cliConfigs.Code, webConfigs.Code)
 	}
 
 	revoke := performFormRequest(router, http.MethodPost, "/api/v1/oauth/revoke", url.Values{

@@ -13,7 +13,6 @@ type AccessTokenScopeDefinition struct {
 type scopeDefinition struct {
 	AccessTokenScopeDefinition
 	AccessTokenAllowed      bool
-	OAuthRecommended        bool
 	OAuthAuthorizableByUser bool
 }
 
@@ -64,9 +63,9 @@ var scopeCatalog = []scopeDefinition{
 
 	scopeDef(ActionVolumeRead, "volume", true, true, true),
 	scopeDef(ActionVolumeWrite, "volume", false, false, true),
-	oauthOnlyScopeDef(ActionVolumeImport, "volume", false, true),
-	oauthOnlyScopeDef(ActionVolumeExport, "volume", false, true),
-	oauthOnlyScopeDef(ActionVolumeDelete, "volume", false, true),
+	oauthOnlyScopeDef(ActionVolumeImport, "volume", true),
+	oauthOnlyScopeDef(ActionVolumeExport, "volume", true),
+	oauthOnlyScopeDef(ActionVolumeDelete, "volume", true),
 
 	scopeDef(ActionBillingRead, "billing", true, true, true),
 	scopeDef(ActionBillingAdjust, "billing", false, false, true),
@@ -105,20 +104,6 @@ func AccessTokenScopeCatalog(userRole string) []AccessTokenScopeDefinition {
 	return output
 }
 
-func RecommendedOAuthScopes(userRole string) []string {
-	values := make([]string, 0, len(scopeCatalog))
-	for _, scope := range scopeCatalog {
-		if !scope.OAuthRecommended {
-			continue
-		}
-		if !IsPlatformAdmin(userRole) && !scope.OAuthAuthorizableByUser {
-			continue
-		}
-		values = append(values, scope.Value)
-	}
-	return values
-}
-
 func scopeDef(action Action, group string, recommended, creatableByUser, oauthAuthorizableByUser bool) scopeDefinition {
 	return scopeDefinition{
 		AccessTokenScopeDefinition: AccessTokenScopeDefinition{
@@ -128,19 +113,16 @@ func scopeDef(action Action, group string, recommended, creatableByUser, oauthAu
 			CreatableByUser: creatableByUser,
 		},
 		AccessTokenAllowed:      true,
-		OAuthRecommended:        recommended,
 		OAuthAuthorizableByUser: oauthAuthorizableByUser,
 	}
 }
 
-func oauthOnlyScopeDef(action Action, group string, recommended, authorizableByUser bool) scopeDefinition {
+func oauthOnlyScopeDef(action Action, group string, authorizableByUser bool) scopeDefinition {
 	return scopeDefinition{
 		AccessTokenScopeDefinition: AccessTokenScopeDefinition{
-			Value:       string(action),
-			Group:       group,
-			Recommended: false,
+			Value: string(action),
+			Group: group,
 		},
-		OAuthRecommended:        recommended,
 		OAuthAuthorizableByUser: authorizableByUser,
 	}
 }

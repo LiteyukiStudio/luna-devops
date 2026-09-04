@@ -45,45 +45,12 @@ type pendingOAuthAuthorizationCode struct {
 	code         string
 }
 
-func TestOAuthDeviceScopeExpansionPreservesExistingFamilyScope(t *testing.T) {
-	fixture := newOAuthFamilyTestFixture(t)
-	first := issueOAuthDeviceFamily(t, fixture, "user:read")
-	second := issueOAuthDeviceFamily(t, fixture, "user:read volume:export")
-
-	if first.accessToken.OAuthGrantID != second.accessToken.OAuthGrantID {
-		t.Fatalf("grant IDs differ: first=%q second=%q", first.accessToken.OAuthGrantID, second.accessToken.OAuthGrantID)
-	}
-	if first.accessToken.OAuthFamilyID == second.accessToken.OAuthFamilyID {
-		t.Fatalf("multiple logins share family %q", first.accessToken.OAuthFamilyID)
-	}
-	var grant model.OAuthGrant
-	if err := fixture.db.First(&grant, "id = ?", first.accessToken.OAuthGrantID).Error; err != nil {
-		t.Fatal(err)
-	}
-	if grant.Scope != "user:read,volume:export" {
-		t.Fatalf("consent grant scope = %q", grant.Scope)
-	}
-	if first.accessToken.Scope != "user:read" || second.accessToken.Scope != "user:read,volume:export" {
-		t.Fatalf("family scopes: first=%q second=%q", first.accessToken.Scope, second.accessToken.Scope)
-	}
-
-	rotated := refreshOAuthFamily(t, fixture, first.tokens.RefreshToken)
-	if rotated.Scope != "user:read" {
-		t.Fatalf("rotated old family scope = %q, want user:read", rotated.Scope)
-	}
-	var rotatedAccess model.AccessToken
-	if err := fixture.db.First(&rotatedAccess, "token_hash = ?", hashToken(rotated.AccessToken)).Error; err != nil {
-		t.Fatal(err)
-	}
-	if rotatedAccess.OAuthFamilyID != first.accessToken.OAuthFamilyID || rotatedAccess.Scope != first.accessToken.Scope {
-		t.Fatalf("rotated access token = %#v", rotatedAccess)
-	}
-}
+const lunaCLITestFullAccessScope = "*"
 
 func TestConcurrentOAuthDeviceExchangesShareGrantAndSeparateFamilies(t *testing.T) {
 	fixture := newOAuthFamilyTestFixture(t)
-	first := startOAuthDeviceAuthorization(t, fixture, "user:read")
-	second := startOAuthDeviceAuthorization(t, fixture, "user:read volume:export")
+	first := startOAuthDeviceAuthorization(t, fixture)
+	second := startOAuthDeviceAuthorization(t, fixture)
 	approveOAuthDeviceAuthorization(t, fixture, first.userCode)
 	approveOAuthDeviceAuthorization(t, fixture, second.userCode)
 
@@ -127,10 +94,10 @@ func TestConcurrentOAuthDeviceExchangesShareGrantAndSeparateFamilies(t *testing.
 	}
 }
 
-func TestExpiredOAuthDeviceScopeExpansionLeavesExistingGrantAndTokenActive(t *testing.T) {
+func TestExpiredOAuthDeviceAuthorizationLeavesExistingGrantAndTokenActive(t *testing.T) {
 	fixture := newOAuthFamilyTestFixture(t)
-	first := issueOAuthDeviceFamily(t, fixture, "user:read")
-	pending := startOAuthDeviceAuthorization(t, fixture, "user:read volume:export")
+	first := issueOAuthDeviceFamily(t, fixture)
+	pending := startOAuthDeviceAuthorization(t, fixture)
 	approveOAuthDeviceAuthorization(t, fixture, pending.userCode)
 
 	var authorization model.OAuthDeviceAuthorization
@@ -152,8 +119,8 @@ func TestExpiredOAuthDeviceScopeExpansionLeavesExistingGrantAndTokenActive(t *te
 	if err := fixture.db.First(&grant, "id = ?", first.accessToken.OAuthGrantID).Error; err != nil {
 		t.Fatal(err)
 	}
-	if grant.Scope != "user:read" || grant.RevokedAt != nil {
-		t.Fatalf("expired expansion changed existing grant: %#v", grant)
+	if grant.Scope != lunaCLITestFullAccessScope || grant.RevokedAt != nil {
+		t.Fatalf("expired authorization changed existing grant: %#v", grant)
 	}
 	currentUser := performBearerRequest(fixture.router, http.MethodGet, "/api/v1/users/me", first.tokens.AccessToken, "")
 	if currentUser.Code != http.StatusOK {
@@ -163,8 +130,8 @@ func TestExpiredOAuthDeviceScopeExpansionLeavesExistingGrantAndTokenActive(t *te
 
 func TestOAuthRefreshReplayRevokesOnlyCompromisedFamily(t *testing.T) {
 	fixture := newOAuthFamilyTestFixture(t)
-	compromised := issueOAuthDeviceFamily(t, fixture, "user:read")
-	unrelated := issueOAuthDeviceFamily(t, fixture, "user:read")
+	compromised := issueOAuthDeviceFamily(t, fixture)
+	unrelated := issueOAuthDeviceFamily(t, fixture)
 	rotated := refreshOAuthFamily(t, fixture, compromised.tokens.RefreshToken)
 
 	replay := performFormRequest(fixture.router, http.MethodPost, "/api/v1/oauth/token", url.Values{
@@ -192,8 +159,8 @@ func TestOAuthRefreshReplayRevokesOnlyCompromisedFamily(t *testing.T) {
 
 func TestOAuthTokenRevocationRevokesOnlyCurrentFamily(t *testing.T) {
 	fixture := newOAuthFamilyTestFixture(t)
-	revoked := issueOAuthDeviceFamily(t, fixture, "user:read")
-	unrelated := issueOAuthDeviceFamily(t, fixture, "user:read")
+	revoked := issueOAuthDeviceFamily(t, fixture)
+	unrelated := issueOAuthDeviceFamily(t, fixture)
 
 	revoke := performFormRequest(fixture.router, http.MethodPost, "/api/v1/oauth/revoke", url.Values{
 		"client_id": {lunaCLIClientID},
@@ -259,7 +226,7 @@ func TestOAuthRefreshRotationLinearizesWithRevocation(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			fixture := newOAuthFamilyTestFixture(t)
-			issued := issueOAuthDeviceFamily(t, fixture, "user:read")
+			issued := issueOAuthDeviceFamily(t, fixture)
 			accessCreated := make(chan struct{})
 			releaseCreate := make(chan struct{})
 			var createBarrier sync.Once
@@ -350,8 +317,8 @@ func TestOAuthRefreshRotationLinearizesWithRevocation(t *testing.T) {
 
 func TestOAuthGrantRevocationInvalidatesApprovedPendingArtifacts(t *testing.T) {
 	fixture := newOAuthFamilyTestFixture(t)
-	issued := issueOAuthDeviceFamily(t, fixture, "user:read")
-	pendingDevice := startOAuthDeviceAuthorization(t, fixture, "user:read")
+	issued := issueOAuthDeviceFamily(t, fixture)
+	pendingDevice := startOAuthDeviceAuthorization(t, fixture)
 	approveOAuthDeviceAuthorization(t, fixture, pendingDevice.userCode)
 
 	verifier := strings.Repeat("p", 64)
@@ -412,7 +379,7 @@ func TestOAuthGrantRevocationInvalidatesApprovedPendingArtifacts(t *testing.T) {
 
 func TestOAuthFreshConsentAfterGrantRevocationCreatesNewGrant(t *testing.T) {
 	fixture := newOAuthFamilyTestFixture(t)
-	first := issueOAuthDeviceFamily(t, fixture, "user:read")
+	first := issueOAuthDeviceFamily(t, fixture)
 	revoke := performCookieJSONRequest(
 		fixture.router,
 		http.MethodDelete,
@@ -423,7 +390,7 @@ func TestOAuthFreshConsentAfterGrantRevocationCreatesNewGrant(t *testing.T) {
 	if revoke.Code != http.StatusNoContent {
 		t.Fatalf("revoke initial grant = %d %s", revoke.Code, revoke.Body.String())
 	}
-	second := issueOAuthDeviceFamily(t, fixture, "user:read")
+	second := issueOAuthDeviceFamily(t, fixture)
 	if second.accessToken.OAuthGrantID == first.accessToken.OAuthGrantID {
 		t.Fatalf("fresh consent reused revoked grant %q", first.accessToken.OAuthGrantID)
 	}
@@ -435,26 +402,11 @@ func TestOAuthFreshConsentAfterGrantRevocationCreatesNewGrant(t *testing.T) {
 func TestOAuthPendingDeviceExchangeRevalidatesAuthority(t *testing.T) {
 	tests := []struct {
 		name       string
-		scope      string
 		mutate     func(*gorm.DB, model.User) error
 		wantStatus int
 	}{
 		{
-			name:  "application scope shrunk",
-			scope: "volume:export",
-			mutate: func(db *gorm.DB, _ model.User) error {
-				return db.Transaction(func(tx *gorm.DB) error {
-					if err := tx.Model(&model.OAuthApplication{}).Where("id = ?", lunaCLIApplicationID).Update("allowed_scopes", "user:read").Error; err != nil {
-						return err
-					}
-					return revokeOAuthApplication(tx, lunaCLIApplicationID, time.Now())
-				})
-			},
-			wantStatus: http.StatusBadRequest,
-		},
-		{
-			name:  "application revoked",
-			scope: "user:read",
+			name: "application revoked",
 			mutate: func(db *gorm.DB, _ model.User) error {
 				return db.Transaction(func(tx *gorm.DB) error {
 					now := time.Now()
@@ -467,18 +419,9 @@ func TestOAuthPendingDeviceExchangeRevalidatesAuthority(t *testing.T) {
 			wantStatus: http.StatusUnauthorized,
 		},
 		{
-			name:  "user disabled",
-			scope: "user:read",
+			name: "user disabled",
 			mutate: func(db *gorm.DB, user model.User) error {
 				return db.Model(&model.User{}).Where("id = ?", user.ID).Update("disabled", true).Error
-			},
-			wantStatus: http.StatusBadRequest,
-		},
-		{
-			name:  "user role downgraded",
-			scope: "user:manage",
-			mutate: func(db *gorm.DB, user model.User) error {
-				return db.Model(&model.User{}).Where("id = ?", user.ID).Update("role", authz.PlatformRoleUser).Error
 			},
 			wantStatus: http.StatusBadRequest,
 		},
@@ -486,7 +429,7 @@ func TestOAuthPendingDeviceExchangeRevalidatesAuthority(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			fixture := newOAuthFamilyTestFixture(t)
-			pending := startOAuthDeviceAuthorization(t, fixture, test.scope)
+			pending := startOAuthDeviceAuthorization(t, fixture)
 			approveOAuthDeviceAuthorization(t, fixture, pending.userCode)
 			if err := test.mutate(fixture.db, fixture.user); err != nil {
 				t.Fatal(err)
@@ -585,8 +528,8 @@ func TestOAuthPendingAuthorizationCodeExchangeRevalidatesAuthority(t *testing.T)
 
 func TestUserOAuthGrantRevocationRevokesAllFamilies(t *testing.T) {
 	fixture := newOAuthFamilyTestFixture(t)
-	first := issueOAuthDeviceFamily(t, fixture, "user:read")
-	second := issueOAuthDeviceFamily(t, fixture, "user:read")
+	first := issueOAuthDeviceFamily(t, fixture)
+	second := issueOAuthDeviceFamily(t, fixture)
 
 	revoke := performCookieJSONRequest(
 		fixture.router,
@@ -615,7 +558,7 @@ func TestUserOAuthGrantRevocationRevokesAllFamilies(t *testing.T) {
 
 func TestOAuthTokenRevocationFailureReturnsServerErrorAndRollsBack(t *testing.T) {
 	fixture := newOAuthFamilyTestFixture(t)
-	issued := issueOAuthDeviceFamily(t, fixture, "user:read")
+	issued := issueOAuthDeviceFamily(t, fixture)
 	callbackName := "test:oauth_family_revoke_failure"
 	if err := fixture.db.Callback().Update().Before("gorm:update").Register(callbackName, func(tx *gorm.DB) {
 		if tx.Statement != nil && tx.Statement.Schema != nil && tx.Statement.Schema.Name == "AccessToken" {
@@ -707,6 +650,9 @@ func TestOAuthAuthorizationCodeCreatesConsentAndFamilyAtExchange(t *testing.T) {
 	if err := json.Unmarshal(exchange.Body.Bytes(), &tokens); err != nil {
 		t.Fatal(err)
 	}
+	if tokens.Scope != "user:read" {
+		t.Fatalf("third-party token response scope = %q", tokens.Scope)
+	}
 	var accessToken model.AccessToken
 	if err := fixture.db.First(&accessToken, "token_hash = ?", hashToken(tokens.AccessToken)).Error; err != nil {
 		t.Fatal(err)
@@ -751,9 +697,9 @@ func newOAuthFamilyTestFixture(t *testing.T) oauthFamilyTestFixture {
 	return oauthFamilyTestFixture{db: db, router: NewRouter(db, mustTestConfig(t)), user: user, application: application, sessionToken: sessionToken}
 }
 
-func issueOAuthDeviceFamily(t *testing.T, fixture oauthFamilyTestFixture, scope string) issuedOAuthDeviceFamily {
+func issueOAuthDeviceFamily(t *testing.T, fixture oauthFamilyTestFixture) issuedOAuthDeviceFamily {
 	t.Helper()
-	pending := startOAuthDeviceAuthorization(t, fixture, scope)
+	pending := startOAuthDeviceAuthorization(t, fixture)
 	approveOAuthDeviceAuthorization(t, fixture, pending.userCode)
 	exchange := exchangeOAuthDeviceAuthorization(fixture, pending.deviceCode)
 	if exchange.Code != http.StatusOK {
@@ -771,14 +717,19 @@ func issueOAuthDeviceFamily(t *testing.T, fixture oauthFamilyTestFixture, scope 
 	if err := fixture.db.First(&refreshToken, "token_hash = ?", hashToken(tokens.RefreshToken)).Error; err != nil {
 		t.Fatal(err)
 	}
+	if tokens.Scope != "" {
+		t.Fatalf("CLI token response exposed internal scope %q", tokens.Scope)
+	}
+	if accessToken.Scope != lunaCLITestFullAccessScope || refreshToken.Scope != lunaCLITestFullAccessScope {
+		t.Fatalf("stored CLI token scopes: access=%q refresh=%q", accessToken.Scope, refreshToken.Scope)
+	}
 	return issuedOAuthDeviceFamily{tokens: tokens, accessToken: accessToken, refreshToken: refreshToken}
 }
 
-func startOAuthDeviceAuthorization(t *testing.T, fixture oauthFamilyTestFixture, scope string) pendingOAuthDeviceAuthorization {
+func startOAuthDeviceAuthorization(t *testing.T, fixture oauthFamilyTestFixture) pendingOAuthDeviceAuthorization {
 	t.Helper()
 	start := performFormRequest(fixture.router, http.MethodPost, "/api/v1/oauth/device/authorization", url.Values{
 		"client_id": {lunaCLIClientID},
-		"scope":     {scope},
 	})
 	if start.Code != http.StatusOK {
 		t.Fatalf("start device authorization = %d %s", start.Code, start.Body.String())

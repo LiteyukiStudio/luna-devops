@@ -833,7 +833,6 @@ CREATE TABLE oauth_device_authorizations (
     user_id text,
     device_code_hash text NOT NULL,
     user_code_hash text NOT NULL,
-    scope text NOT NULL,
     status text NOT NULL,
     interval_seconds integer NOT NULL,
     last_polled_at timestamp with time zone,
@@ -2477,7 +2476,7 @@ INSERT INTO oauth_applications (
     'luna-cli',
     '',
     '[]',
-    '',
+    '*',
     1,
     now(),
     now()

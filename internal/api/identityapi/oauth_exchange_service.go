@@ -33,7 +33,7 @@ func exchangeOAuthAuthorizationCodeValue(
 			!oauthApplicationAllowsScope(application, snapshot.Scope) {
 			return errOAuthInvalidGrant
 		}
-		user, err := lockOAuthExchangeUser(tx, snapshot.UserID, snapshot.Scope)
+		user, err := lockOAuthExchangeUser(tx, application, snapshot.UserID, snapshot.Scope)
 		if err != nil {
 			return err
 		}
@@ -102,7 +102,7 @@ func exchangeOAuthRefreshTokenValue(
 			!oauthApplicationAllowsScope(application, snapshot.Scope) {
 			return errOAuthInvalidGrant
 		}
-		if _, err := lockOAuthExchangeUser(tx, snapshot.UserID, snapshot.Scope); err != nil {
+		if _, err := lockOAuthExchangeUser(tx, application, snapshot.UserID, snapshot.Scope); err != nil {
 			return err
 		}
 		var grant model.OAuthGrant
@@ -221,15 +221,14 @@ func exchangeOAuthDeviceCodeValue(
 			protocolError = "invalid_grant"
 			return nil
 		}
-		if snapshot.UserID == nil || snapshot.ApprovedAt == nil ||
-			!oauthApplicationAllowsScope(application, snapshot.Scope) {
+		if snapshot.UserID == nil || snapshot.ApprovedAt == nil || !isLunaCLIApplication(application) {
 			return errOAuthInvalidGrant
 		}
-		user, err := lockOAuthExchangeUser(tx, *snapshot.UserID, snapshot.Scope)
+		user, err := lockOAuthExchangeUser(tx, application, *snapshot.UserID, lunaCLIFullAccessScope)
 		if err != nil {
 			return err
 		}
-		grant, err := ensureOAuthGrant(tx, application, user, snapshot.Scope, *snapshot.ApprovedAt)
+		grant, err := ensureOAuthGrant(tx, application, user, lunaCLIFullAccessScope, *snapshot.ApprovedAt)
 		if err != nil {
 			return err
 		}
@@ -249,11 +248,10 @@ func exchangeOAuthDeviceCodeValue(
 			*authorization.UserID != user.ID ||
 			authorization.ApprovedAt == nil ||
 			!authorization.ApprovedAt.Equal(*snapshot.ApprovedAt) ||
-			authorization.Scope != snapshot.Scope ||
 			!authorization.ExpiresAt.After(now) {
 			return errOAuthInvalidGrant
 		}
-		issued, err := issueOAuthTokens(tx, application, grant, authorization.Scope, id.New("ofam"), now)
+		issued, err := issueOAuthTokens(tx, application, grant, lunaCLIFullAccessScope, id.New("ofam"), now)
 		if err != nil {
 			return err
 		}

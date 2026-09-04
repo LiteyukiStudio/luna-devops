@@ -1816,7 +1816,6 @@ export interface OAuthProtocolError {
 
 export interface OAuthDeviceVerification {
   application: OAuthApplication
-  scope: string
   userCode: string
   expiresAt: string
 }

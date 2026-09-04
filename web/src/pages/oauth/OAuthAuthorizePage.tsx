@@ -6,11 +6,11 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import { api } from '@/api'
 import { useSession } from '@/app/session-context'
+import { accessTokenScopeLabel } from '@/components/common/access-token-scope'
 import { ErrorState } from '@/components/common/error-state'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { OAuthConsentShell } from './oauth-consent'
-import { oauthScopeLabel, splitOAuthScopes } from './oauth-utils'
 
 export function OAuthAuthorizePage() {
   const { t } = useTranslation()
@@ -67,7 +67,7 @@ export function OAuthAuthorizePage() {
             <div className="grid gap-3 rounded-md border border-border bg-muted/30 p-4">
               <p className="text-sm font-medium">{t('oauthApps.requestsAccess')}</p>
               <div className="flex flex-wrap gap-2">
-                {splitOAuthScopes(request.data.scope).map(scope => <Badge key={scope} variant="secondary">{oauthScopeLabel(t, scope)}</Badge>)}
+                {request.data.scope.split(/[\s,]+/).filter(Boolean).map(scope => <Badge key={scope} variant="secondary">{accessTokenScopeLabel(t, scope)}</Badge>)}
               </div>
               <p className="text-sm text-muted-foreground">
                 {request.data.accessTokenLifetimeDays === 0

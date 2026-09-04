@@ -74,7 +74,6 @@ type OAuthDeviceAuthorization struct {
 	UserID          *string    `gorm:"index" json:"userId,omitempty"`
 	DeviceCodeHash  string     `gorm:"uniqueIndex;not null" json:"-"`
 	UserCodeHash    string     `gorm:"uniqueIndex;not null" json:"-"`
-	Scope           string     `gorm:"type:text;not null" json:"scope"`
 	Status          string     `gorm:"index;not null" json:"status"`
 	IntervalSeconds int        `gorm:"not null" json:"intervalSeconds"`
 	LastPolledAt    *time.Time `json:"lastPolledAt,omitempty"`

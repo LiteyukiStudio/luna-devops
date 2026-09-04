@@ -22,6 +22,14 @@ func (h *Handlers) StartOAuthDeviceAuthorization(ctx *gin.Context) {
 	if !bindOAuthForm(ctx, &input) {
 		return
 	}
+	if requestedScopes, present := ctx.GetPostFormArray("scope"); present {
+		for _, requestedScope := range requestedScopes {
+			if strings.TrimSpace(requestedScope) != "" {
+				oauthError(ctx, http.StatusBadRequest, "invalid_scope", "Luna CLI device authorization does not accept a requested scope")
+				return
+			}
+		}
+	}
 	clientID := strings.TrimSpace(input.ClientID)
 	if !h.allowOAuthClientAttempt(ctx, clientID) {
 		return
@@ -36,16 +44,6 @@ func (h *Handlers) StartOAuthDeviceAuthorization(ctx *gin.Context) {
 		oauthError(ctx, http.StatusBadRequest, "invalid_client", "The device authorization client is not available")
 		return
 	}
-	requestedScope := strings.TrimSpace(input.Scope)
-	scope := ""
-	if requestedScope != "" {
-		scope = normalizeOAuthScope(requestedScope)
-		if scope == "" || !oauthApplicationAllowsScope(application, scope) {
-			oauthError(ctx, http.StatusBadRequest, "invalid_scope", "Requested scope is invalid")
-			return
-		}
-	}
-
 	plainDeviceCode := "lyo_device_" + randomHex(32)
 	userCode := newOAuthDeviceUserCode()
 	now := time.Now()
@@ -54,7 +52,6 @@ func (h *Handlers) StartOAuthDeviceAuthorization(ctx *gin.Context) {
 		ApplicationID:   application.ID,
 		DeviceCodeHash:  hashToken(plainDeviceCode),
 		UserCodeHash:    hashToken(normalizeOAuthDeviceUserCode(userCode)),
-		Scope:           scope,
 		Status:          "pending",
 		IntervalSeconds: int(oauthDevicePollInterval / time.Second),
 		ExpiresAt:       now.Add(oauthDeviceCodeTTL),
@@ -85,13 +82,12 @@ func (h *Handlers) GetOAuthDeviceVerification(ctx *gin.Context) {
 		return
 	}
 	userCode := normalizeOAuthDeviceUserCode(ctx.Query("user_code"))
-	authorization, application, ok := h.oauthDeviceVerificationRequest(ctx, user, userCode)
+	authorization, application, ok := h.oauthDeviceVerificationRequest(ctx, userCode)
 	if !ok {
 		return
 	}
 	ctx.JSON(http.StatusOK, oauthDeviceVerificationResponse{
 		Application: oauthApplicationToResponse(application),
-		Scope:       authorization.Scope,
 		UserCode:    formatOAuthDeviceUserCode(userCode),
 		ExpiresAt:   authorization.ExpiresAt,
 	})
@@ -125,10 +121,6 @@ func (h *Handlers) DecideOAuthDeviceVerification(ctx *gin.Context) {
 		writeErrorCode(ctx, http.StatusNotFound, "oauth.device.invalid_code", "Device verification code is invalid or expired")
 		return
 	}
-	if errors.Is(err, errOAuthInvalidScope) {
-		writeErrorCode(ctx, http.StatusForbidden, "oauth.scope.forbidden", "Requested OAuth scope is not allowed")
-		return
-	}
 	if err != nil {
 		writeErrorCode(ctx, http.StatusInternalServerError, "oauth.device.decision_failed", "Device authorization could not be updated")
 		return
@@ -137,7 +129,7 @@ func (h *Handlers) DecideOAuthDeviceVerification(ctx *gin.Context) {
 	if input.Approved {
 		status = "approved"
 	}
-	h.auditWithContext(user.ID, "oauth_device."+status, authorization.ID, true, authorization.Scope, ctx.Request.Context())
+	h.auditWithContext(user.ID, "oauth_device."+status, authorization.ID, true, "", ctx.Request.Context())
 	ctx.JSON(http.StatusOK, oauthDeviceVerificationResult{Status: status})
 }
 
@@ -172,7 +164,7 @@ func (h *Handlers) exchangeOAuthDeviceCode(ctx *gin.Context, authentication oaut
 	}
 }
 
-func (h *Handlers) oauthDeviceVerificationRequest(ctx *gin.Context, user model.User, userCode string) (model.OAuthDeviceAuthorization, model.OAuthApplication, bool) {
+func (h *Handlers) oauthDeviceVerificationRequest(ctx *gin.Context, userCode string) (model.OAuthDeviceAuthorization, model.OAuthApplication, bool) {
 	if len(userCode) != 8 {
 		writeErrorCode(ctx, http.StatusNotFound, "oauth.device.invalid_code", "Device verification code is invalid or expired")
 		return model.OAuthDeviceAuthorization{}, model.OAuthApplication{}, false
@@ -193,11 +185,8 @@ func (h *Handlers) oauthDeviceVerificationRequest(ctx *gin.Context, user model.U
 		writeErrorCode(ctx, http.StatusNotFound, "oauth.application.not_found", "OAuth application not found")
 		return model.OAuthDeviceAuthorization{}, model.OAuthApplication{}, false
 	}
-	if authorization.Scope == "" {
-		authorization.Scope = recommendedOAuthScope(user)
-	}
-	if authorization.Scope == "" || !oauthApplicationAllowsScope(application, authorization.Scope) || !userCanAuthorizeOAuthScope(user, authorization.Scope) {
-		writeErrorCode(ctx, http.StatusForbidden, "oauth.scope.forbidden", "Requested OAuth scope is not allowed")
+	if !isLunaCLIApplication(application) {
+		writeErrorCode(ctx, http.StatusNotFound, "oauth.application.not_found", "OAuth application not found")
 		return model.OAuthDeviceAuthorization{}, model.OAuthApplication{}, false
 	}
 	return authorization, application, true

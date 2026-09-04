@@ -69,12 +69,11 @@ function verification(userCode: string) {
       logoUrl: '',
       clientId: 'luna-cli',
       redirectUris: [],
-      allowedScopes: 'project:read build:write',
+      allowedScopes: '',
       accessTokenLifetimeDays: 1,
       createdAt: '2026-07-27T00:00:00Z',
       updatedAt: '2026-07-27T00:00:00Z',
     },
-    scope: 'project:read build:write',
     userCode,
     expiresAt: '2026-07-27T12:30:00Z',
   }
@@ -96,8 +95,7 @@ describe('oauth device page', () => {
     await waitFor(() => expect(mocks.getOAuthDeviceVerification).toHaveBeenCalledWith('ABCD-EFGH'))
     expect(await screen.findByText('Luna CLI')).toBeInTheDocument()
     expect(screen.getByText('ABCD-EFGH')).toBeInTheDocument()
-    expect(screen.getByText(i18next.t('accessTokens.scopeLabels.project.read'))).toBeInTheDocument()
-
+    expect(screen.getByText(i18next.t('oauthApps.device.requestsAccess', { application: 'Luna CLI' }))).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: i18next.t('oauthApps.device.approve') }))
 
     await waitFor(() => expect(mocks.decideOAuthDeviceVerification).toHaveBeenCalledWith({

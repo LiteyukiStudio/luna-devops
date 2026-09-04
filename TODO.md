@@ -1,5 +1,12 @@
 # TODO
 
+## 2026-09-03 Luna CLI 登录权限模型收敛
+
+- [x] 删除第一方 CLI 登录的 Scope 请求、授权展示、凭据存储和命令预检，登录权限直接与当前用户对等；保留 OpenAPI Scope 元数据供个人令牌、第三方 OAuth 与 Agent 服务身份查询。
+- [x] 保留后端实时 RBAC、项目成员关系与资源策略校验，同时保持个人令牌和第三方 OAuth 应用的 Scope 隔离。
+- [x] 安全迁移既有 CLI 会话：撤销旧 Scope 令牌族、作废未消费设备码并要求重新登录，同时同步 OpenAPI、Web、CLI、双语文档和 Luna DevOps Skill。
+- [x] 完成认证成功/失败链路、迁移、Go、Web、CLI、Agent 契约与文档全量验收，并确认三端生产代码净减少。
+
 ## 2026-09-03 Luna CLI Skill 安装引导
 
 - [x] 在 CLI 安装页提供可复制给 AI 的同版本 Luna DevOps Skill 安装提示词，并同步中英文文档。
@@ -36,7 +43,7 @@
 ## 2026-08-31 权限与 OAuth 契约收口
 
 - [x] 将项目 Action → 角色矩阵集中到 `internal/authz`，API、长连接、数据卷与 Agent 工具统一调用 `ProjectAuthorizer`，删除散落角色数组和旧兼容入口。
-- [x] 将 OpenAPI `x-luna-cli.requiredScopes` 作为 HTTP、CLI 与 Agent 唯一 Scope 契约，运行时在契约缺失时失败关闭。
+- [x] 将 OpenAPI `x-luna-cli.requiredScopes` 作为个人令牌、第三方 OAuth 与 Agent 的唯一 Scope 契约，运行时在契约缺失时失败关闭。
 - [x] 将 OAuth 登录隔离为独立 Token family，并收口刷新、退出、重放、Grant/应用撤销、旧批准凭据和并发线性化语义。
 - [x] 为异步删除贯穿 Actor 与排队/投递/最终失败审计，并让日志、指标、进度与数据卷长流在身份、Scope/RBAC 或资源授权失效后停止。
 - [x] 同步双语文档，完成 Go、迁移、OpenAPI、Agent、Web、Docs、Helm 全量门禁及独立 P0/P1 复审。

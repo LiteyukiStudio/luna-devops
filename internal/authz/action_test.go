@@ -149,38 +149,6 @@ func TestOAuthScopeRules(t *testing.T) {
 	}
 }
 
-func TestRecommendedOAuthScopesExcludeHighRiskOperations(t *testing.T) {
-	scopes := RecommendedOAuthScopes(PlatformRoleUser)
-	for _, scope := range []Action{
-		ActionProjectRead,
-		ActionBuildTrigger,
-		ActionDeploymentRelease,
-	} {
-		if !contains(scopes, string(scope)) {
-			t.Fatalf("expected recommended OAuth scopes to include %q", scope)
-		}
-	}
-	if contains(scopes, string(ActionAgentObservabilityRead)) {
-		t.Fatal("regular users must not receive the cross-user Agent observability scope")
-	}
-	if !contains(RecommendedOAuthScopes(PlatformRoleAdmin), string(ActionAgentObservabilityRead)) {
-		t.Fatal("platform administrators need Agent observability in the default CLI OAuth grant")
-	}
-	for _, scope := range []Action{
-		ActionDeploymentExec,
-		ActionGatewayDelete,
-		ActionSecretUpdate,
-		ActionConfigWrite,
-		ActionVolumeImport,
-		ActionVolumeExport,
-		ActionVolumeDelete,
-	} {
-		if contains(scopes, string(scope)) {
-			t.Fatalf("expected recommended OAuth scopes to exclude high-risk scope %q", scope)
-		}
-	}
-}
-
 func catalogContainsScope(catalog []AccessTokenScopeDefinition, value string) bool {
 	for _, scope := range catalog {
 		if scope.Value == value {

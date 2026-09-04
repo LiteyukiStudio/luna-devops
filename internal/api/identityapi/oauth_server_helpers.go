@@ -30,6 +30,7 @@ const (
 	oauthDeviceCodeGrantType = "urn:ietf:params:oauth:grant-type:device_code"
 	lunaCLIApplicationID     = "oapp_luna_cli"
 	lunaCLIClientID          = "luna-cli"
+	lunaCLIFullAccessScope   = "*"
 )
 
 var allowedOAuthAccessTokenLifetimeDays = map[int]bool{0: true, 1: true, 7: true, 30: true, 90: true}
@@ -227,16 +228,23 @@ func (h *Handlers) authenticateOAuthTokenClient(
 	}, true
 }
 
-func recommendedOAuthScope(user model.User) string {
-	return authz.NormalizeOAuthScope(strings.Join(authz.RecommendedOAuthScopes(user.Role), ","))
-}
-
 func normalizeOAuthScope(scopeText string) string {
 	return authz.NormalizeOAuthScope(scopeText)
 }
 
 func userCanAuthorizeOAuthScope(user model.User, scopeText string) bool {
 	return authz.UserCanAuthorizeOAuthScope(user.Role, scopeText)
+}
+
+func isLunaCLIApplication(application model.OAuthApplication) bool {
+	return application.ID == lunaCLIApplicationID && application.ClientID == lunaCLIClientID
+}
+
+func normalizeOAuthScopeForApplication(application model.OAuthApplication, scopeText string) string {
+	if isLunaCLIApplication(application) && strings.TrimSpace(scopeText) == lunaCLIFullAccessScope {
+		return lunaCLIFullAccessScope
+	}
+	return normalizeOAuthScope(scopeText)
 }
 
 // allowOAuthClientAttempt is the unauthenticated device-start limiter. Token,

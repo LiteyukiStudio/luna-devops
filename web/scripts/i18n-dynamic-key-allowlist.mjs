@@ -19,7 +19,6 @@ export const auditedDynamicTranslationCalls = {
   'src/pages/applications/deployments/application-deployment-bundle-import-dialog.tsx|fallbackKey': 'Callers pass bounded bundleImport fallback keys.',
   'src/pages/applications/gateway/application-gateway-panel.tsx|messageKey': 'The key is selected from three literal gateway domain result keys.',
   'src/pages/applications/gateway/application-gateway-panel.tsx|gatewayRouteTlsModeLabels[item.tlsMode]': 'TLS mode keys come from the local exhaustive mode map.',
-  'src/pages/oauth/oauth-utils.ts|key': 'The key is derived from the accessTokens.scopeLabels prefix and falls back to the raw scope value.',
   'src/pages/settings/identity/UsersPage.tsx|languageKeys[user.language] ?? \'languages.zhCN\'': 'Language keys come from a local supported-language map with a zh-CN fallback.',
   'src/pages/settings/ai/ai-assistant-settings.ts|messageKey': 'boundedInt callers pass literal settings.ai validation keys.',
 }

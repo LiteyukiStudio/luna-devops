@@ -263,7 +263,13 @@ export function OAuthGrantsPanel() {
         </div>
       ),
     },
-    { key: 'scope', header: t('oauthApps.authorizedScopes'), render: grant => <AccessTokenScopeBadges scope={grant.scope} /> },
+    {
+      key: 'scope',
+      header: t('oauthApps.authorizedScopes'),
+      render: grant => grant.application.clientId === 'luna-cli'
+        ? <span className="text-sm text-muted-foreground">{t('oauthApps.accountPermissions')}</span>
+        : <AccessTokenScopeBadges scope={grant.scope} />,
+    },
     { key: 'updatedAt', header: t('oauthApps.authorizedAt'), render: grant => formatAbsoluteDateTime(grant.updatedAt) },
     {
       key: 'actions',

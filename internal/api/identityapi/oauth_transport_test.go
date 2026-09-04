@@ -31,6 +31,24 @@ func TestOAuthApplicationResponseNormalizesEmptyRedirectURIs(t *testing.T) {
 	}
 }
 
+func TestLunaCLIInternalScopeIsBoundToExactBuiltInApplication(t *testing.T) {
+	builtIn := model.OAuthApplication{ID: lunaCLIApplicationID, ClientID: lunaCLIClientID, AllowedScopes: lunaCLIFullAccessScope}
+	if scope := normalizeOAuthScopeForApplication(builtIn, lunaCLIFullAccessScope); scope != lunaCLIFullAccessScope {
+		t.Fatalf("built-in CLI internal scope = %q", scope)
+	}
+	if response := oauthApplicationToResponse(builtIn); response.AllowedScopes != "" {
+		t.Fatalf("built-in CLI response exposed internal scope %q", response.AllowedScopes)
+	}
+	for _, application := range []model.OAuthApplication{
+		{ID: "oapp_external", ClientID: lunaCLIClientID, AllowedScopes: lunaCLIFullAccessScope},
+		{ID: lunaCLIApplicationID, ClientID: "external-client", AllowedScopes: lunaCLIFullAccessScope},
+	} {
+		if scope := normalizeOAuthScopeForApplication(application, lunaCLIFullAccessScope); scope != "" {
+			t.Fatalf("non-built-in application accepted wildcard scope: %#v", application)
+		}
+	}
+}
+
 func TestOAuthRevokeRejectsMissingOrBlankToken(t *testing.T) {
 	router := gin.New()
 	router.POST("/api/v1/oauth/revoke", (&Handlers{}).RevokeOAuthToken)

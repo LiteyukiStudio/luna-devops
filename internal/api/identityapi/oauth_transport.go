@@ -18,7 +18,6 @@ type oauthApplicationInput struct {
 
 type oauthDeviceAuthorizationInput struct {
 	ClientID string `form:"client_id" binding:"required"`
-	Scope    string `form:"scope"`
 }
 
 type oauthTokenInput struct {
@@ -106,7 +105,7 @@ type oauthTokenResponse struct {
 	TokenType    string `json:"token_type"`
 	ExpiresIn    *int64 `json:"expires_in,omitempty"`
 	RefreshToken string `json:"refresh_token,omitempty"`
-	Scope        string `json:"scope"`
+	Scope        string `json:"scope,omitempty"`
 }
 
 type oauthProtocolErrorResponse struct {
@@ -126,7 +125,6 @@ type oauthDeviceAuthorizationResponse struct {
 
 type oauthDeviceVerificationResponse struct {
 	Application oauthApplicationResponse `json:"application"`
-	Scope       string                   `json:"scope"`
 	UserCode    string                   `json:"userCode"`
 	ExpiresAt   time.Time                `json:"expiresAt"`
 }
@@ -145,6 +143,10 @@ func oauthApplicationToResponse(application model.OAuthApplication) oauthApplica
 	if redirectURIs == nil {
 		redirectURIs = []string{}
 	}
+	allowedScopes := application.AllowedScopes
+	if isLunaCLIApplication(application) {
+		allowedScopes = ""
+	}
 	return oauthApplicationResponse{
 		ID:                      application.ID,
 		OwnerUserID:             application.OwnerUserID,
@@ -154,7 +156,7 @@ func oauthApplicationToResponse(application model.OAuthApplication) oauthApplica
 		LogoURL:                 application.LogoURL,
 		ClientID:                application.ClientID,
 		RedirectURIs:            redirectURIs,
-		AllowedScopes:           application.AllowedScopes,
+		AllowedScopes:           allowedScopes,
 		AccessTokenLifetimeDays: application.AccessTokenLifetimeDays,
 		RevokedAt:               application.RevokedAt,
 		CreatedAt:               application.CreatedAt,

@@ -12,7 +12,6 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { OAuthConsentShell } from './oauth-consent'
-import { oauthScopeLabel, splitOAuthScopes } from './oauth-utils'
 
 type DeviceDecision = 'approved' | 'denied'
 
@@ -130,11 +129,6 @@ export function OAuthDevicePage() {
                           {t('oauthApps.device.requestsAccess', { application: verification.data.application.name })}
                         </p>
                         <Badge className="font-mono tracking-wide" variant="outline">{verification.data.userCode}</Badge>
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        {splitOAuthScopes(verification.data.scope).map(scope => (
-                          <Badge key={scope} variant="secondary">{oauthScopeLabel(t, scope)}</Badge>
-                        ))}
                       </div>
                       <p className="text-sm text-muted-foreground">
                         {t('oauthApps.device.expiresAt', { time: formatDateTime(verification.data.expiresAt, i18n.language) })}

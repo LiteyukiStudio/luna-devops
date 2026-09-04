@@ -123,6 +123,7 @@ web/src/i18n
 - 平台角色与项目角色必须复用 `internal/authz`、`web/src/lib/roles.ts` 和 OpenAPI 中的共享角色 schema，禁止在授权判断、输入校验和测试夹具中散落角色字面量。LLM 消息 role、资源 scope、Git owner 等同名字字段属于独立语义，不得混入授权角色常量。
 - 构建/部署阶段的用户配置字符串默认允许使用 GitHub Actions 风格变量；最终执行前必须通过后端统一变量渲染组件处理，禁止在各业务里手写零散替换逻辑。
 - 权限由后端最终判断，前端隐藏按钮只做体验优化。
+- 第一方 Luna CLI 设备登录不接受、不展示也不持久化用户可选 Scope；CLI 会话权限始终由当前用户的平台角色、项目成员关系和资源策略实时决定，禁止在 CLI 恢复 Scope 选择、命令预检或权限副本。个人令牌、第三方 OAuth 应用和 Agent 服务身份继续按 OpenAPI Scope 限权。
 - 危险操作必须写 AuditLog。
 - **MUST Agent 工具注册闭环**：普通平台工具以 OpenAPI operation 为唯一事实源。新增或修改 `operationId` 时，必须在同一事项内同步真实业务路由、请求/响应 Schema、`requiredScopes`、`requiresApproval`、敏感字段、别名和用途说明，并确认 `internal/aitool.PlatformCatalog()` 能自动生成完整契约；特殊协议只能在集中 deny map 中以稳定原因排除。Agent 不维护手写平台 fallback、重复白名单或二次执行 router。仅模型内部工具需要同步 `tool-presentation` 注册、Executor handler 与测试。
 - 修改既有工具的 Scope、参数 Schema 或审批要求时，必须验证远端 Provider Catalog、Agent 详情加载、固定服务身份直达原业务 Handler/Service、当前 Session/用户/项目空间权威回读、最终 RBAC 和审计保持一致。完成后必须用真实调用链验证副作用与权威回读，不能仅编译通过就交付。

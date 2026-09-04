@@ -120,18 +120,8 @@ SET scope = (
 )
 WHERE scope ~ '(^|[[:space:],])kube:';
 
-UPDATE oauth_device_authorizations
-SET scope = (
-    SELECT COALESCE(string_agg(part.value, ',' ORDER BY part.ordinality), '')
-    FROM regexp_split_to_table(oauth_device_authorizations.scope, '[[:space:],]+')
-        WITH ORDINALITY AS part(value, ordinality)
-    WHERE part.value <> '' AND part.value NOT LIKE 'kube:%'
-)
-WHERE scope ~ '(^|[[:space:],])kube:';
-
 -- Empty scopes are invalid. Purge the retired grants and their transient
--- credentials instead of allowing device authorization to substitute a
--- recommended default scope on a later approval.
+-- credentials instead of allowing them to survive without authority.
 DELETE FROM access_tokens
 WHERE oauth_grant_id IN (
     SELECT id FROM oauth_grants WHERE btrim(scope) = ''
@@ -141,9 +131,6 @@ DELETE FROM oauth_authorization_codes
 WHERE btrim(scope) = '';
 
 DELETE FROM oauth_refresh_tokens
-WHERE btrim(scope) = '';
-
-DELETE FROM oauth_device_authorizations
 WHERE btrim(scope) = '';
 
 DELETE FROM oauth_grants
