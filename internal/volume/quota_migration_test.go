@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -14,48 +13,6 @@ import (
 )
 
 const quotaTestGiB = int64(1024 * 1024 * 1024)
-
-func TestProjectVolumeQuotaMigrationUsesDurableTransactionalReservations(t *testing.T) {
-	t.Parallel()
-	up := strings.ToLower(readVolumeMigration(t, "000068_project_volume_quota_billing.up.sql"))
-	for _, required := range []string{
-		"create table project_volume_quota_usage",
-		"create table project_volume_quota_reservations",
-		"from projects where id = new.project_id for update",
-		"project_volume_quota_exceeded",
-		"project_volume_quota_config_invalid",
-		"project_volume_quota_project_immutable",
-		"errcode = 'pvr01'",
-		"errcode = 'pvr02'",
-		"errcode = 'pvr03'",
-		"'storage.transfer_gib'",
-	} {
-		if !strings.Contains(up, required) {
-			t.Errorf("quota migration is missing %q", required)
-		}
-	}
-	for _, forbidden := range []string{"pg_advisory", "pg_try_advisory"} {
-		if strings.Contains(up, forbidden) {
-			t.Errorf("quota migration must not use process/advisory locking: %q", forbidden)
-		}
-	}
-	if !strings.Contains(up, "if delta_bytes > 0 then\n        quota_limit_bytes := luna_project_volume_quota_limit_bytes()") {
-		t.Fatal("quota configuration must be evaluated only for positive reservations so release and referenced-volume paths remain available")
-	}
-
-	down := strings.ToLower(readVolumeMigration(t, "000068_project_volume_quota_billing.down.sql"))
-	for _, required := range []string{
-		"drop trigger if exists trg_project_volumes_quota_update",
-		"drop function if exists luna_sync_project_volume_quota",
-		"drop table if exists project_volume_quota_reservations",
-		"drop table if exists project_volume_quota_usage",
-		"storage.transfer_gib",
-	} {
-		if !strings.Contains(down, required) {
-			t.Errorf("quota rollback migration is missing %q", required)
-		}
-	}
-}
 
 func TestProjectVolumeQuotaPostgresLifecycleConcurrencyAndCancellation(t *testing.T) {
 	db := openVolumeTestDB(t)

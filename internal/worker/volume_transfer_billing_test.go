@@ -5,7 +5,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/billing"
+	"github.com/LiteyukiStudio/devops/internal/database"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/testdb"
 	"github.com/shopspring/decimal"
@@ -14,28 +16,40 @@ import (
 
 func TestVolumeTransferBillingReconcilerSettlesTerminalBytesOnce(t *testing.T) {
 	db := openVolumeTransferBillingWorkerTestDB(t)
-	if err := db.AutoMigrate(
-		&model.Project{}, &model.ProjectMember{}, &model.UserWallet{}, &model.BillingRateRule{},
-		&model.BillingUsageRecord{}, &model.BillingLedgerEntry{}, &model.VolumeTransfer{},
-	); err != nil {
-		t.Fatalf("migrate worker transfer billing tables: %v", err)
+	user := model.User{
+		ID: "usr_worker_transfer", Email: "worker-transfer@example.invalid", Name: "Worker transfer", Role: authz.PlatformRoleUser,
+	}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("seed worker transfer user: %v", err)
 	}
 	project := model.Project{
 		ID: "prj_worker_transfer", Identifier: "worker-transfer", Name: "Worker transfer",
-		BillingOwnerUserID: "usr_worker_transfer", DeleteStatus: "active",
+		BillingOwnerUserID: user.ID, DeleteStatus: "active",
 	}
 	if err := db.Create(&project).Error; err != nil {
 		t.Fatalf("seed worker transfer project: %v", err)
+	}
+	cluster := model.RuntimeCluster{ID: "rcl_worker_transfer", Name: "Worker transfer"}
+	if err := db.Create(&cluster).Error; err != nil {
+		t.Fatalf("seed worker transfer cluster: %v", err)
+	}
+	volume := model.ProjectVolume{
+		ID: "pvol_worker", ProjectID: project.ID, DisplayName: "Worker transfer", ClusterID: cluster.ID,
+		Namespace: "worker-transfer", ClaimName: "worker-transfer", OwnershipMode: model.ProjectVolumeOwnershipReferenced,
+		SourceKind: model.ProjectVolumeSourceExistingClaim, LifecycleState: model.ProjectVolumeLifecycleReady,
+		CapacityRequest: "1Gi", CapacityBytes: 1024 * 1024 * 1024, AccessMode: model.ProjectVolumeAccessReadWriteOnce,
+		VolumeMode: model.ProjectVolumeModeFilesystem, CreatedBy: user.ID, Revision: 1,
+	}
+	if err := db.Create(&volume).Error; err != nil {
+		t.Fatalf("seed worker project volume: %v", err)
 	}
 	if err := db.Create(&model.UserWallet{
 		ID: "wlt_worker_transfer", UserID: project.BillingOwnerUserID, BalanceCredits: decimal.NewFromInt(100),
 	}).Error; err != nil {
 		t.Fatalf("seed worker transfer wallet: %v", err)
 	}
-	if err := db.Create(&model.BillingRateRule{
-		ID: "brte_worker_transfer", Meter: billing.MeterStorageTransferGiB, Unit: "gib",
-		CreditsPerUnit: decimal.NewFromInt(2), Enabled: true, Description: "Volume transfer bytes",
-	}).Error; err != nil {
+	if err := db.Model(&model.BillingRateRule{}).Where("meter = ?", billing.MeterStorageTransferGiB).
+		Updates(map[string]any{"credits_per_unit": decimal.NewFromInt(2), "enabled": true}).Error; err != nil {
 		t.Fatalf("seed worker transfer rate: %v", err)
 	}
 	now := time.Now().UTC()
@@ -97,5 +111,10 @@ func workerBillingTransfer(id, projectID, state string, transferredBytes int64, 
 }
 
 func openVolumeTransferBillingWorkerTestDB(t *testing.T) *gorm.DB {
-	return testdb.Open(t, testdb.Options{SchemaPrefix: "worker_transfer_billing_test"})
+	return testdb.OpenDatabase(t, testdb.Options{
+		SchemaPrefix: "worker_transfer_billing_test",
+		Migrate: func(db *gorm.DB) error {
+			return database.MigrateContext(context.Background(), db)
+		},
+	})
 }

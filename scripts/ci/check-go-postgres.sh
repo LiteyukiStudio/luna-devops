@@ -11,6 +11,6 @@ if [[ -z "${AUTH_TEST_DATABASE_URL:-}" ]]; then
 fi
 
 # These packages own the release-blocking authentication/API integration and
-# fresh/upgrade migration paths. Keep package execution serial because the
+# fresh baseline and migration safety paths. Keep package execution serial because the
 # migration suites perform DDL against the same disposable admin database.
 go test -p 1 -count=1 ./internal/api/... ./internal/database

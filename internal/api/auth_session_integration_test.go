@@ -68,6 +68,13 @@ func TestEnsureInitialAdminAllowsSingleConcurrentInitializer(t *testing.T) {
 		t.Fatalf("administrator password does not match: %v", err)
 	}
 	assertRecordCount(t, db, &model.Project{}, "", nil, 1)
+	var defaultProject model.Project
+	if err := db.First(&defaultProject).Error; err != nil {
+		t.Fatalf("load initial administrator default project: %v", err)
+	}
+	if defaultProject.BillingOwnerUserID != admin.ID {
+		t.Fatalf("default project billing owner = %q, want %q", defaultProject.BillingOwnerUserID, admin.ID)
+	}
 	assertRecordCount(t, db, &model.ProjectMember{}, "user_id = ? and role = ?", []any{admin.ID, authz.ProjectRoleOwner}, 1)
 	assertRecordCount(t, db, &model.AuditLog{}, "action = ? and user_id = ?", []any{"auth.initial_admin_create", admin.ID}, 1)
 }

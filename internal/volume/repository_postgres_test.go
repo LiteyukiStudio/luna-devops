@@ -22,10 +22,10 @@ INSERT INTO runtime_clusters(id, name) VALUES ('rclu_volume_test', 'Volume Test'
 INSERT INTO applications(id, project_id, identifier, name) VALUES
   ('app_volume_a', 'prj_volume_test', 'volume-a', 'Volume A'),
   ('app_volume_b', 'prj_volume_test', 'volume-b', 'Volume B');
-INSERT INTO deployment_targets(id, project_id, application_id, name, cluster_id, namespace)
+INSERT INTO deployment_targets(id, project_id, application_id, name, stage, cluster_id)
 VALUES
-  ('dtgt_volume_a', 'prj_volume_test', 'app_volume_a', 'Volume A', 'rclu_volume_test', 'project-volume-test'),
-  ('dtgt_volume_b', 'prj_volume_test', 'app_volume_b', 'Volume B', 'rclu_volume_test', 'project-volume-test');`).Error; err != nil {
+  ('dtgt_volume_a', 'prj_volume_test', 'app_volume_a', 'Volume A', 'production', 'rclu_volume_test'),
+  ('dtgt_volume_b', 'prj_volume_test', 'app_volume_b', 'Volume B', 'production', 'rclu_volume_test');`).Error; err != nil {
 		t.Fatalf("seed project volume parents: %v", err)
 	}
 

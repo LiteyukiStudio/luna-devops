@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/url"
 	"os"
-	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -22,47 +21,35 @@ import (
 	"gorm.io/gorm/schema"
 )
 
-const (
-	preReleaseBaselineVersion     = 67
-	retiredAIDeliveryStateVersion = 87
-)
+const baselineMigrationVersion = 103
 
-func TestEmbeddedMigrationsStartAtPreReleaseBaseline(t *testing.T) {
+func TestEmbeddedMigrationsContainSingleBaseline(t *testing.T) {
 	entries, err := sqlmigrations.FS.ReadDir(".")
 	if err != nil {
 		t.Fatalf("read embedded migrations: %v", err)
 	}
-	var firstVersion uint64
 	baselineFiles := map[string]bool{
-		"000067_baseline.up.sql":   false,
-		"000067_baseline.down.sql": false,
+		"000103_baseline.up.sql":   false,
+		"000103_baseline.down.sql": false,
 	}
+	migrationCount := 0
 	for _, entry := range entries {
 		name := entry.Name()
-		if _, ok := baselineFiles[name]; ok {
-			baselineFiles[name] = true
-		}
 		if entry.IsDir() || (!strings.HasSuffix(name, ".up.sql") && !strings.HasSuffix(name, ".down.sql")) {
 			continue
 		}
-		prefix, _, found := strings.Cut(name, "_")
-		if !found {
-			t.Fatalf("invalid migration filename %q", name)
+		migrationCount++
+		if _, ok := baselineFiles[name]; !ok {
+			t.Fatalf("unexpected embedded migration %s", name)
 		}
-		version, parseErr := strconv.ParseUint(prefix, 10, 64)
-		if parseErr != nil {
-			t.Fatalf("parse migration version from %q: %v", name, parseErr)
-		}
-		if firstVersion == 0 || version < firstVersion {
-			firstVersion = version
-		}
+		baselineFiles[name] = true
 	}
-	if firstVersion != preReleaseBaselineVersion {
-		t.Fatalf("first embedded migration version = %d, want %d", firstVersion, preReleaseBaselineVersion)
+	if migrationCount != len(baselineFiles) {
+		t.Fatalf("embedded migration file count = %d, want %d", migrationCount, len(baselineFiles))
 	}
 	for name, found := range baselineFiles {
 		if !found {
-			t.Fatalf("pre-release baseline is missing %s", name)
+			t.Fatalf("baseline is missing %s", name)
 		}
 	}
 }
@@ -136,15 +123,54 @@ func TestMigrateBootstrapsFreshPostgresSchema(t *testing.T) {
 	}()
 
 	runner := openTestMigrationRunner(t, testDB)
-	if err := runner.Migrate(preReleaseBaselineVersion); err != nil {
-		t.Fatalf("migrate database to pre-release baseline: %v", err)
+	if err := runner.Migrate(baselineMigrationVersion); err != nil {
+		t.Fatalf("migrate database to baseline: %v", err)
 	}
-	assertRunnerMigrationVersion(t, runner, preReleaseBaselineVersion)
+	assertRunnerMigrationVersion(t, runner, baselineMigrationVersion)
+	if err := testDB.Exec(`CREATE TABLE public.migration_down_sentinel (id text PRIMARY KEY)`).Error; err != nil {
+		t.Fatalf("create rollback sentinel table: %v", err)
+	}
+	if err := testDB.Exec(`CREATE VIEW public.migration_down_external_view AS SELECT id FROM public.users`).Error; err != nil {
+		t.Fatalf("create external view that depends on baseline: %v", err)
+	}
+	if err := runner.Steps(-1); err == nil {
+		t.Fatal("baseline rollback unexpectedly deleted an external dependent view")
+	}
+	var dependentViewPreserved bool
+	if err := testDB.Raw(`SELECT to_regclass('public.migration_down_external_view') IS NOT NULL`).Scan(&dependentViewPreserved).Error; err != nil {
+		t.Fatalf("inspect external dependent view after rejected rollback: %v", err)
+	}
+	if !dependentViewPreserved || !testDB.Migrator().HasTable("users") {
+		t.Fatal("rejected baseline rollback did not preserve external and baseline objects atomically")
+	}
+	var rejectedRollbackState struct {
+		Version int
+		Dirty   bool
+	}
+	if err := testDB.Raw(`SELECT version, dirty FROM schema_migrations`).Scan(&rejectedRollbackState).Error; err != nil {
+		t.Fatalf("read rejected rollback migration state: %v", err)
+	}
+	if rejectedRollbackState.Version != -1 || !rejectedRollbackState.Dirty {
+		t.Fatalf("rejected rollback migration state = %+v, want version -1 dirty", rejectedRollbackState)
+	}
+	if err := testDB.Exec(`DROP VIEW public.migration_down_external_view`).Error; err != nil {
+		t.Fatalf("remove external dependent view: %v", err)
+	}
+	if err := runner.Force(baselineMigrationVersion); err != nil {
+		t.Fatalf("restore clean baseline version after expected rollback rejection: %v", err)
+	}
 	if err := runner.Steps(-1); err != nil {
-		t.Fatalf("roll back pre-release baseline: %v", err)
+		t.Fatalf("roll back baseline: %v", err)
 	}
-	if testDB.Migrator().HasTable("users") {
-		t.Fatal("baseline rollback retained owned public tables")
+	var remainingPublicTables int64
+	if err := testDB.Raw(`SELECT count(*) FROM pg_tables WHERE schemaname = current_schema() AND tablename NOT IN ('schema_migrations', 'migration_down_sentinel')`).Scan(&remainingPublicTables).Error; err != nil {
+		t.Fatalf("inspect public tables after baseline rollback: %v", err)
+	}
+	if remainingPublicTables != 0 {
+		t.Fatalf("baseline rollback retained %d owned public tables", remainingPublicTables)
+	}
+	if !testDB.Migrator().HasTable("migration_down_sentinel") {
+		t.Fatal("baseline rollback removed an unrelated external table")
 	}
 	var hasAISchema bool
 	if err := testDB.Raw(`SELECT to_regnamespace('ai') IS NOT NULL`).Scan(&hasAISchema).Error; err != nil {
@@ -153,130 +179,29 @@ func TestMigrateBootstrapsFreshPostgresSchema(t *testing.T) {
 	if hasAISchema {
 		t.Fatal("baseline rollback retained the owned AI schema")
 	}
-	if err := runner.Migrate(preReleaseBaselineVersion); err != nil {
-		t.Fatalf("reapply pre-release baseline: %v", err)
+	var remainingFunctions int64
+	if err := testDB.Raw(`SELECT count(*)
+FROM pg_proc AS procedure
+JOIN pg_namespace AS namespace ON namespace.oid = procedure.pronamespace
+WHERE namespace.nspname = current_schema()
+  AND procedure.proname LIKE 'luna_%'`).Scan(&remainingFunctions).Error; err != nil {
+		t.Fatalf("inspect functions after baseline rollback: %v", err)
 	}
-	if err := runner.Migrate(retiredAIDeliveryStateVersion); err != nil {
-		t.Fatalf("migrate database to retired AI delivery state: %v", err)
+	if remainingFunctions != 0 {
+		t.Fatalf("baseline rollback retained %d Luna functions", remainingFunctions)
 	}
-	seedRetiredAIDeliveryState(t, testDB)
+	if err := runner.Migrate(baselineMigrationVersion); err != nil {
+		t.Fatalf("reapply baseline: %v", err)
+	}
+	assertRunnerMigrationVersion(t, runner, baselineMigrationVersion)
 	if err := MigrateContext(context.Background(), testDB); err != nil {
-		t.Fatalf("migrate fresh database: %v", err)
-	}
-	assertRetiredAIDeliveryStateRemoved(t, testDB)
-	if err := runner.Migrate(retiredAIDeliveryStateVersion); err != nil {
-		t.Fatalf("roll back retired AI delivery state migration: %v", err)
-	}
-	assertRetiredAIDeliveryStateSchemaRestored(t, testDB)
-	if err := MigrateContext(context.Background(), testDB); err != nil {
-		t.Fatalf("reapply retired AI delivery state migration: %v", err)
-	}
-	assertRetiredAIDeliveryStateRemoved(t, testDB)
-	if err := MigrateContext(context.Background(), testDB); err != nil {
-		t.Fatalf("repeat migration after fresh bootstrap: %v", err)
+		t.Fatalf("repeat migration after baseline bootstrap: %v", err)
 	}
 
 	assertFreshMigrationState(t, testDB)
 	assertStableModelMigrationCoverage(t, testDB)
 	assertActiveDeploymentStageUniqueness(t, testDB)
 	assertDirtyMigrationFailsClosed(t, testDB)
-}
-
-func seedRetiredAIDeliveryState(t *testing.T, db *gorm.DB) {
-	t.Helper()
-
-	statements := []string{
-		`INSERT INTO users (id, email, name, brand_color_preset) VALUES ('usr_retired_theme', 'retired-theme@example.test', 'Retired Theme', 'ruby')`,
-		`INSERT INTO app_configs (key, value) VALUES ('site.brandColorPreset', 'plum') ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
-		`ALTER TABLE ai.runs ADD COLUMN IF NOT EXISTS client_instance_id text`,
-		`ALTER TABLE ai.tool_calls DROP CONSTRAINT IF EXISTS tool_calls_approval_decision_check`,
-		`ALTER TABLE ai.tool_calls ADD CONSTRAINT tool_calls_approval_decision_check CHECK (approval_decision IN ('approve', 'approve_always'))`,
-		`CREATE TABLE ai.tool_approval_exemptions (
-  user_id text NOT NULL,
-  operation_id text NOT NULL,
-  source_tool_call_id text NOT NULL,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now(),
-  PRIMARY KEY (user_id, operation_id)
-)`,
-		`CREATE TABLE ai.ui_actions (
-  id text PRIMARY KEY,
-  run_id text NOT NULL REFERENCES ai.runs(id) ON DELETE CASCADE,
-  tool_call_id text NOT NULL UNIQUE,
-  client_instance_id text NOT NULL,
-  action jsonb NOT NULL,
-  status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'succeeded', 'failed', 'expired')),
-  attempts integer NOT NULL DEFAULT 1 CHECK (attempts > 0),
-  expires_at timestamptz NOT NULL,
-  acknowledged_at timestamptz,
-  actual_path text,
-  error_code text,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now()
-)`,
-		`CREATE INDEX ai_ui_actions_pending_client_idx ON ai.ui_actions (client_instance_id, created_at) WHERE status = 'pending'`,
-		`INSERT INTO ai.conversations (id, owner_user_id, title) VALUES ('conv_retired_delivery', 'usr_retired_delivery', 'Retired delivery state')`,
-		`INSERT INTO ai.turns (id, conversation_id, turn_index, status, input, selected_run_id) VALUES ('turn_retired_delivery', 'conv_retired_delivery', 1, 'completed', 'test', 'run_retired_delivery')`,
-		`INSERT INTO ai.runs (id, owner_user_id, conversation_id, turn_id, run_index, status, prompt_version, tool_catalog_digest, actor_session_id, client_instance_id) VALUES ('run_retired_delivery', 'usr_retired_delivery', 'conv_retired_delivery', 'turn_retired_delivery', 1, 'completed', 'v1', 'digest', 'ses_retired_delivery', 'client_retired_delivery')`,
-		`INSERT INTO ai.tool_calls (id, run_id, operation_id, status, arguments, approval_decision) VALUES ('tool_retired_delivery', 'run_retired_delivery', 'restartRelease', 'succeeded', '{}'::jsonb, 'approve_always')`,
-		`INSERT INTO ai.tool_approval_exemptions (user_id, operation_id, source_tool_call_id) VALUES ('usr_retired_delivery', 'restartRelease', 'tool_retired_delivery')`,
-		`INSERT INTO ai.ui_actions (id, run_id, tool_call_id, client_instance_id, action, expires_at) VALUES ('uia_retired_delivery', 'run_retired_delivery', 'tool_retired_delivery', 'client_retired_delivery', '{"type":"navigate"}'::jsonb, now() + interval '5 minutes')`,
-	}
-	for _, statement := range statements {
-		if err := db.Exec(statement).Error; err != nil {
-			t.Fatalf("seed retired AI delivery state with %q: %v", statement, err)
-		}
-	}
-}
-
-func assertRetiredAIDeliveryStateRemoved(t *testing.T, db *gorm.DB) {
-	t.Helper()
-
-	for _, table := range []string{"ai.ui_actions", "ai.tool_approval_exemptions"} {
-		if db.Migrator().HasTable(table) {
-			t.Fatalf("retired AI delivery table still exists: %s", table)
-		}
-	}
-	if db.Migrator().HasColumn("ai.runs", "client_instance_id") {
-		t.Fatal("retired ai.runs.client_instance_id still exists")
-	}
-	var decision string
-	if err := db.Raw(`SELECT approval_decision FROM ai.tool_calls WHERE id = 'tool_retired_delivery'`).Scan(&decision).Error; err != nil {
-		t.Fatalf("read migrated approval decision: %v", err)
-	}
-	if decision != "approve" {
-		t.Fatalf("migrated approval decision = %q, want approve", decision)
-	}
-	var userPreset string
-	if err := db.Raw(`SELECT brand_color_preset FROM users WHERE id = 'usr_retired_theme'`).Scan(&userPreset).Error; err != nil {
-		t.Fatalf("read migrated user theme: %v", err)
-	}
-	if userPreset != "" {
-		t.Fatalf("retired user theme = %q, want inherited empty preference", userPreset)
-	}
-	var sitePreset string
-	if err := db.Raw(`SELECT value FROM app_configs WHERE key = 'site.brandColorPreset'`).Scan(&sitePreset).Error; err != nil {
-		t.Fatalf("read migrated site theme: %v", err)
-	}
-	if sitePreset != "blue" {
-		t.Fatalf("retired site theme = %q, want blue", sitePreset)
-	}
-}
-
-func assertRetiredAIDeliveryStateSchemaRestored(t *testing.T, db *gorm.DB) {
-	t.Helper()
-
-	for _, table := range []string{"ai.ui_actions", "ai.tool_approval_exemptions"} {
-		if !db.Migrator().HasTable(table) {
-			t.Fatalf("rollback did not restore retired AI delivery table %s", table)
-		}
-	}
-	if !db.Migrator().HasColumn("ai.runs", "client_instance_id") {
-		t.Fatal("rollback did not restore ai.runs.client_instance_id")
-	}
-	if err := db.Exec(`UPDATE ai.tool_calls SET approval_decision = 'approve_always' WHERE id = 'tool_retired_delivery'`).Error; err != nil {
-		t.Fatalf("rollback did not restore approve_always constraint: %v", err)
-	}
 }
 
 func TestMigrateRejectsUnversionedNonEmptySchema(t *testing.T) {
@@ -337,11 +262,12 @@ func assertFreshMigrationState(t *testing.T, db *gorm.DB) {
 	if migrationState.Dirty {
 		t.Fatalf("fresh database migration is dirty at version %d", migrationState.Version)
 	}
-	latestVersion := latestEmbeddedMigrationVersion(t)
-	if migrationState.Version != latestVersion {
-		t.Fatalf("migration version = %d, want %d", migrationState.Version, latestVersion)
+	if migrationState.Version != baselineMigrationVersion {
+		t.Fatalf("migration version = %d, want %d", migrationState.Version, baselineMigrationVersion)
 	}
 	assertSlimmingMigrationRemovals(t, db)
+	assertBaselineConstraintsAndDefaults(t, db)
+	assertBaselineSeedData(t, db)
 
 	for _, table := range []string{
 		"billing_rate_rules",
@@ -552,6 +478,15 @@ func assertFreshMigrationState(t *testing.T, db *gorm.DB) {
 		{name: "idx_user_sessions_retention_expiry"},
 		{name: "idx_user_remember_tokens_retention_expiry"},
 		{name: "idx_runtime_observations_target_period", fragments: []string{"UNIQUE INDEX"}},
+		{name: "idx_runtime_observations_cluster_period"},
+		{name: "idx_runtime_observations_project_period"},
+		{name: "idx_access_tokens_oauth_family_id", fragments: []string{"WHERE (oauth_family_id <> ''::text)"}},
+		{name: "idx_oauth_refresh_tokens_family_id"},
+		{name: "idx_notification_channels_owner_user_id"},
+		{name: "idx_notification_deliveries_event_channel_recipient", fragments: []string{"UNIQUE INDEX"}},
+		{name: "idx_notification_deliveries_recipient_user_id"},
+		{name: "idx_platform_events_notification_fanout_status"},
+		{name: "idx_platform_events_resource_owner_user_id"},
 	} {
 		var definition string
 		if err := db.Raw(`SELECT indexdef FROM pg_indexes WHERE schemaname = current_schema() AND indexname = ?`, expected.name).Scan(&definition).Error; err != nil {
@@ -566,25 +501,157 @@ func assertFreshMigrationState(t *testing.T, db *gorm.DB) {
 			}
 		}
 	}
+}
 
-	var defaultRuleCount int64
-	if err := db.Table("billing_rate_rules").Count(&defaultRuleCount).Error; err != nil {
-		t.Fatalf("count default billing rules: %v", err)
+func assertBaselineConstraintsAndDefaults(t *testing.T, db *gorm.DB) {
+	t.Helper()
+
+	constraintNames := []string{
+		"chk_platform_events_notification_fanout_status",
+		"platform_mail_settings_personal_email_cooldown_seconds_range",
+		"runtime_clusters_cpu_request_percent_range",
+		"runtime_clusters_memory_request_percent_range",
+		"runtime_clusters_cpu_limit_percent_range",
+		"runtime_clusters_memory_limit_percent_range",
+		"runtime_clusters_cpu_policy_order",
+		"runtime_clusters_memory_policy_order",
+		"runtime_observations_policy_range",
+		"runtime_observations_usage_nonnegative",
 	}
-	if defaultRuleCount == 0 {
-		t.Fatal("fresh database did not seed default billing rules")
+	var constraintCount int64
+	if err := db.Raw(`SELECT count(*)
+FROM pg_constraint
+WHERE connamespace = current_schema()::regnamespace
+  AND conname IN ?`, constraintNames).Scan(&constraintCount).Error; err != nil {
+		t.Fatalf("inspect baseline constraints: %v", err)
 	}
-	var transferRate struct {
-		Enabled        bool
+	if constraintCount != int64(len(constraintNames)) {
+		t.Fatalf("baseline constraint count = %d, want %d", constraintCount, len(constraintNames))
+	}
+
+	if err := db.Exec(`INSERT INTO runtime_clusters (id, name) VALUES ('rcl_baseline_defaults', 'Baseline Defaults')`).Error; err != nil {
+		t.Fatalf("insert runtime cluster with baseline defaults: %v", err)
+	}
+	var policy struct {
+		CPURequestPercent    int
+		MemoryRequestPercent int
+		CPULimitPercent      int
+		MemoryLimitPercent   int
+	}
+	if err := db.Table("runtime_clusters").Where("id = ?", "rcl_baseline_defaults").Take(&policy).Error; err != nil {
+		t.Fatalf("read runtime cluster baseline defaults: %v", err)
+	}
+	if policy.CPURequestPercent != 10 || policy.MemoryRequestPercent != 25 || policy.CPULimitPercent != 100 || policy.MemoryLimitPercent != 100 {
+		t.Fatalf("runtime cluster policy defaults = %#v", policy)
+	}
+	if err := db.Table("runtime_clusters").Where("id = ?", "rcl_baseline_defaults").Updates(map[string]any{
+		"cpu_request_percent": 50,
+		"cpu_limit_percent":   40,
+	}).Error; err == nil {
+		t.Fatal("database accepted a CPU request above its limit")
+	}
+
+	if err := db.Exec(`INSERT INTO platform_mail_settings (id) VALUES ('baseline_defaults')`).Error; err != nil {
+		t.Fatalf("insert platform mail settings with baseline defaults: %v", err)
+	}
+	var cooldown int
+	if err := db.Table("platform_mail_settings").Select("personal_email_cooldown_seconds").Where("id = ?", "baseline_defaults").Scan(&cooldown).Error; err != nil {
+		t.Fatalf("read personal email cooldown default: %v", err)
+	}
+	if cooldown != 60 {
+		t.Fatalf("personal email cooldown default = %d, want 60", cooldown)
+	}
+	if err := db.Table("platform_mail_settings").Where("id = ?", "baseline_defaults").Update("personal_email_cooldown_seconds", 3601).Error; err == nil {
+		t.Fatal("database accepted an out-of-range personal email cooldown")
+	}
+
+	if err := db.Exec(`INSERT INTO platform_events (id, type, category, severity, status, occurred_at) VALUES ('evt_baseline', 'build.failed', 'build', 'error', 'failed', now())`).Error; err != nil {
+		t.Fatalf("insert baseline platform event: %v", err)
+	}
+	if err := db.Table("platform_events").Where("id = ?", "evt_baseline").Update("notification_fanout_status", "invalid").Error; err == nil {
+		t.Fatal("database accepted an invalid notification fanout status")
+	}
+
+	insertDelivery := func(id, recipient string) error {
+		return db.Exec(`INSERT INTO notification_deliveries (id, event_id, event_type, channel_id, adapter_kind, recipient_user_id, queued_at) VALUES (?, 'evt_baseline', 'build.failed', 'notification:user-email', 'smtp', ?, now())`, id, recipient).Error
+	}
+	if err := insertDelivery("ndl_baseline_first", "usr_first"); err != nil {
+		t.Fatalf("insert first baseline notification delivery: %v", err)
+	}
+	if err := insertDelivery("ndl_baseline_second", "usr_second"); err != nil {
+		t.Fatalf("insert delivery for another recipient: %v", err)
+	}
+	if err := insertDelivery("ndl_baseline_duplicate", "usr_first"); err == nil {
+		t.Fatal("database accepted a duplicate event, channel, and recipient delivery")
+	}
+}
+
+func assertBaselineSeedData(t *testing.T, db *gorm.DB) {
+	t.Helper()
+
+	var oauthApplicationCount int64
+	if err := db.Table("oauth_applications").Count(&oauthApplicationCount).Error; err != nil {
+		t.Fatalf("count built-in OAuth applications: %v", err)
+	}
+	if oauthApplicationCount != 1 {
+		t.Fatalf("built-in OAuth application count = %d, want 1", oauthApplicationCount)
+	}
+	var cliApplication struct {
+		ClientID                string
+		AllowedScopes           string
+		AccessTokenLifetimeDays int
+	}
+	if err := db.Table("oauth_applications").Where("id = ?", "oapp_luna_cli").Take(&cliApplication).Error; err != nil {
+		t.Fatalf("read built-in Luna CLI OAuth application: %v", err)
+	}
+	if cliApplication.ClientID != "luna-cli" || cliApplication.AllowedScopes != "*" || cliApplication.AccessTokenLifetimeDays != 1 {
+		t.Fatalf("built-in Luna CLI OAuth application = %#v", cliApplication)
+	}
+
+	var appConfigCount int64
+	if err := db.Table("app_configs").Count(&appConfigCount).Error; err != nil {
+		t.Fatalf("count baseline app configs: %v", err)
+	}
+	if appConfigCount != 1 {
+		t.Fatalf("baseline app config count = %d, want 1", appConfigCount)
+	}
+	var aiAccessMode string
+	if err := db.Table("app_configs").Select("value").Where("key = ?", "ai.access.mode").Scan(&aiAccessMode).Error; err != nil {
+		t.Fatalf("read default AI access mode: %v", err)
+	}
+	if aiAccessMode != "all_authenticated" {
+		t.Fatalf("default AI access mode = %q, want all_authenticated", aiAccessMode)
+	}
+
+	type billingRateSeed struct {
+		Meter          string
+		Unit           string
 		CreditsPerUnit string
+		Enabled        bool
+		Description    string
 	}
-	if err := db.Table("billing_rate_rules").Select("enabled, credits_per_unit::text AS credits_per_unit").Where("meter = ?", "storage.transfer_gib").Scan(&transferRate).Error; err != nil {
-		t.Fatalf("read default volume transfer billing rule: %v", err)
+	var rates []billingRateSeed
+	if err := db.Table("billing_rate_rules").Select("meter, unit, credits_per_unit::text AS credits_per_unit, enabled, description").Order("meter ASC").Scan(&rates).Error; err != nil {
+		t.Fatalf("read default billing rates: %v", err)
 	}
-	if transferRate.Enabled || transferRate.CreditsPerUnit != "0.00000000" {
-		t.Fatalf("default volume transfer billing rule = %#v", transferRate)
+	wantRates := []billingRateSeed{
+		{Meter: "build.cpu_vcpu_minute", Unit: "vcpu_minute", CreditsPerUnit: "10.00000000", Enabled: true, Description: "Build CPU usage"},
+		{Meter: "build.memory_gib_minute", Unit: "gib_minute", CreditsPerUnit: "2.00000000", Enabled: true, Description: "Build memory usage"},
+		{Meter: "gateway.egress_gib", Unit: "gib", CreditsPerUnit: "1.00000000", Enabled: true, Description: "Gateway response egress traffic"},
+		{Meter: "gateway.requests_1000", Unit: "1000_requests", CreditsPerUnit: "0.00000000", Enabled: false, Description: "Gateway request count"},
+		{Meter: "runtime.cpu_vcpu_hour", Unit: "vcpu_hour", CreditsPerUnit: "30.00000000", Enabled: true, Description: "Runtime CPU usage"},
+		{Meter: "runtime.memory_gib_hour", Unit: "gib_hour", CreditsPerUnit: "6.00000000", Enabled: true, Description: "Runtime memory usage"},
+		{Meter: "storage.gib_day", Unit: "gib_day", CreditsPerUnit: "1.00000000", Enabled: true, Description: "Persistent storage usage"},
+		{Meter: "storage.transfer_gib", Unit: "gib", CreditsPerUnit: "0.00000000", Enabled: false, Description: "Volume transfer bytes"},
 	}
-
+	if len(rates) != len(wantRates) {
+		t.Fatalf("default billing rate count = %d, want %d", len(rates), len(wantRates))
+	}
+	for index := range wantRates {
+		if rates[index] != wantRates[index] {
+			t.Fatalf("default billing rate %d = %#v, want %#v", index, rates[index], wantRates[index])
+		}
+	}
 }
 
 func assertSlimmingMigrationRemovals(t *testing.T, db *gorm.DB) {
@@ -638,12 +705,21 @@ func assertSlimmingMigrationRemovals(t *testing.T, db *gorm.DB) {
 		}
 	}
 
-	var obsoleteGatewayConfigCount int64
-	if err := db.Table("app_configs").Where("key IN ?", []string{"gateway.rootDomain", "gateway.publicScheme"}).Count(&obsoleteGatewayConfigCount).Error; err != nil {
-		t.Fatalf("count obsolete gateway app configs: %v", err)
+	obsoleteConfigKeys := []string{
+		"gateway.rootDomain",
+		"gateway.publicScheme",
+		"billing.freeQuotaCredits",
+		"billing.overdueGracePeriodHours",
+		"billing.allowNegativeBalance",
+		"ai.runtime.context_input_k_tokens",
+		"ai.context.summary_input_k_tokens",
 	}
-	if obsoleteGatewayConfigCount != 0 {
-		t.Fatalf("fresh database contains %d obsolete gateway app configs", obsoleteGatewayConfigCount)
+	var obsoleteConfigCount int64
+	if err := db.Table("app_configs").Where("key IN ?", obsoleteConfigKeys).Count(&obsoleteConfigCount).Error; err != nil {
+		t.Fatalf("count obsolete app configs: %v", err)
+	}
+	if obsoleteConfigCount != 0 {
+		t.Fatalf("fresh database contains %d obsolete app configs", obsoleteConfigCount)
 	}
 }
 
@@ -748,37 +824,6 @@ func assertDirtyMigrationFailsClosed(t *testing.T, db *gorm.DB) {
 	if !errors.As(err, &dirtyErr) {
 		t.Fatalf("migration with dirty state error = %v, want migrate.ErrDirty", err)
 	}
-}
-
-func latestEmbeddedMigrationVersion(t *testing.T) uint {
-	t.Helper()
-
-	entries, err := sqlmigrations.FS.ReadDir(".")
-	if err != nil {
-		t.Fatalf("read embedded migrations: %v", err)
-	}
-	var latest uint64
-	for _, entry := range entries {
-		name := entry.Name()
-		if entry.IsDir() || !strings.HasSuffix(name, ".up.sql") {
-			continue
-		}
-		prefix, _, found := strings.Cut(name, "_")
-		if !found {
-			t.Fatalf("invalid migration filename %q", name)
-		}
-		version, parseErr := strconv.ParseUint(prefix, 10, 64)
-		if parseErr != nil {
-			t.Fatalf("parse migration version from %q: %v", name, parseErr)
-		}
-		if version > latest {
-			latest = version
-		}
-	}
-	if latest == 0 {
-		t.Fatal("no embedded up migrations found")
-	}
-	return uint(latest)
 }
 
 func openTestMigrationRunner(t *testing.T, db *gorm.DB) *migrate.Migrate {
