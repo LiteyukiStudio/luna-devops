@@ -24,7 +24,7 @@ Deleting an application or deployment only unbinds the volume; it does not autom
 
 ## Import and export
 
-An import writes the archive directly into the target volume mounted by a temporary Transfer Pod. It does not pass through object storage, browser-side pre-hashing, or a complete local platform spool. The API and Transfer Pod independently calculate and compare the digest during that same stream. The account, session or token, scopes, and project role are continuously revalidated; losing any authorization stops the write. An interrupted connection cannot resume or retry against the same destination. Delete the failed import volume and start a fresh import so old partial data cannot mix with the new archive. Recovery is complete only when both the Transfer and volume reach succeeded and ready terminal states.
+An import writes the archive directly into the target volume mounted by a temporary Transfer Pod. It does not pass through object storage, browser-side pre-hashing, or a complete local platform spool. The API and Transfer Pod independently calculate and compare the digest during that same stream. The account, session or token, scopes, and project role are continuously revalidated; losing any authorization stops the write. An interrupted connection cannot resume or retry against the same destination. Delete the failed import volume and start a fresh import so old partial data cannot mix with the new archive. If the client does not receive the create response, replaying it with the same Idempotency-Key only reads back the original Transfer; it does not create or write a second destination. Recovery is complete only when both the Transfer and volume reach succeeded and ready terminal states.
 
 Export modes are:
 

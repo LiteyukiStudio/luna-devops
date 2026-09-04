@@ -326,10 +326,43 @@ func TestCompletedChecksumDoesNotChangeImportIdempotencyIdentity(t *testing.T) {
 		ProjectID: input.ProjectID, ProjectVolumeID: input.ProjectVolumeID, Direction: input.Direction,
 		Format: input.Format, ConsistencyMode: input.ConsistencyMode, SourceFilename: input.SourceFilename,
 		ExpectedBytes: input.ExpectedBytes, SHA256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-		ActorID: input.ActorID, ExpiresAt: input.ExpiresAt,
+		ActorID: input.ActorID, ExpiresAt: input.ExpiresAt.Add(-30 * time.Minute),
 	}
 	if !sameVolumeTransferRequest(existing, input) {
-		t.Fatal("authoritative completion checksum must not make an idempotent create replay conflict")
+		t.Fatal("authoritative completion fields and the derived expiry must not make an idempotent create replay conflict")
+	}
+}
+
+func TestCreateVolumeTransferReplaysCompletedResultWithFreshDerivedExpiry(t *testing.T) {
+	repository := &repositoryStub{lockedVolume: model.ProjectVolume{
+		ID: "pvol_replay", ProjectID: "prj_replay", SourceKind: model.ProjectVolumeSourceArchiveImport,
+		LifecycleState: model.ProjectVolumeLifecycleProvisioning, VolumeMode: model.ProjectVolumeModeFilesystem,
+	}}
+	dispatcher := &dispatcherStub{}
+	service := NewService(repository, dispatcher)
+	input := CreateVolumeTransferInput{
+		ProjectID: "prj_replay", ProjectVolumeID: "pvol_replay", Direction: model.VolumeTransferDirectionImport,
+		Format: model.VolumeTransferFormatTarGZ, ConsistencyMode: model.VolumeTransferConsistencyUnmounted,
+		SourceFilename: "backup.tar.gz", ExpectedBytes: 42, ActorID: "usr_replay",
+		ExpiresAt: time.Now().Add(time.Hour), IdempotencyKey: "import-replay-0001",
+	}
+	created, err := service.CreateVolumeTransfer(t.Context(), input)
+	if err != nil {
+		t.Fatalf("first CreateVolumeTransfer() error = %v", err)
+	}
+	repository.transferByID.State = model.VolumeTransferStateSucceeded
+	repository.transferByID.SHA256 = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	repository.lockedVolume.LifecycleState = model.ProjectVolumeLifecycleReady
+	input.ExpiresAt = input.ExpiresAt.Add(30 * time.Minute)
+	replayed, err := service.CreateVolumeTransfer(t.Context(), input)
+	if err != nil {
+		t.Fatalf("replayed CreateVolumeTransfer() error = %v", err)
+	}
+	if replayed.ID != created.ID || replayed.State != model.VolumeTransferStateSucceeded {
+		t.Fatalf("replayed transfer = %#v, created = %#v", replayed, created)
+	}
+	if len(dispatcher.operations) != 1 {
+		t.Fatalf("idempotent replay dispatched %d operations, want 1", len(dispatcher.operations))
 	}
 }
 

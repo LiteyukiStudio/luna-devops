@@ -764,9 +764,6 @@ func (service *Service) CreateVolumeTransfer(ctx context.Context, input CreateVo
 		if lockErr != nil {
 			return normalizeRepositoryError(lockErr)
 		}
-		if transferErr := validateVolumeForTransfer(volume, input); transferErr != nil {
-			return transferErr
-		}
 		transferID := id.New("vtx")
 		if input.IdempotencyKey != "" {
 			transferID = idempotentVolumeTransferID(input)
@@ -781,6 +778,9 @@ func (service *Service) CreateVolumeTransfer(ctx context.Context, input CreateVo
 			if !errors.Is(findErr, gorm.ErrRecordNotFound) {
 				return findErr
 			}
+		}
+		if transferErr := validateVolumeForTransfer(volume, input); transferErr != nil {
+			return transferErr
 		}
 		transfer := model.VolumeTransfer{
 			ID:              transferID,
@@ -1282,8 +1282,7 @@ func sameVolumeTransferRequest(existing model.VolumeTransfer, input CreateVolume
 		existing.ConsistencyMode == input.ConsistencyMode &&
 		existing.SourceFilename == input.SourceFilename &&
 		existing.ExpectedBytes == input.ExpectedBytes &&
-		existing.ActorID == input.ActorID &&
-		existing.ExpiresAt.UTC().Truncate(time.Microsecond).Equal(input.ExpiresAt.UTC().Truncate(time.Microsecond))
+		existing.ActorID == input.ActorID
 }
 
 func hashCreateProjectVolumeRequest(input CreateProjectVolumeInput) (string, error) {
