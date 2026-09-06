@@ -103,6 +103,34 @@ type releaseRuntimeTerminalAuthorizationReference struct {
 
 func (h *Handlers) releaseRuntimeTerminalAuthorizationAllowed(ctx context.Context, user model.User, reference releaseRuntimeTerminalAuthorizationReference) bool {
 	db := h.dbWithContext(ctx).WithContext(ctx)
+	var release model.Release
+	if err := db.First(&release, "id = ? and project_id = ? and application_id = ? and deployment_target_id = ?", reference.ReleaseID, reference.ProjectID, reference.ApplicationID, reference.DeploymentTargetID).Error; err != nil {
+		return false
+	}
+	return h.deploymentTargetRuntimeTerminalAuthorizationAllowedWithDB(ctx, db, user, deploymentTargetRuntimeTerminalAuthorizationReference{
+		ProjectID:          reference.ProjectID,
+		ApplicationID:      reference.ApplicationID,
+		DeploymentTargetID: reference.DeploymentTargetID,
+		ClusterID:          reference.ClusterID,
+		ClusterKubeconfig:  reference.ClusterKubeconfig,
+		Namespace:          reference.Namespace,
+	})
+}
+
+type deploymentTargetRuntimeTerminalAuthorizationReference struct {
+	ProjectID          string
+	ApplicationID      string
+	DeploymentTargetID string
+	ClusterID          string
+	ClusterKubeconfig  string
+	Namespace          string
+}
+
+func (h *Handlers) deploymentTargetRuntimeTerminalAuthorizationAllowed(ctx context.Context, user model.User, reference deploymentTargetRuntimeTerminalAuthorizationReference) bool {
+	return h.deploymentTargetRuntimeTerminalAuthorizationAllowedWithDB(ctx, h.dbWithContext(ctx).WithContext(ctx), user, reference)
+}
+
+func (h *Handlers) deploymentTargetRuntimeTerminalAuthorizationAllowedWithDB(ctx context.Context, db *gorm.DB, user model.User, reference deploymentTargetRuntimeTerminalAuthorizationReference) bool {
 	var project model.Project
 	if err := db.First(&project, "id = ?", reference.ProjectID).Error; err != nil || !resourceCanMutateDuringDelete(project.DeleteStatus) {
 		return false
@@ -113,8 +141,8 @@ func (h *Handlers) releaseRuntimeTerminalAuthorizationAllowed(ctx context.Contex
 		return false
 	}
 
-	var release model.Release
-	if err := db.First(&release, "id = ? and project_id = ? and application_id = ? and deployment_target_id = ?", reference.ReleaseID, reference.ProjectID, reference.ApplicationID, reference.DeploymentTargetID).Error; err != nil {
+	var application model.Application
+	if err := db.First(&application, "id = ? and project_id = ?", reference.ApplicationID, reference.ProjectID).Error; err != nil || !resourceCanMutateDuringDelete(application.DeleteStatus) {
 		return false
 	}
 	var target model.DeploymentTarget

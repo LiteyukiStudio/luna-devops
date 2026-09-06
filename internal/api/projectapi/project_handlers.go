@@ -50,6 +50,7 @@ func (h *Handler) ListProjects(ctx *gin.Context) {
 	if visibility == projectservice.ListVisibilityRelated {
 		baseQuery = baseQuery.Where("project_members.user_id = ?", user.ID)
 	}
+	baseQuery = applyExactProjectIdentifierFilter(ctx, baseQuery)
 	baseQuery = applySearch(ctx, baseQuery, "projects.name", "projects.identifier")
 
 	pagination := paginationFromQueryWithSort(ctx, map[string]string{
@@ -68,6 +69,13 @@ func (h *Handler) ListProjects(ctx *gin.Context) {
 		return
 	}
 	ctx.JSON(http.StatusOK, paginatedResponse(projects, total, pagination))
+}
+
+func applyExactProjectIdentifierFilter(ctx *gin.Context, query *gorm.DB) *gorm.DB {
+	if identifier, present := ctx.GetQuery("identifier"); present {
+		return query.Where("projects.identifier = ?", identifier)
+	}
+	return query
 }
 
 func projectPageQuery(query *gorm.DB, pagination paginationParams) *gorm.DB {

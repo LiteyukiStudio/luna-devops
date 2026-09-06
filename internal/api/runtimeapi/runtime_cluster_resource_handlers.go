@@ -209,7 +209,7 @@ func (h *Handlers) StreamRuntimeClusterPodTerminal(ctx *gin.Context) {
 		writeErrorCode(ctx, http.StatusBadRequest, "runtime_terminal.protocol_required", "terminal WebSocket requires the luna.devops.terminal.v1 subprotocol")
 		return
 	}
-	ticket := strings.TrimSpace(ctx.Query("ticket"))
+	ticket := transportapi.RuntimeTerminalTicket(ctx.Request, true)
 	if !requireRuntimeTerminalTicketForBearer(ctx, ticket) {
 		return
 	}
@@ -245,17 +245,18 @@ func (h *Handlers) StreamRuntimeClusterPodTerminal(ctx *gin.Context) {
 		writeError(ctx, http.StatusForbidden, "只有平台管理员可以打开集群 Pod 终端")
 		return
 	}
-	cluster, client, snapshot, ok := h.runtimeClusterPodTerminalTarget(ctx, user)
-	if !ok {
-		return
-	}
-	reference := runtimeClusterPodTerminalReference(cluster, snapshot)
 	if ticket == "" {
 		authorization, ok = h.requireRuntimeTerminalAuthorization(ctx, user)
 		if !ok {
 			return
 		}
-	} else {
+	}
+	cluster, client, snapshot, ok := h.runtimeClusterPodTerminalTarget(ctx, user)
+	if !ok {
+		return
+	}
+	reference := runtimeClusterPodTerminalReference(cluster, snapshot)
+	if ticket != "" {
 		if !ticketValue.matches("runtime_pod", reference) ||
 			!h.continuousAuthorizationActive(ctx.Request.Context(), authorization, func(checkCtx context.Context, currentUser model.User) bool {
 				return h.runtimeClusterPodTerminalAuthorizationAllowed(checkCtx, currentUser, client, reference)
@@ -325,7 +326,12 @@ func (h *Handlers) StreamRuntimeClusterPodTerminal(ctx *gin.Context) {
 }
 
 func (h *Handlers) AuthorizeRuntimeClusterPodTerminal(ctx *gin.Context) {
+	ctx.Header("Cache-Control", "no-store")
 	user, ok := h.currentUser(ctx)
+	if !ok {
+		return
+	}
+	authorization, ok := h.requireRuntimeTerminalAuthorization(ctx, user)
 	if !ok {
 		return
 	}
@@ -334,10 +340,6 @@ func (h *Handlers) AuthorizeRuntimeClusterPodTerminal(ctx *gin.Context) {
 		return
 	}
 	cluster, _, snapshot, ok := h.runtimeClusterPodTerminalTarget(ctx, user)
-	if !ok {
-		return
-	}
-	authorization, ok := h.requireRuntimeTerminalAuthorization(ctx, user)
 	if !ok {
 		return
 	}

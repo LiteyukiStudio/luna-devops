@@ -105,11 +105,33 @@ func (h *Handlers) ExecReleaseRuntimeCommand(ctx *gin.Context) {
 }
 
 func (h *Handlers) StreamReleaseRuntimeTerminal(ctx *gin.Context) {
+	h.streamRuntimeTerminal(ctx, true, h.releaseRuntimeTerminalEndpoint)
+}
+
+func (h *Handlers) AuthorizeReleaseRuntimeTerminal(ctx *gin.Context) {
+	h.authorizeRuntimeTerminal(ctx, h.releaseRuntimeTerminalEndpoint)
+}
+
+type runtimeTerminalEndpoint struct {
+	resourceKind         string
+	reference            any
+	client               *kubeprovider.Client
+	namespace            string
+	target               model.DeploymentTarget
+	auditAction          string
+	auditAuthorizeAction string
+	auditResourceID      string
+	authorizationAllowed func(context.Context, model.User) bool
+}
+
+type runtimeTerminalEndpointResolver func(*gin.Context, model.Project) (runtimeTerminalEndpoint, bool)
+
+func (h *Handlers) streamRuntimeTerminal(ctx *gin.Context, allowLegacyQueryTicket bool, resolve runtimeTerminalEndpointResolver) {
 	if !transportapi.RuntimeTerminalSubprotocolRequested(ctx.Request) {
 		writeErrorCode(ctx, http.StatusBadRequest, "runtime_terminal.protocol_required", "terminal WebSocket requires the luna.devops.terminal.v1 subprotocol")
 		return
 	}
-	ticket := strings.TrimSpace(ctx.Query("ticket"))
+	ticket := transportapi.RuntimeTerminalTicket(ctx.Request, allowLegacyQueryTicket)
 	if !requireRuntimeTerminalTicketForBearer(ctx, ticket) {
 		return
 	}
@@ -140,7 +162,7 @@ func (h *Handlers) StreamReleaseRuntimeTerminal(ctx *gin.Context) {
 			writeErrorKey(ctx, http.StatusUnauthorized, requestLanguage(ctx), "auth.account.disabled")
 			return
 		}
-		project, ok = h.releaseRuntimeTerminalProjectForUser(ctx, user)
+		project, ok = h.runtimeTerminalProjectForUser(ctx, user)
 		if !ok {
 			return
 		}
@@ -149,39 +171,20 @@ func (h *Handlers) StreamReleaseRuntimeTerminal(ctx *gin.Context) {
 	if !h.ensureProjectCanMutate(ctx, project) {
 		return
 	}
-	release, ok := h.findRelease(ctx)
-	if !ok {
-		return
-	}
-	target, ok := h.releaseRuntimeTarget(ctx, release)
-	if !ok || !ensureRuntimeWebConsoleEnabled(ctx, project, target) {
-		return
-	}
-	client, namespace, cluster, ok := h.runtimeClientForDeploymentTarget(ctx, project, target)
-	if !ok {
-		return
-	}
-	if !h.ensureDeploymentTargetCanMutate(ctx, target) {
-		return
-	}
-	reference := releaseRuntimeTerminalAuthorizationReference{
-		ProjectID:          project.ID,
-		ApplicationID:      release.ApplicationID,
-		ReleaseID:          release.ID,
-		DeploymentTargetID: target.ID,
-		ClusterID:          cluster.ID,
-		ClusterKubeconfig:  cluster.KubeconfigRef,
-		Namespace:          namespace,
-	}
 	if ticket == "" {
 		authorization, ok = h.requireRuntimeTerminalAuthorization(ctx, user)
 		if !ok {
 			return
 		}
-	} else {
-		if !ticketValue.Matches("release", reference) ||
+	}
+	endpoint, ok := resolve(ctx, project)
+	if !ok {
+		return
+	}
+	if ticket != "" {
+		if !ticketValue.Matches(endpoint.resourceKind, endpoint.reference) ||
 			!h.continuousAuthorizationActive(ctx.Request.Context(), authorization, func(checkCtx context.Context, currentUser model.User) bool {
-				return h.releaseRuntimeTerminalAuthorizationAllowed(checkCtx, currentUser, reference)
+				return endpoint.authorizationAllowed(checkCtx, currentUser)
 			}) {
 			writeErrorCode(ctx, http.StatusUnauthorized, "runtime_terminal.ticket_invalid", "terminal ticket is invalid, expired, revoked, or bound to another resource")
 			return
@@ -190,7 +193,7 @@ func (h *Handlers) StreamReleaseRuntimeTerminal(ctx *gin.Context) {
 	upgrader := transportapi.RuntimeTerminalUpgrader(h.host.AllowedOrigin)
 	conn, err := upgrader.Upgrade(ctx.Writer, ctx.Request, nil)
 	if err != nil {
-		h.auditWithContext(user.ID, "release_runtime.terminal", release.ID, false, err.Error(), ctx.Request.Context())
+		h.auditWithContext(user.ID, endpoint.auditAction, endpoint.auditResourceID, false, err.Error(), ctx.Request.Context())
 		return
 	}
 	defer conn.Close()
@@ -205,21 +208,21 @@ func (h *Handlers) StreamReleaseRuntimeTerminal(ctx *gin.Context) {
 	terminalSocket := transportapi.NewRuntimeTerminalWebSocket(conn)
 	var authorizationRevoked atomic.Bool
 	_, authorizationActive := h.monitorContinuousAuthorization(sessionCtx, authorization, func(checkCtx context.Context, currentUser model.User) bool {
-		return h.releaseRuntimeTerminalAuthorizationAllowed(checkCtx, currentUser, reference)
+		return endpoint.authorizationAllowed(checkCtx, currentUser)
 	}, func() {
 		authorizationRevoked.Store(true)
 		cancel()
 	})
 	if !authorizationActive {
 		_ = terminalSocket.CloseAuthorizationRevoked()
-		h.auditWithContext(user.ID, "release_runtime.terminal", release.ID, false, "authorization expired or was revoked", ctx.Request.Context())
+		h.auditWithContext(user.ID, endpoint.auditAction, endpoint.auditResourceID, false, "authorization expired or was revoked", ctx.Request.Context())
 		return
 	}
 
 	inputDone := terminalSocket.PumpInput(stdinWriter, sizeQueue, cancel)
-	result, streamErr := client.RuntimeTerminal(sessionCtx, kubeprovider.RuntimeTerminalOptions{
-		Namespace:          namespace,
-		DeploymentTargetID: target.ID,
+	result, streamErr := endpoint.client.RuntimeTerminal(sessionCtx, kubeprovider.RuntimeTerminalOptions{
+		Namespace:          endpoint.namespace,
+		DeploymentTargetID: endpoint.target.ID,
 		Container:          strings.TrimSpace(ctx.Query("container")),
 		Stdin:              stdinReader,
 		Stdout:             terminalSocket,
@@ -228,69 +231,57 @@ func (h *Handlers) StreamReleaseRuntimeTerminal(ctx *gin.Context) {
 	end := transportapi.FinishRuntimeTerminal(terminalSocket, result.ExitCode, streamErr, sessionCtx.Err(), authorizationRevoked.Load(), inputDone)
 	switch end {
 	case transportapi.RuntimeTerminalEndAuthorizationLost:
-		h.auditWithContext(user.ID, "release_runtime.terminal", release.ID, false, "authorization expired or was revoked", ctx.Request.Context())
+		h.auditWithContext(user.ID, endpoint.auditAction, endpoint.auditResourceID, false, "authorization expired or was revoked", ctx.Request.Context())
 		return
 	case transportapi.RuntimeTerminalEndAuthorizationExpiry:
-		h.auditWithContext(user.ID, "release_runtime.terminal", release.ID, false, "authorization deadline reached", ctx.Request.Context())
+		h.auditWithContext(user.ID, endpoint.auditAction, endpoint.auditResourceID, false, "authorization deadline reached", ctx.Request.Context())
 		return
 	case transportapi.RuntimeTerminalEndInternalError:
-		h.auditWithContext(user.ID, "release_runtime.terminal", release.ID, false, streamErr.Error(), ctx.Request.Context())
+		h.auditWithContext(user.ID, endpoint.auditAction, endpoint.auditResourceID, false, streamErr.Error(), ctx.Request.Context())
 		return
 	case transportapi.RuntimeTerminalEndProtocolError:
-		h.auditWithContext(user.ID, "release_runtime.terminal", release.ID, false, "terminal protocol error", ctx.Request.Context())
+		h.auditWithContext(user.ID, endpoint.auditAction, endpoint.auditResourceID, false, "terminal protocol error", ctx.Request.Context())
 		return
 	case transportapi.RuntimeTerminalEndClientDisconnected:
-		h.auditWithContext(user.ID, "release_runtime.terminal", release.ID, false, "terminal client disconnected", ctx.Request.Context())
+		h.auditWithContext(user.ID, endpoint.auditAction, endpoint.auditResourceID, false, "terminal client disconnected", ctx.Request.Context())
 		return
 	}
-	h.auditWithContext(user.ID, "release_runtime.terminal", release.ID, true, strings.TrimSpace(ctx.Query("container")), ctx.Request.Context())
+	h.auditWithContext(user.ID, endpoint.auditAction, endpoint.auditResourceID, true, strings.TrimSpace(ctx.Query("container")), ctx.Request.Context())
 }
 
-func (h *Handlers) AuthorizeReleaseRuntimeTerminal(ctx *gin.Context) {
+func (h *Handlers) authorizeRuntimeTerminal(ctx *gin.Context, resolve runtimeTerminalEndpointResolver) {
+	markRuntimeTerminalAuthorizationResponse(ctx)
 	user, project, ok := h.authorizeProject(ctx, authz.ActionDeploymentExec)
 	if !ok || !h.ensureProjectCanMutate(ctx, project) {
-		return
-	}
-	release, ok := h.findRelease(ctx)
-	if !ok {
-		return
-	}
-	target, ok := h.releaseRuntimeTarget(ctx, release)
-	if !ok || !ensureRuntimeWebConsoleEnabled(ctx, project, target) || !h.ensureDeploymentTargetCanMutate(ctx, target) {
-		return
-	}
-	_, namespace, cluster, ok := h.runtimeClientForDeploymentTarget(ctx, project, target)
-	if !ok {
 		return
 	}
 	authorization, ok := h.requireRuntimeTerminalAuthorization(ctx, user)
 	if !ok {
 		return
 	}
-	reference := releaseRuntimeTerminalAuthorizationReference{
-		ProjectID:          project.ID,
-		ApplicationID:      release.ApplicationID,
-		ReleaseID:          release.ID,
-		DeploymentTargetID: target.ID,
-		ClusterID:          cluster.ID,
-		ClusterKubeconfig:  cluster.KubeconfigRef,
-		Namespace:          namespace,
+	endpoint, ok := resolve(ctx, project)
+	if !ok {
+		return
 	}
 	ticket, expiresAt, err := h.issueRuntimeTerminalTicket(
 		ctx.Request.Context(),
 		authorization,
-		"release",
-		reference,
+		endpoint.resourceKind,
+		endpoint.reference,
 	)
 	if err != nil {
-		h.auditWithContext(user.ID, "release_runtime.terminal_authorize", release.ID, false, err.Error(), ctx.Request.Context())
+		h.auditWithContext(user.ID, endpoint.auditAuthorizeAction, endpoint.auditResourceID, false, err.Error(), ctx.Request.Context())
 		writeErrorCode(ctx, http.StatusServiceUnavailable, "runtime_terminal.ticket_unavailable", "terminal authorization is temporarily unavailable")
 		return
 	}
 	ctx.JSON(http.StatusOK, runtimeTerminalTicketResponse{Ticket: ticket, ExpiresAt: expiresAt})
 }
 
-func (h *Handlers) releaseRuntimeTerminalProjectForUser(ctx *gin.Context, user model.User) (model.Project, bool) {
+func markRuntimeTerminalAuthorizationResponse(ctx *gin.Context) {
+	ctx.Header("Cache-Control", "no-store")
+}
+
+func (h *Handlers) runtimeTerminalProjectForUser(ctx *gin.Context, user model.User) (model.Project, bool) {
 	project, ok := h.findProject(ctx)
 	if !ok {
 		return model.Project{}, false
@@ -305,6 +296,52 @@ func (h *Handlers) releaseRuntimeTerminalProjectForUser(ctx *gin.Context, user m
 		return model.Project{}, false
 	}
 	return project, true
+}
+
+func (h *Handlers) releaseRuntimeTerminalEndpoint(ctx *gin.Context, project model.Project) (runtimeTerminalEndpoint, bool) {
+	release, ok := h.findRelease(ctx)
+	if !ok {
+		return runtimeTerminalEndpoint{}, false
+	}
+	var application model.Application
+	if err := h.dbFor(ctx).First(&application, "id = ? and project_id = ?", release.ApplicationID, project.ID).Error; err != nil {
+		writeError(ctx, http.StatusNotFound, "application not found")
+		return runtimeTerminalEndpoint{}, false
+	}
+	if !applicationCanMutate(application) {
+		writeErrorCode(ctx, http.StatusConflict, "application.delete_in_progress", "应用正在删除中，不能打开运行终端")
+		return runtimeTerminalEndpoint{}, false
+	}
+	target, ok := h.releaseRuntimeTarget(ctx, release)
+	if !ok || !ensureRuntimeWebConsoleEnabled(ctx, project, target) || !h.ensureDeploymentTargetCanMutate(ctx, target) {
+		return runtimeTerminalEndpoint{}, false
+	}
+	client, namespace, cluster, ok := h.runtimeClientForDeploymentTarget(ctx, project, target)
+	if !ok {
+		return runtimeTerminalEndpoint{}, false
+	}
+	reference := releaseRuntimeTerminalAuthorizationReference{
+		ProjectID:          project.ID,
+		ApplicationID:      release.ApplicationID,
+		ReleaseID:          release.ID,
+		DeploymentTargetID: target.ID,
+		ClusterID:          cluster.ID,
+		ClusterKubeconfig:  cluster.KubeconfigRef,
+		Namespace:          namespace,
+	}
+	return runtimeTerminalEndpoint{
+		resourceKind:         "release",
+		reference:            reference,
+		client:               client,
+		namespace:            namespace,
+		target:               target,
+		auditAction:          "release_runtime.terminal",
+		auditAuthorizeAction: "release_runtime.terminal_authorize",
+		auditResourceID:      release.ID,
+		authorizationAllowed: func(checkCtx context.Context, currentUser model.User) bool {
+			return h.releaseRuntimeTerminalAuthorizationAllowed(checkCtx, currentUser, reference)
+		},
+	}, true
 }
 
 func (h *Handlers) releaseRuntimeClient(ctx *gin.Context, release model.Release) (*kubeprovider.Client, string, model.DeploymentTarget, bool) {

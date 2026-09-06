@@ -19,6 +19,13 @@ const common = {
   copy: '复制',
   copied: '已复制',
   copyFailed: '复制失败',
+  cliCommand: {
+    label: 'CLI 命令',
+    copy: '复制 CLI 命令',
+    copied: 'CLI 命令已复制',
+    docs: '查看 CLI 文档',
+    docsTip: '在本机终端执行；打开 Luna CLI 文档',
+  },
   noDescription: '暂无描述',
   id: 'ID',
   type: '类型',

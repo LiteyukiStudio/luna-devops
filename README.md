@@ -114,7 +114,7 @@ Luna CLI 可在终端中管理 Luna DevOps，支持人类可读输出和面向�
 ```bash
 npm install --global @liteyuki/luna-cli
 luna login
-luna project get-projects
+luna project list
 ```
 
 - [CLI 使用文档](https://luna-devops.liteyuki.org/use/cli/installation)

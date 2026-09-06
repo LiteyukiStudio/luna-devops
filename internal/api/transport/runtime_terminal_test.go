@@ -87,6 +87,20 @@ func TestRuntimeTerminalSubprotocolMustBeRequested(t *testing.T) {
 	}
 }
 
+func TestRuntimeTerminalTicketPrefersHeaderAndGatesLegacyQuery(t *testing.T) {
+	request := httptest.NewRequest(http.MethodGet, "/terminal?ticket=query-ticket", nil)
+	if got := RuntimeTerminalTicket(request, false); got != "" {
+		t.Fatalf("query ticket accepted for a new endpoint: %q", got)
+	}
+	if got := RuntimeTerminalTicket(request, true); got != "query-ticket" {
+		t.Fatalf("legacy query ticket = %q", got)
+	}
+	request.Header.Set(RuntimeTerminalTicketHeader, "header-ticket")
+	if got := RuntimeTerminalTicket(request, true); got != "header-ticket" {
+		t.Fatalf("header ticket = %q", got)
+	}
+}
+
 func TestRuntimeTerminalWebSocketUsesVersionedBinaryProtocol(t *testing.T) {
 	serverErr := make(chan error, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {

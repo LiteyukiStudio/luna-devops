@@ -68,6 +68,7 @@ type Host interface {
 	IssueRuntimeTerminalTicket(ctx context.Context, authorization runtimeapi.RuntimeTerminalAuthorizationBinding, resourceKind string, resource any) (string, time.Time, error)
 	ContinuousAuthorizationActive(ctx context.Context, binding runtimeapi.RuntimeTerminalAuthorizationBinding, authorizationAllowed func(context.Context, model.User) bool) bool
 	ReleaseRuntimeTerminalAuthorizationAllowed(ctx context.Context, user model.User, reference runtimeapi.ReleaseRuntimeTerminalAuthorizationReference) bool
+	DeploymentTargetRuntimeTerminalAuthorizationAllowed(ctx context.Context, user model.User, reference runtimeapi.DeploymentTargetRuntimeTerminalAuthorizationReference) bool
 	FindProject(ctx *gin.Context) (model.Project, bool)
 	ProjectRoleActionAllowed(ctx context.Context, user model.User, projectID string, action authz.Action) (bool, error)
 }
@@ -83,6 +84,7 @@ type runtimeTerminalAuthorizationBinding = runtimeapi.RuntimeTerminalAuthorizati
 type runtimeTerminalTicketValue = runtimeapi.RuntimeTerminalTicketValue
 type runtimeTerminalTicketResponse = runtimeapi.RuntimeTerminalTicketResponse
 type releaseRuntimeTerminalAuthorizationReference = runtimeapi.ReleaseRuntimeTerminalAuthorizationReference
+type deploymentTargetRuntimeTerminalAuthorizationReference = runtimeapi.DeploymentTargetRuntimeTerminalAuthorizationReference
 
 func New(host Host) *Handler {
 	return &Handler{host: host, secrets: host.SecretStore()}
@@ -276,6 +278,10 @@ func (h *Handler) continuousAuthorizationActive(ctx context.Context, binding run
 
 func (h *Handler) releaseRuntimeTerminalAuthorizationAllowed(ctx context.Context, user model.User, reference releaseRuntimeTerminalAuthorizationReference) bool {
 	return h.host.ReleaseRuntimeTerminalAuthorizationAllowed(ctx, user, reference)
+}
+
+func (h *Handler) deploymentTargetRuntimeTerminalAuthorizationAllowed(ctx context.Context, user model.User, reference deploymentTargetRuntimeTerminalAuthorizationReference) bool {
+	return h.host.DeploymentTargetRuntimeTerminalAuthorizationAllowed(ctx, user, reference)
 }
 
 func (h *Handler) findProject(ctx *gin.Context) (model.Project, bool) {

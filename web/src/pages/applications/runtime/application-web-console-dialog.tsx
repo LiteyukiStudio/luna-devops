@@ -1,6 +1,8 @@
 import type { Release } from '@/api'
 import { lazy } from 'react'
 import { useTranslation } from 'react-i18next'
+import { apiBaseOrigin } from '@/api'
+import { CliCommandSnippet } from '@/components/common/cli-command-snippet'
 import { RuntimeWebConsoleDialog } from '@/components/common/runtime-web-console-dialog'
 
 const RuntimeTerminalPanel = lazy(() =>
@@ -31,6 +33,18 @@ export function ApplicationWebConsoleDialog({
       open={Boolean(release)}
       resourceKey={releaseId}
       resourceLabel={releaseId}
+      toolbar={({ container }) => release && (
+        <CliCommandSnippet
+          spec={{
+            command: 'deployment.exec',
+            server: apiBaseOrigin(),
+            projectId,
+            applicationId: release.applicationId,
+            targetId: release.deploymentTargetId,
+            container,
+          }}
+        />
+      )}
       title={t('deploymentsPage.webConsole')}
       onOpenChange={onOpenChange}
     >

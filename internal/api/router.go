@@ -314,6 +314,8 @@ func NewRouterWithStaticFSAndMetricsConfig(db *gorm.DB, staticFS fs.FS, httpMetr
 		v1.PUT("/projects/:projectId/applications/:applicationId/deployment-targets/:targetId/runtime-secrets", domains.deployment.UpdateDeploymentTargetRuntimeSecrets)
 		v1.GET("/projects/:projectId/applications/:applicationId/deployment-targets/:targetId/runtime-secrets", domains.deployment.GetDeploymentTargetRuntimeSecretsSummary)
 		v1.POST("/projects/:projectId/applications/:applicationId/deployment-targets/:targetId/restart", domains.deployment.RestartDeploymentTarget)
+		v1.POST("/projects/:projectId/applications/:applicationId/deployment-targets/:targetId/terminal/authorize", domains.deployment.AuthorizeDeploymentTargetRuntimeTerminal)
+		v1.GET("/projects/:projectId/applications/:applicationId/deployment-targets/:targetId/terminal", domains.deployment.StreamDeploymentTargetRuntimeTerminal)
 		v1.GET("/projects/:projectId/applications/:applicationId/deployment-targets/:targetId/metrics/stream", domains.deployment.StreamDeploymentTargetMetrics)
 		v1.DELETE("/projects/:projectId/applications/:applicationId/deployment-targets/:targetId", domains.deployment.DeleteDeploymentTarget)
 		v1.GET("/projects/:projectId/build-runs", domains.build.ListBuildRuns)

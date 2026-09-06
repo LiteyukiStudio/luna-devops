@@ -19,6 +19,7 @@ interface RuntimeWebConsoleDialogProps {
   open: boolean
   resourceKey: string
   resourceLabel: string
+  toolbar?: (context: { container: string }) => ReactNode
   title: string
   onOpenChange: (open: boolean) => void
 }
@@ -36,6 +37,7 @@ export function RuntimeWebConsoleDialog({
   open,
   resourceKey,
   resourceLabel,
+  toolbar,
   title,
   onOpenChange,
 }: RuntimeWebConsoleDialogProps) {
@@ -55,17 +57,17 @@ export function RuntimeWebConsoleDialog({
     <Dialog open={open} onOpenChange={changeOpen}>
       <DialogContent
         className={cn(
-          'overflow-visible border-0 bg-transparent p-0 shadow-none',
+          'border-0 bg-transparent p-0 shadow-none',
           fullscreen
-            ? 'h-[calc(100dvh-1rem)] max-h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] max-w-none'
-            : 'max-h-[calc(100vh-2rem)] max-w-[min(94vw,96rem)]',
+            ? 'h-[calc(100dvh-1rem)] max-h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] max-w-none overflow-hidden'
+            : 'max-h-[calc(100vh-2rem)] max-w-[min(94vw,96rem)] overflow-y-auto',
         )}
         showCloseButton={false}
       >
         <DialogTitle className="sr-only">{title}</DialogTitle>
         <DialogDescription className="sr-only">{description}</DialogDescription>
         <div className={cn('overflow-hidden rounded-md border border-zinc-800 bg-zinc-950 text-zinc-100 shadow-2xl', fullscreen && 'flex h-full min-h-0 flex-col')}>
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-800 bg-zinc-900 px-5 py-3">
+          <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-zinc-800 bg-zinc-900 px-5 py-3">
             <div className="flex min-w-0 items-center gap-2">
               <WindowControlButton
                 icon={<X className="size-2.5" strokeWidth={3} />}
@@ -97,6 +99,11 @@ export function RuntimeWebConsoleDialog({
               />
             </label>
           </div>
+          {toolbar && (
+            <div className="shrink-0 border-b border-zinc-800 bg-zinc-900 px-3 py-2 sm:px-5">
+              {toolbar({ container })}
+            </div>
+          )}
           <div className={fullscreen ? 'min-h-0 flex-1' : undefined}>
             <LazyLoadBoundary
               fallback={<TerminalLoadingState fullscreen={fullscreen} label={loadingLabel} />}

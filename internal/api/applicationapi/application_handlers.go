@@ -49,6 +49,7 @@ func (h *Handlers) ListApplications(ctx *gin.Context) {
 
 	var applications []model.Application
 	query := h.dbFor(ctx).Model(&model.Application{}).Where("project_id = ?", ctx.Param("projectId"))
+	query = applyExactApplicationIdentifierFilter(ctx, query)
 	query = applySearch(ctx, query, "name", "identifier")
 	pagination := paginationFromQueryWithSort(ctx, map[string]string{"name": "name", "identifier": "identifier", "createdAt": "created_at"}, "createdAt")
 	var total int64
@@ -75,6 +76,13 @@ func (h *Handlers) ListApplications(ctx *gin.Context) {
 		return
 	}
 	ctx.JSON(http.StatusOK, paginatedResponse(applications, total, pagination))
+}
+
+func applyExactApplicationIdentifierFilter(ctx *gin.Context, query *gorm.DB) *gorm.DB {
+	if identifier, present := ctx.GetQuery("identifier"); present {
+		return query.Where("identifier = ?", identifier)
+	}
+	return query
 }
 
 func (h *Handlers) CreateApplication(ctx *gin.Context) {

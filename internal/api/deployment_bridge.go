@@ -96,6 +96,9 @@ func (host deploymentHost) ContinuousAuthorizationActive(ctx context.Context, bi
 func (host deploymentHost) ReleaseRuntimeTerminalAuthorizationAllowed(ctx context.Context, user model.User, reference runtimeapi.ReleaseRuntimeTerminalAuthorizationReference) bool {
 	return host.handlers.domains.runtime.ReleaseRuntimeTerminalAuthorizationAllowed(ctx, user, reference)
 }
+func (host deploymentHost) DeploymentTargetRuntimeTerminalAuthorizationAllowed(ctx context.Context, user model.User, reference runtimeapi.DeploymentTargetRuntimeTerminalAuthorizationReference) bool {
+	return host.handlers.domains.runtime.DeploymentTargetRuntimeTerminalAuthorizationAllowed(ctx, user, reference)
+}
 func (host deploymentHost) FindProject(ctx *gin.Context) (model.Project, bool) {
 	return host.handlers.findProject(ctx)
 }

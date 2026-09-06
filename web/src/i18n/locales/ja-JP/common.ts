@@ -19,6 +19,13 @@ const common = {
   copy: 'コピー',
   copied: 'コピーしました',
   copyFailed: 'コピーに失敗しました',
+  cliCommand: {
+    label: 'CLI コマンド',
+    copy: 'CLI コマンドをコピー',
+    copied: 'CLI コマンドをコピーしました',
+    docs: 'CLI ドキュメントを表示',
+    docsTip: 'ローカル端末で実行します；Luna CLI ドキュメントを開きます',
+  },
   noDescription: '説明なし',
   id: 'ID',
   type: 'タイプ',

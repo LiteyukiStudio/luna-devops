@@ -29,6 +29,7 @@ func (h *Handlers) ListDeploymentTargets(ctx *gin.Context) {
 	}
 	var targets []model.DeploymentTarget
 	query := h.dbFor(ctx).Model(&model.DeploymentTarget{}).Where("project_id = ? and application_id = ?", app.ProjectID, app.ID)
+	query = applyExactDeploymentTargetStageFilter(ctx, query)
 	query = applySearch(ctx, query, "name", "source_branch", "image_repository", "image_tag")
 	pagination := paginationFromQueryWithSort(ctx, map[string]string{"name": "name", "createdAt": "created_at"}, "createdAt")
 	var total int64
@@ -51,6 +52,13 @@ func (h *Handlers) ListDeploymentTargets(ctx *gin.Context) {
 	}
 	h.observeDeploymentTargets(ctx.Request.Context(), project, targets)
 	ctx.JSON(http.StatusOK, paginatedResponse(deploymentTargetResponses(targets, mountsByTarget), total, pagination))
+}
+
+func applyExactDeploymentTargetStageFilter(ctx *gin.Context, query *gorm.DB) *gorm.DB {
+	if stage, present := ctx.GetQuery("stage"); present {
+		return query.Where("stage = ?", stage)
+	}
+	return query
 }
 
 func deploymentTargetPageQuery(query *gorm.DB, pagination paginationParams) *gorm.DB {

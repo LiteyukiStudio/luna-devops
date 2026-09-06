@@ -113,7 +113,7 @@ JSON output for automation:
 ```bash
 npm install --global @liteyuki/luna-cli
 luna login
-luna project get-projects
+luna project list
 ```
 
 - [CLI documentation](https://luna-devops.liteyuki.org/en/use/cli/installation)

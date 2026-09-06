@@ -15,7 +15,10 @@ import (
 	"k8s.io/client-go/tools/remotecommand"
 )
 
-const RuntimeTerminalWebSocketSubprotocol = "luna.devops.terminal.v1"
+const (
+	RuntimeTerminalWebSocketSubprotocol = "luna.devops.terminal.v1"
+	RuntimeTerminalTicketHeader         = "X-Luna-Terminal-Ticket"
+)
 
 const (
 	RuntimeTerminalEndExited              RuntimeTerminalEnd = "exited"
@@ -130,6 +133,19 @@ func RuntimeTerminalSubprotocolRequested(request *http.Request) bool {
 		}
 	}
 	return false
+}
+
+func RuntimeTerminalTicket(request *http.Request, allowLegacyQuery bool) string {
+	if request == nil {
+		return ""
+	}
+	if ticket := strings.TrimSpace(request.Header.Get(RuntimeTerminalTicketHeader)); ticket != "" {
+		return ticket
+	}
+	if allowLegacyQuery {
+		return strings.TrimSpace(request.URL.Query().Get("ticket"))
+	}
+	return ""
 }
 
 func (socket *RuntimeTerminalWebSocket) Write(data []byte) (int, error) {

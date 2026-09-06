@@ -42,6 +42,7 @@ type RuntimeTerminalAuthorizationBinding = runtimeTerminalAuthorizationBinding
 type RuntimeTerminalTicketResponse = runtimeTerminalTicketResponse
 type RuntimeTerminalTicketValue = runtimeTerminalTicketValue
 type ReleaseRuntimeTerminalAuthorizationReference = releaseRuntimeTerminalAuthorizationReference
+type DeploymentTargetRuntimeTerminalAuthorizationReference = deploymentTargetRuntimeTerminalAuthorizationReference
 
 type RuntimeClusterAuditMetadata = runtimeClusterAuditMetadata
 
@@ -153,6 +154,9 @@ func (h *Handler) CurrentInteractiveAuthorizationBinding(ctx *gin.Context, user 
 }
 func (h *Handler) ReleaseRuntimeTerminalAuthorizationAllowed(ctx context.Context, user model.User, reference ReleaseRuntimeTerminalAuthorizationReference) bool {
 	return h.releaseRuntimeTerminalAuthorizationAllowed(ctx, user, reference)
+}
+func (h *Handler) DeploymentTargetRuntimeTerminalAuthorizationAllowed(ctx context.Context, user model.User, reference DeploymentTargetRuntimeTerminalAuthorizationReference) bool {
+	return h.deploymentTargetRuntimeTerminalAuthorizationAllowed(ctx, user, reference)
 }
 
 func (h *Handler) IssueRuntimeTerminalTicket(ctx context.Context, authorization RuntimeTerminalAuthorizationBinding, resourceKind string, resource any) (string, time.Time, error) {

@@ -86,3 +86,14 @@ func TestEnsureRuntimeWebConsoleEnabledRejectsDisabledProjectEvenWithEnabledTarg
 		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusForbidden)
 	}
 }
+
+func TestRuntimeTerminalAuthorizationResponseIsNotCached(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+
+	markRuntimeTerminalAuthorizationResponse(ctx)
+
+	if value := recorder.Header().Get("Cache-Control"); value != "no-store" {
+		t.Fatalf("Cache-Control = %q, want no-store", value)
+	}
+}

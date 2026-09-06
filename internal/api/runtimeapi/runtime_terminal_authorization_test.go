@@ -85,3 +85,37 @@ func TestRuntimeClusterPodTerminalTicketIsOneTimeAndResourceBound(t *testing.T) 
 		t.Fatalf("consuming a terminal ticket twice = (%v, %v), want (false, nil)", ok, err)
 	}
 }
+
+func TestDeploymentTargetTerminalTicketIsBoundWithoutARelease(t *testing.T) {
+	handlers := &Handlers{mode: "test"}
+	binding := runtimeTerminalAuthorizationBinding{
+		UserID:    "usr_deployment_target_ticket",
+		SubjectID: "ses_deployment_target_ticket",
+		Deadline:  time.Now().Add(time.Hour),
+	}
+	reference := deploymentTargetRuntimeTerminalAuthorizationReference{
+		ProjectID:          "prj_deployment_target_ticket",
+		ApplicationID:      "app_deployment_target_ticket",
+		DeploymentTargetID: "dplt_deployment_target_ticket",
+		ClusterID:          "rcl_deployment_target_ticket",
+		ClusterKubeconfig:  "sec_deployment_target_ticket",
+		Namespace:          "luna-deployment-target-ticket",
+	}
+
+	ticket, _, err := handlers.issueRuntimeTerminalTicket(context.Background(), binding, "deployment_target", reference)
+	if err != nil {
+		t.Fatal(err)
+	}
+	value, ok, err := handlers.consumeRuntimeTerminalTicket(context.Background(), ticket)
+	if err != nil || !ok {
+		t.Fatalf("consume target ticket = (%#v, %t, %v)", value, ok, err)
+	}
+	if !value.matches("deployment_target", reference) {
+		t.Fatal("ticket did not match its deployment target")
+	}
+	otherReference := reference
+	otherReference.DeploymentTargetID = "dplt_another_target"
+	if value.matches("deployment_target", otherReference) {
+		t.Fatal("ticket matched another deployment target")
+	}
+}
