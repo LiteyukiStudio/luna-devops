@@ -360,6 +360,7 @@ const deploymentsPage = {
   stage: '단계',
   namespace: '네임스페이스',
   replicas: '레플리카 수',
+  replicasHint: '0으로 설정하면 실행을 중지합니다.',
   image: '대상 이미지',
   stageDev: '개발',
   stageTest: '테스트',

@@ -13,6 +13,7 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/tasks"
 	"github.com/hibiken/asynq"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 const (
@@ -226,6 +227,11 @@ func systemComponentLastError(status string, message string) string {
 }
 
 func (r *Runner) applyApplicationResources(ctx context.Context, release model.Release, project model.Project, application model.Application, deploymentTarget model.DeploymentTarget, namespace string, serviceBindings resolvedServiceBindingConfig) error {
+	latestTarget, err := r.releaseDeploymentTarget(ctx, release)
+	if err != nil {
+		return err
+	}
+	deploymentTarget.Replicas = latestTarget.Replicas
 	manager, spec, err := r.applicationResourcesManagerAndSpec(ctx, release, project, application, deploymentTarget, namespace, serviceBindings)
 	if err != nil {
 		return err
@@ -234,7 +240,32 @@ func (r *Runner) applyApplicationResources(ctx context.Context, release model.Re
 	if err := manager.ApplyApplicationResources(ctx, spec); err != nil {
 		return err
 	}
-	return nil
+	return r.reconcileApplicationResourceReplicas(ctx, release, manager, spec)
+}
+
+func scaleApplicationResourcesToLatestTarget(ctx context.Context, manager kubeprovider.NamespaceManager, spec kubeprovider.ApplicationResourcesSpec, target model.DeploymentTarget) error {
+	if target.Replicas < 0 {
+		return errors.New("deployment replicas cannot be negative")
+	}
+	desired := int32(target.Replicas)
+	if desired == spec.Replicas {
+		return nil
+	}
+	return manager.ScaleApplicationWorkload(ctx, spec, desired)
+}
+
+func (r *Runner) reconcileApplicationResourceReplicas(ctx context.Context, release model.Release, manager kubeprovider.NamespaceManager, spec kubeprovider.ApplicationResourcesSpec) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var target model.DeploymentTarget
+		// Use the same target row lock as the update endpoint so the last
+		// committed replica value also wins over an in-flight Release apply.
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Select("id", "replicas").
+			First(&target, "id = ? and project_id = ? and application_id = ?", release.DeploymentTargetID, release.ProjectID, release.ApplicationID).Error; err != nil {
+			return err
+		}
+		return scaleApplicationResourcesToLatestTarget(ctx, manager, spec, target)
+	})
 }
 
 func (r *Runner) applyApplicationRuntimeConfig(ctx context.Context, release model.Release, project model.Project, application model.Application, deploymentTarget model.DeploymentTarget, namespace string, serviceBindings resolvedServiceBindingConfig) error {

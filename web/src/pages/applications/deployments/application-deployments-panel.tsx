@@ -24,7 +24,7 @@ import { buildDeploymentRuntimeStatus, buildInternalServiceEndpoint } from '@/pa
 import { ApplicationDeploymentTargetsList } from '@/pages/applications/deployments/operations/application-deployment-targets-list'
 import { effectiveWebConsoleEnabled } from '@/pages/applications/runtime/web-console-policy'
 import { DeferredCreateReleaseDialog, DeferredDeploymentBundleImportDialog, DeferredDeploymentTargetDialog, DeferredReleaseLogsDialog, DeferredRepositoryBindingDialog, DeferredRuntimeConfigSetDialog, DeferredWebConsoleDialog } from './application-deployment-dialogs'
-import { applyDockerfileBuildDefaults, deploymentTargetHasRunningInstances, deploymentTargetRuntimeChanged, normalizeBoolean, normalizeDeploymentTargetPayload, normalizeRuntimeConfigPayload, normalizeRuntimeConfigRefs, redeployReleasePayload, releaseDefaults, repositoryBindingItems, runtimeConfigDefaults, runtimeConfigLiveSetIds, runtimeConfigRefIds } from './application-deployments-panel-utils'
+import { applyDockerfileBuildDefaults, deploymentTargetRuntimeChanged, normalizeBoolean, normalizeDeploymentTargetPayload, normalizeRuntimeConfigPayload, normalizeRuntimeConfigRefs, redeployReleasePayload, releaseDefaults, repositoryBindingItems, runtimeConfigDefaults, runtimeConfigLiveSetIds, runtimeConfigRefIds } from './application-deployments-panel-utils'
 
 export interface DeploymentsPanelHandle {
   openImportDialog: () => void
@@ -247,10 +247,8 @@ export function ApplicationDeploymentsPanel({ applicationId, applicationIdentifi
   const latestEditingTargetRelease = editingTarget ? latestReleaseByTarget[deploymentReleaseKey(editingTarget.id)] : undefined
   const normalizedTargetValues = normalizeDeploymentTargetPayload(watchedTargetValues)
   const targetHasRuntimeChanges = editingTarget ? deploymentTargetRuntimeChanged(editingTarget, normalizedTargetValues) : false
-  const targetHasRunningInstances = Boolean(editingTarget && deploymentTargetHasRunningInstances(editingTarget))
   const targetCanRedeploy = Boolean(
     editingTarget
-    && targetHasRunningInstances
     && normalizedTargetValues.enabled
     && (normalizedTargetValues.sourceType === 'image' ? normalizedTargetValues.imageRef.trim() : latestEditingTargetRelease?.imageRef.trim()),
   )
@@ -729,7 +727,6 @@ export function ApplicationDeploymentsPanel({ applicationId, applicationIdentifi
         targetHasDataVolumes={targetHasDataVolumes}
         targetDataVolumes={targetDataVolumes}
         targetHasRuntimeChanges={targetHasRuntimeChanges}
-        targetHasRunningInstances={targetHasRunningInstances}
         targetImagePrefix={targetImagePrefix}
         targetRuntimeFilesValid={targetRuntimeFilesValid}
         targetSecretFilesValid={targetSecretFilesValid}

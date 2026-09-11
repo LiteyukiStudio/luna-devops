@@ -68,7 +68,6 @@ export function ApplicationDeploymentTargetDialog({
   targetHasDataVolumes,
   targetDataVolumes,
   targetHasRuntimeChanges,
-  targetHasRunningInstances,
   targetImagePrefix,
   targetRuntimeFilesValid,
   targetSecretFilesValid,
@@ -132,7 +131,6 @@ export function ApplicationDeploymentTargetDialog({
   targetHasDataVolumes: boolean
   targetDataVolumes: Parameters<typeof RuntimeDataVolumesEditor>[0]['rows']
   targetHasRuntimeChanges: boolean
-  targetHasRunningInstances: boolean
   targetImagePrefix: string
   targetRuntimeFilesValid: boolean
   targetSecretFilesValid: boolean
@@ -458,7 +456,6 @@ export function ApplicationDeploymentTargetDialog({
           </div>
           <DeploymentTargetDialogFooter
             canRedeploy={targetCanRedeploy}
-            hasRunningInstances={targetHasRunningInstances}
             hasRuntimeChanges={targetHasRuntimeChanges}
             saveDisabled={saveDisabled}
             onSaveAndRedeploy={form.handleSubmit(values => onSave(values, true))}
@@ -469,15 +466,14 @@ export function ApplicationDeploymentTargetDialog({
   )
 }
 
-export function DeploymentTargetDialogFooter({ canRedeploy, hasRunningInstances, hasRuntimeChanges, onSaveAndRedeploy, saveDisabled }: {
+export function DeploymentTargetDialogFooter({ canRedeploy, hasRuntimeChanges, onSaveAndRedeploy, saveDisabled }: {
   canRedeploy: boolean
-  hasRunningInstances: boolean
   hasRuntimeChanges: boolean
   onSaveAndRedeploy: () => void
   saveDisabled: boolean
 }) {
   const { t } = useTranslation()
-  const showRedeployActions = hasRunningInstances && hasRuntimeChanges
+  const showRedeployActions = hasRuntimeChanges
 
   return (
     <DialogFooter className="shrink-0 flex-col gap-3 border-t border-border bg-background px-6 py-4 sm:flex-row sm:items-center sm:justify-between">

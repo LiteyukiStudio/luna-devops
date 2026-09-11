@@ -16,8 +16,8 @@ export function RuntimeResourceFields({ form, priceText }: RuntimeResourceFields
   return (
     <div className="grid w-full gap-3">
       <div className="grid gap-3 md:grid-cols-3">
-        <Field label={t('deploymentsPage.replicas')} required>
-          <Input {...form.register('replicas', { valueAsNumber: true })} min={1} type="number" />
+        <Field hint={t('deploymentsPage.replicasHint')} label={t('deploymentsPage.replicas')} required>
+          <Input {...form.register('replicas', { min: 0, required: true, valueAsNumber: true })} min={0} required type="number" />
         </Field>
         <Field hint={t('deploymentsPage.runtimeQuotaPolicyHint')} label={t('deploymentsPage.cpuRequest')} required>
           <UnitInput

@@ -78,6 +78,8 @@ const errors = {
   },
   deployment_target: {
     service_account_invalid: 'ServiceAccount 設定が無効です。確認して再試行してください。',
+    replicas_invalid: 'レプリカ数は 0 以上の整数で指定してください。',
+    scale_failed: '実行クラスターにレプリカ数を適用できませんでした。再試行してください。',
   },
   kubernetes: {
     resource_ownership_conflict: 'Kubernetes の同名リソースは他のリソースライフサイクルに属しています。プラットフォームは自動的に引き継ぎません。先に残留リソースを処理してください。',

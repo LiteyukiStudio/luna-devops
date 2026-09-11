@@ -137,7 +137,6 @@ export function deploymentTargetRuntimeChanged(current: DeploymentTarget, next: 
   const fields: Array<keyof DeploymentTargetPayload> = [
     'clusterId',
     'workloadType',
-    'replicas',
     'cpuRequest',
     'memoryRequest',
     'imagePullPolicy',
@@ -186,10 +185,6 @@ export function deploymentTargetRuntimeChanged(current: DeploymentTarget, next: 
     !== normalizedComparable(deploymentRuntimeHookBindings(nextPayload.buildHookBindings))
 }
 
-export function deploymentTargetHasRunningInstances(target: DeploymentTarget) {
-  return target.desiredReplicas > 0
-}
-
 export function repositoryBindingItems(items: RepositoryBinding[] | null | undefined) {
   return Array.isArray(items) ? items : []
 }
@@ -200,6 +195,8 @@ export function normalizeDeploymentTargetPayload(values: DeploymentTargetPayload
   const requireApproval = normalizeBoolean(values.requireApproval, false)
   const buildHooksEnabled = normalizeBoolean(values.buildHooksEnabled, true)
   const readOnlyRootFilesystem = normalizeBoolean(values.readOnlyRootFilesystem, false)
+  const replicas = normalizeNonNegativeInteger(values.replicas, 1)
+  const autoScalingMinReplicas = normalizePositiveInteger(values.autoScalingMinReplicas, 1)
   const dataVolumes = parseRuntimeDataVolumes(values.dataVolumes)
   const sourceType = values.sourceType === 'image' ? 'image' : 'repository'
   const buildDefinitionMode = values.buildDefinitionMode === 'template' ? 'template' : 'repository_dockerfile'
@@ -210,7 +207,7 @@ export function normalizeDeploymentTargetPayload(values: DeploymentTargetPayload
     sourceType,
     clusterId: values.clusterId?.trim() ?? '',
     workloadType: normalizeChoice(values.workloadType, ['Deployment', 'StatefulSet']) || 'Deployment',
-    replicas: normalizePositiveInteger(values.replicas, 1),
+    replicas,
     cpuRequest: values.cpuRequest || '1',
     memoryRequest: values.memoryRequest || '1Gi',
     imagePullPolicy: normalizeChoice(values.imagePullPolicy, ['IfNotPresent', 'Always', 'Never']),
@@ -236,8 +233,8 @@ export function normalizeDeploymentTargetPayload(values: DeploymentTargetPayload
     serviceAnnotations: values.serviceAnnotations?.trim() ?? '',
     serviceSessionAffinity: normalizeChoice(values.serviceSessionAffinity, ['None', 'ClientIP']),
     autoScalingEnabled: normalizeBoolean(values.autoScalingEnabled, false),
-    autoScalingMinReplicas: normalizeNonNegativeInteger(values.autoScalingMinReplicas),
-    autoScalingMaxReplicas: Math.max(normalizePositiveInteger(values.autoScalingMaxReplicas, 1), normalizePositiveInteger(values.replicas, 1)),
+    autoScalingMinReplicas,
+    autoScalingMaxReplicas: Math.max(normalizePositiveInteger(values.autoScalingMaxReplicas, 1), autoScalingMinReplicas),
     autoScalingCpuPercent: normalizeNonNegativeInteger(values.autoScalingCpuPercent),
     autoScalingMemoryPercent: normalizeNonNegativeInteger(values.autoScalingMemoryPercent),
     autoScalingBehavior: values.autoScalingBehavior?.trim() ?? '',
@@ -382,10 +379,10 @@ export function normalizeDeploymentServicePorts(value: unknown) {
   return ports.length > 0 ? ports : [{ appProtocol: '', name: 'http', port: 8080 }]
 }
 
-function normalizeNonNegativeInteger(value: unknown) {
+function normalizeNonNegativeInteger(value: unknown, fallback = 0) {
   const number = Number(value)
   if (!Number.isFinite(number) || number < 0)
-    return 0
+    return fallback
   return Math.floor(number)
 }
 

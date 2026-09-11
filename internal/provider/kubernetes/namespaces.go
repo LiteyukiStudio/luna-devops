@@ -24,6 +24,7 @@ type NamespaceManager interface {
 	PreflightApplicationResources(ctx context.Context, spec ApplicationResourcesSpec) error
 	ApplyApplicationRuntimeConfig(ctx context.Context, spec ApplicationResourcesSpec) error
 	ApplyApplicationResources(ctx context.Context, spec ApplicationResourcesSpec) error
+	ScaleApplicationWorkload(ctx context.Context, spec ApplicationResourcesSpec, replicas int32) error
 	RunHookJob(ctx context.Context, spec HookJobSpec) (HookJobResult, error)
 	GetDeploymentSnapshot(ctx context.Context, namespace, name string) (DeploymentSnapshot, error)
 	GetWorkloadSnapshot(ctx context.Context, namespace, name, workloadType string) (DeploymentSnapshot, error)

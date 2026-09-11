@@ -360,6 +360,7 @@ const deploymentsPage = {
   stage: '階段',
   namespace: '名稱空間',
   replicas: '副本數',
+  replicasHint: '設為 0 會停止執行。',
   image: '目標映象',
   stageDev: '開發',
   stageTest: '測試',

@@ -56,6 +56,70 @@ func TestNormalizeBuildTimeoutSecondsValue(t *testing.T) {
 	}
 }
 
+func TestNormalizeDeploymentReplicas(t *testing.T) {
+	zero := 0
+	three := 3
+	negative := -1
+	tests := []struct {
+		name    string
+		value   *int
+		want    int
+		wantErr bool
+	}{
+		{name: "omitted uses default", want: 1},
+		{name: "zero is preserved", value: &zero, want: 0},
+		{name: "positive is preserved", value: &three, want: 3},
+		{name: "negative is rejected", value: &negative, wantErr: true},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := normalizeDeploymentReplicas(test.value)
+			if (err != nil) != test.wantErr {
+				t.Fatalf("normalizeDeploymentReplicas() error = %v, wantErr %v", err, test.wantErr)
+			}
+			if got != test.want {
+				t.Fatalf("normalizeDeploymentReplicas() = %d, want %d", got, test.want)
+			}
+		})
+	}
+}
+
+func TestDeploymentTargetResponsePreservesZeroReplicas(t *testing.T) {
+	response := deploymentTargetResponseFromModel(model.DeploymentTarget{Replicas: 0})
+	if response.Replicas != 0 {
+		t.Fatalf("deploymentTargetResponseFromModel().Replicas = %d, want 0", response.Replicas)
+	}
+}
+
+func TestDeploymentTargetInputStopsWorkload(t *testing.T) {
+	zero := 0
+	one := 1
+	if !deploymentTargetInputStopsWorkload(deploymentTargetInput{Replicas: &zero}) {
+		t.Fatal("zero replicas was not recognized as a stop request")
+	}
+	if deploymentTargetInputStopsWorkload(deploymentTargetInput{Replicas: &one}) || deploymentTargetInputStopsWorkload(deploymentTargetInput{}) {
+		t.Fatal("non-zero or omitted replicas was recognized as a stop request")
+	}
+}
+
+func TestNormalizeDeploymentAutoScalingKeepsResourceMetricMinimumPositive(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	autoScaling, ok := normalizeDeploymentAutoScaling(ctx, deploymentTargetInput{
+		AutoScalingEnabled:     true,
+		AutoScalingMinReplicas: 0,
+		AutoScalingMaxReplicas: 5,
+		AutoScalingCPUPercent:  70,
+	}, 0)
+	if !ok {
+		t.Fatalf("normalizeDeploymentAutoScaling() failed: status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if autoScaling.MinReplicas != 1 || autoScaling.MaxReplicas != 5 {
+		t.Fatalf("auto scaling replicas = %d..%d, want 1..5", autoScaling.MinReplicas, autoScaling.MaxReplicas)
+	}
+}
+
 func TestNormalizeDeploymentServicePortName(t *testing.T) {
 	tests := []struct {
 		name  string

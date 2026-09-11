@@ -13,18 +13,30 @@ import (
 
 var errDeploymentStageExists = errors.New("deployment stage already exists")
 
+type deploymentTargetAfterPersist func(current model.DeploymentTarget) error
+
 func (h *Handlers) createDeploymentTarget(target model.DeploymentTarget, dataVolumes []deploymentTargetDataVolumeInput, hookInputs []deploymentTargetHookBindingInput, buildEnvironment *model.BuildEnvironmentConfig, ctx context.Context) (deploymentVolumeMountChanges, error) {
 	return h.persistDeploymentTarget(target, dataVolumes, hookInputs, buildEnvironment, nil, true, ctx)
 }
 
 func (h *Handlers) saveDeploymentTarget(target model.DeploymentTarget, dataVolumes []deploymentTargetDataVolumeInput, hookInputs []deploymentTargetHookBindingInput, buildEnvironment *model.BuildEnvironmentConfig, ctx context.Context) (deploymentVolumeMountChanges, error) {
-	return h.persistDeploymentTarget(target, dataVolumes, hookInputs, buildEnvironment, nil, false, ctx)
+	return h.saveDeploymentTargetWithAfterPersist(target, dataVolumes, hookInputs, buildEnvironment, nil, ctx)
 }
 
 func (h *Handlers) persistDeploymentTarget(target model.DeploymentTarget, dataVolumes []deploymentTargetDataVolumeInput, hookInputs []deploymentTargetHookBindingInput, buildEnvironment *model.BuildEnvironmentConfig, secretValues []model.SecretValue, create bool, ctx context.Context) (deploymentVolumeMountChanges, error) {
+	return h.persistDeploymentTargetWithAfterPersist(target, dataVolumes, hookInputs, buildEnvironment, secretValues, create, nil, ctx)
+}
+
+func (h *Handlers) saveDeploymentTargetWithAfterPersist(target model.DeploymentTarget, dataVolumes []deploymentTargetDataVolumeInput, hookInputs []deploymentTargetHookBindingInput, buildEnvironment *model.BuildEnvironmentConfig, afterPersist deploymentTargetAfterPersist, ctx context.Context) (deploymentVolumeMountChanges, error) {
+	return h.persistDeploymentTargetWithAfterPersist(target, dataVolumes, hookInputs, buildEnvironment, nil, false, afterPersist, ctx)
+}
+
+func (h *Handlers) persistDeploymentTargetWithAfterPersist(target model.DeploymentTarget, dataVolumes []deploymentTargetDataVolumeInput, hookInputs []deploymentTargetHookBindingInput, buildEnvironment *model.BuildEnvironmentConfig, secretValues []model.SecretValue, create bool, afterPersist deploymentTargetAfterPersist, ctx context.Context) (deploymentVolumeMountChanges, error) {
 	changes := deploymentVolumeMountChanges{}
 	err := h.dbWithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var current model.DeploymentTarget
 		if create {
+			requestedReplicas := target.Replicas
 			result := tx.Clauses(clause.OnConflict{
 				Columns:     []clause.Column{{Name: "application_id"}, {Name: "stage"}},
 				TargetWhere: clause.Where{Exprs: []clause.Expression{clause.Expr{SQL: "deleted_at IS NULL"}}},
@@ -36,9 +48,21 @@ func (h *Handlers) persistDeploymentTarget(target model.DeploymentTarget, dataVo
 			if result.RowsAffected == 0 {
 				return errDeploymentStageExists
 			}
+			// GORM substitutes the model's default for zero-valued integer fields on
+			// Create. Persist an explicitly requested stop after the insert while the
+			// same transaction still owns the new target.
+			if requestedReplicas == 0 {
+				if err := tx.Model(&model.DeploymentTarget{}).
+					Where("id = ?", target.ID).
+					UpdateColumn("replicas", requestedReplicas).Error; err != nil {
+					return err
+				}
+				target.Replicas = requestedReplicas
+			}
 		} else {
-			var current model.DeploymentTarget
-			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id", "secret_refs").First(&current, "id = ?", target.ID).Error; err != nil {
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+				Select("id", "project_id", "application_id", "cluster_id", "kubernetes_name", "workload_type", "replicas", "secret_refs").
+				First(&current, "id = ?", target.ID).Error; err != nil {
 				return err
 			}
 			target.SecretRefs = current.SecretRefs
@@ -62,6 +86,11 @@ func (h *Handlers) persistDeploymentTarget(target model.DeploymentTarget, dataVo
 		}
 		if len(secretValues) > 0 {
 			if err := tx.Create(&secretValues).Error; err != nil {
+				return err
+			}
+		}
+		if afterPersist != nil {
+			if err := afterPersist(current); err != nil {
 				return err
 			}
 		}

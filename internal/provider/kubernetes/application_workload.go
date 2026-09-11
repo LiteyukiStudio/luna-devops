@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	appsv1 "k8s.io/api/apps/v1"
+	autoscalingv1 "k8s.io/api/autoscaling/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -32,9 +33,6 @@ func (c *Client) applyApplicationWorkload(ctx context.Context, spec ApplicationR
 
 func (c *Client) applyDeployment(ctx context.Context, spec ApplicationResourcesSpec, objectLabels map[string]string, selectorLabels map[string]string) (map[string]string, error) {
 	replicas := spec.Replicas
-	if replicas <= 0 {
-		replicas = 1
-	}
 	progressDeadlineSeconds := spec.RolloutTimeoutSeconds
 	if progressDeadlineSeconds <= 0 {
 		progressDeadlineSeconds = 600
@@ -71,9 +69,6 @@ func (c *Client) applyDeployment(ctx context.Context, spec ApplicationResourcesS
 
 func (c *Client) applyStatefulSet(ctx context.Context, spec ApplicationResourcesSpec, objectLabels map[string]string, selectorLabels map[string]string) (map[string]string, error) {
 	replicas := spec.Replicas
-	if replicas <= 0 {
-		replicas = 1
-	}
 	statefulSet := &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{Name: spec.Name, Namespace: spec.Namespace, Labels: objectLabels},
 		Spec: appsv1.StatefulSetSpec{
@@ -101,6 +96,50 @@ func (c *Client) applyStatefulSet(ctx context.Context, spec ApplicationResources
 	existing.Spec.Template.Labels = appPodTemplateLabels(objectLabels, effectiveSelectorLabels)
 	_, err = c.client.AppsV1().StatefulSets(spec.Namespace).Update(ctx, existing, metav1.UpdateOptions{})
 	return effectiveSelectorLabels, err
+}
+
+func (c *Client) ScaleApplicationWorkload(ctx context.Context, spec ApplicationResourcesSpec, replicas int32) error {
+	if replicas < 0 {
+		return fmt.Errorf("application replicas must be non-negative")
+	}
+
+	desiredLabels := appObjectLabels(spec)
+	switch applicationWorkloadType(spec) {
+	case "StatefulSet":
+		statefulSet, err := c.client.AppsV1().StatefulSets(spec.Namespace).Get(ctx, spec.Name, metav1.GetOptions{})
+		if err != nil {
+			return err
+		}
+		if err := ensureResourceOwnership("StatefulSet", statefulSet, desiredLabels); err != nil {
+			return err
+		}
+		_, err = c.client.AppsV1().StatefulSets(spec.Namespace).UpdateScale(ctx, spec.Name, &autoscalingv1.Scale{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:            statefulSet.Name,
+				Namespace:       statefulSet.Namespace,
+				ResourceVersion: statefulSet.ResourceVersion,
+			},
+			Spec: autoscalingv1.ScaleSpec{Replicas: replicas},
+		}, metav1.UpdateOptions{})
+		return err
+	default:
+		deployment, err := c.client.AppsV1().Deployments(spec.Namespace).Get(ctx, spec.Name, metav1.GetOptions{})
+		if err != nil {
+			return err
+		}
+		if err := ensureResourceOwnership("Deployment", deployment, desiredLabels); err != nil {
+			return err
+		}
+		_, err = c.client.AppsV1().Deployments(spec.Namespace).UpdateScale(ctx, spec.Name, &autoscalingv1.Scale{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:            deployment.Name,
+				Namespace:       deployment.Namespace,
+				ResourceVersion: deployment.ResourceVersion,
+			},
+			Spec: autoscalingv1.ScaleSpec{Replicas: replicas},
+		}, metav1.UpdateOptions{})
+		return err
+	}
 }
 
 func applicationPodTemplate(spec ApplicationResourcesSpec, objectLabels map[string]string, selectorLabels map[string]string) corev1.PodTemplateSpec {

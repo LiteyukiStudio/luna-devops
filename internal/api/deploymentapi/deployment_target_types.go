@@ -125,7 +125,7 @@ func deploymentTargetResponseFromModel(target model.DeploymentTarget, mounts ...
 		KubernetesName:            strings.TrimSpace(target.KubernetesName),
 		ClusterID:                 target.ClusterID,
 		WorkloadType:              normalizeWorkloadType(target.WorkloadType),
-		Replicas:                  fallbackInt(target.Replicas, 1),
+		Replicas:                  target.Replicas,
 		CPURequest:                fallback(strings.TrimSpace(target.CPURequest), model.DefaultDeploymentCPURequest),
 		MemoryRequest:             fallback(strings.TrimSpace(target.MemoryRequest), model.DefaultDeploymentMemoryRequest),
 		ImagePullPolicy:           normalizeImagePullPolicyValue(target.ImagePullPolicy),
@@ -229,7 +229,7 @@ type deploymentTargetInput struct {
 	ClusterID                    string                             `json:"clusterId"`
 	Namespace                    string                             `json:"namespace"`
 	WorkloadType                 string                             `json:"workloadType"`
-	Replicas                     int                                `json:"replicas"`
+	Replicas                     *int                               `json:"replicas"`
 	CPURequest                   string                             `json:"cpuRequest"`
 	MemoryRequest                string                             `json:"memoryRequest"`
 	ImagePullPolicy              string                             `json:"imagePullPolicy"`

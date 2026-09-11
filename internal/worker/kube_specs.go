@@ -357,8 +357,8 @@ func applicationResourcesSpec(release model.Release, project model.Project, appl
 	servicePort := configuredServicePorts[0].Port
 	servicePorts := deploymentTargetApplicationServicePorts(deploymentTarget)
 	replicas := deploymentTarget.Replicas
-	if replicas <= 0 {
-		replicas = 1
+	if replicas < 0 {
+		return kubeprovider.ApplicationResourcesSpec{}, errors.New("deployment replicas cannot be negative")
 	}
 	return kubeprovider.ApplicationResourcesSpec{
 		Name:                         resourceName,

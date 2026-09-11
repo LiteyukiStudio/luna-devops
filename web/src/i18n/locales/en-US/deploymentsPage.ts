@@ -360,6 +360,7 @@ const deploymentsPage = {
   stage: 'Stage',
   namespace: 'Namespace',
   replicas: 'Replicas',
+  replicasHint: 'Set to 0 to stop the workload.',
   image: 'Target image',
   stageDev: 'Development',
   stageTest: 'Test',

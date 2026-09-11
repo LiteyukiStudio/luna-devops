@@ -139,6 +139,7 @@ func (h *Handlers) CreateDeploymentTarget(ctx *gin.Context) {
 }
 
 func (h *Handlers) UpdateDeploymentTarget(ctx *gin.Context) {
+	markLiveObservationResponse(ctx)
 	user, project, ok := h.authorizeProject(ctx, authz.ActionDeploymentUpdate)
 	if !ok {
 		return
@@ -166,7 +167,7 @@ func (h *Handlers) UpdateDeploymentTarget(ctx *gin.Context) {
 	if !bindJSON(ctx, &input) {
 		return
 	}
-	if !h.ensureBillingAllowsDeployChange(ctx, project.ID) {
+	if !deploymentTargetInputStopsWorkload(input) && !h.ensureBillingAllowsDeployChange(ctx, project.ID) {
 		return
 	}
 	if strings.TrimSpace(input.Stage) != strings.TrimSpace(existing.Stage) {
@@ -193,8 +194,23 @@ func (h *Handlers) UpdateDeploymentTarget(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	changes, err := h.saveDeploymentTarget(target, dataVolumes, input.BuildHookBindings, buildEnvironment, ctx.Request.Context())
+	scaleOutcome := deploymentTargetScaleOutcome{}
+	changes, err := h.saveDeploymentTargetWithAfterPersist(target, dataVolumes, input.BuildHookBindings, buildEnvironment, func(current model.DeploymentTarget) error {
+		if current.Replicas == target.Replicas {
+			return nil
+		}
+		scaleOutcome.attempted = true
+		var scaleErr error
+		scaleOutcome.workloadFound, scaleErr = h.scaleDeploymentTargetReplicas(ctx.Request.Context(), project, current, target.Replicas)
+		return scaleErr
+	}, ctx.Request.Context())
 	if err != nil {
+		var scaleErr *deploymentTargetScaleError
+		if errors.As(err, &scaleErr) {
+			h.auditWithContext(user.ID, "deployment_target.scale", target.ID, false, scaleErr.Error(), ctx.Request.Context())
+			writeDeploymentTargetScaleError(ctx, scaleErr)
+			return
+		}
 		h.auditDeploymentVolumeMountFailure(ctx.Request.Context(), user.ID, changes, err)
 		if volume.ErrorCode(err) != "" {
 			writeVolumeError(ctx, err)
@@ -202,6 +218,17 @@ func (h *Handlers) UpdateDeploymentTarget(ctx *gin.Context) {
 			writeError(ctx, http.StatusBadRequest, err.Error())
 		}
 		return
+	}
+	if scaleOutcome.attempted {
+		message := "workload_not_found"
+		if scaleOutcome.workloadFound {
+			if target.Replicas == 0 {
+				message = "scaled_to_zero"
+			} else {
+				message = "scaled_to_positive"
+			}
+		}
+		h.auditWithContext(user.ID, "deployment_target.scale", target.ID, true, message, ctx.Request.Context())
 	}
 	h.auditDeploymentVolumeMountChanges(ctx.Request.Context(), user.ID, target, changes)
 	target, _ = h.deploymentTargetWithHookBindings(target, ctx.Request.Context())

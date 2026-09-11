@@ -1,6 +1,7 @@
 package api
 
 import (
+	"path/filepath"
 	"reflect"
 	"sort"
 	"strings"
@@ -8,6 +9,24 @@ import (
 
 	"github.com/LiteyukiStudio/devops/internal/aitool"
 )
+
+func TestUpdateDeploymentTargetDeclaresLiveScaleContract(t *testing.T) {
+	document := readOpenAPIDocument(t, filepath.Join(apiRepositoryRoot(t), "openapi", "openapi.yaml"))
+	operation := openAPIOperationAt(t, document, "/api/v1/projects/{projectId}/applications/{applicationId}/deployment-targets/{targetId}", "put")
+	responses, _ := operation["responses"].(map[string]any)
+	for _, status := range []string{"200", "400", "404", "409", "502", "504"} {
+		if _, ok := responses[status]; !ok {
+			t.Fatalf("updateDeploymentTarget response %s is missing", status)
+		}
+	}
+	response, _ := responses["200"].(map[string]any)
+	headers, _ := response["headers"].(map[string]any)
+	cacheControl, _ := headers["Cache-Control"].(map[string]any)
+	schema, _ := cacheControl["schema"].(map[string]any)
+	if schema["const"] != "no-store" {
+		t.Fatalf("updateDeploymentTarget Cache-Control contract = %#v", cacheControl)
+	}
+}
 
 func TestDeploymentTargetAgentSchemaCoversHandlerInput(t *testing.T) {
 	legacyRejectOnlyFields := map[string]struct{}{
@@ -156,9 +175,13 @@ func TestDeploymentTargetAgentSchemaDescribesSourceAndStructuredFields(t *testin
 	if !ok || stage["pattern"] != "^(dev|test|staging|prod|sys-[a-z0-9-]+)$" || stage["default"] != "dev" {
 		t.Fatalf("stage must accept public stages and persisted system stages: %#v", stage)
 	}
+	replicas, ok := properties["replicas"].(map[string]any)
+	if !ok || replicas["minimum"] != float64(0) {
+		t.Fatalf("replicas must allow zero to stop all Pods: %#v", replicas)
+	}
 	autoScalingMin, ok := properties["autoScalingMinReplicas"].(map[string]any)
-	if !ok || autoScalingMin["minimum"] != float64(0) {
-		t.Fatalf("autoScalingMinReplicas must allow scale-to-zero: %#v", autoScalingMin)
+	if !ok || autoScalingMin["minimum"] != float64(1) {
+		t.Fatalf("autoScalingMinReplicas must stay positive for resource metrics: %#v", autoScalingMin)
 	}
 	assertSchemaEnum(t, properties, "workloadType", "Deployment", "StatefulSet")
 

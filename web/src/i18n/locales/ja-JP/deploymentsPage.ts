@@ -360,6 +360,7 @@ const deploymentsPage = {
   stage: 'ステージ',
   namespace: '名前空間',
   replicas: 'レプリカ数',
+  replicasHint: '0 に設定すると稼働を停止します。',
   image: 'ターゲットイメージ',
   stageDev: '開発',
   stageTest: 'テスト',

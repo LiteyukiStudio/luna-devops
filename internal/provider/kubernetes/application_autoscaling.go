@@ -65,6 +65,9 @@ func validateApplicationAutoScaling(spec ApplicationResourcesSpec) error {
 	if !spec.AutoScalingEnabled {
 		return nil
 	}
+	if spec.AutoScalingMinReplicas < 0 {
+		return fmt.Errorf("hpa min replicas must be non-negative")
+	}
 	if autoScalingMaxReplicas(spec) < autoScalingMinReplicas(spec) {
 		return fmt.Errorf("hpa max replicas must be greater than or equal to min replicas")
 	}
@@ -75,7 +78,7 @@ func validateApplicationAutoScaling(spec ApplicationResourcesSpec) error {
 }
 
 func autoScalingMinReplicas(spec ApplicationResourcesSpec) int32 {
-	if spec.AutoScalingMinReplicas >= 0 {
+	if spec.AutoScalingMinReplicas > 0 {
 		return spec.AutoScalingMinReplicas
 	}
 	if spec.Replicas > 0 {

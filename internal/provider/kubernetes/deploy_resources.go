@@ -183,6 +183,9 @@ func validateApplicationResourcesSpec(spec ApplicationResourcesSpec) error {
 	if strings.TrimSpace(spec.Image) == "" {
 		return fmt.Errorf("release image is required")
 	}
+	if spec.Replicas < 0 {
+		return fmt.Errorf("application replicas must be non-negative")
+	}
 	if strings.TrimSpace(spec.ProjectID) == "" || strings.TrimSpace(spec.ApplicationID) == "" || strings.TrimSpace(spec.DeploymentTargetID) == "" {
 		return fmt.Errorf("project, application, and deployment target ids are required")
 	}

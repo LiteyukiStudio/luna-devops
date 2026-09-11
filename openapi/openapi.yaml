@@ -2865,10 +2865,25 @@ paths:
             schema: { $ref: "#/components/schemas/DeploymentTargetInput" }
       responses:
         "200":
-          description: Updated deployment target.
+          description: Updated deployment target with a no-store point-in-time runtime observation.
+          headers:
+            Cache-Control: { schema: { type: string, const: no-store } }
           content:
             application/json:
               schema: { $ref: "#/components/schemas/DeploymentTarget" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "502":
+          description: The runtime cluster rejected or could not apply the replica change.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "504":
+          description: Applying the replica change to the runtime cluster timed out.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
     delete:
       operationId: deleteDeploymentTarget
       x-luna-cli:
@@ -11177,8 +11192,9 @@ components:
           default: Deployment
         replicas:
           type: integer
-          minimum: 1
+          minimum: 0
           default: 1
+          description: Set to 0 to retain the deployment resources while stopping all Pods.
         cpuRequest:
           type: string
           default: "1"
@@ -11257,8 +11273,8 @@ components:
           default: false
         autoScalingMinReplicas:
           type: integer
-          minimum: 0
-          description: Minimum desired replicas. Zero enables HPA scale-to-zero.
+          minimum: 1
+          description: Minimum desired replicas while autoscaling is enabled. The current CPU and memory resource metrics cannot wake a workload from zero replicas.
         autoScalingMaxReplicas:
           type: integer
           minimum: 1

@@ -78,6 +78,8 @@ const errors = {
   },
   deployment_target: {
     service_account_invalid: 'ServiceAccount 구성이 유효하지 않습니다. 확인 후 다시 시도하세요.',
+    replicas_invalid: '복제본 수는 0 이상의 정수여야 합니다.',
+    scale_failed: '런타임 클러스터에 복제본 수를 적용하지 못했습니다. 다시 시도하세요.',
   },
   kubernetes: {
     resource_ownership_conflict: 'Kubernetes의 동일한 이름의 리소스는 다른 리소스 수명 주기에 속합니다. 플랫폼은 자동으로 인수하지 않습니다. 먼저 잔여 리소스를 처리하세요.',

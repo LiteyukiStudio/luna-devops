@@ -37,6 +37,36 @@ func TestGetDeploymentSnapshotReadsSucceededDeployment(t *testing.T) {
 	}
 }
 
+func TestDeploymentSnapshotWaitsUntilScaleToZeroCompletes(t *testing.T) {
+	replicas := int32(0)
+	deployment := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{Generation: 3},
+		Spec:       appsv1.DeploymentSpec{Replicas: &replicas},
+		Status: appsv1.DeploymentStatus{
+			ObservedGeneration: 3,
+			Replicas:           1,
+			UpdatedReplicas:    1,
+			ReadyReplicas:      1,
+			AvailableReplicas:  1,
+			Conditions: []appsv1.DeploymentCondition{{
+				Type:   appsv1.DeploymentProgressing,
+				Status: corev1.ConditionFalse,
+				Reason: "ProgressDeadlineExceeded",
+			}},
+		},
+	}
+	if snapshot := deploymentStatusSnapshot(deployment); snapshot.Phase != DeploymentRunning {
+		t.Fatalf("phase while pod remains = %q, want %q", snapshot.Phase, DeploymentRunning)
+	}
+	deployment.Status.Replicas = 0
+	deployment.Status.UpdatedReplicas = 0
+	deployment.Status.ReadyReplicas = 0
+	deployment.Status.AvailableReplicas = 0
+	if snapshot := deploymentStatusSnapshot(deployment); snapshot.Phase != DeploymentSucceeded {
+		t.Fatalf("phase after scale to zero = %q, want %q", snapshot.Phase, DeploymentSucceeded)
+	}
+}
+
 func TestGetDeploymentSnapshotReadsProgressDeadlineFailure(t *testing.T) {
 	replicas := int32(2)
 	client := NewClientForInterface(fake.NewSimpleClientset(&appsv1.Deployment{
@@ -82,6 +112,43 @@ func TestGetDeploymentSnapshotFallsBackToStatefulSet(t *testing.T) {
 	}
 	if snapshot.Phase != DeploymentSucceeded || snapshot.Message != "StatefulSet rollout completed" {
 		t.Fatalf("snapshot = %#v", snapshot)
+	}
+}
+
+func TestStatefulSetSnapshotWaitsUntilScaleToZeroCompletes(t *testing.T) {
+	replicas := int32(0)
+	statefulSet := &appsv1.StatefulSet{
+		ObjectMeta: metav1.ObjectMeta{Name: "api-stateful", Namespace: "project-demo", Generation: 3},
+		Spec:       appsv1.StatefulSetSpec{Replicas: &replicas},
+		Status: appsv1.StatefulSetStatus{
+			ObservedGeneration: 3,
+			Replicas:           1,
+			UpdatedReplicas:    1,
+			ReadyReplicas:      1,
+			AvailableReplicas:  1,
+		},
+	}
+	client := NewClientForInterface(fake.NewSimpleClientset(statefulSet))
+	snapshot, err := client.GetWorkloadSnapshot(context.Background(), "project-demo", "api-stateful", "StatefulSet")
+	if err != nil {
+		t.Fatalf("GetWorkloadSnapshot returned error: %v", err)
+	}
+	if snapshot.Phase != DeploymentRunning {
+		t.Fatalf("phase while pod remains = %q, want %q", snapshot.Phase, DeploymentRunning)
+	}
+	statefulSet.Status.Replicas = 0
+	statefulSet.Status.UpdatedReplicas = 0
+	statefulSet.Status.ReadyReplicas = 0
+	statefulSet.Status.AvailableReplicas = 0
+	if _, err := client.client.AppsV1().StatefulSets("project-demo").UpdateStatus(context.Background(), statefulSet, metav1.UpdateOptions{}); err != nil {
+		t.Fatalf("UpdateStatus returned error: %v", err)
+	}
+	snapshot, err = client.GetWorkloadSnapshot(context.Background(), "project-demo", "api-stateful", "StatefulSet")
+	if err != nil {
+		t.Fatalf("GetWorkloadSnapshot returned error: %v", err)
+	}
+	if snapshot.Phase != DeploymentSucceeded {
+		t.Fatalf("phase after scale to zero = %q, want %q", snapshot.Phase, DeploymentSucceeded)
 	}
 }
 

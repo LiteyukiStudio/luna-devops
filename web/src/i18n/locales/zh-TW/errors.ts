@@ -78,6 +78,8 @@ const errors = {
   },
   deployment_target: {
     service_account_invalid: 'ServiceAccount 配置無效，請檢查後重試。',
+    replicas_invalid: '副本數必須為 0 或正整數。',
+    scale_failed: '無法在執行叢集套用副本數，請稍後再試。',
   },
   kubernetes: {
     resource_ownership_conflict: 'Kubernetes 同名資源屬於其他資源生命週期，平臺不會自動接管，請先處理殘留資源。',

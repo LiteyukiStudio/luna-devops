@@ -20,6 +20,8 @@ The **Idle / Light / Moderate / Heavy / Full** badge beside each runtime cluster
 
 Open advanced settings only when the application needs custom commands, autoscaling, StatefulSet, scheduling, security contexts, sidecars, or deployment hooks.
 
-Changes to the image, resources, Service, volumes, or advanced runtime settings require a new Release to affect running instances. When the page offers **Save and redeploy**, review the impact before using it.
+Set replicas to `0` to retain the deployment configuration and its Kubernetes resources while stopping all Pods. Set replicas back to a positive integer to resume the workload. Switching between zero and a positive replica count applies directly to the current workload without creating a new Release. When autoscaling is enabled, the minimum replica count must be at least `1` because the current CPU and memory resource metrics cannot wake a workload from zero replicas.
+
+Changes to the image, resource quotas, Service, volumes, or advanced runtime settings require a new Release to affect running instances. When the page offers **Save and redeploy**, review the impact before using it.
 
 CPU and memory inputs are quotas, not Kubernetes requests or limits. Luna DevOps derives the actual fields from the selected runtime cluster policy; a `0%` policy value omits the corresponding field. A deployment cannot override its CPU or memory limit separately.

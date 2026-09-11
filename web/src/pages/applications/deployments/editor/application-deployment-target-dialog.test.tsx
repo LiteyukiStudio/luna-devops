@@ -9,7 +9,6 @@ describe('deployment target dialog footer', () => {
     render(
       <DeploymentTargetDialogFooter
         canRedeploy
-        hasRunningInstances
         hasRuntimeChanges
         saveDisabled={false}
         onSaveAndRedeploy={onSaveAndRedeploy}
@@ -23,20 +22,18 @@ describe('deployment target dialog footer', () => {
     expect(onSaveAndRedeploy).toHaveBeenCalledOnce()
   })
 
-  it('keeps a single save action when there is no running instance', () => {
+  it('keeps save-only available when a changed stopped target cannot redeploy', () => {
     render(
       <DeploymentTargetDialogFooter
         canRedeploy={false}
-        hasRunningInstances={false}
         hasRuntimeChanges
         saveDisabled={false}
         onSaveAndRedeploy={vi.fn()}
       />,
     )
 
-    expect(screen.queryByRole('status')).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /仅保存|Save only/ })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /保存并重新部署|Save and redeploy/ })).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /^保存$|^Save$/ })).toBeEnabled()
+    expect(screen.getByRole('status')).toBeVisible()
+    expect(screen.getByRole('button', { name: /仅保存|Save only/ })).toBeEnabled()
+    expect(screen.getByRole('button', { name: /保存并重新部署|Save and redeploy/ })).toBeDisabled()
   })
 })

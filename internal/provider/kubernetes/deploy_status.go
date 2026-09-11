@@ -68,17 +68,25 @@ func deploymentStatusSnapshot(deployment *appsv1.Deployment) DeploymentSnapshot 
 		ObservedAt:        time.Now().UTC(),
 	}
 
-	for _, condition := range deployment.Status.Conditions {
-		if condition.Type == appsv1.DeploymentProgressing && condition.Status == corev1.ConditionFalse && condition.Reason == "ProgressDeadlineExceeded" {
-			snapshot.Phase = DeploymentFailed
-			snapshot.Message = firstNonEmpty(condition.Message, "Deployment rollout exceeded progress deadline")
-			return snapshot
+	if desired > 0 {
+		for _, condition := range deployment.Status.Conditions {
+			if condition.Type == appsv1.DeploymentProgressing && condition.Status == corev1.ConditionFalse && condition.Reason == "ProgressDeadlineExceeded" {
+				snapshot.Phase = DeploymentFailed
+				snapshot.Message = firstNonEmpty(condition.Message, "Deployment rollout exceeded progress deadline")
+				return snapshot
+			}
 		}
 	}
-	if deployment.Status.ObservedGeneration >= deployment.Generation &&
-		deployment.Status.UpdatedReplicas >= desired &&
+	replicasReady := deployment.Status.UpdatedReplicas >= desired &&
 		deployment.Status.ReadyReplicas >= desired &&
-		deployment.Status.AvailableReplicas >= desired {
+		deployment.Status.AvailableReplicas >= desired
+	if desired == 0 {
+		replicasReady = deployment.Status.Replicas == 0 &&
+			deployment.Status.UpdatedReplicas == 0 &&
+			deployment.Status.ReadyReplicas == 0 &&
+			deployment.Status.AvailableReplicas == 0
+	}
+	if deployment.Status.ObservedGeneration >= deployment.Generation && replicasReady {
 		snapshot.Phase = DeploymentSucceeded
 		snapshot.Message = "Deployment rollout completed"
 		for _, condition := range deployment.Status.Conditions {
@@ -110,9 +118,14 @@ func (c *Client) getStatefulSetSnapshot(ctx context.Context, namespace, name str
 		AvailableReplicas: statefulSet.Status.AvailableReplicas,
 		ObservedAt:        time.Now().UTC(),
 	}
-	if statefulSet.Status.ObservedGeneration >= statefulSet.Generation &&
-		statefulSet.Status.UpdatedReplicas >= desired &&
-		statefulSet.Status.ReadyReplicas >= desired {
+	replicasReady := statefulSet.Status.UpdatedReplicas >= desired && statefulSet.Status.ReadyReplicas >= desired
+	if desired == 0 {
+		replicasReady = statefulSet.Status.Replicas == 0 &&
+			statefulSet.Status.UpdatedReplicas == 0 &&
+			statefulSet.Status.ReadyReplicas == 0 &&
+			statefulSet.Status.AvailableReplicas == 0
+	}
+	if statefulSet.Status.ObservedGeneration >= statefulSet.Generation && replicasReady {
 		snapshot.Phase = DeploymentSucceeded
 		snapshot.Message = "StatefulSet rollout completed"
 	}

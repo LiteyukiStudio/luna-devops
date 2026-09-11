@@ -171,8 +171,8 @@ func normalizeDeploymentAutoScaling(ctx *gin.Context, input deploymentTargetInpu
 		return deploymentAutoScalingInput{MinReplicas: 1, MaxReplicas: fallbackInt(replicas, 1)}, true
 	}
 	minReplicas := input.AutoScalingMinReplicas
-	if minReplicas < 0 {
-		minReplicas = fallbackInt(replicas, 1)
+	if minReplicas <= 0 {
+		minReplicas = 1
 	}
 	maxReplicas := input.AutoScalingMaxReplicas
 	if maxReplicas <= 0 {

@@ -78,6 +78,8 @@ const errors = {
   },
   deployment_target: {
     service_account_invalid: 'The ServiceAccount configuration is invalid. Check it and try again.',
+    replicas_invalid: 'Replicas must be zero or a positive integer.',
+    scale_failed: 'The replica count could not be applied to the runtime cluster. Try again.',
   },
   kubernetes: {
     resource_ownership_conflict: 'A same-name Kubernetes resource belongs to another lifecycle. The platform will not adopt it automatically. Handle the retained resource first.',

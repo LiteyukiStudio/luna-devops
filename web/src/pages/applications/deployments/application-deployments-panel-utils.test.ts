@@ -1,6 +1,6 @@
 import type { DeploymentTarget, DeploymentTargetPayload } from '@/api'
 import { describe, expect, it } from 'vitest'
-import { deploymentTargetDefaults, deploymentTargetHasRunningInstances, deploymentTargetRuntimeChanged, formatTargetRuntimeSize, normalizeDeploymentTargetPayload } from './application-deployments-panel-utils'
+import { deploymentTargetDefaults, deploymentTargetRuntimeChanged, formatTargetRuntimeSize, normalizeDeploymentTargetPayload } from './application-deployments-panel-utils'
 
 const currentTarget = {
   ...deploymentTargetDefaults,
@@ -37,13 +37,7 @@ describe('deployment target runtime changes', () => {
     expect(formatTargetRuntimeSize({ ...currentTarget, cpuRequest: '125m', memoryRequest: '512Mi' }, format)).toBe('0.125 · 0.5G')
   })
 
-  it('uses the live desired replica observation to identify running instances', () => {
-    expect(deploymentTargetHasRunningInstances(currentTarget)).toBe(true)
-    expect(deploymentTargetHasRunningInstances({ ...currentTarget, desiredReplicas: 0 })).toBe(false)
-  })
-
   it.each([
-    ['replicas', { replicas: 2 }],
     ['runtime config', { environmentVariables: [{ key: 'LOG_LEVEL', value: 'debug', valueMode: 'public' }] }],
     ['service ports', { servicePorts: [{ name: 'http', port: 9090 }] }],
     ['deployment hook', { buildHookBindings: [{ hookConfigId: 'hook_1', phase: 'preDeployment', runOrder: 1 }] }],
@@ -52,6 +46,8 @@ describe('deployment target runtime changes', () => {
   })
 
   it.each([
+    ['replica scale up', { replicas: 2 }],
+    ['replica scale to zero', { replicas: 0 }],
     ['display name', { name: 'renamed target' }],
     ['build args', { buildArgs: 'VERSION=2' }],
     ['automatic deployment policy', { autoDeploy: false }],
@@ -60,5 +56,21 @@ describe('deployment target runtime changes', () => {
     ['build-only hook', { buildHookBindings: [{ hookConfigId: 'hook_1', phase: 'postBuild', runOrder: 1 }] }],
   ] satisfies Array<[string, Partial<DeploymentTargetPayload>]>)('ignores %s changes that do not alter running instances', (_label, overrides) => {
     expect(deploymentTargetRuntimeChanged(currentTarget, changedPayload(overrides))).toBe(false)
+  })
+
+  it('preserves zero replicas while keeping HPA replica bounds positive', () => {
+    expect(changedPayload({
+      autoScalingMaxReplicas: 0,
+      autoScalingMinReplicas: 0,
+      replicas: 0,
+    })).toMatchObject({
+      autoScalingMaxReplicas: 1,
+      autoScalingMinReplicas: 1,
+      replicas: 0,
+    })
+  })
+
+  it('does not turn an empty replica field into a stop request', () => {
+    expect(changedPayload({ replicas: Number.NaN })).toMatchObject({ replicas: 1 })
   })
 })

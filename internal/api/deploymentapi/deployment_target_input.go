@@ -2,6 +2,7 @@ package deploymentapi
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 
@@ -58,9 +59,10 @@ func (h *Handlers) deploymentTargetFromInput(ctx *gin.Context, user model.User, 
 	if !ok {
 		return model.DeploymentTarget{}, nil, false
 	}
-	replicas := input.Replicas
-	if replicas <= 0 {
-		replicas = 1
+	replicas, err := normalizeDeploymentReplicas(input.Replicas)
+	if err != nil {
+		writeArgumentErrorCode(ctx, http.StatusBadRequest, "deployment_target.replicas_invalid", err.Error(), "replicas", nil, false)
+		return model.DeploymentTarget{}, nil, false
 	}
 	runtimeCPURequest, ok := normalizeBuildResourceQuantity(ctx, input.CPURequest, model.DefaultDeploymentCPURequest, "运行 CPU")
 	if !ok {
@@ -242,6 +244,20 @@ func (h *Handlers) deploymentTargetFromInput(ctx *gin.Context, user model.User, 
 		Enabled:                      input.Enabled,
 		CreatedBy:                    user.ID,
 	}, dataVolumes, true
+}
+
+func normalizeDeploymentReplicas(value *int) (int, error) {
+	if value == nil {
+		return 1, nil
+	}
+	if *value < 0 {
+		return 0, errors.New("deployment replicas cannot be negative")
+	}
+	return *value, nil
+}
+
+func deploymentTargetInputStopsWorkload(input deploymentTargetInput) bool {
+	return input.Replicas != nil && *input.Replicas == 0
 }
 
 func (h *Handlers) projectNamespaceForDeploymentTarget(ctx *gin.Context, projectID string) (string, bool) {

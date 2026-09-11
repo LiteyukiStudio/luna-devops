@@ -1100,6 +1100,10 @@ func (fakeNamespaceManager) ApplyApplicationResources(context.Context, kubeprovi
 	return nil
 }
 
+func (fakeNamespaceManager) ScaleApplicationWorkload(context.Context, kubeprovider.ApplicationResourcesSpec, int32) error {
+	return nil
+}
+
 func (fakeNamespaceManager) PreflightApplicationResources(context.Context, kubeprovider.ApplicationResourcesSpec) error {
 	return nil
 }
@@ -1166,9 +1170,10 @@ func (fakeNamespaceManager) DeleteManagedResource(context.Context, string, strin
 
 type recordingNamespaceManager struct {
 	fakeNamespaceManager
-	deletions []string
-	policies  []networkpolicy.BuildPolicy
-	err       error
+	deletions     []string
+	policies      []networkpolicy.BuildPolicy
+	replicaScales []int32
+	err           error
 }
 
 func (m *recordingNamespaceManager) DeleteManagedResource(_ context.Context, kind string, namespace string, name string) error {
@@ -1179,6 +1184,28 @@ func (m *recordingNamespaceManager) DeleteManagedResource(_ context.Context, kin
 func (m *recordingNamespaceManager) EnsureBuildPolicy(_ context.Context, policy networkpolicy.BuildPolicy) error {
 	m.policies = append(m.policies, policy)
 	return m.err
+}
+
+func (m *recordingNamespaceManager) ScaleApplicationWorkload(_ context.Context, _ kubeprovider.ApplicationResourcesSpec, replicas int32) error {
+	m.replicaScales = append(m.replicaScales, replicas)
+	return m.err
+}
+
+func TestScaleApplicationResourcesToLatestTarget(t *testing.T) {
+	manager := &recordingNamespaceManager{}
+	spec := kubeprovider.ApplicationResourcesSpec{Replicas: 1}
+	if err := scaleApplicationResourcesToLatestTarget(t.Context(), manager, spec, model.DeploymentTarget{Replicas: 0}); err != nil {
+		t.Fatalf("scaleApplicationResourcesToLatestTarget() error = %v", err)
+	}
+	if len(manager.replicaScales) != 1 || manager.replicaScales[0] != 0 {
+		t.Fatalf("replica scales = %#v, want [0]", manager.replicaScales)
+	}
+	if err := scaleApplicationResourcesToLatestTarget(t.Context(), manager, spec, model.DeploymentTarget{Replicas: 1}); err != nil {
+		t.Fatalf("unchanged replicas error = %v", err)
+	}
+	if len(manager.replicaScales) != 1 {
+		t.Fatalf("unchanged replicas triggered scale: %#v", manager.replicaScales)
+	}
 }
 
 func TestEnsureProjectNamespaceDefaultsToRestrictedBuildEgressPolicy(t *testing.T) {
@@ -1455,6 +1482,7 @@ func TestApplicationResourcesSpecAppliesDefaults(t *testing.T) {
 		model.DeploymentTarget{
 			ID:             "dplt_backend",
 			KubernetesName: "dplt-backend",
+			Replicas:       1,
 			EnvVars:        `{"APP_ENV":"dev","LOG_LEVEL":"debug"}`,
 			SecretRefs:     `{"TOKEN":"secret"}`,
 			ServicePorts:   model.EncodeDeploymentServicePorts([]model.DeploymentServicePort{{Name: "http", Port: 8080}}, 8080),
@@ -1472,6 +1500,30 @@ func TestApplicationResourcesSpecAppliesDefaults(t *testing.T) {
 	}
 	if spec.ConfigData["APP_ENV"] != "dev" || spec.ConfigData["LOG_LEVEL"] != "debug" || spec.SecretData["TOKEN"] != "secret" {
 		t.Fatalf("spec data = config:%#v secret:%#v", spec.ConfigData, spec.SecretData)
+	}
+}
+
+func TestApplicationResourcesSpecPreservesZeroReplicas(t *testing.T) {
+	spec, err := applicationResourcesSpec(
+		model.Release{ImageRef: "registry.example.com/acme/api:v1"},
+		model.Project{ID: "prj_demo"},
+		model.Application{ID: "app_api"},
+		model.DeploymentTarget{
+			ID:             "dplt_backend",
+			KubernetesName: "dplt-backend",
+			Replicas:       0,
+			ServicePorts:   model.EncodeDeploymentServicePorts([]model.DeploymentServicePort{{Name: "http", Port: 8080}}, 8080),
+		},
+		nil,
+		nil,
+		"ns-demo",
+		120,
+	)
+	if err != nil {
+		t.Fatalf("applicationResourcesSpec returned error: %v", err)
+	}
+	if spec.Replicas != 0 {
+		t.Fatalf("spec replicas = %d, want 0", spec.Replicas)
 	}
 }
 
