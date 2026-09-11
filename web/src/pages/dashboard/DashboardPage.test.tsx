@@ -66,6 +66,10 @@ describe('dashboard page', () => {
     expect(screen.queryByRole('combobox', { name: 'View range' })).not.toBeInTheDocument()
     expect(await screen.findByRole('link', { name: 'View all events' })).toHaveAttribute('href', '/events?visibility=related')
     expect(screen.getByRole('link', { name: /^Registries/ })).toHaveAttribute('href', '/registries?visibility=related')
+    const clusterLinks = screen.getAllByRole('link').filter(link => link.getAttribute('href')?.startsWith('/clusters'))
+    expect(clusterLinks).toHaveLength(2)
+    for (const link of clusterLinks)
+      expect(link).toHaveAttribute('href', '/clusters')
   })
 })
 

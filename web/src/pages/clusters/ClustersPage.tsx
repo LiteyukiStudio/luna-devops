@@ -9,14 +9,12 @@ import { useSession } from '@/app/session-context'
 import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { ContentTabs } from '@/components/common/content-tabs'
 import { LazyDialogBoundary } from '@/components/common/lazy-dialog-boundary'
-import { ResultVisibilitySelect } from '@/components/common/result-visibility-select'
 import { Button } from '@/components/ui/button'
 import { NativeSelect as Select } from '@/components/ui/native-select'
 import { TabsContent } from '@/components/ui/tabs'
 import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
 import { isPlatformAdmin } from '@/lib/roles'
 import { useRuntimeClusterPressure } from '@/lib/runtime-cluster-pressure'
-import { useResultVisibility } from '@/lib/use-result-visibility'
 import { canManageCluster } from './management/cluster-helpers'
 import { RuntimeClusterTable } from './management/runtime-cluster-table'
 import { ClusterResourcesPanel } from './resources/cluster-resources-panel'
@@ -42,8 +40,7 @@ export function ClustersPage() {
   const [clusterToDelete, setClusterToDelete] = useState<RuntimeCluster | null>(null)
   const [clusterPage, setClusterPage] = useState(1)
   const [clusterPageSize, setClusterPageSize] = useState(10)
-  const canViewAll = isPlatformAdmin(user?.role)
-  const [effectiveVisibility, setVisibility] = useResultVisibility(canViewAll)
+  const effectiveVisibility = isPlatformAdmin(user?.role) ? 'all' : 'related'
   const projects = useQuery({ queryKey: ['projects', 'options', effectiveVisibility], queryFn: () => api.listProjects(effectiveVisibility) })
   const clusters = useQuery({
     ...liveObservationQueryPolicy,
@@ -114,15 +111,6 @@ export function ClustersPage() {
         ]}
         tools={(
           <div className="flex flex-wrap items-center gap-2">
-            <ResultVisibilitySelect
-              canViewAll={canViewAll}
-              value={effectiveVisibility}
-              onChange={(nextVisibility) => {
-                setVisibility(nextVisibility)
-                setClusterPage(1)
-                resources.resetPageAndSelection()
-              }}
-            />
             {activeTab === 'clusters'
               ? (
                   <Button onClick={() => openClusterDialog()}>

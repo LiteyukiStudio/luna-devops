@@ -89,7 +89,7 @@ export function DashboardPage() {
               <MetricItem emphasis={overview.summary.activeBuilds > 0} href={withResultVisibility('/events?categories=build&statuses=in_progress', dashboardVisibility)} icon={<Hammer size={18} />} label={t('dashboardPage.activeBuilds')} value={overview.summary.activeBuilds} />
               <MetricItem emphasis={overview.summary.activeReleases > 0} href={withResultVisibility('/events?categories=release&statuses=in_progress', dashboardVisibility)} icon={<Rocket size={18} />} label={t('dashboardPage.activeReleases')} value={overview.summary.activeReleases} />
               <MetricItem emphasis={overview.summary.attentionItems > 0} href={withResultVisibility('/events?severities=error&severities=warning', dashboardVisibility)} icon={<ShieldAlert size={18} />} label={t('dashboardPage.attentionItems')} tone={overview.summary.attentionItems ? 'danger' : 'neutral'} value={overview.summary.attentionItems} />
-              <MetricItem emphasis={overview.summary.totalClusters > 0} href={withResultVisibility('/clusters', dashboardVisibility)} icon={<Server size={18} />} label={t('dashboardPage.healthyClusters')} tone={overview.summary.healthyClusters < overview.summary.totalClusters ? 'warning' : 'neutral'} value={`${overview.summary.healthyClusters}/${overview.summary.totalClusters}`} />
+              <MetricItem emphasis={overview.summary.totalClusters > 0} href="/clusters" icon={<Server size={18} />} label={t('dashboardPage.healthyClusters')} tone={overview.summary.healthyClusters < overview.summary.totalClusters ? 'warning' : 'neutral'} value={`${overview.summary.healthyClusters}/${overview.summary.totalClusters}`} />
             </MetricGroup>
           </div>
 
@@ -125,7 +125,7 @@ export function DashboardPage() {
             <Section className="border-t border-border p-5 sm:p-6 xl:border-l xl:border-t-0" icon={<Boxes size={18} />} title={t('dashboardPage.platformReadiness')}>
               <div className="grid gap-3">
                 <ReadinessRow icon={<Container size={16} />} item={overview.readiness.registries} kind="registries" label={t('registries')} to={withResultVisibility('/registries', dashboardVisibility)} />
-                <ReadinessRow icon={<Server size={16} />} item={overview.readiness.clusters} kind="clusters" label={t('clusters')} to={withResultVisibility('/clusters', dashboardVisibility)} />
+                <ReadinessRow icon={<Server size={16} />} item={overview.readiness.clusters} kind="clusters" label={t('clusters')} to="/clusters" />
               </div>
             </Section>
           </div>
