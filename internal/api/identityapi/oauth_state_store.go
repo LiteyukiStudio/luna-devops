@@ -43,18 +43,8 @@ type OAuthStateStore interface {
 	ConsumeOIDC(ctx context.Context, state string) (OIDCAuthStateValue, bool, error)
 }
 
-type oauthStateStore = OAuthStateStore
-
-func NewOAuthStateStore(redisAddr string) OAuthStateStore {
-	return newOAuthStateStoreWithRedis(redisconfig.Options{Addr: redisAddr})
-}
-
 func NewOAuthStateStoreWithRedis(options redisconfig.Options) OAuthStateStore {
 	return newOAuthStateStoreWithRedis(options)
-}
-
-func newOAuthStateStore(redisAddr string) OAuthStateStore {
-	return NewOAuthStateStore(redisAddr)
 }
 
 func newOAuthStateStoreWithRedis(options redisconfig.Options) OAuthStateStore {
@@ -70,8 +60,6 @@ func newOAuthStateStoreWithRedis(options redisconfig.Options) OAuthStateStore {
 type RedisOAuthStateStore struct {
 	client *redis.Client
 }
-
-type redisOAuthStateStore = RedisOAuthStateStore
 
 func (s *RedisOAuthStateStore) SaveGit(ctx context.Context, state string, value GitOAuthStateValue, ttl time.Duration) error {
 	return s.save(ctx, gitOAuthStateKeyPrefix, state, value, ttl)

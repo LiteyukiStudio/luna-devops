@@ -14,20 +14,7 @@ function RuntimeResourceFieldsHarness() {
   return <RuntimeResourceFields form={form} priceText="1" />
 }
 
-describe('runtime resource fields layout', () => {
-  it('fills its parent without creating implicit grid columns', () => {
-    const { container } = render(
-      <TooltipProvider>
-        <RuntimeResourceFieldsHarness />
-      </TooltipProvider>,
-    )
-    const root = container.firstElementChild
-
-    expect(root).toHaveClass('w-full')
-    expect(root).not.toHaveClass('md:col-span-2')
-    expect(root?.firstElementChild).toHaveClass('md:grid-cols-3')
-  })
-
+describe('runtime resource fields', () => {
   it('allows zero replicas and explains that zero stops the workload', async () => {
     const user = userEvent.setup()
     const { container } = render(

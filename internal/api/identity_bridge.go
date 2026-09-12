@@ -125,11 +125,6 @@ func (limiter *rateLimiter) reset(ctx context.Context, key string) error {
 type gitOAuthStateValue = identityapi.GitOAuthStateValue
 type oidcAuthStateValue = identityapi.OIDCAuthStateValue
 type oauthStateStore = identityapi.OAuthStateStore
-type redisOAuthStateStore = identityapi.RedisOAuthStateStore
-
-func newOAuthStateStore(redisAddr string) oauthStateStore {
-	return identityapi.NewOAuthStateStore(redisAddr)
-}
 
 func newOAuthStateStoreWithRedis(options redisconfig.Options) oauthStateStore {
 	return identityapi.NewOAuthStateStoreWithRedis(options)

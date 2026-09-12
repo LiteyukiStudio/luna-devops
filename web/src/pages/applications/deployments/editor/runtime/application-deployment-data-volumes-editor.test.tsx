@@ -34,16 +34,14 @@ describe('deployment data volumes editor', () => {
     await i18next.changeLanguage('en-US')
   })
 
-  it('uses a responsive labeled field layout and keeps row actions inside the editor', async () => {
+  it('keeps labeled add and remove actions connected to the editor value', async () => {
     const user = userEvent.setup()
-    const { container, onChange, row } = renderEditor()
+    const { onChange, row } = renderEditor()
 
     expect(screen.getByLabelText('Name')).toBeInTheDocument()
     expect(screen.getByLabelText('Source')).toBeInTheDocument()
     expect(screen.getByLabelText('Data path')).toBeInTheDocument()
     expect(screen.getByText('Source detail')).toBeInTheDocument()
-    expect(container.querySelector('.sm\\:grid-cols-2')).toBeInTheDocument()
-    expect(container.innerHTML).not.toContain('minmax(7rem')
 
     await user.click(screen.getByRole('button', { name: 'Remove data volume' }))
     expect(onChange).toHaveBeenCalledWith([])

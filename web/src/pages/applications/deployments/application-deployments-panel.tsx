@@ -22,9 +22,11 @@ import { deploymentReleaseKey, deploymentTargetCanRelease, registryInputPrefix }
 import { useDeploymentTargetForm } from '@/pages/applications/deployments/editor/use-deployment-target-form'
 import { buildDeploymentRuntimeStatus, buildInternalServiceEndpoint } from '@/pages/applications/deployments/operations/application-deployment-runtime-utils'
 import { ApplicationDeploymentTargetsList } from '@/pages/applications/deployments/operations/application-deployment-targets-list'
+import { ApplicationWebConsolePanel } from '@/pages/applications/runtime/application-web-console-panel'
 import { effectiveWebConsoleEnabled } from '@/pages/applications/runtime/web-console-policy'
-import { DeferredCreateReleaseDialog, DeferredDeploymentBundleImportDialog, DeferredDeploymentTargetDialog, DeferredReleaseLogsDialog, DeferredRepositoryBindingDialog, DeferredRuntimeConfigSetDialog, DeferredWebConsoleDialog } from './application-deployment-dialogs'
+import { DeferredCreateReleaseDialog, DeferredDeploymentBundleImportDialog, DeferredDeploymentTargetDialog, DeferredRepositoryBindingDialog, DeferredRuntimeConfigSetDialog } from './application-deployment-dialogs'
 import { applyDockerfileBuildDefaults, deploymentTargetRuntimeChanged, normalizeBoolean, normalizeDeploymentTargetPayload, normalizeRuntimeConfigPayload, normalizeRuntimeConfigRefs, redeployReleasePayload, releaseDefaults, repositoryBindingItems, runtimeConfigDefaults, runtimeConfigLiveSetIds, runtimeConfigRefIds } from './application-deployments-panel-utils'
+import { ApplicationReleaseLogsPanel } from './application-release-logs-panel'
 
 export interface DeploymentsPanelHandle {
   openImportDialog: () => void
@@ -89,7 +91,6 @@ export function ApplicationDeploymentsPanel({ applicationId, applicationIdentifi
   const [dialogOpen, setDialogOpen] = useState(false)
   const [bundleImportOpen, setBundleImportOpen] = useState(false)
   const [logRelease, setLogRelease] = useState<Release | null>(null)
-  const [logView, setLogView] = useState<'deployment' | 'runtime'>('deployment')
   const [consoleRelease, setConsoleRelease] = useState<Release | null>(null)
   const [targetToDelete, setTargetToDelete] = useState<DeploymentTarget | null>(null)
   const [runtimeConfigDialogOpen, setRuntimeConfigDialogOpen] = useState(false)
@@ -787,18 +788,20 @@ export function ApplicationDeploymentsPanel({ applicationId, applicationIdentifi
         onSecretFilesValidityChange={setRuntimeSecretFilesValid}
         onSubmit={values => saveRuntimeConfigSet.mutate(values)}
       />
-      <DeferredReleaseLogsDialog
-        logView={logView}
-        projectId={projectId}
-        release={logRelease}
-        setLogView={setLogView}
-        onOpenChange={open => !open && setLogRelease(null)}
-      />
-      <DeferredWebConsoleDialog
-        projectId={projectId}
-        release={consoleRelease}
-        onOpenChange={open => !open && setConsoleRelease(null)}
-      />
+      {logRelease && (
+        <ApplicationReleaseLogsPanel
+          projectId={projectId}
+          release={logRelease}
+          onClose={() => setLogRelease(null)}
+        />
+      )}
+      {consoleRelease && (
+        <ApplicationWebConsolePanel
+          projectId={projectId}
+          release={consoleRelease}
+          onClose={() => setConsoleRelease(null)}
+        />
+      )}
       <ConfirmDialog
         cancelText={t('common.cancel')}
         confirmText={t('common.delete')}

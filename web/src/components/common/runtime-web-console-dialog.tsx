@@ -24,7 +24,7 @@ interface RuntimeWebConsoleDialogProps {
   onOpenChange: (open: boolean) => void
 }
 
-/** Shared terminal window chrome for application releases and cluster pods. */
+/** Terminal window chrome for cluster pod consoles. */
 export function RuntimeWebConsoleDialog({
   children,
   closeLabel,

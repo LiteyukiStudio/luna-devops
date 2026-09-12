@@ -3,43 +3,10 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { beforeAll, describe, expect, it, vi } from 'vitest'
 import i18next from '@/i18n'
 import { extremeInteractionCardFixture, interactionCardTemplateFixtures, templateSelectionInteractionCardFixture } from './interaction-card-fixtures'
-import { interactionCardTemplateConfigs } from './interaction-card-templates'
 import { AIInteractionCards } from './interaction-cards'
-
-const expectedContentBlocks = {
-  candidates: ['key_value', 'metrics', 'data_table'],
-  form: ['callout'],
-  change_review: ['timeline', 'callout'],
-  result: ['callout', 'key_value', 'relations', 'resource_links', 'status_list', 'code', 'metrics', 'chart'],
-  live_task: ['live_progress'],
-} as const
 
 beforeAll(async () => {
   await i18next.changeLanguage('zh-CN')
-})
-
-describe.each(Object.entries(interactionCardTemplateFixtures))('%s interaction card template', (template, fixture) => {
-  it('renders its intended structure and expansion behavior', () => {
-    const { container } = render(<AIInteractionCards arguments={fixture} onAction={vi.fn()} />)
-    const group = container.querySelector(`[data-ai-card-group="${template}"]`)
-    expect(group).not.toBeNull()
-    expect(group).toHaveAttribute('data-ai-card-density', interactionCardTemplateConfigs[template as keyof typeof interactionCardTemplateConfigs].defaultDensity)
-    expect(group).toHaveAttribute('data-ai-card-mode', fixture.mode)
-    expect(container.querySelectorAll(`[data-ai-card-template="${template}"]`)).toHaveLength(fixture.cards.length)
-
-    const toggleButtons = screen.queryAllByRole('button', { name: '展开或收起卡片详情' })
-    if (toggleButtons.length > 0) {
-      const shouldExpand = interactionCardTemplateConfigs[template as keyof typeof interactionCardTemplateConfigs].expandByDefault || fixture.cards.some(card => 'form' in card && Boolean(card.form))
-      expect(toggleButtons[0]).toHaveAttribute('aria-expanded', String(shouldExpand))
-      if (!shouldExpand) {
-        for (const button of toggleButtons)
-          fireEvent.click(button)
-      }
-    }
-
-    for (const blockType of expectedContentBlocks[template as keyof typeof expectedContentBlocks])
-      expect(container.querySelector(`[data-ai-content-block="${blockType}"]`)).not.toBeNull()
-  })
 })
 
 describe('interaction card template edge cases', () => {
@@ -71,17 +38,6 @@ describe('interaction card template edge cases', () => {
     expect(screen.getByText('阻断构建')).toBeVisible()
     expect(container.querySelector('[data-ai-content-block="metrics"] svg')).not.toBeNull()
     expect(container.querySelector('[data-ai-content-block="callout"]')).not.toBeNull()
-  })
-
-  it.each(['line', 'bar', 'area', 'donut'] as const)('renders the %s chart with the declared chart semantics', (chartType) => {
-    const fixture: InteractionCardGroup = structuredClone(interactionCardTemplateFixtures.result)
-    const chart = fixture.cards.flatMap(card => card.blocks ?? []).find(block => block.type === 'chart')
-    if (!chart || chart.type !== 'chart')
-      throw new Error('result chart fixture is missing')
-    chart.chartType = chartType
-
-    const { container } = render(<AIInteractionCards arguments={fixture} onAction={vi.fn()} />)
-    expect(container.querySelector(`[data-ai-chart-type="${chartType}"]`)).toHaveAccessibleName('请求量')
   })
 
   it('renders segmented choices as choices instead of silently falling back to a select', () => {

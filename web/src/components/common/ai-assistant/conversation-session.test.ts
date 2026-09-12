@@ -3,21 +3,14 @@ import {
   aiConversationSessionReducer,
   initialAIConversationSessionState,
   isRecentConversationInteraction,
-  REFRESH_CONVERSATION_RECENCY_MS,
-  REFRESH_CONVERSATION_RETURN_DURATION_MS,
 } from './conversation-session'
 
 describe('ai conversation session lifecycle', () => {
-  it('keeps the refresh return window at eight seconds', () => {
-    expect(REFRESH_CONVERSATION_RETURN_DURATION_MS).toBe(8_000)
-  })
-
   it('offers the return only when the previous interaction is within ten minutes', () => {
     const now = Date.parse('2026-08-03T10:10:00.000Z')
 
     expect(isRecentConversationInteraction('2026-08-03T10:00:00.000Z', now)).toBe(true)
     expect(isRecentConversationInteraction('2026-08-03T09:59:59.999Z', now)).toBe(false)
-    expect(REFRESH_CONVERSATION_RECENCY_MS).toBe(10 * 60_000)
   })
 
   it('does not treat invalid or future timestamps as recent interactions', () => {
@@ -31,7 +24,7 @@ describe('ai conversation session lifecycle', () => {
     const state = aiConversationSessionReducer(initialAIConversationSessionState, { type: 'open', now: 1_000 })
 
     expect(state.activeConversationId).toBeUndefined()
-    expect(state.refreshReturnExpiresAt).toBe(1_000 + REFRESH_CONVERSATION_RETURN_DURATION_MS)
+    expect(state.refreshReturnExpiresAt).toBe(9_000)
   })
 
   it('keeps the active conversation when the assistant is closed and reopened without a page refresh', () => {

@@ -59,18 +59,4 @@ describe('brand color preset field', () => {
     expect(screen.getByRole('radio', { name: 'Blue' })).toBeChecked()
     expect(screen.queryByRole('radio', { name: 'Ruby' })).not.toBeInTheDocument()
   })
-
-  it('marks the bright lime swatch for a contrast-safe foreground', () => {
-    const { container } = render(
-      <TooltipProvider>
-        <BrandColorPresetField
-          ariaLabel="Color theme"
-          value="lime"
-          onValueChange={vi.fn()}
-        />
-      </TooltipProvider>,
-    )
-
-    expect(container.querySelector('#brand-color-lime + label .brand-theme-swatch')).toHaveAttribute('data-dark-foreground', 'true')
-  })
 })

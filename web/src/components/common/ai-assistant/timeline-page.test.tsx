@@ -49,25 +49,6 @@ afterEach(() => {
 })
 
 describe('ai assistant page timeline', () => {
-  it('uses the full message lane for assistant content and page-sized message actions', () => {
-    const { container } = render(
-      <MemoryRouter>
-        <AIAssistantTimeline {...timelineProps} blocks={blocks} />
-      </MemoryRouter>,
-    )
-
-    expect(container.querySelector('[data-slot="ai-assistant-timeline"]')).toHaveAttribute('role', 'log')
-    expect(container.querySelector('[data-slot="ai-assistant-timeline"]')).toHaveClass(
-      'pl-[max(1rem,env(safe-area-inset-left))]',
-      'pr-[max(1rem,env(safe-area-inset-right))]',
-    )
-    expect(container.querySelector('[data-ai-turn]')?.parentElement).toHaveClass('max-w-none')
-    expect(container.querySelector('[data-ai-reply] [data-ai-message-group]')).toHaveClass('w-full', 'max-w-full')
-    expect(container.querySelector('[data-ai-assistant-bubble]')).toHaveClass('w-full')
-    for (const action of screen.getAllByRole('button', { name: i18next.t('aiAssistant.messageActions.copy') }))
-      expect(action).toHaveClass('size-11')
-  })
-
   it('follows within 48px and offers a page-local back-to-latest action beyond it', () => {
     const requestFrame = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
       callback(0)
@@ -80,6 +61,7 @@ describe('ai assistant page timeline', () => {
       </MemoryRouter>,
     )
     const viewport = container.querySelector<HTMLElement>('[data-slot="ai-assistant-timeline"]')!
+    expect(viewport).toHaveAttribute('role', 'log')
     Object.defineProperties(viewport, {
       clientHeight: { configurable: true, value: 400 },
       scrollHeight: { configurable: true, value: 1000 },

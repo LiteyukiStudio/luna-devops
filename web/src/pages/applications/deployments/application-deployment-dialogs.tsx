@@ -11,17 +11,11 @@ const DeploymentTargetDialog = lazy(() =>
 const DeploymentBundleImportDialog = lazy(() =>
   import('./application-deployment-bundle-import-dialog').then(module => ({ default: module.ApplicationDeploymentBundleImportDialog })),
 )
-const ReleaseLogsDialog = lazy(() =>
-  import('./application-release-logs-dialog').then(module => ({ default: module.ApplicationReleaseLogsDialog })),
-)
 const RepositoryBindingDialog = lazy(() =>
   import('@/pages/applications/deployments/editor/source/application-repository-binding-dialog').then(module => ({ default: module.ApplicationRepositoryBindingDialog })),
 )
 const RuntimeConfigSetDialog = lazy(() =>
   import('@/components/common/runtime-config-set-dialog').then(module => ({ default: module.RuntimeConfigSetDialog })),
-)
-const WebConsoleDialog = lazy(() =>
-  import('@/pages/applications/runtime/application-web-console-dialog').then(module => ({ default: module.ApplicationWebConsoleDialog })),
 )
 
 export function DeferredCreateReleaseDialog(props: ComponentProps<typeof CreateReleaseDialog>) {
@@ -70,26 +64,6 @@ export function DeferredRuntimeConfigSetDialog(props: ComponentProps<typeof Runt
   return (
     <LazyDialogBoundary resetKey={`runtime-config-${props.editingSet?.id ?? 'new'}`} onOpenChange={props.onOpenChange}>
       <RuntimeConfigSetDialog {...props} />
-    </LazyDialogBoundary>
-  )
-}
-
-export function DeferredReleaseLogsDialog(props: ComponentProps<typeof ReleaseLogsDialog>) {
-  if (!props.release)
-    return null
-  return (
-    <LazyDialogBoundary resetKey={`release-logs-${props.release.id}`} onOpenChange={props.onOpenChange}>
-      <ReleaseLogsDialog {...props} />
-    </LazyDialogBoundary>
-  )
-}
-
-export function DeferredWebConsoleDialog(props: ComponentProps<typeof WebConsoleDialog>) {
-  if (!props.release)
-    return null
-  return (
-    <LazyDialogBoundary resetKey={`web-console-${props.release.id}`} onOpenChange={props.onOpenChange}>
-      <WebConsoleDialog {...props} />
     </LazyDialogBoundary>
   )
 }

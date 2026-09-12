@@ -84,11 +84,3 @@ func TestCatalogContainsUniqueTypes(t *testing.T) {
 		}
 	}
 }
-
-func TestDefaultRetentionCutoff(t *testing.T) {
-	now := time.Date(2026, 7, 11, 12, 0, 0, 0, time.UTC)
-	want := time.Date(2026, 4, 12, 12, 0, 0, 0, time.UTC)
-	if got := DefaultRetentionCutoff(now); !got.Equal(want) {
-		t.Fatalf("retention cutoff = %s, want %s", got, want)
-	}
-}

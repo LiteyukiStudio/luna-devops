@@ -62,16 +62,16 @@ export const runtimeApi = {
     request<ReleaseImageCandidates>(`/projects/${projectId}/applications/${applicationId}/deployment-targets/${targetId}/release-image-candidates`),
   createRelease: (projectId: string, payload: Omit<Release, 'id' | 'projectId' | 'createdBy' | 'createdAt' | 'rollbackFromId'>) =>
     request<Release>(`/projects/${projectId}/releases`, { method: 'POST', body: JSON.stringify(payload) }),
-  getReleaseLogs: (projectId: string, releaseId: string) =>
-    request<ReleaseLog>(`/projects/${projectId}/releases/${releaseId}/logs`),
-  getReleaseRuntimeLogs: (projectId: string, releaseId: string, params: { container?: string, tailLines?: number } = {}) => {
+  getReleaseLogs: (projectId: string, releaseId: string, signal?: AbortSignal) =>
+    request<ReleaseLog>(`/projects/${projectId}/releases/${releaseId}/logs`, { signal }),
+  getReleaseRuntimeLogs: (projectId: string, releaseId: string, params: { container?: string, tailLines?: number } = {}, signal?: AbortSignal) => {
     const search = new URLSearchParams()
     if (params.container)
       search.set('container', params.container)
     if (params.tailLines)
       search.set('tailLines', String(params.tailLines))
     const query = search.toString()
-    return request<ReleaseRuntimeLog>(`/projects/${projectId}/releases/${releaseId}/runtime-logs${query ? `?${query}` : ''}`)
+    return request<ReleaseRuntimeLog>(`/projects/${projectId}/releases/${releaseId}/runtime-logs${query ? `?${query}` : ''}`, { signal })
   },
   rollbackRelease: (projectId: string, releaseId: string) =>
     request<Release>(`/projects/${projectId}/releases/${releaseId}/rollback`, { method: 'POST' }),

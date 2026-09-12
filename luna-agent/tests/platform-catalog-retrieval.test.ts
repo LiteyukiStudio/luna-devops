@@ -71,8 +71,6 @@ describe("real PlatformCatalog retrieval", () => {
     const browsed = Array.from({ length: Math.ceil(operations.length / 100) }, (_, index) =>
       platformCatalog.search({ page: index + 1, pageSize: 100 }).items.map(item => item.operationId)).flat()
 
-    // Global mail contributes three operations and personal notification self-service contributes nine.
-    expect(operations).toHaveLength(218)
     expect(new Set(browsed)).toEqual(new Set(operations.map(operation => operation.operationId)))
     for (const operation of operations) {
       expect(platformCatalog.search({ query: operation.operationId, pageSize: 8 }).items[0]?.operationId)

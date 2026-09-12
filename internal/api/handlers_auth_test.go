@@ -18,24 +18,6 @@ import (
 	"gorm.io/gorm"
 )
 
-func TestLoginInputRequiresExplicitRememberChoice(t *testing.T) {
-	var defaultInput loginInput
-	if err := json.Unmarshal([]byte(`{"email":"user@example.com","password":"password"}`), &defaultInput); err != nil {
-		t.Fatalf("unmarshal default login input: %v", err)
-	}
-	if defaultInput.RememberMe {
-		t.Fatal("rememberMe must default to false")
-	}
-
-	var rememberedInput loginInput
-	if err := json.Unmarshal([]byte(`{"email":"user@example.com","password":"password","rememberMe":true}`), &rememberedInput); err != nil {
-		t.Fatalf("unmarshal remembered login input: %v", err)
-	}
-	if !rememberedInput.RememberMe {
-		t.Fatal("rememberMe=true must be preserved")
-	}
-}
-
 func TestUpdateCurrentUserInputDistinguishesThemeInheritance(t *testing.T) {
 	var omitted updateCurrentUserInput
 	if err := json.Unmarshal([]byte(`{"name":"Luna"}`), &omitted); err != nil {

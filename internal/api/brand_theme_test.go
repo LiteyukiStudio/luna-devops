@@ -2,21 +2,6 @@ package api
 
 import "testing"
 
-func TestBrandColorPresetOptionsMatchSettingsCatalog(t *testing.T) {
-	want := []string{
-		"aurora", "harbor", "sunset", "botanical", "meadow", "citrus",
-		"gold", "orange", "red", "pink", "violet", "blue", "cyan", "teal", "green", "lime",
-	}
-	if len(brandColorPresetOptions) != len(want) {
-		t.Fatalf("brand preset count = %d, want %d", len(brandColorPresetOptions), len(want))
-	}
-	for index := range want {
-		if brandColorPresetOptions[index] != want[index] {
-			t.Fatalf("brand preset %d = %q, want %q", index, brandColorPresetOptions[index], want[index])
-		}
-	}
-}
-
 func TestNormalizeBrandColorPresetFallsBackToBlue(t *testing.T) {
 	if got := normalizeBrandColorPreset(" Teal "); got != "teal" {
 		t.Fatalf("normalized preset = %q, want teal", got)

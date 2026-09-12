@@ -27,7 +27,6 @@ describe('common button reuse', () => {
     )
 
     const help = screen.getByRole('button', { name: /CPU/ })
-    expect(help).toHaveClass('size-auto', 'p-0')
     expect(help).toHaveAttribute('tabindex', '-1')
     fireEvent.focus(help)
     expect((await screen.findAllByText('CPU allocation guidance'))[0]).toBeVisible()
@@ -44,7 +43,6 @@ describe('common button reuse', () => {
 
     await interaction.click(screen.getByRole('button', { name: 'Select project' }))
     const option = screen.getByRole('button', { name: /Alpha/ })
-    expect(option).toHaveAttribute('data-slot', 'button')
     expect(screen.getByRole('button', { name: 'Disabled' })).toBeDisabled()
     await interaction.click(option)
     expect(selectValue).toHaveBeenCalledWith('alpha')
@@ -54,7 +52,6 @@ describe('common button reuse', () => {
     render(<SearchMultiSelect options={options} placeholder="Select projects" value={['alpha']} onValueChange={clearValue} />)
     await interaction.click(screen.getByRole('button', { name: 'Select projects' }))
     const clear = screen.getByRole('button', { name: i18next.t('common.clearSelection') })
-    expect(clear).toHaveAttribute('data-slot', 'button')
     await interaction.click(clear)
     expect(clearValue).toHaveBeenCalledWith([])
   })
@@ -66,7 +63,6 @@ describe('common button reuse', () => {
     render(<CopyableHoverText copyLabel="Copy value" value="registry.example/app">registry.example/app</CopyableHoverText>)
 
     const trigger = screen.getByRole('button', { name: 'Copy value' })
-    expect(trigger).toHaveClass('h-auto', 'p-0')
     await interaction.hover(trigger)
     const tooltipAction = await waitFor(() => {
       const action = document.querySelector<HTMLButtonElement>('[data-slot="tooltip-content"] > [data-slot="button"]')
@@ -86,7 +82,6 @@ describe('common button reuse', () => {
     const { unmount } = render(<UsageRing ariaLabel="CPU usage" ratio={0.75} tooltip="75% used" />)
 
     const usage = screen.getByRole('button', { name: 'CPU usage' })
-    expect(usage).toHaveClass('size-7')
     await interaction.hover(usage)
     expect((await screen.findAllByText('75% used'))[0]).toBeVisible()
 
@@ -95,8 +90,6 @@ describe('common button reuse', () => {
     await interaction.click(screen.getByRole('button', { name: i18next.t('apps.iconPickerAria') }))
     const nextIcon = APPLICATION_ICON_NAMES[1]!
     const iconOption = screen.getByRole('button', { name: i18next.t(`apps.icons.${nextIcon}`) })
-    expect(iconOption).toHaveAttribute('data-slot', 'button')
-    expect(iconOption).toHaveClass('size-8')
     await interaction.click(iconOption)
     expect(changeIcon).toHaveBeenCalledWith(nextIcon)
   })

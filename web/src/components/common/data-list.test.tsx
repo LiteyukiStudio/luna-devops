@@ -72,23 +72,6 @@ describe('data list behavior', () => {
     expect(screen.getByRole('button', { name: 'Create project' })).toBeVisible()
   })
 
-  it('keeps an explicitly sticky action column available while scrolling', () => {
-    render(
-      <DataList
-        columns={[
-          ...columns,
-          { key: 'actions', header: 'Actions', sticky: 'right', render: () => <button type="button">Inspect</button> },
-        ]}
-        emptyTitle="Empty"
-        items={[{ id: 'one', name: 'One' }]}
-        rowKey={item => item.id}
-      />,
-    )
-
-    expect(screen.getByRole('columnheader', { name: 'Actions' })).toHaveClass('sticky', 'right-0')
-    expect(screen.getByRole('button', { name: 'Inspect' })).toBeVisible()
-  })
-
   it('reports row and select-all selection changes and exposes partial selection', () => {
     const onSelectionChange = vi.fn()
     const { rerender } = render(

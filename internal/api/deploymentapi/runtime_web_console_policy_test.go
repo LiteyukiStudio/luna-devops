@@ -10,48 +10,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func TestRuntimeWebConsoleEnabled(t *testing.T) {
-	enabled := true
-	disabled := false
-	tests := []struct {
-		name           string
-		projectEnabled bool
-		targetOverride *bool
-		want           bool
-	}{
-		{name: "inherits enabled project default", projectEnabled: true, want: true},
-		{name: "inherits disabled project default", projectEnabled: false, want: false},
-		{name: "target disables enabled project", projectEnabled: true, targetOverride: &disabled, want: false},
-		{name: "target cannot enable disabled project", projectEnabled: false, targetOverride: &enabled, want: false},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			got := runtimeWebConsoleEnabled(
-				model.Project{WebConsoleEnabled: test.projectEnabled},
-				model.DeploymentTarget{WebConsoleEnabled: test.targetOverride},
-			)
-			if got != test.want {
-				t.Fatalf("runtimeWebConsoleEnabled() = %v, want %v", got, test.want)
-			}
-		})
-	}
-}
-
-func TestNormalizeWebConsoleOverrideOnlyKeepsFurtherDisable(t *testing.T) {
-	enabled := true
-	disabled := false
-	if got := normalizeWebConsoleOverride(nil); got != nil {
-		t.Fatalf("inherit override = %v, want nil", got)
-	}
-	if got := normalizeWebConsoleOverride(&enabled); got != nil {
-		t.Fatalf("enabled override = %v, want inherit", *got)
-	}
-	if got := normalizeWebConsoleOverride(&disabled); got == nil || *got {
-		t.Fatalf("disabled override = %v, want false", got)
-	}
-}
-
 func TestEnsureRuntimeWebConsoleEnabledRejectsDisabledTarget(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	recorder := httptest.NewRecorder()

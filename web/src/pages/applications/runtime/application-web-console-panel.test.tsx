@@ -3,7 +3,7 @@ import { fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import i18next from '@/i18n'
-import { ApplicationWebConsoleDialog } from './application-web-console-dialog'
+import { ApplicationWebConsolePanel } from './application-web-console-panel'
 
 vi.mock('@/components/common/runtime-terminal-panel', () => ({
   RuntimeTerminalPanel: () => <div>Terminal</div>,
@@ -26,22 +26,27 @@ const release: Release = {
   createdAt: '2026-09-06T00:00:00Z',
 }
 
-describe('application web console CLI command', () => {
+describe('application web console panel', () => {
   beforeEach(async () => {
     await i18next.changeLanguage('en-US')
   })
 
-  it('uses stable resource IDs and tracks the selected container', () => {
+  it('tracks the selected container in the CLI command and toggles fullscreen', async () => {
     render(
       <TooltipProvider>
-        <ApplicationWebConsoleDialog projectId="prj_123" release={release} onOpenChange={vi.fn()} />
+        <ApplicationWebConsolePanel projectId="prj_123" release={release} onClose={vi.fn()} />
       </TooltipProvider>,
     )
+
+    expect(await screen.findByText('Terminal')).toBeInTheDocument()
 
     const command = screen.getByRole('group', { name: 'CLI command' })
     expect(command).toHaveTextContent(`luna deployment exec server=${window.location.origin} projectId=prj_123 applicationId=app_456 targetId=dplt_789`)
 
     fireEvent.change(screen.getByRole('textbox', { name: 'Container' }), { target: { value: 'worker' } })
     expect(command).toHaveTextContent(`luna deployment exec server=${window.location.origin} projectId=prj_123 applicationId=app_456 targetId=dplt_789 container=worker`)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Fullscreen' }))
+    expect(screen.getByRole('button', { name: 'Exit fullscreen' })).toBeInTheDocument()
   })
 })

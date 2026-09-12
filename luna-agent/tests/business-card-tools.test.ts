@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import {
+  businessCardToolOperationIds,
   businessCardToolInputs,
   businessCardTools,
   compileBusinessCardToolInput,
@@ -68,6 +69,7 @@ describe("business card model tools", () => {
       "request_input",
       "request_choice",
     ])
+    expect([...businessCardToolOperationIds].sort()).toEqual(Object.keys(businessCardToolInputs).sort())
   })
 
   it("publishes object schemas for every registered operation", () => {
