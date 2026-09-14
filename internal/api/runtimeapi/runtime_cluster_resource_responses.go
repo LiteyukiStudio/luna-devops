@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	transportapi "github.com/LiteyukiStudio/devops/internal/api/transport"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	kubeprovider "github.com/LiteyukiStudio/devops/internal/provider/kubernetes"
 )
@@ -176,6 +177,11 @@ func sortClusterResourceResponses(items []clusterResourceResponse, pagination pa
 		}
 		return compareClusterResourceTieBreaker(items[i], items[j]) < 0
 	})
+}
+
+func clusterResourcePaginatedResponse(items []clusterResourceResponse, pagination paginationParams) transportapi.PaginatedResponseBody[clusterResourceResponse] {
+	sortClusterResourceResponses(items, pagination)
+	return paginatedResponse(paginateSlice(items, pagination), int64(len(items)), pagination)
 }
 
 func groupWorkloadPodResponses(items []clusterResourceResponse) []clusterResourceResponse {

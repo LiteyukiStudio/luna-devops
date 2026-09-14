@@ -37,7 +37,7 @@ func TestDeploymentTargetDataVolumesUsesAuthoritativeMountsAndClaim(t *testing.T
 	runner := &Runner{volumeService: service}
 	resolved, err := runner.deploymentTargetDataVolumes(context.Background(), model.DeploymentTarget{
 		ID: "target", ProjectID: "project", ClusterID: "cluster",
-	}, "project-ns")
+	}, "project-ns", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,12 +53,51 @@ func TestDeploymentTargetDataVolumesIgnoresLegacyTargetColumns(t *testing.T) {
 	runner := &Runner{volumeService: service}
 	resolved, err := runner.deploymentTargetDataVolumes(context.Background(), model.DeploymentTarget{
 		ID: "target", ProjectID: "project", DataRetentionEnabled: true, DataVolumes: `[{"sourceType":"managed","mountPath":"/legacy"}]`,
-	}, "project-ns")
+	}, "project-ns", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(resolved) != 0 {
 		t.Fatalf("legacy deployment target columns must be ignored, got %+v", resolved)
+	}
+}
+
+func TestDeploymentTargetDataVolumesAdoptsRetainedClaimBeforeUse(t *testing.T) {
+	volumeID := "pvol_retained"
+	mountPath := "/data"
+	projectVolume := model.ProjectVolume{
+		ID: volumeID, ProjectID: "project", ClusterID: "cluster", Namespace: "project-ns",
+		ClaimName: "retained-data", SourceKind: model.ProjectVolumeSourceRetained,
+		LifecycleState: model.ProjectVolumeLifecycleReady,
+	}
+	service := &volumeWorkerServiceStub{
+		listMountsFn: func(context.Context, string, string) ([]model.DeploymentVolumeMount, error) {
+			return []model.DeploymentVolumeMount{{
+				ID: "mount", ProjectID: projectVolume.ProjectID, DeploymentTargetID: "target",
+				SourceType: model.DeploymentVolumeSourceProjectVolume, ProjectVolumeID: &volumeID,
+				LogicalName: "data", MountPath: &mountPath, ActivationState: model.DeploymentVolumeActivationReserved,
+			}}, nil
+		},
+		getFn: func(context.Context, string, string) (model.ProjectVolume, error) { return projectVolume, nil },
+	}
+	adopted := false
+	provider := &projectVolumeProviderStub{adoptFn: func(_ context.Context, spec kubeprovider.ExistingProjectVolumeClaimSpec) (kubeprovider.ProjectVolumeClaimObservation, error) {
+		if spec.ProjectID != projectVolume.ProjectID || spec.VolumeID != projectVolume.ID ||
+			spec.Namespace != projectVolume.Namespace || spec.ClaimName != projectVolume.ClaimName {
+			t.Fatalf("adoption spec = %#v", spec)
+		}
+		adopted = true
+		return kubeprovider.ProjectVolumeClaimObservation{Exists: true}, nil
+	}}
+
+	resolved, err := (&Runner{volumeService: service}).deploymentTargetDataVolumes(t.Context(), model.DeploymentTarget{
+		ID: "target", ProjectID: projectVolume.ProjectID, ClusterID: projectVolume.ClusterID,
+	}, projectVolume.Namespace, provider)
+	if err != nil {
+		t.Fatalf("deploymentTargetDataVolumes() error = %v", err)
+	}
+	if !adopted || len(resolved) != 1 || resolved[0].ProjectVolumeID != projectVolume.ID {
+		t.Fatalf("adopted=%t resolved=%#v", adopted, resolved)
 	}
 }
 

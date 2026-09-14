@@ -114,6 +114,8 @@ func (s *volumeTaskEnqueuerStub) EnqueueVolumeDelete(_ context.Context, payload 
 type projectVolumeProviderStub struct {
 	kubeprovider.ProjectVolumeProvider
 	createFn         func(context.Context, kubeprovider.ProjectVolumeClaimSpec) (kubeprovider.ProjectVolumeClaimObservation, error)
+	adoptFn          func(context.Context, kubeprovider.ExistingProjectVolumeClaimSpec) (kubeprovider.ProjectVolumeClaimObservation, error)
+	expandFn         func(context.Context, string, string, string, string, string) (kubeprovider.ProjectVolumeClaimObservation, error)
 	deleteFn         func(context.Context, string, string, string, string) error
 	createSnapshotFn func(context.Context, kubeprovider.ProjectVolumeSnapshotSpec) (kubeprovider.VolumeSnapshotObservation, error)
 	observeFn        func(context.Context, string, string) (kubeprovider.ProjectVolumeClaimObservation, error)
@@ -121,6 +123,12 @@ type projectVolumeProviderStub struct {
 
 func (s *projectVolumeProviderStub) CreateProjectVolumeClaim(ctx context.Context, spec kubeprovider.ProjectVolumeClaimSpec) (kubeprovider.ProjectVolumeClaimObservation, error) {
 	return s.createFn(ctx, spec)
+}
+func (s *projectVolumeProviderStub) AdoptExistingProjectVolumeClaim(ctx context.Context, spec kubeprovider.ExistingProjectVolumeClaimSpec) (kubeprovider.ProjectVolumeClaimObservation, error) {
+	return s.adoptFn(ctx, spec)
+}
+func (s *projectVolumeProviderStub) ExpandProjectVolumeClaim(ctx context.Context, namespace, claim, projectID, volumeID, capacity string) (kubeprovider.ProjectVolumeClaimObservation, error) {
+	return s.expandFn(ctx, namespace, claim, projectID, volumeID, capacity)
 }
 func (s *projectVolumeProviderStub) DeleteProjectVolumeClaim(ctx context.Context, namespace, claim, projectID, volumeID string) error {
 	return s.deleteFn(ctx, namespace, claim, projectID, volumeID)
@@ -226,6 +234,38 @@ func TestHandleVolumeProvisionPermanentFailureUsesStableCode(t *testing.T) {
 	}
 }
 
+func TestRetainedVolumeExpandAdoptsClaimBeforeExpansion(t *testing.T) {
+	projectVolume := transferProjectVolume(model.ProjectVolumeModeFilesystem)
+	projectVolume.SourceKind = model.ProjectVolumeSourceRetained
+	projectVolume.CapacityRequest = "2Gi"
+	adopted := false
+	provider := &projectVolumeProviderStub{
+		adoptFn: func(_ context.Context, spec kubeprovider.ExistingProjectVolumeClaimSpec) (kubeprovider.ProjectVolumeClaimObservation, error) {
+			if spec.ProjectID != projectVolume.ProjectID || spec.VolumeID != projectVolume.ID ||
+				spec.Namespace != projectVolume.Namespace || spec.ClaimName != projectVolume.ClaimName {
+				t.Fatalf("adoption spec = %#v", spec)
+			}
+			if spec.ExpectedCapacity != "" || spec.ExpectedStorageClassName != "" || spec.ExpectedAccessMode != "" || spec.ExpectedVolumeMode != "" {
+				t.Fatalf("retained claim adoption unexpectedly used updated desired spec: %#v", spec)
+			}
+			adopted = true
+			return kubeprovider.ProjectVolumeClaimObservation{Exists: true}, nil
+		},
+		expandFn: func(_ context.Context, namespace, claim, projectID, volumeID, capacity string) (kubeprovider.ProjectVolumeClaimObservation, error) {
+			if !adopted {
+				t.Fatal("claim expansion ran before retained claim adoption")
+			}
+			if namespace != projectVolume.Namespace || claim != projectVolume.ClaimName || projectID != projectVolume.ProjectID || volumeID != projectVolume.ID || capacity != "2Gi" {
+				t.Fatalf("expand input namespace=%q claim=%q project=%q volume=%q capacity=%q", namespace, claim, projectID, volumeID, capacity)
+			}
+			return kubeprovider.ProjectVolumeClaimObservation{Exists: true}, nil
+		},
+	}
+	if err := (&Runner{}).applyProjectVolumeOperation(t.Context(), provider, projectVolume, tasks.VolumeOperationExpand); err != nil {
+		t.Fatalf("expand retained project volume: %v", err)
+	}
+}
+
 func TestHandleVolumeDeleteCompletesOnlyAfterClaimDisappears(t *testing.T) {
 	projectVolume := transferProjectVolume(model.ProjectVolumeModeFilesystem)
 	projectVolume.LifecycleState = model.ProjectVolumeLifecycleDeleting
@@ -256,6 +296,43 @@ func TestHandleVolumeDeleteCompletesOnlyAfterClaimDisappears(t *testing.T) {
 	claimExists = false
 	if err := runner.handleVolumeDelete(context.Background(), task); err != nil || !completed {
 		t.Fatalf("second delete error=%v completed=%t", err, completed)
+	}
+}
+
+func TestRetainedVolumeDeleteAdoptsClaimBeforeDeletion(t *testing.T) {
+	projectVolume := transferProjectVolume(model.ProjectVolumeModeFilesystem)
+	projectVolume.SourceKind = model.ProjectVolumeSourceRetained
+	projectVolume.LifecycleState = model.ProjectVolumeLifecycleDeleting
+	projectVolume.PendingOperation = volume.OperationDelete
+	adopted := false
+	completed := false
+	provider := &projectVolumeProviderStub{
+		adoptFn: func(_ context.Context, spec kubeprovider.ExistingProjectVolumeClaimSpec) (kubeprovider.ProjectVolumeClaimObservation, error) {
+			if spec.ProjectID != projectVolume.ProjectID || spec.VolumeID != projectVolume.ID ||
+				spec.Namespace != projectVolume.Namespace || spec.ClaimName != projectVolume.ClaimName {
+				t.Fatalf("adoption spec = %#v", spec)
+			}
+			adopted = true
+			return kubeprovider.ProjectVolumeClaimObservation{Exists: true}, nil
+		},
+		deleteFn: func(context.Context, string, string, string, string) error {
+			if !adopted {
+				t.Fatal("claim deletion ran before retained claim adoption")
+			}
+			return kubeprovider.ErrProjectVolumeClaimNotFound
+		},
+	}
+	service := &volumeWorkerServiceStub{
+		getFn: func(context.Context, string, string) (model.ProjectVolume, error) { return projectVolume, nil },
+		completeDeletionFn: func(context.Context, string, string) (model.ProjectVolume, error) {
+			completed = true
+			return projectVolume, nil
+		},
+	}
+	runner := &Runner{volumeService: service, projectVolumeProviderFactory: func(context.Context, string) (kubeprovider.ProjectVolumeProvider, error) { return provider, nil }}
+	task, _ := tasks.NewVolumeDeleteTask(tasks.VolumeDeletePayload{ProjectID: projectVolume.ProjectID, VolumeID: projectVolume.ID})
+	if err := runner.handleVolumeDelete(t.Context(), task); err != nil || !completed {
+		t.Fatalf("delete retained project volume error=%v completed=%t", err, completed)
 	}
 }
 
@@ -336,11 +413,24 @@ func TestHandleVolumeImportPreparesPodAndStopsAtReady(t *testing.T) {
 
 func TestPrepareSnapshotExportUsesTemporaryClaim(t *testing.T) {
 	projectVolume := transferProjectVolume(model.ProjectVolumeModeFilesystem)
+	projectVolume.SourceKind = model.ProjectVolumeSourceRetained
 	transfer := transferFixture(model.VolumeTransferDirectionExport)
 	transfer.ConsistencyMode = model.VolumeTransferConsistencySnapshot
 	var snapshotName string
+	adopted := false
 	provider := &projectVolumeProviderStub{
+		adoptFn: func(_ context.Context, spec kubeprovider.ExistingProjectVolumeClaimSpec) (kubeprovider.ProjectVolumeClaimObservation, error) {
+			if spec.ProjectID != projectVolume.ProjectID || spec.VolumeID != projectVolume.ID ||
+				spec.Namespace != projectVolume.Namespace || spec.ClaimName != projectVolume.ClaimName {
+				t.Fatalf("adoption spec = %#v", spec)
+			}
+			adopted = true
+			return kubeprovider.ProjectVolumeClaimObservation{Exists: true}, nil
+		},
 		createSnapshotFn: func(_ context.Context, spec kubeprovider.ProjectVolumeSnapshotSpec) (kubeprovider.VolumeSnapshotObservation, error) {
+			if !adopted {
+				t.Fatal("snapshot creation ran before retained claim adoption")
+			}
 			snapshotName = spec.Name
 			return kubeprovider.VolumeSnapshotObservation{ReadyToUse: true}, nil
 		},
@@ -353,8 +443,8 @@ func TestPrepareSnapshotExportUsesTemporaryClaim(t *testing.T) {
 	}
 	runner := &Runner{projectVolumeProviderFactory: func(context.Context, string) (kubeprovider.ProjectVolumeProvider, error) { return provider, nil }}
 	claim, cleanup, err := runner.prepareVolumeTransferClaim(context.Background(), projectVolume, transfer)
-	if err != nil || cleanup == nil || claim != cleanup.claimName || snapshotName != cleanup.snapshotName {
-		t.Fatalf("claim=%q cleanup=%#v snapshot=%q err=%v", claim, cleanup, snapshotName, err)
+	if err != nil || !adopted || cleanup == nil || claim != cleanup.claimName || snapshotName != cleanup.snapshotName {
+		t.Fatalf("claim=%q cleanup=%#v snapshot=%q adopted=%t err=%v", claim, cleanup, snapshotName, adopted, err)
 	}
 }
 

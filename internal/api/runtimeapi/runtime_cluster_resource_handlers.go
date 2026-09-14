@@ -37,10 +37,6 @@ func (h *Handlers) ListRuntimeClusterResources(ctx *gin.Context) {
 		return
 	}
 	pagination := paginationFromQuery(ctx)
-	if pagination.Page != 1 {
-		writeErrorCode(ctx, http.StatusBadRequest, "pagination.cursor_required", "runtime cluster resources only support the first bounded page")
-		return
-	}
 	kubeconfig := h.secrets.ResolveContext(ctx.Request.Context(), cluster.KubeconfigRef)
 	if strings.TrimSpace(kubeconfig) == "" {
 		writeError(ctx, http.StatusBadRequest, "运行集群缺少 kubeconfig，无法读取资源")
@@ -57,7 +53,6 @@ func (h *Handlers) ListRuntimeClusterResources(ctx *gin.Context) {
 		ProjectID:          strings.TrimSpace(ctx.Query("projectId")),
 		ApplicationID:      strings.TrimSpace(ctx.Query("applicationId")),
 		DeploymentTargetID: strings.TrimSpace(ctx.Query("deploymentTargetId")),
-		Limit:              int64(pagination.PageSize),
 	}
 	if !validRuntimeResourceCategory(options.Kind) {
 		writeRuntimeResourceArgumentError(ctx, "cluster.resource_category_invalid", "resourceCategory", runtimeResourceCategories)
@@ -68,12 +63,12 @@ func (h *Handlers) ListRuntimeClusterResources(ctx *gin.Context) {
 	}
 	requestCtx, cancel := context.WithTimeout(ctx.Request.Context(), 10*time.Second)
 	defer cancel()
-	page, err := client.ListManagedResourcesPage(requestCtx, options)
+	items, err := client.ListManagedResources(requestCtx, options)
 	if err != nil {
 		writeError(ctx, http.StatusBadGateway, "集群资源读取失败，请检查集群连接和权限")
 		return
 	}
-	items := h.filterClusterResourceSnapshots(ctx, user, page.Items, visibility, options.ProjectID)
+	items = h.filterClusterResourceSnapshots(ctx, user, items, visibility, options.ProjectID)
 	responses, err := h.clusterResourceResponses(items, ctx.Request.Context())
 	if err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
@@ -83,13 +78,7 @@ func (h *Handlers) ListRuntimeClusterResources(ctx *gin.Context) {
 		responses = groupWorkloadPodResponses(responses)
 	}
 	pagination.SortBy = normalizeClusterResourceSortBy(pagination.SortBy)
-	sortClusterResourceResponses(responses, pagination)
-	pageItems := paginateSlice(responses, pagination)
-	// A resource category fans out to several Kubernetes kinds, each with an
-	// independent continue token. A numeric global page cannot preserve the
-	// requested cross-kind sort without draining every kind. Keep this endpoint
-	// to one bounded page and do not advertise inaccessible remaining pages.
-	ctx.JSON(http.StatusOK, paginatedResponse(pageItems, int64(len(pageItems)), pagination))
+	ctx.JSON(http.StatusOK, clusterResourcePaginatedResponse(responses, pagination))
 }
 
 func (h *Handlers) GetRuntimeClusterResourceYAML(ctx *gin.Context) {

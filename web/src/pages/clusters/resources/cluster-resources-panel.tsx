@@ -83,8 +83,8 @@ export function ClusterResourcesPanel({ items, loading, pagination, selectedClus
   if (!selectedCluster) {
     return (
       <EmptyState
-        title={t('clustersPage.noManageableClusterTitle')}
-        description={t('clustersPage.noManageableClusterDescription')}
+        title={t('clustersPage.noResourceClusterTitle')}
+        description={t('clustersPage.noResourceClusterDescription')}
       />
     )
   }

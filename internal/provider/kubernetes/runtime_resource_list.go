@@ -13,15 +13,12 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	k8sruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/tools/pager"
 )
 
 func (c *Client) ListManagedResources(ctx context.Context, options ResourceListOptions) ([]ResourceSnapshot, error) {
-	page, err := c.ListManagedResourcesPage(ctx, options)
-	return page.Items, err
-}
-
-func (c *Client) ListManagedResourcesPage(ctx context.Context, options ResourceListOptions) (ResourceListPage, error) {
 	switch normalizeResourceKind(options.Kind) {
 	case "namespaces":
 		return c.listManagedNamespaces(ctx, options)
@@ -34,23 +31,41 @@ func (c *Client) ListManagedResourcesPage(ctx context.Context, options ResourceL
 	case "storage":
 		return c.listManagedStorage(ctx, options)
 	default:
-		return ResourceListPage{}, fmt.Errorf("unsupported resource kind: %s", options.Kind)
+		return nil, fmt.Errorf("unsupported resource kind: %s", options.Kind)
 	}
 }
 
-func (c *Client) listManagedNamespaces(ctx context.Context, options ResourceListOptions) (ResourceListPage, error) {
-	list, err := c.client.CoreV1().Namespaces().List(ctx, metav1.ListOptions{LabelSelector: managedResourceSelector(options), Limit: options.Limit})
+func listResourceSnapshots(
+	ctx context.Context,
+	options metav1.ListOptions,
+	listPage pager.ListPageFunc,
+	snapshot func(k8sruntime.Object) ResourceSnapshot,
+) ([]ResourceSnapshot, error) {
+	// A resource category combines several Kubernetes kinds. Drain each kind's
+	// continuation pages before the API applies one global sort and pagination.
+	items := make([]ResourceSnapshot, 0)
+	err := pager.New(listPage).EachListItem(ctx, options, func(item k8sruntime.Object) error {
+		items = append(items, snapshot(item))
+		return nil
+	})
 	if err != nil {
-		return ResourceListPage{}, err
+		return nil, err
 	}
-	items := make([]ResourceSnapshot, 0, len(list.Items))
-	for _, item := range list.Items {
-		if !matchesResourceOptions(item.Labels, options) {
-			continue
-		}
-		items = append(items, snapshotFromMeta("Namespace", item.ObjectMeta, "", item.Status.Phase, ""))
-	}
-	return ResourceListPage{Items: items, Remaining: remainingItemCount(list.RemainingItemCount)}, nil
+	return items, nil
+}
+
+func (c *Client) listManagedNamespaces(ctx context.Context, options ResourceListOptions) ([]ResourceSnapshot, error) {
+	return listResourceSnapshots(
+		ctx,
+		metav1.ListOptions{LabelSelector: managedResourceSelector(options)},
+		func(ctx context.Context, listOptions metav1.ListOptions) (k8sruntime.Object, error) {
+			return c.client.CoreV1().Namespaces().List(ctx, listOptions)
+		},
+		func(object k8sruntime.Object) ResourceSnapshot {
+			item := object.(*corev1.Namespace)
+			return snapshotFromMeta("Namespace", item.ObjectMeta, "", item.Status.Phase, "")
+		},
+	)
 }
 
 func managedSnapshot(snapshot ResourceSnapshot) (ResourceSnapshot, error) {
@@ -91,83 +106,96 @@ func eventSnapshot(item corev1.Event) ResourceEventSnapshot {
 	}
 }
 
-func (c *Client) listManagedWorkloads(ctx context.Context, options ResourceListOptions) (ResourceListPage, error) {
+func (c *Client) listManagedWorkloads(ctx context.Context, options ResourceListOptions) ([]ResourceSnapshot, error) {
 	selector := managedRuntimeResourceSelector(options)
-	listOptions := metav1.ListOptions{LabelSelector: selector, Limit: options.Limit}
-	deployments, err := c.client.AppsV1().Deployments(options.Namespace).List(ctx, listOptions)
+	listOptions := metav1.ListOptions{LabelSelector: selector}
+	deployments, err := listResourceSnapshots(ctx, listOptions, func(ctx context.Context, listOptions metav1.ListOptions) (k8sruntime.Object, error) {
+		return c.client.AppsV1().Deployments(options.Namespace).List(ctx, listOptions)
+	}, func(object k8sruntime.Object) ResourceSnapshot {
+		return deploymentSnapshot(*object.(*appsv1.Deployment))
+	})
 	if err != nil {
-		return ResourceListPage{}, err
+		return nil, err
 	}
-	statefulSets, err := c.client.AppsV1().StatefulSets(options.Namespace).List(ctx, listOptions)
+	statefulSets, err := listResourceSnapshots(ctx, listOptions, func(ctx context.Context, listOptions metav1.ListOptions) (k8sruntime.Object, error) {
+		return c.client.AppsV1().StatefulSets(options.Namespace).List(ctx, listOptions)
+	}, func(object k8sruntime.Object) ResourceSnapshot {
+		return statefulSetSnapshot(*object.(*appsv1.StatefulSet))
+	})
 	if err != nil {
-		return ResourceListPage{}, err
+		return nil, err
 	}
-	pods, err := c.client.CoreV1().Pods(options.Namespace).List(ctx, listOptions)
+	pods, err := listResourceSnapshots(ctx, listOptions, func(ctx context.Context, listOptions metav1.ListOptions) (k8sruntime.Object, error) {
+		return c.client.CoreV1().Pods(options.Namespace).List(ctx, listOptions)
+	}, func(object k8sruntime.Object) ResourceSnapshot {
+		return podSnapshot(*object.(*corev1.Pod))
+	})
 	if err != nil {
-		return ResourceListPage{}, err
+		return nil, err
 	}
-	hpas, err := c.client.AutoscalingV2().HorizontalPodAutoscalers(options.Namespace).List(ctx, listOptions)
+	hpas, err := listResourceSnapshots(ctx, listOptions, func(ctx context.Context, listOptions metav1.ListOptions) (k8sruntime.Object, error) {
+		return c.client.AutoscalingV2().HorizontalPodAutoscalers(options.Namespace).List(ctx, listOptions)
+	}, func(object k8sruntime.Object) ResourceSnapshot {
+		return hpaSnapshot(*object.(*autoscalingv2.HorizontalPodAutoscaler))
+	})
 	if err != nil {
-		return ResourceListPage{}, err
+		return nil, err
 	}
-	items := make([]ResourceSnapshot, 0, len(deployments.Items)+len(statefulSets.Items)+len(pods.Items)+len(hpas.Items))
-	for _, item := range deployments.Items {
-		items = append(items, deploymentSnapshot(item))
-	}
-	for _, item := range statefulSets.Items {
-		items = append(items, statefulSetSnapshot(item))
-	}
-	for _, item := range hpas.Items {
-		items = append(items, hpaSnapshot(item))
-	}
-	for _, item := range pods.Items {
-		items = append(items, podSnapshot(item))
-	}
-	remaining := remainingItemCount(deployments.RemainingItemCount) + remainingItemCount(statefulSets.RemainingItemCount) +
-		remainingItemCount(pods.RemainingItemCount) + remainingItemCount(hpas.RemainingItemCount)
-	return ResourceListPage{Items: items, Remaining: remaining}, nil
+	items := make([]ResourceSnapshot, 0, len(deployments)+len(statefulSets)+len(pods)+len(hpas))
+	items = append(items, deployments...)
+	items = append(items, statefulSets...)
+	items = append(items, hpas...)
+	items = append(items, pods...)
+	return items, nil
 }
 
-func (c *Client) listManagedServicesAndRoutes(ctx context.Context, options ResourceListOptions) (ResourceListPage, error) {
+func (c *Client) listManagedServicesAndRoutes(ctx context.Context, options ResourceListOptions) ([]ResourceSnapshot, error) {
 	selector := managedResourceSelector(options)
-	services, err := c.client.CoreV1().Services(options.Namespace).List(ctx, metav1.ListOptions{LabelSelector: selector, Limit: options.Limit})
+	services, err := listResourceSnapshots(ctx, metav1.ListOptions{LabelSelector: selector}, func(ctx context.Context, listOptions metav1.ListOptions) (k8sruntime.Object, error) {
+		return c.client.CoreV1().Services(options.Namespace).List(ctx, listOptions)
+	}, func(object k8sruntime.Object) ResourceSnapshot {
+		return serviceSnapshot(*object.(*corev1.Service))
+	})
 	if err != nil {
-		return ResourceListPage{}, err
-	}
-	items := make([]ResourceSnapshot, 0, len(services.Items))
-	for _, item := range services.Items {
-		items = append(items, serviceSnapshot(item))
+		return nil, err
 	}
 	if c.dynamic == nil {
-		return ResourceListPage{Items: items, Remaining: remainingItemCount(services.RemainingItemCount)}, nil
+		return services, nil
 	}
-	httpRoutes, err := c.listGatewayAPIResources(ctx, httpRouteGVR, options.Namespace, selector, options.Limit)
+	httpRoutes, err := c.listGatewayAPIResources(ctx, httpRouteGVR, options.Namespace, selector, httpRouteSnapshot)
 	if err != nil {
-		return ResourceListPage{}, err
+		return nil, err
 	}
-	for i := range httpRoutes.Items {
-		items = append(items, httpRouteSnapshot(&httpRoutes.Items[i]))
-	}
-	gateways, err := c.listGatewayAPIResources(ctx, gatewayGVR, options.Namespace, selector, options.Limit)
+	gateways, err := c.listGatewayAPIResources(ctx, gatewayGVR, options.Namespace, selector, gatewaySnapshot)
 	if err != nil {
-		return ResourceListPage{}, err
+		return nil, err
 	}
-	for i := range gateways.Items {
-		items = append(items, gatewaySnapshot(&gateways.Items[i]))
-	}
-	remaining := remainingItemCount(services.RemainingItemCount) + remainingItemCount(httpRoutes.GetRemainingItemCount()) + remainingItemCount(gateways.GetRemainingItemCount())
-	return ResourceListPage{Items: items, Remaining: remaining}, nil
+	items := make([]ResourceSnapshot, 0, len(services)+len(httpRoutes)+len(gateways))
+	items = append(items, services...)
+	items = append(items, httpRoutes...)
+	items = append(items, gateways...)
+	return items, nil
 }
 
-func (c *Client) listGatewayAPIResources(ctx context.Context, gvr schema.GroupVersionResource, namespace string, selector string, limit int64) (*unstructured.UnstructuredList, error) {
+func (c *Client) listGatewayAPIResources(
+	ctx context.Context,
+	gvr schema.GroupVersionResource,
+	namespace string,
+	selector string,
+	snapshot func(*unstructured.Unstructured) ResourceSnapshot,
+) ([]ResourceSnapshot, error) {
 	if c.dynamic == nil {
-		return &unstructured.UnstructuredList{}, nil
+		return []ResourceSnapshot{}, nil
 	}
-	list, err := c.dynamic.Resource(gvr).Namespace(namespace).List(ctx, metav1.ListOptions{LabelSelector: selector, Limit: limit})
+	items, err := listResourceSnapshots(ctx, metav1.ListOptions{LabelSelector: selector}, func(ctx context.Context, listOptions metav1.ListOptions) (k8sruntime.Object, error) {
+		return c.dynamic.Resource(gvr).Namespace(namespace).List(ctx, listOptions)
+	}, func(object k8sruntime.Object) ResourceSnapshot {
+		return snapshot(object.(*unstructured.Unstructured))
+	})
 	if apierrors.IsNotFound(err) {
-		return &unstructured.UnstructuredList{}, nil
+		return []ResourceSnapshot{}, nil
 	}
-	return list, err
+	return items, err
 }
 
 func (c *Client) getGatewayAPIResource(ctx context.Context, gvr schema.GroupVersionResource, namespace string, name string) (*unstructured.Unstructured, error) {
@@ -181,38 +209,45 @@ func (c *Client) getGatewayAPIResource(ctx context.Context, gvr schema.GroupVers
 	return item, err
 }
 
-func (c *Client) listManagedConfigs(ctx context.Context, options ResourceListOptions) (ResourceListPage, error) {
+func (c *Client) listManagedConfigs(ctx context.Context, options ResourceListOptions) ([]ResourceSnapshot, error) {
 	selector := managedResourceSelector(options)
-	listOptions := metav1.ListOptions{LabelSelector: selector, Limit: options.Limit}
-	configMaps, err := c.client.CoreV1().ConfigMaps(options.Namespace).List(ctx, listOptions)
+	listOptions := metav1.ListOptions{LabelSelector: selector}
+	configMaps, err := listResourceSnapshots(ctx, listOptions, func(ctx context.Context, listOptions metav1.ListOptions) (k8sruntime.Object, error) {
+		return c.client.CoreV1().ConfigMaps(options.Namespace).List(ctx, listOptions)
+	}, func(object k8sruntime.Object) ResourceSnapshot {
+		item := object.(*corev1.ConfigMap)
+		return snapshotFromMeta("ConfigMap", item.ObjectMeta, "", fmt.Sprintf("%d keys", len(item.Data)), "")
+	})
 	if err != nil {
-		return ResourceListPage{}, err
+		return nil, err
 	}
-	secrets, err := c.client.CoreV1().Secrets(options.Namespace).List(ctx, listOptions)
+	secrets, err := listResourceSnapshots(ctx, listOptions, func(ctx context.Context, listOptions metav1.ListOptions) (k8sruntime.Object, error) {
+		return c.client.CoreV1().Secrets(options.Namespace).List(ctx, listOptions)
+	}, func(object k8sruntime.Object) ResourceSnapshot {
+		item := object.(*corev1.Secret)
+		return snapshotFromMeta("Secret", item.ObjectMeta, "", string(item.Type), "data hidden")
+	})
 	if err != nil {
-		return ResourceListPage{}, err
+		return nil, err
 	}
-	items := make([]ResourceSnapshot, 0, len(configMaps.Items)+len(secrets.Items))
-	for _, item := range configMaps.Items {
-		items = append(items, snapshotFromMeta("ConfigMap", item.ObjectMeta, "", fmt.Sprintf("%d keys", len(item.Data)), ""))
-	}
-	for _, item := range secrets.Items {
-		items = append(items, snapshotFromMeta("Secret", item.ObjectMeta, "", string(item.Type), "data hidden"))
-	}
-	remaining := remainingItemCount(configMaps.RemainingItemCount) + remainingItemCount(secrets.RemainingItemCount)
-	return ResourceListPage{Items: items, Remaining: remaining}, nil
+	items := make([]ResourceSnapshot, 0, len(configMaps)+len(secrets))
+	items = append(items, configMaps...)
+	items = append(items, secrets...)
+	return items, nil
 }
 
-func (c *Client) listManagedStorage(ctx context.Context, options ResourceListOptions) (ResourceListPage, error) {
-	claims, err := c.client.CoreV1().PersistentVolumeClaims(options.Namespace).List(ctx, metav1.ListOptions{LabelSelector: managedResourceSelector(options), Limit: options.Limit})
-	if err != nil {
-		return ResourceListPage{}, err
-	}
-	items := make([]ResourceSnapshot, 0, len(claims.Items))
-	for _, item := range claims.Items {
-		items = append(items, snapshotFromMeta("PersistentVolumeClaim", item.ObjectMeta, "", item.Status.Phase, pvcSummary(item)))
-	}
-	return ResourceListPage{Items: items, Remaining: remainingItemCount(claims.RemainingItemCount)}, nil
+func (c *Client) listManagedStorage(ctx context.Context, options ResourceListOptions) ([]ResourceSnapshot, error) {
+	return listResourceSnapshots(
+		ctx,
+		metav1.ListOptions{LabelSelector: managedResourceSelector(options)},
+		func(ctx context.Context, listOptions metav1.ListOptions) (k8sruntime.Object, error) {
+			return c.client.CoreV1().PersistentVolumeClaims(options.Namespace).List(ctx, listOptions)
+		},
+		func(object k8sruntime.Object) ResourceSnapshot {
+			item := object.(*corev1.PersistentVolumeClaim)
+			return snapshotFromMeta("PersistentVolumeClaim", item.ObjectMeta, "", item.Status.Phase, pvcSummary(*item))
+		},
+	)
 }
 
 func deploymentSnapshot(item appsv1.Deployment) ResourceSnapshot {
@@ -428,22 +463,6 @@ func managedRuntimeResourceSelector(options ResourceListOptions) string {
 		return ScopeLabel + "!=build"
 	}
 	return selector + "," + ScopeLabel + "!=build"
-}
-
-func matchesResourceOptions(labels map[string]string, options ResourceListOptions) bool {
-	if options.ProjectID != "" && labels[ProjectIDLabel] != options.ProjectID {
-		return false
-	}
-	if options.ApplicationID != "" && labels[ApplicationIDLabel] != options.ApplicationID {
-		return false
-	}
-	if options.DeploymentTargetID != "" && labels[DeploymentTargetIDLabel] != options.DeploymentTargetID {
-		return false
-	}
-	if options.RouteID != "" && labels[GatewayRouteIDLabel] != options.RouteID {
-		return false
-	}
-	return true
 }
 
 func normalizeResourceKind(value string) string {

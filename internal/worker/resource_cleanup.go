@@ -11,6 +11,7 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	kubeprovider "github.com/LiteyukiStudio/devops/internal/provider/kubernetes"
+	"github.com/LiteyukiStudio/devops/internal/runtimecluster"
 	"github.com/LiteyukiStudio/devops/internal/tasks"
 	"github.com/hibiken/asynq"
 	"gorm.io/gorm"
@@ -22,6 +23,15 @@ func (r *Runner) recoverStaleResourceCleanups(ctx context.Context) error {
 	if r.taskClient == nil {
 		return nil
 	}
+	applicationPayloads, err := r.staleApplicationDeletePayloads(ctx, time.Now().Add(-resourceCleanupRecoveryAfter))
+	if err != nil {
+		return err
+	}
+	for _, payload := range applicationPayloads {
+		if _, err := r.taskClient.EnqueueApplicationDelete(ctx, payload); err != nil && !errors.Is(err, asynq.ErrDuplicateTask) {
+			return err
+		}
+	}
 	payloads, err := r.staleResourceCleanupPayloads(ctx, time.Now().Add(-resourceCleanupRecoveryAfter))
 	if err != nil {
 		return err
@@ -32,6 +42,26 @@ func (r *Runner) recoverStaleResourceCleanups(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+func (r *Runner) staleApplicationDeletePayloads(ctx context.Context, cutoff time.Time) ([]tasks.ApplicationDeletePayload, error) {
+	var applications []model.Application
+	if err := r.db.WithContext(ctx).
+		Where("delete_status = ? and delete_started_at < ?", "deleting", cutoff).
+		Order("delete_started_at asc").
+		Limit(50).
+		Find(&applications).Error; err != nil {
+		return nil, err
+	}
+	payloads := make([]tasks.ApplicationDeletePayload, 0, len(applications))
+	for _, application := range applications {
+		payloads = append(payloads, tasks.ApplicationDeletePayload{
+			ApplicationID: application.ID,
+			ProjectID:     application.ProjectID,
+			ActorID:       "system:cleanup-recovery",
+		})
+	}
+	return payloads, nil
 }
 
 func (r *Runner) staleResourceCleanupPayloads(ctx context.Context, cutoff time.Time) ([]tasks.ResourceCleanupPayload, error) {
@@ -156,7 +186,7 @@ func (r *Runner) cleanupProject(ctx context.Context, payload tasks.ResourceClean
 }
 
 func (r *Runner) cleanupProjectNamespaces(ctx context.Context, project model.Project) error {
-	targets, err := r.projectCleanupDeploymentTargets(project.ID)
+	targets, err := r.projectCleanupClusterTargets(ctx, project.ID)
 	if err != nil {
 		return err
 	}
@@ -165,46 +195,86 @@ func (r *Runner) cleanupProjectNamespaces(ctx context.Context, project model.Pro
 
 func (r *Runner) cleanupProjectNamespacesForDeploymentTargets(ctx context.Context, project model.Project, targets []model.DeploymentTarget) error {
 	namespace := projectNamespace(project)
-	if len(targets) == 0 {
-		return nil
-	}
-	seen := map[string]bool{}
 	for _, target := range targets {
-		key := projectCleanupClusterKey(target)
-		if seen[key] {
-			continue
-		}
-		seen[key] = true
 		manager, err := r.kubernetesManager(ctx, target)
 		if err != nil {
 			return err
 		}
-		if err := deleteManagedNamespace(ctx, manager, namespace); err != nil {
+		if err := deleteManagedNamespace(ctx, manager, namespace, project.ID); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (r *Runner) projectCleanupDeploymentTargets(projectID string) ([]model.DeploymentTarget, error) {
-	var targets []model.DeploymentTarget
-	if err := r.db.Where("project_id = ?", projectID).Order("created_at asc").Find(&targets).Error; err != nil {
+func (r *Runner) projectCleanupClusterTargets(ctx context.Context, projectID string) ([]model.DeploymentTarget, error) {
+	targets, err := r.activeRuntimeClusterTargets(ctx)
+	if err != nil || len(targets) > 0 {
+		return targets, err
+	}
+	var targetCount int64
+	if err := r.db.WithContext(ctx).Unscoped().Model(&model.DeploymentTarget{}).
+		Where("project_id = ?", projectID).Count(&targetCount).Error; err != nil {
 		return nil, err
+	}
+	var volumeCount int64
+	if err := r.db.WithContext(ctx).Unscoped().Model(&model.ProjectVolume{}).
+		Where("project_id = ?", projectID).Count(&volumeCount).Error; err != nil {
+		return nil, err
+	}
+	if targetCount+volumeCount > 0 {
+		return nil, fmt.Errorf("project %s has runtime resources but no active runtime cluster is available for cleanup", projectID)
+	}
+	return nil, nil
+}
+
+func (r *Runner) activeRuntimeClusterTargets(ctx context.Context) ([]model.DeploymentTarget, error) {
+	// A legacy empty cluster ID meant "the current default", so after the
+	// default changes only checking stored target references can miss resources.
+	var clusters []model.RuntimeCluster
+	if err := runtimecluster.ActiveScope(r.db.WithContext(ctx)).
+		Select("id").
+		Order("created_at asc").
+		Find(&clusters).Error; err != nil {
+		return nil, err
+	}
+	targets := make([]model.DeploymentTarget, 0, len(clusters))
+	for _, cluster := range clusters {
+		targets = append(targets, model.DeploymentTarget{ClusterID: cluster.ID})
 	}
 	return targets, nil
 }
 
-func projectCleanupClusterKey(target model.DeploymentTarget) string {
-	clusterID := strings.TrimSpace(target.ClusterID)
-	if clusterID == "" {
-		return "default"
+func deleteManagedNamespace(ctx context.Context, manager kubeprovider.NamespaceManager, namespace, projectID string) error {
+	options := kubeprovider.ResourceListOptions{Kind: "namespaces", ProjectID: projectID}
+	items, err := manager.ListManagedResources(ctx, options)
+	if err != nil {
+		if isKubernetesNotFound(err) {
+			return nil
+		}
+		return fmt.Errorf("inspect namespace %s ownership: %w", namespace, err)
 	}
-	return "cluster:" + clusterID
-}
-
-func deleteManagedNamespace(ctx context.Context, manager kubeprovider.NamespaceManager, namespace string) error {
+	owned := false
+	for _, item := range items {
+		if item.Name == namespace && strings.TrimSpace(item.ProjectID) == strings.TrimSpace(projectID) {
+			owned = true
+			break
+		}
+	}
+	if !owned {
+		return nil
+	}
 	if err := manager.DeleteManagedResource(ctx, "Namespace", "", namespace); err != nil && !isKubernetesNotFound(err) {
 		return err
+	}
+	items, err = manager.ListManagedResources(ctx, options)
+	if err != nil {
+		return fmt.Errorf("confirm namespace %s deletion: %w", namespace, err)
+	}
+	for _, item := range items {
+		if item.Name == namespace && strings.TrimSpace(item.ProjectID) == strings.TrimSpace(projectID) {
+			return fmt.Errorf("namespace %s deletion is still in progress", namespace)
+		}
 	}
 	return nil
 }
@@ -313,6 +383,13 @@ func (r *Runner) cleanupRuntimeCluster(ctx context.Context, payload tasks.Resour
 func (r *Runner) finishRuntimeClusterDelete(ctx context.Context, cluster model.RuntimeCluster) error {
 	finishedAt := time.Now().UTC()
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		targetCount, volumeCount, err := runtimecluster.ActiveProjectReferenceCounts(tx, cluster.ID)
+		if err != nil {
+			return err
+		}
+		if targetCount > 0 || volumeCount > 0 {
+			return fmt.Errorf("runtime cluster %s is referenced by %d active deployment targets and %d active project volumes", cluster.ID, targetCount, volumeCount)
+		}
 		if err := r.secrets.DeleteRefContextWithDB(ctx, tx, cluster.KubeconfigRef, "runtime_cluster:"+cluster.ID+":kubeconfig"); err != nil {
 			return err
 		}
@@ -346,26 +423,43 @@ func (r *Runner) cleanupDeploymentTargetRuntimeResources(ctx context.Context, ta
 	namespace := deploymentNamespace(project)
 	kinds := []string{"services", "workloads", "configs"}
 	for _, kind := range kinds {
-		items, err := manager.ListManagedResources(ctx, kubeprovider.ResourceListOptions{
+		if err := deleteManagedResourcesAndConfirm(ctx, manager, kubeprovider.ResourceListOptions{
 			Kind:               kind,
 			Namespace:          namespace,
 			ProjectID:          target.ProjectID,
 			ApplicationID:      target.ApplicationID,
 			DeploymentTargetID: target.ID,
-		})
-		if err != nil {
-			if isKubernetesNotFound(err) {
-				continue
-			}
-			return fmt.Errorf("list %s resources in %s: %w", kind, namespace, err)
-		}
-		for _, item := range items {
-			if err := manager.DeleteManagedResource(ctx, item.Kind, item.Namespace, item.Name); err != nil && !isKubernetesNotFound(err) {
-				return fmt.Errorf("delete %s %s/%s: %w", item.Kind, item.Namespace, item.Name, err)
-			}
+		}); err != nil {
+			return err
 		}
 	}
 	return r.releaseDeploymentTargetVolumeMountsAfterCleanup(ctx, target, manager, namespace)
+}
+
+func deleteManagedResourcesAndConfirm(ctx context.Context, manager kubeprovider.NamespaceManager, options kubeprovider.ResourceListOptions) error {
+	items, err := manager.ListManagedResources(ctx, options)
+	if err != nil {
+		if isKubernetesNotFound(err) {
+			return nil
+		}
+		return fmt.Errorf("list %s resources in %s: %w", options.Kind, options.Namespace, err)
+	}
+	for _, item := range items {
+		if err := manager.DeleteManagedResource(ctx, item.Kind, item.Namespace, item.Name); err != nil && !isKubernetesNotFound(err) {
+			return fmt.Errorf("delete %s %s/%s: %w", item.Kind, item.Namespace, item.Name, err)
+		}
+	}
+	remaining, err := manager.ListManagedResources(ctx, options)
+	if err != nil {
+		if isKubernetesNotFound(err) {
+			return nil
+		}
+		return fmt.Errorf("confirm %s resource deletion in %s: %w", options.Kind, options.Namespace, err)
+	}
+	if len(remaining) > 0 {
+		return fmt.Errorf("%d %s resources in %s are still deleting", len(remaining), options.Kind, options.Namespace)
+	}
+	return nil
 }
 
 func (r *Runner) cleanupGatewayRuntimeResources(ctx context.Context, route model.GatewayRoute) error {
@@ -434,6 +528,32 @@ func markCleanupFailed(db *gorm.DB, model any, id string, err error) error {
 func (r *Runner) finishProjectDelete(project model.Project) error {
 	finishedAt := time.Now()
 	return r.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("project_id = ?", project.ID).Delete(&model.DeploymentVolumeMount{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("project_id = ?", project.ID).Delete(&model.ProjectVolume{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&model.DeploymentTarget{}).Where("project_id = ?", project.ID).Updates(map[string]any{
+			"delete_status":      "deleted",
+			"delete_message":     "",
+			"delete_finished_at": &finishedAt,
+		}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("project_id = ?", project.ID).Delete(&model.DeploymentTarget{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&model.Application{}).Where("project_id = ?", project.ID).Updates(map[string]any{
+			"delete_status":      "deleted",
+			"delete_message":     "",
+			"delete_finished_at": &finishedAt,
+		}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("project_id = ?", project.ID).Delete(&model.Application{}).Error; err != nil {
+			return err
+		}
 		if err := tx.Model(&model.Project{}).Where("id = ?", project.ID).Updates(map[string]any{
 			"delete_status":      "deleted",
 			"delete_message":     "",

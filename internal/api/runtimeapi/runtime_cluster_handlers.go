@@ -2,6 +2,7 @@ package runtimeapi
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -227,13 +228,17 @@ func (h *Handlers) DeleteRuntimeCluster(ctx *gin.Context) {
 	if !h.canManageScopedResourceByID(ctx, user, cluster.Scope, cluster.OwnerRef, scopedResourceRuntimeCluster, cluster.ID, "无权维护该运行集群") {
 		return
 	}
-	var targetCount int64
-	if err := h.dbFor(ctx).Model(&model.DeploymentTarget{}).Where("cluster_id = ?", cluster.ID).Count(&targetCount).Error; err != nil {
+	targetCount, volumeCount, err := runtimeClusterReferenceCounts(h.dbFor(ctx), cluster)
+	if err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
 	if targetCount > 0 {
-		writeError(ctx, http.StatusConflict, "运行集群仍被部署配置引用，请先迁移或删除相关部署配置")
+		writeErrorCode(ctx, http.StatusConflict, "runtime_cluster.in_use", "runtime cluster is referenced by active deployment targets")
+		return
+	}
+	if volumeCount > 0 {
+		writeErrorCode(ctx, http.StatusConflict, "runtime_cluster.in_use", "runtime cluster is referenced by active project volumes")
 		return
 	}
 	if !h.deleteStatusCanStart(cluster.DeleteStatus) {
@@ -258,6 +263,39 @@ func (h *Handlers) DeleteRuntimeCluster(ctx *gin.Context) {
 	}
 	h.auditWithContext(user.ID, "runtime_cluster.delete", cluster.ID, true, "cleanup_queued", ctx.Request.Context())
 	ctx.Status(http.StatusNoContent)
+}
+
+func runtimeClusterReferenceCounts(db *gorm.DB, cluster model.RuntimeCluster) (int64, int64, error) {
+	targetCount, volumeCount, err := runtimecluster.ActiveProjectReferenceCounts(db, cluster.ID)
+	if err != nil {
+		return 0, 0, err
+	}
+	if cluster.Scope == "global" {
+		var defaultCluster model.RuntimeCluster
+		err = runtimecluster.ActiveScope(db).
+			Where("scope = ? and is_default = ?", "global", true).
+			First(&defaultCluster).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			err = runtimecluster.ActiveScope(db).
+				Where("scope = ?", "global").
+				Order("created_at asc").
+				First(&defaultCluster).Error
+		}
+		if err != nil {
+			return 0, 0, err
+		}
+		if defaultCluster.ID == cluster.ID {
+			var implicitTargetCount int64
+			if err := db.Model(&model.DeploymentTarget{}).
+				Joins("join projects on projects.id = deployment_targets.project_id and projects.deleted_at is null").
+				Where("cluster_id = ''").
+				Count(&implicitTargetCount).Error; err != nil {
+				return 0, 0, err
+			}
+			targetCount += implicitTargetCount
+		}
+	}
+	return targetCount, volumeCount, nil
 }
 
 func (h *Handlers) TestRuntimeCluster(ctx *gin.Context) {

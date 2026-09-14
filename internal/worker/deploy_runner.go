@@ -299,7 +299,8 @@ func (r *Runner) applicationResourcesManagerAndSpec(ctx context.Context, release
 	}
 	deploymentTarget.SecretRefs = r.resolveRuntimeSecretRefsRaw(ctx, deploymentTarget.SecretRefs)
 	deploymentTarget.SecretFiles = r.resolveRuntimeSecretFileRefsRaw(ctx, deploymentTarget.SecretFiles)
-	dataVolumes, err := r.deploymentTargetDataVolumes(ctx, deploymentTarget, namespace)
+	volumeProvider, _ := manager.(kubeprovider.ProjectVolumeProvider)
+	dataVolumes, err := r.deploymentTargetDataVolumes(ctx, deploymentTarget, namespace, volumeProvider)
 	if err != nil {
 		return nil, kubeprovider.ApplicationResourcesSpec{}, err
 	}

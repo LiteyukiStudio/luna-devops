@@ -2,6 +2,7 @@ package kubernetes
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -14,31 +15,47 @@ import (
 	k8stesting "k8s.io/client-go/testing"
 )
 
-func TestListManagedResourcesPageUsesKubernetesLimitAndRemainingCount(t *testing.T) {
+func TestListManagedResourcesExhaustsKubernetesPages(t *testing.T) {
 	clientset := fake.NewSimpleClientset()
+	var requests []metav1.ListOptions
 	clientset.PrependReactor("list", "namespaces", func(action k8stesting.Action) (bool, runtime.Object, error) {
 		listAction, ok := action.(k8stesting.ListActionImpl)
 		if !ok {
-			t.Fatalf("action type = %T", action)
+			return true, nil, fmt.Errorf("action type = %T", action)
 		}
-		if limit := listAction.GetListOptions().Limit; limit != 20 {
-			t.Fatalf("Kubernetes list limit = %d, want 20", limit)
+		options := listAction.GetListOptions()
+		requests = append(requests, options)
+		switch options.Continue {
+		case "":
+			return true, &corev1.NamespaceList{
+				ListMeta: metav1.ListMeta{Continue: "next"},
+				Items: []corev1.Namespace{{ObjectMeta: metav1.ObjectMeta{
+					Name: "luna-project-a", Labels: map[string]string{ManagedByLabel: ManagedByValue},
+				}}},
+			}, nil
+		case "next":
+			return true, &corev1.NamespaceList{Items: []corev1.Namespace{{ObjectMeta: metav1.ObjectMeta{
+				Name: "luna-project-b", Labels: map[string]string{ManagedByLabel: ManagedByValue},
+			}}}}, nil
+		default:
+			return true, nil, fmt.Errorf("unexpected continue token %q", options.Continue)
 		}
-		remaining := int64(7)
-		return true, &corev1.NamespaceList{
-			ListMeta: metav1.ListMeta{RemainingItemCount: &remaining},
-			Items: []corev1.Namespace{{ObjectMeta: metav1.ObjectMeta{
-				Name: "luna-project", Labels: map[string]string{ManagedByLabel: ManagedByValue},
-			}}},
-		}, nil
 	})
 
-	page, err := NewClientForInterface(clientset).ListManagedResourcesPage(context.Background(), ResourceListOptions{Kind: "namespaces", Limit: 20})
+	items, err := NewClientForInterface(clientset).ListManagedResources(context.Background(), ResourceListOptions{Kind: "namespaces"})
 	if err != nil {
-		t.Fatalf("ListManagedResourcesPage returned error: %v", err)
+		t.Fatalf("ListManagedResources returned error: %v", err)
 	}
-	if len(page.Items) != 1 || page.Remaining != 7 {
-		t.Fatalf("page = %#v", page)
+	if len(items) != 2 || items[0].Name != "luna-project-a" || items[1].Name != "luna-project-b" {
+		t.Fatalf("items = %#v", items)
+	}
+	if len(requests) != 2 || requests[0].Continue != "" || requests[1].Continue != "next" {
+		t.Fatalf("list requests = %#v", requests)
+	}
+	for _, request := range requests {
+		if request.Limit <= 0 {
+			t.Fatalf("Kubernetes list limit = %d, want a bounded page", request.Limit)
+		}
 	}
 }
 
@@ -146,17 +163,15 @@ func TestListManagedWorkloadsExcludesBuildPods(t *testing.T) {
 	)
 	client := NewClientForInterface(clientset)
 
-	page, err := client.ListManagedResourcesPage(context.Background(), ResourceListOptions{
+	items, err := client.ListManagedResources(context.Background(), ResourceListOptions{
 		Kind:          "workloads",
 		Namespace:     "ns-demo",
 		ProjectID:     "prj_demo",
 		ApplicationID: "app_api",
-		Limit:         20,
 	})
 	if err != nil {
-		t.Fatalf("ListManagedResourcesPage returned error: %v", err)
+		t.Fatalf("ListManagedResources returned error: %v", err)
 	}
-	items := page.Items
 	for _, item := range items {
 		if item.Name == "build-job-pod" {
 			t.Fatalf("build pod should be excluded from runtime workloads: %#v", items)
@@ -173,8 +188,8 @@ func TestListManagedWorkloadsExcludesBuildPods(t *testing.T) {
 		if !ok {
 			t.Fatalf("action type = %T", action)
 		}
-		if limit := listAction.GetListOptions().Limit; limit != 20 {
-			t.Fatalf("%s list limit = %d, want 20", action.GetResource().Resource, limit)
+		if limit := listAction.GetListOptions().Limit; limit <= 0 {
+			t.Fatalf("%s list limit = %d, want a bounded page", action.GetResource().Resource, limit)
 		}
 	}
 }

@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 
 	"github.com/LiteyukiStudio/devops/internal/api/applicationapi"
 	"github.com/LiteyukiStudio/devops/internal/api/buildapi"
@@ -11,6 +12,7 @@ import (
 	kubeprovider "github.com/LiteyukiStudio/devops/internal/provider/kubernetes"
 	"github.com/LiteyukiStudio/devops/internal/tasks"
 	"github.com/gin-gonic/gin"
+	"github.com/hibiken/asynq"
 	"gorm.io/gorm"
 )
 
@@ -149,5 +151,5 @@ func (host applicationHost) EnqueueApplicationDelete(ctx context.Context, app mo
 	_, err := host.handlers.taskClient.EnqueueApplicationDelete(ctx, tasks.ApplicationDeletePayload{
 		ApplicationID: app.ID, ProjectID: app.ProjectID, ActorID: actorID, DeleteData: deleteData,
 	})
-	return err == nil
+	return err == nil || errors.Is(err, asynq.ErrDuplicateTask)
 }

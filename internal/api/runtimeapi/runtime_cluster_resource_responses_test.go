@@ -1,6 +1,9 @@
 package runtimeapi
 
-import "testing"
+import (
+	"fmt"
+	"testing"
+)
 
 func TestGroupWorkloadPodResponses(t *testing.T) {
 	items := []clusterResourceResponse{
@@ -25,5 +28,26 @@ func TestGroupWorkloadPodResponses(t *testing.T) {
 	}
 	if grouped[2].Kind != "Pod" || grouped[2].Name != "manual-pod" {
 		t.Fatalf("expected unmatched pod to stay top-level, got %s/%s", grouped[2].Kind, grouped[2].Name)
+	}
+}
+
+func TestClusterResourcePaginatedResponseUsesCompleteSortedSet(t *testing.T) {
+	filteredItems := make([]clusterResourceResponse, 0, 25)
+	for index := 24; index >= 0; index-- {
+		filteredItems = append(filteredItems, clusterResourceResponse{Name: fmt.Sprintf("resource-%02d", index)})
+	}
+
+	response := clusterResourcePaginatedResponse(filteredItems, paginationParams{
+		Page:      2,
+		PageSize:  10,
+		SortBy:    "name",
+		SortOrder: "asc",
+	})
+
+	if response.Page != 2 || response.Total != 25 || response.TotalPages != 3 {
+		t.Fatalf("pagination = page %d, total %d, totalPages %d", response.Page, response.Total, response.TotalPages)
+	}
+	if len(response.Items) != 10 || response.Items[0].Name != "resource-10" || response.Items[9].Name != "resource-19" {
+		t.Fatalf("second page = %#v", response.Items)
 	}
 }

@@ -37,13 +37,17 @@ func (r *Runner) handleApplicationDelete(ctx context.Context, task *asynq.Task) 
 	if err := workerStage(ctx, "application_delete.cleanup_runtime", func(stageCtx context.Context) error {
 		return r.cleanupApplicationRuntimeResources(stageCtx, payload)
 	}); err != nil {
-		// Persist the terminal attempt state even when the task context was cancelled.
-		// WithoutCancel preserves trace values while the timeout bounds this detached write.
-		persistCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-		defer cancel()
-		_ = r.markApplicationDeleteFailed(persistCtx, payload.ApplicationID, err)
+		if resourceCleanupAttemptExhausted(ctx) {
+			// Persist the terminal attempt state even when the task context was cancelled.
+			// WithoutCancel preserves trace values while the timeout bounds this detached write.
+			persistCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+			defer cancel()
+			_ = r.markApplicationDeleteFailed(persistCtx, payload.ApplicationID, err)
+		}
 		return err
 	}
+	// A finalize failure leaves the application deleting. The periodic stale
+	// cleanup recovery can safely enqueue the idempotent finalizer again.
 	return workerStage(ctx, "application_delete.finalize", func(stageCtx context.Context) error {
 		return r.finishApplicationDelete(stageCtx, app)
 	})
@@ -55,34 +59,38 @@ func (r *Runner) cleanupApplicationRuntimeResources(ctx context.Context, payload
 		return fmt.Errorf("project not found: %w", err)
 	}
 	var targets []model.DeploymentTarget
-	if err := r.db.WithContext(ctx).Where("project_id = ? and application_id = ?", payload.ProjectID, payload.ApplicationID).Find(&targets).Error; err != nil {
+	if err := r.db.WithContext(ctx).Unscoped().Where("project_id = ? and application_id = ?", payload.ProjectID, payload.ApplicationID).Find(&targets).Error; err != nil {
 		return err
 	}
+	clusterTargets, err := r.activeRuntimeClusterTargets(ctx)
+	if err != nil {
+		return err
+	}
+	if len(clusterTargets) == 0 && len(targets) > 0 {
+		return fmt.Errorf("application %s has runtime resources but no active runtime cluster is available for cleanup", payload.ApplicationID)
+	}
 	kinds := []string{"services", "workloads", "configs"}
-	for _, target := range targets {
-		manager, err := r.kubernetesManager(ctx, target)
+	namespace := deploymentNamespace(project)
+	for _, clusterTarget := range clusterTargets {
+		manager, err := r.kubernetesManager(ctx, clusterTarget)
 		if err != nil {
 			return err
 		}
-		namespace := deploymentNamespace(project)
 		for _, kind := range kinds {
-			items, err := manager.ListManagedResources(ctx, kubeprovider.ResourceListOptions{
+			if err := deleteManagedResourcesAndConfirm(ctx, manager, kubeprovider.ResourceListOptions{
 				Kind:          kind,
 				Namespace:     namespace,
 				ProjectID:     payload.ProjectID,
 				ApplicationID: payload.ApplicationID,
-			})
-			if err != nil {
-				if isKubernetesNotFound(err) {
-					continue
-				}
-				return fmt.Errorf("list %s resources in %s: %w", kind, namespace, err)
+			}); err != nil {
+				return err
 			}
-			for _, item := range items {
-				if err := manager.DeleteManagedResource(ctx, item.Kind, item.Namespace, item.Name); err != nil && !isKubernetesNotFound(err) {
-					return fmt.Errorf("delete %s %s/%s: %w", item.Kind, item.Namespace, item.Name, err)
-				}
-			}
+		}
+	}
+	for _, target := range targets {
+		manager, err := r.kubernetesManager(ctx, target)
+		if err != nil {
+			return err
 		}
 		if err := r.releaseDeploymentTargetVolumeMountsAfterCleanup(ctx, target, manager, namespace); err != nil {
 			return err

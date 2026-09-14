@@ -21,12 +21,6 @@ type ResourceListOptions struct {
 	ApplicationID      string
 	DeploymentTargetID string
 	RouteID            string
-	Limit              int64
-}
-
-type ResourceListPage struct {
-	Items     []ResourceSnapshot
-	Remaining int64
 }
 
 type ResourceEventListPage struct {

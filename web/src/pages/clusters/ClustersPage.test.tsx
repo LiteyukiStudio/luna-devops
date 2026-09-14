@@ -88,6 +88,7 @@ describe('clusters page visibility', () => {
   beforeEach(async () => {
     vi.clearAllMocks()
     await i18next.changeLanguage('en-US')
+    mocks.session.user = { id: 'usr_admin', role: 'platform_admin' }
     mocks.listProjects.mockResolvedValue([])
     mocks.listRuntimeClusters.mockResolvedValue([cluster])
     mocks.listRuntimeClustersPage.mockResolvedValue(page([cluster]))
@@ -111,6 +112,30 @@ describe('clusters page visibility', () => {
       cluster.id,
       expect.objectContaining({ resourceCategory: 'workloads', visibility: 'all' }),
     ))
+  })
+
+  it('allows regular users to inspect related resources on a global cluster', async () => {
+    mocks.session.user = { id: 'usr_member', role: 'user' }
+    const user = userEvent.setup()
+    renderPage()
+
+    await user.click(await screen.findByRole('tab', { name: 'Workloads' }))
+
+    await waitFor(() => expect(mocks.listRuntimeClusterResourcesPage).toHaveBeenCalledWith(
+      cluster.id,
+      expect.objectContaining({ resourceCategory: 'workloads', visibility: 'related' }),
+    ))
+  })
+
+  it('shows a query failure instead of an empty resource list', async () => {
+    mocks.listRuntimeClusterResourcesPage.mockRejectedValueOnce(new Error('cluster unavailable'))
+    const user = userEvent.setup()
+    renderPage()
+
+    await user.click(await screen.findByRole('tab', { name: 'Workloads' }))
+
+    expect(await screen.findByText('Unable to load cluster resources')).toBeInTheDocument()
+    expect(screen.getByText('The live Kubernetes resource query failed. Check the cluster connection and permissions, then retry.')).toBeInTheDocument()
   })
 })
 
