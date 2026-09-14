@@ -152,7 +152,7 @@ func TestHighGrowthListHandlersCannotBypassPaginationContract(t *testing.T) {
 		t.Run(contract.function, func(t *testing.T) {
 			function := parseAPIFunction(t, contract.file, contract.function)
 			calls := calledFunctions(function.Body)
-			if !calls["paginatedResponse"] {
+			if !calls["paginatedResponse"] && !calls["clusterResourcePaginatedResponse"] {
 				t.Fatalf("%s must return the shared pagination envelope", contract.function)
 			}
 			sortNormalized := calls["paginationFromQueryWithSort"] || calls["normalizeClusterResourceSortBy"] || calls["gitRepositoryPagination"]
@@ -163,7 +163,7 @@ func TestHighGrowthListHandlersCannotBypassPaginationContract(t *testing.T) {
 				calls["buildRunPageQuery"] || calls["containerImagePageQuery"] ||
 				calls["deploymentTargetPageQuery"] || calls["projectPageQuery"] ||
 				calls["ListRepositories"] || calls["SearchPublicRepositories"] ||
-				calls["ListManagedResourcesPage"] || calls["ListManagedResourceEventsPage"]
+				calls["clusterResourcePaginatedResponse"] || calls["ListManagedResourceEventsPage"]
 			if !bounded {
 				t.Fatalf("%s must apply LIMIT/OFFSET or bounded slice pagination", contract.function)
 			}

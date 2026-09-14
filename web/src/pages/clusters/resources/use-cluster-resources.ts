@@ -11,9 +11,9 @@ import { canDeleteClusterResource } from './cluster-resource-utils'
 const RESOURCE_PAGE_SIZE_OPTIONS = [10, 20, 50, 100]
 interface ResourceViewState { scope: string, page: number, selectedKeys: string[] }
 
-export function useClusterResources({ activeTab, manageableClusters, user, visibility }: {
+export function useClusterResources({ activeTab, resourceClusters, user, visibility }: {
   activeTab: string
-  manageableClusters: RuntimeCluster[]
+  resourceClusters: RuntimeCluster[]
   user?: CurrentUser
   visibility: ResultVisibility
 }) {
@@ -28,10 +28,10 @@ export function useClusterResources({ activeTab, manageableClusters, user, visib
   const [consoleResource, setConsoleResource] = useState<ClusterResource | null>(null)
   const [yamlResource, setYamlResource] = useState<ClusterResource | null>(null)
 
-  const effectiveResourceClusterId = manageableClusters.some(cluster => cluster.id === selectedResourceClusterId)
+  const effectiveResourceClusterId = resourceClusters.some(cluster => cluster.id === selectedResourceClusterId)
     ? selectedResourceClusterId
-    : manageableClusters[0]?.id ?? ''
-  const selectedResourceCluster = manageableClusters.find(cluster => cluster.id === effectiveResourceClusterId)
+    : resourceClusters[0]?.id ?? ''
+  const selectedResourceCluster = resourceClusters.find(cluster => cluster.id === effectiveResourceClusterId)
   const resourceCategory = (activeTab === 'clusters' ? 'namespaces' : activeTab) as RuntimeClusterResourceCategory
   const resourceScope = `${effectiveResourceClusterId}:${resourceCategory}`
   const currentResourceView = resourceViewState.scope === resourceScope

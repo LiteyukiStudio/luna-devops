@@ -21,16 +21,21 @@ import (
 	"gorm.io/gorm/schema"
 )
 
-const baselineMigrationVersion = 103
+const (
+	baselineMigrationVersion = 103
+	latestMigrationVersion   = 104
+)
 
-func TestEmbeddedMigrationsContainSingleBaseline(t *testing.T) {
+func TestEmbeddedMigrationsContainExpectedFiles(t *testing.T) {
 	entries, err := sqlmigrations.FS.ReadDir(".")
 	if err != nil {
 		t.Fatalf("read embedded migrations: %v", err)
 	}
-	baselineFiles := map[string]bool{
-		"000103_baseline.up.sql":   false,
-		"000103_baseline.down.sql": false,
+	migrationFiles := map[string]bool{
+		"000103_baseline.up.sql":                  false,
+		"000103_baseline.down.sql":                false,
+		"000104_bridge_retained_volumes.up.sql":   false,
+		"000104_bridge_retained_volumes.down.sql": false,
 	}
 	migrationCount := 0
 	for _, entry := range entries {
@@ -39,17 +44,17 @@ func TestEmbeddedMigrationsContainSingleBaseline(t *testing.T) {
 			continue
 		}
 		migrationCount++
-		if _, ok := baselineFiles[name]; !ok {
+		if _, ok := migrationFiles[name]; !ok {
 			t.Fatalf("unexpected embedded migration %s", name)
 		}
-		baselineFiles[name] = true
+		migrationFiles[name] = true
 	}
-	if migrationCount != len(baselineFiles) {
-		t.Fatalf("embedded migration file count = %d, want %d", migrationCount, len(baselineFiles))
+	if migrationCount != len(migrationFiles) {
+		t.Fatalf("embedded migration file count = %d, want %d", migrationCount, len(migrationFiles))
 	}
-	for name, found := range baselineFiles {
+	for name, found := range migrationFiles {
 		if !found {
-			t.Fatalf("baseline is missing %s", name)
+			t.Fatalf("embedded migrations are missing %s", name)
 		}
 	}
 }
@@ -195,8 +200,9 @@ WHERE namespace.nspname = current_schema()
 	}
 	assertRunnerMigrationVersion(t, runner, baselineMigrationVersion)
 	if err := MigrateContext(context.Background(), testDB); err != nil {
-		t.Fatalf("repeat migration after baseline bootstrap: %v", err)
+		t.Fatalf("apply migrations after baseline bootstrap: %v", err)
 	}
+	assertRunnerMigrationVersion(t, runner, latestMigrationVersion)
 
 	assertFreshMigrationState(t, testDB)
 	assertStableModelMigrationCoverage(t, testDB)
@@ -262,8 +268,8 @@ func assertFreshMigrationState(t *testing.T, db *gorm.DB) {
 	if migrationState.Dirty {
 		t.Fatalf("fresh database migration is dirty at version %d", migrationState.Version)
 	}
-	if migrationState.Version != baselineMigrationVersion {
-		t.Fatalf("migration version = %d, want %d", migrationState.Version, baselineMigrationVersion)
+	if migrationState.Version != latestMigrationVersion {
+		t.Fatalf("migration version = %d, want %d", migrationState.Version, latestMigrationVersion)
 	}
 	assertSlimmingMigrationRemovals(t, db)
 	assertBaselineConstraintsAndDefaults(t, db)

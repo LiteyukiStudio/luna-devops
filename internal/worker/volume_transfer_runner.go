@@ -223,6 +223,9 @@ func (r *Runner) prepareVolumeTransferClaim(ctx context.Context, projectVolume m
 	if err != nil {
 		return "", nil, err
 	}
+	if err := adoptRetainedProjectVolumeClaim(ctx, provider, projectVolume); err != nil {
+		return "", nil, err
+	}
 	if transfer.Direction == model.VolumeTransferDirectionImport {
 		_, observeErr := provider.ObserveProjectVolumeClaim(ctx, projectVolume.Namespace, projectVolume.ClaimName)
 		switch {

@@ -14,7 +14,7 @@ type applicationVolumeAttachmentObserver interface {
 	ObserveApplicationVolumeAttachments(context.Context, string, string, string) (map[string]kubeprovider.ApplicationVolumeAttachment, error)
 }
 
-func (r *Runner) deploymentTargetDataVolumes(ctx context.Context, target model.DeploymentTarget, namespace string) ([]kubeprovider.ApplicationDataVolume, error) {
+func (r *Runner) deploymentTargetDataVolumes(ctx context.Context, target model.DeploymentTarget, namespace string, provider kubeprovider.ProjectVolumeProvider) ([]kubeprovider.ApplicationDataVolume, error) {
 	service, err := r.projectVolumeService()
 	if err != nil {
 		return nil, err
@@ -52,6 +52,14 @@ func (r *Runner) deploymentTargetDataVolumes(ctx context.Context, target model.D
 			}
 			if projectVolume.ClusterID != target.ClusterID || projectVolume.Namespace != namespace {
 				return nil, fmt.Errorf("project volume %s is not compatible with the deployment target", projectVolume.ID)
+			}
+			if projectVolume.SourceKind == model.ProjectVolumeSourceRetained {
+				if provider == nil {
+					return nil, fmt.Errorf("kubernetes provider does not support retained project volume adoption")
+				}
+				if err := adoptRetainedProjectVolumeClaim(ctx, provider, projectVolume); err != nil {
+					return nil, err
+				}
 			}
 			item.SourceType = "projectVolume"
 			item.ProjectVolumeID = projectVolume.ID

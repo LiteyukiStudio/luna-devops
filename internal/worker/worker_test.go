@@ -1301,29 +1301,28 @@ func TestResourceCleanupCanRunOnlyAllowsDeleting(t *testing.T) {
 
 func TestCleanupProjectNamespacesCoversDistinctClusters(t *testing.T) {
 	runner := newDryRunWorkerTestRunner(t, Options{})
-	managers := map[string]*recordingNamespaceManager{}
+	project := model.Project{ID: "prj_abcdef1234567890", Identifier: "demo", KubernetesNamespace: "luna-demo"}
+	ownedNamespace := kubeprovider.ResourceSnapshot{Kind: "Namespace", Name: project.KubernetesNamespace, ProjectID: project.ID}
+	managers := map[string]*cleanupObservationManager{}
 	runner.kubernetesManagerFactory = func(target model.DeploymentTarget) (kubeprovider.NamespaceManager, error) {
-		key := projectCleanupClusterKey(target)
+		key := target.ClusterID
 		manager := managers[key]
 		if manager == nil {
-			manager = &recordingNamespaceManager{}
+			manager = &cleanupObservationManager{lists: [][]kubeprovider.ResourceSnapshot{{ownedNamespace}, nil}}
 			managers[key] = manager
 		}
 		return manager, nil
 	}
 
-	project := model.Project{ID: "prj_abcdef1234567890", Identifier: "demo", KubernetesNamespace: "luna-demo"}
 	targets := []model.DeploymentTarget{
-		{ID: "dplt_dev", ClusterID: "rcl_one"},
-		{ID: "dplt_prod", ClusterID: "rcl_two"},
-		{ID: "dplt_stage", ClusterID: "rcl_one"},
-		{ID: "dplt_default"},
+		{ClusterID: "rcl_one"},
+		{ClusterID: "rcl_two"},
 	}
 
 	if err := runner.cleanupProjectNamespacesForDeploymentTargets(context.Background(), project, targets); err != nil {
 		t.Fatalf("cleanupProjectNamespacesForDeploymentTargets returned error: %v", err)
 	}
-	for _, key := range []string{"cluster:rcl_one", "cluster:rcl_two", "default"} {
+	for _, key := range []string{"rcl_one", "rcl_two"} {
 		manager := managers[key]
 		if manager == nil {
 			t.Fatalf("manager %q was not used", key)
@@ -1334,29 +1333,13 @@ func TestCleanupProjectNamespacesCoversDistinctClusters(t *testing.T) {
 	}
 }
 
-func TestCleanupProjectNamespacesWithoutDeploymentTargetsDoesNotRequireCluster(t *testing.T) {
-	runner := newDryRunWorkerTestRunner(t, Options{})
-	managerCalls := 0
-	runner.kubernetesManagerFactory = func(model.DeploymentTarget) (kubeprovider.NamespaceManager, error) {
-		managerCalls++
-		return nil, errors.New("unexpected manager call")
-	}
-
-	project := model.Project{ID: "prj_empty", Identifier: "empty"}
-	if err := runner.cleanupProjectNamespacesForDeploymentTargets(context.Background(), project, nil); err != nil {
-		t.Fatalf("cleanupProjectNamespacesForDeploymentTargets returned error: %v", err)
-	}
-	if managerCalls != 0 {
-		t.Fatalf("manager calls = %d, want 0", managerCalls)
-	}
-}
-
 func TestDeleteManagedNamespaceIgnoresKubernetesNotFound(t *testing.T) {
-	manager := &recordingNamespaceManager{
-		err: apierrors.NewNotFound(schema.GroupResource{Resource: "namespaces"}, "ns-demo"),
+	manager := &cleanupObservationManager{
+		lists:     [][]kubeprovider.ResourceSnapshot{{{Kind: "Namespace", Name: "ns-demo", ProjectID: "prj_demo"}}, nil},
+		deleteErr: apierrors.NewNotFound(schema.GroupResource{Resource: "namespaces"}, "ns-demo"),
 	}
 
-	if err := deleteManagedNamespace(context.Background(), manager, "ns-demo"); err != nil {
+	if err := deleteManagedNamespace(context.Background(), manager, "ns-demo", "prj_demo"); err != nil {
 		t.Fatalf("deleteManagedNamespace returned error: %v", err)
 	}
 	if len(manager.deletions) != 1 {

@@ -8,6 +8,7 @@ import { api } from '@/api'
 import { useSession } from '@/app/session-context'
 import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { ContentTabs } from '@/components/common/content-tabs'
+import { ErrorState } from '@/components/common/error-state'
 import { LazyDialogBoundary } from '@/components/common/lazy-dialog-boundary'
 import { Button } from '@/components/ui/button'
 import { NativeSelect as Select } from '@/components/ui/native-select'
@@ -15,7 +16,6 @@ import { TabsContent } from '@/components/ui/tabs'
 import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
 import { isPlatformAdmin } from '@/lib/roles'
 import { useRuntimeClusterPressure } from '@/lib/runtime-cluster-pressure'
-import { canManageCluster } from './management/cluster-helpers'
 import { RuntimeClusterTable } from './management/runtime-cluster-table'
 import { ClusterResourcesPanel } from './resources/cluster-resources-panel'
 import { useClusterResources } from './resources/use-cluster-resources'
@@ -52,13 +52,12 @@ export function ClustersPage() {
     clusterIds: (clusters.data?.items ?? []).map(cluster => cluster.id),
     enabled: activeTab === 'clusters',
   })
-  const manageableClusters = useMemo(
+  const resourceClusters = useMemo(
     () => (clusterOptions.data ?? [])
-      .filter(cluster => (cluster.deleteStatus ?? 'active') === 'active')
-      .filter(cluster => canManageCluster(cluster, user?.id, user?.role)),
-    [clusterOptions.data, user?.id, user?.role],
+      .filter(cluster => (cluster.deleteStatus ?? 'active') === 'active'),
+    [clusterOptions.data],
   )
-  const resources = useClusterResources({ activeTab, manageableClusters, user, visibility: effectiveVisibility })
+  const resources = useClusterResources({ activeTab, resourceClusters, user, visibility: effectiveVisibility })
 
   const deleteCluster = useMutation({
     mutationFn: api.deleteRuntimeCluster,
@@ -124,13 +123,13 @@ export function ClustersPage() {
                       aria-label={t('clustersPage.selectResourceCluster')}
                       className="h-9"
                       containerClassName="w-52 max-w-full"
-                      disabled={manageableClusters.length === 0}
+                      disabled={resourceClusters.length === 0}
                       value={resources.selectedResourceCluster?.id ?? ''}
                       onChange={event => resources.selectResourceCluster(event.target.value)}
                     >
-                      {manageableClusters.length > 0
-                        ? manageableClusters.map(cluster => <option key={cluster.id} value={cluster.id}>{cluster.name}</option>)
-                        : <option value="">{t('clustersPage.noManageableClusterTitle')}</option>}
+                      {resourceClusters.length > 0
+                        ? resourceClusters.map(cluster => <option key={cluster.id} value={cluster.id}>{cluster.name}</option>)
+                        : <option value="">{t('clustersPage.noResourceClusterTitle')}</option>}
                     </Select>
                     <Button
                       disabled={!resources.selectedResourceCluster || resources.clusterResources.isFetching}
@@ -189,20 +188,29 @@ export function ClustersPage() {
         </TabsContent>
         {RESOURCE_TABS.map(tab => (
           <TabsContent key={tab} value={tab}>
-            <ClusterResourcesPanel
-              items={activeTab === tab ? resources.activeResourceItems : []}
-              loading={activeTab === tab && resources.clusterResources.isFetching}
-              pagination={activeTab === tab ? resources.resourcePagination : undefined}
-              selectedCluster={resources.selectedResourceCluster}
-              selectedResourceKeys={activeTab === tab ? resources.selectedResourceKeys : []}
-              tab={tab}
-              user={user}
-              onDeleteResource={resources.setResourceToDelete}
-              onOpenConsole={resources.setConsoleResource}
-              onOpenEvents={resources.setEventResource}
-              onOpenYAML={resources.setYamlResource}
-              onSelectionChange={resources.setSelectedResourceKeys}
-            />
+            {activeTab === tab && resources.clusterResources.isError
+              ? (
+                  <ErrorState
+                    title={t('clustersPage.resourceLoadFailedTitle')}
+                    description={t('clustersPage.resourceLoadFailedDescription')}
+                  />
+                )
+              : (
+                  <ClusterResourcesPanel
+                    items={activeTab === tab ? resources.activeResourceItems : []}
+                    loading={activeTab === tab && resources.clusterResources.isFetching}
+                    pagination={activeTab === tab ? resources.resourcePagination : undefined}
+                    selectedCluster={resources.selectedResourceCluster}
+                    selectedResourceKeys={activeTab === tab ? resources.selectedResourceKeys : []}
+                    tab={tab}
+                    user={user}
+                    onDeleteResource={resources.setResourceToDelete}
+                    onOpenConsole={resources.setConsoleResource}
+                    onOpenEvents={resources.setEventResource}
+                    onOpenYAML={resources.setYamlResource}
+                    onSelectionChange={resources.setSelectedResourceKeys}
+                  />
+                )}
           </TabsContent>
         ))}
       </ContentTabs>

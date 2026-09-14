@@ -74,6 +74,19 @@ func TestEnqueueResourceCleanupPassesActor(t *testing.T) {
 	}
 }
 
+func TestEnqueueApplicationDeleteTreatsExistingTaskAsQueued(t *testing.T) {
+	fake := &fakeBuildTaskEnqueuer{applicationDeleteError: asynq.ErrDuplicateTask}
+	h := &Handlers{taskClient: fake}
+
+	app := model.Application{ID: "app_1", ProjectID: "prj_1"}
+	if !((applicationHost{domainHost{handlers: h}}).EnqueueApplicationDelete(context.Background(), app, "usr_operator", false)) {
+		t.Fatal("existing application deletion task must be treated as queued")
+	}
+	if fake.applicationDeletePayload.ApplicationID != app.ID || fake.applicationDeletePayload.ProjectID != app.ProjectID {
+		t.Fatalf("application deletion payload = %#v", fake.applicationDeletePayload)
+	}
+}
+
 func TestRollbackReleaseFromTargetUsesPreviousSuccessfulRelease(t *testing.T) {
 	source := model.Release{
 		ID:            "rel_current",
@@ -205,6 +218,7 @@ type fakeBuildTaskEnqueuer struct {
 	gatewayPayload           tasks.GatewayApplyPayload
 	notificationPayload      tasks.NotificationDeliverPayload
 	applicationDeletePayload tasks.ApplicationDeletePayload
+	applicationDeleteError   error
 	resourceCleanupPayload   tasks.ResourceCleanupPayload
 }
 
@@ -230,7 +244,7 @@ func (f *fakeBuildTaskEnqueuer) EnqueueNotificationDeliver(_ context.Context, pa
 
 func (f *fakeBuildTaskEnqueuer) EnqueueApplicationDelete(_ context.Context, payload tasks.ApplicationDeletePayload) (*asynq.TaskInfo, error) {
 	f.applicationDeletePayload = payload
-	return &asynq.TaskInfo{}, nil
+	return &asynq.TaskInfo{}, f.applicationDeleteError
 }
 
 func (f *fakeBuildTaskEnqueuer) EnqueueResourceCleanup(_ context.Context, payload tasks.ResourceCleanupPayload) (*asynq.TaskInfo, error) {

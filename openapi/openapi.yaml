@@ -4217,7 +4217,7 @@ paths:
             type: string
         - name: page
           in: query
-          schema: { type: integer, minimum: 1, maximum: 1, default: 1 }
+          schema: { type: integer, minimum: 1, default: 1 }
         - $ref: "#/components/parameters/PageSize"
         - name: sortBy
           in: query
@@ -4225,7 +4225,7 @@ paths:
         - $ref: "#/components/parameters/SortOrder"
       responses:
         "200":
-          description: First bounded, globally sorted resource page. Kubernetes resource categories span independent cursors, so page values above 1 return `pagination.cursor_required`.
+          description: Globally sorted resource page after the selected Kubernetes resource category has been fully enumerated and visibility-filtered.
           content:
             application/json:
               schema:

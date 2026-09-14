@@ -114,6 +114,9 @@ func (r *Runner) handleVolumeProvision(ctx context.Context, task *asynq.Task) er
 
 func (r *Runner) applyProjectVolumeOperation(ctx context.Context, provider kubeprovider.ProjectVolumeProvider, projectVolume model.ProjectVolume, operation string) error {
 	if operation == tasks.VolumeOperationExpand {
+		if err := adoptRetainedProjectVolumeClaim(ctx, provider, projectVolume); err != nil {
+			return err
+		}
 		_, err := provider.ExpandProjectVolumeClaim(ctx, projectVolume.Namespace, projectVolume.ClaimName,
 			projectVolume.ProjectID, projectVolume.ID, projectVolume.CapacityRequest)
 		return err
@@ -203,6 +206,10 @@ func (r *Runner) handleVolumeDelete(ctx context.Context, task *asynq.Task) error
 	if err != nil {
 		return r.finishProjectVolumeAttempt(ctx, service, projectVolume, err)
 	}
+	if err = adoptRetainedProjectVolumeClaim(ctx, provider, projectVolume); err != nil &&
+		!errors.Is(err, kubeprovider.ErrProjectVolumeClaimNotFound) {
+		return r.finishProjectVolumeAttempt(ctx, service, projectVolume, err)
+	}
 	err = provider.DeleteProjectVolumeClaim(ctx, projectVolume.Namespace, projectVolume.ClaimName, projectVolume.ProjectID, projectVolume.ID)
 	if err != nil && !errors.Is(err, kubeprovider.ErrProjectVolumeClaimNotFound) {
 		return r.finishProjectVolumeAttempt(ctx, service, projectVolume, err)
@@ -224,6 +231,19 @@ func (r *Runner) handleVolumeDelete(ctx context.Context, task *asynq.Task) error
 		return safeVolumeTaskError(err)
 	}
 	return nil
+}
+
+func adoptRetainedProjectVolumeClaim(ctx context.Context, provider kubeprovider.ProjectVolumeProvider, projectVolume model.ProjectVolume) error {
+	if projectVolume.SourceKind != model.ProjectVolumeSourceRetained {
+		return nil
+	}
+	_, err := provider.AdoptExistingProjectVolumeClaim(ctx, kubeprovider.ExistingProjectVolumeClaimSpec{
+		ProjectID: projectVolume.ProjectID,
+		VolumeID:  projectVolume.ID,
+		Namespace: projectVolume.Namespace,
+		ClaimName: projectVolume.ClaimName,
+	})
+	return err
 }
 
 func (r *Runner) handleVolumeReconcile(ctx context.Context, _ *asynq.Task) error {
