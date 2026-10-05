@@ -12,6 +12,7 @@ fi
 while IFS= read -r migration; do
   psql "${AGENT_TEST_DATABASE_URL}" \
     --set ON_ERROR_STOP=1 \
+    --single-transaction \
     --file "${migration}" \
     >/dev/null
 done < <(find "${ROOT_DIR}/migrations" -maxdepth 1 -type f -name '*.up.sql' -print | sort)
