@@ -27,8 +27,9 @@ const buildJobProgressKeys = new Set([
 
 const buildFailedStatuses = new Set(['failed', 'lost', 'timeout'])
 
-export function ApplicationBuildRunRow({ binding, deploymentTargetName, canceling, deleting, focused = false, jobs, latestJob, onCancel, onDelete, onOpenLogs, onRetry, retrying, run }: {
-  binding: { cloneUrl?: string, defaultBranch: string, gitAccountId: string, owner: string, repo: string }
+export function ApplicationBuildRunRow({ binding, canRetry, deploymentTargetName, canceling, deleting, focused = false, jobs, latestJob, onCancel, onDelete, onOpenLogs, onRetry, retrying, run }: {
+  binding?: { cloneUrl?: string, defaultBranch: string, gitAccountId: string, owner: string, repo: string }
+  canRetry: boolean
   deploymentTargetName?: string
   canceling: boolean
   deleting: boolean
@@ -43,7 +44,7 @@ export function ApplicationBuildRunRow({ binding, deploymentTargetName, cancelin
   run: BuildRun
 }) {
   const { t } = useTranslation()
-  const branch = run.sourceBranch || run.sourceTag || binding.defaultBranch || 'main'
+  const branch = run.sourceBranch || run.sourceTag || binding?.defaultBranch || 'main'
   const targetImage = buildRunImageRef(run)
   const commit = shortCommit(run.sourceCommit)
   const triggerActor = buildRunTriggerActor(run)
@@ -52,8 +53,8 @@ export function ApplicationBuildRunRow({ binding, deploymentTargetName, cancelin
   const liveState = buildRunLiveState(run, latestJob, t)
   const failureMessage = buildRunFailureMessage(run, latestJob, t)
   const duration = formatBuildDuration(run, t)
-  const commitUrl = buildCommitUrl(binding, run.sourceCommit)
-  const authorUrl = buildAuthorUrl(binding, run)
+  const commitUrl = binding ? buildCommitUrl(binding, run.sourceCommit) : ''
+  const authorUrl = binding ? buildAuthorUrl(binding, run) : ''
   const canCancel = run.status === 'queued' || run.status === 'running'
   const canDelete = ['succeeded', 'failed', 'canceled', 'lost', 'timeout'].includes(run.status)
   const copyImageRef = () => {
@@ -80,7 +81,7 @@ export function ApplicationBuildRunRow({ binding, deploymentTargetName, cancelin
           <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
             <span className="inline-flex max-w-full min-w-0 items-center gap-1.5 rounded-md border border-border bg-muted/60 px-2 py-1">
               <span className="shrink-0 font-mono font-medium text-primary-text">{branch}</span>
-              {commitUrl
+              {binding && (commitUrl
                 ? (
                     <a className="min-w-0 truncate font-medium text-primary-text transition-colors hover:text-primary-text/80" href={commitUrl} rel="noreferrer" target="_blank" title={`${binding.owner}/${binding.repo}`}>
                       {binding.owner}
@@ -94,7 +95,7 @@ export function ApplicationBuildRunRow({ binding, deploymentTargetName, cancelin
                       /
                       {binding.repo}
                     </span>
-                  )}
+                  ))}
               <span className="shrink-0 font-mono text-muted-foreground">
                 #
                 {shortBuildId(run.id)}
@@ -178,7 +179,7 @@ export function ApplicationBuildRunRow({ binding, deploymentTargetName, cancelin
             </Button>
           </PopoverTrigger>
           <PopoverContent align="end" className="w-64 max-w-[calc(100vw-2rem)] p-1">
-            <Button className="h-auto w-full justify-start gap-2 whitespace-normal text-left" disabled={retrying} variant="ghost" onClick={onRetry}>
+            <Button className="h-auto w-full justify-start gap-2 whitespace-normal text-left" disabled={!canRetry || retrying} variant="ghost" onClick={onRetry}>
               <RotateCcw className="size-4 shrink-0" />
               <span className="min-w-0">{t('buildsPage.retry')}</span>
             </Button>

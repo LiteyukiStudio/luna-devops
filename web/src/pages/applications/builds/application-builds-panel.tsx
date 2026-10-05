@@ -347,100 +347,92 @@ export function ApplicationBuildsPanel({ applicationId, applicationIdentifier, b
 
   return (
     <div className="grid gap-4">
-      {repositoryBindings.length || binding
-        ? (
-            <div className="overflow-hidden rounded-lg border border-border bg-card">
-              <div className="flex flex-col gap-3 border-b border-border bg-muted/45 px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
-                <div className="min-w-0">
-                  <h2 className="text-base font-semibold">{t('buildsPage.workflowRunCount', { count: runsTotal })}</h2>
-                  <p className="mt-1 text-sm text-muted-foreground">{t('buildsPage.applicationRunsDescription')}</p>
-                </div>
-                <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
-                  <Button type="button" variant="outline" onClick={() => void openApplicationEnvironment()}>
-                    <Settings2 className="size-4" />
-                    {t('buildsPage.applicationBuildEnvironment')}
-                  </Button>
-                  <div className="relative min-w-0 sm:w-80">
-                    <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                    <Input
-                      className="h-9 pl-9"
-                      placeholder={t('buildsPage.filterRuns')}
-                      value={runSearch}
-                      onChange={event => updateRunSearch(event.target.value)}
-                    />
-                  </div>
-                </div>
-              </div>
-              <ApplicationBuildRunFilterBar
-                actor={actorFilter}
-                actorOptions={actorFilterOptions}
-                branch={branchFilter}
-                branchOptions={branchFilterOptions}
-                event={eventFilter}
-                status={statusFilter}
-                onActorChange={updateActorFilter}
-                onBranchChange={updateBranchFilter}
-                onEventChange={updateEventFilter}
-                onStatusChange={updateStatusFilter}
+      <div className="overflow-hidden rounded-lg border border-border bg-card">
+        <div className="flex flex-col gap-3 border-b border-border bg-muted/45 px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="min-w-0">
+            <h2 className="text-base font-semibold">{t('buildsPage.workflowRunCount', { count: runsTotal })}</h2>
+            <p className="mt-1 text-sm text-muted-foreground">{t('buildsPage.applicationRunsDescription')}</p>
+          </div>
+          <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
+            <Button type="button" variant="outline" onClick={() => void openApplicationEnvironment()}>
+              <Settings2 className="size-4" />
+              {t('buildsPage.applicationBuildEnvironment')}
+            </Button>
+            <div className="relative min-w-0 sm:w-80">
+              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                className="h-9 pl-9"
+                placeholder={t('buildsPage.filterRuns')}
+                value={runSearch}
+                onChange={event => updateRunSearch(event.target.value)}
               />
-              {pagedRuns.length
-                ? (
-                    <div className="divide-y divide-border">
-                      {pagedRuns.map((run) => {
-                        const jobs = buildJobMap.get(run.id) ?? []
-                        const latestJob = jobs[0]
-                        const config = deploymentTargets.find(config => config.id === run.deploymentTargetId)
-                        const rowBinding = repositoryBindings.find(binding => binding.id === config?.repositoryBindingId) ?? binding
-                        if (!rowBinding)
-                          return null
-                        return (
-                          <ApplicationBuildRunRow
-                            key={run.id}
-                            binding={rowBinding}
-                            deploymentTargetName={config?.name}
-                            jobs={jobs}
-                            latestJob={latestJob}
-                            run={run}
-                            focused={run.id === focusedBuildRunId}
-                            canceling={cancelBuild.isPending}
-                            deleting={deleteBuild.isPending}
-                            retrying={retryBuild.isPending}
-                            onCancel={() => cancelBuild.mutate(run.id)}
-                            onDelete={() => deleteBuild.mutate(run.id)}
-                            onOpenLogs={job => setLogJob(job)}
-                            onRetry={() => retryBuild.mutate(run.id)}
-                          />
-                        )
-                      })}
-                    </div>
-                  )
-                : <EmptyState title={t('buildsPage.emptyRuns')} variant="plain" />}
-              <div className="border-t border-border px-4 py-4">
-                <PaginationController
-                  initialPage={runsPage}
-                  pageSize={runsPageSize}
-                  pageSizeOptions={[10, 20, 50]}
-                  total={runsTotal}
-                  onPageChange={setRunsPage}
-                  onPageSizeChange={(pageSize) => {
-                    setRunsPageSize(pageSize)
-                    setRunsPage(1)
-                  }}
-                />
-              </div>
             </div>
-          )
-        : (
-            <EmptyState
-              actions={(
-                <Button type="button" variant="outline" onClick={() => void openApplicationEnvironment()}>
-                  <Settings2 className="size-4" />
-                  {t('buildsPage.applicationBuildEnvironment')}
-                </Button>
-              )}
-              title={t('buildsPage.repositoryBindingRequired')}
-            />
-          )}
+          </div>
+        </div>
+        <ApplicationBuildRunFilterBar
+          actor={actorFilter}
+          actorOptions={actorFilterOptions}
+          branch={branchFilter}
+          branchOptions={branchFilterOptions}
+          event={eventFilter}
+          status={statusFilter}
+          onActorChange={updateActorFilter}
+          onBranchChange={updateBranchFilter}
+          onEventChange={updateEventFilter}
+          onStatusChange={updateStatusFilter}
+        />
+        {pagedRuns.length
+          ? (
+              <div className="divide-y divide-border">
+                {pagedRuns.map((run) => {
+                  const jobs = buildJobMap.get(run.id) ?? []
+                  const latestJob = jobs[0]
+                  const config = deploymentTargets.find(config => config.id === run.deploymentTargetId)
+                  const rowBinding = config?.repositoryBindingId
+                    ? repositoryBindings.find(binding => binding.id === config.repositoryBindingId)
+                    : config ? binding : undefined
+                  return (
+                    <ApplicationBuildRunRow
+                      key={run.id}
+                      binding={rowBinding}
+                      canRetry={Boolean(config && rowBinding)}
+                      deploymentTargetName={config?.name}
+                      jobs={jobs}
+                      latestJob={latestJob}
+                      run={run}
+                      focused={run.id === focusedBuildRunId}
+                      canceling={cancelBuild.isPending}
+                      deleting={deleteBuild.isPending}
+                      retrying={retryBuild.isPending}
+                      onCancel={() => cancelBuild.mutate(run.id)}
+                      onDelete={() => deleteBuild.mutate(run.id)}
+                      onOpenLogs={job => setLogJob(job)}
+                      onRetry={() => retryBuild.mutate(run.id)}
+                    />
+                  )
+                })}
+              </div>
+            )
+          : (
+              <EmptyState
+                title={repositoryBindings.length || binding ? t('buildsPage.emptyRuns') : t('buildsPage.repositoryBindingRequired')}
+                variant="plain"
+              />
+            )}
+        <div className="border-t border-border px-4 py-4">
+          <PaginationController
+            initialPage={runsPage}
+            pageSize={runsPageSize}
+            pageSizeOptions={[10, 20, 50]}
+            total={runsTotal}
+            onPageChange={setRunsPage}
+            onPageSizeChange={(pageSize) => {
+              setRunsPageSize(pageSize)
+              setRunsPage(1)
+            }}
+          />
+        </div>
+      </div>
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent>
           <DialogHeader>

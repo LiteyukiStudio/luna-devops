@@ -68,7 +68,7 @@ export function ApplicationConfigPage() {
   const [activeTab, setActiveTab] = useState(() => searchParams.get('tab') || 'overview')
   const shouldPollWorkflowStatus = activeTab === 'builds' || activeTab === 'deployments'
   const needsOverviewData = activeTab === 'overview'
-  const needsRepositoryBindings = needsOverviewData || activeTab === 'repositories' || activeTab === 'deployments'
+  const needsRepositoryBindings = needsOverviewData || activeTab === 'repositories' || activeTab === 'builds' || activeTab === 'deployments'
   const needsBuildRuns = needsOverviewData || activeTab === 'builds' || activeTab === 'deployments'
   const needsDeploymentData = needsOverviewData || activeTab === 'deployments'
   const needsDeploymentTargets = needsDeploymentData || activeTab === 'builds' || activeTab === 'gateway'
@@ -84,7 +84,7 @@ export function ApplicationConfigPage() {
   })
   const project = useQuery({ queryKey: ['project', projectId], queryFn: () => api.getProject(projectId), enabled: Boolean(projectId && (activeTab === 'builds' || activeTab === 'deployments')) })
   const repositoryBindings = useQuery({ ...liveObservationQueryPolicy, queryKey: ['repository-bindings', projectId, applicationId], queryFn: () => api.listRepositoryBindings(projectId, applicationId), enabled: Boolean(projectId && applicationId && needsRepositoryBindings) })
-  const registries = useQuery({ ...liveObservationQueryPolicy, queryKey: ['registries', projectId], queryFn: () => api.listRegistries(projectId), enabled: Boolean(projectId && activeTab === 'deployments') })
+  const registries = useQuery({ ...liveObservationQueryPolicy, queryKey: ['registries', projectId], queryFn: () => api.listRegistries(projectId), enabled: Boolean(projectId && (activeTab === 'builds' || activeTab === 'deployments')) })
   const buildRuns = useQuery({
     queryKey: ['build-runs', projectId, applicationId],
     queryFn: () => api.listBuildRuns(projectId, applicationId),
