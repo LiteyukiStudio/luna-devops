@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 	otellog "go.opentelemetry.io/otel/log"
 	logglobal "go.opentelemetry.io/otel/log/global"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -100,7 +101,7 @@ func TestSetupIgnoresExporterEnvironmentOutsideSnapshot(t *testing.T) {
 	}
 	counter.Add(t.Context(), 1)
 	var record otellog.Record
-	record.SetBody(otellog.StringValue("snapshot"))
+	record.SetBody(attribute.StringValue("snapshot"))
 	runtime.loggerProvider.Logger("snapshot-test").Emit(t.Context(), record)
 	if err := errors.Join(
 		runtime.tracerProvider.ForceFlush(t.Context()),
