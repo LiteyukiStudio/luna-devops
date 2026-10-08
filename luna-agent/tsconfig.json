@@ -7,7 +7,7 @@
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "paths": {
-      "@luna-devops/ai-interaction-card-contract": ["../packages/ai-interaction-card-contract/index.d.ts"]
+      "@luna-devops/ai-interaction-card-contract": ["../packages/ai-interaction-card-contract"]
     },
     "lib": ["ES2023"],
     "types": ["node"],
