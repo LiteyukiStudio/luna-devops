@@ -8,6 +8,7 @@ overrides:
   brace-expansion@>=4.0.0 <5.0.9: 5.0.9
   nanoid@>=3.0.0 <3.3.18: 3.3.18
   postcss@>=8.0.0 <8.5.23: 8.5.23
+  source-map-js@>=1.0.0 <1.2.2: 1.2.2
   undici@>=7.0.0 <7.29.0: 7.29.0
 auditConfig:
   ignoreGhsas:
