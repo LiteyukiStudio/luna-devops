@@ -27,7 +27,9 @@ export async function streamModel(
   signal: AbortSignal,
   expectedRunVersion?: number,
 ): Promise<AssistantModelInput & {
+  finishReason?: string
   finalizeTerminal?: (to: "completed" | "failed" | "canceled" | "interrupted", errorCode?: string, conversationTitle?: string) => Promise<void>
+  commitStep?: () => Promise<void>
 }> {
   const startedAt = performance.now()
   let outcome = "success"
@@ -41,6 +43,7 @@ export async function streamModel(
     let reasoningSummary = ""
     let answer = ""
     let toolCalls: ModelToolCall[] = []
+    let finishReason: string | undefined
     let firstOutputRecorded = false
     let reasoningTimelineIndex: number | undefined
     let messageTimelineIndex: number | undefined
@@ -129,6 +132,7 @@ export async function streamModel(
         }
         if (event.type === "completed") {
           toolCalls = event.toolCalls ?? []
+          finishReason = event.finishReason
           span.setAttribute("luna.tool_call.count", toolCalls.length)
           const usage = event.reconciliationRequired
             ? { status: "reconciliation_required" as const, reason: event.usage.status === "unavailable" ? event.usage.reason : "hold_deficit" }
@@ -175,8 +179,12 @@ export async function streamModel(
       if (!finalSession) await stream.commit("completed")
       return {
         ...input, reasoningSummary, answer, toolCalls,
+        ...(finishReason ? { finishReason } : {}),
         ...(finalSession
-          ? { finalizeTerminal: (to: "completed" | "failed" | "canceled" | "interrupted", errorCode?: string, conversationTitle?: string) => finalSession.commitTerminal(to, errorCode, conversationTitle) }
+          ? {
+              finalizeTerminal: (to: "completed" | "failed" | "canceled" | "interrupted", errorCode?: string, conversationTitle?: string) => finalSession.commitTerminal(to, errorCode, conversationTitle),
+              commitStep: () => finalSession.commit("completed"),
+            }
           : {}),
       }
     }

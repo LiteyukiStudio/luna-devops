@@ -23,6 +23,11 @@ import { TerminalPersistenceExhaustedError, type RunStreamBus } from "../run-str
 
 const selectedOperationLimit = 16
 const searchAutoLoadLimit = 5
+const maxFinalConfirmations = 1
+const maxEmptyAnswerRetries = 2
+const toolCallFinishReasons = new Set(["tool_calls", "function_call"])
+const executionContinuationNudge = "系统注入指令（非用户输入）：上一步没有调用任何工具。若用户目标尚未完成，请在本步直接调用需要的工具继续执行；若已经完成，请保持沉默，不要输出内容。"
+const emptyAnswerContinuationNudge = "系统注入指令（非用户输入）：上一步没有输出任何内容。请直接给出最终答复，或在本步调用工具继续执行。"
 
 export type RunExecutorDependencies = {
   repository: Repository
@@ -221,8 +226,12 @@ export class RunExecutor {
         let assistantRenamed = false
         let cardRepairExhausted = false
         let finalAnswer = ""
+        let finalAnswerFinishReason: string | undefined
         let completed = false
-        let finalResponseMissing = false
+        let executionStarted = executionInput.toolInteractions.some(item => item.type === "tool_call")
+        let pendingFinalAnswer: { text: string, finishReason?: string } | undefined
+        let finalConfirmations = 0
+        let emptyAnswers = 0
         const continuationMessages = resumedToolMessages(executionInput.toolInteractions)
         const searchedToolQueries = restoredInternalToolResults(executionInput.toolInteractions, "search_tools")
         const detailedToolRequests = restoredInternalToolResults(executionInput.toolInteractions, "get_tool_details")
@@ -249,7 +258,6 @@ export class RunExecutor {
           }, abort.signal, run.rowVersion)
           pendingTerminal = result.finalizeTerminal
           finalAnswer = result.answer
-          finalResponseMissing = false
           if (cardRepairExhausted) {
             if (result.toolCalls.length > 0) throw new Error("ai.interaction_card_schema_invalid")
             completed = true
@@ -260,13 +268,48 @@ export class RunExecutor {
               await this.cards.fail(run.id, cardGeneration, "ai.interaction_card_schema_invalid")
               cardGeneration = undefined
             }
-            if (result.answer.trim()) {
+            if (result.finishReason && toolCallFinishReasons.has(result.finishReason))
+              throw new Error("ai.provider_response_invalid")
+            const answerText = result.answer.trim()
+            if (answerText && pendingFinalAnswer) {
+              finalAnswer = result.answer
+              finalAnswerFinishReason = result.finishReason
               completed = true
               break
             }
-            finalResponseMissing = true
+            if (answerText) {
+              if (!executionStarted || finalConfirmations >= maxFinalConfirmations) {
+                finalAnswer = result.answer
+                finalAnswerFinishReason = result.finishReason
+                completed = true
+                break
+              }
+              finalConfirmations += 1
+              pendingFinalAnswer = {
+                text: result.answer,
+                ...(result.finishReason ? { finishReason: result.finishReason } : {}),
+              }
+              await result.commitStep?.()
+              pendingTerminal = undefined
+              continuationMessages.push({ role: "assistant", content: result.answer })
+              continuationMessages.push({ role: "user", content: executionContinuationNudge })
+              continue
+            }
+            if (pendingFinalAnswer) {
+              finalAnswer = pendingFinalAnswer.text
+              finalAnswerFinishReason = pendingFinalAnswer.finishReason
+              completed = true
+              break
+            }
+            emptyAnswers += 1
+            if (emptyAnswers > maxEmptyAnswerRetries) throw new Error("ai.final_response_missing")
+            continuationMessages.push({ role: "user", content: emptyAnswerContinuationNudge })
             continue
           }
+          executionStarted = true
+          finalConfirmations = 0
+          pendingFinalAnswer = undefined
+          emptyAnswers = 0
 
           const toolCalls = result.toolCalls.map((call, index) => ({
             ...call,
@@ -606,7 +649,7 @@ export class RunExecutor {
             break
           }
         }
-        if (!completed) throw new Error(finalResponseMissing ? "ai.final_response_missing" : "ai.limit_exceeded")
+        if (!completed) throw new Error("ai.limit_exceeded")
         let generatedTitle: string | undefined
         if (executionInput.conversation.titleSource === "default" && !assistantRenamed) {
           try {
@@ -619,9 +662,9 @@ export class RunExecutor {
         }
         recordAIContent(span, "luna.gen_ai.content.output", "gen_ai.output.messages", genAIOutputMessages({
           text: finalAnswer,
-          finishReason: "stop",
+          ...(finalAnswerFinishReason ? { finishReason: finalAnswerFinishReason } : {}),
         }))
-        span.setAttribute("gen_ai.response.finish_reasons", ["stop"])
+        span.setAttribute("gen_ai.response.finish_reasons", [finalAnswerFinishReason ?? "stop"])
         await this.repository.finalizeStreamingItems(run.id, "completed")
         if (pendingTerminal) {
           await pendingTerminal("completed", undefined, generatedTitle)

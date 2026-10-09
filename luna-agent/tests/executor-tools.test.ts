@@ -211,6 +211,7 @@ describe("RunExecutor slim lifecycle", () => {
     expect(observed.filter(item => item.runId === secondRunId)).toEqual([
       { runId: secondRunId, configVersion: "cfg-new", baseUrl: "https://new-provider.example/v1/", maxOutputTokens: defaultRuntimeSettings.assistantMaxOutputTokens },
       { runId: secondRunId, configVersion: "cfg-new", baseUrl: "https://new-provider.example/v1/", maxOutputTokens: defaultRuntimeSettings.assistantMaxOutputTokens },
+      { runId: secondRunId, configVersion: "cfg-new", baseUrl: "https://new-provider.example/v1/", maxOutputTokens: defaultRuntimeSettings.assistantMaxOutputTokens },
     ])
     const firstCard = (await repository.getExecutionInput(firstRunId))?.toolInteractions
       .find(item => item.content.operationId === "present_card")
@@ -307,6 +308,7 @@ describe("RunExecutor slim lifecycle", () => {
     await executor.stop()
 
     expect(observed.filter(item => item.runId === approvalRunId)).toEqual([
+      { runId: approvalRunId, configVersion: "cfg-approval-old", maxOutputTokens: defaultRuntimeSettings.assistantMaxOutputTokens },
       { runId: approvalRunId, configVersion: "cfg-approval-old", maxOutputTokens: defaultRuntimeSettings.assistantMaxOutputTokens },
       { runId: approvalRunId, configVersion: "cfg-approval-old", maxOutputTokens: defaultRuntimeSettings.assistantMaxOutputTokens },
     ])
@@ -831,7 +833,319 @@ describe("RunExecutor slim lifecycle", () => {
     expect(records[1]?.content.result).toMatchObject({ loadedOperationIds: ["getProject"], alreadySelectedOperationIds: ["getProject"], duplicate: true, cacheHit: true })
     expect((records[1]?.content.result as { items: unknown[] }).items).toHaveLength(1)
   })
+
+  it("continues the Run when a platform tool result is followed by a text-only promise", async () => {
+    const repository = new TestRepository()
+    const conversation = await repository.createConversation("usr_promise", "promise")
+    const created = await repository.createTurn("usr_promise", {
+      conversationId: conversation.id, input: "依次读取两个项目空间", pageContext: {},
+      idempotencyKey: "run-promise-continuation", actorSessionId: "ses_promise",
+    })
+    const catalog = projectCatalog()
+    const executed: string[] = []
+    const { provider, modelSteps } = scriptedProvider([
+      { toolCallId: "promise-1", operationId: "getProject", arguments: { projectId: "prj_a" } },
+      { text: "已读取 prj_a，接下来我读取 prj_b：" },
+      { toolCallId: "promise-2", operationId: "getProject", arguments: { projectId: "prj_b" } },
+      { text: "两个项目空间都已读取。" },
+    ])
+    const tools = new ToolOrchestrator(
+      catalog,
+      new DeterministicLunaApiClient(({ arguments: args }) => {
+        executed.push(String(args.projectId))
+        return { status: 200, body: { id: args.projectId } }
+      }),
+      new ProjectingToolCallStore(new MemoryToolCallStore(), repository),
+    )
+
+    await testExecutor(
+      repository,
+      new ModelRuntime(provider, testRegistry({ resolve: () => catalog.modelTools(["getProject"]) })),
+      { catalog, tools },
+    ).runOnce()
+
+    expect(executed).toEqual(["prj_a", "prj_b"])
+    expect(modelSteps()).toBe(5)
+    expect((await repository.getRun("usr_promise", created.run.id))?.status).toBe("completed")
+  })
+
+  it("bounds the continuation repair when the model keeps returning text", async () => {
+    const repository = new TestRepository()
+    const conversation = await repository.createConversation("usr_bound", "bound")
+    const created = await repository.createTurn("usr_bound", {
+      conversationId: conversation.id, input: "读取项目空间", pageContext: {},
+      idempotencyKey: "run-continuation-bound", actorSessionId: "ses_bound",
+    })
+    const catalog = projectCatalog()
+    const executed: string[] = []
+    const { provider, modelSteps } = scriptedProvider([
+      { toolCallId: "bound-1", operationId: "getProject", arguments: { projectId: "prj_a" } },
+      { text: "接下来我继续执行：" },
+    ])
+    const tools = new ToolOrchestrator(
+      catalog,
+      new DeterministicLunaApiClient(({ arguments: args }) => {
+        executed.push(String(args.projectId))
+        return { status: 200, body: { id: args.projectId } }
+      }),
+      new ProjectingToolCallStore(new MemoryToolCallStore(), repository),
+    )
+
+    await testExecutor(
+      repository,
+      new ModelRuntime(provider, testRegistry({ resolve: () => catalog.modelTools(["getProject"]) })),
+      { catalog, tools },
+    ).runOnce()
+
+    expect(executed).toEqual(["prj_a"])
+    expect(modelSteps()).toBe(3)
+    expect((await repository.getRun("usr_bound", created.run.id))?.status).toBe("completed")
+  })
+
+  it("uses the pending answer when the continuation turn stays silent", async () => {
+    const repository = new TestRepository()
+    const conversation = await repository.createConversation("usr_silent", "silent")
+    const created = await repository.createTurn("usr_silent", {
+      conversationId: conversation.id, input: "读取项目空间", pageContext: {},
+      idempotencyKey: "run-silent-confirmation", actorSessionId: "ses_silent",
+    })
+    const catalog = projectCatalog()
+    const { provider, modelSteps } = scriptedProvider([
+      { toolCallId: "silent-1", operationId: "getProject", arguments: { projectId: "prj_a" } },
+      { text: "项目空间 prj_a 已读取。" },
+      {},
+    ])
+    const tools = new ToolOrchestrator(
+      catalog,
+      new DeterministicLunaApiClient(() => ({ status: 200, body: { id: "prj_a" } })),
+      new ProjectingToolCallStore(new MemoryToolCallStore(), repository),
+    )
+
+    await testExecutor(
+      repository,
+      new ModelRuntime(provider, testRegistry({ resolve: () => catalog.modelTools(["getProject"]) })),
+      { catalog, tools },
+    ).runOnce()
+
+    expect(modelSteps()).toBe(3)
+    expect((await repository.getRun("usr_silent", created.run.id))?.status).toBe("completed")
+    const timeline = await repository.getTimeline("usr_silent", conversation.id)
+    const messages = timeline?.turns[0]?.items.filter(item => item.type === "assistant_message") ?? []
+    expect(messages).toHaveLength(1)
+    expect(messages[0]?.content).toEqual({ parts: [{ type: "text", text: "项目空间 prj_a 已读取。" }] })
+  })
+
+  it("completes a plain conversation in a single model step", async () => {
+    const repository = new TestRepository()
+    const conversation = await repository.createConversation("usr_plain", "plain")
+    const created = await repository.createTurn("usr_plain", {
+      conversationId: conversation.id, input: "什么是 Pod？", pageContext: {},
+      idempotencyKey: "run-plain-answer", actorSessionId: "ses_plain",
+    })
+    const { provider, modelSteps } = scriptedProvider([{ text: "Pod 是 Kubernetes 的最小调度单元。" }])
+
+    await testExecutor(repository, new ModelRuntime(provider, testRegistry())).runOnce()
+
+    expect(modelSteps()).toBe(1)
+    expect((await repository.getRun("usr_plain", created.run.id))?.status).toBe("completed")
+  })
+
+  it("keeps a question-only Run single-step after an earlier Run used tools", async () => {
+    const repository = new TestRepository()
+    const conversation = await repository.createConversation("usr_history", "history")
+    const first = await repository.createTurn("usr_history", {
+      conversationId: conversation.id, input: "读取项目空间", pageContext: {},
+      idempotencyKey: "run-history-tool", actorSessionId: "ses_history",
+    })
+    const catalog = projectCatalog()
+    const { provider, modelSteps } = scriptedProvider([
+      { toolCallId: "history-1", operationId: "getProject", arguments: { projectId: "prj_a" } },
+      { text: "项目空间 prj_a 已读取。" },
+    ])
+    const tools = new ToolOrchestrator(
+      catalog,
+      new DeterministicLunaApiClient(() => ({ status: 200, body: { id: "prj_a" } })),
+      new ProjectingToolCallStore(new MemoryToolCallStore(), repository),
+    )
+    const executor = testExecutor(
+      repository,
+      new ModelRuntime(provider, testRegistry({ resolve: () => catalog.modelTools(["getProject"]) })),
+      { catalog, tools },
+    )
+
+    await executor.runOnce()
+    expect((await repository.getRun("usr_history", first.run.id))?.status).toBe("completed")
+    const stepsAfterFirstTurn = modelSteps()
+
+    const second = await repository.createTurn("usr_history", {
+      conversationId: conversation.id, input: "什么是 Pod？", pageContext: {},
+      idempotencyKey: "run-history-question", actorSessionId: "ses_history",
+    })
+    await executor.runOnce()
+
+    expect(modelSteps() - stepsAfterFirstTurn).toBe(1)
+    expect((await repository.getRun("usr_history", second.run.id))?.status).toBe("completed")
+  })
+
+  it("fails the Run when the provider reports tool calls without any tool call", async () => {
+    const repository = new TestRepository()
+    const conversation = await repository.createConversation("usr_finish", "finish reason")
+    const created = await repository.createTurn("usr_finish", {
+      conversationId: conversation.id, input: "读取项目空间", pageContext: {},
+      idempotencyKey: "run-finish-reason", actorSessionId: "ses_finish",
+    })
+    const { provider, modelSteps } = scriptedProvider([{ text: "让我先调用工具：", finishReason: "tool_calls" }])
+
+    await testExecutor(repository, new ModelRuntime(provider, testRegistry())).runOnce()
+
+    expect(modelSteps()).toBe(1)
+    expect(await repository.getRun("usr_finish", created.run.id)).toMatchObject({
+      status: "failed",
+      errorCode: "ai.provider_response_invalid",
+    })
+  })
+
+  it("fails a continued Run when a later model step breaks the protocol", async () => {
+    const repository = new TestRepository()
+    const conversation = await repository.createConversation("usr_late_finish", "late finish reason")
+    const created = await repository.createTurn("usr_late_finish", {
+      conversationId: conversation.id, input: "读取项目空间", pageContext: {},
+      idempotencyKey: "run-late-finish-reason", actorSessionId: "ses_late_finish",
+    })
+    const catalog = projectCatalog()
+    const { provider, modelSteps } = scriptedProvider([
+      { toolCallId: "late-1", operationId: "getProject", arguments: { projectId: "prj_a" } },
+      { text: "接下来我继续执行：" },
+      { text: "让我继续：", finishReason: "tool_calls" },
+    ])
+    const tools = new ToolOrchestrator(
+      catalog,
+      new DeterministicLunaApiClient(() => ({ status: 200, body: { id: "prj_a" } })),
+      new ProjectingToolCallStore(new MemoryToolCallStore(), repository),
+    )
+
+    await testExecutor(
+      repository,
+      new ModelRuntime(provider, testRegistry({ resolve: () => catalog.modelTools(["getProject"]) })),
+      { catalog, tools },
+    ).runOnce()
+
+    expect(modelSteps()).toBe(3)
+    expect(await repository.getRun("usr_late_finish", created.run.id)).toMatchObject({
+      status: "failed",
+      errorCode: "ai.provider_response_invalid",
+    })
+  })
+
+  it("fails a continued Run when a later step throws before the model responds", async () => {
+    class FailingSelectionRepository extends TestRepository {
+      private selectionCalls = 0
+      override async touchRunSelectedOperations(runId: string, operationIds: string[], limit: number) {
+        if (operationIds.length === 1 && operationIds[0] === "getProject") {
+          this.selectionCalls += 1
+          if (this.selectionCalls === 2) throw new Error("ai.persistence_unavailable")
+        }
+        return super.touchRunSelectedOperations(runId, operationIds, limit)
+      }
+    }
+    const repository = new FailingSelectionRepository()
+    const conversation = await repository.createConversation("usr_late_throw", "late throw")
+    const created = await repository.createTurn("usr_late_throw", {
+      conversationId: conversation.id, input: "读取两个项目空间", pageContext: {},
+      idempotencyKey: "run-late-throw", actorSessionId: "ses_late_throw",
+    })
+    const catalog = projectCatalog()
+    const { provider } = scriptedProvider([
+      { toolCallId: "throw-1", operationId: "getProject", arguments: { projectId: "prj_a" } },
+      { text: "接下来我读取 prj_b：" },
+      { toolCallId: "throw-2", operationId: "getProject", arguments: { projectId: "prj_b" } },
+    ])
+    const tools = new ToolOrchestrator(
+      catalog,
+      new DeterministicLunaApiClient(() => ({ status: 200, body: {} })),
+      new ProjectingToolCallStore(new MemoryToolCallStore(), repository),
+    )
+
+    await testExecutor(
+      repository,
+      new ModelRuntime(provider, testRegistry({ resolve: () => catalog.modelTools(["getProject"]) })),
+      { catalog, tools },
+    ).runOnce()
+
+    expect(await repository.getRun("usr_late_throw", created.run.id)).toMatchObject({
+      status: "failed",
+      errorCode: "ai.persistence_unavailable",
+    })
+  })
+
+  it("fails the Run after bounded empty model answers", async () => {
+    const repository = new TestRepository()
+    const conversation = await repository.createConversation("usr_empty", "empty")
+    const created = await repository.createTurn("usr_empty", {
+      conversationId: conversation.id, input: "读取项目空间", pageContext: {},
+      idempotencyKey: "run-empty-answer", actorSessionId: "ses_empty",
+    })
+    const { provider, modelSteps } = scriptedProvider([{}])
+
+    await testExecutor(repository, new ModelRuntime(provider, testRegistry())).runOnce()
+
+    expect(modelSteps()).toBe(3)
+    expect(await repository.getRun("usr_empty", created.run.id)).toMatchObject({
+      status: "failed",
+      errorCode: "ai.final_response_missing",
+    })
+  })
 })
+
+type ScriptedModelStep = {
+  text?: string
+  toolCallId?: string
+  operationId?: string
+  arguments?: Record<string, unknown>
+  finishReason?: string
+}
+
+function scriptedProvider(steps: ScriptedModelStep[]) {
+  let modelSteps = 0
+  const provider: ModelProvider = {
+    async *stream() {
+      const step = steps[Math.min(modelSteps, steps.length - 1)] ?? {}
+      modelSteps += 1
+      if (step.text) yield { type: "message_delta", delta: step.text }
+      yield {
+        type: "completed",
+        usage: { status: "reported", value: { inputTokens: 2, outputTokens: 2, totalTokens: 4 } },
+        ...(step.operationId
+          ? { toolCalls: [{ id: step.toolCallId ?? `call_${modelSteps}`, operationId: step.operationId, arguments: step.arguments ?? {} }] }
+          : {}),
+        ...(step.finishReason ? { finishReason: step.finishReason } : {}),
+      }
+    },
+    async complete() {
+      return { text: "", usage: { status: "reported", value: { inputTokens: 1, outputTokens: 0, totalTokens: 1 } }, toolCalls: [] }
+    },
+    capabilities: () => ({ streaming: true, toolCalling: true, structuredOutput: true }),
+    health: async () => ({ ok: true }),
+  }
+  return { provider, modelSteps: () => modelSteps }
+}
+
+function projectCatalog(): ToolCatalog {
+  return ToolCatalog.load([{
+    ...testToolOperation("getProject"),
+    operationId: "getProject",
+    name: "读取项目空间",
+    summary: "按 projectId 读取项目空间详情。",
+    method: "GET",
+    path: "/api/v1/projects/{projectId}",
+    category: "projects",
+    requiredScopes: ["project:read"],
+    requiresApproval: false,
+    idempotent: true,
+    parameters: [{ inputName: "projectId", wireName: "projectId", in: "path", required: true }],
+    inputSchema: { type: "object", properties: { projectId: { type: "string" } }, required: ["projectId"], additionalProperties: false },
+  }])
+}
 
 function remoteConfig(
   version: string,
