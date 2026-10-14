@@ -296,7 +296,7 @@ describe("RunExecutor 当前行为基线（Phase 0 特征化测试）", () => {
     expect(modelCalls()).toBe(1)
   })
 
-  it.each([false, true])("用例 10 当前行为：导航同一步附带文字=%s，非空文本完成 Run", async (withText) => {
+  it.each([false, true])("用例 10：导航步骤不再结束 Run，由下一步最终答复结束（同一步附带文字=%s）", async (withText) => {
     const owner = "usr_baseline_navigate"
     const { repository, runId } = await queuedRun(owner, "baseline-navigate")
     const { provider, modelCalls } = scriptedProvider([
@@ -307,7 +307,7 @@ describe("RunExecutor 当前行为基线（Phase 0 特征化测试）", () => {
     await testExecutor(repository, new ModelRuntime(provider, testRegistry())).runOnce()
 
     expect((await repository.getRun(owner, runId))?.status).toBe("completed")
-    expect(modelCalls()).toBe(withText ? 1 : 2)
+    expect(modelCalls()).toBe(2)
   })
 
   it("用例 18 当前行为：Run 超时把 Run 置为 failed 并记录 ai.run_timeout", async () => {

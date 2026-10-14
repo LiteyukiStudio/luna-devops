@@ -46,6 +46,7 @@ const aiAssistant = {
       model_context_limit_invalid: 'モデルカタログのコンテキスト上限が無効です。プラットフォーム管理者に連絡してモデル設定を確認してください。',
       model_context_insufficient: '現在のリクエストが選択したモデルのコンテキストウィンドウを超えています。入力を短くするか、会話履歴をクリアしてください。',
       model_output_limit_invalid: 'モデルカタログの出力上限が無効です。プラットフォーム管理者に連絡してモデル設定を確認してください。',
+      model_protocol_violation: 'モデルの応答が実行プロトコルに準拠していないため、このタスクは停止しました。再試行する前に、これまでの実行結果を確認してください。',
       wallet_balance_insufficient: '個人ウォレットの利用可能残高が不足しています。モデルリクエストは送信されませんでした。',
       tool_not_available: '現在の Agent インスタンスは必要なプラットフォームツールを使用できません。',
       tool_execution_failed: 'プラットフォームツールの実行に失敗しました。後ほど再試行してください。',
