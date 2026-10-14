@@ -46,6 +46,7 @@ const aiAssistant = {
       model_context_limit_invalid: 'The model catalog context limit is invalid. Ask a platform administrator to check the model configuration.',
       model_context_insufficient: 'This request exceeds the selected model context window. Shorten the input or clear conversation history.',
       model_output_limit_invalid: 'The model catalog output limit is invalid. Ask a platform administrator to check the model configuration.',
+      model_protocol_violation: 'The model response does not comply with the execution protocol. This task has stopped. Check existing execution results before retrying.',
       wallet_balance_insufficient: 'Your personal wallet has insufficient available credits. The model request was not sent.',
       tool_not_available: 'The required platform tool is unavailable on this Agent instance.',
       tool_execution_failed: 'The platform tool failed to execute. Try again later.',

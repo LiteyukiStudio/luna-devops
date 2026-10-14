@@ -410,7 +410,7 @@ model 返回需要工具的计划文字但没有 tool call
 
 工作：
 
-- 新增 `ModelDecision` 和 `ToolOutcome`；
+- 新增 `ModelDecision`；`ToolOutcome` 推迟到 Phase 4 定义工具 adapter 时落地，避免先引入无消费者的类型；
 - 把 finish reason、tool call 解析和空响应处理移到纯函数；
 - `RunExecutor` 暂时保留，但只消费结构化决策；
 - 删除主循环中直接依据 `answer.trim()` 完成 Run 的分支；

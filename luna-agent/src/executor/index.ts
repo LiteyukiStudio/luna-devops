@@ -15,6 +15,7 @@ import { businessCardToolInputs, compileBusinessCardToolInput, isBusinessCardToo
 import { searchToolsInput } from "../tools/tool-search.js"
 import { getToolDetailsInput } from "../tools/tool-details.js"
 import { CardGenerationService, cardValidationFailure, providerArgumentFailure, validationIssues, type CardGeneration } from "./cards.js"
+import { modelDecision } from "./decision.js"
 import { InternalToolHandlers } from "./internal-tools.js"
 import { internalToolOperationIds, normalizeToolSearchQuery, resumedToolMessages } from "./resume.js"
 import { StreamModelFinalizationError, streamModel } from "./streaming.js"
@@ -23,6 +24,8 @@ import { TerminalPersistenceExhaustedError, type RunStreamBus } from "../run-str
 
 const selectedOperationLimit = 16
 const searchAutoLoadLimit = 5
+const maxProtocolRepairs = 1
+const protocolRepairInstruction = "系统指令：上一步的结束原因表明需要调用工具，但没有任何可解析的工具调用。请直接调用所需工具，或给出最终答复。"
 
 export type RunExecutorDependencies = {
   repository: Repository
@@ -223,6 +226,8 @@ export class RunExecutor {
         let finalAnswer = ""
         let completed = false
         let finalResponseMissing = false
+        let protocolRepairCount = 0
+        let finalFinishReason: string | undefined
         const continuationMessages = resumedToolMessages(executionInput.toolInteractions)
         const searchedToolQueries = restoredInternalToolResults(executionInput.toolInteractions, "search_tools")
         const detailedToolRequests = restoredInternalToolResults(executionInput.toolInteractions, "get_tool_details")
@@ -250,17 +255,30 @@ export class RunExecutor {
           pendingTerminal = result.finalizeTerminal
           finalAnswer = result.answer
           finalResponseMissing = false
+          const decision = modelDecision(result)
           if (cardRepairExhausted) {
-            if (result.toolCalls.length > 0) throw new Error("ai.interaction_card_schema_invalid")
+            if (decision.kind === "protocol_error" && decision.code === "missing_tool_calls")
+              throw new Error("ai.model_protocol_violation")
+            if (decision.kind !== "final" && decision.kind !== "empty")
+              throw new Error("ai.interaction_card_schema_invalid")
             completed = true
             break
           }
-          if (!result.toolCalls.length) {
+          if (decision.kind === "protocol_error") {
+            if (decision.code === "invalid_finish_reason" || protocolRepairCount >= maxProtocolRepairs)
+              throw new Error("ai.model_protocol_violation")
+            protocolRepairCount += 1
+            if (result.answer.trim()) continuationMessages.push({ role: "assistant", content: result.answer })
+            continuationMessages.push({ role: "system", content: protocolRepairInstruction })
+            continue
+          }
+          if (decision.kind !== "tool_calls") {
             if (cardGeneration) {
               await this.cards.fail(run.id, cardGeneration, "ai.interaction_card_schema_invalid")
               cardGeneration = undefined
             }
-            if (result.answer.trim()) {
+            if (decision.kind === "final") {
+              finalFinishReason = decision.finishReason
               completed = true
               break
             }
@@ -601,10 +619,6 @@ export class RunExecutor {
             completed = true
             break
           }
-          if (!platformToolCalled && result.answer.trim()) {
-            completed = true
-            break
-          }
         }
         if (!completed) throw new Error(finalResponseMissing ? "ai.final_response_missing" : "ai.limit_exceeded")
         let generatedTitle: string | undefined
@@ -619,9 +633,9 @@ export class RunExecutor {
         }
         recordAIContent(span, "luna.gen_ai.content.output", "gen_ai.output.messages", genAIOutputMessages({
           text: finalAnswer,
-          finishReason: "stop",
+          finishReason: finalFinishReason ?? "stop",
         }))
-        span.setAttribute("gen_ai.response.finish_reasons", ["stop"])
+        span.setAttribute("gen_ai.response.finish_reasons", [finalFinishReason ?? "stop"])
         await this.repository.finalizeStreamingItems(run.id, "completed")
         if (pendingTerminal) {
           await pendingTerminal("completed", undefined, generatedTitle)
