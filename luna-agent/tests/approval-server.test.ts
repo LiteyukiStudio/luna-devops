@@ -154,6 +154,7 @@ describe("approval decisions", () => {
       argumentsHash: "sha256:terminal",
       attempt: 1,
       rowVersion: 2,
+      executionCount: 1,
       result: { ok: true },
     })
     await fixture.repository.appendItem({

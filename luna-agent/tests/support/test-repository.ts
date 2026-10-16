@@ -7,6 +7,8 @@ import type {
   CreatedTurn,
   CreateTurn,
   Run,
+  RunCheckpoint,
+  RunCheckpointAdvance,
   RunEvent,
   RunExecutionSnapshot,
   TimelineItem,
@@ -14,6 +16,7 @@ import type {
 } from "../../src/domain.js"
 import { createId } from "../../src/id.js"
 import {
+  RunCheckpointConflictError,
   RunStateConflictError,
   type ConversationListOptions,
   type ModelAttemptMetadata,
@@ -50,6 +53,7 @@ export class TestRepository implements Repository {
   private readonly modelUsages: Array<{ runId: string, operation: ModelCallOperation, usage: OfficialModelUsage }> = []
   private readonly contextUsageByConversation = new Map<string, NonNullable<Awaited<ReturnType<Repository["getTimeline"]>>>["contextUsage"]>()
   private readonly streamHighWatermarks = new Map<string, number>()
+  private readonly checkpoints = new Map<string, RunCheckpoint>()
 
   async health(): Promise<boolean> { return true }
   async readiness() { return { database: true, schema: true } }
@@ -346,6 +350,51 @@ export class TestRepository implements Repository {
       completedAt: new Date().toISOString(), errorCode: "ai.agent_restarted",
     })
     return true
+  }
+  async recoverOrphanedRun(runId: string, expectedRunVersion: number, maxRecoveries: number) {
+    const run = this.runs.get(runId)
+    if (!run || run.status !== "running" || run.rowVersion !== expectedRunVersion) return "skipped" as const
+    const checkpoint = this.checkpoints.get(runId)
+    if (!checkpoint || checkpoint.recoveries >= maxRecoveries) {
+      await this.interruptOrphanedRun(runId, expectedRunVersion)
+      return "interrupted" as const
+    }
+    checkpoint.recoveries += 1
+    checkpoint.revision += 1
+    checkpoint.updatedAt = new Date().toISOString()
+    run.status = "queued"
+    run.rowVersion += 1
+    const turn = this.turns.get(run.turnId)
+    if (turn) turn.status = "queued"
+    await this.appendEvent(runId, "run.requeued", {
+      state: "queued", rowVersion: run.rowVersion, reason: "ai.agent_restarted", recoveries: checkpoint.recoveries,
+    })
+    return "requeued" as const
+  }
+  async loadRunCheckpoint(runId: string) {
+    const value = this.checkpoints.get(runId)
+    return value ? structuredClone(value) : undefined
+  }
+  async saveRunCheckpoint(runId: string, advance: RunCheckpointAdvance) {
+    const current = this.checkpoints.get(runId)
+    const revision = advance.expectedRevision + 1
+    if (current && current.revision === revision) return structuredClone(current)
+    if (current ? current.revision !== advance.expectedRevision : advance.expectedRevision !== 0)
+      throw new RunCheckpointConflictError(runId, advance.expectedRevision, current?.revision)
+    const now = new Date().toISOString()
+    const value: RunCheckpoint = {
+      runId,
+      revision,
+      phase: advance.phase,
+      modelStep: advance.modelStep,
+      toolCallCount: advance.toolCallCount,
+      recoveries: current?.recoveries ?? 0,
+      state: structuredClone(advance.state),
+      createdAt: current?.createdAt ?? now,
+      updatedAt: now,
+    }
+    this.checkpoints.set(runId, value)
+    return structuredClone(value)
   }
   async countActiveUserRuns(userId: string) {
     let count = 0

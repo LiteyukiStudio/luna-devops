@@ -23,7 +23,7 @@ import (
 
 const (
 	baselineMigrationVersion = 103
-	latestMigrationVersion   = 104
+	latestMigrationVersion   = 105
 )
 
 func TestEmbeddedMigrationsContainExpectedFiles(t *testing.T) {
@@ -36,6 +36,8 @@ func TestEmbeddedMigrationsContainExpectedFiles(t *testing.T) {
 		"000103_baseline.down.sql":                false,
 		"000104_bridge_retained_volumes.up.sql":   false,
 		"000104_bridge_retained_volumes.down.sql": false,
+		"000105_ai_run_checkpoints.up.sql":        false,
+		"000105_ai_run_checkpoints.down.sql":      false,
 	}
 	migrationCount := 0
 	for _, entry := range entries {
@@ -297,6 +299,7 @@ func assertFreshMigrationState(t *testing.T, db *gorm.DB) {
 		"ai.conversation_summaries",
 		"ai.model_credit_holds",
 		"ai.model_usages",
+		"ai.run_checkpoints",
 	} {
 		if !db.Migrator().HasTable(table) {
 			t.Fatalf("fresh database is missing table %s", table)
@@ -353,6 +356,7 @@ func assertFreshMigrationState(t *testing.T, db *gorm.DB) {
 		{table: "ai.tool_calls", column: "input_mode"},
 		{table: "ai.tool_calls", column: "approval_decision"},
 		{table: "ai.tool_calls", column: "row_version"},
+		{table: "ai.tool_calls", column: "execution_count"},
 		{table: "ai_models", column: "max_context_tokens"},
 		{table: "ai_models", column: "max_output_tokens"},
 		{table: "ai.items", column: "revision"},

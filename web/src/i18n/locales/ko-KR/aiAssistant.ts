@@ -52,6 +52,7 @@ const aiAssistant = {
       tool_execution_failed: '플랫폼 도구 실행에 실패했습니다. 잠시 후 다시 시도하세요.',
       tool_storage_unavailable: '플랫폼 데이터를 일시적으로 읽을 수 없습니다. 잠시 후 다시 시도하세요. 계속 실패하면 요청 번호를 제공하세요.',
       tool_arguments_key_unavailable: '도구 파라미터를 일시적으로 안전하게 복호화할 수 없습니다. 이 작업을 다시 시작하세요.',
+      tool_outcome_unknown: '도구 실행 중 Agent가 재시작되어 이 도구 호출의 결과를 알 수 없습니다. 다시 시도하기 전에 대상 리소스의 현재 상태를 확인하세요.',
       tool_permission_denied: '현재 사용자는 대상 리소스에 접근하거나 이 작업을 실행할 권한이 없습니다.',
       web_target_blocked: '대상 웹사이트가 플랫폼 도메인 또는 IP 블랙리스트에 히트되었습니다. 접근이 중지되었습니다.',
       web_content_rejected: '대상 콘텐츠가 읽을 수 있는 텍스트가 아니거나 응답 크기가 플랫폼 제한을 초과합니다.',

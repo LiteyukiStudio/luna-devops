@@ -128,6 +128,57 @@ export type RunExecutionSnapshot = {
 
 export type ClaimedRun = Run & { executionSnapshot?: RunExecutionSnapshot }
 
+export const runCheckpointPhases = [
+  "model", "tool_execution", "awaiting_input", "awaiting_approval", "finalizing",
+] as const
+export type RunCheckpointPhase = typeof runCheckpointPhases[number]
+
+/**
+ * Executor 必须在进程退出后恢复的 Run 控制流状态。
+ * 阶段、模型步数和剩余预算以 checkpoint 为准；Timeline 只作为用户可见投影，
+ * 不得用其中的条目反推控制流位置。
+ */
+export type RunCheckpoint = {
+  runId: string
+  revision: number
+  phase: RunCheckpointPhase
+  /** 下一步模型调用的索引；恢复时从该步继续，不重置预算。 */
+  modelStep: number
+  /** Run 内已执行的工具调用数；循环保护的 executed 计数由该列承载。 */
+  toolCallCount: number
+  /** 启动恢复次数；由启动对账写入，Executor 不修改。 */
+  recoveries: number
+  state: RunCheckpointState
+  createdAt: string
+  updatedAt: string
+}
+
+export type RunCheckpointState = {
+  /** 循环保护计数；executed 由 RunCheckpoint.toolCallCount 承载，避免两处事实。 */
+  loopGuard?: {
+    proposed: number
+    occurrences: Array<{ operationId: string, argumentsHash: string, count: number }>
+    nonRetryableCalls: Array<{ operationId: string, argumentsHash: string }>
+  }
+  /** 模型协议违例的有界修复次数。 */
+  protocolRepairCount?: number
+  /** 平台工具参数修复次数，按 operationId 计数。 */
+  argumentRepairAttempts?: Record<string, number>
+  /** phase=awaiting_approval 时等待审批的持久化 tool call id。 */
+  pendingToolCallId?: string
+  /** phase=finalizing 时已决定但尚未提交的最终答复；终态批次只存在于流式会话内存中。 */
+  finalOutput?: string
+}
+
+/** Executor 对 checkpoint 的一次推进；expectedRevision=0 表示首次创建。 */
+export type RunCheckpointAdvance = {
+  expectedRevision: number
+  phase: RunCheckpointPhase
+  modelStep: number
+  toolCallCount: number
+  state: RunCheckpointState
+}
+
 export type TimelineItem = {
   id: string
   runId: string

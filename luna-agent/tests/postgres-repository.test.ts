@@ -2,9 +2,14 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import type { CreatedTurn, RunExecutionSnapshot } from "../src/domain.js"
 import { PayloadCipher } from "../src/payload-cipher.js"
 import { PostgresRepository } from "../src/persistence/postgres.js"
-import { RunStateConflictError } from "../src/persistence/repository.js"
+import { RunCheckpointConflictError, RunStateConflictError } from "../src/persistence/repository.js"
 import type { RemoteProviderConfig } from "../src/provider/config-client.js"
 import { defaultRuntimeSettings, type RemoteRuntimeSettings } from "../src/runtime-settings.js"
+import { ToolCatalog } from "../src/tools/catalog.js"
+import { DeterministicLunaApiClient } from "../src/tools/luna-api-client.js"
+import { PostgresToolCallStore } from "../src/tools/postgres-store.js"
+import { ToolOrchestrator } from "../src/tools/orchestrator.js"
+import { testToolOperation } from "./support/tool-catalog.js"
 
 /**
  * 真实 PostgreSQL 集成测试：验证 Drizzle 持久层的事务、并发与状态机语义。
@@ -30,7 +35,7 @@ suite("PostgresRepository (Drizzle) integration", () => {
     repository = new PostgresRepository(databaseUrl!, {}, runExecutionSnapshotCipher())
     await repository.pool.query(`
       truncate ai.tool_calls, ai.run_events, ai.items,
-               ai.idempotency_keys, ai.conversation_summaries, ai.runs, ai.turns, ai.conversations
+               ai.idempotency_keys, ai.conversation_summaries, ai.run_checkpoints, ai.runs, ai.turns, ai.conversations
       cascade
     `)
   })
@@ -38,6 +43,7 @@ suite("PostgresRepository (Drizzle) integration", () => {
   afterAll(async () => {
     await repository.close()
   })
+
 
   it("creates, queries, renames and paginates conversations", async () => {
     const c1 = await repository.createConversation(owner, "新会话", undefined, undefined, "aimod_fast")
@@ -391,6 +397,105 @@ suite("PostgresRepository (Drizzle) integration", () => {
     await expect(repository.appendRunInput("airun_missing", "x")).rejects.toThrow("ai.run_not_found")
   })
 
+  it("advances the Run checkpoint revision monotonically across replays", async () => {
+    while (await repository.claimNextQueuedRun()) { /* drain earlier queued fixtures */ }
+    const conversation = await repository.createConversation(owner, "checkpoint")
+    const created = await repository.createTurn(owner, {
+      conversationId: conversation.id, input: "检查", pageContext: {},
+      idempotencyKey: key("checkpoint"), actorSessionId: key("session"),
+    })
+    await repository.claimNextQueuedRun()
+
+    const first = await repository.saveRunCheckpoint(created.run.id, {
+      expectedRevision: 0, phase: "model", modelStep: 0, toolCallCount: 0,
+      state: { protocolRepairCount: 1 },
+    })
+    expect(first).toMatchObject({ revision: 1, phase: "model", modelStep: 0, toolCallCount: 0, recoveries: 0 })
+    expect(first.state).toEqual({ protocolRepairCount: 1 })
+
+    // 同一 revision 的重放必须幂等：返回已存状态，不覆盖、不报错。
+    const replay = await repository.saveRunCheckpoint(created.run.id, {
+      expectedRevision: 0, phase: "model", modelStep: 7, toolCallCount: 7, state: {},
+    })
+    expect(replay).toMatchObject({ revision: 1, modelStep: 0, toolCallCount: 0 })
+
+    const advanced = await repository.saveRunCheckpoint(created.run.id, {
+      expectedRevision: 1, phase: "tool_execution", modelStep: 0, toolCallCount: 0, state: {},
+    })
+    expect(advanced).toMatchObject({ revision: 2, phase: "tool_execution" })
+
+    // 旧 revision 不能覆盖新状态。
+    await expect(repository.saveRunCheckpoint(created.run.id, {
+      expectedRevision: 0, phase: "model", modelStep: 9, toolCallCount: 9, state: {},
+    })).rejects.toBeInstanceOf(RunCheckpointConflictError)
+    expect(await repository.loadRunCheckpoint(created.run.id)).toMatchObject({ revision: 2, phase: "tool_execution" })
+  })
+
+  it("requeues checkpointed orphaned runs and interrupts the rest", async () => {
+    while (await repository.claimNextQueuedRun()) { /* drain earlier queued fixtures */ }
+    const claimRun = async (name: string) => {
+      const conversation = await repository.createConversation(owner, name)
+      const created = await repository.createTurn(owner, {
+        conversationId: conversation.id, input: name, pageContext: {},
+        idempotencyKey: key(name), actorSessionId: key("session"),
+      })
+      const claimed = await repository.claimNextQueuedRun()
+      if (!claimed || claimed.id !== created.run.id) throw new Error("missing claimed run")
+      return { runId: created.run.id, rowVersion: claimed.rowVersion }
+    }
+
+    const legacy = await claimRun("legacy")
+    expect(await repository.recoverOrphanedRun(legacy.runId, legacy.rowVersion, 3)).toBe("interrupted")
+    expect(await repository.getRun(owner, legacy.runId)).toMatchObject({
+      status: "interrupted", errorCode: "ai.agent_restarted",
+    })
+
+    const recoverable = await claimRun("recoverable")
+    await repository.saveRunCheckpoint(recoverable.runId, {
+      expectedRevision: 0, phase: "model", modelStep: 1, toolCallCount: 1, state: {},
+    })
+    expect(await repository.recoverOrphanedRun(recoverable.runId, recoverable.rowVersion, 3)).toBe("requeued")
+    expect(await repository.getRun(owner, recoverable.runId)).toMatchObject({ status: "queued" })
+    expect((await repository.loadRunCheckpoint(recoverable.runId))?.recoveries).toBe(1)
+
+    const exhausted = await repository.claimNextQueuedRun()
+    if (!exhausted) throw new Error("missing claimed run")
+    expect(exhausted.id).toBe(recoverable.runId)
+    await repository.saveRunCheckpoint(recoverable.runId, {
+      expectedRevision: 1, phase: "model", modelStep: 1, toolCallCount: 1, state: {},
+    })
+    expect(await repository.recoverOrphanedRun(recoverable.runId, exhausted.rowVersion, 1)).toBe("interrupted")
+    expect(await repository.getRun(owner, recoverable.runId)).toMatchObject({
+      status: "interrupted", errorCode: "ai.agent_restarted",
+    })
+  })
+
+
+  it("persists execution counts across HTTP 428, approval and a fresh store", async () => {
+    const conversation = await repository.createConversation(owner, "执行计数")
+    const { run } = await repository.createTurn(owner, {
+      conversationId: conversation.id, input: "检查项目", pageContext: {},
+      idempotencyKey: key("tool-count"), actorSessionId: key("session"),
+    })
+    const catalog = ToolCatalog.load([testToolOperation("getProject")])
+    let executions = 0
+    const client = new DeterministicLunaApiClient(() => ++executions === 1
+      ? { status: 428, body: { code: "ai.approval_required" } }
+      : { status: 200, body: { id: "prj_1" } })
+    const cipher = new PayloadCipher(Buffer.alloc(32, 23), "tool-count-test")
+    const makeTools = () => new ToolOrchestrator(catalog, client, new PostgresToolCallStore(repository.pool, repository, cipher))
+    const pending = await makeTools().propose({ runId: run.id, operationId: "getProject", arguments: {} })
+    expect(pending).toMatchObject({ status: "awaiting_approval", executionCount: 1 })
+    const approved = await makeTools().resolveApproval(pending.id, "approve")
+    expect(approved).toMatchObject({ status: "succeeded", executionCount: 2 })
+    const restored = makeTools()
+    await restored.recoverToolBatch(run.id)
+    await restored.recoverToolBatch(run.id)
+    expect(restored.toolLoopSnapshot(run.id)).toMatchObject({ proposed: 1, executed: 2 })
+    expect(client.calls).toHaveLength(2)
+    await expect(repository.pool.query(`update ai.tool_calls set execution_count=-1 where id=$1`, [pending.id]))
+      .rejects.toMatchObject({ code: "23514" })
+  })
 })
 
 function executionSnapshot(version: string, apiKey: string): RunExecutionSnapshot {

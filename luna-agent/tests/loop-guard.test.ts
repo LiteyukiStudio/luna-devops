@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { InMemoryLoopGuard, ToolLoopStoppedError } from "../src/tools/loop-guard.js"
+import { InMemoryLoopGuard, ToolLoopStoppedError, type LoopGuardState } from "../src/tools/loop-guard.js"
 
 const call = { runId: "airun_guard", operationId: "getBuildRun", argumentsHash: "sha256:args" }
 
@@ -44,6 +44,64 @@ describe("run tool loop guard", () => {
     expect(guard.snapshot(call.runId).maxToolCalls).toBe(32)
     guard.clearRun(call.runId)
     expect(guard.snapshot(call.runId)).toEqual({ proposed: 0, executed: 0, maxToolCalls: 64 })
+  })
+
+  it("round-trips run state through a JSON-safe export for checkpoint replay", () => {
+    const guard = new InMemoryLoopGuard({ sameCallLimit: 3 })
+    guard.beforePropose(call)
+    guard.beforeExecute(call)
+    guard.beforePropose(call)
+    guard.blockNonRetryable(call)
+    const exported = guard.exportRun(call.runId)
+    expect(exported).toEqual({
+      proposed: 2,
+      occurrences: [{ operationId: call.operationId, argumentsHash: call.argumentsHash, count: 2 }],
+      nonRetryableCalls: [{ operationId: call.operationId, argumentsHash: call.argumentsHash }],
+    })
+
+    // checkpoint 走 jsonb，导出结果必须能原样序列化并恢复同一份调用保护。
+    const restored = new InMemoryLoopGuard({ sameCallLimit: 3 })
+    restored.restoreRun(call.runId, JSON.parse(JSON.stringify(exported)) as LoopGuardState, 1)
+    expect(restored.snapshot(call.runId)).toMatchObject({ proposed: 2, executed: 1 })
+    expect(() => restored.beforePropose(call)).toThrowError(expect.objectContaining({ code: "ai.tool_repeated_in_run" }))
+    expect(restored.exportRun("airun_unknown")).toBeUndefined()
+  })
+
+  it("keeps the higher counter when restoring on top of live state", () => {
+    const guard = new InMemoryLoopGuard({ sameCallLimit: 3 })
+    guard.beforePropose(call)
+    guard.beforeExecute(call)
+    guard.restoreRun(call.runId, { proposed: 0, occurrences: [], nonRetryableCalls: [] }, 0)
+    expect(guard.snapshot(call.runId)).toMatchObject({ proposed: 1, executed: 1 })
+  })
+
+  it("raises run counters from settled facts idempotently", () => {
+    const guard = new InMemoryLoopGuard({ sameCallLimit: 3 })
+    const settled = {
+      proposed: 3,
+      executed: 2,
+      occurrences: [
+        { operationId: "getProject", argumentsHash: "sha256:a" },
+        { operationId: "getProject", argumentsHash: "sha256:a" },
+        { operationId: "getBuild", argumentsHash: "sha256:b" },
+      ],
+      nonRetryableCalls: [{ operationId: "getBuild", argumentsHash: "sha256:b" }],
+    }
+    guard.restoreRun(call.runId, { proposed: 1, occurrences: [{ operationId: "getProject", argumentsHash: "sha256:a", count: 1 }], nonRetryableCalls: [] }, 1)
+    guard.raiseFromSettledCalls(call.runId, settled)
+    guard.raiseFromSettledCalls(call.runId, settled)
+
+    expect(guard.snapshot(call.runId)).toMatchObject({ proposed: 3, executed: 2 })
+    expect(guard.exportRun(call.runId)).toEqual({
+      proposed: 3,
+      occurrences: [
+        { operationId: "getProject", argumentsHash: "sha256:a", count: 2 },
+        { operationId: "getBuild", argumentsHash: "sha256:b", count: 1 },
+      ],
+      nonRetryableCalls: [{ operationId: "getBuild", argumentsHash: "sha256:b" }],
+    })
+    expect(() => guard.beforePropose({ runId: call.runId, operationId: "getBuild", argumentsHash: "sha256:b" }))
+      .toThrowError(expect.objectContaining({ code: "ai.tool_repeated_in_run" }))
   })
 
   it("rejects invalid runtime limits", () => {

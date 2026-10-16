@@ -5,6 +5,7 @@ export { items, runEvents } from "./timeline.js"
 export { idempotencyKeys } from "./idempotency.js"
 export { conversationSummaries } from "./summaries.js"
 export { toolCalls } from "./tool-calls.js"
+export { runCheckpoints } from "./run-checkpoints.js"
 
 export type { ConversationRow, NewConversationRow } from "./conversations.js"
 export type { TurnRow, NewTurnRow } from "./turns.js"
@@ -13,3 +14,4 @@ export type { TimelineItemRow, NewTimelineItemRow, RunEventRow, NewRunEventRow }
 export type { IdempotencyKeyRow, NewIdempotencyKeyRow } from "./idempotency.js"
 export type { ConversationSummaryRow, NewConversationSummaryRow } from "./summaries.js"
 export type { ToolCallRow, NewToolCallRow } from "./tool-calls.js"
+export type { RunCheckpointRow, NewRunCheckpointRow } from "./run-checkpoints.js"

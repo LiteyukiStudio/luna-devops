@@ -51,7 +51,7 @@ describe("RunExecutor slim lifecycle", () => {
     const streamBus = new CleanupBus(repository)
     const executor = testExecutor(repository, new ModelRuntime(new DeterministicProvider(), testRegistry()), { streamBus })
 
-    await expect((executor as unknown as { interruptOrphanedRuns(): Promise<boolean> }).interruptOrphanedRuns()).resolves.toBe(true)
+    await expect((executor as unknown as { recoverOrphanedRuns(): Promise<boolean> }).recoverOrphanedRuns()).resolves.toBe(true)
 
     expect((await repository.getRun("usr_reconcile_cleanup", run.id))?.status).toBe("interrupted")
     expect(streamBus.cleanupCalls).toBe(1)
