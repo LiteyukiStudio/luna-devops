@@ -7,7 +7,7 @@ import { ToolArgumentsInvalidError, requiredInputFields, validateToolArguments }
 import type { Repository } from "../persistence/repository.js"
 import type { ToolCatalog } from "./catalog.js"
 import type { LunaApiToolClient, ToolExecutionResult } from "./luna-api-client.js"
-import { InMemoryLoopGuard, type LoopGuard, type ToolLoopSnapshot } from "./loop-guard.js"
+import { InMemoryLoopGuard, type LoopGuard, type LoopGuardState, type ToolLoopSnapshot } from "./loop-guard.js"
 import { ToolPolicy } from "./policy.js"
 
 export type ToolCallStatus = "proposed" | "awaiting_approval" | "running" | "succeeded" | "failed" | "rejected" | "canceled" | "skipped"
@@ -20,6 +20,7 @@ export type ToolCallRecord = {
   /** 仅用于 Run 内参数归一化计数及历史数据兼容，不再作为审批凭据。 */
   argumentsHash: string
   attempt: number
+  executionCount: number
   /** 仅用于工具状态的原子更新，不再由审批 API 暴露。 */
   rowVersion: number
   approvalDecision?: "approve"
@@ -33,6 +34,8 @@ export type ApprovalDecision = "reject" | "approve"
 export interface ToolCallStore {
   insert(value: ToolCallRecord): Promise<void>
   get(id: string): Promise<ToolCallRecord | undefined>
+  /** Run 的工具执行事实，按创建顺序返回；恢复时用它核对批次是否已落地。 */
+  listByRun(runId: string): Promise<ToolCallRecord[]>
   update(id: string, expected: ToolCallStatus, patch: Partial<ToolCallRecord>): Promise<ToolCallRecord>
   emit(event: ToolEvent): Promise<void>
 }
@@ -83,6 +86,7 @@ export class ToolOrchestrator {
       argumentsHash,
       attempt: 1,
       rowVersion: 1,
+      executionCount: 0,
       inputMode,
     }
     await this.store.insert(record)
@@ -97,6 +101,7 @@ export class ToolOrchestrator {
 
   async resolveApproval(id: string, decision: ApprovalDecision, signal?: AbortSignal): Promise<ToolCallRecord> {
     const call = await this.requireAwaitingApproval(id)
+    await this.recoverToolBatch(call.runId)
     agentMetrics.approvals.add(1, { decision, tool: call.operationId })
     telemetryLog("agent.approval.resolved", "info", {
       "luna.run.id": call.runId,
@@ -125,6 +130,23 @@ export class ToolOrchestrator {
     return this.require(id)
   }
 
+  /**
+   * 恢复崩溃批次：读取 Run 的工具执行事实，并把已落地的调用计入循环保护计数，
+   * 使重启后 Run 的工具预算不放宽。事实表是权威结果，Timeline 投影缺失不影响计数。
+   */
+  async recoverToolBatch(runId: string): Promise<ToolCallRecord[]> {
+    const calls = await this.store.listByRun(runId)
+    this.loopGuard.raiseFromSettledCalls(runId, {
+      proposed: calls.length,
+      executed: calls.reduce((count, call) => count + call.executionCount, 0),
+      occurrences: calls.map(call => ({ operationId: call.operationId, argumentsHash: call.argumentsHash })),
+      nonRetryableCalls: calls
+        .filter(call => isExplicitlyNonRetryable(call.result))
+        .map(call => ({ operationId: call.operationId, argumentsHash: call.argumentsHash })),
+    })
+    return calls
+  }
+
   async retryFailed(id: string, signal?: AbortSignal): Promise<ToolCallRecord> {
     const previous = await this.require(id)
     if (previous.status !== "failed") throw new Error("ai.tool_call_not_retryable")
@@ -138,6 +160,7 @@ export class ToolOrchestrator {
       argumentsHash: previous.argumentsHash,
       attempt: previous.attempt + 1,
       rowVersion: 1,
+      executionCount: 0,
       ...(previous.inputMode ? { inputMode: previous.inputMode } : {}),
     }
     await this.store.insert(retry)
@@ -185,6 +208,16 @@ export class ToolOrchestrator {
     return this.loopGuard.snapshot(runId)
   }
 
+  /** Run 内循环保护计数，供 Executor 写入 checkpoint。 */
+  runLoopState(runId: string): LoopGuardState | undefined {
+    return this.loopGuard.exportRun(runId)
+  }
+
+  /** 从 checkpoint 恢复循环保护计数；重置进程内存不会放宽调用保护。 */
+  restoreRunLoopState(runId: string, state: LoopGuardState | undefined, executed: number): void {
+    this.loopGuard.restoreRun(runId, state, executed)
+  }
+
   clearRunLoopState(runId: string): void {
     this.loopGuard.clearRun(runId)
   }
@@ -228,7 +261,7 @@ export class ToolOrchestrator {
           "gen_ai.tool.name": call.operationId,
           "luna.tool_call.id": call.id,
         })
-        const running = await this.transition(call, "running", {}, "tool_call.running")
+        const running = await this.transition(call, "running", { executionCount: call.executionCount + 1 }, "tool_call.running")
         let result: ToolExecutionResult
         try {
           signal.throwIfAborted()
@@ -367,6 +400,7 @@ export class ToolOrchestrator {
       argumentsHash,
       attempt: 1,
       rowVersion: 1,
+      executionCount: 0,
       errorCode: error.code,
       result,
       ...(input.inputMode ? { inputMode: input.inputMode } : {}),
@@ -467,6 +501,7 @@ export class MemoryToolCallStore implements ToolCallStore {
   readonly events: ToolEvent[] = []
   async insert(value: ToolCallRecord) { this.records.set(value.id, value) }
   async get(id: string) { return this.records.get(id) }
+  async listByRun(runId: string) { return [...this.records.values()].filter(record => record.runId === runId) }
   async update(id: string, expected: ToolCallStatus, patch: Partial<ToolCallRecord>) {
     const value = this.records.get(id)
     if (!value || value.status !== expected) throw new Error("ai.tool_call_state_conflict")
@@ -481,6 +516,7 @@ export class ProjectingToolCallStore implements ToolCallStore {
   constructor(private readonly inner: ToolCallStore, private readonly repository: Repository) {}
   insert(value: ToolCallRecord) { return this.inner.insert(value) }
   get(id: string) { return this.inner.get(id) }
+  listByRun(runId: string) { return this.inner.listByRun(runId) }
   update(id: string, expected: ToolCallStatus, patch: Partial<ToolCallRecord>) { return this.inner.update(id, expected, patch) }
   async emit(event: ToolEvent) {
     await this.inner.emit(event)

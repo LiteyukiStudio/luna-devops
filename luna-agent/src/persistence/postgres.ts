@@ -7,6 +7,8 @@ import type {
   CreatedTurn,
   CreateTurn,
   Run,
+  RunCheckpoint,
+  RunCheckpointAdvance,
   RunExecutionSnapshot,
   TimelineItem,
 } from "../domain.js"
@@ -18,8 +20,10 @@ import { defaultRuntimeSettings, runtimeSettingsSnapshot, type RuntimeSettings }
 import { agentMetrics, internalSpanOptions, withSpan } from "../telemetry.js"
 import {
   RunStateConflictError,
+  RunCheckpointConflictError,
   type ConversationListOptions,
   type Repository,
+  type OrphanedRunRecovery,
   type ModelAttemptMetadata,
   type ModelCallOperation,
   type TimelinePageOptions,
@@ -32,6 +36,7 @@ import {
   mapConversationSummary,
   mapClaimedRun,
   mapRun,
+  mapRunCheckpoint,
   mapRunEvent,
   mapTimelineItem,
   timelineContentText,
@@ -41,6 +46,7 @@ import {
   conversationSummaries,
   idempotencyKeys,
   items,
+  runCheckpoints,
   runEvents,
   runs,
   toolCalls,
@@ -729,21 +735,102 @@ export class PostgresRepository implements Repository {
 
   async interruptOrphanedRun(runId: string, expectedRunVersion: number): Promise<boolean> {
     return this.db.transaction(async (tx) => {
+      const row = await this.interruptRunningRow(tx, runId, expectedRunVersion)
+      return row !== undefined
+    })
+  }
+
+  /**
+   * 启动对账：只有 checkpoint 能证明续跑位置时才把孤儿 Run 重新排队，
+   * 其余情况沿用 interrupted。恢复次数有上限，避免崩溃-恢复循环。
+   */
+  async recoverOrphanedRun(runId: string, expectedRunVersion: number, maxRecoveries: number): Promise<OrphanedRunRecovery> {
+    return this.db.transaction(async (tx) => {
+      const checkpoint = (await tx.select({ recoveries: runCheckpoints.recoveries })
+        .from(runCheckpoints)
+        .where(eq(runCheckpoints.runId, runId))
+        .for("update"))[0]
+      if (!checkpoint || checkpoint.recoveries >= maxRecoveries) {
+        const interrupted = await this.interruptRunningRow(tx, runId, expectedRunVersion)
+        return interrupted === undefined ? "skipped" : "interrupted"
+      }
       const row = (await tx.update(runs).set({
-        status: "interrupted",
+        status: "queued",
         rowVersion: sql`${runs.rowVersion} + 1`,
-        completedAt: sql`now()`,
-        errorCode: "ai.agent_restarted",
       }).where(and(
         eq(runs.id, runId), eq(runs.status, "running"), eq(runs.rowVersion, expectedRunVersion),
       )).returning({ turnId: runs.turnId, rowVersion: runs.rowVersion }))[0]
-      if (!row) return false
-      await tx.update(turns).set({ status: "interrupted" }).where(eq(turns.id, row.turnId))
-      await this.appendEventWith(tx, runId, "run.interrupted", {
-        state: "interrupted", rowVersion: row.rowVersion, errorCode: "ai.agent_restarted",
+      if (!row) return "skipped"
+      await tx.update(turns).set({ status: "queued" }).where(eq(turns.id, row.turnId))
+      await tx.update(runCheckpoints).set({
+        recoveries: sql`${runCheckpoints.recoveries} + 1`,
+        revision: sql`${runCheckpoints.revision} + 1`,
+        updatedAt: sql`now()`,
+      }).where(eq(runCheckpoints.runId, runId))
+      await this.appendEventWith(tx, runId, "run.requeued", {
+        state: "queued",
+        rowVersion: row.rowVersion,
+        reason: "ai.agent_restarted",
+        recoveries: checkpoint.recoveries + 1,
       })
-      return true
+      return "requeued"
     })
+  }
+
+  async loadRunCheckpoint(runId: string) {
+    const row = (await this.db.select().from(runCheckpoints).where(eq(runCheckpoints.runId, runId)))[0]
+    return row ? mapRunCheckpoint(row) : undefined
+  }
+
+  /**
+   * revision 单调推进：只有当前 revision 等于 expectedRevision 才能写入。
+   * 同一 revision 的重放返回已存状态（幂等），更旧的 revision 抛冲突，
+   * 避免重启后的恢复用陈旧状态覆盖新状态。
+   */
+  async saveRunCheckpoint(runId: string, advance: RunCheckpointAdvance): Promise<RunCheckpoint> {
+    const revision = advance.expectedRevision + 1
+    const row = (await this.db.insert(runCheckpoints).values({
+      runId,
+      revision,
+      phase: advance.phase,
+      modelStep: advance.modelStep,
+      toolCallCount: advance.toolCallCount,
+      state: advance.state,
+    })
+      .onConflictDoUpdate({
+        target: runCheckpoints.runId,
+        set: {
+          revision: sql`excluded.revision`,
+          phase: sql`excluded.phase`,
+          modelStep: sql`excluded.model_step`,
+          toolCallCount: sql`excluded.tool_call_count`,
+          state: sql`excluded.state`,
+          updatedAt: sql`now()`,
+        },
+        setWhere: sql`${runCheckpoints.revision} = excluded.revision - 1`,
+      })
+      .returning())[0]
+    if (row) return mapRunCheckpoint(row)
+    const current = await this.loadRunCheckpoint(runId)
+    if (current && current.revision === revision) return current
+    throw new RunCheckpointConflictError(runId, advance.expectedRevision, current?.revision)
+  }
+
+  private async interruptRunningRow(tx: AgentTx, runId: string, expectedRunVersion: number) {
+    const row = (await tx.update(runs).set({
+      status: "interrupted",
+      rowVersion: sql`${runs.rowVersion} + 1`,
+      completedAt: sql`now()`,
+      errorCode: "ai.agent_restarted",
+    }).where(and(
+      eq(runs.id, runId), eq(runs.status, "running"), eq(runs.rowVersion, expectedRunVersion),
+    )).returning({ turnId: runs.turnId, rowVersion: runs.rowVersion }))[0]
+    if (!row) return undefined
+    await tx.update(turns).set({ status: "interrupted" }).where(eq(turns.id, row.turnId))
+    await this.appendEventWith(tx, runId, "run.interrupted", {
+      state: "interrupted", rowVersion: row.rowVersion, errorCode: "ai.agent_restarted",
+    })
+    return row
   }
 
   async countActiveUserRuns(userId: string) {

@@ -3,6 +3,7 @@ import type {
   Conversation,
   ConversationSummary,
   Run,
+  RunCheckpoint,
   RunExecutionSnapshot,
   RunEvent,
   TimelineItem,
@@ -13,6 +14,7 @@ import type {
   ConversationSummaryRow,
   RunEventRow,
   RunRow,
+  RunCheckpointRow,
   TimelineItemRow,
 } from "../schema/index.js"
 
@@ -105,6 +107,20 @@ export function mapRunEvent(row: RunEventRow): RunEvent {
     type: row.type,
     data: row.data,
     createdAt: row.createdAt.toISOString(),
+  }
+}
+
+export function mapRunCheckpoint(row: RunCheckpointRow): RunCheckpoint {
+  return {
+    runId: row.runId,
+    revision: row.revision,
+    phase: row.phase,
+    modelStep: row.modelStep,
+    toolCallCount: row.toolCallCount,
+    recoveries: row.recoveries,
+    state: row.state,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
   }
 }
 

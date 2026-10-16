@@ -32,6 +32,9 @@
 关键结论：恢复所需的控制流信息（阶段、模型步数、剩余预算、待处理调用）目前没有一处权威存储，
 只能由 timeline + Run 状态 + 进程内存拼接。这是 13 号方案 §5.3 要引入 checkpoint 的直接原因。
 
+Phase 2 起该结论已被 `ai.run_checkpoints` 取代：控制流事实源的变化见第 9 节，
+下表保留 Phase 0 的原始快照用于对照。
+
 ## 3. 行为矩阵
 
 | # | 场景 | 当前结果 | 期望结果 | 负责模块 | 回归位置 |
@@ -196,3 +199,120 @@ Agent lint 与 typecheck 均通过，无诊断。实际执行包内 `node_module
   但沙箱内的结果不能当作门禁通过。
 - `web` 的 `errors.test.ts` 与 `scripts/check-i18n.mjs` 通过。
 - 仍未验证：真实 E2E（API → Agent → Tool → 外部平台 → 权威回读），属 Phase 4 入口条件。
+
+## 9. Phase 2 变更记录
+
+状态：主体接入完成。四个进程退出边界（模型调用前、工具完成后、审批等待后、终态提交前）
+已可恢复；真实进程崩溃与 PostgreSQL 持久性仍未验证，见 9.6。
+
+### 9.1 改动范围
+
+- 新增迁移 `migrations/000105_ai_run_checkpoints.{up,down}.sql` 与表 `ai.run_checkpoints`
+  （`run_id` 主键、`revision` 乐观锁、`phase`、`model_step`、`tool_call_count`、`recoveries`、
+  `state jsonb`），并同步 Drizzle schema、领域类型和 Go 侧迁移门禁
+  （`internal/database/fresh_database_migration_test.go` 的 `latestMigrationVersion=105`）。
+  同一迁移为工具事实增加 `execution_count`，进入 `running` 时与状态一起更新；
+  参数校验失败、审批拒绝不消耗执行次数，HTTP 428 及批准后的再次执行分别计数。
+- 新增 `luna-agent/src/executor/checkpoint.ts`：`resumePlan` 把持久化相位映射为续跑动作，
+  `checkpointState` 组装状态字段。
+- `Repository` 新增 `loadRunCheckpoint` / `saveRunCheckpoint` / `recoverOrphanedRun`，
+  PostgreSQL 与内存实现同步；`saveRunCheckpoint` 用 `revision` 单调推进做乐观锁，
+  同一 revision 重放幂等，旧 revision 抛 `RunCheckpointConflictError`。
+- `RunExecutor` 在五个边界写 checkpoint：每个模型步之前（`model`）、工具批次之前
+  （`tool_execution`）、等待审批（`awaiting_approval`）、等待用户输入（`awaiting_input`）、
+  终态提交之前（`finalizing`）。恢复时从 checkpoint 取阶段、模型步数、循环保护计数和
+  协议/参数修复次数，不再从 Timeline 或进程内存推断位置。
+- `tool_execution` 只是批次边界，不是结果：恢复时用工具事实表 `ai.tool_calls`
+  （`ToolCallStore.listByRun` / `ToolOrchestrator.recoverToolBatch`）核对批次落地情况，
+  已落地的调用折叠结果继续、`running` 的调用失败关闭、停在审批的回到等待审批。
+  进程在“工具成功后、下一个 checkpoint 之前”退出属于这一路径，不需要重放工具。
+- 核对同时把崩溃批次已落地的调用计入循环保护计数（`LoopGuard.raiseFromSettledCalls`）：
+  计数只抬高不降低，重启后 Run 的工具预算与重复调用保护不放宽。
+- 启动对账由 `interruptOrphanedRuns` 改为 `recoverOrphanedRuns`：有 checkpoint 的孤儿 Run
+  重新排队续跑，恢复次数上限 3（`maxRunRecoveries`）；没有 checkpoint 的旧 Run 仍然置为
+  `interrupted`（方案 §12.2）。
+- 循环保护计数跨重启保留：`InMemoryLoopGuard` 新增 `exportRun` / `restoreRun`，
+  `ToolOrchestrator.runLoopState` / `restoreRunLoopState` 供 Executor 读写 checkpoint。
+  计数键导出时拆成 `{operationId, argumentsHash}`，因为 jsonb 不能保存 NUL 分隔符。
+
+### 9.2 行为变化
+
+- 矩阵行 15 变化：进程在模型调用前、工具完成后、审批等待后、终态提交前退出时，Run 不再直接
+  进入 `interrupted` 终态，而是重启后续跑且状态只执行一次。回归位置：`executor-checkpoint.test.ts`
+  的四个边界用例；旧行为由 `executor-baseline.test.ts` 用例 15 保留为“无 checkpoint 的旧 Run”。
+- 矩阵行 11 变化：审批恢复不再只靠 timeline 反推上下文，等待中的调用由 checkpoint 记录；
+  审批恢复与批次恢复统一核对工具事实，恢复计数并持久补齐缺失的 Timeline 投影，
+  已有投影不重复写入；结果进入续跑上下文时不重复折叠（回归用例断言续跑上下文里
+  该工具结果只出现一次）。
+- 矩阵行 12 变化：等待用户输入时写入 `phase=awaiting_input`（需补充的字段仍只由
+  `run.input_required` 事件承载，checkpoint 不重复保存），重新排队后从同一步继续，
+  修复次数与循环保护计数不再重置。
+- 新增行 26：工具批次中断后恢复。按工具事实核对：批次已落地则把结果折叠进续跑上下文并继续，
+  不重复执行工具（工具成功但 checkpoint 仍停在 `tool_execution` 也在此覆盖）；调用停在
+  `awaiting_approval` 则回到等待审批；调用处于 `running`（请求可能已送达外部平台）则以
+  `ai.tool_outcome_unknown` 失败关闭；只有 `proposed` 或没有记录时没有副作用，回模型重新决策。
+  投影缺失（事实已提交、Timeline 条目未写入）时先持久补齐调用与工具结果，再推进 checkpoint；
+  补写中途再次退出时按已存在条目继续核对。批次同时存在审批等待与 `running` 时优先失败关闭。
+- 新增行 27：恢复次数达到上限。Run 置 `interrupted` 且 `errorCode=ai.agent_restarted`，
+  不再续跑，避免崩溃-恢复循环。
+- 新增行 28：终态批次尚未提交（`phase=finalizing`）。恢复时不再调用模型：checkpoint 记录过
+  未提交答复时重建助手消息与终态转换（仍走同一条流式批次路径），否则只补提交终态。
+
+### 9.3 与方案 §6.3 / §7.1 的偏差
+
+- `selectedOperationIds` 不写入 checkpoint：`ai.runs.selected_operation_ids` 已经是持久化事实，
+  重复保存会产生两份互相漂移的状态。
+- `pendingToolCallIds` 收敛为单个 `pendingToolCallId`：Executor 在第一个等待审批的调用处停止，
+  列表没有消费者。
+- `budget` 不写入 checkpoint：每次 claim 的 `executionSnapshot` 已持久化该 Run 的
+  `runtimeSettings`，恢复后使用的是启动时的原始预算。
+- `state.loopGuard.executed` 不单独保存：由 `tool_call_count` 列承载，避免同一事实两处存储。
+- `pendingExternalOperationIds`、`lastDecisionId` 未引入：异步权威回读属于 Phase 4，当前无消费者。
+- checkpoint 与工具事实仍然分属不同操作。当前顺序为工具事实先提交、投影写入后推进 checkpoint；
+  审批与批次恢复均核对事实并补齐持久投影，计数以 checkpoint 与事实计数的最大值恢复。
+  内存守卫在持久化前消耗预算，因此存储失败时不能保证 checkpoint 计数必定小于或等于事实计数。
+
+### 9.4 未完成项
+
+- 模块拆分（`decision`、`graph`、`tool-step`、`finalize`）仍是 Phase 3 范围；本次只在
+  `RunExecutor` 内部接入 checkpoint，主循环结构未拆。
+- `ToolOutcome`、写操作 `verificationRequired` 与权威回读仍是 Phase 4 范围；`completed`
+  目前仍只由模型合法 final 决定。
+- 工具调用的逻辑幂等键与崩溃后重放（方案 §7.2）未做：恢复按工具事实核对，不重放已落地的
+  调用；只有结果确实未知（`running`）时才失败关闭，不用新调用掩盖未知结果。
+- 仍未实现“工具事实、投影与 checkpoint 同一事务”：外部 HTTP 无法纳入数据库事务，
+  但 HTTP 返回后的同库事实、投影与 checkpoint 可以事务化，当前尚未合并这三个写入边界。
+  当前依靠事实先行与恢复核对；核对读取或补写投影失败时 Run 以稳定错误码失败关闭，
+  checkpoint 停原处等待人工核对，不猜测推进。
+- 模型调用进行中退出会重跑该模型步：模型调用不产生业务副作用，四个验收边界也不包含
+  调用中途，因此不引入调用级 checkpoint。
+- 流式投影仍未收敛（Phase 1 遗留）：计划文字仍以 `assistant_message` 落库。
+
+### 9.5 风险
+
+- 恢复会重新调用模型并再次计费：模型步边界崩溃后需要重新生成该步输出。
+- `finalOutput` 保存脱敏后的最终答复副本，用于重建未提交的终态批次；未提交批次的文本
+  因此短暂存在于两张表，Run 进入终态后 checkpoint 行不再被读取。
+- 启动恢复依赖单副本部署：多副本下 `running` Run 可能属于其他实例，恢复会误判为孤儿。
+
+### 9.6 验证记录
+
+- 本轮修复后以 Node v24.21.0 直接执行本地 `vitest run`，连接独立 PostgreSQL 测试库：
+  46 个文件、447 个用例全部通过，无跳过。新增覆盖审批恢复核对、精确执行计数、
+  缺失投影持久补齐后再次恢复、重复核对与补写失败关闭；真实 PostgreSQL 验证计数存取及非负约束。
+  Agent 的 `eslint`、类型检查与构建通过；Go 全量测试和真实数据库迁移检查通过；
+  Web 515 个用例、lint、i18n、单例检查与构建通过。Helm 检查因缺少 `helm` 未完成；
+  文档站构建因缺少本地 `rspress` 依赖未完成。
+- `pnpm --dir luna-agent test`：Node v24.21.0 + 真实 PostgreSQL（独立库 `luna_agent_test`），
+  46 个文件、440 个用例全部通过，无跳过。其中 `executor-checkpoint.test.ts` 覆盖四个退出边界、
+  工具批次已落地/投影缺失/未开始/`running`/停在审批五种批次状态、崩溃批次计数恢复（移除
+  `raiseFromSettledCalls` 时这两条用例会失败）、核对失败失败关闭、恢复次数上限与 revision 乐观锁。
+- `luna-agent` 的 `eslint` 与 `tsc --noEmit` 无诊断。
+- `000105` 迁移在空库完成 up、down、reapply；`go test ./internal/database/` 的
+  `TestMigrateBootstrapsFreshPostgresSchema`（含最终 Schema 与 dirty 状态断言）通过。
+- `go test ./...` 全部通过；`web` 的 `vitest run`（133 文件、515 用例）、`eslint`、
+  `check:i18n`、`check:singletons` 通过。
+- 新增 `web/src/i18n/locales/*/aiAssistant.ts` 的 `tool_outcome_unknown` 文案与
+  `web/src/components/common/ai-assistant/errors.ts` 映射。
+- 仍未验证：真实 E2E（API → Agent → Tool → 外部平台 → 权威回读），属 Phase 4 入口条件。
+  进程退出用“重建 durable 状态 + 新 Executor”模拟，不代表真实进程崩溃与 PostgreSQL 持久性验证。

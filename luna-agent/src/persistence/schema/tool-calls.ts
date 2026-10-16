@@ -12,6 +12,7 @@ export const toolCalls = aiSchema.table("tool_calls", {
   argumentsCiphertext: text("arguments_ciphertext"),
   argumentsHash: text("arguments_hash").notNull(),
   attempt: integer("attempt").notNull().default(1),
+  executionCount: integer("execution_count").notNull().default(0),
   rowVersion: integer("row_version").notNull().default(1),
   approvalDecision: text("approval_decision").$type<"approve">(),
   result: jsonb("result").$type<unknown>(),

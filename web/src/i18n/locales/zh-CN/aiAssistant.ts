@@ -52,6 +52,7 @@ const aiAssistant = {
       tool_execution_failed: '平台工具执行失败，请稍后重试。',
       tool_storage_unavailable: '平台数据暂时无法读取，请稍后重试；如持续失败，请提供请求编号。',
       tool_arguments_key_unavailable: '工具参数暂时无法安全解密，请重新发起该操作。',
+      tool_outcome_unknown: 'Agent 在工具执行过程中重启，这次工具调用的结果未知；请先核对目标资源的当前状态，再决定是否重试。',
       tool_permission_denied: '当前用户没有访问目标资源或执行该操作的权限。',
       web_target_blocked: '目标网站命中了平台域名或 IP 黑名单，已停止访问。',
       web_content_rejected: '目标内容不是可读取文本，或响应大小超过平台限制。',

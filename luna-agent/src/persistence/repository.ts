@@ -9,6 +9,8 @@ import type {
   AIModelSnapshot,
   ClaimedRun,
   Run,
+  RunCheckpoint,
+  RunCheckpointAdvance,
   RunExecutionSnapshot,
   RunEvent,
   TimelineItem,
@@ -29,6 +31,25 @@ export class RunStateConflictError extends Error {
     super("ai.run_state_conflict")
   }
 }
+
+/**
+ * checkpoint 的 revision 乐观锁未命中：调用方要么在更旧的 revision 上推进，
+ * 要么跳过了中间状态。同一 revision 的重放不算冲突。
+ */
+export class RunCheckpointConflictError extends Error {
+  override readonly name = "RunCheckpointConflictError"
+
+  constructor(
+    readonly runId: string,
+    readonly expectedRevision: number,
+    readonly actualRevision?: number,
+  ) {
+    super("ai.run_checkpoint_conflict")
+  }
+}
+
+/** 启动对账结果：requeued 表示可安全续跑，interrupted 表示无法续跑，skipped 表示 Run 已不是 running。 */
+export type OrphanedRunRecovery = "requeued" | "interrupted" | "skipped"
 
 export type ConversationListOptions = {
   search?: string
@@ -96,6 +117,9 @@ export interface Repository {
   claimNextQueuedRun(executionSnapshot?: RunExecutionSnapshot): Promise<ClaimedRun | undefined>
   listRunningRuns(): Promise<Array<Pick<Run, "id" | "rowVersion">>>
   interruptOrphanedRun(runId: string, expectedRunVersion: number): Promise<boolean>
+  recoverOrphanedRun(runId: string, expectedRunVersion: number, maxRecoveries: number): Promise<OrphanedRunRecovery>
+  loadRunCheckpoint(runId: string): Promise<RunCheckpoint | undefined>
+  saveRunCheckpoint(runId: string, advance: RunCheckpointAdvance): Promise<RunCheckpoint>
   countActiveUserRuns(userId: string): Promise<number>
   getExecutionInput(runId: string): Promise<{
     conversationId: string

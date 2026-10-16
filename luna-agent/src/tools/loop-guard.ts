@@ -15,6 +15,28 @@ export type ToolLoopSnapshot = {
   maxToolCalls: number
 }
 
+/**
+ * Run 内循环保护的可持久化计数。checkpoint 保存该状态，
+ * 使重启、审批恢复和后续多副本执行不会重置调用保护。
+ * executed 计数由 RunCheckpoint.toolCallCount 承载，不在两处保存。
+ */
+export type LoopGuardState = {
+  proposed: number
+  occurrences: Array<{ operationId: string, argumentsHash: string, count: number }>
+  nonRetryableCalls: Array<{ operationId: string, argumentsHash: string }>
+}
+
+/**
+ * 由工具执行事实推导出的已落地调用。崩溃批次已经执行的调用必须计入计数，
+ * 否则重启后 Run 的工具预算会被放宽。
+ */
+export type SettledToolCalls = {
+  proposed: number
+  executed: number
+  occurrences: Array<{ operationId: string, argumentsHash: string }>
+  nonRetryableCalls: Array<{ operationId: string, argumentsHash: string }>
+}
+
 export interface LoopGuard {
   setMaxToolCalls(limit: number): void
   setRunMaxToolCalls(runId: string, limit: number): void
@@ -22,6 +44,9 @@ export interface LoopGuard {
   beforeExecute(call: ToolLoopCall): void
   blockNonRetryable(call: ToolLoopCall): void
   snapshot(runId: string): ToolLoopSnapshot
+  exportRun(runId: string): LoopGuardState | undefined
+  restoreRun(runId: string, state: LoopGuardState | undefined, executed: number): void
+  raiseFromSettledCalls(runId: string, settled: SettledToolCalls): void
   clearRun(runId: string): void
 }
 
@@ -103,6 +128,54 @@ export class InMemoryLoopGuard implements LoopGuard {
     }
   }
 
+  exportRun(runId: string): LoopGuardState | undefined {
+    const state = this.runs.get(runId)
+    if (!state) return undefined
+    return {
+      proposed: state.proposed,
+      occurrences: [...state.occurrences].map(([key, count]) => ({ ...parseCallKey(key), count })),
+      nonRetryableCalls: [...state.nonRetryableCalls].map(key => parseCallKey(key)),
+    }
+  }
+
+  /**
+   * 计数恢复到不低于 checkpoint 记录的水平：重启后按 checkpoint 恢复，
+   * 同进程内已有的计数只抬高不降低，避免恢复过程放宽调用保护。
+   */
+  restoreRun(runId: string, state: LoopGuardState | undefined, executed: number): void {
+    const current = this.runs.get(runId)
+    const occurrences = new Map(current?.occurrences ?? [])
+    for (const item of state?.occurrences ?? []) {
+      const key = callKey(item)
+      occurrences.set(key, Math.max(occurrences.get(key) ?? 0, item.count))
+    }
+    this.runs.set(runId, {
+      proposed: Math.max(current?.proposed ?? 0, state?.proposed ?? 0),
+      executed: Math.max(current?.executed ?? 0, executed),
+      maxToolCalls: current?.maxToolCalls ?? this.maxToolCalls,
+      occurrences,
+      nonRetryableCalls: new Set([
+        ...(current?.nonRetryableCalls ?? []),
+        ...(state?.nonRetryableCalls ?? []).map(item => callKey(item)),
+      ]),
+    })
+  }
+
+  /** 只抬高不降低，因此可以重复应用；用于把崩溃批次已落地的调用计入计数。 */
+  raiseFromSettledCalls(runId: string, settled: SettledToolCalls): void {
+    const state = this.state(runId)
+    state.proposed = Math.max(state.proposed, settled.proposed)
+    state.executed = Math.max(state.executed, settled.executed)
+    const occurrences = new Map<string, number>()
+    for (const call of settled.occurrences) {
+      const key = callKey(call)
+      occurrences.set(key, (occurrences.get(key) ?? 0) + 1)
+    }
+    for (const [key, count] of occurrences)
+      state.occurrences.set(key, Math.max(state.occurrences.get(key) ?? 0, count))
+    for (const call of settled.nonRetryableCalls) state.nonRetryableCalls.add(callKey(call))
+  }
+
   clearRun(runId: string): void {
     this.runs.delete(runId)
   }
@@ -123,8 +196,16 @@ export function validateMaxToolCalls(limit: number): number {
   return limit
 }
 
-function callKey(call: ToolLoopCall): string {
+function callKey(call: { operationId: string, argumentsHash: string }): string {
   return `${call.operationId}\u0000${call.argumentsHash}`
+}
+
+// 计数键使用 NUL 分隔，不能直接进入 jsonb；导出时拆回结构化字段。
+function parseCallKey(key: string): { operationId: string, argumentsHash: string } {
+  const separator = key.indexOf("\u0000")
+  return separator < 0
+    ? { operationId: key, argumentsHash: "" }
+    : { operationId: key.slice(0, separator), argumentsHash: key.slice(separator + 1) }
 }
 
 function stop(code: ToolLoopStoppedError["code"], call: ToolLoopCall): ToolLoopStoppedError {

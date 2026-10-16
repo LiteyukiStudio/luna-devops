@@ -52,6 +52,7 @@ const aiAssistant = {
       tool_execution_failed: '平臺工具執行失敗，請稍後重試。',
       tool_storage_unavailable: '平臺資料暫時無法讀取，請稍後重試；如持續失敗，請提供請求編號。',
       tool_arguments_key_unavailable: '工具引數暫時無法安全解密，請重新發起該操作。',
+      tool_outcome_unknown: 'Agent 在工具執行過程中重啟，這次工具呼叫的結果未知；請先確認目標資源的目前狀態，再決定是否重試。',
       tool_permission_denied: '當前使用者沒有訪問目標資源或執行該操作的許可權。',
       web_target_blocked: '目標網站命中了平臺域名或 IP 黑名單，已停止訪問。',
       web_content_rejected: '目標內容不是可讀取文字，或響應大小超過平臺限制。',

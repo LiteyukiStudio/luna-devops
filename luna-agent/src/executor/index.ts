@@ -1,9 +1,11 @@
 import type { InteractionCardValidationIssue } from "@luna-devops/ai-interaction-card-contract"
 import type { AssistantModelInput, ModelRuntime } from "../model-runtime.js"
-import type { ConversationToolInteraction, RunExecutionSnapshot } from "../domain.js"
-import type { ModelToolDetailsResult, ModelToolSearchResult } from "../provider/provider.js"
+import type { ClaimedRun, ConversationToolInteraction, RunCheckpointPhase, RunCheckpointState, RunExecutionSnapshot } from "../domain.js"
+import type { ModelMessage, ModelToolCall, ModelToolDetailsResult, ModelToolSearchResult } from "../provider/provider.js"
 import { RunStateConflictError, type Repository } from "../persistence/repository.js"
 import type { RemoteConfigSource, RemoteProviderConfig } from "../provider/config-client.js"
+import { createId } from "../id.js"
+import { redact } from "../redaction.js"
 import type { ToolCatalogRegistry } from "../tools/catalog-registry.js"
 import type { ToolCatalog } from "../tools/catalog.js"
 import { genAIAgentName, genAIAgentSpanAttributes, genAIInputMessages, genAIOutputMessages, genAIToolCallObject, genAIToolSpanAttributes } from "../genai-semconv.js"
@@ -15,6 +17,7 @@ import { businessCardToolInputs, compileBusinessCardToolInput, isBusinessCardToo
 import { searchToolsInput } from "../tools/tool-search.js"
 import { getToolDetailsInput } from "../tools/tool-details.js"
 import { CardGenerationService, cardValidationFailure, providerArgumentFailure, validationIssues, type CardGeneration } from "./cards.js"
+import { checkpointState, maxRunRecoveries, restoredArgumentRepairAttempts, resumePlan, type RunResumePlan } from "./checkpoint.js"
 import { modelDecision } from "./decision.js"
 import { InternalToolHandlers } from "./internal-tools.js"
 import { internalToolOperationIds, normalizeToolSearchQuery, resumedToolMessages } from "./resume.js"
@@ -89,7 +92,7 @@ export class RunExecutor {
     }
     const reconcile = () => {
       if (this.stopping) return
-      void this.interruptOrphanedRuns().then((complete) => {
+      void this.recoverOrphanedRuns().then((complete) => {
         if (this.stopping) return
         if (complete) {
           tick()
@@ -187,7 +190,11 @@ export class RunExecutor {
       const timeout = setTimeout(() => abort.abort(new Error("ai.run_timeout")), runtimeSettings.runTimeoutMs)
       let cardGeneration: CardGeneration | undefined
       let pendingTerminal: ((to: "completed" | "failed" | "canceled" | "interrupted", errorCode?: string, conversationTitle?: string) => Promise<void>) | undefined
-      const providerArgumentRepairAttempts = new Map<string, number>()
+      // 中断路径也要写 checkpoint，因此版本号与计数在 try 外声明。
+      let checkpointRevision = 0
+      let modelStep = 0
+      let protocolRepairCount = 0
+      let providerArgumentRepairAttempts = new Map<string, number>()
       try {
         telemetryLog("agent.run.started", "info", {
           "luna.run.id": run.id,
@@ -197,11 +204,6 @@ export class RunExecutor {
         })
         const executionInput = await this.repository.getExecutionInput(run.id)
         if (!executionInput) throw new Error("ai.turn_not_found")
-        let selectedOperationIds = (await this.repository.touchRunSelectedOperations(
-          run.id,
-          reconstructSelectedOperationIds(executionInput.toolInteractions),
-          selectedOperationLimit,
-        )).selectedOperationIds
         recordAIContent(span, "luna.gen_ai.content.input", "gen_ai.input.messages", genAIInputMessages([
           { role: "user", content: executionInput.input },
         ]))
@@ -217,6 +219,23 @@ export class RunExecutor {
           })
           return true
         }
+        // checkpoint 是恢复控制流的事实：阶段、模型步数和循环保护计数都从这里恢复，
+        // 不从 Timeline、Run 状态或进程内存反推续跑位置。
+        const checkpoint = await this.repository.loadRunCheckpoint(run.id)
+        const resume: RunResumePlan = checkpoint ? resumePlan(checkpoint) : { kind: "model" }
+        this.tools.restoreRunLoopState(run.id, checkpoint?.state.loopGuard, checkpoint?.toolCallCount ?? 0)
+        checkpointRevision = checkpoint?.revision ?? 0
+        modelStep = checkpoint?.modelStep ?? 0
+        protocolRepairCount = checkpoint?.state.protocolRepairCount ?? 0
+        providerArgumentRepairAttempts = restoredArgumentRepairAttempts(checkpoint)
+        // 已选工具集合由 ai.runs.selected_operation_ids 持久化，checkpoint 不重复保存。
+        let selectedOperationIds = checkpoint
+          ? [...run.selectedOperationIds]
+          : (await this.repository.touchRunSelectedOperations(
+              run.id,
+              reconstructSelectedOperationIds(executionInput.toolInteractions),
+              selectedOperationLimit,
+            )).selectedOperationIds
         let conversationContext = {
           ...executionInput.conversation,
           turnIndex: executionInput.turnIndex,
@@ -226,12 +245,51 @@ export class RunExecutor {
         let finalAnswer = ""
         let completed = false
         let finalResponseMissing = false
-        let protocolRepairCount = 0
         let finalFinishReason: string | undefined
         const continuationMessages = resumedToolMessages(executionInput.toolInteractions)
         const searchedToolQueries = restoredInternalToolResults(executionInput.toolInteractions, "search_tools")
         const detailedToolRequests = restoredInternalToolResults(executionInput.toolInteractions, "get_tool_details")
-        for (let step = 0; step < runtimeSettings.maxModelSteps; step += 1) {
+        const currentState = (extra: Omit<Parameters<typeof checkpointState>[0], "loopGuard" | "protocolRepairCount" | "argumentRepairAttempts"> = {}) => checkpointState({
+          loopGuard: this.tools.runLoopState(run.id),
+          protocolRepairCount,
+          argumentRepairAttempts: providerArgumentRepairAttempts,
+          ...extra,
+        })
+        const writeCheckpoint = async (phase: RunCheckpointPhase, step: number, state: RunCheckpointState) => {
+          checkpointRevision = await this.saveCheckpoint(run.id, checkpointRevision, phase, step, state)
+        }
+        let awaitingToolCallId = resume.kind === "await_approval" ? resume.toolCallId : undefined
+        if (resume.kind === "settle_tool_batch" || resume.kind === "await_approval") {
+          // 工具事实是权威结果：批次已落地就只折叠结果，批次仍在执行则结果未知。
+          try {
+            const pending = await this.settleInterruptedToolBatch(run.id, continuationMessages, runToolResultMessage)
+            awaitingToolCallId = pending ?? awaitingToolCallId
+          }
+          catch (error) {
+            if (error instanceof Error && error.message.startsWith("ai.")) throw error
+            throw new Error("ai.tool_persistence_failed", { cause: error })
+          }
+        }
+        if (awaitingToolCallId) {
+          const settled = await this.resumeToolCall(awaitingToolCallId)
+          if (!settled) {
+            outcome = "waiting_approval"
+            telemetryLog("agent.run.waiting_approval", "info", { "luna.run.id": run.id })
+            await writeCheckpoint("awaiting_approval", modelStep, currentState({ pendingToolCallId: awaitingToolCallId }))
+            await this.repository.updateRun(run.id, "running", "waiting_approval")
+            return true
+          }
+        }
+        // 已决定完成但终态批次尚未提交时，不再调用模型：按已决定的答复重建终态提交。
+        const recoveredFinalOutput = resume.kind === "finalize" ? resume.finalOutput : undefined
+        const recoveredFinal = resume.kind === "finalize"
+        if (resume.kind === "finalize") {
+          if (resume.finalOutput !== undefined) finalAnswer = resume.finalOutput
+          completed = true
+        }
+        for (let step = modelStep; !completed && step < runtimeSettings.maxModelSteps; step += 1) {
+          modelStep = step
+          await writeCheckpoint("model", step, currentState())
           const loadedOperationIds = [...selectedOperationIds]
           const result = await this.streamModel(run.id, run.turnId, {
             runId: run.id,
@@ -290,6 +348,9 @@ export class RunExecutor {
             ...call,
             id: call.id ?? `call_${step}_${index}`,
           }))
+          // 先记录进入工具批次，再执行：进程在批次中途退出时按工具事实判断已落地部分，
+          // 不重放可能已产生副作用的调用。modelStep 记录批次完成后要跑的下一个模型步。
+          await writeCheckpoint("tool_execution", step + 1, currentState())
           continuationMessages.push({ role: "assistant", content: result.answer, toolCalls })
           let platformToolCalled = false
           let toolDetailsCalled = false
@@ -606,6 +667,7 @@ export class RunExecutor {
             if (call.status === "awaiting_approval") {
               outcome = "waiting_approval"
               telemetryLog("agent.run.waiting_approval", "info", { "luna.run.id": run.id, "tool.name": call.operationId })
+              await writeCheckpoint("awaiting_approval", step + 1, currentState({ pendingToolCallId: call.id }))
               await this.repository.updateRun(run.id, "running", "waiting_approval")
               return true
             }
@@ -621,6 +683,12 @@ export class RunExecutor {
           }
         }
         if (!completed) throw new Error(finalResponseMissing ? "ai.final_response_missing" : "ai.limit_exceeded")
+        // 终态批次只存在于流式会话内存中：仍有未提交答复时先写入 checkpoint，重启后可重建提交；
+        // 批次里没有新消息时只记录终态决定本身。
+        const finalOutputForCheckpoint = pendingTerminal ? redact(finalAnswer) : recoveredFinalOutput
+        await writeCheckpoint("finalizing", modelStep, currentState(
+          finalOutputForCheckpoint === undefined ? {} : { finalOutput: finalOutputForCheckpoint },
+        ))
         let generatedTitle: string | undefined
         if (executionInput.conversation.titleSource === "default" && !assistantRenamed) {
           try {
@@ -640,6 +708,9 @@ export class RunExecutor {
         if (pendingTerminal) {
           await pendingTerminal("completed", undefined, generatedTitle)
           pendingTerminal = undefined
+        }
+        else if (recoveredFinal && finalAnswer.trim()) {
+          await this.commitRecoveredFinalMessage(run, finalAnswer, generatedTitle)
         }
         else {
           await this.repository.updateRun(run.id, "running", "completed", { completedAt: new Date().toISOString() })
@@ -735,6 +806,11 @@ export class RunExecutor {
         if (cardGeneration) await this.cards.fail(run.id, cardGeneration, stableError(message))
         if (error instanceof ToolInterruption && error.state === "waiting_input") {
           outcome = "waiting_input"
+          checkpointRevision = await this.saveCheckpoint(run.id, checkpointRevision, "awaiting_input", modelStep, checkpointState({
+            loopGuard: this.tools.runLoopState(run.id),
+            protocolRepairCount,
+            argumentRepairAttempts: providerArgumentRepairAttempts,
+          }))
           await this.repository.appendEvent(run.id, "run.input_required", { fields: error.fields })
           await this.repository.updateRun(run.id, "running", "waiting_input")
           return true
@@ -770,7 +846,11 @@ export class RunExecutor {
     }, extractTraceContext(run.traceContext))
   }
 
-  private async interruptOrphanedRuns(): Promise<boolean> {
+  /**
+   * 启动对账：有 checkpoint 的孤儿 Run 重新排队续跑，没有 checkpoint 的按原语义置为
+   * interrupted。单副本部署下 running 只可能来自本进程崩溃，因此恢复不与执行者竞争。
+   */
+  private async recoverOrphanedRuns(): Promise<boolean> {
     let complete = true
     let running: Array<{ id: string, rowVersion: number }>
     try {
@@ -784,8 +864,15 @@ export class RunExecutor {
     }
     for (const run of running) {
       try {
-        const interrupted = await this.repository.interruptOrphanedRun(run.id, run.rowVersion)
-        if (interrupted) {
+        const recovery = await this.repository.recoverOrphanedRun(run.id, run.rowVersion, maxRunRecoveries)
+        if (recovery === "requeued") {
+          telemetryLog("agent.run.recovered", "warn", {
+            operation: "agent.run.startup_reconcile",
+            outcome: "requeued",
+            "luna.run.id": run.id,
+          })
+        }
+        else if (recovery === "interrupted") {
           telemetryLog("agent.run.orphan_interrupted", "warn", {
             operation: "agent.run.startup_reconcile", outcome: "interrupted", "error.code": "ai.agent_restarted",
           })
@@ -837,6 +924,108 @@ export class RunExecutor {
 
   private async streamModel(runId: string, turnId: string, input: AssistantModelInput, signal: AbortSignal, expectedRunVersion?: number): ReturnType<typeof streamModel> {
     return streamModel(this.streamBus, this.modelRuntime, runId, turnId, input, signal, expectedRunVersion)
+  }
+
+  private async saveCheckpoint(
+    runId: string,
+    expectedRevision: number,
+    phase: RunCheckpointPhase,
+    modelStep: number,
+    state: RunCheckpointState,
+  ): Promise<number> {
+    const saved = await this.repository.saveRunCheckpoint(runId, {
+      expectedRevision,
+      phase,
+      modelStep,
+      toolCallCount: this.tools.toolLoopSnapshot(runId).executed,
+      state,
+    })
+    return saved.revision
+  }
+
+  /**
+   * 审批恢复：确认等待中的调用已经落地。已决的调用由 Timeline 投影重新进入续跑
+   * 上下文，这里不重复折叠；仍未审批时返回 false 让 Run 继续等待，执行中退出
+   * 则结果未知，按 fail closed 处理。
+   */
+  private async resumeToolCall(toolCallId: string): Promise<boolean> {
+    const call = await this.tools.inspect(toolCallId)
+    if (!call) throw new Error("ai.tool_call_not_found")
+    if (call.status === "awaiting_approval") return false
+    if (call.status === "proposed" || call.status === "running") throw new Error("ai.tool_outcome_unknown")
+    return true
+  }
+
+  /**
+   * 工具批次中途退出后的核对：工具事实表是权威结果，控制流 checkpoint 只是批次边界。
+   *
+   * - 已落地的调用：结果补进续跑上下文，绝不重复执行；
+   * - 仍在 `running` 的调用：请求可能已送达外部平台，结果未知，失败关闭；
+   * - `awaiting_approval` 的调用：回到等待审批，等审批落地后再续跑；
+   * - 只有 `proposed`（尚未执行）或没有记录：没有副作用，回模型重新决策。
+   *
+   * 投影可能缺少条目（事实已提交但投影写入前退出），缺失的结果按事实表补齐。
+   */
+  private async settleInterruptedToolBatch(
+    runId: string,
+    continuation: ModelMessage[],
+    toolResult: (toolCall: ModelToolCall & { id: string }, result: Record<string, unknown>) => ModelMessage,
+  ): Promise<string | undefined> {
+    const calls = await this.tools.recoverToolBatch(runId)
+    const awaitingApproval = calls.find(call => call.status === "awaiting_approval")
+    if (calls.some(call => call.status === "running")) throw new Error("ai.tool_outcome_unknown")
+
+    const execution = await this.repository.getExecutionInput(runId)
+    if (!execution) throw new Error("ai.turn_not_found")
+    const settledToolCallIds = new Set(continuation.flatMap(message =>
+      message.role === "tool" ? [message.toolCallId] : []))
+    for (const call of calls) {
+      if (call.status === "proposed" || call.status === "awaiting_approval") continue
+      const itemId = `${call.id}:item`
+      const projected = execution.toolInteractions.find(item => item.itemId === itemId)
+      const result = execution.toolInteractions.find(item => item.type === "tool_result" && item.content.relatedItemId === itemId)
+      const content = redact({
+        ...projected?.content,
+        toolCallId: call.id, operationId: call.operationId, status: call.status,
+        arguments: call.arguments, result: call.result, errorCode: call.errorCode,
+      })
+      if (!projected) {
+        await this.repository.appendItemWithEvent({
+          id: itemId, runId, turnId: execution.turnId, type: "tool_call", status: "streaming", content,
+        }, "tool.started", { itemId, toolCallId: call.id })
+      }
+      if (!result) {
+        const status = call.status === "failed" ? "failed" : "completed"
+        const event = call.status === "succeeded" ? "tool.completed" : `tool.${call.status}`
+        await this.repository.completeToolItemWithEvent(itemId, status, content, {
+          id: `${call.id}:result`, runId, turnId: execution.turnId, type: "tool_result", status,
+          content: redact({ relatedItemId: itemId, result: call.result, errorCode: call.errorCode }),
+        }, event, { itemId, toolCallId: call.id })
+      }
+      if (settledToolCallIds.has(call.id)) continue
+      const toolCall = { id: call.id, operationId: call.operationId, arguments: call.arguments }
+      continuation.push({ role: "assistant", content: "", toolCalls: [toolCall] })
+      continuation.push(toolResult(toolCall, {
+        status: call.status,
+        ...(call.result !== undefined ? { result: call.result } : {}),
+        ...(call.errorCode ? { errorCode: call.errorCode } : {}),
+      }))
+    }
+    return awaitingApproval?.id
+  }
+
+  /** 重建崩溃前未提交的终态批次：助手消息与终态转换仍走同一条流式提交路径。 */
+  private async commitRecoveredFinalMessage(run: ClaimedRun, finalOutput: string, conversationTitle?: string): Promise<void> {
+    const session = await this.streamBus.open(run.id, run.turnId, run.rowVersion)
+    const content = redact({ parts: [{ type: "text", text: finalOutput }] })
+    const itemId = createId("aiitm")
+    const { item } = await session.appendItemWithEvent({
+      id: itemId, runId: run.id, turnId: run.turnId, type: "assistant_message", status: "streaming", content,
+    }, "content.delta", redact({ itemId, contentPartId: `${itemId}:0`, partIndex: 0, delta: finalOutput }))
+    await session.updateItemWithEvent(itemId, "completed", content, "message.completed", redact({
+      itemId, contentPartId: `${itemId}:0`, partIndex: 0, timelineIndex: item.timelineIndex,
+    }))
+    await session.commitTerminal("completed", undefined, conversationTitle)
   }
 
   private async traceInternalTool<T>(operationId: string, runId: string, input: unknown, operation: () => Promise<T>, callId?: string, captureContent = true): Promise<T> {

@@ -13,8 +13,8 @@ export class PostgresToolCallStore implements ToolCallStore {
   async insert(value: ToolCallRecord) {
     try {
       await this.pool.query(
-		`insert into ai.tool_calls(id,run_id,operation_id,status,input_mode,arguments,arguments_ciphertext,arguments_hash,attempt,row_version,approval_decision,result,error_code)
-		 values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+		`insert into ai.tool_calls(id,run_id,operation_id,status,input_mode,arguments,arguments_ciphertext,arguments_hash,attempt,row_version,approval_decision,result,error_code,execution_count)
+		 values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
         [
           value.id,
           value.runId,
@@ -29,6 +29,7 @@ export class PostgresToolCallStore implements ToolCallStore {
 		  value.approvalDecision ?? null,
 			value.result === undefined ? null : JSON.stringify(value.result),
           value.errorCode ?? null,
+          value.executionCount,
         ],
       )
     }
@@ -40,14 +41,26 @@ export class PostgresToolCallStore implements ToolCallStore {
     const row = (await this.pool.query<DbToolCall>(`select * from ai.tool_calls where id=$1`, [id])).rows[0]
     return row ? this.map(row) : undefined
   }
+  async listByRun(runId: string) {
+    try {
+      const rows = (await this.pool.query<DbToolCall>(
+        `select * from ai.tool_calls where run_id=$1 order by created_at, id`,
+        [runId],
+      )).rows
+      return rows.map(row => this.map(row))
+    }
+    catch (error) {
+      throw toolPersistenceError(error)
+    }
+  }
   async update(id: string, expected: ToolCallStatus, patch: Partial<ToolCallRecord>) {
     const row = (await this.pool.query<DbToolCall>(
 		 `update ai.tool_calls set status=coalesce($3,status),row_version=coalesce($4,row_version),
 		 approval_decision=coalesce($5,approval_decision),
-		 result=coalesce($6,result),error_code=coalesce($7,error_code),updated_at=now()
+		 result=coalesce($6,result),error_code=coalesce($7,error_code),execution_count=coalesce($8,execution_count),updated_at=now()
 		 where id=$1 and status=$2 returning *`,
 		[id, expected, patch.status ?? null, patch.rowVersion ?? null,
-		 patch.approvalDecision ?? null, patch.result === undefined ? null : JSON.stringify(patch.result), patch.errorCode ?? null],
+		 patch.approvalDecision ?? null, patch.result === undefined ? null : JSON.stringify(patch.result), patch.errorCode ?? null, patch.executionCount ?? null],
     )).rows[0]
     if (!row) throw new Error("ai.tool_call_state_conflict")
     return this.map(row)
@@ -92,7 +105,7 @@ export class PostgresToolCallStore implements ToolCallStore {
     const argumentsValue = JSON.parse(this.argumentsCipher.decrypt(row.arguments_ciphertext)) as Record<string, unknown>
     return {
       id: row.id, runId: row.run_id, operationId: row.operation_id, status: row.status,
-      arguments: argumentsValue, argumentsHash: row.arguments_hash, attempt: row.attempt, rowVersion: row.row_version,
+      arguments: argumentsValue, argumentsHash: row.arguments_hash, attempt: row.attempt, rowVersion: row.row_version, executionCount: row.execution_count,
       ...(row.input_mode === "direct" || row.input_mode === "model" ? { inputMode: row.input_mode } : {}),
       ...(row.approval_decision ? { approvalDecision: row.approval_decision } : {}),
       ...(row.result !== null ? { result: row.result } : {}),
@@ -121,7 +134,7 @@ function publicToolEventType(type: string) {
 type DbToolCall = {
   id: string; run_id: string; operation_id: string; status: ToolCallStatus; input_mode: string; arguments: Record<string, unknown>;
   arguments_ciphertext: string | null;
-  arguments_hash: string; attempt: number; row_version: number;
+  arguments_hash: string; attempt: number; row_version: number; execution_count: number;
 	approval_decision: "approve" | null;
 	result: unknown; error_code: string | null
 }

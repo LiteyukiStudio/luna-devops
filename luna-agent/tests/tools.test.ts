@@ -22,6 +22,38 @@ const catalog = ToolCatalog.load([
 ])
 
 describe("tool catalog and orchestration", () => {
+
+  it("恢复计数不把参数校验失败和审批拒绝算成执行", async () => {
+    const store = new MemoryToolCallStore()
+    const client = new DeterministicLunaApiClient(() => ({ status: 200, body: {} }))
+    const tools = new ToolOrchestrator(catalog, client, store)
+    await tools.propose({ runId: "airun_counts", operationId: "getBuildRun", arguments: { buildId: 123 } })
+    const pending = await tools.propose({ runId: "airun_counts", operationId: "restartRelease", arguments: { releaseId: "rel_a" } })
+    await tools.resolveApproval(pending.id, "reject")
+    const restored = new ToolOrchestrator(catalog, client, store)
+    await restored.recoverToolBatch("airun_counts")
+    expect(restored.toolLoopSnapshot("airun_counts")).toMatchObject({ proposed: 2, executed: 0 })
+    expect(client.calls).toHaveLength(0)
+  })
+
+  it("HTTP 428 与审批后执行都持久计数，重复核对不会重复累加", async () => {
+    const store = new MemoryToolCallStore()
+    let calls = 0
+    const client = new DeterministicLunaApiClient(() => ++calls === 1
+      ? { status: 428, body: { code: "ai.approval_required" } }
+      : { status: 200, body: { ok: true } })
+    const tools = new ToolOrchestrator(catalog, client, store)
+    const pending = await tools.propose({ runId: "airun_428", operationId: "getBuildRun", arguments: { buildId: "build_a" } })
+    const approving = new ToolOrchestrator(catalog, client, store)
+    expect(pending.executionCount).toBe(1)
+    await approving.resolveApproval(pending.id, "approve")
+    const restored = new ToolOrchestrator(catalog, client, store)
+    await restored.recoverToolBatch("airun_428")
+    await restored.recoverToolBatch("airun_428")
+    expect(restored.toolLoopSnapshot("airun_428")).toMatchObject({ proposed: 1, executed: 2 })
+    expect(client.calls).toHaveLength(2)
+  })
+
   it("asks for missing required input", async () => {
     const orchestrator = new ToolOrchestrator(catalog, new DeterministicLunaApiClient(() => ({ status: 200, body: {} })), new MemoryToolCallStore())
     await expect(orchestrator.propose({ runId: "airun_test", operationId: "getBuildRun", arguments: {} }))
