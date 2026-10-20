@@ -331,7 +331,15 @@ describe('timeline query cache', () => {
     }])
 
     const completed = applyTimelineQueryEvent(data, { ...event(6), type: 'run.completed', item: undefined })
-    expect(activeRunStreamSubscriptions(completed)).toEqual([])
+    const completedSubscriptions = activeRunStreamSubscriptions(completed)
+    expect(completedSubscriptions).toEqual([{
+      conversationId: 'conversation-1',
+      eventsUrl: '/api/v1/ai/runs/run-1/events',
+      runId: 'run-1',
+      after: 6,
+    }])
+    expect(activeRunStreamSubscriptions(completed, 'conversation-1', completedSubscriptions, new Set(['run-1'])))
+      .toEqual([])
   })
 
   it('retains a newly created run subscription until the refreshed snapshot contains it', () => {
@@ -349,6 +357,55 @@ describe('timeline query cache', () => {
     ])
   })
 
+  it('keeps an already subscribed completed Run when a newer turn starts before its stream ends', () => {
+    const data = snapshot(5)
+    data.turns[0] = {
+      ...data.turns[0]!,
+      id: 'turn-prev',
+      status: 'completed',
+      selectedRun: {
+        id: 'run-prev',
+        runIndex: 0,
+        status: 'completed',
+        items: [],
+      },
+    }
+    data.turns.push({
+      id: 'turn-new',
+      turnIndex: 1,
+      status: 'running',
+      input: {
+        id: 'turn-new:input',
+        type: 'user_message',
+        createdAt: '2026-08-15T00:01:00Z',
+        parts: [{ id: 'turn-new:input:0', partIndex: 0, type: 'text', text: '继续检查' }],
+      },
+      selectedRun: {
+        id: 'run-new',
+        runIndex: 0,
+        status: 'running',
+        items: [],
+      },
+    })
+    data.eventCursors = [{ runId: 'run-prev', after: 5 }, { runId: 'run-new', after: 0 }]
+    const previousSubscription = {
+      conversationId: 'conversation-1',
+      eventsUrl: '/api/v1/ai/runs/run-prev/events',
+      runId: 'run-prev',
+      after: 5,
+    }
+    const queryData = timelineQueryDataFromSnapshot(data)
+
+    expect(activeRunStreamSubscriptions(queryData, 'conversation-1', [previousSubscription]).map(item => item.runId))
+      .toEqual(['run-prev', 'run-new'])
+    expect(activeRunStreamSubscriptions(
+      queryData,
+      'conversation-1',
+      [previousSubscription],
+      new Set(['run-prev']),
+    ).map(item => item.runId)).toEqual(['run-new'])
+  })
+
   it('keeps an active gap recovery on the accepted cursor and converges after the terminal commit', () => {
     const subscription = {
       conversationId: 'conversation-1',
@@ -360,10 +417,16 @@ describe('timeline query cache', () => {
     expect(runStreamRecoveryFromTimeline(active, subscription)).toEqual({ after: 1, terminal: false })
 
     const terminalSnapshot = snapshot(3, messageItem(3, 'committed'))
-    terminalSnapshot.turns[0]!.status = 'completed'
-    terminalSnapshot.turns[0]!.selectedRun!.status = 'completed'
+    terminalSnapshot.turns[0]!.status = 'failed'
+    terminalSnapshot.turns[0]!.selectedRun!.status = 'failed'
     const terminal = timelineQueryDataFromSnapshot(terminalSnapshot)
     expect(runStreamRecoveryFromTimeline(terminal, subscription)).toEqual({ after: 3, terminal: true })
+
+    const completedSnapshot = snapshot(4, messageItem(4, 'completed'))
+    completedSnapshot.turns[0]!.status = 'completed'
+    completedSnapshot.turns[0]!.selectedRun!.status = 'completed'
+    expect(runStreamRecoveryFromTimeline(timelineQueryDataFromSnapshot(completedSnapshot), subscription))
+      .toEqual({ after: 4, terminal: false })
   })
 
   it('coalesces concurrent snapshot recovery for the same conversation', async () => {

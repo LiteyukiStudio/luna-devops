@@ -277,8 +277,14 @@ export function AIAssistantRuntimeProvider({ capabilities, children, initiallyOp
   useEffect(() => {
     if (!enabled || !selectedConversationId)
       return
-    syncRunStreams(selectedConversationId, activeRunStreamSubscriptions(timelineData, selectedConversationId, runSubscriptions))
-  }, [enabled, runSubscriptions, selectedConversationId, syncRunStreams, timelineData])
+    const terminalStreamRunIds = new Set(runStreamStates.filter(state => state.status === 'terminal').map(state => state.runId))
+    syncRunStreams(selectedConversationId, activeRunStreamSubscriptions(
+      timelineData,
+      selectedConversationId,
+      runSubscriptions,
+      terminalStreamRunIds,
+    ))
+  }, [enabled, runStreamStates, runSubscriptions, selectedConversationId, syncRunStreams, timelineData])
 
   const createConversation = useMutation({
     mutationFn: ({ modelId }: { modelId: string }) => api.createAIConversation({ modelId, projectId: pageContext().projectId }),

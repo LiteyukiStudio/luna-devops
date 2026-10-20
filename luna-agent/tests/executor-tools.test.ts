@@ -34,6 +34,97 @@ describe("RunExecutor slim lifecycle", () => {
     await expect(executor.stop()).resolves.toBeUndefined()
   })
 
+  it("converges a claimed Run when the concurrent-run query fails", async () => {
+    class CountFailureRepository extends TestRepository {
+      override async countActiveUserRuns(): Promise<never> {
+        throw new Error("database unavailable")
+      }
+    }
+    const repository = new CountFailureRepository()
+    const conversation = await repository.createConversation("usr_init_count", "init count")
+    const created = await repository.createTurn("usr_init_count", {
+      conversationId: conversation.id, input: "hello", pageContext: {},
+      idempotencyKey: "init-count-failure", actorSessionId: "ses_init_count",
+    })
+    const executor = testExecutor(repository, new ModelRuntime(new DeterministicProvider(), testRegistry()))
+
+    await expect(executor.runOnce()).resolves.toBe(true)
+
+    expect(await repository.getRun("usr_init_count", created.run.id)).toMatchObject({
+      status: "interrupted",
+      errorCode: "ai.agent_restarted",
+    })
+  })
+
+  it("converges a claimed Run when quota rejection cannot be persisted", async () => {
+    const repository = new TestRepository()
+    const conversation = await repository.createConversation("usr_init_quota", "init quota")
+    const created = await repository.createTurn("usr_init_quota", {
+      conversationId: conversation.id, input: "hello", pageContext: {},
+      idempotencyKey: "init-quota-failure", actorSessionId: "ses_init_quota",
+    })
+    repository.countActiveUserRuns = async () => 11
+    const updateRun = repository.updateRun.bind(repository)
+    repository.updateRun = async (runId, from, to, fields) => {
+      if (to === "failed" && fields?.errorCode === "ai.quota.user_concurrent_runs_exceeded")
+        throw new Error("database unavailable")
+      return updateRun(runId, from, to, fields)
+    }
+    const executor = testExecutor(repository, new ModelRuntime(new DeterministicProvider(), testRegistry()))
+
+    await expect(executor.runOnce()).resolves.toBe(true)
+
+    expect(await repository.getRun("usr_init_quota", created.run.id)).toMatchObject({
+      status: "interrupted",
+      errorCode: "ai.agent_restarted",
+    })
+  })
+
+  it("converges a claimed Run when awaiting_input checkpoint persistence fails", async () => {
+    const repository = new TestRepository()
+    const conversation = await repository.createConversation("usr_input_checkpoint", "input checkpoint")
+    const created = await repository.createTurn("usr_input_checkpoint", {
+      conversationId: conversation.id, input: "检查项目", pageContext: {},
+      idempotencyKey: "input-checkpoint-failure", actorSessionId: "ses_input_checkpoint",
+    })
+    const catalog = ToolCatalog.load([testToolOperation("getProject", {
+      inputSchema: {
+        type: "object",
+        properties: { projectId: { type: "string" } },
+        required: ["projectId"],
+        additionalProperties: false,
+      },
+    })])
+    const provider: ModelProvider = {
+      async *stream() {
+        yield { type: "tool_call_delta" }
+        yield {
+          type: "completed",
+          usage: { status: "reported" as const, value: { inputTokens: 1, outputTokens: 1, totalTokens: 2 } },
+          toolCalls: [{ id: "missing-project", operationId: "getProject", arguments: {} }],
+        }
+      },
+      async complete() {
+        return { text: "", toolCalls: [], usage: { status: "reported" as const, value: { inputTokens: 1, outputTokens: 0, totalTokens: 1 } } }
+      },
+      capabilities: () => ({ streaming: true, toolCalling: true, structuredOutput: true }),
+      health: async () => ({ ok: true }),
+    }
+    const saveCheckpoint = repository.saveRunCheckpoint.bind(repository)
+    repository.saveRunCheckpoint = async (runId, advance) => {
+      if (advance.phase === "awaiting_input")
+        throw new Error("database unavailable")
+      return saveCheckpoint(runId, advance)
+    }
+
+    await testExecutor(repository, new ModelRuntime(provider, testRegistry()), { catalog }).runOnce()
+
+    expect(await repository.getRun("usr_input_checkpoint", created.run.id)).toMatchObject({
+      status: "interrupted",
+      errorCode: "ai.agent_restarted",
+    })
+  })
+
   it("cleans up the live buffer after startup interrupts an orphaned Run", async () => {
     class CleanupBus extends InMemoryRunStreamBus {
       cleanupCalls = 0
@@ -463,11 +554,86 @@ describe("RunExecutor slim lifecycle", () => {
     expect((await repository.getRun("usr_cancel", created.run.id))?.status).toBe("canceled")
     const timeline = await repository.getTimeline("usr_cancel", conversation.id)
     expect(timeline?.turns[0]?.items).toContainEqual(expect.objectContaining({
-      type: "assistant_message", status: "failed", content: { parts: [{ type: "text", text: "partial" }] },
+      type: "progress", status: "failed", content: { parts: [{ type: "text", text: "partial" }] },
     }))
     const events = await repository.getEvents("usr_cancel", created.run.id, 0)
     expect(events.at(-1)).toMatchObject({ type: "run.canceled" })
     expect(events.every((event, index) => index === 0 || event.sequence > events[index - 1]!.sequence)).toBe(true)
+  })
+
+  it("does not swallow terminal persistence failures while canceling", async () => {
+    const repository = new TestRepository()
+    const conversation = await repository.createConversation("usr_cancel_persist", "cancel persistence")
+    const created = await repository.createTurn("usr_cancel_persist", {
+      conversationId: conversation.id, input: "等待", pageContext: {},
+      idempotencyKey: "run-cancel-persist-failure", actorSessionId: "ses_cancel_persist",
+    })
+    let notifyDelta!: () => void
+    const deltaPublished = new Promise<void>(resolve => { notifyDelta = resolve })
+    const provider: ModelProvider = {
+      async *stream(request) {
+        yield { type: "message_delta", delta: "partial" }
+        notifyDelta()
+        await new Promise<void>((_resolve, reject) => {
+          const signal = request.signal
+          const abort = () => reject(signal?.reason instanceof Error ? signal.reason : new Error("ai.run_canceled"))
+          if (signal?.aborted) abort()
+          signal?.addEventListener("abort", abort, { once: true })
+        })
+      },
+      async complete() { return { text: "", usage: { status: "reported" as const, value: { inputTokens: 1, outputTokens: 0, totalTokens: 1 } }, toolCalls: [] } },
+      capabilities: () => ({ streaming: true, toolCalling: true, structuredOutput: true }),
+      health: async () => ({ ok: true }),
+    }
+    repository.finalizeStreamingItems = vi.fn(async () => {
+      throw new Error("database unavailable")
+    })
+    const executor = testExecutor(repository, new ModelRuntime(provider, testRegistry()), {
+      streamBus: new InMemoryRunStreamBus(repository),
+    })
+    const executing = executor.runOnce()
+    await deltaPublished
+    expect(await executor.cancel(created.run.id)).toBe(true)
+    await executing
+
+    expect(await repository.getRun("usr_cancel_persist", created.run.id)).toMatchObject({
+      status: "interrupted",
+      errorCode: "ai.agent_restarted",
+    })
+  })
+
+  it("converges the Run when card failure persistence fails during error handling", async () => {
+    const repository = new TestRepository()
+    const conversation = await repository.createConversation("usr_card_persist", "card persistence")
+    const created = await repository.createTurn("usr_card_persist", {
+      conversationId: conversation.id, input: "展示卡片", pageContext: {},
+      idempotencyKey: "run-card-persist-failure", actorSessionId: "ses_card_persist",
+    })
+    const provider: ModelProvider = {
+      async *stream() {
+        yield { type: "tool_call_delta" }
+        yield {
+          type: "completed",
+          usage: { status: "reported" as const, value: { inputTokens: 1, outputTokens: 1, totalTokens: 2 } },
+          toolCalls: [{ id: "card-1", operationId: "present_card", arguments: {} }],
+        }
+      },
+      async complete() {
+        return { text: "", toolCalls: [], usage: { status: "reported" as const, value: { inputTokens: 1, outputTokens: 0, totalTokens: 1 } } }
+      },
+      capabilities: () => ({ streaming: true, toolCalling: true, structuredOutput: true }),
+      health: async () => ({ ok: true }),
+    }
+    repository.updateItemWithEvent = vi.fn(async () => {
+      throw new Error("database unavailable")
+    })
+
+    await testExecutor(repository, new ModelRuntime(provider, testRegistry())).runOnce()
+
+    expect(await repository.getRun("usr_card_persist", created.run.id)).toMatchObject({
+      status: "interrupted",
+      errorCode: "ai.agent_restarted",
+    })
   })
 
   it("aborts an in-flight platform tool when the Run is canceled", async () => {

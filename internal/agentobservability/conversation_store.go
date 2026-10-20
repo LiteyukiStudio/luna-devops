@@ -815,7 +815,7 @@ func (s *ConversationStore) loadRunItems(ctx context.Context, runIDs []string) (
 	}
 	var rows []itemRow
 	if err := s.db.WithContext(ctx).Table("ai.items").Select("id, run_id, timeline_index, type, status, content, created_at").
-		Where("run_id IN ? AND type IN ?", runIDs, []string{"reasoning_summary", "assistant_message", "tool_call"}).Order("run_id ASC, timeline_index ASC").Scan(&rows).Error; err != nil {
+		Where("run_id IN ? AND type IN ?", runIDs, []string{"reasoning_summary", "progress", "assistant_message", "tool_call"}).Order("run_id ASC, timeline_index ASC").Scan(&rows).Error; err != nil {
 		return nil, err
 	}
 	for _, row := range rows {

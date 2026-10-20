@@ -15,14 +15,16 @@ const runStreamManagerMock = vi.hoisted(() => ({
   connect: vi.fn(),
   reconnect: vi.fn(),
   syncConversation: vi.fn(),
+  streamStates: [] as Array<{ runId: string, status: string }>,
+  subscriptions: [] as Array<{ conversationId: string, eventsUrl: string, runId: string, after: number }>,
 }))
 
 vi.mock('./run-stream-manager', () => ({
   useAIRunStreamManager: () => ({
     connect: runStreamManagerMock.connect,
     reconnect: runStreamManagerMock.reconnect,
-    streamStates: [],
-    subscriptions: [],
+    streamStates: runStreamManagerMock.streamStates,
+    subscriptions: runStreamManagerMock.subscriptions,
     syncConversation: runStreamManagerMock.syncConversation,
   }),
 }))
@@ -60,6 +62,8 @@ beforeEach(() => {
   runStreamManagerMock.connect.mockReset()
   runStreamManagerMock.reconnect.mockReset()
   runStreamManagerMock.syncConversation.mockReset()
+  runStreamManagerMock.streamStates.length = 0
+  runStreamManagerMock.subscriptions.length = 0
   vi.spyOn(api, 'listAIModels').mockResolvedValue([])
   vi.spyOn(api, 'listAIConversations').mockResolvedValue({
     items: [],
@@ -147,6 +151,93 @@ describe('ai assistant runtime provider', () => {
       runId: 'run-1',
     }))
     expect(screen.getByTestId('runtime-open')).toHaveTextContent('false')
+  })
+
+  it('keeps the latest completed run subscribed until its stream reaches terminal', async () => {
+    vi.spyOn(api, 'getAIConversationTimeline').mockResolvedValue({
+      conversation: {
+        id: 'conversation-1',
+        title: 'Conversation',
+        titleSource: 'user',
+        status: 'active',
+        modelId: 'model-1',
+      },
+      turns: [{
+        id: 'turn-1',
+        turnIndex: 0,
+        status: 'completed',
+        input: {
+          id: 'turn-1:input',
+          type: 'user_message',
+          createdAt: '2026-10-20T00:00:00Z',
+          parts: [{ id: 'input:0', partIndex: 0, type: 'text', text: 'hello' }],
+        },
+        selectedRun: {
+          id: 'run-1',
+          runIndex: 0,
+          status: 'completed',
+          items: [],
+        },
+      }],
+      eventCursors: [{ runId: 'run-1', after: 4 }],
+      pageInfo: { hasOlder: false },
+    })
+    const user = userEvent.setup()
+    renderRuntimeHarness()
+
+    await user.click(screen.getByRole('button', { name: 'select-conversation' }))
+
+    await waitFor(() => expect(runStreamManagerMock.syncConversation).toHaveBeenCalledWith(
+      'conversation-1',
+      [expect.objectContaining({
+        conversationId: 'conversation-1',
+        eventsUrl: '/api/v1/ai/runs/run-1/events',
+        runId: 'run-1',
+        after: 4,
+      })],
+    ))
+  })
+
+  it('does not recreate a completed run subscription after its stream is terminal', async () => {
+    vi.spyOn(api, 'getAIConversationTimeline').mockResolvedValue({
+      conversation: {
+        id: 'conversation-1',
+        title: 'Conversation',
+        titleSource: 'user',
+        status: 'active',
+        modelId: 'model-1',
+      },
+      turns: [{
+        id: 'turn-1',
+        turnIndex: 0,
+        status: 'completed',
+        input: {
+          id: 'turn-1:input',
+          type: 'user_message',
+          createdAt: '2026-10-20T00:00:00Z',
+          parts: [{ id: 'input:0', partIndex: 0, type: 'text', text: 'hello' }],
+        },
+        selectedRun: {
+          id: 'run-1',
+          runIndex: 0,
+          status: 'completed',
+          items: [],
+        },
+      }],
+      eventCursors: [{ runId: 'run-1', after: 4 }],
+      pageInfo: { hasOlder: false },
+    })
+    runStreamManagerMock.streamStates.push({ runId: 'run-1', status: 'terminal' })
+    const user = userEvent.setup()
+    renderRuntimeHarness()
+
+    await user.click(screen.getByRole('button', { name: 'select-conversation' }))
+    await waitFor(() => expect(api.getAIConversationTimeline).toHaveBeenCalled())
+
+    expect(runStreamManagerMock.syncConversation).not.toHaveBeenCalledWith(
+      'conversation-1',
+      [expect.objectContaining({ runId: 'run-1' })],
+    )
   })
 })
 

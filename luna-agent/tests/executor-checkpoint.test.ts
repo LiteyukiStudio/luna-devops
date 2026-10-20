@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest"
 import type { RunCheckpoint, TimelineItem } from "../src/domain.js"
 import type { RunExecutor } from "../src/executor/index.js"
 import { checkpointState, maxRunRecoveries, resumePlan } from "../src/executor/checkpoint.js"
+import { ToolStepRunner, type ToolStepState } from "../src/executor/tool-step.js"
 import { ModelRuntime } from "../src/model-runtime.js"
 import { RunCheckpointConflictError } from "../src/persistence/repository.js"
 import type { ModelMessage, ModelProvider, ModelToolCall } from "../src/provider/provider.js"
+import { defaultRuntimeSettings } from "../src/runtime-settings.js"
 import { ToolCatalog } from "../src/tools/catalog.js"
 import { DeterministicLunaApiClient } from "../src/tools/luna-api-client.js"
 import { MemoryToolCallStore, ProjectingToolCallStore, ToolOrchestrator, type ToolCallRecord } from "../src/tools/orchestrator.js"
@@ -408,18 +410,24 @@ describe("Phase 2：checkpoint 恢复边界", () => {
     await repository.saveRunCheckpoint(runId, {
       expectedRevision: 0, phase: "tool_execution", modelStep: 1, toolCallCount: 0, state: {},
     })
-    const executor = testExecutor(repository, new ModelRuntime(scriptedProvider([]).provider, testRegistry()), {
-      catalog, tools: restartedTool(repository, catalog, client),
-    })
-    const settle = (executor as unknown as {
-      settleInterruptedToolBatch(runId: string, continuation: ModelMessage[], result: (call: ModelToolCall & { id: string }, result: Record<string, unknown>) => ModelMessage): Promise<string | undefined>
-    }).settleInterruptedToolBatch.bind(executor)
-    const resultMessage = (call: ModelToolCall & { id: string }, result: Record<string, unknown>): ModelMessage => ({
-      role: "tool", toolCallId: call.id, content: JSON.stringify(result),
-    })
-    await settle(runId, [], resultMessage)
+    const toolStep = new ToolStepRunner(
+      repository,
+      new ModelRuntime(scriptedProvider([]).provider, testRegistry()),
+      restartedTool(repository, catalog, client),
+    )
+    const state: ToolStepState = {
+      continuationMessages: [],
+      selectedOperationIds: [],
+      conversation: { title: "recover", titleSource: "default", turnIndex: 0 },
+      assistantRenamed: false,
+      cardRepairExhausted: false,
+      providerArgumentRepairAttempts: new Map(),
+      searchedToolQueries: new Map(),
+      detailedToolRequests: new Map(),
+    }
+    await toolStep.recoverInterruptedBatch(runId, state, defaultRuntimeSettings)
     const eventCount = (await repository.getEvents(owner, runId, 0)).length
-    await settle(runId, [], resultMessage)
+    await toolStep.recoverInterruptedBatch(runId, state, defaultRuntimeSettings)
     expect((await repository.getEvents(owner, runId, 0)).length).toBe(eventCount)
     await repository.saveRunCheckpoint(runId, {
       expectedRevision: 1, phase: "model", modelStep: 1, toolCallCount: 1, state: {},

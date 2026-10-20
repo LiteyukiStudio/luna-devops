@@ -31,6 +31,7 @@ export const AI_EVENT_TYPES = [
   'run.completed',
   'run.canceled',
   'run.interrupted',
+  'run.stream.completed',
 ] as const
 
 const terminalRunEvents = new Set(['run.completed', 'run.failed', 'run.canceled', 'run.interrupted'])
@@ -198,19 +199,27 @@ export class AIRunStreamManager {
         const event = parseAIEvent((rawEvent as MessageEvent<string>).data)
         if (event.runId !== subscription.runId || event.conversationId !== subscription.conversationId)
           throw new Error('ai_stream_subscription_mismatch')
+        if (event.type === 'run.stream.completed') {
+          this.finish(subscription.runId)
+          return
+        }
         const receivedAt = this.now()
         const result = this.callbacks.onEvent(event)
         const accepted = result?.accepted ?? true
         this.updateState(stream, {
           after: accepted ? Math.max(stream.state.after, event.eventSequence) : stream.state.after,
           lastEventAt: receivedAt,
-          status: terminalRunEvents.has(event.type) && accepted ? 'terminal' : 'streaming',
+          status: terminalRunEvents.has(event.type) && accepted && event.type !== 'run.completed' ? 'terminal' : 'streaming',
         })
         if (result?.desynced) {
           this.recoverSequenceGap(stream, event)
           return
         }
         if (terminalRunEvents.has(event.type) && accepted) {
+          if (event.type === 'run.completed') {
+            this.clearTimers(stream)
+            return
+          }
           this.finish(event.runId)
           return
         }
@@ -244,7 +253,7 @@ export class AIRunStreamManager {
         this.disconnect(runId)
     }
     for (const [runId, state] of this.states) {
-      if (state.conversationId === conversationId && !desiredRunIds.has(runId)) {
+      if (state.conversationId === conversationId && !desiredRunIds.has(runId) && state.status !== 'terminal') {
         this.states.delete(runId)
         removedState = true
       }

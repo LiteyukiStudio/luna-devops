@@ -237,6 +237,7 @@ const operationsDashboardPage = {
     turnLabel: 'Turn {{index}}',
     assistant: 'Agent',
     thinking: 'Thinking summary',
+    progress: 'Execution progress',
     loopLabel: 'Loop {{index}}',
     toolCount: '{{count}} tool calls',
     emptyLoop: 'This loop has no execution items to display.',

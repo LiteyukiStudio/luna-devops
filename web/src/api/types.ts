@@ -149,7 +149,7 @@ export interface AgentObservabilityConversationLoop {
 export interface AgentObservabilityConversationRunItem {
   id: string
   timelineIndex: number
-  type: 'reasoning_summary' | 'assistant_message' | 'tool_call'
+  type: 'reasoning_summary' | 'progress' | 'assistant_message' | 'tool_call'
   status: string
   text: string
   toolCall?: AgentObservabilityConversationToolCall

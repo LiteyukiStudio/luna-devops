@@ -185,7 +185,7 @@ export type TimelineItem = {
   turnId: string
   timelineIndex: number
   revision: number
-  type: "user_message" | "reasoning_summary" | "assistant_message" | "tool_call" | "tool_result" | "system_notice"
+  type: "user_message" | "reasoning_summary" | "progress" | "assistant_message" | "tool_call" | "tool_result" | "system_notice"
   status: "streaming" | "completed" | "failed"
   content: Record<string, unknown>
   createdAt: string

@@ -237,6 +237,7 @@ const operationsDashboardPage = {
     turnLabel: '第 {{index}} 轮',
     assistant: 'Agent',
     thinking: '思考摘要',
+    progress: '执行过程',
     loopLabel: 'Loop {{index}}',
     toolCount: '{{count}} 次工具调用',
     emptyLoop: '本次 Loop 没有可展示的执行项。',

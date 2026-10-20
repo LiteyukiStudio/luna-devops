@@ -91,7 +91,7 @@ describe('run stream manager', () => {
     expect(manager.subscriptions().map(item => item.runId)).toEqual(['run-2'])
   })
 
-  it('forwards terminal events before closing and publishing the remaining subscriptions', () => {
+  it('waits for post-completion events before closing after a completed Run', () => {
     const source = new MockEventSource()
     const onEvent = vi.fn()
     const onSubscriptionsChange = vi.fn()
@@ -104,10 +104,23 @@ describe('run stream manager', () => {
     source.emit('run.completed', runEvent('run.completed'))
 
     expect(onEvent).toHaveBeenCalledWith(runEvent('run.completed'))
+    expect(source.close).not.toHaveBeenCalled()
+    expect(manager.subscriptions()).toHaveLength(1)
+    expect(manager.streamStates()).toEqual([expect.objectContaining({ runId: 'run-1', status: 'streaming' })])
+
+    const titleEvent = { ...runEvent('conversation.title.updated'), eventId: 'event-title', eventSequence: 2, payload: { title: '自动标题' } }
+    const streamCompleted = { ...runEvent('run.stream.completed'), eventId: 'event-stream-completed', eventSequence: 3 }
+    source.emit('conversation.title.updated', titleEvent)
+    source.emit('run.stream.completed', streamCompleted)
+
+    expect(onEvent).toHaveBeenCalledWith(titleEvent)
+    expect(onEvent).not.toHaveBeenCalledWith(streamCompleted)
     expect(source.close).toHaveBeenCalledOnce()
     expect(manager.subscriptions()).toEqual([])
     expect(manager.streamStates()).toEqual([expect.objectContaining({ runId: 'run-1', status: 'terminal' })])
     expect(onSubscriptionsChange).toHaveBeenLastCalledWith([])
+    manager.syncConversation('conversation-1', [])
+    expect(manager.streamStates()).toEqual([expect.objectContaining({ runId: 'run-1', status: 'terminal' })])
   })
 
   it('publishes connection freshness without sending heartbeats through the business reducer', () => {
@@ -225,7 +238,9 @@ describe('run stream manager', () => {
 
     sources[1]!.emit('run.running', { ...runEvent('run.running'), eventSequence: 2 })
     sources[1]!.emit('run.completed', { ...runEvent('run.completed'), eventSequence: 3 })
-    expect(manager.streamStates()[0]).toMatchObject({ after: 3, status: 'terminal' })
+    expect(manager.streamStates()[0]).toMatchObject({ after: 3, status: 'streaming' })
+    expect(manager.subscriptions()).toHaveLength(1)
+    sources[1]!.emit('run.stream.completed', { ...runEvent('run.stream.completed'), eventSequence: 4 })
     expect(manager.subscriptions()).toEqual([])
     manager.closeAll()
   })

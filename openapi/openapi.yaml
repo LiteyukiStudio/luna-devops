@@ -9718,7 +9718,7 @@ components:
       properties:
         id: { type: string }
         timelineIndex: { type: integer }
-        type: { type: string, enum: [reasoning_summary, assistant_message, tool_call] }
+        type: { type: string, enum: [reasoning_summary, progress, assistant_message, tool_call] }
         status: { type: string }
         text: { type: string }
         toolCall: { $ref: "#/components/schemas/AgentObservabilityConversationToolCall" }

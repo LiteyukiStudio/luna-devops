@@ -204,11 +204,18 @@ export class RunStreamSession {
     content: Record<string, unknown>,
     eventType: string,
     eventData: Record<string, unknown> = {},
+    type?: TimelineItem["type"],
   ) {
     this.assertOpen()
     const current = this.items.get(itemId)
     if (!current) throw new Error("ai.item_not_found")
-    const item: TimelineItem = { ...current, status, content: structuredClone(content), revision: current.revision + 1 }
+    const item: TimelineItem = {
+      ...current,
+      ...(type ? { type } : {}),
+      status,
+      content: structuredClone(content),
+      revision: current.revision + 1,
+    }
     this.items.set(itemId, item)
     const event = await this.appendEvent(eventType, liveItemEventTypes.has(eventType)
       ? { ...eventData, itemId: item.id, timelineIndex: item.timelineIndex }

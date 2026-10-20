@@ -8,6 +8,8 @@ const defaultMaximumSubscribersPerInstance = 64
 const defaultMaximumPendingEventsPerSubscriber = 256
 const defaultMaximumPendingBytesPerSubscriber = 512 * 1024
 const durablePollIntervalMs = 1_000
+const postProcessWaitMs = 5_000
+const postProcessRecentMs = 60_000
 
 export interface RunStreamHubUpdate {
   events: RunEvent[]
@@ -104,6 +106,8 @@ class RunStreamHub {
   private liveCursor: number
   private durableCursor: number
   private stopped = false
+  private postProcessed = false
+  private postProcessDeadline: number | undefined
 
   constructor(
     private readonly runId: string,
@@ -165,7 +169,16 @@ class RunStreamHub {
       if (!run) throw new Error("ai.run_not_found")
       if (durable.length) this.durableCursor = Math.max(this.durableCursor, ...durable.map(event => event.sequence))
       const terminal = isTerminalRun(run)
-      this.broadcast(durable, run, undefined, terminal)
+      if (durable.some(event => event.type === "run.postprocess.completed")) this.postProcessed = true
+      const visible = durable.filter(event => event.type !== "run.postprocess.completed")
+      if (terminal && run.status === "completed" && !this.postProcessed && isRecentCompletion(run)) {
+        this.postProcessDeadline ??= Date.now() + postProcessWaitMs
+        if (Date.now() < this.postProcessDeadline) {
+          this.broadcast(visible, run, undefined, false)
+          continue
+        }
+      }
+      this.broadcast(visible, run, undefined, terminal)
       if (terminal) break
     }
   }
@@ -282,6 +295,12 @@ class LocalSubscription implements RunStreamHubSubscription {
 
 function isTerminalRun(run: Run): boolean {
   return ["completed", "failed", "canceled", "expired", "interrupted"].includes(run.status)
+}
+
+function isRecentCompletion(run: Run): boolean {
+  if (!run.completedAt) return false
+  const completedAt = Date.parse(run.completedAt)
+  return Number.isFinite(completedAt) && Date.now() - completedAt <= postProcessRecentMs
 }
 
 function delay(milliseconds: number, signal: AbortSignal): Promise<void> {

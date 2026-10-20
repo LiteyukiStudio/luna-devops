@@ -12,6 +12,7 @@ import { presentEventForRun, presentTimeline } from "./timeline-presenter.js"
 import type { RunStreamBus } from "./run-stream-bus.js"
 import { RunStreamHubManager } from "./run-stream-hub.js"
 import { maximumRequestBodyBytes, maximumTurnInputBytes, utf8ByteLength } from "./input-limits.js"
+import { createId } from "./id.js"
 import { agentLogger, agentMetrics, captureTraceContext, errorDiagnostic, internalSpanOptions, stableErrorCode as telemetryErrorCode, telemetryLog, withSpan } from "./telemetry.js"
 
 declare module "fastify" {
@@ -355,7 +356,7 @@ export function buildServer(input: BuildServerDependencies): FastifyInstance {
       const after = Math.max(query.after ?? 0, Number.isSafeInteger(headerCursor) && headerCursor >= 0 ? headerCursor : 0)
       const acceptsEventStream = request.headers.accept?.split(",").some(value => value.trim().split(";")[0] === "text/event-stream") ?? false
       const streamRequested = acceptsEventStream || query.stream === "true"
-      const subscription = streamRequested && !isTerminalRun(run)
+      const subscription = streamRequested
         ? await streamHubs.subscribe(runId, request.actor.userId, after)
         : undefined
       try {
@@ -427,7 +428,21 @@ export function buildServer(input: BuildServerDependencies): FastifyInstance {
         }
       }
       finally { subscription?.close() }
-      if (!closed) reply.raw.end()
+      if (!closed) {
+        const completedSequence = Math.max(1, cursor)
+        await writeSSE(reply.raw, sse("run.stream.completed", completedSequence, {
+          version: 2,
+          eventId: createId("aievt"),
+          eventSequence: completedSequence,
+          type: "run.stream.completed",
+          conversationId: run.conversationId,
+          turnId: run.turnId,
+          runId: run.id,
+          occurredAt: new Date().toISOString(),
+          payload: {},
+        }), streamAbort.signal)
+        reply.raw.end()
+      }
       return reply
       }
       finally { subscription?.close() }

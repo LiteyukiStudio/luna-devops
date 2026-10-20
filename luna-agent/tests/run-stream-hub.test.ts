@@ -100,6 +100,32 @@ describe("per-Run SSE hub", () => {
     second.close()
     await manager.close()
   })
+
+  it("keeps a completed Run stream open until post-completion title events are durable", async () => {
+    const { repository, bus, run } = await fixture()
+    const manager = new RunStreamHubManager(repository, bus)
+    const after = (await repository.getRunStreamPosition(run.id))!.nextEventSequence - 1
+    const subscription = await manager.subscribe(run.id, "hub-user", after)
+
+    await repository.updateRun(run.id, "running", "completed", { completedAt: new Date().toISOString() })
+    const first = await subscription.next(new AbortController().signal)
+    expect(first.terminal).toBe(false)
+    subscription.advance(first.events.at(-1)?.sequence ?? after)
+
+    const title = await repository.appendEvent(run.id, "conversation.title.updated", { title: "自动标题" })
+    await repository.appendEvent(run.id, "run.postprocess.completed", {})
+    const events = [...first.events]
+    let terminal = first.terminal
+    while (!terminal) {
+      const update = await subscription.next(new AbortController().signal)
+      events.push(...update.events)
+      terminal = update.terminal
+    }
+    expect(events.some(event => event.id === title.id)).toBe(true)
+    expect(events.some(event => event.type === "run.postprocess.completed")).toBe(false)
+    subscription.close()
+    await manager.close()
+  })
 })
 
 async function nextContaining(
