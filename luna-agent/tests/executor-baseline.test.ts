@@ -108,6 +108,12 @@ function assistantTexts(items: TimelineItem[]): string[] {
     .map(item => (item.content as { parts?: Array<{ text?: string }> }).parts?.[0]?.text ?? "")
 }
 
+function progressTexts(items: TimelineItem[]): string[] {
+  return items
+    .filter(item => item.type === "progress")
+    .map(item => (item.content as { parts?: Array<{ text?: string }> }).parts?.[0]?.text ?? "")
+}
+
 function platformTool(repository: TestRepository, catalog: ToolCatalog, result: () => { status: number, body: unknown }) {
   const store = repository.toolCallStore
   const client = new DeterministicLunaApiClient(result)
@@ -132,7 +138,87 @@ describe("RunExecutor 当前行为基线（Phase 0 特征化测试）", () => {
     expect(assistantTexts(await timelineItems(repository, "usr_answer", conversation.id))).toEqual(["你好。"])
   })
 
-  it("工具过程文字和最终回答都持久化为 assistant_message", async () => {
+  it("完成后再生成标题，并在终态后写入 postprocess 标记", async () => {
+    const owner = "usr_title_after_complete"
+    const repository = new TestRepository()
+    const conversation = await repository.createConversation(owner, "新会话")
+    const created = await repository.createTurn(owner, {
+      conversationId: conversation.id,
+      input: "你好",
+      pageContext: {},
+      idempotencyKey: "title-after-complete",
+      actorSessionId: "ses_title_after_complete",
+    })
+    const runId = created.run.id
+    let titleCalls = 0
+    const provider: ModelProvider = {
+      async *stream() {
+        yield { type: "message_delta", delta: "你好。" }
+        yield { type: "completed", usage: reportedUsage }
+      },
+      async complete() {
+        titleCalls += 1
+        return { text: "自动标题", toolCalls: [], usage: reportedUsage }
+      },
+      capabilities: () => ({ streaming: true, toolCalling: true, structuredOutput: true }),
+      health: async () => ({ ok: true }),
+    }
+
+    await testExecutor(repository, new ModelRuntime(provider, testRegistry())).runOnce()
+
+    expect(titleCalls).toBe(1)
+    expect((await repository.getConversation(owner, conversation.id))?.title).toBe("自动标题")
+    const events = await repository.getEvents(owner, runId, 0)
+    const completedIndex = events.findIndex(event => event.type === "run.completed")
+    const titleIndex = events.findIndex(event => event.type === "conversation.title.updated")
+    const markerIndex = events.findIndex(event => event.type === "run.postprocess.completed")
+    expect(completedIndex).toBeGreaterThanOrEqual(0)
+    expect(titleIndex).toBeGreaterThan(completedIndex)
+    expect(markerIndex).toBeGreaterThan(titleIndex)
+  })
+
+  it("直接工具失败走 finalize 并记录失败终态", async () => {
+    const owner = "usr_direct_tool_failed"
+    const repository = new TestRepository()
+    const conversation = await repository.createConversation(owner, "新会话")
+    const created = await repository.createTurn(owner, {
+      conversationId: conversation.id,
+      input: "执行工具",
+      pageContext: { __lunaDirectToolAction: true },
+      idempotencyKey: "direct-tool-failed",
+      actorSessionId: "ses_direct_tool_failed",
+    })
+    await repository.appendItem({
+      runId: created.run.id,
+      turnId: created.turn.id,
+      type: "tool_call",
+      status: "completed",
+      content: { operationId: "getProject", status: "failed" },
+    })
+    let modelCalls = 0
+    const provider: ModelProvider = {
+      async *stream() {
+        modelCalls += 1
+        yield { type: "message_delta", delta: "不应调用模型" }
+        yield { type: "completed", usage: reportedUsage }
+      },
+      async complete() {
+        modelCalls += 1
+        return { text: "", toolCalls: [], usage: reportedUsage }
+      },
+      capabilities: () => ({ streaming: true, toolCalling: true, structuredOutput: true }),
+      health: async () => ({ ok: true }),
+    }
+
+    await testExecutor(repository, new ModelRuntime(provider, testRegistry())).runOnce()
+
+    expect(modelCalls).toBe(0)
+    expect(await repository.getRun(owner, created.run.id)).toMatchObject({ status: "failed" })
+    expect((await repository.getEvents(owner, created.run.id, 0)).map(event => event.type))
+      .toContain("run.failed")
+  })
+
+  it("工具过程文字持久化为 progress，最终回答持久化为 assistant_message", async () => {
     const owner = "usr_progress"
     const { repository, conversation, runId } = await queuedRun(owner, "progress")
     const catalog = ToolCatalog.load([testToolOperation("getProject")])
@@ -144,7 +230,9 @@ describe("RunExecutor 当前行为基线（Phase 0 特征化测试）", () => {
     await testExecutor(repository, new ModelRuntime(provider, testRegistry({ resolve: () => catalog.modelTools(["getProject"]) })), { catalog, tools }).runOnce()
     expect((await repository.getRun(owner, runId))?.status).toBe("completed")
     expect(modelCalls()).toBe(2)
-    expect(assistantTexts(await timelineItems(repository, owner, conversation.id))).toEqual(["正在查询。", "查询完成。"])
+    const items = await timelineItems(repository, owner, conversation.id)
+    expect(progressTexts(items)).toEqual(["正在查询。"])
+    expect(assistantTexts(items)).toEqual(["查询完成。"])
   })
 
   it("缺必填参数先等待输入，重新排队后完成同一 Run", async () => {

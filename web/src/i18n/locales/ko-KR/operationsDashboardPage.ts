@@ -237,6 +237,7 @@ const operationsDashboardPage = {
     turnLabel: '{{index}}번째 턴',
     assistant: 'Agent',
     thinking: '사고 요약',
+    progress: '실행 과정',
     loopLabel: 'Loop {{index}}',
     toolCount: '{{count}}회 도구 호출',
     emptyLoop: '이 Loop에는 표시 가능한 실행 항목이 없습니다.',

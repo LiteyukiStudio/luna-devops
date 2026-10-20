@@ -1,6 +1,9 @@
 import type { ConversationToolInteraction } from "../domain.js"
-import type { ModelMessage } from "../provider/provider.js"
-export { internalToolOperationIds } from "../tools/internal-operation-ids.js"
+import type { ModelMessage, ModelToolDetailsResult, ModelToolSearchResult } from "../provider/provider.js"
+import { internalToolOperationIds } from "../tools/internal-operation-ids.js"
+import { getToolDetailsInput } from "../tools/tool-details.js"
+import { searchToolsInput } from "../tools/tool-search.js"
+export { internalToolOperationIds }
 
 // 审批恢复后，把已完成的工具调用重建为 assistant + tool 消息对，
 // 让模型在断点续跑时看到暂停前的工具结果。只重建有结果的调用。
@@ -32,4 +35,51 @@ export function resumedToolMessages(interactions: ConversationToolInteraction[])
 
 export function normalizeToolSearchQuery(query: string): string {
   return query.trim().toLowerCase().replace(/\s+/g, " ")
+}
+
+export function reconstructSelectedOperationIds(interactions: ConversationToolInteraction[]): string[] {
+  const selected: string[] = []
+  for (const interaction of interactions) {
+    if (interaction.type !== "tool_call") continue
+    const operationId = typeof interaction.content.operationId === "string" ? interaction.content.operationId : ""
+    if (operationId && !internalToolOperationIds.has(operationId)) selected.push(operationId)
+    const result = recordValue(interaction.content.result)
+    const loaded = Array.isArray(result?.loadedOperationIds)
+      ? result.loadedOperationIds.filter((item): item is string => typeof item === "string")
+      : []
+    selected.push(...loaded)
+  }
+  return [...new Set(selected)]
+}
+
+export function restoredInternalToolResults(interactions: ConversationToolInteraction[], operationId: "search_tools"): Map<string, ModelToolSearchResult>
+export function restoredInternalToolResults(interactions: ConversationToolInteraction[], operationId: "get_tool_details"): Map<string, ModelToolDetailsResult>
+export function restoredInternalToolResults(interactions: ConversationToolInteraction[], operationId: "search_tools" | "get_tool_details") {
+  const output = new Map<string, ModelToolSearchResult | ModelToolDetailsResult>()
+  for (const interaction of interactions) {
+    if (interaction.type !== "tool_call" || interaction.content.operationId !== operationId) continue
+    const args = recordValue(interaction.content.arguments)
+    const result = recordValue(interaction.content.result)
+    if (!args || !result) continue
+    if (operationId === "search_tools") {
+      const parsed = searchToolsInput.safeParse(args)
+      if (parsed.success && Array.isArray(result.items)) {
+        const key = `${normalizeToolSearchQuery(parsed.data.query)}\u0000${parsed.data.page}\u0000${parsed.data.pageSize}`
+        output.set(key, result as unknown as ModelToolSearchResult)
+      }
+    }
+    else {
+      const parsed = getToolDetailsInput.safeParse(args)
+      if (parsed.success && Array.isArray(result.items)) output.set(normalizedDetailRequest(parsed.data.operationIds), result as unknown as ModelToolDetailsResult)
+    }
+  }
+  return output
+}
+
+export function normalizedDetailRequest(operationIds: string[]): string {
+  return JSON.stringify([...new Set(operationIds)].sort())
+}
+
+export function recordValue(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined
 }

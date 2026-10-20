@@ -3,14 +3,26 @@ import type { ModelToolCall } from "../provider/provider.js"
 import { createId } from "../id.js"
 import { redact } from "../redaction.js"
 import { agentMetrics, errorDiagnostic, internalSpanOptions, isExpectedCancellation, recordAIContent, stableErrorCode, telemetryLog, withSpan } from "../telemetry.js"
+import { modelDecision } from "./decision.js"
 import { contentError } from "./tool-results.js"
 import type { RunStreamBus, RunStreamSession } from "../run-stream-bus.js"
+
+export type TerminalCommit = (
+  to: "completed" | "failed" | "canceled" | "interrupted",
+  errorCode?: string,
+  conversationTitle?: string,
+) => Promise<void>
+
+export type StreamedModelResult = AssistantModelInput & {
+  finishReason?: string
+  finalizeTerminal?: TerminalCommit
+}
 
 export class StreamModelFinalizationError extends Error {
   override readonly name = "StreamModelFinalizationError"
   constructor(
     cause: unknown,
-    readonly finalizeTerminal: (to: "completed" | "failed" | "canceled" | "interrupted", errorCode?: string, conversationTitle?: string) => Promise<void>,
+    readonly finalizeTerminal: TerminalCommit,
   ) {
     super(stableErrorCode(cause), { cause })
   }
@@ -26,10 +38,7 @@ export async function streamModel(
   input: AssistantModelInput,
   signal: AbortSignal,
   expectedRunVersion?: number,
-): Promise<AssistantModelInput & {
-  finishReason?: string
-  finalizeTerminal?: (to: "completed" | "failed" | "canceled" | "interrupted", errorCode?: string, conversationTitle?: string) => Promise<void>
-}> {
+): Promise<StreamedModelResult> {
   const startedAt = performance.now()
   let outcome = "success"
   let stream: RunStreamSession | undefined
@@ -161,6 +170,7 @@ export async function streamModel(
           { itemId: reasoningItemId, display: "summary", timelineIndex: reasoningTimelineIndex },
         )
       }
+      const decision = modelDecision({ answer, toolCalls, ...(finishReason === undefined ? {} : { finishReason }) })
       if (answer) {
         await stream.updateItemWithEvent(
           messageItemId,
@@ -168,13 +178,14 @@ export async function streamModel(
           redact({ parts: [{ type: "text", text: answer }] }),
           "message.completed",
           { itemId: messageItemId, contentPartId: `${messageItemId}:0`, partIndex: 0, timelineIndex: messageTimelineIndex },
+          decision.kind === "final" ? "assistant_message" : "progress",
         )
       }
       agentMetrics.modelRequests.add(1, { operation: "stream", outcome })
       agentMetrics.modelSteps.add(1, { outcome })
       agentMetrics.modelDuration.record((performance.now() - startedAt) / 1000, { operation: "stream", outcome })
       telemetryLog("agent.model.completed", "info", { "luna.run.id": runId, "tool_call.count": toolCalls.length })
-      const finalSession = toolCalls.length === 0 && answer.trim().length > 0 ? stream : undefined
+      const finalSession = decision.kind === "final" ? stream : undefined
       if (!finalSession) await stream.commit("completed")
       return {
         ...input, reasoningSummary, answer, toolCalls,
@@ -186,6 +197,16 @@ export async function streamModel(
     }
     catch (error) {
       if (stream) {
+        if (answer) {
+          await stream.updateItemWithEvent(
+            messageItemId,
+            "streaming",
+            redact({ parts: [{ type: "text", text: answer }] }),
+            "message.completed",
+            { itemId: messageItemId, contentPartId: `${messageItemId}:0`, partIndex: 0, timelineIndex: messageTimelineIndex },
+            "progress",
+          ).catch(() => undefined)
+        }
         throw new StreamModelFinalizationError(error, (to, errorCode, conversationTitle) => stream!.commitTerminal(to, errorCode, conversationTitle))
       }
       recordAIContent(span, "luna.gen_ai.content.error", "luna.gen_ai.response.error_body", contentError(error))

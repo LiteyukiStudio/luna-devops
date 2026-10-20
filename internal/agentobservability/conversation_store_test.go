@@ -168,12 +168,13 @@ func TestPageWithinTotalClampsEmptyAndOverflowPages(t *testing.T) {
 func TestBuildConversationLoops(t *testing.T) {
 	items := []ConversationRunItem{
 		{ID: "thinking-1", Type: "reasoning_summary"},
+		{ID: "progress-1", Type: "progress", Text: "正在检查"},
 		{ID: "tool-1", Type: "tool_call"},
 		{ID: "thinking-2", Type: "reasoning_summary"},
 		{ID: "message-2", Type: "assistant_message", Text: "done"},
 	}
 	loops := buildConversationLoops(items)
-	if len(loops) != 2 || len(loops[0].Items) != 2 || len(loops[1].Items) != 2 {
+	if len(loops) != 2 || len(loops[0].Items) != 3 || len(loops[1].Items) != 2 {
 		t.Fatalf("unexpected loops: %#v", loops)
 	}
 }

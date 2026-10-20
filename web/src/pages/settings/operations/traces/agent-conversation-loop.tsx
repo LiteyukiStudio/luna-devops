@@ -23,8 +23,8 @@ export function AgentConversationLoopView({ loop, onViewTrace, onSelectToolCall 
       </div>
       <div className="grid gap-3 border-l border-separator-subtle pl-3">
         {loop.items.map((item) => {
-          if (item.type === 'reasoning_summary' && item.text)
-            return <AgentConversationMessage key={item.id} role="thinking" text={item.text} />
+          if ((item.type === 'reasoning_summary' || item.type === 'progress') && item.text)
+            return <AgentConversationMessage key={item.id} role={item.type === 'progress' ? 'progress' : 'thinking'} text={item.text} />
           if (item.type === 'assistant_message' && item.text)
             return <AgentConversationMessage key={item.id} role="assistant" text={item.text} />
           if (item.type === 'tool_call' && item.toolCall)

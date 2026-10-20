@@ -237,6 +237,7 @@ const operationsDashboardPage = {
     turnLabel: '第 {{index}} ターン',
     assistant: 'Agent',
     thinking: '思考サマリ',
+    progress: '実行過程',
     loopLabel: 'Loop {{index}}',
     toolCount: '{{count}} 回のツール呼び出し',
     emptyLoop: 'この Loop には表示可能な実行項目がありません。',

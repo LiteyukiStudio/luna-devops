@@ -60,6 +60,12 @@ function assistantTexts(items: TimelineItem[]): string[] {
     .map(item => (item.content as { parts?: Array<{ text?: string }> }).parts?.[0]?.text ?? "")
 }
 
+function progressTexts(items: TimelineItem[]): string[] {
+  return items
+    .filter(item => item.type === "progress")
+    .map(item => (item.content as { parts?: Array<{ text?: string }> }).parts?.[0]?.text ?? "")
+}
+
 const planText = "我先梳理一下执行步骤，随后再确认部署状态。"
 
 const invalidPresentCard = {
@@ -75,7 +81,7 @@ const invalidPresentCard = {
 }
 
 describe("模型协议错误处理", () => {
-  it("结束原因宣告工具调用但没有工具调用时，先注入一次有界修复，仍违规才失败", async () => {
+  it("结束原因宣告工具调用但没有工具调用时，先注入一次有界修复，仍违规才失败且计划文字不冒充最终回答", async () => {
     const owner = "usr_protocol_missing_calls"
     const { repository, conversation, runId } = await queuedRun(owner, "protocol-missing-calls")
     const { provider, modelCalls, requests } = protocolProvider([{ text: planText, finishReason: "tool_calls" }])
@@ -88,8 +94,10 @@ describe("模型协议错误处理", () => {
     expect(modelCalls()).toBe(2)
     expect(requests[1]?.at(-1)).toMatchObject({ role: "system" })
     const items = (await repository.getTimeline(owner, conversation.id))?.turns[0]?.items ?? []
-    expect(assistantTexts(items)).toEqual([planText])
-    expect(items).toContainEqual(expect.objectContaining({ type: "assistant_message", status: "completed" }))
+    expect(progressTexts(items)).toHaveLength(2)
+    expect(progressTexts(items).every(text => text === planText)).toBe(true)
+    expect(assistantTexts(items)).toEqual([])
+    expect(items).toContainEqual(expect.objectContaining({ type: "progress", status: "completed" }))
   })
 
   it("有界修复后模型给出工具调用时继续执行并正常完成", async () => {

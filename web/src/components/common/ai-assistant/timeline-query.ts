@@ -270,26 +270,43 @@ export function activeRunStreamSubscriptions(
   data: AITimelineQueryData | undefined,
   conversationId = data?.snapshot?.conversation.id,
   currentSubscriptions: AIRunStreamSubscription[] = [],
+  terminalStreamRunIds: ReadonlySet<string> = new Set(),
 ): AIRunStreamSubscription[] {
   if (!conversationId)
     return []
   const cursors = new Map(data?.snapshot?.eventCursors.map(cursor => [cursor.runId, cursor.after]) ?? [])
-  const snapshotRunIds = new Set(data?.snapshot?.turns.flatMap(turn => turn.selectedRun ? [turn.selectedRun.id] : []) ?? [])
-  const authoritative = data?.snapshot?.turns.flatMap((turn) => {
+  const turns = data?.snapshot?.turns ?? []
+  const snapshotRunIds = new Set(turns.flatMap(turn => turn.selectedRun ? [turn.selectedRun.id] : []))
+  const subscribedRunIds = new Set(currentSubscriptions.map(subscription => subscription.runId))
+  const latestTurn = [...turns].sort((left, right) => right.turnIndex - left.turnIndex).find(turn => turn.selectedRun)
+  const latestRunId = latestTurn?.selectedRun?.id
+  const shouldTrack = (runId: string, status: string) => {
+    if (!['completed', 'failed', 'canceled', 'interrupted'].includes(status))
+      return true
+    return status === 'completed'
+      && (runId === latestRunId || subscribedRunIds.has(runId))
+      && !terminalStreamRunIds.has(runId)
+  }
+  const keepsOptimisticStream = (runId: string, status: string) =>
+    status !== 'failed'
+    && status !== 'canceled'
+    && status !== 'interrupted'
+    && (status !== 'completed' || !terminalStreamRunIds.has(runId))
+  const authoritative = turns.flatMap((turn) => {
     const run = turn.selectedRun
-    if (!run || ['completed', 'failed', 'canceled', 'interrupted'].includes(data.state.runStatuses[run.id] ?? run.status))
+    if (!run || !shouldTrack(run.id, data?.state.runStatuses[run.id] ?? run.status))
       return []
     return [{
       conversationId,
       eventsUrl: `/api/v1/ai/runs/${encodeURIComponent(run.id)}/events`,
       runId: run.id,
-      after: Math.max(cursors.get(run.id) ?? 0, data.state.lastEventSequences[run.id] ?? 0),
+      after: Math.max(cursors.get(run.id) ?? 0, data?.state.lastEventSequences[run.id] ?? 0),
     }]
   }) ?? []
   const optimistic = currentSubscriptions.filter(subscription =>
     subscription.conversationId === conversationId
     && !snapshotRunIds.has(subscription.runId)
-    && !['completed', 'failed', 'canceled', 'interrupted'].includes(data?.state.runStatuses[subscription.runId] ?? 'queued'))
+    && keepsOptimisticStream(subscription.runId, data?.state.runStatuses[subscription.runId] ?? 'queued'))
   return [...authoritative, ...optimistic]
 }
 
@@ -300,7 +317,7 @@ export function runStreamRecoveryFromTimeline(
   const status = data?.state.runStatuses[subscription.runId]
   return {
     after: data?.state.lastEventSequences[subscription.runId] ?? subscription.after,
-    terminal: status !== undefined && ['completed', 'failed', 'canceled', 'interrupted'].includes(status),
+    terminal: status !== undefined && ['failed', 'canceled', 'interrupted'].includes(status),
   }
 }
 

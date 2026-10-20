@@ -274,8 +274,7 @@ Agent lint 与 typecheck 均通过，无诊断。实际执行包内 `node_module
 
 ### 9.4 未完成项
 
-- 模块拆分（`decision`、`graph`、`tool-step`、`finalize`）仍是 Phase 3 范围；本次只在
-  `RunExecutor` 内部接入 checkpoint，主循环结构未拆。
+- 模块拆分（`decision`、`graph`、`tool-step`、`finalize`）已由 Phase 3 完成，见第 10 节。
 - `ToolOutcome`、写操作 `verificationRequired` 与权威回读仍是 Phase 4 范围；`completed`
   目前仍只由模型合法 final 决定。
 - 工具调用的逻辑幂等键与崩溃后重放（方案 §7.2）未做：恢复按工具事实核对，不重放已落地的
@@ -286,7 +285,7 @@ Agent lint 与 typecheck 均通过，无诊断。实际执行包内 `node_module
   checkpoint 停原处等待人工核对，不猜测推进。
 - 模型调用进行中退出会重跑该模型步：模型调用不产生业务副作用，四个验收边界也不包含
   调用中途，因此不引入调用级 checkpoint。
-- 流式投影仍未收敛（Phase 1 遗留）：计划文字仍以 `assistant_message` 落库。
+- 流式投影已由 Phase 3 收敛，计划文字改写为 `progress` 投影，见第 10 节。
 
 ### 9.5 风险
 
@@ -316,3 +315,90 @@ Agent lint 与 typecheck 均通过，无诊断。实际执行包内 `node_module
   `web/src/components/common/ai-assistant/errors.ts` 映射。
 - 仍未验证：真实 E2E（API → Agent → Tool → 外部平台 → 权威回读），属 Phase 4 入口条件。
   进程退出用“重建 durable 状态 + 新 Executor”模拟，不代表真实进程崩溃与 PostgreSQL 持久性验证。
+
+## 10. Phase 3 变更记录
+
+状态：模块拆分与验收缺口修复完成后通过主体验收。Phase 4 的工具 outcome、写操作验证和
+异步权威回读仍未开始。
+
+### 10.1 改动范围
+
+- `RunExecutor` 从 1126 行收缩为 295 行，只保留 Run claim、配额、并发控制、超时、
+  取消、启动对账、远端配置刷新和组件装配。
+- 新增 `executor/run-loop.ts`，负责单个 Run 的模型步骤、checkpoint 推进、恢复动作和
+  TerminalPersistence 错误分支。
+- 新增 `executor/graph.ts`，把 `ModelDecision`、工具批次结果和 checkpoint 恢复计划
+  映射为显式动作：`execute_tools`、`finalize`、`repair`、`retry`、`fail`、
+  `continue_model`、`waiting_approval`。
+- 新增 `executor/tool-step.ts`，集中执行工具批次、内部工具、搜索/详情缓存、卡片生成、
+  导航、会话重命名、平台工具调用和恢复批次核对。
+- 新增 `executor/finalize.ts`，独占 `completed` 提交、终态失败/取消/中断、未提交答复重建，
+  并把标题生成移到 Run 完成后以 best-effort 执行。
+- `Resume` 辅助函数从 `executor/index.ts` 移到 `resume.ts`，由 `ToolStepRunner.initialState`
+  统一恢复续跑上下文、缓存和已选工具。
+- `TimelineItem` 增加 `progress` 类型；`RunStreamSession.updateItemWithEvent` 支持在提交前
+  修正条目类型。
+- `RunFinalizer` 只在确认实际状态已是终态时忽略 `RunStateConflictError`；数据库故障和
+  `TerminalPersistenceExhaustedError` 上抛到统一持久化失败处理。
+- 自动标题生成改为终态提交后的受控任务：使用 Run 的 AbortSignal，并设置 4 秒上限；
+  标题失败不影响 Run，但任务必须结束并写入 `run.postprocess.completed`。
+- `RunStreamHub` 对刚完成的 Run 等待 postprocess 标记，再把标题更新和终态事件交给 SSE；
+  前端在收到 `run.stream.completed` 后才关闭订阅。
+- 前端订阅协调保留最新完成 Run，直到对应流的 Manager 状态进入 `terminal`；页面刷新后
+  也会为最新完成 Run 重建一次订阅，避免绕过后处理等待。
+- 已订阅但尚未收到流结束事件的 completed Run 在下一轮开始后仍然保留，避免连续发送时
+  丢失上一轮的自动标题更新。
+- `run.completed` 只结束业务状态，不再把连接状态设为 `terminal`；只有
+  `run.stream.completed` 才结束 SSE。Manager 会保留已结束流的 terminal 记录，避免重复重连。
+- 序列缺口恢复在 completed 状态下继续重连，只有 failed/canceled/interrupted 才直接判定流结束。
+- 服务端对终态 Run 的 SSE 重连同样创建 Hub 订阅，由 Hub 判断是否等待 postprocess。
+- 管理员观测的 Run item 枚举与查询加入 `progress`，避免过程文字在观测页丢失。
+- 前端观测 DTO 与 OpenAPI 枚举同步包含 `progress`，管理台 Loop 视图可正常渲染。
+- 管理员 Loop 视图渲染 `progress` 项，并在五种语言中提供“执行过程”标签。
+- 直接工具路径改由 `RunFinalizer.completeDirectTool` 提交，返回真实 `completed`/`failed`
+  outcome，不再绕过 finalize 或误记完成指标。
+- `RunFinalizer` 的完成、失败、取消和中断在终态竞争时都返回数据库实际终态；RunLoop 使用该值
+  记录 outcome。完成竞争不生成标题或 postprocess，失败/取消/中断也不会覆盖已落库的实际终态。
+- RunLoop 的取消分支直接接收 `finalizer.cancel()` 返回值，不再保留初始 `completed`；
+  RunLoop 级测试覆盖模型流取消后返回 `canceled`。
+- 错误处理中的卡片失败落盘异常进入统一终态持久化处理，不再跳过取消、失败或中断提交。
+- `graph.ts` 为每个 `RunPhase` 定义合法动作集；决策、工具批次和恢复动作都会校验，
+  非法转换抛 `ai.run_graph_illegal_transition`。
+- Run claim 成功后立即进入统一生命周期：快照校验、目录恢复、并发查询、配额拒绝和
+  工具预算装配都在同一异常边界内；初始化失败通过 `failBeforeExecution` 收敛为明确终态。
+- `awaiting_input` 的 checkpoint、`run.input_required` 事件和 Run 状态更新作为一个
+  持久化步骤；任一步失败都进入统一终态持久化处理，不再停留在 `running`。
+
+### 10.2 行为变化
+
+- 矩阵行 6 变化：模型在同一工具调用步骤输出的过程文字不再落为 `assistant_message`，
+  而是 `progress`；只有合法 `final` 决策产生 `assistant_message`。
+- Phase 1 遗留的协议违规草稿不再冒充最终回答：`missing_tool_calls` 的修复草稿和失败终态
+  都保留为 `progress`。
+- 取消时已经流出的部分正文以 `progress` / `failed` 提交，不产生最终回答。
+- 标题生成不再参与终态事务，也不会因标题模型失败改变 Run 终态；完成事件先提交，标题随后更新。
+- 自动标题更新通过 `conversation.title.updated` 送达当前会话；完成 Run 的 SSE 在标题任务
+  结束并收到 postprocess 标记后才发送 `run.stream.completed`，前端不再在 `run.completed`
+  时提前关闭订阅。
+- `RunExecutor` 不再包含 `search_tools`、`get_tool_details`、卡片 Schema、导航或具体平台工具
+  分支；这些逻辑只在 `ToolStepRunner` 中存在。
+
+### 10.3 未改变或仍待后续
+
+- `ToolOutcome`、`verificationRequired`、写操作权威回读、异步外部状态仍属 Phase 4。
+- `completed` 仍由模型合法 `final` 或既有交互卡片完成分支触发；Phase 3 只收敛提交入口，
+  不扩展业务完成证据。
+- `decision.ts` 和 `checkpoint.ts` 保持 Phase 1/2 的结构，Phase 3 只把它们接入显式状态图。
+- 直接工具路径仍保留原有的“工具事实已落地即结束 Run”语义；Phase 4 再统一到业务验证。
+- 真实进程崩溃、多副本恢复和 PostgreSQL 持久性仍未在 Phase 3 重新验证。
+
+### 10.4 验证记录
+
+- 状态图纯函数测试 `executor-graph.test.ts`：5 个用例通过。
+- Executor、协议、checkpoint、工具、状态图、finalize 和流式 hub 回归共 85 个用例通过，覆盖普通问答、工具过程文字、
+  审批恢复、输入恢复、取消、终态持久化和 checkpoint 退出边界。
+- Agent `tsc --noEmit` 与 `eslint .` 通过。
+- 沙箱外全量 `vitest run`：46 个测试文件通过、2 个跳过；445 个用例通过、22 个跳过。
+  跳过项依赖真实 PostgreSQL 或基准测试数据库，本轮未启动对应数据库。
+- Web 全量 `vitest run`：134 个测试文件、519 个用例通过。
+- `go test ./internal/agentobservability` 通过。
