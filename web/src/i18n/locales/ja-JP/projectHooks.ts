@@ -5,7 +5,6 @@ const projectHooks = {
   createTitle: 'フックを作成',
   editTitle: 'フックを編集',
   dialogDescription: 'スクリプトは実行時にスナップショットとして保存され、後続の変更は開始済みのビルドやリリースに影響しません。',
-  phase: 'フェーズ',
   script: 'スクリプト',
   scriptHint: 'スクリプトはテンプレートレンダリングされません。環境変数を直接読み取ってください。プラットフォームは LITEYUKI_GIT_SHA、LITEYUKI_IMAGE_REF、LITEYUKI_RELEASE_ID などのコンテキスト変数を注入します。',
   shell: 'Shell',

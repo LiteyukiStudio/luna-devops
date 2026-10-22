@@ -95,6 +95,7 @@ const apps = {
   configDescription: 'アプリケーションアイコンと名前を編集し、不変のアプリケーション識別子を確認します。リポジトリ、ビルド、デプロイ、アクセスエントリは対応するタブで管理してください。',
   detailTitle: 'アプリケーション詳細',
   detailTopbarTitle: 'アプリ：{{projectName}} / {{name}}',
+  backToDeployments: 'デプロイ一覧に戻る',
   applicationTopbarPrefix: 'アプリ：',
   overview: '概要',
   topology: {

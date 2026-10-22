@@ -95,6 +95,7 @@ const apps = {
   configDescription: 'Edit the application icon and name, and view its immutable identifier. Maintain repositories, builds, deployments, and access routes in their own tabs.',
   detailTitle: 'Application detail',
   detailTopbarTitle: 'Application: {{projectName}} / {{name}}',
+  backToDeployments: 'Back to deployments',
   applicationTopbarPrefix: 'Application:',
   overview: 'Overview',
   topology: {

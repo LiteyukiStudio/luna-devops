@@ -1,7 +1,7 @@
 import type { CodeEditorProps } from './code-editor'
 import { json } from '@codemirror/lang-json'
 import { yaml } from '@codemirror/lang-yaml'
-import CodeMirror from '@uiw/react-codemirror'
+import CodeMirror, { EditorView } from '@uiw/react-codemirror'
 import { useEffect, useMemo, useState } from 'react'
 import { cn } from '@/lib/utils'
 
@@ -17,9 +17,14 @@ export function CodeEditorCore({
   readOnly,
   className,
   ariaInvalid,
+  ariaDescribedBy,
+  ariaLabelledBy,
 }: CodeEditorProps) {
   const [dark, setDark] = useState(() => document.documentElement.dataset.theme === 'dark')
-  const extensions = useMemo(() => languageExtensions(language), [language])
+  const extensions = useMemo(() => [
+    ...languageExtensions(language),
+    EditorView.contentAttributes.of(accessibleContentAttributes({ ariaDescribedBy, ariaInvalid, ariaLabelledBy })),
+  ], [ariaDescribedBy, ariaInvalid, ariaLabelledBy, language])
 
   useEffect(() => {
     const observer = new MutationObserver(() => {
@@ -74,4 +79,16 @@ function languageExtensions(language: CodeEditorLanguage) {
     default:
       return []
   }
+}
+
+/** 把外部 label/说明/错误关联到 CodeMirror 的可编辑区域，使其拥有可访问名称。 */
+function accessibleContentAttributes({ ariaDescribedBy, ariaInvalid, ariaLabelledBy }: Pick<CodeEditorProps, 'ariaDescribedBy' | 'ariaInvalid' | 'ariaLabelledBy'>) {
+  const attributes: Record<string, string> = {}
+  if (ariaLabelledBy)
+    attributes['aria-labelledby'] = ariaLabelledBy
+  if (ariaDescribedBy)
+    attributes['aria-describedby'] = ariaDescribedBy
+  if (ariaInvalid)
+    attributes['aria-invalid'] = 'true'
+  return attributes
 }

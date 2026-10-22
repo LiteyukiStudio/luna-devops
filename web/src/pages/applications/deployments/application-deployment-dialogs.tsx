@@ -5,9 +5,6 @@ import { LazyDialogBoundary } from '@/components/common/lazy-dialog-boundary'
 const CreateReleaseDialog = lazy(() =>
   import('./application-create-release-dialog').then(module => ({ default: module.ApplicationCreateReleaseDialog })),
 )
-const DeploymentTargetDialog = lazy(() =>
-  import('@/pages/applications/deployments/editor/application-deployment-target-dialog').then(module => ({ default: module.ApplicationDeploymentTargetDialog })),
-)
 const DeploymentBundleImportDialog = lazy(() =>
   import('./application-deployment-bundle-import-dialog').then(module => ({ default: module.ApplicationDeploymentBundleImportDialog })),
 )
@@ -24,16 +21,6 @@ export function DeferredCreateReleaseDialog(props: ComponentProps<typeof CreateR
   return (
     <LazyDialogBoundary resetKey={`release-${props.projectId}-${props.applicationId}`} onOpenChange={props.onOpenChange}>
       <CreateReleaseDialog {...props} />
-    </LazyDialogBoundary>
-  )
-}
-
-export function DeferredDeploymentTargetDialog(props: ComponentProps<typeof DeploymentTargetDialog>) {
-  if (!props.open)
-    return null
-  return (
-    <LazyDialogBoundary resetKey={`target-${props.editingTarget?.id ?? 'new'}`} onOpenChange={props.onOpenChange}>
-      <DeploymentTargetDialog {...props} />
     </LazyDialogBoundary>
   )
 }

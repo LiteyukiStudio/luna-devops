@@ -108,7 +108,7 @@ const navSections: NavSection[] = [
 const pageMetaRules = [
   { match: (pathname: string) => pathname === '/dashboard', titleKey: 'dashboard' },
   { match: (pathname: string) => isAIAssistantRoutePath(pathname), titleKey: 'aiAssistant.title' },
-  { match: (pathname: string) => /^\/projects\/[^/]+\/apps\/[^/]+$/.test(pathname), titleKey: 'apps.detailTitle' },
+  { match: (pathname: string) => /^\/projects\/[^/]+\/apps\/[^/]+(?:\/deployments\/(?:new|[^/]+\/edit))?$/.test(pathname), titleKey: 'apps.detailTitle' },
   { match: (pathname: string) => /^\/projects\/[^/]+$/.test(pathname), titleKey: 'projectSpaces.workspaceTitle' },
   { match: (pathname: string) => pathname === '/projects', titleKey: 'projectSpaces.title' },
   { match: (pathname: string) => pathname === '/events', titleKey: 'eventsPage.title' },
@@ -174,7 +174,7 @@ export function AppLayout() {
   const enabledAICapabilities = aiCapabilities.data?.enabled ? aiCapabilities.data : undefined
   const assistantRoute = isAIAssistantRoutePath(location.pathname)
   const projectRouteMatch = location.pathname.match(/^\/projects\/([^/]+)/)
-  const appRouteMatch = location.pathname.match(/^\/projects\/([^/]+)\/apps\/([^/]+)$/)
+  const appRouteMatch = location.pathname.match(/^\/projects\/([^/]+)\/apps\/([^/]+)(\/deployments\/(?:new|[^/]+\/edit))?$/)
   const currentProject = useQuery({
     queryKey: ['project', projectRouteMatch?.[1]],
     queryFn: () => api.getProject(projectRouteMatch?.[1] ?? ''),
@@ -206,10 +206,9 @@ export function AppLayout() {
       if (project)
         titleCrumbs.push({ label: project.name, to: `/projects/${project.id}` })
       titleCrumbs.push({ label: application.name, to: `/projects/${application.projectId}/apps/${application.id}` })
-      backNavigation = {
-        label: t('backToApps'),
-        to: `/projects/${application.projectId}#tab=apps`,
-      }
+      backNavigation = appRouteMatch?.[3]
+        ? { label: t('apps.backToDeployments'), to: `/projects/${application.projectId}/apps/${application.id}?tab=deployments` }
+        : { label: t('backToApps'), to: `/projects/${application.projectId}#tab=apps` }
     }
     return {
       backNavigation,

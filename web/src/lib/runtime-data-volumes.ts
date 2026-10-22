@@ -29,7 +29,8 @@ export function defaultRuntimeDataVolumeRow(): RuntimeDataVolumeRow {
 export function emptyRuntimeDataVolumeRow(index: number): RuntimeDataVolumeRow {
   return {
     ...defaultRuntimeDataVolumeRow(),
-    id: runtimeDataVolumeRowId(index),
+    // 新增行在删除后可能与解析出的序号 ID 重名，使用随机 ID 保证列表 key 稳定唯一。
+    id: crypto.randomUUID(),
     mountPath: '',
     name: `data-${index + 1}`,
   }

@@ -95,6 +95,7 @@ const apps = {
   configDescription: '애플리케이션 아이콘과 이름을 편집하고 불변의 애플리케이션 식별자를 확인합니다. 리포지토리, 빌드, 배포, 접근 진입점은 해당 탭에서 관리하세요.',
   detailTitle: '애플리케이션 상세',
   detailTopbarTitle: '앱: {{projectName}} / {{name}}',
+  backToDeployments: '배포 목록으로 돌아가기',
   applicationTopbarPrefix: '앱: ',
   overview: '개요',
   topology: {

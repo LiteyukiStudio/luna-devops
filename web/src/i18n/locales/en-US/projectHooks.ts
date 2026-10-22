@@ -5,7 +5,6 @@ const projectHooks = {
   createTitle: 'Create hook',
   editTitle: 'Edit hook',
   dialogDescription: 'Scripts are snapshotted when they run. Later edits do not affect builds or releases already in progress.',
-  phase: 'Phase',
   script: 'Script',
   scriptHint: 'Scripts are not template-rendered. Read environment variables directly; the platform injects context variables such as LITEYUKI_GIT_SHA, LITEYUKI_IMAGE_REF, and LITEYUKI_RELEASE_ID.',
   shell: 'Shell',

@@ -5,7 +5,6 @@ const projectHooks = {
   createTitle: '创建钩子',
   editTitle: '编辑钩子',
   dialogDescription: '脚本会在运行时保存快照，后续修改不会影响已经开始的构建或发布。',
-  phase: '阶段',
   script: '脚本',
   scriptHint: '脚本不做模板渲染，请直接读取环境变量。平台会注入 LITEYUKI_GIT_SHA、LITEYUKI_IMAGE_REF、LITEYUKI_RELEASE_ID 等上下文变量。',
   shell: 'Shell',

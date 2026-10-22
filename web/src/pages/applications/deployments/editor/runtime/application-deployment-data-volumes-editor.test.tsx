@@ -19,7 +19,7 @@ function renderEditor() {
           <Routes>
             <Route
               path="/projects/:projectId/applications/:applicationId"
-              element={<RuntimeDataVolumesEditor clusterId="cluster-1" enabled onChange={onChange} rows={[row]} runtimeClusters={[]} />}
+              element={<RuntimeDataVolumesEditor clusterId="cluster-1" projectId="project-1" onChange={onChange} rows={[row]} runtimeClusters={[]} />}
             />
           </Routes>
         </TooltipProvider>

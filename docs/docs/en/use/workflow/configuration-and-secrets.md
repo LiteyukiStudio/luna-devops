@@ -16,6 +16,7 @@ Save the deployment first, then add, replace, generate, or clear fields under **
 - A blank edit keeps the current value. Clearing requires an explicit clear action.
 - A runtime Secret overrides an ordinary variable with the same name during release.
 - Luna DevOps can generate and store random credentials without returning plaintext to the browser.
+- Runtime Secret changes are written immediately and are not part of the page's **Save** action. Clearing and regenerating ask for confirmation and cannot be undone.
 
 Each Secret update succeeds or rolls back as a unit. Use configuration files or secret files for mounted multiline content instead of placing it in a startup command.
 

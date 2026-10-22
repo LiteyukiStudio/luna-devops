@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { api } from '@/api'
@@ -33,7 +33,6 @@ function renderEditor(canManage = false, onOuterSubmit?: () => void) {
         <ApplicationDeploymentRuntimeSecretsEditor
           applicationId="app-1"
           canManage={canManage}
-          open
           projectId="project-1"
           targetId="target-1"
         />
@@ -60,11 +59,13 @@ describe('application deployment runtime secrets editor', () => {
     expect(screen.queryByRole('button', { name: /reveal/i })).not.toBeInTheDocument()
   })
 
-  it('uses an explicit typed clear operation', async () => {
+  it('confirms before sending an explicit typed clear operation', async () => {
     const user = userEvent.setup()
     renderEditor(true)
     await screen.findByText('API_TOKEN')
     await user.click(screen.getByRole('button', { name: 'Clear' }))
+    expect(update).not.toHaveBeenCalled()
+    await user.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Clear' }))
     expect(update).toHaveBeenCalledWith('project-1', 'app-1', 'target-1', {
       items: [{ key: 'API_TOKEN', operation: 'clear', valueMode: 'secret' }],
     })
