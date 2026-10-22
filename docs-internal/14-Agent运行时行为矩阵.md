@@ -30,7 +30,7 @@
 | 暂停前的工具消息 | timeline 反推 | `resumedToolMessages` | 重建，只覆盖有 `tool_result` 的调用 |
 
 关键结论：恢复所需的控制流信息（阶段、模型步数、剩余预算、待处理调用）目前没有一处权威存储，
-只能由 timeline + Run 状态 + 进程内存拼接。这是 13 号方案 §5.3 要引入 checkpoint 的直接原因。
+只能由 timeline + Run 状态 + 进程内存拼接。这是 13 号方案引入 checkpoint 的直接原因，Phase 2 后的现状见第 9 节。
 
 Phase 2 起该结论已被 `ai.run_checkpoints` 取代：控制流事实源的变化见第 9 节，
 下表保留 Phase 0 的原始快照用于对照。
@@ -40,29 +40,29 @@ Phase 2 起该结论已被 `ai.run_checkpoints` 取代：控制流事实源的�
 | # | 场景 | 当前结果 | 期望结果 | 负责模块 | 回归位置 |
 | --- | --- | --- | --- | --- | --- |
 | 1 | 普通问答，单次模型调用 | 非空文本直接判 `completed` | 保留；由 `finalize` 唯一提交 | `executor/index.ts:263` | `executor-baseline.test.ts`：普通问答一次模型调用完成 |
-| 2 | 首步计划文字，无 tool call | 文本被当作最终答复，Run `completed` | 结束原因指示工具调用时改为 `protocol_error` + 一次有界修复（§8.5）；结束原因为 `stop` 或缺失时仍是合法 `final` | `executor/index.ts:263` | `executor-baseline.test.ts`：用例 2 |
-| 3 | 工具执行后模型只输出计划文字 | 无新平台调用时文本直接判 `completed` | 需要完成证据（§5.4） | `executor/index.ts:604` | `executor-baseline.test.ts`：用例 3 |
+| 2 | 首步计划文字，无 tool call | 文本被当作最终答复，Run `completed` | 保留为合法 `final`，计划文字由 Prompt 与评测治理（§2、§14）；结束原因宣告工具调用时为 `protocol_error` + 一次有界修复（§8.6） | `executor/index.ts:263` | `executor-baseline.test.ts`：用例 2 |
+| 3 | 工具执行后模型只输出计划文字 | 无新平台调用时文本直接判 `completed` | 保留为合法 `final`；`completed` 不表示业务成功（§5.4） | `executor/index.ts:604` | `executor-baseline.test.ts`：用例 3 |
 | 4 | 连续空回答 | `finalResponseMissing` 后重试，无独立空答预算，最多 256 个模型步；耗尽得 `ai.final_response_missing` | 统一 Run Budget 与耗尽原因 | `executor/index.ts:267,609` | `executor-baseline.test.ts`：用例 4a/4b |
 | 5 | 达到 `maxModelSteps` | `ai.limit_exceeded` | 同上 | `executor/index.ts:609` | `executor-baseline.test.ts`：用例 5 |
 | 6 | 工具调用同时带文字 | 文字先进入 timeline `assistant_message`，后续最终答复仍为 `assistant_message`，没有 progress 语义 | 过程文本使用 `progress_message` 语义 | `streaming.ts:104` | `executor-baseline.test.ts`：工具过程文字和最终回答 |
-| 7 | 只调用 `search_tools`/`get_tool_details` | 强制回模型，即使模型附带文本 | 发现类不产生完成证据（§9） | `executor/index.ts:598` | `executor-tools.test.ts` |
+| 7 | 只调用 `search_tools`/`get_tool_details` | 强制回模型，即使模型附带文本 | 保留：发现类回模型（§9） | `executor/index.ts:598` | `executor-tools.test.ts` |
 | 8 | 只调用 `present_card`（presentation） | 回模型继续，不结束 Run | 呈现类不产生完成证据 | `executor/index.ts:600` | `executor-baseline.test.ts`：用例 8 |
-| 9 | 调用 `request_input`/`request_choice`（interactive） | Run 直接 `completed` 并结束模型循环，不等用户提交 | 统一为中断/恢复（§5.1） | `executor/index.ts:601` | `executor-baseline.test.ts`：用例 9（input/choice） |
+| 9 | 调用 `request_input`/`request_choice`（interactive） | Run 直接 `completed` 并结束模型循环，不等用户提交 | `awaiting_input` 中断并从 checkpoint 恢复（§8.4，Phase 4） | `executor/index.ts:601` | `executor-baseline.test.ts`：用例 9（input/choice） |
 | 10 | 只调用 `navigate_to_route` | 落到"无平台工具 + 有文本"分支判 `completed` | 呈现类不产生完成证据 | `executor/index.ts:604` | `executor-baseline.test.ts`：用例 10（导航有/无同一步文字） |
 | 24 | 结束原因宣告工具调用但没有工具调用 | 基线：文本被当作最终答复直接完成 | 现在：注入一次有界修复，仍违规则 `ai.model_protocol_violation` 失败 | `executor/decision.ts`、`executor/index.ts` | `executor-protocol.test.ts` |
-| 25 | 工具调用与非工具结束原因同时出现 | 基线：照常执行工具 | 现在：不执行工具，直接 `ai.model_protocol_violation` 失败 | `executor/decision.ts` | `executor-protocol.test.ts` |
+| 25 | 工具调用与非工具结束原因同时出现 | 基线：照常执行工具 | Phase 1 初版不执行工具并失败；Phase 1 修正后照常执行，结束原因只记遥测（§5.2） | `executor/decision.ts` | `executor-protocol.test.ts` |
 | 11 | 平台工具等待审批 | Run 置 `waiting_approval` 并退出；审批后置回 `queued` 重新 claim，靠 timeline 反推上下文 | 由 checkpoint 恢复（Phase 2） | `executor/index.ts:588` | `executor-tools.test.ts:543` |
 | 12 | 工具缺必填参数 | `ToolInterruption` → 事件 `run.input_required` + Run `waiting_input` | 同上 | `orchestrator.ts:73`、`index.ts:724` | `executor-baseline.test.ts`：缺必填参数先等待输入 |
 | 13 | 取消 | abort + DB `cancelRun` 置 Run 与未终态 ToolCall 为 `canceled` | 保留；不伪造成功 | `index.ts:113`、`postgres.ts:610` | `executor-tools.test.ts:432` |
-| 14 | 终态持久化耗尽 | 尽力置 `interrupted`，不伪造 `completed` | 保留（§12.5 fail closed） | `index.ts:637`、`run-stream-bus.ts:304` | `executor-tools.test.ts:340` |
+| 14 | 终态持久化耗尽 | 尽力置 `interrupted`，不伪造 `completed` | 保留（§12.5） | `index.ts:637`、`run-stream-bus.ts:304` | `executor-tools.test.ts:340` |
 | 15 | 进程退出（模型步间/工具完成后） | 内存计数丢失；timeline 反推部分状态；`running` 被对账置 `interrupted`，不续跑 | checkpoint 精确恢复（Phase 2） | `index.ts:759`、`resume.ts` | `executor-baseline.test.ts`：用例 15（三个重启边界） |
 | 16 | 同一 Run 并发 claim | `for update skip locked` + `row_version` 乐观锁 | 保留 | `postgres.ts:660` | `postgres-repository.test.ts:74`（真实 PG，当前跳过） |
-| 17 | 相同工具与参数重复调用 | 第 4 次同 `operationId + canonical args hash` 熔断，作为工具结果回灌 | 持久化幂等（§7.2） | `loop-guard.ts:84` | `loop-guard.test.ts` |
+| 17 | 相同工具与参数重复调用 | 第 4 次同 `operationId + canonical args hash` 熔断，作为工具结果回灌 | 计数随 checkpoint 恢复；下游幂等键为 tool call id（§7.2） | `loop-guard.ts:84` | `loop-guard.test.ts` |
 | 18 | Run 超时 | `ai.run_timeout` → Run `failed` | 统一 Run Budget | `index.ts:184` | `executor-baseline.test.ts`：用例 18 |
 | 19 | 用户并发配额超限 | claim 后直接置 Run `failed`，`ai.quota.user_concurrent_runs_exceeded` | 保留 | `index.ts:163` | `executor-baseline.test.ts`：用户并发配额超限 |
-| 20 | 目录发现不产生完成证据 | 成立（用例 7） | 保留（§9） | `executor/index.ts:598` | `executor-tools.test.ts:693` |
+| 20 | 目录发现后必须回模型 | 成立（用例 7） | 保留（§9） | `executor/index.ts:598` | `executor-tools.test.ts:693` |
 | 21 | Secret 不进入消息、日志和事件 | 现有脱敏单测覆盖成立 | 保留 | `redaction.ts` | `redaction.test.ts`、`telemetry-content.test.ts`；非完整 E2E 保证 |
-| 22 | 异步构建提交返回 HTTP 202、外部状态仍 queued | 工具 `succeeded`；下一步纯文字使 Run `completed`，没有外部状态回读 | `waiting_external` + 状态查询和权威验证 | `tools/orchestrator.ts`、`executor/index.ts` | `executor-baseline.test.ts`：异步场景 |
+| 22 | 异步构建提交返回 HTTP 202、外部状态仍 queued | 工具 `succeeded`；下一步纯文字使 Run `completed`，没有外部状态回读 | 工具结果为 `accepted`，Run 可正常 `completed`；最终答复不得声称已完成，由 Prompt 与评测约束（§5.3、§8.5，Phase 4） | `tools/orchestrator.ts`、`executor/index.ts` | `executor-baseline.test.ts`：异步场景 |
 | 23 | 终态落库成功但提交响应未知 | 同批次重试，唯一 completed 终态与消息 | 保留幂等提交 | `run-stream-bus.ts`、`persistence/postgres.ts` | `run-stream-bus.test.ts`：`retries an unknown commit result idempotently without duplicating the completed terminal` |
 
 ## 4. 预算与终态错误码现状
@@ -76,7 +76,7 @@ Phase 2 起该结论已被 `ai.run_checkpoints` 取代：控制流事实源的�
 | 空回答重试 | 无独立预算 | 仅受模型步数约束 | `ai.final_response_missing` |
 | Run 超时 | `runtimeSettings.runTimeoutMs` | 3600000 ms | `ai.run_timeout` |
 
-上述预算分属进程内存、远程配置和局部变量三处，耗尽后的用户可观察行为不一致，对应 13 号方案 P2。
+上述预算分属进程内存、远程配置和局部变量三处，耗尽后的用户可观察行为不一致，对应 13 号方案 P2，目标为统一 Run Budget（§6.1，Phase 4）。
 
 ## 5. 覆盖与缺口
 
@@ -150,7 +150,7 @@ Agent lint 与 typecheck 均通过，无诊断。实际执行包内 `node_module
 
 ## 8. Phase 1 变更记录
 
-状态：主体完成，**未完全通过验收**。终态协议只做到"完成判定不再依据文本"，完成证据（§5.4）属于 Phase 3–4；
+状态：主体完成，**未完全通过验收**。终态协议只做到"完成判定不再依据文本"（修订后的方案不再要求 Runtime 收集业务完成证据，见 13 号 §5.4）；
 流式投影未收敛（见下）。
 
 改动范围：新增 `executor/decision.ts` 纯函数，主循环只消费 `ModelDecision`；`streaming.ts` 透出
@@ -178,7 +178,7 @@ Agent lint 与 typecheck 均通过，无诊断。实际执行包内 `node_module
 
 - 流式投影未收敛：`streaming.ts:164` 在模型步内就把正文写成已完成的助手消息，`:177` 仍以 `answer.trim()`
   判断是否保留最终会话流。协议违规失败时，被拒的计划文字会以 `assistant_message` / `completed` 落库，
-  与 §6.6 的"未提交草稿或 `progress_message` 语义"冲突。该项按方案归入 Phase 3，Phase 1 不宣称已解决。
+  与方案中“过程文字使用未提交草稿或 progress 语义”的要求冲突。该项按方案归入 Phase 3，Phase 1 不宣称已解决。
 - 完成证据未落地：模型输出合法 `final` 仍然是当前唯一的完成依据，写操作与异步操作的权威回读属于 Phase 3–4。
 
 风险：
@@ -199,6 +199,17 @@ Agent lint 与 typecheck 均通过，无诊断。实际执行包内 `node_module
   但沙箱内的结果不能当作门禁通过。
 - `web` 的 `errors.test.ts` 与 `scripts/check-i18n.mjs` 通过。
 - 仍未验证：真实 E2E（API → Agent → Tool → 外部平台 → 权威回读），属 Phase 4 入口条件。
+
+### 8.1 Phase 1 修正
+
+方案修订后撤回了 Phase 1 的两项收紧，上文“风险”中的行 25 和 `length` 两条不再适用：
+
+- 有可解析的工具调用时一律执行，不再因结束原因不一致返回 `invalid_finish_reason`；`tool_use` 与
+  `tool_calls`、`function_call` 一样视为宣告工具调用。
+- 无工具调用时 `length` / `max_tokens` 以 `ai.model_output_truncated` 失败，`content_filter` 以
+  `ai.model_output_filtered` 失败，未知结束原因按 `stop` 处理；两个错误码已有五种语言的 i18n 映射。
+- 决策在 `decision.ts`，动作映射在 `graph.ts`；回归位置为 `executor-decision.test.ts`、
+  `executor-graph.test.ts` 与 `executor-protocol.test.ts`。
 
 ## 9. Phase 2 变更记录
 
@@ -258,7 +269,7 @@ Agent lint 与 typecheck 均通过，无诊断。实际执行包内 `node_module
 - 新增行 28：终态批次尚未提交（`phase=finalizing`）。恢复时不再调用模型：checkpoint 记录过
   未提交答复时重建助手消息与终态转换（仍走同一条流式批次路径），否则只补提交终态。
 
-### 9.3 与方案 §6.3 / §7.1 的偏差
+### 9.3 与原方案 checkpoint 字段设计的偏差
 
 - `selectedOperationIds` 不写入 checkpoint：`ai.runs.selected_operation_ids` 已经是持久化事实，
   重复保存会产生两份互相漂移的状态。
