@@ -65,7 +65,7 @@ func TestDockerComposeApplicationEnvironmentAllowlist(t *testing.T) {
 		"OTEL_SERVICE_VERSION":                    agentOnly("${DEVOPS_IMAGE_TAG:-nightly}"),
 		"AI_OBSERVABILITY_CAPTURE_CONTENT":        agentOnly("${AI_OBSERVABILITY_CAPTURE_CONTENT:-false}"),
 		"AI_OBSERVABILITY_CAPTURE_DATABASE_SPANS": agentOnly("${AI_OBSERVABILITY_CAPTURE_DATABASE_SPANS:-false}"),
-		"BUILD_EXECUTOR_IMAGE":                    workerOnly("${BUILD_EXECUTOR_IMAGE:-moby/buildkit:v0.24.0-rootless}"),
+		"BUILD_EXECUTOR_IMAGE":                    workerOnly("${BUILD_EXECUTOR_IMAGE:-moby/buildkit:v0.34.1-rootless}"),
 		"BUILD_EGRESS_MODE":                       workerOnly("${BUILD_EGRESS_MODE:-restricted}"),
 		"BUILD_JOB_TIMEOUT_SECONDS":               workerOnly("${BUILD_JOB_TIMEOUT_SECONDS:-1800}"),
 		"BUILD_JOB_TTL_SECONDS":                   workerOnly("${BUILD_JOB_TTL_SECONDS:-3600}"),

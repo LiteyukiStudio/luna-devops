@@ -26,7 +26,7 @@ The following versions are the current priority support and test ranges. Prefer 
 | cert-manager | `>= 1.0` | Must also support the current Kubernetes version |
 | PostgreSQL | `14 ~ 18` | `17` recommended; SQLite is unsupported |
 | Redis | `7.x ~ 8.x` | Cluster and Sentinel are not currently supported |
-| BuildKit | `v0.20+ rootless` | Default and priority test target is `v0.24.0-rootless` |
+| BuildKit | `v0.20+ rootless` | Default and priority test target is `v0.34.1-rootless` |
 
 ## Identity, notifications, and observability
 

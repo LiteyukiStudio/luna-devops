@@ -26,7 +26,7 @@
 | cert-manager | `>= 1.0` | 版本需同时兼容当前 Kubernetes |
 | PostgreSQL | `14 ~ 18` | 推荐 `17`；不支持 SQLite |
 | Redis | `7.x ~ 8.x` | 当前不支持 Cluster 或 Sentinel |
-| BuildKit | `v0.20+ rootless` | 默认并重点验证 `v0.24.0-rootless` |
+| BuildKit | `v0.20+ rootless` | 默认并重点验证 `v0.34.1-rootless` |
 
 ## 登录、通知与可观测
 

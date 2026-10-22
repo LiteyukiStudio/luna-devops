@@ -58,7 +58,7 @@ type apiEnvironment struct {
 
 type workerEnvironment struct {
 	Database                 databasePoolEnvironment `envPrefix:"WORKER_DB_"`
-	BuildExecutorImage       string                  `env:"BUILD_EXECUTOR_IMAGE" envDefault:"moby/buildkit:v0.24.0-rootless"`
+	BuildExecutorImage       string                  `env:"BUILD_EXECUTOR_IMAGE" envDefault:"moby/buildkit:v0.34.1-rootless"`
 	BuildEgressMode          string                  `env:"BUILD_EGRESS_MODE" envDefault:"restricted"`
 	BuildCacheEnabled        bool                    `env:"BUILD_CACHE_ENABLED" envDefault:"false"`
 	BuildCacheTag            string                  `env:"BUILD_CACHE_TAG" envDefault:"buildcache"`
