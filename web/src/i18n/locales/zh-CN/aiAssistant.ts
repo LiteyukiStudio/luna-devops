@@ -47,6 +47,8 @@ const aiAssistant = {
       model_context_insufficient: '当前请求超过所选模型的上下文窗口，请缩短输入或清理会话历史。',
       model_output_limit_invalid: '模型目录的输出上限无效，请联系平台管理员检查模型配置。',
       model_protocol_violation: '模型响应不符合执行协议，本次任务已停止，请检查已有执行结果后再重试。',
+      model_output_truncated: '模型回答因达到输出长度上限被截断，本次任务已停止，请缩小问题范围或检查已有执行结果后再重试。',
+      model_output_filtered: '模型回答被内容安全策略拦截，本次任务已停止，请调整请求内容后重试。',
       wallet_balance_insufficient: '个人钱包可用余额不足，模型请求未发送。',
       tool_not_available: '当前 Agent 实例无法使用所需平台工具。',
       tool_execution_failed: '平台工具执行失败，请稍后重试。',

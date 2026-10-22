@@ -7,6 +7,8 @@ describe('ai assistant error translations', () => {
     'ai.model_context_insufficient',
     'ai.model_output_limit_invalid',
     'ai.model_protocol_violation',
+    'ai.model_output_truncated',
+    'ai.model_output_filtered',
     'ai.wallet_balance_insufficient',
   ])('maps the stable model execution code %s to a public message', (code) => {
     expect(runFailureTranslationKey(code)).not.toBe('aiAssistant.runFailure.generic')

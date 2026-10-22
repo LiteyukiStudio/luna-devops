@@ -47,6 +47,8 @@ const aiAssistant = {
       model_context_insufficient: '현재 요청이 선택한 모델의 컨텍스트 윈도우를 초과합니다. 입력을 줄이거나 대화 기록을 정리하세요.',
       model_output_limit_invalid: '모델 카탈로그의 출력 상한이 유효하지 않습니다. 플랫폼 관리자에게 문의하여 모델 설정을 확인하세요.',
       model_protocol_violation: '모델 응답이 실행 프로토콜을 준수하지 않아 이번 작업이 중단되었습니다. 다시 시도하기 전에 기존 실행 결과를 확인하세요.',
+      model_output_truncated: '모델 응답이 출력 길이 한도에 도달해 잘려 이번 작업이 중단되었습니다. 요청 범위를 줄이거나 기존 실행 결과를 확인한 후 다시 시도하세요.',
+      model_output_filtered: '모델 응답이 콘텐츠 안전 정책에 의해 차단되어 이번 작업이 중단되었습니다. 요청 내용을 조정한 후 다시 시도하세요.',
       wallet_balance_insufficient: '개인 지갑의 사용 가능 잔액이 부족합니다. 모델 요청이 전송되지 않았습니다.',
       tool_not_available: '현재 Agent 인스턴스는 필요한 플랫폼 도구를 사용할 수 없습니다.',
       tool_execution_failed: '플랫폼 도구 실행에 실패했습니다. 잠시 후 다시 시도하세요.',

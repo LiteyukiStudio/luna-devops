@@ -125,15 +125,16 @@ describe("模型协议错误处理", () => {
     expect(client.calls).toHaveLength(1)
   })
 
-  it("工具调用与非工具结束原因同时出现时不执行工具，直接以协议违规失败", async () => {
-    const owner = "usr_protocol_invalid_reason"
-    const { repository, runId } = await queuedRun(owner, "protocol-invalid-reason")
+  it("工具调用与非工具结束原因同时出现时照常执行工具", async () => {
+    const owner = "usr_protocol_stop_with_calls"
+    const { repository, runId } = await queuedRun(owner, "protocol-stop-with-calls")
     const catalog = ToolCatalog.load([testToolOperation("getProject")])
     const store = repository.toolCallStore
     const client = new DeterministicLunaApiClient(() => ({ status: 200, body: {} }))
     const tools = new ToolOrchestrator(catalog, client, new ProjectingToolCallStore(store, repository))
     const { provider, modelCalls } = protocolProvider([
       { toolCalls: [{ id: "call-1", operationId: "getProject", arguments: {} }], finishReason: "stop" },
+      { text: "部署配置正常。", finishReason: "stop" },
     ])
     const executor = testExecutor(
       repository,
@@ -143,23 +144,24 @@ describe("模型协议错误处理", () => {
 
     await executor.runOnce()
 
-    const run = await repository.getRun(owner, runId)
-    expect(run?.status).toBe("failed")
-    expect(run?.errorCode).toBe("ai.model_protocol_violation")
-    expect(modelCalls()).toBe(1)
-    expect(client.calls).toHaveLength(0)
+    expect((await repository.getRun(owner, runId))?.status).toBe("completed")
+    expect(modelCalls()).toBe(2)
+    expect(client.calls).toHaveLength(1)
   })
 
-  it("非正常最终结束原因不会把截断文本判为完成", async () => {
-    const owner = "usr_protocol_length"
-    const { repository, runId } = await queuedRun(owner, "protocol-length")
-    const { provider, modelCalls } = protocolProvider([{ text: "未完成的回答", finishReason: "length" }])
+  it.each([
+    ["length", "ai.model_output_truncated"],
+    ["content_filter", "ai.model_output_filtered"],
+  ])("结束原因为 %s 的文本不判为完成，以 %s 失败", async (finishReason, errorCode) => {
+    const owner = `usr_protocol_${finishReason}`
+    const { repository, runId } = await queuedRun(owner, `protocol-${finishReason}`)
+    const { provider, modelCalls } = protocolProvider([{ text: "未完成的回答", finishReason }])
 
     await testExecutor(repository, new ModelRuntime(provider, testRegistry())).runOnce()
 
     const run = await repository.getRun(owner, runId)
     expect(run?.status).toBe("failed")
-    expect(run?.errorCode).toBe("ai.model_protocol_violation")
+    expect(run?.errorCode).toBe(errorCode)
     expect(modelCalls()).toBe(1)
   })
 
