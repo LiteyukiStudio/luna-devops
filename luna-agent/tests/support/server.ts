@@ -25,6 +25,7 @@ export function buildTestServer(input: TestServerDependencies) {
     tools,
     remoteConfig: input.remoteConfig ?? remote.source,
     cancelRun: input.cancelRun ?? (runId => tools.cancelRun(runId)),
+    cancelExecutingRun: input.cancelExecutingRun ?? (async () => false),
     toolCatalogDigest: input.toolCatalogDigest ?? (() => catalog.digest),
     streamBus,
     ...(input.streamHubLimits ? { streamHubLimits: input.streamHubLimits } : {}),

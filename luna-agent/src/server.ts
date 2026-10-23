@@ -49,6 +49,7 @@ export type BuildServerDependencies = {
   tools: ToolOrchestrator
   remoteConfig: Pick<RemoteConfigSource, "current">
   cancelRun: (runId: string) => boolean | Promise<boolean>
+  cancelExecutingRun: (runId: string) => Promise<boolean>
   toolCatalogDigest: () => string
   streamBus: RunStreamBus
   streamHubLimits?: { perRun: number, perInstance: number, pendingEvents?: number, pendingBytes?: number }
@@ -267,14 +268,21 @@ export function buildServer(input: BuildServerDependencies): FastifyInstance {
       const { runId } = z.object({ runId: id }).parse(request.params)
       const current = await input.repository.getRun(request.actor.userId, runId)
       if (!current) return reply.code(404).send(errorBody("ai.run_not_found", request.id))
-      const wasTerminal = isTerminalRun(current)
-      const value = wasTerminal
-        ? current
-        : await input.repository.cancelRun(request.actor.userId, runId)
-      if (!value) return reply.code(404).send(errorBody("ai.run_not_found", request.id))
-      if (!wasTerminal && value.status === "canceled") {
-        try { await input.cancelRun(runId) } catch { /* 权威 canceled 已持久化，本地中止仅为 best effort。 */ }
+      let value: Run | undefined = current
+      if (!isTerminalRun(current)) {
+        // 本地执行器持有 Run 时由它通过同一流式会话提交 canceled，事件序号与已推送的实时事件连续；
+        // 在这里直接写库会复用实时事件已占用的序号，客户端会把终态事件当作重复丢弃。
+        let executorOwned = false
+        try { executorOwned = await input.cancelExecutingRun(runId) } catch { /* 本地中止失败时退回直接取消。 */ }
+        if (executorOwned) value = await input.repository.getRun(request.actor.userId, runId)
+        else {
+          value = await input.repository.cancelRun(request.actor.userId, runId)
+          if (value?.status === "canceled") {
+            try { await input.cancelRun(runId) } catch { /* 权威 canceled 已持久化，本地中止仅为 best effort。 */ }
+          }
+        }
       }
+      if (!value) return reply.code(404).send(errorBody("ai.run_not_found", request.id))
       if (isTerminalRun(value)) await input.streamBus.cleanup(runId).catch(() => undefined)
       return reply.code(202).send(presentRun(value))
     })
