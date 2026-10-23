@@ -6,36 +6,38 @@ import (
 	"net/http"
 	"strings"
 
+	runtimeapi "github.com/LiteyukiStudio/devops/internal/api/runtimeapi"
 	"github.com/LiteyukiStudio/devops/internal/buildtemplate"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/runtimeconfig"
 	"github.com/gin-gonic/gin"
 )
 
-func (h *Handlers) deploymentTargetFromInput(ctx *gin.Context, user model.User, app model.Application, input deploymentTargetInput, targetID, kubernetesName string, existingSecretFiles map[string]string, existingRuntimeConfigRefs string) (model.DeploymentTarget, []deploymentTargetDataVolumeInput, bool) {
+// deploymentTargetFromInput 返回待持久化的部署配置、数据卷输入，以及统一键值表中需要在保存事务内应用的加密操作。
+func (h *Handlers) deploymentTargetFromInput(ctx *gin.Context, user model.User, app model.Application, input deploymentTargetInput, targetID, kubernetesName string, existingSecretFiles map[string]string, existingRuntimeConfigRefs string) (model.DeploymentTarget, []deploymentTargetDataVolumeInput, runtimeapi.RuntimeSecretMutationInput, bool) {
 	_, ok := h.projectNamespaceForDeploymentTarget(ctx, app.ProjectID)
 	if !ok {
-		return model.DeploymentTarget{}, nil, false
+		return model.DeploymentTarget{}, nil, runtimeapi.RuntimeSecretMutationInput{}, false
 	}
 	if namespace := strings.TrimSpace(input.Namespace); namespace != "" {
 		writeErrorCode(ctx, http.StatusBadRequest, "deployment_target.namespace_forbidden", "deployment target namespace is managed by the project and cannot be overridden")
-		return model.DeploymentTarget{}, nil, false
+		return model.DeploymentTarget{}, nil, runtimeapi.RuntimeSecretMutationInput{}, false
 	}
 	sourceType := normalizeDeploymentSourceType(input.SourceType)
 	repositoryBindingID := strings.TrimSpace(input.RepositoryBindingID)
 	if sourceType == "repository" {
 		if repositoryBindingID == "" {
 			writeErrorCode(ctx, http.StatusBadRequest, "deployment_target.repository_binding_required", "代码仓库不能为空")
-			return model.DeploymentTarget{}, nil, false
+			return model.DeploymentTarget{}, nil, runtimeapi.RuntimeSecretMutationInput{}, false
 		}
 		var binding model.RepositoryBinding
 		if err := h.dbFor(ctx).First(&binding, "id = ? and project_id = ? and application_id = ?", repositoryBindingID, app.ProjectID, app.ID).Error; err != nil {
 			writeErrorCode(ctx, http.StatusBadRequest, "deployment_target.repository_binding_not_found", "代码仓库绑定不存在")
-			return model.DeploymentTarget{}, nil, false
+			return model.DeploymentTarget{}, nil, runtimeapi.RuntimeSecretMutationInput{}, false
 		}
 	} else if strings.TrimSpace(input.ImageRef) == "" {
 		writeErrorCode(ctx, http.StatusBadRequest, "deployment_target.image_ref_required", "镜像地址不能为空")
-		return model.DeploymentTarget{}, nil, false
+		return model.DeploymentTarget{}, nil, runtimeapi.RuntimeSecretMutationInput{}, false
 	}
 	targetRepository, targetTag := splitTargetImageRef(input.TargetImageRef)
 	if targetRepository == "" {
@@ -53,48 +55,48 @@ func (h *Handlers) deploymentTargetFromInput(ctx *gin.Context, user model.User, 
 	}
 	dataVolumes, ok := normalizeDataVolumes(ctx, input.DataVolumes)
 	if !ok {
-		return model.DeploymentTarget{}, nil, false
+		return model.DeploymentTarget{}, nil, runtimeapi.RuntimeSecretMutationInput{}, false
 	}
 	servicePorts, ok := normalizeDeploymentServicePorts(ctx, input.ServicePorts, 8080)
 	if !ok {
-		return model.DeploymentTarget{}, nil, false
+		return model.DeploymentTarget{}, nil, runtimeapi.RuntimeSecretMutationInput{}, false
 	}
 	replicas, err := normalizeDeploymentReplicas(input.Replicas)
 	if err != nil {
 		writeArgumentErrorCode(ctx, http.StatusBadRequest, "deployment_target.replicas_invalid", err.Error(), "replicas", nil, false)
-		return model.DeploymentTarget{}, nil, false
+		return model.DeploymentTarget{}, nil, runtimeapi.RuntimeSecretMutationInput{}, false
 	}
 	runtimeCPURequest, ok := normalizeBuildResourceQuantity(ctx, input.CPURequest, model.DefaultDeploymentCPURequest, "运行 CPU")
 	if !ok {
-		return model.DeploymentTarget{}, nil, false
+		return model.DeploymentTarget{}, nil, runtimeapi.RuntimeSecretMutationInput{}, false
 	}
 	runtimeMemoryRequest, ok := normalizeBuildResourceQuantity(ctx, input.MemoryRequest, model.DefaultDeploymentMemoryRequest, "运行内存")
 	if !ok {
-		return model.DeploymentTarget{}, nil, false
+		return model.DeploymentTarget{}, nil, runtimeapi.RuntimeSecretMutationInput{}, false
 	}
 	kubernetesAdvanced, ok := normalizeDeploymentKubernetesAdvanced(ctx, input)
 	if !ok {
-		return model.DeploymentTarget{}, nil, false
+		return model.DeploymentTarget{}, nil, runtimeapi.RuntimeSecretMutationInput{}, false
 	}
 	autoScaling, ok := normalizeDeploymentAutoScaling(ctx, input, replicas)
 	if !ok {
-		return model.DeploymentTarget{}, nil, false
+		return model.DeploymentTarget{}, nil, runtimeapi.RuntimeSecretMutationInput{}, false
 	}
 	buildCPURequest, ok := normalizeBuildResourceQuantity(ctx, input.BuildCPURequest, defaultBuildCPURequest, "构建 CPU")
 	if !ok {
-		return model.DeploymentTarget{}, nil, false
+		return model.DeploymentTarget{}, nil, runtimeapi.RuntimeSecretMutationInput{}, false
 	}
 	buildMemoryRequest, ok := normalizeBuildResourceQuantity(ctx, input.BuildMemoryRequest, defaultBuildMemoryRequest, "构建内存")
 	if !ok {
-		return model.DeploymentTarget{}, nil, false
+		return model.DeploymentTarget{}, nil, runtimeapi.RuntimeSecretMutationInput{}, false
 	}
 	buildTimeoutSeconds, ok := normalizeBuildTimeoutSeconds(ctx, input.BuildTimeoutSeconds)
 	if !ok {
-		return model.DeploymentTarget{}, nil, false
+		return model.DeploymentTarget{}, nil, runtimeapi.RuntimeSecretMutationInput{}, false
 	}
 	buildArgs, ok := normalizeBuildArgsInput(ctx, input.BuildArgs)
 	if !ok {
-		return model.DeploymentTarget{}, nil, false
+		return model.DeploymentTarget{}, nil, runtimeapi.RuntimeSecretMutationInput{}, false
 	}
 	buildDefinitionMode := buildtemplate.DefinitionModeRepository
 	buildTemplateID := ""
@@ -107,12 +109,12 @@ func (h *Handlers) deploymentTargetFromInput(ctx *gin.Context, user model.User, 
 		definition, found := buildtemplate.Find(buildTemplateID, buildTemplateVersion)
 		if !found {
 			writeErrorCode(ctx, http.StatusBadRequest, "build_template.not_found", "build template not found")
-			return model.DeploymentTarget{}, nil, false
+			return model.DeploymentTarget{}, nil, runtimeapi.RuntimeSecretMutationInput{}, false
 		}
 		values, err := buildtemplate.NormalizeValues(definition, input.BuildTemplateValues)
 		if err != nil {
 			writeErrorCode(ctx, http.StatusBadRequest, "build_template.invalid", "build template values are invalid")
-			return model.DeploymentTarget{}, nil, false
+			return model.DeploymentTarget{}, nil, runtimeapi.RuntimeSecretMutationInput{}, false
 		}
 		buildTemplateVersion = definition.Version
 		buildTemplateValues = buildtemplate.EncodeValues(values)
@@ -120,7 +122,7 @@ func (h *Handlers) deploymentTargetFromInput(ctx *gin.Context, user model.User, 
 	clusterID := strings.TrimSpace(input.ClusterID)
 	targetRegistryID := strings.TrimSpace(input.TargetRegistryID)
 	if _, ok := h.runtimeClusterForProjectUse(ctx, user, app.ProjectID, clusterID); !ok {
-		return model.DeploymentTarget{}, nil, false
+		return model.DeploymentTarget{}, nil, runtimeapi.RuntimeSecretMutationInput{}, false
 	}
 	targetRepository, targetTag, ok = h.applyRegistryCredentialImageTemplate(ctx, user, app, sourceType, targetRegistryID, targetRepository, targetTag, model.DeploymentTarget{
 		ID:    targetID,
@@ -128,38 +130,38 @@ func (h *Handlers) deploymentTargetFromInput(ctx *gin.Context, user model.User, 
 		Stage: stage,
 	})
 	if !ok {
-		return model.DeploymentTarget{}, nil, false
+		return model.DeploymentTarget{}, nil, runtimeapi.RuntimeSecretMutationInput{}, false
 	}
-	publicEnvironment, ok := normalizePublicEnvironmentVariables(ctx, input.EnvironmentVariables)
+	publicEnvironment, secretMutation, ok := runtimeapi.NormalizeEnvironmentVariables(ctx, input.EnvironmentVariables)
 	if !ok {
-		return model.DeploymentTarget{}, nil, false
+		return model.DeploymentTarget{}, nil, runtimeapi.RuntimeSecretMutationInput{}, false
 	}
 	envVars, err := runtimeconfig.EncodeKeyValue(publicEnvironment)
 	if err != nil {
 		writeErrorCode(ctx, http.StatusBadRequest, "deployment.runtime_config_invalid", "运行时环境变量格式无效")
-		return model.DeploymentTarget{}, nil, false
+		return model.DeploymentTarget{}, nil, runtimeapi.RuntimeSecretMutationInput{}, false
 	}
 	runtimeConfigRefs, ok := h.runtimeConfigRefsFromInput(ctx, app.ProjectID, input, existingRuntimeConfigRefs)
 	if !ok {
-		return model.DeploymentTarget{}, nil, false
+		return model.DeploymentTarget{}, nil, runtimeapi.RuntimeSecretMutationInput{}, false
 	}
 	configFiles, ok := normalizeRuntimeConfigFilesInput(ctx, input.ConfigFiles)
 	if !ok {
-		return model.DeploymentTarget{}, nil, false
+		return model.DeploymentTarget{}, nil, runtimeapi.RuntimeSecretMutationInput{}, false
 	}
 	secretFiles, ok := h.runtimeSecretFilesFromInput(ctx, user, targetID, input.SecretFiles, existingSecretFiles)
 	if !ok {
-		return model.DeploymentTarget{}, nil, false
+		return model.DeploymentTarget{}, nil, runtimeapi.RuntimeSecretMutationInput{}, false
 	}
 	secretFilesContent, err := json.Marshal(secretFiles)
 	if err != nil {
 		writeErrorCode(ctx, http.StatusInternalServerError, "deployment.runtime_secret_files_invalid", "runtime secret files could not be encoded")
-		return model.DeploymentTarget{}, nil, false
+		return model.DeploymentTarget{}, nil, runtimeapi.RuntimeSecretMutationInput{}, false
 	}
 	for _, volume := range dataVolumes {
 		if runtimeDataPathConflicts(volume.MountPath, configFiles, string(secretFilesContent)) {
 			writeErrorCode(ctx, http.StatusBadRequest, "deployment.runtime_path_invalid", "deployment runtime paths conflict")
-			return model.DeploymentTarget{}, nil, false
+			return model.DeploymentTarget{}, nil, runtimeapi.RuntimeSecretMutationInput{}, false
 		}
 	}
 	return model.DeploymentTarget{
@@ -243,7 +245,7 @@ func (h *Handlers) deploymentTargetFromInput(ctx *gin.Context, user model.User, 
 		WebConsoleEnabled:            normalizeWebConsoleOverride(input.WebConsoleEnabled),
 		Enabled:                      input.Enabled,
 		CreatedBy:                    user.ID,
-	}, dataVolumes, true
+	}, dataVolumes, secretMutation, true
 }
 
 func normalizeDeploymentReplicas(value *int) (int, error) {

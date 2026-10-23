@@ -2,6 +2,7 @@ package runtimeapi
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/LiteyukiStudio/devops/internal/model"
@@ -77,6 +78,18 @@ func ProjectRuntimeConfigSetSecretMutationOwner(setID, projectID string) Runtime
 func NormalizePublicEnvironmentVariables(ctx *gin.Context, items []RuntimeEnvironmentVariableInput) (map[string]string, bool) {
 	return normalizePublicEnvironmentVariables(ctx, items)
 }
+func NormalizeEnvironmentVariables(ctx *gin.Context, items []RuntimeEnvironmentVariableInput) (map[string]string, RuntimeSecretMutationInput, bool) {
+	return normalizeEnvironmentVariables(ctx, items)
+}
+func RuntimeEnvironmentKeyConflicts(publicRaw string, secretKeys map[string]struct{}) []string {
+	return runtimeEnvironmentKeyConflicts(publicRaw, secretKeys)
+}
+func IsRuntimeEnvironmentKeyConflict(err error) bool {
+	return errors.Is(err, errRuntimeEnvironmentKeyConflict)
+}
+func WriteRuntimeEnvironmentKeyConflict(ctx *gin.Context) {
+	writeRuntimeEnvironmentKeyConflict(ctx)
+}
 func RuntimeEnvironmentVariables(publicRaw, secretRaw string) []RuntimeEnvironmentVariableResponse {
 	return runtimeEnvironmentVariables(publicRaw, secretRaw)
 }
@@ -134,6 +147,16 @@ func (h *Handler) ObserveRuntimeClusters(ctx context.Context, clusters []model.R
 }
 func (h *Handler) RuntimeSecretFilesFromInput(ctx *gin.Context, user model.User, ownerID, value string, existing map[string]string) (map[string]string, bool) {
 	return h.runtimeSecretFilesFromInput(ctx, user, ownerID, value, existing)
+}
+
+// MutateRuntimeSecretsTx 在调用方事务内应用密钥变更并返回编码后的最新引用。
+func (h *Handler) MutateRuntimeSecretsTx(ctx context.Context, tx *gorm.DB, user model.User, prepared PreparedRuntimeSecretMutation, owner RuntimeSecretMutationOwner) (RuntimeSecretMutationResponse, string, error) {
+	return h.mutateRuntimeSecretsTx(ctx, tx, user, preparedRuntimeSecretMutation{
+		values:        prepared.Values,
+		configuredKey: prepared.ConfiguredKeys,
+		generatedKey:  prepared.GeneratedKeys,
+		clearKey:      prepared.ClearKeys,
+	}, owner)
 }
 func (h *Handler) MutateRuntimeSecrets(ctx context.Context, user model.User, prepared PreparedRuntimeSecretMutation, owner RuntimeSecretMutationOwner) (RuntimeSecretMutationResponse, error) {
 	return h.mutateRuntimeSecrets(ctx, user, preparedRuntimeSecretMutation{

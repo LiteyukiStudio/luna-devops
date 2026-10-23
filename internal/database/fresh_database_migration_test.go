@@ -23,7 +23,7 @@ import (
 
 const (
 	baselineMigrationVersion = 103
-	latestMigrationVersion   = 105
+	latestMigrationVersion   = 106
 )
 
 func TestEmbeddedMigrationsContainExpectedFiles(t *testing.T) {
@@ -32,12 +32,14 @@ func TestEmbeddedMigrationsContainExpectedFiles(t *testing.T) {
 		t.Fatalf("read embedded migrations: %v", err)
 	}
 	migrationFiles := map[string]bool{
-		"000103_baseline.up.sql":                  false,
-		"000103_baseline.down.sql":                false,
-		"000104_bridge_retained_volumes.up.sql":   false,
-		"000104_bridge_retained_volumes.down.sql": false,
-		"000105_ai_run_checkpoints.up.sql":        false,
-		"000105_ai_run_checkpoints.down.sql":      false,
+		"000103_baseline.up.sql":                        false,
+		"000103_baseline.down.sql":                      false,
+		"000104_bridge_retained_volumes.up.sql":         false,
+		"000104_bridge_retained_volumes.down.sql":       false,
+		"000105_ai_run_checkpoints.up.sql":              false,
+		"000105_ai_run_checkpoints.down.sql":            false,
+		"000106_runtime_env_secret_uniqueness.up.sql":   false,
+		"000106_runtime_env_secret_uniqueness.down.sql": false,
 	}
 	migrationCount := 0
 	for _, entry := range entries {
@@ -209,6 +211,7 @@ WHERE namespace.nspname = current_schema()
 	assertFreshMigrationState(t, testDB)
 	assertStableModelMigrationCoverage(t, testDB)
 	assertActiveDeploymentStageUniqueness(t, testDB)
+	assertRuntimeEnvConflictMigrationRoundTrip(t, testDB, runner)
 	assertDirtyMigrationFailsClosed(t, testDB)
 }
 
@@ -894,5 +897,112 @@ func assertActiveDeploymentStageUniqueness(t *testing.T, db *gorm.DB) {
 	}
 	if err := insertTarget("dplt_stage_reused"); err != nil {
 		t.Fatalf("reuse deployment stage after soft deletion: %v", err)
+	}
+}
+
+// assertRuntimeEnvConflictMigrationRoundTrip 验证 000106 在 up/down/reapply 下按“密钥优先”清理同名普通项，
+// 只在审计中记录名称与数量，并能由 down 完整恢复。
+func assertRuntimeEnvConflictMigrationRoundTrip(t *testing.T, db *gorm.DB, runner *migrate.Migrate) {
+	t.Helper()
+	const uniquenessVersion = 106
+	if err := runner.Migrate(uniquenessVersion - 1); err != nil {
+		t.Fatalf("roll back to version before runtime env uniqueness: %v", err)
+	}
+	now := time.Now()
+	seed := []string{
+		`INSERT INTO projects (id, identifier, kubernetes_namespace, name, created_at, updated_at) VALUES ('prj_env_conflict', 'env-conflict', 'luna-env-conflict', 'Env Conflict', $1, $1)`,
+		`INSERT INTO applications (id, project_id, identifier, name, created_at, updated_at) VALUES ('app_env_conflict', 'prj_env_conflict', 'api', 'API', $1, $1)`,
+		`INSERT INTO deployment_targets (id, project_id, application_id, name, stage, kubernetes_name, env_vars, secret_refs, created_at, updated_at) VALUES
+			('dt_env_conflict', 'prj_env_conflict', 'app_env_conflict', 'conflict', 'dev', 'api-dev', '{"LOG_LEVEL":"info","TOKEN":"shadowed"}', '{"TOKEN":"sec_ref"}', $1, $1),
+			('dt_env_clean', 'prj_env_conflict', 'app_env_conflict', 'clean', 'test', 'api-test', '{"LOG_LEVEL":"debug"}', '{"API_KEY":"sec_ref_2"}', $1, $1),
+			('dt_env_empty', 'prj_env_conflict', 'app_env_conflict', 'empty', 'staging', 'api-staging', '', '', $1, $1),
+			('dt_env_legacy', 'prj_env_conflict', 'app_env_conflict', 'legacy', 'prod', 'api-prod', 'not-json', '{"TOKEN":"sec_ref_3"}', $1, $1)`,
+		`INSERT INTO project_runtime_config_sets (id, project_id, name, env_vars, secret_refs, created_at, updated_at) VALUES
+			('prcs_env_conflict', 'prj_env_conflict', 'shared', '{"DB_PASSWORD":"shadowed","REGION":"cn"}', '{"DB_PASSWORD":"sec_ref_4"}', $1, $1)`,
+	}
+	for _, statement := range seed {
+		if err := db.Exec(statement, now).Error; err != nil {
+			t.Fatalf("seed runtime env conflict fixture: %v", err)
+		}
+	}
+	envVars := func(table, id string) string {
+		var value string
+		if err := db.Raw(`SELECT env_vars FROM `+table+` WHERE id = ?`, id).Scan(&value).Error; err != nil {
+			t.Fatalf("read %s env vars: %v", id, err)
+		}
+		return value
+	}
+	auditCount := func() int64 {
+		var count int64
+		if err := db.Raw(`SELECT count(*) FROM audit_logs WHERE action LIKE '%.runtime_env.conflict_resolved'`).Scan(&count).Error; err != nil {
+			t.Fatalf("count runtime env conflict audits: %v", err)
+		}
+		return count
+	}
+	assertMigrated := func() {
+		t.Helper()
+		if got := envVars("deployment_targets", "dt_env_conflict"); got != `{"LOG_LEVEL": "info"}` {
+			t.Fatalf("conflicting target env vars = %q, want TOKEN removed", got)
+		}
+		if got := envVars("project_runtime_config_sets", "prcs_env_conflict"); got != `{"REGION": "cn"}` {
+			t.Fatalf("conflicting config set env vars = %q, want DB_PASSWORD removed", got)
+		}
+		if got := envVars("deployment_targets", "dt_env_clean"); got != `{"LOG_LEVEL":"debug"}` {
+			t.Fatalf("clean target env vars changed to %q", got)
+		}
+		if got := envVars("deployment_targets", "dt_env_legacy"); got != "not-json" {
+			t.Fatalf("unparsable target env vars changed to %q", got)
+		}
+		if got := auditCount(); got != 2 {
+			t.Fatalf("runtime env conflict audits = %d, want 2", got)
+		}
+		var metadata string
+		if err := db.Raw(`SELECT metadata::text FROM audit_logs WHERE action = 'deployment_target.runtime_env.conflict_resolved' AND resource = 'dt_env_conflict'`).Scan(&metadata).Error; err != nil {
+			t.Fatalf("read conflict audit metadata: %v", err)
+		}
+		if metadata != `{"keys": ["TOKEN"], "count": 1}` || strings.Contains(metadata, "shadowed") {
+			t.Fatalf("conflict audit metadata = %q, want key names and count only", metadata)
+		}
+	}
+
+	if err := runner.Migrate(uniquenessVersion); err != nil {
+		t.Fatalf("apply runtime env uniqueness migration: %v", err)
+	}
+	assertMigrated()
+
+	if err := runner.Steps(-1); err != nil {
+		t.Fatalf("roll back runtime env uniqueness migration: %v", err)
+	}
+	if got := envVars("deployment_targets", "dt_env_conflict"); got != `{"TOKEN": "shadowed", "LOG_LEVEL": "info"}` {
+		t.Fatalf("restored target env vars = %q, want TOKEN restored", got)
+	}
+	if got := envVars("project_runtime_config_sets", "prcs_env_conflict"); got != `{"REGION": "cn", "DB_PASSWORD": "shadowed"}` {
+		t.Fatalf("restored config set env vars = %q, want DB_PASSWORD restored", got)
+	}
+	if got := auditCount(); got != 0 {
+		t.Fatalf("runtime env conflict audits after down = %d, want 0", got)
+	}
+	if db.Migrator().HasTable("runtime_env_conflict_backups") {
+		t.Fatal("down migration retained runtime_env_conflict_backups")
+	}
+
+	if err := runner.Migrate(uniquenessVersion); err != nil {
+		t.Fatalf("reapply runtime env uniqueness migration: %v", err)
+	}
+	assertMigrated()
+	assertRunnerMigrationVersion(t, runner, latestMigrationVersion)
+
+	cleanup := []string{
+		`DELETE FROM audit_logs WHERE action LIKE '%.runtime_env.conflict_resolved'`,
+		`DELETE FROM runtime_env_conflict_backups`,
+		`DELETE FROM project_runtime_config_sets WHERE project_id = 'prj_env_conflict'`,
+		`DELETE FROM deployment_targets WHERE project_id = 'prj_env_conflict'`,
+		`DELETE FROM applications WHERE project_id = 'prj_env_conflict'`,
+		`DELETE FROM projects WHERE id = 'prj_env_conflict'`,
+	}
+	for _, statement := range cleanup {
+		if err := db.Exec(statement).Error; err != nil {
+			t.Fatalf("clean runtime env conflict fixture: %v", err)
+		}
 	}
 }

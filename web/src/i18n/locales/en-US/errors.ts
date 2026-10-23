@@ -38,6 +38,8 @@ const errors = {
     runtime_environment_items_invalid: 'Configure no more than 128 runtime environment variables.',
     runtime_environment_value_too_long: 'Each runtime environment variable value must be no more than 8192 characters.',
     runtime_environment_value_mode_invalid: 'Choose the correct public or secret value type.',
+    runtime_environment_key_conflict: 'A plain variable and an encrypted variable cannot share a name. Rename one or clear the other first.',
+    secret_value_required: 'Enter a value when setting an encrypted variable.',
     secret_items_invalid: 'Submit between 1 and 128 runtime secret operations.',
     secret_operation_invalid: 'Choose an explicit set, generate, or clear secret operation.',
     secret_value_too_long: 'Each runtime secret value must be no more than 8192 characters.',

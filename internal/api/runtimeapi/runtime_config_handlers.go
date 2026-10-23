@@ -3,6 +3,7 @@ package runtimeapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"path"
 	"strings"
@@ -108,8 +109,23 @@ func (h *Handlers) UpdateProjectRuntimeConfigSet(ctx *gin.Context) {
 			return err
 		}
 		existing.SecretRefs = current.SecretRefs
+		secretRefs, err := decodeRuntimeSecretRefs(current.SecretRefs)
+		if err != nil {
+			return errRuntimeSecretMutationUnavailable
+		}
+		secretKeys := make(map[string]struct{}, len(secretRefs))
+		for key := range secretRefs {
+			secretKeys[key] = struct{}{}
+		}
+		if len(runtimeEnvironmentKeyConflicts(existing.EnvVars, secretKeys)) > 0 {
+			return errRuntimeEnvironmentKeyConflict
+		}
 		return tx.Save(&existing).Error
 	}); err != nil {
+		if errors.Is(err, errRuntimeEnvironmentKeyConflict) {
+			writeRuntimeEnvironmentKeyConflict(ctx)
+			return
+		}
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}

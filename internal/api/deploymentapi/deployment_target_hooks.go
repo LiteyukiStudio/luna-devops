@@ -13,7 +13,8 @@ import (
 
 var errDeploymentStageExists = errors.New("deployment stage already exists")
 
-type deploymentTargetAfterPersist func(current model.DeploymentTarget) error
+// deploymentTargetAfterPersist 在部署配置写入后、事务提交前执行；返回错误会回滚整次保存。
+type deploymentTargetAfterPersist func(tx *gorm.DB, current model.DeploymentTarget) error
 
 func (h *Handlers) createDeploymentTarget(target model.DeploymentTarget, dataVolumes []deploymentTargetDataVolumeInput, hookInputs []deploymentTargetHookBindingInput, buildEnvironment *model.BuildEnvironmentConfig, ctx context.Context) (deploymentVolumeMountChanges, error) {
 	return h.persistDeploymentTarget(target, dataVolumes, hookInputs, buildEnvironment, nil, true, ctx)
@@ -90,7 +91,7 @@ func (h *Handlers) persistDeploymentTargetWithAfterPersist(target model.Deployme
 			}
 		}
 		if afterPersist != nil {
-			if err := afterPersist(current); err != nil {
+			if err := afterPersist(tx, current); err != nil {
 				return err
 			}
 		}

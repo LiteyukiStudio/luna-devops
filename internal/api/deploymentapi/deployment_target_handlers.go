@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	runtimeapi "github.com/LiteyukiStudio/devops/internal/api/runtimeapi"
 	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/model"
@@ -106,7 +107,7 @@ func (h *Handlers) CreateDeploymentTarget(ctx *gin.Context) {
 	}
 	targetID := id.New("dplt")
 	kubernetesName := resourceidentifier.DeploymentTargetName(app.Identifier, stage)
-	target, dataVolumes, ok := h.deploymentTargetFromInput(ctx, user, app, input, targetID, kubernetesName, nil, "")
+	target, dataVolumes, secretMutation, ok := h.deploymentTargetFromInput(ctx, user, app, input, targetID, kubernetesName, nil, "")
 	if !ok {
 		return
 	}
@@ -114,9 +115,13 @@ func (h *Handlers) CreateDeploymentTarget(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	changes, err := h.createDeploymentTarget(target, dataVolumes, input.BuildHookBindings, buildEnvironment, ctx.Request.Context())
+	changes, err := h.persistDeploymentTargetWithAfterPersist(target, dataVolumes, input.BuildHookBindings, buildEnvironment, nil, true, func(tx *gorm.DB, _ model.DeploymentTarget) error {
+		return h.applyRuntimeSecretsInTx(ctx.Request.Context(), tx, user, &target, secretMutation)
+	}, ctx.Request.Context())
 	if errors.Is(err, errDeploymentStageExists) {
 		writeErrorCode(ctx, http.StatusConflict, "deployment.stage_exists", "deployment stage already exists in this application")
+		return
+	} else if writeDeploymentTargetSecretError(ctx, err) {
 		return
 	} else if err != nil {
 		h.auditDeploymentVolumeMountFailure(ctx.Request.Context(), user.ID, changes, err)
@@ -174,7 +179,7 @@ func (h *Handlers) UpdateDeploymentTarget(ctx *gin.Context) {
 		writeErrorCode(ctx, http.StatusConflict, "deployment.stage_immutable", "deployment stage cannot be changed")
 		return
 	}
-	target, dataVolumes, ok := h.deploymentTargetFromInput(ctx, user, app, input, existing.ID, existing.KubernetesName, decodeSecretRefs(existing.SecretFiles), existing.RuntimeConfigRefs)
+	target, dataVolumes, secretMutation, ok := h.deploymentTargetFromInput(ctx, user, app, input, existing.ID, existing.KubernetesName, decodeSecretRefs(existing.SecretFiles), existing.RuntimeConfigRefs)
 	if !ok {
 		return
 	}
@@ -195,7 +200,11 @@ func (h *Handlers) UpdateDeploymentTarget(ctx *gin.Context) {
 		return
 	}
 	scaleOutcome := deploymentTargetScaleOutcome{}
-	changes, err := h.saveDeploymentTargetWithAfterPersist(target, dataVolumes, input.BuildHookBindings, buildEnvironment, func(current model.DeploymentTarget) error {
+	changes, err := h.saveDeploymentTargetWithAfterPersist(target, dataVolumes, input.BuildHookBindings, buildEnvironment, func(tx *gorm.DB, current model.DeploymentTarget) error {
+		// 先在事务内完成加密配置与名称唯一性校验，再执行副本伸缩这一外部副作用。
+		if err := h.applyRuntimeSecretsInTx(ctx.Request.Context(), tx, user, &target, secretMutation); err != nil {
+			return err
+		}
 		if current.Replicas == target.Replicas {
 			return nil
 		}
@@ -204,6 +213,9 @@ func (h *Handlers) UpdateDeploymentTarget(ctx *gin.Context) {
 		scaleOutcome.workloadFound, scaleErr = h.scaleDeploymentTargetReplicas(ctx.Request.Context(), project, current, target.Replicas)
 		return scaleErr
 	}, ctx.Request.Context())
+	if writeDeploymentTargetSecretError(ctx, err) {
+		return
+	}
 	if err != nil {
 		var scaleErr *deploymentTargetScaleError
 		if errors.As(err, &scaleErr) {
@@ -383,4 +395,30 @@ func (h *Handlers) DeleteDeploymentTarget(ctx *gin.Context) {
 	}
 	h.auditWithContext(user.ID, "deployment.delete", target.ID, true, "cleanup_queued", ctx.Request.Context())
 	ctx.Status(http.StatusNoContent)
+}
+
+// deploymentTargetSecretError 标记保存事务中由加密配置导致的失败，便于映射为稳定错误码。
+type deploymentTargetSecretError struct{ err error }
+
+func (e *deploymentTargetSecretError) Error() string { return e.err.Error() }
+func (e *deploymentTargetSecretError) Unwrap() error { return e.err }
+
+// applyRuntimeSecretsInTx 在保存事务内应用统一键值表的加密操作，并把最新引用回写到响应使用的 target。
+// 即使没有加密操作也会执行，以校验普通配置不会与已有密钥同名。
+func (h *Handlers) applyRuntimeSecretsInTx(ctx context.Context, tx *gorm.DB, user model.User, target *model.DeploymentTarget, input runtimeapi.RuntimeSecretMutationInput) error {
+	encoded, err := h.host.ApplyDeploymentTargetRuntimeSecretsTx(ctx, tx, user, target.ProjectID, target.ApplicationID, target.ID, input)
+	if err != nil {
+		return &deploymentTargetSecretError{err: err}
+	}
+	target.SecretRefs = encoded
+	return nil
+}
+
+func writeDeploymentTargetSecretError(ctx *gin.Context, err error) bool {
+	var secretErr *deploymentTargetSecretError
+	if !errors.As(err, &secretErr) {
+		return false
+	}
+	runtimeapi.WriteRuntimeSecretMutationError(ctx, "deployment_target", secretErr.err)
+	return true
 }

@@ -36,6 +36,7 @@ type Host interface {
 	RegistryPushCredentialForProject(user model.User, registry model.ArtifactRegistry, projectID string, ctx context.Context) (model.RegistryCredential, bool)
 	CanUseScopedResourceByID(user model.User, scope, ownerRef, resourceType, resourceID string, ctx context.Context) bool
 	MutateDeploymentTargetRuntimeSecrets(ctx *gin.Context, user model.User, project model.Project, application model.Application, target model.DeploymentTarget)
+	ApplyDeploymentTargetRuntimeSecretsTx(ctx context.Context, tx *gorm.DB, user model.User, projectID, applicationID, targetID string, input runtimeapi.RuntimeSecretMutationInput) (string, error)
 	AuthorizeProject(ctx *gin.Context, action authz.Action) (model.User, model.Project, bool)
 	FindApplication(ctx *gin.Context) (model.Application, bool)
 	AuditWithContext(userID, action, resource string, success bool, message string, ctx context.Context)

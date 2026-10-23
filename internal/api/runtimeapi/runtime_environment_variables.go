@@ -21,6 +21,9 @@ type runtimeEnvironmentVariableInput struct {
 	Key       string `json:"key"`
 	ValueMode string `json:"valueMode"`
 	Value     string `json:"value"`
+	// SecretOperation 仅用于 secret 项：set、generate 或 clear。未出现在列表中的已有密钥保持不变。
+	SecretOperation string                   `json:"secretOperation,omitempty"`
+	Generation      *runtimeSecretGeneration `json:"generation,omitempty"`
 }
 
 type runtimeEnvironmentVariableResponse struct {
@@ -46,8 +49,8 @@ func normalizePublicEnvironmentVariables(ctx *gin.Context, items []runtimeEnviro
 			writeErrorCode(ctx, http.StatusBadRequest, "deployment.runtime_environment_key_duplicate", "运行时环境变量名称不能重复")
 			return nil, false
 		}
-		if strings.TrimSpace(item.ValueMode) != runtimeEnvironmentValueModePublic {
-			writeErrorCode(ctx, http.StatusBadRequest, "deployment.runtime_environment_value_mode_invalid", "普通运行时环境变量必须使用 public 类型")
+		if strings.TrimSpace(item.ValueMode) != runtimeEnvironmentValueModePublic || strings.TrimSpace(item.SecretOperation) != "" || item.Generation != nil {
+			writeErrorCode(ctx, http.StatusBadRequest, "deployment.runtime_environment_value_mode_invalid", "普通运行时环境变量必须使用 public 类型且不能携带密钥操作")
 			return nil, false
 		}
 		if utf8.RuneCountInString(item.Value) > maxRuntimeEnvironmentValueLength {
@@ -57,6 +60,65 @@ func normalizePublicEnvironmentVariables(ctx *gin.Context, items []runtimeEnviro
 		values[key] = item.Value
 	}
 	return values, true
+}
+
+// normalizeEnvironmentVariables 拆分统一键值表：public 项是完整期望集合；secret 项只携带显式操作。
+// 同一请求里普通项只能与“清除”同名，用于加密转普通。
+func normalizeEnvironmentVariables(ctx *gin.Context, items []runtimeEnvironmentVariableInput) (map[string]string, runtimeSecretMutationInput, bool) {
+	empty := runtimeSecretMutationInput{Values: map[string]string{}, Generate: map[string]runtimeSecretGeneration{}}
+	if len(items) > maxRuntimeEnvironmentVariables {
+		writeErrorCode(ctx, http.StatusBadRequest, "deployment.runtime_environment_items_invalid", "运行时环境变量数量超过限制")
+		return nil, empty, false
+	}
+	publicItems := make([]runtimeEnvironmentVariableInput, 0, len(items))
+	secretItems := make([]runtimeSecretMutationRequestItem, 0)
+	for _, item := range items {
+		switch strings.TrimSpace(item.ValueMode) {
+		case runtimeEnvironmentValueModePublic:
+			publicItems = append(publicItems, item)
+		case runtimeEnvironmentValueModeSecret:
+			secretItems = append(secretItems, runtimeSecretMutationRequestItem{
+				Key:        item.Key,
+				ValueMode:  item.ValueMode,
+				Operation:  item.SecretOperation,
+				Value:      item.Value,
+				Generation: item.Generation,
+			})
+		default:
+			writeErrorCode(ctx, http.StatusBadRequest, "deployment.runtime_environment_value_mode_invalid", "运行时环境变量类型无效")
+			return nil, empty, false
+		}
+	}
+	publicValues, ok := normalizePublicEnvironmentVariables(ctx, publicItems)
+	if !ok {
+		return nil, empty, false
+	}
+	if len(secretItems) == 0 {
+		return publicValues, empty, true
+	}
+	secretInput, ok := runtimeSecretMutationInputFromRequest(ctx, runtimeSecretMutationRequest{Items: secretItems})
+	if !ok || !validateRuntimeSecretMutation(ctx, &secretInput) {
+		return nil, empty, false
+	}
+	for _, value := range secretInput.Values {
+		if value == "" {
+			writeErrorCode(ctx, http.StatusBadRequest, "deployment.secret_value_required", "设置加密配置时必须填写值")
+			return nil, empty, false
+		}
+	}
+	for key := range publicValues {
+		_, set := secretInput.Values[key]
+		_, generated := secretInput.Generate[key]
+		if set || generated {
+			writeRuntimeEnvironmentKeyConflict(ctx)
+			return nil, empty, false
+		}
+	}
+	return publicValues, secretInput, true
+}
+
+func writeRuntimeEnvironmentKeyConflict(ctx *gin.Context) {
+	writeErrorCode(ctx, http.StatusBadRequest, "deployment.runtime_environment_key_conflict", "普通配置与加密配置的名称不能重复")
 }
 
 func runtimeEnvironmentVariables(publicRaw, secretRaw string) []runtimeEnvironmentVariableResponse {

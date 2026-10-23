@@ -19,3 +19,11 @@ func runtimeEnvironmentVariables(publicRaw, secretRaw string) []runtimeEnvironme
 func publicEnvironmentVariableInputs(raw string) []runtimeEnvironmentVariableInput {
 	return runtimeapi.PublicEnvironmentVariableInputs(raw)
 }
+
+func runtimeEnvironmentNamesConflict(publicRaw string, secretRefs map[string]string) bool {
+	keys := make(map[string]struct{}, len(secretRefs))
+	for key := range secretRefs {
+		keys[key] = struct{}{}
+	}
+	return len(runtimeapi.RuntimeEnvironmentKeyConflicts(publicRaw, keys)) > 0
+}

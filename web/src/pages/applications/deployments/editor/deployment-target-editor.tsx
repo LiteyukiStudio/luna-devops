@@ -21,6 +21,7 @@ import {
   deploymentTargetFormToPayload,
   deploymentTargetNeedsRedeploy,
   deploymentTargetSectionOrder,
+  pendingSecretOperations,
 } from './deployment-target-form'
 import { targetImageTemplateQuery } from './deployment-target-queries'
 import { BasicsSection } from './sections/basics-section'
@@ -79,6 +80,8 @@ export function DeploymentTargetEditor({
   )
   const needsRedeploy = baselinePayload ? safeNeedsRedeploy(baselinePayload, values) : false
   const canRedeploy = Boolean(target && values.enabled && (values.sourceType === 'image' ? values.imageRef.trim() : latestRelease?.imageRef.trim()))
+  const pendingSecrets = pendingSecretOperations(values.environmentVariables)
+  const pendingSecretCount = pendingSecrets.cleared + pendingSecrets.generated + pendingSecrets.set
   const totalErrors = deploymentTargetSectionOrder.reduce((count, section) => count + sectionErrorCount(errors, section), 0)
 
   const save = useMutation({
@@ -180,7 +183,6 @@ export function DeploymentTargetEditor({
               repositoryBindings={repositoryBindings}
             />
             <RuntimeSection
-              applicationId={applicationId}
               canManageRuntimeSecrets={canManageRuntimeSecrets}
               deploymentTargets={deploymentTargets}
               projectId={projectId}
@@ -199,6 +201,11 @@ export function DeploymentTargetEditor({
               <button className="text-left text-danger underline-offset-4 hover:underline focus-visible:underline" type="button" onClick={() => focusFirstError(errors)}>
                 {t('deploymentTargetEditor.fixErrors', { count: totalErrors })}
               </button>
+            )}
+            {pendingSecretCount > 0 && (
+              <p className="text-foreground">
+                {t('deploymentTargetEditor.pendingSecretSummary', pendingSecrets)}
+              </p>
             )}
             {!(isSubmitted && totalErrors > 0) && needsRedeploy && (
               <p className="text-warning">

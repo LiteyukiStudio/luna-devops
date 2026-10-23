@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 
+	runtimeapi "github.com/LiteyukiStudio/devops/internal/api/runtimeapi"
 	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/buildenv"
 	"github.com/LiteyukiStudio/devops/internal/id"
@@ -176,12 +177,19 @@ func (h *Handlers) ImportDeploymentTargetBundle(ctx *gin.Context) {
 	// Keep the regular input parser from storing them before the target transaction.
 	input.SecretFiles = "[]"
 	input.BuildSecrets = nil
-	target, dataVolumes, ok := h.deploymentTargetFromInput(
+	target, dataVolumes, secretMutation, ok := h.deploymentTargetFromInput(
 		ctx, user, app, input, targetID,
 		resourceidentifier.DeploymentTargetName(app.Identifier, normalizeStage(input.Stage)), nil, "",
 	)
 	if !ok {
 		operationErr = errors.New("deployment bundle target validation failed")
+		return
+	}
+	// 迁移包的密钥来自 secret requirements，不接受内联加密操作；普通项也不能与密钥同名。
+	if len(secretMutation.Values) > 0 || len(secretMutation.Generate) > 0 || len(secretMutation.Clear) > 0 || runtimeEnvironmentNamesConflict(target.EnvVars, runtimeSecretRefs) {
+		operationErr = errors.New("deployment bundle runtime environment conflict")
+		h.auditWithContext(user.ID, "deployment_bundle.import", app.ID, false, "deployment.runtime_environment_key_conflict", ctx.Request.Context())
+		runtimeapi.WriteRuntimeEnvironmentKeyConflict(ctx)
 		return
 	}
 	target.SecretRefs = encodeStringMap(runtimeSecretRefs)

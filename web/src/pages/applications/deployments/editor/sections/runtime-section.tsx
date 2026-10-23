@@ -15,8 +15,7 @@ import { ServicePortsFields } from '../runtime/service-ports-fields'
 
 const containerFields = ['imagePullPolicy', 'containerCommand', 'containerArgs', 'lifecycle', 'readinessProbe', 'livenessProbe', 'startupProbe'] as const
 
-export function RuntimeSection({ applicationId, canManageRuntimeSecrets, deploymentTargets, projectId, releases, runtimeClusters, target }: {
-  applicationId: string
+export function RuntimeSection({ canManageRuntimeSecrets, deploymentTargets, projectId, releases, runtimeClusters, target }: {
   canManageRuntimeSecrets: boolean
   deploymentTargets: DeploymentTarget[]
   projectId: string
@@ -31,7 +30,6 @@ export function RuntimeSection({ applicationId, canManageRuntimeSecrets, deploym
       <RuntimeScaleFields />
       <ServicePortsFields />
       <RuntimeEnvironmentFields
-        applicationId={applicationId}
         canManageRuntimeSecrets={canManageRuntimeSecrets}
         deploymentTargets={deploymentTargets}
         projectId={projectId}

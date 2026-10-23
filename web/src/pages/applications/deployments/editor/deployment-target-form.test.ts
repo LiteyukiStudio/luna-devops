@@ -1,4 +1,4 @@
-import type { DeploymentTargetFormValues } from './deployment-target-form'
+import type { DeploymentTargetFormValues, RuntimeEnvironmentRow } from './deployment-target-form'
 import type { DeploymentTarget, DeploymentTargetPayload } from '@/api'
 import type { components } from '@/api/generated/openapi'
 import { beforeAll, describe, expect, expectTypeOf, it } from 'vitest'
@@ -10,6 +10,8 @@ import {
   deploymentTargetSectionFields,
   deploymentTargetToFormValues,
   emptyDeploymentTargetFormValues,
+  environmentRowsToPayload,
+  pendingSecretOperations,
 } from './deployment-target-form'
 
 const configuredTarget: DeploymentTarget = {
@@ -121,6 +123,74 @@ function validNewTarget(overrides: Partial<DeploymentTargetFormValues> = {}): De
   }
 }
 
+function publicRow(key: string, value: string): RuntimeEnvironmentRow {
+  return { key, mode: 'public', secretAction: 'keep', stored: 'none', value }
+}
+
+function storedSecretRow(key: string): RuntimeEnvironmentRow {
+  return { key, mode: 'secret', secretAction: 'keep', stored: 'secret', value: '' }
+}
+
+describe('unified runtime environment table', () => {
+  beforeAll(async () => {
+    await i18next.changeLanguage('en-US')
+  })
+
+  it('loads public values and masked secrets as rows', () => {
+    expect(deploymentTargetToFormValues(configuredTarget).environmentVariables).toEqual([
+      { key: 'LOG_LEVEL', mode: 'public', secretAction: 'keep', stored: 'public', value: 'info' },
+      { key: 'API_TOKEN', mode: 'secret', secretAction: 'keep', stored: 'secret', value: '' },
+    ])
+  })
+
+  it('submits public rows in full and only explicit secret operations', () => {
+    expect(environmentRowsToPayload([
+      publicRow('LOG_LEVEL', 'info'),
+      storedSecretRow('KEEP_ME'),
+      { ...storedSecretRow('ROTATE'), secretAction: 'generate' },
+      { ...storedSecretRow('REMOVE'), secretAction: 'clear' },
+      { key: 'NEW_SECRET', mode: 'secret', secretAction: 'set', stored: 'none', value: 's3cret' },
+      { key: 'WAS_SECRET', mode: 'public', secretAction: 'keep', stored: 'secret', value: 'now-public' },
+      { key: 'WAS_PUBLIC', mode: 'secret', secretAction: 'set', stored: 'public', value: 'promoted' },
+    ])).toEqual([
+      { key: 'LOG_LEVEL', valueMode: 'public', value: 'info' },
+      { key: 'ROTATE', valueMode: 'secret', secretOperation: 'generate' },
+      { key: 'REMOVE', valueMode: 'secret', secretOperation: 'clear' },
+      { key: 'NEW_SECRET', valueMode: 'secret', secretOperation: 'set', value: 's3cret' },
+      { key: 'WAS_SECRET', valueMode: 'public', value: 'now-public' },
+      { key: 'WAS_SECRET', valueMode: 'secret', secretOperation: 'clear' },
+      { key: 'WAS_PUBLIC', valueMode: 'secret', secretOperation: 'set', value: 'promoted' },
+    ])
+  })
+
+  it('keeps names unique across public and secret rows', () => {
+    const messages = validationMessages(validNewTarget({ environmentVariables: [publicRow('TOKEN', 'a'), storedSecretRow('TOKEN')] }))
+    expect(messages['environmentVariables.1.key']).toBe('Name is already used by another variable')
+    expect(validationMessages(validNewTarget({
+      environmentVariables: [{ ...storedSecretRow('TOKEN'), secretAction: 'clear' }, publicRow('TOKEN', 'a')],
+    }))).toEqual({})
+  })
+
+  it('requires a new value when a secret becomes public or is replaced', () => {
+    expect(validationMessages(validNewTarget({
+      environmentVariables: [{ ...storedSecretRow('TOKEN'), mode: 'public' }],
+    }))).toHaveProperty('environmentVariables.0.value')
+    expect(validationMessages(validNewTarget({
+      environmentVariables: [{ ...storedSecretRow('TOKEN'), secretAction: 'set' }],
+    }))).toHaveProperty('environmentVariables.0.value')
+  })
+
+  it('counts pending secret operations for the save summary', () => {
+    expect(pendingSecretOperations([
+      { ...storedSecretRow('A'), secretAction: 'clear' },
+      { ...storedSecretRow('B'), mode: 'public', value: 'x' },
+      { ...storedSecretRow('C'), secretAction: 'generate' },
+      { key: 'D', mode: 'secret', secretAction: 'set', stored: 'none', value: 'v' },
+      storedSecretRow('E'),
+    ])).toEqual({ cleared: 2, generated: 1, set: 1 })
+  })
+})
+
 describe('deployment target form model', () => {
   beforeAll(async () => {
     await i18next.changeLanguage('en-US')
@@ -199,7 +269,7 @@ describe('deployment target form model', () => {
     expect(validationMessages(validNewTarget({ readinessProbe: '{"httpGet":' }))).toHaveProperty('readinessProbe')
     expect(validationMessages(validNewTarget({ tolerations: '{}' }))).toHaveProperty('tolerations')
     expect(validationMessages(validNewTarget({ runAsUser: 'root' }))).toHaveProperty('runAsUser')
-    expect(validationMessages(validNewTarget({ environmentVariablesText: 'NO_SEPARATOR' }))).toHaveProperty('environmentVariablesText')
+    expect(validationMessages(validNewTarget({ environmentVariables: [publicRow('1BAD', 'x')] }))).toHaveProperty('environmentVariables.0.key')
     expect(validationMessages(validNewTarget({ configFiles: '[{"content":"x","path":"relative.conf"}]' }))).toHaveProperty('configFiles')
     expect(validationMessages(validNewTarget({
       buildHookBindings: [{ hookConfigId: 'hook_1', phase: 'preDeployment' }, { hookConfigId: 'hook_1', phase: 'preDeployment' }],
@@ -219,7 +289,8 @@ describe('deployment target form model', () => {
     )
 
     it.each([
-      ['runtime config', { environmentVariablesText: 'LOG_LEVEL=debug' }],
+      ['runtime config', { environmentVariables: [publicRow('LOG_LEVEL', 'debug'), storedSecretRow('API_TOKEN')] }],
+      ['secret replacement', { environmentVariables: [publicRow('LOG_LEVEL', 'info'), { ...storedSecretRow('API_TOKEN'), secretAction: 'set' as const, value: 'new' }] }],
       ['service ports', { servicePorts: [{ name: 'http', port: 9090, appProtocol: '' }] }],
       ['deployment hook', { buildHookBindings: [{ hookConfigId: 'hook_1', phase: 'preDeployment' as const }] }],
       ['secret files', { secretFiles: '[{"content":"x","path":"/run/secret"}]' }],

@@ -1,12 +1,10 @@
 import type { TFunction } from 'i18next'
-import type { BuildEnvironmentConfig, DeploymentTarget, DeploymentTargetPayload, HookPhase } from '@/api'
+import type { BuildEnvironmentConfig, DeploymentRuntimeEnvironmentVariableInput, DeploymentTarget, DeploymentTargetPayload, HookPhase } from '@/api'
 import type { RuntimeDataVolumeRow } from '@/lib/runtime-data-volumes'
 import { z } from 'zod'
 import { buildVariableRecordToRows, buildVariableRowsToRecord, emptyKeyValueRow, secretStateToRows } from '@/lib/build-variables'
-import { formatKeyValueText, KeyValueTextError, parseKeyValueText } from '@/lib/key-value-text'
 import { duplicateRuntimeConfigPathRowIds, parseRuntimeConfigFiles } from '@/lib/runtime-config-files'
 import { parseRuntimeDataVolumes, projectVolumeRowsAreValid, serializeRuntimeDataVolumes } from '@/lib/runtime-data-volumes'
-import { publicRuntimeEnvironmentInputs, publicRuntimeEnvironmentRecord } from '@/lib/runtime-environment'
 import { defaultBuildCpuRequest, defaultBuildMemoryRequest, defaultBuildTimeoutSeconds } from '@/pages/applications/application-build-defaults'
 import { deploymentTargetImageRef } from '@/pages/applications/application-config-utils'
 
@@ -18,6 +16,10 @@ export function isPublicDeploymentStage(stage: string): stage is typeof publicDe
 export const deploymentHookPhases = ['prePull', 'postPull', 'preBuild', 'postBuild', 'prePush', 'postPush', 'preDeployment', 'postDeployment'] as const satisfies readonly HookPhase[]
 export const buildHookPhases = new Set<HookPhase>(['prePull', 'postPull', 'preBuild', 'postBuild', 'prePush', 'postPush'])
 export const maxServicePorts = 16
+export const maxRuntimeEnvironmentVariables = 128
+export const maxRuntimeEnvironmentValueLength = 8192
+/** 与后端 isBuildEnvKey 一致的环境变量名规则。 */
+export const runtimeEnvironmentKeyPattern = /^[A-Z_]\w{0,127}$/i
 
 export type DeploymentTargetEditorSection = 'basics' | 'source' | 'runtime' | 'release' | 'hooks' | 'security'
 
@@ -92,7 +94,13 @@ export function createDeploymentTargetFormSchema(t: TFunction) {
     serviceSessionAffinity: z.enum(['', 'None', 'ClientIP']),
     serviceAnnotations: keyValueOrJson,
     runtimeConfigRefs: z.array(z.object({ setId: z.string(), mode: z.enum(['live', 'snapshot']) })),
-    environmentVariablesText: z.string(),
+    environmentVariables: z.array(z.object({
+      key: z.string().trim(),
+      mode: z.enum(['public', 'secret']),
+      value: z.string().max(maxRuntimeEnvironmentValueLength, t('deploymentTargetEditor.validation.maxLength', { max: maxRuntimeEnvironmentValueLength })),
+      stored: z.enum(['none', 'public', 'secret']),
+      secretAction: z.enum(['keep', 'set', 'generate', 'clear']),
+    })).max(maxRuntimeEnvironmentVariables, t('deploymentTargetEditor.validation.environmentMax', { max: maxRuntimeEnvironmentVariables })),
     configFiles: z.string(),
     secretFiles: z.string(),
     dataVolumes: z.array(z.custom<RuntimeDataVolumeRow>()),
@@ -177,13 +185,21 @@ export function createDeploymentTargetFormSchema(t: TFunction) {
         seenPortNames.add(name)
     })
 
-    const environmentError = keyValueTextErrorCode(values.environmentVariablesText)
-    if (environmentError === 'invalid_line')
-      issue(['environmentVariablesText'], t('common.invalid_line'))
-    else if (environmentError === 'empty_key')
-      issue(['environmentVariablesText'], t('common.empty_key'))
-    else if (environmentError === 'duplicate_key')
-      issue(['environmentVariablesText'], t('common.duplicate_key'))
+    // 普通配置与加密配置共用一个命名空间；待清除的密钥行不再占用名称。
+    const seenEnvironmentKeys = new Set<string>()
+    values.environmentVariables.forEach((row, index) => {
+      if (row.mode === 'secret' && row.secretAction === 'clear')
+        return
+      if (!runtimeEnvironmentKeyPattern.test(row.key))
+        issue(['environmentVariables', index, 'key'], t('deploymentTargetEditor.validation.environmentKey'))
+      else if (seenEnvironmentKeys.has(row.key))
+        issue(['environmentVariables', index, 'key'], t('deploymentTargetEditor.validation.environmentKeyDuplicate'))
+      seenEnvironmentKeys.add(row.key)
+      if (row.mode === 'secret' && row.secretAction === 'set' && !row.value)
+        issue(['environmentVariables', index, 'value'], t('deploymentTargetEditor.validation.secretValueRequired'))
+      if (row.mode === 'public' && row.stored === 'secret' && !row.value)
+        issue(['environmentVariables', index, 'value'], t('deploymentTargetEditor.validation.reenterValue'))
+    })
 
     for (const field of ['configFiles', 'secretFiles'] as const) {
       const rows = parseRuntimeConfigFiles(values[field])
@@ -250,7 +266,7 @@ export function emptyDeploymentTargetFormValues(): DeploymentTargetFormValues {
     serviceSessionAffinity: '',
     serviceAnnotations: '',
     runtimeConfigRefs: [],
-    environmentVariablesText: '',
+    environmentVariables: [],
     configFiles: '',
     secretFiles: '',
     dataVolumes: [],
@@ -335,7 +351,13 @@ export function deploymentTargetToFormValues(target: DeploymentTarget, buildEnvi
     serviceSessionAffinity: oneOf(target.serviceSessionAffinity, ['', 'None', 'ClientIP'] as const, ''),
     serviceAnnotations: target.serviceAnnotations,
     runtimeConfigRefs: (target.runtimeConfigRefs ?? []).map(ref => ({ setId: ref.setId, mode: ref.mode })),
-    environmentVariablesText: formatKeyValueText(publicRuntimeEnvironmentRecord(target.environmentVariables)),
+    environmentVariables: (target.environmentVariables ?? []).map(variable => ({
+      key: variable.key,
+      mode: variable.valueMode,
+      value: variable.valueMode === 'public' ? variable.value ?? '' : '',
+      stored: variable.valueMode,
+      secretAction: 'keep' as const,
+    })),
     configFiles: target.configFiles,
     dataVolumes: parseRuntimeDataVolumes(target.dataVolumes),
     workloadType: oneOf(target.workloadType, ['Deployment', 'StatefulSet'] as const, 'Deployment'),
@@ -418,7 +440,7 @@ export function deploymentTargetFormToPayload(values: DeploymentTargetFormValues
     serviceSessionAffinity: values.serviceSessionAffinity,
     serviceAnnotations: values.serviceAnnotations.trim(),
     runtimeConfigRefs: values.runtimeConfigRefs,
-    environmentVariables: publicRuntimeEnvironmentInputs(parseKeyValueText(values.environmentVariablesText)),
+    environmentVariables: environmentRowsToPayload(values.environmentVariables),
     configFiles: values.configFiles.trim(),
     secretFiles: values.secretFiles.trim(),
     dataVolumes: serializeRuntimeDataVolumes(values.dataVolumes),
@@ -525,7 +547,7 @@ function deploymentPhaseHooks(payload: DeploymentTargetPayload) {
 export const deploymentTargetSectionFields: Record<DeploymentTargetEditorSection, readonly DeploymentTargetFieldName[]> = {
   basics: ['name', 'stage', 'clusterId', 'enabled'],
   source: ['sourceType', 'repositoryBindingId', 'imageRef', 'targetRegistryId', 'targetImageRef', 'buildDefinitionMode', 'buildTemplateId', 'buildTemplateVersion', 'buildTemplateValues', 'dockerfilePath', 'buildContext', 'buildDirectory', 'buildArgs', 'buildCpuRequest', 'buildMemoryRequest', 'buildTimeoutMinutes', 'buildVariables', 'buildSecrets'],
-  runtime: ['replicas', 'cpuRequest', 'memoryRequest', 'autoScalingEnabled', 'autoScalingMinReplicas', 'autoScalingMaxReplicas', 'autoScalingCpuPercent', 'autoScalingMemoryPercent', 'autoScalingBehavior', 'servicePorts', 'serviceSessionAffinity', 'serviceAnnotations', 'runtimeConfigRefs', 'environmentVariablesText', 'configFiles', 'secretFiles', 'dataVolumes', 'workloadType', 'imagePullPolicy', 'containerCommand', 'containerArgs', 'lifecycle', 'readinessProbe', 'livenessProbe', 'startupProbe'],
+  runtime: ['replicas', 'cpuRequest', 'memoryRequest', 'autoScalingEnabled', 'autoScalingMinReplicas', 'autoScalingMaxReplicas', 'autoScalingCpuPercent', 'autoScalingMemoryPercent', 'autoScalingBehavior', 'servicePorts', 'serviceSessionAffinity', 'serviceAnnotations', 'runtimeConfigRefs', 'environmentVariables', 'configFiles', 'secretFiles', 'dataVolumes', 'workloadType', 'imagePullPolicy', 'containerCommand', 'containerArgs', 'lifecycle', 'readinessProbe', 'livenessProbe', 'startupProbe'],
   release: ['autoDeploy', 'branchPattern', 'tagPattern', 'concurrencyPolicy'],
   hooks: ['buildHooksEnabled', 'buildHookBindings'],
   security: ['webConsoleEnabled', 'runAsUser', 'runAsGroup', 'fsGroup', 'fsGroupChangePolicy', 'readOnlyRootFilesystem', 'capabilityDrop', 'nodeSelector', 'tolerations', 'affinity', 'topologySpreadConstraints', 'priorityClassName', 'initContainers', 'sidecarContainers'],
@@ -545,6 +567,46 @@ export const deploymentTargetErrorFields: Record<string, DeploymentTargetFieldNa
   'deployment_target.repository_binding_not_found': 'repositoryBindingId',
   'deployment_target.image_ref_required': 'imageRef',
   'deployment_target.replicas_invalid': 'replicas',
+}
+
+export type RuntimeEnvironmentRow = DeploymentTargetFormValues['environmentVariables'][number]
+
+/** 统一键值表转 API 载荷：普通行给出完整期望集合；加密行只提交显式操作，未改动的已有密钥不出现在载荷中。 */
+export function environmentRowsToPayload(rows: RuntimeEnvironmentRow[]): DeploymentRuntimeEnvironmentVariableInput[] {
+  const items: DeploymentRuntimeEnvironmentVariableInput[] = []
+  for (const row of rows) {
+    const key = row.key.trim()
+    if (row.mode === 'public') {
+      items.push({ key, valueMode: 'public', value: row.value })
+      // 加密转普通：同一次保存先清除原密钥，再写入重新填写的普通值。
+      if (row.stored === 'secret')
+        items.push({ key, valueMode: 'secret', secretOperation: 'clear' })
+      continue
+    }
+    if (row.secretAction === 'set')
+      items.push({ key, valueMode: 'secret', secretOperation: 'set', value: row.value })
+    else if (row.secretAction === 'generate')
+      items.push({ key, valueMode: 'secret', secretOperation: 'generate' })
+    else if (row.secretAction === 'clear' && row.stored === 'secret')
+      items.push({ key, valueMode: 'secret', secretOperation: 'clear' })
+  }
+  return items
+}
+
+/** 统计保存时将执行的加密操作，用于提交前的汇总提示。 */
+export function pendingSecretOperations(rows: RuntimeEnvironmentRow[]) {
+  const counts = { cleared: 0, generated: 0, set: 0 }
+  for (const row of rows) {
+    if (row.mode === 'public' && row.stored === 'secret')
+      counts.cleared++
+    else if (row.mode === 'secret' && row.secretAction === 'clear' && row.stored === 'secret')
+      counts.cleared++
+    else if (row.mode === 'secret' && row.secretAction === 'generate')
+      counts.generated++
+    else if (row.mode === 'secret' && row.secretAction === 'set')
+      counts.set++
+  }
+  return counts
 }
 
 function oneOf<const T extends string>(value: string, allowed: readonly T[], fallback: T): T {
@@ -590,14 +652,4 @@ function keyValueOrJsonTextIsValid(value: string) {
     const separator = text.indexOf('=')
     return separator > 0
   })
-}
-
-function keyValueTextErrorCode(value: string) {
-  try {
-    parseKeyValueText(value)
-    return null
-  }
-  catch (error) {
-    return error instanceof KeyValueTextError ? error.code : 'invalid_line'
-  }
 }

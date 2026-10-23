@@ -218,3 +218,64 @@ func assertRuntimeSecretErrorCode(t *testing.T, recorder *httptest.ResponseRecor
 		t.Fatalf("code = %#v, want %q", body["code"], want)
 	}
 }
+
+func TestNormalizeEnvironmentVariablesSplitsUnifiedTable(t *testing.T) {
+	ctx, _ := testRuntimeSecretContext()
+	public, secrets, ok := runtimeapi.NormalizeEnvironmentVariables(ctx, []runtimeapi.RuntimeEnvironmentVariableInput{
+		{Key: "LOG_LEVEL", ValueMode: runtimeapi.RuntimeEnvironmentValueModePublic, Value: "info"},
+		{Key: "TOKEN", ValueMode: runtimeapi.RuntimeEnvironmentValueModePublic, Value: "now-public"},
+		{Key: "TOKEN", ValueMode: runtimeapi.RuntimeEnvironmentValueModeSecret, SecretOperation: "clear"},
+		{Key: "PASSWORD", ValueMode: runtimeapi.RuntimeEnvironmentValueModeSecret, SecretOperation: "set", Value: "secret"},
+		{Key: "SESSION_KEY", ValueMode: runtimeapi.RuntimeEnvironmentValueModeSecret, SecretOperation: "generate"},
+	})
+	if !ok {
+		t.Fatal("NormalizeEnvironmentVariables() rejected a valid unified table")
+	}
+	if public["LOG_LEVEL"] != "info" || public["TOKEN"] != "now-public" || len(public) != 2 {
+		t.Fatalf("public = %#v", public)
+	}
+	if secrets.Values["PASSWORD"] != "secret" || len(secrets.Clear) != 1 || secrets.Clear[0] != "TOKEN" {
+		t.Fatalf("secret mutation = %#v", secrets)
+	}
+	if generation, exists := secrets.Generate["SESSION_KEY"]; !exists || generation.Length != 32 || generation.Encoding != "base64" {
+		t.Fatalf("generate = %#v, want defaulted generation", secrets.Generate)
+	}
+}
+
+func TestNormalizeEnvironmentVariablesRejectsInvalidUnifiedItems(t *testing.T) {
+	tests := map[string]struct {
+		items []runtimeapi.RuntimeEnvironmentVariableInput
+		code  string
+	}{
+		"public and secret set share a name": {
+			items: []runtimeapi.RuntimeEnvironmentVariableInput{
+				{Key: "TOKEN", ValueMode: runtimeapi.RuntimeEnvironmentValueModePublic, Value: "a"},
+				{Key: "TOKEN", ValueMode: runtimeapi.RuntimeEnvironmentValueModeSecret, SecretOperation: "set", Value: "b"},
+			},
+			code: "deployment.runtime_environment_key_conflict",
+		},
+		"secret set without value": {
+			items: []runtimeapi.RuntimeEnvironmentVariableInput{{Key: "TOKEN", ValueMode: runtimeapi.RuntimeEnvironmentValueModeSecret, SecretOperation: "set"}},
+			code:  "deployment.secret_value_required",
+		},
+		"secret without operation": {
+			items: []runtimeapi.RuntimeEnvironmentVariableInput{{Key: "TOKEN", ValueMode: runtimeapi.RuntimeEnvironmentValueModeSecret}},
+			code:  "deployment.secret_operation_invalid",
+		},
+		"public item with secret operation": {
+			items: []runtimeapi.RuntimeEnvironmentVariableInput{{Key: "TOKEN", ValueMode: runtimeapi.RuntimeEnvironmentValueModePublic, SecretOperation: "clear"}},
+			code:  "deployment.runtime_environment_value_mode_invalid",
+		},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			ctx, recorder := testRuntimeSecretContext()
+			if _, _, ok := runtimeapi.NormalizeEnvironmentVariables(ctx, test.items); ok {
+				t.Fatal("NormalizeEnvironmentVariables() accepted an invalid item")
+			}
+			if recorder.Code != http.StatusBadRequest || !strings.Contains(recorder.Body.String(), test.code) {
+				t.Fatalf("response = %d %s, want %s", recorder.Code, recorder.Body.String(), test.code)
+			}
+		})
+	}
+}

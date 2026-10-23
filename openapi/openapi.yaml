@@ -2932,6 +2932,7 @@ paths:
       operationId: updateDeploymentTargetRuntimeSecrets
       tags: [Deployments]
       summary: Securely update deployment target runtime secrets
+      description: Applies secret operations immediately, outside the deployment target save. A secret name must not match a public runtime variable of the same deployment target; violations return 400 deployment.runtime_environment_key_conflict.
       x-luna-cli:
         requiredScopes: ["deployment:update"]
         risk: high
@@ -6000,6 +6001,7 @@ paths:
       tags:
         - Projects
       summary: Update Project Runtime Config Set
+      description: Public runtime variable names must not match a secret already stored on the config set; violations return 400 deployment.runtime_environment_key_conflict.
       parameters:
         - name: projectId
           in: path
@@ -6062,6 +6064,7 @@ paths:
       operationId: updateProjectRuntimeConfigSetRuntimeSecrets
       tags: [Projects]
       summary: Securely update project runtime config set secrets
+      description: A secret name must not match a public runtime variable of the same config set; violations return 400 deployment.runtime_environment_key_conflict.
       x-luna-cli:
         requiredScopes: ["secret:update"]
         risk: high
@@ -11412,8 +11415,8 @@ components:
         environmentVariables:
           type: array
           maxItems: 128
-          items: { $ref: "#/components/schemas/RuntimeEnvironmentVariableInput" }
-          description: Caller-selected public runtime environment variables. The platform does not infer sensitivity from key names or values; it stores these values in the deployment-managed ConfigMap and injects them into the workload. A key may also have a separately managed secret; the secret takes precedence in deployed workloads while both modes remain visible in API state. Choose the dedicated runtime secret action when encrypted storage and non-disclosure are required.
+          items: { $ref: "#/components/schemas/DeploymentRuntimeEnvironmentVariableInput" }
+          description: Unified runtime environment table. Public items are the complete desired set of plaintext values stored in the deployment-managed ConfigMap; the platform does not infer sensitivity from names or values. Secret items carry an explicit secretOperation and are applied in the same transaction as the rest of the save. Existing secrets that are not listed stay unchanged; remove one with secretOperation clear. After the save, a name must be either public or secret, never both; violations return 400 deployment.runtime_environment_key_conflict. Converting a secret to public requires a clear item plus a public item with a newly supplied value.
         configFiles:
           type: string
           description: JSON array of runtime configuration file mounts.
@@ -11526,9 +11529,31 @@ components:
         key: { type: string, pattern: '^[A-Za-z_][A-Za-z0-9_]*$', minLength: 1, maxLength: 128 }
         valueMode: { type: string, enum: [public] }
         value: { type: string, maxLength: 8192 }
+    DeploymentRuntimeEnvironmentVariableInput:
+      type: object
+      additionalProperties: false
+      required: [key, valueMode]
+      description: One row of the unified runtime environment table. Public rows require value. Secret rows require secretOperation; set requires a non-empty value, generate accepts generation, and clear removes the stored secret.
+      properties:
+        key: { type: string, pattern: '^[A-Za-z_][A-Za-z0-9_]*$', minLength: 1, maxLength: 128 }
+        valueMode: { type: string, enum: [public, secret] }
+        value:
+          type: string
+          maxLength: 8192
+          writeOnly: true
+          x-luna-sensitive: true
+          description: Plaintext for public rows, or the new secret value for secretOperation set. Secret values are encrypted and never returned.
+        secretOperation: { type: string, enum: [set, generate, clear], description: Required for secret rows and forbidden for public rows. }
+        generation:
+          type: object
+          additionalProperties: false
+          description: Used only by secretOperation generate.
+          properties:
+            length: { type: integer, minimum: 8, maximum: 256, default: 32 }
+            encoding: { type: string, enum: [base64, hex, alphanumeric, numeric], default: base64 }
     RuntimeEnvironmentVariable:
       type: object
-      description: One stored runtime environment value mode. Responses may contain public and secret entries with the same key; the secret entry takes precedence in deployed workloads.
+      description: One stored runtime environment entry. A name is either public or secret within one owner.
       additionalProperties: false
       required: [key, valueMode, configured]
       properties:

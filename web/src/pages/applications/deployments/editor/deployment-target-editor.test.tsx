@@ -18,7 +18,6 @@ vi.mock('@/api', async (importOriginal) => {
       ...actual.api,
       createDeploymentTarget: vi.fn(),
       createRelease: vi.fn(),
-      getDeploymentTargetRuntimeSecretsSummary: vi.fn(),
       getGitRepositoryBuildOptions: vi.fn(),
       getRegistryImageTemplateDefault: vi.fn(),
       listBuildTemplates: vi.fn(),
@@ -142,6 +141,44 @@ describe('deployment target editor', () => {
       targetImageRef: 'team/demo:dev',
     }))
     expect(api.createDeploymentTarget).toHaveBeenCalledWith('prj_1', 'app_1', expect.not.objectContaining({ buildVariables: expect.anything() }))
+  })
+
+  it('saves plain and encrypted variables from one table in a single request', async () => {
+    const user = userEvent.setup()
+    renderEditor()
+
+    await user.type(screen.getByRole('textbox', { name: /Name/ }), 'dev')
+    await user.click(screen.getByRole('button', { name: 'Add variable' }))
+    await user.type(screen.getByRole('textbox', { name: 'Name of variable 1' }), 'LOG_LEVEL')
+    await user.type(screen.getByRole('textbox', { name: 'Value of LOG_LEVEL' }), 'info')
+    await user.click(screen.getByRole('button', { name: 'Add variable' }))
+    await user.type(screen.getByRole('textbox', { name: 'Name of variable 2' }), 'API_TOKEN')
+    await user.click(screen.getByRole('switch', { name: 'Encrypt API_TOKEN' }))
+    await user.type(screen.getByLabelText('Value of API_TOKEN'), 's3cret')
+    await user.click(screen.getByRole('button', { name: 'Create deploy config' }))
+
+    expect(await screen.findByText('deployments list')).toBeInTheDocument()
+    expect(api.createDeploymentTarget).toHaveBeenCalledWith('prj_1', 'app_1', expect.objectContaining({
+      environmentVariables: [
+        { key: 'LOG_LEVEL', valueMode: 'public', value: 'info' },
+        { key: 'API_TOKEN', valueMode: 'secret', secretOperation: 'set', value: 's3cret' },
+      ],
+    }))
+  })
+
+  it('rejects names shared by a plain and an encrypted variable', async () => {
+    const user = userEvent.setup()
+    renderEditor()
+
+    await user.type(screen.getByRole('textbox', { name: /Name/ }), 'dev')
+    for (const index of [1, 2]) {
+      await user.click(screen.getByRole('button', { name: 'Add variable' }))
+      await user.type(screen.getByRole('textbox', { name: `Name of variable ${index}` }), 'TOKEN')
+    }
+    await user.click(screen.getByRole('button', { name: 'Create deploy config' }))
+
+    expect(api.createDeploymentTarget).not.toHaveBeenCalled()
+    expect(await screen.findByText('Name is already used by another variable')).toBeInTheDocument()
   })
 
   it('maps backend field errors back to the form field', async () => {
