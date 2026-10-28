@@ -105,6 +105,15 @@ export class RunExecutor {
     await Promise.allSettled([...this.active])
   }
 
+  /**
+   * 只在本执行器循环持有 Run 时中止它，并由循环通过流式会话提交 canceled 终态；
+   * 未持有时不产生任何副作用并返回 false，由调用方直接持久化取消。
+   */
+  async cancelExecuting(runId: string): Promise<boolean> {
+    if (!this.controllers.has(runId)) return false
+    return this.cancel(runId)
+  }
+
   async cancel(runId: string): Promise<boolean> {
     const controller = this.controllers.get(runId)
     const reason = new Error("ai.run_canceled")

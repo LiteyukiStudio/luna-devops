@@ -29,7 +29,6 @@ const buildsPage = {
   globalBuildEnvironmentDescription: 'すべてのビルドで使用されるデフォルトの変数とシークレット。プロジェクトスペース、アプリケーション、デプロイ設定内の同名キーが段階的に上書きします。',
   buildEnvironmentSaved: 'ビルド環境を保存しました',
   buildEnvironmentLoadFailed: 'ビルド環境の読み込みに失敗しました',
-  buildEnvironmentLoading: 'ビルド環境を読み込み中…',
   triggerBuild: 'ビルドをトリガー',
   triggerDialogDescription: 'ビルド実行を作成してビルドキューに追加します。Worker はデプロイクラスターで Kubernetes Job を作成し、ソースコードを取得、イメージをビルドしてターゲットレジストリにプッシュします。',
   buildConfig: 'デプロイ設定',

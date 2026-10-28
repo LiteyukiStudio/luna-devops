@@ -15,7 +15,7 @@ When running from source, Worker reads these variables from the root `.env`. Doc
 | `LOG_COLOR` | `auto` | Controls console log colors; use `auto`, `always`, or `never`; `NO_COLOR` always disables colors. |
 | `LOG_LEVEL` | `info` | Sets log verbosity; use `debug`, `info`, `warn`, or `error`. |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | Empty | Sets the telemetry receiver; use the Collector OTLP/HTTP URL. |
-| `BUILD_EXECUTOR_IMAGE` | `moby/buildkit:v0.24.0-rootless` | Selects the BuildKit used by build jobs; use an OCI image reference. |
+| `BUILD_EXECUTOR_IMAGE` | `moby/buildkit:v0.34.1-rootless` | Selects the BuildKit used by build jobs; use an OCI image reference. |
 | `BUILD_EGRESS_MODE`<sup>2</sup> | `restricted` | Sets the build-network egress policy; use `restricted` or `permissive`. |
 | `BUILD_PRIVATE_EGRESS_CIDRS` | Empty | Allows builds to reach private targets; use comma-separated CIDRs. |
 | `DEPLOY_ROLLOUT_TIMEOUT_SECONDS` | `600` | Sets the deployment wait timeout; use a positive number of seconds. |

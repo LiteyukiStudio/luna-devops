@@ -5,7 +5,6 @@ const projectHooks = {
   createTitle: '建立鉤子',
   editTitle: '編輯鉤子',
   dialogDescription: '指令碼會在執行時儲存快照，後續修改不會影響已經開始的構建或釋出。',
-  phase: '階段',
   script: '指令碼',
   scriptHint: '指令碼不做模板渲染，請直接讀取環境變數。平臺會注入 LITEYUKI_GIT_SHA、LITEYUKI_IMAGE_REF、LITEYUKI_RELEASE_ID 等上下文變數。',
   shell: 'Shell',

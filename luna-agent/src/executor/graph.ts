@@ -26,10 +26,12 @@ export function decisionAction(
     assertGraphTransition(phase, action)
     return action
   }
+  if (decision.kind === "truncated") return validate({ type: "fail", errorCode: "ai.model_output_truncated" })
+  if (decision.kind === "filtered") return validate({ type: "fail", errorCode: "ai.model_output_filtered" })
   if (context.cardRepairExhausted) {
-    if (decision.kind === "protocol_error" && decision.code === "missing_tool_calls")
+    if (decision.kind === "protocol_error")
       return validate({ type: "fail", errorCode: "ai.model_protocol_violation" })
-    if (decision.kind !== "final" && decision.kind !== "empty")
+    if (decision.kind === "tool_calls")
       return validate({ type: "fail", errorCode: "ai.interaction_card_schema_invalid" })
   }
   let action: DecisionAction
@@ -48,7 +50,7 @@ export function decisionAction(
       action = { type: "retry" }
       break
     case "protocol_error":
-      if (decision.code === "invalid_finish_reason" || context.protocolRepairCount >= maxProtocolRepairs)
+      if (context.protocolRepairCount >= maxProtocolRepairs)
         action = { type: "fail", errorCode: "ai.model_protocol_violation" }
       else
         action = { type: "repair" }

@@ -10,6 +10,8 @@ const publicRunFailureKeys: Readonly<Record<string, string>> = {
   'ai.model_context_insufficient': 'model_context_insufficient',
   'ai.model_output_limit_invalid': 'model_output_limit_invalid',
   'ai.model_protocol_violation': 'model_protocol_violation',
+  'ai.model_output_truncated': 'model_output_truncated',
+  'ai.model_output_filtered': 'model_output_filtered',
   'ai.wallet_balance_insufficient': 'wallet_balance_insufficient',
   'ai.limit_exceeded': 'limit_exceeded',
   'ai.run_failed': 'run_failed',

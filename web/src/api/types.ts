@@ -1041,6 +1041,15 @@ export interface RuntimeEnvironmentVariableInput {
   value: string
 }
 
+/** 部署配置统一键值表的一行：public 是完整期望集合；secret 只携带显式操作，未列出的已有密钥保持不变。 */
+export interface DeploymentRuntimeEnvironmentVariableInput {
+  key: string
+  valueMode: 'public' | 'secret'
+  value?: string
+  secretOperation?: 'set' | 'generate' | 'clear'
+  generation?: { length?: number, encoding?: 'base64' | 'hex' | 'alphanumeric' | 'numeric' }
+}
+
 export interface RuntimeEnvironmentVariable {
   key: string
   valueMode: 'public' | 'secret'
@@ -1278,10 +1287,6 @@ export interface DeploymentTargetMetrics {
   updatedAt: string
 }
 
-export interface DeploymentTargetRuntimeSecretsSummary {
-  environmentVariables: RuntimeEnvironmentVariable[]
-}
-
 export interface DeploymentTargetRuntimeSecretsPayload {
   items: Array<{
     key: string
@@ -1304,7 +1309,7 @@ export type DeploymentTargetPayload = Omit<DeploymentTarget, 'id' | 'projectId' 
   buildVariables?: Record<string, string>
   buildSecrets?: Record<string, string>
   runtimeConfigRefs: DeploymentRuntimeConfigRef[]
-  environmentVariables: RuntimeEnvironmentVariableInput[]
+  environmentVariables: DeploymentRuntimeEnvironmentVariableInput[]
   secretFiles?: string
   dataVolumes: DeploymentDataVolumeInput[]
 }

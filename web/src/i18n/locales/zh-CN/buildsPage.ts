@@ -29,7 +29,6 @@ const buildsPage = {
   globalBuildEnvironmentDescription: '所有构建使用的默认变量与密钥；项目空间、应用和部署配置中的同名键会逐级覆盖。',
   buildEnvironmentSaved: '构建环境已保存',
   buildEnvironmentLoadFailed: '构建环境加载失败',
-  buildEnvironmentLoading: '正在加载构建环境…',
   triggerBuild: '触发构建',
   triggerDialogDescription: '创建构建运行并加入构建队列，Worker 会在部署集群中创建 Kubernetes Job 拉取源码、构建镜像并推送到目标镜像站。',
   buildConfig: '部署配置',

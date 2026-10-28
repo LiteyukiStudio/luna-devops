@@ -38,6 +38,8 @@ const errors = {
     runtime_environment_items_invalid: '런타임 환경 변수는 최대 128개 항목까지 설정할 수 있습니다.',
     runtime_environment_value_too_long: '단일 런타임 환경 변수 값은 8192자를 초과할 수 없습니다.',
     runtime_environment_value_mode_invalid: '올바른 일반 값 또는 시크릿 값 유형을 선택하세요.',
+    runtime_environment_key_conflict: '일반 변수와 암호화 변수는 같은 이름을 사용할 수 없습니다. 이름을 바꾸거나 같은 이름의 항목을 먼저 삭제하세요.',
+    secret_value_required: '암호화 변수를 설정할 때는 값을 입력해야 합니다.',
     secret_items_invalid: '1~128개의 런타임 시크릿 작업을 제출하세요.',
     secret_operation_invalid: '명확한 설정, 생성 또는 삭제 시크릿 작업을 선택하세요.',
     secret_value_too_long: '단일 런타임 시크릿 값은 8192자를 초과할 수 없습니다.',

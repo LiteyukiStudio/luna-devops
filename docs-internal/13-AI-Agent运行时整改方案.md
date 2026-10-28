@@ -2,49 +2,47 @@
 
 ## 1. 文档目的
 
-本文用于整改 `luna-agent` 当前的 Agent Loop、工具执行、审批恢复、流式输出和终态判定。
+本文用于整改 `luna-agent` 的 Agent Loop、工具执行、审批恢复、流式输出和终态判定。
 目标是向成熟 Agent Runtime 的通用范式靠拢，减少自研控制流和启发式补丁，同时保留 Luna
-DevOps 必须掌握的权限、审批、审计、幂等、业务终态和计费边界。
+DevOps 必须掌握的权限、审批、审计、幂等和计费边界。
 
-本文是内部实施方案，不是新的 API 契约。实现后的字段、迁移、OpenAPI 和测试以代码与生成物为准。
+本文是内部实施方案，不是新的 API 契约。实现后的字段、迁移、OpenAPI 和测试以代码与生成物为准；
+各阶段的行为变化、偏差和验证记录见 [14-Agent运行时行为矩阵.md](14-Agent运行时行为矩阵.md)。
 
 ## 2. 整改结论
 
-当前实现已经形成一个自研 Agent Runtime，主要问题不是单个条件判断，而是模型协议、业务状态、
-恢复状态和流式状态没有使用同一个显式模型。`RunExecutor` 同时承担调度、模型循环、工具执行、
-卡片、审批、恢复、终态持久化和遥测，后续每增加一个异常路径都会扩大状态组合。
+整改前的 `RunExecutor` 同时承担调度、模型循环、工具执行、卡片、审批、恢复、终态持久化和遥测，
+控制流由多个布尔变量和进程内存拼接。Phase 0–3 已经把它收敛为结构化决策、显式状态图、持久化
+checkpoint 和独立的终态提交模块。后续整改遵循以下结论：
 
-尚未合入的 Pull Request #20 对“工具执行后模型只输出计划文字”的问题提出了有限止血方案，但它通过候选回答、
-继续指令和确认次数补偿协议缺口，不能作为最终架构。首步计划文字仍可能被当成最终答复，且
-候选文字、工具交互和恢复状态仍然分散在多处。
-
-整改采用以下方向：
-
-1. 以显式状态图替代 `RunExecutor` 内部的隐式布尔状态组合。
-2. 以结构化模型决策替代“普通文本到底是计划还是最终答复”的猜测。
-3. 以持久化 checkpoint 替代内存中的 continuation、确认次数和关键 loop 状态。
-4. 以 `tool call → tool result → verification` 作为任务型 Agent 的基本执行单元。
-5. 以中断/恢复作为审批、用户输入和异步外部任务的统一机制。
-6. Langfuse 或 OpenTelemetry 只负责观测，不参与控制流；LangGraph 风格的图编排作为参考，
-   是否引入具体框架在最小状态机完成后再决定。
+1. **显式状态替代隐式布尔组合**：控制流位置由 `ai.run_checkpoints.phase` 表达，Run 生命周期由
+   `ai.runs.status` 表达，两者都不描述业务是否成功。
+2. **Run 生命周期与业务结果分离**：`completed` 只表示 Agent 循环正常结束，不表示用户目标已达成。
+   业务事实由工具结果和权威 API 响应表达，Runtime 不判定“用户要求的写操作是否全部完成”。
+3. **沿用通用 final 语义**：没有 tool call 的合法文本就是最终答复。模型“说了计划却没行动”是
+   模型行为质量问题，由 Prompt 和评测集治理，Runtime 不猜测文本是计划还是答复。
+4. **结束原因只作辅助信号**：可解析的工具调用一律执行；只有“宣告工具调用却没有调用”、截断和
+   内容过滤会改变控制流。
+5. **checkpoint 保持当前粒度**：模型步、工具批次、等待和终态四类边界已持久化；不再扩展到模型调用
+   内部或外部 HTTP 调用级别。
+6. **不让 Run 等待长耗时异步任务**：异步提交以“已受理 + 资源引用”回到模型，终态由资源页面和通知跟踪。
+7. **统一 Run Budget**：所有预算由同一结构约束，耗尽语义和错误码一致。
+8. Langfuse 或 OpenTelemetry 只负责观测，不参与控制流；是否引入具体框架在 Phase 4 后再评估。
 
 ## 3. 参考范式与边界
 
 ### 3.1 参考范式
 
-成熟 Agent Runtime 通常将一次 Agent Run 组织为：
-
 ```text
 模型调用
-  ├─ final output       → 结束
-  ├─ tool calls         → 执行工具，回灌结果，再次调用模型
-  ├─ handoff            → 切换 Agent 或工作流节点
-  └─ interrupt          → 持久化状态，等待用户/审批后恢复
+  ├─ 无 tool call 的文本  → final，结束
+  ├─ tool calls           → 执行工具，回灌结果，再次调用模型
+  └─ interrupt            → 持久化状态，等待用户/审批后恢复
 ```
 
-OpenAI Agents SDK 将上述循环封装在 Runner 中，并使用 `max_turns` 限制模型步数；工具审批和
-中断通过可恢复的 RunState 继续。LangGraph 使用状态图、条件边和 checkpointer 表达工具循环、
-`END`、人工介入和故障恢复。
+OpenAI Agents SDK 的 Runner 以“没有 tool call 的输出”作为 final output，并用 `max_turns` 限制模型
+步数；工具审批通过可恢复的 RunState 继续。LangGraph 使用状态图、条件边和 checkpointer 表达工具
+循环、`END` 与人工介入。
 
 参考资料：
 
@@ -58,491 +56,306 @@ OpenAI Agents SDK 将上述循环封装在 Runner 中，并使用 `max_turns` �
 
 | 层 | 负责内容 | 不负责内容 |
 | --- | --- | --- |
-| Agent Runtime | 模型循环、状态图、tool call 路由、checkpoint、interrupt/resume、max turns | Luna 权限和业务终态 |
+| Agent Runtime | 模型循环、状态图、tool call 路由、checkpoint、interrupt/resume、Run Budget | Luna 权限和业务结果判定 |
 | Luna Tool Adapter | OpenAPI operation、参数 Schema、服务端请求、工具结果映射 | 自己推断用户权限、跳过 API 鉴权 |
-| Luna API/Service | RBAC、审批、幂等、审计、业务状态和权威回读 | 解析模型计划文字 |
+| Luna API/Service | RBAC、审批、幂等、审计、业务状态和权威响应 | 解析模型文字 |
 | Timeline/Stream | 事件和过程输出的投影、SSE、断线回读 | 决定 Run 是否完成 |
-| Langfuse/OTel | Agent、generation、tool、interrupt、verification 的 trace | 驱动 loop 或恢复执行 |
+| Langfuse/OTel | Agent、generation、tool、interrupt 的 trace | 驱动 loop 或恢复执行 |
 
-## 4. 当前问题清单
+## 4. 问题清单与状态
 
-### P0：终态协议不明确
-
-当前 `result.answer` 同时表示最终回答、执行计划和失败解释。`executionStarted`、
-`pendingFinalAnswer`、`finalConfirmations` 和隐藏 continuation nudge 只能提高命中率，无法
-证明模型真正完成了用户目标。
-
-整改要求：普通文本不得直接证明业务完成。任务型 Run 必须使用结构化决策和服务端完成证据。
-
-### P1：`RunExecutor` 职责堆积
-
-`luna-agent/src/executor/index.ts` 同时实现调度、模型调用、工具发现、工具执行、卡片、审批、
-取消、错误收敛、流式提交、标题生成和遥测。应拆成可单测的状态转换、模型决策、工具批处理、
-checkpoint 和终态提交模块。
-
-### P1：恢复状态分散且不可完整恢复
-
-`continuationMessages`、`pendingFinalAnswer`、确认次数、空回答次数和 `InMemoryLoopGuard` 主要
-存在于内存。进程在模型步骤之间、工具完成之后或流式提交期间退出时，重启只能从部分
-`toolInteractions` 推断状态，无法恢复准确的当前节点和剩余预算。
-
-### P1：过程消息和最终消息混用
-
-候选计划文字通过 `commitStep()` 持久化为 `assistant_message`，后续最终回答又产生另一条消息。
-历史会话和前端投影无法可靠区分过程文本与最终答案。
-
-### P1：工具循环保护不是持久事实
-
-重复调用计数和非重试集合在进程内存中。进程重启、审批恢复或未来多副本执行时，Run 级调用保护
-可能丢失。工具执行还需要与下游 API 的幂等键和数据库状态共同约束。
-
-### P1：工具发现、平台执行和 UI 卡片混在一个循环
-
-`search_tools`、`get_tool_details`、`present_card`、平台读写工具和导航工具虽然都使用 tool call
-接口，但它们的控制流含义不同：有的只发现能力，有的产生副作用，有的只呈现事实。当前逻辑用多个
-布尔变量补偿这种差异，容易出现错误终态和额外模型调用。
-
-### P2：多个预算没有统一语义
-
-模型步数、工具调用数、同参数重复次数、卡片修复次数、空回答重试次数、继续确认次数和 Run 超时
-分别维护，耗尽后错误码和用户可观察行为不一致。应统一为 Run Budget，并记录耗尽原因。
-
-### P2：测试覆盖脚本路径多，恢复和并发证据不足
-
-现有模型脚本测试覆盖了多种输出顺序，但还需要覆盖 checkpoint、进程恢复、审批恢复、重复执行、
-并发 claim、异步权威回读、取消竞态和过程消息投影。
+| 级别 | 问题 | 状态 |
+| --- | --- | --- |
+| P0 | 交互工具 `request_input` / `request_choice` 创建卡片后 Run 直接 `completed`，不等待用户提交 | **未解决**，Phase 4 |
+| P0 | 结束原因与工具调用不一致时拒绝执行可解析的工具调用；`tool_use` 未识别 | 已解决（Phase 1 修正） |
+| P1 | `RunExecutor` 职责堆积 | 已解决（Phase 3） |
+| P1 | 恢复状态分散在 timeline 与进程内存 | 已解决（Phase 2 checkpoint） |
+| P1 | 过程文字与最终答复都落为 `assistant_message` | 已解决（Phase 3 `progress`） |
+| P1 | 循环保护计数仅在进程内存 | 已解决（Phase 2：计数随 checkpoint 导出与恢复） |
+| P2 | 模型步数、工具调用数、重复调用、卡片修复、协议修复、参数修复、空回答和超时各自维护；空回答会耗尽全部模型步数 | **未解决**，Phase 4 |
+| P2 | 工具结果没有统一 outcome，异步提交与同步成功不可区分 | **未解决**，Phase 4 |
+| P2 | 缺少 API → Agent → Tool → 外部平台的真实链路验收 | **未解决**，Phase 4 |
 
 ## 5. 目标状态模型
 
-### 5.1 Run 阶段
+### 5.1 Run 状态
 
-将当前多个布尔变量收敛为单一阶段。阶段只描述控制流位置，不描述业务成功。
+两层状态各司其职：
 
-```ts
-type RunPhase =
-  | "model"
-  | "tool_execution"
-  | "verification"
-  | "awaiting_input"
-  | "awaiting_approval"
-  | "waiting_external"
-  | "finalizing"
-  | "completed"
-  | "failed"
-  | "canceled"
-  | "interrupted"
-```
+- `ai.runs.status`：生命周期，`queued → running → completed | failed | canceled | interrupted`，
+  可恢复中断为 `waiting_approval`、`waiting_input`；
+- `ai.run_checkpoints.phase`：控制流位置，`model`、`tool_execution`、`awaiting_input`、
+  `awaiting_approval`、`finalizing`，由 `graph.ts` 校验合法转换。
 
-### 5.2 模型决策
+`completed` 只表示模型给出合法 final 且没有挂起的工具调用或中断，不表示业务成功。
 
-Provider 输出先转换为内部判别联合，Executor 不再直接依据 `answer.trim()` 推断控制流。
+进程在 `running` 期间退出时，有 checkpoint 的 Run 由启动对账重新排队续跑（恢复次数上限 3）；
+没有 checkpoint 或超过上限的 Run 置为 `interrupted`。该机制以单副本部署为前提。
+
+### 5.2 模型决策（已落地）
 
 ```ts
 type ModelDecision =
   | { kind: "tool_calls"; calls: ModelToolCall[]; finishReason?: string }
   | { kind: "final"; text: string; finishReason?: string }
   | { kind: "empty"; finishReason?: string }
-  | { kind: "protocol_error"; code: "missing_tool_calls" | "invalid_finish_reason" }
+  | { kind: "truncated" }
+  | { kind: "filtered" }
+  | { kind: "protocol_error"; code: "missing_tool_calls" }
 ```
 
-`needs_input` 和 `awaiting_approval` 是工具执行后的 Run 阶段，不由模型普通文本表示。
+判定规则：
 
-### 5.3 工具结果
+1. 有可解析的 tool call：一律为 `tool_calls`，结束原因不一致只体现在遥测中。
+2. 无 tool call，结束原因宣告工具调用（`tool_calls`、`function_call`、`tool_use`）：`protocol_error`。
+3. 无 tool call，结束原因为 `length` 或 `max_tokens`：`truncated`；为 `content_filter`：`filtered`。
+4. 无 tool call，非空文本：`final`；空文本：`empty`。未知结束原因按 `stop` 处理。
 
-平台工具结果必须明确区分：
+### 5.3 工具结果（Phase 4）
 
 ```ts
 type ToolOutcome =
   | { kind: "succeeded"; result: unknown }
+  | { kind: "accepted"; result: unknown }
   | { kind: "failed"; errorCode: string; retryable: boolean }
   | { kind: "awaiting_approval"; toolCallId: string }
   | { kind: "awaiting_input"; fields: string[] }
-  | { kind: "running"; externalOperationId?: string }
   | { kind: "canceled" }
 ```
 
-工具成功不等于业务完成。写操作和异步操作必须进入 `verification`，由权威读取确认最终状态。
+- `succeeded`：同步 API 返回成功，响应即服务端权威结果，不需要额外回读；
+- `accepted`：异步 API 返回 202，结果中包含资源引用和当前状态（如构建 `queued`）。模型可以按需调用
+  只读状态工具，但 Runtime 不等待异步操作到达终态；
+- `awaiting_*`：进入对应中断，不回模型。
 
-### 5.4 完成证据
+### 5.4 完成语义
 
-Run 的 `completed` 需要满足：
+Run 进入 `completed` 需要且只需要：
 
-1. 模型输出合法 final text；
-2. 当前任务没有未处理的 tool call、approval、input 或 external operation；
-3. 所有要求执行的写操作都有成功结果；
-4. 异步任务已经通过约定的权威读取工具确认终态；
-5. 没有未解决的工具错误或协议错误。
+1. 模型决策为 `final`；
+2. 当前步骤没有未处理的 tool call、审批或输入。
 
-普通问答没有业务工具依赖时，可以直接满足第 1、2 条。
+业务结果不由 Run 状态表达。模型如实说明“权限不足无法删除”或“构建已提交，状态 queued”都是合法的
+`completed`。最终答复不得把 `accepted` 描述为已完成，这一约束写入系统 Prompt 并纳入评测，
+不由 Runtime 解析文本。
 
-## 6. 目标模块拆分
+## 6. 模块职责
 
-### 6.1 `executor/decision.ts`
+| 模块 | 职责 | 状态 |
+| --- | --- | --- |
+| `executor/index.ts` | Run claim、配额、并发、超时、取消、启动对账和组件装配 | 已落地 |
+| `executor/run-loop.ts` | 单个 Run 的模型步骤、checkpoint 推进、恢复动作和终态持久化错误分支 | 已落地 |
+| `executor/decision.ts` | Provider 结果 → `ModelDecision`，纯函数 | 已落地 |
+| `executor/graph.ts` | 决策、工具批次和恢复计划 → 显式动作，并按 phase 校验合法转换 | 已落地 |
+| `executor/checkpoint.ts` | 持久化 phase 与续跑状态，`resumePlan` 映射续跑动作 | 已落地 |
+| `executor/tool-step.ts` | 工具批次、内部工具、卡片、导航和恢复批次核对 | 已落地；Phase 4 按 §9 拆 adapter |
+| `executor/finalize.ts` | 唯一的 `completed` 提交入口，终态竞争返回实际终态；标题生成作为后处理 | 已落地 |
+| `executor/streaming.ts` | 草稿流式输出；`final` 提交为 `assistant_message`，其余提交为 `progress` | 已落地 |
+| Run Budget | 统一预算结构与耗尽语义，见 §6.1 | Phase 4 |
 
-职责：把 Provider/ModelRuntime 的一次结果转换为 `ModelDecision`。
-
-要求：
-
-- 检查 `finishReason` 与 tool call 是否一致；
-- 不访问数据库、不执行工具、不写 Timeline；
-- 用纯函数测试所有组合：文字、空输出、工具调用、非法 finish reason、工具调用带文字。
-
-### 6.2 `executor/graph.ts`
-
-职责：实现显式状态转换。
-
-建议入口：
-
-```ts
-type GraphAction =
-  | { type: "call_model" }
-  | { type: "execute_tools"; toolCallIds: string[] }
-  | { type: "wait"; phase: "input" | "approval" | "external" }
-  | { type: "finalize" }
-  | { type: "fail"; errorCode: string }
-```
-
-该模块不直接做 HTTP 请求，只根据 checkpoint 和事件生成下一动作。
-
-### 6.3 `executor/checkpoint.ts`
-
-职责：读取、校验和原子保存 Run checkpoint。
-
-checkpoint 至少包含：
+### 6.1 Run Budget
 
 ```ts
-type RunCheckpoint = {
-  runId: string
-  revision: number
-  phase: RunPhase
-  modelStep: number
-  toolCallCount: number
-  pendingToolCallIds: string[]
-  pendingExternalOperationIds: string[]
-  selectedOperationIds: string[]
-  budget: {
-    maxModelSteps: number
-    maxToolCalls: number
-    maxRepairAttempts: number
-  }
-  lastDecisionId?: string
-  finalOutput?: string
+type RunBudget = {
+  maxModelSteps: number
+  maxToolCalls: number
+  sameCallLimit: number
+  maxRepairs: number      // 协议、参数、卡片 Schema 和空回答修复共用
+  runTimeoutMs: number
 }
 ```
 
-关键点：checkpoint 是恢复控制流的事实；Timeline 是用户可见投影；工具表是工具执行事实；三者
-不再互相推断代替。
+- 预算取值继续来自 claim 时持久化的 `runtimeSettings` 快照，不重复写入 checkpoint；
+- 已消耗量随 checkpoint 恢复（现有协议/参数修复次数与循环保护计数并入同一结构）；
+- 由 `graph.ts` 在每次 `call_model`、`repair`、`retry` 和工具批次前检查；
+- 同参数重复调用是对单次调用的拒绝，继续以 `ai.tool_repeated_in_run` 作为工具结果回灌，让模型改变做法，
+  不终止 Run；
+- Run 级预算（`model_steps` / `tool_calls` / `repairs` / `timeout`）耗尽统一以 `ai.run_budget_exceeded`
+  终止 Run，遥测记录低基数属性 `luna.run.budget_kind`，前端按稳定错误码映射 i18n；
+- 空回答计入 `repairs`，不再消耗整份模型步数；`ai.final_response_missing`、`ai.limit_exceeded`、
+  `ai.run_timeout` 与 `ai.run_tool_call_budget_exceeded` 随之删除，代码、测试、i18n 和文档同步清理。
 
-### 6.4 `executor/tool-step.ts`
+## 7. 数据与幂等
 
-职责：执行一个结构化 tool batch，并返回统一 `ToolOutcome`。
+### 7.1 checkpoint（已落地）
 
-要求：
+`ai.run_checkpoints` 以 `run_id` 为主键，`revision` 乐观锁单调推进，同一 revision 重放幂等、旧
+revision 被拒绝；`recoveries` 记录启动恢复次数。字段取舍与偏差见 14 号文档 §9.3：
+能由 `ai.runs`、`ai.tool_calls` 或执行快照推导的数据不重复保存。
 
-- 平台权限和审批仍由 Luna API/ToolOrchestrator 最终判断；
-- 每个调用携带 `runId`、`toolCallId` 和幂等键；
-- 结果写入工具事实后再推进 checkpoint；
-- `awaiting_approval`、`awaiting_input` 和 `running` 不进入模型最终回答分支；
-- 不把 `present_card` 或 `navigate_to_route` 当成业务完成证据。
-
-### 6.5 `executor/finalize.ts`
-
-职责：检查完成证据，持久化 final output 和 Run 终态。
-
-只有该模块可以将 Run 推进到 `completed`。模型循环、流式模块和工具模块不能直接完成 Run。
-
-### 6.6 `streaming.ts`
-
-流式层只输出事件，不决定业务终态。建议事件类型区分：
-
-```text
-model.started
-model.text.delta
-model.reasoning.delta
-tool.started
-tool.completed
-run.interrupted
-run.waiting_input
-run.waiting_approval
-run.completed
-run.failed
-```
-
-计划文字如果需要实时展示，使用 `progress_message` 或未提交草稿语义；`assistant_message` 只表示
-已经接受为对话输出的消息。
-
-## 7. 数据和迁移方案
-
-### 7.1 新增 checkpoint 存储
-
-新增编号迁移和 Repository 方法，建议使用独立表而不是继续向 `runs` 堆叠临时字段：
-
-```text
-ai.run_checkpoints
-  run_id              primary key
-  revision            bigint not null
-  phase               text not null
-  model_step          integer not null
-  tool_call_count     integer not null
-  state               jsonb not null
-  created_at          timestamptz not null
-  updated_at          timestamptz not null
-```
-
-保存使用 `run_id + revision` 乐观锁。重复提交同一 revision 必须幂等，旧 revision 不能覆盖新状态。
+已知边界：工具事实、Timeline 投影与 checkpoint 仍是三次写入，依靠“事实先行 + 恢复核对”保证一致；
+核对失败时失败关闭，不猜测推进。
 
 ### 7.2 工具调用幂等
 
-工具事实表增加或复用以下约束：
-
-- `run_id`；
-- `tool_call_id`；
-- `operation_id`；
-- canonical arguments hash；
-- attempt；
-- 当前状态；
-- 外部 operation ID（如有）。
-
-同一次逻辑调用重试必须复用逻辑幂等键；不能每次因为模型再次生成而无条件创建新的副作用调用。
-
-### 7.3 数据迁移原则
-
-1. 先增加表和读路径，不改变旧 Run 的终态语义。
-2. 新 Run 同时写旧事实和 checkpoint，做一段时间双读校验。
-3. 确认恢复、审批和取消路径稳定后，切换 Executor 只从 checkpoint 恢复。
-4. 清理 `pendingFinalAnswer`、continuation retry 字段和旧兼容读取前，完成历史 Run 处理和回滚方案。
+- `ai.tool_calls.id` 是工具调用的唯一标识，下游写操作以它作为幂等键；
+- 审批恢复执行已持久化的调用记录，不重新生成调用；
+- 恢复时已落地的调用折叠结果继续，`running` 的调用以 `ai.tool_outcome_unknown` 失败关闭，
+  不自动重放可能已送达外部平台的请求。
 
 ## 8. 运行流程
 
 ### 8.1 普通问答
 
 ```text
-claim Run
-→ checkpoint.phase=model
-→ call model
-→ decision.final
-→ finalize final output
-→ completed
+claim → model → final → finalizing → completed
 ```
 
 ### 8.2 读取型任务
 
 ```text
-model
-→ tool_calls
-→ execute read tools
-→ persist tool results
-→ checkpoint.phase=model
-→ call model
-→ final
-→ completed
+model → tool_calls → tool_execution → 工具事实落库 → model → final → completed
 ```
 
 ### 8.3 写操作和审批
 
 ```text
-model
-→ tool_calls
-→ policy/approval
-→ awaiting_approval
-→ persist checkpoint
-→ 用户批准
-→ resume checkpoint
-→ execute tool
-→ verification
-→ model
-→ final
+model → tool_calls → policy/approval → awaiting_approval + waiting_approval
+→ 用户批准 → queued → claim → 按 checkpoint 核对 → 执行工具（幂等键 = tool call id）
+→ model → final → completed
 ```
 
-### 8.4 异步操作
+### 8.4 用户输入（交互卡片为 Phase 4）
 
 ```text
-model
-→ submit operation
-→ external operation running
-→ waiting_external
-→ 按契约调用状态工具
-→ verification
-→ terminal / unavailable / failed
-→ final 或 incomplete
+model → request_input / request_choice → awaiting_input + waiting_input
+→ 用户提交 → queued → claim → 输入作为工具结果回灌 → model
 ```
 
-### 8.5 模型协议错误
+工具缺必填参数已走该路径；交互卡片仍直接 `completed`，Phase 4 统一到此流程。
+
+### 8.5 异步操作
 
 ```text
-model 返回需要工具的计划文字但没有 tool call
-→ protocol_error
-→ 最多一次有界修复
-→ 仍无 tool call：model_protocol_violation / incomplete
+model → submit operation → accepted（资源引用 + 当前状态）→ model
+→ 可选：调用只读状态工具 → final（如实描述当前状态）→ completed
 ```
 
-修复请求不能伪装成用户消息，也不能把第二次普通文字自动当成业务完成证据。
+### 8.6 模型协议错误
 
-## 9. 工具分类和终态规则
+```text
+结束原因宣告工具调用但无 tool call → protocol_error → 一次有界修复 → 仍无 tool call：ai.model_protocol_violation
+length / max_tokens → ai.model_output_truncated
+content_filter      → ai.model_output_filtered
+```
 
-| 工具类别 | 示例 | 是否产生业务完成证据 | 默认后续 |
-| --- | --- | --- | --- |
-| 发现 | `search_tools`, `get_tool_details` | 否 | 回模型 |
-| 只读事实 | 项目、部署、Pod、日志查询 | 可作为事实 | 视目标决定是否验证 |
-| 写操作 | 保存配置、发布、重启、删除 | 否 | 权威回读 |
-| 异步提交 | 构建、部署、证书申请 | 否 | 状态查询 |
-| 交互 | `request_input`, `request_choice` | 否 | 等待用户恢复 |
-| 呈现 | `present_card`, `navigate_to_route` | 否 | 回模型或结束呈现 |
+修复请求使用 system 消息，不伪装成用户消息；被拒步骤的文字只以 `progress` 保留。
 
-只有写操作的成功结果加权威回读，或纯问答的 final output，才可以形成 completed。
+## 9. 工具分类和后续动作
+
+| 工具类别 | 示例 | 默认后续 |
+| --- | --- | --- |
+| 发现 | `search_tools`, `get_tool_details` | 回模型 |
+| 只读事实 | 项目、部署、Pod、日志查询 | 回模型 |
+| 同步写操作 | 保存配置、重启、删除 | 回模型；API 响应即权威结果 |
+| 异步提交 | 构建、部署、证书申请 | 回模型；结果为 `accepted` |
+| 交互 | `request_input`, `request_choice` | `awaiting_input` 中断 |
+| 呈现 | `present_card`, `navigate_to_route` | 回模型 |
+
+所有类别都只决定下一动作；Run 结束只由 `final` 决策触发（§5.4）。直接工具路径
+（用户在卡片上直接执行工具）仍以工具事实结束 Run，属于用户显式操作，不经过模型决策。
 
 ## 10. 分阶段实施计划
 
-### Phase 0：基线和冻结（1 个任务）
+### Phase 0–3（已完成）
 
-目标：停止继续增加 loop 特殊分支。
+| 阶段 | 内容 | 记录 |
+| --- | --- | --- |
+| Phase 0 | 行为矩阵与特征化测试基线 | 14 号文档 §3–§7 |
+| Phase 1 | `ModelDecision`；结束原因只作辅助信号；截断与过滤独立错误码 | 14 号文档 §8 |
+| Phase 2 | `ai.run_checkpoints`、四类退出边界续跑、恢复次数上限、批次核对与失败关闭 | 14 号文档 §9 |
+| Phase 3 | 拆分 run-loop / graph / tool-step / finalize；`progress` 投影；标题后处理 | 14 号文档 §10 |
 
-工作：
+冻结规则继续有效：不新增确认次数、prompt nudge、候选回答或兜底条件。
 
-- 冻结当前已合入实现的行为，不再追加确认次数和 prompt nudge；PR #20 尚未合入，不属于冻结基线；
-- 建立当前行为矩阵：普通问答、首步计划、工具后计划、审批、输入、异步、取消、重启；
-- 记录当前 Run、ToolCall、Timeline 和 SSE 的事实源；
-- 补充失败案例和最小复现，不改生产代码。
-
-验收：每个场景都有当前结果、期望结果、负责模块和回归测试位置。
-
-### Phase 1：抽出决策协议（小重构）
+### Phase 4：交互中断、统一预算与工具 outcome
 
 工作：
 
-- 新增 `ModelDecision`；`ToolOutcome` 推迟到 Phase 4 定义工具 adapter 时落地，避免先引入无消费者的类型；
-- 把 finish reason、tool call 解析和空响应处理移到纯函数；
-- `RunExecutor` 暂时保留，但只消费结构化决策；
-- 删除主循环中直接依据 `answer.trim()` 完成 Run 的分支；
-- 将协议错误映射为稳定错误码。
-
-验收：协议单测覆盖完整组合；普通问答仍为一次模型调用；已有工具测试全部通过。
-
-### Phase 2：引入显式 RunPhase 和 checkpoint
-
-工作：
-
-- 新增迁移和 Repository checkpoint 接口；
-- 每个模型步骤和工具 batch 原子更新 checkpoint；
-- 审批、用户输入、异步等待使用 checkpoint 恢复；
-- 将 loop guard 的关键计数迁移到 checkpoint/数据库；
-- 保留旧 timeline 作为投影，不让 timeline 反推控制流。
-
-验收：在模型调用前、工具完成后、审批等待后、最终提交前模拟进程退出，重启后状态只执行一次。
-
-### Phase 3：拆分 Executor
-
-工作：
-
-- 拆出 `decision`、`graph`、`checkpoint`、`tool-step`、`finalize`；
-- `RunExecutor` 只负责 claim、生命周期和组件装配；
-- 统一取消、超时、终态和 TerminalPersistence 错误处理；
-- 把标题生成移出 Agent 核心终态路径，作为完成后的 best-effort 工作。
-
-验收：主 Executor 不再包含工具目录、卡片 Schema 和具体平台工具分支；模块可以独立测试。
-
-### Phase 4：统一工具适配和业务验证
-
-工作：
-
-- 发现、只读、写操作、异步提交、交互和呈现工具分别定义 adapter；
-- 写操作统一返回 `verificationRequired` 或外部 operation 状态；
-- 为发布、构建、部署和证书类异步任务建立权威回读节点；
+- `request_input` / `request_choice` 改为 `awaiting_input` 中断，用户提交后恢复，修复矩阵行 9；
+- 按 §6.1 引入 Run Budget，并删除旧的分散错误码；
+- 按 §9 的类别拆分 `tool-step.ts` 中的 adapter，输出 `ToolOutcome`；异步提交统一返回 `accepted`；
+- 系统 Prompt 增加“`accepted` 不得描述为已完成”的约束，并纳入评测集；
 - 取消和失败路径保留已提交副作用的真实状态，不伪造回滚成功。
 
-验收：至少完成一条构建/发布/部署真实成功链路，以及失败、取消、审批和撤权终态链路。
+验收：交互卡片在跨进程（新 Executor + 真实 PostgreSQL）下等待并恢复；连续空回答受 `repairs`
+约束；至少一条 API → Agent → Tool → 外部平台的真实链路（如提交构建并查询状态）覆盖成功、失败、
+取消、审批和撤权。
 
 ### Phase 5：评估是否引入具体框架
 
-只有 Phase 1–4 完成后才做框架选型。
-
-评估条件：
-
-- 如果自研 graph/checkpoint 代码仍然重复 LangGraph 的通用能力，则做小范围 PoC；
-- 只迁移 `model → tool → checkpoint → interrupt → resume` 这条最小路径；
-- Luna 权限、审批、审计、业务状态和 Tool Adapter 保持独立；
-- 对比迁移后的恢复语义、数据库事务边界、流式事件和可观测成本。
-
+只有 Phase 4 完成后才做框架选型。若自研状态图和 checkpoint 代码仍然重复 LangGraph 等框架的通用能力，
+只对 `model → tool → interrupt → resume` 最小路径做 PoC；Luna 权限、审批、审计和 Tool Adapter 保持独立。
 禁止一次性把整个 `luna-agent` 重写为框架示例代码。
 
 ## 11. 测试和发布门禁
 
-### 11.1 必须具备的测试层次
+### 11.1 测试层次
 
-1. `ModelDecision` 和 `ToolOutcome` 纯函数单测。
-2. 状态图转换单测，覆盖每个 phase 和非法转换。
-3. checkpoint 乐观锁、重复提交和旧 revision 拒绝的 PostgreSQL 集成测试。
-4. Tool Adapter 的参数、权限、审批、幂等和错误码契约测试。
-5. SSE/Timeline 只验证事件投影，不验证业务终态逻辑。
-6. Agent Run 集成测试覆盖成功、失败、取消、超时、审批、输入和异步恢复。
-7. 至少一条 API → Agent → Tool → 外部平台 → 权威回读的 E2E。
+1. `ModelDecision`、`graph` 转换和 Run Budget 纯函数单测。
+2. checkpoint 乐观锁、恢复核对与恢复上限的 PostgreSQL 集成测试。
+3. Tool Adapter 的参数、权限、审批、幂等和错误码契约测试。
+4. SSE/Timeline 只验证事件投影，包括 `progress` 与 `assistant_message` 的区分。
+5. Agent Run 集成测试覆盖成功、失败、取消、超时、审批、输入和预算耗尽。
+6. 至少一条 API → Agent → Tool → 外部平台的 E2E。
 
-### 11.2 必测场景
+### 11.2 Phase 4 必测场景
 
 ```text
-普通问答一次完成
-首步计划文字没有 tool call
-工具后计划文字
-工具调用带文字
-finish_reason 与 tool call 不一致
-工具参数错误后有界修复
-工具等待审批后恢复
-工具等待用户输入后恢复
-异步提交后权威回读
-模型调用前进程退出
-工具成功后进程退出
-终态提交响应未知后重试
-同一 Run 并发 claim
-相同工具和参数重复调用
-取消模型和工具请求
-Run 超时
-目录发现不产生业务完成证据
-present_card 不产生业务完成证据
-Secret 不进入消息、日志和事件
+request_input / request_choice 等待输入后跨进程恢复
+连续空回答受 repairs 预算约束
+各类 Run 级预算耗尽返回 ai.run_budget_exceeded 与对应 budget_kind
+同参数重复调用仍作为工具结果回灌，不终止 Run
+异步提交返回 accepted，最终答复不声称已完成（评测集）
+同步写操作成功后不额外回读
+真实链路：提交构建并查询状态，覆盖成功、失败、取消、审批和撤权
+Secret 不进入消息、checkpoint、日志和事件
 ```
+
+Phase 0–3 的必测场景已在 14 号文档登记回归位置，后续改动不得让其失效。
 
 ### 11.3 发布门禁
 
 - `go test ./...`
-- `pnpm --dir luna-agent test`
+- `pnpm --dir luna-agent test`（含真实 PostgreSQL）
 - `pnpm --dir luna-agent lint`
 - `pnpm --dir luna-agent typecheck`
+- 涉及投影或错误码时执行 Web test/lint/build 与 i18n 检查
 - OpenAPI 与 Tool Catalog 契约检查
 - 相关 PostgreSQL migration up/down/reapply
 - Agent 关键 E2E
-- 文档构建：`pnpm --dir docs build`
 
-涉及 checkpoint、审批、幂等、Secret、取消和跨服务协议时，不能只以单元测试通过作为合并条件。
+## 12. 回滚和故障语义
 
-## 12. 回滚和兼容
-
-1. 新 checkpoint 表和字段先向后兼容，不删除旧字段。
-2. Agent 启动时可以读取旧 Run，但旧 Run 不重新执行未完成的模型步骤；必要时标记为 `interrupted`。
-3. 新 Executor 通过 feature flag 仅用于内部测试 Run，生产默认保留旧路径直到集成验收完成。
-4. 新旧路径产生的 Timeline 事件必须使用同一稳定事件语义，不能让前端按实现版本分叉。
-5. checkpoint 写入失败时 fail closed，不能退回到仅内存 loop 继续执行写操作。
-6. 确认所有活动 Run 已完成或中断后，再删除 `pendingFinalAnswer`、旧 nudge 和旧恢复分支。
+1. 迁移可 down；回滚代码前先执行 down。
+2. 进程在 `running` 期间退出：有 checkpoint 时续跑，超过恢复上限或无 checkpoint 时置为 `interrupted`。
+3. 结果未知的工具调用失败关闭，不重放。
+4. checkpoint 或恢复核对写入失败时失败关闭，不在内存中继续执行写操作。
+5. 终态持久化耗尽时尽力置为 `interrupted`，不伪造 `completed` 或 `failed`。
+6. 直接替换旧执行路径，不保留 feature flag 或新旧双路径；新旧代码产生的 Timeline 事件使用同一稳定语义。
 
 ## 13. 完成标准
 
-整改完成必须同时满足：
-
-- 主循环不再通过普通文字猜测业务是否完成；
-- Run 有单一、可持久化、可恢复的控制流状态；
-- 工具调用有持久化幂等和清晰的 outcome；
-- 审批、输入和异步任务可以从 checkpoint 恢复；
-- 业务 completed 只由 final output 和完成证据共同触发；
-- 过程消息与最终回答在 Timeline 中可区分；
-- 取消、超时、重启和终态持久化失败不会伪造成功；
+- Runtime 不解析模型文字判断意图，final 只由结构化决策触发；
+- 可解析的工具调用不因结束原因取值被拒绝；
+- 审批和输入（含交互卡片）从 checkpoint 恢复，不从 timeline 反推；
+- 预算统一，耗尽使用统一错误码；
+- 过程消息与最终答复在 Timeline 中可区分；
+- 取消、超时、崩溃和终态持久化失败不会伪造成功；
 - Langfuse/OTel 只观测，不改变控制流；
-- 至少一条真实平台副作用链路完成成功、失败、取消和权威回读验收；
+- 至少一条真实平台副作用链路完成成功、失败、取消、审批和撤权验收；
 - 相关测试、迁移、OpenAPI、Agent catalog 和内部文档同步通过。
 
 ## 14. 明确不做
 
+- **不在 Runtime 判定业务完成**：Runtime 无法知道用户“要求执行”了哪些写操作，强行判定只会重新依赖
+  模型文字；也不为每个写 operation 维护“写 → 验证读”的映射。
+- **不让 Run 等待长耗时异步任务**：构建、部署、证书终态由资源页面和通知跟踪，不引入 `waiting_external`。
+- **不扩展 checkpoint 粒度**：不做模型调用内部或外部 HTTP 调用级 checkpoint；多副本部署前不放宽
+  “单副本启动恢复”的前提。
+- 不为区分“计划文字”和“最终答复”增加确认次数、隐藏 nudge 或候选回答。若评测显示该行为频繁，
+  再评估任务模式下的强制工具调用。
+- 不保留 feature flag、新旧双路径或多个互相兜底的 final 判定路径。
 - 不为了“更像框架”增加多 Agent 自主讨论、投票或规划层。
 - 不把 Langfuse 当 Agent 执行框架。
-- 不把平台权限、审批、审计和业务终态交给模型或通用框架。
-- 不保留多个互相兜底的 final 判定路径。
-- 不通过无限重试、隐藏 prompt、进程内缓存或历史猜测掩盖不可恢复状态。
-- 不在没有 checkpoint、迁移、回滚和 E2E 方案前进行全量框架迁移。
+- 不把平台权限、审批、审计和业务状态交给模型或通用框架。

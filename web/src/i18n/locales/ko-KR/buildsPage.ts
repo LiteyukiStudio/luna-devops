@@ -29,7 +29,6 @@ const buildsPage = {
   globalBuildEnvironmentDescription: '모든 빌드에서 사용하는 기본 변수와 시크릿. 프로젝트 스페이스, 애플리케이션, 배포 구성 내 동일한 이름의 키가 단계적으로 덮어씁니다.',
   buildEnvironmentSaved: '빌드 환경이 저장되었습니다',
   buildEnvironmentLoadFailed: '빌드 환경 로드 실패',
-  buildEnvironmentLoading: '빌드 환경 로드 중…',
   triggerBuild: '빌드 트리거',
   triggerDialogDescription: '빌드 실행을 생성하고 빌드 대기열에 추가합니다. Worker는 배포 클러스터에서 Kubernetes Job을 생성하고 소스 코드를 가져와 이미지를 빌드한 후 대상 레지스트리에 푸시합니다.',
   buildConfig: '배포 구성',

@@ -38,6 +38,8 @@ const errors = {
     runtime_environment_items_invalid: '运行时环境变量最多可以配置 128 项。',
     runtime_environment_value_too_long: '单个运行时环境变量值不能超过 8192 个字符。',
     runtime_environment_value_mode_invalid: '请选择正确的普通值或密钥值类型。',
+    runtime_environment_key_conflict: '普通配置与加密配置的名称不能重复，请修改名称或先清除同名项。',
+    secret_value_required: '设置加密配置时必须填写值。',
     secret_items_invalid: '请提交 1 至 128 项运行时密钥操作。',
     secret_operation_invalid: '请选择明确的设置、生成或清除密钥操作。',
     secret_value_too_long: '单个运行时密钥值不能超过 8192 个字符。',

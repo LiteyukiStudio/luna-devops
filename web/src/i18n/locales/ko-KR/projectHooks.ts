@@ -5,7 +5,6 @@ const projectHooks = {
   createTitle: '훅 생성',
   editTitle: '훅 편집',
   dialogDescription: '스크립트는 실행 시 스냅샷으로 저장되며, 이후 수정은 이미 시작된 빌드나 릴리스에 영향을 주지 않습니다.',
-  phase: '단계',
   script: '스크립트',
   scriptHint: '스크립트는 템플릿 렌더링을 하지 않습니다. 환경 변수를 직접 읽으세요. 플랫폼은 LITEYUKI_GIT_SHA, LITEYUKI_IMAGE_REF, LITEYUKI_RELEASE_ID 등의 컨텍스트 변수를 주입합니다.',
   shell: 'Shell',

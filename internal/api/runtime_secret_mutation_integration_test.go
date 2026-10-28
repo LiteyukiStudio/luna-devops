@@ -62,41 +62,95 @@ func TestRuntimeSecretMutationReplacesAndClearsAtomically(t *testing.T) {
 	assertRuntimeSecretAuditCount(t, db, "secret.write", "", 0)
 }
 
-func TestRuntimeSecretMutationAllowsPublicValueAndSecretToOverlap(t *testing.T) {
+func TestRuntimeSecretMutationRejectsNameUsedByPublicValue(t *testing.T) {
 	db := runtimeSecretMutationIntegrationDB(t)
 	handlers, set, user := runtimeSecretMutationFixture(t, db, "mode_overlap")
 	set.EnvVars = `{"TOKEN":"public-value"}`
 	if err := db.Model(&model.ProjectRuntimeConfigSet{}).Where("id = ?", set.ID).Update("env_vars", set.EnvVars).Error; err != nil {
 		t.Fatalf("store public runtime fixture: %v", err)
 	}
+	owner := runtimeapi.ProjectRuntimeConfigSetSecretMutationOwner(set.ID, set.ProjectID)
 
 	prepared, err := runtimeapi.PrepareRuntimeSecretMutation(runtimeapi.RuntimeSecretMutationInput{Values: map[string]string{"TOKEN": "secret-value"}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	response, err := handlers.domains.runtime.MutateRuntimeSecrets(t.Context(), user, prepared, runtimeapi.ProjectRuntimeConfigSetSecretMutationOwner(set.ID, set.ProjectID))
-	if err != nil {
-		t.Fatalf("mutate runtime secrets: %v", err)
+	_, err = handlers.domains.runtime.MutateRuntimeSecrets(t.Context(), user, prepared, owner)
+	if !runtimeapi.IsRuntimeEnvironmentKeyConflict(err) {
+		t.Fatalf("mutate runtime secrets error = %v, want name conflict", err)
 	}
 
 	var stored model.ProjectRuntimeConfigSet
 	if err := db.First(&stored, "id = ?", set.ID).Error; err != nil {
 		t.Fatalf("reload runtime config set: %v", err)
 	}
-	if stored.EnvVars != set.EnvVars {
-		t.Fatalf("public value changed: env=%q, want %q", stored.EnvVars, set.EnvVars)
+	if stored.EnvVars != set.EnvVars || len(buildapi.DecodeSecretRefs(stored.SecretRefs)) != 0 {
+		t.Fatalf("conflicting mutation changed state: env=%q refs=%q", stored.EnvVars, stored.SecretRefs)
 	}
-	refs := buildapi.DecodeSecretRefs(stored.SecretRefs)
-	if got := handlers.secrets.ResolveContext(t.Context(), refs["TOKEN"]); got != "secret-value" {
-		t.Fatalf("resolved secret = %q, want secret-value", got)
+	assertRuntimeSecretAuditCount(t, db, owner.AuditAction, set.ID, 0)
+}
+
+func TestDeploymentTargetUnifiedSaveConvertsSecretToPublicInOneTransaction(t *testing.T) {
+	db := runtimeSecretMutationIntegrationDB(t)
+	target := model.DeploymentTarget{
+		ID: "dt_unified_env", ProjectID: "prj_unified_env", ApplicationID: "app_unified_env",
+		Name: "Unified env target", Stage: "dev", SecretRefs: "{}", CreatedBy: "usr_unified_env",
 	}
-	if len(response.EnvironmentVariables) != 1 || response.EnvironmentVariables[0].Key != "TOKEN" || response.EnvironmentVariables[0].ValueMode != runtimeapi.RuntimeEnvironmentValueModeSecret {
-		t.Fatalf("mutation response = %#v, want configured TOKEN secret", response.EnvironmentVariables)
+	if err := db.Create(&target).Error; err != nil {
+		t.Fatalf("create deployment target: %v", err)
 	}
-	combined := runtimeapi.RuntimeEnvironmentVariables(stored.EnvVars, stored.SecretRefs)
-	if len(combined) != 2 || combined[0].ValueMode != runtimeapi.RuntimeEnvironmentValueModePublic || combined[1].ValueMode != runtimeapi.RuntimeEnvironmentValueModeSecret {
-		t.Fatalf("combined variables = %#v, want both modes with secret rendered separately", combined)
+	handlers := &Handlers{db: db, secrets: secret.NewStore(db, nil, mustTestSecretCodec(t))}
+	handlers.domains = newDomainHandlers(handlers)
+	host := deploymentHost{domainHost{handlers: handlers}}
+	user := model.User{ID: "usr_unified_env"}
+	owner := deploymentTargetRuntimeSecretMutationOwner(target.ID, target.ProjectID, target.ApplicationID)
+	tokenRef := storeRuntimeSecretFixture(t, handlers, db, "old-token", user.ID, owner.ResourcePrefix+":TOKEN")
+	if err := db.Model(&model.DeploymentTarget{}).Where("id = ?", target.ID).Update("secret_refs", deploymentapi.EncodeStringMap(map[string]string{"TOKEN": tokenRef})).Error; err != nil {
+		t.Fatalf("seed secret refs: %v", err)
 	}
+
+	// 同一事务中：TOKEN 由加密转为普通，API_KEY 新增为加密项。
+	var encoded string
+	err := db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&model.DeploymentTarget{}).Where("id = ?", target.ID).Update("env_vars", `{"TOKEN":"now-public"}`).Error; err != nil {
+			return err
+		}
+		var err error
+		encoded, err = host.ApplyDeploymentTargetRuntimeSecretsTx(t.Context(), tx, user, target.ProjectID, target.ApplicationID, target.ID, runtimeapi.RuntimeSecretMutationInput{
+			Values: map[string]string{"API_KEY": "secret-key"},
+			Clear:  []string{"TOKEN"},
+		})
+		return err
+	})
+	if err != nil {
+		t.Fatalf("unified save: %v", err)
+	}
+	refs := buildapi.DecodeSecretRefs(encoded)
+	if _, exists := refs["TOKEN"]; exists || handlers.secrets.ResolveContext(t.Context(), refs["API_KEY"]) != "secret-key" {
+		t.Fatalf("encoded refs = %q, want only API_KEY", encoded)
+	}
+	assertRuntimeSecretRows(t, db, []string{tokenRef}, 0)
+	assertRuntimeSecretAuditCount(t, db, owner.AuditAction, target.ID, 1)
+
+	// 普通项与保留的密钥同名时整次保存回滚。
+	err = db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&model.DeploymentTarget{}).Where("id = ?", target.ID).Update("env_vars", `{"API_KEY":"shadow"}`).Error; err != nil {
+			return err
+		}
+		_, err := host.ApplyDeploymentTargetRuntimeSecretsTx(t.Context(), tx, user, target.ProjectID, target.ApplicationID, target.ID, runtimeapi.RuntimeSecretMutationInput{})
+		return err
+	})
+	if !runtimeapi.IsRuntimeEnvironmentKeyConflict(err) {
+		t.Fatalf("conflicting save error = %v, want name conflict", err)
+	}
+	var reloaded model.DeploymentTarget
+	if err := db.First(&reloaded, "id = ?", target.ID).Error; err != nil {
+		t.Fatalf("reload deployment target: %v", err)
+	}
+	if reloaded.EnvVars != `{"TOKEN":"now-public"}` {
+		t.Fatalf("env vars after rollback = %q, want previous public values", reloaded.EnvVars)
+	}
+	assertRuntimeSecretAuditCount(t, db, owner.AuditAction, target.ID, 1)
 }
 
 func TestRuntimeSecretMutationRollsBackSecretWhenOwnerUpdateFails(t *testing.T) {

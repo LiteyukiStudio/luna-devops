@@ -95,6 +95,7 @@ const apps = {
   configDescription: '編輯應用圖示和名稱，並檢視不可變的應用標識。倉庫、構建、部署和訪問入口請在對應頁籤維護。',
   detailTitle: '應用詳情',
   detailTopbarTitle: '應用：{{projectName}} / {{name}}',
+  backToDeployments: '返回部署列表',
   applicationTopbarPrefix: '應用：',
   overview: '概覽',
   topology: {

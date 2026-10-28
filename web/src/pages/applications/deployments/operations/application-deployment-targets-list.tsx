@@ -37,7 +37,7 @@ export function ApplicationDeploymentTargetsList({
   onDeleteTarget,
   onOpenConsole,
   onOpenReleaseDialog,
-  onOpenTargetDialog,
+  onEditTarget,
   onPullLatestImageDeploy,
   onRestart,
   onRollback,
@@ -55,7 +55,7 @@ export function ApplicationDeploymentTargetsList({
   onDeleteTarget: (target: DeploymentTarget) => void
   onOpenConsole: (release: Release) => void
   onOpenReleaseDialog: (deploymentTargetId: string) => void
-  onOpenTargetDialog: (target: DeploymentTarget) => void
+  onEditTarget: (target: DeploymentTarget) => void
   onPullLatestImageDeploy: (target: DeploymentTarget) => void
   onRestart: (target: DeploymentTarget) => void
   onRollback: (releaseId: string) => void
@@ -127,7 +127,7 @@ export function ApplicationDeploymentTargetsList({
                   onExportTarget={exportTarget}
                   onOpenConsole={onOpenConsole}
                   onOpenReleaseDialog={onOpenReleaseDialog}
-                  onOpenTargetDialog={onOpenTargetDialog}
+                  onEditTarget={onEditTarget}
                   onPullLatestImageDeploy={onPullLatestImageDeploy}
                   onRestart={onRestart}
                   onRollback={onRollback}
@@ -163,7 +163,7 @@ export function ApplicationDeploymentTargetsList({
                     onExportTarget={exportTarget}
                     onOpenConsole={onOpenConsole}
                     onOpenReleaseDialog={onOpenReleaseDialog}
-                    onOpenTargetDialog={onOpenTargetDialog}
+                    onEditTarget={onEditTarget}
                     onPullLatestImageDeploy={onPullLatestImageDeploy}
                     onRestart={onRestart}
                     onRollback={onRollback}
@@ -198,7 +198,7 @@ function DeploymentTargetActions({
   onExportTarget,
   onOpenConsole,
   onOpenReleaseDialog,
-  onOpenTargetDialog,
+  onEditTarget,
   onPullLatestImageDeploy,
   onRestart,
   onRollback,
@@ -217,7 +217,7 @@ function DeploymentTargetActions({
   onExportTarget: (target: DeploymentTarget) => void
   onOpenConsole: (release: Release) => void
   onOpenReleaseDialog: (deploymentTargetId: string) => void
-  onOpenTargetDialog: (target: DeploymentTarget) => void
+  onEditTarget: (target: DeploymentTarget) => void
   onPullLatestImageDeploy: (target: DeploymentTarget) => void
   onRestart: (target: DeploymentTarget) => void
   onRollback: (releaseId: string) => void
@@ -247,7 +247,7 @@ function DeploymentTargetActions({
             <Package className="size-4" />
             {item.release ? t('deploymentsPage.createRelease') : t('deploymentsPage.deployToEnvironment')}
           </DropdownMenuItem>
-          <DropdownMenuItem disabled={deleting} onSelect={() => onOpenTargetDialog(item.target)}>
+          <DropdownMenuItem disabled={deleting} onSelect={() => onEditTarget(item.target)}>
             <Pencil className="size-4" />
             {t('common.edit')}
           </DropdownMenuItem>
@@ -365,7 +365,7 @@ function MobileDeploymentTargetCard({
   onExportTarget,
   onOpenConsole,
   onOpenReleaseDialog,
-  onOpenTargetDialog,
+  onEditTarget,
   onPullLatestImageDeploy,
   onRestart,
   onRollback,
@@ -384,7 +384,7 @@ function MobileDeploymentTargetCard({
   onExportTarget: (target: DeploymentTarget) => void
   onOpenConsole: (release: Release) => void
   onOpenReleaseDialog: (deploymentTargetId: string) => void
-  onOpenTargetDialog: (target: DeploymentTarget) => void
+  onEditTarget: (target: DeploymentTarget) => void
   onPullLatestImageDeploy: (target: DeploymentTarget) => void
   onRestart: (target: DeploymentTarget) => void
   onRollback: (releaseId: string) => void
@@ -426,7 +426,7 @@ function MobileDeploymentTargetCard({
           onExportTarget={onExportTarget}
           onOpenConsole={onOpenConsole}
           onOpenReleaseDialog={onOpenReleaseDialog}
-          onOpenTargetDialog={onOpenTargetDialog}
+          onEditTarget={onEditTarget}
           onPullLatestImageDeploy={onPullLatestImageDeploy}
           onRestart={onRestart}
           onRollback={onRollback}

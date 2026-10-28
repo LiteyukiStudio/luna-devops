@@ -86,6 +86,11 @@ func projectRuntimeConfigSetSecretMutationOwner(setID, projectID string) runtime
 				First(&current, "id = ? and project_id = ? and delete_status in ?", setID, projectID, []string{"", "active", "delete_failed"}).Error
 			return current.SecretRefs, err
 		},
+		LoadEnvVars: func(tx *gorm.DB) (string, error) {
+			var current model.ProjectRuntimeConfigSet
+			err := tx.Select("id", "env_vars").First(&current, "id = ? and project_id = ?", setID, projectID).Error
+			return current.EnvVars, err
+		},
 		SaveRefs: func(tx *gorm.DB, encoded string) error {
 			return tx.Model(&model.ProjectRuntimeConfigSet{}).
 				Where("id = ? and project_id = ?", setID, projectID).

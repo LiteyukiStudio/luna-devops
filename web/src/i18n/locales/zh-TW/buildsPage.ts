@@ -29,7 +29,6 @@ const buildsPage = {
   globalBuildEnvironmentDescription: '所有構建使用的預設變數與金鑰；專案空間、應用和部署配置中的同名鍵會逐級覆蓋。',
   buildEnvironmentSaved: '構建環境已儲存',
   buildEnvironmentLoadFailed: '構建環境載入失敗',
-  buildEnvironmentLoading: '正在載入構建環境…',
   triggerBuild: '觸發構建',
   triggerDialogDescription: '建立構建執行並加入構建佇列，Worker 會在部署叢集中建立 Kubernetes Job 拉取原始碼、構建映象並推送到目標映象站。',
   buildConfig: '部署配置',

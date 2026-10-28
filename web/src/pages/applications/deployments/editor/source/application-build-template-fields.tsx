@@ -1,8 +1,9 @@
-import type { UseFormReturn } from 'react-hook-form'
-import type { BuildTemplate, BuildTemplatePreview, DeploymentTargetPayload } from '@/api'
+import type { DeploymentTargetFormValues } from '../deployment-target-form'
+import type { BuildTemplate, BuildTemplatePreview } from '@/api'
 import { useMutation } from '@tanstack/react-query'
 import { FileCode2, Sparkles } from 'lucide-react'
 import { useMemo, useState } from 'react'
+import { useFormContext } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { api } from '@/api'
@@ -15,19 +16,20 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from '@/components/ui/input'
 import { NativeSelect } from '@/components/ui/native-select'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { useFieldError } from '../deployment-target-editor-utils'
 
 export function ApplicationBuildTemplateFields({
   dockerfileSuggestions,
-  form,
   recommendedTemplateIds,
   templates,
 }: {
   dockerfileSuggestions: string[]
-  form: UseFormReturn<DeploymentTargetPayload>
   recommendedTemplateIds: string[]
   templates: BuildTemplate[]
 }) {
   const { t } = useTranslation()
+  const form = useFormContext<DeploymentTargetFormValues>()
+  const templateError = useFieldError('buildTemplateId')
   const [preview, setPreview] = useState<BuildTemplatePreview | null>(null)
   const mode = form.watch('buildDefinitionMode') || 'repository_dockerfile'
   const templateID = form.watch('buildTemplateId')
@@ -58,11 +60,12 @@ export function ApplicationBuildTemplateFields({
     form.setValue('buildTemplateValues', JSON.stringify(defaultTemplateValues(next)), { shouldDirty: true })
   }
 
-  const switchMode = (nextMode: DeploymentTargetPayload['buildDefinitionMode']) => {
+  const switchMode = (nextMode: DeploymentTargetFormValues['buildDefinitionMode']) => {
     form.setValue('buildDefinitionMode', nextMode, { shouldDirty: true, shouldValidate: true })
-    if (nextMode !== 'template' || selectedTemplate)
-      return
-    selectTemplate(recommendedTemplateIds.find(id => templates.some(item => item.id === id)) ?? templates[0]?.id ?? '')
+    if (nextMode === 'template' && !selectedTemplate)
+      selectTemplate(recommendedTemplateIds.find(id => templates.some(item => item.id === id)) ?? templates[0]?.id ?? '')
+    if (form.formState.isSubmitted)
+      void form.trigger(['dockerfilePath', 'buildTemplateId'])
   }
 
   const updateValue = (key: string, value: string) => {
@@ -70,9 +73,9 @@ export function ApplicationBuildTemplateFields({
   }
 
   return (
-    <div className="grid gap-3 md:col-span-2">
+    <div className="grid gap-4 md:col-span-2">
       <Field hint={t('buildTemplates.modeHint')} label={t('buildTemplates.mode')} required>
-        <NativeSelect value={mode} onChange={event => switchMode(event.target.value as DeploymentTargetPayload['buildDefinitionMode'])}>
+        <NativeSelect value={mode} onChange={event => switchMode(event.target.value === 'template' ? 'template' : 'repository_dockerfile')}>
           <option value="repository_dockerfile">{t('buildTemplates.repositoryDockerfile')}</option>
           <option value="template">{t('buildTemplates.platformTemplate')}</option>
         </NativeSelect>
@@ -93,23 +96,25 @@ export function ApplicationBuildTemplateFields({
 
       {mode === 'template' && (
         <>
-          <Field hint={t('buildTemplates.templateHint')} label={t('buildTemplates.template')} required>
-            <Select value={templateID || undefined} onValueChange={selectTemplate}>
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder={t('common.select')} />
-              </SelectTrigger>
-              <SelectContent position="popper">
-                {orderedTemplates.map((item) => {
-                  return (
-                    <SelectItem key={`${item.id}:${item.version}`} value={item.id}>
-                      {buildTemplateIcon(item)}
-                      <span>{t(`buildTemplates.names.${item.id}`)}</span>
-                      {recommendedTemplateIds.includes(item.id) && <Badge className="ml-auto" variant="secondary">{t('buildTemplates.recommended')}</Badge>}
-                    </SelectItem>
-                  )
-                })}
-              </SelectContent>
-            </Select>
+          <Field error={templateError} hint={t('buildTemplates.templateHint')} label={t('buildTemplates.template')} required>
+            {control => (
+              <Select value={templateID || undefined} onValueChange={selectTemplate}>
+                <SelectTrigger {...control} className="w-full">
+                  <SelectValue placeholder={t('common.select')} />
+                </SelectTrigger>
+                <SelectContent position="popper">
+                  {orderedTemplates.map((item) => {
+                    return (
+                      <SelectItem key={`${item.id}:${item.version}`} value={item.id}>
+                        {buildTemplateIcon(item)}
+                        <span>{t(`buildTemplates.names.${item.id}`)}</span>
+                        {recommendedTemplateIds.includes(item.id) && <Badge className="ml-auto" variant="secondary">{t('buildTemplates.recommended')}</Badge>}
+                      </SelectItem>
+                    )
+                  })}
+                </SelectContent>
+              </Select>
+            )}
           </Field>
           {selectedTemplate?.id === 'nextjs-service' && (
             <Alert className="md:col-span-2">

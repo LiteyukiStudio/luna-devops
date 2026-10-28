@@ -42,6 +42,16 @@ func (host deploymentHost) MutateDeploymentTargetRuntimeSecrets(ctx *gin.Context
 	}
 	ctx.JSON(http.StatusOK, response)
 }
+
+// ApplyDeploymentTargetRuntimeSecretsTx 在部署配置保存事务内应用统一键值表中的加密操作，并返回最新密钥引用。
+func (host deploymentHost) ApplyDeploymentTargetRuntimeSecretsTx(ctx context.Context, tx *gorm.DB, user model.User, projectID, applicationID, targetID string, input runtimeapi.RuntimeSecretMutationInput) (string, error) {
+	prepared, err := runtimeapi.PrepareRuntimeSecretMutation(input)
+	if err != nil {
+		return "", err
+	}
+	_, encoded, err := host.handlers.domains.runtime.MutateRuntimeSecretsTx(ctx, tx, user, prepared, deploymentTargetRuntimeSecretMutationOwner(targetID, projectID, applicationID))
+	return encoded, err
+}
 func (host deploymentHost) FindApplication(ctx *gin.Context) (model.Application, bool) {
 	return host.handlers.domains.application.FindApplication(ctx)
 }
@@ -382,6 +392,11 @@ func deploymentTargetRuntimeSecretMutationOwner(targetID, projectID, application
 			var current model.DeploymentTarget
 			err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id", "secret_refs").First(&current, "id = ? and project_id = ? and application_id = ? and delete_status in ?", targetID, projectID, applicationID, []string{"", "active", "delete_failed"}).Error
 			return current.SecretRefs, err
+		},
+		LoadEnvVars: func(tx *gorm.DB) (string, error) {
+			var current model.DeploymentTarget
+			err := tx.Select("id", "env_vars").First(&current, "id = ? and project_id = ? and application_id = ?", targetID, projectID, applicationID).Error
+			return current.EnvVars, err
 		},
 		SaveRefs: func(tx *gorm.DB, encoded string) error {
 			return tx.Model(&model.DeploymentTarget{}).Where("id = ? and project_id = ? and application_id = ?", targetID, projectID, applicationID).Update("secret_refs", encoded).Error

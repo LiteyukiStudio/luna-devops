@@ -14,6 +14,7 @@ const BillingPage = lazyTranslated(() => import('./pages/billing/BillingPage'), 
 const ClustersPage = lazyTranslated(() => import('./pages/clusters/ClustersPage'), 'ClustersPage', ['clustersPage', 'codeRepositoriesView', 'deploymentsPage', 'gatewayRoutesPage', 'projectSpaces'])
 const CodeRepositoriesPage = lazyTranslated(() => import('./pages/code-repositories/CodeRepositoriesPage'), 'CodeRepositoriesPage', ['codeRepositoriesPage', 'codeRepositoriesView', 'repositories', 'projectSpaces'])
 const DashboardPage = lazyTranslated(() => import('./pages/dashboard/DashboardPage'), 'DashboardPage', ['dashboardPage', 'registriesPage', 'clustersPage', 'eventsPage', 'projectSpaces'])
+const DeploymentTargetEditorPage = lazyTranslated(() => import('./pages/applications/deployments/editor/DeploymentTargetEditorPage'), 'DeploymentTargetEditorPage', ['apps', 'buildTemplates', 'buildsPage', 'deploymentsPage', 'deploymentTargetEditor', 'repositories', 'runtimeConfigSets', 'runtimeConfigFilesEditor', 'clustersPage', 'billingPage', 'projectHooks', 'codeRepositoriesView', 'projectVolumes'])
 const EventsPage = lazyTranslated(() => import('./pages/events/EventsPage'), 'EventsPage', ['eventsPage'])
 const LoginPage = lazyNamed(() => import('./pages/login/LoginPage'), 'LoginPage')
 const InboxPage = lazyTranslated(() => import('./pages/inbox/InboxPage'), 'InboxPage', ['inbox', 'eventsPage'])
@@ -50,6 +51,8 @@ export default function App() {
             <Route path="/inbox" element={<InboxPage />} />
             <Route path="/projects/:projectId" element={<ProjectWorkspacePage />} />
             <Route path="/projects/:projectId/apps/:applicationId" element={<ApplicationConfigPage />} />
+            <Route path="/projects/:projectId/apps/:applicationId/deployments/new" element={<DeploymentTargetEditorPage />} />
+            <Route path="/projects/:projectId/apps/:applicationId/deployments/:targetId/edit" element={<DeploymentTargetEditorPage />} />
             <Route path="/app-templates" element={<AppTemplatesPage />} />
             <Route path="/code-repositories" element={<CodeRepositoriesPage />} />
             <Route path="/registries" element={<RegistriesPage />} />

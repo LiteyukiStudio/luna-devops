@@ -24,13 +24,17 @@ describe("Run 状态图", () => {
       .toEqual({ type: "retry" })
   })
 
-  it("协议修复有次数上限，非法结束原因直接失败", () => {
+  it("协议修复有次数上限，截断和过滤直接以独立错误码失败", () => {
     expect(decisionAction({ kind: "protocol_error", code: "missing_tool_calls" }, { protocolRepairCount: 0, cardRepairExhausted: false }))
       .toEqual({ type: "repair" })
     expect(decisionAction({ kind: "protocol_error", code: "missing_tool_calls" }, { protocolRepairCount: maxProtocolRepairs, cardRepairExhausted: false }))
       .toEqual({ type: "fail", errorCode: "ai.model_protocol_violation" })
-    expect(decisionAction({ kind: "protocol_error", code: "invalid_finish_reason" }, { protocolRepairCount: 0, cardRepairExhausted: false }))
-      .toEqual({ type: "fail", errorCode: "ai.model_protocol_violation" })
+    for (const cardRepairExhausted of [false, true]) {
+      expect(decisionAction({ kind: "truncated" }, { protocolRepairCount: 0, cardRepairExhausted }))
+        .toEqual({ type: "fail", errorCode: "ai.model_output_truncated" })
+      expect(decisionAction({ kind: "filtered" }, { protocolRepairCount: 0, cardRepairExhausted }))
+        .toEqual({ type: "fail", errorCode: "ai.model_output_filtered" })
+    }
   })
 
   it("卡片修复耗尽后只允许最终答复或空答复", () => {

@@ -29,7 +29,6 @@ const buildsPage = {
   globalBuildEnvironmentDescription: 'Default variables and secrets for all builds. Project, application, and deploy config values override entries with the same key.',
   buildEnvironmentSaved: 'Build environment saved',
   buildEnvironmentLoadFailed: 'Build environment failed to load',
-  buildEnvironmentLoading: 'Loading build environment…',
   triggerBuild: 'Trigger build',
   triggerDialogDescription: 'Create a build run and queue it. Worker creates a Kubernetes Job in the deploy cluster to clone source, build the image, and push it to the target registry.',
   buildConfig: 'Deploy config',

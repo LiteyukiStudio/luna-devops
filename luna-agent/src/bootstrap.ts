@@ -162,6 +162,7 @@ export async function startAgent(config: RuntimeConfig): Promise<void> {
   const server = buildServer({
     config, repository, requestVerifier,
     cancelRun: runId => executor.cancel(runId),
+    cancelExecutingRun: runId => executor.cancelExecuting(runId),
     toolCatalogDigest: () => catalogRegistry.digest(),
     tools,
     remoteConfig,

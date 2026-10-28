@@ -15,7 +15,7 @@
 | `LOG_COLOR` | `auto` | 控制 console 日志颜色；可填 `auto`、`always` 或 `never`，`NO_COLOR` 会强制关闭。 |
 | `LOG_LEVEL` | `info` | 设置日志级别；可填 `debug`、`info`、`warn` 或 `error`。 |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | 空 | 设置遥测数据接收端；填写 Collector 的 OTLP/HTTP URL。 |
-| `BUILD_EXECUTOR_IMAGE` | `moby/buildkit:v0.24.0-rootless` | 选择构建 Job 使用的 BuildKit；填写 OCI 镜像引用。 |
+| `BUILD_EXECUTOR_IMAGE` | `moby/buildkit:v0.34.1-rootless` | 选择构建 Job 使用的 BuildKit；填写 OCI 镜像引用。 |
 | `BUILD_EGRESS_MODE`<sup>2</sup> | `restricted` | 设置构建网络出口策略；可填 `restricted` 或 `permissive`。 |
 | `BUILD_PRIVATE_EGRESS_CIDRS` | 空 | 放行构建访问的私网目标；填写逗号分隔的 CIDR。 |
 | `DEPLOY_ROLLOUT_TIMEOUT_SECONDS` | `600` | 设置部署等待超时；填写正整数秒数。 |

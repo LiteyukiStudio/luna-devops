@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
-import { emptyRuntimeConfigFileRow, parseRuntimeConfigFiles, serializeRuntimeConfigFiles } from '@/lib/runtime-config-files'
+import { duplicateRuntimeConfigPathRowIds, emptyRuntimeConfigFileRow, parseRuntimeConfigFiles, serializeRuntimeConfigFiles } from '@/lib/runtime-config-files'
 
 export function RuntimeConfigFilesEditor({ configuredPlaceholder, initialValue, onChange, onValidationChange }: {
   configuredPlaceholder?: string
@@ -86,41 +86,4 @@ export function RuntimeConfigFilesEditor({ configuredPlaceholder, initialValue, 
           )}
     </div>
   )
-}
-
-function duplicateRuntimeConfigPathRowIds(rows: RuntimeConfigFileRow[]) {
-  const pathRows = new Map<string, string[]>()
-  for (const row of rows) {
-    const path = normalizeRuntimeConfigPathForConflict(row.path)
-    if (!path)
-      continue
-    pathRows.set(path, [...(pathRows.get(path) ?? []), row.id])
-  }
-  const duplicated = new Set<string>()
-  for (const rowIds of pathRows.values()) {
-    if (rowIds.length <= 1)
-      continue
-    for (const rowId of rowIds)
-      duplicated.add(rowId)
-  }
-  return duplicated
-}
-
-function normalizeRuntimeConfigPathForConflict(value: string) {
-  const trimmed = value.trim()
-  if (!trimmed)
-    return ''
-  if (!trimmed.startsWith('/'))
-    return trimmed
-  const parts: string[] = []
-  for (const part of trimmed.split('/')) {
-    if (!part || part === '.')
-      continue
-    if (part === '..') {
-      parts.pop()
-      continue
-    }
-    parts.push(part)
-  }
-  return `/${parts.join('/')}`
 }

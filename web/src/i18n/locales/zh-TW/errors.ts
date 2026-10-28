@@ -38,6 +38,8 @@ const errors = {
     runtime_environment_items_invalid: '執行時環境變數最多可以配置 128 項。',
     runtime_environment_value_too_long: '單個執行時環境變數值不能超過 8192 個字元。',
     runtime_environment_value_mode_invalid: '請選擇正確的普通值或金鑰值型別。',
+    runtime_environment_key_conflict: '一般設定與加密設定的名稱不能重複，請修改名稱或先清除同名項目。',
+    secret_value_required: '設定加密設定時必須填寫值。',
     secret_items_invalid: '請提交 1 至 128 項執行時金鑰操作。',
     secret_operation_invalid: '請選擇明確的設定、生成或清除金鑰操作。',
     secret_value_too_long: '單個執行時金鑰值不能超過 8192 個字元。',

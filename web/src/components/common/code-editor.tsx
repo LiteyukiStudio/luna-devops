@@ -14,6 +14,8 @@ export interface CodeEditorProps {
   readOnly?: boolean
   className?: string
   ariaInvalid?: boolean
+  ariaDescribedBy?: string
+  ariaLabelledBy?: string
 }
 
 const CodeEditorCore = lazy(() => import('./code-editor-core').then(module => ({ default: module.CodeEditorCore })))
@@ -45,6 +47,8 @@ function CodeEditorFallback({
   readOnly,
   className,
   ariaInvalid,
+  ariaDescribedBy,
+  ariaLabelledBy,
   failureMessage,
 }: CodeEditorProps & { failureMessage?: string }) {
   return (
@@ -61,7 +65,9 @@ function CodeEditorFallback({
       </div>
       {failureMessage && <p className="m-0 bg-warning-subtle px-3 py-2 text-xs text-warning" role="status">{failureMessage}</p>}
       <textarea
+        aria-describedby={ariaDescribedBy}
         aria-invalid={ariaInvalid || undefined}
+        aria-labelledby={ariaLabelledBy}
         className="block w-full resize-none bg-transparent p-3 font-mono text-sm outline-none placeholder:text-muted-foreground"
         placeholder={placeholder}
         readOnly={failureMessage ? readOnly : true}

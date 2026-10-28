@@ -82,7 +82,8 @@ function route(routeName: AIInternalRouteName, pageKind: RouteContext['pageKind'
 }
 
 function resolveRouteContext(pathname: string): RouteContext {
-  const applicationMatch = pathname.match(/^\/projects\/([^/]+)\/apps\/([^/]+)$/)
+  // 部署配置编辑页属于应用详情的子页面，沿用应用上下文。
+  const applicationMatch = pathname.match(/^\/projects\/([^/]+)\/apps\/([^/]+)(?:\/deployments\/(?:new|[^/]+\/edit))?$/)
   if (applicationMatch?.[1] && applicationMatch[2]) {
     return {
       routeName: 'application.detail',

@@ -10,11 +10,10 @@ import { Globe2, Package, Play, Plus, Save, Upload } from 'lucide-react'
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
-import { useParams, useSearchParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { z } from 'zod'
 import { api } from '@/api'
-import { useSession } from '@/app/session-context'
 import { ApplicationBasicFields } from '@/components/common/application-basic-fields'
 import { ContentTabs } from '@/components/common/content-tabs'
 import { ErrorState } from '@/components/common/error-state'
@@ -27,7 +26,6 @@ import { TabsContent } from '@/components/ui/tabs'
 import { APPLICATION_IDENTIFIER_MAX_LENGTH, APPLICATION_IDENTIFIER_MIN_LENGTH } from '@/lib/identifier-limits'
 import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
 import { statusRefetchInterval, WORKFLOW_STATUS_REFETCH_INTERVAL_MS } from '@/lib/polling'
-import { isPlatformAdmin } from '@/lib/roles'
 import { firstReleaseReadyTarget } from './application-config-utils'
 import { ApplicationOverviewPanel } from './overview/application-overview-panel'
 
@@ -61,8 +59,8 @@ type ApplicationForm = z.output<typeof schema>
 const APPLICATION_CONFIG_FORM_ID = 'application-config-form'
 export function ApplicationConfigPage() {
   const { t } = useTranslation()
-  const { user } = useSession()
   const { projectId = '', applicationId = '' } = useParams()
+  const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const queryClient = useQueryClient()
   const [activeTab, setActiveTab] = useState(() => searchParams.get('tab') || 'overview')
@@ -182,7 +180,7 @@ export function ApplicationConfigPage() {
     window.setTimeout(action, 0)
   }
   const openRepositoryBindingTask = () => runAfterTabChange('repositories', () => repositoryBindingsPageRef.current?.openCreateDialog())
-  const openDeploymentTargetTask = () => runAfterTabChange('deployments', () => deploymentsPanelRef.current?.openTargetDialog())
+  const openDeploymentTargetTask = () => navigate(`/projects/${projectId}/apps/${applicationId}/deployments/new`)
   const openBuildTask = () => runAfterTabChange('builds', () => buildsPanelRef.current?.openTriggerDrawer())
   const openReleaseTask = () => {
     const target = firstReleaseReadyTarget(deploymentTargetRows, appBuildRuns)
@@ -212,7 +210,7 @@ export function ApplicationConfigPage() {
                   <Upload size={16} />
                   {t('deploymentsPage.bundleImport.open')}
                 </Button>
-                <Button variant="outline" onClick={() => deploymentsPanelRef.current?.openTargetDialog()}>
+                <Button variant="outline" onClick={openDeploymentTargetTask}>
                   <Plus size={16} />
                   {t('deploymentsPage.createDeploymentTarget')}
                 </Button>
@@ -335,15 +333,10 @@ export function ApplicationConfigPage() {
             <ApplicationDeploymentsPanel
               ref={deploymentsPanelRef}
               applicationId={applicationId}
-              applicationIdentifier={application.data?.identifier ?? ''}
               buildRuns={appBuildRuns}
               deploymentTargets={deploymentTargetRows}
               projectId={projectId}
-              projectIdentifier={project.data?.identifier ?? ''}
               projectWebConsoleEnabled={project.data?.webConsoleEnabled ?? true}
-              canManageRuntimeSecrets={isPlatformAdmin(user?.role) || ['owner', 'admin', 'developer'].includes(project.data?.currentUserRole ?? '')}
-              registries={registries.data ?? []}
-              repositoryBindings={appRepositoryBindings}
               releases={appReleases}
               routes={appRoutes}
             />

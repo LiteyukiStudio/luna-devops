@@ -468,9 +468,9 @@ export function ApplicationBuildsPanel({ applicationId, applicationIdentifier, b
             </Field>
             <Field hint={t('buildsPage.targetImageRefHint')} label={t('buildsPage.targetImageRef')} required>
               <TargetImageRefInput
+                {...form.register('targetImageRef', { required: true })}
                 placeholder={t('buildsPage.targetImageRefPlaceholder')}
                 prefix={targetImagePrefix}
-                register={form.register('targetImageRef', { required: true })}
               />
             </Field>
             <Field hint={t('buildsPage.inheritedModuleHint')} label={t('buildsPage.dockerfilePath')}>

@@ -38,6 +38,8 @@ const errors = {
     runtime_environment_items_invalid: 'ランタイム環境変数は最大 128 項目まで設定できます。',
     runtime_environment_value_too_long: '単一のランタイム環境変数値は 8192 文字を超えることはできません。',
     runtime_environment_value_mode_invalid: '正しい通常値またはシークレット値タイプを選択してください。',
+    runtime_environment_key_conflict: '通常の変数と暗号化された変数で同じ名前は使えません。名前を変更するか、先に同名の項目をクリアしてください。',
+    secret_value_required: '暗号化変数を設定するときは値を入力してください。',
     secret_items_invalid: '1 から 128 項目のランタイムシークレット操作を送信してください。',
     secret_operation_invalid: '明確な設定、生成、またはクリアシークレット操作を選択してください。',
     secret_value_too_long: '単一のランタイムシークレット値は 8192 文字を超えることはできません。',

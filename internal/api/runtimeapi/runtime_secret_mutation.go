@@ -13,6 +13,7 @@ import (
 
 	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/model"
+	"github.com/LiteyukiStudio/devops/internal/runtimeconfig"
 	"github.com/LiteyukiStudio/devops/internal/secret"
 	"github.com/LiteyukiStudio/devops/internal/telemetry"
 	"github.com/gin-gonic/gin"
@@ -54,8 +55,10 @@ type runtimeSecretMutationOwner struct {
 	ResourcePrefix string
 	AuditAction    string
 	LoadRefs       func(tx *gorm.DB) (string, error)
-	SaveRefs       func(tx *gorm.DB, encoded string) error
-	EncodeRefs     func(refs map[string]string) string
+	// LoadEnvVars 读取同一所有者当前（含本事务已写入）的普通配置，用于名称唯一性校验。
+	LoadEnvVars func(tx *gorm.DB) (string, error)
+	SaveRefs    func(tx *gorm.DB, encoded string) error
+	EncodeRefs  func(refs map[string]string) string
 }
 
 type preparedRuntimeSecretMutation struct {
@@ -67,6 +70,7 @@ type preparedRuntimeSecretMutation struct {
 
 var (
 	errRuntimeSecretMutationUnavailable = errors.New("runtime secret mutation unavailable")
+	errRuntimeEnvironmentKeyConflict    = errors.New("runtime environment key conflict")
 )
 
 func prepareRuntimeSecretMutation(input runtimeSecretMutationInput) (preparedRuntimeSecretMutation, error) {
@@ -104,39 +108,79 @@ func prepareRuntimeSecretMutation(input runtimeSecretMutationInput) (preparedRun
 func (h *Handlers) mutateRuntimeSecrets(ctx context.Context, user model.User, prepared preparedRuntimeSecretMutation, owner runtimeSecretMutationOwner) (runtimeSecretMutationResponse, error) {
 	var response runtimeSecretMutationResponse
 	err := h.dbWithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		rawRefs, err := owner.LoadRefs(tx.WithContext(ctx))
+		var err error
+		response, _, err = h.mutateRuntimeSecretsTx(ctx, tx, user, prepared, owner)
+		return err
+	})
+	if err != nil {
+		return runtimeSecretMutationResponse{}, err
+	}
+	return response, nil
+}
+
+// mutateRuntimeSecretsTx 在调用方事务内应用密钥变更，并校验普通配置与加密配置名称不相交。
+// 没有任何变更时只做校验，不写密钥、不写审计。返回值包含编码后的最新引用，供响应回读。
+func (h *Handlers) mutateRuntimeSecretsTx(ctx context.Context, tx *gorm.DB, user model.User, prepared preparedRuntimeSecretMutation, owner runtimeSecretMutationOwner) (runtimeSecretMutationResponse, string, error) {
+	rawRefs, err := owner.LoadRefs(tx.WithContext(ctx))
+	if err != nil {
+		return runtimeSecretMutationResponse{}, "", err
+	}
+	previousRefs, err := decodeRuntimeSecretRefs(rawRefs)
+	if err != nil {
+		return runtimeSecretMutationResponse{}, "", errRuntimeSecretMutationUnavailable
+	}
+	nextKeys := make(map[string]struct{}, len(previousRefs)+len(prepared.values))
+	for key := range previousRefs {
+		nextKeys[key] = struct{}{}
+	}
+	for key := range prepared.values {
+		nextKeys[key] = struct{}{}
+	}
+	for _, key := range prepared.clearKey {
+		delete(nextKeys, key)
+	}
+	publicRaw, err := owner.LoadEnvVars(tx.WithContext(ctx))
+	if err != nil {
+		return runtimeSecretMutationResponse{}, "", err
+	}
+	if len(runtimeEnvironmentKeyConflicts(publicRaw, nextKeys)) > 0 {
+		return runtimeSecretMutationResponse{}, "", errRuntimeEnvironmentKeyConflict
+	}
+
+	nextRefs := copyStringMap(previousRefs)
+	for key, value := range prepared.values {
+		ref, err := h.secrets.StoreContextWithDB(ctx, tx, value, user.ID, owner.ResourcePrefix+":"+key)
 		if err != nil {
-			return err
+			return runtimeSecretMutationResponse{}, "", errRuntimeSecretMutationUnavailable
 		}
-		previousRefs, err := decodeRuntimeSecretRefs(rawRefs)
-		if err != nil {
-			return errRuntimeSecretMutationUnavailable
+		nextRefs[key] = ref
+	}
+	clearedKeys := make([]string, 0, len(prepared.clearKey))
+	for _, key := range prepared.clearKey {
+		if _, exists := nextRefs[key]; !exists {
+			continue
 		}
-		nextRefs := copyStringMap(previousRefs)
-
-		for key, value := range prepared.values {
-			ref, err := h.secrets.StoreContextWithDB(ctx, tx, value, user.ID, owner.ResourcePrefix+":"+key)
-			if err != nil {
-				return errRuntimeSecretMutationUnavailable
-			}
-			nextRefs[key] = ref
-		}
-
-		clearedKeys := make([]string, 0, len(prepared.clearKey))
-		for _, key := range prepared.clearKey {
-			if _, exists := nextRefs[key]; !exists {
-				continue
-			}
-			delete(nextRefs, key)
-			clearedKeys = append(clearedKeys, key)
-		}
-
-		if err := owner.SaveRefs(tx.WithContext(ctx), owner.EncodeRefs(nextRefs)); err != nil {
-			return err
+		delete(nextRefs, key)
+		clearedKeys = append(clearedKeys, key)
+	}
+	encoded := owner.EncodeRefs(nextRefs)
+	if len(prepared.values) > 0 || len(clearedKeys) > 0 {
+		if err := owner.SaveRefs(tx.WithContext(ctx), encoded); err != nil {
+			return runtimeSecretMutationResponse{}, "", err
 		}
 		if err := h.deleteSupersededRuntimeSecrets(ctx, tx, owner.ResourcePrefix, previousRefs, nextRefs); err != nil {
-			return err
+			return runtimeSecretMutationResponse{}, "", err
 		}
+		// 审计只记录密钥名称与操作类型，永不记录值。
+		metadata, err := json.Marshal(map[string][]string{
+			"configured": append([]string{}, prepared.configuredKey...),
+			"generated":  append([]string{}, prepared.generatedKey...),
+			"cleared":    clearedKeys,
+		})
+		if err != nil {
+			return runtimeSecretMutationResponse{}, "", err
+		}
+		metadataText := string(metadata)
 		if err := tx.WithContext(ctx).Create(&model.AuditLog{
 			ID:        id.New("aud"),
 			UserID:    strings.TrimSpace(user.ID),
@@ -144,30 +188,42 @@ func (h *Handlers) mutateRuntimeSecrets(ctx context.Context, user model.User, pr
 			Resource:  owner.ResourceID,
 			Success:   true,
 			Message:   "runtime secret state updated",
+			Metadata:  &metadataText,
 			CreatedAt: time.Now(),
 		}).Error; err != nil {
-			return err
+			return runtimeSecretMutationResponse{}, "", err
 		}
-
-		keys := make([]string, 0, len(nextRefs))
-		for key, ref := range nextRefs {
-			if isBuildEnvKey(key) && strings.TrimSpace(ref) != "" {
-				keys = append(keys, key)
-			}
-		}
-		sort.Strings(keys)
-		response = runtimeSecretMutationResponse{
-			ConfiguredKeys:       prepared.configuredKey,
-			GeneratedKeys:        prepared.generatedKey,
-			ClearedKeys:          clearedKeys,
-			EnvironmentVariables: secretEnvironmentVariables(keys),
-		}
-		return nil
-	})
-	if err != nil {
-		return runtimeSecretMutationResponse{}, err
 	}
-	return response, nil
+
+	keys := make([]string, 0, len(nextRefs))
+	for key, ref := range nextRefs {
+		if isBuildEnvKey(key) && strings.TrimSpace(ref) != "" {
+			keys = append(keys, key)
+		}
+	}
+	sort.Strings(keys)
+	return runtimeSecretMutationResponse{
+		ConfiguredKeys:       prepared.configuredKey,
+		GeneratedKeys:        prepared.generatedKey,
+		ClearedKeys:          clearedKeys,
+		EnvironmentVariables: secretEnvironmentVariables(keys),
+	}, encoded, nil
+}
+
+// runtimeEnvironmentKeyConflicts 返回同时存在于普通配置与加密配置中的名称。
+func runtimeEnvironmentKeyConflicts(publicRaw string, secretKeys map[string]struct{}) []string {
+	publicValues, err := runtimeconfig.DecodeKeyValue(publicRaw)
+	if err != nil {
+		return nil
+	}
+	conflicts := make([]string, 0)
+	for key := range publicValues {
+		if _, exists := secretKeys[key]; exists {
+			conflicts = append(conflicts, key)
+		}
+	}
+	sort.Strings(conflicts)
+	return conflicts
 }
 
 func runtimeSecretMutationInputFromRequest(ctx *gin.Context, request runtimeSecretMutationRequest) (runtimeSecretMutationInput, bool) {
@@ -267,6 +323,10 @@ func (h *Handlers) deleteSupersededRuntimeSecrets(ctx context.Context, tx *gorm.
 }
 
 func writeRuntimeSecretMutationError(ctx *gin.Context, ownerType string, err error) {
+	if errors.Is(err, errRuntimeEnvironmentKeyConflict) {
+		writeRuntimeEnvironmentKeyConflict(ctx)
+		return
+	}
 	telemetry.LogError(ctx.Request.Context(), "Runtime secret mutation failed",
 		"runtime_secret.mutation.failed", "runtime_secret.mutate",
 		"database.secret_write.failed", err,

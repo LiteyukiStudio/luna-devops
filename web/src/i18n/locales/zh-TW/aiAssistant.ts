@@ -47,6 +47,8 @@ const aiAssistant = {
       model_context_insufficient: '當前請求超過所選模型的上下文視窗，請縮短輸入或清理會話歷史。',
       model_output_limit_invalid: '模型目錄的輸出上限無效，請聯絡平臺管理員檢查模型配置。',
       model_protocol_violation: '模型回應不符合執行協定，本次任務已停止，請檢查已有執行結果後再重試。',
+      model_output_truncated: '模型回答因達到輸出長度上限被截斷，本次任務已停止，請縮小問題範圍或檢查已有執行結果後再重試。',
+      model_output_filtered: '模型回答被內容安全政策攔截，本次任務已停止，請調整請求內容後重試。',
       wallet_balance_insufficient: '個人錢包可用餘額不足，模型請求未傳送。',
       tool_not_available: '當前 Agent 例項無法使用所需平臺工具。',
       tool_execution_failed: '平臺工具執行失敗，請稍後重試。',
