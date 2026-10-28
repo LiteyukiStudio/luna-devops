@@ -15,6 +15,7 @@ export type RunResumePlan =
   | { kind: "settle_tool_batch" }
   /** finalOutput 存在表示终态批次里还有未提交的最终答复，需要重建助手消息。 */
   | { kind: "finalize"; finalOutput?: string }
+  | { kind: "verify" }
 
 export function resumePlan(checkpoint: RunCheckpoint): RunResumePlan {
   switch (checkpoint.phase) {
@@ -31,6 +32,9 @@ export function resumePlan(checkpoint: RunCheckpoint): RunResumePlan {
         : { kind: "finalize", finalOutput: checkpoint.state.finalOutput }
     case "tool_execution":
       return { kind: "settle_tool_batch" }
+    case "verification":
+    case "waiting_external":
+      return { kind: "verify" }
   }
 }
 
@@ -40,6 +44,8 @@ export type CheckpointStateInput = {
   argumentRepairAttempts: ReadonlyMap<string, number>
   pendingToolCallId?: string
   finalOutput?: string
+  pendingVerifications?: RunCheckpoint["state"]["pendingVerifications"]
+  completionBlockers?: RunCheckpoint["state"]["completionBlockers"]
 }
 
 /** 组装一次 checkpoint 推进的状态字段；省略空值，避免写入无消费者的字段。 */
@@ -52,6 +58,8 @@ export function checkpointState(input: CheckpointStateInput): RunCheckpointState
       : {}),
     ...(input.pendingToolCallId ? { pendingToolCallId: input.pendingToolCallId } : {}),
     ...(input.finalOutput === undefined ? {} : { finalOutput: input.finalOutput }),
+    ...(input.pendingVerifications?.length ? { pendingVerifications: input.pendingVerifications } : {}),
+    ...(input.completionBlockers?.length ? { completionBlockers: input.completionBlockers } : {}),
   }
 }
 

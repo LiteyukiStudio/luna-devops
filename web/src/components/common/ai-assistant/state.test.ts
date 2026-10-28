@@ -85,6 +85,18 @@ describe('aI assistant state', () => {
     expect(second.blocks[0]).toMatchObject({ text: 'hello world' })
   })
 
+  it('keeps the run active while an external operation is being verified', () => {
+    const state = reduceAIEvent(emptyAIAssistantState, event({
+      type: 'run.waiting_external',
+      payload: {
+        operationId: 'getBuildRun',
+        externalOperationId: 'build-1',
+      },
+    }))
+
+    expect(state.runStatuses['run-1']).toBe('running')
+  })
+
   it('projects real message and thinking delta frames before authoritative completion overwrites them', () => {
     const thinkingStarted = reduceAIEvent(emptyAIAssistantState, event({
       type: 'thinking.started',

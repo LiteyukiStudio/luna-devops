@@ -250,6 +250,7 @@ func NewRouterWithStaticFSAndMetricsConfig(db *gorm.DB, staticFS fs.FS, httpMetr
 		v1.GET("/projects/:projectId/runtime-config-sets", domains.runtime.ListProjectRuntimeConfigSets)
 		v1.POST("/projects/:projectId/runtime-config-sets", domains.runtime.CreateProjectRuntimeConfigSet)
 		v1.PUT("/projects/:projectId/runtime-config-sets/:setId", domains.runtime.UpdateProjectRuntimeConfigSet)
+		v1.GET("/projects/:projectId/runtime-config-sets/:setId/runtime-secrets", domains.runtime.GetProjectRuntimeConfigSetRuntimeSecretsSummary)
 		v1.PUT("/projects/:projectId/runtime-config-sets/:setId/runtime-secrets", domains.runtime.UpdateProjectRuntimeConfigSetRuntimeSecrets)
 		v1.DELETE("/projects/:projectId/runtime-config-sets/:setId", domains.runtime.DeleteProjectRuntimeConfigSet)
 		v1.PUT("/projects/:projectId/pin", domains.project.PinProject)

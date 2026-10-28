@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/LiteyukiStudio/devops/internal/api/transport"
 	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/model"
@@ -109,13 +110,29 @@ func buildRunTriggerAllowed(triggerType string) bool {
 }
 
 func (h *Handlers) TriggerBuildRun(ctx *gin.Context) {
-	user, _, ok := h.authorizeProject(ctx, authz.ActionBuildTrigger)
+	user, project, ok := h.authorizeProject(ctx, authz.ActionBuildTrigger)
 	if !ok {
+		return
+	}
+	idempotencyKey, validKey := transport.DeliveryIdempotencyKey(ctx, "build.trigger")
+	if !validKey {
+		writeErrorCode(ctx, http.StatusBadRequest, "request.idempotency_key_invalid", "Idempotency-Key must contain 8 to 128 characters")
 		return
 	}
 	var input buildRunInput
 	if !bindJSON(ctx, &input) {
 		return
+	}
+	idempotencyRequestHash := transport.DeliveryRequestHash(input)
+	if idempotencyKey != "" {
+		existing, found, available := h.findBuildRunByIdempotency(ctx, user.ID, project.ID, idempotencyKey, idempotencyRequestHash)
+		if !available {
+			return
+		}
+		if found {
+			ctx.JSON(http.StatusCreated, existing)
+			return
+		}
 	}
 	if !h.ensureBillingAllowsNewBuild(ctx, ctx.Param("projectId")) {
 		return
@@ -124,13 +141,34 @@ func (h *Handlers) TriggerBuildRun(ctx *gin.Context) {
 	run.ID = id.New("bldr")
 	run.Status = "queued"
 	run.TriggerType = fallback(strings.TrimSpace(input.TriggerType), "manual")
+	run.IdempotencyKey = idempotencyKey
+	run.IdempotencyRequestHash = idempotencyRequestHash
 	h.createQueuedBuildRun(ctx, user, run, strings.TrimSpace(input.TargetImageRef), http.StatusCreated)
 }
 
 func (h *Handlers) RetryBuildRun(ctx *gin.Context) {
-	user, _, ok := h.authorizeProject(ctx, authz.ActionBuildTrigger)
+	user, project, ok := h.authorizeProject(ctx, authz.ActionBuildTrigger)
 	if !ok {
 		return
+	}
+	idempotencyKey, validKey := transport.DeliveryIdempotencyKey(ctx, "build.retry")
+	if !validKey {
+		writeErrorCode(ctx, http.StatusBadRequest, "request.idempotency_key_invalid", "Idempotency-Key must contain 8 to 128 characters")
+		return
+	}
+	idempotencyRequestHash := transport.DeliveryRequestHash(map[string]string{
+		"projectId": project.ID,
+		"runId":     ctx.Param("runId"),
+	})
+	if idempotencyKey != "" {
+		existing, found, available := h.findBuildRunByIdempotency(ctx, user.ID, project.ID, idempotencyKey, idempotencyRequestHash)
+		if !available {
+			return
+		}
+		if found {
+			ctx.JSON(http.StatusCreated, existing)
+			return
+		}
 	}
 	previous, ok := h.findBuildRun(ctx)
 	if !ok {
@@ -149,6 +187,8 @@ func (h *Handlers) RetryBuildRun(ctx *gin.Context) {
 		BuildSecretRefsSnapshot: previous.BuildSecretRefsSnapshot,
 		Status:                  "queued",
 		TriggerType:             "retry",
+		IdempotencyKey:          idempotencyKey,
+		IdempotencyRequestHash:  idempotencyRequestHash,
 		SourceBranch:            previous.SourceBranch,
 		SourceTag:               previous.SourceTag,
 		SourceCommit:            previous.SourceCommit,
@@ -289,6 +329,16 @@ func (h *Handlers) createQueuedBuildRun(ctx *gin.Context, user model.User, run m
 	_ = targetImageRef
 	queuedRun, err := h.queueBuildRun(ctx.Request.Context(), user, run)
 	if err != nil {
+		if run.IdempotencyKey != "" && !errors.Is(err, errBuildQueueUnavailable) && !strings.Contains(err.Error(), "投递失败") {
+			existing, found, available := h.findBuildRunByIdempotency(ctx, user.ID, run.ProjectID, run.IdempotencyKey, run.IdempotencyRequestHash)
+			if !available {
+				return
+			}
+			if found {
+				ctx.JSON(statusCode, existing)
+				return
+			}
+		}
 		if errors.Is(err, errBuildQueueUnavailable) || strings.Contains(err.Error(), "投递失败") {
 			writeError(ctx, http.StatusServiceUnavailable, err.Error())
 			return
@@ -315,7 +365,9 @@ func (h *Handlers) queueBuildRun(ctx context.Context, user model.User, run model
 		return run, err
 	}
 	if !h.host.BuildQueueAvailable() {
-		h.markBuildRunDispatchFailed(run, job, "构建任务队列未配置", ctx)
+		if run.IdempotencyKey == "" {
+			h.markBuildRunDispatchFailed(run, job, "构建任务队列未配置", ctx)
+		}
 		return run, errBuildQueueUnavailable
 	}
 	if err := h.host.EnqueueBuildRun(ctx, tasks.BuildRunPayload{
@@ -324,7 +376,9 @@ func (h *Handlers) queueBuildRun(ctx context.Context, user model.User, run model
 		ProjectID:  run.ProjectID,
 		ActorID:    user.ID,
 	}); err != nil {
-		h.markBuildRunDispatchFailed(run, job, "构建任务投递失败: "+err.Error(), ctx)
+		if run.IdempotencyKey == "" {
+			h.markBuildRunDispatchFailed(run, job, "构建任务投递失败: "+err.Error(), ctx)
+		}
 		return run, errors.New("构建任务投递失败")
 	}
 	return run, nil

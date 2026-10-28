@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/LiteyukiStudio/devops/internal/api/transport"
 	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/model"
@@ -63,6 +64,11 @@ func (h *Handlers) CreateRelease(ctx *gin.Context) {
 	if !ok {
 		return
 	}
+	idempotencyKey, validKey := transport.DeliveryIdempotencyKey(ctx, "release.create")
+	if !validKey {
+		writeErrorCode(ctx, http.StatusBadRequest, "request.idempotency_key_invalid", "Idempotency-Key must contain 8 to 128 characters")
+		return
+	}
 	if !h.ensureProjectCanMutate(ctx, project) {
 		return
 	}
@@ -70,7 +76,20 @@ func (h *Handlers) CreateRelease(ctx *gin.Context) {
 	if !bindJSON(ctx, &input) {
 		return
 	}
+	idempotencyRequestHash := transport.DeliveryRequestHash(input)
+	if idempotencyKey != "" {
+		existing, found, available := h.findReleaseByIdempotency(ctx, user.ID, project.ID, idempotencyKey, idempotencyRequestHash)
+		if !available {
+			return
+		}
+		if found {
+			ctx.JSON(http.StatusCreated, existing)
+			return
+		}
+	}
 	release := releaseFromInput(ctx.Param("projectId"), user.ID, input, "")
+	release.IdempotencyKey = idempotencyKey
+	release.IdempotencyRequestHash = idempotencyRequestHash
 	if !h.validateReleaseForCreate(ctx, &release) {
 		return
 	}
@@ -79,10 +98,24 @@ func (h *Handlers) CreateRelease(ctx *gin.Context) {
 	}
 	release.ID = id.New("rel")
 	if err := h.dbFor(ctx).Create(&release).Error; err != nil {
+		if idempotencyKey != "" {
+			existing, found, available := h.findReleaseByIdempotency(ctx, user.ID, project.ID, idempotencyKey, idempotencyRequestHash)
+			if !available {
+				return
+			}
+			if found {
+				ctx.JSON(http.StatusCreated, existing)
+				return
+			}
+		}
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
 	if !h.enqueueDeployRun(ctx.Request.Context(), release) {
+		if release.IdempotencyKey != "" {
+			writeError(ctx, http.StatusServiceUnavailable, "部署队列暂不可用")
+			return
+		}
 		release.Status = "failed"
 		release.Message = "部署任务投递失败，请稍后重试"
 		if err := h.dbFor(ctx).Save(&release).Error; err != nil {
@@ -99,6 +132,25 @@ func (h *Handlers) RollbackRelease(ctx *gin.Context) {
 	user, project, ok := h.authorizeProject(ctx, authz.ActionDeploymentRollback)
 	if !ok {
 		return
+	}
+	idempotencyKey, validKey := transport.DeliveryIdempotencyKey(ctx, "release.rollback")
+	if !validKey {
+		writeErrorCode(ctx, http.StatusBadRequest, "request.idempotency_key_invalid", "Idempotency-Key must contain 8 to 128 characters")
+		return
+	}
+	idempotencyRequestHash := transport.DeliveryRequestHash(map[string]string{
+		"projectId": project.ID,
+		"releaseId": ctx.Param("releaseId"),
+	})
+	if idempotencyKey != "" {
+		existing, found, available := h.findReleaseByIdempotency(ctx, user.ID, project.ID, idempotencyKey, idempotencyRequestHash)
+		if !available {
+			return
+		}
+		if found {
+			ctx.JSON(http.StatusCreated, existing)
+			return
+		}
 	}
 	if !h.ensureProjectCanMutate(ctx, project) {
 		return
@@ -128,12 +180,28 @@ func (h *Handlers) RollbackRelease(ctx *gin.Context) {
 		return
 	}
 	release := rollbackReleaseFromTarget(source, target, user.ID, revision)
+	release.IdempotencyKey = idempotencyKey
+	release.IdempotencyRequestHash = idempotencyRequestHash
 	release.ID = id.New("rel")
 	if err := h.dbFor(ctx).Create(&release).Error; err != nil {
+		if idempotencyKey != "" {
+			existing, found, available := h.findReleaseByIdempotency(ctx, user.ID, project.ID, idempotencyKey, idempotencyRequestHash)
+			if !available {
+				return
+			}
+			if found {
+				ctx.JSON(http.StatusCreated, existing)
+				return
+			}
+		}
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
 	if !h.enqueueDeployRun(ctx.Request.Context(), release) {
+		if release.IdempotencyKey != "" {
+			writeError(ctx, http.StatusServiceUnavailable, "部署队列暂不可用")
+			return
+		}
 		release.Status = "failed"
 		release.Message = "部署任务投递失败，请稍后重试"
 		if err := h.dbFor(ctx).Save(&release).Error; err != nil {

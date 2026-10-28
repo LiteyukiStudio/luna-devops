@@ -54,7 +54,7 @@
     "tailwind-merge": "^3.6.0",
     "tailwindcss": "^4.3.0",
     "yaml": "^2.9.0",
-    "zod": "^4.4.3"
+    "zod": "^4.6.6"
   },
   "devDependencies": {
     "@antfu/eslint-config": "^9.1.0",
@@ -73,7 +73,7 @@
     "jsdom": "^29.1.1",
     "openapi-typescript": "^7.13.0",
     "typescript": "~6.0.2",
-    "vite": "^8.0.12",
+    "vite": "^8.1.6",
     "vitest": "^4.1.10"
   }
 }

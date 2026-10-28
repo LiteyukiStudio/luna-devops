@@ -245,16 +245,64 @@ export function buildServer(input: BuildServerDependencies): FastifyInstance {
         return value
       })
       try {
+        await input.repository.updateRun(created.run.id, "queued", "running", { startedAt: new Date().toISOString() })
         await input.repository.touchRunSelectedOperations(created.run.id, [body.operationId], 16)
-        const call = await input.tools.propose({ runId: created.run.id, operationId: body.operationId, arguments: body.arguments, inputMode: "direct" })
-		if (call.status === "awaiting_approval")
-		  await input.repository.updateRun(created.run.id, "queued", "waiting_approval")
-		else
-          await input.repository.updateRun(created.run.id, "queued", call.status === "failed" ? "failed" : "completed", { completedAt: new Date().toISOString() })
+        const call = await input.tools.propose({
+          runId: created.run.id,
+          operationId: body.operationId,
+          arguments: body.arguments,
+          inputMode: "direct",
+        })
+        if (call.status === "awaiting_approval") {
+          await input.repository.saveRunCheckpoint(created.run.id, {
+            expectedRevision: 0,
+            phase: "awaiting_approval",
+            modelStep: 0,
+            toolCallCount: 0,
+            state: { pendingToolCallId: call.id },
+          })
+          await input.repository.updateRun(created.run.id, "running", "waiting_approval")
+        }
+        else if (call.status === "failed" || call.status === "rejected" || call.status === "canceled")
+          await input.repository.updateRun(created.run.id, "running", "failed", {
+            completedAt: new Date().toISOString(),
+            errorCode: call.errorCode ?? "ai.tool_execution_failed",
+          })
+        else {
+          const outcome = await input.tools.outcome(call.id)
+          if (outcome.kind === "failed")
+            await input.repository.updateRun(created.run.id, "running", "failed", {
+              completedAt: new Date().toISOString(),
+              errorCode: outcome.errorCode,
+            })
+          else if (outcome.kind === "running" || outcome.kind === "succeeded" && outcome.verificationRequired)
+            await input.repository.updateRun(created.run.id, "running", "queued")
+          else if (outcome.kind === "succeeded")
+            await input.repository.updateRun(created.run.id, "running", "completed", { completedAt: new Date().toISOString() })
+          else
+            await input.repository.updateRun(created.run.id, "running", "failed", {
+              completedAt: new Date().toISOString(),
+              errorCode: "ai.tool_execution_failed",
+            })
+        }
         const run = await input.repository.getRun(request.actor.userId, created.run.id)
         return reply.code(202).send({ turnId: created.turn.id, turnIndex: created.turn.turnIndex, runId: created.run.id, state: run?.status ?? "completed", toolCallId: call.id, eventsUrl: `/api/v1/ai/runs/${created.run.id}/events` })
       } catch (error) {
-        try { await input.repository.updateRun(created.run.id, "queued", "failed", { completedAt: new Date().toISOString(), errorCode: telemetryErrorCode(error) }) } catch { /* the tool may already have transitioned the run */ }
+        try {
+          await input.repository.updateRun(created.run.id, "running", "failed", {
+            completedAt: new Date().toISOString(),
+            errorCode: telemetryErrorCode(error),
+          })
+        }
+        catch {
+          try {
+            await input.repository.updateRun(created.run.id, "queued", "failed", {
+              completedAt: new Date().toISOString(),
+              errorCode: telemetryErrorCode(error),
+            })
+          }
+          catch { /* the tool may already have transitioned the run */ }
+        }
         throw error
       }
     })

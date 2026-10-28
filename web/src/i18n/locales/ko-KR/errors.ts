@@ -136,9 +136,11 @@ const errors = {
     wallet_balance_insufficient: '개인 지갑의 사용 가능 잔액이 부족합니다. 모델 호출이 전송되지 않았습니다.',
   },
   request: {
+    failed: '요청 처리에 실패했습니다. 잠시 후 다시 시도하세요',
+    idempotency_conflict: '이 요청 식별자는 다른 파라미터의 요청에 이미 사용되었습니다. 작업을 다시 시작하세요.',
+    idempotency_key_invalid: '요청 식별자는 8~128자여야 합니다.',
     invalid: '요청 파라미터가 올바르지 않습니다',
     invalid_json: '요청 JSON 형식이 올바르지 않습니다',
-    failed: '요청 처리에 실패했습니다. 잠시 후 다시 시도하세요',
   },
   resource: {
     not_found: '리소스가 존재하지 않거나 삭제되었습니다',

@@ -35,6 +35,9 @@ function operation(input: Partial<ToolOperation> & Pick<ToolOperation, "operatio
     requestBody: input.requestBody ?? false,
     requestRequired: input.requestRequired ?? false,
     requestType: input.requestType ?? "",
+    ...(input.effect ? { effect: input.effect } : {}),
+    ...(input.verification ? { verification: input.verification } : {}),
+    ...(input.verificationOnly ? { verificationOnly: input.verificationOnly } : {}),
   }
 }
 
@@ -70,6 +73,8 @@ const projectVolumeOperations = [
     method: "PATCH",
     idempotent: false,
     requiredScopes: ["volume:write"],
+    effect: "write",
+    verification: [{ operationId: "getProjectVolume", family: "resource", idFrom: "argument.volumeId", readIdArgument: "volumeId" }],
   }),
   operation({
     operationId: "previewProjectVolumeDeletion",
@@ -80,6 +85,7 @@ const projectVolumeOperations = [
     requiresApproval: true,
     method: "POST",
     requiredScopes: ["volume:delete"],
+    effect: "read",
   }),
   operation({
     operationId: "deleteProjectVolume",
@@ -91,21 +97,35 @@ const projectVolumeOperations = [
     method: "DELETE",
     idempotent: false,
     requiredScopes: ["volume:delete"],
+    effect: "write",
+    verification: [{ operationId: "getProjectVolume", family: "resource", idFrom: "argument.volumeId", readIdArgument: "volumeId", expect: "absent" }],
   }),
 ]
 
 const broadOperations = [
   ...projectVolumeOperations,
-  operation({ operationId: "createProject", name: "创建项目空间", summary: "创建新的项目空间。", category: "projects", tags: ["Projects"], aliases: { zh: ["创建项目空间", "新建项目"], en: ["create project", "create project space"] }, purpose: { zh: "创建项目空间。", en: "Create a project." }, method: "POST", idempotent: false, requiredScopes: ["project:write"] }),
+  operation({ operationId: "createProject", name: "创建项目空间", summary: "创建新的项目空间。", category: "projects", tags: ["Projects"], aliases: { zh: ["创建项目空间", "新建项目"], en: ["create project", "create project space"] }, purpose: { zh: "创建项目空间。", en: "Create a project." }, method: "POST", idempotent: false, requiredScopes: ["project:write"], effect: "write", verification: [{ operationId: "getProject", family: "resource", idFrom: "result.id", readIdArgument: "projectId" }] }),
   operation({ operationId: "getProject", name: "查看项目空间详情", summary: "按 projectId 读取项目空间。", category: "projects", tags: ["Projects"], aliases: { zh: ["查看项目空间详情"], en: ["get project", "project details"] }, purpose: { zh: "读取项目空间详情。", en: "Get project details." }, inputSchema: { type: "object", properties: { projectId: { type: "string", description: "项目空间标识" } }, required: ["projectId"], additionalProperties: false } }),
   operation({ operationId: "listUsers", name: "列出平台用户", summary: "分页列出平台用户。", category: "users", tags: ["Users"], aliases: { zh: ["列出平台用户", "用户列表"], en: ["list platform users"] }, purpose: { zh: "列出平台用户。", en: "List platform users." } }),
   operation({ operationId: "getBillingSummary", name: "查看平台账单概览", summary: "读取账单费用和用量概览。", category: "billing", tags: ["Billing"], aliases: { zh: ["查看平台账单概览", "费用概览"], en: ["billing summary"] }, purpose: { zh: "查看平台账单概览。", en: "Get billing summary." } }),
   operation({ operationId: "listNotificationChannels", name: "列出通知渠道", summary: "分页列出通知渠道。", category: "notifications", tags: ["Notifications"], aliases: { zh: ["查看通知渠道", "通知渠道列表"], en: ["list notification channels"] }, purpose: { zh: "列出通知渠道。", en: "List notification channels." } }),
-  operation({ operationId: "webSearch", name: "搜索互联网", summary: "通过受控出口搜索公开网络。", category: "web", tags: ["Web"], aliases: { zh: ["搜索互联网", "网络搜索"], en: ["web search", "search the internet"] }, purpose: { zh: "搜索互联网。", en: "Search the public web." }, method: "POST", path: "/api/v1/ai-tools/web-search", inputSchema: { type: "object", properties: { query: { type: "string" } }, required: ["query"], additionalProperties: false } }),
-  operation({ operationId: "fetchWebPage", name: "读取公开网页正文", summary: "读取公开 URL 的有界正文。", category: "web", tags: ["Web"], aliases: { zh: ["读取公开网页正文", "获取网页正文"], en: ["fetch web page", "read webpage"] }, purpose: { zh: "读取公开网页正文。", en: "Fetch a public webpage." }, method: "POST", path: "/api/v1/ai-tools/fetch-web-page", inputSchema: { type: "object", properties: { url: { type: "string" } }, required: ["url"], additionalProperties: false } }),
+  operation({ operationId: "webSearch", name: "搜索互联网", summary: "通过受控出口搜索公开网络。", category: "web", tags: ["Web"], aliases: { zh: ["搜索互联网", "网络搜索"], en: ["web search", "search the internet"] }, purpose: { zh: "搜索互联网。", en: "Search the public web." }, method: "POST", path: "/api/v1/ai-tools/web-search", effect: "read", inputSchema: { type: "object", properties: { query: { type: "string" } }, required: ["query"], additionalProperties: false } }),
+  operation({ operationId: "fetchWebPage", name: "读取公开网页正文", summary: "读取公开 URL 的有界正文。", category: "web", tags: ["Web"], aliases: { zh: ["读取公开网页正文", "获取网页正文"], en: ["fetch web page", "read webpage"] }, purpose: { zh: "读取公开网页正文。", en: "Fetch a public webpage." }, method: "POST", path: "/api/v1/ai-tools/fetch-web-page", effect: "read", inputSchema: { type: "object", properties: { url: { type: "string" } }, required: ["url"], additionalProperties: false } }),
 ]
 
 describe("ToolCatalog", () => {
+  it("keeps verification-only reads available to the runtime without exposing them to the model", () => {
+    const catalog = ToolCatalog.load([
+      testToolOperation("getProject"),
+      testToolOperation("getVerificationState", { verificationOnly: true }),
+    ])
+
+    expect(catalog.get("getVerificationState").verificationOnly).toBe(true)
+    expect(catalog.search().items.map(item => item.operationId)).toEqual(["getProject"])
+    expect(catalog.modelTools(["getVerificationState"])).toEqual([])
+    expect(catalog.semanticDetails(["getVerificationState"]).missingOperationIds).toEqual(["getVerificationState"])
+  })
+
   it.each([
     "name", "summary", "tags", "aliases", "purpose", "avoidWhen", "preconditions",
     "successEvidence", "requiresApproval", "inputSchema", "outputSchema", "requestBody", "requestRequired",

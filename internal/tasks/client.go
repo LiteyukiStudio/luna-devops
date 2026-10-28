@@ -128,7 +128,7 @@ func (c *Client) EnqueueDeployRun(ctx context.Context, payload DeployRunPayload)
 		return nil, err
 	}
 
-	return c.enqueueWithPolicy(ctx, task, PolicyForType(TypeDeployRun))
+	return c.enqueueWithPolicy(ctx, task, PolicyForType(TypeDeployRun), asynq.TaskID("deploy-"+payload.ReleaseID))
 }
 
 func (c *Client) EnqueueBuildRun(ctx context.Context, payload BuildRunPayload) (*asynq.TaskInfo, error) {
@@ -137,7 +137,7 @@ func (c *Client) EnqueueBuildRun(ctx context.Context, payload BuildRunPayload) (
 		return nil, err
 	}
 
-	return c.enqueueWithPolicy(ctx, task, PolicyForType(TypeBuildRun))
+	return c.enqueueWithPolicy(ctx, task, PolicyForType(TypeBuildRun), asynq.TaskID("build-"+payload.BuildJobID))
 }
 
 func (c *Client) EnqueueBuildRunAfter(ctx context.Context, payload BuildRunPayload, delay time.Duration) (*asynq.TaskInfo, error) {
@@ -220,14 +220,15 @@ func (c *Client) EnqueueGitAccountRefresh(ctx context.Context, payload GitAccoun
 	return c.enqueueWithPolicy(ctx, task, PolicyForType(TypeGitAccountRefresh))
 }
 
-func (c *Client) enqueueWithPolicy(ctx context.Context, task *asynq.Task, policy EnqueuePolicy) (*asynq.TaskInfo, error) {
-	return c.enqueue(ctx, task, policy.Queue,
+func (c *Client) enqueueWithPolicy(ctx context.Context, task *asynq.Task, policy EnqueuePolicy, options ...asynq.Option) (*asynq.TaskInfo, error) {
+	options = append([]asynq.Option{
 		asynq.Queue(policy.Queue),
 		asynq.MaxRetry(policy.MaxRetry),
 		asynq.Timeout(policy.Timeout),
 		asynq.Retention(policy.Retention),
 		asynq.Unique(policy.Unique),
-	)
+	}, options...)
+	return c.enqueue(ctx, task, policy.Queue, options...)
 }
 
 func (c *Client) enqueue(ctx context.Context, task *asynq.Task, queue string, options ...asynq.Option) (info *asynq.TaskInfo, err error) {
@@ -244,6 +245,15 @@ func (c *Client) enqueue(ctx context.Context, task *asynq.Task, queue string, op
 	startedAt := time.Now()
 	task = taskWithTraceHeaders(ctx, task)
 	info, err = c.client.EnqueueContext(ctx, task, options...)
+	if errors.Is(err, asynq.ErrTaskIDConflict) || errors.Is(err, asynq.ErrDuplicateTask) {
+		for _, option := range options {
+			if option.Type() == asynq.TaskIDOpt {
+				info = &asynq.TaskInfo{ID: option.Value().(string), Queue: queue, Type: task.Type()}
+				err = nil
+				break
+			}
+		}
+	}
 	outcome := telemetry.ErrorOutcome(err)
 	metricOptions := metric.WithAttributes(
 		attribute.String("task.type", task.Type()),

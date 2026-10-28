@@ -64,24 +64,26 @@ type RuntimeCluster struct {
 }
 
 type Release struct {
-	ID                 string         `gorm:"primaryKey" json:"id"`
-	ProjectID          string         `gorm:"index;not null" json:"projectId"`
-	ApplicationID      string         `gorm:"index;not null" json:"applicationId"`
-	DeploymentTargetID string         `gorm:"index;not null;default:''" json:"deploymentTargetId"`
-	BuildRunID         string         `gorm:"index" json:"buildRunId"`
-	ImageRef           string         `gorm:"not null" json:"imageRef"`
-	ForceImagePull     bool           `gorm:"not null;default:false" json:"forceImagePull"`
-	Type               string         `gorm:"not null;default:deploy" json:"type"`
-	Status             string         `gorm:"index;not null;default:pending" json:"status"`
-	Revision           int            `gorm:"not null;default:1" json:"revision"`
-	RollbackFromID     string         `gorm:"index" json:"rollbackFromId"`
-	Message            string         `json:"message"`
-	StartedAt          *time.Time     `json:"startedAt"`
-	FinishedAt         *time.Time     `json:"finishedAt"`
-	CreatedBy          string         `gorm:"index" json:"createdBy"`
-	CreatedAt          time.Time      `json:"createdAt"`
-	UpdatedAt          time.Time      `json:"updatedAt"`
-	DeletedAt          gorm.DeletedAt `gorm:"index" json:"-"`
+	ID                     string         `gorm:"primaryKey" json:"id"`
+	ProjectID              string         `gorm:"index;not null" json:"projectId"`
+	ApplicationID          string         `gorm:"index;not null" json:"applicationId"`
+	DeploymentTargetID     string         `gorm:"index;not null;default:''" json:"deploymentTargetId"`
+	BuildRunID             string         `gorm:"index" json:"buildRunId"`
+	ImageRef               string         `gorm:"not null" json:"imageRef"`
+	ForceImagePull         bool           `gorm:"not null;default:false" json:"forceImagePull"`
+	Type                   string         `gorm:"not null;default:deploy" json:"type"`
+	Status                 string         `gorm:"index;not null;default:pending" json:"status"`
+	Revision               int            `gorm:"not null;default:1" json:"revision"`
+	RollbackFromID         string         `gorm:"index" json:"rollbackFromId"`
+	Message                string         `json:"message"`
+	StartedAt              *time.Time     `json:"startedAt"`
+	FinishedAt             *time.Time     `json:"finishedAt"`
+	CreatedBy              string         `gorm:"index" json:"createdBy"`
+	IdempotencyKey         string         `gorm:"not null;default:''" json:"-"`
+	IdempotencyRequestHash string         `gorm:"not null;default:''" json:"-"`
+	CreatedAt              time.Time      `json:"createdAt"`
+	UpdatedAt              time.Time      `json:"updatedAt"`
+	DeletedAt              gorm.DeletedAt `gorm:"index" json:"-"`
 }
 
 type DeploymentTarget struct {

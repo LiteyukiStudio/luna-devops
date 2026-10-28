@@ -6,13 +6,16 @@ import { agentMetrics, errorDiagnostic, internalSpanOptions, recordAIContent, st
 import { ToolArgumentsInvalidError, requiredInputFields, validateToolArguments } from "./argument-validator.js"
 import type { Repository } from "../persistence/repository.js"
 import type { ToolCatalog } from "./catalog.js"
-import type { LunaApiToolClient, ToolExecutionResult } from "./luna-api-client.js"
+import { UnknownToolOutcomeError, type LunaApiToolClient, type ToolExecutionResult } from "./luna-api-client.js"
 import { InMemoryLoopGuard, type LoopGuard, type LoopGuardState, type ToolLoopSnapshot } from "./loop-guard.js"
+import { toolEffect, toolOutcome, type ToolOutcome } from "./outcome.js"
 import { ToolPolicy } from "./policy.js"
 
 export type ToolCallStatus = "proposed" | "awaiting_approval" | "running" | "succeeded" | "failed" | "rejected" | "canceled" | "skipped"
 export type ToolCallRecord = {
   id: string
+  idempotencyKey: string
+  verificationForToolCallId?: string
   runId: string
   operationId: string
   status: ToolCallStatus
@@ -24,7 +27,7 @@ export type ToolCallRecord = {
   /** 仅用于工具状态的原子更新，不再由审批 API 暴露。 */
   rowVersion: number
   approvalDecision?: "approve"
-  inputMode?: "model" | "direct"
+  inputMode?: "model" | "direct" | "verification"
   result?: unknown
   errorCode?: string
 }
@@ -62,10 +65,46 @@ export class ToolOrchestrator {
     this.loopGuard = loopGuard
   }
 
-  async propose(input: { runId: string, operationId: string, arguments: unknown, inputMode?: "model" | "direct" }, signal?: AbortSignal): Promise<ToolCallRecord> {
-    const operation = (await this.catalogForRun(input.runId)).get(input.operationId)
+  async propose(input: {
+    runId: string
+    operationId: string
+    arguments: unknown
+    inputMode?: "model" | "direct" | "verification"
+    verificationForToolCallId?: string
+  }, signal?: AbortSignal): Promise<ToolCallRecord> {
+    const catalog = await this.catalogForRun(input.runId)
+    const operation = catalog.get(input.operationId)
     const argumentsHash = safeArgumentsHash(input.arguments)
-    this.loopGuard.beforePropose({ runId: input.runId, operationId: input.operationId, argumentsHash })
+    const inputMode = input.inputMode ?? "model"
+    const effect = toolEffect(operation)
+    const sideEffect = inputMode !== "verification" && (effect === "write" || effect === "async")
+    if (sideEffect && !operation.verification?.length)
+      throw new Error("ai.tool_not_available")
+    const history = sideEffect
+      ? (await this.store.listByRun(input.runId)).filter(call =>
+          call.inputMode !== "verification"
+          && isSideEffectOperation(catalog, call.operationId))
+      : []
+    const previous = history.at(-1)
+    const idempotencyKey = previous?.operationId === input.operationId && previous.argumentsHash === argumentsHash
+      ? previous.idempotencyKey
+      : logicalIdempotencyKey(
+          input.runId,
+          input.operationId,
+          argumentsHash,
+          new Set(history
+            .filter(call => call.operationId === input.operationId && call.argumentsHash === argumentsHash)
+            .map(call => call.idempotencyKey)).size + 1,
+        )
+    const existingCalls = sideEffect
+      ? history.filter(call => call.idempotencyKey === idempotencyKey)
+      : []
+    const reusable = existingCalls.find(call =>
+      call.status === "proposed" || call.status === "running" || call.status === "awaiting_approval" || call.status === "succeeded")
+    if (reusable) return reusable
+    const attempt = existingCalls.reduce((maximum, call) => Math.max(maximum, call.attempt), 0) + 1
+    if (inputMode !== "verification")
+      this.loopGuard.beforePropose({ runId: input.runId, operationId: input.operationId, argumentsHash })
     let args: Record<string, unknown>
     try {
       args = validateToolArguments(operation.inputSchema, input.arguments)
@@ -74,17 +113,19 @@ export class ToolOrchestrator {
       if (!(error instanceof ToolArgumentsInvalidError)) throw error
       const fields = requiredInputFields(error)
       if (fields) throw new ToolInterruption("waiting_input", fields)
-      return this.rejectInvalidArguments(input, argumentsHash, error)
+      return this.rejectInvalidArguments(input, argumentsHash, idempotencyKey, attempt, error)
     }
-    const inputMode = input.inputMode ?? "model"
+    const id = createId("aitool")
     const record: ToolCallRecord = {
-      id: createId("aitool"),
+      id,
+      idempotencyKey,
+      ...(input.verificationForToolCallId ? { verificationForToolCallId: input.verificationForToolCallId } : {}),
       runId: input.runId,
       operationId: input.operationId,
       status: "proposed",
       arguments: args,
       argumentsHash,
-      attempt: 1,
+      attempt,
       rowVersion: 1,
       executionCount: 0,
       inputMode,
@@ -130,17 +171,32 @@ export class ToolOrchestrator {
     return this.require(id)
   }
 
+  async outcome(id: string): Promise<ToolOutcome> {
+    const call = await this.require(id)
+    const catalog = await this.catalogForRun(call.runId)
+    const operation = catalog.get(call.operationId)
+    return toolOutcome(operation, call, (operationId) => {
+      try {
+        return catalog.get(operationId)
+      }
+      catch {
+        return undefined
+      }
+    })
+  }
+
   /**
    * 恢复崩溃批次：读取 Run 的工具执行事实，并把已落地的调用计入循环保护计数，
    * 使重启后 Run 的工具预算不放宽。事实表是权威结果，Timeline 投影缺失不影响计数。
    */
   async recoverToolBatch(runId: string): Promise<ToolCallRecord[]> {
     const calls = await this.store.listByRun(runId)
+    const modelCalls = calls.filter(call => call.inputMode !== "verification")
     this.loopGuard.raiseFromSettledCalls(runId, {
-      proposed: calls.length,
-      executed: calls.reduce((count, call) => count + call.executionCount, 0),
-      occurrences: calls.map(call => ({ operationId: call.operationId, argumentsHash: call.argumentsHash })),
-      nonRetryableCalls: calls
+      proposed: modelCalls.length,
+      executed: modelCalls.reduce((count, call) => count + call.executionCount, 0),
+      occurrences: modelCalls.map(call => ({ operationId: call.operationId, argumentsHash: call.argumentsHash })),
+      nonRetryableCalls: modelCalls
         .filter(call => isExplicitlyNonRetryable(call.result))
         .map(call => ({ operationId: call.operationId, argumentsHash: call.argumentsHash })),
     })
@@ -153,6 +209,8 @@ export class ToolOrchestrator {
     this.loopGuard.beforePropose({ runId: previous.runId, operationId: previous.operationId, argumentsHash: previous.argumentsHash })
     const retry: ToolCallRecord = {
       id: createId("aitool"),
+      idempotencyKey: previous.idempotencyKey,
+      ...(previous.verificationForToolCallId ? { verificationForToolCallId: previous.verificationForToolCallId } : {}),
       runId: previous.runId,
       operationId: previous.operationId,
       status: "proposed",
@@ -243,7 +301,8 @@ export class ToolOrchestrator {
   private async execute(call: ToolCallRecord, approvalGranted: boolean, operation: ReturnType<ToolCatalog["get"]>, signal: AbortSignal): Promise<ToolCallRecord> {
     const startedAt = performance.now()
     let outcome = "succeeded"
-    this.loopGuard.beforeExecute({ runId: call.runId, operationId: call.operationId, argumentsHash: call.argumentsHash })
+    if (call.inputMode !== "verification")
+      this.loopGuard.beforeExecute({ runId: call.runId, operationId: call.operationId, argumentsHash: call.argumentsHash })
     try {
       return await withSpan(`execute_tool ${call.operationId}`, internalSpanOptions({
         ...genAIToolSpanAttributes({
@@ -268,6 +327,7 @@ export class ToolOrchestrator {
           result = await this.client.execute({
             runId: call.runId,
             toolCallId: call.id,
+            idempotencyKey: call.idempotencyKey,
             operation,
             arguments: call.arguments,
             signal,
@@ -297,12 +357,15 @@ export class ToolOrchestrator {
             return durablyCanceled
           }
           const errorCode = stableErrorCode(error)
+          const unknownOutcome = error instanceof UnknownToolOutcomeError
+          const retryable = unknownOutcome && operation.retryOnUnknown === true
           recordAIContent(span, "luna.gen_ai.tool.content.output", "gen_ai.tool.call.result", {
             error: { type: error instanceof Error ? error.name : "UnknownError", code: errorCode },
           }, { "gen_ai.tool.name": call.operationId, "luna.tool_call.id": call.id })
           const failed = await this.fail(running, errorCode, {
             code: errorCode,
-            retryable: false,
+            retryable,
+            ...(unknownOutcome ? { outcome: "unknown" } : {}),
           }, {
             durationMs: Math.max(0, Math.round(performance.now() - startedAt)),
             traceId: span.spanContext().traceId,
@@ -327,7 +390,7 @@ export class ToolOrchestrator {
         const finished = await this.finish(running, result, {
           durationMs: Math.max(0, Math.round(performance.now() - startedAt)),
           traceId: span.spanContext().traceId,
-        })
+        }, operation)
         outcome = finished.status
         telemetryLog(finished.status === "succeeded" ? "agent.tool.completed" : "agent.tool.failed", finished.status === "succeeded" ? "info" : "warn", {
           "luna.run.id": call.runId,
@@ -365,7 +428,7 @@ export class ToolOrchestrator {
     }
   }
 
-  private async finish(call: ToolCallRecord, result: ToolExecutionResult, diagnostics: { durationMs: number, traceId: string }): Promise<ToolCallRecord> {
+  private async finish(call: ToolCallRecord, result: ToolExecutionResult, diagnostics: { durationMs: number, traceId: string }, operation: ReturnType<ToolCatalog["get"]>): Promise<ToolCallRecord> {
     const code = extractCode(result.body)
     const storedResult = redact(withRequestId(result.body, result.requestId))
     if (result.status === 428 && code === "ai.approval_required")
@@ -382,6 +445,10 @@ export class ToolOrchestrator {
       }
       return failed
     }
+    if (toolEffect(operation) === "execute") {
+      const outcome = toolOutcome(operation, { ...call, status: "succeeded", result: storedResult })
+      if (outcome.kind === "failed") return this.fail(call, outcome.errorCode, storedResult, diagnostics)
+    }
     return this.transition(call, "succeeded", { result: storedResult }, "tool_call.succeeded", diagnostics)
   }
 
@@ -389,16 +456,24 @@ export class ToolOrchestrator {
     return this.transition(call, "failed", { errorCode, result: storedResult }, "tool_call.failed", diagnostics)
   }
 
-  private async rejectInvalidArguments(input: { runId: string, operationId: string, inputMode?: "model" | "direct" }, argumentsHash: string, error: ToolArgumentsInvalidError): Promise<ToolCallRecord> {
+  private async rejectInvalidArguments(
+    input: { runId: string, operationId: string, inputMode?: "model" | "direct" | "verification" },
+    argumentsHash: string,
+    idempotencyKey: string,
+    attempt: number,
+    error: ToolArgumentsInvalidError,
+  ): Promise<ToolCallRecord> {
     const result = error.toJSON()
+    const id = createId("aitool")
     const record: ToolCallRecord = {
-      id: createId("aitool"),
+      id,
+      idempotencyKey,
       runId: input.runId,
       operationId: input.operationId,
       status: "proposed",
       arguments: {},
       argumentsHash,
-      attempt: 1,
+      attempt,
       rowVersion: 1,
       executionCount: 0,
       errorCode: error.code,
@@ -496,6 +571,16 @@ function safeArgumentsHash(value: unknown): string {
   }
 }
 
+function logicalIdempotencyKey(runId: string, operationId: string, argumentsHash: string, occurrence: number): string {
+  return `aiidem_${hashCanonicalJSON({ runId, operationId, argumentsHash, occurrence })}`
+}
+
+function isSideEffectOperation(catalog: ToolCatalog, operationId: string): boolean {
+  const operation = catalog.get(operationId)
+  const effect = toolEffect(operation)
+  return effect === "write" || effect === "async"
+}
+
 export class MemoryToolCallStore implements ToolCallStore {
   readonly records = new Map<string, ToolCallRecord>()
   readonly events: ToolEvent[] = []
@@ -552,6 +637,8 @@ function toolCallContent(call: ToolCallRecord) {
     toolCallId: call.id,
     operationId: call.operationId,
     status: call.status,
+    inputMode: call.inputMode ?? "model",
+    ...(call.verificationForToolCallId ? { verificationForToolCallId: call.verificationForToolCallId } : {}),
     arguments: call.arguments,
     result: call.result,
     errorCode: call.errorCode,

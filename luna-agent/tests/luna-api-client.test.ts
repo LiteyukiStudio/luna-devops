@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { ToolCatalog, type ToolOperation } from "../src/tools/catalog.js"
-import { buildToolRequest, HttpLunaApiToolClient } from "../src/tools/luna-api-client.js"
+import { buildToolRequest, HttpLunaApiToolClient, UnknownToolOutcomeError } from "../src/tools/luna-api-client.js"
 import { testToolOperation } from "./support/tool-catalog.js"
 
 afterEach(() => {
@@ -25,6 +25,7 @@ describe("Luna API tool client", () => {
     const result = await new HttpLunaApiToolClient("http://api:8080", "service-token").execute({
       runId: "airun_1",
       toolCallId: "aitool_1",
+      idempotencyKey: "aitool_1",
       operation,
       arguments: { projectId: "prj_1", templateId: "postgresql", values: { username: "app", password: "generated" } },
     })
@@ -51,6 +52,7 @@ describe("Luna API tool client", () => {
     const result = await new HttpLunaApiToolClient("http://api:8080", "service-token", 5).execute({
       runId: "airun_1",
       toolCallId: "aitool_1",
+      idempotencyKey: "aitool_1",
       operation: toolOperation({
         operationId: "listProjects",
         method: "GET",
@@ -70,6 +72,7 @@ describe("Luna API tool client", () => {
     const result = await new HttpLunaApiToolClient("http://api:8080", "service-token", 5).execute({
       runId: "airun_1",
       toolCallId: "aitool_1",
+      idempotencyKey: "aitool_1",
       operation: toolOperation({ operationId: "createThing", method: "POST", path: "/api/v1/things", requestBody: true, idempotent: false }),
       arguments: { name: "thing" },
     })
@@ -83,6 +86,7 @@ describe("Luna API tool client", () => {
     const result = await new HttpLunaApiToolClient("http://api:8080", "service-token").execute({
       runId: "airun_1",
       toolCallId: "aitool_1",
+      idempotencyKey: "aitool_1",
       operation: toolOperation({ operationId: "deleteThing", method: "DELETE", path: "/api/v1/things/{thingId}", parameters: [{ inputName: "thingId", wireName: "thingId", in: "path", required: true }] }),
       arguments: { thingId: "thing_1" },
     })
@@ -90,15 +94,31 @@ describe("Luna API tool client", () => {
     expect(result).toMatchObject({ status: 204, body: undefined })
   })
 
-  it("rejects a successful response that violates the JSON contract", async () => {
+  it("marks a successful response with an invalid JSON body as an unknown outcome", async () => {
     vi.stubGlobal("fetch", vi.fn<typeof fetch>().mockResolvedValueOnce(new Response("<html>upstream proxy error</html>", { status: 200 })))
 
     await expect(new HttpLunaApiToolClient("http://api:8080", "service-token").execute({
       runId: "airun_1",
       toolCallId: "aitool_1",
+      idempotencyKey: "aitool_1",
       operation: toolOperation({ operationId: "getThing", method: "GET", path: "/api/v1/things" }),
       arguments: {},
-    })).rejects.toThrow("ai.tool_response_invalid_json")
+    })).rejects.toMatchObject({
+      name: "UnknownToolOutcomeError",
+      message: "ai.tool_outcome_unknown",
+    })
+  })
+
+  it("marks a transport failure after dispatch as an unknown tool outcome", async () => {
+    vi.stubGlobal("fetch", vi.fn<typeof fetch>().mockRejectedValueOnce(new Error("request timeout")))
+
+    await expect(new HttpLunaApiToolClient("http://api:8080", "service-token").execute({
+      runId: "airun_1",
+      toolCallId: "aitool_1",
+      idempotencyKey: "aitool_1",
+      operation: toolOperation({ operationId: "triggerThing", method: "POST", path: "/api/v1/things", requestBody: true, idempotent: false }),
+      arguments: { name: "thing" },
+    })).rejects.toBeInstanceOf(UnknownToolOutcomeError)
   })
 
   it("unwraps the OpenAPI request body envelope before calling the platform route", () => {

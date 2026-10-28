@@ -46,12 +46,28 @@ describe("Run 状态图", () => {
     expect(toolBatchAction({ kind: "continue" })).toEqual({ type: "continue_model" })
     expect(toolBatchAction({ kind: "waiting_approval", toolCallId: "aitool_1" }))
       .toEqual({ type: "waiting_approval", toolCallId: "aitool_1" })
+    expect(toolBatchAction({
+      kind: "verification",
+      verifications: [{
+        runId: "airun_1",
+        sourceToolCallId: "aitool_1",
+        sourceOperationId: "triggerBuildRun",
+        operationId: "getBuildRun",
+        family: "build_run",
+        expectation: "present",
+        arguments: { projectId: "prj_1", runId: "bldr_1" },
+        externalOperationId: "bldr_1",
+        attempts: 0,
+      }],
+    })).toEqual({ type: "verify" })
     expect(toolBatchAction({ kind: "complete" })).toEqual({ type: "complete" })
   })
 
   it("checkpoint 恢复计划映射为续跑动作", () => {
     expect(resumeAction({ kind: "model" }, "model")).toEqual({ type: "call_model" })
     expect(resumeAction({ kind: "settle_tool_batch" }, "tool_execution")).toEqual({ type: "settle_tools" })
+    expect(resumeAction({ kind: "verify" }, "verification")).toEqual({ type: "verify" })
+    expect(resumeAction({ kind: "verify" }, "waiting_external")).toEqual({ type: "verify" })
     expect(resumeAction({ kind: "await_approval", toolCallId: "aitool_1" }, "awaiting_approval"))
       .toEqual({ type: "waiting_approval", toolCallId: "aitool_1" })
     expect(resumeAction({ kind: "finalize", finalOutput: "已决定" }, "finalizing"))
@@ -63,6 +79,8 @@ describe("Run 状态图", () => {
     expect(() => assertGraphTransition("model", { type: "execute_tools", calls: [] })).not.toThrow()
     expect(() => assertGraphTransition("tool_execution", { type: "continue_model" })).not.toThrow()
     expect(() => assertGraphTransition("tool_execution", { type: "settle_tools" })).not.toThrow()
+    expect(() => assertGraphTransition("verification", { type: "verify" })).not.toThrow()
+    expect(() => assertGraphTransition("waiting_external", { type: "verify" })).not.toThrow()
     expect(() => assertGraphTransition("awaiting_input", { type: "call_model" })).not.toThrow()
     expect(() => assertGraphTransition("awaiting_approval", { type: "waiting_approval", toolCallId: "aitool_1" })).not.toThrow()
     expect(() => assertGraphTransition("finalizing", { type: "finalize", text: "完成" })).not.toThrow()

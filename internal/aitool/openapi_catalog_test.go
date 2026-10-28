@@ -158,18 +158,194 @@ func TestPlatformCatalogJSONIsMinimalAndSelfContained(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(encoded)
-	for _, removed := range []string{"\"contract\"", "predecessors", "followups", "verification", "searchHints", "\"allowed\""} {
+	for _, removed := range []string{"\"contract\"", "predecessors", "followups", "searchHints", "\"allowed\""} {
 		if strings.Contains(text, removed) {
 			t.Fatalf("legacy catalog field %s leaked: %s", removed, text)
 		}
 	}
-	for _, required := range []string{"operationId", "summary", "tags", "aliases", "purpose", "avoidWhen", "preconditions", "successEvidence", "requiresApproval", "inputSchema", "outputSchema", "parameters"} {
+	for _, required := range []string{"operationId", "summary", "tags", "aliases", "purpose", "avoidWhen", "preconditions", "successEvidence", "requiresApproval", "effect", "inputSchema", "outputSchema", "parameters"} {
 		if !strings.Contains(text, `"`+required+`"`) {
 			t.Fatalf("catalog JSON is missing %s: %s", required, text)
 		}
 	}
 	if !operation.RequiresApproval {
 		t.Fatal("high-risk volume creation must require approval")
+	}
+}
+
+func TestDeliveryOperationsDeclareAuthoritativeVerification(t *testing.T) {
+	expected := map[string][]OperationVerification{
+		"triggerBuildRun":    {{OperationID: "getBuildRun", Family: "build_run"}},
+		"retryBuildRun":      {{OperationID: "getBuildRun", Family: "build_run"}},
+		"createRelease":      {{OperationID: "getRelease", Family: "release"}},
+		"rollbackRelease":    {{OperationID: "getRelease", Family: "release"}},
+		"createGatewayRoute": {{OperationID: "getGatewayRoute", Family: "gateway_route"}},
+		"updateGatewayRoute": {{OperationID: "getGatewayRoute", Family: "gateway_route"}},
+	}
+	for operationID, want := range expected {
+		operation, ok := PlatformOperation(operationID)
+		if !ok {
+			t.Fatalf("missing %s", operationID)
+		}
+		if operation.Effect != "async" || !reflect.DeepEqual(operation.Verification, want) {
+			t.Errorf("%s execution semantics = effect:%q verification:%#v", operationID, operation.Effect, operation.Verification)
+		}
+	}
+	for _, operationID := range []string{"triggerBuildRun", "retryBuildRun", "createRelease", "rollbackRelease"} {
+		operation, ok := PlatformOperation(operationID)
+		if !ok || !operation.RetryOnUnknown {
+			t.Errorf("%s must allow idempotent replay after an unknown transport outcome", operationID)
+		}
+	}
+}
+
+func TestApplicationAndDeploymentWritesDeclareAuthoritativeReadback(t *testing.T) {
+	expected := map[string][]OperationVerification{
+		"createApplication":      {{OperationID: "getApplication", Family: "application"}},
+		"updateApplication":      {{OperationID: "getApplication", Family: "application"}},
+		"deleteApplication":      {{OperationID: "getApplication", Family: "application", Expect: "absent"}},
+		"createDeploymentTarget": {{OperationID: "listDeploymentTargets", Family: "deployment_target"}},
+		"updateDeploymentTarget": {{OperationID: "listDeploymentTargets", Family: "deployment_target"}},
+		"deleteDeploymentTarget": {{OperationID: "listDeploymentTargets", Family: "deployment_target", Expect: "absent"}},
+		"updateDeploymentTargetRuntimeSecrets": {
+			{OperationID: "getDeploymentTargetRuntimeSecretsSummary", Family: "runtime_secrets"},
+		},
+		"deleteBuildRun":     {{OperationID: "getBuildRun", Family: "build_run", Expect: "absent"}},
+		"cancelBuildRun":     {{OperationID: "getBuildRun", Family: "build_run", Expect: "canceled"}},
+		"deleteGatewayRoute": {{OperationID: "getGatewayRoute", Family: "gateway_route", Expect: "absent"}},
+		"installAppTemplate": {
+			{OperationID: "getRelease", Family: "release", WhenResultHas: "release"},
+			{OperationID: "getApplication", Family: "application"},
+		},
+	}
+	for operationID, want := range expected {
+		operation, ok := PlatformOperation(operationID)
+		if !ok {
+			t.Fatalf("missing %s", operationID)
+		}
+		if operation.Effect != "write" || !reflect.DeepEqual(operation.Verification, want) {
+			t.Errorf("%s execution semantics = effect:%q verification:%#v", operationID, operation.Effect, operation.Verification)
+		}
+	}
+}
+
+func TestRuntimeSecretSummaryIsVerificationOnly(t *testing.T) {
+	for _, operationID := range []string{
+		"getDeploymentTargetRuntimeSecretsSummary",
+		"getProjectRuntimeConfigSetRuntimeSecretsSummary",
+	} {
+		operation, ok := PlatformOperation(operationID)
+		if !ok {
+			t.Fatalf("missing runtime secret summary %s", operationID)
+		}
+		if operation.Effect != "read" || !operation.VerificationOnly {
+			t.Fatalf("%s semantics = effect:%q verificationOnly:%t", operationID, operation.Effect, operation.VerificationOnly)
+		}
+	}
+}
+
+func TestPlatformCatalogHasCompletionSemanticsForEveryMutation(t *testing.T) {
+	operations, err := PlatformCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, operation := range operations {
+		if operation.Effect != "write" && operation.Effect != "async" {
+			continue
+		}
+		if len(operation.Verification) == 0 {
+			t.Errorf("%s exposes a side effect without completion verification", operation.OperationID)
+		}
+	}
+}
+
+func TestExtendedResourceMutationsDeclareAuthoritativeReadback(t *testing.T) {
+	expected := map[string]OperationVerification{
+		"deleteRuntimeClusterResource": {
+			OperationID: "getRuntimeClusterResourceYAML",
+			Family:      "resource",
+			Expect:      "absent",
+			IDFrom:      "argument.name",
+		},
+		"updateProjectRuntimeConfigSetRuntimeSecrets": {
+			OperationID: "getProjectRuntimeConfigSetRuntimeSecretsSummary",
+			Family:      "runtime_config_secrets",
+		},
+		"updateProjectOrder": {
+			OperationID: "listProjects",
+			Family:      "project_order",
+		},
+		"updateBillingRateRules": {
+			OperationID: "listBillingRateRules",
+			Family:      "billing_rate_rules",
+		},
+		"restartDeploymentTarget": {
+			OperationID:     "listDeploymentTargets",
+			Family:          "resource",
+			IDFrom:          "argument.targetId",
+			Collection:      true,
+			StatusField:     "status",
+			PendingStatuses: []string{"progressing", "unavailable", "not-found", "not-configured", "unknown"},
+			SuccessStatuses: []string{"ready", "scaled-to-zero"},
+			FailureStatuses: []string{"degraded"},
+		},
+	}
+	for operationID, want := range expected {
+		operation, ok := PlatformOperation(operationID)
+		if !ok {
+			t.Fatalf("missing %s", operationID)
+		}
+		found := false
+		for _, verification := range operation.Verification {
+			if reflect.DeepEqual(verification, want) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("%s verification = %#v, want %#v", operationID, operation.Verification, want)
+		}
+	}
+	for _, operationID := range []string{"cleanupDataRetention", "execReleaseRuntimeCommand"} {
+		operation, ok := PlatformOperation(operationID)
+		if !ok {
+			t.Fatalf("missing %s", operationID)
+		}
+		if operation.Effect != "execute" {
+			t.Errorf("%s effect = %q, want execute", operationID, operation.Effect)
+		}
+		if !operation.RequiresApproval {
+			t.Errorf("%s must require approval", operationID)
+		}
+	}
+}
+
+func TestGenericResourceVerificationTracksProjectAndVolumeTerminals(t *testing.T) {
+	project, ok := PlatformOperation("createProject")
+	if !ok {
+		t.Fatal("missing createProject")
+	}
+	wantProject := []OperationVerification{{
+		OperationID:    "getProject",
+		Family:         "resource",
+		IDFrom:         "result.id",
+		ReadIDArgument: "projectId",
+	}}
+	if !reflect.DeepEqual(project.Verification, wantProject) {
+		t.Fatalf("createProject verification = %#v", project.Verification)
+	}
+
+	volume, ok := PlatformOperation("createProjectVolume")
+	if !ok {
+		t.Fatal("missing createProjectVolume")
+	}
+	if len(volume.Verification) != 1 ||
+		volume.Verification[0].OperationID != "getProjectVolume" ||
+		volume.Verification[0].StatusField != "lifecycleState" ||
+		!reflect.DeepEqual(volume.Verification[0].SuccessStatuses, []string{"ready"}) ||
+		!reflect.DeepEqual(volume.Verification[0].PendingStatuses, []string{"provisioning"}) ||
+		!reflect.DeepEqual(volume.Verification[0].FailureStatuses, []string{"error"}) {
+		t.Fatalf("createProjectVolume verification = %#v", volume.Verification)
 	}
 }
 

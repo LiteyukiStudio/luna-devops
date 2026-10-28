@@ -9,6 +9,7 @@ export const AI_EVENT_TYPES = [
   'run.queued',
   'run.waiting_approval',
   'run.waiting_input',
+  'run.waiting_external',
   'run.input_required',
   'run.input_received',
   'conversation.title.updated',

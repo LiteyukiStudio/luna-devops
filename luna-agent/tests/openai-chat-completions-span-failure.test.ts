@@ -133,24 +133,36 @@ describe("OpenAI Chat Completions spans", () => {
     const rawCommand = "kubectl get pods --namespace telemetry-private"
     const operationId = "executeRuntimeCommand"
     const argumentsValue = { body: { command: rawCommand, container: "api" } }
-    const catalog = ToolCatalog.load([{
-      ...testToolOperation(operationId),
-      operationId,
-      category: "runtime",
-      idempotent: false,
-      method: "POST",
-      path: "/api/v1/runtime/exec",
-      requiredScopes: ["runtime:write"],
-      sensitivePaths: ["body.command"],
-      inputSchema: {
-        type: "object",
-        properties: {
-          body: { type: "object" },
+    const catalog = ToolCatalog.load([
+      {
+        ...testToolOperation(operationId),
+        operationId,
+        category: "runtime",
+        idempotent: false,
+        method: "POST",
+        path: "/api/v1/runtime/exec",
+        requiredScopes: ["runtime:write"],
+        effect: "write",
+        verification: [{ operationId: "getRuntimeCommandState", family: "resource", singleton: true }],
+        sensitivePaths: ["body.command"],
+        inputSchema: {
+          type: "object",
+          properties: {
+            body: { type: "object" },
+          },
+          required: ["body"],
+          additionalProperties: false,
         },
-        required: ["body"],
-        additionalProperties: false,
       },
-    }])
+      {
+        ...testToolOperation("getRuntimeCommandState"),
+        operationId: "getRuntimeCommandState",
+        method: "GET",
+        path: "/api/v1/runtime/exec/state",
+        category: "runtime",
+        requiredScopes: ["runtime:read"],
+      },
+    ])
     const fetchMock = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({
       id: "chatcmpl_sensitive",
       model: "model-a",

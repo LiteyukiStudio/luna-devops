@@ -1,5 +1,5 @@
 import type { InteractionCardValidationIssue } from "@luna-devops/ai-interaction-card-contract"
-import type { ClaimedRun, RunCheckpoint } from "../domain.js"
+import type { ClaimedRun, RunCheckpoint, RunCompletionBlocker, RunToolVerification } from "../domain.js"
 import { genAIToolCallObject, genAIToolSpanAttributes } from "../genai-semconv.js"
 import type { ConversationPromptContext, ModelRuntime } from "../model-runtime.js"
 import type { Repository } from "../persistence/repository.js"
@@ -18,7 +18,8 @@ import { businessCardToolInputs, compileBusinessCardToolInput, isBusinessCardToo
 import { internalToolOperationIds } from "../tools/internal-operation-ids.js"
 import { getToolDetailsInput } from "../tools/tool-details.js"
 import { ToolLoopStoppedError } from "../tools/loop-guard.js"
-import type { ToolOrchestrator } from "../tools/orchestrator.js"
+import { ToolInterruption, type ToolOrchestrator } from "../tools/orchestrator.js"
+import type { ToolOutcome } from "../tools/outcome.js"
 import { searchToolsInput } from "../tools/tool-search.js"
 import {
   CardGenerationService,
@@ -37,9 +38,19 @@ import {
   restoredInternalToolResults,
 } from "./resume.js"
 import { toolResultMessage } from "./tool-results.js"
+import { evaluateVerification, type VerificationExecution } from "./verification.js"
 
 const selectedOperationLimit = 16
 const searchAutoLoadLimit = 5
+
+export class ToolStepInterruption extends ToolInterruption {
+  constructor(
+    fields: string[],
+    readonly pendingVerifications: RunToolVerification[],
+  ) {
+    super("waiting_input", fields)
+  }
+}
 
 export type RunExecutionInput = NonNullable<Awaited<ReturnType<Repository["getExecutionInput"]>>>
 
@@ -53,11 +64,13 @@ export type ToolStepState = {
   providerArgumentRepairAttempts: Map<string, number>
   searchedToolQueries: Map<string, ModelToolSearchResult>
   detailedToolRequests: Map<string, ModelToolDetailsResult>
+  completionBlockers: RunCompletionBlocker[]
 }
 
 export type ToolBatchResult =
   | { kind: "continue" }
   | { kind: "waiting_approval"; toolCallId: string }
+  | { kind: "verification"; verifications: RunToolVerification[] }
   | { kind: "complete" }
 
 export type ToolStepInput = {
@@ -106,6 +119,7 @@ export class ToolStepRunner {
       providerArgumentRepairAttempts: restoredArgumentRepairAttempts(checkpoint),
       searchedToolQueries: restoredInternalToolResults(executionInput.toolInteractions, "search_tools"),
       detailedToolRequests: restoredInternalToolResults(executionInput.toolInteractions, "get_tool_details"),
+      completionBlockers: [...checkpoint?.state.completionBlockers ?? []],
     }
   }
 
@@ -118,6 +132,7 @@ export class ToolStepRunner {
     let businessCardCalled = false
     let createdInteractionCardMode: "presentation" | "interactive" | undefined
     let recoverableToolError = false
+    const verifications: RunToolVerification[] = []
     const hasPlatformTool = input.calls.some(call => !internalToolOperationIds.has(call.operationId))
     for (const toolCall of input.calls) {
       if (toolCall.argumentError) {
@@ -406,9 +421,16 @@ export class ToolStepRunner {
       state.selectedOperationIds = (await this.repository.touchRunSelectedOperations(run.id, [toolCall.operationId], selectedOperationLimit)).selectedOperationIds
       let call: Awaited<ReturnType<ToolOrchestrator["propose"]>>
       try {
-        call = await this.tools.propose({ runId: run.id, operationId: toolCall.operationId, arguments: toolCall.arguments, inputMode: "model" }, signal)
+        call = await this.tools.propose({
+          runId: run.id,
+          operationId: toolCall.operationId,
+          arguments: toolCall.arguments,
+          inputMode: "model",
+        }, signal)
       }
       catch (error) {
+        if (error instanceof ToolInterruption)
+          throw new ToolStepInterruption(error.fields, verifications)
         if (!(error instanceof ToolLoopStoppedError)) throw error
         recoverableToolError = true
         state.continuationMessages.push(this.toolResult(toolCall, {
@@ -427,7 +449,35 @@ export class ToolStepRunner {
         telemetryLog("agent.run.waiting_approval", "info", { "luna.run.id": run.id, "tool.name": call.operationId })
         return { kind: "waiting_approval", toolCallId: call.id }
       }
+      const outcome = await this.tools.outcome(call.id)
+      this.trackOutcome(state, call, outcome)
+      if (outcome.kind === "failed")
+        state.continuationMessages[state.continuationMessages.length - 1] = this.toolResult(toolCall, {
+          status: "failed",
+          errorCode: outcome.errorCode,
+          ...(outcome.result !== undefined ? { result: outcome.result } : {}),
+        }, runtimeSettings)
+      const verification = outcome.kind === "running"
+        ? outcome.verification
+        : outcome.kind === "succeeded" && outcome.verificationRequired
+          ? outcome.verification
+          : undefined
+      if (verification) verifications.push(verification)
+      if (outcome.kind === "running" || outcome.kind === "succeeded" && outcome.verificationRequired) {
+        state.continuationMessages[state.continuationMessages.length - 1] = this.toolResult(toolCall, {
+          status: outcome.kind === "running" ? "running" : "succeeded",
+          ...(call.result !== undefined ? { result: call.result } : {}),
+          verificationRequired: true,
+          completionEvidence: false,
+          ...(verification
+            ? {
+                guidance: `操作已被平台接受，但尚未完成权威验证。Agent 必须调用 ${verification.operationId} 读取 ${verification.externalOperationId} 的当前状态后才能判定完成。`,
+              }
+            : { guidance: "操作已被平台接受；当前工具未声明可自动执行的权威回读，不能仅凭本次成功响应判定业务完成。" }),
+        }, runtimeSettings)
+      }
     }
+    if (verifications.length) return { kind: "verification", verifications }
     if (recoverableToolError || state.cardRepairExhausted || toolDetailsCalled || searchToolsCalled)
       return { kind: "continue" }
     if (!platformToolCalled && businessCardCalled)
@@ -439,16 +489,18 @@ export class ToolStepRunner {
     runId: string,
     state: ToolStepState,
     runtimeSettings: RuntimeSettings,
-  ): Promise<string | undefined> {
+  ): Promise<{ awaitingToolCallId?: string; verifications: RunToolVerification[] }> {
     const calls = await this.tools.recoverToolBatch(runId)
-    const awaitingApproval = calls.find(call => call.status === "awaiting_approval")
-    if (calls.some(call => call.status === "running")) throw new Error("ai.tool_outcome_unknown")
+    const modelCalls = calls.filter(call => call.inputMode !== "verification")
+    const awaitingApproval = modelCalls.find(call => call.status === "awaiting_approval")
+    if (modelCalls.some(call => call.status === "running")) throw new Error("ai.tool_outcome_unknown")
 
     const execution = await this.repository.getExecutionInput(runId)
     if (!execution) throw new Error("ai.turn_not_found")
     const settledToolCallIds = new Set(state.continuationMessages.flatMap(message =>
       message.role === "tool" ? [message.toolCallId] : []))
-    for (const call of calls) {
+    const verifications: RunToolVerification[] = []
+    for (const call of modelCalls) {
       if (call.status === "proposed" || call.status === "awaiting_approval") continue
       const itemId = `${call.id}:item`
       const projected = execution.toolInteractions.find(item => item.itemId === itemId)
@@ -471,22 +523,133 @@ export class ToolStepRunner {
           content: redact({ relatedItemId: itemId, result: call.result, errorCode: call.errorCode }),
         }, event, { itemId, toolCallId: call.id })
       }
+      const outcome = await this.tools.outcome(call.id)
+      this.trackOutcome(state, call, outcome)
+      const verification = outcome.kind === "running"
+        ? outcome.verification
+        : outcome.kind === "succeeded" && outcome.verificationRequired
+          ? outcome.verification
+          : undefined
+      if (verification && !await this.hasCompletedVerification(verification, execution.toolInteractions))
+        verifications.push(verification)
       if (settledToolCallIds.has(call.id)) continue
       const toolCall = { id: call.id, operationId: call.operationId, arguments: call.arguments }
       state.continuationMessages.push({ role: "assistant", content: "", toolCalls: [toolCall] })
       state.continuationMessages.push(this.toolResult(toolCall, {
-        status: call.status,
+        status: outcome.kind === "failed" ? "failed" : call.status,
         ...(call.result !== undefined ? { result: call.result } : {}),
-        ...(call.errorCode ? { errorCode: call.errorCode } : {}),
+        ...(outcome.kind === "failed" ? { errorCode: outcome.errorCode } : call.errorCode ? { errorCode: call.errorCode } : {}),
       }, runtimeSettings))
     }
-    return awaitingApproval?.id
+    return {
+      ...(awaitingApproval ? { awaitingToolCallId: awaitingApproval.id } : {}),
+      verifications,
+    }
+  }
+
+  async recordVerification(
+    state: ToolStepState,
+    plan: RunToolVerification,
+    execution: VerificationExecution,
+    runtimeSettings: RuntimeSettings,
+  ): Promise<void> {
+    const source = await this.tools.inspect(plan.sourceToolCallId)
+    if (execution.kind === "verified")
+      state.completionBlockers = state.completionBlockers.filter(blocker => blocker.idempotencyKey !== source.idempotencyKey)
+    else if (execution.kind === "failed")
+      this.upsertCompletionBlocker(state, source, "tool_failed", execution.errorCode)
+    let found = false
+    state.continuationMessages = state.continuationMessages.map((message) => {
+      if (message.role !== "tool" || message.toolCallId !== plan.sourceToolCallId) return message
+      found = true
+      return this.toolResult({
+        id: source.id,
+        operationId: source.operationId,
+        arguments: source.arguments,
+      }, {
+        status: execution.kind,
+        ...(source.result !== undefined ? { result: source.result } : {}),
+        completionEvidence: execution.kind === "verified",
+        verification: {
+          operationId: plan.operationId,
+          externalOperationId: plan.externalOperationId,
+          result: execution.result,
+          ...(execution.kind === "failed" ? { errorCode: execution.errorCode } : {}),
+        },
+      }, runtimeSettings)
+    })
+    if (!found) {
+      const toolCall = { id: source.id, operationId: source.operationId, arguments: source.arguments }
+      state.continuationMessages.push({ role: "assistant", content: "", toolCalls: [toolCall] })
+      state.continuationMessages.push(this.toolResult(toolCall, {
+        status: execution.kind,
+        completionEvidence: execution.kind === "verified",
+        verification: {
+          operationId: plan.operationId,
+          externalOperationId: plan.externalOperationId,
+          result: execution.result,
+          ...(execution.kind === "failed" ? { errorCode: execution.errorCode } : {}),
+        },
+      }, runtimeSettings))
+    }
+  }
+
+  private async hasCompletedVerification(
+    plan: RunToolVerification,
+    interactions: RunExecutionInput["toolInteractions"],
+  ): Promise<boolean> {
+    const calls = interactions.filter(interaction =>
+      interaction.type === "tool_call"
+      && interaction.content.inputMode === "verification"
+      && interaction.content.verificationForToolCallId === plan.sourceToolCallId
+      && typeof interaction.content.toolCallId === "string")
+    for (const interaction of calls) {
+      const call = await this.tools.inspect(String(interaction.content.toolCallId))
+      if (evaluateVerification(plan, call).kind === "verified") return true
+    }
+    return false
   }
 
   async failCard(runId: string, state: ToolStepState, errorCode: string): Promise<void> {
     if (!state.cardGeneration) return
     await this.cards.fail(runId, state.cardGeneration, errorCode)
     state.cardGeneration = undefined
+  }
+
+  trackOutcome(state: ToolStepState, call: Awaited<ReturnType<ToolOrchestrator["inspect"]>>, outcome: ToolOutcome): void {
+    if (call.inputMode === "verification" || outcome.effect !== "write" && outcome.effect !== "async" && outcome.effect !== "execute") return
+    if (outcome.kind === "running" || outcome.kind === "succeeded") {
+      state.completionBlockers = state.completionBlockers.filter(blocker => blocker.idempotencyKey !== call.idempotencyKey)
+      if (outcome.kind === "succeeded" && outcome.verificationRequired && !outcome.verification)
+        this.upsertCompletionBlocker(state, call, "verification_required")
+      return
+    }
+    if (outcome.kind === "failed" && call.status !== "rejected")
+      this.upsertCompletionBlocker(state, call, "tool_failed", outcome.errorCode)
+  }
+
+  assertCompletionAllowed(state: ToolStepState): void {
+    if (state.completionBlockers.length > 0)
+      throw new Error("ai.verification_inconclusive")
+  }
+
+  private upsertCompletionBlocker(
+    state: ToolStepState,
+    call: Awaited<ReturnType<ToolOrchestrator["inspect"]>>,
+    reason: RunCompletionBlocker["reason"],
+    errorCode?: string,
+  ): void {
+    const blocker: RunCompletionBlocker = {
+      toolCallId: call.id,
+      idempotencyKey: call.idempotencyKey,
+      operationId: call.operationId,
+      reason,
+      ...(errorCode ? { errorCode } : {}),
+    }
+    state.completionBlockers = [
+      ...state.completionBlockers.filter(item => item.idempotencyKey !== call.idempotencyKey),
+      blocker,
+    ]
   }
 
   private toolResult(toolCall: ModelToolCall & { id: string }, result: Record<string, unknown>, runtimeSettings: RuntimeSettings): ModelMessage {

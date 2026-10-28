@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { ToolCatalog } from "../src/tools/catalog.js"
-import { DeterministicLunaApiClient } from "../src/tools/luna-api-client.js"
+import { DeterministicLunaApiClient, UnknownToolOutcomeError } from "../src/tools/luna-api-client.js"
 import { MemoryToolCallStore, ToolOrchestrator, type ToolInterruption } from "../src/tools/orchestrator.js"
 import { testToolOperation } from "./support/tool-catalog.js"
 
@@ -15,7 +15,14 @@ const catalog = ToolCatalog.load([
   {
     ...testToolOperation("restartRelease"),
     operationId: "restartRelease", name: "重启发布", summary: "重启指定发布。", method: "POST", path: "/api/v1/releases/{releaseId}/restart", category: "deployment",
-    requiredScopes: ["deployment:write"], requiresApproval: true, idempotent: true,
+    requiredScopes: ["deployment:write"], requiresApproval: true, idempotent: true, effect: "write",
+    verification: [{ operationId: "getReleaseState", family: "resource", idFrom: "argument.releaseId", readIdArgument: "releaseId" }],
+    parameters: [{ inputName: "releaseId", wireName: "releaseId", in: "path", required: true }],
+    inputSchema: { type: "object", properties: { releaseId: { type: "string" } }, required: ["releaseId"], additionalProperties: false },
+  },
+  {
+    ...testToolOperation("getReleaseState"),
+    operationId: "getReleaseState", name: "读取发布", summary: "读取发布状态。", method: "GET", path: "/api/v1/releases/{releaseId}",
     parameters: [{ inputName: "releaseId", wireName: "releaseId", in: "path", required: true }],
     inputSchema: { type: "object", properties: { releaseId: { type: "string" } }, required: ["releaseId"], additionalProperties: false },
   },
@@ -68,6 +75,170 @@ describe("tool catalog and orchestration", () => {
     })
     expect(result).toMatchObject({ status: "succeeded", result: { token: "[REDACTED]" } })
     expect(client.calls).toHaveLength(1)
+  })
+
+  it("reuses one logical idempotency key when retrying a failed side effect", async () => {
+    const retryCatalog = ToolCatalog.load([
+      { ...catalog.get("restartRelease"), requiresApproval: false },
+      catalog.get("getReleaseState"),
+    ])
+    let attempt = 0
+    const client = new DeterministicLunaApiClient(() => ++attempt === 1
+      ? { status: 503, body: { code: "service.unavailable", retryable: true } }
+      : { status: 200, body: { restarted: true } })
+    const orchestrator = new ToolOrchestrator(retryCatalog, client, new MemoryToolCallStore())
+    const failed = await orchestrator.propose({
+      runId: "airun_retry_key",
+      operationId: "restartRelease",
+      arguments: { releaseId: "rel_a" },
+    })
+
+    const retried = await orchestrator.retryFailed(failed.id)
+
+    expect(retried.status).toBe("succeeded")
+    expect(client.calls).toHaveLength(2)
+    expect(client.calls[1]?.idempotencyKey).toBe(client.calls[0]?.idempotencyKey)
+    expect(client.calls[1]?.toolCallId).not.toBe(client.calls[0]?.toolCallId)
+  })
+
+  it("retries an unknown outcome after recovery when the platform supports idempotent replay", async () => {
+    const retryCatalog = ToolCatalog.load([
+      { ...catalog.get("restartRelease"), requiresApproval: false, retryOnUnknown: true },
+      catalog.get("getReleaseState"),
+    ])
+    let attempts = 0
+    const client = new DeterministicLunaApiClient(() => {
+      attempts += 1
+      if (attempts === 1) throw new UnknownToolOutcomeError(new Error("request timeout"))
+      return { status: 200, body: { restarted: true } }
+    })
+    const store = new MemoryToolCallStore()
+    const first = await new ToolOrchestrator(retryCatalog, client, store).propose({
+      runId: "airun_unknown_retry",
+      operationId: "restartRelease",
+      arguments: { releaseId: "rel_unknown" },
+    })
+
+    expect(first).toMatchObject({
+      status: "failed",
+      result: { retryable: true, outcome: "unknown" },
+    })
+
+    const restored = new ToolOrchestrator(retryCatalog, client, store)
+    await restored.recoverToolBatch("airun_unknown_retry")
+    const retried = await restored.propose({
+      runId: "airun_unknown_retry",
+      operationId: "restartRelease",
+      arguments: { releaseId: "rel_unknown" },
+    })
+
+    expect(retried.status).toBe("succeeded")
+    expect(client.calls).toHaveLength(2)
+    expect(client.calls[1]?.idempotencyKey).toBe(client.calls[0]?.idempotencyKey)
+  })
+
+  it("keeps an unknown outcome fail-closed when the platform has no idempotent replay contract", async () => {
+    const writeCatalog = ToolCatalog.load([
+      { ...catalog.get("restartRelease"), requiresApproval: false },
+      catalog.get("getReleaseState"),
+    ])
+    const client = new DeterministicLunaApiClient(() => {
+      throw new UnknownToolOutcomeError(new Error("request timeout"))
+    })
+    const store = new MemoryToolCallStore()
+    const first = await new ToolOrchestrator(writeCatalog, client, store).propose({
+      runId: "airun_unknown_blocked",
+      operationId: "restartRelease",
+      arguments: { releaseId: "rel_unknown" },
+    })
+
+    expect(first).toMatchObject({
+      status: "failed",
+      result: { retryable: false, outcome: "unknown" },
+    })
+
+    const restored = new ToolOrchestrator(writeCatalog, client, store)
+    await restored.recoverToolBatch("airun_unknown_blocked")
+    await expect(restored.propose({
+      runId: "airun_unknown_blocked",
+      operationId: "restartRelease",
+      arguments: { releaseId: "rel_unknown" },
+    })).rejects.toMatchObject({ code: "ai.tool_repeated_in_run", retryable: false })
+    expect(client.calls).toHaveLength(1)
+  })
+
+  it("replays an identical successful side effect instead of issuing a new platform request", async () => {
+    const retryCatalog = ToolCatalog.load([
+      { ...catalog.get("restartRelease"), requiresApproval: false },
+      catalog.get("getReleaseState"),
+    ])
+    const client = new DeterministicLunaApiClient(() => ({ status: 200, body: { restarted: true } }))
+    const orchestrator = new ToolOrchestrator(retryCatalog, client, new MemoryToolCallStore())
+    const input = {
+      runId: "airun_replay_success",
+      operationId: "restartRelease",
+      arguments: { releaseId: "rel_a" },
+    }
+
+    const first = await orchestrator.propose(input)
+    const replay = await orchestrator.propose(input)
+
+    expect(replay.id).toBe(first.id)
+    expect(replay.idempotencyKey).toBe(first.idempotencyKey)
+    expect(client.calls).toHaveLength(1)
+  })
+
+  it("executes a new identical modification intent after an intervening different value", async () => {
+    const retryCatalog = ToolCatalog.load([
+      { ...catalog.get("restartRelease"), requiresApproval: false },
+      catalog.get("getReleaseState"),
+    ])
+    let attempt = 0
+    const client = new DeterministicLunaApiClient(() => ({ status: 200, body: { attempt: ++attempt } }))
+    const orchestrator = new ToolOrchestrator(retryCatalog, client, new MemoryToolCallStore())
+
+    const first = await orchestrator.propose({
+      runId: "airun_modify_aba",
+      operationId: "restartRelease",
+      arguments: { releaseId: "rel_a" },
+    })
+    const intervening = await orchestrator.propose({
+      runId: "airun_modify_aba",
+      operationId: "restartRelease",
+      arguments: { releaseId: "rel_b" },
+    })
+    const final = await orchestrator.propose({
+      runId: "airun_modify_aba",
+      operationId: "restartRelease",
+      arguments: { releaseId: "rel_a" },
+    })
+
+    expect(client.calls).toHaveLength(3)
+    expect(final.result).toEqual({ attempt: 3 })
+    expect(final.idempotencyKey).not.toBe(first.idempotencyKey)
+    expect(intervening.idempotencyKey).not.toBe(first.idempotencyKey)
+  })
+
+  it("does not replay an ordinary read because live platform state may have changed", async () => {
+    let reads = 0
+    const client = new DeterministicLunaApiClient(() => {
+      reads += 1
+      return { status: 200, body: { id: "build_a", status: reads === 1 ? "running" : "succeeded" } }
+    })
+    const orchestrator = new ToolOrchestrator(catalog, client, new MemoryToolCallStore())
+    const input = {
+      runId: "airun_live_read",
+      operationId: "getBuildRun",
+      arguments: { buildId: "build_a" },
+    }
+
+    const first = await orchestrator.propose(input)
+    const second = await orchestrator.propose(input)
+
+    expect(first.result).toMatchObject({ status: "running" })
+    expect(second.result).toMatchObject({ status: "succeeded" })
+    expect(second.id).not.toBe(first.id)
+    expect(client.calls).toHaveLength(2)
   })
 
   it("terminates the ToolCall when the transport rejects before returning an HTTP response", async () => {
@@ -129,16 +300,25 @@ describe("tool catalog and orchestration", () => {
   })
 
   it("allows model tools to submit schema-sensitive input through the normal approval flow", async () => {
-    const sensitive = ToolCatalog.load([{
-      ...testToolOperation("updateRuntimeSecret"),
-      operationId: "updateRuntimeSecret", name: "更新密钥", summary: "更新运行密钥。", method: "PUT", path: "/api/v1/runtime-secrets", category: "deployment",
-      requiredScopes: ["deployment:update"], requiresApproval: true, idempotent: true, requestBody: true,
-      inputSchema: {
-        type: "object",
-        properties: { values: { type: "object", writeOnly: true, "x-luna-sensitive": true, additionalProperties: { type: "string" } } },
-        required: ["values"], additionalProperties: false,
+    const sensitive = ToolCatalog.load([
+      {
+        ...testToolOperation("updateRuntimeSecret"),
+        operationId: "updateRuntimeSecret", name: "更新密钥", summary: "更新运行密钥。", method: "PUT", path: "/api/v1/runtime-secrets", category: "deployment",
+        requiredScopes: ["deployment:update"], requiresApproval: true, idempotent: true, requestBody: true,
+        effect: "write",
+        verification: [{ operationId: "getRuntimeSecretStatus", family: "resource", singleton: true }],
+        inputSchema: {
+          type: "object",
+          properties: { values: { type: "object", writeOnly: true, "x-luna-sensitive": true, additionalProperties: { type: "string" } } },
+          required: ["values"], additionalProperties: false,
+        },
       },
-    }])
+      {
+        ...testToolOperation("getRuntimeSecretStatus"),
+        operationId: "getRuntimeSecretStatus", name: "读取密钥状态", summary: "读取脱敏密钥状态。", method: "GET", path: "/api/v1/runtime-secrets",
+        effect: "read",
+      },
+    ])
     const client = new DeterministicLunaApiClient(() => ({ status: 200, body: { configured: ["TOKEN"] } }))
     const orchestrator = new ToolOrchestrator(sensitive, client, new MemoryToolCallStore())
     const pending = await orchestrator.propose({ runId: "airun_test", operationId: "updateRuntimeSecret", arguments: { values: { TOKEN: "secret" } } })

@@ -312,3 +312,49 @@ func TestTaskPayloadIsStableForSameInput(t *testing.T) {
 		t.Fatalf("task payloads differ: %s / %s", first.Payload(), second.Payload())
 	}
 }
+
+func TestDeliveryReplayDoesNotDuplicateTasksAfterUniqueExpires(t *testing.T) {
+	redis := miniredis.RunT(t)
+	client := NewClientWithRedis(redisconfig.Options{Addr: redis.Addr()})
+	t.Cleanup(func() { _ = client.Close() })
+	build := BuildRunPayload{BuildRunID: "bldr_replay", BuildJobID: "bldj_replay", ProjectID: "prj_1", ActorID: "usr_1"}
+	deploy := DeployRunPayload{ReleaseID: "rel_replay", ProjectID: "prj_1", ActorID: "usr_1"}
+	if _, err := client.EnqueueBuildRun(t.Context(), build); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.EnqueueDeployRun(t.Context(), deploy); err != nil {
+		t.Fatal(err)
+	}
+	redis.FastForward(31 * time.Minute)
+	errorsCh := make(chan error, 16)
+	for range 8 {
+		go func() {
+			_, err := client.EnqueueBuildRun(t.Context(), build)
+			errorsCh <- err
+		}()
+		go func() {
+			_, err := client.EnqueueDeployRun(t.Context(), deploy)
+			errorsCh <- err
+		}()
+	}
+	for range 16 {
+		if err := <-errorsCh; err != nil {
+			t.Fatalf("concurrent replay: %v", err)
+		}
+	}
+	inspector := asynq.NewInspector(redisconfig.Options{Addr: redis.Addr()}.Asynq())
+	t.Cleanup(func() { _ = inspector.Close() })
+	for _, queue := range []string{QueueBuild, QueueDeploy} {
+		info, err := inspector.GetQueueInfo(queue)
+		if err != nil || info.Pending != 1 {
+			t.Fatalf("queue %s = %#v, %v", queue, info, err)
+		}
+	}
+	if _, err := client.EnqueueBuildRunAfter(t.Context(), build, time.Minute); err != nil {
+		t.Fatalf("capacity retry must remain schedulable: %v", err)
+	}
+	info, err := inspector.GetQueueInfo(QueueBuild)
+	if err != nil || info.Scheduled != 1 {
+		t.Fatalf("scheduled capacity retry = %#v, %v", info, err)
+	}
+}

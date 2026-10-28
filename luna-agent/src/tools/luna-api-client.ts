@@ -6,6 +6,7 @@ import { isRetryableHTTPStatus, parseRetryAfter, waitForRetry } from "../retry.j
 export type ToolExecutionRequest = {
   runId: string
   toolCallId: string
+  idempotencyKey: string
   operation: ToolOperation
   arguments: Record<string, unknown>
   signal?: AbortSignal
@@ -14,6 +15,14 @@ export type ToolExecutionResult = { status: number, body: unknown, requestId?: s
 
 export interface LunaApiToolClient {
   execute(request: ToolExecutionRequest): Promise<ToolExecutionResult>
+}
+
+export class UnknownToolOutcomeError extends Error {
+  override readonly name = "UnknownToolOutcomeError"
+
+  constructor(readonly original: unknown) {
+    super("ai.tool_outcome_unknown", { cause: original })
+  }
 }
 
 export class HttpLunaApiToolClient implements LunaApiToolClient {
@@ -37,13 +46,20 @@ export class HttpLunaApiToolClient implements LunaApiToolClient {
         ...transport.headers,
         authorization: `Bearer ${this.serviceToken}`,
         "x-luna-ai-run-id": request.runId, "x-luna-ai-tool-call-id": request.toolCallId,
-        "idempotency-key": request.toolCallId,
+        "idempotency-key": request.idempotencyKey,
         ...(transport.body === undefined ? {} : { "content-type": "application/json" }),
       },
       ...(request.signal ? { signal: request.signal } : {}),
       ...(transport.body === undefined ? {} : { body: JSON.stringify(transport.body) }),
     }
-    const response = await this.fetchWithRetry(transport.url, init, "tool_execute", request.signal, request.operation.idempotent)
+    let response: Response
+    try {
+      response = await this.fetchWithRetry(transport.url, init, "tool_execute", request.signal, request.operation.idempotent)
+    }
+    catch (error) {
+      if (request.signal?.aborted) throw error
+      throw new UnknownToolOutcomeError(error)
+    }
     const requestId = response.headers.get("x-request-id")
     span.setAttribute("http.response.status_code", response.status)
     let body: unknown
@@ -52,7 +68,7 @@ export class HttpLunaApiToolClient implements LunaApiToolClient {
     }
     catch (error) {
       agentMetrics.externalRequests.add(1, { target: "luna_api", operation: "tool_execute", outcome: "invalid_response" })
-      throw error
+      throw new UnknownToolOutcomeError(error)
     }
     agentMetrics.externalRequests.add(1, { target: "luna_api", operation: "tool_execute", outcome: response.ok ? "success" : String(response.status) })
     span.setAttribute("luna.external.duration_ms", performance.now() - startedAt)

@@ -225,6 +225,7 @@ describe("Phase 2：checkpoint 恢复边界", () => {
     const owner = "usr_cp_approval"
     const { repository, runId } = await queuedRun(owner, "cp-approval", "重启应用 app_1")
     const catalog = ToolCatalog.load([testToolOperation("restartApplication", {
+      effect: "read",
       method: "POST",
       path: "/api/v1/applications/:id/restart",
       requiresApproval: true,
@@ -373,7 +374,7 @@ describe("Phase 2：checkpoint 恢复边界", () => {
   it("审批事实已落地但终态投影缺失：新进程恢复计数并持久补齐结果", async () => {
     const owner = "usr_cp_approval_unprojected"
     const { repository, runId } = await queuedRun(owner, "cp-approval-unprojected")
-    const catalog = ToolCatalog.load([testToolOperation("restartApplication", { requiresApproval: true })])
+    const catalog = ToolCatalog.load([testToolOperation("restartApplication", { requiresApproval: true, effect: "read" })])
     const { tools, client } = platformTool(repository, catalog, () => ({ status: 200, body: { restarted: "app_1" } }))
     await claimOrThrow(repository)
     const pending = await tools.propose({ runId, operationId: "restartApplication", arguments: {} })
@@ -424,6 +425,7 @@ describe("Phase 2：checkpoint 恢复边界", () => {
       providerArgumentRepairAttempts: new Map(),
       searchedToolQueries: new Map(),
       detailedToolRequests: new Map(),
+      completionBlockers: [],
     }
     await toolStep.recoverInterruptedBatch(runId, state, defaultRuntimeSettings)
     const eventCount = (await repository.getEvents(owner, runId, 0)).length
@@ -471,7 +473,7 @@ describe("Phase 2：checkpoint 恢复边界", () => {
     const { tools, client, store } = platformTool(repository, catalog, () => ({ status: 200, body: {} }))
     await claimOrThrow(repository)
     await store.insert({
-      id: "aitool_running", runId, operationId: "getProject", status: "running",
+      id: "aitool_running", idempotencyKey: "aitool_running", runId, operationId: "getProject", status: "running",
       arguments: {}, argumentsHash: "sha256:args", attempt: 1, rowVersion: 1, executionCount: 1,
     })
     await repository.saveRunCheckpoint(runId, {
@@ -521,20 +523,19 @@ describe("Phase 2：checkpoint 恢复边界", () => {
     expect(client.calls).toHaveLength(2)
   })
 
-  it("崩溃批次已落地的同参数调用仍受重复调用保护", async () => {
+  it("崩溃批次已落地的同参数 GET 仍重新请求实时平台状态", async () => {
     const owner = "usr_cp_guard_repeat"
     const { repository, runId } = await queuedRun(owner, "cp-guard-repeat")
     const catalog = ToolCatalog.load([testToolOperation("getProject", { inputSchema: requiredProjectInput })])
     const { client } = platformTool(repository, catalog, () => ({ status: 200, body: { ok: true } }))
     const crashedProcess = restartedTool(repository, catalog, client)
     await claimOrThrow(repository)
-    for (let attempt = 0; attempt < 3; attempt += 1)
-      expect((await crashedProcess.propose({ runId, operationId: "getProject", arguments: { projectId: "prj_1" } })).status).toBe("succeeded")
+    expect((await crashedProcess.propose({ runId, operationId: "getProject", arguments: { projectId: "prj_1" } })).status).toBe("succeeded")
     await repository.saveRunCheckpoint(runId, {
-      expectedRevision: 0, phase: "tool_execution", modelStep: 1, toolCallCount: 3, state: {},
+      expectedRevision: 0, phase: "tool_execution", modelStep: 1, toolCallCount: 1, state: {},
     })
 
-    // 模型在重启后原样重发同参数调用：必须被重复调用保护挡住，不能再打一次平台。
+    // 普通读取不属于幂等副作用，重启后再次调用仍返回平台当前事实。
     const { provider, modelCalls } = scriptedProvider([
       { toolCalls: [{ id: "repeat-1", operationId: "getProject", arguments: { projectId: "prj_1" } }] },
       { text: "已停止重复调用。" },
@@ -547,7 +548,7 @@ describe("Phase 2：checkpoint 恢复边界", () => {
     expect(await restart(executor)).toBe(true)
 
     expect(modelCalls()).toBe(2)
-    expect(client.calls).toHaveLength(3)
+    expect(client.calls).toHaveLength(2)
     expect(await repository.getRun(owner, runId)).toMatchObject({ status: "completed" })
   })
 
@@ -604,6 +605,7 @@ describe("Phase 2：checkpoint 恢复边界", () => {
     const owner = "usr_cp_tool_awaiting"
     const { repository, runId } = await queuedRun(owner, "cp-tool-awaiting", "重启应用 app_1")
     const catalog = ToolCatalog.load([testToolOperation("restartApplication", {
+      effect: "read",
       method: "POST",
       path: "/api/v1/applications/:id/restart",
       requiresApproval: true,
@@ -660,7 +662,7 @@ describe("Phase 2：checkpoint 恢复边界", () => {
     expect(await repository.getRun(owner, runId)).toMatchObject({ status: "waiting_input" })
     expect(await repository.loadRunCheckpoint(runId)).toMatchObject({
       phase: "awaiting_input",
-      modelStep: 0,
+      modelStep: 1,
     })
 
     await repository.appendRunInput(runId, "项目为 prj_1")

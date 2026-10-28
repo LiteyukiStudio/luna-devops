@@ -9,23 +9,35 @@ import { presentTimeline } from "../src/timeline-presenter.js"
 import { testToolOperation } from "./support/tool-catalog.js"
 import { buildTestServer } from "./support/server.js"
 
-const approvalCatalog = ToolCatalog.load([{
-  ...testToolOperation("updateThing"),
-  operationId: "updateThing",
-  method: "POST",
-  path: "/api/v1/things",
-  category: "thing",
-  requiresApproval: true,
-  requiredScopes: ["project:write"],
-  idempotent: true,
-  timeoutMs: 1000,
-  inputSchema: {
-    type: "object",
-    properties: { value: { type: "string" } },
-    required: ["value"],
-    additionalProperties: false,
+const approvalCatalog = ToolCatalog.load([
+  {
+    ...testToolOperation("updateThing"),
+    operationId: "updateThing",
+    method: "POST",
+    path: "/api/v1/things",
+    category: "thing",
+    requiresApproval: true,
+    requiredScopes: ["project:write"],
+    idempotent: true,
+    timeoutMs: 1000,
+    effect: "write",
+    verification: [{ operationId: "getThingState", family: "resource", singleton: true }],
+    inputSchema: {
+      type: "object",
+      properties: { value: { type: "string" } },
+      required: ["value"],
+      additionalProperties: false,
+    },
   },
-}])
+  {
+    ...testToolOperation("getThingState"),
+    operationId: "getThingState",
+    method: "GET",
+    path: "/api/v1/things/state",
+    category: "thing",
+    requiredScopes: ["project:read"],
+  },
+])
 
 async function approvalFixture(
   client = new DeterministicLunaApiClient(() => ({ status: 200, body: { ok: true } })),
@@ -147,6 +159,7 @@ describe("approval decisions", () => {
     const terminalId = "aitool_terminal_existing"
     await fixture.store.insert({
       id: terminalId,
+      idempotencyKey: terminalId,
       runId,
       operationId: "updateThing",
       status: "succeeded",
