@@ -62,6 +62,7 @@ export function decisionAction(
 export type ToolBatchAction =
   | { type: "continue_model" }
   | { type: "waiting_approval"; toolCallId: string }
+  | { type: "verify" }
   | { type: "complete" }
 
 export function toolBatchAction(result: ToolBatchResult, phase: RunCheckpointPhase = "tool_execution"): ToolBatchAction {
@@ -72,6 +73,9 @@ export function toolBatchAction(result: ToolBatchResult, phase: RunCheckpointPha
       break
     case "waiting_approval":
       action = { type: "waiting_approval", toolCallId: result.toolCallId }
+      break
+    case "verification":
+      action = { type: "verify" }
       break
     case "complete":
       action = { type: "complete" }
@@ -85,15 +89,18 @@ export type ResumeAction =
   | { type: "call_model" }
   | { type: "settle_tools" }
   | { type: "waiting_approval"; toolCallId: string }
+  | { type: "verify" }
   | { type: "finalize"; finalOutput?: string }
 
 export type GraphAction = DecisionAction | ToolBatchAction | ResumeAction
 
 const actionsByPhase: Record<RunCheckpointPhase, ReadonlySet<GraphAction["type"]>> = {
   model: new Set(["call_model", "execute_tools", "finalize", "repair", "retry", "fail"]),
-  tool_execution: new Set(["settle_tools", "continue_model", "waiting_approval", "complete"]),
+  tool_execution: new Set(["settle_tools", "continue_model", "waiting_approval", "verify", "complete"]),
+  verification: new Set(["verify"]),
   awaiting_input: new Set(["call_model"]),
   awaiting_approval: new Set(["settle_tools", "waiting_approval"]),
+  waiting_external: new Set(["verify"]),
   finalizing: new Set(["finalize"]),
 }
 
@@ -115,8 +122,10 @@ export function assertGraphTransition(phase: RunCheckpointPhase, action: GraphAc
 const resumeActionsByPhase: Record<RunCheckpointPhase, ReadonlySet<ResumeAction["type"]>> = {
   model: new Set(["call_model"]),
   tool_execution: new Set(["settle_tools"]),
+  verification: new Set(["verify"]),
   awaiting_input: new Set(["call_model"]),
   awaiting_approval: new Set(["settle_tools", "waiting_approval"]),
+  waiting_external: new Set(["verify"]),
   finalizing: new Set(["finalize"]),
 }
 
@@ -131,6 +140,9 @@ export function resumeAction(plan: RunResumePlan, phase: RunCheckpointPhase): Re
       break
     case "await_approval":
       action = { type: "waiting_approval", toolCallId: plan.toolCallId }
+      break
+    case "verify":
+      action = { type: "verify" }
       break
     case "finalize":
       action = plan.finalOutput === undefined

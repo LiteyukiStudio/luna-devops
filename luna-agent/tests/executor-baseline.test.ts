@@ -415,9 +415,9 @@ describe("RunExecutor 当前行为基线（Phase 0 特征化测试）", () => {
     expect(run?.errorCode).toBe("ai.run_timeout")
   })
 
-  it("异步场景当前行为：平台受理提交即视为工具成功，没有外部操作状态与权威回读", async () => {
+  it("异步提交没有权威回读方案时在副作用前拒绝工具", async () => {
     const owner = "usr_baseline_async_submit"
-    const { repository, conversation, runId } = await queuedRun(owner, "baseline-async-submit", "帮我构建应用 app_1")
+    const { repository, runId } = await queuedRun(owner, "baseline-async-submit", "帮我构建应用 app_1")
     const catalog = ToolCatalog.load([testToolOperation("createBuild", {
       name: "创建构建",
       summary: "提交应用构建。",
@@ -447,11 +447,12 @@ describe("RunExecutor 当前行为基线（Phase 0 特征化测试）", () => {
 
     await executor.runOnce()
 
-    expect((await repository.getRun(owner, runId))?.status).toBe("completed")
-    expect(client.calls).toHaveLength(1)
-    expect([...store.records.values()][0]).toMatchObject({ status: "succeeded" })
-    const toolResult = (await timelineItems(repository, owner, conversation.id)).find(item => item.type === "tool_result")
-    expect(toolResult?.content).toMatchObject({ result: { operationId: "bld_1", status: "queued" } })
+    expect(await repository.getRun(owner, runId)).toMatchObject({
+      status: "failed",
+      errorCode: "ai.tool_not_available",
+    })
+    expect(client.calls).toHaveLength(0)
+    expect(store.records.size).toBe(0)
   })
 
   it.each(["模型调用前", "工具完成后", "终态提交前"])("用例 15 当前行为：%s 丢弃进程状态后重启置为 interrupted", async (boundary) => {

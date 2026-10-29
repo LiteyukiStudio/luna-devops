@@ -28,6 +28,7 @@ export type RunExecutorDependencies = {
   initialRuntimeSettings: RuntimeSettings
   catalogRegistry: ToolCatalogRegistry
   streamBus: RunStreamBus
+  verificationPollIntervalMs?: number
 }
 
 export class RunExecutor {
@@ -55,7 +56,7 @@ export class RunExecutor {
     this.catalogRegistry = input.catalogRegistry
     this.streamBus = input.streamBus
     this.runtimeSettings = runtimeSettingsSnapshot(input.initialRuntimeSettings)
-    this.runLoop = new RunLoop(input.repository, input.modelRuntime, input.tools, input.streamBus)
+    this.runLoop = new RunLoop(input.repository, input.modelRuntime, input.tools, input.streamBus, input.verificationPollIntervalMs)
     const currentConfig = this.runtimeConfig.current()
     const currentCatalog = this.runtimeConfig.currentCatalog()
     if (!currentConfig || !currentCatalog) throw new Error("ai.provider_config_unavailable")

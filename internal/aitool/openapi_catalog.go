@@ -15,28 +15,48 @@ import (
 )
 
 type OpenAPIOperation struct {
-	OperationID      string             `json:"operationId"`
-	Name             string             `json:"name"`
-	Summary          string             `json:"summary"`
-	Category         string             `json:"category"`
-	Tags             []string           `json:"tags"`
-	Aliases          OperationAliases   `json:"aliases"`
-	Purpose          LocalizedText      `json:"purpose"`
-	AvoidWhen        LocalizedText      `json:"avoidWhen"`
-	Preconditions    LocalizedList      `json:"preconditions"`
-	SuccessEvidence  LocalizedText      `json:"successEvidence"`
-	RequiresApproval bool               `json:"requiresApproval"`
-	Idempotent       bool               `json:"idempotent"`
-	Method           string             `json:"method"`
-	Path             string             `json:"path"`
-	RequiredScopes   []string           `json:"requiredScopes"`
-	InputSchema      map[string]any     `json:"inputSchema"`
-	OutputSchema     map[string]any     `json:"outputSchema"`
-	SensitivePaths   []string           `json:"sensitivePaths,omitempty"`
-	Parameters       []OpenAPIParameter `json:"parameters,omitempty"`
-	RequestBody      bool               `json:"requestBody"`
-	RequestRequired  bool               `json:"requestRequired"`
-	RequestType      string             `json:"requestType,omitempty"`
+	OperationID      string                  `json:"operationId"`
+	Name             string                  `json:"name"`
+	Summary          string                  `json:"summary"`
+	Category         string                  `json:"category"`
+	Tags             []string                `json:"tags"`
+	Aliases          OperationAliases        `json:"aliases"`
+	Purpose          LocalizedText           `json:"purpose"`
+	AvoidWhen        LocalizedText           `json:"avoidWhen"`
+	Preconditions    LocalizedList           `json:"preconditions"`
+	SuccessEvidence  LocalizedText           `json:"successEvidence"`
+	RequiresApproval bool                    `json:"requiresApproval"`
+	Idempotent       bool                    `json:"idempotent"`
+	Method           string                  `json:"method"`
+	Path             string                  `json:"path"`
+	RequiredScopes   []string                `json:"requiredScopes"`
+	InputSchema      map[string]any          `json:"inputSchema"`
+	OutputSchema     map[string]any          `json:"outputSchema"`
+	SensitivePaths   []string                `json:"sensitivePaths,omitempty"`
+	Parameters       []OpenAPIParameter      `json:"parameters,omitempty"`
+	RequestBody      bool                    `json:"requestBody"`
+	RequestRequired  bool                    `json:"requestRequired"`
+	RequestType      string                  `json:"requestType,omitempty"`
+	Effect           string                  `json:"effect"`
+	Verification     []OperationVerification `json:"verification,omitempty"`
+	RetryOnUnknown   bool                    `json:"retryOnUnknown,omitempty"`
+	VerificationOnly bool                    `json:"verificationOnly,omitempty"`
+}
+
+type OperationVerification struct {
+	OperationID     string   `json:"operationId"`
+	Family          string   `json:"family"`
+	Expect          string   `json:"expect,omitempty"`
+	WhenResultHas   string   `json:"whenResultHas,omitempty"`
+	IDFrom          string   `json:"idFrom,omitempty"`
+	ReadIDArgument  string   `json:"readIdArgument,omitempty"`
+	Singleton       bool     `json:"singleton,omitempty"`
+	Collection      bool     `json:"collection,omitempty"`
+	TargetField     string   `json:"targetField,omitempty"`
+	StatusField     string   `json:"statusField,omitempty"`
+	PendingStatuses []string `json:"pendingStatuses,omitempty"`
+	SuccessStatuses []string `json:"successStatuses,omitempty"`
+	FailureStatuses []string `json:"failureStatuses,omitempty"`
 }
 
 type OperationAliases struct {
@@ -209,6 +229,10 @@ func catalogOperation(document openAPIDocument, scopeResolver *openapiscope.Reso
 	}
 	extension := mapValue(raw["x-luna-agent"])
 	requiresApproval := operationRequiresApproval(method, cliExtension, extension)
+	effect, verification, err := operationExecutionSemantics(method, extension)
+	if err != nil {
+		return OpenAPIOperation{}, fmt.Errorf("Agent operation %q execution semantics: %w", operationID, err)
+	}
 	aliases := operationAliases(operationID, tags, extension)
 	purpose := localizedText(extension["purpose"])
 	if purpose.ZH == "" {
@@ -240,7 +264,94 @@ func catalogOperation(document openAPIDocument, scopeResolver *openapiscope.Reso
 		RequestBody:      len(requestSchema) > 0,
 		RequestRequired:  requestRequired,
 		RequestType:      requestType,
+		Effect:           effect,
+		Verification:     verification,
+		RetryOnUnknown:   boolValue(extension["retryOnUnknown"]),
+		VerificationOnly: boolValue(extension["verificationOnly"]),
 	}, nil
+}
+
+func operationExecutionSemantics(method string, extension map[string]any) (string, []OperationVerification, error) {
+	effect := stringValue(extension["effect"])
+	if effect == "" {
+		effect = "write"
+		if strings.EqualFold(method, http.MethodGet) {
+			effect = "read"
+		}
+	}
+	switch effect {
+	case "discovery", "read", "write", "async", "execute", "interactive", "presentation":
+	default:
+		return "", nil, fmt.Errorf("unsupported effect %q", effect)
+	}
+	verification, err := operationVerifications(extension["verification"])
+	if err != nil {
+		return "", nil, err
+	}
+	if len(verification) == 0 {
+		if effect == "async" {
+			return "", nil, fmt.Errorf("async effect requires verification")
+		}
+		return effect, nil, nil
+	}
+	return effect, verification, nil
+}
+
+func operationVerifications(value any) ([]OperationVerification, error) {
+	values := make([]any, 0)
+	switch typed := value.(type) {
+	case nil:
+		return nil, nil
+	case []any:
+		values = typed
+	case map[string]any:
+		values = append(values, typed)
+	default:
+		return nil, fmt.Errorf("verification must be an object or array")
+	}
+	verifications := make([]OperationVerification, 0, len(values))
+	for _, item := range values {
+		raw := mapValue(item)
+		verification := OperationVerification{
+			OperationID:    stringValue(raw["operationId"]),
+			Family:         stringValue(raw["family"]),
+			Expect:         stringValue(raw["expect"]),
+			WhenResultHas:  stringValue(raw["whenResultHas"]),
+			IDFrom:         stringValue(raw["idFrom"]),
+			ReadIDArgument: stringValue(raw["readIdArgument"]),
+			Singleton:      boolValue(raw["singleton"]),
+			Collection:     boolValue(raw["collection"]),
+			TargetField:    stringValue(raw["targetField"]),
+			StatusField:    stringValue(raw["statusField"]),
+		}
+		if values := stringArray(raw["pendingStatuses"]); len(values) > 0 {
+			verification.PendingStatuses = values
+		}
+		if values := stringArray(raw["successStatuses"]); len(values) > 0 {
+			verification.SuccessStatuses = values
+		}
+		if values := stringArray(raw["failureStatuses"]); len(values) > 0 {
+			verification.FailureStatuses = values
+		}
+		if verification.OperationID == "" {
+			return nil, fmt.Errorf("verification operationId is required")
+		}
+		switch verification.Family {
+		case "build_run", "release", "gateway_route", "application", "deployment_target", "runtime_secrets", "runtime_config_secrets", "project_order", "billing_rate_rules", "resource":
+		default:
+			return nil, fmt.Errorf("unsupported verification family %q", verification.Family)
+		}
+		switch verification.Expect {
+		case "", "present", "absent", "canceled":
+		default:
+			return nil, fmt.Errorf("unsupported verification expectation %q", verification.Expect)
+		}
+		if verification.Family == "resource" && verification.IDFrom == "" && !verification.Singleton {
+			return nil, fmt.Errorf("resource verification idFrom is required")
+		}
+		verifications = append(verifications, verification)
+	}
+	return verifications, nil
 }
 
 func mergedOpenAPIParameters(document openAPIDocument, pathParameters, operationParameters any) []any {
@@ -296,10 +407,11 @@ func agentEligibleOperation(path, method, operationID string, raw map[string]any
 		}
 	}
 	extension := mapValue(raw["x-luna-cli"])
+	agentExtension := mapValue(raw["x-luna-agent"])
 	// CLI exposure and the platform-internal Agent catalog are independent
 	// boundaries. An operation with explicit Agent semantics can remain hidden
 	// from external CLI users while still being discoverable by luna-agent.
-	if len(mapValue(raw["x-luna-agent"])) == 0 {
+	if len(agentExtension) == 0 {
 		switch stringValue(extension["classification"]) {
 		case "protocol-adapter", "browser-callback", "webhook-receiver":
 			return false
@@ -318,7 +430,8 @@ func agentEligibleOperation(path, method, operationID string, raw map[string]any
 	if strings.Contains(path, "/stream") || strings.Contains(path, "/terminal") {
 		return false
 	}
-	if strings.HasSuffix(path, "/runtime-secrets/reveal") || (strings.HasSuffix(path, "/runtime-secrets") && method != "put") {
+	if strings.HasSuffix(path, "/runtime-secrets/reveal") ||
+		(strings.HasSuffix(path, "/runtime-secrets") && method != "put" && !boolValue(agentExtension["verificationOnly"])) {
 		return false
 	}
 	if method == "get" && (strings.HasSuffix(path, "/start") || strings.Contains(path, "/callback")) {

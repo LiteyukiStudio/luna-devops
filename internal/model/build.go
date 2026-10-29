@@ -41,6 +41,8 @@ type BuildRun struct {
 	StartedAt               *time.Time     `json:"startedAt"`
 	FinishedAt              *time.Time     `json:"finishedAt"`
 	CreatedBy               string         `gorm:"index" json:"createdBy"`
+	IdempotencyKey          string         `gorm:"not null;default:''" json:"-"`
+	IdempotencyRequestHash  string         `gorm:"not null;default:''" json:"-"`
 	TriggeredByName         string         `json:"triggeredByName"`
 	TriggeredByEmail        string         `json:"triggeredByEmail"`
 	SourceAuthorName        string         `json:"sourceAuthorName"`

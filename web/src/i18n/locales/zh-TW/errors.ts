@@ -138,9 +138,11 @@ const errors = {
     wallet_balance_insufficient: '個人錢包可用餘額不足，模型呼叫未傳送。',
   },
   request: {
+    failed: '請求處理失敗，請稍後重試',
+    idempotency_conflict: '該請求標識已用於不同引數的請求，請重新發起操作。',
+    idempotency_key_invalid: '請求標識長度必須為 8 到 128 個字元。',
     invalid: '請求引數不正確',
     invalid_json: '請求 JSON 格式不正確',
-    failed: '請求處理失敗，請稍後重試',
   },
   resource: {
     not_found: '資源不存在或已被刪除',

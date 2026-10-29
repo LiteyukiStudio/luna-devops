@@ -597,8 +597,10 @@ export function reduceAIEvent(state: AIAssistantState, event: AIEvent): AIAssist
   if (event.type === 'thinking.delta')
     return applyThinkingDelta(next, event, turnIndex)
 
-  if (event.type === 'run.started' || event.type === 'run.running' || event.type === 'run.queued' || event.type === 'run.waiting_approval' || event.type === 'run.waiting_input' || event.type === 'run.completed' || event.type === 'run.failed' || event.type === 'run.canceled' || event.type === 'run.interrupted') {
-    const status = event.type === 'run.started' || event.type === 'run.running' ? 'running' : event.type.slice(4)
+  if (event.type === 'run.started' || event.type === 'run.running' || event.type === 'run.queued' || event.type === 'run.waiting_approval' || event.type === 'run.waiting_input' || event.type === 'run.waiting_external' || event.type === 'run.completed' || event.type === 'run.failed' || event.type === 'run.canceled' || event.type === 'run.interrupted') {
+    const status = event.type === 'run.started' || event.type === 'run.running' || event.type === 'run.waiting_external'
+      ? 'running'
+      : event.type.slice(4)
     const terminalBlock = status === 'failed' || status === 'canceled' || status === 'interrupted'
       ? updateBlock(next, `${event.runId}:status`, block => block.type === 'run_status'
           ? { ...block, status, errorCode: stringPayload(event.payload, 'errorCode') || block.errorCode }

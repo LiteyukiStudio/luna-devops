@@ -11,6 +11,34 @@ import (
 	"gorm.io/gorm/clause"
 )
 
+type projectRuntimeConfigSetRuntimeSecretsSummary struct {
+	EnvironmentVariables []runtimeEnvironmentVariableResponse `json:"environmentVariables"`
+}
+
+func (h *Handlers) GetProjectRuntimeConfigSetRuntimeSecretsSummary(ctx *gin.Context) {
+	setRuntimeSecretNoStoreHeaders(ctx)
+	_, project, ok := h.authorizeProject(ctx, authz.ActionSecretReadSummary)
+	if !ok {
+		return
+	}
+	var set model.ProjectRuntimeConfigSet
+	if err := h.dbFor(ctx).First(&set, "id = ? and project_id = ?", ctx.Param("setId"), project.ID).Error; err != nil {
+		writeError(ctx, http.StatusNotFound, "运行配置集不存在")
+		return
+	}
+	if !h.ensureRuntimeConfigSetCanMutate(ctx, set) {
+		return
+	}
+
+	ctx.JSON(http.StatusOK, projectRuntimeConfigSetRuntimeSecretsSummaryFor(set))
+}
+
+func projectRuntimeConfigSetRuntimeSecretsSummaryFor(set model.ProjectRuntimeConfigSet) projectRuntimeConfigSetRuntimeSecretsSummary {
+	return projectRuntimeConfigSetRuntimeSecretsSummary{
+		EnvironmentVariables: secretEnvironmentVariables(runtimeSecretKeys(set.SecretRefs)),
+	}
+}
+
 func (h *Handlers) UpdateProjectRuntimeConfigSetRuntimeSecrets(ctx *gin.Context) {
 	setRuntimeSecretNoStoreHeaders(ctx)
 	user, project, ok := h.authorizeProject(ctx, authz.ActionSecretUpdate)

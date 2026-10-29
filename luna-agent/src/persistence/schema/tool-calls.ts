@@ -4,10 +4,12 @@ import { runs } from "./runs.js"
 
 export const toolCalls = aiSchema.table("tool_calls", {
   id: text("id").primaryKey(),
+  idempotencyKey: text("idempotency_key").notNull().default(""),
+  verificationForToolCallId: text("verification_for_tool_call_id").notNull().default(""),
   runId: text("run_id").notNull().references(() => runs.id, { onDelete: "cascade" }),
   operationId: text("operation_id").notNull(),
   status: text("status").notNull(),
-  inputMode: text("input_mode").notNull().default("model"),
+  inputMode: text("input_mode").notNull().default("model").$type<"model" | "direct" | "verification">(),
   arguments: jsonb("arguments").notNull().$type<Record<string, unknown>>(),
   argumentsCiphertext: text("arguments_ciphertext"),
   argumentsHash: text("arguments_hash").notNull(),

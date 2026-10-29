@@ -13,10 +13,12 @@ export class PostgresToolCallStore implements ToolCallStore {
   async insert(value: ToolCallRecord) {
     try {
       await this.pool.query(
-		`insert into ai.tool_calls(id,run_id,operation_id,status,input_mode,arguments,arguments_ciphertext,arguments_hash,attempt,row_version,approval_decision,result,error_code,execution_count)
-		 values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+		`insert into ai.tool_calls(id,idempotency_key,verification_for_tool_call_id,run_id,operation_id,status,input_mode,arguments,arguments_ciphertext,arguments_hash,attempt,row_version,approval_decision,result,error_code,execution_count)
+		 values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
         [
           value.id,
+          value.idempotencyKey,
+          value.verificationForToolCallId ?? "",
           value.runId,
           value.operationId,
           value.status,
@@ -73,7 +75,8 @@ export class PostgresToolCallStore implements ToolCallStore {
     if (!turnId) return
     const itemId = `${call.id}:item`
     const content = {
-        toolCallId: call.id, operationId: call.operationId, status: call.status,
+        toolCallId: call.id, operationId: call.operationId, status: call.status, inputMode: call.inputMode ?? "model",
+        ...(call.verificationForToolCallId ? { verificationForToolCallId: call.verificationForToolCallId } : {}),
         arguments: redact(call.arguments), result: call.result, errorCode: call.errorCode,
 		approvalDecision: call.approvalDecision,
         ...(typeof event.data.durationMs === "number" && Number.isFinite(event.data.durationMs)
@@ -104,9 +107,10 @@ export class PostgresToolCallStore implements ToolCallStore {
       throw new Error("ai.tool_arguments_key_unavailable")
     const argumentsValue = JSON.parse(this.argumentsCipher.decrypt(row.arguments_ciphertext)) as Record<string, unknown>
     return {
-      id: row.id, runId: row.run_id, operationId: row.operation_id, status: row.status,
+      id: row.id, idempotencyKey: row.idempotency_key || row.id, runId: row.run_id, operationId: row.operation_id, status: row.status,
+      ...(row.verification_for_tool_call_id ? { verificationForToolCallId: row.verification_for_tool_call_id } : {}),
       arguments: argumentsValue, argumentsHash: row.arguments_hash, attempt: row.attempt, rowVersion: row.row_version, executionCount: row.execution_count,
-      ...(row.input_mode === "direct" || row.input_mode === "model" ? { inputMode: row.input_mode } : {}),
+      ...(row.input_mode === "direct" || row.input_mode === "model" || row.input_mode === "verification" ? { inputMode: row.input_mode } : {}),
       ...(row.approval_decision ? { approvalDecision: row.approval_decision } : {}),
       ...(row.result !== null ? { result: row.result } : {}),
       ...(row.error_code ? { errorCode: row.error_code } : {}),
@@ -132,7 +136,7 @@ function publicToolEventType(type: string) {
 }
 
 type DbToolCall = {
-  id: string; run_id: string; operation_id: string; status: ToolCallStatus; input_mode: string; arguments: Record<string, unknown>;
+  id: string; idempotency_key: string; verification_for_tool_call_id: string; run_id: string; operation_id: string; status: ToolCallStatus; input_mode: string; arguments: Record<string, unknown>;
   arguments_ciphertext: string | null;
   arguments_hash: string; attempt: number; row_version: number; execution_count: number;
 	approval_decision: "approve" | null;

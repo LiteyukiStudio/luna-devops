@@ -138,9 +138,11 @@ const errors = {
     wallet_balance_insufficient: '个人钱包可用余额不足，模型调用未发送。',
   },
   request: {
+    failed: '请求处理失败，请稍后重试',
+    idempotency_conflict: '该请求标识已用于不同参数的请求，请重新发起操作。',
+    idempotency_key_invalid: '请求标识长度必须为 8 到 128 个字符。',
     invalid: '请求参数不正确',
     invalid_json: '请求 JSON 格式不正确',
-    failed: '请求处理失败，请稍后重试',
   },
   resource: {
     not_found: '资源不存在或已被删除',

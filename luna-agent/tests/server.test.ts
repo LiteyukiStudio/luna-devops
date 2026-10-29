@@ -1,6 +1,7 @@
 import { EventEmitter } from "node:events"
 import { describe, expect, it, vi } from "vitest"
 import { DevelopmentRequestVerifier } from "../src/auth.js"
+import type { RequestVerifier } from "../src/auth.js"
 import { loadConfig } from "../src/config.js"
 import { TestRepository } from "./support/test-repository.js"
 import { RemoteConfigSnapshot } from "../src/provider/config-client.js"
@@ -9,6 +10,11 @@ import { type presentEventForRun, presentTimeline } from "../src/timeline-presen
 import { InMemoryRunStreamBus } from "../src/run-stream-bus.js"
 import { maximumRequestBodyBytes, maximumTurnInputBytes } from "../src/input-limits.js"
 import { buildTestServer } from "./support/server.js"
+import { ToolCatalog } from "../src/tools/catalog.js"
+import { DeterministicLunaApiClient } from "../src/tools/luna-api-client.js"
+import { ProjectingToolCallStore, ToolOrchestrator } from "../src/tools/orchestrator.js"
+import { testToolOperation } from "./support/tool-catalog.js"
+import { testRemoteConfigSource, testRemoteProviderConfig } from "./support/remote-config.js"
 
 type AIEvent = ReturnType<typeof presentEventForRun>
 type AITimeline = NonNullable<Awaited<ReturnType<typeof presentTimeline>>>
@@ -26,7 +32,90 @@ function fixture() {
   return { app, repository }
 }
 
+class RunScopedDevelopmentRequestVerifier implements RequestVerifier {
+  private readonly fallback = new DevelopmentRequestVerifier()
+
+  async verify(headers: Record<string, string | string[] | undefined>) {
+    const actor = await this.fallback.verify(headers)
+    const runId = Array.isArray(headers["x-luna-dev-run"]) ? headers["x-luna-dev-run"][0] : headers["x-luna-dev-run"]
+    return runId ? { ...actor, runId } : actor
+  }
+}
+
 describe("internal API", () => {
+  it("marks a direct async tool action failed when authoritative verification cannot be planned", async () => {
+    const repository = new TestRepository()
+    const conversation = await repository.createConversation("usr_direct_missing_id", "direct")
+    const runId = "airun_direct_missing_id"
+    const catalog = ToolCatalog.load([
+      testToolOperation("triggerBuildRun", {
+        method: "POST",
+        path: "/api/v1/projects/{projectId}/build-runs/trigger",
+        effect: "async",
+        verification: [{ operationId: "getBuildRun", family: "build_run" }],
+        parameters: [{ inputName: "projectId", wireName: "projectId", in: "path", required: true }],
+        requestBody: true,
+        requestRequired: true,
+        inputSchema: {
+          type: "object",
+          properties: { projectId: { type: "string" }, body: { type: "object" } },
+          required: ["projectId", "body"],
+          additionalProperties: false,
+        },
+      }),
+      testToolOperation("getBuildRun", {
+        method: "GET",
+        path: "/api/v1/projects/{projectId}/build-runs/{runId}",
+        effect: "read",
+        parameters: [
+          { inputName: "projectId", wireName: "projectId", in: "path", required: true },
+          { inputName: "runId", wireName: "runId", in: "path", required: true },
+        ],
+        inputSchema: {
+          type: "object",
+          properties: { projectId: { type: "string" }, runId: { type: "string" } },
+          required: ["projectId", "runId"],
+          additionalProperties: false,
+        },
+      }),
+    ])
+    const client = new DeterministicLunaApiClient(() => ({ status: 202, body: { status: "queued" } }))
+    const tools = new ToolOrchestrator(catalog, client, new ProjectingToolCallStore(repository.toolCallStore, repository))
+    const remote = testRemoteConfigSource(testRemoteProviderConfig({ toolCatalog: catalog.all() }))
+    const app = buildTestServer({
+      config: loadConfig({ NODE_ENV: "test" }),
+      repository,
+      requestVerifier: new RunScopedDevelopmentRequestVerifier(),
+      tools,
+      remoteConfig: remote.source,
+      toolCatalogDigest: () => catalog.digest,
+    })
+
+    const response = await app.inject({
+      method: "POST",
+      url: `/internal/v1/conversations/${conversation.id}/tool-actions`,
+      headers: {
+        "x-luna-dev-user": "usr_direct_missing_id",
+        "x-luna-dev-run": runId,
+        "idempotency-key": "direct-missing-id",
+      },
+      payload: {
+        operationId: "triggerBuildRun",
+        arguments: { projectId: "prj_1", body: { applicationId: "app_1" } },
+        message: "触发构建",
+        runId,
+      },
+    })
+
+    expect(response.statusCode).toBe(202)
+    expect(response.json()).toMatchObject({ runId, state: "failed" })
+    expect(await repository.getRun("usr_direct_missing_id", runId)).toMatchObject({
+      status: "failed",
+      errorCode: "ai.verification_inconclusive",
+    })
+    await app.close()
+  })
+
   it("bounds an SSE write that never drains and destroys the slow connection", async () => {
     vi.useFakeTimers()
     try {

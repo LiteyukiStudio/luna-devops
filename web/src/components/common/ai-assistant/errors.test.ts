@@ -7,6 +7,7 @@ describe('ai assistant error translations', () => {
     'ai.model_context_insufficient',
     'ai.model_output_limit_invalid',
     'ai.model_protocol_violation',
+    'ai.verification_inconclusive',
     'ai.model_output_truncated',
     'ai.model_output_filtered',
     'ai.wallet_balance_insufficient',

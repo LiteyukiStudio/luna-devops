@@ -129,7 +129,7 @@ export type RunExecutionSnapshot = {
 export type ClaimedRun = Run & { executionSnapshot?: RunExecutionSnapshot }
 
 export const runCheckpointPhases = [
-  "model", "tool_execution", "awaiting_input", "awaiting_approval", "finalizing",
+  "model", "tool_execution", "verification", "awaiting_input", "awaiting_approval", "waiting_external", "finalizing",
 ] as const
 export type RunCheckpointPhase = typeof runCheckpointPhases[number]
 
@@ -168,6 +168,42 @@ export type RunCheckpointState = {
   pendingToolCallId?: string
   /** phase=finalizing 时已决定但尚未提交的最终答复；终态批次只存在于流式会话内存中。 */
   finalOutput?: string
+  /** phase=verification/waiting_external 时尚未完成的权威回读。 */
+  pendingVerifications?: RunToolVerification[]
+  /** 已发生但尚未被成功权威回读解决的副作用或工具失败。 */
+  completionBlockers?: RunCompletionBlocker[]
+}
+
+export type RunToolVerification = {
+  runId: string
+  sourceToolCallId: string
+  sourceOperationId: string
+  operationId: string
+  family: "build_run" | "release" | "gateway_route" | "application" | "deployment_target" | "runtime_secrets" | "runtime_config_secrets" | "project_order" | "billing_rate_rules" | "resource"
+  expectation: "present" | "absent" | "canceled"
+  arguments: Record<string, unknown>
+  externalOperationId: string
+  attempts: number
+  requiredKeys?: string[]
+  absentKeys?: string[]
+  expected?: unknown
+  resource?: {
+    singleton: boolean
+    collection: boolean
+    targetField: string
+    statusField?: string
+    pendingStatuses?: string[]
+    successStatuses?: string[]
+    failureStatuses?: string[]
+  }
+}
+
+export type RunCompletionBlocker = {
+  toolCallId: string
+  idempotencyKey: string
+  operationId: string
+  reason: "verification_required" | "tool_failed"
+  errorCode?: string
 }
 
 /** Executor 对 checkpoint 的一次推进；expectedRevision=0 表示首次创建。 */

@@ -67,7 +67,7 @@ describe("real PlatformCatalog retrieval", () => {
   })
 
   it("discovers every real operation exactly and paginates the complete directory", () => {
-    const operations = platformCatalog.all()
+    const operations = platformCatalog.discoverableOperations()
     const browsed = Array.from({ length: Math.ceil(operations.length / 100) }, (_, index) =>
       platformCatalog.search({ page: index + 1, pageSize: 100 }).items.map(item => item.operationId)).flat()
 
@@ -79,7 +79,7 @@ describe("real PlatformCatalog retrieval", () => {
   })
 
   it("keeps every operation discoverable in the first eight results by its human-readable intent", () => {
-    for (const operation of platformCatalog.all()) {
+    for (const operation of platformCatalog.discoverableOperations()) {
       const matches = platformCatalog.search({ query: operation.summary, pageSize: 8 }).items
         .map(item => item.operationId)
       expect(matches, `${operation.operationId}: ${operation.summary}`)
@@ -193,7 +193,7 @@ describe("real PlatformCatalog retrieval", () => {
   })
 
   it("covers every real operation through search, semantic details, and model-tool loading", () => {
-    const operations = platformCatalog.all()
+    const operations = platformCatalog.discoverableOperations()
     for (const operation of operations) {
       const search = platformCatalog.search({ query: operation.operationId, pageSize: 8 })
       const details = platformCatalog.semanticDetails([operation.operationId])
@@ -212,6 +212,39 @@ describe("real PlatformCatalog retrieval", () => {
         inputSchema: operation.inputSchema,
       })])
     }
+  })
+
+  it("exposes writes only when they declare authoritative verification", () => {
+    for (const operation of platformCatalog.all()) {
+      const effect = operation.effect ?? (operation.method === "GET" ? "read" : "write")
+      if (effect !== "write" && effect !== "async") continue
+      const discoverable = platformCatalog.discoverableOperations().some(item => item.operationId === operation.operationId)
+      expect(Boolean(operation.verification?.length), operation.operationId).toBe(discoverable)
+    }
+
+    expect(platformCatalog.get("createProject").verification).toContainEqual(expect.objectContaining({
+      operationId: "getProject",
+      family: "resource",
+    }))
+    expect(platformCatalog.get("createProjectVolume").verification).toContainEqual(expect.objectContaining({
+      operationId: "getProjectVolume",
+      family: "resource",
+      statusField: "lifecycleState",
+    }))
+    expect(platformCatalog.get("updateMyNotificationPreferences").verification).toContainEqual(expect.objectContaining({
+      operationId: "getMyNotificationPreferences",
+      singleton: true,
+    }))
+    expect(platformCatalog.get("updateProjectRuntimeConfigSetRuntimeSecrets").verification).toContainEqual(expect.objectContaining({
+      operationId: "getProjectRuntimeConfigSetRuntimeSecretsSummary",
+      family: "runtime_config_secrets",
+    }))
+    expect(platformCatalog.get("deleteRuntimeClusterResource").verification).toContainEqual(expect.objectContaining({
+      operationId: "getRuntimeClusterResourceYAML",
+      expect: "absent",
+    }))
+    expect(platformCatalog.modelTools(["getProjectRuntimeConfigSetRuntimeSecretsSummary"])).toEqual([])
+    expect(platformCatalog.modelTools(["testMyNotificationChannel"])).toHaveLength(1)
   })
 
   it("is deterministic and returns no fabricated match", () => {

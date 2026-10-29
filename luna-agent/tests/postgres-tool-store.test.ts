@@ -44,6 +44,7 @@ describe("Postgres tool argument storage", () => {
 
     await store.insert({
       id: "aitool_1",
+      idempotencyKey: "aitool_1",
       runId: "airun_1",
       operationId: "installAppTemplate",
       status: "proposed",
@@ -57,13 +58,13 @@ describe("Postgres tool argument storage", () => {
     })
 
     expect(query.mock.calls[0]?.[0]).toContain("input_mode")
-    expect(calls[0]?.[4]).toBe("model")
-    expect(calls[0]?.[5]).toContain("[REDACTED]")
-    expect(calls[0]?.[5]).not.toContain("generated-secret")
-    expect(calls[0]?.[6]).not.toContain("generated-secret")
-	expect(calls[0]?.[11]).toBe(JSON.stringify({ code: "ai.tool_arguments_invalid", retryable: true }))
-	expect(calls[0]?.[12]).toBe("ai.tool_arguments_invalid")
-    expect(calls[0]?.[13]).toBe(0)
+    expect(calls[0]?.[6]).toBe("model")
+    expect(calls[0]?.[7]).toContain("[REDACTED]")
+    expect(calls[0]?.[7]).not.toContain("generated-secret")
+    expect(calls[0]?.[8]).not.toContain("generated-secret")
+    expect(calls[0]?.[13]).toBe(JSON.stringify({ code: "ai.tool_arguments_invalid", retryable: true }))
+    expect(calls[0]?.[14]).toBe("ai.tool_arguments_invalid")
+    expect(calls[0]?.[15]).toBe(0)
     await expect(store.get("aitool_1")).resolves.toMatchObject({ arguments: executable, executionCount: 1 })
   })
 
@@ -106,6 +107,7 @@ describe("Postgres tool argument storage", () => {
 
     await expect(store.insert({
       id: "aitool_schema",
+      idempotencyKey: "aitool_schema",
       runId: "airun_schema",
       operationId: "listProjects",
       status: "proposed",

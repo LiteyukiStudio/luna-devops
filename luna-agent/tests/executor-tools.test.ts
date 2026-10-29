@@ -314,6 +314,7 @@ describe("RunExecutor slim lifecycle", () => {
   it("restores the first-claim configuration after approval while new Runs use the refresh", async () => {
     const catalog = ToolCatalog.load([{
       ...testToolOperation("restartRelease"),
+      effect: "read",
       operationId: "restartRelease",
       name: "重启发布",
       summary: "重启指定发布。",
@@ -718,6 +719,7 @@ describe("RunExecutor slim lifecycle", () => {
     })
     const catalog = ToolCatalog.load([{
       ...testToolOperation("restartRelease"),
+      effect: "read",
       operationId: "restartRelease",
       name: "重启发布",
       summary: "重启指定发布。",

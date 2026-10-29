@@ -23,7 +23,7 @@ import (
 
 const (
 	baselineMigrationVersion = 103
-	latestMigrationVersion   = 106
+	latestMigrationVersion   = 108
 )
 
 func TestEmbeddedMigrationsContainExpectedFiles(t *testing.T) {
@@ -40,6 +40,10 @@ func TestEmbeddedMigrationsContainExpectedFiles(t *testing.T) {
 		"000105_ai_run_checkpoints.down.sql":            false,
 		"000106_runtime_env_secret_uniqueness.up.sql":   false,
 		"000106_runtime_env_secret_uniqueness.down.sql": false,
+		"000107_ai_tool_verification.up.sql":            false,
+		"000107_ai_tool_verification.down.sql":          false,
+		"000108_delivery_idempotency.up.sql":            false,
+		"000108_delivery_idempotency.down.sql":          false,
 	}
 	migrationCount := 0
 	for _, entry := range entries {
@@ -207,6 +211,14 @@ WHERE namespace.nspname = current_schema()
 		t.Fatalf("apply migrations after baseline bootstrap: %v", err)
 	}
 	assertRunnerMigrationVersion(t, runner, latestMigrationVersion)
+	if err := runner.Steps(-2); err != nil {
+		t.Fatalf("roll back Phase 4 migrations: %v", err)
+	}
+	assertRunnerMigrationVersion(t, runner, latestMigrationVersion-2)
+	if err := runner.Steps(2); err != nil {
+		t.Fatalf("reapply Phase 4 migrations: %v", err)
+	}
+	assertRunnerMigrationVersion(t, runner, latestMigrationVersion)
 
 	assertFreshMigrationState(t, testDB)
 	assertStableModelMigrationCoverage(t, testDB)
@@ -360,6 +372,12 @@ func assertFreshMigrationState(t *testing.T, db *gorm.DB) {
 		{table: "ai.tool_calls", column: "approval_decision"},
 		{table: "ai.tool_calls", column: "row_version"},
 		{table: "ai.tool_calls", column: "execution_count"},
+		{table: "ai.tool_calls", column: "idempotency_key"},
+		{table: "ai.tool_calls", column: "verification_for_tool_call_id"},
+		{table: "build_runs", column: "idempotency_key"},
+		{table: "build_runs", column: "idempotency_request_hash"},
+		{table: "releases", column: "idempotency_key"},
+		{table: "releases", column: "idempotency_request_hash"},
 		{table: "ai_models", column: "max_context_tokens"},
 		{table: "ai_models", column: "max_output_tokens"},
 		{table: "ai.items", column: "revision"},
@@ -990,6 +1008,9 @@ func assertRuntimeEnvConflictMigrationRoundTrip(t *testing.T, db *gorm.DB, runne
 		t.Fatalf("reapply runtime env uniqueness migration: %v", err)
 	}
 	assertMigrated()
+	if err := runner.Migrate(latestMigrationVersion); err != nil {
+		t.Fatalf("restore latest migrations after runtime env uniqueness round trip: %v", err)
+	}
 	assertRunnerMigrationVersion(t, runner, latestMigrationVersion)
 
 	cleanup := []string{

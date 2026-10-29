@@ -138,9 +138,11 @@ const errors = {
     wallet_balance_insufficient: 'Your personal wallet has insufficient available credits. The model request was not sent.',
   },
   request: {
+    failed: 'The request failed. Try again later',
+    idempotency_conflict: 'This request key was already used with different parameters. Start the operation again.',
+    idempotency_key_invalid: 'The request key must contain 8 to 128 characters.',
     invalid: 'The request parameters are invalid',
     invalid_json: 'The request JSON is invalid',
-    failed: 'The request failed. Try again later',
   },
   resource: {
     not_found: 'The resource does not exist or has been deleted',

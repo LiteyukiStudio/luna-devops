@@ -138,9 +138,11 @@ const errors = {
     wallet_balance_insufficient: '個人ウォレットの利用可能残高が不足しています。モデル呼び出しは送信されませんでした。',
   },
   request: {
+    failed: 'リクエスト処理に失敗しました。後ほど再試行してください',
+    idempotency_conflict: 'このリクエスト識別子は異なるパラメータで使用済みです。操作をやり直してください。',
+    idempotency_key_invalid: 'リクエスト識別子は 8〜128 文字で入力してください。',
     invalid: 'リクエストパラメータが正しくありません',
     invalid_json: 'リクエスト JSON 形式が正しくありません',
-    failed: 'リクエスト処理に失敗しました。後ほど再試行してください',
   },
   resource: {
     not_found: 'リソースが存在しないか、削除されました',

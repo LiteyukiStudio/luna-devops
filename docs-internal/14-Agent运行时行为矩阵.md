@@ -13,6 +13,10 @@
 - 基线为当前已合入实现；未合入 PR #20 的补偿改动不在记录范围内。
 - 本文件不是 API 契约。字段、错误码和迁移以代码与生成物为准。
 
+当前 Phase 4 分支与主分支修订方案存在设计偏差：本分支保留写后权威验证和 `waiting_external`，
+异步工具须确认外部终态后才允许模型结束；13 号方案 §5.3、§8.5、§14 则要求受理后回模型。
+本次合并保留已有实现；该偏差尚未收敛，不能据此宣称符合修订方案的全部验收要求。
+
 ## 2. 事实源清单
 
 | 事实 | 现在存于 | 写入方 | Agent 重启后 |
@@ -62,7 +66,7 @@ Phase 2 起该结论已被 `ai.run_checkpoints` 取代：控制流事实源的�
 | 19 | 用户并发配额超限 | claim 后直接置 Run `failed`，`ai.quota.user_concurrent_runs_exceeded` | 保留 | `index.ts:163` | `executor-baseline.test.ts`：用户并发配额超限 |
 | 20 | 目录发现后必须回模型 | 成立（用例 7） | 保留（§9） | `executor/index.ts:598` | `executor-tools.test.ts:693` |
 | 21 | Secret 不进入消息、日志和事件 | 现有脱敏单测覆盖成立 | 保留 | `redaction.ts` | `redaction.test.ts`、`telemetry-content.test.ts`；非完整 E2E 保证 |
-| 22 | 异步构建提交返回 HTTP 202、外部状态仍 queued | 工具 `succeeded`；下一步纯文字使 Run `completed`，没有外部状态回读 | 工具结果为 `accepted`，Run 可正常 `completed`；最终答复不得声称已完成，由 Prompt 与评测约束（§5.3、§8.5，Phase 4） | `tools/orchestrator.ts`、`executor/index.ts` | `executor-baseline.test.ts`：异步场景 |
+| 22 | 异步构建提交返回 HTTP 202、外部状态仍 queued | Phase 4 后工具事实保留平台受理结果，Run 进入 `verification/waiting_external`，由 `getBuildRun` 回读终态后才允许模型结束 | `waiting_external` + 状态查询和权威验证 | `tools/outcome.ts`、`executor/verification.ts`、`executor/run-loop.ts` | `executor-verification.test.ts`：异步构建成功、失败、审批恢复和进程恢复 |
 | 23 | 终态落库成功但提交响应未知 | 同批次重试，唯一 completed 终态与消息 | 保留幂等提交 | `run-stream-bus.ts`、`persistence/postgres.ts` | `run-stream-bus.test.ts`：`retries an unknown commit result idempotently without duplicating the completed terminal` |
 
 ## 4. 预算与终态错误码现状
@@ -413,3 +417,103 @@ Agent lint 与 typecheck 均通过，无诊断。实际执行包内 `node_module
   跳过项依赖真实 PostgreSQL 或基准测试数据库，本轮未启动对应数据库。
 - Web 全量 `vitest run`：134 个测试文件、519 个用例通过。
 - `go test ./internal/agentobservability` 通过。
+
+## 11. Phase 4 变更记录
+
+状态：部分实现，验收未完成，不进入 Phase 5。工具适配、基础业务验证、交付幂等和直接工具路径已有实现；
+真实外部平台的成功、失败、取消、审批和撤权链路仍未验收。
+
+### 11.1 改动范围
+
+- OpenAPI `x-luna-agent` 增加可选的 `effect` 和 `verification` 语义。异步构建、发布和网关路由，
+  应用及部署目标写入，以及按响应选择 Release 或应用回读的 `installAppTemplate` 已声明权威回读关系。
+- 应用与部署目标的同步写入使用 `application`、`deployment_target` 家族回读；只有读取结果匹配
+  目标资源后才清除完成阻断。未声明可靠回读关系的写操作仍 fail closed。
+- 项目、项目数据卷、个人通知偏好和个人通知渠道已使用通用 `resource` 验证契约；支持单资源、
+  集合、`present`、`absent`、状态字段及 pending/success/failure 状态集合。
+- Agent 目录中的 `write`、`async` 操作为零缺失契约：用户、认证 Provider、注册设置、平台配置、
+  运行集群、Git Provider/账号、镜像站及凭据、容器镜像、项目成员与置顶、仓库绑定/Webhook、
+  OAuth 应用/授权、构建变量集、通知渠道/模板/规则、运行配置集、Hooks、服务绑定、拓扑边、
+  系统组件、账单和 AI 模型配置均已声明权威回读。仍由目录准入或协议适配边界排除的操作不会进入
+  `search_tools`、详情或 `modelTools`；直接工具入口也会在平台副作用前返回
+  `ai.tool_not_available`。
+- 验证规则支持 `present`、`absent`、`canceled` 期望：删除必须由权威读取确认目标不存在，
+  `cancelBuildRun` 必须由 `getBuildRun` 确认 `canceled`；应用、部署目标、构建和网关路由的删除
+  均已声明对应回读。运行集群和运行配置集删除还区分 `deleting` 与 `delete_failed`；卷传输取消
+  必须回读到 `cancelled`。
+- 恢复工具批次时先核对 Timeline 中已持久化的验证调用及结果，只重新生成尚未完成的回读计划；
+  已完成的历史写入不会被后续删除状态反向判失败。
+- `updateDeploymentTargetRuntimeSecrets` 使用 `getDeploymentTargetRuntimeSecretsSummary`
+  核对设置、生成和清除结果。该摘要工具标记为 `verificationOnly`，只供运行时验证，不进入模型搜索、
+  工具详情或可调用工具列表；回读只包含密钥名称和配置状态，不包含明文值或存储引用。
+- `updateProjectRuntimeConfigSetRuntimeSecrets` 使用新增的
+  `getProjectRuntimeConfigSetRuntimeSecretsSummary` 执行同样的脱敏键状态回读，并复用
+  `runtime_config_secrets` 验证族关联 `projectId + setId`。
+- `updateProjectOrder` 和 `updateBillingRateRules` 分别在 `listProjects` 的
+  `dashboardOrder` 与 `listBillingRateRules` 的价格/启用状态中核对所有请求项，不把普通 2xx
+  当作完成；`deleteRuntimeClusterResource` 通过资源 YAML 读取确认目标不存在。
+- `cleanupDataRetention` 和 `execReleaseRuntimeCommand` 使用 `execute` 效果。它们没有可等待的
+  持久资源状态，当前调用返回的删除计数或命令退出结果就是一次性命令的权威终态；失败不会伪装成
+  完成，且两者都由高风险策略要求逐次审批。
+- 通用集合回读从 `page=1&pageSize=100` 开始，按 `totalPages` 读取全部分页并合并验证；恢复时重新读取，不能以单页缺失证明删除完成，同时支持 `{items:[]}` 与根数组响应；删除和取消
+  会识别配置的失败状态并立即终止，避免已失败的资源持续等待到 Run 超时。
+- 新增 `tools/outcome.ts`，把平台响应统一归一化为只读、写入、异步、交互和呈现结果；
+  异步响应不再因 HTTP 2xx 被当成业务完成。
+- 新增 `executor/verification.ts`，支持构建、发布、网关路由、应用和部署目标的权威回读。
+  DNS/TLS 路由只有在路由可用且所需证书就绪时才通过验证。
+- checkpoint 增加 `verification` 和 `waiting_external` 相位，持久化待验证 operationId、
+  外部 operation ID、参数和尝试次数。进程退出后继续读取，不重新提交写操作。
+- 同一工具批次先提交异步操作、随后因其他工具缺参进入 `waiting_input` 时，已产生的回读计划
+  会随 checkpoint 保存；恢复后先完成权威回读，再调用模型。
+- checkpoint 同时保存 `completionBlockers`：未声明回读方案的写操作和尚未解决的写工具失败
+  会阻止 finalize；成功的同逻辑调用或权威回读解决后才清除。
+- 工具事实增加稳定 `idempotency_key`、`verification` 输入模式和
+  `verification_for_tool_call_id`；重试复用同一逻辑幂等键，验证读取不消耗模型工具预算，
+  重启后可从 Timeline 恢复“写操作 → 权威回读”的关联。
+- 幂等键不再包含模型生成的 ToolCall ID。Runtime 按同一 Run 内最近的副作用调用关联重试：
+  明确失败或可安全重放的结果未知后，同参数调用复用原键；紧邻的成功同参数调用复用已落地结果；
+  若中间发生了另一项副作用，则同参数再次调用按新的修改意图生成新键。复用只适用于 `write/async`，
+  普通 GET 和标记为只读的实时查询始终重新请求平台。
+- 传输超时、连接中断和响应体解析失败记录为 `outcome=unknown`。只有声明
+  `retryOnUnknown: true` 且服务端支持 `Idempotency-Key` 重放的构建与发布操作允许恢复后复用原键；
+  其他操作继续 fail closed，不把未知结果冒充明确失败。
+- `triggerBuildRun`、`retryBuildRun`、`createRelease` 和 `rollbackRelease` 增加服务端持久化幂等。
+  同一用户、同一作用域键和同一规范化请求返回原资源；不同请求复用键返回冲突。
+- 直接工具路径不再在任意 2xx 后立即完成。写操作会进入相同验证流程；审批等待写入 checkpoint。
+- 直接工具结果明确为 `failed` 时不再落入完成分支；异步成功响应缺少可验证 ID 时 Run
+  以 `ai.verification_inconclusive` 失败。
+- Web SSE 接受 `run.waiting_external`，验证期间保持 Run 为运行中，不提前关闭流。
+
+### 11.2 行为变化
+
+- 矩阵行 22 变化：异步构建返回 queued/running 时，Run 保持执行并轮询权威状态；
+  `succeeded` 后才形成完成证据，平台终态为 `failed/lost/timeout` 时 Run 失败。
+- 审批通过后不再直接回到模型：先核对已落地写操作，再完成权威回读，最后才继续模型。
+- 进程在等待外部任务或回读阶段退出时，恢复执行只重做幂等读取，不重放构建或发布提交。
+- 网关路由按后端实际枚举验证：`degraded` 立即失败；`manual-cert/manual` 和
+  `http-only/disabled` 可完成；`http-challenge` 只在证书 `issued` 后完成，`failed/expired`
+  直接失败。
+- 已声明回读契约的普通写操作在 2xx 后自动读取目标资源，匹配成功才解除完成阻断；
+  未声明可靠回读契约或回读失败的写操作仍不能由模型最终文字推进到 `completed`。
+- `installAppTemplate` 在响应包含 Release 时回读 `getRelease`，仅安装不发布时回读
+  `getApplication`，不再因缺少 Release 被判为验证不确定。
+- 工具批次进入执行或验证前先把 checkpoint `modelStep` 推进到下一次允许执行的模型步；
+  验证阶段重启不会重新获得已经消费的模型步数。
+- 取消 Run 只终止本地等待和模型执行，已提交的外部 operation ID 仍保留在工具与
+  checkpoint 事实中；外部平台若仍在运行，Agent 不伪造回滚成功。
+- 一次性命令以直接返回结果形成完成证据；需要持久状态证明的写操作仍必须完成对应权威回读。
+
+### 11.3 验证记录
+
+- `luna-agent` 全量测试：48 个文件通过、2 个跳过；486 个用例通过、22 个跳过。跳过项需要
+  PostgreSQL 测试库或基准测试数据库。Node v23.11.0 低于项目声明的 Node >=24，但本机执行通过。
+- 定向回归：112 个用例通过，覆盖历史验证恢复、运行密钥 verification-only 回读、结果未知的恢复重试、
+  删除与取消终态、应用与部署目标权威回读、`installNow=false` 模板安装和验证阶段 checkpoint 预算。
+- `go test ./...` 通过；OpenAPI 工具目录测试通过。
+- Agent `tsc --noEmit`、`eslint .` 通过。
+- 本轮未重新执行 PostgreSQL 幂等集成测试、迁移 down/up/reapply、Web 全量测试和真实外部平台 E2E，
+  不能以当前结果代替完整发布门禁。
+- 仍未验证：连接真实 Kubernetes、BuildKit、镜像仓库和 Gateway 的成功/失败/取消/撤权 E2E。
+  当前构建与发布链路主要使用确定性 API 替身验证控制流，不代表外部平台交付完成。
+- PostgreSQL 幂等集成测试在未配置数据库时会跳过；真实外部平台 E2E、迁移重放和完整发布门禁
+  不能以当前单元与集成测试结果代替。

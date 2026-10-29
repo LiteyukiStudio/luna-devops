@@ -24,6 +24,24 @@ const inputSchema = z.object({
 
 const outputSchema = z.record(z.string(), z.unknown())
 
+const toolEffectSchema = z.enum(["discovery", "read", "write", "async", "execute", "interactive", "presentation"])
+const toolVerificationRuleSchema = z.object({
+  operationId: z.string().regex(/^[A-Za-z][A-Za-z0-9._-]{2,100}$/),
+  family: z.enum(["build_run", "release", "gateway_route", "application", "deployment_target", "runtime_secrets", "runtime_config_secrets", "project_order", "billing_rate_rules", "resource"]),
+  expect: z.enum(["present", "absent", "canceled"]).optional(),
+  whenResultHas: z.string().trim().min(1).max(120).optional(),
+  idFrom: z.string().trim().min(1).max(240).optional(),
+  readIdArgument: z.string().trim().min(1).max(120).optional(),
+  singleton: z.boolean().optional(),
+  collection: z.boolean().optional(),
+  targetField: z.string().trim().min(1).max(120).optional(),
+  statusField: z.string().trim().min(1).max(120).optional(),
+  pendingStatuses: z.array(z.string().trim().min(1).max(120)).max(20).optional(),
+  successStatuses: z.array(z.string().trim().min(1).max(120)).max(20).optional(),
+  failureStatuses: z.array(z.string().trim().min(1).max(20)).max(20).optional(),
+}).strict()
+const toolVerificationSchema = z.array(toolVerificationRuleSchema).min(1).max(4)
+
 const operationSchema = z.object({
   operationId: z.string().regex(/^[A-Za-z][A-Za-z0-9._-]{2,100}$/),
   name: z.string().trim().min(1).max(160),
@@ -47,9 +65,14 @@ const operationSchema = z.object({
   requestBody: z.boolean(),
   requestRequired: z.boolean(),
   requestType: z.string().trim().max(120).default(""),
+  effect: toolEffectSchema.optional(),
+  verification: toolVerificationSchema.optional(),
+  retryOnUnknown: z.boolean().optional(),
+  verificationOnly: z.boolean().optional(),
 })
 
 export type ToolOperation = z.infer<typeof operationSchema>
+export type ToolVerificationRule = z.infer<typeof toolVerificationRuleSchema>
 
 export type ToolSearchInput = {
   query?: string
@@ -70,9 +93,18 @@ export class ToolCatalog {
     const immutableValues = values.map(deepFreeze)
     this.operations = new Map(immutableValues.map(value => [value.operationId, value]))
     if (this.operations.size !== values.length) throw new Error("ai.tool_catalog_duplicate_operation")
+    for (const operation of immutableValues) {
+      if (operation.effect === "async" && !operation.verification?.length)
+        throw new Error("ai.tool_catalog_async_verification_missing")
+      for (const verification of operation.verification ?? []) {
+        if (!this.operations.has(verification.operationId))
+          throw new Error("ai.tool_catalog_verification_operation_missing")
+      }
+    }
     this.orderedOperations = Object.freeze([...immutableValues].sort(compareOperations)) as ToolOperation[]
+    const discoverableOperations = immutableValues.filter(operation => discoverable(operation))
     const tokenizer = new UnicodeLexicalTokenizer()
-    this.bm25 = new BM25FIndex(this.orderedOperations.map(operation => ({
+    this.bm25 = new BM25FIndex(discoverableOperations.map(operation => ({
       operationId: operation.operationId,
       fields: searchFields(operation),
     })), tokenizer)
@@ -93,12 +125,17 @@ export class ToolCatalog {
     return [...this.orderedOperations]
   }
 
+  discoverableOperations(): ToolOperation[] {
+    return this.orderedOperations.filter(operation => discoverable(operation))
+  }
+
   search(input: ToolSearchInput = {}): ToolCatalogPage {
     const query = bounded(input.query?.trim() ?? "", 240)
     const page = boundedInteger(input.page, 1, 100_000, 1)
     const pageSize = boundedInteger(input.pageSize, 1, maximumPageSize, defaultPageSize)
+    const discoverableOperations = this.orderedOperations.filter(operation => discoverable(operation))
     const matching = query
-      ? this.bm25.search(query, this.orderedOperations.length)
+      ? this.bm25.search(query, discoverableOperations.length)
           .sort((left, right) => {
             const leftOperation = this.operations.get(left.operationId)
             const rightOperation = this.operations.get(right.operationId)
@@ -109,7 +146,7 @@ export class ToolCatalog {
           })
           .map(result => this.operations.get(result.operationId))
           .filter((operation): operation is ToolOperation => operation !== undefined)
-      : this.orderedOperations
+      : discoverableOperations
     const offset = (page - 1) * pageSize
     return {
       query,
@@ -125,7 +162,7 @@ export class ToolCatalog {
     const requested = unique(operationIds)
     const items = requested.flatMap((operationId) => {
       const operation = this.operations.get(operationId)
-      return operation ? [operation] : []
+      return operation && discoverable(operation) ? [operation] : []
     })
     const found = new Set(items.map(item => item.operationId))
     return {
@@ -259,6 +296,12 @@ function splitIdentifier(value: string): string[] {
 
 function compareOperations(left: ToolOperation, right: ToolOperation): number {
   return compareOperationsById(left.operationId, right.operationId)
+}
+
+function discoverable(operation: ToolOperation): boolean {
+  if (operation.verificationOnly) return false
+  const effect = operation.effect ?? (operation.method === "GET" ? "read" : "write")
+  return effect !== "write" && effect !== "async" || Boolean(operation.verification?.length)
 }
 
 function compareOperationsById(left: string, right: string): number {
