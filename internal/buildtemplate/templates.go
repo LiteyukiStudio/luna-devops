@@ -52,7 +52,7 @@ var definitions = []Definition{
 	{
 		ID: "node-service", Version: "1.0.0", Runtime: "node", Category: "service", DefaultServicePort: 3000,
 		Parameters: []Parameter{
-			{Key: "nodeVersion", Type: "select", Required: true, DefaultValue: "22", Options: []string{"20", "22", "24"}},
+			{Key: "nodeVersion", Type: "select", Required: true, DefaultValue: "24", Options: []string{"22", "24"}},
 			{Key: "installCommand", Type: "command", Required: true, DefaultValue: "npm install"},
 			{Key: "buildCommand", Type: "command", Required: true, DefaultValue: "npm run build"},
 			{Key: "startCommand", Type: "command", Required: true, DefaultValue: "npm start"},
@@ -78,7 +78,7 @@ CMD ["sh", "-c", {{json .startCommand}}]
 	{
 		ID: "node-static", Version: "1.0.0", Runtime: "node", Category: "static", DefaultServicePort: 8080,
 		Parameters: []Parameter{
-			{Key: "nodeVersion", Type: "select", Required: true, DefaultValue: "22", Options: []string{"20", "22", "24"}},
+			{Key: "nodeVersion", Type: "select", Required: true, DefaultValue: "24", Options: []string{"22", "24"}},
 			{Key: "installCommand", Type: "command", Required: true, DefaultValue: "npm install"},
 			{Key: "buildCommand", Type: "command", Required: true, DefaultValue: "npm run build"},
 			{Key: "outputDirectory", Type: "path", Required: true, DefaultValue: "dist"},
@@ -99,7 +99,7 @@ EXPOSE 8080
 	{
 		ID: "nextjs-service", Version: "1.0.0", Runtime: "nextjs", Category: "service", DefaultServicePort: 3000,
 		Parameters: []Parameter{
-			{Key: "nodeVersion", Type: "select", Required: true, DefaultValue: "24", Options: []string{"20", "22", "24"}},
+			{Key: "nodeVersion", Type: "select", Required: true, DefaultValue: "24", Options: []string{"22", "24"}},
 			{Key: "port", Type: "port", Required: true, DefaultValue: "3000"},
 		},
 		detectionFiles: []string{"package.json", "next.config.js", "next.config.mjs", "next.config.ts"},

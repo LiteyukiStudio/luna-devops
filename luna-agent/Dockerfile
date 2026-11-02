@@ -1,4 +1,4 @@
-FROM node:24-alpine AS build
+FROM node:24.22.2-alpine AS build
 ENV CI=true
 WORKDIR /workspace
 RUN corepack enable
@@ -11,7 +11,7 @@ COPY luna-agent/ ./luna-agent/
 WORKDIR /workspace/luna-agent
 RUN pnpm build && pnpm prune --prod
 
-FROM node:24-alpine AS runtime
+FROM node:24.22.2-alpine AS runtime
 ENV NODE_ENV=production
 WORKDIR /app
 RUN addgroup -S -g 10001 luna && adduser -S -D -H -u 10001 -G luna luna \
