@@ -1,5 +1,5 @@
 # 构建前端静态资源，供 API 镜像在 embed_web 模式下内嵌 SPA。
-FROM node:26-alpine AS web-build
+FROM node:24.22.2-alpine AS web-build
 
 WORKDIR /src
 

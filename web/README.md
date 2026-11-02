@@ -5,7 +5,7 @@
 
 ## 环境要求
 
-- Node.js 26
+- Node.js 24
 - `web/package.json` 声明的 pnpm 版本
 - 本地 Luna API：`http://localhost:8080`
 

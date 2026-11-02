@@ -82,7 +82,7 @@ func TestNextJSServiceUsesOfficialStandaloneContainerPattern(t *testing.T) {
 		t.Fatalf("Render() error = %v", err)
 	}
 	for _, wanted := range []string{
-		"FROM node:26-slim AS dependencies",
+		"FROM node:24-slim AS dependencies",
 		"pnpm install --frozen-lockfile",
 		"/app/.next/standalone",
 		"/app/.next/static",
