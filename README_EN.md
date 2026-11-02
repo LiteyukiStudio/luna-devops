@@ -59,7 +59,7 @@ Repository
 | Layer | Stack |
 | --- | --- |
 | Backend | Go, Gin, GORM, PostgreSQL, Redis, Asynq, client-go |
-| AI Agent | Node.js 24, TypeScript, Fastify, LangGraph.js, PostgreSQL checkpoints |
+| AI Agent | Node.js 26, TypeScript, Fastify, LangGraph.js, PostgreSQL checkpoints |
 | Frontend | Vite, React, TypeScript, Tailwind CSS, shadcn/ui, TanStack Query |
 | Forms and UX | React Hook Form, Zod, i18next, react-i18next, Sonner |
 | Delivery | Docker Compose, Helm, Kubernetes Job, BuildKit, Gateway API |

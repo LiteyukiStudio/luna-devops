@@ -144,7 +144,7 @@ Agent lint 与 typecheck 均通过，无诊断。实际执行包内 `node_module
 
 后续补充：上述两项环境前置已解除。
 
-- Node：本机 nvm 安装 v24.21.0，与 CI 的 `node-version: "24"` 对齐。
+- Node：CI 使用 `node-version: "26"`。
 - PostgreSQL：在 `docker compose -f docker-compose-dev-db.yaml` 的容器内新建独立库 `luna_agent_test`，
   按 CI 的 `scripts/ci/prepare-agent-test-database.sh` 方式应用 `migrations/*.up.sql`，再以
   `AGENT_TEST_DATABASE_URL=postgres://devops:devops@127.0.0.1:5432/luna_agent_test?sslmode=disable` 运行。
