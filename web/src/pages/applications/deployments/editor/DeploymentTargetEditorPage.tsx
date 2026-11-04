@@ -58,9 +58,10 @@ export function DeploymentTargetEditorPage() {
   const title = editing ? t('deploymentsPage.editDeploymentTarget') : t('deploymentsPage.createDeploymentTarget')
   if (required.some(query => query.isError))
     return <ErrorState description={t('deploymentTargetEditor.loadFailedDescription')} title={t('deploymentTargetEditor.loadFailedTitle')} />
+  // 只等首次加载：来源分区共享同一查询键，挂载后的后台重取不能把编辑器切回骨架屏。
   const initialQueriesSettled = editing
     ? !buildEnvironment.isPending
-    : (initialBuildOptions.fetchStatus === 'idle' && initialImageTemplate.fetchStatus === 'idle')
+    : (!initialBuildOptions.isLoading && !initialImageTemplate.isLoading)
   if (required.some(query => query.isPending) || !initialQueriesSettled) {
     return (
       <PageShell width="content">
