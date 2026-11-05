@@ -373,7 +373,7 @@ function InstallTemplateForm({ installing, template, onCancel, onInstallProject,
             <button
               aria-describedby={advancedSummaryId}
               aria-labelledby={advancedTitleId}
-              className="flex w-full min-w-0 items-start justify-between gap-3 rounded-container px-3 py-2.5 text-left transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="flex w-full min-w-0 items-start justify-between gap-3 rounded-container px-3 py-2.5 text-left transition-colors hover:bg-surface-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               type="button"
             >
               <span className="min-w-0">

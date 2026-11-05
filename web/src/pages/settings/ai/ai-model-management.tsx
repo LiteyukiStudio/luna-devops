@@ -177,7 +177,7 @@ export function AIModelManagement() {
               ))}
             </datalist>
             {suggestedPreset && (
-              <div className="flex flex-wrap items-center justify-between gap-2 rounded-control bg-surface-subtle px-4 py-3 text-sm">
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-control border border-border px-3 py-2 text-sm">
                 <span className="text-muted-foreground">
                   {t('settings.ai.models.suggestedPreset', {
                     contextTokens: suggestedPreset.maxContextTokens,
@@ -207,8 +207,8 @@ export function AIModelManagement() {
               render={({ field }) => <ControlledCheckboxField field={field}>{t('settings.ai.models.enabled')}</ControlledCheckboxField>}
             />
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setOpen(false)}>{t('common.cancel')}</Button>
-              <Button disabled={!form.formState.isValid || save.isPending} type="submit">{t('common.save')}</Button>
+              <Button disabled={save.isPending} type="button" variant="outline" onClick={() => setOpen(false)}>{t('common.cancel')}</Button>
+              <Button disabled={!form.formState.isValid || save.isPending} type="submit">{editing ? t('common.save') : t('settings.ai.models.addTitle')}</Button>
             </DialogFooter>
           </form>
         </DialogContent>

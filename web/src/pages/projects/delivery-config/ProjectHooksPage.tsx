@@ -15,7 +15,7 @@ import { ErrorState } from '@/components/common/error-state'
 import { FormField as Field } from '@/components/common/form-field'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { NativeSelect as Select } from '@/components/ui/native-select'
 import { Textarea } from '@/components/ui/textarea'
@@ -156,7 +156,7 @@ export function ProjectHooksPage({ projectId, ref }: { projectId: string, ref?: 
           )
         : <EmptyState description={t('projectHooks.emptyDescription')} title={t('projectHooks.emptyTitle')} variant="plain" />}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-3xl">
+        <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>{editingHook ? t('projectHooks.editTitle') : t('projectHooks.createTitle')}</DialogTitle>
             <DialogDescription>{t('projectHooks.dialogDescription')}</DialogDescription>
@@ -189,9 +189,12 @@ export function ProjectHooksPage({ projectId, ref }: { projectId: string, ref?: 
               />
             </Field>
             <DialogFooter>
+              <DialogClose asChild>
+                <Button disabled={saveHook.isPending} type="button" variant="outline">{t('common.cancel')}</Button>
+              </DialogClose>
               <Button disabled={!form.formState.isValid || saveHook.isPending} type="submit">
                 <ScrollText className="size-4" />
-                {t('common.save')}
+                {editingHook ? t('common.save') : t('projectHooks.createTitle')}
               </Button>
             </DialogFooter>
           </form>

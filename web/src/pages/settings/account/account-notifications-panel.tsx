@@ -345,7 +345,7 @@ function ChannelDialog({ channel, presets, saving, onClose, onSave }: {
 
   return (
     <Dialog open onOpenChange={open => !open && onClose()}>
-      <DialogContent className="max-w-3xl">
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>{channel ? t('accountPage.notifications.editChannelTitle') : t('accountPage.notifications.createChannelTitle')}</DialogTitle>
           <DialogDescription>{t('accountPage.notifications.channelDialogDescription')}</DialogDescription>
@@ -386,8 +386,8 @@ function ChannelDialog({ channel, presets, saving, onClose, onSave }: {
             render={({ field }) => <ControlledCheckboxField field={field}>{t('accountPage.notifications.channelEnabled')}</ControlledCheckboxField>}
           />
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={onClose}>{t('common.cancel')}</Button>
-            <Button disabled={saving || !form.formState.isValid} type="submit">{t('common.save')}</Button>
+            <Button disabled={saving} type="button" variant="outline" onClick={onClose}>{t('common.cancel')}</Button>
+            <Button disabled={saving || !form.formState.isValid} type="submit">{channel ? t('common.save') : t('accountPage.notifications.createChannelTitle')}</Button>
           </DialogFooter>
         </form>
       </DialogContent>

@@ -3,7 +3,8 @@ export const lazyTranslationResourcePath = 'deploymentsPage.bundleImport'
 export const lazyTranslationResources = {
   'zh-CN': {
     title: '导入部署配置',
-    description: '导入会新建一条部署配置，不会覆盖现有配置，也不会自动构建或发布。源项目空间的 ID、凭据和密钥不会随文件迁移。',
+    description: '导入会新建一条部署配置，不会覆盖现有配置，也不会自动构建或发布。',
+    migrationHint: '源项目空间的 ID、凭据和密钥不会随文件迁移，导入时需要重新映射引用并填写密钥。',
     selectFile: '选择部署配置 JSON',
     selectedFile: '已选择：{{file}}',
     fileTooLarge: '文件不能超过 1 MiB。',
@@ -72,7 +73,8 @@ export const lazyTranslationResources = {
   },
   'en-US': {
     title: 'Import deploy config',
-    description: 'Import creates a new deploy config. It never overwrites an existing config or starts a build or release. Source project IDs, credentials, and secret values are not carried in the file.',
+    description: 'Import creates a new deploy config without overwriting existing configs or starting a build or release.',
+    migrationHint: 'Source project IDs, credentials, and secret values are not carried in the file; remap references and enter secrets during import.',
     selectFile: 'Select deploy config JSON',
     selectedFile: 'Selected: {{file}}',
     fileTooLarge: 'The file must be no larger than 1 MiB.',
@@ -141,7 +143,8 @@ export const lazyTranslationResources = {
   },
   'zh-TW': {
     title: '匯入部署設定',
-    description: '匯入會新建一筆部署設定，不會覆蓋現有設定，也不會自動建置或釋出。來源專案空間的 ID、憑據和金鑰不會隨檔案遷移。',
+    description: '匯入會新建一筆部署設定，不會覆蓋現有設定，也不會自動建置或釋出。',
+    migrationHint: '來源專案空間的 ID、憑據和金鑰不會隨檔案遷移，匯入時需要重新對映引用並填寫金鑰。',
     selectFile: '選擇部署設定 JSON',
     selectedFile: '已選擇：{{file}}',
     fileTooLarge: '檔案不能超過 1 MiB。',
@@ -210,7 +213,8 @@ export const lazyTranslationResources = {
   },
   'ja-JP': {
     title: 'デプロイ設定をインポート',
-    description: 'インポートは新しいデプロイ設定を作成します。既存の設定を上書きせず、ビルドやリリースも自動実行しません。元のプロジェクトスペースの ID、認証情報、シークレットは移行されません。',
+    description: 'インポートは新しいデプロイ設定を作成し、既存の設定の上書きやビルド・リリースの自動実行は行いません。',
+    migrationHint: '元のプロジェクトスペースの ID、認証情報、シークレットは移行されないため、インポート時に参照を再マッピングしシークレットを入力してください。',
     selectFile: 'デプロイ設定 JSON を選択',
     selectedFile: '選択済み：{{file}}',
     fileTooLarge: 'ファイルサイズは 1 MiB 以下にしてください。',
@@ -279,7 +283,8 @@ export const lazyTranslationResources = {
   },
   'ko-KR': {
     title: '배포 설정 가져오기',
-    description: '가져오기는 새 배포 설정을 만들며 기존 설정을 덮어쓰거나 빌드 또는 릴리스를 자동으로 시작하지 않습니다. 원본 프로젝트 공간의 ID, 자격 증명 및 시크릿 값은 이전되지 않습니다.',
+    description: '가져오기는 새 배포 설정을 만들며 기존 설정을 덮어쓰거나 빌드 또는 릴리스를 자동으로 시작하지 않습니다.',
+    migrationHint: '원본 프로젝트 공간의 ID, 자격 증명 및 시크릿 값은 이전되지 않으므로 가져올 때 참조를 다시 매핑하고 시크릿을 입력하세요.',
     selectFile: '배포 설정 JSON 선택',
     selectedFile: '선택됨: {{file}}',
     fileTooLarge: '파일 크기는 1 MiB 이하여야 합니다.',

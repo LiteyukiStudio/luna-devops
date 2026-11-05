@@ -364,7 +364,7 @@ function TransferRow({ capabilities, projectId, transfer, volumeName }: { capabi
   const canCancel = canCancelVolumeTransfer(capabilities, transfer)
   const canRetry = canRetryVolumeTransfer(capabilities, transfer)
   return (
-    <div className="grid gap-2 rounded-md bg-muted p-3">
+    <div className="grid gap-2 rounded-control border border-border bg-surface-subtle p-3">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <div className="flex items-center gap-2">
@@ -390,7 +390,7 @@ function TransferRow({ capabilities, projectId, transfer, volumeName }: { capabi
           {(transfer.state === 'failed' || transfer.state === 'cancelled' || transfer.state === 'expired') && canRetry && <Button disabled={retry.isPending} size="sm" variant="ghost" onClick={() => retry.mutate()}>{t('projectVolumes.retryTransfer')}</Button>}
         </div>
       </div>
-      {transfer.expectedBytes > 0 && <div className="h-1.5 overflow-hidden rounded-full bg-background"><div className="h-full bg-primary" style={{ width: `${transferProgress(transfer)}%` }} /></div>}
+      {transfer.expectedBytes > 0 && <div className="h-1.5 overflow-hidden rounded-full bg-surface-inset"><div className="h-full bg-primary" style={{ width: `${transferProgress(transfer)}%` }} /></div>}
       <p className="text-xs text-muted-foreground">
         {transfer.expectedBytes > 0
           ? t('projectVolumes.transferProgress', { transferred: formatBytes(transfer.transferredBytes), total: formatBytes(transfer.expectedBytes) })

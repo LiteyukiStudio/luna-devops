@@ -1,7 +1,7 @@
-import { safeStorageGet } from '@/lib/safe-storage'
+import { safeStorageGet, safeStorageSet } from '@/lib/safe-storage'
 
 export const WINDOW_STORAGE_KEY = 'luna.ai-assistant.window.v2'
-export const LAUNCHER_STORAGE_KEY = 'luna.ai-assistant.launcher.v1'
+const LAUNCHER_STORAGE_KEY = 'luna.ai-assistant.launcher.v2'
 export const VIEWPORT_GUTTER = 24
 export const PAGE_LAUNCHER_GUTTER = 48
 export const MIN_WINDOW_WIDTH = 360
@@ -72,12 +72,31 @@ function defaultLauncherPosition(): Position {
   return { x: viewport.width - LAUNCHER_SIZE - VIEWPORT_GUTTER, y: viewport.height - LAUNCHER_SIZE - VIEWPORT_GUTTER }
 }
 
-export function readLauncherPosition(): Position {
+/**
+ * 启动器位置按“距右边、距下边”的偏移保存，窗口缩放后仍贴着用户放置的角落；
+ * 只在用户拖动时保存，窗口变窄导致的临时夹取不会覆盖用户的选择。
+ */
+export function readLauncherPosition(gutter = VIEWPORT_GUTTER): Position {
   try {
     const value = JSON.parse(safeStorageGet(LAUNCHER_STORAGE_KEY) ?? '')
-    if (typeof value.x === 'number' && typeof value.y === 'number')
-      return clampAssistantPosition(value, LAUNCHER_SIZE, LAUNCHER_SIZE)
+    if (typeof value.right === 'number' && typeof value.bottom === 'number') {
+      const viewport = viewportSize()
+      return clampAssistantPosition(
+        { x: viewport.width - LAUNCHER_SIZE - value.right, y: viewport.height - LAUNCHER_SIZE - value.bottom },
+        LAUNCHER_SIZE,
+        LAUNCHER_SIZE,
+        gutter,
+      )
+    }
   }
   catch {}
-  return defaultLauncherPosition()
+  return clampAssistantPosition(defaultLauncherPosition(), LAUNCHER_SIZE, LAUNCHER_SIZE, gutter)
+}
+
+export function saveLauncherPosition(position: Position) {
+  const viewport = viewportSize()
+  safeStorageSet(LAUNCHER_STORAGE_KEY, JSON.stringify({
+    bottom: Math.max(0, viewport.height - LAUNCHER_SIZE - position.y),
+    right: Math.max(0, viewport.width - LAUNCHER_SIZE - position.x),
+  }))
 }

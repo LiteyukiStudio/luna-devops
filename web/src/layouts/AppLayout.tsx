@@ -16,9 +16,9 @@ import { AIAssistantLauncher } from '@/components/common/ai-assistant/launcher'
 import {
   clampAssistantPosition,
   LAUNCHER_SIZE,
-  LAUNCHER_STORAGE_KEY,
   PAGE_LAUNCHER_GUTTER,
   readLauncherPosition,
+  saveLauncherPosition,
 } from '@/components/common/ai-assistant/layout'
 import { useAIAssistantPresentationMode } from '@/components/common/ai-assistant/presentation-mode'
 import {
@@ -53,7 +53,6 @@ import {
   SidebarMenu,
   SidebarMenuItem,
 } from '@/components/ui/sidebar'
-import { safeStorageSet } from '@/lib/safe-storage'
 import { cn } from '@/lib/utils'
 import { AIAssistantPage } from '@/pages/ai-assistant/AIAssistantPage'
 import { normalizeProjectWorkspaceSection, projectWorkspaceSectionPath, projectWorkspaceSections } from '@/pages/projects/overview/project-workspace-sections'
@@ -513,26 +512,12 @@ function AIAssistantEntryHost() {
 }
 
 function AIAssistantPageLauncher({ label, onOpen }: { label: string, onOpen: () => void }) {
-  const [position, setPosition] = useState(() => clampAssistantPosition(
-    readLauncherPosition(),
-    LAUNCHER_SIZE,
-    LAUNCHER_SIZE,
-    PAGE_LAUNCHER_GUTTER,
-  ))
+  const [position, setPosition] = useState(() => readLauncherPosition(PAGE_LAUNCHER_GUTTER))
 
   useEffect(() => {
-    safeStorageSet(LAUNCHER_STORAGE_KEY, JSON.stringify(position))
-  }, [position])
-
-  useEffect(() => {
-    const clampToViewport = () => setPosition(current => clampAssistantPosition(
-      current,
-      LAUNCHER_SIZE,
-      LAUNCHER_SIZE,
-      PAGE_LAUNCHER_GUTTER,
-    ))
-    window.addEventListener('resize', clampToViewport)
-    return () => window.removeEventListener('resize', clampToViewport)
+    const followViewport = () => setPosition(readLauncherPosition(PAGE_LAUNCHER_GUTTER))
+    window.addEventListener('resize', followViewport)
+    return () => window.removeEventListener('resize', followViewport)
   }, [])
 
   return (
@@ -540,12 +525,11 @@ function AIAssistantPageLauncher({ label, onOpen }: { label: string, onOpen: () 
       label={label}
       position={position}
       onOpen={onOpen}
-      onPositionChange={nextPosition => setPosition(clampAssistantPosition(
-        nextPosition,
-        LAUNCHER_SIZE,
-        LAUNCHER_SIZE,
-        PAGE_LAUNCHER_GUTTER,
-      ))}
+      onPositionChange={(nextPosition) => {
+        const clamped = clampAssistantPosition(nextPosition, LAUNCHER_SIZE, LAUNCHER_SIZE, PAGE_LAUNCHER_GUTTER)
+        setPosition(clamped)
+        saveLauncherPosition(clamped)
+      }}
     />
   )
 }

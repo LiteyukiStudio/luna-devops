@@ -2,6 +2,7 @@ import type { ComponentType } from 'react'
 import { lazy } from 'react'
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { LazyLoadBoundary } from './components/common/lazy-load-boundary'
+import { NotFoundPage } from './components/common/not-found-page'
 import { TooltipProvider } from './components/ui/tooltip'
 import { loadTranslationBundles } from './i18n'
 
@@ -64,6 +65,7 @@ export default function App() {
             <Route path="/settings/operations" element={<OperationsDashboardPage />} />
             <Route path="/settings/site" element={<SiteSettingsPage />} />
             <Route path="/settings/users" element={<UsersPage />} />
+            <Route path="*" element={<NotFoundPage />} />
           </Route>
         </Routes>
       </LazyLoadBoundary>

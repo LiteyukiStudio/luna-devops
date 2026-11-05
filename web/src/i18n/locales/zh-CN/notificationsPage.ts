@@ -28,7 +28,7 @@ const notificationsPage = {
   emptyRules: '还没有通知规则',
   emptyDeliveries: '还没有投递记录',
   channelDialog: '通知渠道',
-  channelDialogDescription: '配置 Webhook 或 SMTP 适配器。密钥会写入 Secret Store，列表只展示是否已设置。',
+  channelDialogDescription: '配置 Webhook 或 SMTP 适配器，密钥保存到 Secret Store 后不会回显。',
   adapter: '适配器',
   adapters: {
     webhook: 'Webhook',
@@ -38,7 +38,7 @@ const notificationsPage = {
   secretLines: '密钥键值',
   secretPlaceholder: 'password=...',
   presetDialog: '从模板创建渠道',
-  presetDialogDescription: '渠道模板会按目标平台生成普通 Webhook 渠道快照和默认模板，后续修改模板不会影响已有渠道。',
+  presetDialogDescription: '按目标平台生成 Webhook 渠道和默认模板，之后修改渠道模板不影响已创建的渠道。',
   preset: '渠道模板',
   templateDialog: '通知模板',
   templateDialogDescription: '模板使用 Go template 渲染，可引用 .Event 和 .Secrets。',

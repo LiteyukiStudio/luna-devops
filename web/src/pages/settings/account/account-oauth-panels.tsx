@@ -343,7 +343,7 @@ function OAuthApplicationDialog({ application, form, open, pending, scopeItems, 
   const presentationSummary = [form.watch('homepageUrl'), form.watch('description')].map(value => value?.trim()).filter(Boolean).join(' · ')
   return (
     <Dialog open={open} onOpenChange={nextOpen => !nextOpen && onClose()}>
-      <DialogContent className="max-w-3xl">
+      <DialogContent className="sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>{t(application ? 'oauthApps.editApplication' : 'oauthApps.createApplication')}</DialogTitle>
           <DialogDescription>{t('oauthApps.applicationDialogDescription')}</DialogDescription>
@@ -380,10 +380,10 @@ function OAuthApplicationDialog({ application, form, open, pending, scopeItems, 
             </div>
           </ProgressiveSection>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={onClose}>{t('common.cancel')}</Button>
+            <Button disabled={pending} type="button" variant="outline" onClick={onClose}>{t('common.cancel')}</Button>
             <Button disabled={pending || !form.formState.isValid} type="submit">
               <KeyRound size={16} />
-              {t(application ? 'common.save' : 'common.create')}
+              {t(application ? 'common.save' : 'oauthApps.createApplication')}
             </Button>
           </DialogFooter>
         </form>

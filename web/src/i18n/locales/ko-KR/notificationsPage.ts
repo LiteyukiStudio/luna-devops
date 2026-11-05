@@ -28,7 +28,7 @@ const notificationsPage = {
   emptyRules: '아직 알림 규칙이 없습니다',
   emptyDeliveries: '아직 전송 기록이 없습니다',
   channelDialog: '알림 채널',
-  channelDialogDescription: 'Webhook 또는 SMTP 어댑터를 설정합니다. 시크릿은 Secret Store에 기록되며 목록에는 설정 여부만 표시됩니다.',
+  channelDialogDescription: 'Webhook 또는 SMTP 어댑터를 설정하며, 시크릿은 Secret Store에 저장된 뒤 다시 표시되지 않습니다.',
   adapter: '어댑터',
   adapters: {
     webhook: 'Webhook',
@@ -38,7 +38,7 @@ const notificationsPage = {
   secretLines: '시크릿 키-값',
   secretPlaceholder: 'password=...',
   presetDialog: '템플릿에서 채널 생성',
-  presetDialogDescription: '채널 템플릿은 대상 플랫폼용 일반 Webhook 채널 스냅샷과 기본 템플릿을 생성합니다. 이후 템플릿을 수정필요 기존 채널에 영향을 주지 않습니다.',
+  presetDialogDescription: '대상 플랫폼용 Webhook 채널과 기본 템플릿을 생성하며, 이후 템플릿 변경은 기존 채널에 영향을 주지 않습니다.',
   preset: '채널 템플릿',
   templateDialog: '알림 템플릿',
   templateDialogDescription: '템플릿은 Go template으로 렌더링되며 .Event와 .Secrets를 참조할 수 있습니다.',

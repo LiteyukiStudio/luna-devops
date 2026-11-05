@@ -18,7 +18,7 @@ import { KeyValueRowsEditor } from '@/components/common/key-value-rows-editor'
 import { StatusValueBadge } from '@/components/common/status-badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { buildVariableRecordToRows, buildVariableRowsToRecord, emptyKeyValueRow, secretStateToRows } from '@/lib/build-variables'
 
@@ -161,7 +161,7 @@ export function ProjectBuildVariableSetsPage({ projectId, ref }: { projectId: st
         rowKey={item => item.id}
       />
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-3xl">
+        <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>{editingSet ? t('buildsPage.editVariableSet') : t('buildsPage.createVariableSet')}</DialogTitle>
             <DialogDescription>{t('buildsPage.variableSetDialogDescription')}</DialogDescription>
@@ -190,7 +190,12 @@ export function ProjectBuildVariableSetsPage({ projectId, ref }: { projectId: st
                 </ControlledCheckboxField>
               )}
             />
-            <DialogFooter><Button disabled={!form.formState.isValid || saveVariableSet.isPending} type="submit">{t('common.save')}</Button></DialogFooter>
+            <DialogFooter>
+              <DialogClose asChild>
+                <Button disabled={saveVariableSet.isPending} type="button" variant="outline">{t('common.cancel')}</Button>
+              </DialogClose>
+              <Button disabled={!form.formState.isValid || saveVariableSet.isPending} type="submit">{editingSet ? t('common.save') : t('buildsPage.createVariableSet')}</Button>
+            </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>

@@ -16,7 +16,7 @@ import { StatusDot } from '@/components/common/status-dot'
 import { statusToneFor } from '@/components/common/status-tone'
 import { formatAbsoluteDateTime } from '@/components/common/time-format'
 import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { NativeSelect as Select } from '@/components/ui/native-select'
@@ -207,7 +207,7 @@ export function ApplicationGatewayPanel({ applicationId, applicationIdentifier, 
         rowKey={item => item.id}
       />
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-3xl">
+        <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>{editingRoute ? t('gatewayRoutesPage.editRoute') : t('gatewayRoutesPage.createRoute')}</DialogTitle>
             <DialogDescription>{t('gatewayRoutesPage.routeDialogDescription')}</DialogDescription>
@@ -276,7 +276,12 @@ export function ApplicationGatewayPanel({ applicationId, applicationIdentifier, 
                 <Textarea {...form.register('requestRedirect')} placeholder={t('gatewayRoutesPage.requestRedirectPlaceholder')} rows={3} />
               </Field>
             </ProgressiveSection>
-            <DialogFooter><Button disabled={!form.formState.isValid || saveRoute.isPending} type="submit">{t('common.save')}</Button></DialogFooter>
+            <DialogFooter>
+              <DialogClose asChild>
+                <Button disabled={saveRoute.isPending} type="button" variant="outline">{t('common.cancel')}</Button>
+              </DialogClose>
+              <Button disabled={!form.formState.isValid || saveRoute.isPending} type="submit">{editingRoute ? t('common.save') : t('gatewayRoutesPage.createRoute')}</Button>
+            </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>

@@ -17,7 +17,7 @@ import { DataList } from '@/components/common/data-list'
 import { ErrorState } from '@/components/common/error-state'
 import { Button } from '@/components/ui/button'
 import { buttonVariants } from '@/components/ui/button-variants'
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -304,7 +304,7 @@ export function ApplicationsPage({ projectId: projectIdProp, ref }: Applications
           }
         }}
       >
-        <DialogContent className="max-w-3xl">
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>{editingApplication ? t('apps.editTitle') : t('apps.createTitle')}</DialogTitle>
             <DialogDescription>{t('apps.description')}</DialogDescription>
@@ -330,6 +330,9 @@ export function ApplicationsPage({ projectId: projectIdProp, ref }: Applications
               onIconChange={icon => form.setValue('icon', icon, { shouldDirty: true, shouldValidate: true })}
             />
             <DialogFooter>
+              <DialogClose asChild>
+                <Button disabled={createApplication.isPending || updateApplication.isPending} type="button" variant="outline">{t('common.cancel')}</Button>
+              </DialogClose>
               <Button
                 disabled={createApplication.isPending || updateApplication.isPending || !form.formState.isValid}
                 type="submit"

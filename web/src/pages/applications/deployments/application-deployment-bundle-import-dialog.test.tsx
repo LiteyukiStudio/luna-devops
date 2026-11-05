@@ -1,7 +1,13 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import type { ReactElement } from 'react'
+import { fireEvent, render as renderWithoutProviders, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { TooltipProvider } from '@/components/ui/tooltip'
 import { ApplicationDeploymentBundleImportDialog } from './application-deployment-bundle-import-dialog'
 import '@/i18n'
+
+function render(ui: ReactElement) {
+  return renderWithoutProviders(ui, { wrapper: TooltipProvider })
+}
 
 const { importDeploymentTargetBundle, listDeploymentTargetBundleReferenceCandidates, previewDeploymentTargetBundleImport } = vi.hoisted(() => ({
   importDeploymentTargetBundle: vi.fn(),

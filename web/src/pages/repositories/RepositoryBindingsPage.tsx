@@ -3,7 +3,7 @@ import type { GitAccount, GitProvider, RepositoryBinding } from '@/api'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import i18next from 'i18next'
-import { GitBranch, LinkIcon, MoreHorizontal, Pencil, Plus, Trash2 } from 'lucide-react'
+import { GitBranch, LinkIcon, MoreHorizontal, Pencil, Plus, Save, Trash2 } from 'lucide-react'
 import { useImperativeHandle, useMemo, useState } from 'react'
 import { Controller, useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
@@ -20,7 +20,7 @@ import { GitRepositoryPicker } from '@/components/common/git-repository-picker'
 import { SearchSelect } from '@/components/common/search-select'
 import { StatusValueBadge } from '@/components/common/status-badge'
 import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { NativeSelect as Select } from '@/components/ui/native-select'
@@ -316,7 +316,7 @@ export function RepositoryBindingsPage({ applicationId, projectId: projectIdProp
           }
         }}
       >
-        <DialogContent className="max-w-3xl">
+        <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>{editingBinding ? t('repositories.editBinding') : t('repositories.bindRepoTitle')}</DialogTitle>
             <DialogDescription>{t('repositories.bindingDialogDescription')}</DialogDescription>
@@ -385,14 +385,13 @@ export function RepositoryBindingsPage({ applicationId, projectId: projectIdProp
                 />
               </Field>
             </div>
-            <div className="grid gap-3 md:grid-cols-2">
+            <div className="grid gap-3">
               <Field error={form.formState.errors.cloneUrl?.message} label={t('repositories.cloneUrl')}><Input {...form.register('cloneUrl')} aria-invalid={Boolean(form.formState.errors.cloneUrl)} placeholder={t('repositories.cloneUrlPlaceholder')} /></Field>
               <Controller
                 control={form.control}
                 name="autoConfigureWebhook"
                 render={({ field }) => (
                   <ControlledCheckboxField
-                    className="rounded-md border border-border bg-muted/30 p-3"
                     description={t('repositories.autoConfigureWebhookHint')}
                     field={field}
                   >
@@ -402,9 +401,12 @@ export function RepositoryBindingsPage({ applicationId, projectId: projectIdProp
               />
             </div>
             <DialogFooter>
+              <DialogClose asChild>
+                <Button disabled={createBinding.isPending || updateBinding.isPending} type="button" variant="outline">{t('common.cancel')}</Button>
+              </DialogClose>
               <Button disabled={createBinding.isPending || updateBinding.isPending || (accounts.data ?? []).length === 0 || !form.formState.isValid || Boolean(duplicateBinding)} type="submit">
-                <Plus size={16} />
-                {t('repositories.saveBinding')}
+                {editingBinding ? <Save size={16} /> : <Plus size={16} />}
+                {editingBinding ? t('save') : t('repositories.bindRepository')}
               </Button>
             </DialogFooter>
           </form>

@@ -1,7 +1,7 @@
 const gatewayRoutesPage = {
   createRoute: '创建域名',
   editRoute: '编辑域名',
-  routeDialogDescription: '选择要暴露的部署配置。留空域名时会按项目空间、应用和部署环境自动生成唯一默认域名；也可以填写短前缀或完整自定义域名。',
+  routeDialogDescription: '选择要对外暴露的部署配置并设置访问域名。',
   basicGatewayConfig: '基础访问配置',
   basicGatewayConfigDescription: '配置部署配置、域名、路径、端口和 TLS，这些是创建访问入口的常用项。',
   advancedGatewayConfig: '高级网关配置',
@@ -70,11 +70,13 @@ const gatewayRoutesPage = {
   certificateIssuerName: 'Issuer 名称',
   pathToPort: '路径 → 端口',
   routeStatuses: {
-    pending: '生效中',
-    ready: '已生效',
-    active: '已生效',
-    disabled: '已停用',
-    failed: '失败',
+    'pending': '生效中',
+    'ready': '已生效',
+    'active': '已生效',
+    'disabled': '已停用',
+    'failed': '失败',
+    'not-configured': '集群未配置网关',
+    'unavailable': '暂时无法读取',
   },
 }
 

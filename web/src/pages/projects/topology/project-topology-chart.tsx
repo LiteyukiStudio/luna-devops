@@ -434,15 +434,15 @@ function LaneBandNode({ data }: NodeProps<LaneFlowNode>) {
   return (
     <div
       className={cn(
-        'h-full w-full border-y border-dashed border-border bg-surface-subtle/70 transition-opacity duration-standard',
+        'h-full w-full border-y border-separator-subtle bg-surface-subtle/70 transition-opacity duration-standard',
         data.dimmed && 'opacity-40',
       )}
     >
       <div className="flex flex-col gap-0.5 p-3">
-        <span className="text-[11px] font-semibold tracking-wide text-muted-foreground">
+        <span className="text-xs font-semibold text-muted-foreground">
           {t('projectTopology.chart.laneLabel', { number: data.layerIndex + 1 })}
         </span>
-        <span className="text-[10px] text-muted-foreground/80">
+        <span className="text-xs text-muted-foreground/80">
           {`${t('projectTopology.chart.laneSub', { number: data.layerIndex })} · ${t('projectTopology.chart.laneServiceCount', { count: data.serviceCount })}`}
         </span>
       </div>
@@ -498,17 +498,17 @@ function ServiceFlowNodeCard({ data }: NodeProps<ServiceFlowNode>) {
           <AppWindow className="size-4" />
         </span>
         <div className="min-w-0">
-          <div className="truncate text-[13.5px] font-semibold tracking-tight">{node.name}</div>
-          <div className="truncate text-[11px] text-muted-foreground/80">{categoryLabel}</div>
+          <div className="truncate text-sm font-semibold tracking-tight">{node.name}</div>
+          <div className="truncate text-xs text-muted-foreground/80">{categoryLabel}</div>
         </div>
       </div>
-      <div className="mt-2 flex items-center gap-2 text-[11px] text-muted-foreground">
-        <span className={cn('inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 leading-none font-medium', tonePillClass(tone))}>
+      <div className="mt-2 flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
+        <span className={cn('inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5 leading-none font-medium', tonePillClass(tone))}>
           <span className="size-1.5 flex-none rounded-full bg-current" />
           {statusLabel}
         </span>
-        {stageSummary && <span className="font-mono text-[10.5px] tabular-nums">{stageSummary}</span>}
-        <span className="ml-auto inline-flex gap-2 text-[10.5px] tabular-nums text-muted-foreground/80">
+        {stageSummary && <span className="min-w-0 truncate font-mono tabular-nums">{stageSummary}</span>}
+        <span className="ml-auto inline-flex shrink-0 gap-2 tabular-nums text-muted-foreground/80">
           <span>{`←${degree.in}`}</span>
           <span>{`→${degree.out}`}</span>
         </span>
@@ -561,7 +561,7 @@ function TopologyFlowEdgeComponent({
       {data?.label && (
         <EdgeLabelRenderer>
           <span
-            className="nodrag nopan pointer-events-none absolute rounded-[3px] bg-surface/85 px-1 py-px font-mono text-[10px] text-muted-foreground"
+            className="nodrag nopan pointer-events-none absolute rounded-sm bg-surface/85 px-1 py-px font-mono text-xs text-muted-foreground"
             style={{
               transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
               opacity: dimmed ? FADED_OPACITY : 1,
@@ -593,18 +593,18 @@ function TopologyLegend() {
       className="flex flex-wrap gap-x-8 gap-y-3 border-t border-border bg-surface-subtle px-5 py-3 text-xs text-muted-foreground"
     >
       <div className="flex items-center gap-3">
-        <span className="text-[11px] font-semibold tracking-wide text-muted-foreground/80">
+        <span className="text-xs font-semibold text-muted-foreground/80">
           {t('projectTopology.chart.legend.category')}
         </span>
         {CATEGORY_ORDER.map(category => (
           <span key={category} className="inline-flex items-center gap-1.5">
-            <span className="size-3 rounded-[3px]" style={{ background: CATEGORY_COLORS[category] }} />
+            <span className="size-3 rounded-sm" style={{ background: CATEGORY_COLORS[category] }} />
             {t(`projectTopology.chart.legend.categories.${category}`)}
           </span>
         ))}
       </div>
       <div className="flex items-center gap-3">
-        <span className="text-[11px] font-semibold tracking-wide text-muted-foreground/80">
+        <span className="text-xs font-semibold text-muted-foreground/80">
           {t('projectTopology.chart.legend.status')}
         </span>
         {statusItems.map(item => (
@@ -615,7 +615,7 @@ function TopologyLegend() {
         ))}
       </div>
       <div className="flex flex-wrap items-center gap-3">
-        <span className="text-[11px] font-semibold tracking-wide text-muted-foreground/80">
+        <span className="text-xs font-semibold text-muted-foreground/80">
           {t('projectTopology.chart.legend.relation')}
         </span>
         <span className="inline-flex items-center gap-1.5">

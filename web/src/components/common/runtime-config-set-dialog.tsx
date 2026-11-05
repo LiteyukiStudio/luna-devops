@@ -9,7 +9,7 @@ import { KeyValueTextEditor } from '@/components/common/key-value-text-editor'
 import { RuntimeConfigFilesEditor } from '@/components/common/runtime-config-files-editor'
 import { RuntimeConfigSetSecretsEditor } from '@/components/common/runtime-config-set-secrets-editor'
 import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { publicRuntimeEnvironmentInputs, publicRuntimeEnvironmentRecord } from '@/lib/runtime-environment'
 
@@ -97,10 +97,13 @@ export function RuntimeConfigSetDialog({
               )}
             />
           </div>
-          <DialogFooter className="border-t border-border bg-background px-6 py-4">
+          <DialogFooter className="border-t border-border px-6 py-4">
+            <DialogClose asChild>
+              <Button disabled={pending} type="button" variant="outline">{t('common.cancel')}</Button>
+            </DialogClose>
             <Button disabled={!form.formState.isValid || !configFilesValid || !secretFilesValid || pending} type="submit">
               <FileCode2 className="size-4" />
-              {t('common.save')}
+              {editingSet ? t('common.save') : t('runtimeConfigSets.createTitle')}
             </Button>
           </DialogFooter>
         </form>

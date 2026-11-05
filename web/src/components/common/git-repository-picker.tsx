@@ -190,7 +190,7 @@ export function GitRepositoryPicker({
         </div>
       )}
       {value.owner && value.repo && (
-        <div className="grid gap-1 rounded-container border border-border bg-surface-subtle px-3 py-2 text-xs text-muted-foreground md:grid-cols-3">
+        <div className="grid gap-1 rounded-control border border-border px-3 py-2 text-xs text-muted-foreground md:grid-cols-3">
           <span className="truncate">
             {t('repositories.owner')}
             :

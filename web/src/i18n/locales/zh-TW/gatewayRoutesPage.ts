@@ -1,7 +1,7 @@
 const gatewayRoutesPage = {
   createRoute: '建立域名',
   editRoute: '編輯域名',
-  routeDialogDescription: '選擇要暴露的部署配置。留空域名時會按專案空間、應用和部署環境自動生成唯一預設域名；也可以填寫短字首或完整自定義域名。',
+  routeDialogDescription: '選擇要對外暴露的部署配置並設定訪問域名。',
   basicGatewayConfig: '基礎訪問配置',
   basicGatewayConfigDescription: '配置部署配置、域名、路徑、埠和 TLS，這些是建立訪問入口的常用項。',
   advancedGatewayConfig: '高階閘道配置',
@@ -70,11 +70,13 @@ const gatewayRoutesPage = {
   certificateIssuerName: 'Issuer 名稱',
   pathToPort: '路徑 → 連接埠',
   routeStatuses: {
-    pending: '生效中',
-    ready: '已生效',
-    active: '已生效',
-    disabled: '已停用',
-    failed: '失敗',
+    'pending': '生效中',
+    'ready': '已生效',
+    'active': '已生效',
+    'disabled': '已停用',
+    'failed': '失敗',
+    'not-configured': '叢集未設定閘道',
+    'unavailable': '暫時無法讀取',
   },
 }
 

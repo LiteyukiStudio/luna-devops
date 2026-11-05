@@ -9,7 +9,7 @@ const deploymentsPage = {
   deleteClusterDescription: 'This runtime cluster will be deleted. If deploy configs still reference it, migrate or delete those deploy configs first.',
   emptyClusters: 'No runtime clusters',
   createRelease: 'Create release',
-  releaseDialogDescription: 'Create a pending release record first. A worker will run the real deployment later.',
+  releaseDialogDescription: 'Choose the image to release; the platform rolls it out using the deploy config.',
   releaseTargetLockedHint: 'When release is opened from a deploy config, the current config is locked to avoid publishing to another environment by mistake.',
   releaseImageSummaryHint: 'Defaults to the latest successful build or the current image config. Click to copy the full reference.',
   releaseImageOverride: 'Advanced image override',

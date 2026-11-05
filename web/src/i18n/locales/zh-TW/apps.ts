@@ -1,6 +1,6 @@
 const apps = {
   title: '應用',
-  description: '應用只維護名稱、標識和圖示；程式碼倉庫、映象來源、構建和部署策略請到應用詳情的部署配置中維護。',
+  description: '應用只儲存名稱、標識和圖示，程式碼倉庫、構建和部署策略在部署配置中設定。',
   createTitle: '建立應用',
   editTitle: '編輯應用',
   name: '應用名稱',

@@ -15,7 +15,7 @@ import { SearchSelect } from '@/components/common/search-select'
 import { TargetImageRefInput } from '@/components/common/target-image-ref-input'
 import { UnitInput } from '@/components/common/unit-input'
 import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { NativeSelect as Select } from '@/components/ui/native-select'
 import { Textarea } from '@/components/ui/textarea'
@@ -414,7 +414,7 @@ export function ApplicationBuildsPanel({ applicationId, applicationIdentifier, b
         )}
       />
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent>
+        <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>{t('buildsPage.triggerBuild')}</DialogTitle>
             <DialogDescription>{t('buildsPage.triggerDialogDescription')}</DialogDescription>
@@ -505,7 +505,12 @@ export function ApplicationBuildsPanel({ applicationId, applicationIdentifier, b
                 </Field>
               </div>
             </div>
-            <DialogFooter><Button disabled={!form.formState.isValid || triggerBuild.isPending} type="submit">{t('buildsPage.queueBuild')}</Button></DialogFooter>
+            <DialogFooter>
+              <DialogClose asChild>
+                <Button disabled={triggerBuild.isPending} type="button" variant="outline">{t('common.cancel')}</Button>
+              </DialogClose>
+              <Button disabled={!form.formState.isValid || triggerBuild.isPending} type="submit">{t('buildsPage.queueBuild')}</Button>
+            </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>

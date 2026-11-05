@@ -9,7 +9,7 @@ const deploymentsPage = {
   deleteClusterDescription: '이 실행 클러스터는 삭제됩니다. 아직 배포 구성이 참조하고 있다면 먼저 관련 배포 구성을 마이그레이션하거나 삭제하세요.',
   emptyClusters: '실행 클러스터가 없습니다',
   createRelease: '릴리스 생성',
-  releaseDialogDescription: '먼저 pending 릴리스 기록을 생성하고 후속으로 worker가 실제 배포를 실행합니다.',
+  releaseDialogDescription: '릴리스할 이미지를 선택하면 배포 구성에 따라 롤링 업데이트합니다.',
   releaseTargetLockedHint: '배포 구성에서 릴리스를 트리거하면 현재 구성이 잠겨 다른 환경으로의 오배포를 방지합니다.',
   releaseImageSummaryHint: '기본적으로 최근 성공 빌드 또는 현재 이미지 구성에서 생성된 이미지 주소를 사용합니다. 클릭하면 전체 참조를 복사할 수 있습니다.',
   releaseImageOverride: '고급 이미지 재정의',

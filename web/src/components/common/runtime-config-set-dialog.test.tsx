@@ -90,7 +90,7 @@ describe('runtime config set dialog', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Update runtime files config-original' }))
     fireEvent.click(screen.getByRole('button', { name: 'Update runtime files secret-original' }))
     fireEvent.click(screen.getByRole('checkbox', { name: 'Enabled' }))
-    const saveButton = screen.getByRole('button', { name: 'Save' })
+    const saveButton = screen.getByRole('button', { name: 'Add config' })
     await waitFor(() => expect(saveButton).toBeEnabled())
     fireEvent.click(saveButton)
 
@@ -107,7 +107,7 @@ describe('runtime config set dialog', () => {
   it('disables submission for an invalid name, invalid editors, or a pending request', async () => {
     const { rerender } = render(<DialogHarness />)
     const nameInput = screen.getByRole('textbox', { name: 'Name' })
-    const saveButton = screen.getByRole('button', { name: 'Save' })
+    const saveButton = screen.getByRole('button', { name: 'Add config' })
     await waitFor(() => expect(saveButton).toBeEnabled())
 
     fireEvent.change(nameInput, { target: { value: '' } })
@@ -119,16 +119,16 @@ describe('runtime config set dialog', () => {
     await waitFor(() => expect(saveButton).toBeEnabled())
 
     rerender(<DialogHarness configFilesValid={false} />)
-    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Add config' })).toBeDisabled()
 
     rerender(<DialogHarness secretFilesValid={false} />)
-    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Add config' })).toBeDisabled()
 
     rerender(<DialogHarness pending />)
-    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
-    expect(screen.getByRole('button', { name: 'Save' }).closest('form')).toHaveAttribute('aria-busy', 'true')
+    expect(screen.getByRole('button', { name: 'Add config' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Add config' }).closest('form')).toHaveAttribute('aria-busy', 'true')
 
     rerender(<DialogHarness />)
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled())
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Add config' })).toBeEnabled())
   })
 })

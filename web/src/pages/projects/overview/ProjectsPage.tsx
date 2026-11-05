@@ -2,7 +2,7 @@ import type { Project } from '@/api'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import i18next from 'i18next'
-import { ArrowDownWideNarrow, ArrowUpNarrowWide, FolderKanban, MoreHorizontal, Pencil, Plus, SearchX, Trash2 } from 'lucide-react'
+import { ArrowDownWideNarrow, ArrowUpNarrowWide, FolderKanban, MoreHorizontal, Pencil, Plus, Save, SearchX, Trash2 } from 'lucide-react'
 import { useDeferredValue, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
@@ -23,7 +23,7 @@ import { ResultVisibilitySelect } from '@/components/common/result-visibility-se
 import { formatSmartDateTime } from '@/components/common/time-format'
 import { Button } from '@/components/ui/button'
 import { buttonVariants } from '@/components/ui/button-variants'
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -168,7 +168,7 @@ export function ProjectsPage() {
             className: 'px-4 py-3 align-middle text-muted-foreground',
             mobile: 'hidden',
             width: 'secondary',
-            render: project => <code className="rounded bg-background px-2 py-1 text-xs">{project.identifier}</code>,
+            render: project => <span className="font-mono text-xs text-muted-foreground">{project.identifier}</span>,
           },
           {
             key: 'usage',
@@ -433,9 +433,12 @@ export function ProjectsPage() {
               </Field>
             </ProgressiveSection>
             <DialogFooter>
+              <DialogClose asChild>
+                <Button disabled={createProject.isPending || updateProject.isPending} type="button" variant="outline">{t('common.cancel')}</Button>
+              </DialogClose>
               <Button disabled={createProject.isPending || updateProject.isPending || !form.formState.isValid} type="submit">
-                <Plus size={16} />
-                {editingProject ? t('save') : t('create')}
+                {editingProject ? <Save size={16} /> : <Plus size={16} />}
+                {editingProject ? t('save') : t('projectSpaces.createTitle')}
               </Button>
             </DialogFooter>
           </form>
@@ -484,7 +487,7 @@ function ProjectSummary({ project }: { project: Project }) {
           {project.description || t('common.noDescription')}
         </p>
         <div className="mt-1 flex min-w-0 items-center gap-2 text-xs text-muted-foreground md:hidden">
-          <code className="max-w-32 truncate rounded bg-background px-1.5 py-0.5">{project.identifier}</code>
+          <span className="max-w-32 truncate font-mono text-xs text-muted-foreground">{project.identifier}</span>
           <span className="truncate">
             {project.lastUsedAt
               ? formatSmartDateTime(project.lastUsedAt, t)

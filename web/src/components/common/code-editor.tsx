@@ -60,8 +60,8 @@ function CodeEditorFallback({
       )}
       style={{ minHeight: height ? undefined : minHeight }}
     >
-      <div className="flex h-8 items-center justify-between border-b border-border bg-muted/70 px-3">
-        <span className="font-mono text-xs font-medium uppercase tracking-normal text-muted-foreground">{language}</span>
+      <div className="flex h-8 items-center justify-between border-b border-border bg-surface-subtle px-3">
+        <span className="font-mono text-xs font-medium text-muted-foreground">{language}</span>
       </div>
       {failureMessage && <p className="m-0 bg-warning-subtle px-3 py-2 text-xs text-warning" role="status">{failureMessage}</p>}
       <textarea

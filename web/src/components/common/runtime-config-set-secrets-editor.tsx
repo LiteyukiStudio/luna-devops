@@ -45,7 +45,7 @@ export function RuntimeConfigSetSecretsEditor({ projectId, set }: { projectId: s
       </div>
       {keys.length === 0 && <p className="text-sm text-muted-foreground">{t('runtimeConfigSets.noSecrets')}</p>}
       {keys.map(secretKey => (
-        <div className="flex items-center justify-between gap-3 rounded-control bg-background p-3" key={secretKey}>
+        <div className="flex items-center justify-between gap-3 rounded-control border border-border bg-surface p-3" key={secretKey}>
           <div className="min-w-0">
             <p className="truncate text-sm font-medium" title={secretKey}>{secretKey}</p>
             <p className="font-mono text-sm text-muted-foreground">{t('common.secretValueMasked')}</p>
@@ -62,7 +62,7 @@ export function RuntimeConfigSetSecretsEditor({ projectId, set }: { projectId: s
           </div>
         </div>
       ))}
-      <div className="grid gap-3 rounded-control bg-background p-3 md:grid-cols-2">
+      <div className="grid gap-3 rounded-control border border-border bg-surface p-3 md:grid-cols-2">
         <Field label={t('deploymentsPage.runtimeSecretNewKey')}>
           <Input aria-label={t('deploymentsPage.runtimeSecretNewKey')} value={key} onChange={event => setKey(event.target.value)} />
         </Field>

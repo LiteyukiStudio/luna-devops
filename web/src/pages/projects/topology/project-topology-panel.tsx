@@ -264,7 +264,7 @@ function MobileRelationItem({ edge, nodes, onSelect }: { edge: ProjectTopologyEd
   const source = nodes.find(node => node.id === edge.source)?.name ?? t('projectTopology.unknownApplication')
   const target = nodes.find(node => node.id === edge.target)?.name ?? t('projectTopology.unknownApplication')
   return (
-    <button className="grid min-w-0 gap-2 rounded-container border border-border bg-background p-3 text-left transition hover:border-primary/40 hover:bg-surface-subtle" type="button" onClick={onSelect}>
+    <button className="grid min-w-0 gap-2 rounded-container border border-border bg-surface p-3 text-left transition-colors hover:border-primary-border hover:bg-surface-subtle" type="button" onClick={onSelect}>
       <div className="flex min-w-0 items-start justify-between gap-3">
         <span className="min-w-0 truncate font-medium">{t('projectTopology.direction', { source, target })}</span>
         <StatusValueBadge labelKeyPrefix="projectTopology.statuses" value={edge.status || 'unknown'} />

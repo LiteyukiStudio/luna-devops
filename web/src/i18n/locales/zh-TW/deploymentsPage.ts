@@ -9,7 +9,7 @@ const deploymentsPage = {
   deleteClusterDescription: '該執行叢集會被刪除；如果仍有部署配置引用它，請先遷移或刪除相關部署配置。',
   emptyClusters: '暫無執行叢集',
   createRelease: '建立釋出',
-  releaseDialogDescription: '先建立 pending 釋出記錄，後續由 worker 執行實際部署。',
+  releaseDialogDescription: '選擇要釋出的映象，平台會按部署配置滾動更新。',
   releaseTargetLockedHint: '從部署配置觸發釋出時會鎖定當前配置，避免誤釋出到其他環境。',
   releaseImageSummaryHint: '預設使用最近成功構建或當前映象配置生成的映象地址；點選可複製完整引用。',
   releaseImageOverride: '高階映象覆蓋',

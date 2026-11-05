@@ -17,6 +17,7 @@ import { EmptyState } from '@/components/common/empty-state'
 import { ErrorState } from '@/components/common/error-state'
 import { ToolViewportSkeleton } from '@/components/common/loading-states'
 import { StatusValueBadge } from '@/components/common/status-badge'
+import { Surface } from '@/components/common/surface'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -103,7 +104,7 @@ export function ApplicationTopologyPanel({ applicationId, projectId }: Applicati
   return (
     <div className="grid gap-3">
       {(logicalTopology.data?.edges.length ?? 0) > 0 && (
-        <div className="grid gap-3 rounded-md border border-border bg-muted/25 p-3">
+        <Surface className="grid gap-3 p-3">
           <div className="flex items-center justify-between gap-3">
             <h2 className="text-sm font-semibold">{t('apps.topology.logicalDependencies')}</h2>
             <Link className="text-sm text-primary-text hover:underline" to={`/projects/${projectId}?tab=topology`}>{t('apps.topology.openProjectTopology')}</Link>
@@ -114,7 +115,7 @@ export function ApplicationTopologyPanel({ applicationId, projectId }: Applicati
               const relatedId = upstream ? edge.source : edge.target
               const related = logicalTopology.data.nodes.find(node => node.id === relatedId)
               return (
-                <Link key={edge.id} className="flex min-w-0 items-center gap-2 rounded-md border border-border bg-background px-3 py-2 hover:border-primary/50" to={`/projects/${projectId}/apps/${relatedId}`}>
+                <Link key={edge.id} className="flex min-w-0 items-center gap-2 rounded-control border border-border bg-surface-subtle px-3 py-2 transition-colors hover:border-primary-border" to={`/projects/${projectId}/apps/${relatedId}`}>
                   <span className="shrink-0 text-xs text-muted-foreground">{t(upstream ? 'apps.topology.upstream' : 'apps.topology.downstream')}</span>
                   <span className="min-w-0 flex-1 truncate font-medium">{related?.name ?? relatedId}</span>
                   <StatusValueBadge labelKeyPrefix="projectTopology.statuses" value={edge.status} />
@@ -122,10 +123,10 @@ export function ApplicationTopologyPanel({ applicationId, projectId }: Applicati
               )
             })}
           </div>
-        </div>
+        </Surface>
       )}
       {topology.data.warnings.length > 0 && (
-        <Alert>
+        <Alert variant="warning">
           <Boxes />
           <AlertTitle>{t('apps.topology.partialTitle')}</AlertTitle>
           <AlertDescription>
@@ -246,13 +247,14 @@ function TopologyChart({ edges, fitVersion, nodes }: {
 
   useEffect(() => {
     const observer = new MutationObserver(() => setThemeVersion(version => version + 1))
-    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'style'] })
+    // 明暗模式与品牌主色都会改写根节点 token，切换后重新取色。
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'data-brand-theme'] })
     return () => observer.disconnect()
   }, [])
 
   return (
     <>
-      <div ref={chartElementRef} className="h-[64vh] min-h-104 max-h-160 w-full bg-muted/40" />
+      <div ref={chartElementRef} className="h-[64vh] min-h-104 max-h-160 w-full bg-surface-subtle" />
       <Sheet open={Boolean(selectedNode)} onOpenChange={open => !open && setSelectedNode(null)}>
         <SheetContent>
           {selectedNode && (
@@ -293,11 +295,7 @@ function buildChartOption(
   _themeVersion: number,
   compact: boolean,
 ): TopologyChartOption {
-  const styles = getComputedStyle(document.documentElement)
-  const foreground = chartThemeColor(styles, '--foreground', '#18181b')
-  const edgeColor = chartThemeColor(styles, '--foreground', 'rgba(24, 24, 27, 0.68)', 0.68)
-  const border = chartThemeColor(styles, '--border', '#d4d4d8')
-  const background = chartThemeColor(styles, '--surface', '#ffffff')
+  const palette = readTopologyPalette()
   const grouped = new Map<number, ApplicationTopologyNode[]>()
   for (const node of nodes) {
     const rank = kindRanks[node.kind] ?? 3
@@ -322,22 +320,20 @@ function buildChartOption(
         ? (node.kind === 'Pod' ? [78, 40] : [92, 46])
         : (node.kind === 'Pod' ? [146, 48] : [168, 56]),
       itemStyle: {
-        color: colorForKind(node.kind),
-        borderColor: colorForStatus(node.status),
+        color: colorForKind(palette, node.kind),
+        borderColor: colorForStatus(palette, node.status),
         borderWidth: 2,
         shadowBlur: 8,
-        shadowColor: 'rgba(0,0,0,0.08)',
+        shadowColor: palette.shadow,
       },
       label: {
         show: true,
-        color: '#ffffff',
+        color: palette.nodeText,
         fontSize: compact ? 10 : 12,
-        textBorderColor: 'rgba(15, 23, 42, 0.32)',
-        textBorderWidth: 2,
         formatter: `{kind|${escapeEChartsRichText(t(`apps.topology.kinds.${node.kind}`, { defaultValue: node.kind }))}}\n{name|${escapeEChartsRichText(truncate(node.name, labelMaxLength))}}`,
         rich: {
-          kind: { color: '#f8fafc', fontSize: compact ? 8 : 10, lineHeight: compact ? 13 : 17 },
-          name: { color: '#ffffff', fontSize: compact ? 9 : 12, fontWeight: 600, lineHeight: compact ? 14 : 18 },
+          kind: { color: palette.nodeText, fontSize: compact ? 8 : 10, lineHeight: compact ? 13 : 17 },
+          name: { color: palette.nodeText, fontSize: compact ? 9 : 12, fontWeight: 600, lineHeight: compact ? 14 : 18 },
         },
       },
     }
@@ -347,9 +343,9 @@ function buildChartOption(
     tooltip: {
       trigger: 'item',
       confine: true,
-      backgroundColor: background,
-      borderColor: border,
-      textStyle: { color: foreground },
+      backgroundColor: palette.surface,
+      borderColor: palette.border,
+      textStyle: { color: palette.foreground },
       formatter: (params) => {
         if (Array.isArray(params) || params.dataType !== 'node')
           return ''
@@ -380,7 +376,7 @@ function buildChartOption(
         source: edge.source,
         target: edge.target,
         lineStyle: {
-          color: edgeColor,
+          color: palette.edge,
           curveness: edge.type === 'configures' || edge.type === 'mounts' || edge.type === 'scales' ? 0.08 : 0,
           opacity: 0.78,
           width: 1.75,
@@ -406,37 +402,65 @@ function symbolForKind(kind: string): 'roundRect' | 'circle' | 'diamond' {
   return 'roundRect'
 }
 
-function colorForKind(kind: string) {
-  if (kind === 'Gateway' || kind === 'HTTPRoute')
-    return '#2563eb'
-  if (kind === 'Service')
-    return '#0891b2'
-  if (kind === 'Deployment' || kind === 'StatefulSet')
-    return '#4f46e5'
-  if (kind === 'Pod')
-    return '#475569'
-  if (kind === 'Secret')
-    return '#be123c'
-  if (kind === 'PersistentVolumeClaim')
-    return '#7c3aed'
-  return '#64748b'
+type TopologyPalette = ReturnType<typeof readTopologyPalette>
+
+/**
+ * 从根节点读取设计 token 作为 ECharts 配色；canvas 无法解析 CSS 变量，
+ * 因此在每次明暗模式或品牌主色切换后重新读取。
+ */
+function readTopologyPalette() {
+  const styles = getComputedStyle(document.documentElement)
+  const token = (variable: string, alpha?: number) => cssTokenColor(styles, variable, alpha)
+  return {
+    foreground: token('--foreground'),
+    edge: token('--muted-foreground'),
+    border: token('--border'),
+    surface: token('--surface'),
+    // 节点使用实心分类色，文字取表面色形成反差：浅色主题为白字，深色主题为深字。
+    nodeText: token('--surface'),
+    shadow: token('--foreground', 0.08),
+    primary: token('--primary'),
+    workload: token('--muted-foreground'),
+    access: token('--topology-cat-access'),
+    core: token('--topology-cat-core'),
+    support: token('--topology-cat-support'),
+    infra: token('--topology-cat-infra'),
+    success: token('--status-success'),
+    warning: token('--status-warning'),
+    danger: token('--status-danger'),
+  }
 }
 
-function colorForStatus(status: string) {
+function colorForKind(palette: TopologyPalette, kind: string) {
+  if (kind === 'Gateway' || kind === 'HTTPRoute')
+    return palette.access
+  if (kind === 'Service')
+    return palette.primary
+  if (kind === 'Deployment' || kind === 'StatefulSet')
+    return palette.core
+  if (kind === 'Pod')
+    return palette.workload
+  if (dependencyKinds.has(kind))
+    return palette.support
+  return palette.infra
+}
+
+function colorForStatus(palette: TopologyPalette, status: string) {
   const normalized = status.toLowerCase()
   if (normalized.includes('fail') || normalized.includes('error'))
-    return '#fb7185'
+    return palette.danger
   if (normalized.includes('ready') || normalized.includes('running') || normalized.includes('programmed'))
-    return '#34d399'
+    return palette.success
   if (normalized.includes('pending') || normalized.includes('progress'))
-    return '#fbbf24'
-  return '#cbd5e1'
+    return palette.warning
+  return palette.border
 }
 
-function chartThemeColor(styles: CSSStyleDeclaration, variable: string, fallback: string, alpha?: number) {
+/** HSL 分量 token（如 `--foreground`）转为 hsl()/hsla()；hex 等完整颜色 token 原样返回。缺失时交给 ECharts 默认色。 */
+function cssTokenColor(styles: CSSStyleDeclaration, variable: string, alpha?: number) {
   const value = styles.getPropertyValue(variable).trim()
   if (!value)
-    return fallback
+    return undefined
   const hslParts = value.split(/\s+/)
   if (hslParts.length === 3 && hslParts[1]?.endsWith('%') && hslParts[2]?.endsWith('%')) {
     const [hue, saturation, lightness] = hslParts

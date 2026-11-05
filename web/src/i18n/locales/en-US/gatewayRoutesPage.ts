@@ -1,7 +1,7 @@
 const gatewayRoutesPage = {
   createRoute: 'Create domain',
   editRoute: 'Edit domain',
-  routeDialogDescription: 'Choose the deploy config to expose. Leave the domain empty to generate a unique default domain from project, app, and deploy environment. You can also enter a short prefix or a full custom domain.',
+  routeDialogDescription: 'Choose the deploy config to expose and set its access domain.',
   basicGatewayConfig: 'Basic access config',
   basicGatewayConfigDescription: 'Configure deploy config, domain, path, port, and TLS. These are the common settings for an access route.',
   advancedGatewayConfig: 'Advanced gateway settings',
@@ -70,11 +70,13 @@ const gatewayRoutesPage = {
   certificateIssuerName: 'Issuer name',
   pathToPort: 'Path → port',
   routeStatuses: {
-    pending: 'Applying',
-    ready: 'Active',
-    active: 'Active',
-    disabled: 'Disabled',
-    failed: 'Failed',
+    'pending': 'Applying',
+    'ready': 'Active',
+    'active': 'Active',
+    'disabled': 'Disabled',
+    'failed': 'Failed',
+    'not-configured': 'Gateway not configured',
+    'unavailable': 'Unavailable',
   },
 }
 

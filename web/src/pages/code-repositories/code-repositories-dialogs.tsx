@@ -51,7 +51,7 @@ export function ProviderDialog({
       open={open}
       onOpenChange={onOpenChange}
     >
-      <DialogContent className="max-w-3xl">
+      <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>{editingProvider ? t('codeRepositoriesView.editProvider') : t('codeRepositoriesView.createProvider')}</DialogTitle>
           <DialogDescription>{t('codeRepositoriesView.providerDialogDescription')}</DialogDescription>
@@ -137,7 +137,7 @@ export function ProviderDialog({
           </ProgressiveSection>
           <DialogFooter>
             <DialogClose asChild>
-              <Button type="button" variant="outline">{t('common.cancel')}</Button>
+              <Button disabled={pending} type="button" variant="outline">{t('common.cancel')}</Button>
             </DialogClose>
             <Button disabled={pending || !form.formState.isValid} type="submit">
               {editingProvider ? <Save size={16} /> : <Plus size={16} />}
@@ -233,7 +233,7 @@ export function CredentialDialog({ open, editingCredential, form, projects, prov
           </Field>
           <DialogFooter>
             <DialogClose asChild>
-              <Button type="button" variant="outline">{t('common.cancel')}</Button>
+              <Button disabled={pending} type="button" variant="outline">{t('common.cancel')}</Button>
             </DialogClose>
             <Button disabled={pending || !form.formState.isValid} type="submit">
               {editingCredential ? <Save size={16} /> : <Plus size={16} />}

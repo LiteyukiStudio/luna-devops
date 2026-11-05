@@ -28,7 +28,7 @@ const notificationsPage = {
   emptyRules: 'No notification rules yet',
   emptyDeliveries: 'No delivery records yet',
   channelDialog: 'Notification channel',
-  channelDialogDescription: 'Configure a Webhook or SMTP adapter. Secrets are stored in Secret Store, and lists only show whether a secret is set.',
+  channelDialogDescription: 'Configure a Webhook or SMTP adapter; secrets are kept in Secret Store and never shown again.',
   adapter: 'Adapter',
   adapters: {
     webhook: 'Webhook',
@@ -38,7 +38,7 @@ const notificationsPage = {
   secretLines: 'Secret key-values',
   secretPlaceholder: 'password=...',
   presetDialog: 'Create channel from template',
-  presetDialogDescription: 'Channel templates create ordinary Webhook channel snapshots and default message templates for the target platform. Later template edits do not affect existing channels.',
+  presetDialogDescription: 'Creates a Webhook channel and default templates for the target platform; later template changes do not affect it.',
   preset: 'Channel template',
   templateDialog: 'Notification template',
   templateDialogDescription: 'Templates use Go template syntax and can reference .Event and .Secrets.',

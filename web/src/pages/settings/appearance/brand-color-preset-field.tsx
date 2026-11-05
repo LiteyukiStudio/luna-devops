@@ -70,16 +70,16 @@ function BrandColorOption({ checked, id, label, preset, value }: {
         <TooltipTrigger asChild>
           <Label
             className={cn(
-              'relative flex size-12 cursor-pointer items-center justify-center rounded-full border-2 border-transparent bg-card p-1.5 transition-all duration-standard ease-standard hover:border-primary-border peer-data-[state=checked]:border-primary peer-data-[state=checked]:shadow-sm peer-focus-visible:ring-3 peer-focus-visible:ring-ring/50',
+              'relative flex size-12 cursor-pointer items-center justify-center rounded-full border-2 border-transparent bg-surface p-1.5 transition-colors duration-standard ease-standard hover:border-primary-border peer-data-[state=checked]:border-primary peer-focus-visible:ring-3 peer-focus-visible:ring-ring/50',
             )}
             htmlFor={id}
           >
             <span
-              className="relative flex size-full items-center justify-center overflow-hidden rounded-full border border-border/70 shadow-xs"
+              className="relative flex size-full items-center justify-center overflow-hidden rounded-full border border-border/70"
               style={{ background: `var(--${preset}-9)` }}
             >
               <span className={cn(
-                'relative z-10 flex size-5 items-center justify-center rounded-full bg-card/90 text-foreground shadow-sm backdrop-blur-sm transition-opacity',
+                'relative z-10 flex size-5 items-center justify-center rounded-full bg-surface text-foreground transition-opacity',
                 checked ? 'opacity-100' : 'opacity-0',
               )}
               >
@@ -87,7 +87,7 @@ function BrandColorOption({ checked, id, label, preset, value }: {
               </span>
             </span>
             {showLabel && (
-              <span className="absolute -right-1 -bottom-1 flex size-4 items-center justify-center rounded-full border border-border bg-card text-muted-foreground shadow-xs">
+              <span className="absolute -right-1 -bottom-1 flex size-4 items-center justify-center rounded-full border border-border bg-surface text-muted-foreground">
                 <Link2 className="size-2.5" />
               </span>
             )}

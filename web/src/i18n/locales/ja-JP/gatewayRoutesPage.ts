@@ -1,7 +1,7 @@
 const gatewayRoutesPage = {
   createRoute: 'ドメインを作成',
   editRoute: 'ドメインを編集',
-  routeDialogDescription: '公開するデプロイ設定を選択します。ドメインを空欄にすると、プロジェクトスペース、アプリケーション、デプロイ環境に基づいて一意のデフォルトドメインが自動生成されます。短いプレフィックスまたは完全なカスタムドメインを入力することもできます。',
+  routeDialogDescription: '公開するデプロイ設定を選び、アクセスドメインを設定します。',
   basicGatewayConfig: '基本アクセス設定',
   basicGatewayConfigDescription: 'デプロイ設定、ドメイン、パス、ポート、TLS を設定します。アクセスエントリを作成するための一般的な項目です。',
   advancedGatewayConfig: '高度なゲートウェイ設定',
@@ -70,11 +70,13 @@ const gatewayRoutesPage = {
   certificateIssuerName: 'Issuer 名',
   pathToPort: 'パス → ポート',
   routeStatuses: {
-    pending: '反映中',
-    ready: '有効',
-    active: '有効',
-    disabled: '無効',
-    failed: '失敗',
+    'pending': '反映中',
+    'ready': '有効',
+    'active': '有効',
+    'disabled': '無効',
+    'failed': '失敗',
+    'not-configured': 'ゲートウェイ未設定',
+    'unavailable': '取得できません',
   },
 }
 

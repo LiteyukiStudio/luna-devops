@@ -35,7 +35,7 @@ export function InboxTrigger() {
     <Button aria-label={count > 99 ? t('inbox.unreadCountOverflow') : count > 0 ? t('inbox.unreadCount', { count }) : t('inbox.open')} className="relative" size="icon" variant="ghost">
       <Bell className="size-5" />
       {count > 0 && (
-        <span className="absolute -right-1 -top-1 grid h-5 min-w-5 place-items-center rounded-full bg-danger px-1 text-[10px] font-semibold leading-none text-white">
+        <span className="absolute -right-1 -top-1 grid h-5 min-w-5 place-items-center rounded-full bg-danger px-1 text-xs font-semibold leading-none text-white">
           {count > 99 ? '99+' : count}
         </span>
       )}

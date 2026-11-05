@@ -321,7 +321,7 @@ function ChannelDialog({ onClose, onSave, onUpdate, openState, saving }: { onClo
     : t('notificationsPage.secretPlaceholder')
   return (
     <Dialog open onOpenChange={open => !open && onClose()}>
-      <DialogContent className="max-w-3xl">
+      <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>{t('notificationsPage.channelDialog')}</DialogTitle>
           <DialogDescription>{t('notificationsPage.channelDialogDescription')}</DialogDescription>
@@ -338,8 +338,8 @@ function ChannelDialog({ onClose, onSave, onUpdate, openState, saving }: { onClo
           <Field className="md:col-span-2" label={t('notificationsPage.secretLines')}><Textarea className="min-h-24 font-mono" placeholder={secretPlaceholder} value={openState.secretText} onChange={event => onUpdate({ ...openState, secretText: event.target.value })} /></Field>
         </FormGrid>
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>{t('common.cancel')}</Button>
-          <Button disabled={saving} onClick={() => onSave(openState)}>{t('common.save')}</Button>
+          <Button disabled={saving} variant="outline" onClick={onClose}>{t('common.cancel')}</Button>
+          <Button disabled={saving} onClick={() => onSave(openState)}>{openState.id ? t('common.save') : t('notificationsPage.createChannel')}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -364,8 +364,8 @@ function PresetDialog({ onClose, onSave, onUpdate, openState, presets, saving }:
           <Field className="md:col-span-2" label={t('notificationsPage.secretLines')}><Textarea className="font-mono" placeholder={(preset?.secretFields ?? []).map(field => `${field}=`).join('\n')} value={openState.secretText} onChange={event => onUpdate({ ...openState, secretText: event.target.value })} /></Field>
         </FormGrid>
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>{t('common.cancel')}</Button>
-          <Button disabled={saving || !openState.presetId} onClick={() => onSave(openState)}>{t('common.create')}</Button>
+          <Button disabled={saving} variant="outline" onClick={onClose}>{t('common.cancel')}</Button>
+          <Button disabled={saving || !openState.presetId} onClick={() => onSave(openState)}>{t('notificationsPage.createChannel')}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -378,7 +378,7 @@ function TemplateDialog({ onClose, onSave, onUpdate, openState, saving }: { onCl
     return null
   return (
     <Dialog open onOpenChange={open => !open && onClose()}>
-      <DialogContent className="max-w-3xl">
+      <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>{t('notificationsPage.templateDialog')}</DialogTitle>
           <DialogDescription>{t('notificationsPage.templateDialogDescription')}</DialogDescription>
@@ -398,8 +398,8 @@ function TemplateDialog({ onClose, onSave, onUpdate, openState, saving }: { onCl
           <Field className="md:col-span-2" label={t('notificationsPage.jsonBodyTemplate')}><Textarea className="min-h-40 font-mono" value={openState.jsonBodyTemplate} onChange={event => onUpdate({ ...openState, jsonBodyTemplate: event.target.value })} /></Field>
         </FormGrid>
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>{t('common.cancel')}</Button>
-          <Button disabled={saving} onClick={() => onSave(openState)}>{t('common.save')}</Button>
+          <Button disabled={saving} variant="outline" onClick={onClose}>{t('common.cancel')}</Button>
+          <Button disabled={saving} onClick={() => onSave(openState)}>{openState.id ? t('common.save') : t('notificationsPage.createTemplate')}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -415,7 +415,7 @@ function RuleDialog({ channels, onClose, onSave, onUpdate, openState, projects, 
   const canSave = notificationRulePayloadFromState(openState) !== null
   return (
     <Dialog open onOpenChange={open => !open && onClose()}>
-      <DialogContent className="max-w-3xl">
+      <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>{t('notificationsPage.ruleDialog')}</DialogTitle>
           <DialogDescription>{t('notificationsPage.ruleDialogDescription')}</DialogDescription>
@@ -484,8 +484,8 @@ function RuleDialog({ channels, onClose, onSave, onUpdate, openState, projects, 
           </div>
         </FormGrid>
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>{t('common.cancel')}</Button>
-          <Button disabled={saving || !canSave} onClick={() => onSave(openState)}>{t('common.save')}</Button>
+          <Button disabled={saving} variant="outline" onClick={onClose}>{t('common.cancel')}</Button>
+          <Button disabled={saving || !canSave} onClick={() => onSave(openState)}>{openState.id ? t('common.save') : t('notificationsPage.createRule')}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

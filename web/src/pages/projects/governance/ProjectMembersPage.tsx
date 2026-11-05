@@ -18,7 +18,7 @@ import { SearchMultiSelect } from '@/components/common/search-select'
 import { StatusBadge } from '@/components/common/status-badge'
 import { UserAvatar } from '@/components/common/user-avatar'
 import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { NativeSelect as Select } from '@/components/ui/native-select'
 import { PROJECT_ROLES, ProjectRole } from '@/lib/roles'
 
@@ -223,7 +223,7 @@ export function ProjectMembersPage({ embedded = false, projectId: projectIdProp,
           }
         }}
       >
-        <DialogContent>
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>{t('projectMembers.addTitle')}</DialogTitle>
             <DialogDescription>{t('projectMembers.description')}</DialogDescription>
@@ -257,6 +257,9 @@ export function ProjectMembersPage({ embedded = false, projectId: projectIdProp,
               </Select>
             </Field>
             <DialogFooter>
+              <DialogClose asChild>
+                <Button disabled={createMember.isPending} type="button" variant="outline">{t('common.cancel')}</Button>
+              </DialogClose>
               <Button disabled={createMember.isPending || !form.formState.isValid || selectedUsers.length === 0} type="submit">
                 <UserPlus size={16} />
                 {t('projectMembers.add')}

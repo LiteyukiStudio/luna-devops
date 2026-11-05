@@ -13,7 +13,7 @@ import { projectVolumeAccessModeOptions, projectVolumeModeOptions } from '@/comp
 import { ProjectVolumeClusterSelect, ProjectVolumeStorageClassSelect } from '@/components/common/project-volumes/volume-resource-selectors'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { NativeSelect } from '@/components/ui/native-select'
 import { uploadVolumeImport, waitForVolumeTransferReady } from './volume-transfer-upload'
@@ -258,10 +258,15 @@ export function ProjectVolumeImportDialog({ onOpenChange, open, projectId }: { o
           )}
           <DialogFooter>
             {!busy && (
-              <Button disabled={!file || !form.formState.isValid} type="submit">
-                <Upload className="size-4" />
-                {t('projectVolumes.importArchive')}
-              </Button>
+              <>
+                <DialogClose asChild>
+                  <Button type="button" variant="outline">{t('common.cancel')}</Button>
+                </DialogClose>
+                <Button disabled={!file || !form.formState.isValid} type="submit">
+                  <Upload className="size-4" />
+                  {t('projectVolumes.importArchive')}
+                </Button>
+              </>
             )}
             {busy && (
               <Button disabled={stage === 'cancelling'} type="button" variant="destructive" onClick={cancelCurrentImport}>

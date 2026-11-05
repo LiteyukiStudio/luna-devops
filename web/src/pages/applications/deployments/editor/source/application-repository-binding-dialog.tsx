@@ -8,7 +8,7 @@ import { FormField as Field } from '@/components/common/form-field'
 import { GitRepositoryPicker } from '@/components/common/git-repository-picker'
 import { SearchSelect } from '@/components/common/search-select'
 import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { branchOptions } from '@/pages/applications/application-config-utils'
 
@@ -66,7 +66,7 @@ export function ApplicationRepositoryBindingDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl">
+      <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>{t('repositories.bindRepoTitle')}</DialogTitle>
           <DialogDescription>{t('deploymentsPage.repositoryBindingDialogDescription')}</DialogDescription>
@@ -113,7 +113,7 @@ export function ApplicationRepositoryBindingDialog({
               />
             </Field>
           </div>
-          <div className="grid gap-3 md:grid-cols-2">
+          <div className="grid gap-3">
             <Field error={form.formState.errors.cloneUrl?.message} label={t('repositories.cloneUrl')}>
               <Input {...form.register('cloneUrl')} aria-invalid={Boolean(form.formState.errors.cloneUrl)} placeholder={t('repositories.cloneUrlPlaceholder')} />
             </Field>
@@ -122,7 +122,6 @@ export function ApplicationRepositoryBindingDialog({
               name="autoConfigureWebhook"
               render={({ field }) => (
                 <ControlledCheckboxField
-                  className="rounded-control border border-border bg-surface-inset p-3"
                   description={t('repositories.autoConfigureWebhookHint')}
                   field={field}
                 >
@@ -132,9 +131,12 @@ export function ApplicationRepositoryBindingDialog({
             />
           </div>
           <DialogFooter>
+            <DialogClose asChild>
+              <Button disabled={pending} type="button" variant="outline">{t('common.cancel')}</Button>
+            </DialogClose>
             <Button disabled={pending || accounts.length === 0 || !form.formState.isValid} type="submit">
               <Plus className="size-4" />
-              {t('repositories.saveBinding')}
+              {t('repositories.bindRepository')}
             </Button>
           </DialogFooter>
         </form>

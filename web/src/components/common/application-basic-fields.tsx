@@ -31,13 +31,15 @@ export function ApplicationBasicFields({
 
   if (compact) {
     return (
-      <div className="grid gap-3 md:grid-cols-[auto_minmax(0,1fr)_minmax(0,1fr)]">
-        <Field hint={t('apps.iconHint')} label={t('apps.icon')}>
-          <ApplicationIconPicker compact value={icon} onChange={onIconChange} />
-        </Field>
-        <Field error={nameError} hint={t('apps.nameHint')} label={t('apps.name')} required>
-          <Input {...nameField} aria-invalid={Boolean(nameError)} placeholder={t('apps.namePlaceholder')} />
-        </Field>
+      <div className="grid gap-3">
+        <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-3">
+          <Field hint={t('apps.iconHint')} label={t('apps.icon')}>
+            <ApplicationIconPicker compact value={icon} onChange={onIconChange} />
+          </Field>
+          <Field error={nameError} hint={t('apps.nameHint')} label={t('apps.name')} required>
+            <Input {...nameField} aria-invalid={Boolean(nameError)} placeholder={t('apps.namePlaceholder')} />
+          </Field>
+        </div>
         <Field error={identifierError} hint={t('apps.identifierHint', { min: APPLICATION_IDENTIFIER_MIN_LENGTH, max: normalizedIdentifierMaxLength })} label={t('apps.identifier')} required>
           <Input
             {...identifierField}

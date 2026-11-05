@@ -117,7 +117,7 @@ export function LogViewer({
       <div
         ref={viewportRef}
         aria-label={t('common.logViewer.label')}
-        className="h-full min-h-0 overflow-auto bg-terminal py-3 font-mono text-[12.5px] leading-[1.6] text-terminal-foreground selection:bg-terminal-selection focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary"
+        className="h-full min-h-0 overflow-auto bg-terminal py-3 font-mono text-xs leading-5 text-terminal-foreground selection:bg-terminal-selection focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary"
         role="log"
         tabIndex={0}
         onScroll={handleScroll}

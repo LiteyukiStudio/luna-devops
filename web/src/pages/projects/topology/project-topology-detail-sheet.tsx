@@ -147,7 +147,7 @@ export function ProjectTopologyDetailSheet({
                             <StatusValueBadge labelKeyPrefix="projectTopology.checkStatuses" value={item.status} />
                           </div>
                         ))
-                      : <p className="rounded-container border border-dashed border-border px-3 py-4 text-muted-foreground">{t('projectTopology.noDiagnostics')}</p>}
+                      : <p className="rounded-container border border-border bg-surface-subtle px-3 py-4 text-muted-foreground">{t('projectTopology.noDiagnostics')}</p>}
                   </div>
                 )}
 

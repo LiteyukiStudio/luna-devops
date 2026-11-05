@@ -85,7 +85,6 @@ export function GatewayRouteFormFields({
         </Select>
       </Field>
       <ControlledCheckboxField
-        className="rounded-md border border-border bg-muted/20 px-3 py-2"
         description={t('gatewayRoutesPage.enabledHint')}
         field={enabledField}
       >

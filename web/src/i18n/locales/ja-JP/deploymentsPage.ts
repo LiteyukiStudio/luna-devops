@@ -9,7 +9,7 @@ const deploymentsPage = {
   deleteClusterDescription: 'この実行クラスターは削除されます。まだデプロイ設定が参照している場合は、先に関連するデプロイ設定を移行または削除してください。',
   emptyClusters: '実行クラスターがありません',
   createRelease: 'リリースを作成',
-  releaseDialogDescription: 'まず pending リリース記録を作成し、後続で worker が実際のデプロイを実行します。',
+  releaseDialogDescription: 'リリースするイメージを選ぶと、デプロイ設定に従ってローリング更新します。',
   releaseTargetLockedHint: 'デプロイ設定からリリースをトリガーすると現在の設定がロックされ、誤って他の環境にリリースすることを防ぎます。',
   releaseImageSummaryHint: 'デフォルトでは最近の成功ビルドまたは現在のイメージ設定から生成されたイメージアドレスを使用します。クリックで完全な参照をコピーできます。',
   releaseImageOverride: '高度なイメージオーバーライド',

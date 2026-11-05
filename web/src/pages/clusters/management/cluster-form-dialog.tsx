@@ -11,7 +11,7 @@ import { FormField as Field } from '@/components/common/form-field'
 import { ProgressiveSection } from '@/components/common/progressive-section'
 import { ProjectSpaceMultiSelect } from '@/components/common/project-space-select'
 import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { NativeSelect as Select } from '@/components/ui/native-select'
 import { Textarea } from '@/components/ui/textarea'
@@ -340,7 +340,10 @@ export function ClusterFormDialog({ editingCluster, open, projects, user, onOpen
             </div>
           </div>
           <DialogFooter className="shrink-0 border-t border-border p-5 pt-4">
-            <Button disabled={!form.formState.isValid || !policyValidation.success || saveCluster.isPending || kubeconfigInspection.error || (kubeconfigContextSelectionRequired && !effectiveKubeconfigContext)} type="submit">{t('common.save')}</Button>
+            <DialogClose asChild>
+              <Button disabled={saveCluster.isPending} type="button" variant="outline">{t('common.cancel')}</Button>
+            </DialogClose>
+            <Button disabled={!form.formState.isValid || !policyValidation.success || saveCluster.isPending || kubeconfigInspection.error || (kubeconfigContextSelectionRequired && !effectiveKubeconfigContext)} type="submit">{editingCluster ? t('common.save') : t('deploymentsPage.createCluster')}</Button>
           </DialogFooter>
         </form>
       </DialogContent>

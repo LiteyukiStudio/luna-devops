@@ -4,7 +4,7 @@ const apps = {
   updated: 'Application updated',
   editMissing: 'Choose an application to edit first',
   title: 'Applications',
-  description: 'Applications keep only a name, immutable identifier, and icon. Repository, image source, build, and deployment policy are configured in deploy configs.',
+  description: 'An application holds only a name, identifier, and icon; set the repository, build, and deployment in deploy configs.',
   name: 'Application name',
   nameRequired: 'Enter application name',
   nameHint: 'Human-readable application name.',

@@ -43,8 +43,8 @@ export function CodeEditorCore({
         className,
       )}
     >
-      <div className="flex h-8 items-center justify-between border-b border-border bg-muted/70 px-3">
-        <span className="font-mono text-xs font-medium uppercase tracking-normal text-muted-foreground">{language}</span>
+      <div className="flex h-8 items-center justify-between border-b border-border bg-surface-subtle px-3">
+        <span className="font-mono text-xs font-medium text-muted-foreground">{language}</span>
       </div>
       <CodeMirror
         basicSetup={{

@@ -9,7 +9,7 @@ const deploymentsPage = {
   deleteClusterDescription: '该运行集群会被删除；如果仍有部署配置引用它，请先迁移或删除相关部署配置。',
   emptyClusters: '暂无运行集群',
   createRelease: '创建发布',
-  releaseDialogDescription: '先创建 pending 发布记录，后续由 worker 执行实际部署。',
+  releaseDialogDescription: '选择要发布的镜像，平台会按部署配置滚动更新。',
   releaseTargetLockedHint: '从部署配置触发发布时会锁定当前配置，避免误发布到其他环境。',
   releaseImageSummaryHint: '默认使用最近成功构建或当前镜像配置生成的镜像地址；点击可复制完整引用。',
   releaseImageOverride: '高级镜像覆盖',

@@ -186,7 +186,7 @@ function SpanInspector({ span }: { span: AgentObservabilityTraceSpan }) {
           ? <p className="text-sm text-muted-foreground">{t('operationsDashboardPage.traceDetail.noAttributes')}</p>
           : Object.entries(span.attributes).filter(([key]) => !isAgentSpanContentAttribute(key)).map(([key, value]) => (
               <div key={key} className="grid gap-1 rounded-control bg-surface-subtle p-2">
-                <span className="font-mono text-[11px] text-muted-foreground">{key}</span>
+                <span className="font-mono text-xs text-muted-foreground">{key}</span>
                 <span className="break-all text-sm">{value}</span>
               </div>
             ))}

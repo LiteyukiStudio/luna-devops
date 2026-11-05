@@ -28,7 +28,7 @@ const notificationsPage = {
   emptyRules: '通知ルールがまだありません',
   emptyDeliveries: '配信記録がまだありません',
   channelDialog: '通知チャネル',
-  channelDialogDescription: 'Webhook または SMTP アダプターを設定します。シークレットは Secret Store に書き込まれ、リストには設定済みかどうかのみ表示されます。',
+  channelDialogDescription: 'Webhook または SMTP アダプターを設定します。シークレットは Secret Store に保存され、再表示されません。',
   adapter: 'アダプター',
   adapters: {
     webhook: 'Webhook',
@@ -38,7 +38,7 @@ const notificationsPage = {
   secretLines: 'シークレットキー値',
   secretPlaceholder: 'password=...',
   presetDialog: 'テンプレートからチャネルを作成',
-  presetDialogDescription: 'チャネルテンプレートは対象プラットフォーム向けに通常の Webhook チャネルスナップショットとデフォルトテンプレートを生成します。後でテンプレートを変更しても既存チャネルには影響しません。',
+  presetDialogDescription: '対象プラットフォーム向けの Webhook チャネルとデフォルトテンプレートを生成し、後のテンプレート変更は影響しません。',
   preset: 'チャネルテンプレート',
   templateDialog: '通知テンプレート',
   templateDialogDescription: 'テンプレートは Go template でレンダリングされ、.Event と .Secrets を参照できます。',

@@ -2,7 +2,7 @@ import type { KeyValueRow } from '@/components/common/key-value-rows-editor'
 import { useTranslation } from 'react-i18next'
 import { KeyValueRowsEditor } from '@/components/common/key-value-rows-editor'
 import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 
 export function BuildEnvironmentEditorDialog({ description, open, pending, secretRows, title, variableRows, onOpenChange, onSave, onSecretRowsChange, onVariableRowsChange }: {
   description: string
@@ -19,7 +19,7 @@ export function BuildEnvironmentEditorDialog({ description, open, pending, secre
   const { t } = useTranslation()
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl">
+      <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>{description}</DialogDescription>
@@ -40,7 +40,9 @@ export function BuildEnvironmentEditorDialog({ description, open, pending, secre
           />
         </div>
         <DialogFooter>
-          <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>{t('common.cancel')}</Button>
+          <DialogClose asChild>
+            <Button disabled={pending} type="button" variant="outline">{t('common.cancel')}</Button>
+          </DialogClose>
           <Button disabled={pending} type="button" onClick={onSave}>{t('common.save')}</Button>
         </DialogFooter>
       </DialogContent>

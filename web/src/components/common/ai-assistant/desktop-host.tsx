@@ -10,12 +10,11 @@ import { AIDesktopShell } from './desktop-shell'
 import { AIAssistantLauncher } from './launcher'
 import {
   clampAssistantPosition,
-  LAUNCHER_SIZE,
-  LAUNCHER_STORAGE_KEY,
   MIN_WINDOW_HEIGHT,
   MIN_WINDOW_WIDTH,
   readLauncherPosition,
   readWindowPreference,
+  saveLauncherPosition,
   VIEWPORT_GUTTER,
   WINDOW_STORAGE_KEY,
 } from './layout'
@@ -63,14 +62,9 @@ export function AIAssistantDesktopHost({ view, onExpand, onViewChange }: AIAssis
   useEffect(() => {
     if (!runtime.enabled)
       return
-    safeStorageSet(LAUNCHER_STORAGE_KEY, JSON.stringify(launcherPosition))
-  }, [launcherPosition, runtime.enabled])
-  useEffect(() => {
-    if (!runtime.enabled)
-      return
     const handleResize = () => {
       setPreference(clampWindowPreference)
-      setLauncherPosition(current => clampAssistantPosition(current, LAUNCHER_SIZE, LAUNCHER_SIZE))
+      setLauncherPosition(readLauncherPosition())
     }
     window.addEventListener('resize', handleResize)
     return () => window.removeEventListener('resize', handleResize)
@@ -86,7 +80,10 @@ export function AIAssistantDesktopHost({ view, onExpand, onViewChange }: AIAssis
         label={t('aiAssistant.open')}
         position={launcherPosition}
         onOpen={runtime.openAssistant}
-        onPositionChange={setLauncherPosition}
+        onPositionChange={(nextPosition) => {
+          setLauncherPosition(nextPosition)
+          saveLauncherPosition(nextPosition)
+        }}
       />
     )
   }

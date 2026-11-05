@@ -10,7 +10,7 @@ import { buildRunImageRef, buildRunOptionLabel } from '@/components/common/deplo
 import { FormField as Field } from '@/components/common/form-field'
 import { ProgressiveSection } from '@/components/common/progressive-section'
 import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { NativeSelect as Select } from '@/components/ui/native-select'
 import { shortImageRef } from '@/lib/image-ref'
@@ -75,7 +75,7 @@ export function ApplicationCreateReleaseDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-xl">
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>{t('deploymentsPage.createRelease')}</DialogTitle>
           <DialogDescription>{t('deploymentsPage.releaseDialogDescription')}</DialogDescription>
@@ -95,10 +95,10 @@ export function ApplicationCreateReleaseDialog({
               ? (
                   <>
                     <input type="hidden" {...form.register('deploymentTargetId', { required: true })} />
-                    <div className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm">
-                      <span className="font-medium text-foreground">{selectedTarget.name}</span>
-                      <span className="ml-2 text-muted-foreground">{t(`deploymentsPage.stageLabels.${selectedTarget.stage}`, { defaultValue: selectedTarget.stage })}</span>
-                    </div>
+                    <Input
+                      disabled
+                      value={`${selectedTarget.name} · ${t(`deploymentsPage.stageLabels.${selectedTarget.stage}`, { defaultValue: selectedTarget.stage })}`}
+                    />
                   </>
                 )
               : (
@@ -109,13 +109,11 @@ export function ApplicationCreateReleaseDialog({
                 )}
           </Field>
           <Field hint={t('deploymentsPage.releaseImageSummaryHint')} label={t('deploymentsPage.imageSummary')} required>
-            <div className="rounded-md border border-border bg-muted/40 px-3 py-2">
-              <CopyableHoverText
-                className="max-w-full font-mono text-sm"
-                display={imageSummary ? shortImageRef(imageSummary) : t('common.select')}
-                value={imageSummary}
-              />
-            </div>
+            <CopyableHoverText
+              className="max-w-full font-mono text-sm"
+              display={imageSummary ? shortImageRef(imageSummary) : t('common.select')}
+              value={imageSummary}
+            />
           </Field>
           <ProgressiveSection
             description={t('deploymentsPage.releaseImageOverrideDescription')}
@@ -130,7 +128,10 @@ export function ApplicationCreateReleaseDialog({
             </Field>
           </ProgressiveSection>
           <DialogFooter>
-            <Button disabled={!form.formState.isValid || pending} type="submit">{t('common.save')}</Button>
+            <DialogClose asChild>
+              <Button disabled={pending} type="button" variant="outline">{t('common.cancel')}</Button>
+            </DialogClose>
+            <Button disabled={!form.formState.isValid || pending} type="submit">{t('deploymentsPage.createRelease')}</Button>
           </DialogFooter>
         </form>
       </DialogContent>

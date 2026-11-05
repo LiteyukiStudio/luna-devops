@@ -259,7 +259,7 @@ export function ProjectVolumeCreateDialog({ deploymentContext, onCreated, onOpen
             )}
           </div>
           <DialogFooter>
-            <Button disabled={create.isPending} type="button" variant="secondary" onClick={() => handleOpenChange(false)}>{t('common.cancel')}</Button>
+            <Button disabled={create.isPending} type="button" variant="outline" onClick={() => handleOpenChange(false)}>{t('common.cancel')}</Button>
             <Button disabled={!form.formState.isValid || create.isPending} type="submit">{t('projectVolumes.create')}</Button>
           </DialogFooter>
         </form>

@@ -1,7 +1,7 @@
 const gatewayRoutesPage = {
   createRoute: '도메인 생성',
   editRoute: '도메인 편집',
-  routeDialogDescription: '노출할 배포 구성을 선택하세요. 도메인을 비워 두면 프로젝트 스페이스, 애플리케이션, 배포 환경에 따라 고유한 기본 도메인이 자동 생성됩니다. 짧은 접두사나 전체 사용자 정의 도메인을 입력할 수도 있습니다.',
+  routeDialogDescription: '외부에 노출할 배포 구성을 선택하고 접근 도메인을 설정하세요.',
   basicGatewayConfig: '기본 접근 설정',
   basicGatewayConfigDescription: '배포 구성, 도메인, 경로, 포트, TLS를 설정합니다. 접근 진입점을 생성하는 데 일반적으로 사용되는 항목입니다.',
   advancedGatewayConfig: '고급 게이트웨이 설정',
@@ -70,11 +70,13 @@ const gatewayRoutesPage = {
   certificateIssuerName: 'Issuer 이름',
   pathToPort: '경로 → 포트',
   routeStatuses: {
-    pending: '적용 중',
-    ready: '활성',
-    active: '활성',
-    disabled: '비활성화',
-    failed: '실패',
+    'pending': '적용 중',
+    'ready': '활성',
+    'active': '활성',
+    'disabled': '비활성화',
+    'failed': '실패',
+    'not-configured': '게이트웨이 미구성',
+    'unavailable': '읽을 수 없음',
   },
 }
 

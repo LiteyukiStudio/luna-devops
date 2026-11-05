@@ -50,7 +50,7 @@ export function DotEnvPasteDialog({ onImport, onOpenChange, open }: {
           </CheckboxField>
         </div>
         <DialogFooter>
-          <Button type="button" variant="ghost" onClick={close}>{t('common.cancel')}</Button>
+          <Button type="button" variant="outline" onClick={close}>{t('common.cancel')}</Button>
           <Button
             disabled={parsed.entries.length === 0}
             type="button"

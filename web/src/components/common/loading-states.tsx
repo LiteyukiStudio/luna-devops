@@ -32,7 +32,7 @@ export function AppLoadingState({ logoUrl, title }: { logoUrl: string, title: st
 export function DataListSkeleton({ columns = 4, rows = 6 }: { columns?: number, rows?: number }) {
   return (
     <LoadingRegion className="min-w-full">
-      <div className="grid h-10 items-center gap-4 bg-muted/70 px-4" style={{ gridTemplateColumns: `repeat(${columns}, minmax(7rem, 1fr))` }}>
+      <div className="grid h-10 items-center gap-4 bg-surface-subtle px-4" style={{ gridTemplateColumns: `repeat(${columns}, minmax(7rem, 1fr))` }}>
         {Array.from({ length: columns }, (_, index) => <Skeleton key={index} className="h-3 w-20 max-w-full" />)}
       </div>
       <div>

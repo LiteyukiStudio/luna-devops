@@ -169,7 +169,7 @@ export function AgentTurnDetailSheet({ turn, onOpenChange }: {
                 <Network className="size-4" />
               </span>
               <span className="min-w-0">
-                <span className="block text-[10px] font-medium uppercase tracking-wide opacity-75">{t('operationsDashboardPage.traceId')}</span>
+                <span className="block text-xs font-medium opacity-75">{t('operationsDashboardPage.traceId')}</span>
                 <code className="block break-all text-xs font-semibold sm:text-sm">{turn.traceId}</code>
               </span>
               <Copy className="ml-auto size-4 shrink-0 opacity-70 transition-opacity group-hover:opacity-100" />
@@ -286,7 +286,7 @@ function TimelineStep({ span, expanded, isLast, userMessage, assistantMessage, o
     <li className="grid grid-cols-[4.5rem_1.5rem_minmax(0,1fr)] gap-3">
       <time className="grid gap-0.5 pt-4 text-right font-mono text-xs text-muted-foreground">
         <span>{formatSpanTime(span.startTimeUnixNano, i18n.language)}</span>
-        <span className="text-[10px]">
+        <span>
           +
           {formatDuration(span.startOffsetMs)}
         </span>
@@ -340,7 +340,7 @@ function TimelineStep({ span, expanded, isLast, userMessage, assistantMessage, o
                 <div className="grid gap-2 sm:grid-cols-2">
                   {attributes.map(([key, value]) => (
                     <div key={key} className="grid min-w-0 gap-1 rounded-control bg-surface-subtle p-2">
-                      <span className="truncate text-[11px] font-medium text-muted-foreground" title={key}>{spanAttributeLabel(key, t)}</span>
+                      <span className="truncate text-xs font-medium text-muted-foreground" title={key}>{spanAttributeLabel(key, t)}</span>
                       <ObservabilityJsonValue>{spanAttributeValue(key, value, t, i18n.language)}</ObservabilityJsonValue>
                     </div>
                   ))}
@@ -375,7 +375,7 @@ function SpanContentSection({ kind, value }: { kind: 'systemInstructions' | 'mod
             <div className="grid gap-2">
               {messages.map(message => (
                 <div key={message.id} className="grid min-w-0 gap-2 rounded-control bg-surface-subtle p-3">
-                  <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  <span className="text-xs font-semibold text-muted-foreground">
                     {t(`operationsDashboardPage.turnDetail.roles.${message.role}`, { defaultValue: message.role })}
                   </span>
                   <AIMarkdown className="max-h-96 overflow-y-auto text-sm leading-6">{agentSpanMessageMarkdown(message.content) || t('operationsDashboardPage.turnDetail.noReadableModelContent')}</AIMarkdown>
@@ -390,7 +390,7 @@ function SpanContentSection({ kind, value }: { kind: 'systemInstructions' | 'mod
                 {output.text && <TimelineMarkdownContent label={t('operationsDashboardPage.assistantMessage')} value={output.text} />}
                 {output.toolCalls !== undefined && (
                   <div className="grid gap-1.5">
-                    <span className="text-[11px] font-medium text-muted-foreground">{t('operationsDashboardPage.turnDetail.modelToolCalls')}</span>
+                    <span className="text-xs font-medium text-muted-foreground">{t('operationsDashboardPage.turnDetail.modelToolCalls')}</span>
                     <ObservabilityJsonBlock className="max-h-80" value={output.toolCalls} />
                   </div>
                 )}

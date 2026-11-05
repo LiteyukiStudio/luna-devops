@@ -8,10 +8,11 @@ import { toast } from 'sonner'
 import { z } from 'zod'
 
 import { api, ApiError } from '@/api'
+import { HelpTip } from '@/components/common/help-tip'
 import { StatusBadge } from '@/components/common/status-badge'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -193,6 +194,7 @@ export function ApplicationDeploymentBundleImportDialog({ applicationId, onImpor
             <div className="flex items-center gap-2 font-medium">
               <FileJson2 className="size-4" />
               {t('deploymentsPage.bundleImport.selectFile')}
+              <HelpTip label={t('deploymentsPage.bundleImport.title')}>{t('deploymentsPage.bundleImport.migrationHint')}</HelpTip>
             </div>
             <Input accept="application/json,.json" aria-label={t('deploymentsPage.bundleImport.selectFile')} type="file" onChange={event => void selectFile(event.target.files?.[0])} />
             {fileName && <p className="text-sm text-muted-foreground">{t('deploymentsPage.bundleImport.selectedFile', { file: fileName })}</p>}
@@ -310,7 +312,9 @@ export function ApplicationDeploymentBundleImportDialog({ applicationId, onImpor
           )}
 
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => handleOpenChange(false)}>{t('common.cancel')}</Button>
+            <DialogClose asChild>
+              <Button disabled={importing} type="button" variant="outline">{t('common.cancel')}</Button>
+            </DialogClose>
             {bundle && (
               <Button disabled={previewing} type="button" variant="outline" onClick={() => void runPreview()}>
                 <RefreshCw className={previewing ? 'size-4 animate-spin' : 'size-4'} />
@@ -388,7 +392,7 @@ function ReferenceMappingField({ applicationId, onChange, projectId, reference, 
     }
   }
   return (
-    <div className="grid gap-2 rounded-control bg-muted/50 p-4 sm:grid-cols-[minmax(0,1fr)_minmax(14rem,1fr)] sm:items-center">
+    <div className="grid gap-2 rounded-control border border-border p-4 sm:grid-cols-[minmax(0,1fr)_minmax(14rem,1fr)] sm:items-center">
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-2">
           <span className="truncate font-medium">{source}</span>

@@ -16,7 +16,7 @@ import { FormField as Field } from '@/components/common/form-field'
 import { StatusValueBadge } from '@/components/common/status-badge'
 import { formatAbsoluteDateTime } from '@/components/common/time-format'
 import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { NativeSelect as Select } from '@/components/ui/native-select'
 import { OneTimeSecret } from './one-time-secret'
@@ -218,6 +218,9 @@ export function AccessTokensPanel({ createDialogOpen, onCreateDialogOpenChange }
               </Select>
             </Field>
             <DialogFooter>
+              <DialogClose asChild>
+                <Button disabled={createToken.isPending} type="button" variant="outline">{t('common.cancel')}</Button>
+              </DialogClose>
               <Button disabled={createToken.isPending || !form.formState.isValid} type="submit">
                 <Plus size={16} />
                 {t('accessTokens.create')}
