@@ -22,3 +22,16 @@ type AppTemplateInstallation struct {
 	UpdatedAt          time.Time      `json:"updatedAt"`
 	DeletedAt          gorm.DeletedAt `gorm:"index" json:"-"`
 }
+
+// AppTemplateInstallationComponent 记录多组件模板一次安装中每个组件创建的应用、部署配置和首个 Release。
+type AppTemplateInstallationComponent struct {
+	ID                 string    `gorm:"primaryKey" json:"id"`
+	InstallationID     string    `gorm:"not null;uniqueIndex:idx_app_template_installation_components_component,priority:1" json:"installationId"`
+	ComponentKey       string    `gorm:"not null;uniqueIndex:idx_app_template_installation_components_component,priority:2" json:"componentKey"`
+	ProjectID          string    `gorm:"index;not null" json:"projectId"`
+	ApplicationID      string    `gorm:"index;not null" json:"applicationId"`
+	DeploymentTargetID string    `gorm:"not null" json:"deploymentTargetId"`
+	ReleaseID          string    `gorm:"not null;default:''" json:"releaseId"`
+	CreatedAt          time.Time `json:"createdAt"`
+	UpdatedAt          time.Time `json:"updatedAt"`
+}

@@ -21,7 +21,7 @@ const appTemplatesPage = {
   installStarted: '앱 템플릿 설치가 시작되었습니다',
   systemInstallStarted: '플랫폼 컴포넌트 설치가 시작되었습니다',
   installDialogTitle: '{{name}} 설치',
-  installDialogDescription: '템플릿은 대상 프로젝트 스페이스에 애플리케이션과 배포 구성을 생성합니다. 시크릿 계열 파라미터는 안전하게 저장되며 평문으로 다시 표시되지 않습니다.',
+  installDialogDescription: '템플릿은 선택한 프로젝트 공간에 애플리케이션과 배포 구성을 만듭니다. 멀티 컴포넌트 템플릿은 컴포넌트마다 애플리케이션을 하나씩 만듭니다. 시크릿 값은 안전하게 저장되며 다시 표시되지 않습니다.',
   systemInstallDialogDescription: '플랫폼 컴포넌트는 지정한 실행 클러스터의 시스템 네임스페이스에 설치되어 플랫폼 기능을 향상시킵니다. 프로젝트 스페이스 애플리케이션은 생성되지 않습니다.',
   platformComponent: '플랫폼 컴포넌트',
   selectRuntimeCluster: '실행 클러스터를 선택하세요',
@@ -43,6 +43,11 @@ const appTemplatesPage = {
   projectVolume: '프로젝트 데이터 볼륨',
   selectProjectVolume: '마운트 가능한 프로젝트 데이터 볼륨을 선택하세요',
   projectVolumeNotRequired: '이 템플릿은 영구 데이터 볼륨이 필요하지 않습니다',
+  components: '컴포넌트',
+  componentsDescription: '이 컴포넌트들은 함께 설치되며 각각 별도의 애플리케이션이 됩니다. 공유 비밀번호는 한 번만 생성되어 의존 서비스와 메인 애플리케이션에 시크릿으로 함께 주입됩니다.',
+  componentSpec: '포트 {{port}} · 레플리카 {{replicas}} · CPU {{cpu}} · 메모리 {{memory}}',
+  componentProjectVolume: '{{name}} 데이터 볼륨',
+  componentIdentifierHint: '생성될 애플리케이션: {{identifiers}}',
   templateParameters: '템플릿 파라미터',
   templateParametersDescription: '비워 둔 자동 생성 시크릿은 백엔드에서 생성되어 시크릿 저장소에 기록됩니다.',
   autoGeneratePlaceholder: '비워 두면 자동 생성',
@@ -80,6 +85,11 @@ const appTemplatesPage = {
     email: '이메일',
     apiBaseUrl: 'Luna DevOps API 기본 주소',
     traefikMetricsUrl: 'Traefik Metrics 주소',
+    baseUrl: '사이트 URL',
+    databasePassword: '데이터베이스 비밀번호',
+    redisPassword: 'Redis 비밀번호',
+    passwordSalt: '비밀번호 솔트',
+    jwtSecret: 'JWT 시크릿',
   },
   valueHints: {
     redisPassword: '선택 사항입니다. 길고 무작위인 비밀번호 설정을 권장합니다. 비워 두면 Redis 비밀번호 인증이 활성화되지 않습니다.',
@@ -181,6 +191,9 @@ const appTemplatesPage = {
     },
     'vaultwarden': {
       description: 'Bitwarden 클라이언트 호환 경량 셀프 호스트 비밀번호 관리자.',
+    },
+    'neo-blog': {
+      description: '셀프 호스팅 블로그입니다. Next.js 프론트엔드와 Go 백엔드를 필요한 PostgreSQL 데이터베이스, Redis와 함께 설치합니다.',
     },
     'nocodb': {
       description: '오픈 소스 노코드 데이터베이스 인터페이스. 소규모 남부 도구와 데이터 앱에 적합합니다.',

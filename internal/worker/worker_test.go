@@ -1357,10 +1357,11 @@ func TestRedisTemplateResolvedPasswordReachesKubernetesSecretWithoutManifestLeak
 	if !found {
 		t.Fatal("redis template not found")
 	}
-	rendered, err := appstore.Render(template, map[string]string{"password": password})
+	values, err := appstore.ResolveValues(template, map[string]string{"password": password})
 	if err != nil {
 		t.Fatal(err)
 	}
+	rendered := appstore.RenderWorkload(template.Workload, values)
 	plainEnv, err := json.Marshal(rendered.Env)
 	if err != nil {
 		t.Fatal(err)

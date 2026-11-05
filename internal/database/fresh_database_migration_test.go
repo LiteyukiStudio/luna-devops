@@ -23,7 +23,7 @@ import (
 
 const (
 	baselineMigrationVersion = 103
-	latestMigrationVersion   = 108
+	latestMigrationVersion   = 109
 )
 
 func TestEmbeddedMigrationsContainExpectedFiles(t *testing.T) {
@@ -32,18 +32,20 @@ func TestEmbeddedMigrationsContainExpectedFiles(t *testing.T) {
 		t.Fatalf("read embedded migrations: %v", err)
 	}
 	migrationFiles := map[string]bool{
-		"000103_baseline.up.sql":                        false,
-		"000103_baseline.down.sql":                      false,
-		"000104_bridge_retained_volumes.up.sql":         false,
-		"000104_bridge_retained_volumes.down.sql":       false,
-		"000105_ai_run_checkpoints.up.sql":              false,
-		"000105_ai_run_checkpoints.down.sql":            false,
-		"000106_runtime_env_secret_uniqueness.up.sql":   false,
-		"000106_runtime_env_secret_uniqueness.down.sql": false,
-		"000107_ai_tool_verification.up.sql":            false,
-		"000107_ai_tool_verification.down.sql":          false,
-		"000108_delivery_idempotency.up.sql":            false,
-		"000108_delivery_idempotency.down.sql":          false,
+		"000103_baseline.up.sql":                               false,
+		"000103_baseline.down.sql":                             false,
+		"000104_bridge_retained_volumes.up.sql":                false,
+		"000104_bridge_retained_volumes.down.sql":              false,
+		"000105_ai_run_checkpoints.up.sql":                     false,
+		"000105_ai_run_checkpoints.down.sql":                   false,
+		"000106_runtime_env_secret_uniqueness.up.sql":          false,
+		"000106_runtime_env_secret_uniqueness.down.sql":        false,
+		"000107_ai_tool_verification.up.sql":                   false,
+		"000107_ai_tool_verification.down.sql":                 false,
+		"000108_delivery_idempotency.up.sql":                   false,
+		"000108_delivery_idempotency.down.sql":                 false,
+		"000109_app_template_installation_components.up.sql":   false,
+		"000109_app_template_installation_components.down.sql": false,
 	}
 	migrationCount := 0
 	for _, entry := range entries {
@@ -791,6 +793,7 @@ func assertStableModelMigrationCoverage(t *testing.T, db *gorm.DB) {
 		&model.ServiceBinding{},
 		&model.ProjectTopologyEdge{},
 		&model.AppTemplateInstallation{},
+		&model.AppTemplateInstallationComponent{},
 		&model.SystemComponentInstallation{},
 		&model.GitProvider{},
 		&model.GitAccount{},

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -193,10 +194,17 @@ func TestInstallAppTemplateAcceptsPendingProvisionAndRejectsPendingImport(t *tes
 
 type appTemplateInstallDBObservation struct {
 	projectVolume       model.ProjectVolume
+	createdApplications []model.Application
+	createdTargets      []model.DeploymentTarget
+	createdComponents   []model.AppTemplateInstallationComponent
+	createdReleases     []model.Release
 	createdTarget       *model.DeploymentTarget
 	createdMount        *model.DeploymentVolumeMount
 	createdInstallation *model.AppTemplateInstallation
 	createdSecrets      []model.SecretValue
+	// distinctVolumes 让每次项目卷查询返回不同 ID，模拟多组件各自选择独立数据卷。
+	distinctVolumes bool
+	volumeQueries   int
 }
 
 func newAppTemplateInstallTestDB(t *testing.T, observation *appTemplateInstallDBObservation) *gorm.DB {
@@ -227,6 +235,10 @@ func newAppTemplateInstallTestDB(t *testing.T, observation *appTemplateInstallDB
 			*destination = []model.ScopedResourceProjectBinding{}
 		case *model.ProjectVolume:
 			*destination = observation.projectVolume
+			if observation.distinctVolumes {
+				observation.volumeQueries++
+				destination.ID = fmt.Sprintf("%s_%d", observation.projectVolume.ID, observation.volumeQueries)
+			}
 			query.RowsAffected = 1
 		case *model.DeploymentTarget:
 			if observation.createdTarget == nil {
@@ -237,7 +249,8 @@ func newAppTemplateInstallTestDB(t *testing.T, observation *appTemplateInstallDB
 			query.RowsAffected = 1
 		case *[]model.DeploymentVolumeMount:
 			*destination = []model.DeploymentVolumeMount{}
-			if observation.createdMount != nil {
+			// 多组件场景下伪库无法按部署配置过滤挂载，返回空列表避免把上一个组件的挂载当作冲突。
+			if observation.createdMount != nil && !observation.distinctVolumes {
 				*destination = append(*destination, *observation.createdMount)
 				query.RowsAffected = 1
 			}
@@ -250,9 +263,16 @@ func newAppTemplateInstallTestDB(t *testing.T, observation *appTemplateInstallDB
 	}
 	if err := db.Callback().Create().Replace("gorm:create", func(query *gorm.DB) {
 		switch destination := query.Statement.Dest.(type) {
+		case *model.Application:
+			observation.createdApplications = append(observation.createdApplications, *destination)
 		case *model.DeploymentTarget:
 			created := *destination
 			observation.createdTarget = &created
+			observation.createdTargets = append(observation.createdTargets, created)
+		case *model.AppTemplateInstallationComponent:
+			observation.createdComponents = append(observation.createdComponents, *destination)
+		case *model.Release:
+			observation.createdReleases = append(observation.createdReleases, *destination)
 		case *model.DeploymentVolumeMount:
 			created := *destination
 			observation.createdMount = &created
@@ -267,6 +287,137 @@ func newAppTemplateInstallTestDB(t *testing.T, observation *appTemplateInstallDB
 		t.Fatalf("replace app template install create callback: %v", err)
 	}
 	return db
+}
+
+func TestInstallNeoBlogTemplateCreatesComponentsWithSharedSecrets(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	observation := &appTemplateInstallDBObservation{projectVolume: model.ProjectVolume{
+		ID: "pvol_blog", ProjectID: "prj_template", DisplayName: "Blog data",
+		ClusterID: "clu_template", Namespace: "project-template", ClaimName: "pvc-blog-data",
+		OwnershipMode: model.ProjectVolumeOwnershipManaged, SourceKind: model.ProjectVolumeSourceBlank,
+		LifecycleState: model.ProjectVolumeLifecycleReady, CapacityRequest: "10Gi", CapacityBytes: 10 * 1024 * 1024 * 1024,
+		StorageClassName: "fast", AccessMode: model.ProjectVolumeAccessReadWriteOnce,
+		VolumeMode: model.ProjectVolumeModeFilesystem, CreatedBy: "usr_template", Revision: 1,
+	}, distinctVolumes: true}
+	db := newAppTemplateInstallTestDB(t, observation)
+	codec, err := secretstore.NewCodec("app-template-test-encryption-key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	handlers := &Handlers{
+		db:      db,
+		configs: &configCache{values: map[string]string{"billing.blockDeployChangesWhenInsufficient": "false"}},
+		secrets: secretstore.NewStore(db, nil, codec),
+	}
+	handlers.domains = newDomainHandlers(handlers)
+	install := func(input applicationapi.AppTemplateInstallInput) *httptest.ResponseRecorder {
+		body, err := json.Marshal(input)
+		if err != nil {
+			t.Fatal(err)
+		}
+		recorder := httptest.NewRecorder()
+		ctx, _ := gin.CreateTestContext(recorder)
+		ctx.Request = httptest.NewRequest(http.MethodPost, "/api/v1/projects/prj_template/app-templates/neo-blog/install", strings.NewReader(string(body)))
+		ctx.Request.Header.Set("Content-Type", "application/json")
+		ctx.Params = gin.Params{{Key: "projectId", Value: "prj_template"}, {Key: "templateId", Value: "neo-blog"}}
+		ctx.Set(currentUserContextKey, model.User{ID: "usr_template", Role: authz.PlatformRoleAdmin})
+		handlers.domains.application.InstallAppTemplate(ctx)
+		return recorder
+	}
+	installNow := false
+	base := applicationapi.AppTemplateInstallInput{
+		ApplicationName: "Blog", ApplicationIdentifier: "blog", DeploymentName: "default", Stage: "prod",
+		ClusterID: "clu_template", InstallNow: &installNow,
+		ComponentProjectVolumeIDs: map[string]string{"api": "pvol_blog_api", "postgres": "pvol_blog_db"},
+	}
+
+	override := base
+	override.ImageRef = "example/override:latest"
+	if recorder := install(override); recorder.Code != http.StatusBadRequest || !strings.Contains(recorder.Body.String(), "app_template.component_override_unsupported") {
+		t.Fatalf("single-image override status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	duplicated := base
+	duplicated.ComponentProjectVolumeIDs = map[string]string{"api": "pvol_same", "postgres": "pvol_same"}
+	if recorder := install(duplicated); recorder.Code != http.StatusBadRequest || !strings.Contains(recorder.Body.String(), "app_template.project_volume_duplicated") {
+		t.Fatalf("duplicated volume status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	missing := base
+	missing.ComponentProjectVolumeIDs = map[string]string{"api": "pvol_blog_api"}
+	if recorder := install(missing); recorder.Code != http.StatusBadRequest || !strings.Contains(recorder.Body.String(), "app_template.project_volume_required") {
+		t.Fatalf("missing volume status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if len(observation.createdTargets) != 0 || observation.createdInstallation != nil {
+		t.Fatalf("rejected installs created state: %#v", observation)
+	}
+
+	recorder := install(base)
+	if recorder.Code != http.StatusCreated {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	identifiers := []string{}
+	for _, application := range observation.createdApplications {
+		identifiers = append(identifiers, application.Identifier)
+	}
+	if !reflect.DeepEqual(identifiers, []string{"blog-web", "blog-api", "blog-postgres", "blog-redis"}) {
+		t.Fatalf("created application identifiers = %v", identifiers)
+	}
+	if len(observation.createdTargets) != 4 || len(observation.createdComponents) != 4 || len(observation.createdReleases) != 0 {
+		t.Fatalf("targets=%d components=%d releases=%d", len(observation.createdTargets), len(observation.createdComponents), len(observation.createdReleases))
+	}
+	if observation.createdInstallation.ApplicationID != observation.createdApplications[0].ID || observation.createdComponents[0].ComponentKey != "web" {
+		t.Fatalf("entry component is not the installation anchor: %#v %#v", observation.createdInstallation, observation.createdComponents)
+	}
+	targets := map[string]model.DeploymentTarget{}
+	for index, target := range observation.createdTargets {
+		targets[observation.createdComponents[index].ComponentKey] = target
+	}
+	if targets["api"].FSGroup != "1000" || targets["web"].KubernetesName != "luna-blog-web-prod" {
+		t.Fatalf("api target=%#v web target=%#v", targets["api"], targets["web"])
+	}
+	if env := buildapi.DecodeSecretRefs(targets["web"].EnvVars); env["BACKEND_URL"] != "http://luna-blog-api-prod:8888" {
+		t.Fatalf("web env = %#v", env)
+	}
+	resolved := map[string]string{}
+	for _, entry := range observation.createdSecrets {
+		resolved["secret-id:"+entry.ID] = codec.ResolveInline(entry.CipherRef)
+	}
+	secretValue := func(component, key string) string {
+		ref := buildapi.DecodeSecretRefs(targets[component].SecretRefs)[key]
+		if !strings.HasPrefix(ref, "secret-id:") {
+			t.Fatalf("%s %s ref = %q", component, key, ref)
+		}
+		return resolved[ref]
+	}
+	databasePassword := secretValue("postgres", "POSTGRES_PASSWORD")
+	redisPassword := secretValue("redis", "REDIS_PASSWORD")
+	if len(databasePassword) < 32 || len(redisPassword) < 32 || databasePassword == redisPassword {
+		t.Fatalf("generated passwords are invalid")
+	}
+	if secretValue("api", "DB_URL") != "postgres://neoblog:"+databasePassword+"@luna-blog-postgres-prod:5432/neoblog?sslmode=disable" {
+		t.Fatal("backend DB_URL does not use the PostgreSQL password")
+	}
+	redisURL := "redis://:" + redisPassword + "@luna-blog-redis-prod:6379/0"
+	if secretValue("api", "REDIS_URL") != redisURL || secretValue("web", "REDIS_URL") != redisURL {
+		t.Fatal("frontend and backend REDIS_URL do not use the Redis password")
+	}
+	stored := observation.createdInstallation.ValuesSnapshot
+	for _, target := range observation.createdTargets {
+		stored += target.EnvVars + target.SecretRefs + target.ContainerArgs
+	}
+	if strings.Contains(stored, databasePassword) || strings.Contains(stored, redisPassword) {
+		t.Fatal("generated password leaked into deployment metadata or values snapshot")
+	}
+	var response struct {
+		Components []struct {
+			Key string `json:"key"`
+		} `json:"components"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if len(response.Components) != 4 || strings.Contains(recorder.Body.String(), databasePassword) {
+		t.Fatalf("install response = %s", recorder.Body.String())
+	}
 }
 
 type appTemplateInstallTestConnector struct{}

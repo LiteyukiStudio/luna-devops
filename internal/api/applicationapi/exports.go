@@ -13,7 +13,7 @@ type AppTemplateInstallInput = appTemplateInstallInput
 
 type ServiceBindingUsage = serviceBindingUsage
 
-func AppTemplateDeploymentDataVolumes(template appstore.Template, selectedProjectVolume *model.ProjectVolume) []DeploymentTargetDataVolumeInput {
+func AppTemplateDeploymentDataVolumes(template appstore.Workload, selectedProjectVolume *model.ProjectVolume) []DeploymentTargetDataVolumeInput {
 	return appTemplateDeploymentDataVolumes(template, selectedProjectVolume)
 }
 

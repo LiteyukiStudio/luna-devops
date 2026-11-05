@@ -21,7 +21,7 @@ const appTemplatesPage = {
   installStarted: '應用模板已開始安裝',
   systemInstallStarted: '平臺元件已開始安裝',
   installDialogTitle: '安裝 {{name}}',
-  installDialogDescription: '模板會在目標專案空間中建立一個應用和部署配置；金鑰類引數會安全儲存，不會明文回顯。',
+  installDialogDescription: '範本會在目標專案空間中建立應用與部署設定；多元件範本會為每個元件各建立一個應用。金鑰類參數會安全儲存，不會明文回顯。',
   systemInstallDialogDescription: '平臺元件會安裝到指定執行叢集的系統名稱空間，用於增強平臺能力，不會建立專案空間應用。',
   platformComponent: '平臺元件',
   selectRuntimeCluster: '請選擇執行叢集',
@@ -43,6 +43,11 @@ const appTemplatesPage = {
   projectVolume: '專案資料卷',
   selectProjectVolume: '請選擇可掛載的專案資料卷',
   projectVolumeNotRequired: '此模板不需要持久化資料卷',
+  components: '元件',
+  componentsDescription: '這些元件會一起安裝，每個元件各自成為一個應用。共用的密碼只產生一次，並以金鑰形式同時注入依賴與主應用。',
+  componentSpec: '連接埠 {{port}} · {{replicas}} 副本 · CPU {{cpu}} · 記憶體 {{memory}}',
+  componentProjectVolume: '{{name}} 資料卷',
+  componentIdentifierHint: '將建立應用：{{identifiers}}',
   templateParameters: '模板引數',
   templateParametersDescription: '留空的自動生成金鑰會由後端生成並寫入金鑰儲存。',
   autoGeneratePlaceholder: '留空自動生成',
@@ -80,6 +85,11 @@ const appTemplatesPage = {
     email: '郵箱',
     apiBaseUrl: 'Luna DevOps API 基礎地址',
     traefikMetricsUrl: 'Traefik Metrics 地址',
+    baseUrl: '網站位址',
+    databasePassword: '資料庫密碼',
+    redisPassword: 'Redis 密碼',
+    passwordSalt: '密碼鹽',
+    jwtSecret: 'JWT 金鑰',
   },
   valueHints: {
     redisPassword: '選填。建議設定較長的隨機密碼；留空時 Redis 不啟用密碼驗證。',
@@ -181,6 +191,9 @@ const appTemplatesPage = {
     },
     'vaultwarden': {
       description: '相容 Bitwarden 客戶端的輕量自託管密碼管理器。',
+    },
+    'neo-blog': {
+      description: '自架部落格，Next.js 前端與 Go 後端會與所需的 PostgreSQL 資料庫和 Redis 一起安裝。',
     },
     'nocodb': {
       description: '開源無程式碼資料庫介面，適合小型內部工具和資料應用。',

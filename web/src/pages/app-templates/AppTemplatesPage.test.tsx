@@ -76,6 +76,7 @@ const template = {
   defaultCPU: '500m',
   defaultMemory: '512Mi',
   dataVolumes: [{ logicalName: 'data', sourceType: 'projectVolume' as const, mountPath: '/data' }],
+  components: [],
   values: [{
     key: 'password',
     label: 'Password',
@@ -352,6 +353,63 @@ describe('app template installation', () => {
     await user.click(openCreateDialog())
     createDialog = await screen.findByRole('dialog', { name: i18next.t('projectVolumes.create') })
     expect(within(createDialog).getByPlaceholderText(i18next.t('projectVolumes.displayNamePlaceholder'))).toHaveValue('')
+  })
+
+  it('installs a multi-component template with one volume per persistent component', async () => {
+    const component = (key: string, name: string, persistent: boolean) => ({
+      key,
+      name,
+      image: `example/${key}:latest`,
+      servicePort: 8080,
+      defaultReplicas: 1,
+      defaultCPU: '500m',
+      defaultMemory: '512Mi',
+      dataVolumes: persistent ? [{ logicalName: 'data', sourceType: 'projectVolume' as const, mountPath: '/data' }] : [],
+    })
+    const blogTemplate = {
+      ...template,
+      id: 'neo-blog',
+      slug: 'neo-blog',
+      name: 'Neo Blog',
+      image: '',
+      servicePort: 0,
+      dataVolumes: [],
+      components: [component('web', 'Frontend', false), component('api', 'Backend', true), component('postgres', 'PostgreSQL', true)],
+      values: [{ key: 'databasePassword', label: 'Database password', description: '', default: '', required: true, secret: true, autoGenerate: true }],
+    }
+    mocks.listAppTemplates.mockResolvedValue([{ ...blogTemplate, valueCount: 1, requiredValueCount: 1 }])
+    mocks.getAppTemplate.mockResolvedValue(blogTemplate)
+    mocks.listProjectVolumes.mockResolvedValue(page([
+      { ...createdVolume, id: 'pvol_api', displayName: 'Blog uploads', lifecycleState: 'ready', pendingOperation: '', availability: 'available' },
+      { ...createdVolume, id: 'pvol_db', displayName: 'Blog database', lifecycleState: 'ready', pendingOperation: '', availability: 'available' },
+    ]))
+    const user = userEvent.setup()
+    renderPage()
+
+    await user.click(await screen.findByRole('button', { name: i18next.t('appTemplatesPage.install') }))
+    const installDialog = await screen.findByRole('dialog', { name: i18next.t('appTemplatesPage.installDialogTitle', { name: 'Neo Blog' }) })
+    expect(within(installDialog).queryByText(i18next.t('appTemplatesPage.imageRef'))).not.toBeInTheDocument()
+    expect(within(installDialog).getByText('example/web:latest')).toBeInTheDocument()
+    const identifier = within(installDialog).getByDisplayValue(/^neo-blog/) as HTMLInputElement
+    expect(identifier.value.length + '-postgres'.length).toBeLessThanOrEqual(22)
+    const installButton = within(installDialog).getByRole('button', { name: i18next.t('appTemplatesPage.install') })
+
+    const apiVolume = within(installDialog).getByText(i18next.t('appTemplatesPage.componentProjectVolume', { name: 'Backend' })).closest('div')!.parentElement!
+    await user.selectOptions(within(apiVolume).getAllByRole('combobox')[0], await within(apiVolume).findByRole('option', { name: 'Blog uploads · 10Gi' }))
+    expect(installButton).toBeDisabled()
+    const databaseVolume = within(installDialog).getByText(i18next.t('appTemplatesPage.componentProjectVolume', { name: 'PostgreSQL' })).closest('div')!.parentElement!
+    await user.selectOptions(within(databaseVolume).getAllByRole('combobox')[0], await within(databaseVolume).findByRole('option', { name: 'Blog database · 10Gi' }))
+    expect(installButton).toBeEnabled()
+    await user.click(installButton)
+
+    await waitFor(() => expect(mocks.installAppTemplate).toHaveBeenCalledWith('prj_1', 'neo-blog', expect.objectContaining({
+      componentProjectVolumeIds: { api: 'pvol_api', postgres: 'pvol_db' },
+      cpuRequest: '',
+      imageRef: '',
+      memoryRequest: '',
+      projectVolumeId: '',
+      replicas: 0,
+    })))
   })
 
   it('locks quick creation to a block volume when the template declares a device path', async () => {

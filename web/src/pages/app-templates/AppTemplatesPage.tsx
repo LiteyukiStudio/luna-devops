@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import type { AppTemplate, AppTemplateInstallPayload, AppTemplateSummary, Project, ProjectVolume, RuntimeCluster } from '@/api'
+import type { AppTemplate, AppTemplateComponent, AppTemplateDataVolume, AppTemplateInstallPayload, AppTemplateSummary, Project, ProjectVolume, RuntimeCluster } from '@/api'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowRight, ExternalLink, PackagePlus, Plus, Search, Sparkles } from 'lucide-react'
 import { useMemo, useState } from 'react'
@@ -86,8 +86,7 @@ export function AppTemplatesPage() {
     ?? clusterItems[0]
   const effectiveClusterId = effectiveCluster?.id ?? ''
   const canWriteProject = projectVolumeCapabilities(user?.role, projectDetail.data?.currentUserRole, user?.id).canWrite
-  const selectedProjectVolumeDeclaration = selectedTemplate?.dataVolumes.find(volume => volume.sourceType === 'projectVolume')
-  const requiredProjectVolumeMode = selectedProjectVolumeDeclaration?.devicePath ? 'Block' : 'Filesystem'
+  const requiredProjectVolumeMode = projectVolumeModeOf(selectedTemplate?.dataVolumes ?? [])
 
   const categoryOptions = useMemo(() => {
     const categories = new Set((templates.data ?? []).map(template => template.category).filter(Boolean))
@@ -220,7 +219,12 @@ export function AppTemplatesPage() {
     }
     if (!projectId)
       return
-    installTemplate.mutate({ ...form, projectId, templateId: selectedTemplate.id })
+    if (isMultiComponentTemplate(selectedTemplate)) {
+      // 多组件模板按组件定义运行，后端拒绝单镜像、规格和单卷覆盖。
+      installTemplate.mutate({ ...form, imageRef: '', replicas: 0, cpuRequest: '', memoryRequest: '', projectVolumeId: '', projectId, templateId: selectedTemplate.id })
+      return
+    }
+    installTemplate.mutate({ ...form, componentProjectVolumeIds: undefined, projectId, templateId: selectedTemplate.id })
   }
 
   return (
@@ -331,6 +335,7 @@ export function AppTemplatesPage() {
           setSelectedProjectId(value)
           updateForm('clusterId', '')
           updateForm('projectVolumeId', '')
+          updateForm('componentProjectVolumeIds', {})
         }}
         onSubmit={submitInstall}
         onTemplateValueChange={updateTemplateValue}
@@ -479,11 +484,22 @@ function InstallTemplateDialog({
 }) {
   const { t } = useTranslation()
   const systemComponent = isSystemComponentTemplate(template)
-  const requiresProjectVolume = Boolean(template?.dataVolumes.some(volume => volume.sourceType === 'projectVolume'))
+  const multiComponent = isMultiComponentTemplate(template)
+  const components = template?.components ?? []
+  const requiresProjectVolume = hasProjectVolume(template?.dataVolumes ?? [])
+  const identifierMaxLength = applicationIdentifierBaseMaxLength(template)
+  const volumesSelected = multiComponent
+    ? components.every(component => !hasProjectVolume(component.dataVolumes) || form.componentProjectVolumeIds?.[component.key]?.trim())
+    : !requiresProjectVolume || Boolean(form.projectVolumeId?.trim())
   const canSubmit = systemComponent
     ? Boolean(template && canInstallSystemComponent && form.clusterId.trim() && (form.values.apiBaseUrl ?? '').trim() && !installing)
-    : Boolean(template && canInstallProjectTemplate && projectId && form.applicationName.trim() && form.applicationIdentifier.trim().length >= APPLICATION_IDENTIFIER_MIN_LENGTH && form.imageRef.trim()
-      && (!requiresProjectVolume || form.projectVolumeId?.trim()) && !installing)
+    : Boolean(template && canInstallProjectTemplate && projectId && form.applicationName.trim() && form.applicationIdentifier.trim().length >= APPLICATION_IDENTIFIER_MIN_LENGTH
+      && form.applicationIdentifier.trim().length <= identifierMaxLength && (multiComponent || form.imageRef.trim()) && volumesSelected && !installing)
+  function updateComponentProjectVolume(componentKey: string, value: string) {
+    if (value)
+      onUpdate('clusterId', projectVolumeClusterId)
+    onUpdate('componentProjectVolumeIds', { ...form.componentProjectVolumeIds, [componentKey]: value })
+  }
   return (
     <Dialog open={Boolean(template)} onOpenChange={open => !open && onClose()}>
       <DialogContent className="flex max-h-[min(94dvh,54rem)] w-[calc(100vw-1rem)] max-w-4xl flex-col gap-0 overflow-hidden rounded-lg p-0 sm:w-[calc(100%-2rem)]">
@@ -509,6 +525,7 @@ function InstallTemplateDialog({
                   onChange={(event) => {
                     onUpdate('clusterId', event.target.value)
                     onUpdate('projectVolumeId', '')
+                    onUpdate('componentProjectVolumeIds', {})
                   }}
                 >
                   <option value="">{t('appTemplatesPage.defaultCluster')}</option>
@@ -523,9 +540,17 @@ function InstallTemplateDialog({
               <Field label={t('appTemplatesPage.applicationName')} required>
                 <Input value={form.applicationName} onChange={event => onUpdate('applicationName', event.target.value)} />
               </Field>
-              <Field label={t('appTemplatesPage.applicationIdentifier')} required>
+              <Field
+                hint={multiComponent
+                  ? t('appTemplatesPage.componentIdentifierHint', {
+                      identifiers: components.map(component => `${form.applicationIdentifier}-${component.key}`).join(', '),
+                    })
+                  : undefined}
+                label={t('appTemplatesPage.applicationIdentifier')}
+                required
+              >
                 <Input
-                  maxLength={APPLICATION_IDENTIFIER_MAX_LENGTH}
+                  maxLength={identifierMaxLength}
                   minLength={APPLICATION_IDENTIFIER_MIN_LENGTH}
                   value={form.applicationIdentifier}
                   onChange={event => onUpdate('applicationIdentifier', normalizeIdentifierInput(event.target.value))}
@@ -541,62 +566,79 @@ function InstallTemplateDialog({
                   ))}
                 </Select>
               </Field>
-              <div className="md:col-span-2">
-                <Field label={t('appTemplatesPage.imageRef')} required>
-                  <Input
-                    value={form.imageRef}
-                    onChange={event => onUpdate('imageRef', event.target.value)}
-                  />
-                  <p className="text-xs text-muted-foreground">{t('appTemplatesPage.imageRefHint')}</p>
-                </Field>
-              </div>
-              <div className="grid gap-4 md:col-span-2 md:grid-cols-3 md:gap-5">
-                <Field label={t('appTemplatesPage.replicas')}>
-                  <Input min={1} type="number" value={form.replicas} onChange={event => onUpdate('replicas', Number(event.target.value || 1))} />
-                </Field>
-                <Field label={t('appTemplatesPage.cpu')}>
-                  <UnitInput
-                    unitSelectLabel={t('appTemplatesPage.cpu')}
-                    units={[
-                      { label: 'm', value: 'm' },
-                      { label: t('deploymentsPage.cpuUnits.core'), value: '' },
-                    ]}
-                    value={form.cpuRequest}
-                    onChange={value => onUpdate('cpuRequest', value)}
-                  />
-                </Field>
-                <Field label={t('appTemplatesPage.memory')}>
-                  <UnitInput
-                    unitSelectLabel={t('appTemplatesPage.memory')}
-                    units={[
-                      { label: 'Mi', value: 'Mi' },
-                      { label: 'Gi', value: 'Gi' },
-                    ]}
-                    value={form.memoryRequest}
-                    onChange={value => onUpdate('memoryRequest', value)}
-                  />
-                </Field>
-                <div className="md:col-span-3">
-                  <Field label={t('appTemplatesPage.projectVolume')} required={requiresProjectVolume}>
-                    <TemplateProjectVolumePicker
-                      key={`${projectId}:${projectVolumeClusterId}:${projectVolumeMode}:${template?.id ?? ''}`}
-                      clusterId={projectVolumeClusterId}
-                      clusterName={projectVolumeClusterName}
-                      canCreate={canCreateProjectVolume}
+              {multiComponent
+                ? (
+                    <TemplateComponentList
+                      canCreateProjectVolume={canCreateProjectVolume}
+                      components={components}
                       disabled={installing}
-                      mode={projectVolumeMode}
+                      form={form}
                       projectId={projectId}
-                      required={requiresProjectVolume}
-                      value={form.projectVolumeId ?? ''}
-                      onChange={(value) => {
-                        if (value)
-                          onUpdate('clusterId', projectVolumeClusterId)
-                        onUpdate('projectVolumeId', value)
-                      }}
+                      projectVolumeClusterId={projectVolumeClusterId}
+                      projectVolumeClusterName={projectVolumeClusterName}
+                      onProjectVolumeChange={updateComponentProjectVolume}
                     />
-                  </Field>
-                </div>
-              </div>
+                  )
+                : (
+                    <>
+                      <div className="md:col-span-2">
+                        <Field label={t('appTemplatesPage.imageRef')} required>
+                          <Input
+                            value={form.imageRef}
+                            onChange={event => onUpdate('imageRef', event.target.value)}
+                          />
+                          <p className="text-xs text-muted-foreground">{t('appTemplatesPage.imageRefHint')}</p>
+                        </Field>
+                      </div>
+                      <div className="grid gap-4 md:col-span-2 md:grid-cols-3 md:gap-5">
+                        <Field label={t('appTemplatesPage.replicas')}>
+                          <Input min={1} type="number" value={form.replicas} onChange={event => onUpdate('replicas', Number(event.target.value || 1))} />
+                        </Field>
+                        <Field label={t('appTemplatesPage.cpu')}>
+                          <UnitInput
+                            unitSelectLabel={t('appTemplatesPage.cpu')}
+                            units={[
+                              { label: 'm', value: 'm' },
+                              { label: t('deploymentsPage.cpuUnits.core'), value: '' },
+                            ]}
+                            value={form.cpuRequest}
+                            onChange={value => onUpdate('cpuRequest', value)}
+                          />
+                        </Field>
+                        <Field label={t('appTemplatesPage.memory')}>
+                          <UnitInput
+                            unitSelectLabel={t('appTemplatesPage.memory')}
+                            units={[
+                              { label: 'Mi', value: 'Mi' },
+                              { label: 'Gi', value: 'Gi' },
+                            ]}
+                            value={form.memoryRequest}
+                            onChange={value => onUpdate('memoryRequest', value)}
+                          />
+                        </Field>
+                        <div className="md:col-span-3">
+                          <Field label={t('appTemplatesPage.projectVolume')} required={requiresProjectVolume}>
+                            <TemplateProjectVolumePicker
+                              key={`${projectId}:${projectVolumeClusterId}:${projectVolumeMode}:${template?.id ?? ''}`}
+                              clusterId={projectVolumeClusterId}
+                              clusterName={projectVolumeClusterName}
+                              canCreate={canCreateProjectVolume}
+                              disabled={installing}
+                              mode={projectVolumeMode}
+                              projectId={projectId}
+                              required={requiresProjectVolume}
+                              value={form.projectVolumeId ?? ''}
+                              onChange={(value) => {
+                                if (value)
+                                  onUpdate('clusterId', projectVolumeClusterId)
+                                onUpdate('projectVolumeId', value)
+                              }}
+                            />
+                          </Field>
+                        </div>
+                      </div>
+                    </>
+                  )}
             </div>
           )}
 
@@ -699,6 +741,63 @@ function InstallTemplateDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  )
+}
+
+function TemplateComponentList({ canCreateProjectVolume, components, disabled, form, onProjectVolumeChange, projectId, projectVolumeClusterId, projectVolumeClusterName }: {
+  canCreateProjectVolume: boolean
+  components: AppTemplateComponent[]
+  disabled: boolean
+  form: AppTemplateInstallPayload
+  onProjectVolumeChange: (componentKey: string, value: string) => void
+  projectId: string
+  projectVolumeClusterId: string
+  projectVolumeClusterName: string
+}) {
+  const { t } = useTranslation()
+  return (
+    <div className="grid gap-3 md:col-span-2">
+      <div>
+        <h3 className="font-semibold">{t('appTemplatesPage.components')}</h3>
+        <p className="mt-1 text-sm text-muted-foreground">{t('appTemplatesPage.componentsDescription')}</p>
+      </div>
+      {components.map((component) => {
+        const requiresVolume = hasProjectVolume(component.dataVolumes)
+        const mode = projectVolumeModeOf(component.dataVolumes)
+        return (
+          <Surface key={component.key} className="grid gap-3 rounded-lg p-4">
+            <div className="flex min-w-0 flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+              <span className="font-medium">{component.name}</span>
+              <span className="min-w-0 truncate font-mono text-xs text-muted-foreground">{component.image}</span>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {t('appTemplatesPage.componentSpec', {
+                port: component.servicePort,
+                replicas: component.defaultReplicas || 1,
+                cpu: component.defaultCPU,
+                memory: component.defaultMemory,
+              })}
+            </p>
+            {requiresVolume && (
+              <Field label={t('appTemplatesPage.componentProjectVolume', { name: component.name })} required>
+                <TemplateProjectVolumePicker
+                  key={`${projectId}:${projectVolumeClusterId}:${mode}:${component.key}`}
+                  clusterId={projectVolumeClusterId}
+                  clusterName={projectVolumeClusterName}
+                  canCreate={canCreateProjectVolume}
+                  disabled={disabled}
+                  mode={mode}
+                  projectId={projectId}
+                  required
+                  value={form.componentProjectVolumeIds?.[component.key] ?? ''}
+                  onChange={value => onProjectVolumeChange(component.key, value)}
+                />
+              </Field>
+            )}
+          </Surface>
+        )
+      })}
+    </div>
   )
 }
 
@@ -852,6 +951,7 @@ function emptyInstallPayload(): AppTemplateInstallPayload {
     cpuRequest: '1',
     memoryRequest: '1Gi',
     projectVolumeId: '',
+    componentProjectVolumeIds: {},
     installNow: true,
     provisionAccess: false,
     values: {},
@@ -863,13 +963,32 @@ function payloadFromTemplate(template: AppTemplate): AppTemplateInstallPayload {
   return {
     ...emptyInstallPayload(),
     applicationName: template.name,
-    applicationIdentifier: normalizeIdentifierInput(`${template.slug}-${suffix}`).slice(0, APPLICATION_IDENTIFIER_MAX_LENGTH),
+    applicationIdentifier: normalizeIdentifierInput(`${template.slug}-${suffix}`).slice(0, applicationIdentifierBaseMaxLength(template)).replace(/-+$/, ''),
     imageRef: template.image,
     replicas: template.defaultReplicas || 1,
     cpuRequest: template.defaultCPU || '1',
     memoryRequest: template.defaultMemory || '1Gi',
     values: Object.fromEntries(template.values.filter(value => !value.autoGenerate).map(value => [value.key, value.default])),
   }
+}
+
+function isMultiComponentTemplate(template: Pick<AppTemplate, 'components'> | null | undefined) {
+  return (template?.components.length ?? 0) > 0
+}
+
+function hasProjectVolume(dataVolumes: AppTemplateDataVolume[]) {
+  return dataVolumes.some(volume => volume.sourceType === 'projectVolume')
+}
+
+function projectVolumeModeOf(dataVolumes: AppTemplateDataVolume[]): 'Block' | 'Filesystem' {
+  const declaration = dataVolumes.find(volume => volume.sourceType === 'projectVolume')
+  return declaration?.sourceType === 'projectVolume' && declaration.devicePath ? 'Block' : 'Filesystem'
+}
+
+/** 多组件模板会把组件 key 追加到应用标识后，基础标识需要为最长的 `-key` 后缀留出长度。 */
+function applicationIdentifierBaseMaxLength(template: Pick<AppTemplate, 'components'> | null | undefined) {
+  const longestSuffix = Math.max(0, ...(template?.components ?? []).map(component => component.key.length + 1))
+  return APPLICATION_IDENTIFIER_MAX_LENGTH - longestSuffix
 }
 
 function isSystemComponentTemplate(template: Pick<AppTemplate, 'kind' | 'systemComponent'> | null | undefined) {

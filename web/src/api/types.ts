@@ -336,6 +336,18 @@ export type AppTemplateDataVolume
     }
   }
 
+/** 多组件模板中的一个组件；安装后各自成为一个应用，应用标识为 `<applicationIdentifier>-<key>`。 */
+export interface AppTemplateComponent {
+  key: string
+  name: string
+  image: string
+  servicePort: number
+  defaultReplicas: number
+  defaultCPU: string
+  defaultMemory: string
+  dataVolumes: AppTemplateDataVolume[]
+}
+
 export interface AppTemplate {
   id: string
   slug: string
@@ -355,6 +367,7 @@ export interface AppTemplate {
   defaultCPU: string
   defaultMemory: string
   dataVolumes: AppTemplateDataVolume[]
+  components: AppTemplateComponent[]
   values: AppTemplateValueDefinition[]
 }
 
@@ -390,9 +403,17 @@ export interface AppTemplateInstallPayload {
   cpuRequest: string
   memoryRequest: string
   projectVolumeId?: string
+  componentProjectVolumeIds?: Record<string, string>
   installNow: boolean
   provisionAccess?: boolean
   values: Record<string, string>
+}
+
+export interface AppTemplateInstalledComponent {
+  key: string
+  application: Application
+  deploymentTarget: DeploymentTarget
+  release?: Release
 }
 
 export interface AppTemplateInstallResponse {
@@ -400,6 +421,7 @@ export interface AppTemplateInstallResponse {
   application: Application
   deploymentTarget: DeploymentTarget
   release?: Release
+  components?: AppTemplateInstalledComponent[]
 }
 
 export interface ApplicationDeletionPreview {
@@ -1588,6 +1610,24 @@ export interface ReleaseRuntimeLog {
   content: string
 }
 
+/** 部署配置运行副本的实时观测，按平台默认选择顺序返回。 */
+export interface DeploymentTargetRuntimePod {
+  name: string
+  phase: string
+  ready: boolean
+  terminating: boolean
+  restartCount: number
+  releaseId: string
+  containers: string[]
+  createdAt: string
+}
+
+export interface DeploymentTargetRuntimePodPage extends PaginatedResponse<DeploymentTargetRuntimePod> {
+  status: 'ready' | 'unavailable'
+  observationCode: string
+  observedAt: string
+}
+
 export interface GatewayRoute {
   id: string
   projectId: string
@@ -1610,24 +1650,6 @@ export interface GatewayRoute {
   status: 'pending' | 'ready' | 'active' | 'disabled' | 'failed'
   enabled: boolean
   parentGatewayName: string
-/** 部署配置运行副本的实时观测，按平台默认选择顺序返回。 */
-export interface DeploymentTargetRuntimePod {
-  name: string
-  phase: string
-  ready: boolean
-  terminating: boolean
-  restartCount: number
-  releaseId: string
-  containers: string[]
-  createdAt: string
-}
-
-export interface DeploymentTargetRuntimePodPage extends PaginatedResponse<DeploymentTargetRuntimePod> {
-  status: 'ready' | 'unavailable'
-  observationCode: string
-  observedAt: string
-}
-
   parentGatewayNamespace: string
   sectionName: string
   pathMatchType: 'PathPrefix' | 'Exact'

@@ -342,6 +342,20 @@ func (s *Service) platformAdmin(ctx context.Context, userID string) bool {
 
 // getAppTemplate 返回单个模板的完整参数定义，供用户选定模板后按需加载，
 // 避免 listAppTemplates 在列表态携带全部 values 造成上下文过大。
+// appTemplateComponents 让 Agent 知道多组件模板会创建哪些应用，以及哪些组件需要 componentProjectVolumeIds。
+func appTemplateComponents(template appstore.Template) []map[string]any {
+	components := make([]map[string]any, 0, len(template.Components))
+	for _, component := range template.Components {
+		components = append(components, map[string]any{
+			"key": component.Key, "name": component.Name, "image": component.Image,
+			"servicePort": component.ServicePort, "defaultReplicas": component.DefaultReplicas,
+			"defaultCPU": component.DefaultCPU, "defaultMemory": component.DefaultMemory,
+			"dataVolumes": component.DataVolumes,
+		})
+	}
+	return components
+}
+
 func (s *Service) getAppTemplate(input Request) (Result, error) {
 	id := strings.TrimSpace(stringArgument(input.Arguments, "id"))
 	if id == "" {
@@ -375,6 +389,7 @@ func (s *Service) getAppTemplate(input Request) (Result, error) {
 		"officialRepository": template.OfficialRepository, "version": template.Version,
 		"defaultReplicas": template.DefaultReplicas, "defaultCPU": template.DefaultCPU,
 		"defaultMemory": template.DefaultMemory, "dataVolumes": template.DataVolumes, "values": values,
+		"components": appTemplateComponents(template),
 	}}, nil
 }
 

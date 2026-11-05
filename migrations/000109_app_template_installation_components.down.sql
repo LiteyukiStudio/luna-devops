@@ -1,0 +1,1 @@
+DROP TABLE public.app_template_installation_components;

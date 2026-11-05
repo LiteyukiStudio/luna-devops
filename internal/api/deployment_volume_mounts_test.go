@@ -13,7 +13,7 @@ import (
 )
 
 func TestAppTemplateDataVolumesBindExplicitSelectedProjectVolume(t *testing.T) {
-	template := appstore.Template{ID: "postgresql", DataVolumes: []appstore.DataVolume{{
+	template := appstore.Workload{DataVolumes: []appstore.DataVolume{{
 		LogicalName: "data", SourceType: "projectVolume", MountPath: "/var/lib/postgresql/data",
 	}}}
 	selected := model.ProjectVolume{ID: "pvol_database"}

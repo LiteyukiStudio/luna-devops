@@ -21,7 +21,7 @@ const appTemplatesPage = {
   installStarted: 'アプリテンプレートのインストールを開始しました',
   systemInstallStarted: 'プラットフォームコンポーネントのインストールを開始しました',
   installDialogTitle: '{{name}} をインストール',
-  installDialogDescription: 'テンプレートはターゲットプロジェクトスペースにアプリケーションとデプロイ設定を作成します。シークレット系パラメータは安全に保存され、平文で再表示されません。',
+  installDialogDescription: 'テンプレートは選択したプロジェクトスペースにアプリとデプロイ設定を作成します。マルチコンポーネントテンプレートはコンポーネントごとにアプリを作成します。シークレットは安全に保存され、再表示されません。',
   systemInstallDialogDescription: 'プラットフォームコンポーネントは指定した実行クラスターのシステム名前空間にインストールされ、プラットフォーム機能を強化します。プロジェクトスペースアプリケーションは作成されません。',
   platformComponent: 'プラットフォームコンポーネント',
   selectRuntimeCluster: '実行クラスターを選択してください',
@@ -43,6 +43,11 @@ const appTemplatesPage = {
   projectVolume: 'プロジェクトデータボリューム',
   selectProjectVolume: 'マウント可能なプロジェクトデータボリュームを選択してください',
   projectVolumeNotRequired: 'このテンプレートは永続データボリュームを必要としません',
+  components: 'コンポーネント',
+  componentsDescription: 'これらのコンポーネントはまとめてインストールされ、それぞれ独立したアプリになります。共有パスワードは一度だけ生成され、依存サービスとメインアプリの両方にシークレットとして注入されます。',
+  componentSpec: 'ポート {{port}} · レプリカ {{replicas}} · CPU {{cpu}} · メモリ {{memory}}',
+  componentProjectVolume: '{{name}} のデータボリューム',
+  componentIdentifierHint: '作成されるアプリ: {{identifiers}}',
   templateParameters: 'テンプレートパラメータ',
   templateParametersDescription: '空欄の自動生成シークレットはバックエンドで生成され、シークレットストアに書き込まれます。',
   autoGeneratePlaceholder: '空欄で自動生成',
@@ -80,6 +85,11 @@ const appTemplatesPage = {
     email: 'メールアドレス',
     apiBaseUrl: 'Luna DevOps API ベースアドレス',
     traefikMetricsUrl: 'Traefik Metrics アドレス',
+    baseUrl: 'サイト URL',
+    databasePassword: 'データベースパスワード',
+    redisPassword: 'Redis パスワード',
+    passwordSalt: 'パスワードソルト',
+    jwtSecret: 'JWT シークレット',
   },
   valueHints: {
     redisPassword: '任意です。長くランダムなパスワードの設定を推奨します。空欄の場合、Redis のパスワード認証は有効になりません。',
@@ -181,6 +191,9 @@ const appTemplatesPage = {
     },
     'vaultwarden': {
       description: 'Bitwarden クライアント互換の軽量セルフホストパスワードマネージャー。',
+    },
+    'neo-blog': {
+      description: 'セルフホスト型ブログ。Next.js フロントエンドと Go バックエンドを、必要な PostgreSQL と Redis と一緒にインストールします。',
     },
     'nocodb': {
       description: 'オープンソースノーコードデータベースインターフェース。小規模内部ツールとデータアプリに適しています。',

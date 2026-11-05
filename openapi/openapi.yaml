@@ -7188,13 +7188,13 @@ paths:
       tags:
         - Projects
       summary: Install an app template into a project
-      description: Creates an application and deployment target from the selected template. When installNow is true, the response also contains the first Release; read that Release back to verify its terminal state.
+      description: Creates an application and deployment target from the selected template. A multi-component template (non-empty components) creates one application, deployment target, and optional first Release per component, returns them in components, and anchors installation to the first component. Shared Secret values are generated once and injected into every component that references them through Secret references. When installNow is true, read every returned Release back to verify its terminal state.
       x-luna-agent:
         purpose: { zh: 从应用市场模板创建应用和部署配置，并可立即创建首个 Release。, en: Create an application and deployment target from an App Marketplace template, optionally creating the first Release. }
         aliases: { zh: [安装应用模板, 从应用市场安装, 模板部署应用], en: [install app template, install from app marketplace, deploy app template] }
         avoidWhen: { zh: 修改已有应用或部署配置时不要重复安装模板，应使用对应更新工具。, en: Do not reinstall a template to modify an existing application or deployment target; use the corresponding update operation. }
         preconditions: { zh: [先用 listAppTemplates 和 getAppTemplate 确认模板与必填参数, 先用 listRuntimeClusters 解析真实 clusterId, stage 必须使用 dev、test、staging 或 prod], en: [Confirm the template and required values with listAppTemplates and getAppTemplate, Resolve an authoritative clusterId with listRuntimeClusters, Use dev, test, staging, or prod for stage] }
-        successEvidence: { zh: 返回安装记录、应用和部署目标；installNow 为 true 时还必须用 getRelease 回读首个 Release 终态。, en: Returns the installation, application, and deployment target; when installNow is true, getRelease must read back the first Release terminal state. }
+        successEvidence: { zh: 返回安装记录、应用和部署目标，多组件模板还返回 components；installNow 为 true 时还必须用 getRelease 回读每个 Release 终态。, en: Returns the installation, application, and deployment target, plus components for multi-component templates; when installNow is true, getRelease must read back every Release terminal state. }
         effect: write
         verification:
           - { operationId: getRelease, family: release, whenResultHas: release }
@@ -7205,6 +7205,10 @@ paths:
         risk: medium
         requiredScopes: ["project:write"]
         agentAllowed: true
+        examples:
+          - luna app-template install projectId=prj_111111111111111111111111 templateId=postgresql body=@postgresql-install.json output=json interactive=false
+          - luna app-template install projectId=prj_111111111111111111111111 templateId=neo-blog body=@neo-blog-install.json output=json interactive=false
+          - "# Multi-component templates: set componentProjectVolumeIds by component key, for example {\"api\":\"pvol_...\",\"postgres\":\"pvol_...\"}; omit imageRef, replicas, cpuRequest, memoryRequest and projectVolumeId."
       parameters:
         - name: projectId
           in: path
@@ -7985,15 +7989,15 @@ paths:
           required: false
           schema:
             type: string
-      responses:
-        "200":
-          description: Successful business response.
-          content:
         - name: pod
           in: query
           required: false
           description: Runtime pod of this deployment target to connect. Omit to let the platform select one; an unknown pod is rejected instead of falling back.
           schema: { type: string }
+      responses:
+        "200":
+          description: Successful business response.
+          content:
             application/json:
               schema:
                 $ref: "#/components/schemas/BusinessObject"
@@ -8101,15 +8105,15 @@ paths:
           schema:
             type: string
           description: Legacy ticket transport retained for older CLI clients. New clients use the `X-Luna-Terminal-Ticket` header.
-      responses:
-        "101":
-          description: WebSocket protocol switch accepted with the `luna.devops.terminal.v1` subprotocol after the ticket or browser session is authorized.
-          content:
         - name: pod
           in: query
           required: false
           description: Runtime pod of this deployment target to connect. Omit to let the platform select one; an unknown pod is rejected instead of falling back.
           schema: { type: string }
+      responses:
+        "101":
+          description: WebSocket protocol switch accepted with the `luna.devops.terminal.v1` subprotocol after the ticket or browser session is authorized.
+          content:
             text/plain:
               schema:
                 type: string
@@ -13576,10 +13580,26 @@ components:
         required: { type: boolean }
         secret: { type: boolean }
         autoGenerate: { type: boolean }
+    AppTemplateComponent:
+      type: object
+      additionalProperties: false
+      required: [key, name, image, servicePort, defaultReplicas, defaultCPU, defaultMemory, dataVolumes]
+      properties:
+        key: { type: string, pattern: "^[a-z][a-z0-9]*$", description: Stable component key; the installed application identifier is applicationIdentifier-key. }
+        name: { type: string }
+        image: { type: string }
+        servicePort: { type: integer }
+        defaultReplicas: { type: integer }
+        defaultCPU: { type: string }
+        defaultMemory: { type: string }
+        dataVolumes:
+          type: array
+          maxItems: 32
+          items: { $ref: "#/components/schemas/AppTemplateDataVolume" }
     AppTemplateSummary:
       type: object
       additionalProperties: false
-      required: [id, slug, name, description, category, kind, systemComponent, icon, officialWebsite, officialRepository, popularityWeight, image, version, servicePort, defaultReplicas, defaultCPU, defaultMemory, dataVolumes, valueCount, requiredValueCount]
+      required: [id, slug, name, description, category, kind, systemComponent, icon, officialWebsite, officialRepository, popularityWeight, image, version, servicePort, defaultReplicas, defaultCPU, defaultMemory, dataVolumes, components, valueCount, requiredValueCount]
       properties:
         id: { type: string }
         slug: { type: string }
@@ -13602,12 +13622,17 @@ components:
           type: array
           maxItems: 32
           items: { $ref: "#/components/schemas/AppTemplateDataVolume" }
+        components:
+          type: array
+          maxItems: 16
+          description: Components installed together by a multi-component template; empty for single-workload templates, whose runtime fields are the template-level image, servicePort, defaults, and dataVolumes.
+          items: { $ref: "#/components/schemas/AppTemplateComponent" }
         valueCount: { type: integer, minimum: 0 }
         requiredValueCount: { type: integer, minimum: 0 }
     AppTemplate:
       type: object
       additionalProperties: false
-      required: [id, slug, name, description, category, kind, systemComponent, icon, officialWebsite, officialRepository, popularityWeight, image, version, servicePort, defaultReplicas, defaultCPU, defaultMemory, dataVolumes, values]
+      required: [id, slug, name, description, category, kind, systemComponent, icon, officialWebsite, officialRepository, popularityWeight, image, version, servicePort, defaultReplicas, defaultCPU, defaultMemory, dataVolumes, components, values]
       properties:
         id: { type: string }
         slug: { type: string }
@@ -13630,6 +13655,11 @@ components:
           type: array
           maxItems: 32
           items: { $ref: "#/components/schemas/AppTemplateDataVolume" }
+        components:
+          type: array
+          maxItems: 16
+          description: Components installed together by a multi-component template; empty for single-workload templates, whose runtime fields are the template-level image, servicePort, defaults, and dataVolumes.
+          items: { $ref: "#/components/schemas/AppTemplateComponent" }
         values:
           type: array
           items: { $ref: "#/components/schemas/AppTemplateValueDefinition" }
@@ -13645,13 +13675,17 @@ components:
           enum: [dev, test, staging, prod]
           description: Canonical deployment stage. Use dev, test, staging, or prod; arbitrary values such as default or qa are rejected before installation.
         clusterId: { type: string }
-        imageRef: { type: string }
-        replicas: { type: integer, minimum: 0 }
-        cpuRequest: { type: string }
-        memoryRequest: { type: string }
+        imageRef: { type: string, description: Single-workload templates only; multi-component templates reject this override with app_template.component_override_unsupported. }
+        replicas: { type: integer, minimum: 0, description: Single-workload templates only; multi-component templates use component defaults. }
+        cpuRequest: { type: string, description: Single-workload templates only; multi-component templates use component defaults. }
+        memoryRequest: { type: string, description: Single-workload templates only; multi-component templates use component defaults. }
         projectVolumeId:
           type: string
-          description: Existing project-volume ID matching the template declaration, project space, cluster, namespace, and volume mode. A volume is attachable when lifecycleState=ready, or when lifecycleState=provisioning and (pendingOperation=provision or pendingOperation=expand); pendingOperation=import and all other lifecycle/pending-operation combinations are rejected. Required when dataVolumes contains projectVolume; rejected otherwise.
+          description: Existing project-volume ID matching the template declaration, project space, cluster, namespace, and volume mode. A volume is attachable when lifecycleState=ready, or when lifecycleState=provisioning and (pendingOperation=provision or pendingOperation=expand); pendingOperation=import and all other lifecycle/pending-operation combinations are rejected. Required when dataVolumes contains projectVolume; rejected otherwise and for multi-component templates.
+        componentProjectVolumeIds:
+          type: object
+          additionalProperties: { type: string }
+          description: Multi-component templates only. Maps each component key whose dataVolumes contains projectVolume to a distinct attachable project-volume ID, using the same attachability rules as projectVolumeId. Unknown keys, missing required volumes, and one volume selected for several components are rejected.
         installNow: { type: boolean }
         values:
           type: object
@@ -13750,40 +13784,6 @@ components:
         createdBy: { type: string }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
-    ReleaseRuntimeExecInput:
-      type: object
-      additionalProperties: false
-      required: [command]
-      properties:
-        command:
-          type: string
-          minLength: 1
-          maxLength: 2000
-          x-luna-sensitive: true
-        container: { type: string }
-    RuntimeExecResult:
-      type: object
-      additionalProperties: false
-      required: [pod, container, stdout, stderr, exitCode, truncated, durationMs]
-      properties:
-        pod: { type: string }
-        container: { type: string }
-        stdout: { type: string }
-        stderr: { type: string }
-        exitCode: { type: integer }
-        truncated: { type: boolean }
-        durationMs: { type: integer, format: int64, minimum: 0 }
-    GatewayRouteInput:
-      type: object
-      required: [applicationId, deploymentTargetId]
-      properties:
-        applicationId: { type: string }
-        deploymentTargetId: { type: string }
-        host: { type: string }
-        domainSuffix: { type: string }
-        path: { type: string }
-        servicePort: { type: integer, minimum: 1, maximum: 65535 }
-        tlsMode: { type: string }
     DeploymentTargetRuntimePod:
       type: object
       additionalProperties: false
@@ -13812,6 +13812,41 @@ components:
         status: { type: string, enum: [ready, unavailable] }
         observationCode: { type: string, enum: [deployment_target.runtime_pods_ready, deployment_target.runtime_pods_unavailable] }
         observedAt: { type: string, format: date-time }
+    ReleaseRuntimeExecInput:
+      type: object
+      additionalProperties: false
+      required: [command]
+      properties:
+        command:
+          type: string
+          minLength: 1
+          maxLength: 2000
+          x-luna-sensitive: true
+        pod: { type: string, description: Runtime pod of this deployment target. Omit to let the platform select one; an unknown pod is rejected instead of falling back. }
+        container: { type: string }
+    RuntimeExecResult:
+      type: object
+      additionalProperties: false
+      required: [pod, container, stdout, stderr, exitCode, truncated, durationMs]
+      properties:
+        pod: { type: string }
+        container: { type: string }
+        stdout: { type: string }
+        stderr: { type: string }
+        exitCode: { type: integer }
+        truncated: { type: boolean }
+        durationMs: { type: integer, format: int64, minimum: 0 }
+    GatewayRouteInput:
+      type: object
+      required: [applicationId, deploymentTargetId]
+      properties:
+        applicationId: { type: string }
+        deploymentTargetId: { type: string }
+        host: { type: string }
+        domainSuffix: { type: string }
+        path: { type: string }
+        servicePort: { type: integer, minimum: 1, maximum: 65535 }
+        tlsMode: { type: string }
         dnsStatus: { type: string }
         status: { type: string }
         enabled: { type: boolean }
@@ -13822,7 +13857,6 @@ components:
         pathMatchType: { type: string, enum: [PathPrefix, Exact] }
         requestHeaders: { type: string }
         responseHeaders: { type: string }
-        pod: { type: string, description: Runtime pod of this deployment target. Omit to let the platform select one; an unknown pod is rejected instead of falling back. }
         urlRewrite: { type: string }
         requestRedirect: { type: string }
         backendWeight: { type: integer, minimum: 1 }

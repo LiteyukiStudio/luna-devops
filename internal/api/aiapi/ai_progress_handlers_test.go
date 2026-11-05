@@ -54,7 +54,7 @@ func TestAppTemplateProgressFollowsLinkedRelease(t *testing.T) {
 	now := time.Now().UTC()
 	snapshot := appTemplateReleaseProgress(
 		model.AppTemplateInstallation{ID: "inst_1", Status: "deploying", ReleaseID: "rel_1"},
-		model.Release{ID: "rel_1", Status: "succeeded", FinishedAt: &now, UpdatedAt: now},
+		[]model.Release{{ID: "rel_1", Status: "succeeded", FinishedAt: &now, UpdatedAt: now}},
 	)
 
 	if snapshot.OperationID != "inst_1" || snapshot.OperationType != "app_template_installation" {
@@ -62,5 +62,30 @@ func TestAppTemplateProgressFollowsLinkedRelease(t *testing.T) {
 	}
 	if snapshot.State != "succeeded" || snapshot.FinishedAt == nil {
 		t.Fatalf("the linked release terminal state was not projected: %#v", snapshot)
+	}
+}
+
+func TestAppTemplateProgressAggregatesComponentReleases(t *testing.T) {
+	now := time.Now().UTC()
+	installation := model.AppTemplateInstallation{ID: "inst_multi", Status: "deploying", ReleaseID: "rel_web"}
+	components := []model.AppTemplateInstallationComponent{
+		{ComponentKey: "web", ReleaseID: "rel_web"}, {ComponentKey: "api", ReleaseID: "rel_api"}, {ComponentKey: "postgres", ReleaseID: "rel_db"},
+	}
+	if ids := appTemplateInstallationReleaseIDs(installation, components); len(ids) != 3 {
+		t.Fatalf("component release ids = %#v", ids)
+	}
+	running := appTemplateReleaseProgress(installation, []model.Release{
+		{ID: "rel_web", Status: "succeeded", FinishedAt: &now, UpdatedAt: now},
+		{ID: "rel_api", Status: "running", UpdatedAt: now},
+	})
+	if running.State != "running" || running.FinishedAt != nil {
+		t.Fatalf("partially finished installation must stay running: %#v", running)
+	}
+	failed := appTemplateReleaseProgress(installation, []model.Release{
+		{ID: "rel_web", Status: "succeeded", FinishedAt: &now, UpdatedAt: now},
+		{ID: "rel_api", Status: "failed", FinishedAt: &now, UpdatedAt: now},
+	})
+	if failed.State != "failed" || failed.FinishedAt == nil {
+		t.Fatalf("any failed component release must fail the installation: %#v", failed)
 	}
 }

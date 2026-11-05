@@ -168,12 +168,20 @@ func (h *Handler) resolveAIProgress(ctx *gin.Context) (aiProgressSnapshot, error
 		if err := h.dbFor(ctx).First(&installation, "id = ? and project_id = ?", operationID, projectID).Error; err != nil {
 			return aiProgressSnapshot{}, normalizeAIProgressDBError(err)
 		}
-		if installation.ReleaseID != "" {
-			var release model.Release
-			if err := h.dbFor(ctx).First(&release, "id = ? and project_id = ?", installation.ReleaseID, projectID).Error; err != nil {
-				return aiProgressSnapshot{}, normalizeAIProgressDBError(err)
+		var components []model.AppTemplateInstallationComponent
+		if err := h.dbFor(ctx).Where("installation_id = ? and project_id = ?", installation.ID, projectID).Find(&components).Error; err != nil {
+			return aiProgressSnapshot{}, err
+		}
+		releaseIDs := appTemplateInstallationReleaseIDs(installation, components)
+		if len(releaseIDs) > 0 {
+			var releases []model.Release
+			if err := h.dbFor(ctx).Where("id in ? and project_id = ?", releaseIDs, projectID).Find(&releases).Error; err != nil {
+				return aiProgressSnapshot{}, err
 			}
-			return appTemplateReleaseProgress(installation, release), nil
+			if len(releases) != len(releaseIDs) {
+				return aiProgressSnapshot{}, errAIProgressNotFound
+			}
+			return appTemplateReleaseProgress(installation, releases), nil
 		}
 		return appTemplateInstallationProgress(installation), nil
 	default:
@@ -249,10 +257,49 @@ func appTemplateInstallationProgress(installation model.AppTemplateInstallation)
 	return progressSnapshot(installation.ID, "app_template_installation", state, "ai.progress.installation."+state, nil, terminalTime(state, installation.UpdatedAt), installation.UpdatedAt, steps)
 }
 
-func appTemplateReleaseProgress(installation model.AppTemplateInstallation, release model.Release) aiProgressSnapshot {
-	state := normalizeAIProgressState(release.Status)
+// appTemplateInstallationReleaseIDs 返回一次模板安装创建的全部 Release；多组件安装按组件记录汇总。
+func appTemplateInstallationReleaseIDs(installation model.AppTemplateInstallation, components []model.AppTemplateInstallationComponent) []string {
+	if len(components) == 0 {
+		if installation.ReleaseID == "" {
+			return nil
+		}
+		return []string{installation.ReleaseID}
+	}
+	ids := make([]string, 0, len(components))
+	for _, component := range components {
+		if component.ReleaseID != "" {
+			ids = append(ids, component.ReleaseID)
+		}
+	}
+	return ids
+}
+
+// appTemplateReleaseProgress 汇总安装创建的所有 Release：任一失败即失败，全部成功才成功。
+func appTemplateReleaseProgress(installation model.AppTemplateInstallation, releases []model.Release) aiProgressSnapshot {
+	statePriority := map[string]int{"failed": 6, "cancelled": 5, "waiting_approval": 4, "waiting_input": 3, "running": 2, "queued": 1, "succeeded": 0}
+	state := "succeeded"
+	var startedAt, finishedAt *time.Time
+	updatedAt := installation.UpdatedAt
+	for _, release := range releases {
+		releaseState := normalizeAIProgressState(release.Status)
+		if statePriority[releaseState] > statePriority[state] {
+			state = releaseState
+		}
+		if release.StartedAt != nil && (startedAt == nil || release.StartedAt.Before(*startedAt)) {
+			startedAt = release.StartedAt
+		}
+		if release.FinishedAt != nil && (finishedAt == nil || release.FinishedAt.After(*finishedAt)) {
+			finishedAt = release.FinishedAt
+		}
+		if release.UpdatedAt.After(updatedAt) {
+			updatedAt = release.UpdatedAt
+		}
+	}
+	if !aiProgressTerminal(state) {
+		finishedAt = nil
+	}
 	steps := threeStageProgress("installation", state)
-	return progressSnapshot(installation.ID, "app_template_installation", state, "ai.progress.installation."+state, release.StartedAt, release.FinishedAt, release.UpdatedAt, steps)
+	return progressSnapshot(installation.ID, "app_template_installation", state, "ai.progress.installation."+state, startedAt, finishedAt, updatedAt, steps)
 }
 
 func progressSnapshot(operationID, operationType, state, stageCode string, startedAt, finishedAt *time.Time, updatedAt time.Time, steps []aiProgressStep) aiProgressSnapshot {

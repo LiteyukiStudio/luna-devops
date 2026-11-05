@@ -10,7 +10,7 @@ App Marketplace provides curated templates grouped into seven categories: databa
 4. Enter required parameters. Leave platform-generated passwords blank when supported.
 5. Choose whether to deploy immediately and confirm installation.
 
-The template creates an application and deployment and can create its first Release. Secret parameters are written only to the secret store and are never displayed in the page or installation result.
+The template creates an application and deployment and can create its first Release. A multi-component template creates one set per component; see [Multi-component templates](#multi-component-templates). Secret parameters are written only to the secret store and are never displayed in the page or installation result.
 
 The Redis password is optional. A long, random password is recommended; leaving it blank runs Redis without password authentication. When provided, the password reaches the workload only through a Secret, and its plaintext is not written to ordinary environment settings or the installation-value snapshot.
 
@@ -21,6 +21,23 @@ The deployment stage must be `dev`, `test`, `staging`, or `prod`. The CLI expose
 ## Volumes
 
 A template that declares persistent data requires a compatible volume from the same project space and cluster. The installation dialog can create a blank volume for the current runtime cluster with the mode required by the template and selects it automatically once creation is accepted. You can also select an existing compatible volume. If the creation task cannot be queued temporarily, the dialog keeps your input; retrying continues the same creation instead of producing a duplicate volume. The template never silently falls back to `emptyDir`. See [Runtime Data Persistence](./workflow/runtime-data-persistence) for other creation and connection methods.
+
+## Multi-component templates
+
+Some templates consist of several components. For example, Neo Blog includes a frontend, a backend, PostgreSQL, and Redis. The installation dialog lists each component's image and default resources. Installation creates one application and deployment per component, with the identifier `<application identifier>-<component>`, such as `blog-web` and `blog-api`. Leave room in the application identifier for the longest component suffix; the dialog shows every identifier that will be created.
+
+- Components reach each other through service names in the same project space. The platform fills in these addresses during installation.
+- Shared passwords, such as database and Redis passwords, are generated or entered once and injected as Secrets into both the dependencies and the main application. Their plaintext never appears in the page, installation result, or value snapshot.
+- Each component that declares persistent data needs its own volume. One volume cannot be selected for several components.
+- Multi-component templates install with each component's image and resources. You cannot override the image, replicas, CPU, or memory for all components at install time; adjust each component's deployment afterward.
+
+After installation, each component appears as an application in the application list. With **Deploy after install**, every component gets its first Release, and installation succeeds only when all of them succeed. The main application may restart a few times until its dependencies are ready. If it keeps failing, check that component's logs.
+
+### Neo Blog
+
+- Requires two filesystem volumes: one for backend uploads and one for the PostgreSQL database. Redis only holds shared state and uses temporary storage.
+- **Site URL** is the public address of the blog. You can leave it blank and set it later in the blog console. The password salt and JWT secret are generated when left blank; do not change the password salt after users sign up.
+- After installation, [create a route](./workflow/routes) to the frontend component (`<application identifier>-web`, port 3000). The backend does not need to be exposed.
 
 ## Platform components
 

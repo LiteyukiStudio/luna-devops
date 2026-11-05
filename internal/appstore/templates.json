@@ -1176,5 +1176,152 @@
         "required": true
       }
     ]
+  },
+  {
+    "id": "neo-blog",
+    "slug": "neo-blog",
+    "name": "Neo Blog",
+    "description": "Self-hosted blog with a Next.js frontend and Go backend, installed together with its PostgreSQL database and Redis shared state.",
+    "category": "collaboration",
+    "icon": "/app-templates/icons/fallback.svg",
+    "officialWebsite": "https://github.com/snowykami/neo-blog",
+    "officialRepository": "https://github.com/snowykami/neo-blog",
+    "popularityWeight": 80,
+    "version": "latest",
+    "components": [
+      {
+        "key": "web",
+        "name": "Frontend",
+        "image": "snowykami/neo-blog-frontend:latest",
+        "servicePort": 3000,
+        "defaultReplicas": 1,
+        "defaultCPU": "500m",
+        "defaultMemory": "512Mi",
+        "env": {
+          "PORT": "3000",
+          "BACKEND_URL": "http://{{components.api.host}}:8888",
+          "REDIS_KEY_PREFIX": "neo-blog:"
+        },
+        "secretEnv": {
+          "REDIS_URL": "redis://:{{redisPassword | urlUserinfo}}@{{components.redis.host}}:6379/0"
+        }
+      },
+      {
+        "key": "api",
+        "name": "Backend",
+        "image": "snowykami/neo-blog-backend:latest",
+        "servicePort": 8888,
+        "defaultReplicas": 1,
+        "defaultCPU": "500m",
+        "defaultMemory": "1Gi",
+        "fsGroup": "1000",
+        "dataVolumes": [
+          {
+            "logicalName": "data",
+            "sourceType": "projectVolume",
+            "mountPath": "/app/data"
+          }
+        ],
+        "env": {
+          "PORT": "8888",
+          "MODE": "prod",
+          "LOG_LEVEL": "info",
+          "BASE_URL": "{{baseUrl}}",
+          "REDIS_KEY_PREFIX": "neo-blog:"
+        },
+        "secretEnv": {
+          "DB_URL": "postgres://neoblog:{{databasePassword | urlUserinfo}}@{{components.postgres.host}}:5432/neoblog?sslmode=disable",
+          "REDIS_URL": "redis://:{{redisPassword | urlUserinfo}}@{{components.redis.host}}:6379/0",
+          "PASSWORD_SALT": "{{passwordSalt}}",
+          "JWT_SECRET": "{{jwtSecret}}"
+        }
+      },
+      {
+        "key": "postgres",
+        "name": "PostgreSQL",
+        "image": "postgres:16-alpine",
+        "servicePort": 5432,
+        "defaultReplicas": 1,
+        "defaultCPU": "500m",
+        "defaultMemory": "512Mi",
+        "dataVolumes": [
+          {
+            "logicalName": "data",
+            "sourceType": "projectVolume",
+            "mountPath": "/var/lib/postgresql/data"
+          }
+        ],
+        "env": {
+          "POSTGRES_USER": "neoblog",
+          "POSTGRES_DB": "neoblog",
+          "PGDATA": "/var/lib/postgresql/data/pgdata"
+        },
+        "secretEnv": {
+          "POSTGRES_PASSWORD": "{{databasePassword}}"
+        }
+      },
+      {
+        "key": "redis",
+        "name": "Redis",
+        "image": "redis:7-alpine",
+        "servicePort": 6379,
+        "defaultReplicas": 1,
+        "defaultCPU": "250m",
+        "defaultMemory": "256Mi",
+        "containerCommand": "/bin/sh\n-ec",
+        "containerArgs": "exec /usr/local/bin/docker-entrypoint.sh redis-server --requirepass \"$REDIS_PASSWORD\"",
+        "dataVolumes": [
+          {
+            "logicalName": "data",
+            "sourceType": "emptyDir",
+            "mountPath": "/data"
+          }
+        ],
+        "secretEnv": {
+          "REDIS_PASSWORD": "{{redisPassword}}"
+        }
+      }
+    ],
+    "values": [
+      {
+        "key": "baseUrl",
+        "label": "Site URL",
+        "description": "Public URL of the blog, for example https://blog.example.com. Leave blank to configure it later in the blog console.",
+        "default": "",
+        "required": false
+      },
+      {
+        "key": "databasePassword",
+        "label": "Database password",
+        "description": "Shared by PostgreSQL and the backend. Leave blank to generate a random value.",
+        "secret": true,
+        "autoGenerate": true,
+        "required": true
+      },
+      {
+        "key": "redisPassword",
+        "label": "Redis password",
+        "description": "Shared by Redis, the backend, and the frontend. Leave blank to generate a random value.",
+        "secret": true,
+        "autoGenerate": true,
+        "required": true
+      },
+      {
+        "key": "passwordSalt",
+        "label": "Password salt",
+        "description": "Salt for user password hashes; at least 16 characters. Do not change it after users sign up.",
+        "secret": true,
+        "autoGenerate": true,
+        "required": true
+      },
+      {
+        "key": "jwtSecret",
+        "label": "JWT secret",
+        "description": "Signing key for sign-in tokens; at least 32 characters.",
+        "secret": true,
+        "autoGenerate": true,
+        "required": true
+      }
+    ]
   }
 ]

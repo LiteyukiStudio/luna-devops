@@ -21,7 +21,7 @@ const appTemplatesPage = {
   installStarted: '应用模板已开始安装',
   systemInstallStarted: '平台组件已开始安装',
   installDialogTitle: '安装 {{name}}',
-  installDialogDescription: '模板会在目标项目空间中创建一个应用和部署配置；密钥类参数会安全存储，不会明文回显。',
+  installDialogDescription: '模板会在目标项目空间中创建应用和部署配置；多组件模板会为每个组件各创建一个应用。密钥类参数会安全存储，不会明文回显。',
   systemInstallDialogDescription: '平台组件会安装到指定运行集群的系统命名空间，用于增强平台能力，不会创建项目空间应用。',
   platformComponent: '平台组件',
   selectRuntimeCluster: '请选择运行集群',
@@ -43,6 +43,11 @@ const appTemplatesPage = {
   projectVolume: '项目数据卷',
   selectProjectVolume: '请选择可挂载的项目数据卷',
   projectVolumeNotRequired: '此模板不需要持久化数据卷',
+  components: '组件',
+  componentsDescription: '这些组件会一起安装，每个组件各自成为一个应用。共享的密码只生成一次，并以密钥形式同时注入依赖和主应用。',
+  componentSpec: '端口 {{port}} · {{replicas}} 副本 · CPU {{cpu}} · 内存 {{memory}}',
+  componentProjectVolume: '{{name}} 数据卷',
+  componentIdentifierHint: '将创建应用：{{identifiers}}',
   templateParameters: '模板参数',
   templateParametersDescription: '留空的自动生成密钥会由后端生成并写入密钥存储。',
   autoGeneratePlaceholder: '留空自动生成',
@@ -80,6 +85,11 @@ const appTemplatesPage = {
     email: '邮箱',
     apiBaseUrl: 'Luna DevOps API 基础地址',
     traefikMetricsUrl: 'Traefik Metrics 地址',
+    baseUrl: '站点地址',
+    databasePassword: '数据库密码',
+    redisPassword: 'Redis 密码',
+    passwordSalt: '密码盐',
+    jwtSecret: 'JWT 密钥',
   },
   valueHints: {
     redisPassword: '可选。建议设置较长的随机密码；留空时 Redis 不启用密码认证。',
@@ -181,6 +191,9 @@ const appTemplatesPage = {
     },
     'vaultwarden': {
       description: '兼容 Bitwarden 客户端的轻量自托管密码管理器。',
+    },
+    'neo-blog': {
+      description: '自托管博客，Next.js 前端与 Go 后端会与所需的 PostgreSQL 数据库和 Redis 一起安装。',
     },
     'nocodb': {
       description: '开源无代码数据库界面，适合小型内部工具和数据应用。',
