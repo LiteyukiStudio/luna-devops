@@ -2230,7 +2230,7 @@ paths:
         - $ref: "#/components/parameters/SortOrder"
         - name: includeRuntime
           in: query
-          description: Include a point-in-time Kubernetes replica summary for each application. The response is marked no-store because the summary is read from the authoritative runtime.
+          description: Include a point-in-time Kubernetes replica summary, the primary configured access URL, and the most recent succeeded release for each application. The response is marked no-store because the summary is read from the authoritative runtime.
           schema: { type: boolean, default: false }
       responses:
         "200":
@@ -11272,7 +11272,22 @@ components:
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
         deploymentSummary: { $ref: "#/components/schemas/ApplicationDeploymentSummary" }
+        primaryAccessUrl:
+          type: string
+          format: uri
+          description: Configured access URL of the application's primary enabled gateway route (default route first, then production stage). Returned only when includeRuntime=true and a route exists; it is derived from configuration and does not prove reachability.
+        currentRelease: { $ref: "#/components/schemas/ApplicationCurrentRelease" }
       required: [id, projectId, identifier, name, icon, deleteStatus, deleteMessage, createdAt, updatedAt]
+    ApplicationCurrentRelease:
+      type: object
+      additionalProperties: false
+      description: Most recent succeeded release on an existing deployment target. It is a workflow result returned only when includeRuntime=true, not the live Kubernetes image.
+      properties:
+        id: { type: string }
+        deploymentTargetId: { type: string }
+        imageRef: { type: string }
+        deployedAt: { type: string, format: date-time }
+      required: [id, deploymentTargetId, imageRef, deployedAt]
     PaginatedApplications:
       type: object
       required: [items, page, pageSize, sortBy, sortOrder, total, totalPages]
@@ -13591,7 +13606,7 @@ components:
     AppTemplateSummary:
       type: object
       additionalProperties: false
-      required: [id, slug, name, description, category, kind, systemComponent, icon, officialWebsite, officialRepository, popularityWeight, image, version, servicePort, defaultReplicas, defaultCPU, defaultMemory, dataVolumes, components, valueCount, requiredValueCount]
+      required: [id, slug, name, description, category, kind, systemComponent, icon, officialWebsite, officialRepository, popularityWeight, featured, image, version, servicePort, defaultReplicas, defaultCPU, defaultMemory, dataVolumes, components, valueCount, requiredValueCount]
       properties:
         id: { type: string }
         slug: { type: string }
@@ -13604,6 +13619,7 @@ components:
         officialWebsite: { type: string }
         officialRepository: { type: string }
         popularityWeight: { type: integer }
+        featured: { type: boolean, description: Whether the template is shown in the app store recommended section. }
         image: { type: string }
         version: { type: string }
         servicePort: { type: integer }
@@ -13624,7 +13640,7 @@ components:
     AppTemplate:
       type: object
       additionalProperties: false
-      required: [id, slug, name, description, category, kind, systemComponent, icon, officialWebsite, officialRepository, popularityWeight, image, version, servicePort, defaultReplicas, defaultCPU, defaultMemory, dataVolumes, components, values]
+      required: [id, slug, name, description, category, kind, systemComponent, icon, officialWebsite, officialRepository, popularityWeight, featured, image, version, servicePort, defaultReplicas, defaultCPU, defaultMemory, dataVolumes, components, values]
       properties:
         id: { type: string }
         slug: { type: string }
@@ -13637,6 +13653,7 @@ components:
         officialWebsite: { type: string }
         officialRepository: { type: string }
         popularityWeight: { type: integer }
+        featured: { type: boolean, description: Whether the template is shown in the app store recommended section. }
         image: { type: string }
         version: { type: string }
         servicePort: { type: integer }

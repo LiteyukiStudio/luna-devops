@@ -2,6 +2,8 @@ const appTemplatesPage = {
   searchPlaceholder: 'Search apps, use cases, or images',
   categoryFilter: 'Filter by category',
   allCategories: 'All',
+  featuredSection: 'Featured',
+  allTemplatesSection: 'All templates',
   sortBy: 'Sort Field',
   sortByPopularity: 'Popularity',
   sortByName: 'Name A-Z',

@@ -2,7 +2,7 @@ import type { AuthAdmissionPolicy, AuthProvider } from '@/api'
 import type { DataListColumn } from '@/components/common/data-list'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Copy, Plus, Save } from 'lucide-react'
+import { Copy, KeyRound, Plus, Save } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { Controller, useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
@@ -15,11 +15,12 @@ import { DataList } from '@/components/common/data-list'
 import { EditActionButton } from '@/components/common/edit-action-button'
 import { ErrorState } from '@/components/common/error-state'
 import { FormField as Field } from '@/components/common/form-field'
+import { HelpTip } from '@/components/common/help-tip'
 import { PageShell } from '@/components/common/page-shell'
+import { ProgressiveSection } from '@/components/common/progressive-section'
 import { StatusBadge, StatusValueBadge } from '@/components/common/status-badge'
 import { Surface } from '@/components/common/surface'
 import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { NativeSelect as Select } from '@/components/ui/native-select'
@@ -158,6 +159,7 @@ export function AuthProvidersPage() {
     onError: error => toast.error(error.message),
   })
 
+  const claimValues = providerForm.watch(['groupClaim', 'emailClaim', 'usernameClaim'])
   const copyOIDCCallbackURL = () => {
     const value = oidcCallbackConfig.data?.callbackUrl
     if (!value)
@@ -169,7 +171,7 @@ export function AuthProvidersPage() {
     {
       key: 'name',
       header: t('common.name'),
-      className: 'min-w-64',
+      width: 'primary',
       render: provider => (
         <div className="min-w-0">
           <p className="truncate font-medium">{provider.name}</p>
@@ -180,19 +182,21 @@ export function AuthProvidersPage() {
     {
       key: 'groupClaim',
       header: t('authProvidersPage.groupClaim'),
-      className: 'min-w-40',
+      mobile: 'hidden',
+      width: 'compact',
       render: provider => <span className="font-mono text-xs text-muted-foreground">{provider.groupClaim}</span>,
     },
     {
       key: 'scopes',
       header: t('authProvidersPage.scopes'),
-      className: 'min-w-56',
+      mobile: 'hidden',
+      width: 'secondary',
       render: provider => <span className="font-mono text-xs text-muted-foreground">{provider.scopes}</span>,
     },
     {
       key: 'status',
       header: t('common.status'),
-      className: 'w-52',
+      width: 'status',
       render: provider => (
         <div className="flex flex-wrap items-center gap-2">
           {provider.isDefault && <StatusBadge>{t('common.default')}</StatusBadge>}
@@ -203,7 +207,9 @@ export function AuthProvidersPage() {
     {
       key: 'actions',
       header: t('common.actions'),
-      className: 'whitespace-nowrap text-right',
+      className: 'text-right whitespace-nowrap',
+      sticky: 'right',
+      width: 'actions',
       render: provider => (
         <EditActionButton
           aria-label={t('edit')}
@@ -240,7 +246,7 @@ export function AuthProvidersPage() {
             )
           : (
               <SettingsTabSaveButton
-                disabled={!policyForm.formState.isValid}
+                disabled={!policyForm.formState.isValid || !policyForm.formState.isDirty}
                 label={t('authProvidersPage.savePolicy')}
                 pending={savePolicy.isPending}
                 type="button"
@@ -252,13 +258,15 @@ export function AuthProvidersPage() {
       >
         <TabsContent value="providers">
           {providers.isError
-            ? <Card className="p-4"><ErrorState title={t('authProvidersPage.loadFailedTitle')} description={t('common.platformAdminPermissionRequired')} /></Card>
+            ? <ErrorState title={t('authProvidersPage.loadFailedTitle')} description={t('common.platformAdminPermissionRequired')} />
             : (
                 <DataList
                   columns={providerColumns}
-                  emptyTitle={t('authProvidersPage.providersTab')}
                   emptyDescription={t('authProvidersPage.description')}
+                  emptyIcon={<KeyRound className="size-5" />}
+                  emptyTitle={t('authProvidersPage.emptyTitle')}
                   items={providers.data ?? []}
+                  loading={providers.isLoading}
                   rowKey={provider => provider.id}
                 />
               )}
@@ -280,12 +288,15 @@ export function AuthProvidersPage() {
               <DialogDescription>{t('authProvidersPage.description')}</DialogDescription>
             </DialogHeader>
             <form className="grid gap-3" onSubmit={providerForm.handleSubmit(values => saveProvider.mutate(values))}>
-              <div className="grid gap-2 rounded-container border border-border bg-surface-subtle p-3">
-                <p className="text-sm font-medium">{t('authProvidersPage.callbackUrl')}</p>
+              <Surface className="grid gap-2 p-3" variant="inset">
+                <p className="flex items-center gap-1.5 text-sm font-medium">
+                  {t('authProvidersPage.callbackUrl')}
+                  <HelpTip label={t('authProvidersPage.callbackUrl')}>{t('authProvidersPage.callbackUrlHint')}</HelpTip>
+                </p>
                 {oidcCallbackConfig.data?.configured
                   ? (
                       <div className="flex min-w-0 items-center gap-2">
-                        <code className="min-w-0 flex-1 truncate rounded bg-background px-2 py-1.5 text-xs text-muted-foreground">
+                        <code className="min-w-0 flex-1 truncate rounded-control border border-border bg-surface-raised px-2 py-1.5 font-mono text-xs text-muted-foreground">
                           {oidcCallbackConfig.data.callbackUrl}
                         </code>
                         <Button aria-label={t('authProvidersPage.copyCallbackUrl')} size="icon" type="button" variant="outline" onClick={copyOIDCCallbackURL}>
@@ -294,8 +305,7 @@ export function AuthProvidersPage() {
                       </div>
                     )
                   : <p className="text-sm text-danger">{t('authProvidersPage.callbackUrlMissing')}</p>}
-                <p className="text-xs text-muted-foreground">{t('authProvidersPage.callbackUrlHint')}</p>
-              </div>
+              </Surface>
               <Field error={providerForm.formState.errors.name?.message} hint={t('authProvidersPage.nameHint')} label={t('authProvidersPage.name')} required>
                 <Input {...providerForm.register('name')} aria-invalid={Boolean(providerForm.formState.errors.name)} placeholder={t('authProvidersPage.namePlaceholder')} />
               </Field>
@@ -317,36 +327,44 @@ export function AuthProvidersPage() {
               <Field error={providerForm.formState.errors.scopes?.message} hint={t('authProvidersPage.scopesHint')} label={t('authProvidersPage.scopes')} required>
                 <Input {...providerForm.register('scopes')} aria-invalid={Boolean(providerForm.formState.errors.scopes)} />
               </Field>
-              <div className="grid gap-3 md:grid-cols-3">
-                <Field error={providerForm.formState.errors.groupClaim?.message} hint={t('authProvidersPage.groupClaimHint')} label={t('authProvidersPage.groupClaim')} required>
-                  <Input {...providerForm.register('groupClaim')} aria-invalid={Boolean(providerForm.formState.errors.groupClaim)} />
-                </Field>
-                <Field error={providerForm.formState.errors.emailClaim?.message} hint={t('authProvidersPage.emailClaimHint')} label={t('authProvidersPage.emailClaim')} required>
-                  <Input {...providerForm.register('emailClaim')} aria-invalid={Boolean(providerForm.formState.errors.emailClaim)} />
-                </Field>
-                <Field error={providerForm.formState.errors.usernameClaim?.message} hint={t('authProvidersPage.usernameClaimHint')} label={t('authProvidersPage.usernameClaim')} required>
-                  <Input {...providerForm.register('usernameClaim')} aria-invalid={Boolean(providerForm.formState.errors.usernameClaim)} />
-                </Field>
+              <ProgressiveSection
+                summary={claimValues.join(' · ')}
+                title={t('authProvidersPage.claimMapping')}
+              >
+                <div className="grid gap-3 md:grid-cols-3">
+                  <Field error={providerForm.formState.errors.groupClaim?.message} hint={t('authProvidersPage.groupClaimHint')} label={t('authProvidersPage.groupClaim')} required>
+                    <Input {...providerForm.register('groupClaim')} aria-invalid={Boolean(providerForm.formState.errors.groupClaim)} />
+                  </Field>
+                  <Field error={providerForm.formState.errors.emailClaim?.message} hint={t('authProvidersPage.emailClaimHint')} label={t('authProvidersPage.emailClaim')} required>
+                    <Input {...providerForm.register('emailClaim')} aria-invalid={Boolean(providerForm.formState.errors.emailClaim)} />
+                  </Field>
+                  <Field error={providerForm.formState.errors.usernameClaim?.message} hint={t('authProvidersPage.usernameClaimHint')} label={t('authProvidersPage.usernameClaim')} required>
+                    <Input {...providerForm.register('usernameClaim')} aria-invalid={Boolean(providerForm.formState.errors.usernameClaim)} />
+                  </Field>
+                </div>
+              </ProgressiveSection>
+              <div className="flex flex-wrap gap-x-6 gap-y-3">
+                <Controller
+                  control={providerForm.control}
+                  name="enabled"
+                  render={({ field }) => (
+                    <ControlledCheckboxField field={field}>
+                      {t('authProvidersPage.enabled')}
+                    </ControlledCheckboxField>
+                  )}
+                />
+                <Controller
+                  control={providerForm.control}
+                  name="isDefault"
+                  render={({ field }) => (
+                    <ControlledCheckboxField field={field}>
+                      {t('authProvidersPage.defaultProvider')}
+                    </ControlledCheckboxField>
+                  )}
+                />
               </div>
-              <Controller
-                control={providerForm.control}
-                name="enabled"
-                render={({ field }) => (
-                  <ControlledCheckboxField field={field}>
-                    {t('authProvidersPage.enabled')}
-                  </ControlledCheckboxField>
-                )}
-              />
-              <Controller
-                control={providerForm.control}
-                name="isDefault"
-                render={({ field }) => (
-                  <ControlledCheckboxField field={field}>
-                    {t('authProvidersPage.defaultProvider')}
-                  </ControlledCheckboxField>
-                )}
-              />
               <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setProviderDialogOpen(false)}>{t('common.cancel')}</Button>
                 <Button disabled={saveProvider.isPending || !providerForm.formState.isValid} type="submit">
                   <Save size={16} />
                   {editingProvider ? t('authProvidersPage.save') : t('authProvidersPage.create')}
@@ -357,65 +375,64 @@ export function AuthProvidersPage() {
         </Dialog>
 
         <TabsContent value="policy">
-          <Surface className="max-w-4xl p-5 sm:p-6" variant="bordered">
-            <form className="grid gap-5" onSubmit={policyForm.handleSubmit(values => savePolicy.mutate(values))}>
-              <div>
-                <h2 className="text-base font-semibold">{t('authProvidersPage.admissionPolicy')}</h2>
-                <p className="mt-1 text-sm text-muted-foreground">{t('authProvidersPage.policyDescription')}</p>
-              </div>
-              {policy.isError && <ErrorState title={t('authProvidersPage.policyLoadFailedTitle')} description={t('common.platformAdminPermissionRequired')} />}
-              <div className="grid gap-3 md:grid-cols-2">
-                <Controller
-                  control={policyForm.control}
-                  name="allowLocalLogin"
-                  render={({ field }) => (
-                    <ControlledCheckboxField className="rounded-container border border-border bg-surface-inset p-3" field={field}>
-                      {t('authProvidersPage.allowLocalLogin')}
-                    </ControlledCheckboxField>
-                  )}
-                />
-                <Controller
-                  control={policyForm.control}
-                  name="allowOidcLogin"
-                  render={({ field }) => (
-                    <ControlledCheckboxField className="rounded-container border border-border bg-surface-inset p-3" field={field}>
-                      {t('authProvidersPage.allowOidcLogin')}
-                    </ControlledCheckboxField>
-                  )}
-                />
-                <Controller
-                  control={policyForm.control}
-                  name="requireVerifiedOidcEmail"
-                  render={({ field }) => (
-                    <ControlledCheckboxField
-                      className="rounded-container border border-border bg-surface-inset p-3 md:col-span-2"
-                      description={t('authProvidersPage.requireVerifiedOidcEmailHint')}
-                      field={field}
-                    >
-                      {t('authProvidersPage.requireVerifiedOidcEmail')}
-                    </ControlledCheckboxField>
-                  )}
-                />
-              </div>
-              <div className="grid gap-4 md:grid-cols-2">
-                <Field error={policyForm.formState.errors.allowedEmailDomains?.message} hint={t('authProvidersPage.allowedEmailDomainsHint')} label={t('authProvidersPage.allowedEmailDomains')}>
-                  <Textarea {...policyForm.register('allowedEmailDomains')} aria-invalid={Boolean(policyForm.formState.errors.allowedEmailDomains)} placeholder={t('authProvidersPage.allowedEmailDomainsPlaceholder')} rows={2} />
-                </Field>
-                <Field error={policyForm.formState.errors.allowedOidcGroups?.message} hint={t('authProvidersPage.allowedOidcGroupsHint')} label={t('authProvidersPage.allowedOidcGroups')}>
-                  <Textarea {...policyForm.register('allowedOidcGroups')} aria-invalid={Boolean(policyForm.formState.errors.allowedOidcGroups)} placeholder={t('authProvidersPage.allowedOidcGroupsPlaceholder')} rows={2} />
-                </Field>
-              </div>
-              <Field error={policyForm.formState.errors.invitedEmails?.message} hint={t('authProvidersPage.invitedEmailsHint')} label={t('authProvidersPage.invitedEmails')}>
-                <Textarea {...policyForm.register('invitedEmails')} aria-invalid={Boolean(policyForm.formState.errors.invitedEmails)} placeholder={t('authProvidersPage.invitedEmailsPlaceholder')} rows={2} />
-              </Field>
-              <Field error={policyForm.formState.errors.defaultRole?.message} hint={t('authProvidersPage.defaultRoleHint')} label={t('authProvidersPage.defaultRole')} required>
-                <Select {...policyForm.register('defaultRole')} aria-invalid={Boolean(policyForm.formState.errors.defaultRole)}>
-                  <option value={PlatformRole.User}>{t('usersPage.normalUser')}</option>
-                  <option value={PlatformRole.Admin}>{t('usersPage.platformAdmin')}</option>
-                </Select>
-              </Field>
-            </form>
-          </Surface>
+          {policy.isError
+            ? <ErrorState title={t('authProvidersPage.policyLoadFailedTitle')} description={t('common.platformAdminPermissionRequired')} />
+            : (
+                <Surface className="max-w-3xl p-6" variant="bordered">
+                  <form className="grid gap-5" onSubmit={policyForm.handleSubmit(values => savePolicy.mutate(values))}>
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <Controller
+                        control={policyForm.control}
+                        name="allowLocalLogin"
+                        render={({ field }) => (
+                          <ControlledCheckboxField field={field}>
+                            {t('authProvidersPage.allowLocalLogin')}
+                          </ControlledCheckboxField>
+                        )}
+                      />
+                      <Controller
+                        control={policyForm.control}
+                        name="allowOidcLogin"
+                        render={({ field }) => (
+                          <ControlledCheckboxField field={field}>
+                            {t('authProvidersPage.allowOidcLogin')}
+                          </ControlledCheckboxField>
+                        )}
+                      />
+                      <Controller
+                        control={policyForm.control}
+                        name="requireVerifiedOidcEmail"
+                        render={({ field }) => (
+                          <ControlledCheckboxField
+                            className="md:col-span-2"
+                            description={t('authProvidersPage.requireVerifiedOidcEmailHint')}
+                            field={field}
+                          >
+                            {t('authProvidersPage.requireVerifiedOidcEmail')}
+                          </ControlledCheckboxField>
+                        )}
+                      />
+                    </div>
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <Field error={policyForm.formState.errors.allowedEmailDomains?.message} hint={t('authProvidersPage.allowedEmailDomainsHint')} label={t('authProvidersPage.allowedEmailDomains')}>
+                        <Textarea {...policyForm.register('allowedEmailDomains')} aria-invalid={Boolean(policyForm.formState.errors.allowedEmailDomains)} placeholder={t('authProvidersPage.allowedEmailDomainsPlaceholder')} rows={2} />
+                      </Field>
+                      <Field error={policyForm.formState.errors.allowedOidcGroups?.message} hint={t('authProvidersPage.allowedOidcGroupsHint')} label={t('authProvidersPage.allowedOidcGroups')}>
+                        <Textarea {...policyForm.register('allowedOidcGroups')} aria-invalid={Boolean(policyForm.formState.errors.allowedOidcGroups)} placeholder={t('authProvidersPage.allowedOidcGroupsPlaceholder')} rows={2} />
+                      </Field>
+                    </div>
+                    <Field error={policyForm.formState.errors.invitedEmails?.message} hint={t('authProvidersPage.invitedEmailsHint')} label={t('authProvidersPage.invitedEmails')}>
+                      <Textarea {...policyForm.register('invitedEmails')} aria-invalid={Boolean(policyForm.formState.errors.invitedEmails)} placeholder={t('authProvidersPage.invitedEmailsPlaceholder')} rows={2} />
+                    </Field>
+                    <Field error={policyForm.formState.errors.defaultRole?.message} hint={t('authProvidersPage.defaultRoleHint')} label={t('authProvidersPage.defaultRole')} required>
+                      <Select {...policyForm.register('defaultRole')} aria-invalid={Boolean(policyForm.formState.errors.defaultRole)}>
+                        <option value={PlatformRole.User}>{t('usersPage.normalUser')}</option>
+                        <option value={PlatformRole.Admin}>{t('usersPage.platformAdmin')}</option>
+                      </Select>
+                    </Field>
+                  </form>
+                </Surface>
+              )}
         </TabsContent>
       </ContentTabs>
     </PageShell>

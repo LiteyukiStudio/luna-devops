@@ -19,11 +19,9 @@ const eventsPage = {
     time: '発生時刻',
   },
   filters: {
-    title: 'イベントをフィルター',
-    open: 'フィルター',
+    more: 'その他のフィルター',
     selectedCount: '現在 {{count}} 件のフィルター条件を選択中',
     clearAll: 'すべてクリア',
-    apply: 'フィルターを適用',
     project: 'プロジェクトスペース',
     application: 'アプリケーション',
     deploymentTarget: 'デプロイ設定',

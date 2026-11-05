@@ -28,6 +28,7 @@ import {
 } from '@/components/common/ai-assistant/route-state'
 import { useAIAssistantRuntime } from '@/components/common/ai-assistant/runtime-context'
 import { AIAssistantRuntimeProvider } from '@/components/common/ai-assistant/runtime-provider'
+import { CommandPalette } from '@/components/common/command-palette'
 import { InboxTrigger } from '@/components/common/inbox/inbox-trigger'
 import { AppLoadingState } from '@/components/common/loading-states'
 import { PageMotion } from '@/components/common/motion'
@@ -429,6 +430,7 @@ export function AppLayout() {
                         <h1 className="truncate text-base font-medium text-foreground">{pageMeta.heading}</h1>
                       )}
                     </div>
+                    <CommandPalette />
                     <InboxTrigger />
                   </header>
                   <main className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-page-inline py-page-block">
@@ -478,8 +480,21 @@ function AIAssistantEntryHost() {
   if (!runtime.enabled)
     return null
 
-  if (presentationMode === 'window')
-    return <AIAssistantDesktopHost view={assistantView} onViewChange={setAssistantView} />
+  if (presentationMode === 'window') {
+    return (
+      <AIAssistantDesktopHost
+        view={assistantView}
+        onExpand={() => {
+          rememberWorkspaceLocation(location)
+          transitionAssistantToPage()
+          navigate(AI_ASSISTANT_ROUTE_PATH, {
+            state: createAIAssistantRouteState(location),
+          })
+        }}
+        onViewChange={setAssistantView}
+      />
+    )
+  }
 
   if (runtime.open)
     return <div aria-hidden="true" className="fixed inset-0 z-50 bg-surface" data-ai-assistant-transition />

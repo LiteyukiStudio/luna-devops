@@ -32,6 +32,8 @@ const dashboardPage = {
   applicationColumn: '애플리케이션',
   statusColumn: '실행 상태',
   activityColumn: '최근 활동',
+  accessUrlColumn: '접속 주소와 버전',
+  versionReleasedAt: '{{time}} 릴리스',
   noRecentApps: '아직 애플리케이션이 없습니다',
   noRecentAppsDescription: '프로젝트 스페이스에서 애플리케이션을 만들거나 템플릿으로 시작하세요.',
   openApplication: '애플리케이션 {{name}} 열기',

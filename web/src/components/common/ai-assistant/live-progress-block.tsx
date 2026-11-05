@@ -95,36 +95,36 @@ export function LiveProgressBlock({ block }: { block: LiveProgressBlockDefinitio
   const value = snapshot?.progress.value
   return (
     <div className="grid gap-2" data-ai-live-progress={state ?? connection}>
-      <div className="flex min-w-0 items-center justify-between gap-2 text-[10px]">
+      <div className="flex min-w-0 items-center justify-between gap-2 text-xs">
         <span className="truncate font-medium">{block.label ?? (snapshot ? translateCode(t, snapshot.stageCode) : t('aiAssistant.cards.liveProgress.connecting'))}</span>
         <ProgressStateBadge state={state} connection={connection} />
       </div>
-      <div className="h-1.5 overflow-hidden rounded-full bg-surface-inset" role="progressbar" aria-label={block.label ?? t('aiAssistant.cards.liveProgress.label')} aria-valuenow={value}>
+      <div className="h-1.5 overflow-hidden rounded-full bg-muted" role="progressbar" aria-label={block.label ?? t('aiAssistant.cards.liveProgress.label')} aria-valuenow={value}>
         <div
           className={cn(
             'h-full rounded-full transition-[width] duration-500 motion-reduce:transition-none',
             state === 'failed' || connection === 'failed' ? 'bg-danger' : state === 'cancelled' ? 'bg-warning' : 'bg-primary',
-            snapshot?.progress.mode !== 'determinate' && !isTerminal(state) && 'w-1/3 animate-[ai-live-progress_1.35s_ease-in-out_infinite] motion-reduce:animate-pulse',
+            snapshot?.progress.mode !== 'determinate' && !isTerminal(state) && 'w-1/3 animate-[ai-live-progress_1.35s_ease-in-out_infinite] motion-reduce:w-full motion-reduce:animate-none motion-reduce:opacity-60',
           )}
           style={snapshot?.progress.mode === 'determinate' ? { width: `${value ?? 0}%` } : undefined}
         />
       </div>
-      {block.detail && <p className="text-[9px] text-muted-foreground">{block.detail}</p>}
+      {block.detail && <p className="text-[11px] text-muted-foreground">{block.detail}</p>}
       {snapshot && (
         <div className="grid gap-1" aria-live="polite">
           {snapshot.steps.map(step => (
-            <div key={step.id} className="flex min-w-0 items-center gap-1.5 text-[10px] text-muted-foreground">
+            <div key={step.id} className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
               <StepIcon status={step.status} />
               <span className={cn('truncate', step.status === 'running' && 'font-medium text-foreground')}>{translateCode(t, step.labelCode)}</span>
             </div>
           ))}
-          <time className="mt-0.5 text-[9px] text-muted-foreground" dateTime={snapshot.updatedAt}>
+          <time className="mt-0.5 text-[11px] text-muted-foreground" dateTime={snapshot.updatedAt}>
             {t('aiAssistant.cards.liveProgress.updatedAt', { time: new Date(snapshot.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) })}
           </time>
         </div>
       )}
       {(connection === 'paused' || connection === 'failed') && !isTerminal(state) && (
-        <p className="text-[9px] text-warning" role="status">{t(connection === 'paused' ? 'aiAssistant.cards.liveProgress.paused' : 'aiAssistant.cards.liveProgress.unavailable')}</p>
+        <p className="text-[11px] text-warning" role="status">{t(connection === 'paused' ? 'aiAssistant.cards.liveProgress.paused' : 'aiAssistant.cards.liveProgress.unavailable')}</p>
       )}
     </div>
   )
@@ -134,7 +134,7 @@ function ProgressStateBadge({ state, connection }: { state?: ProgressSnapshot['s
   const { t } = useTranslation()
   const key = state === 'failed' ? 'operation_failed' : state ?? connection
   const tone = state === 'failed' || connection === 'failed' ? 'danger' : state === 'succeeded' ? 'success' : state === 'cancelled' || connection === 'paused' ? 'warning' : 'info'
-  return <StatusBadge className="shrink-0 px-1.5 py-0 text-[9px]" tone={tone}>{t(`aiAssistant.cards.liveProgress.states.${key}`)}</StatusBadge>
+  return <StatusBadge className="shrink-0 px-1.5 py-0 text-[11px]" tone={tone}>{t(`aiAssistant.cards.liveProgress.states.${key}`)}</StatusBadge>
 }
 
 function StepIcon({ status }: { status: ProgressSnapshot['steps'][number]['status'] }) {

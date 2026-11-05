@@ -69,7 +69,7 @@ describe('aI assistant channel affinity setting', () => {
     expect(affinitySwitch).toBeChecked()
     await waitFor(() => expect(screen.getByRole('button', { name: i18next.t('settings.restoreDefaults') })).toBeEnabled())
 
-    const help = screen.getByRole('button', { name: i18next.t('settings.ai.channelAffinityHelp') })
+    const help = screen.getByRole('button', { name: `${i18next.t('settings.ai.channelAffinity')}${i18next.t('common.helpSuffix')}` })
     await user.hover(help)
     expect(await screen.findByRole('tooltip')).toHaveTextContent(i18next.t('settings.ai.channelAffinityTip'))
 

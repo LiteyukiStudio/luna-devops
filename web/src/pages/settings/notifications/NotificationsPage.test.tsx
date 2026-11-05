@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { TooltipProvider } from '@/components/ui/tooltip'
 import i18next from '@/i18n'
 import { NotificationsPage } from './NotificationsPage'
 
@@ -55,7 +56,7 @@ describe('notification rule scope', () => {
     await user.click(screen.getByRole('button', { name: 'Create rule' }))
 
     expect(screen.getByRole('dialog', { name: 'Notification rule' })).toBeInTheDocument()
-    const name = screen.getByText('Name', { selector: '[data-slot="field-label"] span' }).closest('[data-slot="field"]')?.querySelector('input')
+    const name = screen.getByRole('textbox', { name: 'Name' })
     const scope = screen.getByText('Notification scope', { selector: '[data-slot="field-label"] span' }).closest('[data-slot="field"]')?.querySelector('select')
     expect(name).not.toBeNull()
     expect(scope).not.toBeNull()
@@ -63,7 +64,7 @@ describe('notification rule scope', () => {
     expect(screen.getByText('Select at least one project space before saving the rule.')).toBeInTheDocument()
     expect(mocks.listProjects).toHaveBeenCalledWith('all')
 
-    await user.type(name!, 'Build failures')
+    await user.type(name, 'Build failures')
     await user.click(screen.getByRole('checkbox', { name: 'Team channel' }))
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
 
@@ -83,17 +84,15 @@ describe('notification rule scope', () => {
 
     await user.click(await screen.findByRole('tab', { name: 'Rules' }))
     await user.click(screen.getByRole('button', { name: 'Create rule' }))
-    const name = screen.getByText('Name', { selector: '[data-slot="field-label"] span' }).closest('[data-slot="field"]')?.querySelector('input')
+    const name = screen.getByRole('textbox', { name: 'Name' })
     const scope = screen.getByText('Notification scope', { selector: '[data-slot="field-label"] span' }).closest('[data-slot="field"]')?.querySelector('select')
-    await user.type(name!, 'Build failures')
+    await user.type(name, 'Build failures')
     await user.click(screen.getByRole('checkbox', { name: 'Team channel' }))
     await user.selectOptions(scope!, 'all')
 
-    const filterField = screen.getByText('Advanced filter JSON', { selector: '[data-slot="field-label"] span' }).closest('[data-slot="field"]')
-    const filter = filterField?.querySelector('textarea')
-    expect(filter).not.toBeNull()
-    expect(filterField).toHaveClass('md:col-span-2')
-    fireEvent.change(filter!, { target: { value: '{' } })
+    await user.click(screen.getByRole('button', { name: 'Advanced filters' }))
+    const filter = screen.getByRole('textbox', { name: 'Advanced filter JSON' })
+    fireEvent.change(filter, { target: { value: '{' } })
 
     expect(screen.getByText('Enter a valid JSON object and remove unknown fields or invalid arrays.')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
@@ -105,7 +104,9 @@ function renderPage() {
   const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false }, queries: { retry: false } } })
   return render(
     <QueryClientProvider client={queryClient}>
-      <NotificationsPage />
+      <TooltipProvider>
+        <NotificationsPage />
+      </TooltipProvider>
     </QueryClientProvider>,
   )
 }

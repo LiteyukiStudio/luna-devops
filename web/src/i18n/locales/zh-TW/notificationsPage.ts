@@ -61,6 +61,15 @@ const notificationsPage = {
   filterJsonHint: '可選。僅支援 severities、applicationIds 和 deploymentTargetIds；通知範圍和專案空間以上方選擇為準。',
   filterJsonInvalid: '請輸入有效的 JSON 物件，並移除未知欄位或無效陣列。',
   ruleInvalid: '請完整填寫規則，並修正通知範圍或進階過濾條件。',
+  rowActions: '{{name}} 的操作',
+  advancedFilter: '進階過濾',
+  filterSummarySet: '已設定附加過濾條件',
+  filterSummaryNone: '未設定，比對範圍內全部事件',
+  filterSummaryInvalid: 'JSON 格式無效',
+  deleteChannelTitle: '刪除通知渠道',
+  deleteTemplateTitle: '刪除通知範本',
+  deleteRuleTitle: '刪除通知規則',
+  deleteDescription: '將刪除「{{name}}」，此操作無法復原。',
 }
 
 export default notificationsPage

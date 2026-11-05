@@ -109,13 +109,12 @@ const registriesPage = {
   deleteCredentialConfirm: '자격 증명 삭제',
   deleteCredentialTitle: '자격 증명 삭제',
   deleteCredentialDescription: '자격 증명 {{name}}은(는) 삭제됩니다. 확인 후 계속하세요.',
-  noCapabilities: 'no capabilities',
+  noCapabilities: '선언된 기능 없음',
+  advancedSettings: '고급 설정',
   test: '테스트',
-  deleteRegistryAria: '레지스트리 삭제',
   tokenOnly: 'token-only',
   passwordSet: 'password',
   tokenSet: 'token',
-  deleteCredentialAria: '자격 증명 삭제',
 }
 
 export default registriesPage

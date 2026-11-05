@@ -1,13 +1,14 @@
 import type { InboxDecision, InboxFilter, InboxMessage } from '@/api'
 import type { DataListColumn } from '@/components/common/data-list'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Archive, Bell, CheckCheck, Eye } from 'lucide-react'
+import { Archive, Bell, CheckCheck } from 'lucide-react'
 import { useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { api } from '@/api'
 import { ConfirmDialog } from '@/components/common/confirm-dialog'
+import { ContentTabs } from '@/components/common/content-tabs'
 import { DataList } from '@/components/common/data-list'
 import { inboxKeys, invalidateInbox } from '@/components/common/inbox/inbox-query'
 import { inboxMessageText } from '@/components/common/inbox/message-format'
@@ -15,7 +16,6 @@ import { StatusBadge } from '@/components/common/status-badge'
 import { formatAbsoluteDateTime, formatSmartDateTime } from '@/components/common/time-format'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
 const filters: InboxFilter[] = ['all', 'unread', 'action']
 
@@ -80,7 +80,7 @@ export function InboxPage() {
         const text = inboxMessageText(message, t)
         return (
           <div className="flex min-w-0 items-start gap-3">
-            <span className="relative mt-1 grid size-8 shrink-0 place-items-center rounded-container bg-muted text-muted-foreground">
+            <span className="relative mt-1 grid size-8 shrink-0 place-items-center rounded-control bg-surface-subtle text-muted-foreground">
               <Bell className="size-4" />
               {!message.readAt && <span className="absolute -right-0.5 -top-0.5 size-2 rounded-full bg-primary" />}
             </span>
@@ -113,13 +113,12 @@ export function InboxPage() {
       sticky: 'right',
       width: 'actions',
       render: message => (
-        <div className="flex items-center gap-1">
-          <Button aria-label={t('inbox.actions.viewDetails')} size="icon" variant="ghost" onClick={() => void openDetails(message)}><Eye className="size-4" /></Button>
-          <Button aria-label={t('inbox.actions.archive')} size="icon" variant="ghost" onClick={() => archive.mutate(message.id)}><Archive className="size-4" /></Button>
-        </div>
+        <Button aria-label={t('inbox.actions.archive')} className="size-8" size="icon" variant="ghost" onClick={() => archive.mutate(message.id)}>
+          <Archive />
+        </Button>
       ),
     },
-  ], [archive, openDetails, t])
+  ], [archive, t])
 
   const selectFilter = (value: string) => {
     setFilter(value as InboxFilter)
@@ -131,16 +130,18 @@ export function InboxPage() {
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <Tabs value={filter} onValueChange={selectFilter}>
-          <TabsList>{filters.map(value => <TabsTrigger key={value} value={value}>{t(`inbox.tabs.${value}`)}</TabsTrigger>)}</TabsList>
-        </Tabs>
+    <ContentTabs
+      hashRouting={false}
+      tabs={filters.map(value => ({ label: t(`inbox.tabs.${value}`), value }))}
+      tools={(
         <Button disabled={markAllRead.isPending} variant="outline" onClick={() => markAllRead.mutate()}>
-          <CheckCheck className="size-4" />
+          <CheckCheck />
           {t('inbox.actions.markAllRead')}
         </Button>
-      </div>
+      )}
+      value={filter}
+      onValueChange={selectFilter}
+    >
       <DataList
         columns={columns}
         emptyDescription={t('inbox.empty.description')}
@@ -154,12 +155,14 @@ export function InboxPage() {
               pageSize,
               total: messages.data.total,
               totalPages: messages.data.totalPages,
-              pageInfoLabel: t('pagination.pageInfo', { current: page, total: messages.data.totalPages }),
+              pageInfoLabel: t('pagination.pageInfo', { page, totalPages: messages.data.totalPages, total: messages.data.total }),
               onPageChange: setPage,
               onPageSizeChange: changePageSize,
             }
           : undefined}
+        rowActionLabel={() => t('inbox.actions.viewDetails')}
         rowKey={message => message.id}
+        onRowClick={openDetails}
       />
       <InboxDetail
         message={selectedMessage.data}
@@ -175,7 +178,7 @@ export function InboxPage() {
           await decide.mutateAsync({ decision, expectedVersion: request.rowVersion, requestId: request.id })
         }}
       />
-    </div>
+    </ContentTabs>
   )
 }
 

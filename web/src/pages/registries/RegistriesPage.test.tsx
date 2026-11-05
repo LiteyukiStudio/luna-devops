@@ -75,7 +75,8 @@ describe('registry credentials', () => {
     expect(await screen.findByText('Credential One')).toBeInTheDocument()
     expect(screen.getByText('Credential Two')).toBeInTheDocument()
 
-    await user.click(screen.getAllByRole('button', { name: i18next.t('edit') })[0])
+    await user.click(screen.getAllByRole('button', { name: i18next.t('common.actions') })[0])
+    await user.click(await screen.findByRole('menuitem', { name: i18next.t('edit') }))
     await screen.findByRole('heading', { name: i18next.t('registriesPage.editCredentialTitle') })
 
     const configuredSecret = screen.getByPlaceholderText(i18next.t('common.secretSetPlaceholder'))

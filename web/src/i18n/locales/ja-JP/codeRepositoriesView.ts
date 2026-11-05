@@ -82,6 +82,7 @@ const codeRepositoriesView = {
   scopesHint: 'アップストリーム Git プラットフォームが Token に付与した API 権限。カンマ区切りで、例：repo、read:user。これはこのプラットフォーム内でのクレデンシャルの使用範囲を制御しません。',
   status: 'ステータス',
   oauthConnect: '{{provider}} に接続',
+  oauthConnectMenu: 'OAuth で接続',
   oauthReadyTitle: 'リダイレクト認証を使用できます',
   oauthReadyDescription: '{{provider}} に OAuth App が設定されています。承認をクリックするとコードプラットフォームにリダイレクトされ、承認成功後に Git クレデンシャルが自動生成されます。',
   oauthManualOnlyTitle: '現在は手動で Token を入力するのみです',
@@ -102,11 +103,9 @@ const codeRepositoriesView = {
   deleteProviderTitle: 'Git Provider を削除',
   deleteProviderConfirm: 'Git Provider を削除',
   deleteProviderDescription: 'Git Provider {{name}} は削除され、それに属するすべての Git クレデンシャルも一緒に削除されます。確認して続行してください。',
-  deleteProviderAria: 'Git Provider を削除',
   deleteCredentialTitle: 'Git クレデンシャルを削除',
   deleteCredentialConfirm: 'クレデンシャルを削除',
   deleteCredentialDescription: 'Git クレデンシャル {{name}} は削除されます。確認して続行してください。',
-  deleteCredentialAria: 'Git クレデンシャルを削除',
 }
 
 export default codeRepositoriesView

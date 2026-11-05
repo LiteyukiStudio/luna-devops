@@ -34,8 +34,6 @@ const authProvidersPage = {
   save: 'Save identity provider',
   created: 'Identity provider created',
   updated: 'Identity provider updated',
-  admissionPolicy: 'Admission policy',
-  policyDescription: 'Control the sign-in methods available to the platform and the requirements for first-time OIDC users.',
   policySaved: 'Admission policy saved',
   policyLoadFailedTitle: 'Admission policy failed to load',
   allowLocalLogin: 'Allow local login',
@@ -55,6 +53,8 @@ const authProvidersPage = {
   defaultRoleHint: 'Global role assigned when OIDC first creates a user. Project space permissions are managed separately in project members.',
   savePolicy: 'Save admission policy',
   loadFailedTitle: 'Identity providers failed to load',
+  emptyTitle: 'No identity providers yet',
+  claimMapping: 'Claim mapping',
 }
 
 export default authProvidersPage

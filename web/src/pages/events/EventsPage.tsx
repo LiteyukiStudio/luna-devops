@@ -3,7 +3,7 @@ import type { PlatformEvent, PlatformEventSnapshot } from '@/api'
 import type { DataListColumn } from '@/components/common/data-list'
 import type { SearchSelectOption } from '@/components/common/search-select'
 import { useQueries, useQuery } from '@tanstack/react-query'
-import { Activity, ExternalLink, Eye, FileKey2, Globe2, Hammer, RefreshCw, Rocket, SearchX, SlidersHorizontal, Workflow } from 'lucide-react'
+import { Activity, ExternalLink, FileKey2, Globe2, Hammer, RefreshCw, Rocket, SearchX, SlidersHorizontal, Workflow, X } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useSearchParams } from 'react-router-dom'
@@ -13,11 +13,11 @@ import { DataList } from '@/components/common/data-list'
 import { ErrorState } from '@/components/common/error-state'
 import { ResultVisibilitySelect } from '@/components/common/result-visibility-select'
 import { SearchMultiSelect } from '@/components/common/search-select'
-import { StatusValueBadge } from '@/components/common/status-badge'
+import { StatusBadge, StatusValueBadge } from '@/components/common/status-badge'
 import { formatAbsoluteDateTime, formatSmartDateTime } from '@/components/common/time-format'
 import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
 import { isPlatformAdmin } from '@/lib/roles'
@@ -43,7 +43,6 @@ export function EventsPage() {
   const [dateFrom, setDateFrom] = useState(() => dateDaysAgo(7))
   const [dateTo, setDateTo] = useState(() => dateDaysAgo(0))
   const [selectedEventId, setSelectedEventId] = useState('')
-  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false)
 
   const projects = useQuery({ queryKey: ['projects', 'options', visibility], queryFn: () => api.listProjects(visibility) })
   const applicationQueries = useQueries({
@@ -142,7 +141,7 @@ export function EventsPage() {
       width: 'primary',
       render: event => (
         <div className="flex min-w-0 items-start gap-3">
-          <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
+          <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-control bg-surface-subtle text-muted-foreground">
             {categoryIcon(event.category)}
           </div>
           <div className="min-w-0">
@@ -185,19 +184,10 @@ export function EventsPage() {
       width: 'compact',
       render: event => <span className="whitespace-nowrap text-sm text-muted-foreground">{formatSmartDateTime(event.occurredAt, t)}</span>,
     },
-    {
-      key: 'actions',
-      header: t('common.actions'),
-      sticky: 'right',
-      width: 'actions',
-      render: event => (
-        <Button aria-label={t('eventsPage.viewDetails')} size="icon" variant="ghost" onClick={() => setSelectedEventId(event.id)}>
-          <Eye className="size-4" />
-        </Button>
-      ),
-    },
   ], [t])
-  const activeFilterCount = projectIds.length + applicationIds.length + deploymentTargetIds.length + categories.length + eventTypes.length + severities.length + statuses.length + (visibility === 'all' ? 1 : 0)
+  const advancedFilterCount = projectIds.length + applicationIds.length + deploymentTargetIds.length + eventTypes.length
+  const activeFilterCount = advancedFilterCount + categories.length + severities.length + statuses.length + (visibility === 'all' ? 1 : 0)
+  const filtered = Boolean(search) || activeFilterCount > 0
   const clearFilters = () => {
     setVisibility('related')
     setProjectIds([])
@@ -211,23 +201,8 @@ export function EventsPage() {
     setDateTo('')
     resetPage()
   }
-  const filterFields = (
-    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-      {platformAdmin && (
-        <ResultVisibilitySelect
-          canViewAll={platformAdmin}
-          containerClassName="w-full"
-          showLabel
-          value={visibility}
-          onChange={(nextVisibility) => {
-            setVisibility(nextVisibility)
-            setProjectIds([])
-            setApplicationIds([])
-            setDeploymentTargetIds([])
-            resetPage()
-          }}
-        />
-      )}
+  const advancedFilterFields = (
+    <div className="grid gap-3 sm:grid-cols-2">
       <EventFilterMultiSelect
         label={t('eventsPage.filters.project')}
         loading={projects.isLoading}
@@ -279,20 +254,6 @@ export function EventsPage() {
         }}
       />
       <EventFilterMultiSelect
-        label={t('eventsPage.filters.category')}
-        options={categoryOptions}
-        placeholder={t('eventsPage.filters.allCategories')}
-        value={categories}
-        onChange={(values) => {
-          const allowedTypes = new Set((catalog.data ?? [])
-            .filter(item => values.length === 0 || values.includes(item.category))
-            .map(item => item.type))
-          setCategories(values)
-          setEventTypes(current => current.filter(value => allowedTypes.has(value)))
-          resetPage()
-        }}
-      />
-      <EventFilterMultiSelect
         label={t('eventsPage.filters.type')}
         options={eventTypeOptions}
         placeholder={t('eventsPage.filters.allTypes')}
@@ -302,30 +263,10 @@ export function EventsPage() {
           resetPage()
         }}
       />
-      <EventFilterMultiSelect
-        label={t('eventsPage.filters.severity')}
-        options={severityOptions}
-        placeholder={t('eventsPage.filters.allSeverities')}
-        value={severities}
-        onChange={(values) => {
-          setSeverities(values)
-          resetPage()
-        }}
-      />
-      <EventFilterMultiSelect
-        label={t('eventsPage.filters.status')}
-        options={statusOptions}
-        placeholder={t('eventsPage.filters.allStatuses')}
-        value={statuses}
-        onChange={(values) => {
-          setStatuses(values)
-          resetPage()
-        }}
-      />
       <label className="grid gap-1.5 text-xs text-muted-foreground">
         {t('eventsPage.filters.dateFrom')}
         <Input
-          className="h-9 rounded-md"
+          className="h-8"
           max={dateTo}
           type="date"
           value={dateFrom}
@@ -338,7 +279,7 @@ export function EventsPage() {
       <label className="grid gap-1.5 text-xs text-muted-foreground">
         {t('eventsPage.filters.dateTo')}
         <Input
-          className="h-9 rounded-md"
+          className="h-8"
           min={dateFrom}
           type="date"
           value={dateTo}
@@ -361,37 +302,10 @@ export function EventsPage() {
   }
 
   return (
-    <div className="space-y-4">
-      <Card className="hidden p-4 lg:block">{filterFields}</Card>
-
-      <div className="flex items-center justify-between gap-2 lg:hidden">
-        <Button className="gap-2" variant="outline" onClick={() => setMobileFiltersOpen(true)}>
-          <SlidersHorizontal className="size-4" />
-          {t('eventsPage.filters.open')}
-          {activeFilterCount > 0 && <span className="rounded-full bg-primary-subtle px-2 py-0.5 text-xs text-primary-text">{activeFilterCount}</span>}
-        </Button>
-        <Button aria-label={t('common.refresh')} disabled={events.isFetching} size="icon" variant="outline" onClick={() => events.refetch()}>
-          <RefreshCw className={`size-4 ${events.isFetching ? 'animate-spin' : ''}`} />
-        </Button>
-      </div>
-
-      <Sheet open={mobileFiltersOpen} onOpenChange={setMobileFiltersOpen}>
-        <SheetContent className="flex w-full flex-col overflow-hidden sm:max-w-md" side="right">
-          <SheetHeader className="border-b border-border">
-            <SheetTitle>{t('eventsPage.filters.title')}</SheetTitle>
-            <SheetDescription>{t('eventsPage.filters.selectedCount', { count: activeFilterCount })}</SheetDescription>
-          </SheetHeader>
-          <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">{filterFields}</div>
-          <div className="flex shrink-0 items-center justify-end gap-2 border-t border-border p-4">
-            <Button variant="ghost" onClick={clearFilters}>{t('eventsPage.filters.clearAll')}</Button>
-            <Button onClick={() => setMobileFiltersOpen(false)}>{t('eventsPage.filters.apply')}</Button>
-          </div>
-        </SheetContent>
-      </Sheet>
-
+    <>
       <DataList
         columns={columns}
-        emptyActions={(search || activeFilterCount > 0)
+        emptyActions={filtered
           ? (
               <Button
                 variant="outline"
@@ -404,12 +318,13 @@ export function EventsPage() {
               </Button>
             )
           : undefined}
-        emptyDescription={t(search || activeFilterCount > 0 ? 'eventsPage.filteredEmptyDescription' : 'eventsPage.emptyDescription')}
-        emptyIcon={search || activeFilterCount > 0 ? <SearchX className="size-5" /> : undefined}
-        emptyMode={search || activeFilterCount > 0 ? 'filtered' : 'actionable'}
-        emptyTitle={t(search || activeFilterCount > 0 ? 'eventsPage.filteredEmptyTitle' : 'eventsPage.emptyTitle')}
+        emptyDescription={t(filtered ? 'eventsPage.filteredEmptyDescription' : 'eventsPage.emptyDescription')}
+        emptyIcon={filtered ? <SearchX className="size-5" /> : <Activity className="size-5" />}
+        emptyMode={filtered ? 'filtered' : 'actionable'}
+        emptyTitle={t(filtered ? 'eventsPage.filteredEmptyTitle' : 'eventsPage.emptyTitle')}
         items={events.data?.items ?? []}
         loading={events.isLoading}
+        rowActionLabel={() => t('eventsPage.viewDetails')}
         viewportOffset={24}
         pagination={{
           page: events.data?.page ?? page,
@@ -433,17 +348,91 @@ export function EventsPage() {
           },
         }}
         toolbar={(
-          <Button
-            aria-label={t('common.refresh')}
-            className="hidden lg:inline-flex"
-            disabled={events.isFetching}
-            size="icon"
-            variant="ghost"
-            onClick={() => events.refetch()}
-          >
-            <RefreshCw className={`size-4 ${events.isFetching ? 'animate-spin' : ''}`} />
-          </Button>
+          <>
+            <ResultVisibilitySelect
+              canViewAll={platformAdmin}
+              containerClassName="w-full sm:w-36"
+              value={visibility}
+              onChange={(nextVisibility) => {
+                setVisibility(nextVisibility)
+                setProjectIds([])
+                setApplicationIds([])
+                setDeploymentTargetIds([])
+                resetPage()
+              }}
+            />
+            <SearchMultiSelect
+              ariaLabel={t('eventsPage.filters.category')}
+              className="w-full sm:w-36"
+              options={categoryOptions}
+              placeholder={t('eventsPage.filters.allCategories')}
+              size="sm"
+              value={categories}
+              onValueChange={(values) => {
+                const allowedTypes = new Set((catalog.data ?? [])
+                  .filter(item => values.length === 0 || values.includes(item.category))
+                  .map(item => item.type))
+                setCategories(values)
+                setEventTypes(current => current.filter(value => allowedTypes.has(value)))
+                resetPage()
+              }}
+            />
+            <SearchMultiSelect
+              ariaLabel={t('eventsPage.filters.severity')}
+              className="w-full sm:w-36"
+              options={severityOptions}
+              placeholder={t('eventsPage.filters.allSeverities')}
+              size="sm"
+              value={severities}
+              onValueChange={(values) => {
+                setSeverities(values)
+                resetPage()
+              }}
+            />
+            <SearchMultiSelect
+              ariaLabel={t('eventsPage.filters.status')}
+              className="w-full sm:w-36"
+              options={statusOptions}
+              placeholder={t('eventsPage.filters.allStatuses')}
+              size="sm"
+              value={statuses}
+              onValueChange={(values) => {
+                setStatuses(values)
+                resetPage()
+              }}
+            />
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button className="gap-1.5" size="sm" variant="outline">
+                  <SlidersHorizontal />
+                  {t('eventsPage.filters.more')}
+                  {advancedFilterCount > 0 && <StatusBadge tone="info">{advancedFilterCount}</StatusBadge>}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="end" className="grid w-[min(36rem,calc(100vw-2rem))] gap-4">
+                <p className="text-xs text-muted-foreground">{t('eventsPage.filters.selectedCount', { count: activeFilterCount })}</p>
+                {advancedFilterFields}
+              </PopoverContent>
+            </Popover>
+            {activeFilterCount > 0 && (
+              <Button size="sm" variant="ghost" onClick={clearFilters}>
+                <X />
+                {t('eventsPage.filters.clearAll')}
+              </Button>
+            )}
+            <Button
+              aria-label={t('common.refresh')}
+              className="size-8"
+              disabled={events.isFetching}
+              size="icon"
+              variant="ghost"
+              onClick={() => events.refetch()}
+            >
+              <RefreshCw className={events.isFetching ? 'animate-spin' : undefined} />
+            </Button>
+          </>
         )}
+        onRowClick={event => setSelectedEventId(event.id)}
       />
 
       <EventDetailSheet
@@ -452,7 +441,7 @@ export function EventsPage() {
         open={Boolean(selectedEventId)}
         onOpenChange={open => !open && setSelectedEventId('')}
       />
-    </div>
+    </>
   )
 }
 
@@ -529,10 +518,12 @@ function EventDetailSheet({ event, loading, onOpenChange, open }: { event?: Plat
               <DetailSection title={t('eventsPage.details.links')}>
                 <div className="flex flex-wrap gap-2">
                   {Object.entries(links).map(([key, href]) => (
-                    <a key={key} className="inline-flex h-9 items-center gap-2 rounded-container border border-border px-3 text-sm transition hover:bg-muted" href={href}>
-                      {t(`eventsPage.linkNames.${key}`, { defaultValue: key })}
-                      <ExternalLink className="size-3.5" />
-                    </a>
+                    <Button key={key} asChild size="sm" variant="outline">
+                      <a href={href}>
+                        {t(`eventsPage.linkNames.${key}`, { defaultValue: key })}
+                        <ExternalLink />
+                      </a>
+                    </Button>
                   ))}
                 </div>
               </DetailSection>

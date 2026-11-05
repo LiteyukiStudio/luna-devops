@@ -32,6 +32,8 @@ const dashboardPage = {
   applicationColumn: '應用',
   statusColumn: '執行狀態',
   activityColumn: '最近活動',
+  accessUrlColumn: '存取位址與版本',
+  versionReleasedAt: '{{time}} 發布',
   noRecentApps: '還沒有應用',
   noRecentAppsDescription: '在專案空間中建立應用，或從範本開始。',
   openApplication: '開啟應用 {{name}}',

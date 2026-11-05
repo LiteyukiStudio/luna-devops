@@ -89,7 +89,7 @@ export function ApplicationOverviewPanel({ buildRuns, deploymentTargets, onBindR
           </ol>
         </Section>
       )}
-      <div className="grid gap-section xl:grid-cols-[minmax(0,1.4fr)_minmax(20rem,0.6fr)]">
+      <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1.4fr)_minmax(20rem,0.6fr)]">
         <Section description={t('apps.deploymentSummariesDescription')} title={t('apps.deploymentSummaries')} variant="bordered">
           {deploymentTargets.length
             ? (
@@ -112,7 +112,7 @@ export function ApplicationOverviewPanel({ buildRuns, deploymentTargets, onBindR
                 <ul className="-my-3 divide-y divide-border">
                   {recentActivities.map(item => (
                     <li key={item.id} className="flex min-w-0 items-center justify-between gap-3 py-3">
-                      <div className="min-w-0">
+                      <div className="min-w-0 flex-1">
                         <div className="text-sm font-medium">{item.label}</div>
                         <div className="mt-0.5 truncate font-mono text-xs text-muted-foreground" title={item.meta}>{item.meta}</div>
                       </div>

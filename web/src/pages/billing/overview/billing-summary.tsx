@@ -5,7 +5,6 @@ import { useTranslation } from 'react-i18next'
 import { MetricGroup, MetricItem } from '@/components/common/metric-group'
 import { Section } from '@/components/common/section'
 import { StatusBadge } from '@/components/common/status-badge'
-import { Surface } from '@/components/common/surface'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { balanceStatusTone, gatewayTrafficStatusLabel, normalizeBalanceStatus } from './billing-page-utils'
 
@@ -76,48 +75,47 @@ export function BillingSummary({
         )}
         variant="bordered"
       >
-        <div className="grid min-h-[5.75rem] gap-3 md:grid-cols-3 xl:grid-cols-6">
-          {periodCategories.length > 0
-            ? periodCategories.filter(category => !(showGatewayTrafficStatusCard && category.category === 'gateway')).map(category => (
-                <Surface
-                  key={category.category}
-                  className="p-3"
-                  variant="inset"
-                >
-                  <p className="truncate text-xs text-muted-foreground">
-                    {t(`billingPage.categories.${category.category}`, { defaultValue: category.category })}
-                  </p>
-                  <p className="mt-1 truncate text-lg font-semibold tabular-nums text-foreground">
-                    {billingDisplay.formatAmountWithUnit(category.amountCredits)}
-                  </p>
-                </Surface>
-              ))
-            : null}
-          {showGatewayTrafficStatusCard && (
-            <Surface className="p-3" variant="inset">
-              <p className="truncate text-xs text-muted-foreground">
-                {t('billingPage.categories.gateway')}
+        {periodCategories.length === 0 && !showGatewayTrafficStatusCard
+          ? (
+              <p className="py-4 text-sm text-muted-foreground">
+                {scopedFetching ? t('common.loading') : t('billingPage.emptyPeriodCategories')}
               </p>
-              <p className="mt-1 truncate text-lg font-semibold tabular-nums text-foreground">
-                {gatewayTrafficStatusLabel(gatewayTrafficStatus, t)}
-              </p>
-              <a
-                className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-primary-text transition-colors hover:text-primary-text/80"
-                href={GATEWAY_TRAFFIC_METRICS_DOC_URL}
-                rel="noreferrer"
-                target="_blank"
-              >
-                {t('billingPage.gatewayTrafficMetricsDocs')}
-                <ExternalLink className="size-3" />
-              </a>
-            </Surface>
-          )}
-          {periodCategories.length === 0 && !showGatewayTrafficStatusCard && (
-            <div className="flex min-h-[5.75rem] items-center rounded-container border border-dashed border-border bg-muted/10 px-4 text-sm text-muted-foreground md:col-span-3 xl:col-span-6">
-              {scopedFetching ? t('common.loading') : t('billingPage.emptyPeriodCategories')}
-            </div>
-          )}
-        </div>
+            )
+          : (
+              <dl className="grid gap-x-6 gap-y-4 sm:grid-cols-3 xl:grid-cols-6">
+                {periodCategories.filter(category => !(showGatewayTrafficStatusCard && category.category === 'gateway')).map(category => (
+                  <div key={category.category} className="min-w-0">
+                    <dt className="truncate text-xs text-muted-foreground">
+                      {t(`billingPage.categories.${category.category}`, { defaultValue: category.category })}
+                    </dt>
+                    <dd className="mt-1 truncate text-lg font-semibold tabular-nums text-foreground">
+                      {billingDisplay.formatAmountWithUnit(category.amountCredits)}
+                    </dd>
+                  </div>
+                ))}
+                {showGatewayTrafficStatusCard && (
+                  <div className="min-w-0">
+                    <dt className="truncate text-xs text-muted-foreground">
+                      {t('billingPage.categories.gateway')}
+                    </dt>
+                    <dd className="mt-1 grid gap-1">
+                      <span className="truncate text-lg font-semibold text-foreground">
+                        {gatewayTrafficStatusLabel(gatewayTrafficStatus, t)}
+                      </span>
+                      <a
+                        className="inline-flex w-fit items-center gap-1 text-xs font-medium text-primary-text transition-colors hover:text-primary-text/80"
+                        href={GATEWAY_TRAFFIC_METRICS_DOC_URL}
+                        rel="noreferrer"
+                        target="_blank"
+                      >
+                        {t('billingPage.gatewayTrafficMetricsDocs')}
+                        <ExternalLink className="size-3" />
+                      </a>
+                    </dd>
+                  </div>
+                )}
+              </dl>
+            )}
       </Section>
     </>
   )

@@ -19,11 +19,9 @@ const eventsPage = {
     time: '發生時間',
   },
   filters: {
-    title: '篩選事件',
-    open: '篩選',
+    more: '更多篩選',
     selectedCount: '當前已選擇 {{count}} 項篩選條件',
     clearAll: '清除全部',
-    apply: '應用篩選',
     project: '專案空間',
     application: '應用',
     deploymentTarget: '部署配置',

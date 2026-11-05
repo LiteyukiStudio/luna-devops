@@ -13,7 +13,7 @@ export function AgentConversationMessage({ role, text }: { role: 'user' | 'assis
         <Icon className="size-4" />
         {t(`operationsDashboardPage.conversationDetail.${role}`)}
       </div>
-      <div className={cn('min-w-0 break-words text-sm leading-6', !process && 'rounded-control bg-muted px-4 py-3')}>
+      <div className={cn('min-w-0 break-words text-sm leading-6', !process && 'rounded-control bg-surface-subtle px-4 py-3')}>
         <AIMarkdown className="min-w-0 max-w-full text-foreground">{text}</AIMarkdown>
       </div>
     </div>

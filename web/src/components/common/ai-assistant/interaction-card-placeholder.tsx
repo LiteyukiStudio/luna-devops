@@ -1,6 +1,7 @@
 import type { AIToolDisplayResult } from '@/api'
-import { LayoutTemplate, Sparkles } from 'lucide-react'
+import { LayoutTemplate, LoaderCircle } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { Skeleton } from '@/components/ui/skeleton'
 import { AIMarkdown } from './markdown'
 
 export function AIInteractionCardPlaceholder({ arguments: rawArguments, result }: { arguments: Record<string, unknown>, result?: AIToolDisplayResult }) {
@@ -14,29 +15,27 @@ export function AIInteractionCardPlaceholder({ arguments: rawArguments, result }
   const repairing = Boolean(result?.attempt && result.attempt > 0)
 
   return (
-    <section aria-label={title} aria-live="polite" className="relative min-h-32 min-w-0 overflow-hidden rounded-container bg-surface" data-ai-card-preparing role="status">
-      <div aria-hidden="true" className="ai-card-generation-flow absolute inset-0 motion-reduce:hidden" />
-      <div aria-hidden="true" className="absolute inset-0 bg-surface/65 backdrop-blur-[1px]" />
-      <div className="relative grid min-h-32 content-between gap-6 p-3">
-        <div className="flex min-w-0 items-start gap-2.5">
+    <section aria-label={title} aria-live="polite" className="min-w-0 overflow-hidden rounded-container border border-border bg-surface shadow-sm" data-ai-card-preparing role="status">
+      <div className="grid gap-4 p-3.5">
+        <div className="flex min-w-0 items-start gap-3">
           <span className="grid size-9 shrink-0 place-items-center rounded-control bg-primary-subtle text-primary-text">
             <LayoutTemplate className="size-4" />
           </span>
           <div className="min-w-0 flex-1">
-            <p className="text-[10px] font-medium uppercase tracking-wide text-primary-text">
+            <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+              <LoaderCircle aria-hidden="true" className="size-3 animate-spin motion-reduce:animate-none" />
               {repairing
                 ? t('aiAssistant.cards.repairingEyebrow', { attempt: result?.attempt, max: result?.maxAttempts })
                 : t('aiAssistant.cards.preparingEyebrow')}
             </p>
-            <AIMarkdown className="mt-0.5 text-[13px] font-semibold leading-5">{title}</AIMarkdown>
-            {description && <AIMarkdown className="mt-1 text-[11px] leading-4 text-muted-foreground">{description}</AIMarkdown>}
+            <AIMarkdown className="mt-1 text-sm font-semibold leading-5">{title}</AIMarkdown>
+            {description && <AIMarkdown className="mt-1 text-xs leading-5 text-muted-foreground">{description}</AIMarkdown>}
           </div>
-          <Sparkles aria-hidden="true" className="size-4 shrink-0 animate-pulse text-primary-text motion-reduce:animate-none" />
         </div>
-        <div aria-hidden="true" className="grid gap-1.5">
-          <span className="h-2.5 w-[72%] rounded-full bg-primary-subtle/80" />
-          <span className="h-2.5 w-[90%] rounded-full bg-surface-inset/90" />
-          <span className="h-2.5 w-[54%] rounded-full bg-primary-subtle/60" />
+        <div aria-hidden="true" className="grid gap-2">
+          <Skeleton className="h-2.5 w-[72%]" />
+          <Skeleton className="h-2.5 w-[90%]" />
+          <Skeleton className="h-2.5 w-[54%]" />
         </div>
       </div>
     </section>

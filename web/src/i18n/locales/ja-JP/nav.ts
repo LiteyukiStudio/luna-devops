@@ -18,6 +18,25 @@ const nav = {
     members: 'メンバー',
     topology: 'サービス関係',
   },
+  commandPalette: {
+    trigger: '検索…',
+    shortcutMac: '⌘K',
+    shortcutOther: 'Ctrl K',
+    title: 'コマンドパレット',
+    description: 'ページ、プロジェクトスペース、アプリケーションを検索するか、よく使う操作を実行します。',
+    placeholder: 'ページ、プロジェクトスペース、アプリケーション、操作を検索…',
+    empty: '一致する結果はありません',
+    groups: {
+      pages: 'ページ',
+      projects: 'プロジェクトスペース',
+      applications: '{{project}} のアプリケーション',
+      actions: 'よく使う操作',
+    },
+    actions: {
+      createProject: 'プロジェクトスペースを作成',
+      toggleTheme: 'ライト/ダークテーマを切り替え',
+    },
+  },
 }
 
 export default nav

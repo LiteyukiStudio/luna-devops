@@ -17,7 +17,7 @@ export type AIAssistantConversationListProps = Omit<ComponentProps<typeof AIConv
   refetch: () => Promise<void>
 }
 
-export type AIAssistantTimelineProps = Omit<ComponentProps<typeof AIAssistantTimeline>, 'bottomInset'>
+export type AIAssistantTimelineProps = Omit<ComponentProps<typeof AIAssistantTimeline>, 'emptyState'>
 export type AIAssistantComposerProps = ComponentProps<typeof AIAssistantComposer>
 
 export interface AIAssistantRuntimeValue {

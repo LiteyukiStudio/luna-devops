@@ -6,7 +6,7 @@ import { ArrowDownWideNarrow, ArrowUpNarrowWide, FolderKanban, MoreHorizontal, P
 import { useDeferredValue, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { z } from 'zod'
 import { api } from '@/api'
@@ -61,6 +61,9 @@ export function ProjectsPage() {
   const [projectToDelete, setProjectToDelete] = useState<Project | null>(null)
   const [deleteConfirmation, setDeleteConfirmation] = useState('')
   const [dialogOpen, setDialogOpen] = useState(false)
+  // 命令面板等入口通过 ?create=1 直接打开新建对话框；关闭或创建成功后移除该参数。
+  const [searchParams, setSearchParams] = useSearchParams()
+  const createRequested = searchParams.get('create') === '1'
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
   const [search, setSearch] = useState('')
@@ -91,7 +94,7 @@ export function ProjectsPage() {
     onSuccess: () => {
       toast.success(t('projectSpaces.created'))
       form.reset()
-      setDialogOpen(false)
+      closeProjectDialog()
       queryClient.invalidateQueries({ queryKey: ['projects'] })
     },
     onError: error => toast.error(error.message),
@@ -123,6 +126,17 @@ export function ProjectsPage() {
     },
     onError: error => toast.error(error.message),
   })
+
+  function closeProjectDialog() {
+    setDialogOpen(false)
+    if (createRequested) {
+      setSearchParams((current) => {
+        const next = new URLSearchParams(current)
+        next.delete('create')
+        return next
+      }, { replace: true })
+    }
+  }
 
   return (
     <PageShell spacing="compact" width="full">
@@ -346,9 +360,12 @@ export function ProjectsPage() {
         }}
       />
       <Dialog
-        open={dialogOpen}
+        open={dialogOpen || createRequested}
         onOpenChange={(open) => {
-          setDialogOpen(open)
+          if (open)
+            setDialogOpen(true)
+          else
+            closeProjectDialog()
           if (!open) {
             setEditingProject(null)
             form.reset({ name: '', identifier: '', description: '', maxConcurrentBuilds: 2, webConsoleEnabled: true })

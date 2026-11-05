@@ -74,6 +74,36 @@ describe('dashboard page', () => {
     expect(await screen.findByText('Application detail route')).toBeInTheDocument()
   })
 
+  it('shows the configured access URL and current release version for recent applications', async () => {
+    mocks.listApplicationsPage.mockResolvedValue({
+      items: [
+        {
+          ...applicationFixture(),
+          currentRelease: { deployedAt: '2026-11-05T08:00:00Z', deploymentTargetId: 'dt_1', id: 'rel_1', imageRef: 'harbor.example.com/team/api:1.4.2' },
+          primaryAccessUrl: 'https://api.example.com',
+        },
+        { ...applicationFixture(), id: 'app_2', name: 'Worker', primaryAccessUrl: 'javascript:alert(1)' },
+      ],
+      page: 1,
+      pageSize: 20,
+      sortBy: 'createdAt',
+      sortOrder: 'desc',
+      total: 2,
+      totalPages: 1,
+    })
+    renderPage()
+
+    const table = await screen.findByRole('table')
+    expect(within(table).getByRole('columnheader', { name: 'Access & version' })).toBeInTheDocument()
+    const accessLink = await within(table).findByRole('link', { name: 'api.example.com' })
+    expect(accessLink).toHaveAttribute('href', 'https://api.example.com')
+    expect(accessLink).toHaveAttribute('rel', 'noopener noreferrer')
+    expect(within(table).getByTitle(/^harbor\.example\.com\/team\/api:1\.4\.2 · /)).toHaveTextContent('team/api:1.4.2')
+
+    const workerRow = within(table).getByRole('row', { name: 'Open application Worker' })
+    expect(within(workerRow).queryByRole('link', { name: /alert/ })).not.toBeInTheDocument()
+  })
+
   it('offers one primary page action and keeps platform readiness for platform admins only', async () => {
     renderPage()
 

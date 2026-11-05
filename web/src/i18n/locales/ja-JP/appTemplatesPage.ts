@@ -2,6 +2,8 @@ const appTemplatesPage = {
   searchPlaceholder: 'アプリ、用途、イメージを検索',
   categoryFilter: 'カテゴリで絞り込み',
   allCategories: 'すべて',
+  featuredSection: 'おすすめ',
+  allTemplatesSection: 'すべてのテンプレート',
   sortBy: 'ソートフィールド',
   sortByPopularity: '人気',
   sortByName: '名前 A-Z',

@@ -13,7 +13,7 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { NativeSelect as Select } from '@/components/ui/native-select'
-import { shortImageRef } from './application-deployments-panel-utils'
+import { shortImageRef } from '@/lib/image-ref'
 
 interface ApplicationCreateReleaseDialogProps {
   applicationId: string

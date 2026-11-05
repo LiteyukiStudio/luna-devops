@@ -82,7 +82,7 @@ export function RegisterPage() {
   if (status.isLoading)
     return <div className="min-h-screen bg-primary-subtle" />
   if (status.isError)
-    return <div className="grid min-h-screen place-items-center p-4"><ErrorState title={t('loginPage.registration.statusFailedTitle')} description={t('loginPage.registration.statusFailedDescription')} /></div>
+    return <div className="grid min-h-screen place-items-center bg-primary-subtle p-4"><ErrorState title={t('loginPage.registration.statusFailedTitle')} description={t('loginPage.registration.statusFailedDescription')} /></div>
   if (!status.data?.emailRegistrationEnabled)
     return <Navigate to="/login" replace />
 

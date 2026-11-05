@@ -538,6 +538,9 @@ func TestListAppTemplatesFiltersSummariesByQueryAndCategory(t *testing.T) {
 	if items[0]["valueCount"] == nil || items[0]["requiredValueCount"] == nil {
 		t.Fatalf("summary counts missing: %#v", items[0])
 	}
+	if items[0]["featured"] != true {
+		t.Fatalf("postgresql summary featured = %#v, want true", items[0]["featured"])
+	}
 
 	response = httptest.NewRecorder()
 	ctx, _ = gin.CreateTestContext(response)

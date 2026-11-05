@@ -18,6 +18,25 @@ const nav = {
     members: '成員',
     topology: '服務關係',
   },
+  commandPalette: {
+    trigger: '搜尋…',
+    shortcutMac: '⌘K',
+    shortcutOther: 'Ctrl K',
+    title: '命令面板',
+    description: '搜尋頁面、專案空間和應用，或執行常用操作。',
+    placeholder: '搜尋頁面、專案空間、應用或操作…',
+    empty: '沒有符合的結果',
+    groups: {
+      pages: '頁面',
+      projects: '專案空間',
+      applications: '{{project}} 的應用',
+      actions: '常用操作',
+    },
+    actions: {
+      createProject: '新增專案空間',
+      toggleTheme: '切換明暗主題',
+    },
+  },
 }
 
 export default nav

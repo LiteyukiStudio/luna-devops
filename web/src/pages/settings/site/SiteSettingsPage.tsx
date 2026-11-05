@@ -3,7 +3,7 @@ import type { BillingRateRule, BillingRateRulePayload, ConfigDefinition, DataRet
 import type { DataListColumn } from '@/components/common/data-list'
 import type { KeyValueRow } from '@/components/common/key-value-rows-editor'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Eye, Settings2, Trash2 } from 'lucide-react'
+import { Eye, Settings2, Trash2, TriangleAlert } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
@@ -16,6 +16,7 @@ import { ContentTabs } from '@/components/common/content-tabs'
 import { DataList } from '@/components/common/data-list'
 import { ErrorState } from '@/components/common/error-state'
 import { FormField as Field } from '@/components/common/form-field'
+import { HelpTip } from '@/components/common/help-tip'
 import { SettingsSkeleton } from '@/components/common/loading-states'
 import { PageShell } from '@/components/common/page-shell'
 import { SearchMultiSelect } from '@/components/common/search-select'
@@ -131,7 +132,6 @@ export function SiteSettingsPage() {
 
       <div>
         <ContentTabs
-          headerClassName={['billing', 'retention'].includes(activeTab) ? undefined : 'max-w-3xl'}
           tabs={[
             { value: 'brand', label: t('settings.siteConfigTitle') },
             { value: 'registration', label: t('settings.registration.tab') },
@@ -187,7 +187,7 @@ export function SiteSettingsPage() {
             />
           </TabsContent>
           <TabsContent value="billing">
-            <div className="grid gap-4">
+            <div className="grid max-w-3xl gap-4">
               <Surface className="p-6" variant="bordered">
                 <ConfigSection definitions={billingDefinitions} form={form} />
               </Surface>
@@ -195,8 +195,11 @@ export function SiteSettingsPage() {
             </div>
           </TabsContent>
           <TabsContent value="retention">
-            <div className="grid gap-4">
-              <Section description={t('settings.retentionAutomaticDescription')} title={t('settings.retentionAutomaticTitle')} variant="bordered">
+            <div className="grid max-w-3xl gap-4">
+              <Section
+                title={<SectionTitleWithHelp help={t('settings.retentionAutomaticDescription')} title={t('settings.retentionAutomaticTitle')} />}
+                variant="bordered"
+              >
                 <ConfigSection definitions={retentionDefinitions} form={form} />
               </Section>
               <DataRetentionSection />
@@ -367,11 +370,14 @@ function DataRetentionSection() {
     return <ErrorState title={t('settings.retentionCatalogFailedTitle')} description={t('settings.retentionCatalogFailedDescription')} />
 
   return (
-    <div className="grid gap-4">
-      <Section description={t('settings.retentionManualDescription')} title={t('settings.retentionManualTitle')} variant="bordered">
-        <p className="rounded-md bg-surface-inset px-3 py-2 text-sm leading-6 text-muted-foreground">
-          {t('settings.retentionProtectedNote')}
-        </p>
+    <>
+      <Section
+        className="border-danger-border"
+        description={t('settings.retentionManualDescription')}
+        icon={<TriangleAlert className="size-4 text-danger" />}
+        title={t('settings.retentionManualTitle')}
+        variant="bordered"
+      >
         <div className="grid gap-4 md:grid-cols-2">
           <div className="md:col-span-2">
             <Field hint={t('settings.retentionDatasetsHint')} label={t('settings.retentionDatasets')} required>
@@ -411,7 +417,7 @@ function DataRetentionSection() {
           </Field>
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2">
-          <Button disabled={!payload || preview.isPending || cleanup.isPending} type="button" variant="secondary" onClick={runPreview}>
+          <Button disabled={!payload || preview.isPending || cleanup.isPending} type="button" variant="outline" onClick={runPreview}>
             <Eye size={16} />
             {t('settings.retentionPreview')}
           </Button>
@@ -420,28 +426,29 @@ function DataRetentionSection() {
             {t('settings.retentionCleanup')}
           </Button>
         </div>
-      </Section>
 
-      {result && (
-        <div className="grid gap-3">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <h3 className="text-base font-semibold text-foreground">
-              {t(result.kind === 'preview' ? 'settings.retentionPreviewResults' : 'settings.retentionCleanupResults')}
-            </h3>
-            <span className="text-sm text-muted-foreground">
-              {result.kind === 'preview'
-                ? t('settings.retentionPreviewTotal', { count: resultTotal })
-                : t('settings.retentionDeletedTotal', { count: resultTotal })}
-            </span>
+        {result && (
+          <div className="grid gap-3 border-t border-border pt-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <h3 className="text-sm font-semibold text-foreground">
+                {t(result.kind === 'preview' ? 'settings.retentionPreviewResults' : 'settings.retentionCleanupResults')}
+              </h3>
+              <span className="text-sm text-muted-foreground">
+                {result.kind === 'preview'
+                  ? t('settings.retentionPreviewTotal', { count: resultTotal })
+                  : t('settings.retentionDeletedTotal', { count: resultTotal })}
+              </span>
+            </div>
+            <DataList
+              columns={resultColumns}
+              emptyTitle={t(result.kind === 'preview' ? 'settings.retentionPreviewResults' : 'settings.retentionCleanupResults')}
+              framed={false}
+              items={result.items}
+              rowKey={item => item.dataset}
+            />
           </div>
-          <DataList
-            columns={resultColumns}
-            emptyTitle={t(result.kind === 'preview' ? 'settings.retentionPreviewResults' : 'settings.retentionCleanupResults')}
-            items={result.items}
-            rowKey={item => item.dataset}
-          />
-        </div>
-      )}
+        )}
+      </Section>
 
       <ConfirmDialog
         cancelText={t('common.cancel')}
@@ -449,7 +456,7 @@ function DataRetentionSection() {
         confirmDisabled={!previewResult}
         confirmText={t('settings.retentionCleanup')}
         content={previewResult && (
-          <dl className="grid gap-3 rounded-md border border-border p-3 text-sm">
+          <dl className="grid gap-3 text-sm">
             <div className="grid gap-1">
               <dt className="text-muted-foreground">{t('settings.retentionConfirmRange')}</dt>
               <dd className="font-medium text-foreground">
@@ -475,7 +482,7 @@ function DataRetentionSection() {
         }}
         onOpenChange={setConfirmOpen}
       />
-    </div>
+    </>
   )
 }
 
@@ -501,7 +508,12 @@ function BillingRateRulesSection() {
       key: 'meter',
       header: t('settings.billingRateMeter'),
       className: 'min-w-44',
-      render: rule => <span className="font-mono text-xs text-foreground">{rule.meter}</span>,
+      render: rule => (
+        <span className="inline-flex min-w-0 items-center gap-1.5">
+          <span className="truncate font-mono text-xs text-foreground">{rule.meter}</span>
+          <HelpTip label={rule.meter}>{t(`settings.billingRateRuleDescriptions.${rule.meter}`, { defaultValue: rule.description })}</HelpTip>
+        </span>
+      ),
     },
     {
       key: 'unit',
@@ -521,7 +533,7 @@ function BillingRateRulesSection() {
         const draft = drafts[rule.meter] ?? billingRateRulePayloadFromRule(rule)
         return (
           <Input
-            className="w-36"
+            className="h-8 w-32"
             inputMode="decimal"
             min="0"
             step="0.0001"
@@ -540,7 +552,7 @@ function BillingRateRulesSection() {
         const draft = drafts[rule.meter] ?? billingRateRulePayloadFromRule(rule)
         return (
           <Select value={String(draft.enabled)} onValueChange={nextValue => setDrafts(current => ({ ...current, [rule.meter]: { ...draft, enabled: nextValue === 'true' } }))}>
-            <SelectTrigger className="w-28">
+            <SelectTrigger className="w-28" size="sm">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -550,16 +562,6 @@ function BillingRateRulesSection() {
           </Select>
         )
       },
-    },
-    {
-      key: 'description',
-      header: t('settings.billingRateDescription'),
-      className: 'min-w-80',
-      render: rule => (
-        <span className="text-muted-foreground">
-          {t(`settings.billingRateRuleDescriptions.${rule.meter}`, { defaultValue: rule.description })}
-        </span>
-      ),
     },
   ], [drafts, t])
   if (rateRules.isError)
@@ -592,6 +594,15 @@ function BillingRateRulesSection() {
         rowKey={rule => rule.meter}
       />
     </Section>
+  )
+}
+
+function SectionTitleWithHelp({ help, title }: { help: string, title: string }) {
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      {title}
+      <HelpTip label={title}>{help}</HelpTip>
+    </span>
   )
 }
 

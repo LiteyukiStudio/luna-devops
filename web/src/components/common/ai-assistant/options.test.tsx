@@ -54,6 +54,20 @@ describe('ai assistant options', () => {
     expect(screen.getByRole('button', { name: /查看项目空间/ })).toBeInTheDocument()
   })
 
+  it('renders welcome suggestions as cards with the message preview', async () => {
+    const user = userEvent.setup()
+    const onAction = vi.fn(async () => true)
+    render(<AIOptionsBar actions={actions} placement="welcome" sourceKey="preset:/dashboard" onAction={onAction} />)
+
+    const region = screen.getByRole('region', { name: i18next.t('aiAssistant.options.suggested') })
+    expect(region).toHaveAttribute('data-ai-options-placement', 'welcome')
+    expect(screen.getByText('请继续诊断最近失败的构建')).toBeInTheDocument()
+    expect(screen.getByText('打开项目空间列表')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /继续诊断/ }))
+    expect(onAction).toHaveBeenCalledWith(actions[1])
+  })
+
   it('keeps repeatable navigation and sibling actions available after a one-time choice', async () => {
     const user = userEvent.setup()
     const onAction = vi.fn(async () => true)

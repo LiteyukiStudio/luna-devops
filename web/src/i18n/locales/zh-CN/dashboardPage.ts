@@ -32,6 +32,8 @@ const dashboardPage = {
   applicationColumn: '应用',
   statusColumn: '运行状态',
   activityColumn: '最近活动',
+  accessUrlColumn: '访问地址与版本',
+  versionReleasedAt: '{{time}} 发布',
   noRecentApps: '还没有应用',
   noRecentAppsDescription: '在项目空间中创建应用，或从模板开始。',
   openApplication: '打开应用 {{name}}',

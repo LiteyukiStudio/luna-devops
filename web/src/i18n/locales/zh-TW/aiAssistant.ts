@@ -2,6 +2,8 @@ const aiAssistant = {
   aiAssistant: {
     open: '開啟 Luna 助手',
     title: 'Luna 助手',
+    expand: '展開為全螢幕',
+    collapse: '收合為浮動視窗',
     page: {
       backToWorkspace: '返回工作區',
       unavailableTitle: '助手目前無法使用',
@@ -18,6 +20,7 @@ const aiAssistant = {
     inputLabel: '傳送給 Luna 助手的訊息',
     inputPlaceholder: '描述要診斷的問題…',
     inputTooLarge: '訊息超過 {{limit}} 上限，請縮短後再傳送。',
+    inputLength: '{{count}} 字',
     loadOlder: '載入更早的訊息',
     loadingOlder: '正在載入更早的訊息',
     olderLoadFailed: '更早的訊息載入失敗，請重試',
@@ -532,6 +535,12 @@ const aiAssistant = {
     conversations: {
       title: '會話',
       new: '新建會話',
+      close: '關閉會話列表',
+      groups: {
+        today: '今天',
+        recent: '7 天內',
+        earlier: '更早',
+      },
       refreshStarted: '重新整理後已進入新會話',
       returnPrevious: '返回上一個會話',
       returnPreviousCountdown: '{{count}} 秒',

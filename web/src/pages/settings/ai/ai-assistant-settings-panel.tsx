@@ -1,7 +1,7 @@
 import type { AISettingsFormValues } from './ai-assistant-settings'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { CircleHelp, FlaskConical, LoaderCircle, RotateCcw } from 'lucide-react'
+import { FlaskConical, LoaderCircle, RotateCcw } from 'lucide-react'
 import { useEffect, useMemo } from 'react'
 import { Controller, useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
@@ -9,6 +9,7 @@ import { toast } from 'sonner'
 import { api } from '@/api'
 import { ControlledCheckboxField } from '@/components/common/checkbox-field'
 import { FormField as Field } from '@/components/common/form-field'
+import { HelpTip } from '@/components/common/help-tip'
 import { PageChromeTools } from '@/components/common/page-chrome'
 import { ProgressiveSection } from '@/components/common/progressive-section'
 import { StatusBadge } from '@/components/common/status-badge'
@@ -18,7 +19,6 @@ import { Input } from '@/components/ui/input'
 import { NativeSelect as Select } from '@/components/ui/native-select'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { SettingsTabSaveButton } from '@/pages/settings/settings-tab-save-button'
 import { aiSettingsPayload, aiSettingsSchema } from './ai-assistant-settings'
 import { AIModelManagement } from './ai-model-management'
@@ -163,28 +163,14 @@ export function AIAssistantSettingsPanel() {
               <option value="disabled">{t('settings.ai.promptCacheKeyModeDisabled')}</option>
             </Select>
           </Field>
-          <div className="flex items-start justify-between gap-4 rounded-lg bg-surface-subtle p-4">
-            <div className="grid min-w-0 gap-1">
-              <div className="flex items-center gap-1.5">
-                <span className="text-sm font-medium" id="channel-affinity-label">{t('settings.ai.channelAffinity')}</span>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button
-                      aria-label={t('settings.ai.channelAffinityHelp')}
-                      className="inline-flex shrink-0 text-muted-foreground outline-none hover:text-primary-text focus-visible:text-primary-text focus-visible:ring-2 focus-visible:ring-primary/30"
-                      type="button"
-                    >
-                      <CircleHelp aria-hidden="true" className="size-3.5" />
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent className="max-w-72 leading-5" side="top">
-                    {t('settings.ai.channelAffinityTip')}
-                  </TooltipContent>
-                </Tooltip>
-              </div>
-              <p className="text-xs leading-5 text-muted-foreground" id="channel-affinity-description">
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex min-w-0 items-center gap-1.5">
+              <span className="text-sm font-medium" id="channel-affinity-label">{t('settings.ai.channelAffinity')}</span>
+              <HelpTip id="channel-affinity-description" label={t('settings.ai.channelAffinity')}>
                 {t('settings.ai.channelAffinityDescription')}
-              </p>
+                {' '}
+                {t('settings.ai.channelAffinityTip')}
+              </HelpTip>
             </div>
             <Controller
               control={form.control}
@@ -330,7 +316,7 @@ function ObservabilitySourceFields({ form, source, tenant = false }: { form: Ret
     }),
   })
   return (
-    <div className="grid gap-4 rounded-lg bg-surface-subtle p-4">
+    <div className="grid gap-4 border-t border-border pt-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm font-medium">{t(`settings.ai.observabilitySources.${source}`)}</p>
         <div className="flex items-center gap-2">

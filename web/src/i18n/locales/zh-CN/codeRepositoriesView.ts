@@ -82,6 +82,7 @@ const codeRepositoriesView = {
   scopesHint: '上游 Git 平台授予 Token 的 API 权限，逗号分隔，例如 repo、read:user；它不控制凭据在本平台内的使用范围。',
   status: '状态',
   oauthConnect: '授权连接 {{provider}}',
+  oauthConnectMenu: '授权连接',
   oauthReadyTitle: '可以使用跳转授权',
   oauthReadyDescription: '{{provider}} 已配置 OAuth App。点击授权后会跳转到代码平台，授权成功后自动生成 Git 凭据。',
   oauthManualOnlyTitle: '当前只能手动填写 Token',
@@ -102,11 +103,9 @@ const codeRepositoriesView = {
   deleteProviderTitle: '删除 Git Provider',
   deleteProviderConfirm: '删除 Git Provider',
   deleteProviderDescription: 'Git Provider {{name}} 会被删除，属于它的所有 Git 凭据也会一并删除，请确认后继续。',
-  deleteProviderAria: '删除 Git Provider',
   deleteCredentialTitle: '删除 Git 凭据',
   deleteCredentialConfirm: '删除凭据',
   deleteCredentialDescription: 'Git 凭据 {{name}} 会被删除，请确认后继续。',
-  deleteCredentialAria: '删除 Git 凭据',
 }
 
 export default codeRepositoriesView

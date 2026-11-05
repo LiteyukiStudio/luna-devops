@@ -1,7 +1,6 @@
 const oauthApps = {
   applicationsTab: '开发者应用',
   grantsTab: '已授权应用',
-  grantsTitle: '应用授权',
   application: '应用',
   createApplication: '创建应用',
   editApplication: '编辑应用',
@@ -73,6 +72,9 @@ const oauthApps = {
     redirectRequired: '请至少填写一个回调地址',
     scopeRequired: '请至少选择一项权限',
   },
+  applicationActions: '应用 {{name}} 的操作',
+  presentationSection: '展示信息',
+  presentationEmpty: '描述、主页和 Logo 均未填写',
 }
 
 export default oauthApps

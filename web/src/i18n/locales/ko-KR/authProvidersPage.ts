@@ -34,8 +34,6 @@ const authProvidersPage = {
   save: 'ID 공급자 저장',
   created: 'ID 공급자가 생성되었습니다',
   updated: 'ID 공급자가 업데이트되었습니다',
-  admissionPolicy: '허용 정책',
-  policyDescription: '플랫폼에서 허용하는 로그인 방식과 OIDC 사용자가 처음 플랫폼에 들어올 때 충족해야 하는 조건을 제어합니다.',
   policySaved: '허용 정책이 저장되었습니다',
   policyLoadFailedTitle: '허용 정책 로드 실패',
   allowLocalLogin: '로컬 계정 로그인 허용',
@@ -55,6 +53,8 @@ const authProvidersPage = {
   defaultRoleHint: 'OIDC로 처음 플랫폼에 들어올 때 자동 생성되는 사용자에게 부여하는 전역 역할. 프로젝트 스페이스 권한은 프로젝트 스페이스 멤버에서 별도로 제어합니다.',
   savePolicy: '허용 정책 저장',
   loadFailedTitle: 'ID 공급자 로드 실패',
+  emptyTitle: '아직 ID 공급자가 없습니다',
+  claimMapping: 'Claim 매핑',
 }
 
 export default authProvidersPage

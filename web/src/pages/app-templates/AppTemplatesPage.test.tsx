@@ -69,6 +69,7 @@ const template = {
   officialWebsite: 'https://redis.io',
   officialRepository: 'https://github.com/redis/redis',
   popularityWeight: 100,
+  featured: false,
   image: 'redis:7-alpine',
   version: '7',
   servicePort: 6379,
@@ -462,6 +463,31 @@ describe('app template installation', () => {
     await user.click(screen.getByRole('button', { name: i18next.t('appTemplatesPage.clearFilters') }))
     expect(screen.getByRole('button', { name: /^Redis/ })).toBeInTheDocument()
     expect(within(filters).getByRole('button', { name: `${i18next.t('appTemplatesPage.allCategories')} 3` })).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('shows featured templates in their own section only while browsing all templates', async () => {
+    mocks.listAppTemplates.mockResolvedValue([
+      { ...template, valueCount: 1, requiredValueCount: 0 },
+      { ...template, id: 'postgresql', slug: 'postgresql', name: 'PostgreSQL', category: 'database', featured: true, popularityWeight: 90, valueCount: 0, requiredValueCount: 0 },
+      { ...template, id: 'mysql', slug: 'mysql', name: 'MySQL', category: 'database', popularityWeight: 80, valueCount: 0, requiredValueCount: 0 },
+    ])
+    const user = userEvent.setup()
+    renderPage()
+
+    const featured = await screen.findByRole('region', { name: i18next.t('appTemplatesPage.featuredSection') })
+    const all = screen.getByRole('region', { name: i18next.t('appTemplatesPage.allTemplatesSection') })
+    expect(within(featured).getByRole('button', { name: /^PostgreSQL/ })).toBeInTheDocument()
+    expect(within(featured).queryByRole('button', { name: /^Redis/ })).not.toBeInTheDocument()
+    expect(within(all).getByRole('button', { name: /^Redis/ })).toBeInTheDocument()
+    expect(within(all).queryByRole('button', { name: /^PostgreSQL/ })).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: `${i18next.t('appTemplatesPage.categories.database')} 2` }))
+    expect(screen.queryByRole('region', { name: i18next.t('appTemplatesPage.featuredSection') })).not.toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: /^PostgreSQL/ })).toHaveLength(1)
+
+    await user.click(screen.getByRole('button', { name: `${i18next.t('appTemplatesPage.allCategories')} 3` }))
+    await user.type(screen.getByRole('searchbox', { name: i18next.t('appTemplatesPage.searchPlaceholder') }), 'sql')
+    expect(screen.queryByRole('region', { name: i18next.t('appTemplatesPage.featuredSection') })).not.toBeInTheDocument()
   })
 
   it('opens the install sheet from the whole card with the keyboard', async () => {

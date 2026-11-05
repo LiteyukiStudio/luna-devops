@@ -14,16 +14,6 @@ export const runtimeConfigDefaults: ProjectRuntimeConfigSetPayload = {
   secretFiles: '',
 }
 
-export function shortImageRef(imageRef: string) {
-  const value = imageRef.trim()
-  if (!value)
-    return '-'
-  const [repository, tag = ''] = value.split(':')
-  const parts = repository.split('/').filter(Boolean)
-  const compactRepository = parts.length > 2 ? `${parts.at(-2)}/${parts.at(-1)}` : repository
-  return tag ? `${compactRepository}:${tag}` : compactRepository
-}
-
 export function formatTargetRuntimeSize(target: DeploymentTarget, t: (key: string, options?: Record<string, unknown>) => string) {
   // 未配置的配额会在渲染 workload 时省略，界面如实展示，不用猜测的默认值冒充。
   if (!target.cpuRequest?.trim() && !target.memoryRequest?.trim())

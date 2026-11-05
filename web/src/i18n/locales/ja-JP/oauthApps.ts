@@ -1,7 +1,6 @@
 const oauthApps = {
   applicationsTab: '開発者アプリ',
   grantsTab: '承認済みアプリ',
-  grantsTitle: 'アプリ承認',
   application: 'アプリ',
   createApplication: 'アプリを作成',
   editApplication: 'アプリを編集',
@@ -73,6 +72,9 @@ const oauthApps = {
     redirectRequired: '少なくとも 1 つのコールバック URL を入力してください',
     scopeRequired: '少なくとも 1 つの権限を選択してください',
   },
+  applicationActions: 'アプリ {{name}} の操作',
+  presentationSection: '表示情報',
+  presentationEmpty: '説明、ホームページ、ロゴは未設定',
 }
 
 export default oauthApps

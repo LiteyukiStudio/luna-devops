@@ -105,7 +105,7 @@ export function UsersPage() {
     {
       key: 'name',
       header: t('usersPage.name'),
-      className: 'w-[20%] px-4 py-3 align-middle',
+      width: 'primary',
       render: user => (
         <div className="flex min-w-0 items-center gap-3">
           <UserAvatar className="size-9" user={user} />
@@ -119,26 +119,25 @@ export function UsersPage() {
     {
       key: 'role',
       header: t('usersPage.globalRole'),
-      className: 'w-[13%] px-4 py-3 align-middle',
+      width: 'compact',
       render: user => <span className="text-sm text-muted-foreground">{user.role === PlatformRole.Admin ? t('usersPage.platformAdmin') : t('usersPage.normalUser')}</span>,
     },
     {
       key: 'authentication',
       header: t('usersPage.authentication'),
-      className: 'px-4 py-3 align-middle',
+      width: 'secondary',
       render: user => (
-        <div className="grid gap-1.5 text-xs text-muted-foreground">
-          <div className="flex items-center justify-between gap-2">
-            <span>{t('usersPage.passwordLogin')}</span>
-            <StatusBadge tone="neutral">{user.passwordSet ? t('common.enabled') : t('common.disabled')}</StatusBadge>
-          </div>
-        </div>
+        <span className="inline-flex items-center gap-2 text-sm text-muted-foreground">
+          {t('usersPage.passwordLogin')}
+          <StatusBadge tone="neutral">{user.passwordSet ? t('common.enabled') : t('common.disabled')}</StatusBadge>
+        </span>
       ),
     },
     {
       key: 'language',
       header: t('language'),
-      className: 'w-[10%] px-4 py-3 align-middle text-muted-foreground',
+      width: 'compact',
+      cellClassName: 'text-muted-foreground',
       mobile: 'hidden',
       render: (user) => {
         const languageKeys: Record<string, string> = { 'zh-CN': 'languages.zhCN', 'zh-TW': 'languages.zhTW', 'en-US': 'languages.enUS', 'ja-JP': 'languages.jaJP', 'ko-KR': 'languages.koKR' }
@@ -148,29 +147,33 @@ export function UsersPage() {
     {
       key: 'status',
       header: t('usersPage.status'),
-      className: 'w-[10%] px-4 py-3 align-middle',
+      width: 'status',
       render: user => <StatusValueBadge value={user.disabled ? 'disabled' : 'active'} />,
     },
     {
       key: 'balance',
       header: t('usersPage.balance'),
-      className: 'w-[12%] px-4 py-3 align-middle font-medium tabular-nums',
+      width: 'number',
+      cellClassName: 'font-medium tabular-nums',
       mobile: 'hidden',
       render: user => billingDisplay.formatAmountWithUnit(user.balanceCredits),
     },
     {
       key: 'createdAt',
       header: t('usersPage.createdAt'),
-      className: 'w-[13%] px-4 py-3 align-middle text-muted-foreground',
+      width: 'compact',
+      cellClassName: 'whitespace-nowrap text-muted-foreground',
       mobile: 'hidden',
       render: user => formatAbsoluteDateTime(user.createdAt),
     },
     {
       key: 'actions',
       header: t('usersPage.actions'),
-      className: 'w-[1%] whitespace-nowrap px-4 py-3 align-middle text-right',
+      className: 'text-right whitespace-nowrap',
+      sticky: 'right',
+      width: 'actions',
       render: user => (
-        <div className="flex justify-end gap-1">
+        <div className="flex justify-end">
           <EditActionButton
             type="button"
             label={t('edit')}
@@ -198,42 +201,44 @@ export function UsersPage() {
           {t('usersPage.createTitle')}
         </Button>
       </PageChromeTools>
-      <div className="grid min-w-0 self-start">
-        {users.isError && <ErrorState title={t('usersPage.loadFailedTitle')} description={t('common.platformAdminPermissionRequired')} />}
-        <DataList
-          columns={columns}
-          emptyDescription={t('usersPage.emptyDescription')}
-          emptyTitle={t('usersPage.emptyTitle')}
-          items={userItems}
-          loading={users.isLoading}
-          pagination={{
-            page: users.data?.page ?? page,
-            pageSize: users.data?.pageSize ?? pageSize,
-            pageSizeOptions: PAGE_SIZE_OPTIONS,
-            total: users.data?.total ?? 0,
-            totalPages: users.data?.totalPages ?? 0,
-            pageInfoLabel: t('pagination.pageInfo', {
-              page: users.data?.page ?? page,
-              totalPages: users.data?.totalPages ?? 0,
-              total: users.data?.total ?? 0,
-            }),
-            onPageChange: setPage,
-            onPageSizeChange: (nextPageSize) => {
-              setPageSize(nextPageSize)
-              setPage(1)
-            },
-          }}
-          rowKey={user => user.id}
-          search={{
-            value: search,
-            placeholder: t('usersPage.searchPlaceholder'),
-            onChange: (value) => {
-              setSearch(value)
-              setPage(1)
-            },
-          }}
-        />
-      </div>
+      {users.isError
+        ? <ErrorState title={t('usersPage.loadFailedTitle')} description={t('common.platformAdminPermissionRequired')} />
+        : (
+            <DataList
+              columns={columns}
+              emptyDescription={t('usersPage.emptyDescription')}
+              emptyMode={search ? 'filtered' : 'actionable'}
+              emptyTitle={t('usersPage.emptyTitle')}
+              items={userItems}
+              loading={users.isLoading}
+              pagination={{
+                page: users.data?.page ?? page,
+                pageSize: users.data?.pageSize ?? pageSize,
+                pageSizeOptions: PAGE_SIZE_OPTIONS,
+                total: users.data?.total ?? 0,
+                totalPages: users.data?.totalPages ?? 0,
+                pageInfoLabel: t('pagination.pageInfo', {
+                  page: users.data?.page ?? page,
+                  totalPages: users.data?.totalPages ?? 0,
+                  total: users.data?.total ?? 0,
+                }),
+                onPageChange: setPage,
+                onPageSizeChange: (nextPageSize) => {
+                  setPageSize(nextPageSize)
+                  setPage(1)
+                },
+              }}
+              rowKey={user => user.id}
+              search={{
+                value: search,
+                placeholder: t('usersPage.searchPlaceholder'),
+                onChange: (value) => {
+                  setSearch(value)
+                  setPage(1)
+                },
+              }}
+            />
+          )}
 
       <Dialog
         open={dialogOpen}
@@ -260,21 +265,23 @@ export function UsersPage() {
             <Field error={passwordError} hint={editingUser ? t('usersPage.resetPasswordHint') : t('usersPage.passwordHint')} label={editingUser ? t('usersPage.resetPassword') : t('usersPage.password')} required={!editingUser}>
               <Input {...form.register('password')} aria-invalid={Boolean(passwordError)} autoComplete="new-password" placeholder={editingUser ? t('usersPage.resetPasswordPlaceholder') : t('usersPage.passwordPlaceholder')} type="password" />
             </Field>
-            <Field error={form.formState.errors.role?.message} hint={t('usersPage.globalRoleHint')} label={t('usersPage.globalRole')} required>
-              <Select {...form.register('role')} aria-invalid={Boolean(form.formState.errors.role)}>
-                <option value={PlatformRole.User}>{t('usersPage.normalUser')}</option>
-                <option value={PlatformRole.Admin}>{t('usersPage.platformAdmin')}</option>
-              </Select>
-            </Field>
-            <Field error={form.formState.errors.language?.message} hint={t('usersPage.languageHint')} label={t('language')} required>
-              <Select {...form.register('language')} aria-invalid={Boolean(form.formState.errors.language)}>
-                <option value="zh-CN">{t('languages.zhCN')}</option>
-                <option value="zh-TW">{t('languages.zhTW')}</option>
-                <option value="en-US">{t('languages.enUS')}</option>
-                <option value="ja-JP">{t('languages.jaJP')}</option>
-                <option value="ko-KR">{t('languages.koKR')}</option>
-              </Select>
-            </Field>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field error={form.formState.errors.role?.message} hint={t('usersPage.globalRoleHint')} label={t('usersPage.globalRole')} required>
+                <Select {...form.register('role')} aria-invalid={Boolean(form.formState.errors.role)}>
+                  <option value={PlatformRole.User}>{t('usersPage.normalUser')}</option>
+                  <option value={PlatformRole.Admin}>{t('usersPage.platformAdmin')}</option>
+                </Select>
+              </Field>
+              <Field error={form.formState.errors.language?.message} hint={t('usersPage.languageHint')} label={t('language')} required>
+                <Select {...form.register('language')} aria-invalid={Boolean(form.formState.errors.language)}>
+                  <option value="zh-CN">{t('languages.zhCN')}</option>
+                  <option value="zh-TW">{t('languages.zhTW')}</option>
+                  <option value="en-US">{t('languages.enUS')}</option>
+                  <option value="ja-JP">{t('languages.jaJP')}</option>
+                  <option value="ko-KR">{t('languages.koKR')}</option>
+                </Select>
+              </Field>
+            </div>
             <Controller
               control={form.control}
               name="disabled"
@@ -285,6 +292,16 @@ export function UsersPage() {
               )}
             />
             <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setDialogOpen(false)
+                  setEditingUser(null)
+                }}
+              >
+                {t('common.cancel')}
+              </Button>
               <Button disabled={save.isPending || !canSubmit} type="submit">
                 {editingUser ? <Save size={16} /> : <UserPlus size={16} />}
                 {editingUser ? t('usersPage.save') : t('usersPage.create')}

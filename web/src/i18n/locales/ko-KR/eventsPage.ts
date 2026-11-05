@@ -19,11 +19,9 @@ const eventsPage = {
     time: '발생 시간',
   },
   filters: {
-    title: '이벤트 필터',
-    open: '필터',
+    more: '추가 필터',
     selectedCount: '현재 {{count}}개의 필터 조건이 선택됨',
     clearAll: '모두 지우기',
-    apply: '필터 적용',
     project: '프로젝트 스페이스',
     application: '애플리케이션',
     deploymentTarget: '배포 구성',

@@ -18,6 +18,25 @@ const nav = {
     members: 'Members',
     topology: 'Service relations',
   },
+  commandPalette: {
+    trigger: 'Search…',
+    shortcutMac: '⌘K',
+    shortcutOther: 'Ctrl K',
+    title: 'Command palette',
+    description: 'Search pages, project spaces, and applications, or run a common action.',
+    placeholder: 'Search pages, project spaces, applications, or actions…',
+    empty: 'No matching results',
+    groups: {
+      pages: 'Pages',
+      projects: 'Project spaces',
+      applications: 'Applications in {{project}}',
+      actions: 'Actions',
+    },
+    actions: {
+      createProject: 'Create project space',
+      toggleTheme: 'Toggle light/dark theme',
+    },
+  },
 }
 
 export default nav

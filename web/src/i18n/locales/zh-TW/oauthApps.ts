@@ -1,7 +1,6 @@
 const oauthApps = {
   applicationsTab: '開發者應用',
   grantsTab: '已授權應用',
-  grantsTitle: '應用授權',
   application: '應用',
   createApplication: '建立應用',
   editApplication: '編輯應用',
@@ -73,6 +72,9 @@ const oauthApps = {
     redirectRequired: '請至少填寫一個回撥地址',
     scopeRequired: '請至少選擇一項許可權',
   },
+  applicationActions: '應用 {{name}} 的操作',
+  presentationSection: '展示資訊',
+  presentationEmpty: '描述、首頁和 Logo 均未填寫',
 }
 
 export default oauthApps

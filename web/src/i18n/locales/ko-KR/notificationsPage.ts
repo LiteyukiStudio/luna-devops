@@ -61,6 +61,15 @@ const notificationsPage = {
   filterJsonHint: '선택 사항입니다. severities, applicationIds, deploymentTargetIds만 지원하며 알림 범위와 프로젝트는 위 선택이 우선합니다.',
   filterJsonInvalid: '유효한 JSON 객체를 입력하고 알 수 없는 필드나 잘못된 배열을 제거하세요.',
   ruleInvalid: '규칙을 모두 입력하고 알림 범위 또는 고급 필터를 수정하세요.',
+  rowActions: '{{name}} 작업',
+  advancedFilter: '고급 필터',
+  filterSummarySet: '추가 필터가 설정됨',
+  filterSummaryNone: '설정 안 함. 범위 내 모든 이벤트와 일치합니다',
+  filterSummaryInvalid: 'JSON 형식이 올바르지 않음',
+  deleteChannelTitle: '알림 채널 삭제',
+  deleteTemplateTitle: '알림 템플릿 삭제',
+  deleteRuleTitle: '알림 규칙 삭제',
+  deleteDescription: '"{{name}}"을(를) 삭제합니다. 이 작업은 되돌릴 수 없습니다.',
 }
 
 export default notificationsPage

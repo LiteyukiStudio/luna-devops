@@ -109,13 +109,12 @@ const registriesPage = {
   deleteCredentialConfirm: '删除凭据',
   deleteCredentialTitle: '删除凭据',
   deleteCredentialDescription: '凭据 {{name}} 会被删除，请确认后继续。',
-  noCapabilities: 'no capabilities',
+  noCapabilities: '未声明能力',
+  advancedSettings: '高级设置',
   test: '测试',
-  deleteRegistryAria: '删除镜像站',
   tokenOnly: 'token-only',
   passwordSet: 'password',
   tokenSet: 'token',
-  deleteCredentialAria: '删除凭据',
 }
 
 export default registriesPage

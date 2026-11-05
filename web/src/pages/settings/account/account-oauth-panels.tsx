@@ -5,7 +5,7 @@ import type { DataListColumn } from '@/components/common/data-list'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import i18next from 'i18next'
-import { Copy, KeyRound, Pencil, RotateCcwKey, ShieldX, Trash2 } from 'lucide-react'
+import { Copy, KeyRound, MoreHorizontal, Pencil, RotateCcwKey, ShieldX, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
@@ -18,13 +18,15 @@ import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { DataList } from '@/components/common/data-list'
 import { ErrorState } from '@/components/common/error-state'
 import { FormField as Field } from '@/components/common/form-field'
+import { ProgressiveSection } from '@/components/common/progressive-section'
 import { formatAbsoluteDateTime } from '@/components/common/time-format'
 import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { NativeSelect as Select } from '@/components/ui/native-select'
 import { Textarea } from '@/components/ui/textarea'
+import { OneTimeSecret } from './one-time-secret'
 
 const PAGE_SIZE_OPTIONS = [10, 20, 50]
 const oauthApplicationSchema = z.object({
@@ -60,6 +62,8 @@ export function OAuthApplicationsPanel({ createDialogOpen, onCreateDialogOpenCha
   const [search, setSearch] = useState('')
   const [editingApplication, setEditingApplication] = useState<OAuthApplication>()
   const [createdSecret, setCreatedSecret] = useState('')
+  const [rotateTarget, setRotateTarget] = useState<OAuthApplication | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<OAuthApplication | null>(null)
   const applications = useQuery({
     queryKey: ['oauth-applications', page, pageSize, search],
     queryFn: () => api.listOAuthApplications({ page, pageSize, search, sortBy: 'createdAt', sortOrder: 'desc' }),
@@ -92,6 +96,7 @@ export function OAuthApplicationsPanel({ createDialogOpen, onCreateDialogOpenCha
   const rotateSecret = useMutation({
     mutationFn: api.rotateOAuthApplicationSecret,
     onSuccess: (result) => {
+      setRotateTarget(null)
       setCreatedSecret(result.clientSecret)
       toast.success(t('oauthApps.secretRotated'))
     },
@@ -100,6 +105,7 @@ export function OAuthApplicationsPanel({ createDialogOpen, onCreateDialogOpenCha
   const remove = useMutation({
     mutationFn: api.deleteOAuthApplication,
     onSuccess: () => {
+      setDeleteTarget(null)
       toast.success(t('oauthApps.revoked'))
       queryClient.invalidateQueries({ queryKey: ['oauth-applications'] })
     },
@@ -132,8 +138,9 @@ export function OAuthApplicationsPanel({ createDialogOpen, onCreateDialogOpenCha
     {
       key: 'name',
       header: t('oauthApps.application'),
+      width: 'primary',
       render: application => (
-        <div className="min-w-48">
+        <div className="min-w-0">
           <p className="font-medium text-foreground">{application.name}</p>
           <p className="truncate text-sm text-muted-foreground">{application.description || t('oauthApps.noDescription')}</p>
         </div>
@@ -145,7 +152,7 @@ export function OAuthApplicationsPanel({ createDialogOpen, onCreateDialogOpenCha
       render: application => (
         <div className="flex items-center gap-1">
           <code className="max-w-56 truncate text-xs">{application.clientId}</code>
-          <Button aria-label={t('oauthApps.copyClientId')} size="icon" variant="ghost" onClick={() => copyValue(application.clientId)}><Copy size={14} /></Button>
+          <Button aria-label={t('oauthApps.copyClientId')} className="size-7" size="icon" variant="ghost" onClick={() => copyValue(application.clientId)}><Copy className="size-3.5" /></Button>
         </div>
       ),
     },
@@ -164,29 +171,33 @@ export function OAuthApplicationsPanel({ createDialogOpen, onCreateDialogOpenCha
     {
       key: 'actions',
       header: t('common.actions'),
-      className: 'w-[1%] whitespace-nowrap text-right',
+      className: 'text-right whitespace-nowrap',
+      sticky: 'right',
+      width: 'actions',
       render: application => (
-        <div className="flex justify-end gap-1">
-          <Button aria-label={t('common.edit')} size="icon" variant="ghost" onClick={() => openEdit(application)}><Pencil size={16} /></Button>
-          <ConfirmDialog
-            confirmText={t('oauthApps.rotateSecret')}
-            description={t('oauthApps.rotateSecretDescription')}
-            pending={rotateSecret.isPending}
-            title={t('oauthApps.rotateSecretTitle')}
-            onConfirm={() => rotateSecret.mutate(application.id)}
-          >
-            <Button aria-label={t('oauthApps.rotateSecret')} size="icon" variant="ghost"><RotateCcwKey size={16} /></Button>
-          </ConfirmDialog>
-          <ConfirmDialog
-            confirmText={t('oauthApps.revokeApplication')}
-            confirmVariant="destructive"
-            description={t('oauthApps.revokeApplicationDescription', { name: application.name })}
-            pending={remove.isPending}
-            title={t('oauthApps.revokeApplicationTitle')}
-            onConfirm={() => remove.mutate(application.id)}
-          >
-            <Button aria-label={t('oauthApps.revokeApplication')} size="icon" variant="ghost"><Trash2 size={16} /></Button>
-          </ConfirmDialog>
+        <div className="flex justify-end">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button aria-label={t('oauthApps.applicationActions', { name: application.name })} size="icon" variant="ghost">
+                <MoreHorizontal className="size-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onSelect={() => openEdit(application)}>
+                <Pencil className="size-4" />
+                {t('common.edit')}
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => setRotateTarget(application)}>
+                <RotateCcwKey className="size-4" />
+                {t('oauthApps.rotateSecret')}
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem variant="destructive" onSelect={() => setDeleteTarget(application)}>
+                <Trash2 className="size-4" />
+                {t('oauthApps.revokeApplication')}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       ),
     },
@@ -194,15 +205,7 @@ export function OAuthApplicationsPanel({ createDialogOpen, onCreateDialogOpenCha
 
   return (
     <div className="grid gap-4">
-      {createdSecret && (
-        <Card className="grid gap-2 border-primary/30 bg-primary/5 p-3">
-          <p className="text-sm font-medium">{t('oauthApps.secretOneTime')}</p>
-          <div className="flex items-center gap-2">
-            <code className="min-w-0 flex-1 truncate text-xs">{createdSecret}</code>
-            <Button aria-label={t('common.copy')} size="icon" variant="secondary" onClick={() => copyValue(createdSecret)}><Copy size={14} /></Button>
-          </div>
-        </Card>
-      )}
+      {createdSecret && <OneTimeSecret label={t('oauthApps.secretOneTime')} value={createdSecret} />}
       {applications.isError
         ? <ErrorState title={t('oauthApps.loadFailed')} description={applications.error.message} />
         : (
@@ -231,6 +234,24 @@ export function OAuthApplicationsPanel({ createDialogOpen, onCreateDialogOpenCha
         onClose={closeDialog}
         onSubmit={values => save.mutate(values)}
       />
+      <ConfirmDialog
+        confirmText={t('oauthApps.rotateSecret')}
+        description={t('oauthApps.rotateSecretDescription')}
+        open={Boolean(rotateTarget)}
+        pending={rotateSecret.isPending}
+        title={t('oauthApps.rotateSecretTitle')}
+        onConfirm={() => rotateTarget && rotateSecret.mutateAsync(rotateTarget.id).then(() => undefined)}
+        onOpenChange={open => !open && setRotateTarget(null)}
+      />
+      <ConfirmDialog
+        confirmText={t('oauthApps.revokeApplication')}
+        description={t('oauthApps.revokeApplicationDescription', { name: deleteTarget?.name ?? '' })}
+        open={Boolean(deleteTarget)}
+        pending={remove.isPending}
+        title={t('oauthApps.revokeApplicationTitle')}
+        onConfirm={() => deleteTarget && remove.mutateAsync(deleteTarget.id).then(() => undefined)}
+        onOpenChange={open => !open && setDeleteTarget(null)}
+      />
     </div>
   )
 }
@@ -256,8 +277,9 @@ export function OAuthGrantsPanel() {
     {
       key: 'application',
       header: t('oauthApps.application'),
+      width: 'primary',
       render: grant => (
-        <div className="min-w-48">
+        <div className="min-w-0">
           <p className="font-medium text-foreground">{grant.application.name}</p>
           <p className="truncate text-sm text-muted-foreground">{grant.application.homepageUrl || grant.application.description || t('oauthApps.noDescription')}</p>
         </div>
@@ -274,7 +296,9 @@ export function OAuthGrantsPanel() {
     {
       key: 'actions',
       header: t('common.actions'),
-      className: 'w-[1%] whitespace-nowrap text-right',
+      className: 'text-right whitespace-nowrap',
+      sticky: 'right',
+      width: 'actions',
       render: grant => (
         <ConfirmDialog
           confirmText={t('oauthApps.revokeAuthorization')}
@@ -284,8 +308,8 @@ export function OAuthGrantsPanel() {
           title={t('oauthApps.revokeAuthorizationTitle')}
           onConfirm={() => revoke.mutate(grant.id)}
         >
-          <Button variant="ghost">
-            <ShieldX size={16} />
+          <Button size="sm" variant="ghost">
+            <ShieldX className="size-4" />
             {t('oauthApps.revokeAuthorization')}
           </Button>
         </ConfirmDialog>
@@ -301,7 +325,6 @@ export function OAuthGrantsPanel() {
           items={grants.data?.items ?? []}
           pagination={paginationProps(grants.data, page, pageSize, setPage, setPageSize, t)}
           rowKey={grant => grant.id}
-          title={t('oauthApps.grantsTitle')}
         />
       )
 }
@@ -317,6 +340,7 @@ function OAuthApplicationDialog({ application, form, open, pending, scopeItems, 
 }) {
   const { t } = useTranslation()
   const selectedScopes = form.watch('scopes') ?? []
+  const presentationSummary = [form.watch('homepageUrl'), form.watch('description')].map(value => value?.trim()).filter(Boolean).join(' · ')
   return (
     <Dialog open={open} onOpenChange={nextOpen => !nextOpen && onClose()}>
       <DialogContent className="max-w-3xl">
@@ -325,12 +349,7 @@ function OAuthApplicationDialog({ application, form, open, pending, scopeItems, 
           <DialogDescription>{t('oauthApps.applicationDialogDescription')}</DialogDescription>
         </DialogHeader>
         <form className="grid gap-3" onSubmit={form.handleSubmit(onSubmit)}>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Field error={form.formState.errors.name?.message} label={t('oauthApps.name')} required><Input {...form.register('name')} /></Field>
-            <Field label={t('oauthApps.homepageUrl')}><Input {...form.register('homepageUrl')} placeholder="https://example.com" /></Field>
-          </div>
-          <Field label={t('oauthApps.description')}><Textarea {...form.register('description')} rows={2} /></Field>
-          <Field label={t('oauthApps.logoUrl')}><Input {...form.register('logoUrl')} placeholder="https://example.com/logo.png" /></Field>
+          <Field error={form.formState.errors.name?.message} label={t('oauthApps.name')} required><Input {...form.register('name')} /></Field>
           <Field error={form.formState.errors.redirectUrisText?.message} hint={t('oauthApps.redirectUrisHint')} label={t('oauthApps.redirectUris')} required>
             <Textarea {...form.register('redirectUrisText')} className="font-mono" rows={3} placeholder="https://example.com/oauth/callback" />
           </Field>
@@ -350,7 +369,18 @@ function OAuthApplicationDialog({ application, form, open, pending, scopeItems, 
               <option value={0}>{t('oauthApps.neverExpires')}</option>
             </Select>
           </Field>
+          <ProgressiveSection
+            summary={presentationSummary || t('oauthApps.presentationEmpty')}
+            title={t('oauthApps.presentationSection')}
+          >
+            <Field label={t('oauthApps.description')}><Textarea {...form.register('description')} rows={2} /></Field>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label={t('oauthApps.homepageUrl')}><Input {...form.register('homepageUrl')} placeholder="https://example.com" /></Field>
+              <Field label={t('oauthApps.logoUrl')}><Input {...form.register('logoUrl')} placeholder="https://example.com/logo.png" /></Field>
+            </div>
+          </ProgressiveSection>
           <DialogFooter>
+            <Button type="button" variant="outline" onClick={onClose}>{t('common.cancel')}</Button>
             <Button disabled={pending || !form.formState.isValid} type="submit">
               <KeyRound size={16} />
               {t(application ? 'common.save' : 'common.create')}

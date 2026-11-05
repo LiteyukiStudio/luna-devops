@@ -1,13 +1,14 @@
+import type { ReactNode } from 'react'
 import type { CredentialWithRegistry } from './registry-form-model'
 import type { ArtifactRegistry, ContainerImage, PaginatedResponse } from '@/api'
-import { CheckCircle2, FlaskConical, Trash2 } from 'lucide-react'
+import { CheckCircle2, Container, FlaskConical, KeyRound, MoreHorizontal, Package, Pencil, Trash2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { CopyableHoverText } from '@/components/common/copyable-hover-text'
 import { DataList } from '@/components/common/data-list'
-import { EditActionButton } from '@/components/common/edit-action-button'
 import { ErrorState } from '@/components/common/error-state'
 import { StatusBadge, StatusValueBadge } from '@/components/common/status-badge'
 import { Button } from '@/components/ui/button'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 
 const PAGE_SIZE_OPTIONS = [10, 20, 50, 100]
 const IMAGE_PAGE_SIZE_OPTIONS = [10, 20, 50, 100]
@@ -23,6 +24,8 @@ interface PageState<T> {
 interface RegistriesPanelProps {
   items: ArtifactRegistry[]
   isError: boolean
+  loading: boolean
+  toolbar?: ReactNode
   projectMap: Record<string, { name: string }>
   pagination: PageState<ArtifactRegistry>
   testing: boolean
@@ -35,9 +38,11 @@ interface RegistriesPanelProps {
 export function RegistriesPanel({
   items,
   isError,
+  loading,
   projectMap,
   pagination,
   testing,
+  toolbar,
   onSelectCredentials,
   onEdit,
   onTest,
@@ -45,64 +50,88 @@ export function RegistriesPanel({
 }: RegistriesPanelProps) {
   const { t } = useTranslation()
 
+  if (isError)
+    return <ErrorState title={t('registriesPage.loadFailedTitle')} description={t('registriesPage.loadFailedDescription')} />
+
   return (
-    <>
-      {isError && <ErrorState title={t('registriesPage.loadFailedTitle')} description={t('registriesPage.loadFailedDescription')} />}
-      <DataList
-        columns={[
-          {
-            key: 'name',
-            header: t('registriesPage.name'),
-            render: registry => (
-              <button
-                className="grid min-w-0 text-left"
-                type="button"
-                onClick={() => onSelectCredentials(registry.id)}
-              >
-                <span className="truncate font-medium">{registry.name}</span>
-                <span className="truncate text-sm text-muted-foreground">{registry.endpoint}</span>
-              </button>
-            ),
-          },
-          { key: 'provider', header: t('registriesPage.provider'), render: registry => <StatusBadge>{registryProviderLabel(registry.provider, t)}</StatusBadge> },
-          {
-            key: 'scope',
-            header: t('common.scope'),
-            render: registry => (
-              <div className="flex flex-wrap gap-2">
-                <StatusBadge>{registry.scope}</StatusBadge>
-                {projectScopeBadges(registry.projectIds, projectMap)}
-                {registry.isDefault && <StatusBadge>{t('common.default')}</StatusBadge>}
-              </div>
-            ),
-          },
-          { key: 'capabilities', header: t('registriesPage.capabilities'), render: registry => <span className="text-sm text-muted-foreground">{registry.capabilities.join(', ') || t('registriesPage.noCapabilities')}</span> },
-          {
-            key: 'actions',
-            header: t('common.actions'),
-            className: 'text-right whitespace-nowrap',
-            render: registry => (
-              <div className="flex justify-end gap-2">
-                <EditActionButton type="button" label={t('edit')} onClick={() => onEdit(registry)} />
-                <Button disabled={testing} type="button" variant="ghost" onClick={() => onTest(registry.id)}>
-                  <FlaskConical size={16} />
-                  {t('registriesPage.test')}
-                </Button>
-                <Button aria-label={t('registriesPage.deleteRegistryAria')} type="button" variant="ghost" onClick={() => onDelete(registry)}>
-                  <Trash2 size={16} />
-                </Button>
-              </div>
-            ),
-          },
-        ]}
-        emptyTitle={t('registriesPage.emptyTitle')}
-        emptyDescription={t('registriesPage.emptyDescription')}
-        items={items}
-        pagination={dataListPagination(t, pagination)}
-        rowKey={registry => registry.id}
-      />
-    </>
+    <DataList
+      columns={[
+        {
+          key: 'name',
+          header: t('registriesPage.name'),
+          width: 'primary',
+          render: registry => (
+            <div className="grid min-w-0">
+              <span className="truncate font-medium">{registry.name}</span>
+              <span className="truncate text-xs text-muted-foreground">{registry.endpoint}</span>
+            </div>
+          ),
+        },
+        { key: 'provider', header: t('registriesPage.provider'), width: 'secondary', render: registry => <StatusBadge>{registryProviderLabel(registry.provider, t)}</StatusBadge> },
+        {
+          key: 'scope',
+          header: t('common.scope'),
+          width: 'normal',
+          render: registry => (
+            <div className="flex flex-wrap gap-2">
+              <StatusBadge>{scopeLabel(registry.scope, t)}</StatusBadge>
+              {projectScopeBadges(registry.projectIds, projectMap)}
+              {registry.isDefault && <StatusBadge>{t('common.default')}</StatusBadge>}
+            </div>
+          ),
+        },
+        { key: 'capabilities', header: t('registriesPage.capabilities'), mobile: 'hidden', width: 'normal', render: registry => <span className="text-sm text-muted-foreground">{registry.capabilities.join(', ') || t('registriesPage.noCapabilities')}</span> },
+        {
+          key: 'actions',
+          header: t('common.actions'),
+          sticky: 'right',
+          width: 'actions',
+          render: registry => (
+            <div className="flex items-center justify-end gap-1">
+              <Button disabled={testing} size="sm" type="button" variant="ghost" onClick={() => onTest(registry.id)}>
+                <FlaskConical />
+                {t('registriesPage.test')}
+              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button aria-label={t('common.actions')} className="size-8" size="icon" type="button" variant="ghost">
+                    <MoreHorizontal />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onSelect={() => onSelectCredentials(registry.id)}>
+                    <KeyRound />
+                    {t('registriesPage.credentialsTab')}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => onEdit(registry)}>
+                    <Pencil />
+                    {t('edit')}
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem variant="destructive" onSelect={() => onDelete(registry)}>
+                    <Trash2 />
+                    {t('common.delete')}
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          ),
+        },
+      ]}
+      emptyTitle={t('registriesPage.emptyTitle')}
+      emptyDescription={t('registriesPage.emptyDescription')}
+      emptyIcon={<Container className="size-5" />}
+      items={items}
+      loading={loading}
+      pagination={dataListPagination(t, pagination)}
+      rowKey={registry => registry.id}
+      toolbar={toolbar}
+    />
   )
+}
+
+function scopeLabel(scope: string, t: ReturnType<typeof useTranslation>['t']) {
+  return t(`registriesPage.scope${scope.charAt(0).toUpperCase()}${scope.slice(1)}`, { defaultValue: scope })
 }
 
 function registryProviderLabel(provider: ArtifactRegistry['provider'], t: ReturnType<typeof useTranslation>['t']) {
@@ -121,13 +150,15 @@ function registryProviderLabel(provider: ArtifactRegistry['provider'], t: Return
 
 interface CredentialsPanelProps {
   items: CredentialWithRegistry[]
+  loading: boolean
+  toolbar?: ReactNode
   pagination: PageState<CredentialWithRegistry>
   projectMap: Record<string, { name: string }>
   onEdit: (credential: CredentialWithRegistry) => void
   onDelete: (credential: CredentialWithRegistry) => void
 }
 
-export function CredentialsPanel({ items, pagination, projectMap, onDelete, onEdit }: CredentialsPanelProps) {
+export function CredentialsPanel({ items, loading, pagination, projectMap, toolbar, onDelete, onEdit }: CredentialsPanelProps) {
   const { t } = useTranslation()
 
   return (
@@ -136,32 +167,35 @@ export function CredentialsPanel({ items, pagination, projectMap, onDelete, onEd
         {
           key: 'name',
           header: t('registriesPage.name'),
+          width: 'primary',
           render: credential => (
             <div className="min-w-0">
               <div className="truncate font-medium">{credential.name}</div>
-              <p className="truncate text-sm text-muted-foreground">{credential.username || t('registriesPage.tokenOnly')}</p>
+              <p className="truncate text-xs text-muted-foreground">{credential.username || t('registriesPage.tokenOnly')}</p>
             </div>
           ),
         },
-        { key: 'registry', header: t('registries'), render: credential => credential.registryName },
+        { key: 'registry', header: t('registries'), width: 'secondary', render: credential => credential.registryName },
         {
           key: 'template',
           header: t('registriesPage.imageTemplate'),
-          className: 'min-w-56',
+          mobile: 'hidden',
+          width: 'normal',
           render: credential => (
             <CopyableHoverText
-              className="max-w-72 rounded bg-background px-2 py-1 font-mono text-xs"
+              className="max-w-72 font-mono text-xs"
               value={`${credential.repositoryTemplate}:${credential.tagTemplate}`}
             />
           ),
         },
-        { key: 'usage', header: t('registriesPage.usage'), render: credential => <StatusBadge>{credential.usage}</StatusBadge> },
+        { key: 'usage', header: t('registriesPage.usage'), width: 'status', render: credential => <StatusBadge>{credential.usage}</StatusBadge> },
         {
           key: 'access',
           header: t('registriesPage.credentialAccessScope'),
+          width: 'normal',
           render: credential => (
             <div className="flex flex-wrap gap-2">
-              <StatusBadge>{t(`registriesPage.scope${credential.scope.charAt(0).toUpperCase()}${credential.scope.slice(1)}`)}</StatusBadge>
+              <StatusBadge>{scopeLabel(credential.scope, t)}</StatusBadge>
               {projectScopeBadges(credential.projectIds, projectMap)}
             </div>
           ),
@@ -169,6 +203,8 @@ export function CredentialsPanel({ items, pagination, projectMap, onDelete, onEd
         {
           key: 'secret',
           header: t('registriesPage.credential'),
+          mobile: 'hidden',
+          width: 'secondary',
           render: credential => (
             <div className="flex flex-wrap gap-2">
               {credential.passwordSet && <StatusBadge>{t('registriesPage.passwordSet')}</StatusBadge>}
@@ -179,33 +215,51 @@ export function CredentialsPanel({ items, pagination, projectMap, onDelete, onEd
         {
           key: 'actions',
           header: t('common.actions'),
-          className: 'text-right whitespace-nowrap',
+          sticky: 'right',
+          width: 'actions',
           render: credential => (
-            <div className="flex justify-end gap-2">
-              <EditActionButton type="button" label={t('edit')} onClick={() => onEdit(credential)} />
-              <Button aria-label={t('registriesPage.deleteCredentialAria')} variant="ghost" onClick={() => onDelete(credential)}>
-                <Trash2 size={16} />
-              </Button>
-            </div>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button aria-label={t('common.actions')} className="size-8" size="icon" type="button" variant="ghost">
+                  <MoreHorizontal />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onSelect={() => onEdit(credential)}>
+                  <Pencil />
+                  {t('edit')}
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem variant="destructive" onSelect={() => onDelete(credential)}>
+                  <Trash2 />
+                  {t('common.delete')}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           ),
         },
       ]}
       emptyTitle={t('registriesPage.noCredentialsTitle')}
       emptyDescription={t('registriesPage.noCredentialsDescription')}
+      emptyIcon={<KeyRound className="size-5" />}
       items={items}
+      loading={loading}
       pagination={dataListPagination(t, pagination)}
       rowKey={credential => credential.id}
+      toolbar={toolbar}
     />
   )
 }
 
 interface ImagesPanelProps {
   images: ContainerImage[]
+  loading: boolean
+  toolbar?: ReactNode
   registries: ArtifactRegistry[]
   pagination: PageState<ContainerImage>
 }
 
-export function ImagesPanel({ images, registries, pagination }: ImagesPanelProps) {
+export function ImagesPanel({ images, loading, registries, pagination, toolbar }: ImagesPanelProps) {
   const { t } = useTranslation()
 
   return (
@@ -214,24 +268,28 @@ export function ImagesPanel({ images, registries, pagination }: ImagesPanelProps
         {
           key: 'image',
           header: t('registriesPage.image'),
+          width: 'primary',
           render: image => (
             <CopyableHoverText
-              className="max-w-xl rounded bg-background px-2 py-1 font-mono text-xs"
+              className="max-w-xl font-mono text-xs"
               value={image.imageRef}
             />
           ),
         },
-        { key: 'registry', header: t('registries'), render: image => registries.find(registry => registry.id === image.registryId)?.name ?? image.registryId },
-        { key: 'source', header: t('common.type'), render: image => <StatusBadge>{image.sourceType}</StatusBadge> },
-        { key: 'scan', header: t('common.status'), render: image => <StatusValueBadge value={image.scanStatus} /> },
-        { key: 'digest', header: t('registriesPage.digest'), render: image => image.digest ? <CheckCircle2 className="text-primary-text" size={16} /> : '-' },
+        { key: 'registry', header: t('registries'), width: 'secondary', render: image => registries.find(registry => registry.id === image.registryId)?.name ?? image.registryId },
+        { key: 'source', header: t('common.type'), mobile: 'hidden', width: 'status', render: image => <StatusBadge>{image.sourceType}</StatusBadge> },
+        { key: 'scan', header: t('common.status'), width: 'status', render: image => <StatusValueBadge value={image.scanStatus} /> },
+        { key: 'digest', header: t('registriesPage.digest'), mobile: 'hidden', width: 'compact', render: image => image.digest ? <CheckCircle2 aria-label={image.digest} className="size-4 text-success" /> : '-' },
       ]}
       emptyTitle={t('registriesPage.noImagesTitle')}
       emptyDescription={t('registriesPage.noImagesDescription')}
+      emptyIcon={<Package className="size-5" />}
       items={images}
+      loading={loading}
       constrainedHeight
       pagination={dataListPagination(t, pagination, IMAGE_PAGE_SIZE_OPTIONS)}
       rowKey={image => image.id}
+      toolbar={toolbar}
     />
   )
 }

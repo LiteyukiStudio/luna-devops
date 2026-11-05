@@ -32,6 +32,8 @@ const dashboardPage = {
   applicationColumn: 'Application',
   statusColumn: 'Status',
   activityColumn: 'Latest activity',
+  accessUrlColumn: 'Access & version',
+  versionReleasedAt: 'Released {{time}}',
   noRecentApps: 'No applications yet',
   noRecentAppsDescription: 'Create an application in a project space, or start from a template.',
   openApplication: 'Open application {{name}}',

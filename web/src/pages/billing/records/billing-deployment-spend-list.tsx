@@ -1,6 +1,7 @@
 import type { BillingDisplay, BillingListPage } from './billing-list-cells'
 import type { BillingDeploymentSpend, Project } from '@/api'
 import type { DataListColumn } from '@/components/common/data-list'
+import { Rocket } from 'lucide-react'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { DataList } from '@/components/common/data-list'
@@ -10,12 +11,14 @@ import { ApplicationCell, DeploymentTargetCell, ProjectCell, SpendAmount } from 
 export function BillingDeploymentSpendList({
   billingDisplay,
   data,
+  loading,
   page,
   projectMap,
   onPageChange,
 }: {
   billingDisplay: BillingDisplay
   data?: BillingListPage<BillingDeploymentSpend>
+  loading: boolean
   page: number
   projectMap: Map<string, Project>
   onPageChange: (page: number) => void
@@ -25,55 +28,55 @@ export function BillingDeploymentSpendList({
     {
       key: 'project',
       header: t('billingPage.project'),
-      className: 'min-w-56',
+      width: 'primary',
       render: item => <ProjectCell project={projectMap.get(item.projectId)} fallbackName={item.projectName} fallbackIdentifier={item.projectIdentifier} unknownLabel={t('billingPage.unknownProject')} />,
     },
     {
       key: 'application',
       header: t('billingPage.application'),
-      className: 'min-w-52',
+      width: 'normal',
       render: item => <ApplicationCell item={item} unassignedLabel={t('billingPage.unassignedApplication')} />,
     },
     {
       key: 'deploymentTarget',
       header: t('billingPage.deploymentTarget'),
-      className: 'min-w-48',
+      width: 'normal',
       render: item => <DeploymentTargetCell item={item} unassignedLabel={t('billingPage.unassignedDeploymentTarget')} />,
     },
     {
       key: 'amount',
       header: t('billingPage.amount'),
-      className: 'w-40',
+      width: 'number',
       render: item => <SpendAmount value={item.amountCredits} billingDisplay={billingDisplay} strong />,
     },
     {
       key: 'build',
       header: t('billingPage.buildSpend'),
-      className: 'w-32',
+      width: 'number',
       render: item => <SpendAmount value={item.buildCredits} billingDisplay={billingDisplay} />,
     },
     {
       key: 'runtime',
       header: t('billingPage.runtimeSpend'),
-      className: 'w-32',
+      width: 'number',
       render: item => <SpendAmount value={item.runtimeCredits} billingDisplay={billingDisplay} />,
     },
     {
       key: 'storage',
       header: t('billingPage.storageSpend'),
-      className: 'w-32',
+      width: 'number',
       render: item => <SpendAmount value={item.storageCredits} billingDisplay={billingDisplay} />,
     },
     {
       key: 'gateway',
       header: t('billingPage.gatewaySpend'),
-      className: 'w-32',
+      width: 'number',
       render: item => <SpendAmount value={item.gatewayCredits} billingDisplay={billingDisplay} />,
     },
     {
       key: 'other',
       header: t('billingPage.otherSpend'),
-      className: 'w-32',
+      width: 'number',
       render: item => <SpendAmount value={item.otherCredits} billingDisplay={billingDisplay} />,
     },
   ], [billingDisplay, projectMap, t])
@@ -83,7 +86,9 @@ export function BillingDeploymentSpendList({
       columns={columns}
       emptyDescription={t('billingPage.emptyDeploymentSpendDescription')}
       emptyTitle={t('billingPage.emptyDeploymentSpendTitle')}
+      emptyIcon={<Rocket className="size-5" />}
       items={data?.items ?? []}
+      loading={loading}
       pagination={{
         page: data?.page ?? page,
         pageInfoLabel: t('billingPage.deploymentSpendPageInfo', {

@@ -1,5 +1,5 @@
 import type { AIUIAction } from '@/api'
-import { Check, LoaderCircle } from 'lucide-react'
+import { ArrowUpRight, Check, LoaderCircle } from 'lucide-react'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import { useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -9,9 +9,13 @@ import { cn } from '@/lib/utils'
 import { isAIUIActionRepeatable, parseAIOptionActions } from './actions'
 import { AIOptionLeadingVisual } from './option-visual'
 
-export function AIOptionsBar({ actions, placement = 'floating', sourceKey, surface = 'window', onAction }: {
+/**
+ * 助手给出的下一步选项。
+ * inline：回复内的紧凑按钮组；welcome：空会话欢迎页里按页面上下文给出的建议问题卡片。
+ */
+export function AIOptionsBar({ actions, placement = 'inline', sourceKey, surface = 'window', onAction }: {
   actions: AIUIAction[]
-  placement?: 'floating' | 'inline'
+  placement?: 'inline' | 'welcome'
   sourceKey: string
   surface?: 'page' | 'window'
   onAction: (action: AIUIAction) => Promise<boolean>
@@ -60,95 +64,78 @@ export function AIOptionsBar({ actions, placement = 'floating', sourceKey, surfa
     }
   }
 
+  const welcome = placement === 'welcome'
   return (
     <section
       aria-label={t('aiAssistant.options.suggested')}
-      className={cn(
-        'min-w-0 overflow-hidden',
-        placement === 'floating' && (
-          page
-            ? 'pointer-events-none absolute inset-x-0 bottom-0 z-10 pb-2 pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))]'
-            : 'pointer-events-none absolute inset-x-0 bottom-0 z-10 px-3 pb-2'
-        ),
-      )}
+      className="min-w-0"
       data-ai-options-placement={placement}
       data-ai-options-surface={surface}
     >
       <AnimatePresence initial mode="popLayout">
         <motion.div
           key={sourceKey}
-          animate={{ opacity: 1, x: 0 }}
-          className={cn(
-            'pointer-events-auto flex min-w-0 gap-2',
-            placement === 'floating'
-              ? 'overflow-x-auto overscroll-x-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden'
-              : 'flex-wrap py-0.5',
-          )}
-          exit={reduceMotion ? { opacity: 0 } : { opacity: 0, x: -12 }}
-          initial={reduceMotion ? { opacity: 0 } : { opacity: 0, x: 32 }}
-          transition={reduceMotion ? { duration: 0.12 } : { type: 'spring', stiffness: 420, damping: 30, mass: 0.75 }}
+          animate={{ opacity: 1, y: 0 }}
+          className={cn('min-w-0', welcome ? 'grid gap-2 sm:grid-cols-2' : 'flex flex-wrap gap-2 py-0.5')}
+          exit={{ opacity: 0 }}
+          initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 6 }}
+          transition={{ duration: reduceMotion ? 0.1 : 0.18, ease: [0.2, 0, 0, 1] }}
         >
           {options.map((action, index) => {
             const key = action.id ? `${sourceKey}:id:${action.id}:${index}` : `${sourceKey}:${action.type}-${JSON.stringify(action.payload)}-${index}`
             const selected = selectedKeys.has(key)
             const pending = pendingKeys.has(key)
             const repeatable = isAIUIActionRepeatable(action)
-            const variant = action.tone === 'primary' ? 'default' : action.tone === 'danger' ? 'destructive' : 'outline'
             const label = action.label ?? t(`aiAssistant.actions.${action.type}`)
-            const compactPageOption = page && placement === 'floating'
-            const content = (
-              <>
-                {(pending || selected || showVisuals) && (
-                  <span className="grid size-4 shrink-0 place-items-center" data-ai-option-visual>
-                    {pending && <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" />}
-                    {!pending && selected && <Check className="size-3.5" />}
-                    {!pending && !selected && showVisuals && action.visual && <AIOptionLeadingVisual visual={action.visual} />}
-                  </span>
-                )}
-                <span className="truncate">{label}</span>
-              </>
+            const visual = (pending || selected || showVisuals) && (
+              <span className="grid size-4 shrink-0 place-items-center" data-ai-option-visual>
+                {pending && <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" />}
+                {!pending && selected && <Check className="size-3.5" />}
+                {!pending && !selected && showVisuals && action.visual && <AIOptionLeadingVisual visual={action.visual} />}
+              </span>
             )
-            return (
-              <motion.div
-                key={key}
-                animate={{ opacity: 1, x: 0, scale: 1 }}
-                className={placement === 'floating' ? 'shrink-0' : 'min-w-0 max-w-full'}
-                initial={reduceMotion ? { opacity: 0 } : { opacity: 0, x: 24, scale: 0.94 }}
-                transition={reduceMotion
-                  ? { duration: 0.1 }
-                  : { type: 'spring', stiffness: 460, damping: 28, mass: 0.7, delay: Math.min(index * 0.045, 0.18) }}
-              >
+            const position = <span className="sr-only">{t('aiAssistant.options.position', { current: index + 1, total: options.length })}</span>
+            if (welcome) {
+              const detail = action.type === 'send_message' ? action.payload.message : action.description
+              return (
                 <Button
+                  key={key}
                   aria-pressed={selected}
                   className={cn(
-                    'shrink-0 rounded-full shadow-none [&_svg]:size-3.5',
-                    compactPageOption
-                      ? 'group h-11 max-w-52 p-0 hover:bg-transparent'
-                      : placement === 'floating'
-                        ? page ? 'min-h-11 max-w-64 px-4 !text-sm' : 'h-8 max-w-52 px-3 !text-[11px]'
-                        : page ? 'min-h-11 max-w-full px-3 !text-sm' : 'h-7 max-w-full px-2.5 !text-xs',
+                    'h-auto min-h-11 w-full min-w-0 items-start justify-start gap-2.5 whitespace-normal rounded-container border border-border bg-surface px-3.5 py-3 text-left font-normal text-foreground shadow-xs hover:border-primary-border hover:bg-primary-subtle/40 [&_svg]:size-3.5',
+                    page && 'pointer-coarse:min-h-14',
                   )}
                   disabled={pending || (!repeatable && selected)}
-                  title={label}
-                  variant={compactPageOption ? 'ghost' : variant}
+                  variant="ghost"
                   onClick={() => void choose(action, key)}
                 >
-                  {compactPageOption
-                    ? (
-                        <span className={cn(
-                          'flex h-7 min-w-0 max-w-full items-center justify-center gap-1 rounded-full px-2.5 text-xs font-medium transition-colors',
-                          action.tone === 'primary' && 'bg-primary text-primary-foreground group-hover:bg-primary-hover',
-                          action.tone === 'danger' && 'bg-danger text-white group-hover:bg-danger/90',
-                          (!action.tone || action.tone === 'default') && 'border border-border bg-background text-foreground group-hover:bg-muted',
-                        )}
-                        >
-                          {content}
-                        </span>
-                      )
-                    : content}
-                  <span className="sr-only">{t('aiAssistant.options.position', { current: index + 1, total: options.length })}</span>
+                  {visual || <ArrowUpRight aria-hidden="true" className="mt-0.5 text-muted-foreground" />}
+                  <span className="grid min-w-0 flex-1 gap-0.5">
+                    <span className="truncate text-sm font-medium">{label}</span>
+                    {detail && <span className="line-clamp-2 text-xs leading-5 text-muted-foreground">{detail}</span>}
+                  </span>
+                  {position}
                 </Button>
-              </motion.div>
+              )
+            }
+            const variant = action.tone === 'primary' ? 'secondary' : action.tone === 'danger' ? 'destructive' : 'outline'
+            return (
+              <Button
+                key={key}
+                aria-pressed={selected}
+                className={cn(
+                  'min-w-0 max-w-full shrink-0 shadow-none [&_svg]:size-3.5',
+                  page ? 'min-h-11 px-3 text-sm pointer-fine:h-8 pointer-fine:min-h-0 pointer-fine:text-xs' : 'h-8 px-3 text-xs',
+                )}
+                disabled={pending || (!repeatable && selected)}
+                title={label}
+                variant={variant}
+                onClick={() => void choose(action, key)}
+              >
+                {visual}
+                <span className="truncate">{label}</span>
+                {position}
+              </Button>
             )
           })}
         </motion.div>

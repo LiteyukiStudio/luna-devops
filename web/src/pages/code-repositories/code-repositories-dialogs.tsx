@@ -4,11 +4,12 @@ import type { GitAccount, GitProvider, Project } from '@/api'
 import { Info, Plus, Save } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { FormField as Field } from '@/components/common/form-field'
+import { HelpTip } from '@/components/common/help-tip'
 import { ProgressiveSection } from '@/components/common/progressive-section'
 import { ProjectSpaceMultiSelect } from '@/components/common/project-space-select'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { NativeSelect as Select } from '@/components/ui/native-select'
 import { credentialDefaults } from './code-repositories-form-model'
@@ -57,15 +58,15 @@ export function ProviderDialog({
         </DialogHeader>
         <form className="grid gap-4" onSubmit={form.handleSubmit(onSubmit)}>
           <section className="grid gap-3">
-            <div>
-              <h3 className="text-sm font-semibold text-foreground">{t('codeRepositoriesView.providerBasicSectionTitle')}</h3>
-              <p className="mt-1 text-xs text-muted-foreground">{t('codeRepositoriesView.providerBasicSectionDescription')}</p>
-            </div>
+            <h3 className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
+              {t('codeRepositoriesView.providerBasicSectionTitle')}
+              <HelpTip label={t('codeRepositoriesView.providerBasicSectionTitle')}>{t('codeRepositoriesView.providerBasicSectionDescription')}</HelpTip>
+            </h3>
             <div className="grid gap-3 sm:grid-cols-2">
               <Field error={form.formState.errors.name?.message} hint={t('codeRepositoriesView.providerNameHint')} label={t('codeRepositoriesView.name')} required><Input {...form.register('name')} aria-invalid={Boolean(form.formState.errors.name)} placeholder={t('codeRepositoriesView.providerNamePlaceholder')} /></Field>
               <Field error={form.formState.errors.type?.message} hint={t('codeRepositoriesView.providerTypeHint')} label={t('codeRepositoriesView.type')} required>
                 <div className="flex gap-2">
-                  <GitProviderIcon baseUrl={providerBaseUrl} type={providerType} />
+                  <GitProviderIcon baseUrl={providerBaseUrl} className="flex size-9 shrink-0 items-center justify-center rounded-control border border-border bg-surface-subtle p-1.5" type={providerType} />
                   <Select {...form.register('type')} aria-invalid={Boolean(form.formState.errors.type)}>
                     <option value="github" disabled={hasAnotherGithubProvider && (!editingProvider || editingProvider.type !== 'github')}>{t('codeRepositoriesView.github')}</option>
                     <option value="gitea">{t('codeRepositoriesView.gitea')}</option>
@@ -135,6 +136,9 @@ export function ProviderDialog({
             {providerAuthType === 'oauth' && <OAuthAppGuide guide={providerGuide} />}
           </ProgressiveSection>
           <DialogFooter>
+            <DialogClose asChild>
+              <Button type="button" variant="outline">{t('common.cancel')}</Button>
+            </DialogClose>
             <Button disabled={pending || !form.formState.isValid} type="submit">
               {editingProvider ? <Save size={16} /> : <Plus size={16} />}
               {editingProvider ? t('codeRepositoriesView.saveProvider') : t('codeRepositoriesView.createProvider')}
@@ -228,6 +232,9 @@ export function CredentialDialog({ open, editingCredential, form, projects, prov
             <Input {...form.register('scopesText')} aria-invalid={Boolean(form.formState.errors.scopesText)} />
           </Field>
           <DialogFooter>
+            <DialogClose asChild>
+              <Button type="button" variant="outline">{t('common.cancel')}</Button>
+            </DialogClose>
             <Button disabled={pending || !form.formState.isValid} type="submit">
               {editingCredential ? <Save size={16} /> : <Plus size={16} />}
               {editingCredential ? t('codeRepositoriesView.saveCredential') : t('codeRepositoriesView.createCredential')}

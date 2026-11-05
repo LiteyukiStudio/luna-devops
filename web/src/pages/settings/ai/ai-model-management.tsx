@@ -2,7 +2,7 @@ import type { ModelFormValues } from './ai-model-management-utils'
 import type { AIModelConfig } from '@/api'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Pencil, Plus, Trash2 } from 'lucide-react'
+import { MoreHorizontal, Pencil, Plus, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { Controller, useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
@@ -13,9 +13,11 @@ import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { DataList } from '@/components/common/data-list'
 import { ErrorState } from '@/components/common/error-state'
 import { FormField as Field } from '@/components/common/form-field'
+import { HelpTip } from '@/components/common/help-tip'
 import { StatusValueBadge } from '@/components/common/status-badge'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { findSuggestedModelPreset, listSuggestedModelPresets } from '@/lib/ai-model-suggested-prices'
 import { aiModelFormSchema, emptyModel, modelDeleteErrorMessage, modelFormValues, modelSaveErrorMessage } from './ai-model-management-utils'
@@ -79,9 +81,8 @@ export function AIModelManagement() {
     form.setValue('cachedInputCreditsPerMillion', suggestedPreset.prices.cachedInput, { shouldValidate: true })
   }
   return (
-    <div className="max-w-3xl">
-      <div className="mt-6 grid gap-4">
-        <p className="text-sm text-muted-foreground">{t('settings.ai.models.description')}</p>
+    <div className="mt-4 max-w-3xl">
+      <div className="grid gap-4">
         {models.isError
           ? <ErrorState title={t('settings.ai.models.loadFailed')} />
           : (
@@ -107,10 +108,28 @@ export function AIModelManagement() {
                     key: 'actions',
                     header: t('common.actions'),
                     mobileActions: 'inline',
+                    className: 'text-right whitespace-nowrap',
+                    width: 'actions',
                     render: model => (
-                      <div className="flex justify-end gap-1">
-                        <Button aria-label={t('settings.ai.models.edit')} size="icon" type="button" variant="ghost" onClick={() => startEdit(model)}><Pencil className="size-4" /></Button>
-                        <Button aria-label={t('settings.ai.models.delete')} size="icon" type="button" variant="ghost" onClick={() => setDeleting(model)}><Trash2 className="size-4" /></Button>
+                      <div className="flex justify-end">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button aria-label={t('settings.ai.models.actions', { name: model.name })} size="icon" type="button" variant="ghost">
+                              <MoreHorizontal className="size-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onSelect={() => startEdit(model)}>
+                              <Pencil className="size-4" />
+                              {t('settings.ai.models.edit')}
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem variant="destructive" onSelect={() => setDeleting(model)}>
+                              <Trash2 className="size-4" />
+                              {t('settings.ai.models.delete')}
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </div>
                     ),
                   },
@@ -125,9 +144,14 @@ export function AIModelManagement() {
                 items={models.data ?? []}
                 loading={models.isLoading}
                 rowKey={model => model.id}
-                title={t('settings.ai.models.title')}
+                title={(
+                  <span className="inline-flex items-center gap-1.5">
+                    {t('settings.ai.models.title')}
+                    <HelpTip label={t('settings.ai.models.title')}>{t('settings.ai.models.description')}</HelpTip>
+                  </span>
+                )}
                 toolbarActions={(
-                  <Button type="button" onClick={startCreate}>
+                  <Button size="sm" type="button" variant="outline" onClick={startCreate}>
                     <Plus className="size-4" />
                     {t('settings.ai.models.add')}
                   </Button>

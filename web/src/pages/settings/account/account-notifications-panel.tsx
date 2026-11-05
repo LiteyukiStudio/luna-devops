@@ -4,7 +4,7 @@ import type { DataListColumn } from '@/components/common/data-list'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import i18next from 'i18next'
-import { FlaskConical, Pencil, Plus, Save, Trash2 } from 'lucide-react'
+import { FlaskConical, MoreHorizontal, Pencil, Plus, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { Controller, useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
@@ -16,16 +16,19 @@ import { CheckboxField, ControlledCheckboxField } from '@/components/common/chec
 import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { DataList } from '@/components/common/data-list'
 import { ErrorState } from '@/components/common/error-state'
-import { FormActions } from '@/components/common/form-actions'
 import { FormField as Field } from '@/components/common/form-field'
+import { HelpTip } from '@/components/common/help-tip'
+import { PageChromeTools } from '@/components/common/page-chrome'
 import { Section } from '@/components/common/section'
 import { StatusBadge, StatusValueBadge } from '@/components/common/status-badge'
 import { formatSmartDateTime } from '@/components/common/time-format'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { NativeSelect } from '@/components/ui/native-select'
 import { Textarea } from '@/components/ui/textarea'
+import { SettingsTabSaveButton } from '@/pages/settings/settings-tab-save-button'
 
 const pageSize = 10
 const failureEventTypes = [
@@ -147,11 +150,31 @@ export function AccountNotificationsPanel() {
       header: t('common.actions'),
       sticky: 'right',
       width: 'actions',
+      className: 'text-right whitespace-nowrap',
       render: item => (
-        <div className="flex items-center gap-1">
-          <Button aria-label={t('accountPage.notifications.testChannel', { name: item.name })} disabled={testChannel.isPending} size="icon" variant="ghost" onClick={() => testChannel.mutate(item.id)}><FlaskConical className="size-4" /></Button>
-          <Button aria-label={t('accountPage.notifications.editChannel', { name: item.name })} size="icon" variant="ghost" onClick={() => setChannelDialog({ channel: item })}><Pencil className="size-4" /></Button>
-          <Button aria-label={t('accountPage.notifications.deleteChannel', { name: item.name })} size="icon" variant="ghost" onClick={() => setDeleteTarget(item)}><Trash2 className="size-4" /></Button>
+        <div className="flex justify-end">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button aria-label={t('accountPage.notifications.channelActions', { name: item.name })} size="icon" variant="ghost">
+                <MoreHorizontal className="size-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem disabled={testChannel.isPending} onSelect={() => testChannel.mutate(item.id)}>
+                <FlaskConical className="size-4" />
+                {t('common.test')}
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => setChannelDialog({ channel: item })}>
+                <Pencil className="size-4" />
+                {t('common.edit')}
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem variant="destructive" onSelect={() => setDeleteTarget(item)}>
+                <Trash2 className="size-4" />
+                {t('common.delete')}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       ),
     },
@@ -168,7 +191,16 @@ export function AccountNotificationsPanel() {
 
   return (
     <div className="grid gap-4">
-      <Section description={t('accountPage.notifications.preferencesDescription')} title={t('accountPage.notifications.preferencesTitle')} variant="bordered">
+      <PageChromeTools>
+        <SettingsTabSaveButton
+          disabled={!preferenceForm.formState.isDirty || !preferenceForm.formState.isValid}
+          label={t('accountPage.notifications.savePreferences')}
+          pending={savePreferences.isPending}
+          type="button"
+          onClick={() => void preferenceForm.handleSubmit(values => savePreferences.mutate(values))()}
+        />
+      </PageChromeTools>
+      <Section title={<SectionTitle description={t('accountPage.notifications.preferencesDescription')} title={t('accountPage.notifications.preferencesTitle')} />} variant="bordered">
         <form className="grid gap-4" onSubmit={preferenceForm.handleSubmit(values => savePreferences.mutate(values))}>
           <Field hint={t('accountPage.notifications.accountEmailHint')} label={t('accountPage.notifications.accountEmail')}>
             <Input readOnly value={user?.email ?? ''} type="email" />
@@ -186,8 +218,8 @@ export function AccountNotificationsPanel() {
             control={preferenceForm.control}
             name="eventTypes"
             render={({ field }) => (
-              <fieldset className="grid gap-3 rounded-container bg-surface-inset p-4 sm:grid-cols-2">
-                <legend className="px-1 text-sm font-medium">{t('accountPage.notifications.failureEvents')}</legend>
+              <fieldset className="grid gap-3 sm:grid-cols-2">
+                <legend className="mb-3 text-sm font-medium">{t('accountPage.notifications.failureEvents')}</legend>
                 {failureEventTypes.map(eventType => (
                   <CheckboxField
                     key={eventType}
@@ -206,20 +238,13 @@ export function AccountNotificationsPanel() {
               </fieldset>
             )}
           />
-          <FormActions>
-            <Button disabled={savePreferences.isPending || !preferenceForm.formState.isDirty || !preferenceForm.formState.isValid} type="submit">
-              <Save className="size-4" />
-              {t('accountPage.notifications.savePreferences')}
-            </Button>
-          </FormActions>
         </form>
       </Section>
 
       <Section
-        description={t('accountPage.notifications.channelsDescription')}
-        title={t('accountPage.notifications.channelsTitle')}
+        title={<SectionTitle description={t('accountPage.notifications.channelsDescription')} title={t('accountPage.notifications.channelsTitle')} />}
         tools={(
-          <Button disabled={presets.isLoading || presets.isError || !presets.data?.length} type="button" variant="outline" onClick={() => setChannelDialog({})}>
+          <Button disabled={presets.isLoading || presets.isError || !presets.data?.length} size="sm" type="button" variant="outline" onClick={() => setChannelDialog({})}>
             <Plus className="size-4" />
             {t('accountPage.notifications.createChannel')}
           </Button>
@@ -233,6 +258,7 @@ export function AccountNotificationsPanel() {
                 columns={channelColumns}
                 emptyDescription={t('accountPage.notifications.emptyChannelsDescription')}
                 emptyTitle={t('accountPage.notifications.emptyChannels')}
+                framed={false}
                 items={channels.data?.items ?? []}
                 loading={channels.isLoading}
                 pagination={pageFor(channels.data, channelPage, setChannelPage, t)}
@@ -241,13 +267,14 @@ export function AccountNotificationsPanel() {
             )}
       </Section>
 
-      <Section description={t('accountPage.notifications.deliveriesDescription')} title={t('accountPage.notifications.deliveriesTitle')} variant="bordered">
+      <Section title={<SectionTitle description={t('accountPage.notifications.deliveriesDescription')} title={t('accountPage.notifications.deliveriesTitle')} />} variant="bordered">
         {deliveries.isError
           ? <ErrorState title={t('accountPage.notifications.deliveriesLoadFailedTitle')} description={t('accountPage.notifications.deliveriesLoadFailedDescription')} />
           : (
               <DataList
                 columns={deliveryColumns}
                 emptyTitle={t('accountPage.notifications.emptyDeliveries')}
+                framed={false}
                 items={deliveries.data?.items ?? []}
                 loading={deliveries.isLoading}
                 pagination={pageFor(deliveries.data, deliveryPage, setDeliveryPage, t)}
@@ -365,6 +392,15 @@ function ChannelDialog({ channel, presets, saving, onClose, onSave }: {
         </form>
       </DialogContent>
     </Dialog>
+  )
+}
+
+function SectionTitle({ description, title }: { description: string, title: string }) {
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      {title}
+      <HelpTip label={title}>{description}</HelpTip>
+    </span>
   )
 }
 

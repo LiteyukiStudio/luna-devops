@@ -51,6 +51,11 @@ vi.mock('@/pages/ai-assistant/AIAssistantPage', () => ({
   AIAssistantPage: () => <AssistantRouteProbe />,
 }))
 
+// 命令面板有独立测试；这里只验证 AI 助手入口，避免引入主题 Provider。
+vi.mock('@/components/common/command-palette', () => ({
+  CommandPalette: () => null,
+}))
+
 function AssistantRouteProbe() {
   const location = useLocation()
   const routeState = readAIAssistantRouteState(location.state)

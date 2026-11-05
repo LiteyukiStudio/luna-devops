@@ -21,7 +21,7 @@ describe('assistant launcher viewport clamping', () => {
       LAUNCHER_SIZE,
       PAGE_LAUNCHER_GUTTER,
     )
-    expect(portrait).toEqual({ x: 216, y: 464 })
+    expect(portrait).toEqual({ x: 224, y: 472 })
 
     setViewport(844, 390)
     const landscape = clampAssistantPosition(
@@ -30,7 +30,7 @@ describe('assistant launcher viewport clamping', () => {
       LAUNCHER_SIZE,
       PAGE_LAUNCHER_GUTTER,
     )
-    expect(landscape).toEqual({ x: 216, y: 286 })
+    expect(landscape).toEqual({ x: 224, y: 294 })
   })
 })
 

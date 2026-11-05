@@ -10,9 +10,9 @@ import { api } from '@/api'
 import { useSession } from '@/app/session-context'
 import { FormActions } from '@/components/common/form-actions'
 import { FormField as Field } from '@/components/common/form-field'
+import { Section } from '@/components/common/section'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 
 const schema = z.object({
@@ -46,11 +46,7 @@ export function AccountPasswordPanel() {
   const canSetPassword = Boolean(user?.passwordSet || registration.data?.externalIdentityPasswordEnabled)
 
   return (
-    <Card className="grid gap-4">
-      <div className="flex items-center gap-2">
-        <KeyRound className="size-4 text-muted-foreground" />
-        <h2 className="text-base font-semibold">{user?.passwordSet ? t('accountPage.password.changeTitle') : t('accountPage.password.setTitle')}</h2>
-      </div>
+    <Section title={user?.passwordSet ? t('accountPage.password.changeTitle') : t('accountPage.password.setTitle')} variant="bordered">
       {!canSetPassword
         ? (
             <Alert>
@@ -60,7 +56,7 @@ export function AccountPasswordPanel() {
             </Alert>
           )
         : (
-            <form className="grid gap-3" onSubmit={form.handleSubmit(values => save.mutate(values))}>
+            <form className="grid gap-4" onSubmit={form.handleSubmit(values => save.mutate(values))}>
               {user?.email && (
                 <input
                   aria-hidden="true"
@@ -84,8 +80,8 @@ export function AccountPasswordPanel() {
               <Field error={form.formState.errors.confirmPassword?.message} label={t('accountPage.password.confirm')} required>
                 <Input {...form.register('confirmPassword')} autoComplete="new-password" type="password" />
               </Field>
-              <p className="text-xs text-muted-foreground">{t('accountPage.password.sessionNotice')}</p>
               <FormActions>
+                <p className="text-xs text-muted-foreground sm:mr-auto">{t('accountPage.password.sessionNotice')}</p>
                 <Button disabled={save.isPending || !form.formState.isValid} type="submit">
                   <Save className="size-4" />
                   {t('accountPage.password.save')}
@@ -93,6 +89,6 @@ export function AccountPasswordPanel() {
               </FormActions>
             </form>
           )}
-    </Card>
+    </Section>
   )
 }

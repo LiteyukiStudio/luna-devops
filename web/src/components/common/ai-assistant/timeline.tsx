@@ -3,13 +3,14 @@ import type { AIBlock } from './state'
 import type { AIApprovalDecision, ToolCallBlock } from './tool-call'
 import type { MessageBlock } from './turns'
 import type { AIUIAction } from '@/api'
-import { AlertCircle, ArrowDown, Bot, ChevronRight, CircleStop, LoaderCircle, RotateCcw, Sparkles } from 'lucide-react'
+import { AlertCircle, ArrowDown, Brain, ChevronRight, CircleStop, LoaderCircle, RotateCcw, Sparkles } from 'lucide-react'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 import { parseAIOptionActions } from './actions'
+import { AIAssistantMark } from './assistant-mark'
 import { AIContextCompactedBadge } from './context-compacted-badge'
 import { runFailureTranslationKey } from './errors'
 import { useInfiniteLoadTrigger } from './infinite-load-trigger'
@@ -25,8 +26,9 @@ import { groupAIAssistantBlocksByTurn, isInteractionCardOperationId } from './tu
 
 interface AIAssistantTimelineProps {
   activeTurnId?: string
-  bottomInset?: boolean
   blocks: AIBlock[]
+  /** 会话没有任何轮次时的欢迎内容；缺省为通用说明。 */
+  emptyState?: ReactNode
   error: Error | null
   generating: boolean
   hasOlder?: boolean
@@ -61,7 +63,7 @@ function isVisibleResponseBlock(block: AIBlock, showInternalTools: boolean): boo
   return block.type !== 'tool_call' || block.visibility !== 'internal' || showInternalTools
 }
 
-export function AIAssistantTimeline({ activeTurnId, bottomInset = false, blocks, error, generating, hasOlder = false, loading, loadingOlder = false, olderError = null, outputStreaming = false, onAction, onApproval, onLoadOlder = async () => {}, onResend, onRetry, resetKey, resendDisabled, showInternalTools = false, surface = 'window', topContent }: AIAssistantTimelineProps) {
+export function AIAssistantTimeline({ activeTurnId, blocks, emptyState, error, generating, hasOlder = false, loading, loadingOlder = false, olderError = null, outputStreaming = false, onAction, onApproval, onLoadOlder = async () => {}, onResend, onRetry, resetKey, resendDisabled, showInternalTools = false, surface = 'window', topContent }: AIAssistantTimelineProps) {
   const { t } = useTranslation()
   const page = surface === 'page'
   const viewportRef = useRef<HTMLDivElement>(null)
@@ -174,15 +176,25 @@ export function AIAssistantTimeline({ activeTurnId, bottomInset = false, blocks,
   if (loading) {
     return (
       <div
+        aria-label={t('common.loading')}
         className={cn(
-          'grid flex-1 content-start gap-2.5 p-3',
-          page && 'gap-4 py-4 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))]',
+          'flex-1 p-4',
+          page && 'pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))]',
         )}
         data-ai-timeline-surface={surface}
+        role="status"
       >
-        <Skeleton className="ml-auto h-14 w-[62%]" />
-        <Skeleton className="h-16 w-[70%]" />
-        <Skeleton className="h-24 w-[78%]" />
+        <div className="mx-auto grid w-full max-w-3xl gap-5">
+          <Skeleton className="ml-auto h-10 w-[56%] rounded-container" />
+          <div className="flex gap-3">
+            <Skeleton className="size-6 shrink-0 rounded-full" />
+            <div className="grid flex-1 gap-2">
+              <Skeleton className="h-3.5 w-[82%]" />
+              <Skeleton className="h-3.5 w-[64%]" />
+              <Skeleton className="h-3.5 w-[72%]" />
+            </div>
+          </div>
+        </div>
       </div>
     )
   }
@@ -190,13 +202,15 @@ export function AIAssistantTimeline({ activeTurnId, bottomInset = false, blocks,
     return (
       <div
         className={cn(
-          'grid flex-1 place-content-center gap-3 p-6 text-center',
+          'grid flex-1 place-content-center justify-items-center gap-3 p-6 text-center',
           page && 'pl-[max(1.5rem,env(safe-area-inset-left))] pr-[max(1.5rem,env(safe-area-inset-right))]',
         )}
         data-ai-timeline-surface={surface}
+        role="alert"
       >
-        <p className={cn('text-[13px] font-medium', page && 'text-sm')}>{t('aiAssistant.errors.timeline')}</p>
-        <Button className={cn(page && 'min-h-11')} size="sm" variant="outline" onClick={onRetry}>
+        <span className="grid size-10 place-items-center rounded-full bg-danger-subtle text-danger"><AlertCircle className="size-5" /></span>
+        <p className="text-sm font-medium">{t('aiAssistant.errors.timeline')}</p>
+        <Button className={cn(page && 'min-h-11 pointer-fine:min-h-8')} size="sm" variant="outline" onClick={onRetry}>
           <RotateCcw className="size-4" />
           {t('common.retry')}
         </Button>
@@ -208,9 +222,8 @@ export function AIAssistantTimeline({ activeTurnId, bottomInset = false, blocks,
       ref={viewportRef}
       aria-live={page ? undefined : 'polite'}
       className={cn(
-        'min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-x-none bg-surface p-3',
-        page && 'py-4 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))]',
-        bottomInset && 'pb-16',
+        'min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-x-none bg-surface px-4 py-4',
+        page && 'py-5 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))]',
       )}
       data-ai-timeline-surface={surface}
       data-slot="ai-assistant-timeline"
@@ -219,11 +232,11 @@ export function AIAssistantTimeline({ activeTurnId, bottomInset = false, blocks,
     >
       {topContent}
       {hasOlder && (
-        <div ref={olderTrigger.sentinelRef} className="flex min-h-8 items-center justify-center gap-2 pb-2" data-ai-history-sentinel>
-          {olderError && <span className="text-[11px] text-danger">{t('aiAssistant.olderLoadFailed')}</span>}
+        <div ref={olderTrigger.sentinelRef} className="flex min-h-8 items-center justify-center gap-2 pb-3" data-ai-history-sentinel>
+          {olderError && <span className="text-xs text-danger">{t('aiAssistant.olderLoadFailed')}</span>}
           <Button
             aria-label={t(loadingOlder ? 'aiAssistant.loadingOlder' : 'aiAssistant.loadOlder')}
-            className={cn('h-7 gap-1.5 px-2 text-[11px] text-muted-foreground', page && 'min-h-11 px-3 text-sm')}
+            className={cn('h-7 gap-1.5 px-2.5 text-xs text-muted-foreground', page && 'min-h-11 px-3 text-sm pointer-fine:min-h-8')}
             disabled={loadingOlder}
             size="sm"
             variant="ghost"
@@ -235,15 +248,15 @@ export function AIAssistantTimeline({ activeTurnId, bottomInset = false, blocks,
         </div>
       )}
       {turns.length === 0 && !showTypingIndicator
-        ? (
-            <div className="mx-auto grid h-full max-w-64 place-content-center gap-2.5 text-center text-muted-foreground">
-              <span className="mx-auto grid size-10 place-items-center rounded-full bg-primary-subtle text-primary-text"><Sparkles className="size-5" /></span>
-              <p className="text-[13px] font-medium text-foreground">{t('aiAssistant.emptyTitle')}</p>
-              <p className="text-xs leading-5">{t('aiAssistant.empty')}</p>
-            </div>
-          )
+        ? emptyState ?? (
+          <div className="mx-auto grid h-full max-w-xs place-content-center justify-items-center gap-3 text-center">
+            <AIAssistantMark size="lg" />
+            <p className="text-base font-semibold text-foreground">{t('aiAssistant.emptyTitle')}</p>
+            <p className="text-sm leading-6 text-muted-foreground">{t('aiAssistant.empty')}</p>
+          </div>
+        )
         : (
-            <div className={cn('mx-auto grid w-full min-w-0 gap-4', page ? 'max-w-none' : 'max-w-[48rem]')}>
+            <div className="mx-auto grid w-full min-w-0 max-w-3xl gap-6">
               {turns.map((turn, index) => (
                 <ConversationTurn
                   key={turn.id}
@@ -273,12 +286,9 @@ export function AIAssistantTimeline({ activeTurnId, bottomInset = false, blocks,
       {showBackToLatest && (
         <Button
           aria-label={t('aiAssistant.thinking.backToLatest')}
-          className={cn(
-            'absolute left-1/2 z-10 min-h-11 -translate-x-1/2 rounded-full px-4 shadow-raised',
-            bottomInset ? 'bottom-16' : 'bottom-3',
-          )}
+          className="absolute bottom-3 left-1/2 z-10 min-h-11 -translate-x-1/2 rounded-full border border-border bg-surface px-4 text-foreground shadow-raised hover:bg-surface-subtle pointer-fine:min-h-8"
           size="sm"
-          variant="secondary"
+          variant="ghost"
           onClick={scrollToLatest}
         >
           <ArrowDown className="size-4" />
@@ -304,11 +314,11 @@ function ConversationTurn({ generating, responseBlocks, userMessage, onAction, o
   const visibleResponseBlocks = responseBlocks.filter(block => isVisibleResponseBlock(block, showInternalTools ?? false))
   const turnId = userMessage?.turnId ?? visibleResponseBlocks[0]?.turnId
   return (
-    <article className="grid min-w-0 gap-2.5" data-ai-turn data-ai-turn-id={turnId}>
+    <article className="grid min-w-0 gap-3" data-ai-turn data-ai-turn-id={turnId}>
       {userMessage && (
         <div className="flex min-w-0 max-w-full justify-end" data-ai-user-message>
-          <div className={cn('group/message flex min-w-0 max-w-[78%] flex-col items-end', page && 'max-w-[84%]')} data-ai-message-group>
-            <div className={cn('min-w-0 max-w-full whitespace-pre-wrap break-words rounded-container rounded-br-sm bg-primary px-3 py-2 text-[13px] leading-5 text-primary-foreground', page && 'px-4 py-2.5 text-base leading-6')} data-ai-user-bubble>
+          <div className={cn('group/message flex min-w-0 max-w-[85%] flex-col items-end', page && 'max-w-[88%]')} data-ai-message-group>
+            <div className={cn('min-w-0 max-w-full whitespace-pre-wrap break-words rounded-container bg-primary-subtle px-3.5 py-2 text-[13px] leading-5.5 text-foreground', page && 'px-4 py-2.5 text-base leading-6')} data-ai-user-bubble>
               {userMessage.text}
             </div>
             <AIMessageMeta
@@ -343,23 +353,14 @@ function AssistantReply({ generating, responseBlocks, surface, onAction, onAppro
   onApproval: (block: ToolCallBlock, decision: AIApprovalDecision) => Promise<void>
 }) {
   const page = surface === 'page'
-  const hasWideContent = responseBlocks.some(block =>
-    block.type === 'tool_call'
-    && isInteractionCardOperationId(block.operationId))
   const assistantMessages = responseBlocks.filter((block): block is MessageBlock => block.type === 'message' && block.role === 'assistant' && Boolean(block.text.trim()))
   const copyText = assistantMessages.map(block => block.text).join('\n\n')
   const createdAt = assistantMessages.at(-1)?.createdAt
   return (
-    <div className="flex min-w-0 max-w-full items-start gap-2" data-ai-reply>
-      <span className="mt-0.5 grid size-6 shrink-0 place-items-center rounded-control bg-primary-subtle text-primary-text"><Bot className="size-3" /></span>
-      <div
-        className={cn(
-          'group/message flex min-w-0 flex-col items-start',
-          page || hasWideContent ? 'w-full max-w-full flex-1' : 'w-fit max-w-[78%] flex-none',
-        )}
-        data-ai-message-group
-      >
-        <div className={cn('grid min-w-0 max-w-full gap-2.5 rounded-container rounded-tl-sm bg-surface-subtle px-3 py-2.5', page && 'w-full gap-3 px-4 py-3 [&_button]:min-h-11 [&_button]:min-w-11')} data-ai-assistant-bubble>
+    <div className="flex min-w-0 max-w-full items-start gap-3" data-ai-reply>
+      <AIAssistantMark className="mt-px" />
+      <div className="group/message flex w-full min-w-0 max-w-full flex-1 flex-col items-start" data-ai-message-group>
+        <div className={cn('grid w-full min-w-0 max-w-full gap-3', page && 'pointer-coarse:[&_button]:min-h-11 pointer-coarse:[&_button]:min-w-11')} data-ai-assistant-bubble>
           {responseBlocks.map(block => <ResponseBlock key={block.id} block={block} surface={surface} onAction={onAction} onApproval={onApproval} />)}
           {generating && <TypingIndicator />}
         </div>
@@ -372,7 +373,7 @@ function AssistantReply({ generating, responseBlocks, surface, onAction, onAppro
 function TypingIndicator() {
   const { t } = useTranslation()
   return (
-    <div aria-label={t('aiAssistant.generating')} className="flex h-7 items-center" role="status">
+    <div aria-label={t('aiAssistant.generating')} className="flex h-6 items-center" role="status">
       <span className="flex items-center gap-1">
         <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground [animation-delay:-300ms] motion-reduce:animate-pulse" />
         <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground [animation-delay:-150ms] motion-reduce:animate-pulse" />
@@ -425,8 +426,8 @@ function RunStatusBlock({ block }: { block: Extract<AIBlock, { type: 'run_status
     : t(block.status === 'interrupted' ? 'aiAssistant.runInterrupted' : 'aiAssistant.runCanceled')
   return (
     <div className={cn(
-      'flex items-start gap-2 rounded-control px-2.5 py-2 text-xs leading-5',
-      block.status === 'failed' ? 'bg-danger-subtle text-danger' : 'bg-surface-subtle text-muted-foreground',
+      'flex items-start gap-2 rounded-control border px-3 py-2 text-xs leading-5',
+      block.status === 'failed' ? 'border-danger-border bg-danger-subtle text-danger' : 'border-border bg-surface-subtle text-muted-foreground',
     )}
     >
       {block.status === 'failed' ? <AlertCircle className="mt-0.5 size-4 shrink-0" /> : <CircleStop className="mt-0.5 size-4 shrink-0" />}
@@ -455,20 +456,20 @@ function ThinkingBlock({ block, surface }: { block: Extract<AIBlock, { type: 'th
   }, [block.text, expanded, following])
 
   return (
-    <div className="min-w-0 rounded-control bg-surface-inset/70 px-2.5 py-1.5">
-      <button aria-expanded={expanded} className={cn('flex w-full items-center gap-1.5 text-left text-[11px] font-medium text-muted-foreground', page && 'min-h-11 text-sm')} type="button" onClick={() => setExpanded(value => !value)}>
-        <Sparkles className="size-3.5" />
+    <div className="min-w-0 border-l-2 border-border pl-3">
+      <button aria-expanded={expanded} className={cn('flex w-full items-center gap-1.5 rounded-sm text-left text-xs font-medium text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring', page && 'min-h-11 text-sm pointer-fine:min-h-6')} type="button" onClick={() => setExpanded(value => !value)}>
+        {block.status === 'completed' ? <Brain className="size-3.5" /> : <Sparkles className="size-3.5 animate-pulse motion-reduce:animate-none" />}
         <span>{t(block.display === 'summary' ? `aiAssistant.thinking.${block.status === 'completed' ? 'summaryComplete' : 'summaryStreaming'}` : `aiAssistant.thinking.${block.status === 'completed' ? 'progressComplete' : 'progressStreaming'}`)}</span>
         <ChevronRight className={cn('ml-auto size-3.5 transition-transform', expanded && 'rotate-90')} />
       </button>
       <div
         ref={viewportRef}
         className={cn(
-          'whitespace-pre-wrap break-words text-[11px] leading-4 text-muted-foreground',
-          page && 'text-sm leading-5',
+          'whitespace-pre-wrap break-words text-xs leading-5 text-muted-foreground',
+          page && 'text-sm leading-6',
           expanded
             ? 'mt-1 max-h-56 overflow-y-auto'
-            : 'mt-1 max-h-12 overflow-hidden',
+            : 'mt-1 max-h-10 overflow-hidden [mask-image:linear-gradient(to_bottom,transparent,black_60%)]',
         )}
         onScroll={expanded
           ? (event) => {
@@ -479,7 +480,7 @@ function ThinkingBlock({ block, surface }: { block: Extract<AIBlock, { type: 'th
       >
         {block.text}
       </div>
-      {expanded && !following && <button className={cn('mt-1 text-[10px] font-medium text-primary-text', page && 'min-h-11 text-sm')} type="button" onClick={() => setFollowing(true)}>{t('aiAssistant.thinking.backToLatest')}</button>}
+      {expanded && !following && <button className={cn('mt-1 text-xs font-medium text-primary-text', page && 'min-h-11 text-sm pointer-fine:min-h-6')} type="button" onClick={() => setFollowing(true)}>{t('aiAssistant.thinking.backToLatest')}</button>}
     </div>
   )
 }

@@ -23,6 +23,8 @@ import { useAIAssistantRuntime } from './runtime-context'
 
 interface AIAssistantDesktopHostProps {
   view?: AIAssistantView
+  /** 把浮窗展开为全页助手；由布局层负责记住工作区位置并导航。 */
+  onExpand?: () => void
   onViewChange?: (view: AIAssistantView) => void
 }
 
@@ -38,7 +40,7 @@ function clampWindowPreference(preference: WindowPreference): WindowPreference {
   }
 }
 
-export function AIAssistantDesktopHost({ view, onViewChange }: AIAssistantDesktopHostProps = {}) {
+export function AIAssistantDesktopHost({ view, onExpand, onViewChange }: AIAssistantDesktopHostProps = {}) {
   const { t } = useTranslation()
   const runtime = useAIAssistantRuntime()
   const triggerRef = useRef<HTMLButtonElement>(null)
@@ -101,6 +103,7 @@ export function AIAssistantDesktopHost({ view, onViewChange }: AIAssistantDeskto
       conversationsOpen={showConversations}
       surface="window"
       onClose={close}
+      onExpand={onExpand}
       onToggleConversations={() => setAssistantView(showConversations ? 'chat' : 'conversations')}
     />
   )
@@ -128,10 +131,10 @@ export function AIAssistantDesktopHost({ view, onViewChange }: AIAssistantDeskto
           }))
         }}
       >
-        <section aria-label={t('aiAssistant.title')} className="relative flex size-full overflow-hidden rounded-feature border border-border bg-surface text-[13px] shadow-overlay">
+        <section aria-label={t('aiAssistant.title')} className="relative flex size-full overflow-hidden rounded-container border border-border bg-surface text-[13px] shadow-overlay">
           <AIDesktopShell
             chat={chat}
-            closeLabel={t('common.back')}
+            closeLabel={t('aiAssistant.conversations.close')}
             conversationsOpen={showConversations}
             initialWidth={panelPreference.width}
             listButtonRef={conversationButtonRef}

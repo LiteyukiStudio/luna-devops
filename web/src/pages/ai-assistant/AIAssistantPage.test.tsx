@@ -146,6 +146,13 @@ describe('ai assistant route page', () => {
     expect(await screen.findByTestId('dashboard-route')).toBeInTheDocument()
   })
 
+  it('welcomes an empty conversation with suggestions for the workspace page', async () => {
+    renderAssistantPage()
+
+    expect(await screen.findByRole('button', { name: new RegExp(i18next.t('aiAssistant.options.presets.application.status.label')) })).toBeInTheDocument()
+    expect(screen.getByText(i18next.t('aiAssistant.emptyTitle'))).toBeInTheDocument()
+  })
+
   it('shows a friendly disabled state and returns direct access to the dashboard', async () => {
     const user = userEvent.setup()
     renderAssistantPage({ capabilities: { enabled: false, maxInputBytes: 0 }, initialEntries: ['/ai-assistant'] })

@@ -1,7 +1,7 @@
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import i18next from 'i18next'
-import { Link2, Plus, Save, Unlink } from 'lucide-react'
+import { ChevronDown, Link2, Plus, Unlink } from 'lucide-react'
 import { motion } from 'motion/react'
 import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
@@ -13,21 +13,24 @@ import { brandColorPresets } from '@/app/brand-theme'
 import { usePublicConfig } from '@/app/public-config-context'
 import { useSession } from '@/app/session-context'
 import { useTheme } from '@/app/theme-context'
+import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { ContentTabs } from '@/components/common/content-tabs'
 import { EmptyState } from '@/components/common/empty-state'
 import { ErrorState } from '@/components/common/error-state'
-import { FormActions } from '@/components/common/form-actions'
 import { FormField as Field } from '@/components/common/form-field'
-import { MotionItem, MotionList } from '@/components/common/motion'
+import { PageChromeTools } from '@/components/common/page-chrome'
 import { PageShell } from '@/components/common/page-shell'
+import { Section } from '@/components/common/section'
 import { StatusValueBadge } from '@/components/common/status-badge'
+import { Surface } from '@/components/common/surface'
 import { UserAvatar } from '@/components/common/user-avatar'
 import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { NativeSelect as Select } from '@/components/ui/native-select'
 import { TabsContent } from '@/components/ui/tabs'
 import { BrandColorPresetField } from '@/pages/settings/appearance/brand-color-preset-field'
+import { SettingsTabSaveButton } from '@/pages/settings/settings-tab-save-button'
 import { AccessTokensPanel } from './access-tokens-panel'
 import { AccountNotificationsPanel } from './account-notifications-panel'
 import { OAuthApplicationsPanel, OAuthGrantsPanel } from './account-oauth-panels'
@@ -171,9 +174,20 @@ function ProfilePanel() {
     name: name || user?.name || '',
   }
 
+  const submitProfile = form.handleSubmit(values => saveProfile.mutate({ ...values, avatarUrl: values.avatarUrl ?? '' }))
+
   return (
-    <Card className="grid gap-5">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+    <Surface className="grid gap-5 p-6" variant="bordered">
+      <PageChromeTools>
+        <SettingsTabSaveButton
+          disabled={!form.formState.isValid || !form.formState.isDirty}
+          label={t('accountPage.saveProfile')}
+          pending={saveProfile.isPending}
+          type="button"
+          onClick={() => void submitProfile()}
+        />
+      </PageChromeTools>
+      <div className="flex flex-col gap-4 border-b border-border pb-5 sm:flex-row sm:items-center">
         <UserAvatar className="size-16 text-xl" user={previewUser} />
         <div className="min-w-0">
           <h2 className="truncate text-base font-semibold">{user?.name}</h2>
@@ -181,7 +195,7 @@ function ProfilePanel() {
         </div>
       </div>
 
-      <form className="grid gap-3" onSubmit={form.handleSubmit(values => saveProfile.mutate({ ...values, avatarUrl: values.avatarUrl ?? '' }))}>
+      <form className="grid gap-4" onSubmit={submitProfile}>
         <Field error={form.formState.errors.name?.message} hint={t('accountPage.profileNameHint')} label={t('accountPage.profileName')} required>
           <Input {...form.register('name')} aria-invalid={Boolean(form.formState.errors.name)} placeholder={t('accountPage.profileNamePlaceholder')} />
         </Field>
@@ -213,14 +227,8 @@ function ProfilePanel() {
             onValueChange={nextValue => form.setValue('brandColorPreset', nextValue, { shouldDirty: true, shouldValidate: true })}
           />
         </Field>
-        <FormActions>
-          <Button disabled={saveProfile.isPending || !form.formState.isValid || !form.formState.isDirty} type="submit">
-            <Save size={16} />
-            {t('accountPage.saveProfile')}
-          </Button>
-        </FormActions>
       </form>
-    </Card>
+    </Surface>
   )
 }
 
@@ -238,56 +246,67 @@ function IdentityBindingsPanel() {
     onError: error => toast.error(error.message),
   })
 
-  return (
-    <div className="grid gap-4 lg:grid-cols-3">
-      <Card className="lg:col-span-2">
-        <h2 className="mb-4 text-base font-semibold">{t('settings.boundIdentities')}</h2>
-        {identities.isError && <ErrorState title={t('settings.identityLoadFailedTitle')} description={t('settings.identityLoadFailedDescription')} />}
-        {identities.data?.length === 0 && <EmptyState description={t('settings.noIdentitiesDescription')} title={t('settings.noIdentitiesTitle')} variant="plain" />}
-        <MotionList className="grid gap-3">
-          {(identities.data ?? []).map(identity => (
-            <MotionItem key={identity.id}>
-              <div className="flex items-center justify-between gap-4 rounded-md border border-border p-3 transition duration-150 hover:border-primary hover:shadow-sm">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <p className="font-medium">{identity.providerName}</p>
-                    <StatusValueBadge value={identity.emailVerified ? 'verified' : 'unverified'} />
-                  </div>
-                  <p className="truncate text-sm text-muted-foreground">{identity.email || identity.username || identity.subject}</p>
-                </div>
-                <Button
-                  aria-label={t('settings.unbindIdentity')}
-                  disabled={unbind.isPending}
-                  variant="ghost"
-                  onClick={() => unbind.mutate(identity.id)}
-                >
-                  <Unlink size={16} />
-                </Button>
-              </div>
-            </MotionItem>
-          ))}
-        </MotionList>
-      </Card>
+  const providerItems = providers.data ?? []
 
-      <Card>
-        <h2 className="mb-4 text-base font-semibold">{t('settings.bindProviderTitle')}</h2>
-        {providers.isError && <ErrorState title={t('settings.providerLoadFailedTitle')} description={t('settings.providerLoadFailedDescription')} />}
-        <div className="grid gap-2">
-          {(providers.data ?? []).map(provider => (
-            <Button
-              key={provider.id}
-              type="button"
-              variant="secondary"
-              onClick={() => {
-                window.location.href = oidcStartUrl(provider.id, 'bind', '/settings/account')
-              }}
-            >
-              <Link2 size={16} />
-              {t('settings.bindProvider', { provider: provider.name })}
+  return (
+    <Section
+      title={t('settings.boundIdentities')}
+      tools={providerItems.length > 0 && (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button size="sm" type="button" variant="outline">
+              <Link2 className="size-4" />
+              {t('settings.bindProviderTitle')}
+              <ChevronDown className="size-4" />
             </Button>
-          ))}
-        </div>
-      </Card>
-    </div>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            {providerItems.map(provider => (
+              <DropdownMenuItem
+                key={provider.id}
+                onSelect={() => {
+                  window.location.href = oidcStartUrl(provider.id, 'bind', '/settings/account')
+                }}
+              >
+                {t('settings.bindProvider', { provider: provider.name })}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
+      variant="bordered"
+    >
+      {providers.isError && <ErrorState title={t('settings.providerLoadFailedTitle')} description={t('settings.providerLoadFailedDescription')} />}
+      {identities.isError
+        ? <ErrorState title={t('settings.identityLoadFailedTitle')} description={t('settings.identityLoadFailedDescription')} />
+        : identities.data?.length === 0
+          ? <EmptyState description={t('settings.noIdentitiesDescription')} icon={<Link2 className="size-5" />} title={t('settings.noIdentitiesTitle')} variant="plain" />
+          : (
+              <ul className="divide-y divide-border">
+                {(identities.data ?? []).map(identity => (
+                  <li key={identity.id} className="flex items-center justify-between gap-4 py-3 first:pt-0 last:pb-0">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="truncate font-medium">{identity.providerName}</p>
+                        <StatusValueBadge value={identity.emailVerified ? 'verified' : 'unverified'} />
+                      </div>
+                      <p className="truncate text-sm text-muted-foreground">{identity.email || identity.username || identity.subject}</p>
+                    </div>
+                    <ConfirmDialog
+                      confirmText={t('settings.unbindIdentity')}
+                      description={t('settings.unbindIdentityDescription', { provider: identity.providerName })}
+                      pending={unbind.isPending}
+                      title={t('settings.unbindIdentity')}
+                      onConfirm={() => unbind.mutateAsync(identity.id).then(() => undefined)}
+                    >
+                      <Button aria-label={t('settings.unbindIdentity')} size="icon" variant="ghost">
+                        <Unlink className="size-4" />
+                      </Button>
+                    </ConfirmDialog>
+                  </li>
+                ))}
+              </ul>
+            )}
+    </Section>
   )
 }

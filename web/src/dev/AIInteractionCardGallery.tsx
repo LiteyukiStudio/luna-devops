@@ -17,10 +17,10 @@ export function AIInteractionCardGallery() {
     ? allFixtures.filter(fixture => fixture.generationId === requestedFixture)
     : allFixtures
   return (
-    <main className="min-h-screen bg-primary-subtle p-4">
+    <main className="min-h-screen bg-background p-4">
       <div className="grid items-start gap-4 xl:grid-cols-3">
         {fixtures.map(fixture => (
-          <section key={fixture.generationId} className="mx-auto w-full min-w-0 max-w-[420px] overflow-x-hidden rounded-feature bg-surface-inset p-3 text-[13px]" data-ai-gallery-template={fixture.template}>
+          <section key={fixture.generationId} className="mx-auto w-full min-w-0 max-w-[420px] overflow-x-hidden rounded-container border border-border bg-surface p-4 text-[13px] shadow-sm" data-ai-gallery-template={fixture.template}>
             <AIInteractionCards arguments={fixture} onAction={async () => true} />
           </section>
         ))}
@@ -31,8 +31,8 @@ export function AIInteractionCardGallery() {
 
 function MessageActionsFixture() {
   return (
-    <main className="grid min-h-screen place-items-center bg-primary-subtle p-4">
-      <section className="flex h-[520px] w-full max-w-[420px] overflow-hidden rounded-feature bg-surface shadow-overlay">
+    <main className="grid min-h-screen place-items-center bg-background p-4">
+      <section className="flex h-[520px] w-full max-w-[420px] overflow-hidden rounded-container border border-border bg-surface text-[13px] shadow-overlay">
         <AIAssistantTimeline
           blocks={[
             { id: 'user', turnId: 'turn', index: -1, type: 'message', role: 'user', status: 'completed', text: '请帮我检查这个应用最近一次部署。', createdAt: '2026-08-01T17:02:00+08:00' },
@@ -57,7 +57,7 @@ function LauncherFixture() {
   const [position, setPosition] = useState({ x: 24, y: 24 })
 
   return (
-    <main className="grid min-h-screen place-items-center bg-primary-subtle">
+    <main className="grid min-h-screen place-items-center bg-background">
       {!opened && (
         <AIAssistantLauncher
           label={t('aiAssistant.open')}
@@ -67,7 +67,7 @@ function LauncherFixture() {
         />
       )}
       {opened && (
-        <section aria-label={t('aiAssistant.title')} className="grid gap-4 rounded-feature bg-surface p-6 shadow-overlay">
+        <section aria-label={t('aiAssistant.title')} className="grid gap-4 rounded-container border border-border bg-surface p-6 shadow-overlay">
           <p>{t('aiAssistant.title')}</p>
           <Button onClick={() => setOpened(false)}>{t('common.close')}</Button>
         </section>

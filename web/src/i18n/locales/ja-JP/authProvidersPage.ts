@@ -34,8 +34,6 @@ const authProvidersPage = {
   save: 'ID プロバイダーを保存',
   created: 'ID プロバイダーを作成しました',
   updated: 'ID プロバイダーを更新しました',
-  admissionPolicy: '許可ポリシー',
-  policyDescription: 'プラットフォームで許可するログイン方法と、OIDC ユーザーが初めてプラットフォームに入る際に満たすべき条件を制御します。',
   policySaved: '許可ポリシーを保存しました',
   policyLoadFailedTitle: '許可ポリシーの読み込みに失敗しました',
   allowLocalLogin: 'ローカルアカウントログインを許可',
@@ -55,6 +53,8 @@ const authProvidersPage = {
   defaultRoleHint: 'OIDC で初めてプラットフォームに入った際に自動作成されるユーザーに付与するグローバルロール。プロジェクトスペースの権限はプロジェクトスペースメンバーで個別に制御します。',
   savePolicy: '許可ポリシーを保存',
   loadFailedTitle: 'ID プロバイダーの読み込みに失敗しました',
+  emptyTitle: 'ID プロバイダーはまだありません',
+  claimMapping: 'Claim マッピング',
 }
 
 export default authProvidersPage

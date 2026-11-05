@@ -55,7 +55,7 @@ export function AINavigationEvent({ block, onAction }: { block: ToolCallBlock, o
   return (
     <button
       aria-label={t('aiAssistant.navigation.open', { target })}
-      className="inline-flex h-6 max-w-full w-fit items-center gap-1.5 rounded-full bg-primary-subtle px-2.5 text-[11px] font-medium text-primary-text transition-colors hover:bg-primary-subtle-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default disabled:opacity-70"
+      className="inline-flex h-7 max-w-full w-fit items-center gap-1.5 rounded-control border border-border bg-surface px-2.5 text-xs font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default disabled:opacity-70 [&_svg]:text-primary-text"
       data-ai-navigation-event
       disabled={!action || pending}
       title={targetPath ?? undefined}

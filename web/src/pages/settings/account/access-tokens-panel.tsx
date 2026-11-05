@@ -2,7 +2,7 @@ import type { AccessToken } from '@/api'
 import type { DataListColumn } from '@/components/common/data-list'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Copy, Plus, ShieldX } from 'lucide-react'
+import { Plus, ShieldX } from 'lucide-react'
 import { useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
@@ -16,10 +16,10 @@ import { FormField as Field } from '@/components/common/form-field'
 import { StatusValueBadge } from '@/components/common/status-badge'
 import { formatAbsoluteDateTime } from '@/components/common/time-format'
 import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { NativeSelect as Select } from '@/components/ui/native-select'
+import { OneTimeSecret } from './one-time-secret'
 
 const schema = z.object({
   name: z.string().min(1),
@@ -89,77 +89,69 @@ export function AccessTokensPanel({ createDialogOpen, onCreateDialogOpenChange }
     },
     onError: error => toast.error(error.message),
   })
-  const copyCreatedToken = () => {
-    navigator.clipboard.writeText(createdToken)
-      .then(() => toast.success(t('common.copied')))
-      .catch(error => toast.error(error.message))
-  }
   const tokenItems = tokens.data?.items ?? []
   const columns: DataListColumn<AccessToken>[] = [
     {
       key: 'name',
       header: t('accessTokens.name'),
-      className: 'w-[28%] px-4 py-3 align-middle',
+      width: 'primary',
       render: token => <span className="font-medium text-foreground">{token.name}</span>,
     },
     {
       key: 'scope',
       header: t('accessTokens.scope'),
-      className: 'w-[26%] px-4 py-3 align-middle',
+      width: 'normal',
       render: token => <AccessTokenScopeBadges scope={token.scope} />,
     },
     {
       key: 'createdAt',
       header: t('accessTokens.createdAt'),
-      className: 'w-[20%] whitespace-nowrap px-4 py-3 align-middle text-muted-foreground',
+      width: 'compact',
+      mobile: 'hidden',
+      cellClassName: 'whitespace-nowrap text-muted-foreground',
       render: token => formatAbsoluteDateTime(token.createdAt),
     },
     {
       key: 'expiresAt',
       header: t('accessTokens.expiresAt'),
-      className: 'w-[20%] whitespace-nowrap px-4 py-3 align-middle text-muted-foreground',
+      width: 'compact',
+      cellClassName: 'whitespace-nowrap text-muted-foreground',
       render: token => token.expiresAt ? formatAbsoluteDateTime(token.expiresAt) : t('accessTokens.neverExpires'),
     },
     {
       key: 'status',
       header: t('accessTokens.status'),
-      className: 'w-[12%] px-4 py-3 align-middle',
+      width: 'status',
       render: token => <StatusValueBadge value={tokenStatusValue(token)} />,
     },
     {
       key: 'actions',
       header: t('accessTokens.actions'),
-      className: 'w-[1%] whitespace-nowrap px-4 py-3 align-middle text-right',
-      render: token => (
-        <ConfirmDialog
-          confirmText={t('accessTokens.revoke')}
-          description={t('accessTokens.revokeDescription', { name: token.name })}
-          pending={revokeToken.isPending}
-          title={t('accessTokens.revokeTitle')}
-          onConfirm={() => revokeToken.mutate(token.id)}
-        >
-          <Button disabled={Boolean(token.revokedAt)} variant="ghost">
-            <ShieldX size={16} />
-            {t('accessTokens.revoke')}
-          </Button>
-        </ConfirmDialog>
-      ),
+      className: 'text-right whitespace-nowrap',
+      sticky: 'right',
+      width: 'actions',
+      render: token => token.revokedAt
+        ? null
+        : (
+            <ConfirmDialog
+              confirmText={t('accessTokens.revoke')}
+              description={t('accessTokens.revokeDescription', { name: token.name })}
+              pending={revokeToken.isPending}
+              title={t('accessTokens.revokeTitle')}
+              onConfirm={() => revokeToken.mutate(token.id)}
+            >
+              <Button size="sm" variant="ghost">
+                <ShieldX size={16} />
+                {t('accessTokens.revoke')}
+              </Button>
+            </ConfirmDialog>
+          ),
     },
   ]
 
   return (
     <div className="grid items-start gap-4">
-      {createdToken && (
-        <Card className="rounded-md border border-border bg-muted p-3">
-          <p className="mb-2 text-xs font-medium text-muted-foreground">{t('accessTokens.oneTime')}</p>
-          <div className="flex items-center gap-2">
-            <code className="min-w-0 flex-1 truncate text-xs">{createdToken}</code>
-            <Button aria-label={t('common.copy')} variant="secondary" onClick={copyCreatedToken}>
-              <Copy size={14} />
-            </Button>
-          </div>
-        </Card>
-      )}
+      {createdToken && <OneTimeSecret label={t('accessTokens.oneTime')} value={createdToken} />}
       <DataList
         columns={columns}
         emptyTitle={t('accessTokens.empty')}

@@ -2,6 +2,8 @@ const aiAssistant = {
   aiAssistant: {
     open: 'Luna 어시스턴트 열기',
     title: 'Luna 어시스턴트',
+    expand: '전체 화면으로 확장',
+    collapse: '플로팅 창으로 축소',
     page: {
       backToWorkspace: '작업 공간으로 돌아가기',
       unavailableTitle: '어시스턴트를 사용할 수 없음',
@@ -18,6 +20,7 @@ const aiAssistant = {
     inputLabel: 'Luna 어시스턴트에게 메시지 본내기',
     inputPlaceholder: '진단할 문제를 설명…',
     inputTooLarge: '메시지가 {{limit}} 한도를 초과했습니다. 줄인 후 다시 보내세요.',
+    inputLength: '{{count}}자',
     loadOlder: '이전 메시지 로드',
     loadingOlder: '이전 메시지 로드 중',
     olderLoadFailed: '이전 메시지 로드에 실패했습니다. 다시 시도하세요',
@@ -532,6 +535,12 @@ const aiAssistant = {
     conversations: {
       title: '세션',
       new: '새 세션',
+      close: '대화 목록 닫기',
+      groups: {
+        today: '오늘',
+        recent: '최근 7일',
+        earlier: '이전',
+      },
       refreshStarted: '새로고침 후 새 세션에 들어왔습니다',
       returnPrevious: '이전 세션으로 돌아가기',
       returnPreviousCountdown: '{{count}}초',

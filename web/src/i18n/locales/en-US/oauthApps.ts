@@ -1,7 +1,6 @@
 const oauthApps = {
   applicationsTab: 'Developer apps',
   grantsTab: 'Authorized apps',
-  grantsTitle: 'Application authorizations',
   application: 'Application',
   createApplication: 'Create application',
   editApplication: 'Edit application',
@@ -73,6 +72,9 @@ const oauthApps = {
     redirectRequired: 'Enter at least one callback URL',
     scopeRequired: 'Select at least one scope',
   },
+  applicationActions: 'Actions for application {{name}}',
+  presentationSection: 'Display details',
+  presentationEmpty: 'No description, homepage, or logo',
 }
 
 export default oauthApps

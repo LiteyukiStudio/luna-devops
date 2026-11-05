@@ -260,8 +260,23 @@ export function RegistriesPage() {
     setImageRepositoryResultsOpen(false)
   }
 
+  const visibilitySelect = (
+    <ResultVisibilitySelect
+      canViewAll={canViewAll}
+      containerClassName="w-full sm:w-36"
+      value={effectiveVisibility}
+      onChange={(nextVisibility) => {
+        setVisibility(nextVisibility)
+        setRegistryPage(1)
+        setCredentialPage(1)
+        setImagePage(1)
+        setCredentialRegistryFilterId('')
+      }}
+    />
+  )
+
   return (
-    <div className="grid gap-6">
+    <>
       <ContentTabs
         tabs={[
           { value: 'registries', label: t('registriesPage.registriesTab') },
@@ -270,17 +285,6 @@ export function RegistriesPage() {
         ]}
         tools={(
           <>
-            <ResultVisibilitySelect
-              canViewAll={canViewAll}
-              value={effectiveVisibility}
-              onChange={(nextVisibility) => {
-                setVisibility(nextVisibility)
-                setRegistryPage(1)
-                setCredentialPage(1)
-                setImagePage(1)
-                setCredentialRegistryFilterId('')
-              }}
-            />
             {activeTab === 'registries' && (
               <Button
                 onClick={() => {
@@ -289,41 +293,23 @@ export function RegistriesPage() {
                   setRegistryDialogOpen(true)
                 }}
               >
-                <Plus size={16} />
+                <Plus />
                 {t('registriesPage.createRegistry')}
               </Button>
             )}
             {activeTab === 'credentials' && (
-              <div className="flex flex-nowrap items-center justify-end gap-2">
-                <Select
-                  className="h-9"
-                  containerClassName="w-40 shrink-0"
-                  value={credentialRegistryFilterId}
-                  aria-label={t('registriesPage.selectRegistryTitle')}
-                  onChange={(event) => {
-                    setCredentialRegistryFilterId(event.target.value)
-                    setCredentialPage(1)
-                  }}
-                >
-                  <option value="">{t('registriesPage.allRegistries')}</option>
-                  {(registryOptions.data ?? registryItems).map(registry => (
-                    <option key={registry.id} value={registry.id}>{registry.name}</option>
-                  ))}
-                </Select>
-                <Button
-                  className="shrink-0 whitespace-nowrap"
-                  onClick={() => {
-                    setEditingCredential(null)
-                    credentialForm.reset({ ...credentialDefaults, registryId: credentialRegistryFilterId })
-                    credentialForm.setValue('registryId', credentialRegistryFilterId, { shouldValidate: true })
-                    credentialForm.setValue('scope', 'user', { shouldValidate: true })
-                    setCredentialDialogOpen(true)
-                  }}
-                >
-                  <KeyRound size={16} />
-                  {t('registriesPage.createCredentialTitle')}
-                </Button>
-              </div>
+              <Button
+                onClick={() => {
+                  setEditingCredential(null)
+                  credentialForm.reset({ ...credentialDefaults, registryId: credentialRegistryFilterId })
+                  credentialForm.setValue('registryId', credentialRegistryFilterId, { shouldValidate: true })
+                  credentialForm.setValue('scope', 'user', { shouldValidate: true })
+                  setCredentialDialogOpen(true)
+                }}
+              >
+                <KeyRound />
+                {t('registriesPage.createCredentialTitle')}
+              </Button>
             )}
             {activeTab === 'images' && (
               <Button
@@ -332,7 +318,7 @@ export function RegistriesPage() {
                   setImageDialogOpen(true)
                 }}
               >
-                <PackagePlus size={16} />
+                <PackagePlus />
                 {t('registriesPage.recordImage')}
               </Button>
             )}
@@ -346,6 +332,8 @@ export function RegistriesPage() {
           <RegistriesPanel
             items={registryItems}
             isError={registries.isError}
+            loading={registries.isLoading}
+            toolbar={visibilitySelect}
             projectMap={projectMap}
             pagination={{
               data: registries.data,
@@ -372,28 +360,37 @@ export function RegistriesPage() {
         <TabsContent value="credentials">
           <CredentialsPanel
             items={visibleCredentials}
+            loading={credentialRegistryFilterId ? credentials.isLoading : allCredentials.isLoading}
             projectMap={projectMap}
-            pagination={credentialRegistryFilterId
-              ? {
-                  data: credentialPageData,
-                  page: credentialPage,
-                  pageSize: credentialPageSize,
-                  onPageChange: setCredentialPage,
-                  onPageSizeChange: (nextPageSize) => {
-                    setCredentialPageSize(nextPageSize)
+            toolbar={(
+              <>
+                {visibilitySelect}
+                <Select
+                  aria-label={t('registriesPage.selectRegistryTitle')}
+                  containerClassName="w-full sm:w-40"
+                  value={credentialRegistryFilterId}
+                  onChange={(event) => {
+                    setCredentialRegistryFilterId(event.target.value)
                     setCredentialPage(1)
-                  },
-                }
-              : {
-                  data: credentialPageData,
-                  page: credentialPage,
-                  pageSize: credentialPageSize,
-                  onPageChange: setCredentialPage,
-                  onPageSizeChange: (nextPageSize) => {
-                    setCredentialPageSize(nextPageSize)
-                    setCredentialPage(1)
-                  },
-                }}
+                  }}
+                >
+                  <option value="">{t('registriesPage.allRegistries')}</option>
+                  {(registryOptions.data ?? registryItems).map(registry => (
+                    <option key={registry.id} value={registry.id}>{registry.name}</option>
+                  ))}
+                </Select>
+              </>
+            )}
+            pagination={{
+              data: credentialPageData,
+              page: credentialPage,
+              pageSize: credentialPageSize,
+              onPageChange: setCredentialPage,
+              onPageSizeChange: (nextPageSize) => {
+                setCredentialPageSize(nextPageSize)
+                setCredentialPage(1)
+              },
+            }}
             onDelete={setCredentialToDelete}
             onEdit={beginEditCredential}
           />
@@ -402,6 +399,8 @@ export function RegistriesPage() {
         <TabsContent value="images">
           <ImagesPanel
             images={images.data?.items ?? []}
+            loading={images.isLoading}
+            toolbar={visibilitySelect}
             registries={registryOptions.data ?? registryItems}
             pagination={{
               data: images.data,
@@ -493,6 +492,6 @@ export function RegistriesPage() {
         onConfirm={() => credentialToDelete && deleteCredential.mutate({ registryId: credentialToDelete.registryId, credentialId: credentialToDelete.id })}
         onOpenChange={open => !open && setCredentialToDelete(null)}
       />
-    </div>
+    </>
   )
 }

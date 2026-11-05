@@ -73,6 +73,7 @@ type appTemplateSummaryResponse struct {
 	OfficialWebsite    string                         `json:"officialWebsite"`
 	OfficialRepository string                         `json:"officialRepository"`
 	PopularityWeight   int                            `json:"popularityWeight"`
+	Featured           bool                           `json:"featured"`
 	Image              string                         `json:"image"`
 	Version            string                         `json:"version"`
 	ServicePort        int                            `json:"servicePort"`
@@ -157,7 +158,7 @@ func appTemplateSummaryFrom(template appstore.Template) appTemplateSummaryRespon
 		ID: template.ID, Slug: template.Slug, Name: template.Name, Description: template.Description,
 		Category: template.Category, Kind: template.Kind, SystemComponent: template.SystemComponent,
 		Icon: template.Icon, OfficialWebsite: template.OfficialWebsite, OfficialRepository: template.OfficialRepository,
-		PopularityWeight: template.PopularityWeight, Image: template.Image, Version: template.Version,
+		PopularityWeight: template.PopularityWeight, Featured: template.Featured, Image: template.Image, Version: template.Version,
 		ServicePort: template.ServicePort, DefaultReplicas: template.DefaultReplicas,
 		DefaultCPU: template.DefaultCPU, DefaultMemory: template.DefaultMemory, DataVolumes: nonNilDataVolumes(template.DataVolumes),
 		Components: components, ValueCount: len(template.Values), RequiredValueCount: requiredValueCount,

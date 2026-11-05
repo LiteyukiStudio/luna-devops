@@ -1,7 +1,8 @@
 import type { BillingPeriodSelection } from './billing-page-utils'
 import type { Project, User } from '@/api'
-import { Plus } from 'lucide-react'
+import { Plus, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { PageChromeTools } from '@/components/common/page-chrome'
 import { ProjectSpaceMultiSelect } from '@/components/common/project-space-select'
 import { UserSelect } from '@/components/common/user-select'
 import { Button } from '@/components/ui/button'
@@ -37,48 +38,48 @@ export function BillingScopeToolbar({
   const { t } = useTranslation()
 
   return (
-    <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-      <div className="flex min-w-0 flex-1 flex-col gap-2 xl:flex-row xl:items-center">
-        <BillingPeriodPicker period={billingPeriod} onChange={onPeriodChange} />
-        {canManageBilling && (
-          <div className="w-full sm:w-80">
-            <UserSelect
-              allLabel={t('billingPage.allUsers')}
-              ariaLabel={t('billingPage.billingUserScope')}
-              disabled={usersLoading}
-              emptyLabel={t('billingPage.emptyUsers')}
-              includeAll
-              placeholder={t('billingPage.selectBillingUser')}
-              users={userItems}
-              value={billingUserScopeId}
-              onChange={onBillingUserChange}
-            />
-          </div>
-        )}
-        <div className="w-full sm:w-80">
-          <ProjectSpaceMultiSelect
-            disabled={projectsLoading}
-            projects={visibleProjectItems}
-            value={selectedProjectIds}
-            onChange={onProjectFilterChange}
+    <div className="flex min-w-0 flex-col gap-2 xl:flex-row xl:flex-wrap xl:items-center">
+      <BillingPeriodPicker period={billingPeriod} onChange={onPeriodChange} />
+      {canManageBilling && (
+        <div className="w-full xl:w-64">
+          <UserSelect
+            allLabel={t('billingPage.allUsers')}
+            ariaLabel={t('billingPage.billingUserScope')}
+            disabled={usersLoading}
+            emptyLabel={t('billingPage.emptyUsers')}
+            includeAll
+            placeholder={t('billingPage.selectBillingUser')}
+            users={userItems}
+            value={billingUserScopeId}
+            onChange={onBillingUserChange}
           />
         </div>
-        {selectedProjectIds.length > 0 && (
-          <Button className="shrink-0" type="button" variant="outline" onClick={() => onProjectFilterChange([])}>
-            {t('billingPage.clearProjectFilter')}
-          </Button>
-        )}
+      )}
+      <div className="w-full xl:w-64">
+        <ProjectSpaceMultiSelect
+          disabled={projectsLoading}
+          projects={visibleProjectItems}
+          value={selectedProjectIds}
+          onChange={onProjectFilterChange}
+        />
       </div>
-      {canManageBilling && (
-        <Button
-          className="shrink-0"
-          disabled={usersLoading || userItems.length === 0}
-          type="button"
-          onClick={onCreateTransaction}
-        >
-          <Plus size={16} />
-          {t('billingPage.createWalletTransaction')}
+      {selectedProjectIds.length > 0 && (
+        <Button className="shrink-0 self-start xl:self-auto" type="button" variant="ghost" onClick={() => onProjectFilterChange([])}>
+          <X />
+          {t('billingPage.clearProjectFilter')}
         </Button>
+      )}
+      {canManageBilling && (
+        <PageChromeTools>
+          <Button
+            disabled={usersLoading || userItems.length === 0}
+            type="button"
+            onClick={onCreateTransaction}
+          >
+            <Plus />
+            {t('billingPage.createWalletTransaction')}
+          </Button>
+        </PageChromeTools>
       )}
     </div>
   )

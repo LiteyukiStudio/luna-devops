@@ -109,13 +109,12 @@ const registriesPage = {
   deleteCredentialConfirm: 'Delete credential',
   deleteCredentialTitle: 'Delete credential',
   deleteCredentialDescription: 'Credential {{name}} will be deleted. Confirm to continue.',
-  noCapabilities: 'no capabilities',
+  noCapabilities: 'No capabilities declared',
+  advancedSettings: 'Advanced settings',
   test: 'Test',
-  deleteRegistryAria: 'Delete registry',
   tokenOnly: 'token-only',
   passwordSet: 'password',
   tokenSet: 'token',
-  deleteCredentialAria: 'Delete credential',
 }
 
 export default registriesPage

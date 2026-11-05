@@ -2,6 +2,8 @@ const appTemplatesPage = {
   searchPlaceholder: '앱, 용도, 이미지 검색',
   categoryFilter: '카테고리로 필터링',
   allCategories: '전체',
+  featuredSection: '추천',
+  allTemplatesSection: '전체 템플릿',
   sortBy: '정렬 필드',
   sortByPopularity: '인기',
   sortByName: '이름 A-Z',

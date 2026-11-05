@@ -7,10 +7,12 @@ import { toast } from 'sonner'
 import { api } from '@/api'
 import { useSession } from '@/app/session-context'
 import { ErrorState } from '@/components/common/error-state'
+import { Surface } from '@/components/common/surface'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Skeleton } from '@/components/ui/skeleton'
 import { OAuthConsentShell } from './oauth-consent'
 
 type DeviceDecision = 'approved' | 'denied'
@@ -116,14 +118,14 @@ export function OAuthDevicePage() {
                   <>
                     <div className="flex items-start gap-3">
                       {verification.data.application.logoUrl
-                        ? <img alt={verification.data.application.name} className="size-12 rounded-md border border-border object-contain" src={verification.data.application.logoUrl} />
-                        : <div className="grid size-12 place-items-center rounded-md bg-primary/10 text-primary"><KeyRound size={22} /></div>}
+                        ? <img alt={verification.data.application.name} className="size-12 rounded-control border border-border object-contain" src={verification.data.application.logoUrl} />
+                        : <div className="grid size-12 place-items-center rounded-control bg-primary-subtle text-primary-text"><KeyRound className="size-5" /></div>}
                       <div className="min-w-0">
                         <h2 className="font-semibold">{verification.data.application.name}</h2>
                         <p className="text-sm text-muted-foreground">{verification.data.application.description || t('oauthApps.noDescription')}</p>
                       </div>
                     </div>
-                    <div className="grid gap-3 rounded-md border border-border bg-muted/30 p-4">
+                    <Surface className="grid gap-3 p-4" variant="inset">
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <p className="text-sm font-medium">
                           {t('oauthApps.device.requestsAccess', { application: verification.data.application.name })}
@@ -133,7 +135,7 @@ export function OAuthDevicePage() {
                       <p className="text-sm text-muted-foreground">
                         {t('oauthApps.device.expiresAt', { time: formatDateTime(verification.data.expiresAt, i18n.language) })}
                       </p>
-                    </div>
+                    </Surface>
                     <p className="text-sm text-muted-foreground">{t('oauthApps.revokeAnytime')}</p>
                     <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                       <Button disabled={decision.isPending} variant="secondary" onClick={() => decision.mutate(false)}>
@@ -174,10 +176,16 @@ function DeviceDecisionResult({ decision, onReset }: { decision: DeviceDecision,
 
 function DeviceVerificationSkeleton() {
   return (
-    <div className="grid animate-pulse gap-4">
-      <div className="h-12 rounded-md bg-muted" />
-      <div className="h-32 rounded-md bg-muted" />
-      <div className="ml-auto h-9 w-36 rounded-md bg-muted" />
+    <div className="grid gap-4">
+      <div className="flex items-center gap-3">
+        <Skeleton className="size-12 rounded-control" />
+        <div className="grid flex-1 gap-2">
+          <Skeleton className="h-4 w-40" />
+          <Skeleton className="h-3 w-64 max-w-full" />
+        </div>
+      </div>
+      <Skeleton className="h-28 rounded-container" />
+      <Skeleton className="ml-auto h-9 w-36 rounded-control" />
     </div>
   )
 }

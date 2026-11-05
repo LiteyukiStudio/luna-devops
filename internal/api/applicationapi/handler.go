@@ -86,6 +86,7 @@ type Host interface {
 	NormalizeRuntimeConfigFilePathInput(ctx *gin.Context, value string) (string, bool)
 	IsBuildEnvKey(value string) bool
 	ObserveDeploymentTargets(ctx context.Context, project model.Project, targets []model.DeploymentTarget)
+	GatewayRouteAccessURL(ctx context.Context, route model.GatewayRoute, target model.DeploymentTarget) (string, error)
 	RuntimeClusterForDeploymentTarget(ctx *gin.Context, target model.DeploymentTarget) (model.RuntimeCluster, bool)
 	DeploymentTargetNamespace(project model.Project, target model.DeploymentTarget) string
 	KubernetesClientForDeploymentTargetObservation(project model.Project, target model.DeploymentTarget, ctx context.Context) (*kubeprovider.Client, string, string)

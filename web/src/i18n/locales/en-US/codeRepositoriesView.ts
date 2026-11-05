@@ -82,6 +82,7 @@ const codeRepositoriesView = {
   scopesHint: 'Upstream Git API permissions granted to the token, comma separated, such as repo and read:user. They do not control who can use the credential in Luna DevOps.',
   status: 'Status',
   oauthConnect: 'Connect {{provider}}',
+  oauthConnectMenu: 'Connect via OAuth',
   oauthReadyTitle: 'OAuth redirect is available',
   oauthReadyDescription: '{{provider}} has an OAuth App configured. Continue to the code platform and the credential will be created after authorization.',
   oauthManualOnlyTitle: 'Manual token only',
@@ -102,11 +103,9 @@ const codeRepositoriesView = {
   deleteProviderTitle: 'Delete Git provider',
   deleteProviderConfirm: 'Delete provider',
   deleteProviderDescription: 'Git provider {{name}} and all of its Git credentials will be deleted.',
-  deleteProviderAria: 'Delete Git provider',
   deleteCredentialTitle: 'Delete Git credential',
   deleteCredentialConfirm: 'Delete credential',
   deleteCredentialDescription: 'Git credential {{name}} will be deleted.',
-  deleteCredentialAria: 'Delete Git credential',
 }
 
 export default codeRepositoriesView

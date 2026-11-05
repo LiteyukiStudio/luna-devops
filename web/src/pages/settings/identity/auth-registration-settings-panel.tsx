@@ -45,7 +45,7 @@ export function AuthRegistrationSettingsPanel() {
     return <ErrorState title={t('settings.registration.loadFailedTitle')} description={t('settings.registration.loadFailedDescription')} />
 
   return (
-    <div className="grid max-w-3xl gap-4">
+    <div className="max-w-3xl">
       <PageChromeTools>
         <SettingsTabSaveButton
           disabled={settings.isLoading || !form.formState.isValid || !form.formState.isDirty}
@@ -56,7 +56,7 @@ export function AuthRegistrationSettingsPanel() {
         />
       </PageChromeTools>
       <Surface className="grid gap-4 p-6" variant="bordered">
-        <div className="grid gap-3">
+        <div className="grid gap-4">
           <Controller
             control={form.control}
             name="allowEmailRegistration"

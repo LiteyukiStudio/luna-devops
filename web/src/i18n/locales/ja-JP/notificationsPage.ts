@@ -61,6 +61,15 @@ const notificationsPage = {
   filterJsonHint: '任意。severities、applicationIds、deploymentTargetIds のみ対応し、通知範囲とプロジェクトスペースは上の選択が優先されます。',
   filterJsonInvalid: '有効な JSON オブジェクトを入力し、不明なフィールドまたは無効な配列を削除してください。',
   ruleInvalid: 'ルールをすべて入力し、通知範囲または高度なフィルターを修正してください。',
+  rowActions: '{{name}} の操作',
+  advancedFilter: '高度なフィルター',
+  filterSummarySet: '追加フィルターを設定済み',
+  filterSummaryNone: '未設定。範囲内のすべてのイベントに一致します',
+  filterSummaryInvalid: 'JSON 形式が無効です',
+  deleteChannelTitle: '通知チャネルを削除',
+  deleteTemplateTitle: '通知テンプレートを削除',
+  deleteRuleTitle: '通知ルールを削除',
+  deleteDescription: '「{{name}}」を削除します。この操作は元に戻せません。',
 }
 
 export default notificationsPage

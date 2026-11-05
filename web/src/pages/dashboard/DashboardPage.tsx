@@ -19,12 +19,15 @@ import { statusToneFor } from '@/components/common/status-tone'
 import { formatCompactDateTime } from '@/components/common/time-format'
 import { Button } from '@/components/ui/button'
 import { buttonVariants } from '@/components/ui/button-variants'
+import { shortImageRef } from '@/lib/image-ref'
 import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
 import { statusRefetchInterval } from '@/lib/polling'
 import { withResultVisibility } from '@/lib/result-visibility'
 import { isPlatformAdmin } from '@/lib/roles'
 import { cn } from '@/lib/utils'
 import { effectiveReplicaState, replicaStateTone } from '@/pages/applications/deployments/operations/application-deployment-runtime-utils'
+import { AccessUrlLink } from '@/pages/applications/gateway/access-url-link'
+import { httpAccessUrl } from '@/pages/applications/gateway/gateway-route-url'
 
 const dashboardVisibility: ResultVisibility = 'related'
 // 首页只为最常用的项目空间读取应用实时状态，避免一次扇出过多 Kubernetes 观测请求。
@@ -170,6 +173,13 @@ function RecentApplications({ failed, loading, rows, visibility }: { failed: boo
             ),
           },
           { key: 'status', header: t('dashboardPage.statusColumn'), width: 'status', render: row => <DashboardRuntimeStatus application={row.application} /> },
+          { key: 'accessUrl', header: t('dashboardPage.accessUrlColumn'), width: 'normal', mobile: 'hidden', render: row => (
+            // 访问地址与当前版本放在同一格的两行，避免两栏布局下表格被撑出横向滚动
+            <div className="grid min-w-0 gap-0.5">
+              <DashboardAccessUrl application={row.application} />
+              <DashboardCurrentVersion application={row.application} />
+            </div>
+          ) },
           {
             key: 'activity',
             header: t('dashboardPage.activityColumn'),
@@ -221,6 +231,28 @@ function DashboardRuntimeStatus({ application }: { application: Application }) {
       label={t(`dashboardPage.runtimeStatuses.${state.value}`, { defaultValue: state.value })}
       tone={replicaStateTone(state.value)}
     />
+  )
+}
+
+function DashboardAccessUrl({ application }: { application: Application }) {
+  const url = httpAccessUrl(application.primaryAccessUrl?.trim())
+  if (!url)
+    return <span className="text-sm text-muted-foreground">-</span>
+  return <AccessUrlLink url={url} />
+}
+
+function DashboardCurrentVersion({ application }: { application: Application }) {
+  const { t } = useTranslation()
+  const release = application.currentRelease
+  if (!release)
+    return null
+  return (
+    <span
+      className="truncate font-mono text-xs text-muted-foreground"
+      title={`${release.imageRef} · ${t('dashboardPage.versionReleasedAt', { time: formatCompactDateTime(release.deployedAt) })}`}
+    >
+      {shortImageRef(release.imageRef)}
+    </span>
   )
 }
 

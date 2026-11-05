@@ -228,59 +228,51 @@ export function CodeRepositoriesPage() {
     onError: error => toast.error(error.message),
   })
 
-  return (
-    <div className="grid gap-6">
-      {(providers.isError || credentials.isError) && (
-        <ErrorState title={t('codeRepositoriesView.loadFailedTitle')} description={t('codeRepositoriesView.loadFailedDescription')} />
-      )}
+  const visibilitySelect = (
+    <ResultVisibilitySelect
+      canViewAll={canViewAll}
+      containerClassName="w-full sm:w-36"
+      value={effectiveVisibility}
+      onChange={(nextVisibility) => {
+        setVisibility(nextVisibility)
+        setProviderPage(1)
+        setCredentialPage(1)
+      }}
+    />
+  )
 
+  return (
+    <>
       <ContentTabs
         tabs={[
           { value: 'providers', label: t('codeRepositoriesView.providersTab') },
           { value: 'credentials', label: t('codeRepositoriesView.credentialsTab') },
         ]}
-        tools={(canViewAll || activeTab === 'credentials' || canManageProviders) && (
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            <ResultVisibilitySelect
-              canViewAll={canViewAll}
-              value={effectiveVisibility}
-              onChange={(nextVisibility) => {
-                setVisibility(nextVisibility)
-                setProviderPage(1)
-                setCredentialPage(1)
+        tools={activeTab === 'providers'
+          ? canManageProviders && (
+            <Button
+              onClick={() => {
+                setEditingProvider(null)
+                providerForm.reset(providerDefaults)
+                setProviderDialogOpen(true)
               }}
-            />
-            {activeTab === 'providers'
-              ? (
-                  canManageProviders
-                    ? (
-                        <Button
-                          onClick={() => {
-                            setEditingProvider(null)
-                            providerForm.reset(providerDefaults)
-                            setProviderDialogOpen(true)
-                          }}
-                        >
-                          <Plus size={16} />
-                          {t('codeRepositoriesView.createProvider')}
-                        </Button>
-                      )
-                    : undefined
-                )
-              : (
-                  <Button
-                    onClick={() => {
-                      setEditingCredential(null)
-                      credentialForm.reset(credentialDefaults)
-                      setCredentialDialogOpen(true)
-                    }}
-                  >
-                    <Plus size={16} />
-                    {t('codeRepositoriesView.createCredential')}
-                  </Button>
-                )}
-          </div>
-        )}
+            >
+              <Plus />
+              {t('codeRepositoriesView.createProvider')}
+            </Button>
+          )
+          : (
+              <Button
+                onClick={() => {
+                  setEditingCredential(null)
+                  credentialForm.reset(credentialDefaults)
+                  setCredentialDialogOpen(true)
+                }}
+              >
+                <Plus />
+                {t('codeRepositoriesView.createCredential')}
+              </Button>
+            )}
         value={activeTab}
         onValueChange={setActiveTab}
       >
@@ -291,51 +283,57 @@ export function CodeRepositoriesPage() {
             initial={{ opacity: 0, y: 6 }}
             transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
           >
-            {activeTab === 'providers'
-              ? (
-                  <ProvidersPanel
-                    canManage={Boolean(canManageProviders)}
-                    page={providers.data?.page ?? providerPage}
-                    pageSize={providers.data?.pageSize ?? providerPageSize}
-                    providers={providerOptionItems}
-                    projectMap={projectMap}
-                    total={providers.data?.total ?? 0}
-                    totalPages={providers.data?.totalPages ?? 0}
-                    onDelete={setProviderToDelete}
-                    onEdit={(provider) => {
-                      setEditingProvider(provider)
-                      setProviderDialogOpen(true)
-                    }}
-                    onPageChange={setProviderPage}
-                    onPageSizeChange={(pageSize) => {
-                      setProviderPageSize(pageSize)
-                      setProviderPage(1)
-                    }}
-                  />
-                )
-              : (
-                  <CredentialsPanel
-                    credentials={credentialItems}
-                    page={credentials.data?.page ?? credentialPage}
-                    pageSize={credentials.data?.pageSize ?? credentialPageSize}
-                    providers={providerOptionItems}
-                    projectMap={projectMap}
-                    refreshPending={refreshCredential.isPending}
-                    total={credentials.data?.total ?? 0}
-                    totalPages={credentials.data?.totalPages ?? 0}
-                    onDelete={setCredentialToDelete}
-                    onEdit={(credential) => {
-                      setEditingCredential(credential)
-                      setCredentialDialogOpen(true)
-                    }}
-                    onPageChange={setCredentialPage}
-                    onPageSizeChange={(pageSize) => {
-                      setCredentialPageSize(pageSize)
-                      setCredentialPage(1)
-                    }}
-                    onRefresh={credential => refreshCredential.mutate(credential.id)}
-                  />
-                )}
+            {(activeTab === 'providers' ? providers.isError : credentials.isError)
+              ? <ErrorState title={t('codeRepositoriesView.loadFailedTitle')} description={t('codeRepositoriesView.loadFailedDescription')} />
+              : activeTab === 'providers'
+                ? (
+                    <ProvidersPanel
+                      canManage={Boolean(canManageProviders)}
+                      loading={providers.isLoading}
+                      page={providers.data?.page ?? providerPage}
+                      pageSize={providers.data?.pageSize ?? providerPageSize}
+                      providers={providers.data?.items ?? []}
+                      projectMap={projectMap}
+                      toolbar={visibilitySelect}
+                      total={providers.data?.total ?? 0}
+                      totalPages={providers.data?.totalPages ?? 0}
+                      onDelete={setProviderToDelete}
+                      onEdit={(provider) => {
+                        setEditingProvider(provider)
+                        setProviderDialogOpen(true)
+                      }}
+                      onPageChange={setProviderPage}
+                      onPageSizeChange={(pageSize) => {
+                        setProviderPageSize(pageSize)
+                        setProviderPage(1)
+                      }}
+                    />
+                  )
+                : (
+                    <CredentialsPanel
+                      credentials={credentialItems}
+                      loading={credentials.isLoading}
+                      page={credentials.data?.page ?? credentialPage}
+                      pageSize={credentials.data?.pageSize ?? credentialPageSize}
+                      providers={providerOptionItems}
+                      projectMap={projectMap}
+                      refreshPending={refreshCredential.isPending}
+                      toolbar={visibilitySelect}
+                      total={credentials.data?.total ?? 0}
+                      totalPages={credentials.data?.totalPages ?? 0}
+                      onDelete={setCredentialToDelete}
+                      onEdit={(credential) => {
+                        setEditingCredential(credential)
+                        setCredentialDialogOpen(true)
+                      }}
+                      onPageChange={setCredentialPage}
+                      onPageSizeChange={(pageSize) => {
+                        setCredentialPageSize(pageSize)
+                        setCredentialPage(1)
+                      }}
+                      onRefresh={credential => refreshCredential.mutate(credential.id)}
+                    />
+                  )}
           </motion.div>
         </TabsContent>
       </ContentTabs>
@@ -388,6 +386,6 @@ export function CodeRepositoriesPage() {
         onConfirm={() => credentialToDelete && deleteCredential.mutate(credentialToDelete.id)}
         onOpenChange={open => !open && setCredentialToDelete(null)}
       />
-    </div>
+    </>
   )
 }

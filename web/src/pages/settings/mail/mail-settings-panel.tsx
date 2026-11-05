@@ -9,10 +9,9 @@ import { toast } from 'sonner'
 import { z } from 'zod'
 import { api } from '@/api'
 import { ErrorState } from '@/components/common/error-state'
-import { FormActions } from '@/components/common/form-actions'
 import { FormField as Field } from '@/components/common/form-field'
 import { PageChromeTools } from '@/components/common/page-chrome'
-import { Section } from '@/components/common/section'
+import { Surface } from '@/components/common/surface'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { NativeSelect } from '@/components/ui/native-select'
@@ -72,15 +71,10 @@ export function MailSettingsPanel() {
           onClick={() => void submit()}
         />
       </PageChromeTools>
-      <Section
-        className="max-w-3xl"
-        description={t('settings.mail.description')}
-        title={t('settings.mail.title')}
-        variant="bordered"
-      >
+      <Surface className="max-w-3xl p-6" variant="bordered">
         <form className="grid gap-4" onSubmit={submit}>
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field error={form.formState.errors.host?.message} label={t('settings.mail.host')} required>
+            <Field error={form.formState.errors.host?.message} hint={t('settings.mail.description')} label={t('settings.mail.host')} required>
               <Input {...form.register('host')} aria-invalid={Boolean(form.formState.errors.host)} placeholder="smtp.example.com" />
             </Field>
             <Field error={form.formState.errors.port?.message} label={t('settings.mail.port')} required>
@@ -132,9 +126,6 @@ export function MailSettingsPanel() {
             <Field hint={t('settings.mail.testRecipientHint')} label={t('settings.mail.testRecipient')}>
               <Input value={testRecipient} type="email" onChange={event => setTestRecipient(event.target.value)} />
             </Field>
-          </div>
-
-          <FormActions separated={false}>
             <Button
               disabled={!testRecipientValid || test.isPending || settings.isLoading || form.formState.isDirty || !settings.data?.host}
               type="button"
@@ -144,9 +135,9 @@ export function MailSettingsPanel() {
               <Send className="size-4" />
               {t('settings.mail.sendTest')}
             </Button>
-          </FormActions>
+          </div>
         </form>
-      </Section>
+      </Surface>
     </>
   )
 }

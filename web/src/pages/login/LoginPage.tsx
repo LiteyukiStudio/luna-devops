@@ -92,7 +92,7 @@ export function LoginPage() {
     <div className="grid min-h-screen place-items-center bg-primary-subtle px-3 py-4 text-foreground sm:px-6 sm:py-6 lg:px-4 lg:py-8">
       <PageMotion className="w-full max-w-5xl">
         <Card
-          className="relative overflow-visible rounded-container bg-surface p-4 sm:p-6 lg:bg-[image:var(--auth-card-background)] lg:p-0"
+          className="relative overflow-visible bg-surface p-4 sm:p-6 lg:bg-[image:var(--auth-card-background)] lg:p-0"
           padding="none"
         >
           <div className="grid lg:min-h-160 lg:grid-cols-[1.08fr_0.92fr]">

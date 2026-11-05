@@ -28,7 +28,9 @@ type Template struct {
 	OfficialWebsite    string `json:"officialWebsite"`
 	OfficialRepository string `json:"officialRepository"`
 	PopularityWeight   int    `json:"popularityWeight"`
-	Version            string `json:"version"`
+	// Featured 标记应用市场“推荐”分区展示的模板，只给少数确有推荐意义的模板设置。
+	Featured bool   `json:"featured"`
+	Version  string `json:"version"`
 	Workload
 	// Components 声明多组件模板；第一个组件是入口组件。声明后模板自身不再携带单容器 Workload。
 	Components []Component       `json:"components"`

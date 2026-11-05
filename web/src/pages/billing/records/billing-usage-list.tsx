@@ -1,6 +1,7 @@
 import type { BillingDisplay, BillingListPage } from './billing-list-cells'
 import type { BillingUsageRecord, Project } from '@/api'
 import type { DataListColumn } from '@/components/common/data-list'
+import { Gauge } from 'lucide-react'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { DataList } from '@/components/common/data-list'
@@ -12,6 +13,7 @@ import { ApplicationCell, ProjectCell, ResourceCell } from './billing-list-cells
 export function BillingUsageList({
   billingDisplay,
   data,
+  loading,
   locale,
   page,
   projectMap,
@@ -19,6 +21,7 @@ export function BillingUsageList({
 }: {
   billingDisplay: BillingDisplay
   data?: BillingListPage<BillingUsageRecord>
+  loading: boolean
   locale: string
   page: number
   projectMap: Map<string, Project>
@@ -29,49 +32,49 @@ export function BillingUsageList({
     {
       key: 'project',
       header: t('billingPage.project'),
-      className: 'min-w-56',
+      width: 'primary',
       render: item => <ProjectCell project={projectMap.get(item.projectId)} unknownLabel={t('billingPage.unknownProject')} />,
     },
     {
       key: 'application',
       header: t('billingPage.application'),
-      className: 'min-w-52',
+      width: 'normal',
       render: item => <ApplicationCell item={item} unassignedLabel={t('billingPage.unassignedApplication')} />,
     },
     {
       key: 'meter',
       header: t('billingPage.meter'),
-      className: 'min-w-40',
+      width: 'secondary',
       render: item => t(`billingPage.meters.${item.meter}`, { defaultValue: item.meter }),
     },
     {
       key: 'status',
       header: t('common.status'),
-      className: 'w-28',
+      width: 'status',
       render: item => <StatusValueBadge value={item.status} />,
     },
     {
       key: 'quantity',
       header: t('billingPage.quantity'),
-      className: 'w-36',
+      width: 'number',
       render: item => <span className="tabular-nums">{formatQuantity(item.quantity, item.unit, locale)}</span>,
     },
     {
       key: 'amount',
       header: t('billingPage.amount'),
-      className: 'w-40',
+      width: 'number',
       render: item => <span className="font-medium tabular-nums text-destructive">{billingDisplay.formatAmountWithUnit(item.amountCredits)}</span>,
     },
     {
       key: 'resource',
       header: t('billingPage.resource'),
-      className: 'min-w-56',
+      width: 'primary',
       render: item => <ResourceCell resourceId={item.resourceId} resourceType={item.resourceType} />,
     },
     {
       key: 'time',
       header: t('billingPage.time'),
-      className: 'w-44',
+      width: 'compact',
       render: item => formatSmartDateTime(item.createdAt, t),
     },
   ], [billingDisplay, locale, projectMap, t])
@@ -81,7 +84,9 @@ export function BillingUsageList({
       columns={columns}
       emptyDescription={t('billingPage.emptyUsageDescription')}
       emptyTitle={t('billingPage.emptyUsageTitle')}
+      emptyIcon={<Gauge className="size-5" />}
       items={data?.items ?? []}
+      loading={loading}
       pagination={{
         page: data?.page ?? page,
         pageInfoLabel: t('billingPage.usagePageInfo', {

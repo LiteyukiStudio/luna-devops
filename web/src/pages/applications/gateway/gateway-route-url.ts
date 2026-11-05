@@ -5,7 +5,11 @@ import type { GatewayRoute } from '@/api'
  * 只返回 http(s) 协议的地址，其它值视为不可点击。
  */
 export function gatewayRouteAccessUrl(route: GatewayRoute) {
-  const candidate = route.accessUrl?.trim() || derivedRouteUrl(route)
+  return httpAccessUrl(route.accessUrl?.trim() || derivedRouteUrl(route))
+}
+
+/** 只放行 http(s) 协议的访问地址，其它值（含无法解析的值）返回空串表示不可点击。 */
+export function httpAccessUrl(candidate: string | undefined) {
   if (!candidate)
     return ''
   try {

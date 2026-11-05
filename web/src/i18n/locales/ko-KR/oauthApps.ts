@@ -1,7 +1,6 @@
 const oauthApps = {
   applicationsTab: '개발자 앱',
   grantsTab: '승인된 앱',
-  grantsTitle: '앱 승인',
   application: '앱',
   createApplication: '앱 생성',
   editApplication: '앱 편집',
@@ -73,6 +72,9 @@ const oauthApps = {
     redirectRequired: '최소 하나의 콜백 URL을 입력하세요',
     scopeRequired: '최소 하나의 권한을 선택하세요',
   },
+  applicationActions: '{{name}} 앱 작업',
+  presentationSection: '표시 정보',
+  presentationEmpty: '설명, 홈페이지, 로고가 없습니다',
 }
 
 export default oauthApps

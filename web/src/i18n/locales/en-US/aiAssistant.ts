@@ -2,6 +2,8 @@ const aiAssistant = {
   aiAssistant: {
     open: 'Open Luna Assistant',
     title: 'Luna Assistant',
+    expand: 'Expand to full screen',
+    collapse: 'Collapse to floating window',
     page: {
       backToWorkspace: 'Back to workspace',
       unavailableTitle: 'Assistant unavailable',
@@ -18,6 +20,7 @@ const aiAssistant = {
     inputLabel: 'Message Luna Assistant',
     inputPlaceholder: 'Describe the issue to diagnose…',
     inputTooLarge: 'The message exceeds the {{limit}} limit. Shorten it before sending.',
+    inputLength: '{{count}} chars',
     loadOlder: 'Load earlier messages',
     loadingOlder: 'Loading earlier messages',
     olderLoadFailed: 'Earlier messages could not be loaded. Try again.',
@@ -532,6 +535,12 @@ const aiAssistant = {
     conversations: {
       title: 'Conversations',
       new: 'New conversation',
+      close: 'Close conversation list',
+      groups: {
+        today: 'Today',
+        recent: 'Previous 7 days',
+        earlier: 'Earlier',
+      },
       refreshStarted: 'A new conversation was opened after refresh',
       returnPrevious: 'Return to previous',
       returnPreviousCountdown: '{{count}}s',

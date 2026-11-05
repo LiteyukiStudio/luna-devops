@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen } from '@testing-library/react'
 import { beforeAll, describe, expect, it, vi } from 'vitest'
+import { TooltipProvider } from '@/components/ui/tooltip'
 import i18next from '@/i18n'
 import { BillingPriceList } from './billing-price-list'
 
@@ -61,12 +62,14 @@ describe('billing price list', () => {
 
     render(
       <QueryClientProvider client={queryClient}>
-        <BillingPriceList
-          billingDisplay={{
-            formatAmountWithUnit: value => `${value} Credits`,
-            formatFiatAmount: () => '',
-          }}
-        />
+        <TooltipProvider>
+          <BillingPriceList
+            billingDisplay={{
+              formatAmountWithUnit: value => `${value} Credits`,
+              formatFiatAmount: () => '',
+            }}
+          />
+        </TooltipProvider>
       </QueryClientProvider>,
     )
 

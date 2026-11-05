@@ -32,6 +32,8 @@ const dashboardPage = {
   applicationColumn: 'アプリケーション',
   statusColumn: '稼働状態',
   activityColumn: '最新アクティビティ',
+  accessUrlColumn: 'アクセスとバージョン',
+  versionReleasedAt: '{{time}} にリリース',
   noRecentApps: 'アプリケーションはまだありません',
   noRecentAppsDescription: 'プロジェクトスペースでアプリケーションを作成するか、テンプレートから始めてください。',
   openApplication: 'アプリケーション {{name}} を開く',

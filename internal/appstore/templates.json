@@ -9,6 +9,7 @@
     "officialWebsite": "https://www.postgresql.org/",
     "officialRepository": "https://github.com/postgres/postgres",
     "popularityWeight": 100,
+    "featured": true,
     "image": "postgres:16-alpine",
     "version": "16-alpine",
     "servicePort": 5432,
@@ -61,6 +62,7 @@
     "officialWebsite": "https://redis.io/",
     "officialRepository": "https://github.com/redis/redis",
     "popularityWeight": 95,
+    "featured": true,
     "image": "redis:7-alpine",
     "version": "7-alpine",
     "servicePort": 6379,
@@ -1006,6 +1008,7 @@
     "officialWebsite": "https://about.gitea.com/",
     "officialRepository": "https://github.com/go-gitea/gitea",
     "popularityWeight": 82,
+    "featured": true,
     "image": "gitea/gitea:1.22-rootless",
     "version": "1.22-rootless",
     "servicePort": 3000,
@@ -1187,6 +1190,7 @@
     "officialWebsite": "https://github.com/snowykami/neo-blog",
     "officialRepository": "https://github.com/snowykami/neo-blog",
     "popularityWeight": 80,
+    "featured": true,
     "version": "latest",
     "components": [
       {

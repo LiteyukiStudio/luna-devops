@@ -2,6 +2,8 @@ const aiAssistant = {
   aiAssistant: {
     open: '打开 Luna 助手',
     title: 'Luna 助手',
+    expand: '展开为全屏',
+    collapse: '收起为浮窗',
     page: {
       backToWorkspace: '返回工作区',
       unavailableTitle: '助手当前不可用',
@@ -18,6 +20,7 @@ const aiAssistant = {
     inputLabel: '发送给 Luna 助手的消息',
     inputPlaceholder: '描述要诊断的问题…',
     inputTooLarge: '消息超过 {{limit}} 上限，请缩短后再发送。',
+    inputLength: '{{count}} 字',
     loadOlder: '加载更早的消息',
     loadingOlder: '正在加载更早的消息',
     olderLoadFailed: '更早的消息加载失败，请重试',
@@ -532,6 +535,12 @@ const aiAssistant = {
     conversations: {
       title: '会话',
       new: '新建会话',
+      close: '关闭会话列表',
+      groups: {
+        today: '今天',
+        recent: '7 天内',
+        earlier: '更早',
+      },
       refreshStarted: '刷新后已进入新会话',
       returnPrevious: '返回上一个会话',
       returnPreviousCountdown: '{{count}} 秒',

@@ -244,8 +244,19 @@ export interface Application {
   deleteStartedAt?: string | null
   deleteFinishedAt?: string | null
   deploymentSummary?: ApplicationDeploymentSummary
+  /** 仅 includeRuntime=true 且存在启用路由时返回；来自网关配置，不代表连通性。 */
+  primaryAccessUrl?: string
+  /** 仅 includeRuntime=true 且存在成功发布时返回；是工作流结果，不是实时镜像。 */
+  currentRelease?: ApplicationCurrentRelease
   createdAt: string
   updatedAt: string
+}
+
+export interface ApplicationCurrentRelease {
+  id: string
+  deploymentTargetId: string
+  imageRef: string
+  deployedAt: string
 }
 
 export interface ApplicationDeploymentSummary {
@@ -360,6 +371,7 @@ export interface AppTemplate {
   officialWebsite: string
   officialRepository: string
   popularityWeight: number
+  featured: boolean
   image: string
   version: string
   servicePort: number

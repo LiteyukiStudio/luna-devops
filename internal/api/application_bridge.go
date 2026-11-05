@@ -6,6 +6,7 @@ import (
 
 	"github.com/LiteyukiStudio/devops/internal/api/applicationapi"
 	"github.com/LiteyukiStudio/devops/internal/api/buildapi"
+	"github.com/LiteyukiStudio/devops/internal/api/gatewayapi"
 	"github.com/LiteyukiStudio/devops/internal/api/runtimeapi"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/notification"
@@ -134,6 +135,16 @@ func (host applicationHost) IsBuildEnvKey(value string) bool { return buildapi.I
 
 func (host applicationHost) ObserveDeploymentTargets(ctx context.Context, project model.Project, targets []model.DeploymentTarget) {
 	host.handlers.observeDeploymentTargets(ctx, project, targets)
+}
+
+// GatewayRouteAccessURL 复用网关域的公开 scheme/端口规则，为路由所在运行集群生成访问地址。
+func (host applicationHost) GatewayRouteAccessURL(ctx context.Context, route model.GatewayRoute, target model.DeploymentTarget) (string, error) {
+	cluster, err := runtimeapi.RuntimeClusterForDeploymentTargetDB(host.handlers.dbWithContext(ctx), target)
+	if err != nil {
+		return "", err
+	}
+	gateway := host.handlers.domains.gateway
+	return gatewayapi.GatewayRouteAccessURL(route, gateway.GatewayPublicScheme(cluster), gateway.GatewayPublicPort(cluster)), nil
 }
 
 func (host applicationHost) DeploymentTargetNamespace(project model.Project, target model.DeploymentTarget) string {

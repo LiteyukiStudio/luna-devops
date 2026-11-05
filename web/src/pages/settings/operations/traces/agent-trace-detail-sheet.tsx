@@ -137,7 +137,7 @@ export function AgentTraceDetailSheet({ trace, onOpenChange }: {
                             </span>
                           </button>
                         </span>
-                        <span className="relative h-6 overflow-hidden rounded-control bg-muted">
+                        <span className="relative h-6 overflow-hidden rounded-control bg-surface-subtle">
                           <span className={cn('absolute top-1 h-4 min-w-1 rounded-sm', spanBarClass(span))} style={barStyle(span, detail.data.durationMs)} />
                         </span>
                         <span className="self-center text-right font-mono text-xs">{formatDuration(span.durationMs)}</span>
@@ -185,7 +185,7 @@ function SpanInspector({ span }: { span: AgentObservabilityTraceSpan }) {
         {!Object.keys(span.attributes).some(key => !isAgentSpanContentAttribute(key))
           ? <p className="text-sm text-muted-foreground">{t('operationsDashboardPage.traceDetail.noAttributes')}</p>
           : Object.entries(span.attributes).filter(([key]) => !isAgentSpanContentAttribute(key)).map(([key, value]) => (
-              <div key={key} className="grid gap-1 rounded-control bg-muted p-2">
+              <div key={key} className="grid gap-1 rounded-control bg-surface-subtle p-2">
                 <span className="font-mono text-[11px] text-muted-foreground">{key}</span>
                 <span className="break-all text-sm">{value}</span>
               </div>

@@ -59,6 +59,9 @@ export function AppTemplatesPage() {
       return popularityResult === 0 ? a.name.localeCompare(b.name, i18n.language) : direction * popularityResult
     })
   const filtered = Boolean(keyword) || category !== ALL_CATEGORIES
+  // 只有浏览全部且未搜索时才拆出“推荐”分区，筛选结果保持单一列表，避免同一模板出现两次或被分区打散。
+  const featuredTemplates = filtered ? [] : visibleTemplates.filter(template => template.featured)
+  const remainingTemplates = featuredTemplates.length > 0 ? visibleTemplates.filter(template => !template.featured) : visibleTemplates
 
   function closeInstallSheet() {
     setSelectedTemplateOverride(null)
@@ -143,21 +146,43 @@ export function AppTemplatesPage() {
                   )
                 : <EmptyState description={t('appTemplatesPage.emptyDescription')} title={t('appTemplatesPage.emptyTitle')} />
             )
-          : (
-              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-                {visibleTemplates.map(template => (
-                  <TemplateCard
-                    key={template.id}
-                    template={template}
-                    onOpen={() => setSelectedTemplateOverride(template)}
-                  />
-                ))}
-              </div>
-            )
+          : featuredTemplates.length > 0
+            ? (
+                <>
+                  <TemplateSection templates={featuredTemplates} title={t('appTemplatesPage.featuredSection')} titleId="app-templates-featured" onOpen={setSelectedTemplateOverride} />
+                  {remainingTemplates.length > 0 && (
+                    <TemplateSection templates={remainingTemplates} title={t('appTemplatesPage.allTemplatesSection')} titleId="app-templates-all" onOpen={setSelectedTemplateOverride} />
+                  )}
+                </>
+              )
+            : <TemplateGrid templates={visibleTemplates} onOpen={setSelectedTemplateOverride} />
       )}
 
       <InstallTemplateSheet summary={selectedTemplate} onClose={closeInstallSheet} />
     </PageShell>
+  )
+}
+
+function TemplateSection({ templates, title, titleId, onOpen }: { templates: AppTemplateSummary[], title: string, titleId: string, onOpen: (template: AppTemplateSummary) => void }) {
+  return (
+    <section aria-labelledby={titleId} className="grid gap-2.5">
+      <h2 className="text-sm font-semibold" id={titleId}>{title}</h2>
+      <TemplateGrid templates={templates} onOpen={onOpen} />
+    </section>
+  )
+}
+
+function TemplateGrid({ templates, onOpen }: { templates: AppTemplateSummary[], onOpen: (template: AppTemplateSummary) => void }) {
+  return (
+    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+      {templates.map(template => (
+        <TemplateCard
+          key={template.id}
+          template={template}
+          onOpen={() => onOpen(template)}
+        />
+      ))}
+    </div>
   )
 }
 

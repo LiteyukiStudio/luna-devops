@@ -2,11 +2,13 @@ import type { BillingDisplay } from '../records/billing-list-cells'
 import type { BillingRateRule } from '@/api'
 import type { DataListColumn } from '@/components/common/data-list'
 import { useQuery } from '@tanstack/react-query'
+import { ReceiptText } from 'lucide-react'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { api } from '@/api'
 import { DataList } from '@/components/common/data-list'
 import { ErrorState } from '@/components/common/error-state'
+import { HelpTip } from '@/components/common/help-tip'
 import { StatusBadge } from '@/components/common/status-badge'
 
 type PriceDisplay = Pick<BillingDisplay, 'formatAmountWithUnit' | 'formatFiatAmount'>
@@ -22,8 +24,13 @@ export function BillingPriceList({ billingDisplay }: { billingDisplay: PriceDisp
       width: 'primary',
       render: rule => (
         <span className="block min-w-0">
-          <span className="block truncate font-medium">
-            {t(`billingPage.meters.${rule.meter}`, { defaultValue: rule.meter })}
+          <span className="flex min-w-0 items-center gap-1.5">
+            <span className="truncate font-medium">
+              {t(`billingPage.meters.${rule.meter}`, { defaultValue: rule.meter })}
+            </span>
+            <HelpTip label={t(`billingPage.meters.${rule.meter}`, { defaultValue: rule.meter })}>
+              {t(`settings.billingRateRuleDescriptions.${rule.meter}`, { defaultValue: rule.description })}
+            </HelpTip>
           </span>
           <span className="block truncate font-mono text-xs text-muted-foreground">{rule.meter}</span>
         </span>
@@ -31,7 +38,16 @@ export function BillingPriceList({ billingDisplay }: { billingDisplay: PriceDisp
     },
     {
       key: 'price',
-      header: t('billingPage.unitPrice'),
+      header: (
+        <span className="inline-flex items-center gap-1.5">
+          {t('billingPage.unitPrice')}
+          <HelpTip label={t('billingPage.unitPrice')}>
+            {t('billingPage.priceTableDescription')}
+            {' '}
+            {t('billingPage.aiModelPricingNote')}
+          </HelpTip>
+        </span>
+      ),
       width: 'secondary',
       render: (rule) => {
         const fiatPrice = billingDisplay.formatFiatAmount(rule.creditsPerUnit)
@@ -63,16 +79,6 @@ export function BillingPriceList({ billingDisplay }: { billingDisplay: PriceDisp
         </StatusBadge>
       ),
     },
-    {
-      key: 'description',
-      header: t('billingPage.descriptionLabel'),
-      width: 'normal',
-      render: rule => (
-        <span className="text-muted-foreground">
-          {t(`settings.billingRateRuleDescriptions.${rule.meter}`, { defaultValue: rule.description })}
-        </span>
-      ),
-    },
   ], [billingDisplay, t])
 
   if (rateRules.isError) {
@@ -85,17 +91,14 @@ export function BillingPriceList({ billingDisplay }: { billingDisplay: PriceDisp
   }
 
   return (
-    <div className="grid gap-3">
-      <p className="text-sm text-muted-foreground">{t('billingPage.priceTableDescription')}</p>
-      <p className="text-sm text-muted-foreground">{t('billingPage.aiModelPricingNote')}</p>
-      <DataList
-        columns={columns}
-        emptyDescription={t('billingPage.emptyPriceTableDescription')}
-        emptyTitle={t('billingPage.emptyPriceTableTitle')}
-        items={resourceRateRules}
-        loading={rateRules.isLoading}
-        rowKey={rule => rule.meter}
-      />
-    </div>
+    <DataList
+      columns={columns}
+      emptyDescription={t('billingPage.emptyPriceTableDescription')}
+      emptyIcon={<ReceiptText className="size-5" />}
+      emptyTitle={t('billingPage.emptyPriceTableTitle')}
+      items={resourceRateRules}
+      loading={rateRules.isLoading}
+      rowKey={rule => rule.meter}
+    />
   )
 }

@@ -195,3 +195,26 @@ func TestValidateTemplateWorkloadsRejectsInvalidComponents(t *testing.T) {
 		t.Fatalf("valid components rejected: %v", err)
 	}
 }
+
+func TestCatalogFeaturesOnlyCuratedApplicationTemplates(t *testing.T) {
+	templates, err := Catalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	featured := make([]string, 0)
+	for _, template := range templates {
+		if !template.Featured {
+			continue
+		}
+		if template.Kind == "system_component" {
+			t.Fatalf("system component template %q must not be featured", template.ID)
+		}
+		featured = append(featured, template.ID)
+	}
+	slices.Sort(featured)
+	want := []string{"gitea", "neo-blog", "postgresql", "redis"}
+	if !slices.Equal(featured, want) {
+		t.Fatalf("featured templates = %v, want %v", featured, want)
+	}
+}

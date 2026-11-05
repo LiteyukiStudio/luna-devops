@@ -49,7 +49,7 @@ import { interactionCardDensity, interactionCardTemplateConfigs, shouldExpandInt
 import { LiveProgressBlock } from './live-progress-block'
 import { AIInlineMarkdown, AIMarkdown } from './markdown'
 
-const compactActionClassName = 'h-auto min-h-7 max-w-full gap-1.5 whitespace-normal px-2.5 py-1 !text-[11px] leading-4 [&_svg]:size-3.5'
+const compactActionClassName = 'h-auto min-h-8 max-w-full gap-1.5 whitespace-normal px-3 py-1.5 text-xs leading-4 [&_svg]:size-3.5'
 
 function withOccurrenceKeys<T>(items: readonly T[], identity: (item: T) => string) {
   const occurrences = new Map<string, number>()
@@ -82,7 +82,7 @@ export function AIInteractionCards({ arguments: rawArguments, onAction }: AIInte
   const group = useMemo(() => readValidatedInteractionCardGroup(rawArguments), [rawArguments])
   if (!group) {
     return (
-      <div className="rounded-container bg-danger-subtle px-3 py-2 text-xs text-danger" role="alert">
+      <div className="rounded-control border border-danger-border bg-danger-subtle px-3 py-2 text-xs text-danger" role="alert">
         {t('aiAssistant.cards.invalid')}
       </div>
     )
@@ -100,10 +100,10 @@ function InteractionCardGroupView({ group, onAction }: { group: InteractionCardG
   const templateConfig = interactionCardTemplateConfigs[group.template]
   return (
     <section className={cn('grid min-w-0 grid-cols-[minmax(0,1fr)]', density === 'compact' ? 'gap-2' : 'gap-2.5')} data-ai-card-density={density} data-ai-card-generation={group.generationId} data-ai-card-group={group.template} data-ai-card-mode={group.mode}>
-      <header className="px-0.5">
-        <p className="text-[10px] font-medium uppercase tracking-wide text-primary-text">{t(`aiAssistant.cards.templates.${group.template}`)}</p>
-        <h3 className="mt-0.5 text-[13px] font-semibold leading-5"><AIInlineMarkdown>{group.title}</AIInlineMarkdown></h3>
-        {group.description && <AIMarkdown className="mt-0.5 text-[11px] leading-4 text-muted-foreground">{group.description}</AIMarkdown>}
+      <header className="grid gap-0.5">
+        <p className="text-xs font-medium text-muted-foreground">{t(`aiAssistant.cards.templates.${group.template}`)}</p>
+        <h3 className="text-sm font-semibold leading-5"><AIInlineMarkdown>{group.title}</AIInlineMarkdown></h3>
+        {group.description && <AIMarkdown className="text-xs leading-5 text-muted-foreground">{group.description}</AIMarkdown>}
       </header>
       <div className={cn('grid min-w-0', density === 'compact' ? 'gap-1.5' : 'gap-2', templateConfig.gridClassName)}>
         {group.cards.map(card => (
@@ -113,7 +113,7 @@ function InteractionCardGroupView({ group, onAction }: { group: InteractionCardG
         ))}
       </div>
       {group.groupActions && group.groupActions.length > 0 && (
-        <div className="flex flex-wrap justify-end gap-1.5">
+        <div className="flex flex-wrap justify-end gap-2">
           {group.groupActions.map(action => <CardActionButton key={action.id} action={action} cardId="group" values={{}} onAction={onAction} />)}
         </div>
       )}
@@ -145,28 +145,28 @@ function InteractionCardView({ card, density, group, onAction }: {
   const secondaryActions = card.actions?.filter(action => action !== primaryAction) ?? []
 
   return (
-    <article className="min-w-0 overflow-hidden rounded-container bg-surface" data-ai-card={card.presentation.variant} data-ai-card-id={card.id} data-ai-card-template={group.template}>
-      <div className={cn('flex min-w-0 items-start', density === 'compact' ? 'gap-2 p-2' : 'gap-2.5 p-2.5')}>
+    <article className="min-w-0 overflow-hidden rounded-container border border-border bg-surface shadow-sm" data-ai-card={card.presentation.variant} data-ai-card-id={card.id} data-ai-card-template={group.template}>
+      <div className={cn('flex min-w-0 items-start', density === 'compact' ? 'gap-2.5 p-3' : 'gap-3 p-3.5')}>
         <span className={cn('grid shrink-0 place-items-center rounded-control bg-primary-subtle text-primary-text', density === 'compact' ? 'size-8' : 'size-9')}>
           <CardIcon category={card.presentation.icon?.type === 'category' ? card.presentation.icon.name : card.presentation.variant} />
         </span>
         <div className="min-w-0 flex-1">
-          <h4 className="text-xs font-semibold leading-4"><AIInlineMarkdown>{card.presentation.title}</AIInlineMarkdown></h4>
-          {card.presentation.subtitle && <AIInlineMarkdown className="block text-[10px] leading-4 text-muted-foreground">{card.presentation.subtitle}</AIInlineMarkdown>}
-          {card.presentation.description && <AIMarkdown className="mt-1 text-[11px] leading-4 text-muted-foreground">{card.presentation.description}</AIMarkdown>}
+          <h4 className="text-sm font-semibold leading-5"><AIInlineMarkdown>{card.presentation.title}</AIInlineMarkdown></h4>
+          {card.presentation.subtitle && <AIInlineMarkdown className="block text-xs leading-4 text-muted-foreground">{card.presentation.subtitle}</AIInlineMarkdown>}
+          {card.presentation.description && <AIMarkdown className="mt-1 text-xs leading-5 text-muted-foreground">{card.presentation.description}</AIMarkdown>}
           {card.presentation.badges && card.presentation.badges.length > 0 && (
             <div className="mt-1.5 flex flex-wrap gap-1">
               {withOccurrenceKeys(card.presentation.badges, badge => `${badge.label}:${badge.tone}`).map(({ item: badge, key }) => (
-                <StatusBadge key={key} className="px-1.5 py-0 text-[9px]" tone={badge.tone === 'error' ? 'danger' : badge.tone}>
+                <StatusBadge key={key} className="px-1.5 py-0 text-[11px]" tone={badge.tone === 'error' ? 'danger' : badge.tone}>
                   {badge.label}
                 </StatusBadge>
               ))}
             </div>
           )}
           {card.sourceRefs && card.sourceRefs.length > 0 && (
-            <div className="mt-1.5 flex min-w-0 flex-wrap gap-1" data-ai-card-sources>
+            <div className="mt-2 flex min-w-0 flex-wrap gap-1" data-ai-card-sources>
               {card.sourceRefs.slice(0, 4).map(source => (
-                <span key={`${source.type}:${source.refId}`} className="inline-flex min-w-0 max-w-full items-center gap-1 rounded-full bg-surface-inset px-1.5 py-0.5 text-[9px] text-muted-foreground" title={source.label}>
+                <span key={`${source.type}:${source.refId}`} className="inline-flex min-w-0 max-w-full items-center gap-1 rounded-md border border-border bg-surface-subtle px-1.5 py-0.5 text-[11px] text-muted-foreground" title={source.label}>
                   <SourceTrustIcon trust={source.trust} />
                   <span className="truncate">{source.label}</span>
                   <span className="sr-only">{t(`aiAssistant.cards.trust.${source.trust}`)}</span>
@@ -176,28 +176,28 @@ function InteractionCardView({ card, density, group, onAction }: {
           )}
         </div>
         {hasDetails && (
-          <Button aria-expanded={expanded} aria-label={t('aiAssistant.cards.toggleDetails')} className="size-7" size="icon" variant="ghost" onClick={() => setExpanded(value => !value)}>
+          <Button aria-expanded={expanded} aria-label={t('aiAssistant.cards.toggleDetails')} className="size-8 text-muted-foreground" size="icon" variant="ghost" onClick={() => setExpanded(value => !value)}>
             <ChevronDown className={cn('size-3.5 transition-transform', expanded && 'rotate-180')} />
           </Button>
         )}
       </div>
       {expanded && (
         <form
-          className={cn('grid min-w-0 border-t border-separator-subtle', density === 'compact' ? 'gap-2.5 p-2' : 'gap-3 p-2.5')}
+          className={cn('grid min-w-0 border-t border-border', density === 'compact' ? 'gap-3 p-3' : 'gap-3.5 p-3.5')}
           onSubmit={event => event.preventDefault()}
         >
           {card.blocks?.map(block => <ContentBlock key={block.id} block={block} onAction={onAction} />)}
           {card.form?.sections.map(section => (
             <fieldset key={section.id} className="grid min-w-0 gap-2" data-ai-section-id={section.id}>
               {section.title && <legend className="text-[11px] font-semibold"><AIInlineMarkdown>{section.title}</AIInlineMarkdown></legend>}
-              {section.description && <AIMarkdown className="text-[10px] leading-4 text-muted-foreground">{section.description}</AIMarkdown>}
+              {section.description && <AIMarkdown className="text-xs leading-4 text-muted-foreground">{section.description}</AIMarkdown>}
               {section.fields.filter(field => isFieldVisible(field, watchedValues)).map(field => (
                 <DynamicField key={field.id} control={form.control} field={field} error={form.formState.errors[field.id]?.message as string | undefined} />
               ))}
             </fieldset>
           ))}
           {(primaryAction || secondaryActions.length > 0) && (
-            <div className="flex flex-wrap justify-end gap-1.5 pt-0.5">
+            <div className="flex flex-wrap justify-end gap-2 pt-1">
               {secondaryActions.map(action => <CardActionButton key={action.id} action={action} cardId={card.id} disabled={actionNeedsValidForm(action) && !form.formState.isValid} messageValues={messageValues} values={toolFormValues} onAction={onAction} />)}
               {primaryAction && <CardActionButton action={primaryAction} cardId={card.id} disabled={actionNeedsValidForm(primaryAction) && !form.formState.isValid} messageValues={messageValues} values={toolFormValues} onAction={onAction} />}
             </div>
@@ -205,7 +205,7 @@ function InteractionCardView({ card, density, group, onAction }: {
         </form>
       )}
       {!expanded && primaryAction && !card.form && (
-        <div className="flex justify-end border-t border-separator-subtle px-2.5 py-2">
+        <div className="flex justify-end border-t border-border bg-surface-subtle/50 px-3.5 py-2.5">
           <CardActionButton action={primaryAction} cardId={card.id} values={{}} onAction={onAction} />
         </div>
       )}
@@ -219,14 +219,14 @@ function ContentBlock({ block, onAction }: { block: InteractionContentBlock, onA
     if (block.type === 'markdown')
       return <AIMarkdown className="text-xs leading-5">{block.content}</AIMarkdown>
     if (block.type === 'callout')
-      return <div className={cn('rounded-control px-2.5 py-2 text-[11px] leading-4', block.tone === 'error' ? 'bg-danger-subtle text-danger' : block.tone === 'warning' ? 'bg-warning-subtle text-warning' : block.tone === 'success' ? 'bg-success-subtle text-success' : 'bg-info-subtle text-info')}>{block.content}</div>
+      return <div className={cn('rounded-control px-2.5 py-2 text-xs leading-5', block.tone === 'error' ? 'bg-danger-subtle text-danger' : block.tone === 'warning' ? 'bg-warning-subtle text-warning' : block.tone === 'success' ? 'bg-success-subtle text-success' : 'bg-info-subtle text-info')}>{block.content}</div>
     if (block.type === 'key_value') {
       return (
         <dl className="grid gap-1.5 text-[11px]">
           {withOccurrenceKeys(block.items, item => `${item.label}:${item.value}`).map(({ item, key }) => (
             <div key={key} className="grid grid-cols-[minmax(4.5rem,35%)_minmax(0,1fr)] gap-2">
               <dt className="min-w-0 text-muted-foreground"><AIInlineMarkdown>{item.label}</AIInlineMarkdown></dt>
-              <dd className={cn('min-w-0 break-words font-medium', item.format === 'code' && 'font-mono text-[10px]')}>
+              <dd className={cn('min-w-0 break-words font-medium', item.format === 'code' && 'font-mono text-xs')}>
                 <AIInlineMarkdown>{item.value}</AIInlineMarkdown>
                 {item.copyable && <CopyButton value={item.value} />}
               </dd>
@@ -249,13 +249,13 @@ function ContentBlock({ block, onAction }: { block: InteractionContentBlock, onA
                     ? 'bg-warning-subtle text-warning'
                     : item.tone === 'error'
                       ? 'bg-danger-subtle text-danger'
-                      : 'bg-surface-inset',
+                      : 'bg-surface-subtle',
               )}
             >
-              <AIInlineMarkdown className="block text-[9px] text-muted-foreground">{item.label}</AIInlineMarkdown>
+              <AIInlineMarkdown className="block text-[11px] text-muted-foreground">{item.label}</AIInlineMarkdown>
               <AIInlineMarkdown className="mt-0.5 block text-xs font-semibold">{item.value}</AIInlineMarkdown>
               {item.change && (
-                <span className="mt-0.5 flex items-center gap-1 text-[9px] text-muted-foreground">
+                <span className="mt-0.5 flex items-center gap-1 text-[11px] text-muted-foreground">
                   <MetricTrendIcon trend={item.trend} />
                   <AIInlineMarkdown>{item.change}</AIInlineMarkdown>
                 </span>
@@ -273,9 +273,9 @@ function ContentBlock({ block, onAction }: { block: InteractionContentBlock, onA
               <Package className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
               <div className="min-w-0">
                 <AIInlineMarkdown className="block text-[11px] font-medium">{item.primary}</AIInlineMarkdown>
-                {item.secondary && <AIMarkdown className="text-[10px] leading-4 text-muted-foreground">{item.secondary}</AIMarkdown>}
+                {item.secondary && <AIMarkdown className="text-xs leading-4 text-muted-foreground">{item.secondary}</AIMarkdown>}
               </div>
-              {item.meta && <span className="ml-auto shrink-0 text-[9px] text-muted-foreground">{item.meta}</span>}
+              {item.meta && <span className="ml-auto shrink-0 text-[11px] text-muted-foreground">{item.meta}</span>}
             </div>
           ))}
         </div>
@@ -289,7 +289,7 @@ function ContentBlock({ block, onAction }: { block: InteractionContentBlock, onA
               <StatusIcon status={item.status} />
               <div>
                 <AIInlineMarkdown className="block font-medium">{item.label}</AIInlineMarkdown>
-                {item.detail && <AIMarkdown className="text-[10px] leading-4 text-muted-foreground">{item.detail}</AIMarkdown>}
+                {item.detail && <AIMarkdown className="text-xs leading-4 text-muted-foreground">{item.detail}</AIMarkdown>}
               </div>
             </div>
           ))}
@@ -298,17 +298,17 @@ function ContentBlock({ block, onAction }: { block: InteractionContentBlock, onA
     }
     if (block.type === 'data_table') {
       return (
-        <div className="max-w-full overflow-x-auto rounded-control border border-separator-subtle">
-          <table className="w-max min-w-full text-left text-[10px]">
-            <thead className="bg-surface-inset"><tr>{block.columns.map(column => <th key={column.key} className="whitespace-nowrap px-2 py-1.5 font-medium"><AIInlineMarkdown>{column.label}</AIInlineMarkdown></th>)}</tr></thead>
-            <tbody>{block.rows.map(row => <tr key={row.id} className="border-t border-separator-subtle">{block.columns.map(column => <td key={column.key} className={cn('max-w-52 px-2 py-1.5 [overflow-wrap:anywhere]', column.format === 'code' && 'font-mono')}><AIInlineMarkdown>{row.cells[column.key] ?? '—'}</AIInlineMarkdown></td>)}</tr>)}</tbody>
+        <div className="max-w-full overflow-x-auto rounded-control border border-border">
+          <table className="w-max min-w-full text-left text-xs">
+            <thead className="bg-muted text-muted-foreground"><tr>{block.columns.map(column => <th key={column.key} className="whitespace-nowrap px-2 py-1.5 font-medium"><AIInlineMarkdown>{column.label}</AIInlineMarkdown></th>)}</tr></thead>
+            <tbody>{block.rows.map(row => <tr key={row.id} className="border-t border-border">{block.columns.map(column => <td key={column.key} className={cn('max-w-52 px-2 py-1.5 [overflow-wrap:anywhere]', column.format === 'code' && 'font-mono')}><AIInlineMarkdown>{row.cells[column.key] ?? '—'}</AIInlineMarkdown></td>)}</tr>)}</tbody>
           </table>
         </div>
       )
     }
     if (block.type === 'code' || block.type === 'diff') {
       const content = block.type === 'code' ? block.content : block.unifiedDiff
-      return <CopyableCodeBlock className="text-[10px]" value={content}><code>{content}</code></CopyableCodeBlock>
+      return <CopyableCodeBlock className="max-h-72" language={block.type === 'code' ? (block.filename ?? block.language) : 'diff'} value={content}><code>{content}</code></CopyableCodeBlock>
     }
     if (block.type === 'timeline') {
       return (
@@ -316,8 +316,8 @@ function ContentBlock({ block, onAction }: { block: InteractionContentBlock, onA
           {block.items.map(item => (
             <div key={item.id} className="relative text-[11px] before:absolute before:-left-[13px] before:top-1 before:size-1.5 before:rounded-full before:bg-primary">
               <p className="font-medium">{item.title}</p>
-              {item.detail && <p className="text-[10px] text-muted-foreground">{item.detail}</p>}
-              {item.timestamp && <time className="text-[9px] text-muted-foreground">{item.timestamp}</time>}
+              {item.detail && <p className="text-xs text-muted-foreground">{item.detail}</p>}
+              {item.timestamp && <time className="text-[11px] text-muted-foreground">{item.timestamp}</time>}
             </div>
           ))}
         </div>
@@ -331,14 +331,14 @@ function ContentBlock({ block, onAction }: { block: InteractionContentBlock, onA
       return (
         <div className="grid gap-1.5">
           {withOccurrenceKeys(block.edges, edge => `${edge.source}:${edge.target}:${edge.label ?? ''}`).map(({ item: edge, key }) => (
-            <div key={key} className="flex min-w-0 items-center gap-1.5 rounded-control bg-surface-inset px-2 py-1.5 text-[10px]">
+            <div key={key} className="flex min-w-0 items-center gap-1.5 rounded-control bg-surface-subtle px-2 py-1.5 text-xs">
               <span className="truncate font-medium">{nodes.get(edge.source)?.label ?? edge.source}</span>
               <ChevronRight className="size-3 shrink-0 text-muted-foreground" />
               <span className="truncate font-medium">{nodes.get(edge.target)?.label ?? edge.target}</span>
-              {edge.label && <span className="ml-auto shrink-0 text-[9px] text-muted-foreground">{edge.label}</span>}
+              {edge.label && <span className="ml-auto shrink-0 text-[11px] text-muted-foreground">{edge.label}</span>}
             </div>
           ))}
-          {block.edges.length === 0 && block.nodes.map(node => <div key={node.id} className="rounded-control bg-surface-inset px-2 py-1.5 text-[10px] font-medium">{node.label}</div>)}
+          {block.edges.length === 0 && block.nodes.map(node => <div key={node.id} className="rounded-control bg-surface-subtle px-2 py-1.5 text-xs font-medium">{node.label}</div>)}
         </div>
       )
     }
@@ -404,9 +404,9 @@ function DynamicField({ control, field, error }: { control: Control<FormValues>,
       render={({ field: input }) => (
         <div className="grid gap-1" data-ai-field-id={field.id}>
           {grouped
-            ? <div id={labelId} className="text-[10px] font-medium">{labelContent}</div>
-            : <Label id={labelId} className="text-[10px]" htmlFor={controlId}>{labelContent}</Label>}
-          {field.description && <div id={descriptionId}><AIMarkdown className="text-[9px] leading-3.5 text-muted-foreground">{field.description}</AIMarkdown></div>}
+            ? <div id={labelId} className="text-xs font-medium">{labelContent}</div>
+            : <Label id={labelId} className="text-xs" htmlFor={controlId}>{labelContent}</Label>}
+          {field.description && <div id={descriptionId}><AIMarkdown className="text-[11px] leading-4 text-muted-foreground">{field.description}</AIMarkdown></div>}
           {field.type === 'textarea'
             ? <Textarea {...input} id={controlId} aria-describedby={describedBy} aria-invalid={Boolean(error)} aria-required={field.required} rows={field.rows ?? 3} value={String(input.value ?? '')} />
             : field.type === 'number'
@@ -415,7 +415,7 @@ function DynamicField({ control, field, error }: { control: Control<FormValues>,
                 ? (
                     <div className="flex items-center gap-2">
                       <Checkbox ref={input.ref} checked={Boolean(input.value)} id={controlId} aria-describedby={describedBy} aria-invalid={Boolean(error)} aria-required={field.required} name={input.name} onBlur={input.onBlur} onCheckedChange={value => input.onChange(value === true)} />
-                      <span className="text-[10px] text-muted-foreground">{input.value ? t('common.enabled') : t('common.disabled')}</span>
+                      <span className="text-xs text-muted-foreground">{input.value ? t('common.enabled') : t('common.disabled')}</span>
                     </div>
                   )
                 : field.type === 'select'
@@ -426,7 +426,7 @@ function DynamicField({ control, field, error }: { control: Control<FormValues>,
                           {field.options.map((option, ordinal) => {
                             const optionId = `${controlId}-option-${ordinal}`
                             return (
-                              <div key={option.value} className="flex items-start gap-2 text-[10px]">
+                              <div key={option.value} className="flex items-start gap-2 text-xs">
                                 <Checkbox
                                   id={optionId}
                                   aria-invalid={Boolean(error)}
@@ -439,10 +439,10 @@ function DynamicField({ control, field, error }: { control: Control<FormValues>,
                                     input.onChange(checked ? [...current, option.value] : current.filter(value => value !== option.value))
                                   }}
                                 />
-                                <Label className="block min-w-0 cursor-pointer text-[10px] leading-4" htmlFor={optionId}>
+                                <Label className="block min-w-0 cursor-pointer text-xs leading-4" htmlFor={optionId}>
                                   <span>
                                     {option.label}
-                                    {option.description && <span className="block text-[9px] text-muted-foreground">{option.description}</span>}
+                                    {option.description && <span className="block text-[11px] text-muted-foreground">{option.description}</span>}
                                   </span>
                                 </Label>
                               </div>
@@ -455,7 +455,7 @@ function DynamicField({ control, field, error }: { control: Control<FormValues>,
                       : field.type === 'secret'
                         ? <Input {...input} id={controlId} aria-describedby={describedBy} aria-invalid={Boolean(error)} aria-labelledby={labelId} aria-required={field.required} placeholder={field.placeholder} type="password" value={String(input.value ?? '')} />
                         : <Input {...input} id={controlId} aria-describedby={describedBy} aria-invalid={Boolean(error)} aria-required={field.required} placeholder={field.placeholder} type="text" value={String(input.value ?? '')} />}
-          {error && <p id={errorId} className="text-[9px] text-danger" role="alert">{error}</p>}
+          {error && <p id={errorId} className="text-[11px] text-danger" role="alert">{error}</p>}
         </div>
       )}
     />
@@ -518,14 +518,14 @@ function SelectField({ controlId, describedBy, error, field, labelId, name, requ
         const content = (
           <span className="min-w-0">
             <span className="block [overflow-wrap:anywhere]">{option.label}</span>
-            {option.description && <span className="block text-[9px] leading-3.5 text-muted-foreground [overflow-wrap:anywhere]">{option.description}</span>}
+            {option.description && <span className="block text-[11px] leading-4 text-muted-foreground [overflow-wrap:anywhere]">{option.description}</span>}
           </span>
         )
         if (segmented) {
           return (
             <RadioGroupItem
               key={option.value}
-              className="flex h-auto min-h-8 w-auto min-w-0 max-w-full aspect-auto items-start gap-2 rounded-control! border-separator-subtle px-2 py-1.5 text-left text-[10px] shadow-none focus-visible:ring-2! focus-visible:ring-primary/35! data-[state=checked]:border-primary-border data-[state=checked]:bg-primary-subtle data-[state=checked]:text-primary-text [&_[data-slot=radio-group-indicator]]:hidden"
+              className="flex h-auto min-h-8 w-auto min-w-0 max-w-full aspect-auto items-start gap-2 rounded-control! border-border px-2 py-1.5 text-left text-xs shadow-none focus-visible:ring-2! focus-visible:ring-primary/35! data-[state=checked]:border-primary-border data-[state=checked]:bg-primary-subtle data-[state=checked]:text-primary-text [&_[data-slot=radio-group-indicator]]:hidden"
               disabled={option.disabled}
               id={optionId}
               value={option.value}
@@ -535,9 +535,9 @@ function SelectField({ controlId, describedBy, error, field, labelId, name, requ
           )
         }
         return (
-          <div key={option.value} className={cn('flex min-w-0 items-start gap-2 rounded-control px-1 py-0.5 text-[10px]', option.disabled && 'opacity-50')}>
+          <div key={option.value} className={cn('flex min-w-0 items-start gap-2 rounded-control px-1 py-0.5 text-xs', option.disabled && 'opacity-50')}>
             <RadioGroupItem className="mt-0.5" disabled={option.disabled} id={optionId} value={option.value} />
-            <Label className={cn('block min-w-0 text-[10px] leading-4', option.disabled ? 'cursor-not-allowed' : 'cursor-pointer')} htmlFor={optionId}>{content}</Label>
+            <Label className={cn('block min-w-0 text-xs leading-4', option.disabled ? 'cursor-not-allowed' : 'cursor-pointer')} htmlFor={optionId}>{content}</Label>
           </div>
         )
       })}

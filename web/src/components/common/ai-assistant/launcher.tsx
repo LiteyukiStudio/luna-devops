@@ -3,7 +3,6 @@ import type { Position } from './layout'
 import { Sparkles } from 'lucide-react'
 import { useRef } from 'react'
 import { Button } from '@/components/ui/button'
-import { aiAssistantLauncherClassName } from './launcher-appearance'
 import { clampAssistantPosition, LAUNCHER_SIZE } from './layout'
 
 const LAUNCHER_TAP_MAX_DISTANCE = 8
@@ -67,8 +66,10 @@ export function AIAssistantLauncher({
       <Button
         ref={ref}
         aria-label={label}
-        className={`${aiAssistantLauncherClassName} pointer-events-auto fixed`}
+        className="pointer-events-auto fixed size-12 touch-none rounded-full border border-border bg-surface text-primary-text shadow-raised hover:bg-surface-subtle hover:text-primary-text-strong"
         size="icon"
+        title={label}
+        variant="ghost"
         style={{ left: position.x, top: position.y }}
         onClick={event => event.detail === 0 && onOpen()}
         onPointerCancel={cancelPointer}
@@ -86,7 +87,7 @@ export function AIAssistantLauncher({
         onPointerMove={updatePosition}
         onPointerUp={finishPointer}
       >
-        <Sparkles className="size-5" />
+        <Sparkles className="size-5" aria-hidden="true" />
       </Button>
     </div>
   )

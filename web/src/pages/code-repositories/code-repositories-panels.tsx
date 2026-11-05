@@ -1,25 +1,28 @@
+import type { ReactNode } from 'react'
 import type { GitProviderGuide } from './code-repositories-utils'
 import type { GitAccount, GitProvider } from '@/api'
-import { Copy, ExternalLink, Info, KeyRound, LinkIcon, RefreshCw, Trash2 } from 'lucide-react'
-import { useState } from 'react'
+import { ChevronDown, Copy, ExternalLink, GitBranch, Info, KeyRound, LinkIcon, MoreHorizontal, Pencil, RefreshCw, Trash2 } from 'lucide-react'
+import { Fragment, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { gitOAuthStartUrl } from '@/api'
 import { DataList } from '@/components/common/data-list'
-import { EditActionButton } from '@/components/common/edit-action-button'
 import { StatusBadge, StatusValueBadge } from '@/components/common/status-badge'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { normalizeGitBaseUrl } from './code-repositories-utils'
 
 const PAGE_SIZE_OPTIONS = [10, 20, 50, 100]
 
 export function ProvidersPanel({
   canManage,
+  loading,
   page,
   pageSize,
   providers,
   projectMap,
+  toolbar,
   total,
   totalPages,
   onDelete,
@@ -28,10 +31,12 @@ export function ProvidersPanel({
   onPageSizeChange,
 }: {
   canManage: boolean
+  loading: boolean
   page: number
   pageSize: number
   providers: GitProvider[]
   projectMap: Record<string, string>
+  toolbar?: ReactNode
   total: number
   totalPages: number
   onDelete: (provider: GitProvider) => void
@@ -46,49 +51,54 @@ export function ProvidersPanel({
         {
           key: 'name',
           header: t('common.name'),
+          width: 'primary',
           render: provider => (
             <div className="flex min-w-0 items-center gap-3">
               <GitProviderIcon baseUrl={provider.baseUrl} type={provider.type} />
               <div className="min-w-0">
                 <div className="truncate font-medium">{provider.name}</div>
-                <p className="truncate text-sm text-muted-foreground">{provider.baseUrl}</p>
+                <p className="truncate text-xs text-muted-foreground">{provider.baseUrl}</p>
               </div>
             </div>
           ),
         },
-        { key: 'type', header: t('common.type'), render: provider => <StatusBadge>{provider.type}</StatusBadge> },
-        { key: 'auth', header: t('codeRepositoriesView.authType'), render: provider => <StatusBadge>{provider.authType}</StatusBadge> },
+        { key: 'type', header: t('common.type'), width: 'status', render: provider => <StatusBadge>{provider.type}</StatusBadge> },
+        { key: 'auth', header: t('codeRepositoriesView.authType'), mobile: 'hidden', width: 'status', render: provider => <StatusBadge>{provider.authType}</StatusBadge> },
         {
           key: 'scope',
           header: t('common.scope'),
+          width: 'normal',
           render: provider => (
             <div className="flex flex-wrap gap-2">
-              <StatusBadge>{provider.scope}</StatusBadge>
+              <StatusBadge>{scopeLabel(provider.scope, t)}</StatusBadge>
               {projectScopeBadges(provider.projectIds, projectMap)}
             </div>
           ),
         },
-        { key: 'secret', header: t('codeRepositoriesView.clientSecret'), render: provider => provider.clientSecretSet ? t('codeRepositoriesView.secretSet') : t('codeRepositoriesView.secretNotSet') },
-        { key: 'status', header: t('common.status'), render: provider => <StatusValueBadge value={provider.enabled ? 'enabled' : 'disabled'} /> },
+        { key: 'secret', header: t('codeRepositoriesView.clientSecret'), mobile: 'hidden', width: 'secondary', render: provider => provider.clientSecretSet ? t('codeRepositoriesView.secretSet') : t('codeRepositoriesView.secretNotSet') },
+        { key: 'status', header: t('common.status'), width: 'status', render: provider => <StatusValueBadge value={provider.enabled ? 'enabled' : 'disabled'} /> },
         {
           key: 'actions',
           header: t('common.actions'),
-          className: 'text-right whitespace-nowrap',
+          sticky: 'right',
+          width: 'actions',
           render: provider => canManage
             ? (
-                <div className="flex shrink-0 items-center gap-2">
-                  <EditActionButton aria-label={t('edit')} label={t('edit')} onClick={() => onEdit(provider)} />
-                  <Button aria-label={t('codeRepositoriesView.deleteProviderAria')} variant="ghost" onClick={() => onDelete(provider)}>
-                    <Trash2 size={16} />
-                  </Button>
-                </div>
+                <RowActionsMenu
+                  items={[
+                    { icon: <Pencil />, label: t('edit'), onSelect: () => onEdit(provider) },
+                    { destructive: true, icon: <Trash2 />, label: t('common.delete'), onSelect: () => onDelete(provider) },
+                  ]}
+                />
               )
             : <span className="text-xs text-muted-foreground">{t('common.viewOnly')}</span>,
         },
       ]}
       emptyTitle={t('codeRepositoriesView.noProvidersTitle')}
       emptyDescription={t('codeRepositoriesView.noProvidersDescription')}
+      emptyIcon={<GitBranch className="size-5" />}
       items={providers}
+      loading={loading}
       pagination={{
         page,
         pageSize,
@@ -100,17 +110,20 @@ export function ProvidersPanel({
         onPageSizeChange,
       }}
       rowKey={provider => provider.id}
+      toolbar={toolbar}
     />
   )
 }
 
 export function CredentialsPanel({
   credentials,
+  loading,
   page,
   pageSize,
   providers,
   projectMap,
   refreshPending,
+  toolbar,
   total,
   totalPages,
   onDelete,
@@ -120,11 +133,13 @@ export function CredentialsPanel({
   onRefresh,
 }: {
   credentials: GitAccount[]
+  loading: boolean
   page: number
   pageSize: number
   providers: GitProvider[]
   projectMap: Record<string, string>
   refreshPending: boolean
+  toolbar?: ReactNode
   total: number
   totalPages: number
   onDelete: (credential: GitAccount) => void
@@ -138,23 +153,6 @@ export function CredentialsPanel({
   const oauthBlockedProviders = providers.filter(provider => provider.enabled && provider.authType === 'oauth' && !isGitOAuthReady(provider))
   return (
     <div className="grid gap-4">
-      {oauthProviders.length > 0 && (
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4">
-          {oauthProviders.map(provider => (
-            <Button
-              key={provider.id}
-              className="h-auto min-w-0 justify-start px-3 py-3 text-left"
-              title={t('codeRepositoriesView.oauthConnect', { provider: provider.name })}
-              type="button"
-              variant="secondary"
-              onClick={() => { window.location.href = gitOAuthStartUrl(provider.id, '/code-repositories', window.location.origin) }}
-            >
-              <GitProviderIcon baseUrl={provider.baseUrl} className="flex size-8 shrink-0 items-center justify-center rounded-md bg-background p-1" type={provider.type} />
-              <span className="min-w-0 truncate">{t('codeRepositoriesView.oauthConnect', { provider: provider.name })}</span>
-            </Button>
-          ))}
-        </div>
-      )}
       {oauthBlockedProviders.length > 0 && (
         <Alert>
           <Info />
@@ -169,23 +167,25 @@ export function CredentialsPanel({
           {
             key: 'name',
             header: t('codeRepositoriesView.username'),
+            width: 'primary',
             render: credential => (
               <div className="flex min-w-0 items-center gap-3">
-                <span className="flex size-10 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground"><KeyRound size={18} /></span>
+                <span className="flex size-8 shrink-0 items-center justify-center rounded-control bg-surface-subtle text-muted-foreground"><KeyRound className="size-4" /></span>
                 <div className="min-w-0">
                   <div className="truncate font-medium">{credential.username}</div>
-                  <p className="truncate text-sm text-muted-foreground">{credential.scopes || t('codeRepositoriesView.noScopes')}</p>
+                  <p className="truncate text-xs text-muted-foreground">{credential.scopes || t('codeRepositoriesView.noScopes')}</p>
                 </div>
               </div>
             ),
           },
-          { key: 'provider', header: t('codeRepositoriesView.provider'), render: credential => <ProviderNameBadge provider={providers.find(provider => provider.id === credential.providerId)} providerId={credential.providerId} /> },
+          { key: 'provider', header: t('codeRepositoriesView.provider'), width: 'secondary', render: credential => <ProviderNameBadge provider={providers.find(provider => provider.id === credential.providerId)} providerId={credential.providerId} /> },
           {
             key: 'scope',
             header: t('common.scope'),
+            width: 'normal',
             render: credential => (
               <div className="flex flex-wrap gap-2">
-                <StatusBadge>{t(`codeRepositoriesView.scope${credential.scope.charAt(0).toUpperCase()}${credential.scope.slice(1)}`)}</StatusBadge>
+                <StatusBadge>{scopeLabel(credential.scope, t)}</StatusBadge>
                 {projectScopeBadges(credential.projectIds, projectMap)}
               </div>
             ),
@@ -193,6 +193,8 @@ export function CredentialsPanel({
           {
             key: 'tokens',
             header: t('codeRepositoriesView.accessToken'),
+            mobile: 'hidden',
+            width: 'normal',
             render: credential => (
               <span className="text-sm text-muted-foreground">
                 {credential.accessTokenSet ? t('codeRepositoriesView.accessTokenSet') : t('codeRepositoriesView.accessTokenNotSet')}
@@ -201,28 +203,28 @@ export function CredentialsPanel({
               </span>
             ),
           },
-          { key: 'status', header: t('common.status'), render: credential => <StatusValueBadge value={credential.status} /> },
+          { key: 'status', header: t('common.status'), width: 'status', render: credential => <StatusValueBadge value={credential.status} /> },
           {
             key: 'actions',
             header: t('common.actions'),
-            className: 'text-right whitespace-nowrap',
+            sticky: 'right',
+            width: 'actions',
             render: credential => (
-              <div className="flex justify-end gap-2">
-                <EditActionButton type="button" label={t('edit')} onClick={() => onEdit(credential)} />
-                <Button disabled={refreshPending || !credential.refreshTokenSet} type="button" variant="ghost" onClick={() => onRefresh(credential)}>
-                  <RefreshCw size={16} />
-                  {t('codeRepositoriesView.refreshCredential')}
-                </Button>
-                <Button aria-label={t('codeRepositoriesView.deleteCredentialAria')} variant="ghost" onClick={() => onDelete(credential)}>
-                  <Trash2 size={16} />
-                </Button>
-              </div>
+              <RowActionsMenu
+                items={[
+                  { icon: <Pencil />, label: t('edit'), onSelect: () => onEdit(credential) },
+                  { disabled: refreshPending || !credential.refreshTokenSet, icon: <RefreshCw />, label: t('codeRepositoriesView.refreshCredential'), onSelect: () => onRefresh(credential) },
+                  { destructive: true, icon: <Trash2 />, label: t('common.delete'), onSelect: () => onDelete(credential) },
+                ]}
+              />
             ),
           },
         ]}
         emptyTitle={t('codeRepositoriesView.noCredentialsTitle')}
         emptyDescription={t('codeRepositoriesView.noCredentialsDescription')}
+        emptyIcon={<KeyRound className="size-5" />}
         items={credentials}
+        loading={loading}
         pagination={{
           page,
           pageSize,
@@ -234,15 +236,88 @@ export function CredentialsPanel({
           onPageSizeChange,
         }}
         rowKey={credential => credential.id}
+        toolbar={toolbar}
+        toolbarActions={oauthProviders.length > 0 && <OAuthConnectMenu providers={oauthProviders} />}
       />
     </div>
   )
 }
 
+function OAuthConnectMenu({ providers }: { providers: GitProvider[] }) {
+  const { t } = useTranslation()
+  const connect = (provider: GitProvider) => {
+    window.location.href = gitOAuthStartUrl(provider.id, '/code-repositories', window.location.origin)
+  }
+  if (providers.length === 1) {
+    const provider = providers[0]
+    return (
+      <Button size="sm" type="button" variant="outline" onClick={() => connect(provider)}>
+        <GitProviderIcon baseUrl={provider.baseUrl} className="size-4 shrink-0" type={provider.type} />
+        {t('codeRepositoriesView.oauthConnect', { provider: provider.name })}
+      </Button>
+    )
+  }
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button size="sm" type="button" variant="outline">
+          <LinkIcon />
+          {t('codeRepositoriesView.oauthConnectMenu')}
+          <ChevronDown />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        {providers.map(provider => (
+          <DropdownMenuItem key={provider.id} onSelect={() => connect(provider)}>
+            <GitProviderIcon baseUrl={provider.baseUrl} className="size-4 shrink-0" type={provider.type} />
+            {provider.name}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
+
+interface RowAction {
+  destructive?: boolean
+  disabled?: boolean
+  icon: ReactNode
+  label: string
+  onSelect: () => void
+}
+
+function RowActionsMenu({ items }: { items: RowAction[] }) {
+  const { t } = useTranslation()
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button aria-label={t('common.actions')} className="size-8" size="icon" type="button" variant="ghost">
+          <MoreHorizontal />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        {items.map(item => (
+          <Fragment key={item.label}>
+            {item.destructive && <DropdownMenuSeparator />}
+            <DropdownMenuItem disabled={item.disabled} variant={item.destructive ? 'destructive' : 'default'} onSelect={item.onSelect}>
+              {item.icon}
+              {item.label}
+            </DropdownMenuItem>
+          </Fragment>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
+
+function scopeLabel(scope: string, t: ReturnType<typeof useTranslation>['t']) {
+  return t(`codeRepositoriesView.scope${scope.charAt(0).toUpperCase()}${scope.slice(1)}`, { defaultValue: scope })
+}
+
 function ProviderNameBadge({ provider, providerId }: { provider?: GitProvider, providerId: string }) {
   return (
-    <span className="inline-flex min-w-0 items-center gap-1 rounded-full border border-border bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
-      <GitProviderIcon baseUrl={provider?.baseUrl} className="size-4 rounded-sm border-0 bg-transparent p-0" type={provider?.type ?? 'github'} />
+    <span className="inline-flex min-w-0 items-center gap-1.5 text-sm">
+      <GitProviderIcon baseUrl={provider?.baseUrl} className="size-4 shrink-0" type={provider?.type ?? 'github'} />
       <span className="truncate">{provider?.name ?? providerId}</span>
     </span>
   )
@@ -260,7 +335,7 @@ export function GitProviderIcon({
   const faviconUrl = gitProviderFaviconUrl(type, baseUrl)
 
   return (
-    <span className={className ?? 'flex size-9 shrink-0 items-center justify-center rounded-container border border-border bg-muted p-1 text-muted-foreground'}>
+    <span className={className ?? 'flex size-8 shrink-0 items-center justify-center rounded-control border border-border bg-surface-subtle p-1 text-muted-foreground'}>
       {faviconUrl
         ? <GitProviderFavicon key={faviconUrl} faviconUrl={faviconUrl} type={type} />
         : <GitProviderFallbackIcon type={type} />}
@@ -325,7 +400,7 @@ export function OAuthAppGuide({ guide }: { guide: GitProviderGuide }) {
       <AlertTitle>{t('codeRepositoriesView.oauthAppGuideTitle')}</AlertTitle>
       <AlertDescription className="gap-3">
         <p>{t(`codeRepositoriesView.${guide.type}OAuthGuide`)}</p>
-        <div className="grid w-full gap-2 rounded-md bg-muted/70 p-3 text-xs text-foreground">
+        <div className="grid w-full gap-2 rounded-control border border-border bg-surface-inset p-3 text-xs text-foreground">
           <GuideValue label={t('codeRepositoriesView.oauthAppName')} value={guide.appName} />
           <GuideValue label={t('codeRepositoriesView.oauthHomepageUrl')} value={guide.homepageUrl} />
           <GuideValue important label={t('codeRepositoriesView.oauthCallbackUrl')} value={guide.callbackUrl} />

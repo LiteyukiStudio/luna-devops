@@ -2,6 +2,8 @@ const appTemplatesPage = {
   searchPlaceholder: '搜索应用、用途或镜像',
   categoryFilter: '按分类筛选',
   allCategories: '全部',
+  featuredSection: '推荐',
+  allTemplatesSection: '全部模板',
   sortBy: '排序字段',
   sortByPopularity: '热度',
   sortByName: '名称 A-Z',

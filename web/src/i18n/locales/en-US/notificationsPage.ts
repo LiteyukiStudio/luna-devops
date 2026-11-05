@@ -61,6 +61,15 @@ const notificationsPage = {
   filterJsonHint: 'Optional. Only severities, applicationIds, and deploymentTargetIds are supported; the scope and projects selected above take precedence.',
   filterJsonInvalid: 'Enter a valid JSON object and remove unknown fields or invalid arrays.',
   ruleInvalid: 'Complete the rule and correct its notification scope or advanced filters.',
+  rowActions: 'Actions for {{name}}',
+  advancedFilter: 'Advanced filters',
+  filterSummarySet: 'Additional filters set',
+  filterSummaryNone: 'Not set; matches all events in scope',
+  filterSummaryInvalid: 'Invalid JSON',
+  deleteChannelTitle: 'Delete notification channel',
+  deleteTemplateTitle: 'Delete notification template',
+  deleteRuleTitle: 'Delete notification rule',
+  deleteDescription: '"{{name}}" will be deleted. This cannot be undone.',
 }
 
 export default notificationsPage

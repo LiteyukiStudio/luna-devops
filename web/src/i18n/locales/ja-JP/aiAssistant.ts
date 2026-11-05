@@ -2,6 +2,8 @@ const aiAssistant = {
   aiAssistant: {
     open: 'Luna アシスタントを開く',
     title: 'Luna アシスタント',
+    expand: '全画面に展開',
+    collapse: 'フローティングウィンドウに戻す',
     page: {
       backToWorkspace: 'ワークスペースに戻る',
       unavailableTitle: 'アシスタントを利用できません',
@@ -18,6 +20,7 @@ const aiAssistant = {
     inputLabel: 'Luna アシスタントへのメッセージを送信',
     inputPlaceholder: '診断する問題を記述…',
     inputTooLarge: 'メッセージが {{limit}} の上限を超えています。短くしてから送信してください。',
+    inputLength: '{{count}} 文字',
     loadOlder: '以前のメッセージを読み込む',
     loadingOlder: '以前のメッセージを読み込み中',
     olderLoadFailed: '以前のメッセージの読み込みに失敗しました。再試行してください',
@@ -532,6 +535,12 @@ const aiAssistant = {
     conversations: {
       title: 'セッション',
       new: '新しいセッション',
+      close: '会話一覧を閉じる',
+      groups: {
+        today: '今日',
+        recent: '過去 7 日間',
+        earlier: 'それ以前',
+      },
       refreshStarted: '更新後、新しいセッションに入りました',
       returnPrevious: '前のセッションに戻る',
       returnPreviousCountdown: '{{count}} 秒',

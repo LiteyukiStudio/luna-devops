@@ -35,25 +35,25 @@ function isStructured(value: unknown): boolean {
 }
 
 function DetailHeading({ children }: { children: ReactNode }) {
-  return <h3 className="text-[11px] font-semibold text-muted-foreground">{children}</h3>
+  return <h3 className="text-xs font-medium text-muted-foreground">{children}</h3>
 }
 
 function MetadataItem({ copyable = false, label, value, mono = true }: { copyable?: boolean, label: string, value: string, mono?: boolean }) {
   const { t } = useTranslation()
   return (
-    <div className="min-w-0 rounded-control bg-surface px-2.5 py-2">
-      <dt className="text-[10px] leading-4 text-muted-foreground">{label}</dt>
+    <div className="min-w-0 rounded-control border border-border bg-surface px-2.5 py-1.5">
+      <dt className="text-[11px] leading-4 text-muted-foreground">{label}</dt>
       <dd className="m-0 mt-0.5 min-w-0">
         {copyable
           ? (
               <CopyableHoverText
-                className={cn('break-all text-[11px] leading-4 text-foreground', mono && 'font-mono')}
+                className={cn('break-all text-xs leading-5 text-foreground', mono && 'font-mono')}
                 copyLabel={`${t('common.copy')} ${label}`}
                 truncate={false}
                 value={value}
               />
             )
-          : <span className={cn('break-all text-[11px] leading-4 text-foreground', mono && 'font-mono')}>{value}</span>}
+          : <span className={cn('break-all text-xs leading-5 text-foreground', mono && 'font-mono')}>{value}</span>}
       </dd>
     </div>
   )
@@ -64,7 +64,7 @@ function ValueView({ value }: { value: unknown }) {
     return <span className="break-words font-medium text-foreground">{displayValue(value)}</span>
   const content = displayJSON(value)
   return (
-    <CopyableCodeBlock className="max-h-48" value={content}>
+    <CopyableCodeBlock className="max-h-56" language="json" value={content}>
       <code>{content}</code>
     </CopyableCodeBlock>
   )
@@ -85,47 +85,47 @@ export function AIToolCallDetails({ block, errorCode, summary }: { block: ToolCa
   ]
 
   return (
-    <div className="border-t border-separator-subtle bg-surface-subtle/40 px-3 pb-3">
-      <section className="mt-3 grid gap-2" aria-labelledby={`${block.id}-identifiers`}>
+    <div className="grid gap-3 border-t border-border bg-surface-subtle/60 px-3 py-3">
+      <section className="grid gap-1.5" aria-labelledby={`${block.id}-identifiers`}>
         <DetailHeading><span id={`${block.id}-identifiers`}>{t('aiAssistant.identifiers')}</span></DetailHeading>
         <dl className="m-0 grid min-w-0 grid-cols-1 gap-1.5 sm:grid-cols-2">
           {metadata.map(item => <MetadataItem key={item.label} {...item} />)}
         </dl>
       </section>
 
-      <section className="mt-3 grid gap-2" aria-labelledby={`${block.id}-arguments`}>
+      <section className="grid gap-1.5" aria-labelledby={`${block.id}-arguments`}>
         <DetailHeading><span id={`${block.id}-arguments`}>{t('aiAssistant.arguments')}</span></DetailHeading>
         {entries.length
           ? (
-              <dl className="m-0 grid gap-0.5 rounded-control bg-surface px-2.5 py-1.5 text-xs">
+              <dl className="m-0 grid rounded-control border border-border bg-surface px-2.5 text-xs">
                 {entries.map(([key, value]) => (
-                  <div key={key} className="grid min-w-0 grid-cols-[minmax(5rem,35%)_minmax(0,1fr)] gap-2 border-b border-separator-subtle py-1.5 last:border-b-0">
-                    <dt className="min-w-0 truncate text-muted-foreground">{key}</dt>
+                  <div key={key} className="grid min-w-0 grid-cols-[minmax(5rem,35%)_minmax(0,1fr)] gap-2 border-b border-border py-2 last:border-b-0">
+                    <dt className="min-w-0 truncate font-mono text-muted-foreground">{key}</dt>
                     <dd className="m-0 min-w-0"><ValueView value={value} /></dd>
                   </div>
                 ))}
               </dl>
             )
-          : <p className="m-0 rounded-control bg-surface px-2.5 py-2 text-xs text-muted-foreground">{t('aiAssistant.noArguments')}</p>}
+          : <p className="m-0 rounded-control border border-border bg-surface px-2.5 py-2 text-xs text-muted-foreground">{t('aiAssistant.noArguments')}</p>}
       </section>
 
-      <section className="mt-3 grid gap-2" aria-labelledby={`${block.id}-result`}>
+      <section className="grid gap-1.5" aria-labelledby={`${block.id}-result`}>
         <DetailHeading><span id={`${block.id}-result`}>{t('aiAssistant.returnValue')}</span></DetailHeading>
         {block.result
           ? (
-              <div className="grid gap-2 rounded-control bg-surface px-2.5 py-2 text-xs">
+              <div className="grid gap-2 rounded-control border border-border bg-surface px-2.5 py-2 text-xs">
                 <div className="grid gap-0.5">
-                  <span className="text-[10px] text-muted-foreground">{t('aiAssistant.summary')}</span>
+                  <span className="text-[11px] text-muted-foreground">{t('aiAssistant.summary')}</span>
                   <p className="m-0 text-foreground">{summary}</p>
                 </div>
                 {errorCode && (
                   <div className="flex justify-between gap-3">
                     <span className="text-muted-foreground">{t('aiAssistant.errorCode')}</span>
-                    <code className="break-all text-right text-[11px]">{errorCode}</code>
+                    <code className="break-all text-right font-mono text-[11px]">{errorCode}</code>
                   </div>
                 )}
                 {block.result.errorMessage && (
-                  <p className="m-0 break-words rounded-control bg-danger-subtle px-2 py-1.5 text-danger">
+                  <p className="m-0 break-words rounded-control border border-danger-border bg-danger-subtle px-2 py-1.5 text-danger">
                     {block.result.errorMessage}
                   </p>
                 )}
@@ -136,7 +136,7 @@ export function AIToolCallDetails({ block, errorCode, summary }: { block: ToolCa
                   </div>
                 ))}
                 {block.result.issues && block.result.issues.length > 0 && (
-                  <div className="grid gap-1.5 rounded-control bg-danger-subtle px-2 py-2">
+                  <div className="grid gap-1.5 rounded-control border border-danger-border bg-danger-subtle px-2 py-2">
                     <strong className="text-[11px] text-danger">{t('aiAssistant.validationDetails')}</strong>
                     <ul className="m-0 grid list-none gap-1 p-0">
                       {block.result.issues.map(issue => (
@@ -166,14 +166,14 @@ export function AIToolCallDetails({ block, errorCode, summary }: { block: ToolCa
                 )}
                 {block.result.data !== undefined && (
                   <div className="grid min-w-0 gap-1">
-                    <strong className="text-[11px] text-muted-foreground">{t('aiAssistant.responseData')}</strong>
+                    <strong className="text-[11px] font-medium text-muted-foreground">{t('aiAssistant.responseData')}</strong>
                     <ValueView value={block.result.data} />
                   </div>
                 )}
               </div>
             )
           : (
-              <div className="grid gap-2 rounded-control bg-surface px-2.5 py-2" aria-label={t('aiAssistant.resultPending')}>
+              <div className="grid gap-2 rounded-control border border-border bg-surface px-2.5 py-2.5" aria-label={t('aiAssistant.resultPending')}>
                 <Skeleton className="h-2.5 w-full" />
                 <Skeleton className="h-2.5 w-2/3" />
               </div>

@@ -211,7 +211,7 @@ export function AgentTurnDetailSheet({ turn, onOpenChange }: {
                       <Switch aria-label={t('operationsDashboardPage.turnDetail.showExternalServices')} checked={showExternalServices} onCheckedChange={setShowExternalServices} />
                       <span>{t('operationsDashboardPage.turnDetail.showExternalServices')}</span>
                     </label>
-                    <div className="flex flex-wrap gap-1 rounded-control bg-muted p-1">
+                    <div className="flex flex-wrap gap-1 rounded-control bg-surface-subtle p-1">
                       {(['all', 'model', 'tool', 'error'] as const).map(value => (
                         <Button key={value} aria-pressed={filter === value} size="sm" variant={filter === value ? 'secondary' : 'ghost'} onClick={() => setFilter(value)}>
                           {t(`operationsDashboardPage.turnDetail.filters.${value}`)}
@@ -339,7 +339,7 @@ function TimelineStep({ span, expanded, isLast, userMessage, assistantMessage, o
                 <p className="m-0 text-xs font-medium text-muted-foreground">{t('operationsDashboardPage.turnDetail.attributes')}</p>
                 <div className="grid gap-2 sm:grid-cols-2">
                   {attributes.map(([key, value]) => (
-                    <div key={key} className="grid min-w-0 gap-1 rounded-control bg-muted p-2">
+                    <div key={key} className="grid min-w-0 gap-1 rounded-control bg-surface-subtle p-2">
                       <span className="truncate text-[11px] font-medium text-muted-foreground" title={key}>{spanAttributeLabel(key, t)}</span>
                       <ObservabilityJsonValue>{spanAttributeValue(key, value, t, i18n.language)}</ObservabilityJsonValue>
                     </div>
@@ -347,7 +347,7 @@ function TimelineStep({ span, expanded, isLast, userMessage, assistantMessage, o
                 </div>
               </div>
             )}
-            <details className="group overflow-hidden rounded-control bg-muted">
+            <details className="group overflow-hidden rounded-control bg-surface-subtle">
               <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-xs font-medium outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
                 <ChevronRight className="size-3.5 text-muted-foreground transition-transform group-open:rotate-90" />
                 {t('operationsDashboardPage.turnDetail.rawJson')}
@@ -374,7 +374,7 @@ function SpanContentSection({ kind, value }: { kind: 'systemInstructions' | 'mod
         ? (
             <div className="grid gap-2">
               {messages.map(message => (
-                <div key={message.id} className="grid min-w-0 gap-2 rounded-control bg-muted p-3">
+                <div key={message.id} className="grid min-w-0 gap-2 rounded-control bg-surface-subtle p-3">
                   <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                     {t(`operationsDashboardPage.turnDetail.roles.${message.role}`, { defaultValue: message.role })}
                   </span>
@@ -385,7 +385,7 @@ function SpanContentSection({ kind, value }: { kind: 'systemInstructions' | 'mod
           )
         : output && (output.text || output.reasoningSummary || output.toolCalls)
           ? (
-              <div className="grid gap-3 rounded-control bg-muted p-3">
+              <div className="grid gap-3 rounded-control bg-surface-subtle p-3">
                 {output.reasoningSummary && <TimelineMarkdownContent label={t('operationsDashboardPage.turnDetail.reasoningSummary')} value={output.reasoningSummary} />}
                 {output.text && <TimelineMarkdownContent label={t('operationsDashboardPage.assistantMessage')} value={output.text} />}
                 {output.toolCalls !== undefined && (

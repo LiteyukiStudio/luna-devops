@@ -2,7 +2,7 @@ import type { ReactNode } from 'react'
 import type { NotificationChannel, NotificationChannelPayload, NotificationDelivery, NotificationRule, NotificationRuleAdvancedFilter, NotificationRulePayload, NotificationTemplate, NotificationTemplatePayload, Project } from '@/api'
 import type { DataListColumn } from '@/components/common/data-list'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Bell, FlaskConical, Pencil, Plus, Trash2 } from 'lucide-react'
+import { Bell, FlaskConical, MoreHorizontal, Pencil, Plus, Trash2 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -12,11 +12,13 @@ import { ContentTabs } from '@/components/common/content-tabs'
 import { DataList } from '@/components/common/data-list'
 import { FormField as Field } from '@/components/common/form-field'
 import { PageShell } from '@/components/common/page-shell'
+import { ProgressiveSection } from '@/components/common/progressive-section'
 import { ProjectSpaceMultiSelect } from '@/components/common/project-space-select'
 import { StatusBadge, StatusValueBadge } from '@/components/common/status-badge'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { NativeSelect as Select } from '@/components/ui/native-select'
 import { TabsContent } from '@/components/ui/tabs'
@@ -39,6 +41,7 @@ export function NotificationsPage() {
   const [templateDialog, setTemplateDialog] = useState<TemplateFormState | null>(null)
   const [ruleDialog, setRuleDialog] = useState<RuleFormState | null>(null)
   const [testChannelTarget, setTestChannelTarget] = useState<NotificationChannel | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null)
 
   const presets = useQuery({ queryKey: ['notifications', 'presets'], queryFn: api.listNotificationPresets })
   const channels = useQuery({
@@ -142,17 +145,26 @@ export function NotificationsPage() {
   })
   const deleteChannel = useMutation({
     mutationFn: api.deleteNotificationChannel,
-    onSuccess: refreshNotifications,
+    onSuccess: () => {
+      setDeleteTarget(null)
+      void refreshNotifications()
+    },
     onError: error => toast.error(error.message),
   })
   const deleteTemplate = useMutation({
     mutationFn: api.deleteNotificationTemplate,
-    onSuccess: refreshNotifications,
+    onSuccess: () => {
+      setDeleteTarget(null)
+      void refreshNotifications()
+    },
     onError: error => toast.error(error.message),
   })
   const deleteRule = useMutation({
     mutationFn: api.deleteNotificationRule,
-    onSuccess: refreshNotifications,
+    onSuccess: () => {
+      setDeleteTarget(null)
+      void refreshNotifications()
+    },
     onError: error => toast.error(error.message),
   })
   const testChannel = useMutation({
@@ -170,22 +182,22 @@ export function NotificationsPage() {
     { key: 'enabled', header: t('common.status'), width: 'status', render: item => <StatusBadge tone={item.enabled ? 'success' : 'neutral'}>{item.enabled ? t('common.enabled') : t('common.disabled')}</StatusBadge> },
     { key: 'lastDeliveryStatus', header: t('notificationsPage.lastDelivery'), width: 'status', render: item => item.lastDeliveryStatus ? <StatusValueBadge value={item.lastDeliveryStatus} /> : '-' },
     { key: 'secretSet', header: t('notificationsPage.secrets'), width: 'normal', render: item => Object.keys(item.secretSet ?? {}).filter(key => item.secretSet?.[key]).join(', ') || '-' },
-    { key: 'actions', header: t('common.actions'), sticky: 'right', render: item => <Actions onDelete={() => deleteChannel.mutate(item.id)} onEdit={() => setChannelDialog(channelStateFromItem(item))} onTest={() => setTestChannelTarget(item)} /> },
-  ], [deleteChannel, t])
+    { key: 'actions', header: t('common.actions'), className: 'text-right', mobileActions: 'inline', sticky: 'right', width: 'actions', render: item => <Actions name={item.name} onDelete={() => setDeleteTarget({ id: item.id, kind: 'channel', name: item.name })} onEdit={() => setChannelDialog(channelStateFromItem(item))} onTest={() => setTestChannelTarget(item)} /> },
+  ], [t])
 
   const templateColumns = useMemo<DataListColumn<NotificationTemplate>[]>(() => [
     { key: 'name', header: t('notificationsPage.name'), width: 'primary', render: item => <NameCell name={item.name} sub={`${item.eventType} · ${item.adapterKind}`} /> },
     { key: 'enabled', header: t('common.status'), width: 'status', render: item => <StatusBadge tone={item.enabled ? 'success' : 'neutral'}>{item.enabled ? t('common.enabled') : t('common.disabled')}</StatusBadge> },
     { key: 'locale', header: t('notificationsPage.locale'), width: 'compact', render: item => item.locale || '-' },
-    { key: 'actions', header: t('common.actions'), sticky: 'right', render: item => <Actions onDelete={() => deleteTemplate.mutate(item.id)} onEdit={() => setTemplateDialog(templateStateFromItem(item))} /> },
-  ], [deleteTemplate, t])
+    { key: 'actions', header: t('common.actions'), className: 'text-right', mobileActions: 'inline', sticky: 'right', width: 'actions', render: item => <Actions name={item.name} onDelete={() => setDeleteTarget({ id: item.id, kind: 'template', name: item.name })} onEdit={() => setTemplateDialog(templateStateFromItem(item))} /> },
+  ], [t])
 
   const ruleColumns = useMemo<DataListColumn<NotificationRule>[]>(() => [
     { key: 'name', header: t('notificationsPage.name'), width: 'primary', render: item => <NameCell name={item.name} sub={decodeStringList(item.eventTypesJson).join(', ')} /> },
     { key: 'enabled', header: t('common.status'), width: 'status', render: item => <StatusBadge tone={item.enabled ? 'success' : 'neutral'}>{item.enabled ? t('common.enabled') : t('common.disabled')}</StatusBadge> },
     { key: 'channels', header: t('notificationsPage.channels'), width: 'normal', render: item => decodeStringList(item.channelIdsJson).length },
-    { key: 'actions', header: t('common.actions'), sticky: 'right', render: item => <Actions onDelete={() => deleteRule.mutate(item.id)} onEdit={() => setRuleDialog(ruleStateFromItem(item))} /> },
-  ], [deleteRule, t])
+    { key: 'actions', header: t('common.actions'), className: 'text-right', mobileActions: 'inline', sticky: 'right', width: 'actions', render: item => <Actions name={item.name} onDelete={() => setDeleteTarget({ id: item.id, kind: 'rule', name: item.name })} onEdit={() => setRuleDialog(ruleStateFromItem(item))} /> },
+  ], [t])
 
   const deliveryColumns = useMemo<DataListColumn<NotificationDelivery>[]>(() => [
     { key: 'eventType', header: t('notificationsPage.eventType'), width: 'normal', render: item => <NameCell name={item.eventType} sub={item.eventId} /> },
@@ -270,10 +282,31 @@ export function NotificationsPage() {
         onConfirm={() => testChannelTarget && testChannel.mutate(testChannelTarget.id)}
         onOpenChange={open => !open && setTestChannelTarget(null)}
       />
+      <ConfirmDialog
+        cancelText={t('common.cancel')}
+        closeOnConfirm={false}
+        confirmText={t('common.delete')}
+        description={t('notificationsPage.deleteDescription', { name: deleteTarget?.name ?? '' })}
+        open={Boolean(deleteTarget)}
+        pending={deleteChannel.isPending || deleteTemplate.isPending || deleteRule.isPending}
+        title={deleteTarget?.kind === 'rule'
+          ? t('notificationsPage.deleteRuleTitle')
+          : deleteTarget?.kind === 'template' ? t('notificationsPage.deleteTemplateTitle') : t('notificationsPage.deleteChannelTitle')}
+        onConfirm={() => {
+          if (deleteTarget?.kind === 'channel')
+            deleteChannel.mutate(deleteTarget.id)
+          else if (deleteTarget?.kind === 'template')
+            deleteTemplate.mutate(deleteTarget.id)
+          else if (deleteTarget?.kind === 'rule')
+            deleteRule.mutate(deleteTarget.id)
+        }}
+        onOpenChange={open => !open && setDeleteTarget(null)}
+      />
     </PageShell>
   )
 }
 
+interface DeleteTarget { id: string, kind: 'channel' | 'rule' | 'template', name: string }
 interface ChannelFormState { adapterKind: string, configText: string, enabled: boolean, id?: string, name: string, secretKeys: string[], secretText: string }
 interface PresetFormState { enabled: boolean, name: string, presetId: string, secretText: string }
 interface TemplateFormState { adapterKind: string, bodyTemplate: string, enabled: boolean, eventType: string, id?: string, jsonBodyTemplate: string, locale: string, name: string, subjectTemplate: string }
@@ -388,14 +421,14 @@ function RuleDialog({ channels, onClose, onSave, onUpdate, openState, projects, 
           <DialogDescription>{t('notificationsPage.ruleDialogDescription')}</DialogDescription>
         </DialogHeader>
         <FormGrid>
-          <Field label={t('notificationsPage.name')}><Input value={openState.name} onChange={event => onUpdate({ ...openState, name: event.target.value })} /></Field>
+          <Field label={t('notificationsPage.name')} required><Input value={openState.name} onChange={event => onUpdate({ ...openState, name: event.target.value })} /></Field>
           <Field label={t('notificationsPage.template')}>
             <Select value={openState.templateId} onChange={event => onUpdate({ ...openState, templateId: event.target.value })}>
               <option value="">{t('notificationsPage.defaultTemplate')}</option>
               {templates.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
             </Select>
           </Field>
-          <Field className="md:col-span-2" label={t('notificationsPage.eventTypes')}><Input value={openState.eventTypes.join(', ')} onChange={event => onUpdate({ ...openState, eventTypes: splitList(event.target.value) })} /></Field>
+          <Field className="md:col-span-2" label={t('notificationsPage.eventTypes')} required><Input value={openState.eventTypes.join(', ')} onChange={event => onUpdate({ ...openState, eventTypes: splitList(event.target.value) })} /></Field>
           <Field className="md:col-span-2" label={t('notificationsPage.ruleScope')}>
             <Select
               value={openState.scope}
@@ -410,11 +443,14 @@ function RuleDialog({ channels, onClose, onSave, onUpdate, openState, projects, 
           </Field>
           {openState.scope === 'projects'
             ? (
-                <Field className="md:col-span-2" label={t('notificationsPage.ruleProjects')}>
+                <Field
+                  className="md:col-span-2"
+                  error={openState.projectIds.length === 0 ? t('notificationsPage.ruleProjectsRequired') : undefined}
+                  hint={t('notificationsPage.ruleProjectsHint')}
+                  label={t('notificationsPage.ruleProjects')}
+                  required
+                >
                   <ProjectSpaceMultiSelect projects={projects} value={openState.projectIds} onChange={projectIds => onUpdate({ ...openState, projectIds })} />
-                  <p className={openState.projectIds.length === 0 ? 'text-sm text-danger' : 'text-sm text-muted-foreground'} role={openState.projectIds.length === 0 ? 'alert' : undefined}>
-                    {openState.projectIds.length === 0 ? t('notificationsPage.ruleProjectsRequired') : t('notificationsPage.ruleProjectsHint')}
-                  </p>
                 </Field>
               )
             : (
@@ -422,13 +458,7 @@ function RuleDialog({ channels, onClose, onSave, onUpdate, openState, projects, 
                   {t('notificationsPage.ruleScopeAllWarning')}
                 </div>
               )}
-          <Field className="md:col-span-2" label={t('notificationsPage.filterJson')}>
-            <Textarea aria-invalid={!advancedFilterValid} className="min-h-28 font-mono" value={openState.filterText} onChange={event => onUpdate({ ...openState, filterText: event.target.value })} />
-            <p className={advancedFilterValid ? 'text-sm text-muted-foreground' : 'text-sm text-danger'} role={advancedFilterValid ? undefined : 'alert'}>
-              {advancedFilterValid ? t('notificationsPage.filterJsonHint') : t('notificationsPage.filterJsonInvalid')}
-            </p>
-          </Field>
-          <Field className="md:col-span-2" label={t('notificationsPage.channels')}>
+          <Field className="md:col-span-2" label={t('notificationsPage.channels')} required>
             <div className="grid gap-2 rounded-container border border-border p-3">
               {channels.map(channel => (
                 <label key={channel.id} className="flex items-center gap-2 text-sm">
@@ -438,6 +468,20 @@ function RuleDialog({ channels, onClose, onSave, onUpdate, openState, projects, 
               ))}
             </div>
           </Field>
+          <div className="md:col-span-2">
+            <ProgressiveSection
+              defaultOpen={!advancedFilterValid || hasAdvancedFilter(openState.filterText)}
+              hint={t('notificationsPage.filterJsonHint')}
+              summary={!advancedFilterValid
+                ? t('notificationsPage.filterSummaryInvalid')
+                : hasAdvancedFilter(openState.filterText) ? t('notificationsPage.filterSummarySet') : t('notificationsPage.filterSummaryNone')}
+              title={t('notificationsPage.advancedFilter')}
+            >
+              <Field error={advancedFilterValid ? undefined : t('notificationsPage.filterJsonInvalid')} label={t('notificationsPage.filterJson')}>
+                <Textarea className="min-h-28 font-mono" value={openState.filterText} onChange={event => onUpdate({ ...openState, filterText: event.target.value })} />
+              </Field>
+            </ProgressiveSection>
+          </div>
         </FormGrid>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>{t('common.cancel')}</Button>
@@ -448,13 +492,34 @@ function RuleDialog({ channels, onClose, onSave, onUpdate, openState, projects, 
   )
 }
 
-function Actions({ onDelete, onEdit, onTest }: { onDelete: () => void, onEdit: () => void, onTest?: () => void }) {
+function Actions({ name, onDelete, onEdit, onTest }: { name: string, onDelete: () => void, onEdit: () => void, onTest?: () => void }) {
   const { t } = useTranslation()
   return (
-    <div className="flex items-center justify-end gap-1">
-      {onTest && <Button aria-label={t('notificationsPage.testChannel')} size="icon" variant="ghost" onClick={onTest}><FlaskConical className="size-4" /></Button>}
-      <Button aria-label={t('common.edit')} size="icon" variant="ghost" onClick={onEdit}><Pencil className="size-4" /></Button>
-      <Button aria-label={t('common.delete')} size="icon" variant="ghost" onClick={onDelete}><Trash2 className="size-4" /></Button>
+    <div className="flex justify-end">
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button aria-label={t('notificationsPage.rowActions', { name })} size="icon" variant="ghost">
+            <MoreHorizontal className="size-4" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          {onTest && (
+            <DropdownMenuItem onSelect={onTest}>
+              <FlaskConical className="size-4" />
+              {t('notificationsPage.testChannel')}
+            </DropdownMenuItem>
+          )}
+          <DropdownMenuItem onSelect={onEdit}>
+            <Pencil className="size-4" />
+            {t('common.edit')}
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem variant="destructive" onSelect={onDelete}>
+            <Trash2 className="size-4" />
+            {t('common.delete')}
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   )
 }
@@ -472,11 +537,11 @@ function TestNotificationVariables() {
     '.Event.Gateway.Domain',
   ]
   return (
-    <div className="grid gap-2 rounded-container border border-border bg-surface-subtle p-3 text-sm">
+    <div className="grid gap-2 text-sm">
       <p className="text-muted-foreground">{t('notificationsPage.testVariablesIntro')}</p>
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap gap-1.5">
         {variables.map(variable => (
-          <code key={variable} className="rounded-md bg-surface px-2 py-1 font-mono text-xs text-foreground">
+          <code key={variable} className="rounded-control bg-surface-subtle px-2 py-1 font-mono text-xs text-foreground">
             {variable}
           </code>
         ))}
@@ -589,6 +654,11 @@ function parseNotificationRuleAdvancedFilter(value: string): NotificationRuleAdv
     ...(applicationIds === undefined ? {} : { applicationIds }),
     ...(deploymentTargetIds === undefined ? {} : { deploymentTargetIds }),
   }
+}
+
+function hasAdvancedFilter(value: string) {
+  const parsed = parseJSONObject(value)
+  return parsed !== null && Object.keys(parsed).length > 0
 }
 
 function parseJSONObject(value: string): Record<string, unknown> | null {

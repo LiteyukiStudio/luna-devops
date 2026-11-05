@@ -82,6 +82,7 @@ const codeRepositoriesView = {
   scopesHint: '업스트림 Git 플랫폼이 Token에 부여한 API 권한. 쉼표로 구분하며 예: repo, read:user. 이는 이 플랫폼 내에서 자격 증명의 사용 범위를 제어하지 않습니다.',
   status: '상태',
   oauthConnect: '{{provider}}에 연결',
+  oauthConnectMenu: 'OAuth로 연결',
   oauthReadyTitle: '리다이렉트 인증을 사용할 수 있습니다',
   oauthReadyDescription: '{{provider}}에 OAuth App이 설정되어 있습니다. 승인을 클릭하면 코드 플랫폼으로 리다이렉트되고 승인 성공 후 Git 자격 증명이 자동 생성됩니다.',
   oauthManualOnlyTitle: '현재는 수동으로 Token 입력만 가능합니다',
@@ -102,11 +103,9 @@ const codeRepositoriesView = {
   deleteProviderTitle: 'Git Provider 삭제',
   deleteProviderConfirm: 'Git Provider 삭제',
   deleteProviderDescription: 'Git Provider {{name}}은(는) 삭제되고 이에 속한 모든 Git 자격 증명도 함께 삭제됩니다. 확인 후 계속하세요.',
-  deleteProviderAria: 'Git Provider 삭제',
   deleteCredentialTitle: 'Git 자격 증명 삭제',
   deleteCredentialConfirm: '자격 증명 삭제',
   deleteCredentialDescription: 'Git 자격 증명 {{name}}은(는) 삭제됩니다. 확인 후 계속하세요.',
-  deleteCredentialAria: 'Git 자격 증명 삭제',
 }
 
 export default codeRepositoriesView

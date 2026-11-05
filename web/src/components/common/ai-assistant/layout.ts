@@ -6,7 +6,7 @@ export const VIEWPORT_GUTTER = 24
 export const PAGE_LAUNCHER_GUTTER = 48
 export const MIN_WINDOW_WIDTH = 360
 export const MIN_WINDOW_HEIGHT = 480
-export const LAUNCHER_SIZE = 56
+export const LAUNCHER_SIZE = 48
 export const AI_ASSISTANT_SPLIT_MIN_WIDTH = 720
 export const AI_ASSISTANT_SIDEBAR_WIDTH = 264
 

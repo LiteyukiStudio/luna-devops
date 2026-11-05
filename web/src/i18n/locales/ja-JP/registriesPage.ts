@@ -109,13 +109,12 @@ const registriesPage = {
   deleteCredentialConfirm: 'クレデンシャルを削除',
   deleteCredentialTitle: 'クレデンシャルを削除',
   deleteCredentialDescription: 'クレデンシャル {{name}} は削除されます。確認して続行してください。',
-  noCapabilities: 'no capabilities',
+  noCapabilities: '機能の宣言なし',
+  advancedSettings: '詳細設定',
   test: 'テスト',
-  deleteRegistryAria: 'レジストリを削除',
   tokenOnly: 'token-only',
   passwordSet: 'password',
   tokenSet: 'token',
-  deleteCredentialAria: 'クレデンシャルを削除',
 }
 
 export default registriesPage

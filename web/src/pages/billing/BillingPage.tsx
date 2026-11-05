@@ -65,6 +65,7 @@ export function BillingPage() {
           <BillingDeploymentSpendList
             billingDisplay={billingDisplay}
             data={billing.deploymentSpendQuery.data}
+            loading={billing.deploymentSpendQuery.isLoading}
             page={billing.deploymentSpendPage}
             projectMap={billing.projectMap}
             onPageChange={billing.setDeploymentSpendPage}
@@ -74,6 +75,7 @@ export function BillingPage() {
           <BillingLedgerList
             billingDisplay={billingDisplay}
             data={billing.ledgerQuery.data}
+            loading={billing.ledgerQuery.isLoading}
             page={billing.ledgerPage}
             projectMap={billing.projectMap}
             onPageChange={billing.setLedgerPage}
@@ -83,6 +85,7 @@ export function BillingPage() {
           <BillingUsageList
             billingDisplay={billingDisplay}
             data={billing.usageQuery.data}
+            loading={billing.usageQuery.isLoading}
             locale={i18n.language}
             page={billing.usagePage}
             projectMap={billing.projectMap}

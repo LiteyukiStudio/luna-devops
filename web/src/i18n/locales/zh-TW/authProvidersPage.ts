@@ -34,8 +34,6 @@ const authProvidersPage = {
   save: '儲存身份源',
   created: '身份源已建立',
   updated: '身份源已更新',
-  admissionPolicy: '准入策略',
-  policyDescription: '控制平臺允許的登入方式，以及 OIDC 使用者首次進入平臺時需要滿足的條件。',
   policySaved: '准入策略已儲存',
   policyLoadFailedTitle: '准入策略載入失敗',
   allowLocalLogin: '允許本地賬號登入',
@@ -55,6 +53,8 @@ const authProvidersPage = {
   defaultRoleHint: 'OIDC 首次進入平臺自動建立使用者時賦予的全域性角色。專案空間許可權仍在專案空間成員裡單獨控制。',
   savePolicy: '儲存准入策略',
   loadFailedTitle: '身份源載入失敗',
+  emptyTitle: '還沒有身份源',
+  claimMapping: 'Claim 對應',
 }
 
 export default authProvidersPage

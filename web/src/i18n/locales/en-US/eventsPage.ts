@@ -19,11 +19,9 @@ const eventsPage = {
     time: 'Occurred',
   },
   filters: {
-    title: 'Filter events',
-    open: 'Filters',
+    more: 'More filters',
     selectedCount: '{{count}} filter selections active',
     clearAll: 'Clear all',
-    apply: 'Apply filters',
     project: 'Project space',
     application: 'Application',
     deploymentTarget: 'Deployment target',

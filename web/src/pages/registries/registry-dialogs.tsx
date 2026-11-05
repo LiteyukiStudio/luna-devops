@@ -10,7 +10,7 @@ import { FormField as Field } from '@/components/common/form-field'
 import { ProgressiveSection } from '@/components/common/progressive-section'
 import { ProjectSpaceMultiSelect } from '@/components/common/project-space-select'
 import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { NativeSelect as Select } from '@/components/ui/native-select'
 import { credentialDefaults, registryDefaults } from './registry-form-model'
@@ -75,19 +75,27 @@ export function RegistryDialog({ open, editingRegistry, form, projects, pending,
               />
             </Field>
           )}
-          <Field error={form.formState.errors.capabilitiesText?.message} hint={t('registriesPage.capabilitiesHint')} label={t('registriesPage.capabilities')}>
-            <Input {...form.register('capabilitiesText')} aria-invalid={Boolean(form.formState.errors.capabilitiesText)} />
-          </Field>
-          <Controller
-            control={form.control}
-            name="isDefault"
-            render={({ field }) => (
-              <ControlledCheckboxField field={field}>
-                {t('registriesPage.setAsDefault')}
-              </ControlledCheckboxField>
-            )}
-          />
+          <ProgressiveSection
+            summary={[form.watch('capabilitiesText').trim() || t('registriesPage.noCapabilities'), form.watch('isDefault') ? t('common.default') : null].filter(Boolean).join(' · ')}
+            title={t('registriesPage.advancedSettings')}
+          >
+            <Field error={form.formState.errors.capabilitiesText?.message} hint={t('registriesPage.capabilitiesHint')} label={t('registriesPage.capabilities')}>
+              <Input {...form.register('capabilitiesText')} aria-invalid={Boolean(form.formState.errors.capabilitiesText)} />
+            </Field>
+            <Controller
+              control={form.control}
+              name="isDefault"
+              render={({ field }) => (
+                <ControlledCheckboxField field={field}>
+                  {t('registriesPage.setAsDefault')}
+                </ControlledCheckboxField>
+              )}
+            />
+          </ProgressiveSection>
           <DialogFooter>
+            <DialogClose asChild>
+              <Button type="button" variant="outline">{t('common.cancel')}</Button>
+            </DialogClose>
             <Button disabled={pending || !form.formState.isValid} type="submit">
               <Plus size={16} />
               {editingRegistry ? t('registriesPage.saveRegistry') : t('registriesPage.createRegistry')}
@@ -235,6 +243,9 @@ export function CredentialDialog({ editingCredential, open, form, registries, pr
             </div>
           </ProgressiveSection>
           <DialogFooter>
+            <DialogClose asChild>
+              <Button type="button" variant="outline">{t('common.cancel')}</Button>
+            </DialogClose>
             <Button disabled={pending || !form.formState.isValid || (secretRequired && !secretProvided)} type="submit">
               <KeyRound size={16} />
               {t('registriesPage.saveCredential')}
@@ -351,14 +362,14 @@ export function ImageDialog({
             </div>
           </Field>
           {registryId && repositoryResultsOpen && (
-            <div className="grid max-h-52 gap-2 overflow-y-auto rounded-container border border-border p-2">
+            <div className="grid max-h-52 gap-1 overflow-y-auto rounded-control border border-border p-1">
               {repositoryResults.isFetching && (
                 <p className="px-3 py-2 text-sm text-muted-foreground">{t('registriesPage.searchingImages')}</p>
               )}
               {repositoryResults.items.map(repository => (
                 <button
                   key={repository.name}
-                  className="rounded-md px-3 py-2 text-left hover:bg-muted"
+                  className="rounded-control px-3 py-2 text-left hover:bg-muted"
                   type="button"
                   onClick={() => onSelectRepository(repository)}
                 >
@@ -393,6 +404,9 @@ export function ImageDialog({
             </Field>
           </div>
           <DialogFooter>
+            <DialogClose asChild>
+              <Button type="button" variant="outline">{t('common.cancel')}</Button>
+            </DialogClose>
             <Button disabled={pending || !form.formState.isValid} type="submit">
               <PackagePlus size={16} />
               {t('registriesPage.recordImage')}

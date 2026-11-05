@@ -1,7 +1,7 @@
 import type { AgentObservabilityRange, AgentObservabilityToolSummary, AgentObservabilityTurn } from '@/api'
 import type { DataListColumn } from '@/components/common/data-list'
 import { useQuery } from '@tanstack/react-query'
-import { CircleGauge, Clock3, ExternalLink, Eye, MessagesSquare, RefreshCw, Settings, UserRound, Wrench } from 'lucide-react'
+import { CircleGauge, Clock3, ExternalLink, MessagesSquare, RefreshCw, Settings, UserRound, Wrench } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
@@ -13,13 +13,15 @@ import { DataList } from '@/components/common/data-list'
 import { EmptyState } from '@/components/common/empty-state'
 import { ErrorState } from '@/components/common/error-state'
 import { ForbiddenPage } from '@/components/common/forbidden-page'
+import { HelpTip } from '@/components/common/help-tip'
 import { ToolViewportSkeleton } from '@/components/common/loading-states'
 import { MetricGroup, MetricItem } from '@/components/common/metric-group'
+import { PageChromeTools } from '@/components/common/page-chrome'
 import { PageShell } from '@/components/common/page-shell'
-import { Section } from '@/components/common/section'
 import { StatusBadge } from '@/components/common/status-badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { isPlatformAdmin } from '@/lib/roles'
 import { AgentToolDetailSheet } from '@/pages/settings/operations/tools/agent-tool-detail-sheet'
@@ -216,19 +218,6 @@ function AgentObservabilityView({ active, enabled, userId }: { active: boolean, 
         </span>
       ),
     },
-    {
-      key: 'actions',
-      header: t('operationsDashboardPage.actions'),
-      width: 'actions',
-      sticky: 'right',
-      mobileActions: 'inline',
-      render: item => (
-        <Button size="sm" variant="outline" onClick={() => setSelectedTurn(item)}>
-          <Eye className="size-4" />
-          {t('operationsDashboardPage.viewTurn')}
-        </Button>
-      ),
-    },
   ], [i18n.language, t])
   const toolColumns = useMemo<DataListColumn<AgentObservabilityToolSummary>[]>(() => [
     {
@@ -274,42 +263,39 @@ function AgentObservabilityView({ active, enabled, userId }: { active: boolean, 
       mobile: 'hidden',
       render: item => <span className="text-xs text-muted-foreground">{formatDateTime(item.lastCalledAt, i18n.language)}</span>,
     },
-    {
-      key: 'actions',
-      header: t('operationsDashboardPage.actions'),
-      width: 'actions',
-      sticky: 'right',
-      mobileActions: 'inline',
-      render: item => (
-        <Button size="sm" variant="outline" onClick={() => setSelectedTool(item)}>
-          <Eye className="size-4" />
-          {t('operationsDashboardPage.viewToolCalls')}
-        </Button>
-      ),
-    },
   ], [i18n.language, t])
 
   if (!enabled) {
     return <ObservabilityConfigEmpty title={t('operationsDashboardPage.agentDisabledTitle')} description={t('operationsDashboardPage.agentDisabledDescription')} />
   }
   const data = overview.data
+  const dataTabs = (
+    <span className="flex items-center gap-1.5">
+      <TabsList aria-label={t('operationsDashboardPage.dataScope')}>
+        <TabsTrigger value="turns">{t('operationsDashboardPage.turnScope')}</TabsTrigger>
+        <TabsTrigger value="tools">{t('operationsDashboardPage.toolScope')}</TabsTrigger>
+      </TabsList>
+      <HelpTip label={t(dataTab === 'turns' ? 'operationsDashboardPage.turnScope' : 'operationsDashboardPage.toolScope')}>
+        {t(dataTab === 'turns' ? 'operationsDashboardPage.turnListDescription' : 'operationsDashboardPage.toolListDescription')}
+      </HelpTip>
+    </span>
+  )
   const successRate = data?.summary.turnSuccessRate ?? 0
   const toolSuccessRate = data?.summary.toolSuccessRate ?? 0
   return (
-    <div className="grid gap-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="grid gap-0.5">
-          <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-base font-semibold">{t('operationsDashboardPage.agentOverview')}</h2>
-            {data?.observationCode === 'ai.observability.partial' && <StatusBadge tone="warning">{t('operationsDashboardPage.metricsUnavailable')}</StatusBadge>}
-          </div>
-          <p className="m-0 text-sm text-muted-foreground">{t('operationsDashboardPage.agentOverviewDescription', { range: t(`operationsDashboardPage.timeRange.${range}`) })}</p>
-        </div>
-        <div className="flex flex-wrap items-center justify-end gap-2">
-          {agentObservabilityRanges.map(item => <Button key={item} size="sm" variant={range === item ? 'default' : 'outline'} onClick={() => changeRange(item)}>{t(`operationsDashboardPage.timeRange.${item}`)}</Button>)}
-          <Button aria-label={t('common.refresh')} disabled={workspaceFetching} size="icon" variant="ghost" onClick={refreshWorkspace}><RefreshCw className={workspaceFetching ? 'animate-spin' : ''} /></Button>
-        </div>
-      </div>
+    <div className="grid gap-4">
+      <PageChromeTools>
+        {data?.observationCode === 'ai.observability.partial' && <StatusBadge tone="warning">{t('operationsDashboardPage.metricsUnavailable')}</StatusBadge>}
+        <Select value={range} onValueChange={value => changeRange(value as AgentObservabilityRange)}>
+          <SelectTrigger aria-label={t('operationsDashboardPage.timeRangeLabel')} className="w-28">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {agentObservabilityRanges.map(item => <SelectItem key={item} value={item}>{t(`operationsDashboardPage.timeRange.${item}`)}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <Button aria-label={t('common.refresh')} disabled={workspaceFetching} size="icon" variant="outline" onClick={refreshWorkspace}><RefreshCw className={workspaceFetching ? 'animate-spin' : ''} /></Button>
+      </PageChromeTools>
       {overview.isLoading && <ToolViewportSkeleton />}
       {overview.isError && <ErrorState title={t('operationsDashboardPage.agentLoadFailedTitle')} description={t('operationsDashboardPage.agentLoadFailedDescription')} />}
       {data && (
@@ -332,71 +318,65 @@ function AgentObservabilityView({ active, enabled, userId }: { active: boolean, 
           setSelectedTool(null)
         }}
       >
-        <TabsList aria-label={t('operationsDashboardPage.dataScope')}>
-          <TabsTrigger value="turns">{t('operationsDashboardPage.turnScope')}</TabsTrigger>
-          <TabsTrigger value="tools">{t('operationsDashboardPage.toolScope')}</TabsTrigger>
-        </TabsList>
         <TabsContent value="turns">
-          <Section title={t('operationsDashboardPage.turnList')} description={t('operationsDashboardPage.turnListDescription')}>
-            {turns.isError
-              ? <ErrorState title={t('operationsDashboardPage.turnsLoadFailed')} description={t('operationsDashboardPage.turnsLoadFailedDescription')} />
-              : (
-                  <DataList
-                    columns={turnColumns}
-                    constrainedHeight
-                    emptyDescription={t('operationsDashboardPage.noRunsDescription')}
-                    emptyMode={turnSearch ? 'filtered' : 'actionable'}
-                    emptyTitle={t('operationsDashboardPage.noRuns')}
-                    items={turns.data?.items ?? []}
-                    loading={turns.isLoading}
-                    pagination={{
-                      page: turnPage,
-                      pageSize: turnPageSize,
-                      total: turns.data?.total ?? 0,
-                      totalPages: turns.data?.totalPages ?? 0,
-                      pageInfoLabel: t('pagination.pageInfo', { page: turns.data?.page ?? turnPage, totalPages: turns.data?.totalPages ?? 0, total: turns.data?.total ?? 0 }),
-                      onPageChange: setTurnPage,
-                      onPageSizeChange: changeTurnPageSize,
-                    }}
-                    rowActionLabel={item => t('operationsDashboardPage.openTurnLabel', { index: item.turnIndex + 1, title: item.conversationTitle })}
-                    rowKey={item => item.id}
-                    search={{ value: turnSearch, placeholder: t('operationsDashboardPage.searchTurns'), onChange: changeTurnSearch }}
-                    viewportOffset={28}
-                    onRowClick={setSelectedTurn}
-                  />
-                )}
-          </Section>
+          {turns.isError
+            ? <ErrorState title={t('operationsDashboardPage.turnsLoadFailed')} description={t('operationsDashboardPage.turnsLoadFailedDescription')} />
+            : (
+                <DataList
+                  columns={turnColumns}
+                  constrainedHeight
+                  emptyDescription={t('operationsDashboardPage.noRunsDescription')}
+                  emptyMode={turnSearch ? 'filtered' : 'actionable'}
+                  emptyTitle={t('operationsDashboardPage.noRuns')}
+                  items={turns.data?.items ?? []}
+                  loading={turns.isLoading}
+                  pagination={{
+                    page: turnPage,
+                    pageSize: turnPageSize,
+                    total: turns.data?.total ?? 0,
+                    totalPages: turns.data?.totalPages ?? 0,
+                    pageInfoLabel: t('pagination.pageInfo', { page: turns.data?.page ?? turnPage, totalPages: turns.data?.totalPages ?? 0, total: turns.data?.total ?? 0 }),
+                    onPageChange: setTurnPage,
+                    onPageSizeChange: changeTurnPageSize,
+                  }}
+                  rowActionLabel={item => t('operationsDashboardPage.openTurnLabel', { index: item.turnIndex + 1, title: item.conversationTitle })}
+                  rowKey={item => item.id}
+                  search={{ value: turnSearch, placeholder: t('operationsDashboardPage.searchTurns'), onChange: changeTurnSearch }}
+                  title={dataTabs}
+                  viewportOffset={28}
+                  onRowClick={setSelectedTurn}
+                />
+              )}
         </TabsContent>
         <TabsContent value="tools">
-          <Section title={t('operationsDashboardPage.toolList')} description={t('operationsDashboardPage.toolListDescription')}>
-            {tools.isError
-              ? <ErrorState title={t('operationsDashboardPage.toolsLoadFailed')} description={t('operationsDashboardPage.toolsLoadFailedDescription')} />
-              : (
-                  <DataList
-                    columns={toolColumns}
-                    constrainedHeight
-                    emptyDescription={t('operationsDashboardPage.noToolsDescription')}
-                    emptyMode={toolSearch ? 'filtered' : 'actionable'}
-                    emptyTitle={t('operationsDashboardPage.noTools')}
-                    items={tools.data?.items ?? []}
-                    loading={tools.isLoading}
-                    pagination={{
-                      page: toolPage,
-                      pageSize: toolPageSize,
-                      total: tools.data?.total ?? 0,
-                      totalPages: tools.data?.totalPages ?? 0,
-                      pageInfoLabel: t('pagination.pageInfo', { page: tools.data?.page ?? toolPage, totalPages: tools.data?.totalPages ?? 0, total: tools.data?.total ?? 0 }),
-                      onPageChange: setToolPage,
-                      onPageSizeChange: changeToolPageSize,
-                    }}
-                    rowActionLabel={item => t('operationsDashboardPage.openToolLabel', { tool: item.operationId })}
-                    rowKey={item => item.operationId}
-                    search={{ value: toolSearch, placeholder: t('operationsDashboardPage.searchTools'), onChange: changeToolSearch }}
-                    viewportOffset={28}
-                    onRowClick={setSelectedTool}
-                  />
-                )}
-          </Section>
+          {tools.isError
+            ? <ErrorState title={t('operationsDashboardPage.toolsLoadFailed')} description={t('operationsDashboardPage.toolsLoadFailedDescription')} />
+            : (
+                <DataList
+                  columns={toolColumns}
+                  constrainedHeight
+                  emptyDescription={t('operationsDashboardPage.noToolsDescription')}
+                  emptyMode={toolSearch ? 'filtered' : 'actionable'}
+                  emptyTitle={t('operationsDashboardPage.noTools')}
+                  items={tools.data?.items ?? []}
+                  loading={tools.isLoading}
+                  pagination={{
+                    page: toolPage,
+                    pageSize: toolPageSize,
+                    total: tools.data?.total ?? 0,
+                    totalPages: tools.data?.totalPages ?? 0,
+                    pageInfoLabel: t('pagination.pageInfo', { page: tools.data?.page ?? toolPage, totalPages: tools.data?.totalPages ?? 0, total: tools.data?.total ?? 0 }),
+                    onPageChange: setToolPage,
+                    onPageSizeChange: changeToolPageSize,
+                  }}
+                  rowActionLabel={item => t('operationsDashboardPage.openToolLabel', { tool: item.operationId })}
+                  rowKey={item => item.operationId}
+                  search={{ value: toolSearch, placeholder: t('operationsDashboardPage.searchTools'), onChange: changeToolSearch }}
+                  title={dataTabs}
+                  viewportOffset={28}
+                  onRowClick={setSelectedTool}
+                />
+              )}
         </TabsContent>
       </Tabs>
       <AgentTurnDetailSheet key={selectedTurn?.id ?? 'turn-closed'} turn={selectedTurn} onOpenChange={open => !open && setSelectedTurn(null)} />

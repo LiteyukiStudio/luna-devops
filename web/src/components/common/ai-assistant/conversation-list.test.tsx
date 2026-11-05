@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import i18next from '@/i18n'
 import { AIConversationList } from './conversation-list'
-import { formatAIConversationTimestamp } from './conversation-timestamp'
+import { formatAIConversationTimestamp, groupAIConversationsByRecency } from './conversation-timestamp'
 
 const conversations: AIConversation[] = [
   {
@@ -50,6 +50,22 @@ describe('ai conversation list', () => {
     expect(formatAIConversationTimestamp(new Date(2026, 7, 5, 16, 20).toISOString(), 'zh-CN', now)).toBe('16:20')
     expect(formatAIConversationTimestamp(new Date(2026, 7, 4, 16, 20).toISOString(), 'zh-CN', now)).toBe('8月4日 16:20')
     expect(formatAIConversationTimestamp(new Date(2025, 11, 31, 16, 20).toISOString(), 'zh-CN', now)).toBe('2025年12月31日 16:20')
+  })
+
+  it('groups conversations into today, the previous 7 days and earlier while keeping order', () => {
+    const now = new Date(2026, 7, 10, 9, 0)
+    const items = [
+      { id: 'a', updatedAt: new Date(2026, 7, 10, 8, 0).toISOString() },
+      { id: 'b', updatedAt: new Date(2026, 7, 9, 23, 0).toISOString() },
+      { id: 'c', updatedAt: new Date(2026, 7, 4, 0, 30).toISOString() },
+      { id: 'd', updatedAt: new Date(2026, 7, 3, 23, 59).toISOString() },
+    ]
+
+    expect(groupAIConversationsByRecency(items, now).map(group => [group.recency, group.items.map(item => item.id)])).toEqual([
+      ['today', ['a']],
+      ['recent', ['b', 'c']],
+      ['earlier', ['d']],
+    ])
   })
 
   it('enters an explicit selection mode and bulk deletes the selected conversations', async () => {
