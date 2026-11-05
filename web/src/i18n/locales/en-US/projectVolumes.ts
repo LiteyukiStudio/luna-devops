@@ -1,5 +1,4 @@
 const projectVolumes = {
-  title: 'Volume center',
   description: 'Manage persistent project-space volumes, bindings, imports, and exports in one place.',
   create: 'Create volume',
   import: 'Import volume',

@@ -8,12 +8,12 @@ import { api } from '@/api'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { NativeSelect } from '@/components/ui/native-select'
-import { EditorSection, SwitchField } from '../deployment-target-editor-fields'
+import { SwitchField } from '../deployment-target-editor-fields'
 import { useFieldError } from '../deployment-target-editor-utils'
 import { buildHookPhases, deploymentHookPhases } from '../deployment-target-form'
 
 /** 钩子绑定：按阶段分组选择；已有镜像来源不会执行构建阶段，相关阶段保留但禁用。 */
-export function HooksSection({ projectId }: { projectId: string }) {
+export function HookBindingsFields({ projectId }: { projectId: string }) {
   const { t } = useTranslation()
   const { control } = useFormContext<DeploymentTargetFormValues>()
   const { append, fields, move, remove } = useFieldArray({ control, name: 'buildHookBindings' })
@@ -23,7 +23,8 @@ export function HooksSection({ projectId }: { projectId: string }) {
   const canEdit = hooksEnabled && hookItems.length > 0
 
   return (
-    <EditorSection description={t('deploymentsPage.deploymentHooksDescription')} section="hooks" title={t('deploymentTargetEditor.sections.hooks')}>
+    <>
+      <p className="text-sm leading-6 text-muted-foreground">{t('deploymentsPage.deploymentHooksDescription')}</p>
       <SwitchField description={t('deploymentsPage.deploymentHooksEnabledHint')} label={t('deploymentsPage.deploymentHooksEnabled')} name="buildHooksEnabled" />
       <p className="text-sm leading-6 text-muted-foreground">{t('deploymentsPage.deploymentHooksHint')}</p>
       {hooks.isError && (
@@ -32,7 +33,7 @@ export function HooksSection({ projectId }: { projectId: string }) {
         </Alert>
       )}
       {hooks.isSuccess && hookItems.length === 0 && (
-        <p className="rounded-control border border-dashed border-border px-4 py-3 text-sm text-muted-foreground">{t('deploymentsPage.emptyDeploymentHooks')}</p>
+        <p className="text-sm text-muted-foreground">{t('deploymentsPage.emptyDeploymentHooks')}</p>
       )}
       {fields.length > 0 && (
         <ol className="grid gap-2">
@@ -63,7 +64,7 @@ export function HooksSection({ projectId }: { projectId: string }) {
           {t('deploymentsPage.addHookBinding')}
         </Button>
       </div>
-    </EditorSection>
+    </>
   )
 }
 
@@ -85,7 +86,7 @@ function HookBindingRow({ disabled, hooks, imageSource, index, isFirst, isLast, 
   const errorId = `deployment-target-hook-${index}-error`
 
   return (
-    <li className="grid gap-2 rounded-control bg-surface-inset/60 p-3 md:grid-cols-[2rem_minmax(0,1fr)_minmax(0,1.2fr)_auto] md:items-center">
+    <li className="grid gap-2 md:grid-cols-[2rem_minmax(0,1fr)_minmax(0,1.2fr)_auto] md:items-center">
       <span aria-hidden="true" className="text-sm font-medium text-muted-foreground tabular-nums">{order}</span>
       <NativeSelect {...register(`buildHookBindings.${index}.phase`)} aria-label={t('deploymentTargetEditor.hookPhaseFor', { index: order })} disabled={disabled}>
         <optgroup label={t('deploymentTargetEditor.buildPhases')}>

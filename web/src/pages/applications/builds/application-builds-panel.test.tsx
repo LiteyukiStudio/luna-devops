@@ -91,6 +91,8 @@ describe('application builds panel', () => {
 
     expect(await screen.findByText(/1 build run/)).toBeVisible()
     expect(screen.getByText('registry.example.test/example:latest')).toBeVisible()
+    expect(screen.getByText('Succeeded', { selector: '[data-slot="status-dot"] span' }).closest('[data-slot="status-dot"]')).toHaveAttribute('data-tone', 'success')
+    expect(screen.getByRole('button', { name: 'Logs' })).toBeDisabled()
     expect(screen.queryByText('Bind a code repository to this application first')).not.toBeInTheDocument()
   })
 
@@ -110,7 +112,7 @@ describe('application builds panel', () => {
     expect(await screen.findByText(/1 build run/)).toBeVisible()
     expect(screen.queryByTitle('new-owner/new-repo')).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Build run actions' }))
-    expect(screen.getByRole('button', { name: 'Retry' })).toBeDisabled()
+    expect(await screen.findByRole('menuitem', { name: 'Retry' })).toHaveAttribute('aria-disabled', 'true')
   })
 })
 

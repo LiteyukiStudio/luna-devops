@@ -23,7 +23,7 @@ import (
 
 const (
 	baselineMigrationVersion = 103
-	latestMigrationVersion   = 109
+	latestMigrationVersion   = 110
 )
 
 func TestEmbeddedMigrationsContainExpectedFiles(t *testing.T) {
@@ -46,6 +46,8 @@ func TestEmbeddedMigrationsContainExpectedFiles(t *testing.T) {
 		"000108_delivery_idempotency.down.sql":                 false,
 		"000109_app_template_installation_components.up.sql":   false,
 		"000109_app_template_installation_components.down.sql": false,
+		"000110_theme_simplification.up.sql":                   false,
+		"000110_theme_simplification.down.sql":                 false,
 	}
 	migrationCount := 0
 	for _, entry := range entries {
@@ -226,6 +228,7 @@ WHERE namespace.nspname = current_schema()
 	assertStableModelMigrationCoverage(t, testDB)
 	assertActiveDeploymentStageUniqueness(t, testDB)
 	assertRuntimeEnvConflictMigrationRoundTrip(t, testDB, runner)
+	assertThemeSimplificationMigration(t, testDB, runner)
 	assertDirtyMigrationFailsClosed(t, testDB)
 }
 
@@ -713,6 +716,7 @@ func assertSlimmingMigrationRemovals(t *testing.T, db *gorm.DB) {
 		{table: "build_jobs", column: "lease_token"},
 		{table: "build_jobs", column: "lease_until"},
 		{table: "build_jobs", column: "last_heartbeat_at"},
+		{table: "users", column: "interface_style"},
 	} {
 		if db.Migrator().HasColumn(obsolete.table, obsolete.column) {
 			t.Fatalf("fresh database contains slimming-migration column %s.%s", obsolete.table, obsolete.column)
@@ -923,6 +927,82 @@ func assertActiveDeploymentStageUniqueness(t *testing.T, db *gorm.DB) {
 
 // assertRuntimeEnvConflictMigrationRoundTrip 验证 000106 在 up/down/reapply 下按“密钥优先”清理同名普通项，
 // 只在审计中记录名称与数量，并能由 down 完整恢复。
+func assertThemeSimplificationMigration(t *testing.T, db *gorm.DB, runner *migrate.Migrate) {
+	t.Helper()
+	const themeVersion = 110
+	if err := runner.Migrate(themeVersion - 1); err != nil {
+		t.Fatalf("roll back to version before theme simplification: %v", err)
+	}
+	seed := []string{
+		`INSERT INTO users (id, email, name, brand_color_preset, interface_style, created_at, updated_at) VALUES
+			('usr_theme_removed', 'theme-removed@example.test', 'Removed', 'aurora', 'minimal', now(), now()),
+			('usr_theme_kept', 'theme-kept@example.test', 'Kept', 'teal', 'themed', now(), now()),
+			('usr_theme_inherit', 'theme-inherit@example.test', 'Inherit', '', '', now(), now())`,
+		`INSERT INTO app_configs (key, value, updated_at) VALUES ('site.brandColorPreset', 'lime', now()), ('site.minimalModeDefault', 'true', now())`,
+	}
+	for _, statement := range seed {
+		if err := db.Exec(statement).Error; err != nil {
+			t.Fatalf("seed theme simplification fixture: %v", err)
+		}
+	}
+
+	if err := runner.Migrate(themeVersion); err != nil {
+		t.Fatalf("apply theme simplification migration: %v", err)
+	}
+	presets := map[string]string{}
+	var rows []struct {
+		ID               string
+		BrandColorPreset string
+	}
+	if err := db.Raw(`SELECT id, brand_color_preset FROM users WHERE id LIKE 'usr_theme_%'`).Scan(&rows).Error; err != nil {
+		t.Fatalf("read migrated user presets: %v", err)
+	}
+	for _, row := range rows {
+		presets[row.ID] = row.BrandColorPreset
+	}
+	if presets["usr_theme_removed"] != "" || presets["usr_theme_kept"] != "teal" || presets["usr_theme_inherit"] != "" {
+		t.Fatalf("migrated user presets = %#v, want removed preset reset and catalog preset kept", presets)
+	}
+	var sitePreset string
+	if err := db.Raw(`SELECT value FROM app_configs WHERE key = 'site.brandColorPreset'`).Scan(&sitePreset).Error; err != nil {
+		t.Fatalf("read migrated site preset: %v", err)
+	}
+	if sitePreset != "blue" {
+		t.Fatalf("migrated site preset = %q, want blue", sitePreset)
+	}
+	var minimalModeRows int64
+	if err := db.Raw(`SELECT count(*) FROM app_configs WHERE key = 'site.minimalModeDefault'`).Scan(&minimalModeRows).Error; err != nil {
+		t.Fatalf("count minimal mode config: %v", err)
+	}
+	if minimalModeRows != 0 {
+		t.Fatalf("site.minimalModeDefault rows = %d, want 0", minimalModeRows)
+	}
+	if db.Migrator().HasColumn("users", "interface_style") {
+		t.Fatal("theme simplification retained users.interface_style")
+	}
+
+	if err := runner.Steps(-1); err != nil {
+		t.Fatalf("roll back theme simplification migration: %v", err)
+	}
+	if !db.Migrator().HasColumn("users", "interface_style") {
+		t.Fatal("theme simplification rollback did not restore users.interface_style")
+	}
+	if err := runner.Migrate(latestMigrationVersion); err != nil {
+		t.Fatalf("restore latest migrations after theme simplification round trip: %v", err)
+	}
+	assertRunnerMigrationVersion(t, runner, latestMigrationVersion)
+
+	cleanup := []string{
+		`DELETE FROM users WHERE id LIKE 'usr_theme_%'`,
+		`DELETE FROM app_configs WHERE key = 'site.brandColorPreset'`,
+	}
+	for _, statement := range cleanup {
+		if err := db.Exec(statement).Error; err != nil {
+			t.Fatalf("clean theme simplification fixture: %v", err)
+		}
+	}
+}
+
 func assertRuntimeEnvConflictMigrationRoundTrip(t *testing.T, db *gorm.DB, runner *migrate.Migrate) {
 	t.Helper()
 	const uniquenessVersion = 106

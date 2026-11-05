@@ -122,7 +122,6 @@ export function ClustersPage() {
                   <>
                     <Select
                       aria-label={t('clustersPage.selectResourceCluster')}
-                      className="h-9"
                       containerClassName="w-52 max-w-full"
                       disabled={resourceClusters.length === 0}
                       value={resources.selectedResourceCluster?.id ?? ''}
@@ -145,14 +144,17 @@ export function ClustersPage() {
                         {t('clustersPage.selectedResources', { count: resources.selectedDeletableResources.length })}
                       </span>
                     )}
-                    <Button
-                      disabled={resources.selectedDeletableResources.length === 0 || resources.deleteResources.isPending}
-                      variant="destructive"
-                      onClick={() => resources.setResourcesToDelete(resources.selectedDeletableResources)}
-                    >
-                      <Trash2 className="size-4" />
-                      {t('clustersPage.deleteSelectedResources')}
-                    </Button>
+                    {/* 危险批量操作只在确有可删除选择时出现，不常驻页头。 */}
+                    {resources.selectedDeletableResources.length > 0 && (
+                      <Button
+                        disabled={resources.deleteResources.isPending}
+                        variant="destructive"
+                        onClick={() => resources.setResourcesToDelete(resources.selectedDeletableResources)}
+                      >
+                        <Trash2 className="size-4" />
+                        {t('clustersPage.deleteSelectedResources')}
+                      </Button>
+                    )}
                   </>
                 )}
           </div>

@@ -1,6 +1,6 @@
 import type { DeploymentTarget, GatewayRoute, RuntimeCluster } from '@/api'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { SearchCheck, Trash2 } from 'lucide-react'
+import { MoreHorizontal, Pencil, SearchCheck, Trash2 } from 'lucide-react'
 import { useEffect, useImperativeHandle, useMemo, useState } from 'react'
 import { useController, useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
@@ -8,21 +8,25 @@ import { toast } from 'sonner'
 import { api } from '@/api'
 import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { DataList } from '@/components/common/data-list'
-import { EditActionButton } from '@/components/common/edit-action-button'
 import { FormField as Field } from '@/components/common/form-field'
 import { ProgressiveSection } from '@/components/common/progressive-section'
 import { ResourceDeletionStatus } from '@/components/common/resource-deletion-status'
 import { StatusValueBadge } from '@/components/common/status-badge'
+import { StatusDot } from '@/components/common/status-dot'
+import { statusToneFor } from '@/components/common/status-tone'
 import { formatAbsoluteDateTime } from '@/components/common/time-format'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { NativeSelect as Select } from '@/components/ui/native-select'
 import { Textarea } from '@/components/ui/textarea'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
 import { gatewayDeploymentTargetLabel } from '../application-config-utils'
+import { AccessUrlLink } from './access-url-link'
 import { GatewayRouteFormFields } from './application-gateway-form-fields'
+import { gatewayRouteAccessUrl } from './gateway-route-url'
 
 type RouteForm = Omit<GatewayRoute, 'id' | 'projectId' | 'createdBy' | 'createdAt' | 'certificateStatus' | 'certificateMessage' | 'certificateNotAfter' | 'certificateIssuerKind' | 'certificateIssuerName' | 'cnameName' | 'cnameTarget' | 'accessUrl' | 'deleteStatus' | 'deleteMessage' | 'deleteStartedAt' | 'deleteFinishedAt' | 'routeSummary' | 'conditions'>
 
@@ -161,28 +165,39 @@ export function ApplicationGatewayPanel({ applicationId, applicationIdentifier, 
       <DataList
         columns={[
           { key: 'host', header: t('gatewayRoutesPage.host'), width: 'primary', render: item => <GatewayRouteSummary item={item} /> },
-          { key: 'path', header: t('gatewayRoutesPage.path'), width: 'compact', render: item => item.path },
-          { key: 'servicePort', header: t('gatewayRoutesPage.targetPort'), className: 'whitespace-nowrap', width: 'number', render: item => item.servicePort || '-' },
+          { key: 'deploymentTarget', header: t('gatewayRoutesPage.deploymentTarget'), width: 'secondary', render: item => <span className="text-sm">{gatewayRouteTargetLabel(item, deploymentTargets)}</span> },
+          { key: 'path', header: t('gatewayRoutesPage.pathToPort'), width: 'compact', render: item => <span className="font-mono text-xs">{`${item.path || '/'} → ${item.servicePort || '-'}`}</span> },
           { key: 'tls', header: t('gatewayRoutesPage.tlsMode'), width: 'status', render: item => <GatewayRouteTlsSummary item={item} /> },
-          { key: 'parentGateway', header: t('gatewayRoutesPage.parentGateway'), width: 'secondary', render: item => gatewayRouteParentGateway(item) },
-          { key: 'status', header: t('common.status'), render: item => (
-            <div className="flex flex-wrap items-center gap-2">
-              <StatusValueBadge labelKeyPrefix="gatewayRoutesPage.statuses" value={gatewayRouteEffectiveStatus(item)} />
-            </div>
-          ), width: 'status' },
-          { key: 'actions', header: t('common.actions'), className: 'text-right whitespace-nowrap', sticky: 'right', width: 'actions', render: (item) => {
+          { key: 'status', header: t('common.status'), width: 'status', render: (item) => {
+            const status = gatewayRouteEffectiveStatus(item)
+            return <StatusDot label={t(`gatewayRoutesPage.routeStatuses.${status}`, { defaultValue: status })} tone={statusToneFor(status)} />
+          } },
+          { key: 'actions', header: t('common.actions'), mobileActions: 'inline', sticky: 'right', width: 'actions', render: (item) => {
             const deleting = item.deleteStatus === 'deleting'
             return (
-              <div className="flex justify-end gap-2">
-                <Button disabled={deleting} size="sm" variant="ghost" onClick={() => checkDomain.mutate({ deploymentTargetId: item.deploymentTargetId, domainSuffix: item.domainSuffix, host: item.host, routeId: item.id })}>
-                  <SearchCheck className="size-4" />
-                  {t('gatewayRoutesPage.checkDomain')}
+              <div className="flex items-center justify-end gap-1">
+                <Button disabled={deleting} size="sm" variant="outline" onClick={() => openRouteDialog(item)}>
+                  <Pencil className="size-4" />
+                  {t('common.edit')}
                 </Button>
-                <EditActionButton disabled={deleting} label={t('common.edit')} onClick={() => openRouteDialog(item)} />
-                <Button disabled={deleting} size="sm" variant="ghost" onClick={() => setRouteToDelete(item)}>
-                  <Trash2 className="size-4" />
-                  {t('common.delete')}
-                </Button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button aria-label={t('common.actions')} size="icon" variant="ghost">
+                      <MoreHorizontal className="size-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem disabled={deleting || checkDomain.isPending} onSelect={() => checkDomain.mutate({ deploymentTargetId: item.deploymentTargetId, domainSuffix: item.domainSuffix, host: item.host, routeId: item.id })}>
+                      <SearchCheck className="size-4" />
+                      {t('gatewayRoutesPage.checkDomain')}
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem disabled={deleting} variant="destructive" onSelect={() => setRouteToDelete(item)}>
+                      <Trash2 className="size-4" />
+                      {t('common.delete')}
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
             )
           } },
@@ -274,12 +289,8 @@ function gatewayRouteEffectiveStatus(item: GatewayRoute) {
   return item.enabled ? item.status : 'disabled'
 }
 
-function gatewayRouteParentGateway(item: GatewayRoute) {
-  const name = item.parentGatewayName?.trim()
-  const namespace = item.parentGatewayNamespace?.trim()
-  if (!name && !namespace)
-    return '-'
-  return namespace ? `${namespace}/${name || '-'}` : name
+function gatewayRouteTargetLabel(item: GatewayRoute, targets: DeploymentTarget[]) {
+  return targets.find(target => target.id === item.deploymentTargetId)?.name ?? '-'
 }
 
 function GatewayRouteTlsSummary({ item }: { item: GatewayRoute }) {
@@ -342,10 +353,12 @@ function GatewayRouteTlsSummary({ item }: { item: GatewayRoute }) {
 }
 
 function GatewayRouteSummary({ item }: { item: GatewayRoute }) {
-  const displayUrl = item.accessUrl?.trim() || item.host
+  const url = item.enabled ? gatewayRouteAccessUrl(item) : ''
   return (
     <div className="min-w-0">
-      <span className="block truncate" title={displayUrl}>{displayUrl}</span>
+      {url
+        ? <AccessUrlLink className="text-sm" url={url} />
+        : <span className="block truncate font-mono text-sm text-muted-foreground" title={item.host}>{item.host || '-'}</span>}
       <ResourceDeletionStatus className="mt-1" message={item.deleteMessage} status={item.deleteStatus} />
     </div>
   )

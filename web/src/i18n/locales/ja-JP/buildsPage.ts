@@ -48,7 +48,6 @@ const buildsPage = {
   deleteBuildDescription: 'このビルド実行記録、タスクログ、フック実行記録は削除されます。プッシュ済みのイメージと既存のリリースは削除されません。',
   deleted: 'ビルド記録を削除しました',
   runActions: 'ビルド実行操作',
-  viewLogsStream: 'ログ/ログストリームを見る',
   logsTitle: 'ビルドログ #{{id}}',
   logsStreaming: 'ログストリーム更新中',
   logsUpdated: 'ログを読み込みました',
@@ -57,7 +56,6 @@ const buildsPage = {
   failureReasonUnavailable: '最近のタスクに明確な失敗理由が記録されていません。ログを開いて最後の出力を確認してください。',
   failureReasonNoJob: 'ビルド実行がビルドタスクに関連付けられていません。更新して再試行してください。',
   workflowRunCount: '{{count}} 回のビルド実行',
-  applicationRunsDescription: '現在のアプリケーションのビルド記録、ブランチ、イメージ、最近のタスク状態を表示します。',
   filterRuns: 'ビルド実行をフィルター',
   eventFilter: 'イベント',
   statusFilter: 'ステータス',
@@ -75,9 +73,6 @@ const buildsPage = {
   runTitleWithConfig: '{{title}}：{{config}}',
   triggeredBy: '{{actor}} がトリガー',
   committedBy: '{{actor}}',
-  commitAction: 'コミット',
-  latestJobSummary: 'タスク #{{id}}、{{attempts}} 回試行',
-  noBuildJob: 'ビルドタスクがありません',
   jobCount: '{{count}} 個のタスク',
   emptyRuns: 'ビルド実行がありません',
   targetRegistry: 'ターゲットレジストリ',
@@ -128,6 +123,11 @@ const buildsPage = {
     lost: '切断',
     timeout: 'タイムアウト',
   },
+  viewLogs: 'ログ',
+  copyImageRef: 'イメージ参照 {{image}} をコピー',
+  sourceColumn: 'ビルド',
+  imageColumn: 'イメージ',
+  timeColumn: '時刻',
 }
 
 export default buildsPage

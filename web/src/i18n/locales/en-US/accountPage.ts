@@ -13,15 +13,8 @@ const accountPage = {
   languageHint: 'Preferred UI language. Backend errors and frontend language will stay in sync where possible.',
   appearanceModeHint: 'Choose light, dark, or system mode. This preference applies immediately and is stored in this browser.',
   brandColor: 'Color theme',
-  brandColorHint: 'Multi-color themes combine primary, supporting, and highlight colors; single-color themes keep one hue. The platform theme is used by default.',
+  brandColorHint: 'The single accent color used for buttons, links, selected states, and focus rings. The platform color is used by default.',
   followPlatformBrandColor: 'Follow platform',
-  interfaceStyle: 'Interface style',
-  interfaceStyleHint: 'Follow the platform by default. Minimal mode uses a neutral white or gray canvas; standard mode keeps the subtle brand-tinted background.',
-  followPlatformInterfaceStyle: 'Follow platform',
-  interfaceStyles: {
-    themed: 'Standard mode',
-    minimal: 'Minimal mode',
-  },
   saveProfile: 'Save personal settings',
   profileSaved: 'Personal settings saved',
   notifications: {

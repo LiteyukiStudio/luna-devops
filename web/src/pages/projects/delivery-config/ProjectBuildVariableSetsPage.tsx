@@ -117,6 +117,7 @@ export function ProjectBuildVariableSetsPage({ projectId, ref }: { projectId: st
         </div>
       </div>
       <DataList
+        framed={false}
         columns={[
           { key: 'name', header: t('common.name'), className: 'min-w-40 px-4 py-3 align-middle', render: item => <span className="block truncate whitespace-nowrap" title={item.name}>{item.name}</span> },
           { key: 'variables', header: t('buildsPage.variables'), className: 'w-32 whitespace-nowrap px-4 py-3 align-middle', render: item => t('buildsPage.variableCount', { count: item.variableCount }) },

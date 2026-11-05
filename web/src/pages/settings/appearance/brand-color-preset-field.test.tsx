@@ -15,7 +15,7 @@ describe('brand color preset field', () => {
       <TooltipProvider>
         <BrandColorPresetField
           ariaLabel="Color theme"
-          inheritedPreset="harbor"
+          inheritedPreset="teal"
           inheritLabel="Follow platform"
           options={['aurora', 'blue']}
           value=""
@@ -34,14 +34,14 @@ describe('brand color preset field', () => {
       <TooltipProvider>
         <BrandColorPresetField
           ariaLabel="Color theme"
-          inheritedPreset="aurora"
-          value="botanical"
+          inheritedPreset="teal"
+          value="violet"
           onValueChange={vi.fn()}
         />
       </TooltipProvider>,
     )
 
-    expect(screen.getByRole('radio', { name: 'Botanical' })).toBeChecked()
+    expect(screen.getByRole('radio', { name: 'Violet' })).toBeChecked()
     expect(screen.getByRole('radio', { name: 'Blue' })).toBeInTheDocument()
     expect(screen.queryByRole('radio', { name: 'Ruby' })).not.toBeInTheDocument()
 
@@ -49,8 +49,8 @@ describe('brand color preset field', () => {
       <TooltipProvider>
         <BrandColorPresetField
           ariaLabel="Color theme"
-          inheritedPreset="aurora"
-          value="ruby"
+          inheritedPreset="teal"
+          value="aurora"
           onValueChange={vi.fn()}
         />
       </TooltipProvider>,
@@ -58,5 +58,6 @@ describe('brand color preset field', () => {
 
     expect(screen.getByRole('radio', { name: 'Blue' })).toBeChecked()
     expect(screen.queryByRole('radio', { name: 'Ruby' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('radio', { name: 'Aurora' })).not.toBeInTheDocument()
   })
 })

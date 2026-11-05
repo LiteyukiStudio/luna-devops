@@ -37,6 +37,8 @@ interface DataListProps<T> {
   toolbar?: ReactNode
   toolbarActions?: ReactNode
   emptyTitle: string
+  /** 列表自带白底细边框外框；放进已有外框的卡片时传 false，避免框中套框。 */
+  framed?: boolean
   emptyActions?: ReactNode
   emptyDescription?: ReactNode
   emptyIcon?: ReactNode
@@ -236,6 +238,7 @@ export function DataList<T>({
   emptyMode = 'actionable',
   loading = false,
   constrainedHeight = false,
+  framed = true,
   viewportOffset = 15,
   search,
   selection,
@@ -257,7 +260,6 @@ export function DataList<T>({
   const hasToolbarControls = Boolean(toolbar || search || selection?.bulkActions)
   const hasTools = Boolean(title || hasToolbarControls || toolbarActions)
   const hasToolsLead = Boolean(title || (selection && selection.selectedKeys.length > 0))
-  const showTableFrame = loading || items.length > 0
   const allRowsSelected = selectableRowKeys.length > 0 && selectableRowKeys.every(key => selectedKeySet.has(key))
   const someRowsSelected = selectableRowKeys.some(key => selectedKeySet.has(key))
   useEffect(() => {
@@ -334,7 +336,9 @@ export function DataList<T>({
       {hasTools && (
         <div
           className={cn(
-            'flex shrink-0 flex-col gap-3 pb-4 sm:flex-row sm:flex-wrap sm:items-center',
+            'flex shrink-0 flex-col gap-2 pb-3 sm:flex-row sm:flex-wrap sm:items-center',
+            // 工具区控件统一使用紧凑高度，避免筛选比表格行还重
+            '[&_[data-slot=input]]:h-8 [&_[data-slot=native-select]]:h-8 [&_[data-slot=select-trigger]]:h-8',
             hasToolsLead ? 'sm:justify-between' : 'sm:justify-start',
           )}
           data-slot="data-list-tools"
@@ -358,7 +362,7 @@ export function DataList<T>({
               {search && (
                 <Input
                   aria-label={search.placeholder}
-                  className="h-9 w-full sm:w-64"
+                  className="w-full sm:w-60"
                   placeholder={search.placeholder}
                   value={search.value}
                   onChange={event => search.onChange(event.target.value)}
@@ -378,10 +382,10 @@ export function DataList<T>({
       <TableFrame
         className={cn(
           'w-full flex-1',
-          !hasTools && showTableFrame && 'mt-group',
+          !hasTools && 'mt-group',
         )}
         footer={tableFooter}
-        framed={showTableFrame}
+        framed={framed}
         scrollAreaClassName="h-full"
         scrollbars="both"
         scrollType="auto"
@@ -404,7 +408,7 @@ export function DataList<T>({
                   <thead className="sticky top-0 z-10 [background:var(--data-list-header-surface)]">
                     <tr>
                       {selectable && (
-                        <th className="h-11 w-10 px-3 py-3 text-left align-middle text-sm font-medium whitespace-nowrap text-foreground sm:px-4">
+                        <th className="h-10 w-10 border-b border-border px-3 py-2 text-left align-middle text-sm font-medium whitespace-nowrap text-foreground sm:px-4">
                           <Checkbox
                             aria-label={selection?.selectAllLabel}
                             checked={someRowsSelected && !allRowsSelected ? 'indeterminate' : allRowsSelected}
@@ -418,7 +422,7 @@ export function DataList<T>({
                           key={column.key}
                           className={cn(
                             column.className,
-                            'h-11 px-3 py-3 text-left align-middle text-sm font-medium whitespace-nowrap text-foreground sm:px-4',
+                            'h-10 border-b border-border px-3 py-2 text-left align-middle text-sm font-medium whitespace-nowrap text-foreground sm:px-4',
                             stickyColumnClass(column.sticky, 'header'),
                             column.headerClassName,
                             column.mobile === 'hidden' && 'hidden md:table-cell',
@@ -441,7 +445,7 @@ export function DataList<T>({
                           key={itemKey}
                           aria-label={rowActionLabel?.(item)}
                           className={cn(
-                            'group border-t border-border transition-colors hover:[&>td]:[background:var(--data-list-row-hover)] [&>td]:transition-colors',
+                            'group border-b border-border last:border-b-0 transition-colors hover:[&>td]:[background:var(--data-list-row-hover)] [&>td]:transition-colors',
                             onRowClick && 'cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
                           )}
                           tabIndex={onRowClick ? 0 : undefined}
@@ -449,7 +453,7 @@ export function DataList<T>({
                           onKeyDown={event => activateRowFromKeyboard(event, item)}
                         >
                           {selectable && (
-                            <td className="w-10 px-3 py-3 align-middle sm:px-4">
+                            <td className="w-10 px-3 py-2.5 align-middle sm:px-4">
                               <Checkbox
                                 aria-label={selection?.selectRowLabel(item)}
                                 checked={selectedKeySet.has(itemKey)}
@@ -468,7 +472,7 @@ export function DataList<T>({
                                 key={column.key}
                                 className={cn(
                                   column.className,
-                                  'px-3 py-3 align-middle sm:px-4',
+                                  'px-3 py-2.5 align-middle sm:px-4',
                                   stickyColumnClass(column.sticky, 'cell'),
                                   column.cellClassName,
                                   column.mobile === 'hidden' && 'hidden md:table-cell',

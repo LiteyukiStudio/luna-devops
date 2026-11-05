@@ -1,4 +1,3 @@
-import type { ReactNode } from 'react'
 import type { Application, BuildRun, GatewayRoute, PlatformEvent, Project, ProjectMember, Release } from '@/api'
 import type { ApplicationsPageHandle } from '@/pages/applications/ApplicationsPage'
 import type { ProjectBuildVariableSetsPageHandle } from '@/pages/projects/delivery-config/ProjectBuildVariableSetsPage'
@@ -14,15 +13,18 @@ import { useTranslation } from 'react-i18next'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { api } from '@/api'
 import { useSession } from '@/app/session-context'
+import { DescriptionListItem } from '@/components/common/description-list-item'
+import { EmptyState } from '@/components/common/empty-state'
 import { ErrorState } from '@/components/common/error-state'
 import { ToolViewportSkeleton } from '@/components/common/loading-states'
-import { PageChromeTools } from '@/components/common/page-chrome'
+import { MetricGroup, MetricItem } from '@/components/common/metric-group'
+import { PageChromeHeading, PageChromeTools } from '@/components/common/page-chrome'
 import { PageShell } from '@/components/common/page-shell'
+import { Section } from '@/components/common/section'
 import { StatusValueBadge } from '@/components/common/status-badge'
 import { formatSmartDateTime } from '@/components/common/time-format'
 import { UserAvatar } from '@/components/common/user-avatar'
 import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
 import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
 import { projectVolumeCapabilities } from '@/lib/project-volume-capabilities'
 import { isPlatformAdmin, ProjectRole } from '@/lib/roles'
@@ -75,7 +77,7 @@ export function ProjectWorkspacePage() {
   const activeContent = (() => {
     switch (activeTab) {
       case 'apps':
-        return <ApplicationsPage ref={applicationsPageRef} embedded projectId={projectId} projectName={currentProject?.name} />
+        return <ApplicationsPage ref={applicationsPageRef} projectId={projectId} />
       case 'build-variables':
         return <ProjectBuildVariableSetsPage ref={buildVariableSetsPageRef} projectId={projectId} />
       case 'runtime-configs':
@@ -106,6 +108,7 @@ export function ProjectWorkspacePage() {
           <ProjectOverviewDashboard
             applications={applications.data ?? []}
             builds={recentBuilds.data?.items ?? []}
+            buildTotal={recentBuilds.data?.total ?? 0}
             events={recentEvents.data?.items ?? []}
             members={members.data ?? []}
             project={currentProject}
@@ -206,8 +209,9 @@ export function ProjectWorkspacePage() {
   )
 }
 
-function ProjectOverviewDashboard({ applications, builds, canTransferBillingOwnership, events, members, project, releases, routes, runtimeConfigSetCount, variableSetCount }: {
+function ProjectOverviewDashboard({ applications, buildTotal, builds, canTransferBillingOwnership, events, members, project, releases, routes, runtimeConfigSetCount, variableSetCount }: {
   applications: Application[]
+  buildTotal: number
   builds: BuildRun[]
   canTransferBillingOwnership: boolean
   events: PlatformEvent[]
@@ -219,122 +223,112 @@ function ProjectOverviewDashboard({ applications, builds, canTransferBillingOwne
   variableSetCount: number
 }) {
   const { t } = useTranslation()
-  const succeededBuilds = builds.filter(build => build.status === 'succeeded').length
   const failedBuilds = builds.filter(build => ['failed', 'lost', 'timeout'].includes(build.status)).length
   const activeReleases = releases.filter(release => release.status === 'pending' || release.status === 'running').length
   const failedReleases = releases.filter(release => release.status === 'failed').length
   const readyRoutes = routes.filter(route => route.status === 'ready').length
   const ownerCount = members.filter(member => member.role === ProjectRole.Owner).length
-  const latestRelease = [...releases].sort((left, right) => right.createdAt.localeCompare(left.createdAt))[0]
 
   return (
-    <div className="grid gap-4">
-      <Card className="grid gap-4 p-4">
-        <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0">
-            <h2 className="truncate text-lg font-semibold">{project?.name ?? t('projectSpaces.title')}</h2>
-            <p className="mt-1 text-sm text-muted-foreground">{project?.description || t('common.noDescription')}</p>
-          </div>
-        </div>
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <ProjectMetric icon={<Package className="size-4" />} label={t('projectSpaces.apps')} meta={t('projectSpaces.projectAppsMeta', { count: applications.length })} value={applications.length} />
-          <ProjectMetric icon={<Activity className="size-4" />} label={t('projectSpaces.recentBuildsMetric')} meta={failedBuilds > 0 ? t('projectSpaces.failedBuildsMeta', { count: failedBuilds }) : t('projectSpaces.succeededBuildsMeta', { count: succeededBuilds })} value={builds.length} />
-          <ProjectMetric icon={<Rocket className="size-4" />} label={t('projectSpaces.releasesMetric')} meta={failedReleases > 0 ? t('projectSpaces.failedReleasesMeta', { count: failedReleases }) : t('projectSpaces.activeReleasesMeta', { count: activeReleases })} value={releases.length} />
-          <ProjectMetric icon={<Globe2 className="size-4" />} label={t('projectSpaces.accessHealth')} meta={t('projectSpaces.readyRoutesMeta', { ready: readyRoutes, total: routes.length })} value={routes.length} />
-        </div>
-      </Card>
+    <div className="grid gap-section">
+      {project && <PageChromeHeading description={project.description || undefined} title={project.name} />}
+      <MetricGroup>
+        <MetricItem href="?tab=apps" icon={<Package className="size-4" />} label={t('projectSpaces.apps')} value={applications.length} />
+        <MetricItem
+          emphasis={buildTotal > 0}
+          icon={<Activity className="size-4" />}
+          label={t('projectSpaces.buildsMetric')}
+          meta={builds.length > 0 ? t('projectSpaces.recentBuildsFailedMeta', { count: builds.length, failed: failedBuilds }) : undefined}
+          tone={failedBuilds > 0 ? 'danger' : 'neutral'}
+          value={buildTotal}
+        />
+        <MetricItem
+          emphasis={activeReleases > 0 || failedReleases > 0}
+          icon={<Rocket className="size-4" />}
+          label={t('projectSpaces.activeReleasesMetric')}
+          meta={failedReleases > 0 ? t('projectSpaces.failedReleasesMeta', { count: failedReleases }) : undefined}
+          tone={failedReleases > 0 ? 'danger' : activeReleases > 0 ? 'warning' : 'neutral'}
+          value={activeReleases}
+        />
+        <MetricItem
+          emphasis={routes.length > 0}
+          icon={<Globe2 className="size-4" />}
+          label={t('projectSpaces.accessHealth')}
+          tone={routes.length > 0 && readyRoutes < routes.length ? 'warning' : 'neutral'}
+          value={`${readyRoutes}/${routes.length}`}
+        />
+      </MetricGroup>
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.25fr)_minmax(18rem,0.75fr)]">
-        <Card className="min-w-0 p-4">
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <div>
-              <h3 className="text-sm font-semibold">{t('projectSpaces.recentBuilds')}</h3>
-              <p className="mt-1 text-xs text-muted-foreground">{t('projectSpaces.recentBuildsDescription')}</p>
-            </div>
-          </div>
-          <div className="grid gap-2">
-            {builds.length > 0
-              ? builds.map(build => (
-                  <div key={build.id} className="flex min-w-0 items-center justify-between gap-3 rounded-md border border-border bg-background px-3 py-2">
-                    <div className="min-w-0">
-                      <div className="truncate text-sm font-medium" title={build.imageRef || build.targetRepository || build.id}>
-                        {build.imageRef || build.targetRepository || build.id}
+      <div className="grid gap-section xl:grid-cols-[minmax(0,1.25fr)_minmax(18rem,0.75fr)]">
+        <Section description={t('projectSpaces.recentBuildsDescription')} title={t('projectSpaces.recentBuilds')} variant="bordered">
+          {builds.length > 0
+            ? (
+                <ul className="-my-2 divide-y divide-border">
+                  {builds.map(build => (
+                    <li key={build.id} className="flex min-w-0 items-center justify-between gap-3 py-2">
+                      <div className="min-w-0">
+                        <div className="truncate font-mono text-xs text-foreground" title={build.imageRef || build.targetRepository || build.id}>
+                          {build.imageRef || build.targetRepository || build.id}
+                        </div>
+                        <div className="mt-0.5 truncate text-xs text-muted-foreground">
+                          {projectBuildMeta(build, applications, t)}
+                        </div>
                       </div>
-                      <div className="mt-1 truncate text-xs text-muted-foreground">
-                        {projectBuildMeta(build, applications, t)}
+                      <div className="flex shrink-0 items-center gap-2">
+                        <StatusValueBadge labelKeyPrefix="buildsPage.statuses" value={build.status} />
+                        <span className="text-xs text-muted-foreground">{formatSmartDateTime(build.createdAt, t)}</span>
                       </div>
-                    </div>
-                    <div className="flex shrink-0 items-center gap-2">
-                      <StatusValueBadge labelKeyPrefix="buildsPage.statuses" value={build.status} />
-                      <span className="text-xs text-muted-foreground">{formatSmartDateTime(build.createdAt, t)}</span>
-                    </div>
-                  </div>
-                ))
-              : <p className="rounded-md border border-dashed border-border px-3 py-6 text-sm text-muted-foreground">{t('projectSpaces.noRecentBuilds')}</p>}
-          </div>
-        </Card>
+                    </li>
+                  ))}
+                </ul>
+              )
+            : <EmptyState title={t('projectSpaces.noRecentBuilds')} variant="plain" />}
+        </Section>
 
-        <Card className="min-w-0 p-4">
-          <h3 className="text-sm font-semibold">{t('projectSpaces.projectOperations')}</h3>
-          <div className="mt-3 grid gap-3">
+        <Section title={t('projectSpaces.projectOperations')} variant="bordered">
+          <dl className="grid gap-4">
             <ProjectBillingOwnerItem
               canTransfer={canTransferBillingOwnership}
               members={members}
               project={project}
             />
-            <ProjectOverviewItem label={t('buildsPage.variablesAndSecrets')} value={t('projectSpaces.variableSetCount', { count: variableSetCount })} />
-            <ProjectOverviewItem label={t('runtimeConfigSets.tab')} value={t('projectSpaces.runtimeConfigSetCount', { count: runtimeConfigSetCount })} />
-            <ProjectOverviewItem label={t('projectSpaces.members')} value={t('projectSpaces.memberRoleMeta', { members: members.length, owners: ownerCount })} />
-            <ProjectOverviewItem label={t('projectSpaces.latestRelease')} value={latestRelease ? formatSmartDateTime(latestRelease.createdAt, t) : t('projectSpaces.noRelease')} />
-            <ProjectOverviewItem label={t('projectSpaces.accessHealth')} value={t('projectSpaces.readyRoutesMeta', { ready: readyRoutes, total: routes.length })} />
-          </div>
-        </Card>
+            <DescriptionListItem label={t('buildsPage.variablesAndSecrets')} value={t('projectSpaces.variableSetCount', { count: variableSetCount })} />
+            <DescriptionListItem label={t('runtimeConfigSets.tab')} value={t('projectSpaces.runtimeConfigSetCount', { count: runtimeConfigSetCount })} />
+            <DescriptionListItem label={t('projectSpaces.members')} value={t('projectSpaces.memberRoleMeta', { members: members.length, owners: ownerCount })} />
+          </dl>
+        </Section>
       </div>
 
-      <Card className="min-w-0 p-4">
-        <div className="mb-3 flex items-center justify-between gap-3">
-          <div>
-            <h3 className="text-sm font-semibold">{t('projectSpaces.recentEvents')}</h3>
-            <p className="mt-1 text-xs text-muted-foreground">{t('projectSpaces.recentEventsDescription')}</p>
-          </div>
-          <Link className="inline-flex h-9 shrink-0 items-center gap-2 rounded-md px-3 text-sm text-primary-text transition hover:bg-muted" to={`/events?projectId=${encodeURIComponent(project?.id ?? '')}`}>
+      <Section
+        description={t('projectSpaces.recentEventsDescription')}
+        title={t('projectSpaces.recentEvents')}
+        tools={(
+          <Link className="inline-flex items-center gap-1 rounded-sm text-sm text-primary-text hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" to={`/events?projectId=${encodeURIComponent(project?.id ?? '')}`}>
             {t('projectSpaces.viewAllEvents')}
             <ArrowRight className="size-4" />
           </Link>
-        </div>
-        <div className="grid gap-2">
-          {events.length > 0
-            ? events.map(event => (
-                <div key={event.id} className="flex min-w-0 items-center justify-between gap-3 rounded-md border border-border bg-background px-3 py-2">
-                  <div className="flex min-w-0 items-center gap-3">
-                    <ScrollText className="size-4 shrink-0 text-muted-foreground" />
+        )}
+        variant="bordered"
+      >
+        {events.length > 0
+          ? (
+              <ul className="-my-2 divide-y divide-border">
+                {events.map(event => (
+                  <li key={event.id} className="flex min-w-0 items-center justify-between gap-3 py-2">
                     <div className="min-w-0">
                       <p className="truncate text-sm font-medium">{t(`eventsPage.types.${event.type.replaceAll('.', '_')}`, { defaultValue: event.type })}</p>
-                      <p className="mt-1 truncate text-xs text-muted-foreground">{event.message || t('eventsPage.noMessage')}</p>
+                      <p className="mt-0.5 truncate text-xs text-muted-foreground">{event.message || t('eventsPage.noMessage')}</p>
                     </div>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-2">
-                    <StatusValueBadge labelKeyPrefix="eventsPage.statuses" value={event.status} />
-                    <span className="hidden text-xs text-muted-foreground sm:inline">{formatSmartDateTime(event.occurredAt, t)}</span>
-                  </div>
-                </div>
-              ))
-            : <p className="rounded-md border border-dashed border-border px-3 py-6 text-sm text-muted-foreground">{t('projectSpaces.noRecentEvents')}</p>}
-        </div>
-      </Card>
-    </div>
-  )
-}
-
-function ProjectMetric({ icon, label, meta, value }: { icon: ReactNode, label: string, meta: string, value: number }) {
-  return (
-    <div className="rounded-md border border-border bg-background p-3">
-      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-        {icon}
-        <span>{label}</span>
-      </div>
-      <p className="mt-3 text-2xl font-semibold">{value}</p>
-      <p className="mt-1 text-xs text-muted-foreground">{meta}</p>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <StatusValueBadge labelKeyPrefix="eventsPage.statuses" value={event.status} />
+                      <span className="hidden text-xs text-muted-foreground sm:inline">{formatSmartDateTime(event.occurredAt, t)}</span>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )
+          : <EmptyState title={t('projectSpaces.noRecentEvents')} variant="plain" />}
+      </Section>
     </div>
   )
 }
@@ -343,31 +337,21 @@ function ProjectBillingOwnerItem({ canTransfer, members, project }: { canTransfe
   const { t } = useTranslation()
   const owner = project?.billingOwner
   return (
-    <div className="rounded-md border border-border bg-background px-3 py-2">
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-xs text-muted-foreground">{t('projectSpaces.billingOwner')}</p>
+    <div className="grid min-w-0 gap-1" data-slot="description-list-item">
+      <dt className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
+        {t('projectSpaces.billingOwner')}
         {canTransfer && project && <BillingOwnerTransferDialog members={members} project={project} />}
-      </div>
-      {owner
-        ? (
-            <div className="mt-2 flex min-w-0 items-center gap-3">
-              <UserAvatar className="size-8" user={owner} />
-              <div className="min-w-0">
-                <p className="truncate text-sm font-medium" title={owner.name || owner.email}>{owner.name || owner.email}</p>
-                <p className="truncate text-xs text-muted-foreground" title={owner.email}>{owner.email}</p>
+      </dt>
+      <dd className="min-w-0 text-sm">
+        {owner
+          ? (
+              <div className="flex min-w-0 items-center gap-2">
+                <UserAvatar className="size-6" user={owner} />
+                <span className="truncate font-medium" title={owner.email}>{owner.name || owner.email}</span>
               </div>
-            </div>
-          )
-        : <p className="mt-1 truncate text-sm font-medium">{t('projectSpaces.billingOwnerUnknown')}</p>}
-    </div>
-  )
-}
-
-function ProjectOverviewItem({ label, value }: { label: string, value: string }) {
-  return (
-    <div className="rounded-md border border-border bg-background px-3 py-2">
-      <p className="text-xs text-muted-foreground">{label}</p>
-      <p className="mt-1 truncate text-sm font-medium" title={value}>{value}</p>
+            )
+          : <span className="text-muted-foreground">{t('projectSpaces.billingOwnerUnknown')}</span>}
+      </dd>
     </div>
   )
 }

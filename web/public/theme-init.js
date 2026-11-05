@@ -1,38 +1,6 @@
 (() => {
   const root = document.documentElement
-  const validBrandPresets = new Set([
-    'aurora',
-    'harbor',
-    'sunset',
-    'botanical',
-    'meadow',
-    'citrus',
-    'gold',
-    'bronze',
-    'brown',
-    'yellow',
-    'amber',
-    'orange',
-    'tomato',
-    'red',
-    'ruby',
-    'crimson',
-    'pink',
-    'plum',
-    'purple',
-    'violet',
-    'iris',
-    'indigo',
-    'blue',
-    'cyan',
-    'teal',
-    'jade',
-    'green',
-    'grass',
-    'lime',
-    'mint',
-    'sky',
-  ])
+  const validBrandPresets = new Set(['blue', 'violet', 'teal', 'green', 'orange', 'pink'])
   const readStorage = (key) => {
     try {
       return localStorage.getItem(key)
@@ -67,15 +35,4 @@
     ? readStorage(`luna-devops-user-brand-color-preset:${activeUserId}`)
     : null
   root.dataset.brandTheme = validBrandPresets.has(userPreset) ? userPreset : sitePreset
-
-  const siteInterfaceStyle = readStorage('luna-devops-site-minimal-mode') === 'true'
-    ? 'minimal'
-    : 'themed'
-  const activeInterfaceStyleUserId = readStorage('luna-devops-interface-style-active-user')
-  const userInterfaceStyle = activeInterfaceStyleUserId
-    ? readStorage(`luna-devops-user-interface-style:${activeInterfaceStyleUserId}`)
-    : null
-  root.dataset.interfaceStyle = userInterfaceStyle === 'minimal' || userInterfaceStyle === 'themed'
-    ? userInterfaceStyle
-    : siteInterfaceStyle
 })()

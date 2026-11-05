@@ -166,7 +166,7 @@ export function GitRepositoryPicker({
         </div>
       </Field>
       {value.gitAccountId && (isAnonymous ? Boolean(value.providerId) : true) && (
-        <div className="grid max-h-56 gap-2 overflow-y-auto rounded-md border border-border p-2">
+        <div className="grid max-h-56 gap-2 overflow-y-auto rounded-container border border-border p-2">
           {(repositories.data?.items ?? []).map(repository => (
             <button
               key={repository.fullName}
@@ -190,7 +190,7 @@ export function GitRepositoryPicker({
         </div>
       )}
       {value.owner && value.repo && (
-        <div className="grid gap-1 rounded-md border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground md:grid-cols-3">
+        <div className="grid gap-1 rounded-container border border-border bg-surface-subtle px-3 py-2 text-xs text-muted-foreground md:grid-cols-3">
           <span className="truncate">
             {t('repositories.owner')}
             :

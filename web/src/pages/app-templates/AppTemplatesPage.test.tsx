@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, useLocation } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import i18next from '@/i18n'
@@ -171,8 +171,8 @@ describe('app template installation', () => {
     const user = userEvent.setup()
     renderPage()
 
-    await user.click(await screen.findByRole('button', { name: i18next.t('appTemplatesPage.install') }))
-    const installDialog = await screen.findByRole('dialog', { name: i18next.t('appTemplatesPage.installDialogTitle', { name: 'Redis' }) })
+    const installDialog = await openInstallSheet(user, 'Redis')
+    await expandCustomParameters(user, installDialog)
     expect(await within(installDialog).findByText(i18next.t('projectVolumes.deploymentSelectorEmpty'))).toBeInTheDocument()
     const initialIdentifier = (within(installDialog).getByDisplayValue(/^redis-/) as HTMLInputElement).value
 
@@ -227,8 +227,8 @@ describe('app template installation', () => {
     const user = userEvent.setup()
     renderPage()
 
-    await user.click(await screen.findByRole('button', { name: i18next.t('appTemplatesPage.install') }))
-    const installDialog = await screen.findByRole('dialog', { name: i18next.t('appTemplatesPage.installDialogTitle', { name: 'Redis' }) })
+    const installDialog = await openInstallSheet(user, 'Redis')
+    await expandCustomParameters(user, installDialog)
     const passwordLabel = i18next.t('appTemplatesPage.valueLabels.password')
     const passwordInput = within(installDialog).getByPlaceholderText(i18next.t('appTemplatesPage.valuePlaceholders.redisPassword'))
     expect(passwordInput).toHaveAccessibleName(passwordLabel)
@@ -248,6 +248,7 @@ describe('app template installation', () => {
     await waitFor(() => expect(mocks.installAppTemplate).toHaveBeenCalledWith('prj_1', 'redis', expect.objectContaining({
       values: { password: 'redis-test-password' },
     })))
+    expect(await screen.findByTestId('location')).toHaveTextContent('/projects/prj_1/apps/app_1?tab=deployments')
   })
 
   it('uses the project detail role and keeps viewers from creating or installing', async () => {
@@ -270,14 +271,15 @@ describe('app template installation', () => {
     const user = userEvent.setup()
     renderPage()
 
-    await user.click(await screen.findByRole('button', { name: i18next.t('appTemplatesPage.install') }))
-    const installDialog = await screen.findByRole('dialog', { name: i18next.t('appTemplatesPage.installDialogTitle', { name: 'Redis' }) })
+    const installDialog = await openInstallSheet(user, 'Redis')
+    await expandCustomParameters(user, installDialog)
     const volumeOption = await within(installDialog).findByRole('option', { name: 'Existing Redis data · 10Gi' })
     await user.selectOptions(volumeOption.parentElement as HTMLSelectElement, 'pvol_existing')
     await waitFor(() => expect(mocks.getProject).toHaveBeenCalledWith('prj_1'))
 
     expect(within(installDialog).queryByRole('button', { name: i18next.t('projectVolumes.create') })).not.toBeInTheDocument()
     expect(within(installDialog).getByRole('button', { name: i18next.t('appTemplatesPage.install') })).toBeDisabled()
+    expect(within(installDialog).getByText(i18next.t('appTemplatesPage.projectWriteRequired'))).toBeInTheDocument()
   })
 
   it('prevents dismissing an in-flight volume creation', async () => {
@@ -288,8 +290,8 @@ describe('app template installation', () => {
     const user = userEvent.setup()
     renderPage()
 
-    await user.click(await screen.findByRole('button', { name: i18next.t('appTemplatesPage.install') }))
-    const installDialog = await screen.findByRole('dialog', { name: i18next.t('appTemplatesPage.installDialogTitle', { name: 'Redis' }) })
+    const installDialog = await openInstallSheet(user, 'Redis')
+    await expandCustomParameters(user, installDialog)
     await user.click(await within(installDialog).findByRole('button', { name: i18next.t('projectVolumes.create') }))
     const createDialog = await screen.findByRole('dialog', { name: i18next.t('projectVolumes.create') })
     await user.type(within(createDialog).getByPlaceholderText(i18next.t('projectVolumes.displayNamePlaceholder')), 'Redis data')
@@ -312,8 +314,8 @@ describe('app template installation', () => {
     const user = userEvent.setup()
     renderPage()
 
-    await user.click(await screen.findByRole('button', { name: i18next.t('appTemplatesPage.install') }))
-    const installDialog = await screen.findByRole('dialog', { name: i18next.t('appTemplatesPage.installDialogTitle', { name: 'Redis' }) })
+    const installDialog = await openInstallSheet(user, 'Redis')
+    await expandCustomParameters(user, installDialog)
     await user.click(await within(installDialog).findByRole('button', { name: i18next.t('projectVolumes.create') }))
     const createDialog = await screen.findByRole('dialog', { name: i18next.t('projectVolumes.create') })
     const nameInput = within(createDialog).getByPlaceholderText(i18next.t('projectVolumes.displayNamePlaceholder'))
@@ -341,8 +343,8 @@ describe('app template installation', () => {
     const user = userEvent.setup()
     renderPage()
 
-    await user.click(await screen.findByRole('button', { name: i18next.t('appTemplatesPage.install') }))
-    const installDialog = await screen.findByRole('dialog', { name: i18next.t('appTemplatesPage.installDialogTitle', { name: 'Redis' }) })
+    const installDialog = await openInstallSheet(user, 'Redis')
+    await expandCustomParameters(user, installDialog)
     const openCreateDialog = () => within(installDialog).getByRole('button', { name: i18next.t('projectVolumes.create') })
     await user.click(openCreateDialog())
     let createDialog = await screen.findByRole('dialog', { name: i18next.t('projectVolumes.create') })
@@ -386,8 +388,8 @@ describe('app template installation', () => {
     const user = userEvent.setup()
     renderPage()
 
-    await user.click(await screen.findByRole('button', { name: i18next.t('appTemplatesPage.install') }))
-    const installDialog = await screen.findByRole('dialog', { name: i18next.t('appTemplatesPage.installDialogTitle', { name: 'Neo Blog' }) })
+    const installDialog = await openInstallSheet(user, 'Neo Blog')
+    await expandCustomParameters(user, installDialog)
     expect(within(installDialog).queryByText(i18next.t('appTemplatesPage.imageRef'))).not.toBeInTheDocument()
     expect(within(installDialog).getByText('example/web:latest')).toBeInTheDocument()
     const identifier = within(installDialog).getByDisplayValue(/^neo-blog/) as HTMLInputElement
@@ -396,7 +398,10 @@ describe('app template installation', () => {
 
     const apiVolume = within(installDialog).getByText(i18next.t('appTemplatesPage.componentProjectVolume', { name: 'Backend' })).closest('div')!.parentElement!
     await user.selectOptions(within(apiVolume).getAllByRole('combobox')[0], await within(apiVolume).findByRole('option', { name: 'Blog uploads · 10Gi' }))
-    expect(installButton).toBeDisabled()
+    expect(installButton).toBeEnabled()
+    await user.click(installButton)
+    expect(await within(installDialog).findByText(i18next.t('appTemplatesPage.validation.projectVolumeRequired'))).toBeInTheDocument()
+    expect(mocks.installAppTemplate).not.toHaveBeenCalled()
     const databaseVolume = within(installDialog).getByText(i18next.t('appTemplatesPage.componentProjectVolume', { name: 'PostgreSQL' })).closest('div')!.parentElement!
     await user.selectOptions(within(databaseVolume).getAllByRole('combobox')[0], await within(databaseVolume).findByRole('option', { name: 'Blog database · 10Gi' }))
     expect(installButton).toBeEnabled()
@@ -420,14 +425,77 @@ describe('app template installation', () => {
     const user = userEvent.setup()
     renderPage()
 
-    await user.click(await screen.findByRole('button', { name: i18next.t('appTemplatesPage.install') }))
-    const installDialog = await screen.findByRole('dialog', { name: i18next.t('appTemplatesPage.installDialogTitle', { name: 'Redis' }) })
+    const installDialog = await openInstallSheet(user, 'Redis')
+    await expandCustomParameters(user, installDialog)
     await user.click(await within(installDialog).findByRole('button', { name: i18next.t('projectVolumes.create') }))
     const createDialog = await screen.findByRole('dialog', { name: i18next.t('projectVolumes.create') })
     const blockMode = within(createDialog).getByRole('option', { name: i18next.t('deploymentsPage.kubernetesValues.Block') }) as HTMLOptionElement
 
     expect(blockMode.selected).toBe(true)
     expect(blockMode.parentElement).toBeDisabled()
+  })
+
+  it('filters templates by category chips with counts and pressed state', async () => {
+    mocks.listAppTemplates.mockResolvedValue([
+      { ...template, valueCount: 1, requiredValueCount: 0 },
+      { ...template, id: 'postgresql', slug: 'postgresql', name: 'PostgreSQL', category: 'database', popularityWeight: 90, valueCount: 0, requiredValueCount: 0 },
+      { ...template, id: 'mysql', slug: 'mysql', name: 'MySQL', category: 'database', popularityWeight: 80, valueCount: 0, requiredValueCount: 0 },
+    ])
+    const user = userEvent.setup()
+    renderPage()
+
+    const filters = await screen.findByRole('group', { name: i18next.t('appTemplatesPage.categoryFilter') })
+    const all = await within(filters).findByRole('button', { name: `${i18next.t('appTemplatesPage.allCategories')} 3` })
+    const database = within(filters).getByRole('button', { name: `${i18next.t('appTemplatesPage.categories.database')} 2` })
+    expect(all).toHaveAttribute('aria-pressed', 'true')
+    expect(database).toHaveAttribute('aria-pressed', 'false')
+
+    await user.click(database)
+    expect(database).toHaveAttribute('aria-pressed', 'true')
+    expect(all).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.getByRole('button', { name: /^PostgreSQL/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^MySQL/ })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Redis/ })).not.toBeInTheDocument()
+
+    await user.type(screen.getByRole('searchbox', { name: i18next.t('appTemplatesPage.searchPlaceholder') }), 'nothing-matches')
+    expect(screen.getByText(i18next.t('appTemplatesPage.noResultsTitle'))).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: i18next.t('appTemplatesPage.clearFilters') }))
+    expect(screen.getByRole('button', { name: /^Redis/ })).toBeInTheDocument()
+    expect(within(filters).getByRole('button', { name: `${i18next.t('appTemplatesPage.allCategories')} 3` })).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('opens the install sheet from the whole card with the keyboard', async () => {
+    const user = userEvent.setup()
+    renderPage()
+
+    const card = await screen.findByRole('button', { name: /^Redis/ })
+    card.focus()
+    await user.keyboard('{Enter}')
+
+    const installDialog = await screen.findByRole('dialog', { name: i18next.t('appTemplatesPage.installDialogTitle', { name: 'Redis' }) })
+    expect(within(installDialog).getByText(i18next.t('appTemplatesPage.templates.redis.description'))).toBeInTheDocument()
+    expect(within(installDialog).getByRole('link', { name: i18next.t('appTemplatesPage.officialWebsite') })).toHaveAttribute('href', 'https://redis.io')
+  })
+
+  it('keeps custom parameters collapsed until a validation error needs them', async () => {
+    const user = userEvent.setup()
+    renderPage()
+
+    const installDialog = await openInstallSheet(user, 'Redis')
+    const customParameters = await within(installDialog).findByRole('button', { name: i18next.t('appTemplatesPage.customParameters') })
+    expect(customParameters).toHaveAttribute('aria-expanded', 'false')
+    expect(within(installDialog).getByLabelText(new RegExp(`^${i18next.t('appTemplatesPage.applicationName')}`))).toHaveValue('Redis')
+    expect(within(installDialog).queryByDisplayValue('redis:7-alpine')).not.toBeInTheDocument()
+    expect(customParameters).toHaveTextContent('redis:7-alpine')
+
+    const installButton = within(installDialog).getByRole('button', { name: i18next.t('appTemplatesPage.install') })
+    await waitFor(() => expect(installButton).toBeEnabled())
+    await user.click(installButton)
+
+    await waitFor(() => expect(customParameters).toHaveAttribute('aria-expanded', 'true'))
+    expect(within(installDialog).getByDisplayValue('redis:7-alpine')).toBeInTheDocument()
+    expect(within(installDialog).getByText(i18next.t('appTemplatesPage.validation.projectVolumeRequired'))).toBeInTheDocument()
+    expect(mocks.installAppTemplate).not.toHaveBeenCalled()
   })
 })
 
@@ -440,10 +508,25 @@ function renderPage() {
       <MemoryRouter initialEntries={['/app-templates']}>
         <TooltipProvider>
           <AppTemplatesPage />
+          <LocationProbe />
         </TooltipProvider>
       </MemoryRouter>
     </QueryClientProvider>,
   )
+}
+
+function LocationProbe() {
+  const location = useLocation()
+  return <output data-testid="location">{`${location.pathname}${location.search}`}</output>
+}
+
+async function openInstallSheet(user: ReturnType<typeof userEvent.setup>, name: string) {
+  await user.click(await screen.findByRole('button', { name: new RegExp(`^${name}`) }))
+  return screen.findByRole('dialog', { name: i18next.t('appTemplatesPage.installDialogTitle', { name }) })
+}
+
+async function expandCustomParameters(user: ReturnType<typeof userEvent.setup>, dialog: HTMLElement) {
+  await user.click(await within(dialog).findByRole('button', { name: i18next.t('appTemplatesPage.customParameters') }))
 }
 
 function page<T>(items: T[], sortBy = 'displayName') {

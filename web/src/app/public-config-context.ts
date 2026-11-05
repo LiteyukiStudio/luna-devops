@@ -8,7 +8,6 @@ export const defaultPublicConfigs: Record<string, string> = {
   'site.logoUrl': '/luna-devops-logo.svg',
   'site.faviconUrl': '/luna-devops-logo.svg',
   'site.brandColorPreset': 'blue',
-  'site.minimalModeDefault': 'false',
 }
 
 export const PublicConfigContext = createContext(defaultPublicConfigs)

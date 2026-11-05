@@ -29,7 +29,7 @@ export const authApi = {
   updateAuthAdmissionPolicy: (payload: Omit<AuthAdmissionPolicy, 'id'>) =>
     request<AuthAdmissionPolicy>('/auth/admission-policy', { method: 'PUT', body: JSON.stringify(payload) }),
   getCurrentUser: () => request<CurrentUser>('/users/me'),
-  updateCurrentUser: (payload: { name?: string, avatarUrl?: string, language?: 'zh-CN' | 'zh-TW' | 'en-US' | 'ja-JP' | 'ko-KR', brandColorPreset?: CurrentUser['brandColorPreset'], interfaceStyle?: CurrentUser['interfaceStyle'] }) =>
+  updateCurrentUser: (payload: { name?: string, avatarUrl?: string, language?: 'zh-CN' | 'zh-TW' | 'en-US' | 'ja-JP' | 'ko-KR', brandColorPreset?: CurrentUser['brandColorPreset'] }) =>
     request<CurrentUser>('/users/me', { method: 'PUT', body: JSON.stringify(payload) }),
   updateMyPassword: (payload: { currentPassword?: string, newPassword: string }) =>
     request<void>('/users/me/password', { method: 'PUT', body: JSON.stringify(payload) }),

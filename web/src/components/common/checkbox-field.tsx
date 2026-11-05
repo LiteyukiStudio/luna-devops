@@ -1,5 +1,6 @@
 import type { ComponentPropsWithRef, ReactNode } from 'react'
 import { useId } from 'react'
+import { HelpTip } from '@/components/common/help-tip'
 import { Checkbox } from '@/components/ui/checkbox'
 import { cn } from '@/lib/utils'
 
@@ -47,12 +48,10 @@ export function CheckboxField({
         {...props}
       />
       <span className="min-w-0">
-        <span className="block font-medium leading-5">{children}</span>
-        {description && (
-          <span id={descriptionId} className="mt-1 block text-xs leading-5 text-muted-foreground">
-            {description}
-          </span>
-        )}
+        <span className="inline-flex items-center gap-1.5 font-medium leading-5">
+          {children}
+          {description && <HelpTip id={descriptionId} label={typeof children === 'string' ? children : ''}>{description}</HelpTip>}
+        </span>
       </span>
     </label>
   )

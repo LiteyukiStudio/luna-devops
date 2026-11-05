@@ -3,6 +3,7 @@ const nav = {
   integrations: '集成',
   systemManagement: '系统管理',
   openSidebar: '打开侧边栏',
+  toggleSidebar: '折叠或展开侧边栏',
   breadcrumb: '面包屑导航',
   projectNavigation: '项目空间导航',
   switchProject: '切换项目空间',

@@ -28,7 +28,7 @@ export function RuntimeDataVolumesEditor({ clusterId, onChange, projectId, rowEr
 
   return (
     <div className="grid min-w-0 gap-3">
-      {rows.length === 0 && <p className="rounded-control border border-dashed border-border px-3 py-4 text-sm text-muted-foreground">{t('deploymentTargetEditor.dataVolumesEmpty')}</p>}
+      {rows.length === 0 && <p className="text-sm text-muted-foreground">{t('deploymentTargetEditor.dataVolumesEmpty')}</p>}
       {rows.map((volume, index) => (
         <div key={volume.id} aria-invalid={rowErrors[index] ? true : undefined} className="grid min-w-0 gap-3 rounded-control bg-surface-inset/60 p-3 aria-invalid:ring-1 aria-invalid:ring-danger/40 sm:grid-cols-2" role="group" aria-label={t('deploymentTargetEditor.dataVolumeRowLabel', { index: index + 1 })}>
           <Field label={t('deploymentsPage.dataVolumeName')}>

@@ -34,7 +34,6 @@ const root = {
   edit: '編輯',
   delete: '刪除',
   backToProjectSpaces: '返回專案空間',
-  backToApps: '返回應用列表',
 }
 
 export default root

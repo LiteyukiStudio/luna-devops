@@ -154,7 +154,7 @@ export function ProjectTopologyPanel({ applications, canManage, projectId }: Pro
   return (
     <div className="grid gap-3">
       {pendingReleaseApplicationId && (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-warning-border bg-warning-subtle px-3 py-2 text-sm text-warning">
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-container border border-warning-border bg-warning-subtle px-3 py-2 text-sm text-warning">
           <span>{t('projectTopology.savedNeedsRelease')}</span>
           <Link className="font-medium text-primary-text hover:underline" to={`/projects/${projectId}/apps/${pendingReleaseApplicationId}?tab=deployments`}>
             {t('projectTopology.openDeployment')}
@@ -162,7 +162,7 @@ export function ProjectTopologyPanel({ applications, canManage, projectId }: Pro
         </div>
       )}
       {topology.data.warnings.length > 0 && (
-        <div className="flex items-start gap-2 rounded-md border border-border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
+        <div className="flex items-start gap-2 rounded-container border border-border bg-surface-subtle px-3 py-2 text-sm text-muted-foreground">
           <AlertTriangle className="mt-0.5 size-4 shrink-0" />
           <span>{topology.data.warnings.map(warning => t(`projectTopology.warningCodes.${warning.code}`, { defaultValue: warning.code })).join(' · ')}</span>
         </div>
@@ -264,7 +264,7 @@ function MobileRelationItem({ edge, nodes, onSelect }: { edge: ProjectTopologyEd
   const source = nodes.find(node => node.id === edge.source)?.name ?? t('projectTopology.unknownApplication')
   const target = nodes.find(node => node.id === edge.target)?.name ?? t('projectTopology.unknownApplication')
   return (
-    <button className="grid min-w-0 gap-2 rounded-md border border-border bg-background p-3 text-left transition hover:border-primary/40 hover:bg-muted/40" type="button" onClick={onSelect}>
+    <button className="grid min-w-0 gap-2 rounded-container border border-border bg-background p-3 text-left transition hover:border-primary/40 hover:bg-surface-subtle" type="button" onClick={onSelect}>
       <div className="flex min-w-0 items-start justify-between gap-3">
         <span className="min-w-0 truncate font-medium">{t('projectTopology.direction', { source, target })}</span>
         <StatusValueBadge labelKeyPrefix="projectTopology.statuses" value={edge.status || 'unknown'} />

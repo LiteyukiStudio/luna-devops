@@ -40,7 +40,6 @@ const currentUser: CurrentUser = {
   role: 'user',
   language: 'zh-CN',
   brandColorPreset: 'blue',
-  interfaceStyle: 'themed',
   permissions: [],
 }
 const sessionValue: SessionContextValue = {

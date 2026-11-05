@@ -21,22 +21,25 @@ func TestNormalizeUserBrandColorPresetAllowsFollowingPlatform(t *testing.T) {
 	if got, valid := normalizeUserBrandColorPreset(" Ruby "); valid || got != "ruby" {
 		t.Fatalf("hidden user preset = %q, valid=%v; want ruby and invalid", got, valid)
 	}
+	if got, valid := normalizeUserBrandColorPreset("aurora"); valid || got != "aurora" {
+		t.Fatalf("removed user preset = %q, valid=%v; want invalid", got, valid)
+	}
 	if got, valid := normalizeUserBrandColorPreset("custom-css"); valid || got != "custom-css" {
 		t.Fatalf("custom user preset = %q, valid=%v; want invalid", got, valid)
 	}
 }
 
 func TestValidateConfigValuesRejectsUnknownBrandColorPreset(t *testing.T) {
-	for _, invalid := range []string{"custom-css", "ruby"} {
+	for _, invalid := range []string{"custom-css", "ruby", "aurora", "red", "lime"} {
 		if _, err := validateConfigValues(map[string]any{siteBrandColorPresetKey: invalid}); err == nil {
 			t.Fatalf("expected brand color preset %q to be rejected", invalid)
 		}
 	}
-	values, err := validateConfigValues(map[string]any{siteBrandColorPresetKey: "red"})
+	values, err := validateConfigValues(map[string]any{siteBrandColorPresetKey: "pink"})
 	if err != nil {
 		t.Fatalf("validate official brand color preset: %v", err)
 	}
-	if values[siteBrandColorPresetKey] != "red" {
-		t.Fatalf("validated preset = %q, want red", values[siteBrandColorPresetKey])
+	if values[siteBrandColorPresetKey] != "pink" {
+		t.Fatalf("validated preset = %q, want pink", values[siteBrandColorPresetKey])
 	}
 }

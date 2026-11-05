@@ -11,7 +11,6 @@ import { ErrorState } from '@/components/common/error-state'
 import { ProjectVolumeCreateDialog } from '@/components/common/project-volumes/project-volume-create-dialog'
 import { useProjectRuntimeClusters } from '@/components/common/project-volumes/volume-resource-queries'
 import { ProjectVolumeClusterSelect } from '@/components/common/project-volumes/volume-resource-selectors'
-import { Section } from '@/components/common/section'
 import { StatusValueBadge } from '@/components/common/status-badge'
 import { formatSmartDateTime } from '@/components/common/time-format'
 import { Button } from '@/components/ui/button'
@@ -43,27 +42,27 @@ function VolumeFilters({ availability, clusterId, onAvailabilityChange, onCluste
 }) {
   const { t } = useTranslation()
   return (
-    <div className="grid min-w-0 gap-2 md:flex md:flex-wrap">
-      <div className="w-full md:w-44">
+    <div className="grid min-w-0 gap-2 md:contents">
+      <div className="w-full md:w-40">
         <ProjectVolumeClusterSelect allowAll projectId={projectId} value={clusterId} onChange={onClusterChange} />
       </div>
-      <NativeSelect aria-label={t('projectVolumes.allAvailability')} containerClassName="w-full md:w-40" value={availability} onChange={event => onAvailabilityChange(event.target.value as '' | ProjectVolumeAvailability)}>
+      <NativeSelect aria-label={t('projectVolumes.allAvailability')} containerClassName="w-full md:w-36" value={availability} onChange={event => onAvailabilityChange(event.target.value as '' | ProjectVolumeAvailability)}>
         <option value="">{t('projectVolumes.allAvailability')}</option>
         <option value="available">{t('projectVolumes.availabilityStates.available')}</option>
         <option value="reserved">{t('projectVolumes.availabilityStates.reserved')}</option>
         <option value="in_use">{t('projectVolumes.availabilityStates.in_use')}</option>
         <option value="unavailable">{t('projectVolumes.availabilityStates.unavailable')}</option>
       </NativeSelect>
-      <NativeSelect aria-label={t('projectVolumes.allSources')} containerClassName="w-full md:w-40" value={sourceKind} onChange={event => onSourceChange(event.target.value as '' | ProjectVolumeSourceKind)}>
+      <NativeSelect aria-label={t('projectVolumes.allSources')} containerClassName="w-full md:w-36" value={sourceKind} onChange={event => onSourceChange(event.target.value as '' | ProjectVolumeSourceKind)}>
         <option value="">{t('projectVolumes.allSources')}</option>
         {(['blank', 'managed', 'retained', 'archive_import', 'snapshot_restore', 'existing_claim'] as const).map(value => <option key={value} value={value}>{t(`projectVolumes.sourceKinds.${value}`)}</option>)}
       </NativeSelect>
-      <NativeSelect aria-label={t('projectVolumes.allOwnership')} containerClassName="w-full md:w-40" value={ownership} onChange={event => onOwnershipChange(event.target.value as '' | ProjectVolumeOwnershipMode)}>
+      <NativeSelect aria-label={t('projectVolumes.allOwnership')} containerClassName="w-full md:w-36" value={ownership} onChange={event => onOwnershipChange(event.target.value as '' | ProjectVolumeOwnershipMode)}>
         <option value="">{t('projectVolumes.allOwnership')}</option>
         <option value="managed">{t('projectVolumes.ownershipModes.managed')}</option>
         <option value="referenced">{t('projectVolumes.ownershipModes.referenced')}</option>
       </NativeSelect>
-      <NativeSelect aria-label={t('projectVolumes.sort')} containerClassName="w-full md:w-40" value={sortBy} onChange={event => onSortChange(event.target.value as typeof sortBy)}>
+      <NativeSelect aria-label={t('projectVolumes.sort')} containerClassName="w-full md:w-36" value={sortBy} onChange={event => onSortChange(event.target.value as typeof sortBy)}>
         <option value="createdAt">{t('projectVolumes.sortCreated')}</option>
         <option value="updatedAt">{t('projectVolumes.sortUpdated')}</option>
         <option value="displayName">{t('projectVolumes.sortName')}</option>
@@ -157,107 +156,103 @@ export function ProjectVolumesPage({ capabilities, projectId, ref }: { capabilit
   const hasFilters = Boolean(search || clusterId || availability || sourceKind || ownership || sortBy !== 'createdAt')
   return (
     <div className="grid min-w-0 gap-section">
-      <Section description={t('projectVolumes.description')} icon={<HardDrive className="size-5" />} title={t('projectVolumes.title')} variant="plain">
-        <div className="min-w-0 overflow-hidden rounded-container bg-surface-raised">
-          <DataList
-            columns={[
-              { key: 'name', header: t('projectVolumes.name'), width: 'primary', render: item => (
-                <div className="min-w-0">
-                  <p className="truncate font-medium">{item.displayName}</p>
-                  <p className="mt-1 truncate text-xs text-muted-foreground">
-                    {item.namespace}
-                    /
-                    {item.claimName}
-                  </p>
+      <DataList
+        columns={[
+          { key: 'name', header: t('projectVolumes.name'), width: 'primary', render: item => (
+            <div className="min-w-0">
+              <p className="truncate font-medium">{item.displayName}</p>
+              <p className="mt-1 truncate text-xs text-muted-foreground">
+                {item.namespace}
+                /
+                {item.claimName}
+              </p>
+            </div>
+          ) },
+          { key: 'capacity', header: t('projectVolumes.capacity'), width: 'number', render: item => (
+            <div>
+              <p>{item.capacity}</p>
+              <p className="mt-1 truncate text-xs text-muted-foreground">{item.storageClassName}</p>
+            </div>
+          ) },
+          { key: 'cluster', header: t('projectVolumes.cluster'), mobile: 'hidden', render: item => clusterNames[item.clusterId] ?? item.clusterId },
+          { key: 'source', header: t('projectVolumes.source'), mobile: 'hidden', render: item => (
+            <div className="grid gap-1">
+              <span>{t(`projectVolumes.sourceKinds.${item.sourceKind}`)}</span>
+              <span className="text-xs text-muted-foreground">{t(`projectVolumes.ownershipModes.${item.ownershipMode}`)}</span>
+            </div>
+          ) },
+          { key: 'availability', header: t('projectVolumes.usage'), render: item => <StatusValueBadge labelKeyPrefix="projectVolumes.availabilityStates" value={item.availability} /> },
+          { key: 'observation', header: t('projectVolumes.observation'), render: item => (
+            <div className="grid gap-1">
+              <StatusValueBadge labelKeyPrefix="projectVolumes.lifecycleStates" value={item.lifecycleState} />
+              {item.lastErrorCode && (
+                <span className="truncate text-xs text-danger">
+                  {t(`errors.${item.lastErrorCode}`, { defaultValue: t('errors.request.failed') })}
+                </span>
+              )}
+            </div>
+          ) },
+          { key: 'updatedAt', header: t('projectVolumes.updatedAt'), mobile: 'hidden', render: item => formatSmartDateTime(item.updatedAt, t) },
+          { key: 'actions', header: t('common.actions'), sticky: 'right', width: 'actions', render: item => <Button size="sm" variant="ghost" onClick={() => setSelectedVolume(item)}>{t('projectVolumes.details')}</Button> },
+        ]}
+        emptyActions={hasFilters
+          ? <Button variant="outline" onClick={clearFilters}>{t('projectVolumes.clearFilters')}</Button>
+          : capabilities.canWrite ? <Button onClick={() => setCreateOpen(true)}>{t('projectVolumes.create')}</Button> : undefined}
+        emptyDescription={t(hasFilters ? 'projectVolumes.noMatches' : 'projectVolumes.emptyDescription')}
+        emptyIcon={<HardDrive className="size-6" />}
+        emptyMode={hasFilters ? 'filtered' : 'actionable'}
+        emptyTitle={t(hasFilters ? 'projectVolumes.noMatches' : 'projectVolumes.emptyTitle')}
+        items={volumes.data?.items ?? []}
+        loading={volumes.isLoading}
+        pagination={{
+          page: volumes.data?.page ?? page,
+          pageSize: volumes.data?.pageSize ?? pageSize,
+          pageSizeOptions: PAGE_SIZE_OPTIONS,
+          total: volumes.data?.total ?? 0,
+          totalPages: volumes.data?.totalPages ?? 0,
+          pageInfoLabel: t('pagination.pageInfo', { page: volumes.data?.page ?? page, totalPages: volumes.data?.totalPages ?? 0, total: volumes.data?.total ?? 0 }),
+          onPageChange: setPage,
+          onPageSizeChange: (value) => {
+            setPageSize(value)
+            setPage(1)
+          },
+        }}
+        rowActionLabel={item => t('projectVolumes.openDetailsFor', { name: item.displayName })}
+        rowKey={item => item.id}
+        search={{
+          value: search,
+          placeholder: t('projectVolumes.searchPlaceholder'),
+          onChange: (value) => {
+            setSearch(value)
+            setPage(1)
+          },
+        }}
+        toolbar={(
+          <>
+            <div className="hidden md:contents">{filters}</div>
+            <Sheet open={filtersOpen} onOpenChange={setFiltersOpen}>
+              <SheetTrigger asChild>
+                <Button className="md:hidden" size="sm" variant="outline">
+                  <Filter className="size-4" />
+                  {t('projectVolumes.filters')}
+                </Button>
+              </SheetTrigger>
+              <SheetContent className="w-[min(92vw,28rem)] max-w-none sm:max-w-md">
+                <SheetHeader>
+                  <SheetTitle>{t('projectVolumes.filters')}</SheetTitle>
+                  <SheetDescription>{t('projectVolumes.description')}</SheetDescription>
+                </SheetHeader>
+                <div className="grid gap-3 p-4">
+                  {filters}
+                  <Button variant="outline" onClick={clearFilters}>{t('projectVolumes.clearFilters')}</Button>
                 </div>
-              ) },
-              { key: 'capacity', header: t('projectVolumes.capacity'), width: 'number', render: item => (
-                <div>
-                  <p>{item.capacity}</p>
-                  <p className="mt-1 truncate text-xs text-muted-foreground">{item.storageClassName}</p>
-                </div>
-              ) },
-              { key: 'cluster', header: t('projectVolumes.cluster'), mobile: 'hidden', render: item => clusterNames[item.clusterId] ?? item.clusterId },
-              { key: 'source', header: t('projectVolumes.source'), mobile: 'hidden', render: item => (
-                <div className="grid gap-1">
-                  <span>{t(`projectVolumes.sourceKinds.${item.sourceKind}`)}</span>
-                  <span className="text-xs text-muted-foreground">{t(`projectVolumes.ownershipModes.${item.ownershipMode}`)}</span>
-                </div>
-              ) },
-              { key: 'availability', header: t('projectVolumes.usage'), render: item => <StatusValueBadge labelKeyPrefix="projectVolumes.availabilityStates" value={item.availability} /> },
-              { key: 'observation', header: t('projectVolumes.observation'), render: item => (
-                <div className="grid gap-1">
-                  <StatusValueBadge labelKeyPrefix="projectVolumes.lifecycleStates" value={item.lifecycleState} />
-                  {item.lastErrorCode && (
-                    <span className="truncate text-xs text-danger">
-                      {t(`errors.${item.lastErrorCode}`, { defaultValue: t('errors.request.failed') })}
-                    </span>
-                  )}
-                </div>
-              ) },
-              { key: 'updatedAt', header: t('projectVolumes.updatedAt'), mobile: 'hidden', render: item => formatSmartDateTime(item.updatedAt, t) },
-              { key: 'actions', header: t('common.actions'), sticky: 'right', width: 'actions', render: item => <Button size="sm" variant="ghost" onClick={() => setSelectedVolume(item)}>{t('projectVolumes.details')}</Button> },
-            ]}
-            emptyActions={hasFilters
-              ? <Button variant="outline" onClick={clearFilters}>{t('projectVolumes.clearFilters')}</Button>
-              : capabilities.canWrite ? <Button onClick={() => setCreateOpen(true)}>{t('projectVolumes.create')}</Button> : undefined}
-            emptyDescription={t(hasFilters ? 'projectVolumes.noMatches' : 'projectVolumes.emptyDescription')}
-            emptyIcon={<HardDrive className="size-6" />}
-            emptyMode={hasFilters ? 'filtered' : 'actionable'}
-            emptyTitle={t(hasFilters ? 'projectVolumes.noMatches' : 'projectVolumes.emptyTitle')}
-            items={volumes.data?.items ?? []}
-            loading={volumes.isLoading}
-            pagination={{
-              page: volumes.data?.page ?? page,
-              pageSize: volumes.data?.pageSize ?? pageSize,
-              pageSizeOptions: PAGE_SIZE_OPTIONS,
-              total: volumes.data?.total ?? 0,
-              totalPages: volumes.data?.totalPages ?? 0,
-              pageInfoLabel: t('pagination.pageInfo', { page: volumes.data?.page ?? page, totalPages: volumes.data?.totalPages ?? 0, total: volumes.data?.total ?? 0 }),
-              onPageChange: setPage,
-              onPageSizeChange: (value) => {
-                setPageSize(value)
-                setPage(1)
-              },
-            }}
-            rowActionLabel={item => t('projectVolumes.openDetailsFor', { name: item.displayName })}
-            rowKey={item => item.id}
-            search={{
-              value: search,
-              placeholder: t('projectVolumes.searchPlaceholder'),
-              onChange: (value) => {
-                setSearch(value)
-                setPage(1)
-              },
-            }}
-            toolbar={(
-              <>
-                <div className="hidden min-w-0 flex-1 md:block">{filters}</div>
-                <Sheet open={filtersOpen} onOpenChange={setFiltersOpen}>
-                  <SheetTrigger asChild>
-                    <Button className="md:hidden" size="sm" variant="outline">
-                      <Filter className="size-4" />
-                      {t('projectVolumes.filters')}
-                    </Button>
-                  </SheetTrigger>
-                  <SheetContent className="w-[min(92vw,28rem)] max-w-none sm:max-w-md">
-                    <SheetHeader>
-                      <SheetTitle>{t('projectVolumes.filters')}</SheetTitle>
-                      <SheetDescription>{t('projectVolumes.description')}</SheetDescription>
-                    </SheetHeader>
-                    <div className="grid gap-3 p-4">
-                      {filters}
-                      <Button variant="outline" onClick={clearFilters}>{t('projectVolumes.clearFilters')}</Button>
-                    </div>
-                  </SheetContent>
-                </Sheet>
-              </>
-            )}
-            toolbarActions={<Button aria-label={t('projectVolumes.refresh')} size="icon" variant="ghost" onClick={() => volumes.refetch()}><RefreshCcw className="size-4" /></Button>}
-            onRowClick={(item: ProjectVolume) => setSelectedVolume(item)}
-          />
-        </div>
-      </Section>
+              </SheetContent>
+            </Sheet>
+          </>
+        )}
+        toolbarActions={<Button aria-label={t('projectVolumes.refresh')} size="icon" variant="ghost" onClick={() => volumes.refetch()}><RefreshCcw className="size-4" /></Button>}
+        onRowClick={(item: ProjectVolume) => setSelectedVolume(item)}
+      />
       {capabilities.canWrite && <ProjectVolumeCreateDialog onOpenChange={setCreateOpen} open={createOpen} projectId={projectId} />}
       {capabilities.canImport && <ProjectVolumeImportDialog onOpenChange={setImportOpen} open={importOpen} projectId={projectId} />}
       <ProjectVolumeDetailSheet

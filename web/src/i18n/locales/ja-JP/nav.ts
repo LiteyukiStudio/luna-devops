@@ -3,6 +3,7 @@ const nav = {
   integrations: '連携',
   systemManagement: 'システム管理',
   openSidebar: 'サイドバーを開く',
+  toggleSidebar: 'サイドバーの表示を切り替え',
   breadcrumb: 'パンくずリスト',
   projectNavigation: 'プロジェクトスペースのナビゲーション',
   switchProject: 'プロジェクトスペースを切り替え',

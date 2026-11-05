@@ -4,7 +4,7 @@ import type { ArtifactRegistry, DeploymentTarget, Release, RepositoryBinding, Ru
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Rocket, Save } from 'lucide-react'
-import { useMemo, useRef } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { FormProvider, useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { Link, useNavigate } from 'react-router-dom'
@@ -13,6 +13,8 @@ import { api, ApiError } from '@/api'
 import { Button } from '@/components/ui/button'
 import { deploymentReleaseKey } from '@/pages/applications/application-config-utils'
 import { latestReleaseByTarget, redeployReleasePayload } from '@/pages/applications/deployments/application-deployments-panel-utils'
+import { advancedItemConfiguredCount, visibleAdvancedItems } from './advanced/advanced-items'
+import { AdvancedSection } from './advanced/advanced-section'
 import { DeploymentTargetEditorNav } from './deployment-target-editor-nav'
 import { preferredScrollBehavior, scrollToDeploymentTargetSection, sectionErrorCount } from './deployment-target-editor-utils'
 import {
@@ -25,11 +27,8 @@ import {
 } from './deployment-target-form'
 import { targetImageTemplateQuery } from './deployment-target-queries'
 import { BasicsSection } from './sections/basics-section'
-import { HooksSection } from './sections/hooks-section'
 import { ReleaseSection } from './sections/release-section'
 import { RuntimeSection } from './sections/runtime-section'
-import { SecuritySection } from './sections/security-section'
-import { SourceBuildSection } from './sections/source-build-section'
 
 export interface DeploymentTargetEditorProps {
   applicationId: string
@@ -45,7 +44,7 @@ export interface DeploymentTargetEditorProps {
   target: DeploymentTarget | null
 }
 
-/** 部署配置独立编辑页的表单主体：分区导航 + 分区表单 + 固定操作栏。 */
+/** 部署配置独立编辑页的表单主体：分区导航 + 常用分区 + 默认折叠的高级分区 + 固定操作栏。 */
 export function DeploymentTargetEditor({
   applicationId,
   buildEnvironmentAvailable,
@@ -70,6 +69,9 @@ export function DeploymentTargetEditor({
     resolver: zodResolver(schema),
     shouldFocusError: false,
   })
+  // 已有非默认高级配置时默认展开，避免把已生效的配置藏起来。
+  const [advancedOpen, setAdvancedOpen] = useState(() => visibleAdvancedItems(initialValues.sourceType)
+    .some(item => advancedItemConfiguredCount(item, initialValues, target) > 0))
   const values = form.watch()
   const { dirtyFields, errors, isSubmitted } = form.formState
   const backTo = `/projects/${projectId}/apps/${applicationId}?tab=deployments`
@@ -170,17 +172,23 @@ export function DeploymentTargetEditor({
       >
         <div className="grid min-w-0 gap-6 lg:grid-cols-[15rem_minmax(0,1fr)]">
           <aside className="min-w-0 lg:sticky lg:top-0 lg:self-start">
-            <DeploymentTargetEditorNav repositoryBindings={repositoryBindings} runtimeClusters={runtimeClusters} />
+            <DeploymentTargetEditorNav
+              repositoryBindings={repositoryBindings}
+              target={target}
+              onNavigate={(section) => {
+                if (section === 'advanced')
+                  setAdvancedOpen(true)
+              }}
+            />
           </aside>
           <div className="grid min-w-0 gap-6">
-            <BasicsSection editing={Boolean(target)} projectId={projectId} runtimeClusters={runtimeClusters} />
-            <SourceBuildSection
+            <BasicsSection
               applicationId={applicationId}
-              buildEnvironmentAvailable={buildEnvironmentAvailable}
               editing={Boolean(target)}
               projectId={projectId}
               registries={registries}
               repositoryBindings={repositoryBindings}
+              runtimeClusters={runtimeClusters}
             />
             <RuntimeSection
               canManageRuntimeSecrets={canManageRuntimeSecrets}
@@ -188,11 +196,16 @@ export function DeploymentTargetEditor({
               projectId={projectId}
               releases={releases}
               runtimeClusters={runtimeClusters}
-              target={target}
             />
             <ReleaseSection />
-            <HooksSection projectId={projectId} />
-            <SecuritySection />
+            <AdvancedSection
+              buildEnvironmentAvailable={buildEnvironmentAvailable}
+              open={advancedOpen}
+              projectId={projectId}
+              repositoryBindings={repositoryBindings}
+              target={target}
+              onOpenChange={setAdvancedOpen}
+            />
           </div>
         </div>
         <div className="sticky bottom-0 z-10 flex flex-col gap-3 rounded-container border border-border bg-surface-raised px-4 py-3 shadow-raised sm:flex-row sm:items-center sm:justify-between">

@@ -21,7 +21,9 @@ export const maxRuntimeEnvironmentValueLength = 8192
 /** 与后端 isBuildEnvKey 一致的环境变量名规则。 */
 export const runtimeEnvironmentKeyPattern = /^[A-Z_]\w{0,127}$/i
 
-export type DeploymentTargetEditorSection = 'basics' | 'source' | 'runtime' | 'release' | 'hooks' | 'security'
+export type DeploymentTargetEditorSection = 'basics' | 'runtime' | 'release' | 'advanced'
+/** 高级（Kubernetes）分区内的低频配置项，每项一行摘要，可单独展开。 */
+export type DeploymentTargetAdvancedItem = 'build' | 'workload' | 'container' | 'service' | 'files' | 'hooks' | 'webConsole' | 'securityScheduling' | 'auxContainers'
 
 /**
  * 部署配置编辑器的唯一表单模型。
@@ -543,22 +545,43 @@ function deploymentPhaseHooks(payload: DeploymentTargetPayload) {
     .map(binding => ({ hookConfigId: binding.hookConfigId, phase: binding.phase, runOrder: binding.runOrder }))
 }
 
-/** 各分区字段归属：用于导航上的错误计数和提交失败后的定位。 */
-export const deploymentTargetSectionFields: Record<DeploymentTargetEditorSection, readonly DeploymentTargetFieldName[]> = {
-  basics: ['name', 'stage', 'clusterId', 'enabled'],
-  source: ['sourceType', 'repositoryBindingId', 'imageRef', 'targetRegistryId', 'targetImageRef', 'buildDefinitionMode', 'buildTemplateId', 'buildTemplateVersion', 'buildTemplateValues', 'dockerfilePath', 'buildContext', 'buildDirectory', 'buildArgs', 'buildCpuRequest', 'buildMemoryRequest', 'buildTimeoutMinutes', 'buildVariables', 'buildSecrets'],
-  runtime: ['replicas', 'cpuRequest', 'memoryRequest', 'autoScalingEnabled', 'autoScalingMinReplicas', 'autoScalingMaxReplicas', 'autoScalingCpuPercent', 'autoScalingMemoryPercent', 'autoScalingBehavior', 'servicePorts', 'serviceSessionAffinity', 'serviceAnnotations', 'runtimeConfigRefs', 'environmentVariables', 'configFiles', 'secretFiles', 'dataVolumes', 'workloadType', 'imagePullPolicy', 'containerCommand', 'containerArgs', 'lifecycle', 'readinessProbe', 'livenessProbe', 'startupProbe'],
-  release: ['autoDeploy', 'branchPattern', 'tagPattern', 'concurrencyPolicy'],
+/** 高级分区各配置项的字段归属：决定摘要、已设置计数和错误时的自动展开。 */
+export const deploymentTargetAdvancedItemFields: Record<DeploymentTargetAdvancedItem, readonly DeploymentTargetFieldName[]> = {
+  build: ['buildDirectory', 'buildArgs', 'buildCpuRequest', 'buildMemoryRequest', 'buildTimeoutMinutes', 'buildVariables', 'buildSecrets'],
+  workload: ['workloadType', 'autoScalingBehavior'],
+  container: ['imagePullPolicy', 'containerCommand', 'containerArgs', 'lifecycle', 'readinessProbe', 'livenessProbe', 'startupProbe'],
+  service: ['serviceSessionAffinity', 'serviceAnnotations'],
+  files: ['configFiles', 'secretFiles'],
   hooks: ['buildHooksEnabled', 'buildHookBindings'],
-  security: ['webConsoleEnabled', 'runAsUser', 'runAsGroup', 'fsGroup', 'fsGroupChangePolicy', 'readOnlyRootFilesystem', 'capabilityDrop', 'nodeSelector', 'tolerations', 'affinity', 'topologySpreadConstraints', 'priorityClassName', 'initContainers', 'sidecarContainers'],
+  webConsole: ['webConsoleEnabled'],
+  securityScheduling: ['runAsUser', 'runAsGroup', 'fsGroup', 'fsGroupChangePolicy', 'readOnlyRootFilesystem', 'capabilityDrop', 'nodeSelector', 'tolerations', 'affinity', 'topologySpreadConstraints', 'priorityClassName'],
+  auxContainers: ['initContainers', 'sidecarContainers'],
 }
 
-export const deploymentTargetSectionOrder: readonly DeploymentTargetEditorSection[] = ['basics', 'source', 'runtime', 'release', 'hooks', 'security']
+export const deploymentTargetAdvancedItemOrder: readonly DeploymentTargetAdvancedItem[] = ['build', 'workload', 'container', 'service', 'files', 'hooks', 'webConsole', 'securityScheduling', 'auxContainers']
 
-/** 统计与平台默认值不同的字段数量，用于“高级选项已设置 N 项”。 */
+/** 各分区字段归属：用于导航上的错误计数和提交失败后的定位。 */
+export const deploymentTargetSectionFields: Record<DeploymentTargetEditorSection, readonly DeploymentTargetFieldName[]> = {
+  basics: ['name', 'stage', 'clusterId', 'enabled', 'sourceType', 'repositoryBindingId', 'imageRef', 'targetRegistryId', 'targetImageRef', 'buildDefinitionMode', 'buildTemplateId', 'buildTemplateVersion', 'buildTemplateValues', 'dockerfilePath', 'buildContext'],
+  runtime: ['replicas', 'cpuRequest', 'memoryRequest', 'autoScalingEnabled', 'autoScalingMinReplicas', 'autoScalingMaxReplicas', 'autoScalingCpuPercent', 'autoScalingMemoryPercent', 'servicePorts', 'runtimeConfigRefs', 'environmentVariables', 'dataVolumes'],
+  release: ['autoDeploy', 'branchPattern', 'tagPattern', 'concurrencyPolicy'],
+  advanced: deploymentTargetAdvancedItemOrder.flatMap(item => deploymentTargetAdvancedItemFields[item]),
+}
+
+export const deploymentTargetSectionOrder: readonly DeploymentTargetEditorSection[] = ['basics', 'runtime', 'release', 'advanced']
+
+/**
+ * 统计与平台默认值不同的字段数量，用于高级项的“已设置 N 项”和默认展开。
+ * 构建变量与密钥的空行带随机 ID，按是否存在已命名的行判断。
+ */
 export function changedFieldCount(values: Partial<Record<DeploymentTargetFieldName, unknown>>, fields: readonly DeploymentTargetFieldName[]) {
   const defaults = emptyDeploymentTargetFormValues()
-  return fields.filter(field => JSON.stringify(values[field]) !== JSON.stringify(defaults[field])).length
+  return fields.filter((field) => {
+    const value = values[field]
+    if (field === 'buildVariables' || field === 'buildSecrets')
+      return Array.isArray(value) && value.some((row: unknown) => Boolean(row && typeof row === 'object' && 'key' in row && typeof row.key === 'string' && row.key.trim()))
+    return JSON.stringify(value) !== JSON.stringify(defaults[field])
+  }).length
 }
 
 /** 后端字段错误码到表单字段的映射；其余错误以 toast 呈现。 */

@@ -33,32 +33,39 @@ export function CliCommandSnippet({ className, spec }: { className?: string, spe
     }
   }
 
+  const copyLabel = copied ? t('common.cliCommand.copied') : t('common.cliCommand.copy')
+  const actionClassName = 'size-7 shrink-0 text-terminal-muted hover:bg-terminal-foreground/10 hover:text-terminal-foreground'
+
   return (
     <div
       aria-label={t('common.cliCommand.label')}
-      className={cn('flex min-w-0 items-center gap-2 rounded-control bg-zinc-950 px-2 py-1.5 text-zinc-100', className)}
+      className={cn('flex min-w-0 items-center gap-2 rounded-control border border-terminal-border bg-terminal py-1 pl-2.5 pr-1 text-terminal-foreground', className)}
       role="group"
     >
-      <SquareTerminal aria-hidden="true" className="size-3.5 shrink-0 text-emerald-400" />
-      <code className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap font-mono text-xs leading-5 text-zinc-300">
+      <SquareTerminal aria-hidden="true" className="size-3.5 shrink-0 text-terminal-success" />
+      <code className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap font-mono text-xs leading-5 selection:bg-terminal-selection">
         {command}
       </code>
-      <Button
-        aria-label={copied ? t('common.cliCommand.copied') : t('common.cliCommand.copy')}
-        className="size-7 shrink-0 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 focus-visible:ring-emerald-400/70"
-        size="icon"
-        title={copied ? t('common.cliCommand.copied') : t('common.cliCommand.copy')}
-        type="button"
-        variant="ghost"
-        onClick={() => void copyCommand()}
-      >
-        {copied ? <Check aria-hidden="true" className="size-3.5 text-emerald-400" /> : <Copy aria-hidden="true" className="size-3.5" />}
-      </Button>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            aria-label={copyLabel}
+            className={actionClassName}
+            size="icon"
+            type="button"
+            variant="ghost"
+            onClick={() => void copyCommand()}
+          >
+            {copied ? <Check aria-hidden="true" className="size-3.5 text-terminal-success" /> : <Copy aria-hidden="true" className="size-3.5" />}
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="top">{copyLabel}</TooltipContent>
+      </Tooltip>
       <Tooltip>
         <TooltipTrigger asChild>
           <Button
             asChild
-            className="size-7 shrink-0 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 focus-visible:ring-emerald-400/70"
+            className={actionClassName}
             size="icon"
             variant="ghost"
           >

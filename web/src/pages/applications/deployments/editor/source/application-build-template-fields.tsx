@@ -127,7 +127,7 @@ export function ApplicationBuildTemplateFields({
             <div className="flex min-w-0 items-end gap-2">
               <div className="grid min-w-0 flex-1 gap-1">
                 <span className="text-sm font-medium">{t('buildTemplates.selectedVersion')}</span>
-                <div className="flex h-9 items-center gap-2 rounded-md border border-input bg-muted/40 px-3">
+                <div className="flex h-8 items-center gap-2 rounded-control border border-border bg-surface-inset px-3">
                   <Badge variant="secondary">
                     v
                     {selectedTemplate.version}

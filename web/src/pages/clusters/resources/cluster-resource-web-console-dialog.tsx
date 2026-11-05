@@ -28,8 +28,8 @@ export function ClusterResourceWebConsoleDialog({
       containerLabel={t('deploymentsPage.container')}
       containerPlaceholder={t('deploymentsPage.webConsoleContainerPlaceholder')}
       description={t('clustersPage.webConsoleDescription')}
-      exitFullscreenLabel={t('deploymentsPage.exitFullscreen')}
-      fullscreenLabel={t('deploymentsPage.fullscreen')}
+      exitFullscreenLabel={t('common.viewer.exitFullscreen')}
+      fullscreenLabel={t('common.viewer.fullscreen')}
       loadingLabel={t('common.loading')}
       open={Boolean(cluster && pod)}
       resourceKey={podKey}
@@ -49,19 +49,20 @@ export function ClusterResourceWebConsoleDialog({
       title={t('clustersPage.webConsole')}
       onOpenChange={onOpenChange}
     >
-      {({ container, fullscreen }) => {
+      {({ attempt, container, fullscreen, onConnectionChange }) => {
         const socketUrl = cluster?.id && pod?.namespace && pod?.name
           ? runtimeClusterPodTerminalUrl(cluster.id, pod.namespace, pod.name, container)
           : ''
         return (
           <RuntimeTerminalPanel
-            key={`${podKey}:${container}`}
+            key={`${podKey}:${container}:${attempt}`}
             container={container}
             fullscreen={fullscreen}
             projectId=""
             ready={Boolean(socketUrl)}
             release={null}
             socketUrl={socketUrl}
+            onConnectionChange={onConnectionChange}
           />
         )
       }}

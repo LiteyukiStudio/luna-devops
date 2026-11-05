@@ -11,7 +11,7 @@ export function TargetImageRefInput({ className, prefix, ...props }: TargetImage
     return <Input className={className} {...props} />
 
   return (
-    <div className="flex min-w-0 overflow-hidden rounded-md border border-input bg-background shadow-sm focus-within:ring-2 focus-within:ring-ring/50">
+    <div className="flex min-w-0 overflow-hidden rounded-control border border-input bg-background shadow-xs focus-within:ring-2 focus-within:ring-ring/50">
       <span aria-hidden="true" className="flex shrink-0 items-center border-r border-border bg-muted px-3 text-sm text-muted-foreground">
         {prefix}
       </span>

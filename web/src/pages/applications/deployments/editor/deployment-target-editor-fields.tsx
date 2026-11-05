@@ -1,16 +1,14 @@
 import type { ReactNode } from 'react'
 import type { FieldPath } from 'react-hook-form'
 import type { DeploymentTargetEditorSection, DeploymentTargetFormValues } from './deployment-target-form'
-import { ChevronDown } from 'lucide-react'
-import { useId, useState } from 'react'
-import { Controller, get, useFormContext, useFormState } from 'react-hook-form'
+import { useId } from 'react'
+import { Controller, useFormContext } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { CodeEditor } from '@/components/common/code-editor'
 import { FormField } from '@/components/common/form-field'
+import { HelpTip } from '@/components/common/help-tip'
 import { Section } from '@/components/common/section'
-import { StatusBadge } from '@/components/common/status-badge'
-import { Button } from '@/components/ui/button'
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
+import { RadioGroupItem } from '@/components/ui/radio-group'
 import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
 import { deploymentTargetSectionAnchor, useFieldError } from './deployment-target-editor-utils'
@@ -35,8 +33,12 @@ export function EditorSection({ children, description, section, title, tools }: 
     <section aria-labelledby={`${deploymentTargetSectionAnchor(section)}-title`} className="scroll-mt-24" id={deploymentTargetSectionAnchor(section)}>
       <Section
         className="gap-6"
-        description={description}
-        title={<span id={`${deploymentTargetSectionAnchor(section)}-title`}>{title}</span>}
+        title={(
+          <span className="inline-flex items-center gap-1.5">
+            <span id={`${deploymentTargetSectionAnchor(section)}-title`}>{title}</span>
+            {description && <HelpTip label={title}>{description}</HelpTip>}
+          </span>
+        )}
         tools={tools}
         variant="bordered"
       >
@@ -58,8 +60,10 @@ export function EditorGroup({ children, className, description, title, tools }: 
     <div className={cn('grid min-w-0 gap-4 border-t border-border pt-5 first:border-t-0 first:pt-0', className)}>
       <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <h3 className="text-sm font-semibold text-foreground">{title}</h3>
-          {description && <p className="mt-1 text-sm text-muted-foreground">{description}</p>}
+          <h3 className="inline-flex items-center gap-1.5 text-sm font-semibold text-foreground">
+            {title}
+            {description && <HelpTip label={title}>{description}</HelpTip>}
+          </h3>
         </div>
         {tools && <div className="flex shrink-0 flex-wrap items-center gap-2">{tools}</div>}
       </div>
@@ -68,34 +72,28 @@ export function EditorGroup({ children, className, description, title, tools }: 
   )
 }
 
-/**
- * 低频选项的渐进展示；已有非默认值时默认展开，避免把已生效配置藏起来。
- * 传入 fields 后，其中任一字段校验失败都会强制展开，错误不会被折叠隐藏。
- */
-export function AdvancedOptions({ children, configuredCount, fields = [], title }: {
-  children: ReactNode
-  configuredCount: number
-  fields?: readonly FieldPath<DeploymentTargetFormValues>[]
-  title: string
+/** 单选卡片：标题 + 一行说明，整张卡片是 RadioGroupItem 的 label，保留方向键切换与焦点样式。 */
+export function ChoiceCard({ description, icon, id, label, value }: {
+  description: string
+  icon?: ReactNode
+  id: string
+  label: string
+  value: string
 }) {
-  const { t } = useTranslation()
-  const [expanded, setExpanded] = useState(configuredCount > 0)
-  const { errors } = useFormState<DeploymentTargetFormValues>({ name: [...fields] })
-  const hasError = fields.some(field => Boolean(get(errors, field)))
-  const open = expanded || hasError
   return (
-    <Collapsible className="grid min-w-0 gap-4" open={open} onOpenChange={setExpanded}>
-      <CollapsibleTrigger asChild>
-        <Button className="w-fit gap-2 px-2 text-muted-foreground hover:text-foreground" size="sm" type="button" variant="ghost">
-          <ChevronDown aria-hidden="true" className={cn('size-4 transition-transform duration-fast motion-reduce:transition-none', open && 'rotate-180')} />
-          <span>{title}</span>
-          {configuredCount > 0 && <StatusBadge tone="info">{t('deploymentTargetEditor.configuredCount', { count: configuredCount })}</StatusBadge>}
-        </Button>
-      </CollapsibleTrigger>
-      <CollapsibleContent className="grid min-w-0 gap-4 border-l-2 border-border pl-4">
-        {children}
-      </CollapsibleContent>
-    </Collapsible>
+    <label
+      className="flex min-w-0 cursor-pointer items-start gap-3 rounded-control border border-border bg-background px-3 py-2.5 transition-colors duration-fast hover:bg-surface-subtle has-[[data-state=checked]]:border-primary has-[[data-state=checked]]:bg-primary-subtle"
+      htmlFor={id}
+    >
+      <RadioGroupItem className="mt-0.5" id={id} value={value} />
+      <span className="grid min-w-0 gap-0.5">
+        <span className="flex items-center gap-2 text-sm font-medium text-foreground">
+          {icon && <span aria-hidden="true" className="text-muted-foreground">{icon}</span>}
+          {label}
+        </span>
+        <span className="text-xs leading-5 text-muted-foreground">{description}</span>
+      </span>
+    </label>
   )
 }
 
@@ -115,10 +113,12 @@ export function SwitchField({ description, disabled, label, name, revalidate }: 
       control={control}
       name={name}
       render={({ field }) => (
-        <div className="flex min-w-0 items-start justify-between gap-4 rounded-control bg-surface-inset/60 px-4 py-3">
+        <div className="flex min-w-0 items-start justify-between gap-4">
           <div className="min-w-0">
-            <label className="text-sm font-medium text-foreground" htmlFor={id}>{label}</label>
-            {description && <p className="mt-1 text-xs leading-5 text-muted-foreground" id={`${id}-description`}>{description}</p>}
+            <span className="inline-flex items-center gap-1.5">
+              <label className="text-sm font-medium text-foreground" htmlFor={id}>{label}</label>
+              {description && <HelpTip id={`${id}-description`} label={label}>{description}</HelpTip>}
+            </span>
           </div>
           <Switch
             ref={field.ref}

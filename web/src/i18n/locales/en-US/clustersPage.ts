@@ -24,6 +24,7 @@ const clustersPage = {
   runtimeCluster: 'Runtime cluster',
   runtimeClustersTab: 'Runtime clusters',
   clusterActions: 'Actions for {{name}}',
+  resourceActions: 'Actions for {{name}}',
   deleteStatuses: {
     active: 'Active',
     deleting: 'Deleting',

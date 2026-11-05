@@ -1,14 +1,25 @@
-import type { ComponentProps, ReactNode } from 'react'
-import { Maximize2, Minimize2, Minus, X } from 'lucide-react'
-import { useState } from 'react'
+import type { ReactNode } from 'react'
+import type { TerminalConnectionState } from './use-terminal-connection'
+import { LoaderCircle, Maximize2, Minimize2, RotateCw, SquareTerminal, X } from 'lucide-react'
+import { useId, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { LazyLoadBoundary } from '@/components/common/lazy-load-boundary'
-import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
+import { TerminalConnectionStatus, TerminalPlaceholder, ViewerToolbar, ViewerToolbarButton } from './terminal-chrome'
+import { useTerminalConnection } from './use-terminal-connection'
+
+interface RuntimeWebConsoleRenderContext {
+  /** 拼进终端面板 key，重连时递增。 */
+  attempt: number
+  container: string
+  fullscreen: boolean
+  onConnectionChange: (state: TerminalConnectionState) => void
+}
 
 interface RuntimeWebConsoleDialogProps {
-  children: (context: { container: string, fullscreen: boolean }) => ReactNode
+  children: (context: RuntimeWebConsoleRenderContext) => ReactNode
   closeLabel: string
   containerLabel: string
   containerPlaceholder: string
@@ -41,14 +52,18 @@ export function RuntimeWebConsoleDialog({
   title,
   onOpenChange,
 }: RuntimeWebConsoleDialogProps) {
+  const { t } = useTranslation()
+  const containerInputId = useId()
   const [containerState, setContainerState] = useState({ resourceKey: '', value: '' })
   const [fullscreen, setFullscreen] = useState(false)
+  const connection = useTerminalConnection()
   const container = containerState.resourceKey === resourceKey ? containerState.value : ''
 
   const changeOpen = (nextOpen: boolean) => {
     if (!nextOpen) {
       setContainerState({ resourceKey: '', value: '' })
       setFullscreen(false)
+      connection.reset()
     }
     onOpenChange(nextOpen)
   }
@@ -57,105 +72,69 @@ export function RuntimeWebConsoleDialog({
     <Dialog open={open} onOpenChange={changeOpen}>
       <DialogContent
         className={cn(
-          'border-0 bg-transparent p-0 shadow-none',
+          'flex flex-col gap-0 overflow-hidden p-0',
           fullscreen
-            ? 'h-[calc(100dvh-1rem)] max-h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] max-w-none overflow-hidden'
-            : 'max-h-[calc(100vh-2rem)] max-w-[min(94vw,96rem)] overflow-y-auto',
+            ? 'h-[calc(100dvh-1rem)] max-h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] max-w-none'
+            : 'max-h-[calc(100vh-2rem)] w-[min(94vw,80rem)] max-w-none',
         )}
         showCloseButton={false}
       >
-        <DialogTitle className="sr-only">{title}</DialogTitle>
-        <DialogDescription className="sr-only">{description}</DialogDescription>
-        <div className={cn('overflow-hidden rounded-md border border-zinc-800 bg-zinc-950 text-zinc-100 shadow-2xl', fullscreen && 'flex h-full min-h-0 flex-col')}>
-          <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-zinc-800 bg-zinc-900 px-5 py-3">
-            <div className="flex min-w-0 items-center gap-2">
-              <WindowControlButton
-                icon={<X className="size-2.5" strokeWidth={3} />}
-                label={closeLabel}
-                tone="close"
-                onClick={() => changeOpen(false)}
+        <ViewerToolbar
+          actions={(
+            <>
+              <ViewerToolbarButton
+                disabled={connection.state === 'connecting' || connection.state === 'idle'}
+                icon={<RotateCw aria-hidden="true" />}
+                label={t('common.terminal.reconnect')}
+                onClick={connection.reconnect}
               />
-              <WindowControlButton
-                aria-hidden="true"
-                disabled
-                icon={<Minus className="size-2.5" strokeWidth={3} />}
-                tone="minimize"
-              />
-              <WindowControlButton
-                icon={fullscreen ? <Minimize2 className="size-2.5" strokeWidth={3} /> : <Maximize2 className="size-2.5" strokeWidth={3} />}
+              <ViewerToolbarButton
+                icon={fullscreen ? <Minimize2 aria-hidden="true" /> : <Maximize2 aria-hidden="true" />}
                 label={fullscreen ? exitFullscreenLabel : fullscreenLabel}
-                tone="fullscreen"
                 onClick={() => setFullscreen(value => !value)}
               />
-              <span className="ml-3 min-w-0 truncate font-mono text-xs text-zinc-400">{resourceLabel || '-'}</span>
-            </div>
-            <label className="flex min-w-0 items-center gap-2 font-mono text-xs text-zinc-400">
-              <span>{containerLabel}</span>
-              <Input
-                className="h-7 w-32 border-zinc-700 bg-zinc-950 px-2 text-zinc-100 shadow-none placeholder:text-zinc-600 focus-visible:border-emerald-500 focus-visible:ring-0"
-                placeholder={containerPlaceholder}
-                value={container}
-                onChange={event => setContainerState({ resourceKey, value: event.target.value })}
-              />
-            </label>
-          </div>
-          {toolbar && (
-            <div className="shrink-0 border-b border-zinc-800 bg-zinc-900 px-3 py-2 sm:px-5">
-              {toolbar({ container })}
-            </div>
+              <ViewerToolbarButton icon={<X aria-hidden="true" />} label={closeLabel} onClick={() => changeOpen(false)} />
+            </>
           )}
-          <div className={fullscreen ? 'min-h-0 flex-1' : undefined}>
-            <LazyLoadBoundary
-              fallback={<TerminalLoadingState fullscreen={fullscreen} label={loadingLabel} />}
-              resetKey={`${resourceKey}:${container}`}
-            >
-              {children({ container, fullscreen })}
-            </LazyLoadBoundary>
+        >
+          <div className="flex min-w-0 items-center gap-2">
+            <SquareTerminal aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
+            <DialogTitle className="shrink-0 text-sm">{title}</DialogTitle>
+            <span className="min-w-0 truncate font-mono text-xs text-muted-foreground" title={resourceLabel}>{resourceLabel || '-'}</span>
           </div>
+          <TerminalConnectionStatus state={connection.state} />
+          <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
+            <label htmlFor={containerInputId}>{containerLabel}</label>
+            <Input
+              className="h-8 w-36 font-mono text-xs"
+              id={containerInputId}
+              placeholder={containerPlaceholder}
+              value={container}
+              onChange={event => setContainerState({ resourceKey, value: event.target.value })}
+            />
+          </div>
+        </ViewerToolbar>
+        <DialogDescription className="sr-only">{description}</DialogDescription>
+        {toolbar && (
+          <div className="shrink-0 border-b border-border bg-surface-subtle px-4 py-2">
+            {toolbar({ container })}
+          </div>
+        )}
+        <div className={cn('bg-terminal', fullscreen && 'min-h-0 flex-1')}>
+          <LazyLoadBoundary
+            fallback={(
+              <TerminalPlaceholder
+                className={fullscreen ? 'min-h-[28rem]' : 'h-[29.5rem]'}
+                icon={<LoaderCircle className="motion-safe:animate-spin" />}
+                label={loadingLabel}
+              />
+            )}
+            resetKey={`${resourceKey}:${container}:${connection.attempt}`}
+          >
+            {children({ attempt: connection.attempt, container, fullscreen, onConnectionChange: connection.onStateChange })}
+          </LazyLoadBoundary>
         </div>
       </DialogContent>
     </Dialog>
-  )
-}
-
-function TerminalLoadingState({ fullscreen, label }: { fullscreen: boolean, label: string }) {
-  return <div className={cn('grid place-items-center bg-slate-950 text-sm text-zinc-400', fullscreen ? 'h-full min-h-[28rem]' : 'h-[29.5rem]')} role="status">{label}</div>
-}
-
-function WindowControlButton({
-  disabled,
-  icon,
-  label,
-  tone,
-  onClick,
-  ...props
-}: {
-  disabled?: boolean
-  icon: ReactNode
-  label?: string
-  tone: 'close' | 'minimize' | 'fullscreen'
-  onClick?: () => void
-} & Omit<ComponentProps<typeof Button>, 'children' | 'onClick'>) {
-  return (
-    <Button
-      {...props}
-      aria-label={label}
-      className={cn(
-        'group size-4 rounded-full border p-0 outline-none focus-visible:ring-2 disabled:cursor-default',
-        tone === 'close' && 'border-red-400/60 bg-red-500 shadow-sm shadow-red-950/50 hover:bg-red-400 focus-visible:ring-red-300/50',
-        tone === 'minimize' && 'border-yellow-500/60 bg-yellow-400 shadow-sm shadow-yellow-950/40',
-        tone === 'fullscreen' && 'border-emerald-600/60 bg-emerald-500 shadow-sm shadow-emerald-950/40 hover:bg-emerald-400 focus-visible:ring-emerald-300/50',
-      )}
-      disabled={disabled}
-      size="icon"
-      tabIndex={disabled ? -1 : undefined}
-      type="button"
-      variant="ghost"
-      onClick={onClick}
-    >
-      <span className="grid place-items-center text-black/70 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
-        {icon}
-      </span>
-    </Button>
   )
 }

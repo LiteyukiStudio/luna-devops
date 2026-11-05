@@ -167,6 +167,23 @@ export function ClusterFormDialog({ editingCluster, open, projects, user, onOpen
     })
   }
 
+  const [watchedPolicy, watchedGateway] = [
+    {
+      cpuLimitPercent: form.watch('cpuLimitPercent'),
+      cpuRequestPercent: form.watch('cpuRequestPercent'),
+      memoryLimitPercent: form.watch('memoryLimitPercent'),
+      memoryRequestPercent: form.watch('memoryRequestPercent'),
+    },
+    {
+      gatewayControllerType: form.watch('gatewayControllerType'),
+      gatewayDomainSuffixesText: form.watch('gatewayDomainSuffixesText'),
+      gatewayHttpListenerPort: form.watch('gatewayHttpListenerPort'),
+      gatewayHttpsListenerPort: form.watch('gatewayHttpsListenerPort'),
+      gatewayPublicPort: form.watch('gatewayPublicPort'),
+      gatewayPublicScheme: form.watch('gatewayPublicScheme'),
+    },
+  ]
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="flex max-h-[min(88vh,52rem)] w-[min(92vw,48rem)] max-w-[92vw] min-w-0 flex-col gap-0 overflow-hidden p-0">
@@ -202,7 +219,32 @@ export function ClusterFormDialog({ editingCluster, open, projects, user, onOpen
                   />
                 )}
               </ProgressiveSection>
-              <ProgressiveSection defaultOpen description={t('clustersPage.resourcePolicyDescription')} title={t('clustersPage.resourcePolicy')}>
+              <ProgressiveSection defaultOpen title={t('deploymentsPage.kubeconfig')}>
+                <Field hint={canEditKubeconfig ? t('clustersPage.kubeconfigHint') : t('clustersPage.kubeconfigRestrictedHint')} label={t('deploymentsPage.kubeconfig')} required={!editingCluster}>
+                  <Controller
+                    control={form.control}
+                    name="kubeconfig"
+                    rules={{ required: !editingCluster }}
+                    render={({ field }) => (
+                      <div className="min-w-0 max-w-full overflow-x-hidden">
+                        <CodeEditor ariaInvalid={Boolean(form.formState.errors.kubeconfig) || kubeconfigInspection.error} className="w-full" height="14rem" language="yaml" placeholder={editingCluster?.kubeconfigSet ? t('common.secretSetPlaceholder') : t('clustersPage.kubeconfigPlaceholder')} readOnly={!canEditKubeconfig} value={field.value ?? ''} onChange={field.onChange} />
+                        {canEditKubeconfig && kubeconfigInspection.error && <p className="mt-2 text-sm text-danger">{t('clustersPage.kubeconfigParseFailed')}</p>}
+                        {canEditKubeconfig && kubeconfigInspection.contexts.length === 1 && <p className="mt-2 text-sm text-muted-foreground">{t('clustersPage.kubeconfigSingleContext', { context: kubeconfigInspection.contexts[0].name })}</p>}
+                        {kubeconfigContextSelectionRequired && (
+                          <div className="mt-3 grid gap-2">
+                            <label className="text-sm font-medium text-foreground" htmlFor="cluster-kubeconfig-context">{t('clustersPage.kubeconfigContextLabel')}</label>
+                            <Select id="cluster-kubeconfig-context" value={effectiveKubeconfigContext} onChange={event => setSelectedKubeconfigContext(event.target.value)}>
+                              {kubeconfigInspection.contexts.map(context => <option key={context.name} value={context.name}>{kubeconfigContextOptionLabel(context)}</option>)}
+                            </Select>
+                            <p className="text-xs text-muted-foreground">{t('clustersPage.kubeconfigContextHint')}</p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  />
+                </Field>
+              </ProgressiveSection>
+              <ProgressiveSection description={t('clustersPage.resourcePolicyDescription')} summary={`${watchedPolicy.cpuRequestPercent}% · ${watchedPolicy.memoryRequestPercent}% · ${watchedPolicy.cpuLimitPercent}% · ${watchedPolicy.memoryLimitPercent}%`} title={t('clustersPage.resourcePolicy')}>
                 <div className="grid gap-3 md:grid-cols-2">
                   <Field error={policyErrors.get('cpuRequestPercent')} hint={t('clustersPage.resourcePercentHint')} label={t('clustersPage.cpuRequestPercent')} required>
                     <Input {...form.register('cpuRequestPercent', { valueAsNumber: true })} inputMode="numeric" max={100} min={0} type="number" />
@@ -218,7 +260,7 @@ export function ClusterFormDialog({ editingCluster, open, projects, user, onOpen
                   </Field>
                 </div>
               </ProgressiveSection>
-              <ProgressiveSection defaultOpen description={t('clustersPage.gatewayExternalAccessConfigDescription')} title={t('clustersPage.gatewayExternalAccessConfig')}>
+              <ProgressiveSection defaultOpen={!editingCluster} description={t('clustersPage.gatewayExternalAccessConfigDescription')} summary={`${watchedGateway.gatewayPublicScheme}://${(watchedGateway.gatewayDomainSuffixesText || '').split(/\s+/).find(Boolean) ?? '-'}:${watchedGateway.gatewayPublicPort}`} title={t('clustersPage.gatewayExternalAccessConfig')}>
                 <div className="grid gap-3 md:grid-cols-2">
                   <Field hint={t('clustersPage.gatewayDomainSuffixesHint')} label={t('clustersPage.gatewayDomainSuffixes')} required>
                     <Textarea {...form.register('gatewayDomainSuffixesText', { required: true })} placeholder={t('clustersPage.gatewayDomainSuffixesPlaceholder')} rows={3} />
@@ -254,7 +296,7 @@ export function ClusterFormDialog({ editingCluster, open, projects, user, onOpen
                   </Field>
                 </div>
               </ProgressiveSection>
-              <ProgressiveSection defaultOpen description={t('clustersPage.gatewayInternalConfigDescription')} title={t('clustersPage.gatewayInternalConfig')}>
+              <ProgressiveSection description={t('clustersPage.gatewayInternalConfigDescription')} summary={`${watchedGateway.gatewayControllerType} · ${watchedGateway.gatewayHttpListenerPort} / ${watchedGateway.gatewayHttpsListenerPort}`} title={t('clustersPage.gatewayInternalConfig')}>
                 <div className="grid gap-3 md:grid-cols-2">
                   <Field hint={t('clustersPage.gatewayControllerTypeHint')} label={t('clustersPage.gatewayControllerType')}>
                     <Select {...form.register('gatewayControllerType')}>
@@ -294,31 +336,6 @@ export function ClusterFormDialog({ editingCluster, open, projects, user, onOpen
                 <Field hint={t('clustersPage.gatewayTrustedProxyCIDRsHint')} label={t('clustersPage.gatewayTrustedProxyCIDRs')}><Textarea {...form.register('gatewayTrustedProxyCIDRs')} placeholder={t('clustersPage.gatewayTrustedProxyCIDRsPlaceholder')} rows={3} /></Field>
                 <Field hint={t('clustersPage.gatewayDefaultRequestHeadersHint')} label={t('clustersPage.gatewayDefaultRequestHeaders')}><Textarea {...form.register('gatewayDefaultRequestHeaders')} placeholder={t('gatewayRoutesPage.headersPlaceholder')} rows={4} /></Field>
                 <Field hint={t('clustersPage.gatewayDefaultResponseHeadersHint')} label={t('clustersPage.gatewayDefaultResponseHeaders')}><Textarea {...form.register('gatewayDefaultResponseHeaders')} placeholder={t('gatewayRoutesPage.headersPlaceholder')} rows={4} /></Field>
-              </ProgressiveSection>
-              <ProgressiveSection defaultOpen description={canEditKubeconfig ? t('clustersPage.kubeconfigHint') : t('clustersPage.kubeconfigRestrictedHint')} title={t('deploymentsPage.kubeconfig')}>
-                <Field hint={canEditKubeconfig ? t('clustersPage.kubeconfigHint') : t('clustersPage.kubeconfigRestrictedHint')} label={t('deploymentsPage.kubeconfig')} required={!editingCluster}>
-                  <Controller
-                    control={form.control}
-                    name="kubeconfig"
-                    rules={{ required: !editingCluster }}
-                    render={({ field }) => (
-                      <div className="min-w-0 max-w-full overflow-x-hidden">
-                        <CodeEditor ariaInvalid={Boolean(form.formState.errors.kubeconfig) || kubeconfigInspection.error} className="w-full" height="22rem" language="yaml" placeholder={editingCluster?.kubeconfigSet ? t('common.secretSetPlaceholder') : t('clustersPage.kubeconfigPlaceholder')} readOnly={!canEditKubeconfig} value={field.value ?? ''} onChange={field.onChange} />
-                        {canEditKubeconfig && kubeconfigInspection.error && <p className="mt-2 text-sm text-danger">{t('clustersPage.kubeconfigParseFailed')}</p>}
-                        {canEditKubeconfig && kubeconfigInspection.contexts.length === 1 && <p className="mt-2 text-sm text-muted-foreground">{t('clustersPage.kubeconfigSingleContext', { context: kubeconfigInspection.contexts[0].name })}</p>}
-                        {kubeconfigContextSelectionRequired && (
-                          <div className="mt-3 grid gap-2">
-                            <label className="text-sm font-medium text-foreground" htmlFor="cluster-kubeconfig-context">{t('clustersPage.kubeconfigContextLabel')}</label>
-                            <Select id="cluster-kubeconfig-context" value={effectiveKubeconfigContext} onChange={event => setSelectedKubeconfigContext(event.target.value)}>
-                              {kubeconfigInspection.contexts.map(context => <option key={context.name} value={context.name}>{kubeconfigContextOptionLabel(context)}</option>)}
-                            </Select>
-                            <p className="text-xs text-muted-foreground">{t('clustersPage.kubeconfigContextHint')}</p>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  />
-                </Field>
               </ProgressiveSection>
             </div>
           </div>

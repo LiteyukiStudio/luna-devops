@@ -1,3 +1,5 @@
+import type { ITheme } from '@xterm/xterm'
+import type { TerminalConnectionState } from './use-terminal-connection'
 import type { Release } from '@/api'
 import { FitAddon } from '@xterm/addon-fit'
 import { Terminal as XTerm } from '@xterm/xterm'
@@ -5,6 +7,7 @@ import { useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { releaseRuntimeTerminalUrl } from '@/api'
 import { createTracedWebSocket } from '@/lib/telemetry'
+import { cn } from '@/lib/utils'
 import {
   encodeRuntimeTerminalInput,
   parseRuntimeTerminalControl,
@@ -20,6 +23,7 @@ export function RuntimeTerminalPanel({
   release,
   ready,
   socketUrl,
+  onConnectionChange,
 }: {
   container: string
   fullscreen?: boolean
@@ -28,6 +32,8 @@ export function RuntimeTerminalPanel({
   ready?: boolean
   release: Release | null
   socketUrl?: string
+  /** 必须是稳定引用（例如 useState 的 setter），否则会触发重连。 */
+  onConnectionChange?: (state: TerminalConnectionState) => void
 }) {
   const { t } = useTranslation()
   const terminalRef = useRef<HTMLDivElement | null>(null)
@@ -35,36 +41,20 @@ export function RuntimeTerminalPanel({
   useEffect(() => {
     const terminalSocketUrl = socketUrl ?? (release && projectId ? releaseRuntimeTerminalUrl(projectId, release.id, container, pod) : '')
     const shouldConnect = ready ?? Boolean(release && projectId)
-    if (!shouldConnect || !terminalSocketUrl || !terminalRef.current)
+    if (!shouldConnect || !terminalSocketUrl || !terminalRef.current) {
+      onConnectionChange?.('idle')
       return
+    }
+    onConnectionChange?.('connecting')
 
     const terminal = new XTerm({
-      cursorBlink: true,
+      cursorBlink: !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches,
       convertEol: true,
       fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
       fontSize: 13,
       scrollback: 3000,
-      theme: {
-        background: '#020617',
-        black: '#020617',
-        blue: '#60a5fa',
-        brightBlack: '#475569',
-        brightBlue: '#93c5fd',
-        brightCyan: '#67e8f9',
-        brightGreen: '#86efac',
-        brightMagenta: '#f0abfc',
-        brightRed: '#fca5a5',
-        brightWhite: '#f8fafc',
-        brightYellow: '#fde68a',
-        cursor: '#34d399',
-        cyan: '#22d3ee',
-        foreground: '#e2e8f0',
-        green: '#22c55e',
-        magenta: '#d946ef',
-        red: '#ef4444',
-        white: '#cbd5e1',
-        yellow: '#facc15',
-      },
+      lineHeight: 1.25,
+      theme: terminalThemeFromTokens(terminalRef.current),
     })
     const fitAddon = new FitAddon()
     terminal.loadAddon(fitAddon)
@@ -73,6 +63,7 @@ export function RuntimeTerminalPanel({
     terminal.focus()
 
     let socket: WebSocket | undefined
+    let failed = false
 
     const sendResize = () => {
       if (!socket || socket.readyState !== WebSocket.OPEN)
@@ -94,6 +85,7 @@ export function RuntimeTerminalPanel({
 
     const handleOpen = () => {
       fitAndResize()
+      onConnectionChange?.('connected')
       terminal.writeln(t('deploymentsPage.webConsoleConnected'))
     }
     const handleMessage = (event: MessageEvent) => {
@@ -107,10 +99,14 @@ export function RuntimeTerminalPanel({
       terminal.write(new Uint8Array(event.data))
     }
     const handleClose = () => {
+      if (!failed)
+        onConnectionChange?.('disconnected')
       terminal.writeln('')
       terminal.writeln(t('deploymentsPage.webConsoleDisconnected'))
     }
     const handleError = () => {
+      failed = true
+      onConnectionChange?.('failed')
       terminal.writeln('')
       terminal.writeln(t('deploymentsPage.webConsoleConnectionFailed'))
     }
@@ -137,11 +133,43 @@ export function RuntimeTerminalPanel({
       socket?.close()
       terminal.dispose()
     }
-  }, [container, pod, projectId, ready, release, socketUrl, t])
+  }, [container, onConnectionChange, pod, projectId, ready, release, socketUrl, t])
 
   return (
-    <div className={fullscreen ? 'flex h-full min-h-0 p-3 pt-2' : 'p-3'}>
-      <div ref={terminalRef} className={fullscreen ? 'min-h-0 flex-1 overflow-hidden rounded border border-zinc-800 bg-slate-950 p-2' : 'h-[28rem] overflow-hidden rounded border border-zinc-800 bg-slate-950 p-2'} />
+    <div className={cn('bg-terminal p-3', fullscreen && 'flex h-full min-h-0')}>
+      <div ref={terminalRef} className={fullscreen ? 'min-h-0 flex-1 overflow-hidden' : 'h-[28rem] overflow-hidden'} />
     </div>
   )
+}
+
+/** xterm 只接受具体颜色值，从终端 token 读取，保持与日志查看器一致。 */
+function terminalThemeFromTokens(element: HTMLElement): ITheme {
+  const styles = getComputedStyle(element)
+  const token = (name: string) => styles.getPropertyValue(`--terminal-${name}`).trim() || undefined
+  const background = token('background')
+  const foreground = token('foreground')
+  const muted = token('muted')
+  return {
+    background,
+    foreground,
+    cursor: token('cursor'),
+    cursorAccent: background,
+    selectionBackground: token('selection'),
+    black: background,
+    brightBlack: muted,
+    red: token('error'),
+    brightRed: token('error'),
+    green: token('success'),
+    brightGreen: token('success'),
+    yellow: token('warning'),
+    brightYellow: token('warning'),
+    blue: token('info'),
+    brightBlue: token('info'),
+    magenta: token('magenta'),
+    brightMagenta: token('magenta'),
+    cyan: token('cyan'),
+    brightCyan: token('cyan'),
+    white: muted,
+    brightWhite: foreground,
+  }
 }

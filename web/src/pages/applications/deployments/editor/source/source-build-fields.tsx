@@ -1,4 +1,3 @@
-import type { ReactNode } from 'react'
 import type { DeploymentTargetFormValues } from '../deployment-target-form'
 import type { ArtifactRegistry, RepositoryBinding } from '@/api'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -12,36 +11,37 @@ import { TargetImageRefInput } from '@/components/common/target-image-ref-input'
 import { UnitInput } from '@/components/common/unit-input'
 import { Input } from '@/components/ui/input'
 import { NativeSelect } from '@/components/ui/native-select'
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
+import { RadioGroup } from '@/components/ui/radio-group'
 import { Textarea } from '@/components/ui/textarea'
 import { useBillingDisplay } from '@/lib/billing-display'
 import { registryInputPrefix, registryOptionLabel } from '@/pages/applications/application-config-utils'
-import { AdvancedOptions, EditorGroup, EditorSection } from '../deployment-target-editor-fields'
+import { ChoiceCard, EditorGroup } from '../deployment-target-editor-fields'
 import { useFieldError } from '../deployment-target-editor-utils'
-import { changedFieldCount, deploymentTargetSectionFields } from '../deployment-target-form'
+import { deploymentTargetAdvancedItemFields, deploymentTargetSectionFields } from '../deployment-target-form'
 import { dockerfileBuildDefaults, repositoryBuildOptionsQuery, targetImageTemplateQuery } from '../deployment-target-queries'
 import { cpuUnits, memoryUnits } from '../resource-units'
-import { ApplicationBuildTemplateFields } from '../source/application-build-template-fields'
-import { RepositoryBindingField } from '../source/repository-binding-field'
+import { ApplicationBuildTemplateFields } from './application-build-template-fields'
+import { RepositoryBindingField } from './repository-binding-field'
 
-export function SourceBuildSection({ applicationId, buildEnvironmentAvailable, editing, projectId, registries, repositoryBindings }: {
+// 来源类型决定这些字段是否必填。
+const sourceDependentFields = [...deploymentTargetSectionFields.basics, ...deploymentTargetAdvancedItemFields.build]
+
+/** 来源与构建方式：基本信息分区中的常用部分；构建目录、参数、规格与变量收在高级分区。 */
+export function SourceFields({ applicationId, editing, projectId, registries, repositoryBindings }: {
   applicationId: string
-  buildEnvironmentAvailable: boolean
   editing: boolean
   projectId: string
   registries: ArtifactRegistry[]
   repositoryBindings: RepositoryBinding[]
 }) {
-  const { i18n, t } = useTranslation()
+  const { t } = useTranslation()
   const queryClient = useQueryClient()
-  const billing = useBillingDisplay(i18n.language)
   const { control, getValues, register, setValue, trigger } = useFormContext<DeploymentTargetFormValues>()
   const { dirtyFields, isSubmitted } = useFormState({ control, name: 'targetImageRef' })
-  const [sourceType, repositoryBindingId, registryId, buildDefinitionMode, stage, targetName, buildCpuRequest, buildMemoryRequest] = useWatch({
+  const [sourceType, repositoryBindingId, registryId, buildDefinitionMode, stage, targetName] = useWatch({
     control,
-    name: ['sourceType', 'repositoryBindingId', 'targetRegistryId', 'buildDefinitionMode', 'stage', 'name', 'buildCpuRequest', 'buildMemoryRequest'],
+    name: ['sourceType', 'repositoryBindingId', 'targetRegistryId', 'buildDefinitionMode', 'stage', 'name'],
   })
-  const advancedValues = useWatch({ control, name: ['buildDirectory', 'buildArgs', 'buildCpuRequest', 'buildMemoryRequest', 'buildTimeoutMinutes'] })
   const repository = sourceType === 'repository'
   const binding = repositoryBindings.find(item => item.id === repositoryBindingId)
   const buildOptionsQuery = repositoryBuildOptionsQuery(binding)
@@ -62,14 +62,6 @@ export function SourceBuildSection({ applicationId, buildEnvironmentAvailable, e
   const targetImageRefError = useFieldError('targetImageRef')
   const dockerfileError = useFieldError('dockerfilePath')
   const buildContextError = useFieldError('buildContext')
-  const buildTimeoutError = useFieldError('buildTimeoutMinutes')
-  const advancedCount = changedFieldCount({
-    buildDirectory: advancedValues[0],
-    buildArgs: advancedValues[1],
-    buildCpuRequest: advancedValues[2],
-    buildMemoryRequest: advancedValues[3],
-    buildTimeoutMinutes: advancedValues[4],
-  }, ['buildDirectory', 'buildArgs', 'buildCpuRequest', 'buildMemoryRequest', 'buildTimeoutMinutes'])
 
   const applyDockerfile = (dockerfilePath: string, nextDirectories: string[], nextPorts: Record<string, number[]>, options: { includePath: boolean }) => {
     const defaults = dockerfileBuildDefaults(dockerfilePath, nextDirectories, nextPorts)
@@ -95,7 +87,7 @@ export function SourceBuildSection({ applicationId, buildEnvironmentAvailable, e
   }
 
   return (
-    <EditorSection description={t('deploymentTargetEditor.sections.sourceDescription')} section="source" title={t('deploymentTargetEditor.sections.source')}>
+    <>
       <EditorGroup description={t('apps.sourceTypeHint')} title={t('apps.sourceType')}>
         <Controller
           control={control}
@@ -103,17 +95,17 @@ export function SourceBuildSection({ applicationId, buildEnvironmentAvailable, e
           render={({ field }) => (
             <RadioGroup
               aria-label={t('apps.sourceType')}
-              className="grid gap-3 sm:grid-cols-2"
+              className="grid gap-2 sm:grid-cols-2"
               value={field.value}
               onValueChange={(value) => {
                 field.onChange(value === 'image' ? 'image' : 'repository')
                 // 来源类型决定哪些字段必填；提交过后切换来源要立即刷新该分区的校验结果。
                 if (isSubmitted)
-                  void trigger([...deploymentTargetSectionFields.source])
+                  void trigger(sourceDependentFields)
               }}
             >
-              <SourceOption description={t('deploymentTargetEditor.sourceRepositoryDescription')} icon={<GitBranch className="size-4" />} label={t('apps.repository')} value="repository" />
-              <SourceOption description={t('deploymentTargetEditor.sourceImageDescription')} icon={<Box className="size-4" />} label={t('apps.image')} value="image" />
+              <ChoiceCard description={t('deploymentTargetEditor.sourceRepositoryDescription')} icon={<GitBranch className="size-4" />} id="deployment-target-source-repository" label={t('apps.repository')} value="repository" />
+              <ChoiceCard description={t('deploymentTargetEditor.sourceImageDescription')} icon={<Box className="size-4" />} id="deployment-target-source-image" label={t('apps.image')} value="image" />
             </RadioGroup>
           )}
         />
@@ -203,96 +195,95 @@ export function SourceBuildSection({ applicationId, buildEnvironmentAvailable, e
               )}
             </FormField>
           </div>
-          <AdvancedOptions configuredCount={advancedCount} fields={['buildDirectory', 'buildArgs', 'buildCpuRequest', 'buildMemoryRequest', 'buildTimeoutMinutes', 'buildVariables', 'buildSecrets']} title={t('deploymentTargetEditor.buildAdvanced')}>
-            <div className="grid gap-4 md:grid-cols-2">
-              <FormField hint={t('buildsPage.buildDirectoryHint')} label={t('buildsPage.buildDirectory')}>
-                {fieldControl => (
-                  <div>
-                    <Input {...register('buildDirectory')} {...fieldControl} list="deployment-target-build-directory-options" placeholder={t('buildsPage.buildDirectoryPlaceholder')} />
-                    <datalist id="deployment-target-build-directory-options">
-                      {directories.filter(option => option !== '.').map(option => <option key={option} value={option} />)}
-                    </datalist>
-                  </div>
-                )}
-              </FormField>
-              <FormField hint={t('buildsPage.buildArgsHint')} label={t('buildsPage.buildArgs')}>
-                <Textarea {...register('buildArgs')} className="min-h-20 font-mono text-sm" placeholder={t('deploymentTargetEditor.examplePlaceholder', { value: t('buildsPage.buildArgsPlaceholder') })} />
-              </FormField>
-            </div>
-            <div className="grid gap-4 md:grid-cols-3">
-              <FormField label={t('deploymentsPage.buildCpuRequest')} required>
-                {fieldControl => (
-                  <Controller
-                    control={control}
-                    name="buildCpuRequest"
-                    render={({ field }) => <UnitInput unitSelectLabel={t('deploymentTargetEditor.cpuUnitLabel')} units={cpuUnits(t)} inputProps={fieldControl} value={field.value} onChange={field.onChange} />}
-                  />
-                )}
-              </FormField>
-              <FormField label={t('deploymentsPage.buildMemoryRequest')} required>
-                {fieldControl => (
-                  <Controller
-                    control={control}
-                    name="buildMemoryRequest"
-                    render={({ field }) => <UnitInput unitSelectLabel={t('deploymentTargetEditor.memoryUnitLabel')} units={memoryUnits} inputProps={fieldControl} value={field.value} onChange={field.onChange} />}
-                  />
-                )}
-              </FormField>
-              <FormField error={buildTimeoutError} hint={t('deploymentsPage.buildTimeoutHint')} label={t('deploymentsPage.buildTimeoutMinutes')} required>
-                <Input {...register('buildTimeoutMinutes', { valueAsNumber: true })} inputMode="numeric" max={1440} min={1} type="number" />
-              </FormField>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              {t('deploymentsPage.buildEstimatedPrice', { price: billing.formatAmountWithUnit(billing.buildMinuteCost(buildCpuRequest, buildMemoryRequest)) })}
-            </p>
-            <div className="grid gap-3">
-              <div>
-                <h4 className="text-sm font-medium">{t('deploymentsPage.deploymentBuildEnvironment')}</h4>
-                <p className="mt-1 text-xs text-muted-foreground">{t('deploymentsPage.deploymentBuildEnvironmentDescription')}</p>
-              </div>
-              {buildEnvironmentAvailable
-                ? (
-                    <div className="grid gap-3 lg:grid-cols-2">
-                      <Controller
-                        control={control}
-                        name="buildVariables"
-                        render={({ field }) => (
-                          <KeyValueRowsEditor rows={field.value} title={t('buildsPage.variables')} valuePlaceholder={t('buildsPage.variableValuePlaceholder')} onChange={field.onChange} />
-                        )}
-                      />
-                      <Controller
-                        control={control}
-                        name="buildSecrets"
-                        render={({ field }) => (
-                          <KeyValueRowsEditor secret rows={field.value} title={t('buildsPage.secrets')} valuePlaceholder={t('buildsPage.secretValuePlaceholder')} onChange={field.onChange} />
-                        )}
-                      />
-                    </div>
-                  )
-                : <p className="text-sm text-muted-foreground">{t('buildsPage.buildEnvironmentLoadFailed')}</p>}
-            </div>
-          </AdvancedOptions>
         </EditorGroup>
       )}
-    </EditorSection>
+    </>
   )
 }
 
-function SourceOption({ description, icon, label, value }: { description: string, icon: ReactNode, label: string, value: 'image' | 'repository' }) {
-  const id = `deployment-target-source-${value}`
+/** 高级分区中的构建选项：构建目录、参数、构建规格、超时和部署级构建变量。 */
+export function BuildAdvancedFields({ buildEnvironmentAvailable, repositoryBindings }: {
+  buildEnvironmentAvailable: boolean
+  repositoryBindings: RepositoryBinding[]
+}) {
+  const { i18n, t } = useTranslation()
+  const billing = useBillingDisplay(i18n.language)
+  const { control, register } = useFormContext<DeploymentTargetFormValues>()
+  const [repositoryBindingId, buildCpuRequest, buildMemoryRequest] = useWatch({ control, name: ['repositoryBindingId', 'buildCpuRequest', 'buildMemoryRequest'] })
+  const buildOptionsQuery = repositoryBuildOptionsQuery(repositoryBindings.find(item => item.id === repositoryBindingId))
+  const buildOptions = useQuery(buildOptionsQuery)
+  const directories = buildOptions.data?.directories ?? []
+  const buildTimeoutError = useFieldError('buildTimeoutMinutes')
+
   return (
-    <label
-      className="flex min-w-0 cursor-pointer items-start gap-3 rounded-control border border-border bg-background p-4 transition-colors hover:bg-surface-subtle has-[[data-state=checked]]:border-primary has-[[data-state=checked]]:bg-primary/5"
-      htmlFor={id}
-    >
-      <RadioGroupItem className="mt-0.5" id={id} value={value} />
-      <span className="grid min-w-0 gap-1">
-        <span className="flex items-center gap-2 text-sm font-medium text-foreground">
-          <span aria-hidden="true" className="text-muted-foreground">{icon}</span>
-          {label}
-        </span>
-        <span className="text-xs leading-5 text-muted-foreground">{description}</span>
-      </span>
-    </label>
+    <>
+      <div className="grid gap-4 md:grid-cols-2">
+        <FormField hint={t('buildsPage.buildDirectoryHint')} label={t('buildsPage.buildDirectory')}>
+          {fieldControl => (
+            <div>
+              <Input {...register('buildDirectory')} {...fieldControl} list="deployment-target-build-directory-options" placeholder={t('buildsPage.buildDirectoryPlaceholder')} />
+              <datalist id="deployment-target-build-directory-options">
+                {directories.filter(option => option !== '.').map(option => <option key={option} value={option} />)}
+              </datalist>
+            </div>
+          )}
+        </FormField>
+        <FormField hint={t('buildsPage.buildArgsHint')} label={t('buildsPage.buildArgs')}>
+          <Textarea {...register('buildArgs')} className="min-h-20 font-mono text-sm" placeholder={t('deploymentTargetEditor.examplePlaceholder', { value: t('buildsPage.buildArgsPlaceholder') })} />
+        </FormField>
+      </div>
+      <div className="grid gap-4 md:grid-cols-3">
+        <FormField label={t('deploymentsPage.buildCpuRequest')} required>
+          {fieldControl => (
+            <Controller
+              control={control}
+              name="buildCpuRequest"
+              render={({ field }) => <UnitInput unitSelectLabel={t('deploymentTargetEditor.cpuUnitLabel')} units={cpuUnits(t)} inputProps={fieldControl} value={field.value} onChange={field.onChange} />}
+            />
+          )}
+        </FormField>
+        <FormField label={t('deploymentsPage.buildMemoryRequest')} required>
+          {fieldControl => (
+            <Controller
+              control={control}
+              name="buildMemoryRequest"
+              render={({ field }) => <UnitInput unitSelectLabel={t('deploymentTargetEditor.memoryUnitLabel')} units={memoryUnits} inputProps={fieldControl} value={field.value} onChange={field.onChange} />}
+            />
+          )}
+        </FormField>
+        <FormField error={buildTimeoutError} hint={t('deploymentsPage.buildTimeoutHint')} label={t('deploymentsPage.buildTimeoutMinutes')} required>
+          <Input {...register('buildTimeoutMinutes', { valueAsNumber: true })} inputMode="numeric" max={1440} min={1} type="number" />
+        </FormField>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        {t('deploymentsPage.buildEstimatedPrice', { price: billing.formatAmountWithUnit(billing.buildMinuteCost(buildCpuRequest, buildMemoryRequest)) })}
+      </p>
+      <div className="grid gap-3">
+        <div>
+          <h4 className="text-sm font-medium">{t('deploymentsPage.deploymentBuildEnvironment')}</h4>
+          <p className="mt-1 text-xs text-muted-foreground">{t('deploymentsPage.deploymentBuildEnvironmentDescription')}</p>
+        </div>
+        {buildEnvironmentAvailable
+          ? (
+              <div className="grid gap-3 lg:grid-cols-2">
+                <Controller
+                  control={control}
+                  name="buildVariables"
+                  render={({ field }) => (
+                    <KeyValueRowsEditor rows={field.value} title={t('buildsPage.variables')} valuePlaceholder={t('buildsPage.variableValuePlaceholder')} onChange={field.onChange} />
+                  )}
+                />
+                <Controller
+                  control={control}
+                  name="buildSecrets"
+                  render={({ field }) => (
+                    <KeyValueRowsEditor secret rows={field.value} title={t('buildsPage.secrets')} valuePlaceholder={t('buildsPage.secretValuePlaceholder')} onChange={field.onChange} />
+                  )}
+                />
+              </div>
+            )
+          : <p className="text-sm text-muted-foreground">{t('buildsPage.buildEnvironmentLoadFailed')}</p>}
+      </div>
+    </>
   )
 }

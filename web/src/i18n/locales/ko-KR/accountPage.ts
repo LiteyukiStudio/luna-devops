@@ -13,15 +13,8 @@ const accountPage = {
   languageHint: '사용자가 선호하는 인터페이스 언어입니다. 백엔드 오류 문구와 프런트엔드 언어가 가능한 한 동기화됩니다.',
   appearanceModeHint: '라이트, 다크 또는 시스템 따르기를 선택하세요. 이 설정은 즉시 적용되고 현재 브라우저에 저장됩니다.',
   brandColor: '컬러 테마',
-  brandColorHint: '멀티 컬러 테마는 주 색상, 보조 색상, 강조 색상을 조합합니다. 단색 테마는 통일된 색상을 유지합니다. 기본값은 플랫폼 설정을 따릅니다.',
+  brandColorHint: '버튼, 링크, 선택 상태, 포커스 링에 사용하는 단색 주 색상입니다. 기본값은 플랫폼 설정을 따릅니다.',
   followPlatformBrandColor: '플랫폼 따르기',
-  interfaceStyle: '인터페이스 스타일',
-  interfaceStyleHint: '기본값은 플랫폼을 따릅니다. 미니멀 모드는 중성적인 흰색 또는 회색 캔버스를 사용하고, 표준 모드는 테마 색상의 연한 배경을 유지합니다.',
-  followPlatformInterfaceStyle: '플랫폼 따르기',
-  interfaceStyles: {
-    themed: '표준 모드',
-    minimal: '미니멀 모드',
-  },
   saveProfile: '개인 설정 저장',
   profileSaved: '개인 설정이 저장되었습니다',
   notifications: {

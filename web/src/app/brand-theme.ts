@@ -5,22 +5,8 @@ export const siteBrandColorPresetStorageKey = 'luna-devops-site-brand-color-pres
 export const activeThemeUserStorageKey = 'luna-devops-theme-active-user'
 export const userBrandColorPresetStoragePrefix = 'luna-devops-user-brand-color-preset:'
 
-export const compositeBrandColorPresets = ['aurora', 'harbor', 'sunset', 'botanical', 'meadow', 'citrus'] as const
-
 // This catalog is both the accepted contract and the settings picker source.
-export const brandColorPresets = [
-  ...compositeBrandColorPresets,
-  'gold',
-  'orange',
-  'red',
-  'pink',
-  'violet',
-  'blue',
-  'cyan',
-  'teal',
-  'green',
-  'lime',
-] as const
+export const brandColorPresets = ['blue', 'violet', 'teal', 'green', 'orange', 'pink'] as const
 
 export type BrandColorPreset = typeof brandColorPresets[number]
 export type UserBrandColorPreference = BrandColorPreset | ''
@@ -71,33 +57,6 @@ export function clearActiveUserBrandColorPreference() {
 
 export function userBrandColorPresetStorageKey(userId: string) {
   return `${userBrandColorPresetStoragePrefix}${userId}`
-}
-
-export function brandColorUsesDarkForeground(preset: BrandColorPreset) {
-  return preset === 'lime'
-}
-
-export function brandThemeSwatchColors(preset: BrandColorPreset): readonly [string, string, string, string] | null {
-  switch (preset) {
-    case 'aurora':
-      return ['#3b6fe8', '#7867d9', '#2e9eaa', '#e7a63a']
-    case 'harbor':
-      return ['#147d73', '#47709b', '#ce8a62', '#e7a63a']
-    case 'sunset':
-      return ['#eb7a53', '#f7d44c', '#7c5cc4', '#d84a8c']
-    case 'botanical':
-      return ['#0d4336', '#ce8a62', '#147d73', '#eb7a53']
-    case 'meadow':
-      return ['#5cab8c', '#bdee63', '#86ead4', '#f7d44c']
-    case 'citrus':
-      return ['#eb7a53', '#f7d44c', '#f6ecc9', '#e5484d']
-    default:
-      return null
-  }
-}
-
-export function brandThemeSwatchBackground(preset: BrandColorPreset) {
-  return brandThemeSwatchColors(preset)?.[0] ?? `var(--${preset}-9)`
 }
 
 function readActiveUserBrandColorPreference() {

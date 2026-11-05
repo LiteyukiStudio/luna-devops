@@ -53,6 +53,6 @@ function statusToneClassName(tone: StatusTone) {
     case 'info':
       return 'border-info-border bg-info-subtle text-info'
     case 'neutral':
-      return 'border-border bg-muted text-muted-foreground'
+      return 'border-border bg-muted text-foreground'
   }
 }

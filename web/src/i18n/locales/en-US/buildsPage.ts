@@ -48,7 +48,6 @@ const buildsPage = {
   deleteBuildDescription: 'This build run record, job logs, and hook run records will be deleted. Pushed images and existing releases will not be deleted.',
   deleted: 'Build record deleted',
   runActions: 'Build run actions',
-  viewLogsStream: 'View logs/log stream',
   logsTitle: 'Build logs #{{id}}',
   logsStreaming: 'Log stream refreshing',
   logsUpdated: 'Logs loaded',
@@ -57,7 +56,6 @@ const buildsPage = {
   failureReasonUnavailable: 'The latest job did not record a clear failure reason. Open logs to inspect the last output.',
   failureReasonNoJob: 'This build run is not linked to a build job. Refresh and try again.',
   workflowRunCount: '{{count}} build runs',
-  applicationRunsDescription: 'Showing build records, branches, images, and latest job status for this application.',
   filterRuns: 'Filter build runs',
   eventFilter: 'Event',
   statusFilter: 'Status',
@@ -75,9 +73,6 @@ const buildsPage = {
   runTitleWithConfig: '{{title}}: {{config}}',
   triggeredBy: 'triggered by {{actor}}',
   committedBy: '{{actor}}',
-  commitAction: 'commit',
-  latestJobSummary: 'Job #{{id}}, {{attempts}} attempts',
-  noBuildJob: 'No build job yet',
   jobCount: '{{count}} jobs',
   emptyRuns: 'No build runs',
   targetRegistry: 'Target registry',
@@ -128,6 +123,11 @@ const buildsPage = {
     lost: 'Lost',
     timeout: 'Timed out',
   },
+  viewLogs: 'Logs',
+  copyImageRef: 'Copy image reference {{image}}',
+  sourceColumn: 'Build',
+  imageColumn: 'Image',
+  timeColumn: 'Time',
 }
 
 export default buildsPage

@@ -117,12 +117,6 @@ var configDefinitions = []configDefinition{
 		Options: brandColorPresetOptions,
 	},
 	{
-		Key:     siteMinimalModeDefaultKey,
-		Type:    "boolean",
-		Public:  true,
-		Default: "false",
-	},
-	{
 		Key:     "site.operationsDashboardUrl",
 		Type:    "string",
 		Public:  false,

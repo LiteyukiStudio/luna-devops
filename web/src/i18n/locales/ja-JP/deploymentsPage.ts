@@ -92,7 +92,6 @@ const deploymentsPage = {
   redeployAffectedRuntimeConfig: '影響を受けるリソースを再デプロイ',
   runtimeConfigRedeployQueued: '{{queued}} 件のデプロイ設定に再デプロイタスクを作成しました。{{skipped}} 件は一時的に再デプロイできません。',
   runtimeData: '実行データ',
-  runtimeDataDescription: 'プロジェクトデータボリュームをコンテナにマウントするか、emptyDir を使用して Pod と同じライフサイクルの一時データを保存します。',
   dataVolumes: 'データボリューム',
   dataVolumesHint: '既存のプロジェクトデータボリュームを選択して永続データに使用するか、emptyDir を使用して一時データを保存します。ボリュームが不要な場合は空のままにしてください。',
   dataVolumeCount: '{{count}} 個のデータボリューム',
@@ -134,7 +133,6 @@ const deploymentsPage = {
   runtimePodMissing: '選択したレプリカは存在しません。別のレプリカを選択してください。',
   runtimePodsUnavailable: '現在レプリカ一覧を取得できません。自動選択は引き続き利用できます。',
   runtimeStatus: '実行状態',
-  releaseStatus: 'リリース状態',
   runtimeStatusCluster: '実行クラスター：{{cluster}}',
   runtimePodCount: '{{count}} 個の Pod',
   runtimeStatuses: {
@@ -144,6 +142,7 @@ const deploymentsPage = {
     'create-container-config-error': 'コンテナ設定エラー',
     'create-container-error': 'コンテナ作成エラー',
     'degraded': '異常',
+    'disabled': '無効',
     'err-image-pull': 'イメージプルエラー',
     'failed': '失敗',
     'image-pull-back-off': 'イメージプルバックオフ',
@@ -175,8 +174,6 @@ const deploymentsPage = {
   webConsoleDisabledHint: '現在のプロジェクトスペースまたはデプロイ設定で Web Console が無効になっています。',
   webConsoleDescription: '現在のリリースに対応する実行コンテナの実際の対話型ターミナルに接続します。この操作は監査ログに記録されます。',
   webConsoleContainerPlaceholder: 'デフォルトコンテナ',
-  fullscreen: '全画面',
-  exitFullscreen: '全画面終了',
   webConsoleConnecting: '実行コンテナターミナルに接続中...',
   webConsoleConnected: '接続しました。shell コマンドを入力してトラブルシューティングを開始します。',
   webConsoleDisconnected: 'ターミナル接続が切断されました。',
@@ -337,6 +334,8 @@ const deploymentsPage = {
     staging: 'ステージング',
     prod: '本番',
   },
+  accessAddress: 'アクセスアドレス',
+  currentVersion: '現在のバージョン',
 }
 
 export default deploymentsPage

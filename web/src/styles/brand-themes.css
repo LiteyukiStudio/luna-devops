@@ -1,37 +1,19 @@
-@import "@radix-ui/colors/gray.css";
-@import "@radix-ui/colors/gray-dark.css";
-@import "@radix-ui/colors/gold.css";
-@import "@radix-ui/colors/gold-dark.css";
-@import "@radix-ui/colors/bronze.css";
-@import "@radix-ui/colors/bronze-dark.css";
-@import "@radix-ui/colors/yellow.css";
-@import "@radix-ui/colors/yellow-dark.css";
-@import "@radix-ui/colors/amber.css";
-@import "@radix-ui/colors/amber-dark.css";
-@import "@radix-ui/colors/orange.css";
-@import "@radix-ui/colors/orange-dark.css";
-@import "@radix-ui/colors/tomato.css";
-@import "@radix-ui/colors/tomato-dark.css";
-@import "@radix-ui/colors/red.css";
-@import "@radix-ui/colors/red-dark.css";
-@import "@radix-ui/colors/pink.css";
-@import "@radix-ui/colors/pink-dark.css";
-@import "@radix-ui/colors/violet.css";
-@import "@radix-ui/colors/violet-dark.css";
 @import "@radix-ui/colors/blue.css";
 @import "@radix-ui/colors/blue-dark.css";
-@import "@radix-ui/colors/cyan.css";
-@import "@radix-ui/colors/cyan-dark.css";
+@import "@radix-ui/colors/violet.css";
+@import "@radix-ui/colors/violet-dark.css";
 @import "@radix-ui/colors/teal.css";
 @import "@radix-ui/colors/teal-dark.css";
-@import "@radix-ui/colors/jade.css";
-@import "@radix-ui/colors/jade-dark.css";
 @import "@radix-ui/colors/green.css";
 @import "@radix-ui/colors/green-dark.css";
-@import "@radix-ui/colors/lime.css";
-@import "@radix-ui/colors/lime-dark.css";
-@import "@radix-ui/colors/mint.css";
-@import "@radix-ui/colors/mint-dark.css";
+@import "@radix-ui/colors/orange.css";
+@import "@radix-ui/colors/orange-dark.css";
+@import "@radix-ui/colors/pink.css";
+@import "@radix-ui/colors/pink-dark.css";
+@import "@radix-ui/colors/red.css";
+@import "@radix-ui/colors/red-dark.css";
+@import "@radix-ui/colors/amber.css";
+@import "@radix-ui/colors/amber-dark.css";
 @import "@radix-ui/colors/sky.css";
 @import "@radix-ui/colors/sky-dark.css";
 
@@ -39,128 +21,33 @@
  * 9-10 solid controls, and 11-12 text. Values stay owned by Radix. */
 :root,
 :root[data-brand-theme="blue"] {
-  --primary-subtle: var(--blue-3);
-  --primary-subtle-hover: var(--blue-4);
-  --primary-subtle-active: var(--blue-5);
-  --primary-border: var(--blue-7);
-  --primary-ring: var(--blue-8);
-  --primary: var(--blue-9);
-  --primary-hover: var(--blue-10);
-  --primary-text: var(--blue-11);
-  --primary-text-strong: var(--blue-12);
-  --primary-foreground: #fff;
+  --primary-subtle: #e2f0ff;
+  --primary-subtle-hover: #cfe5ff;
+  --primary-subtle-active: #b5d7fd;
+  --primary-border: #a6d2ff;
+  --primary-ring: #1f74bf;
+  --primary: #1f74bf;
+  --primary-hover: #0465af;
+  --primary-text: #00569f;
+  --primary-text-strong: #162330;
+  --primary-foreground: #f4f9ff;
   --theme-secondary: var(--primary);
   --theme-supporting: var(--primary);
   --theme-highlight: var(--primary);
 }
 
-:root[data-brand-theme="aurora"] {
-  --primary-subtle: var(--blue-3);
-  --primary-subtle-hover: var(--blue-4);
-  --primary-subtle-active: var(--blue-5);
-  --primary-border: var(--blue-7);
-  --primary-ring: var(--blue-8);
-  --primary: var(--blue-9);
-  --primary-hover: var(--blue-10);
-  --primary-text: var(--blue-11);
-  --primary-text-strong: var(--blue-12);
-  --primary-foreground: #fff;
-  --theme-secondary: var(--violet-9);
-  --theme-supporting: var(--cyan-9);
-  --theme-highlight: var(--amber-9);
-}
-
-:root[data-brand-theme="harbor"] {
-  --primary-subtle: var(--teal-3);
-  --primary-subtle-hover: var(--teal-4);
-  --primary-subtle-active: var(--teal-5);
-  --primary-border: var(--teal-7);
-  --primary-ring: var(--teal-8);
-  --primary: var(--teal-9);
-  --primary-hover: var(--teal-10);
-  --primary-text: var(--teal-11);
-  --primary-text-strong: var(--teal-12);
-  --primary-foreground: #fff;
-  --theme-secondary: var(--blue-9);
-  --theme-supporting: var(--bronze-9);
-  --theme-highlight: var(--amber-9);
-}
-
-:root[data-brand-theme="sunset"] {
-  --primary-subtle: var(--orange-3);
-  --primary-subtle-hover: var(--orange-4);
-  --primary-subtle-active: var(--orange-5);
-  --primary-border: var(--orange-7);
-  --primary-ring: var(--orange-8);
-  --primary: var(--orange-9);
-  --primary-hover: var(--orange-10);
-  --primary-text: var(--orange-11);
-  --primary-text-strong: var(--orange-12);
-  --primary-foreground: #fff;
-  --theme-secondary: var(--amber-9);
-  --theme-supporting: var(--violet-9);
-  --theme-highlight: var(--pink-9);
-}
-
-:root[data-brand-theme="botanical"] {
-  --primary-subtle: var(--jade-3);
-  --primary-subtle-hover: var(--jade-4);
-  --primary-subtle-active: var(--jade-5);
-  --primary-border: var(--jade-7);
-  --primary-ring: var(--jade-8);
-  --primary: var(--jade-9);
-  --primary-hover: var(--jade-10);
-  --primary-text: var(--jade-11);
-  --primary-text-strong: var(--jade-12);
-  --primary-foreground: #fff;
-  --theme-secondary: var(--bronze-9);
-  --theme-supporting: var(--teal-9);
-  --theme-highlight: var(--orange-9);
-}
-
-:root[data-brand-theme="meadow"] {
-  --primary-subtle: var(--mint-3);
-  --primary-subtle-hover: var(--mint-4);
-  --primary-subtle-active: var(--mint-5);
-  --primary-border: var(--mint-7);
-  --primary-ring: var(--mint-8);
-  --primary: var(--jade-9);
-  --primary-hover: var(--jade-10);
-  --primary-text: var(--jade-11);
-  --primary-text-strong: var(--jade-12);
-  --primary-foreground: #fff;
-  --theme-secondary: var(--lime-9);
-  --theme-supporting: var(--mint-9);
-  --theme-highlight: var(--yellow-9);
-}
-
-:root[data-brand-theme="citrus"] {
-  --primary-subtle: var(--orange-3);
-  --primary-subtle-hover: var(--orange-4);
-  --primary-subtle-active: var(--orange-5);
-  --primary-border: var(--orange-7);
-  --primary-ring: var(--orange-8);
-  --primary: var(--orange-9);
-  --primary-hover: var(--orange-10);
-  --primary-text: var(--orange-11);
-  --primary-text-strong: var(--orange-12);
-  --primary-foreground: #fff;
-  --theme-secondary: var(--amber-9);
-  --theme-supporting: var(--yellow-9);
-  --theme-highlight: var(--tomato-9);
-}
-
-:root[data-brand-theme="gold"] {
-  --primary-subtle: var(--gold-3);
-  --primary-subtle-hover: var(--gold-4);
-  --primary-subtle-active: var(--gold-5);
-  --primary-border: var(--gold-7);
-  --primary-ring: var(--gold-8);
-  --primary: var(--gold-9);
-  --primary-hover: var(--gold-10);
-  --primary-text: var(--gold-11);
-  --primary-text-strong: var(--gold-12);
-  --primary-foreground: #fff;
+:root[data-theme="dark"]:not([data-brand-theme]),
+:root[data-theme="dark"][data-brand-theme="blue"] {
+  --primary-subtle: #283747;
+  --primary-subtle-hover: #2f4256;
+  --primary-subtle-active: #36506a;
+  --primary-border: #36506a;
+  --primary-ring: #63b3ff;
+  --primary: #63b3ff;
+  --primary-hover: #80c3ff;
+  --primary-text: #a6d2ff;
+  --primary-text-strong: #e3e8ee;
+  --primary-foreground: #0b1723;
 }
 
 :root[data-brand-theme="orange"] {
@@ -173,19 +60,6 @@
   --primary-hover: var(--orange-10);
   --primary-text: var(--orange-11);
   --primary-text-strong: var(--orange-12);
-  --primary-foreground: #fff;
-}
-
-:root[data-brand-theme="red"] {
-  --primary-subtle: var(--red-3);
-  --primary-subtle-hover: var(--red-4);
-  --primary-subtle-active: var(--red-5);
-  --primary-border: var(--red-7);
-  --primary-ring: var(--red-8);
-  --primary: var(--red-9);
-  --primary-hover: var(--red-10);
-  --primary-text: var(--red-11);
-  --primary-text-strong: var(--red-12);
   --primary-foreground: #fff;
 }
 
@@ -215,19 +89,6 @@
   --primary-foreground: #fff;
 }
 
-:root[data-brand-theme="cyan"] {
-  --primary-subtle: var(--cyan-3);
-  --primary-subtle-hover: var(--cyan-4);
-  --primary-subtle-active: var(--cyan-5);
-  --primary-border: var(--cyan-7);
-  --primary-ring: var(--cyan-8);
-  --primary: var(--cyan-9);
-  --primary-hover: var(--cyan-10);
-  --primary-text: var(--cyan-11);
-  --primary-text-strong: var(--cyan-12);
-  --primary-foreground: #fff;
-}
-
 :root[data-brand-theme="teal"] {
   --primary-subtle: var(--teal-3);
   --primary-subtle-hover: var(--teal-4);
@@ -252,33 +113,4 @@
   --primary-text: var(--green-11);
   --primary-text-strong: var(--green-12);
   --primary-foreground: #fff;
-}
-
-:root[data-brand-theme="lime"] {
-  --primary-subtle: var(--lime-3);
-  --primary-subtle-hover: var(--lime-4);
-  --primary-subtle-active: var(--lime-5);
-  --primary-border: var(--lime-7);
-  --primary-ring: var(--lime-8);
-  --primary: var(--lime-9);
-  --primary-hover: var(--lime-10);
-  --primary-text: var(--lime-11);
-  --primary-text-strong: var(--lime-12);
-  --primary-foreground: var(--gray-12);
-}
-
-:root.dark[data-brand-theme="lime"] {
-  --primary-foreground: var(--gray-1);
-}
-
-.brand-theme-swatch {
-  color: #fff;
-}
-
-.brand-theme-swatch[data-dark-foreground="true"] {
-  color: var(--gray-12);
-}
-
-.dark .brand-theme-swatch[data-dark-foreground="true"] {
-  color: var(--gray-1);
 }

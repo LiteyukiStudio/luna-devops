@@ -34,7 +34,8 @@ describe('progressive section', () => {
     const trigger = screen.getByRole('button', { expanded: false })
     fireEvent.click(trigger)
     expect(screen.getByText('Runtime fields')).toBeVisible()
-    expect(screen.getByText('Configure runtime resources')).toBeVisible()
+    // 说明只在问号 tooltip 里，展开后也不铺在标题下
+    expect(screen.queryByText('Configure runtime resources')).not.toBeInTheDocument()
     expect(trigger).toHaveAttribute('aria-controls')
     expect(document.getElementById(trigger.getAttribute('aria-controls')!)).toHaveAttribute('data-slot', 'collapsible-content')
     expect(localStorage.getItem('test.progressive.runtime')).toBe('true')

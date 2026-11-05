@@ -24,6 +24,10 @@ export function scrollToDeploymentTargetSection(section: DeploymentTargetEditorS
   document.getElementById(deploymentTargetSectionAnchor(section))?.scrollIntoView({ behavior: preferredScrollBehavior(), block: 'start' })
 }
 
+export function fieldErrorCount(errors: object, fields: readonly FieldPath<DeploymentTargetFormValues>[]) {
+  return fields.filter(field => Boolean(get(errors, field))).length
+}
+
 export function sectionErrorCount(errors: object, section: DeploymentTargetEditorSection) {
-  return deploymentTargetSectionFields[section].filter(field => Boolean(get(errors, field))).length
+  return fieldErrorCount(errors, deploymentTargetSectionFields[section])
 }

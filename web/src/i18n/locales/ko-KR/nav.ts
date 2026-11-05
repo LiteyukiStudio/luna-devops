@@ -3,6 +3,7 @@ const nav = {
   integrations: '연동',
   systemManagement: '시스템 관리',
   openSidebar: '사이드바 열기',
+  toggleSidebar: '사이드바 접기/펼치기',
   breadcrumb: '탐색 경로',
   projectNavigation: '프로젝트 공간 탐색',
   switchProject: '프로젝트 공간 전환',

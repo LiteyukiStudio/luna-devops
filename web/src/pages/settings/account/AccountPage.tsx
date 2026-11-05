@@ -38,7 +38,6 @@ const profileSchema = z.object({
   avatarUrl: z.string().optional(),
   language: z.enum(['zh-CN', 'zh-TW', 'en-US', 'ja-JP', 'ko-KR']),
   brandColorPreset: z.union([z.literal(''), z.enum(brandColorPresets)]),
-  interfaceStyle: z.enum(['', 'minimal', 'themed']),
 })
 
 type ProfileForm = z.infer<typeof profileSchema>
@@ -142,7 +141,6 @@ function ProfilePanel() {
     defaultValues: {
       avatarUrl: user?.avatarUrl ?? '',
       brandColorPreset: user?.brandColorPreset ?? '',
-      interfaceStyle: user?.interfaceStyle ?? '',
       language: user?.language ?? 'zh-CN',
       name: user?.name ?? '',
     },
@@ -154,7 +152,6 @@ function ProfilePanel() {
     form.reset({
       avatarUrl: user.avatarUrl ?? '',
       brandColorPreset: user.brandColorPreset ?? '',
-      interfaceStyle: user.interfaceStyle ?? '',
       language: user.language,
       name: user.name,
     })
@@ -215,13 +212,6 @@ function ProfilePanel() {
             value={form.watch('brandColorPreset')}
             onValueChange={nextValue => form.setValue('brandColorPreset', nextValue, { shouldDirty: true, shouldValidate: true })}
           />
-        </Field>
-        <Field error={form.formState.errors.interfaceStyle?.message} hint={t('accountPage.interfaceStyleHint')} label={t('accountPage.interfaceStyle')}>
-          <Select {...form.register('interfaceStyle')} aria-invalid={Boolean(form.formState.errors.interfaceStyle)}>
-            <option value="">{t('accountPage.followPlatformInterfaceStyle')}</option>
-            <option value="themed">{t('accountPage.interfaceStyles.themed')}</option>
-            <option value="minimal">{t('accountPage.interfaceStyles.minimal')}</option>
-          </Select>
         </Field>
         <FormActions>
           <Button disabled={saveProfile.isPending || !form.formState.isValid || !form.formState.isDirty} type="submit">

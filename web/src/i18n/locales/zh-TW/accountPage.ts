@@ -13,15 +13,8 @@ const accountPage = {
   languageHint: '使用者偏好的介面語言，後端錯誤文案和前端語言會盡量保持同步。',
   appearanceModeHint: '選擇亮色、暗色或跟隨系統；該偏好會立即應用並儲存在當前瀏覽器。',
   brandColor: '配色主題',
-  brandColorHint: '多色主題組合主色、輔助色和強調色；單色主題保持統一色相。預設跟隨平臺設定。',
+  brandColorHint: '用於按鈕、連結、選中態和焦點環的單色主色；預設跟隨平臺設定。',
   followPlatformBrandColor: '跟隨平臺',
-  interfaceStyle: '介面風格',
-  interfaceStyleHint: '預設跟隨平臺；簡約模式使用中性白色或灰色畫布，標準模式保留主題色淡背景。',
-  followPlatformInterfaceStyle: '跟隨平臺',
-  interfaceStyles: {
-    themed: '標準模式',
-    minimal: '簡約模式',
-  },
   saveProfile: '儲存個人設定',
   profileSaved: '個人設定已儲存',
   notifications: {

@@ -16,6 +16,8 @@ describe('brand theme presets', () => {
     expect(normalizeUserBrandColorPreference('')).toBe('')
     expect(normalizeUserBrandColorPreference(' Teal ')).toBe('teal')
     expect(normalizeUserBrandColorPreference(' Ruby ')).toBe('')
+    expect(normalizeUserBrandColorPreference('aurora')).toBe('')
+    expect(normalizeUserBrandColorPreference('lime')).toBe('')
     expect(normalizeUserBrandColorPreference('custom-css')).toBe('')
   })
 
@@ -24,13 +26,13 @@ describe('brand theme presets', () => {
     applyUserBrandColorPreference('usr_theme', 'teal')
     expect(document.documentElement.dataset.brandTheme).toBe('teal')
 
-    applySiteBrandColorPreset('red')
+    applySiteBrandColorPreset('orange')
     expect(document.documentElement.dataset.brandTheme).toBe('teal')
 
     applyUserBrandColorPreference('usr_theme', '')
-    expect(document.documentElement.dataset.brandTheme).toBe('red')
+    expect(document.documentElement.dataset.brandTheme).toBe('orange')
 
     clearActiveUserBrandColorPreference()
-    expect(document.documentElement.dataset.brandTheme).toBe('red')
+    expect(document.documentElement.dataset.brandTheme).toBe('orange')
   })
 })

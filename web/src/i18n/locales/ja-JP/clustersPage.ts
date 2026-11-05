@@ -24,6 +24,7 @@ const clustersPage = {
   runtimeCluster: '実行クラスター',
   runtimeClustersTab: '実行クラスター',
   clusterActions: '{{name}} の操作',
+  resourceActions: '{{name}} の操作',
   deleteStatuses: {
     active: '有効',
     deleting: '削除中',

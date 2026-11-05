@@ -1,4 +1,6 @@
 import type { ClusterResource, DeploymentTarget, RuntimeCluster } from '@/api'
+import type { StatusTone } from '@/components/common/status-tone'
+import { statusToneFor } from '@/components/common/status-tone'
 
 export interface DeploymentRuntimeStatus {
   clusterName?: string
@@ -136,4 +138,41 @@ function normalizeDeploymentRuntimeStatus(status: string) {
   if (value === 'failed')
     return 'failed'
   return value || 'unknown'
+}
+
+const replicaUnobservedStatuses = new Set(['checking', 'disabled', 'not-configured', 'not-found', 'unavailable', 'unknown'])
+
+export interface ReplicaRuntimeState {
+  /** 用于状态文案与语义 tone 的有效状态；未部署时为 `not-deployed`。 */
+  value: string
+  /** 是否有可信的副本观测，可展示 `ready/desired`。 */
+  showReplicas: boolean
+}
+
+/**
+ * 把工作负载观测状态与副本数收敛为一个可展示的有效状态。
+ * ready 但副本未全部就绪时降级为 progressing；期望副本为 0 时视为已缩容。
+ */
+export function effectiveReplicaState({ availableReplicas, deployed = true, desiredReplicas, readyReplicas, status }: {
+  availableReplicas?: number
+  deployed?: boolean
+  desiredReplicas: number
+  readyReplicas: number
+  status: string
+}): ReplicaRuntimeState {
+  const normalized = status.trim().toLowerCase() || 'unknown'
+  if (!deployed || normalized === 'not-deployed')
+    return { showReplicas: false, value: 'not-deployed' }
+  if (normalized === 'scaled-to-zero' || (normalized === 'ready' && desiredReplicas === 0))
+    return { showReplicas: true, value: 'scaled-to-zero' }
+  if (normalized === 'ready' && (readyReplicas < desiredReplicas || (availableReplicas !== undefined && availableReplicas < desiredReplicas)))
+    return { showReplicas: true, value: 'progressing' }
+  return { showReplicas: !replicaUnobservedStatuses.has(normalized), value: normalized }
+}
+
+/** 运行状态到语义 tone：未部署和已缩容不是故障，统一中性色。 */
+export function replicaStateTone(value: string): StatusTone {
+  if (value === 'not-deployed' || value === 'scaled-to-zero')
+    return 'neutral'
+  return statusToneFor(value)
 }

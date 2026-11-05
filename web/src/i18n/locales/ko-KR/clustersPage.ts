@@ -24,6 +24,7 @@ const clustersPage = {
   runtimeCluster: '실행 클러스터',
   runtimeClustersTab: '실행 클러스터',
   clusterActions: '{{name}} 작업',
+  resourceActions: '{{name}} 작업',
   deleteStatuses: {
     active: '활성',
     deleting: '삭제 중',

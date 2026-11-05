@@ -68,7 +68,7 @@ export function RuntimeEnvironmentTable() {
         </div>
       </div>
       {fields.length === 0
-        ? <p className="rounded-control border border-dashed border-border px-3 py-4 text-sm text-muted-foreground">{t('deploymentTargetEditor.environmentEmpty')}</p>
+        ? <p className="text-sm text-muted-foreground">{t('deploymentTargetEditor.environmentEmpty')}</p>
         : (
             <div className="grid gap-2">
               <div aria-hidden="true" className="hidden gap-2 px-1 text-xs font-medium text-muted-foreground xl:grid xl:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_4.5rem_2.25rem]">
@@ -226,7 +226,7 @@ function EnvironmentValueCell({ className, describedBy, index, invalid, name, on
         ? t('deploymentTargetEditor.secretPendingClear')
         : null
     return (
-      <div className={cn('flex h-9 min-w-0 items-center gap-2 rounded-md border border-dashed border-border px-3', className)} aria-label={valueLabel} role="group">
+      <div className={cn('flex h-8 min-w-0 items-center gap-2 rounded-control border border-dashed border-border px-3', className)} aria-label={valueLabel} role="group">
         <span aria-hidden="true" className={cn('font-mono text-sm text-muted-foreground', row.secretAction === 'clear' && 'line-through')}>{secretMask}</span>
         <span className="sr-only">{t('common.secretValueMasked')}</span>
         {status && <StatusBadge tone={row.secretAction === 'clear' ? 'danger' : 'info'}>{status}</StatusBadge>}

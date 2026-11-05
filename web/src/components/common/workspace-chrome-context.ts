@@ -5,6 +5,8 @@ import { createContext } from 'react'
  * 页面仍拥有标题、导航和操作状态，只通过 Portal 将视图投放到正文顶部的页头。
  */
 export interface WorkspaceChromeTargets {
+  /** 页面描述放在正文顶部；标题在面板顶栏里，空间有限。 */
+  description: HTMLElement | null
   registerHeading: () => () => void
   registerTabs: () => () => void
   registerTools: () => () => void

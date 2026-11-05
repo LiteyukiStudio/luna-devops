@@ -1,23 +1,21 @@
 import type { DeploymentTargetFormValues } from '../deployment-target-form'
 import { Plus, X } from 'lucide-react'
-import { useFieldArray, useFormContext, useWatch } from 'react-hook-form'
+import { useFieldArray, useFormContext } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { FormField } from '@/components/common/form-field'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { NativeSelect } from '@/components/ui/native-select'
 import { Textarea } from '@/components/ui/textarea'
-import { AdvancedOptions, EditorGroup } from '../deployment-target-editor-fields'
+import { EditorGroup } from '../deployment-target-editor-fields'
 import { useFieldError } from '../deployment-target-editor-utils'
-import { changedFieldCount, maxServicePorts } from '../deployment-target-form'
+import { maxServicePorts } from '../deployment-target-form'
 
 /** 服务端口表格：第一行是默认端口，列标题可见，每个输入仍有独立可访问名称。 */
 export function ServicePortsFields() {
   const { t } = useTranslation()
-  const { control, register } = useFormContext<DeploymentTargetFormValues>()
+  const { control } = useFormContext<DeploymentTargetFormValues>()
   const { append, fields, remove } = useFieldArray({ control, name: 'servicePorts' })
-  const [serviceSessionAffinity, serviceAnnotations] = useWatch({ control, name: ['serviceSessionAffinity', 'serviceAnnotations'] })
-  const annotationsError = useFieldError('serviceAnnotations')
 
   return (
     <EditorGroup
@@ -46,21 +44,28 @@ export function ServicePortsFields() {
           <ServicePortRow key={field.id} index={index} removable={fields.length > 1} onRemove={() => remove(index)} />
         ))}
       </div>
-      <AdvancedOptions configuredCount={changedFieldCount({ serviceSessionAffinity, serviceAnnotations }, ['serviceSessionAffinity', 'serviceAnnotations'])} fields={['serviceSessionAffinity', 'serviceAnnotations']} title={t('deploymentTargetEditor.serviceAdvanced')}>
-        <div className="grid gap-4 md:grid-cols-2">
-          <FormField hint={t('deploymentsPage.serviceSessionAffinityHint')} label={t('deploymentsPage.serviceSessionAffinity')}>
-            <NativeSelect {...register('serviceSessionAffinity')}>
-              <option value="">{t('deploymentsPage.kubernetesDefaultNone')}</option>
-              <option value="None">{t('deploymentsPage.kubernetesValues.None')}</option>
-              <option value="ClientIP">{t('deploymentsPage.kubernetesValues.ClientIP')}</option>
-            </NativeSelect>
-          </FormField>
-          <FormField error={annotationsError} hint={t('deploymentsPage.serviceAnnotationsHint')} label={t('deploymentsPage.serviceAnnotations')}>
-            <Textarea {...register('serviceAnnotations')} className="min-h-20 font-mono text-sm" placeholder={t('deploymentTargetEditor.examplePlaceholder', { value: t('deploymentsPage.serviceAnnotationsPlaceholder') })} />
-          </FormField>
-        </div>
-      </AdvancedOptions>
     </EditorGroup>
+  )
+}
+
+/** 高级分区中的 Service 选项：会话亲和与注解。 */
+export function ServiceAdvancedFields() {
+  const { t } = useTranslation()
+  const { register } = useFormContext<DeploymentTargetFormValues>()
+  const annotationsError = useFieldError('serviceAnnotations')
+  return (
+    <div className="grid gap-4 md:grid-cols-2">
+      <FormField hint={t('deploymentsPage.serviceSessionAffinityHint')} label={t('deploymentsPage.serviceSessionAffinity')}>
+        <NativeSelect {...register('serviceSessionAffinity')}>
+          <option value="">{t('deploymentsPage.kubernetesDefaultNone')}</option>
+          <option value="None">{t('deploymentsPage.kubernetesValues.None')}</option>
+          <option value="ClientIP">{t('deploymentsPage.kubernetesValues.ClientIP')}</option>
+        </NativeSelect>
+      </FormField>
+      <FormField error={annotationsError} hint={t('deploymentsPage.serviceAnnotationsHint')} label={t('deploymentsPage.serviceAnnotations')}>
+        <Textarea {...register('serviceAnnotations')} className="min-h-20 font-mono text-sm" placeholder={t('deploymentTargetEditor.examplePlaceholder', { value: t('deploymentsPage.serviceAnnotationsPlaceholder') })} />
+      </FormField>
+    </div>
   )
 }
 

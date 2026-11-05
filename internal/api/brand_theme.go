@@ -10,22 +10,12 @@ const (
 
 // The backend accepts the same compact catalog exposed by the settings picker.
 var brandColorPresetOptions = []string{
-	"aurora",
-	"harbor",
-	"sunset",
-	"botanical",
-	"meadow",
-	"citrus",
-	"gold",
-	"orange",
-	"red",
-	"pink",
-	"violet",
 	"blue",
-	"cyan",
+	"violet",
 	"teal",
 	"green",
-	"lime",
+	"orange",
+	"pink",
 }
 
 func normalizeBrandColorPreset(value string) string {

@@ -48,7 +48,6 @@ const buildsPage = {
   deleteBuildDescription: '이 빌드 실행 기록, 작업 로그, 훅 실행 기록이 삭제됩니다. 푸시된 이미지와 기존 릴리스는 삭제되지 않습니다.',
   deleted: '빌드 기록이 삭제되었습니다',
   runActions: '빌드 실행 작업',
-  viewLogsStream: '로그/로그 스트림 보기',
   logsTitle: '빌드 로그 #{{id}}',
   logsStreaming: '로그 스트림 새로고침 중',
   logsUpdated: '로그가 로드되었습니다',
@@ -57,7 +56,6 @@ const buildsPage = {
   failureReasonUnavailable: '최근 작업에 명확한 실패 이유가 기록되지 않았습니다. 로그를 열어 마지막 출력을 확인하세요.',
   failureReasonNoJob: '빌드 실행이 빌드 작업에 연결되지 않았습니다. 새로고침 후 다시 시도하세요.',
   workflowRunCount: '{{count}}회 빌드 실행',
-  applicationRunsDescription: '현재 애플리케이션의 빌드 기록, 브랜치, 이미지, 최근 작업 상태를 표시합니다.',
   filterRuns: '빌드 실행 필터',
   eventFilter: '이벤트',
   statusFilter: '상태',
@@ -75,9 +73,6 @@ const buildsPage = {
   runTitleWithConfig: '{{title}}: {{config}}',
   triggeredBy: '{{actor}}이(가) 트리거',
   committedBy: '{{actor}}',
-  commitAction: '커밋',
-  latestJobSummary: '작업 #{{id}}, {{attempts}}회 시도',
-  noBuildJob: '빌드 작업 없음',
   jobCount: '{{count}}개 작업',
   emptyRuns: '빌드 실행 없음',
   targetRegistry: '대상 레지스트리',
@@ -128,6 +123,11 @@ const buildsPage = {
     lost: '연결 끊김',
     timeout: '시간 초과',
   },
+  viewLogs: '로그',
+  copyImageRef: '이미지 참조 {{image}} 복사',
+  sourceColumn: '빌드',
+  imageColumn: '이미지',
+  timeColumn: '시간',
 }
 
 export default buildsPage

@@ -50,7 +50,7 @@ export function AccessTokenScopeSelector({ items, loading = false, value, onChan
   }
 
   return (
-    <div className="overflow-hidden rounded-md border border-border bg-card">
+    <div className="overflow-hidden rounded-container border border-border bg-card">
       <div className="grid gap-2 border-b border-border p-3">
         <div className="relative min-w-0">
           <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -90,7 +90,7 @@ export function AccessTokenScopeSelector({ items, loading = false, value, onChan
         )}
         {groups.map(group => (
           <section key={group.group} className="border-b border-border last:border-b-0">
-            <div className="flex items-center justify-between bg-muted/60 px-3 py-2 text-xs font-semibold text-muted-foreground">
+            <div className="flex items-center justify-between bg-surface-subtle px-3 py-2 text-xs font-semibold text-muted-foreground">
               <span>{t(`accessTokens.scopeGroups.${group.group}`)}</span>
               <span>{group.items.length}</span>
             </div>

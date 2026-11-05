@@ -1,30 +1,47 @@
-import type { ReactNode } from 'react'
-import type { DashboardActivity, DashboardAttentionItem, DashboardProjectShortcut, DashboardReadinessItem, ResultVisibility } from '@/api'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Activity, AppWindow, ArrowRight, Boxes, Container, FileKey2, FolderKanban, Globe2, Hammer, Pin, Rocket, ScrollText, Server, ShieldAlert, Workflow } from 'lucide-react'
+import type { Application, DashboardActivity, DashboardAttentionItem, DashboardOverview, DashboardProjectShortcut, DashboardReadinessItem, ResultVisibility } from '@/api'
+import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
+import { AppWindow, LayoutTemplate, Pin } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { api } from '@/api'
+import { useSession } from '@/app/session-context'
+import { ApplicationIcon } from '@/components/common/application-icon-picker'
+import { DataList } from '@/components/common/data-list'
 import { EmptyState } from '@/components/common/empty-state'
 import { ErrorState } from '@/components/common/error-state'
 import { OverviewSkeleton } from '@/components/common/loading-states'
-import { MetricGroup, MetricItem } from '@/components/common/metric-group'
+import { PageChromeHeading, PageChromeTools } from '@/components/common/page-chrome'
 import { PageShell } from '@/components/common/page-shell'
 import { Section } from '@/components/common/section'
-import { StatusBadge, StatusValueBadge } from '@/components/common/status-badge'
-import { Surface } from '@/components/common/surface'
+import { StatusValueBadge } from '@/components/common/status-badge'
+import { StatusDot } from '@/components/common/status-dot'
+import { statusToneFor } from '@/components/common/status-tone'
 import { formatCompactDateTime } from '@/components/common/time-format'
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
+import { buttonVariants } from '@/components/ui/button-variants'
 import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
 import { statusRefetchInterval } from '@/lib/polling'
 import { withResultVisibility } from '@/lib/result-visibility'
+import { isPlatformAdmin } from '@/lib/roles'
+import { cn } from '@/lib/utils'
+import { effectiveReplicaState, replicaStateTone } from '@/pages/applications/deployments/operations/application-deployment-runtime-utils'
 
 const dashboardVisibility: ResultVisibility = 'related'
+// 首页只为最常用的项目空间读取应用实时状态，避免一次扇出过多 Kubernetes 观测请求。
+const RECENT_APP_PROJECT_LIMIT = 6
+const RECENT_APP_PAGE_SIZE = 20
+const RECENT_APP_LIMIT = 10
+const ATTENTION_LIMIT = 4
+
+interface RecentApplicationRow {
+  application: Application
+  latestActivity?: DashboardActivity
+  project: DashboardProjectShortcut
+}
 
 export function DashboardPage() {
   const { t } = useTranslation()
-  const queryClient = useQueryClient()
+  const { user } = useSession()
   const dashboard = useQuery({
     ...liveObservationQueryPolicy,
     queryKey: ['dashboard', dashboardVisibility],
@@ -34,18 +51,13 @@ export function DashboardPage() {
       && (query.state.data.summary.activeBuilds > 0 || query.state.data.summary.activeReleases > 0),
     )),
   })
-  const toggleProjectPin = useMutation<void, Error, { pinned: boolean, projectId: string }>({
-    mutationFn: async ({ pinned, projectId }) => {
-      if (pinned)
-        await api.unpinProject(projectId)
-      else
-        await api.pinProject(projectId)
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
-      queryClient.invalidateQueries({ queryKey: ['projects'] })
-      queryClient.invalidateQueries({ queryKey: ['project-pins'] })
-    },
+  const recentProjects = (dashboard.data?.projects ?? []).slice(0, RECENT_APP_PROJECT_LIMIT)
+  const applicationQueries = useQueries({
+    queries: recentProjects.map(project => ({
+      ...liveObservationQueryPolicy,
+      queryKey: ['dashboard-applications', project.id, RECENT_APP_PAGE_SIZE],
+      queryFn: () => api.listApplicationsPage(project.id, { includeRuntime: true, page: 1, pageSize: RECENT_APP_PAGE_SIZE, sortBy: 'createdAt', sortOrder: 'desc' }),
+    })),
   })
 
   if (dashboard.isError) {
@@ -63,218 +75,331 @@ export function DashboardPage() {
 
   const overview = dashboard.data
   const activeTasks = overview.summary.activeBuilds + overview.summary.activeReleases
-  const hasMoreProjects = overview.summary.projects > overview.projects.length
+  const recentApplications = recentApplicationRows(overview, recentProjects, applicationQueries.map(query => query.data?.items ?? []))
+  const applicationsLoading = applicationQueries.some(query => query.isLoading)
+  const applicationsFailed = applicationQueries.some(query => query.isError)
+  const summary = [
+    t('dashboardPage.resourceTotals', { applications: overview.summary.applications, projects: overview.summary.projects }),
+    activeTasks > 0 ? t('dashboardPage.activeTasksTotal', { count: activeTasks }) : '',
+  ].filter(Boolean).join(' · ')
 
   return (
     <PageShell width="full">
+      <PageChromeHeading description={summary} title={t('dashboard')} />
+      <PageChromeTools>
+        <Link className={buttonVariants()} to="/app-templates">
+          <LayoutTemplate size={16} />
+          {t('dashboardPage.startFromTemplate')}
+        </Link>
+      </PageChromeTools>
+
       {overview.attention.length > 0 && <AttentionPanel items={overview.attention} visibility={dashboardVisibility} />}
 
-      <section className="grid gap-3">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <StatusBadge>
-              {overview.summary.attentionItems ? t('dashboardPage.needsAttention') : t('dashboardPage.healthy')}
-            </StatusBadge>
-            <span className="text-sm text-muted-foreground">
-              {t('dashboardPage.resourceTotals', { applications: overview.summary.applications, projects: overview.summary.projects })}
-            </span>
-          </div>
-          {activeTasks > 0 && (
-            <span className="text-xs text-muted-foreground">{t('dashboardPage.activeTasksTotal', { count: activeTasks })}</span>
-          )}
+      <div className="grid min-w-0 items-start gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(20rem,1fr)]">
+        <RecentApplications failed={applicationsFailed} loading={applicationsLoading} rows={recentApplications} visibility={dashboardVisibility} />
+        <div className="grid min-w-0 content-start gap-section">
+          <RecentActivity activities={overview.activities} visibility={dashboardVisibility} />
+          <ProjectShortcuts hasMore={overview.summary.projects > overview.projects.length} projects={overview.projects} visibility={dashboardVisibility} />
+          {isPlatformAdmin(user?.role) && <PlatformReadiness overview={overview} visibility={dashboardVisibility} />}
         </div>
-        <Surface className="overflow-hidden" data-slot="dashboard-overview" variant="bordered">
-          <div className="p-4 sm:p-6">
-            <MetricGroup>
-              <MetricItem emphasis={overview.summary.activeBuilds > 0} href={withResultVisibility('/events?categories=build&statuses=in_progress', dashboardVisibility)} icon={<Hammer size={18} />} label={t('dashboardPage.activeBuilds')} value={overview.summary.activeBuilds} />
-              <MetricItem emphasis={overview.summary.activeReleases > 0} href={withResultVisibility('/events?categories=release&statuses=in_progress', dashboardVisibility)} icon={<Rocket size={18} />} label={t('dashboardPage.activeReleases')} value={overview.summary.activeReleases} />
-              <MetricItem emphasis={overview.summary.attentionItems > 0} href={withResultVisibility('/events?severities=error&severities=warning', dashboardVisibility)} icon={<ShieldAlert size={18} />} label={t('dashboardPage.attentionItems')} tone={overview.summary.attentionItems ? 'danger' : 'neutral'} value={overview.summary.attentionItems} />
-              <MetricItem emphasis={overview.summary.totalClusters > 0} href="/clusters" icon={<Server size={18} />} label={t('dashboardPage.healthyClusters')} tone={overview.summary.healthyClusters < overview.summary.totalClusters ? 'warning' : 'neutral'} value={`${overview.summary.healthyClusters}/${overview.summary.totalClusters}`} />
-            </MetricGroup>
-          </div>
-
-          <div className="grid min-w-0 border-t border-border xl:grid-cols-[minmax(0,2fr)_minmax(18rem,1fr)]">
-            <Section
-              className="min-w-0 p-5 sm:p-6"
-              icon={<ScrollText size={18} />}
-              title={t('dashboardPage.recentActivity')}
-              tools={(
-                <Link className="text-sm font-medium text-muted-foreground transition hover:text-primary-text" to={withResultVisibility('/events', dashboardVisibility)}>
-                  {t('dashboardPage.viewAllEvents')}
-                </Link>
-              )}
-            >
-              <div className={overview.activities.length > 5 ? 'max-h-80 overflow-y-auto pr-1' : ''}>
-                {overview.activities.length
-                  ? (
-                      <div className="divide-y divide-border">
-                        {overview.activities.map(activity => <ActivityRow key={activity.id} activity={activity} visibility={dashboardVisibility} />)}
-                      </div>
-                    )
-                  : (
-                      <EmptyState
-                        description={t('dashboardPage.noActivityDescription')}
-                        icon={<Activity className="size-5" />}
-                        title={t('dashboardPage.noActivity')}
-                        variant="plain"
-                      />
-                    )}
-              </div>
-            </Section>
-
-            <Section className="border-t border-border p-5 sm:p-6 xl:border-l xl:border-t-0" icon={<Boxes size={18} />} title={t('dashboardPage.platformReadiness')}>
-              <div className="grid gap-3">
-                <ReadinessRow icon={<Container size={16} />} item={overview.readiness.registries} kind="registries" label={t('registries')} to={withResultVisibility('/registries', dashboardVisibility)} />
-                <ReadinessRow icon={<Server size={16} />} item={overview.readiness.clusters} kind="clusters" label={t('clusters')} to="/clusters" />
-              </div>
-            </Section>
-          </div>
-        </Surface>
-      </section>
-
-      <Section
-        icon={<FolderKanban size={18} />}
-        title={t('dashboardPage.projectShortcuts')}
-        tools={hasMoreProjects && (
-          <Link className="text-sm font-medium text-muted-foreground transition hover:text-primary-text" to={withResultVisibility('/projects', dashboardVisibility)}>
-            {t('dashboardPage.viewAllProjects')}
-          </Link>
-        )}
-      >
-        {overview.projects.length
-          ? (
-              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-                {overview.projects.slice(0, 6).map(project => (
-                  <ProjectShortcutCard
-                    key={project.id}
-                    isPinPending={toggleProjectPin.isPending}
-                    project={project}
-                    visibility={dashboardVisibility}
-                    onTogglePin={(projectId, pinned) => toggleProjectPin.mutate({ pinned, projectId })}
-                  />
-                ))}
-              </div>
-            )
-          : (
-              <EmptyState
-                description={t('dashboardPage.noProjectsDescription')}
-                icon={<FolderKanban className="size-5" />}
-                title={t('projectSpaces.emptyTitle')}
-                variant="plain"
-              />
-            )}
-      </Section>
+      </div>
     </PageShell>
-  )
-}
-
-function ProjectShortcutCard({ isPinPending, onTogglePin, project, visibility }: { isPinPending: boolean, onTogglePin: (projectId: string, pinned: boolean) => void, project: DashboardProjectShortcut, visibility: ResultVisibility }) {
-  const { t } = useTranslation()
-  return (
-    <Link
-      className="group relative grid min-h-36 min-w-0 gap-4 rounded-container bg-surface-raised p-4 transition-colors hover:bg-surface-subtle"
-      to={withResultVisibility(`/projects/${project.id}`, visibility)}
-    >
-      <div className="min-w-0">
-        <span className="block truncate pr-9 font-medium">{project.name}</span>
-        <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{project.description || t('common.noDescription')}</p>
-      </div>
-      <Button
-        aria-label={project.pinned ? t('common.unpinProject') : t('common.pinProject')}
-        className={`absolute right-2 top-2 size-8 transition-opacity ${project.pinned ? 'text-primary-text opacity-100 hover:text-primary-text' : 'opacity-0 group-hover:opacity-100 focus-visible:opacity-100'}`}
-        disabled={isPinPending}
-        size="icon"
-        type="button"
-        variant="ghost"
-        onClick={(event) => {
-          event.preventDefault()
-          event.stopPropagation()
-          onTogglePin(project.id, project.pinned)
-        }}
-      >
-        <Pin className={`size-4 ${project.pinned ? 'fill-current' : ''}`} />
-      </Button>
-      <div className="flex min-w-0 items-end justify-between gap-3 self-end">
-        <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <StatusBadge>{t('dashboardPage.appsCount', { count: project.applicationCount })}</StatusBadge>
-          {project.latestActivity
-            ? <StatusValueBadge labelKeyPrefix="eventsPage.statuses" value={project.latestActivity.status} />
-            : <span className="text-xs text-muted-foreground">{t('dashboardPage.noActivityShort')}</span>}
-          {project.latestActivity && <span className="text-xs text-muted-foreground">{formatCompactDateTime(project.latestActivity.occurredAt)}</span>}
-        </div>
-        <ArrowRight className="size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-primary-text" />
-      </div>
-    </Link>
   )
 }
 
 function AttentionPanel({ items, visibility }: { items: DashboardAttentionItem[], visibility: ResultVisibility }) {
   const { t } = useTranslation()
-  const hasError = items.some(item => item.severity === 'error')
   return (
-    <Alert className="border-0 bg-surface-raised p-group">
-      <ShieldAlert className={hasError ? 'text-danger' : 'text-warning'} size={18} />
-      <AlertTitle>{t('dashboardPage.attention')}</AlertTitle>
-      <AlertDescription className="mt-1 flex min-w-0 flex-row flex-wrap gap-2">
-        {items.slice(0, 4).map(item => (
-          <Link key={item.key} className="group flex min-h-8 min-w-0 max-w-full items-center gap-2 rounded-md bg-surface-subtle px-2 py-1.5 transition-colors hover:bg-surface-inset" to={withResultVisibility(activityTarget(item.latest), visibility)}>
-            <span className="shrink-0 transition-colors group-hover:text-primary-text">{categoryIcon(item.category)}</span>
-            <span className="truncate text-sm text-foreground">{eventTypeLabel(t, item.latest.type)}</span>
-            {item.occurrences > 1 && <StatusBadge>{t('dashboardPage.occurrences', { count: item.occurrences })}</StatusBadge>}
-          </Link>
+    <Section
+      className="border-danger-border"
+      title={t('dashboardPage.attention')}
+      tools={items.length > ATTENTION_LIMIT && (
+        <Link className="text-sm text-primary-text hover:underline" to={withResultVisibility('/events?severities=error&severities=warning', visibility)}>
+          {t('dashboardPage.moreAttention', { count: items.length - ATTENTION_LIMIT })}
+        </Link>
+      )}
+      variant="bordered"
+    >
+      <ul className="-my-3 divide-y divide-border" data-slot="dashboard-attention">
+        {items.slice(0, ATTENTION_LIMIT).map(item => (
+          <li key={item.key} className="flex min-w-0 flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                <StatusDot label={eventTypeLabel(t, item.latest.type)} tone={item.severity === 'error' || item.latest.status === 'failed' ? 'danger' : 'warning'} />
+                {item.occurrences > 1 && <span className="text-xs text-muted-foreground">{t('dashboardPage.occurrences', { count: item.occurrences })}</span>}
+              </div>
+              <p className="mt-0.5 truncate pl-3.5 text-xs text-muted-foreground">
+                {[activityContext(item.latest), item.latest.message, formatCompactDateTime(item.latest.occurredAt)].filter(Boolean).join(' · ')}
+              </p>
+            </div>
+            <Link className={cn(buttonVariants({ size: 'sm', variant: 'outline' }), 'shrink-0 self-start sm:self-center')} to={withResultVisibility(activityTarget(item.latest), visibility)}>
+              {attentionActionLabel(t, item.category)}
+            </Link>
+          </li>
         ))}
-        {items.length > 4 && <Link className="flex min-h-8 items-center px-2 text-sm font-medium text-primary-text" to={withResultVisibility('/events?severities=error&severities=warning', visibility)}>{t('dashboardPage.moreAttention', { count: items.length - 4 })}</Link>}
-      </AlertDescription>
-    </Alert>
+      </ul>
+    </Section>
   )
 }
 
-function ActivityRow({ activity, visibility }: { activity: DashboardActivity, visibility: ResultVisibility }) {
+function RecentApplications({ failed, loading, rows, visibility }: { failed: boolean, loading: boolean, rows: RecentApplicationRow[], visibility: ResultVisibility }) {
+  const { t } = useTranslation()
+  const navigate = useNavigate()
+  const detailPath = (row: RecentApplicationRow) => `/projects/${row.project.id}/apps/${row.application.id}`
+  return (
+    <Section className="content-start" title={t('dashboardPage.recentApps')} variant="bordered">
+      <DataList
+        framed={false}
+        columns={[
+          {
+            key: 'application',
+            header: t('dashboardPage.applicationColumn'),
+            width: 'primary',
+            render: row => (
+              <div className="flex min-w-0 items-center gap-3">
+                <span className="flex size-8 shrink-0 items-center justify-center rounded-control bg-muted text-muted-foreground">
+                  <ApplicationIcon name={row.application.icon} />
+                </span>
+                <div className="min-w-0">
+                  <Link className="block truncate rounded-sm font-medium hover:text-primary-text hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" to={detailPath(row)}>
+                    {row.application.name}
+                  </Link>
+                  <span className="block truncate text-xs text-muted-foreground">{row.project.name}</span>
+                </div>
+              </div>
+            ),
+          },
+          { key: 'status', header: t('dashboardPage.statusColumn'), width: 'status', render: row => <DashboardRuntimeStatus application={row.application} /> },
+          {
+            key: 'activity',
+            header: t('dashboardPage.activityColumn'),
+            width: 'normal',
+            mobile: 'hidden',
+            render: row => row.latestActivity
+              ? (
+                  <div className="grid min-w-0 gap-0.5">
+                    <span className="truncate text-sm">{eventTypeLabel(t, row.latestActivity.type)}</span>
+                    <span className="text-xs text-muted-foreground">{formatCompactDateTime(row.latestActivity.occurredAt)}</span>
+                  </div>
+                )
+              : <span className="text-sm text-muted-foreground">-</span>,
+          },
+        ]}
+        emptyActions={(
+          <Link className={buttonVariants({ variant: 'outline' })} to={withResultVisibility('/projects', visibility)}>
+            {t('dashboardPage.viewAllProjects')}
+          </Link>
+        )}
+        emptyDescription={t('dashboardPage.noRecentAppsDescription')}
+        emptyIcon={<AppWindow className="size-5" />}
+        emptyTitle={t('dashboardPage.noRecentApps')}
+        items={rows}
+        loading={loading && rows.length === 0}
+        rowActionLabel={row => t('dashboardPage.openApplication', { name: row.application.name })}
+        rowKey={row => row.application.id}
+        onRowClick={row => navigate(detailPath(row))}
+      />
+      {failed && <p className="text-xs text-muted-foreground">{t('dashboardPage.appsPartiallyUnavailable')}</p>}
+    </Section>
+  )
+}
+
+function DashboardRuntimeStatus({ application }: { application: Application }) {
+  const { t } = useTranslation()
+  const summary = application.deploymentSummary
+  if (!summary)
+    return <span className="text-sm text-muted-foreground">-</span>
+  const state = effectiveReplicaState({
+    deployed: summary.targets.length > 0,
+    desiredReplicas: summary.desiredReplicas,
+    readyReplicas: summary.readyReplicas,
+    status: summary.status,
+  })
+  return (
+    <StatusDot
+      detail={state.showReplicas ? `${summary.readyReplicas}/${summary.desiredReplicas}` : undefined}
+      label={t(`dashboardPage.runtimeStatuses.${state.value}`, { defaultValue: state.value })}
+      tone={replicaStateTone(state.value)}
+    />
+  )
+}
+
+function RecentActivity({ activities, visibility }: { activities: DashboardActivity[], visibility: ResultVisibility }) {
   const { t } = useTranslation()
   return (
-    <Link className="group grid gap-2 py-3 transition-colors first:pt-0 hover:text-primary-text sm:flex sm:items-center sm:justify-between" to={withResultVisibility(activityTarget(activity), visibility)}>
-      <div className="flex min-w-0 flex-1 items-start gap-3">
-        <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
-          {categoryIcon(activity.category)}
-        </div>
-        <div className="min-w-0">
-          <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <span className="truncate font-medium">{eventTypeLabel(t, activity.type)}</span>
-            <StatusValueBadge labelKeyPrefix="eventsPage.statuses" value={activity.status} />
-          </div>
-          <p className="mt-1 truncate text-sm text-muted-foreground">
-            {activityContext(activity) || activity.message || t('eventsPage.noMessage')}
-          </p>
-        </div>
-      </div>
-      <span className="pl-11 text-xs text-muted-foreground sm:pl-0">{formatCompactDateTime(activity.occurredAt)}</span>
-    </Link>
+    <Section
+      title={t('dashboardPage.recentActivity')}
+      tools={(
+        <Link className="text-sm text-primary-text hover:underline" to={withResultVisibility('/events', visibility)}>
+          {t('dashboardPage.viewAllEvents')}
+        </Link>
+      )}
+      variant="bordered"
+    >
+      {activities.length
+        ? (
+            <ul className="-my-2 divide-y divide-border">
+              {activities.slice(0, 8).map(activity => (
+                <li key={activity.id}>
+                  <Link className="group flex min-w-0 items-start justify-between gap-3 py-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" to={withResultVisibility(activityTarget(activity), visibility)}>
+                    <div className="min-w-0">
+                      <StatusDot label={eventTypeLabel(t, activity.type)} tone={statusToneFor(activity.status)} />
+                      <p className="truncate pl-3.5 text-xs text-muted-foreground group-hover:text-foreground">
+                        {activityContext(activity) || activity.message || t('eventsPage.noMessage')}
+                      </p>
+                    </div>
+                    <span className="shrink-0 text-xs text-muted-foreground">{formatCompactDateTime(activity.occurredAt)}</span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )
+        : (
+            <EmptyState
+              description={t('dashboardPage.noActivityDescription')}
+              title={t('dashboardPage.noActivity')}
+              variant="plain"
+            />
+          )}
+    </Section>
   )
 }
 
-function ReadinessRow({ icon, item, kind, label, to }: { icon: ReactNode, item: DashboardReadinessItem, kind: 'clusters' | 'registries', label: string, to: string }) {
+function ProjectShortcuts({ hasMore, projects, visibility }: { hasMore: boolean, projects: DashboardProjectShortcut[], visibility: ResultVisibility }) {
+  const { t } = useTranslation()
+  const queryClient = useQueryClient()
+  const toggleProjectPin = useMutation<void, Error, { pinned: boolean, projectId: string }>({
+    mutationFn: async ({ pinned, projectId }) => {
+      if (pinned)
+        await api.unpinProject(projectId)
+      else
+        await api.pinProject(projectId)
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+      queryClient.invalidateQueries({ queryKey: ['projects'] })
+      queryClient.invalidateQueries({ queryKey: ['project-pins'] })
+    },
+  })
+  return (
+    <Section
+      title={t('dashboardPage.projectShortcuts')}
+      tools={hasMore && (
+        <Link className="text-sm text-primary-text hover:underline" to={withResultVisibility('/projects', visibility)}>
+          {t('dashboardPage.viewAllProjects')}
+        </Link>
+      )}
+      variant="bordered"
+    >
+      {projects.length
+        ? (
+            <ul className="-my-2 divide-y divide-border">
+              {projects.slice(0, 6).map(project => (
+                <li key={project.id} className="flex min-w-0 items-center justify-between gap-2 py-1.5">
+                  <Link className="min-w-0 flex-1 rounded-sm py-0.5 hover:text-primary-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" to={withResultVisibility(`/projects/${project.id}`, visibility)}>
+                    <span className="block truncate text-sm font-medium">{project.name}</span>
+                    <span className="block text-xs text-muted-foreground">{t('dashboardPage.appsCount', { count: project.applicationCount })}</span>
+                  </Link>
+                  <Button
+                    aria-label={project.pinned ? t('common.unpinProject') : t('common.pinProject')}
+                    aria-pressed={project.pinned}
+                    className={project.pinned ? 'text-primary-text' : 'text-muted-foreground'}
+                    disabled={toggleProjectPin.isPending}
+                    size="icon"
+                    type="button"
+                    variant="ghost"
+                    onClick={() => toggleProjectPin.mutate({ pinned: project.pinned, projectId: project.id })}
+                  >
+                    <Pin className={cn('size-4', project.pinned && 'fill-current')} />
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          )
+        : (
+            <EmptyState
+              description={t('dashboardPage.noProjectsDescription')}
+              title={t('projectSpaces.emptyTitle')}
+              variant="plain"
+            />
+          )}
+    </Section>
+  )
+}
+
+function PlatformReadiness({ overview, visibility }: { overview: DashboardOverview, visibility: ResultVisibility }) {
+  const { t } = useTranslation()
+  return (
+    <Section description={t('dashboardPage.platformReadinessDescription')} title={t('dashboardPage.platformReadiness')} variant="bordered">
+      <dl className="grid gap-2">
+        <ReadinessRow item={overview.readiness.registries} kind="registries" label={t('registries')} to={withResultVisibility('/registries', visibility)} />
+        <ReadinessRow item={overview.readiness.clusters} kind="clusters" label={t('clusters')} to="/clusters" />
+      </dl>
+    </Section>
+  )
+}
+
+function ReadinessRow({ item, kind, label, to }: { item: DashboardReadinessItem, kind: 'clusters' | 'registries', label: string, to: string }) {
   const { t } = useTranslation()
   const value = kind === 'clusters' ? `${item.available}/${item.total}` : item.total
   return (
-    <Link className="group flex items-center justify-between gap-3 rounded-md bg-surface-subtle px-3 py-3 transition-colors hover:bg-surface-inset" to={to}>
-      <div className="flex min-w-0 items-center gap-2 text-sm font-medium">
-        <span className="text-muted-foreground">{icon}</span>
-        <span className="truncate">{label}</span>
-      </div>
-      <div className="flex shrink-0 items-center gap-2">
+    <div className="flex items-center justify-between gap-3">
+      <dt>
+        <Link className="text-sm hover:text-primary-text hover:underline" to={to}>{label}</Link>
+      </dt>
+      <dd className="flex shrink-0 items-center gap-2">
         <StatusValueBadge labelKeyPrefix="dashboardPage.readinessStatuses" value={item.status} />
         <span className="text-sm tabular-nums text-muted-foreground" title={t('dashboardPage.availableCount')}>{value}</span>
-      </div>
-    </Link>
+      </dd>
+    </div>
   )
+}
+
+/**
+ * 首页应用列表：来自最常用项目空间的应用，按最近活动时间排序；没有活动的应用按项目空间顺序排在后面。
+ */
+function recentApplicationRows(overview: DashboardOverview, projects: DashboardProjectShortcut[], applicationPages: Application[][]): RecentApplicationRow[] {
+  const latestActivityByApplication = new Map<string, DashboardActivity>()
+  for (const activity of [...overview.activities, ...overview.attention.map(item => item.latest)]) {
+    const applicationId = activity.application?.id
+    if (!applicationId)
+      continue
+    const current = latestActivityByApplication.get(applicationId)
+    if (!current || activity.occurredAt > current.occurredAt)
+      latestActivityByApplication.set(applicationId, activity)
+  }
+  const rows = projects.flatMap((project, index) => (applicationPages[index] ?? [])
+    .filter(application => application.deleteStatus !== 'deleting' && application.deleteStatus !== 'deleted')
+    .map(application => ({ application, latestActivity: latestActivityByApplication.get(application.id), project })))
+  return rows
+    .map((row, order) => ({ order, row }))
+    .sort((left, right) => {
+      const leftTime = left.row.latestActivity?.occurredAt ?? ''
+      const rightTime = right.row.latestActivity?.occurredAt ?? ''
+      if (leftTime !== rightTime)
+        return rightTime.localeCompare(leftTime)
+      return left.order - right.order
+    })
+    .slice(0, RECENT_APP_LIMIT)
+    .map(item => item.row)
 }
 
 function eventTypeLabel(t: ReturnType<typeof useTranslation>['t'], type: string) {
   return t(`eventsPage.types.${type.replaceAll('.', '_')}`, { defaultValue: type })
 }
 
+function attentionActionLabel(t: ReturnType<typeof useTranslation>['t'], category: string) {
+  if (category === 'build')
+    return t('dashboardPage.viewBuild')
+  if (category === 'release' || category === 'hook')
+    return t('dashboardPage.viewDeployment')
+  if (category === 'gateway' || category === 'certificate')
+    return t('dashboardPage.viewAccess')
+  return t('dashboardPage.viewDetails')
+}
+
 function activityContext(activity: DashboardActivity) {
-  return [activity.project?.name, activity.application?.name, activity.deploymentTarget?.name].filter(Boolean).join(' · ')
+  return [activity.project?.name, activity.application?.name, activity.deploymentTarget?.name].filter(Boolean).join(' / ')
 }
 
 function activityTarget(activity: DashboardActivity) {
@@ -283,26 +408,9 @@ function activityTarget(activity: DashboardActivity) {
     return primary
   if (activity.project && activity.application) {
     const tab = activity.category === 'build' ? 'builds' : activity.category === 'gateway' || activity.category === 'certificate' ? 'gateway' : 'deployments'
-    return `/projects/${activity.project.id}/apps/${activity.application.id}#tab=${tab}`
+    return `/projects/${activity.project.id}/apps/${activity.application.id}?tab=${tab}`
   }
   if (activity.project)
     return `/projects/${activity.project.id}`
   return '/events'
-}
-
-function categoryIcon(category: string) {
-  const className = 'size-4'
-  if (category === 'build')
-    return <Hammer className={className} />
-  if (category === 'release')
-    return <Rocket className={className} />
-  if (category === 'hook')
-    return <Workflow className={className} />
-  if (category === 'gateway')
-    return <Globe2 className={className} />
-  if (category === 'certificate')
-    return <FileKey2 className={className} />
-  if (category === 'application')
-    return <AppWindow className={className} />
-  return <Activity className={className} />
 }

@@ -587,7 +587,7 @@ function ModeOption({ description, hint, title, value }: { description: string, 
       </span>
       <span className="pl-6 text-xs leading-5 text-muted-foreground">{description}</span>
       {hint && (
-        <span className="mt-1 ml-6 rounded-control border border-border bg-muted/40 px-2 py-1 text-[11px] leading-4 text-muted-foreground">
+        <span className="mt-1 ml-6 rounded-control border border-border bg-surface-subtle px-2 py-1 text-[11px] leading-4 text-muted-foreground">
           {hint}
         </span>
       )}

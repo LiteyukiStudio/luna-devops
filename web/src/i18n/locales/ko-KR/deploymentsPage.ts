@@ -92,7 +92,6 @@ const deploymentsPage = {
   redeployAffectedRuntimeConfig: '영향을 받는 리소스 재배포',
   runtimeConfigRedeployQueued: '{{queued}}개의 배포 구성에 재배포 작업을 생성했습니다. {{skipped}}개는 일시적으로 재배포할 수 없습니다.',
   runtimeData: '실행 데이터',
-  runtimeDataDescription: '프로젝트 데이터 볼륨을 컨테이너에 마운트하거나 emptyDir를 사용하여 Pod와 동일한 수명 주기의 임시 데이터를 저장합니다.',
   dataVolumes: '데이터 볼륨',
   dataVolumesHint: '기존 프로젝트 데이터 볼륨을 선택하여 영구 데이터에 사용하거나 emptyDir를 사용하여 임시 데이터를 저장합니다. 볼륨이 필요 없으면 비워 두세요.',
   dataVolumeCount: '{{count}}개 데이터 볼륨',
@@ -134,7 +133,6 @@ const deploymentsPage = {
   runtimePodMissing: '선택한 레플리카가 더 이상 없습니다. 다른 레플리카를 선택하세요.',
   runtimePodsUnavailable: '지금은 레플리카 목록을 읽을 수 없습니다. 자동 선택은 계속 사용할 수 있습니다.',
   runtimeStatus: '실행 상태',
-  releaseStatus: '릴리스 상태',
   runtimeStatusCluster: '실행 클러스터: {{cluster}}',
   runtimePodCount: '{{count}}개 Pod',
   runtimeStatuses: {
@@ -144,6 +142,7 @@ const deploymentsPage = {
     'create-container-config-error': '컨테이너 구성 오류',
     'create-container-error': '컨테이너 생성 오류',
     'degraded': '이상',
+    'disabled': '비활성화',
     'err-image-pull': '이미지 풀 오류',
     'failed': '실패',
     'image-pull-back-off': '이미지 풀 백오프',
@@ -175,8 +174,6 @@ const deploymentsPage = {
   webConsoleDisabledHint: '현재 프로젝트 스페이스 또는 배포 구성에서 Web Console이 비활성화되어 있습니다.',
   webConsoleDescription: '현재 릴리스에 해당하는 실행 컨테이너의 실제 대화형 터미널에 연결합니다. 이 작업은 감사 로그에 기록됩니다.',
   webConsoleContainerPlaceholder: '기본 컨테이너',
-  fullscreen: '전체 화면',
-  exitFullscreen: '전체 화면 종료',
   webConsoleConnecting: '실행 컨테이너 터미널에 연결 중...',
   webConsoleConnected: '연결되었습니다. shell 명령을 입력하여 문제 해결을 시작합니다.',
   webConsoleDisconnected: '터미널 연결이 끊겼습니다.',
@@ -337,6 +334,8 @@ const deploymentsPage = {
     staging: '스테이징',
     prod: '프로덕션',
   },
+  accessAddress: '접근 주소',
+  currentVersion: '현재 버전',
 }
 
 export default deploymentsPage

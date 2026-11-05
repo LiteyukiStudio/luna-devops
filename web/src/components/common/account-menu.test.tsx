@@ -11,7 +11,6 @@ const user: CurrentUser = {
   brandColorPreset: '',
   email: 'snowykami@example.com',
   id: 'usr_test',
-  interfaceStyle: '',
   language: 'zh-CN',
   name: 'snowykami',
   passwordSet: true,

@@ -44,7 +44,7 @@ export function ApplicationIconPicker({ compact = false, disabled, value, onChan
       <PopoverTrigger asChild>
         <Button
           aria-label={t('apps.iconPickerAria')}
-          className={compact ? 'size-9 rounded-md border-0 bg-transparent px-0 text-foreground shadow-none hover:bg-muted hover:text-foreground' : undefined}
+          className={compact ? 'size-9 rounded-container border-0 bg-transparent px-0 text-foreground shadow-none hover:bg-muted hover:text-foreground' : undefined}
           disabled={disabled}
           title={iconTitle}
           type="button"
@@ -63,7 +63,7 @@ export function ApplicationIconPicker({ compact = false, disabled, value, onChan
                 key={name}
                 aria-label={t(`apps.icons.${name}`)}
                 className={cn(
-                  'size-8 rounded-md border border-transparent p-0 text-muted-foreground transition hover:border-border hover:bg-muted hover:text-foreground [&_svg]:size-[18px]',
+                  'size-8 rounded-container border border-transparent p-0 text-muted-foreground transition hover:border-border hover:bg-muted hover:text-foreground [&_svg]:size-[18px]',
                   active && 'border-primary bg-primary/10 text-primary-text',
                 )}
                 size="icon"

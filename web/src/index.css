@@ -16,16 +16,29 @@
 }
 
 :root {
-  --background: 210 20% 98%;
-  --foreground: 222 18% 13%;
-  --muted: 214 22% 93%;
-  --muted-foreground: 220 9% 42%;
+  --background: 213 44% 95%;
+  --foreground: 214 29% 11%;
+  --muted: 213 35% 94%;
+  --muted-foreground: 213 10% 40%;
   --surface: 0 0% 100%;
-  --surface-base: 210 20% 98%;
+  --surface-base: 216 56% 98%;
   --surface-raised: 0 0% 100%;
-  --surface-subtle: 214 28% 96%;
-  --surface-inset: 214 24% 94%;
-  --border: 214 18% 86%;
+  --surface-subtle: 213 45% 97%;
+  --surface-inset: 213 35% 94%;
+  --border: 210 19% 88%;
+  --input: 212 17% 85%;
+  --status-success: #4c6b1f;
+  --status-success-subtle: #d3f1a7;
+  --status-success-border: #b3df72;
+  --status-warning: #9e4c00;
+  --status-warning-subtle: #fce4a6;
+  --status-warning-border: #fbc828;
+  --status-danger: #ae2e24;
+  --status-danger-subtle: #ffd5d2;
+  --status-danger-border: #fd9891;
+  --status-info: #1558bc;
+  --status-info-subtle: #cfe1fd;
+  --status-info-border: #8fb8f6;
   --separator-strong: color-mix(in oklab, hsl(var(--border)) 82%, hsl(var(--foreground)) 18%);
   --separator-subtle: color-mix(in oklab, hsl(var(--border)) 48%, hsl(var(--surface)) 52%);
   --workspace-background: hsl(var(--surface-base));
@@ -33,17 +46,30 @@
   --theme-navigation: var(--primary);
   --theme-navigation-text: var(--primary-text);
   --theme-emphasis: var(--primary);
-  --sidebar-nav-hover: hsl(var(--surface-subtle));
-  --sidebar-nav-active: hsl(var(--muted));
-  --sidebar-nav-active-text: var(--primary-text);
+  --sidebar-nav-hover: var(--primary-subtle);
+  --sidebar-nav-active: var(--primary-subtle);
+  --sidebar-nav-active-text: hsl(var(--foreground));
   --data-list-header-surface: hsl(var(--surface));
-  --data-list-row-hover: hsl(var(--surface-subtle));
-  --danger: 0 74% 48%;
+  --data-list-row-hover: hsl(var(--muted) / 0.5);
+  --danger: 4 64% 48%;
   /* 服务拓扑分类定性色板（Okabe-Ito 色盲安全色，集中维护的图表色板例外） */
   --topology-cat-access: #0072b2;
   --topology-cat-core: #5b5bd6;
   --topology-cat-support: #009e73;
   --topology-cat-infra: #8b94a3;
+  /* 日志与终端面板在明暗主题下都使用深色画布 */
+  --terminal-background: #0f141b;
+  --terminal-foreground: #dfe6ee;
+  --terminal-muted: #8a96a6;
+  --terminal-border: #283140;
+  --terminal-selection: rgb(96 152 232 / 0.35);
+  --terminal-cursor: #dfe6ee;
+  --terminal-error: #ff8a80;
+  --terminal-warning: #f2c14e;
+  --terminal-success: #8fd16a;
+  --terminal-info: #7fb8f5;
+  --terminal-magenta: #d5a6f5;
+  --terminal-cyan: #6fd6e0;
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   background: hsl(var(--background));
   color: hsl(var(--foreground));
@@ -54,120 +80,34 @@
   --topology-cat-core: #8f8ff0;
   --topology-cat-support: #4cc3a5;
   --topology-cat-infra: #9aa3b2;
-  --background: 222 18% 10%;
-  --foreground: 210 20% 96%;
-  --muted: 220 14% 17%;
-  --muted-foreground: 218 10% 68%;
-  --surface: 222 16% 13%;
-  --surface-base: 222 18% 10%;
-  --surface-raised: 222 16% 13%;
-  --surface-subtle: 220 15% 16%;
-  --surface-inset: 220 16% 12%;
-  --border: 220 13% 24%;
+  --terminal-background: #0b1016;
+  --terminal-border: #252e3a;
+  --background: 210 36% 6%;
+  --foreground: 213 24% 91%;
+  --muted: 212 16% 15%;
+  --muted-foreground: 214 8% 63%;
+  --surface: 210 20% 12%;
+  --surface-base: 210 26% 9%;
+  --surface-raised: 210 20% 12%;
+  --surface-subtle: 210 20% 10%;
+  --surface-inset: 210 30% 7%;
+  --border: 210 14% 19%;
+  --input: 210 12% 23%;
+  --status-success: #b3df72;
+  --status-success-subtle: #28311b;
+  --status-success-border: #4c6b1f;
+  --status-warning: #fbc828;
+  --status-warning-subtle: #3a2c1f;
+  --status-warning-border: #9e4c00;
+  --status-danger: #fd9891;
+  --status-danger-subtle: #42221f;
+  --status-danger-border: #ae2e24;
+  --status-info: #8fb8f6;
+  --status-info-subtle: #1c2b42;
+  --status-info-border: #1558bc;
   --separator-strong: color-mix(in oklab, hsl(var(--border)) 78%, hsl(var(--foreground)) 22%);
   --separator-subtle: color-mix(in oklab, hsl(var(--border)) 52%, hsl(var(--surface)) 48%);
-  --danger: 0 70% 56%;
-}
-
-:root[data-interface-style="themed"] {
-  --primary-subtle: color-mix(in oklab, var(--primary-border) 7%, color-mix(in oklab, var(--theme-supporting) 3%, hsl(var(--surface-base))));
-  --primary-subtle-hover: color-mix(in oklab, var(--primary-border) 14%, color-mix(in oklab, var(--theme-secondary) 5%, hsl(var(--surface-base))));
-  --primary-subtle-active: color-mix(in oklab, var(--primary-border) 20%, color-mix(in oklab, var(--theme-secondary) 8%, hsl(var(--surface-base))));
-  --separator-strong: color-mix(in oklab, hsl(var(--border)) 74%, var(--theme-secondary) 26%);
-  --separator-subtle: color-mix(in oklab, hsl(var(--border)) 84%, var(--theme-supporting) 16%);
-  --theme-selection-surface: linear-gradient(
-    115deg,
-    color-mix(in oklab, var(--primary) 13%, hsl(var(--surface-base))),
-    color-mix(in oklab, var(--theme-secondary) 12%, hsl(var(--surface-base)))
-  );
-  --theme-navigation: var(--theme-secondary);
-  --theme-navigation-text: color-mix(in oklab, var(--theme-secondary) 62%, hsl(var(--foreground)));
-  --theme-emphasis: var(--theme-highlight);
-  --sidebar-nav-hover: color-mix(in oklab, var(--primary) 14%, hsl(var(--surface-base)));
-  --sidebar-nav-active: color-mix(in oklab, var(--primary) 19%, color-mix(in oklab, var(--theme-secondary) 3%, hsl(var(--surface-base))));
-  --sidebar-nav-active-text: color-mix(in oklab, var(--primary-text) 58%, hsl(var(--foreground)));
-  --data-list-header-surface: color-mix(in oklab, var(--theme-supporting) 5%, hsl(var(--surface)));
-  --data-list-row-hover: color-mix(in oklab, var(--theme-supporting) 6%, hsl(var(--surface-subtle)));
-  --workspace-background: color-mix(in oklab, var(--primary-border) 7%, hsl(var(--surface-base)));
-}
-
-:root[data-theme="dark"][data-interface-style="themed"] {
-  --primary-subtle: color-mix(in oklab, var(--primary-border) 6%, color-mix(in oklab, var(--theme-supporting) 2%, hsl(var(--surface-base))));
-  --primary-subtle-hover: color-mix(in oklab, var(--primary-border) 12%, color-mix(in oklab, var(--theme-secondary) 4%, hsl(var(--surface-base))));
-  --primary-subtle-active: color-mix(in oklab, var(--primary-border) 18%, color-mix(in oklab, var(--theme-secondary) 7%, hsl(var(--surface-base))));
-  --separator-strong: color-mix(in oklab, hsl(var(--border)) 76%, var(--theme-secondary) 24%);
-  --separator-subtle: color-mix(in oklab, hsl(var(--border)) 86%, var(--theme-supporting) 14%);
-  --theme-navigation-text: color-mix(in oklab, var(--theme-secondary) 74%, hsl(var(--foreground)));
-  --sidebar-nav-hover: color-mix(in oklab, var(--primary) 13%, hsl(var(--surface-base)));
-  --sidebar-nav-active: color-mix(in oklab, var(--primary) 18%, color-mix(in oklab, var(--theme-secondary) 3%, hsl(var(--surface-base))));
-  --data-list-header-surface: color-mix(in oklab, var(--theme-supporting) 4%, hsl(var(--surface)));
-  --data-list-row-hover: color-mix(in oklab, var(--theme-supporting) 5%, hsl(var(--surface-subtle)));
-  --workspace-background: color-mix(in oklab, var(--primary-border) 6%, hsl(var(--surface-base)));
-}
-
-:root:is(
-  [data-brand-theme="aurora"],
-  [data-brand-theme="harbor"],
-  [data-brand-theme="sunset"],
-  [data-brand-theme="botanical"],
-  [data-brand-theme="meadow"],
-  [data-brand-theme="citrus"]
-)[data-interface-style="themed"] {
-  --sidebar-nav-active: linear-gradient(
-    115deg,
-    color-mix(in oklab, var(--primary) 20%, hsl(var(--surface-base))),
-    color-mix(in oklab, var(--theme-secondary) 17%, hsl(var(--surface-base)))
-  );
-  --sidebar-nav-active-text: color-mix(in oklab, var(--primary-text) 56%, hsl(var(--foreground)));
-  --data-list-header-surface: color-mix(in oklab, var(--theme-supporting) 10%, hsl(var(--surface)));
-  --data-list-row-hover: color-mix(in oklab, var(--theme-supporting) 9%, hsl(var(--surface-subtle)));
-  --workspace-background: linear-gradient(
-    135deg,
-    color-mix(in oklab, var(--primary) 5%, hsl(var(--surface-base))) 0%,
-    color-mix(in oklab, var(--theme-secondary) 4%, hsl(var(--surface-base))) 52%,
-    color-mix(in oklab, var(--theme-supporting) 5%, hsl(var(--surface-base))) 100%
-  );
-}
-
-:root[data-theme="dark"]:is(
-  [data-brand-theme="aurora"],
-  [data-brand-theme="harbor"],
-  [data-brand-theme="sunset"],
-  [data-brand-theme="botanical"],
-  [data-brand-theme="meadow"],
-  [data-brand-theme="citrus"]
-)[data-interface-style="themed"] {
-  --sidebar-nav-active: linear-gradient(
-    115deg,
-    color-mix(in oklab, var(--primary) 19%, hsl(var(--surface-base))),
-    color-mix(in oklab, var(--theme-secondary) 16%, hsl(var(--surface-base)))
-  );
-  --data-list-header-surface: color-mix(in oklab, var(--theme-supporting) 8%, hsl(var(--surface)));
-  --data-list-row-hover: color-mix(in oklab, var(--theme-supporting) 7%, hsl(var(--surface-subtle)));
-  --workspace-background: linear-gradient(
-    135deg,
-    color-mix(in oklab, var(--primary) 5%, hsl(var(--surface-base))) 0%,
-    color-mix(in oklab, var(--theme-secondary) 4%, hsl(var(--surface-base))) 52%,
-    color-mix(in oklab, var(--theme-supporting) 4%, hsl(var(--surface-base))) 100%
-  );
-}
-
-:root[data-interface-style="minimal"] {
-  --primary-subtle: hsl(var(--surface-base));
-  --primary-subtle-hover: hsl(var(--muted));
-  --primary-subtle-active: hsl(var(--muted));
-  --separator-strong: color-mix(in oklab, hsl(var(--border)) 82%, hsl(var(--foreground)) 18%);
-  --separator-subtle: color-mix(in oklab, hsl(var(--border)) 48%, hsl(var(--surface)) 52%);
-  --workspace-background: hsl(var(--surface-base));
-  --theme-selection-surface: hsl(var(--muted));
-  --theme-navigation: var(--primary);
-  --theme-navigation-text: var(--primary-text);
-  --theme-emphasis: var(--primary);
-  --sidebar-nav-hover: hsl(var(--surface-subtle));
-  --sidebar-nav-active: hsl(var(--muted));
-  --sidebar-nav-active-text: var(--primary-text);
-  --data-list-header-surface: hsl(var(--surface));
-  --data-list-row-hover: hsl(var(--surface-subtle));
+  --danger: 4 91% 69%;
 }
 
 .workspace-canvas {

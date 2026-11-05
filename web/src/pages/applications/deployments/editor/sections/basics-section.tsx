@@ -1,5 +1,5 @@
 import type { DeploymentTargetFormValues } from '../deployment-target-form'
-import type { RuntimeCluster } from '@/api'
+import type { ArtifactRegistry, RepositoryBinding, RuntimeCluster } from '@/api'
 import { Controller, useFormContext } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { FormField } from '@/components/common/form-field'
@@ -11,12 +11,17 @@ import { useRuntimeClusterPressure } from '@/lib/runtime-cluster-pressure'
 import { EditorSection, SwitchField } from '../deployment-target-editor-fields'
 import { useFieldError } from '../deployment-target-editor-utils'
 import { isPublicDeploymentStage, publicDeploymentStages } from '../deployment-target-form'
+import { SourceFields } from '../source/source-build-fields'
 
 const defaultClusterValue = '__default__'
 
-export function BasicsSection({ editing, projectId, runtimeClusters }: {
+/** 基本信息与来源：名称、阶段、集群与启用状态，以及来源类型、仓库或镜像和构建方式。 */
+export function BasicsSection({ applicationId, editing, projectId, registries, repositoryBindings, runtimeClusters }: {
+  applicationId: string
   editing: boolean
   projectId: string
+  registries: ArtifactRegistry[]
+  repositoryBindings: RepositoryBinding[]
   runtimeClusters: RuntimeCluster[]
 }) {
   const { t } = useTranslation()
@@ -90,6 +95,7 @@ export function BasicsSection({ editing, projectId, runtimeClusters }: {
           <SwitchField description={t('deploymentTargetEditor.enabledDescription')} label={t('deploymentTargetEditor.enabled')} name="enabled" />
         </div>
       </div>
+      <SourceFields applicationId={applicationId} editing={editing} projectId={projectId} registries={registries} repositoryBindings={repositoryBindings} />
     </EditorSection>
   )
 }

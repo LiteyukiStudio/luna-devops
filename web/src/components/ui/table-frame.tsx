@@ -34,7 +34,7 @@ function TableFrame({
       className={cn(
         'relative flex min-h-0 min-w-0 max-w-full flex-col overflow-hidden',
         framed
-          ? 'rounded-container border border-border bg-card'
+          ? 'rounded-control border border-border bg-surface'
           : 'border-0 bg-transparent',
         className,
       )}

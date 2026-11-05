@@ -4,6 +4,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { api, ApiError } from '@/api'
+import { TooltipProvider } from '@/components/ui/tooltip'
 import i18next from '@/i18n'
 import { WORKFLOW_STATUS_REFETCH_INTERVAL_MS } from '@/lib/polling'
 import { ApplicationReleaseLogsPanel } from './application-release-logs-panel'
@@ -60,7 +61,9 @@ function renderPanel(onClose = vi.fn()) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(
     <QueryClientProvider client={queryClient}>
-      <ApplicationReleaseLogsPanel projectId="prj_123" release={release} onClose={onClose} />
+      <TooltipProvider>
+        <ApplicationReleaseLogsPanel projectId="prj_123" release={release} onClose={onClose} />
+      </TooltipProvider>
     </QueryClientProvider>,
   )
   return onClose

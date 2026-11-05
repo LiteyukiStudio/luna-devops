@@ -122,7 +122,7 @@ export function ApplicationRepositoryBindingDialog({
               name="autoConfigureWebhook"
               render={({ field }) => (
                 <ControlledCheckboxField
-                  className="rounded-md border border-border bg-muted/30 p-3"
+                  className="rounded-control border border-border bg-surface-inset p-3"
                   description={t('repositories.autoConfigureWebhookHint')}
                   field={field}
                 >

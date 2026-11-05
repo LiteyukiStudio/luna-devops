@@ -34,7 +34,6 @@ const root = {
   edit: 'Edit',
   delete: 'Delete',
   backToProjectSpaces: 'Back to project spaces',
-  backToApps: 'Back to applications',
 }
 
 export default root

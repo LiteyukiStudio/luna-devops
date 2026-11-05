@@ -121,7 +121,7 @@ export function RuntimeConfigSetsField({ canManageSecrets, deploymentTargets, pr
         </Button>
       </div>
       {sets.isError && <p className="text-sm text-danger">{t('deploymentTargetEditor.runtimeConfigSetsLoadFailed')}</p>}
-      {sets.data && sets.data.length === 0 && <p className="rounded-control border border-dashed border-border px-3 py-4 text-sm text-muted-foreground">{t('deploymentsPage.emptyRuntimeConfigSets')}</p>}
+      {sets.data && sets.data.length === 0 && <p className="text-sm text-muted-foreground">{t('deploymentsPage.emptyRuntimeConfigSets')}</p>}
       {sets.data && sets.data.length > 0 && (
         <ul className="grid gap-1 rounded-control border border-border p-1">
           {sets.data.map((set) => {

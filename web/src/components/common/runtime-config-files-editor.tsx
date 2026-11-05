@@ -40,7 +40,7 @@ export function RuntimeConfigFilesEditor({ configuredPlaceholder, initialValue, 
     <div className="grid gap-3">
       {rows.length === 0
         ? (
-            <div className="grid justify-items-start gap-3 rounded-md border border-dashed border-border px-3 py-4">
+            <div className="grid justify-items-start gap-3 rounded-container border border-dashed border-border px-3 py-4">
               <p className="text-sm text-muted-foreground">{configuredPlaceholder || t('runtimeConfigFilesEditor.empty')}</p>
               <Button size="sm" type="button" variant="secondary" onClick={addFile}>
                 <FilePlus2 className="size-4" />
@@ -51,7 +51,7 @@ export function RuntimeConfigFilesEditor({ configuredPlaceholder, initialValue, 
         : (
             <div className="grid gap-3">
               {rows.map((row, index) => (
-                <div key={row.id} className="grid gap-2 rounded-md border border-border bg-background p-3">
+                <div key={row.id} className="grid gap-2 rounded-container border border-border bg-background p-3">
                   <div className="flex items-center justify-between gap-3">
                     <span className="text-sm font-medium">{t('runtimeConfigFilesEditor.fileTitle', { index: index + 1 })}</span>
                     <Button size="sm" type="button" variant="ghost" onClick={() => removeFile(row.id)}>

@@ -1,7 +1,7 @@
 import { cva } from 'class-variance-authority'
 
 const buttonVariants = cva(
-  'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-colors outline-none focus-visible:border-primary focus-visible:ring-3 focus-visible:ring-primary/50 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0',
+  'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-control text-sm font-medium transition-colors outline-none focus-visible:border-primary focus-visible:ring-3 focus-visible:ring-primary/50 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0',
   {
     defaultVariants: {
       size: 'default',
@@ -19,8 +19,8 @@ const buttonVariants = cva(
         destructive: 'bg-danger text-white hover:bg-danger/90 focus-visible:ring-danger/20',
         ghost: 'hover:bg-muted hover:text-foreground',
         link: 'text-primary-text underline-offset-4 hover:underline',
-        outline: 'border border-border bg-background hover:bg-muted hover:text-foreground',
-        secondary: 'border border-border bg-surface text-foreground hover:bg-muted',
+        outline: 'border border-border bg-surface shadow-xs hover:bg-muted hover:text-foreground',
+        secondary: 'bg-primary-subtle text-primary-text hover:bg-primary-subtle-hover',
       },
     },
   },

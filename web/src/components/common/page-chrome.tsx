@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom'
 import { WorkspaceChromeTargetsContext } from '@/components/common/workspace-chrome-context'
 import { cn } from '@/lib/utils'
 
-type ChromeSlot = 'heading' | 'tabs' | 'tools'
+type ChromeSlot = 'description' | 'heading' | 'tabs' | 'tools'
 
 function hasContent(children: ReactNode) {
   return children !== null && children !== undefined && children !== false
@@ -16,7 +16,7 @@ function hasContent(children: ReactNode) {
  */
 function useChromeSlot(slot: ChromeSlot, active: boolean) {
   const targets = use(WorkspaceChromeTargetsContext)
-  const register = slot === 'heading' ? targets?.registerHeading : slot === 'tabs' ? targets?.registerTabs : targets?.registerTools
+  const register = slot === 'heading' ? targets?.registerHeading : slot === 'tabs' ? targets?.registerTabs : slot === 'tools' ? targets?.registerTools : undefined
 
   useEffect(() => {
     if (!active || !register)
@@ -33,17 +33,25 @@ function useChromeSlot(slot: ChromeSlot, active: boolean) {
  */
 export function PageChromeHeading({ description, title }: { description?: ReactNode, title: string }) {
   const { hasLayout, target } = useChromeSlot('heading', true)
-  const heading = (
-    <div className="min-w-0">
-      <h1 className="truncate text-xl font-semibold tracking-tight text-foreground md:text-2xl">{title}</h1>
-      {description && <p className="mt-1 text-sm text-muted-foreground">{description}</p>}
-    </div>
+  const { target: descriptionTarget } = useChromeSlot('description', Boolean(description))
+  const heading = <h1 className="truncate text-base font-medium text-foreground">{title}</h1>
+  const descriptionText = description ? <p className="text-sm text-muted-foreground">{description}</p> : null
+
+  if (!hasLayout) {
+    return (
+      <div className="grid min-w-0 gap-1">
+        {heading}
+        {descriptionText}
+      </div>
+    )
+  }
+
+  return (
+    <>
+      {target && createPortal(heading, target)}
+      {descriptionTarget && descriptionText && createPortal(descriptionText, descriptionTarget)}
+    </>
   )
-
-  if (!hasLayout)
-    return heading
-
-  return target ? createPortal(heading, target) : null
 }
 
 /**

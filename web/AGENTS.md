@@ -71,10 +71,12 @@
 - shadcn/ui 不提供完整平台资源选择器；统一复用
   `components/common/search-select.tsx` 的 `SearchSelect` / `SearchMultiSelect`。固定小枚举继续用
   `Select` / `NativeSelect`，带独立策略的选项保留领域编辑器。
-- Button/Input/Select 使用标准控件圆角；Badge、状态标签、头像和真正的 segmented control 才使用
-  胶囊形。页面导航与表单控件不得伪装成 Badge。
-- 页面使用 `PageShell` 的 `content/full/settings/tool` 语义。顶栏只放面包屑、收件箱和账号菜单；页面标题、
-  页面级操作和 Tabs 由布局渲染在正文页头，页面通过 `PageChromeHeading`、`PageChromeTools` 和
+- 视觉语言与 Liteyuki 的 neo-blog 控制台保持一致（shadcn inset 侧栏布局）：侧栏色画布上放一块圆角加轻阴影的
+  正文面板；侧栏顶部是站点标识，底部是用户卡片（账号菜单）；面板顶栏放侧栏开关、上级面包屑和页面标题。卡片白底、
+  `rounded-container`、细边框、`shadow-sm`；Button/Input/Select 36px、`rounded-control`（8px）；Badge 与状态
+  标签为 8px 圆角、中等字重。头像、开关和真正的 segmented control 才使用圆形或胶囊形。页面导航与表单控件不得
+  伪装成 Badge。
+- 页面使用 `PageShell` 的 `content/full/settings/tool` 语义。面板顶栏放面包屑、页面标题和收件箱；页面级操作、Tabs 和页面描述由布局渲染在正文顶部，页面通过 `PageChromeHeading`、`PageChromeTools` 和
   `ContentTabs` 投放，不自行渲染 h1、返回链接或独立全宽 topbar。全局画布 padding 由布局层提供，业务页不加
   根 padding 或负间距。
 - 项目空间内的分区由侧栏项目导航和 URL `?tab=` 表达，分区定义只维护在
@@ -85,10 +87,12 @@
   筛选为空给清除入口。
 - 编辑、删除、测试和绑定使用独立按钮或菜单；整行点击只用于明确详情导航并支持键盘。
 - 状态使用 `StatusBadge` / `StatusValueBadge` 与语义 tone；业务代码不硬编码 red/green/amber 状态色。
-- 间距、圆角、颜色、表面和动效使用 Tailwind 标准 token 或 `styles/design-tokens.css`。普通 Surface
-  不加常驻边框/阴影，阴影只用于 Dialog、Popover、悬浮层与 raised 状态。
+- 间距、圆角、颜色、表面和动效使用 Tailwind 标准 token 或 `styles/design-tokens.css`。内容容器
+  （`Surface bordered`、`Card`、`MetricItem`）使用 1px `border-border` 加 `shadow-sm`；`DataList` 默认带细边框白底外框，
+  放进已有外框的卡片时传 `framed={false}`；工具区控件统一 32px；空状态居中并始终带图标；
+  更重的阴影只用于 Dialog、Popover 与悬浮层。
 - 同页或 Tab 默认最多一个实心主操作。同级动作使用 outline、ghost 或菜单。
-- 页面不得读取“标准/简约/跟随平台”偏好或建立局部主题分支；“Project”在 UI 统一称“项目空间”。
+- 主题只由明暗模式和单色品牌主色决定，页面不得读取主题偏好或建立局部主题分支；“Project”在 UI 统一称“项目空间”。
 
 ## 7. i18n、可访问性与安全
 

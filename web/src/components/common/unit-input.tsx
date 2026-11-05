@@ -31,7 +31,7 @@ export function UnitInput({ className, disabled, inputProps, onChange, unitSelec
   }
 
   return (
-    <div className={cn('flex h-9 min-w-40 overflow-hidden rounded-md border border-input bg-background shadow-xs transition focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/50', disabled && 'opacity-50', className)}>
+    <div className={cn('flex h-9 min-w-40 overflow-hidden rounded-control border border-input bg-background shadow-xs transition focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/50', disabled && 'opacity-50', className)}>
       <Input
         {...inputProps}
         className="h-full min-w-0 flex-1 rounded-none border-0 bg-transparent px-4 shadow-none focus-visible:ring-0"

@@ -26,9 +26,6 @@ func TestUpdateCurrentUserInputDistinguishesThemeInheritance(t *testing.T) {
 	if omitted.BrandColorPreset != nil {
 		t.Fatalf("omitted brandColorPreset = %q, want nil", *omitted.BrandColorPreset)
 	}
-	if omitted.InterfaceStyle != nil {
-		t.Fatalf("omitted interfaceStyle = %q, want nil", *omitted.InterfaceStyle)
-	}
 
 	var inherited updateCurrentUserInput
 	if err := json.Unmarshal([]byte(`{"brandColorPreset":""}`), &inherited); err != nil {
@@ -37,26 +34,15 @@ func TestUpdateCurrentUserInputDistinguishesThemeInheritance(t *testing.T) {
 	if inherited.BrandColorPreset == nil || *inherited.BrandColorPreset != "" {
 		t.Fatalf("inherited brandColorPreset = %#v, want explicit empty value", inherited.BrandColorPreset)
 	}
-
-	var inheritedStyle updateCurrentUserInput
-	if err := json.Unmarshal([]byte(`{"interfaceStyle":""}`), &inheritedStyle); err != nil {
-		t.Fatalf("unmarshal inherited interface style: %v", err)
-	}
-	if inheritedStyle.InterfaceStyle == nil || *inheritedStyle.InterfaceStyle != "" {
-		t.Fatalf("inherited interfaceStyle = %#v, want explicit empty value", inheritedStyle.InterfaceStyle)
-	}
 }
 
 func TestCurrentUserResponseIncludesBrandColorPreference(t *testing.T) {
-	response := currentUserResponse(model.User{BrandColorPreset: "teal", InterfaceStyle: "minimal", Password: "hash"})
+	response := currentUserResponse(model.User{BrandColorPreset: "teal", Password: "hash"})
 	if response["brandColorPreset"] != "teal" {
 		t.Fatalf("brandColorPreset = %v, want teal", response["brandColorPreset"])
 	}
 	if response["passwordSet"] != true {
 		t.Fatalf("passwordSet = %v, want true", response["passwordSet"])
-	}
-	if response["interfaceStyle"] != "minimal" {
-		t.Fatalf("interfaceStyle = %v, want minimal", response["interfaceStyle"])
 	}
 }
 

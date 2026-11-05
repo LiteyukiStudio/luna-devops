@@ -351,7 +351,7 @@ export function ImageDialog({
             </div>
           </Field>
           {registryId && repositoryResultsOpen && (
-            <div className="grid max-h-52 gap-2 overflow-y-auto rounded-md border border-border p-2">
+            <div className="grid max-h-52 gap-2 overflow-y-auto rounded-container border border-border p-2">
               {repositoryResults.isFetching && (
                 <p className="px-3 py-2 text-sm text-muted-foreground">{t('registriesPage.searchingImages')}</p>
               )}

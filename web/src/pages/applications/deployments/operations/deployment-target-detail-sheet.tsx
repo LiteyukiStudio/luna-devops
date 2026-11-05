@@ -1,13 +1,15 @@
 import type { DeploymentTargetRow } from './application-deployment-targets-list'
-import { ExternalLink, Gauge, Network, Package } from 'lucide-react'
+import { Gauge, Network, Package } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { CopyableHoverText } from '@/components/common/copyable-hover-text'
 import { DescriptionListItem } from '@/components/common/description-list-item'
 import { Section } from '@/components/common/section'
-import { StatusBadge, StatusValueBadge } from '@/components/common/status-badge'
+import { StatusValueBadge } from '@/components/common/status-badge'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { formatReleaseTime } from '@/pages/applications/application-config-utils'
-import { DeploymentRuntimeSpecBadge, DeploymentRuntimeStatusBadge } from './application-deployment-runtime'
+import { AccessUrlLink } from '@/pages/applications/gateway/access-url-link'
+import { gatewayRouteAccessUrl } from '@/pages/applications/gateway/gateway-route-url'
+import { DeploymentRuntimeSpec, DeploymentRuntimeStatusDot } from './application-deployment-runtime'
 import { DeploymentTargetMetricsCell } from './application-deployment-target-metrics-cell'
 
 export function DeploymentTargetDetailSheet({ applicationId, item, onOpenChange, open, projectId }: {
@@ -23,7 +25,7 @@ export function DeploymentTargetDetailSheet({ applicationId, item, onOpenChange,
   const namespace = item?.internalEndpoint?.namespace || '-'
   const stage = target ? t(`deploymentsPage.stageLabels.${target.stage}`, { defaultValue: target.stage }) : '-'
   const cluster = item?.runtimeStatus.clusterName || '-'
-  const projectRoutes = (item?.routes ?? []).filter(route => route.enabled && route.accessUrl.trim())
+  const projectRoutes = (item?.routes ?? []).filter(route => route.enabled && gatewayRouteAccessUrl(route))
   const releaseMessage = release?.status === 'succeeded' ? '' : release?.message?.trim()
 
   return (
@@ -35,20 +37,17 @@ export function DeploymentTargetDetailSheet({ applicationId, item, onOpenChange,
         </SheetHeader>
         {item && target && (
           <div className="grid gap-4 p-6">
-            <div className="flex flex-wrap items-center gap-2">
-              <StatusBadge tone="neutral">{stage}</StatusBadge>
-              <StatusValueBadge value={target.enabled ? 'enabled' : 'disabled'} />
-              <DeploymentRuntimeStatusBadge
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+              <DeploymentRuntimeStatusDot
                 availableReplicas={target.availableReplicas}
                 deployed={Boolean(release)}
                 desiredReplicas={target.desiredReplicas}
                 readyReplicas={target.readyReplicas}
                 status={item.runtimeStatus}
               />
-              {release
-                ? <StatusValueBadge labelKeyPrefix="buildsPage.statuses" value={release.status} />
-                : <StatusBadge tone="warning">{t('deploymentsPage.notDeployed')}</StatusBadge>}
-              <DeploymentRuntimeSpecBadge target={target} />
+              {release && <StatusValueBadge labelKeyPrefix="buildsPage.statuses" value={release.status} />}
+              {!target.enabled && <StatusValueBadge value="disabled" />}
+              <DeploymentRuntimeSpec target={target} />
             </div>
 
             <Section
@@ -75,10 +74,7 @@ export function DeploymentTargetDetailSheet({ applicationId, item, onOpenChange,
                           <div className="divide-y divide-separator-subtle">
                             {projectRoutes.map(route => (
                               <div key={route.id} className="flex min-w-0 items-center justify-between gap-3 py-2 first:pt-0 last:pb-0">
-                                <a className="inline-flex min-w-0 items-center gap-1 font-mono text-xs text-primary-text hover:underline" href={route.accessUrl} rel="noreferrer" target="_blank">
-                                  <span className="truncate">{route.accessUrl}</span>
-                                  <ExternalLink className="size-3.5 shrink-0" aria-hidden="true" />
-                                </a>
+                                <AccessUrlLink url={gatewayRouteAccessUrl(route)} />
                                 <StatusValueBadge labelKeyPrefix="gatewayRoutesPage.statuses" value={route.status} />
                               </div>
                             ))}

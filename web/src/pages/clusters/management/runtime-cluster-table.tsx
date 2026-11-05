@@ -4,10 +4,10 @@ import { FlaskConical, MoreHorizontal, Pencil, Trash2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { DataList } from '@/components/common/data-list'
 import { RuntimeClusterPressureRings } from '@/components/common/runtime-cluster-pressure'
-import { StatusValueBadge } from '@/components/common/status-badge'
+import { StatusBadge, StatusValueBadge } from '@/components/common/status-badge'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
-import { canManageCluster, gatewayDomainSuffixSummary, gatewayPublicPortSummary, scopeLabel } from './cluster-helpers'
+import { canManageCluster, gatewayAccessSummary, scopeLabel } from './cluster-helpers'
 
 export function RuntimeClusterTable({ clusters, loading, pagination, pressureByClusterId, pressureLoading, projects, user, onDelete, onEdit, onTest }: {
   clusters: RuntimeCluster[]
@@ -31,14 +31,28 @@ export function RuntimeClusterTable({ clusters, loading, pagination, pressureByC
   const { t } = useTranslation()
   const projectMap = Object.fromEntries(projects.map(project => [project.id, project]))
   const columns: DataListColumn<RuntimeCluster>[] = [
-    { key: 'name', header: t('common.name'), width: 'primary', render: item => item.name },
-    { key: 'scope', header: t('common.scope'), width: 'status', render: item => scopeLabel(item, projectMap, t) },
-    { key: 'default', header: t('clustersPage.defaultCluster'), width: 'status', render: item => item.isDefault ? t('common.yes') : t('common.no') },
-    { key: 'buildConcurrency', header: t('clustersPage.maxConcurrentBuilds'), width: 'number', render: item => item.maxConcurrentBuilds || 4 },
+    {
+      key: 'name',
+      header: t('common.name'),
+      width: 'primary',
+      render: item => (
+        <div className="min-w-0">
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="truncate font-medium">{item.name}</span>
+            {item.isDefault && <StatusBadge tone="info">{t('clustersPage.defaultCluster')}</StatusBadge>}
+          </div>
+          <p className="mt-0.5 truncate text-xs text-muted-foreground">
+            {scopeLabel(item, projectMap, t)}
+            {' · '}
+            {t('clustersPage.maxConcurrentBuilds')}
+            {' '}
+            {item.maxConcurrentBuilds || 4}
+          </p>
+        </div>
+      ),
+    },
     { key: 'pressure', header: t('clustersPage.resourcePressure'), width: 'secondary', render: item => <RuntimeClusterPressureRings loading={pressureLoading} pressure={pressureByClusterId[item.id]} /> },
-    { key: 'gatewayDomainSuffixes', header: t('clustersPage.gatewayDomainSuffixes'), width: 'secondary', render: item => gatewayDomainSuffixSummary(item) },
-    { key: 'gatewayPublicScheme', header: t('clustersPage.gatewayPublicScheme'), width: 'compact', render: item => item.gatewayPublicScheme || 'http' },
-    { key: 'gatewayPublicPort', header: t('clustersPage.gatewayPublicPort'), width: 'compact', render: item => gatewayPublicPortSummary(item) },
+    { key: 'gateway', header: t('clustersPage.gatewayExternalAccessConfig'), width: 'secondary', render: item => <span className="font-mono text-xs">{gatewayAccessSummary(item)}</span> },
     {
       key: 'status',
       header: t('common.status'),

@@ -13,15 +13,8 @@ const accountPage = {
   languageHint: 'ユーザーの優先インターフェース言語です。バックエンドのエラーメッセージとフロントエンドの言語は可能な限り同期されます。',
   appearanceModeHint: 'ライト、ダーク、またはシステムに従うを選択します。この設定は即座に適用され、現在のブラウザに保存されます。',
   brandColor: 'カラーテーマ',
-  brandColorHint: 'マルチカラーテーマはメインカラー、補助カラー、アクセントカラーを組み合わせます。モノカラーテーマは統一された色相を維持します。デフォルトはプラットフォーム設定に従います。',
+  brandColorHint: 'ボタン、リンク、選択状態、フォーカスリングに使用する単色のメインカラーです。デフォルトはプラットフォーム設定に従います。',
   followPlatformBrandColor: 'プラットフォームに従う',
-  interfaceStyle: 'インターフェーススタイル',
-  interfaceStyleHint: 'デフォルトはプラットフォームに従います。ミニマルモードはニュートラルな白またはグレーのキャンバスを使用し、標準モードはテーマカラーの淡い背景を保持します。',
-  followPlatformInterfaceStyle: 'プラットフォームに従う',
-  interfaceStyles: {
-    themed: '標準モード',
-    minimal: 'ミニマルモード',
-  },
   saveProfile: '個人設定を保存',
   profileSaved: '個人設定を保存しました',
   notifications: {

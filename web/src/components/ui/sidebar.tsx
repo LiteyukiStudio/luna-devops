@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils'
 function Sidebar({ className, ...props }: ComponentProps<'aside'>) {
   return (
     <aside
-      className={cn('sticky top-0 hidden h-screen w-64 min-w-64 max-w-64 shrink-0 flex-col overflow-x-hidden bg-transparent lg:flex', className)}
+      className={cn('sticky top-0 hidden h-screen w-64 min-w-64 max-w-64 shrink-0 flex-col overflow-x-hidden bg-surface lg:flex', className)}
       data-slot="sidebar"
       {...props}
     />
@@ -25,13 +25,13 @@ function SidebarFooter({ className, ...props }: ComponentProps<'div'>) {
 }
 
 function SidebarGroup({ className, ...props }: ComponentProps<'section'>) {
-  return <section className={cn('grid w-full min-w-0 max-w-full gap-2 overflow-hidden', className)} data-slot="sidebar-group" {...props} />
+  return <section className={cn('grid w-full min-w-0 max-w-full gap-1 overflow-hidden', className)} data-slot="sidebar-group" {...props} />
 }
 
 function SidebarGroupLabel({ className, ...props }: ComponentProps<'p'>) {
   return (
     <p
-      className={cn('px-3 text-[0.6875rem] font-normal uppercase tracking-wide text-muted-foreground/80', className)}
+      className={cn('flex h-8 items-center px-3 text-xs font-medium text-muted-foreground', className)}
       data-slot="sidebar-group-label"
       {...props}
     />

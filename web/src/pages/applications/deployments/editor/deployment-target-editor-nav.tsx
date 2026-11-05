@@ -1,17 +1,20 @@
 import type { DeploymentTargetEditorSection, DeploymentTargetFormValues } from './deployment-target-form'
-import type { RepositoryBinding, RuntimeCluster } from '@/api'
+import type { DeploymentTarget, RepositoryBinding } from '@/api'
 import { useEffect, useState } from 'react'
 import { useFormContext, useFormState, useWatch } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { StatusBadge } from '@/components/common/status-badge'
 import { cn } from '@/lib/utils'
+import { advancedItemConfiguredCount, visibleAdvancedItems } from './advanced/advanced-items'
 import { deploymentTargetSectionAnchor, scrollToDeploymentTargetSection, sectionErrorCount } from './deployment-target-editor-utils'
 import { deploymentTargetSectionOrder } from './deployment-target-form'
 
 /** 分区导航：显示当前摘要和错误数；桌面端固定在左侧，窄屏为横向滚动条。 */
-export function DeploymentTargetEditorNav({ repositoryBindings, runtimeClusters }: {
+export function DeploymentTargetEditorNav({ onNavigate, repositoryBindings, target }: {
+  /** 跳转前通知编辑器，例如先展开默认折叠的高级分区。 */
+  onNavigate: (section: DeploymentTargetEditorSection) => void
   repositoryBindings: RepositoryBinding[]
-  runtimeClusters: RuntimeCluster[]
+  target: DeploymentTarget | null
 }) {
   const { t } = useTranslation()
   const { control } = useFormContext<DeploymentTargetFormValues>()
@@ -20,20 +23,18 @@ export function DeploymentTargetEditorNav({ repositoryBindings, runtimeClusters 
   const values = useWatch({ control })
   const titles: Record<DeploymentTargetEditorSection, string> = {
     basics: t('deploymentTargetEditor.sections.basics'),
-    source: t('deploymentTargetEditor.sections.source'),
     runtime: t('deploymentTargetEditor.sections.runtime'),
     release: t('deploymentTargetEditor.sections.release'),
-    hooks: t('deploymentTargetEditor.sections.hooks'),
-    security: t('deploymentTargetEditor.sections.security'),
+    advanced: t('deploymentTargetEditor.sections.advanced'),
   }
-  const cluster = runtimeClusters.find(item => item.id === values.clusterId)
   const binding = repositoryBindings.find(item => item.id === values.repositoryBindingId)
   const ports = values.servicePorts ?? []
+  const advancedConfigured = visibleAdvancedItems(values.sourceType).reduce((count, item) => count + advancedItemConfiguredCount(item, values, target), 0)
+  const source = values.sourceType === 'image'
+    ? (values.imageRef?.trim() || t('apps.image'))
+    : (binding ? `${binding.owner}/${binding.repo}` : t('apps.repository'))
   const summaries: Record<DeploymentTargetEditorSection, string> = {
-    basics: [values.name?.trim() || t('deploymentTargetEditor.unnamed'), cluster?.name ?? t('deploymentTargetEditor.platformDefaultCluster')].join(' · '),
-    source: values.sourceType === 'image'
-      ? (values.imageRef?.trim() || t('apps.image'))
-      : (binding ? `${binding.owner}/${binding.repo}` : t('apps.repository')),
+    basics: [values.name?.trim() || t('deploymentTargetEditor.unnamed'), source].join(' · '),
     runtime: [
       values.autoScalingEnabled
         ? t('deploymentTargetEditor.summaryAutoScaling', { min: values.autoScalingMinReplicas, max: values.autoScalingMaxReplicas })
@@ -42,10 +43,9 @@ export function DeploymentTargetEditorNav({ repositoryBindings, runtimeClusters 
       t('deploymentTargetEditor.summaryPorts', { count: ports.length }),
     ].join(' · '),
     release: values.autoDeploy ? t('deploymentTargetEditor.summaryAutoDeployOn') : t('deploymentTargetEditor.summaryAutoDeployOff'),
-    hooks: values.buildHooksEnabled
-      ? t('deploymentsPage.progressiveHooksSummary', { count: values.buildHookBindings?.length ?? 0 })
-      : t('deploymentsPage.progressiveHooksDisabledSummary'),
-    security: values.webConsoleEnabled === 'disabled' ? t('deploymentsPage.webConsoleDisableForTarget') : t('deploymentsPage.webConsoleInheritProject'),
+    advanced: advancedConfigured > 0
+      ? t('deploymentTargetEditor.configuredCount', { count: advancedConfigured })
+      : t('deploymentTargetEditor.advancedDefault'),
   }
 
   return (
@@ -65,7 +65,9 @@ export function DeploymentTargetEditorNav({ repositoryBindings, runtimeClusters 
                 href={`#${deploymentTargetSectionAnchor(section)}`}
                 onClick={(event) => {
                   event.preventDefault()
-                  scrollToDeploymentTargetSection(section)
+                  onNavigate(section)
+                  // 等待被展开的分区渲染后再滚动。
+                  window.requestAnimationFrame(() => scrollToDeploymentTargetSection(section))
                 }}
               >
                 <span className="flex min-w-0 items-center justify-between gap-2">

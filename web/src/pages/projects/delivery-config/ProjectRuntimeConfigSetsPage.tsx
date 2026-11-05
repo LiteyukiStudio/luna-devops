@@ -127,6 +127,7 @@ export function ProjectRuntimeConfigSetsPage({ projectId, ref }: { projectId: st
         </div>
       </div>
       <DataList
+        framed={false}
         columns={[
           { key: 'name', header: t('common.name'), className: 'min-w-48 px-4 py-3 align-middle', render: item => <RuntimeConfigSetSummary item={item} /> },
           { key: 'configFiles', header: t('runtimeConfigSets.configFiles'), className: 'w-32 whitespace-nowrap px-4 py-3 align-middle', render: item => t('runtimeConfigSets.configFileState', { count: runtimeConfigFileCount(item.configFiles) }) },

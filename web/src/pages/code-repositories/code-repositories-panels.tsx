@@ -260,7 +260,7 @@ export function GitProviderIcon({
   const faviconUrl = gitProviderFaviconUrl(type, baseUrl)
 
   return (
-    <span className={className ?? 'flex size-9 shrink-0 items-center justify-center rounded-md border border-border bg-muted p-1 text-muted-foreground'}>
+    <span className={className ?? 'flex size-9 shrink-0 items-center justify-center rounded-container border border-border bg-muted p-1 text-muted-foreground'}>
       {faviconUrl
         ? <GitProviderFavicon key={faviconUrl} faviconUrl={faviconUrl} type={type} />
         : <GitProviderFallbackIcon type={type} />}

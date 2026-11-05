@@ -113,7 +113,7 @@ export function BillingSummary({
             </Surface>
           )}
           {periodCategories.length === 0 && !showGatewayTrafficStatusCard && (
-            <div className="flex min-h-[5.75rem] items-center rounded-md border border-dashed border-border bg-muted/10 px-4 text-sm text-muted-foreground md:col-span-3 xl:col-span-6">
+            <div className="flex min-h-[5.75rem] items-center rounded-container border border-dashed border-border bg-muted/10 px-4 text-sm text-muted-foreground md:col-span-3 xl:col-span-6">
               {scopedFetching ? t('common.loading') : t('billingPage.emptyPeriodCategories')}
             </div>
           )}

@@ -36,7 +36,7 @@ describe('page chrome', () => {
     const registerTabs = vi.fn(() => unregisterTabs)
     const registerTools = vi.fn(() => unregisterTools)
     const { unmount } = render(
-      <WorkspaceChromeTargetsProvider value={{ heading: null, registerHeading, registerTabs, registerTools, tabs: null, tools: null }}>
+      <WorkspaceChromeTargetsProvider value={{ description: null, heading: null, registerHeading, registerTabs, registerTools, tabs: null, tools: null }}>
         <PageChromeHeading title="Edit target" />
         <PageChromeTabs>Overview</PageChromeTabs>
         <PageChromeTools>Create</PageChromeTools>
@@ -62,6 +62,7 @@ function ChromeTargetsFixture() {
   return (
     <WorkspaceChromeTargetsProvider
       value={{
+        description: null,
         heading,
         registerHeading: () => () => {},
         registerTabs: () => () => {},

@@ -92,7 +92,6 @@ const deploymentsPage = {
   redeployAffectedRuntimeConfig: '重新部署受影响资源',
   runtimeConfigRedeployQueued: '已为 {{queued}} 个部署配置创建重新部署任务，{{skipped}} 个暂不可重新部署。',
   runtimeData: '运行数据',
-  runtimeDataDescription: '将项目数据卷挂载到容器，或使用 emptyDir 保存与 Pod 同生命周期的临时数据。',
   dataVolumes: '数据卷',
   dataVolumesHint: '选择已有项目数据卷用于持久化数据，或使用 emptyDir 保存临时数据；不需要卷时保持为空。',
   dataVolumeCount: '{{count}} 个数据卷',
@@ -134,7 +133,6 @@ const deploymentsPage = {
   runtimePodMissing: '所选副本已不存在，请重新选择。',
   runtimePodsUnavailable: '暂时无法读取副本列表，可继续使用自动选择。',
   runtimeStatus: '运行状态',
-  releaseStatus: '发布状态',
   runtimeStatusCluster: '运行集群：{{cluster}}',
   runtimePodCount: '{{count}} 个 Pod',
   runtimeStatuses: {
@@ -144,6 +142,7 @@ const deploymentsPage = {
     'create-container-config-error': '容器配置错误',
     'create-container-error': '容器创建错误',
     'degraded': '异常',
+    'disabled': '已停用',
     'err-image-pull': '镜像拉取错误',
     'failed': '失败',
     'image-pull-back-off': '镜像拉取退避',
@@ -175,8 +174,6 @@ const deploymentsPage = {
   webConsoleDisabledHint: '当前项目空间或部署配置已关闭 Web Console。',
   webConsoleDescription: '连接当前发布对应运行容器的真实交互式终端。该操作会写入审计日志。',
   webConsoleContainerPlaceholder: '默认容器',
-  fullscreen: '全屏',
-  exitFullscreen: '退出全屏',
   webConsoleConnecting: '正在连接运行容器终端...',
   webConsoleConnected: '已连接。输入 shell 命令开始排查。',
   webConsoleDisconnected: '终端连接已断开。',
@@ -337,6 +334,8 @@ const deploymentsPage = {
     staging: '预发',
     prod: '生产',
   },
+  accessAddress: '访问地址',
+  currentVersion: '当前版本',
 }
 
 export default deploymentsPage

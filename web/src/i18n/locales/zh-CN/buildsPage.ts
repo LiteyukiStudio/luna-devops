@@ -48,7 +48,6 @@ const buildsPage = {
   deleteBuildDescription: '该构建运行记录、任务日志和钩子运行记录会被删除。已推送的镜像和已有发布不会被删除。',
   deleted: '构建记录已删除',
   runActions: '构建运行操作',
-  viewLogsStream: '查看日志/日志流',
   logsTitle: '构建日志 #{{id}}',
   logsStreaming: '日志流刷新中',
   logsUpdated: '日志已加载',
@@ -57,7 +56,6 @@ const buildsPage = {
   failureReasonUnavailable: '最近任务未记录明确失败原因，请打开日志查看最后输出。',
   failureReasonNoJob: '构建运行未关联到构建任务，请刷新后重试。',
   workflowRunCount: '{{count}} 次构建运行',
-  applicationRunsDescription: '显示当前应用的构建记录、分支、镜像和最近任务状态。',
   filterRuns: '筛选构建运行',
   eventFilter: '事件',
   statusFilter: '状态',
@@ -75,9 +73,6 @@ const buildsPage = {
   runTitleWithConfig: '{{title}}：{{config}}',
   triggeredBy: '由 {{actor}} 触发',
   committedBy: '{{actor}}',
-  commitAction: '提交',
-  latestJobSummary: '任务 #{{id}}，尝试 {{attempts}} 次',
-  noBuildJob: '暂无构建任务',
   jobCount: '{{count}} 个任务',
   emptyRuns: '暂无构建运行',
   targetRegistry: '目标镜像站',
@@ -128,6 +123,11 @@ const buildsPage = {
     lost: '已失联',
     timeout: '已超时',
   },
+  viewLogs: '日志',
+  copyImageRef: '复制镜像引用 {{image}}',
+  sourceColumn: '构建',
+  imageColumn: '镜像',
+  timeColumn: '时间',
 }
 
 export default buildsPage

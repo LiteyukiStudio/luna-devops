@@ -1,7 +1,7 @@
 import type { AIAssistantView } from '@/components/common/ai-assistant/route-state'
 import type { ProjectWorkspaceSection } from '@/pages/projects/overview/project-workspace-sections'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowLeft, Bell, ChartNoAxesCombined, Check, ChevronRight, ChevronsUpDown, Container, Fingerprint, FolderKanban, GitBranch, LayoutDashboard, Menu, ScrollText, Server, Settings, Sparkles, Store, Users } from 'lucide-react'
+import { ArrowLeft, Bell, ChartNoAxesCombined, Check, ChevronsUpDown, Container, Fingerprint, FolderKanban, GitBranch, LayoutDashboard, PanelLeft, ScrollText, Server, Settings, Sparkles, Store, Users } from 'lucide-react'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, Navigate, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
@@ -45,6 +45,7 @@ import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet'
 import {
   Sidebar,
   SidebarContent,
+  SidebarFooter,
   SidebarGroup,
   SidebarGroupLabel,
   SidebarHeader,
@@ -132,7 +133,7 @@ const pageMetaRules = [
 
 function sidebarMenuButtonClassName(active?: boolean) {
   return cn(
-    'flex h-9 w-full min-w-0 max-w-full items-center gap-3 overflow-hidden rounded-control px-3 text-sm font-normal leading-none text-muted-foreground transition-colors duration-fast hover:bg-sidebar-nav-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+    'flex h-10 w-full min-w-0 max-w-full items-center gap-3 overflow-hidden rounded-control px-3 text-sm font-normal leading-none text-foreground transition-colors duration-fast hover:bg-sidebar-nav-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [&>svg]:size-[18px]',
     active && 'font-medium [background:var(--sidebar-nav-active)] text-sidebar-nav-active-text hover:[background:var(--sidebar-nav-active)] hover:text-sidebar-nav-active-text',
   )
 }
@@ -160,7 +161,9 @@ export function AppLayout() {
   const configs = usePublicConfig()
   const location = useLocation()
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
+  const [desktopSidebarCollapsed, setDesktopSidebarCollapsed] = useState(false)
   const [headingTarget, setHeadingTarget] = useState<HTMLDivElement | null>(null)
+  const [descriptionTarget, setDescriptionTarget] = useState<HTMLDivElement | null>(null)
   const [tabsTarget, setTabsTarget] = useState<HTMLDivElement | null>(null)
   const [toolsTarget, setToolsTarget] = useState<HTMLDivElement | null>(null)
   const [hasCustomHeading, registerHeading] = useChromeSlotPresence()
@@ -222,13 +225,14 @@ export function AppLayout() {
   }, [appRouteMatch, configs, currentApplication.data, location.pathname, project, projectRouteMatch, t])
   useDocumentTitle(pageMeta.documentTitle)
   const workspaceChromeTargets = useMemo(() => ({
+    description: descriptionTarget,
     heading: headingTarget,
     registerHeading,
     registerTabs,
     registerTools,
     tabs: tabsTarget,
     tools: toolsTarget,
-  }), [headingTarget, registerHeading, registerTabs, registerTools, tabsTarget, toolsTarget])
+  }), [descriptionTarget, headingTarget, registerHeading, registerTabs, registerTools, tabsTarget, toolsTarget])
   const pageMotionKey = /^\/projects\/[^/]+$/.test(location.pathname) ? '/projects/:projectId' : location.pathname
   const handleLogout = async () => {
     try {
@@ -269,7 +273,7 @@ export function AppLayout() {
                         to={item.to}
                         onClick={onNavigate}
                       >
-                        <item.icon className="size-4 shrink-0" />
+                        <item.icon className="shrink-0" />
                         <span className="min-w-0 flex-1 truncate text-sm leading-none">{t(item.labelKey)}</span>
                       </NavLink>
                     )}
@@ -308,7 +312,7 @@ export function AppLayout() {
                 to={projectWorkspaceSectionPath(projectId, section.value)}
                 onClick={onNavigate}
               >
-                <section.icon className="size-4 shrink-0" />
+                <section.icon className="shrink-0" />
                 <span className="min-w-0 flex-1 truncate text-sm leading-none">{t(section.labelKey)}</span>
               </Link>
             </SidebarMenuItem>
@@ -324,26 +328,34 @@ export function AppLayout() {
 
     return (
       <>
-        <SidebarHeader className="h-14">
+        <SidebarHeader className="p-2">
           <Link
             aria-label={configs['site.title'] || t('appName')}
-            className="flex h-full w-full min-w-0 max-w-full items-center gap-3 overflow-hidden px-4"
-            to="/projects"
+            className="flex h-12 min-w-0 items-center gap-2 rounded-control px-2 outline-none transition-colors hover:bg-sidebar-nav-hover focus-visible:ring-2 focus-visible:ring-ring"
+            to="/dashboard"
             onClick={onNavigate}
           >
             <img
               alt=""
-              className="size-8 shrink-0 rounded-container object-contain"
+              className="size-6 shrink-0 rounded-control object-contain"
               src={configs['site.logoUrl'] || '/luna-devops-logo.svg'}
             />
-            <span className="min-w-0 flex-1 truncate font-semibold">{configs['site.title'] || t('appName')}</span>
+            <span className="min-w-0 truncate text-base font-semibold">{configs['site.title'] || t('appName')}</span>
           </Link>
         </SidebarHeader>
-        <SidebarContent>
+        <SidebarContent className="px-2 py-2">
           {projectRouteMatch
             ? renderProjectNavigation(projectRouteMatch[1], onNavigate)
             : renderGlobalNavigation(onNavigate)}
         </SidebarContent>
+        <SidebarFooter className="border-t-0 p-2">
+          <AccountMenu
+            logoutPending={isLoggingOut}
+            user={user}
+            variant="sidebar"
+            onLogout={handleLogout}
+          />
+        </SidebarFooter>
       </>
     )
   }
@@ -375,61 +387,67 @@ export function AppLayout() {
             </div>
           )
         : (
-            <div className="workspace-canvas h-dvh overflow-hidden text-foreground">
-              <div className="flex h-full w-full min-w-0 overflow-hidden">
-                <Sidebar className="border-r border-border">
+            <div className="workspace-canvas flex h-dvh overflow-hidden text-foreground">
+              {!desktopSidebarCollapsed && (
+                <Sidebar className="h-full w-72 min-w-72 max-w-72 bg-transparent">
                   {renderSidebarContent()}
                 </Sidebar>
-                <Sheet open={mobileSidebarOpen} onOpenChange={setMobileSidebarOpen}>
-                  <SheetContent className="workspace-canvas flex h-full w-72 max-w-[86vw] flex-col gap-0 overflow-hidden p-0 sm:max-w-80" side="left">
-                    <SheetTitle className="sr-only">{configs['site.title'] || t('appName')}</SheetTitle>
-                    {renderSidebarContent(() => setMobileSidebarOpen(false))}
-                  </SheetContent>
-                </Sheet>
+              )}
+              <Sheet open={mobileSidebarOpen} onOpenChange={setMobileSidebarOpen}>
+                <SheetContent className="workspace-canvas flex h-full w-72 max-w-[86vw] flex-col gap-0 overflow-hidden p-0 sm:max-w-80" side="left">
+                  <SheetTitle className="sr-only">{configs['site.title'] || t('appName')}</SheetTitle>
+                  {renderSidebarContent(() => setMobileSidebarOpen(false))}
+                </SheetContent>
+              </Sheet>
 
-                <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-                  <WorkspaceChromeTargetsProvider value={workspaceChromeTargets}>
-                    <header className="relative z-20 flex h-14 shrink-0 items-center gap-2 border-b border-border px-page-inline">
-                      <Button
-                        aria-label={t('nav.openSidebar')}
-                        className="shrink-0 lg:hidden"
-                        size="icon"
-                        variant="ghost"
-                        onClick={() => setMobileSidebarOpen(true)}
-                      >
-                        <Menu className="size-5" />
-                      </Button>
-                      <Breadcrumbs items={pageMeta.breadcrumbs} label={t('nav.breadcrumb')} />
-                      <InboxTrigger />
-                      <AccountMenu
-                        logoutPending={isLoggingOut}
-                        user={user}
-                        onLogout={handleLogout}
-                      />
-                    </header>
-                    <main
-                      className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden bg-transparent px-page-inline py-page-block transition-colors"
+              <WorkspaceChromeTargetsProvider value={workspaceChromeTargets}>
+                <div className={cn('flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background lg:my-2 lg:mr-2 lg:rounded-container lg:shadow-sm', desktopSidebarCollapsed && 'lg:ml-2')}>
+                  <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-4">
+                    <Button
+                      aria-label={t('nav.openSidebar')}
+                      className="-ml-1 size-8 shrink-0 lg:hidden"
+                      size="icon"
+                      variant="ghost"
+                      onClick={() => setMobileSidebarOpen(true)}
                     >
-                      <div className="flex min-h-full min-w-0 flex-col gap-section">
-                        <div className="grid min-w-0 gap-3" data-slot="workspace-page-header">
-                          <div className="flex min-w-0 flex-wrap items-start justify-between gap-x-4 gap-y-3">
-                            <div ref={setHeadingTarget} className="min-w-0 flex-1" data-slot="workspace-page-heading">
-                              {!hasCustomHeading && (
-                                <h1 className="truncate text-xl font-semibold tracking-tight text-foreground md:text-2xl">{pageMeta.heading}</h1>
-                              )}
-                            </div>
-                            <div ref={setToolsTarget} className="flex min-w-0 max-w-full items-center justify-end empty:hidden" data-slot="workspace-page-tools" />
-                          </div>
+                      <PanelLeft className="size-4" />
+                    </Button>
+                    <Button
+                      aria-label={t('nav.toggleSidebar')}
+                      aria-pressed={!desktopSidebarCollapsed}
+                      className="-ml-1 hidden size-8 shrink-0 lg:inline-flex"
+                      size="icon"
+                      variant="ghost"
+                      onClick={() => setDesktopSidebarCollapsed(collapsed => !collapsed)}
+                    >
+                      <PanelLeft className="size-4" />
+                    </Button>
+                    <span aria-hidden="true" className="mx-1 h-4 w-px shrink-0 bg-border" />
+                    <Breadcrumbs items={pageMeta.breadcrumbs} label={t('nav.breadcrumb')} />
+                    <div ref={setHeadingTarget} className="min-w-0 flex-1" data-slot="workspace-page-heading">
+                      {!hasCustomHeading && (
+                        <h1 className="truncate text-base font-medium text-foreground">{pageMeta.heading}</h1>
+                      )}
+                    </div>
+                    <InboxTrigger />
+                  </header>
+                  <main className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-page-inline py-page-block">
+                    <div className="flex min-h-full min-w-0 flex-col gap-group">
+                      {/* 左侧依次是 Tabs 与页面描述，右侧是页面级操作；三者都为空时整行隐藏 */}
+                      <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-3 has-[[data-slot=workspace-page-tabs]:empty]:has-[[data-slot=workspace-page-description]:empty]:has-[[data-slot=workspace-page-tools]:empty]:hidden" data-slot="workspace-page-header">
+                        <div className="grid min-w-0 flex-1 gap-2" data-slot="workspace-page-intro">
                           <div ref={setTabsTarget} className="min-w-0 empty:hidden" data-slot="workspace-page-tabs" />
+                          <div ref={setDescriptionTarget} className="min-w-0 empty:hidden" data-slot="workspace-page-description" />
                         </div>
-                        <PageMotion key={pageMotionKey} className="w-full min-w-0 max-w-full">
-                          <Outlet />
-                        </PageMotion>
+                        <div ref={setToolsTarget} className="ml-auto flex min-w-0 max-w-full items-center justify-end empty:hidden" data-slot="workspace-page-tools" />
                       </div>
-                    </main>
-                  </WorkspaceChromeTargetsProvider>
+                      <PageMotion key={pageMotionKey} className="w-full min-w-0 max-w-full">
+                        <Outlet />
+                      </PageMotion>
+                    </div>
+                  </main>
                 </div>
-              </div>
+              </WorkspaceChromeTargetsProvider>
               <AIAssistantEntryHost />
             </div>
           )}
@@ -550,22 +568,21 @@ function AIAssistantNavButton({ icon: Icon, label, onNavigate }: {
   )
 }
 
+/** 面板顶栏里标题前的上级层级（如 项目空间 / xxx /），当前页面由 h1 表达；窄屏隐藏。 */
 function Breadcrumbs({ items, label }: { items: Breadcrumb[], label: string }) {
+  const ancestors = items.slice(0, -1).filter(item => item.to)
+  if (ancestors.length === 0)
+    return null
+
   return (
-    <nav aria-label={label} className="min-w-0 flex-1">
+    <nav aria-label={label} className="hidden min-w-0 shrink md:block">
       <ol className="flex min-w-0 items-center gap-1.5 text-sm text-muted-foreground">
-        {items.map((item, index) => {
-          const current = index === items.length - 1
-          return (
-            // 窄屏只保留当前层级，上级由侧栏和返回入口承担。
-            <li key={`${item.label}-${item.to ?? index}`} className={cn('min-w-0 items-center gap-1.5', current ? 'flex' : 'hidden md:flex')}>
-              {index > 0 && <ChevronRight aria-hidden="true" className="hidden size-3.5 shrink-0 text-muted-foreground/70 md:block" />}
-              {current || !item.to
-                ? <span aria-current={current ? 'page' : undefined} className={cn('min-w-0 truncate', current && 'font-medium text-foreground')} title={item.label}>{item.label}</span>
-                : <Link className="min-w-0 truncate rounded-sm outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring" title={item.label} to={item.to}>{item.label}</Link>}
-            </li>
-          )
-        })}
+        {ancestors.map(item => (
+          <li key={`${item.label}-${item.to}`} className="flex min-w-0 items-center gap-1.5">
+            <Link className="min-w-0 max-w-48 truncate rounded-sm outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring" title={item.label} to={item.to ?? '/'}>{item.label}</Link>
+            <span aria-hidden="true" className="text-muted-foreground/60">/</span>
+          </li>
+        ))}
       </ol>
     </nav>
   )

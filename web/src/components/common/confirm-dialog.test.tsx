@@ -25,7 +25,7 @@ describe('confirm dialog', () => {
     const cancel = screen.getByRole('button', { name: 'Cancel' })
 
     expect(confirm).toHaveClass('bg-danger')
-    expect(cancel).toHaveClass('bg-surface')
+    expect(cancel).toHaveClass('border-border', 'bg-surface')
     await interaction.click(confirm)
     expect(onConfirm).toHaveBeenCalledOnce()
     expect(confirm).toBeDisabled()

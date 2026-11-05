@@ -1,7 +1,7 @@
 import type { BrandColorPreset, UserBrandColorPreference } from '@/app/brand-theme'
 import { Check, Link2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { brandColorPresets, brandColorUsesDarkForeground, brandThemeSwatchBackground, brandThemeSwatchColors, normalizeBrandColorPreset, normalizeUserBrandColorPreference } from '@/app/brand-theme'
+import { brandColorPresets, normalizeBrandColorPreset, normalizeUserBrandColorPreference } from '@/app/brand-theme'
 import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -62,7 +62,6 @@ function BrandColorOption({ checked, id, label, preset, value }: {
   value: string
 }) {
   const showLabel = value === inheritValue
-  const compositeColors = brandThemeSwatchColors(preset)
 
   return (
     <div className="shrink-0">
@@ -76,11 +75,9 @@ function BrandColorOption({ checked, id, label, preset, value }: {
             htmlFor={id}
           >
             <span
-              className="brand-theme-swatch relative flex size-full items-center justify-center overflow-hidden rounded-full border border-border/70 shadow-xs"
-              data-dark-foreground={brandColorUsesDarkForeground(preset)}
-              style={{ background: compositeColors ? compositeColors[0] : brandThemeSwatchBackground(preset) }}
+              className="relative flex size-full items-center justify-center overflow-hidden rounded-full border border-border/70 shadow-xs"
+              style={{ background: `var(--${preset}-9)` }}
             >
-              {compositeColors && <CompositeThemeSwatch colors={compositeColors} />}
               <span className={cn(
                 'relative z-10 flex size-5 items-center justify-center rounded-full bg-card/90 text-foreground shadow-sm backdrop-blur-sm transition-opacity',
                 checked ? 'opacity-100' : 'opacity-0',
@@ -103,48 +100,4 @@ function BrandColorOption({ checked, id, label, preset, value }: {
       </Tooltip>
     </div>
   )
-}
-
-const compositeWedgePaths = [
-  sectorPath(135, 195),
-  sectorPath(195, 255),
-  sectorPath(255, 315),
-]
-
-function CompositeThemeSwatch({ colors }: { colors: readonly [string, string, string, string] }) {
-  return (
-    <svg
-      aria-hidden="true"
-      className="absolute inset-0 size-full"
-      data-slot="composite-theme-swatch"
-      shapeRendering="geometricPrecision"
-      viewBox="0 0 100 100"
-    >
-      <circle cx="50" cy="50" fill={colors[0]} r="50" />
-      {compositeWedgePaths.map((path, index) => (
-        <path
-          key={path}
-          d={path}
-          fill={colors[index + 1]}
-          stroke={colors[index + 1]}
-          strokeLinejoin="round"
-          strokeWidth="0.45"
-        />
-      ))}
-    </svg>
-  )
-}
-
-function sectorPath(startAngle: number, endAngle: number) {
-  const start = polarPoint(startAngle)
-  const end = polarPoint(endAngle)
-  return `M 50 50 L ${start.x} ${start.y} A 50 50 0 0 1 ${end.x} ${end.y} Z`
-}
-
-function polarPoint(angle: number) {
-  const radians = angle * Math.PI / 180
-  return {
-    x: Number((50 + 50 * Math.cos(radians)).toFixed(4)),
-    y: Number((50 + 50 * Math.sin(radians)).toFixed(4)),
-  }
 }

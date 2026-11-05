@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils'
 function Empty({ className, ...props }: ComponentProps<'div'>) {
   return (
     <div
-      className={cn('flex min-h-32 flex-col items-start justify-center rounded-lg border border-border bg-surface p-4 text-sm text-muted-foreground', className)}
+      className={cn('flex min-h-48 flex-col items-center justify-center rounded-container border border-border bg-surface px-6 py-10 text-center text-sm text-muted-foreground', className)}
       data-slot="empty"
       {...props}
     />

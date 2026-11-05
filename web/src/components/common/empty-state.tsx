@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { Inbox } from 'lucide-react'
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
 import { cn } from '@/lib/utils'
 
@@ -20,16 +21,14 @@ export function EmptyState({ title, description, actions, icon, mode = 'actionab
   return (
     <Empty
       className={cn(
-        filtered ? 'min-h-24 items-center text-center' : 'min-h-32',
+        filtered && 'min-h-32 py-8',
         variant === 'plain' && 'rounded-none border-0 bg-transparent shadow-none',
       )}
     >
-      {icon && (
-        <div className="mb-3 flex size-10 items-center justify-center rounded-md bg-muted text-muted-foreground" aria-hidden="true">
-          {icon}
-        </div>
-      )}
-      <EmptyHeader className={cn(filtered && 'justify-items-center')}>
+      <div className="mb-4 flex size-12 items-center justify-center rounded-full bg-muted text-muted-foreground" aria-hidden="true">
+        {icon ?? <Inbox className="size-5" />}
+      </div>
+      <EmptyHeader className="max-w-md justify-items-center">
         <EmptyTitle>{title}</EmptyTitle>
         {description && <EmptyDescription>{description}</EmptyDescription>}
       </EmptyHeader>

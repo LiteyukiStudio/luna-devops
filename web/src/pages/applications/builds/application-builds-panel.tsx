@@ -2,16 +2,15 @@ import type { Ref } from 'react'
 import type { ArtifactRegistry, BuildJob, BuildRun, DeploymentTarget, RepositoryBinding } from '@/api'
 import type { KeyValueRow } from '@/components/common/key-value-rows-editor'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Search, Settings2 } from 'lucide-react'
+import { Settings2 } from 'lucide-react'
 import { useEffect, useImperativeHandle, useMemo, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { api, buildJobLogsStreamUrl } from '@/api'
 import { BuildEnvironmentEditorDialog } from '@/components/common/build-environment-editor-dialog'
-import { EmptyState } from '@/components/common/empty-state'
+import { DataList } from '@/components/common/data-list'
 import { FormField as Field } from '@/components/common/form-field'
-import { PaginationController } from '@/components/common/pagination'
 import { SearchSelect } from '@/components/common/search-select'
 import { TargetImageRefInput } from '@/components/common/target-image-ref-input'
 import { UnitInput } from '@/components/common/unit-input'
@@ -30,7 +29,7 @@ import { branchOptions, defaultTargetImageRef, deploymentTargetImageRef, firstSe
 import { ApplicationBuildLogPanel } from './application-build-log-panel'
 import { buildRunIdFromHash } from './application-build-navigation'
 import { ApplicationBuildRunFilterBar } from './application-build-run-filter-bar'
-import { ApplicationBuildRunRow } from './application-build-run-row'
+import { BuildRunActions, BuildRunImageCell, BuildRunSourceCell, BuildRunStatusCell, BuildRunTimeCell } from './application-build-run-row'
 
 export interface BuildsPanelHandle {
   openTriggerDrawer: () => void
@@ -64,7 +63,6 @@ export function ApplicationBuildsPanel({ applicationId, applicationIdentifier, b
   const billingDisplay = useBillingDisplay(i18n.language)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [branchSearch, setBranchSearch] = useState('')
-  const [focusedBuildRunId, setFocusedBuildRunId] = useState(() => buildRunIdFromHash(window.location.hash))
   const [runSearch, setRunSearch] = useState(() => buildRunIdFromHash(window.location.hash))
   const [runsPage, setRunsPage] = useState(1)
   const [runsPageSize, setRunsPageSize] = useState(10)
@@ -156,9 +154,17 @@ export function ApplicationBuildsPanel({ applicationId, applicationIdentifier, b
     ...buildRuns.map(run => run.createdBy),
     actorFilter,
   ]), [actorFilter, buildRuns])
+  const hasRunFilters = Boolean(runSearch.trim() || eventFilter || statusFilter || branchFilter || actorFilter)
+  // 构建记录只归属到它当时的部署配置所绑定的仓库，避免把旧构建算到替换后的仓库上。
+  const runContext = (run: BuildRun) => {
+    const config = deploymentTargets.find(item => item.id === run.deploymentTargetId)
+    const rowBinding = config?.repositoryBindingId
+      ? repositoryBindings.find(item => item.id === config.repositoryBindingId)
+      : config ? binding : undefined
+    return { binding: rowBinding, config }
+  }
   const updateRunSearch = (value: string) => {
     setRunSearch(value)
-    setFocusedBuildRunId('')
     setRunsPage(1)
   }
   const updateEventFilter = (value: string) => {
@@ -235,19 +241,12 @@ export function ApplicationBuildsPanel({ applicationId, applicationIdentifier, b
       const buildRunId = buildRunIdFromHash(window.location.hash)
       if (!buildRunId)
         return
-      setFocusedBuildRunId(buildRunId)
       setRunSearch(buildRunId)
       setRunsPage(1)
     }
     window.addEventListener('hashchange', syncBuildRunFromHash)
     return () => window.removeEventListener('hashchange', syncBuildRunFromHash)
   }, [])
-
-  useEffect(() => {
-    if (!focusedBuildRunId || !pagedRuns.some(run => run.id === focusedBuildRunId))
-      return
-    document.getElementById(`build-run-${focusedBuildRunId}`)?.scrollIntoView({ block: 'center', behavior: 'smooth' })
-  }, [focusedBuildRunId, pagedRuns])
 
   useEffect(() => {
     if (!logJobId)
@@ -347,92 +346,73 @@ export function ApplicationBuildsPanel({ applicationId, applicationIdentifier, b
 
   return (
     <div className="grid gap-4">
-      <div className="overflow-hidden rounded-lg border border-border bg-card">
-        <div className="flex flex-col gap-3 border-b border-border bg-muted/45 px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
-          <div className="min-w-0">
-            <h2 className="text-base font-semibold">{t('buildsPage.workflowRunCount', { count: runsTotal })}</h2>
-            <p className="mt-1 text-sm text-muted-foreground">{t('buildsPage.applicationRunsDescription')}</p>
-          </div>
-          <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
-            <Button type="button" variant="outline" onClick={() => void openApplicationEnvironment()}>
-              <Settings2 className="size-4" />
-              {t('buildsPage.applicationBuildEnvironment')}
-            </Button>
-            <div className="relative min-w-0 sm:w-80">
-              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                className="h-9 pl-9"
-                placeholder={t('buildsPage.filterRuns')}
-                value={runSearch}
-                onChange={event => updateRunSearch(event.target.value)}
+      <DataList
+        columns={[
+          { key: 'status', header: t('common.status'), width: 'status', render: run => <BuildRunStatusCell latestJob={buildJobMap.get(run.id)?.[0]} run={run} /> },
+          { key: 'source', header: t('buildsPage.sourceColumn'), width: 'primary', render: (run) => {
+            const { binding: rowBinding, config } = runContext(run)
+            return <BuildRunSourceCell binding={rowBinding} deploymentTargetName={config?.name} run={run} />
+          } },
+          { key: 'image', header: t('buildsPage.imageColumn'), width: 'normal', mobile: 'hidden', render: run => <BuildRunImageCell run={run} /> },
+          { key: 'time', header: t('buildsPage.timeColumn'), width: 'compact', render: run => <BuildRunTimeCell jobs={buildJobMap.get(run.id) ?? []} run={run} /> },
+          { key: 'actions', header: t('common.actions'), mobileActions: 'inline', sticky: 'right', width: 'actions', render: (run) => {
+            const { binding: rowBinding, config } = runContext(run)
+            return (
+              <BuildRunActions
+                canRetry={Boolean(config && rowBinding)}
+                canceling={cancelBuild.isPending}
+                deleting={deleteBuild.isPending}
+                latestJob={buildJobMap.get(run.id)?.[0]}
+                retrying={retryBuild.isPending}
+                run={run}
+                onCancel={() => cancelBuild.mutate(run.id)}
+                onDelete={() => deleteBuild.mutate(run.id)}
+                onOpenLogs={job => setLogJob(job)}
+                onRetry={() => retryBuild.mutate(run.id)}
               />
-            </div>
-          </div>
-        </div>
-        <ApplicationBuildRunFilterBar
-          actor={actorFilter}
-          actorOptions={actorFilterOptions}
-          branch={branchFilter}
-          branchOptions={branchFilterOptions}
-          event={eventFilter}
-          status={statusFilter}
-          onActorChange={updateActorFilter}
-          onBranchChange={updateBranchFilter}
-          onEventChange={updateEventFilter}
-          onStatusChange={updateStatusFilter}
-        />
-        {pagedRuns.length
-          ? (
-              <div className="divide-y divide-border">
-                {pagedRuns.map((run) => {
-                  const jobs = buildJobMap.get(run.id) ?? []
-                  const latestJob = jobs[0]
-                  const config = deploymentTargets.find(config => config.id === run.deploymentTargetId)
-                  const rowBinding = config?.repositoryBindingId
-                    ? repositoryBindings.find(binding => binding.id === config.repositoryBindingId)
-                    : config ? binding : undefined
-                  return (
-                    <ApplicationBuildRunRow
-                      key={run.id}
-                      binding={rowBinding}
-                      canRetry={Boolean(config && rowBinding)}
-                      deploymentTargetName={config?.name}
-                      jobs={jobs}
-                      latestJob={latestJob}
-                      run={run}
-                      focused={run.id === focusedBuildRunId}
-                      canceling={cancelBuild.isPending}
-                      deleting={deleteBuild.isPending}
-                      retrying={retryBuild.isPending}
-                      onCancel={() => cancelBuild.mutate(run.id)}
-                      onDelete={() => deleteBuild.mutate(run.id)}
-                      onOpenLogs={job => setLogJob(job)}
-                      onRetry={() => retryBuild.mutate(run.id)}
-                    />
-                  )
-                })}
-              </div>
             )
-          : (
-              <EmptyState
-                title={repositoryBindings.length || binding ? t('buildsPage.emptyRuns') : t('buildsPage.repositoryBindingRequired')}
-                variant="plain"
-              />
-            )}
-        <div className="border-t border-border px-4 py-4">
-          <PaginationController
-            initialPage={runsPage}
-            pageSize={runsPageSize}
-            pageSizeOptions={[10, 20, 50]}
-            total={runsTotal}
-            onPageChange={setRunsPage}
-            onPageSizeChange={(pageSize) => {
-              setRunsPageSize(pageSize)
-              setRunsPage(1)
-            }}
+          } },
+        ]}
+        emptyMode={hasRunFilters ? 'filtered' : 'actionable'}
+        emptyTitle={repositoryBindings.length || binding ? t('buildsPage.emptyRuns') : t('buildsPage.repositoryBindingRequired')}
+        items={pagedRuns}
+        loading={buildRunsPage.isLoading}
+        pagination={{
+          page: buildRunsPage.data?.page ?? runsPage,
+          pageSize: buildRunsPage.data?.pageSize ?? runsPageSize,
+          pageSizeOptions: [10, 20, 50],
+          total: runsTotal,
+          totalPages: buildRunsPage.data?.totalPages ?? 0,
+          pageInfoLabel: t('buildsPage.workflowRunCount', { count: runsTotal }),
+          onPageChange: setRunsPage,
+          onPageSizeChange: (pageSize) => {
+            setRunsPageSize(pageSize)
+            setRunsPage(1)
+          },
+        }}
+        rowKey={run => run.id}
+        search={{ value: runSearch, placeholder: t('buildsPage.filterRuns'), onChange: updateRunSearch }}
+        toolbar={(
+          <ApplicationBuildRunFilterBar
+            actor={actorFilter}
+            actorOptions={actorFilterOptions}
+            branch={branchFilter}
+            branchOptions={branchFilterOptions}
+            event={eventFilter}
+            status={statusFilter}
+            onActorChange={updateActorFilter}
+            onBranchChange={updateBranchFilter}
+            onEventChange={updateEventFilter}
+            onStatusChange={updateStatusFilter}
           />
-        </div>
-      </div>
+        )}
+        toolbarActions={(
+          <Button type="button" variant="outline" onClick={() => void openApplicationEnvironment()}>
+            <Settings2 className="size-4" />
+            {t('buildsPage.applicationBuildEnvironment')}
+          </Button>
+        )}
+      />
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent>
           <DialogHeader>

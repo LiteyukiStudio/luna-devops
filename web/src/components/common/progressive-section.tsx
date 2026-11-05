@@ -39,12 +39,12 @@ export function ProgressiveSection({ children, defaultOpen = false, description,
 
   return (
     <Collapsible asChild open={open} onOpenChange={changeOpen}>
-      <section className="min-w-0 rounded-lg border border-border bg-card">
-        <div className="relative min-w-0 rounded-lg px-4 py-3">
+      <section className="min-w-0 rounded-container border border-border bg-card">
+        <div className="relative min-w-0 rounded-container px-4 py-3">
           <CollapsibleTrigger asChild>
             <Button
               aria-labelledby={titleId}
-              className="absolute inset-0 z-0 h-full w-full rounded-lg p-0 hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring"
+              className="absolute inset-0 z-0 h-full w-full rounded-container p-0 hover:bg-surface-subtle focus-visible:ring-2 focus-visible:ring-ring"
               type="button"
               variant="ghost"
             />
@@ -53,7 +53,7 @@ export function ProgressiveSection({ children, defaultOpen = false, description,
             <span className="min-w-0 flex-1 text-left">
               <span className="flex min-w-0 items-center gap-1.5">
                 <span id={titleId} className="min-w-0 text-sm font-semibold break-words text-foreground">{title}</span>
-                {hint && (
+                {(hint ?? description) && (
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button
@@ -68,14 +68,13 @@ export function ProgressiveSection({ children, defaultOpen = false, description,
                         <CircleHelp className="size-3.5" />
                       </Button>
                     </TooltipTrigger>
-                    <TooltipContent className="max-w-72 leading-5" side="top">
-                      {hint}
+                    <TooltipContent className="max-w-80 leading-5" side="top">
+                      {hint ?? description}
                     </TooltipContent>
                   </Tooltip>
                 )}
               </span>
               {summary && <span className="mt-1 block truncate text-xs text-muted-foreground">{summary}</span>}
-              {description && open && <span className="mt-1 block text-xs break-words text-muted-foreground">{description}</span>}
             </span>
             <ChevronDown className={cn('size-4 shrink-0 text-muted-foreground transition-transform', open && 'rotate-180')} />
           </div>

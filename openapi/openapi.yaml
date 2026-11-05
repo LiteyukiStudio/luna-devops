@@ -12740,15 +12740,11 @@ components:
         brandColorPreset:
           type: string
           description: Empty follows the platform color theme; otherwise contains a preset from the current curated catalog.
-          enum: ['', aurora, harbor, sunset, botanical, meadow, citrus, gold, orange, red, pink, violet, blue, cyan, teal, green, lime]
-        interfaceStyle:
-          type: string
-          description: Empty follows the platform default; minimal uses a neutral canvas and themed uses the brand-tinted canvas.
-          enum: ['', minimal, themed]
+          enum: ['', blue, violet, teal, green, orange, pink]
         permissions:
           type: array
           items: { type: string }
-      required: [id, email, name, avatarUrl, passwordSet, role, language, brandColorPreset, interfaceStyle, permissions]
+      required: [id, email, name, avatarUrl, passwordSet, role, language, brandColorPreset, permissions]
     AuthRegistrationStatus:
       type: object
       properties:
@@ -12855,11 +12851,7 @@ components:
         brandColorPreset:
           type: string
           description: Empty follows the platform color theme; otherwise stores a preset from the current curated catalog.
-          enum: ['', aurora, harbor, sunset, botanical, meadow, citrus, gold, orange, red, pink, violet, blue, cyan, teal, green, lime]
-        interfaceStyle:
-          type: string
-          description: Empty follows the platform default; otherwise overrides the interface style.
-          enum: ['', minimal, themed]
+          enum: ['', blue, violet, teal, green, orange, pink]
     UserInput:
       type: object
       properties:

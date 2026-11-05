@@ -141,14 +141,6 @@ func (h *Handlers) UpdateCurrentUser(ctx *gin.Context) {
 		}
 		user.BrandColorPreset = preset
 	}
-	if input.InterfaceStyle != nil {
-		style, valid := h.host.NormalizeUserInterfaceStyle(*input.InterfaceStyle)
-		if !valid {
-			writeErrorCode(ctx, http.StatusBadRequest, "user.interface_style_invalid", "unsupported interface style")
-			return
-		}
-		user.InterfaceStyle = style
-	}
 
 	if err := h.dbFor(ctx).Save(&user).Error; err != nil {
 		writeError(ctx, http.StatusBadRequest, err.Error())
@@ -352,7 +344,6 @@ type updateCurrentUserInput struct {
 	AvatarURL        string  `json:"avatarUrl"`
 	Language         string  `json:"language"`
 	BrandColorPreset *string `json:"brandColorPreset"`
-	InterfaceStyle   *string `json:"interfaceStyle"`
 }
 
 type userInput struct {
@@ -526,7 +517,6 @@ func currentUserResponse(user model.User) gin.H {
 		"role":             user.Role,
 		"language":         normalizeLanguage(user.Language),
 		"brandColorPreset": user.BrandColorPreset,
-		"interfaceStyle":   user.InterfaceStyle,
 		"permissions":      permissionsFor(user),
 	}
 }

@@ -1,12 +1,9 @@
 import type { ReactNode } from 'react'
-import i18next from 'i18next'
-import { CircleHelp } from 'lucide-react'
 import { Slot } from 'radix-ui'
 import { isValidElement, useId } from 'react'
 
-import { Button } from '@/components/ui/button'
+import { HelpTip } from '@/components/common/help-tip'
 import { Field, FieldError, FieldLabel } from '@/components/ui/field'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 
 /** FormField 分配给内部控件的关联属性；复合控件可用 render 函数把它们放到真正的输入元素上。 */
@@ -71,28 +68,7 @@ export function FormField({
             {required && <span aria-hidden="true" className="ml-1 text-primary-text">*</span>}
           </span>
         </FieldLabel>
-        {hint && (
-          <>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  aria-label={`${label}${i18next.t('common.helpSuffix')}`}
-                  className="size-auto shrink-0 rounded-sm p-0 text-muted-foreground hover:bg-transparent hover:text-primary-text focus:text-primary-text focus-visible:ring-0 [&_svg]:size-3.5"
-                  size="icon"
-                  tabIndex={-1}
-                  type="button"
-                  variant="ghost"
-                >
-                  <CircleHelp className="size-3.5 transition" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent className="max-w-72 leading-5" side="top">
-                {hint}
-              </TooltipContent>
-            </Tooltip>
-            <span className="sr-only" id={hintId}>{hint}</span>
-          </>
-        )}
+        {hint && <HelpTip id={hintId} label={label}>{hint}</HelpTip>}
       </div>
       {content}
       {error && (

@@ -14,7 +14,6 @@ type User struct {
 	Role             string         `gorm:"not null;default:user" json:"role"`
 	Language         string         `gorm:"not null;default:zh-CN" json:"language"`
 	BrandColorPreset string         `gorm:"not null;default:''" json:"brandColorPreset"`
-	InterfaceStyle   string         `gorm:"not null;default:''" json:"interfaceStyle"`
 	Password         string         `json:"-"`
 	Disabled         bool           `gorm:"not null;default:false" json:"disabled"`
 	CreatedAt        time.Time      `json:"createdAt"`

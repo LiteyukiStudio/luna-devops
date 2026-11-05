@@ -27,7 +27,7 @@ export function KeyValueRowsEditor({ onChange, rows, secret = false, title, valu
     onChange(nextRows.length ? nextRows : [emptyKeyValueRow()])
   }
   return (
-    <div className="grid gap-2 rounded-lg border border-border p-3">
+    <div className="grid gap-2 rounded-container border border-border p-3">
       <div className="flex items-center justify-between gap-3">
         <h3 className="text-sm font-medium">{title}</h3>
         <Button size="sm" type="button" variant="secondary" onClick={() => onChange([...rows, emptyKeyValueRow()])}>

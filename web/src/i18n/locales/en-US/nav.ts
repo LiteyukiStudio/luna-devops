@@ -3,6 +3,7 @@ const nav = {
   integrations: 'Integrations',
   systemManagement: 'System management',
   openSidebar: 'Open sidebar',
+  toggleSidebar: 'Toggle sidebar',
   breadcrumb: 'Breadcrumb',
   projectNavigation: 'Project space navigation',
   switchProject: 'Switch project space',

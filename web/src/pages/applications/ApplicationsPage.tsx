@@ -3,18 +3,17 @@ import type { Application } from '@/api'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import i18next from 'i18next'
-import { LayoutDashboard, MoreHorizontal, Pencil, Plus, Save, Trash2 } from 'lucide-react'
+import { MoreHorizontal, Pencil, Plus, Rocket, Save, Trash2 } from 'lucide-react'
 import { useImperativeHandle, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { z } from 'zod'
 import { api } from '@/api'
 import { ApplicationBasicFields } from '@/components/common/application-basic-fields'
 import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { DataList } from '@/components/common/data-list'
-import { EditActionButton } from '@/components/common/edit-action-button'
 import { ErrorState } from '@/components/common/error-state'
 import { Button } from '@/components/ui/button'
 import { buttonVariants } from '@/components/ui/button-variants'
@@ -24,7 +23,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { APPLICATION_IDENTIFIER_MAX_LENGTH, APPLICATION_IDENTIFIER_MIN_LENGTH } from '@/lib/identifier-limits'
 import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
-import { ApplicationSummary } from './overview/application-summary'
+import { ApplicationRuntimeStatus, ApplicationSummary } from './overview/application-summary'
 
 const schema = z.object({
   name: z.string().min(1, i18next.t('apps.nameRequired')),
@@ -44,17 +43,17 @@ export interface ApplicationsPageHandle {
 }
 
 interface ApplicationsPageProps {
-  embedded?: boolean
   projectId?: string
-  projectName?: string
   ref?: Ref<ApplicationsPageHandle>
 }
 
-export function ApplicationsPage({ embedded = false, projectId: projectIdProp, ref }: ApplicationsPageProps = {}) {
+/** 项目空间内的应用列表；页面级“新建应用”由项目工作区放入页头。 */
+export function ApplicationsPage({ projectId: projectIdProp, ref }: ApplicationsPageProps = {}) {
   const { t } = useTranslation()
   const { projectId: routeProjectId = '' } = useParams()
   const projectId = projectIdProp ?? routeProjectId
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingApplication, setEditingApplication] = useState<Application | null>(null)
   const [applicationToDelete, setApplicationToDelete] = useState<Application | null>(null)
@@ -157,121 +156,104 @@ export function ApplicationsPage({ embedded = false, projectId: projectIdProp, r
   })
 
   return (
-    <div className="grid gap-6">
-      {applications.isError && <ErrorState title={t('apps.loadFailedTitle')} description={t('apps.loadFailedDescription')} />}
-      <DataList
-        toolbarActions={!embedded
-          ? (
-              <div className="flex items-center gap-3">
-                <Button onClick={openCreateDialog}>
-                  <Plus size={16} />
-                  {t('apps.createTitle')}
-                </Button>
-                <Link className="text-sm text-primary-text hover:underline" to="/projects">{t('backToProjectSpaces')}</Link>
-              </div>
-            )
-          : undefined}
-        columns={[
-          {
-            key: 'name',
-            header: t('apps.title'),
-            className: 'min-w-64 px-4 py-3 align-middle',
-            render: application => <ApplicationSummary application={application} projectId={projectId} />,
-          },
-          {
-            key: 'actions',
-            header: t('common.actions'),
-            className: 'w-[1%] whitespace-nowrap px-4 py-3 align-middle text-right',
-            mobileActions: 'inline',
-            render: (application) => {
-              const deleting = application.deleteStatus === 'deleting'
-              const openEditDialog = () => {
-                setEditingApplication(application)
-                resetApplicationForm(application)
-                setDialogOpen(true)
-              }
-              const openDeleteDialog = () => {
-                setApplicationToDelete(application)
-                setDeleteConfirmation('')
-              }
-              return (
-                <div className="flex justify-end">
-                  <div className="hidden justify-end gap-2 md:flex">
-                    <Link
-                      aria-label={t('apps.openDetailAria')}
-                      aria-disabled={deleting}
-                      className={buttonVariants({ className: deleting ? 'pointer-events-none opacity-50' : undefined, size: 'sm', variant: 'ghost' })}
-                      to={`/projects/${projectId}/apps/${application.id}`}
-                    >
-                      <LayoutDashboard size={16} />
-                      {t('apps.openDetail')}
-                    </Link>
-                    <EditActionButton
-                      aria-label={t('apps.editAria')}
-                      label={t('edit')}
-                      disabled={deleting}
-                      onClick={openEditDialog}
-                    />
-                    <Button
-                      aria-label={t('apps.deleteAria')}
-                      disabled={deleting}
-                      variant="ghost"
-                      onClick={openDeleteDialog}
-                    >
-                      <Trash2 size={16} />
-                    </Button>
-                  </div>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button aria-label={t('common.actions')} className="md:hidden" size="icon" variant="ghost">
-                        <MoreHorizontal size={16} />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem asChild disabled={deleting}>
-                        <Link className={deleting ? 'pointer-events-none opacity-50' : undefined} to={`/projects/${projectId}/apps/${application.id}`}>
-                          <LayoutDashboard size={16} />
-                          {t('apps.openDetail')}
+    <div className="grid gap-section">
+      {applications.isError
+        ? <ErrorState title={t('apps.loadFailedTitle')} description={t('apps.loadFailedDescription')} />
+        : (
+            <DataList
+              columns={[
+                {
+                  key: 'name',
+                  header: t('apps.title'),
+                  width: 'primary',
+                  render: application => <ApplicationSummary application={application} projectId={projectId} />,
+                },
+                {
+                  key: 'runtimeStatus',
+                  header: t('apps.runtimeStatus'),
+                  width: 'normal',
+                  render: application => <ApplicationRuntimeStatus application={application} />,
+                },
+                {
+                  key: 'actions',
+                  header: t('common.actions'),
+                  mobileActions: 'inline',
+                  sticky: 'right',
+                  width: 'actions',
+                  render: (application) => {
+                    const deleting = application.deleteStatus === 'deleting'
+                    const openEditDialog = () => {
+                      setEditingApplication(application)
+                      resetApplicationForm(application)
+                      setDialogOpen(true)
+                    }
+                    const openDeleteDialog = () => {
+                      setApplicationToDelete(application)
+                      setDeleteConfirmation('')
+                    }
+                    return (
+                      <div className="flex items-center justify-end gap-1">
+                        <Link
+                          aria-disabled={deleting}
+                          className={buttonVariants({ className: deleting ? 'pointer-events-none opacity-50' : undefined, size: 'sm', variant: 'outline' })}
+                          tabIndex={deleting ? -1 : undefined}
+                          to={`/projects/${projectId}/apps/${application.id}?tab=deployments`}
+                        >
+                          <Rocket size={16} />
+                          {t('apps.deployAction')}
                         </Link>
-                      </DropdownMenuItem>
-                      <DropdownMenuItem disabled={deleting} onSelect={openEditDialog}>
-                        <Pencil size={16} />
-                        {t('edit')}
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem disabled={deleting} variant="destructive" onSelect={openDeleteDialog}>
-                        <Trash2 size={16} />
-                        {t('common.delete')}
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
-              )
-            },
-          },
-        ]}
-        emptyDescription={t('apps.emptyDescription')}
-        emptyTitle={t('apps.emptyTitle')}
-        items={applications.data?.items ?? []}
-        pagination={{
-          page: applications.data?.page ?? page,
-          pageSize: applications.data?.pageSize ?? pageSize,
-          pageSizeOptions: PAGE_SIZE_OPTIONS,
-          total: applications.data?.total ?? 0,
-          totalPages: applications.data?.totalPages ?? 0,
-          pageInfoLabel: t('pagination.pageInfo', {
-            page: applications.data?.page ?? page,
-            totalPages: applications.data?.totalPages ?? 0,
-            total: applications.data?.total ?? 0,
-          }),
-          onPageChange: setPage,
-          onPageSizeChange: (nextPageSize) => {
-            setPageSize(nextPageSize)
-            setPage(1)
-          },
-        }}
-        rowKey={application => application.id}
-      />
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button aria-label={t('apps.moreActionsAria', { name: application.name })} size="icon" variant="ghost">
+                              <MoreHorizontal size={16} />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem disabled={deleting} onSelect={openEditDialog}>
+                              <Pencil size={16} />
+                              {t('edit')}
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem disabled={deleting} variant="destructive" onSelect={openDeleteDialog}>
+                              <Trash2 size={16} />
+                              {t('common.delete')}
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                    )
+                  },
+                },
+              ]}
+              emptyDescription={t('apps.emptyDescription')}
+              emptyTitle={t('apps.emptyTitle')}
+              items={applications.data?.items ?? []}
+              pagination={{
+                page: applications.data?.page ?? page,
+                pageSize: applications.data?.pageSize ?? pageSize,
+                pageSizeOptions: PAGE_SIZE_OPTIONS,
+                total: applications.data?.total ?? 0,
+                totalPages: applications.data?.totalPages ?? 0,
+                pageInfoLabel: t('pagination.pageInfo', {
+                  page: applications.data?.page ?? page,
+                  totalPages: applications.data?.totalPages ?? 0,
+                  total: applications.data?.total ?? 0,
+                }),
+                onPageChange: setPage,
+                onPageSizeChange: (nextPageSize) => {
+                  setPageSize(nextPageSize)
+                  setPage(1)
+                },
+              }}
+              loading={applications.isLoading}
+              rowActionLabel={application => t('apps.openDetailAria', { name: application.name })}
+              rowKey={application => application.id}
+              onRowClick={(application) => {
+                if (application.deleteStatus !== 'deleting')
+                  navigate(`/projects/${projectId}/apps/${application.id}`)
+              }}
+            />
+          )}
 
       <ConfirmDialog
         confirmDisabled={!deleteConfirmationMatches}

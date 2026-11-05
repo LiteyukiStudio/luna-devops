@@ -30,7 +30,6 @@ type Host interface {
 	ExternalBaseURL(ctx *gin.Context) string
 	AdminConfiguredEgressContext(ctx context.Context, timeout time.Duration) context.Context
 	NormalizeUserBrandColorPreset(value string) (string, bool)
-	NormalizeUserInterfaceStyle(value string) (string, bool)
 	Mode() string
 	PublicBaseURL() string
 	TrustedProxyCIDRs() []string

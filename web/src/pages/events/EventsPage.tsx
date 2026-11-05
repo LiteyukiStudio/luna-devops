@@ -529,7 +529,7 @@ function EventDetailSheet({ event, loading, onOpenChange, open }: { event?: Plat
               <DetailSection title={t('eventsPage.details.links')}>
                 <div className="flex flex-wrap gap-2">
                   {Object.entries(links).map(([key, href]) => (
-                    <a key={key} className="inline-flex h-9 items-center gap-2 rounded-md border border-border px-3 text-sm transition hover:bg-muted" href={href}>
+                    <a key={key} className="inline-flex h-9 items-center gap-2 rounded-container border border-border px-3 text-sm transition hover:bg-muted" href={href}>
                       {t(`eventsPage.linkNames.${key}`, { defaultValue: key })}
                       <ExternalLink className="size-3.5" />
                     </a>

@@ -3,6 +3,7 @@ const nav = {
   integrations: '整合',
   systemManagement: '系統管理',
   openSidebar: '開啟側邊欄',
+  toggleSidebar: '摺疊或展開側邊欄',
   breadcrumb: '頁面路徑',
   projectNavigation: '專案空間導覽',
   switchProject: '切換專案空間',

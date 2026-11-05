@@ -260,7 +260,7 @@ function SearchOptionsContent({ emptyLabel, footer, isLimited, loading, options,
         <Search className={cn(size === 'sm' ? 'size-3.5' : 'size-4', 'shrink-0 text-muted-foreground')} />
         <Input
           autoFocus
-          className={cn('rounded-md border-0 px-0 shadow-none focus-visible:ring-0', size === 'sm' ? 'h-7 text-xs' : 'h-8 text-sm')}
+          className={cn('rounded-container border-0 px-0 shadow-none focus-visible:ring-0', size === 'sm' ? 'h-7 text-xs' : 'h-8 text-sm')}
           placeholder={searchPlaceholder ?? t('common.search')}
           value={search}
           onChange={event => onSearchChange(event.target.value)}

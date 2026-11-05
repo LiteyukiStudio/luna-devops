@@ -9,7 +9,6 @@ import { api } from '@/api'
 import { safeStorageGet, safeStorageRemove, safeStorageSet } from '@/lib/safe-storage'
 import { enableBrowserTelemetry } from '@/lib/telemetry'
 import { applyUserBrandColorPreference, clearActiveUserBrandColorPreference } from './brand-theme'
-import { applyUserInterfaceStylePreference, clearActiveUserInterfaceStylePreference } from './interface-style'
 import { SessionContext } from './session-context'
 
 const currentUserQueryKey = ['current-user'] as const
@@ -27,7 +26,6 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     queryFn: async () => {
       const user = await api.getCurrentUser()
       applyUserBrandColorPreference(user.id, user.brandColorPreset)
-      applyUserInterfaceStylePreference(user.id, user.interfaceStyle)
       setRecentLoginUsers(cacheRecentLoginUser(user))
       return user
     },
@@ -58,7 +56,6 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     mutationFn: api.logout,
     onSuccess: () => {
       clearActiveUserBrandColorPreference()
-      clearActiveUserInterfaceStylePreference()
       queryClient.clear()
       navigate('/login')
     },
@@ -132,7 +129,6 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 function setCurrentUser(queryClient: ReturnType<typeof useQueryClient>, user: CurrentUser) {
   safeStorageSet('luna-devops-language', user.language)
   applyUserBrandColorPreference(user.id, user.brandColorPreset)
-  applyUserInterfaceStylePreference(user.id, user.interfaceStyle)
   queryClient.setQueryData(currentUserQueryKey, user)
 }
 

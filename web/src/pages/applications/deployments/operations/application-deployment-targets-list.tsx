@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import type { DeploymentRuntimeStatus, InternalServiceEndpointValue } from './application-deployment-runtime-utils'
 import type { BuildRun, DeploymentTarget, GatewayRoute, Release } from '@/api'
-import { Download, Eye, MoreHorizontal, Package, PanelRightOpen, Pencil, RefreshCw, RotateCcw, Terminal, Trash2 } from 'lucide-react'
+import { Download, Eye, MoreHorizontal, Package, PanelRightOpen, Pencil, RefreshCw, Rocket, RotateCcw, Terminal, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -10,13 +10,16 @@ import { CopyableHoverText } from '@/components/common/copyable-hover-text'
 import { DataList } from '@/components/common/data-list'
 import { EmptyState } from '@/components/common/empty-state'
 import { ResourceDeletionStatus } from '@/components/common/resource-deletion-status'
-import { StatusBadge, StatusValueBadge } from '@/components/common/status-badge'
+import { StatusValueBadge } from '@/components/common/status-badge'
+import { Surface } from '@/components/common/surface'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { deploymentTargetCanRelease } from '@/pages/applications/application-config-utils'
 import { shortImageRef } from '@/pages/applications/deployments/application-deployments-panel-utils'
-import { DeploymentRuntimeSpecBadge, DeploymentRuntimeStatusBadge } from './application-deployment-runtime'
+import { AccessUrlLink } from '@/pages/applications/gateway/access-url-link'
+import { gatewayRouteAccessUrl, primaryGatewayRoute } from '@/pages/applications/gateway/gateway-route-url'
+import { DeploymentRuntimeSpec, DeploymentRuntimeStatusDot } from './application-deployment-runtime'
 import { DeploymentTargetDetailSheet } from './deployment-target-detail-sheet'
 
 export interface DeploymentTargetRow {
@@ -98,21 +101,18 @@ export function ApplicationDeploymentTargetsList({
       <div className="hidden min-w-0 max-w-full @[68rem]/deployment-targets:block" data-slot="deployment-targets-table">
         <DataList
           columns={[
-            { key: 'name', header: t('common.name'), width: 'primary', render: item => <DeploymentTargetSummary item={item} /> },
+            { key: 'name', header: t('common.name'), width: 'primary', render: item => <DeploymentTargetSummary item={item} onViewDetails={() => setDetailTargetId(item.target.id)} /> },
+            { key: 'runtimeStatus', header: t('deploymentsPage.runtimeStatus'), width: 'status', render: item => <DeploymentRuntimeStatusDot availableReplicas={item.target.availableReplicas} deployed={Boolean(item.release)} desiredReplicas={item.target.desiredReplicas} readyReplicas={item.target.readyReplicas} status={item.runtimeStatus} /> },
+            { key: 'accessUrl', header: t('deploymentsPage.accessAddress'), width: 'normal', render: item => <DeploymentAccessAddress item={item} /> },
             { key: 'domain', header: t('deploymentsPage.internalAddress'), width: 'secondary', render: item => <DeploymentServiceDomain endpoint={item.internalEndpoint} /> },
-            { key: 'stage', header: t('deploymentsPage.stage'), width: 'compact', render: item => t(`deploymentsPage.stageLabels.${item.target.stage}`, { defaultValue: item.target.stage }) },
-            { key: 'runtimeSize', header: t('deploymentsPage.runtimeEnvironment'), width: 'secondary', render: item => <DeploymentRuntimeSpecBadge target={item.target} /> },
-            { key: 'runtimeStatus', header: t('deploymentsPage.runtimeStatus'), width: 'status', render: item => <DeploymentRuntimeStatusBadge availableReplicas={item.target.availableReplicas} deployed={Boolean(item.release)} desiredReplicas={item.target.desiredReplicas} readyReplicas={item.target.readyReplicas} status={item.runtimeStatus} /> },
-            { key: 'status', header: t('deploymentsPage.releaseStatus'), width: 'status', render: item => <ReleaseStatusSummary release={item.release} /> },
-            { key: 'image', header: t('deploymentsPage.imageSummary'), width: 'normal', render: item => <DeploymentImageSummary release={item.release} /> },
+            { key: 'image', header: t('deploymentsPage.currentVersion'), width: 'normal', render: item => <DeploymentVersionSummary release={item.release} /> },
+            { key: 'runtimeSize', header: t('deploymentsPage.runtimeEnvironment'), width: 'compact', render: item => <DeploymentRuntimeSpec target={item.target} /> },
             {
               key: 'actions',
               header: t('common.actions'),
-              cellClassName: 'bg-card',
-              className: 'border-l border-border text-right',
-              headerClassName: 'z-20 bg-muted/95',
               sticky: 'right',
               width: 'actions',
+              mobileActions: 'inline',
               render: item => (
                 <DeploymentTargetActions
                   createReleasePending={createReleasePending}
@@ -229,8 +229,14 @@ function DeploymentTargetActions({
 }) {
   const { t } = useTranslation()
   const deleting = item.target.deleteStatus === 'deleting'
+  const canRelease = !deleting && deploymentTargetCanRelease(item.target, deployableBuildRuns) && !createReleasePending
+  const release = item.release
   return (
-    <div className="flex justify-end">
+    <div className="flex items-center justify-end gap-1">
+      <Button disabled={!canRelease} size="sm" variant="outline" onClick={() => onOpenReleaseDialog(item.target.id)}>
+        <Rocket className="size-4" />
+        {release ? t('deploymentsPage.createRelease') : t('deploymentsPage.deployToEnvironment')}
+      </Button>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button aria-label={t('common.actions')} size="icon" variant="ghost">
@@ -238,52 +244,48 @@ function DeploymentTargetActions({
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
-          <DropdownMenuItem onSelect={onViewDetails}>
-            <PanelRightOpen className="size-4" />
-            {t('deploymentsPage.deploymentDetails')}
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem disabled={deleting || !deploymentTargetCanRelease(item.target, deployableBuildRuns) || createReleasePending} onSelect={() => onOpenReleaseDialog(item.target.id)}>
-            <Package className="size-4" />
-            {item.release ? t('deploymentsPage.createRelease') : t('deploymentsPage.deployToEnvironment')}
-          </DropdownMenuItem>
-          <DropdownMenuItem disabled={deleting} onSelect={() => onEditTarget(item.target)}>
-            <Pencil className="size-4" />
-            {t('common.edit')}
-          </DropdownMenuItem>
-          <DropdownMenuItem disabled={exportPending} onSelect={() => onExportTarget(item.target)}>
-            <Download className="size-4" />
-            {t('deploymentsPage.bundleExport.action')}
-          </DropdownMenuItem>
-          {item.release && (
-            <DropdownMenuItem onSelect={() => item.release && onViewLogs(item.release)}>
+          {release && (
+            <DropdownMenuItem onSelect={() => onViewLogs(release)}>
               <Eye className="size-4" />
               {t('deploymentsPage.viewLogs')}
             </DropdownMenuItem>
           )}
-          {item.release && (
+          {release && (
             <DropdownMenuItem
-              disabled={!item.webConsoleEnabled || (item.release.status !== 'succeeded' && item.release.status !== 'running')}
+              disabled={!item.webConsoleEnabled || (release.status !== 'succeeded' && release.status !== 'running')}
               title={!item.webConsoleEnabled ? t('deploymentsPage.webConsoleDisabledHint') : undefined}
-              onSelect={() => item.release && onOpenConsole(item.release)}
+              onSelect={() => onOpenConsole(release)}
             >
               <Terminal className="size-4" />
               {t('deploymentsPage.webConsole')}
             </DropdownMenuItem>
           )}
-          {item.release && (
-            <DropdownMenuItem disabled={item.release.status !== 'succeeded' || rollbackPending} onSelect={() => item.release && onRollback(item.release.id)}>
+          <DropdownMenuItem disabled={deleting || !release || restartPending} onSelect={() => onRestart(item.target)}>
+            <RefreshCw className="size-4" />
+            {t('deploymentsPage.restart')}
+          </DropdownMenuItem>
+          {release && (
+            <DropdownMenuItem disabled={release.status !== 'succeeded' || rollbackPending} onSelect={() => onRollback(release.id)}>
               <RotateCcw className="size-4" />
               {t('deploymentsPage.rollback')}
             </DropdownMenuItem>
           )}
-          <DropdownMenuItem disabled={deleting || !item.release || restartPending} onSelect={() => onRestart(item.target)}>
-            <RefreshCw className="size-4" />
-            {t('deploymentsPage.restart')}
-          </DropdownMenuItem>
-          <DropdownMenuItem disabled={deleting || !item.release || pullLatestPending} onSelect={() => onPullLatestImageDeploy(item.target)}>
+          <DropdownMenuItem disabled={deleting || !release || pullLatestPending} onSelect={() => onPullLatestImageDeploy(item.target)}>
             <Package className="size-4" />
             {t('deploymentsPage.pullLatestImageDeploy')}
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem disabled={deleting} onSelect={() => onEditTarget(item.target)}>
+            <Pencil className="size-4" />
+            {t('common.edit')}
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={onViewDetails}>
+            <PanelRightOpen className="size-4" />
+            {t('deploymentsPage.deploymentDetails')}
+          </DropdownMenuItem>
+          <DropdownMenuItem disabled={exportPending} onSelect={() => onExportTarget(item.target)}>
+            <Download className="size-4" />
+            {t('deploymentsPage.bundleExport.action')}
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem disabled={deletePending || deleting} variant="destructive" onSelect={() => onDeleteTarget(item.target)}>
@@ -296,13 +298,38 @@ function DeploymentTargetActions({
   )
 }
 
-function DeploymentTargetSummary({ item }: { item: DeploymentTargetRow }) {
+function DeploymentTargetSummary({ item, onViewDetails }: { item: DeploymentTargetRow, onViewDetails: () => void }) {
+  const { t } = useTranslation()
   const { target } = item
   return (
-    <div className="grid max-w-80 min-w-0 gap-2">
-      <span className="block truncate" title={target.name}>{target.name}</span>
+    <div className="grid max-w-80 min-w-0 gap-0.5">
+      <button
+        className="min-w-0 truncate rounded-sm text-left font-medium text-foreground hover:text-primary-text hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        title={target.name}
+        type="button"
+        onClick={onViewDetails}
+      >
+        {target.name}
+      </button>
+      <span className="truncate text-xs text-muted-foreground">
+        {t(`deploymentsPage.stageLabels.${target.stage}`, { defaultValue: target.stage })}
+        {!target.enabled && ` · ${t('common.disabled')}`}
+      </span>
       <ResourceDeletionStatus className="mt-1" message={target.deleteMessage} status={target.deleteStatus} />
     </div>
+  )
+}
+
+function DeploymentAccessAddress({ item }: { item: DeploymentTargetRow }) {
+  const primary = primaryGatewayRoute(item.routes)
+  if (!primary)
+    return <span className="text-sm text-muted-foreground">-</span>
+  const extraCount = item.routes.filter(route => route.id !== primary.id && route.enabled && gatewayRouteAccessUrl(route)).length
+  return (
+    <span className="inline-flex min-w-0 max-w-64 items-center gap-1.5">
+      <AccessUrlLink url={gatewayRouteAccessUrl(primary)} />
+      {extraCount > 0 && <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{`+${extraCount}`}</span>}
+    </span>
   )
 }
 
@@ -318,40 +345,37 @@ function DeploymentServiceDomain({ endpoint }: { endpoint?: InternalServiceEndpo
   )
 }
 
-function ReleaseStatusSummary({ release }: { release?: Release }) {
+function DeploymentVersionSummary({ release }: { release?: Release }) {
   const { t } = useTranslation()
-  const message = release?.message?.trim()
-  const badge = release
-    ? <StatusValueBadge labelKeyPrefix="buildsPage.statuses" value={release.status} />
-    : <StatusBadge tone="warning">{t('deploymentsPage.notDeployed')}</StatusBadge>
-
-  if (!message)
-    return badge
-
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <span className="inline-flex max-w-full" tabIndex={0}>
-          {badge}
-        </span>
-      </TooltipTrigger>
-      <TooltipContent className="max-w-96 whitespace-pre-wrap break-words leading-5">
-        {message}
-      </TooltipContent>
-    </Tooltip>
-  )
-}
-
-function DeploymentImageSummary({ release }: { release?: Release }) {
   if (!release)
-    return <span className="text-sm text-muted-foreground">-</span>
+    return <span className="text-sm text-muted-foreground">{t('deploymentsPage.notDeployed')}</span>
 
+  const message = release.message?.trim()
+  const status = release.status === 'succeeded'
+    ? null
+    : <StatusValueBadge labelKeyPrefix="buildsPage.statuses" value={release.status} />
   return (
-    <CopyableHoverText
-      className="max-w-60 rounded bg-background px-2 py-1 font-mono text-xs"
-      display={shortImageRef(release.imageRef)}
-      value={release.imageRef}
-    />
+    <div className="flex min-w-0 max-w-72 items-center gap-2">
+      <CopyableHoverText
+        className="min-w-0 font-mono text-xs"
+        display={shortImageRef(release.imageRef)}
+        value={release.imageRef}
+      />
+      {status && (message
+        ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="inline-flex shrink-0 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" tabIndex={0}>
+                  {status}
+                </span>
+              </TooltipTrigger>
+              <TooltipContent className="max-w-96 whitespace-pre-wrap break-words leading-5">
+                {message}
+              </TooltipContent>
+            </Tooltip>
+          )
+        : <span className="shrink-0">{status}</span>)}
+    </div>
   )
 }
 
@@ -397,55 +421,46 @@ function MobileDeploymentTargetCard({
   const { t } = useTranslation()
 
   return (
-    <article className="grid gap-3 rounded-lg border border-border bg-card p-4 shadow-sm">
+    <Surface className="grid gap-3 p-4" data-slot="deployment-target-card" variant="bordered">
       <div className="flex min-w-0 items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h3 className="truncate text-sm font-semibold">{item.target.name}</h3>
-          <div className="mt-1 flex flex-wrap items-center gap-2">
-            <span className="text-xs text-muted-foreground">
-              {t(`deploymentsPage.stageLabels.${item.target.stage}`, { defaultValue: item.target.stage })}
-            </span>
-            <DeploymentRuntimeSpecBadge target={item.target} />
-          </div>
-          {item.internalEndpoint && (
-            <p className="mt-2 truncate font-mono text-xs text-muted-foreground" title={item.internalEndpoint.serviceName}>
-              {item.internalEndpoint.serviceName}
-            </p>
-          )}
-        </div>
-        <DeploymentTargetActions
-          createReleasePending={createReleasePending}
-          deletePending={deletePending}
-          deployableBuildRuns={deployableBuildRuns}
-          item={item}
-          exportPending={exportPending}
-          pullLatestPending={pullLatestPending}
-          restartPending={restartPending}
-          rollbackPending={rollbackPending}
-          onDeleteTarget={onDeleteTarget}
-          onExportTarget={onExportTarget}
-          onOpenConsole={onOpenConsole}
-          onOpenReleaseDialog={onOpenReleaseDialog}
-          onEditTarget={onEditTarget}
-          onPullLatestImageDeploy={onPullLatestImageDeploy}
-          onRestart={onRestart}
-          onRollback={onRollback}
-          onViewDetails={onViewDetails}
-          onViewLogs={onViewLogs}
-        />
+        <DeploymentTargetSummary item={item} onViewDetails={onViewDetails} />
+        <DeploymentRuntimeStatusDot availableReplicas={item.target.availableReplicas} deployed={Boolean(item.release)} desiredReplicas={item.target.desiredReplicas} readyReplicas={item.target.readyReplicas} status={item.runtimeStatus} />
       </div>
-      <div className="grid grid-cols-2 gap-3 text-xs">
-        <LabeledValue label={t('deploymentsPage.runtimeStatus')}>
-          <DeploymentRuntimeStatusBadge availableReplicas={item.target.availableReplicas} deployed={Boolean(item.release)} desiredReplicas={item.target.desiredReplicas} readyReplicas={item.target.readyReplicas} status={item.runtimeStatus} />
+      <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
+        <LabeledValue label={t('deploymentsPage.accessAddress')}>
+          <DeploymentAccessAddress item={item} />
         </LabeledValue>
-        <LabeledValue label={t('deploymentsPage.releaseStatus')}>
-          <ReleaseStatusSummary release={item.release} />
+        <LabeledValue label={t('deploymentsPage.currentVersion')}>
+          <DeploymentVersionSummary release={item.release} />
         </LabeledValue>
-      </div>
-      <LabeledValue label={t('deploymentsPage.imageSummary')}>
-        <DeploymentImageSummary release={item.release} />
-      </LabeledValue>
-    </article>
+        <LabeledValue label={t('deploymentsPage.internalAddress')}>
+          <DeploymentServiceDomain endpoint={item.internalEndpoint} />
+        </LabeledValue>
+        <LabeledValue label={t('deploymentsPage.runtimeEnvironment')}>
+          <DeploymentRuntimeSpec target={item.target} />
+        </LabeledValue>
+      </dl>
+      <DeploymentTargetActions
+        createReleasePending={createReleasePending}
+        deletePending={deletePending}
+        deployableBuildRuns={deployableBuildRuns}
+        item={item}
+        exportPending={exportPending}
+        pullLatestPending={pullLatestPending}
+        restartPending={restartPending}
+        rollbackPending={rollbackPending}
+        onDeleteTarget={onDeleteTarget}
+        onExportTarget={onExportTarget}
+        onOpenConsole={onOpenConsole}
+        onOpenReleaseDialog={onOpenReleaseDialog}
+        onEditTarget={onEditTarget}
+        onPullLatestImageDeploy={onPullLatestImageDeploy}
+        onRestart={onRestart}
+        onRollback={onRollback}
+        onViewDetails={onViewDetails}
+        onViewLogs={onViewLogs}
+      />
+    </Surface>
   )
 }
 
@@ -456,8 +471,8 @@ function deploymentBundleFilenamePart(value: string) {
 function LabeledValue({ children, label }: { children: ReactNode, label: string }) {
   return (
     <div className="grid min-w-0 gap-1">
-      <span className="text-xs font-medium uppercase text-muted-foreground">{label}</span>
-      <div className="min-w-0 text-sm text-foreground">{children}</div>
+      <dt className="text-xs text-muted-foreground">{label}</dt>
+      <dd className="min-w-0 text-sm text-foreground">{children}</dd>
     </div>
   )
 }

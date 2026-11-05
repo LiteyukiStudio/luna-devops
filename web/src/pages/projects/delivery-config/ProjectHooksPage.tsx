@@ -116,6 +116,7 @@ export function ProjectHooksPage({ projectId, ref }: { projectId: string, ref?: 
       {(hooks.data?.items.length ?? 0) > 0
         ? (
             <DataList
+              framed={false}
               columns={[
                 { key: 'name', header: t('common.name'), className: 'w-52 px-4 py-3 align-middle', render: item => <span className="block max-w-44 truncate" title={item.name}>{item.name}</span> },
                 { key: 'shell', header: t('projectHooks.shell'), className: 'w-24 px-4 py-3 align-middle', render: item => t(`projectHooks.shells.${item.shell}`) },

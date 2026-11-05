@@ -24,6 +24,7 @@ const clustersPage = {
   runtimeCluster: '运行集群',
   runtimeClustersTab: '运行集群',
   clusterActions: '{{name}} 的操作',
+  resourceActions: '{{name}} 的操作',
   deleteStatuses: {
     active: '可用',
     deleting: '删除中',

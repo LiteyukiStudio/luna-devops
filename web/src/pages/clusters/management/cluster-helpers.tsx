@@ -24,10 +24,12 @@ export function defaultGatewayPublicPort(scheme: RuntimeCluster['gatewayPublicSc
   return scheme === 'https' ? 443 : 80
 }
 
-export function gatewayPublicPortSummary(cluster: RuntimeCluster) {
+/** 列表里的对外访问摘要：协议 + 通配域名，非默认端口时附带端口。 */
+export function gatewayAccessSummary(cluster: RuntimeCluster) {
   const scheme = cluster.gatewayPublicScheme || 'http'
   const port = cluster.gatewayPublicPort || defaultGatewayPublicPort(scheme)
-  return `${scheme}:${port}`
+  const portSuffix = port === defaultGatewayPublicPort(scheme) ? '' : `:${port}`
+  return `${scheme}://*.${gatewayDomainSuffixSummary(cluster)}${portSuffix}`
 }
 
 export function gatewayDomainSuffixSummary(cluster: RuntimeCluster) {

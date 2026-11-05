@@ -429,7 +429,7 @@ function RuleDialog({ channels, onClose, onSave, onUpdate, openState, projects, 
             </p>
           </Field>
           <Field className="md:col-span-2" label={t('notificationsPage.channels')}>
-            <div className="grid gap-2 rounded-lg border border-border p-3">
+            <div className="grid gap-2 rounded-container border border-border p-3">
               {channels.map(channel => (
                 <label key={channel.id} className="flex items-center gap-2 text-sm">
                   <Checkbox checked={openState.channelIds.includes(channel.id)} onCheckedChange={checked => toggleChannel(channel.id, checked === true)} />
@@ -472,7 +472,7 @@ function TestNotificationVariables() {
     '.Event.Gateway.Domain',
   ]
   return (
-    <div className="grid gap-2 rounded-lg border border-border bg-muted/30 p-3 text-sm">
+    <div className="grid gap-2 rounded-container border border-border bg-surface-subtle p-3 text-sm">
       <p className="text-muted-foreground">{t('notificationsPage.testVariablesIntro')}</p>
       <div className="flex flex-wrap gap-2">
         {variables.map(variable => (

@@ -102,4 +102,35 @@ describe('runtime terminal panel protocol', () => {
     expect(mocks.terminalWrite).not.toHaveBeenCalled()
     expect(mocks.socketClose).toHaveBeenCalledWith(1002, 'invalid terminal control message')
   })
+
+  it('reports connection state changes for the toolbar status', () => {
+    const socket = new TestSocket()
+    const onConnectionChange = vi.fn()
+    mocks.createSocket.mockReturnValue(socket)
+    render(
+      <RuntimeTerminalPanel
+        container=""
+        projectId="prj_test"
+        ready
+        release={null}
+        socketUrl="ws://terminal.test"
+        onConnectionChange={onConnectionChange}
+      />,
+    )
+
+    expect(onConnectionChange).toHaveBeenLastCalledWith('connecting')
+    act(() => socket.dispatchEvent(new Event('open')))
+    expect(onConnectionChange).toHaveBeenLastCalledWith('connected')
+    act(() => socket.dispatchEvent(new Event('error')))
+    act(() => socket.dispatchEvent(new Event('close')))
+    expect(onConnectionChange).toHaveBeenLastCalledWith('failed')
+  })
+
+  it('reports idle without opening a socket when the target is not ready', () => {
+    const onConnectionChange = vi.fn()
+    render(<RuntimeTerminalPanel container="" projectId="" ready={false} release={null} socketUrl="" onConnectionChange={onConnectionChange} />)
+
+    expect(onConnectionChange).toHaveBeenCalledWith('idle')
+    expect(mocks.createSocket).not.toHaveBeenCalled()
+  })
 })

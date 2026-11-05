@@ -21,7 +21,7 @@
   --color-border: hsl(var(--border));
   --color-separator-strong: var(--separator-strong);
   --color-separator-subtle: var(--separator-subtle);
-  --color-input: hsl(var(--border));
+  --color-input: hsl(var(--input));
   --color-ring: var(--primary-ring);
   --color-primary: var(--primary);
   --color-primary-hover: var(--primary-hover);
@@ -42,22 +42,22 @@
   --color-sidebar-nav-active: var(--sidebar-nav-active);
   --color-sidebar-nav-active-text: var(--sidebar-nav-active-text, var(--primary-text));
   --color-danger: hsl(var(--danger));
-  --color-danger-subtle: var(--red-3);
-  --color-danger-border: var(--red-7);
+  --color-danger-subtle: var(--status-danger-subtle);
+  --color-danger-border: var(--status-danger-border);
   --color-destructive: hsl(var(--danger));
-  --color-success: var(--green-11);
-  --color-success-subtle: var(--green-3);
-  --color-success-border: var(--green-7);
-  --color-warning: var(--amber-11);
-  --color-warning-subtle: var(--amber-3);
-  --color-warning-border: var(--amber-7);
-  --color-info: var(--sky-11);
-  --color-info-subtle: var(--sky-3);
-  --color-info-border: var(--sky-7);
+  --color-success: var(--status-success);
+  --color-success-subtle: var(--status-success-subtle);
+  --color-success-border: var(--status-success-border);
+  --color-warning: var(--status-warning);
+  --color-warning-subtle: var(--status-warning-subtle);
+  --color-warning-border: var(--status-warning-border);
+  --color-info: var(--status-info);
+  --color-info-subtle: var(--status-info-subtle);
+  --color-info-border: var(--status-info-border);
 
-  --radius-control: 0.375rem;
-  --radius-container: 0.5rem;
-  --radius-feature: 0.75rem;
+  --radius-control: 0.5rem;
+  --radius-container: 0.875rem;
+  --radius-feature: 1rem;
 
   --spacing-inline: 0.5rem;
   --spacing-field: 0.75rem;
@@ -206,19 +206,32 @@
 
 @media (width >= 40rem) {
   :root {
-    --layout-page-inline: 3rem;
-    --layout-page-block: 3rem;
+    --layout-page-inline: 1.5rem;
+    --layout-page-block: 1.25rem;
   }
 }
 
 @media (width >= 64rem) {
   :root {
-    --layout-page-inline: 4rem;
-    --layout-page-block: 2rem;
+    --layout-page-inline: 1.5rem;
+    --layout-page-block: 1.25rem;
   }
 }
 @keyframes ai-live-progress {
   0% { transform: translateX(-110%); }
   50% { transform: translateX(110%); }
   100% { transform: translateX(300%); }
+}
+
+/* 日志查看器与 Web 终端：值在 index.css 的 :root / dark 块定义 */
+@theme {
+  --color-terminal: var(--terminal-background);
+  --color-terminal-foreground: var(--terminal-foreground);
+  --color-terminal-muted: var(--terminal-muted);
+  --color-terminal-border: var(--terminal-border);
+  --color-terminal-selection: var(--terminal-selection);
+  --color-terminal-error: var(--terminal-error);
+  --color-terminal-warning: var(--terminal-warning);
+  --color-terminal-success: var(--terminal-success);
+  --color-terminal-info: var(--terminal-info);
 }

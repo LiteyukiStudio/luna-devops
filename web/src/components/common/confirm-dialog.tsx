@@ -39,7 +39,7 @@ export function ConfirmDialog({
   children,
   content,
   cancelText,
-  cancelVariant = 'secondary',
+  cancelVariant = 'outline',
   confirmVariant = 'destructive',
   closeOnConfirm = true,
   open,

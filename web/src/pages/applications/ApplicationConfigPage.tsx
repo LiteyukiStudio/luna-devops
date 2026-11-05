@@ -6,8 +6,8 @@ import type { RepositoryBindingsPageHandle } from '@/pages/repositories/Reposito
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import i18next from 'i18next'
-import { Globe2, Package, Play, Plus, Save, Upload } from 'lucide-react'
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
+import { Globe2, Play, Plus, Rocket, Save, Upload } from 'lucide-react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
@@ -18,15 +18,15 @@ import { ApplicationBasicFields } from '@/components/common/application-basic-fi
 import { ContentTabs } from '@/components/common/content-tabs'
 import { ErrorState } from '@/components/common/error-state'
 import { ToolViewportSkeleton } from '@/components/common/loading-states'
-import { MotionItem, MotionList } from '@/components/common/motion'
 import { PageShell } from '@/components/common/page-shell'
+import { Section } from '@/components/common/section'
 import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
 import { TabsContent } from '@/components/ui/tabs'
 import { APPLICATION_IDENTIFIER_MAX_LENGTH, APPLICATION_IDENTIFIER_MIN_LENGTH } from '@/lib/identifier-limits'
 import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
 import { statusRefetchInterval, WORKFLOW_STATUS_REFETCH_INTERVAL_MS } from '@/lib/polling'
 import { firstReleaseReadyTarget } from './application-config-utils'
+import { ApplicationFactStrip } from './overview/application-fact-strip'
 import { ApplicationOverviewPanel } from './overview/application-overview-panel'
 
 const RepositoryBindingsPage = lazy(() =>
@@ -57,36 +57,66 @@ const schema = z.object({
 type ApplicationFormInput = z.input<typeof schema>
 type ApplicationForm = z.output<typeof schema>
 const APPLICATION_CONFIG_FORM_ID = 'application-config-form'
+const applicationTabs = ['overview', 'deployments', 'builds', 'gateway', 'topology', 'settings'] as const
+type ApplicationTab = typeof applicationTabs[number]
+
+/** 读取 URL 中的 Tab；旧的“仓库”Tab 已并入设置。 */
+function normalizeApplicationTab(value: string | null): ApplicationTab {
+  if (value === 'repositories')
+    return 'settings'
+  return applicationTabs.find(tab => tab === value) ?? 'overview'
+}
+
+/**
+ * 惰性 Tab 面板的命令句柄。面板在切换 Tab 后才挂载，此时句柄尚不存在；
+ * 先暂存动作，待面板挂载、ref 回调拿到句柄后立即执行，避免依赖定时器猜测挂载时机。
+ */
+function useDeferredPanelHandle<T>() {
+  const handleRef = useRef<T | null>(null)
+  const pendingRef = useRef<((handle: T) => void) | null>(null)
+  const attach = useCallback((handle: T | null) => {
+    handleRef.current = handle
+    const pending = pendingRef.current
+    if (handle && pending) {
+      pendingRef.current = null
+      pending(handle)
+    }
+  }, [])
+  const run = useCallback((action: (handle: T) => void) => {
+    if (handleRef.current)
+      action(handleRef.current)
+    else
+      pendingRef.current = action
+  }, [])
+  return [attach, run] as const
+}
+
 export function ApplicationConfigPage() {
   const { t } = useTranslation()
   const { projectId = '', applicationId = '' } = useParams()
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const queryClient = useQueryClient()
-  const [activeTab, setActiveTab] = useState(() => searchParams.get('tab') || 'overview')
+  const [activeTab, setActiveTab] = useState<ApplicationTab>(() => normalizeApplicationTab(searchParams.get('tab')))
   const shouldPollWorkflowStatus = activeTab === 'builds' || activeTab === 'deployments'
-  const needsOverviewData = activeTab === 'overview'
-  const needsRepositoryBindings = needsOverviewData || activeTab === 'repositories' || activeTab === 'builds' || activeTab === 'deployments'
-  const needsBuildRuns = needsOverviewData || activeTab === 'builds' || activeTab === 'deployments'
-  const needsDeploymentData = needsOverviewData || activeTab === 'deployments'
-  const needsDeploymentTargets = needsDeploymentData || activeTab === 'builds' || activeTab === 'gateway'
-  const needsRoutes = needsDeploymentData || activeTab === 'gateway'
-  const buildsPanelRef = useRef<BuildsPanelHandle>(null)
-  const deploymentsPanelRef = useRef<DeploymentsPanelHandle>(null)
-  const gatewayPanelRef = useRef<ApplicationGatewayPanelHandle>(null)
-  const repositoryBindingsPageRef = useRef<RepositoryBindingsPageHandle>(null)
+  // 事实条在所有 Tab 显示，部署配置、发布、构建和访问入口在每个 Tab 都需要。
+  const needsRepositoryBindings = activeTab === 'overview' || activeTab === 'builds' || activeTab === 'deployments'
+  const [attachBuildsPanel, runWithBuildsPanel] = useDeferredPanelHandle<BuildsPanelHandle>()
+  const [attachDeploymentsPanel, runWithDeploymentsPanel] = useDeferredPanelHandle<DeploymentsPanelHandle>()
+  const [attachGatewayPanel, runWithGatewayPanel] = useDeferredPanelHandle<ApplicationGatewayPanelHandle>()
+  const [attachRepositoryBindings, runWithRepositoryBindings] = useDeferredPanelHandle<RepositoryBindingsPageHandle>()
   const application = useQuery({
     queryKey: ['application', projectId, applicationId],
     queryFn: () => api.getApplication(projectId, applicationId),
     enabled: Boolean(projectId && applicationId),
   })
-  const project = useQuery({ queryKey: ['project', projectId], queryFn: () => api.getProject(projectId), enabled: Boolean(projectId && (activeTab === 'builds' || activeTab === 'deployments')) })
+  const project = useQuery({ queryKey: ['project', projectId], queryFn: () => api.getProject(projectId), enabled: Boolean(projectId && (activeTab === 'builds' || activeTab === 'deployments' || activeTab === 'gateway')) })
   const repositoryBindings = useQuery({ ...liveObservationQueryPolicy, queryKey: ['repository-bindings', projectId, applicationId], queryFn: () => api.listRepositoryBindings(projectId, applicationId), enabled: Boolean(projectId && applicationId && needsRepositoryBindings) })
   const registries = useQuery({ ...liveObservationQueryPolicy, queryKey: ['registries', projectId], queryFn: () => api.listRegistries(projectId), enabled: Boolean(projectId && (activeTab === 'builds' || activeTab === 'deployments')) })
   const buildRuns = useQuery({
     queryKey: ['build-runs', projectId, applicationId],
     queryFn: () => api.listBuildRuns(projectId, applicationId),
-    enabled: Boolean(projectId && applicationId && needsBuildRuns),
+    enabled: Boolean(projectId && applicationId),
     refetchInterval: query => shouldPollWorkflowStatus
       ? statusRefetchInterval((query.state.data ?? []).some(run => run.status === 'queued' || run.status === 'running'))
       : false,
@@ -102,7 +132,7 @@ export function ApplicationConfigPage() {
   const releases = useQuery({
     queryKey: ['releases', projectId, applicationId],
     queryFn: () => api.listReleases(projectId, applicationId),
-    enabled: Boolean(projectId && applicationId && needsDeploymentData),
+    enabled: Boolean(projectId && applicationId),
     refetchInterval: query => activeTab === 'deployments'
       ? statusRefetchInterval((query.state.data ?? []).some(release => release.status === 'pending' || release.status === 'running'))
       : false,
@@ -111,7 +141,7 @@ export function ApplicationConfigPage() {
     ...liveObservationQueryPolicy,
     queryKey: ['deployment-targets', projectId, applicationId],
     queryFn: () => api.listDeploymentTargets(projectId, applicationId),
-    enabled: Boolean(projectId && applicationId && needsDeploymentTargets),
+    enabled: Boolean(projectId && applicationId),
     refetchInterval: activeTab === 'deployments'
       ? statusRefetchInterval((releases.data ?? []).some(release => release.status === 'pending' || release.status === 'running'))
       : false,
@@ -120,7 +150,7 @@ export function ApplicationConfigPage() {
     ...liveObservationQueryPolicy,
     queryKey: ['gateway-routes', projectId, applicationId],
     queryFn: () => api.listGatewayRoutes(projectId, applicationId),
-    enabled: Boolean(projectId && applicationId && needsRoutes),
+    enabled: Boolean(projectId && applicationId),
     refetchInterval: query => activeTab === 'gateway' && (query.state.data ?? []).some(route => route.certificateStatus === 'pending')
       ? WORKFLOW_STATUS_REFETCH_INTERVAL_MS
       : false,
@@ -175,95 +205,100 @@ export function ApplicationConfigPage() {
     },
     onError: error => toast.error(error.message),
   })
-  const runAfterTabChange = (tab: string, action: () => void) => {
-    setActiveTab(tab)
-    window.setTimeout(action, 0)
+  const changeTab = (value: ApplicationTab) => {
+    setActiveTab(value)
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current)
+      if (value === 'overview')
+        next.delete('tab')
+      else
+        next.set('tab', value)
+      return next
+    }, { replace: true })
   }
-  const openRepositoryBindingTask = () => runAfterTabChange('repositories', () => repositoryBindingsPageRef.current?.openCreateDialog())
+  const openRepositoryBindingTask = () => {
+    changeTab('settings')
+    runWithRepositoryBindings(handle => handle.openCreateDialog())
+  }
   const openDeploymentTargetTask = () => navigate(`/projects/${projectId}/apps/${applicationId}/deployments/new`)
-  const openBuildTask = () => runAfterTabChange('builds', () => buildsPanelRef.current?.openTriggerDrawer())
+  const openBuildTask = () => {
+    changeTab('builds')
+    runWithBuildsPanel(handle => handle.openTriggerDrawer())
+  }
   const openReleaseTask = () => {
     const target = firstReleaseReadyTarget(deploymentTargetRows, appBuildRuns)
-    runAfterTabChange('deployments', () => target && deploymentsPanelRef.current?.openReleaseDialog(target.id))
+    changeTab('deployments')
+    runWithDeploymentsPanel(handle => handle.openReleaseDialog(target?.id))
   }
-  const openGatewayTask = () => runAfterTabChange('gateway', () => gatewayPanelRef.current?.openCreateDialog())
+  const openGatewayTask = () => {
+    changeTab('gateway')
+    runWithGatewayPanel(handle => handle.openCreateDialog())
+  }
   if (application.isError)
     return <ErrorState title={t('apps.loadFailedTitle')} description={t('apps.appLoadFailedDescription')} />
 
   return (
     <PageShell spacing="compact" width="full">
+      <ApplicationFactStrip
+        buildRuns={appBuildRuns}
+        deploymentTargets={deploymentTargetRows}
+        loading={deploymentTargets.isLoading || releases.isLoading || routes.isLoading || buildRuns.isLoading}
+        releases={appReleases}
+        routes={appRoutes}
+      />
       <ContentTabs
         tabs={[
           { label: t('apps.overview'), value: 'overview' },
-          { label: t('apps.repoBinding'), value: 'repositories' },
-          { label: t('builds'), value: 'builds' },
           { label: t('deployments'), value: 'deployments' },
+          { label: t('builds'), value: 'builds' },
           { label: t('gatewayRoutes'), value: 'gateway' },
           { label: t('apps.topology.title'), value: 'topology' },
           { label: t('apps.configTab'), value: 'settings' },
         ]}
-        tools={(
-          <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
-            {activeTab === 'deployments' && (
-              <>
-                <Button variant="outline" onClick={() => deploymentsPanelRef.current?.openImportDialog()}>
-                  <Upload size={16} />
-                  {t('deploymentsPage.bundleImport.open')}
-                </Button>
-                <Button variant="outline" onClick={openDeploymentTargetTask}>
-                  <Plus size={16} />
-                  {t('deploymentsPage.createDeploymentTarget')}
-                </Button>
-                <Button disabled={!releaseReadyTarget} onClick={() => releaseReadyTarget && deploymentsPanelRef.current?.openReleaseDialog(releaseReadyTarget.id)}>
-                  <Package size={16} />
-                  {t('deploymentsPage.createRelease')}
-                </Button>
-              </>
-            )}
-            {activeTab === 'builds' && (
-              <>
-                <Button disabled={!deploymentTargets.data?.some(target => target.sourceType === 'repository' && target.repositoryBindingId)} onClick={() => buildsPanelRef.current?.openTriggerDrawer()}>
-                  <Play size={16} />
-                  {t('buildsPage.triggerBuild')}
-                </Button>
-              </>
-            )}
-            {activeTab === 'repositories' && (
-              <Button disabled={!projectId || !applicationId} onClick={() => repositoryBindingsPageRef.current?.openCreateDialog()}>
-                <Plus size={16} />
-                {t('repositories.addRepository')}
-              </Button>
-            )}
-            {activeTab === 'gateway' && (
-              <Button disabled={!deploymentTargets.data?.length} onClick={() => gatewayPanelRef.current?.openCreateDialog()}>
-                <Globe2 size={16} />
-                {t('gatewayRoutesPage.createRoute')}
-              </Button>
-            )}
-            {activeTab === 'settings' && (
+        tools={activeTab === 'settings'
+          ? (
               <Button disabled={updateApplication.isPending || !updateForm.formState.isValid} form={APPLICATION_CONFIG_FORM_ID} type="submit">
                 <Save size={16} />
                 {t('apps.saveConfig')}
               </Button>
+            )
+          : (
+              <>
+                {activeTab === 'deployments' && (
+                  <>
+                    <Button variant="outline" onClick={() => runWithDeploymentsPanel(handle => handle.openImportDialog())}>
+                      <Upload size={16} />
+                      {t('deploymentsPage.bundleImport.open')}
+                    </Button>
+                    <Button variant="outline" onClick={openDeploymentTargetTask}>
+                      <Plus size={16} />
+                      {t('deploymentsPage.createDeploymentTarget')}
+                    </Button>
+                  </>
+                )}
+                {activeTab === 'builds' && (
+                  <Button disabled={!deploymentTargetRows.some(target => target.sourceType === 'repository' && target.repositoryBindingId)} variant="outline" onClick={openBuildTask}>
+                    <Play size={16} />
+                    {t('buildsPage.triggerBuild')}
+                  </Button>
+                )}
+                {activeTab === 'gateway' && (
+                  <Button disabled={!deploymentTargetRows.length} variant="outline" onClick={openGatewayTask}>
+                    <Globe2 size={16} />
+                    {t('gatewayRoutesPage.createRoute')}
+                  </Button>
+                )}
+                <Button disabled={!releaseReadyTarget} onClick={openReleaseTask}>
+                  <Rocket size={16} />
+                  {t('deploymentsPage.createRelease')}
+                </Button>
+              </>
             )}
-          </div>
-        )}
         value={activeTab}
-        onValueChange={(value) => {
-          setActiveTab(value)
-          setSearchParams((current) => {
-            const next = new URLSearchParams(current)
-            if (value === 'overview')
-              next.delete('tab')
-            else
-              next.set('tab', value)
-            return next
-          }, { replace: true })
-        }}
+        onValueChange={value => changeTab(normalizeApplicationTab(value))}
       >
         <TabsContent value="overview">
           <ApplicationOverviewPanel
-            app={application.data}
             buildRuns={appBuildRuns}
             deploymentTargets={deploymentTargetRows}
             releases={appReleases}
@@ -277,44 +312,46 @@ export function ApplicationConfigPage() {
           />
         </TabsContent>
         <TabsContent value="settings">
-          <Card className="p-4">
-            <div className="mb-4">
-              <h3 className="text-base font-semibold">{t('apps.configTitle')}</h3>
-              <p className="mt-1 text-sm text-muted-foreground">{t('apps.configDescription')}</p>
-            </div>
-            <form id={APPLICATION_CONFIG_FORM_ID} onSubmit={updateForm.handleSubmit(values => updateApplication.mutate(values))}>
-              <MotionList className="grid gap-4">
-                <MotionItem>
-                  <ApplicationBasicFields
-                    compact
-                    icon={updateForm.watch('icon')}
-                    nameError={updateForm.formState.errors.name?.message}
-                    nameField={updateForm.register('name')}
-                    identifierError={updateForm.formState.errors.identifier?.message}
-                    identifierField={updateForm.register('identifier')}
-                    identifierMaxLength={APPLICATION_IDENTIFIER_MAX_LENGTH}
-                    identifierReadOnly
-                    onIconChange={icon => updateForm.setValue('icon', icon, { shouldDirty: true, shouldValidate: true })}
-                  />
-                </MotionItem>
-              </MotionList>
-            </form>
-          </Card>
-        </TabsContent>
-        <TabsContent value="repositories">
-          <Suspense fallback={<TabFallback />}>
-            <RepositoryBindingsPage
-              ref={repositoryBindingsPageRef}
-              applicationId={applicationId}
-              embedded
-              projectId={projectId}
-            />
-          </Suspense>
+          <div className="grid max-w-5xl gap-section">
+            <Section description={t('apps.configDescription')} title={t('apps.basicInfo')} variant="bordered">
+              <form id={APPLICATION_CONFIG_FORM_ID} onSubmit={updateForm.handleSubmit(values => updateApplication.mutate(values))}>
+                <ApplicationBasicFields
+                  compact
+                  icon={updateForm.watch('icon')}
+                  nameError={updateForm.formState.errors.name?.message}
+                  nameField={updateForm.register('name')}
+                  identifierError={updateForm.formState.errors.identifier?.message}
+                  identifierField={updateForm.register('identifier')}
+                  identifierMaxLength={APPLICATION_IDENTIFIER_MAX_LENGTH}
+                  identifierReadOnly
+                  onIconChange={icon => updateForm.setValue('icon', icon, { shouldDirty: true, shouldValidate: true })}
+                />
+              </form>
+            </Section>
+            <Section
+              description={t('apps.repositorySectionDescription')}
+              title={t('apps.repoBinding')}
+              tools={(
+                <Button disabled={!projectId || !applicationId} variant="outline" onClick={() => runWithRepositoryBindings(handle => handle.openCreateDialog())}>
+                  <Plus size={16} />
+                  {t('repositories.addRepository')}
+                </Button>
+              )}
+            >
+              <Suspense fallback={<TabFallback />}>
+                <RepositoryBindingsPage
+                  ref={attachRepositoryBindings}
+                  applicationId={applicationId}
+                  projectId={projectId}
+                />
+              </Suspense>
+            </Section>
+          </div>
         </TabsContent>
         <TabsContent value="builds">
           <Suspense fallback={<TabFallback />}>
             <ApplicationBuildsPanel
-              ref={buildsPanelRef}
+              ref={attachBuildsPanel}
               applicationId={applicationId}
               applicationIdentifier={application.data?.identifier ?? ''}
               binding={binding}
@@ -331,7 +368,7 @@ export function ApplicationConfigPage() {
         <TabsContent value="deployments">
           <Suspense fallback={<TabFallback />}>
             <ApplicationDeploymentsPanel
-              ref={deploymentsPanelRef}
+              ref={attachDeploymentsPanel}
               applicationId={applicationId}
               buildRuns={appBuildRuns}
               deploymentTargets={deploymentTargetRows}
@@ -345,7 +382,7 @@ export function ApplicationConfigPage() {
         <TabsContent value="gateway">
           <Suspense fallback={<TabFallback />}>
             <ApplicationGatewayPanel
-              ref={gatewayPanelRef}
+              ref={attachGatewayPanel}
               applicationId={applicationId}
               applicationIdentifier={application.data?.identifier ?? ''}
               deploymentTargets={deploymentTargetRows}

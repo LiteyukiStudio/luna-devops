@@ -48,7 +48,6 @@ const buildsPage = {
   deleteBuildDescription: '該構建執行記錄、任務日誌和鉤子執行記錄會被刪除。已推送的映象和已有釋出不會被刪除。',
   deleted: '構建記錄已刪除',
   runActions: '構建執行操作',
-  viewLogsStream: '檢視日誌/日誌流',
   logsTitle: '構建日誌 #{{id}}',
   logsStreaming: '日誌流重新整理中',
   logsUpdated: '日誌已載入',
@@ -57,7 +56,6 @@ const buildsPage = {
   failureReasonUnavailable: '最近任務未記錄明確失敗原因，請開啟日誌檢視最後輸出。',
   failureReasonNoJob: '構建執行未關聯到構建任務，請重新整理後重試。',
   workflowRunCount: '{{count}} 次構建執行',
-  applicationRunsDescription: '顯示當前應用的構建記錄、分支、映象和最近任務狀態。',
   filterRuns: '篩選構建執行',
   eventFilter: '事件',
   statusFilter: '狀態',
@@ -75,9 +73,6 @@ const buildsPage = {
   runTitleWithConfig: '{{title}}：{{config}}',
   triggeredBy: '由 {{actor}} 觸發',
   committedBy: '{{actor}}',
-  commitAction: '提交',
-  latestJobSummary: '任務 #{{id}}，嘗試 {{attempts}} 次',
-  noBuildJob: '暫無構建任務',
   jobCount: '{{count}} 個任務',
   emptyRuns: '暫無構建執行',
   targetRegistry: '目標映象站',
@@ -128,6 +123,11 @@ const buildsPage = {
     lost: '已失聯',
     timeout: '已超時',
   },
+  viewLogs: '日誌',
+  copyImageRef: '複製映象引用 {{image}}',
+  sourceColumn: '構建',
+  imageColumn: '映象',
+  timeColumn: '時間',
 }
 
 export default buildsPage

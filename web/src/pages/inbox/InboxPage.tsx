@@ -80,7 +80,7 @@ export function InboxPage() {
         const text = inboxMessageText(message, t)
         return (
           <div className="flex min-w-0 items-start gap-3">
-            <span className="relative mt-1 grid size-8 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground">
+            <span className="relative mt-1 grid size-8 shrink-0 place-items-center rounded-container bg-muted text-muted-foreground">
               <Bell className="size-4" />
               {!message.readAt && <span className="absolute -right-0.5 -top-0.5 size-2 rounded-full bg-primary" />}
             </span>

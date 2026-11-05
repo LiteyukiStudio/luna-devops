@@ -3,10 +3,9 @@ import { useQuery } from '@tanstack/react-query'
 import { useEffect, useMemo } from 'react'
 import { api } from '@/api'
 import { applySiteBrandColorPreset } from './brand-theme'
-import { applySiteMinimalModeDefault } from './interface-style'
 import { defaultPublicConfigs, PublicConfigContext } from './public-config-context'
 
-const publicConfigKeys = ['site.title', 'site.logoUrl', 'site.faviconUrl', 'site.loginSubtitle', 'site.brandColorPreset', 'site.minimalModeDefault', 'billing.creditsDisplayName', 'billing.fiatCurrencyUnit', 'billing.creditsPerFiatUnit']
+const publicConfigKeys = ['site.title', 'site.logoUrl', 'site.faviconUrl', 'site.loginSubtitle', 'site.brandColorPreset', 'billing.creditsDisplayName', 'billing.fiatCurrencyUnit', 'billing.creditsPerFiatUnit']
 
 export function PublicConfigProvider({ children }: { children: ReactNode }) {
   const configs = useQuery({
@@ -35,10 +34,6 @@ export function PublicConfigProvider({ children }: { children: ReactNode }) {
     if (preset)
       applySiteBrandColorPreset(preset)
   }, [configs.data])
-
-  useEffect(() => {
-    applySiteMinimalModeDefault(value['site.minimalModeDefault'])
-  }, [value])
 
   return <PublicConfigContext value={value}>{children}</PublicConfigContext>
 }

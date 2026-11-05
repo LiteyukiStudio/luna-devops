@@ -3,7 +3,7 @@ import type { GitAccount, GitProvider, RepositoryBinding } from '@/api'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import i18next from 'i18next'
-import { GitBranch, LinkIcon, Plus, Trash2 } from 'lucide-react'
+import { GitBranch, LinkIcon, MoreHorizontal, Pencil, Plus, Trash2 } from 'lucide-react'
 import { useImperativeHandle, useMemo, useState } from 'react'
 import { Controller, useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
@@ -14,14 +14,14 @@ import { api } from '@/api'
 import { ControlledCheckboxField } from '@/components/common/checkbox-field'
 import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { DataList } from '@/components/common/data-list'
-import { EditActionButton } from '@/components/common/edit-action-button'
 import { ErrorState } from '@/components/common/error-state'
 import { FormField as Field } from '@/components/common/form-field'
 import { GitRepositoryPicker } from '@/components/common/git-repository-picker'
 import { SearchSelect } from '@/components/common/search-select'
-import { StatusBadge, StatusValueBadge } from '@/components/common/status-badge'
+import { StatusValueBadge } from '@/components/common/status-badge'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { NativeSelect as Select } from '@/components/ui/native-select'
 import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
@@ -44,7 +44,7 @@ export interface RepositoryBindingsPageHandle {
   openCreateDialog: () => void
 }
 
-export function RepositoryBindingsPage({ applicationId, embedded = false, projectId: projectIdProp, ref }: { applicationId?: string, embedded?: boolean, projectId?: string, ref?: Ref<RepositoryBindingsPageHandle> } = {}) {
+export function RepositoryBindingsPage({ applicationId, projectId: projectIdProp, ref }: { applicationId?: string, projectId?: string, ref?: Ref<RepositoryBindingsPageHandle> } = {}) {
   const { t } = useTranslation()
   const { projectId: routeProjectId = '' } = useParams()
   const projectId = projectIdProp ?? routeProjectId
@@ -216,29 +216,16 @@ export function RepositoryBindingsPage({ applicationId, embedded = false, projec
       )}
 
       <DataList
-        toolbarActions={!embedded
-          ? (
-              <div className="flex items-center gap-3">
-                <Button type="button" onClick={openCreateDialog}>
-                  <Plus size={16} />
-                  {t('repositories.bindRepoTitle')}
-                </Button>
-                <Link className="text-sm text-primary-text hover:underline" to={`/projects/${projectId}`}>{t('backToApps')}</Link>
-              </div>
-            )
-          : undefined}
         columns={[
           {
             key: 'repo',
             header: t('repositories.repositorySearch'),
             render: binding => (
               <div className="flex min-w-0 items-center gap-3">
-                <span className="flex size-10 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
-                  <GitBranch size={18} />
-                </span>
+                <GitBranch aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
                 <div className="min-w-0">
-                  <div className="truncate font-medium">{`${binding.owner}/${binding.repo}`}</div>
-                  <p className="truncate text-sm text-muted-foreground">{binding.cloneUrl}</p>
+                  <div className="truncate font-mono text-sm font-medium">{`${binding.owner}/${binding.repo}`}</div>
+                  <p className="truncate font-mono text-xs text-muted-foreground">{binding.cloneUrl}</p>
                 </div>
               </div>
             ),
@@ -246,23 +233,40 @@ export function RepositoryBindingsPage({ applicationId, embedded = false, projec
           ...(!applicationId
             ? [{ key: 'application', header: t('repositories.application'), render: (binding: RepositoryBinding) => binding.applicationName ?? binding.applicationId }]
             : []),
-          { key: 'branch', header: t('repositories.defaultBranch'), render: binding => <StatusBadge>{binding.defaultBranch}</StatusBadge> },
+          { key: 'branch', header: t('repositories.defaultBranch'), width: 'compact', render: binding => <span className="font-mono text-xs">{binding.defaultBranch}</span> },
           { key: 'provider', header: t('codeRepositoriesView.provider'), render: binding => providerBindingLabel(binding, providers.data ?? [], accounts.data ?? []) },
           { key: 'webhook', header: t('repositories.webhookStatus'), render: binding => <StatusValueBadge value={binding.webhookStatus} /> },
           {
             key: 'actions',
             header: t('common.actions'),
-            className: 'text-right whitespace-nowrap',
+            mobileActions: 'inline',
+            width: 'actions',
             render: binding => (
-              <div className="flex justify-end gap-2">
-                <Button disabled={createWebhook.isPending || binding.webhookStatus === 'ready'} type="button" variant="ghost" onClick={() => createWebhook.mutate(binding.id)}>
-                  <LinkIcon size={16} />
-                  {t('repositories.createWebhook')}
-                </Button>
-                <EditActionButton aria-label={t('repositories.editAria')} label={t('edit')} onClick={() => openEditDialog(binding)} />
-                <Button aria-label={t('repositories.deleteAria')} variant="ghost" onClick={() => setBindingToDelete(binding)}>
-                  <Trash2 size={16} />
-                </Button>
+              <div className="flex items-center justify-end gap-1">
+                {binding.webhookStatus !== 'ready' && (
+                  <Button disabled={createWebhook.isPending} size="sm" type="button" variant="outline" onClick={() => createWebhook.mutate(binding.id)}>
+                    <LinkIcon size={16} />
+                    {t('repositories.createWebhook')}
+                  </Button>
+                )}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button aria-label={t('common.actions')} size="icon" type="button" variant="ghost">
+                      <MoreHorizontal size={16} />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onSelect={() => openEditDialog(binding)}>
+                      <Pencil size={16} />
+                      {t('repositories.editAria')}
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem variant="destructive" onSelect={() => setBindingToDelete(binding)}>
+                      <Trash2 size={16} />
+                      {t('repositories.deleteAria')}
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
             ),
           },

@@ -1,5 +1,5 @@
 import type { ClusterResource, ClusterResourceEvent, CurrentUser, RuntimeCluster } from '@/api'
-import { ChevronDown, ChevronRight, FileCode2, ScrollText, SquareTerminal, Trash2 } from 'lucide-react'
+import { ChevronDown, ChevronRight, FileCode2, MoreHorizontal, ScrollText, SquareTerminal, Trash2 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { CopyableHoverText } from '@/components/common/copyable-hover-text'
@@ -9,6 +9,7 @@ import { DataListSkeleton } from '@/components/common/loading-states'
 import { StatusValueBadge } from '@/components/common/status-badge'
 import { formatSmartDateTime } from '@/components/common/time-format'
 import { Button } from '@/components/ui/button'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { isPlatformAdmin } from '@/lib/roles'
 import { canDeleteClusterResource } from './cluster-resource-utils'
 
@@ -143,27 +144,39 @@ export function ClusterResourcesPanel({ items, loading, pagination, selectedClus
           className: 'whitespace-nowrap text-right',
           sticky: 'right',
           render: item => (
-            <div className="flex justify-end gap-2">
-              {canOpenWebConsole(item) && (
-                <Button size="sm" variant="ghost" onClick={() => onOpenConsole(item)}>
-                  <SquareTerminal className="size-4" />
-                  {t('clustersPage.webConsole')}
-                </Button>
-              )}
-              <Button size="sm" variant="ghost" onClick={() => onOpenEvents(item)}>
-                <ScrollText className="size-4" />
-                {t('clustersPage.viewEvents')}
-              </Button>
+            <div className="flex justify-end gap-1">
               <Button size="sm" variant="ghost" onClick={() => onOpenYAML(item)}>
                 <FileCode2 className="size-4" />
                 {t('clustersPage.viewYaml')}
               </Button>
-              {canDeleteClusterResource(user, item) && (
-                <Button size="sm" variant="ghost" onClick={() => onDeleteResource(item)}>
-                  <Trash2 className="size-4" />
-                  {t('common.delete')}
-                </Button>
-              )}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button aria-label={t('clustersPage.resourceActions', { name: item.name })} size="icon" variant="ghost">
+                    <MoreHorizontal className="size-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onSelect={() => onOpenEvents(item)}>
+                    <ScrollText className="size-4" />
+                    {t('clustersPage.viewEvents')}
+                  </DropdownMenuItem>
+                  {canOpenWebConsole(item) && (
+                    <DropdownMenuItem onSelect={() => onOpenConsole(item)}>
+                      <SquareTerminal className="size-4" />
+                      {t('clustersPage.webConsole')}
+                    </DropdownMenuItem>
+                  )}
+                  {canDeleteClusterResource(user, item) && (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem variant="destructive" onSelect={() => onDeleteResource(item)}>
+                        <Trash2 className="size-4" />
+                        {t('common.delete')}
+                      </DropdownMenuItem>
+                    </>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           ),
         },
@@ -224,7 +237,7 @@ export function ClusterResourceEventsList({ events, loading }: { events: Cluster
   return (
     <div className="grid gap-3">
       {events.map(event => (
-        <div key={event.id} className="rounded-md border border-border bg-surface-subtle p-3">
+        <div key={event.id} className="rounded-container border border-border bg-surface-subtle p-3">
           <div className="flex flex-wrap items-center gap-2">
             <StatusValueBadge value={event.type || 'normal'} />
             <span className="font-medium text-foreground">{event.reason || t('common.none')}</span>

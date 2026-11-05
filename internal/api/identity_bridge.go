@@ -154,10 +154,6 @@ func (host identityHost) NormalizeUserBrandColorPreset(value string) (string, bo
 	return normalizeUserBrandColorPreset(value)
 }
 
-func (host identityHost) NormalizeUserInterfaceStyle(value string) (string, bool) {
-	return normalizeUserInterfaceStyle(value)
-}
-
 func (host identityHost) TrustedProxyCIDRs() []string {
 	return host.handlers.config.TrustedProxyCIDRs
 }

@@ -1,3 +1,4 @@
+import type { DeploymentTargetFormValues } from './deployment-target-form'
 import type { DeploymentTarget } from '@/api'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, within } from '@testing-library/react'
@@ -31,11 +32,11 @@ vi.mock('@/api', async (importOriginal) => {
 
 const repositoryBinding = { applicationId: 'app_1', defaultBranch: 'main', gitAccountId: 'acc_1', id: 'rb_1', owner: 'team', repo: 'demo' }
 
-function renderEditor({ target = null as DeploymentTarget | null } = {}) {
+function renderEditor({ target = null as DeploymentTarget | null, values = {} as Partial<DeploymentTargetFormValues> } = {}) {
   const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false }, queries: { retry: false } } })
   const initialValues = target
     ? deploymentTargetToFormValues(target)
-    : { ...emptyDeploymentTargetFormValues(), repositoryBindingId: 'rb_1', targetImageRef: 'team/demo:latest', targetRegistryId: 'reg_1' }
+    : { ...emptyDeploymentTargetFormValues(), repositoryBindingId: 'rb_1', targetImageRef: 'team/demo:latest', targetRegistryId: 'reg_1', ...values }
   return render(
     <MemoryRouter initialEntries={['/projects/prj_1/apps/app_1/deployments/new']}>
       <QueryClientProvider client={queryClient}>
@@ -87,16 +88,76 @@ describe('deployment target editor', () => {
     vi.clearAllMocks()
   })
 
-  it('groups the form into navigable sections with labelled controls', async () => {
+  it('groups the form into common sections and a collapsed advanced section', async () => {
     renderEditor()
 
     const navigation = screen.getByRole('navigation', { name: 'Deploy config sections' })
-    for (const section of ['Basics', 'Source and build', 'Runtime', 'Release triggers', 'Hooks', 'Security and scheduling'])
+    for (const section of ['Basics and source', 'Runtime', 'Release triggers', 'Advanced \\(Kubernetes\\)'])
       expect(within(navigation).getByRole('link', { name: new RegExp(section) })).toBeInTheDocument()
     expect(screen.getByRole('textbox', { name: /Name/ })).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: /Code repository|Repository/ })).toBeChecked()
     expect(screen.getByRole('spinbutton', { name: /Replicas/ })).toBeInTheDocument()
     expect(screen.getByRole('switch', { name: 'Enable this deploy config' })).toBeChecked()
-    expect(screen.queryByRole('textbox', { name: /Readiness probe/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Advanced \(Kubernetes\)/ })).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByRole('combobox', { name: /Workload type/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('switch', { name: 'Enable deployment hooks' })).not.toBeInTheDocument()
+  })
+
+  it('expands the advanced section from the navigation and summarizes each item', async () => {
+    const user = userEvent.setup()
+    renderEditor()
+
+    await user.click(within(screen.getByRole('navigation', { name: 'Deploy config sections' })).getByRole('link', { name: /Advanced/ }))
+
+    expect(screen.getByRole('button', { name: /Advanced \(Kubernetes\)/ })).toHaveAttribute('aria-expanded', 'true')
+    const container = screen.getByRole('button', { name: /Container startup and health checks/ })
+    expect(container).toHaveAttribute('aria-expanded', 'false')
+    expect(container).toHaveTextContent('Using defaults')
+    await user.click(container)
+    expect(screen.getByRole('combobox', { name: /Image pull policy/ })).toBeInTheDocument()
+  })
+
+  it('opens configured advanced items and forces them open when they fail validation', async () => {
+    const user = userEvent.setup()
+    renderEditor({ values: { name: 'dev', runAsUser: 'abc' } })
+
+    const advanced = screen.getByRole('button', { name: /Advanced \(Kubernetes\)/ })
+    expect(advanced).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByRole('button', { name: /Security context and scheduling/ })).toHaveTextContent('Set: 1')
+    await user.click(advanced)
+    expect(advanced).toHaveAttribute('aria-expanded', 'false')
+
+    await user.click(screen.getByRole('button', { name: 'Create deploy config' }))
+
+    expect(api.createDeploymentTarget).not.toHaveBeenCalled()
+    expect(advanced).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByRole('textbox', { name: /Run as UID/ })).toHaveAttribute('aria-invalid', 'true')
+    expect(within(screen.getByRole('navigation', { name: 'Deploy config sections' })).getByRole('link', { name: /Advanced/ })).toHaveTextContent('Errors: 1')
+  })
+
+  it('writes size presets into the CPU and memory requests', async () => {
+    const user = userEvent.setup()
+    renderEditor({ values: { name: 'dev' } })
+
+    expect(screen.getByRole('radio', { name: /^L/ })).toBeChecked()
+    expect(screen.queryByRole('textbox', { name: /CPU quota/ })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('radio', { name: /^M/ }))
+    await user.click(screen.getByRole('button', { name: 'Create deploy config' }))
+
+    expect(await screen.findByText('deployments list')).toBeInTheDocument()
+    expect(api.createDeploymentTarget).toHaveBeenCalledWith('prj_1', 'app_1', expect.objectContaining({ cpuRequest: '500m', memoryRequest: '512Mi' }))
+  })
+
+  it('shows the raw CPU and memory inputs for custom sizes', async () => {
+    const user = userEvent.setup()
+    renderEditor({ values: { cpuRequest: '750m', memoryRequest: '768Mi' } })
+
+    expect(screen.getByRole('radio', { name: /Custom/ })).toBeChecked()
+    expect(screen.getByRole('textbox', { name: /CPU quota/ })).toHaveValue('750')
+    await user.click(screen.getByRole('radio', { name: /^S/ }))
+    expect(screen.queryByRole('textbox', { name: /CPU quota/ })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('radio', { name: /Custom/ }))
+    expect(screen.getByRole('textbox', { name: /CPU quota/ })).toHaveValue('250')
   })
 
   it('shows inline errors and section counts instead of submitting invalid input', async () => {

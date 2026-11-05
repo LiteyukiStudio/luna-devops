@@ -20,7 +20,7 @@ export function ApplicationBuildRunFilterBar({ actor, actorOptions, branch, bran
 }) {
   const { t } = useTranslation()
   return (
-    <div className="flex flex-wrap items-center gap-1 border-b border-border bg-muted/25 px-4 py-2">
+    <div className="flex flex-wrap items-center gap-2">
       <BuildRunFilterSelect
         label={t('buildsPage.eventFilter')}
         value={event}
@@ -72,11 +72,10 @@ function BuildRunFilterSelect({ children, label, onChange, value }: {
   onChange: (value: string) => void
 }) {
   return (
-    <label className="min-w-32">
+    <label className="w-full sm:w-36">
       <span className="sr-only">{label}</span>
       <Select
         aria-label={label}
-        className="h-8 rounded-md border-transparent bg-transparent px-2.5 pr-8 text-sm text-muted-foreground shadow-none hover:bg-background/70 focus-visible:border-primary/40 focus-visible:ring-primary/20"
         value={value}
         onChange={event => onChange(event.target.value)}
       >

@@ -1,13 +1,14 @@
 import type { Release } from '@/api'
-import { Maximize2, Minimize2 } from 'lucide-react'
-import { lazy, useState } from 'react'
+import { LoaderCircle, RotateCw } from 'lucide-react'
+import { lazy, useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { apiBaseOrigin } from '@/api'
 import { CliCommandSnippet } from '@/components/common/cli-command-snippet'
 import { LazyLoadBoundary } from '@/components/common/lazy-load-boundary'
 import { OutputViewerSheet } from '@/components/common/output-viewer-sheet'
 import { StatusValueBadge } from '@/components/common/status-badge'
-import { Button } from '@/components/ui/button'
+import { TerminalConnectionStatus, TerminalPlaceholder, ViewerToolbar, ViewerToolbarButton } from '@/components/common/terminal-chrome'
+import { useTerminalConnection } from '@/components/common/use-terminal-connection'
 import { Input } from '@/components/ui/input'
 import { RuntimePodSelect } from './runtime-pod-select'
 
@@ -25,42 +26,43 @@ export function ApplicationWebConsolePanel({
   onClose: () => void
 }) {
   const { t } = useTranslation()
+  const containerInputId = useId()
   const [pod, setPod] = useState('')
   const [container, setContainer] = useState('')
-  const [expanded, setExpanded] = useState(false)
+  const connection = useTerminalConnection()
+  const terminalKey = `${release.id}:${pod}:${container}:${connection.attempt}`
 
   return (
     <OutputViewerSheet
-      contentClassName={expanded ? 'w-screen' : undefined}
       description={t('deploymentsPage.webConsoleDescription')}
       title={t('deploymentsPage.webConsole')}
       titleAccessory={<StatusValueBadge labelKeyPrefix="buildsPage.statuses" value={release.status} />}
       onClose={onClose}
     >
-      <div className="grid shrink-0 gap-2 border-b border-border bg-muted/30 px-4 py-3">
-        <div className="flex min-w-0 flex-wrap items-center gap-3">
-          <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground" title={release.id}>{release.id}</span>
-          <RuntimePodSelect projectId={projectId} release={release} value={pod} onValueChange={setPod} />
-          <label className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
-            <span>{t('deploymentsPage.container')}</span>
-            <Input
-              className="h-8 w-36 bg-background font-mono text-xs"
-              placeholder={t('deploymentsPage.webConsoleContainerPlaceholder')}
-              value={container}
-              onChange={event => setContainer(event.target.value)}
-            />
-          </label>
-          <Button
-            aria-label={expanded ? t('deploymentsPage.exitFullscreen') : t('deploymentsPage.fullscreen')}
-            size="icon"
-            title={expanded ? t('deploymentsPage.exitFullscreen') : t('deploymentsPage.fullscreen')}
-            type="button"
-            variant="ghost"
-            onClick={() => setExpanded(value => !value)}
-          >
-            {expanded ? <Minimize2 className="size-4" /> : <Maximize2 className="size-4" />}
-          </Button>
+      <ViewerToolbar
+        actions={(
+          <ViewerToolbarButton
+            disabled={connection.state === 'connecting' || connection.state === 'idle'}
+            icon={<RotateCw aria-hidden="true" />}
+            label={t('common.terminal.reconnect')}
+            onClick={connection.reconnect}
+          />
+        )}
+      >
+        <TerminalConnectionStatus state={connection.state} />
+        <RuntimePodSelect projectId={projectId} release={release} value={pod} onValueChange={setPod} />
+        <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
+          <label htmlFor={containerInputId}>{t('deploymentsPage.container')}</label>
+          <Input
+            className="h-8 w-36 font-mono text-xs"
+            id={containerInputId}
+            placeholder={t('deploymentsPage.webConsoleContainerPlaceholder')}
+            value={container}
+            onChange={event => setContainer(event.target.value)}
+          />
         </div>
+      </ViewerToolbar>
+      <div className="shrink-0 border-b border-border bg-surface-subtle px-4 py-2">
         <CliCommandSnippet
           spec={{
             command: 'deployment.exec',
@@ -73,18 +75,19 @@ export function ApplicationWebConsolePanel({
           }}
         />
       </div>
-      <div className="min-h-0 flex-1 bg-zinc-950">
+      <div className="min-h-0 flex-1 bg-terminal">
         <LazyLoadBoundary
-          fallback={<div className="grid h-full min-h-80 place-items-center text-sm text-zinc-400" role="status">{t('common.loading')}</div>}
-          resetKey={`${release.id}:${pod}:${container}`}
+          fallback={<TerminalPlaceholder icon={<LoaderCircle className="motion-safe:animate-spin" />} label={t('common.loading')} />}
+          resetKey={terminalKey}
         >
           <RuntimeTerminalPanel
-            key={`${release.id}:${pod}:${container}`}
+            key={terminalKey}
             container={container}
             fullscreen
             pod={pod}
             projectId={projectId}
             release={release}
+            onConnectionChange={connection.onStateChange}
           />
         </LazyLoadBoundary>
       </div>

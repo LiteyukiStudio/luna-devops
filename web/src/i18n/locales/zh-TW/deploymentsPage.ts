@@ -92,7 +92,6 @@ const deploymentsPage = {
   redeployAffectedRuntimeConfig: '重新部署受影響資源',
   runtimeConfigRedeployQueued: '已為 {{queued}} 個部署配置建立重新部署任務，{{skipped}} 個暫不可重新部署。',
   runtimeData: '執行資料',
-  runtimeDataDescription: '將專案資料卷掛載到容器，或使用 emptyDir 儲存與 Pod 同生命週期的臨時資料。',
   dataVolumes: '資料卷',
   dataVolumesHint: '選擇已有專案資料卷用於持久化資料，或使用 emptyDir 儲存臨時資料；不需要卷時保持為空。',
   dataVolumeCount: '{{count}} 個資料卷',
@@ -134,7 +133,6 @@ const deploymentsPage = {
   runtimePodMissing: '所選副本已不存在，請重新選擇。',
   runtimePodsUnavailable: '暫時無法讀取副本列表，可繼續使用自動選擇。',
   runtimeStatus: '執行狀態',
-  releaseStatus: '釋出狀態',
   runtimeStatusCluster: '執行叢集：{{cluster}}',
   runtimePodCount: '{{count}} 個 Pod',
   runtimeStatuses: {
@@ -144,6 +142,7 @@ const deploymentsPage = {
     'create-container-config-error': '容器配置錯誤',
     'create-container-error': '容器建立錯誤',
     'degraded': '異常',
+    'disabled': '已停用',
     'err-image-pull': '映象拉取錯誤',
     'failed': '失敗',
     'image-pull-back-off': '映象拉取退避',
@@ -175,8 +174,6 @@ const deploymentsPage = {
   webConsoleDisabledHint: '當前專案空間或部署配置已關閉 Web Console。',
   webConsoleDescription: '連線當前釋出對應執行容器的真實互動式終端。該操作會寫入審計日誌。',
   webConsoleContainerPlaceholder: '預設容器',
-  fullscreen: '全屏',
-  exitFullscreen: '退出全屏',
   webConsoleConnecting: '正在連線執行容器終端...',
   webConsoleConnected: '已連線。輸入 shell 命令開始排查。',
   webConsoleDisconnected: '終端連線已斷開。',
@@ -337,6 +334,8 @@ const deploymentsPage = {
     staging: '預發',
     prod: '生產',
   },
+  accessAddress: '存取位址',
+  currentVersion: '目前版本',
 }
 
 export default deploymentsPage

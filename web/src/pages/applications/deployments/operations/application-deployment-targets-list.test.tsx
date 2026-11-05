@@ -96,6 +96,12 @@ describe('application deployment targets behavior', () => {
     }])
 
     expect(screen.queryByText(/自动部署|Auto deploy/i)).not.toBeInTheDocument()
+    const card = screen.getAllByText('app-dev', { selector: 'button' })
+      .map(element => element.closest<HTMLElement>('[data-slot="deployment-target-card"]'))
+      .find(element => element !== null) as HTMLElement
+    expect(within(card).getByRole('link', { name: /outline\.example\.com/ })).toHaveAttribute('rel', 'noopener noreferrer')
+    expect(within(card).getByText('Ready').closest('[data-slot="status-dot"]')).toHaveAttribute('data-tone', 'success')
+    expect(within(card).getByRole('button', { name: 'Create release' })).toBeDisabled()
     expect(screen.queryByText('Deployment has minimum availability.')).not.toBeInTheDocument()
     await user.click(screen.getAllByLabelText('Actions')[0])
     await user.click(await screen.findByRole('menuitem', { name: 'View details' }))
@@ -103,7 +109,7 @@ describe('application deployment targets behavior', () => {
     const dialog = await screen.findByRole('dialog')
     expect(within(dialog).getByText('Access addresses')).toBeInTheDocument()
     expect(within(dialog).getByText('app-dev.luna-dev.svc.cluster.local')).toBeInTheDocument()
-    expect(within(dialog).getByText('https://outline.example.com')).toBeInTheDocument()
+    expect(within(dialog).getByRole('link', { name: /outline\.example\.com/ })).toHaveAttribute('href', 'https://outline.example.com')
     expect(within(dialog).getByText('0.5 vCPU · 1G')).toBeInTheDocument()
     expect(within(dialog).getByText('#3')).toBeInTheDocument()
   })

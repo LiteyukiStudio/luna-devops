@@ -1997,8 +1997,7 @@ export interface CurrentUser {
   passwordSet: boolean
   role: PlatformRoleValue
   language: 'zh-CN' | 'zh-TW' | 'en-US' | 'ja-JP' | 'ko-KR'
-  brandColorPreset: '' | 'aurora' | 'harbor' | 'sunset' | 'botanical' | 'meadow' | 'citrus' | 'gold' | 'orange' | 'red' | 'pink' | 'violet' | 'blue' | 'cyan' | 'teal' | 'green' | 'lime'
-  interfaceStyle: '' | 'minimal' | 'themed'
+  brandColorPreset: '' | 'blue' | 'violet' | 'teal' | 'green' | 'orange' | 'pink'
   permissions: string[]
 }
 

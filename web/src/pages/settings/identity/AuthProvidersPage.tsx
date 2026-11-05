@@ -280,7 +280,7 @@ export function AuthProvidersPage() {
               <DialogDescription>{t('authProvidersPage.description')}</DialogDescription>
             </DialogHeader>
             <form className="grid gap-3" onSubmit={providerForm.handleSubmit(values => saveProvider.mutate(values))}>
-              <div className="grid gap-2 rounded-md border border-border bg-muted/40 p-3">
+              <div className="grid gap-2 rounded-container border border-border bg-surface-subtle p-3">
                 <p className="text-sm font-medium">{t('authProvidersPage.callbackUrl')}</p>
                 {oidcCallbackConfig.data?.configured
                   ? (
@@ -369,7 +369,7 @@ export function AuthProvidersPage() {
                   control={policyForm.control}
                   name="allowLocalLogin"
                   render={({ field }) => (
-                    <ControlledCheckboxField className="rounded-lg border border-border bg-surface-inset p-3" field={field}>
+                    <ControlledCheckboxField className="rounded-container border border-border bg-surface-inset p-3" field={field}>
                       {t('authProvidersPage.allowLocalLogin')}
                     </ControlledCheckboxField>
                   )}
@@ -378,7 +378,7 @@ export function AuthProvidersPage() {
                   control={policyForm.control}
                   name="allowOidcLogin"
                   render={({ field }) => (
-                    <ControlledCheckboxField className="rounded-lg border border-border bg-surface-inset p-3" field={field}>
+                    <ControlledCheckboxField className="rounded-container border border-border bg-surface-inset p-3" field={field}>
                       {t('authProvidersPage.allowOidcLogin')}
                     </ControlledCheckboxField>
                   )}
@@ -388,7 +388,7 @@ export function AuthProvidersPage() {
                   name="requireVerifiedOidcEmail"
                   render={({ field }) => (
                     <ControlledCheckboxField
-                      className="rounded-lg border border-border bg-surface-inset p-3 md:col-span-2"
+                      className="rounded-container border border-border bg-surface-inset p-3 md:col-span-2"
                       description={t('authProvidersPage.requireVerifiedOidcEmailHint')}
                       field={field}
                     >

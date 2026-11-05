@@ -7,7 +7,7 @@ type MetricTone = 'danger' | 'info' | 'neutral' | 'success' | 'warning'
 /** 概览页指标的统一分组，外层依靠表面与圆角分层，指标之间保留共享分隔线。 */
 export function MetricGroup({ children, className }: { children: ReactNode, className?: string }) {
   return (
-    <div className={cn('grid gap-px overflow-hidden rounded-container bg-border sm:grid-cols-2 xl:grid-cols-4', className)} data-slot="metric-group">
+    <div className={cn('grid gap-4 sm:grid-cols-2 xl:grid-cols-4', className)} data-slot="metric-group">
       {children}
     </div>
   )
@@ -36,7 +36,7 @@ export function MetricItem({ emphasis = true, href, icon, label, meta, tone = 'n
     </>
   )
   const className = cn(
-    'group min-w-0 bg-surface-raised p-4 ring-1 ring-inset ring-transparent transition-colors hover:bg-surface-subtle',
+    'group min-w-0 rounded-container border border-border bg-surface-raised p-4 shadow-sm transition-colors hover:border-primary-border',
   )
 
   return href

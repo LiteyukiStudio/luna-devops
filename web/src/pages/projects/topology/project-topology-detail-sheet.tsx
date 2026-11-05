@@ -93,7 +93,7 @@ export function ProjectTopologyDetailSheet({
                 <SheetDescription>{t('projectTopology.detailDescription')}</SheetDescription>
               </SheetHeader>
               <div className="grid gap-5 px-4 pb-5 text-sm">
-                <div className="grid gap-3 rounded-md border border-border bg-muted/25 p-3">
+                <div className="grid gap-3 rounded-container border border-border bg-surface-subtle p-3">
                   <ApplicationLink label={t('projectTopology.source')} name={sourceNode?.name ?? t('projectTopology.unknownApplication')} projectId={projectId} applicationId={sourceNode?.id} />
                   <div className="pl-3 text-muted-foreground">↓</div>
                   <ApplicationLink label={t('projectTopology.target')} name={targetNode?.name ?? t('projectTopology.unknownApplication')} projectId={projectId} applicationId={targetNode?.id} />
@@ -139,7 +139,7 @@ export function ProjectTopologyDetailSheet({
                     </div>
                     {diagnostics
                       ? diagnostics.checks.map(item => (
-                          <div key={item.code} className="flex items-start justify-between gap-3 rounded-md border border-border px-3 py-2">
+                          <div key={item.code} className="flex items-start justify-between gap-3 rounded-container border border-border px-3 py-2">
                             <div className="min-w-0">
                               <p className="font-medium">{t(`projectTopology.checkCodes.${item.code}`, { defaultValue: item.code })}</p>
                               {(item.resource || item.detail) && <p className="mt-1 break-words text-xs text-muted-foreground">{item.resource || item.detail}</p>}
@@ -147,7 +147,7 @@ export function ProjectTopologyDetailSheet({
                             <StatusValueBadge labelKeyPrefix="projectTopology.checkStatuses" value={item.status} />
                           </div>
                         ))
-                      : <p className="rounded-md border border-dashed border-border px-3 py-4 text-muted-foreground">{t('projectTopology.noDiagnostics')}</p>}
+                      : <p className="rounded-container border border-dashed border-border px-3 py-4 text-muted-foreground">{t('projectTopology.noDiagnostics')}</p>}
                   </div>
                 )}
 

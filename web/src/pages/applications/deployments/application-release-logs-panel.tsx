@@ -3,9 +3,10 @@ import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { api, ApiError } from '@/api'
-import { AutoFollowLog } from '@/components/common/auto-follow-log'
+import { LogViewer } from '@/components/common/log-viewer'
 import { OutputViewerSheet } from '@/components/common/output-viewer-sheet'
 import { StatusValueBadge } from '@/components/common/status-badge'
+import { StatusDot } from '@/components/common/status-dot'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
 import { WORKFLOW_STATUS_REFETCH_INTERVAL_MS } from '@/lib/polling'
@@ -36,16 +37,15 @@ export function ApplicationReleaseLogsPanel({
     enabled: Boolean(projectId && logView === 'runtime'),
     refetchInterval: logView === 'runtime' ? WORKFLOW_STATUS_REFETCH_INTERVAL_MS : false,
   })
-  const releaseLogFallback = releaseLogs.isError
-    ? t('common.unavailable')
-    : releaseLogs.isLoading ? t('common.loading') : t('deploymentsPage.emptyLogs')
-  const runtimeLogFallback = runtimeLogs.isError
-    ? t(runtimeLogs.error instanceof ApiError && runtimeLogs.error.code === 'runtime.pod_not_found' ? 'deploymentsPage.runtimePodMissing' : 'common.unavailable')
-    : runtimeLogs.isLoading ? t('common.loading') : t('deploymentsPage.emptyLogs')
+  const deploymentLive = release.status === 'running' || release.status === 'pending'
+  const runtimeErrorLabel = runtimeLogs.error instanceof ApiError && runtimeLogs.error.code === 'runtime.pod_not_found'
+    ? t('deploymentsPage.runtimePodMissing')
+    : t('common.unavailable')
+  const liveDot = <StatusDot className="text-xs" label={t('common.logViewer.live')} tone="info" />
 
   return (
     <OutputViewerSheet
-      description={release.id}
+      description={<span className="font-mono text-xs">{release.id}</span>}
       title={t('deploymentsPage.releaseLogs')}
       titleAccessory={<StatusValueBadge labelKeyPrefix="buildsPage.statuses" value={release.status} />}
       onClose={onClose}
@@ -58,33 +58,42 @@ export function ApplicationReleaseLogsPanel({
             ))}
           </TabsList>
         </div>
-        <TabsContent className="min-h-0 flex-1 overflow-hidden" value="deployment">
-          <AutoFollowLog
-            className="h-full bg-zinc-950 p-4 font-mono text-sm leading-6 text-zinc-100"
-            content={releaseLogs.isError ? undefined : releaseLogs.data?.content}
-            emptyFallback={releaseLogFallback}
+        <TabsContent className="flex min-h-0 flex-1 flex-col overflow-hidden" value="deployment">
+          <LogViewer
+            className="flex-1"
+            content={releaseLogs.data?.content}
+            downloadName={`release-${release.id}.log`}
+            emptyLabel={t('deploymentsPage.emptyLogs')}
+            live={deploymentLive}
+            meta={deploymentLive ? liveDot : undefined}
             resetKey={`${release.id}:deployment`}
+            state={releaseLogs.isError ? 'error' : releaseLogs.isLoading ? 'loading' : 'ready'}
+            onRetry={() => void releaseLogs.refetch()}
           />
         </TabsContent>
-        <TabsContent className="min-h-0 flex-1 overflow-hidden" value="runtime">
-          <div className="grid h-full min-h-0 grid-rows-[auto_auto_minmax(0,1fr)] bg-zinc-950">
-            <div className="border-b border-border bg-background px-4 py-2">
-              <RuntimePodSelect projectId={projectId} release={release} value={pod} onValueChange={setPod} />
-            </div>
-            {runtimeLogs.data && !runtimeLogs.isError
-              ? (
-                  <div className="border-b border-zinc-800 px-4 py-2 font-mono text-xs text-zinc-400">
+        <TabsContent className="flex min-h-0 flex-1 flex-col overflow-hidden" value="runtime">
+          <LogViewer
+            className="flex-1"
+            content={runtimeLogs.data?.content}
+            downloadName={`release-${release.id}-${runtimeLogs.data?.pod || 'runtime'}.log`}
+            emptyLabel={t('deploymentsPage.emptyLogs')}
+            errorLabel={runtimeErrorLabel}
+            live
+            meta={(
+              <>
+                <RuntimePodSelect projectId={projectId} release={release} value={pod} onValueChange={setPod} />
+                {runtimeLogs.data && !runtimeLogs.isError && (
+                  <span className="min-w-0 truncate font-mono text-xs text-muted-foreground">
                     {t('deploymentsPage.runtimeLogSource', { pod: runtimeLogs.data.pod, container: runtimeLogs.data.container })}
-                  </div>
-                )
-              : <div />}
-            <AutoFollowLog
-              className="min-h-0 bg-zinc-950 p-4 font-mono text-sm leading-6 text-zinc-100"
-              content={runtimeLogs.isError ? undefined : runtimeLogs.data?.content}
-              emptyFallback={runtimeLogFallback}
-              resetKey={`${release.id}:runtime:${pod}`}
-            />
-          </div>
+                  </span>
+                )}
+                {liveDot}
+              </>
+            )}
+            resetKey={`${release.id}:runtime:${pod}`}
+            state={runtimeLogs.isError ? 'error' : runtimeLogs.isLoading ? 'loading' : 'ready'}
+            onRetry={() => void runtimeLogs.refetch()}
+          />
         </TabsContent>
       </Tabs>
     </OutputViewerSheet>

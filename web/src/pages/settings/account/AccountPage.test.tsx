@@ -16,7 +16,6 @@ const mocks = vi.hoisted(() => {
         brandColorPreset: '',
         email: 'owner@example.com',
         id: 'usr_owner',
-        interfaceStyle: '',
         language: 'en-US',
         name: 'Owner',
         passwordSet: true,

@@ -20,7 +20,7 @@ export function InboxMessageRow({ compact = false, message, onSelect }: { compac
       type="button"
       onClick={() => onSelect(message)}
     >
-      <span className={cn('mt-0.5 grid size-9 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground', !message.readAt && 'bg-primary/10 text-primary-text')}>
+      <span className={cn('mt-0.5 grid size-9 shrink-0 place-items-center rounded-container bg-muted text-muted-foreground', !message.readAt && 'bg-primary/10 text-primary-text')}>
         {categoryIcon(message.category)}
       </span>
       <span className="min-w-0 flex-1">

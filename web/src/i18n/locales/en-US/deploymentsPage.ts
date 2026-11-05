@@ -92,7 +92,6 @@ const deploymentsPage = {
   redeployAffectedRuntimeConfig: 'Redeploy affected resources',
   runtimeConfigRedeployQueued: 'Created redeploy tasks for {{queued}} deploy configs. {{skipped}} could not be redeployed yet.',
   runtimeData: 'Runtime data',
-  runtimeDataDescription: 'Mount project volumes into the container, or use emptyDir for temporary data that follows the Pod lifecycle.',
   dataVolumes: 'Data volumes',
   dataVolumesHint: 'Select an existing project volume for persistent data, or use emptyDir for temporary data. Leave this empty when no volume is needed.',
   dataVolumeCount: '{{count}} data volumes',
@@ -134,7 +133,6 @@ const deploymentsPage = {
   runtimePodMissing: 'The selected replica no longer exists. Choose another one.',
   runtimePodsUnavailable: 'Replicas cannot be listed right now. Automatic selection still works.',
   runtimeStatus: 'Runtime status',
-  releaseStatus: 'Release status',
   runtimeStatusCluster: 'Runtime cluster: {{cluster}}',
   runtimePodCount: '{{count}} Pods',
   runtimeStatuses: {
@@ -144,6 +142,7 @@ const deploymentsPage = {
     'create-container-config-error': 'Container config error',
     'create-container-error': 'Container create error',
     'degraded': 'Degraded',
+    'disabled': 'Disabled',
     'err-image-pull': 'Image pull error',
     'failed': 'Failed',
     'image-pull-back-off': 'ImagePullBackOff',
@@ -175,8 +174,6 @@ const deploymentsPage = {
   webConsoleDisabledHint: 'Web Console is disabled by this project space or deploy config.',
   webConsoleDescription: 'Connect to the real interactive terminal of the runtime container for this release. The operation is written to the audit log.',
   webConsoleContainerPlaceholder: 'Default container',
-  fullscreen: 'Fullscreen',
-  exitFullscreen: 'Exit fullscreen',
   webConsoleConnecting: 'Connecting to the runtime container terminal...',
   webConsoleConnected: 'Connected. Type shell commands to inspect the runtime.',
   webConsoleDisconnected: 'Terminal disconnected.',
@@ -337,6 +334,8 @@ const deploymentsPage = {
     staging: 'Staging',
     prod: 'Production',
   },
+  accessAddress: 'Access address',
+  currentVersion: 'Current version',
 }
 
 export default deploymentsPage

@@ -27,7 +27,7 @@ export interface SessionContextValue {
   logout: () => Promise<void>
   refreshUser: () => Promise<void>
   resumeLogin: (userId: string) => Promise<CurrentUser>
-  updateProfile: (input: { name: string, avatarUrl: string, language: CurrentUser['language'], brandColorPreset: CurrentUser['brandColorPreset'], interfaceStyle: CurrentUser['interfaceStyle'] }) => Promise<CurrentUser>
+  updateProfile: (input: { name: string, avatarUrl: string, language: CurrentUser['language'], brandColorPreset: CurrentUser['brandColorPreset'] }) => Promise<CurrentUser>
   updateLanguage: (language: CurrentUser['language']) => Promise<CurrentUser>
 }
 

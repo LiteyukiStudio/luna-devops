@@ -110,7 +110,7 @@ describe('site settings page', () => {
       {
         default: 'blue',
         key: 'site.brandColorPreset',
-        options: ['red', 'blue'],
+        options: ['pink', 'blue'],
         public: true,
         type: 'select',
       },
