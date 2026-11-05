@@ -1,93 +1,81 @@
 import type { ReactNode } from 'react'
-import { ArrowLeft } from 'lucide-react'
 import { use, useEffect } from 'react'
 import { createPortal } from 'react-dom'
-import { Link } from 'react-router-dom'
 import { WorkspaceChromeTargetsContext } from '@/components/common/workspace-chrome-context'
 import { cn } from '@/lib/utils'
 
-interface PageChromeBackNavigation {
-  label: string
-  to: string
-}
+type ChromeSlot = 'heading' | 'tabs' | 'tools'
 
-export function PageBackNavigation({
-  className,
-  label,
-  to,
-}: PageChromeBackNavigation & { className?: string }) {
-  return (
-    <Link
-      className={cn(
-        'inline-flex w-fit items-center gap-1.5 rounded-control px-1 py-1 text-sm font-medium text-muted-foreground outline-none transition-colors duration-fast ease-standard hover:bg-surface-subtle hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring',
-        className,
-      )}
-      data-slot="page-chrome-back-navigation"
-      to={to}
-    >
-      <ArrowLeft aria-hidden="true" className="size-4" />
-      <span>{label}</span>
-    </Link>
-  )
+function hasContent(children: ReactNode) {
+  return children !== null && children !== undefined && children !== false
 }
 
 /**
- * 将页面级操作放入 Topbar 的导航操作行；中小屏回落到正文流。
+ * 在页面挂载期间登记插槽占用，并返回布局提供的投放目标。
+ * 没有布局（如独立路由或测试）时返回 null，调用方在原位渲染。
+ */
+function useChromeSlot(slot: ChromeSlot, active: boolean) {
+  const targets = use(WorkspaceChromeTargetsContext)
+  const register = slot === 'heading' ? targets?.registerHeading : slot === 'tabs' ? targets?.registerTabs : targets?.registerTools
+
+  useEffect(() => {
+    if (!active || !register)
+      return
+
+    return register()
+  }, [active, register])
+
+  return { hasLayout: Boolean(targets), target: targets?.[slot] ?? null }
+}
+
+/**
+ * 替换布局页头默认标题。只有页面标题需要比路由名更具体时使用（例如编辑器标明正在编辑的对象）。
+ */
+export function PageChromeHeading({ description, title }: { description?: ReactNode, title: string }) {
+  const { hasLayout, target } = useChromeSlot('heading', true)
+  const heading = (
+    <div className="min-w-0">
+      <h1 className="truncate text-xl font-semibold tracking-tight text-foreground md:text-2xl">{title}</h1>
+      {description && <p className="mt-1 text-sm text-muted-foreground">{description}</p>}
+    </div>
+  )
+
+  if (!hasLayout)
+    return heading
+
+  return target ? createPortal(heading, target) : null
+}
+
+/**
+ * 将页面级操作放入正文页头右侧。
  */
 export function PageChromeTools({ children, className }: { children?: ReactNode, className?: string }) {
-  const targets = use(WorkspaceChromeTargetsContext)
-  const tools = targets?.tools
-  const registerTools = targets?.registerTools
-  const hasChildren = children !== null && children !== undefined && children !== false
+  const active = hasContent(children)
+  const { hasLayout, target } = useChromeSlot('tools', active)
 
-  useEffect(() => {
-    if (!hasChildren || !registerTools)
-      return
-
-    return registerTools()
-  }, [hasChildren, registerTools])
-
-  if (!hasChildren)
+  if (!active)
     return null
 
-  return (
-    <>
-      {tools && createPortal(
-        <div className={cn('flex min-w-0 flex-nowrap items-center justify-end gap-2', className)}>
-          {children}
-        </div>,
-        tools,
-      )}
-      <div className={cn('flex min-w-0 flex-wrap items-center gap-2 lg:hidden', className)}>
-        {children}
-      </div>
-    </>
-  )
+  const tools = <div className={cn('flex min-w-0 flex-wrap items-center justify-end gap-2', className)}>{children}</div>
+  if (!hasLayout)
+    return tools
+
+  return target ? createPortal(tools, target) : null
 }
 
 /**
- * 将页面级 Tab 放入工作区 Topbar。布局只提供插槽，不持有业务 Tab 状态。
+ * 将页面级 Tab 放入正文页头下方。布局只提供插槽，不持有业务 Tab 状态。
  */
 export function PageChromeTabs({ children, className }: { children?: ReactNode, className?: string }) {
-  const targets = use(WorkspaceChromeTargetsContext)
-  const registerTabs = targets?.registerTabs
-  const hasChildren = children !== null && children !== undefined && children !== false
+  const active = hasContent(children)
+  const { hasLayout, target } = useChromeSlot('tabs', active)
 
-  useEffect(() => {
-    if (!hasChildren || !registerTabs)
-      return
-
-    return registerTabs()
-  }, [hasChildren, registerTabs])
-
-  if (!hasChildren)
+  if (!active)
     return null
 
-  if (!targets)
-    return <div className={cn('min-w-0', className)}>{children}</div>
+  const tabs = <div className={cn('min-w-0', className)}>{children}</div>
+  if (!hasLayout)
+    return tabs
 
-  if (!targets.tabs)
-    return null
-
-  return createPortal(<div className={cn('min-w-0', className)}>{children}</div>, targets.tabs)
+  return target ? createPortal(tabs, target) : null
 }

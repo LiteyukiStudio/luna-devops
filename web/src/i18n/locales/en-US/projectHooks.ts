@@ -1,5 +1,4 @@
 const projectHooks = {
-  tab: 'Hooks',
   title: 'Project hooks',
   description: 'Maintain shared project-level scripts. Scripts only run after a deploy config binds them to a specific build or deployment phase.',
   createTitle: 'Create hook',

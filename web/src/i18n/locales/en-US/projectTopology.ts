@@ -1,5 +1,4 @@
 const projectTopology = {
-  tab: 'Service relations',
   addRelation: 'Add relation',
   loadFailed: 'Failed to load service relations',
   loadFailedDescription: 'Refresh and try again, or check your project permissions.',

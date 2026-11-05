@@ -15,6 +15,7 @@ import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { DataList } from '@/components/common/data-list'
 import { ErrorState } from '@/components/common/error-state'
 import { FormField as Field } from '@/components/common/form-field'
+import { PageChromeTools } from '@/components/common/page-chrome'
 import { PageShell } from '@/components/common/page-shell'
 import { ProgressiveSection } from '@/components/common/progressive-section'
 import { ResourceDeletionStatus } from '@/components/common/resource-deletion-status'
@@ -125,20 +126,20 @@ export function ProjectsPage() {
 
   return (
     <PageShell spacing="compact" width="full">
+      <PageChromeTools>
+        <Button
+          onClick={() => {
+            setEditingProject(null)
+            form.reset({ name: '', identifier: '', description: '', maxConcurrentBuilds: 2, webConsoleEnabled: true })
+            setDialogOpen(true)
+          }}
+        >
+          <Plus size={16} />
+          <span>{t('projectSpaces.createTitle')}</span>
+        </Button>
+      </PageChromeTools>
       {projects.isError && <ErrorState title={t('projectSpaces.loadFailedTitle')} description={t('projectSpaces.loadFailedDescription')} />}
       <DataList
-        toolbarActions={(
-          <Button
-            onClick={() => {
-              setEditingProject(null)
-              form.reset({ name: '', identifier: '', description: '', maxConcurrentBuilds: 2, webConsoleEnabled: true })
-              setDialogOpen(true)
-            }}
-          >
-            <Plus size={16} />
-            <span>{t('projectSpaces.createTitle')}</span>
-          </Button>
-        )}
         columns={[
           {
             key: 'name',

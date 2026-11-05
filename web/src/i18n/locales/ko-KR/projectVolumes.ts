@@ -1,5 +1,4 @@
 const projectVolumes = {
-  tab: '데이터 볼륨',
   title: '데이터 볼륨 센터',
   description: '프로젝트 스페이스 내의 영구 데이터 볼륨, 마운트 관계, 가져오기/낚수하기 작업을 중앙에서 관리합니다.',
   create: '데이터 볼륨 생성',

@@ -14,6 +14,7 @@ import { DataList } from '@/components/common/data-list'
 import { EditActionButton } from '@/components/common/edit-action-button'
 import { ErrorState } from '@/components/common/error-state'
 import { FormField as Field } from '@/components/common/form-field'
+import { PageChromeTools } from '@/components/common/page-chrome'
 import { PageShell } from '@/components/common/page-shell'
 import { StatusBadge, StatusValueBadge } from '@/components/common/status-badge'
 import { formatAbsoluteDateTime } from '@/components/common/time-format'
@@ -185,21 +186,21 @@ export function UsersPage() {
 
   return (
     <PageShell>
+      <PageChromeTools>
+        <Button
+          onClick={() => {
+            setEditingUser(null)
+            form.reset(defaultValues)
+            setDialogOpen(true)
+          }}
+        >
+          <UserPlus size={16} />
+          {t('usersPage.createTitle')}
+        </Button>
+      </PageChromeTools>
       <div className="grid min-w-0 self-start">
         {users.isError && <ErrorState title={t('usersPage.loadFailedTitle')} description={t('common.platformAdminPermissionRequired')} />}
         <DataList
-          toolbarActions={(
-            <Button
-              onClick={() => {
-                setEditingUser(null)
-                form.reset(defaultValues)
-                setDialogOpen(true)
-              }}
-            >
-              <UserPlus size={16} />
-              {t('usersPage.createTitle')}
-            </Button>
-          )}
           columns={columns}
           emptyDescription={t('usersPage.emptyDescription')}
           emptyTitle={t('usersPage.emptyTitle')}

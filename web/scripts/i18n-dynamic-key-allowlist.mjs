@@ -15,6 +15,7 @@ export const auditedDynamicTranslationCalls = {
   'src/layouts/AppLayout.tsx|rule.titleKey': 'Page title keys come from the local route title catalog.',
   'src/layouts/AppLayout.tsx|section.titleKey': 'Sidebar section keys come from the local navigation catalog.',
   'src/layouts/AppLayout.tsx|item.labelKey': 'Sidebar item keys come from the local navigation catalog.',
+  'src/layouts/AppLayout.tsx|section.labelKey': 'Project sidebar keys come from the project workspace section catalog (nav.projectSections).',
   'src/pages/applications/deployments/application-deployment-bundle-import-dialog.tsx|errorKey': 'The API error key is translated only after i18next.exists succeeds.',
   'src/pages/applications/deployments/application-deployment-bundle-import-dialog.tsx|fallbackKey': 'Callers pass bounded bundleImport fallback keys.',
   'src/pages/applications/gateway/application-gateway-panel.tsx|messageKey': 'The key is selected from three literal gateway domain result keys.',

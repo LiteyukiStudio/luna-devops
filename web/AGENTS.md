@@ -73,10 +73,14 @@
   `Select` / `NativeSelect`，带独立策略的选项保留领域编辑器。
 - Button/Input/Select 使用标准控件圆角；Badge、状态标签、头像和真正的 segmented control 才使用
   胶囊形。页面导航与表单控件不得伪装成 Badge。
-- 页面使用 `PageShell` 的 `content/full/settings/tool` 语义；标题、工具和 Tabs 使用 `PageChrome` /
-  `ContentTabs`。全局画布 padding 由布局层提供，业务页不加根 padding、负间距或独立全宽 topbar。
+- 页面使用 `PageShell` 的 `content/full/settings/tool` 语义。顶栏只放面包屑、收件箱和账号菜单；页面标题、
+  页面级操作和 Tabs 由布局渲染在正文页头，页面通过 `PageChromeHeading`、`PageChromeTools` 和
+  `ContentTabs` 投放，不自行渲染 h1、返回链接或独立全宽 topbar。全局画布 padding 由布局层提供，业务页不加
+  根 padding 或负间距。
+- 项目空间内的分区由侧栏项目导航和 URL `?tab=` 表达，分区定义只维护在
+  `pages/projects/overview/project-workspace-sections.ts`；布局常驻渲染的文案放 `nav` 命名空间。
 - 区块优先 `Surface`、`Section`、`MetricGroup`；列表唯一外壳是 `DataList`。不嵌套无业务意义 Card。
-- 搜索、筛选和排序放 DataList 工具区；创建操作放 PageChrome。`total === 0` 时不显示分页。
+- 搜索、筛选和排序放 DataList 工具区；创建等页面级操作放 `PageChromeTools`。`total === 0` 时不显示分页。
 - Loading、empty、error 互斥并分别使用结构化 skeleton、`EmptyState`、`ErrorState`；首次空状态给下一步，
   筛选为空给清除入口。
 - 编辑、删除、测试和绑定使用独立按钮或菜单；整行点击只用于明确详情导航并支持键盘。

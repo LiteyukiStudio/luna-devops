@@ -236,7 +236,7 @@ export function AppTemplatesPage() {
               <Sparkles className="size-4" />
               {t('appTemplatesPage.heroEyebrow')}
             </div>
-            <h1 className="max-w-2xl text-2xl font-semibold tracking-tight sm:text-3xl">{t('appTemplatesPage.heroTitle')}</h1>
+            <h2 className="max-w-2xl text-2xl font-semibold tracking-tight sm:text-3xl">{t('appTemplatesPage.heroTitle')}</h2>
             <div className="relative mt-5 max-w-2xl">
               <Search className="pointer-events-none absolute left-4 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
               <Input

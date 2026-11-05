@@ -8,6 +8,7 @@ import { api } from '@/api'
 import { useSession } from '@/app/session-context'
 import { ErrorState } from '@/components/common/error-state'
 import { SettingsSkeleton } from '@/components/common/loading-states'
+import { PageChromeHeading } from '@/components/common/page-chrome'
 import { PageShell } from '@/components/common/page-shell'
 import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
 import { isPlatformAdmin, ProjectRole } from '@/lib/roles'
@@ -65,7 +66,7 @@ export function DeploymentTargetEditorPage() {
   if (required.some(query => query.isPending) || !initialQueriesSettled) {
     return (
       <PageShell width="content">
-        <PageHeading description={t('deploymentTargetEditor.pageDescription')} title={title} />
+        <PageChromeHeading description={t('deploymentTargetEditor.pageDescription')} title={title} />
         <SettingsSkeleton />
       </PageShell>
     )
@@ -81,7 +82,7 @@ export function DeploymentTargetEditorPage() {
 
   return (
     <PageShell width="content">
-      <PageHeading description={t('deploymentTargetEditor.pageDescription')} title={target ? `${title} · ${target.name}` : title} />
+      <PageChromeHeading description={t('deploymentTargetEditor.pageDescription')} title={target ? `${title} · ${target.name}` : title} />
       <ReadyEditor
         key={targetId ?? 'new'}
         applicationId={applicationId}
@@ -116,13 +117,4 @@ function ReadyEditor({ createInitialValues, ...props }: Omit<DeploymentTargetEdi
 }) {
   const [initialValues] = useState(createInitialValues)
   return <DeploymentTargetEditor {...props} initialValues={initialValues} />
-}
-
-function PageHeading({ description, title }: { description: string, title: string }) {
-  return (
-    <header className="grid gap-1">
-      <h1 className="text-xl font-semibold tracking-tight text-foreground">{title}</h1>
-      <p className="max-w-3xl text-sm text-muted-foreground">{description}</p>
-    </header>
-  )
 }

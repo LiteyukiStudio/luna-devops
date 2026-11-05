@@ -9,25 +9,25 @@ import type { ProjectVolumesPageHandle } from '@/pages/projects/volumes/ProjectV
 import { useQuery } from '@tanstack/react-query'
 import { Activity, ArrowRight, FileCode2, Globe2, KeyRound, Package, Plus, Rocket, ScrollText, Upload, UserPlus } from 'lucide-react'
 import { motion } from 'motion/react'
-import { lazy, Suspense, useRef, useState } from 'react'
+import { lazy, Suspense, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { api } from '@/api'
 import { useSession } from '@/app/session-context'
-import { ContentTabs } from '@/components/common/content-tabs'
 import { ErrorState } from '@/components/common/error-state'
 import { ToolViewportSkeleton } from '@/components/common/loading-states'
+import { PageChromeTools } from '@/components/common/page-chrome'
 import { PageShell } from '@/components/common/page-shell'
 import { StatusValueBadge } from '@/components/common/status-badge'
 import { formatSmartDateTime } from '@/components/common/time-format'
 import { UserAvatar } from '@/components/common/user-avatar'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
-import { TabsContent } from '@/components/ui/tabs'
 import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
 import { projectVolumeCapabilities } from '@/lib/project-volume-capabilities'
 import { isPlatformAdmin, ProjectRole } from '@/lib/roles'
 import { BillingOwnerTransferDialog } from '@/pages/projects/governance/billing-owner-transfer-dialog'
+import { normalizeProjectWorkspaceSection } from './project-workspace-sections'
 
 const ApplicationsPage = lazy(() => import('@/pages/applications/ApplicationsPage').then(module => ({ default: module.ApplicationsPage })))
 const ProjectBuildVariableSetsPage = lazy(() => import('@/pages/projects/delivery-config/ProjectBuildVariableSetsPage').then(module => ({ default: module.ProjectBuildVariableSetsPage })))
@@ -36,14 +36,14 @@ const ProjectMembersPage = lazy(() => import('@/pages/projects/governance/Projec
 const ProjectRuntimeConfigSetsPage = lazy(() => import('@/pages/projects/delivery-config/ProjectRuntimeConfigSetsPage').then(module => ({ default: module.ProjectRuntimeConfigSetsPage })))
 const ProjectTopologyPanel = lazy(() => import('@/pages/projects/topology/project-topology-panel').then(module => ({ default: module.ProjectTopologyPanel })))
 const ProjectVolumesPage = lazy(() => import('@/pages/projects/volumes/ProjectVolumesPage'))
-const PROJECT_TABS = new Set(['overview', 'apps', 'build-variables', 'runtime-configs', 'hooks', 'volumes', 'members', 'topology'])
 
 export function ProjectWorkspacePage() {
   const { t } = useTranslation()
   const { projectId = '' } = useParams()
-  const [searchParams, setSearchParams] = useSearchParams()
+  const [searchParams] = useSearchParams()
   const { user } = useSession()
-  const [activeTab, setActiveTab] = useState(() => normalizeProjectTab(searchParams.get('tab')))
+  // 分区由侧栏导航写入 URL，页面只读取，不维护第二份状态。
+  const activeTab = normalizeProjectWorkspaceSection(searchParams.get('tab'))
   const applicationsPageRef = useRef<ApplicationsPageHandle>(null)
   const buildVariableSetsPageRef = useRef<ProjectBuildVariableSetsPageHandle>(null)
   const hooksPageRef = useRef<ProjectHooksPageHandle>(null)
@@ -191,50 +191,19 @@ export function ProjectWorkspacePage() {
 
   return (
     <PageShell>
-      <ContentTabs
-        tabs={[
-          { value: 'overview', label: t('projectSpaces.overviewTab') },
-          { value: 'apps', label: t('projectSpaces.apps') },
-          { value: 'build-variables', label: t('buildsPage.variablesAndSecrets') },
-          { value: 'runtime-configs', label: t('runtimeConfigSets.tab') },
-          { value: 'hooks', label: t('projectHooks.tab') },
-          { value: 'volumes', label: t('projectVolumes.tab') },
-          { value: 'members', label: t('projectSpaces.members') },
-          { value: 'topology', label: t('projectTopology.tab') },
-        ]}
-        tools={contentTools}
-        value={activeTab}
-        onValueChange={(value) => {
-          setActiveTab(value)
-          setSearchParams((current) => {
-            const next = new URLSearchParams(current)
-            if (value === 'overview')
-              next.delete('tab')
-            else
-              next.set('tab', value)
-            return next
-          }, { replace: true })
-        }}
+      <PageChromeTools>{contentTools}</PageChromeTools>
+      <motion.div
+        key={`${projectId}-${activeTab}`}
+        animate={{ opacity: 1, y: 0 }}
+        initial={{ opacity: 0, y: 6 }}
+        transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
       >
-        <TabsContent value={activeTab}>
-          <motion.div
-            key={`${projectId}-${activeTab}`}
-            animate={{ opacity: 1, y: 0 }}
-            initial={{ opacity: 0, y: 6 }}
-            transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
-          >
-            <Suspense fallback={<ToolViewportSkeleton />}>
-              {activeContent}
-            </Suspense>
-          </motion.div>
-        </TabsContent>
-      </ContentTabs>
+        <Suspense fallback={<ToolViewportSkeleton />}>
+          {activeContent}
+        </Suspense>
+      </motion.div>
     </PageShell>
   )
-}
-
-function normalizeProjectTab(value: string | null) {
-  return value && PROJECT_TABS.has(value) ? value : 'overview'
 }
 
 function ProjectOverviewDashboard({ applications, builds, canTransferBillingOwnership, events, members, project, releases, routes, runtimeConfigSetCount, variableSetCount }: {

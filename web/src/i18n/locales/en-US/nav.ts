@@ -1,9 +1,22 @@
 const nav = {
   workbench: 'Workbench',
-  resources: 'Resources',
+  integrations: 'Integrations',
   systemManagement: 'System management',
-  personal: 'Personal',
   openSidebar: 'Open sidebar',
+  breadcrumb: 'Breadcrumb',
+  projectNavigation: 'Project space navigation',
+  switchProject: 'Switch project space',
+  allProjectSpaces: 'All project spaces',
+  projectSections: {
+    apps: 'Applications',
+    overview: 'Overview',
+    buildVariables: 'Build variables',
+    runtimeConfigs: 'Config',
+    hooks: 'Hooks',
+    volumes: 'Volumes',
+    members: 'Members',
+    topology: 'Service relations',
+  },
 }
 
 export default nav

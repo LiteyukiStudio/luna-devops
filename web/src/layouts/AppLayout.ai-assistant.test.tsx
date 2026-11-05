@@ -167,7 +167,7 @@ describe('app layout ai assistant route', () => {
     expect(outlet).toBeInTheDocument()
     expect(container.querySelector('main')).toContainElement(outlet)
     expect(container.querySelector('[data-slot="sidebar"]')).not.toBeInTheDocument()
-    expect(container.querySelector('[data-slot="workspace-topbar-tabs"]')).not.toBeInTheDocument()
+    expect(container.querySelector('[data-slot="workspace-page-tabs"]')).not.toBeInTheDocument()
     expect(container.querySelector('.workspace-canvas')).not.toBeInTheDocument()
   })
 

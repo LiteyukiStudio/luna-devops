@@ -1,5 +1,5 @@
 import type { CurrentUser } from '@/api'
-import { BookOpen, CircleUserRound, GitFork, LogOut } from 'lucide-react'
+import { BookOpen, CircleUserRound, CreditCard, GitFork, LogOut } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
@@ -57,6 +57,12 @@ export function AccountMenu({
             <Link to="/settings/account">
               <CircleUserRound />
               <span>{t('account')}</span>
+            </Link>
+          </DropdownMenuItem>
+          <DropdownMenuItem asChild>
+            <Link to="/billing">
+              <CreditCard />
+              <span>{t('billing')}</span>
             </Link>
           </DropdownMenuItem>
           <DropdownMenuItem asChild>

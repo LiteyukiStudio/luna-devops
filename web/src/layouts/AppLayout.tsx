@@ -1,6 +1,7 @@
 import type { AIAssistantView } from '@/components/common/ai-assistant/route-state'
+import type { ProjectWorkspaceSection } from '@/pages/projects/overview/project-workspace-sections'
 import { useQuery } from '@tanstack/react-query'
-import { Bell, ChartNoAxesCombined, CircleUserRound, Container, CreditCard, Fingerprint, FolderKanban, GitBranch, LayoutDashboard, Menu, ScrollText, Server, Settings, Sparkles, Store, Users } from 'lucide-react'
+import { ArrowLeft, Bell, ChartNoAxesCombined, Check, ChevronRight, ChevronsUpDown, Container, Fingerprint, FolderKanban, GitBranch, LayoutDashboard, Menu, ScrollText, Server, Settings, Sparkles, Store, Users } from 'lucide-react'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, Navigate, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
@@ -30,9 +31,16 @@ import { AIAssistantRuntimeProvider } from '@/components/common/ai-assistant/run
 import { InboxTrigger } from '@/components/common/inbox/inbox-trigger'
 import { AppLoadingState } from '@/components/common/loading-states'
 import { PageMotion } from '@/components/common/motion'
-import { PageBackNavigation } from '@/components/common/page-chrome'
 import { WorkspaceChromeTargetsProvider } from '@/components/common/workspace-chrome-context'
 import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet'
 import {
   Sidebar,
@@ -46,10 +54,11 @@ import {
 import { safeStorageSet } from '@/lib/safe-storage'
 import { cn } from '@/lib/utils'
 import { AIAssistantPage } from '@/pages/ai-assistant/AIAssistantPage'
+import { normalizeProjectWorkspaceSection, projectWorkspaceSectionPath, projectWorkspaceSections } from '@/pages/projects/overview/project-workspace-sections'
 
-interface TopbarCrumb {
+interface Breadcrumb {
   label: string
-  to: string
+  to?: string
 }
 
 interface NavItem {
@@ -67,23 +76,25 @@ interface NavSection {
   items: NavItem[]
 }
 
+// 全局导航按工作流分组：日常工作、接入的外部资源（代码源、镜像站、运行集群）、平台管理。
+// 账号与账单收在头像菜单。
 const navSections: NavSection[] = [
   {
     titleKey: 'nav.workbench',
     items: [
       { to: '/dashboard', labelKey: 'dashboard', icon: LayoutDashboard },
       { to: '/projects', labelKey: 'projects', icon: FolderKanban, activeMatch: pathname => pathname === '/projects' || pathname.startsWith('/projects/') },
+      { to: '/app-templates', labelKey: 'appTemplates', icon: Store },
       { to: '/events', labelKey: 'events', icon: ScrollText },
       { to: '/ai-assistant', labelKey: 'aiAssistantNav', icon: Sparkles, action: 'ai-assistant' },
     ],
   },
   {
-    titleKey: 'nav.resources',
+    titleKey: 'nav.integrations',
     items: [
       { to: '/code-repositories', labelKey: 'codeRepositories', icon: GitBranch },
       { to: '/registries', labelKey: 'registries', icon: Container },
       { to: '/clusters', labelKey: 'clusters', icon: Server },
-      { to: '/app-templates', labelKey: 'appTemplates', icon: Store },
     ],
   },
   {
@@ -94,13 +105,6 @@ const navSections: NavSection[] = [
       { to: '/settings/notifications', labelKey: 'notifications', icon: Bell, permission: 'user.manage' },
       { to: '/settings/operations', labelKey: 'operationsDashboard', icon: ChartNoAxesCombined, permission: 'user.manage' },
       { to: '/settings/site', labelKey: 'siteSettings', icon: Settings, permission: 'user.manage' },
-    ],
-  },
-  {
-    titleKey: 'nav.personal',
-    items: [
-      { to: '/settings/account', labelKey: 'account', icon: CircleUserRound },
-      { to: '/billing', labelKey: 'billing', icon: CreditCard },
     ],
   },
 ]
@@ -128,8 +132,8 @@ const pageMetaRules = [
 
 function sidebarMenuButtonClassName(active?: boolean) {
   return cn(
-    'flex h-10 w-full min-w-0 max-w-full items-center gap-3 overflow-hidden rounded-lg px-3 text-sm font-normal leading-none text-muted-foreground transition-all duration-150 hover:bg-sidebar-nav-hover hover:text-primary-text-strong',
-    active && 'font-semibold [background:var(--sidebar-nav-active)] text-sidebar-nav-active-text hover:font-semibold hover:[background:var(--sidebar-nav-active)] hover:text-sidebar-nav-active-text',
+    'flex h-9 w-full min-w-0 max-w-full items-center gap-3 overflow-hidden rounded-control px-3 text-sm font-normal leading-none text-muted-foreground transition-colors duration-fast hover:bg-sidebar-nav-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+    active && 'font-medium [background:var(--sidebar-nav-active)] text-sidebar-nav-active-text hover:[background:var(--sidebar-nav-active)] hover:text-sidebar-nav-active-text',
   )
 }
 
@@ -156,10 +160,12 @@ export function AppLayout() {
   const configs = usePublicConfig()
   const location = useLocation()
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
-  const [topbarTabsTarget, setTopbarTabsTarget] = useState<HTMLDivElement | null>(null)
-  const [topbarToolsTarget, setTopbarToolsTarget] = useState<HTMLDivElement | null>(null)
-  const [hasTopbarTabs, registerTopbarTabs] = useChromeSlotPresence()
-  const [hasTopbarTools, registerTopbarTools] = useChromeSlotPresence()
+  const [headingTarget, setHeadingTarget] = useState<HTMLDivElement | null>(null)
+  const [tabsTarget, setTabsTarget] = useState<HTMLDivElement | null>(null)
+  const [toolsTarget, setToolsTarget] = useState<HTMLDivElement | null>(null)
+  const [hasCustomHeading, registerHeading] = useChromeSlotPresence()
+  const [, registerTabs] = useChromeSlotPresence()
+  const [, registerTools] = useChromeSlotPresence()
   const projects = useQuery({ queryKey: ['projects'], queryFn: () => api.listProjects(), enabled: Boolean(user) })
   // 布局层是 AI 访问状态的唯一查询者。Agent 短暂不可达时仍保留入口和已打开窗口，
   // 只有平台关闭助手或当前用户不在允许范围时才不挂载。
@@ -185,46 +191,44 @@ export function AppLayout() {
     queryFn: () => api.getApplication(appRouteMatch?.[1] ?? '', appRouteMatch?.[2] ?? ''),
     enabled: Boolean(user && appRouteMatch),
   })
+  const project = currentProject.data ?? (projectRouteMatch ? projects.data?.find(item => item.id === projectRouteMatch[1]) : undefined)
+  const activeProjectSection: ProjectWorkspaceSection = appRouteMatch
+    ? 'apps'
+    : normalizeProjectWorkspaceSection(new URLSearchParams(location.search).get('tab'))
   const pageMeta = useMemo(() => {
     const rule = pageMetaRules.find(item => item.match(location.pathname))
-    const projectWorkspaceMatch = location.pathname.match(/^\/projects\/([^/]+)$/)
-    const project = currentProject.data ?? (projectRouteMatch ? projects.data?.find(project => project.id === projectRouteMatch[1]) : undefined)
+    const projectWorkspaceMatch = /^\/projects\/[^/]+$/.test(location.pathname)
     const application = appRouteMatch ? currentApplication.data : undefined
-    let title = rule?.titleKey ? t(rule.titleKey) : configs['site.title'] || t('appName')
-    let titlePrefix = ''
-    const titleCrumbs: TopbarCrumb[] = []
-    let backNavigation
+    let documentTitle = rule?.titleKey ? t(rule.titleKey) : configs['site.title'] || t('appName')
+    let heading = documentTitle
+    const breadcrumbs: Breadcrumb[] = []
+    if (projectRouteMatch) {
+      breadcrumbs.push({ label: t('projectSpaces.title'), to: '/projects' })
+      if (project)
+        breadcrumbs.push({ label: project.name, to: `/projects/${project.id}` })
+    }
     if (projectWorkspaceMatch && project) {
-      title = t('projectSpaces.detailTopbarTitle', { name: project.name })
-      titlePrefix = t('projectSpaces.topbarPrefix')
-      titleCrumbs.push({ label: project.name, to: `/projects/${project.id}` })
-      backNavigation = { label: t('backToProjectSpaces'), to: '/projects' }
+      documentTitle = t('projectSpaces.detailTopbarTitle', { name: project.name })
+      heading = project.name
     }
     if (application) {
-      title = t('apps.detailTopbarTitle', { name: application.name, projectName: project?.name ?? t('projectSpaces.title') })
-      titlePrefix = t('apps.applicationTopbarPrefix')
-      if (project)
-        titleCrumbs.push({ label: project.name, to: `/projects/${project.id}` })
-      titleCrumbs.push({ label: application.name, to: `/projects/${application.projectId}/apps/${application.id}` })
-      backNavigation = appRouteMatch?.[3]
-        ? { label: t('apps.backToDeployments'), to: `/projects/${application.projectId}/apps/${application.id}?tab=deployments` }
-        : { label: t('backToApps'), to: `/projects/${application.projectId}#tab=apps` }
+      documentTitle = t('apps.detailTopbarTitle', { name: application.name, projectName: project?.name ?? t('projectSpaces.title') })
+      heading = application.name
+      breadcrumbs.push({ label: application.name, to: `/projects/${application.projectId}/apps/${application.id}` })
     }
-    return {
-      backNavigation,
-      title,
-      titleCrumbs,
-      titlePrefix,
-    }
-  }, [appRouteMatch, configs, currentApplication.data, currentProject.data, location.pathname, projectRouteMatch, projects.data, t])
-  useDocumentTitle(pageMeta.title)
+    if (breadcrumbs.length === 0)
+      breadcrumbs.push({ label: heading })
+    return { breadcrumbs, documentTitle, heading }
+  }, [appRouteMatch, configs, currentApplication.data, location.pathname, project, projectRouteMatch, t])
+  useDocumentTitle(pageMeta.documentTitle)
   const workspaceChromeTargets = useMemo(() => ({
-    registerTabs: registerTopbarTabs,
-    registerTools: registerTopbarTools,
-    tabs: topbarTabsTarget,
-    tools: topbarToolsTarget,
-  }), [registerTopbarTabs, registerTopbarTools, topbarTabsTarget, topbarToolsTarget])
-  const hasTopbarSecondaryRow = hasTopbarTabs || hasTopbarTools
+    heading: headingTarget,
+    registerHeading,
+    registerTabs,
+    registerTools,
+    tabs: tabsTarget,
+    tools: toolsTarget,
+  }), [headingTarget, registerHeading, registerTabs, registerTools, tabsTarget, toolsTarget])
   const pageMotionKey = /^\/projects\/[^/]+$/.test(location.pathname) ? '/projects/:projectId' : location.pathname
   const handleLogout = async () => {
     try {
@@ -235,63 +239,110 @@ export function AppLayout() {
     }
   }
 
+  const renderGlobalNavigation = (onNavigate?: () => void) => {
+    if (!user)
+      return null
+
+    return navSections.map((section, index) => {
+      const items = section.items.filter(item => (!item.permission || user.permissions.includes(item.permission)) && (item.action !== 'ai-assistant' || enabledAICapabilities))
+      if (items.length === 0)
+        return null
+
+      return (
+        <SidebarGroup key={section.titleKey} className={index > 0 ? 'mt-4' : undefined}>
+          <SidebarGroupLabel>{t(section.titleKey)}</SidebarGroupLabel>
+          <SidebarMenu>
+            {items.map(item => (
+              <SidebarMenuItem key={item.to}>
+                {item.action
+                  ? (
+                      <AIAssistantNavButton
+                        icon={item.icon}
+                        label={t(item.labelKey)}
+                        onNavigate={onNavigate}
+                      />
+                    )
+                  : (
+                      <NavLink
+                        className={({ isActive }) => sidebarMenuButtonClassName(isActive || item.activeMatch?.(location.pathname))}
+                        title={t(item.labelKey)}
+                        to={item.to}
+                        onClick={onNavigate}
+                      >
+                        <item.icon className="size-4 shrink-0" />
+                        <span className="min-w-0 flex-1 truncate text-sm leading-none">{t(item.labelKey)}</span>
+                      </NavLink>
+                    )}
+              </SidebarMenuItem>
+            ))}
+          </SidebarMenu>
+        </SidebarGroup>
+      )
+    })
+  }
+
+  const renderProjectNavigation = (projectId: string, onNavigate?: () => void) => (
+    <>
+      <Link
+        className="mb-2 inline-flex h-8 w-full items-center gap-2 rounded-control px-3 text-sm text-muted-foreground transition-colors duration-fast hover:bg-sidebar-nav-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        to="/projects"
+        onClick={onNavigate}
+      >
+        <ArrowLeft aria-hidden="true" className="size-4 shrink-0" />
+        <span className="truncate">{t('nav.allProjectSpaces')}</span>
+      </Link>
+      <ProjectSwitcher
+        currentProjectId={projectId}
+        currentProjectName={project?.name}
+        projects={projects.data ?? []}
+        onNavigate={onNavigate}
+      />
+      <SidebarGroup className="mt-3">
+        <SidebarMenu aria-label={t('nav.projectNavigation')}>
+          {projectWorkspaceSections.map(section => (
+            <SidebarMenuItem key={section.value}>
+              <Link
+                aria-current={activeProjectSection === section.value ? 'page' : undefined}
+                className={sidebarMenuButtonClassName(activeProjectSection === section.value)}
+                title={t(section.labelKey)}
+                to={projectWorkspaceSectionPath(projectId, section.value)}
+                onClick={onNavigate}
+              >
+                <section.icon className="size-4 shrink-0" />
+                <span className="min-w-0 flex-1 truncate text-sm leading-none">{t(section.labelKey)}</span>
+              </Link>
+            </SidebarMenuItem>
+          ))}
+        </SidebarMenu>
+      </SidebarGroup>
+    </>
+  )
+
   const renderSidebarContent = (onNavigate?: () => void) => {
     if (!user)
       return null
 
     return (
       <>
-        <SidebarHeader className="h-18">
+        <SidebarHeader className="h-14">
           <Link
             aria-label={configs['site.title'] || t('appName')}
             className="flex h-full w-full min-w-0 max-w-full items-center gap-3 overflow-hidden px-4"
             to="/projects"
+            onClick={onNavigate}
           >
             <img
               alt=""
-              className="size-10 shrink-0 rounded-feature object-contain"
+              className="size-8 shrink-0 rounded-container object-contain"
               src={configs['site.logoUrl'] || '/luna-devops-logo.svg'}
             />
             <span className="min-w-0 flex-1 truncate font-semibold">{configs['site.title'] || t('appName')}</span>
           </Link>
         </SidebarHeader>
         <SidebarContent>
-          {navSections.map((section, index) => {
-            const items = section.items.filter(item => (!item.permission || user.permissions.includes(item.permission)) && (item.action !== 'ai-assistant' || enabledAICapabilities))
-            if (items.length === 0)
-              return null
-
-            return (
-              <SidebarGroup key={section.titleKey} className={index > 0 ? 'mt-4' : undefined}>
-                <SidebarGroupLabel>{t(section.titleKey)}</SidebarGroupLabel>
-                <SidebarMenu>
-                  {items.map(item => (
-                    <SidebarMenuItem key={item.to}>
-                      {item.action
-                        ? (
-                            <AIAssistantNavButton
-                              icon={item.icon}
-                              label={t(item.labelKey)}
-                              onNavigate={onNavigate}
-                            />
-                          )
-                        : (
-                            <NavLink
-                              className={({ isActive }) => sidebarMenuButtonClassName(isActive || item.activeMatch?.(location.pathname))}
-                              title={t(item.labelKey)}
-                              to={item.to}
-                              onClick={onNavigate}
-                            >
-                              <item.icon className="size-4 shrink-0" />
-                              <span className="min-w-0 flex-1 truncate text-sm leading-none">{t(item.labelKey)}</span>
-                            </NavLink>
-                          )}
-                    </SidebarMenuItem>
-                  ))}
-                </SidebarMenu>
-              </SidebarGroup>
-            )
-          })}
+          {projectRouteMatch
+            ? renderProjectNavigation(projectRouteMatch[1], onNavigate)
+            : renderGlobalNavigation(onNavigate)}
         </SidebarContent>
       </>
     )
@@ -326,7 +377,7 @@ export function AppLayout() {
         : (
             <div className="workspace-canvas h-dvh overflow-hidden text-foreground">
               <div className="flex h-full w-full min-w-0 overflow-hidden">
-                <Sidebar>
+                <Sidebar className="border-r border-border">
                   {renderSidebarContent()}
                 </Sidebar>
                 <Sheet open={mobileSidebarOpen} onOpenChange={setMobileSidebarOpen}>
@@ -338,42 +389,39 @@ export function AppLayout() {
 
                 <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
                   <WorkspaceChromeTargetsProvider value={workspaceChromeTargets}>
-                    <header
-                      className={cn(
-                        'relative z-20 flex shrink-0 flex-col bg-transparent',
-                        hasTopbarSecondaryRow ? 'h-26 lg:h-30' : 'h-14 lg:h-18',
-                      )}
-                    >
-                      <div className="flex h-14 min-w-0 shrink-0 items-center gap-2 px-page-inline lg:h-18">
-                        <Button
-                          aria-label={t('nav.openSidebar')}
-                          className="shrink-0 lg:hidden"
-                          size="icon"
-                          variant="ghost"
-                          onClick={() => setMobileSidebarOpen(true)}
-                        >
-                          <Menu className="size-5" />
-                        </Button>
-                        <div className="min-w-0 flex-1">
-                          <TopbarTitle crumbs={pageMeta.titleCrumbs} prefix={pageMeta.titlePrefix} title={pageMeta.title} />
-                        </div>
-                        <InboxTrigger />
-                        <AccountMenu
-                          logoutPending={isLoggingOut}
-                          user={user}
-                          onLogout={handleLogout}
-                        />
-                      </div>
-                      <div className={cn('flex min-w-0 shrink-0 items-center gap-3 overflow-hidden px-page-inline', hasTopbarSecondaryRow ? 'h-12' : 'h-0')}>
-                        <div ref={setTopbarTabsTarget} className="min-w-0 flex-1 overflow-hidden" data-slot="workspace-topbar-tabs" />
-                        <div ref={setTopbarToolsTarget} className="hidden min-w-0 shrink-0 items-center justify-end empty:hidden lg:flex" data-slot="workspace-topbar-tools" />
-                      </div>
+                    <header className="relative z-20 flex h-14 shrink-0 items-center gap-2 border-b border-border px-page-inline">
+                      <Button
+                        aria-label={t('nav.openSidebar')}
+                        className="shrink-0 lg:hidden"
+                        size="icon"
+                        variant="ghost"
+                        onClick={() => setMobileSidebarOpen(true)}
+                      >
+                        <Menu className="size-5" />
+                      </Button>
+                      <Breadcrumbs items={pageMeta.breadcrumbs} label={t('nav.breadcrumb')} />
+                      <InboxTrigger />
+                      <AccountMenu
+                        logoutPending={isLoggingOut}
+                        user={user}
+                        onLogout={handleLogout}
+                      />
                     </header>
                     <main
                       className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden bg-transparent px-page-inline py-page-block transition-colors"
                     >
-                      <div className="flex min-h-full min-w-0 flex-col gap-group py-0">
-                        {pageMeta.backNavigation && <PageBackNavigation {...pageMeta.backNavigation} />}
+                      <div className="flex min-h-full min-w-0 flex-col gap-section">
+                        <div className="grid min-w-0 gap-3" data-slot="workspace-page-header">
+                          <div className="flex min-w-0 flex-wrap items-start justify-between gap-x-4 gap-y-3">
+                            <div ref={setHeadingTarget} className="min-w-0 flex-1" data-slot="workspace-page-heading">
+                              {!hasCustomHeading && (
+                                <h1 className="truncate text-xl font-semibold tracking-tight text-foreground md:text-2xl">{pageMeta.heading}</h1>
+                              )}
+                            </div>
+                            <div ref={setToolsTarget} className="flex min-w-0 max-w-full items-center justify-end empty:hidden" data-slot="workspace-page-tools" />
+                          </div>
+                          <div ref={setTabsTarget} className="min-w-0 empty:hidden" data-slot="workspace-page-tabs" />
+                        </div>
                         <PageMotion key={pageMotionKey} className="w-full min-w-0 max-w-full">
                           <Outlet />
                         </PageMotion>
@@ -502,21 +550,66 @@ function AIAssistantNavButton({ icon: Icon, label, onNavigate }: {
   )
 }
 
-function TopbarTitle({ crumbs, prefix, title }: { crumbs: TopbarCrumb[], prefix: string, title: string }) {
-  if (crumbs.length === 0)
-    return <h1 className="truncate text-lg font-semibold tracking-normal md:text-xl">{title}</h1>
+function Breadcrumbs({ items, label }: { items: Breadcrumb[], label: string }) {
+  return (
+    <nav aria-label={label} className="min-w-0 flex-1">
+      <ol className="flex min-w-0 items-center gap-1.5 text-sm text-muted-foreground">
+        {items.map((item, index) => {
+          const current = index === items.length - 1
+          return (
+            // 窄屏只保留当前层级，上级由侧栏和返回入口承担。
+            <li key={`${item.label}-${item.to ?? index}`} className={cn('min-w-0 items-center gap-1.5', current ? 'flex' : 'hidden md:flex')}>
+              {index > 0 && <ChevronRight aria-hidden="true" className="hidden size-3.5 shrink-0 text-muted-foreground/70 md:block" />}
+              {current || !item.to
+                ? <span aria-current={current ? 'page' : undefined} className={cn('min-w-0 truncate', current && 'font-medium text-foreground')} title={item.label}>{item.label}</span>
+                : <Link className="min-w-0 truncate rounded-sm outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring" title={item.label} to={item.to}>{item.label}</Link>}
+            </li>
+          )
+        })}
+      </ol>
+    </nav>
+  )
+}
+
+function ProjectSwitcher({ currentProjectId, currentProjectName, onNavigate, projects }: {
+  currentProjectId: string
+  currentProjectName?: string
+  onNavigate?: () => void
+  projects: { id: string, name: string }[]
+}) {
+  const { t } = useTranslation()
+  const name = currentProjectName ?? projects.find(item => item.id === currentProjectId)?.name ?? ''
 
   return (
-    <h1 className="flex min-w-0 items-center gap-1.5 text-lg font-semibold tracking-normal md:text-xl">
-      <span className="shrink-0">{prefix}</span>
-      {crumbs.map((crumb, index) => (
-        <span key={crumb.to} className="flex min-w-0 items-center gap-1.5">
-          {index > 0 && <span className="shrink-0 text-muted-foreground">/</span>}
-          <Link className="min-w-0 truncate rounded-sm outline-none transition-colors hover:text-primary-text focus-visible:text-primary-text focus-visible:ring-2 focus-visible:ring-ring" title={crumb.label} to={crumb.to}>
-            {crumb.label}
-          </Link>
-        </span>
-      ))}
-    </h1>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          aria-label={t('nav.switchProject')}
+          className="flex h-10 w-full min-w-0 items-center gap-2 rounded-control border border-border bg-surface px-3 text-left text-sm outline-none transition-colors duration-fast hover:bg-sidebar-nav-hover focus-visible:ring-2 focus-visible:ring-ring"
+          type="button"
+        >
+          <span aria-hidden="true" className="grid size-6 shrink-0 place-items-center rounded-control bg-muted text-xs font-semibold text-foreground">
+            {name.slice(0, 1).toUpperCase()}
+          </span>
+          <span className="min-w-0 flex-1 truncate font-medium">{name}</span>
+          <ChevronsUpDown aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="max-h-80 w-(--radix-dropdown-menu-trigger-width) min-w-56 overflow-y-auto">
+        <DropdownMenuLabel>{t('projectSpaces.title')}</DropdownMenuLabel>
+        {projects.map(item => (
+          <DropdownMenuItem key={item.id} asChild>
+            <Link to={`/projects/${item.id}`} onClick={onNavigate}>
+              <span className="min-w-0 flex-1 truncate">{item.name}</span>
+              {item.id === currentProjectId && <Check aria-hidden="true" />}
+            </Link>
+          </DropdownMenuItem>
+        ))}
+        <DropdownMenuSeparator />
+        <DropdownMenuItem asChild>
+          <Link to="/projects" onClick={onNavigate}>{t('nav.allProjectSpaces')}</Link>
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }

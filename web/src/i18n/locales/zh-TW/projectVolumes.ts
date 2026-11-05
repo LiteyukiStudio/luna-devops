@@ -1,5 +1,4 @@
 const projectVolumes = {
-  tab: '資料卷',
   title: '資料卷中心',
   description: '統一管理專案空間中的持久資料卷、掛載關係與匯入匯出任務。',
   create: '建立資料卷',

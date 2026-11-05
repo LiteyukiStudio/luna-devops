@@ -1,5 +1,4 @@
 const projectHooks = {
-  tab: '鉤子',
   title: '專案鉤子',
   description: '維護專案空間級通用指令碼庫。指令碼在部署配置裡繫結到具體構建或部署階段後才會執行。',
   createTitle: '建立鉤子',

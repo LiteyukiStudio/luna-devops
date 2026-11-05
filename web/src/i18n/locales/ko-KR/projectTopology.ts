@@ -1,5 +1,4 @@
 const projectTopology = {
-  tab: '서비스 관계',
   addRelation: '관계 추가',
   loadFailed: '서비스 관계 로드 실패',
   loadFailedDescription: '새로고침 후 다시 시도하거나 현재 프로젝트 스페이스 권한을 확인하세요.',

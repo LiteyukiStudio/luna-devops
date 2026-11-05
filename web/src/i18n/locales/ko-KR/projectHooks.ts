@@ -1,5 +1,4 @@
 const projectHooks = {
-  tab: '훅',
   title: '프로젝트 훅',
   description: '프로젝트 스페이스 수준의 공용 스크립트 라이브러리를 관리합니다. 스크립트는 배포 구성에서 특정 빌드 또는 배포 단계에 바인딩된 후에만 실행됩니다.',
   createTitle: '훅 생성',

@@ -1,5 +1,4 @@
 const projectHooks = {
-  tab: '钩子',
   title: '项目钩子',
   description: '维护项目空间级通用脚本库。脚本在部署配置里绑定到具体构建或部署阶段后才会执行。',
   createTitle: '创建钩子',
