@@ -11,7 +11,8 @@ run_case() {
   local paths_file
   paths_file="$(mktemp)"
   printf '%s\n' "${paths}" > "${paths_file}"
-  GITHUB_OUTPUT="${output_file}" bash "${DETECTOR}" --files-from "${paths_file}" >/dev/null
+  # 清空 Runner 继承的触发上下文，避免 workflow_dispatch 或 tag 构建让检测器忽略给定文件列表。
+  GITHUB_EVENT_NAME='' GITHUB_REF='' GITHUB_OUTPUT="${output_file}" bash "${DETECTOR}" --files-from "${paths_file}" >/dev/null
   rm -f "${paths_file}"
 }
 
