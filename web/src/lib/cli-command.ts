@@ -5,6 +5,7 @@ export type CliInvocationSpec
     projectId: string
     applicationId: string
     targetId: string
+    pod?: string
     container?: string
   }
   | {
@@ -43,6 +44,7 @@ export function buildCliCommand(spec: CliInvocationSpec) {
         argument('projectId', spec.projectId),
         argument('applicationId', spec.applicationId),
         argument('targetId', spec.targetId),
+        optionalArgument('pod', spec.pod),
         optionalArgument('container', spec.container),
       ]
     : [

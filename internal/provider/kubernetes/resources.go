@@ -56,11 +56,20 @@ type ResourceEventSnapshot struct {
 	LastSeen  time.Time `json:"lastSeen"`
 }
 
-type RuntimePodLogsOptions struct {
+// RuntimePodSelection 定位部署配置下的一个运行副本及其容器。
+type RuntimePodSelection struct {
 	Namespace          string
 	DeploymentTargetID string
+	// Pod 非空时只接受该部署配置下的这个运行 Pod，不回退到其他副本。
+	Pod string
+	// PreferredReleaseID 在未指定 Pod 时优先选择属于该发布的副本。
+	PreferredReleaseID string
 	Container          string
-	TailLines          int64
+}
+
+type RuntimePodLogsOptions struct {
+	RuntimePodSelection
+	TailLines int64
 }
 
 type RuntimePodLogsResult struct {
@@ -70,10 +79,8 @@ type RuntimePodLogsResult struct {
 }
 
 type RuntimeExecOptions struct {
-	Namespace          string
-	DeploymentTargetID string
-	Container          string
-	Command            string
+	RuntimePodSelection
+	Command string
 }
 
 type RuntimeExecResult struct {
@@ -87,12 +94,22 @@ type RuntimeExecResult struct {
 }
 
 type RuntimeTerminalOptions struct {
-	Namespace          string
-	DeploymentTargetID string
-	Container          string
-	Stdin              io.Reader
-	Stdout             io.Writer
-	SizeQueue          remotecommand.TerminalSizeQueue
+	RuntimePodSelection
+	Stdin     io.Reader
+	Stdout    io.Writer
+	SizeQueue remotecommand.TerminalSizeQueue
+}
+
+// RuntimePodSnapshot 是部署配置运行副本的实时观测，只用于响应，不落库。
+type RuntimePodSnapshot struct {
+	Name         string    `json:"name"`
+	Phase        string    `json:"phase"`
+	Ready        bool      `json:"ready"`
+	Terminating  bool      `json:"terminating"`
+	RestartCount int32     `json:"restartCount"`
+	ReleaseID    string    `json:"releaseId"`
+	Containers   []string  `json:"containers"`
+	CreatedAt    time.Time `json:"createdAt"`
 }
 
 type RuntimeTerminalResult struct {

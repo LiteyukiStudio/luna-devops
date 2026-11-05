@@ -43,8 +43,10 @@ function apiWebSocketUrl(path: string) {
   return url
 }
 
-export function releaseRuntimeTerminalUrl(projectId: string, releaseId: string, container = '') {
+export function releaseRuntimeTerminalUrl(projectId: string, releaseId: string, container = '', pod = '') {
   const url = apiWebSocketUrl(`/projects/${encodeURIComponent(projectId)}/releases/${encodeURIComponent(releaseId)}/terminal`)
+  if (pod.trim())
+    url.searchParams.set('pod', pod.trim())
   if (container.trim())
     url.searchParams.set('container', container.trim())
   return url.toString()

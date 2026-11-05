@@ -3,6 +3,7 @@ package deploymentapi
 import (
 	"context"
 	"net/http"
+	"strings"
 
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/gin-gonic/gin"
@@ -43,6 +44,7 @@ func (h *Handlers) deploymentTargetRuntimeTerminalEndpoint(ctx *gin.Context, pro
 	if !ok {
 		return runtimeTerminalEndpoint{}, false
 	}
+	pod := strings.TrimSpace(ctx.Query("pod"))
 	reference := deploymentTargetRuntimeTerminalAuthorizationReference{
 		ProjectID:          project.ID,
 		ApplicationID:      app.ID,
@@ -50,6 +52,7 @@ func (h *Handlers) deploymentTargetRuntimeTerminalEndpoint(ctx *gin.Context, pro
 		ClusterID:          cluster.ID,
 		ClusterKubeconfig:  cluster.KubeconfigRef,
 		Namespace:          namespace,
+		Pod:                pod,
 	}
 	return runtimeTerminalEndpoint{
 		resourceKind:         "deployment_target",
@@ -57,6 +60,7 @@ func (h *Handlers) deploymentTargetRuntimeTerminalEndpoint(ctx *gin.Context, pro
 		client:               client,
 		namespace:            namespace,
 		target:               target,
+		pod:                  pod,
 		auditAction:          "deployment_target_runtime.terminal",
 		auditAuthorizeAction: "deployment_target_runtime.terminal_authorize",
 		auditResourceID:      target.ID,

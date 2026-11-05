@@ -9,6 +9,7 @@ import { OutputViewerSheet } from '@/components/common/output-viewer-sheet'
 import { StatusValueBadge } from '@/components/common/status-badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { RuntimePodSelect } from './runtime-pod-select'
 
 const RuntimeTerminalPanel = lazy(() =>
   import('@/components/common/runtime-terminal-panel').then(module => ({ default: module.RuntimeTerminalPanel })),
@@ -24,6 +25,7 @@ export function ApplicationWebConsolePanel({
   onClose: () => void
 }) {
   const { t } = useTranslation()
+  const [pod, setPod] = useState('')
   const [container, setContainer] = useState('')
   const [expanded, setExpanded] = useState(false)
 
@@ -38,6 +40,7 @@ export function ApplicationWebConsolePanel({
       <div className="grid shrink-0 gap-2 border-b border-border bg-muted/30 px-4 py-3">
         <div className="flex min-w-0 flex-wrap items-center gap-3">
           <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground" title={release.id}>{release.id}</span>
+          <RuntimePodSelect projectId={projectId} release={release} value={pod} onValueChange={setPod} />
           <label className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
             <span>{t('deploymentsPage.container')}</span>
             <Input
@@ -65,6 +68,7 @@ export function ApplicationWebConsolePanel({
             projectId,
             applicationId: release.applicationId,
             targetId: release.deploymentTargetId,
+            pod,
             container,
           }}
         />
@@ -72,12 +76,13 @@ export function ApplicationWebConsolePanel({
       <div className="min-h-0 flex-1 bg-zinc-950">
         <LazyLoadBoundary
           fallback={<div className="grid h-full min-h-80 place-items-center text-sm text-zinc-400" role="status">{t('common.loading')}</div>}
-          resetKey={`${release.id}:${container}`}
+          resetKey={`${release.id}:${pod}:${container}`}
         >
           <RuntimeTerminalPanel
-            key={`${release.id}:${container}`}
+            key={`${release.id}:${pod}:${container}`}
             container={container}
             fullscreen
+            pod={pod}
             projectId={projectId}
             release={release}
           />

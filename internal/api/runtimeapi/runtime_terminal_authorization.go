@@ -99,6 +99,8 @@ type releaseRuntimeTerminalAuthorizationReference struct {
 	ClusterID          string
 	ClusterKubeconfig  string
 	Namespace          string
+	// Pod 让一次性票据只能连接授权时选定的副本；为空表示由平台自动选择。
+	Pod string
 }
 
 func (h *Handlers) releaseRuntimeTerminalAuthorizationAllowed(ctx context.Context, user model.User, reference releaseRuntimeTerminalAuthorizationReference) bool {
@@ -124,6 +126,8 @@ type deploymentTargetRuntimeTerminalAuthorizationReference struct {
 	ClusterID          string
 	ClusterKubeconfig  string
 	Namespace          string
+	// Pod 让一次性票据只能连接授权时选定的副本；为空表示由平台自动选择。
+	Pod string
 }
 
 func (h *Handlers) deploymentTargetRuntimeTerminalAuthorizationAllowed(ctx context.Context, user model.User, reference deploymentTargetRuntimeTerminalAuthorizationReference) bool {

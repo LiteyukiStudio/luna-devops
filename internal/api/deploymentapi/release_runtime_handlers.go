@@ -2,6 +2,7 @@ package deploymentapi
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"strconv"
@@ -39,11 +40,19 @@ func (h *Handlers) GetReleaseRuntimeLogs(ctx *gin.Context) {
 	requestCtx, cancel := context.WithTimeout(ctx.Request.Context(), 12*time.Second)
 	defer cancel()
 	result, err := client.RuntimePodLogs(requestCtx, kubeprovider.RuntimePodLogsOptions{
-		Namespace:          namespace,
-		DeploymentTargetID: target.ID,
-		Container:          strings.TrimSpace(ctx.Query("container")),
-		TailLines:          tailLines,
+		RuntimePodSelection: kubeprovider.RuntimePodSelection{
+			Namespace:          namespace,
+			DeploymentTargetID: target.ID,
+			Pod:                strings.TrimSpace(ctx.Query("pod")),
+			PreferredReleaseID: release.ID,
+			Container:          strings.TrimSpace(ctx.Query("container")),
+		},
+		TailLines: tailLines,
 	})
+	if errors.Is(err, kubeprovider.ErrRuntimePodNotFound) {
+		writeRuntimePodNotFound(ctx)
+		return
+	}
 	if err != nil {
 		writeError(ctx, http.StatusBadGateway, err.Error())
 		return
@@ -90,11 +99,20 @@ func (h *Handlers) ExecReleaseRuntimeCommand(ctx *gin.Context) {
 	requestCtx, cancel := context.WithTimeout(ctx.Request.Context(), 30*time.Second)
 	defer cancel()
 	result, err := client.RuntimeExec(requestCtx, kubeprovider.RuntimeExecOptions{
-		Namespace:          namespace,
-		DeploymentTargetID: target.ID,
-		Container:          strings.TrimSpace(input.Container),
-		Command:            command,
+		RuntimePodSelection: kubeprovider.RuntimePodSelection{
+			Namespace:          namespace,
+			DeploymentTargetID: target.ID,
+			Pod:                strings.TrimSpace(input.Pod),
+			PreferredReleaseID: release.ID,
+			Container:          strings.TrimSpace(input.Container),
+		},
+		Command: command,
 	})
+	if errors.Is(err, kubeprovider.ErrRuntimePodNotFound) {
+		h.auditWithContext(user.ID, "release_runtime.exec", release.ID, false, err.Error(), ctx.Request.Context())
+		writeRuntimePodNotFound(ctx)
+		return
+	}
 	if err != nil {
 		h.auditWithContext(user.ID, "release_runtime.exec", release.ID, false, err.Error(), ctx.Request.Context())
 		writeError(ctx, http.StatusBadGateway, err.Error())
@@ -118,6 +136,8 @@ type runtimeTerminalEndpoint struct {
 	client               *kubeprovider.Client
 	namespace            string
 	target               model.DeploymentTarget
+	pod                  string
+	preferredReleaseID   string
 	auditAction          string
 	auditAuthorizeAction string
 	auditResourceID      string
@@ -221,12 +241,16 @@ func (h *Handlers) streamRuntimeTerminal(ctx *gin.Context, allowLegacyQueryTicke
 
 	inputDone := terminalSocket.PumpInput(stdinWriter, sizeQueue, cancel)
 	result, streamErr := endpoint.client.RuntimeTerminal(sessionCtx, kubeprovider.RuntimeTerminalOptions{
-		Namespace:          endpoint.namespace,
-		DeploymentTargetID: endpoint.target.ID,
-		Container:          strings.TrimSpace(ctx.Query("container")),
-		Stdin:              stdinReader,
-		Stdout:             terminalSocket,
-		SizeQueue:          sizeQueue,
+		RuntimePodSelection: kubeprovider.RuntimePodSelection{
+			Namespace:          endpoint.namespace,
+			DeploymentTargetID: endpoint.target.ID,
+			Pod:                endpoint.pod,
+			PreferredReleaseID: endpoint.preferredReleaseID,
+			Container:          strings.TrimSpace(ctx.Query("container")),
+		},
+		Stdin:     stdinReader,
+		Stdout:    terminalSocket,
+		SizeQueue: sizeQueue,
 	})
 	end := transportapi.FinishRuntimeTerminal(terminalSocket, result.ExitCode, streamErr, sessionCtx.Err(), authorizationRevoked.Load(), inputDone)
 	switch end {
@@ -246,7 +270,24 @@ func (h *Handlers) streamRuntimeTerminal(ctx *gin.Context, allowLegacyQueryTicke
 		h.auditWithContext(user.ID, endpoint.auditAction, endpoint.auditResourceID, false, "terminal client disconnected", ctx.Request.Context())
 		return
 	}
-	h.auditWithContext(user.ID, endpoint.auditAction, endpoint.auditResourceID, true, strings.TrimSpace(ctx.Query("container")), ctx.Request.Context())
+	h.auditWithContext(user.ID, endpoint.auditAction, endpoint.auditResourceID, true, runtimeTerminalAuditTarget(endpoint.pod, ctx.Query("container")), ctx.Request.Context())
+}
+
+// runtimeTerminalAuditTarget 记录用户指定的 Pod 与容器；为空表示由平台自动选择。
+func runtimeTerminalAuditTarget(pod string, container string) string {
+	pod = strings.TrimSpace(pod)
+	container = strings.TrimSpace(container)
+	if pod == "" {
+		return container
+	}
+	if container == "" {
+		return "pod=" + pod
+	}
+	return "pod=" + pod + " container=" + container
+}
+
+func writeRuntimePodNotFound(ctx *gin.Context) {
+	writeErrorCode(ctx, http.StatusNotFound, "runtime.pod_not_found", "runtime pod not found for this deployment target")
 }
 
 func (h *Handlers) authorizeRuntimeTerminal(ctx *gin.Context, resolve runtimeTerminalEndpointResolver) {
@@ -320,6 +361,7 @@ func (h *Handlers) releaseRuntimeTerminalEndpoint(ctx *gin.Context, project mode
 	if !ok {
 		return runtimeTerminalEndpoint{}, false
 	}
+	pod := strings.TrimSpace(ctx.Query("pod"))
 	reference := releaseRuntimeTerminalAuthorizationReference{
 		ProjectID:          project.ID,
 		ApplicationID:      release.ApplicationID,
@@ -328,6 +370,7 @@ func (h *Handlers) releaseRuntimeTerminalEndpoint(ctx *gin.Context, project mode
 		ClusterID:          cluster.ID,
 		ClusterKubeconfig:  cluster.KubeconfigRef,
 		Namespace:          namespace,
+		Pod:                pod,
 	}
 	return runtimeTerminalEndpoint{
 		resourceKind:         "release",
@@ -335,6 +378,8 @@ func (h *Handlers) releaseRuntimeTerminalEndpoint(ctx *gin.Context, project mode
 		client:               client,
 		namespace:            namespace,
 		target:               target,
+		pod:                  pod,
+		preferredReleaseID:   release.ID,
 		auditAction:          "release_runtime.terminal",
 		auditAuthorizeAction: "release_runtime.terminal_authorize",
 		auditResourceID:      release.ID,

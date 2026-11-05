@@ -3336,6 +3336,51 @@ paths:
         "413": { description: Bundle exceeds 1 MiB, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
         "500": { description: Internal failure with a stable deployment bundle error code and no dependency diagnostics., content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
 
+  /api/v1/projects/{projectId}/applications/{applicationId}/deployment-targets/{targetId}/pods:
+    get:
+      operationId: listDeploymentTargetRuntimePods
+      x-luna-cli:
+        requiredScopes: ["deployment:read"]
+      tags: [Deployments]
+      summary: List runtime pods of a deployment target
+      description: >-
+        Returns a no-store point-in-time Kubernetes observation of the runtime replicas
+        (build pods excluded). The default `recommended` order matches the replica the
+        platform selects automatically for logs, exec, and terminals: pods of `releaseId`
+        first, then ready, running, and newest. When the cluster cannot be read the
+        response has `status=unavailable`, a stable `observationCode`, and no items.
+      x-luna-agent:
+        purpose: { zh: 列出部署目标当前的运行副本，用于选择查看日志或执行命令的具体 Pod。, en: List the current runtime replicas of a deployment target to choose a specific pod for logs or commands. }
+        aliases: { zh: [列出运行副本, 查看部署 Pod, 多副本诊断], en: [list runtime pods, list deployment replicas, diagnose replicas] }
+        avoidWhen: { zh: 只需要部署整体状态时使用部署目标列表。, en: Use the deployment target list when only overall status is needed. }
+        preconditions: { zh: [提供真实 projectId、applicationId 和 targetId], en: [Provide projectId, applicationId, and targetId] }
+        successEvidence: { zh: 返回实时副本列表，包含 Pod 名、就绪、重启次数和所属发布。, en: Returns live replicas with pod name, readiness, restart count, and release. }
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/ApplicationId"
+        - $ref: "#/components/parameters/TargetId"
+        - name: releaseId
+          in: query
+          required: false
+          description: Ranks pods of this release first in the recommended order.
+          schema: { type: string }
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - $ref: "#/components/parameters/Search"
+        - name: sortBy
+          in: query
+          schema: { type: string, enum: [recommended, name, createdAt], default: recommended }
+        - $ref: "#/components/parameters/SortOrder"
+      responses:
+        "200":
+          description: Paginated live runtime pod observation.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DeploymentTargetRuntimePodPage" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   /api/v1/projects/{projectId}/applications/{applicationId}/deployment-targets/{targetId}/terminal/authorize:
     post:
       operationId: authorizeDeploymentTargetRuntimeTerminal
@@ -3354,6 +3399,11 @@ paths:
         - $ref: "#/components/parameters/ProjectId"
         - $ref: "#/components/parameters/ApplicationId"
         - $ref: "#/components/parameters/TargetId"
+        - name: pod
+          in: query
+          required: false
+          description: Runtime pod of this deployment target to connect. Omit to let the platform select one; an unknown pod is rejected instead of falling back.
+          schema: { type: string }
       responses:
         "200":
           description: One-time terminal ticket issued. The WebSocket endpoint must still atomically consume it and repeat authorization checks.
@@ -3425,6 +3475,11 @@ paths:
           in: query
           required: false
           schema: { type: string }
+        - name: pod
+          in: query
+          required: false
+          description: Runtime pod of this deployment target to connect. Omit to let the platform select one; an unknown pod is rejected instead of falling back.
+          schema: { type: string }
       responses:
         "101":
           description: WebSocket protocol switch accepted with the `luna.devops.terminal.v1` subprotocol after the ticket or browser session is authorized.
@@ -3459,6 +3514,11 @@ paths:
       parameters:
         - $ref: "#/components/parameters/ProjectId"
         - $ref: "#/components/parameters/ReleaseId"
+        - name: pod
+          in: query
+          required: false
+          description: Runtime pod of this deployment target to connect. Omit to let the platform select one; an unknown pod is rejected instead of falling back.
+          schema: { type: string }
       responses:
         "200":
           description: One-time terminal ticket issued. The WebSocket endpoint must still atomically consume it and repeat authorization checks.
@@ -7929,6 +7989,11 @@ paths:
         "200":
           description: Successful business response.
           content:
+        - name: pod
+          in: query
+          required: false
+          description: Runtime pod of this deployment target to connect. Omit to let the platform select one; an unknown pod is rejected instead of falling back.
+          schema: { type: string }
             application/json:
               schema:
                 $ref: "#/components/schemas/BusinessObject"
@@ -8040,6 +8105,11 @@ paths:
         "101":
           description: WebSocket protocol switch accepted with the `luna.devops.terminal.v1` subprotocol after the ticket or browser session is authorized.
           content:
+        - name: pod
+          in: query
+          required: false
+          description: Runtime pod of this deployment target to connect. Omit to let the platform select one; an unknown pod is rejected instead of falling back.
+          schema: { type: string }
             text/plain:
               schema:
                 type: string
@@ -13714,6 +13784,34 @@ components:
         path: { type: string }
         servicePort: { type: integer, minimum: 1, maximum: 65535 }
         tlsMode: { type: string }
+    DeploymentTargetRuntimePod:
+      type: object
+      additionalProperties: false
+      required: [name, phase, ready, terminating, restartCount, releaseId, containers, createdAt]
+      properties:
+        name: { type: string }
+        phase: { type: string, description: Kubernetes pod phase. }
+        ready: { type: boolean }
+        terminating: { type: boolean }
+        restartCount: { type: integer, minimum: 0, description: Sum of container restarts. }
+        releaseId: { type: string, description: Release that created this pod; empty when unknown. }
+        containers: { type: array, items: { type: string } }
+        createdAt: { type: string, format: date-time }
+    DeploymentTargetRuntimePodPage:
+      type: object
+      additionalProperties: false
+      required: [items, page, pageSize, sortBy, sortOrder, total, totalPages, status, observationCode, observedAt]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/DeploymentTargetRuntimePod" } }
+        page: { type: integer, minimum: 1 }
+        pageSize: { type: integer, minimum: 1, maximum: 100 }
+        sortBy: { type: string, enum: [recommended, name, createdAt] }
+        sortOrder: { type: string, enum: [asc, desc] }
+        total: { type: integer, minimum: 0 }
+        totalPages: { type: integer, minimum: 0 }
+        status: { type: string, enum: [ready, unavailable] }
+        observationCode: { type: string, enum: [deployment_target.runtime_pods_ready, deployment_target.runtime_pods_unavailable] }
+        observedAt: { type: string, format: date-time }
         dnsStatus: { type: string }
         status: { type: string }
         enabled: { type: boolean }
@@ -13724,6 +13822,7 @@ components:
         pathMatchType: { type: string, enum: [PathPrefix, Exact] }
         requestHeaders: { type: string }
         responseHeaders: { type: string }
+        pod: { type: string, description: Runtime pod of this deployment target. Omit to let the platform select one; an unknown pod is rejected instead of falling back. }
         urlRewrite: { type: string }
         requestRedirect: { type: string }
         backendWeight: { type: integer, minimum: 1 }

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -88,13 +89,8 @@ func (c *Client) RuntimeMetrics(ctx context.Context, options RuntimeMetricsOptio
 	if err != nil {
 		return RuntimeMetricsSnapshot{Available: false, Reason: "workload_unavailable", UpdatedAt: time.Now()}, nil
 	}
-	selector := strings.Join([]string{
-		ManagedByLabel + "=" + ManagedByValue,
-		DeploymentTargetIDLabel + "=" + deploymentTargetID,
-		ScopeLabel + "!=build",
-	}, ",")
 	gvr := schema.GroupVersionResource{Group: "metrics.k8s.io", Version: "v1beta1", Resource: "pods"}
-	list, err := c.dynamic.Resource(gvr).Namespace(namespace).List(ctx, metav1.ListOptions{LabelSelector: selector})
+	list, err := c.dynamic.Resource(gvr).Namespace(namespace).List(ctx, metav1.ListOptions{LabelSelector: runtimePodLabelSelector(deploymentTargetID)})
 	if err != nil {
 		return RuntimeMetricsSnapshot{
 			Available: false, Reason: "metrics_unavailable", DesiredReplicas: workload.DesiredReplicas,
@@ -135,7 +131,7 @@ func (c *Client) RuntimeMetrics(ctx context.Context, options RuntimeMetricsOptio
 }
 
 func (c *Client) RuntimePodLogs(ctx context.Context, options RuntimePodLogsOptions) (RuntimePodLogsResult, error) {
-	pod, container, err := c.runtimePod(ctx, options.Namespace, options.DeploymentTargetID, options.Container)
+	pod, container, err := c.runtimePod(ctx, options.RuntimePodSelection)
 	if err != nil {
 		return RuntimePodLogsResult{}, err
 	}
@@ -163,7 +159,7 @@ func (c *Client) RuntimeExec(ctx context.Context, options RuntimeExecOptions) (R
 	if command == "" {
 		return RuntimeExecResult{}, fmt.Errorf("command is required")
 	}
-	pod, container, err := c.runtimePod(ctx, options.Namespace, options.DeploymentTargetID, options.Container)
+	pod, container, err := c.runtimePod(ctx, options.RuntimePodSelection)
 	if err != nil {
 		return RuntimeExecResult{}, err
 	}
@@ -225,7 +221,7 @@ func (c *Client) RuntimeTerminal(ctx context.Context, options RuntimeTerminalOpt
 	if options.Stdin == nil || options.Stdout == nil {
 		return RuntimeTerminalResult{}, fmt.Errorf("runtime terminal streams are required")
 	}
-	pod, container, err := c.runtimePod(ctx, options.Namespace, options.DeploymentTargetID, options.Container)
+	pod, container, err := c.runtimePod(ctx, options.RuntimePodSelection)
 	if err != nil {
 		return RuntimeTerminalResult{}, err
 	}
@@ -325,46 +321,137 @@ func (c *Client) namedPod(ctx context.Context, namespace string, podName string,
 	return *pod, selectedContainer, nil
 }
 
-func (c *Client) runtimePod(ctx context.Context, namespace string, deploymentTargetID string, container string) (corev1.Pod, string, error) {
-	namespace = strings.TrimSpace(namespace)
-	deploymentTargetID = strings.TrimSpace(deploymentTargetID)
+// ErrRuntimePodNotFound 表示部署配置下没有运行 Pod，或指定的 Pod 不属于该部署配置。
+var ErrRuntimePodNotFound = errors.New("runtime pod not found")
+
+// RuntimePods 读取部署配置当前的运行副本：当前发布优先，其次就绪、运行中，最后按创建时间从新到旧。
+func (c *Client) RuntimePods(ctx context.Context, namespace string, deploymentTargetID string, preferredReleaseID string) ([]RuntimePodSnapshot, error) {
+	pods, err := c.listRuntimePods(ctx, namespace, deploymentTargetID)
+	if err != nil {
+		return nil, err
+	}
+	sortRuntimePods(pods, preferredReleaseID)
+	items := make([]RuntimePodSnapshot, 0, len(pods))
+	for _, pod := range pods {
+		items = append(items, runtimePodSnapshot(pod))
+	}
+	return items, nil
+}
+
+func (c *Client) runtimePod(ctx context.Context, selection RuntimePodSelection) (corev1.Pod, string, error) {
+	namespace := strings.TrimSpace(selection.Namespace)
+	deploymentTargetID := strings.TrimSpace(selection.DeploymentTargetID)
 	if namespace == "" {
 		return corev1.Pod{}, "", fmt.Errorf("resource namespace is required")
 	}
 	if deploymentTargetID == "" {
 		return corev1.Pod{}, "", fmt.Errorf("deployment target is required")
 	}
-	selector := strings.Join([]string{
+	if podName := strings.TrimSpace(selection.Pod); podName != "" {
+		pod, err := c.client.CoreV1().Pods(namespace).Get(ctx, podName, metav1.GetOptions{})
+		if apierrors.IsNotFound(err) {
+			return corev1.Pod{}, "", ErrRuntimePodNotFound
+		}
+		if err != nil {
+			return corev1.Pod{}, "", err
+		}
+		if !isRuntimePodOf(*pod, deploymentTargetID) {
+			return corev1.Pod{}, "", ErrRuntimePodNotFound
+		}
+		selectedContainer, err := selectPodContainer(*pod, selection.Container)
+		if err != nil {
+			return corev1.Pod{}, "", err
+		}
+		return *pod, selectedContainer, nil
+	}
+	pods, err := c.listRuntimePods(ctx, namespace, deploymentTargetID)
+	if err != nil {
+		return corev1.Pod{}, "", err
+	}
+	if len(pods) == 0 {
+		return corev1.Pod{}, "", ErrRuntimePodNotFound
+	}
+	sortRuntimePods(pods, selection.PreferredReleaseID)
+	selectedContainer, err := selectPodContainer(pods[0], selection.Container)
+	if err != nil {
+		return corev1.Pod{}, "", err
+	}
+	return pods[0], selectedContainer, nil
+}
+
+func (c *Client) listRuntimePods(ctx context.Context, namespace string, deploymentTargetID string) ([]corev1.Pod, error) {
+	namespace = strings.TrimSpace(namespace)
+	deploymentTargetID = strings.TrimSpace(deploymentTargetID)
+	if namespace == "" {
+		return nil, fmt.Errorf("resource namespace is required")
+	}
+	if deploymentTargetID == "" {
+		return nil, fmt.Errorf("deployment target is required")
+	}
+	pods, err := c.client.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{LabelSelector: runtimePodLabelSelector(deploymentTargetID)})
+	if err != nil {
+		return nil, err
+	}
+	return pods.Items, nil
+}
+
+func runtimePodLabelSelector(deploymentTargetID string) string {
+	return strings.Join([]string{
 		ManagedByLabel + "=" + ManagedByValue,
 		DeploymentTargetIDLabel + "=" + deploymentTargetID,
 		ScopeLabel + "!=build",
 	}, ",")
-	pods, err := c.client.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{LabelSelector: selector})
-	if err != nil {
-		return corev1.Pod{}, "", err
-	}
-	if len(pods.Items) == 0 {
-		return corev1.Pod{}, "", fmt.Errorf("runtime pod not found")
-	}
-	sort.Slice(pods.Items, func(left, right int) bool {
-		leftReady := podReady(pods.Items[left])
-		rightReady := podReady(pods.Items[right])
+}
+
+func isRuntimePodOf(pod corev1.Pod, deploymentTargetID string) bool {
+	return pod.Labels[ManagedByLabel] == ManagedByValue &&
+		pod.Labels[DeploymentTargetIDLabel] == deploymentTargetID &&
+		pod.Labels[ScopeLabel] != "build"
+}
+
+func sortRuntimePods(pods []corev1.Pod, preferredReleaseID string) {
+	preferredReleaseID = strings.TrimSpace(preferredReleaseID)
+	sort.SliceStable(pods, func(left, right int) bool {
+		if preferredReleaseID != "" {
+			leftPreferred := pods[left].Labels[ReleaseIDLabel] == preferredReleaseID
+			rightPreferred := pods[right].Labels[ReleaseIDLabel] == preferredReleaseID
+			if leftPreferred != rightPreferred {
+				return leftPreferred
+			}
+		}
+		leftReady := podReady(pods[left])
+		rightReady := podReady(pods[right])
 		if leftReady != rightReady {
 			return leftReady
 		}
-		leftRunning := pods.Items[left].Status.Phase == corev1.PodRunning
-		rightRunning := pods.Items[right].Status.Phase == corev1.PodRunning
+		leftRunning := pods[left].Status.Phase == corev1.PodRunning
+		rightRunning := pods[right].Status.Phase == corev1.PodRunning
 		if leftRunning != rightRunning {
 			return leftRunning
 		}
-		return pods.Items[left].CreationTimestamp.After(pods.Items[right].CreationTimestamp.Time)
+		return pods[left].CreationTimestamp.After(pods[right].CreationTimestamp.Time)
 	})
-	pod := pods.Items[0]
-	selectedContainer, err := selectPodContainer(pod, container)
-	if err != nil {
-		return corev1.Pod{}, "", err
+}
+
+func runtimePodSnapshot(pod corev1.Pod) RuntimePodSnapshot {
+	var restartCount int32
+	for _, status := range pod.Status.ContainerStatuses {
+		restartCount += status.RestartCount
 	}
-	return pod, selectedContainer, nil
+	containers := make([]string, 0, len(pod.Spec.Containers))
+	for _, container := range pod.Spec.Containers {
+		containers = append(containers, container.Name)
+	}
+	return RuntimePodSnapshot{
+		Name:         pod.Name,
+		Phase:        string(pod.Status.Phase),
+		Ready:        podReady(pod),
+		Terminating:  pod.DeletionTimestamp != nil,
+		RestartCount: restartCount,
+		ReleaseID:    pod.Labels[ReleaseIDLabel],
+		Containers:   containers,
+		CreatedAt:    pod.CreationTimestamp.Time,
+	}
 }
 
 func selectPodContainer(pod corev1.Pod, container string) (string, error) {

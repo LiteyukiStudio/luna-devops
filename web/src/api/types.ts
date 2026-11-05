@@ -1610,6 +1610,24 @@ export interface GatewayRoute {
   status: 'pending' | 'ready' | 'active' | 'disabled' | 'failed'
   enabled: boolean
   parentGatewayName: string
+/** 部署配置运行副本的实时观测，按平台默认选择顺序返回。 */
+export interface DeploymentTargetRuntimePod {
+  name: string
+  phase: string
+  ready: boolean
+  terminating: boolean
+  restartCount: number
+  releaseId: string
+  containers: string[]
+  createdAt: string
+}
+
+export interface DeploymentTargetRuntimePodPage extends PaginatedResponse<DeploymentTargetRuntimePod> {
+  status: 'ready' | 'unavailable'
+  observationCode: string
+  observedAt: string
+}
+
   parentGatewayNamespace: string
   sectionName: string
   pathMatchType: 'PathPrefix' | 'Exact'

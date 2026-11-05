@@ -13,6 +13,18 @@ describe('buildCliCommand', () => {
     })).toBe('luna deployment exec server=https://devops.example.com projectId=prj_123 applicationId=app_456 targetId=dplt_789')
   })
 
+  it('places the selected replica before the container', () => {
+    expect(buildCliCommand({
+      command: 'deployment.exec',
+      server: 'https://devops.example.com',
+      projectId: 'prj_123',
+      applicationId: 'app_456',
+      targetId: 'dplt_789',
+      pod: 'api-7f6cb48d8f-j9km2',
+      container: 'app',
+    })).toBe('luna deployment exec server=https://devops.example.com projectId=prj_123 applicationId=app_456 targetId=dplt_789 pod=api-7f6cb48d8f-j9km2 container=app')
+  })
+
   it('builds the existing cluster pod terminal command in a stable order', () => {
     expect(buildCliCommand({
       command: 'cluster.pod-terminal',

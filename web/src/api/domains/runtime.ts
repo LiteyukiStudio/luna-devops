@@ -1,5 +1,5 @@
-import type { ClusterResource, ClusterResourceEvent, ClusterResourceYAML, PaginatedResponse, PaginationParams, Release, ReleaseImageCandidates, ReleaseLog, ReleaseRuntimeLog, ResultVisibility, RuntimeCluster, RuntimeClusterPressure, RuntimeClusterResourceCategory, RuntimeClusterResourceKind, RuntimeClusterResourceListParams } from '../types'
-import { paginationWithProjectQuery, request, runtimeClusterResourceListQuery } from '../core'
+import type { ClusterResource, ClusterResourceEvent, ClusterResourceYAML, DeploymentTargetRuntimePodPage, PaginatedResponse, PaginationParams, Release, ReleaseImageCandidates, ReleaseLog, ReleaseRuntimeLog, ResultVisibility, RuntimeCluster, RuntimeClusterPressure, RuntimeClusterResourceCategory, RuntimeClusterResourceKind, RuntimeClusterResourceListParams } from '../types'
+import { paginationQuery, paginationWithProjectQuery, request, runtimeClusterResourceListQuery } from '../core'
 import { selectionItems, selectionPageParams } from '../selection-page'
 
 export const runtimeApi = {
@@ -64,8 +64,16 @@ export const runtimeApi = {
     request<Release>(`/projects/${projectId}/releases`, { method: 'POST', body: JSON.stringify(payload) }),
   getReleaseLogs: (projectId: string, releaseId: string, signal?: AbortSignal) =>
     request<ReleaseLog>(`/projects/${projectId}/releases/${releaseId}/logs`, { signal }),
-  getReleaseRuntimeLogs: (projectId: string, releaseId: string, params: { container?: string, tailLines?: number } = {}, signal?: AbortSignal) => {
+  listDeploymentTargetRuntimePods: (projectId: string, applicationId: string, targetId: string, params: { releaseId?: string, search?: string } = {}, signal?: AbortSignal) => {
+    const search = new URLSearchParams(paginationQuery({ ...selectionPageParams, sortBy: 'recommended', search: params.search?.trim() }))
+    if (params.releaseId)
+      search.set('releaseId', params.releaseId)
+    return request<DeploymentTargetRuntimePodPage>(`/projects/${projectId}/applications/${applicationId}/deployment-targets/${targetId}/pods?${search.toString()}`, { signal })
+  },
+  getReleaseRuntimeLogs: (projectId: string, releaseId: string, params: { pod?: string, container?: string, tailLines?: number } = {}, signal?: AbortSignal) => {
     const search = new URLSearchParams()
+    if (params.pod)
+      search.set('pod', params.pod)
     if (params.container)
       search.set('container', params.container)
     if (params.tailLines)

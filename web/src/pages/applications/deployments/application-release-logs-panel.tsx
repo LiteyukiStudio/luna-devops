@@ -2,13 +2,14 @@ import type { Release } from '@/api'
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { api } from '@/api'
+import { api, ApiError } from '@/api'
 import { AutoFollowLog } from '@/components/common/auto-follow-log'
 import { OutputViewerSheet } from '@/components/common/output-viewer-sheet'
 import { StatusValueBadge } from '@/components/common/status-badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
 import { WORKFLOW_STATUS_REFETCH_INTERVAL_MS } from '@/lib/polling'
+import { RuntimePodSelect } from '@/pages/applications/runtime/runtime-pod-select'
 
 export function ApplicationReleaseLogsPanel({
   projectId,
@@ -21,6 +22,7 @@ export function ApplicationReleaseLogsPanel({
 }) {
   const { t } = useTranslation()
   const [logView, setLogView] = useState<'deployment' | 'runtime'>('deployment')
+  const [pod, setPod] = useState('')
   const releaseLogs = useQuery({
     queryKey: ['release-logs', projectId, release.id],
     queryFn: ({ signal }) => api.getReleaseLogs(projectId, release.id, signal),
@@ -29,8 +31,8 @@ export function ApplicationReleaseLogsPanel({
   })
   const runtimeLogs = useQuery({
     ...liveObservationQueryPolicy,
-    queryKey: ['release-runtime-logs', projectId, release.id],
-    queryFn: ({ signal }) => api.getReleaseRuntimeLogs(projectId, release.id, { tailLines: 500 }, signal),
+    queryKey: ['release-runtime-logs', projectId, release.id, pod],
+    queryFn: ({ signal }) => api.getReleaseRuntimeLogs(projectId, release.id, { pod: pod || undefined, tailLines: 500 }, signal),
     enabled: Boolean(projectId && logView === 'runtime'),
     refetchInterval: logView === 'runtime' ? WORKFLOW_STATUS_REFETCH_INTERVAL_MS : false,
   })
@@ -38,7 +40,7 @@ export function ApplicationReleaseLogsPanel({
     ? t('common.unavailable')
     : releaseLogs.isLoading ? t('common.loading') : t('deploymentsPage.emptyLogs')
   const runtimeLogFallback = runtimeLogs.isError
-    ? t('common.unavailable')
+    ? t(runtimeLogs.error instanceof ApiError && runtimeLogs.error.code === 'runtime.pod_not_found' ? 'deploymentsPage.runtimePodMissing' : 'common.unavailable')
     : runtimeLogs.isLoading ? t('common.loading') : t('deploymentsPage.emptyLogs')
 
   return (
@@ -65,17 +67,22 @@ export function ApplicationReleaseLogsPanel({
           />
         </TabsContent>
         <TabsContent className="min-h-0 flex-1 overflow-hidden" value="runtime">
-          <div className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] bg-zinc-950">
-            {runtimeLogs.data && !runtimeLogs.isError && (
-              <div className="border-b border-zinc-800 px-4 py-2 font-mono text-xs text-zinc-400">
-                {t('deploymentsPage.runtimeLogSource', { pod: runtimeLogs.data.pod, container: runtimeLogs.data.container })}
-              </div>
-            )}
+          <div className="grid h-full min-h-0 grid-rows-[auto_auto_minmax(0,1fr)] bg-zinc-950">
+            <div className="border-b border-border bg-background px-4 py-2">
+              <RuntimePodSelect projectId={projectId} release={release} value={pod} onValueChange={setPod} />
+            </div>
+            {runtimeLogs.data && !runtimeLogs.isError
+              ? (
+                  <div className="border-b border-zinc-800 px-4 py-2 font-mono text-xs text-zinc-400">
+                    {t('deploymentsPage.runtimeLogSource', { pod: runtimeLogs.data.pod, container: runtimeLogs.data.container })}
+                  </div>
+                )
+              : <div />}
             <AutoFollowLog
               className="min-h-0 bg-zinc-950 p-4 font-mono text-sm leading-6 text-zinc-100"
               content={runtimeLogs.isError ? undefined : runtimeLogs.data?.content}
               emptyFallback={runtimeLogFallback}
-              resetKey={`${release.id}:runtime`}
+              resetKey={`${release.id}:runtime:${pod}`}
             />
           </div>
         </TabsContent>

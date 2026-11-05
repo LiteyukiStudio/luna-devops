@@ -25,6 +25,8 @@ Open the release and deployment logs. Confirm that the image exists, the cluster
 
 For an unready application, inspect workload events and container logs to distinguish image pulls, startup failures, health checks, and resource exhaustion.
 
+When a deployment has several replicas, runtime logs and the Web Console connect to one replica at a time. The default **Automatic** option prefers a ready replica of the current release. To inspect a specific replica, such as one that is restarting or not ready, choose it in the **Replica** list. The list shows each replica's readiness, restart count, and whether it belongs to this release or another one. If the selected replica is recreated or scaled away, the page asks you to choose again instead of switching replicas silently. In the CLI, add `pod=<pod name>` to `luna deployment exec` or `luna release exec` to choose a replica.
+
 ## An unreachable route
 
 Check DNS, route status, the Service port, available Pods, and TLS configuration in that order. Administrators should also inspect Gateway, HTTPRoute, and certificate status.

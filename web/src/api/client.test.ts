@@ -123,4 +123,17 @@ describe('api client', () => {
       expect(url).toContain('applicationId=app-1')
     }
   })
+
+  it('requests runtime pods in the recommended order for the selected release', async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockImplementation(async () => jsonResponse({ items: [], page: 1, pageSize: 100, sortBy: 'recommended', sortOrder: 'desc', total: 0, totalPages: 0, status: 'ready', observationCode: 'deployment_target.runtime_pods_ready', observedAt: '2026-09-06T00:00:00Z' }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await api.listDeploymentTargetRuntimePods('project-1', 'app-1', 'target-1', { releaseId: 'rel-1', search: ' api ' })
+    await api.getReleaseRuntimeLogs('project-1', 'rel-1', { pod: 'api-a', tailLines: 500 })
+
+    const podsUrl = new URL(String(fetchMock.mock.calls[0]?.[0]), window.location.origin)
+    expect(podsUrl.pathname).toMatch(/\/projects\/project-1\/applications\/app-1\/deployment-targets\/target-1\/pods$/)
+    expect(Object.fromEntries(podsUrl.searchParams)).toEqual({ page: '1', pageSize: '100', sortBy: 'recommended', search: 'api', releaseId: 'rel-1' })
+    expect(String(fetchMock.mock.calls[1]?.[0])).toContain('/releases/rel-1/runtime-logs?pod=api-a&tailLines=500')
+  })
 })

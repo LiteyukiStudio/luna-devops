@@ -287,7 +287,7 @@ func TestRuntimePodExcludesBuildPods(t *testing.T) {
 		},
 	))
 
-	pod, container, err := client.runtimePod(context.Background(), "ns-demo", "dplt_api", "")
+	pod, container, err := client.runtimePod(context.Background(), RuntimePodSelection{Namespace: "ns-demo", DeploymentTargetID: "dplt_api"})
 	if err != nil {
 		t.Fatalf("runtimePod returned error: %v", err)
 	}

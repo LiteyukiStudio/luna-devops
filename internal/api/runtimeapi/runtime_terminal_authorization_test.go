@@ -119,3 +119,41 @@ func TestDeploymentTargetTerminalTicketIsBoundWithoutARelease(t *testing.T) {
 		t.Fatal("ticket matched another deployment target")
 	}
 }
+
+func TestRuntimeTerminalTicketIsBoundToSelectedPod(t *testing.T) {
+	handlers := &Handlers{mode: "test"}
+	binding := runtimeTerminalAuthorizationBinding{
+		UserID:    "usr_pod_ticket",
+		SubjectID: "ses_pod_ticket",
+		Deadline:  time.Now().Add(time.Hour),
+	}
+	reference := releaseRuntimeTerminalAuthorizationReference{
+		ProjectID:          "prj_pod_ticket",
+		ApplicationID:      "app_pod_ticket",
+		ReleaseID:          "rel_pod_ticket",
+		DeploymentTargetID: "dplt_pod_ticket",
+		ClusterID:          "rcl_pod_ticket",
+		ClusterKubeconfig:  "sec_pod_ticket",
+		Namespace:          "luna-pod-ticket",
+		Pod:                "api-7f9c-a",
+	}
+
+	ticket, _, err := handlers.issueRuntimeTerminalTicket(context.Background(), binding, "release", reference)
+	if err != nil {
+		t.Fatal(err)
+	}
+	value, ok, err := handlers.consumeRuntimeTerminalTicket(context.Background(), ticket)
+	if err != nil || !ok {
+		t.Fatalf("consume pod ticket = (%#v, %t, %v)", value, ok, err)
+	}
+	if !value.matches("release", reference) {
+		t.Fatal("ticket did not match its selected pod")
+	}
+	for _, pod := range []string{"api-7f9c-b", ""} {
+		otherReference := reference
+		otherReference.Pod = pod
+		if value.matches("release", otherReference) {
+			t.Fatalf("ticket matched pod %q", pod)
+		}
+	}
+}

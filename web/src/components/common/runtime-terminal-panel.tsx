@@ -15,6 +15,7 @@ import '@xterm/xterm/css/xterm.css'
 export function RuntimeTerminalPanel({
   container,
   fullscreen = false,
+  pod = '',
   projectId,
   release,
   ready,
@@ -22,6 +23,7 @@ export function RuntimeTerminalPanel({
 }: {
   container: string
   fullscreen?: boolean
+  pod?: string
   projectId: string
   ready?: boolean
   release: Release | null
@@ -31,7 +33,7 @@ export function RuntimeTerminalPanel({
   const terminalRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
-    const terminalSocketUrl = socketUrl ?? (release && projectId ? releaseRuntimeTerminalUrl(projectId, release.id, container) : '')
+    const terminalSocketUrl = socketUrl ?? (release && projectId ? releaseRuntimeTerminalUrl(projectId, release.id, container, pod) : '')
     const shouldConnect = ready ?? Boolean(release && projectId)
     if (!shouldConnect || !terminalSocketUrl || !terminalRef.current)
       return
@@ -135,7 +137,7 @@ export function RuntimeTerminalPanel({
       socket?.close()
       terminal.dispose()
     }
-  }, [container, projectId, ready, release, socketUrl, t])
+  }, [container, pod, projectId, ready, release, socketUrl, t])
 
   return (
     <div className={fullscreen ? 'flex h-full min-h-0 p-3 pt-2' : 'p-3'}>
