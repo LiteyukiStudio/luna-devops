@@ -4,7 +4,6 @@ import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { SearchSelect } from '@/components/common/search-select'
 import { UserAvatar } from '@/components/common/user-avatar'
-import { cn } from '@/lib/utils'
 
 const ALL_USERS_VALUE = '__all_users__'
 
@@ -55,7 +54,7 @@ export function UserSelect({
   return (
     <SearchSelect
       ariaLabel={ariaLabel ?? placeholder}
-      className={cn('h-11 rounded-2xl', className)}
+      className={className}
       disabled={disabled}
       emptyLabel={emptyLabel}
       options={options}

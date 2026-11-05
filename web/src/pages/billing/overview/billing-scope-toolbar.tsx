@@ -64,14 +64,14 @@ export function BillingScopeToolbar({
           />
         </div>
         {selectedProjectIds.length > 0 && (
-          <Button className="h-11 shrink-0 rounded-2xl" type="button" variant="outline" onClick={() => onProjectFilterChange([])}>
+          <Button className="shrink-0" type="button" variant="outline" onClick={() => onProjectFilterChange([])}>
             {t('billingPage.clearProjectFilter')}
           </Button>
         )}
       </div>
       {canManageBilling && (
         <Button
-          className="h-11 shrink-0 rounded-2xl"
+          className="shrink-0"
           disabled={usersLoading || userItems.length === 0}
           type="button"
           onClick={onCreateTransaction}

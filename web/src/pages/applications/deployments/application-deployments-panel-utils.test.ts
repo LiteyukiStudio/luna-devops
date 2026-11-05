@@ -9,6 +9,8 @@ describe('deployment panel utils', () => {
 
     expect(formatTargetRuntimeSize(target('500m', '1Gi'), format)).toBe('0.5 · 1G')
     expect(formatTargetRuntimeSize(target('125m', '512Mi'), format)).toBe('0.125 · 0.5G')
+    expect(formatTargetRuntimeSize(target('', '512Mi'), format)).toBe('- · 0.5G')
+    expect(formatTargetRuntimeSize(target('', ''), key => key)).toBe('common.notConfigured')
   })
 
   it('keeps the newest release for each deployment target', () => {

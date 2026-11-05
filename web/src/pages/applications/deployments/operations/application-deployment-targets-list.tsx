@@ -99,7 +99,7 @@ export function ApplicationDeploymentTargetsList({
         <DataList
           columns={[
             { key: 'name', header: t('common.name'), width: 'primary', render: item => <DeploymentTargetSummary item={item} /> },
-            { key: 'domain', header: t('deploymentsPage.serviceDomain'), width: 'secondary', render: item => <DeploymentServiceDomain endpoint={item.internalEndpoint} /> },
+            { key: 'domain', header: t('deploymentsPage.internalAddress'), width: 'secondary', render: item => <DeploymentServiceDomain endpoint={item.internalEndpoint} /> },
             { key: 'stage', header: t('deploymentsPage.stage'), width: 'compact', render: item => t(`deploymentsPage.stageLabels.${item.target.stage}`, { defaultValue: item.target.stage }) },
             { key: 'runtimeSize', header: t('deploymentsPage.runtimeEnvironment'), width: 'secondary', render: item => <DeploymentRuntimeSpecBadge target={item.target} /> },
             { key: 'runtimeStatus', header: t('deploymentsPage.runtimeStatus'), width: 'status', render: item => <DeploymentRuntimeStatusBadge availableReplicas={item.target.availableReplicas} deployed={Boolean(item.release)} desiredReplicas={item.target.desiredReplicas} readyReplicas={item.target.readyReplicas} status={item.runtimeStatus} /> },

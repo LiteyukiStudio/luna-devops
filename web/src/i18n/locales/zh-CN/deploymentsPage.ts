@@ -188,7 +188,7 @@ const deploymentsPage = {
   rolloutMessage: '部署进度',
   releaseTime: '时间',
   imageSummary: '镜像摘要',
-  serviceDomain: '域名',
+  internalAddress: '集群内地址',
   deploymentDetails: '查看详情',
   accessAddresses: '访问地址',
   accessAddressesDescription: '按访问范围区分 Service 地址和项目访问入口。',

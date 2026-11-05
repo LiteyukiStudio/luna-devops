@@ -91,7 +91,7 @@ export function RegisterPage() {
       <PageMotion className="w-full max-w-lg">
         <Card className="grid gap-5 p-6 sm:p-8">
           <div className="flex items-center gap-3">
-            <img alt="" className="size-11 rounded-xl object-contain" src={configs['site.logoUrl'] || '/luna-devops-logo.svg'} />
+            <img alt="" className="size-11 rounded-feature object-contain" src={configs['site.logoUrl'] || '/luna-devops-logo.svg'} />
             <div className="min-w-0">
               <h1 className="text-lg font-semibold">{t('loginPage.registration.title')}</h1>
               <p className="text-sm text-muted-foreground">{t('loginPage.registration.description')}</p>

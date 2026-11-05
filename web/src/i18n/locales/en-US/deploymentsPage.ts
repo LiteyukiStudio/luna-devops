@@ -188,7 +188,7 @@ const deploymentsPage = {
   rolloutMessage: 'Rollout',
   releaseTime: 'Time',
   imageSummary: 'Image summary',
-  serviceDomain: 'Domain',
+  internalAddress: 'Internal address',
   deploymentDetails: 'View details',
   accessAddresses: 'Access addresses',
   accessAddressesDescription: 'Service addresses and project entrypoints grouped by access scope.',

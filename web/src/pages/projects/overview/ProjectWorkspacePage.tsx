@@ -17,6 +17,7 @@ import { useSession } from '@/app/session-context'
 import { ContentTabs } from '@/components/common/content-tabs'
 import { ErrorState } from '@/components/common/error-state'
 import { ToolViewportSkeleton } from '@/components/common/loading-states'
+import { PageShell } from '@/components/common/page-shell'
 import { StatusValueBadge } from '@/components/common/status-badge'
 import { formatSmartDateTime } from '@/components/common/time-format'
 import { UserAvatar } from '@/components/common/user-avatar'
@@ -189,7 +190,7 @@ export function ProjectWorkspacePage() {
   })()
 
   return (
-    <div className="grid gap-6">
+    <PageShell>
       <ContentTabs
         tabs={[
           { value: 'overview', label: t('projectSpaces.overviewTab') },
@@ -228,7 +229,7 @@ export function ProjectWorkspacePage() {
           </motion.div>
         </TabsContent>
       </ContentTabs>
-    </div>
+    </PageShell>
   )
 }
 
@@ -268,8 +269,8 @@ function ProjectOverviewDashboard({ applications, builds, canTransferBillingOwne
         </div>
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <ProjectMetric icon={<Package className="size-4" />} label={t('projectSpaces.apps')} meta={t('projectSpaces.projectAppsMeta', { count: applications.length })} value={applications.length} />
-          <ProjectMetric icon={<Activity className="size-4" />} label={t('projectSpaces.buildHealth')} meta={failedBuilds > 0 ? t('projectSpaces.failedBuildsMeta', { count: failedBuilds }) : t('projectSpaces.succeededBuildsMeta', { count: succeededBuilds })} value={builds.length} />
-          <ProjectMetric icon={<Rocket className="size-4" />} label={t('projectSpaces.releaseHealth')} meta={failedReleases > 0 ? t('projectSpaces.failedReleasesMeta', { count: failedReleases }) : t('projectSpaces.activeReleasesMeta', { count: activeReleases })} value={releases.length} />
+          <ProjectMetric icon={<Activity className="size-4" />} label={t('projectSpaces.recentBuildsMetric')} meta={failedBuilds > 0 ? t('projectSpaces.failedBuildsMeta', { count: failedBuilds }) : t('projectSpaces.succeededBuildsMeta', { count: succeededBuilds })} value={builds.length} />
+          <ProjectMetric icon={<Rocket className="size-4" />} label={t('projectSpaces.releasesMetric')} meta={failedReleases > 0 ? t('projectSpaces.failedReleasesMeta', { count: failedReleases }) : t('projectSpaces.activeReleasesMeta', { count: activeReleases })} value={releases.length} />
           <ProjectMetric icon={<Globe2 className="size-4" />} label={t('projectSpaces.accessHealth')} meta={t('projectSpaces.readyRoutesMeta', { ready: readyRoutes, total: routes.length })} value={routes.length} />
         </div>
       </Card>

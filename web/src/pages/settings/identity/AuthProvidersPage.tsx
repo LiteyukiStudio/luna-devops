@@ -14,8 +14,8 @@ import { ContentTabs } from '@/components/common/content-tabs'
 import { DataList } from '@/components/common/data-list'
 import { EditActionButton } from '@/components/common/edit-action-button'
 import { ErrorState } from '@/components/common/error-state'
-import { FormActions } from '@/components/common/form-actions'
 import { FormField as Field } from '@/components/common/form-field'
+import { PageShell } from '@/components/common/page-shell'
 import { StatusBadge, StatusValueBadge } from '@/components/common/status-badge'
 import { Surface } from '@/components/common/surface'
 import { Button } from '@/components/ui/button'
@@ -26,6 +26,7 @@ import { NativeSelect as Select } from '@/components/ui/native-select'
 import { TabsContent } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import { PLATFORM_ROLES, PlatformRole } from '@/lib/roles'
+import { SettingsTabSaveButton } from '@/pages/settings/settings-tab-save-button'
 
 const providerSchema = z.object({
   name: z.string().min(1),
@@ -218,7 +219,7 @@ export function AuthProvidersPage() {
   ], [t])
 
   return (
-    <div className="grid gap-6">
+    <PageShell>
       <ContentTabs
         tabs={[
           { value: 'providers', label: t('authProvidersPage.providersTab') },
@@ -237,7 +238,15 @@ export function AuthProvidersPage() {
                 {t('authProvidersPage.createTitle')}
               </Button>
             )
-          : undefined}
+          : (
+              <SettingsTabSaveButton
+                disabled={!policyForm.formState.isValid}
+                label={t('authProvidersPage.savePolicy')}
+                pending={savePolicy.isPending}
+                type="button"
+                onClick={() => void policyForm.handleSubmit(values => savePolicy.mutate(values))()}
+              />
+            )}
         value={activeTab}
         onValueChange={setActiveTab}
       >
@@ -405,17 +414,11 @@ export function AuthProvidersPage() {
                   <option value={PlatformRole.Admin}>{t('usersPage.platformAdmin')}</option>
                 </Select>
               </Field>
-              <FormActions>
-                <Button disabled={savePolicy.isPending || !policyForm.formState.isValid} type="submit">
-                  <Save size={16} />
-                  {t('authProvidersPage.savePolicy')}
-                </Button>
-              </FormActions>
             </form>
           </Surface>
         </TabsContent>
       </ContentTabs>
-    </div>
+    </PageShell>
   )
 }
 

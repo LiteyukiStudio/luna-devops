@@ -15,6 +15,7 @@ import { ErrorState } from '@/components/common/error-state'
 import { ForbiddenPage } from '@/components/common/forbidden-page'
 import { ToolViewportSkeleton } from '@/components/common/loading-states'
 import { MetricGroup, MetricItem } from '@/components/common/metric-group'
+import { PageShell } from '@/components/common/page-shell'
 import { Section } from '@/components/common/section'
 import { StatusBadge } from '@/components/common/status-badge'
 import { Button } from '@/components/ui/button'
@@ -58,21 +59,23 @@ export function OperationsDashboardPage() {
 
   const observabilityEnabled = configs.data?.['ai.observability.enabled'] === 'true'
   return (
-    <ContentTabs
-      tabs={[
-        { value: 'platform', label: t('operationsDashboardPage.platformTab') },
-        { value: 'agent', label: t('operationsDashboardPage.agentTab') },
-      ]}
-      value={activeTab}
-      onValueChange={setActiveTab}
-    >
-      <TabsContent value="platform">
-        <PlatformDashboardContent dashboardUrl={dashboardUrl} iframeUrl={iframeUrl} />
-      </TabsContent>
-      <TabsContent value="agent">
-        <AgentObservabilityView active={activeTab === 'agent'} enabled={observabilityEnabled} userId={user?.id ?? ''} />
-      </TabsContent>
-    </ContentTabs>
+    <PageShell spacing="compact">
+      <ContentTabs
+        tabs={[
+          { value: 'platform', label: t('operationsDashboardPage.platformTab') },
+          { value: 'agent', label: t('operationsDashboardPage.agentTab') },
+        ]}
+        value={activeTab}
+        onValueChange={setActiveTab}
+      >
+        <TabsContent value="platform">
+          <PlatformDashboardContent dashboardUrl={dashboardUrl} iframeUrl={iframeUrl} />
+        </TabsContent>
+        <TabsContent value="agent">
+          <AgentObservabilityView active={activeTab === 'agent'} enabled={observabilityEnabled} userId={user?.id ?? ''} />
+        </TabsContent>
+      </ContentTabs>
+    </PageShell>
   )
 }
 

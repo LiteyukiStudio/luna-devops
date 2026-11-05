@@ -18,7 +18,6 @@ import { DataList } from '@/components/common/data-list'
 import { ErrorState } from '@/components/common/error-state'
 import { FormField as Field } from '@/components/common/form-field'
 import { SettingsSkeleton } from '@/components/common/loading-states'
-import { PageChromeTools } from '@/components/common/page-chrome'
 import { PageShell } from '@/components/common/page-shell'
 import { SearchMultiSelect } from '@/components/common/search-select'
 import { Section } from '@/components/common/section'
@@ -160,7 +159,7 @@ export function SiteSettingsPage() {
           onValueChange={setActiveTab}
         >
           <TabsContent value="brand">
-            <Surface className="max-w-3xl rounded-xl p-6" variant="bordered">
+            <Surface className="max-w-3xl p-6" variant="bordered">
               <ConfigSection definitions={siteDefinitions} form={form} />
             </Surface>
           </TabsContent>
@@ -171,7 +170,7 @@ export function SiteSettingsPage() {
             <MailSettingsPanel />
           </TabsContent>
           <TabsContent value="security">
-            <Surface className="max-w-3xl rounded-xl p-6" variant="bordered">
+            <Surface className="max-w-3xl p-6" variant="bordered">
               <ConfigSection definitions={securityDefinitions} form={form} />
             </Surface>
           </TabsContent>
@@ -574,8 +573,9 @@ function BillingRateRulesSection() {
     .filter((rule): rule is BillingRateRulePayload => Boolean(rule))
 
   return (
-    <>
-      <PageChromeTools>
+    <Section
+      title={t('settings.billingRateRulesTitle')}
+      tools={(
         <SettingsTabSaveButton
           disabled={rules.length === 0 || Object.keys(drafts).length === 0}
           label={t('settings.saveBillingRateRules')}
@@ -584,17 +584,16 @@ function BillingRateRulesSection() {
           variant="outline"
           onClick={() => save.mutate(payload)}
         />
-      </PageChromeTools>
-      <Section title={t('settings.billingRateRulesTitle')}>
-        <DataList
-          columns={columns}
-          emptyTitle={t('settings.billingRateRulesTitle')}
-          items={rules}
-          loading={rateRules.isLoading}
-          rowKey={rule => rule.meter}
-        />
-      </Section>
-    </>
+      )}
+    >
+      <DataList
+        columns={columns}
+        emptyTitle={t('settings.billingRateRulesTitle')}
+        items={rules}
+        loading={rateRules.isLoading}
+        rowKey={rule => rule.meter}
+      />
+    </Section>
   )
 }
 

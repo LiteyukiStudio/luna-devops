@@ -188,7 +188,7 @@ const deploymentsPage = {
   rolloutMessage: '배포 진행 상황',
   releaseTime: '시간',
   imageSummary: '이미지 요약',
-  serviceDomain: '도메인',
+  internalAddress: '클러스터 내부 주소',
   deploymentDetails: '상세 보기',
   accessAddresses: '접근 주소',
   accessAddressesDescription: '접근 범위로 Service 주소와 프로젝트 접근 진입점을 구별합니다.',

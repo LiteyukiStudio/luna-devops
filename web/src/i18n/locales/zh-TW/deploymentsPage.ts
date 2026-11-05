@@ -200,7 +200,7 @@ const deploymentsPage = {
   releaseInformation: '發佈信息',
   releaseInformationDescription: '當前映象、版本和 Kubernetes 發佈信息。',
   kubernetesResourceName: 'Kubernetes 資源名',
-  serviceDomain: '域名',
+  internalAddress: '叢集內地址',
   runtimeMetrics: '資源佔用',
   metricsCpu: 'CPU',
   metricsMemory: '記憶體',

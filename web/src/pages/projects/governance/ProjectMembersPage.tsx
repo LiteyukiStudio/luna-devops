@@ -231,7 +231,6 @@ export function ProjectMembersPage({ embedded = false, projectId: projectIdProp,
           <form className="grid gap-3" onSubmit={form.handleSubmit(values => createMember.mutate(values))}>
             <Field hint={t('projectMembers.userSearchHint')} label={t('projectMembers.userSearch')} required>
               <SearchMultiSelect
-                className="h-11 rounded-2xl"
                 emptyLabel={t('projectMembers.noUserResults')}
                 filterLocally={false}
                 limited={(memberCandidates.data?.length ?? 0) >= 20}

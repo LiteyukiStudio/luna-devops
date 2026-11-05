@@ -96,11 +96,11 @@ export function LoginPage() {
           padding="none"
         >
           <div className="grid lg:min-h-160 lg:grid-cols-[1.08fr_0.92fr]">
-            <div className="relative hidden overflow-visible rounded-l-container lg:block">
-              <div className="absolute inset-0 rounded-l-container bg-[linear-gradient(135deg,rgba(47,123,244,0.12)_0,transparent_36%),linear-gradient(45deg,rgba(34,199,169,0.12)_0,transparent_42%)]" />
+            <div className="relative hidden overflow-hidden rounded-l-container lg:block">
+              <div className="absolute inset-0 rounded-l-container bg-[image:var(--auth-illustration-background)]" />
               <img
                 alt=""
-                className="pointer-events-none absolute bottom-0 left-[51.5%] z-10 h-[112%] w-auto max-w-none -translate-x-1/2 select-none object-contain object-bottom drop-shadow-xl"
+                className="pointer-events-none absolute bottom-0 left-[51.5%] z-10 h-[96%] w-auto max-w-none -translate-x-1/2 select-none object-contain object-bottom"
                 decoding="async"
                 fetchPriority="high"
                 height={1454}
@@ -114,7 +114,7 @@ export function LoginPage() {
                 <div className="mb-6 flex items-center gap-3">
                   <img
                     alt=""
-                    className="size-11 shrink-0 rounded-xl object-contain"
+                    className="size-11 shrink-0 rounded-feature object-contain"
                     src={configs['site.logoUrl'] || '/luna-devops-logo.svg'}
                   />
                   <div className="min-w-0">

@@ -19,6 +19,7 @@ import { ErrorState } from '@/components/common/error-state'
 import { FormActions } from '@/components/common/form-actions'
 import { FormField as Field } from '@/components/common/form-field'
 import { MotionItem, MotionList } from '@/components/common/motion'
+import { PageShell } from '@/components/common/page-shell'
 import { StatusValueBadge } from '@/components/common/status-badge'
 import { UserAvatar } from '@/components/common/user-avatar'
 import { Button } from '@/components/ui/button'
@@ -96,35 +97,37 @@ export function AccountPage() {
       : null
 
   return (
-    <ContentTabs
-      headerClassName="flex justify-start"
-      tabs={[
-        { value: 'profile', label: t('accountPage.profileTab') },
-        { value: 'security', label: t('accountPage.securityTab') },
-        { value: 'notifications', label: t('accountPage.notificationsTab') },
-        { value: 'tokens', label: t('accountPage.tokensTab') },
-        { value: 'oauth-applications', label: t('oauthApps.applicationsTab') },
-        { value: 'oauth-grants', label: t('oauthApps.grantsTab') },
-      ]}
-      tools={activeTools}
-      value={activeTab}
-      onValueChange={(nextTab) => {
-        setCreateDialog(null)
-        setActiveTab(nextTab)
-      }}
-    >
-      <TabsContent value={activeTab}>
-        <motion.div
-          key={activeTab}
-          animate={{ opacity: 1, y: 0 }}
-          className={activeTab === 'profile' || activeTab === 'security' ? 'w-full max-w-3xl' : undefined}
-          initial={{ opacity: 0, y: 6 }}
-          transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
-        >
-          {activeContent}
-        </motion.div>
-      </TabsContent>
-    </ContentTabs>
+    <PageShell spacing="compact" width="settings">
+      <ContentTabs
+        headerClassName="flex justify-start"
+        tabs={[
+          { value: 'profile', label: t('accountPage.profileTab') },
+          { value: 'security', label: t('accountPage.securityTab') },
+          { value: 'notifications', label: t('accountPage.notificationsTab') },
+          { value: 'tokens', label: t('accountPage.tokensTab') },
+          { value: 'oauth-applications', label: t('oauthApps.applicationsTab') },
+          { value: 'oauth-grants', label: t('oauthApps.grantsTab') },
+        ]}
+        tools={activeTools}
+        value={activeTab}
+        onValueChange={(nextTab) => {
+          setCreateDialog(null)
+          setActiveTab(nextTab)
+        }}
+      >
+        <TabsContent value={activeTab}>
+          <motion.div
+            key={activeTab}
+            animate={{ opacity: 1, y: 0 }}
+            className={activeTab === 'profile' || activeTab === 'security' ? 'w-full max-w-3xl' : undefined}
+            initial={{ opacity: 0, y: 6 }}
+            transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+          >
+            {activeContent}
+          </motion.div>
+        </TabsContent>
+      </ContentTabs>
+    </PageShell>
   )
 }
 

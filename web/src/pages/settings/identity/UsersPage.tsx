@@ -14,6 +14,7 @@ import { DataList } from '@/components/common/data-list'
 import { EditActionButton } from '@/components/common/edit-action-button'
 import { ErrorState } from '@/components/common/error-state'
 import { FormField as Field } from '@/components/common/form-field'
+import { PageShell } from '@/components/common/page-shell'
 import { StatusBadge, StatusValueBadge } from '@/components/common/status-badge'
 import { formatAbsoluteDateTime } from '@/components/common/time-format'
 import { UserAvatar } from '@/components/common/user-avatar'
@@ -183,7 +184,7 @@ export function UsersPage() {
   ]
 
   return (
-    <div className="grid gap-6">
+    <PageShell>
       <div className="grid min-w-0 self-start">
         {users.isError && <ErrorState title={t('usersPage.loadFailedTitle')} description={t('common.platformAdminPermissionRequired')} />}
         <DataList
@@ -291,6 +292,6 @@ export function UsersPage() {
           </form>
         </DialogContent>
       </Dialog>
-    </div>
+    </PageShell>
   )
 }

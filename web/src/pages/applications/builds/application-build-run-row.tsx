@@ -225,9 +225,9 @@ export function ApplicationBuildRunRow({ binding, canRetry, deploymentTargetName
 function BuildRunStatusIcon({ compact = false, status }: { compact?: boolean, status: string }) {
   const className = compact ? 'size-3.5 shrink-0' : 'mt-0.5 size-5 shrink-0'
   if (status === 'succeeded')
-    return <CircleCheck className={`${className} text-emerald-600`} />
+    return <CircleCheck className={`${className} text-success`} />
   if (status === 'failed' || status === 'lost' || status === 'timeout')
-    return <CircleX className={`${className} text-rose-600`} />
+    return <CircleX className={`${className} text-danger`} />
   if (status === 'running')
     return <LoaderCircle className={`${className} animate-spin text-primary-text`} />
   return <Clock3 className={`${className} text-muted-foreground`} />

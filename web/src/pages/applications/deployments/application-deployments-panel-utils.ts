@@ -25,6 +25,9 @@ export function shortImageRef(imageRef: string) {
 }
 
 export function formatTargetRuntimeSize(target: DeploymentTarget, t: (key: string, options?: Record<string, unknown>) => string) {
+  // 未配置的配额会在渲染 workload 时省略，界面如实展示，不用猜测的默认值冒充。
+  if (!target.cpuRequest?.trim() && !target.memoryRequest?.trim())
+    return t('common.notConfigured')
   return t('deploymentsPage.runtimeSizeValue', {
     cpu: formatCPU(target.cpuRequest),
     memory: formatMemoryGi(target.memoryRequest),
@@ -118,7 +121,9 @@ export function formatMetricsBytes(value: number, locale: string) {
 }
 
 function formatCPU(value: string) {
-  const normalized = value?.trim() || '1'
+  const normalized = value?.trim()
+  if (!normalized)
+    return '-'
   const cpu = normalized.endsWith('m')
     ? Number(normalized.slice(0, -1)) / 1000
     : Number(normalized)
@@ -126,7 +131,9 @@ function formatCPU(value: string) {
 }
 
 function formatMemoryGi(value: string) {
-  const normalized = value?.trim() || '1Gi'
+  const normalized = value?.trim()
+  if (!normalized)
+    return '-'
   const matched = normalized.match(/^(\d+(?:\.\d+)?)\s*([kmgt])i?$/i)
   if (!matched)
     return normalized

@@ -188,7 +188,7 @@ const deploymentsPage = {
   rolloutMessage: 'デプロイ進捗',
   releaseTime: '時間',
   imageSummary: 'イメージサマリ',
-  serviceDomain: 'ドメイン',
+  internalAddress: 'クラスター内アドレス',
   deploymentDetails: '詳細を見る',
   accessAddresses: 'アクセスアドレス',
   accessAddressesDescription: 'アクセス範囲で Service アドレスとプロジェクトアクセスエントリを区別します。',

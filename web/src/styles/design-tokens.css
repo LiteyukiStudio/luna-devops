@@ -103,6 +103,9 @@
     hsl(var(--surface) / 0.2) 38%,
     hsl(var(--surface) / 0.58) 100%
   );
+  --auth-illustration-background:
+    linear-gradient(135deg, color-mix(in oklab, var(--primary) 12%, transparent) 0, transparent 36%),
+    linear-gradient(45deg, color-mix(in oklab, var(--theme-supporting) 12%, transparent) 0, transparent 42%);
   --ai-assistant-launcher-background:
     radial-gradient(
       circle at 28% 20%,

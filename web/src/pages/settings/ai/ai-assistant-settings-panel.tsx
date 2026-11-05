@@ -129,7 +129,7 @@ export function AIAssistantSettingsPanel() {
             onClick={() => void form.handleSubmit(values => save.mutate(values))()}
           />
         </PageChromeTools>
-        <Surface className="grid gap-5 rounded-xl p-6" variant="bordered">
+        <Surface className="grid gap-5 p-6" variant="bordered">
           <Controller
             control={form.control}
             name="enabled"

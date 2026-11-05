@@ -249,7 +249,7 @@ export function AppLayout() {
           >
             <img
               alt=""
-              className="size-10 shrink-0 rounded-xl object-contain"
+              className="size-10 shrink-0 rounded-feature object-contain"
               src={configs['site.logoUrl'] || '/luna-devops-logo.svg'}
             />
             <span className="min-w-0 flex-1 truncate font-semibold">{configs['site.title'] || t('appName')}</span>

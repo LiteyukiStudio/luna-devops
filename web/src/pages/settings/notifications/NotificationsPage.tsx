@@ -11,6 +11,7 @@ import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { ContentTabs } from '@/components/common/content-tabs'
 import { DataList } from '@/components/common/data-list'
 import { FormField as Field } from '@/components/common/form-field'
+import { PageShell } from '@/components/common/page-shell'
 import { ProjectSpaceMultiSelect } from '@/components/common/project-space-select'
 import { StatusBadge, StatusValueBadge } from '@/components/common/status-badge'
 import { Button } from '@/components/ui/button'
@@ -194,7 +195,7 @@ export function NotificationsPage() {
   ], [t])
 
   return (
-    <div className="grid gap-5">
+    <PageShell spacing="compact">
       <ContentTabs
         tabs={[
           { label: t('notificationsPage.channels'), value: 'channels' },
@@ -269,7 +270,7 @@ export function NotificationsPage() {
         onConfirm={() => testChannelTarget && testChannel.mutate(testChannelTarget.id)}
         onOpenChange={open => !open && setTestChannelTarget(null)}
       />
-    </div>
+    </PageShell>
   )
 }
 

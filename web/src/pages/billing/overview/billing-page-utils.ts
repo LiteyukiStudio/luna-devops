@@ -48,7 +48,7 @@ export function amountToneClass(value: string) {
   if (numeric < 0)
     return 'text-destructive'
   if (numeric > 0)
-    return 'text-emerald-600 dark:text-emerald-400'
+    return 'text-success'
   return 'text-muted-foreground'
 }
 

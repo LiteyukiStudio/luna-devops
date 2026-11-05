@@ -349,8 +349,8 @@ function DeploymentSummary({ latestRelease, target, t }: { latestRelease?: Relea
             ? '-'
             : `${target.readyReplicas} / ${target.desiredReplicas}`}
         />
-        <DeploymentResourceItem label={t('deploymentsPage.cpuRequest')} value={target.cpuRequest || '1'} />
-        <DeploymentResourceItem label={t('deploymentsPage.memoryRequest')} value={target.memoryRequest || '1Gi'} />
+        <DeploymentResourceItem label={t('deploymentsPage.cpuRequest')} value={target.cpuRequest || t('common.notConfigured')} />
+        <DeploymentResourceItem label={t('deploymentsPage.memoryRequest')} value={target.memoryRequest || t('common.notConfigured')} />
       </div>
       {latestRelease && (
         <div className="flex items-center gap-2 text-xs text-muted-foreground">

@@ -240,7 +240,7 @@ export function AppTemplatesPage() {
             <div className="relative mt-5 max-w-2xl">
               <Search className="pointer-events-none absolute left-4 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
               <Input
-                className="h-12 rounded-xl border-transparent bg-surface-subtle pl-11 pr-4 shadow-none focus-visible:border-primary-border focus-visible:ring-2"
+                className="h-12 rounded-control border-transparent bg-surface-subtle pl-11 pr-4 shadow-none focus-visible:border-primary-border focus-visible:ring-2"
                 placeholder={t('appTemplatesPage.searchPlaceholder')}
                 value={search}
                 onChange={event => setSearch(event.target.value)}
@@ -350,9 +350,9 @@ function TemplateCard({ canInstallSystemComponent, template, onInstall }: { canI
   const systemComponent = isSystemComponentTemplate(template)
   const installDisabled = systemComponent && !canInstallSystemComponent
   return (
-    <Surface className="group flex min-h-48 flex-col rounded-xl p-5 transition-[background-color,box-shadow,transform] duration-standard ease-emphasized hover:bg-surface-subtle hover:shadow-raised motion-safe:hover:-translate-y-0.5">
+    <Surface className="group flex min-h-48 flex-col p-5 transition-colors duration-standard ease-standard hover:bg-surface-subtle">
       <div className="flex items-start gap-4">
-        <div className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-surface-inset">
+        <div className="flex size-12 shrink-0 items-center justify-center rounded-container bg-surface-inset">
           <img
             alt=""
             className="size-8 object-contain transition-transform duration-standard ease-emphasized motion-safe:group-hover:scale-105"

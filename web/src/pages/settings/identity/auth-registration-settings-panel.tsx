@@ -55,7 +55,7 @@ export function AuthRegistrationSettingsPanel() {
           onClick={() => void form.handleSubmit(values => save.mutate(values))()}
         />
       </PageChromeTools>
-      <Surface className="grid gap-4 rounded-xl p-6" variant="bordered">
+      <Surface className="grid gap-4 p-6" variant="bordered">
         <div className="grid gap-3">
           <Controller
             control={form.control}

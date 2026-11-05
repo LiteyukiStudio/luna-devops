@@ -53,6 +53,6 @@ function statusToneClassName(tone: StatusTone) {
     case 'info':
       return 'border-info-border bg-info-subtle text-info'
     case 'neutral':
-      return 'border-zinc-200 bg-zinc-50 text-zinc-700 dark:border-zinc-800 dark:bg-zinc-900/60 dark:text-zinc-300'
+      return 'border-border bg-muted text-muted-foreground'
   }
 }

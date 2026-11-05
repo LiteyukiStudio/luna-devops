@@ -39,7 +39,6 @@ export function ProjectSpaceMultiSelect({ disabled, projects, value, onChange }:
   const options = useProjectOptions(projects)
   return (
     <SearchMultiSelect
-      className="h-11 rounded-2xl"
       disabled={disabled}
       emptyLabel={t('projectSpaces.emptyTitle')}
       options={options}

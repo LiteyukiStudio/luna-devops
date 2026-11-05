@@ -10,6 +10,7 @@ import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { ContentTabs } from '@/components/common/content-tabs'
 import { ErrorState } from '@/components/common/error-state'
 import { LazyDialogBoundary } from '@/components/common/lazy-dialog-boundary'
+import { PageShell } from '@/components/common/page-shell'
 import { Button } from '@/components/ui/button'
 import { NativeSelect as Select } from '@/components/ui/native-select'
 import { TabsContent } from '@/components/ui/tabs'
@@ -98,7 +99,7 @@ export function ClustersPage() {
   }
 
   return (
-    <div className="grid gap-4">
+    <PageShell spacing="compact">
       <ContentTabs
         tabs={[
           { label: t('clustersPage.runtimeClustersTab'), value: 'clusters' },
@@ -268,6 +269,6 @@ export function ClustersPage() {
           />
         </LazyDialogBoundary>
       )}
-    </div>
+    </PageShell>
   )
 }

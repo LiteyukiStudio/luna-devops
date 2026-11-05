@@ -8,7 +8,6 @@ import { useTranslation } from 'react-i18next'
 import { api, ApiError } from '@/api'
 import { DataList } from '@/components/common/data-list'
 import { ErrorState } from '@/components/common/error-state'
-import { PageShell } from '@/components/common/page-shell'
 import { ProjectVolumeCreateDialog } from '@/components/common/project-volumes/project-volume-create-dialog'
 import { useProjectRuntimeClusters } from '@/components/common/project-volumes/volume-resource-queries'
 import { ProjectVolumeClusterSelect } from '@/components/common/project-volumes/volume-resource-selectors'
@@ -146,18 +145,18 @@ export function ProjectVolumesPage({ capabilities, projectId, ref }: { capabilit
   if (volumes.isError) {
     const forbidden = volumes.error instanceof ApiError && volumes.error.status === 403
     return (
-      <PageShell>
+      <div className="grid min-w-0 gap-section">
         <ErrorState
           description={t(forbidden ? 'projectVolumes.forbiddenDescription' : 'projectVolumes.loadFailedDescription')}
           title={t(forbidden ? 'projectVolumes.forbiddenTitle' : 'projectVolumes.loadFailedTitle')}
         />
-      </PageShell>
+      </div>
     )
   }
 
   const hasFilters = Boolean(search || clusterId || availability || sourceKind || ownership || sortBy !== 'createdAt')
   return (
-    <PageShell>
+    <div className="grid min-w-0 gap-section">
       <Section description={t('projectVolumes.description')} icon={<HardDrive className="size-5" />} title={t('projectVolumes.title')} variant="plain">
         <div className="min-w-0 overflow-hidden rounded-container bg-surface-raised">
           <DataList
@@ -269,7 +268,7 @@ export function ProjectVolumesPage({ capabilities, projectId, ref }: { capabilit
         volumeId={selectedVolume?.id ?? null}
         onOpenChange={open => !open && setSelectedVolume(null)}
       />
-    </PageShell>
+    </div>
   )
 }
 

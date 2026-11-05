@@ -18,7 +18,7 @@ export function AppLoadingState({ logoUrl, title }: { logoUrl: string, title: st
   return (
     <LoadingRegion className="grid min-h-screen place-items-center bg-surface-base p-4">
       <div className="grid justify-items-center gap-4">
-        <img alt="" className="size-12 rounded-xl object-contain" src={logoUrl} />
+        <img alt="" className="size-12 rounded-feature object-contain" src={logoUrl} />
         <div className="grid justify-items-center gap-2">
           <span className="text-sm font-medium text-foreground">{title}</span>
           <Skeleton className="h-2 w-24" />
