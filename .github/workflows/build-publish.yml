@@ -21,38 +21,9 @@ permissions:
   contents: read
 
 jobs:
-  changes:
-    name: Detect affected areas
-    runs-on: ubuntu-24.04
-    outputs:
-      go: ${{ steps.changes.outputs.go }}
-      web: ${{ steps.changes.outputs.web }}
-      agent: ${{ steps.changes.outputs.agent }}
-      docs: ${{ steps.changes.outputs.docs }}
-      helm: ${{ steps.changes.outputs.helm }}
-      dependencies: ${{ steps.changes.outputs.dependencies }}
-      container: ${{ steps.changes.outputs.container }}
-      container_images: ${{ steps.changes.outputs.container_images }}
-    steps:
-      - name: Check out complete history
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          fetch-depth: 0
-
-      - name: Detect affected checks and images
-        id: changes
-        env:
-          GITHUB_EVENT_BEFORE: ${{ github.event.before }}
-        run: bash scripts/ci/detect-changes.sh
-
-      - name: Test change detection
-        run: bash scripts/ci/test-detect-changes.sh
-
   go-quality:
     name: Go quality
-    needs: changes
     if: >-
-      needs.changes.outputs.go == 'true' &&
       !startsWith(github.ref, 'refs/tags/') &&
       github.event_name != 'workflow_dispatch'
     runs-on: ubuntu-24.04
@@ -69,9 +40,7 @@ jobs:
 
   web-quality:
     name: Web quality
-    needs: changes
     if: >-
-      needs.changes.outputs.web == 'true' &&
       !startsWith(github.ref, 'refs/tags/') &&
       github.event_name != 'workflow_dispatch'
     runs-on: ubuntu-24.04
@@ -96,9 +65,7 @@ jobs:
 
   agent-quality:
     name: Agent quality
-    needs: changes
     if: >-
-      needs.changes.outputs.agent == 'true' &&
       !startsWith(github.ref, 'refs/tags/') &&
       github.event_name != 'workflow_dispatch'
     runs-on: ubuntu-24.04
@@ -123,9 +90,7 @@ jobs:
 
   docs-quality:
     name: Docs quality
-    needs: changes
     if: >-
-      needs.changes.outputs.docs == 'true' &&
       !startsWith(github.ref, 'refs/tags/') &&
       github.event_name != 'workflow_dispatch'
     runs-on: ubuntu-24.04
@@ -150,9 +115,7 @@ jobs:
 
   helm-quality:
     name: Helm quality
-    needs: changes
     if: >-
-      needs.changes.outputs.helm == 'true' &&
       !startsWith(github.ref, 'refs/tags/') &&
       github.event_name != 'workflow_dispatch'
     runs-on: ubuntu-24.04
@@ -166,9 +129,7 @@ jobs:
 
   dependency-quality:
     name: Dependency vulnerability checks
-    needs: changes
     if: >-
-      needs.changes.outputs.dependencies == 'true' &&
       !startsWith(github.ref, 'refs/tags/') &&
       github.event_name != 'workflow_dispatch'
     runs-on: ubuntu-24.04
@@ -204,7 +165,6 @@ jobs:
   container:
     name: container-build / ${{ matrix.title }}
     needs:
-      - changes
       - go-quality
       - web-quality
       - agent-quality
@@ -214,8 +174,6 @@ jobs:
       - full-quality
     if: >-
       always() &&
-      needs.changes.result == 'success' &&
-      needs.changes.outputs.container == 'true' &&
       (needs.go-quality.result == 'success' || needs.go-quality.result == 'skipped') &&
       (needs.web-quality.result == 'success' || needs.web-quality.result == 'skipped') &&
       (needs.agent-quality.result == 'success' || needs.agent-quality.result == 'skipped') &&
@@ -231,29 +189,25 @@ jobs:
       contents: read
     strategy:
       fail-fast: false
+      # 每次推送都构建全部镜像，避免被取消或失败的上一次运行遗漏组件。
       matrix:
-        image_key: ${{ fromJSON(needs.changes.outputs.container_images) }}
         include:
-          - image_key: api
-            title: API
+          - title: API
             image: luna-devops
             file: Dockerfile
             target: runtime-embed-web
             build_args: TARGET=api
-          - image_key: worker
-            title: Worker
+          - title: Worker
             image: luna-worker
             file: Dockerfile
             target: runtime-worker
             build_args: TARGET=worker
-          - image_key: agent
-            title: Agent
+          - title: Agent
             image: luna-agent
             file: luna-agent/Dockerfile
             target: runtime
             build_args: ""
-          - image_key: gateway-traffic-probe
-            title: Gateway Traffic Probe
+          - title: Gateway Traffic Probe
             image: devops-gateway-traffic-probe
             file: Dockerfile
             target: runtime-probe
@@ -316,7 +270,6 @@ jobs:
   quality:
     name: Release Quality Gate
     needs:
-      - changes
       - go-quality
       - web-quality
       - agent-quality
@@ -330,7 +283,6 @@ jobs:
     steps:
       - name: Require every executed check to succeed
         env:
-          CHANGES_RESULT: ${{ needs.changes.result }}
           GO_RESULT: ${{ needs.go-quality.result }}
           WEB_RESULT: ${{ needs.web-quality.result }}
           AGENT_RESULT: ${{ needs.agent-quality.result }}
@@ -341,7 +293,7 @@ jobs:
           CONTAINER_RESULT: ${{ needs.container.result }}
         run: |
           for result in \
-            "$CHANGES_RESULT" "$GO_RESULT" "$WEB_RESULT" "$AGENT_RESULT" \
+            "$GO_RESULT" "$WEB_RESULT" "$AGENT_RESULT" \
             "$DOCS_RESULT" "$HELM_RESULT" "$DEPENDENCY_RESULT" "$FULL_RESULT" "$CONTAINER_RESULT"; do
             case "$result" in
               success|skipped) ;;
