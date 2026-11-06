@@ -3,7 +3,7 @@ const aiAssistant = {
     open: '打开 Luna 助手',
     title: 'Luna 助手',
     expand: '展开为全屏',
-    collapse: '收起为浮窗',
+    collapse: '收起到侧边面板',
     page: {
       backToWorkspace: '返回工作区',
       unavailableTitle: '助手当前不可用',

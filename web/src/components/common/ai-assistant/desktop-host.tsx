@@ -1,52 +1,28 @@
-import type { WindowPreference } from './layout'
 import type { AIAssistantView } from './route-state'
-import { useEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Rnd } from 'react-rnd'
-import { safeStorageSet } from '@/lib/safe-storage'
 import { AIAssistantChatSurface } from './chat-surface'
 import { AIConversationList } from './conversation-list'
 import { AIDesktopShell } from './desktop-shell'
-import { AIAssistantLauncher } from './launcher'
-import {
-  clampAssistantPosition,
-  MIN_WINDOW_HEIGHT,
-  MIN_WINDOW_WIDTH,
-  readLauncherPosition,
-  readWindowPreference,
-  saveLauncherPosition,
-  VIEWPORT_GUTTER,
-  WINDOW_STORAGE_KEY,
-} from './layout'
+import { AI_ASSISTANT_PANEL_WIDTH } from './layout'
 import { useAIAssistantRuntime } from './runtime-context'
 
 interface AIAssistantDesktopHostProps {
   view?: AIAssistantView
-  /** 把浮窗展开为全页助手；由布局层负责记住工作区位置并导航。 */
+  /** 把停靠面板展开为全页助手；由布局层负责记住工作区位置并导航。 */
   onExpand?: () => void
   onViewChange?: (view: AIAssistantView) => void
 }
 
-function clampWindowPreference(preference: WindowPreference): WindowPreference {
-  const availableWidth = Math.max(MIN_WINDOW_WIDTH, window.innerWidth - VIEWPORT_GUTTER * 2)
-  const availableHeight = Math.max(MIN_WINDOW_HEIGHT, window.innerHeight - VIEWPORT_GUTTER * 2)
-  const width = Math.min(availableWidth, Math.max(MIN_WINDOW_WIDTH, preference.width))
-  const height = Math.min(availableHeight, Math.max(MIN_WINDOW_HEIGHT, preference.height))
-  return {
-    ...clampAssistantPosition(preference, width, height),
-    width,
-    height,
-  }
-}
-
+/**
+ * 桌面端右侧停靠面板：宽屏（xl）并排挤压工作区，较窄桌面覆盖在工作区右侧。
+ * 入口在顶栏右上角，关闭后焦点回到该入口。
+ */
 export function AIAssistantDesktopHost({ view, onExpand, onViewChange }: AIAssistantDesktopHostProps = {}) {
   const { t } = useTranslation()
   const runtime = useAIAssistantRuntime()
-  const triggerRef = useRef<HTMLButtonElement>(null)
   const conversationButtonRef = useRef<HTMLButtonElement>(null)
   const [internalView, setInternalView] = useState<AIAssistantView>('chat')
-  const [preference, setPreference] = useState(readWindowPreference)
-  const [launcherPosition, setLauncherPosition] = useState(readLauncherPosition)
   const assistantView = view ?? internalView
   const setAssistantView = (nextView: AIAssistantView) => {
     if (view === undefined)
@@ -54,46 +30,14 @@ export function AIAssistantDesktopHost({ view, onExpand, onViewChange }: AIAssis
     onViewChange?.(nextView)
   }
 
-  useEffect(() => {
-    if (!runtime.enabled)
-      return
-    safeStorageSet(WINDOW_STORAGE_KEY, JSON.stringify(preference))
-  }, [preference, runtime.enabled])
-  useEffect(() => {
-    if (!runtime.enabled)
-      return
-    const handleResize = () => {
-      setPreference(clampWindowPreference)
-      setLauncherPosition(readLauncherPosition())
-    }
-    window.addEventListener('resize', handleResize)
-    return () => window.removeEventListener('resize', handleResize)
-  }, [runtime.enabled])
-
-  if (!runtime.enabled)
+  if (!runtime.enabled || !runtime.open)
     return null
-
-  if (!runtime.open) {
-    return (
-      <AIAssistantLauncher
-        ref={triggerRef}
-        label={t('aiAssistant.open')}
-        position={launcherPosition}
-        onOpen={runtime.openAssistant}
-        onPositionChange={(nextPosition) => {
-          setLauncherPosition(nextPosition)
-          saveLauncherPosition(nextPosition)
-        }}
-      />
-    )
-  }
 
   const close = () => {
     runtime.closeAssistant()
-    window.setTimeout(() => triggerRef.current?.focus(), 0)
+    window.setTimeout(() => document.querySelector<HTMLElement>('[data-ai-assistant-trigger]')?.focus(), 0)
   }
   const showConversations = assistantView === 'conversations'
-  const panelPreference = clampWindowPreference(preference)
   const chat = (
     <AIAssistantChatSurface
       conversationButtonRef={conversationButtonRef}
@@ -106,51 +50,32 @@ export function AIAssistantDesktopHost({ view, onExpand, onViewChange }: AIAssis
   )
 
   return (
-    <div className="pointer-events-none fixed inset-0 z-40">
-      <Rnd
-        bounds="parent"
-        cancel="button,input,textarea,select,a,[role='button'],[role='menuitem']"
-        className="pointer-events-auto"
-        dragHandleClassName="ai-assistant-drag-handle"
-        maxHeight={`calc(100dvh - ${VIEWPORT_GUTTER * 2}px)`}
-        maxWidth={`calc(100vw - ${VIEWPORT_GUTTER * 2}px)`}
-        minHeight={MIN_WINDOW_HEIGHT}
-        minWidth={MIN_WINDOW_WIDTH}
-        position={{ x: panelPreference.x, y: panelPreference.y }}
-        size={{ width: panelPreference.width, height: panelPreference.height }}
-        onDragStop={(_, data) => setPreference(current => ({ ...current, x: data.x, y: data.y }))}
-        onResizeStop={(_, __, element, ___, position) => {
-          setPreference(clampWindowPreference({
-            x: position.x,
-            y: position.y,
-            width: element.offsetWidth,
-            height: element.offsetHeight,
-          }))
+    <aside
+      aria-label={t('aiAssistant.title')}
+      className="fixed inset-y-2 right-2 z-40 flex max-w-[calc(100vw-1rem)] shrink-0 overflow-hidden rounded-container border border-border bg-surface text-[13px] shadow-overlay animate-[luna-devops-sheet-right-in_260ms_var(--ease-emphasized)] motion-reduce:animate-none xl:static xl:my-2 xl:mr-2 xl:shadow-sm"
+      data-ai-assistant-panel
+      style={{ width: AI_ASSISTANT_PANEL_WIDTH }}
+    >
+      <AIDesktopShell
+        chat={chat}
+        closeLabel={t('aiAssistant.conversations.close')}
+        conversationsOpen={showConversations}
+        initialWidth={AI_ASSISTANT_PANEL_WIDTH}
+        listButtonRef={conversationButtonRef}
+        conversationList={(variant) => {
+          const { refetch, ...conversationListProps } = runtime.conversationListProps
+          return (
+            <AIConversationList
+              {...conversationListProps}
+              variant={variant}
+              onBack={() => setAssistantView('chat')}
+              onRetry={() => void refetch()}
+            />
+          )
         }}
-      >
-        <section aria-label={t('aiAssistant.title')} className="relative flex size-full overflow-hidden rounded-container border border-border bg-surface text-[13px] shadow-overlay">
-          <AIDesktopShell
-            chat={chat}
-            closeLabel={t('aiAssistant.conversations.close')}
-            conversationsOpen={showConversations}
-            initialWidth={panelPreference.width}
-            listButtonRef={conversationButtonRef}
-            conversationList={(variant) => {
-              const { refetch, ...conversationListProps } = runtime.conversationListProps
-              return (
-                <AIConversationList
-                  {...conversationListProps}
-                  variant={variant}
-                  onBack={() => setAssistantView('chat')}
-                  onRetry={() => void refetch()}
-                />
-              )
-            }}
-            onCloseConversations={() => setAssistantView('chat')}
-            onOpenConversations={() => setAssistantView('conversations')}
-          />
-        </section>
-      </Rnd>
-    </div>
+        onCloseConversations={() => setAssistantView('chat')}
+        onOpenConversations={() => setAssistantView('conversations')}
+      />
+    </aside>
   )
 }

@@ -3,7 +3,7 @@ const aiAssistant = {
     open: 'Luna アシスタントを開く',
     title: 'Luna アシスタント',
     expand: '全画面に展開',
-    collapse: 'フローティングウィンドウに戻す',
+    collapse: 'サイドパネルに戻す',
     page: {
       backToWorkspace: 'ワークスペースに戻る',
       unavailableTitle: 'アシスタントを利用できません',

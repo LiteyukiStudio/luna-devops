@@ -51,7 +51,7 @@ export function AIAssistantChatSurface({
         'flex shrink-0 select-none items-center gap-1 border-b border-border pt-[env(safe-area-inset-top)]',
         page
           ? 'h-[calc(3.5rem+env(safe-area-inset-top))] pl-[max(0.5rem,env(safe-area-inset-left))] pr-[max(0.5rem,env(safe-area-inset-right))] pointer-fine:h-[calc(3rem+env(safe-area-inset-top))]'
-          : 'ai-assistant-drag-handle h-12 px-2 sm:cursor-move sm:touch-none',
+          : 'h-12 px-2',
       )}
       >
         <Button

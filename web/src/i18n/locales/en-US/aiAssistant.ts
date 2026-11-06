@@ -3,7 +3,7 @@ const aiAssistant = {
     open: 'Open Luna Assistant',
     title: 'Luna Assistant',
     expand: 'Expand to full screen',
-    collapse: 'Collapse to floating window',
+    collapse: 'Collapse to side panel',
     page: {
       backToWorkspace: 'Back to workspace',
       unavailableTitle: 'Assistant unavailable',

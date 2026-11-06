@@ -12,14 +12,6 @@ import { usePublicConfig } from '@/app/public-config-context'
 import { useSession } from '@/app/session-context'
 import { AccountMenu } from '@/components/common/account-menu'
 import { AIAssistantDesktopHost } from '@/components/common/ai-assistant/desktop-host'
-import { AIAssistantLauncher } from '@/components/common/ai-assistant/launcher'
-import {
-  clampAssistantPosition,
-  LAUNCHER_SIZE,
-  PAGE_LAUNCHER_GUTTER,
-  readLauncherPosition,
-  saveLauncherPosition,
-} from '@/components/common/ai-assistant/layout'
 import { useAIAssistantPresentationMode } from '@/components/common/ai-assistant/presentation-mode'
 import {
   AI_ASSISTANT_ROUTE_PATH,
@@ -68,8 +60,6 @@ interface NavItem {
   icon: typeof LayoutDashboard
   permission?: string
   activeMatch?: (pathname: string) => boolean
-  /** 动作型菜单项：不跳转路由、无选中态，点击后派发对应动作 */
-  action?: 'ai-assistant'
 }
 
 interface NavSection {
@@ -87,7 +77,6 @@ const navSections: NavSection[] = [
       { to: '/projects', labelKey: 'projects', icon: FolderKanban, activeMatch: pathname => pathname === '/projects' || pathname.startsWith('/projects/') },
       { to: '/app-templates', labelKey: 'appTemplates', icon: Store },
       { to: '/events', labelKey: 'events', icon: ScrollText },
-      { to: '/ai-assistant', labelKey: 'aiAssistantNav', icon: Sparkles, action: 'ai-assistant' },
     ],
   },
   {
@@ -248,7 +237,7 @@ export function AppLayout() {
       return null
 
     return navSections.map((section, index) => {
-      const items = section.items.filter(item => (!item.permission || user.permissions.includes(item.permission)) && (item.action !== 'ai-assistant' || enabledAICapabilities))
+      const items = section.items.filter(item => !item.permission || user.permissions.includes(item.permission))
       if (items.length === 0)
         return null
 
@@ -258,25 +247,15 @@ export function AppLayout() {
           <SidebarMenu>
             {items.map(item => (
               <SidebarMenuItem key={item.to}>
-                {item.action
-                  ? (
-                      <AIAssistantNavButton
-                        icon={item.icon}
-                        label={t(item.labelKey)}
-                        onNavigate={onNavigate}
-                      />
-                    )
-                  : (
-                      <NavLink
-                        className={({ isActive }) => sidebarMenuButtonClassName(isActive || item.activeMatch?.(location.pathname))}
-                        title={t(item.labelKey)}
-                        to={item.to}
-                        onClick={onNavigate}
-                      >
-                        <item.icon className="shrink-0" />
-                        <span className="min-w-0 flex-1 truncate text-sm leading-none">{t(item.labelKey)}</span>
-                      </NavLink>
-                    )}
+                <NavLink
+                  className={({ isActive }) => sidebarMenuButtonClassName(isActive || item.activeMatch?.(location.pathname))}
+                  title={t(item.labelKey)}
+                  to={item.to}
+                  onClick={onNavigate}
+                >
+                  <item.icon className="shrink-0" />
+                  <span className="min-w-0 flex-1 truncate text-sm leading-none">{t(item.labelKey)}</span>
+                </NavLink>
               </SidebarMenuItem>
             ))}
           </SidebarMenu>
@@ -431,6 +410,7 @@ export function AppLayout() {
                     </div>
                     <CommandPalette />
                     <InboxTrigger />
+                    <AIAssistantTopbarButton />
                   </header>
                   <main className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-page-inline py-page-block">
                     <div className="flex min-h-full min-w-0 flex-col gap-group">
@@ -457,7 +437,6 @@ export function AppLayout() {
 }
 
 function AIAssistantEntryHost() {
-  const { t } = useTranslation()
   const location = useLocation()
   const navigate = useNavigate()
   const runtime = useAIAssistantRuntime()
@@ -498,61 +477,34 @@ function AIAssistantEntryHost() {
   if (runtime.open)
     return <div aria-hidden="true" className="fixed inset-0 z-50 bg-surface" data-ai-assistant-transition />
 
-  return (
-    <AIAssistantPageLauncher
-      label={t('aiAssistant.open')}
-      onOpen={() => {
-        runtime.rememberWorkspaceLocation(location)
-        navigate(AI_ASSISTANT_ROUTE_PATH, {
-          state: createAIAssistantRouteState(location),
-        })
-      }}
-    />
-  )
+  return null
 }
 
-function AIAssistantPageLauncher({ label, onOpen }: { label: string, onOpen: () => void }) {
-  const [position, setPosition] = useState(() => readLauncherPosition(PAGE_LAUNCHER_GUTTER))
-
-  useEffect(() => {
-    const followViewport = () => setPosition(readLauncherPosition(PAGE_LAUNCHER_GUTTER))
-    window.addEventListener('resize', followViewport)
-    return () => window.removeEventListener('resize', followViewport)
-  }, [])
-
-  return (
-    <AIAssistantLauncher
-      label={label}
-      position={position}
-      onOpen={onOpen}
-      onPositionChange={(nextPosition) => {
-        const clamped = clampAssistantPosition(nextPosition, LAUNCHER_SIZE, LAUNCHER_SIZE, PAGE_LAUNCHER_GUTTER)
-        setPosition(clamped)
-        saveLauncherPosition(clamped)
-      }}
-    />
-  )
-}
-
-function AIAssistantNavButton({ icon: Icon, label, onNavigate }: {
-  icon: typeof LayoutDashboard
-  label: string
-  onNavigate?: () => void
-}) {
+/** 顶栏右上角的助手入口：桌面窗口模式切换右侧停靠面板，页面模式进入全页助手。 */
+function AIAssistantTopbarButton() {
+  const { t } = useTranslation()
   const location = useLocation()
   const navigate = useNavigate()
   const runtime = useAIAssistantRuntime()
   const presentationMode = useAIAssistantPresentationMode(location.pathname)
+  if (!runtime.enabled)
+    return null
 
+  const open = presentationMode === 'window' && runtime.open
   return (
-    <button
-      className={sidebarMenuButtonClassName(false)}
-      title={label}
-      type="button"
+    <Button
+      aria-pressed={open}
+      className={cn('h-8 shrink-0 gap-1.5 px-2.5', open && 'border-primary-border bg-primary-subtle text-primary-text hover:bg-primary-subtle-hover')}
+      data-ai-assistant-trigger
+      size="sm"
+      title={t('aiAssistant.open')}
+      variant="outline"
       onClick={() => {
-        onNavigate?.()
         if (presentationMode === 'window') {
-          runtime.openAssistant()
+          if (runtime.open)
+            runtime.closeAssistant()
+          else
+            runtime.openAssistant()
           return
         }
         runtime.rememberWorkspaceLocation(location)
@@ -561,9 +513,9 @@ function AIAssistantNavButton({ icon: Icon, label, onNavigate }: {
         })
       }}
     >
-      <Icon className="size-4 shrink-0" />
-      <span className="min-w-0 flex-1 truncate text-left text-sm leading-none">{label}</span>
-    </button>
+      <Sparkles aria-hidden="true" className="size-4 text-primary-text" />
+      <span className="max-sm:sr-only">{t('aiAssistantNav')}</span>
+    </Button>
   )
 }
 

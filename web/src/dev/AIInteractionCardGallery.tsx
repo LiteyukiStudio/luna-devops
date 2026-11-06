@@ -1,16 +1,10 @@
-import { useState } from 'react'
-import { useTranslation } from 'react-i18next'
 import { extremeInteractionCardFixture, interactionCardTemplateFixtures, templateSelectionInteractionCardFixture } from '@/components/common/ai-assistant/interaction-card-fixtures'
 import { AIInteractionCards } from '@/components/common/ai-assistant/interaction-cards'
-import { AIAssistantLauncher } from '@/components/common/ai-assistant/launcher'
 import { AIAssistantTimeline } from '@/components/common/ai-assistant/timeline'
-import { Button } from '@/components/ui/button'
 
 export function AIInteractionCardGallery() {
   const allFixtures = [...Object.values(interactionCardTemplateFixtures), templateSelectionInteractionCardFixture, extremeInteractionCardFixture]
   const requestedFixture = new URLSearchParams(window.location.search).get('fixture')
-  if (requestedFixture === 'launcher')
-    return <LauncherFixture />
   if (requestedFixture === 'messages')
     return <MessageActionsFixture />
   const fixtures = requestedFixture
@@ -47,31 +41,6 @@ function MessageActionsFixture() {
           onRetry={() => {}}
         />
       </section>
-    </main>
-  )
-}
-
-function LauncherFixture() {
-  const { t } = useTranslation()
-  const [opened, setOpened] = useState(false)
-  const [position, setPosition] = useState({ x: 24, y: 24 })
-
-  return (
-    <main className="grid min-h-screen place-items-center bg-background">
-      {!opened && (
-        <AIAssistantLauncher
-          label={t('aiAssistant.open')}
-          position={position}
-          onOpen={() => setOpened(true)}
-          onPositionChange={setPosition}
-        />
-      )}
-      {opened && (
-        <section aria-label={t('aiAssistant.title')} className="grid gap-4 rounded-container border border-border bg-surface p-6 shadow-overlay">
-          <p>{t('aiAssistant.title')}</p>
-          <Button onClick={() => setOpened(false)}>{t('common.close')}</Button>
-        </section>
-      )}
     </main>
   )
 }

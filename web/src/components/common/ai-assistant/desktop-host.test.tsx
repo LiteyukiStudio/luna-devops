@@ -1,4 +1,3 @@
-import type { ReactNode } from 'react'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -9,10 +8,6 @@ const runtime = vi.hoisted(() => ({
   enabled: true,
   open: true,
   openAssistant: vi.fn(),
-}))
-
-vi.mock('react-rnd', () => ({
-  Rnd: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 }))
 
 vi.mock('./runtime-context', () => ({

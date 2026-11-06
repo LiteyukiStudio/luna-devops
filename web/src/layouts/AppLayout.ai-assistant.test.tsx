@@ -122,22 +122,31 @@ describe('app layout ai assistant route', () => {
       expect(usersNavigation).not.toBeInTheDocument()
   })
 
-  it('opens the assistant window directly from the navigation entry', async () => {
+  it('toggles the docked assistant panel from the top bar entry', async () => {
     const user = userEvent.setup()
-    renderAppLayout('/dashboard')
+    const { rerenderApp } = renderAppLayout('/dashboard')
 
-    await user.click(screen.getByRole('button', { name: i18next.t('aiAssistantNav') }))
-
+    const trigger = screen.getByRole('button', { name: i18next.t('aiAssistantNav') })
+    expect(trigger).toHaveAttribute('aria-pressed', 'false')
+    expect(document.querySelector('nav [data-ai-assistant-trigger], [data-slot="sidebar"] [data-ai-assistant-trigger]')).not.toBeInTheDocument()
+    await user.click(trigger)
     expect(assistantMocks.runtime.openAssistant).toHaveBeenCalledOnce()
+
+    assistantMocks.runtime.open = true
+    rerenderApp()
+    const pressedTrigger = screen.getByRole('button', { name: i18next.t('aiAssistantNav') })
+    expect(pressedTrigger).toHaveAttribute('aria-pressed', 'true')
+    await user.click(pressedTrigger)
+    expect(assistantMocks.runtime.closeAssistant).toHaveBeenCalledOnce()
   })
 
-  it('opens the assistant page from the shared launcher', async () => {
+  it('opens the assistant page from the top bar entry in page mode', async () => {
     const user = userEvent.setup()
     assistantMocks.presentationMode = 'page'
     renderAppLayout('/dashboard')
 
-    const launcher = screen.getByRole('button', { name: i18next.t('aiAssistant.open') })
-    launcher.focus()
+    const trigger = screen.getByRole('button', { name: i18next.t('aiAssistantNav') })
+    trigger.focus()
     await user.keyboard('{Enter}')
 
     expect(assistantMocks.runtime.rememberWorkspaceLocation).toHaveBeenCalledWith(expect.objectContaining({ pathname: '/dashboard' }))
