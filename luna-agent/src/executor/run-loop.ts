@@ -1,3 +1,4 @@
+import type { DocsKnowledge } from "../knowledge/docs-knowledge.js"
 import type { Span } from "@opentelemetry/api"
 import type { ClaimedRun, RunCheckpointState, RunToolVerification } from "../domain.js"
 import { genAIInputMessages } from "../genai-semconv.js"
@@ -41,8 +42,9 @@ export class RunLoop {
     private readonly tools: ToolOrchestrator,
     private readonly streamBus: RunStreamBus,
     verificationPollIntervalMs = 1_500,
+    docsKnowledge?: DocsKnowledge,
   ) {
-    this.toolStep = new ToolStepRunner(repository, modelRuntime, tools)
+    this.toolStep = new ToolStepRunner(repository, modelRuntime, tools, docsKnowledge)
     this.finalizer = new RunFinalizer(repository, streamBus, modelRuntime)
     this.verification = new ToolVerificationRunner(tools, verificationPollIntervalMs)
   }

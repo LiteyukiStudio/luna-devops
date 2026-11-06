@@ -63,6 +63,9 @@ ai:
   existingSecret: ""
   internalSecretKey: ai-internal-secret
   agent:
+    # Optional public docs site origin. When set, the assistant cites links to the
+    # bundled docs sections it answers from (for example https://docs.example.com).
+    docsBaseUrl: ""
     # High-sensitivity diagnostics. Exports redacted model and tool content.
     observabilityCaptureContent: false
     # Optional PostgreSQL query spans for short diagnostic windows.

@@ -1,5 +1,38 @@
 [
   {
+    "type": "section-header",
+    "label": "Configuration Reference"
+  },
+  {
+    "type": "file",
+    "name": "image-templates",
+    "label": "Image Repository and Tag Templates"
+  },
+  {
+    "type": "file",
+    "name": "build-variables",
+    "label": "Build Args and Build Variables"
+  },
+  {
+    "type": "file",
+    "name": "runtime-variables",
+    "label": "Runtime Variables and References"
+  },
+  {
+    "type": "file",
+    "name": "app-template-parameters",
+    "label": "App Template Parameters"
+  },
+  {
+    "type": "file",
+    "name": "field-formats",
+    "label": "Field Formats and Ranges"
+  },
+  {
+    "type": "section-header",
+    "label": "Platform Reference"
+  },
+  {
     "type": "file",
     "name": "compatibility",
     "label": "Compatibility"

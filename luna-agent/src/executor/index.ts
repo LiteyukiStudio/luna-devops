@@ -1,3 +1,4 @@
+import type { DocsKnowledge } from "../knowledge/docs-knowledge.js"
 import type { RunExecutionSnapshot } from "../domain.js"
 import type { ModelRuntime } from "../model-runtime.js"
 import { RunStateConflictError, type Repository } from "../persistence/repository.js"
@@ -29,6 +30,7 @@ export type RunExecutorDependencies = {
   catalogRegistry: ToolCatalogRegistry
   streamBus: RunStreamBus
   verificationPollIntervalMs?: number
+  docsKnowledge?: DocsKnowledge
 }
 
 export class RunExecutor {
@@ -56,7 +58,7 @@ export class RunExecutor {
     this.catalogRegistry = input.catalogRegistry
     this.streamBus = input.streamBus
     this.runtimeSettings = runtimeSettingsSnapshot(input.initialRuntimeSettings)
-    this.runLoop = new RunLoop(input.repository, input.modelRuntime, input.tools, input.streamBus, input.verificationPollIntervalMs)
+    this.runLoop = new RunLoop(input.repository, input.modelRuntime, input.tools, input.streamBus, input.verificationPollIntervalMs, input.docsKnowledge)
     const currentConfig = this.runtimeConfig.current()
     const currentCatalog = this.runtimeConfig.currentCatalog()
     if (!currentConfig || !currentCatalog) throw new Error("ai.provider_config_unavailable")

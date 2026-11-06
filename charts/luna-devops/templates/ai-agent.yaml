@@ -98,6 +98,10 @@ spec:
                 secretKeyRef:
                   name: {{ include "luna-devops.aiSecretName" . }}
                   key: {{ .Values.ai.internalSecretKey }}
+            {{- if .Values.ai.agent.docsBaseUrl }}
+            - name: AI_DOCS_BASE_URL
+              value: {{ .Values.ai.agent.docsBaseUrl | quote }}
+            {{- end }}
             - name: AI_OBSERVABILITY_CAPTURE_CONTENT
               value: {{ .Values.ai.agent.observabilityCaptureContent | quote }}
             - name: AI_OBSERVABILITY_CAPTURE_DATABASE_SPANS

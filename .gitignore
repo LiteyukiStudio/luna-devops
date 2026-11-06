@@ -44,6 +44,7 @@ web/node_modules/
 tests/node_modules/
 web/dist/
 luna-agent/dist/
+luna-agent/knowledge/
 web/dist-ssr/
 release/
 web/.vite/

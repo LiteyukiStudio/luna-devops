@@ -10,7 +10,7 @@ App Marketplace provides curated templates grouped into seven categories: databa
 4. Enter required parameters. Leave platform-generated passwords blank when supported.
 5. Choose whether to deploy immediately and confirm installation.
 
-The template creates an application and deployment and can create its first Release. A multi-component template creates one set per component; see [Multi-component templates](#multi-component-templates). Secret parameters are written only to the secret store and are never displayed in the page or installation result.
+The template creates an application and deployment and can create its first Release. A multi-component template creates one set per component; see [Multi-component templates](#multi-component-templates). Secret parameters are written only to the secret store and are never displayed in the page or installation result. For defaults, auto-generation, and required-parameter rules, see [App Marketplace Template Parameters](../reference/app-template-parameters).
 
 The Redis password is optional. A long, random password is recommended; leaving it blank runs Redis without password authentication. When provided, the password reaches the workload only through a Secret, and its plaintext is not written to ordinary environment settings or the installation-value snapshot.
 

@@ -77,6 +77,8 @@ const schema = z.object({
     message: "must contain at least 32 UTF-8 bytes",
   })),
   LUNA_API_BASE_URL: optionalValue(httpOrigin),
+  /** 公开文档站根地址；设置后 search_docs / read_doc 结果附带可点击的文档链接。 */
+  AI_DOCS_BASE_URL: optionalValue(httpURL),
   OTEL_EXPORTER_OTLP_ENDPOINT: optionalValue(httpURL),
   OTEL_RESOURCE_ATTRIBUTES: optionalOTELKeyValueList,
   OTEL_EXPORTER_OTLP_HEADERS: optionalOTELKeyValueList,

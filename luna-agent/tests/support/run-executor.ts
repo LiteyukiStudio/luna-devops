@@ -38,5 +38,6 @@ export function testExecutor(
     initialRuntimeSettings: input.initialRuntimeSettings ?? defaultRuntimeSettings,
     streamBus: input.streamBus ?? new InMemoryRunStreamBus(repository),
     ...(input.verificationPollIntervalMs === undefined ? {} : { verificationPollIntervalMs: input.verificationPollIntervalMs }),
+    ...(input.docsKnowledge ? { docsKnowledge: input.docsKnowledge } : {}),
   })
 }

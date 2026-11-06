@@ -40,7 +40,9 @@ coverage/
 
 # API/worker images do not need project documentation, reports, charts, or tests.
 Doc/
-docs/
+# 只有 Agent 镜像需要公开文档原文（构建时打包为检索知识库）
+docs/*
+!docs/docs
 notes/
 charts/
 tests/
@@ -60,6 +62,7 @@ web/*.local
 
 # Agent 镜像从独立 lockfile 安装依赖，本地依赖、构建和覆盖率产物不进入上下文。
 luna-agent/node_modules/
+luna-agent/knowledge/
 luna-agent/dist/
 luna-agent/coverage/
 luna-agent/*.local

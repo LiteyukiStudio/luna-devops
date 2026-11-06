@@ -12,6 +12,8 @@ Select **New deploy config** on the application's **Deployments** tab, or choose
 - Container port, per-replica CPU quota, per-replica memory quota, and replicas.
 - Image pull policy and required health checks.
 
+For allowed values, formats, and defaults of each field, see [Field Formats and Ranges](../../reference/field-formats).
+
 The **Idle / Light / Moderate / Heavy / Full** badge beside each runtime cluster is a current pressure overview refreshed about every 10 seconds. Regular users see only the level, not exact cluster capacity or other workload usage. **Unavailable** means Luna DevOps could not complete the observation. The level helps choose a cluster but does not guarantee that Kubernetes can schedule a particular Pod.
 
 When the runtime cluster is left at the **Platform default cluster** or **current default cluster** option, the deployment runs on the global runtime cluster marked as default. If no cluster is marked as default, the earliest added global runtime cluster is used. Project-space and personal runtime clusters are never used implicitly; select them explicitly in the deployment. The cluster shown on the Deployments tab is the cluster Luna DevOps actually deploys to, observes, and meters. When no runtime cluster is available, the deployment shows **No cluster**.

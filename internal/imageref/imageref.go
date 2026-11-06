@@ -2,6 +2,7 @@ package imageref
 
 import (
 	"net/url"
+	"sort"
 	"strings"
 
 	"github.com/LiteyukiStudio/devops/internal/model"
@@ -189,6 +190,18 @@ func staticImageTemplateValues(registry model.ArtifactRegistry, project model.Pr
 		"stage":                 stageValue(target),
 		"target":                targetValue(target),
 	}
+}
+
+// RepositoryTemplateVariables 返回镜像仓库模板可用的全部变量名（不含花括号），按字典序排列。
+// 它与仓库模板渲染共用 staticImageTemplateValues，是这组变量的唯一事实源；公开文档一致性测试也读取它。
+func RepositoryTemplateVariables() []string {
+	values := staticImageTemplateValues(model.ArtifactRegistry{}, model.Project{}, model.Application{}, model.DeploymentTarget{})
+	names := make([]string, 0, len(values))
+	for name := range values {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }
 
 func replaceTemplatePlaceholders(template string, values map[string]string) string {

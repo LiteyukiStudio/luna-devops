@@ -1,5 +1,38 @@
 [
   {
+    "type": "section-header",
+    "label": "配置参考"
+  },
+  {
+    "type": "file",
+    "name": "image-templates",
+    "label": "镜像仓库与 Tag 模板"
+  },
+  {
+    "type": "file",
+    "name": "build-variables",
+    "label": "构建参数与构建变量"
+  },
+  {
+    "type": "file",
+    "name": "runtime-variables",
+    "label": "运行环境变量与引用"
+  },
+  {
+    "type": "file",
+    "name": "app-template-parameters",
+    "label": "应用市场模板参数"
+  },
+  {
+    "type": "file",
+    "name": "field-formats",
+    "label": "字段格式与取值范围"
+  },
+  {
+    "type": "section-header",
+    "label": "平台参考"
+  },
+  {
     "type": "file",
     "name": "compatibility",
     "label": "兼容范围"

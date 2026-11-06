@@ -97,7 +97,14 @@ assert_output "${output}" 'container_images=["agent"]'
 run_case 'docs/docs/zh/index.md' "${output}"
 assert_output "${output}" 'docs=true'
 assert_output "${output}" 'go=false'
-assert_output "${output}" 'container=false'
+# 公开文档打包进 Agent 检索知识库，文档变化需要重建 Agent 镜像。
+assert_output "${output}" 'agent=true'
+assert_output "${output}" 'container_images=["agent"]'
+
+: > "${output}"
+run_case 'docs/theme/index.tsx' "${output}"
+assert_output "${output}" 'docs=true'
+assert_output "${output}" 'agent=false'
 assert_output "${output}" 'container_images=[]'
 
 for documentation_path in README.md docs-internal/README.md reports/audit.html; do

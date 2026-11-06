@@ -9,11 +9,12 @@
     "node": ">=24"
   },
   "scripts": {
-    "dev": "tsx watch --env-file-if-exists=../.env --env-file-if-exists=.env.local src/index.ts",
-    "build": "tsc -p tsconfig.build.json",
+    "dev": "node scripts/bundle-docs.ts && tsx watch --env-file-if-exists=../.env --env-file-if-exists=.env.local src/index.ts",
+    "bundle:docs": "node scripts/bundle-docs.ts",
+    "build": "node scripts/bundle-docs.ts && tsc -p tsconfig.build.json",
     "lint": "eslint .",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run",
+    "test": "node scripts/bundle-docs.ts && vitest run",
     "start": "node dist/index.js"
   },
   "dependencies": {

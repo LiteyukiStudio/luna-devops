@@ -1,3 +1,5 @@
+import { bundledDocsKnowledge, type DocsKnowledge } from "../knowledge/docs-knowledge.js"
+import { listDocsInput, readDocInput, searchDocsInput, type ListDocsInput, type ReadDocInput, type SearchDocsInput } from "../tools/docs-tools.js"
 import type { InteractionCardValidationIssue } from "@luna-devops/ai-interaction-card-contract"
 import type { ClaimedRun, RunCheckpoint, RunCompletionBlocker, RunToolVerification } from "../domain.js"
 import { genAIToolCallObject, genAIToolSpanAttributes } from "../genai-semconv.js"
@@ -90,6 +92,7 @@ export class ToolStepRunner {
     private readonly repository: Repository,
     private readonly modelRuntime: ModelRuntime,
     private readonly tools: ToolOrchestrator,
+    private readonly docsKnowledge?: DocsKnowledge,
   ) {
     this.cards = new CardGenerationService(repository)
     this.internalTools = new InternalToolHandlers(repository)
@@ -397,6 +400,12 @@ export class ToolStepRunner {
         }, runtimeSettings))
         continue
       }
+      if (toolCall.operationId === "search_docs" || toolCall.operationId === "list_docs" || toolCall.operationId === "read_doc") {
+        const docsResult = await this.runDocsTool(run, toolCall)
+        if (docsResult.status === "failed") recoverableToolError = true
+        state.continuationMessages.push(this.toolResult(toolCall, docsResult, runtimeSettings))
+        continue
+      }
       if (toolCall.operationId === "rename_conversation") {
         const renamed = await this.traceInternalTool("rename_conversation", run.id, toolCall.arguments, () => this.internalTools.renameConversation(run.id, run.turnId, run.conversationId, toolCall.arguments), toolCall.id)
         if (renamed) {
@@ -654,6 +663,46 @@ export class ToolStepRunner {
 
   private toolResult(toolCall: ModelToolCall & { id: string }, result: Record<string, unknown>, runtimeSettings: RuntimeSettings): ModelMessage {
     return toolResultMessage(toolCall, result, runtimeSettings.toolResultPayloadBudget)
+  }
+
+  /** 公开文档检索与读取：只读、无平台副作用，结果按普通内部工具记录到时间线。 */
+  private async runDocsTool(run: ClaimedRun, toolCall: ModelToolCall & { id: string }): Promise<Record<string, unknown>> {
+    const operationId = toolCall.operationId as "search_docs" | "list_docs" | "read_doc"
+    const parsed = operationId === "search_docs"
+      ? searchDocsInput.safeParse(toolCall.arguments)
+      : operationId === "list_docs" ? listDocsInput.safeParse(toolCall.arguments) : readDocInput.safeParse(toolCall.arguments)
+    if (!parsed.success) {
+      const errorCode = "ai.tool_arguments_invalid"
+      const issues = parsed.error.issues.map(issue => ({ path: issue.path, code: issue.code }))
+      await this.internalTools.recordToolCall(run.id, run.turnId, operationId, toolCall.arguments, "failed", { issues }, errorCode, toolCall.id)
+      return { status: "failed", errorCode, issues, retryable: true, guidance: `请按 issues 修正参数后，在当前 Run 内重试一次 ${operationId}。` }
+    }
+    const startedAt = performance.now()
+    const knowledge = this.docsKnowledge ?? bundledDocsKnowledge()
+    const result = await this.traceInternalTool(operationId, run.id, parsed.data, async () => {
+      if (operationId === "search_docs") {
+        const input = parsed.data as SearchDocsInput
+        const items = knowledge.search(input.query, input.locale, input.limit)
+        return items.length
+          ? { status: "succeeded", docsVersion: knowledge.digest, items, guidance: "这些是与问题最相关的文档章节摘要。回答配置语法、变量或限制前，用 read_doc 读取对应章节原文核对；引用时附上文档标题或链接。" }
+          : { status: "no_matches", docsVersion: knowledge.digest, items, guidance: "公开文档中没有匹配章节。可换用更具体的名词检索一次；仍无结果时如实说明文档未覆盖，不要编造。" }
+      }
+      if (operationId === "list_docs") {
+        const input = parsed.data as ListDocsInput
+        const listing = knowledge.list(input.locale, input.path, input.depth)
+        return listing
+          ? { status: "succeeded", docsVersion: knowledge.digest, ...listing, guidance: "目录树只包含标题和简短描述。选出相关文档后用 read_doc 读取正文；需要更深一层时把目录的 path 传回 list_docs。" }
+          : { status: "not_found", errorCode: "ai.docs_not_found", guidance: "目录不存在。请从 path 为空的根目录开始逐级浏览，不要猜测路径。" }
+      }
+      const input = parsed.data as ReadDocInput
+      const document = knowledge.read(input.docId, input.sectionId)
+      return document
+        ? { status: "succeeded", docsVersion: knowledge.digest, ...document }
+        : { status: "not_found", errorCode: "ai.docs_not_found", guidance: "docId 或 sectionId 不存在。请使用 search_docs 返回的值，不要猜测。" }
+    }, toolCall.id)
+    const status = result.status === "not_found" ? "failed" : "succeeded"
+    await this.internalTools.recordToolCall(run.id, run.turnId, operationId, parsed.data, status, result, status === "failed" ? "ai.docs_not_found" : undefined, toolCall.id, performance.now() - startedAt)
+    return result
   }
 
   private async traceInternalTool<T>(operationId: string, runId: string, input: unknown, operation: () => Promise<T>, callId?: string, captureContent = true): Promise<T> {

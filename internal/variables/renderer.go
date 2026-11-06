@@ -2,6 +2,7 @@ package variables
 
 import (
 	"regexp"
+	"sort"
 	"strings"
 )
 
@@ -47,24 +48,37 @@ func ExpandEnvRefs(data map[string]string) map[string]string {
 	return expanded
 }
 
+// BuildTemplateVariables 返回构建时可在镜像 tag 与 Build Args 值中使用的全部变量写法，按字典序排列。
+// 它与 Render 共用 buildTemplateValues，是这组变量的唯一事实源；公开文档一致性测试也读取它。
+func BuildTemplateVariables() []string {
+	values := buildTemplateValues(Context{})
+	names := make([]string, 0, len(values))
+	for name := range values {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
 func Render(value string, ctx Context) string {
 	output := strings.TrimSpace(value)
 	if output == "" {
 		return ""
 	}
-	refName := fallback(strings.TrimSpace(ctx.SourceTag), strings.TrimSpace(ctx.SourceBranch))
-	shortSHA := shortCommit(ctx.SourceCommit)
-	replacements := map[string]string{
-		"${{ github.sha }}":      strings.TrimSpace(ctx.SourceCommit),
-		"${{ github.ref_name }}": refName,
-		"${{ github.ref_type }}": refType(ctx),
-		"${{ github.ref }}":      githubRef(ctx),
-		"{short_sha}":            shortSHA,
-	}
-	for key, replacement := range replacements {
+	for key, replacement := range buildTemplateValues(ctx) {
 		output = strings.ReplaceAll(output, key, replacement)
 	}
 	return output
+}
+
+func buildTemplateValues(ctx Context) map[string]string {
+	return map[string]string{
+		"${{ github.sha }}":      strings.TrimSpace(ctx.SourceCommit),
+		"${{ github.ref_name }}": fallback(strings.TrimSpace(ctx.SourceTag), strings.TrimSpace(ctx.SourceBranch)),
+		"${{ github.ref_type }}": refType(ctx),
+		"${{ github.ref }}":      githubRef(ctx),
+		"{short_sha}":            shortCommit(ctx.SourceCommit),
+	}
 }
 
 func shortCommit(commit string) string {

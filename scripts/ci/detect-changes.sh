@@ -214,6 +214,13 @@ else
         agent_image=true
         continue
         ;;
+      docs/docs/*)
+        # Agent 镜像在构建时打包公开文档作为检索知识库，文档变化需要重建 Agent。
+        docs_changed=true
+        agent_changed=true
+        agent_image=true
+        continue
+        ;;
       docs/*)
         docs_changed=true
         continue

@@ -16,7 +16,9 @@ Manage them in the environment variable table under **Runtime → Environment an
 
 When the platform is upgraded to this version, any deploy config or shared runtime config that has a plain variable and a secret with the same name keeps the secret and removes the plain variable. This matches the value that was already used at release time, so running instances are unaffected. The audit log records the removed names, never their values.
 
-Build variables can exist at global, project-space, application, and deployment levels. The closest matching value wins. Project-space build variables are maintained under **Shared config → Build variables** in the project space. Build arguments and ordinary variables appear in build records and are not suitable for secrets.
+Build variables can exist at global, project-space, application, and deployment levels. The closest matching value wins. Project-space build variables are maintained under **Shared config → Build variables** in the project space. Build arguments and ordinary variables appear in build records and are not suitable for secrets. For precedence and formats, see [Build Arguments and Build Variables](../../reference/build-variables).
+
+For name rules, value limits, and the `${NAME}` syntax for referencing other variables, see [Runtime Environment Variables and References](../../reference/runtime-variables).
 
 ## Shared runtime config
 

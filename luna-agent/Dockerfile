@@ -7,6 +7,7 @@ COPY luna-agent/package.json luna-agent/pnpm-lock.yaml luna-agent/pnpm-workspace
 WORKDIR /workspace/luna-agent
 RUN pnpm install --frozen-lockfile
 WORKDIR /workspace
+COPY docs/docs ./docs/docs
 COPY luna-agent/ ./luna-agent/
 WORKDIR /workspace/luna-agent
 RUN pnpm build && pnpm prune --prod
@@ -20,6 +21,7 @@ COPY --from=build --chown=luna:luna /workspace/luna-agent/package.json ./package
 COPY --from=build --chown=luna:luna /workspace/luna-agent/node_modules ./node_modules
 COPY --from=build --chown=luna:luna /workspace/luna-agent/dist ./dist
 COPY --from=build --chown=luna:luna /workspace/luna-agent/skills ./skills
+COPY --from=build --chown=luna:luna /workspace/luna-agent/knowledge ./knowledge
 USER 10001:10001
 EXPOSE 8091
 CMD ["node", "dist/index.js"]

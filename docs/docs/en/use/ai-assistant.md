@@ -8,6 +8,7 @@ AI Assistant uses the current page and your permissions to query resources, expl
 - Analyze failed states and provide verifiable troubleshooting steps.
 - Prepare deployments from a repository, an existing image, or an App Marketplace template.
 - Collect parameters in forms and execute platform operations after confirmation.
+- Answer questions about concepts, steps, configuration syntax, template variables, and limits from the public docs that ship with the current platform version, citing the source.
 
 Describe the goal directly, such as “check why this application is unreachable” or “deploy this API repository.” If containers or Kubernetes are new to you, say that this is your first deployment and the assistant will explain only the required concepts.
 

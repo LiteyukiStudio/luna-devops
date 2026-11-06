@@ -1,3 +1,5 @@
+import { loadBundledDocsKnowledge } from "./knowledge/docs-knowledge.js"
+import { listDocsTool, readDocTool, searchDocsTool } from "./tools/docs-tools.js"
 import { BffHmacRequestVerifier, DevelopmentRequestVerifier } from "./auth.js"
 import type { RuntimeConfig } from "./config.js"
 import { RunExecutor } from "./executor/index.js"
@@ -111,6 +113,9 @@ export async function startAgent(config: RuntimeConfig): Promise<void> {
             ...retrievedTools,
             searchToolsTool,
             getToolDetailsTool,
+            searchDocsTool,
+            listDocsTool,
+            readDocTool,
             ...businessCardTools,
             navigateToRouteTool,
           ]
@@ -158,6 +163,7 @@ export async function startAgent(config: RuntimeConfig): Promise<void> {
     initialRuntimeSettings: runtime,
     catalogRegistry,
     streamBus,
+    docsKnowledge: loadBundledDocsKnowledge(config.AI_DOCS_BASE_URL),
   })
   const server = buildServer({
     config, repository, requestVerifier,

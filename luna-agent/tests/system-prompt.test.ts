@@ -37,6 +37,13 @@ describe("versioned system prompt", () => {
       expect(prompt).not.toContain(operationFact)
   })
 
+  it("routes product knowledge questions to the bundled docs instead of memory", () => {
+    const prompt = systemPromptFor("system-v4")
+
+    for (const rule of ["search_docs", "list_docs", "read_doc", "不得凭印象补全变量名", "受控文档链接"])
+      expect(prompt).toContain(rule)
+  })
+
   it("rejects obsolete prompt versions", () => {
     expect(() => systemPromptFor("system-v3" as never)).toThrow("ai.prompt_version_unavailable")
   })

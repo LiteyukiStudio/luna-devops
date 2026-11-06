@@ -1,3 +1,4 @@
+import { listDocsTool, readDocTool, searchDocsTool } from "../src/tools/docs-tools.js"
 import { readdirSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 import { describe, expect, inject, it } from "vitest"
@@ -263,6 +264,7 @@ describe("real PlatformCatalog retrieval", () => {
       navigateToRouteTool.operationId,
       renameConversationTool.operationId,
       ...businessCardTools.map(tool => tool.operationId),
+      ...[searchDocsTool, listDocsTool, readDocTool].map(tool => tool.operationId),
     ])
     const operationLike = /^(?:get|list|create|update|delete|preview|retry|install|trigger|check|test|read|fetch|search|rotate|revoke|unbind|pin|unpin|rollback|cancel|cleanup|export|import|resolve|set|start|complete|authorize|reconfigure)[A-Z_]/
     const missing = skillMarkdownFiles(new URL("../skills", import.meta.url).pathname)

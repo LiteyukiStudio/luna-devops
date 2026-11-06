@@ -10,5 +10,8 @@ export const internalToolOperationIds = new Set<string>([
   "navigate_to_route",
   "get_tool_details",
   "search_tools",
+  "search_docs",
+  "list_docs",
+  "read_doc",
   ...cardToolOperationIds,
 ])

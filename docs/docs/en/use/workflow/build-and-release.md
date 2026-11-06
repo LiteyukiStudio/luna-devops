@@ -10,7 +10,9 @@ A build reads the bound repository, creates an image from the Dockerfile, and pu
 
 If an explicitly referenced push credential or the build's deployment target no longer exists, is unavailable to the current user, or cannot be queried, the build fails instead of selecting another credential or a default target. Repair the reference before rebuilding.
 
-Read the build log until the task reaches a succeeded, failed, timed-out, or canceled terminal state. Failed, timed-out, and canceled builds show a reason summary under their status in the build list; open **Logs** for the full output. Use unique, traceable image tags for production.
+Read the build log until the task reaches a succeeded, failed, timed-out, or canceled terminal state. Failed, timed-out, and canceled builds show a reason summary under their status in the build list; open **Logs** for the full output. Use unique, traceable image tags for production, for example `{short_sha}` in the target image.
+
+For the variables available in target images and tags, see [Image Repository and Tag Templates](../../reference/image-templates). For the Build Args format, build variable precedence, and hook environment variables, see [Build Arguments and Build Variables](../../reference/build-variables).
 
 Builds have two time limits. A build that runs longer than its build timeout (from the deployment configuration or `BUILD_JOB_TIMEOUT_SECONDS`) is marked as timed out; the platform deletes its build job and settles the time used. A build still queued after twice its build timeout is also marked as timed out, with a queue-wait reason. Builds cannot be triggered while the project space or deployment configuration is being deleted.
 
