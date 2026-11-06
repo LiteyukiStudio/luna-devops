@@ -71,14 +71,43 @@ func Render(value string, ctx Context) string {
 	return output
 }
 
+// buildTemplateValues 是构建时变量的唯一定义；构建执行器 run.sh 的 render_template_value 必须逐一支持，
+// 由 executor 一致性测试实际执行脚本比对两侧渲染结果。
 func buildTemplateValues(ctx Context) map[string]string {
+	commit := strings.TrimSpace(ctx.SourceCommit)
+	branch := strings.TrimSpace(ctx.SourceBranch)
+	tag := strings.TrimSpace(ctx.SourceTag)
 	return map[string]string{
-		"${{ github.sha }}":      strings.TrimSpace(ctx.SourceCommit),
-		"${{ github.ref_name }}": fallback(strings.TrimSpace(ctx.SourceTag), strings.TrimSpace(ctx.SourceBranch)),
+		"${{ github.sha }}":      commit,
+		"${{ github.ref_name }}": fallback(tag, branch),
 		"${{ github.ref_type }}": refType(ctx),
 		"${{ github.ref }}":      githubRef(ctx),
-		"{short_sha}":            shortCommit(ctx.SourceCommit),
+		"{short_sha}":            shortCommit(commit),
+		"{commit}":               commit,
+		"{shortSha}":             shortCommit(commit),
+		"{branch}":               branch,
+		"{branchSlug}":           Slug(branch),
+		"{tag}":                  tag,
+		"{tagSlug}":              Slug(tag),
 	}
+}
+
+// Slug 把分支或标签名转成小写字母、数字和连字符；空值保持为空，交由镜像 tag 规范化处理。
+func Slug(value string) string {
+	var builder strings.Builder
+	previousDash := false
+	for _, char := range strings.ToLower(strings.TrimSpace(value)) {
+		if char >= 'a' && char <= 'z' || char >= '0' && char <= '9' {
+			builder.WriteRune(char)
+			previousDash = false
+			continue
+		}
+		if !previousDash {
+			builder.WriteByte('-')
+			previousDash = true
+		}
+	}
+	return strings.Trim(builder.String(), "-")
 }
 
 func shortCommit(commit string) string {

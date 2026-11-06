@@ -69,10 +69,19 @@ func BuildTargetImageTagTemplateForCredential(credential model.RegistryCredentia
 	return NormalizeTagTemplate(credential.TagTemplate)
 }
 
+// BuildStaticTargetImageTagForCredential 在创建部署配置时预先替换静态变量（项目、应用、阶段等），
+// 构建时变量（提交、分支、标签）原样保留给构建执行器渲染；只有存在未知占位符时才回落为 latest。
 func BuildStaticTargetImageTagForCredential(registry model.ArtifactRegistry, credential model.RegistryCredential, project model.Project, application model.Application, target model.DeploymentTarget) string {
 	rendered := replaceTemplatePlaceholders(NormalizeTagTemplate(credential.TagTemplate), staticImageTemplateValues(registry, project, application, target))
-	if hasUnresolvedPlaceholder(rendered) {
+	withoutBuildVariables := rendered
+	for _, variable := range variables.BuildTemplateVariables() {
+		withoutBuildVariables = strings.ReplaceAll(withoutBuildVariables, variable, "")
+	}
+	if hasUnresolvedPlaceholder(withoutBuildVariables) {
 		return DefaultTagTemplate
+	}
+	if withoutBuildVariables != rendered {
+		return strings.TrimSpace(rendered)
 	}
 	return sanitizeImageTag(rendered)
 }
@@ -136,9 +145,7 @@ func IsDockerHubRegistry(registry model.ArtifactRegistry) bool {
 }
 
 func RenderBuildTagTemplate(template string, ctx variables.Context) string {
-	rendered := variables.Render(fallback(strings.TrimSpace(template), DefaultTagTemplate), ctx)
-	rendered = replaceTemplatePlaceholders(rendered, buildVariableValues(ctx))
-	return sanitizeImageTag(rendered)
+	return sanitizeImageTag(variables.Render(fallback(strings.TrimSpace(template), DefaultTagTemplate), ctx))
 }
 
 func SplitImageRef(value string) (string, string) {
@@ -217,31 +224,6 @@ func hasUnresolvedPlaceholder(value string) bool {
 	return strings.Contains(value, "{") || strings.Contains(value, "}")
 }
 
-func buildVariableValues(ctx variables.Context) map[string]string {
-	refName := strings.TrimSpace(ctx.SourceTag)
-	if refName == "" {
-		refName = strings.TrimSpace(ctx.SourceBranch)
-	}
-	shortSHA := shortCommit(ctx.SourceCommit)
-	return map[string]string{
-		"branch":        strings.TrimSpace(ctx.SourceBranch),
-		"branchSlug":    dnsSafeSegment(ctx.SourceBranch),
-		"tag":           strings.TrimSpace(ctx.SourceTag),
-		"tagSlug":       dnsSafeSegment(ctx.SourceTag),
-		"ref":           refName,
-		"refSlug":       dnsSafeSegment(refName),
-		"commit":        strings.TrimSpace(ctx.SourceCommit),
-		"commitSha":     strings.TrimSpace(ctx.SourceCommit),
-		"shortSha":      shortSHA,
-		"shortSHA":      shortSHA,
-		"shortCommit":   shortSHA,
-		"short_sha":     shortSHA,
-		"github.sha":    strings.TrimSpace(ctx.SourceCommit),
-		"github.ref":    refName,
-		"github.branch": strings.TrimSpace(ctx.SourceBranch),
-	}
-}
-
 func registryNamespaceValue(registry model.ArtifactRegistry, project model.Project) string {
 	namespace := strings.Trim(strings.TrimSpace(registry.Namespace), "/")
 	if namespace != "" {
@@ -314,14 +296,6 @@ func dnsSafeSegment(value string) string {
 		return "app"
 	}
 	return output
-}
-
-func shortCommit(commit string) string {
-	commit = strings.TrimSpace(commit)
-	if len(commit) <= 12 {
-		return commit
-	}
-	return commit[:12]
 }
 
 func fallback(value, defaultValue string) string {

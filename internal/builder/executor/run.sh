@@ -148,6 +148,13 @@ SOURCE_AUTHOR_EMAIL="$(git log -1 --format=%ae)"
 export_luna_devops_build_context
 run_hooks "postPull" "${POST_PULL_HOOK_IDS:-}"
 
+# --- build-template-render:begin ---
+# 构建时模板变量的渲染；变量清单以 internal/variables.buildTemplateValues 为唯一事实源，
+# Go 一致性测试会抽取本段实际执行并与 Go 渲染结果逐一比对。
+slug_value() {
+  printf "%s" "$1" | tr 'A-Z' 'a-z' | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//'
+}
+
 sanitize_tag() {
   printf "%s" "$1" \
     | sed -E 's/[^A-Za-z0-9_.-]+/-/g; s/^[.-]+//; s/[.-]+$//' \
@@ -186,6 +193,12 @@ render_template_value() {
   rendered="$(replace_token '${{ github.ref_type }}' "$ref_type" "$rendered")"
   rendered="$(replace_token '${{ github.ref }}' "$ref_value" "$rendered")"
   rendered="$(replace_token '{short_sha}' "$short_sha" "$rendered")"
+  rendered="$(replace_token '{commit}' "$CHECKED_OUT_COMMIT" "$rendered")"
+  rendered="$(replace_token '{shortSha}' "$short_sha" "$rendered")"
+  rendered="$(replace_token '{branch}' "${SOURCE_BRANCH:-}" "$rendered")"
+  rendered="$(replace_token '{branchSlug}' "$(slug_value "${SOURCE_BRANCH:-}")" "$rendered")"
+  rendered="$(replace_token '{tag}' "${SOURCE_TAG:-}" "$rendered")"
+  rendered="$(replace_token '{tagSlug}' "$(slug_value "${SOURCE_TAG:-}")" "$rendered")"
   printf "%s" "$rendered"
 }
 
@@ -197,6 +210,7 @@ render_image_tag() {
   fi
   printf "%s" "$sanitized"
 }
+# --- build-template-render:end ---
 
 if [ -n "${IMAGE_NAME_PREFIX:-}" ]; then
   IMAGE_REF="${IMAGE_NAME_PREFIX}:$(render_image_tag)"

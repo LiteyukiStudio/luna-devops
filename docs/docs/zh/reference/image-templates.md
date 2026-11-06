@@ -56,8 +56,14 @@
 | `${{ github.ref_name }}` | 构建 Git 标签时取标签名，否则取分支名 | `main`、`v1.2.0` |
 | `${{ github.ref_type }}` | `tag` 或 `branch` | `branch` |
 | `${{ github.ref }}` | 完整引用 | `refs/heads/main`、`refs/tags/v1.2.0` |
+| `{commit}` | 同 `${{ github.sha }}` | `1234567890abcdef1234567890abcdef12345678` |
+| `{shortSha}` | 同 `{short_sha}` | `1234567890ab` |
+| `{branch}` | 分支名；构建 Git 标签时为空 | `feature/login` |
+| `{branchSlug}` | 分支名转为小写字母、数字和 `-` | `feature-login` |
+| `{tag}` | Git 标签名；构建分支时为空 | `v1.2.0` |
+| `{tagSlug}` | 标签名转为小写字母、数字和 `-` | `v1-2-0` |
 
-这些写法区分大小写，空格也必须与上表一致。
+这些写法区分大小写，空格也必须与上表一致；表外的写法（例如 `{sha}`、`{ref_name}`）不会被替换。
 
 渲染后 Tag 会被规范化：`A-Z a-z 0-9 _ . -` 以外的连续字符替换为一个 `-`，去掉首尾的 `.` 和 `-`，最长 128 个字符；结果为空时使用 `latest`。
 
@@ -68,14 +74,15 @@
 | `team/api:${{ github.ref_name }}-{short_sha}` | `team/api:feature-login-1234567890ab` |
 | `team/api:${{ github.ref }}` | `team/api:refs-heads-feature-login` |
 | `team/api:{short_sha}` | `team/api:1234567890ab` |
+| `team/api:{branchSlug}-{shortSha}` | `team/api:feature-login-1234567890ab` |
 
 ### 推送凭据中的 Tag 模板
 
-凭据的“镜像 Tag 模板”只用于生成新部署配置的默认 Tag，其中只能使用[仓库路径模板变量](#仓库路径模板变量)。模板中残留其他占位符时（包括上表的构建时变量），默认 Tag 回落为 `latest`。需要按提交或分支打 Tag 时，直接在部署配置的“目标镜像”中写构建时变量，例如 `team/api:{short_sha}`。
+凭据的“镜像 Tag 模板”用于生成新部署配置的默认 Tag。创建部署配置时先替换[仓库路径模板变量](#仓库路径模板变量)，上表的构建时变量原样保留，在每次构建时渲染。例如模板 `{stage}-{shortSha}` 生成的默认 Tag 为 `prod-{shortSha}`，构建后推送 `prod-1234567890ab`。模板中有其他未知占位符时，默认 Tag 回落为 `latest`。
 
 ## 常见错误
 
-- **推送的 Tag 变成了 `branch`、`shortSha` 这类字面量**：使用了 `{branch}`、`{shortSha}`、`{commit}`、`{branchSlug}`、`{tag}` 等写法，构建时不会被替换，只会被规范化成字面量。请改用上表中的写法。
+- **推送的 Tag 变成了 `sha`、`ref-name` 这类字面量**：使用了表外的写法，构建时不会被替换，只会被规范化成字面量。请改用上表中的写法。
 - **仓库路径里出现 `{...}`**：仓库路径模板中拼错或使用了不存在的变量，未知变量会原样保留，推送会失败。核对变量名后保存凭据，再在部署配置中恢复默认目标镜像。
 - **DockerHub 推送被拒绝**：仓库路径第一段不是你有权推送的用户名或组织名。把模板改为 `你的用户名/{projectIdentifier}-{appIdentifier}`。
 - **`{target}` 渲染成 `app`**：部署配置名称只包含中文或符号，规范化后为空。改用 `{stage}`，或在名称中包含字母数字。

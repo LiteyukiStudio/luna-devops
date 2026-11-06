@@ -117,12 +117,13 @@ func TestRenderPrefersTagRefName(t *testing.T) {
 	}
 }
 
-func TestRenderDoesNotSupportDuplicateAliasVariables(t *testing.T) {
+// 只支持 buildTemplateValues 中定义的写法；其他看似相近的别名保持原样，不做猜测替换。
+func TestRenderSupportsOnlyDefinedAliases(t *testing.T) {
 	got := Render(
-		"app:{sha}-{commit}-{commit_short}-{branch}-{tag}-{ref_name}",
-		Context{SourceBranch: "main", SourceCommit: "1234567890abcdef", SourceTag: "v1.0.0"},
+		"app:{sha}-{commit}-{commit_short}-{branch}-{tag}-{ref_name}-{branchSlug}",
+		Context{SourceBranch: "Feature/X", SourceCommit: "1234567890abcdef", SourceTag: "v1.0.0"},
 	)
-	want := "app:{sha}-{commit}-{commit_short}-{branch}-{tag}-{ref_name}"
+	want := "app:{sha}-1234567890abcdef-{commit_short}-Feature/X-v1.0.0-{ref_name}-feature-x"
 	if got != want {
 		t.Fatalf("Render() = %q, want %q", got, want)
 	}

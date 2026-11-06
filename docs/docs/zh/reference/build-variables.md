@@ -40,8 +40,11 @@ Build Args 的值在构建时渲染，可用变量与镜像 Tag 相同：
 | `${{ github.ref_name }}` | 构建 Git 标签时取标签名，否则取分支名 |
 | `${{ github.ref_type }}` | `tag` 或 `branch` |
 | `${{ github.ref }}` | `refs/heads/<分支>` 或 `refs/tags/<标签>` |
+| `{commit}` / `{shortSha}` | 同 `${{ github.sha }}` / `{short_sha}` |
+| `{branch}` / `{tag}` | 分支名 / Git 标签名，未构建对应引用时为空 |
+| `{branchSlug}` / `{tagSlug}` | 分支名 / 标签名转为小写字母、数字和 `-` |
 
-与镜像 Tag 不同，Build Args 的值不做字符规范化，例如 `${{ github.ref }}` 保持 `refs/heads/main`。其他写法（如 `{branch}`、`{commit}`）不会被替换。各变量的详细说明见[镜像仓库路径与 Tag 模板](./image-templates#tag-变量)。
+与镜像 Tag 不同，Build Args 的值不做字符规范化，例如 `${{ github.ref }}` 保持 `refs/heads/main`。表外的写法不会被替换。各变量的详细说明见[镜像仓库路径与 Tag 模板](./image-templates#tag-变量)。
 
 ## 构建变量与密钥
 

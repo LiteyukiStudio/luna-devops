@@ -56,8 +56,14 @@ The tag part of the deploy config or manual build **Target image** is rendered a
 | `${{ github.ref_name }}` | Tag name when building a Git tag, otherwise the branch name | `main`, `v1.2.0` |
 | `${{ github.ref_type }}` | `tag` or `branch` | `branch` |
 | `${{ github.ref }}` | Full ref | `refs/heads/main`, `refs/tags/v1.2.0` |
+| `{commit}` | Same as `${{ github.sha }}` | `1234567890abcdef1234567890abcdef12345678` |
+| `{shortSha}` | Same as `{short_sha}` | `1234567890ab` |
+| `{branch}` | Branch name; empty when building a Git tag | `feature/login` |
+| `{branchSlug}` | Branch name as lowercase letters, digits, and `-` | `feature-login` |
+| `{tag}` | Git tag name; empty when building a branch | `v1.2.0` |
+| `{tagSlug}` | Tag name as lowercase letters, digits, and `-` | `v1-2-0` |
 
-These forms are case-sensitive, and spaces must match the table exactly.
+These forms are case-sensitive, and spaces must match the table exactly. Forms not listed here (for example `{sha}` or `{ref_name}`) are not replaced.
 
 The rendered tag is then normalized: each run of characters outside `A-Z a-z 0-9 _ . -` becomes one `-`, leading and trailing `.` and `-` are removed, and the result is cut to 128 characters. An empty result becomes `latest`.
 
@@ -68,14 +74,15 @@ The rendered tag is then normalized: each run of characters outside `A-Z a-z 0-9
 | `team/api:${{ github.ref_name }}-{short_sha}` | `team/api:feature-login-1234567890ab` |
 | `team/api:${{ github.ref }}` | `team/api:refs-heads-feature-login` |
 | `team/api:{short_sha}` | `team/api:1234567890ab` |
+| `team/api:{branchSlug}-{shortSha}` | `team/api:feature-login-1234567890ab` |
 
 ### Tag template in a push credential
 
-A credential's **Image tag template** only generates the default tag for new deploy configs, and only the [repository path template variables](#repository-path-template-variables) are replaced in it. If any other placeholder remains, including the build-time variables above, the default tag falls back to `latest`. To tag by commit or branch, write the build-time variables directly in the deploy config **Target image**, for example `team/api:{short_sha}`.
+A credential's **Image tag template** generates the default tag for new deploy configs. When a deploy config is created, the [repository path template variables](#repository-path-template-variables) are replaced and the build-time variables above are kept as is, to be rendered on every build. For example, the template `{stage}-{shortSha}` produces the default tag `prod-{shortSha}`, and a build pushes `prod-1234567890ab`. If any other unknown placeholder remains, the default tag falls back to `latest`.
 
 ## Common mistakes
 
-- **The pushed tag is a literal such as `branch` or `shortSha`**: forms like `{branch}`, `{shortSha}`, `{commit}`, `{branchSlug}`, or `{tag}` are not replaced at build time; they are only normalized into literals. Use the forms in the table above.
+- **The pushed tag is a literal such as `sha` or `ref-name`**: a form not listed in the table was used. It is not replaced at build time and is only normalized into a literal. Use the forms in the table above.
 - **The repository path contains `{...}`**: the repository template has a typo or an unknown variable. Unknown variables are kept as is and the push fails. Fix the variable name, save the credential, and restore the default target image in the deploy config.
 - **DockerHub rejects the push**: the first path segment is not a user or organization you can push to. Change the template to `your-user/{projectIdentifier}-{appIdentifier}`.
 - **`{target}` renders as `app`**: the deploy config name contains only non-ASCII characters or symbols, so normalization leaves nothing. Use `{stage}`, or include letters or digits in the name.

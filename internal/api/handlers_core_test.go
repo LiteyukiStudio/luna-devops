@@ -432,9 +432,14 @@ func TestCredentialStaticTagTemplateOnlyUsesDeploymentContext(t *testing.T) {
 		t.Fatalf("static tag = %q", tag)
 	}
 
-	buildVariableCredential := model.RegistryCredential{TagTemplate: "{commit}"}
-	if tag := buildapi.BuildStaticTargetImageTagForCredential(registry, buildVariableCredential, project, application, target); tag != "latest" {
+	// 构建时变量保留为模板，由构建执行器在检出代码后渲染；未知占位符才回落为 latest。
+	buildVariableCredential := model.RegistryCredential{TagTemplate: "{stage}-{shortSha}"}
+	if tag := buildapi.BuildStaticTargetImageTagForCredential(registry, buildVariableCredential, project, application, target); tag != "prod-{shortSha}" {
 		t.Fatalf("build variable tag = %q", tag)
+	}
+	unknownCredential := model.RegistryCredential{TagTemplate: "{unknown}"}
+	if tag := buildapi.BuildStaticTargetImageTagForCredential(registry, unknownCredential, project, application, target); tag != "latest" {
+		t.Fatalf("unknown placeholder tag = %q", tag)
 	}
 }
 

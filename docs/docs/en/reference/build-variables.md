@@ -40,8 +40,11 @@ Build Arg values are rendered at build time with the same variables as image tag
 | `${{ github.ref_name }}` | Tag name when building a Git tag, otherwise the branch name |
 | `${{ github.ref_type }}` | `tag` or `branch` |
 | `${{ github.ref }}` | `refs/heads/<branch>` or `refs/tags/<tag>` |
+| `{commit}` / `{shortSha}` | Same as `${{ github.sha }}` / `{short_sha}` |
+| `{branch}` / `{tag}` | Branch name / Git tag name; empty when that ref is not being built |
+| `{branchSlug}` / `{tagSlug}` | Branch / tag name as lowercase letters, digits, and `-` |
 
-Unlike image tags, Build Arg values are not character-normalized; `${{ github.ref }}` stays `refs/heads/main`. Other forms such as `{branch}` or `{commit}` are not replaced. See [Image Repository and Tag Templates](./image-templates#tag-variables) for details on each variable.
+Unlike image tags, Build Arg values are not character-normalized; `${{ github.ref }}` stays `refs/heads/main`. Forms not listed here are not replaced. See [Image Repository and Tag Templates](./image-templates#tag-variables) for details on each variable.
 
 ## Build variables and secrets
 
