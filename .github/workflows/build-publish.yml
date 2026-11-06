@@ -272,9 +272,8 @@ jobs:
           if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
             version_tag="${GITHUB_REF#refs/tags/}"
             image_tags="${image_prefix}/${image_name}:${version_tag}"
-            if [[ "${version_tag}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-              image_tags="${image_tags}"$'\n'"${image_prefix}/${image_name}:latest"
-            fi
+            image_tags="${image_tags}"$'\n'"${image_prefix}/${image_name}:latest"
+            image_tags="${image_tags}"$'\n'"${image_prefix}/${image_name}:nightly"
           elif [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
             short_sha="${GITHUB_SHA::12}"
             image_tags="${image_prefix}/${image_name}:pr-${short_sha}"

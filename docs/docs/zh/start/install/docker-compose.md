@@ -14,7 +14,7 @@ Docker Compose 是最快的体验方式，适合个人服务器、测试环境�
 
 ## 选择版本
 
-仓库根目录的 `docker-compose.yaml` 默认使用 `nightly` 镜像。
+仓库根目录的 `docker-compose.yaml` 默认使用 `nightly` 镜像。`nightly` 跟随 `main` 与 `dev` 的最新提交，每次发版也会更新；`latest` 指向最近一次发版。
 
 验证指定版本时，在启动命令前设置镜像 tag：
 

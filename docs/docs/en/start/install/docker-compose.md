@@ -14,7 +14,7 @@ You need:
 
 ## Choose A Version
 
-The repository root `docker-compose.yaml` uses `nightly` images by default.
+The repository root `docker-compose.yaml` uses `nightly` images by default. `nightly` follows the latest `main` and `dev` commits and is also refreshed by every release; `latest` points to the most recent release.
 
 To verify a specific release, set the image tag before starting:
 
