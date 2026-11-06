@@ -80,10 +80,10 @@ describe('application runtime status', () => {
     )
 
     expect(screen.getByText('生产')).toBeVisible()
-    expect(screen.getByText('异常').closest('[data-slot="status-dot"]')).toHaveAttribute('data-tone', 'warning')
+    expect(screen.getByText('异常').closest('[data-slot="status-indicator"]')).toHaveAttribute('data-tone', 'warning')
     expect(screen.getByText('1/2')).toBeVisible()
     expect(screen.getByText('开发')).toBeVisible()
-    expect(screen.getByText('就绪').closest('[data-slot="status-dot"]')).toHaveAttribute('data-tone', 'success')
+    expect(screen.getByText('就绪').closest('[data-slot="status-indicator"]')).toHaveAttribute('data-tone', 'success')
     expect(screen.getByText('1/1')).toBeVisible()
     expect(screen.queryByText('2/3')).not.toBeInTheDocument()
   })
@@ -98,7 +98,7 @@ describe('application runtime status', () => {
       />,
     )
 
-    expect(screen.getByText('未部署').closest('[data-slot="status-dot"]')).toHaveAttribute('data-tone', 'neutral')
+    expect(screen.getByText('未部署').closest('[data-slot="status-indicator"]')).toHaveAttribute('data-tone', 'neutral')
     expect(screen.queryByText('0/0')).not.toBeInTheDocument()
   })
 

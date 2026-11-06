@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { LogViewer } from '@/components/common/log-viewer'
 import { OutputViewerSheet } from '@/components/common/output-viewer-sheet'
 import { StatusValueBadge } from '@/components/common/status-badge'
-import { StatusDot } from '@/components/common/status-dot'
+import { StatusIndicator } from '@/components/common/status-indicator'
 import { shortBuildId } from '@/pages/applications/application-config-utils'
 
 export function ApplicationBuildLogPanel({ content, job, loading, onClose }: {
@@ -30,11 +30,10 @@ export function ApplicationBuildLogPanel({ content, job, loading, onClose }: {
         live={loading}
         loadingLabel={t('common.logViewer.waiting')}
         meta={(
-          <StatusDot
+          <StatusIndicator
             className="text-xs"
             label={loading ? t('buildsPage.logsStreaming') : t('buildsPage.logsUpdated')}
-            pulse={loading}
-            tone={loading ? 'info' : 'neutral'}
+            state={loading ? 'running' : 'neutral'}
           />
         )}
         resetKey={job.id}

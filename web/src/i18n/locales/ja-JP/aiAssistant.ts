@@ -266,6 +266,14 @@ const aiAssistant = {
         group: 'この対話カードセットは一時的に表示できません。他のチャット内容は影響を受けません。',
         card: 'このカードは一時的に表示できません。他のカードは引き続き使用できます。',
       },
+      stepStatuses: {
+        pending: '待機中',
+        running: '実行中',
+        success: '完了',
+        warning: '要確認',
+        error: '失敗',
+        skipped: 'スキップ',
+      },
       liveProgress: {
         label: 'タスクリアルタイム進捗',
         connecting: 'リアルタイム進捗に接続中',

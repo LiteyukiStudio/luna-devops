@@ -12,8 +12,8 @@ import { FormField as Field } from '@/components/common/form-field'
 import { ProgressiveSection } from '@/components/common/progressive-section'
 import { ResourceDeletionStatus } from '@/components/common/resource-deletion-status'
 import { StatusValueBadge } from '@/components/common/status-badge'
-import { StatusDot } from '@/components/common/status-dot'
-import { statusToneFor } from '@/components/common/status-tone'
+import { StatusIndicator } from '@/components/common/status-indicator'
+import { statusIndicatorStateFor } from '@/components/common/status-tone'
 import { formatAbsoluteDateTime } from '@/components/common/time-format'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -175,7 +175,7 @@ export function ApplicationGatewayPanel({ applicationId, applicationIdentifier, 
           { key: 'tls', header: t('gatewayRoutesPage.tlsMode'), width: 'status', render: item => <GatewayRouteTlsSummary item={item} /> },
           { key: 'status', header: t('common.status'), width: 'status', render: (item) => {
             const status = gatewayRouteEffectiveStatus(item)
-            return <StatusDot label={t(`gatewayRoutesPage.routeStatuses.${status}`, { defaultValue: status })} tone={statusToneFor(status)} />
+            return <StatusIndicator label={t(`gatewayRoutesPage.routeStatuses.${status}`, { defaultValue: status })} state={statusIndicatorStateFor(status)} />
           } },
           { key: 'actions', header: t('common.actions'), mobileActions: 'inline', sticky: 'right', width: 'actions', render: (item) => {
             const deleting = item.deleteStatus === 'deleting'

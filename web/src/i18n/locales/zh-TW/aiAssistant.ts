@@ -266,6 +266,14 @@ const aiAssistant = {
         group: '這組互動卡片暫時無法顯示，其他聊天內容不受影響。',
         card: '這張卡片暫時無法顯示，其他卡片仍可繼續使用。',
       },
+      stepStatuses: {
+        pending: '等待中',
+        running: '進行中',
+        success: '已完成',
+        warning: '需要注意',
+        error: '失敗',
+        skipped: '已略過',
+      },
       liveProgress: {
         label: '任務實時進度',
         connecting: '正在連線實時進度',

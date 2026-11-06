@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import { ApplicationIcon } from '@/components/common/application-icon-picker'
 import { ResourceDeletionStatus } from '@/components/common/resource-deletion-status'
-import { ReplicaStatusDot } from '@/pages/applications/deployments/operations/application-deployment-runtime'
+import { ReplicaStatusIndicator } from '@/pages/applications/deployments/operations/application-deployment-runtime'
 import { applicationDeleteFailureMessage } from './application-delete-failure'
 
 /** 应用名称单元：图标 + 名称链接 + 标识符。名称是进入详情的唯一入口。 */
@@ -40,13 +40,13 @@ export function ApplicationRuntimeStatus({ application }: { application: Applica
   if (!summary || application.deleteStatus === 'deleting')
     return <span className="text-sm text-muted-foreground">-</span>
   if (summary.targets.length === 0)
-    return <ReplicaStatusDot deployed={false} desiredReplicas={0} readyReplicas={0} status="not-deployed" />
+    return <ReplicaStatusIndicator deployed={false} desiredReplicas={0} readyReplicas={0} status="not-deployed" />
   return (
     <ul className="grid min-w-0 gap-1">
       {summary.targets.map(target => (
         <li key={target.id} className="flex min-w-0 items-center gap-2">
           <span className="shrink-0 text-xs text-muted-foreground">{t(`deploymentsPage.stageLabels.${target.stage}`, { defaultValue: target.stage })}</span>
-          <ReplicaStatusDot desiredReplicas={target.desiredReplicas} readyReplicas={target.readyReplicas} status={target.status} />
+          <ReplicaStatusIndicator desiredReplicas={target.desiredReplicas} readyReplicas={target.readyReplicas} status={target.status} />
         </li>
       ))}
     </ul>

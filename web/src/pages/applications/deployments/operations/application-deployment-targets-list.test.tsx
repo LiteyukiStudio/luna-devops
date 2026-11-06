@@ -104,7 +104,7 @@ describe('application deployment targets behavior', () => {
       .map(element => element.closest<HTMLElement>('[data-slot="deployment-target-card"]'))
       .find(element => element !== null) as HTMLElement
     expect(within(card).getByRole('link', { name: /outline\.example\.com/ })).toHaveAttribute('rel', 'noopener noreferrer')
-    expect(within(card).getByText('Ready').closest('[data-slot="status-dot"]')).toHaveAttribute('data-tone', 'success')
+    expect(within(card).getByText('Ready').closest('[data-slot="status-indicator"]')).toHaveAttribute('data-tone', 'success')
     expect(within(card).getByRole('button', { name: 'Create release' })).toBeDisabled()
     expect(screen.queryByText('Deployment has minimum availability.')).not.toBeInTheDocument()
     await user.click(screen.getAllByRole('button', { name: 'More actions for deploy config app-dev' })[0])

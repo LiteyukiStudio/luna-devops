@@ -9,7 +9,7 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '
 import { formatReleaseTime } from '@/pages/applications/application-config-utils'
 import { AccessUrlLink } from '@/pages/applications/gateway/access-url-link'
 import { gatewayRouteAccessUrl } from '@/pages/applications/gateway/gateway-route-url'
-import { DeploymentRuntimeSpec, DeploymentRuntimeStatusDot } from './application-deployment-runtime'
+import { DeploymentRuntimeSpec, DeploymentRuntimeStatusIndicator } from './application-deployment-runtime'
 import { DeploymentTargetMetricsCell } from './application-deployment-target-metrics-cell'
 
 export function DeploymentTargetDetailSheet({ applicationId, item, onOpenChange, open, projectId }: {
@@ -38,7 +38,7 @@ export function DeploymentTargetDetailSheet({ applicationId, item, onOpenChange,
         {item && target && (
           <div className="grid gap-4 p-6">
             <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-              <DeploymentRuntimeStatusDot
+              <DeploymentRuntimeStatusIndicator
                 availableReplicas={target.availableReplicas}
                 deployed={Boolean(release)}
                 desiredReplicas={target.desiredReplicas}

@@ -1,6 +1,5 @@
 import type { TFunction } from 'i18next'
 import type { InteractionContentBlock } from './interaction-card-schema'
-import { AlertCircle, Check, Circle, LoaderCircle, Pause, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { z } from 'zod'
@@ -8,6 +7,7 @@ import { aiProgressStreamUrl } from '@/api'
 import { StatusBadge } from '@/components/common/status-badge'
 import { createTracedEventSource } from '@/lib/telemetry'
 import { cn } from '@/lib/utils'
+import { AIStepStatusGlyph } from './step-status'
 
 type LiveProgressBlockDefinition = Extract<InteractionContentBlock, { type: 'live_progress' }>
 
@@ -114,7 +114,7 @@ export function LiveProgressBlock({ block }: { block: LiveProgressBlockDefinitio
         <div className="grid gap-1" aria-live="polite">
           {snapshot.steps.map(step => (
             <div key={step.id} className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
-              <StepIcon status={step.status} />
+              <AIStepStatusGlyph status={step.status} />
               <span className={cn('truncate', step.status === 'running' && 'font-medium text-foreground')}>{translateCode(t, step.labelCode)}</span>
             </div>
           ))}
@@ -135,21 +135,6 @@ function ProgressStateBadge({ state, connection }: { state?: ProgressSnapshot['s
   const key = state === 'failed' ? 'operation_failed' : state ?? connection
   const tone = state === 'failed' || connection === 'failed' ? 'danger' : state === 'succeeded' ? 'success' : state === 'cancelled' || connection === 'paused' ? 'warning' : 'info'
   return <StatusBadge className="shrink-0 px-1.5 py-0 text-[11px]" tone={tone}>{t(`aiAssistant.cards.liveProgress.states.${key}`)}</StatusBadge>
-}
-
-function StepIcon({ status }: { status: ProgressSnapshot['steps'][number]['status'] }) {
-  const className = 'size-3 shrink-0'
-  if (status === 'running')
-    return <LoaderCircle className={cn(className, 'animate-spin text-info motion-reduce:animate-none')} />
-  if (status === 'success')
-    return <Check className={cn(className, 'text-success')} />
-  if (status === 'error')
-    return <AlertCircle className={cn(className, 'text-danger')} />
-  if (status === 'warning')
-    return <Pause className={cn(className, 'text-warning')} />
-  if (status === 'skipped')
-    return <X className={className} />
-  return <Circle className={className} />
 }
 
 function translateCode(t: TFunction, code: string) {

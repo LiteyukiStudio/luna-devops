@@ -14,8 +14,8 @@ import { PageChromeHeading, PageChromeTools } from '@/components/common/page-chr
 import { PageShell } from '@/components/common/page-shell'
 import { Section } from '@/components/common/section'
 import { StatusValueBadge } from '@/components/common/status-badge'
-import { StatusDot } from '@/components/common/status-dot'
-import { isInProgressStatus, statusToneFor } from '@/components/common/status-tone'
+import { StatusIndicator } from '@/components/common/status-indicator'
+import { statusIndicatorStateFor } from '@/components/common/status-tone'
 import { formatCompactDateTime } from '@/components/common/time-format'
 import { Button } from '@/components/ui/button'
 import { buttonVariants } from '@/components/ui/button-variants'
@@ -25,7 +25,7 @@ import { statusRefetchInterval } from '@/lib/polling'
 import { withResultVisibility } from '@/lib/result-visibility'
 import { isPlatformAdmin } from '@/lib/roles'
 import { cn } from '@/lib/utils'
-import { effectiveReplicaState, replicaStateTone } from '@/pages/applications/deployments/operations/application-deployment-runtime-utils'
+import { effectiveReplicaState, replicaIndicatorState } from '@/pages/applications/deployments/operations/application-deployment-runtime-utils'
 import { AccessUrlLink } from '@/pages/applications/gateway/access-url-link'
 import { httpAccessUrl } from '@/pages/applications/gateway/gateway-route-url'
 
@@ -128,10 +128,10 @@ function AttentionPanel({ items, visibility }: { items: DashboardAttentionItem[]
           <li key={item.key} className="flex min-w-0 flex-col gap-2 py-3 @lg/workspace:flex-row @lg/workspace:items-center @lg/workspace:justify-between">
             <div className="min-w-0">
               <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-                <StatusDot label={eventTypeLabel(t, item.latest.type)} tone={item.severity === 'error' || item.latest.status === 'failed' ? 'danger' : 'warning'} />
+                <StatusIndicator label={eventTypeLabel(t, item.latest.type)} state={item.severity === 'error' || item.latest.status === 'failed' ? 'failure' : 'warning'} />
                 {item.occurrences > 1 && <span className="text-xs text-muted-foreground">{t('dashboardPage.occurrences', { count: item.occurrences })}</span>}
               </div>
-              <p className="mt-0.5 truncate pl-3.5 text-xs text-muted-foreground">
+              <p className="mt-0.5 truncate pl-5 text-xs text-muted-foreground">
                 {[activityContext(item.latest), item.latest.message, formatCompactDateTime(item.latest.occurredAt)].filter(Boolean).join(' · ')}
               </p>
             </div>
@@ -226,11 +226,10 @@ function DashboardRuntimeStatus({ application }: { application: Application }) {
     status: summary.status,
   })
   return (
-    <StatusDot
+    <StatusIndicator
       detail={state.showReplicas ? `${summary.readyReplicas}/${summary.desiredReplicas}` : undefined}
       label={t(`dashboardPage.runtimeStatuses.${state.value}`, { defaultValue: state.value })}
-      pulse={isInProgressStatus(state.value)}
-      tone={replicaStateTone(state.value)}
+      state={replicaIndicatorState(state.value)}
     />
   )
 }
@@ -276,8 +275,8 @@ function RecentActivity({ activities, visibility }: { activities: DashboardActiv
                 <li key={activity.id}>
                   <Link className="group flex min-w-0 items-start justify-between gap-3 py-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" to={withResultVisibility(activityTarget(activity), visibility)}>
                     <div className="min-w-0">
-                      <StatusDot label={eventTypeLabel(t, activity.type)} pulse={isInProgressStatus(activity.status)} tone={statusToneFor(activity.status)} />
-                      <p className="truncate pl-3.5 text-xs text-muted-foreground group-hover:text-foreground">
+                      <StatusIndicator label={eventTypeLabel(t, activity.type)} state={statusIndicatorStateFor(activity.status)} />
+                      <p className="truncate pl-5 text-xs text-muted-foreground group-hover:text-foreground">
                         {activityContext(activity) || activity.message || t('eventsPage.noMessage')}
                       </p>
                     </div>

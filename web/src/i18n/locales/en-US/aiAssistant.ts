@@ -266,6 +266,14 @@ const aiAssistant = {
         group: 'This interaction card group cannot be displayed right now. Other conversation content is unaffected.',
         card: 'This card cannot be displayed right now. Other cards remain available.',
       },
+      stepStatuses: {
+        pending: 'Pending',
+        running: 'In progress',
+        success: 'Completed',
+        warning: 'Needs attention',
+        error: 'Failed',
+        skipped: 'Skipped',
+      },
       liveProgress: {
         label: 'Live task progress',
         connecting: 'Connecting to live progress',

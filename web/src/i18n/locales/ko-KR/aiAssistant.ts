@@ -266,6 +266,14 @@ const aiAssistant = {
         group: '이 대화형 카드 세트는 일시적으로 표시할 수 없습니다. 다른 채팅 내용은 영향을 받지 않습니다.',
         card: '이 카드는 일시적으로 표시할 수 없습니다. 다른 카드는 계속 사용할 수 있습니다.',
       },
+      stepStatuses: {
+        pending: '대기 중',
+        running: '진행 중',
+        success: '완료',
+        warning: '확인 필요',
+        error: '실패',
+        skipped: '건너뜀',
+      },
       liveProgress: {
         label: '작업 실시간 진행',
         connecting: '실시간 진행에 연결 중',

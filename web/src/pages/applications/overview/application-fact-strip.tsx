@@ -4,13 +4,13 @@ import { ArrowRight } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { CopyableHoverText } from '@/components/common/copyable-hover-text'
 import { StatusBadge } from '@/components/common/status-badge'
-import { StatusDot } from '@/components/common/status-dot'
-import { isInProgressStatus, statusToneFor } from '@/components/common/status-tone'
+import { StatusIndicator } from '@/components/common/status-indicator'
+import { statusIndicatorStateFor } from '@/components/common/status-tone'
 import { formatSmartDateTime } from '@/components/common/time-format'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { shortImageRef } from '@/lib/image-ref'
-import { ReplicaStatusDot } from '@/pages/applications/deployments/operations/application-deployment-runtime'
+import { ReplicaStatusIndicator } from '@/pages/applications/deployments/operations/application-deployment-runtime'
 import { AccessUrlLink } from '@/pages/applications/gateway/access-url-link'
 import { gatewayRouteAccessUrl, primaryGatewayRoute } from '@/pages/applications/gateway/gateway-route-url'
 import { latestByDate } from './application-facts'
@@ -46,8 +46,8 @@ export function ApplicationFactStrip({ buildRuns, deploymentTargets, loading, on
       <Fact label={t('apps.runtimeStatus')} loading={loading}>
         <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-1">
           {summary
-            ? <ReplicaStatusDot desiredReplicas={summary.desiredReplicas} readyReplicas={summary.readyReplicas} status={summary.status} />
-            : <ReplicaStatusDot desiredReplicas={0} readyReplicas={0} status={runtimeError ? 'unavailable' : 'unknown'} />}
+            ? <ReplicaStatusIndicator desiredReplicas={summary.desiredReplicas} readyReplicas={summary.readyReplicas} status={summary.status} />
+            : <ReplicaStatusIndicator desiredReplicas={0} readyReplicas={0} status={runtimeError ? 'unavailable' : 'unknown'} />}
           {onViewDeployments && (
             <Button className="h-auto shrink-0 p-0 text-xs text-primary-text" type="button" variant="link" onClick={onViewDeployments}>
               {t('apps.viewDeployments')}
@@ -81,11 +81,10 @@ export function ApplicationFactStrip({ buildRuns, deploymentTargets, loading, on
       <Fact label={t('apps.latestBuild')} loading={loading}>
         {latestBuild
           ? (
-              <StatusDot
+              <StatusIndicator
                 detail={formatSmartDateTime(latestBuild.createdAt, t)}
                 label={t(`buildsPage.statuses.${latestBuild.status}`, { defaultValue: latestBuild.status })}
-                pulse={isInProgressStatus(latestBuild.status)}
-                tone={statusToneFor(latestBuild.status)}
+                state={statusIndicatorStateFor(latestBuild.status)}
               />
             )
           : <span className="text-sm text-muted-foreground">{t('apps.noRecentBuild')}</span>}

@@ -9,9 +9,6 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
-  Circle,
-  CircleDashed,
-  CircleDot,
   Copy,
   Database,
   ExternalLink,
@@ -48,6 +45,7 @@ import { readValidatedInteractionCardGroup } from './interaction-card-schema'
 import { interactionCardDensity, interactionCardTemplateConfigs, shouldExpandInteractionCard } from './interaction-card-templates'
 import { LiveProgressBlock } from './live-progress-block'
 import { AIInlineMarkdown, AIMarkdown } from './markdown'
+import { AIStepStatusGlyph } from './step-status'
 
 const compactActionClassName = 'h-auto min-h-8 max-w-full gap-1.5 whitespace-normal px-3 py-1.5 text-xs leading-4 [&_svg]:size-3.5'
 
@@ -67,15 +65,6 @@ interface AIInteractionCardsProps {
 }
 
 type FormValues = Record<string, unknown>
-
-const statusClasses = {
-  pending: 'text-muted-foreground',
-  running: 'text-info',
-  success: 'text-success',
-  warning: 'text-warning',
-  error: 'text-danger',
-  skipped: 'text-muted-foreground',
-} as const
 
 export function AIInteractionCards({ arguments: rawArguments, onAction }: AIInteractionCardsProps) {
   const { t } = useTranslation()
@@ -286,7 +275,7 @@ function ContentBlock({ block, onAction }: { block: InteractionContentBlock, onA
         <div className="grid gap-1.5">
           {block.items.map(item => (
             <div key={item.id} className="flex items-start gap-2 text-[11px]">
-              <StatusIcon status={item.status} />
+              <AIStepStatusGlyph className="mt-0.5 text-sm" status={item.status} />
               <div>
                 <AIInlineMarkdown className="block font-medium">{item.label}</AIInlineMarkdown>
                 {item.detail && <AIMarkdown className="text-xs leading-4 text-muted-foreground">{item.detail}</AIMarkdown>}
@@ -881,21 +870,6 @@ function MetricTrendIcon({ trend }: { trend?: 'up' | 'down' | 'flat' }) {
   if (trend === 'flat')
     return <Minus aria-hidden="true" className="size-3 shrink-0" />
   return null
-}
-
-function StatusIcon({ status }: { status: 'pending' | 'running' | 'success' | 'warning' | 'error' | 'skipped' }) {
-  const className = cn('mt-0.5 size-3.5 shrink-0', statusClasses[status])
-  if (status === 'running')
-    return <LoaderCircle className={cn(className, 'animate-spin motion-reduce:animate-none')} />
-  if (status === 'success')
-    return <Check className={className} />
-  if (status === 'error')
-    return <AlertCircle className={className} />
-  if (status === 'warning')
-    return <CircleDot className={className} />
-  if (status === 'skipped')
-    return <Circle className={className} />
-  return <CircleDashed className={className} />
 }
 
 function CopyButton({ value }: { value: string }) {

@@ -65,23 +65,64 @@ export function statusToneFor(value: string): StatusTone {
   }
 }
 
-/** 仍在进行、尚未到达终态的状态；用于给状态圆点加呼吸效果。 */
-export function isInProgressStatus(value: string | null | undefined) {
-  switch ((value ?? '').trim().toLowerCase()) {
+/** 状态指示器的图形状态：决定 StatusIndicator 画哪种图形，颜色由 statusIndicatorTone 统一映射。 */
+export type StatusIndicatorState = 'canceled' | 'failure' | 'info' | 'neutral' | 'queued' | 'running' | 'success' | 'warning'
+
+/** 把原始状态值映射为指示器状态：排队/等待与进行中优先识别，其余沿用 statusToneFor 的语义。 */
+export function statusIndicatorStateFor(value: string | null | undefined): StatusIndicatorState {
+  const normalized = (value ?? '').trim().toLowerCase()
+  switch (normalized) {
+    case 'pending':
+    case 'queued':
+      return 'queued'
     case 'checking':
     case 'connecting':
     case 'container-creating':
     case 'deleting':
     case 'in_progress':
-    case 'pending':
     case 'preparing':
     case 'progressing':
-    case 'queued':
     case 'running':
     case 'scanning':
     case 'streaming':
-      return true
-    default:
-      return false
+      return 'running'
+    case 'canceled':
+    case 'cancelled':
+      return 'canceled'
+  }
+  return statusIndicatorStateForTone(statusToneFor(normalized))
+}
+
+function statusIndicatorStateForTone(tone: StatusTone): StatusIndicatorState {
+  switch (tone) {
+    case 'success':
+      return 'success'
+    case 'danger':
+      return 'failure'
+    case 'warning':
+      return 'warning'
+    case 'info':
+      return 'info'
+    case 'neutral':
+      return 'neutral'
+  }
+}
+
+/** 指示器状态到语义 tone：进行中与排队沿用 StatusBadge 对 running/queued 的琥珀色。 */
+export function statusIndicatorTone(state: StatusIndicatorState): StatusTone {
+  switch (state) {
+    case 'running':
+    case 'queued':
+    case 'warning':
+      return 'warning'
+    case 'success':
+      return 'success'
+    case 'failure':
+      return 'danger'
+    case 'info':
+      return 'info'
+    case 'canceled':
+    case 'neutral':
+      return 'neutral'
   }
 }

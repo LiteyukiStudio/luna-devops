@@ -1,11 +1,11 @@
 import type { ReactNode } from 'react'
 import type { TerminalConnectionState } from './use-terminal-connection'
-import type { StatusTone } from '@/components/common/status-tone'
+import type { StatusIndicatorState } from '@/components/common/status-tone'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
-import { StatusDot } from './status-dot'
+import { StatusIndicator } from './status-indicator'
 
 /** 日志查看器与 Web 终端共用的工具栏：左侧对象信息，右侧操作。 */
 export function ViewerToolbar({ actions, children, className }: {
@@ -92,11 +92,11 @@ export function TerminalPlaceholderButton({ children, icon, onClick }: {
   )
 }
 
-const connectionTones: Record<TerminalConnectionState, StatusTone> = {
+const connectionStates: Record<TerminalConnectionState, StatusIndicatorState> = {
   connected: 'success',
-  connecting: 'info',
+  connecting: 'running',
   disconnected: 'neutral',
-  failed: 'danger',
+  failed: 'failure',
   idle: 'neutral',
 }
 
@@ -111,7 +111,7 @@ export function TerminalConnectionStatus({ state }: { state: TerminalConnectionS
   }
   return (
     <span aria-live="polite" className="inline-flex">
-      <StatusDot className="text-xs" label={labels[state]} pulse={state === 'connecting'} tone={connectionTones[state]} />
+      <StatusIndicator className="text-xs" label={labels[state]} state={connectionStates[state]} />
     </span>
   )
 }

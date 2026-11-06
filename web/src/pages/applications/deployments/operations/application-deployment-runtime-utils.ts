@@ -1,6 +1,6 @@
 import type { ClusterResource, DeploymentTarget, RuntimeCluster } from '@/api'
-import type { StatusTone } from '@/components/common/status-tone'
-import { statusToneFor } from '@/components/common/status-tone'
+import type { StatusIndicatorState } from '@/components/common/status-tone'
+import { statusIndicatorStateFor } from '@/components/common/status-tone'
 
 export interface DeploymentRuntimeStatus {
   clusterName?: string
@@ -174,9 +174,9 @@ export function effectiveReplicaState({ availableReplicas, deployed = true, desi
   return { showReplicas: !replicaUnobservedStatuses.has(normalized), value: normalized }
 }
 
-/** 运行状态到语义 tone：未部署和已缩容不是故障，统一中性色。 */
-export function replicaStateTone(value: string): StatusTone {
+/** 运行状态到状态指示器：未部署和已缩容不是故障，统一中性。 */
+export function replicaIndicatorState(value: string): StatusIndicatorState {
   if (value === 'not-deployed' || value === 'scaled-to-zero')
     return 'neutral'
-  return statusToneFor(value)
+  return statusIndicatorStateFor(value)
 }

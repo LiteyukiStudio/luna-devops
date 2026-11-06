@@ -1,9 +1,11 @@
 import type { AgentObservabilityConversationToolCall, AgentObservabilityTrace } from '@/api'
-import { Check, ChevronRight, CircleAlert, CircleDashed, Network } from 'lucide-react'
+import { ChevronRight, Network } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { CopyableCodeBlock } from '@/components/common/ai-assistant/copyable-code-block'
+import { aiToolIndicatorState } from '@/components/common/ai-assistant/status-indicator-states'
 import { toolDisplayName } from '@/components/common/ai-assistant/tool-display-name'
 import { StatusBadge } from '@/components/common/status-badge'
+import { StatusGlyph } from '@/components/common/status-indicator'
 import { formatMillisecondsDuration } from '@/components/common/time-format'
 import { Button } from '@/components/ui/button'
 
@@ -16,7 +18,7 @@ export function AgentObservabilityToolCall({ call, onViewTrace, onSelectToolCall
   return (
     <details className="group overflow-hidden rounded-container bg-surface" open>
       <summary className="flex min-h-10 cursor-pointer list-none items-center gap-2 px-3 py-2 outline-none hover:bg-surface-inset focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
-        <ToolStatusIcon status={call.status} />
+        <StatusGlyph className="text-base" state={aiToolIndicatorState(call.status)} />
         <strong className="min-w-0 flex-1 truncate text-xs font-medium">{toolDisplayName(t, call.operationId)}</strong>
         <StatusBadge tone={toolTone(call.status)}>{t(`aiAssistant.status.${call.status}`, { defaultValue: call.status })}</StatusBadge>
         {call.durationMs !== undefined && <span className="text-xs text-muted-foreground">{formatMillisecondsDuration(call.durationMs, i18n.language)}</span>}
@@ -48,14 +50,6 @@ function ToolPayload({ label, value, emptyLabel }: { label: string, value: unkno
         : <CopyableCodeBlock className="max-h-64" value={formatJSON(value)}><code>{formatJSON(value)}</code></CopyableCodeBlock>}
     </section>
   )
-}
-
-function ToolStatusIcon({ status }: { status: string }) {
-  if (status === 'succeeded')
-    return <Check className="size-4 shrink-0 text-success" />
-  if (status === 'failed')
-    return <CircleAlert className="size-4 shrink-0 text-danger" />
-  return <CircleDashed className="size-4 shrink-0 text-muted-foreground" />
 }
 
 function toolTone(status: string): 'success' | 'danger' | 'warning' | 'neutral' {

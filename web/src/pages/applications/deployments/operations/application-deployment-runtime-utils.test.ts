@@ -1,6 +1,6 @@
 import type { ClusterResource, DeploymentTarget, RuntimeCluster } from '@/api'
 import { describe, expect, it } from 'vitest'
-import { buildDeploymentRuntimeStatus, effectiveReplicaState, replicaStateTone } from './application-deployment-runtime-utils'
+import { buildDeploymentRuntimeStatus, effectiveReplicaState, replicaIndicatorState } from './application-deployment-runtime-utils'
 
 describe('deployment runtime status', () => {
   const cluster = { id: 'cluster-1', name: 'Runtime' } as RuntimeCluster
@@ -49,13 +49,13 @@ describe('deployment runtime status', () => {
 describe('effective replica state', () => {
   it('treats a missing deployment as undeployed without replica counts', () => {
     expect(effectiveReplicaState({ deployed: false, desiredReplicas: 0, readyReplicas: 0, status: 'ready' })).toEqual({ showReplicas: false, value: 'not-deployed' })
-    expect(replicaStateTone('not-deployed')).toBe('neutral')
+    expect(replicaIndicatorState('not-deployed')).toBe('neutral')
   })
 
   it('downgrades an inconsistent ready state and recognises scaled-down workloads', () => {
     expect(effectiveReplicaState({ availableReplicas: 0, desiredReplicas: 1, readyReplicas: 0, status: 'ready' })).toEqual({ showReplicas: true, value: 'progressing' })
     expect(effectiveReplicaState({ desiredReplicas: 0, readyReplicas: 0, status: 'ready' })).toEqual({ showReplicas: true, value: 'scaled-to-zero' })
-    expect(replicaStateTone('scaled-to-zero')).toBe('neutral')
+    expect(replicaIndicatorState('scaled-to-zero')).toBe('neutral')
   })
 
   it('shows observed replicas of a disabled target that is still running', () => {
@@ -65,6 +65,6 @@ describe('effective replica state', () => {
 
   it('hides replica counts when the runtime could not be observed', () => {
     expect(effectiveReplicaState({ desiredReplicas: 2, readyReplicas: 0, status: 'unavailable' })).toEqual({ showReplicas: false, value: 'unavailable' })
-    expect(replicaStateTone('unavailable')).toBe('danger')
+    expect(replicaIndicatorState('unavailable')).toBe('failure')
   })
 })

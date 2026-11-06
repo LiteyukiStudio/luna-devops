@@ -1,33 +1,22 @@
 import type { AIBlock } from './state'
-import type { AIToolStatus, AIUIAction } from '@/api'
-import type { StatusTone } from '@/components/common/status-tone'
-import { Check, ChevronRight, CircleAlert, CircleDashed, CircleStop, LoaderCircle, Minus, ShieldAlert } from 'lucide-react'
+import type { AIUIAction } from '@/api'
+import { ChevronRight, LoaderCircle, ShieldAlert } from 'lucide-react'
 import { useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { StatusBadge } from '@/components/common/status-badge'
-import { StatusDot } from '@/components/common/status-dot'
+import { StatusGlyph } from '@/components/common/status-indicator'
 import { formatMillisecondsDuration } from '@/components/common/time-format'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { isAIUIActionRepeatable } from './actions'
 import { runFailureTranslationKey } from './errors'
+import { aiToolIndicatorState } from './status-indicator-states'
 import { AIToolCallDetails } from './tool-call-details'
 import { toolDisplayName } from './tool-display-name'
 
 export type ToolCallBlock = Extract<AIBlock, { type: 'tool_call' }>
 export type AIApprovalDecision = 'reject' | 'approve'
-
-const statusTone: Record<AIToolStatus, StatusTone> = {
-  proposed: 'neutral',
-  awaiting_approval: 'warning',
-  running: 'info',
-  succeeded: 'success',
-  failed: 'danger',
-  rejected: 'neutral',
-  canceled: 'neutral',
-  skipped: 'neutral',
-}
 
 export function AIToolCallCard({ block, onAction, onApproval, surface = 'window' }: { block: ToolCallBlock, onAction: (action: AIUIAction) => Promise<boolean>, onApproval: (block: ToolCallBlock, decision: AIApprovalDecision) => Promise<void>, surface?: 'page' | 'window' }) {
   const { t, i18n } = useTranslation()
@@ -49,8 +38,8 @@ export function AIToolCallCard({ block, onAction, onApproval, surface = 'window'
     >
       <details className="group/tool">
         <summary className={cn('relative flex cursor-pointer list-none items-center gap-2 outline-none transition-colors hover:bg-surface-subtle focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring [&::-webkit-details-marker]:hidden', page ? 'min-h-11 px-3 py-1.5 pointer-fine:min-h-9' : 'min-h-9 px-2.5 py-1.5')} data-ai-tool-summary data-ai-tool-surface={surface}>
-          <span className={cn('grid size-5 shrink-0 place-items-center rounded-md', block.status === 'failed' ? 'bg-danger-subtle' : 'bg-muted')}>
-            <ToolStatusIcon status={block.status} />
+          <span className="grid size-5 shrink-0 place-items-center text-sm" data-ai-tool-status-icon={block.status}>
+            <StatusGlyph state={aiToolIndicatorState(block.status)} />
           </span>
           <strong className={cn('min-w-0 flex-1 truncate font-medium', page ? 'text-sm' : 'text-xs')}>{title}</strong>
           {block.visibility === 'internal' && (
@@ -59,7 +48,7 @@ export function AIToolCallCard({ block, onAction, onApproval, surface = 'window'
             </StatusBadge>
           )}
           <span className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
-            <StatusDot className="text-xs [&_[data-slot=status-dot-indicator]]:size-1.5" label={t(`aiAssistant.status.${block.status}`)} pulse={block.status === 'running'} tone={statusTone[block.status]} />
+            <span>{t(`aiAssistant.status.${block.status}`)}</span>
             {block.durationMs !== undefined && (
               <span className="hidden tabular-nums sm:contents" data-ai-tool-duration>
                 <span aria-hidden="true" className="opacity-60">·</span>
@@ -90,23 +79,6 @@ export function AIToolCallCard({ block, onAction, onApproval, surface = 'window'
       )}
     </div>
   )
-}
-
-function ToolStatusIcon({ status }: { status: AIToolStatus }) {
-  const className = 'size-3'
-  if (status === 'running')
-    return <LoaderCircle aria-hidden="true" className={cn(className, 'animate-spin text-info motion-reduce:animate-none')} data-ai-tool-status-icon={status} />
-  if (status === 'succeeded')
-    return <Check aria-hidden="true" className={cn(className, 'text-success')} data-ai-tool-status-icon={status} />
-  if (status === 'failed')
-    return <CircleAlert aria-hidden="true" className={cn(className, 'text-danger')} data-ai-tool-status-icon={status} />
-  if (status === 'rejected' || status === 'skipped')
-    return <Minus aria-hidden="true" className={cn(className, 'text-muted-foreground')} data-ai-tool-status-icon={status} />
-  if (status === 'canceled')
-    return <CircleStop aria-hidden="true" className={cn(className, 'text-muted-foreground')} data-ai-tool-status-icon={status} />
-  if (status === 'awaiting_approval')
-    return <ShieldAlert aria-hidden="true" className={cn(className, 'text-warning')} data-ai-tool-status-icon={status} />
-  return <CircleDashed aria-hidden="true" className={cn(className, 'text-muted-foreground')} data-ai-tool-status-icon={status} />
 }
 
 function ActionButton({ action, onAction, surface }: { action: AIUIAction, onAction: (action: AIUIAction) => Promise<boolean>, surface: 'page' | 'window' }) {

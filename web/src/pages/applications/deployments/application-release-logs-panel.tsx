@@ -6,7 +6,7 @@ import { api, ApiError } from '@/api'
 import { LogViewer } from '@/components/common/log-viewer'
 import { OutputViewerSheet } from '@/components/common/output-viewer-sheet'
 import { StatusValueBadge } from '@/components/common/status-badge'
-import { StatusDot } from '@/components/common/status-dot'
+import { StatusIndicator } from '@/components/common/status-indicator'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
 import { WORKFLOW_STATUS_REFETCH_INTERVAL_MS } from '@/lib/polling'
@@ -48,7 +48,7 @@ export function ApplicationReleaseLogsPanel({
     : runtimeErrorCode === 'runtime.container_not_started'
       ? t('deploymentsPage.runtimeContainerNotStarted')
       : t('common.unavailable')
-  const liveDot = <StatusDot className="text-xs" label={t('common.logViewer.live')} pulse tone="info" />
+  const liveDot = <StatusIndicator className="text-xs" label={t('common.logViewer.live')} state="running" />
 
   return (
     <OutputViewerSheet

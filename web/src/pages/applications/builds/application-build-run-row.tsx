@@ -6,8 +6,8 @@ import { toast } from 'sonner'
 import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { buildRunImageRef } from '@/components/common/deployment-build-runs'
 import { HoverText } from '@/components/common/hover-text'
-import { StatusDot } from '@/components/common/status-dot'
-import { isInProgressStatus, statusToneFor } from '@/components/common/status-tone'
+import { StatusIndicator } from '@/components/common/status-indicator'
+import { statusIndicatorStateFor } from '@/components/common/status-tone'
 import { formatElapsedDuration, formatSmartDateTime } from '@/components/common/time-format'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
@@ -31,13 +31,13 @@ const buildFailedStatuses = new Set(['failed', 'timeout'])
 
 export interface BuildRunBinding { cloneUrl?: string, defaultBranch: string, gitAccountId: string, owner: string, repo: string }
 
-/** 构建状态：圆点 + 当前阶段或结果；失败、超时或取消时直接显示原因摘要，悬停查看任务诊断信息。 */
+/** 构建状态：状态指示器 + 当前阶段或结果；失败、超时或取消时直接显示原因摘要，悬停查看任务诊断信息。 */
 export function BuildRunStatusCell({ latestJob, run }: { latestJob?: BuildJob, run: BuildRun }) {
   const { t } = useTranslation()
   const liveState = buildRunLiveState(run, latestJob, t)
   const failureMessage = buildRunFailureMessage(run, latestJob, t)
   const failureReason = run.failureCode ? t(`buildsPage.failureCodes.${run.failureCode}`) : ''
-  const status = <StatusDot label={liveState} pulse={isInProgressStatus(run.status)} tone={statusToneFor(run.status)} />
+  const status = <StatusIndicator label={liveState} state={statusIndicatorStateFor(run.status)} />
   return (
     <div className="grid min-w-0 max-w-full gap-0.5">
       {failureMessage

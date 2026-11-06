@@ -93,7 +93,7 @@ describe('application builds panel', () => {
 
     expect(await screen.findByText(/1 build run/)).toBeVisible()
     expect(screen.getByText('registry.example.test/example:latest')).toBeVisible()
-    expect(screen.getByText('Succeeded', { selector: '[data-slot="status-dot"] span' }).closest('[data-slot="status-dot"]')).toHaveAttribute('data-tone', 'success')
+    expect(screen.getByText('Succeeded', { selector: '[data-slot="status-indicator"] span' }).closest('[data-slot="status-indicator"]')).toHaveAttribute('data-tone', 'success')
     expect(screen.getByRole('button', { name: 'Logs' })).toBeDisabled()
     expect(screen.queryByText('Bind a code repository to this application first')).not.toBeInTheDocument()
   })
@@ -111,7 +111,7 @@ describe('application builds panel', () => {
     renderPanel()
 
     expect(await screen.findByText('Waited in the queue too long to start')).toBeVisible()
-    expect(screen.getByText('Timed out', { selector: '[data-slot="status-dot"] span' }).closest('[data-slot="status-dot"]')).toHaveAttribute('data-tone', 'danger')
+    expect(screen.getByText('Timed out', { selector: '[data-slot="status-indicator"] span' }).closest('[data-slot="status-indicator"]')).toHaveAttribute('data-tone', 'danger')
   })
 
   it('does not attribute an old build to a replacement repository binding', async () => {

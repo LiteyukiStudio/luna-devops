@@ -20,7 +20,7 @@ import { shortImageRef } from '@/lib/image-ref'
 import { deploymentTargetCanRelease } from '@/pages/applications/application-config-utils'
 import { AccessUrlLink } from '@/pages/applications/gateway/access-url-link'
 import { gatewayRouteAccessUrl, primaryGatewayRoute } from '@/pages/applications/gateway/gateway-route-url'
-import { DeploymentRuntimeSpec, DeploymentRuntimeStatusDot } from './application-deployment-runtime'
+import { DeploymentRuntimeSpec, DeploymentRuntimeStatusIndicator } from './application-deployment-runtime'
 import { deploymentTargetDeleteFailureMessage } from './deployment-target-delete-failure'
 import { DeploymentTargetDetailSheet } from './deployment-target-detail-sheet'
 
@@ -160,7 +160,7 @@ export function ApplicationDeploymentTargetsList({
         <DataList
           columns={[
             { key: 'name', header: t('common.name'), width: 'primary', maxWidth: 176, minWidth: 144, render: item => <DeploymentTargetSummary item={item} onViewDetails={() => setDetailTargetId(item.target.id)} /> },
-            { key: 'runtimeStatus', header: t('deploymentsPage.runtimeStatus'), width: 'status', maxWidth: 152, render: item => <DeploymentRuntimeStatusDot availableReplicas={item.target.availableReplicas} deployed={item.deployed} desiredReplicas={item.target.desiredReplicas} readyReplicas={item.target.readyReplicas} status={item.runtimeStatus} /> },
+            { key: 'runtimeStatus', header: t('deploymentsPage.runtimeStatus'), width: 'status', maxWidth: 152, render: item => <DeploymentRuntimeStatusIndicator availableReplicas={item.target.availableReplicas} deployed={item.deployed} desiredReplicas={item.target.desiredReplicas} readyReplicas={item.target.readyReplicas} status={item.runtimeStatus} /> },
             { key: 'accessUrl', header: t('deploymentsPage.accessAddress'), width: 'normal', maxWidth: 176, minWidth: 128, render: item => <DeploymentAccessAddress item={item} /> },
             { key: 'domain', className: 'hidden @[96rem]/deployment-targets:table-cell', header: t('deploymentsPage.internalAddress'), width: 'secondary', maxWidth: 176, render: item => <DeploymentServiceDomain endpoint={item.internalEndpoint} /> },
             { key: 'image', header: t('deploymentsPage.currentVersion'), width: 'normal', maxWidth: 240, minWidth: 144, render: item => <DeploymentVersionSummary release={item.release} onViewLogs={onViewLogs} /> },
@@ -426,7 +426,7 @@ function MobileDeploymentTargetCard({
     <Surface className="grid gap-3 p-4" data-slot="deployment-target-card" variant="bordered">
       <div className="flex min-w-0 items-start justify-between gap-3">
         <DeploymentTargetSummary item={item} onViewDetails={onViewDetails} />
-        <DeploymentRuntimeStatusDot availableReplicas={item.target.availableReplicas} deployed={item.deployed} desiredReplicas={item.target.desiredReplicas} readyReplicas={item.target.readyReplicas} status={item.runtimeStatus} />
+        <DeploymentRuntimeStatusIndicator availableReplicas={item.target.availableReplicas} deployed={item.deployed} desiredReplicas={item.target.desiredReplicas} readyReplicas={item.target.readyReplicas} status={item.runtimeStatus} />
       </div>
       <dl className="grid grid-cols-1 gap-3 text-sm @lg/deployment-targets:grid-cols-2">
         <LabeledValue label={t('deploymentsPage.accessAddress')}>
