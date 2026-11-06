@@ -15,6 +15,7 @@ import (
 	kubeprovider "github.com/LiteyukiStudio/devops/internal/provider/kubernetes"
 	"github.com/LiteyukiStudio/devops/internal/provider/networkpolicy"
 	"github.com/LiteyukiStudio/devops/internal/redisconfig"
+	"github.com/LiteyukiStudio/devops/internal/resourcepolicy"
 	"github.com/LiteyukiStudio/devops/internal/tasks"
 	"github.com/LiteyukiStudio/devops/internal/telemetry"
 	"github.com/LiteyukiStudio/devops/internal/testdb"
@@ -258,16 +259,6 @@ func TestCompletedHourlyWindowsReturnsOnlyCompleteHours(t *testing.T) {
 	}
 }
 
-func TestRuntimeBillingEffectivePeriodProratesWindowStart(t *testing.T) {
-	windowStart := time.Date(2026, 6, 19, 6, 0, 0, 0, time.UTC)
-	windowEnd := windowStart.Add(time.Hour)
-	workloadCreatedAt := windowStart.Add(25 * time.Minute)
-	start, end, ok := runtimeBillingEffectivePeriod(windowStart, windowEnd, workloadCreatedAt)
-	if !ok || !start.Equal(workloadCreatedAt) || !end.Equal(windowEnd) {
-		t.Fatalf("period = %s %s %v", start, end, ok)
-	}
-}
-
 func TestRuntimeObservationWindowOnlyAcceptsCurrentMinute(t *testing.T) {
 	now := time.Date(2026, 8, 16, 12, 10, 0, 0, time.UTC)
 	start, end, ok := runtimeObservationWindow(now.Add(30*time.Second), now.Add(45*time.Second))
@@ -339,13 +330,19 @@ func TestRecordRuntimeObservationIsMinuteIdempotentAndPersistsMetrics(t *testing
 	target := model.DeploymentTarget{
 		ID: "dplt_observation", ProjectID: "prj_observation", CPURequest: "1", MemoryRequest: "1Gi",
 	}
+	// The cluster policy changed after the workload was rendered; the observation
+	// must record what the Pod template actually runs, not the current policy.
 	cluster := model.RuntimeCluster{
-		ID: "clu_observation", CPURequestPercent: 10, MemoryRequestPercent: 25,
+		ID: "clu_observation", CPURequestPercent: 50, MemoryRequestPercent: 50,
 		CPULimitPercent: 100, MemoryLimitPercent: 100,
 	}
 	snapshot := kubeprovider.DeploymentSnapshot{
 		DesiredReplicas: 2, UpdatedReplicas: 2, ReadyReplicas: 2, AvailableReplicas: 2,
 		CreatedAt: observedAt.Add(-time.Hour), ObservedAt: observedAt, Phase: "running",
+		Resources: kubeprovider.PodTemplateResources{
+			CPURequestMilli: 100, MemoryRequestBytes: 256 * 1024 * 1024,
+			Policy: &resourcepolicy.Policy{CPURequestPercent: 10, MemoryRequestPercent: 25, CPULimitPercent: 100, MemoryLimitPercent: 100},
+		},
 	}
 	metrics := kubeprovider.RuntimeMetricsSnapshot{
 		Available: true, PodCount: 2, ContainerCount: 4, CPUUsageMilli: 375,
@@ -368,12 +365,70 @@ func TestRecordRuntimeObservationIsMinuteIdempotentAndPersistsMetrics(t *testing
 		got.PodCount != 2 || got.ContainerCount != 4 || got.EffectiveCPURequest != "100m" || got.EffectiveMemoryRequest != "256Mi" {
 		t.Fatalf("persisted runtime observation = %#v", got)
 	}
+	if got.CPURequestPercent == nil || *got.CPURequestPercent != 10 || got.MemoryRequestPercent == nil || *got.MemoryRequestPercent != 25 {
+		t.Fatalf("persisted render-time policy = %v/%v", got.CPURequestPercent, got.MemoryRequestPercent)
+	}
+}
+
+func TestRuntimeObservationRequestStrings(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		cpuMilli   int64
+		memory     int64
+		wantCPU    string
+		wantMemory string
+	}{
+		{name: "rendered requests", cpuMilli: 250, memory: 512 * 1024 * 1024, wantCPU: "250m", wantMemory: "512Mi"},
+		{name: "whole cores and sidecar sum", cpuMilli: 1000, memory: 1536 * 1024 * 1024, wantCPU: "1", wantMemory: "1536Mi"},
+		{name: "omitted requests", cpuMilli: 0, memory: 0, wantCPU: "", wantMemory: ""},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := milliQuantityString(test.cpuMilli); got != test.wantCPU {
+				t.Fatalf("milliQuantityString(%d) = %q, want %q", test.cpuMilli, got, test.wantCPU)
+			}
+			if got := byteQuantityString(test.memory); got != test.wantMemory {
+				t.Fatalf("byteQuantityString(%d) = %q, want %q", test.memory, got, test.wantMemory)
+			}
+			if got := quantityMilliValue(milliQuantityString(test.cpuMilli)); got != test.cpuMilli {
+				t.Fatalf("cpu round trip = %d, want %d", got, test.cpuMilli)
+			}
+			if got := quantityValue(byteQuantityString(test.memory)); got != test.memory {
+				t.Fatalf("memory round trip = %d, want %d", got, test.memory)
+			}
+		})
+	}
+}
+
+func TestAggregateRuntimeObservationsCollectsOnlyRecordedPolicies(t *testing.T) {
+	start := time.Date(2026, 8, 22, 7, 0, 0, 0, time.UTC)
+	ten, twentyFive, hundred := 10, 25, 100
+	recorded := model.RuntimeObservation{
+		PeriodStart: start, PeriodEnd: start.Add(time.Minute), WorkloadCreatedAt: start, DesiredReplicas: 1,
+		EffectiveCPURequest: "100m", CPURequestPercent: &ten, MemoryRequestPercent: &twentyFive, CPULimitPercent: &hundred, MemoryLimitPercent: &hundred,
+	}
+	legacy := model.RuntimeObservation{
+		PeriodStart: start.Add(time.Minute), PeriodEnd: start.Add(2 * time.Minute), WorkloadCreatedAt: start, DesiredReplicas: 1,
+		EffectiveCPURequest: "100m",
+	}
+	got, ok := aggregateRuntimeObservations(hourlyWindow{Start: start, End: start.Add(time.Hour)}, []model.RuntimeObservation{legacy, recorded})
+	if !ok || got.sampleCount != 2 {
+		t.Fatalf("aggregation = %#v, %v", got, ok)
+	}
+	want := []runtimePolicySnapshot{{CPURequestPercent: 10, MemoryRequestPercent: 25, CPULimitPercent: 100, MemoryLimitPercent: 100}}
+	if len(got.policySnapshots) != 1 || got.policySnapshots[0] != want[0] {
+		t.Fatalf("policy snapshots = %#v, want %#v", got.policySnapshots, want)
+	}
+	// Both minutes bill the observed template request, with or without a recorded policy.
+	if got.cpuRequest.String() != "0.00333333333333334" {
+		t.Fatalf("cpu request floor = %s", got.cpuRequest)
+	}
 }
 
 func TestAggregateRuntimeObservationsUsesPerSampleMaximumAndSkipsGaps(t *testing.T) {
 	start := time.Date(2026, 8, 22, 4, 0, 0, 0, time.UTC)
 	window := hourlyWindow{Start: start, End: start.Add(time.Hour)}
-	policy := model.RuntimeObservation{CPURequestPercent: 10, MemoryRequestPercent: 25, CPULimitPercent: 100, MemoryLimitPercent: 100}
+	cpuRequestPercent, memoryRequestPercent, limitPercent := 10, 25, 100
+	policy := model.RuntimeObservation{CPURequestPercent: &cpuRequestPercent, MemoryRequestPercent: &memoryRequestPercent, CPULimitPercent: &limitPercent, MemoryLimitPercent: &limitPercent}
 	first := policy
 	first.PeriodStart, first.PeriodEnd, first.WorkloadCreatedAt = start, start.Add(time.Minute), start.Add(30*time.Second)
 	first.DesiredReplicas, first.EffectiveCPURequest, first.EffectiveMemoryRequest = 2, "100m", "256Mi"
@@ -460,8 +515,8 @@ func TestStorageBillingEffectivePeriodDoesNotPrecedeClaimCreation(t *testing.T) 
 
 func TestExpiredBuildJobUpdatesRecordTimeout(t *testing.T) {
 	finishedAt := time.Date(2026, 6, 9, 12, 0, 0, 0, time.UTC)
-	updates := expiredBuildJobUpdates(finishedAt)
-	if updates["status"] != "lost" || updates["message"] != "build_timeout_expired" {
+	updates := expiredBuildJobUpdates(model.BuildFailureTimeout, finishedAt)
+	if updates["status"] != "timeout" || updates["failure_code"] != model.BuildFailureTimeout {
 		t.Fatalf("updates = %#v", updates)
 	}
 	gotFinishedAt, ok := updates["finished_at"].(*time.Time)
@@ -497,16 +552,6 @@ func TestProjectNamespaceSelection(t *testing.T) {
 				t.Fatalf("namespace = %q, want %q", got, test.want)
 			}
 		})
-	}
-}
-
-func TestRuntimeClusterLookupTrimsClusterID(t *testing.T) {
-	query, args := runtimeClusterLookup(" rcl_target ")
-	if query != "id = ?" {
-		t.Fatalf("query = %q", query)
-	}
-	if args[0] != "rcl_target" {
-		t.Fatalf("cluster id arg = %#v", args[0])
 	}
 }
 
@@ -1160,6 +1205,14 @@ func (fakeNamespaceManager) GetCertificateSnapshot(context.Context, string, stri
 	return kubeprovider.CertificateSnapshot{}, nil
 }
 
+func (fakeNamespaceManager) ReleaseGatewayCertificate(context.Context, kubeprovider.GatewayCertificateRelease) (kubeprovider.GatewayCertificateReleaseResult, error) {
+	return kubeprovider.GatewayCertificateReleaseResult{}, nil
+}
+
+func (fakeNamespaceManager) HasManagedHTTPRoutes(context.Context) (bool, error) {
+	return false, nil
+}
+
 func (fakeNamespaceManager) ListManagedResources(context.Context, kubeprovider.ResourceListOptions) ([]kubeprovider.ResourceSnapshot, error) {
 	return nil, nil
 }
@@ -1319,7 +1372,7 @@ func TestCleanupProjectNamespacesCoversDistinctClusters(t *testing.T) {
 		{ClusterID: "rcl_two"},
 	}
 
-	if err := runner.cleanupProjectNamespacesForDeploymentTargets(context.Background(), project, targets); err != nil {
+	if err := runner.cleanupProjectNamespacesForDeploymentTargets(context.Background(), project, targets, "usr_test"); err != nil {
 		t.Fatalf("cleanupProjectNamespacesForDeploymentTargets returned error: %v", err)
 	}
 	for _, key := range []string{"rcl_one", "rcl_two"} {
@@ -1567,8 +1620,8 @@ func TestApplicationResourcesSpecMergesRuntimeConfigFiles(t *testing.T) {
 
 func TestReleaseFinishUpdatesIncludesTerminalFields(t *testing.T) {
 	finishedAt := time.Date(2026, 6, 7, 12, 0, 0, 0, time.UTC)
-	updates := releaseFinishUpdates("succeeded", "rollout completed", finishedAt)
-	if updates["status"] != "succeeded" || updates["message"] != "rollout completed" {
+	updates := releaseFinishUpdates("failed", model.ReleaseFailureRolloutFailed, "rollout failed", finishedAt)
+	if updates["status"] != "failed" || updates["failure_code"] != model.ReleaseFailureRolloutFailed || updates["message"] != "rollout failed" {
 		t.Fatalf("updates = %#v", updates)
 	}
 	gotFinishedAt, ok := updates["finished_at"].(*time.Time)

@@ -1,7 +1,7 @@
 const runtimeConfigSets = {
-  tab: '配置',
+  tab: '執行配置',
   title: '配置',
-  description: '把同一專案空間內多個應用會複用的執行變數、配置檔案和金鑰檔案抽成公共配置。',
+  description: '把同一專案空間內多個應用會複用的執行變數、配置檔案和金鑰檔案抽成共用執行配置。',
   createTitle: '新增配置',
   editTitle: '編輯配置',
   dialogDescription: '配置可被部署配置引用；儲存後，下一次釋出或重啟會把配置注入到應用容器。',

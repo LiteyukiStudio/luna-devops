@@ -16,7 +16,6 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/runtimecluster"
 	"github.com/LiteyukiStudio/devops/internal/runtimeconfig"
 	"github.com/LiteyukiStudio/devops/internal/variables"
-	"gorm.io/gorm"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 )
 
@@ -48,6 +47,7 @@ func applyRuntimeClusterResourcePolicy(spec *kubeprovider.ApplicationResourcesSp
 	spec.MemoryRequest = effective.MemoryRequest
 	spec.CPULimit = effective.CPULimit
 	spec.MemoryLimit = effective.MemoryLimit
+	spec.ResourcePolicy = kubeprovider.EncodeResourcePolicyAnnotation(policy)
 	return nil
 }
 
@@ -73,21 +73,11 @@ func (r *Runner) runtimeClusterForDeploymentTarget(ctx context.Context, target m
 }
 
 func (r *Runner) runtimeClusterForClusterID(ctx context.Context, clusterID string) (model.RuntimeCluster, error) {
-	var cluster model.RuntimeCluster
-	db := r.db.WithContext(ctx)
-	if clusterID = strings.TrimSpace(clusterID); clusterID != "" {
-		query, args := runtimeClusterLookup(clusterID)
-		err := runtimecluster.ActiveScope(db).First(&cluster, append([]any{query}, args...)...).Error
-		if err != nil {
+	cluster, err := runtimecluster.ResolveForTarget(r.db.WithContext(ctx), clusterID)
+	if err != nil {
+		if clusterID = strings.TrimSpace(clusterID); clusterID != "" {
 			return cluster, fmt.Errorf("runtime cluster %s not found: %w", clusterID, err)
 		}
-		return cluster, nil
-	}
-	err := runtimecluster.ActiveScope(db).Where("scope = ? and is_default = ?", "global", true).First(&cluster).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		err = runtimecluster.ActiveScope(db).Where("scope = ?", "global").Order("created_at asc").First(&cluster).Error
-	}
-	if err != nil {
 		return cluster, fmt.Errorf("runtime cluster not found: %w", err)
 	}
 	return cluster, nil
@@ -108,10 +98,6 @@ func runtimeClusterKubeconfigError(err error) error {
 
 func isKubernetesNotFound(err error) bool {
 	return apierrors.IsNotFound(err)
-}
-
-func runtimeClusterLookup(clusterID string) (string, []any) {
-	return "id = ?", []any{strings.TrimSpace(clusterID)}
 }
 
 func projectNamespace(project model.Project) string {

@@ -1,6 +1,8 @@
 package dashboard
 
 import (
+	"fmt"
+	"maps"
 	"slices"
 	"testing"
 	"time"
@@ -186,4 +188,115 @@ func assertDashboardResourceIDs(t *testing.T, got []string, want []string) {
 
 func openDashboardTestDB(t *testing.T) *gorm.DB {
 	return testdb.Open(t, testdb.Options{SchemaPrefix: "dashboard_test"})
+}
+
+func TestDashboardExcludesDeletingApplicationsAndReturnsLatestActivityPerApplication(t *testing.T) {
+	db := openDashboardTestDB(t)
+	if err := db.AutoMigrate(&model.Project{}, &model.ProjectMember{}, &model.ProjectPin{}, &model.Application{}, &model.DeploymentTarget{}, &model.BuildRun{}, &model.Release{}, &model.PlatformEvent{}); err != nil {
+		t.Fatalf("migrate dashboard test schema: %v", err)
+	}
+	now := time.Date(2026, 7, 16, 12, 0, 0, 0, time.UTC)
+	project := model.Project{ID: "prj_apps", Name: "Apps", Identifier: "apps", MaxConcurrentBuilds: 2, WebConsoleEnabled: true, CreatedAt: now}
+	if err := db.Create(&project).Error; err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	applications := []model.Application{
+		{ID: "app_busy", ProjectID: project.ID, Name: "Busy", Identifier: "busy", DeleteStatus: "active", CreatedAt: now},
+		{ID: "app_quiet", ProjectID: project.ID, Name: "Quiet", Identifier: "quiet", DeleteStatus: "active", CreatedAt: now},
+		{ID: "app_failed_delete", ProjectID: project.ID, Name: "Failed delete", Identifier: "failed-delete", DeleteStatus: "delete_failed", CreatedAt: now},
+		{ID: "app_deleting", ProjectID: project.ID, Name: "Deleting", Identifier: "deleting", DeleteStatus: "deleting", CreatedAt: now},
+		{ID: "app_deleted", ProjectID: project.ID, Name: "Deleted", Identifier: "deleted", DeleteStatus: "deleted", CreatedAt: now},
+	}
+	if err := db.Create(&applications).Error; err != nil {
+		t.Fatalf("create applications: %v", err)
+	}
+	events := []model.PlatformEvent{
+		{ID: "evt_quiet_old", Type: "release.succeeded", Category: "release", Severity: "info", Status: "succeeded", ProjectID: project.ID, ApplicationID: "app_quiet", OccurredAt: now.Add(-48 * time.Hour), CreatedAt: now.Add(-48 * time.Hour)},
+		{ID: "evt_quiet_older", Type: "build.succeeded", Category: "build", Severity: "info", Status: "succeeded", ProjectID: project.ID, ApplicationID: "app_quiet", OccurredAt: now.Add(-72 * time.Hour), CreatedAt: now.Add(-72 * time.Hour)},
+		{ID: "evt_deleting", Type: "application.deleting", Category: "application", Severity: "info", Status: "running", ProjectID: project.ID, ApplicationID: "app_deleting", OccurredAt: now, CreatedAt: now},
+	}
+	for index := 0; index < activityLimit+5; index++ {
+		occurredAt := now.Add(-time.Duration(index) * time.Minute)
+		events = append(events, model.PlatformEvent{ID: fmt.Sprintf("evt_busy_%02d", index), Type: "build.succeeded", Category: "build", Severity: "info", Status: "succeeded", ProjectID: project.ID, ApplicationID: "app_busy", OccurredAt: occurredAt, CreatedAt: occurredAt})
+	}
+	if err := db.Create(&events).Error; err != nil {
+		t.Fatalf("create events: %v", err)
+	}
+	service := NewService(db)
+	service.now = func() time.Time { return now }
+
+	overview, err := service.Overview(t.Context(), Scope{UserID: "usr_1", VisibleProjectIDs: []string{project.ID}})
+	if err != nil {
+		t.Fatalf("aggregate dashboard: %v", err)
+	}
+	if overview.Summary.Applications != 3 {
+		t.Fatalf("summary applications = %d, want 3 (deleting and deleted excluded)", overview.Summary.Applications)
+	}
+	if len(overview.Projects) != 1 || overview.Projects[0].ApplicationCount != 3 {
+		t.Fatalf("project shortcuts = %#v, want 3 applications", overview.Projects)
+	}
+	for _, activity := range overview.Activities {
+		if activity.Application != nil && activity.Application.ID == "app_quiet" {
+			t.Fatalf("quiet application should fall outside the recent activity window: %#v", overview.Activities)
+		}
+	}
+	got := make([]string, 0, len(overview.ApplicationActivities))
+	for _, activity := range overview.ApplicationActivities {
+		if activity.Application == nil {
+			t.Fatalf("application activity without application reference: %#v", activity)
+		}
+		got = append(got, activity.Application.ID+"="+activity.ID)
+	}
+	want := []string{"app_busy=evt_busy_00", "app_quiet=evt_quiet_old"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("application activities = %v, want %v", got, want)
+	}
+}
+
+func TestDashboardProjectShortcutLatestActivityIsNotLimitedByRecentEventScan(t *testing.T) {
+	db := openDashboardTestDB(t)
+	if err := db.AutoMigrate(&model.Project{}, &model.ProjectMember{}, &model.ProjectPin{}, &model.Application{}, &model.DeploymentTarget{}, &model.BuildRun{}, &model.Release{}, &model.PlatformEvent{}); err != nil {
+		t.Fatalf("migrate dashboard test schema: %v", err)
+	}
+	now := time.Date(2026, 7, 16, 12, 0, 0, 0, time.UTC)
+	busy := model.Project{ID: "prj_busy", Name: "Busy", Identifier: "busy", MaxConcurrentBuilds: 2, WebConsoleEnabled: true, CreatedAt: now}
+	quiet := model.Project{ID: "prj_quiet", Name: "Quiet", Identifier: "quiet", MaxConcurrentBuilds: 2, WebConsoleEnabled: true, CreatedAt: now.Add(-time.Hour)}
+	silent := model.Project{ID: "prj_silent", Name: "Silent", Identifier: "silent", MaxConcurrentBuilds: 2, WebConsoleEnabled: true, CreatedAt: now.Add(-2 * time.Hour)}
+	if err := db.Create(&[]model.Project{busy, quiet, silent}).Error; err != nil {
+		t.Fatalf("create projects: %v", err)
+	}
+	// 忙碌项目空间的事件填满全局最近事件扫描窗口，安静项目空间的最近一条事件落在窗口之外。
+	events := []model.PlatformEvent{
+		{ID: "evt_quiet_latest", Type: "release.succeeded", Category: "release", Severity: "info", Status: "succeeded", ProjectID: quiet.ID, OccurredAt: now.Add(-48 * time.Hour), CreatedAt: now.Add(-48 * time.Hour)},
+		{ID: "evt_quiet_older", Type: "build.succeeded", Category: "build", Severity: "info", Status: "succeeded", ProjectID: quiet.ID, OccurredAt: now.Add(-72 * time.Hour), CreatedAt: now.Add(-72 * time.Hour)},
+	}
+	for index := 0; index < eventScanLimit+10; index++ {
+		occurredAt := now.Add(-time.Duration(index) * time.Second)
+		events = append(events, model.PlatformEvent{ID: fmt.Sprintf("evt_busy_%03d", index), Type: "build.succeeded", Category: "build", Severity: "info", Status: "succeeded", ProjectID: busy.ID, OccurredAt: occurredAt, CreatedAt: occurredAt})
+	}
+	if err := db.CreateInBatches(&events, 100).Error; err != nil {
+		t.Fatalf("create events: %v", err)
+	}
+	service := NewService(db)
+	service.now = func() time.Time { return now }
+
+	overview, err := service.Overview(t.Context(), Scope{UserID: "usr_1", VisibleProjectIDs: []string{busy.ID, quiet.ID, silent.ID}})
+	if err != nil {
+		t.Fatalf("aggregate dashboard: %v", err)
+	}
+	latest := map[string]string{}
+	for _, shortcut := range overview.Projects {
+		if shortcut.LatestActivity == nil {
+			latest[shortcut.ID] = ""
+			continue
+		}
+		if shortcut.LatestActivity.Project == nil || shortcut.LatestActivity.Project.ID != shortcut.ID {
+			t.Fatalf("shortcut %s latest activity has wrong project reference: %#v", shortcut.ID, shortcut.LatestActivity)
+		}
+		latest[shortcut.ID] = shortcut.LatestActivity.ID
+	}
+	want := map[string]string{busy.ID: "evt_busy_000", quiet.ID: "evt_quiet_latest", silent.ID: ""}
+	if !maps.Equal(latest, want) {
+		t.Fatalf("shortcut latest activities = %v, want %v", latest, want)
+	}
 }

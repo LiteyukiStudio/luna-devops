@@ -3,7 +3,7 @@ import type { BuildRun } from '@/api'
 import { useTranslation } from 'react-i18next'
 import { NativeSelect as Select } from '@/components/ui/native-select'
 
-const buildRunStatusFilters: Array<BuildRun['status']> = ['queued', 'running', 'succeeded', 'failed', 'canceled', 'lost', 'timeout']
+const buildRunStatusFilters: Array<BuildRun['status']> = ['queued', 'running', 'succeeded', 'failed', 'canceled', 'timeout']
 const buildRunEventFilters: Array<BuildRun['triggerType']> = ['manual', 'push', 'tag', 'webhook', 'api', 'retry']
 
 export function ApplicationBuildRunFilterBar({ actor, actorOptions, branch, branchOptions, event, onActorChange, onBranchChange, onEventChange, onStatusChange, status }: {
@@ -72,7 +72,7 @@ function BuildRunFilterSelect({ children, label, onChange, value }: {
   onChange: (value: string) => void
 }) {
   return (
-    <label className="w-full sm:w-36">
+    <label className="w-full @lg/data-list:w-36">
       <span className="sr-only">{label}</span>
       <Select
         aria-label={label}

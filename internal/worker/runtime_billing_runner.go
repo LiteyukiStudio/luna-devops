@@ -11,7 +11,6 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	kubeprovider "github.com/LiteyukiStudio/devops/internal/provider/kubernetes"
-	"github.com/LiteyukiStudio/devops/internal/resourcepolicy"
 	"github.com/LiteyukiStudio/devops/internal/telemetry"
 	"github.com/hibiken/asynq"
 	"github.com/shopspring/decimal"
@@ -34,7 +33,8 @@ func (r *Runner) settleRuntimeUsageWindows(ctx context.Context, now time.Time) e
 	var targets []model.DeploymentTarget
 	if err := r.db.WithContext(ctx).
 		Joins("join projects on projects.id = deployment_targets.project_id").
-		Where("deployment_targets.enabled = ? and deployment_targets.delete_status in ? and projects.system_key = ?", true, []string{"active", ""}, "").
+		// 停用部署配置不会缩容工作负载，仍按真实副本观察与计费。
+		Where("deployment_targets.delete_status in ? and projects.system_key = ?", []string{"active", ""}, "").
 		Order("deployment_targets.created_at asc").
 		Find(&targets).Error; err != nil {
 		return err
@@ -212,11 +212,6 @@ func (r *Runner) recordRuntimeObservation(ctx context.Context, target model.Depl
 	if !ok {
 		return nil
 	}
-	policy := resourcepolicy.Policy{CPURequestPercent: cluster.CPURequestPercent, MemoryRequestPercent: cluster.MemoryRequestPercent, CPULimitPercent: cluster.CPULimitPercent, MemoryLimitPercent: cluster.MemoryLimitPercent}
-	effective, err := resourcepolicy.Calculate(target.CPURequest, target.MemoryRequest, policy)
-	if err != nil {
-		return err
-	}
 	observationCode := "runtime.metrics_observed"
 	if !metrics.Available {
 		observationCode = "runtime.metrics_unavailable"
@@ -232,21 +227,23 @@ func (r *Runner) recordRuntimeObservation(ctx context.Context, target model.Depl
 		UpdatedReplicas:        snapshot.UpdatedReplicas,
 		ReadyReplicas:          snapshot.ReadyReplicas,
 		AvailableReplicas:      snapshot.AvailableReplicas,
-		EffectiveCPURequest:    effective.CPURequest,
-		EffectiveMemoryRequest: effective.MemoryRequest,
+		EffectiveCPURequest:    milliQuantityString(snapshot.Resources.CPURequestMilli),
+		EffectiveMemoryRequest: byteQuantityString(snapshot.Resources.MemoryRequestBytes),
 		CPUUsageMilli:          metrics.CPUUsageMilli,
 		MemoryUsageBytes:       metrics.MemoryUsageBytes,
 		MetricsAvailable:       metrics.Available,
 		PodCount:               metrics.PodCount,
 		ContainerCount:         metrics.ContainerCount,
-		CPURequestPercent:      policy.CPURequestPercent, MemoryRequestPercent: policy.MemoryRequestPercent,
-		CPULimitPercent: policy.CPULimitPercent, MemoryLimitPercent: policy.MemoryLimitPercent,
-		WorkloadCreatedAt: snapshot.CreatedAt,
-		Status:            snapshot.Phase,
-		ObservationCode:   observationCode,
-		ObservedAt:        observedAt,
+		WorkloadCreatedAt:      snapshot.CreatedAt,
+		Status:                 snapshot.Phase,
+		ObservationCode:        observationCode,
+		ObservedAt:             observedAt,
 	}
-	err = r.db.WithContext(ctx).Clauses(clause.OnConflict{
+	if policy := snapshot.Resources.Policy; policy != nil {
+		observation.CPURequestPercent, observation.MemoryRequestPercent = &policy.CPURequestPercent, &policy.MemoryRequestPercent
+		observation.CPULimitPercent, observation.MemoryLimitPercent = &policy.CPULimitPercent, &policy.MemoryLimitPercent
+	}
+	err := r.db.WithContext(ctx).Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "deployment_target_id"}, {Name: "period_start"}},
 		DoNothing: true,
 	}).Create(&observation).Error
@@ -320,8 +317,7 @@ func aggregateRuntimeObservations(window hourlyWindow, observations []model.Runt
 		if observation.MetricsAvailable {
 			result.metricsSampleCount++
 		}
-		policy := runtimePolicySnapshot{observation.CPURequestPercent, observation.MemoryRequestPercent, observation.CPULimitPercent, observation.MemoryLimitPercent}
-		if !seenPolicies[policy] {
+		if policy, ok := observationPolicySnapshot(observation); ok && !seenPolicies[policy] {
 			seenPolicies[policy] = true
 			result.policySnapshots = append(result.policySnapshots, policy)
 		}
@@ -362,6 +358,35 @@ func aggregateRuntimeObservations(window hourlyWindow, observations []model.Runt
 		result.memoryBilled = result.memoryBilled.Add(decimal.NewFromInt(billedMemoryBytes).Div(gib).Mul(durationHours))
 	}
 	return result, result.sampleCount > 0
+}
+
+// observationPolicySnapshot returns the render-time policy recorded with the
+// observation; workloads rendered before the policy annotation have none.
+func observationPolicySnapshot(observation model.RuntimeObservation) (runtimePolicySnapshot, bool) {
+	if observation.CPURequestPercent == nil || observation.MemoryRequestPercent == nil ||
+		observation.CPULimitPercent == nil || observation.MemoryLimitPercent == nil {
+		return runtimePolicySnapshot{}, false
+	}
+	return runtimePolicySnapshot{
+		CPURequestPercent: *observation.CPURequestPercent, MemoryRequestPercent: *observation.MemoryRequestPercent,
+		CPULimitPercent: *observation.CPULimitPercent, MemoryLimitPercent: *observation.MemoryLimitPercent,
+	}, true
+}
+
+// milliQuantityString and byteQuantityString encode the per-replica Pod
+// template requests; an omitted request is stored as an empty quantity.
+func milliQuantityString(milli int64) string {
+	if milli <= 0 {
+		return ""
+	}
+	return resource.NewMilliQuantity(milli, resource.DecimalSI).String()
+}
+
+func byteQuantityString(bytes int64) string {
+	if bytes <= 0 {
+		return ""
+	}
+	return resource.NewQuantity(bytes, resource.BinarySI).String()
 }
 
 func quantityMilliValue(value string) int64 {
@@ -486,17 +511,6 @@ func completedHourlyWindows(now time.Time, lookbackHours int) []hourlyWindow {
 		windows = append(windows, hourlyWindow{Start: start, End: start.Add(time.Hour)})
 	}
 	return windows
-}
-
-func runtimeBillingEffectivePeriod(windowStart time.Time, windowEnd time.Time, workloadCreatedAt time.Time) (time.Time, time.Time, bool) {
-	start := windowStart
-	if workloadCreatedAt.After(start) {
-		start = workloadCreatedAt
-	}
-	if !windowEnd.After(start) {
-		return time.Time{}, time.Time{}, false
-	}
-	return start, windowEnd, true
 }
 
 func storageBillingEffectivePeriod(windowStart time.Time, windowEnd time.Time, targetCreatedAt time.Time) (time.Time, time.Time, bool) {

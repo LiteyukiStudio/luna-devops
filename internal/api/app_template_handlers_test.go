@@ -202,6 +202,7 @@ type appTemplateInstallDBObservation struct {
 	createdMount        *model.DeploymentVolumeMount
 	createdInstallation *model.AppTemplateInstallation
 	createdSecrets      []model.SecretValue
+	createdBindings     []model.ServiceBinding
 	// distinctVolumes 让每次项目卷查询返回不同 ID，模拟多组件各自选择独立数据卷。
 	distinctVolumes bool
 	volumeQueries   int
@@ -281,6 +282,8 @@ func newAppTemplateInstallTestDB(t *testing.T, observation *appTemplateInstallDB
 			observation.createdInstallation = &created
 		case *model.SecretValue:
 			observation.createdSecrets = append(observation.createdSecrets, *destination)
+		case *model.ServiceBinding:
+			observation.createdBindings = append(observation.createdBindings, *destination)
 		}
 		query.RowsAffected = 1
 	}); err != nil {
@@ -376,6 +379,44 @@ func TestInstallNeoBlogTemplateCreatesComponentsWithSharedSecrets(t *testing.T) 
 	}
 	if env := buildapi.DecodeSecretRefs(targets["web"].EnvVars); env["BACKEND_URL"] != "http://luna-blog-api-prod:8888" {
 		t.Fatalf("web env = %#v", env)
+	}
+	edges := map[string]model.ServiceBinding{}
+	for _, binding := range observation.createdBindings {
+		var sourceKey, targetKey string
+		for key, target := range targets {
+			if target.ID == binding.SourceDeploymentTargetID {
+				sourceKey = key
+			}
+			if target.ID == binding.TargetDeploymentTargetID {
+				targetKey = key
+			}
+		}
+		edges[sourceKey+"->"+targetKey] = binding
+	}
+	if len(observation.createdBindings) != 4 || len(edges) != 4 {
+		t.Fatalf("component service bindings = %#v", observation.createdBindings)
+	}
+	for edge, want := range map[string][3]any{
+		"web->api": {"API_HOST", "API_PORT", 8888}, "web->redis": {"REDIS_HOST", "REDIS_PORT", 6379},
+		"api->postgres": {"POSTGRES_HOST", "POSTGRES_PORT", 5432}, "api->redis": {"REDIS_HOST", "REDIS_PORT", 6379},
+	} {
+		binding, exists := edges[edge]
+		if !exists || binding.InjectionMode != "host_port" || binding.Protocol != "tcp" || !binding.Enabled ||
+			binding.HostEnvVar != want[0] || binding.PortEnvVar != want[1] || binding.TargetPort != want[2] || binding.ProjectID != "prj_template" {
+			t.Fatalf("binding %s = %#v", edge, binding)
+		}
+	}
+	if len(observation.createdReleases) != 0 {
+		t.Fatalf("installNow=false created releases: %#v", observation.createdReleases)
+	}
+	var installationFields struct {
+		Installation map[string]any `json:"installation"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &installationFields); err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := installationFields.Installation["status"]; exists {
+		t.Fatalf("installation response must not carry a persisted status: %#v", installationFields.Installation)
 	}
 	resolved := map[string]string{}
 	for _, entry := range observation.createdSecrets {

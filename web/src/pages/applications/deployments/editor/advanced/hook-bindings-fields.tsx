@@ -86,7 +86,7 @@ function HookBindingRow({ disabled, hooks, imageSource, index, isFirst, isLast, 
   const errorId = `deployment-target-hook-${index}-error`
 
   return (
-    <li className="grid gap-2 md:grid-cols-[2rem_minmax(0,1fr)_minmax(0,1.2fr)_auto] md:items-center">
+    <li className="grid gap-2 @xl/workspace:grid-cols-[2rem_minmax(0,1fr)_minmax(0,1.2fr)_auto] @xl/workspace:items-center">
       <span aria-hidden="true" className="text-sm font-medium text-muted-foreground tabular-nums">{order}</span>
       <NativeSelect {...register(`buildHookBindings.${index}.phase`)} aria-label={t('deploymentTargetEditor.hookPhaseFor', { index: order })} disabled={disabled}>
         <optgroup label={t('deploymentTargetEditor.buildPhases')}>
@@ -120,7 +120,7 @@ function HookBindingRow({ disabled, hooks, imageSource, index, isFirst, isLast, 
           <Trash2 className="size-4" />
         </Button>
       </div>
-      {error && <p className="text-xs text-danger md:col-span-4" id={errorId} role="alert">{error}</p>}
+      {error && <p className="text-xs text-danger @xl/workspace:col-span-4" id={errorId} role="alert">{error}</p>}
     </li>
   )
 }

@@ -130,7 +130,21 @@ func eventTime(event corev1.Event) time.Time {
 	return event.CreationTimestamp.Time
 }
 
-var errBuildRunCanceled = errors.New("build run canceled")
+var (
+	errBuildRunCanceled = errors.New("build run canceled")
+	errBuildJobTimedOut = errors.New("build job timed out")
+	errBuildJobFailed   = errors.New("build job failed")
+)
+
+// buildFollowFailureCode classifies a followBuildJob error into its stable code.
+func buildFollowFailureCode(err error) string {
+	switch {
+	case errors.Is(err, errBuildJobFailed):
+		return model.BuildFailureJobFailed
+	default:
+		return model.BuildFailureObservationFailed
+	}
+}
 
 func (r *Runner) buildRunCanceled(job model.BuildJob) (bool, error) {
 	var run model.BuildRun
@@ -201,29 +215,43 @@ func (r *Runner) completeBuildJob(ctx context.Context, job model.BuildJob, run m
 	return completedRun, err
 }
 
-func (r *Runner) failBuildJob(ctx context.Context, job model.BuildJob, run model.BuildRun, message string) error {
+func (r *Runner) failBuildJob(ctx context.Context, job model.BuildJob, run model.BuildRun, code string, message string) error {
+	return r.finishBuildJobUnsuccessfully(ctx, job, run, "failed", code, message)
+}
+
+// finishBuildJobUnsuccessfully moves an active job/run into a terminal failure
+// state. Rows already terminal are left untouched, and events are emitted only
+// by the writer that performed the transition.
+func (r *Runner) finishBuildJobUnsuccessfully(ctx context.Context, job model.BuildJob, run model.BuildRun, status string, code string, message string) error {
 	finishedAt := time.Now()
-	err := r.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Model(&model.BuildJob{}).Where("id = ? and project_id = ? and status in ?", job.ID, job.ProjectID, []string{"queued", "running"}).Updates(map[string]any{
-			"status":      "failed",
-			"message":     firstNonEmpty(message, "builder task failed"),
-			"finished_at": &finishedAt,
+	transitioned := false
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&model.BuildJob{}).Where("id = ? and project_id = ? and status in ?", job.ID, job.ProjectID, model.BuildActiveStatuses).Updates(map[string]any{
+			"status":       status,
+			"failure_code": code,
+			"message":      firstNonEmpty(message, code),
+			"finished_at":  &finishedAt,
 		}).Error; err != nil {
 			return err
 		}
-		return tx.Model(&model.BuildRun{}).Where("id = ? and project_id = ? and status in ?", run.ID, run.ProjectID, []string{"queued", "running"}).Updates(map[string]any{
-			"status":      "failed",
-			"finished_at": &finishedAt,
-		}).Error
+		result := tx.Model(&model.BuildRun{}).Where("id = ? and project_id = ? and status in ?", run.ID, run.ProjectID, model.BuildActiveStatuses).Updates(map[string]any{
+			"status":       status,
+			"failure_code": code,
+			"finished_at":  &finishedAt,
+		})
+		transitioned = result.RowsAffected == 1
+		return result.Error
 	})
-	if err == nil {
-		run.Status = "failed"
+	if err == nil && transitioned {
+		run.Status = status
+		run.FailureCode = code
 		run.FinishedAt = &finishedAt
 		r.recordBuildRunMetrics(ctx, run)
-		r.emitBuildFailed(ctx, run, message)
+		r.emitBuildFailed(ctx, run, firstNonEmpty(message, code))
 	}
 	return err
 }
+
 func (r *Runner) cleanupBuildJobSecrets(ctx context.Context, client kubernetes.Interface, namespace string, secretName string) error {
 	err := client.CoreV1().Secrets(namespace).Delete(ctx, secretName, metav1.DeleteOptions{})
 	if apierrors.IsNotFound(err) {
@@ -234,7 +262,11 @@ func (r *Runner) cleanupBuildJobSecrets(ctx context.Context, client kubernetes.I
 
 func (r *Runner) deleteKubernetesBuildJob(ctx context.Context, client kubernetes.Interface, namespace string, jobName string) error {
 	propagation := metav1.DeletePropagationBackground
-	return client.BatchV1().Jobs(namespace).Delete(ctx, jobName, metav1.DeleteOptions{PropagationPolicy: &propagation})
+	err := client.BatchV1().Jobs(namespace).Delete(ctx, jobName, metav1.DeleteOptions{PropagationPolicy: &propagation})
+	if apierrors.IsNotFound(err) {
+		return nil
+	}
+	return err
 }
 
 func buildKubernetesJobName(jobID string) string {

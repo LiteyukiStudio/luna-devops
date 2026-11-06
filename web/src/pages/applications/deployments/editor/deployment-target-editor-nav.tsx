@@ -50,7 +50,7 @@ export function DeploymentTargetEditorNav({ onNavigate, repositoryBindings, targ
 
   return (
     <nav aria-label={t('deploymentTargetEditor.navLabel')} className="min-w-0">
-      <ol className="flex gap-1 overflow-x-auto pb-1 lg:grid lg:overflow-visible lg:pb-0">
+      <ol className="flex gap-1 overflow-x-auto pb-1 @2xl/workspace:grid @2xl/workspace:overflow-visible @2xl/workspace:pb-0">
         {deploymentTargetSectionOrder.map((section) => {
           const errorCount = sectionErrorCount(errors, section)
           const active = activeSection === section
@@ -59,7 +59,7 @@ export function DeploymentTargetEditorNav({ onNavigate, repositoryBindings, targ
               <a
                 aria-current={active ? 'location' : undefined}
                 className={cn(
-                  'grid min-w-36 gap-0.5 rounded-control px-3 py-2 text-left outline-none transition-colors duration-fast hover:bg-surface-subtle focus-visible:ring-2 focus-visible:ring-ring lg:min-w-0',
+                  'grid min-w-36 gap-0.5 rounded-control px-3 py-2 text-left outline-none transition-colors duration-fast hover:bg-surface-subtle focus-visible:ring-2 focus-visible:ring-ring @2xl/workspace:min-w-0',
                   active && 'bg-primary-subtle',
                 )}
                 href={`#${deploymentTargetSectionAnchor(section)}`}
@@ -74,7 +74,7 @@ export function DeploymentTargetEditorNav({ onNavigate, repositoryBindings, targ
                   <span className={cn('truncate text-sm', active ? 'font-semibold text-primary-text' : 'font-medium text-foreground')}>{titles[section]}</span>
                   {errorCount > 0 && <StatusBadge tone="danger">{t('deploymentTargetEditor.errorCount', { count: errorCount })}</StatusBadge>}
                 </span>
-                <span className="hidden truncate text-xs text-muted-foreground lg:block">{summaries[section]}</span>
+                <span className="hidden truncate text-xs text-muted-foreground @2xl/workspace:block">{summaries[section]}</span>
               </a>
             </li>
           )

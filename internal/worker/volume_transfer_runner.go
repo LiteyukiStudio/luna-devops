@@ -22,6 +22,8 @@ const (
 	volumeTransferCleanupDeadline  = 45 * time.Second
 	volumeTransferCreationLeaseTTL = 2 * time.Minute
 	volumeTransferPodReadyDeadline = 15 * time.Minute
+	// volumeTransferSnapshotReadyDeadline 限制等待 VolumeSnapshot 就绪的时间，独立于 Pod 就绪和任务超时。
+	volumeTransferSnapshotReadyDeadline = 10 * time.Minute
 )
 
 func (r *Runner) handleVolumeImport(ctx context.Context, task *asynq.Task) error {
@@ -276,19 +278,9 @@ func (r *Runner) prepareVolumeTransferClaim(ctx context.Context, projectVolume m
 	if err != nil {
 		return "", nil, err
 	}
-	for !observation.ReadyToUse {
-		if observation.ErrorCode != "" {
-			return "", nil, &volume.DomainError{Code: volume.CodeTransferJobFailed, Message: "volume snapshot failed"}
-		}
-		select {
-		case <-ctx.Done():
-			return "", nil, ctx.Err()
-		case <-time.After(volumeTransferPodPollInterval):
-		}
-		observation, err = provider.ObserveVolumeSnapshot(ctx, projectVolume.Namespace, cleanup.snapshotName)
-		if err != nil {
-			return "", nil, err
-		}
+	// 快照已创建：等待失败或超时也要随失败清理一并删除快照。
+	if err := waitForVolumeTransferSnapshotReady(ctx, provider, projectVolume.Namespace, cleanup.snapshotName, observation, volumeTransferSnapshotReadyDeadline); err != nil {
+		return "", cleanup, err
 	}
 	_, err = provider.CreateProjectVolumeClaim(ctx, kubeprovider.ProjectVolumeClaimSpec{
 		ProjectID: projectVolume.ProjectID, VolumeID: projectVolume.ID, Namespace: projectVolume.Namespace,
@@ -297,6 +289,35 @@ func (r *Runner) prepareVolumeTransferClaim(ctx context.Context, projectVolume m
 		SourceSnapshotName: cleanup.snapshotName, SourceSnapshotAPI: "snapshot.storage.k8s.io", SourceSnapshotKind: "VolumeSnapshot",
 	})
 	return cleanup.claimName, cleanup, err
+}
+
+// waitForVolumeTransferSnapshotReady 用独立截止时间等待快照 ReadyToUse。集群装有 VolumeSnapshot CRD 却没有
+// snapshot controller 时快照永远不会就绪，超时后以 volume_transfer.snapshot_timeout 终止而不是拖到任务超时。
+func waitForVolumeTransferSnapshotReady(ctx context.Context, provider kubeprovider.ProjectVolumeProvider, namespace, snapshotName string, observation kubeprovider.VolumeSnapshotObservation, deadline time.Duration) error {
+	snapshotCtx, cancel := context.WithTimeout(ctx, deadline)
+	defer cancel()
+	for !observation.ReadyToUse {
+		if observation.ErrorCode != "" {
+			return &volume.DomainError{Code: volume.CodeTransferJobFailed, Message: "volume snapshot failed"}
+		}
+		select {
+		case <-snapshotCtx.Done():
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			return &volume.DomainError{Code: volume.CodeTransferSnapshotTimeout, Message: "volume snapshot did not become ready before the deadline"}
+		case <-time.After(volumeTransferPodPollInterval):
+		}
+		var err error
+		observation, err = provider.ObserveVolumeSnapshot(snapshotCtx, namespace, snapshotName)
+		if err != nil {
+			if snapshotCtx.Err() != nil && ctx.Err() == nil {
+				return &volume.DomainError{Code: volume.CodeTransferSnapshotTimeout, Message: "volume snapshot did not become ready before the deadline"}
+			}
+			return err
+		}
+	}
+	return nil
 }
 
 func (r *Runner) failOrRetryVolumeTransfer(ctx context.Context, service volumeWorkerService, provider kubeprovider.VolumeTransferProvider, transfer model.VolumeTransfer, projectVolume model.ProjectVolume, snapshot *volumeTransferSnapshotCleanup, cause error) error {

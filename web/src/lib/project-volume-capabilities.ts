@@ -1,6 +1,5 @@
 import type { ProjectVolume, VolumeTransfer } from '@/api'
-import type { ProjectRoleValue } from '@/lib/roles'
-import { isPlatformAdmin, ProjectRole } from '@/lib/roles'
+import { ProjectAction, projectActionAllowed } from '@/lib/roles'
 
 export interface ProjectVolumeCapabilities {
   canDelete: boolean
@@ -11,16 +10,16 @@ export interface ProjectVolumeCapabilities {
   userId: string
 }
 
-export function projectVolumeCapabilities(platformRole: string | null | undefined, projectRole: ProjectRoleValue | null | undefined, userId: string | null | undefined): ProjectVolumeCapabilities {
-  const platformAdmin = isPlatformAdmin(platformRole)
-  const projectAdmin = projectRole === ProjectRole.Owner || projectRole === ProjectRole.Admin
-  const projectWriter = projectAdmin || projectRole === ProjectRole.Developer
+/** 从项目详情返回的 currentUserActions 投影数据卷操作；角色策略只由后端 internal/authz 维护。 */
+export function projectVolumeCapabilities(actions: readonly string[] | null | undefined, userId: string | null | undefined): ProjectVolumeCapabilities {
+  const canExport = projectActionAllowed(actions, ProjectAction.VolumeExport)
   return {
-    canDelete: platformAdmin || projectAdmin,
-    canExport: platformAdmin || projectAdmin,
-    canImport: platformAdmin || projectWriter,
-    canManageOtherTransfers: platformAdmin || projectAdmin,
-    canWrite: platformAdmin || projectWriter,
+    canDelete: projectActionAllowed(actions, ProjectAction.VolumeDelete),
+    canExport,
+    canImport: projectActionAllowed(actions, ProjectAction.VolumeImport),
+    // 后端以 volume:export 判断能否管理他人发起的传输任务。
+    canManageOtherTransfers: canExport,
+    canWrite: projectActionAllowed(actions, ProjectAction.VolumeWrite),
     userId: userId ?? '',
   }
 }

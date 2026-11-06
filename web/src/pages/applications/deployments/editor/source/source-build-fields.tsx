@@ -95,7 +95,7 @@ export function SourceFields({ applicationId, editing, projectId, registries, re
           render={({ field }) => (
             <RadioGroup
               aria-label={t('apps.sourceType')}
-              className="grid gap-2 sm:grid-cols-2"
+              className="grid gap-2 @lg/workspace:grid-cols-2"
               value={field.value}
               onValueChange={(value) => {
                 field.onChange(value === 'image' ? 'image' : 'repository')
@@ -111,8 +111,8 @@ export function SourceFields({ applicationId, editing, projectId, registries, re
         />
         {repository
           ? (
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="md:col-span-2">
+              <div className="grid gap-4 @xl/workspace:grid-cols-2">
+                <div className="@xl/workspace:col-span-2">
                   <RepositoryBindingField
                     applicationId={applicationId}
                     projectId={projectId}
@@ -160,7 +160,7 @@ export function SourceFields({ applicationId, editing, projectId, registries, re
 
       {repository && (
         <EditorGroup description={t('deploymentTargetEditor.buildDescription')} title={t('deploymentTargetEditor.buildTitle')}>
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="grid gap-4 @xl/workspace:grid-cols-2">
             <ApplicationBuildTemplateFields
               dockerfileSuggestions={dockerfiles}
               recommendedTemplateIds={buildOptions.data?.recommendedTemplateIds ?? []}
@@ -217,7 +217,7 @@ export function BuildAdvancedFields({ buildEnvironmentAvailable, repositoryBindi
 
   return (
     <>
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid gap-4 @xl/workspace:grid-cols-2">
         <FormField hint={t('buildsPage.buildDirectoryHint')} label={t('buildsPage.buildDirectory')}>
           {fieldControl => (
             <div>
@@ -232,7 +232,7 @@ export function BuildAdvancedFields({ buildEnvironmentAvailable, repositoryBindi
           <Textarea {...register('buildArgs')} className="min-h-20 font-mono text-sm" placeholder={t('deploymentTargetEditor.examplePlaceholder', { value: t('buildsPage.buildArgsPlaceholder') })} />
         </FormField>
       </div>
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 @xl/workspace:grid-cols-3">
         <FormField label={t('deploymentsPage.buildCpuRequest')} required>
           {fieldControl => (
             <Controller
@@ -265,7 +265,7 @@ export function BuildAdvancedFields({ buildEnvironmentAvailable, repositoryBindi
         </div>
         {buildEnvironmentAvailable
           ? (
-              <div className="grid gap-3 lg:grid-cols-2">
+              <div className="grid gap-3 @2xl/workspace:grid-cols-2">
                 <Controller
                   control={control}
                   name="buildVariables"

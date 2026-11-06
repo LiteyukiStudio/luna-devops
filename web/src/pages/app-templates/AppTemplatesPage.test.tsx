@@ -142,6 +142,7 @@ describe('app template installation', () => {
       identifier: 'project-one',
       description: '',
       currentUserRole: 'developer',
+      currentUserActions: ['project:read', 'project:write', 'volume:read', 'volume:write'],
     })
     mocks.listRuntimeClusters.mockResolvedValue([{ id: 'cluster_1', name: 'Primary cluster', isDefault: true }])
     mocks.listProjectVolumes.mockResolvedValue(page([]))
@@ -252,13 +253,14 @@ describe('app template installation', () => {
     expect(await screen.findByTestId('location')).toHaveTextContent('/projects/prj_1/apps/app_1?tab=deployments')
   })
 
-  it('uses the project detail role and keeps viewers from creating or installing', async () => {
+  it('uses the project detail actions and keeps viewers from creating or installing', async () => {
     mocks.getProject.mockResolvedValue({
       id: 'prj_1',
       name: 'Project One',
       identifier: 'project-one',
       description: '',
       currentUserRole: 'viewer',
+      currentUserActions: ['project:read', 'volume:read'],
     })
     const availableVolume = {
       ...createdVolume,
@@ -281,6 +283,36 @@ describe('app template installation', () => {
     expect(within(installDialog).queryByRole('button', { name: i18next.t('projectVolumes.create') })).not.toBeInTheDocument()
     expect(within(installDialog).getByRole('button', { name: i18next.t('appTemplatesPage.install') })).toBeDisabled()
     expect(within(installDialog).getByText(i18next.t('appTemplatesPage.projectWriteRequired'))).toBeInTheDocument()
+  })
+
+  it('authorizes template installation separately from inline volume creation', async () => {
+    mocks.getProject.mockResolvedValue({
+      id: 'prj_1',
+      name: 'Project One',
+      identifier: 'project-one',
+      description: '',
+      currentUserActions: ['project:read', 'project:write', 'volume:read'],
+    })
+    mocks.listProjectVolumes.mockResolvedValue(page([{
+      ...createdVolume,
+      id: 'pvol_existing',
+      displayName: 'Existing Redis data',
+      lifecycleState: 'ready',
+      pendingOperation: '',
+      availability: 'available',
+    }]))
+    const user = userEvent.setup()
+    renderPage()
+
+    const installDialog = await openInstallSheet(user, 'Redis')
+    await expandCustomParameters(user, installDialog)
+    const volumeOption = await within(installDialog).findByRole('option', { name: 'Existing Redis data · 10Gi' })
+    await user.selectOptions(volumeOption.parentElement as HTMLSelectElement, 'pvol_existing')
+    await waitFor(() => expect(mocks.getProject).toHaveBeenCalledWith('prj_1'))
+
+    expect(within(installDialog).queryByRole('button', { name: i18next.t('projectVolumes.create') })).not.toBeInTheDocument()
+    expect(within(installDialog).queryByText(i18next.t('appTemplatesPage.projectWriteRequired'))).not.toBeInTheDocument()
+    expect(within(installDialog).getByRole('button', { name: i18next.t('appTemplatesPage.install') })).toBeEnabled()
   })
 
   it('prevents dismissing an in-flight volume creation', async () => {

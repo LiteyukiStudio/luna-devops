@@ -231,7 +231,7 @@ export function CodeRepositoriesPage() {
   const visibilitySelect = (
     <ResultVisibilitySelect
       canViewAll={canViewAll}
-      containerClassName="w-full sm:w-36"
+      containerClassName="w-full @lg/data-list:w-36"
       value={effectiveVisibility}
       onChange={(nextVisibility) => {
         setVisibility(nextVisibility)

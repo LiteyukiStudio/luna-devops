@@ -2,9 +2,11 @@ package appstore
 
 import (
 	"bytes"
+	"errors"
 	"slices"
 	"strings"
 	"testing"
+	"testing/iotest"
 )
 
 func TestCatalogUsesConsolidatedCategories(t *testing.T) {
@@ -184,6 +186,8 @@ func TestValidateTemplateWorkloadsRejectsInvalidComponents(t *testing.T) {
 		"unknown reference":   {Components: []Component{component("web", map[string]string{"API": "{{components.api.host}}"})}},
 		"template workload":   {Workload: Workload{Image: "example/app"}, Components: []Component{component("web", nil)}},
 		"missing image":       {Components: []Component{{Key: "web", Name: "Web", Workload: Workload{ServicePort: 80}}}},
+		"self reference":      {Components: []Component{component("web", map[string]string{"SELF": "{{components.web.host}}"})}},
+		"binding env clash":   {Components: []Component{component("web", map[string]string{"API_HOST": "{{components.api.host}}"}), component("api", nil)}},
 		"two project volumes": {Components: []Component{{Key: "web", Name: "Web", Workload: Workload{Image: "example/web", ServicePort: 80, DataVolumes: []DataVolume{{LogicalName: "a", SourceType: "projectVolume", MountPath: "/a"}, {LogicalName: "b", SourceType: "projectVolume", MountPath: "/b"}}}}}},
 	} {
 		if err := validateTemplateWorkloads(template); err == nil {
@@ -216,5 +220,45 @@ func TestCatalogFeaturesOnlyCuratedApplicationTemplates(t *testing.T) {
 	want := []string{"gitea", "neo-blog", "postgresql", "redis"}
 	if !slices.Equal(featured, want) {
 		t.Fatalf("featured templates = %v, want %v", featured, want)
+	}
+}
+
+func TestResolveValuesFailsWhenRandomSecretCannotBeGenerated(t *testing.T) {
+	original := randomSource
+	randomSource = iotest.ErrReader(errors.New("entropy unavailable"))
+	t.Cleanup(func() { randomSource = original })
+	template := Template{Values: []ValueDefinition{{Key: "password", Secret: true, AutoGenerate: true}}}
+	values, err := ResolveValues(template, nil)
+	if !errors.Is(err, ErrRandomSecretUnavailable) || values != nil {
+		t.Fatalf("ResolveValues() = %#v, %v; want ErrRandomSecretUnavailable", values, err)
+	}
+}
+
+func TestResolveValuesReportsMissingRequiredKey(t *testing.T) {
+	template := Template{Values: []ValueDefinition{{Key: "baseUrl", Required: true}}}
+	_, err := ResolveValues(template, map[string]string{"baseUrl": "  "})
+	var required *ValueRequiredError
+	if !errors.As(err, &required) || required.Key != "baseUrl" {
+		t.Fatalf("ResolveValues() error = %v, want ValueRequiredError for baseUrl", err)
+	}
+}
+
+func TestNeoBlogComponentDependenciesAreDeclaredOnce(t *testing.T) {
+	template, found, err := Find("neo-blog")
+	if err != nil || !found {
+		t.Fatalf("Find(neo-blog) found=%t err=%v", found, err)
+	}
+	got := map[string][]string{}
+	for _, component := range template.Components {
+		got[component.Key] = ComponentDependencies(component.Workload)
+	}
+	want := map[string][]string{"web": {"api", "redis"}, "api": {"postgres", "redis"}, "postgres": nil, "redis": nil}
+	for key, dependencies := range want {
+		if !slices.Equal(got[key], dependencies) {
+			t.Fatalf("%s dependencies = %v, want %v", key, got[key], dependencies)
+		}
+	}
+	if host, port := ComponentBindingEnvVars("postgres"); host != "POSTGRES_HOST" || port != "POSTGRES_PORT" {
+		t.Fatalf("binding env vars = %s/%s", host, port)
 	}
 }

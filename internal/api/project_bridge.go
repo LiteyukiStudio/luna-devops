@@ -42,6 +42,10 @@ func (host projectHost) ContinuousAuthorizationInterval() time.Duration {
 	return host.handlers.continuousAuthorizationInterval
 }
 
+func (host projectHost) ObserveGatewayRouteStatuses(ctx context.Context, routes []model.GatewayRoute) []model.GatewayRoute {
+	return host.handlers.domains.gateway.ObserveGatewayRouteStatuses(ctx, routes)
+}
+
 func (h *Handlers) authorizeProject(ctx *gin.Context, action authz.Action) (model.User, model.Project, bool) {
 	return h.domains.project.AuthorizeProject(ctx, action)
 }

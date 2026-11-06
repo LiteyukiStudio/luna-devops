@@ -79,7 +79,7 @@ export function AppTemplatesPage() {
 
   return (
     <PageShell spacing="compact" width="full">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+      <div className="flex flex-col gap-3 @2xl/workspace:flex-row @2xl/workspace:items-start @2xl/workspace:justify-between">
         <div aria-label={t('appTemplatesPage.categoryFilter')} className="flex min-w-0 flex-wrap gap-1.5" role="group">
           <CategoryChip
             count={keywordMatches.length}
@@ -100,7 +100,7 @@ export function AppTemplatesPage() {
         <div className="flex min-w-0 shrink-0 flex-wrap items-center gap-2">
           <Input
             aria-label={t('appTemplatesPage.searchPlaceholder')}
-            className="w-full sm:w-64"
+            className="w-full @lg/workspace:w-64"
             placeholder={t('appTemplatesPage.searchPlaceholder')}
             type="search"
             value={search}
@@ -108,7 +108,7 @@ export function AppTemplatesPage() {
           />
           <Select
             aria-label={t('appTemplatesPage.sortBy')}
-            containerClassName="min-w-32 flex-1 sm:w-36 sm:flex-none"
+            containerClassName="min-w-32 flex-1 @lg/workspace:w-36 @lg/workspace:flex-none"
             value={sortBy}
             onChange={event => setSortBy(event.target.value === 'name' ? 'name' : 'popularity')}
           >
@@ -174,7 +174,7 @@ function TemplateSection({ templates, title, titleId, onOpen }: { templates: App
 
 function TemplateGrid({ templates, onOpen }: { templates: AppTemplateSummary[], onOpen: (template: AppTemplateSummary) => void }) {
   return (
-    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+    <div className="grid gap-3 @lg/workspace:grid-cols-2 @4xl/workspace:grid-cols-3 @6xl/workspace:grid-cols-4">
       {templates.map(template => (
         <TemplateCard
           key={template.id}

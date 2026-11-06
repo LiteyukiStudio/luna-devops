@@ -40,6 +40,7 @@ const (
 	CodeTransferDownloadUnauthorized = "volume_transfer.download_unauthorized"
 	CodeTransferFormatUnsupported    = "volume_transfer.format_unsupported"
 	CodeTransferJobFailed            = "volume_transfer.job_failed"
+	CodeTransferSnapshotTimeout      = "volume_transfer.snapshot_timeout"
 	CodePaginationSortByInvalid      = "pagination.sort_by_invalid"
 	CodePaginationOrderInvalid       = "pagination.sort_order_invalid"
 )

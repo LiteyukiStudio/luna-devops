@@ -7,6 +7,7 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/appstore"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 type AppTemplateInstallInput = appTemplateInstallInput
@@ -33,16 +34,16 @@ func WriteApplicationIdentifierConflict(ctx *gin.Context, deleteStatus string) {
 	writeApplicationIdentifierConflict(ctx, deleteStatus)
 }
 
-func NormalizeBuildConcurrencyPolicy(value string) string {
-	return normalizeBuildConcurrencyPolicy(value)
-}
-
 func (h *Handler) EnqueueApplicationDelete(ctx context.Context, app model.Application, actorID string, deleteData bool) bool {
 	return h.enqueueApplicationDelete(ctx, app, actorID, deleteData)
 }
 
-func (h *Handler) EnsureNoIncomingServiceBindings(ctx *gin.Context, projectID, targetApplicationID, targetDeploymentTargetID string) bool {
-	return h.ensureNoIncomingServiceBindings(ctx, projectID, targetApplicationID, targetDeploymentTargetID)
+func EnsureNoIncomingServiceBindingsTx(tx *gorm.DB, projectID, targetApplicationID, targetDeploymentTargetID string) error {
+	return ensureNoIncomingServiceBindingsTx(tx, projectID, targetApplicationID, targetDeploymentTargetID)
+}
+
+func WriteServiceBindingInUseError(ctx *gin.Context, err error) bool {
+	return writeServiceBindingInUseError(ctx, err)
 }
 
 func WriteServiceBindingInUse(ctx *gin.Context, usages []ServiceBindingUsage) {

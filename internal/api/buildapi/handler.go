@@ -32,6 +32,7 @@ type Host interface {
 	ProjectRoleActionAllowed(ctx context.Context, user model.User, projectID string, action authz.Action) (bool, error)
 	WriteProjectAuthorizationError(ctx *gin.Context, err error)
 	AuditWithContext(userID, action, resource string, success bool, message string, ctx context.Context)
+	EnsureProjectCanMutate(ctx *gin.Context, project model.Project) bool
 	EnsureBillingAllowsNewBuild(ctx *gin.Context, projectID string) bool
 	RequireContinuousAuthorizationBinding(ctx *gin.Context, user model.User) (projectapi.ContinuousAuthorizationBinding, bool)
 	MonitorContinuousAuthorization(ctx context.Context, binding projectapi.ContinuousAuthorizationBinding, authorizationAllowed func(context.Context, model.User) bool, revoke func()) (<-chan struct{}, bool)
@@ -111,6 +112,10 @@ func (h *Handler) projectRoleActionAllowed(ctx context.Context, user model.User,
 
 func (h *Handler) auditWithContext(userID, action, resource string, success bool, message string, ctx context.Context) {
 	h.host.AuditWithContext(userID, action, resource, success, message, ctx)
+}
+
+func (h *Handler) ensureProjectCanMutate(ctx *gin.Context, project model.Project) bool {
+	return h.host.EnsureProjectCanMutate(ctx, project)
 }
 
 func (h *Handler) ensureBillingAllowsNewBuild(ctx *gin.Context, projectID string) bool {

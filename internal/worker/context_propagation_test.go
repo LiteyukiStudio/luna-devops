@@ -63,8 +63,8 @@ func TestDeploymentDatabaseOperationsPreserveTraceAndCancellationContext(t *test
 		ApplicationID:      "app_context",
 		DeploymentTargetID: "dt_context",
 	})
-	_ = runner.finishDeployRelease(ctx, model.Release{ID: "rel_context"}, "failed", "cancelled")
-	_ = runner.markApplicationDeleteFailed(ctx, "app_context", context.Canceled)
+	_, _ = runner.finishDeployRelease(ctx, model.Release{ID: "rel_context"}, "failed", model.ReleaseFailureCanceledByUser, "cancelled")
+	_ = runner.markApplicationDeleteFailed(ctx, "app_context", applicationDeleteCodeCleanupFailed, context.Canceled)
 
 	mu.Lock()
 	contexts := append([]context.Context(nil), observed...)

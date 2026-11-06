@@ -13,7 +13,6 @@ import (
 	kubeprovider "github.com/LiteyukiStudio/devops/internal/provider/kubernetes"
 	"github.com/LiteyukiStudio/devops/internal/runtimecluster"
 	"github.com/gin-gonic/gin"
-	"k8s.io/apimachinery/pkg/api/resource"
 )
 
 func (h *Handlers) StreamDeploymentTargetMetrics(ctx *gin.Context) {
@@ -159,14 +158,7 @@ func (h *Handlers) writeDeploymentTargetMetricsEvent(ctx *gin.Context, client *k
 }
 
 func (h *Handlers) deploymentTargetMetricsClient(target model.DeploymentTarget, ctx context.Context) (*kubeprovider.Client, string) {
-	var cluster model.RuntimeCluster
-	var err error
-	query := runtimecluster.ActiveScope(h.dbWithContext(ctx))
-	if clusterID := strings.TrimSpace(target.ClusterID); clusterID != "" {
-		err = query.First(&cluster, "id = ?", clusterID).Error
-	} else {
-		err = query.Where("scope = ?", "global").Order("is_default desc, created_at asc").First(&cluster).Error
-	}
+	cluster, err := runtimecluster.ResolveForTarget(h.dbWithContext(ctx), target.ClusterID)
 	if err != nil {
 		return nil, "cluster_unavailable"
 	}
@@ -181,45 +173,67 @@ func (h *Handlers) deploymentTargetMetricsClient(target model.DeploymentTarget, 
 	return client, ""
 }
 
+// deploymentTargetMetricsResponse compares like with like: usage, request
+// floor and limit all cover every regular container of every replica. The
+// request and limit come from the workload Pod template observed together with
+// the usage, so they reflect what was rendered rather than current settings.
 type deploymentTargetMetricsResponse struct {
-	Available           bool      `json:"available"`
-	Status              string    `json:"status"`
-	Reason              string    `json:"reason,omitempty"`
-	ConfiguredReplicas  int       `json:"configuredReplicas"`
-	DesiredReplicas     int32     `json:"desiredReplicas"`
-	ReadyReplicas       int32     `json:"readyReplicas"`
-	AvailableReplicas   int32     `json:"availableReplicas"`
-	PodCount            int       `json:"podCount"`
-	ContainerCount      int       `json:"containerCount"`
-	CPUUsageMilli       int64     `json:"cpuUsageMilli"`
-	CPUCapacityMilli    int64     `json:"cpuCapacityMilli"`
-	CPUUsagePercent     float64   `json:"cpuUsagePercent"`
-	MemoryUsageBytes    int64     `json:"memoryUsageBytes"`
-	MemoryCapacityBytes int64     `json:"memoryCapacityBytes"`
-	MemoryUsagePercent  float64   `json:"memoryUsagePercent"`
-	UpdatedAt           time.Time `json:"updatedAt"`
+	Available          bool   `json:"available"`
+	Status             string `json:"status"`
+	Reason             string `json:"reason,omitempty"`
+	ConfiguredReplicas int    `json:"configuredReplicas"`
+	DesiredReplicas    int32  `json:"desiredReplicas"`
+	ReadyReplicas      int32  `json:"readyReplicas"`
+	AvailableReplicas  int32  `json:"availableReplicas"`
+	PodCount           int    `json:"podCount"`
+	ContainerCount     int    `json:"containerCount"`
+	// Aggregates across all replicas.
+	CPUUsageMilli      int64 `json:"cpuUsageMilli"`
+	CPURequestMilli    int64 `json:"cpuRequestMilli"`
+	CPULimitMilli      int64 `json:"cpuLimitMilli"`
+	MemoryUsageBytes   int64 `json:"memoryUsageBytes"`
+	MemoryRequestBytes int64 `json:"memoryRequestBytes"`
+	MemoryLimitBytes   int64 `json:"memoryLimitBytes"`
+	// Percentages are usage divided by the aggregate limit; omitted when the
+	// workload has no bounded limit for that resource.
+	CPUUsagePercent    *float64 `json:"cpuUsagePercent,omitempty"`
+	MemoryUsagePercent *float64 `json:"memoryUsagePercent,omitempty"`
+	// Per-replica Pod template envelope.
+	ReplicaCPURequestMilli    int64     `json:"replicaCpuRequestMilli"`
+	ReplicaCPULimitMilli      int64     `json:"replicaCpuLimitMilli"`
+	ReplicaMemoryRequestBytes int64     `json:"replicaMemoryRequestBytes"`
+	ReplicaMemoryLimitBytes   int64     `json:"replicaMemoryLimitBytes"`
+	UpdatedAt                 time.Time `json:"updatedAt"`
 }
 
 func deploymentTargetMetricsResponseFromSnapshot(snapshot kubeprovider.RuntimeMetricsSnapshot, target model.DeploymentTarget) deploymentTargetMetricsResponse {
-	cpuCapacityMilli := quantityMilliValue(target.CPURequest) * int64(snapshot.DesiredReplicas)
-	memoryCapacityBytes := quantityValue(target.MemoryRequest) * int64(snapshot.DesiredReplicas)
+	replicas := int64(snapshot.DesiredReplicas)
+	resources := snapshot.Resources
+	cpuLimit := resources.CPULimitMilli * replicas
+	memoryLimit := resources.MemoryLimitBytes * replicas
 	return deploymentTargetMetricsResponse{
-		Available:           snapshot.Available,
-		Status:              deploymentTargetMetricsStatus(snapshot.Available),
-		Reason:              snapshot.Reason,
-		ConfiguredReplicas:  target.Replicas,
-		DesiredReplicas:     snapshot.DesiredReplicas,
-		ReadyReplicas:       snapshot.ReadyReplicas,
-		AvailableReplicas:   snapshot.AvailableReplicas,
-		PodCount:            snapshot.PodCount,
-		ContainerCount:      snapshot.ContainerCount,
-		CPUUsageMilli:       snapshot.CPUUsageMilli,
-		CPUCapacityMilli:    cpuCapacityMilli,
-		CPUUsagePercent:     usagePercent(snapshot.CPUUsageMilli, cpuCapacityMilli),
-		MemoryUsageBytes:    snapshot.MemoryUsageBytes,
-		MemoryCapacityBytes: memoryCapacityBytes,
-		MemoryUsagePercent:  usagePercent(snapshot.MemoryUsageBytes, memoryCapacityBytes),
-		UpdatedAt:           snapshot.UpdatedAt,
+		Available:                 snapshot.Available,
+		Status:                    deploymentTargetMetricsStatus(snapshot.Available),
+		Reason:                    snapshot.Reason,
+		ConfiguredReplicas:        target.Replicas,
+		DesiredReplicas:           snapshot.DesiredReplicas,
+		ReadyReplicas:             snapshot.ReadyReplicas,
+		AvailableReplicas:         snapshot.AvailableReplicas,
+		PodCount:                  snapshot.PodCount,
+		ContainerCount:            snapshot.ContainerCount,
+		CPUUsageMilli:             snapshot.CPUUsageMilli,
+		CPURequestMilli:           resources.CPURequestMilli * replicas,
+		CPULimitMilli:             cpuLimit,
+		CPUUsagePercent:           usagePercent(snapshot.CPUUsageMilli, cpuLimit),
+		MemoryUsageBytes:          snapshot.MemoryUsageBytes,
+		MemoryRequestBytes:        resources.MemoryRequestBytes * replicas,
+		MemoryLimitBytes:          memoryLimit,
+		MemoryUsagePercent:        usagePercent(snapshot.MemoryUsageBytes, memoryLimit),
+		ReplicaCPURequestMilli:    resources.CPURequestMilli,
+		ReplicaCPULimitMilli:      resources.CPULimitMilli,
+		ReplicaMemoryRequestBytes: resources.MemoryRequestBytes,
+		ReplicaMemoryLimitBytes:   resources.MemoryLimitBytes,
+		UpdatedAt:                 snapshot.UpdatedAt,
 	}
 }
 
@@ -230,25 +244,10 @@ func deploymentTargetMetricsStatus(available bool) string {
 	return observation.StatusUnavailable
 }
 
-func quantityMilliValue(value string) int64 {
-	quantity, err := resource.ParseQuantity(strings.TrimSpace(value))
-	if err != nil {
-		return 0
+func usagePercent(usage int64, limit int64) *float64 {
+	if limit <= 0 {
+		return nil
 	}
-	return quantity.MilliValue()
-}
-
-func quantityValue(value string) int64 {
-	quantity, err := resource.ParseQuantity(strings.TrimSpace(value))
-	if err != nil {
-		return 0
-	}
-	return quantity.Value()
-}
-
-func usagePercent(usage int64, capacity int64) float64 {
-	if usage <= 0 || capacity <= 0 {
-		return 0
-	}
-	return float64(usage) / float64(capacity) * 100
+	percent := float64(max(usage, 0)) / float64(limit) * 100
+	return &percent
 }

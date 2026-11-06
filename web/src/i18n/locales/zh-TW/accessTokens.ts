@@ -21,7 +21,7 @@ const accessTokens = {
     gateway: '訪問入口',
     secret: '配置與金鑰',
     cluster: '叢集資源',
-    git: '程式碼庫',
+    git: '程式碼倉庫',
     registry: '映象站',
     image: '映象',
     billing: '賬單',
@@ -73,8 +73,8 @@ const accessTokens = {
       manage: '管理叢集',
     },
     git: {
-      read: '讀取程式碼庫',
-      write: '管理程式碼庫憑據',
+      read: '讀取程式碼倉庫',
+      write: '管理程式碼倉庫憑據',
     },
     registry: {
       read: '讀取映象站',

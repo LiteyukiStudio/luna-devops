@@ -34,20 +34,6 @@ type BuildUsageInput struct {
 	FinishedAt       time.Time
 }
 
-type RuntimeUsageInput struct {
-	Context            context.Context
-	ProjectID          string
-	ApplicationID      string
-	DeploymentTargetID string
-	Stage              string
-	DesiredReplicas    int32
-	CPURequest         string
-	MemoryRequest      string
-	PeriodStart        time.Time
-	PeriodEnd          time.Time
-	ActorID            string
-}
-
 type RuntimeAggregatedUsageInput struct {
 	Context                       context.Context
 	ProjectID                     string
@@ -153,79 +139,6 @@ func (s Service) SettleBuildRun(input BuildUsageInput) error {
 	return s.debitUsage(usage, ReasonBuildUsage, "Build job usage", input.Run.CreatedBy)
 }
 
-func (s Service) SettleRuntimeTargetWindow(input RuntimeUsageInput) error {
-	service := s
-	if input.Context != nil {
-		service.DB = s.DB.WithContext(input.Context)
-	}
-	if input.ProjectID == "" || input.DeploymentTargetID == "" || !input.PeriodEnd.After(input.PeriodStart) {
-		return nil
-	}
-	if input.DesiredReplicas < 0 {
-		return nil
-	}
-	durationHours := runtimeDurationHours(input)
-	if durationHours.LessThanOrEqual(decimal.Zero) {
-		return nil
-	}
-	replicaHours := runtimeReplicaHours(input)
-	cpuQuantity := cpuCoresFromQuantity(input.CPURequest).Mul(replicaHours)
-	memoryQuantity := memoryGiBFromQuantity(input.MemoryRequest).Mul(replicaHours)
-	cpuRate, err := service.rate("runtime.cpu_vcpu_hour")
-	if err != nil {
-		return err
-	}
-	memoryRate, err := service.rate("runtime.memory_gib_hour")
-	if err != nil {
-		return err
-	}
-	resourceID := runtimeUsageResourceID(input.DeploymentTargetID, input.PeriodStart)
-	metadata, _ := json.Marshal(map[string]string{
-		"deploymentTargetId": input.DeploymentTargetID,
-		"stage":              input.Stage,
-		"replicas":           decimal.NewFromInt(int64(input.DesiredReplicas)).String(),
-		"durationHours":      durationHours.String(),
-		"cpuCores":           cpuCoresFromQuantity(input.CPURequest).String(),
-		"memoryGiB":          memoryGiBFromQuantity(input.MemoryRequest).String(),
-	})
-	now := time.Now()
-	records := []model.BillingUsageRecord{
-		{
-			ID:            id.New("busg"),
-			ProjectID:     input.ProjectID,
-			ApplicationID: input.ApplicationID,
-			Meter:         "runtime.cpu_vcpu_hour",
-			Quantity:      cpuQuantity,
-			Unit:          "vcpu_hour",
-			AmountCredits: cpuQuantity.Mul(cpuRate),
-			ResourceType:  ResourceTypeRuntime,
-			ResourceID:    resourceID,
-			PeriodStart:   input.PeriodStart,
-			PeriodEnd:     input.PeriodEnd,
-			Status:        "settled",
-			Metadata:      string(metadata),
-			SettledAt:     &now,
-		},
-		{
-			ID:            id.New("busg"),
-			ProjectID:     input.ProjectID,
-			ApplicationID: input.ApplicationID,
-			Meter:         "runtime.memory_gib_hour",
-			Quantity:      memoryQuantity,
-			Unit:          "gib_hour",
-			AmountCredits: memoryQuantity.Mul(memoryRate),
-			ResourceType:  ResourceTypeRuntime,
-			ResourceID:    resourceID,
-			PeriodStart:   input.PeriodStart,
-			PeriodEnd:     input.PeriodEnd,
-			Status:        "settled",
-			Metadata:      string(metadata),
-			SettledAt:     &now,
-		},
-	}
-	return service.debitUsages(records, ReasonRuntimeUsage, "Runtime resource usage", input.ActorID)
-}
-
 func (s Service) SettleRuntimeTargetAggregation(input RuntimeAggregatedUsageInput) error {
 	service := s
 	if input.Context != nil {
@@ -276,18 +189,6 @@ func (s Service) SettleRuntimeTargetAggregation(input RuntimeAggregatedUsageInpu
 			Status: "settled", Metadata: metadata(input.MemoryRequestFloorGiBHours, input.MemoryActualObservedGiBHours, input.MemoryGiBHours), SettledAt: &now})
 	}
 	return service.debitUsages(records, ReasonRuntimeUsage, "Runtime resource usage", input.ActorID)
-}
-
-func runtimeReplicaHours(input RuntimeUsageInput) decimal.Decimal {
-	durationHours := runtimeDurationHours(input)
-	if durationHours.LessThanOrEqual(decimal.Zero) || input.DesiredReplicas < 0 {
-		return decimal.Zero
-	}
-	return decimal.NewFromInt(int64(input.DesiredReplicas)).Mul(durationHours)
-}
-
-func runtimeDurationHours(input RuntimeUsageInput) decimal.Decimal {
-	return decimal.NewFromInt(int64(input.PeriodEnd.Sub(input.PeriodStart) / time.Second)).Div(decimal.NewFromInt(3600))
 }
 
 // SettleProjectVolumeStorageWindow bills the Kubernetes-observed capacity of

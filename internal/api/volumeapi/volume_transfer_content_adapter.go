@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/model"
@@ -63,6 +64,39 @@ func (adapter *volumeTransferRuntimeAdapter) OpenVolumeTransferExport(ctx contex
 		return nil, err
 	}
 	return &apiVolumeTransferExportStream{stream: stream}, nil
+}
+
+// VolumeSnapshotSupported 读取 PVC 实际使用的 StorageClass（PVC 不可见时退回数据卷登记的类名，空值表示默认类），
+// 并按该类的 provisioner 是否存在 VolumeSnapshotClass 判断快照能力。
+func (adapter *volumeTransferRuntimeAdapter) VolumeSnapshotSupported(ctx context.Context, projectVolume model.ProjectVolume) (bool, error) {
+	client, err := adapter.clusters.clientForCluster(ctx, projectVolume.ClusterID)
+	if err != nil {
+		return false, err
+	}
+	probeCtx, cancel := context.WithTimeout(ctx, projectVolumeClusterTimeout)
+	defer cancel()
+	className := strings.TrimSpace(projectVolume.StorageClassName)
+	observation, err := client.ObserveProjectVolumeClaim(probeCtx, projectVolume.Namespace, projectVolume.ClaimName)
+	switch {
+	case err == nil && strings.TrimSpace(observation.StorageClassName) != "":
+		className = strings.TrimSpace(observation.StorageClassName)
+	case err != nil && !errors.Is(err, kubeprovider.ErrProjectVolumeClaimNotFound):
+		return false, err
+	}
+	classes, err := client.ListVolumeStorageClasses(probeCtx)
+	if err != nil {
+		return false, err
+	}
+	return storageClassSnapshotSupported(classes, className), nil
+}
+
+func storageClassSnapshotSupported(classes []kubeprovider.VolumeStorageClass, className string) bool {
+	for _, class := range classes {
+		if (className != "" && class.Name == className) || (className == "" && class.IsDefault) {
+			return class.SnapshotSupported
+		}
+	}
+	return false
 }
 
 type apiVolumeTransferExportStream struct {

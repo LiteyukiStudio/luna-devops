@@ -14,7 +14,7 @@ const billingDisplay: BillingDisplay = {
   formatAmountWithUnit: (value: string | number | undefined) => `C:${value ?? ''}`,
   formatFiatAmount: (value: string | number | undefined) => `F:${value ?? ''}`,
   formatSignedAmountWithUnit: value => `C:${value ?? ''}`,
-  runtimeHourCost: () => 0,
+  runtimeHourCostRange: () => ({ ceiling: 0, floor: 0 }),
 }
 
 const gatewayTrafficStatus: GatewayTrafficStatus = {
@@ -71,12 +71,37 @@ describe('billing summary', () => {
     )
     expect(screen.getByRole('alert')).toHaveClass('bg-danger/5')
   })
+
+  it('labels the platform wallet total without an account balance status', () => {
+    const platform = summary({ balanceCredits: '900', balanceScope: 'platform_total', balanceStatus: undefined })
+    render(
+      <>
+        <BillingBalanceWarning accountSummary={platform} billingDisplay={billingDisplay} />
+        <BillingSummary
+          accountLoading={false}
+          accountSummary={platform}
+          billingDisplay={billingDisplay}
+          canManageBilling
+          gatewayTrafficStatusLoaded={false}
+          scopedFetching={false}
+          scopedLoading={false}
+          scopedSummary={summary()}
+        />
+      </>,
+    )
+
+    expect(screen.getByText('Platform wallet total')).toBeVisible()
+    expect(screen.queryByText('Balance')).toBeNull()
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(screen.queryByText('Balance healthy')).toBeNull()
+  })
 })
 
 function summary(overrides: Partial<BillingSummaryData> = {}): BillingSummaryData {
   return {
     availableCredits: '80',
     balanceCredits: '100',
+    balanceScope: 'account',
     balanceStatus: 'ok',
     lowBalanceLimit: '20',
     monthSpend: '15',

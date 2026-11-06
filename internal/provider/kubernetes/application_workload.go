@@ -261,6 +261,7 @@ func appPodTemplateAnnotations(spec ApplicationResourcesSpec) map[string]string 
 	setLabel(annotations, BuildRunIDLabel, spec.BuildRunID)
 	setLabel(annotations, ImageDigestLabel, spec.ImageDigest)
 	setLabel(annotations, "luna.devops/service-bindings-digest", spec.ServiceBindingsDigest)
+	setLabel(annotations, ResourcePolicyAnnotation, spec.ResourcePolicy)
 	return annotations
 }
 

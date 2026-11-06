@@ -22,14 +22,16 @@ func (h *Handler) ListBillingLedgerEntries(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	query := h.dbFor(ctx).Table("billing_ledger_entries as ledger").Where("ledger.user_id in ?", scope.UserIDs)
+	query := h.dbFor(ctx).Table("billing_ledger_entries as ledger").
+		Joins("LEFT JOIN billing_usage_records AS usage ON usage.id = ledger.usage_record_id").
+		Where("ledger.user_id in ?", scope.UserIDs)
 	if scope.FilterProjectIDs {
 		query = query.Where("ledger.project_id in ?", scope.ProjectIDs)
 	}
 	if entryType := strings.TrimSpace(ctx.Query("type")); entryType != "" {
 		query = query.Where("ledger.type = ?", entryType)
 	}
-	query = applyBillingCreatedPeriod(query, "ledger.created_at", period)
+	query = applyBillingOccurredPeriod(query, billing.OccurredAtSQL, period)
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
@@ -38,6 +40,7 @@ func (h *Handler) ListBillingLedgerEntries(ctx *gin.Context) {
 	var entries []billingLedgerEntryItem
 	orderBy := orderByClause(pagination, map[string]string{
 		"createdAt":     "ledger.created_at",
+		"occurredAt":    billing.OccurredAtSQL,
 		"amountCredits": "ledger.amount_credits",
 		"reason":        "ledger.reason",
 	}, "ledger.created_at")
@@ -56,11 +59,11 @@ func (h *Handler) ListBillingLedgerEntries(ctx *gin.Context) {
 			ledger.description,
 			ledger.created_by,
 			ledger.created_at,
+			` + billing.OccurredAtSQL + ` AS occurred_at,
 			COALESCE(usage.application_id, '') AS application_id,
 			COALESCE(applications.name, '') AS application_name,
 			COALESCE(applications.identifier, '') AS application_identifier
 		`).
-		Joins("LEFT JOIN billing_usage_records AS usage ON usage.id = ledger.usage_record_id").
 		Joins("LEFT JOIN applications ON applications.id = usage.application_id").
 		Order(orderBy).
 		Limit(pagination.PageSize).
@@ -93,7 +96,7 @@ func (h *Handler) ListBillingUsageRecords(ctx *gin.Context) {
 	if meter := strings.TrimSpace(ctx.Query("meter")); meter != "" {
 		query = query.Where("usage.meter = ?", meter)
 	}
-	query = applyBillingUsagePeriod(query, period)
+	query = applyBillingOccurredPeriod(query, "usage.period_start", period)
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
@@ -102,6 +105,7 @@ func (h *Handler) ListBillingUsageRecords(ctx *gin.Context) {
 	var records []billingUsageRecordItem
 	orderBy := orderByClause(pagination, map[string]string{
 		"createdAt":     "usage.created_at",
+		"periodStart":   "usage.period_start",
 		"amountCredits": "usage.amount_credits",
 		"meter":         "usage.meter",
 	}, "usage.created_at")
@@ -157,16 +161,17 @@ func (h *Handler) ListBillingDeploymentSpend(ctx *gin.Context) {
 	}
 
 	deploymentTargetIDSQL := billingDeploymentTargetIDSQL()
+	spendGroupSQL := billingSpendGroupSQL()
 	grouped := h.dbFor(ctx).Table("billing_usage_records as usage").
-		Select("usage.project_id, usage.application_id, "+deploymentTargetIDSQL+" AS deployment_target_id").
+		Select("usage.project_id, usage.application_id, "+deploymentTargetIDSQL+" AS deployment_target_id, "+spendGroupSQL+" AS spend_group").
 		Joins("LEFT JOIN build_runs ON build_runs.id = usage.resource_id AND usage.resource_type = ?", billing.ResourceTypeBuildRun).
 		Joins("LEFT JOIN gateway_routes ON gateway_routes.id = split_part(usage.resource_id, ':', 1) AND usage.resource_type = ?", billing.ResourceTypeGateway).
 		Where("usage.billed_user_id in ? AND usage.status = ?", scope.UserIDs, "settled").
-		Group("usage.project_id, usage.application_id, " + deploymentTargetIDSQL)
+		Group("usage.project_id, usage.application_id, " + deploymentTargetIDSQL + ", " + spendGroupSQL)
 	if scope.FilterProjectIDs {
 		grouped = grouped.Where("usage.project_id in ?", scope.ProjectIDs)
 	}
-	grouped = applyBillingUsagePeriod(grouped, period)
+	grouped = applyBillingOccurredPeriod(grouped, "usage.period_start", period)
 	var total int64
 	if err := h.dbFor(ctx).Table("(?) as grouped", grouped).Count(&total).Error; err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
@@ -183,6 +188,7 @@ func (h *Handler) ListBillingDeploymentSpend(ctx *gin.Context) {
 			COALESCE(applications.name, '') AS application_name,
 			COALESCE(applications.identifier, '') AS application_identifier,
 			`+deploymentTargetIDSQL+` AS deployment_target_id,
+			`+spendGroupSQL+` AS spend_group,
 			COALESCE(deployment_targets.name, '') AS deployment_target_name,
 			COALESCE(deployment_targets.stage, '') AS deployment_target_stage,
 			COALESCE(SUM(usage.amount_credits), 0) AS amount_credits,
@@ -198,11 +204,11 @@ func (h *Handler) ListBillingDeploymentSpend(ctx *gin.Context) {
 		Joins("LEFT JOIN gateway_routes ON gateway_routes.id = split_part(usage.resource_id, ':', 1) AND usage.resource_type = ?", billing.ResourceTypeGateway).
 		Joins("LEFT JOIN deployment_targets ON deployment_targets.id = "+deploymentTargetIDSQL).
 		Where("usage.billed_user_id in ? AND usage.status = ?", scope.UserIDs, "settled").
-		Group("usage.project_id, projects.name, projects.identifier, usage.application_id, applications.name, applications.identifier, " + deploymentTargetIDSQL + ", deployment_targets.name, deployment_targets.stage")
+		Group("usage.project_id, projects.name, projects.identifier, usage.application_id, applications.name, applications.identifier, " + deploymentTargetIDSQL + ", " + spendGroupSQL + ", deployment_targets.name, deployment_targets.stage")
 	if scope.FilterProjectIDs {
 		query = query.Where("usage.project_id in ?", scope.ProjectIDs)
 	}
-	query = applyBillingUsagePeriod(query, period)
+	query = applyBillingOccurredPeriod(query, "usage.period_start", period)
 	orderBy := orderByClause(pagination, map[string]string{
 		"amountCredits":        "amount_credits",
 		"projectName":          "project_name",

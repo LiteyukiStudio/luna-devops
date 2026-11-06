@@ -26,7 +26,7 @@ const dashboardPage = {
   startFromTemplate: 'テンプレートから始める',
   viewBuild: 'ビルドを見る',
   viewDeployment: 'デプロイを見る',
-  viewAccess: 'アクセスを見る',
+  viewAccess: 'アクセスエントリを見る',
   viewDetails: '詳細を見る',
   recentApps: '最近のアプリケーション',
   applicationColumn: 'アプリケーション',

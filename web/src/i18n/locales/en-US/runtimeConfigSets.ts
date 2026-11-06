@@ -1,5 +1,5 @@
 const runtimeConfigSets = {
-  tab: 'Config',
+  tab: 'Runtime config',
   title: 'Config',
   description: 'Extract runtime variables, config files, and secret files that multiple apps in this project space can reuse.',
   createTitle: 'Add config',

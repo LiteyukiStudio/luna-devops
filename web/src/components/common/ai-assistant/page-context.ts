@@ -17,9 +17,9 @@ interface RouteContext {
 }
 
 const identifierPattern = /^[\w.:-]{1,160}$/
-const safeViewKeys = new Set(['tab', 'buildRunId', 'releaseId', 'deploymentId', 'page', 'sortBy', 'sortOrder'])
-const projectTabs = ['overview', 'apps', 'members', 'build-variables', 'runtime-configs', 'hooks', 'topology']
-const applicationTabs = ['overview', 'repositories', 'builds', 'deployments', 'gateway', 'topology', 'settings']
+const safeViewKeys = new Set(['tab', 'config', 'buildRunId', 'releaseId', 'deploymentId', 'page', 'sortBy', 'sortOrder'])
+const projectTabs = ['overview', 'apps', 'shared-config', 'volumes', 'members', 'topology']
+const applicationTabs = ['overview', 'builds', 'deployments', 'gateway', 'topology', 'settings']
 
 export function buildAIPageContext(pathname: string, search: string, locale: string, options: PageContextOptions = {}) {
   const route = resolveRouteContext(pathname)

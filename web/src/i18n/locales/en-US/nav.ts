@@ -12,8 +12,9 @@ const nav = {
     apps: 'Applications',
     overview: 'Overview',
     buildVariables: 'Build variables',
-    runtimeConfigs: 'Config',
+    runtimeConfigs: 'Runtime config',
     hooks: 'Hooks',
+    sharedConfig: 'Shared config',
     volumes: 'Volumes',
     members: 'Members',
     topology: 'Service relations',
@@ -30,6 +31,7 @@ const nav = {
       pages: 'Pages',
       projects: 'Project spaces',
       applications: 'Applications in {{project}}',
+      projectSections: 'Sections in {{project}}',
       actions: 'Actions',
     },
     actions: {
@@ -37,6 +39,11 @@ const nav = {
       toggleTheme: 'Toggle light/dark theme',
     },
   },
+  backToParent: 'Back to {{name}}',
+  deploymentTargetCreate: 'New deploy config',
+  deploymentTargetEdit: 'Edit deploy config',
+  deploymentTargetCreateDocumentTitle: 'New deploy config: {{projectName}} / {{name}}',
+  deploymentTargetEditDocumentTitle: 'Edit deploy config: {{projectName}} / {{name}}',
 }
 
 export default nav

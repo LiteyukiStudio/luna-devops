@@ -134,7 +134,7 @@ func (service *Service) CreateExport(ctx context.Context, request ExportRequest)
 	if err != nil {
 		return model.VolumeTransfer{}, err
 	}
-	consistency, err := exportConsistency(projectVolume, strings.TrimSpace(request.Consistency))
+	consistency, err := exportConsistency(ctx, service.runtime, projectVolume, strings.TrimSpace(request.Consistency))
 	if err != nil {
 		return model.VolumeTransfer{}, err
 	}
@@ -592,19 +592,39 @@ func validateFormatForVolume(volumeMode, format string) error {
 	return domainError(volume.CodeTransferFormatMismatch, "volume transfer format does not match volume mode", nil)
 }
 
-func exportConsistency(projectVolume model.ProjectVolume, requested string) (string, error) {
+// exportConsistency 解析导出一致性模式。auto 对已挂载卷优先使用快照；存储类不支持快照时，
+// 文件系统卷退回在线导出（live），块设备卷无法安全在线读取，返回 volume.snapshot_unsupported。
+func exportConsistency(ctx context.Context, runtime RuntimeStreamer, projectVolume model.ProjectVolume, requested string) (string, error) {
+	mounted := projectVolume.BindingSummary.Active != 0 || projectVolume.BindingSummary.Reserved != 0
 	switch requested {
 	case "auto":
-		if projectVolume.BindingSummary.Active == 0 && projectVolume.BindingSummary.Reserved == 0 {
+		if !mounted {
 			return model.VolumeTransferConsistencyUnmounted, nil
 		}
-		return model.VolumeTransferConsistencySnapshot, nil
+		supported, err := volumeSnapshotSupported(ctx, runtime, projectVolume)
+		if err != nil {
+			return "", err
+		}
+		if supported {
+			return model.VolumeTransferConsistencySnapshot, nil
+		}
+		if projectVolume.VolumeMode == model.ProjectVolumeModeFilesystem {
+			return model.VolumeTransferConsistencyLive, nil
+		}
+		return "", domainError(volume.CodeSnapshotUnsupported, "mounted block volumes require VolumeSnapshot support for export", nil)
 	case model.VolumeTransferConsistencyUnmounted:
-		if projectVolume.BindingSummary.Active != 0 || projectVolume.BindingSummary.Reserved != 0 {
+		if mounted {
 			return "", domainError(volume.CodeTransferStateConflict, "mounted project volumes cannot use unmounted export consistency", nil)
 		}
 		return requested, nil
 	case model.VolumeTransferConsistencySnapshot:
+		supported, err := volumeSnapshotSupported(ctx, runtime, projectVolume)
+		if err != nil {
+			return "", err
+		}
+		if !supported {
+			return "", domainError(volume.CodeSnapshotUnsupported, "the project volume storage class does not support VolumeSnapshot", nil)
+		}
 		return requested, nil
 	case model.VolumeTransferConsistencyLive:
 		if projectVolume.VolumeMode != model.ProjectVolumeModeFilesystem {
@@ -614,4 +634,12 @@ func exportConsistency(projectVolume model.ProjectVolume, requested string) (str
 	default:
 		return "", domainError(volume.CodeInvalidInput, fmt.Sprintf("unsupported export consistency %q", requested), nil)
 	}
+}
+
+func volumeSnapshotSupported(ctx context.Context, runtime RuntimeStreamer, projectVolume model.ProjectVolume) (bool, error) {
+	supported, err := runtime.VolumeSnapshotSupported(ctx, projectVolume)
+	if err != nil {
+		return false, domainError(volume.CodeClusterUnavailable, "volume snapshot capability is unavailable", err)
+	}
+	return supported, nil
 }

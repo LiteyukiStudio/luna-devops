@@ -3,10 +3,10 @@ import i18next from 'i18next'
 import { z } from 'zod'
 import { ApiError } from '@/api'
 
-const price = () => z.string().trim().regex(/^\d+(?:\.\d{1,8})?$/, { message: i18next.t('settings.ai.models.priceInvalid') })
+const price = () => z.string().trim().regex(/^\d+(?:\.\d{1,8})?$/, { error: () => i18next.t('settings.ai.models.priceInvalid') })
 
 export const aiModelFormSchema = z.object({
-  name: z.string().trim().min(1, { message: i18next.t('settings.ai.models.nameRequired') }),
+  name: z.string().trim().min(1, { error: () => i18next.t('settings.ai.models.nameRequired') }),
   maxContextTokens: z.number().int().min(4096).max(2097152),
   maxOutputTokens: z.number().int().min(256).max(262144),
   inputCreditsPerMillion: price(),
@@ -15,7 +15,7 @@ export const aiModelFormSchema = z.object({
   enabled: z.boolean(),
 }).refine(value => value.maxOutputTokens < value.maxContextTokens, {
   path: ['maxOutputTokens'],
-  message: i18next.t('settings.ai.models.outputLimitInvalid'),
+  error: () => i18next.t('settings.ai.models.outputLimitInvalid'),
 })
 
 export type ModelFormValues = z.infer<typeof aiModelFormSchema>

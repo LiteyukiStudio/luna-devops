@@ -154,7 +154,7 @@ func StatusForType(eventType string) string {
 		return StatusInProgress
 	case "succeeded", "applied", "issued", "renewed":
 		return StatusSucceeded
-	case "failed", "apply_failed", "expired":
+	case "failed", "apply_failed", "expired", "webhook_rejected":
 		return StatusFailed
 	case "canceled":
 		return StatusCanceled

@@ -1,4 +1,4 @@
-import type { BillingListParams, BuildRunListParams, PaginationParams, ResultVisibility, RuntimeClusterResourceListParams } from './types'
+import type { BillingListParams, BillingPeriodParams, BuildRunListParams, PaginationParams, ResultVisibility, RuntimeClusterResourceListParams } from './types'
 import i18next from '@/i18n'
 import { startAPIRequestSpan } from '@/lib/telemetry'
 
@@ -108,7 +108,7 @@ export function billingQuery(params: BillingListParams) {
   return search.toString()
 }
 
-export function billingSummaryQuery(projectIds?: string[], period?: { periodStart?: string, periodEnd?: string, accountScope?: string, userId?: string }) {
+export function billingSummaryQuery(projectIds?: string[], period?: BillingPeriodParams) {
   const search = new URLSearchParams()
   for (const projectId of projectIds ?? []) {
     if (projectId)
@@ -122,6 +122,8 @@ export function billingSummaryQuery(projectIds?: string[], period?: { periodStar
     search.set('accountScope', period.accountScope)
   if (period?.userId)
     search.set('userId', period.userId)
+  if (period?.timeZone)
+    search.set('timeZone', period.timeZone)
   const query = search.toString()
   return query ? `?${query}` : ''
 }

@@ -25,8 +25,7 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '
 import { Skeleton } from '@/components/ui/skeleton'
 import { APPLICATION_IDENTIFIER_MIN_LENGTH } from '@/lib/identifier-limits'
 import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
-import { projectVolumeCapabilities } from '@/lib/project-volume-capabilities'
-import { isPlatformAdmin } from '@/lib/roles'
+import { isPlatformAdmin, ProjectAction, projectActionAllowed } from '@/lib/roles'
 import { cn } from '@/lib/utils'
 import {
   applicationIdentifierBaseMaxLength,
@@ -231,11 +230,14 @@ function InstallTemplateForm({ installing, template, onCancel, onInstallProject,
   const effectiveClusterName = effectiveCluster?.name ?? effectiveClusterId
 
   const canInstallSystemComponent = isPlatformAdmin(user?.role)
-  const canWriteProject = projectVolumeCapabilities(user?.role, projectDetail.data?.currentUserRole, user?.id).canWrite
-  const canInstall = systemComponent ? canInstallSystemComponent : Boolean(projectId) && canWriteProject
+  // 模板安装由 project:write 授权；选择器里新建数据卷单独由 volume:write 授权。
+  const currentUserActions = projectDetail.data?.currentUserActions
+  const canInstallProjectTemplate = projectActionAllowed(currentUserActions, ProjectAction.ProjectWrite)
+  const canCreateProjectVolume = projectActionAllowed(currentUserActions, ProjectAction.VolumeWrite)
+  const canInstall = systemComponent ? canInstallSystemComponent : Boolean(projectId) && canInstallProjectTemplate
   const permissionNotice = systemComponent
     ? (!canInstallSystemComponent ? t('appTemplatesPage.systemInstallAdminOnly') : '')
-    : (projectDetail.isSuccess && !canWriteProject ? t('appTemplatesPage.projectWriteRequired') : '')
+    : (projectDetail.isSuccess && !canInstallProjectTemplate ? t('appTemplatesPage.projectWriteRequired') : '')
 
   function resetVolumes() {
     setValue('projectVolumeId', '')
@@ -468,7 +470,7 @@ function InstallTemplateForm({ installing, template, onCancel, onInstallProject,
                                             render={({ field }) => (
                                               <TemplateProjectVolumePicker
                                                 key={`${projectId}:${effectiveClusterId}:${mode}:${component.key}`}
-                                                canCreate={canWriteProject}
+                                                canCreate={canCreateProjectVolume}
                                                 clusterId={effectiveClusterId}
                                                 clusterName={effectiveClusterName}
                                                 control={fieldControl}
@@ -554,7 +556,7 @@ function InstallTemplateForm({ installing, template, onCancel, onInstallProject,
                                     render={({ field }) => (
                                       <TemplateProjectVolumePicker
                                         key={`${projectId}:${effectiveClusterId}:${projectVolumeMode}:${template.id}`}
-                                        canCreate={canWriteProject}
+                                        canCreate={canCreateProjectVolume}
                                         clusterId={effectiveClusterId}
                                         clusterName={effectiveClusterName}
                                         control={fieldControl}

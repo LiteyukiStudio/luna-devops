@@ -190,7 +190,7 @@ func buildLogStreamOffset(ctx *gin.Context) int {
 }
 
 func buildJobTerminal(status string) bool {
-	return status == "succeeded" || status == "failed" || status == "canceled" || status == "lost" || status == "timeout"
+	return status == "succeeded" || status == "failed" || status == "canceled" || status == "timeout"
 }
 
 func writeSSE(writer http.ResponseWriter, event string, idValue string, data any) {

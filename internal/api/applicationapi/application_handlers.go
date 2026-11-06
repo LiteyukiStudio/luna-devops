@@ -18,7 +18,12 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-var errApplicationIdentifierExists = errors.New("application identifier already exists")
+var (
+	errApplicationIdentifierExists = errors.New("application identifier already exists")
+	errApplicationDeleteInProgress = errors.New("application delete is already in progress")
+)
+
+const applicationDeleteEnqueueFailedCode = "application.delete_enqueue_failed"
 
 type applicationDeletionTargetPreview struct {
 	TargetID   string                             `json:"deploymentTargetId"`
@@ -123,12 +128,23 @@ func (h *Handlers) CreateApplication(ctx *gin.Context) {
 }
 
 func (h *Handlers) GetApplication(ctx *gin.Context) {
-	if _, _, ok := h.authorizeProject(ctx, authz.ActionApplicationRead); !ok {
+	_, project, ok := h.authorizeProject(ctx, authz.ActionApplicationRead)
+	if !ok {
 		return
 	}
 
 	app, ok := h.findApplication(ctx)
 	if !ok {
+		return
+	}
+	if ctx.Query("includeRuntime") == "true" {
+		items, err := h.applicationListItemsWithRuntime(ctx.Request.Context(), project, []model.Application{app})
+		if err != nil {
+			writeError(ctx, http.StatusInternalServerError, err.Error())
+			return
+		}
+		markLiveObservationResponse(ctx)
+		ctx.JSON(http.StatusOK, items[0])
 		return
 	}
 	ctx.JSON(http.StatusOK, app)
@@ -182,9 +198,6 @@ func (h *Handlers) DeleteApplication(ctx *gin.Context) {
 		writeErrorCode(ctx, http.StatusConflict, "application.delete_in_progress", "应用正在删除中，不能重复操作")
 		return
 	}
-	if !h.ensureNoIncomingServiceBindings(ctx, app.ProjectID, app.ID, "") {
-		return
-	}
 	var targets []model.DeploymentTarget
 	if err := h.dbFor(ctx).Where("project_id = ? and application_id = ?", app.ProjectID, app.ID).Find(&targets).Error; err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
@@ -193,10 +206,23 @@ func (h *Handlers) DeleteApplication(ctx *gin.Context) {
 	startedAt := time.Now()
 	volumeChanges := make(map[string]deploymentVolumeMountChanges, len(targets))
 	err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
+		// 排他锁与创建服务关系时对目标应用加的共享锁互斥：入站关系检查和进入 deleting 是同一个原子判断。
+		var locked model.Application
+		if err := tx.Clauses(clause.Locking{Strength: clause.LockingStrengthUpdate}).
+			First(&locked, "id = ? and project_id = ?", app.ID, app.ProjectID).Error; err != nil {
+			return err
+		}
+		if !applicationCanMutate(locked) {
+			return errApplicationDeleteInProgress
+		}
+		if err := ensureNoIncomingServiceBindingsTx(tx, app.ProjectID, app.ID, ""); err != nil {
+			return err
+		}
 		if err := tx.Model(&model.Application{}).
-			Where("id = ? and project_id = ? and delete_status in ?", app.ID, app.ProjectID, []string{"active", "delete_failed", ""}).
+			Where("id = ? and project_id = ?", app.ID, app.ProjectID).
 			Updates(map[string]any{
 				"delete_status":      "deleting",
+				"delete_code":        "",
 				"delete_message":     "",
 				"delete_started_at":  &startedAt,
 				"delete_finished_at": nil,
@@ -204,6 +230,7 @@ func (h *Handlers) DeleteApplication(ctx *gin.Context) {
 			return err
 		}
 		app.DeleteStatus = "deleting"
+		app.DeleteCode = ""
 		app.DeleteMessage = ""
 		app.DeleteStartedAt = &startedAt
 		app.DeleteFinishedAt = nil
@@ -216,7 +243,13 @@ func (h *Handlers) DeleteApplication(ctx *gin.Context) {
 		}
 		return nil
 	})
-	if err != nil {
+	switch {
+	case writeServiceBindingInUseError(ctx, err):
+		return
+	case errors.Is(err, errApplicationDeleteInProgress):
+		writeErrorCode(ctx, http.StatusConflict, "application.delete_in_progress", "应用正在删除中，不能重复操作")
+		return
+	case err != nil:
 		for _, target := range targets {
 			h.auditDeploymentVolumeMountFailure(ctx.Request.Context(), user.ID, volumeChanges[target.ID], err)
 		}
@@ -234,10 +267,11 @@ func (h *Handlers) DeleteApplication(ctx *gin.Context) {
 		finishedAt := time.Now()
 		_ = h.dbFor(ctx).Model(&model.Application{}).Where("id = ?", app.ID).Updates(map[string]any{
 			"delete_status":      "delete_failed",
-			"delete_message":     "应用删除任务投递失败，请确认 Worker 队列可用后重试",
+			"delete_code":        applicationDeleteEnqueueFailedCode,
+			"delete_message":     "application delete task enqueue failed",
 			"delete_finished_at": &finishedAt,
 		}).Error
-		writeError(ctx, http.StatusServiceUnavailable, "应用删除任务投递失败，请确认 Worker 队列可用后重试")
+		writeErrorCode(ctx, http.StatusServiceUnavailable, applicationDeleteEnqueueFailedCode, "application delete task enqueue failed")
 		return
 	}
 	h.auditWithContext(user.ID, "application.delete.request", app.ID, true, "volume_mounts_unbound", ctx.Request.Context())
@@ -385,15 +419,6 @@ type applicationInput struct {
 	Identifier string `json:"identifier" binding:"required"`
 	Name       string `json:"name" binding:"required"`
 	Icon       string `json:"icon"`
-}
-
-func normalizeBuildConcurrencyPolicy(value string) string {
-	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "parallel":
-		return "parallel"
-	default:
-		return "queue"
-	}
 }
 
 func normalizeApplicationIcon(value string) string {

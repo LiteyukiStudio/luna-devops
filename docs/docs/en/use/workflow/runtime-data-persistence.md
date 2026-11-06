@@ -28,9 +28,11 @@ An import writes the archive directly into the target volume mounted by a tempor
 
 Export modes are:
 
-- **Automatic**: export an idle volume directly; prefer a CSI Snapshot for an attached volume.
-- **Snapshot**: require a CSI Snapshot. It is crash-consistent, not application-consistent.
-- **Online read**: read an attached Filesystem volume while data may change; Owner/Admin only.
+- **Automatic**: export an idle volume directly. An attached volume uses a CSI Snapshot when its storage class supports VolumeSnapshot; otherwise a Filesystem volume falls back to an online read and a Block volume is rejected until it is detached.
+- **Snapshot**: require a CSI Snapshot; unavailable when the storage class does not support it. It is crash-consistent, not application-consistent.
+- **Online read**: read an attached Filesystem volume while data may change; Owner/Admin only. Not available for Block volumes.
+
+Snapshot support means the StorageClass of the volume's PVC has a matching VolumeSnapshotClass in the cluster. If the cluster has the VolumeSnapshot CRDs but no running snapshot controller, the snapshot never becomes ready: after 10 minutes the export fails with a snapshot timeout and the temporary snapshot is removed. Ask the cluster administrator to install a snapshot controller, or use an online read for Filesystem volumes.
 
 Export content streams directly from the Transfer Pod. Luna DevOps does not retain a server-side archive for repeated downloads, and downloads cannot resume. Authorization uses a short-lived, single-use ticket bound to the current user, session, and Transfer, and output stops if that authorization is revoked during the download. A backup is complete only after the download finishes and the Transfer is Succeeded; start a new export after an interruption.
 

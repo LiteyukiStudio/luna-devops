@@ -30,12 +30,12 @@ import { OneTimeSecret } from './one-time-secret'
 
 const PAGE_SIZE_OPTIONS = [10, 20, 50]
 const oauthApplicationSchema = z.object({
-  name: z.string().trim().min(1, i18next.t('oauthApps.validation.nameRequired')),
+  name: z.string().trim().min(1, { error: () => i18next.t('oauthApps.validation.nameRequired') }),
   description: z.string(),
   homepageUrl: z.string(),
   logoUrl: z.string(),
-  redirectUrisText: z.string().trim().min(1, i18next.t('oauthApps.validation.redirectRequired')),
-  scopes: z.array(z.string()).min(1, i18next.t('oauthApps.validation.scopeRequired')),
+  redirectUrisText: z.string().trim().min(1, { error: () => i18next.t('oauthApps.validation.redirectRequired') }),
+  scopes: z.array(z.string()).min(1, { error: () => i18next.t('oauthApps.validation.scopeRequired') }),
   accessTokenLifetimeDays: z.number().int().refine(value => [0, 1, 7, 30, 90].includes(value)),
 })
 

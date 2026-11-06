@@ -9,7 +9,7 @@ export function FormActions({ className, separated = true, ...props }: Component
   return (
     <div
       className={cn(
-        'flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-end [&>button]:w-full sm:[&>button]:w-auto',
+        'flex flex-col-reverse gap-2 @lg/workspace:flex-row @lg/workspace:items-center @lg/workspace:justify-end [&>button]:w-full @lg/workspace:[&>button]:w-auto',
         separated && 'border-t border-border pt-4',
         className,
       )}

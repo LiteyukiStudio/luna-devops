@@ -71,6 +71,53 @@ func TestBindDeploymentBundlePayloadDoesNotExposeDuplicateKey(t *testing.T) {
 	}
 }
 
+func TestBindDeploymentBundleJSONMigratesRemovedV1ConfigurationFields(t *testing.T) {
+	t.Parallel()
+	bundleJSON := func(schemaVersion int, configuration string) []byte {
+		return []byte(fmt.Sprintf(`{"bundle":{"schemaVersion":%d,"kind":"luna-devops.deployment-target","exportedAt":"2026-01-02T03:04:05Z","configuration":%s,"references":[],"secretRequirements":[],"omissions":[]}}`, schemaVersion, configuration))
+	}
+	bind := func(payload []byte) (deploymentTargetBundleImportRequest, *httptest.ResponseRecorder, bool) {
+		ctx, recorder := deploymentBundleRequestContext(http.MethodPost, "/preview", payload, model.User{}, "", "")
+		var request deploymentTargetBundleImportRequest
+		ok := bindDeploymentBundleJSON(ctx, &request)
+		return request, recorder, ok
+	}
+
+	// schemaVersion 1 的旧导出包携带已删除的 concurrencyPolicy：导入时丢弃该字段，其余配置照常解码。
+	request, recorder, ok := bind(bundleJSON(1, `{"name":"web","stage":"prod","concurrencyPolicy":"parallel"}`))
+	if !ok {
+		t.Fatalf("legacy bundle rejected: %d %s", recorder.Code, recorder.Body.String())
+	}
+	if request.Bundle.Configuration.Name != "web" || request.Bundle.Configuration.Stage != "prod" {
+		t.Fatalf("legacy bundle configuration = %#v", request.Bundle.Configuration)
+	}
+	current, _, ok := bind(bundleJSON(1, `{"name":"web","stage":"prod"}`))
+	if !ok {
+		t.Fatal("current bundle rejected")
+	}
+	legacyDigest, err := deploymentBundleDigest(request.Bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	currentDigest, err := deploymentBundleDigest(current.Bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if legacyDigest != currentDigest {
+		t.Fatalf("migrated bundle digest = %s, want %s", legacyDigest, currentDigest)
+	}
+
+	// 迁移只针对已知版本的已知字段，其他未知字段与未知版本仍被严格解码拒绝。
+	for name, payload := range map[string][]byte{
+		"unknown configuration field":      bundleJSON(1, `{"name":"web","stage":"prod","futureField":true}`),
+		"removed field in unknown version": bundleJSON(2, `{"name":"web","stage":"prod","concurrencyPolicy":"parallel"}`),
+	} {
+		if _, recorder, ok := bind(payload); ok || recorder.Code != http.StatusBadRequest || !strings.Contains(recorder.Body.String(), "deployment_bundle.invalid_json") {
+			t.Fatalf("%s accepted: %d %s", name, recorder.Code, recorder.Body.String())
+		}
+	}
+}
+
 func TestDeploymentBundleErrorBoundaryUsesRegisteredSafeResponses(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct {

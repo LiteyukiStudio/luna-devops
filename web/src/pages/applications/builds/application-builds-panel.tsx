@@ -348,12 +348,13 @@ export function ApplicationBuildsPanel({ applicationId, applicationIdentifier, b
     <div className="grid gap-4">
       <DataList
         columns={[
-          { key: 'status', header: t('common.status'), width: 'status', render: run => <BuildRunStatusCell latestJob={buildJobMap.get(run.id)?.[0]} run={run} /> },
-          { key: 'source', header: t('buildsPage.sourceColumn'), width: 'primary', render: (run) => {
+          // 列宽上限按 1440 宽视口的正文宽度预算，长文本省略并悬停查看，宽屏不出现横向滚动。
+          { key: 'status', header: t('common.status'), width: 'status', maxWidth: 160, render: run => <BuildRunStatusCell latestJob={buildJobMap.get(run.id)?.[0]} run={run} /> },
+          { key: 'source', header: t('buildsPage.sourceColumn'), width: 'primary', maxWidth: 320, render: (run) => {
             const { binding: rowBinding, config } = runContext(run)
             return <BuildRunSourceCell binding={rowBinding} deploymentTargetName={config?.name} run={run} />
           } },
-          { key: 'image', header: t('buildsPage.imageColumn'), width: 'normal', mobile: 'hidden', render: run => <BuildRunImageCell run={run} /> },
+          { key: 'image', header: t('buildsPage.imageColumn'), width: 'normal', maxWidth: 224, mobile: 'hidden', render: run => <BuildRunImageCell run={run} /> },
           { key: 'time', header: t('buildsPage.timeColumn'), width: 'compact', render: run => <BuildRunTimeCell jobs={buildJobMap.get(run.id) ?? []} run={run} /> },
           { key: 'actions', header: t('common.actions'), mobileActions: 'inline', sticky: 'right', width: 'actions', render: (run) => {
             const { binding: rowBinding, config } = runContext(run)
@@ -375,6 +376,14 @@ export function ApplicationBuildsPanel({ applicationId, applicationIdentifier, b
         ]}
         emptyMode={hasRunFilters ? 'filtered' : 'actionable'}
         emptyTitle={repositoryBindings.length || binding ? t('buildsPage.emptyRuns') : t('buildsPage.repositoryBindingRequired')}
+        error={buildRunsPage.isError
+          ? {
+              description: t('buildsPage.runsLoadFailedDescription'),
+              onRetry: () => void buildRunsPage.refetch(),
+              retrying: buildRunsPage.isFetching,
+              title: t('buildsPage.runsLoadFailedTitle'),
+            }
+          : undefined}
         items={pagedRuns}
         loading={buildRunsPage.isLoading}
         pagination={{

@@ -14,6 +14,11 @@ import (
 
 const applicationRuntimeNotDeployed = "not-deployed"
 
+// applicationDeploymentSummary is the single application runtime verdict
+// shared by the dashboard, application list and application detail.
+// Only enabled deployment targets with at least one succeeded release take
+// part in Status and replica totals; disabled or never deployed targets are
+// listed with their own status but never affect application health.
 type applicationDeploymentSummary struct {
 	TargetCount     int                                  `json:"targetCount"`
 	DesiredReplicas int32                                `json:"desiredReplicas"`
@@ -23,11 +28,15 @@ type applicationDeploymentSummary struct {
 }
 
 type applicationDeploymentTargetSummary struct {
-	ID              string `json:"id"`
-	Stage           string `json:"stage"`
-	DesiredReplicas int32  `json:"desiredReplicas"`
-	ReadyReplicas   int32  `json:"readyReplicas"`
-	Status          string `json:"status"`
+	ID              string                     `json:"id"`
+	Stage           string                     `json:"stage"`
+	Enabled         bool                       `json:"enabled"`
+	Deployed        bool                       `json:"deployed"`
+	DesiredReplicas int32                      `json:"desiredReplicas"`
+	ReadyReplicas   int32                      `json:"readyReplicas"`
+	Status          string                     `json:"status"`
+	ObservationCode string                     `json:"observationCode,omitempty"`
+	CurrentRelease  *applicationCurrentRelease `json:"currentRelease,omitempty"`
 }
 
 // applicationCurrentRelease 是应用最近一次成功发布的工作流结果，不代表 Kubernetes 当前实时状态。
@@ -73,16 +82,17 @@ func (h *Handlers) applicationListItemsWithRuntime(ctx context.Context, project 
 	if err != nil {
 		return nil, err
 	}
-	currentReleases, err := h.applicationCurrentReleases(ctx, project, applicationIDs, targets)
+	targetReleases, err := h.deploymentTargetCurrentReleases(ctx, project, targets)
 	if err != nil {
 		return nil, err
 	}
 	for _, application := range applications {
+		applicationTargets := targetsByApplication[application.ID]
 		items = append(items, applicationListItemResponse{
 			Application:       application,
-			DeploymentSummary: summarizeApplicationDeploymentTargets(targetsByApplication[application.ID]),
+			DeploymentSummary: summarizeApplicationDeploymentTargets(applicationTargets, targetReleases),
 			PrimaryAccessURL:  accessURLs[application.ID],
-			CurrentRelease:    currentReleases[application.ID],
+			CurrentRelease:    applicationCurrentReleaseOf(applicationTargets, targetReleases),
 		})
 	}
 	return items, nil
@@ -155,8 +165,9 @@ func primaryGatewayRoutes(routes []model.GatewayRoute, targetsByID map[string]mo
 	return result
 }
 
-// applicationCurrentReleases 读取每个应用在现存部署配置上最近一次成功的发布记录。
-func (h *Handlers) applicationCurrentReleases(ctx context.Context, project model.Project, applicationIDs []string, targets []model.DeploymentTarget) (map[string]*applicationCurrentRelease, error) {
+// deploymentTargetCurrentReleases 读取每个现存部署配置最近一次成功发布（按 finished_at）。
+// 这是工作流结果，不代表 Kubernetes 当前运行的镜像。
+func (h *Handlers) deploymentTargetCurrentReleases(ctx context.Context, project model.Project, targets []model.DeploymentTarget) (map[string]*applicationCurrentRelease, error) {
 	if len(targets) == 0 {
 		return map[string]*applicationCurrentRelease{}, nil
 	}
@@ -164,74 +175,82 @@ func (h *Handlers) applicationCurrentReleases(ctx context.Context, project model
 	for _, target := range targets {
 		targetIDs = append(targetIDs, target.ID)
 	}
-	db := h.dbWithContext(ctx)
-	latest := db.Model(&model.Release{}).
-		Select("application_id, max(finished_at)").
-		Where("project_id = ? and application_id in ? and deployment_target_id in ? and status = ?", project.ID, applicationIDs, targetIDs, releaseStatusSucceeded).
-		Group("application_id")
 	var releases []model.Release
-	if err := db.
-		Where("project_id = ? and deployment_target_id in ? and status = ? and (application_id, finished_at) in (?)", project.ID, targetIDs, releaseStatusSucceeded, latest).
+	if err := h.dbWithContext(ctx).Model(&model.Release{}).
+		Select("distinct on (deployment_target_id) *").
+		Where("project_id = ? and deployment_target_id in ? and status = ? and finished_at is not null", project.ID, targetIDs, releaseStatusSucceeded).
+		Order("deployment_target_id, finished_at desc, id desc").
 		Find(&releases).Error; err != nil {
-		return nil, fmt.Errorf("list application current releases: %w", err)
+		return nil, fmt.Errorf("list deployment target current releases: %w", err)
 	}
-	return latestSucceededReleases(releases), nil
+	return latestSucceededReleasesByTarget(releases), nil
 }
 
-func latestSucceededReleases(releases []model.Release) map[string]*applicationCurrentRelease {
+func latestSucceededReleasesByTarget(releases []model.Release) map[string]*applicationCurrentRelease {
 	result := make(map[string]*applicationCurrentRelease)
 	for _, release := range releases {
 		if release.Status != releaseStatusSucceeded || release.FinishedAt == nil {
 			continue
 		}
-		if current, exists := result[release.ApplicationID]; exists && !releaseFinishedLater(release, current) {
-			continue
-		}
-		result[release.ApplicationID] = &applicationCurrentRelease{
+		candidate := &applicationCurrentRelease{
 			ID:                 release.ID,
 			DeploymentTargetID: release.DeploymentTargetID,
 			ImageRef:           release.ImageRef,
 			DeployedAt:         *release.FinishedAt,
 		}
+		if current, exists := result[release.DeploymentTargetID]; exists && !releaseFinishedLater(candidate, current) {
+			continue
+		}
+		result[release.DeploymentTargetID] = candidate
 	}
 	return result
 }
 
-func summarizeApplicationDeploymentTargets(targets []model.DeploymentTarget) applicationDeploymentSummary {
+// applicationCurrentReleaseOf 是应用在现存部署配置上最近完成的成功发布。
+func applicationCurrentReleaseOf(targets []model.DeploymentTarget, targetReleases map[string]*applicationCurrentRelease) *applicationCurrentRelease {
+	var latest *applicationCurrentRelease
+	for _, target := range targets {
+		release := targetReleases[target.ID]
+		if release != nil && (latest == nil || releaseFinishedLater(release, latest)) {
+			latest = release
+		}
+	}
+	return latest
+}
+
+// summarizeApplicationDeploymentTargets is the only application runtime
+// aggregation. Per target status is "disabled" for disabled targets,
+// "not-deployed" for enabled targets without a succeeded release, and the live
+// Kubernetes observation otherwise. The application status is the most severe
+// status among participating (enabled and deployed) targets, or "not-deployed"
+// when none participates; replica totals only count participating targets.
+func summarizeApplicationDeploymentTargets(targets []model.DeploymentTarget, targetReleases map[string]*applicationCurrentRelease) applicationDeploymentSummary {
 	summary := applicationDeploymentSummary{
 		TargetCount: len(targets),
 		Status:      applicationRuntimeNotDeployed,
 		Targets:     make([]applicationDeploymentTargetSummary, 0, len(targets)),
 	}
-	if len(targets) == 0 {
-		return summary
-	}
-
-	allObservedTargetsHealthy := true
-	hasRuntimeObservation := false
 	for _, target := range targets {
-		summary.Targets = append(summary.Targets, applicationDeploymentTargetSummary{
+		release := targetReleases[target.ID]
+		item := applicationDeploymentTargetSummary{
 			ID:              target.ID,
 			Stage:           target.Stage,
+			Enabled:         target.Enabled,
+			Deployed:        release != nil,
 			DesiredReplicas: target.DesiredReplicas,
 			ReadyReplicas:   target.ReadyReplicas,
-			Status:          target.Status,
-		})
-		summary.DesiredReplicas += target.DesiredReplicas
-		summary.ReadyReplicas += target.ReadyReplicas
-		if target.Status == observation.StatusReady || target.Status == observation.StatusScaledToZero || target.Status == observation.StatusProgressing || target.Status == observation.StatusDegraded {
-			hasRuntimeObservation = true
+			Status:          applicationTargetRuntimeStatus(target, release != nil),
+			ObservationCode: target.ObservationCode,
+			CurrentRelease:  release,
 		}
-		if target.Status != observation.StatusReady && target.Status != observation.StatusScaledToZero {
-			allObservedTargetsHealthy = false
+		summary.Targets = append(summary.Targets, item)
+		if !item.Enabled || !item.Deployed {
+			continue
 		}
-		switch target.Status {
-		case observation.StatusUnavailable:
-			summary.Status = observation.StatusUnavailable
-		case observation.StatusDegraded:
-			if summary.Status != observation.StatusUnavailable {
-				summary.Status = observation.StatusDegraded
-			}
+		summary.DesiredReplicas += item.DesiredReplicas
+		summary.ReadyReplicas += item.ReadyReplicas
+		if summary.Status == applicationRuntimeNotDeployed || applicationDeploymentStatusPriority(item.Status) < applicationDeploymentStatusPriority(summary.Status) {
+			summary.Status = item.Status
 		}
 	}
 	sort.SliceStable(summary.Targets, func(i, j int) bool {
@@ -241,44 +260,46 @@ func summarizeApplicationDeploymentTargets(targets []model.DeploymentTarget) app
 		}
 		return applicationDeploymentStagePriority(left.Stage) < applicationDeploymentStagePriority(right.Stage)
 	})
-
-	if summary.Status == observation.StatusUnavailable || summary.Status == observation.StatusDegraded {
-		return summary
-	}
-	if allObservedTargetsHealthy && hasRuntimeObservation && summary.DesiredReplicas == 0 {
-		summary.Status = observation.StatusScaledToZero
-		return summary
-	}
-	if allObservedTargetsHealthy && hasRuntimeObservation && summary.ReadyReplicas >= summary.DesiredReplicas {
-		summary.Status = observation.StatusReady
-		return summary
-	}
-	if hasRuntimeObservation {
-		summary.Status = observation.StatusProgressing
-	}
 	return summary
 }
 
+func applicationTargetRuntimeStatus(target model.DeploymentTarget, deployed bool) string {
+	switch {
+	case !target.Enabled:
+		return observation.StatusDisabled
+	case !deployed:
+		return applicationRuntimeNotDeployed
+	case target.Status == "":
+		return observation.StatusUnknown
+	default:
+		return target.Status
+	}
+}
+
+// applicationDeploymentStatusPriority orders statuses by how much attention
+// they need; ready sorts before scaled-to-zero so a mix of both is ready.
 func applicationDeploymentStatusPriority(status string) int {
 	switch status {
 	case observation.StatusUnavailable:
 		return 0
 	case observation.StatusDegraded:
 		return 1
-	case observation.StatusProgressing:
-		return 2
 	case observation.StatusNotFound:
-		return 3
+		return 2
 	case observation.StatusNotConfigured:
+		return 3
+	case observation.StatusProgressing:
 		return 4
 	case observation.StatusReady:
-		return 5
-	case observation.StatusScaledToZero:
 		return 6
-	case "disabled":
+	case observation.StatusScaledToZero:
 		return 7
-	default:
+	case applicationRuntimeNotDeployed:
 		return 8
+	case observation.StatusDisabled:
+		return 9
+	default:
+		return 5
 	}
 }
 
@@ -297,9 +318,9 @@ func applicationDeploymentStagePriority(stage string) int {
 	}
 }
 
-func releaseFinishedLater(release model.Release, current *applicationCurrentRelease) bool {
-	if release.FinishedAt.Equal(current.DeployedAt) {
+func releaseFinishedLater(release, current *applicationCurrentRelease) bool {
+	if release.DeployedAt.Equal(current.DeployedAt) {
 		return release.ID > current.ID
 	}
-	return release.FinishedAt.After(current.DeployedAt)
+	return release.DeployedAt.After(current.DeployedAt)
 }

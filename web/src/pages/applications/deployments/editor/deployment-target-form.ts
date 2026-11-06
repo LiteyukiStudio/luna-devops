@@ -119,7 +119,6 @@ export function createDeploymentTargetFormSchema(t: TFunction) {
     autoDeploy: z.boolean(),
     branchPattern: z.string(),
     tagPattern: z.string(),
-    concurrencyPolicy: z.enum(['queue', 'parallel']),
 
     // 钩子
     buildHooksEnabled: z.boolean(),
@@ -283,7 +282,6 @@ export function emptyDeploymentTargetFormValues(): DeploymentTargetFormValues {
     autoDeploy: true,
     branchPattern: '',
     tagPattern: '',
-    concurrencyPolicy: 'queue',
     buildHooksEnabled: true,
     buildHookBindings: [],
     webConsoleEnabled: 'inherit',
@@ -373,7 +371,6 @@ export function deploymentTargetToFormValues(target: DeploymentTarget, buildEnvi
     autoDeploy: target.autoDeploy,
     branchPattern: target.branchPattern,
     tagPattern: target.tagPattern,
-    concurrencyPolicy: target.concurrencyPolicy,
     buildHooksEnabled: target.buildHooksEnabled,
     buildHookBindings: [...(target.buildHookBindings ?? [])]
       .sort((left, right) => left.runOrder - right.runOrder)
@@ -457,7 +454,6 @@ export function deploymentTargetFormToPayload(values: DeploymentTargetFormValues
     autoDeploy: values.autoDeploy,
     branchPattern: values.branchPattern.trim(),
     tagPattern: values.tagPattern.trim(),
-    concurrencyPolicy: values.concurrencyPolicy,
     buildHooksEnabled: values.buildHooksEnabled,
     buildHookBindings: values.buildHookBindings.map((binding, index) => ({ hookConfigId: binding.hookConfigId, phase: binding.phase, runOrder: index + 1 })),
     webConsoleEnabled: values.webConsoleEnabled === 'disabled' ? false : null,
@@ -564,7 +560,7 @@ export const deploymentTargetAdvancedItemOrder: readonly DeploymentTargetAdvance
 export const deploymentTargetSectionFields: Record<DeploymentTargetEditorSection, readonly DeploymentTargetFieldName[]> = {
   basics: ['name', 'stage', 'clusterId', 'enabled', 'sourceType', 'repositoryBindingId', 'imageRef', 'targetRegistryId', 'targetImageRef', 'buildDefinitionMode', 'buildTemplateId', 'buildTemplateVersion', 'buildTemplateValues', 'dockerfilePath', 'buildContext'],
   runtime: ['replicas', 'cpuRequest', 'memoryRequest', 'autoScalingEnabled', 'autoScalingMinReplicas', 'autoScalingMaxReplicas', 'autoScalingCpuPercent', 'autoScalingMemoryPercent', 'servicePorts', 'runtimeConfigRefs', 'environmentVariables', 'dataVolumes'],
-  release: ['autoDeploy', 'branchPattern', 'tagPattern', 'concurrencyPolicy'],
+  release: ['autoDeploy', 'branchPattern', 'tagPattern'],
   advanced: deploymentTargetAdvancedItemOrder.flatMap(item => deploymentTargetAdvancedItemFields[item]),
 }
 

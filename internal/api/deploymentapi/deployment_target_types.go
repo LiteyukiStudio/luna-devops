@@ -18,6 +18,7 @@ type deploymentTargetResponse struct {
 	Stage                     string                               `json:"stage"`
 	KubernetesName            string                               `json:"kubernetesName"`
 	ClusterID                 string                               `json:"clusterId"`
+	EffectiveClusterID        string                               `json:"effectiveClusterId"`
 	WorkloadType              string                               `json:"workloadType"`
 	Replicas                  int                                  `json:"replicas"`
 	CPURequest                string                               `json:"cpuRequest"`
@@ -75,7 +76,6 @@ type deploymentTargetResponse struct {
 	AutoDeploy                bool                                 `json:"autoDeploy"`
 	BranchPattern             string                               `json:"branchPattern"`
 	TagPattern                string                               `json:"tagPattern"`
-	ConcurrencyPolicy         string                               `json:"concurrencyPolicy"`
 	RuntimeConfigRefs         []deploymentRuntimeConfigRefResponse `json:"runtimeConfigRefs"`
 	EnvironmentVariables      []runtimeEnvironmentVariableResponse `json:"environmentVariables"`
 	ConfigFiles               string                               `json:"configFiles"`
@@ -93,6 +93,7 @@ type deploymentTargetResponse struct {
 	AvailableReplicas         int32                                `json:"availableReplicas"`
 	DeleteStatus              string                               `json:"deleteStatus"`
 	DeleteMessage             string                               `json:"deleteMessage"`
+	DeleteCode                string                               `json:"deleteCode"`
 	DeleteStartedAt           *time.Time                           `json:"deleteStartedAt"`
 	DeleteFinishedAt          *time.Time                           `json:"deleteFinishedAt"`
 	CreatedBy                 string                               `json:"createdBy"`
@@ -124,6 +125,7 @@ func deploymentTargetResponseFromModel(target model.DeploymentTarget, mounts ...
 		Stage:                     fallback(strings.TrimSpace(target.Stage), model.DefaultDeploymentStage),
 		KubernetesName:            strings.TrimSpace(target.KubernetesName),
 		ClusterID:                 target.ClusterID,
+		EffectiveClusterID:        target.EffectiveClusterID,
 		WorkloadType:              normalizeWorkloadType(target.WorkloadType),
 		Replicas:                  target.Replicas,
 		CPURequest:                fallback(strings.TrimSpace(target.CPURequest), model.DefaultDeploymentCPURequest),
@@ -181,7 +183,6 @@ func deploymentTargetResponseFromModel(target model.DeploymentTarget, mounts ...
 		AutoDeploy:                target.AutoDeploy,
 		BranchPattern:             target.BranchPattern,
 		TagPattern:                target.TagPattern,
-		ConcurrencyPolicy:         target.ConcurrencyPolicy,
 		RuntimeConfigRefs:         deploymentRuntimeConfigRefsResponse(target),
 		EnvironmentVariables:      runtimeEnvironmentVariables(target.EnvVars, target.SecretRefs),
 		ConfigFiles:               target.ConfigFiles,
@@ -199,6 +200,7 @@ func deploymentTargetResponseFromModel(target model.DeploymentTarget, mounts ...
 		AvailableReplicas:         target.AvailableReplicas,
 		DeleteStatus:              target.DeleteStatus,
 		DeleteMessage:             target.DeleteMessage,
+		DeleteCode:                target.DeleteCode,
 		DeleteStartedAt:           target.DeleteStartedAt,
 		DeleteFinishedAt:          target.DeleteFinishedAt,
 		CreatedBy:                 target.CreatedBy,
@@ -294,7 +296,6 @@ type deploymentTargetInput struct {
 	AutoDeploy                   bool                               `json:"autoDeploy"`
 	BranchPattern                string                             `json:"branchPattern"`
 	TagPattern                   string                             `json:"tagPattern"`
-	ConcurrencyPolicy            string                             `json:"concurrencyPolicy"`
 	RuntimeConfigRefs            []deploymentRuntimeConfigRefInput  `json:"runtimeConfigRefs"`
 	EnvironmentVariables         []runtimeEnvironmentVariableInput  `json:"environmentVariables"`
 	ConfigFiles                  string                             `json:"configFiles"`

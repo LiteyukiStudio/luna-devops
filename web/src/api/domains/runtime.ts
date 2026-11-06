@@ -60,7 +60,7 @@ export const runtimeApi = {
   },
   listReleaseImageCandidates: (projectId: string, applicationId: string, targetId: string) =>
     request<ReleaseImageCandidates>(`/projects/${projectId}/applications/${applicationId}/deployment-targets/${targetId}/release-image-candidates`),
-  createRelease: (projectId: string, payload: Omit<Release, 'id' | 'projectId' | 'createdBy' | 'createdAt' | 'rollbackFromId'>) =>
+  createRelease: (projectId: string, payload: Omit<Release, 'id' | 'projectId' | 'createdBy' | 'createdAt' | 'rollbackFromId' | 'failureCode'>) =>
     request<Release>(`/projects/${projectId}/releases`, { method: 'POST', body: JSON.stringify(payload) }),
   getReleaseLogs: (projectId: string, releaseId: string, signal?: AbortSignal) =>
     request<ReleaseLog>(`/projects/${projectId}/releases/${releaseId}/logs`, { signal }),
@@ -83,4 +83,6 @@ export const runtimeApi = {
   },
   rollbackRelease: (projectId: string, releaseId: string) =>
     request<Release>(`/projects/${projectId}/releases/${releaseId}/rollback`, { method: 'POST' }),
+  cancelRelease: (projectId: string, releaseId: string) =>
+    request<Release>(`/projects/${projectId}/releases/${releaseId}/cancel`, { method: 'POST' }),
 }

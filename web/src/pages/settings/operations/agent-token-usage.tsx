@@ -38,7 +38,7 @@ export function AgentTokenUsageStrip({ className, usage }: { className?: string,
   const { t, i18n } = useTranslation()
   return (
     <div className="@container/agent-usage">
-      <dl className={cn('grid grid-cols-2 gap-px overflow-hidden rounded-container bg-border sm:grid-cols-3 @[60rem]/agent-usage:grid-cols-6', className)}>
+      <dl className={cn('grid grid-cols-2 gap-px overflow-hidden rounded-container bg-border @lg/agent-usage:grid-cols-3 @[60rem]/agent-usage:grid-cols-6', className)}>
         {[...detailUsageFields, cacheHitRateField].map(({ icon: Icon, key, labelKey, valueKind }) => (
           <div key={key} className="min-w-0 bg-surface-raised px-3 py-2.5">
             <dt className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">

@@ -14,11 +14,20 @@ const errors = {
     identifier_exists: '이 프로젝트 스페이스 내에 애플리케이션 식별자가 이미 존재합니다.',
     identifier_delete_in_progress: '같은 식별자의 애플리케이션을 삭제 중입니다. 리소스 정리 완료 후 재사용할 수 있습니다.',
     identifier_delete_failed: '같은 식별자의 애플리케이션의 이전 삭제가 실패했습니다. 먼저 리소스 정리를 완료하세요.',
+    delete_cleanup_failed: '애플리케이션 실행 리소스 정리에 실패했습니다. 실행 클러스터를 확인한 후 다시 삭제하세요.',
+    delete_finalize_failed: '실행 리소스는 정리되었지만 삭제 기록을 완료하지 못했습니다. 잠시 후 다시 삭제하세요.',
+    delete_enqueue_failed: '애플리케이션 삭제 작업을 등록할 수 없습니다. Worker 큐가 사용 가능한지 확인한 후 다시 시도하세요.',
   },
   app_template: {
     volume_contract_invalid: '이 템플릿의 데이터 볼륨 구성이 올바르지 않습니다. 플랫폼 관리자에게 앱 마켓 템플릿 수정을 요청하세요.',
     project_volume_required: '이 템플릿을 설치하기 전에 사용 가능한 프로젝트 데이터 볼륨을 선택하세요.',
     project_volume_unsupported: '이 템플릿은 프로젝트 데이터 볼륨 선택을 지원하지 않습니다.',
+    value_required: '템플릿의 필수 매개변수를 모두 입력하세요.',
+    install_conflict: '설치가 기존 리소스와 충돌했습니다. 새로 고친 후 다른 애플리케이션 식별자로 다시 시도하세요.',
+    install_failed: '템플릿 설치에 실패했으며 리소스는 생성되지 않았습니다. 잠시 후 다시 시도하세요.',
+    catalog_unavailable: '앱 마켓 템플릿 카탈로그를 사용할 수 없습니다. 플랫폼 관리자에게 문의하세요.',
+    secret_generation_failed: '템플릿 시크릿을 안전하게 생성할 수 없어 설치를 중단했습니다. 잠시 후 다시 시도하세요.',
+    dependency_invalid: '이 템플릿의 컴포넌트 의존성 구성이 올바르지 않습니다. 플랫폼 관리자에게 템플릿 수정을 요청하세요.',
   },
   project_volume: {
     not_found: '선택한 프로젝트 데이터 볼륨이 존재하지 않거나 삭제되었습니다.',
@@ -28,9 +37,13 @@ const errors = {
     mode_incompatible: '프로젝트 데이터 볼륨 모드가 이 템플릿과 호환되지 않습니다. 알맞은 파일 시스템 또는 블록 볼륨을 선택하세요.',
   },
   project: {
+    delete_in_progress: '프로젝트 스페이스를 삭제하는 중입니다. 리소스 정리가 끝날 때까지 기다리세요.',
     identifier_exists: '프로젝트 스페이스 식별자가 이미 존재합니다.',
     identifier_delete_in_progress: '같은 식별자의 프로젝트 스페이스를 삭제 중입니다. 리소스 정리 완료 후 재사용할 수 있습니다.',
     identifier_delete_failed: '같은 식별자의 프로젝트 스페이스의 이전 삭제가 실패했습니다. 먼저 리소스 정리를 완료하세요.',
+  },
+  release: {
+    not_cancelable: '대기 중이거나 실행 중인 릴리스만 취소할 수 있습니다.',
   },
   deployment: {
     runtime_environment_key_invalid: '유효한 환경 변수 이름을 입력하세요.',
@@ -82,6 +95,9 @@ const errors = {
     service_account_invalid: 'ServiceAccount 구성이 유효하지 않습니다. 확인 후 다시 시도하세요.',
     replicas_invalid: '복제본 수는 0 이상의 정수여야 합니다.',
     scale_failed: '런타임 클러스터에 복제본 수를 적용하지 못했습니다. 다시 시도하세요.',
+    delete_cleanup_failed: '배포 구성의 실행 리소스 정리에 실패했습니다. 실행 클러스터를 확인한 후 다시 삭제하세요.',
+    delete_finalize_failed: '실행 리소스는 정리되었지만 삭제 기록을 완료하지 못했습니다. 잠시 후 다시 삭제하세요.',
+    delete_enqueue_failed: '배포 구성 삭제 작업을 대기열에 넣지 못했습니다. Worker 대기열을 사용할 수 있는지 확인한 후 다시 시도하세요.',
   },
   kubernetes: {
     resource_ownership_conflict: 'Kubernetes의 동일한 이름의 리소스는 다른 리소스 수명 주기에 속합니다. 플랫폼은 자동으로 인수하지 않습니다. 먼저 잔여 리소스를 처리하세요.',
@@ -163,6 +179,7 @@ const errors = {
   service_binding_env_conflict: '주입된 환경 변수가 기존 배포 구성과 충돌합니다.',
   service_binding_reserved_env: '플랫폼 예약 환경 변수 이름은 사용할 수 없습니다.',
   service_binding_in_use: '이 애플리케이션 또는 배포 구성은 아직 서비스 관계에 의해 참조되고 있습니다. 먼저 관련 관계를 삭제하세요.',
+  service_binding_target_deleting: '대상 애플리케이션 또는 배포 구성이 삭제 중이거나 이전 삭제에 실패하여 이를 참조하는 서비스 관계를 만들거나 수정할 수 없습니다.',
   topology_edge_duplicate: '같은 서비스 관계가 이미 존재합니다.',
   topology_truncated: '토폴로지 관계가 너무 많습니다. 현재 결과가 잘렸습니다.',
   dependency_cycle: '순환 종속성이 감지되었습니다. 서비스 관계를 조정하세요.',
@@ -174,6 +191,7 @@ const errors = {
     download_unauthorized: '다운로드 승인이 유효하지 않거나 현재 작업과 일치하지 않습니다. 다운로드를 다시 시작하세요.',
     format_unsupported: '이 아카이브 형식은 지원되지 않습니다.',
     job_failed: '데이터 볼륨 전송에 실패했습니다. 작업 상태를 확인한 후 다시 시도하세요.',
+    snapshot_timeout: '데이터 볼륨 스냅샷이 제한 시간 내에 준비되지 않았습니다. 클러스터에 snapshot controller가 설치되어 있는지 확인한 후 다시 시도하거나 다른 일관성 모드를 선택하세요.',
   },
   volume: {
     invalid_input: '데이터 볼륨 구성이 올바르지 않습니다. 필드를 확인한 후 다시 시도하세요.',

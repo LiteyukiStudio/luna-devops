@@ -7,8 +7,9 @@ const projectSpaces = {
   workspaceLoadFailedDescription: 'Make sure the project space exists and you have access.',
   apps: 'Applications',
   members: 'Members',
-  failedReleasesMeta: '{{count}} releases failed',
+  failedReleasesMeta: '{{count}} releases failed in the last {{days}} days',
   accessHealth: 'Access routes',
+  accessHealthUnavailable: 'Live gateway status is unavailable',
   recentBuilds: 'Recent builds',
   recentBuildsDescription: 'Latest build runs triggered in this project space.',
   noRecentBuilds: 'No build records yet',
@@ -91,7 +92,7 @@ const projectSpaces = {
   loadFailedTitle: 'Project spaces failed to load',
   loadFailedDescription: 'Make sure you are signed in and the backend API is reachable.',
   emptyTitle: 'No project spaces yet',
-  emptyDescription: 'Create one from the left side first.',
+  emptyDescription: 'Create a project space to organize applications, members, and resources.',
   noSearchResultsTitle: 'No project spaces match this search',
   noSearchResultsDescription: 'Try another keyword or clear the search to view all project spaces.',
   clearSearch: 'Clear search',
@@ -108,6 +109,7 @@ const projectSpaces = {
   buildsMetric: 'Build runs',
   recentBuildsFailedMeta: '{{failed}} of the last {{count}} failed',
   activeReleasesMetric: 'Releases in progress',
+  moreActionsAria: 'More actions for project space {{name}}',
 }
 
 export default projectSpaces

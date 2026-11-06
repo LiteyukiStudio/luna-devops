@@ -12,8 +12,9 @@ const nav = {
     apps: '애플리케이션',
     overview: '개요',
     buildVariables: '빌드 변수',
-    runtimeConfigs: '설정',
+    runtimeConfigs: '실행 설정',
     hooks: '훅',
+    sharedConfig: '공유 설정',
     volumes: '데이터 볼륨',
     members: '멤버',
     topology: '서비스 관계',
@@ -30,6 +31,7 @@ const nav = {
       pages: '페이지',
       projects: '프로젝트 공간',
       applications: '{{project}}의 애플리케이션',
+      projectSections: '{{project}}의 섹션',
       actions: '자주 쓰는 작업',
     },
     actions: {
@@ -37,6 +39,11 @@ const nav = {
       toggleTheme: '라이트/다크 테마 전환',
     },
   },
+  backToParent: '{{name}}(으)로 돌아가기',
+  deploymentTargetCreate: '배포 구성 추가',
+  deploymentTargetEdit: '배포 구성 편집',
+  deploymentTargetCreateDocumentTitle: '배포 구성 추가: {{projectName}} / {{name}}',
+  deploymentTargetEditDocumentTitle: '배포 구성 편집: {{projectName}} / {{name}}',
 }
 
 export default nav

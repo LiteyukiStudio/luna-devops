@@ -29,6 +29,7 @@ type ApplicationResourcesSpec struct {
 	MemoryRequest                string
 	CPULimit                     string
 	MemoryLimit                  string
+	ResourcePolicy               string
 	ImagePullPolicy              string
 	ContainerCommand             string
 	ContainerArgs                string

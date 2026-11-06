@@ -42,27 +42,27 @@ function VolumeFilters({ availability, clusterId, onAvailabilityChange, onCluste
 }) {
   const { t } = useTranslation()
   return (
-    <div className="grid min-w-0 gap-2 md:contents">
-      <div className="w-full md:w-40">
+    <div className="grid min-w-0 gap-2 @xl/data-list:contents">
+      <div className="w-full @xl/data-list:w-40">
         <ProjectVolumeClusterSelect allowAll projectId={projectId} value={clusterId} onChange={onClusterChange} />
       </div>
-      <NativeSelect aria-label={t('projectVolumes.allAvailability')} containerClassName="w-full md:w-36" value={availability} onChange={event => onAvailabilityChange(event.target.value as '' | ProjectVolumeAvailability)}>
+      <NativeSelect aria-label={t('projectVolumes.allAvailability')} containerClassName="w-full @xl/data-list:w-36" value={availability} onChange={event => onAvailabilityChange(event.target.value as '' | ProjectVolumeAvailability)}>
         <option value="">{t('projectVolumes.allAvailability')}</option>
         <option value="available">{t('projectVolumes.availabilityStates.available')}</option>
         <option value="reserved">{t('projectVolumes.availabilityStates.reserved')}</option>
         <option value="in_use">{t('projectVolumes.availabilityStates.in_use')}</option>
         <option value="unavailable">{t('projectVolumes.availabilityStates.unavailable')}</option>
       </NativeSelect>
-      <NativeSelect aria-label={t('projectVolumes.allSources')} containerClassName="w-full md:w-36" value={sourceKind} onChange={event => onSourceChange(event.target.value as '' | ProjectVolumeSourceKind)}>
+      <NativeSelect aria-label={t('projectVolumes.allSources')} containerClassName="w-full @xl/data-list:w-36" value={sourceKind} onChange={event => onSourceChange(event.target.value as '' | ProjectVolumeSourceKind)}>
         <option value="">{t('projectVolumes.allSources')}</option>
         {(['blank', 'managed', 'retained', 'archive_import', 'snapshot_restore', 'existing_claim'] as const).map(value => <option key={value} value={value}>{t(`projectVolumes.sourceKinds.${value}`)}</option>)}
       </NativeSelect>
-      <NativeSelect aria-label={t('projectVolumes.allOwnership')} containerClassName="w-full md:w-36" value={ownership} onChange={event => onOwnershipChange(event.target.value as '' | ProjectVolumeOwnershipMode)}>
+      <NativeSelect aria-label={t('projectVolumes.allOwnership')} containerClassName="w-full @xl/data-list:w-36" value={ownership} onChange={event => onOwnershipChange(event.target.value as '' | ProjectVolumeOwnershipMode)}>
         <option value="">{t('projectVolumes.allOwnership')}</option>
         <option value="managed">{t('projectVolumes.ownershipModes.managed')}</option>
         <option value="referenced">{t('projectVolumes.ownershipModes.referenced')}</option>
       </NativeSelect>
-      <NativeSelect aria-label={t('projectVolumes.sort')} containerClassName="w-full md:w-36" value={sortBy} onChange={event => onSortChange(event.target.value as typeof sortBy)}>
+      <NativeSelect aria-label={t('projectVolumes.sort')} containerClassName="w-full @xl/data-list:w-36" value={sortBy} onChange={event => onSortChange(event.target.value as typeof sortBy)}>
         <option value="createdAt">{t('projectVolumes.sortCreated')}</option>
         <option value="updatedAt">{t('projectVolumes.sortUpdated')}</option>
         <option value="displayName">{t('projectVolumes.sortName')}</option>
@@ -229,10 +229,10 @@ export function ProjectVolumesPage({ capabilities, projectId, ref }: { capabilit
         }}
         toolbar={(
           <>
-            <div className="hidden md:contents">{filters}</div>
+            <div className="hidden @xl/data-list:contents">{filters}</div>
             <Sheet open={filtersOpen} onOpenChange={setFiltersOpen}>
               <SheetTrigger asChild>
-                <Button className="md:hidden" size="sm" variant="outline">
+                <Button className="@xl/data-list:hidden" size="sm" variant="outline">
                   <Filter className="size-4" />
                   {t('projectVolumes.filters')}
                 </Button>

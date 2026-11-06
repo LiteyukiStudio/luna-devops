@@ -33,8 +33,15 @@ type Overview struct {
 	Projects    []ProjectShortcut `json:"projects"`
 	Attention   []AttentionItem   `json:"attention"`
 	Activities  []Activity        `json:"activities"`
-	Readiness   Readiness         `json:"readiness"`
+	// ApplicationActivities holds the latest event of every application in
+	// the shortcut projects, independent of the global recent activity window.
+	ApplicationActivities []Activity `json:"applicationActivities"`
+	Readiness             Readiness  `json:"readiness"`
 }
+
+// excludedApplicationDeleteStatuses are applications being removed; they are
+// not counted as existing applications anywhere on the dashboard.
+var excludedApplicationDeleteStatuses = []string{"deleting", "deleted"}
 
 type Summary struct {
 	Projects        int64 `json:"projects"`
@@ -110,10 +117,11 @@ func NewService(db *gorm.DB) *Service {
 
 func (s *Service) Overview(ctx context.Context, scope Scope) (Overview, error) {
 	result := Overview{
-		GeneratedAt: s.now().UTC(),
-		Projects:    []ProjectShortcut{},
-		Attention:   []AttentionItem{},
-		Activities:  []Activity{},
+		GeneratedAt:           s.now().UTC(),
+		Projects:              []ProjectShortcut{},
+		Attention:             []AttentionItem{},
+		Activities:            []Activity{},
+		ApplicationActivities: []Activity{},
 	}
 	projectIDs, err := s.visibleProjectIDs(ctx, scope)
 	if err != nil {
@@ -122,7 +130,7 @@ func (s *Service) Overview(ctx context.Context, scope Scope) (Overview, error) {
 	result.Summary.Projects = int64(len(projectIDs))
 
 	if len(projectIDs) > 0 {
-		if err := s.db.WithContext(ctx).Model(&model.Application{}).Where("project_id in ?", projectIDs).Count(&result.Summary.Applications).Error; err != nil {
+		if err := s.db.WithContext(ctx).Model(&model.Application{}).Where("project_id in ? and delete_status not in ?", projectIDs, excludedApplicationDeleteStatuses).Count(&result.Summary.Applications).Error; err != nil {
 			return result, fmt.Errorf("count dashboard applications: %w", err)
 		}
 		if err := s.db.WithContext(ctx).Model(&model.BuildRun{}).Where("project_id in ? and status in ?", projectIDs, []string{"queued", "running"}).Count(&result.Summary.ActiveBuilds).Error; err != nil {
@@ -153,11 +161,48 @@ func (s *Service) Overview(ctx context.Context, scope Scope) (Overview, error) {
 	result.Attention = aggregateAttention(events, references, result.GeneratedAt.Add(-attentionWindow))
 	result.Summary.AttentionItems = len(result.Attention)
 
-	result.Projects, err = s.projectShortcuts(ctx, scope, projectIDs, activities)
+	result.Projects, err = s.projectShortcuts(ctx, scope, projectIDs)
+	if err != nil {
+		return result, err
+	}
+	shortcutIDs := make([]string, 0, len(result.Projects))
+	for _, project := range result.Projects {
+		shortcutIDs = append(shortcutIDs, project.ID)
+	}
+	result.ApplicationActivities, err = s.latestApplicationActivities(ctx, shortcutIDs)
 	if err != nil {
 		return result, err
 	}
 	return result, nil
+}
+
+// latestApplicationActivities returns the latest event of each existing
+// application in the given projects, newest first.
+func (s *Service) latestApplicationActivities(ctx context.Context, projectIDs []string) ([]Activity, error) {
+	if len(projectIDs) == 0 {
+		return []Activity{}, nil
+	}
+	var events []model.PlatformEvent
+	if err := s.db.WithContext(ctx).Model(&model.PlatformEvent{}).
+		Select("distinct on (platform_events.application_id) platform_events.*").
+		Joins("join applications on applications.id = platform_events.application_id and applications.deleted_at is null and applications.delete_status not in ?", excludedApplicationDeleteStatuses).
+		Where("platform_events.project_id in ? and platform_events.application_id <> ''", projectIDs).
+		Order("platform_events.application_id, platform_events.occurred_at desc, platform_events.created_at desc, platform_events.id desc").
+		Find(&events).Error; err != nil {
+		return nil, fmt.Errorf("list dashboard application activities: %w", err)
+	}
+	sort.SliceStable(events, func(left, right int) bool {
+		return events[left].OccurredAt.After(events[right].OccurredAt)
+	})
+	references, err := s.loadEntityReferences(ctx, projectIDs, events)
+	if err != nil {
+		return nil, err
+	}
+	activities := make([]Activity, 0, len(events))
+	for _, event := range events {
+		activities = append(activities, activityFromEvent(event, references))
+	}
+	return activities, nil
 }
 
 func (s *Service) visibleProjectIDs(ctx context.Context, scope Scope) ([]string, error) {
@@ -188,7 +233,32 @@ type projectCountRow struct {
 	Count     int64
 }
 
-func (s *Service) projectShortcuts(ctx context.Context, scope Scope, projectIDs []string, activities []Activity) ([]ProjectShortcut, error) {
+// latestProjectActivities returns the latest event of each given project,
+// independent of the global recent activity window.
+func (s *Service) latestProjectActivities(ctx context.Context, projectIDs []string) (map[string]Activity, error) {
+	latest := map[string]Activity{}
+	if len(projectIDs) == 0 {
+		return latest, nil
+	}
+	var events []model.PlatformEvent
+	if err := s.db.WithContext(ctx).Model(&model.PlatformEvent{}).
+		Select("distinct on (platform_events.project_id) platform_events.*").
+		Where("platform_events.project_id in ?", projectIDs).
+		Order("platform_events.project_id, platform_events.occurred_at desc, platform_events.created_at desc, platform_events.id desc").
+		Find(&events).Error; err != nil {
+		return nil, fmt.Errorf("list dashboard project activities: %w", err)
+	}
+	references, err := s.loadEntityReferences(ctx, projectIDs, events)
+	if err != nil {
+		return nil, err
+	}
+	for _, event := range events {
+		latest[event.ProjectID] = activityFromEvent(event, references)
+	}
+	return latest, nil
+}
+
+func (s *Service) projectShortcuts(ctx context.Context, scope Scope, projectIDs []string) ([]ProjectShortcut, error) {
 	if len(projectIDs) == 0 {
 		return []ProjectShortcut{}, nil
 	}
@@ -212,7 +282,7 @@ func (s *Service) projectShortcuts(ctx context.Context, scope Scope, projectIDs 
 		var countRows []projectCountRow
 		if err := s.db.WithContext(ctx).Model(&model.Application{}).
 			Select("project_id, count(*) as count").
-			Where("project_id in ?", shortcutIDs).
+			Where("project_id in ? and delete_status not in ?", shortcutIDs, excludedApplicationDeleteStatuses).
 			Group("project_id").Scan(&countRows).Error; err != nil {
 			return nil, fmt.Errorf("count dashboard shortcut applications: %w", err)
 		}
@@ -220,13 +290,9 @@ func (s *Service) projectShortcuts(ctx context.Context, scope Scope, projectIDs 
 			counts[row.ProjectID] = row.Count
 		}
 	}
-	latest := map[string]Activity{}
-	for _, activity := range activities {
-		if activity.Project != nil {
-			if _, exists := latest[activity.Project.ID]; !exists {
-				latest[activity.Project.ID] = activity
-			}
-		}
+	latest, err := s.latestProjectActivities(ctx, shortcutIDs)
+	if err != nil {
+		return nil, err
 	}
 	shortcuts := make([]ProjectShortcut, 0, len(rows))
 	for _, row := range rows {

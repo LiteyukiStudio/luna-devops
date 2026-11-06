@@ -27,22 +27,28 @@ const buildJobProgressKeys = new Set([
   'registry_auth',
 ])
 
-const buildFailedStatuses = new Set(['failed', 'lost', 'timeout'])
+const buildFailedStatuses = new Set(['failed', 'timeout'])
 
 export interface BuildRunBinding { cloneUrl?: string, defaultBranch: string, gitAccountId: string, owner: string, repo: string }
 
-/** 构建状态：圆点 + 当前阶段或结果；失败时悬停查看原因。 */
+/** 构建状态：圆点 + 当前阶段或结果；失败、超时或取消时直接显示原因摘要，悬停查看任务诊断信息。 */
 export function BuildRunStatusCell({ latestJob, run }: { latestJob?: BuildJob, run: BuildRun }) {
   const { t } = useTranslation()
   const liveState = buildRunLiveState(run, latestJob, t)
   const failureMessage = buildRunFailureMessage(run, latestJob, t)
+  const failureReason = run.failureCode ? t(`buildsPage.failureCodes.${run.failureCode}`) : ''
   const status = <StatusDot label={liveState} tone={statusToneFor(run.status)} />
-  if (!failureMessage)
-    return status
   return (
-    <HoverText className="max-w-full" value={failureMessage}>
-      {status}
-    </HoverText>
+    <div className="grid min-w-0 max-w-full gap-0.5">
+      {failureMessage
+        ? (
+            <HoverText className="max-w-full" value={failureMessage}>
+              {status}
+            </HoverText>
+          )
+        : status}
+      {failureReason && <span className="truncate text-xs text-muted-foreground" title={failureReason}>{failureReason}</span>}
+    </div>
   )
 }
 
@@ -57,8 +63,8 @@ export function BuildRunSourceCell({ binding, deploymentTargetName, run }: { bin
   const authorUrl = binding ? buildAuthorUrl(binding, run) : ''
   const title = buildRunTitle(run, t, deploymentTargetName)
   return (
-    <div className="grid min-w-0 max-w-[32rem] gap-0.5">
-      <span className="truncate text-sm font-medium text-foreground" title={title}>{title}</span>
+    <div className="grid min-w-0 max-w-full gap-0.5">
+      <HoverText className="text-sm font-medium text-foreground" value={title} />
       <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-muted-foreground">
         <span className="font-mono text-foreground">{branch}</span>
         {commit && (commitUrl
@@ -91,7 +97,7 @@ export function BuildRunImageCell({ run }: { run: BuildRun }) {
   return (
     <button
       aria-label={t('buildsPage.copyImageRef', { image: targetImage })}
-      className="inline-flex min-w-0 max-w-72 items-center gap-1.5 rounded-sm text-left font-mono text-xs text-foreground hover:text-primary-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className="inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-sm text-left font-mono text-xs text-foreground hover:text-primary-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       title={targetImage}
       type="button"
       onClick={copyImageRef}
@@ -132,7 +138,7 @@ export function BuildRunActions({ canRetry, canceling, deleting, latestJob, onCa
   const { t } = useTranslation()
   const [confirming, setConfirming] = useState<'cancel' | 'delete' | null>(null)
   const canCancel = run.status === 'queued' || run.status === 'running'
-  const canDelete = ['succeeded', 'failed', 'canceled', 'lost', 'timeout'].includes(run.status)
+  const canDelete = ['succeeded', 'failed', 'canceled', 'timeout'].includes(run.status)
   return (
     <div className="flex items-center justify-end gap-1">
       <Button disabled={!latestJob} size="sm" variant="outline" onClick={() => latestJob && onOpenLogs(latestJob)}>
@@ -280,8 +286,10 @@ function buildRunFailureMessage(run: BuildRun, latestJob: BuildJob | undefined, 
   if (!buildFailedStatuses.has(run.status) && !buildFailedStatuses.has(latestJob?.status ?? ''))
     return ''
   const message = latestJob?.message?.trim()
-  if (message && !buildJobProgressKeys.has(message))
+  if (message && !buildJobProgressKeys.has(message) && message !== run.failureCode)
     return message
+  if (run.failureCode)
+    return ''
   return latestJob ? t('buildsPage.failureReasonUnavailable') : t('buildsPage.failureReasonNoJob')
 }
 

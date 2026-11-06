@@ -75,7 +75,7 @@ export function BillingUsageList({
       key: 'time',
       header: t('billingPage.time'),
       width: 'compact',
-      render: item => formatSmartDateTime(item.createdAt, t),
+      render: item => formatSmartDateTime(item.periodStart, t),
     },
   ], [billingDisplay, locale, projectMap, t])
 

@@ -57,6 +57,14 @@ export class ToolVerificationRunner {
   }
 }
 
+function evaluateCanceledExpectation(status: string, call: ToolCallRecord): VerificationExecution {
+  if (["canceled", "cancelled"].includes(status))
+    return { kind: "verified", toolCallId: call.id, result: call.result }
+  if (["queued", "pending", "running", "progressing"].includes(status))
+    return { kind: "pending", toolCallId: call.id, result: call.result }
+  return { kind: "failed", toolCallId: call.id, errorCode: "ai.tool_execution_failed", result: call.result }
+}
+
 export function evaluateVerification(plan: RunToolVerification, call: ToolCallRecord): VerificationExecution {
   if (call.status === "canceled")
     return { kind: "failed", toolCallId: call.id, errorCode: "ai.run_canceled", result: call.result }
@@ -78,22 +86,19 @@ export function evaluateVerification(plan: RunToolVerification, call: ToolCallRe
       const status = normalizedStatus(result.status)
       if (plan.expectation === "absent")
         return { kind: "pending", toolCallId: call.id, result: call.result }
-      if (plan.expectation === "canceled") {
-        if (["canceled", "cancelled"].includes(status))
-          return { kind: "verified", toolCallId: call.id, result: call.result }
-        if (["queued", "pending", "running", "progressing"].includes(status))
-          return { kind: "pending", toolCallId: call.id, result: call.result }
-        return { kind: "failed", toolCallId: call.id, errorCode: "ai.tool_execution_failed", result: call.result }
-      }
+      if (plan.expectation === "canceled")
+        return evaluateCanceledExpectation(status, call)
       if (status === "succeeded") return { kind: "verified", toolCallId: call.id, result: call.result }
       if (["queued", "pending", "running", "progressing"].includes(status))
         return { kind: "pending", toolCallId: call.id, result: call.result }
-      if (["failed", "lost", "timeout", "canceled", "cancelled"].includes(status))
+      if (["failed", "timeout", "canceled", "cancelled"].includes(status))
         return { kind: "failed", toolCallId: call.id, errorCode: "ai.tool_execution_failed", result: call.result }
       break
     }
     case "release": {
       const status = normalizedStatus(result.status)
+      if (plan.expectation === "canceled")
+        return evaluateCanceledExpectation(status, call)
       if (status === "succeeded") return { kind: "verified", toolCallId: call.id, result: call.result }
       if (["pending", "queued", "running", "progressing", "deploying"].includes(status))
         return { kind: "pending", toolCallId: call.id, result: call.result }

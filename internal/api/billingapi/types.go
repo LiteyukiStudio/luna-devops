@@ -34,6 +34,8 @@ type billingLedgerEntryItem struct {
 	Description           string          `json:"description"`
 	CreatedBy             string          `json:"createdBy"`
 	CreatedAt             time.Time       `json:"createdAt"`
+	// OccurredAt is the billing occurrence time used by period filters.
+	OccurredAt time.Time `json:"occurredAt"`
 }
 
 type billingUsageRecordItem struct {
@@ -66,6 +68,7 @@ type billingDeploymentSpendItem struct {
 	ApplicationName       string          `json:"applicationName"`
 	ApplicationIdentifier string          `json:"applicationIdentifier"`
 	DeploymentTargetID    string          `json:"deploymentTargetId"`
+	SpendGroup            string          `json:"spendGroup"`
 	DeploymentTargetName  string          `json:"deploymentTargetName"`
 	DeploymentTargetStage string          `json:"deploymentTargetStage"`
 	AmountCredits         decimal.Decimal `json:"amountCredits"`

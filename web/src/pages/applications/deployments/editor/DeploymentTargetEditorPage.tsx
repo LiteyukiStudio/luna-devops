@@ -5,24 +5,21 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useParams } from 'react-router-dom'
 import { api } from '@/api'
-import { useSession } from '@/app/session-context'
 import { ErrorState } from '@/components/common/error-state'
 import { SettingsSkeleton } from '@/components/common/loading-states'
 import { PageChromeHeading } from '@/components/common/page-chrome'
 import { PageShell } from '@/components/common/page-shell'
 import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
-import { isPlatformAdmin, ProjectRole } from '@/lib/roles'
+import { ProjectAction, projectActionAllowed } from '@/lib/roles'
+import { platformDefaultRuntimeCluster } from '@/lib/runtime-cluster-default'
 import { defaultTargetImageRef } from '@/pages/applications/application-config-utils'
 import { DeploymentTargetEditor } from './deployment-target-editor'
 import { deploymentTargetToFormValues, emptyDeploymentTargetFormValues } from './deployment-target-form'
 import { dockerfileBuildDefaults, repositoryBuildOptionsQuery, targetImageTemplateQuery } from './deployment-target-queries'
 
-const runtimeSecretManagerRoles: readonly string[] = [ProjectRole.Owner, ProjectRole.Admin, ProjectRole.Developer]
-
 /** 部署配置独立编辑页：/projects/:projectId/apps/:applicationId/deployments/new 与 /:targetId/edit。 */
 export function DeploymentTargetEditorPage() {
   const { t } = useTranslation()
-  const { user } = useSession()
   const { applicationId = '', projectId = '', targetId } = useParams()
   const editing = Boolean(targetId)
   const ids = Boolean(projectId && applicationId)
@@ -74,6 +71,8 @@ export function DeploymentTargetEditorPage() {
   if (editing && !target)
     return <ErrorState description={t('deploymentTargetEditor.notFoundDescription')} title={t('deploymentTargetEditor.notFoundTitle')} />
 
+  // 运行时密钥随部署配置写入，后端按 deployment:update 授权；前端只消费 currentUserActions，不按角色推导。
+  const canManageRuntimeSecrets = projectActionAllowed(project.data?.currentUserActions, ProjectAction.DeploymentUpdate)
   const buildOptions = initialBuildOptions.data
   const detectedDockerfile = buildOptions?.dockerfiles?.[0]
   const newTargetDefaults = detectedDockerfile
@@ -87,13 +86,13 @@ export function DeploymentTargetEditorPage() {
         key={targetId ?? 'new'}
         applicationId={applicationId}
         buildEnvironmentAvailable={!editing || buildEnvironment.isSuccess}
-        canManageRuntimeSecrets={isPlatformAdmin(user?.role) || runtimeSecretManagerRoles.includes(project.data?.currentUserRole ?? '')}
+        canManageRuntimeSecrets={canManageRuntimeSecrets}
         createInitialValues={() => target
           ? deploymentTargetToFormValues(target, buildEnvironment.data)
           : {
               ...emptyDeploymentTargetFormValues(),
               ...newTargetDefaults,
-              clusterId: (runtimeClusters.data ?? []).find(cluster => cluster.isDefault)?.id ?? runtimeClusters.data?.[0]?.id ?? '',
+              clusterId: platformDefaultRuntimeCluster(runtimeClusters.data ?? [])?.id ?? '',
               repositoryBindingId: defaultBinding?.id ?? '',
               targetRegistryId: defaultRegistry?.id ?? '',
               targetImageRef: initialImageTemplate.data?.targetImageRef

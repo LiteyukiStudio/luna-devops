@@ -4,6 +4,9 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	// Embed the IANA database: runtime images do not ship tzdata, and billing
+	// day/month boundaries depend on the caller's time zone.
+	_ "time/tzdata"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -41,7 +44,25 @@ func billingPeriodFromQuery(ctx *gin.Context) (billingPeriodQuery, bool) {
 	return billingPeriodQuery{Start: &start, End: &end}, true
 }
 
-func applyBillingCreatedPeriod(query *gorm.DB, column string, period billingPeriodQuery) *gorm.DB {
+// billingTimeZoneFromQuery reads the IANA time zone that defines "today" and
+// "this month" for the caller. Requests without timeZone use UTC.
+func billingTimeZoneFromQuery(ctx *gin.Context) (*time.Location, bool) {
+	name := strings.TrimSpace(ctx.Query("timeZone"))
+	if name == "" {
+		return time.UTC, true
+	}
+	location, err := time.LoadLocation(name)
+	if err != nil || name == "Local" {
+		writeErrorCode(ctx, http.StatusBadRequest, "billing.time_zone_invalid", "timeZone must be an IANA time zone name")
+		return nil, false
+	}
+	return location, true
+}
+
+// applyBillingOccurredPeriod keeps rows whose billing occurrence time falls in
+// [periodStart, periodEnd). Usage occurs at its period_start; it is never
+// split or counted by period overlap.
+func applyBillingOccurredPeriod(query *gorm.DB, column string, period billingPeriodQuery) *gorm.DB {
 	if period.Start != nil {
 		query = query.Where(column+" >= ?", *period.Start)
 	}
@@ -51,21 +72,23 @@ func applyBillingCreatedPeriod(query *gorm.DB, column string, period billingPeri
 	return query
 }
 
-func applyBillingUsagePeriod(query *gorm.DB, period billingPeriodQuery) *gorm.DB {
-	if period.Start != nil {
-		query = query.Where("usage.period_end > ?", *period.Start)
-	}
-	if period.End != nil {
-		query = query.Where("usage.period_start < ?", *period.End)
-	}
-	return query
-}
-
+// billingDeploymentTargetIDSQL attributes usage to a deployment target. Project
+// volume storage and volume transfers belong to the project, never to a target.
 func billingDeploymentTargetIDSQL() string {
 	return `CASE
 		WHEN usage.resource_type = 'build_run' THEN COALESCE(build_runs.deployment_target_id, '')
-		WHEN usage.resource_type IN ('runtime_target', 'storage_volume') THEN split_part(usage.resource_id, ':', 1)
+		WHEN usage.resource_type = 'runtime_target' THEN split_part(usage.resource_id, ':', 1)
 		WHEN usage.resource_type = 'gateway_route' THEN COALESCE(gateway_routes.deployment_target_id, '')
 		ELSE ''
+	END`
+}
+
+// billingSpendGroupSQL classifies a deployment-spend row: a deployment target,
+// the project-level storage group, or usage without a target.
+func billingSpendGroupSQL() string {
+	return `CASE
+		WHEN usage.resource_type IN ('storage_volume', 'volume_transfer') THEN 'project_storage'
+		WHEN (` + billingDeploymentTargetIDSQL() + `) <> '' THEN 'deployment_target'
+		ELSE 'unassigned'
 	END`
 }

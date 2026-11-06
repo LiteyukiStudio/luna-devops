@@ -1,16 +1,13 @@
-import type { Application, BuildRun, GatewayRoute, PlatformEvent, Project, ProjectMember, Release } from '@/api'
+import type { Application, BuildRun, PlatformEvent, Project, ProjectMember, ProjectOverview } from '@/api'
 import type { ApplicationsPageHandle } from '@/pages/applications/ApplicationsPage'
-import type { ProjectBuildVariableSetsPageHandle } from '@/pages/projects/delivery-config/ProjectBuildVariableSetsPage'
-import type { ProjectHooksPageHandle } from '@/pages/projects/delivery-config/ProjectHooksPage'
-import type { ProjectRuntimeConfigSetsPageHandle } from '@/pages/projects/delivery-config/ProjectRuntimeConfigSetsPage'
 import type { ProjectMembersPageHandle } from '@/pages/projects/governance/ProjectMembersPage'
 import type { ProjectVolumesPageHandle } from '@/pages/projects/volumes/ProjectVolumesPage'
 import { useQuery } from '@tanstack/react-query'
-import { Activity, ArrowRight, FileCode2, Globe2, KeyRound, Package, Plus, Rocket, ScrollText, Upload, UserPlus } from 'lucide-react'
+import { Activity, ArrowRight, Globe2, Package, Plus, Rocket, Upload, UserPlus } from 'lucide-react'
 import { motion } from 'motion/react'
 import { lazy, Suspense, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Link, useParams, useSearchParams } from 'react-router-dom'
+import { Link, Navigate, useParams, useSearchParams } from 'react-router-dom'
 import { api } from '@/api'
 import { useSession } from '@/app/session-context'
 import { DescriptionListItem } from '@/components/common/description-list-item'
@@ -27,15 +24,13 @@ import { UserAvatar } from '@/components/common/user-avatar'
 import { Button } from '@/components/ui/button'
 import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
 import { projectVolumeCapabilities } from '@/lib/project-volume-capabilities'
-import { isPlatformAdmin, ProjectRole } from '@/lib/roles'
+import { ProjectAction, projectActionAllowed, ProjectRole } from '@/lib/roles'
+import { ProjectSharedConfigPanel } from '@/pages/projects/delivery-config/ProjectSharedConfigPanel'
 import { BillingOwnerTransferDialog } from '@/pages/projects/governance/billing-owner-transfer-dialog'
-import { normalizeProjectWorkspaceSection } from './project-workspace-sections'
+import { legacyProjectWorkspaceSearch, normalizeProjectWorkspaceSection } from './project-workspace-sections'
 
 const ApplicationsPage = lazy(() => import('@/pages/applications/ApplicationsPage').then(module => ({ default: module.ApplicationsPage })))
-const ProjectBuildVariableSetsPage = lazy(() => import('@/pages/projects/delivery-config/ProjectBuildVariableSetsPage').then(module => ({ default: module.ProjectBuildVariableSetsPage })))
-const ProjectHooksPage = lazy(() => import('@/pages/projects/delivery-config/ProjectHooksPage').then(module => ({ default: module.ProjectHooksPage })))
 const ProjectMembersPage = lazy(() => import('@/pages/projects/governance/ProjectMembersPage').then(module => ({ default: module.ProjectMembersPage })))
-const ProjectRuntimeConfigSetsPage = lazy(() => import('@/pages/projects/delivery-config/ProjectRuntimeConfigSetsPage').then(module => ({ default: module.ProjectRuntimeConfigSetsPage })))
 const ProjectTopologyPanel = lazy(() => import('@/pages/projects/topology/project-topology-panel').then(module => ({ default: module.ProjectTopologyPanel })))
 const ProjectVolumesPage = lazy(() => import('@/pages/projects/volumes/ProjectVolumesPage'))
 
@@ -46,11 +41,10 @@ export function ProjectWorkspacePage() {
   const { user } = useSession()
   // 分区由侧栏导航写入 URL，页面只读取，不维护第二份状态。
   const activeTab = normalizeProjectWorkspaceSection(searchParams.get('tab'))
+  // 构建变量、运行配置和钩子的旧独立分区链接改写到“共享配置”对应 Tab。
+  const legacySearch = legacyProjectWorkspaceSearch(searchParams)
   const applicationsPageRef = useRef<ApplicationsPageHandle>(null)
-  const buildVariableSetsPageRef = useRef<ProjectBuildVariableSetsPageHandle>(null)
-  const hooksPageRef = useRef<ProjectHooksPageHandle>(null)
   const membersPageRef = useRef<ProjectMembersPageHandle>(null)
-  const runtimeConfigSetsPageRef = useRef<ProjectRuntimeConfigSetsPageHandle>(null)
   const volumesPageRef = useRef<ProjectVolumesPageHandle>(null)
   const project = useQuery({ queryKey: ['project', projectId], queryFn: () => api.getProject(projectId), enabled: Boolean(projectId) })
   const isOverview = activeTab === 'overview'
@@ -60,30 +54,29 @@ export function ProjectWorkspacePage() {
   const members = useQuery({ queryKey: ['project-members', projectId], queryFn: () => api.listProjectMembers(projectId), enabled: Boolean(projectId && isOverview) })
   const recentBuilds = useQuery({ queryKey: ['project-overview-build-runs', projectId], queryFn: () => api.listBuildRunsPage(projectId, { page: 1, pageSize: 5, sortBy: 'createdAt', sortOrder: 'desc' }), enabled: Boolean(projectId && isOverview) })
   const recentEvents = useQuery({ queryKey: ['project-overview-events', projectId], queryFn: () => api.listPlatformEvents({ page: 1, pageSize: 5, projectId, sortBy: 'occurredAt', sortOrder: 'desc' }), enabled: Boolean(projectId && isOverview) })
-  const releases = useQuery({ queryKey: ['project-overview-releases', projectId], queryFn: () => api.listReleases(projectId), enabled: Boolean(projectId && isOverview) })
-  const routes = useQuery({
-    queryKey: ['project-overview-gateway-routes', projectId],
-    queryFn: () => api.listGatewayRoutes(projectId),
+  // 应用、发布与访问入口就绪数由后端按项目空间统计，不在前端对截断的列表计数；访问入口是网关实时观察。
+  const overview = useQuery({
+    queryKey: ['project-overview', projectId],
+    queryFn: () => api.getProjectOverview(projectId),
     enabled: Boolean(projectId && isOverview),
     ...liveObservationQueryPolicy,
   })
+  if (legacySearch)
+    return <Navigate replace to={{ search: legacySearch }} />
   if (project.isError)
     return <ErrorState title={t('projectSpaces.workspaceLoadFailedTitle')} description={t('projectSpaces.workspaceLoadFailedDescription')} />
 
   const currentProject = project.data
-  const currentProjectRole = currentProject?.currentUserRole
-  const canManageTopology = isPlatformAdmin(user?.role) || currentProjectRole === ProjectRole.Owner || currentProjectRole === ProjectRole.Admin
-  const volumeCapabilities = projectVolumeCapabilities(user?.role, currentProjectRole, user?.id)
+  const currentUserActions = currentProject?.currentUserActions
+  // 授权结果只来自项目详情的 currentUserActions，不在前端按角色推导。
+  const canManageTopology = projectActionAllowed(currentUserActions, ProjectAction.ProjectManage)
+  const volumeCapabilities = projectVolumeCapabilities(currentProject?.currentUserActions, user?.id)
   const activeContent = (() => {
     switch (activeTab) {
       case 'apps':
         return <ApplicationsPage ref={applicationsPageRef} projectId={projectId} />
-      case 'build-variables':
-        return <ProjectBuildVariableSetsPage ref={buildVariableSetsPageRef} projectId={projectId} />
-      case 'runtime-configs':
-        return <ProjectRuntimeConfigSetsPage ref={runtimeConfigSetsPageRef} projectId={projectId} />
-      case 'hooks':
-        return <ProjectHooksPage ref={hooksPageRef} projectId={projectId} />
+      case 'shared-config':
+        return <ProjectSharedConfigPanel projectId={projectId} />
       case 'members':
         return <ProjectMembersPage ref={membersPageRef} embedded projectId={projectId} />
       case 'volumes':
@@ -98,7 +91,7 @@ export function ProjectWorkspacePage() {
             <ProjectTopologyPanel
               key={projectId}
               applications={applications.data ?? []}
-              canManage={Boolean(canManageTopology)}
+              canManage={canManageTopology}
               projectId={projectId}
             />
           </Suspense>
@@ -112,9 +105,9 @@ export function ProjectWorkspacePage() {
             events={recentEvents.data?.items ?? []}
             members={members.data ?? []}
             project={currentProject}
-            canTransferBillingOwnership={currentProjectRole === ProjectRole.Owner && currentProject?.billingOwnerUserId === user?.id}
-            releases={releases.data ?? []}
-            routes={routes.data ?? []}
+            canTransferBillingOwnership={projectActionAllowed(currentUserActions, ProjectAction.ProjectOwnerOnly) && currentProject?.billingOwnerUserId === user?.id}
+            overview={overview.data}
+            overviewUnavailable={overview.isError}
             runtimeConfigSetCount={runtimeConfigSets.data?.length ?? 0}
             variableSetCount={variableSets.data?.length ?? 0}
           />
@@ -137,33 +130,6 @@ export function ProjectWorkspacePage() {
         <Button type="button" onClick={() => membersPageRef.current?.openAddMemberDialog()}>
           <UserPlus size={16} />
           {t('projectMembers.addTitle')}
-        </Button>
-      )
-    }
-
-    if (activeTab === 'build-variables') {
-      return (
-        <Button type="button" onClick={() => buildVariableSetsPageRef.current?.openCreateDialog()}>
-          <KeyRound size={16} />
-          {t('buildsPage.createVariableSet')}
-        </Button>
-      )
-    }
-
-    if (activeTab === 'runtime-configs') {
-      return (
-        <Button type="button" onClick={() => runtimeConfigSetsPageRef.current?.openCreateDialog()}>
-          <FileCode2 size={16} />
-          {t('runtimeConfigSets.createTitle')}
-        </Button>
-      )
-    }
-
-    if (activeTab === 'hooks') {
-      return (
-        <Button type="button" onClick={() => hooksPageRef.current?.openCreateDialog()}>
-          <ScrollText size={16} />
-          {t('projectHooks.createTitle')}
         </Button>
       )
     }
@@ -209,31 +175,33 @@ export function ProjectWorkspacePage() {
   )
 }
 
-function ProjectOverviewDashboard({ applications, buildTotal, builds, canTransferBillingOwnership, events, members, project, releases, routes, runtimeConfigSetCount, variableSetCount }: {
+function ProjectOverviewDashboard({ applications, buildTotal, builds, canTransferBillingOwnership, events, members, overview, overviewUnavailable, project, runtimeConfigSetCount, variableSetCount }: {
   applications: Application[]
   buildTotal: number
   builds: BuildRun[]
   canTransferBillingOwnership: boolean
   events: PlatformEvent[]
   members: ProjectMember[]
+  overview?: ProjectOverview
+  overviewUnavailable: boolean
   project?: Project
-  releases: Release[]
-  routes: GatewayRoute[]
   runtimeConfigSetCount: number
   variableSetCount: number
 }) {
   const { t } = useTranslation()
-  const failedBuilds = builds.filter(build => ['failed', 'lost', 'timeout'].includes(build.status)).length
-  const activeReleases = releases.filter(release => release.status === 'pending' || release.status === 'running').length
-  const failedReleases = releases.filter(release => release.status === 'failed').length
-  const readyRoutes = routes.filter(route => route.status === 'ready').length
+  const failedBuilds = builds.filter(build => ['failed', 'timeout'].includes(build.status)).length
+  const activeReleases = overview?.activeReleases ?? 0
+  const failedReleases = overview?.failedReleases ?? 0
+  const accessRoutes = overview?.accessRoutes
+  // 网关不可观察或概览请求失败时如实显示不可用，不把缺失的就绪数当作 0。
+  const accessRoutesUnavailable = overviewUnavailable || accessRoutes?.status === 'unavailable'
   const ownerCount = members.filter(member => member.role === ProjectRole.Owner).length
 
   return (
     <div className="grid gap-section">
       {project && <PageChromeHeading description={project.description || undefined} title={project.name} />}
       <MetricGroup>
-        <MetricItem href="?tab=apps" icon={<Package className="size-4" />} label={t('projectSpaces.apps')} value={applications.length} />
+        <MetricItem href="?tab=apps" icon={<Package className="size-4" />} label={t('projectSpaces.apps')} value={overview?.applications ?? '-'} />
         <MetricItem
           emphasis={buildTotal > 0}
           icon={<Activity className="size-4" />}
@@ -246,20 +214,21 @@ function ProjectOverviewDashboard({ applications, buildTotal, builds, canTransfe
           emphasis={activeReleases > 0 || failedReleases > 0}
           icon={<Rocket className="size-4" />}
           label={t('projectSpaces.activeReleasesMetric')}
-          meta={failedReleases > 0 ? t('projectSpaces.failedReleasesMeta', { count: failedReleases }) : undefined}
+          meta={failedReleases > 0 ? t('projectSpaces.failedReleasesMeta', { count: failedReleases, days: overview?.failedReleaseWindowDays }) : undefined}
           tone={failedReleases > 0 ? 'danger' : activeReleases > 0 ? 'warning' : 'neutral'}
-          value={activeReleases}
+          value={overview ? activeReleases : '-'}
         />
         <MetricItem
-          emphasis={routes.length > 0}
+          emphasis={Boolean(accessRoutes && accessRoutes.total > 0)}
           icon={<Globe2 className="size-4" />}
           label={t('projectSpaces.accessHealth')}
-          tone={routes.length > 0 && readyRoutes < routes.length ? 'warning' : 'neutral'}
-          value={`${readyRoutes}/${routes.length}`}
+          meta={accessRoutesUnavailable ? t('projectSpaces.accessHealthUnavailable') : undefined}
+          tone={accessRoutesUnavailable || accessRoutes?.status === 'degraded' ? 'warning' : 'neutral'}
+          value={accessRoutes && accessRoutes.ready !== undefined ? `${accessRoutes.ready}/${accessRoutes.total}` : '-'}
         />
       </MetricGroup>
 
-      <div className="grid gap-section xl:grid-cols-[minmax(0,1.25fr)_minmax(18rem,0.75fr)]">
+      <div className="grid gap-section @4xl/workspace:grid-cols-[minmax(0,1.25fr)_minmax(18rem,0.75fr)]">
         <Section description={t('projectSpaces.recentBuildsDescription')} title={t('projectSpaces.recentBuilds')} variant="bordered">
           {builds.length > 0
             ? (
@@ -321,7 +290,7 @@ function ProjectOverviewDashboard({ applications, buildTotal, builds, canTransfe
                     </div>
                     <div className="flex shrink-0 items-center gap-2">
                       <StatusValueBadge labelKeyPrefix="eventsPage.statuses" value={event.status} />
-                      <span className="hidden text-xs text-muted-foreground sm:inline">{formatSmartDateTime(event.occurredAt, t)}</span>
+                      <span className="hidden text-xs text-muted-foreground @lg/workspace:inline">{formatSmartDateTime(event.occurredAt, t)}</span>
                     </div>
                   </li>
                 ))}

@@ -15,6 +15,7 @@ type BuildRun struct {
 	BuildVariablesSnapshot  string         `gorm:"type:text;not null;default:'{}'" json:"-"`
 	BuildSecretRefsSnapshot string         `gorm:"type:text;not null;default:'{}'" json:"-"`
 	Status                  string         `gorm:"index;not null;default:queued" json:"status"`
+	FailureCode             string         `gorm:"not null;default:''" json:"failureCode"`
 	TriggerType             string         `gorm:"not null;default:manual" json:"triggerType"`
 	SourceBranch            string         `json:"sourceBranch"`
 	SourceTag               string         `json:"sourceTag"`
@@ -102,6 +103,7 @@ type BuildJob struct {
 	BuildRunID   string         `gorm:"index;not null" json:"buildRunId"`
 	ProjectID    string         `gorm:"index;not null" json:"projectId"`
 	Status       string         `gorm:"index;not null;default:queued" json:"status"`
+	FailureCode  string         `gorm:"not null;default:''" json:"failureCode"`
 	ExecutorID   string         `json:"executorId"`
 	ExecutorName string         `json:"executorName"`
 	Message      string         `json:"message"`

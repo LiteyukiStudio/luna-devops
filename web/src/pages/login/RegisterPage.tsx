@@ -22,15 +22,15 @@ import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 
 const schema = z.object({
-  email: z.string().email(i18next.t('common.validEmailRequired')),
-  name: z.string().min(1, i18next.t('accountPage.profileNameRequired')),
-  password: z.string().min(8, i18next.t('usersPage.passwordMin')),
+  email: z.string().email({ error: () => i18next.t('common.validEmailRequired') }),
+  name: z.string().min(1, { error: () => i18next.t('accountPage.profileNameRequired') }),
+  password: z.string().min(8, { error: () => i18next.t('usersPage.passwordMin') }),
   confirmPassword: z.string(),
-  code: z.string().regex(/^\d{6}$/, i18next.t('loginPage.registration.codeRequired')),
+  code: z.string().regex(/^\d{6}$/, { error: () => i18next.t('loginPage.registration.codeRequired') }),
   rememberMe: z.boolean(),
 }).refine(value => value.password === value.confirmPassword, {
   path: ['confirmPassword'],
-  message: i18next.t('loginPage.registration.passwordMismatch'),
+  error: () => i18next.t('loginPage.registration.passwordMismatch'),
 })
 
 type RegistrationForm = z.infer<typeof schema>

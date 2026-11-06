@@ -23,7 +23,7 @@ import (
 
 const (
 	baselineMigrationVersion = 103
-	latestMigrationVersion   = 110
+	latestMigrationVersion   = 119
 )
 
 func TestEmbeddedMigrationsContainExpectedFiles(t *testing.T) {
@@ -32,22 +32,34 @@ func TestEmbeddedMigrationsContainExpectedFiles(t *testing.T) {
 		t.Fatalf("read embedded migrations: %v", err)
 	}
 	migrationFiles := map[string]bool{
-		"000103_baseline.up.sql":                               false,
-		"000103_baseline.down.sql":                             false,
-		"000104_bridge_retained_volumes.up.sql":                false,
-		"000104_bridge_retained_volumes.down.sql":              false,
-		"000105_ai_run_checkpoints.up.sql":                     false,
-		"000105_ai_run_checkpoints.down.sql":                   false,
-		"000106_runtime_env_secret_uniqueness.up.sql":          false,
-		"000106_runtime_env_secret_uniqueness.down.sql":        false,
-		"000107_ai_tool_verification.up.sql":                   false,
-		"000107_ai_tool_verification.down.sql":                 false,
-		"000108_delivery_idempotency.up.sql":                   false,
-		"000108_delivery_idempotency.down.sql":                 false,
-		"000109_app_template_installation_components.up.sql":   false,
-		"000109_app_template_installation_components.down.sql": false,
-		"000110_theme_simplification.up.sql":                   false,
-		"000110_theme_simplification.down.sql":                 false,
+		"000103_baseline.up.sql":                                    false,
+		"000103_baseline.down.sql":                                  false,
+		"000104_bridge_retained_volumes.up.sql":                     false,
+		"000104_bridge_retained_volumes.down.sql":                   false,
+		"000105_ai_run_checkpoints.up.sql":                          false,
+		"000105_ai_run_checkpoints.down.sql":                        false,
+		"000106_runtime_env_secret_uniqueness.up.sql":               false,
+		"000106_runtime_env_secret_uniqueness.down.sql":             false,
+		"000107_ai_tool_verification.up.sql":                        false,
+		"000107_ai_tool_verification.down.sql":                      false,
+		"000108_delivery_idempotency.up.sql":                        false,
+		"000108_delivery_idempotency.down.sql":                      false,
+		"000109_app_template_installation_components.up.sql":        false,
+		"000109_app_template_installation_components.down.sql":      false,
+		"000110_theme_simplification.up.sql":                        false,
+		"000110_theme_simplification.down.sql":                      false,
+		"000118_drop_deployment_target_concurrency_policy.up.sql":   false,
+		"000118_drop_deployment_target_concurrency_policy.down.sql": false,
+		"000113_runtime_observation_render_policy.up.sql":           false,
+		"000113_runtime_observation_render_policy.down.sql":         false,
+		"000111_delivery_failure_codes.up.sql":                      false,
+		"000111_delivery_failure_codes.down.sql":                    false,
+		"000115_app_template_installation_derived_status.up.sql":    false,
+		"000115_app_template_installation_derived_status.down.sql":  false,
+		"000116_application_delete_code.up.sql":                     false,
+		"000116_application_delete_code.down.sql":                   false,
+		"000119_deployment_target_delete_code.up.sql":               false,
+		"000119_deployment_target_delete_code.down.sql":             false,
 	}
 	migrationCount := 0
 	for _, entry := range entries {
@@ -218,7 +230,7 @@ WHERE namespace.nspname = current_schema()
 	if err := runner.Steps(-2); err != nil {
 		t.Fatalf("roll back Phase 4 migrations: %v", err)
 	}
-	assertRunnerMigrationVersion(t, runner, latestMigrationVersion-2)
+	assertRunnerMigrationVersion(t, runner, previousMigrationVersion(t, previousMigrationVersion(t, latestMigrationVersion)))
 	if err := runner.Steps(2); err != nil {
 		t.Fatalf("reapply Phase 4 migrations: %v", err)
 	}
@@ -229,7 +241,31 @@ WHERE namespace.nspname = current_schema()
 	assertActiveDeploymentStageUniqueness(t, testDB)
 	assertRuntimeEnvConflictMigrationRoundTrip(t, testDB, runner)
 	assertThemeSimplificationMigration(t, testDB, runner)
+	assertConcurrencyPolicyRemovalMigration(t, testDB, runner)
+	assertRuntimeObservationRenderPolicyMigration(t, testDB, runner)
+	assertDeliveryFailureCodesMigration(t, testDB, runner)
 	assertDirtyMigrationFailsClosed(t, testDB)
+}
+
+func assertConcurrencyPolicyRemovalMigration(t *testing.T, db *gorm.DB, runner *migrate.Migrate) {
+	t.Helper()
+	const removalVersion = 118
+	if err := runner.Migrate(removalVersion); err != nil && !errors.Is(err, migrate.ErrNoChange) {
+		t.Fatalf("apply concurrency policy removal migration: %v", err)
+	}
+	if db.Migrator().HasColumn("deployment_targets", "concurrency_policy") {
+		t.Fatal("concurrency policy removal retained deployment_targets.concurrency_policy")
+	}
+	if err := runner.Steps(-1); err != nil {
+		t.Fatalf("roll back concurrency policy removal migration: %v", err)
+	}
+	if !db.Migrator().HasColumn("deployment_targets", "concurrency_policy") {
+		t.Fatal("concurrency policy removal rollback did not restore deployment_targets.concurrency_policy")
+	}
+	if err := runner.Migrate(latestMigrationVersion); err != nil {
+		t.Fatalf("restore latest migrations after concurrency policy round trip: %v", err)
+	}
+	assertRunnerMigrationVersion(t, runner, latestMigrationVersion)
 }
 
 func TestMigrateRejectsUnversionedNonEmptySchema(t *testing.T) {
@@ -864,6 +900,21 @@ func assertDirtyMigrationFailsClosed(t *testing.T, db *gorm.DB) {
 	}
 }
 
+// previousMigrationVersion 读取嵌入迁移中紧邻的上一版本；迁移编号允许不连续。
+func previousMigrationVersion(t *testing.T, version uint) uint {
+	t.Helper()
+	sourceDriver, err := iofs.New(sqlmigrations.FS, ".")
+	if err != nil {
+		t.Fatalf("open embedded migrations: %v", err)
+	}
+	defer func() { _ = sourceDriver.Close() }()
+	previous, err := sourceDriver.Prev(version)
+	if err != nil {
+		t.Fatalf("read migration before %d: %v", version, err)
+	}
+	return previous
+}
+
 func openTestMigrationRunner(t *testing.T, db *gorm.DB) *migrate.Migrate {
 	t.Helper()
 	sqlDB, err := db.DB()
@@ -927,6 +978,48 @@ func assertActiveDeploymentStageUniqueness(t *testing.T, db *gorm.DB) {
 
 // assertRuntimeEnvConflictMigrationRoundTrip 验证 000106 在 up/down/reapply 下按“密钥优先”清理同名普通项，
 // 只在审计中记录名称与数量，并能由 down 完整恢复。
+func assertRuntimeObservationRenderPolicyMigration(t *testing.T, db *gorm.DB, runner *migrate.Migrate) {
+	t.Helper()
+	nullablePolicyColumns := func() int64 {
+		var count int64
+		if err := db.Raw(`SELECT count(*) FROM information_schema.columns
+			WHERE table_schema = current_schema() AND table_name = 'runtime_observations' AND is_nullable = 'YES'
+			  AND column_name IN ('cpu_request_percent', 'memory_request_percent', 'cpu_limit_percent', 'memory_limit_percent')`).Scan(&count).Error; err != nil {
+			t.Fatalf("inspect runtime observation policy columns: %v", err)
+		}
+		return count
+	}
+	completenessConstraints := func() int64 {
+		var count int64
+		if err := db.Raw(`SELECT count(*) FROM pg_constraint
+			WHERE connamespace = current_schema()::regnamespace AND conname = 'runtime_observations_policy_complete'`).Scan(&count).Error; err != nil {
+			t.Fatalf("inspect runtime observation policy constraint: %v", err)
+		}
+		return count
+	}
+	for _, test := range []struct {
+		name           string
+		step           func() error
+		wantNullable   int64
+		wantConstraint int64
+	}{
+		{name: "latest records an optional render policy", step: func() error { return nil }, wantNullable: 4, wantConstraint: 1},
+		{name: "rollback restores required policy columns", step: func() error { return runner.Migrate(previousMigrationVersion(t, 113)) }, wantNullable: 0, wantConstraint: 0},
+		{name: "reapply", step: func() error { return runner.Migrate(latestMigrationVersion) }, wantNullable: 4, wantConstraint: 1},
+	} {
+		if err := test.step(); err != nil {
+			t.Fatalf("%s: %v", test.name, err)
+		}
+		if got := nullablePolicyColumns(); got != test.wantNullable {
+			t.Fatalf("%s: nullable policy columns = %d, want %d", test.name, got, test.wantNullable)
+		}
+		if got := completenessConstraints(); got != test.wantConstraint {
+			t.Fatalf("%s: policy completeness constraints = %d, want %d", test.name, got, test.wantConstraint)
+		}
+	}
+	assertRunnerMigrationVersion(t, runner, latestMigrationVersion)
+}
+
 func assertThemeSimplificationMigration(t *testing.T, db *gorm.DB, runner *migrate.Migrate) {
 	t.Helper()
 	const themeVersion = 110

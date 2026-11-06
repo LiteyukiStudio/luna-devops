@@ -26,7 +26,7 @@ const dashboardPage = {
   startFromTemplate: '從範本開始',
   viewBuild: '檢視構建',
   viewDeployment: '檢視部署',
-  viewAccess: '檢視存取',
+  viewAccess: '檢視訪問入口',
   viewDetails: '檢視詳情',
   recentApps: '最近應用',
   applicationColumn: '應用',

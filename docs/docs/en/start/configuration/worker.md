@@ -18,7 +18,7 @@ When running from source, Worker reads these variables from the root `.env`. Doc
 | `BUILD_EXECUTOR_IMAGE` | `moby/buildkit:v0.34.1-rootless` | Selects the BuildKit used by build jobs; use an OCI image reference. |
 | `BUILD_EGRESS_MODE`<sup>2</sup> | `restricted` | Sets the build-network egress policy; use `restricted` or `permissive`. |
 | `BUILD_PRIVATE_EGRESS_CIDRS` | Empty | Allows builds to reach private targets; use comma-separated CIDRs. |
-| `DEPLOY_ROLLOUT_TIMEOUT_SECONDS` | `600` | Sets the deployment wait timeout; use a positive number of seconds. |
+| `DEPLOY_ROLLOUT_TIMEOUT_SECONDS` | `600` | Sets the deployment wait timeout; use a positive number of seconds. The total release time limit is twice the larger of this value and 30 minutes; releases past it are marked as failed. |
 | `CERT_MANAGER_CLUSTER_ISSUER` | `letsencrypt-http01` | Selects the certificate issuer; use a Kubernetes ClusterIssuer name. |
 
 1. Note: API and Worker must use the same `SECRET_ENCRYPTION_KEY`.
@@ -47,7 +47,7 @@ When running from source, Worker reads these variables from the root `.env`. Doc
 
 | Setting | Default | Description |
 | --- | --- | --- |
-| `BUILD_JOB_TIMEOUT_SECONDS` | `1800` | Sets the build-job execution timeout; use a positive number of seconds. |
+| `BUILD_JOB_TIMEOUT_SECONDS` | `1800` | Sets the default build-job execution timeout used when a build has no timeout of its own; use a positive number of seconds. Builds past it are marked as timed out. |
 | `BUILD_JOB_TTL_SECONDS` | `3600` | Sets how long completed build jobs remain; use a non-negative number of seconds. |
 | `BUILD_CACHE_ENABLED` | `false` | Controls whether BuildKit Registry cache is read and written; use `true` or `false`. |
 | `BUILD_CACHE_TAG` | `buildcache` | Sets the Registry cache tag; use a valid OCI image tag. |

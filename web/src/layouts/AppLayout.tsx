@@ -102,7 +102,9 @@ const navSections: NavSection[] = [
 const pageMetaRules = [
   { match: (pathname: string) => pathname === '/dashboard', titleKey: 'dashboard' },
   { match: (pathname: string) => isAIAssistantRoutePath(pathname), titleKey: 'aiAssistant.title' },
-  { match: (pathname: string) => /^\/projects\/[^/]+\/apps\/[^/]+(?:\/deployments\/(?:new|[^/]+\/edit))?$/.test(pathname), titleKey: 'apps.detailTitle' },
+  { match: (pathname: string) => /^\/projects\/[^/]+\/apps\/[^/]+\/deployments\/new$/.test(pathname), titleKey: 'nav.deploymentTargetCreate' },
+  { match: (pathname: string) => /^\/projects\/[^/]+\/apps\/[^/]+\/deployments\/[^/]+\/edit$/.test(pathname), titleKey: 'nav.deploymentTargetEdit' },
+  { match: (pathname: string) => /^\/projects\/[^/]+\/apps\/[^/]+$/.test(pathname), titleKey: 'apps.detailTitle' },
   { match: (pathname: string) => /^\/projects\/[^/]+$/.test(pathname), titleKey: 'projectSpaces.workspaceTitle' },
   { match: (pathname: string) => pathname === '/projects', titleKey: 'projectSpaces.title' },
   { match: (pathname: string) => pathname === '/events', titleKey: 'eventsPage.title' },
@@ -204,9 +206,21 @@ export function AppLayout() {
       heading = project.name
     }
     if (application) {
-      documentTitle = t('apps.detailTopbarTitle', { name: application.name, projectName: project?.name ?? t('projectSpaces.title') })
-      heading = application.name
+      const projectName = project?.name ?? t('projectSpaces.title')
       breadcrumbs.push({ label: application.name, to: `/projects/${application.projectId}/apps/${application.id}` })
+      // 部署配置编辑页是应用的下一级：应用进入可点击的上级层级，当前页由编辑页标题表达。
+      const editorMode = appRouteMatch?.[3]?.endsWith('/new') ? 'create' : appRouteMatch?.[3] ? 'edit' : null
+      if (editorMode) {
+        documentTitle = editorMode === 'create'
+          ? t('nav.deploymentTargetCreateDocumentTitle', { name: application.name, projectName })
+          : t('nav.deploymentTargetEditDocumentTitle', { name: application.name, projectName })
+        heading = editorMode === 'create' ? t('nav.deploymentTargetCreate') : t('nav.deploymentTargetEdit')
+        breadcrumbs.push({ label: heading })
+      }
+      else {
+        documentTitle = t('apps.detailTopbarTitle', { name: application.name, projectName })
+        heading = application.name
+      }
     }
     if (breadcrumbs.length === 0)
       breadcrumbs.push({ label: heading })
@@ -402,17 +416,23 @@ export function AppLayout() {
                       <PanelLeft className="size-4" />
                     </Button>
                     <span aria-hidden="true" className="mx-1 h-4 w-px shrink-0 bg-border" />
+                    <ParentBackLink items={pageMeta.breadcrumbs} />
                     <Breadcrumbs items={pageMeta.breadcrumbs} label={t('nav.breadcrumb')} />
                     <div ref={setHeadingTarget} className="min-w-0 flex-1" data-slot="workspace-page-heading">
                       {!hasCustomHeading && (
                         <h1 className="truncate text-base font-medium text-foreground">{pageMeta.heading}</h1>
                       )}
                     </div>
-                    <CommandPalette />
+                    <CommandPalette
+                      projectSections={projectRouteMatch
+                        ? projectWorkspaceSections.map(section => ({ icon: section.icon, label: t(section.labelKey), to: projectWorkspaceSectionPath(projectRouteMatch[1], section.value) }))
+                        : undefined}
+                    />
                     <InboxTrigger />
                     <AIAssistantTopbarButton />
                   </header>
-                  <main className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-page-inline py-page-block">
+                  {/* 工作区是页面布局的尺寸容器：AI 助手停靠面板挤压正文时，页面网格按正文实际宽度（@…/workspace:）而非视口响应 */}
+                  <main className="@container/workspace min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-page-inline py-page-block">
                     <div className="flex min-h-full min-w-0 flex-col gap-group">
                       {/* 左侧依次是 Tabs 与页面描述，右侧是页面级操作；三者都为空时整行隐藏 */}
                       <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-3 has-[[data-slot=workspace-page-tabs]:empty]:has-[[data-slot=workspace-page-description]:empty]:has-[[data-slot=workspace-page-tools]:empty]:hidden" data-slot="workspace-page-header">
@@ -519,9 +539,30 @@ function AIAssistantTopbarButton() {
   )
 }
 
+/** 当前页面之前、可导航的上级层级；最后一项是当前页面本身，由 h1 表达。 */
+function breadcrumbAncestors(items: Breadcrumb[]) {
+  return items.slice(0, -1).filter(item => item.to)
+}
+
+/** 窄屏隐藏面包屑后，在标题左侧保留“返回上级”入口，目标为面包屑的上一级。 */
+function ParentBackLink({ items }: { items: Breadcrumb[] }) {
+  const { t } = useTranslation()
+  const parent = breadcrumbAncestors(items).at(-1)
+  if (!parent?.to)
+    return null
+
+  return (
+    <Button asChild className="size-8 shrink-0 md:hidden" size="icon" variant="ghost">
+      <Link aria-label={t('nav.backToParent', { name: parent.label })} title={t('nav.backToParent', { name: parent.label })} to={parent.to}>
+        <ArrowLeft aria-hidden="true" className="size-4" />
+      </Link>
+    </Button>
+  )
+}
+
 /** 面板顶栏里标题前的上级层级（如 项目空间 / xxx /），当前页面由 h1 表达；窄屏隐藏。 */
 function Breadcrumbs({ items, label }: { items: Breadcrumb[], label: string }) {
-  const ancestors = items.slice(0, -1).filter(item => item.to)
+  const ancestors = breadcrumbAncestors(items)
   if (ancestors.length === 0)
     return null
 

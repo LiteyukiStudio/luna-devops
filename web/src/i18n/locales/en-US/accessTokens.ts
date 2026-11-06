@@ -23,7 +23,7 @@ const accessTokens = {
     application: 'Applications',
     deployment: 'Deployments',
     build: 'Builds',
-    gateway: 'Access entries',
+    gateway: 'Access routes',
     secret: 'Configs and secrets',
     cluster: 'Cluster resources',
     git: 'Code repositories',
@@ -64,8 +64,8 @@ const accessTokens = {
       delete: 'Delete build records',
     },
     gateway: {
-      read: 'Read access entries',
-      manage: 'Manage access entries',
+      read: 'Read access routes',
+      manage: 'Manage access routes',
     },
     secret: {
       'read-summary': 'Read config summaries',
@@ -144,8 +144,8 @@ const accessTokens = {
       delete: 'Delete terminal build records.',
     },
     gateway: {
-      read: 'Read access entries, domains, and HTTPRoute status.',
-      manage: 'Create, update, or delete access entries.',
+      read: 'Read access routes, domains, and HTTPRoute status.',
+      manage: 'Create, update, or delete access routes.',
     },
     secret: {
       'read-summary': 'Read config and secret summary state without returning secret values.',

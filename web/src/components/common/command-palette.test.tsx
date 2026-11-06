@@ -1,9 +1,11 @@
+import type { ComponentProps } from 'react'
 import type { Application, CurrentUser, Project } from '@/api'
 import type { SessionContextValue } from '@/app/session-context'
 import type { ThemeContextValue } from '@/app/theme-context'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { Boxes, LayoutDashboard } from 'lucide-react'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SessionContext } from '@/app/session-context'
@@ -96,6 +98,22 @@ describe('command palette', () => {
     expect(await screen.findByTestId('location')).toHaveTextContent('/projects/prj_1/apps/app_web')
   })
 
+  it('lists the sections of the current project space supplied by the layout', async () => {
+    const user = userEvent.setup()
+    renderPalette(['/projects/prj_1/apps/app_web'], {}, [
+      { icon: LayoutDashboard, label: 'Overview', to: '/projects/prj_1' },
+      { icon: Boxes, label: 'Shared config', to: '/projects/prj_1?tab=shared-config' },
+    ])
+
+    await user.click(screen.getByRole('button', { name: 'Search…' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Command palette' })
+    const sections = await within(dialog).findByRole('group', { name: 'Sections in Blog' })
+    expect(within(sections).getAllByRole('option').map(option => option.textContent)).toEqual(['Overview', 'Shared config'])
+
+    await user.click(within(sections).getByRole('option', { name: 'Shared config' }))
+    expect(await screen.findByTestId('location')).toHaveTextContent('/projects/prj_1?tab=shared-config')
+  })
+
   it('runs existing actions', async () => {
     const user = userEvent.setup()
     renderPalette()
@@ -127,7 +145,7 @@ function LocationProbe() {
   return <div data-testid="location">{`${location.pathname}${location.search}`}</div>
 }
 
-function renderPalette(initialEntries = ['/dashboard'], userOverrides: Partial<CurrentUser> = {}) {
+function renderPalette(initialEntries = ['/dashboard'], userOverrides: Partial<CurrentUser> = {}, projectSections?: ComponentProps<typeof CommandPalette>['projectSections']) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const user: CurrentUser = { ...currentUser, ...userOverrides }
   const theme: ThemeContextValue = { mode: 'light', setMode: mocks.setMode }
@@ -136,7 +154,7 @@ function renderPalette(initialEntries = ['/dashboard'], userOverrides: Partial<C
       <SessionContext value={sessionValue(user)}>
         <ThemeContext value={theme}>
           <MemoryRouter initialEntries={initialEntries}>
-            <CommandPalette />
+            <CommandPalette projectSections={projectSections} />
             <Routes>
               <Route element={<LocationProbe />} path="*" />
             </Routes>
@@ -193,6 +211,7 @@ function applicationFixture(): Application {
     icon: '',
     deleteStatus: 'active',
     deleteMessage: '',
+    deleteCode: '',
     createdAt: '2026-11-01T00:00:00Z',
     updatedAt: '2026-11-01T00:00:00Z',
   }

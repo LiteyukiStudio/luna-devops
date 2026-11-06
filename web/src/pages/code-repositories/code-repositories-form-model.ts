@@ -2,7 +2,7 @@ import i18next from 'i18next'
 import { z } from 'zod'
 
 export const providerSchema = z.object({
-  name: z.string().min(1, i18next.t('codeRepositoriesView.providerNameRequired')),
+  name: z.string().min(1, { error: () => i18next.t('codeRepositoriesView.providerNameRequired') }),
   type: z.enum(['github', 'gitea', 'gitlab']),
   baseUrl: z.string().optional(),
   scope: z.enum(['global', 'project', 'user']),
@@ -23,11 +23,11 @@ export const providerSchema = z.object({
 })
 
 export const credentialSchema = z.object({
-  providerId: z.string().min(1, i18next.t('codeRepositoriesView.providerRequired')),
+  providerId: z.string().min(1, { error: () => i18next.t('codeRepositoriesView.providerRequired') }),
   scope: z.enum(['global', 'project', 'user']),
   ownerRef: z.string(),
   projectIds: z.array(z.string()),
-  username: z.string().min(1, i18next.t('codeRepositoriesView.usernameRequired')),
+  username: z.string().min(1, { error: () => i18next.t('codeRepositoriesView.usernameRequired') }),
   externalUserId: z.string().optional(),
   avatarUrl: z.string().optional(),
   accessToken: z.string().optional(),

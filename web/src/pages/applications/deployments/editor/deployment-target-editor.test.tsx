@@ -1,9 +1,9 @@
 import type { DeploymentTargetFormValues } from './deployment-target-form'
-import type { DeploymentTarget } from '@/api'
+import type { DeploymentTarget, Release } from '@/api'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { createMemoryRouter, Link, RouterProvider } from 'react-router-dom'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { api, ApiError } from '@/api'
 import { TooltipProvider } from '@/components/ui/tooltip'
@@ -32,40 +32,133 @@ vi.mock('@/api', async (importOriginal) => {
 
 const repositoryBinding = { applicationId: 'app_1', defaultBranch: 'main', gitAccountId: 'acc_1', id: 'rb_1', owner: 'team', repo: 'demo' }
 
-function renderEditor({ target = null as DeploymentTarget | null, values = {} as Partial<DeploymentTargetFormValues> } = {}) {
+function imageTarget() {
+  // 与线上返回结构一致的完整镜像来源部署配置，保证编辑器载入后表单校验通过。
+  return {
+    id: 'target_1',
+    projectId: 'prj_1',
+    applicationId: 'app_1',
+    name: 'web',
+    stage: 'dev',
+    kubernetesName: 'web-dev',
+    clusterId: '',
+    workloadType: 'Deployment',
+    replicas: 1,
+    cpuRequest: '500m',
+    memoryRequest: '512Mi',
+    imagePullPolicy: 'IfNotPresent',
+    containerCommand: '',
+    containerArgs: '',
+    lifecycle: '',
+    initContainers: '',
+    sidecarContainers: '',
+    readinessProbe: '',
+    livenessProbe: '',
+    startupProbe: '',
+    runAsUser: '',
+    runAsGroup: '',
+    fsGroup: '',
+    fsGroupChangePolicy: '',
+    readOnlyRootFilesystem: false,
+    capabilityDrop: '',
+    nodeSelector: '',
+    tolerations: '',
+    affinity: '',
+    topologySpreadConstraints: '',
+    priorityClassName: '',
+    serviceAnnotations: '',
+    serviceSessionAffinity: '',
+    autoScalingEnabled: false,
+    autoScalingMinReplicas: 1,
+    autoScalingMaxReplicas: 1,
+    autoScalingCpuPercent: 0,
+    autoScalingMemoryPercent: 0,
+    autoScalingBehavior: '',
+    servicePorts: [{ name: 'http', port: 8080, appProtocol: '' }],
+    sourceType: 'image',
+    repositoryBindingId: '',
+    buildDefinitionMode: 'repository_dockerfile',
+    buildTemplateId: '',
+    buildTemplateVersion: '',
+    buildTemplateValues: '{}',
+    dockerfilePath: '',
+    buildContext: '',
+    buildDirectory: '',
+    buildArgs: '',
+    buildEnvironmentId: '',
+    buildCpuRequest: '',
+    buildMemoryRequest: '',
+    buildTimeoutSeconds: 1800,
+    targetRegistryId: '',
+    targetRepository: '',
+    targetTag: '',
+    imageRef: 'registry.example/team/web:v1',
+    buildVariableSetIds: [],
+    buildHooksEnabled: false,
+    buildHookBindings: [],
+    autoDeploy: false,
+    branchPattern: '',
+    tagPattern: '',
+    runtimeConfigRefs: [],
+    environmentVariables: [],
+    configFiles: '',
+    secretFilesSet: false,
+    dataVolumes: [],
+    requireApproval: false,
+    webConsoleEnabled: true,
+    enabled: true,
+    status: 'ready',
+    desiredReplicas: 1,
+    updatedReplicas: 1,
+    readyReplicas: 1,
+    availableReplicas: 1,
+    deleteStatus: 'active',
+    deleteMessage: '',
+    createdBy: 'usr_1',
+    createdAt: '2026-10-01T00:00:00Z',
+  } as unknown as DeploymentTarget
+}
+
+function renderEditor({ releases = [] as Release[], target = null as DeploymentTarget | null, values = {} as Partial<DeploymentTargetFormValues> } = {}) {
   const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false }, queries: { retry: false } } })
   const initialValues = target
     ? deploymentTargetToFormValues(target)
     : { ...emptyDeploymentTargetFormValues(), repositoryBindingId: 'rb_1', targetImageRef: 'team/demo:latest', targetRegistryId: 'reg_1', ...values }
-  return render(
-    <MemoryRouter initialEntries={['/projects/prj_1/apps/app_1/deployments/new']}>
-      <QueryClientProvider client={queryClient}>
-        <TooltipProvider>
-          <Routes>
-            <Route
-              path="/projects/:projectId/apps/:applicationId/deployments/new"
-              element={(
-                <DeploymentTargetEditor
-                  applicationId="app_1"
-                  buildEnvironmentAvailable
-                  canManageRuntimeSecrets
-                  deploymentTargets={[]}
-                  initialValues={initialValues}
-                  projectId="prj_1"
-                  registries={[{ credentialSet: true, endpoint: 'https://registry.example.com', id: 'reg_1', isDefault: true, name: 'Registry', namespace: 'team', provider: 'harbor' } as never]}
-                  releases={[]}
-                  repositoryBindings={[repositoryBinding as never]}
-                  runtimeClusters={[]}
-                  target={target}
-                />
-              )}
-            />
-            <Route path="/projects/:projectId/apps/:applicationId" element={<p>deployments list</p>} />
-          </Routes>
-        </TooltipProvider>
-      </QueryClientProvider>
-    </MemoryRouter>,
+  const editorPath = target ? `/projects/prj_1/apps/app_1/deployments/${target.id}/edit` : '/projects/prj_1/apps/app_1/deployments/new'
+  // 编辑器用 useBlocker 拦截未保存离开，需要数据路由。
+  const router = createMemoryRouter([
+    {
+      path: target ? '/projects/:projectId/apps/:applicationId/deployments/:targetId/edit' : '/projects/:projectId/apps/:applicationId/deployments/new',
+      element: (
+        <>
+          <Link to="/projects/prj_1">project workspace</Link>
+          <DeploymentTargetEditor
+            applicationId="app_1"
+            buildEnvironmentAvailable
+            canManageRuntimeSecrets
+            deploymentTargets={[]}
+            initialValues={initialValues}
+            projectId="prj_1"
+            registries={[{ credentialSet: true, endpoint: 'https://registry.example.com', id: 'reg_1', isDefault: true, name: 'Registry', namespace: 'team', provider: 'harbor' } as never]}
+            releases={releases}
+            repositoryBindings={[repositoryBinding as never]}
+            runtimeClusters={[]}
+            target={target}
+          />
+        </>
+      ),
+    },
+    { path: '/projects/:projectId/apps/:applicationId', element: <p>deployments list</p> },
+    { path: '/projects/:projectId', element: <p>project workspace page</p> },
+  ], { initialEntries: [editorPath] })
+  render(
+    <QueryClientProvider client={queryClient}>
+      <TooltipProvider>
+        <RouterProvider router={router} />
+      </TooltipProvider>
+    </QueryClientProvider>,
   )
+  return router
 }
 
 describe('deployment target editor', () => {
@@ -240,6 +333,66 @@ describe('deployment target editor', () => {
 
     expect(api.createDeploymentTarget).not.toHaveBeenCalled()
     expect(await screen.findByText('Name is already used by another variable')).toBeInTheDocument()
+  })
+
+  it('asks before leaving with unsaved changes and keeps the draft when the user stays', async () => {
+    const user = userEvent.setup()
+    renderEditor()
+
+    await user.type(screen.getByRole('textbox', { name: /Name/ }), 'dev')
+    await user.click(screen.getByRole('link', { name: 'project workspace' }))
+
+    const dialog = await screen.findByRole('alertdialog', { name: 'Discard unsaved changes?' })
+    await user.click(within(dialog).getByRole('button', { name: 'Keep editing' }))
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: /Name/ })).toHaveValue('dev')
+
+    await user.click(screen.getByRole('link', { name: 'project workspace' }))
+    await user.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Discard and leave' }))
+    expect(await screen.findByText('project workspace page')).toBeInTheDocument()
+  })
+
+  it('does not block leaving when nothing changed or the user cancels', async () => {
+    const user = userEvent.setup()
+    renderEditor()
+
+    await user.click(screen.getByRole('link', { name: 'project workspace' }))
+    expect(await screen.findByText('project workspace page')).toBeInTheDocument()
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
+  })
+
+  it('leaves through cancel without prompting even with a draft', async () => {
+    const user = userEvent.setup()
+    renderEditor()
+
+    await user.type(screen.getByRole('textbox', { name: /Name/ }), 'dev')
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(await screen.findByText('deployments list')).toBeInTheDocument()
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
+  })
+
+  it('reports a saved config separately when the redeploy fails and retries only the deploy', async () => {
+    const user = userEvent.setup()
+    const target = imageTarget()
+    vi.mocked(api.updateDeploymentTarget).mockImplementation(async (_projectId, _applicationId, _targetId, payload) => ({ ...target, imageRef: payload.imageRef ?? target.imageRef }) as DeploymentTarget)
+    vi.mocked(api.createRelease).mockRejectedValueOnce(new Error('queue unavailable'))
+    vi.mocked(api.createRelease).mockResolvedValueOnce({ id: 'rel_2' } as Release)
+    renderEditor({ target })
+
+    const image = screen.getByRole('textbox', { name: /Image reference/ })
+    await user.clear(image)
+    await user.click(image)
+    await user.paste('registry.example/team/web:v2')
+    await user.click(screen.getByRole('button', { name: 'Save and redeploy' }))
+
+    expect(await screen.findByText('Config saved, but redeploy failed: queue unavailable')).toBeInTheDocument()
+    expect(api.updateDeploymentTarget).toHaveBeenCalledTimes(1)
+    expect(screen.queryByRole('button', { name: 'Save and redeploy' })).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Retry deploy' }))
+    expect(await screen.findByText('deployments list')).toBeInTheDocument()
+    expect(api.updateDeploymentTarget).toHaveBeenCalledTimes(1)
+    expect(api.createRelease).toHaveBeenLastCalledWith('prj_1', expect.objectContaining({ deploymentTargetId: 'target_1', imageRef: 'registry.example/team/web:v2' }))
   })
 
   it('maps backend field errors back to the form field', async () => {

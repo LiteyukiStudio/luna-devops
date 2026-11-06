@@ -53,6 +53,10 @@ func (h *Handlers) GetReleaseRuntimeLogs(ctx *gin.Context) {
 		writeRuntimePodNotFound(ctx)
 		return
 	}
+	if errors.Is(err, kubeprovider.ErrRuntimeContainerNotStarted) {
+		writeErrorCode(ctx, http.StatusConflict, "runtime.container_not_started", "runtime container has not started; no logs are available yet")
+		return
+	}
 	if err != nil {
 		writeError(ctx, http.StatusBadGateway, err.Error())
 		return

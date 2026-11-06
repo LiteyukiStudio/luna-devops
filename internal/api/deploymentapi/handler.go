@@ -46,7 +46,6 @@ type Host interface {
 	CanManageBuildEnvironmentProject(ctx *gin.Context, user model.User, projectID string) bool
 	DeploymentBuildEnvironmentFromInput(ctx *gin.Context, user model.User, projectID, targetID string, input DeploymentTargetInput, existing *model.BuildEnvironmentConfig) (*model.BuildEnvironmentConfig, bool)
 	EnsureDeploymentTargetCanMutate(ctx *gin.Context, target model.DeploymentTarget) bool
-	EnsureNoIncomingServiceBindings(ctx *gin.Context, projectID, targetApplicationID, targetDeploymentTargetID string) bool
 	DeleteStatusCanStart(status string) bool
 	MarkResourceDeleting(tx *gorm.DB, resource any, resourceID string) error
 	MarkDeploymentTargetGatewayRoutesDeleting(tx *gorm.DB, target model.DeploymentTarget) error
@@ -213,10 +212,6 @@ func (h *Handler) ensureDeploymentTargetCanMutate(ctx *gin.Context, target model
 	return h.host.EnsureDeploymentTargetCanMutate(ctx, target)
 }
 
-func (h *Handler) ensureNoIncomingServiceBindings(ctx *gin.Context, projectID, targetApplicationID, targetDeploymentTargetID string) bool {
-	return h.host.EnsureNoIncomingServiceBindings(ctx, projectID, targetApplicationID, targetDeploymentTargetID)
-}
-
 func (h *Handler) enqueueResourceCleanup(ctx context.Context, resourceType, resourceID, projectID, actorID string) bool {
 	return h.host.EnqueueResourceCleanup(ctx, resourceType, resourceID, projectID, actorID)
 }
@@ -341,9 +336,6 @@ func fallbackInt(value, fallbackValue int) int {
 	return transportapi.FallbackInt(value, fallbackValue)
 }
 func encodeBuildVariableSetIDs(ids []string) string { return buildapi.EncodeBuildVariableSetIDs(ids) }
-func normalizeBuildConcurrencyPolicy(value string) string {
-	return applicationapi.NormalizeBuildConcurrencyPolicy(value)
-}
 func buildTargetImageRepositoryForCredential(registry model.ArtifactRegistry, credential model.RegistryCredential, project model.Project, application model.Application, target model.DeploymentTarget) string {
 	return buildapi.BuildTargetImageRepositoryForCredential(registry, credential, project, application, target)
 }

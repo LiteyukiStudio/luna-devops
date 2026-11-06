@@ -1,15 +1,11 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen } from '@testing-library/react'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { createMemoryRouter, RouterProvider } from 'react-router-dom'
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { api } from '@/api'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import i18next from '@/i18n'
 import { DeploymentTargetEditorPage } from './DeploymentTargetEditorPage'
-
-vi.mock('@/app/session-context', () => ({
-  useSession: () => ({ user: { role: 'user' } }),
-}))
 
 vi.mock('@/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/api')>()
@@ -37,16 +33,17 @@ vi.mock('@/api', async (importOriginal) => {
 
 function renderPage() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  // 编辑器用 useBlocker 拦截未保存离开，需要数据路由。
+  const router = createMemoryRouter(
+    [{ path: '/projects/:projectId/apps/:applicationId/deployments/new', element: <DeploymentTargetEditorPage /> }],
+    { initialEntries: ['/projects/prj_1/apps/app_1/deployments/new'] },
+  )
   return render(
-    <MemoryRouter initialEntries={['/projects/prj_1/apps/app_1/deployments/new']}>
-      <QueryClientProvider client={queryClient}>
-        <TooltipProvider>
-          <Routes>
-            <Route path="/projects/:projectId/apps/:applicationId/deployments/new" element={<DeploymentTargetEditorPage />} />
-          </Routes>
-        </TooltipProvider>
-      </QueryClientProvider>
-    </MemoryRouter>,
+    <QueryClientProvider client={queryClient}>
+      <TooltipProvider>
+        <RouterProvider router={router} />
+      </TooltipProvider>
+    </QueryClientProvider>,
   )
 }
 
@@ -59,7 +56,7 @@ describe('deployment target editor page', () => {
     await i18next.changeLanguage('en-US')
     vi.clearAllMocks()
     vi.mocked(api.getApplication).mockResolvedValue({ id: 'app_1', identifier: 'web', name: 'Web' } as never)
-    vi.mocked(api.getProject).mockResolvedValue({ currentUserRole: 'owner', id: 'prj_1', identifier: 'demo', name: 'Demo' } as never)
+    vi.mocked(api.getProject).mockResolvedValue({ currentUserActions: ['project:read', 'deployment:update'], currentUserRole: 'owner', id: 'prj_1', identifier: 'demo', name: 'Demo' } as never)
     vi.mocked(api.listRegistries).mockResolvedValue([{ credentialSet: true, endpoint: 'https://registry.example.com', id: 'reg_1', isDefault: true, name: 'Registry', namespace: 'team', provider: 'harbor' }] as never)
     vi.mocked(api.listRepositoryBindings).mockResolvedValue([{ applicationId: 'app_1', defaultBranch: 'main', gitAccountId: 'acc_1', id: 'rb_1', owner: 'team', repo: 'demo' }] as never)
     vi.mocked(api.listDeploymentTargets).mockResolvedValue([])

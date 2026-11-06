@@ -115,6 +115,10 @@ export function periodSelectionForPreset(preset: BillingPeriodPreset): BillingPe
   }
 }
 
+export function browserTimeZone() {
+  return new Intl.DateTimeFormat().resolvedOptions().timeZone
+}
+
 export function billingPeriodToQuery(period: BillingPeriodSelection) {
   const start = parseDateInput(period.startDate)
   const endInclusive = parseDateInput(period.endDate)

@@ -136,7 +136,7 @@ const common = {
     deploymentTarget: 'Deployment Target',
     runtimeCluster: 'Runtime Cluster',
     registry: 'Registry',
-    gatewayRoute: 'Gateway Route',
+    gatewayRoute: 'Access route',
     event: 'Event',
     user: 'User',
     build: 'Build',

@@ -2,7 +2,7 @@ import type { DeploymentRuntimeConfigRef, DeploymentTarget, ProjectRuntimeConfig
 import { publicRuntimeEnvironmentInputs } from '@/lib/runtime-environment'
 import { deploymentReleaseKey } from '@/pages/applications/application-config-utils'
 
-export type ReleaseForm = Omit<Release, 'id' | 'projectId' | 'createdBy' | 'createdAt' | 'rollbackFromId'>
+export type ReleaseForm = Omit<Release, 'id' | 'projectId' | 'createdBy' | 'createdAt' | 'rollbackFromId' | 'failureCode'>
 
 export const releaseDefaults: ReleaseForm = { applicationId: '', buildRunId: '', deploymentTargetId: '', forceImagePull: false, imageRef: '', message: '', revision: 1, status: 'pending', type: 'deploy' }
 
@@ -32,6 +32,24 @@ export function latestReleaseByTarget(releases: Release[]) {
     const existing = output[key]
     if (!existing || new Date(release.createdAt).getTime() > new Date(existing.createdAt).getTime())
       output[key] = release
+  }
+  return output
+}
+
+/**
+ * 回滚将回到的版本：与后端 findPreviousSuccessfulRelease 同一规则——同一部署配置中
+ * revision 小于来源发布的最近一次成功发布（revision 降序，其次创建时间降序）。
+ */
+export function previousSuccessfulRelease(releases: Release[], source: Release) {
+  let output: Release | undefined
+  for (const release of releases) {
+    if (release.deploymentTargetId !== source.deploymentTargetId || release.applicationId !== source.applicationId || release.status !== 'succeeded' || release.revision >= source.revision)
+      continue
+    if (!output
+      || release.revision > output.revision
+      || (release.revision === output.revision && new Date(release.createdAt).getTime() > new Date(output.createdAt).getTime())) {
+      output = release
+    }
   }
   return output
 }
@@ -94,10 +112,19 @@ export function normalizeRuntimeConfigPayload(values: ProjectRuntimeConfigSetPay
   }
 }
 
-export function formatMetricsPercent(value: number, locale: string) {
-  if (!Number.isFinite(value) || value <= 0)
-    return '0%'
+/** Percent of the aggregate limit; '-' when the workload has no bounded limit (percent omitted). */
+export function formatMetricsPercent(value: number | undefined, locale: string) {
+  if (value === undefined || !Number.isFinite(value) || value < 0)
+    return '-'
   return `${value.toLocaleString(locale, { maximumFractionDigits: 1 })}%`
+}
+
+export function formatMetricsCPU(milli: number, locale: string) {
+  if (!Number.isFinite(milli) || milli <= 0)
+    return '-'
+  if (milli >= 1000)
+    return (milli / 1000).toLocaleString(locale, { maximumFractionDigits: 2 })
+  return `${Math.round(milli).toLocaleString(locale)}m`
 }
 
 export function formatMetricsBytes(value: number, locale: string) {

@@ -26,7 +26,7 @@ const dashboardPage = {
   startFromTemplate: 'Start from a template',
   viewBuild: 'View build',
   viewDeployment: 'View deployment',
-  viewAccess: 'View access',
+  viewAccess: 'View access routes',
   viewDetails: 'View details',
   recentApps: 'Recent applications',
   applicationColumn: 'Application',

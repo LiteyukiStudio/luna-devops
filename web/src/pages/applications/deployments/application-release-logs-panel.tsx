@@ -13,16 +13,18 @@ import { WORKFLOW_STATUS_REFETCH_INTERVAL_MS } from '@/lib/polling'
 import { RuntimePodSelect } from '@/pages/applications/runtime/runtime-pod-select'
 
 export function ApplicationReleaseLogsPanel({
+  initialView = 'deployment',
   projectId,
   release,
   onClose,
 }: {
+  initialView?: 'deployment' | 'runtime'
   projectId: string
   release: Release
   onClose: () => void
 }) {
   const { t } = useTranslation()
-  const [logView, setLogView] = useState<'deployment' | 'runtime'>('deployment')
+  const [logView, setLogView] = useState<'deployment' | 'runtime'>(initialView)
   const [pod, setPod] = useState('')
   const releaseLogs = useQuery({
     queryKey: ['release-logs', projectId, release.id],
@@ -36,11 +38,16 @@ export function ApplicationReleaseLogsPanel({
     queryFn: ({ signal }) => api.getReleaseRuntimeLogs(projectId, release.id, { pod: pod || undefined, tailLines: 500 }, signal),
     enabled: Boolean(projectId && logView === 'runtime'),
     refetchInterval: logView === 'runtime' ? WORKFLOW_STATUS_REFETCH_INTERVAL_MS : false,
+    // 副本缺失或容器未启动是确定结论，立即展示原因，不做退避重试。
+    retry: (failureCount, error) => !(error instanceof ApiError && error.status < 500) && failureCount < 3,
   })
   const deploymentLive = release.status === 'running' || release.status === 'pending'
-  const runtimeErrorLabel = runtimeLogs.error instanceof ApiError && runtimeLogs.error.code === 'runtime.pod_not_found'
+  const runtimeErrorCode = runtimeLogs.error instanceof ApiError ? runtimeLogs.error.code : ''
+  const runtimeErrorLabel = runtimeErrorCode === 'runtime.pod_not_found'
     ? t('deploymentsPage.runtimePodMissing')
-    : t('common.unavailable')
+    : runtimeErrorCode === 'runtime.container_not_started'
+      ? t('deploymentsPage.runtimeContainerNotStarted')
+      : t('common.unavailable')
   const liveDot = <StatusDot className="text-xs" label={t('common.logViewer.live')} tone="info" />
 
   return (

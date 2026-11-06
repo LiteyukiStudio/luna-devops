@@ -13,6 +13,9 @@ export const applicationsApi = {
   },
   getApplication: (projectId: string, applicationId: string) =>
     request<Application>(`/projects/${projectId}/applications/${applicationId}`),
+  /** 应用详情加后端统一的运行结论、主访问地址与当前版本；实时观察，不可缓存。 */
+  getApplicationRuntime: (projectId: string, applicationId: string) =>
+    request<Application>(`/projects/${projectId}/applications/${applicationId}?includeRuntime=true`),
   getApplicationTopology: (projectId: string, applicationId: string) =>
     request<ApplicationTopology>(`/projects/${projectId}/applications/${applicationId}/topology`),
   createApplication: (projectId: string, payload: ApplicationPayload) =>

@@ -29,3 +29,24 @@ export const PROJECT_ROLES = [
 export function isPlatformAdmin(role: string | null | undefined): boolean {
   return role === PlatformRole.Admin
 }
+
+/**
+ * 前端消费的项目空间 Action 名，取值与 internal/authz 策略键一致。
+ * 是否放行只看 getProject 返回的 currentUserActions，不在前端按角色推导。
+ */
+export const ProjectAction = {
+  ProjectWrite: 'project:write',
+  ProjectManage: 'project:manage',
+  ProjectOwnerOnly: 'project:owner_only',
+  DeploymentUpdate: 'deployment:update',
+  VolumeWrite: 'volume:write',
+  VolumeImport: 'volume:import',
+  VolumeExport: 'volume:export',
+  VolumeDelete: 'volume:delete',
+} as const
+
+export type ProjectActionValue = typeof ProjectAction[keyof typeof ProjectAction]
+
+export function projectActionAllowed(actions: readonly string[] | null | undefined, action: ProjectActionValue): boolean {
+  return actions?.includes(action) ?? false
+}

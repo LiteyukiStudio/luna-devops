@@ -2,7 +2,6 @@ package runtimeapi
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -244,15 +243,5 @@ func (h *Handlers) ensureRuntimeClusterPodWebConsoleEnabled(ctx *gin.Context, sn
 }
 
 func runtimeClusterForDeploymentTargetDB(db *gorm.DB, target model.DeploymentTarget) (model.RuntimeCluster, error) {
-	var cluster model.RuntimeCluster
-	query := runtimecluster.ActiveScope(db)
-	if clusterID := strings.TrimSpace(target.ClusterID); clusterID != "" {
-		err := query.First(&cluster, "id = ?", clusterID).Error
-		return cluster, err
-	}
-	err := query.Where("scope = ? and is_default = ?", "global", true).First(&cluster).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		err = query.Where("scope = ?", "global").Order("created_at asc").First(&cluster).Error
-	}
-	return cluster, err
+	return runtimecluster.ResolveForTarget(db, target.ClusterID)
 }

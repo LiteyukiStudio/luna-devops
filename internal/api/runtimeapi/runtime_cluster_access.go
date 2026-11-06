@@ -2,7 +2,6 @@ package runtimeapi
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"strings"
 
@@ -12,24 +11,10 @@ import (
 	kubeprovider "github.com/LiteyukiStudio/devops/internal/provider/kubernetes"
 	"github.com/LiteyukiStudio/devops/internal/runtimecluster"
 	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
 )
 
 func (h *Handlers) runtimeClusterForDeploymentTarget(ctx *gin.Context, target model.DeploymentTarget) (model.RuntimeCluster, bool) {
-	var cluster model.RuntimeCluster
-	query := runtimecluster.ActiveScope(h.dbFor(ctx))
-	if clusterID := strings.TrimSpace(target.ClusterID); clusterID != "" {
-		err := query.First(&cluster, "id = ?", clusterID).Error
-		if err != nil {
-			writeError(ctx, http.StatusNotFound, "runtime cluster not found")
-			return cluster, false
-		}
-		return cluster, true
-	}
-	err := query.Where("scope = ? and is_default = ?", "global", true).First(&cluster).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		err = query.Where("scope = ?", "global").Order("created_at asc").First(&cluster).Error
-	}
+	cluster, err := runtimecluster.ResolveForTarget(h.dbFor(ctx), target.ClusterID)
 	if err != nil {
 		writeError(ctx, http.StatusNotFound, "runtime cluster not found")
 		return cluster, false
@@ -54,18 +39,14 @@ func (h *Handlers) runtimeClusterForProjectUse(ctx *gin.Context, user model.User
 	return cluster, false
 }
 
+// defaultRuntimeClusterID is the cluster an empty deployment target cluster
+// reference resolves to; empty when none applies.
 func (h *Handlers) defaultRuntimeClusterID(ctx context.Context) string {
-	var cluster model.RuntimeCluster
-	query := runtimecluster.ActiveScope(h.dbWithContext(ctx))
-	err := query.Where("is_default = ?", true).Order("created_at asc").First(&cluster).Error
-	if err == nil {
-		return cluster.ID
+	cluster, err := runtimecluster.ResolveForTarget(h.dbWithContext(ctx), "")
+	if err != nil {
+		return ""
 	}
-	err = query.Order("created_at asc").First(&cluster).Error
-	if err == nil {
-		return cluster.ID
-	}
-	return ""
+	return cluster.ID
 }
 
 func canUseRuntimeClusterForProject(user model.User, cluster model.RuntimeCluster, projectID string, boundProjectIDs []string) bool {

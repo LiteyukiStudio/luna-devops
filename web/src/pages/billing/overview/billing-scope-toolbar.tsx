@@ -38,10 +38,10 @@ export function BillingScopeToolbar({
   const { t } = useTranslation()
 
   return (
-    <div className="flex min-w-0 flex-col gap-2 xl:flex-row xl:flex-wrap xl:items-center">
+    <div className="flex min-w-0 flex-col gap-2 @4xl/workspace:flex-row @4xl/workspace:flex-wrap @4xl/workspace:items-center">
       <BillingPeriodPicker period={billingPeriod} onChange={onPeriodChange} />
       {canManageBilling && (
-        <div className="w-full xl:w-64">
+        <div className="w-full @4xl/workspace:w-64">
           <UserSelect
             allLabel={t('billingPage.allUsers')}
             ariaLabel={t('billingPage.billingUserScope')}
@@ -55,7 +55,7 @@ export function BillingScopeToolbar({
           />
         </div>
       )}
-      <div className="w-full xl:w-64">
+      <div className="w-full @4xl/workspace:w-64">
         <ProjectSpaceMultiSelect
           disabled={projectsLoading}
           projects={visibleProjectItems}
@@ -64,7 +64,7 @@ export function BillingScopeToolbar({
         />
       </div>
       {selectedProjectIds.length > 0 && (
-        <Button className="shrink-0 self-start xl:self-auto" type="button" variant="ghost" onClick={() => onProjectFilterChange([])}>
+        <Button className="shrink-0 self-start @4xl/workspace:self-auto" type="button" variant="ghost" onClick={() => onProjectFilterChange([])}>
           <X />
           {t('billingPage.clearProjectFilter')}
         </Button>

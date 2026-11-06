@@ -150,7 +150,7 @@ func (h *Handlers) InstallSystemAppTemplate(ctx *gin.Context) {
 	}
 	if !h.enqueueDeployRun(ctx.Request.Context(), *plan.Release) {
 		message := "平台组件部署任务投递失败"
-		_ = h.dbFor(ctx).Model(&model.Release{}).Where("id = ?", plan.Release.ID).Updates(map[string]any{"status": "failed", "message": message}).Error
+		_ = h.dbFor(ctx).Model(&model.Release{}).Where("id = ? and status in ?", plan.Release.ID, model.ReleaseActiveStatuses).Updates(map[string]any{"status": "failed", "failure_code": model.ReleaseFailureDispatchFailed, "message": message}).Error
 		_ = h.dbFor(ctx).Model(&model.SystemComponentInstallation{}).Where("id = ?", plan.Installation.ID).Updates(map[string]any{"status": "failed", "message": message, "last_error": message}).Error
 		writeError(ctx, http.StatusServiceUnavailable, message)
 		return
@@ -236,7 +236,6 @@ func (h *Handlers) systemComponentApplicationPlan(ctx *gin.Context, user model.U
 		BuildCPURequest:              model.DefaultBuildCPURequest,
 		BuildMemoryRequest:           model.DefaultBuildMemoryRequest,
 		BuildTimeoutSeconds:          1800,
-		ConcurrencyPolicy:            "queue",
 		EnvVars:                      systemComponentProbeEnv(cluster, componentID, mode, apiBaseURL, traefikMetricsURL),
 		Enabled:                      true,
 		DeleteStatus:                 "active",

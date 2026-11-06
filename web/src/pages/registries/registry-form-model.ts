@@ -3,9 +3,9 @@ import i18next from 'i18next'
 import { z } from 'zod'
 
 export const registrySchema = z.object({
-  name: z.string().min(1, i18next.t('registriesPage.registryNameRequired')),
+  name: z.string().min(1, { error: () => i18next.t('registriesPage.registryNameRequired') }),
   provider: z.enum(['harbor', 'dockerhub', 'gitea-registry', 'generic-oci']),
-  endpoint: z.string().url(i18next.t('registriesPage.validUrlRequired')),
+  endpoint: z.string().url({ error: () => i18next.t('registriesPage.validUrlRequired') }),
   scope: z.enum(['global', 'project', 'user']),
   ownerRef: z.string(),
   projectIds: z.array(z.string()),
@@ -22,16 +22,16 @@ export const registrySchema = z.object({
 })
 
 export const credentialSchema = z.object({
-  registryId: z.string().min(1, i18next.t('registriesPage.registryRequired')),
-  name: z.string().min(1, i18next.t('registriesPage.credentialNameRequired')),
+  registryId: z.string().min(1, { error: () => i18next.t('registriesPage.registryRequired') }),
+  name: z.string().min(1, { error: () => i18next.t('registriesPage.credentialNameRequired') }),
   username: z.string(),
   password: z.string(),
   token: z.string(),
   usage: z.enum(['push-pull', 'push', 'pull']),
   scope: z.enum(['global', 'project', 'user']),
   projectIds: z.array(z.string()),
-  repositoryTemplate: z.string().min(1, i18next.t('registriesPage.repositoryTemplateRequired')),
-  tagTemplate: z.string().min(1, i18next.t('registriesPage.tagTemplateRequired')),
+  repositoryTemplate: z.string().min(1, { error: () => i18next.t('registriesPage.repositoryTemplateRequired') }),
+  tagTemplate: z.string().min(1, { error: () => i18next.t('registriesPage.tagTemplateRequired') }),
 }).superRefine((values, ctx) => {
   if (values.scope === 'project' && values.projectIds.length === 0) {
     ctx.addIssue({
@@ -45,8 +45,8 @@ export const credentialSchema = z.object({
 export const imageSchema = z.object({
   projectId: z.string(),
   applicationId: z.string(),
-  registryId: z.string().min(1, i18next.t('registriesPage.registryRequired')),
-  repository: z.string().min(1, i18next.t('registriesPage.repositoryRequired')),
+  registryId: z.string().min(1, { error: () => i18next.t('registriesPage.registryRequired') }),
+  repository: z.string().min(1, { error: () => i18next.t('registriesPage.repositoryRequired') }),
   tag: z.string(),
   digest: z.string(),
   sourceCommit: z.string(),

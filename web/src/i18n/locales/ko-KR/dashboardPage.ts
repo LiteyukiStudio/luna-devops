@@ -26,7 +26,7 @@ const dashboardPage = {
   startFromTemplate: '템플릿으로 시작',
   viewBuild: '빌드 보기',
   viewDeployment: '배포 보기',
-  viewAccess: '접근 보기',
+  viewAccess: '접근 진입점 보기',
   viewDetails: '상세 보기',
   recentApps: '최근 애플리케이션',
   applicationColumn: '애플리케이션',

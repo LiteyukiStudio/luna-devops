@@ -81,6 +81,9 @@ func (h *Handlers) prepareBuildRunRequest(user model.User, run *model.BuildRun, 
 	if err := h.dbWithContext(ctx).First(&project, "id = ?", run.ProjectID).Error; err != nil {
 		return buildRunBadRequest("项目空间不存在")
 	}
+	if !model.DeleteStatusActive(project.DeleteStatus) {
+		return buildRunConflict("project.delete_in_progress", "项目空间正在删除中，不能触发构建")
+	}
 	var app model.Application
 	if err := h.dbWithContext(ctx).First(&app, "id = ? and project_id = ?", run.ApplicationID, run.ProjectID).Error; err != nil {
 		return buildRunBadRequest("应用不存在")
@@ -202,7 +205,7 @@ func (h *Handlers) prepareBuildRunRequest(user model.User, run *model.BuildRun, 
 
 func (h *Handlers) deploymentTargetForBuildRun(app model.Application, targetID string, ctx context.Context) (model.DeploymentTarget, error) {
 	var config model.DeploymentTarget
-	query := h.dbWithContext(ctx).Where("project_id = ? and application_id = ? and enabled = ?", app.ProjectID, app.ID, true)
+	query := h.dbWithContext(ctx).Where("project_id = ? and application_id = ? and enabled = ? and delete_status in ?", app.ProjectID, app.ID, true, model.ActiveDeleteStatuses)
 	if strings.TrimSpace(targetID) != "" {
 		query = query.Where("id = ?", strings.TrimSpace(targetID))
 	} else {

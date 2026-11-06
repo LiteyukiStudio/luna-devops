@@ -18,6 +18,13 @@ interface PageCommand {
   permission?: string
 }
 
+/** 当前项目空间的分区入口；分区定义由布局从项目空间工作区目录传入。 */
+export interface ProjectSectionCommand {
+  to: string
+  label: string
+  icon: LucideIcon
+}
+
 // 与侧栏和头像菜单的页面入口保持一致；系统管理页仍由后端最终鉴权，这里只按权限隐藏入口。
 function pageCommands(t: TFunction): PageCommand[] {
   return [
@@ -53,8 +60,8 @@ function isApplePlatform() {
   return typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/.test(navigator.userAgent)
 }
 
-/** 全局命令面板：顶栏搜索按钮或 ⌘K / Ctrl+K 打开，用于跳转页面、项目空间、当前项目空间的应用和执行常用操作。 */
-export function CommandPalette() {
+/** 全局命令面板：顶栏搜索按钮或 ⌘K / Ctrl+K 打开，用于跳转页面、项目空间、当前项目空间的分区与应用，以及执行常用操作。 */
+export function CommandPalette({ projectSections = [] }: { projectSections?: ProjectSectionCommand[] }) {
   const { t } = useTranslation()
   const { user } = useSession()
   const { setMode } = useTheme()
@@ -124,6 +131,16 @@ export function CommandPalette() {
               </CommandItem>
             ))}
           </CommandGroup>
+          {currentProjectId && projectSections.length > 0 && (
+            <CommandGroup heading={t('nav.commandPalette.groups.projectSections', { project: currentProject?.name ?? t('projects') })}>
+              {projectSections.map(section => (
+                <CommandItem key={section.to} value={`${section.label} ${section.to}`} onSelect={() => run(() => navigate(section.to))}>
+                  <section.icon aria-hidden="true" />
+                  <span>{section.label}</span>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          )}
           {currentProjectId && (applications.data?.length ?? 0) > 0 && (
             <CommandGroup heading={t('nav.commandPalette.groups.applications', { project: currentProject?.name ?? t('projects') })}>
               {applications.data?.map(application => (

@@ -12,6 +12,9 @@ const (
 	StatusUnavailable   = "unavailable"
 	StatusUnknown       = "unknown"
 	StatusDeclared      = "declared"
+	// StatusDisabled marks a resource the user disabled; it never participates
+	// in health aggregation even when its workload is still observed.
+	StatusDisabled = "disabled"
 )
 
 // Result describes a point-in-time observation from an upstream system.

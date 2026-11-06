@@ -33,54 +33,75 @@ func (r *Runner) handleBuildRun(ctx context.Context, task *asynq.Task) error {
 	if err := json.Unmarshal(task.Payload(), &payload); err != nil {
 		return err
 	}
+	// Build tasks are not retried by the queue, so every early exit below must
+	// leave the run in a terminal state instead of an indefinitely queued one.
+	payloadJob := model.BuildJob{ID: payload.BuildJobID, BuildRunID: payload.BuildRunID, ProjectID: payload.ProjectID}
+	payloadRun := model.BuildRun{ID: payload.BuildRunID, ProjectID: payload.ProjectID}
 	var run model.BuildRun
-	if err := r.db.First(&run, "id = ? and project_id = ?", payload.BuildRunID, payload.ProjectID).Error; err != nil {
+	if err := r.db.WithContext(ctx).First(&run, "id = ? and project_id = ?", payload.BuildRunID, payload.ProjectID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		_ = r.failBuildJob(ctx, payloadJob, payloadRun, model.BuildFailureInternalError, "load build run: "+err.Error())
 		return err
 	}
 	var job model.BuildJob
-	if err := r.db.First(&job, "id = ? and build_run_id = ? and project_id = ?", payload.BuildJobID, run.ID, run.ProjectID).Error; err != nil {
+	if err := r.db.WithContext(ctx).First(&job, "id = ? and build_run_id = ? and project_id = ?", payload.BuildJobID, run.ID, run.ProjectID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			_ = r.failBuildJob(ctx, payloadJob, run, model.BuildFailureInternalError, "build job not found")
+			return nil
+		}
+		_ = r.failBuildJob(ctx, payloadJob, run, model.BuildFailureInternalError, "load build job: "+err.Error())
 		return err
 	}
 	if !buildJobCanStart(job.Status) || run.Status == "canceled" {
 		return nil
 	}
 	var project model.Project
-	if err := r.db.First(&project, "id = ?", run.ProjectID).Error; err != nil {
-		return err
+	if err := r.db.WithContext(ctx).First(&project, "id = ?", run.ProjectID).Error; err != nil {
+		_ = r.failBuildJob(ctx, job, run, model.BuildFailureProjectUnavailable, "load project: "+err.Error())
+		return ignoreRecordNotFound(err)
+	}
+	if !model.DeleteStatusActive(project.DeleteStatus) {
+		return r.failBuildJob(ctx, job, run, model.BuildFailureProjectUnavailable, "project is being deleted")
 	}
 	var target model.DeploymentTarget
-	if err := r.db.First(&target, "id = ? and project_id = ? and application_id = ?", run.DeploymentTargetID, run.ProjectID, run.ApplicationID).Error; err != nil {
-		return err
+	if err := r.db.WithContext(ctx).First(&target, "id = ? and project_id = ? and application_id = ?", run.DeploymentTargetID, run.ProjectID, run.ApplicationID).Error; err != nil {
+		_ = r.failBuildJob(ctx, job, run, model.BuildFailureTargetUnavailable, "load deployment target: "+err.Error())
+		return ignoreRecordNotFound(err)
+	}
+	if !model.DeleteStatusActive(target.DeleteStatus) {
+		return r.failBuildJob(ctx, job, run, model.BuildFailureTargetUnavailable, "deployment target is being deleted")
 	}
 	cluster, err := r.runtimeClusterForDeploymentTarget(ctx, target)
 	if err != nil {
-		_ = r.failBuildJob(ctx, job, run, err.Error())
+		_ = r.failBuildJob(ctx, job, run, model.BuildFailureClusterUnavailable, err.Error())
 		return err
 	}
 	if err := workerStage(ctx, "build.ensure_capacity", func(context.Context) error {
 		return r.ensureBuildCapacity(project, cluster, target)
 	}); err != nil {
-		if errors.Is(err, errBuildCapacityUnavailable) {
-			_ = r.db.Model(&model.BuildJob{}).Where("id = ? and status = ?", job.ID, "queued").Update("message", buildCapacityMessage(err)).Error
-			if r.taskClient != nil {
-				if _, enqueueErr := r.taskClient.EnqueueBuildRunAfter(ctx, payload, buildCapacityRetryDelay); enqueueErr != nil {
-					return enqueueErr
-				}
-				return nil
+		if errors.Is(err, errBuildCapacityUnavailable) && r.taskClient != nil {
+			_ = r.db.WithContext(ctx).Model(&model.BuildJob{}).Where("id = ? and status = ?", job.ID, "queued").Update("message", buildCapacityMessage(err)).Error
+			if _, enqueueErr := r.taskClient.EnqueueBuildRunAfter(ctx, payload, buildCapacityRetryDelay); enqueueErr != nil {
+				_ = r.failBuildJob(ctx, job, run, model.BuildFailureDispatchFailed, "requeue after capacity wait: "+enqueueErr.Error())
+				return enqueueErr
 			}
+			return nil
 		}
+		_ = r.failBuildJob(ctx, job, run, model.BuildFailureCapacityCheckFailed, err.Error())
 		return err
 	}
 	namespace := deploymentNamespace(project)
 	if err := workerStage(ctx, "build.ensure_namespace", func(stageCtx context.Context) error {
 		return r.ensureProjectNamespace(stageCtx, namespace, project, target)
 	}); err != nil {
-		_ = r.failBuildJob(ctx, job, run, "namespace prepare failed: "+err.Error())
+		_ = r.failBuildJob(ctx, job, run, model.BuildFailureNamespaceFailed, "namespace prepare failed: "+err.Error())
 		return err
 	}
 	client, err := r.kubernetesClient(ctx, target)
 	if err != nil {
-		_ = r.failBuildJob(ctx, job, run, err.Error())
+		_ = r.failBuildJob(ctx, job, run, model.BuildFailureClusterUnavailable, err.Error())
 		return err
 	}
 
@@ -88,7 +109,7 @@ func (r *Runner) handleBuildRun(ctx context.Context, task *asynq.Task) error {
 		return (buildruntime.Resolver{DB: r.db, Secrets: r.secrets}).ResolveBuildTask(stageCtx, r.db.WithContext(stageCtx), run, job)
 	})
 	if err != nil {
-		_ = r.failBuildJob(ctx, job, run, err.Error())
+		_ = r.failBuildJob(ctx, job, run, model.BuildFailureTaskResolveFailed, err.Error())
 		return err
 	}
 	taskPayload := resolved.Task
@@ -97,27 +118,14 @@ func (r *Runner) handleBuildRun(ctx context.Context, task *asynq.Task) error {
 	if err := workerStage(ctx, "build.start_job", func(stageCtx context.Context) error {
 		return r.startBuildJob(stageCtx, client, namespace, secretName, jobName, run, taskPayload)
 	}); err != nil {
-		_ = r.failBuildJob(ctx, job, run, err.Error())
+		_ = r.failBuildJob(ctx, job, run, model.BuildFailureJobStartFailed, err.Error())
 		return err
 	}
 	defer r.cleanupBuildJobSecrets(context.WithoutCancel(ctx), client, namespace, secretName)
 	now := time.Now()
-	if err := r.db.Model(&model.BuildJob{}).Where("id = ? and status = ?", job.ID, "queued").Updates(map[string]any{
-		"status":        "running",
-		"message":       "kubernetes_job_started",
-		"executor_id":   jobName,
-		"executor_name": "kubernetes job",
-		"log_ref":       "kubernetes-job:" + namespace + "/" + jobName,
-		"attempts":      gorm.Expr("attempts + 1"),
-		"started_at":    &now,
-	}).Error; err != nil {
-		return err
-	}
-	if err := r.db.Model(&model.BuildRun{}).Where("id = ? and status = ?", run.ID, "queued").Updates(map[string]any{
-		"status":     "running",
-		"image_ref":  taskPayload.Registry.ImageRef,
-		"started_at": &now,
-	}).Error; err != nil {
+	if err := r.markBuildJobRunning(ctx, job, run, jobName, namespace, taskPayload.Registry.ImageRef, now); err != nil {
+		_ = r.deleteKubernetesBuildJob(context.WithoutCancel(ctx), client, namespace, jobName)
+		_ = r.failBuildJob(ctx, job, run, model.BuildFailureInternalError, "mark build running: "+err.Error())
 		return err
 	}
 	run.Status = "running"
@@ -133,7 +141,11 @@ func (r *Runner) handleBuildRun(ctx context.Context, task *asynq.Task) error {
 			_ = r.settleBuildUsage(ctx, job.ID, run.ID, run.ProjectID, target)
 			return nil
 		}
-		_ = r.failBuildJob(ctx, job, run, err.Error())
+		if errors.Is(err, errBuildJobTimedOut) {
+			_ = r.finishBuildJobUnsuccessfully(ctx, job, run, "timeout", model.BuildFailureTimeout, err.Error())
+		} else {
+			_ = r.failBuildJob(ctx, job, run, buildFollowFailureCode(err), err.Error())
+		}
 		_ = r.settleBuildUsage(ctx, job.ID, run.ID, run.ProjectID, target)
 		return err
 	}
@@ -144,6 +156,8 @@ func (r *Runner) handleBuildRun(ctx context.Context, task *asynq.Task) error {
 		return r.completeBuildJob(ctx, job, run, result)
 	})
 	if err != nil {
+		_ = r.failBuildJob(ctx, job, run, model.BuildFailureInternalError, "complete build: "+err.Error())
+		_ = r.settleBuildUsage(ctx, job.ID, run.ID, run.ProjectID, target)
 		return err
 	}
 	_ = r.settleBuildUsage(ctx, job.ID, run.ID, run.ProjectID, target)
@@ -152,6 +166,36 @@ func (r *Runner) handleBuildRun(ctx context.Context, task *asynq.Task) error {
 		r.enqueueAutoDeploymentsForBuildRun(ctx, completedRun)
 	}
 	return nil
+}
+
+// markBuildJobRunning records that the Kubernetes Job was created. Both rows
+// only move forward from queued so a concurrent cancel or timeout wins.
+func (r *Runner) markBuildJobRunning(ctx context.Context, job model.BuildJob, run model.BuildRun, jobName string, namespace string, imageRef string, now time.Time) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&model.BuildJob{}).Where("id = ? and status = ?", job.ID, "queued").Updates(map[string]any{
+			"status":        "running",
+			"message":       "kubernetes_job_started",
+			"executor_id":   jobName,
+			"executor_name": "kubernetes job",
+			"log_ref":       "kubernetes-job:" + namespace + "/" + jobName,
+			"attempts":      gorm.Expr("attempts + 1"),
+			"started_at":    &now,
+		}).Error; err != nil {
+			return err
+		}
+		return tx.Model(&model.BuildRun{}).Where("id = ? and status = ?", run.ID, "queued").Updates(map[string]any{
+			"status":     "running",
+			"image_ref":  imageRef,
+			"started_at": &now,
+		}).Error
+	})
+}
+
+func ignoreRecordNotFound(err error) error {
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil
+	}
+	return err
 }
 
 func (r *Runner) settleBuildUsage(ctx context.Context, jobID string, runID string, projectID string, target model.DeploymentTarget) (err error) {

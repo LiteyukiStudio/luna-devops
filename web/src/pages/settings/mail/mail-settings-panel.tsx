@@ -73,7 +73,7 @@ export function MailSettingsPanel() {
       </PageChromeTools>
       <Surface className="max-w-3xl p-6" variant="bordered">
         <form className="grid gap-4" onSubmit={submit}>
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid gap-4 @lg/workspace:grid-cols-2">
             <Field error={form.formState.errors.host?.message} hint={t('settings.mail.description')} label={t('settings.mail.host')} required>
               <Input {...form.register('host')} aria-invalid={Boolean(form.formState.errors.host)} placeholder="smtp.example.com" />
             </Field>
@@ -122,7 +122,7 @@ export function MailSettingsPanel() {
             </Field>
           </div>
 
-          <div className="grid gap-2 border-t border-border pt-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+          <div className="grid gap-2 border-t border-border pt-4 @lg/workspace:grid-cols-[minmax(0,1fr)_auto] @lg/workspace:items-end">
             <Field hint={t('settings.mail.testRecipientHint')} label={t('settings.mail.testRecipient')}>
               <Input value={testRecipient} type="email" onChange={event => setTestRecipient(event.target.value)} />
             </Field>

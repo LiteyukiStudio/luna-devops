@@ -37,7 +37,7 @@ import { OAuthApplicationsPanel, OAuthGrantsPanel } from './account-oauth-panels
 import { AccountPasswordPanel } from './account-password-panel'
 
 const profileSchema = z.object({
-  name: z.string().min(1, i18next.t('accountPage.profileNameRequired')),
+  name: z.string().min(1, { error: () => i18next.t('accountPage.profileNameRequired') }),
   avatarUrl: z.string().optional(),
   language: z.enum(['zh-CN', 'zh-TW', 'en-US', 'ja-JP', 'ko-KR']),
   brandColorPreset: z.union([z.literal(''), z.enum(brandColorPresets)]),
@@ -187,7 +187,7 @@ function ProfilePanel() {
           onClick={() => void submitProfile()}
         />
       </PageChromeTools>
-      <div className="flex flex-col gap-4 border-b border-border pb-5 sm:flex-row sm:items-center">
+      <div className="flex flex-col gap-4 border-b border-border pb-5 @lg/workspace:flex-row @lg/workspace:items-center">
         <UserAvatar className="size-16 text-xl" user={previewUser} />
         <div className="min-w-0">
           <h2 className="truncate text-base font-semibold">{user?.name}</h2>

@@ -13,6 +13,7 @@ import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { DescriptionListItem } from '@/components/common/description-list-item'
 import { ErrorState } from '@/components/common/error-state'
 import { FormField as Field } from '@/components/common/form-field'
+import { useProjectVolumeStorageClasses } from '@/components/common/project-volumes/volume-resource-queries'
 import { Section } from '@/components/common/section'
 import { StatusValueBadge } from '@/components/common/status-badge'
 import { formatSmartDateTime } from '@/components/common/time-format'
@@ -24,6 +25,7 @@ import { NativeSelect } from '@/components/ui/native-select'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
 import { canCancelVolumeTransfer, canRetryProjectVolume, canRetryVolumeTransfer } from '@/lib/project-volume-capabilities'
+import { volumeSnapshotNotice, volumeSnapshotSupport } from './volume-export-consistency'
 import { startNativeVolumeTransferDownload } from './volume-transfer-download'
 
 function formatBytes(value: number) {
@@ -268,6 +270,13 @@ function ProjectVolumeExportDialog({ onOpenChange, open, projectId, volume }: { 
   const queryClient = useQueryClient()
   const format: VolumeExportCreateInput['format'] = volume.volumeMode === 'Block' ? 'raw_zst' : 'tar_gz'
   const form = useForm<VolumeExportCreateInput>({ defaultValues: { consistency: 'auto', format } })
+  const storageClasses = useProjectVolumeStorageClasses(projectId, volume.clusterId, open)
+  const snapshotSupport = volumeSnapshotSupport(volume, {
+    items: storageClasses.data?.pages.flatMap(page => page.items) ?? [],
+    complete: storageClasses.isSuccess && !storageClasses.hasNextPage,
+    status: storageClasses.status,
+  })
+  const snapshotNotice = volumeSnapshotNotice(t, volume.volumeMode, snapshotSupport)
   const create = useMutation({
     mutationFn: (values: VolumeExportCreateInput) => api.createVolumeExport(projectId, volume.id, values),
     onSuccess: () => {
@@ -301,10 +310,11 @@ function ProjectVolumeExportDialog({ onOpenChange, open, projectId, volume }: { 
           <Field label={t('projectVolumes.consistency')}>
             <NativeSelect {...form.register('consistency')}>
               <option value="auto">{t('projectVolumes.consistencyAuto')}</option>
-              <option value="snapshot">{t('projectVolumes.consistencySnapshot')}</option>
-              <option value="live">{t('projectVolumes.consistencyLive')}</option>
+              <option disabled={snapshotSupport === 'unsupported'} value="snapshot">{t('projectVolumes.consistencySnapshot')}</option>
+              <option disabled={volume.volumeMode === 'Block'} value="live">{t('projectVolumes.consistencyLive')}</option>
             </NativeSelect>
           </Field>
+          {snapshotNotice && <p className="text-xs text-muted-foreground" role="note">{snapshotNotice}</p>}
           <DialogFooter>
             <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>{t('common.cancel')}</Button>
             <Button disabled={create.isPending} type="submit">{t('projectVolumes.export')}</Button>

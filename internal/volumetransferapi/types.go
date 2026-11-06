@@ -78,6 +78,8 @@ type ExportStream interface {
 type RuntimeStreamer interface {
 	OpenVolumeTransferImport(context.Context, model.ProjectVolume, model.VolumeTransfer, io.Reader) (StreamResult, error)
 	OpenVolumeTransferExport(context.Context, model.ProjectVolume, model.VolumeTransfer) (ExportStream, error)
+	// VolumeSnapshotSupported 实时读取数据卷 PVC 所用 StorageClass 是否有匹配的 VolumeSnapshotClass，不使用缓存。
+	VolumeSnapshotSupported(context.Context, model.ProjectVolume) (bool, error)
 }
 
 type BlockManifest struct {

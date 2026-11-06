@@ -263,7 +263,7 @@ export function RegistriesPage() {
   const visibilitySelect = (
     <ResultVisibilitySelect
       canViewAll={canViewAll}
-      containerClassName="w-full sm:w-36"
+      containerClassName="w-full @lg/data-list:w-36"
       value={effectiveVisibility}
       onChange={(nextVisibility) => {
         setVisibility(nextVisibility)
@@ -367,7 +367,7 @@ export function RegistriesPage() {
                 {visibilitySelect}
                 <Select
                   aria-label={t('registriesPage.selectRegistryTitle')}
-                  containerClassName="w-full sm:w-40"
+                  containerClassName="w-full @lg/data-list:w-40"
                   value={credentialRegistryFilterId}
                   onChange={(event) => {
                     setCredentialRegistryFilterId(event.target.value)

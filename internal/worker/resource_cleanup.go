@@ -110,8 +110,9 @@ func (r *Runner) handleResourceCleanup(ctx context.Context, task *asynq.Task) er
 		return err
 	}
 	err := r.handleResourceCleanupPayload(ctx, payload)
-	if err != nil && resourceCleanupAttemptExhausted(ctx) {
-		_ = r.markResourceCleanupFailed(payload, err)
+	// SkipRetry 表示确定性冲突（例如仍被服务关系引用），立即收敛到 delete_failed，不等待重试耗尽。
+	if err != nil && (errors.Is(err, asynq.SkipRetry) || resourceCleanupAttemptExhausted(ctx)) {
+		_ = r.markResourceCleanupFailed(ctx, payload, err)
 		_ = r.auditResourceCleanupFailure(ctx, payload)
 	}
 	return err
@@ -179,21 +180,28 @@ func (r *Runner) cleanupProject(ctx context.Context, payload tasks.ResourceClean
 	if !resourceCleanupCanRun(project.DeleteStatus) {
 		return nil
 	}
-	if err := r.cleanupProjectNamespaces(ctx, project); err != nil {
+	if err := r.cleanupProjectNamespaces(ctx, project, payload.ActorID); err != nil {
 		return err
 	}
 	return r.finishProjectDelete(project)
 }
 
-func (r *Runner) cleanupProjectNamespaces(ctx context.Context, project model.Project) error {
+func (r *Runner) cleanupProjectNamespaces(ctx context.Context, project model.Project, actorID string) error {
 	targets, err := r.projectCleanupClusterTargets(ctx, project.ID)
 	if err != nil {
 		return err
 	}
-	return r.cleanupProjectNamespacesForDeploymentTargets(ctx, project, targets)
+	return r.cleanupProjectNamespacesForDeploymentTargets(ctx, project, targets, actorID)
 }
 
-func (r *Runner) cleanupProjectNamespacesForDeploymentTargets(ctx context.Context, project model.Project, targets []model.DeploymentTarget) error {
+func (r *Runner) cleanupProjectNamespacesForDeploymentTargets(ctx context.Context, project model.Project, targets []model.DeploymentTarget, actorID string) error {
+	if len(targets) == 0 {
+		return nil
+	}
+	var routes []model.GatewayRoute
+	if err := r.db.WithContext(ctx).Where("project_id = ?", project.ID).Find(&routes).Error; err != nil {
+		return err
+	}
 	namespace := projectNamespace(project)
 	for _, target := range targets {
 		manager, err := r.kubernetesManager(ctx, target)
@@ -201,6 +209,10 @@ func (r *Runner) cleanupProjectNamespacesForDeploymentTargets(ctx context.Contex
 			return err
 		}
 		if err := deleteManagedNamespace(ctx, manager, namespace, project.ID); err != nil {
+			return err
+		}
+		// 命名空间删除已确认，项目 HTTPRoute 已不存在；网关证书命名空间里的证书需单独回收。
+		if err := r.releaseGatewayCertificates(ctx, manager, target, project, routes, actorID); err != nil {
 			return err
 		}
 	}
@@ -290,16 +302,77 @@ func (r *Runner) cleanupDeploymentTarget(ctx context.Context, payload tasks.Reso
 	if !resourceCleanupCanRun(target.DeleteStatus) {
 		return nil
 	}
-	if err := r.cleanupDeploymentTargetGatewayRoutes(ctx, target); err != nil {
-		return err
+	// 入站服务关系必须在清理访问入口和运行资源之前检查：否则依赖方已失去后端，finalize 才发现冲突为时已晚。
+	if err := workerStage(ctx, "deployment_target_delete.check_references", func(stageCtx context.Context) error {
+		return ensureDeploymentTargetHasNoIncomingBindings(r.db.WithContext(stageCtx), target)
+	}); err != nil {
+		return deploymentTargetDeleteFailure(deploymentTargetDeleteCodeCleanupFailed, err)
 	}
-	if err := r.cleanupDeploymentTargetRuntimeResources(ctx, target); err != nil {
-		return err
+	if err := workerStage(ctx, "deployment_target_delete.cleanup_runtime", func(stageCtx context.Context) error {
+		if err := r.cleanupDeploymentTargetGatewayRoutes(stageCtx, target, payload.ActorID); err != nil {
+			return err
+		}
+		return r.cleanupDeploymentTargetRuntimeResources(stageCtx, target)
+	}); err != nil {
+		return deploymentTargetDeleteFailure(deploymentTargetDeleteCodeCleanupFailed, err)
 	}
-	return r.finishDeploymentTargetDelete(target)
+	if err := workerStage(ctx, "deployment_target_delete.finalize", func(stageCtx context.Context) error {
+		return r.finishDeploymentTargetDelete(stageCtx, target)
+	}); err != nil {
+		return deploymentTargetDeleteFailure(deploymentTargetDeleteCodeFinalizeFailed, err)
+	}
+	return nil
 }
 
-func (r *Runner) cleanupDeploymentTargetGatewayRoutes(ctx context.Context, target model.DeploymentTarget) error {
+const (
+	// deploymentTargetDeleteCodeServiceBindingInUse 与 API 删除守卫共用稳定码：仍有服务关系依赖该部署配置。
+	deploymentTargetDeleteCodeServiceBindingInUse = "service_binding_in_use"
+	deploymentTargetDeleteCodeCleanupFailed       = "deployment_target.delete_cleanup_failed"
+	deploymentTargetDeleteCodeFinalizeFailed      = "deployment_target.delete_finalize_failed"
+)
+
+var errDeploymentTargetReferencedByServiceBinding = errors.New("deployment target is referenced by active service bindings")
+
+// deploymentTargetDeleteError 携带部署配置删除失败阶段对应的稳定码，供终态写入 delete_code。
+type deploymentTargetDeleteError struct {
+	code string
+	err  error
+}
+
+func (e *deploymentTargetDeleteError) Error() string { return e.err.Error() }
+func (e *deploymentTargetDeleteError) Unwrap() error { return e.err }
+
+// deploymentTargetDeleteFailure 把阶段错误映射为稳定码；入站服务关系冲突是确定性失败，标记 SkipRetry 立即收敛。
+func deploymentTargetDeleteFailure(code string, err error) error {
+	if errors.Is(err, errDeploymentTargetReferencedByServiceBinding) {
+		return fmt.Errorf("%w: %w", asynq.SkipRetry, &deploymentTargetDeleteError{code: deploymentTargetDeleteCodeServiceBindingInUse, err: err})
+	}
+	return &deploymentTargetDeleteError{code: code, err: err}
+}
+
+func deploymentTargetDeleteFailureCode(err error) string {
+	var deleteErr *deploymentTargetDeleteError
+	if errors.As(err, &deleteErr) {
+		return deleteErr.code
+	}
+	return deploymentTargetDeleteCodeCleanupFailed
+}
+
+// ensureDeploymentTargetHasNoIncomingBindings 统计指向该部署配置的启用服务关系；停用关系随部署配置一起删除。
+func ensureDeploymentTargetHasNoIncomingBindings(db *gorm.DB, target model.DeploymentTarget) error {
+	var incomingActive int64
+	if err := db.Model(&model.ServiceBinding{}).
+		Where("target_deployment_target_id = ? and enabled = ?", target.ID, true).
+		Count(&incomingActive).Error; err != nil {
+		return err
+	}
+	if incomingActive > 0 {
+		return fmt.Errorf("%w: %d", errDeploymentTargetReferencedByServiceBinding, incomingActive)
+	}
+	return nil
+}
+
+func (r *Runner) cleanupDeploymentTargetGatewayRoutes(ctx context.Context, target model.DeploymentTarget, actorID string) error {
 	var routes []model.GatewayRoute
 	if err := r.db.Where("project_id = ? and application_id = ? and deployment_target_id = ?", target.ProjectID, target.ApplicationID, target.ID).Find(&routes).Error; err != nil {
 		return err
@@ -318,7 +391,7 @@ func (r *Runner) cleanupDeploymentTargetGatewayRoutes(ctx context.Context, targe
 			}
 			route.DeleteStatus = "deleting"
 		}
-		if err := r.cleanupGatewayRuntimeResources(ctx, route); err != nil {
+		if err := r.cleanupDeletedGatewayRoute(ctx, route, actorID); err != nil {
 			if resourceCleanupAttemptExhausted(ctx) {
 				_ = r.markGatewayRouteDeleteFailed(route.ID, err)
 			}
@@ -342,7 +415,7 @@ func (r *Runner) cleanupGatewayRoute(ctx context.Context, payload tasks.Resource
 	if !resourceCleanupCanRun(route.DeleteStatus) {
 		return nil
 	}
-	if err := r.cleanupGatewayRuntimeResources(ctx, route); err != nil {
+	if err := r.cleanupDeletedGatewayRoute(ctx, route, payload.ActorID); err != nil {
 		return err
 	}
 	return r.finishGatewayRouteDelete(route)
@@ -462,27 +535,49 @@ func deleteManagedResourcesAndConfirm(ctx context.Context, manager kubeprovider.
 	return nil
 }
 
+// cleanupGatewayRuntimeResources 只删除访问入口的 HTTPRoute；停用入口保留证书，重新启用时无需重新签发。
 func (r *Runner) cleanupGatewayRuntimeResources(ctx context.Context, route model.GatewayRoute) error {
+	_, err := r.deleteGatewayHTTPRoute(ctx, route)
+	return err
+}
+
+// cleanupDeletedGatewayRoute 删除访问入口的 HTTPRoute 后回收其网关证书。
+func (r *Runner) cleanupDeletedGatewayRoute(ctx context.Context, route model.GatewayRoute, actorID string) error {
+	runtime, err := r.deleteGatewayHTTPRoute(ctx, route)
+	if err != nil || runtime.manager == nil {
+		return err
+	}
+	return r.releaseGatewayCertificates(ctx, runtime.manager, runtime.target, runtime.project, []model.GatewayRoute{route}, actorID)
+}
+
+type gatewayRouteRuntime struct {
+	project model.Project
+	target  model.DeploymentTarget
+	manager kubeprovider.NamespaceManager
+}
+
+// deleteGatewayHTTPRoute 删除访问入口的 HTTPRoute；部署配置已不存在时返回空 manager，表示无运行时可清理。
+func (r *Runner) deleteGatewayHTTPRoute(ctx context.Context, route model.GatewayRoute) (gatewayRouteRuntime, error) {
 	var project model.Project
-	if err := r.db.First(&project, "id = ?", route.ProjectID).Error; err != nil {
-		return fmt.Errorf("project not found: %w", err)
+	if err := r.db.WithContext(ctx).First(&project, "id = ?", route.ProjectID).Error; err != nil {
+		return gatewayRouteRuntime{}, fmt.Errorf("project not found: %w", err)
 	}
 	var target model.DeploymentTarget
-	if err := r.db.First(&target, "id = ? and project_id = ?", route.DeploymentTargetID, route.ProjectID).Error; err != nil {
+	if err := r.db.WithContext(ctx).First(&target, "id = ? and project_id = ?", route.DeploymentTargetID, route.ProjectID).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil
+			return gatewayRouteRuntime{}, nil
 		}
-		return fmt.Errorf("deployment target not found: %w", err)
+		return gatewayRouteRuntime{}, fmt.Errorf("deployment target not found: %w", err)
 	}
 	manager, err := r.kubernetesManager(ctx, target)
 	if err != nil {
-		return err
+		return gatewayRouteRuntime{}, err
 	}
 	namespace := deploymentNamespace(project)
 	if err := manager.DeleteHTTPRoute(ctx, namespace, gatewayRuntimeName(route)); err != nil && !isKubernetesNotFound(err) {
-		return fmt.Errorf("delete HTTPRoute %s/%s: %w", namespace, gatewayRuntimeName(route), err)
+		return gatewayRouteRuntime{}, fmt.Errorf("delete HTTPRoute %s/%s: %w", namespace, gatewayRuntimeName(route), err)
 	}
-	return nil
+	return gatewayRouteRuntime{project: project, target: target, manager: manager}, nil
 }
 
 func (r *Runner) markGatewayRouteDeleteFailed(routeID string, err error) error {
@@ -495,21 +590,60 @@ func resourceCleanupAttemptExhausted(ctx context.Context) bool {
 	return !retryOK || !maxRetryOK || retry >= maxRetry
 }
 
-func (r *Runner) markResourceCleanupFailed(payload tasks.ResourceCleanupPayload, err error) error {
+func (r *Runner) markResourceCleanupFailed(ctx context.Context, payload tasks.ResourceCleanupPayload, err error) error {
+	// Persist the terminal attempt state even when the task context was cancelled.
+	// WithoutCancel preserves trace values while the timeout bounds this detached write.
+	persistCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	db := r.db.WithContext(persistCtx)
 	switch strings.TrimSpace(payload.ResourceType) {
 	case "project":
-		return markCleanupFailed(r.db, &model.Project{}, payload.ResourceID, err)
+		return markCleanupFailed(db, &model.Project{}, payload.ResourceID, err)
 	case "deployment_target":
-		return markCleanupFailed(r.db, &model.DeploymentTarget{}, payload.ResourceID, err)
+		return markDeploymentTargetDeleteFailed(db, payload.ResourceID, deploymentTargetDeleteFailureCode(err), err)
 	case "gateway_route":
-		return markCleanupFailed(r.db, &model.GatewayRoute{}, payload.ResourceID, err)
+		return markCleanupFailed(db, &model.GatewayRoute{}, payload.ResourceID, err)
 	case "runtime_config":
-		return markCleanupFailed(r.db, &model.ProjectRuntimeConfigSet{}, payload.ResourceID, err)
+		return markCleanupFailed(db, &model.ProjectRuntimeConfigSet{}, payload.ResourceID, err)
 	case "runtime_cluster":
-		return markCleanupFailed(r.db, &model.RuntimeCluster{}, payload.ResourceID, err)
+		return markCleanupFailed(db, &model.RuntimeCluster{}, payload.ResourceID, err)
 	default:
 		return nil
 	}
+}
+
+// markDeploymentTargetDeleteFailed 写入部署配置删除终态与稳定码，并让随同进入 deleting 的访问入口一起落 delete_failed，
+// 避免过期恢复在部署配置删除失败后仍单独删除这些入口。
+func markDeploymentTargetDeleteFailed(db *gorm.DB, targetID, code string, err error) error {
+	finishedAt := time.Now()
+	message := ""
+	if err != nil {
+		message = err.Error()
+	}
+	return db.Transaction(func(tx *gorm.DB) error {
+		var target model.DeploymentTarget
+		if err := tx.Select("id", "project_id", "application_id").First(&target, "id = ?", targetID).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil
+			}
+			return err
+		}
+		if err := tx.Model(&model.DeploymentTarget{}).Where("id = ?", target.ID).Updates(map[string]any{
+			"delete_status":      "delete_failed",
+			"delete_code":        code,
+			"delete_message":     trimReleaseLogContent(message),
+			"delete_finished_at": &finishedAt,
+		}).Error; err != nil {
+			return err
+		}
+		return tx.Model(&model.GatewayRoute{}).
+			Where("project_id = ? and application_id = ? and deployment_target_id = ? and delete_status = ?", target.ProjectID, target.ApplicationID, target.ID, "deleting").
+			Updates(map[string]any{
+				"delete_status":      "delete_failed",
+				"delete_message":     trimReleaseLogContent(message),
+				"delete_finished_at": &finishedAt,
+			}).Error
+	})
 }
 
 func markCleanupFailed(db *gorm.DB, model any, id string, err error) error {
@@ -565,17 +699,11 @@ func (r *Runner) finishProjectDelete(project model.Project) error {
 	})
 }
 
-func (r *Runner) finishDeploymentTargetDelete(target model.DeploymentTarget) error {
+func (r *Runner) finishDeploymentTargetDelete(ctx context.Context, target model.DeploymentTarget) error {
 	finishedAt := time.Now()
-	return r.db.Transaction(func(tx *gorm.DB) error {
-		var incomingActive int64
-		if err := tx.Model(&model.ServiceBinding{}).
-			Where("target_deployment_target_id = ? and enabled = ?", target.ID, true).
-			Count(&incomingActive).Error; err != nil {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := ensureDeploymentTargetHasNoIncomingBindings(tx, target); err != nil {
 			return err
-		}
-		if incomingActive > 0 {
-			return fmt.Errorf("deployment target is referenced by %d active service bindings", incomingActive)
 		}
 		if err := tx.Where("source_deployment_target_id = ? or (target_deployment_target_id = ? and enabled = ?)", target.ID, target.ID, false).
 			Delete(&model.ServiceBinding{}).Error; err != nil {
@@ -602,6 +730,7 @@ func (r *Runner) finishDeploymentTargetDelete(target model.DeploymentTarget) err
 		}
 		if err := tx.Model(&model.DeploymentTarget{}).Where("id = ?", target.ID).Updates(map[string]any{
 			"delete_status":      "deleted",
+			"delete_code":        "",
 			"delete_message":     "",
 			"delete_finished_at": &finishedAt,
 		}).Error; err != nil {

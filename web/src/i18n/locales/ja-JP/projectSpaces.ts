@@ -30,7 +30,7 @@ const projectSpaces = {
   loadFailedTitle: 'プロジェクトスペースの読み込みに失敗しました',
   loadFailedDescription: 'ログイン済みで、バックエンド API にアクセスできることを確認してください。',
   emptyTitle: 'プロジェクトスペースがまだありません',
-  emptyDescription: 'まず左側でプロジェクトスペースを作成してください。',
+  emptyDescription: 'プロジェクトスペースを作成して、アプリケーション、メンバー、リソースを整理しましょう。',
   noSearchResultsTitle: '現在の条件に一致するプロジェクトスペースがありません',
   noSearchResultsDescription: '別のキーワードを試すか、検索をクリアしてすべてのプロジェクトスペースを表示してください。',
   clearSearch: '検索をクリア',
@@ -50,8 +50,9 @@ const projectSpaces = {
   detailTopbarTitle: 'プロジェクト：{{name}}',
   workspaceLoadFailedTitle: 'プロジェクトスペースの読み込みに失敗しました',
   workspaceLoadFailedDescription: 'プロジェクトスペースが存在し、アクセス権限があることを確認してください。',
-  failedReleasesMeta: '{{count}} 件のリリース失敗',
+  failedReleasesMeta: '直近 {{days}} 日間で {{count}} 件のリリース失敗',
   accessHealth: 'アクセスエントリ',
+  accessHealthUnavailable: 'ゲートウェイのリアルタイム状態を取得できません',
   recentBuilds: '最近のビルド',
   recentBuildsDescription: 'プロジェクトスペースで最近トリガーされたビルド実行。',
   noRecentBuilds: 'ビルド記録がありません',
@@ -108,6 +109,7 @@ const projectSpaces = {
   buildsMetric: 'ビルド回数',
   recentBuildsFailedMeta: '直近 {{count}} 回中 {{failed}} 回失敗',
   activeReleasesMetric: '進行中のリリース',
+  moreActionsAria: 'プロジェクトスペース {{name}} のその他の操作',
 }
 
 export default projectSpaces

@@ -12,8 +12,9 @@ const nav = {
     apps: '應用',
     overview: '概覽',
     buildVariables: '構建變數',
-    runtimeConfigs: '配置',
+    runtimeConfigs: '執行配置',
     hooks: '鉤子',
+    sharedConfig: '共用配置',
     volumes: '資料卷',
     members: '成員',
     topology: '服務關係',
@@ -30,6 +31,7 @@ const nav = {
       pages: '頁面',
       projects: '專案空間',
       applications: '{{project}} 的應用',
+      projectSections: '{{project}} 的分區',
       actions: '常用操作',
     },
     actions: {
@@ -37,6 +39,11 @@ const nav = {
       toggleTheme: '切換明暗主題',
     },
   },
+  backToParent: '返回{{name}}',
+  deploymentTargetCreate: '新增部署配置',
+  deploymentTargetEdit: '編輯部署配置',
+  deploymentTargetCreateDocumentTitle: '新增部署配置：{{projectName}} / {{name}}',
+  deploymentTargetEditDocumentTitle: '編輯部署配置：{{projectName}} / {{name}}',
 }
 
 export default nav

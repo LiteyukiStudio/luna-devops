@@ -4,11 +4,12 @@ import { z } from 'zod'
 const observabilityUrl = z.union([z.literal(''), z.url().refine((value) => {
   const parsed = new URL(value)
   return ['http:', 'https:'].includes(parsed.protocol) && !parsed.username && !parsed.password && !parsed.search && !parsed.hash
-}, { message: i18next.t('settings.ai.observabilityUrlInvalid') })])
+}, { error: () => i18next.t('settings.ai.observabilityUrlInvalid') })])
 
 function boundedInt(min: number, max: number, messageKey: string) {
-  const message = i18next.t(messageKey, { min, max })
-  return z.number({ message }).int({ message }).min(min, { message }).max(max, { message })
+  // 校验文案在校验时按当前语言求值，切换语言后新的错误提示随之生效。
+  const error = () => i18next.t(messageKey, { min, max })
+  return z.number({ error }).int({ error }).min(min, { error }).max(max, { error })
 }
 
 export const aiSettingsSchema = z.object({
@@ -40,19 +41,19 @@ export const aiSettingsSchema = z.object({
     }
   }),
   webProxyPoolConfigured: z.boolean(),
-  providerTimeoutSeconds: z.number({ message: i18next.t('settings.ai.providerTimeoutInvalid') })
-    .int({ message: i18next.t('settings.ai.providerTimeoutInvalid') })
-    .min(1, { message: i18next.t('settings.ai.providerTimeoutInvalid') })
-    .max(900, { message: i18next.t('settings.ai.providerTimeoutInvalid') }),
+  providerTimeoutSeconds: z.number({ error: () => i18next.t('settings.ai.providerTimeoutInvalid') })
+    .int({ error: () => i18next.t('settings.ai.providerTimeoutInvalid') })
+    .min(1, { error: () => i18next.t('settings.ai.providerTimeoutInvalid') })
+    .max(900, { error: () => i18next.t('settings.ai.providerTimeoutInvalid') }),
   maxRequestRetries: boundedInt(0, 10, 'settings.ai.maxRequestRetriesInvalid'),
-  runTimeoutSeconds: z.number({ message: i18next.t('settings.ai.runTimeoutInvalid') })
-    .int({ message: i18next.t('settings.ai.runTimeoutInvalid') })
-    .min(30, { message: i18next.t('settings.ai.runTimeoutInvalid') })
-    .max(7200, { message: i18next.t('settings.ai.runTimeoutInvalid') }),
-  agentConcurrentRuns: z.number({ message: i18next.t('settings.ai.agentConcurrentRunsInvalid') })
-    .int({ message: i18next.t('settings.ai.agentConcurrentRunsInvalid') })
-    .min(1, { message: i18next.t('settings.ai.agentConcurrentRunsInvalid') })
-    .max(100, { message: i18next.t('settings.ai.agentConcurrentRunsInvalid') }),
+  runTimeoutSeconds: z.number({ error: () => i18next.t('settings.ai.runTimeoutInvalid') })
+    .int({ error: () => i18next.t('settings.ai.runTimeoutInvalid') })
+    .min(30, { error: () => i18next.t('settings.ai.runTimeoutInvalid') })
+    .max(7200, { error: () => i18next.t('settings.ai.runTimeoutInvalid') }),
+  agentConcurrentRuns: z.number({ error: () => i18next.t('settings.ai.agentConcurrentRunsInvalid') })
+    .int({ error: () => i18next.t('settings.ai.agentConcurrentRunsInvalid') })
+    .min(1, { error: () => i18next.t('settings.ai.agentConcurrentRunsInvalid') })
+    .max(100, { error: () => i18next.t('settings.ai.agentConcurrentRunsInvalid') }),
   observabilityEnabled: z.boolean(),
   prometheusUrl: observabilityUrl,
   prometheusToken: z.string(),

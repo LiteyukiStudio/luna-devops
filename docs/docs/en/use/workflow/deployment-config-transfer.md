@@ -16,6 +16,8 @@ The file may still contain image references and ordinary configuration. Handle i
 4. Re-enter required Secrets.
 5. Submit only after the preflight status says the configuration can be imported.
 
+Files exported by older versions may contain the release concurrency policy field, which is no longer supported; it is ignored during import. Any other unrecognized field makes the preview reject the file.
+
 Public stages are `dev`, `test`, `staging`, and `prod`; `production` is normalized to `prod`. A stage must be unique in an application.
 
 A volume mapping creates a mount relation only. It does not copy a PVC or its data. Use [Runtime Data Persistence](./runtime-data-persistence) to move data first.

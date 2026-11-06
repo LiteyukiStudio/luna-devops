@@ -30,7 +30,7 @@ const projectSpaces = {
   loadFailedTitle: '專案空間載入失敗',
   loadFailedDescription: '請確認已經登入，且後端 API 可以訪問。',
   emptyTitle: '還沒有專案空間',
-  emptyDescription: '先在左側建立一個專案空間。',
+  emptyDescription: '建立一個專案空間來組織應用、成員和資源。',
   noSearchResultsTitle: '沒有符合當前條件的專案空間',
   noSearchResultsDescription: '可以換一個關鍵詞，或清除搜尋後檢視全部專案空間。',
   clearSearch: '清除搜尋',
@@ -50,8 +50,9 @@ const projectSpaces = {
   detailTopbarTitle: '專案：{{name}}',
   workspaceLoadFailedTitle: '專案空間載入失敗',
   workspaceLoadFailedDescription: '請確認專案空間存在，並且你有訪問許可權。',
-  failedReleasesMeta: '{{count}} 個釋出失敗',
+  failedReleasesMeta: '近 {{days}} 天 {{count}} 個釋出失敗',
   accessHealth: '訪問入口',
+  accessHealthUnavailable: '閘道即時狀態暫不可用',
   recentBuilds: '最近構建',
   recentBuildsDescription: '專案空間下最近觸發的構建執行。',
   noRecentBuilds: '暫無構建記錄',
@@ -108,6 +109,7 @@ const projectSpaces = {
   buildsMetric: '構建次數',
   recentBuildsFailedMeta: '最近 {{count}} 次中失敗 {{failed}} 次',
   activeReleasesMetric: '進行中釋出',
+  moreActionsAria: '專案空間 {{name}} 的更多操作',
 }
 
 export default projectSpaces

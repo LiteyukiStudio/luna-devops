@@ -27,6 +27,6 @@ features:
     details: Prepare runtime clusters, registries, and Git Provider OAuth for the team.
     link: /start/connect-resources
   - title: Troubleshoot failed states
-    details: Work through build, release, cluster, and route checks to find where a failure started.
+    details: Work through build, release, cluster, and access route checks to find where a failure started.
     link: /use/diagnostics
 ---

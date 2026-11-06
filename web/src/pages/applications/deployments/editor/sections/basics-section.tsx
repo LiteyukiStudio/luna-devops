@@ -7,6 +7,7 @@ import { RuntimeClusterPressureBadge } from '@/components/common/runtime-cluster
 import { Input } from '@/components/ui/input'
 import { NativeSelect } from '@/components/ui/native-select'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { platformDefaultRuntimeCluster } from '@/lib/runtime-cluster-default'
 import { useRuntimeClusterPressure } from '@/lib/runtime-cluster-pressure'
 import { EditorSection, SwitchField } from '../deployment-target-editor-fields'
 import { useFieldError } from '../deployment-target-editor-utils'
@@ -29,7 +30,7 @@ export function BasicsSection({ applicationId, editing, projectId, registries, r
   const stage = watch('stage')
   const nameError = useFieldError('name')
   const pressure = useRuntimeClusterPressure({ clusterIds: runtimeClusters.map(cluster => cluster.id), projectId })
-  const defaultCluster = runtimeClusters.find(cluster => cluster.isDefault) ?? runtimeClusters[0]
+  const defaultCluster = platformDefaultRuntimeCluster(runtimeClusters)
   const stageLabels = {
     dev: t('deploymentsPage.stageDev'),
     test: t('deploymentsPage.stageTest'),
@@ -46,7 +47,7 @@ export function BasicsSection({ applicationId, editing, projectId, registries, r
 
   return (
     <EditorSection description={t('deploymentTargetEditor.sections.basicsDescription')} section="basics" title={t('deploymentTargetEditor.sections.basics')}>
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid gap-4 @xl/workspace:grid-cols-2">
         <FormField error={nameError} hint={t('deploymentsPage.deploymentConfigNameHint')} label={t('common.name')} required>
           <Input {...register('name')} autoComplete="off" placeholder={t('deploymentsPage.deploymentConfigNamePattern')} />
         </FormField>
@@ -58,7 +59,7 @@ export function BasicsSection({ applicationId, editing, projectId, registries, r
             {publicDeploymentStages.map(item => <option key={item} value={item}>{stageLabels[item]}</option>)}
           </NativeSelect>
         </FormField>
-        <FormField className="md:col-span-2" hint={t('deploymentsPage.runtimeEnvironmentHint')} label={t('clustersPage.runtimeCluster')}>
+        <FormField className="@xl/workspace:col-span-2" hint={t('deploymentsPage.runtimeEnvironmentHint')} label={t('clustersPage.runtimeCluster')}>
           {fieldControl => (
             <Controller
               control={control}
@@ -91,7 +92,7 @@ export function BasicsSection({ applicationId, editing, projectId, registries, r
             />
           )}
         </FormField>
-        <div className="md:col-span-2">
+        <div className="@xl/workspace:col-span-2">
           <SwitchField description={t('deploymentTargetEditor.enabledDescription')} label={t('deploymentTargetEditor.enabled')} name="enabled" />
         </div>
       </div>

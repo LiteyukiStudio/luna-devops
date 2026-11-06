@@ -133,17 +133,19 @@ type RuntimeMetricsOptions struct {
 }
 
 type RuntimeMetricsSnapshot struct {
-	Available         bool      `json:"available"`
-	Reason            string    `json:"reason,omitempty"`
-	DesiredReplicas   int32     `json:"desiredReplicas"`
-	UpdatedReplicas   int32     `json:"updatedReplicas"`
-	ReadyReplicas     int32     `json:"readyReplicas"`
-	AvailableReplicas int32     `json:"availableReplicas"`
-	PodCount          int       `json:"podCount"`
-	ContainerCount    int       `json:"containerCount"`
-	CPUUsageMilli     int64     `json:"cpuUsageMilli"`
-	MemoryUsageBytes  int64     `json:"memoryUsageBytes"`
-	UpdatedAt         time.Time `json:"updatedAt"`
+	Available         bool   `json:"available"`
+	Reason            string `json:"reason,omitempty"`
+	DesiredReplicas   int32  `json:"desiredReplicas"`
+	UpdatedReplicas   int32  `json:"updatedReplicas"`
+	ReadyReplicas     int32  `json:"readyReplicas"`
+	AvailableReplicas int32  `json:"availableReplicas"`
+	PodCount          int    `json:"podCount"`
+	ContainerCount    int    `json:"containerCount"`
+	CPUUsageMilli     int64  `json:"cpuUsageMilli"`
+	MemoryUsageBytes  int64  `json:"memoryUsageBytes"`
+	// Resources is the per-replica Pod template envelope from the same workload observation.
+	Resources PodTemplateResources `json:"-"`
+	UpdatedAt time.Time            `json:"updatedAt"`
 }
 
 func (c *Client) GetManagedResource(ctx context.Context, kind string, namespace string, name string) (ResourceSnapshot, error) {

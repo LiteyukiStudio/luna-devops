@@ -241,16 +241,40 @@ func TestExportCancellationClosesBlockedStreamAndFinalizes(t *testing.T) {
 }
 
 func TestExportConsistencyAutoUsesBindingSafety(t *testing.T) {
-	unmounted, err := exportConsistency(model.ProjectVolume{VolumeMode: model.ProjectVolumeModeFilesystem}, "auto")
+	unmounted, err := exportConsistency(t.Context(), runtimeStreamerStub{snapshotErr: errors.New("must not be queried")}, model.ProjectVolume{VolumeMode: model.ProjectVolumeModeFilesystem}, "auto")
 	if err != nil || unmounted != model.VolumeTransferConsistencyUnmounted {
 		t.Fatalf("unbound auto consistency = %q, %v", unmounted, err)
 	}
-	mounted, err := exportConsistency(model.ProjectVolume{
-		VolumeMode:     model.ProjectVolumeModeFilesystem,
-		BindingSummary: model.ProjectVolumeBindingSummary{Active: 1},
-	}, "auto")
-	if err != nil || mounted != model.VolumeTransferConsistencySnapshot {
-		t.Fatalf("bound auto consistency = %q, %v", mounted, err)
+	mounted := func(mode string) model.ProjectVolume {
+		return model.ProjectVolume{VolumeMode: mode, BindingSummary: model.ProjectVolumeBindingSummary{Active: 1}}
+	}
+	for _, test := range []struct {
+		name      string
+		runtime   runtimeStreamerStub
+		volume    model.ProjectVolume
+		requested string
+		want      string
+		wantCode  string
+	}{
+		{name: "auto snapshot when supported", runtime: runtimeStreamerStub{snapshotSupported: true}, volume: mounted(model.ProjectVolumeModeFilesystem), requested: "auto", want: model.VolumeTransferConsistencySnapshot},
+		{name: "auto filesystem falls back to live", volume: mounted(model.ProjectVolumeModeFilesystem), requested: "auto", want: model.VolumeTransferConsistencyLive},
+		{name: "auto block without snapshots is rejected", volume: mounted(model.ProjectVolumeModeBlock), requested: "auto", wantCode: volume.CodeSnapshotUnsupported},
+		{name: "explicit snapshot requires support", volume: mounted(model.ProjectVolumeModeFilesystem), requested: model.VolumeTransferConsistencySnapshot, wantCode: volume.CodeSnapshotUnsupported},
+		{name: "explicit snapshot when supported", runtime: runtimeStreamerStub{snapshotSupported: true}, volume: mounted(model.ProjectVolumeModeBlock), requested: model.VolumeTransferConsistencySnapshot, want: model.VolumeTransferConsistencySnapshot},
+		{name: "capability unavailable", runtime: runtimeStreamerStub{snapshotErr: errors.New("cluster down")}, volume: mounted(model.ProjectVolumeModeFilesystem), requested: "auto", wantCode: volume.CodeClusterUnavailable},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := exportConsistency(t.Context(), test.runtime, test.volume, test.requested)
+			if test.wantCode != "" {
+				if volume.ErrorCode(err) != test.wantCode {
+					t.Fatalf("exportConsistency() = %q, %v; want code %s", got, err, test.wantCode)
+				}
+				return
+			}
+			if err != nil || got != test.want {
+				t.Fatalf("exportConsistency() = %q, %v; want %q", got, err, test.want)
+			}
+		})
 	}
 }
 
@@ -365,7 +389,14 @@ func (domain *volumeDomainStub) CompleteVolumeTransferStream(context.Context, st
 	return model.VolumeTransfer{}, domain.completeErr
 }
 
-type runtimeStreamerStub struct{}
+type runtimeStreamerStub struct {
+	snapshotSupported bool
+	snapshotErr       error
+}
+
+func (stub runtimeStreamerStub) VolumeSnapshotSupported(context.Context, model.ProjectVolume) (bool, error) {
+	return stub.snapshotSupported, stub.snapshotErr
+}
 
 func (runtimeStreamerStub) OpenVolumeTransferImport(_ context.Context, _ model.ProjectVolume, _ model.VolumeTransfer, source io.Reader) (StreamResult, error) {
 	hasher := sha256.New()
@@ -378,6 +409,10 @@ func (runtimeStreamerStub) OpenVolumeTransferExport(context.Context, model.Proje
 }
 
 type deadlineRuntimeStub struct{}
+
+func (deadlineRuntimeStub) VolumeSnapshotSupported(context.Context, model.ProjectVolume) (bool, error) {
+	return false, nil
+}
 
 func (deadlineRuntimeStub) OpenVolumeTransferImport(_ context.Context, _ model.ProjectVolume, _ model.VolumeTransfer, source io.Reader) (StreamResult, error) {
 	_, err := io.Copy(io.Discard, source)

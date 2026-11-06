@@ -28,8 +28,8 @@ import { useBillingAmountDisplay } from '@/lib/billing-display'
 import { PLATFORM_ROLES, PlatformRole } from '@/lib/roles'
 
 const schema = z.object({
-  email: z.string().email(i18next.t('common.validEmailRequired')),
-  name: z.string().min(1, i18next.t('usersPage.nameRequired')),
+  email: z.string().email({ error: () => i18next.t('common.validEmailRequired') }),
+  name: z.string().min(1, { error: () => i18next.t('usersPage.nameRequired') }),
   password: z.string(),
   role: z.enum(PLATFORM_ROLES),
   language: z.enum(['zh-CN', 'zh-TW', 'en-US', 'ja-JP', 'ko-KR']),

@@ -36,6 +36,8 @@ type NamespaceManager interface {
 	GetServiceBackendSnapshot(ctx context.Context, namespace, name string, servicePort int32) (ServiceBackendSnapshot, error)
 	ApplyCertificate(ctx context.Context, spec CertificateSpec) error
 	GetCertificateSnapshot(ctx context.Context, namespace, name string) (CertificateSnapshot, error)
+	ReleaseGatewayCertificate(ctx context.Context, release GatewayCertificateRelease) (GatewayCertificateReleaseResult, error)
+	HasManagedHTTPRoutes(ctx context.Context) (bool, error)
 	ListManagedResources(ctx context.Context, options ResourceListOptions) ([]ResourceSnapshot, error)
 	DeleteManagedResource(ctx context.Context, kind string, namespace string, name string) error
 }

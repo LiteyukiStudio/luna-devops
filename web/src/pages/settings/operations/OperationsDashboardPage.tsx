@@ -301,7 +301,7 @@ function AgentObservabilityView({ active, enabled, userId }: { active: boolean, 
       {data && (
         <div className="grid gap-3">
           <AgentTokenUsageStrip usage={data.summary} />
-          <MetricGroup className="grid-cols-2 lg:grid-cols-5">
+          <MetricGroup className="grid-cols-2 @2xl/metric-group:grid-cols-5 @4xl/metric-group:grid-cols-5">
             <MetricItem icon={<Wrench className="size-4" />} label={t('operationsDashboardPage.toolCalls')} value={formatNumber(data.summary.toolCalls)} />
             <MetricItem icon={<CircleGauge className="size-4" />} label={t('operationsDashboardPage.toolSuccessRate')} value={`${toolSuccessRate.toFixed(1)}%`} tone={successRateTone(toolSuccessRate)} />
             <MetricItem icon={<MessagesSquare className="size-4" />} label={t('operationsDashboardPage.turnCount')} value={formatNumber(data.summary.turnCount)} />

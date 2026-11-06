@@ -73,7 +73,7 @@ export function ApplicationBuildTemplateFields({
   }
 
   return (
-    <div className="grid gap-4 md:col-span-2">
+    <div className="grid gap-4 @xl/workspace:col-span-2">
       <Field hint={t('buildTemplates.modeHint')} label={t('buildTemplates.mode')} required>
         <NativeSelect value={mode} onChange={event => switchMode(event.target.value === 'template' ? 'template' : 'repository_dockerfile')}>
           <option value="repository_dockerfile">{t('buildTemplates.repositoryDockerfile')}</option>
@@ -82,7 +82,7 @@ export function ApplicationBuildTemplateFields({
       </Field>
 
       {mode === 'repository_dockerfile' && dockerfileSuggestions.length === 0 && (
-        <Alert className="md:col-span-2">
+        <Alert className="@xl/workspace:col-span-2">
           <Sparkles className="size-4" />
           <AlertTitle>{t('buildTemplates.noDockerfileTitle')}</AlertTitle>
           <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
@@ -117,7 +117,7 @@ export function ApplicationBuildTemplateFields({
             )}
           </Field>
           {selectedTemplate?.id === 'nextjs-service' && (
-            <Alert className="md:col-span-2">
+            <Alert className="@xl/workspace:col-span-2">
               <FileCode2 className="size-4" />
               <AlertTitle>{t('buildTemplates.nextjsStandaloneTitle')}</AlertTitle>
               <AlertDescription>{t('buildTemplates.nextjsStandaloneDescription')}</AlertDescription>
@@ -158,7 +158,7 @@ export function ApplicationBuildTemplateFields({
                   )}
             </Field>
           ))}
-          <p className="text-xs text-muted-foreground md:col-span-2">{t('buildTemplates.overrideNotice')}</p>
+          <p className="text-xs text-muted-foreground @xl/workspace:col-span-2">{t('buildTemplates.overrideNotice')}</p>
         </>
       )}
 

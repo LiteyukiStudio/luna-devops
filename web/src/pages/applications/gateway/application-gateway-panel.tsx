@@ -1,6 +1,6 @@
 import type { DeploymentTarget, GatewayRoute, RuntimeCluster } from '@/api'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { MoreHorizontal, Pencil, SearchCheck, Trash2 } from 'lucide-react'
+import { MoreHorizontal, Pencil, Plus, SearchCheck, Trash2 } from 'lucide-react'
 import { useEffect, useImperativeHandle, useMemo, useState } from 'react'
 import { useController, useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
@@ -62,10 +62,15 @@ const gatewayRouteTlsModeLabels: Record<GatewayRoute['tlsMode'], string> = {
 export interface ApplicationGatewayPanelHandle {
   openCreateDialog: () => void
 }
-export function ApplicationGatewayPanel({ applicationId, applicationIdentifier, deploymentTargets, projectId, projectIdentifier, ref, routes }: {
+export function ApplicationGatewayPanel({ applicationId, applicationIdentifier, deploymentTargets, listState, projectId, projectIdentifier, ref, routes }: {
   applicationId: string
   applicationIdentifier: string
   deploymentTargets: DeploymentTarget[]
+  /** 访问入口列表的加载状态；loading、error、empty 互斥渲染。 */
+  listState: {
+    loading: boolean
+    error?: { onRetry: () => void, retrying: boolean }
+  }
   projectId: string
   projectIdentifier: string
   ref?: React.Ref<ApplicationGatewayPanelHandle>
@@ -182,7 +187,7 @@ export function ApplicationGatewayPanel({ applicationId, applicationIdentifier, 
                 </Button>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button aria-label={t('common.actions')} size="icon" variant="ghost">
+                    <Button aria-label={t('gatewayRoutesPage.moreActionsAria', { name: gatewayRouteDisplayName(item) })} size="icon" variant="ghost">
                       <MoreHorizontal className="size-4" />
                     </Button>
                   </DropdownMenuTrigger>
@@ -202,8 +207,16 @@ export function ApplicationGatewayPanel({ applicationId, applicationIdentifier, 
             )
           } },
         ]}
+        emptyActions={deploymentTargets.length > 0 && (
+          <Button type="button" variant="outline" onClick={() => openRouteDialog()}>
+            <Plus className="size-4" />
+            {t('gatewayRoutesPage.createRoute')}
+          </Button>
+        )}
         emptyTitle={t('gatewayRoutesPage.emptyRoutes')}
+        error={listState.error && { ...listState.error, description: t('gatewayRoutesPage.listLoadFailedDescription'), title: t('gatewayRoutesPage.listLoadFailedTitle') }}
         items={routes}
+        loading={listState.loading}
         rowKey={item => item.id}
       />
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
@@ -285,9 +298,23 @@ export function ApplicationGatewayPanel({ applicationId, applicationIdentifier, 
           </form>
         </DialogContent>
       </Dialog>
-      <ConfirmDialog cancelText={t('common.cancel')} confirmText={t('common.delete')} description={t('gatewayRoutesPage.deleteRouteDescription')} open={Boolean(routeToDelete)} title={t('gatewayRoutesPage.deleteRouteTitle')} onConfirm={() => routeToDelete && deleteRoute.mutate(routeToDelete.id)} onOpenChange={open => !open && setRouteToDelete(null)} />
+      <ConfirmDialog
+        cancelText={t('common.cancel')}
+        confirmText={t('common.delete')}
+        description={routeToDelete ? t('gatewayRoutesPage.deleteRouteDescription', { name: gatewayRouteDisplayName(routeToDelete) }) : ''}
+        open={Boolean(routeToDelete)}
+        pending={deleteRoute.isPending}
+        title={t('gatewayRoutesPage.deleteRouteTitle')}
+        onConfirm={() => routeToDelete && deleteRoute.mutate(routeToDelete.id)}
+        onOpenChange={open => !open && setRouteToDelete(null)}
+      />
     </div>
   )
+}
+
+/** 访问入口在确认框和可访问名称中的称呼：优先完整访问地址，其次域名。 */
+function gatewayRouteDisplayName(item: GatewayRoute) {
+  return gatewayRouteAccessUrl(item) || item.host || item.id
 }
 
 function gatewayRouteEffectiveStatus(item: GatewayRoute) {
@@ -384,13 +411,11 @@ function firstGatewayDomainSuffix(target: DeploymentTarget | undefined, clusters
   return runtimeClusterDomainSuffixes(runtimeClusterForDeploymentTarget(target, clusters))[0] ?? ''
 }
 
+/** 部署配置的生效集群只取后端解析结果（effectiveClusterId），不推断默认集群。 */
 function runtimeClusterForDeploymentTarget(target: DeploymentTarget | undefined, clusters: RuntimeCluster[]) {
-  if (clusters.length === 0)
+  if (!target?.effectiveClusterId)
     return undefined
-  const defaultCluster = clusters.find(cluster => cluster.isDefault) ?? clusters[0]
-  if (!target?.clusterId)
-    return defaultCluster
-  return clusters.find(cluster => cluster.id === target.clusterId) ?? defaultCluster
+  return clusters.find(cluster => cluster.id === target.effectiveClusterId)
 }
 
 function runtimeClusterDomainSuffixes(cluster?: RuntimeCluster) {

@@ -378,8 +378,8 @@ function DataRetentionSection() {
         title={t('settings.retentionManualTitle')}
         variant="bordered"
       >
-        <div className="grid gap-4 md:grid-cols-2">
-          <div className="md:col-span-2">
+        <div className="grid gap-4 @xl/workspace:grid-cols-2">
+          <div className="@xl/workspace:col-span-2">
             <Field hint={t('settings.retentionDatasetsHint')} label={t('settings.retentionDatasets')} required>
               <SearchMultiSelect
                 ariaLabel={t('settings.retentionDatasets')}

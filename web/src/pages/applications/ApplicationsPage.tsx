@@ -14,7 +14,7 @@ import { api } from '@/api'
 import { ApplicationBasicFields } from '@/components/common/application-basic-fields'
 import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { DataList } from '@/components/common/data-list'
-import { ErrorState } from '@/components/common/error-state'
+
 import { Button } from '@/components/ui/button'
 import { buttonVariants } from '@/components/ui/button-variants'
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -26,11 +26,12 @@ import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
 import { ApplicationRuntimeStatus, ApplicationSummary } from './overview/application-summary'
 
 const schema = z.object({
-  name: z.string().min(1, i18next.t('apps.nameRequired')),
+  // 校验文案在校验时按当前语言求值，切换语言后新的错误提示随之生效。
+  name: z.string().min(1, { error: () => i18next.t('apps.nameRequired') }),
   identifier: z.string()
-    .min(APPLICATION_IDENTIFIER_MIN_LENGTH, i18next.t('apps.identifierLength', { min: APPLICATION_IDENTIFIER_MIN_LENGTH, max: APPLICATION_IDENTIFIER_MAX_LENGTH }))
-    .max(APPLICATION_IDENTIFIER_MAX_LENGTH, i18next.t('apps.identifierLength', { min: APPLICATION_IDENTIFIER_MIN_LENGTH, max: APPLICATION_IDENTIFIER_MAX_LENGTH }))
-    .regex(/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/, i18next.t('common.identifierFormat')),
+    .min(APPLICATION_IDENTIFIER_MIN_LENGTH, { error: () => i18next.t('apps.identifierLength', { min: APPLICATION_IDENTIFIER_MIN_LENGTH, max: APPLICATION_IDENTIFIER_MAX_LENGTH }) })
+    .max(APPLICATION_IDENTIFIER_MAX_LENGTH, { error: () => i18next.t('apps.identifierLength', { min: APPLICATION_IDENTIFIER_MIN_LENGTH, max: APPLICATION_IDENTIFIER_MAX_LENGTH }) })
+    .regex(/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/, { error: () => i18next.t('common.identifierFormat') }),
   icon: z.string().default('box'),
 })
 
@@ -111,11 +112,13 @@ export function ApplicationsPage({ projectId: projectIdProp, ref }: Applications
         }
         return api.createApplication(projectId, appPayload)
       })(),
-    onSuccess: () => {
+    onSuccess: (application) => {
       toast.success(t('apps.created'))
       form.reset()
       setDialogOpen(false)
       queryClient.invalidateQueries({ queryKey: ['applications', projectId] })
+      // 新应用直接进入概览，由上线引导带用户完成部署配置、构建和发布。
+      navigate(`/projects/${projectId}/apps/${application.id}`)
     },
     onError: error => toast.error(error.message),
   })
@@ -157,103 +160,108 @@ export function ApplicationsPage({ projectId: projectIdProp, ref }: Applications
 
   return (
     <div className="grid gap-section">
-      {applications.isError
-        ? <ErrorState title={t('apps.loadFailedTitle')} description={t('apps.loadFailedDescription')} />
-        : (
-            <DataList
-              columns={[
-                {
-                  key: 'name',
-                  header: t('apps.title'),
-                  width: 'primary',
-                  render: application => <ApplicationSummary application={application} projectId={projectId} />,
-                },
-                {
-                  key: 'runtimeStatus',
-                  header: t('apps.runtimeStatus'),
-                  width: 'normal',
-                  render: application => <ApplicationRuntimeStatus application={application} />,
-                },
-                {
-                  key: 'actions',
-                  header: t('common.actions'),
-                  mobileActions: 'inline',
-                  sticky: 'right',
-                  width: 'actions',
-                  render: (application) => {
-                    const deleting = application.deleteStatus === 'deleting'
-                    const openEditDialog = () => {
-                      setEditingApplication(application)
-                      resetApplicationForm(application)
-                      setDialogOpen(true)
-                    }
-                    const openDeleteDialog = () => {
-                      setApplicationToDelete(application)
-                      setDeleteConfirmation('')
-                    }
-                    return (
-                      <div className="flex items-center justify-end gap-1">
-                        <Link
-                          aria-disabled={deleting}
-                          className={buttonVariants({ className: deleting ? 'pointer-events-none opacity-50' : undefined, size: 'sm', variant: 'outline' })}
-                          tabIndex={deleting ? -1 : undefined}
-                          to={`/projects/${projectId}/apps/${application.id}?tab=deployments`}
-                        >
-                          <Rocket size={16} />
-                          {t('apps.deployAction')}
-                        </Link>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button aria-label={t('apps.moreActionsAria', { name: application.name })} size="icon" variant="ghost">
-                              <MoreHorizontal size={16} />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem disabled={deleting} onSelect={openEditDialog}>
-                              <Pencil size={16} />
-                              {t('edit')}
-                            </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem disabled={deleting} variant="destructive" onSelect={openDeleteDialog}>
-                              <Trash2 size={16} />
-                              {t('common.delete')}
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </div>
-                    )
-                  },
-                },
-              ]}
-              emptyDescription={t('apps.emptyDescription')}
-              emptyTitle={t('apps.emptyTitle')}
-              items={applications.data?.items ?? []}
-              pagination={{
-                page: applications.data?.page ?? page,
-                pageSize: applications.data?.pageSize ?? pageSize,
-                pageSizeOptions: PAGE_SIZE_OPTIONS,
-                total: applications.data?.total ?? 0,
-                totalPages: applications.data?.totalPages ?? 0,
-                pageInfoLabel: t('pagination.pageInfo', {
-                  page: applications.data?.page ?? page,
-                  totalPages: applications.data?.totalPages ?? 0,
-                  total: applications.data?.total ?? 0,
-                }),
-                onPageChange: setPage,
-                onPageSizeChange: (nextPageSize) => {
-                  setPageSize(nextPageSize)
-                  setPage(1)
-                },
-              }}
-              loading={applications.isLoading}
-              rowActionLabel={application => t('apps.openDetailAria', { name: application.name })}
-              rowKey={application => application.id}
-              onRowClick={(application) => {
-                if (application.deleteStatus !== 'deleting')
-                  navigate(`/projects/${projectId}/apps/${application.id}`)
-              }}
-            />
-          )}
+      <DataList
+        columns={[
+          {
+            key: 'name',
+            header: t('apps.title'),
+            width: 'primary',
+            render: application => <ApplicationSummary application={application} projectId={projectId} />,
+          },
+          {
+            key: 'runtimeStatus',
+            header: t('apps.runtimeStatus'),
+            width: 'normal',
+            render: application => <ApplicationRuntimeStatus application={application} />,
+          },
+          {
+            key: 'actions',
+            header: t('common.actions'),
+            mobileActions: 'inline',
+            sticky: 'right',
+            width: 'actions',
+            render: (application) => {
+              const deleting = application.deleteStatus === 'deleting'
+              const openEditDialog = () => {
+                setEditingApplication(application)
+                resetApplicationForm(application)
+                setDialogOpen(true)
+              }
+              const openDeleteDialog = () => {
+                setApplicationToDelete(application)
+                setDeleteConfirmation('')
+              }
+              return (
+                <div className="flex items-center justify-end gap-1">
+                  <Link
+                    aria-disabled={deleting}
+                    className={buttonVariants({ className: deleting ? 'pointer-events-none opacity-50' : undefined, size: 'sm', variant: 'outline' })}
+                    tabIndex={deleting ? -1 : undefined}
+                    to={`/projects/${projectId}/apps/${application.id}?tab=deployments`}
+                  >
+                    <Rocket size={16} />
+                    {t('apps.deployAction')}
+                  </Link>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button aria-label={t('apps.moreActionsAria', { name: application.name })} size="icon" variant="ghost">
+                        <MoreHorizontal size={16} />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem disabled={deleting} onSelect={openEditDialog}>
+                        <Pencil size={16} />
+                        {t('common.edit')}
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem disabled={deleting} variant="destructive" onSelect={openDeleteDialog}>
+                        <Trash2 size={16} />
+                        {t('common.delete')}
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+              )
+            },
+          },
+        ]}
+        emptyActions={(
+          <Button type="button" variant="outline" onClick={openCreateDialog}>
+            <Plus size={16} />
+            {t('apps.createTitle')}
+          </Button>
+        )}
+        emptyDescription={t('apps.emptyDescription')}
+        emptyTitle={t('apps.emptyTitle')}
+        error={applications.isError
+          ? { description: t('apps.loadFailedDescription'), onRetry: () => void applications.refetch(), retrying: applications.isFetching, title: t('apps.loadFailedTitle') }
+          : undefined}
+        items={applications.data?.items ?? []}
+        pagination={{
+          page: applications.data?.page ?? page,
+          pageSize: applications.data?.pageSize ?? pageSize,
+          pageSizeOptions: PAGE_SIZE_OPTIONS,
+          total: applications.data?.total ?? 0,
+          totalPages: applications.data?.totalPages ?? 0,
+          pageInfoLabel: t('pagination.pageInfo', {
+            page: applications.data?.page ?? page,
+            totalPages: applications.data?.totalPages ?? 0,
+            total: applications.data?.total ?? 0,
+          }),
+          onPageChange: setPage,
+          onPageSizeChange: (nextPageSize) => {
+            setPageSize(nextPageSize)
+            setPage(1)
+          },
+        }}
+        loading={applications.isLoading}
+        rowActionLabel={application => t('apps.openDetailAria', { name: application.name })}
+        rowKey={application => application.id}
+        onRowClick={(application) => {
+          if (application.deleteStatus !== 'deleting')
+            navigate(`/projects/${projectId}/apps/${application.id}`)
+        }}
+      />
 
       <ConfirmDialog
         confirmDisabled={!deleteConfirmationMatches}
@@ -338,7 +346,7 @@ export function ApplicationsPage({ projectId: projectIdProp, ref }: Applications
                 type="submit"
               >
                 {editingApplication ? <Save size={16} /> : <Plus size={16} />}
-                {editingApplication ? t('save') : t('apps.createTitle')}
+                {editingApplication ? t('common.save') : t('apps.createTitle')}
               </Button>
             </DialogFooter>
           </form>

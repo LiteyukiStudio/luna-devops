@@ -1,10 +1,9 @@
-import type { Ref } from 'react'
 import type { GitAccount, GitProvider, RepositoryBinding } from '@/api'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import i18next from 'i18next'
-import { GitBranch, LinkIcon, MoreHorizontal, Pencil, Plus, Save, Trash2 } from 'lucide-react'
-import { useImperativeHandle, useMemo, useState } from 'react'
+import { GitBranch, LinkIcon, MoreHorizontal, Pencil, Save, Unlink } from 'lucide-react'
+import { useMemo, useState } from 'react'
 import { Controller, useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { Link, useParams } from 'react-router-dom'
@@ -27,10 +26,10 @@ import { NativeSelect as Select } from '@/components/ui/native-select'
 import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
 
 const bindingSchema = z.object({
-  applicationId: z.string().min(1, i18next.t('repositories.applicationRequired')),
-  gitAccountId: z.string().min(1, i18next.t('repositories.gitAccountRequired')),
-  owner: z.string().min(1, i18next.t('repositories.ownerRequired')),
-  repo: z.string().min(1, i18next.t('repositories.repoRequired')),
+  applicationId: z.string().min(1, { error: () => i18next.t('repositories.applicationRequired') }),
+  gitAccountId: z.string().min(1, { error: () => i18next.t('repositories.gitAccountRequired') }),
+  owner: z.string().min(1, { error: () => i18next.t('repositories.ownerRequired') }),
+  repo: z.string().min(1, { error: () => i18next.t('repositories.repoRequired') }),
   cloneUrl: z.string().optional(),
   defaultBranch: z.string().optional(),
   autoConfigureWebhook: z.boolean().default(true),
@@ -40,11 +39,10 @@ type BindingFormInput = z.input<typeof bindingSchema>
 type BindingForm = z.output<typeof bindingSchema>
 const PAGE_SIZE_OPTIONS = [10, 20, 50, 100]
 
-export interface RepositoryBindingsPageHandle {
-  openCreateDialog: () => void
-}
-
-export function RepositoryBindingsPage({ applicationId, projectId: projectIdProp, ref }: { applicationId?: string, projectId?: string, ref?: Ref<RepositoryBindingsPageHandle> } = {}) {
+/**
+ * 已绑定代码仓库的查看、维护与解绑。绑定或切换仓库的唯一入口是部署配置编辑器的“来源”。
+ */
+export function RepositoryBindingsPage({ applicationId, projectId: projectIdProp }: { applicationId?: string, projectId?: string } = {}) {
   const { t } = useTranslation()
   const { projectId: routeProjectId = '' } = useParams()
   const projectId = projectIdProp ?? routeProjectId
@@ -118,26 +116,6 @@ export function RepositoryBindingsPage({ applicationId, projectId: projectIdProp
     enabled: Boolean(selectedAccountId && selectedOwner && selectedRepo),
   })
 
-  const createBinding = useMutation({
-    mutationFn: (payload: BindingForm) => api.createRepositoryBinding(projectId, {
-      applicationId: payload.applicationId,
-      gitAccountId: payload.gitAccountId,
-      owner: payload.owner,
-      repo: payload.repo,
-      cloneUrl: payload.cloneUrl ?? '',
-      defaultBranch: payload.defaultBranch ?? 'main',
-      autoConfigureWebhook: payload.autoConfigureWebhook,
-    }),
-    onSuccess: () => {
-      toast.success(t('repositories.bindingSaved'))
-      resetBindingForm()
-      setDialogOpen(false)
-      queryClient.invalidateQueries({ queryKey: ['repository-bindings', projectId] })
-      queryClient.invalidateQueries({ queryKey: ['applications', projectId] })
-    },
-    onError: error => toast.error(error.message),
-  })
-
   const updateBinding = useMutation({
     mutationFn: (payload: BindingForm) => {
       if (!editingBinding)
@@ -195,19 +173,11 @@ export function RepositoryBindingsPage({ applicationId, projectId: projectIdProp
     setBranchSearch('')
   }
 
-  const openCreateDialog = () => {
-    setEditingBinding(null)
-    resetBindingForm()
-    setDialogOpen(true)
-  }
-
   const openEditDialog = (binding: RepositoryBinding) => {
     setEditingBinding(binding)
     resetBindingForm(binding)
     setDialogOpen(true)
   }
-
-  useImperativeHandle(ref, () => ({ openCreateDialog }))
 
   return (
     <div className="grid gap-6">
@@ -219,7 +189,7 @@ export function RepositoryBindingsPage({ applicationId, projectId: projectIdProp
         columns={[
           {
             key: 'repo',
-            header: t('repositories.repositorySearch'),
+            header: t('apps.repoBinding'),
             render: binding => (
               <div className="flex min-w-0 items-center gap-3">
                 <GitBranch aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
@@ -262,7 +232,7 @@ export function RepositoryBindingsPage({ applicationId, projectId: projectIdProp
                     </DropdownMenuItem>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem variant="destructive" onSelect={() => setBindingToDelete(binding)}>
-                      <Trash2 size={16} />
+                      <Unlink size={16} />
                       {t('repositories.deleteAria')}
                     </DropdownMenuItem>
                   </DropdownMenuContent>
@@ -318,17 +288,12 @@ export function RepositoryBindingsPage({ applicationId, projectId: projectIdProp
       >
         <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
-            <DialogTitle>{editingBinding ? t('repositories.editBinding') : t('repositories.bindRepoTitle')}</DialogTitle>
+            <DialogTitle>{t('repositories.editBinding')}</DialogTitle>
             <DialogDescription>{t('repositories.bindingDialogDescription')}</DialogDescription>
           </DialogHeader>
           <form
             className="grid gap-3"
-            onSubmit={form.handleSubmit((values) => {
-              if (editingBinding)
-                updateBinding.mutate(values)
-              else
-                createBinding.mutate(values)
-            })}
+            onSubmit={form.handleSubmit(values => updateBinding.mutate(values))}
           >
             <div className="flex justify-end">
               <Link className="text-sm text-primary-text hover:underline" to="/code-repositories">{t('repositories.manageCodeRepositories')}</Link>
@@ -402,11 +367,11 @@ export function RepositoryBindingsPage({ applicationId, projectId: projectIdProp
             </div>
             <DialogFooter>
               <DialogClose asChild>
-                <Button disabled={createBinding.isPending || updateBinding.isPending} type="button" variant="outline">{t('common.cancel')}</Button>
+                <Button disabled={updateBinding.isPending} type="button" variant="outline">{t('common.cancel')}</Button>
               </DialogClose>
-              <Button disabled={createBinding.isPending || updateBinding.isPending || (accounts.data ?? []).length === 0 || !form.formState.isValid || Boolean(duplicateBinding)} type="submit">
-                {editingBinding ? <Save size={16} /> : <Plus size={16} />}
-                {editingBinding ? t('save') : t('repositories.bindRepository')}
+              <Button disabled={updateBinding.isPending || (accounts.data ?? []).length === 0 || !form.formState.isValid || Boolean(duplicateBinding)} type="submit">
+                <Save size={16} />
+                {t('save')}
               </Button>
             </DialogFooter>
           </form>

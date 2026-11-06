@@ -5,7 +5,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Plus } from 'lucide-react'
 import { useMemo, useState } from 'react'
-import { useForm, useFormContext } from 'react-hook-form'
+import { Controller, useForm, useFormContext } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { z } from 'zod'
@@ -36,7 +36,7 @@ export function RepositoryBindingField({ applicationId, onRepositoryChange, proj
 }) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
-  const { register, setValue } = useFormContext<DeploymentTargetFormValues>()
+  const { control, setValue } = useFormContext<DeploymentTargetFormValues>()
   const error = useFieldError('repositoryBindingId')
   const [dialogOpen, setDialogOpen] = useState(false)
   const [branchSearch, setBranchSearch] = useState('')
@@ -69,7 +69,6 @@ export function RepositoryBindingField({ applicationId, onRepositoryChange, proj
     queryFn: () => api.listGitBranches(accountId || '', owner || '', repo || '', { search: branchSearch, limit: 50 }),
     enabled: Boolean(dialogOpen && accountId && owner && repo),
   })
-  const registration = register('repositoryBindingId')
 
   const closeDialog = () => {
     setDialogOpen(false)
@@ -104,22 +103,32 @@ export function RepositoryBindingField({ applicationId, onRepositoryChange, proj
 
   return (
     <FormField error={error} label={t('apps.repository')} required>
-      {control => (
-        <div className="flex flex-col gap-2 sm:flex-row">
-          <NativeSelect
-            {...registration}
-            {...control}
-            containerClassName="min-w-0 flex-1"
-            onChange={(event) => {
-              void registration.onChange(event)
-              onRepositoryChange(repositoryBindings.find(binding => binding.id === event.target.value))
-            }}
-          >
-            <option value="">{t('common.select')}</option>
-            {repositoryBindings.map(binding => (
-              <option key={binding.id} value={binding.id}>{`${binding.owner}/${binding.repo}`}</option>
-            ))}
-          </NativeSelect>
+      {fieldControl => (
+        <div className="flex flex-col gap-2 @lg/workspace:flex-row">
+          {/* 受控选择：就地绑定后新选项随缓存回写才出现，非受控 select 会丢失先写入的值。 */}
+          <Controller
+            control={control}
+            name="repositoryBindingId"
+            render={({ field }) => (
+              <NativeSelect
+                {...fieldControl}
+                ref={field.ref}
+                containerClassName="min-w-0 flex-1"
+                name={field.name}
+                value={field.value}
+                onBlur={field.onBlur}
+                onChange={(event) => {
+                  field.onChange(event.target.value)
+                  onRepositoryChange(repositoryBindings.find(binding => binding.id === event.target.value))
+                }}
+              >
+                <option value="">{t('common.select')}</option>
+                {repositoryBindings.map(binding => (
+                  <option key={binding.id} value={binding.id}>{`${binding.owner}/${binding.repo}`}</option>
+                ))}
+              </NativeSelect>
+            )}
+          />
           <Button className="shrink-0" type="button" variant="outline" onClick={() => setDialogOpen(true)}>
             <Plus className="size-4" />
             {t('deploymentsPage.bindRepositoryInTarget')}

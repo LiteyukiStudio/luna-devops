@@ -2028,6 +2028,30 @@ paths:
         "204":
           description: Project deletion accepted and queued for asynchronous resource cleanup.
 
+  /api/v1/projects/{projectId}/overview:
+    get:
+      operationId: getProjectOverview
+      x-luna-cli:
+        requiredScopes: ["project:read"]
+      tags: [Projects]
+      summary: Get project space overview counts
+      description: Counts computed by the database for the project-space overview. Applications that are being deleted or were deleted are excluded; failed releases only count releases that failed within the last failedReleaseWindowDays days. accessRoutes is a live gateway observation returned with Cache-Control no-store; when any enabled route cannot be observed it reports unavailable without a ready count.
+      x-luna-agent:
+        purpose: { zh: 读取项目空间概览计数：应用数、进行中发布数、近期失败发布数和访问入口实时就绪数。, en: Read project-space overview counts for applications, active releases, recently failed releases and live access route readiness. }
+        aliases: { zh: [项目空间概览, 项目空间统计], en: [project overview, project counts] }
+        avoidWhen: { zh: 需要具体应用或发布列表时应使用 listApplications 或 listReleases。, en: Use listApplications or listReleases when the actual resources are needed. }
+        preconditions: { zh: [提供真实 projectId], en: [Provide an authoritative projectId] }
+        successEvidence: { zh: 返回项目空间的应用数、进行中发布数、统计窗口内的失败发布数和访问入口就绪汇总；accessRoutes.status 为 unavailable 时如实说明无法观察，不当作 0 个就绪。, en: Returns application, active release, windowed failed release counts and the access route readiness summary; when accessRoutes.status is unavailable, report it as unobservable instead of zero ready routes. }
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      responses:
+        "200":
+          description: Project overview counts.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProjectOverview" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
   /api/v1/projects/{projectId}/pin:
     put:
       operationId: pinProject
@@ -2283,9 +2307,16 @@ paths:
       parameters:
         - $ref: "#/components/parameters/ProjectId"
         - $ref: "#/components/parameters/ApplicationId"
+        - name: includeRuntime
+          in: query
+          description: Include the same point-in-time runtime verdict, primary configured access URL and current release that listApplications returns with includeRuntime=true. The response is marked no-store.
+          schema: { type: boolean, default: false }
       responses:
         "200":
           description: Application.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ApplicationListItem" }
     put:
       operationId: updateApplication
       x-luna-cli:
@@ -2333,7 +2364,11 @@ paths:
         - $ref: "#/components/parameters/ApplicationId"
       responses:
         "202":
-          description: Application deletion was queued.
+          description: Application deletion was queued. The Worker converges to deleteStatus=deleted or deleteStatus=delete_failed with a stable deleteCode; it never leaves the application deleting after its final attempt.
+        "409":
+          description: application.delete_in_progress, or service_binding_in_use when another application still has an enabled service binding to this application. Bindings between deployment targets of the same application do not block deletion.
+        "503":
+          description: application.delete_enqueue_failed; the application is marked delete_failed and can be deleted again.
 
   /api/v1/projects/{projectId}/applications/{applicationId}/deletion-preview:
     get:
@@ -3116,7 +3151,7 @@ paths:
         aliases: { zh: [删除部署目标, 移除部署环境], en: [delete deployment target, remove deployment] }
         avoidWhen: { zh: 只需停用或修改目标时不要使用。, en: Do not use when the target only needs an update. }
         preconditions: { zh: [用户确认运行实例和网关影响], en: [User confirmed runtime and gateway impact] }
-        successEvidence: { zh: 返回 204 仅表示删除已受理；继续通过部署目标列表权威回读，直到目标不再存在。, en: A 204 only confirms the deletion was accepted; use the deployment-target list as authoritative readback until the target no longer exists. }
+        successEvidence: { zh: 返回 204 仅表示删除已受理；继续通过部署目标列表权威回读，直到目标不再存在；若 deleteStatus 变为 delete_failed，按 deleteCode 说明原因。, en: A 204 only confirms the deletion was accepted; use the deployment-target list as authoritative readback until the target no longer exists, and explain deleteCode if deleteStatus becomes delete_failed. }
         effect: write
         verification:
           - { operationId: listDeploymentTargets, family: deployment_target, expect: absent }
@@ -3126,7 +3161,11 @@ paths:
         - $ref: "#/components/parameters/TargetId"
       responses:
         "204":
-          description: Deployment target deletion accepted and queued for asynchronous runtime cleanup.
+          description: Deployment target deletion accepted and queued for asynchronous runtime cleanup. The Worker checks incoming service bindings before cleaning any runtime resource and converges to removal or deleteStatus=delete_failed with a stable deleteCode; it never leaves the target deleting after its final attempt.
+        "409":
+          description: deployment_target.delete_in_progress, or service_binding_in_use when an enabled service binding still targets this deployment target. The check and the transition to deleting happen in one locked transaction.
+        "503":
+          description: deployment_target.delete_enqueue_failed; the deployment target is marked delete_failed and can be deleted again.
 
   /api/v1/projects/{projectId}/applications/{applicationId}/deployment-targets/{targetId}/runtime-secrets:
     get:
@@ -6859,6 +6898,8 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+        "409":
+          description: service_binding_env_conflict, or service_binding_target_deleting when the target application or deployment target is deleting or its last deletion failed.
   /api/v1/projects/{projectId}/service-bindings/{bindingId}:
     put:
       operationId: updateServiceBinding
@@ -7188,7 +7229,7 @@ paths:
       tags:
         - Projects
       summary: Install an app template into a project
-      description: Creates an application and deployment target from the selected template. A multi-component template (non-empty components) creates one application, deployment target, and optional first Release per component, returns them in components, and anchors installation to the first component. Shared Secret values are generated once and injected into every component that references them through Secret references. When installNow is true, read every returned Release back to verify its terminal state.
+      description: Creates an application and deployment target from the selected template. A multi-component template (non-empty components) creates one application, deployment target, and optional first Release per component, returns them in components, and anchors installation to the first component. Shared Secret values are generated once and injected into every component that references them through Secret references. Every component reference to another component ({{components.<key>.host}}) is also persisted in the same transaction as a host/port service binding that injects <KEY>_HOST and <KEY>_PORT, appears in the project topology, and blocks deleting the referenced component while the dependant exists; all component Releases are queued together and dependants may restart until their dependencies are ready. The installation record has no stored status; when installNow is true, read every returned Release back to verify its terminal state. Stable error codes are app_template.value_required (400), app_template.install_conflict (409), app_template.catalog_unavailable, app_template.secret_generation_failed, app_template.dependency_invalid, and app_template.install_failed (500); raw storage errors are never returned.
       x-luna-agent:
         purpose: { zh: 从应用市场模板创建应用和部署配置，并可立即创建首个 Release。, en: Create an application and deployment target from an App Marketplace template, optionally creating the first Release. }
         aliases: { zh: [安装应用模板, 从应用市场安装, 模板部署应用], en: [install app template, install from app marketplace, deploy app template] }
@@ -7241,6 +7282,11 @@ paths:
           $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
+        "500":
+          description: The template catalog, secret generation, component dependency contract, or installation transaction failed; see the stable error code.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
   /api/v1/projects/{projectId}/member-candidates:
     get:
       operationId: searchProjectMemberCandidates
@@ -7540,7 +7586,7 @@ paths:
         purpose: { zh: 删除已结束的构建记录。, en: Delete a terminal build run record. }
         aliases: { zh: [删除构建记录, 移除构建任务], en: [delete build run, remove build record] }
         avoidWhen: { zh: 构建仍在排队或运行时应先取消并等待终态。, en: Do not use while the build is queued or running; cancel and wait for a terminal state first. }
-        preconditions: { zh: [构建已经进入成功、失败、取消、丢失或超时终态], en: [The build run is already succeeded, failed, canceled, lost, or timed out] }
+        preconditions: { zh: [构建已经进入成功、失败、取消或超时终态], en: [The build run is already succeeded, failed, canceled, or timed out] }
         successEvidence: { zh: 返回 204 后用 getBuildRun 确认构建记录不再存在。, en: After a 204 response, getBuildRun must confirm the build record no longer exists. }
         effect: write
         verification:
@@ -8007,6 +8053,12 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+        "409":
+          description: "`runtime.container_not_started`: the selected replica's container has never started (for example image pull failure or still creating), so no logs exist yet; choose another replica or read the release log."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /api/v1/projects/{projectId}/releases/{releaseId}/exec:
     post:
       operationId: execReleaseRuntimeCommand
@@ -8167,6 +8219,59 @@ paths:
           $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
+  /api/v1/projects/{projectId}/releases/{releaseId}/cancel:
+    post:
+      operationId: cancelRelease
+      x-luna-cli:
+        requiredScopes: ["deployment:release"]
+      tags:
+        - Releases
+      summary: Cancel Release
+      description: Stops a pending or running release workflow and records status `canceled` with failureCode `canceled_by_user`. Resources already applied to the cluster are not rolled back. Repeating the request for a canceled release returns the same state.
+      x-luna-agent:
+        purpose: { zh: 取消排队中或进行中的发布工作流。, en: Cancel a pending or running release workflow. }
+        aliases: { zh: [取消发布, 停止发布, 终止部署], en: [cancel release, stop release, abort deployment] }
+        avoidWhen: { zh: 发布已经成功或失败时不要使用；需要恢复上一版本时使用 rollbackRelease。, en: Do not use after the release succeeded or failed; use rollbackRelease to restore the previous version. }
+        preconditions: { zh: [提供真实 releaseId，发布仍处于 pending 或 running, 告知用户取消不会回滚已下发到集群的资源], en: [Provide an authoritative releaseId while the release is pending or running, Tell the user that cancel does not roll back resources already applied to the cluster] }
+        successEvidence: { zh: 返回后必须用 getRelease 确认状态为 canceled。, en: After the response, getRelease must confirm status canceled. }
+        effect: write
+        verification:
+          - { operationId: getRelease, family: release, expect: canceled }
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: releaseId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The release is canceled.
+          headers:
+            Cache-Control:
+              schema: { type: string, example: no-store }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Release"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: The release already reached succeeded or failed. Stable code is `release.not_cancelable`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                code: release.not_cancelable
+                message: only pending or running releases can be canceled
+                requestId: req_example
   /api/v1/projects/{projectId}/gateway-routes:
     get:
       operationId: listGatewayRoutes
@@ -8490,8 +8595,10 @@ paths:
         - name: accountScope
           in: query
           required: false
+          description: "`current` reads the caller's own wallet (or the selected user for administrators)."
           schema:
             type: string
+            enum: [current]
         - name: userId
           in: query
           required: false
@@ -8509,13 +8616,22 @@ paths:
         - name: periodStart
           in: query
           required: false
+          description: Inclusive RFC3339 start. Usage is counted at its usage period start (occurrence time); entries without a usage record use their posting time.
           schema:
             type: string
         - name: periodEnd
           in: query
           required: false
+          description: Exclusive RFC3339 end, provided together with periodStart.
           schema:
             type: string
+        - name: timeZone
+          in: query
+          required: false
+          description: IANA time zone that defines todaySpend and monthSpend boundaries (local midnight). Defaults to UTC.
+          schema:
+            type: string
+            example: Asia/Shanghai
       responses:
         "200":
           description: Successful business response.
@@ -8555,11 +8671,13 @@ paths:
         - name: periodStart
           in: query
           required: false
+          description: Inclusive RFC3339 start. Usage is counted at its usage period start (occurrence time); entries without a usage record use their posting time.
           schema:
             type: string
         - name: periodEnd
           in: query
           required: false
+          description: Exclusive RFC3339 end, provided together with periodStart.
           schema:
             type: string
         - name: page
@@ -8584,7 +8702,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/PaginatedBusinessObjects"
+                $ref: "#/components/schemas/PaginatedBillingDeploymentSpend"
         "400":
           $ref: "#/components/responses/BadRequest"
         "403":
@@ -8622,11 +8740,13 @@ paths:
         - name: periodStart
           in: query
           required: false
+          description: Inclusive RFC3339 start. Usage is counted at its usage period start (occurrence time); entries without a usage record use their posting time.
           schema:
             type: string
         - name: periodEnd
           in: query
           required: false
+          description: Exclusive RFC3339 end, provided together with periodStart.
           schema:
             type: string
         - name: page
@@ -8643,7 +8763,7 @@ paths:
             format: int32
         - name: sortBy
           in: query
-          schema: { type: string, enum: [createdAt, amountCredits, reason], default: createdAt }
+          schema: { type: string, enum: [createdAt, occurredAt, amountCredits, reason], default: createdAt }
         - $ref: "#/components/parameters/SortOrder"
       responses:
         "200":
@@ -8689,11 +8809,13 @@ paths:
         - name: periodStart
           in: query
           required: false
+          description: Inclusive RFC3339 start. Usage is counted at its usage period start (occurrence time); entries without a usage record use their posting time.
           schema:
             type: string
         - name: periodEnd
           in: query
           required: false
+          description: Exclusive RFC3339 end, provided together with periodStart.
           schema:
             type: string
         - name: page
@@ -8710,7 +8832,7 @@ paths:
             format: int32
         - name: sortBy
           in: query
-          schema: { type: string, enum: [createdAt, amountCredits, meter], default: createdAt }
+          schema: { type: string, enum: [createdAt, periodStart, amountCredits, meter], default: createdAt }
         - $ref: "#/components/parameters/SortOrder"
       responses:
         "200":
@@ -10958,6 +11080,7 @@ components:
         pinned: { type: boolean }
         applicationCount: { type: integer, format: int64 }
         latestActivity:
+          description: Latest event of this project space, queried per project and independent of the global recent activity window; null when the project space has no events.
           oneOf:
             - $ref: "#/components/schemas/DashboardActivity"
             - type: "null"
@@ -11046,6 +11169,53 @@ components:
         observationCode: { type: string }
         observedAt: { type: string, format: date-time }
       required: [status, available, total, observedAt]
+    ProjectOverview:
+      type: object
+      additionalProperties: false
+      properties:
+        applications:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Applications in the project space, excluding applications that are being deleted or were deleted.
+        activeReleases:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Releases that are pending or running.
+        failedReleases:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Releases that failed within the last failedReleaseWindowDays days.
+        failedReleaseWindowDays: { type: integer, minimum: 1 }
+        accessRoutes: { $ref: "#/components/schemas/ProjectOverviewAccessRoutes" }
+      required: [applications, activeReleases, failedReleases, failedReleaseWindowDays, accessRoutes]
+    ProjectOverviewAccessRoutes:
+      type: object
+      additionalProperties: false
+      description: Live readiness of the project space's enabled access routes, observed from the gateway on every request. Disabled routes and routes being deleted are excluded.
+      properties:
+        status:
+          type: string
+          enum: [ready, degraded, not-configured, unavailable]
+          description: ready when every enabled route is ready; degraded when some are not ready; not-configured when there are no enabled routes; unavailable when at least one route could not be observed.
+        ready:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Enabled routes observed as ready. Omitted when status is unavailable; clients must not treat a missing value as zero.
+        total:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Enabled routes in the project space, read from the desired configuration.
+        observationCode:
+          type: string
+          enum: [project_overview.access_routes_not_configured, project_overview.access_routes_not_ready, project_overview.access_routes_unavailable]
+          description: Stable reason when status is not ready.
+        observedAt: { type: string, format: date-time }
+      required: [status, total, observedAt]
     DashboardOverview:
       type: object
       properties:
@@ -11054,7 +11224,11 @@ components:
           type: object
           properties:
             projects: { type: integer, format: int64, minimum: 0 }
-            applications: { type: integer, format: int64, minimum: 0 }
+            applications:
+              type: integer
+              format: int64
+              minimum: 0
+              description: Applications in visible project spaces, excluding applications that are being deleted or were deleted.
             activeBuilds: { type: integer, format: int64, minimum: 0 }
             activeReleases: { type: integer, format: int64, minimum: 0 }
             attentionItems: { type: integer, minimum: 0 }
@@ -11073,13 +11247,17 @@ components:
           type: array
           maxItems: 20
           items: { $ref: "#/components/schemas/DashboardActivity" }
+        applicationActivities:
+          type: array
+          description: Latest event of each application in the returned project shortcuts, newest first. Unlike activities it is not limited to the most recent events, so quiet applications keep their own latest activity. Applications that are being deleted or were deleted are excluded.
+          items: { $ref: "#/components/schemas/DashboardActivity" }
         readiness:
           type: object
           properties:
             clusters: { $ref: "#/components/schemas/DashboardReadinessItem" }
             registries: { $ref: "#/components/schemas/DashboardReadinessItem" }
           required: [clusters, registries]
-      required: [generatedAt, summary, projects, attention, activities, readiness]
+      required: [generatedAt, summary, projects, attention, activities, applicationActivities, readiness]
     AuthSessionResponse:
       type: object
       properties:
@@ -11211,17 +11389,24 @@ components:
       required: [name, identifier]
     ApplicationDeploymentSummary:
       type: object
-      description: Point-in-time aggregate of Kubernetes replicas for an application. It is returned only when includeRuntime=true and is never persisted as current state.
+      description: >-
+        Point-in-time application runtime verdict returned only when includeRuntime=true and never persisted as current state.
+        Only enabled deployment targets with at least one succeeded release participate: status is the most severe participating
+        target status (unavailable, degraded, not-found, not-configured, progressing, unknown, ready, scaled-to-zero), and replica
+        totals only count participating targets. Without participating targets status is not-deployed. Disabled targets never affect health.
       properties:
-        targetCount: { type: integer, minimum: 0 }
+        targetCount:
+          type: integer
+          minimum: 0
+          description: Number of existing deployment targets, including disabled and never deployed ones.
         desiredReplicas: { type: integer, minimum: 0 }
         readyReplicas: { type: integer, minimum: 0 }
         status:
           type: string
-          enum: [ready, scaled-to-zero, degraded, progressing, unavailable, not-deployed]
+          enum: [ready, scaled-to-zero, degraded, progressing, not-found, not-configured, unavailable, unknown, not-deployed]
         targets:
           type: array
-          description: Point-in-time Kubernetes runtime summaries for each deployment target, ordered by runtime severity and then stage priority.
+          description: Per deployment target verdicts, ordered by runtime severity and then stage priority.
           items: { $ref: "#/components/schemas/ApplicationDeploymentTargetSummary" }
       required: [targetCount, desiredReplicas, readyReplicas, status, targets]
     ApplicationDeploymentTargetSummary:
@@ -11230,15 +11415,27 @@ components:
       properties:
         id: { type: string }
         stage: { type: string }
+        enabled: { type: boolean }
+        deployed:
+          type: boolean
+          description: Whether the target has at least one succeeded release.
         desiredReplicas: { type: integer, minimum: 0 }
         readyReplicas: { type: integer, minimum: 0 }
         status:
           type: string
-          enum: [ready, scaled-to-zero, degraded, progressing, not-found, not-configured, unavailable, disabled, unknown]
-      required: [id, stage, desiredReplicas, readyReplicas, status]
+          description: disabled for disabled targets, not-deployed for enabled targets without a succeeded release, otherwise the live Kubernetes observation.
+          enum: [ready, scaled-to-zero, degraded, progressing, not-found, not-configured, unavailable, disabled, unknown, not-deployed]
+        observationCode:
+          type: string
+          description: Stable code explaining why the live observation is not ready, when available.
+        currentRelease: { $ref: "#/components/schemas/ApplicationCurrentRelease" }
+      required: [id, stage, enabled, deployed, desiredReplicas, readyReplicas, status]
     DeploymentTargetMetrics:
       type: object
       additionalProperties: false
+      description: >-
+        Usage, request floor and limit cover every regular container (application and sidecars) of every desired
+        replica, read from the same Kubernetes observation; replica* fields are the per-replica Pod template envelope.
       properties:
         available: { type: boolean }
         status: { type: string, enum: [ready, unavailable] }
@@ -11249,14 +11446,20 @@ components:
         availableReplicas: { type: integer, minimum: 0 }
         podCount: { type: integer, minimum: 0 }
         containerCount: { type: integer, minimum: 0 }
-        cpuUsageMilli: { type: integer, minimum: 0 }
-        cpuCapacityMilli: { type: integer, minimum: 0 }
-        cpuUsagePercent: { type: number, minimum: 0 }
+        cpuUsageMilli: { type: integer, minimum: 0, description: Usage summed over all replicas. }
+        cpuRequestMilli: { type: integer, minimum: 0, description: Request floor summed over desired replicas. }
+        cpuLimitMilli: { type: integer, minimum: 0, description: Limit summed over desired replicas; 0 when any container has no CPU limit. }
+        cpuUsagePercent: { type: number, minimum: 0, description: cpuUsageMilli / cpuLimitMilli; omitted when cpuLimitMilli is 0. }
         memoryUsageBytes: { type: integer, minimum: 0 }
-        memoryCapacityBytes: { type: integer, minimum: 0 }
-        memoryUsagePercent: { type: number, minimum: 0 }
+        memoryRequestBytes: { type: integer, minimum: 0 }
+        memoryLimitBytes: { type: integer, minimum: 0, description: 0 when any container has no memory limit. }
+        memoryUsagePercent: { type: number, minimum: 0, description: memoryUsageBytes / memoryLimitBytes; omitted when memoryLimitBytes is 0. }
+        replicaCpuRequestMilli: { type: integer, minimum: 0 }
+        replicaCpuLimitMilli: { type: integer, minimum: 0 }
+        replicaMemoryRequestBytes: { type: integer, minimum: 0 }
+        replicaMemoryLimitBytes: { type: integer, minimum: 0 }
         updatedAt: { type: string, format: date-time }
-      required: [available, status, configuredReplicas, desiredReplicas, readyReplicas, availableReplicas, podCount, containerCount, cpuUsageMilli, cpuCapacityMilli, cpuUsagePercent, memoryUsageBytes, memoryCapacityBytes, memoryUsagePercent, updatedAt]
+      required: [available, status, configuredReplicas, desiredReplicas, readyReplicas, availableReplicas, podCount, containerCount, cpuUsageMilli, cpuRequestMilli, cpuLimitMilli, memoryUsageBytes, memoryRequestBytes, memoryLimitBytes, replicaCpuRequestMilli, replicaCpuLimitMilli, replicaMemoryRequestBytes, replicaMemoryLimitBytes, updatedAt]
     ApplicationListItem:
       type: object
       properties:
@@ -11266,7 +11469,11 @@ components:
         name: { type: string }
         icon: { type: string }
         deleteStatus: { type: string }
-        deleteMessage: { type: string }
+        deleteMessage: { type: string, description: Diagnostic detail of the latest deletion failure. Clients display deleteCode instead. }
+        deleteCode:
+          type: string
+          enum: ["", service_binding_in_use, application.delete_cleanup_failed, application.delete_finalize_failed, application.delete_enqueue_failed]
+          description: Stable reason of the latest deletion failure; empty unless deleteStatus is delete_failed.
         deleteStartedAt: { type: string, format: date-time, nullable: true }
         deleteFinishedAt: { type: string, format: date-time, nullable: true }
         createdAt: { type: string, format: date-time }
@@ -11277,11 +11484,11 @@ components:
           format: uri
           description: Configured access URL of the application's primary enabled gateway route (default route first, then production stage). Returned only when includeRuntime=true and a route exists; it is derived from configuration and does not prove reachability.
         currentRelease: { $ref: "#/components/schemas/ApplicationCurrentRelease" }
-      required: [id, projectId, identifier, name, icon, deleteStatus, deleteMessage, createdAt, updatedAt]
+      required: [id, projectId, identifier, name, icon, deleteStatus, deleteMessage, deleteCode, createdAt, updatedAt]
     ApplicationCurrentRelease:
       type: object
       additionalProperties: false
-      description: Most recent succeeded release on an existing deployment target. It is a workflow result returned only when includeRuntime=true, not the live Kubernetes image.
+      description: Most recent succeeded release by finished time on an existing deployment target. It is a workflow result returned only when includeRuntime=true, not the live Kubernetes image.
       properties:
         id: { type: string }
         deploymentTargetId: { type: string }
@@ -11650,7 +11857,10 @@ components:
       required: [format, consistency]
       properties:
         format: { $ref: "#/components/schemas/VolumeTransferFormat" }
-        consistency: { type: string, enum: [auto, snapshot, live] }
+        consistency:
+          type: string
+          enum: [auto, snapshot, live]
+          description: auto exports an unmounted volume directly; for a mounted volume it uses a VolumeSnapshot when the PVC StorageClass has a matching VolumeSnapshotClass, otherwise falls back to live for Filesystem volumes and rejects Block volumes with volume.snapshot_unsupported. snapshot is rejected with volume.snapshot_unsupported when unsupported; capability lookup failures return volume.cluster_unavailable. A snapshot that is not ready within 10 minutes fails the transfer with volume_transfer.snapshot_timeout.
     VolumeTransferDownloadAuthorization:
       type: object
       additionalProperties: false
@@ -11828,6 +12038,10 @@ components:
           allOf:
             - $ref: "#/components/schemas/ProjectRole"
           description: Role of the current authenticated user in this project space. Omitted for platform administrators.
+        currentUserActions:
+          type: array
+          items: { type: string }
+          description: Project actions (internal/authz policy keys such as project:write or volume:export) the current user's platform and project roles allow right now; returned by getProject only. It does not reflect access-token scope restrictions, and the server still authorizes every request.
         createdAt: { type: string, format: date-time }
       required: [id, name, identifier, kubernetesNamespace, maxConcurrentBuilds, webConsoleEnabled, createdAt]
     DeploymentEmptyDirInput:
@@ -12113,10 +12327,6 @@ components:
           type: string
         tagPattern:
           type: string
-        concurrencyPolicy:
-          type: string
-          enum: [queue, parallel]
-          default: queue
         runtimeConfigRefs:
           type: array
           items:
@@ -12195,13 +12405,25 @@ components:
         status:
           type: string
           enum: [ready, scaled-to-zero, degraded, progressing, not-found, not-configured, unavailable, unknown, disabled]
-          description: Point-in-time Kubernetes observation. scaled-to-zero is an observed zero-desired-replica runtime, not a serving-ready state.
+          description: Point-in-time Kubernetes observation. scaled-to-zero is an observed zero-desired-replica runtime, not a serving-ready state. Disabled targets report disabled while replica counts and observationCode still reflect the workload, because disabling does not stop a running workload.
+        clusterId:
+          type: string
+          description: Explicitly selected runtime cluster; empty selects the platform default.
+        effectiveClusterId:
+          type: string
+          description: Runtime cluster the target resolves to for this request. An explicit clusterId must reference an active cluster; an empty clusterId resolves to the active global default cluster, or the earliest created active global cluster when none is marked default. Project or user scoped clusters are never implicit. Empty when no active cluster applies; clients must use this field instead of inferring a default.
         observationCode: { type: string }
         lastCheckedAt: { type: string, format: date-time }
         desiredReplicas: { type: integer, minimum: 0 }
         updatedReplicas: { type: integer, minimum: 0 }
         readyReplicas: { type: integer, minimum: 0 }
         availableReplicas: { type: integer, minimum: 0 }
+        deleteStatus: { type: string, description: "active, deleting, delete_failed or deleted." }
+        deleteMessage: { type: string, description: Diagnostic detail of the latest deletion failure. Clients display deleteCode instead. }
+        deleteCode:
+          type: string
+          enum: ["", service_binding_in_use, deployment_target.delete_cleanup_failed, deployment_target.delete_finalize_failed, deployment_target.delete_enqueue_failed]
+          description: Stable reason of the latest deletion failure; empty unless deleteStatus is delete_failed.
         webConsoleEnabled:
           type: [boolean, "null"]
           description: Nullable target restriction. Effective policy is `project.webConsoleEnabled && webConsoleEnabled != false`; a true value is treated as inheritance.
@@ -13741,7 +13963,11 @@ components:
         projectId: { type: string, minLength: 1 }
         applicationId: { type: string }
         deploymentTargetId: { type: string }
-        status: { type: string, enum: [queued, running, succeeded, failed, canceled, lost, timeout] }
+        status: { type: string, enum: [queued, running, succeeded, failed, canceled, timeout] }
+        failureCode:
+          type: string
+          description: Stable reason for a failed, timed-out or canceled build; empty while active or succeeded.
+          enum: ["", canceled_by_user, timeout, queue_timeout, dispatch_failed, project_unavailable, deployment_target_unavailable, cluster_unavailable, capacity_check_failed, namespace_failed, task_resolve_failed, job_start_failed, job_failed, observation_failed, internal_error]
         imageRef: { type: string }
         imageDigest: { type: string }
         createdAt: { type: string, format: date-time }
@@ -13784,7 +14010,11 @@ components:
         imageRef: { type: string }
         forceImagePull: { type: boolean }
         type: { type: string, enum: [deploy, rollback] }
-        status: { type: string, enum: [pending, running, succeeded, failed] }
+        status: { type: string, enum: [pending, running, succeeded, failed, canceled] }
+        failureCode:
+          type: string
+          description: Stable reason for a failed or canceled release; empty while active or succeeded. `message` keeps the raw diagnostic text.
+          enum: ["", canceled_by_user, timeout, dispatch_failed, project_unavailable, application_unavailable, deployment_target_unavailable, namespace_failed, service_binding_failed, preflight_failed, runtime_config_failed, pre_hook_failed, dependencies_failed, apply_failed, rollout_failed, rollout_timeout, volume_mount_failed, post_hook_failed, superseded, internal_error]
         revision: { type: integer, format: int32, minimum: 1 }
         rollbackFromId: { type: string }
         message: { type: string }
@@ -13926,15 +14156,69 @@ components:
         periodEnd: { type: string, format: date-time }
     BillingSummary:
       type: object
+      additionalProperties: false
+      description: Spend is counted at usage occurrence time (usage period start); manual adjustments at posting time.
       properties:
-        userId: { type: string }
-        balanceCredits: { type: number }
-        periodSpendCredits: { type: number }
-        todaySpendCredits: { type: number }
-        unsettledCredits: { type: number }
-        buildSpendCredits: { type: number }
-        runtimeSpendCredits: { type: number }
-        storageSpendCredits: { type: number }
-        gatewaySpendCredits: { type: number }
-        periodStart: { type: string, format: date-time }
-        periodEnd: { type: string, format: date-time }
+        balanceScope:
+          type: string
+          enum: [account, platform_total]
+          description: "`platform_total` sums every wallet for an administrator without a selected user; it has no balanceStatus."
+        balanceCredits: { type: string, description: Decimal credits. }
+        todaySpend: { type: string, description: Debits occurring since local midnight in the requested timeZone. }
+        monthSpend: { type: string, description: Debits occurring since the first day of the month in the requested timeZone. }
+        periodSpend: { type: string, description: "Debits occurring in [periodStart, periodEnd); equals monthSpend without a period." }
+        pendingSpend: { type: string }
+        availableCredits: { type: string }
+        lowBalanceLimit: { type: string }
+        balanceStatus: { type: string, enum: [ok, low, insufficient], description: Present only for balanceScope account. }
+        monthlyCategories:
+          type: array
+          items: { $ref: "#/components/schemas/BillingSpendCategory" }
+        periodCategories:
+          type: array
+          items: { $ref: "#/components/schemas/BillingSpendCategory" }
+      required: [balanceScope, balanceCredits, todaySpend, monthSpend, periodSpend, pendingSpend, availableCredits, lowBalanceLimit, monthlyCategories, periodCategories]
+    BillingSpendCategory:
+      type: object
+      additionalProperties: false
+      properties:
+        category: { type: string, enum: [build, runtime, storage, gateway, ai, adjustment, other] }
+        amountCredits: { type: string }
+      required: [category, amountCredits]
+    BillingDeploymentSpend:
+      type: object
+      additionalProperties: false
+      properties:
+        projectId: { type: string }
+        projectName: { type: string }
+        projectIdentifier: { type: string }
+        applicationId: { type: string }
+        applicationName: { type: string }
+        applicationIdentifier: { type: string }
+        spendGroup:
+          type: string
+          enum: [deployment_target, project_storage, unassigned]
+          description: "`project_storage` groups project volume storage and transfers, which never belong to a deployment target."
+        deploymentTargetId: { type: string }
+        deploymentTargetName: { type: string }
+        deploymentTargetStage: { type: string }
+        amountCredits: { type: string }
+        buildCredits: { type: string }
+        runtimeCredits: { type: string }
+        storageCredits: { type: string }
+        gatewayCredits: { type: string }
+        otherCredits: { type: string }
+      required: [projectId, projectName, projectIdentifier, applicationId, applicationName, applicationIdentifier, spendGroup, deploymentTargetId, deploymentTargetName, deploymentTargetStage, amountCredits, buildCredits, runtimeCredits, storageCredits, gatewayCredits, otherCredits]
+    PaginatedBillingDeploymentSpend:
+      type: object
+      required: [items, page, pageSize, sortBy, sortOrder, total, totalPages]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/BillingDeploymentSpend" }
+        page: { type: integer, minimum: 1 }
+        pageSize: { type: integer, minimum: 1, maximum: 100 }
+        sortBy: { type: string }
+        sortOrder: { type: string, enum: [asc, desc] }
+        total: { type: integer, minimum: 0 }
+        totalPages: { type: integer, minimum: 0 }

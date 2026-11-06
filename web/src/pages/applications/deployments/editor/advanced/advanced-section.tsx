@@ -213,7 +213,7 @@ function WorkloadFields() {
   const autoScalingEnabled = useWatch({ control, name: 'autoScalingEnabled' })
   return (
     <>
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid gap-4 @xl/workspace:grid-cols-2">
         <FormField hint={t('deploymentsPage.workloadTypeHint')} label={t('deploymentsPage.workloadType')}>
           <NativeSelect {...register('workloadType')}>
             <option value="Deployment">{t('deploymentsPage.kubernetesValues.Deployment')}</option>
@@ -234,7 +234,7 @@ function RuntimeFilesFields({ target }: { target: DeploymentTarget | null }) {
   const configFilesError = useFieldError('configFiles')
   const secretFilesError = useFieldError('secretFiles')
   return (
-    <div className="grid gap-4 lg:grid-cols-2">
+    <div className="grid gap-4 @2xl/workspace:grid-cols-2">
       <FormField error={configFilesError} hint={t('deploymentsPage.runtimeConfigFilesHint')} label={t('deploymentsPage.runtimeConfigFiles')}>
         <Controller
           control={control}
@@ -267,7 +267,7 @@ function WebConsoleField() {
   const { t } = useTranslation()
   const { register } = useFormContext<DeploymentTargetFormValues>()
   return (
-    <div className="grid gap-4 md:grid-cols-2">
+    <div className="grid gap-4 @xl/workspace:grid-cols-2">
       <FormField hint={t('deploymentsPage.webConsoleOverrideHint')} label={t('deploymentsPage.webConsoleOverride')}>
         <NativeSelect {...register('webConsoleEnabled')}>
           <option value="inherit">{t('deploymentsPage.webConsoleInheritProject')}</option>

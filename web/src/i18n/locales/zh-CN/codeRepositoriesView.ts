@@ -1,7 +1,7 @@
 const codeRepositoriesView = {
   providersTab: 'Git Provider',
   credentialsTab: 'Git 凭据',
-  loadFailedTitle: '代码库数据加载失败',
+  loadFailedTitle: '代码仓库数据加载失败',
   loadFailedDescription: '请确认已经登录，并且后端 Git 集成 API 可以访问。',
   createProvider: '创建 Git Provider',
   editProvider: '编辑 Git Provider',

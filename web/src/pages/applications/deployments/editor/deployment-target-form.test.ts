@@ -22,6 +22,7 @@ const configuredTarget: DeploymentTarget = {
   stage: 'prod',
   kubernetesName: 'demo-prod',
   clusterId: 'cluster_1',
+  effectiveClusterId: 'cluster_1',
   workloadType: 'StatefulSet',
   replicas: 3,
   cpuRequest: '500m',
@@ -82,7 +83,6 @@ const configuredTarget: DeploymentTarget = {
   autoDeploy: false,
   branchPattern: 'main,release-*',
   tagPattern: 'v*',
-  concurrencyPolicy: 'parallel',
   runtimeConfigRefs: [{ setId: 'set_1', mode: 'snapshot' }],
   environmentVariables: [
     { configured: true, key: 'LOG_LEVEL', value: 'info', valueMode: 'public' },
@@ -101,6 +101,7 @@ const configuredTarget: DeploymentTarget = {
   availableReplicas: 3,
   deleteStatus: 'active',
   deleteMessage: '',
+  deleteCode: '',
   createdBy: 'usr_1',
   createdAt: '2026-10-01T00:00:00Z',
 }
@@ -238,7 +239,6 @@ describe('deployment target form model', () => {
         { hookConfigId: 'hook_2', phase: 'postDeployment', runOrder: 2 },
       ],
       autoDeploy: false,
-      concurrencyPolicy: 'parallel',
       runtimeConfigRefs: [{ setId: 'set_1', mode: 'snapshot' }],
       environmentVariables: [{ key: 'LOG_LEVEL', value: 'info', valueMode: 'public' }],
       configFiles: configuredTarget.configFiles,

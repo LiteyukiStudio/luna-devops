@@ -134,6 +134,11 @@ func (h *Handler) GetProject(ctx *gin.Context) {
 	if role, exists := ctx.Get(currentProjectRoleContextKey); exists {
 		response.CurrentUserRole, _ = role.(string)
 	}
+	allowed := authz.ProjectActionsAllowed(user.Role, response.CurrentUserRole)
+	response.CurrentUserActions = make([]string, 0, len(allowed))
+	for _, action := range allowed {
+		response.CurrentUserActions = append(response.CurrentUserActions, string(action))
+	}
 	ctx.JSON(http.StatusOK, response)
 }
 
@@ -637,6 +642,8 @@ type projectResponse struct {
 	model.Project
 	BillingOwner    *projectBillingOwnerResponse `json:"billingOwner,omitempty"`
 	CurrentUserRole string                       `json:"currentUserRole,omitempty"`
+	// CurrentUserActions 是当前用户按 internal/authz 实时策略可在本项目空间执行的 Action；只在项目详情中返回。
+	CurrentUserActions []string `json:"currentUserActions,omitempty"`
 }
 
 type projectBillingOwnerResponse struct {

@@ -1,5 +1,7 @@
 package authz
 
+import "slices"
+
 // ProjectPolicy is the single role contract for a project action.
 type ProjectPolicy struct {
 	AllowedRoles []string
@@ -86,4 +88,17 @@ func ProjectRoleAllows(role string, action Action) bool {
 		}
 	}
 	return false
+}
+
+// ProjectActionsAllowed 返回主体在项目空间内可执行的全部 Action（按字典序），供前端只消费授权结果而不复制角色策略。
+// 平台管理员与 AuthorizeProject 一致地绕过项目角色；非成员（空角色）没有任何项目 Action。
+func ProjectActionsAllowed(platformRole, projectRole string) []Action {
+	actions := make([]Action, 0, len(projectPolicies))
+	for action := range projectPolicies {
+		if IsPlatformAdmin(platformRole) || ProjectRoleAllows(projectRole, action) {
+			actions = append(actions, action)
+		}
+	}
+	slices.Sort(actions)
+	return actions
 }

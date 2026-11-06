@@ -192,6 +192,8 @@ export interface Project {
   maxConcurrentBuilds: number
   webConsoleEnabled: boolean
   currentUserRole?: ProjectRoleValue
+  /** 仅 getProject 返回：后端按 internal/authz 实时计算的当前用户可执行 Action。 */
+  currentUserActions?: string[]
   billingOwnerUserId: string
   billingOwner?: ProjectBillingOwner
   systemKey: string
@@ -241,6 +243,8 @@ export interface Application {
   icon: string
   deleteStatus: 'active' | 'deleting' | 'delete_failed' | 'deleted' | string
   deleteMessage: string
+  /** 删除失败的稳定原因码；前端据此显示本地化文案，deleteMessage 只是诊断原文。 */
+  deleteCode: ApplicationDeleteCode
   deleteStartedAt?: string | null
   deleteFinishedAt?: string | null
   deploymentSummary?: ApplicationDeploymentSummary
@@ -252,6 +256,8 @@ export interface Application {
   updatedAt: string
 }
 
+export type ApplicationDeleteCode = '' | 'service_binding_in_use' | 'application.delete_cleanup_failed' | 'application.delete_finalize_failed' | 'application.delete_enqueue_failed'
+
 export interface ApplicationCurrentRelease {
   id: string
   deploymentTargetId: string
@@ -259,6 +265,10 @@ export interface ApplicationCurrentRelease {
   deployedAt: string
 }
 
+/**
+ * 后端统一给出的应用运行结论：只统计已启用且有成功发布的部署配置，停用配置不参与健康判定。
+ * 前端只展示，不再自行聚合。
+ */
 export interface ApplicationDeploymentSummary {
   targetCount: number
   desiredReplicas: number
@@ -270,9 +280,31 @@ export interface ApplicationDeploymentSummary {
 export interface ApplicationDeploymentTargetSummary {
   id: string
   stage: string
+  enabled: boolean
+  /** 是否存在成功发布。 */
+  deployed: boolean
   desiredReplicas: number
   readyReplicas: number
-  status: LiveObservationStatus | 'disabled'
+  status: LiveObservationStatus | 'disabled' | 'not-deployed'
+  observationCode?: string
+  currentRelease?: ApplicationCurrentRelease
+}
+
+export interface ProjectOverview {
+  applications: number
+  activeReleases: number
+  failedReleases: number
+  failedReleaseWindowDays: number
+  accessRoutes: ProjectOverviewAccessRoutes
+}
+
+/** 启用访问入口的网关实时就绪汇总；status 为 unavailable 时不返回 ready，前端不得当作 0。 */
+export interface ProjectOverviewAccessRoutes {
+  status: 'ready' | 'degraded' | 'not-configured' | 'unavailable'
+  ready?: number
+  total: number
+  observationCode?: 'project_overview.access_routes_not_configured' | 'project_overview.access_routes_not_ready' | 'project_overview.access_routes_unavailable'
+  observedAt: string
 }
 
 export interface ApplicationTopologyTarget {
@@ -396,8 +428,6 @@ export interface AppTemplateInstallation {
   applicationId: string
   deploymentTargetId: string
   releaseId: string
-  status: string
-  message: string
   valuesSnapshot: string
   createdBy: string
   createdAt: string
@@ -762,6 +792,8 @@ export interface DashboardOverview {
   projects: DashboardProjectShortcut[]
   attention: DashboardAttentionItem[]
   activities: DashboardActivity[]
+  /** 快捷项目空间内每个应用各自的最近事件，不受全局最近活动条数限制。 */
+  applicationActivities: DashboardActivity[]
   readiness: {
     clusters: DashboardReadinessItem
     registries: DashboardReadinessItem
@@ -1135,13 +1167,53 @@ export interface ProjectHookConfig {
 
 export type ProjectHookConfigPayload = Omit<ProjectHookConfig, 'id' | 'projectId' | 'createdBy' | 'createdAt' | 'updatedAt'>
 
+/** 构建失败、超时或取消时后端写入的稳定原因码；前端按码映射本地化文案。 */
+export type BuildFailureCode
+  = | 'canceled_by_user'
+    | 'timeout'
+    | 'queue_timeout'
+    | 'dispatch_failed'
+    | 'project_unavailable'
+    | 'deployment_target_unavailable'
+    | 'cluster_unavailable'
+    | 'capacity_check_failed'
+    | 'namespace_failed'
+    | 'task_resolve_failed'
+    | 'job_start_failed'
+    | 'job_failed'
+    | 'observation_failed'
+    | 'internal_error'
+
+/** 发布失败或取消时后端写入的稳定原因码。 */
+export type ReleaseFailureCode
+  = | 'canceled_by_user'
+    | 'timeout'
+    | 'dispatch_failed'
+    | 'project_unavailable'
+    | 'application_unavailable'
+    | 'deployment_target_unavailable'
+    | 'namespace_failed'
+    | 'service_binding_failed'
+    | 'preflight_failed'
+    | 'runtime_config_failed'
+    | 'pre_hook_failed'
+    | 'dependencies_failed'
+    | 'apply_failed'
+    | 'rollout_failed'
+    | 'rollout_timeout'
+    | 'volume_mount_failed'
+    | 'post_hook_failed'
+    | 'superseded'
+    | 'internal_error'
+
 export interface BuildRun {
   id: string
   projectId: string
   applicationId: string
   deploymentTargetId: string
   buildVariableSetIds: string | string[]
-  status: 'queued' | 'running' | 'succeeded' | 'failed' | 'canceled' | 'lost' | 'timeout'
+  status: 'queued' | 'running' | 'succeeded' | 'failed' | 'canceled' | 'timeout'
+  failureCode: '' | BuildFailureCode
   triggerType: 'manual' | 'webhook' | 'push' | 'tag' | 'api' | 'retry'
   sourceBranch: string
   sourceTag: string
@@ -1214,6 +1286,8 @@ export interface DeploymentTarget {
   stage: string
   kubernetesName: string
   clusterId: string
+  /** 后端统一解析出的本次生效集群；空串表示没有可用集群。前端不得自行推断默认集群。 */
+  effectiveClusterId: string
   workloadType: 'Deployment' | 'StatefulSet' | string
   replicas: number
   cpuRequest: string
@@ -1272,7 +1346,6 @@ export interface DeploymentTarget {
   autoDeploy: boolean
   branchPattern: string
   tagPattern: string
-  concurrencyPolicy: 'queue' | 'parallel'
   runtimeConfigRefs: DeploymentRuntimeConfigRef[]
   environmentVariables: RuntimeEnvironmentVariable[]
   configFiles: string
@@ -1290,11 +1363,15 @@ export interface DeploymentTarget {
   availableReplicas: number
   deleteStatus: 'active' | 'deleting' | 'delete_failed' | 'deleted' | string
   deleteMessage: string
+  /** 删除失败的稳定原因码；前端据此显示本地化文案，deleteMessage 只是诊断原文。 */
+  deleteCode: DeploymentTargetDeleteCode
   deleteStartedAt?: string | null
   deleteFinishedAt?: string | null
   createdBy: string
   createdAt: string
 }
+
+export type DeploymentTargetDeleteCode = '' | 'service_binding_in_use' | 'deployment_target.delete_cleanup_failed' | 'deployment_target.delete_finalize_failed' | 'deployment_target.delete_enqueue_failed'
 
 export interface DeploymentServicePort {
   name: string
@@ -1312,12 +1389,23 @@ export interface DeploymentTargetMetrics {
   availableReplicas: number
   podCount: number
   containerCount: number
+  /** Usage, request floor and limit are summed over every container of every desired replica. */
   cpuUsageMilli: number
-  cpuCapacityMilli: number
-  cpuUsagePercent: number
+  cpuRequestMilli: number
+  /** 0 when any container has no CPU limit. */
+  cpuLimitMilli: number
+  /** Omitted when cpuLimitMilli is 0. */
+  cpuUsagePercent?: number
   memoryUsageBytes: number
-  memoryCapacityBytes: number
-  memoryUsagePercent: number
+  memoryRequestBytes: number
+  /** 0 when any container has no memory limit. */
+  memoryLimitBytes: number
+  /** Omitted when memoryLimitBytes is 0. */
+  memoryUsagePercent?: number
+  replicaCpuRequestMilli: number
+  replicaCpuLimitMilli: number
+  replicaMemoryRequestBytes: number
+  replicaMemoryLimitBytes: number
   updatedAt: string
 }
 
@@ -1338,7 +1426,7 @@ export interface RuntimeSecretMutationResponse {
   environmentVariables: RuntimeEnvironmentVariable[]
 }
 
-export type DeploymentTargetPayload = Omit<DeploymentTarget, 'id' | 'projectId' | 'applicationId' | 'kubernetesName' | 'createdBy' | 'createdAt' | 'buildVariableSetIds' | 'runtimeConfigRefs' | 'environmentVariables' | 'secretFilesSet' | 'dataVolumes' | 'status' | 'observationCode' | 'lastCheckedAt' | 'desiredReplicas' | 'updatedReplicas' | 'readyReplicas' | 'availableReplicas' | 'deleteStatus' | 'deleteMessage' | 'deleteStartedAt' | 'deleteFinishedAt'> & {
+export type DeploymentTargetPayload = Omit<DeploymentTarget, 'id' | 'projectId' | 'applicationId' | 'kubernetesName' | 'effectiveClusterId' | 'createdBy' | 'createdAt' | 'buildVariableSetIds' | 'runtimeConfigRefs' | 'environmentVariables' | 'secretFilesSet' | 'dataVolumes' | 'status' | 'observationCode' | 'lastCheckedAt' | 'desiredReplicas' | 'updatedReplicas' | 'readyReplicas' | 'availableReplicas' | 'deleteStatus' | 'deleteMessage' | 'deleteCode' | 'deleteStartedAt' | 'deleteFinishedAt'> & {
   buildVariableSetIds: string[]
   buildVariables?: Record<string, string>
   buildSecrets?: Record<string, string>
@@ -1443,6 +1531,7 @@ export interface BuildJob {
   buildRunId: string
   projectId: string
   status: string
+  failureCode: '' | BuildFailureCode
   message: string
   logRef: string
   attempts: number
@@ -1597,7 +1686,8 @@ export interface Release {
   imageRef: string
   forceImagePull: boolean
   type: 'deploy' | 'rollback'
-  status: 'pending' | 'running' | 'succeeded' | 'failed'
+  status: 'pending' | 'running' | 'succeeded' | 'failed' | 'canceled'
+  failureCode: '' | ReleaseFailureCode
   revision: number
   rollbackFromId: string
   message: string
@@ -1785,6 +1875,8 @@ export interface OAuthDeviceVerificationResult {
 }
 
 export interface BillingSummary {
+  /** platform_total sums every wallet and carries no balanceStatus. */
+  balanceScope: 'account' | 'platform_total'
   balanceCredits: string
   todaySpend: string
   monthSpend: string
@@ -1792,7 +1884,7 @@ export interface BillingSummary {
   pendingSpend: string
   availableCredits: string
   lowBalanceLimit: string
-  balanceStatus: 'ok' | 'low' | 'insufficient' | string
+  balanceStatus?: 'ok' | 'low' | 'insufficient'
   monthlyCategories: BillingSpendCategory[]
   periodCategories: BillingSpendCategory[]
 }
@@ -1809,6 +1901,7 @@ export interface BillingDeploymentSpend {
   applicationId: string
   applicationName: string
   applicationIdentifier: string
+  spendGroup: 'deployment_target' | 'project_storage' | 'unassigned'
   deploymentTargetId: string
   deploymentTargetName: string
   deploymentTargetStage: string
@@ -1862,6 +1955,8 @@ export interface BillingLedgerEntry {
   description: string
   createdBy: string
   createdAt: string
+  /** Billing occurrence time: the usage period start, or createdAt for adjustments. */
+  occurredAt: string
 }
 
 export interface BillingUsageRecord {
@@ -1927,6 +2022,8 @@ export interface BillingPeriodParams {
   periodEnd?: string
   accountScope?: 'current'
   userId?: string
+  /** IANA time zone that defines today and this month. */
+  timeZone?: string
 }
 
 export interface PaginatedResponse<T> {

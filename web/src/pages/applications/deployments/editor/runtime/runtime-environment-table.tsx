@@ -71,7 +71,7 @@ export function RuntimeEnvironmentTable() {
         ? <p className="text-sm text-muted-foreground">{t('deploymentTargetEditor.environmentEmpty')}</p>
         : (
             <div className="grid gap-2">
-              <div aria-hidden="true" className="hidden gap-2 px-1 text-xs font-medium text-muted-foreground xl:grid xl:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_4.5rem_2.25rem]">
+              <div aria-hidden="true" className="hidden gap-2 px-1 text-xs font-medium text-muted-foreground @4xl/workspace:grid @4xl/workspace:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_4.5rem_2.25rem]">
                 <span>{t('deploymentTargetEditor.environmentName')}</span>
                 <span>{t('deploymentTargetEditor.environmentValue')}</span>
                 <span>{t('deploymentTargetEditor.environmentEncrypted')}</span>
@@ -128,7 +128,7 @@ function EnvironmentRow({ index, onRemove, onUpdate, row }: {
 
   return (
     <div className={cn('grid gap-1 rounded-control', clearing && 'opacity-70')}>
-      <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 rounded-control bg-surface-inset/60 p-2 xl:bg-transparent xl:p-0 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_4.5rem_2.25rem]">
+      <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 rounded-control bg-surface-inset/60 p-2 @4xl/workspace:bg-transparent @4xl/workspace:p-0 @4xl/workspace:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_4.5rem_2.25rem]">
         <Input
           {...register(`environmentVariables.${index}.key`)}
           aria-describedby={errors.length ? errorId : undefined}
@@ -141,7 +141,7 @@ function EnvironmentRow({ index, onRemove, onUpdate, row }: {
           spellCheck={false}
         />
         <EnvironmentValueCell
-          className="order-4 col-span-3 xl:order-2 xl:col-span-1"
+          className="order-4 col-span-3 @4xl/workspace:order-2 @4xl/workspace:col-span-1"
           describedBy={[errors.length ? errorId : '', reenterHint ? hintId : ''].filter(Boolean).join(' ') || undefined}
           index={index}
           invalid={Boolean(valueError)}
@@ -149,7 +149,7 @@ function EnvironmentRow({ index, onRemove, onUpdate, row }: {
           row={row}
           onUpdate={onUpdate}
         />
-        <div className="order-2 flex items-center gap-2 xl:order-3">
+        <div className="order-2 flex items-center gap-2 @4xl/workspace:order-3">
           <Switch
             aria-label={t('deploymentTargetEditor.environmentEncryptFor', { name })}
             checked={secret}
@@ -157,7 +157,7 @@ function EnvironmentRow({ index, onRemove, onUpdate, row }: {
             onCheckedChange={toggleSecret}
           />
         </div>
-        <div className="order-3 flex justify-end xl:order-4">
+        <div className="order-3 flex justify-end @4xl/workspace:order-4">
           {storedSecret && secret
             ? (
                 <DropdownMenu>

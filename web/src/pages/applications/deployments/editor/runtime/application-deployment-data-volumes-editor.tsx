@@ -12,6 +12,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { NativeSelect as Select } from '@/components/ui/native-select'
 import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
+import { platformDefaultRuntimeCluster } from '@/lib/runtime-cluster-default'
 import { emptyRuntimeDataVolumeRow } from '@/lib/runtime-data-volumes'
 
 interface RuntimeDataVolumesEditorProps {
@@ -30,7 +31,7 @@ export function RuntimeDataVolumesEditor({ clusterId, onChange, projectId, rowEr
     <div className="grid min-w-0 gap-3">
       {rows.length === 0 && <p className="text-sm text-muted-foreground">{t('deploymentTargetEditor.dataVolumesEmpty')}</p>}
       {rows.map((volume, index) => (
-        <div key={volume.id} aria-invalid={rowErrors[index] ? true : undefined} className="grid min-w-0 gap-3 rounded-control bg-surface-inset/60 p-3 aria-invalid:ring-1 aria-invalid:ring-danger/40 sm:grid-cols-2" role="group" aria-label={t('deploymentTargetEditor.dataVolumeRowLabel', { index: index + 1 })}>
+        <div key={volume.id} aria-invalid={rowErrors[index] ? true : undefined} className="grid min-w-0 gap-3 rounded-control bg-surface-inset/60 p-3 aria-invalid:ring-1 aria-invalid:ring-danger/40 @lg/workspace:grid-cols-2" role="group" aria-label={t('deploymentTargetEditor.dataVolumeRowLabel', { index: index + 1 })}>
           <Field label={t('deploymentsPage.dataVolumeName')}>
             <Input
               aria-label={t('deploymentsPage.dataVolumeName')}
@@ -112,7 +113,7 @@ export function RuntimeDataVolumesEditor({ clusterId, onChange, projectId, rowEr
                   />
                 )
               : (
-                  <div className="grid min-w-0 gap-2 sm:grid-cols-2">
+                  <div className="grid min-w-0 gap-2 @lg/workspace:grid-cols-2">
                     <Select
                       value={volume.emptyDirMedium}
                       onChange={(event) => {
@@ -136,7 +137,7 @@ export function RuntimeDataVolumesEditor({ clusterId, onChange, projectId, rowEr
                   </div>
                 )}
           </Field>
-          <div className="flex min-w-0 items-center justify-between gap-3 sm:col-span-2">
+          <div className="flex min-w-0 items-center justify-between gap-3 @lg/workspace:col-span-2">
             {volume.sourceType === 'projectVolume'
               ? (
                   <label className="flex min-w-0 items-center gap-2 text-sm">
@@ -162,7 +163,7 @@ export function RuntimeDataVolumesEditor({ clusterId, onChange, projectId, rowEr
               <Trash2 className="size-4" />
             </Button>
           </div>
-          {rowErrors[index] && <p className="text-xs text-danger sm:col-span-2" role="alert">{rowErrors[index]}</p>}
+          {rowErrors[index] && <p className="text-xs text-danger @lg/workspace:col-span-2" role="alert">{rowErrors[index]}</p>}
         </div>
       ))}
       <div>
@@ -217,7 +218,7 @@ function ProjectVolumePicker({ clusterId, currentVolumeId, onChange, projectId, 
   const { t } = useTranslation()
   const [page, setPage] = useState(1)
   const [search, setSearch] = useState('')
-  const effectiveClusterId = clusterId || runtimeClusters.find(item => item.isDefault)?.id || ''
+  const effectiveClusterId = clusterId || platformDefaultRuntimeCluster(runtimeClusters)?.id || ''
   const volumes = useQuery({
     ...liveObservationQueryPolicy,
     queryKey: ['deployment-project-volumes', projectId, effectiveClusterId, currentVolumeId, page, search],

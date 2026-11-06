@@ -244,6 +244,21 @@ func TestServiceBindingValidationCodes(t *testing.T) {
 		{name: "reserved env", code: CodeReservedEnv, edit: func(_ *fakeRepository, input *ServiceBindingInput) {
 			input.URLEnvVar = "LUNA_INTERNAL_URL"
 		}},
+		{name: "target application deleting", code: CodeTargetDeleting, edit: func(repository *fakeRepository, _ *ServiceBindingInput) {
+			item := repository.applications["app_target"]
+			item.DeleteStatus = "deleting"
+			repository.applications[item.ID] = item
+		}},
+		{name: "target application delete failed", code: CodeTargetDeleting, edit: func(repository *fakeRepository, _ *ServiceBindingInput) {
+			item := repository.applications["app_target"]
+			item.DeleteStatus = "delete_failed"
+			repository.applications[item.ID] = item
+		}},
+		{name: "target deployment deleting", code: CodeTargetDeleting, edit: func(repository *fakeRepository, _ *ServiceBindingInput) {
+			item := repository.targets["dplt_target"]
+			item.DeleteStatus = "deleting"
+			repository.targets[item.ID] = item
+		}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -361,5 +376,25 @@ func TestSortFieldsAreWhitelisted(t *testing.T) {
 	}
 	if got := normalizedSortOrder("sideways"); got != "desc" {
 		t.Fatalf("unexpected sort order %q", got)
+	}
+}
+
+func TestPrepareServiceBindingValidatesResolvedTargetsWithoutRepository(t *testing.T) {
+	repository := dependencyFixture()
+	binding := model.ServiceBinding{ID: "sbind_template", ProjectID: "prj_main"}
+	input := ServiceBindingInput{
+		SourceApplicationID: "app_source", SourceDeploymentTargetID: "dplt_source",
+		TargetApplicationID: "app_target", TargetDeploymentTargetID: "dplt_target",
+		TargetPortName: "http", Protocol: "tcp", InjectionMode: "host_port", HostEnvVar: "target_host", PortEnvVar: "TARGET_PORT",
+	}
+	if err := PrepareServiceBinding(&binding, input, repository.targets["dplt_source"], repository.targets["dplt_target"]); err != nil {
+		t.Fatalf("PrepareServiceBinding() error = %v", err)
+	}
+	if binding.HostEnvVar != "TARGET_HOST" || binding.TargetPort != 9000 || !binding.Enabled {
+		t.Fatalf("prepared binding = %#v", binding)
+	}
+	mismatched := binding
+	if err := PrepareServiceBinding(&mismatched, input, repository.targets["dplt_target"], repository.targets["dplt_target"]); ErrorCode(err) != CodeCrossProject {
+		t.Fatalf("mismatched targets error = %v", err)
 	}
 }

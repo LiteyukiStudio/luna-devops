@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/LiteyukiStudio/devops/internal/api/applicationapi"
 	runtimeapi "github.com/LiteyukiStudio/devops/internal/api/runtimeapi"
 	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/id"
@@ -15,6 +16,7 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/volume"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 )
 
@@ -337,6 +339,9 @@ func (h *Handlers) RestartDeploymentTarget(ctx *gin.Context) {
 	ctx.Status(http.StatusNoContent)
 }
 
+// deploymentTargetDeleteEnqueueFailedCode 标记清理任务未能投递导致的删除失败，前端按此码显示本地化原因。
+const deploymentTargetDeleteEnqueueFailedCode = "deployment_target.delete_enqueue_failed"
+
 func (h *Handlers) DeleteDeploymentTarget(ctx *gin.Context) {
 	user, project, ok := h.authorizeProject(ctx, authz.ActionDeploymentDelete)
 	if !ok {
@@ -358,12 +363,22 @@ func (h *Handlers) DeleteDeploymentTarget(ctx *gin.Context) {
 		writeError(ctx, http.StatusConflict, "部署配置正在删除中，请等待资源清理完成")
 		return
 	}
-	if !h.ensureNoIncomingServiceBindings(ctx, target.ProjectID, target.ApplicationID, target.ID) {
-		return
-	}
 	volumeChanges := deploymentVolumeMountChanges{}
 	if err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
+		// 排他锁与创建服务关系时对目标部署配置加的共享锁互斥：入站关系检查和进入 deleting 是同一个原子判断。
+		var locked model.DeploymentTarget
+		if err := tx.Clauses(clause.Locking{Strength: clause.LockingStrengthUpdate}).
+			Select("id").
+			First(&locked, "id = ? and project_id = ?", target.ID, target.ProjectID).Error; err != nil {
+			return err
+		}
+		if err := applicationapi.EnsureNoIncomingServiceBindingsTx(tx, target.ProjectID, target.ApplicationID, target.ID); err != nil {
+			return err
+		}
 		if err := h.host.MarkResourceDeleting(tx, &model.DeploymentTarget{}, target.ID); err != nil {
+			return err
+		}
+		if err := tx.Model(&model.DeploymentTarget{}).Where("id = ?", target.ID).Update("delete_code", "").Error; err != nil {
 			return err
 		}
 		if err := h.host.MarkDeploymentTargetGatewayRoutesDeleting(tx, target); err != nil {
@@ -373,6 +388,9 @@ func (h *Handlers) DeleteDeploymentTarget(ctx *gin.Context) {
 		volumeChanges, syncErr = syncDeploymentTargetVolumeMounts(ctx.Request.Context(), tx, target, nil)
 		return syncErr
 	}); err != nil {
+		if applicationapi.WriteServiceBindingInUseError(ctx, err) {
+			return
+		}
 		if h.host.IsResourceDeleteAlreadyStarted(err) {
 			writeErrorCode(ctx, http.StatusConflict, "deployment_target.delete_in_progress", "部署配置正在删除中，请等待资源清理完成")
 			return
@@ -387,10 +405,13 @@ func (h *Handlers) DeleteDeploymentTarget(ctx *gin.Context) {
 	}
 	h.auditDeploymentVolumeMountChanges(ctx.Request.Context(), user.ID, target, volumeChanges)
 	if !h.enqueueResourceCleanup(ctx.Request.Context(), "deployment_target", target.ID, target.ProjectID, user.ID) {
-		_ = h.host.MarkResourceDeleteFailed(h.dbFor(ctx), &model.DeploymentTarget{}, target.ID, "资源清理任务投递失败，请稍后重试")
-		_ = h.host.MarkDeploymentTargetGatewayRoutesDeleteFailed(h.dbFor(ctx), target, "资源清理任务投递失败，请稍后重试")
+		const message = "deployment target cleanup task enqueue failed"
+		db := h.dbFor(ctx)
+		_ = h.host.MarkResourceDeleteFailed(db, &model.DeploymentTarget{}, target.ID, message)
+		_ = db.Model(&model.DeploymentTarget{}).Where("id = ?", target.ID).Update("delete_code", deploymentTargetDeleteEnqueueFailedCode).Error
+		_ = h.host.MarkDeploymentTargetGatewayRoutesDeleteFailed(db, target, message)
 		h.auditWithContext(user.ID, "deployment.delete", target.ID, false, "cleanup_enqueue_failed", ctx.Request.Context())
-		writeError(ctx, http.StatusServiceUnavailable, "资源清理任务投递失败，请稍后重试")
+		writeErrorCode(ctx, http.StatusServiceUnavailable, deploymentTargetDeleteEnqueueFailedCode, message)
 		return
 	}
 	h.auditWithContext(user.ID, "deployment.delete", target.ID, true, "cleanup_queued", ctx.Request.Context())

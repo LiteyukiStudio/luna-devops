@@ -45,13 +45,13 @@ WHERE target.id = victims.id`,
 			countSQL: `SELECT COUNT(*) AS count
 FROM build_logs AS logs
 JOIN build_runs AS parent ON parent.id = logs.build_run_id
-WHERE parent.status IN ('succeeded', 'failed', 'canceled', 'lost', 'timeout')
+WHERE parent.status IN ('succeeded', 'failed', 'canceled', 'timeout')
   AND parent.finished_at >= ? AND parent.finished_at < ?`,
 			deleteSQL: `WITH victims AS (
     SELECT logs.id
     FROM build_logs AS logs
     JOIN build_runs AS parent ON parent.id = logs.build_run_id
-    WHERE parent.status IN ('succeeded', 'failed', 'canceled', 'lost', 'timeout')
+    WHERE parent.status IN ('succeeded', 'failed', 'canceled', 'timeout')
       AND parent.finished_at >= ? AND parent.finished_at < ?
     ORDER BY parent.finished_at, logs.id
     LIMIT 1000
@@ -67,13 +67,13 @@ WHERE target.id = victims.id`,
 			countSQL: `SELECT COUNT(*) AS count
 FROM release_logs AS logs
 JOIN releases AS parent ON parent.id = logs.release_id
-WHERE parent.status IN ('succeeded', 'failed')
+WHERE parent.status IN ('succeeded', 'failed', 'canceled')
   AND parent.finished_at >= ? AND parent.finished_at < ?`,
 			deleteSQL: `WITH victims AS (
     SELECT logs.id
     FROM release_logs AS logs
     JOIN releases AS parent ON parent.id = logs.release_id
-    WHERE parent.status IN ('succeeded', 'failed')
+    WHERE parent.status IN ('succeeded', 'failed', 'canceled')
       AND parent.finished_at >= ? AND parent.finished_at < ?
     ORDER BY parent.finished_at, logs.id
     LIMIT 1000

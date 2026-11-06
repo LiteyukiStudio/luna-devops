@@ -241,18 +241,9 @@ func hookRunProgress(run model.HookRun) aiProgressSnapshot {
 	return progressSnapshot(run.ID, "hook_run", state, "ai.progress.hook."+state, run.StartedAt, run.FinishedAt, run.UpdatedAt, steps)
 }
 
+// appTemplateInstallationProgress 描述未创建 Release 的安装（installNow=false）：资源已在安装事务内落库即完成。
 func appTemplateInstallationProgress(installation model.AppTemplateInstallation) aiProgressSnapshot {
-	state := "running"
-	switch installation.Status {
-	case "installed", "succeeded":
-		state = "succeeded"
-	case "deploy_failed", "failed":
-		state = "failed"
-	case "canceled", "cancelled":
-		state = "cancelled"
-	case "pending", "queued":
-		state = "queued"
-	}
+	const state = "succeeded"
 	steps := threeStageProgress("installation", state)
 	return progressSnapshot(installation.ID, "app_template_installation", state, "ai.progress.installation."+state, nil, terminalTime(state, installation.UpdatedAt), installation.UpdatedAt, steps)
 }

@@ -373,7 +373,7 @@ func (h *Handlers) ReceiveGitWebhook(ctx *gin.Context) {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
-	result := h.enqueueBuildRunsForWebhook(ctx, binding, pushPayload, isPush)
+	result := h.enqueueBuildRunsForWebhook(ctx, binding, pushPayload, isPush, gitWebhookDeliveryID(ctx.Request.Header))
 	ctx.JSON(http.StatusOK, gin.H{
 		"accepted":      true,
 		"event":         event,
@@ -383,76 +383,9 @@ func (h *Handlers) ReceiveGitWebhook(ctx *gin.Context) {
 		"queuedRunIds":  result.QueuedRunIDs,
 		"failed":        result.Failed,
 		"skipped":       result.Skipped,
+		"duplicate":     result.Duplicate,
 		"ignoredReason": result.IgnoredReason,
 	})
-}
-
-type webhookBuildTriggerResult struct {
-	Matched       int
-	Queued        int
-	Failed        int
-	Skipped       int
-	QueuedRunIDs  []string
-	IgnoredReason string
-}
-
-func (h *Handlers) enqueueBuildRunsForWebhook(ctx *gin.Context, binding model.RepositoryBinding, payload gitWebhookPushPayload, isPush bool) webhookBuildTriggerResult {
-	result := webhookBuildTriggerResult{QueuedRunIDs: []string{}}
-	if !isPush {
-		result.IgnoredReason = "unsupported_event"
-		return result
-	}
-	if payload.Deleted {
-		result.IgnoredReason = "deleted_ref"
-		return result
-	}
-	var account model.GitAccount
-	if err := h.dbFor(ctx).First(&account, "id = ?", binding.GitAccountID).Error; err != nil {
-		result.IgnoredReason = "git_account_missing"
-		return result
-	}
-	var actor model.User
-	if err := h.dbFor(ctx).First(&actor, "id = ?", account.UserID).Error; err != nil {
-		result.IgnoredReason = "actor_missing"
-		return result
-	}
-	var targets []model.DeploymentTarget
-	if err := h.dbFor(ctx).Where(
-		"project_id = ? and application_id = ? and repository_binding_id = ? and enabled = ? and delete_status in ?",
-		binding.ProjectID,
-		binding.ApplicationID,
-		binding.ID,
-		true,
-		[]string{"", "active"},
-	).Where("(source_type = ? or source_type = '')", "repository").
-		Order("created_at asc").
-		Find(&targets).Error; err != nil {
-		result.IgnoredReason = "deployment_targets_unavailable"
-		return result
-	}
-	for _, target := range targets {
-		run := webhookBuildRunFromTarget(binding, target, actor, payload, h.host.BuildRunActorName(actor))
-		if !h.host.DeploymentTargetMatchesBuildRun(target, run) {
-			result.Skipped++
-			continue
-		}
-		result.Matched++
-		if err := h.prepareBuildRunRequest(actor, &run, ctx.Request.Context()); err != nil {
-			result.Failed++
-			continue
-		}
-		queuedRun, err := h.queueBuildRun(ctx.Request.Context(), actor, run)
-		if err != nil {
-			result.Failed++
-			continue
-		}
-		result.Queued++
-		result.QueuedRunIDs = append(result.QueuedRunIDs, queuedRun.ID)
-	}
-	if result.Matched == 0 && result.IgnoredReason == "" {
-		result.IgnoredReason = "no_matching_deployment_target"
-	}
-	return result
 }
 
 func webhookBuildRunFromTarget(binding model.RepositoryBinding, target model.DeploymentTarget, actor model.User, payload gitWebhookPushPayload, actorName string) model.BuildRun {

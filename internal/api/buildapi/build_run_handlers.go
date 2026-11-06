@@ -85,7 +85,7 @@ func (h *Handlers) GetBuildRun(ctx *gin.Context) {
 
 func buildRunStatusAllowed(status string) bool {
 	switch status {
-	case "queued", "running", "succeeded", "failed", "canceled", "lost", "timeout":
+	case "queued", "running", "succeeded", "failed", "canceled", "timeout":
 		return true
 	default:
 		return false
@@ -97,7 +97,7 @@ func buildRunCancelable(status string) bool {
 }
 
 func buildRunTerminal(status string) bool {
-	return status == "succeeded" || status == "failed" || status == "canceled" || status == "lost" || status == "timeout"
+	return status == "succeeded" || status == "failed" || status == "canceled" || status == "timeout"
 }
 
 func buildRunTriggerAllowed(triggerType string) bool {
@@ -111,7 +111,7 @@ func buildRunTriggerAllowed(triggerType string) bool {
 
 func (h *Handlers) TriggerBuildRun(ctx *gin.Context) {
 	user, project, ok := h.authorizeProject(ctx, authz.ActionBuildTrigger)
-	if !ok {
+	if !ok || !h.ensureProjectCanMutate(ctx, project) {
 		return
 	}
 	idempotencyKey, validKey := transport.DeliveryIdempotencyKey(ctx, "build.trigger")
@@ -148,7 +148,7 @@ func (h *Handlers) TriggerBuildRun(ctx *gin.Context) {
 
 func (h *Handlers) RetryBuildRun(ctx *gin.Context) {
 	user, project, ok := h.authorizeProject(ctx, authz.ActionBuildTrigger)
-	if !ok {
+	if !ok || !h.ensureProjectCanMutate(ctx, project) {
 		return
 	}
 	idempotencyKey, validKey := transport.DeliveryIdempotencyKey(ctx, "build.retry")
@@ -242,23 +242,24 @@ func (h *Handlers) CancelBuildRun(ctx *gin.Context) {
 		if !buildRunCancelable(lockedRun.Status) {
 			return errBuildRunNotCancelable
 		}
-		if err := tx.Where("build_run_id = ? and project_id = ? and status in ?", lockedRun.ID, lockedRun.ProjectID, []string{"queued", "running"}).Find(&jobs).Error; err != nil {
+		if err := tx.Where("build_run_id = ? and project_id = ? and status in ?", lockedRun.ID, lockedRun.ProjectID, model.BuildActiveStatuses).Find(&jobs).Error; err != nil {
 			return err
 		}
 		if err := tx.Model(&model.BuildJob{}).
-			Where("build_run_id = ? and project_id = ? and status in ?", lockedRun.ID, lockedRun.ProjectID, []string{"queued", "running"}).
+			Where("build_run_id = ? and project_id = ? and status in ?", lockedRun.ID, lockedRun.ProjectID, model.BuildActiveStatuses).
 			Updates(map[string]any{
-				"status":      "canceled",
-				"message":     "canceled by user",
-				"finished_at": &finishedAt,
+				"status":       "canceled",
+				"failure_code": model.BuildFailureCanceledByUser,
+				"finished_at":  &finishedAt,
 			}).Error; err != nil {
 			return err
 		}
 		return tx.Model(&model.BuildRun{}).
-			Where("id = ?", lockedRun.ID).
+			Where("id = ? and status in ?", lockedRun.ID, model.BuildActiveStatuses).
 			Updates(map[string]any{
-				"status":      "canceled",
-				"finished_at": &finishedAt,
+				"status":       "canceled",
+				"failure_code": model.BuildFailureCanceledByUser,
+				"finished_at":  &finishedAt,
 			}).Error
 	}); err != nil {
 		if errors.Is(err, errBuildRunNotCancelable) {
@@ -366,7 +367,7 @@ func (h *Handlers) queueBuildRun(ctx context.Context, user model.User, run model
 	}
 	if !h.host.BuildQueueAvailable() {
 		if run.IdempotencyKey == "" {
-			h.markBuildRunDispatchFailed(run, job, "构建任务队列未配置", ctx)
+			h.markBuildRunDispatchFailed(run, job, "build queue is not configured", ctx)
 		}
 		return run, errBuildQueueUnavailable
 	}
@@ -376,8 +377,10 @@ func (h *Handlers) queueBuildRun(ctx context.Context, user model.User, run model
 		ProjectID:  run.ProjectID,
 		ActorID:    user.ID,
 	}); err != nil {
+		// Idempotent producers keep the run queued so a retry with the same key
+		// re-dispatches it; the Worker reclaims runs that stay queued too long.
 		if run.IdempotencyKey == "" {
-			h.markBuildRunDispatchFailed(run, job, "构建任务投递失败: "+err.Error(), ctx)
+			h.markBuildRunDispatchFailed(run, job, "build task dispatch failed: "+err.Error(), ctx)
 		}
 		return run, errors.New("构建任务投递失败")
 	}
@@ -386,14 +389,16 @@ func (h *Handlers) queueBuildRun(ctx context.Context, user model.User, run model
 
 func (h *Handlers) markBuildRunDispatchFailed(run model.BuildRun, job model.BuildJob, message string, ctx context.Context) {
 	finishedAt := time.Now()
-	_ = h.dbWithContext(ctx).Model(&model.BuildJob{}).Where("id = ? and project_id = ?", job.ID, job.ProjectID).Updates(map[string]any{
-		"status":      "failed",
-		"message":     message,
-		"finished_at": &finishedAt,
+	_ = h.dbWithContext(ctx).Model(&model.BuildJob{}).Where("id = ? and project_id = ? and status in ?", job.ID, job.ProjectID, model.BuildActiveStatuses).Updates(map[string]any{
+		"status":       "failed",
+		"failure_code": model.BuildFailureDispatchFailed,
+		"message":      message,
+		"finished_at":  &finishedAt,
 	}).Error
-	_ = h.dbWithContext(ctx).Model(&model.BuildRun{}).Where("id = ? and project_id = ?", run.ID, run.ProjectID).Updates(map[string]any{
-		"status":      "failed",
-		"finished_at": &finishedAt,
+	_ = h.dbWithContext(ctx).Model(&model.BuildRun{}).Where("id = ? and project_id = ? and status in ?", run.ID, run.ProjectID, model.BuildActiveStatuses).Updates(map[string]any{
+		"status":       "failed",
+		"failure_code": model.BuildFailureDispatchFailed,
+		"finished_at":  &finishedAt,
 	}).Error
 }
 

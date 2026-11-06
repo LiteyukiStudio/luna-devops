@@ -7,6 +7,7 @@ import (
 
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type ListOptions struct {
@@ -119,11 +120,39 @@ func (repository *GormRepository) ConflictingServiceBinding(ctx context.Context,
 }
 
 func (repository *GormRepository) CreateServiceBinding(ctx context.Context, binding *model.ServiceBinding) error {
-	return repository.db.WithContext(ctx).Create(binding).Error
+	return repository.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := LockActiveBindingTarget(tx, *binding); err != nil {
+			return err
+		}
+		return tx.Create(binding).Error
+	})
 }
 
 func (repository *GormRepository) UpdateServiceBinding(ctx context.Context, binding *model.ServiceBinding) error {
-	return repository.db.WithContext(ctx).Save(binding).Error
+	return repository.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := LockActiveBindingTarget(tx, *binding); err != nil {
+			return err
+		}
+		return tx.Save(binding).Error
+	})
+}
+
+// LockActiveBindingTarget 在写入服务关系的事务中以共享锁读取目标应用和部署配置并确认它们仍处于 active。
+// 应用删除事务对同一应用行加排他锁，两者串行化后不会出现“删除已开始但新入站关系仍被写入”的竞态。
+func LockActiveBindingTarget(tx *gorm.DB, binding model.ServiceBinding) error {
+	var application model.Application
+	if err := tx.Clauses(clause.Locking{Strength: clause.LockingStrengthShare}).
+		Select("id", "delete_status").
+		First(&application, "id = ? and project_id = ?", binding.TargetApplicationID, binding.ProjectID).Error; err != nil {
+		return repositoryError(err)
+	}
+	var target model.DeploymentTarget
+	if err := tx.Clauses(clause.Locking{Strength: clause.LockingStrengthShare}).
+		Select("id", "delete_status").
+		First(&target, "id = ? and project_id = ?", binding.TargetDeploymentTargetID, binding.ProjectID).Error; err != nil {
+		return repositoryError(err)
+	}
+	return ensureBindingTargetActive(application, target)
 }
 
 func (repository *GormRepository) DeleteServiceBinding(ctx context.Context, binding *model.ServiceBinding) error {

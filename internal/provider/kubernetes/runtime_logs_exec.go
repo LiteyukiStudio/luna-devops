@@ -90,18 +90,18 @@ func (c *Client) RuntimeMetrics(ctx context.Context, options RuntimeMetricsOptio
 		return RuntimeMetricsSnapshot{Available: false, Reason: "workload_unavailable", UpdatedAt: time.Now()}, nil
 	}
 	gvr := schema.GroupVersionResource{Group: "metrics.k8s.io", Version: "v1beta1", Resource: "pods"}
-	list, err := c.dynamic.Resource(gvr).Namespace(namespace).List(ctx, metav1.ListOptions{LabelSelector: runtimePodLabelSelector(deploymentTargetID)})
+	list, err := c.dynamic.Resource(gvr).Namespace(namespace).List(ctx, metav1.ListOptions{LabelSelector: runtimeMetricsPodLabelSelector(deploymentTargetID)})
 	if err != nil {
 		return RuntimeMetricsSnapshot{
 			Available: false, Reason: "metrics_unavailable", DesiredReplicas: workload.DesiredReplicas,
 			UpdatedReplicas: workload.UpdatedReplicas, ReadyReplicas: workload.ReadyReplicas,
-			AvailableReplicas: workload.AvailableReplicas, UpdatedAt: time.Now(),
+			AvailableReplicas: workload.AvailableReplicas, Resources: workload.Resources, UpdatedAt: time.Now(),
 		}, nil
 	}
 	snapshot := RuntimeMetricsSnapshot{
 		Available: true, DesiredReplicas: workload.DesiredReplicas, UpdatedReplicas: workload.UpdatedReplicas,
 		ReadyReplicas: workload.ReadyReplicas, AvailableReplicas: workload.AvailableReplicas,
-		PodCount: len(list.Items), UpdatedAt: time.Now(),
+		PodCount: len(list.Items), Resources: workload.Resources, UpdatedAt: time.Now(),
 	}
 	for _, item := range list.Items {
 		containers, _, _ := unstructured.NestedSlice(item.Object, "containers")
@@ -134,6 +134,9 @@ func (c *Client) RuntimePodLogs(ctx context.Context, options RuntimePodLogsOptio
 	pod, container, err := c.runtimePod(ctx, options.RuntimePodSelection)
 	if err != nil {
 		return RuntimePodLogsResult{}, err
+	}
+	if containerNeverStarted(pod, container) {
+		return RuntimePodLogsResult{}, ErrRuntimeContainerNotStarted
 	}
 	logOptions := &corev1.PodLogOptions{Container: container}
 	if options.TailLines > 0 {
@@ -324,6 +327,9 @@ func (c *Client) namedPod(ctx context.Context, namespace string, podName string,
 // ErrRuntimePodNotFound 表示部署配置下没有运行 Pod，或指定的 Pod 不属于该部署配置。
 var ErrRuntimePodNotFound = errors.New("runtime pod not found")
 
+// ErrRuntimeContainerNotStarted 表示所选副本的容器从未启动过（拉取镜像失败、创建中等），没有可读取的日志。
+var ErrRuntimeContainerNotStarted = errors.New("runtime container has not started")
+
 // RuntimePods 读取部署配置当前的运行副本：当前发布优先，其次就绪、运行中，最后按创建时间从新到旧。
 func (c *Client) RuntimePods(ctx context.Context, namespace string, deploymentTargetID string, preferredReleaseID string) ([]RuntimePodSnapshot, error) {
 	pods, err := c.listRuntimePods(ctx, namespace, deploymentTargetID)
@@ -403,6 +409,13 @@ func runtimePodLabelSelector(deploymentTargetID string) string {
 	}, ",")
 }
 
+// runtimeMetricsPodLabelSelector selects only workload Pods. Hook Job Pods
+// carry the deployment target label too, but they are not part of the Pod
+// template whose requests and limits are compared with this usage.
+func runtimeMetricsPodLabelSelector(deploymentTargetID string) string {
+	return runtimePodLabelSelector(deploymentTargetID) + ",!" + HookRunIDLabel
+}
+
 func isRuntimePodOf(pod corev1.Pod, deploymentTargetID string) bool {
 	return pod.Labels[ManagedByLabel] == ManagedByValue &&
 		pod.Labels[DeploymentTargetIDLabel] == deploymentTargetID &&
@@ -452,6 +465,17 @@ func runtimePodSnapshot(pod corev1.Pod) RuntimePodSnapshot {
 		Containers:   containers,
 		CreatedAt:    pod.CreationTimestamp.Time,
 	}
+}
+
+// containerNeverStarted 判断容器是否仍在首次等待（未运行过也未退出过）；崩溃重启过的容器仍有上次输出可读。
+func containerNeverStarted(pod corev1.Pod, container string) bool {
+	for _, status := range pod.Status.ContainerStatuses {
+		if status.Name != container {
+			continue
+		}
+		return status.State.Waiting != nil && status.RestartCount == 0 && status.LastTerminationState.Terminated == nil
+	}
+	return false
 }
 
 func selectPodContainer(pod corev1.Pod, container string) (string, error) {

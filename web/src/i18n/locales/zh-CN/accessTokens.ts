@@ -21,7 +21,7 @@ const accessTokens = {
     gateway: '访问入口',
     secret: '配置与密钥',
     cluster: '集群资源',
-    git: '代码库',
+    git: '代码仓库',
     registry: '镜像站',
     image: '镜像',
     billing: '账单',
@@ -73,8 +73,8 @@ const accessTokens = {
       manage: '管理集群',
     },
     git: {
-      read: '读取代码库',
-      write: '管理代码库凭据',
+      read: '读取代码仓库',
+      write: '管理代码仓库凭据',
     },
     registry: {
       read: '读取镜像站',

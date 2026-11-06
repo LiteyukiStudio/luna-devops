@@ -65,7 +65,7 @@ export function AgentToolDetailSheet({ range, summary, onOpenChange }: {
           <div className="min-h-0 flex-1 overflow-auto p-6">
             {summary && (
               <div className="grid gap-6">
-                <MetricGroup className="grid-cols-2 sm:grid-cols-5">
+                <MetricGroup className="grid-cols-2 @lg/metric-group:grid-cols-5 @4xl/metric-group:grid-cols-5">
                   <MetricItem icon={<CircleGauge className="size-4" />} label={t('operationsDashboardPage.toolSuccessRate')} value={`${rate.toFixed(1)}%`} tone={successRateTone(rate)} />
                   <MetricItem icon={<Wrench className="size-4" />} label={t('operationsDashboardPage.totalCalls')} value={formatNumber(summary.totalCalls)} />
                   <MetricItem icon={<CheckCircle2 className="size-4" />} label={t('operationsDashboardPage.succeededCalls')} value={formatNumber(summary.succeededCalls)} tone="success" />

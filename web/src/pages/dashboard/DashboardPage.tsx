@@ -1,6 +1,6 @@
 import type { Application, DashboardActivity, DashboardAttentionItem, DashboardOverview, DashboardProjectShortcut, DashboardReadinessItem, ResultVisibility } from '@/api'
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
-import { AppWindow, LayoutTemplate, Pin } from 'lucide-react'
+import { AppWindow, LayoutTemplate, Pin, Plus } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Link, useNavigate } from 'react-router-dom'
 import { api } from '@/api'
@@ -98,7 +98,7 @@ export function DashboardPage() {
 
       {overview.attention.length > 0 && <AttentionPanel items={overview.attention} visibility={dashboardVisibility} />}
 
-      <div className="grid min-w-0 items-start gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(20rem,1fr)]">
+      <div className="grid min-w-0 items-start gap-4 @4xl/workspace:grid-cols-[minmax(0,2fr)_minmax(20rem,1fr)]">
         <RecentApplications failed={applicationsFailed} loading={applicationsLoading} rows={recentApplications} visibility={dashboardVisibility} />
         <div className="grid min-w-0 content-start gap-section">
           <RecentActivity activities={overview.activities} visibility={dashboardVisibility} />
@@ -125,7 +125,7 @@ function AttentionPanel({ items, visibility }: { items: DashboardAttentionItem[]
     >
       <ul className="-my-3 divide-y divide-border" data-slot="dashboard-attention">
         {items.slice(0, ATTENTION_LIMIT).map(item => (
-          <li key={item.key} className="flex min-w-0 flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <li key={item.key} className="flex min-w-0 flex-col gap-2 py-3 @lg/workspace:flex-row @lg/workspace:items-center @lg/workspace:justify-between">
             <div className="min-w-0">
               <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
                 <StatusDot label={eventTypeLabel(t, item.latest.type)} tone={item.severity === 'error' || item.latest.status === 'failed' ? 'danger' : 'warning'} />
@@ -135,7 +135,7 @@ function AttentionPanel({ items, visibility }: { items: DashboardAttentionItem[]
                 {[activityContext(item.latest), item.latest.message, formatCompactDateTime(item.latest.occurredAt)].filter(Boolean).join(' · ')}
               </p>
             </div>
-            <Link className={cn(buttonVariants({ size: 'sm', variant: 'outline' }), 'shrink-0 self-start sm:self-center')} to={withResultVisibility(activityTarget(item.latest), visibility)}>
+            <Link className={cn(buttonVariants({ size: 'sm', variant: 'outline' }), 'shrink-0 self-start @lg/workspace:self-center')} to={withResultVisibility(activityTarget(item.latest), visibility)}>
               {attentionActionLabel(t, item.category)}
             </Link>
           </li>
@@ -219,8 +219,8 @@ function DashboardRuntimeStatus({ application }: { application: Application }) {
   const summary = application.deploymentSummary
   if (!summary)
     return <span className="text-sm text-muted-foreground">-</span>
+  // 后端已统一判定是否部署（status 为 not-deployed），这里只展示。
   const state = effectiveReplicaState({
-    deployed: summary.targets.length > 0,
     desiredReplicas: summary.desiredReplicas,
     readyReplicas: summary.readyReplicas,
     status: summary.status,
@@ -350,6 +350,12 @@ function ProjectShortcuts({ hasMore, projects, visibility }: { hasMore: boolean,
           )
         : (
             <EmptyState
+              actions={(
+                <Link className={buttonVariants({ variant: 'outline' })} to="/projects?create=1">
+                  <Plus className="size-4" />
+                  {t('projectSpaces.createTitle')}
+                </Link>
+              )}
               description={t('dashboardPage.noProjectsDescription')}
               title={t('projectSpaces.emptyTitle')}
               variant="plain"
@@ -388,16 +394,13 @@ function ReadinessRow({ item, kind, label, to }: { item: DashboardReadinessItem,
 }
 
 /**
- * 首页应用列表：来自最常用项目空间的应用，按最近活动时间排序；没有活动的应用按项目空间顺序排在后面。
+ * 首页应用列表：来自最常用项目空间的应用，按后端返回的各应用最近活动时间排序；没有活动的应用按项目空间顺序排在后面。
  */
 function recentApplicationRows(overview: DashboardOverview, projects: DashboardProjectShortcut[], applicationPages: Application[][]): RecentApplicationRow[] {
   const latestActivityByApplication = new Map<string, DashboardActivity>()
-  for (const activity of [...overview.activities, ...overview.attention.map(item => item.latest)]) {
+  for (const activity of overview.applicationActivities) {
     const applicationId = activity.application?.id
-    if (!applicationId)
-      continue
-    const current = latestActivityByApplication.get(applicationId)
-    if (!current || activity.occurredAt > current.occurredAt)
+    if (applicationId && !latestActivityByApplication.has(applicationId))
       latestActivityByApplication.set(applicationId, activity)
   }
   const rows = projects.flatMap((project, index) => (applicationPages[index] ?? [])

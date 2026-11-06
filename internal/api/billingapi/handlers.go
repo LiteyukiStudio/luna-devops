@@ -20,7 +20,9 @@ func (h *Handler) GetBillingSummary(ctx *gin.Context) {
 	if !ok {
 		return
 	}
+	platformTotal := user.Role == authz.PlatformRoleAdmin && scope.SelectedUserID == ""
 	if strings.TrimSpace(ctx.Query("accountScope")) == "current" {
+		platformTotal = false
 		accountUserID := user.ID
 		if user.Role == authz.PlatformRoleAdmin && scope.SelectedUserID != "" {
 			accountUserID = scope.SelectedUserID
@@ -37,7 +39,14 @@ func (h *Handler) GetBillingSummary(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	summary, err := (billing.Service{DB: h.dbFor(ctx)}).Summary(scope.UserIDs, scope.ProjectIDs, time.Now(), lowBalanceLimit, period.Start, period.End)
+	location, ok := billingTimeZoneFromQuery(ctx)
+	if !ok {
+		return
+	}
+	summary, err := (billing.Service{DB: h.dbFor(ctx)}).Summary(billing.SummaryInput{
+		UserIDs: scope.UserIDs, ProjectIDs: scope.ProjectIDs, Now: time.Now().In(location),
+		LowBalanceLimit: lowBalanceLimit, PeriodStart: period.Start, PeriodEnd: period.End, PlatformTotal: platformTotal,
+	})
 	if err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return

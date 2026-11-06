@@ -380,7 +380,7 @@ export function AuthProvidersPage() {
             : (
                 <Surface className="max-w-3xl p-6" variant="bordered">
                   <form className="grid gap-5" onSubmit={policyForm.handleSubmit(values => savePolicy.mutate(values))}>
-                    <div className="grid gap-3 md:grid-cols-2">
+                    <div className="grid gap-3 @xl/workspace:grid-cols-2">
                       <Controller
                         control={policyForm.control}
                         name="allowLocalLogin"
@@ -404,7 +404,7 @@ export function AuthProvidersPage() {
                         name="requireVerifiedOidcEmail"
                         render={({ field }) => (
                           <ControlledCheckboxField
-                            className="md:col-span-2"
+                            className="@xl/workspace:col-span-2"
                             description={t('authProvidersPage.requireVerifiedOidcEmailHint')}
                             field={field}
                           >
@@ -413,7 +413,7 @@ export function AuthProvidersPage() {
                         )}
                       />
                     </div>
-                    <div className="grid gap-4 md:grid-cols-2">
+                    <div className="grid gap-4 @xl/workspace:grid-cols-2">
                       <Field error={policyForm.formState.errors.allowedEmailDomains?.message} hint={t('authProvidersPage.allowedEmailDomainsHint')} label={t('authProvidersPage.allowedEmailDomains')}>
                         <Textarea {...policyForm.register('allowedEmailDomains')} aria-invalid={Boolean(policyForm.formState.errors.allowedEmailDomains)} placeholder={t('authProvidersPage.allowedEmailDomainsPlaceholder')} rows={2} />
                       </Field>

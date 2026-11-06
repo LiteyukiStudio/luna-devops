@@ -18,6 +18,20 @@ import (
 const gatewayObservationTimeout = 8 * time.Second
 
 func (h *Handlers) observeGatewayRoutes(ctx context.Context, routes []model.GatewayRoute) []model.GatewayRoute {
+	return h.observeGatewayRoutesWith(ctx, routes, h.observeGatewayRoute)
+}
+
+// observeGatewayRouteStatuses 只读取 HTTPRoute 状态，不探测 DNS 与证书，供只需要就绪计数的聚合视图使用。
+func (h *Handlers) observeGatewayRouteStatuses(ctx context.Context, routes []model.GatewayRoute) []model.GatewayRoute {
+	return h.observeGatewayRoutesWith(ctx, routes, func(ctx context.Context, route model.GatewayRoute) model.GatewayRoute {
+		probeCtx, cancel := context.WithTimeout(ctx, gatewayObservationTimeout)
+		defer cancel()
+		route, _, _ = h.observeGatewayRouteStatus(probeCtx, route)
+		return route
+	})
+}
+
+func (h *Handlers) observeGatewayRoutesWith(ctx context.Context, routes []model.GatewayRoute, observe func(context.Context, model.GatewayRoute) model.GatewayRoute) []model.GatewayRoute {
 	const concurrency = 6
 	result := append([]model.GatewayRoute(nil), routes...)
 	guard := make(chan struct{}, concurrency)
@@ -34,7 +48,7 @@ func (h *Handlers) observeGatewayRoutes(ctx context.Context, routes []model.Gate
 				result[index] = unavailableGatewayRoute(result[index], "gateway_route.observation_cancelled")
 				return
 			}
-			result[index] = h.observeGatewayRoute(ctx, result[index])
+			result[index] = observe(ctx, result[index])
 		}()
 	}
 	wait.Wait()
@@ -42,26 +56,50 @@ func (h *Handlers) observeGatewayRoutes(ctx context.Context, routes []model.Gate
 }
 
 func (h *Handlers) observeGatewayRoute(ctx context.Context, route model.GatewayRoute) model.GatewayRoute {
+	probeCtx, cancel := context.WithTimeout(ctx, gatewayObservationTimeout)
+	defer cancel()
+	route, probe, observed := h.observeGatewayRouteStatus(probeCtx, route)
+	if !observed {
+		return route
+	}
+	route.DNSStatus = observeGatewayRouteDNS(ctx, route)
+	if probe == nil {
+		route.CertificateStatus = gatewayRouteCertificateFallback(route)
+		return route
+	}
+	observeGatewayRouteCertificate(probeCtx, probe.client, probe.cluster, probe.namespace, probe.resourceName, &route)
+	return route
+}
+
+// gatewayRouteStatusProbe 是读取 HTTPRoute 状态时建立的集群连接，完整观察复用它继续读取证书。
+type gatewayRouteStatusProbe struct {
+	client       *kubeprovider.Client
+	cluster      model.RuntimeCluster
+	namespace    string
+	resourceName string
+}
+
+// observeGatewayRouteStatus 读取访问入口的 HTTPRoute 状态。observed 为 false 表示入口停用或无法观察，
+// DNS 与证书状态已按终态填写；probe 为 nil 表示运行集群未配置，无法继续读取证书。
+func (h *Handlers) observeGatewayRouteStatus(ctx context.Context, route model.GatewayRoute) (model.GatewayRoute, *gatewayRouteStatusProbe, bool) {
 	observedAt := time.Now().UTC()
 	route.ObservedAt = &observedAt
 	if !route.Enabled {
 		route.Status = "disabled"
 		route.DNSStatus = "disabled"
 		route.CertificateStatus = "disabled"
-		return route
+		return route, nil, false
 	}
 
 	var project model.Project
 	if err := h.dbWithContext(ctx).First(&project, "id = ?", route.ProjectID).Error; err != nil {
-		return unavailableGatewayRoute(route, "gateway_route.project_reference_unavailable")
+		return unavailableGatewayRoute(route, "gateway_route.project_reference_unavailable"), nil, false
 	}
 	cluster, err := h.runtimeClusterForGatewayRoute(route, ctx)
 	if err != nil {
 		route.Status = observation.StatusNotConfigured
 		route.ObservationCode = "gateway_route.runtime_cluster_not_configured"
-		route.DNSStatus = observeGatewayRouteDNS(ctx, route)
-		route.CertificateStatus = gatewayRouteCertificateFallback(route)
-		return route
+		return route, nil, true
 	}
 	route.CertificateIssuerKind = gatewayRouteCertificateIssuerKind(cluster)
 	route.CertificateIssuerName = strings.TrimSpace(cluster.GatewayCertIssuerName)
@@ -70,20 +108,16 @@ func (h *Handlers) observeGatewayRoute(ctx context.Context, route model.GatewayR
 	if strings.TrimSpace(cluster.KubeconfigRef) == "" || kubeconfig == "" {
 		route.Status = observation.StatusNotConfigured
 		route.ObservationCode = "gateway_route.kubeconfig_not_configured"
-		route.DNSStatus = observeGatewayRouteDNS(ctx, route)
-		route.CertificateStatus = gatewayRouteCertificateFallback(route)
-		return route
+		return route, nil, true
 	}
 	client, err := kubeprovider.NewClientFromKubeconfig(kubeconfig)
 	if err != nil {
-		return unavailableGatewayRoute(route, "gateway_route.invalid_kubeconfig")
+		return unavailableGatewayRoute(route, "gateway_route.invalid_kubeconfig"), nil, false
 	}
 
 	namespace := h.runtimeProjectNamespace(project)
 	resourceName := resourcename.GatewayRoute(route.ID)
-	probeCtx, cancel := context.WithTimeout(ctx, gatewayObservationTimeout)
-	defer cancel()
-	snapshot, err := client.GetHTTPRouteStatus(probeCtx, namespace, resourceName)
+	snapshot, err := client.GetHTTPRouteStatus(ctx, namespace, resourceName)
 	switch {
 	case apierrors.IsNotFound(err):
 		route.Status = observation.StatusNotFound
@@ -96,10 +130,7 @@ func (h *Handlers) observeGatewayRoute(ctx context.Context, route model.GatewayR
 		route.RouteSummary = snapshot.Summary
 		route.Conditions = gatewayRouteConditions(snapshot.Conditions)
 	}
-
-	route.DNSStatus = observeGatewayRouteDNS(ctx, route)
-	observeGatewayRouteCertificate(probeCtx, client, cluster, namespace, resourceName, &route)
-	return route
+	return route, &gatewayRouteStatusProbe{client: client, cluster: cluster, namespace: namespace, resourceName: resourceName}, true
 }
 
 func unavailableGatewayRoute(route model.GatewayRoute, code string) model.GatewayRoute {

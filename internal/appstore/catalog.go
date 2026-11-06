@@ -5,16 +5,34 @@ import (
 	"embed"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/url"
 	"path"
 	"reflect"
 	"regexp"
+	"slices"
 	"strings"
 )
 
 //go:embed templates.json
 var templateFS embed.FS
+
+// randomSource 是模板随机密钥的熵来源；测试可替换为失败的 Reader 验证安装会中止。
+var randomSource io.Reader = rand.Reader
+
+// ErrRandomSecretUnavailable 表示无法为 autoGenerate 参数生成随机密钥；安装必须中止，不能退回固定值。
+var ErrRandomSecretUnavailable = errors.New("template random secret generation failed")
+
+// ValueRequiredError 表示模板必填参数缺失；Key 是模板参数键，用于稳定错误响应。
+type ValueRequiredError struct {
+	Key string
+}
+
+func (err *ValueRequiredError) Error() string {
+	return fmt.Sprintf("template value %s is required", err.Key)
+}
 
 type Template struct {
 	ID                 string `json:"id"`
@@ -159,13 +177,38 @@ func validateTemplateWorkloads(template Template) error {
 		}
 	}
 	for _, component := range template.Components {
-		for _, reference := range workloadComponentReferences(component.Workload) {
+		for _, reference := range ComponentDependencies(component.Workload) {
 			if _, exists := keys[reference]; !exists {
 				return fmt.Errorf("component %s references unknown component %q", component.Key, reference)
+			}
+			if reference == component.Key {
+				return fmt.Errorf("component %s cannot reference itself", component.Key)
+			}
+			hostEnv, portEnv := ComponentBindingEnvVars(reference)
+			for _, envKey := range []string{hostEnv, portEnv} {
+				_, plain := component.Env[envKey]
+				_, secret := component.SecretEnv[envKey]
+				if plain || secret {
+					return fmt.Errorf("component %s declares %s, which is reserved for its service binding to %s", component.Key, envKey, reference)
+				}
 			}
 		}
 	}
 	return nil
+}
+
+// ComponentDependencies 返回组件通过 {{components.<key>.host}} 引用的其他组件键，去重并按键排序。
+// 安装时每个依赖都会落成一条 ServiceBinding，使依赖关系进入拓扑并受删除保护。
+func ComponentDependencies(workload Workload) []string {
+	references := workloadComponentReferences(workload)
+	slices.Sort(references)
+	return slices.Compact(references)
+}
+
+// ComponentBindingEnvVars 返回模板组件依赖对应 ServiceBinding 注入的 host/port 环境变量名。
+func ComponentBindingEnvVars(componentKey string) (string, string) {
+	prefix := strings.ToUpper(componentKey)
+	return prefix + "_HOST", prefix + "_PORT"
 }
 
 func workloadComponentReferences(workload Workload) []string {
@@ -267,10 +310,14 @@ func ResolveValues(template Template, input map[string]string) (map[string]strin
 			values[key] = strings.TrimSpace(definition.Default)
 		}
 		if values[key] == "" && definition.AutoGenerate {
-			values[key] = randomSecret()
+			secret, err := randomSecret()
+			if err != nil {
+				return nil, err
+			}
+			values[key] = secret
 		}
 		if definition.Required && values[key] == "" {
-			return nil, fmt.Errorf("template value %s is required", key)
+			return nil, &ValueRequiredError{Key: key}
 		}
 		if definition.Secret && !definition.Required && values[key] == "" {
 			delete(values, key)
@@ -331,10 +378,10 @@ func renderTemplateString(value string, values map[string]string) string {
 	})
 }
 
-func randomSecret() string {
+func randomSecret() (string, error) {
 	data := make([]byte, 32)
-	if _, err := rand.Read(data); err != nil {
-		return "change-me"
+	if _, err := io.ReadFull(randomSource, data); err != nil {
+		return "", fmt.Errorf("%w: %v", ErrRandomSecretUnavailable, err)
 	}
-	return base64.RawURLEncoding.EncodeToString(data)
+	return base64.RawURLEncoding.EncodeToString(data), nil
 }

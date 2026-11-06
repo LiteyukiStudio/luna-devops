@@ -4,7 +4,7 @@ AI Assistant uses the current page and your permissions to query resources, expl
 
 ## What it can do
 
-- Find project spaces, applications, builds, Releases, clusters, and routes.
+- Find project spaces, applications, builds, Releases, clusters, and access routes.
 - Analyze failed states and provide verifiable troubleshooting steps.
 - Prepare deployments from a repository, an existing image, or an App Marketplace template.
 - Collect parameters in forms and execute platform operations after confirmation.

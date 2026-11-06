@@ -141,7 +141,7 @@ export function AIAssistantSettingsPanel() {
               <option value="admins">{t('settings.ai.accessModeAdmins')}</option>
             </Select>
           </Field>
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="grid gap-4 @xl/workspace:grid-cols-2">
             <Field error={errors.baseUrl?.message} hint={t('settings.ai.baseUrlHint')} label={t('settings.ai.baseUrl')} required>
               <Input autoComplete="url" placeholder="https://api.example.com/v1" {...form.register('baseUrl')} />
             </Field>
@@ -199,7 +199,7 @@ export function AIAssistantSettingsPanel() {
             })}
             title={t('settings.ai.runtimeTitle')}
           >
-            <div className="grid gap-4 md:grid-cols-2">
+            <div className="grid gap-4 @xl/workspace:grid-cols-2">
               <Field error={errors.providerTimeoutSeconds?.message} hint={t('settings.ai.providerTimeoutHint')} label={t('settings.ai.providerTimeout')}>
                 <Input max={900} min={1} step={1} type="number" {...form.register('providerTimeoutSeconds', { valueAsNumber: true })} />
               </Field>
@@ -337,7 +337,7 @@ function ObservabilitySourceFields({ form, source, tenant = false }: { form: Ret
           </Button>
         </div>
       </div>
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid gap-4 @xl/workspace:grid-cols-2">
         <Field error={errors[urlField]?.message} hint={t('settings.ai.observabilityUrlHint')} label={t('settings.ai.observabilityUrl')} required={form.watch('observabilityEnabled')}>
           <Input autoComplete="url" placeholder={`http://${source}:${source === 'prometheus' ? '9090' : source === 'loki' ? '3100' : '3200'}`} {...form.register(urlField)} />
         </Field>

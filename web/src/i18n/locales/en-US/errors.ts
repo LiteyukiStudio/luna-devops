@@ -14,11 +14,20 @@ const errors = {
     identifier_exists: 'An application with this identifier already exists in the project space.',
     identifier_delete_in_progress: 'An application with this identifier is being deleted. Wait for cleanup before reusing it.',
     identifier_delete_failed: 'The previous deletion of an application with this identifier failed. Finish cleanup before reusing it.',
+    delete_cleanup_failed: 'Cleaning up the application runtime resources failed. Check the runtime cluster and delete again.',
+    delete_finalize_failed: 'Runtime resources were cleaned up, but the deletion could not be recorded. Delete again later.',
+    delete_enqueue_failed: 'The application deletion task could not be queued. Make sure the Worker queue is available and retry.',
   },
   app_template: {
     volume_contract_invalid: 'This template has an invalid volume configuration. Ask a platform administrator to correct the marketplace template.',
     project_volume_required: 'Select an available project volume before installing this template.',
     project_volume_unsupported: 'This template does not accept a project volume.',
+    value_required: 'Fill in every required template parameter.',
+    install_conflict: 'The installation conflicts with an existing resource. Refresh and retry with another application identifier.',
+    install_failed: 'The template installation failed and created no resources. Try again later.',
+    catalog_unavailable: 'The App Marketplace catalog is unavailable. Contact a platform administrator.',
+    secret_generation_failed: 'Template secrets could not be generated securely, so the installation was aborted. Try again later.',
+    dependency_invalid: 'This template declares invalid component dependencies. Ask a platform administrator to fix the App Marketplace template.',
   },
   project_volume: {
     not_found: 'The selected project volume does not exist or has been deleted.',
@@ -28,9 +37,13 @@ const errors = {
     mode_incompatible: 'The project volume mode is not compatible with this template. Select a matching filesystem or block volume.',
   },
   project: {
+    delete_in_progress: 'This project space is being deleted. Wait for resource cleanup to finish.',
     identifier_exists: 'A project space with this identifier already exists.',
     identifier_delete_in_progress: 'A project space with this identifier is being deleted. Wait for cleanup before reusing it.',
     identifier_delete_failed: 'The previous deletion of a project space with this identifier failed. Finish cleanup before reusing it.',
+  },
+  release: {
+    not_cancelable: 'Only pending or running releases can be canceled.',
   },
   deployment: {
     runtime_environment_key_invalid: 'Use a valid environment variable name.',
@@ -82,6 +95,9 @@ const errors = {
     service_account_invalid: 'The ServiceAccount configuration is invalid. Check it and try again.',
     replicas_invalid: 'Replicas must be zero or a positive integer.',
     scale_failed: 'The replica count could not be applied to the runtime cluster. Try again.',
+    delete_cleanup_failed: 'Cleaning up the deployment target runtime resources failed. Check the runtime cluster and delete again.',
+    delete_finalize_failed: 'Runtime resources were cleaned up, but the deletion record could not be finished. Delete again later.',
+    delete_enqueue_failed: 'The deployment target deletion task could not be queued. Make sure the Worker queue is available and try again.',
   },
   kubernetes: {
     resource_ownership_conflict: 'A same-name Kubernetes resource belongs to another lifecycle. The platform will not adopt it automatically. Handle the retained resource first.',
@@ -163,6 +179,7 @@ const errors = {
   service_binding_env_conflict: 'An injected environment variable conflicts with the deployment configuration.',
   service_binding_reserved_env: 'A platform-reserved environment variable name cannot be used.',
   service_binding_in_use: 'This application or deployment target is still referenced by a service relation. Remove the relation first.',
+  service_binding_target_deleting: 'The target application or deployment target is being deleted or its last deletion failed, so service relations to it cannot be created or changed.',
   topology_edge_duplicate: 'The same service relation already exists.',
   topology_truncated: 'There are too many topology relations, so the current result was truncated.',
   dependency_cycle: 'A dependency cycle was detected. Adjust the service relations.',
@@ -174,6 +191,7 @@ const errors = {
     download_unauthorized: 'The download authorization is invalid or does not match this transfer. Start the download again.',
     format_unsupported: 'This archive format is not supported.',
     job_failed: 'The volume transfer failed. Check the transfer state and retry.',
+    snapshot_timeout: 'The volume snapshot did not become ready in time. Make sure the cluster runs a snapshot controller and retry, or choose another consistency mode.',
   },
   volume: {
     invalid_input: 'The volume configuration is invalid. Check the fields and try again.',

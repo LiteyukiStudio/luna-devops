@@ -1,5 +1,5 @@
 import type { TFunction } from 'i18next'
-import type { BuildRun, DeploymentTarget, GatewayRoute, Release, RepositoryBinding } from '@/api'
+import type { ApplicationDeploymentSummary, BuildRun, DeploymentTarget, GatewayRoute, Release, RepositoryBinding } from '@/api'
 import { CheckCircle2, Circle, GitBranch, Globe2, Package, Play, Rocket } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { buildRunImageRef } from '@/components/common/deployment-build-runs'
@@ -9,18 +9,19 @@ import { Section } from '@/components/common/section'
 import { StatusValueBadge } from '@/components/common/status-badge'
 import { formatSmartDateTime } from '@/components/common/time-format'
 import { Button } from '@/components/ui/button'
-import { parseRuntimeDataVolumes } from '@/lib/runtime-data-volumes'
 import { cn } from '@/lib/utils'
-import { DeploymentRuntimeSpec, ReplicaStatusDot } from '@/pages/applications/deployments/operations/application-deployment-runtime'
+import { primaryGatewayRoute } from '@/pages/applications/gateway/gateway-route-url'
 import { firstReleaseReadyTarget, formatReleaseTime } from '../application-config-utils'
-import { latestByDate, latestReleaseForTarget } from './application-facts'
+import { latestByDate } from './application-facts'
 
-export function ApplicationOverviewPanel({ buildRuns, deploymentTargets, onBindRepository, onCreateDeploymentTarget, onCreateGatewayRoute, onCreateRelease, onTriggerBuild, releases, repositoryBindings, routes }: {
+export function ApplicationOverviewPanel({ buildRuns, deploymentTargets, onBindRepository, onCreateDeploymentTarget, onCreateGatewayRoute, onCreateRelease, onTriggerBuild, releases, repositoryBindings, routes, runtimeSummary }: {
   buildRuns: BuildRun[]
   deploymentTargets: DeploymentTarget[]
   releases: Release[]
   repositoryBindings: RepositoryBinding[]
   routes: GatewayRoute[]
+  /** 后端统一的应用运行结论；加载中或不可用时为空。 */
+  runtimeSummary?: ApplicationDeploymentSummary
   onBindRepository: () => void
   onCreateDeploymentTarget: () => void
   onCreateGatewayRoute: () => void
@@ -49,9 +50,9 @@ export function ApplicationOverviewPanel({ buildRuns, deploymentTargets, onBindR
   const deployGuide = buildDeployGuide({
     buildRuns,
     deploymentTargets,
-    releases,
     repositoryBindings,
     routes,
+    runtimeSummary,
     t,
     onBindRepository,
     onCreateDeploymentTarget,
@@ -75,7 +76,7 @@ export function ApplicationOverviewPanel({ buildRuns, deploymentTargets, onBindR
           )}
           variant="bordered"
         >
-          <ol className="grid gap-x-6 gap-y-3 sm:grid-cols-2 xl:grid-cols-5">
+          <ol className="grid gap-x-6 gap-y-3 @lg/workspace:grid-cols-2 @4xl/workspace:grid-cols-5">
             {deployGuide.steps.map(step => (
               <li key={step.key} className="flex min-w-0 items-start gap-2">
                 {step.done
@@ -90,44 +91,26 @@ export function ApplicationOverviewPanel({ buildRuns, deploymentTargets, onBindR
           </ol>
         </Section>
       )}
-      <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-[minmax(0,1.4fr)_minmax(20rem,0.6fr)]">
-        <Section description={t('apps.deploymentSummariesDescription')} title={t('apps.deploymentSummaries')} variant="bordered">
-          {deploymentTargets.length
-            ? (
-                <ul className="-my-3 divide-y divide-border">
-                  {deploymentTargets.map(target => (
-                    <DeploymentSummary
-                      key={target.id}
-                      latestRelease={latestReleaseForTarget(releases, target)}
-                      target={target}
-                      t={t}
-                    />
-                  ))}
-                </ul>
-              )
-            : <EmptyState description={t('apps.deployGuideTargetMeta')} title={t('apps.emptyBuildConfigs')} variant="plain" />}
-        </Section>
-        <Section title={t('apps.recentActivity')} variant="bordered">
-          {recentActivities.length
-            ? (
-                <ul className="-my-3 divide-y divide-border">
-                  {recentActivities.map(item => (
-                    <li key={item.id} className="flex min-w-0 items-center justify-between gap-3 py-3">
-                      <div className="min-w-0 flex-1">
-                        <div className="text-sm font-medium">{item.label}</div>
-                        <HoverText className="mt-0.5 font-mono text-xs text-muted-foreground" value={item.meta} />
-                      </div>
-                      <div className="flex shrink-0 flex-col items-end gap-1">
-                        <StatusValueBadge labelKeyPrefix="buildsPage.statuses" value={item.status} />
-                        {item.time && <span className="text-xs text-muted-foreground">{item.time}</span>}
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              )
-            : <EmptyState description={t('apps.noRecentActivityDescription')} title={t('apps.noRecentActivity')} variant="plain" />}
-        </Section>
-      </div>
+      <Section title={t('apps.recentActivity')} variant="bordered">
+        {recentActivities.length
+          ? (
+              <ul className="-my-3 divide-y divide-border">
+                {recentActivities.map(item => (
+                  <li key={item.id} className="flex min-w-0 items-center justify-between gap-3 py-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm font-medium">{item.label}</div>
+                      <HoverText className="mt-0.5 font-mono text-xs text-muted-foreground" value={item.meta} />
+                    </div>
+                    <div className="flex shrink-0 flex-col items-end gap-1">
+                      <StatusValueBadge labelKeyPrefix="buildsPage.statuses" value={item.status} />
+                      {item.time && <span className="text-xs text-muted-foreground">{item.time}</span>}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )
+          : <EmptyState description={t('apps.noRecentActivityDescription')} title={t('apps.noRecentActivity')} variant="plain" />}
+      </Section>
     </div>
   )
 }
@@ -141,9 +124,9 @@ function buildDeployGuide({
   onCreateGatewayRoute,
   onCreateRelease,
   onTriggerBuild,
-  releases,
   repositoryBindings,
   routes,
+  runtimeSummary,
   t,
 }: {
   buildRuns: BuildRun[]
@@ -153,16 +136,24 @@ function buildDeployGuide({
   onCreateGatewayRoute: () => void
   onCreateRelease: () => void
   onTriggerBuild: () => void
-  releases: Release[]
   repositoryBindings: RepositoryBinding[]
   routes: GatewayRoute[]
+  runtimeSummary?: ApplicationDeploymentSummary
   t: TFunction
 }) {
   const repositoryTarget = deploymentTargets.find(target => target.sourceType === 'repository')
   const releaseReadyTarget = firstReleaseReadyTarget(deploymentTargets, buildRuns)
   const hasSuccessfulBuild = buildRuns.some(run => run.status === 'succeeded')
-  const hasSuccessfulRelease = releases.some(release => release.status === 'succeeded')
-  const hasReadyRoute = routes.some(route => route.status === 'ready')
+  // “发布运行”与事实条使用同一份后端运行结论：部署后实际在运行才算完成。
+  const runtimeStatus = runtimeSummary?.status
+  const releaseRunning = runtimeStatus === 'ready' || runtimeStatus === 'scaled-to-zero'
+  const releaseMeta = releaseRunning
+    ? t('apps.deployGuideDone')
+    : runtimeStatus && runtimeStatus !== 'not-deployed'
+      ? t(`deploymentsPage.runtimeStatuses.${runtimeStatus}`, { defaultValue: runtimeStatus })
+      : t('apps.deployGuideReleaseMeta')
+  // “开放访问”与事实条的主要访问入口是同一条路由。
+  const hasReadyRoute = primaryGatewayRoute(routes)?.status === 'ready'
   const repositoryDone = repositoryBindings.length > 0 || deploymentTargets.some(target => target.sourceType === 'image')
   const steps = [
     {
@@ -184,10 +175,10 @@ function buildDeployGuide({
       meta: hasSuccessfulBuild ? t('apps.deployGuideDone') : t('apps.deployGuideBuildMeta'),
     },
     {
-      done: hasSuccessfulRelease,
+      done: releaseRunning,
       key: 'release',
       label: t('apps.deployGuideRelease'),
-      meta: hasSuccessfulRelease ? t('apps.deployGuideDone') : t('apps.deployGuideReleaseMeta'),
+      meta: releaseMeta,
     },
     {
       done: hasReadyRoute,
@@ -208,65 +199,10 @@ function buildDeployGuide({
   if (repositoryTarget && !hasSuccessfulBuild) {
     return { action: onTriggerBuild, actionLabel: t('apps.deployGuideTriggerBuild'), icon: <Play className="size-4" />, steps }
   }
-  if (releaseReadyTarget && !hasSuccessfulRelease) {
+  if (releaseReadyTarget && !releaseRunning) {
     return { action: onCreateRelease, actionLabel: t('apps.deployGuideCreateRelease'), icon: <Rocket className="size-4" />, steps }
   }
   return { action: onCreateGatewayRoute, actionLabel: t('apps.deployGuideCreateAccess'), icon: <Globe2 className="size-4" />, steps }
-}
-
-function DeploymentSummary({ latestRelease, target, t }: { latestRelease?: Release, target: DeploymentTarget, t: TFunction }) {
-  const storageItems = deploymentStorageItems(target)
-
-  return (
-    <li className="grid min-w-0 gap-2 py-3 text-sm sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start sm:gap-4">
-      <div className="min-w-0">
-        <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-          <span className="truncate font-medium" title={target.name}>{target.name}</span>
-          <span className="text-xs text-muted-foreground">{t(`deploymentsPage.stageLabels.${target.stage}`, { defaultValue: target.stage })}</span>
-          {!target.enabled && <StatusValueBadge value="disabled" />}
-        </div>
-        <dl className="mt-1 flex min-w-0 flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-          <div className="flex min-w-0 gap-1">
-            <dt>{t('apps.runtimeSpec')}</dt>
-            <dd><DeploymentRuntimeSpec target={target} /></dd>
-          </div>
-          {latestRelease && (
-            <div className="flex min-w-0 gap-1">
-              <dt>{t('apps.latestRelease')}</dt>
-              <dd className="truncate">
-                {t(`buildsPage.statuses.${latestRelease.status}`, { defaultValue: latestRelease.status })}
-                {' · '}
-                {formatReleaseTime(latestRelease, t)}
-              </dd>
-            </div>
-          )}
-          {storageItems.length > 0 && (
-            <div className="flex min-w-0 gap-1">
-              <dt>{t('apps.storageResources')}</dt>
-              <dd className="truncate font-mono" title={storageItems.join('\n')}>{storageItems.join(', ')}</dd>
-            </div>
-          )}
-        </dl>
-      </div>
-      <ReplicaStatusDot
-        availableReplicas={target.availableReplicas}
-        deployed={Boolean(latestRelease)}
-        desiredReplicas={target.desiredReplicas}
-        readyReplicas={target.readyReplicas}
-        status={target.enabled ? target.status || 'unknown' : 'disabled'}
-      />
-    </li>
-  )
-}
-
-function deploymentStorageItems(target: DeploymentTarget) {
-  return parseRuntimeDataVolumes(target.dataVolumes)
-    .map((volume) => {
-      const name = volume.name.trim()
-      const mountPath = volume.mountPath.trim() || volume.devicePath.trim()
-      return [name, mountPath].filter(Boolean).join(' → ')
-    })
-    .filter(Boolean)
 }
 
 function buildOverviewMeta(run: BuildRun, t: TFunction) {

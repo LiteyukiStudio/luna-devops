@@ -41,7 +41,14 @@ export function BillingDeploymentSpendList({
       key: 'deploymentTarget',
       header: t('billingPage.deploymentTarget'),
       width: 'normal',
-      render: item => <DeploymentTargetCell item={item} unassignedLabel={t('billingPage.unassignedDeploymentTarget')} />,
+      render: item => (
+        <DeploymentTargetCell
+          item={item}
+          projectStorageHint={t('billingPage.projectStorageGroupHint')}
+          projectStorageLabel={t('billingPage.projectStorageGroup')}
+          unassignedLabel={t('billingPage.unassignedDeploymentTarget')}
+        />
+      ),
     },
     {
       key: 'amount',
@@ -101,7 +108,7 @@ export function BillingDeploymentSpendList({
         totalPages: data?.totalPages ?? 1,
         onPageChange,
       }}
-      rowKey={item => `${item.projectId}:${item.applicationId || 'unassigned'}:${item.deploymentTargetId || 'unassigned'}`}
+      rowKey={item => `${item.projectId}:${item.applicationId || 'unassigned'}:${item.spendGroup}:${item.deploymentTargetId || 'unassigned'}`}
     />
   )
 }

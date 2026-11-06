@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { TooltipProvider } from '@/components/ui/tooltip'
 import i18next from '@/i18n'
 import { ApplicationBuildsPanel } from './application-builds-panel'
 
@@ -39,6 +40,7 @@ const buildRun: BuildRun = {
   deploymentTargetId: 'dpt_deleted',
   buildVariableSetIds: [],
   status: 'succeeded',
+  failureCode: '',
   triggerType: 'manual',
   sourceBranch: 'main',
   sourceTag: '',
@@ -96,6 +98,22 @@ describe('application builds panel', () => {
     expect(screen.queryByText('Bind a code repository to this application first')).not.toBeInTheDocument()
   })
 
+  it('shows the localized failure reason on a timed-out build row', async () => {
+    mocks.listBuildRunsPage.mockResolvedValue({
+      items: [{ ...buildRun, status: 'timeout', failureCode: 'queue_timeout' } satisfies BuildRun],
+      page: 1,
+      pageSize: 10,
+      sortBy: 'createdAt',
+      sortOrder: 'desc',
+      total: 1,
+      totalPages: 1,
+    })
+    renderPanel()
+
+    expect(await screen.findByText('Waited in the queue too long to start')).toBeVisible()
+    expect(screen.getByText('Timed out', { selector: '[data-slot="status-dot"] span' }).closest('[data-slot="status-dot"]')).toHaveAttribute('data-tone', 'danger')
+  })
+
   it('does not attribute an old build to a replacement repository binding', async () => {
     const user = userEvent.setup()
     renderPanel({
@@ -125,18 +143,20 @@ function renderPanel(options: {
   })
   return render(
     <QueryClientProvider client={queryClient}>
-      <ApplicationBuildsPanel
-        applicationId="app_1"
-        applicationIdentifier="example"
-        binding={options.binding}
-        buildJobs={[]}
-        buildRuns={[buildRun]}
-        deploymentTargets={options.deploymentTargets ?? []}
-        projectId="prj_1"
-        projectIdentifier="project"
-        registries={[]}
-        repositoryBindings={[]}
-      />
+      <TooltipProvider>
+        <ApplicationBuildsPanel
+          applicationId="app_1"
+          applicationIdentifier="example"
+          binding={options.binding}
+          buildJobs={[]}
+          buildRuns={[buildRun]}
+          deploymentTargets={options.deploymentTargets ?? []}
+          projectId="prj_1"
+          projectIdentifier="project"
+          registries={[]}
+          repositoryBindings={[]}
+        />
+      </TooltipProvider>
     </QueryClientProvider>,
   )
 }

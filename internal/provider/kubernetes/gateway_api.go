@@ -428,6 +428,75 @@ func mergeGatewayListenerCertificateRefs(next *unstructured.Unstructured, existi
 	}
 }
 
+// removeGatewayCertificateRef 从共享 Gateway 的所有 listener 移除指向指定 Secret 的证书引用；
+// listener 不再有证书时去掉 tls 块，与 gatewayObject 在无证书时的形态一致。
+func (c *Client) removeGatewayCertificateRef(ctx context.Context, gatewayNamespace, gatewayName, secretNamespace, secretName string) (bool, error) {
+	gatewayNamespace = strings.TrimSpace(gatewayNamespace)
+	gatewayName = strings.TrimSpace(gatewayName)
+	if gatewayNamespace == "" || gatewayName == "" {
+		return false, nil
+	}
+	resource := c.dynamic.Resource(gatewayGVR).Namespace(gatewayNamespace)
+	gateway, err := resource.Get(ctx, gatewayName, metav1.GetOptions{})
+	if apierrors.IsNotFound(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	listeners, _, _ := unstructured.NestedSlice(gateway.Object, "spec", "listeners")
+	changed := false
+	for index, item := range listeners {
+		listener, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		refs := nestedSlice(listener, "tls", "certificateRefs")
+		kept := make([]any, 0, len(refs))
+		for _, rawRef := range refs {
+			ref, ok := rawRef.(map[string]any)
+			if ok && gatewayCertificateRefMatches(ref, gatewayNamespace, secretNamespace, secretName) {
+				continue
+			}
+			kept = append(kept, rawRef)
+		}
+		if len(kept) == len(refs) {
+			continue
+		}
+		changed = true
+		if len(kept) == 0 {
+			delete(listener, "tls")
+		} else if tls, ok := listener["tls"].(map[string]any); ok {
+			tls["certificateRefs"] = kept
+		}
+		listeners[index] = listener
+	}
+	if !changed {
+		return false, nil
+	}
+	if err := unstructured.SetNestedSlice(gateway.Object, listeners, "spec", "listeners"); err != nil {
+		return false, err
+	}
+	if _, err := resource.Update(ctx, gateway, metav1.UpdateOptions{}); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func gatewayCertificateRefMatches(ref map[string]any, gatewayNamespace, secretNamespace, secretName string) bool {
+	if strings.TrimSpace(fmt.Sprint(ref["name"])) != secretName {
+		return false
+	}
+	if kind, ok := ref["kind"].(string); ok && kind != "" && kind != "Secret" {
+		return false
+	}
+	namespace := gatewayNamespace
+	if value, ok := ref["namespace"].(string); ok && strings.TrimSpace(value) != "" {
+		namespace = strings.TrimSpace(value)
+	}
+	return namespace == strings.TrimSpace(secretNamespace)
+}
+
 func nestedSlice(values map[string]any, fields ...string) []any {
 	items, _, _ := unstructured.NestedSlice(values, fields...)
 	return items

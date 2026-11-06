@@ -64,6 +64,8 @@ type Host interface {
 	QueueBuildRun(ctx context.Context, user model.User, run model.BuildRun) (model.BuildRun, error)
 	DeploymentTargetMatchesBuildRun(target model.DeploymentTarget, run model.BuildRun) bool
 	BuildRunActorName(user model.User) string
+	ProjectRoleActionAllowed(ctx context.Context, user model.User, projectID string, action authz.Action) (bool, error)
+	NewBuildBillingDenialCode(ctx context.Context, projectID string) (string, error)
 }
 
 type Handler struct {

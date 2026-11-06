@@ -3,6 +3,7 @@ import type { GitAccount, GitBranch, GitProvider } from '@/api'
 import { Plus } from 'lucide-react'
 import { Controller } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
+import { Link } from 'react-router-dom'
 import { ControlledCheckboxField } from '@/components/common/checkbox-field'
 import { FormField as Field } from '@/components/common/form-field'
 import { GitRepositoryPicker } from '@/components/common/git-repository-picker'
@@ -72,6 +73,10 @@ export function ApplicationRepositoryBindingDialog({
           <DialogDescription>{t('deploymentsPage.repositoryBindingDialogDescription')}</DialogDescription>
         </DialogHeader>
         <form className="grid gap-3" onSubmit={form.handleSubmit(onSubmit)}>
+          {/* 新开页面管理 Git Provider 与凭据，避免离开尚未保存的部署配置。 */}
+          <div className="flex justify-end">
+            <Link className="text-sm text-primary-text hover:underline" rel="noreferrer" target="_blank" to="/code-repositories">{t('repositories.manageCodeRepositories')}</Link>
+          </div>
           <GitRepositoryPicker
             accounts={accounts}
             providers={providers}

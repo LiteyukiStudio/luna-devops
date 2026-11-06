@@ -28,9 +28,11 @@
 
 导出时可选择：
 
-- **自动**：空闲卷直接导出，使用中卷优先创建 CSI Snapshot。
-- **快照**：必须使用 CSI Snapshot；快照是 crash-consistent，不等同于应用一致性备份。
-- **在线读取**：允许读取使用中的 Filesystem，内容可能变化，仅 Owner/Admin 可选。
+- **自动**：空闲卷直接导出。使用中的卷在存储类支持 VolumeSnapshot 时创建 CSI Snapshot；不支持时，Filesystem 卷改为在线读取，Block 卷会被拒绝，需要先解除挂载再导出。
+- **快照**：必须使用 CSI Snapshot；存储类不支持时该选项不可选。快照是 crash-consistent，不等同于应用一致性备份。
+- **在线读取**：允许读取使用中的 Filesystem，内容可能变化，仅 Owner/Admin 可选；Block 卷不支持。
+
+存储类是否支持快照，以该卷 PVC 所用 StorageClass 在集群中是否有匹配的 VolumeSnapshotClass 为准。若集群装有 VolumeSnapshot CRD 但没有运行 snapshot controller，快照会一直无法就绪：等待 10 分钟后导出失败并提示快照超时，临时快照会被清理。此时请让集群管理员安装 snapshot controller，或对 Filesystem 卷改用在线读取。
 
 导出内容从 Transfer Pod 直接流式下载，不保留可重复下载的服务端归档，也不支持断点续传。下载授权是绑定当前用户、会话和 Transfer 的短期一次性票据，下载期间授权失效会停止输出。只有下载完成且 Transfer 显示“成功”才表示本次备份完成；连接中断后需要重新导出。
 

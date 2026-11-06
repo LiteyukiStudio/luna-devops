@@ -50,6 +50,7 @@ const release: Release = {
   forceImagePull: false,
   type: 'deploy',
   status: 'succeeded',
+  failureCode: '',
   revision: 1,
   rollbackFromId: '',
   message: '',

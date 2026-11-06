@@ -35,7 +35,7 @@ export function ServicePortsFields() {
       )}
     >
       <div className="grid gap-2">
-        <div className="hidden gap-2 px-1 text-xs font-medium text-muted-foreground md:grid md:grid-cols-[minmax(0,1.2fr)_8rem_minmax(0,1fr)_2.25rem]" aria-hidden="true">
+        <div className="hidden gap-2 px-1 text-xs font-medium text-muted-foreground @xl/workspace:grid @xl/workspace:grid-cols-[minmax(0,1.2fr)_8rem_minmax(0,1fr)_2.25rem]" aria-hidden="true">
           <span>{t('deploymentsPage.servicePortName')}</span>
           <span>{t('deploymentsPage.servicePortNumber')}</span>
           <span>{t('deploymentsPage.servicePortAppProtocol')}</span>
@@ -54,7 +54,7 @@ export function ServiceAdvancedFields() {
   const { register } = useFormContext<DeploymentTargetFormValues>()
   const annotationsError = useFieldError('serviceAnnotations')
   return (
-    <div className="grid gap-4 md:grid-cols-2">
+    <div className="grid gap-4 @xl/workspace:grid-cols-2">
       <FormField hint={t('deploymentsPage.serviceSessionAffinityHint')} label={t('deploymentsPage.serviceSessionAffinity')}>
         <NativeSelect {...register('serviceSessionAffinity')}>
           <option value="">{t('deploymentsPage.kubernetesDefaultNone')}</option>
@@ -81,7 +81,7 @@ function ServicePortRow({ index, onRemove, removable }: { index: number, onRemov
 
   return (
     <div className="grid gap-1">
-      <div className="grid gap-2 rounded-control bg-surface-inset/60 p-2 md:grid-cols-[minmax(0,1.2fr)_8rem_minmax(0,1fr)_2.25rem] md:items-center md:bg-transparent md:p-0">
+      <div className="grid gap-2 rounded-control bg-surface-inset/60 p-2 @xl/workspace:grid-cols-[minmax(0,1.2fr)_8rem_minmax(0,1fr)_2.25rem] @xl/workspace:items-center @xl/workspace:bg-transparent @xl/workspace:p-0">
         <Input
           {...register(`servicePorts.${index}.name`)}
           aria-describedby={errors.length ? errorId : undefined}

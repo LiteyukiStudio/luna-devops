@@ -4,11 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/LiteyukiStudio/devops/internal/appstore"
 	"github.com/LiteyukiStudio/devops/internal/authz"
+	"github.com/LiteyukiStudio/devops/internal/dependency"
 	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/resourceidentifier"
@@ -104,7 +107,7 @@ type appTemplateResponse struct {
 func (h *Handlers) ListAppTemplates(ctx *gin.Context) {
 	templates, err := appstore.Catalog()
 	if err != nil {
-		writeError(ctx, http.StatusInternalServerError, err.Error())
+		writeTemplateCatalogUnavailable(ctx, err)
 		return
 	}
 	query := strings.ToLower(strings.TrimSpace(ctx.Query("query")))
@@ -129,7 +132,7 @@ func (h *Handlers) ListAppTemplates(ctx *gin.Context) {
 func (h *Handlers) GetAppTemplate(ctx *gin.Context) {
 	template, found, err := appstore.Find(ctx.Param("templateId"))
 	if err != nil {
-		writeError(ctx, http.StatusInternalServerError, err.Error())
+		writeTemplateCatalogUnavailable(ctx, err)
 		return
 	}
 	if !found {
@@ -199,7 +202,7 @@ func (h *Handlers) InstallAppTemplate(ctx *gin.Context) {
 
 	template, found, err := appstore.Find(ctx.Param("templateId"))
 	if err != nil {
-		writeError(ctx, http.StatusInternalServerError, err.Error())
+		writeTemplateCatalogUnavailable(ctx, err)
 		return
 	}
 	if !found {
@@ -240,7 +243,6 @@ func (h *Handlers) InstallAppTemplate(ctx *gin.Context) {
 				if err := tx.Create(component.Release).Error; err != nil {
 					return err
 				}
-				plan.Installation.Status = "deploying"
 			}
 		}
 		if entry := plan.Components[0]; entry.Release != nil {
@@ -263,29 +265,31 @@ func (h *Handlers) InstallAppTemplate(ctx *gin.Context) {
 				}
 			}
 		}
+		for index := range plan.ServiceBindings {
+			if err := tx.Create(&plan.ServiceBindings[index]).Error; err != nil {
+				return err
+			}
+		}
 		for _, entry := range plan.SecretValues {
 			if err := tx.Create(&entry).Error; err != nil {
 				return err
 			}
 		}
 		return nil
-	}); errors.Is(err, errApplicationIdentifierExists) {
-		writeApplicationIdentifierConflict(ctx, "active")
-		return
-	} else if err != nil {
+	}); err != nil {
 		for _, changes := range mountChanges {
 			h.auditDeploymentVolumeMountFailure(ctx.Request.Context(), user.ID, changes, err)
 		}
-		if volume.ErrorCode(err) != "" {
-			h.host.WriteVolumeError(ctx, err)
-		} else {
-			writeError(ctx, http.StatusBadRequest, err.Error())
-		}
+		h.auditWithContext(user.ID, "app_template.install", plan.Installation.ID, false, appTemplateInstallErrorCode(err), ctx.Request.Context())
+		h.writeTemplateInstallError(ctx, err)
 		return
 	}
 
 	for _, entry := range plan.SecretValues {
 		h.auditWithContext(user.ID, "secret.write", entry.ID, true, entry.Resource, ctx.Request.Context())
+	}
+	for _, binding := range plan.ServiceBindings {
+		h.auditWithContext(user.ID, "service_binding.create", binding.ID, true, binding.SourceDeploymentTargetID, ctx.Request.Context())
 	}
 	for index, component := range plan.Components {
 		h.auditDeploymentVolumeMountChanges(ctx.Request.Context(), user.ID, component.DeploymentTarget, mountChanges[index])
@@ -296,14 +300,11 @@ func (h *Handlers) InstallAppTemplate(ctx *gin.Context) {
 		if component.Release == nil || h.enqueueDeployRun(ctx.Request.Context(), *component.Release) {
 			continue
 		}
-		message := "部署任务投递失败"
-		_ = h.dbFor(ctx).Model(&model.Release{}).Where("id = ?", component.Release.ID).Updates(map[string]any{"status": "failed", "message": message}).Error
-		_ = h.dbFor(ctx).Model(&model.AppTemplateInstallation{}).Where("id = ?", plan.Installation.ID).Updates(map[string]any{"status": "deploy_failed", "message": message}).Error
-		component.Release.Status = "failed"
-		component.Release.Message = message
-		plan.Installation.Status = "deploy_failed"
-		plan.Installation.Message = message
-		h.auditWithContext(user.ID, "app_template.deploy_enqueue", plan.Installation.ID, false, message, ctx.Request.Context())
+		if err := markTemplateReleaseDispatchFailed(h.dbFor(ctx), component.Release); err != nil {
+			writeError(ctx, http.StatusInternalServerError, err.Error())
+			return
+		}
+		h.auditWithContext(user.ID, "app_template.deploy_enqueue", plan.Installation.ID, false, model.ReleaseFailureDispatchFailed, ctx.Request.Context())
 	}
 
 	targets := make([]model.DeploymentTarget, 0, len(plan.Components))
@@ -335,11 +336,30 @@ func (h *Handlers) InstallAppTemplate(ctx *gin.Context) {
 	ctx.JSON(http.StatusCreated, response)
 }
 
+// markTemplateReleaseDispatchFailed 终止投递失败的模板安装发布。状态守卫保证 Worker 已推进或其他写入者已收敛的发布不被覆盖；
+// 响应中的发布以数据库回读为准。
+func markTemplateReleaseDispatchFailed(db *gorm.DB, release *model.Release) error {
+	finishedAt := time.Now()
+	if err := db.Model(&model.Release{}).
+		Where("id = ? and status in ?", release.ID, model.ReleaseActiveStatuses).
+		Updates(map[string]any{
+			"status":       "failed",
+			"failure_code": model.ReleaseFailureDispatchFailed,
+			"message":      "deploy task dispatch failed",
+			"finished_at":  &finishedAt,
+		}).Error; err != nil {
+		return err
+	}
+	return db.First(release, "id = ?", release.ID).Error
+}
+
 type templateInstallPlan struct {
 	Installation model.AppTemplateInstallation
 	// Components 按模板声明顺序排列，第一个是入口组件；单组件模板只有一个 Key 为空的组件。
-	Components   []templateComponentPlan
-	SecretValues []model.SecretValue
+	Components []templateComponentPlan
+	// ServiceBindings 把组件间 {{components.<key>.host}} 引用落成服务关系，进入拓扑并阻止被依赖组件单独删除。
+	ServiceBindings []model.ServiceBinding
+	SecretValues    []model.SecretValue
 }
 
 type templateComponentPlan struct {
@@ -407,7 +427,7 @@ func (h *Handlers) buildTemplateInstallPlan(ctx *gin.Context, user model.User, p
 
 	values, err := appstore.ResolveValues(template, input.Values)
 	if err != nil {
-		writeError(ctx, http.StatusBadRequest, err.Error())
+		writeTemplateValuesError(ctx, err)
 		return templateInstallPlan{}, false
 	}
 	valuesSnapshot, err := json.Marshal(safeTemplateValues(template, values))
@@ -557,7 +577,6 @@ func (h *Handlers) buildTemplateInstallPlan(ctx *gin.Context, user model.User, p
 				BuildCPURequest:     defaultBuildCPURequest,
 				BuildMemoryRequest:  defaultBuildMemoryRequest,
 				BuildTimeoutSeconds: defaultBuildTimeoutSeconds,
-				ConcurrencyPolicy:   "queue",
 				EnvVars:             string(envContent),
 				SecretRefs:          string(secretRefsContent),
 				ConfigFiles:         configFilesContent,
@@ -584,11 +603,88 @@ func (h *Handlers) buildTemplateInstallPlan(ctx *gin.Context, user model.User, p
 		ProjectID:          project.ID,
 		ApplicationID:      entry.Application.ID,
 		DeploymentTargetID: entry.DeploymentTarget.ID,
-		Status:             "installed",
 		ValuesSnapshot:     string(valuesSnapshot),
 		CreatedBy:          user.ID,
 	}
+	plan.ServiceBindings, err = templateComponentServiceBindings(components, plan.Components, project.ID, user.ID)
+	if err != nil {
+		writeErrorCode(ctx, http.StatusInternalServerError, "app_template.dependency_invalid", err.Error())
+		return templateInstallPlan{}, false
+	}
 	return plan, true
+}
+
+// templateComponentServiceBindings 为每个组件对其他组件的引用创建一条 host/port 服务关系。
+// 渲染出的连接串仍使用同命名空间短主机名；服务关系额外注入 <KEY>_HOST/<KEY>_PORT，并作为依赖事实源。
+func templateComponentServiceBindings(components []appstore.Component, plans []templateComponentPlan, projectID, actorID string) ([]model.ServiceBinding, error) {
+	planByKey := make(map[string]templateComponentPlan, len(plans))
+	for _, componentPlan := range plans {
+		planByKey[componentPlan.Key] = componentPlan
+	}
+	bindings := []model.ServiceBinding{}
+	for index, component := range components {
+		source := plans[index]
+		for _, dependencyKey := range appstore.ComponentDependencies(component.Workload) {
+			target, exists := planByKey[dependencyKey]
+			if !exists {
+				return nil, fmt.Errorf("component %s references unknown component %s", component.Key, dependencyKey)
+			}
+			hostEnv, portEnv := appstore.ComponentBindingEnvVars(dependencyKey)
+			binding := model.ServiceBinding{ID: id.New("sbind"), ProjectID: projectID, CreatedBy: actorID}
+			if err := dependency.PrepareServiceBinding(&binding, dependency.ServiceBindingInput{
+				SourceApplicationID: source.Application.ID, SourceDeploymentTargetID: source.DeploymentTarget.ID,
+				TargetApplicationID: target.Application.ID, TargetDeploymentTargetID: target.DeploymentTarget.ID,
+				TargetPortName: "http", Protocol: "tcp", InjectionMode: "host_port", HostEnvVar: hostEnv, PortEnvVar: portEnv,
+			}, source.DeploymentTarget, target.DeploymentTarget); err != nil {
+				return nil, fmt.Errorf("component %s binding to %s: %w", component.Key, dependencyKey, err)
+			}
+			bindings = append(bindings, binding)
+		}
+	}
+	return bindings, nil
+}
+
+func writeTemplateCatalogUnavailable(ctx *gin.Context, err error) {
+	writeErrorCode(ctx, http.StatusInternalServerError, "app_template.catalog_unavailable", err.Error())
+}
+
+func writeTemplateValuesError(ctx *gin.Context, err error) {
+	var required *appstore.ValueRequiredError
+	switch {
+	case errors.As(err, &required):
+		writeErrorCode(ctx, http.StatusBadRequest, "app_template.value_required", err.Error())
+	case errors.Is(err, appstore.ErrRandomSecretUnavailable):
+		writeErrorCode(ctx, http.StatusInternalServerError, "app_template.secret_generation_failed", err.Error())
+	default:
+		writeErrorCode(ctx, http.StatusInternalServerError, "app_template.install_failed", err.Error())
+	}
+}
+
+// appTemplateInstallErrorCode 把安装事务错误映射为稳定错误码；未知数据库或运行时错误统一为 install_failed，不回显原文。
+func appTemplateInstallErrorCode(err error) string {
+	switch {
+	case errors.Is(err, errApplicationIdentifierExists):
+		return "application.identifier_exists"
+	case volume.ErrorCode(err) != "":
+		return volume.ErrorCode(err)
+	case strings.Contains(err.Error(), "SQLSTATE 23505"):
+		return "app_template.install_conflict"
+	default:
+		return "app_template.install_failed"
+	}
+}
+
+func (h *Handlers) writeTemplateInstallError(ctx *gin.Context, err error) {
+	switch code := appTemplateInstallErrorCode(err); code {
+	case "application.identifier_exists":
+		writeApplicationIdentifierConflict(ctx, "active")
+	case "app_template.install_conflict":
+		writeErrorCode(ctx, http.StatusConflict, code, err.Error())
+	case "app_template.install_failed":
+		writeErrorCode(ctx, http.StatusInternalServerError, code, err.Error())
+	default:
+		h.host.WriteVolumeError(ctx, err)
+	}
 }
 
 // templateProjectVolume 校验组件声明与用户选择的项目数据卷是否匹配；组件不使用项目数据卷时返回 nil。
@@ -735,17 +831,11 @@ func (h *Handlers) templateSecretFiles(ctx *gin.Context, userID string, secretRe
 }
 
 func (h *Handlers) defaultRuntimeClusterID(ctx context.Context) string {
-	var cluster model.RuntimeCluster
-	query := runtimecluster.ActiveScope(h.dbWithContext(ctx))
-	err := query.Where("is_default = ?", true).Order("created_at asc").First(&cluster).Error
-	if err == nil {
-		return cluster.ID
+	cluster, err := runtimecluster.ResolveForTarget(h.dbWithContext(ctx), "")
+	if err != nil {
+		return ""
 	}
-	err = query.Order("created_at asc").First(&cluster).Error
-	if err == nil {
-		return cluster.ID
-	}
-	return ""
+	return cluster.ID
 }
 
 func safeTemplateValues(template appstore.Template, values map[string]string) map[string]string {

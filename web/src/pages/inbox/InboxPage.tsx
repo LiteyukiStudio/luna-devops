@@ -87,7 +87,7 @@ export function InboxPage() {
             <div className="min-w-0">
               <p className={message.readAt ? 'truncate font-medium' : 'truncate font-semibold'}>{text.title}</p>
               <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{text.content}</p>
-              <div className="mt-2 flex flex-wrap gap-2 md:hidden">
+              <div className="mt-2 flex flex-wrap gap-2 @xl/data-list:hidden">
                 <StatusBadge>{t(`inbox.categories.${message.category}`)}</StatusBadge>
                 <span className="text-xs text-muted-foreground">{formatSmartDateTime(message.createdAt, t)}</span>
               </div>

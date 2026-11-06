@@ -44,22 +44,25 @@ const release = {
   revision: 3,
   rollbackFromId: '',
   status: 'succeeded',
+  failureCode: '',
   type: 'deploy',
 } satisfies Release
 
-function renderList(items: DeploymentTargetRow[] = []) {
+function renderList(items: DeploymentTargetRow[] = [], handlers: { onCancelRelease?: (release: Release) => void, onViewLogs?: (release: Release) => void } = {}) {
   return render(
     <TooltipProvider>
       <ApplicationDeploymentTargetsList
         applicationId="app_1"
+        cancelReleasePending={false}
         createReleasePending={false}
         deletePending={false}
         deployableBuildRuns={[]}
         items={items}
+        listState={{ loading: false }}
+        operationPending={{}}
         projectId="prj_1"
-        pullLatestPending={false}
-        restartPending={false}
-        rollbackPending={false}
+        onCreateTarget={vi.fn()}
+        onCancelRelease={handlers.onCancelRelease ?? vi.fn()}
         onDeleteTarget={vi.fn()}
         onOpenConsole={vi.fn()}
         onOpenReleaseDialog={vi.fn()}
@@ -67,7 +70,7 @@ function renderList(items: DeploymentTargetRow[] = []) {
         onPullLatestImageDeploy={vi.fn()}
         onRestart={vi.fn()}
         onRollback={vi.fn()}
-        onViewLogs={vi.fn()}
+        onViewLogs={handlers.onViewLogs ?? vi.fn()}
       />
     </TooltipProvider>,
   )
@@ -77,6 +80,7 @@ describe('application deployment targets behavior', () => {
   it('opens operational details from the actions menu', async () => {
     const user = userEvent.setup()
     renderList([{
+      deployed: true,
       internalEndpoint: {
         fqdn: 'app-dev.luna-dev.svc.cluster.local',
         namespace: 'luna-dev',
@@ -103,7 +107,7 @@ describe('application deployment targets behavior', () => {
     expect(within(card).getByText('Ready').closest('[data-slot="status-dot"]')).toHaveAttribute('data-tone', 'success')
     expect(within(card).getByRole('button', { name: 'Create release' })).toBeDisabled()
     expect(screen.queryByText('Deployment has minimum availability.')).not.toBeInTheDocument()
-    await user.click(screen.getAllByLabelText('Actions')[0])
+    await user.click(screen.getAllByRole('button', { name: 'More actions for deploy config app-dev' })[0])
     await user.click(await screen.findByRole('menuitem', { name: 'View details' }))
 
     const dialog = await screen.findByRole('dialog')
@@ -117,6 +121,7 @@ describe('application deployment targets behavior', () => {
   it('keeps actionable rollout diagnostics in deployment details', async () => {
     const user = userEvent.setup()
     renderList([{
+      deployed: true,
       release: { ...release, message: 'ImagePullBackOff', status: 'failed' },
       routes: [],
       runtimeStatus: { podCount: 1, summary: 'ImagePullBackOff', value: 'image-pull-back-off' },
@@ -124,8 +129,81 @@ describe('application deployment targets behavior', () => {
       webConsoleEnabled: false,
     }])
 
-    await user.click(screen.getAllByLabelText('Actions')[0])
+    await user.click(screen.getAllByRole('button', { name: 'More actions for deploy config app-dev' })[0])
     await user.click(await screen.findByRole('menuitem', { name: 'View details' }))
     expect(within(await screen.findByRole('dialog')).getAllByText('ImagePullBackOff').length).toBeGreaterThan(0)
+  })
+
+  it('shows not deployed when the backend reports no succeeded release even if a failed release exists', () => {
+    renderList([{
+      deployed: false,
+      release: { ...release, status: 'failed' },
+      routes: [],
+      runtimeStatus: { podCount: 0, summary: '', value: 'not-found' },
+      target: deploymentTarget,
+      webConsoleEnabled: false,
+    }])
+
+    const card = screen.getAllByText('app-dev', { selector: 'button' })
+      .map(element => element.closest<HTMLElement>('[data-slot="deployment-target-card"]'))
+      .find(element => element !== null) as HTMLElement
+    expect(within(card).getAllByText('Not deployed').length).toBeGreaterThan(0)
+    expect(within(card).queryByText('No Pod')).not.toBeInTheDocument()
+  })
+
+  it('shows the localized failure reason next to a failed release with a log entry', async () => {
+    const user = userEvent.setup()
+    const onViewLogs = vi.fn()
+    const failedRelease: Release = { ...release, failureCode: 'rollout_failed', message: 'progress deadline exceeded', status: 'failed' }
+    renderList([{
+      deployed: true,
+      release: failedRelease,
+      routes: [],
+      runtimeStatus: { podCount: 1, summary: '', value: 'ready' },
+      target: deploymentTarget,
+      webConsoleEnabled: false,
+    }], { onViewLogs })
+
+    const card = screen.getAllByText('app-dev', { selector: 'button' })
+      .map(element => element.closest<HTMLElement>('[data-slot="deployment-target-card"]'))
+      .find(element => element !== null) as HTMLElement
+    expect(within(card).getByText('Workload rollout did not complete')).toBeInTheDocument()
+    expect(within(card).queryByText('progress deadline exceeded')).not.toBeInTheDocument()
+    await user.click(within(card).getByRole('button', { name: 'View logs' }))
+    expect(onViewLogs).toHaveBeenCalledWith(failedRelease)
+  })
+
+  it('offers cancel only while the release is active', async () => {
+    const user = userEvent.setup()
+    const onCancelRelease = vi.fn()
+    const runningRelease: Release = { ...release, status: 'running' }
+    renderList([{
+      deployed: true,
+      release: runningRelease,
+      routes: [],
+      runtimeStatus: { podCount: 1, summary: '', value: 'progressing' },
+      target: deploymentTarget,
+      webConsoleEnabled: false,
+    }], { onCancelRelease })
+
+    await user.click(screen.getAllByLabelText('More actions for deploy config app-dev')[0])
+    await user.click(await screen.findByRole('menuitem', { name: 'Cancel release' }))
+    expect(onCancelRelease).toHaveBeenCalledWith(runningRelease)
+  })
+
+  it('hides cancel for a finished release', async () => {
+    const user = userEvent.setup()
+    renderList([{
+      deployed: true,
+      release,
+      routes: [],
+      runtimeStatus: { podCount: 1, summary: '', value: 'ready' },
+      target: deploymentTarget,
+      webConsoleEnabled: false,
+    }])
+
+    await user.click(screen.getAllByLabelText('More actions for deploy config app-dev')[0])
+    await screen.findByRole('menuitem', { name: 'View details' })
+    expect(screen.queryByRole('menuitem', { name: 'Cancel release' })).not.toBeInTheDocument()
   })
 })

@@ -73,6 +73,7 @@ type Release struct {
 	ForceImagePull         bool           `gorm:"not null;default:false" json:"forceImagePull"`
 	Type                   string         `gorm:"not null;default:deploy" json:"type"`
 	Status                 string         `gorm:"index;not null;default:pending" json:"status"`
+	FailureCode            string         `gorm:"not null;default:''" json:"failureCode"`
 	Revision               int            `gorm:"not null;default:1" json:"revision"`
 	RollbackFromID         string         `gorm:"index" json:"rollbackFromId"`
 	Message                string         `json:"message"`
@@ -137,6 +138,7 @@ type DeploymentTarget struct {
 	ServicePorts                 string                        `gorm:"type:text;not null;default:''" json:"servicePorts"`
 	DeleteStatus                 string                        `gorm:"index;not null;default:active" json:"deleteStatus"`
 	DeleteMessage                string                        `gorm:"type:text;not null;default:''" json:"deleteMessage"`
+	DeleteCode                   string                        `gorm:"type:text;not null;default:''" json:"deleteCode"`
 	DeleteStartedAt              *time.Time                    `json:"deleteStartedAt"`
 	DeleteFinishedAt             *time.Time                    `json:"deleteFinishedAt"`
 	SourceType                   string                        `gorm:"not null;default:repository" json:"sourceType"`
@@ -163,7 +165,6 @@ type DeploymentTarget struct {
 	AutoDeploy                   bool                          `gorm:"not null;default:false" json:"autoDeploy"`
 	BranchPattern                string                        `json:"branchPattern"`
 	TagPattern                   string                        `json:"tagPattern"`
-	ConcurrencyPolicy            string                        `gorm:"not null;default:queue" json:"concurrencyPolicy"`
 	RuntimeConfigRefs            string                        `gorm:"type:text;not null;default:''" json:"runtimeConfigRefs"`
 	EnvVars                      string                        `gorm:"type:text;not null;default:''" json:"envVars"`
 	SecretRefs                   string                        `gorm:"type:text;not null;default:''" json:"-"`
@@ -171,27 +172,30 @@ type DeploymentTarget struct {
 	SecretFiles                  string                        `gorm:"type:text;not null;default:''" json:"-"`
 	// Legacy deployment storage columns are retained only for the explicit
 	// backfill command. Request and worker paths use DeploymentVolumeMount.
-	DataRetentionEnabled bool           `gorm:"not null;default:false" json:"-"`
-	DataCapacity         string         `gorm:"not null;default:''" json:"-"`
-	DataMountPath        string         `gorm:"not null;default:'/data'" json:"-"`
-	DataVolumes          string         `gorm:"type:text;not null;default:''" json:"-"`
-	DataStorageClassName string         `gorm:"not null;default:''" json:"-"`
-	DataAccessMode       string         `gorm:"not null;default:''" json:"-"`
-	DataVolumeMode       string         `gorm:"not null;default:''" json:"-"`
-	RequireApproval      bool           `gorm:"not null;default:false" json:"requireApproval"`
-	WebConsoleEnabled    *bool          `json:"webConsoleEnabled"`
-	Enabled              bool           `gorm:"not null;default:true" json:"enabled"`
-	Status               string         `gorm:"-" json:"status"`
-	ObservationCode      string         `gorm:"-" json:"observationCode,omitempty"`
-	LastCheckedAt        *time.Time     `gorm:"-" json:"lastCheckedAt,omitempty"`
-	DesiredReplicas      int32          `gorm:"-" json:"desiredReplicas"`
-	UpdatedReplicas      int32          `gorm:"-" json:"updatedReplicas"`
-	ReadyReplicas        int32          `gorm:"-" json:"readyReplicas"`
-	AvailableReplicas    int32          `gorm:"-" json:"availableReplicas"`
-	CreatedBy            string         `gorm:"index" json:"createdBy"`
-	CreatedAt            time.Time      `json:"createdAt"`
-	UpdatedAt            time.Time      `json:"updatedAt"`
-	DeletedAt            gorm.DeletedAt `gorm:"index" json:"-"`
+	DataRetentionEnabled bool   `gorm:"not null;default:false" json:"-"`
+	DataCapacity         string `gorm:"not null;default:''" json:"-"`
+	DataMountPath        string `gorm:"not null;default:'/data'" json:"-"`
+	DataVolumes          string `gorm:"type:text;not null;default:''" json:"-"`
+	DataStorageClassName string `gorm:"not null;default:''" json:"-"`
+	DataAccessMode       string `gorm:"not null;default:''" json:"-"`
+	DataVolumeMode       string `gorm:"not null;default:''" json:"-"`
+	RequireApproval      bool   `gorm:"not null;default:false" json:"requireApproval"`
+	WebConsoleEnabled    *bool  `json:"webConsoleEnabled"`
+	Enabled              bool   `gorm:"not null;default:true" json:"enabled"`
+	// EffectiveClusterID is the cluster runtimecluster.ResolveForTarget resolved
+	// for this request; empty when no active cluster applies.
+	EffectiveClusterID string         `gorm:"-" json:"effectiveClusterId"`
+	Status             string         `gorm:"-" json:"status"`
+	ObservationCode    string         `gorm:"-" json:"observationCode,omitempty"`
+	LastCheckedAt      *time.Time     `gorm:"-" json:"lastCheckedAt,omitempty"`
+	DesiredReplicas    int32          `gorm:"-" json:"desiredReplicas"`
+	UpdatedReplicas    int32          `gorm:"-" json:"updatedReplicas"`
+	ReadyReplicas      int32          `gorm:"-" json:"readyReplicas"`
+	AvailableReplicas  int32          `gorm:"-" json:"availableReplicas"`
+	CreatedBy          string         `gorm:"index" json:"createdBy"`
+	CreatedAt          time.Time      `json:"createdAt"`
+	UpdatedAt          time.Time      `json:"updatedAt"`
+	DeletedAt          gorm.DeletedAt `gorm:"index" json:"-"`
 }
 
 const (

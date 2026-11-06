@@ -12,7 +12,7 @@ const root = {
   billing: '청구',
   builds: '빌드',
   deployments: '배포',
-  gatewayRoutes: '액세스',
+  gatewayRoutes: '접근 진입점',
   account: '계정',
   security: '계정 보안',
   authProviders: 'ID 공급자',

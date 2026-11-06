@@ -33,16 +33,17 @@ export function BillingSummary({
   scopedSummary?: BillingSummaryData
 }) {
   const { t } = useTranslation()
+  const platformTotal = accountSummary?.balanceScope === 'platform_total'
   const balanceStatus = normalizeBalanceStatus(accountSummary?.balanceStatus)
   const periodCategories = scopedSummary?.periodCategories ?? []
   const showGatewayTrafficStatusCard = gatewayTrafficStatusLoaded && gatewayTrafficStatus && !gatewayTrafficStatus.available
 
   return (
     <>
-      <MetricGroup className="md:grid-cols-4">
+      <MetricGroup className="@xl/metric-group:grid-cols-4">
         <MetricItem
           icon={<Coins className="size-4" />}
-          label={t('billingPage.balance')}
+          label={platformTotal ? t('billingPage.platformWalletTotal') : t('billingPage.balance')}
           meta={!accountLoading && canManageBilling ? billingDisplay.formatFiatAmount(accountSummary?.balanceCredits) : undefined}
           value={accountLoading ? '-' : billingDisplay.formatAmountWithUnit(accountSummary?.balanceCredits)}
         />
@@ -68,11 +69,13 @@ export function BillingSummary({
 
       <Section
         title={t('billingPage.periodCategoriesTitle')}
-        tools={(
-          <StatusBadge tone={balanceStatusTone(balanceStatus)}>
-            {t(`billingPage.balanceStatuses.${balanceStatus}`)}
-          </StatusBadge>
-        )}
+        tools={accountSummary && !platformTotal
+          ? (
+              <StatusBadge tone={balanceStatusTone(balanceStatus)}>
+                {t(`billingPage.balanceStatuses.${balanceStatus}`)}
+              </StatusBadge>
+            )
+          : undefined}
         variant="bordered"
       >
         {periodCategories.length === 0 && !showGatewayTrafficStatusCard
@@ -82,7 +85,7 @@ export function BillingSummary({
               </p>
             )
           : (
-              <dl className="grid gap-x-6 gap-y-4 sm:grid-cols-3 xl:grid-cols-6">
+              <dl className="grid gap-x-6 gap-y-4 @lg/workspace:grid-cols-3 @4xl/workspace:grid-cols-6">
                 {periodCategories.filter(category => !(showGatewayTrafficStatusCard && category.category === 'gateway')).map(category => (
                   <div key={category.category} className="min-w-0">
                     <dt className="truncate text-xs text-muted-foreground">
@@ -127,7 +130,7 @@ export function BillingBalanceWarning({ accountSummary, billingDisplay }: {
 }) {
   const { t } = useTranslation()
   const balanceStatus = normalizeBalanceStatus(accountSummary?.balanceStatus)
-  if (!accountSummary || balanceStatus === 'ok')
+  if (!accountSummary || accountSummary.balanceScope === 'platform_total' || balanceStatus === 'ok')
     return null
 
   return (

@@ -1,6 +1,6 @@
 # Configuration and Secrets
 
-A deployment can combine environment variables (plain or encrypted), shared configuration, configuration files, and secret files.
+A deployment can combine environment variables (plain or encrypted), shared runtime config, configuration files, and secret files.
 
 ## Environment variables
 
@@ -14,14 +14,14 @@ Manage them in the environment variable table under **Runtime → Environment an
 - **Encrypted to plain**: the original value cannot be read back, so you must enter a new plain value. The secret is removed when you save.
 - **Bulk import**: select **Paste .env** and enter one `KEY=VALUE` per line. `export` prefixes, full-line `#` comments, and quotes are supported. Imported variables are plain; you can choose whether to overwrite plain variables with the same name, and encrypted variables are never overwritten.
 
-When the platform is upgraded to this version, any deploy config or shared configuration that has a plain variable and a secret with the same name keeps the secret and removes the plain variable. This matches the value that was already used at release time, so running instances are unaffected. The audit log records the removed names, never their values.
+When the platform is upgraded to this version, any deploy config or shared runtime config that has a plain variable and a secret with the same name keeps the secret and removes the plain variable. This matches the value that was already used at release time, so running instances are unaffected. The audit log records the removed names, never their values.
 
-Build variables can exist at global, project-space, application, and deployment levels. The closest matching value wins. Build arguments and ordinary variables appear in build records and are not suitable for secrets.
+Build variables can exist at global, project-space, application, and deployment levels. The closest matching value wins. Project-space build variables are maintained under **Shared config → Build variables** in the project space. Build arguments and ordinary variables appear in build records and are not suitable for secrets.
 
-## Shared configuration
+## Shared runtime config
 
-Project shared configuration also rejects a plain variable and a secret with the same name. Its secrets are still managed separately in the shared configuration dialog and apply immediately. During release, shared configuration is merged first and the deploy config overrides matching names; a secret from any layer wins over a plain variable with the same name.
+Shared runtime config is maintained under **Shared config → Runtime config** in the project space and attached to deploy configs under **Runtime → Environment and configuration**. It also rejects a plain variable and a secret with the same name. Its secrets are still managed separately in the runtime config dialog and apply immediately. During release, shared runtime config is merged first and the deploy config overrides matching names; a secret from any layer wins over a plain variable with the same name.
 
 Use configuration files or secret files for mounted multiline content instead of placing it in a startup command.
 
-After changing runtime configuration, save and redeploy when the page prompts. Saving desired configuration alone does not change an existing Pod.
+After changing a deploy config or shared runtime config, save and redeploy when the page prompts. Saving desired configuration alone does not change an existing Pod.

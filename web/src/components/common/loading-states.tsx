@@ -52,7 +52,7 @@ export function DataListSkeleton({ columns = 4, rows = 6 }: { columns?: number, 
 export function OverviewSkeleton() {
   return (
     <LoadingRegion className="grid gap-4">
-      <div className="grid gap-px overflow-hidden rounded-container bg-border sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-px overflow-hidden rounded-container bg-border @lg/workspace:grid-cols-2 @4xl/workspace:grid-cols-4">
         {Array.from({ length: 4 }, (_, index) => (
           <div key={index} className="grid gap-3 bg-surface-raised p-4">
             <Skeleton className="h-4 w-24" />
@@ -60,8 +60,8 @@ export function OverviewSkeleton() {
           </div>
         ))}
       </div>
-      <div className="grid gap-4 xl:grid-cols-3">
-        <div className="grid gap-3 rounded-container bg-surface-raised p-4 xl:col-span-2">
+      <div className="grid gap-4 @4xl/workspace:grid-cols-3">
+        <div className="grid gap-3 rounded-container bg-surface-raised p-4 @4xl/workspace:col-span-2">
           <Skeleton className="h-5 w-28" />
           {Array.from({ length: 4 }, (_, index) => <Skeleton key={index} className="h-12 w-full" />)}
         </div>
@@ -92,7 +92,7 @@ export function SettingsSkeleton() {
 /** Marketplace loading state that mirrors responsive template cards. */
 export function TemplateGridSkeleton() {
   return (
-    <LoadingRegion className="grid gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-3 2xl:grid-cols-4">
+    <LoadingRegion className="grid gap-3 @lg/workspace:grid-cols-2 sm:gap-4 @4xl/workspace:grid-cols-3 @6xl/workspace:grid-cols-4">
       {Array.from({ length: 8 }, (_, index) => (
         <div key={index} className="grid min-h-56 gap-4 rounded-container bg-surface-raised p-4">
           <div className="flex gap-3">

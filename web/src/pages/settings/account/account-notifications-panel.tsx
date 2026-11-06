@@ -46,7 +46,7 @@ const preferenceSchema = z.object({
 })
 
 const channelSchema = z.object({
-  name: z.string().trim().min(1, i18next.t('accountPage.notifications.channelNameRequired')),
+  name: z.string().trim().min(1, { error: () => i18next.t('accountPage.notifications.channelNameRequired') }),
   presetId: z.string(),
   secretText: z.string(),
   enabled: z.boolean(),
@@ -218,7 +218,7 @@ export function AccountNotificationsPanel() {
             control={preferenceForm.control}
             name="eventTypes"
             render={({ field }) => (
-              <fieldset className="grid gap-3 sm:grid-cols-2">
+              <fieldset className="grid gap-3 @lg/workspace:grid-cols-2">
                 <legend className="mb-3 text-sm font-medium">{t('accountPage.notifications.failureEvents')}</legend>
                 {failureEventTypes.map(eventType => (
                   <CheckboxField

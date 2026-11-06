@@ -46,11 +46,20 @@ export function ApplicationCell({ item, unassignedLabel }: { item: BillingApplic
   )
 }
 
-type BillingDeploymentTargetRef = Pick<BillingDeploymentSpend, 'deploymentTargetName' | 'deploymentTargetStage'> & {
-  deploymentTargetId?: string
-}
-
-export function DeploymentTargetCell({ item, unassignedLabel }: { item: BillingDeploymentTargetRef, unassignedLabel: string }) {
+export function DeploymentTargetCell({ item, projectStorageHint, projectStorageLabel, unassignedLabel }: {
+  item: Pick<BillingDeploymentSpend, 'deploymentTargetId' | 'deploymentTargetName' | 'deploymentTargetStage' | 'spendGroup'>
+  projectStorageHint: string
+  projectStorageLabel: string
+  unassignedLabel: string
+}) {
+  if (item.spendGroup === 'project_storage') {
+    return (
+      <span className="block min-w-0">
+        <span className="block truncate font-medium">{projectStorageLabel}</span>
+        <span className="block truncate text-xs text-muted-foreground">{projectStorageHint}</span>
+      </span>
+    )
+  }
   return (
     <span className="block min-w-0">
       <span className="block truncate font-medium">{item.deploymentTargetName || unassignedLabel}</span>

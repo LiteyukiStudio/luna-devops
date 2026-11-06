@@ -4,11 +4,16 @@ import { cn } from '@/lib/utils'
 
 type MetricTone = 'danger' | 'info' | 'neutral' | 'success' | 'warning'
 
-/** 概览页指标的统一分组，外层依靠表面与圆角分层，指标之间保留共享分隔线。 */
+/**
+ * 概览页指标的统一分组，外层依靠表面与圆角分层，指标之间保留共享分隔线。
+ * 外层是尺寸容器，列数按分组实际宽度响应；调用方覆盖列数时使用 `@…/metric-group:` 变体。
+ */
 export function MetricGroup({ children, className }: { children: ReactNode, className?: string }) {
   return (
-    <div className={cn('grid gap-4 sm:grid-cols-2 xl:grid-cols-4', className)} data-slot="metric-group">
-      {children}
+    <div className="@container/metric-group">
+      <div className={cn('grid gap-4 @lg/metric-group:grid-cols-2 @4xl/metric-group:grid-cols-4', className)} data-slot="metric-group">
+        {children}
+      </div>
     </div>
   )
 }

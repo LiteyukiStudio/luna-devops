@@ -6,14 +6,14 @@ import { ArrowDownWideNarrow, ArrowUpNarrowWide, FolderKanban, MoreHorizontal, P
 import { useDeferredValue, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { z } from 'zod'
 import { api } from '@/api'
 import { useSession } from '@/app/session-context'
 import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { DataList } from '@/components/common/data-list'
-import { ErrorState } from '@/components/common/error-state'
+
 import { FormField as Field } from '@/components/common/form-field'
 import { PageChromeTools } from '@/components/common/page-chrome'
 import { PageShell } from '@/components/common/page-shell'
@@ -35,13 +35,14 @@ import { useResultVisibility } from '@/lib/use-result-visibility'
 import { cn } from '@/lib/utils'
 
 const schema = z.object({
-  name: z.string().min(1, i18next.t('projectSpaces.nameRequired')),
+  // 校验文案在校验时按当前语言求值，切换语言后新的错误提示随之生效。
+  name: z.string().min(1, { error: () => i18next.t('projectSpaces.nameRequired') }),
   identifier: z.string()
-    .min(PROJECT_IDENTIFIER_MIN_LENGTH, i18next.t('projectSpaces.identifierLength', { min: PROJECT_IDENTIFIER_MIN_LENGTH, max: PROJECT_IDENTIFIER_MAX_LENGTH }))
-    .max(PROJECT_IDENTIFIER_MAX_LENGTH, i18next.t('projectSpaces.identifierLength', { min: PROJECT_IDENTIFIER_MIN_LENGTH, max: PROJECT_IDENTIFIER_MAX_LENGTH }))
-    .regex(/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/, i18next.t('common.identifierFormat')),
+    .min(PROJECT_IDENTIFIER_MIN_LENGTH, { error: () => i18next.t('projectSpaces.identifierLength', { min: PROJECT_IDENTIFIER_MIN_LENGTH, max: PROJECT_IDENTIFIER_MAX_LENGTH }) })
+    .max(PROJECT_IDENTIFIER_MAX_LENGTH, { error: () => i18next.t('projectSpaces.identifierLength', { min: PROJECT_IDENTIFIER_MIN_LENGTH, max: PROJECT_IDENTIFIER_MAX_LENGTH }) })
+    .regex(/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/, { error: () => i18next.t('common.identifierFormat') }),
   description: z.string().optional(),
-  maxConcurrentBuilds: z.number().int().min(1, i18next.t('projectSpaces.maxConcurrentBuildsMin')),
+  maxConcurrentBuilds: z.number().int().min(1, { error: () => i18next.t('projectSpaces.maxConcurrentBuildsMin') }),
   webConsoleEnabled: z.boolean(),
 })
 
@@ -56,6 +57,7 @@ type ProjectSortOrder = 'asc' | 'desc'
 export function ProjectsPage() {
   const { t } = useTranslation()
   const { user } = useSession()
+  const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [editingProject, setEditingProject] = useState<Project | null>(null)
   const [projectToDelete, setProjectToDelete] = useState<Project | null>(null)
@@ -91,11 +93,13 @@ export function ProjectsPage() {
 
   const createProject = useMutation({
     mutationFn: api.createProject,
-    onSuccess: () => {
+    onSuccess: (project) => {
       toast.success(t('projectSpaces.created'))
       form.reset()
-      closeProjectDialog()
+      setDialogOpen(false)
       queryClient.invalidateQueries({ queryKey: ['projects'] })
+      // 新项目空间直接进入工作台，下一步在其中创建应用。
+      navigate(`/projects/${project.id}`)
     },
     onError: error => toast.error(error.message),
   })
@@ -127,6 +131,12 @@ export function ProjectsPage() {
     onError: error => toast.error(error.message),
   })
 
+  function openCreateDialog() {
+    setEditingProject(null)
+    form.reset({ name: '', identifier: '', description: '', maxConcurrentBuilds: 2, webConsoleEnabled: true })
+    setDialogOpen(true)
+  }
+
   function closeProjectDialog() {
     setDialogOpen(false)
     if (createRequested) {
@@ -141,18 +151,11 @@ export function ProjectsPage() {
   return (
     <PageShell spacing="compact" width="full">
       <PageChromeTools>
-        <Button
-          onClick={() => {
-            setEditingProject(null)
-            form.reset({ name: '', identifier: '', description: '', maxConcurrentBuilds: 2, webConsoleEnabled: true })
-            setDialogOpen(true)
-          }}
-        >
+        <Button onClick={openCreateDialog}>
           <Plus size={16} />
           <span>{t('projectSpaces.createTitle')}</span>
         </Button>
       </PageChromeTools>
-      {projects.isError && <ErrorState title={t('projectSpaces.loadFailedTitle')} description={t('projectSpaces.loadFailedDescription')} />}
       <DataList
         columns={[
           {
@@ -211,16 +214,16 @@ export function ProjectsPage() {
                   <Link
                     aria-disabled={deleting}
                     aria-label={t('projectSpaces.openWorkspace')}
-                    className={buttonVariants({ className: cn('hidden md:inline-flex', deleting && 'pointer-events-none opacity-50'), size: 'sm', variant: 'ghost' })}
+                    className={buttonVariants({ className: cn('hidden @xl/data-list:inline-flex', deleting && 'pointer-events-none opacity-50'), size: 'sm', variant: 'ghost' })}
                     title={t('projectSpaces.openWorkspace')}
                     to={`/projects/${project.id}`}
                   >
                     <FolderKanban size={16} />
-                    <span className="hidden lg:inline">{t('projectSpaces.openWorkspace')}</span>
+                    <span className="hidden @2xl/data-list:inline">{t('projectSpaces.openWorkspace')}</span>
                   </Link>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <Button aria-label={t('common.actions')} size="icon" variant="ghost">
+                      <Button aria-label={t('projectSpaces.moreActionsAria', { name: project.name })} size="icon" variant="ghost">
                         <MoreHorizontal size={16} />
                       </Button>
                     </DropdownMenuTrigger>
@@ -234,7 +237,7 @@ export function ProjectsPage() {
                       <DropdownMenuSeparator />
                       <DropdownMenuItem disabled={deleting || systemProject} onSelect={openEditDialog}>
                         <Pencil size={16} />
-                        {t('edit')}
+                        {t('common.edit')}
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
                       <DropdownMenuItem disabled={deleting || systemProject} variant="destructive" onSelect={openDeleteDialog}>
@@ -254,11 +257,19 @@ export function ProjectsPage() {
                 {t('projectSpaces.clearSearch')}
               </Button>
             )
-          : undefined}
+          : (
+              <Button variant="outline" onClick={openCreateDialog}>
+                <Plus size={16} />
+                {t('projectSpaces.createTitle')}
+              </Button>
+            )}
         emptyDescription={t(deferredSearch ? 'projectSpaces.noSearchResultsDescription' : 'projectSpaces.emptyDescription')}
         emptyIcon={deferredSearch ? <SearchX className="size-5" /> : undefined}
         emptyMode={deferredSearch ? 'filtered' : 'actionable'}
         emptyTitle={t(deferredSearch ? 'projectSpaces.noSearchResultsTitle' : 'projectSpaces.emptyTitle')}
+        error={projects.isError
+          ? { description: t('projectSpaces.loadFailedDescription'), onRetry: () => void projects.refetch(), retrying: projects.isFetching, title: t('projectSpaces.loadFailedTitle') }
+          : undefined}
         items={projectItems}
         loading={projects.isLoading}
         pagination={{
@@ -291,7 +302,7 @@ export function ProjectsPage() {
           <>
             <ResultVisibilitySelect
               canViewAll={canViewAllProjects}
-              containerClassName="min-w-32 flex-1 sm:w-40 sm:flex-none"
+              containerClassName="min-w-32 flex-1 @lg/data-list:w-40 @lg/data-list:flex-none"
               value={effectiveVisibility}
               onChange={(nextVisibility) => {
                 setVisibility(nextVisibility)
@@ -300,7 +311,7 @@ export function ProjectsPage() {
             />
             <Select
               aria-label={t('projectSpaces.sortBy')}
-              containerClassName="min-w-32 flex-1 sm:w-40 sm:flex-none"
+              containerClassName="min-w-32 flex-1 @lg/data-list:w-40 @lg/data-list:flex-none"
               value={sortBy}
               onChange={(event) => {
                 setSortBy(event.target.value as ProjectSortBy)
@@ -486,7 +497,7 @@ function ProjectSummary({ project }: { project: Project }) {
         <p className="truncate text-sm text-muted-foreground">
           {project.description || t('common.noDescription')}
         </p>
-        <div className="mt-1 flex min-w-0 items-center gap-2 text-xs text-muted-foreground md:hidden">
+        <div className="mt-1 flex min-w-0 items-center gap-2 text-xs text-muted-foreground @xl/data-list:hidden">
           <span className="max-w-32 truncate font-mono text-xs text-muted-foreground">{project.identifier}</span>
           <span className="truncate">
             {project.lastUsedAt

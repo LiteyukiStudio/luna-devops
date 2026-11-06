@@ -23,8 +23,8 @@ import { Input } from '@/components/ui/input'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 
 const schema = z.object({
-  email: z.string().email(i18next.t('common.validEmailRequired')),
-  password: z.string().min(1, i18next.t('loginPage.passwordRequired')),
+  email: z.string().email({ error: () => i18next.t('common.validEmailRequired') }),
+  password: z.string().min(1, { error: () => i18next.t('loginPage.passwordRequired') }),
   rememberMe: z.boolean(),
 })
 

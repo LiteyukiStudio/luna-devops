@@ -10,6 +10,7 @@ const (
 	CodeSourceTargetSame  = "service_binding_source_target_same"
 	CodePortNotFound      = "service_binding_port_not_found"
 	CodeEnvConflict       = "service_binding_env_conflict"
+	CodeTargetDeleting    = "service_binding_target_deleting"
 	CodeReservedEnv       = "service_binding_reserved_env"
 	CodeTopologyDuplicate = "topology_edge_duplicate"
 	CodeTopologyTruncated = "topology_truncated"

@@ -30,7 +30,7 @@ func (h *Handlers) observeDeploymentTargets(ctx context.Context, project model.P
 			case guard <- struct{}{}:
 				defer func() { <-guard }()
 			case <-ctx.Done():
-				targets[index] = unavailableDeploymentTarget(targets[index], "deployment_target.observation_cancelled")
+				targets[index] = withDisabledStatus(unavailableDeploymentTarget(targets[index], "deployment_target.observation_cancelled"))
 				return
 			}
 			targets[index] = h.observeDeploymentTarget(ctx, project, targets[index])
@@ -39,20 +39,25 @@ func (h *Handlers) observeDeploymentTargets(ctx context.Context, project model.P
 	wait.Wait()
 }
 
+// observeDeploymentTarget reads the target's workload from the cluster
+// resolved by runtimecluster.ResolveForTarget. Disabled targets are observed
+// too, because disabling does not stop a running workload: their status stays
+// "disabled" while replica counts and observationCode reflect Kubernetes.
 func (h *Handlers) observeDeploymentTarget(ctx context.Context, project model.Project, target model.DeploymentTarget) model.DeploymentTarget {
+	return withDisabledStatus(h.observeDeploymentTargetWorkload(ctx, project, target))
+}
+
+func withDisabledStatus(target model.DeploymentTarget) model.DeploymentTarget {
+	if !target.Enabled {
+		target.Status = observation.StatusDisabled
+	}
+	return target
+}
+
+func (h *Handlers) observeDeploymentTargetWorkload(ctx context.Context, project model.Project, target model.DeploymentTarget) model.DeploymentTarget {
 	observedAt := time.Now().UTC()
 	target.LastCheckedAt = &observedAt
-	if !target.Enabled {
-		target.Status = "disabled"
-		return target
-	}
-	if strings.TrimSpace(target.KubernetesName) == "" {
-		target.Status = observation.StatusNotConfigured
-		target.ObservationCode = "deployment_target.resource_name_not_configured"
-		return target
-	}
-
-	cluster, err := h.deploymentTargetRuntimeCluster(project.ID, target.ClusterID, ctx)
+	cluster, err := runtimecluster.ResolveForTarget(h.dbWithContext(ctx), target.ClusterID)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		target.Status = observation.StatusNotConfigured
 		target.ObservationCode = "deployment_target.runtime_cluster_not_configured"
@@ -61,8 +66,17 @@ func (h *Handlers) observeDeploymentTarget(ctx context.Context, project model.Pr
 	if err != nil {
 		return unavailableDeploymentTarget(target, "deployment_target.runtime_cluster_unavailable")
 	}
-	kubeconfig := strings.TrimSpace(h.secrets.ResolveContext(ctx, cluster.KubeconfigRef))
-	if strings.TrimSpace(cluster.KubeconfigRef) == "" || kubeconfig == "" {
+	target.EffectiveClusterID = cluster.ID
+	if strings.TrimSpace(target.KubernetesName) == "" {
+		target.Status = observation.StatusNotConfigured
+		target.ObservationCode = "deployment_target.resource_name_not_configured"
+		return target
+	}
+	kubeconfig := ""
+	if strings.TrimSpace(cluster.KubeconfigRef) != "" {
+		kubeconfig = strings.TrimSpace(h.secrets.ResolveContext(ctx, cluster.KubeconfigRef))
+	}
+	if kubeconfig == "" {
 		target.Status = observation.StatusNotConfigured
 		target.ObservationCode = "deployment_target.kubeconfig_not_configured"
 		return target
@@ -91,21 +105,6 @@ func (h *Handlers) observeDeploymentTarget(ctx context.Context, project model.Pr
 	target.AvailableReplicas = snapshot.AvailableReplicas
 	target.Status = deploymentObservationFromSnapshot(snapshot)
 	return target
-}
-
-func (h *Handlers) deploymentTargetRuntimeCluster(projectID, clusterID string, ctx context.Context) (model.RuntimeCluster, error) {
-	var cluster model.RuntimeCluster
-	query := runtimecluster.ActiveScope(h.dbWithContext(ctx))
-	if strings.TrimSpace(clusterID) != "" {
-		return cluster, query.First(&cluster, "id = ?", clusterID).Error
-	}
-	if err := query.Where("is_default = ?", true).Order("created_at asc").First(&cluster).Error; err == nil {
-		return cluster, nil
-	}
-	return cluster, query.
-		Where("scope = ? OR (scope = ? AND owner_ref = ?)", "global", "project", projectID).
-		Order("created_at asc").
-		First(&cluster).Error
 }
 
 func deploymentObservationFromSnapshot(snapshot kubeprovider.DeploymentSnapshot) string {

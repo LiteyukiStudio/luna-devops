@@ -59,8 +59,8 @@ func TestParseRetentionDaysBounds(t *testing.T) {
 func TestStandardQueriesContainTerminalGuardsAndHalfOpenRange(t *testing.T) {
 	tests := map[string][]string{
 		DatasetNotificationDeliveries: {"status IN ('succeeded', 'failed')", "finished_at >= ? AND finished_at < ?"},
-		DatasetBuildLogs:              {"parent.status IN ('succeeded', 'failed', 'canceled', 'lost', 'timeout')", "parent.id = logs.build_run_id", "parent.finished_at >= ? AND parent.finished_at < ?"},
-		DatasetReleaseLogs:            {"parent.status IN ('succeeded', 'failed')", "parent.id = logs.release_id", "parent.finished_at >= ? AND parent.finished_at < ?"},
+		DatasetBuildLogs:              {"parent.status IN ('succeeded', 'failed', 'canceled', 'timeout')", "parent.id = logs.build_run_id", "parent.finished_at >= ? AND parent.finished_at < ?"},
+		DatasetReleaseLogs:            {"parent.status IN ('succeeded', 'failed', 'canceled')", "parent.id = logs.release_id", "parent.finished_at >= ? AND parent.finished_at < ?"},
 		DatasetHookRunLogs:            {"parent.status IN ('succeeded', 'failed')", "parent.id = logs.hook_run_id", "parent.finished_at >= ? AND parent.finished_at < ?"},
 	}
 	for dataset, fragments := range tests {

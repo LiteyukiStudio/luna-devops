@@ -16,7 +16,7 @@ export function ContainerFields() {
 
   return (
     <>
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid gap-4 @xl/workspace:grid-cols-2">
         <FormField hint={t('deploymentsPage.imagePullPolicyHint')} label={t('deploymentsPage.imagePullPolicy')}>
           <NativeSelect {...register('imagePullPolicy')}>
             <option value="">{t('deploymentsPage.kubernetesDefault')}</option>
@@ -25,7 +25,7 @@ export function ContainerFields() {
             <option value="Never">{t('deploymentsPage.kubernetesValues.Never')}</option>
           </NativeSelect>
         </FormField>
-        <div className="hidden md:block" />
+        <div className="hidden @xl/workspace:block" />
         <FormField error={commandError} hint={t('deploymentsPage.containerCommandHint')} label={t('deploymentsPage.containerCommand')}>
           <Textarea {...register('containerCommand')} className="min-h-20 font-mono text-sm" placeholder={t('deploymentTargetEditor.examplePlaceholder', { value: t('deploymentsPage.containerCommandPlaceholder') })} spellCheck={false} />
         </FormField>

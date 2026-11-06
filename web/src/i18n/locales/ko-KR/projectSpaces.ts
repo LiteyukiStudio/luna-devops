@@ -30,7 +30,7 @@ const projectSpaces = {
   loadFailedTitle: '프로젝트 스페이스 로드 실패',
   loadFailedDescription: '로그인되어 있고 백엔드 API에 접근할 수 있는지 확인하세요.',
   emptyTitle: '프로젝트 스페이스가 아직 없습니다',
-  emptyDescription: '먼저 왼쪽에서 프로젝트 스페이스를 생성하세요.',
+  emptyDescription: '프로젝트 스페이스를 생성해 애플리케이션, 멤버, 리소스를 정리하세요.',
   noSearchResultsTitle: '현재 조건에 맞는 프로젝트 스페이스가 없습니다',
   noSearchResultsDescription: '다른 키워드를 시도하거나 검색을 지우고 모든 프로젝트 스페이스를 보세요.',
   clearSearch: '검색 지우기',
@@ -50,8 +50,9 @@ const projectSpaces = {
   detailTopbarTitle: '프로젝트: {{name}}',
   workspaceLoadFailedTitle: '프로젝트 스페이스 로드 실패',
   workspaceLoadFailedDescription: '프로젝트 스페이스가 존재하고 접근 권한이 있는지 확인하세요.',
-  failedReleasesMeta: '{{count}}개 릴리스 실패',
+  failedReleasesMeta: '최근 {{days}}일간 {{count}}개 릴리스 실패',
   accessHealth: '접근 진입점',
+  accessHealthUnavailable: '게이트웨이 실시간 상태를 확인할 수 없습니다',
   recentBuilds: '최근 빌드',
   recentBuildsDescription: '프로젝트 스페이스에서 최근 트리거된 빌드 실행.',
   noRecentBuilds: '빌드 기록 없음',
@@ -108,6 +109,7 @@ const projectSpaces = {
   buildsMetric: '빌드 횟수',
   recentBuildsFailedMeta: '최근 {{count}}회 중 {{failed}}회 실패',
   activeReleasesMetric: '진행 중인 릴리스',
+  moreActionsAria: '프로젝트 스페이스 {{name}} 추가 작업',
 }
 
 export default projectSpaces

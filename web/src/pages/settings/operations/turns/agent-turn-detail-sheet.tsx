@@ -181,7 +181,7 @@ export function AgentTurnDetailSheet({ turn, onOpenChange }: {
             <div className="grid gap-6">
               <div className="grid gap-3">
                 <AgentTokenUsageStrip usage={traceUsage} />
-                <MetricGroup className="grid-cols-2 lg:grid-cols-4">
+                <MetricGroup className="grid-cols-2 @2xl/metric-group:grid-cols-4">
                   <MetricItem icon={<Clock3 className="size-4" />} label={t('operationsDashboardPage.duration')} value={turn.durationMs > 0 ? formatDuration(turn.durationMs) : '—'} />
                   <MetricItem icon={<Wrench className="size-4" />} label={t('operationsDashboardPage.toolCalls')} value={formatNumber(turn.toolCallCount)} />
                   <MetricItem icon={<Network className="size-4" />} label={t('operationsDashboardPage.turnDetail.spans')} value={formatNumber(detail.data?.spanCount)} />

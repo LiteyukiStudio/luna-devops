@@ -30,7 +30,7 @@ const projectSpaces = {
   loadFailedTitle: '项目空间加载失败',
   loadFailedDescription: '请确认已经登录，且后端 API 可以访问。',
   emptyTitle: '还没有项目空间',
-  emptyDescription: '先在左侧创建一个项目空间。',
+  emptyDescription: '创建一个项目空间来组织应用、成员和资源。',
   noSearchResultsTitle: '没有符合当前条件的项目空间',
   noSearchResultsDescription: '可以换一个关键词，或清除搜索后查看全部项目空间。',
   clearSearch: '清除搜索',
@@ -50,8 +50,9 @@ const projectSpaces = {
   detailTopbarTitle: '项目：{{name}}',
   workspaceLoadFailedTitle: '项目空间加载失败',
   workspaceLoadFailedDescription: '请确认项目空间存在，并且你有访问权限。',
-  failedReleasesMeta: '{{count}} 个发布失败',
+  failedReleasesMeta: '近 {{days}} 天 {{count}} 个发布失败',
   accessHealth: '访问入口',
+  accessHealthUnavailable: '网关实时状态暂不可用',
   recentBuilds: '最近构建',
   recentBuildsDescription: '项目空间下最近触发的构建运行。',
   noRecentBuilds: '暂无构建记录',
@@ -108,6 +109,7 @@ const projectSpaces = {
   buildsMetric: '构建次数',
   recentBuildsFailedMeta: '最近 {{count}} 次中失败 {{failed}} 次',
   activeReleasesMetric: '进行中发布',
+  moreActionsAria: '项目空间 {{name}} 的更多操作',
 }
 
 export default projectSpaces

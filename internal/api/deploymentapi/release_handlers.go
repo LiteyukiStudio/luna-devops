@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/LiteyukiStudio/devops/internal/api/transport"
 	"github.com/LiteyukiStudio/devops/internal/authz"
@@ -116,9 +117,7 @@ func (h *Handlers) CreateRelease(ctx *gin.Context) {
 			writeError(ctx, http.StatusServiceUnavailable, "部署队列暂不可用")
 			return
 		}
-		release.Status = "failed"
-		release.Message = "部署任务投递失败，请稍后重试"
-		if err := h.dbFor(ctx).Save(&release).Error; err != nil {
+		if err := h.markReleaseDispatchFailed(ctx, release); err != nil {
 			writeError(ctx, http.StatusInternalServerError, err.Error())
 			return
 		}
@@ -202,9 +201,7 @@ func (h *Handlers) RollbackRelease(ctx *gin.Context) {
 			writeError(ctx, http.StatusServiceUnavailable, "部署队列暂不可用")
 			return
 		}
-		release.Status = "failed"
-		release.Message = "部署任务投递失败，请稍后重试"
-		if err := h.dbFor(ctx).Save(&release).Error; err != nil {
+		if err := h.markReleaseDispatchFailed(ctx, release); err != nil {
 			writeError(ctx, http.StatusInternalServerError, err.Error())
 			return
 		}
@@ -237,4 +234,22 @@ func (h *Handlers) GetReleaseLogs(ctx *gin.Context) {
 		return
 	}
 	ctx.JSON(http.StatusOK, log)
+}
+
+func (h *Handlers) markReleaseDispatchFailed(ctx *gin.Context, release model.Release) error {
+	return markReleaseDispatchFailed(h.dbFor(ctx), release)
+}
+
+// markReleaseDispatchFailed terminates a release whose deploy task could not
+// be enqueued. Releases that already left the active states are not touched.
+func markReleaseDispatchFailed(db *gorm.DB, release model.Release) error {
+	finishedAt := time.Now()
+	return db.Model(&model.Release{}).
+		Where("id = ? and status in ?", release.ID, model.ReleaseActiveStatuses).
+		Updates(map[string]any{
+			"status":       "failed",
+			"failure_code": model.ReleaseFailureDispatchFailed,
+			"message":      "deploy task dispatch failed",
+			"finished_at":  &finishedAt,
+		}).Error
 }

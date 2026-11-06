@@ -182,7 +182,7 @@ export function ProjectTopologyPanel({ applications, canManage, projectId }: Pro
           </NativeSelect>
           <Input
             aria-label={t('projectTopology.searchRelations')}
-            className="w-full sm:w-52 md:hidden"
+            className="w-full @lg/workspace:w-52 @xl/workspace:hidden"
             placeholder={t('projectTopology.searchRelations')}
             type="search"
             value={search}
@@ -215,10 +215,10 @@ export function ProjectTopologyPanel({ applications, canManage, projectId }: Pro
         {visibleEdges.length > 0
           ? (
               <>
-                <div className="hidden md:block">
+                <div className="hidden @xl/workspace:block">
                   <ProjectTopologyChart edges={visibleEdges} nodes={visibleNodes} onSelectEdge={selectEdge} />
                 </div>
-                <div className="grid gap-2 p-3 md:hidden">
+                <div className="grid gap-2 p-3 @xl/workspace:hidden">
                   {visibleEdges.map(edge => (
                     <MobileRelationItem
                       key={edge.id}

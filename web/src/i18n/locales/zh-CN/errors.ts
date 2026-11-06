@@ -14,11 +14,20 @@ const errors = {
     identifier_exists: '该项目空间内的应用标识已存在。',
     identifier_delete_in_progress: '同标识应用正在删除，资源清理完成后才能复用。',
     identifier_delete_failed: '同标识应用上次删除失败，请先完成资源清理。',
+    delete_cleanup_failed: '清理应用运行资源失败，请检查运行集群后重试删除。',
+    delete_finalize_failed: '运行资源已清理，但删除记录未能完成，请稍后重试删除。',
+    delete_enqueue_failed: '应用删除任务暂时无法投递，请确认 Worker 队列可用后重试。',
   },
   app_template: {
     volume_contract_invalid: '该模板的数据卷配置无效，请联系平台管理员修正应用市场模板。',
     project_volume_required: '安装该模板前，请选择一个可用的项目数据卷。',
     project_volume_unsupported: '该模板不支持选择项目数据卷。',
+    value_required: '请填写模板的全部必填参数。',
+    install_conflict: '安装时与已有资源冲突，请刷新后更换应用标识重试。',
+    install_failed: '模板安装失败，未创建任何资源，请稍后重试。',
+    catalog_unavailable: '应用市场模板目录暂时不可用，请联系平台管理员。',
+    secret_generation_failed: '无法安全生成模板密钥，安装已中止，请稍后重试。',
+    dependency_invalid: '该模板的组件依赖配置无效，请联系平台管理员修正应用市场模板。',
   },
   project_volume: {
     not_found: '所选项目数据卷不存在或已被删除。',
@@ -28,9 +37,13 @@ const errors = {
     mode_incompatible: '项目数据卷模式与该模板不兼容，请选择匹配的文件系统卷或块设备卷。',
   },
   project: {
+    delete_in_progress: '项目空间正在删除中，请等待资源清理完成。',
     identifier_exists: '项目空间标识已存在。',
     identifier_delete_in_progress: '同标识项目空间正在删除，资源清理完成后才能复用。',
     identifier_delete_failed: '同标识项目空间上次删除失败，请先完成资源清理。',
+  },
+  release: {
+    not_cancelable: '只有排队中或进行中的发布可以取消。',
   },
   deployment: {
     runtime_environment_key_invalid: '请输入有效的环境变量名称。',
@@ -82,6 +95,9 @@ const errors = {
     service_account_invalid: 'ServiceAccount 配置无效，请检查后重试。',
     replicas_invalid: '副本数必须为 0 或正整数。',
     scale_failed: '无法在运行集群应用副本数，请稍后重试。',
+    delete_cleanup_failed: '清理部署配置的运行资源失败，请检查运行集群后重试删除。',
+    delete_finalize_failed: '运行资源已清理，但删除记录未能完成，请稍后重试删除。',
+    delete_enqueue_failed: '部署配置删除任务暂时无法投递，请确认 Worker 队列可用后重试。',
   },
   kubernetes: {
     resource_ownership_conflict: 'Kubernetes 同名资源属于其他资源生命周期，平台不会自动接管，请先处理残留资源。',
@@ -163,6 +179,7 @@ const errors = {
   service_binding_env_conflict: '注入的环境变量与现有部署配置冲突。',
   service_binding_reserved_env: '不能使用平台保留的环境变量名称。',
   service_binding_in_use: '该应用或部署配置仍被服务关系引用，请先删除相关关系。',
+  service_binding_target_deleting: '目标应用或部署配置正在删除或上次删除失败，不能新建或修改指向它的服务关系。',
   topology_edge_duplicate: '相同的服务关系已经存在。',
   topology_truncated: '拓扑关系过多，当前结果已截断。',
   dependency_cycle: '检测到循环依赖，请调整服务关系。',
@@ -174,6 +191,7 @@ const errors = {
     download_unauthorized: '下载授权无效或与当前任务不匹配，请重新开始下载。',
     format_unsupported: '不支持该归档格式。',
     job_failed: '数据卷传输失败，请检查任务状态后重试。',
+    snapshot_timeout: '数据卷快照未能在限定时间内就绪，请确认集群已安装 snapshot controller 后重试，或改用其他一致性模式。',
   },
   volume: {
     invalid_input: '数据卷配置不正确，请检查字段后重试。',

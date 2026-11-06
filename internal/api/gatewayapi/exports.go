@@ -41,3 +41,7 @@ func (h *Handler) RuntimeClusterForDeploymentTargetValue(target model.Deployment
 func (h *Handler) EnqueueGatewayApply(ctx context.Context, route model.GatewayRoute, actorID string) bool {
 	return h.enqueueGatewayApply(ctx, route, actorID)
 }
+
+func (h *Handler) ObserveGatewayRouteStatuses(ctx context.Context, routes []model.GatewayRoute) []model.GatewayRoute {
+	return h.observeGatewayRouteStatuses(ctx, routes)
+}

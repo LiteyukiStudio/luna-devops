@@ -12,8 +12,9 @@ const nav = {
     apps: 'アプリケーション',
     overview: '概要',
     buildVariables: 'ビルド変数',
-    runtimeConfigs: '設定',
+    runtimeConfigs: '実行設定',
     hooks: 'フック',
+    sharedConfig: '共有設定',
     volumes: 'データボリューム',
     members: 'メンバー',
     topology: 'サービス関係',
@@ -30,6 +31,7 @@ const nav = {
       pages: 'ページ',
       projects: 'プロジェクトスペース',
       applications: '{{project}} のアプリケーション',
+      projectSections: '{{project}} のセクション',
       actions: 'よく使う操作',
     },
     actions: {
@@ -37,6 +39,11 @@ const nav = {
       toggleTheme: 'ライト/ダークテーマを切り替え',
     },
   },
+  backToParent: '{{name}} に戻る',
+  deploymentTargetCreate: 'デプロイ設定を追加',
+  deploymentTargetEdit: 'デプロイ設定を編集',
+  deploymentTargetCreateDocumentTitle: 'デプロイ設定を追加：{{projectName}} / {{name}}',
+  deploymentTargetEditDocumentTitle: 'デプロイ設定を編集：{{projectName}} / {{name}}',
 }
 
 export default nav

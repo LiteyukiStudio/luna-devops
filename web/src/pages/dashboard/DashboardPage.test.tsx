@@ -104,6 +104,51 @@ describe('dashboard page', () => {
     expect(within(workerRow).queryByRole('link', { name: /alert/ })).not.toBeInTheDocument()
   })
 
+  it('shows the backend runtime verdict and each application latest activity outside the recent window', async () => {
+    const fixture = dashboardOverviewFixture()
+    fixture.activities = []
+    fixture.attention = []
+    fixture.applicationActivities = [{
+      ...fixture.applicationActivities[0]!,
+      application: { id: 'app_2', identifier: 'worker', name: 'Worker' },
+      id: 'evt_old',
+      occurredAt: '2026-06-01T08:00:00Z',
+      type: 'release.succeeded',
+    }]
+    mocks.getDashboard.mockResolvedValue(fixture)
+    mocks.listApplicationsPage.mockResolvedValue({
+      items: [
+        applicationFixture(),
+        {
+          ...applicationFixture(),
+          deploymentSummary: {
+            targetCount: 1,
+            desiredReplicas: 0,
+            readyReplicas: 0,
+            status: 'not-deployed',
+            targets: [{ id: 'dpt_2', stage: 'prod', enabled: true, deployed: false, desiredReplicas: 0, readyReplicas: 0, status: 'not-deployed' }],
+          },
+          id: 'app_2',
+          name: 'Worker',
+        },
+      ],
+      page: 1,
+      pageSize: 20,
+      sortBy: 'createdAt',
+      sortOrder: 'desc',
+      total: 2,
+      totalPages: 1,
+    })
+    renderPage()
+
+    const table = await screen.findByRole('table')
+    const workerRow = await within(table).findByRole('row', { name: 'Open application Worker' })
+    expect(within(workerRow).getByText('Not deployed')).toBeVisible()
+    expect(within(workerRow).getByText(/release/i)).toBeVisible()
+    const apiRow = within(table).getByRole('row', { name: 'Open application API' })
+    expect(within(apiRow).getByText('Running')).toBeVisible()
+  })
+
   it('offers one primary page action and keeps platform readiness for platform admins only', async () => {
     renderPage()
 
@@ -171,6 +216,7 @@ function applicationFixture(): Application {
     icon: 'box',
     deleteStatus: 'active',
     deleteMessage: '',
+    deleteCode: '',
     createdAt: '2026-07-01T00:00:00Z',
     updatedAt: '2026-07-01T00:00:00Z',
     deploymentSummary: {
@@ -178,7 +224,7 @@ function applicationFixture(): Application {
       desiredReplicas: 2,
       readyReplicas: 2,
       status: 'ready',
-      targets: [{ id: 'dpt_1', stage: 'prod', desiredReplicas: 2, readyReplicas: 2, status: 'ready' }],
+      targets: [{ id: 'dpt_1', stage: 'prod', enabled: true, deployed: true, desiredReplicas: 2, readyReplicas: 2, status: 'ready' }],
     },
   }
 }
@@ -238,6 +284,20 @@ function dashboardOverviewFixture(): DashboardOverview {
       },
     }],
     activities: [{
+      id: 'evt_1',
+      type: 'build.failed',
+      category: 'build',
+      severity: 'error',
+      status: 'failed',
+      message: 'build failed',
+      project: { id: 'prj_1', name: 'Example project', identifier: 'example' },
+      application: { id: 'app_1', name: 'API', identifier: 'api' },
+      resourceType: 'build_run',
+      resourceId: 'bldr_1',
+      links: {},
+      occurredAt: '2026-07-16T11:59:00Z',
+    }],
+    applicationActivities: [{
       id: 'evt_1',
       type: 'build.failed',
       category: 'build',

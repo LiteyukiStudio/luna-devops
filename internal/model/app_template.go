@@ -14,8 +14,6 @@ type AppTemplateInstallation struct {
 	ApplicationID      string         `gorm:"index;not null" json:"applicationId"`
 	DeploymentTargetID string         `gorm:"index;not null;default:''" json:"deploymentTargetId"`
 	ReleaseID          string         `gorm:"index;not null;default:''" json:"releaseId"`
-	Status             string         `gorm:"index;not null;default:installed" json:"status"`
-	Message            string         `gorm:"type:text;not null;default:''" json:"message"`
 	ValuesSnapshot     string         `gorm:"type:text;not null;default:'{}'" json:"valuesSnapshot"`
 	CreatedBy          string         `gorm:"index;not null;default:''" json:"createdBy"`
 	CreatedAt          time.Time      `json:"createdAt"`

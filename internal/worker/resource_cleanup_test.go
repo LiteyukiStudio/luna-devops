@@ -253,7 +253,13 @@ type cleanupObservationManager struct {
 	lists     [][]kubeprovider.ResourceSnapshot
 	deletions []string
 	options   []kubeprovider.ResourceListOptions
+	releases  []kubeprovider.GatewayCertificateRelease
 	deleteErr error
+}
+
+func (manager *cleanupObservationManager) ReleaseGatewayCertificate(_ context.Context, release kubeprovider.GatewayCertificateRelease) (kubeprovider.GatewayCertificateReleaseResult, error) {
+	manager.releases = append(manager.releases, release)
+	return kubeprovider.GatewayCertificateReleaseResult{}, nil
 }
 
 func (manager *cleanupObservationManager) ListManagedResources(_ context.Context, options kubeprovider.ResourceListOptions) ([]kubeprovider.ResourceSnapshot, error) {
@@ -280,6 +286,7 @@ func TestApplicationCleanupCoversDeletedImplicitTargetAcrossDefaultChange(t *tes
 				&model.RuntimeCluster{},
 				&model.DeploymentTarget{},
 				&model.DeploymentVolumeMount{},
+				&model.GatewayRoute{},
 			)
 		},
 	})
@@ -302,6 +309,13 @@ func TestApplicationCleanupCoversDeletedImplicitTargetAcrossDefaultChange(t *tes
 	}
 	if err := db.Delete(&target).Error; err != nil {
 		t.Fatalf("soft-delete implicit target: %v", err)
+	}
+	route := model.GatewayRoute{
+		ID: "gwr_cleanup", ProjectID: project.ID, ApplicationID: target.ApplicationID, DeploymentTargetID: target.ID,
+		Host: "cleanup.example.com", TLSMode: "http-challenge",
+	}
+	if err := db.Create(&route).Error; err != nil {
+		t.Fatalf("create gateway route: %v", err)
 	}
 
 	runner := newRunner(db, Options{})
@@ -327,6 +341,9 @@ func TestApplicationCleanupCoversDeletedImplicitTargetAcrossDefaultChange(t *tes
 			if options.ProjectID != project.ID || options.ApplicationID != target.ApplicationID || options.Namespace != project.KubernetesNamespace {
 				t.Fatalf("cluster %s resource filter = %#v", clusterID, options)
 			}
+		}
+		if len(manager.releases) != 1 || manager.releases[0].Name != gatewayRuntimeName(route) || manager.releases[0].SecretName != gatewayTLSSecretName(route) {
+			t.Fatalf("cluster %s certificate releases = %#v", clusterID, manager.releases)
 		}
 	}
 	if managers[""] == nil {
@@ -463,5 +480,40 @@ func TestResourceCleanupFailureAuditSurvivesCancelledTaskContext(t *testing.T) {
 func TestResourceCleanupAttemptWithoutQueueMetadataIsTerminal(t *testing.T) {
 	if !resourceCleanupAttemptExhausted(t.Context()) {
 		t.Fatal("direct cleanup invocation must fail closed as a terminal attempt")
+	}
+}
+
+func TestProjectCleanupReleasesGatewayCertificatesAfterNamespaceDeletion(t *testing.T) {
+	db := testdb.Open(t, testdb.Options{
+		SchemaPrefix: "project_cleanup_certificates_test",
+		Migrate: func(db *gorm.DB) error {
+			return db.AutoMigrate(&model.RuntimeCluster{}, &model.GatewayRoute{})
+		},
+	})
+	cluster := model.RuntimeCluster{ID: "clu_cert", Name: "Cert", Scope: "global", IsDefault: true, DeleteStatus: "active", GatewayCertificateNamespace: "cert-system"}
+	if err := db.Create(&cluster).Error; err != nil {
+		t.Fatalf("create runtime cluster: %v", err)
+	}
+	project := model.Project{ID: "prj_cert_cleanup", Identifier: "cert-cleanup", KubernetesNamespace: "luna-cert-cleanup"}
+	route := model.GatewayRoute{ID: "gwr_project", ProjectID: project.ID, ApplicationID: "app_cert", DeploymentTargetID: "dplt_cert", Host: "project.example.com", TLSMode: "http-challenge"}
+	if err := db.Create(&route).Error; err != nil {
+		t.Fatalf("create gateway route: %v", err)
+	}
+	ownedNamespace := kubeprovider.ResourceSnapshot{Kind: "Namespace", Name: project.KubernetesNamespace, ProjectID: project.ID}
+	manager := &cleanupObservationManager{lists: [][]kubeprovider.ResourceSnapshot{{ownedNamespace}, nil}}
+	runner := newRunner(db, Options{})
+	runner.kubernetesManagerFactory = func(model.DeploymentTarget) (kubeprovider.NamespaceManager, error) {
+		return manager, nil
+	}
+
+	if err := runner.cleanupProjectNamespacesForDeploymentTargets(t.Context(), project, []model.DeploymentTarget{{ClusterID: cluster.ID}}, "usr_owner"); err != nil {
+		t.Fatalf("cleanupProjectNamespacesForDeploymentTargets() error = %v", err)
+	}
+	if len(manager.deletions) != 1 || len(manager.releases) != 1 {
+		t.Fatalf("namespace deletions = %#v, certificate releases = %#v", manager.deletions, manager.releases)
+	}
+	release := manager.releases[0]
+	if release.Namespace != "cert-system" || release.Name != gatewayRuntimeName(route) || release.GatewayNamespace != "kube-system" {
+		t.Fatalf("certificate release = %#v", release)
 	}
 }

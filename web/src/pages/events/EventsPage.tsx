@@ -147,7 +147,7 @@ export function EventsPage() {
           <div className="min-w-0">
             <p className="truncate font-medium">{eventTypeLabel(t, event.type)}</p>
             <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{event.message || t('eventsPage.noMessage')}</p>
-            <div className="mt-2 flex flex-wrap items-center gap-2 md:hidden">
+            <div className="mt-2 flex flex-wrap items-center gap-2 @xl/data-list:hidden">
               <StatusValueBadge labelKeyPrefix="eventsPage.severities" value={event.severity} />
               <StatusValueBadge labelKeyPrefix="eventsPage.statuses" value={event.status} />
               <span className="text-xs text-muted-foreground">{formatSmartDateTime(event.occurredAt, t)}</span>
@@ -351,7 +351,7 @@ export function EventsPage() {
           <>
             <ResultVisibilitySelect
               canViewAll={platformAdmin}
-              containerClassName="w-full sm:w-36"
+              containerClassName="w-full @lg/data-list:w-36"
               value={visibility}
               onChange={(nextVisibility) => {
                 setVisibility(nextVisibility)
@@ -363,7 +363,7 @@ export function EventsPage() {
             />
             <SearchMultiSelect
               ariaLabel={t('eventsPage.filters.category')}
-              className="w-full sm:w-36"
+              className="w-full @lg/data-list:w-36"
               options={categoryOptions}
               placeholder={t('eventsPage.filters.allCategories')}
               size="sm"
@@ -379,7 +379,7 @@ export function EventsPage() {
             />
             <SearchMultiSelect
               ariaLabel={t('eventsPage.filters.severity')}
-              className="w-full sm:w-36"
+              className="w-full @lg/data-list:w-36"
               options={severityOptions}
               placeholder={t('eventsPage.filters.allSeverities')}
               size="sm"
@@ -391,7 +391,7 @@ export function EventsPage() {
             />
             <SearchMultiSelect
               ariaLabel={t('eventsPage.filters.status')}
-              className="w-full sm:w-36"
+              className="w-full @lg/data-list:w-36"
               options={statusOptions}
               placeholder={t('eventsPage.filters.allStatuses')}
               size="sm"

@@ -4,9 +4,11 @@ import { Link } from 'react-router-dom'
 import { ApplicationIcon } from '@/components/common/application-icon-picker'
 import { ResourceDeletionStatus } from '@/components/common/resource-deletion-status'
 import { ReplicaStatusDot } from '@/pages/applications/deployments/operations/application-deployment-runtime'
+import { applicationDeleteFailureMessage } from './application-delete-failure'
 
 /** 应用名称单元：图标 + 名称链接 + 标识符。名称是进入详情的唯一入口。 */
 export function ApplicationSummary({ application, projectId }: { application: Application, projectId: string }) {
+  const { t } = useTranslation()
   const deleting = application.deleteStatus === 'deleting'
   return (
     <div className="flex min-w-0 items-center gap-3">
@@ -23,7 +25,7 @@ export function ApplicationSummary({ application, projectId }: { application: Ap
           >
             {application.name}
           </Link>
-          <ResourceDeletionStatus message={application.deleteMessage} status={application.deleteStatus} />
+          <ResourceDeletionStatus message={applicationDeleteFailureMessage(t, application)} status={application.deleteStatus} />
         </div>
         <p className="truncate font-mono text-xs text-muted-foreground">{application.identifier}</p>
       </div>

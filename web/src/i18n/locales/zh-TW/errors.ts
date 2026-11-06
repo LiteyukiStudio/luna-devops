@@ -14,11 +14,20 @@ const errors = {
     identifier_exists: '該專案空間內的應用標識已存在。',
     identifier_delete_in_progress: '同標識應用正在刪除，資源清理完成後才能複用。',
     identifier_delete_failed: '同標識應用上次刪除失敗，請先完成資源清理。',
+    delete_cleanup_failed: '清理應用執行資源失敗，請檢查執行叢集後重試刪除。',
+    delete_finalize_failed: '執行資源已清理，但刪除記錄未能完成，請稍後重試刪除。',
+    delete_enqueue_failed: '應用刪除任務暫時無法投遞，請確認 Worker 佇列可用後重試。',
   },
   app_template: {
     volume_contract_invalid: '該模板的資料卷配置無效，請聯絡平台管理員修正應用市場模板。',
     project_volume_required: '安裝該模板前，請選擇一個可用的專案資料卷。',
     project_volume_unsupported: '該模板不支援選擇專案資料卷。',
+    value_required: '請填寫模板的全部必填參數。',
+    install_conflict: '安裝時與既有資源衝突，請重新整理後更換應用標識重試。',
+    install_failed: '模板安裝失敗，未建立任何資源，請稍後重試。',
+    catalog_unavailable: '應用市場模板目錄暫時不可用，請聯絡平台管理員。',
+    secret_generation_failed: '無法安全產生模板密鑰，安裝已中止，請稍後重試。',
+    dependency_invalid: '該模板的元件依賴配置無效，請聯絡平台管理員修正應用市場模板。',
   },
   project_volume: {
     not_found: '所選專案資料卷不存在或已被刪除。',
@@ -28,9 +37,13 @@ const errors = {
     mode_incompatible: '專案資料卷模式與該模板不相容，請選擇匹配的檔案系統卷或塊裝置卷。',
   },
   project: {
+    delete_in_progress: '專案空間正在刪除中，請等待資源清理完成。',
     identifier_exists: '專案空間標識已存在。',
     identifier_delete_in_progress: '同標識專案空間正在刪除，資源清理完成後才能複用。',
     identifier_delete_failed: '同標識專案空間上次刪除失敗，請先完成資源清理。',
+  },
+  release: {
+    not_cancelable: '只有排隊中或進行中的釋出可以取消。',
   },
   deployment: {
     runtime_environment_key_invalid: '請輸入有效的環境變數名稱。',
@@ -82,6 +95,9 @@ const errors = {
     service_account_invalid: 'ServiceAccount 配置無效，請檢查後重試。',
     replicas_invalid: '副本數必須為 0 或正整數。',
     scale_failed: '無法在執行叢集套用副本數，請稍後再試。',
+    delete_cleanup_failed: '清理部署配置的執行資源失敗，請檢查執行叢集後重試刪除。',
+    delete_finalize_failed: '執行資源已清理，但刪除記錄未能完成，請稍後重試刪除。',
+    delete_enqueue_failed: '部署配置刪除任務暫時無法投遞，請確認 Worker 佇列可用後重試。',
   },
   kubernetes: {
     resource_ownership_conflict: 'Kubernetes 同名資源屬於其他資源生命週期，平臺不會自動接管，請先處理殘留資源。',
@@ -163,6 +179,7 @@ const errors = {
   service_binding_env_conflict: '注入的環境變數與現有部署配置衝突。',
   service_binding_reserved_env: '不能使用平臺保留的環境變數名稱。',
   service_binding_in_use: '該應用或部署配置仍被服務關係引用，請先刪除相關關係。',
+  service_binding_target_deleting: '目標應用或部署配置正在刪除或上次刪除失敗，不能新建或修改指向它的服務關係。',
   topology_edge_duplicate: '相同的服務關係已經存在。',
   topology_truncated: '拓撲關係過多，當前結果已截斷。',
   dependency_cycle: '檢測到迴圈依賴，請調整服務關係。',
@@ -174,6 +191,7 @@ const errors = {
     download_unauthorized: '下載授權無效或與當前任務不匹配，請重新開始下載。',
     format_unsupported: '不支援該歸檔格式。',
     job_failed: '資料卷傳輸失敗，請檢查任務狀態後重試。',
+    snapshot_timeout: '資料卷快照未能在限定時間內就緒，請確認叢集已安裝 snapshot controller 後重試，或改用其他一致性模式。',
   },
   volume: {
     invalid_input: '資料卷配置不正確，請檢查欄位後重試。',

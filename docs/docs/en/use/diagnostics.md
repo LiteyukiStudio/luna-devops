@@ -27,9 +27,9 @@ For an unready application, inspect workload events and container logs to distin
 
 When a deployment has several replicas, runtime logs and the Web Console connect to one replica at a time. The default **Automatic** option prefers a ready replica of the current release. To inspect a specific replica, such as one that is restarting or not ready, choose it in the **Replica** list. The list shows each replica's readiness, restart count, and whether it belongs to this release or another one. If the selected replica is recreated or scaled away, the page asks you to choose again instead of switching replicas silently. In the CLI, add `pod=<pod name>` to `luna deployment exec` or `luna release exec` to choose a replica.
 
-## An unreachable route
+## An unreachable access route
 
-Check DNS, route status, the Service port, available Pods, and TLS configuration in that order. Administrators should also inspect Gateway, HTTPRoute, and certificate status.
+Check DNS, access route status, the Service port, available Pods, and TLS configuration in that order. Administrators should also inspect Gateway, HTTPRoute, and certificate status.
 
 For a local test domain, use a hosts entry or `curl --resolve` before changing public DNS.
 
@@ -38,6 +38,6 @@ For a local test domain, use a hosts entry or `curl --resolve` before changing p
 - Incorrect configuration: update the deployment target and create a release.
 - Incorrect image: select the correct image and release it.
 - Application failure: inspect logs before restarting or rolling back.
-- Route failure: inspect the route before the cluster Gateway.
+- Access failure: inspect the access route before the cluster Gateway.
 
 Rollbacks, restarts, and releases can affect live traffic. Verify the target version, impact, and recovery path before changing production.

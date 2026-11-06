@@ -22,7 +22,7 @@ export function SecuritySchedulingFields() {
     <>
       <div className="grid gap-4">
         <h4 className="text-sm font-medium text-foreground">{t('deploymentsPage.kubernetesAdvancedSecurity')}</h4>
-        <div className="grid gap-4 md:grid-cols-3">
+        <div className="grid gap-4 @xl/workspace:grid-cols-3">
           <FormField error={runAsUserError} hint={t('deploymentsPage.runAsUserHint')} label={t('deploymentsPage.runAsUser')}>
             <Input {...register('runAsUser')} inputMode="numeric" />
           </FormField>
@@ -47,7 +47,7 @@ export function SecuritySchedulingFields() {
       </div>
       <div className="grid gap-4">
         <h4 className="text-sm font-medium text-foreground">{t('deploymentsPage.kubernetesAdvancedScheduling')}</h4>
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid gap-4 @xl/workspace:grid-cols-2">
           <FormField hint={t('deploymentsPage.priorityClassNameHint')} label={t('deploymentsPage.priorityClassName')}>
             <Input {...register('priorityClassName')} placeholder={t('deploymentTargetEditor.examplePlaceholder', { value: t('deploymentsPage.priorityClassNamePlaceholder') })} />
           </FormField>

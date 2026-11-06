@@ -45,6 +45,10 @@ func (host gitHost) BuildRunActorName(user model.User) string {
 	return buildapi.BuildRunActorName(user)
 }
 
+func (host gitHost) NewBuildBillingDenialCode(ctx context.Context, projectID string) (string, error) {
+	return host.handlers.domains.billing.NewBuildDenialCode(ctx, projectID)
+}
+
 type gitOAuthStateStoreAdapter struct {
 	handlers *Handlers
 }

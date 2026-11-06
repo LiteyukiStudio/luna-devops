@@ -23,16 +23,21 @@ func (r *Runner) enqueueAutoDeploymentsForBuildRun(ctx context.Context, run mode
 	if !applicationRuntimeCanMutate(application) {
 		return
 	}
+	var project model.Project
+	if err := r.db.First(&project, "id = ?", run.ProjectID).Error; err != nil || !model.DeleteStatusActive(project.DeleteStatus) {
+		return
+	}
 	var target model.DeploymentTarget
 	if err := r.db.First(
 		&target,
-		"id = ? and project_id = ? and application_id = ? and enabled = ? and auto_deploy = ? and require_approval = ?",
+		"id = ? and project_id = ? and application_id = ? and enabled = ? and auto_deploy = ? and require_approval = ? and delete_status in ?",
 		run.DeploymentTargetID,
 		run.ProjectID,
 		run.ApplicationID,
 		true,
 		true,
 		false,
+		model.ActiveDeleteStatuses,
 	).Error; err != nil {
 		return
 	}
@@ -48,9 +53,7 @@ func (r *Runner) enqueueAutoDeploymentsForBuildRun(ctx context.Context, run mode
 		ProjectID: release.ProjectID,
 		ActorID:   release.CreatedBy,
 	}); err != nil {
-		release.Status = "failed"
-		release.Message = "部署任务投递失败，请稍后重试"
-		_ = r.db.Save(&release).Error
+		_, _ = r.finishDeployRelease(ctx, release, "failed", model.ReleaseFailureDispatchFailed, "deploy task dispatch failed: "+err.Error())
 	}
 }
 

@@ -18,14 +18,19 @@ const (
 )
 
 type DeploymentSnapshot struct {
-	Phase             string
-	Message           string
+	Phase   string
+	Message string
+	// ReleaseID is the release recorded on the workload pod template, i.e. the
+	// release whose desired state the workload currently converges to.
+	ReleaseID         string
 	CreatedAt         time.Time
 	DesiredReplicas   int32
 	UpdatedReplicas   int32
 	ReadyReplicas     int32
 	AvailableReplicas int32
-	ObservedAt        time.Time
+	// Resources is the per-replica envelope rendered into the current Pod template.
+	Resources  PodTemplateResources
+	ObservedAt time.Time
 }
 
 func (c *Client) GetDeploymentSnapshot(ctx context.Context, namespace, name string) (DeploymentSnapshot, error) {
@@ -59,12 +64,14 @@ func deploymentStatusSnapshot(deployment *appsv1.Deployment) DeploymentSnapshot 
 	}
 	snapshot := DeploymentSnapshot{
 		Phase:             DeploymentRunning,
-		Message:           fmt.Sprintf("rollout 进行中：updated=%d ready=%d available=%d desired=%d", deployment.Status.UpdatedReplicas, deployment.Status.ReadyReplicas, deployment.Status.AvailableReplicas, desired),
+		Message:           fmt.Sprintf("rollout 进行中：updated=%d ready=%d available=%d total=%d desired=%d", deployment.Status.UpdatedReplicas, deployment.Status.ReadyReplicas, deployment.Status.AvailableReplicas, deployment.Status.Replicas, desired),
 		CreatedAt:         deployment.CreationTimestamp.Time,
 		DesiredReplicas:   desired,
 		UpdatedReplicas:   deployment.Status.UpdatedReplicas,
 		ReadyReplicas:     deployment.Status.ReadyReplicas,
 		AvailableReplicas: deployment.Status.AvailableReplicas,
+		Resources:         podTemplateResources(deployment.Spec.Template),
+		ReleaseID:         deployment.Spec.Template.Annotations[ReleaseIDLabel],
 		ObservedAt:        time.Now().UTC(),
 	}
 
@@ -77,9 +84,12 @@ func deploymentStatusSnapshot(deployment *appsv1.Deployment) DeploymentSnapshot 
 			}
 		}
 	}
+	// 与 kubectl rollout status 一致：滚动更新期间新 ReplicaSet 的未就绪 Pod 已计入 updated，
+	// 旧 Pod 仍计入 ready/available，因此还要求旧副本全部退出且可用数追上新版本副本数。
 	replicasReady := deployment.Status.UpdatedReplicas >= desired &&
+		deployment.Status.Replicas <= deployment.Status.UpdatedReplicas &&
 		deployment.Status.ReadyReplicas >= desired &&
-		deployment.Status.AvailableReplicas >= desired
+		deployment.Status.AvailableReplicas >= deployment.Status.UpdatedReplicas
 	if desired == 0 {
 		replicasReady = deployment.Status.Replicas == 0 &&
 			deployment.Status.UpdatedReplicas == 0 &&
@@ -116,9 +126,14 @@ func (c *Client) getStatefulSetSnapshot(ctx context.Context, namespace, name str
 		UpdatedReplicas:   statefulSet.Status.UpdatedReplicas,
 		ReadyReplicas:     statefulSet.Status.ReadyReplicas,
 		AvailableReplicas: statefulSet.Status.AvailableReplicas,
+		Resources:         podTemplateResources(statefulSet.Spec.Template),
+		ReleaseID:         statefulSet.Spec.Template.Annotations[ReleaseIDLabel],
 		ObservedAt:        time.Now().UTC(),
 	}
-	replicasReady := statefulSet.Status.UpdatedReplicas >= desired && statefulSet.Status.ReadyReplicas >= desired
+	// 滚动更新完成需要所有 Pod 都切到新 revision；仅按数量判断会把旧 revision 的就绪 Pod 算作新版本。
+	replicasReady := statefulSet.Status.UpdatedReplicas >= desired &&
+		statefulSet.Status.ReadyReplicas >= desired &&
+		(statefulSet.Status.UpdateRevision == "" || statefulSet.Status.CurrentRevision == statefulSet.Status.UpdateRevision)
 	if desired == 0 {
 		replicasReady = statefulSet.Status.Replicas == 0 &&
 			statefulSet.Status.UpdatedReplicas == 0 &&

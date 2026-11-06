@@ -1,7 +1,30 @@
-import type { BillingRateRule } from '@/api'
+import type { BillingRateRule, RuntimeCluster } from '@/api'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '@/api'
 import { usePublicConfig } from '@/app/public-config-context'
+
+export type RuntimeResourcePolicy = Pick<RuntimeCluster, 'cpuRequestPercent' | 'memoryRequestPercent' | 'cpuLimitPercent' | 'memoryLimitPercent'>
+
+export interface RuntimeHourCostInput {
+  /** Per-replica quota entered in the editor; the cluster policy derives requests and limits from it. */
+  cpuQuota: string | undefined
+  memoryQuota: string | undefined
+  /** Replicas for the request floor (minimum replicas with autoscaling). */
+  floorReplicas: number | undefined
+  /** Replicas for the limit ceiling (maximum replicas with autoscaling). */
+  ceilingReplicas: number | undefined
+  policy: RuntimeResourcePolicy
+}
+
+/**
+ * Runtime is billed per minute as max(request × desired replicas, actual usage) for CPU and memory.
+ * Actual usage cannot exceed the limit, so the hourly cost lies between the request floor and the
+ * limit ceiling. ceiling is null when the policy leaves a billed resource without a limit.
+ */
+export interface RuntimeHourCostRange {
+  floor: number
+  ceiling: number | null
+}
 
 const DEFAULT_CURRENCY_UNIT = 'Credits'
 const DEFAULT_FIAT_CURRENCY_UNIT = 'CNY'
@@ -15,8 +38,7 @@ export function useBillingDisplay(locale: string) {
     ...amountDisplay,
     buildMinuteCost: (cpuRequest: string | undefined, memoryRequest: string | undefined) =>
       estimateBuildMinuteCost(rateRules.data ?? [], cpuRequest, memoryRequest),
-    runtimeHourCost: (replicas: number | undefined, cpuRequest: string | undefined, memoryRequest: string | undefined) =>
-      estimateRuntimeHourCost(rateRules.data ?? [], replicas, cpuRequest, memoryRequest),
+    runtimeHourCostRange: (input: RuntimeHourCostInput) => estimateRuntimeHourCostRange(rateRules.data ?? [], input),
   }
 }
 
@@ -76,12 +98,34 @@ function estimateBuildMinuteCost(rules: BillingRateRule[], cpuRequest: string | 
   ])
 }
 
-function estimateRuntimeHourCost(rules: BillingRateRule[], replicas: number | undefined, cpuRequest: string | undefined, memoryRequest: string | undefined) {
-  const replicaCount = Number.isFinite(replicas) && (replicas ?? 0) > 0 ? replicas ?? 1 : 1
-  return estimateCost([
-    [parseCPUToCores(cpuRequest) * replicaCount, rateForMeter(rules, 'runtime.cpu_vcpu_hour')],
-    [parseMemoryToGiB(memoryRequest) * replicaCount, rateForMeter(rules, 'runtime.memory_gib_hour')],
+export function estimateRuntimeHourCostRange(rules: BillingRateRule[], input: RuntimeHourCostInput): RuntimeHourCostRange {
+  const cpuCores = parseCPUToCores(input.cpuQuota)
+  const memoryGiB = parseMemoryToGiB(input.memoryQuota)
+  const cpuRate = rateForMeter(rules, 'runtime.cpu_vcpu_hour')
+  const memoryRate = rateForMeter(rules, 'runtime.memory_gib_hour')
+  const floorReplicas = replicaCount(input.floorReplicas)
+  const ceilingReplicas = replicaCount(input.ceilingReplicas)
+  const floor = estimateCost([
+    [cpuCores * percentRatio(input.policy.cpuRequestPercent) * floorReplicas, cpuRate],
+    [memoryGiB * percentRatio(input.policy.memoryRequestPercent) * floorReplicas, memoryRate],
   ])
+  const cpuUnbounded = input.policy.cpuLimitPercent <= 0 && cpuCores > 0 && cpuRate > 0
+  const memoryUnbounded = input.policy.memoryLimitPercent <= 0 && memoryGiB > 0 && memoryRate > 0
+  if (ceilingReplicas > 0 && (cpuUnbounded || memoryUnbounded))
+    return { floor, ceiling: null }
+  const ceiling = estimateCost([
+    [cpuCores * percentRatio(input.policy.cpuLimitPercent) * ceilingReplicas, cpuRate],
+    [memoryGiB * percentRatio(input.policy.memoryLimitPercent) * ceilingReplicas, memoryRate],
+  ])
+  return { floor, ceiling: Math.max(floor, ceiling) }
+}
+
+function replicaCount(value: number | undefined) {
+  return Number.isFinite(value) && (value ?? 0) > 0 ? Math.floor(value ?? 0) : 0
+}
+
+function percentRatio(percent: number) {
+  return Number.isFinite(percent) && percent > 0 ? percent / 100 : 0
 }
 
 function estimateCost(items: Array<[number, number]>) {

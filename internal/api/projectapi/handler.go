@@ -37,6 +37,8 @@ type Host interface {
 	CurrentAccessTokenFromContext(ctx *gin.Context) (model.AccessToken, bool)
 	CurrentSessionFromCookie(ctx *gin.Context) (model.UserSession, bool)
 	ContinuousAuthorizationInterval() time.Duration
+	// ObserveGatewayRouteStatuses 实时读取访问入口的 HTTPRoute 状态，不可观察的入口返回 unavailable。
+	ObserveGatewayRouteStatuses(ctx context.Context, routes []model.GatewayRoute) []model.GatewayRoute
 }
 
 type Handler struct {

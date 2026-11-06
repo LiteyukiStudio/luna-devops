@@ -7,13 +7,15 @@ import (
 )
 
 type Application struct {
-	ID               string         `gorm:"primaryKey" json:"id"`
-	ProjectID        string         `gorm:"uniqueIndex:idx_applications_project_identifier_active,where:deleted_at IS NULL;index;not null" json:"projectId"`
-	Identifier       string         `gorm:"column:identifier;uniqueIndex:idx_applications_project_identifier_active,where:deleted_at IS NULL;index;not null" json:"identifier"`
-	Name             string         `gorm:"not null" json:"name"`
-	Icon             string         `gorm:"not null;default:'box'" json:"icon"`
-	DeleteStatus     string         `gorm:"index;not null;default:active" json:"deleteStatus"`
-	DeleteMessage    string         `gorm:"type:text;not null;default:''" json:"deleteMessage"`
+	ID            string `gorm:"primaryKey" json:"id"`
+	ProjectID     string `gorm:"uniqueIndex:idx_applications_project_identifier_active,where:deleted_at IS NULL;index;not null" json:"projectId"`
+	Identifier    string `gorm:"column:identifier;uniqueIndex:idx_applications_project_identifier_active,where:deleted_at IS NULL;index;not null" json:"identifier"`
+	Name          string `gorm:"not null" json:"name"`
+	Icon          string `gorm:"not null;default:'box'" json:"icon"`
+	DeleteStatus  string `gorm:"index;not null;default:active" json:"deleteStatus"`
+	DeleteMessage string `gorm:"type:text;not null;default:''" json:"deleteMessage"`
+	// DeleteCode 是最近一次删除失败的稳定错误码；前端据此显示本地化原因，DeleteMessage 只保留诊断原文。
+	DeleteCode       string         `gorm:"type:text;not null;default:''" json:"deleteCode"`
 	DeleteStartedAt  *time.Time     `json:"deleteStartedAt"`
 	DeleteFinishedAt *time.Time     `json:"deleteFinishedAt"`
 	CreatedAt        time.Time      `json:"createdAt"`

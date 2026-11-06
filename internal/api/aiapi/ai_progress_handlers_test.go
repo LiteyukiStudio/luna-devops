@@ -53,7 +53,7 @@ func TestReleaseProgressOnlyReportsDeterminateCompletion(t *testing.T) {
 func TestAppTemplateProgressFollowsLinkedRelease(t *testing.T) {
 	now := time.Now().UTC()
 	snapshot := appTemplateReleaseProgress(
-		model.AppTemplateInstallation{ID: "inst_1", Status: "deploying", ReleaseID: "rel_1"},
+		model.AppTemplateInstallation{ID: "inst_1", ReleaseID: "rel_1"},
 		[]model.Release{{ID: "rel_1", Status: "succeeded", FinishedAt: &now, UpdatedAt: now}},
 	)
 
@@ -67,7 +67,7 @@ func TestAppTemplateProgressFollowsLinkedRelease(t *testing.T) {
 
 func TestAppTemplateProgressAggregatesComponentReleases(t *testing.T) {
 	now := time.Now().UTC()
-	installation := model.AppTemplateInstallation{ID: "inst_multi", Status: "deploying", ReleaseID: "rel_web"}
+	installation := model.AppTemplateInstallation{ID: "inst_multi", ReleaseID: "rel_web"}
 	components := []model.AppTemplateInstallationComponent{
 		{ComponentKey: "web", ReleaseID: "rel_web"}, {ComponentKey: "api", ReleaseID: "rel_api"}, {ComponentKey: "postgres", ReleaseID: "rel_db"},
 	}

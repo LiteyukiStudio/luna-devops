@@ -2,7 +2,6 @@ package runtimeapi
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -271,16 +270,7 @@ func runtimeClusterReferenceCounts(db *gorm.DB, cluster model.RuntimeCluster) (i
 		return 0, 0, err
 	}
 	if cluster.Scope == "global" {
-		var defaultCluster model.RuntimeCluster
-		err = runtimecluster.ActiveScope(db).
-			Where("scope = ? and is_default = ?", "global", true).
-			First(&defaultCluster).Error
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			err = runtimecluster.ActiveScope(db).
-				Where("scope = ?", "global").
-				Order("created_at asc").
-				First(&defaultCluster).Error
-		}
+		defaultCluster, err := runtimecluster.ResolveForTarget(db, "")
 		if err != nil {
 			return 0, 0, err
 		}

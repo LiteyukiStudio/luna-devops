@@ -7,7 +7,7 @@ import { api } from '@/api'
 import { useSession } from '@/app/session-context'
 import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
 import { isPlatformAdmin } from '@/lib/roles'
-import { BILLING_PAGE_SIZE, billingPeriodToQuery, periodSelectionForPreset, readCachedBillingProjectScope, writeCachedBillingProjectScope } from './billing-page-utils'
+import { BILLING_PAGE_SIZE, billingPeriodToQuery, browserTimeZone, periodSelectionForPreset, readCachedBillingProjectScope, writeCachedBillingProjectScope } from './billing-page-utils'
 
 export function useBillingPage() {
   const { t } = useTranslation()
@@ -42,9 +42,11 @@ export function useBillingPage() {
   const projectIds = selectedProjectIds.length > 0 ? selectedProjectIds : undefined
   const billingPeriodQuery = useMemo(() => billingPeriodToQuery(billingPeriod), [billingPeriod])
   const billingUserQuery = canManageBilling && billingUserScopeId ? billingUserScopeId : undefined
+  // Today and this month follow the viewer's local calendar, not the server's.
+  const timeZone = browserTimeZone()
   const accountSummaryParams = canManageBilling && !billingUserQuery
-    ? { ...billingPeriodQuery, userId: billingUserQuery }
-    : { ...billingPeriodQuery, accountScope: 'current' as const, userId: billingUserQuery }
+    ? { ...billingPeriodQuery, timeZone, userId: billingUserQuery }
+    : { ...billingPeriodQuery, accountScope: 'current' as const, timeZone, userId: billingUserQuery }
   const usersQuery = useQuery({
     enabled: canManageBilling,
     queryKey: ['billing', 'users'],
@@ -53,12 +55,12 @@ export function useBillingPage() {
   const userItems = useMemo(() => usersQuery.data?.items ?? [], [usersQuery.data?.items])
 
   const accountSummaryQuery = useQuery({
-    queryKey: ['billing', 'summary', 'account', billingPeriodQuery, billingUserQuery, canManageBilling],
+    queryKey: ['billing', 'summary', 'account', billingPeriodQuery, billingUserQuery, canManageBilling, timeZone],
     queryFn: () => api.getBillingSummary(undefined, accountSummaryParams),
   })
   const scopedSummaryQuery = useQuery({
-    queryKey: ['billing', 'summary', 'scope', selectedProjectIds, billingPeriodQuery, billingUserQuery],
-    queryFn: () => api.getBillingSummary(projectIds, { ...billingPeriodQuery, userId: billingUserQuery }),
+    queryKey: ['billing', 'summary', 'scope', selectedProjectIds, billingPeriodQuery, billingUserQuery, timeZone],
+    queryFn: () => api.getBillingSummary(projectIds, { ...billingPeriodQuery, timeZone, userId: billingUserQuery }),
   })
   const deploymentSpendQuery = useQuery({
     queryKey: ['billing', 'deployment-spend', selectedProjectIds, billingPeriodQuery, billingUserQuery, deploymentSpendPage],
@@ -80,7 +82,7 @@ export function useBillingPage() {
       ...billingPeriodQuery,
       projectIds,
       userId: billingUserQuery,
-      sortBy: 'createdAt',
+      sortBy: 'occurredAt',
       sortOrder: 'desc',
     }),
   })
@@ -92,7 +94,7 @@ export function useBillingPage() {
       ...billingPeriodQuery,
       projectIds,
       userId: billingUserQuery,
-      sortBy: 'createdAt',
+      sortBy: 'periodStart',
       sortOrder: 'desc',
     }),
   })

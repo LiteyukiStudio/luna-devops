@@ -23,7 +23,7 @@ export function BillingPeriodPicker({ period, onChange }: { period: BillingPerio
   }
 
   return (
-    <div className="flex w-full min-w-0 flex-col gap-2 md:flex-row md:items-center xl:w-auto">
+    <div className="flex w-full min-w-0 flex-col gap-2 @xl/workspace:flex-row @xl/workspace:items-center @4xl/workspace:w-auto">
       <Select
         value={period.preset}
         onValueChange={(value) => {
@@ -33,7 +33,7 @@ export function BillingPeriodPicker({ period, onChange }: { period: BillingPerio
             onChange(periodSelectionForPreset(value as BillingPeriodPreset))
         }}
       >
-        <SelectTrigger className="md:w-40">
+        <SelectTrigger className="@xl/workspace:w-40">
           <CalendarDays className="size-4 shrink-0 text-muted-foreground" />
           <SelectValue />
         </SelectTrigger>
@@ -44,7 +44,7 @@ export function BillingPeriodPicker({ period, onChange }: { period: BillingPerio
           <SelectItem value="custom">{t('billingPage.periodPresets.custom')}</SelectItem>
         </SelectContent>
       </Select>
-      <div className="grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 xl:w-[26rem] xl:flex-none">
+      <div className="grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 @4xl/workspace:w-[26rem] @4xl/workspace:flex-none">
         <Input
           aria-label={t('billingPage.periodStartDate')}
           className="px-3"

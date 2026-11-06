@@ -14,11 +14,20 @@ const errors = {
     identifier_exists: 'このプロジェクトスペース内にアプリケーション識別子が既に存在します。',
     identifier_delete_in_progress: '同じ識別子のアプリケーションを削除中です。リソースクリーンアップ完了後に再利用できます。',
     identifier_delete_failed: '同じ識別子のアプリケーションの前回の削除に失敗しました。先にリソースクリーンアップを完了してください。',
+    delete_cleanup_failed: 'アプリケーションの実行リソースのクリーンアップに失敗しました。実行クラスターを確認してから再度削除してください。',
+    delete_finalize_failed: '実行リソースはクリーンアップされましたが、削除記録を完了できませんでした。しばらくしてから再度削除してください。',
+    delete_enqueue_failed: 'アプリケーション削除タスクを投入できませんでした。Worker キューが利用可能か確認して再試行してください。',
   },
   app_template: {
     volume_contract_invalid: 'このテンプレートのデータボリューム設定が無効です。プラットフォーム管理者にアプリマーケットのテンプレート修正を依頼してください。',
     project_volume_required: 'このテンプレートをインストールする前に、利用可能なプロジェクトデータボリュームを選択してください。',
     project_volume_unsupported: 'このテンプレートではプロジェクトデータボリュームを選択できません。',
+    value_required: 'テンプレートの必須パラメーターをすべて入力してください。',
+    install_conflict: 'インストールが既存のリソースと競合しました。更新してから別のアプリケーション識別子で再試行してください。',
+    install_failed: 'テンプレートのインストールに失敗し、リソースは作成されていません。しばらくしてから再試行してください。',
+    catalog_unavailable: 'アプリマーケットのテンプレートカタログを利用できません。プラットフォーム管理者に連絡してください。',
+    secret_generation_failed: 'テンプレートのシークレットを安全に生成できなかったため、インストールを中止しました。しばらくしてから再試行してください。',
+    dependency_invalid: 'このテンプレートのコンポーネント依存設定が無効です。プラットフォーム管理者にテンプレートの修正を依頼してください。',
   },
   project_volume: {
     not_found: '選択したプロジェクトデータボリュームが存在しないか、削除されました。',
@@ -28,9 +37,13 @@ const errors = {
     mode_incompatible: 'プロジェクトデータボリュームのモードがこのテンプレートと互換性がありません。適合するファイルシステムまたはブロックボリュームを選択してください。',
   },
   project: {
+    delete_in_progress: 'プロジェクトスペースを削除中です。リソースのクリーンアップが完了するまでお待ちください。',
     identifier_exists: 'プロジェクトスペース識別子が既に存在します。',
     identifier_delete_in_progress: '同じ識別子のプロジェクトスペースを削除中です。リソースクリーンアップ完了後に再利用できます。',
     identifier_delete_failed: '同じ識別子のプロジェクトスペースの前回の削除に失敗しました。先にリソースクリーンアップを完了してください。',
+  },
+  release: {
+    not_cancelable: 'キャンセルできるのは待機中または実行中のリリースのみです。',
   },
   deployment: {
     runtime_environment_key_invalid: '有効な環境変数名を入力してください。',
@@ -82,6 +95,9 @@ const errors = {
     service_account_invalid: 'ServiceAccount 設定が無効です。確認して再試行してください。',
     replicas_invalid: 'レプリカ数は 0 以上の整数で指定してください。',
     scale_failed: '実行クラスターにレプリカ数を適用できませんでした。再試行してください。',
+    delete_cleanup_failed: 'デプロイ設定の実行リソースのクリーンアップに失敗しました。実行クラスターを確認してから再度削除してください。',
+    delete_finalize_failed: '実行リソースはクリーンアップされましたが、削除記録を完了できませんでした。しばらくしてから再度削除してください。',
+    delete_enqueue_failed: 'デプロイ設定の削除タスクをキューに投入できませんでした。Worker キューが利用可能か確認してから再試行してください。',
   },
   kubernetes: {
     resource_ownership_conflict: 'Kubernetes の同名リソースは他のリソースライフサイクルに属しています。プラットフォームは自動的に引き継ぎません。先に残留リソースを処理してください。',
@@ -163,6 +179,7 @@ const errors = {
   service_binding_env_conflict: '注入された環境変数が既存のデプロイ設定と競合しています。',
   service_binding_reserved_env: 'プラットフォーム予約の環境変数名は使用できません。',
   service_binding_in_use: 'このアプリケーションまたはデプロイ設定はまだサービス関係によって参照されています。先に関連する関係を削除してください。',
+  service_binding_target_deleting: 'ターゲットのアプリケーションまたはデプロイ設定は削除中か前回の削除に失敗しているため、それを参照するサービス関係を作成・変更できません。',
   topology_edge_duplicate: '同じサービス関係が既に存在します。',
   topology_truncated: 'トポロジー関係が多すぎます。現在の結果は切り捨てられました。',
   dependency_cycle: '循環依存が検出されました。サービス関係を調整してください。',
@@ -174,6 +191,7 @@ const errors = {
     download_unauthorized: 'ダウンロード承認が無効か、現在のタスクと一致しません。ダウンロードを再開してください。',
     format_unsupported: 'このアーカイブ形式はサポートされていません。',
     job_failed: 'データボリューム転送に失敗しました。タスク状態を確認して再試行してください。',
+    snapshot_timeout: 'データボリュームのスナップショットが制限時間内に準備できませんでした。クラスターに snapshot controller がインストールされているか確認して再試行するか、別の整合性モードを選択してください。',
   },
   volume: {
     invalid_input: 'データボリューム設定が正しくありません。フィールドを確認して再試行してください。',

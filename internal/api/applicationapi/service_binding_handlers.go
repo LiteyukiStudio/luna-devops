@@ -285,7 +285,7 @@ func writeDependencyError(ctx *gin.Context, err error) {
 	switch code {
 	case dependency.CodeNotFound:
 		status = http.StatusNotFound
-	case dependency.CodeEnvConflict, dependency.CodeTopologyDuplicate:
+	case dependency.CodeEnvConflict, dependency.CodeTopologyDuplicate, dependency.CodeTargetDeleting:
 		status = http.StatusConflict
 	case dependency.CodeInvalidInput, dependency.CodeCrossProject, dependency.CodeCrossCluster,
 		dependency.CodeSourceTargetSame, dependency.CodePortNotFound, dependency.CodeReservedEnv:

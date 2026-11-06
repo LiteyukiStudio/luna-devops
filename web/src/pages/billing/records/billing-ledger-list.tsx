@@ -99,7 +99,7 @@ export function BillingLedgerList({
       key: 'time',
       header: t('billingPage.time'),
       width: 'compact',
-      render: item => formatSmartDateTime(item.createdAt, t),
+      render: item => formatSmartDateTime(item.occurredAt, t),
     },
   ], [billingDisplay, projectMap, t])
 

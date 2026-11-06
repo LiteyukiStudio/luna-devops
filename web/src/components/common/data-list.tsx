@@ -9,6 +9,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { TableFrame } from '@/components/ui/table-frame'
 import { cn } from '@/lib/utils'
 import { EmptyState } from './empty-state'
+import { ErrorState } from './error-state'
 import { DataListSkeleton } from './loading-states'
 import { PaginationController } from './pagination'
 
@@ -43,6 +44,13 @@ interface DataListProps<T> {
   emptyDescription?: ReactNode
   emptyIcon?: ReactNode
   emptyMode?: 'actionable' | 'filtered'
+  /** 列表数据加载失败时替代空状态与表格；loading、error、empty 三者互斥。 */
+  error?: {
+    title: string
+    description?: string
+    onRetry?: () => void
+    retrying?: boolean
+  }
   loading?: boolean
   constrainedHeight?: boolean
   /**
@@ -236,6 +244,7 @@ export function DataList<T>({
   emptyDescription,
   emptyIcon,
   emptyMode = 'actionable',
+  error,
   loading = false,
   constrainedHeight = false,
   framed = true,
@@ -300,13 +309,13 @@ export function DataList<T>({
     event.preventDefault()
     onRowClick(item)
   }
-  const tableFooter = pagination && pagination.total > 0 && !loading
+  const tableFooter = pagination && pagination.total > 0 && !loading && !error
     ? (
         <div className="px-3 py-3 text-sm text-muted-foreground sm:px-4">
-          <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-col items-stretch gap-3 @lg/data-list:flex-row @lg/data-list:items-center @lg/data-list:justify-between">
             <span>{pagination.pageInfoLabel}</span>
             <PaginationController
-              className="w-full justify-between sm:w-auto sm:justify-center"
+              className="w-full justify-between @lg/data-list:w-auto @lg/data-list:justify-center"
               hideOnSinglePage
               initialPage={pagination.page}
               pageSize={pagination.pageSize}
@@ -327,7 +336,8 @@ export function DataList<T>({
     <div
       ref={rootRef}
       className={cn(
-        'flex w-full min-w-0 max-w-full max-h-none flex-col',
+        // 列表自身是尺寸容器：工具区堆叠/并排与窄屏隐藏列按列表实际宽度（@…/data-list:）响应，在页面、分栏和 Sheet 中一致
+        '@container/data-list flex w-full min-w-0 max-w-full max-h-none flex-col',
         offsetClass,
         constrainedHeight && offsetFixedClass,
       )}
@@ -336,10 +346,10 @@ export function DataList<T>({
       {hasTools && (
         <div
           className={cn(
-            'flex shrink-0 flex-col gap-2 pb-3 sm:flex-row sm:flex-wrap sm:items-center',
+            'flex shrink-0 flex-col gap-2 pb-3 @lg/data-list:flex-row @lg/data-list:flex-wrap @lg/data-list:items-center',
             // 工具区控件统一使用紧凑高度，避免筛选比表格行还重
             '[&_[data-slot=input]]:h-8 [&_[data-slot=native-select]]:h-8 [&_[data-slot=select-trigger]]:h-8',
-            hasToolsLead ? 'sm:justify-between' : 'sm:justify-start',
+            hasToolsLead ? '@lg/data-list:justify-between' : '@lg/data-list:justify-start',
           )}
           data-slot="data-list-tools"
         >
@@ -354,15 +364,15 @@ export function DataList<T>({
           {hasToolbarControls && (
             <div
               className={cn(
-                'flex min-w-0 flex-col gap-2 sm:flex sm:flex-1 sm:flex-row sm:flex-wrap sm:items-center',
-                hasToolsLead && 'sm:justify-end',
+                'flex min-w-0 flex-col gap-2 @lg/data-list:flex @lg/data-list:flex-1 @lg/data-list:flex-row @lg/data-list:flex-wrap @lg/data-list:items-center',
+                hasToolsLead && '@lg/data-list:justify-end',
               )}
               data-slot="data-list-tools-controls"
             >
               {search && (
                 <Input
                   aria-label={search.placeholder}
-                  className="w-full sm:w-60"
+                  className="w-full @lg/data-list:w-60"
                   placeholder={search.placeholder}
                   value={search.value}
                   onChange={event => search.onChange(event.target.value)}
@@ -392,107 +402,113 @@ export function DataList<T>({
       >
         {loading
           ? <DataListSkeleton columns={Math.max(2, Math.min(columns.length + (selectable ? 1 : 0), 6))} />
-          : items.length === 0
+          : error
             ? (
-                <EmptyState
-                  actions={emptyActions}
-                  description={emptyDescription}
-                  icon={emptyIcon}
-                  mode={emptyMode}
-                  title={emptyTitle}
-                  variant="plain"
-                />
+                <div className="p-3 sm:p-4" data-slot="data-list-error">
+                  <ErrorState description={error.description} retrying={error.retrying} title={error.title} onRetry={error.onRetry} />
+                </div>
               )
-            : (
-                <table className="w-max min-w-full table-auto bg-transparent caption-bottom text-sm" data-slot="data-list-table">
-                  <thead className="sticky top-0 z-10 [background:var(--data-list-header-surface)]">
-                    <tr>
-                      {selectable && (
-                        <th className="h-10 w-10 border-b border-border px-3 py-2 text-left align-middle text-sm font-medium whitespace-nowrap text-foreground sm:px-4">
-                          <Checkbox
-                            aria-label={selection?.selectAllLabel}
-                            checked={someRowsSelected && !allRowsSelected ? 'indeterminate' : allRowsSelected}
-                            disabled={selectableRowKeys.length === 0}
-                            onCheckedChange={checked => updateAllRowsSelection(checked === true)}
-                          />
-                        </th>
-                      )}
-                      {columns.map(column => (
-                        <th
-                          key={column.key}
-                          className={cn(
-                            column.className,
-                            'h-10 border-b border-border px-3 py-2 text-left align-middle text-sm font-medium whitespace-nowrap text-foreground sm:px-4',
-                            stickyColumnClass(column.sticky, 'header'),
-                            column.headerClassName,
-                            column.mobile === 'hidden' && 'hidden md:table-cell',
-                            columnCellClassName(column as DataListColumn<unknown>),
-                          )}
-                        >
-                          <div className={columnContentClassName(column as DataListColumn<unknown>, 'header')} style={columnWidthStyle(column as DataListColumn<unknown>)}>
-                            {column.header}
-                          </div>
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="bg-card">
-                    {items.map((item) => {
-                      const itemKey = rowKey(item)
-                      const rowSelectable = selection?.isRowSelectable?.(item) ?? true
-                      return (
-                        <tr
-                          key={itemKey}
-                          aria-label={rowActionLabel?.(item)}
-                          className={cn(
-                            'group border-b border-border last:border-b-0 transition-colors hover:[&>td]:[background:var(--data-list-row-hover)] [&>td]:transition-colors',
-                            onRowClick && 'cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
-                          )}
-                          tabIndex={onRowClick ? 0 : undefined}
-                          onClick={event => activateRow(item, event.target)}
-                          onKeyDown={event => activateRowFromKeyboard(event, item)}
-                        >
-                          {selectable && (
-                            <td className="w-10 px-3 py-2.5 align-middle sm:px-4">
-                              <Checkbox
-                                aria-label={selection?.selectRowLabel(item)}
-                                checked={selectedKeySet.has(itemKey)}
-                                disabled={!rowSelectable}
-                                onCheckedChange={checked => updateRowSelection(itemKey, checked === true)}
-                              />
-                            </td>
-                          )}
-                          {columns.map((column) => {
-                            const content = column.render(item)
-                            const collapseActions = collapseMobileActions
-                              && inferredColumnWidth(column as DataListColumn<unknown>) === 'actions'
-                              && column.mobileActions !== 'inline'
-                            return (
-                              <td
-                                key={column.key}
-                                className={cn(
-                                  column.className,
-                                  'px-3 py-2.5 align-middle sm:px-4',
-                                  stickyColumnClass(column.sticky, 'cell'),
-                                  column.cellClassName,
-                                  column.mobile === 'hidden' && 'hidden md:table-cell',
-                                  columnCellClassName(column as DataListColumn<unknown>),
-                                )}
-                              >
-                                <div className={columnContentClassName(column as DataListColumn<unknown>, 'cell')} style={columnWidthStyle(column as DataListColumn<unknown>)}>
-                                  {collapseActions
-                                    ? <MobileActionMenu label={t('common.actions')}>{content}</MobileActionMenu>
-                                    : content}
-                                </div>
+            : items.length === 0
+              ? (
+                  <EmptyState
+                    actions={emptyActions}
+                    description={emptyDescription}
+                    icon={emptyIcon}
+                    mode={emptyMode}
+                    title={emptyTitle}
+                    variant="plain"
+                  />
+                )
+              : (
+                  <table className="w-max min-w-full table-auto bg-transparent caption-bottom text-sm" data-slot="data-list-table">
+                    <thead className="sticky top-0 z-10 [background:var(--data-list-header-surface)]">
+                      <tr>
+                        {selectable && (
+                          <th className="h-10 w-10 border-b border-border px-3 py-2 text-left align-middle text-sm font-medium whitespace-nowrap text-foreground sm:px-4">
+                            <Checkbox
+                              aria-label={selection?.selectAllLabel}
+                              checked={someRowsSelected && !allRowsSelected ? 'indeterminate' : allRowsSelected}
+                              disabled={selectableRowKeys.length === 0}
+                              onCheckedChange={checked => updateAllRowsSelection(checked === true)}
+                            />
+                          </th>
+                        )}
+                        {columns.map(column => (
+                          <th
+                            key={column.key}
+                            className={cn(
+                              column.className,
+                              'h-10 border-b border-border px-3 py-2 text-left align-middle text-sm font-medium whitespace-nowrap text-foreground sm:px-4',
+                              stickyColumnClass(column.sticky, 'header'),
+                              column.headerClassName,
+                              column.mobile === 'hidden' && 'hidden @xl/data-list:table-cell',
+                              columnCellClassName(column as DataListColumn<unknown>),
+                            )}
+                          >
+                            <div className={columnContentClassName(column as DataListColumn<unknown>, 'header')} style={columnWidthStyle(column as DataListColumn<unknown>)}>
+                              {column.header}
+                            </div>
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody className="bg-card">
+                      {items.map((item) => {
+                        const itemKey = rowKey(item)
+                        const rowSelectable = selection?.isRowSelectable?.(item) ?? true
+                        return (
+                          <tr
+                            key={itemKey}
+                            aria-label={rowActionLabel?.(item)}
+                            className={cn(
+                              'group border-b border-border last:border-b-0 transition-colors hover:[&>td]:[background:var(--data-list-row-hover)] [&>td]:transition-colors',
+                              onRowClick && 'cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
+                            )}
+                            tabIndex={onRowClick ? 0 : undefined}
+                            onClick={event => activateRow(item, event.target)}
+                            onKeyDown={event => activateRowFromKeyboard(event, item)}
+                          >
+                            {selectable && (
+                              <td className="w-10 px-3 py-2.5 align-middle sm:px-4">
+                                <Checkbox
+                                  aria-label={selection?.selectRowLabel(item)}
+                                  checked={selectedKeySet.has(itemKey)}
+                                  disabled={!rowSelectable}
+                                  onCheckedChange={checked => updateRowSelection(itemKey, checked === true)}
+                                />
                               </td>
-                            )
-                          })}
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              )}
+                            )}
+                            {columns.map((column) => {
+                              const content = column.render(item)
+                              const collapseActions = collapseMobileActions
+                                && inferredColumnWidth(column as DataListColumn<unknown>) === 'actions'
+                                && column.mobileActions !== 'inline'
+                              return (
+                                <td
+                                  key={column.key}
+                                  className={cn(
+                                    column.className,
+                                    'px-3 py-2.5 align-middle sm:px-4',
+                                    stickyColumnClass(column.sticky, 'cell'),
+                                    column.cellClassName,
+                                    column.mobile === 'hidden' && 'hidden @xl/data-list:table-cell',
+                                    columnCellClassName(column as DataListColumn<unknown>),
+                                  )}
+                                >
+                                  <div className={columnContentClassName(column as DataListColumn<unknown>, 'cell')} style={columnWidthStyle(column as DataListColumn<unknown>)}>
+                                    {collapseActions
+                                      ? <MobileActionMenu label={t('common.actions')}>{content}</MobileActionMenu>
+                                      : content}
+                                  </div>
+                                </td>
+                              )
+                            })}
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                )}
       </TableFrame>
     </div>
   )

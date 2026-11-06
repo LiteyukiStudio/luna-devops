@@ -103,6 +103,29 @@ func (service *Service) DeleteServiceBinding(ctx context.Context, projectID, bin
 }
 
 func (service *Service) applyServiceBindingInput(ctx context.Context, binding *model.ServiceBinding, input ServiceBindingInput) error {
+	resources, err := service.validateResourcePair(ctx, binding.ProjectID, strings.TrimSpace(input.SourceApplicationID), strings.TrimSpace(input.SourceDeploymentTargetID), strings.TrimSpace(input.TargetApplicationID), strings.TrimSpace(input.TargetDeploymentTargetID), false)
+	if err != nil {
+		return err
+	}
+	if err := ensureBindingTargetActive(resources.targetApplication, resources.targetTarget); err != nil {
+		return err
+	}
+	if err := PrepareServiceBinding(binding, input, resources.sourceTarget, resources.targetTarget); err != nil {
+		return err
+	}
+	conflict, err := service.repository.ConflictingServiceBinding(ctx, binding.SourceDeploymentTargetID, binding.ID, bindingEnvironmentKeys(*binding))
+	if err != nil {
+		return err
+	}
+	if conflict {
+		return domainError(CodeEnvConflict, "service binding environment variable is already used")
+	}
+	return nil
+}
+
+// PrepareServiceBinding 把输入写入 binding，并按已解析的源/目标部署配置校验端口、协议、注入方式与环境变量。
+// 调用方负责确认资源归属当前项目空间、目标未在删除中，以及源部署配置上已有绑定的环境变量冲突。
+func PrepareServiceBinding(binding *model.ServiceBinding, input ServiceBindingInput, sourceTarget, targetTarget model.DeploymentTarget) error {
 	binding.SourceApplicationID = strings.TrimSpace(input.SourceApplicationID)
 	binding.SourceDeploymentTargetID = strings.TrimSpace(input.SourceDeploymentTargetID)
 	binding.TargetApplicationID = strings.TrimSpace(input.TargetApplicationID)
@@ -124,18 +147,17 @@ func (service *Service) applyServiceBindingInput(ctx context.Context, binding *m
 			return domainError(CodeInvalidInput, "credentialMap entries require both sourceEnvVar and targetSecretKey")
 		}
 	}
-
-	resources, err := service.validateResourcePair(ctx, binding.ProjectID, binding.SourceApplicationID, binding.SourceDeploymentTargetID, binding.TargetApplicationID, binding.TargetDeploymentTargetID, false)
-	if err != nil {
-		return err
+	if sourceTarget.ID != binding.SourceDeploymentTargetID || sourceTarget.ApplicationID != binding.SourceApplicationID ||
+		targetTarget.ID != binding.TargetDeploymentTargetID || targetTarget.ApplicationID != binding.TargetApplicationID {
+		return domainError(CodeCrossProject, "service binding deployment targets do not match the selected applications")
 	}
-	if resources.sourceTarget.ID == resources.targetTarget.ID {
+	if sourceTarget.ID == targetTarget.ID {
 		return domainError(CodeSourceTargetSame, "source and target deployment targets must differ")
 	}
-	if resources.sourceTarget.ClusterID != resources.targetTarget.ClusterID {
+	if sourceTarget.ClusterID != targetTarget.ClusterID {
 		return domainError(CodeCrossCluster, "service bindings require source and target deployment targets in the same cluster")
 	}
-	port, ok := resolveTargetPort(resources.targetTarget, binding.TargetPortName, binding.TargetPort)
+	port, ok := resolveTargetPort(targetTarget, binding.TargetPortName, binding.TargetPort)
 	if !ok {
 		return domainError(CodePortNotFound, "target service port does not exist")
 	}
@@ -149,17 +171,23 @@ func (service *Service) applyServiceBindingInput(ctx context.Context, binding *m
 	if err := validateEnvironmentKeys(envKeys); err != nil {
 		return err
 	}
-	if conflictsWithDeploymentEnv(resources.sourceTarget.EnvVars, envKeys) {
+	if conflictsWithDeploymentEnv(sourceTarget.EnvVars, envKeys) {
 		return domainError(CodeEnvConflict, "service binding environment variable conflicts with deployment configuration")
 	}
-	conflict, err := service.repository.ConflictingServiceBinding(ctx, binding.SourceDeploymentTargetID, binding.ID, envKeys)
-	if err != nil {
-		return err
-	}
-	if conflict {
-		return domainError(CodeEnvConflict, "service binding environment variable is already used")
+	return nil
+}
+
+// ensureBindingTargetActive 拒绝指向删除中应用或部署配置的服务关系，避免删除流程在清理运行资源后才发现入站引用。
+func ensureBindingTargetActive(application model.Application, target model.DeploymentTarget) error {
+	if !lifecycleActive(application.DeleteStatus) || !lifecycleActive(target.DeleteStatus) {
+		return domainError(CodeTargetDeleting, "service binding target is being deleted")
 	}
 	return nil
+}
+
+func lifecycleActive(status string) bool {
+	status = strings.TrimSpace(status)
+	return status == "" || status == "active"
 }
 
 func (service *Service) ListTopologyEdges(ctx context.Context, projectID string, options ListOptions) ([]model.ProjectTopologyEdge, int64, error) {
@@ -231,8 +259,9 @@ func (service *Service) applyTopologyEdgeInput(ctx context.Context, edge *model.
 }
 
 type resourcePair struct {
-	sourceTarget model.DeploymentTarget
-	targetTarget model.DeploymentTarget
+	targetApplication model.Application
+	sourceTarget      model.DeploymentTarget
+	targetTarget      model.DeploymentTarget
 }
 
 func (service *Service) validateResourcePair(ctx context.Context, projectID, sourceApplicationID, sourceTargetID, targetApplicationID, targetTargetID string, optionalTargets bool) (resourcePair, error) {
@@ -273,7 +302,7 @@ func (service *Service) validateResourcePair(ctx context.Context, projectID, sou
 			return resourcePair{}, domainError(CodeCrossProject, "target deployment target does not belong to the selected application")
 		}
 	}
-	return resourcePair{sourceTarget: sourceTarget, targetTarget: targetTarget}, nil
+	return resourcePair{targetApplication: targetApplication, sourceTarget: sourceTarget, targetTarget: targetTarget}, nil
 }
 
 func validateServiceBindingShape(binding model.ServiceBinding) error {

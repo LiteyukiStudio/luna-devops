@@ -70,9 +70,6 @@ func (host deploymentHost) DeploymentBuildEnvironmentFromInput(ctx *gin.Context,
 func (host deploymentHost) EnsureDeploymentTargetCanMutate(ctx *gin.Context, target model.DeploymentTarget) bool {
 	return host.handlers.ensureDeploymentTargetCanMutate(ctx, target)
 }
-func (host deploymentHost) EnsureNoIncomingServiceBindings(ctx *gin.Context, projectID, targetApplicationID, targetDeploymentTargetID string) bool {
-	return host.handlers.domains.application.EnsureNoIncomingServiceBindings(ctx, projectID, targetApplicationID, targetDeploymentTargetID)
-}
 func (deploymentHost) MarkDeploymentTargetGatewayRoutesDeleting(tx *gorm.DB, target model.DeploymentTarget) error {
 	return markDeploymentTargetGatewayRoutesDeleting(tx, target)
 }

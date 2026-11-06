@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { BrowserRouter } from 'react-router-dom'
+import { createBrowserRouter, RouterProvider } from 'react-router-dom'
 import { Toaster } from 'sonner'
 import App from './App.tsx'
 import { AppUpdateChecker } from './app/app-update-checker'
@@ -13,6 +13,20 @@ import { i18nextReady } from './i18n'
 import './index.css'
 
 const queryClient = new QueryClient()
+// 数据路由只承载一个通配路由，页面路由仍集中在 App.tsx；数据路由是 useBlocker 拦截未保存离开的前提。
+const router = createBrowserRouter([{
+  path: '*',
+  element: (
+    <>
+      <TelemetryRouteObserver />
+      <SessionProvider>
+        <AppUpdateChecker />
+        <App />
+        <Toaster richColors duration={4000} position="top-right" />
+      </SessionProvider>
+    </>
+  ),
+}])
 
 void i18nextReady.then(() => {
   createRoot(document.getElementById('root')!).render(
@@ -20,14 +34,7 @@ void i18nextReady.then(() => {
       <QueryClientProvider client={queryClient}>
         <ThemeProvider>
           <PublicConfigProvider>
-            <BrowserRouter>
-              <TelemetryRouteObserver />
-              <SessionProvider>
-                <AppUpdateChecker />
-                <App />
-                <Toaster richColors duration={4000} position="top-right" />
-              </SessionProvider>
-            </BrowserRouter>
+            <RouterProvider router={router} />
           </PublicConfigProvider>
         </ThemeProvider>
       </QueryClientProvider>

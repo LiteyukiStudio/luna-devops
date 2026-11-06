@@ -17,11 +17,11 @@ import { Input } from '@/components/ui/input'
 
 const schema = z.object({
   currentPassword: z.string(),
-  newPassword: z.string().min(8, i18next.t('usersPage.passwordMin')),
+  newPassword: z.string().min(8, { error: () => i18next.t('usersPage.passwordMin') }),
   confirmPassword: z.string(),
 }).refine(value => value.newPassword === value.confirmPassword, {
   path: ['confirmPassword'],
-  message: i18next.t('accountPage.password.mismatch'),
+  error: () => i18next.t('accountPage.password.mismatch'),
 })
 
 type PasswordForm = z.infer<typeof schema>
@@ -81,7 +81,7 @@ export function AccountPasswordPanel() {
                 <Input {...form.register('confirmPassword')} autoComplete="new-password" type="password" />
               </Field>
               <FormActions>
-                <p className="text-xs text-muted-foreground sm:mr-auto">{t('accountPage.password.sessionNotice')}</p>
+                <p className="text-xs text-muted-foreground @lg/workspace:mr-auto">{t('accountPage.password.sessionNotice')}</p>
                 <Button disabled={save.isPending || !form.formState.isValid} type="submit">
                   <Save className="size-4" />
                   {t('accountPage.password.save')}

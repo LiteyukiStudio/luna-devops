@@ -48,7 +48,7 @@ func (r *Runner) followBuildJob(ctx context.Context, client kubernetes.Interface
 			}
 		case <-ctx.Done():
 			_ = r.deleteKubernetesBuildJob(context.WithoutCancel(ctx), client, namespace, jobName)
-			return result, fmt.Errorf("build job timed out after %ds", timeoutSeconds)
+			return result, fmt.Errorf("%w after %ds", errBuildJobTimedOut, timeoutSeconds)
 		case <-ticker.C:
 			canceled, err := r.buildRunCanceled(job)
 			if err != nil {
@@ -74,7 +74,7 @@ func (r *Runner) followBuildJob(ctx context.Context, client kubernetes.Interface
 			}
 			if kubeJob.Status.Failed > 0 {
 				message := r.buildKubernetesJobFailureMessage(ctx, client, namespace, jobName, firstNonEmpty(result.Message, "kubernetes build job failed"))
-				return result, errors.New(message)
+				return result, fmt.Errorf("%w: %s", errBuildJobFailed, message)
 			}
 		}
 	}

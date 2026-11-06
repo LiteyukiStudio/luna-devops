@@ -22,7 +22,8 @@ export function buildDeploymentRuntimeStatus(
   loadingByCluster: Record<string, boolean>,
   errorByCluster: Record<string, boolean>,
 ): DeploymentRuntimeStatus {
-  const clusterId = target.clusterId?.trim() || runtimeCluster?.id
+  // 生效集群只取后端统一解析结果，前端不推断默认集群。
+  const clusterId = target.effectiveClusterId
   const clusterName = runtimeCluster?.name
   const observedValue = normalizeDeploymentRuntimeStatus(target.status)
   const statusValue = (fallback: string) => observedValue === 'unknown' ? fallback : observedValue
@@ -167,6 +168,9 @@ export function effectiveReplicaState({ availableReplicas, deployed = true, desi
     return { showReplicas: true, value: 'scaled-to-zero' }
   if (normalized === 'ready' && (readyReplicas < desiredReplicas || (availableReplicas !== undefined && availableReplicas < desiredReplicas)))
     return { showReplicas: true, value: 'progressing' }
+  // 停用不会停止已运行的工作负载：后端仍回读真实副本，仍在运行时一并展示。
+  if (normalized === 'disabled')
+    return { showReplicas: desiredReplicas > 0 || readyReplicas > 0, value: 'disabled' }
   return { showReplicas: !replicaUnobservedStatuses.has(normalized), value: normalized }
 }
 

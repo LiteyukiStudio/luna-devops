@@ -3,13 +3,14 @@ import type { DeploymentTargetFormValues } from './deployment-target-form'
 import type { ArtifactRegistry, DeploymentTarget, Release, RepositoryBinding, RuntimeCluster } from '@/api'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Rocket, Save } from 'lucide-react'
+import { Rocket, RotateCw, Save } from 'lucide-react'
 import { useMemo, useRef, useState } from 'react'
 import { FormProvider, useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
-import { Link, useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import { api, ApiError } from '@/api'
+import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { Button } from '@/components/ui/button'
 import { deploymentReleaseKey } from '@/pages/applications/application-config-utils'
 import { latestReleaseByTarget, redeployReleasePayload } from '@/pages/applications/deployments/application-deployments-panel-utils'
@@ -23,12 +24,14 @@ import {
   deploymentTargetFormToPayload,
   deploymentTargetNeedsRedeploy,
   deploymentTargetSectionOrder,
+  deploymentTargetToFormValues,
   pendingSecretOperations,
 } from './deployment-target-form'
 import { targetImageTemplateQuery } from './deployment-target-queries'
 import { BasicsSection } from './sections/basics-section'
 import { ReleaseSection } from './sections/release-section'
 import { RuntimeSection } from './sections/runtime-section'
+import { useUnsavedChangesGuard } from './use-unsaved-changes-guard'
 
 export interface DeploymentTargetEditorProps {
   applicationId: string
@@ -73,7 +76,7 @@ export function DeploymentTargetEditor({
   const [advancedOpen, setAdvancedOpen] = useState(() => visibleAdvancedItems(initialValues.sourceType)
     .some(item => advancedItemConfiguredCount(item, initialValues, target) > 0))
   const values = form.watch()
-  const { dirtyFields, errors, isSubmitted } = form.formState
+  const { dirtyFields, errors, isDirty, isSubmitted } = form.formState
   const backTo = `/projects/${projectId}/apps/${applicationId}?tab=deployments`
   const latestRelease = target ? latestReleaseByTarget(releases)[deploymentReleaseKey(target.id)] : undefined
   const baselinePayload = useMemo(
@@ -85,6 +88,15 @@ export function DeploymentTargetEditor({
   const pendingSecrets = pendingSecretOperations(values.environmentVariables)
   const pendingSecretCount = pendingSecrets.cleared + pendingSecrets.generated + pendingSecrets.set
   const totalErrors = deploymentTargetSectionOrder.reduce((count, section) => count + sectionErrorCount(errors, section), 0)
+  // 配置已保存但重新部署失败时留在页面，单独反馈并允许只重试部署。
+  const [redeployFailure, setRedeployFailure] = useState<{ message: string, target: DeploymentTarget } | null>(null)
+  const { allowNextNavigation, blocker } = useUnsavedChangesGuard(isDirty)
+  // 保存后若继续修改，回到常规保存流程；未再修改时只提供“重试部署”。
+  const showRedeployRetry = Boolean(redeployFailure) && !isDirty
+  const leaveEditor = () => {
+    allowNextNavigation()
+    navigate(backTo)
+  }
 
   const save = useMutation({
     mutationFn: async ({ formValues, redeploy }: { formValues: DeploymentTargetFormValues, redeploy: boolean }) => {
@@ -95,21 +107,33 @@ export function DeploymentTargetEditor({
       const saved = target
         ? await api.updateDeploymentTarget(projectId, applicationId, target.id, payload)
         : await api.createDeploymentTarget(projectId, applicationId, payload)
-      if (redeploy) {
-        const releasePayload = redeployReleasePayload(saved, latestRelease)
-        if (!releasePayload)
-          throw new Error(t('deploymentsPage.redeployUnavailable'))
-        await api.createRelease(projectId, releasePayload)
+      if (!redeploy)
+        return { redeploy, redeployError: null, resolvedValues, saved }
+      // 配置更新与创建发布是两次独立请求：发布失败不能让已成功的保存被当作整体失败。
+      try {
+        await createRedeployRelease(saved)
+        return { redeploy, redeployError: null, resolvedValues, saved }
       }
-      return { redeploy }
+      catch (error) {
+        return { redeploy, redeployError: error instanceof Error ? error.message : t('errors.request.failed'), resolvedValues, saved }
+      }
     },
-    onSuccess: async ({ redeploy }) => {
+    onSuccess: async ({ redeploy, redeployError, resolvedValues, saved }) => {
+      void queryClient.invalidateQueries({ queryKey: ['build-environment-config', 'deployment', projectId, applicationId] })
+      if (redeployError !== null) {
+        // 表单基线更新为已保存的值，离开时不再提示未保存；保留“需要重新部署”的提示与重试入口。
+        form.reset({ ...deploymentTargetToFormValues(saved), buildSecrets: resolvedValues.buildSecrets, buildVariables: resolvedValues.buildVariables })
+        setRedeployFailure({ message: redeployError, target: saved })
+        toast.error(t('deploymentTargetEditor.savedButRedeployFailed', { message: redeployError }))
+        void queryClient.invalidateQueries({ queryKey: ['deployment-targets', projectId, applicationId] })
+        return
+      }
       toast.success(t(redeploy ? 'deploymentsPage.targetUpdatedAndRedeployQueued' : target ? 'deploymentsPage.targetUpdated' : 'deploymentsPage.targetCreated'))
       await queryClient.invalidateQueries({ queryKey: ['deployment-targets', projectId, applicationId] })
-      void queryClient.invalidateQueries({ queryKey: ['build-environment-config', 'deployment', projectId, applicationId] })
+      void queryClient.invalidateQueries({ queryKey: ['application-runtime', projectId, applicationId] })
       if (redeploy)
         void queryClient.invalidateQueries({ queryKey: ['releases', projectId] })
-      navigate(backTo)
+      leaveEditor()
     },
     onError: (error) => {
       const field = error instanceof ApiError ? deploymentTargetErrorFields[error.code] : undefined
@@ -121,6 +145,24 @@ export function DeploymentTargetEditor({
       focusFirstError({ [field]: { message: error.message, type: 'server' } })
     },
   })
+
+  const retryRedeploy = useMutation({
+    mutationFn: (saved: DeploymentTarget) => createRedeployRelease(saved),
+    onSuccess: () => {
+      setRedeployFailure(null)
+      toast.success(t('deploymentsPage.targetUpdatedAndRedeployQueued'))
+      void queryClient.invalidateQueries({ queryKey: ['releases', projectId] })
+      leaveEditor()
+    },
+    onError: (error, saved) => setRedeployFailure({ message: error.message, target: saved }),
+  })
+
+  async function createRedeployRelease(saved: DeploymentTarget) {
+    const releasePayload = redeployReleasePayload(saved, latestRelease)
+    if (!releasePayload)
+      throw new Error(t('deploymentsPage.redeployUnavailable'))
+    return api.createRelease(projectId, releasePayload)
+  }
 
   async function withTemplateImageRef(formValues: DeploymentTargetFormValues) {
     // 新建且未手动修改目标镜像时，以镜像站模板为准，与界面上派生展示的值保持一致。
@@ -170,8 +212,8 @@ export function DeploymentTargetEditor({
           void submit(false)(event)
         }}
       >
-        <div className="grid min-w-0 gap-6 lg:grid-cols-[15rem_minmax(0,1fr)]">
-          <aside className="min-w-0 lg:sticky lg:top-0 lg:self-start">
+        <div className="grid min-w-0 gap-6 @2xl/workspace:grid-cols-[15rem_minmax(0,1fr)]">
+          <aside className="min-w-0 @2xl/workspace:sticky @2xl/workspace:top-0 @2xl/workspace:self-start">
             <DeploymentTargetEditorNav
               repositoryBindings={repositoryBindings}
               target={target}
@@ -208,8 +250,13 @@ export function DeploymentTargetEditor({
             />
           </div>
         </div>
-        <div className="sticky bottom-0 z-10 flex flex-col gap-3 rounded-container border border-border bg-surface-raised px-4 py-3 shadow-raised sm:flex-row sm:items-center sm:justify-between">
+        <div className="sticky bottom-0 z-10 flex flex-col gap-3 rounded-container border border-border bg-surface-raised px-4 py-3 shadow-raised @lg/workspace:flex-row @lg/workspace:items-center @lg/workspace:justify-between">
           <div aria-live="polite" className="min-w-0 text-sm empty:hidden">
+            {redeployFailure && showRedeployRetry && (
+              <p className="text-danger" data-slot="redeploy-failure">
+                {t('deploymentTargetEditor.savedButRedeployFailed', { message: redeployFailure.message })}
+              </p>
+            )}
             {isSubmitted && totalErrors > 0 && (
               <button className="text-left text-danger underline-offset-4 hover:underline focus-visible:underline" type="button" onClick={() => focusFirstError(errors)}>
                 {t('deploymentTargetEditor.fixErrors', { count: totalErrors })}
@@ -220,38 +267,59 @@ export function DeploymentTargetEditor({
                 {t('deploymentTargetEditor.pendingSecretSummary', pendingSecrets)}
               </p>
             )}
-            {!(isSubmitted && totalErrors > 0) && needsRedeploy && (
+            {!showRedeployRetry && !(isSubmitted && totalErrors > 0) && needsRedeploy && (
               <p className="text-warning">
                 {t(canRedeploy ? 'deploymentsPage.runtimeChangesNeedRedeployInline' : 'deploymentsPage.runtimeChangesNeedRedeployUnavailableInline')}
               </p>
             )}
           </div>
           <div className="flex shrink-0 flex-wrap justify-end gap-2">
-            <Button asChild type="button" variant="ghost">
-              <Link to={backTo}>{t('common.cancel')}</Link>
+            <Button disabled={save.isPending || retryRedeploy.isPending} type="button" variant="ghost" onClick={leaveEditor}>
+              {t('common.cancel')}
             </Button>
-            {needsRedeploy && (
+            {redeployFailure && showRedeployRetry && (
+              <Button disabled={retryRedeploy.isPending || save.isPending} type="button" onClick={() => retryRedeploy.mutate(redeployFailure.target)}>
+                <RotateCw className="size-4" />
+                {t('deploymentTargetEditor.retryRedeploy')}
+              </Button>
+            )}
+            {needsRedeploy && !showRedeployRetry && (
               <Button disabled={save.isPending} type="submit" variant="outline">
                 <Save className="size-4" />
                 {t('deploymentsPage.saveOnly')}
               </Button>
             )}
-            {needsRedeploy
-              ? (
-                  <Button disabled={save.isPending || !canRedeploy} type="button" onClick={() => void submit(true)()}>
-                    <Rocket className="size-4" />
-                    {t('deploymentsPage.saveAndRedeploy')}
-                  </Button>
-                )
-              : (
-                  <Button disabled={save.isPending} type="submit">
-                    <Save className="size-4" />
-                    {target ? t('common.save') : t('deploymentTargetEditor.create')}
-                  </Button>
-                )}
+            {showRedeployRetry
+              ? null
+              : needsRedeploy
+                ? (
+                    <Button disabled={save.isPending || !canRedeploy} type="button" onClick={() => void submit(true)()}>
+                      <Rocket className="size-4" />
+                      {t('deploymentsPage.saveAndRedeploy')}
+                    </Button>
+                  )
+                : (
+                    <Button disabled={save.isPending} type="submit">
+                      <Save className="size-4" />
+                      {target ? t('common.save') : t('deploymentTargetEditor.create')}
+                    </Button>
+                  )}
           </div>
         </div>
       </form>
+      <ConfirmDialog
+        cancelText={t('deploymentTargetEditor.leaveGuard.stay')}
+        closeOnConfirm={false}
+        confirmText={t('deploymentTargetEditor.leaveGuard.leave')}
+        description={t('deploymentTargetEditor.leaveGuard.description')}
+        open={blocker.state === 'blocked'}
+        title={t('deploymentTargetEditor.leaveGuard.title')}
+        onConfirm={() => blocker.proceed?.()}
+        onOpenChange={(open) => {
+          if (!open && blocker.state === 'blocked')
+            blocker.reset()
+        }}
+      />
     </FormProvider>
   )
 }

@@ -2,6 +2,7 @@ import type { DeploymentTargetFormValues } from '../deployment-target-form'
 import type { DeploymentTarget, Release, RuntimeCluster } from '@/api'
 import { Controller, useFormContext, useFormState, useWatch } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
+import { platformDefaultRuntimeCluster } from '@/lib/runtime-cluster-default'
 import { EditorGroup, EditorSection } from '../deployment-target-editor-fields'
 import { RuntimeDataVolumesEditor } from '../runtime/application-deployment-data-volumes-editor'
 import { RuntimeEnvironmentFields } from '../runtime/runtime-environment-fields'
@@ -20,7 +21,7 @@ export function RuntimeSection({ canManageRuntimeSecrets, deploymentTargets, pro
 
   return (
     <EditorSection description={t('deploymentTargetEditor.sections.runtimeDescription')} section="runtime" title={t('deploymentTargetEditor.sections.runtime')}>
-      <RuntimeScaleFields />
+      <RuntimeScaleFields runtimeClusters={runtimeClusters} />
       <ServicePortsFields />
       <RuntimeEnvironmentFields
         canManageRuntimeSecrets={canManageRuntimeSecrets}
@@ -38,7 +39,7 @@ function RuntimeStorageFields({ projectId, runtimeClusters }: { projectId: strin
   const { control } = useFormContext<DeploymentTargetFormValues>()
   const clusterId = useWatch({ control, name: 'clusterId' })
   const { errors } = useFormState({ control, name: 'dataVolumes' })
-  const effectiveClusterId = clusterId || runtimeClusters.find(cluster => cluster.isDefault)?.id || runtimeClusters[0]?.id || ''
+  const effectiveClusterId = clusterId || platformDefaultRuntimeCluster(runtimeClusters)?.id || ''
   const rowErrors = Array.isArray(errors.dataVolumes)
     ? errors.dataVolumes.map(error => typeof error?.message === 'string' ? error.message : undefined)
     : []

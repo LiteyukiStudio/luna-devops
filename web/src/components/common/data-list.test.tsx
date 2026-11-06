@@ -1,5 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import i18next from '@/i18n'
 import { DataList } from './data-list'
 
 const originalMatchMedia = window.matchMedia
@@ -212,5 +213,43 @@ describe('data list behavior', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }))
     expect(clearFilters).toHaveBeenCalledOnce()
     expect(screen.getByText('No matching results')).toBeVisible()
+  })
+
+  it('shows the error slot with retry instead of the empty state or stale rows', async () => {
+    await i18next.changeLanguage('en-US')
+    const retry = vi.fn()
+    render(
+      <DataList
+        columns={columns}
+        emptyTitle="Nothing here"
+        error={{ description: 'Try again later', onRetry: retry, title: 'Failed to load' }}
+        items={[{ id: 'one', name: 'Stale row' }]}
+        pagination={{ page: 1, pageInfoLabel: 'Page 1', pageSize: 10, total: 1, totalPages: 1, onPageChange: vi.fn() }}
+        rowKey={item => item.id}
+      />,
+    )
+
+    expect(screen.getByRole('alert')).toHaveTextContent('Failed to load')
+    expect(screen.queryByText('Nothing here')).not.toBeInTheDocument()
+    expect(screen.queryByText('Stale row')).not.toBeInTheDocument()
+    expect(screen.queryByText('Page 1')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+    expect(retry).toHaveBeenCalledOnce()
+  })
+
+  it('keeps the loading skeleton ahead of the error slot', () => {
+    render(
+      <DataList
+        columns={columns}
+        emptyTitle="Nothing here"
+        error={{ title: 'Failed to load' }}
+        items={[]}
+        loading
+        rowKey={item => item.id}
+      />,
+    )
+
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(screen.queryByText('Nothing here')).not.toBeInTheDocument()
   })
 })
