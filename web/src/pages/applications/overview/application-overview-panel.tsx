@@ -4,6 +4,7 @@ import { CheckCircle2, Circle, GitBranch, Globe2, Package, Play, Rocket } from '
 import { useTranslation } from 'react-i18next'
 import { buildRunImageRef } from '@/components/common/deployment-build-runs'
 import { EmptyState } from '@/components/common/empty-state'
+import { HoverText } from '@/components/common/hover-text'
 import { Section } from '@/components/common/section'
 import { StatusValueBadge } from '@/components/common/status-badge'
 import { formatSmartDateTime } from '@/components/common/time-format'
@@ -60,7 +61,7 @@ export function ApplicationOverviewPanel({ buildRuns, deploymentTargets, onBindR
   })
 
   return (
-    <div className="grid gap-section">
+    <div className="grid grid-cols-1 gap-section">
       {deployGuide && (
         <Section
           description={t('apps.deployGuideDescription')}
@@ -89,7 +90,7 @@ export function ApplicationOverviewPanel({ buildRuns, deploymentTargets, onBindR
           </ol>
         </Section>
       )}
-      <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1.4fr)_minmax(20rem,0.6fr)]">
+      <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-[minmax(0,1.4fr)_minmax(20rem,0.6fr)]">
         <Section description={t('apps.deploymentSummariesDescription')} title={t('apps.deploymentSummaries')} variant="bordered">
           {deploymentTargets.length
             ? (
@@ -114,7 +115,7 @@ export function ApplicationOverviewPanel({ buildRuns, deploymentTargets, onBindR
                     <li key={item.id} className="flex min-w-0 items-center justify-between gap-3 py-3">
                       <div className="min-w-0 flex-1">
                         <div className="text-sm font-medium">{item.label}</div>
-                        <div className="mt-0.5 truncate font-mono text-xs text-muted-foreground" title={item.meta}>{item.meta}</div>
+                        <HoverText className="mt-0.5 font-mono text-xs text-muted-foreground" value={item.meta} />
                       </div>
                       <div className="flex shrink-0 flex-col items-end gap-1">
                         <StatusValueBadge labelKeyPrefix="buildsPage.statuses" value={item.status} />
