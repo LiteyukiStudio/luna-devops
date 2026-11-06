@@ -356,6 +356,7 @@ jobs:
       - quality
       - container
     if: >-
+      always() &&
       startsWith(github.ref, 'refs/tags/v') &&
       needs.quality.result == 'success' &&
       needs.container.result == 'success'
