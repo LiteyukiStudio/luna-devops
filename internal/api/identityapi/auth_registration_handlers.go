@@ -47,7 +47,6 @@ type completeEmailRegistrationInput struct {
 	Name        string `json:"name" binding:"required"`
 	Password    string `json:"password" binding:"required"`
 	Language    string `json:"language"`
-	RememberMe  bool   `json:"rememberMe"`
 }
 
 type updateMyPasswordInput struct {
@@ -229,7 +228,7 @@ func (h *Handlers) CompleteEmailRegistration(ctx *gin.Context) {
 		}
 		return
 	}
-	if !h.createLoginCredentials(ctx, user.ID, input.RememberMe) {
+	if !h.createSession(ctx, user.ID) {
 		return
 	}
 	h.auditWithContext(user.ID, "auth.email_registration", user.ID, true, "email registration completed", ctx.Request.Context())
@@ -281,7 +280,6 @@ func (h *Handlers) UpdateMyPassword(ctx *gin.Context) {
 		return
 	}
 	clearSessionCookie(ctx)
-	clearRememberCookie(ctx, user.ID)
 	h.auditWithContext(user.ID, "auth.password_update", user.ID, true, "password updated and sessions revoked", ctx.Request.Context())
 	ctx.Status(http.StatusNoContent)
 }

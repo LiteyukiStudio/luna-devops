@@ -12,7 +12,6 @@ import { api } from '@/api'
 import { useDocumentTitle } from '@/app/document-title'
 import { usePublicConfig } from '@/app/public-config-context'
 import { useSession } from '@/app/session-context'
-import { ControlledCheckboxField } from '@/components/common/checkbox-field'
 import { ErrorState } from '@/components/common/error-state'
 import { FormField as Field } from '@/components/common/form-field'
 import { PageMotion } from '@/components/common/motion'
@@ -27,7 +26,6 @@ const schema = z.object({
   password: z.string().min(8, { error: () => i18next.t('usersPage.passwordMin') }),
   confirmPassword: z.string(),
   code: z.string().regex(/^\d{6}$/, { error: () => i18next.t('loginPage.registration.codeRequired') }),
-  rememberMe: z.boolean(),
 }).refine(value => value.password === value.confirmPassword, {
   path: ['confirmPassword'],
   error: () => i18next.t('loginPage.registration.passwordMismatch'),
@@ -45,7 +43,7 @@ export function RegisterPage() {
   const form = useForm<RegistrationForm>({
     resolver: zodResolver(schema),
     mode: 'onChange',
-    defaultValues: { email: '', name: '', password: '', confirmPassword: '', code: '', rememberMe: false },
+    defaultValues: { email: '', name: '', password: '', confirmPassword: '', code: '' },
   })
   useDocumentTitle(t('loginPage.registration.title'))
 
@@ -69,7 +67,6 @@ export function RegisterPage() {
       name: values.name,
       password: values.password,
       language: i18n.resolvedLanguage as 'zh-CN' | 'zh-TW' | 'en-US' | 'ja-JP' | 'ko-KR',
-      rememberMe: values.rememberMe,
     }),
     onSuccess: async () => {
       await session.refreshUser()
@@ -142,11 +139,6 @@ export function RegisterPage() {
                 </Button>
               </div>
             </Field>
-            <Controller
-              control={form.control}
-              name="rememberMe"
-              render={({ field }) => <ControlledCheckboxField field={field}>{t('loginPage.rememberMe')}</ControlledCheckboxField>}
-            />
             <Button disabled={!challengeId || register.isPending || !form.formState.isValid} type="submit">
               <UserPlus className="size-4" />
               {t('loginPage.registration.submit')}

@@ -4,7 +4,6 @@ import { createContext, use } from 'react'
 export interface LoginInput {
   email: string
   password: string
-  rememberMe: boolean
 }
 
 export interface RecentLoginUser {
@@ -26,7 +25,6 @@ export interface SessionContextValue {
   login: (input: LoginInput) => Promise<CurrentUser>
   logout: () => Promise<void>
   refreshUser: () => Promise<void>
-  resumeLogin: (userId: string) => Promise<CurrentUser>
   updateProfile: (input: { name: string, avatarUrl: string, language: CurrentUser['language'], brandColorPreset: CurrentUser['brandColorPreset'] }) => Promise<CurrentUser>
   updateLanguage: (language: CurrentUser['language']) => Promise<CurrentUser>
 }

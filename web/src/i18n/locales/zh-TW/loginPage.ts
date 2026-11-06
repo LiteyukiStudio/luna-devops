@@ -5,8 +5,6 @@ const loginPage = {
   password: '密碼',
   passwordHint: '本地賬號密碼。',
   passwordRequired: '請輸入密碼',
-  rememberMe: '保持登入',
-  rememberMeHint: '僅在這臺裝置上需要時啟用。未啟用時，關閉會話或退出登入後需要重新輸入密碼。',
   success: '登入成功',
   useProviderLogin: '使用 {{provider}} 登入',
   recentAccounts: '最近登入',

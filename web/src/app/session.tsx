@@ -44,14 +44,6 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     },
   })
 
-  const resumeLoginMutation = useMutation({
-    mutationFn: api.resumeLogin,
-    onSuccess: (result) => {
-      setCurrentUser(queryClient, result.user)
-      setRecentLoginUsers(cacheRecentLoginUser(result.user))
-    },
-  })
-
   const logoutMutation = useMutation({
     mutationFn: api.logout,
     onSuccess: () => {
@@ -84,7 +76,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const value = useMemo<SessionContextValue>(() => ({
     initialized: currentUser.isFetched,
     isLoading: currentUser.isLoading,
-    isLoggingIn: loginMutation.isPending || resumeLoginMutation.isPending,
+    isLoggingIn: loginMutation.isPending,
     isLoggingOut: logoutMutation.isPending,
     pendingLoginUsername,
     recentLoginUsers,
@@ -105,23 +97,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     async refreshUser() {
       await queryClient.invalidateQueries({ queryKey: currentUserQueryKey })
     },
-    async resumeLogin(userId: string) {
-      setPendingLoginUsername(recentLoginUsers.find(user => user.id === userId)?.email)
-      try {
-        const result = await resumeLoginMutation.mutateAsync({ userId })
-        return result.user
-      }
-      finally {
-        setPendingLoginUsername(undefined)
-      }
-    },
     async updateProfile(input) {
       return updateProfileMutation.mutateAsync(input)
     },
     async updateLanguage(language: CurrentUser['language']) {
       return updateLanguageMutation.mutateAsync({ language })
     },
-  }), [currentUser.data, currentUser.isFetched, currentUser.isLoading, loginMutation, logoutMutation, pendingLoginUsername, queryClient, recentLoginUsers, resumeLoginMutation, updateLanguageMutation, updateProfileMutation])
+  }), [currentUser.data, currentUser.isFetched, currentUser.isLoading, loginMutation, logoutMutation, pendingLoginUsername, queryClient, recentLoginUsers, updateLanguageMutation, updateProfileMutation])
 
   return <SessionContext value={value}>{children}</SessionContext>
 }

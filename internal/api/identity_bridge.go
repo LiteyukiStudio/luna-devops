@@ -21,7 +21,6 @@ const currentUserContextKey = identityapi.CurrentUserContextKey
 const currentAccessTokenContextKey = identityapi.CurrentAccessTokenContextKey
 const authRegistrationSettingsID = identityapi.AuthRegistrationSettingsID
 const sessionDuration = identityapi.SessionDuration
-const rememberDuration = identityapi.RememberDuration
 const lunaCLIClientID = identityapi.LunaCLIClientID
 const oauthDeviceCodeGrantType = identityapi.OAuthDeviceCodeGrantType
 const oauthCredentialRateLimit = identityapi.OAuthCredentialRateLimit
@@ -80,9 +79,6 @@ func (value oauthClientAuthentication) identityValue() identityapi.OAuthClientAu
 }
 
 var (
-	errRememberTokenInvalid     = identityapi.ErrRememberTokenInvalid
-	errRememberTokenReused      = identityapi.ErrRememberTokenReused
-	errRememberUserDisabled     = identityapi.ErrRememberUserDisabled
 	errOIDCDisabled             = identityapi.ErrOIDCDisabled
 	errOIDCEmailRequired        = identityapi.ErrOIDCEmailRequired
 	errOIDCGroupDenied          = identityapi.ErrOIDCGroupDenied
@@ -225,36 +221,8 @@ func (h *Handlers) ensureAdmissionPolicy(ctx context.Context) (model.AuthAdmissi
 	return h.domains.identity.EnsureAdmissionPolicy(ctx)
 }
 
-func (h *Handlers) rotateRememberLogin(userID, plainToken string, ctx context.Context) (model.User, string, string, error) {
-	return h.domains.identity.RotateRememberLogin(userID, plainToken, ctx)
-}
-
 func newUserSession(userID, impersonatorID string, now time.Time) (model.UserSession, string) {
 	return identityapi.NewUserSession(userID, impersonatorID, now)
-}
-
-func newUserSessionInFamily(userID, impersonatorID, familyID string, now time.Time) (model.UserSession, string) {
-	return identityapi.NewUserSessionInFamily(userID, impersonatorID, familyID, now)
-}
-
-func newUserSessionInFamilyWithPrimaryAuthentication(userID, impersonatorID, familyID string, now time.Time, primaryAuthenticatedAt *time.Time, expiresAt time.Time) (model.UserSession, string) {
-	return identityapi.NewUserSessionInFamilyWithPrimaryAuthentication(userID, impersonatorID, familyID, now, primaryAuthenticatedAt, expiresAt)
-}
-
-func newUserRememberToken(userID string, now time.Time) (model.UserRememberToken, string) {
-	return identityapi.NewUserRememberToken(userID, now)
-}
-
-func newUserRememberTokenInFamily(userID, familyID string, expiresAt time.Time) (model.UserRememberToken, string) {
-	return identityapi.NewUserRememberTokenInFamily(userID, familyID, expiresAt)
-}
-
-func (h *Handlers) revokeCurrentSessionAndRememberTokens(plainToken string, ctx context.Context) (string, error) {
-	return h.domains.identity.RevokeCurrentSessionAndRememberTokens(plainToken, ctx)
-}
-
-func (h *Handlers) cleanupExpiredRememberTokenFamilies(userID string, now time.Time, ctx context.Context) error {
-	return h.domains.identity.CleanupExpiredRememberTokenFamilies(userID, now, ctx)
 }
 
 func revokeUserAuthentication(tx *gorm.DB, userID string) error {
@@ -271,14 +239,6 @@ func (h *Handlers) resolveSecretContext(ctx context.Context, ref string) string 
 
 func (h *Handlers) createSession(ctx *gin.Context, userID string) bool {
 	return h.domains.identity.CreateSession(ctx, userID)
-}
-
-func (h *Handlers) createLoginCredentials(ctx *gin.Context, userID string, remember bool) bool {
-	return h.domains.identity.CreateLoginCredentials(ctx, userID, remember)
-}
-
-func (h *Handlers) createRememberToken(ctx *gin.Context, userID string, requested ...bool) bool {
-	return h.domains.identity.CreateRememberToken(ctx, userID, requested...)
 }
 
 func (h *Handlers) auditWithContext(userID, action, resource string, success bool, message string, ctx context.Context) {
@@ -331,19 +291,7 @@ func setSessionCookie(ctx *gin.Context, token string, secure bool, persistent bo
 	identityapi.SetSessionCookie(ctx, token, secure, persistent)
 }
 
-func setRememberCookie(ctx *gin.Context, userID, token string, secure bool) {
-	identityapi.SetRememberCookie(ctx, userID, token, secure)
-}
-
 func clearSessionCookie(ctx *gin.Context) { identityapi.ClearSessionCookie(ctx) }
-
-func clearRememberCookie(ctx *gin.Context, userID string) {
-	identityapi.ClearRememberCookie(ctx, userID)
-}
-
-func rememberCookieNameForUser(userID string) string {
-	return identityapi.RememberCookieNameForUser(userID)
-}
 
 func shouldRevokeUserAuthentication(originalRole, nextRole string, originallyDisabled, nextDisabled, passwordChanged bool) bool {
 	return identityapi.ShouldRevokeUserAuthentication(originalRole, nextRole, originallyDisabled, nextDisabled, passwordChanged)
@@ -437,4 +385,8 @@ var (
 
 func EnsureInitialAdmin(ctx context.Context, db *gorm.DB, mode string, input InitialAdminConfig) error {
 	return identityapi.EnsureInitialAdmin(ctx, db, mode, input)
+}
+
+func (h *Handlers) revokeCurrentSession(plainToken string, ctx context.Context) error {
+	return h.domains.identity.RevokeCurrentSession(plainToken, ctx)
 }

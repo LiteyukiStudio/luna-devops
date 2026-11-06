@@ -323,6 +323,7 @@ paths:
       operationId: login
       tags: [Auth]
       summary: Login with a local account
+      description: Creates a 15-day server-side session and sets it as a persistent HttpOnly cookie. Logging out, changing the password, or disabling the account revokes sessions immediately.
       requestBody:
         required: true
         content:
@@ -338,31 +339,6 @@ paths:
                 $ref: "#/components/schemas/AuthSessionResponse"
         "401":
           description: Login failed.
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ErrorResponse" }
-
-  /api/v1/auth/login/resume:
-    post:
-      operationId: resumeLogin
-      tags: [Auth]
-      summary: Resume login with a remembered account
-      description: Rotates the per-user remember token, creates a new 24-hour session, and refreshes the 30-day remember cookie. Browser cookies are required.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/ResumeLoginInput"
-      responses:
-        "200":
-          description: Remembered login resumed.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/AuthSessionResponse"
-        "401":
-          description: Remember token missing, expired, revoked, or the account is disabled.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
@@ -9628,7 +9604,7 @@ components:
       type: apiKey
       in: cookie
       name: lyd_session
-      description: HttpOnly browser session cookie. Sensitive interactive operations do not accept personal access tokens as a substitute.
+      description: HttpOnly browser session cookie backed by a 15-day server-side session that can be revoked at any time. Sensitive interactive operations do not accept personal access tokens as a substitute.
     BearerToken:
       type: http
       scheme: bearer
@@ -11993,18 +11969,7 @@ components:
       properties:
         email: { type: string, format: email }
         password: { type: string }
-        rememberMe:
-          type: boolean
-          default: false
-          description: When true, also creates a rotating, per-user 30-day HttpOnly remember cookie. The regular session remains valid for 24 hours.
       required: [email, password]
-    ResumeLoginInput:
-      type: object
-      properties:
-        userId:
-          type: string
-          description: User selected from locally stored recent-account display metadata; authentication still requires that user's HttpOnly remember cookie.
-      required: [userId]
     ProjectInput:
       type: object
       properties:
@@ -13071,7 +13036,6 @@ components:
         name: { type: string }
         password: { type: string, minLength: 8, writeOnly: true }
         language: { type: string, enum: [zh-CN, en-US] }
-        rememberMe: { type: boolean }
       required: [challengeId, code, email, name, password]
     UpdateMyPasswordInput:
       type: object

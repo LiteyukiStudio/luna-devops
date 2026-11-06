@@ -5,8 +5,6 @@ const loginPage = {
   password: 'Password',
   passwordHint: 'Local account password.',
   passwordRequired: 'Enter password',
-  rememberMe: 'Keep me signed in',
-  rememberMeHint: 'Enable only on a trusted device. Otherwise you will need your password after the session ends or you sign out.',
   success: 'Signed in',
   useProviderLogin: 'Sign in with {{provider}}',
   recentAccounts: 'Recent accounts',

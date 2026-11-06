@@ -78,7 +78,6 @@ func TestExpiredAuthCleanupPreservesFutureRecordsInPostgres(t *testing.T) {
 	db := openRetentionTestDB(t)
 	if err := db.Exec(`
 CREATE TABLE user_sessions (id text PRIMARY KEY, expires_at timestamptz NOT NULL);
-CREATE TABLE user_remember_tokens (id text PRIMARY KEY, expires_at timestamptz NOT NULL);
 CREATE TABLE email_registration_challenges (id text PRIMARY KEY, expires_at timestamptz NOT NULL);
 `).Error; err != nil {
 		t.Fatalf("create auth retention tables: %v", err)
@@ -89,10 +88,6 @@ CREATE TABLE email_registration_challenges (id text PRIMARY KEY, expires_at time
 	future := now.Add(24 * time.Hour)
 	if err := db.Exec("INSERT INTO user_sessions(id, expires_at) VALUES (?, ?), (?, ?)",
 		"session_old", old, "session_future", future).Error; err != nil {
-		t.Fatal(err)
-	}
-	if err := db.Exec("INSERT INTO user_remember_tokens(id, expires_at) VALUES (?, ?), (?, ?)",
-		"remember_old", old, "remember_future", future).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Exec("INSERT INTO email_registration_challenges(id, expires_at) VALUES (?, ?), (?, ?)",
@@ -107,22 +102,20 @@ CREATE TABLE email_registration_challenges (id text PRIMARY KEY, expires_at time
 	if err != nil {
 		t.Fatalf("preview auth cleanup: %v", err)
 	}
-	if len(preview) != 1 || preview[0].Matched != 3 || preview[0].Deleted != 0 {
-		t.Fatalf("auth preview = %#v, want 3 matched", preview)
+	if len(preview) != 1 || preview[0].Matched != 2 || preview[0].Deleted != 0 {
+		t.Fatalf("auth preview = %#v, want 2 matched", preview)
 	}
 	results, err := service.Cleanup(t.Context(), []string{DatasetExpiredAuthData}, start, end, now)
 	if err != nil {
 		t.Fatalf("cleanup auth data: %v", err)
 	}
-	if len(results) != 1 || results[0].Matched != 3 || results[0].Deleted != 3 {
-		t.Fatalf("auth cleanup = %#v, want 3 matched/deleted", results)
+	if len(results) != 1 || results[0].Matched != 2 || results[0].Deleted != 2 {
+		t.Fatalf("auth cleanup = %#v, want 2 matched/deleted", results)
 	}
 
 	assertRowCount(t, db, "user_sessions", 1)
-	assertRowCount(t, db, "user_remember_tokens", 1)
 	assertRowCount(t, db, "email_registration_challenges", 1)
 	assertIDExists(t, db, "user_sessions", "session_future")
-	assertIDExists(t, db, "user_remember_tokens", "remember_future")
 	assertIDExists(t, db, "email_registration_challenges", "registration_future")
 }
 

@@ -5,10 +5,8 @@ import { paginationQuery, request } from '../core'
 export const authApi = {
   getPublicConfigs: (keys: string[]) =>
     request<Record<string, string>>('/public/configs', { method: 'POST', body: JSON.stringify({ keys }) }),
-  login: (payload: { email: string, password: string, rememberMe: boolean }) =>
+  login: (payload: { email: string, password: string }) =>
     request<{ user: CurrentUser }>('/auth/login', { method: 'POST', body: JSON.stringify(payload) }),
-  resumeLogin: (payload: { userId: string }) =>
-    request<{ user: CurrentUser }>('/auth/login/resume', { method: 'POST', body: JSON.stringify(payload) }),
   logout: () => request<void>('/auth/logout', { method: 'POST' }),
   getAuthRegistrationStatus: () => request<AuthRegistrationStatus>('/auth/registration'),
   getAuthRegistrationSettings: () => request<AuthRegistrationSettings>('/auth/registration/settings'),
@@ -16,7 +14,7 @@ export const authApi = {
     request<AuthRegistrationSettings>('/auth/registration/settings', { method: 'PUT', body: JSON.stringify(payload) }),
   requestEmailRegistrationCode: (payload: { email: string, language: 'zh-CN' | 'zh-TW' | 'en-US' | 'ja-JP' | 'ko-KR' }) =>
     request<{ challengeId: string, expiresAt: string }>('/auth/registration/email/code', { method: 'POST', body: JSON.stringify(payload) }),
-  completeEmailRegistration: (payload: { challengeId: string, code: string, email: string, name: string, password: string, language: 'zh-CN' | 'zh-TW' | 'en-US' | 'ja-JP' | 'ko-KR', rememberMe: boolean }) =>
+  completeEmailRegistration: (payload: { challengeId: string, code: string, email: string, name: string, password: string, language: 'zh-CN' | 'zh-TW' | 'en-US' | 'ja-JP' | 'ko-KR' }) =>
     request<{ user: CurrentUser }>('/auth/registration/email', { method: 'POST', body: JSON.stringify(payload) }),
   getOIDCCallbackConfig: () => request<OIDCCallbackConfig>('/auth/oidc/callback-url'),
   listAuthProviders: (includeDisabled = false) =>

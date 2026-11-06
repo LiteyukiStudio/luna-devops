@@ -89,50 +89,31 @@ func TestRegistrationEmailUsesGlobalPlatformMailSender(t *testing.T) {
 	}
 }
 
-func TestCreateRememberTokenDefaultsToNoOp(t *testing.T) {
-	recorder := httptest.NewRecorder()
-	ctx, _ := gin.CreateTestContext(recorder)
-	h := &Handlers{}
-	h.domains = newDomainHandlers(h)
-
-	if !h.createRememberToken(ctx, "usr_test") {
-		t.Fatal("omitted remember choice should succeed without issuing a token")
-	}
-	if got := recorder.Header().Values("Set-Cookie"); len(got) != 0 {
-		t.Fatalf("unexpected remember cookie: %#v", got)
-	}
-}
-
 func TestGeneratedSessionCredentialsUseExpectedLifetimeAndHash(t *testing.T) {
 	now := time.Date(2026, time.July, 12, 1, 2, 3, 0, time.UTC)
 	session, sessionToken := newUserSession("usr_test", "", now)
-	remember, rememberToken := newUserRememberToken("usr_test", now)
 
 	if !strings.HasPrefix(sessionToken, "sess_") || session.TokenHash != transportapi.HashToken(sessionToken) {
 		t.Fatalf("invalid session token metadata: token=%q hash=%q", sessionToken, session.TokenHash)
 	}
-	if !session.ExpiresAt.Equal(now.Add(sessionDuration)) {
-		t.Fatalf("session expiry = %v", session.ExpiresAt)
+	// 账号密码与 OIDC 登录统一使用 15 天服务端会话。
+	if sessionDuration != 15*24*time.Hour || !session.ExpiresAt.Equal(now.Add(15*24*time.Hour)) {
+		t.Fatalf("session expiry = %v, duration = %v", session.ExpiresAt, sessionDuration)
 	}
-	if !strings.HasPrefix(rememberToken, "rem_") || remember.TokenHash != transportapi.HashToken(rememberToken) {
-		t.Fatalf("invalid remember token metadata: token=%q hash=%q", rememberToken, remember.TokenHash)
-	}
-	if remember.FamilyID == "" {
-		t.Fatal("remember token family must be set")
-	}
-	if !remember.ExpiresAt.Equal(now.Add(rememberDuration)) {
-		t.Fatalf("remember expiry = %v", remember.ExpiresAt)
+	if session.PrimaryAuthenticatedAt == nil || !session.PrimaryAuthenticatedAt.Equal(now) {
+		t.Fatalf("primary authentication = %v", session.PrimaryAuthenticatedAt)
 	}
 }
 
-func TestSessionCookiePersistenceMatchesRememberChoice(t *testing.T) {
+// 普通登录写入与服务端会话同时到期的持久 Cookie；代管会话只保留到浏览器关闭。
+func TestSessionCookiePersistence(t *testing.T) {
 	for _, tc := range []struct {
 		name       string
 		persistent bool
 		wantMaxAge int
 	}{
-		{name: "browser session", persistent: false, wantMaxAge: 0},
-		{name: "remembered session", persistent: true, wantMaxAge: int(sessionDuration / time.Second)},
+		{name: "impersonation session", persistent: false, wantMaxAge: 0},
+		{name: "login session", persistent: true, wantMaxAge: int(sessionDuration / time.Second)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			recorder := httptest.NewRecorder()
@@ -152,17 +133,10 @@ func TestClearAuthenticationCookies(t *testing.T) {
 	ctx, _ := gin.CreateTestContext(recorder)
 
 	clearSessionCookie(ctx)
-	clearRememberCookie(ctx, "usr:test")
 
 	cookies := recorder.Result().Cookies()
-	if len(cookies) != 2 {
-		t.Fatalf("cookie count = %d", len(cookies))
-	}
-	if cookies[0].Name != sessionCookieName || cookies[0].MaxAge >= 0 {
-		t.Fatalf("session cookie was not cleared: %#v", cookies[0])
-	}
-	if cookies[1].Name != rememberCookieNameForUser("usr:test") || cookies[1].MaxAge >= 0 {
-		t.Fatalf("remember cookie was not cleared: %#v", cookies[1])
+	if len(cookies) != 1 || cookies[0].Name != sessionCookieName || cookies[0].MaxAge >= 0 {
+		t.Fatalf("session cookie was not cleared: %#v", cookies)
 	}
 }
 

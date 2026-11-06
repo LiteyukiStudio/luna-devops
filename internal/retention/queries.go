@@ -127,22 +127,6 @@ WHERE target.id = victims.id`,
 			{
 				requireExpired: true,
 				countSQL: `SELECT COUNT(*) AS count
-FROM user_remember_tokens
-WHERE expires_at >= ? AND expires_at < ? AND expires_at <= ?`,
-				deleteSQL: `WITH victims AS (
-    SELECT id
-    FROM user_remember_tokens
-    WHERE expires_at >= ? AND expires_at < ? AND expires_at <= ?
-    ORDER BY expires_at, id
-    LIMIT 1000
-)
-DELETE FROM user_remember_tokens AS target
-USING victims
-WHERE target.id = victims.id`,
-			},
-			{
-				requireExpired: true,
-				countSQL: `SELECT COUNT(*) AS count
 FROM email_registration_challenges
 WHERE expires_at >= ? AND expires_at < ? AND expires_at <= ?`,
 				deleteSQL: `WITH victims AS (

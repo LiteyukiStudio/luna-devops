@@ -52,52 +52,16 @@ func (h *Handlers) Login(ctx *gin.Context) {
 		return
 	}
 
-	if !h.createLoginCredentials(ctx, user.ID, input.RememberMe) {
+	if !h.createSession(ctx, user.ID) {
 		return
 	}
-
-	ctx.JSON(http.StatusOK, gin.H{"user": currentUserResponse(user)})
-}
-
-func (h *Handlers) ResumeLogin(ctx *gin.Context) {
-	var input resumeLoginInput
-	if !bindJSON(ctx, &input) {
-		return
-	}
-
-	userID := strings.TrimSpace(input.UserID)
-	plainToken, err := ctx.Cookie(rememberCookieNameForUser(userID))
-	if err != nil {
-		writeErrorKey(ctx, http.StatusUnauthorized, requestLanguage(ctx), "auth.session.expired")
-		return
-	}
-
-	user, sessionToken, rememberToken, err := h.rotateRememberLogin(userID, plainToken, ctx.Request.Context())
-	if errors.Is(err, errRememberTokenInvalid) || errors.Is(err, errRememberTokenReused) {
-		clearRememberCookie(ctx, userID)
-		writeErrorKey(ctx, http.StatusUnauthorized, requestLanguage(ctx), "auth.session.expired")
-		return
-	}
-	if errors.Is(err, errRememberUserDisabled) {
-		clearRememberCookie(ctx, userID)
-		writeErrorKey(ctx, http.StatusUnauthorized, requestLanguage(ctx), "auth.account.disabled")
-		return
-	}
-	if err != nil {
-		writeErrorCode(ctx, http.StatusInternalServerError, "auth.session.resume_failed", err.Error())
-		return
-	}
-	setSessionCookie(ctx, sessionToken, h.mode == "production", true)
-	setRememberCookie(ctx, user.ID, rememberToken, h.mode == "production")
 
 	ctx.JSON(http.StatusOK, gin.H{"user": currentUserResponse(user)})
 }
 
 func (h *Handlers) Logout(ctx *gin.Context) {
 	if plainToken, err := ctx.Cookie(sessionCookieName); err == nil {
-		userID, revokeErr := h.revokeCurrentSessionAndRememberTokens(plainToken, ctx.Request.Context())
-		clearRememberCookie(ctx, userID)
-		if revokeErr != nil {
+		if revokeErr := h.revokeCurrentSession(plainToken, ctx.Request.Context()); revokeErr != nil {
 			clearSessionCookie(ctx)
 			writeErrorCode(ctx, http.StatusInternalServerError, "auth.logout_failed", revokeErr.Error())
 			return
@@ -330,13 +294,8 @@ func (h *Handlers) UpdateUser(ctx *gin.Context) {
 }
 
 type loginInput struct {
-	Email      string `json:"email" binding:"required"`
-	Password   string `json:"password" binding:"required"`
-	RememberMe bool   `json:"rememberMe"`
-}
-
-type resumeLoginInput struct {
-	UserID string `json:"userId" binding:"required"`
+	Email    string `json:"email" binding:"required"`
+	Password string `json:"password" binding:"required"`
 }
 
 type updateCurrentUserInput struct {

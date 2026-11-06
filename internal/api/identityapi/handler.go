@@ -12,7 +12,6 @@ import (
 	"gorm.io/gorm"
 )
 
-const rememberCookiePrefix = "lyd_remember_"
 const sessionCookieName = "lyd_session"
 
 type InitialAdminConfig = sharedconfig.InitialAdminConfig

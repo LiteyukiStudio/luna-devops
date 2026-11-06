@@ -19,7 +19,6 @@ const CurrentUserContextKey = currentUserContextKey
 const CurrentAccessTokenContextKey = currentAccessTokenContextKey
 const AuthRegistrationSettingsID = authRegistrationSettingsID
 const SessionDuration = sessionDuration
-const RememberDuration = rememberDuration
 const LunaCLIClientID = lunaCLIClientID
 const OAuthDeviceCodeGrantType = oauthDeviceCodeGrantType
 const OAuthCredentialRateLimit = oauthCredentialRateLimit
@@ -78,9 +77,6 @@ func (value OAuthClientAuthentication) internal() oauthClientAuthentication {
 }
 
 var (
-	ErrRememberTokenInvalid     = errRememberTokenInvalid
-	ErrRememberTokenReused      = errRememberTokenReused
-	ErrRememberUserDisabled     = errRememberUserDisabled
 	ErrOIDCDisabled             = errOIDCDisabled
 	ErrOIDCEmailRequired        = errOIDCEmailRequired
 	ErrOIDCGroupDenied          = errOIDCGroupDenied
@@ -125,36 +121,8 @@ func (h *Handler) EnsureAdmissionPolicy(ctx context.Context) (model.AuthAdmissio
 	return h.ensureAdmissionPolicy(ctx)
 }
 
-func (h *Handler) RotateRememberLogin(userID, plainToken string, ctx context.Context) (model.User, string, string, error) {
-	return h.rotateRememberLogin(userID, plainToken, ctx)
-}
-
 func NewUserSession(userID, impersonatorID string, now time.Time) (model.UserSession, string) {
 	return newUserSession(userID, impersonatorID, now)
-}
-
-func NewUserSessionInFamily(userID, impersonatorID, familyID string, now time.Time) (model.UserSession, string) {
-	return newUserSessionInFamily(userID, impersonatorID, familyID, now)
-}
-
-func NewUserSessionInFamilyWithPrimaryAuthentication(userID, impersonatorID, familyID string, now time.Time, primaryAuthenticatedAt *time.Time, expiresAt time.Time) (model.UserSession, string) {
-	return newUserSessionInFamilyWithPrimaryAuthentication(userID, impersonatorID, familyID, now, primaryAuthenticatedAt, expiresAt)
-}
-
-func NewUserRememberToken(userID string, now time.Time) (model.UserRememberToken, string) {
-	return newUserRememberToken(userID, now)
-}
-
-func NewUserRememberTokenInFamily(userID, familyID string, expiresAt time.Time) (model.UserRememberToken, string) {
-	return newUserRememberTokenInFamily(userID, familyID, expiresAt)
-}
-
-func (h *Handler) RevokeCurrentSessionAndRememberTokens(plainToken string, ctx context.Context) (string, error) {
-	return h.revokeCurrentSessionAndRememberTokens(plainToken, ctx)
-}
-
-func (h *Handler) CleanupExpiredRememberTokenFamilies(userID string, now time.Time, ctx context.Context) error {
-	return h.cleanupExpiredRememberTokenFamilies(userID, now, ctx)
 }
 
 func RevokeUserAuthentication(tx *gorm.DB, userID string) error {
@@ -171,14 +139,6 @@ func (h *Handler) ResolveSecretContext(ctx context.Context, ref string) string {
 
 func (h *Handler) CreateSession(ctx *gin.Context, userID string) bool {
 	return h.createSession(ctx, userID)
-}
-
-func (h *Handler) CreateLoginCredentials(ctx *gin.Context, userID string, remember bool) bool {
-	return h.createLoginCredentials(ctx, userID, remember)
-}
-
-func (h *Handler) CreateRememberToken(ctx *gin.Context, userID string, requested ...bool) bool {
-	return h.createRememberToken(ctx, userID, requested...)
 }
 
 func (h *Handler) AuditWithContext(userID, action, resource string, success bool, message string, ctx context.Context) {
@@ -241,15 +201,7 @@ func SetSessionCookie(ctx *gin.Context, token string, secure bool, persistent bo
 	setSessionCookie(ctx, token, secure, persistent)
 }
 
-func SetRememberCookie(ctx *gin.Context, userID, token string, secure bool) {
-	setRememberCookie(ctx, userID, token, secure)
-}
-
 func ClearSessionCookie(ctx *gin.Context) { clearSessionCookie(ctx) }
-
-func ClearRememberCookie(ctx *gin.Context, userID string) { clearRememberCookie(ctx, userID) }
-
-func RememberCookieNameForUser(userID string) string { return rememberCookieNameForUser(userID) }
 
 func ShouldRevokeUserAuthentication(originalRole, nextRole string, originallyDisabled, nextDisabled, passwordChanged bool) bool {
 	return shouldRevokeUserAuthentication(originalRole, nextRole, originallyDisabled, nextDisabled, passwordChanged)
@@ -325,4 +277,8 @@ func RevokeOAuthApplication(tx *gorm.DB, applicationID string, now time.Time) er
 
 func ExchangeOAuthAuthorizationCodeValue(db *gorm.DB, authentication OAuthClientAuthentication, plainCode, redirectURI, verifier string, now time.Time) (OAuthTokenResponse, error) {
 	return exchangeOAuthAuthorizationCodeValue(db, authentication.internal(), plainCode, redirectURI, verifier, now)
+}
+
+func (h *Handler) RevokeCurrentSession(plainToken string, ctx context.Context) error {
+	return h.revokeCurrentSession(plainToken, ctx)
 }

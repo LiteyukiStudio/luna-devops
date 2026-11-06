@@ -15,7 +15,6 @@ const mocks = vi.hoisted(() => ({
   listAuthProviders: vi.fn(),
   login: vi.fn(),
   recentLoginUsers: [] as RecentLoginUser[],
-  resumeLogin: vi.fn(),
 }))
 
 vi.mock('@/api', async (importOriginal) => {
@@ -40,7 +39,6 @@ vi.mock('@/app/session-context', () => ({
     login: mocks.login,
     recentLoginUsers: mocks.recentLoginUsers,
     refreshUser: vi.fn(),
-    resumeLogin: mocks.resumeLogin,
   }),
 }))
 
@@ -78,15 +76,13 @@ describe('authentication form payloads', () => {
     mocks.listAuthProviders.mockResolvedValue([])
     mocks.login.mockResolvedValue({})
     mocks.recentLoginUsers.splice(0)
-    mocks.resumeLogin.mockResolvedValue({})
   })
 
-  it('submits login with rememberMe disabled by default', async () => {
+  it('submits email and password without a remember-me option', async () => {
     const user = userEvent.setup()
     const { container } = renderPage(<LoginPage />)
-    const rememberMe = screen.getByRole('checkbox')
 
-    expect(rememberMe).not.toBeChecked()
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
     const username = inputWithAutocomplete(container, 'username')
     expect(username).toHaveAttribute('type', 'email')
     await user.type(username, 'login@example.test')
@@ -98,11 +94,10 @@ describe('authentication form payloads', () => {
     await waitFor(() => expect(mocks.login).toHaveBeenCalledWith({
       email: 'login@example.test',
       password: 'password',
-      rememberMe: false,
     }))
   })
 
-  it('resumes a recent account from the shared avatar button', async () => {
+  it('prefills the email of a recent account without signing in', async () => {
     const user = userEvent.setup()
     mocks.recentLoginUsers.push({
       avatarUrl: '',
@@ -111,7 +106,7 @@ describe('authentication form payloads', () => {
       lastLoginAt: '2026-08-30T00:00:00Z',
       name: 'Recent User',
     })
-    renderPage(<LoginPage />)
+    const { container } = renderPage(<LoginPage />)
 
     const recentAccount = screen.getByRole('button', {
       name: i18next.t('loginPage.selectRecentAccount', { email: 'recent@example.test', name: 'Recent User' }),
@@ -119,7 +114,8 @@ describe('authentication form payloads', () => {
     expect(recentAccount).toHaveClass('size-10', 'rounded-full')
     await user.click(recentAccount)
 
-    await waitFor(() => expect(mocks.resumeLogin).toHaveBeenCalledWith('usr_recent'))
+    await waitFor(() => expect(inputWithAutocomplete(container, 'username')).toHaveValue('recent@example.test'))
+    expect(mocks.login).not.toHaveBeenCalled()
   })
 
   it('exposes registration as a new password credential form', async () => {

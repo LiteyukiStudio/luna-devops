@@ -23,7 +23,7 @@ import (
 
 const (
 	baselineMigrationVersion = 103
-	latestMigrationVersion   = 119
+	latestMigrationVersion   = 120
 )
 
 func TestEmbeddedMigrationsContainExpectedFiles(t *testing.T) {
@@ -60,6 +60,8 @@ func TestEmbeddedMigrationsContainExpectedFiles(t *testing.T) {
 		"000116_application_delete_code.down.sql":                   false,
 		"000119_deployment_target_delete_code.up.sql":               false,
 		"000119_deployment_target_delete_code.down.sql":             false,
+		"000120_remove_remember_login.up.sql":                       false,
+		"000120_remove_remember_login.down.sql":                     false,
 	}
 	migrationCount := 0
 	for _, entry := range entries {
@@ -244,6 +246,7 @@ WHERE namespace.nspname = current_schema()
 	assertConcurrencyPolicyRemovalMigration(t, testDB, runner)
 	assertRuntimeObservationRenderPolicyMigration(t, testDB, runner)
 	assertDeliveryFailureCodesMigration(t, testDB, runner)
+	assertRememberLoginRemovalMigration(t, testDB, runner)
 	assertDirtyMigrationFailsClosed(t, testDB)
 }
 
@@ -264,6 +267,27 @@ func assertConcurrencyPolicyRemovalMigration(t *testing.T, db *gorm.DB, runner *
 	}
 	if err := runner.Migrate(latestMigrationVersion); err != nil {
 		t.Fatalf("restore latest migrations after concurrency policy round trip: %v", err)
+	}
+	assertRunnerMigrationVersion(t, runner, latestMigrationVersion)
+}
+
+func assertRememberLoginRemovalMigration(t *testing.T, db *gorm.DB, runner *migrate.Migrate) {
+	t.Helper()
+	const removalVersion = 120
+	if err := runner.Migrate(removalVersion); err != nil && !errors.Is(err, migrate.ErrNoChange) {
+		t.Fatalf("apply remember login removal migration: %v", err)
+	}
+	if db.Migrator().HasTable("user_remember_tokens") || db.Migrator().HasColumn("user_sessions", "remember_family_id") {
+		t.Fatal("remember login removal retained user_remember_tokens or user_sessions.remember_family_id")
+	}
+	if err := runner.Migrate(previousMigrationVersion(t, removalVersion)); err != nil {
+		t.Fatalf("roll back remember login removal migration: %v", err)
+	}
+	if !db.Migrator().HasTable("user_remember_tokens") || !db.Migrator().HasColumn("user_sessions", "remember_family_id") {
+		t.Fatal("remember login removal rollback did not restore its schema")
+	}
+	if err := runner.Migrate(latestMigrationVersion); err != nil {
+		t.Fatalf("restore latest migrations after remember login round trip: %v", err)
 	}
 	assertRunnerMigrationVersion(t, runner, latestMigrationVersion)
 }
@@ -383,10 +407,6 @@ func assertFreshMigrationState(t *testing.T, db *gorm.DB) {
 		{table: "platform_mail_settings", column: "personal_email_cooldown_seconds"},
 		{table: "notification_channels", column: "owner_user_id"},
 		{table: "notification_deliveries", column: "recipient_user_id"},
-		{table: "user_remember_tokens", column: "family_id"},
-		{table: "user_remember_tokens", column: "consumed_at"},
-		{table: "user_remember_tokens", column: "revoked_at"},
-		{table: "user_sessions", column: "remember_family_id"},
 		{table: "user_sessions", column: "primary_authenticated_at"},
 		{table: "projects", column: "identifier"},
 		{table: "projects", column: "kubernetes_namespace"},
@@ -548,7 +568,6 @@ func assertFreshMigrationState(t *testing.T, db *gorm.DB) {
 		{name: "idx_hook_run_logs_retention_parent"},
 		{name: "idx_hook_runs_retention_terminal"},
 		{name: "idx_user_sessions_retention_expiry"},
-		{name: "idx_user_remember_tokens_retention_expiry"},
 		{name: "idx_runtime_observations_target_period", fragments: []string{"UNIQUE INDEX"}},
 		{name: "idx_runtime_observations_cluster_period"},
 		{name: "idx_runtime_observations_project_period"},
@@ -802,7 +821,6 @@ func assertStableModelMigrationCoverage(t *testing.T, db *gorm.DB) {
 	models := []any{
 		&model.User{},
 		&model.UserSession{},
-		&model.UserRememberToken{},
 		&model.OAuthApplication{},
 		&model.OAuthGrant{},
 		&model.OAuthAuthorizationCode{},

@@ -176,7 +176,6 @@ function sessionValue(user: CurrentUser): SessionContextValue {
     login: vi.fn(async () => user),
     logout: vi.fn(async () => {}),
     refreshUser: vi.fn(async () => {}),
-    resumeLogin: vi.fn(async () => user),
     updateProfile: vi.fn(async () => user),
     updateLanguage: vi.fn(async () => user),
   }

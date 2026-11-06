@@ -84,7 +84,6 @@ const sessionValue: SessionContextValue = {
   login: vi.fn(async () => currentUser),
   logout: vi.fn(async () => {}),
   refreshUser: vi.fn(async () => {}),
-  resumeLogin: vi.fn(async () => currentUser),
   updateProfile: vi.fn(async () => currentUser),
   updateLanguage: vi.fn(async () => currentUser),
 }

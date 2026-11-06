@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import i18next from 'i18next'
 import { LogIn, TriangleAlert } from 'lucide-react'
 import { useEffect, useMemo } from 'react'
-import { Controller, useForm } from 'react-hook-form'
+import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -12,7 +12,6 @@ import { api, oidcStartUrl } from '@/api'
 import { useDocumentTitle } from '@/app/document-title'
 import { usePublicConfig } from '@/app/public-config-context'
 import { useSession } from '@/app/session-context'
-import { ControlledCheckboxField } from '@/components/common/checkbox-field'
 import { FormField as Field } from '@/components/common/form-field'
 import { PageMotion } from '@/components/common/motion'
 import { UserAvatar } from '@/components/common/user-avatar'
@@ -25,7 +24,6 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 const schema = z.object({
   email: z.string().email({ error: () => i18next.t('common.validEmailRequired') }),
   password: z.string().min(1, { error: () => i18next.t('loginPage.passwordRequired') }),
-  rememberMe: z.boolean(),
 })
 
 type LoginForm = z.infer<typeof schema>
@@ -47,7 +45,6 @@ export function LoginPage() {
     defaultValues: {
       email: '',
       password: '',
-      rememberMe: false,
     },
   })
   useDocumentTitle(t('login'))
@@ -74,18 +71,6 @@ export function LoginPage() {
   function prefillRecentUser(email: string) {
     form.setValue('email', email, { shouldDirty: true, shouldTouch: true, shouldValidate: true })
     form.setValue('password', '', { shouldDirty: true, shouldTouch: true, shouldValidate: true })
-  }
-
-  function selectRecentUser(user: { email: string, id: string }) {
-    session.resumeLogin(user.id)
-      .then(() => {
-        toast.success(t('loginPage.success'))
-        navigate(redirectTo)
-      })
-      .catch((error) => {
-        prefillRecentUser(user.email)
-        toast.error(error.message)
-      })
   }
 
   return (
@@ -143,7 +128,7 @@ export function LoginPage() {
                                 size="icon"
                                 type="button"
                                 variant="ghost"
-                                onClick={() => selectRecentUser(user)}
+                                onClick={() => prefillRecentUser(user.email)}
                               >
                                 <UserAvatar className="size-full" user={user} />
                               </Button>
@@ -165,15 +150,6 @@ export function LoginPage() {
                   <Field error={form.formState.errors.password?.message} hint={t('loginPage.passwordHint')} label={t('loginPage.password')} required>
                     <Input {...form.register('password')} aria-invalid={Boolean(form.formState.errors.password)} autoComplete="current-password" type="password" />
                   </Field>
-                  <Controller
-                    control={form.control}
-                    name="rememberMe"
-                    render={({ field }) => (
-                      <ControlledCheckboxField description={t('loginPage.rememberMeHint')} field={field}>
-                        {t('loginPage.rememberMe')}
-                      </ControlledCheckboxField>
-                    )}
-                  />
                   <Button disabled={session.isLoggingIn || !form.formState.isValid} type="submit">
                     <LogIn size={16} />
                     {t('login')}

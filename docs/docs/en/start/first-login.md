@@ -27,6 +27,8 @@ https://your-platform.example.com/login
 
 Sign in with the configured email and password. Change the password later through account settings; changing `INITIAL_ADMIN_PASSWORD` does not reset an existing account.
 
+Both password and OIDC sign-ins last 15 days, including across browser restarts. Signing out ends the session in the current browser immediately; changing the password, being disabled, or a platform role change ends the account's sessions in every browser immediately.
+
 ## Finish platform settings
 
 After the first sign-in, open **Global Settings** and check at least:

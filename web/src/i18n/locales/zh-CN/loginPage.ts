@@ -5,8 +5,6 @@ const loginPage = {
   password: '密码',
   passwordHint: '本地账号密码。',
   passwordRequired: '请输入密码',
-  rememberMe: '保持登录',
-  rememberMeHint: '仅在这台设备上需要时启用。未启用时，关闭会话或退出登录后需要重新输入密码。',
   success: '登录成功',
   useProviderLogin: '使用 {{provider}} 登录',
   recentAccounts: '最近登录',

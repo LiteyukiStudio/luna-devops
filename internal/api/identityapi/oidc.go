@@ -159,9 +159,6 @@ func (h *Handlers) CompleteOIDC(ctx *gin.Context) {
 	if !h.createSession(ctx, user.ID) {
 		return
 	}
-	if !h.createRememberToken(ctx, user.ID) {
-		return
-	}
 	h.auditWithContext(user.ID, "oidc.login", provider.ID, true, "login succeeded", ctx.Request.Context())
 	ctx.Redirect(http.StatusFound, authState.RedirectPath)
 }

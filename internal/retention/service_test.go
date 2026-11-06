@@ -80,14 +80,14 @@ func TestStandardQueriesContainTerminalGuardsAndHalfOpenRange(t *testing.T) {
 
 func TestExpiredAuthQueriesUseExpiry(t *testing.T) {
 	authPlan := plans[DatasetExpiredAuthData]
-	if len(authPlan.queries) != 3 {
-		t.Fatalf("expired auth query count = %d, want 3", len(authPlan.queries))
+	if len(authPlan.queries) != 2 {
+		t.Fatalf("expired auth query count = %d, want 2", len(authPlan.queries))
 	}
 	sessionDeleteSQL := authPlan.queries[0].deleteSQL
 	if !strings.Contains(sessionDeleteSQL, "session.expires_at <= ?") {
 		t.Fatalf("session cleanup does not treat expiry equal to now as expired:\n%s", sessionDeleteSQL)
 	}
-	if !strings.Contains(authPlan.queries[2].countSQL, "email_registration_challenges") || !strings.Contains(authPlan.queries[2].deleteSQL, "expires_at <= ?") {
+	if !strings.Contains(authPlan.queries[1].countSQL, "email_registration_challenges") || !strings.Contains(authPlan.queries[1].deleteSQL, "expires_at <= ?") {
 		t.Fatal("expired email registration challenges must be included in authentication cleanup")
 	}
 }

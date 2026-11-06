@@ -59,7 +59,6 @@ func NewRouterWithStaticFSAndMetricsConfig(db *gorm.DB, staticFS fs.FS, httpMetr
 		v1.GET("/meta", domains.platform.GetAPIMeta)
 		v1.POST("/public/configs", handlers.GetPublicConfigs)
 		v1.POST("/auth/login", domains.identity.Login)
-		v1.POST("/auth/login/resume", domains.identity.ResumeLogin)
 		v1.POST("/auth/logout", domains.identity.Logout)
 		v1.GET("/auth/registration", domains.identity.GetAuthRegistrationStatus)
 		v1.POST("/auth/registration/email/code", domains.identity.RequestEmailRegistrationCode)

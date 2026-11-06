@@ -16,7 +16,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 const developmentRateLimit = 10000
@@ -26,16 +25,8 @@ const (
 	currentAccessTokenContextKey = "luna.devops.current_access_token"
 )
 
-const (
-	sessionDuration  = 24 * time.Hour
-	rememberDuration = 30 * 24 * time.Hour
-)
-
-var (
-	errRememberTokenInvalid = errors.New("remember token is invalid or expired")
-	errRememberTokenReused  = errors.New("remember token reuse detected")
-	errRememberUserDisabled = errors.New("remember token user is unavailable")
-)
+// 账号密码与 OIDC 登录统一签发 15 天会话；会话保存在服务端，删除记录即可立即吊销。
+const sessionDuration = 15 * 24 * time.Hour
 
 func (h *Handlers) currentUser(ctx *gin.Context) (model.User, bool) {
 	if user, ok := currentUserFromContext(ctx); ok {
@@ -219,290 +210,32 @@ func (h *Handlers) createSessionWithImpersonation(ctx *gin.Context, userID strin
 		return false
 	}
 
-	setSessionCookie(ctx, plainToken, h.mode == "production", false)
+	// 代管会话只在当前浏览器会话内有效；普通登录写入持久 Cookie，与服务端会话同时到期。
+	setSessionCookie(ctx, plainToken, h.mode == "production", impersonatorID == "")
 	return true
 }
 
 func newUserSession(userID, impersonatorID string, now time.Time) (model.UserSession, string) {
-	return newUserSessionInFamilyWithPrimaryAuthentication(userID, impersonatorID, "", now, &now, now.Add(sessionDuration))
-}
-
-func newUserSessionInFamily(userID, impersonatorID, familyID string, now time.Time) (model.UserSession, string) {
-	return newUserSessionInFamilyWithPrimaryAuthentication(userID, impersonatorID, familyID, now, &now, now.Add(sessionDuration))
-}
-
-func newUserSessionInFamilyWithPrimaryAuthentication(userID, impersonatorID, familyID string, now time.Time, primaryAuthenticatedAt *time.Time, expiresAt time.Time) (model.UserSession, string) {
 	plainToken := "sess_" + randomHex(32)
+	authenticatedAt := now
 	return model.UserSession{
 		ID:                     id.New("ses"),
 		UserID:                 userID,
 		ImpersonatorID:         impersonatorID,
-		RememberFamilyID:       familyID,
-		PrimaryAuthenticatedAt: cloneTime(primaryAuthenticatedAt),
+		PrimaryAuthenticatedAt: &authenticatedAt,
 		TokenHash:              hashToken(plainToken),
-		ExpiresAt:              expiresAt,
+		ExpiresAt:              now.Add(sessionDuration),
 	}, plainToken
 }
 
-func cloneTime(value *time.Time) *time.Time {
-	if value == nil {
-		return nil
-	}
-	cloned := *value
-	return &cloned
-}
-
-func newUserRememberToken(userID string, now time.Time) (model.UserRememberToken, string) {
-	return newUserRememberTokenInFamily(userID, id.New("remf"), now.Add(rememberDuration))
-}
-
-func newUserRememberTokenInFamily(userID, familyID string, expiresAt time.Time) (model.UserRememberToken, string) {
-	plainToken := "rem_" + randomHex(32)
-	return model.UserRememberToken{
-		ID:        id.New("rem"),
-		UserID:    userID,
-		FamilyID:  familyID,
-		TokenHash: hashToken(plainToken),
-		ExpiresAt: expiresAt,
-	}, plainToken
-}
-
-func (h *Handlers) createLoginCredentials(ctx *gin.Context, userID string, remember bool) bool {
-	if !remember {
-		return h.createSession(ctx, userID)
-	}
-
-	now := time.Now()
-	rememberToken, rememberPlainToken := newUserRememberToken(userID, now)
-	session, sessionPlainToken := newUserSessionInFamily(userID, "", rememberToken.FamilyID, now)
-	if err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Create(&rememberToken).Error; err != nil {
-			return err
-		}
-		return tx.Create(&session).Error
-	}); err != nil {
-		writeError(ctx, http.StatusInternalServerError, err.Error())
-		return false
-	}
-
-	setSessionCookie(ctx, sessionPlainToken, h.mode == "production", true)
-	setRememberCookie(ctx, userID, rememberPlainToken, h.mode == "production")
-	return true
-}
-
-// Calls that omit requested default to no persistent login. OIDC currently
-// uses that default until it exposes an explicit remember choice.
-func (h *Handlers) createRememberToken(ctx *gin.Context, userID string, requested ...bool) bool {
-	if len(requested) == 0 || !requested[0] {
-		return true
-	}
-	plainSessionToken, err := ctx.Cookie(sessionCookieName)
-	if err != nil {
-		writeErrorKey(ctx, http.StatusUnauthorized, requestLanguage(ctx), "auth.session.missing")
-		return false
-	}
-	now := time.Now()
-	rememberToken, rememberPlainToken := newUserRememberToken(userID, now)
-	if err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
-		result := tx.Model(&model.UserSession{}).
-			Where("user_id = ? and token_hash = ?", userID, hashToken(plainSessionToken)).
-			Update("remember_family_id", rememberToken.FamilyID)
-		if result.Error != nil {
-			return result.Error
-		}
-		if result.RowsAffected != 1 {
-			return gorm.ErrRecordNotFound
-		}
-		return tx.Create(&rememberToken).Error
-	}); err != nil {
-		writeError(ctx, http.StatusInternalServerError, err.Error())
-		return false
-	}
-	setSessionCookie(ctx, plainSessionToken, h.mode == "production", true)
-	setRememberCookie(ctx, userID, rememberPlainToken, h.mode == "production")
-	return true
-}
-
-func (h *Handlers) rotateRememberLogin(userID, plainToken string, ctx context.Context) (model.User, string, string, error) {
-	now := time.Now()
-	if err := h.cleanupExpiredRememberTokenFamilies(userID, now, ctx); err != nil {
-		return model.User{}, "", "", err
-	}
-	var newSessionToken string
-	var newRememberToken string
-	var user model.User
-	reused := false
-
-	err := h.dbWithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var lockedUser model.User
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&lockedUser, "id = ?", userID).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return errRememberTokenInvalid
-			}
-			return err
-		}
-		var current model.UserRememberToken
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(
-			&current,
-			"token_hash = ? and user_id = ?",
-			hashToken(plainToken),
-			userID,
-		).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return errRememberTokenInvalid
-			}
-			return err
-		}
-		if current.RevokedAt != nil || !current.ExpiresAt.After(now) {
-			return errRememberTokenInvalid
-		}
-		if current.ConsumedAt != nil {
-			if err := revokeRememberFamily(tx, current.UserID, current.FamilyID, now); err != nil {
-				return err
-			}
-			reused = true
-			return nil
-		}
-		if lockedUser.Disabled {
-			return errRememberUserDisabled
-		}
-		user = lockedUser
-		var familySessions []model.UserSession
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("user_id = ? and remember_family_id = ?", current.UserID, current.FamilyID).
-			Order("created_at asc, id asc").
-			Find(&familySessions).Error; err != nil {
-			return err
-		}
-		primaryAuthenticatedAt := earliestPrimaryAuthentication(familySessions)
-		result := tx.Model(&model.UserRememberToken{}).
-			Where("id = ? and consumed_at is null and revoked_at is null", current.ID).
-			Update("consumed_at", now)
-		if result.Error != nil {
-			return result.Error
-		}
-		if result.RowsAffected != 1 {
-			return errRememberTokenInvalid
-		}
-		newRemember, plainRemember := newUserRememberTokenInFamily(current.UserID, current.FamilyID, current.ExpiresAt)
-		sessionExpiresAt := now.Add(sessionDuration)
-		if current.ExpiresAt.Before(sessionExpiresAt) {
-			sessionExpiresAt = current.ExpiresAt
-		}
-		newSession, plainSession := newUserSessionInFamilyWithPrimaryAuthentication(current.UserID, "", current.FamilyID, now, primaryAuthenticatedAt, sessionExpiresAt)
-		if err := tx.Create(&newRemember).Error; err != nil {
-			return err
-		}
-		if err := tx.Create(&newSession).Error; err != nil {
-			return err
-		}
-		if err := deleteRememberFamilySessionsExcept(tx, current.UserID, current.FamilyID, newSession.ID); err != nil {
-			return err
-		}
-		newRememberToken = plainRemember
-		newSessionToken = plainSession
-		return nil
-	})
-	if err != nil {
-		return model.User{}, "", "", err
-	}
-	if reused {
-		return model.User{}, "", "", errRememberTokenReused
-	}
-	return user, newSessionToken, newRememberToken, nil
-}
-
-func earliestPrimaryAuthentication(sessions []model.UserSession) *time.Time {
-	var earliest *time.Time
-	for _, session := range sessions {
-		if session.PrimaryAuthenticatedAt == nil || session.PrimaryAuthenticatedAt.IsZero() {
-			continue
-		}
-		if earliest == nil || session.PrimaryAuthenticatedAt.Before(*earliest) {
-			earliest = cloneTime(session.PrimaryAuthenticatedAt)
-		}
-	}
-	return earliest
-}
-
-func deleteRememberFamilySessionsExcept(tx *gorm.DB, userID, familyID, keepSessionID string) error {
-	query := tx.Model(&model.UserSession{}).Where("user_id = ? and remember_family_id = ?", userID, familyID)
-	if strings.TrimSpace(keepSessionID) != "" {
-		query = query.Where("id <> ?", keepSessionID)
-	}
-	var sessionIDs []string
-	if err := query.Pluck("id", &sessionIDs).Error; err != nil {
-		return err
-	}
-	if len(sessionIDs) == 0 {
-		return nil
-	}
-	return tx.Where("id in ?", sessionIDs).Delete(&model.UserSession{}).Error
-}
-
-func (h *Handlers) cleanupExpiredRememberTokenFamilies(userID string, now time.Time, ctx context.Context) error {
-	return h.dbWithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var families []struct {
-			FamilyID string
-		}
-		if err := tx.Model(&model.UserRememberToken{}).
-			Select("family_id").
-			Where("user_id = ? and family_id <> ''", userID).
-			Group("family_id").
-			Having("max(expires_at) <= ?", now).
-			Scan(&families).Error; err != nil {
-			return err
-		}
-		for _, family := range families {
-			if err := deleteRememberFamilySessionsExcept(tx, userID, family.FamilyID, ""); err != nil {
-				return err
-			}
-			if err := tx.Where("user_id = ? and family_id = ?", userID, family.FamilyID).Delete(&model.UserRememberToken{}).Error; err != nil {
-				return err
-			}
-		}
-		return nil
-	})
-}
-
-func revokeRememberFamily(tx *gorm.DB, userID, familyID string, revokedAt time.Time) error {
-	if strings.TrimSpace(familyID) == "" {
-		return errRememberTokenInvalid
-	}
-	if err := tx.Model(&model.UserRememberToken{}).
-		Where("user_id = ? and family_id = ? and revoked_at is null", userID, familyID).
-		Update("revoked_at", revokedAt).Error; err != nil {
-		return err
-	}
-	return tx.Where("user_id = ? and remember_family_id = ?", userID, familyID).Delete(&model.UserSession{}).Error
-}
-
+// revokeUserAuthentication 删除用户的全部会话，用于禁用账号、修改密码等需要立即吊销登录的场景。
 func revokeUserAuthentication(tx *gorm.DB, userID string) error {
-	if err := tx.Model(&model.UserRememberToken{}).
-		Where("user_id = ? and revoked_at is null", userID).
-		Update("revoked_at", time.Now()).Error; err != nil {
-		return err
-	}
 	return tx.Where("user_id = ?", userID).Delete(&model.UserSession{}).Error
 }
 
-func (h *Handlers) revokeCurrentSessionAndRememberTokens(plainToken string, ctx context.Context) (string, error) {
-	userID := ""
-	err := h.dbWithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var session model.UserSession
-		if err := tx.First(&session, "token_hash = ?", hashToken(plainToken)).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return nil
-			}
-			return err
-		}
-		userID = session.UserID
-		if strings.TrimSpace(session.RememberFamilyID) != "" {
-			return revokeRememberFamily(tx, session.UserID, session.RememberFamilyID, time.Now())
-		}
-		return tx.Where("id = ?", session.ID).Delete(&model.UserSession{}).Error
-	})
-	return userID, err
+// revokeCurrentSession 删除当前浏览器的会话（退出登录）。
+func (h *Handlers) revokeCurrentSession(plainToken string, ctx context.Context) error {
+	return h.dbWithContext(ctx).Where("token_hash = ?", hashToken(plainToken)).Delete(&model.UserSession{}).Error
 }
 
 func setSessionCookie(ctx *gin.Context, token string, secure bool, persistent bool) {
@@ -514,26 +247,9 @@ func setSessionCookie(ctx *gin.Context, token string, secure bool, persistent bo
 	ctx.SetCookie(sessionCookieName, token, maxAge, "/", "", secure, true)
 }
 
-func setRememberCookie(ctx *gin.Context, userID string, token string, secure bool) {
-	ctx.SetSameSite(http.SameSiteLaxMode)
-	ctx.SetCookie(rememberCookieNameForUser(userID), token, 30*86400, "/", "", secure, true)
-}
-
 func clearSessionCookie(ctx *gin.Context) {
 	ctx.SetSameSite(http.SameSiteLaxMode)
 	ctx.SetCookie(sessionCookieName, "", -1, "/", "", false, true)
-}
-
-func clearRememberCookie(ctx *gin.Context, userID string) {
-	if strings.TrimSpace(userID) == "" {
-		return
-	}
-	ctx.SetSameSite(http.SameSiteLaxMode)
-	ctx.SetCookie(rememberCookieNameForUser(userID), "", -1, "/", "", false, true)
-}
-
-func rememberCookieNameForUser(userID string) string {
-	return rememberCookiePrefix + strings.NewReplacer("-", "_", ".", "_", ":", "_").Replace(userID)
 }
 
 type RedisRateLimiter struct {

@@ -447,7 +447,6 @@ func agentEligibleOperation(path, method, operationID string, raw map[string]any
 var agentDisabledOperations = map[string]string{
 	"getPublicConfigs":                 "public client configuration protocol",
 	"login":                            "interactive authentication protocol",
-	"resumeLogin":                      "interactive authentication protocol",
 	"logout":                           "interactive authentication protocol",
 	"requestEmailRegistrationCode":     "out-of-band authentication protocol",
 	"completeEmailRegistration":        "out-of-band authentication protocol",

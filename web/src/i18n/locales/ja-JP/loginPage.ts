@@ -5,8 +5,6 @@ const loginPage = {
   password: 'パスワード',
   passwordHint: 'ローカルアカウントのパスワード。',
   passwordRequired: 'パスワードを入力してください',
-  rememberMe: 'ログイン状態を保持',
-  rememberMeHint: 'このデバイスで必要な場合のみ有効にしてください。無効の場合、セッションを閉じるかログアウトするとパスワードの再入力が必要です。',
   success: 'ログイン成功',
   useProviderLogin: '{{provider}} でログイン',
   recentAccounts: '最近のログイン',
