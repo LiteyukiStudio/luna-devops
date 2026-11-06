@@ -15,7 +15,7 @@ import { PageShell } from '@/components/common/page-shell'
 import { Section } from '@/components/common/section'
 import { StatusValueBadge } from '@/components/common/status-badge'
 import { StatusDot } from '@/components/common/status-dot'
-import { statusToneFor } from '@/components/common/status-tone'
+import { isInProgressStatus, statusToneFor } from '@/components/common/status-tone'
 import { formatCompactDateTime } from '@/components/common/time-format'
 import { Button } from '@/components/ui/button'
 import { buttonVariants } from '@/components/ui/button-variants'
@@ -229,6 +229,7 @@ function DashboardRuntimeStatus({ application }: { application: Application }) {
     <StatusDot
       detail={state.showReplicas ? `${summary.readyReplicas}/${summary.desiredReplicas}` : undefined}
       label={t(`dashboardPage.runtimeStatuses.${state.value}`, { defaultValue: state.value })}
+      pulse={isInProgressStatus(state.value)}
       tone={replicaStateTone(state.value)}
     />
   )
@@ -275,7 +276,7 @@ function RecentActivity({ activities, visibility }: { activities: DashboardActiv
                 <li key={activity.id}>
                   <Link className="group flex min-w-0 items-start justify-between gap-3 py-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" to={withResultVisibility(activityTarget(activity), visibility)}>
                     <div className="min-w-0">
-                      <StatusDot label={eventTypeLabel(t, activity.type)} tone={statusToneFor(activity.status)} />
+                      <StatusDot label={eventTypeLabel(t, activity.type)} pulse={isInProgressStatus(activity.status)} tone={statusToneFor(activity.status)} />
                       <p className="truncate pl-3.5 text-xs text-muted-foreground group-hover:text-foreground">
                         {activityContext(activity) || activity.message || t('eventsPage.noMessage')}
                       </p>

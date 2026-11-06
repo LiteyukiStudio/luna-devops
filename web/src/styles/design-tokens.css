@@ -1,5 +1,6 @@
 @theme {
   --animate-caret-blink: caret-blink 1s ease-out infinite;
+  --animate-status-pulse: status-pulse 1.6s cubic-bezier(0, 0, 0.2, 1) infinite;
 
   --color-background: hsl(var(--background));
   --color-foreground: hsl(var(--foreground));
@@ -159,4 +160,18 @@
   --color-terminal-warning: var(--terminal-warning);
   --color-terminal-success: var(--terminal-success);
   --color-terminal-info: var(--terminal-info);
+}
+
+/* 状态圆点的呼吸光圈：从圆点向外扩散并淡出，表示状态仍在进行 */
+@keyframes status-pulse {
+  0% {
+    transform: scale(1);
+    opacity: 0.6;
+  }
+
+  80%,
+  100% {
+    transform: scale(2.6);
+    opacity: 0;
+  }
 }

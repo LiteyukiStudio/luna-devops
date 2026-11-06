@@ -2,6 +2,7 @@ import type { DeploymentRuntimeStatus } from './application-deployment-runtime-u
 import type { DeploymentTarget } from '@/api'
 import { useTranslation } from 'react-i18next'
 import { StatusDot } from '@/components/common/status-dot'
+import { isInProgressStatus } from '@/components/common/status-tone'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { formatTargetRuntimeSize } from '@/pages/applications/deployments/application-deployments-panel-utils'
 import { effectiveReplicaState, replicaStateTone } from './application-deployment-runtime-utils'
@@ -29,6 +30,7 @@ export function ReplicaStatusDot({ availableReplicas, deployed = true, desiredRe
     <StatusDot
       detail={state.showReplicas ? `${readyReplicas}/${desiredReplicas}` : undefined}
       label={label}
+      pulse={isInProgressStatus(state.value)}
       tone={replicaStateTone(state.value)}
     />
   )

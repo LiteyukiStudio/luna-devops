@@ -33,6 +33,7 @@ export function ApplicationBuildLogPanel({ content, job, loading, onClose }: {
           <StatusDot
             className="text-xs"
             label={loading ? t('buildsPage.logsStreaming') : t('buildsPage.logsUpdated')}
+            pulse={loading}
             tone={loading ? 'info' : 'neutral'}
           />
         )}

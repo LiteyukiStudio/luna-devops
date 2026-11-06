@@ -59,7 +59,7 @@ export function AIToolCallCard({ block, onAction, onApproval, surface = 'window'
             </StatusBadge>
           )}
           <span className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
-            <StatusDot className="text-xs [&_[data-slot=status-dot-indicator]]:size-1.5" label={t(`aiAssistant.status.${block.status}`)} tone={statusTone[block.status]} />
+            <StatusDot className="text-xs [&_[data-slot=status-dot-indicator]]:size-1.5" label={t(`aiAssistant.status.${block.status}`)} pulse={block.status === 'running'} tone={statusTone[block.status]} />
             {block.durationMs !== undefined && (
               <span className="hidden tabular-nums sm:contents" data-ai-tool-duration>
                 <span aria-hidden="true" className="opacity-60">·</span>

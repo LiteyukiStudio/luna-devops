@@ -64,3 +64,24 @@ export function statusToneFor(value: string): StatusTone {
       return 'info'
   }
 }
+
+/** 仍在进行、尚未到达终态的状态；用于给状态圆点加呼吸效果。 */
+export function isInProgressStatus(value: string | null | undefined) {
+  switch ((value ?? '').trim().toLowerCase()) {
+    case 'checking':
+    case 'connecting':
+    case 'container-creating':
+    case 'deleting':
+    case 'in_progress':
+    case 'pending':
+    case 'preparing':
+    case 'progressing':
+    case 'queued':
+    case 'running':
+    case 'scanning':
+    case 'streaming':
+      return true
+    default:
+      return false
+  }
+}

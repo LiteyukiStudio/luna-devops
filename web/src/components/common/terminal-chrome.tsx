@@ -111,7 +111,7 @@ export function TerminalConnectionStatus({ state }: { state: TerminalConnectionS
   }
   return (
     <span aria-live="polite" className="inline-flex">
-      <StatusDot className="text-xs" label={labels[state]} tone={connectionTones[state]} />
+      <StatusDot className="text-xs" label={labels[state]} pulse={state === 'connecting'} tone={connectionTones[state]} />
     </span>
   )
 }

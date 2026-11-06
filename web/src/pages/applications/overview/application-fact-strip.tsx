@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next'
 import { CopyableHoverText } from '@/components/common/copyable-hover-text'
 import { StatusBadge } from '@/components/common/status-badge'
 import { StatusDot } from '@/components/common/status-dot'
-import { statusToneFor } from '@/components/common/status-tone'
+import { isInProgressStatus, statusToneFor } from '@/components/common/status-tone'
 import { formatSmartDateTime } from '@/components/common/time-format'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -84,6 +84,7 @@ export function ApplicationFactStrip({ buildRuns, deploymentTargets, loading, on
               <StatusDot
                 detail={formatSmartDateTime(latestBuild.createdAt, t)}
                 label={t(`buildsPage.statuses.${latestBuild.status}`, { defaultValue: latestBuild.status })}
+                pulse={isInProgressStatus(latestBuild.status)}
                 tone={statusToneFor(latestBuild.status)}
               />
             )

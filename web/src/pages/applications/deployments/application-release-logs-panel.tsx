@@ -48,7 +48,7 @@ export function ApplicationReleaseLogsPanel({
     : runtimeErrorCode === 'runtime.container_not_started'
       ? t('deploymentsPage.runtimeContainerNotStarted')
       : t('common.unavailable')
-  const liveDot = <StatusDot className="text-xs" label={t('common.logViewer.live')} tone="info" />
+  const liveDot = <StatusDot className="text-xs" label={t('common.logViewer.live')} pulse tone="info" />
 
   return (
     <OutputViewerSheet

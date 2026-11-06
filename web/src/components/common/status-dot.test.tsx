@@ -31,4 +31,16 @@ describe('status dot', () => {
 
     expect(screen.getByText('Unknown').nextElementSibling).toBeNull()
   })
+
+  it('adds a reduced-motion-aware breathing ring only for in-progress states', () => {
+    const { container, rerender } = render(<StatusDot label="Building" pulse tone="warning" />)
+    const ring = () => container.querySelector('[data-slot=status-dot-indicator] > span')
+
+    expect(container.querySelector('[data-slot=status-dot]')).toHaveAttribute('data-pulse', 'true')
+    expect(ring()).toHaveClass('motion-safe:animate-status-pulse', 'motion-reduce:hidden', 'bg-warning-solid')
+
+    rerender(<StatusDot label="Ready" tone="success" />)
+    expect(container.querySelector('[data-slot=status-dot]')).not.toHaveAttribute('data-pulse')
+    expect(ring()).toBeNull()
+  })
 })

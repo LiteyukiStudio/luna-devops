@@ -7,7 +7,7 @@ import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { buildRunImageRef } from '@/components/common/deployment-build-runs'
 import { HoverText } from '@/components/common/hover-text'
 import { StatusDot } from '@/components/common/status-dot'
-import { statusToneFor } from '@/components/common/status-tone'
+import { isInProgressStatus, statusToneFor } from '@/components/common/status-tone'
 import { formatElapsedDuration, formatSmartDateTime } from '@/components/common/time-format'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
@@ -37,7 +37,7 @@ export function BuildRunStatusCell({ latestJob, run }: { latestJob?: BuildJob, r
   const liveState = buildRunLiveState(run, latestJob, t)
   const failureMessage = buildRunFailureMessage(run, latestJob, t)
   const failureReason = run.failureCode ? t(`buildsPage.failureCodes.${run.failureCode}`) : ''
-  const status = <StatusDot label={liveState} tone={statusToneFor(run.status)} />
+  const status = <StatusDot label={liveState} pulse={isInProgressStatus(run.status)} tone={statusToneFor(run.status)} />
   return (
     <div className="grid min-w-0 max-w-full gap-0.5">
       {failureMessage
