@@ -10,18 +10,18 @@ describe('status dot', () => {
     expect(status).toHaveAttribute('data-tone', 'success')
     expect(screen.getByText('2/2')).toBeVisible()
     expect(status?.querySelector('[data-slot="status-dot-indicator"]')).toHaveAttribute('aria-hidden', 'true')
-    expect(status?.querySelector('[data-slot="status-dot-indicator"]')).toHaveClass('bg-success')
+    expect(status?.querySelector('[data-slot="status-dot-indicator"]')).toHaveClass('bg-success-solid')
   })
 
   it('maps every tone to a semantic token color', () => {
     const { container, rerender } = render(<StatusDot label="Failed" tone="danger" />)
     const indicator = () => container.querySelector('[data-slot="status-dot-indicator"]')
 
-    expect(indicator()).toHaveClass('bg-danger')
+    expect(indicator()).toHaveClass('bg-danger-solid')
     rerender(<StatusDot label="Pending" tone="warning" />)
-    expect(indicator()).toHaveClass('bg-warning')
+    expect(indicator()).toHaveClass('bg-warning-solid')
     rerender(<StatusDot label="Info" tone="info" />)
-    expect(indicator()).toHaveClass('bg-info')
+    expect(indicator()).toHaveClass('bg-info-solid')
     rerender(<StatusDot label="Stopped" tone="neutral" />)
     expect(indicator()).toHaveClass('bg-muted-foreground')
   })

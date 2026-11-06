@@ -103,7 +103,7 @@ export function LiveProgressBlock({ block }: { block: LiveProgressBlockDefinitio
         <div
           className={cn(
             'h-full rounded-full transition-[width] duration-500 motion-reduce:transition-none',
-            state === 'failed' || connection === 'failed' ? 'bg-danger' : state === 'cancelled' ? 'bg-warning' : 'bg-primary',
+            state === 'failed' || connection === 'failed' ? 'bg-danger-solid' : state === 'cancelled' ? 'bg-warning-solid' : 'bg-primary',
             snapshot?.progress.mode !== 'determinate' && !isTerminal(state) && 'w-1/3 animate-[ai-live-progress_1.35s_ease-in-out_infinite] motion-reduce:w-full motion-reduce:animate-none motion-reduce:opacity-60',
           )}
           style={snapshot?.progress.mode === 'determinate' ? { width: `${value ?? 0}%` } : undefined}

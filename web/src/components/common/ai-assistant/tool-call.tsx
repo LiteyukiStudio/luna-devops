@@ -70,7 +70,7 @@ export function AIToolCallCard({ block, onAction, onApproval, surface = 'window'
           <ChevronRight aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground transition-transform duration-fast group-open/tool:rotate-90" />
           {block.status === 'running' && (
             <span aria-hidden="true" className="absolute inset-x-0 bottom-0 h-0.5 overflow-hidden">
-              <span className="block h-full w-1/3 bg-info/70 animate-[ai-live-progress_1.35s_ease-in-out_infinite] motion-reduce:hidden" />
+              <span className="block h-full w-1/3 bg-info-solid/70 animate-[ai-live-progress_1.35s_ease-in-out_infinite] motion-reduce:hidden" />
             </span>
           )}
         </summary>

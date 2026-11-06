@@ -27,13 +27,13 @@ export function StatusDot({ className, detail, label, tone }: {
 function statusDotToneClassName(tone: StatusTone) {
   switch (tone) {
     case 'success':
-      return 'bg-success'
+      return 'bg-success-solid'
     case 'warning':
-      return 'bg-warning'
+      return 'bg-warning-solid'
     case 'danger':
-      return 'bg-danger'
+      return 'bg-danger-solid'
     case 'info':
-      return 'bg-info'
+      return 'bg-info-solid'
     case 'neutral':
       return 'bg-muted-foreground'
   }

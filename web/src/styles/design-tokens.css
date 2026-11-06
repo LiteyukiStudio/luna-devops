@@ -44,16 +44,20 @@
   --color-danger: hsl(var(--danger));
   --color-danger-subtle: var(--status-danger-subtle);
   --color-danger-border: var(--status-danger-border);
+  --color-danger-solid: var(--status-danger-solid);
   --color-destructive: hsl(var(--danger));
   --color-success: var(--status-success);
   --color-success-subtle: var(--status-success-subtle);
   --color-success-border: var(--status-success-border);
+  --color-success-solid: var(--status-success-solid);
   --color-warning: var(--status-warning);
   --color-warning-subtle: var(--status-warning-subtle);
   --color-warning-border: var(--status-warning-border);
+  --color-warning-solid: var(--status-warning-solid);
   --color-info: var(--status-info);
   --color-info-subtle: var(--status-info-subtle);
   --color-info-border: var(--status-info-border);
+  --color-info-solid: var(--status-info-solid);
 
   --radius-control: 0.5rem;
   --radius-container: 0.875rem;

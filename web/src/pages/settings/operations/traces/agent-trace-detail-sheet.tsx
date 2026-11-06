@@ -238,12 +238,12 @@ function isToolSpan(span: AgentObservabilityTraceSpan) {
 }
 function spanBarClass(span: AgentObservabilityTraceSpan) {
   if (span.status === 'error')
-    return 'bg-danger'
+    return 'bg-danger-solid'
   if (isAgentModelSpan(span))
     return 'bg-primary'
   if (isToolSpan(span))
-    return 'bg-warning'
-  return 'bg-info'
+    return 'bg-warning-solid'
+  return 'bg-info-solid'
 }
 function barStyle(span: AgentObservabilityTraceSpan, total: number) {
   const safeTotal = Math.max(total, 0.001)
