@@ -110,6 +110,9 @@ const buildsPage = {
   buildArgsPlaceholder: 'EMBED_WEB=true\nVERSION=$' + '{{ github.sha }}',
   inheritedBuildArgsHint: '继承自部署配置；本次触发构建时会随构建记录保存快照。',
   stepProgress: '第 {{completed}}/{{total}} 步',
+  commitDetailsLabel: '查看提交 {{commit}} 的详情',
+  commitMessageUnavailable: '未记录提交消息',
+  viewCommitOnGit: '在 Git 平台查看',
   progress: {
     claimed: '已领取任务',
     clone_repository: '克隆代码仓库',

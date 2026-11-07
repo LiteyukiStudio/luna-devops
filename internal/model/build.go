@@ -1,7 +1,9 @@
 package model
 
 import (
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"gorm.io/gorm"
 )
@@ -48,6 +50,7 @@ type BuildRun struct {
 	TriggeredByEmail        string         `json:"triggeredByEmail"`
 	SourceAuthorName        string         `json:"sourceAuthorName"`
 	SourceAuthorEmail       string         `json:"sourceAuthorEmail"`
+	SourceCommitMessage     string         `gorm:"type:text;not null;default:''" json:"sourceCommitMessage"`
 	CreatedAt               time.Time      `json:"createdAt"`
 	UpdatedAt               time.Time      `json:"updatedAt"`
 	DeletedAt               gorm.DeletedAt `gorm:"index" json:"-"`
@@ -127,4 +130,20 @@ type BuildLog struct {
 	Content    string    `gorm:"type:text" json:"content"`
 	CreatedAt  time.Time `json:"createdAt"`
 	UpdatedAt  time.Time `json:"updatedAt"`
+}
+
+// MaxSourceCommitMessageBytes 限制保存的提交消息长度，避免超长提交消息撑大构建记录。
+const MaxSourceCommitMessageBytes = 4096
+
+// NormalizeSourceCommitMessage 去掉首尾空白并按 UTF-8 字符边界截断到上限。
+func NormalizeSourceCommitMessage(message string) string {
+	message = strings.TrimSpace(message)
+	if len(message) <= MaxSourceCommitMessageBytes {
+		return message
+	}
+	cut := MaxSourceCommitMessageBytes
+	for cut > 0 && !utf8.RuneStart(message[cut]) {
+		cut--
+	}
+	return strings.TrimSpace(message[:cut])
 }

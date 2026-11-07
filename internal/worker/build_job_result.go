@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"sort"
@@ -146,6 +147,15 @@ func buildFollowFailureCode(err error) string {
 	}
 }
 
+// decodeSourceCommitMessage 解码执行器上报的提交消息；无法解码时视为未上报，保留构建创建时的消息。
+func decodeSourceCommitMessage(encoded string) string {
+	decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(encoded))
+	if err != nil {
+		return ""
+	}
+	return model.NormalizeSourceCommitMessage(string(decoded))
+}
+
 func (r *Runner) buildRunCanceled(job model.BuildJob) (bool, error) {
 	var run model.BuildRun
 	if err := r.db.First(&run, "id = ? and project_id = ?", job.BuildRunID, job.ProjectID).Error; err != nil {
@@ -173,6 +183,7 @@ func (r *Runner) completeBuildJob(ctx context.Context, job model.BuildJob, run m
 		sourceCommit := firstNonEmpty(result.SourceCommit, lockedRun.SourceCommit)
 		sourceAuthorName := firstNonEmpty(result.SourceAuthorName, lockedRun.SourceAuthorName)
 		sourceAuthorEmail := firstNonEmpty(result.SourceAuthorEmail, lockedRun.SourceAuthorEmail)
+		sourceCommitMessage := firstNonEmpty(decodeSourceCommitMessage(result.SourceCommitMessageBase64), lockedRun.SourceCommitMessage)
 		if err := tx.Model(&model.BuildJob{}).Where("id = ?", lockedJob.ID).Updates(map[string]any{
 			"status":      "succeeded",
 			"message":     firstNonEmpty(result.Message, "builder task succeeded"),
@@ -181,13 +192,14 @@ func (r *Runner) completeBuildJob(ctx context.Context, job model.BuildJob, run m
 			return err
 		}
 		if err := tx.Model(&model.BuildRun{}).Where("id = ?", lockedRun.ID).Updates(map[string]any{
-			"status":              "succeeded",
-			"image_ref":           imageRef,
-			"image_digest":        result.ImageDigest,
-			"source_commit":       sourceCommit,
-			"source_author_name":  sourceAuthorName,
-			"source_author_email": sourceAuthorEmail,
-			"finished_at":         &finishedAt,
+			"status":                "succeeded",
+			"image_ref":             imageRef,
+			"image_digest":          result.ImageDigest,
+			"source_commit":         sourceCommit,
+			"source_author_name":    sourceAuthorName,
+			"source_author_email":   sourceAuthorEmail,
+			"source_commit_message": sourceCommitMessage,
+			"finished_at":           &finishedAt,
 		}).Error; err != nil {
 			return err
 		}
@@ -197,6 +209,7 @@ func (r *Runner) completeBuildJob(ctx context.Context, job model.BuildJob, run m
 		lockedRun.SourceCommit = sourceCommit
 		lockedRun.SourceAuthorName = sourceAuthorName
 		lockedRun.SourceAuthorEmail = sourceAuthorEmail
+		lockedRun.SourceCommitMessage = sourceCommitMessage
 		lockedRun.FinishedAt = &finishedAt
 		if imageRef != "" {
 			image := containerImageFromBuildRun(lockedRun, imageRef, result.ImageDigest, sourceCommit)

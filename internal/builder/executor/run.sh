@@ -145,6 +145,7 @@ if [ -n "${SOURCE_COMMIT:-}" ]; then git checkout "$SOURCE_COMMIT"; fi
 CHECKED_OUT_COMMIT="$(git rev-parse HEAD)"
 SOURCE_AUTHOR_NAME="$(git log -1 --format=%an)"
 SOURCE_AUTHOR_EMAIL="$(git log -1 --format=%ae)"
+SOURCE_COMMIT_MESSAGE_B64="$(git log -1 --format=%B | head -c 8192 | base64 | tr -d '\n')"
 export_luna_devops_build_context
 run_hooks "postPull" "${POST_PULL_HOOK_IDS:-}"
 
@@ -281,6 +282,6 @@ export_luna_devops_build_context
 run_hooks "postPush" "${POST_PUSH_HOOK_IDS:-}"
 run_hooks "postBuild" "${POST_BUILD_HOOK_IDS:-}"
 
-RESULT_JSON="$(printf '{"imageRef":"%s","sourceCommit":"%s","sourceAuthorName":"%s","sourceAuthorEmail":"%s","message":"builder task succeeded"}' "$(json_escape "$IMAGE_REF")" "$(json_escape "$CHECKED_OUT_COMMIT")" "$(json_escape "$SOURCE_AUTHOR_NAME")" "$(json_escape "$SOURCE_AUTHOR_EMAIL")")"
+RESULT_JSON="$(printf '{"imageRef":"%s","sourceCommit":"%s","sourceAuthorName":"%s","sourceAuthorEmail":"%s","sourceCommitMessageBase64":"%s","message":"builder task succeeded"}' "$(json_escape "$IMAGE_REF")" "$(json_escape "$CHECKED_OUT_COMMIT")" "$(json_escape "$SOURCE_AUTHOR_NAME")" "$(json_escape "$SOURCE_AUTHOR_EMAIL")" "$SOURCE_COMMIT_MESSAGE_B64")"
 printf "%s" "$RESULT_JSON" > /workspace/result.json
 printf "::luna-devops-build-result::%s\n" "$(b64_line "$RESULT_JSON")"

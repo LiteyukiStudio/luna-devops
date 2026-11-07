@@ -138,7 +138,7 @@ func TestParseGitWebhookPushPayloadReadsBranchAndAuthor(t *testing.T) {
 		"ref":"refs/heads/main",
 		"after":"abc123",
 		"pusher":{"name":"snowy","email":"snowy@example.com"},
-		"head_commit":{"author":{"name":"Author","email":"author@example.com"}}
+		"head_commit":{"message":"feat: add login\n\nBody line\n","author":{"name":"Author","email":"author@example.com"}}
 	}`))
 	if !ok {
 		t.Fatal("expected push payload to parse")
@@ -148,6 +148,9 @@ func TestParseGitWebhookPushPayloadReadsBranchAndAuthor(t *testing.T) {
 	}
 	if payload.TriggeredByName != "snowy" || payload.SourceAuthorEmail != "author@example.com" {
 		t.Fatalf("payload actor = %#v", payload)
+	}
+	if payload.CommitMessage != "feat: add login\n\nBody line" {
+		t.Fatalf("commit message = %q", payload.CommitMessage)
 	}
 }
 

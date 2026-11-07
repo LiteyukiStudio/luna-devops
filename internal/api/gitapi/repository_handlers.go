@@ -418,6 +418,7 @@ func webhookBuildRunFromTarget(binding model.RepositoryBinding, target model.Dep
 		TriggeredByEmail:    triggeredByEmail,
 		SourceAuthorName:    payload.SourceAuthorName,
 		SourceAuthorEmail:   payload.SourceAuthorEmail,
+		SourceCommitMessage: payload.CommitMessage,
 	}
 }
 

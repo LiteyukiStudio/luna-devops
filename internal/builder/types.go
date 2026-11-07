@@ -93,5 +93,7 @@ type Result struct {
 	SourceCommit      string `json:"sourceCommit"`
 	SourceAuthorName  string `json:"sourceAuthorName"`
 	SourceAuthorEmail string `json:"sourceAuthorEmail"`
-	Message           string `json:"message"`
+	// SourceCommitMessageBase64 是检出提交的完整消息；执行器的 JSON 转义不处理换行和控制字符，因此以 base64 传递。
+	SourceCommitMessageBase64 string `json:"sourceCommitMessageBase64"`
+	Message                   string `json:"message"`
 }

@@ -23,7 +23,7 @@ import (
 
 const (
 	baselineMigrationVersion = 103
-	latestMigrationVersion   = 122
+	latestMigrationVersion   = 123
 )
 
 func TestEmbeddedMigrationsContainExpectedFiles(t *testing.T) {
@@ -66,6 +66,8 @@ func TestEmbeddedMigrationsContainExpectedFiles(t *testing.T) {
 		"000121_deployment_target_build_concurrency_policy.down.sql": false,
 		"000122_build_job_step_progress.up.sql":                      false,
 		"000122_build_job_step_progress.down.sql":                    false,
+		"000123_build_run_source_commit_message.up.sql":              false,
+		"000123_build_run_source_commit_message.down.sql":            false,
 	}
 	migrationCount := 0
 	for _, entry := range entries {
@@ -253,6 +255,7 @@ WHERE namespace.nspname = current_schema()
 	assertRememberLoginRemovalMigration(t, testDB, runner)
 	assertBuildConcurrencyPolicyMigration(t, testDB, runner)
 	assertBuildJobStepProgressMigration(t, testDB, runner)
+	assertSingleColumnMigration(t, testDB, runner, 123, "build_runs", "source_commit_message")
 	assertDirtyMigrationFailsClosed(t, testDB)
 }
 
@@ -345,6 +348,27 @@ func assertBuildJobStepProgressMigration(t *testing.T, db *gorm.DB, runner *migr
 	}
 	if err := runner.Migrate(latestMigrationVersion); err != nil {
 		t.Fatalf("restore latest migrations after build job step progress round trip: %v", err)
+	}
+	assertRunnerMigrationVersion(t, runner, latestMigrationVersion)
+}
+
+// assertSingleColumnMigration 验证只新增一列的迁移可以应用、回滚并恢复到最新版本。
+func assertSingleColumnMigration(t *testing.T, db *gorm.DB, runner *migrate.Migrate, version uint, table string, column string) {
+	t.Helper()
+	if err := runner.Migrate(version); err != nil && !errors.Is(err, migrate.ErrNoChange) {
+		t.Fatalf("apply migration %d: %v", version, err)
+	}
+	if !db.Migrator().HasColumn(table, column) {
+		t.Fatalf("migration %d did not add %s.%s", version, table, column)
+	}
+	if err := runner.Migrate(previousMigrationVersion(t, version)); err != nil {
+		t.Fatalf("roll back migration %d: %v", version, err)
+	}
+	if db.Migrator().HasColumn(table, column) {
+		t.Fatalf("migration %d rollback retained %s.%s", version, table, column)
+	}
+	if err := runner.Migrate(latestMigrationVersion); err != nil {
+		t.Fatalf("restore latest migrations after migration %d round trip: %v", version, err)
 	}
 	assertRunnerMigrationVersion(t, runner, latestMigrationVersion)
 }

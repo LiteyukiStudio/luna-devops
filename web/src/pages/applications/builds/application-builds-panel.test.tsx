@@ -70,6 +70,7 @@ const buildRun: BuildRun = {
   triggeredByEmail: 'tester@example.test',
   sourceAuthorName: 'Developer',
   sourceAuthorEmail: 'developer@example.test',
+  sourceCommitMessage: 'feat: add login',
   createdAt: '2026-10-06T00:00:00Z',
 }
 

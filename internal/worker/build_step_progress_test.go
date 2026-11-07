@@ -43,3 +43,12 @@ func TestRecordBuildStepProgressUpdatesOnlyRunningJobs(t *testing.T) {
 		t.Fatalf("finished job steps = %d/%d, want untouched", untouched.StepsCompleted, untouched.StepsTotal)
 	}
 }
+
+func TestDecodeSourceCommitMessageFromExecutorResult(t *testing.T) {
+	if got := decodeSourceCommitMessage("ZmVhdDogYWRkIGxvZ2luCgpCb2R5CXRhYgo="); got != "feat: add login\n\nBody\ttab" {
+		t.Fatalf("decoded message = %q", got)
+	}
+	if got := decodeSourceCommitMessage("not base64!"); got != "" {
+		t.Fatalf("invalid payload decoded to %q", got)
+	}
+}

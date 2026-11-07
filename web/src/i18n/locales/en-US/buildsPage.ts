@@ -110,6 +110,9 @@ const buildsPage = {
   buildArgsPlaceholder: 'EMBED_WEB=true\nVERSION=$' + '{{ github.sha }}',
   inheritedBuildArgsHint: 'Inherited from the deploy config. This trigger snapshots the values into the build run.',
   stepProgress: 'Step {{completed}}/{{total}}',
+  commitDetailsLabel: 'Show details for commit {{commit}}',
+  commitMessageUnavailable: 'No commit message recorded',
+  viewCommitOnGit: 'View on Git platform',
   progress: {
     claimed: 'Task claimed',
     clone_repository: 'Cloning repository',

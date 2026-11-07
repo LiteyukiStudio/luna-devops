@@ -1248,6 +1248,8 @@ export interface BuildRun {
   triggeredByName: string
   triggeredByEmail: string
   sourceAuthorName: string
+  /** 来源提交的完整消息；旧构建或尚未检出时为空。 */
+  sourceCommitMessage: string
   sourceAuthorEmail: string
   createdAt: string
 }

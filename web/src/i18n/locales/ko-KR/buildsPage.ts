@@ -110,6 +110,9 @@ const buildsPage = {
   buildArgsPlaceholder: 'EMBED_WEB=true\nVERSION=$' + '{{ github.sha }}',
   inheritedBuildArgsHint: '배포 구성에서 상속. 이번 빌드 트리거 시 빌드 기록에 스냅샷으로 저장됩니다.',
   stepProgress: '{{completed}}/{{total}} 단계',
+  commitDetailsLabel: '커밋 {{commit}} 세부 정보 보기',
+  commitMessageUnavailable: '기록된 커밋 메시지가 없습니다',
+  viewCommitOnGit: 'Git 플랫폼에서 보기',
   progress: {
     claimed: '작업 수령',
     clone_repository: '코드 리포지토리 클론',

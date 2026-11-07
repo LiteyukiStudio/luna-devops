@@ -214,6 +214,7 @@ func (h *Handlers) RetryBuildRun(ctx *gin.Context) {
 		TriggeredByEmail:        strings.TrimSpace(user.Email),
 		SourceAuthorName:        previous.SourceAuthorName,
 		SourceAuthorEmail:       previous.SourceAuthorEmail,
+		SourceCommitMessage:     previous.SourceCommitMessage,
 	}
 	h.createQueuedBuildRun(ctx, user, run, "", http.StatusCreated)
 }

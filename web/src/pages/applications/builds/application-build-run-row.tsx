@@ -12,6 +12,7 @@ import { formatElapsedDuration, formatSmartDateTime } from '@/components/common/
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { shortBuildId } from '@/pages/applications/application-config-utils'
+import { BuildCommitDetails } from './build-commit-details'
 
 const buildJobProgressKeys = new Set([
   'claimed',
@@ -67,9 +68,7 @@ export function BuildRunSourceCell({ binding, deploymentTargetName, run }: { bin
       <HoverText className="text-sm font-medium text-foreground" value={title} />
       <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-muted-foreground">
         <span className="font-mono text-foreground">{branch}</span>
-        {commit && (commitUrl
-          ? <a className="font-mono text-primary-text hover:underline" href={commitUrl} rel="noopener noreferrer" target="_blank">{commit}</a>
-          : <span className="font-mono">{commit}</span>)}
+        {commit && <BuildCommitDetails author={sourceAuthor} commitUrl={commitUrl} run={run} />}
         {binding && <span className="min-w-0 truncate font-mono" title={`${binding.owner}/${binding.repo}`}>{`${binding.owner}/${binding.repo}`}</span>}
         <span className="font-mono">{`#${shortBuildId(run.id)}`}</span>
         <span>{t('buildsPage.triggeredBy', { actor: triggerActor })}</span>

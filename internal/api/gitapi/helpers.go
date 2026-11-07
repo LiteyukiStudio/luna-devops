@@ -92,6 +92,7 @@ type gitWebhookPushPayload struct {
 	Deleted           bool
 	SourceAuthorName  string
 	SourceAuthorEmail string
+	CommitMessage     string
 	TriggeredByName   string
 	TriggeredByEmail  string
 }
@@ -117,8 +118,9 @@ func parseGitWebhookPushPayload(header http.Header, body []byte) (gitWebhookPush
 			Email string `json:"email"`
 		} `json:"sender"`
 		HeadCommit struct {
-			ID     string `json:"id"`
-			Author struct {
+			ID      string `json:"id"`
+			Message string `json:"message"`
+			Author  struct {
 				Name  string `json:"name"`
 				Email string `json:"email"`
 			} `json:"author"`
@@ -141,6 +143,7 @@ func parseGitWebhookPushPayload(header http.Header, body []byte) (gitWebhookPush
 	}
 	payload.SourceAuthorName = firstNonEmpty(raw.HeadCommit.Author.Name, raw.HeadCommit.Committer.Name)
 	payload.SourceAuthorEmail = firstNonEmpty(raw.HeadCommit.Author.Email, raw.HeadCommit.Committer.Email)
+	payload.CommitMessage = model.NormalizeSourceCommitMessage(raw.HeadCommit.Message)
 	payload.TriggeredByName = firstNonEmpty(raw.Pusher.Name, raw.Sender.Name, raw.Sender.Login)
 	payload.TriggeredByEmail = firstNonEmpty(raw.Pusher.Email, raw.Sender.Email)
 	return payload, payload.SourceBranch != "" || payload.SourceTag != ""

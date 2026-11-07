@@ -110,6 +110,9 @@ const buildsPage = {
   buildArgsPlaceholder: 'EMBED_WEB=true\nVERSION=$' + '{{ github.sha }}',
   inheritedBuildArgsHint: 'デプロイ設定から継承。今回のビルドトリガー時にビルド記録にスナップショットとして保存されます。',
   stepProgress: 'ステップ {{completed}}/{{total}}',
+  commitDetailsLabel: 'コミット {{commit}} の詳細を表示',
+  commitMessageUnavailable: 'コミットメッセージは記録されていません',
+  viewCommitOnGit: 'Git プラットフォームで表示',
   progress: {
     claimed: 'タスクを受領',
     clone_repository: 'コードリポジトリをクローン',
