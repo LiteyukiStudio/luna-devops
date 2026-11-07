@@ -103,6 +103,7 @@ const eventsPage = {
     identifiers: 'Identifiers',
     eventData: 'Event data',
     links: 'Related pages',
+    openResource: 'Open resource',
     time: 'Occurred',
     project: 'Project space',
     application: 'Application',

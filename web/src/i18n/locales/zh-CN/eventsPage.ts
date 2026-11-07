@@ -103,6 +103,7 @@ const eventsPage = {
     identifiers: '标识信息',
     eventData: '事件数据',
     links: '相关页面',
+    openResource: '前往资源',
     time: '发生时间',
     project: '项目空间',
     application: '应用',

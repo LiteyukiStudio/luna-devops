@@ -103,6 +103,7 @@ const eventsPage = {
     identifiers: '識別情報',
     eventData: 'イベントデータ',
     links: '関連ページ',
+    openResource: 'リソースを開く',
     time: '発生時刻',
     project: 'プロジェクトスペース',
     application: 'アプリケーション',

@@ -3,10 +3,10 @@ import type { PlatformEvent, PlatformEventSnapshot } from '@/api'
 import type { DataListColumn } from '@/components/common/data-list'
 import type { SearchSelectOption } from '@/components/common/search-select'
 import { useQueries, useQuery } from '@tanstack/react-query'
-import { Activity, ExternalLink, FileKey2, Globe2, Hammer, RefreshCw, Rocket, SearchX, SlidersHorizontal, Workflow, X } from 'lucide-react'
+import { Activity, ArrowRight, ExternalLink, FileKey2, Globe2, Hammer, RefreshCw, Rocket, SearchX, SlidersHorizontal, Workflow, X } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { api } from '@/api'
 import { useSession } from '@/app/session-context'
 import { DataList } from '@/components/common/data-list'
@@ -20,6 +20,7 @@ import { Input } from '@/components/ui/input'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
+import { platformEventResourcePath } from '@/lib/resource-routes'
 import { isPlatformAdmin } from '@/lib/roles'
 import { useResultVisibility } from '@/lib/use-result-visibility'
 import { initialEventFilterValues, initialEventSeverityFilters } from './event-filter-defaults'
@@ -42,7 +43,8 @@ export function EventsPage() {
   const [statuses, setStatuses] = useState(() => initialEventFilterValues(searchParams, 'statuses', 'status'))
   const [dateFrom, setDateFrom] = useState(() => dateDaysAgo(7))
   const [dateTo, setDateTo] = useState(() => dateDaysAgo(0))
-  const [selectedEventId, setSelectedEventId] = useState('')
+  // 从概览等页面带 eventId 进入时直接打开该事件详情。
+  const [selectedEventId, setSelectedEventId] = useState(() => searchParams.get('eventId')?.trim() ?? '')
 
   const projects = useQuery({ queryKey: ['projects', 'options', visibility], queryFn: () => api.listProjects(visibility) })
   const applicationQueries = useQueries({
@@ -492,12 +494,21 @@ function EventDetailSheet({ event, loading, onOpenChange, open }: { event?: Plat
   const { t } = useTranslation()
   const detail = event?.detail ?? {}
   const links = event?.links ?? {}
+  const resourcePath = event ? platformEventResourcePath(event) : null
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent className="w-full overflow-y-auto sm:max-w-xl">
         <SheetHeader className="border-b border-border pr-10">
           <SheetTitle>{event ? eventTypeLabel(t, event.type) : t('eventsPage.detailsTitle')}</SheetTitle>
           <SheetDescription>{event?.message || (loading ? t('common.loading') : t('eventsPage.noMessage'))}</SheetDescription>
+          {resourcePath && (
+            <Button asChild className="mt-2 w-fit" size="sm" variant="outline">
+              <Link to={resourcePath}>
+                {t('eventsPage.details.openResource')}
+                <ArrowRight />
+              </Link>
+            </Button>
+          )}
         </SheetHeader>
         {event && (
           <div className="space-y-5 px-4 pb-6">

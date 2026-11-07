@@ -24,10 +24,15 @@ import { UserAvatar } from '@/components/common/user-avatar'
 import { Button } from '@/components/ui/button'
 import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
 import { projectVolumeCapabilities } from '@/lib/project-volume-capabilities'
+import { buildRunPath, platformEventDetailPath, platformEventResourcePath, projectEventsPath } from '@/lib/resource-routes'
 import { ProjectAction, projectActionAllowed, ProjectRole } from '@/lib/roles'
 import { ProjectSharedConfigPanel } from '@/pages/projects/delivery-config/ProjectSharedConfigPanel'
 import { BillingOwnerTransferDialog } from '@/pages/projects/governance/billing-owner-transfer-dialog'
-import { legacyProjectWorkspaceSearch, normalizeProjectWorkspaceSection } from './project-workspace-sections'
+import { legacyProjectWorkspaceSearch, normalizeProjectWorkspaceSection, projectSharedConfigTabParam, projectWorkspaceSectionPath } from './project-workspace-sections'
+
+// 整行可点击：负外边距让悬停底色铺满分隔线之间，内容仍与标题对齐。
+const overviewRowLinkClassName = '-mx-2 flex min-w-0 items-center justify-between gap-3 rounded-control px-2 py-2 transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
+const overviewValueLinkClassName = 'rounded-sm hover:text-primary-text hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
 
 const ApplicationsPage = lazy(() => import('@/pages/applications/ApplicationsPage').then(module => ({ default: module.ApplicationsPage })))
 const ProjectMembersPage = lazy(() => import('@/pages/projects/governance/ProjectMembersPage').then(module => ({ default: module.ProjectMembersPage })))
@@ -204,6 +209,7 @@ function ProjectOverviewDashboard({ applications, buildTotal, builds, canTransfe
         <MetricItem href="?tab=apps" icon={<Package className="size-4" />} label={t('projectSpaces.apps')} value={overview?.applications ?? '-'} />
         <MetricItem
           emphasis={buildTotal > 0}
+          href={project && projectEventsPath(project.id, 'build')}
           icon={<Activity className="size-4" />}
           label={t('projectSpaces.buildsMetric')}
           meta={builds.length > 0 ? t('projectSpaces.recentBuildsFailedMeta', { count: builds.length, failed: failedBuilds }) : undefined}
@@ -212,6 +218,7 @@ function ProjectOverviewDashboard({ applications, buildTotal, builds, canTransfe
         />
         <MetricItem
           emphasis={activeReleases > 0 || failedReleases > 0}
+          href={project && projectEventsPath(project.id, 'release')}
           icon={<Rocket className="size-4" />}
           label={t('projectSpaces.activeReleasesMetric')}
           meta={failedReleases > 0 ? t('projectSpaces.failedReleasesMeta', { count: failedReleases, days: overview?.failedReleaseWindowDays }) : undefined}
@@ -220,6 +227,7 @@ function ProjectOverviewDashboard({ applications, buildTotal, builds, canTransfe
         />
         <MetricItem
           emphasis={Boolean(accessRoutes && accessRoutes.total > 0)}
+          href={project && projectEventsPath(project.id, 'gateway')}
           icon={<Globe2 className="size-4" />}
           label={t('projectSpaces.accessHealth')}
           meta={accessRoutesUnavailable ? t('projectSpaces.accessHealthUnavailable') : undefined}
@@ -234,19 +242,21 @@ function ProjectOverviewDashboard({ applications, buildTotal, builds, canTransfe
             ? (
                 <ul className="-my-2 divide-y divide-border">
                   {builds.map(build => (
-                    <li key={build.id} className="flex min-w-0 items-center justify-between gap-3 py-2">
-                      <div className="min-w-0">
-                        <div className="truncate font-mono text-xs text-foreground" title={build.imageRef || build.targetRepository || build.id}>
-                          {build.imageRef || build.targetRepository || build.id}
+                    <li key={build.id}>
+                      <Link className={overviewRowLinkClassName} to={buildRunPath(build)}>
+                        <div className="min-w-0">
+                          <div className="truncate font-mono text-xs text-foreground" title={build.imageRef || build.targetRepository || build.id}>
+                            {build.imageRef || build.targetRepository || build.id}
+                          </div>
+                          <div className="mt-0.5 truncate text-xs text-muted-foreground">
+                            {projectBuildMeta(build, applications, t)}
+                          </div>
                         </div>
-                        <div className="mt-0.5 truncate text-xs text-muted-foreground">
-                          {projectBuildMeta(build, applications, t)}
+                        <div className="flex shrink-0 items-center gap-2">
+                          <StatusValueBadge labelKeyPrefix="buildsPage.statuses" value={build.status} />
+                          <span className="text-xs text-muted-foreground">{formatSmartDateTime(build.createdAt, t)}</span>
                         </div>
-                      </div>
-                      <div className="flex shrink-0 items-center gap-2">
-                        <StatusValueBadge labelKeyPrefix="buildsPage.statuses" value={build.status} />
-                        <span className="text-xs text-muted-foreground">{formatSmartDateTime(build.createdAt, t)}</span>
-                      </div>
+                      </Link>
                     </li>
                   ))}
                 </ul>
@@ -261,9 +271,18 @@ function ProjectOverviewDashboard({ applications, buildTotal, builds, canTransfe
               members={members}
               project={project}
             />
-            <DescriptionListItem label={t('buildsPage.variablesAndSecrets')} value={t('projectSpaces.variableSetCount', { count: variableSetCount })} />
-            <DescriptionListItem label={t('runtimeConfigSets.tab')} value={t('projectSpaces.runtimeConfigSetCount', { count: runtimeConfigSetCount })} />
-            <DescriptionListItem label={t('projectSpaces.members')} value={t('projectSpaces.memberRoleMeta', { members: members.length, owners: ownerCount })} />
+            <DescriptionListItem
+              label={t('buildsPage.variablesAndSecrets')}
+              value={project ? <Link className={overviewValueLinkClassName} to={projectWorkspaceSectionPath(project.id, 'shared-config')}>{t('projectSpaces.variableSetCount', { count: variableSetCount })}</Link> : undefined}
+            />
+            <DescriptionListItem
+              label={t('runtimeConfigSets.tab')}
+              value={project ? <Link className={overviewValueLinkClassName} to={`${projectWorkspaceSectionPath(project.id, 'shared-config')}&${projectSharedConfigTabParam}=runtime-configs`}>{t('projectSpaces.runtimeConfigSetCount', { count: runtimeConfigSetCount })}</Link> : undefined}
+            />
+            <DescriptionListItem
+              label={t('projectSpaces.members')}
+              value={project ? <Link className={overviewValueLinkClassName} to={projectWorkspaceSectionPath(project.id, 'members')}>{t('projectSpaces.memberRoleMeta', { members: members.length, owners: ownerCount })}</Link> : undefined}
+            />
           </dl>
         </Section>
       </div>
@@ -283,15 +302,17 @@ function ProjectOverviewDashboard({ applications, buildTotal, builds, canTransfe
           ? (
               <ul className="-my-2 divide-y divide-border">
                 {events.map(event => (
-                  <li key={event.id} className="flex min-w-0 items-center justify-between gap-3 py-2">
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium">{t(`eventsPage.types.${event.type.replaceAll('.', '_')}`, { defaultValue: event.type })}</p>
-                      <p className="mt-0.5 truncate text-xs text-muted-foreground">{event.message || t('eventsPage.noMessage')}</p>
-                    </div>
-                    <div className="flex shrink-0 items-center gap-2">
-                      <StatusValueBadge labelKeyPrefix="eventsPage.statuses" value={event.status} />
-                      <span className="hidden text-xs text-muted-foreground @lg/workspace:inline">{formatSmartDateTime(event.occurredAt, t)}</span>
-                    </div>
+                  <li key={event.id}>
+                    <Link className={overviewRowLinkClassName} to={platformEventResourcePath(event) ?? platformEventDetailPath(event)}>
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium">{t(`eventsPage.types.${event.type.replaceAll('.', '_')}`, { defaultValue: event.type })}</p>
+                        <p className="mt-0.5 truncate text-xs text-muted-foreground">{event.message || t('eventsPage.noMessage')}</p>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <StatusValueBadge labelKeyPrefix="eventsPage.statuses" value={event.status} />
+                        <span className="hidden text-xs text-muted-foreground @lg/workspace:inline">{formatSmartDateTime(event.occurredAt, t)}</span>
+                      </div>
+                    </Link>
                   </li>
                 ))}
               </ul>
