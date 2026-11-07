@@ -428,8 +428,8 @@ export function AppLayout() {
                         ? projectWorkspaceSections.map(section => ({ icon: section.icon, label: t(section.labelKey), to: projectWorkspaceSectionPath(projectRouteMatch[1], section.value) }))
                         : undefined}
                     />
-                    <InboxTrigger />
                     <AIAssistantTopbarButton />
+                    <InboxTrigger />
                   </header>
                   {/* 工作区是页面布局的尺寸容器：AI 助手停靠面板挤压正文时，页面网格按正文实际宽度（@…/workspace:）而非视口响应 */}
                   <main className="@container/workspace min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-page-inline py-page-block">
