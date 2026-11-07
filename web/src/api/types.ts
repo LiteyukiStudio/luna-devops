@@ -1542,6 +1542,9 @@ export interface BuildJob {
   status: string
   failureCode: '' | BuildFailureCode
   message: string
+  /** 执行中已完成的 Dockerfile 指令步骤数；多阶段构建的总数会随新阶段开始而增加。 */
+  stepsCompleted: number
+  stepsTotal: number
   logRef: string
   attempts: number
   executorId?: string

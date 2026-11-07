@@ -99,21 +99,24 @@ type BuildVariableSet struct {
 }
 
 type BuildJob struct {
-	ID           string         `gorm:"primaryKey" json:"id"`
-	BuildRunID   string         `gorm:"index;not null" json:"buildRunId"`
-	ProjectID    string         `gorm:"index;not null" json:"projectId"`
-	Status       string         `gorm:"index;not null;default:queued" json:"status"`
-	FailureCode  string         `gorm:"not null;default:''" json:"failureCode"`
-	ExecutorID   string         `json:"executorId"`
-	ExecutorName string         `json:"executorName"`
-	Message      string         `json:"message"`
-	LogRef       string         `json:"logRef"`
-	Attempts     int            `gorm:"not null;default:0" json:"attempts"`
-	StartedAt    *time.Time     `json:"startedAt"`
-	FinishedAt   *time.Time     `json:"finishedAt"`
-	CreatedAt    time.Time      `json:"createdAt"`
-	UpdatedAt    time.Time      `json:"updatedAt"`
-	DeletedAt    gorm.DeletedAt `gorm:"index" json:"-"`
+	ID           string `gorm:"primaryKey" json:"id"`
+	BuildRunID   string `gorm:"index;not null" json:"buildRunId"`
+	ProjectID    string `gorm:"index;not null" json:"projectId"`
+	Status       string `gorm:"index;not null;default:queued" json:"status"`
+	FailureCode  string `gorm:"not null;default:''" json:"failureCode"`
+	ExecutorID   string `json:"executorId"`
+	ExecutorName string `json:"executorName"`
+	Message      string `json:"message"`
+	// StepsCompleted/StepsTotal 是执行中解析 BuildKit 输出得到的 Dockerfile 指令步骤进度；多阶段构建的总数随新阶段出现而增加。
+	StepsCompleted int            `gorm:"not null;default:0" json:"stepsCompleted"`
+	StepsTotal     int            `gorm:"not null;default:0" json:"stepsTotal"`
+	LogRef         string         `json:"logRef"`
+	Attempts       int            `gorm:"not null;default:0" json:"attempts"`
+	StartedAt      *time.Time     `json:"startedAt"`
+	FinishedAt     *time.Time     `json:"finishedAt"`
+	CreatedAt      time.Time      `json:"createdAt"`
+	UpdatedAt      time.Time      `json:"updatedAt"`
+	DeletedAt      gorm.DeletedAt `gorm:"index" json:"-"`
 }
 
 type BuildLog struct {

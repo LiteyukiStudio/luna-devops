@@ -109,6 +109,7 @@ const buildsPage = {
   buildArgsHint: '按 KEY=value 每行填寫一個 Dockerfile ARG，會隨部署配置快照到構建記錄並作為 BuildKit build-arg 傳入。不要填寫密碼或 Token，敏感值請使用構建變數裡的金鑰。支援 $' + '{{ github.sha }}、$' + '{{ github.ref_name }}、$' + '{{ github.ref_type }}、$' + '{{ github.ref }} 和 {short_sha}。',
   buildArgsPlaceholder: 'EMBED_WEB=true\nVERSION=$' + '{{ github.sha }}',
   inheritedBuildArgsHint: '繼承自部署配置；本次觸發構建時會隨構建記錄儲存快照。',
+  stepProgress: '第 {{completed}}/{{total}} 步',
   progress: {
     claimed: '已領取任務',
     clone_repository: '克隆程式碼倉庫',

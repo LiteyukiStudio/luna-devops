@@ -37,7 +37,7 @@ export function BuildRunStatusCell({ latestJob, run }: { latestJob?: BuildJob, r
   const liveState = buildRunLiveState(run, latestJob, t)
   const failureMessage = buildRunFailureMessage(run, latestJob, t)
   const failureReason = run.failureCode ? t(`buildsPage.failureCodes.${run.failureCode}`) : ''
-  const status = <StatusIndicator label={liveState} state={statusIndicatorStateFor(run.status)} />
+  const status = <StatusIndicator detail={buildJobStepProgress(latestJob, t)} label={liveState} state={statusIndicatorStateFor(run.status)} />
   return (
     <div className="grid min-w-0 max-w-full gap-0.5">
       {failureMessage
@@ -291,6 +291,12 @@ function buildRunFailureMessage(run: BuildRun, latestJob: BuildJob | undefined, 
   if (run.failureCode)
     return ''
   return latestJob ? t('buildsPage.failureReasonUnavailable') : t('buildsPage.failureReasonNoJob')
+}
+
+function buildJobStepProgress(job: BuildJob | undefined, t: ReturnType<typeof useTranslation>['t']) {
+  if (job?.status !== 'running' || !job.stepsTotal)
+    return undefined
+  return t('buildsPage.stepProgress', { completed: job.stepsCompleted, total: job.stepsTotal })
 }
 
 function buildJobProgressLabel(message: string | undefined, t: ReturnType<typeof useTranslation>['t']) {

@@ -92,6 +92,7 @@ func (r *Runner) streamBuildPodLogs(ctx context.Context, client kubernetes.Inter
 	reader := bufio.NewReader(stream)
 	var result builder.Result
 	var lastProgressKey string
+	steps := buildStepProgress{counter: builder.NewStepCounter()}
 	for {
 		line, err := reader.ReadString('\n')
 		line = strings.TrimRight(line, "\n")
@@ -118,9 +119,18 @@ func (r *Runner) streamBuildPodLogs(ctx context.Context, client kubernetes.Inter
 				lastProgressKey = progress.Key
 				_ = r.db.Model(&model.BuildJob{}).Where("id = ? and status = ?", job.ID, "running").Update("message", progress.Key).Error
 			}
+			if steps.counter.Observe(line) {
+				steps.dirty = true
+			}
+			if steps.dirty && time.Since(steps.writtenAt) >= buildStepProgressInterval {
+				r.recordBuildStepProgress(ctx, job, &steps)
+			}
 		}
 		if err != nil {
 			if errors.Is(err, io.EOF) {
+				if steps.dirty {
+					r.recordBuildStepProgress(ctx, job, &steps)
+				}
 				return result, nil
 			}
 			return result, err
@@ -178,6 +188,28 @@ func buildPodStartupError(pod corev1.Pod) error {
 	}
 	return nil
 }
+
+// buildStepProgressInterval 限制步骤进度的写库频率；缓存命中时步骤会在一秒内连续完成。
+const buildStepProgressInterval = time.Second
+
+type buildStepProgress struct {
+	counter   *builder.StepCounter
+	dirty     bool
+	writtenAt time.Time
+}
+
+func (r *Runner) recordBuildStepProgress(ctx context.Context, job model.BuildJob, progress *buildStepProgress) {
+	completed, total := progress.counter.Counts()
+	err := r.db.WithContext(ctx).Model(&model.BuildJob{}).
+		Where("id = ? and status = ?", job.ID, "running").
+		Updates(map[string]any{"steps_completed": completed, "steps_total": total}).Error
+	if err != nil {
+		return
+	}
+	progress.dirty = false
+	progress.writtenAt = time.Now()
+}
+
 func (r *Runner) appendBuildLog(job model.BuildJob, content string, sensitiveValues []string) {
 	content = trimBuildLogContent(redactSensitiveLogContent(content, sensitiveValues))
 	if strings.TrimSpace(content) == "" {

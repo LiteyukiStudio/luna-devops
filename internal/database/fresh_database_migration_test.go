@@ -23,7 +23,7 @@ import (
 
 const (
 	baselineMigrationVersion = 103
-	latestMigrationVersion   = 121
+	latestMigrationVersion   = 122
 )
 
 func TestEmbeddedMigrationsContainExpectedFiles(t *testing.T) {
@@ -64,6 +64,8 @@ func TestEmbeddedMigrationsContainExpectedFiles(t *testing.T) {
 		"000120_remove_remember_login.down.sql":                      false,
 		"000121_deployment_target_build_concurrency_policy.up.sql":   false,
 		"000121_deployment_target_build_concurrency_policy.down.sql": false,
+		"000122_build_job_step_progress.up.sql":                      false,
+		"000122_build_job_step_progress.down.sql":                    false,
 	}
 	migrationCount := 0
 	for _, entry := range entries {
@@ -250,6 +252,7 @@ WHERE namespace.nspname = current_schema()
 	assertDeliveryFailureCodesMigration(t, testDB, runner)
 	assertRememberLoginRemovalMigration(t, testDB, runner)
 	assertBuildConcurrencyPolicyMigration(t, testDB, runner)
+	assertBuildJobStepProgressMigration(t, testDB, runner)
 	assertDirtyMigrationFailsClosed(t, testDB)
 }
 
@@ -319,6 +322,29 @@ func assertBuildConcurrencyPolicyMigration(t *testing.T, db *gorm.DB, runner *mi
 	}
 	if err := runner.Migrate(latestMigrationVersion); err != nil {
 		t.Fatalf("restore latest migrations after build concurrency policy round trip: %v", err)
+	}
+	assertRunnerMigrationVersion(t, runner, latestMigrationVersion)
+}
+
+func assertBuildJobStepProgressMigration(t *testing.T, db *gorm.DB, runner *migrate.Migrate) {
+	t.Helper()
+	const progressVersion = 122
+	if err := runner.Migrate(progressVersion); err != nil && !errors.Is(err, migrate.ErrNoChange) {
+		t.Fatalf("apply build job step progress migration: %v", err)
+	}
+	for _, column := range []string{"steps_completed", "steps_total"} {
+		if !db.Migrator().HasColumn("build_jobs", column) {
+			t.Fatalf("build job step progress migration did not add build_jobs.%s", column)
+		}
+	}
+	if err := runner.Migrate(previousMigrationVersion(t, progressVersion)); err != nil {
+		t.Fatalf("roll back build job step progress migration: %v", err)
+	}
+	if db.Migrator().HasColumn("build_jobs", "steps_completed") || db.Migrator().HasColumn("build_jobs", "steps_total") {
+		t.Fatal("build job step progress rollback retained its columns")
+	}
+	if err := runner.Migrate(latestMigrationVersion); err != nil {
+		t.Fatalf("restore latest migrations after build job step progress round trip: %v", err)
 	}
 	assertRunnerMigrationVersion(t, runner, latestMigrationVersion)
 }

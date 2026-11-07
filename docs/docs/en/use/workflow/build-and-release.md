@@ -10,7 +10,7 @@ A build reads the bound repository, creates an image from the Dockerfile, and pu
 
 If an explicitly referenced push credential or the build's deployment target no longer exists, is unavailable to the current user, or cannot be queried, the build fails instead of selecting another credential or a default target. Repair the reference before rebuilding.
 
-Read the build log until the task reaches a succeeded, failed, timed-out, or canceled terminal state. Failed, timed-out, and canceled builds show a reason summary under their status in the build list; open **Logs** for the full output. Use unique, traceable image tags for production, for example `{short_sha}` in the target image.
+Read the build log until the task reaches a succeeded, failed, timed-out, or canceled terminal state. Failed, timed-out, and canceled builds show a reason summary under their status in the build list; open **Logs** for the full output.Running builds show the current phase and Dockerfile instruction progress, for example **Step 4/8**; cached steps count as completed. In multi-stage builds a later stage is counted only once it starts, so the total can grow during the build. Use unique, traceable image tags for production, for example `{short_sha}` in the target image.
 
 For the variables available in target images and tags, see [Image Repository and Tag Templates](../../reference/image-templates). For the Build Args format, build variable precedence, and hook environment variables, see [Build Arguments and Build Variables](../../reference/build-variables).
 

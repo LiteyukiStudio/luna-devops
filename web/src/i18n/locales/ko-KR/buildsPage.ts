@@ -109,6 +109,7 @@ const buildsPage = {
   buildArgsHint: 'KEY=value를 줄당 하나의 Dockerfile ARG로 입력합니다. 배포 구성과 함께 빌드 기록에 스냅샷되고 BuildKit build-arg로 전달됩니다. 비밀번호나 Token을 입력하지 마세요. 민감한 값은 빌드 변수의 시크릿을 사용하세요. $' + '{{ github.sha }}, $' + '{{ github.ref_name }}, $' + '{{ github.ref_type }}, $' + '{{ github.ref }}과(와) {short_sha}을(를) 지원합니다.',
   buildArgsPlaceholder: 'EMBED_WEB=true\nVERSION=$' + '{{ github.sha }}',
   inheritedBuildArgsHint: '배포 구성에서 상속. 이번 빌드 트리거 시 빌드 기록에 스냅샷으로 저장됩니다.',
+  stepProgress: '{{completed}}/{{total}} 단계',
   progress: {
     claimed: '작업 수령',
     clone_repository: '코드 리포지토리 클론',
