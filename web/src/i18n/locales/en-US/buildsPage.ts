@@ -109,6 +109,7 @@ const buildsPage = {
   buildArgsHint: 'Enter one Dockerfile ARG per line as KEY=value. Values are snapshotted into each build run and passed to BuildKit as build-arg. Do not put passwords or tokens here; use build secret variables for sensitive values. Supports $' + '{{ github.sha }}, $' + '{{ github.ref_name }}, $' + '{{ github.ref_type }}, $' + '{{ github.ref }}, and {short_sha}.',
   buildArgsPlaceholder: 'EMBED_WEB=true\nVERSION=$' + '{{ github.sha }}',
   inheritedBuildArgsHint: 'Inherited from the deploy config. This trigger snapshots the values into the build run.',
+  building: 'Building',
   stepProgress: 'Step {{completed}}/{{total}}',
   commitDetailsLabel: 'Show details for commit {{commit}}',
   commitMessageUnavailable: 'No commit message recorded',

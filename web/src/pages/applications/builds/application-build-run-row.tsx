@@ -32,18 +32,20 @@ const buildFailedStatuses = new Set(['failed', 'timeout'])
 
 export interface BuildRunBinding { cloneUrl?: string, defaultBranch: string, gitAccountId: string, owner: string, repo: string }
 
-/** 构建状态：状态指示器 + 当前阶段或结果；失败、超时或取消时直接显示原因摘要，悬停查看任务诊断信息。 */
+/** 构建状态：执行中显示“构建中 n/m”，悬停查看当前阶段和步骤进度；失败、超时或取消时直接显示原因摘要，悬停查看任务诊断信息。 */
 export function BuildRunStatusCell({ latestJob, run }: { latestJob?: BuildJob, run: BuildRun }) {
   const { t } = useTranslation()
-  const liveState = buildRunLiveState(run, latestJob, t)
+  const building = latestJob?.status === 'running'
+  const steps = building && latestJob.stepsTotal ? `${latestJob.stepsCompleted}/${latestJob.stepsTotal}` : undefined
   const failureMessage = buildRunFailureMessage(run, latestJob, t)
   const failureReason = run.failureCode ? t(`buildsPage.failureCodes.${run.failureCode}`) : ''
-  const status = <StatusIndicator detail={buildJobStepProgress(latestJob, t)} label={liveState} state={statusIndicatorStateFor(run.status)} />
+  const status = <StatusIndicator detail={steps} label={building ? t('buildsPage.building') : t(`buildsPage.statuses.${run.status}`)} state={statusIndicatorStateFor(run.status)} />
+  const hint = failureMessage || (building ? buildJobLiveHint(latestJob, t) : '')
   return (
     <div className="grid min-w-0 max-w-full gap-0.5">
-      {failureMessage
+      {hint
         ? (
-            <HoverText className="max-w-full" value={failureMessage}>
+            <HoverText className="max-w-full" value={hint}>
               {status}
             </HoverText>
           )
@@ -274,11 +276,10 @@ function repositoryHostUrl(binding: { cloneUrl?: string }) {
   }
 }
 
-function buildRunLiveState(run: BuildRun, latestJob: BuildJob | undefined, t: ReturnType<typeof useTranslation>['t']) {
-  const progress = buildJobProgressLabel(latestJob?.message, t)
-  if (latestJob?.status === 'running' && progress)
-    return progress
-  return t(`buildsPage.statuses.${run.status}`)
+/** 执行中构建的悬停提示：第一行为当前阶段（如“运行构建命令”），第二行为 Dockerfile 指令步骤进度。 */
+function buildJobLiveHint(job: BuildJob, t: ReturnType<typeof useTranslation>['t']) {
+  const steps = job.stepsTotal ? t('buildsPage.stepProgress', { completed: job.stepsCompleted, total: job.stepsTotal }) : ''
+  return [buildJobProgressLabel(job.message, t), steps].filter(Boolean).join('\n')
 }
 
 function buildRunFailureMessage(run: BuildRun, latestJob: BuildJob | undefined, t: ReturnType<typeof useTranslation>['t']) {
@@ -290,12 +291,6 @@ function buildRunFailureMessage(run: BuildRun, latestJob: BuildJob | undefined, 
   if (run.failureCode)
     return ''
   return latestJob ? t('buildsPage.failureReasonUnavailable') : t('buildsPage.failureReasonNoJob')
-}
-
-function buildJobStepProgress(job: BuildJob | undefined, t: ReturnType<typeof useTranslation>['t']) {
-  if (job?.status !== 'running' || !job.stepsTotal)
-    return undefined
-  return t('buildsPage.stepProgress', { completed: job.stepsCompleted, total: job.stepsTotal })
 }
 
 function buildJobProgressLabel(message: string | undefined, t: ReturnType<typeof useTranslation>['t']) {

@@ -109,6 +109,7 @@ const buildsPage = {
   buildArgsHint: '按 KEY=value 每行填写一个 Dockerfile ARG，会随部署配置快照到构建记录并作为 BuildKit build-arg 传入。不要填写密码或 Token，敏感值请使用构建变量里的密钥。支持 $' + '{{ github.sha }}、$' + '{{ github.ref_name }}、$' + '{{ github.ref_type }}、$' + '{{ github.ref }} 和 {short_sha}。',
   buildArgsPlaceholder: 'EMBED_WEB=true\nVERSION=$' + '{{ github.sha }}',
   inheritedBuildArgsHint: '继承自部署配置；本次触发构建时会随构建记录保存快照。',
+  building: '构建中',
   stepProgress: '第 {{completed}}/{{total}} 步',
   commitDetailsLabel: '查看提交 {{commit}} 的详情',
   commitMessageUnavailable: '未记录提交消息',

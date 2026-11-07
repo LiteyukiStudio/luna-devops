@@ -109,6 +109,7 @@ const buildsPage = {
   buildArgsHint: 'KEY=value を 1 行に 1 つの Dockerfile ARG として入力します。デプロイ設定とともにビルド記録にスナップショットされ、BuildKit build-arg として渡されます。パスワードや Token は入力しないでください。機密値はビルド変数のシークレットを使用してください。$' + '{{ github.sha }}、$' + '{{ github.ref_name }}、$' + '{{ github.ref_type }}、$' + '{{ github.ref }} と {short_sha} をサポートします。',
   buildArgsPlaceholder: 'EMBED_WEB=true\nVERSION=$' + '{{ github.sha }}',
   inheritedBuildArgsHint: 'デプロイ設定から継承。今回のビルドトリガー時にビルド記録にスナップショットとして保存されます。',
+  building: 'ビルド中',
   stepProgress: 'ステップ {{completed}}/{{total}}',
   commitDetailsLabel: 'コミット {{commit}} の詳細を表示',
   commitMessageUnavailable: 'コミットメッセージは記録されていません',
