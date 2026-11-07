@@ -97,6 +97,7 @@ function imageTarget() {
     buildHooksEnabled: false,
     buildHookBindings: [],
     autoDeploy: false,
+    buildConcurrencyPolicy: 'queue',
     branchPattern: '',
     tagPattern: '',
     runtimeConfigRefs: [],

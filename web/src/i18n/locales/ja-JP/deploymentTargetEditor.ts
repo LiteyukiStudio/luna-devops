@@ -85,6 +85,17 @@ const deploymentTargetEditor = {
   dataVolumeRowLabel: 'データボリューム {{index}}',
   containerTitle: 'コンテナー起動とヘルスチェック',
   autoDeployDescription: 'ビルド成功後、このデプロイ設定へ自動でリリースします。',
+  buildConcurrencyPolicy: 'ビルド同時実行ポリシー',
+  buildConcurrencyPolicies: {
+    queue: '順番に待機（既定）',
+    cancel_in_progress: '実行中の古いビルドをキャンセル',
+    parallel: '並列実行',
+  },
+  buildConcurrencyPolicyHints: {
+    queue: 'このデプロイ設定のビルドはトリガー順に 1 つずつ実行され、前のビルドが終わってから次が始まります。',
+    cancel_in_progress: '新しいビルドの開始時に、このデプロイ設定のより古い待機中・実行中ビルドをキャンセルし、最新のものだけを実行します。',
+    parallel: 'このデプロイ設定のビルドは同時に実行され、プロジェクトスペースとクラスターのビルド同時実行数の上限だけが適用されます。古いビルドが後で完了しても、自動デプロイ済みの新しいバージョンを上書きしません。',
+  },
   imageSourceTriggerNote: '既存イメージのソースはソースビルドを行わないため、ブランチ・タグの照合は適用されません。',
   buildPhases: 'ビルドフェーズ',
   deploymentPhases: 'デプロイフェーズ',

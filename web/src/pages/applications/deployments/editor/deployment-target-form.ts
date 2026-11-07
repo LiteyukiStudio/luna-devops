@@ -1,5 +1,5 @@
 import type { TFunction } from 'i18next'
-import type { BuildEnvironmentConfig, DeploymentRuntimeEnvironmentVariableInput, DeploymentTarget, DeploymentTargetPayload, HookPhase } from '@/api'
+import type { BuildConcurrencyPolicy, BuildEnvironmentConfig, DeploymentRuntimeEnvironmentVariableInput, DeploymentTarget, DeploymentTargetPayload, HookPhase } from '@/api'
 import type { RuntimeDataVolumeRow } from '@/lib/runtime-data-volumes'
 import { z } from 'zod'
 import { buildVariableRecordToRows, buildVariableRowsToRecord, emptyKeyValueRow, secretStateToRows } from '@/lib/build-variables'
@@ -7,6 +7,9 @@ import { duplicateRuntimeConfigPathRowIds, parseRuntimeConfigFiles } from '@/lib
 import { parseRuntimeDataVolumes, projectVolumeRowsAreValid, serializeRuntimeDataVolumes } from '@/lib/runtime-data-volumes'
 import { defaultBuildCpuRequest, defaultBuildMemoryRequest, defaultBuildTimeoutSeconds } from '@/pages/applications/application-build-defaults'
 import { deploymentTargetImageRef } from '@/pages/applications/application-config-utils'
+
+/** 构建并发策略选项，顺序即表单展示顺序；默认 queue。 */
+export const buildConcurrencyPolicies = ['queue', 'cancel_in_progress', 'parallel'] as const satisfies readonly BuildConcurrencyPolicy[]
 
 export const publicDeploymentStages = ['dev', 'test', 'staging', 'prod'] as const
 export function isPublicDeploymentStage(stage: string): stage is typeof publicDeploymentStages[number] {
@@ -117,6 +120,7 @@ export function createDeploymentTargetFormSchema(t: TFunction) {
 
     // 发布与触发
     autoDeploy: z.boolean(),
+    buildConcurrencyPolicy: z.enum(buildConcurrencyPolicies),
     branchPattern: z.string(),
     tagPattern: z.string(),
 
@@ -280,6 +284,7 @@ export function emptyDeploymentTargetFormValues(): DeploymentTargetFormValues {
     livenessProbe: '',
     startupProbe: '',
     autoDeploy: true,
+    buildConcurrencyPolicy: 'queue',
     branchPattern: '',
     tagPattern: '',
     buildHooksEnabled: true,
@@ -369,6 +374,7 @@ export function deploymentTargetToFormValues(target: DeploymentTarget, buildEnvi
     livenessProbe: target.livenessProbe,
     startupProbe: target.startupProbe,
     autoDeploy: target.autoDeploy,
+    buildConcurrencyPolicy: target.buildConcurrencyPolicy,
     branchPattern: target.branchPattern,
     tagPattern: target.tagPattern,
     buildHooksEnabled: target.buildHooksEnabled,
@@ -452,6 +458,7 @@ export function deploymentTargetFormToPayload(values: DeploymentTargetFormValues
     livenessProbe: values.livenessProbe.trim(),
     startupProbe: values.startupProbe.trim(),
     autoDeploy: values.autoDeploy,
+    buildConcurrencyPolicy: values.buildConcurrencyPolicy,
     branchPattern: values.branchPattern.trim(),
     tagPattern: values.tagPattern.trim(),
     buildHooksEnabled: values.buildHooksEnabled,
@@ -560,7 +567,7 @@ export const deploymentTargetAdvancedItemOrder: readonly DeploymentTargetAdvance
 export const deploymentTargetSectionFields: Record<DeploymentTargetEditorSection, readonly DeploymentTargetFieldName[]> = {
   basics: ['name', 'stage', 'clusterId', 'enabled', 'sourceType', 'repositoryBindingId', 'imageRef', 'targetRegistryId', 'targetImageRef', 'buildDefinitionMode', 'buildTemplateId', 'buildTemplateVersion', 'buildTemplateValues', 'dockerfilePath', 'buildContext'],
   runtime: ['replicas', 'cpuRequest', 'memoryRequest', 'autoScalingEnabled', 'autoScalingMinReplicas', 'autoScalingMaxReplicas', 'autoScalingCpuPercent', 'autoScalingMemoryPercent', 'servicePorts', 'runtimeConfigRefs', 'environmentVariables', 'dataVolumes'],
-  release: ['autoDeploy', 'branchPattern', 'tagPattern'],
+  release: ['autoDeploy', 'buildConcurrencyPolicy', 'branchPattern', 'tagPattern'],
   advanced: deploymentTargetAdvancedItemOrder.flatMap(item => deploymentTargetAdvancedItemFields[item]),
 }
 

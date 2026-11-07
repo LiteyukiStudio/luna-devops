@@ -714,6 +714,8 @@ export interface PlatformEvent {
   deploymentTargetId: string
   resourceType: string
   resourceId: string
+  /** Current display name resolved by the server; empty when unavailable, so callers fall back to resourceId. */
+  resourceName: string
   actorId: string
   resourceOwnerUserId: string
   summaryKey: string
@@ -1172,6 +1174,7 @@ export type ProjectHookConfigPayload = Omit<ProjectHookConfig, 'id' | 'projectId
 /** 构建失败、超时或取消时后端写入的稳定原因码；前端按码映射本地化文案。 */
 export type BuildFailureCode
   = | 'canceled_by_user'
+    | 'superseded'
     | 'timeout'
     | 'queue_timeout'
     | 'dispatch_failed'
@@ -1280,6 +1283,9 @@ export interface DeploymentDataVolume extends DeploymentDataVolumeInput {
   readOnly: boolean
 }
 
+/** 同一部署配置有多个构建待执行时的处理方式：按顺序排队、取消进行中的旧构建或并行执行。 */
+export type BuildConcurrencyPolicy = 'queue' | 'cancel_in_progress' | 'parallel'
+
 export interface DeploymentTarget {
   id: string
   projectId: string
@@ -1346,6 +1352,7 @@ export interface DeploymentTarget {
   buildHooksEnabled: boolean
   buildHookBindings: DeploymentTargetHookBinding[]
   autoDeploy: boolean
+  buildConcurrencyPolicy: BuildConcurrencyPolicy
   branchPattern: string
   tagPattern: string
   runtimeConfigRefs: DeploymentRuntimeConfigRef[]

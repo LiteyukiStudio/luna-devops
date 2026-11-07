@@ -45,3 +45,17 @@ A release that has not finished within its total time limit (twice the larger of
 Enable build-to-release automation or repository webhooks only after the first manual flow works end to end.
 
 Repository webhooks trigger builds as the owner of the code repository account and re-check on every push that the owner is still a project-space member allowed to trigger builds, that the project space is not being deleted, and that the balance policy allows new builds. When a check fails, no build is created and the event center records a **Webhook build rejected** event with a reason code. A redelivered event with the same delivery ID from the Git platform creates at most one build.
+
+### Build order for consecutive commits
+
+When a new build is triggered while an earlier one has not finished, the deploy config's **Build concurrency** option under **Release triggers** decides what happens. It is shown only for deploy configs that build from source, and applies to manual and webhook builds alike.
+
+| Policy | Behavior |
+| --- | --- |
+| Queue in order (default) | Builds for the deploy config run one at a time in the order they were triggered. |
+| Cancel in-progress builds | When a new build starts, earlier queued or running builds for the same deploy config are canceled with the reason **Superseded by a newer build**. |
+| Run in parallel | Builds for the deploy config run at the same time. |
+
+- Under every policy, the total number of running builds is still limited by the project-space (default 2) and runtime-cluster (default 4) build concurrency limits.
+- The queue time limit above still applies. After many commits in a short time, later builds may time out while queued; use **Cancel in-progress builds** in that case.
+- With automatic release enabled, an older build that finishes after a newer build of the same deploy config has been released is not released automatically, so the config never rolls back to an older image.

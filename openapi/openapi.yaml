@@ -12291,6 +12291,11 @@ components:
         autoDeploy:
           type: boolean
           default: false
+        buildConcurrencyPolicy:
+          type: string
+          enum: [queue, cancel_in_progress, parallel]
+          default: queue
+          description: "How builds of this deployment target run when several are pending. `queue` runs them one at a time in creation order; `cancel_in_progress` cancels earlier queued or running builds (failureCode `superseded`) when a newer one starts; `parallel` runs them concurrently, limited only by project-space and cluster build concurrency. Omitted or empty uses `queue`."
         branchPattern:
           type: string
         tagPattern:
@@ -12342,6 +12347,7 @@ components:
         stage: { type: string, minLength: 2, maxLength: 12 }
         kubernetesName: { type: string }
         buildDefinitionMode: { type: string, enum: [repository_dockerfile, template] }
+        buildConcurrencyPolicy: { type: string, enum: [queue, cancel_in_progress, parallel] }
         buildTemplateId: { type: string }
         buildTemplateVersion: { type: string }
         buildTemplateValues: { type: string }
@@ -13080,6 +13086,7 @@ components:
         - deploymentTargetId
         - resourceType
         - resourceId
+        - resourceName
         - actorId
         - resourceOwnerUserId
         - summaryKey
@@ -13102,6 +13109,13 @@ components:
         deploymentTargetId: { type: string }
         resourceType: { type: string }
         resourceId: { type: string }
+        resourceName:
+          type: string
+          description: >-
+            Current display name of the primary resource, resolved within the event's project
+            (for example a repository full name, access route host or build source revision).
+            Empty when the resource no longer exists, has no readable name, or the caller cannot
+            access the event's project; clients then fall back to resourceId.
         actorId: { type: string }
         resourceOwnerUserId: { type: string }
         summaryKey: { type: string }
@@ -13934,7 +13948,7 @@ components:
         failureCode:
           type: string
           description: Stable reason for a failed, timed-out or canceled build; empty while active or succeeded.
-          enum: ["", canceled_by_user, timeout, queue_timeout, dispatch_failed, project_unavailable, deployment_target_unavailable, cluster_unavailable, capacity_check_failed, namespace_failed, task_resolve_failed, job_start_failed, job_failed, observation_failed, internal_error]
+          enum: ["", canceled_by_user, superseded, timeout, queue_timeout, dispatch_failed, project_unavailable, deployment_target_unavailable, cluster_unavailable, capacity_check_failed, namespace_failed, task_resolve_failed, job_start_failed, job_failed, observation_failed, internal_error]
         imageRef: { type: string }
         imageDigest: { type: string }
         createdAt: { type: string, format: date-time }

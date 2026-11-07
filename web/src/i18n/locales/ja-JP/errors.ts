@@ -94,6 +94,7 @@ const errors = {
   deployment_target: {
     service_account_invalid: 'ServiceAccount 設定が無効です。確認して再試行してください。',
     replicas_invalid: 'レプリカ数は 0 以上の整数で指定してください。',
+    build_concurrency_policy_invalid: 'ビルド同時実行ポリシーは、順番に待機、実行中の古いビルドをキャンセル、並列実行のいずれかである必要があります。',
     scale_failed: '実行クラスターにレプリカ数を適用できませんでした。再試行してください。',
     delete_cleanup_failed: 'デプロイ設定の実行リソースのクリーンアップに失敗しました。実行クラスターを確認してから再度削除してください。',
     delete_finalize_failed: '実行リソースはクリーンアップされましたが、削除記録を完了できませんでした。しばらくしてから再度削除してください。',

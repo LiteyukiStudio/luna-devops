@@ -94,6 +94,7 @@ const errors = {
   deployment_target: {
     service_account_invalid: 'ServiceAccount 配置無效，請檢查後重試。',
     replicas_invalid: '副本數必須為 0 或正整數。',
+    build_concurrency_policy_invalid: '建置並行策略只能是依序排隊、取消進行中的舊建置或平行執行。',
     scale_failed: '無法在執行叢集套用副本數，請稍後再試。',
     delete_cleanup_failed: '清理部署配置的執行資源失敗，請檢查執行叢集後重試刪除。',
     delete_finalize_failed: '執行資源已清理，但刪除記錄未能完成，請稍後重試刪除。',

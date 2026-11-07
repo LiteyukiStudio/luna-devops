@@ -57,6 +57,7 @@ const buildsPage = {
   failureReasonNoJob: 'This build run is not linked to a build job. Refresh and try again.',
   failureCodes: {
     canceled_by_user: 'Stopped by a user',
+    superseded: 'Superseded by a newer build',
     timeout: 'Exceeded the build timeout',
     queue_timeout: 'Waited in the queue too long to start',
     dispatch_failed: 'Could not dispatch the build task',

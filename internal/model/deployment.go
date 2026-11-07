@@ -87,6 +87,16 @@ type Release struct {
 	DeletedAt              gorm.DeletedAt `gorm:"index" json:"-"`
 }
 
+// 同一部署配置有多个构建同时待执行时的处理方式。
+const (
+	// BuildConcurrencyQueue 按创建顺序逐个执行，前一个结束后才开始下一个。
+	BuildConcurrencyQueue = "queue"
+	// BuildConcurrencyCancelInProgress 新构建开始前取消同一部署配置更早的排队中和运行中构建。
+	BuildConcurrencyCancelInProgress = "cancel_in_progress"
+	// BuildConcurrencyParallel 不限制同一部署配置的构建，只受项目空间和集群并发上限约束。
+	BuildConcurrencyParallel = "parallel"
+)
+
 type DeploymentTarget struct {
 	ID                           string                        `gorm:"primaryKey" json:"id"`
 	ProjectID                    string                        `gorm:"index;not null" json:"projectId"`
@@ -163,6 +173,7 @@ type DeploymentTarget struct {
 	BuildHooksEnabled            bool                          `gorm:"not null;default:true" json:"buildHooksEnabled"`
 	BuildHookBindings            []DeploymentTargetHookBinding `gorm:"-" json:"buildHookBindings"`
 	AutoDeploy                   bool                          `gorm:"not null;default:false" json:"autoDeploy"`
+	BuildConcurrencyPolicy       string                        `gorm:"not null;default:queue" json:"buildConcurrencyPolicy"`
 	BranchPattern                string                        `json:"branchPattern"`
 	TagPattern                   string                        `json:"tagPattern"`
 	RuntimeConfigRefs            string                        `gorm:"type:text;not null;default:''" json:"runtimeConfigRefs"`

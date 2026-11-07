@@ -472,13 +472,18 @@ function EventFilterMultiSelect({ disabled, label, loading, options, placeholder
 
 function EventResource({ event }: { event: PlatformEvent }) {
   const { t } = useTranslation()
-  const detail = event.detail ?? {}
-  const primary = detail.application?.name || detail.project?.name || event.resourceId
-  const secondary = detail.deploymentTarget?.name || detail.project?.name || event.resourceType
+  const typeLabel = eventResourceTypeLabel(t, event.resourceType)
+  const context = eventResourceContext(event)
   return (
     <div className="min-w-0">
-      <p className="truncate text-sm">{primary || t('eventsPage.platformResource')}</p>
-      <p className="mt-1 truncate text-xs text-muted-foreground">{secondary || event.resourceType || t('eventsPage.platformResource')}</p>
+      {event.resourceName
+        ? <p className="truncate text-sm">{event.resourceName}</p>
+        : event.resourceId
+          ? <p className="truncate font-mono text-xs">{event.resourceId}</p>
+          : <p className="truncate text-sm">{typeLabel}</p>}
+      <p className="mt-1 truncate text-xs text-muted-foreground">
+        {context ? t('eventsPage.resourceSummary', { type: typeLabel, name: context }) : typeLabel}
+      </p>
     </div>
   )
 }
@@ -502,6 +507,12 @@ function EventDetailSheet({ event, loading, onOpenChange, open }: { event?: Plat
             </div>
             <DetailSection title={t('eventsPage.details.context')}>
               <DetailRow label={t('eventsPage.details.time')} value={formatAbsoluteDateTime(event.occurredAt)} />
+              {(event.resourceName || event.resourceId) && (
+                <DetailRow
+                  label={t('eventsPage.details.resource')}
+                  value={t('eventsPage.resourceSummary', { type: eventResourceTypeLabel(t, event.resourceType), name: event.resourceName || event.resourceId })}
+                />
+              )}
               <DetailRow label={t('eventsPage.details.project')} value={detail.project?.name} />
               <DetailRow label={t('eventsPage.details.application')} value={detail.application?.name} />
               <DetailRow label={t('eventsPage.details.deploymentTarget')} value={detail.deploymentTarget?.name} />
@@ -509,7 +520,7 @@ function EventDetailSheet({ event, loading, onOpenChange, open }: { event?: Plat
             </DetailSection>
             <DetailSection title={t('eventsPage.details.identifiers')}>
               <DetailRow label={t('eventsPage.details.eventId')} value={event.id} mono />
-              <DetailRow label={t('eventsPage.details.resource')} value={[event.resourceType, event.resourceId].filter(Boolean).join(' / ')} mono />
+              <DetailRow label={t('eventsPage.details.resourceRef')} value={[event.resourceType, event.resourceId].filter(Boolean).join(' / ')} mono />
               <DetailRow label={t('eventsPage.details.correlationId')} value={event.correlationId} mono />
               <DetailRow label={t('eventsPage.details.notificationDeliveries')} value={String(event.deliveryCount)} />
             </DetailSection>
@@ -574,6 +585,22 @@ function DetailRow({ label, mono, value }: { label: string, mono?: boolean, valu
 
 function eventTypeLabel(t: ReturnType<typeof useTranslation>['t'], type: string) {
   return t(`eventsPage.types.${type.replaceAll('.', '_')}`, { defaultValue: type })
+}
+
+function eventResourceTypeLabel(t: ReturnType<typeof useTranslation>['t'], resourceType: string) {
+  if (!resourceType)
+    return t('eventsPage.platformResource')
+  return t(`eventsPage.resourceTypes.${resourceType}`, { defaultValue: resourceType })
+}
+
+// Snapshot context names the application and deployment target the resource belongs to; the
+// project is only used when nothing narrower exists and the resource is not the project itself.
+function eventResourceContext(event: PlatformEvent) {
+  const detail = event.detail ?? {}
+  const names = [detail.application?.name, detail.deploymentTarget?.name].filter(Boolean)
+  if (names.length === 0 && event.resourceType !== 'project' && detail.project?.name)
+    names.push(detail.project.name)
+  return names.join(' / ')
 }
 
 function categoryIcon(category: string) {

@@ -94,6 +94,7 @@ const errors = {
   deployment_target: {
     service_account_invalid: 'ServiceAccount 구성이 유효하지 않습니다. 확인 후 다시 시도하세요.',
     replicas_invalid: '복제본 수는 0 이상의 정수여야 합니다.',
+    build_concurrency_policy_invalid: '빌드 동시 실행 정책은 순서대로 대기, 진행 중인 이전 빌드 취소, 병렬 실행 중 하나여야 합니다.',
     scale_failed: '런타임 클러스터에 복제본 수를 적용하지 못했습니다. 다시 시도하세요.',
     delete_cleanup_failed: '배포 구성의 실행 리소스 정리에 실패했습니다. 실행 클러스터를 확인한 후 다시 삭제하세요.',
     delete_finalize_failed: '실행 리소스는 정리되었지만 삭제 기록을 완료하지 못했습니다. 잠시 후 다시 삭제하세요.',

@@ -85,6 +85,17 @@ const deploymentTargetEditor = {
   dataVolumeRowLabel: '数据卷 {{index}}',
   containerTitle: '容器启动与健康检查',
   autoDeployDescription: '构建成功后自动发布到此部署配置。',
+  buildConcurrencyPolicy: '构建并发策略',
+  buildConcurrencyPolicies: {
+    queue: '按顺序排队（默认）',
+    cancel_in_progress: '取消进行中的旧构建',
+    parallel: '并行执行',
+  },
+  buildConcurrencyPolicyHints: {
+    queue: '同一部署配置的构建按提交顺序逐个执行，前一个结束后才开始下一个。',
+    cancel_in_progress: '新构建开始时取消同一部署配置更早的排队中和运行中构建，只保留最新的一次。',
+    parallel: '同一部署配置的构建同时执行，只受项目空间和集群的构建并发上限约束；旧构建晚完成时不会覆盖已自动部署的新版本。',
+  },
   imageSourceTriggerNote: '已有镜像来源不经过源码构建，分支和标签匹配不适用。',
   buildPhases: '构建阶段',
   deploymentPhases: '部署阶段',

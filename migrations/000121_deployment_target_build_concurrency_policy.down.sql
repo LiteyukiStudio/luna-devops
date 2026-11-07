@@ -1,0 +1,2 @@
+ALTER TABLE deployment_targets DROP CONSTRAINT IF EXISTS chk_deployment_targets_build_concurrency_policy;
+ALTER TABLE deployment_targets DROP COLUMN IF EXISTS build_concurrency_policy;

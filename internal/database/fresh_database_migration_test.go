@@ -23,7 +23,7 @@ import (
 
 const (
 	baselineMigrationVersion = 103
-	latestMigrationVersion   = 120
+	latestMigrationVersion   = 121
 )
 
 func TestEmbeddedMigrationsContainExpectedFiles(t *testing.T) {
@@ -32,36 +32,38 @@ func TestEmbeddedMigrationsContainExpectedFiles(t *testing.T) {
 		t.Fatalf("read embedded migrations: %v", err)
 	}
 	migrationFiles := map[string]bool{
-		"000103_baseline.up.sql":                                    false,
-		"000103_baseline.down.sql":                                  false,
-		"000104_bridge_retained_volumes.up.sql":                     false,
-		"000104_bridge_retained_volumes.down.sql":                   false,
-		"000105_ai_run_checkpoints.up.sql":                          false,
-		"000105_ai_run_checkpoints.down.sql":                        false,
-		"000106_runtime_env_secret_uniqueness.up.sql":               false,
-		"000106_runtime_env_secret_uniqueness.down.sql":             false,
-		"000107_ai_tool_verification.up.sql":                        false,
-		"000107_ai_tool_verification.down.sql":                      false,
-		"000108_delivery_idempotency.up.sql":                        false,
-		"000108_delivery_idempotency.down.sql":                      false,
-		"000109_app_template_installation_components.up.sql":        false,
-		"000109_app_template_installation_components.down.sql":      false,
-		"000110_theme_simplification.up.sql":                        false,
-		"000110_theme_simplification.down.sql":                      false,
-		"000118_drop_deployment_target_concurrency_policy.up.sql":   false,
-		"000118_drop_deployment_target_concurrency_policy.down.sql": false,
-		"000113_runtime_observation_render_policy.up.sql":           false,
-		"000113_runtime_observation_render_policy.down.sql":         false,
-		"000111_delivery_failure_codes.up.sql":                      false,
-		"000111_delivery_failure_codes.down.sql":                    false,
-		"000115_app_template_installation_derived_status.up.sql":    false,
-		"000115_app_template_installation_derived_status.down.sql":  false,
-		"000116_application_delete_code.up.sql":                     false,
-		"000116_application_delete_code.down.sql":                   false,
-		"000119_deployment_target_delete_code.up.sql":               false,
-		"000119_deployment_target_delete_code.down.sql":             false,
-		"000120_remove_remember_login.up.sql":                       false,
-		"000120_remove_remember_login.down.sql":                     false,
+		"000103_baseline.up.sql":                                     false,
+		"000103_baseline.down.sql":                                   false,
+		"000104_bridge_retained_volumes.up.sql":                      false,
+		"000104_bridge_retained_volumes.down.sql":                    false,
+		"000105_ai_run_checkpoints.up.sql":                           false,
+		"000105_ai_run_checkpoints.down.sql":                         false,
+		"000106_runtime_env_secret_uniqueness.up.sql":                false,
+		"000106_runtime_env_secret_uniqueness.down.sql":              false,
+		"000107_ai_tool_verification.up.sql":                         false,
+		"000107_ai_tool_verification.down.sql":                       false,
+		"000108_delivery_idempotency.up.sql":                         false,
+		"000108_delivery_idempotency.down.sql":                       false,
+		"000109_app_template_installation_components.up.sql":         false,
+		"000109_app_template_installation_components.down.sql":       false,
+		"000110_theme_simplification.up.sql":                         false,
+		"000110_theme_simplification.down.sql":                       false,
+		"000118_drop_deployment_target_concurrency_policy.up.sql":    false,
+		"000118_drop_deployment_target_concurrency_policy.down.sql":  false,
+		"000113_runtime_observation_render_policy.up.sql":            false,
+		"000113_runtime_observation_render_policy.down.sql":          false,
+		"000111_delivery_failure_codes.up.sql":                       false,
+		"000111_delivery_failure_codes.down.sql":                     false,
+		"000115_app_template_installation_derived_status.up.sql":     false,
+		"000115_app_template_installation_derived_status.down.sql":   false,
+		"000116_application_delete_code.up.sql":                      false,
+		"000116_application_delete_code.down.sql":                    false,
+		"000119_deployment_target_delete_code.up.sql":                false,
+		"000119_deployment_target_delete_code.down.sql":              false,
+		"000120_remove_remember_login.up.sql":                        false,
+		"000120_remove_remember_login.down.sql":                      false,
+		"000121_deployment_target_build_concurrency_policy.up.sql":   false,
+		"000121_deployment_target_build_concurrency_policy.down.sql": false,
 	}
 	migrationCount := 0
 	for _, entry := range entries {
@@ -247,6 +249,7 @@ WHERE namespace.nspname = current_schema()
 	assertRuntimeObservationRenderPolicyMigration(t, testDB, runner)
 	assertDeliveryFailureCodesMigration(t, testDB, runner)
 	assertRememberLoginRemovalMigration(t, testDB, runner)
+	assertBuildConcurrencyPolicyMigration(t, testDB, runner)
 	assertDirtyMigrationFailsClosed(t, testDB)
 }
 
@@ -288,6 +291,34 @@ func assertRememberLoginRemovalMigration(t *testing.T, db *gorm.DB, runner *migr
 	}
 	if err := runner.Migrate(latestMigrationVersion); err != nil {
 		t.Fatalf("restore latest migrations after remember login round trip: %v", err)
+	}
+	assertRunnerMigrationVersion(t, runner, latestMigrationVersion)
+}
+
+func assertBuildConcurrencyPolicyMigration(t *testing.T, db *gorm.DB, runner *migrate.Migrate) {
+	t.Helper()
+	const policyVersion = 121
+	if err := runner.Migrate(policyVersion); err != nil && !errors.Is(err, migrate.ErrNoChange) {
+		t.Fatalf("apply build concurrency policy migration: %v", err)
+	}
+	if !db.Migrator().HasColumn("deployment_targets", "build_concurrency_policy") {
+		t.Fatal("build concurrency policy migration did not add deployment_targets.build_concurrency_policy")
+	}
+	var defaultValue string
+	if err := db.Raw(`SELECT column_default FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'deployment_targets' AND column_name = 'build_concurrency_policy'`).Scan(&defaultValue).Error; err != nil {
+		t.Fatalf("read build concurrency policy default: %v", err)
+	}
+	if !strings.Contains(defaultValue, "'queue'") {
+		t.Fatalf("build concurrency policy default = %q, want queue", defaultValue)
+	}
+	if err := runner.Migrate(previousMigrationVersion(t, policyVersion)); err != nil {
+		t.Fatalf("roll back build concurrency policy migration: %v", err)
+	}
+	if db.Migrator().HasColumn("deployment_targets", "build_concurrency_policy") {
+		t.Fatal("build concurrency policy rollback retained deployment_targets.build_concurrency_policy")
+	}
+	if err := runner.Migrate(latestMigrationVersion); err != nil {
+		t.Fatalf("restore latest migrations after build concurrency policy round trip: %v", err)
 	}
 	assertRunnerMigrationVersion(t, runner, latestMigrationVersion)
 }

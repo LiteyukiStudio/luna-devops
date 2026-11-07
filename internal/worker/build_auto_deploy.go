@@ -44,6 +44,10 @@ func (r *Runner) enqueueAutoDeploymentsForBuildRun(ctx context.Context, run mode
 	if !deploymentTargetMatchesBuildRun(target, run) {
 		return
 	}
+	// 并行构建可能乱序完成：同一部署配置更新的构建已经产生发布时，旧构建不再自动部署，避免回退到旧镜像。
+	if superseded, err := r.newerBuildReleased(run, target.ID); err != nil || superseded {
+		return
+	}
 	release, ok := r.createAutoDeployRelease(run, target)
 	if !ok {
 		return
@@ -55,6 +59,16 @@ func (r *Runner) enqueueAutoDeploymentsForBuildRun(ctx context.Context, run mode
 	}); err != nil {
 		_, _ = r.finishDeployRelease(ctx, release, "failed", model.ReleaseFailureDispatchFailed, "deploy task dispatch failed: "+err.Error())
 	}
+}
+
+func (r *Runner) newerBuildReleased(run model.BuildRun, targetID string) (bool, error) {
+	var count int64
+	err := r.db.Model(&model.Release{}).
+		Joins("join build_runs on build_runs.id = releases.build_run_id and build_runs.project_id = releases.project_id").
+		Where("releases.project_id = ? and releases.application_id = ? and releases.deployment_target_id = ?", run.ProjectID, run.ApplicationID, targetID).
+		Where("(build_runs.created_at > ? or (build_runs.created_at = ? and build_runs.id > ?))", run.CreatedAt, run.CreatedAt, run.ID).
+		Count(&count).Error
+	return count > 0, err
 }
 
 func (r *Runner) createAutoDeployRelease(run model.BuildRun, target model.DeploymentTarget) (model.Release, bool) {

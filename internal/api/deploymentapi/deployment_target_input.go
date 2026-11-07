@@ -94,6 +94,10 @@ func (h *Handlers) deploymentTargetFromInput(ctx *gin.Context, user model.User, 
 	if !ok {
 		return model.DeploymentTarget{}, nil, runtimeapi.RuntimeSecretMutationInput{}, false
 	}
+	buildConcurrencyPolicy, ok := normalizeBuildConcurrencyPolicy(ctx, input.BuildConcurrencyPolicy)
+	if !ok {
+		return model.DeploymentTarget{}, nil, runtimeapi.RuntimeSecretMutationInput{}, false
+	}
 	buildArgs, ok := normalizeBuildArgsInput(ctx, input.BuildArgs)
 	if !ok {
 		return model.DeploymentTarget{}, nil, runtimeapi.RuntimeSecretMutationInput{}, false
@@ -234,6 +238,7 @@ func (h *Handlers) deploymentTargetFromInput(ctx *gin.Context, user model.User, 
 		BuildVariableSetIDs:          encodeBuildVariableSetIDs(input.BuildVariableSetIDs),
 		BuildHooksEnabled:            buildHooksEnabled,
 		AutoDeploy:                   input.AutoDeploy,
+		BuildConcurrencyPolicy:       buildConcurrencyPolicy,
 		BranchPattern:                strings.TrimSpace(input.BranchPattern),
 		TagPattern:                   strings.TrimSpace(input.TagPattern),
 		RuntimeConfigRefs:            model.EncodeDeploymentRuntimeConfigRefs(runtimeConfigRefs),

@@ -19,6 +19,9 @@ import (
 
 type platformEventResponse struct {
 	model.PlatformEvent
+	// ResourceName is the current display name of the primary resource; empty
+	// when the resource is gone or outside the caller's project scope.
+	ResourceName  string            `json:"resourceName"`
 	Detail        any               `json:"detail"`
 	Links         map[string]string `json:"links"`
 	DeliveryCount int64             `json:"deliveryCount"`
@@ -59,9 +62,16 @@ func (h *Handlers) ListPlatformEvents(ctx *gin.Context) {
 		return
 	}
 
+	resourceNames, err := h.platformEventResourceNames(ctx.Request.Context(), user, events)
+	if err != nil {
+		writeError(ctx, http.StatusInternalServerError, err.Error())
+		return
+	}
 	responses := make([]platformEventResponse, 0, len(events))
 	for _, event := range events {
-		responses = append(responses, platformEventResponseFor(event, 0))
+		response := platformEventResponseFor(event, 0)
+		response.ResourceName = resourceNames[event.ID]
+		responses = append(responses, response)
 	}
 	ctx.JSON(http.StatusOK, paginatedResponse(responses, total, pagination))
 }
@@ -87,7 +97,14 @@ func (h *Handlers) GetPlatformEvent(ctx *gin.Context) {
 			return
 		}
 	}
-	ctx.JSON(http.StatusOK, platformEventResponseFor(event, deliveryCount))
+	resourceNames, err := h.platformEventResourceNames(ctx.Request.Context(), user, []model.PlatformEvent{event})
+	if err != nil {
+		writeError(ctx, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response := platformEventResponseFor(event, deliveryCount)
+	response.ResourceName = resourceNames[event.ID]
+	ctx.JSON(http.StatusOK, response)
 }
 
 func (h *Handlers) ListPlatformEventCatalog(ctx *gin.Context) {
@@ -107,6 +124,31 @@ func (h *Handlers) platformEventsVisibleTo(user model.User, visibility projectse
 		return query.Where("actor_id = ?", user.ID)
 	}
 	return query.Where("project_id in ? or actor_id = ?", projectIDs, user.ID)
+}
+
+// platformEventResourceNames resolves resource names only for events whose
+// project the caller can currently access. Events visible solely because the
+// caller was the actor keep their raw resource ID, so current names from
+// projects the caller has left are not disclosed.
+func (h *Handlers) platformEventResourceNames(ctx context.Context, user model.User, events []model.PlatformEvent) (map[string]string, error) {
+	if !authz.IsPlatformAdmin(user.Role) {
+		events = platformEventsInProjects(events, h.projectIDsForUser(ctx, user.ID))
+	}
+	return (platformevent.Service{DB: h.dbWithContext(ctx)}).ResourceNames(ctx, events)
+}
+
+func platformEventsInProjects(events []model.PlatformEvent, projectIDs []string) []model.PlatformEvent {
+	allowed := make(map[string]struct{}, len(projectIDs))
+	for _, projectID := range projectIDs {
+		allowed[projectID] = struct{}{}
+	}
+	scoped := make([]model.PlatformEvent, 0, len(events))
+	for _, event := range events {
+		if _, ok := allowed[event.ProjectID]; ok && event.ProjectID != "" {
+			scoped = append(scoped, event)
+		}
+	}
+	return scoped
 }
 
 func (h *Handlers) canReadPlatformEvent(ctx context.Context, user model.User, event model.PlatformEvent) bool {

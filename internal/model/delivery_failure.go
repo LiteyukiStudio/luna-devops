@@ -13,7 +13,9 @@ var (
 // The raw error stays in job messages, logs and traces for diagnostics; user
 // interfaces localize these codes instead.
 const (
-	BuildFailureCanceledByUser      = "canceled_by_user"
+	BuildFailureCanceledByUser = "canceled_by_user"
+	// BuildFailureSuperseded 表示部署配置采用 cancel_in_progress 策略时被更新的构建取消。
+	BuildFailureSuperseded          = "superseded"
 	BuildFailureTimeout             = "timeout"
 	BuildFailureQueueTimeout        = "queue_timeout"
 	BuildFailureDispatchFailed      = "dispatch_failed"

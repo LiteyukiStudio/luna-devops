@@ -74,6 +74,7 @@ type deploymentTargetResponse struct {
 	BuildHooksEnabled         bool                                 `json:"buildHooksEnabled"`
 	BuildHookBindings         []model.DeploymentTargetHookBinding  `json:"buildHookBindings"`
 	AutoDeploy                bool                                 `json:"autoDeploy"`
+	BuildConcurrencyPolicy    string                               `json:"buildConcurrencyPolicy"`
 	BranchPattern             string                               `json:"branchPattern"`
 	TagPattern                string                               `json:"tagPattern"`
 	RuntimeConfigRefs         []deploymentRuntimeConfigRefResponse `json:"runtimeConfigRefs"`
@@ -181,6 +182,7 @@ func deploymentTargetResponseFromModel(target model.DeploymentTarget, mounts ...
 		BuildHooksEnabled:         target.BuildHooksEnabled,
 		BuildHookBindings:         target.BuildHookBindings,
 		AutoDeploy:                target.AutoDeploy,
+		BuildConcurrencyPolicy:    target.BuildConcurrencyPolicy,
 		BranchPattern:             target.BranchPattern,
 		TagPattern:                target.TagPattern,
 		RuntimeConfigRefs:         deploymentRuntimeConfigRefsResponse(target),
@@ -294,6 +296,7 @@ type deploymentTargetInput struct {
 	BuildHooksEnabled            *bool                              `json:"buildHooksEnabled"`
 	BuildHookBindings            []deploymentTargetHookBindingInput `json:"buildHookBindings"`
 	AutoDeploy                   bool                               `json:"autoDeploy"`
+	BuildConcurrencyPolicy       string                             `json:"buildConcurrencyPolicy"`
 	BranchPattern                string                             `json:"branchPattern"`
 	TagPattern                   string                             `json:"tagPattern"`
 	RuntimeConfigRefs            []deploymentRuntimeConfigRefInput  `json:"runtimeConfigRefs"`

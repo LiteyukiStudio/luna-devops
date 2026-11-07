@@ -78,7 +78,10 @@ func (r *Runner) handleBuildRun(ctx context.Context, task *asynq.Task) error {
 		_ = r.failBuildJob(ctx, job, run, model.BuildFailureClusterUnavailable, err.Error())
 		return err
 	}
-	if err := workerStage(ctx, "build.ensure_capacity", func(context.Context) error {
+	if err := workerStage(ctx, "build.ensure_capacity", func(stageCtx context.Context) error {
+		if err := r.applyBuildConcurrencyPolicy(stageCtx, run, target); err != nil {
+			return err
+		}
 		return r.ensureBuildCapacity(project, cluster, target)
 	}); err != nil {
 		if errors.Is(err, errBuildCapacityUnavailable) && r.taskClient != nil {

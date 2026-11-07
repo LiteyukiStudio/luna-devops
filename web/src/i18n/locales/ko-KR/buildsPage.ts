@@ -57,6 +57,7 @@ const buildsPage = {
   failureReasonNoJob: '빌드 실행이 빌드 작업에 연결되지 않았습니다. 새로고침 후 다시 시도하세요.',
   failureCodes: {
     canceled_by_user: '사용자가 중지함',
+    superseded: '더 새로운 빌드로 대체됨',
     timeout: '빌드 제한 시간 초과',
     queue_timeout: '대기열에서 너무 오래 기다려 시작하지 못함',
     dispatch_failed: '빌드 작업을 전달하지 못함',

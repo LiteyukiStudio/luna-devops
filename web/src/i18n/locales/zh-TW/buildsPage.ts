@@ -57,6 +57,7 @@ const buildsPage = {
   failureReasonNoJob: '構建執行未關聯到構建任務，請重新整理後重試。',
   failureCodes: {
     canceled_by_user: '已被使用者終止',
+    superseded: '已被較新的建置取代',
     timeout: '超過構建逾時時間',
     queue_timeout: '排隊時間過長，未能開始執行',
     dispatch_failed: '構建任務投遞失敗',

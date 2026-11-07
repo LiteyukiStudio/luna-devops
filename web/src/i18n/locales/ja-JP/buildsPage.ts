@@ -57,6 +57,7 @@ const buildsPage = {
   failureReasonNoJob: 'ビルド実行がビルドタスクに関連付けられていません。更新して再試行してください。',
   failureCodes: {
     canceled_by_user: 'ユーザーが停止しました',
+    superseded: 'より新しいビルドに置き換えられました',
     timeout: 'ビルドのタイムアウトを超えました',
     queue_timeout: 'キューでの待機が長すぎて開始できませんでした',
     dispatch_failed: 'ビルドタスクを投入できませんでした',

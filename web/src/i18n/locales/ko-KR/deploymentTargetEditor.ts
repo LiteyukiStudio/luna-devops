@@ -85,6 +85,17 @@ const deploymentTargetEditor = {
   dataVolumeRowLabel: '데이터 볼륨 {{index}}',
   containerTitle: '컨테이너 시작과 상태 확인',
   autoDeployDescription: '빌드가 성공하면 이 배포 구성으로 자동 릴리스합니다.',
+  buildConcurrencyPolicy: '빌드 동시 실행 정책',
+  buildConcurrencyPolicies: {
+    queue: '순서대로 대기(기본값)',
+    cancel_in_progress: '진행 중인 이전 빌드 취소',
+    parallel: '병렬 실행',
+  },
+  buildConcurrencyPolicyHints: {
+    queue: '이 배포 구성의 빌드는 트리거된 순서대로 하나씩 실행되며, 이전 빌드가 끝나야 다음 빌드가 시작됩니다.',
+    cancel_in_progress: '새 빌드가 시작되면 이 배포 구성의 이전 대기 중·실행 중 빌드를 취소하고 최신 빌드만 실행합니다.',
+    parallel: '이 배포 구성의 빌드가 동시에 실행되며 프로젝트 공간과 클러스터의 빌드 동시 실행 한도만 적용됩니다. 이전 빌드가 늦게 끝나도 자동 배포된 새 버전을 덮어쓰지 않습니다.',
+  },
   imageSourceTriggerNote: '기존 이미지 소스는 소스 빌드를 거치지 않으므로 브랜치·태그 매칭이 적용되지 않습니다.',
   buildPhases: '빌드 단계',
   deploymentPhases: '배포 단계',

@@ -110,6 +110,8 @@ func (h *Handlers) enqueueBuildRunsForWebhook(ctx *gin.Context, binding model.Re
 			})
 			duplicate, err := h.webhookBuildRunExists(ctx, actor.ID, run.IdempotencyKey)
 			if err != nil {
+				// 事件只记录稳定原因码，具体错误写入关联日志以便排查。
+				telemetry.RecordError(ctx.Request.Context(), "git.webhook_build_state_unavailable", err)
 				h.rejectWebhookBuild(ctx, &result, binding, target, actor, deliveryID, webhookRejectStateUnavailable)
 				continue
 			}
@@ -161,6 +163,7 @@ func (h *Handlers) webhookBuildAdmissionCode(ctx *gin.Context, binding model.Rep
 	requestCtx := ctx.Request.Context()
 	var project model.Project
 	if err := h.dbFor(ctx).Select("id", "delete_status").First(&project, "id = ?", binding.ProjectID).Error; err != nil {
+		telemetry.RecordError(requestCtx, "git.webhook_build_state_unavailable", err)
 		return webhookRejectStateUnavailable
 	}
 	if !model.DeleteStatusActive(project.DeleteStatus) {

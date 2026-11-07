@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/LiteyukiStudio/devops/internal/model"
@@ -249,5 +250,31 @@ func TestNormalizePublicStage(t *testing.T) {
 				t.Fatalf("normalizePublicStage(%q) = %q, %v; want %q, %v", test.input, got, valid, test.want, test.valid)
 			}
 		})
+	}
+}
+
+func TestNormalizeBuildConcurrencyPolicy(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for input, want := range map[string]string{
+		"":                   model.BuildConcurrencyQueue,
+		"  queue ":           model.BuildConcurrencyQueue,
+		"cancel_in_progress": model.BuildConcurrencyCancelInProgress,
+		"parallel":           model.BuildConcurrencyParallel,
+	} {
+		recorder := httptest.NewRecorder()
+		ctx, _ := gin.CreateTestContext(recorder)
+		got, ok := normalizeBuildConcurrencyPolicy(ctx, input)
+		if !ok || got != want {
+			t.Fatalf("normalizeBuildConcurrencyPolicy(%q) = %q, %v; want %q", input, got, ok, want)
+		}
+	}
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/", nil)
+	if _, ok := normalizeBuildConcurrencyPolicy(ctx, "serial"); ok {
+		t.Fatal("unknown policy unexpectedly accepted")
+	}
+	if recorder.Code != http.StatusBadRequest || !strings.Contains(recorder.Body.String(), "deployment_target.build_concurrency_policy_invalid") {
+		t.Fatalf("unknown policy response = %d %s", recorder.Code, recorder.Body.String())
 	}
 }

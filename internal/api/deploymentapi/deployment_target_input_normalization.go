@@ -37,6 +37,23 @@ func normalizeBuildTimeoutSeconds(ctx *gin.Context, value int) (int, bool) {
 	return normalized, true
 }
 
+var buildConcurrencyPolicies = []string{model.BuildConcurrencyQueue, model.BuildConcurrencyCancelInProgress, model.BuildConcurrencyParallel}
+
+// normalizeBuildConcurrencyPolicy 未填写时使用默认的按顺序排队，其他值必须是已知策略。
+func normalizeBuildConcurrencyPolicy(ctx *gin.Context, value string) (string, bool) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return model.BuildConcurrencyQueue, true
+	}
+	for _, policy := range buildConcurrencyPolicies {
+		if value == policy {
+			return value, true
+		}
+	}
+	writeArgumentErrorCode(ctx, http.StatusBadRequest, "deployment_target.build_concurrency_policy_invalid", "unsupported build concurrency policy", "buildConcurrencyPolicy", buildConcurrencyPolicies, false)
+	return "", false
+}
+
 func normalizeBuildTimeoutSecondsValue(value int) int {
 	if value <= 0 {
 		return defaultBuildTimeoutSeconds

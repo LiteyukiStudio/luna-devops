@@ -94,6 +94,7 @@ const errors = {
   deployment_target: {
     service_account_invalid: 'The ServiceAccount configuration is invalid. Check it and try again.',
     replicas_invalid: 'Replicas must be zero or a positive integer.',
+    build_concurrency_policy_invalid: 'Build concurrency must be queue, cancel in-progress builds, or parallel.',
     scale_failed: 'The replica count could not be applied to the runtime cluster. Try again.',
     delete_cleanup_failed: 'Cleaning up the deployment target runtime resources failed. Check the runtime cluster and delete again.',
     delete_finalize_failed: 'Runtime resources were cleaned up, but the deletion record could not be finished. Delete again later.',

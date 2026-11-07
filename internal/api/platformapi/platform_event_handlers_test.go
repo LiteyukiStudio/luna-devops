@@ -110,3 +110,18 @@ func TestPlatformEventResponseAddsRelativeBuildRunDeepLinkWithoutConfiguredBaseU
 		t.Fatalf("build link = %q, want %q", response.Links["build"], want)
 	}
 }
+
+func TestPlatformEventsInProjectsKeepsOnlyAccessibleProjectEvents(t *testing.T) {
+	events := []model.PlatformEvent{
+		{ID: "evt_member", ProjectID: "prj_allowed"},
+		{ID: "evt_actor_only", ProjectID: "prj_left", ActorID: "usr_current"},
+		{ID: "evt_platform", ActorID: "usr_current"},
+	}
+	scoped := platformEventsInProjects(events, []string{"prj_allowed"})
+	if len(scoped) != 1 || scoped[0].ID != "evt_member" {
+		t.Fatalf("scoped events = %+v, want only evt_member", scoped)
+	}
+	if scoped := platformEventsInProjects(events, nil); len(scoped) != 0 {
+		t.Fatalf("scoped events without projects = %+v, want none", scoped)
+	}
+}

@@ -57,6 +57,7 @@ const buildsPage = {
   failureReasonNoJob: '构建运行未关联到构建任务，请刷新后重试。',
   failureCodes: {
     canceled_by_user: '已被用户终止',
+    superseded: '已被更新的构建取代',
     timeout: '超过构建超时时间',
     queue_timeout: '排队时间过长，未能开始执行',
     dispatch_failed: '构建任务投递失败',

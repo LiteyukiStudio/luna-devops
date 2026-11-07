@@ -85,6 +85,17 @@ const deploymentTargetEditor = {
   dataVolumeRowLabel: 'Data volume {{index}}',
   containerTitle: 'Container startup and health checks',
   autoDeployDescription: 'Release to this deploy config automatically after a successful build.',
+  buildConcurrencyPolicy: 'Build concurrency',
+  buildConcurrencyPolicies: {
+    queue: 'Queue in order (default)',
+    cancel_in_progress: 'Cancel in-progress builds',
+    parallel: 'Run in parallel',
+  },
+  buildConcurrencyPolicyHints: {
+    queue: 'Builds for this deploy config run one at a time in the order they were triggered.',
+    cancel_in_progress: 'When a new build starts, earlier queued or running builds for this deploy config are canceled so only the latest runs.',
+    parallel: 'Builds for this deploy config run at the same time, limited only by project-space and cluster build concurrency. An older build that finishes late never replaces a newer auto-deployed version.',
+  },
   imageSourceTriggerNote: 'Existing image sources skip source builds, so branch and tag matching do not apply.',
   buildPhases: 'Build phases',
   deploymentPhases: 'Deployment phases',

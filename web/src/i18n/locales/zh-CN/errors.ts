@@ -94,6 +94,7 @@ const errors = {
   deployment_target: {
     service_account_invalid: 'ServiceAccount 配置无效，请检查后重试。',
     replicas_invalid: '副本数必须为 0 或正整数。',
+    build_concurrency_policy_invalid: '构建并发策略只能是按顺序排队、取消进行中的旧构建或并行执行。',
     scale_failed: '无法在运行集群应用副本数，请稍后重试。',
     delete_cleanup_failed: '清理部署配置的运行资源失败，请检查运行集群后重试删除。',
     delete_finalize_failed: '运行资源已清理，但删除记录未能完成，请稍后重试删除。',

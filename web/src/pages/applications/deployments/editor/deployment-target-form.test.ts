@@ -81,6 +81,7 @@ const configuredTarget: DeploymentTarget = {
     { hookConfigId: 'hook_1', phase: 'preBuild', runOrder: 1 },
   ],
   autoDeploy: false,
+  buildConcurrencyPolicy: 'queue',
   branchPattern: 'main,release-*',
   tagPattern: 'v*',
   runtimeConfigRefs: [{ setId: 'set_1', mode: 'snapshot' }],
@@ -303,6 +304,7 @@ describe('deployment target form model', () => {
       ['display name', { name: 'renamed target' }],
       ['build args', { buildArgs: 'VERSION=2' }],
       ['automatic deployment policy', { autoDeploy: true }],
+      ['build concurrency policy', { buildConcurrencyPolicy: 'cancel_in_progress' as const }],
       ['Web Console policy', { webConsoleEnabled: 'inherit' as const }],
       ['build-only hook', { buildHookBindings: [{ hookConfigId: 'hook_1', phase: 'postBuild' as const }] }],
     ])('does not require a redeploy for %s changes', (_label, overrides) => {
