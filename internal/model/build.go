@@ -111,15 +111,17 @@ type BuildJob struct {
 	ExecutorName string `json:"executorName"`
 	Message      string `json:"message"`
 	// StepsCompleted/StepsTotal 是执行中解析 BuildKit 输出得到的 Dockerfile 指令步骤进度；多阶段构建的总数随新阶段出现而增加。
-	StepsCompleted int            `gorm:"not null;default:0" json:"stepsCompleted"`
-	StepsTotal     int            `gorm:"not null;default:0" json:"stepsTotal"`
-	LogRef         string         `json:"logRef"`
-	Attempts       int            `gorm:"not null;default:0" json:"attempts"`
-	StartedAt      *time.Time     `json:"startedAt"`
-	FinishedAt     *time.Time     `json:"finishedAt"`
-	CreatedAt      time.Time      `json:"createdAt"`
-	UpdatedAt      time.Time      `json:"updatedAt"`
-	DeletedAt      gorm.DeletedAt `gorm:"index" json:"-"`
+	StepsCompleted int `gorm:"not null;default:0" json:"stepsCompleted"`
+	StepsTotal     int `gorm:"not null;default:0" json:"stepsTotal"`
+	// CurrentStep 是最近开始且未完成的 Dockerfile 指令（已按日志规则脱敏，过长时截断）。
+	CurrentStep string         `gorm:"type:text;not null;default:''" json:"currentStep"`
+	LogRef      string         `json:"logRef"`
+	Attempts    int            `gorm:"not null;default:0" json:"attempts"`
+	StartedAt   *time.Time     `json:"startedAt"`
+	FinishedAt  *time.Time     `json:"finishedAt"`
+	CreatedAt   time.Time      `json:"createdAt"`
+	UpdatedAt   time.Time      `json:"updatedAt"`
+	DeletedAt   gorm.DeletedAt `gorm:"index" json:"-"`
 }
 
 type BuildLog struct {

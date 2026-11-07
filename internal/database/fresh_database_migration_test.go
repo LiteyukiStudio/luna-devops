@@ -23,7 +23,7 @@ import (
 
 const (
 	baselineMigrationVersion = 103
-	latestMigrationVersion   = 123
+	latestMigrationVersion   = 124
 )
 
 func TestEmbeddedMigrationsContainExpectedFiles(t *testing.T) {
@@ -68,6 +68,8 @@ func TestEmbeddedMigrationsContainExpectedFiles(t *testing.T) {
 		"000122_build_job_step_progress.down.sql":                    false,
 		"000123_build_run_source_commit_message.up.sql":              false,
 		"000123_build_run_source_commit_message.down.sql":            false,
+		"000124_build_job_current_step.up.sql":                       false,
+		"000124_build_job_current_step.down.sql":                     false,
 	}
 	migrationCount := 0
 	for _, entry := range entries {
@@ -256,6 +258,7 @@ WHERE namespace.nspname = current_schema()
 	assertBuildConcurrencyPolicyMigration(t, testDB, runner)
 	assertBuildJobStepProgressMigration(t, testDB, runner)
 	assertSingleColumnMigration(t, testDB, runner, 123, "build_runs", "source_commit_message")
+	assertSingleColumnMigration(t, testDB, runner, 124, "build_jobs", "current_step")
 	assertDirtyMigrationFailsClosed(t, testDB)
 }
 

@@ -9,7 +9,7 @@ import { BuildRunStatusCell } from './application-build-run-row'
 const run = { id: 'bld_1', status: 'running', failureCode: '' } as BuildRun
 
 function job(overrides: Partial<BuildJob>) {
-  return { id: 'job_1', buildRunId: 'bld_1', status: 'running', message: 'run_command', stepsCompleted: 5, stepsTotal: 7, failureCode: '', ...overrides } as BuildJob
+  return { id: 'job_1', buildRunId: 'bld_1', status: 'running', message: 'run_command', stepsCompleted: 5, stepsTotal: 7, currentStep: '[runner 5/7] RUN pnpm build', failureCode: '', ...overrides } as BuildJob
 }
 
 function renderCell(latestJob: BuildJob, buildRun: BuildRun = run) {
@@ -28,7 +28,19 @@ describe('build run status cell', () => {
     await user.hover(status!)
     const tooltip = await screen.findByRole('tooltip')
     expect(tooltip).toHaveTextContent(i18next.t('buildsPage.progress.run_command'))
+    expect(tooltip).toHaveTextContent('[runner 5/7] RUN pnpm build')
     expect(tooltip).toHaveTextContent(i18next.t('buildsPage.stepProgress', { completed: 5, total: 7 }))
+  })
+
+  it('truncates long instructions in the hover hint with an ellipsis', async () => {
+    const user = userEvent.setup()
+    const instruction = `[builder 2/3] RUN ${'x'.repeat(300)}`
+    renderCell(job({ currentStep: instruction }))
+
+    await user.hover(screen.getByText(i18next.t('buildsPage.building')))
+    const tooltip = await screen.findByRole('tooltip')
+    expect(tooltip.textContent).toContain('…')
+    expect(tooltip.textContent).not.toContain(instruction)
   })
 
   it('omits step counts before any step is known and after the job ends', () => {

@@ -64,3 +64,27 @@ func TestStepCounterIgnoresFailedAndUnrelatedLines(t *testing.T) {
 	)
 	assertSteps(t, counter, 0, 2)
 }
+
+func TestStepCounterTracksCurrentInstruction(t *testing.T) {
+	counter := NewStepCounter()
+	if counter.Current() != "" {
+		t.Fatalf("current before any step = %q", counter.Current())
+	}
+	observeAll(counter,
+		"#3 [builder 1/2] FROM docker.io/library/golang:1.24",
+		"#4 [runner 1/2] FROM docker.io/library/alpine:3.20",
+		"#9 [builder 2/2] RUN go build ./...",
+	)
+	if got := counter.Current(); got != "[builder 2/2] RUN go build ./..." {
+		t.Fatalf("current = %q", got)
+	}
+	// 最近开始的步骤完成后，回退到仍在执行的更早步骤。
+	counter.Observe("#9 DONE 12.0s")
+	if got := counter.Current(); got != "[runner 1/2] FROM docker.io/library/alpine:3.20" {
+		t.Fatalf("current after newest step done = %q", got)
+	}
+	observeAll(counter, "#3 DONE 1.0s", "#4 DONE 1.0s")
+	if got := counter.Current(); got != "[builder 2/2] RUN go build ./..." {
+		t.Fatalf("current after all done = %q", got)
+	}
+}

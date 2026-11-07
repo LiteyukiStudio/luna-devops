@@ -1547,6 +1547,8 @@ export interface BuildJob {
   /** 执行中已完成的 Dockerfile 指令步骤数；多阶段构建的总数会随新阶段开始而增加。 */
   stepsCompleted: number
   stepsTotal: number
+  /** 最近开始的 Dockerfile 指令，例如 `[runner 5/8] RUN pnpm build`；已脱敏，超长时以省略号截断。 */
+  currentStep: string
   logRef: string
   attempts: number
   executorId?: string

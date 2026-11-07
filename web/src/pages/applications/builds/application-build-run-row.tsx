@@ -276,10 +276,18 @@ function repositoryHostUrl(binding: { cloneUrl?: string }) {
   }
 }
 
-/** 执行中构建的悬停提示：第一行为当前阶段（如“运行构建命令”），第二行为 Dockerfile 指令步骤进度。 */
+/** 悬停提示中的指令最多显示的字符数；更长的指令以省略号截断，完整内容在日志中查看。 */
+const maxLiveStepChars = 120
+
+/** 执行中构建的悬停提示：当前阶段（如“运行构建命令”）、当前 Dockerfile 指令和步骤进度，各占一行。 */
 function buildJobLiveHint(job: BuildJob, t: ReturnType<typeof useTranslation>['t']) {
   const steps = job.stepsTotal ? t('buildsPage.stepProgress', { completed: job.stepsCompleted, total: job.stepsTotal }) : ''
-  return [buildJobProgressLabel(job.message, t), steps].filter(Boolean).join('\n')
+  return [buildJobProgressLabel(job.message, t), truncateText(job.currentStep.trim(), maxLiveStepChars), steps].filter(Boolean).join('\n')
+}
+
+function truncateText(value: string, maxChars: number) {
+  const chars = Array.from(value)
+  return chars.length > maxChars ? `${chars.slice(0, maxChars - 1).join('')}…` : value
 }
 
 function buildRunFailureMessage(run: BuildRun, latestJob: BuildJob | undefined, t: ReturnType<typeof useTranslation>['t']) {

@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/LiteyukiStudio/devops/internal/builder"
 	"github.com/LiteyukiStudio/devops/internal/id"
@@ -120,6 +121,7 @@ func (r *Runner) streamBuildPodLogs(ctx context.Context, client kubernetes.Inter
 				_ = r.db.Model(&model.BuildJob{}).Where("id = ? and status = ?", job.ID, "running").Update("message", progress.Key).Error
 			}
 			if steps.counter.Observe(line) {
+				steps.sensitiveValues = sensitiveValues
 				steps.dirty = true
 			}
 			if steps.dirty && time.Since(steps.writtenAt) >= buildStepProgressInterval {
@@ -193,16 +195,37 @@ func buildPodStartupError(pod corev1.Pod) error {
 const buildStepProgressInterval = time.Second
 
 type buildStepProgress struct {
-	counter   *builder.StepCounter
-	dirty     bool
-	writtenAt time.Time
+	counter         *builder.StepCounter
+	sensitiveValues []string
+	dirty           bool
+	writtenAt       time.Time
+}
+
+// maxBuildCurrentStepBytes 限制保存的当前指令长度；超长指令截断并以省略号结尾。
+const maxBuildCurrentStepBytes = 512
+
+// buildCurrentStepText 与构建日志使用相同的脱敏规则，再按 UTF-8 字符边界截断。
+func buildCurrentStepText(instruction string, sensitiveValues []string) string {
+	value := strings.TrimSpace(redactSensitiveLogContent(instruction, sensitiveValues))
+	if len(value) <= maxBuildCurrentStepBytes {
+		return value
+	}
+	cut := maxBuildCurrentStepBytes - len("…")
+	for cut > 0 && !utf8.RuneStart(value[cut]) {
+		cut--
+	}
+	return strings.TrimSpace(value[:cut]) + "…"
 }
 
 func (r *Runner) recordBuildStepProgress(ctx context.Context, job model.BuildJob, progress *buildStepProgress) {
 	completed, total := progress.counter.Counts()
 	err := r.db.WithContext(ctx).Model(&model.BuildJob{}).
 		Where("id = ? and status = ?", job.ID, "running").
-		Updates(map[string]any{"steps_completed": completed, "steps_total": total}).Error
+		Updates(map[string]any{
+			"steps_completed": completed,
+			"steps_total":     total,
+			"current_step":    buildCurrentStepText(progress.counter.Current(), progress.sensitiveValues),
+		}).Error
 	if err != nil {
 		return
 	}
