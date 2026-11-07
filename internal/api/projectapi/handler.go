@@ -39,6 +39,8 @@ type Host interface {
 	ContinuousAuthorizationInterval() time.Duration
 	// ObserveGatewayRouteStatuses 实时读取访问入口的 HTTPRoute 状态，不可观察的入口返回 unavailable。
 	ObserveGatewayRouteStatuses(ctx context.Context, routes []model.GatewayRoute) []model.GatewayRoute
+	// VolumeTransferEnabled 表示部署是否配置了数据卷直传，供项目详情提示导入导出是否可用。
+	VolumeTransferEnabled() bool
 }
 
 type Handler struct {

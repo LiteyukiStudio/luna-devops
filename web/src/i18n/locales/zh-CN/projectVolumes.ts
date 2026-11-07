@@ -96,6 +96,8 @@ const projectVolumes = {
   capacityPlaceholder: '例如：20Gi',
   importDescription: '选择 tar.gz 或 raw.zst 归档。平台准备目标数据卷后，浏览器会直接上传完整文件。',
   directTransfer: '直接传输',
+  transferUnavailableTitle: '数据卷传输未启用',
+  transferUnavailableDescription: '当前部署未配置数据卷直传，暂时无法导入或导出。请联系平台管理员为 API 与 Worker 设置 VOLUME_TRANSFER_JOB_IMAGE 并重启服务。',
   importNoResume: '上传不经过对象存储，也不支持断点续传；连接中断后需要重新导入完整归档。',
   chooseFile: '选择归档文件',
   selectedFile: '{{name}} · {{size}}',

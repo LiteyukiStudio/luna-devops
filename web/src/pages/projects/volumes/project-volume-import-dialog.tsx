@@ -11,11 +11,11 @@ import { api } from '@/api'
 import { FormField as Field } from '@/components/common/form-field'
 import { projectVolumeAccessModeOptions, projectVolumeModeOptions } from '@/components/common/project-volumes/project-volume-form-options'
 import { ProjectVolumeClusterSelect, ProjectVolumeStorageClassSelect } from '@/components/common/project-volumes/volume-resource-selectors'
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { NativeSelect } from '@/components/ui/native-select'
+import { VolumeTransferNotice } from './volume-transfer-notice'
 import { uploadVolumeImport, waitForVolumeTransferReady } from './volume-transfer-upload'
 
 interface ImportValues {
@@ -65,7 +65,7 @@ function importSchema(required: string, nameTooLong: string) {
   })
 }
 
-export function ProjectVolumeImportDialog({ onOpenChange, open, projectId }: { onOpenChange: (open: boolean) => void, open: boolean, projectId: string }) {
+export function ProjectVolumeImportDialog({ onOpenChange, open, projectId, transferEnabled }: { onOpenChange: (open: boolean) => void, open: boolean, projectId: string, transferEnabled: boolean }) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const [file, setFile] = useState<File | null>(null)
@@ -181,11 +181,7 @@ export function ProjectVolumeImportDialog({ onOpenChange, open, projectId }: { o
           <DialogTitle>{t('projectVolumes.import')}</DialogTitle>
           <DialogDescription>{t('projectVolumes.importDescription')}</DialogDescription>
         </DialogHeader>
-        <Alert>
-          <Upload />
-          <AlertTitle>{t('projectVolumes.directTransfer')}</AlertTitle>
-          <AlertDescription>{t('projectVolumes.importNoResume')}</AlertDescription>
-        </Alert>
+        <VolumeTransferNotice direction="import" transferEnabled={transferEnabled} />
         <form className="grid gap-4" onSubmit={form.handleSubmit(startImport)}>
           <div className="grid gap-4 md:grid-cols-2">
             <Field error={form.formState.errors.displayName?.message} label={t('projectVolumes.name')} required>
@@ -262,7 +258,7 @@ export function ProjectVolumeImportDialog({ onOpenChange, open, projectId }: { o
                 <DialogClose asChild>
                   <Button type="button" variant="outline">{t('common.cancel')}</Button>
                 </DialogClose>
-                <Button disabled={!file || !form.formState.isValid} type="submit">
+                <Button disabled={!transferEnabled || !file || !form.formState.isValid} type="submit">
                   <Upload className="size-4" />
                   {t('projectVolumes.importArchive')}
                 </Button>

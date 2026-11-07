@@ -194,6 +194,8 @@ export interface Project {
   currentUserRole?: ProjectRoleValue
   /** 仅 getProject 返回：后端按 internal/authz 实时计算的当前用户可执行 Action。 */
   currentUserActions?: string[]
+  /** 仅 getProject 返回：部署是否配置了数据卷直传。 */
+  volumeTransferEnabled?: boolean
   billingOwnerUserId: string
   billingOwner?: ProjectBillingOwner
   systemKey: string

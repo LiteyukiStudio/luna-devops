@@ -192,6 +192,7 @@ const errors = {
     format_unsupported: 'This archive format is not supported.',
     job_failed: 'The volume transfer failed. Check the transfer state and retry.',
     snapshot_timeout: 'The volume snapshot did not become ready in time. Make sure the cluster runs a snapshot controller and retry, or choose another consistency mode.',
+    unavailable: 'Volume import and export are not enabled on this deployment. Ask a platform administrator to configure VOLUME_TRANSFER_JOB_IMAGE.',
   },
   volume: {
     invalid_input: 'The volume configuration is invalid. Check the fields and try again.',

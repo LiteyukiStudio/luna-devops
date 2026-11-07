@@ -70,7 +70,7 @@ export function ProjectWorkspacePage() {
   const currentUserActions = currentProject?.currentUserActions
   // 授权结果只来自项目详情的 currentUserActions，不在前端按角色推导。
   const canManageTopology = projectActionAllowed(currentUserActions, ProjectAction.ProjectManage)
-  const volumeCapabilities = projectVolumeCapabilities(currentProject?.currentUserActions, user?.id)
+  const volumeCapabilities = projectVolumeCapabilities(currentProject?.currentUserActions, user?.id, currentProject?.volumeTransferEnabled)
   const activeContent = (() => {
     switch (activeTab) {
       case 'apps':

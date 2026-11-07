@@ -96,6 +96,8 @@ const projectVolumes = {
   capacityPlaceholder: '예: 20Gi',
   importDescription: 'tar.gz 또는 raw.zst 아카이브를 선택하세요. 대상 볼륨이 준비되면 브라우저가 전체 파일을 직접 업로드합니다.',
   directTransfer: '직접 전송',
+  transferUnavailableTitle: '데이터 볼륨 전송이 활성화되지 않았습니다',
+  transferUnavailableDescription: '이 배포에는 데이터 볼륨 직접 전송이 구성되지 않아 아직 가져오거나 내보낼 수 없습니다. 플랫폼 관리자에게 API와 Worker에 VOLUME_TRANSFER_JOB_IMAGE를 설정하고 재시작하도록 요청하세요.',
   importNoResume: '객체 스토리지를 거치지 않으며 이어 올리기를 지원하지 않습니다. 연결이 끊기면 전체 아카이브를 다시 가져오세요.',
   chooseFile: '아카이브 파일 선택',
   selectedFile: '{{name}} · {{size}}',

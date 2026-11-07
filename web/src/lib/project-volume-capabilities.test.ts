@@ -15,7 +15,7 @@ describe('project volume capabilities', () => {
     ['developer', developerActions, true, true, false, false],
     ['admin', adminActions, true, true, true, true],
   ] as const)('projects %s server actions onto volume operations', (_name, actions, canWrite, canImport, canExport, canDelete) => {
-    const capabilities = projectVolumeCapabilities(actions, 'user_current')
+    const capabilities = projectVolumeCapabilities(actions, 'user_current', true)
     expect(capabilities).toMatchObject({ canWrite, canImport, canExport, canDelete, canManageOtherTransfers: canExport })
     expect(canRetryProjectVolume(capabilities, volume('provision'))).toBe(canWrite)
     expect(canRetryProjectVolume(capabilities, volume('expand'))).toBe(canWrite)
@@ -25,7 +25,7 @@ describe('project volume capabilities', () => {
   })
 
   it('denies every operation before the project detail is loaded', () => {
-    expect(projectVolumeCapabilities(undefined, 'user_current')).toMatchObject({
+    expect(projectVolumeCapabilities(undefined, 'user_current', undefined)).toMatchObject({
       canWrite: false,
       canImport: false,
       canExport: false,
@@ -34,11 +34,17 @@ describe('project volume capabilities', () => {
     })
   })
 
+  it('disables transfer only when the server reports it is not configured', () => {
+    expect(projectVolumeCapabilities(adminActions, 'user_admin', undefined).transferEnabled).toBe(true)
+    expect(projectVolumeCapabilities(adminActions, 'user_admin', true).transferEnabled).toBe(true)
+    expect(projectVolumeCapabilities(adminActions, 'user_admin', false).transferEnabled).toBe(false)
+  })
+
   it('allows transfer creators to cancel their own transfer without exposing other users transfers', () => {
-    const viewer = projectVolumeCapabilities(viewerActions, 'user_creator')
+    const viewer = projectVolumeCapabilities(viewerActions, 'user_creator', true)
     expect(canCancelVolumeTransfer(viewer, transfer())).toBe(true)
     expect(canCancelVolumeTransfer(viewer, transfer({ actorId: 'user_other' }))).toBe(false)
-    const admin = projectVolumeCapabilities(adminActions, 'user_admin')
+    const admin = projectVolumeCapabilities(adminActions, 'user_admin', true)
     expect(canCancelVolumeTransfer(admin, transfer({ actorId: 'user_other' }))).toBe(true)
   })
 })

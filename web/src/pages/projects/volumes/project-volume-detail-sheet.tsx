@@ -27,6 +27,7 @@ import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
 import { canCancelVolumeTransfer, canRetryProjectVolume, canRetryVolumeTransfer } from '@/lib/project-volume-capabilities'
 import { volumeSnapshotNotice, volumeSnapshotSupport } from './volume-export-consistency'
 import { startNativeVolumeTransferDownload } from './volume-transfer-download'
+import { VolumeTransferNotice } from './volume-transfer-notice'
 
 function formatBytes(value: number) {
   if (value <= 0)
@@ -194,7 +195,7 @@ export function ProjectVolumeDetailSheet({ capabilities, clusterId, onOpenChange
         </SheetContent>
       </Sheet>
       {volume && capabilities.canWrite && <ProjectVolumeEditDialog onOpenChange={setEditOpen} open={editOpen} projectId={projectId} volume={volume} />}
-      {volume && capabilities.canExport && <ProjectVolumeExportDialog onOpenChange={setExportOpen} open={exportOpen} projectId={projectId} volume={volume} />}
+      {volume && capabilities.canExport && <ProjectVolumeExportDialog onOpenChange={setExportOpen} open={exportOpen} projectId={projectId} transferEnabled={capabilities.transferEnabled} volume={volume} />}
       {volume && capabilities.canDelete && (
         <ConfirmDialog
           closeOnConfirm={false}
@@ -265,7 +266,7 @@ function ProjectVolumeEditDialog({ onOpenChange, open, projectId, volume }: { on
   )
 }
 
-function ProjectVolumeExportDialog({ onOpenChange, open, projectId, volume }: { onOpenChange: (open: boolean) => void, open: boolean, projectId: string, volume: ProjectVolume }) {
+function ProjectVolumeExportDialog({ onOpenChange, open, projectId, transferEnabled, volume }: { onOpenChange: (open: boolean) => void, open: boolean, projectId: string, transferEnabled: boolean, volume: ProjectVolume }) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const format: VolumeExportCreateInput['format'] = volume.volumeMode === 'Block' ? 'raw_zst' : 'tar_gz'
@@ -293,11 +294,7 @@ function ProjectVolumeExportDialog({ onOpenChange, open, projectId, volume }: { 
           <DialogTitle>{t('projectVolumes.export')}</DialogTitle>
           <DialogDescription>{t('projectVolumes.exportDescription')}</DialogDescription>
         </DialogHeader>
-        <Alert>
-          <Download />
-          <AlertTitle>{t('projectVolumes.directTransfer')}</AlertTitle>
-          <AlertDescription>{t('projectVolumes.exportNoResume')}</AlertDescription>
-        </Alert>
+        <VolumeTransferNotice direction="export" transferEnabled={transferEnabled} />
         <form className="grid gap-4" onSubmit={form.handleSubmit(values => create.mutate(values))}>
           <Field label={t('projectVolumes.archiveFormat')}>
             <input type="hidden" {...form.register('format')} />
@@ -317,7 +314,7 @@ function ProjectVolumeExportDialog({ onOpenChange, open, projectId, volume }: { 
           {snapshotNotice && <p className="text-xs text-muted-foreground" role="note">{snapshotNotice}</p>}
           <DialogFooter>
             <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>{t('common.cancel')}</Button>
-            <Button disabled={create.isPending} type="submit">{t('projectVolumes.export')}</Button>
+            <Button disabled={!transferEnabled || create.isPending} type="submit">{t('projectVolumes.export')}</Button>
           </DialogFooter>
         </form>
       </DialogContent>

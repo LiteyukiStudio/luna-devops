@@ -96,6 +96,8 @@ const projectVolumes = {
   capacityPlaceholder: '例：20Gi',
   importDescription: 'tar.gz または raw.zst アーカイブを選択します。対象ボリュームの準備後、ブラウザーからファイル全体を直接アップロードします。',
   directTransfer: '直接転送',
+  transferUnavailableTitle: 'データボリューム転送が有効になっていません',
+  transferUnavailableDescription: 'このデプロイではデータボリュームの直接転送が設定されていないため、インポートやエクスポートはまだできません。プラットフォーム管理者に API と Worker へ VOLUME_TRANSFER_JOB_IMAGE を設定して再起動するよう依頼してください。',
   importNoResume: 'オブジェクトストレージを経由せず、再開には対応していません。接続が切れた場合はアーカイブ全体を再度インポートしてください。',
   chooseFile: 'アーカイブファイルを選択',
   selectedFile: '{{name}} · {{size}}',

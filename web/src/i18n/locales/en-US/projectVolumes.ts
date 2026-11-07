@@ -89,6 +89,8 @@ const projectVolumes = {
   capacityPlaceholder: 'For example: 20Gi',
   importDescription: 'Select a tar.gz or raw.zst archive. The browser uploads the complete file after the target volume is ready.',
   directTransfer: 'Direct transfer',
+  transferUnavailableTitle: 'Volume transfer is not enabled',
+  transferUnavailableDescription: 'This deployment has not configured direct volume transfer, so volumes cannot be imported or exported yet. Ask a platform administrator to set VOLUME_TRANSFER_JOB_IMAGE for the API and Worker and restart them.',
   importNoResume: 'The upload bypasses object storage and cannot resume. If the connection ends, import the complete archive again.',
   chooseFile: 'Choose archive file',
   selectedFile: '{{name}} · {{size}}',

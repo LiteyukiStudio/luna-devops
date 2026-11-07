@@ -12007,6 +12007,9 @@ components:
           type: array
           items: { type: string }
           description: Project actions (internal/authz policy keys such as project:write or volume:export) the current user's platform and project roles allow right now; returned by getProject only. It does not reflect access-token scope restrictions, and the server still authorizes every request.
+        volumeTransferEnabled:
+          type: boolean
+          description: Whether this deployment has direct volume transfer configured (VOLUME_TRANSFER_JOB_IMAGE); returned by getProject only. When false, volume import and export requests fail with 503 volume_transfer.unavailable.
         createdAt: { type: string, format: date-time }
       required: [id, name, identifier, kubernetesNamespace, maxConcurrentBuilds, webConsoleEnabled, createdAt]
     DeploymentEmptyDirInput:

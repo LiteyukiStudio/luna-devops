@@ -192,6 +192,7 @@ const errors = {
     format_unsupported: '不支援該歸檔格式。',
     job_failed: '資料卷傳輸失敗，請檢查任務狀態後重試。',
     snapshot_timeout: '資料卷快照未能在限定時間內就緒，請確認叢集已安裝 snapshot controller 後重試，或改用其他一致性模式。',
+    unavailable: '目前部署未啟用資料卷匯入匯出，請聯絡平台管理員設定 VOLUME_TRANSFER_JOB_IMAGE。',
   },
   volume: {
     invalid_input: '資料卷配置不正確，請檢查欄位後重試。',

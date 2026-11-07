@@ -192,6 +192,7 @@ const errors = {
     format_unsupported: '이 아카이브 형식은 지원되지 않습니다.',
     job_failed: '데이터 볼륨 전송에 실패했습니다. 작업 상태를 확인한 후 다시 시도하세요.',
     snapshot_timeout: '데이터 볼륨 스냅샷이 제한 시간 내에 준비되지 않았습니다. 클러스터에 snapshot controller가 설치되어 있는지 확인한 후 다시 시도하거나 다른 일관성 모드를 선택하세요.',
+    unavailable: '이 배포에서는 데이터 볼륨 가져오기와 내보내기가 활성화되지 않았습니다. 플랫폼 관리자에게 VOLUME_TRANSFER_JOB_IMAGE 구성을 요청하세요.',
   },
   volume: {
     invalid_input: '데이터 볼륨 구성이 올바르지 않습니다. 필드를 확인한 후 다시 시도하세요.',

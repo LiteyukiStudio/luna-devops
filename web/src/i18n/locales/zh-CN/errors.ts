@@ -192,6 +192,7 @@ const errors = {
     format_unsupported: '不支持该归档格式。',
     job_failed: '数据卷传输失败，请检查任务状态后重试。',
     snapshot_timeout: '数据卷快照未能在限定时间内就绪，请确认集群已安装 snapshot controller 后重试，或改用其他一致性模式。',
+    unavailable: '当前部署未启用数据卷导入导出，请联系平台管理员配置 VOLUME_TRANSFER_JOB_IMAGE。',
   },
   volume: {
     invalid_input: '数据卷配置不正确，请检查字段后重试。',

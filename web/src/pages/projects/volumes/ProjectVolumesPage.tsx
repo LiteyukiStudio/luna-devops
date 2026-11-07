@@ -254,7 +254,7 @@ export function ProjectVolumesPage({ capabilities, projectId, ref }: { capabilit
         onRowClick={(item: ProjectVolume) => setSelectedVolume(item)}
       />
       {capabilities.canWrite && <ProjectVolumeCreateDialog onOpenChange={setCreateOpen} open={createOpen} projectId={projectId} />}
-      {capabilities.canImport && <ProjectVolumeImportDialog onOpenChange={setImportOpen} open={importOpen} projectId={projectId} />}
+      {capabilities.canImport && <ProjectVolumeImportDialog onOpenChange={setImportOpen} open={importOpen} projectId={projectId} transferEnabled={capabilities.transferEnabled} />}
       <ProjectVolumeDetailSheet
         key={selectedVolume?.id ?? 'closed'}
         capabilities={capabilities}

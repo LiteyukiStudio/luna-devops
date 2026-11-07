@@ -30,6 +30,10 @@ func (host projectHost) AIConversationProjectID(ctx *gin.Context) string {
 	return actor.ProjectID
 }
 
+func (host projectHost) VolumeTransferEnabled() bool {
+	return host.handlers.volumeTransferEnabled
+}
+
 func (host projectHost) ProjectIDsForUser(ctx context.Context, userID string) []string {
 	return host.handlers.projects.IDsForUserContext(ctx, userID)
 }

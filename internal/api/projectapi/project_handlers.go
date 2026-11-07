@@ -139,6 +139,8 @@ func (h *Handler) GetProject(ctx *gin.Context) {
 	for _, action := range allowed {
 		response.CurrentUserActions = append(response.CurrentUserActions, string(action))
 	}
+	transferEnabled := h.host.VolumeTransferEnabled()
+	response.VolumeTransferEnabled = &transferEnabled
 	ctx.JSON(http.StatusOK, response)
 }
 
@@ -644,6 +646,8 @@ type projectResponse struct {
 	CurrentUserRole string                       `json:"currentUserRole,omitempty"`
 	// CurrentUserActions 是当前用户按 internal/authz 实时策略可在本项目空间执行的 Action；只在项目详情中返回。
 	CurrentUserActions []string `json:"currentUserActions,omitempty"`
+	// VolumeTransferEnabled 只在项目详情中返回，让前端在导入导出入口说明部署未启用直传，而不是等提交后才收到 503。
+	VolumeTransferEnabled *bool `json:"volumeTransferEnabled,omitempty"`
 }
 
 type projectBillingOwnerResponse struct {

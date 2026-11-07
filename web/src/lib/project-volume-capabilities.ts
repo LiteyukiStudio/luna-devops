@@ -7,11 +7,13 @@ export interface ProjectVolumeCapabilities {
   canImport: boolean
   canManageOtherTransfers: boolean
   canWrite: boolean
+  /** 部署是否配置了数据卷直传；为 false 时导入导出入口说明原因并禁止提交。 */
+  transferEnabled: boolean
   userId: string
 }
 
 /** 从项目详情返回的 currentUserActions 投影数据卷操作；角色策略只由后端 internal/authz 维护。 */
-export function projectVolumeCapabilities(actions: readonly string[] | null | undefined, userId: string | null | undefined): ProjectVolumeCapabilities {
+export function projectVolumeCapabilities(actions: readonly string[] | null | undefined, userId: string | null | undefined, transferEnabled: boolean | undefined): ProjectVolumeCapabilities {
   const canExport = projectActionAllowed(actions, ProjectAction.VolumeExport)
   return {
     canDelete: projectActionAllowed(actions, ProjectAction.VolumeDelete),
@@ -20,6 +22,8 @@ export function projectVolumeCapabilities(actions: readonly string[] | null | un
     // 后端以 volume:export 判断能否管理他人发起的传输任务。
     canManageOtherTransfers: canExport,
     canWrite: projectActionAllowed(actions, ProjectAction.VolumeWrite),
+    // 项目详情加载前未知时不提前告警，只在后端明确返回未配置时禁用。
+    transferEnabled: transferEnabled !== false,
     userId: userId ?? '',
   }
 }
