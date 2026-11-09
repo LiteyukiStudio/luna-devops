@@ -90,7 +90,8 @@ describe('project workspace overview', () => {
   it('lands on the overview when no section is given', async () => {
     renderPage('/projects/prj_1')
 
-    expect(await screen.findByText('120')).toBeVisible()
+    // 与上一条用例相同：页面切换带淡入动画，元素进入 DOM 时仍处于 initial opacity 0。
+    await waitFor(() => expect(screen.getByText('120')).toBeVisible())
     expect(mocks.getProjectOverview).toHaveBeenCalledWith('prj_1')
   })
 
