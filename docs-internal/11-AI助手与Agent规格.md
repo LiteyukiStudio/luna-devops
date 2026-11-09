@@ -153,6 +153,19 @@ AI 助手不是悬浮在控制台上的通用聊天机器人。它理解用户�
   保留轮次和历史/摘要/续跑负载字节上限同样是 Agent 内置不变量；平台数据库、环境变量与动态配置
   API 均不存储或下发 Token 输入/摘要预算。
 
+### 4.2 Provider 协议方言与思维链回传
+
+- `ai.provider.compatibility` 是请求方言的唯一事实源：`auto` 只识别官方 DeepSeek 端点，
+  网关隐藏上游地址时必须显式选择；`providerDialect()` 是代码内的唯一解析入口，Provider 连接测试
+  会回报实际生效的方言，避免"适配器没生效"被误判为上游故障。
+- 协议消息的 `reasoning` 字段保存该轮推理原文，只有需要回传思维链的方言写入请求；OpenAI 口径从
+  构造上不产生该字段，也不会把响应里的 `reasoning_content` 当作协议字段解释。
+- DeepSeek 思考模式默认开启，携带 `tools` 的请求必须回传每一轮 assistant 的完整
+  `reasoning_content`（含没有工具调用的轮次），缺失即 400。同一 Run 内存续跑直接携带模型原文，
+  审批或进程中断后的恢复从已脱敏的思考条目重建，确实无记录时发送空串占位，不伪造思维链。
+- 推理原文与正文、工具结果一样受历史/续跑字节预算约束，并计入 `gen_ai.output.messages` 的
+  reasoning 部分；不重复进入输入消息的遥测内容。
+
 ## 5. 安全与 Prompt Injection 防护
 
 以下内容一律视为不可信数据：仓库文件、README、Issue、构建/Pod 日志、Kubernetes Events、

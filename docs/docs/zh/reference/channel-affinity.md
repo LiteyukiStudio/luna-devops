@@ -76,6 +76,16 @@ Luna DevOps 默认启用渠道亲和性。启用后，Agent 只为关联到会�
 
 DeepSeek 官方缓存无需该请求字段，DeepSeek 适配器即使选择“启用”也不会发送。经 New API 接入 DeepSeek 时，应把 **Provider 兼容类型** 设为“DeepSeek 兼容”，并从 Provider 官方用量中的缓存读取字段验证结果。New API 当前 Chat Completions DTO 包含 `prompt_cache_key`，但协议转换、渠道类型和版本仍可能影响最终转发；启用前应抓取经过脱敏的出站字段名验证，不要记录完整键值。
 
+## DeepSeek 思考模式与推理回传
+
+DeepSeek 的思考模式默认开启。只要请求携带 `tools`，上游就要求把此前每一轮 assistant 的 `reasoning_content` 原样带回，包括没有发生工具调用的轮次；缺失时返回 HTTP 400（`The reasoning_content in the thinking mode must be passed back to the API.`）。
+
+Luna DevOps 只在 **Provider 兼容类型** 为“DeepSeek 兼容”时回传该字段：
+
+- 直连 `*.deepseek.com` 时由自动识别选中，无需额外配置。
+- 经 New API 等网关接入时，网关隐藏了上游地址，自动识别只能落到“OpenAI 兼容”。此时多步工具调用会在第二轮子请求或后续会话轮次被上游拒绝，必须在 **Provider 兼容类型** 显式选择“DeepSeek 兼容”。
+- 回传的推理原文来自已脱敏的思考条目：同一 Run 内存续跑直接携带模型原文，审批或进程中断后的恢复从思考条目重建；确实没有记录时以空串占位，保证字段存在，但不会伪造思维链。
+
 ## 验证结果
 
 1. 在 Luna DevOps 中新建会话并连续提问两轮。

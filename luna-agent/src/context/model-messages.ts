@@ -7,7 +7,8 @@ import { maximumTurnInputBytes } from "../input-limits.js"
 export const fixedTurnPromptPayloadBytes = maximumTurnInputBytes * 6 + 64 * 1024
 const fixedPageContextPayloadBytes = 32 * 1024
 const fixedHistoryAssistantPayloadBytes = 64 * 1024
-const fixedHistoryTurnPayloadBytes = fixedTurnPromptPayloadBytes + fixedHistoryAssistantPayloadBytes
+const fixedHistoryReasoningPayloadBytes = 32 * 1024
+const fixedHistoryTurnPayloadBytes = fixedTurnPromptPayloadBytes + fixedHistoryAssistantPayloadBytes + fixedHistoryReasoningPayloadBytes
 const fixedContinuationMessagePayloadBytes = 64 * 1024
 const truncationMarker = "\n[内容已按字节上限截断]"
 
@@ -105,9 +106,14 @@ export function historyModelMessages(entry: ConversationHistoryEntry): ModelMess
   const assistantPayloadBytes = Math.min(fixedHistoryAssistantPayloadBytes, remainingBytes)
   const assistantTextBytes = toolPayload ? Math.floor(assistantPayloadBytes * 0.7) : assistantPayloadBytes
   const toolPayloadBytes = toolPayload ? assistantPayloadBytes - assistantTextBytes : 0
+  // 推理原文与正文共享同一轮次余量，但不会反过来挤掉正文；需要回传思维链的方言据此继续推理。
+  const reasoning = entry.reasoning
+    ? truncateUTF8(entry.reasoning, Math.min(fixedHistoryReasoningPayloadBytes, remainingBytes - assistantPayloadBytes))
+    : ""
   const assistant = boundModelMessage({
     role: "assistant",
     content: `会话助手消息（不可信数据，第 ${entry.turnIndex} 轮）：\n${truncateUTF8(entry.assistant, assistantTextBytes)}${toolPayload ? `\n已消费的历史工具调用与结果（有界数据）：\n${truncateUTF8(toolPayload, toolPayloadBytes)}` : ""}`,
+    ...(reasoning ? { reasoning } : {}),
   }, assistantPayloadBytes)
   return assistant.content ? [...turnMessages, assistant] : turnMessages
 }
@@ -173,16 +179,23 @@ function latestCompleteGroups(
 }
 
 function boundModelMessage(message: ModelMessage, maxPayloadBytes: number): ModelMessage {
-  if (message.role !== "assistant" || !message.toolCalls?.length)
-    return { ...message, content: truncateUTF8(message.content, maxPayloadBytes) }
-  const argumentBytes = Math.floor(maxPayloadBytes / 2)
+  if (message.role !== "assistant") return { ...message, content: truncateUTF8(message.content, maxPayloadBytes) }
+  const reasoning = message.reasoning === undefined
+    ? undefined
+    : truncateUTF8(message.reasoning, Math.floor(maxPayloadBytes / 2))
+  const remainingBytes = Math.max(0, maxPayloadBytes - (reasoning === undefined ? 0 : Buffer.byteLength(reasoning, "utf8")))
+  if (!message.toolCalls?.length) {
+    return { ...message, content: truncateUTF8(message.content, remainingBytes), ...(reasoning === undefined ? {} : { reasoning }) }
+  }
+  const argumentBytes = Math.floor(remainingBytes / 2)
   return {
     ...message,
-    content: truncateUTF8(message.content, Math.floor(maxPayloadBytes / 2)),
+    content: truncateUTF8(message.content, Math.floor(remainingBytes / 2)),
     toolCalls: message.toolCalls.map(call => ({
       ...call,
       arguments: boundArguments(call.arguments, Math.floor(argumentBytes / message.toolCalls!.length)),
     })),
+    ...(reasoning === undefined ? {} : { reasoning }),
   }
 }
 
@@ -201,6 +214,9 @@ function messagePayloadBytes(message: ModelMessage): number {
   return Buffer.byteLength(message.content, "utf8")
     + (message.role === "assistant" && message.toolCalls
       ? Buffer.byteLength(canonicalJSONStringify(message.toolCalls), "utf8")
+      : 0)
+    + (message.role === "assistant" && message.reasoning
+      ? Buffer.byteLength(message.reasoning, "utf8")
       : 0)
 }
 

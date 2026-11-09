@@ -235,7 +235,7 @@ function runtimeInput(): AssistantModelInput {
     runId: "airun_http", ownerUserId: "usr_http", conversationId: "aicnv_http", input: "context-retry",
     pageContext: {}, history: [{ turnIndex: 0, user: "old", assistant: "answer" }],
     conversation: { title: "HTTP", titleSource: "user", turnIndex: 1 }, promptVersion: "system-v4",
-    reasoningSummary: "", answer: "", toolCalls: [], continuationMessages: [], loadedOperationIds: [], toolCatalogDigest: "sha256:http",
+    reasoning: "", answer: "", toolCalls: [], continuationMessages: [], loadedOperationIds: [], toolCatalogDigest: "sha256:http",
   }
 }
 

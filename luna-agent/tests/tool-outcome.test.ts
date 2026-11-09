@@ -436,6 +436,40 @@ describe("authoritative verification outcomes", () => {
   })
 })
 
+describe("resumed tool exchange", () => {
+  it("rebuilds the reasoning of the paused model step from the thinking item", () => {
+    const messages = resumedToolMessages([
+      {
+        itemId: "reasoning-item",
+        type: "reasoning_summary",
+        status: "completed",
+        content: { summary: "先确认构建记录。", display: "summary" },
+      },
+      {
+        itemId: "call-item",
+        type: "tool_call",
+        status: "completed",
+        content: {
+          toolCallId: "aitool_call",
+          operationId: "getBuildRun",
+          inputMode: "model",
+          status: "succeeded",
+          arguments: { buildRunId: "bldr_1" },
+          result: { id: "bldr_1", status: "succeeded" },
+        },
+      },
+      {
+        itemId: "call-result",
+        type: "tool_result",
+        status: "completed",
+        content: { relatedItemId: "call-item", result: { id: "bldr_1", status: "succeeded" } },
+      },
+    ])
+
+    expect(messages[0]).toMatchObject({ role: "assistant", reasoning: "先确认构建记录。" })
+  })
+})
+
 describe("durable verification projection", () => {
   it("restores the write and its authoritative verification as one tool result", () => {
     const messages = resumedToolMessages([

@@ -14,6 +14,7 @@ const reportedUsage = { status: "reported" as const, value: { inputTokens: 3, ou
 
 type ScriptedStep = {
   text?: string
+  reasoning?: string
   toolCalls?: ModelToolCall[]
   finishReason?: string
 }
@@ -25,6 +26,7 @@ function protocolProvider(steps: ScriptedStep[]) {
       state.requests.push(request.messages)
       const step = steps[Math.min(state.modelCalls, steps.length - 1)] ?? {}
       state.modelCalls += 1
+      if (step.reasoning) yield { type: "reasoning_summary_delta", delta: step.reasoning }
       if (step.text) yield { type: "message_delta", delta: step.text }
       if (step.toolCalls?.length) yield { type: "tool_call_delta" }
       yield {
@@ -180,5 +182,42 @@ describe("模型协议错误处理", () => {
     expect(run?.status).toBe("failed")
     expect(run?.errorCode).toBe("ai.model_protocol_violation")
     expect(modelCalls()).toBe(3)
+  })
+})
+
+describe("思考原文回传", () => {
+  it("工具调用轮的推理原文随 assistant 消息进入下一轮请求", async () => {
+    const owner = "usr_protocol_reasoning_echo"
+    const { repository, runId } = await queuedRun(owner, "protocol-reasoning-echo")
+    const catalog = ToolCatalog.load([testToolOperation("getProject")])
+    const tools = new ToolOrchestrator(
+      catalog,
+      new DeterministicLunaApiClient(() => ({ status: 200, body: {} })),
+      new ProjectingToolCallStore(repository.toolCallStore, repository),
+    )
+    const { provider, requests } = protocolProvider([
+      {
+        reasoning: "先读取项目配置。",
+        toolCalls: [{ id: "call-1", operationId: "getProject", arguments: {} }],
+        finishReason: "tool_calls",
+      },
+      { reasoning: "配置正常。", text: "部署配置正常。", finishReason: "stop" },
+    ])
+    const executor = testExecutor(
+      repository,
+      new ModelRuntime(provider, testRegistry({ resolve: () => catalog.modelTools(["getProject"]) })),
+      { catalog, tools },
+    )
+
+    await executor.runOnce()
+
+    expect((await repository.getRun(owner, runId))?.status).toBe("completed")
+    const secondRequest = requests[1] ?? []
+    expect(secondRequest).toContainEqual({
+      role: "assistant",
+      content: "",
+      toolCalls: [expect.objectContaining({ id: "call-1", operationId: "getProject" })],
+      reasoning: "先读取项目配置。",
+    })
   })
 })

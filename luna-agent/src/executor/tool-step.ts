@@ -35,6 +35,7 @@ import { InternalToolHandlers } from "./internal-tools.js"
 import {
   normalizeToolSearchQuery,
   normalizedDetailRequest,
+  reasoningByToolCallItemId,
   reconstructSelectedOperationIds,
   resumedToolMessages,
   restoredInternalToolResults,
@@ -80,6 +81,8 @@ export type ToolStepInput = {
   executionInput: RunExecutionInput
   runtimeSettings: RuntimeSettings
   answer: string
+  /** 产生这批工具调用的那一轮推理原文；随 assistant 消息回传。 */
+  reasoning: string
   calls: Array<ModelToolCall & { id: string }>
   signal: AbortSignal
 }
@@ -128,7 +131,7 @@ export class ToolStepRunner {
 
   async execute(input: ToolStepInput, state: ToolStepState): Promise<ToolBatchResult> {
     const { run, executionInput, runtimeSettings, signal } = input
-    state.continuationMessages.push({ role: "assistant", content: input.answer, toolCalls: input.calls })
+    state.continuationMessages.push({ role: "assistant", content: input.answer, toolCalls: input.calls, reasoning: input.reasoning })
     let platformToolCalled = false
     let toolDetailsCalled = false
     let searchToolsCalled = false
@@ -508,6 +511,7 @@ export class ToolStepRunner {
     if (!execution) throw new Error("ai.turn_not_found")
     const settledToolCallIds = new Set(state.continuationMessages.flatMap(message =>
       message.role === "tool" ? [message.toolCallId] : []))
+    const reasoningByCallItem = reasoningByToolCallItemId(execution.toolInteractions)
     const verifications: RunToolVerification[] = []
     for (const call of modelCalls) {
       if (call.status === "proposed" || call.status === "awaiting_approval") continue
@@ -543,7 +547,8 @@ export class ToolStepRunner {
         verifications.push(verification)
       if (settledToolCallIds.has(call.id)) continue
       const toolCall = { id: call.id, operationId: call.operationId, arguments: call.arguments }
-      state.continuationMessages.push({ role: "assistant", content: "", toolCalls: [toolCall] })
+      const reasoning = reasoningByCallItem.get(itemId)
+      state.continuationMessages.push({ role: "assistant", content: "", toolCalls: [toolCall], ...(reasoning ? { reasoning } : {}) })
       state.continuationMessages.push(this.toolResult(toolCall, {
         status: outcome.kind === "failed" ? "failed" : call.status,
         ...(call.result !== undefined ? { result: call.result } : {}),

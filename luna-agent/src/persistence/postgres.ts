@@ -40,6 +40,7 @@ import {
   mapRunEvent,
   mapTimelineItem,
   timelineContentText,
+  timelineReasoningText,
 } from "./mappers/domain.js"
 import {
   conversations,
@@ -872,12 +873,14 @@ export class PostgresRepository implements Repository {
     const [currentToolInteractions, historyRows, historyItems] = await Promise.all([
       this.db.select({ id: items.id, type: items.type, status: items.status, content: items.content })
         .from(items)
-        .where(and(eq(items.runId, runId), inArray(items.type, ["tool_call", "tool_result"])))
+        .where(and(eq(items.runId, runId), inArray(items.type, ["reasoning_summary", "tool_call", "tool_result"])))
         .orderBy(asc(items.timelineIndex)),
-      this.db.execute<{ turn_index: number, input: string, page_context: Record<string, unknown>, assistant: string }>(sql`
+      this.db.execute<{ turn_index: number, input: string, page_context: Record<string, unknown>, assistant: string, reasoning: string }>(sql`
         select recent.turn_index, recent.input, recent.page_context,
                coalesce(string_agg(i.content->'parts'->0->>'text', E'\n' order by i.timeline_index)
-                 filter (where i.type = 'assistant_message'), '') assistant
+                 filter (where i.type = 'assistant_message'), '') assistant,
+               coalesce(string_agg(i.content->>'summary', E'\n' order by i.timeline_index)
+                 filter (where i.type = 'reasoning_summary'), '') reasoning
         from (
           select t.turn_index, t.input, t.selected_run_id, r.page_context
           from ai.turns t
@@ -933,11 +936,12 @@ export class PostgresRepository implements Repository {
           cachedInputCreditsPerMillion: row.cachedInputCreditsPerMillion ?? "0",
         },
       } : {}),
-      toolInteractions: currentToolInteractions.map(item => ({ itemId: item.id, type: item.type as "tool_call" | "tool_result", status: item.status, content: item.content })),
+      toolInteractions: currentToolInteractions.map(item => ({ itemId: item.id, type: item.type as "tool_call" | "tool_result" | "reasoning_summary", status: item.status, content: item.content })),
       history: historyRows.rows.map((item): ConversationHistoryEntry => ({
         turnIndex: item.turn_index,
         user: item.input,
         assistant: item.assistant,
+        ...(item.reasoning ? { reasoning: item.reasoning } : {}),
         pageContext: item.page_context,
         ...((toolInteractionsByTurn.get(item.turn_index)?.length ?? 0) > 0
           ? { toolInteractions: toolInteractionsByTurn.get(item.turn_index)!.map(tool => ({ type: tool.type, status: tool.status, content: tool.content })) }
@@ -979,7 +983,7 @@ export class PostgresRepository implements Repository {
       timelineIndex: items.timelineIndex,
     })
       .from(items)
-      .where(and(inArray(items.runId, runIds), inArray(items.type, ["assistant_message", "tool_call", "tool_result"])))
+      .where(and(inArray(items.runId, runIds), inArray(items.type, ["assistant_message", "reasoning_summary", "tool_call", "tool_result"])))
       .orderBy(asc(items.runId), asc(items.timelineIndex))
     const byRun = new Map<string, typeof turnItems>()
     for (const item of turnItems) {
@@ -997,10 +1001,16 @@ export class PostgresRepository implements Repository {
       const toolInteractions = runItems
         .filter(item => item.type === "tool_call" || item.type === "tool_result")
         .map(item => ({ type: item.type, status: item.status, content: item.content }))
+      const reasoning = runItems
+        .filter(item => item.type === "reasoning_summary")
+        .map(item => timelineReasoningText(item.content))
+        .filter(Boolean)
+        .join("\n")
       return {
         turnIndex: turn.turnIndex,
         user: turn.input,
         assistant,
+        ...(reasoning ? { reasoning } : {}),
         pageContext: turn.pageContext,
         ...(toolInteractions.length ? { toolInteractions } : {}),
       }

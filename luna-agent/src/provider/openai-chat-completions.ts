@@ -36,10 +36,17 @@ const requestToolCallSchema = z.object({
   type: z.literal("function"),
   function: z.object({ name: z.string().min(1), arguments: z.string() }).strict(),
 }).strict()
+const requestAssistantMessageSchema = z.object({
+  role: z.literal("assistant"),
+  content: z.string().nullable(),
+  tool_calls: z.array(requestToolCallSchema).optional(),
+  /** 仅需要回传思维链的方言（DeepSeek 思考模式）产生；OpenAI 映射从构造上不写入该字段。 */
+  reasoning_content: z.string().optional(),
+}).strict()
 const requestMessageSchema = z.discriminatedUnion("role", [
   z.object({ role: z.literal("system"), content: z.string() }).strict(),
   z.object({ role: z.literal("user"), content: z.string() }).strict(),
-  z.object({ role: z.literal("assistant"), content: z.string().nullable(), tool_calls: z.array(requestToolCallSchema).optional() }).strict(),
+  requestAssistantMessageSchema,
   z.object({ role: z.literal("tool"), tool_call_id: z.string().min(1), content: z.string() }).strict(),
 ])
 const requestSchema = z.object({
@@ -206,7 +213,7 @@ export class OpenAIChatCompletionsProvider implements ModelProvider {
     const promptCacheKey = this.promptCacheKey(request)
     const parsed = requestSchema.safeParse({
       model: this.options.model,
-      messages: providerMessages(request.messages),
+      messages: this.providerMessages(request.messages),
       max_completion_tokens: request.maxOutputTokens,
       stream,
       ...(stream ? { stream_options: { include_usage: true } } : {}),
@@ -231,6 +238,26 @@ export class OpenAIChatCompletionsProvider implements ModelProvider {
   protected reasoningDelta(_delta: Record<string, unknown> | undefined): string {
     void _delta
     return ""
+  }
+
+  protected providerMessages(messages: ModelRequest["messages"]): unknown[] {
+    return messages.map((message, messageIndex) => {
+      if (message.role === "tool") return { role: "tool", tool_call_id: message.toolCallId, content: message.content }
+      if (message.role === "assistant") return this.assistantPayload(message, messageIndex)
+      return message
+    })
+  }
+
+  /** 方言可在此追加需要原样回传的字段；官方口径只输出标准 assistant 字段。 */
+  protected assistantPayload(message: Extract<ModelRequest["messages"][number], { role: "assistant" }>, messageIndex: number): Record<string, unknown> {
+    if (!message.toolCalls?.length) return { role: "assistant", content: message.content }
+    return {
+      role: "assistant", content: message.content || null,
+      tool_calls: message.toolCalls.map((call, callIndex) => ({
+        id: call.id ?? `call_${messageIndex}_${callIndex}`, type: "function",
+        function: { name: call.operationId, arguments: JSON.stringify(call.arguments) },
+      })),
+    }
   }
 
   protected providerName(): string {
@@ -533,22 +560,6 @@ export function modelRequestSpanAttributes(request: ModelRequest): Record<string
 
 function providerToolChoice(choice: ModelRequest["toolChoice"]): unknown {
   return choice && typeof choice === "object" ? { type: "function", function: { name: choice.operationId } } : choice ?? "auto"
-}
-
-function providerMessages(messages: ModelRequest["messages"]): unknown[] {
-  return messages.map((message, messageIndex) => {
-    if (message.role === "tool") return { role: "tool", tool_call_id: message.toolCallId, content: message.content }
-    if (message.role === "assistant" && message.toolCalls?.length) {
-      return {
-        role: "assistant", content: message.content || null,
-        tool_calls: message.toolCalls.map((call, callIndex) => ({
-          id: call.id ?? `call_${messageIndex}_${callIndex}`, type: "function",
-          function: { name: call.operationId, arguments: JSON.stringify(call.arguments) },
-        })),
-      }
-    }
-    return message
-  })
 }
 
 function parseToolCall(call: z.infer<typeof toolCallSchema>): ModelToolCall {

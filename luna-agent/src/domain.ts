@@ -58,13 +58,15 @@ export type ConversationHistoryEntry = {
   turnIndex: number
   user: string
   assistant: string
+  /** 该轮模型推理原文（已脱敏）；需要回传思维链的 Provider 方言据此继续推理。 */
+  reasoning?: string
   pageContext?: Record<string, unknown>
   toolInteractions?: Array<Record<string, unknown>>
 }
 
 export type ConversationToolInteraction = {
   itemId: string
-  type: "tool_call" | "tool_result"
+  type: "tool_call" | "tool_result" | "reasoning_summary"
   status: TimelineItem["status"]
   content: Record<string, unknown>
 }

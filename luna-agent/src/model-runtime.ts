@@ -42,7 +42,8 @@ export type AssistantModelInput = {
   history: ConversationHistoryEntry[]
   conversation: ConversationPromptContext
   promptVersion: PromptVersion
-  reasoningSummary: string
+  /** 本轮模型返回的推理原文；需要回传思维链的方言据此继续推理。 */
+  reasoning: string
   answer: string
   toolCalls: ModelToolCall[]
   continuationMessages: ModelMessage[]

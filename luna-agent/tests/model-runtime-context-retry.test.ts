@@ -72,6 +72,6 @@ function input(): AssistantModelInput {
     runId: "airun_test", ownerUserId: "usr_test", conversationId: "aicnv_test", input: "current",
     pageContext: {}, history: [{ turnIndex: 0, user: "old", assistant: "answer" }],
     conversation: { title: "test", titleSource: "user", turnIndex: 1 }, promptVersion: "system-v4",
-    reasoningSummary: "", answer: "", toolCalls: [], continuationMessages: [], loadedOperationIds: [], toolCatalogDigest: "sha256:test",
+    reasoning: "", answer: "", toolCalls: [], continuationMessages: [], loadedOperationIds: [], toolCatalogDigest: "sha256:test",
   }
 }

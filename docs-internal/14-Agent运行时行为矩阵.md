@@ -32,6 +32,7 @@
 | 已选工具集合 | `ai.runs.selected_operation_ids` + timeline 反推 | `touchRunSelectedOperations` | 保留 |
 | 搜索/详情结果缓存 | timeline 反推 | `restoredInternalToolResults` | 重建，只覆盖有 `result` 的调用 |
 | 暂停前的工具消息 | timeline 反推 | `resumedToolMessages` | 重建，只覆盖有 `tool_result` 的调用 |
+| 每轮推理原文 | `ai.items` 中 `reasoning_summary` 条目的脱敏 `summary` | `RunStreamSession` | 保留；按轮次拼接后回传给需要思维链的 Provider 方言，无法恢复的步骤用空串占位 |
 
 关键结论：恢复所需的控制流信息（阶段、模型步数、剩余预算、待处理调用）目前没有一处权威存储，
 只能由 timeline + Run 状态 + 进程内存拼接。这是 13 号方案引入 checkpoint 的直接原因，Phase 2 后的现状见第 9 节。
@@ -55,6 +56,7 @@ Phase 2 起该结论已被 `ai.run_checkpoints` 取代：控制流事实源的�
 | 10 | 只调用 `navigate_to_route` | 落到"无平台工具 + 有文本"分支判 `completed` | 呈现类不产生完成证据 | `executor/index.ts:604` | `executor-baseline.test.ts`：用例 10（导航有/无同一步文字） |
 | 24 | 结束原因宣告工具调用但没有工具调用 | 基线：文本被当作最终答复直接完成 | 现在：注入一次有界修复，仍违规则 `ai.model_protocol_violation` 失败 | `executor/decision.ts`、`executor/index.ts` | `executor-protocol.test.ts` |
 | 25 | 工具调用与非工具结束原因同时出现 | 基线：照常执行工具 | Phase 1 初版不执行工具并失败；Phase 1 修正后照常执行，结束原因只记遥测（§5.2） | `executor/decision.ts` | `executor-protocol.test.ts` |
+| 26 | DeepSeek 思考模式下多轮工具调用 | 先前只在含 `tool_calls` 的 assistant 消息上伪造 `reasoning_content`，历史纯文本 assistant 缺失，上游返回 400 | 兼容类型为 DeepSeek 时每一轮 assistant 都回传真实推理原文，无法恢复的步骤回传空串；OpenAI 口径不发送该字段 | `provider/provider.ts`、`provider/deepseek-chat-completions.ts`、`context/model-messages.ts` | `executor-protocol.test.ts`：思考原文回传；`openai-chat-completions-provider.test.ts`：方言回传与官方口径隔离 |
 | 11 | 平台工具等待审批 | Run 置 `waiting_approval` 并退出；审批后置回 `queued` 重新 claim，靠 timeline 反推上下文 | 由 checkpoint 恢复（Phase 2） | `executor/index.ts:588` | `executor-tools.test.ts:543` |
 | 12 | 工具缺必填参数 | `ToolInterruption` → 事件 `run.input_required` + Run `waiting_input` | 同上 | `orchestrator.ts:73`、`index.ts:724` | `executor-baseline.test.ts`：缺必填参数先等待输入 |
 | 13 | 取消 | abort + DB `cancelRun` 置 Run 与未终态 ToolCall 为 `canceled` | 保留；不伪造成功 | `index.ts:113`、`postgres.ts:610` | `executor-tools.test.ts:432` |

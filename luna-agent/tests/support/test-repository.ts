@@ -481,8 +481,9 @@ export class TestRepository implements Repository {
           selectedOperationIds: [...run.selectedOperationIds],
           ...(run.model ? { model: run.model } : {}),
           toolInteractions: this.items
-            .filter(item => item.runId === runId && (item.type === "tool_call" || item.type === "tool_result"))
-            .map(item => ({ itemId: item.id, type: item.type as "tool_call" | "tool_result", status: item.status, content: item.content })),
+            .filter(item => item.runId === runId && (item.type === "reasoning_summary" || item.type === "tool_call" || item.type === "tool_result"))
+            .sort((a, b) => a.timelineIndex - b.timelineIndex)
+            .map(item => ({ itemId: item.id, type: item.type as "tool_call" | "tool_result" | "reasoning_summary", status: item.status, content: item.content })),
           history,
           conversation: { title: conversation.title, titleSource: conversation.titleSource },
         }
@@ -511,6 +512,12 @@ export class TestRepository implements Repository {
           .map(candidate => timelineText(candidate.content))
           .filter(Boolean)
           .join("\n")
+        const reasoning = this.items
+          .filter(candidate => candidate.runId === item.selectedRunId && candidate.type === "reasoning_summary")
+          .sort((a, b) => a.timelineIndex - b.timelineIndex)
+          .map(candidate => (typeof candidate.content.summary === "string" ? candidate.content.summary : ""))
+          .filter(Boolean)
+          .join("\n")
         const toolInteractions = this.items
           .filter(candidate => candidate.runId === item.selectedRunId && ["tool_call", "tool_result"].includes(candidate.type))
           .sort((a, b) => a.timelineIndex - b.timelineIndex)
@@ -519,6 +526,7 @@ export class TestRepository implements Repository {
           turnIndex: item.turnIndex,
           user: item.input,
           assistant,
+          ...(reasoning ? { reasoning } : {}),
           pageContext: structuredClone(selectedRun?.pageContext ?? {}),
           ...(toolInteractions.length ? { toolInteractions } : {}),
         }

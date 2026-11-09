@@ -76,6 +76,16 @@ Under **Global Settings → AI Assistant → Prompt cache key**, choose:
 
 DeepSeek's official cache does not require this request field, and the DeepSeek adapter never sends it even if the mode is enabled. When DeepSeek is behind New API, set **Provider compatibility** to **DeepSeek-compatible** and verify cache reads from official Provider usage. Current New API Chat Completions DTOs include `prompt_cache_key`, but protocol conversion, channel type, and version can still affect final forwarding. Inspect redacted outbound field names before enabling it, and never log the complete key.
 
+## DeepSeek thinking mode and reasoning replay
+
+DeepSeek thinking mode is enabled by default. Whenever a request carries `tools`, the upstream API requires the `reasoning_content` of every earlier assistant turn to be sent back verbatim, including turns without tool calls. A missing field returns HTTP 400 (`The reasoning_content in the thinking mode must be passed back to the API.`).
+
+Luna DevOps sends that field only when **Provider compatibility** is **DeepSeek-compatible**:
+
+- A direct `*.deepseek.com` endpoint is detected automatically; no extra configuration is needed.
+- Behind New API or another gateway the leaf hostname is hidden, so automatic detection can only resolve to **OpenAI-compatible**. Multi-step tool calls are then rejected by the upstream on the second sub-request or on later conversation turns, and you must select **DeepSeek-compatible** explicitly.
+- The replayed reasoning comes from redacted thinking items: in-memory Run continuations carry the model output directly, while recovery after an approval or a process interruption rebuilds it from those items. A step with no record sends an empty string so the field is present, without inventing a chain of thought.
+
 ## Verify the result
 
 1. Start a conversation in Luna DevOps and send two consecutive turns.

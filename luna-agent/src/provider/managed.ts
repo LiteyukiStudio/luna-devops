@@ -75,17 +75,30 @@ function resolveModel(config: RemoteProviderConfig, request: ModelRequest): Remo
   return selected
 }
 
+/**
+ * Provider 请求方言。它是唯一决定“是否需要回传 reasoning_content、max_tokens 字段、
+ * 渠道亲和与 prompt 缓存键”的事实源；自动识别只覆盖官方 DeepSeek 端点，
+ * 网关隐藏上游地址时必须由 `ai.provider.compatibility` 显式选择。
+ */
+export type ProviderDialect = "openai" | "deepseek"
+
+export function providerDialect(config: RemoteProviderConfig): ProviderDialect {
+  const configured = config.provider.providerCompatibility
+  if (configured === "deepseek") return "deepseek"
+  if (configured === "openai") return "openai"
+  return isDeepSeekEndpoint(config.provider.baseUrl) ? "deepseek" : "openai"
+}
+
 export function createConfiguredProvider(config: RemoteProviderConfig, modelName: string): ModelProvider {
-  const deepSeekCompatible = config.provider.providerCompatibility === "deepseek"
-    || config.provider.providerCompatibility === "auto" && isDeepSeekEndpoint(config.provider.baseUrl)
-  const Provider = deepSeekCompatible
+  const dialect = providerDialect(config)
+  const Provider = dialect === "deepseek"
     ? DeepSeekChatCompletionsProvider
     : OpenAIChatCompletionsProvider
   return new Provider({
     baseUrl: config.provider.baseUrl,
     apiKey: config.provider.apiKey,
     channelAffinityEnabled: config.provider.channelAffinityEnabled,
-    promptCacheKeyEnabled: !deepSeekCompatible && promptCacheKeyEnabled(config),
+    promptCacheKeyEnabled: dialect === "openai" && promptCacheKeyEnabled(config),
     model: modelName,
     timeoutMs: config.runtime.providerTimeoutMs,
   })

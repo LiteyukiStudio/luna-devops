@@ -6,7 +6,8 @@ import { searchToolsInput } from "../tools/tool-search.js"
 export { internalToolOperationIds }
 
 // 审批恢复后，把已完成的工具调用重建为 assistant + tool 消息对，
-// 让模型在断点续跑时看到暂停前的工具结果。只重建有结果的调用。
+// 让模型在断点续跑时看到暂停前的工具结果。只重建有结果的调用；
+// 同一模型步的推理原文只存在思考条目上，按时间线顺序回填到该步的 assistant 消息。
 export function resumedToolMessages(interactions: ConversationToolInteraction[]): ModelMessage[] {
   const resultsByRelatedItem = new Map(interactions
     .filter(interaction => interaction.type === "tool_result" && typeof interaction.content.relatedItemId === "string")
@@ -16,6 +17,7 @@ export function resumedToolMessages(interactions: ConversationToolInteraction[])
       && typeof interaction.content.verificationForToolCallId === "string"
       && interaction.content.verificationForToolCallId !== "")
     .map(interaction => [String(interaction.content.verificationForToolCallId), interaction] as const))
+  const reasoningByCallItem = reasoningByToolCallItemId(interactions)
   return interactions
     .filter(interaction => interaction.type === "tool_call" && interaction.content.inputMode !== "verification")
     .flatMap((interaction): ModelMessage[] => {
@@ -31,8 +33,14 @@ export function resumedToolMessages(interactions: ConversationToolInteraction[])
       const verificationResult = verificationCall ? resultsByRelatedItem.get(verificationCall.itemId) : undefined
       const resultContent = recordValue(result.content)
       const verificationContent = verificationResult ? recordValue(verificationResult.content) : undefined
+      const reasoning = reasoningByCallItem.get(interaction.itemId)
       return [
-        { role: "assistant", content: "", toolCalls: [{ id: toolCallId, operationId, arguments: argumentsRecord }] },
+        {
+          role: "assistant",
+          content: "",
+          toolCalls: [{ id: toolCallId, operationId, arguments: argumentsRecord }],
+          ...(reasoning ? { reasoning } : {}),
+        },
         {
           role: "tool",
           toolCallId,
@@ -51,6 +59,20 @@ export function resumedToolMessages(interactions: ConversationToolInteraction[])
         },
       ]
     })
+}
+
+/** 思考条目按时间线顺序覆盖其后的工具调用条目，重建同一模型步的推理原文。 */
+export function reasoningByToolCallItemId(interactions: ConversationToolInteraction[]): Map<string, string> {
+  const reasoningByCallItem = new Map<string, string>()
+  let currentReasoning = ""
+  for (const interaction of interactions) {
+    if (interaction.type === "reasoning_summary") {
+      currentReasoning = typeof interaction.content.summary === "string" ? interaction.content.summary : ""
+      continue
+    }
+    if (interaction.type === "tool_call" && currentReasoning) reasoningByCallItem.set(interaction.itemId, currentReasoning)
+  }
+  return reasoningByCallItem
 }
 
 export function normalizeToolSearchQuery(query: string): string {

@@ -124,6 +124,11 @@ export function mapRunCheckpoint(row: RunCheckpointRow): RunCheckpoint {
   }
 }
 
+/** 思考条目只保存脱敏后的推理原文，回传时按时间线顺序拼回整轮。 */
+export function timelineReasoningText(content: Record<string, unknown>): string {
+  return typeof content.summary === "string" ? content.summary : ""
+}
+
 export function timelineContentText(content: Record<string, unknown>): string {
   if (!Array.isArray(content.parts)) return ""
   return content.parts.map((part) => {

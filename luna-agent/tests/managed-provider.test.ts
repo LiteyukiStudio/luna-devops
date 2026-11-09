@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { createConfiguredProvider, ManagedProvider } from "../src/provider/managed.js"
+import { createConfiguredProvider, ManagedProvider, providerDialect } from "../src/provider/managed.js"
 import { DeepSeekChatCompletionsProvider } from "../src/provider/deepseek-chat-completions.js"
 import { OpenAIChatCompletionsProvider } from "../src/provider/openai-chat-completions.js"
 import { defaultRuntimeSettings } from "../src/runtime-settings.js"
@@ -30,6 +30,20 @@ describe("ManagedProvider", () => {
       ...configForModels(),
       provider: { ...configForModels().provider, baseUrl: "https://api.deepseek.com/v1", providerCompatibility: "openai" },
     }, "deepseek-chat")).toBeInstanceOf(OpenAIChatCompletionsProvider)
+  })
+
+  it.each([
+    ["official DeepSeek auto mode", "https://api.deepseek.com/v1", "auto", "auto", "deepseek"],
+    ["unknown gateway auto mode", "https://gateway.example/v1", "auto", "auto", "openai"],
+    ["gateway without explicit dialect", "https://gateway.example/v1/", "openai", "auto", "openai"],
+    ["explicit DeepSeek dialect", "https://gateway.example/v1", "deepseek", "auto", "deepseek"],
+    ["explicit OpenAI dialect on the official host", "https://api.deepseek.com/v1", "openai", "auto", "openai"],
+  ] as const)("resolves the provider dialect explicitly for %s", (_name, baseUrl, providerCompatibility, promptCacheKeyMode, expected) => {
+    const config = configForModels()
+    expect(providerDialect({
+      ...config,
+      provider: { ...config.provider, baseUrl, providerCompatibility, promptCacheKeyMode },
+    })).toBe(expected)
   })
 
   it.each([

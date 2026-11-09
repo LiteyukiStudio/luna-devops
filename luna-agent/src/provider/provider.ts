@@ -1,6 +1,11 @@
+/**
+ * 协议无关的对话消息。`reasoning` 保存该 assistant 消息对应的 Provider 推理原文，
+ * 只由需要原样回传思维链的方言（如 DeepSeek 思考模式的 `reasoning_content`）写入请求；
+ * 其余方言必须丢弃，不得把该字段透传给上游。
+ */
 export type ModelMessage =
   | { role: "system" | "user", content: string }
-  | { role: "assistant", content: string, toolCalls?: ModelToolCall[] }
+  | { role: "assistant", content: string, toolCalls?: ModelToolCall[], reasoning?: string }
   | { role: "tool", toolCallId: string, content: string }
 export type ModelToolDefinition = {
   operationId: string
@@ -67,7 +72,6 @@ export type ModelRequest = {
   toolChoice?: ModelToolChoice
   maxOutputTokens: number
   signal?: AbortSignal
-  thinking?: { type: string }
   modelId?: string
   modelName?: string
   modelPricing?: AIModelSnapshot

@@ -48,7 +48,7 @@ export async function streamModel(
   }), async span => {
     const reasoningItemId = createId("aiitm")
     const messageItemId = createId("aiitm")
-    let reasoningSummary = ""
+    let reasoning = ""
     let answer = ""
     let toolCalls: ModelToolCall[] = []
     let finishReason: string | undefined
@@ -86,11 +86,11 @@ export async function streamModel(
           continue
         }
         if (event.type === "reasoning_summary_delta" && event.delta) {
-          reasoningSummary += event.delta
+          reasoning += event.delta
           if (reasoningTimelineIndex === undefined) {
             const { item } = await stream.appendItemWithEvent({
               id: reasoningItemId, runId, turnId, type: "reasoning_summary", status: "streaming",
-              content: redact({ summary: reasoningSummary, display: "summary" }),
+              content: redact({ summary: reasoning, display: "summary" }),
             }, "thinking.started", redact({
               itemId: reasoningItemId,
               summary: event.delta,
@@ -102,7 +102,7 @@ export async function streamModel(
             await stream.updateItemWithEvent(
               reasoningItemId,
               "streaming",
-              redact({ summary: reasoningSummary, display: "summary" }),
+              redact({ summary: reasoning, display: "summary" }),
               "thinking.delta",
               redact({ itemId: reasoningItemId, delta: event.delta, display: "summary", timelineIndex: reasoningTimelineIndex }),
             )
@@ -161,11 +161,11 @@ export async function streamModel(
           })
         }
       }
-      if (reasoningSummary) {
+      if (reasoning) {
         await stream.updateItemWithEvent(
           reasoningItemId,
           "completed",
-          redact({ summary: reasoningSummary, display: "summary" }),
+          redact({ summary: reasoning, display: "summary" }),
           "thinking.completed",
           { itemId: reasoningItemId, display: "summary", timelineIndex: reasoningTimelineIndex },
         )
@@ -188,7 +188,7 @@ export async function streamModel(
       const finalSession = decision.kind === "final" ? stream : undefined
       if (!finalSession) await stream.commit("completed")
       return {
-        ...input, reasoningSummary, answer, toolCalls,
+        ...input, reasoning, answer, toolCalls,
         ...(finishReason === undefined ? {} : { finishReason }),
         ...(finalSession
           ? { finalizeTerminal: (to: "completed" | "failed" | "canceled" | "interrupted", errorCode?: string, conversationTitle?: string) => finalSession.commitTerminal(to, errorCode, conversationTitle) }

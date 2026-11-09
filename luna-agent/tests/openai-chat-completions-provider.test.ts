@@ -253,18 +253,25 @@ describe("OpenAIChatCompletionsProvider official usage", () => {
       usage: { prompt_tokens: 3, completion_tokens: 1, total_tokens: 4, prompt_cache_hit_tokens: 3 },
     }), { status: 200 }))
     vi.stubGlobal("fetch", fetchMock)
-    const result = await new OpenAIChatCompletionsProvider(options).complete({ ...request, thinking: { type: "enabled" } })
+    const result = await new OpenAIChatCompletionsProvider(options).complete({
+      ...request,
+      messages: [
+        { role: "user", content: "hello" },
+        { role: "assistant", content: "working", reasoning: "private chain of thought" },
+      ],
+    })
 
     const body = requestBody(fetchMock)
-    expect(body).not.toHaveProperty("thinking")
+    const messages = body.messages as Array<Record<string, unknown>>
     expect(JSON.stringify(body)).not.toContain("reasoning_content")
+    expect(messages.every(message => !("reasoning" in message))).toBe(true)
     expect(result).not.toHaveProperty("reasoningSummary")
     expect(result.usage).toEqual({ status: "reported", value: { inputTokens: 3, outputTokens: 1, totalTokens: 4 } })
   })
 })
 
 describe("DeepSeekChatCompletionsProvider adapter", () => {
-  it("contains the explicit max_tokens and reasoning_content compatibility", async () => {
+  it("echoes reasoning_content on every assistant message and never fabricates one", async () => {
     const fetchMock = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({
       id: "deepseek_1", model: "deepseek-chat", choices: [{ message: { content: "done" } }],
       usage: { prompt_tokens: 2, completion_tokens: 1, total_tokens: 3 },
@@ -272,13 +279,20 @@ describe("DeepSeekChatCompletionsProvider adapter", () => {
     vi.stubGlobal("fetch", fetchMock)
     await new DeepSeekChatCompletionsProvider({ ...options, baseUrl: "https://api.deepseek.com/v1", model: "deepseek-chat" }).complete({
       ...request,
-      messages: [{ role: "assistant", content: "working", toolCalls: [{ id: "call_1", operationId: "getBuild", arguments: {} }] }],
-      thinking: { type: "enabled" },
+      messages: [
+        { role: "user", content: "hello" },
+        { role: "assistant", content: "working", toolCalls: [{ id: "call_1", operationId: "getBuild", arguments: {} }], reasoning: "先读取构建记录" },
+        { role: "tool", toolCallId: "call_1", content: "{}" },
+        { role: "assistant", content: "已完成" },
+      ],
     })
     const body = requestBody(fetchMock)
-    expect(body).toMatchObject({ max_tokens: 100, thinking: { type: "enabled" } })
+    expect(body).toMatchObject({ max_tokens: 100 })
     expect(body).not.toHaveProperty("max_completion_tokens")
-    expect(JSON.stringify(body)).toContain("reasoning_content")
+    expect((body.messages as Array<Record<string, unknown>>).filter(message => message.role === "assistant")).toEqual([
+      expect.objectContaining({ reasoning_content: "先读取构建记录" }),
+      expect.objectContaining({ content: "已完成", reasoning_content: "" }),
+    ])
   })
 
   it("maps non-streaming prompt_cache_hit_tokens into the normalized cache-read field", async () => {

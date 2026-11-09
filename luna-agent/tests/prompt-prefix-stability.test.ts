@@ -50,6 +50,39 @@ describe("Provider prompt prefix stability", () => {
     expect(firstCurrent?.content).toContain('"页面上下文":{"nested":{"a":1,"b":2},"z":1}')
   })
 
+  it("replays persisted reasoning on the history assistant message", async () => {
+    const requests: ModelRequest[] = []
+    const runtime = new ModelRuntime(capturingProvider(requests), testRegistry())
+    await runtime.complete(runtimeInput({
+      input: "继续",
+      history: [{
+        turnIndex: 0,
+        user: "检查这个构建",
+        assistant: "构建失败在测试阶段。",
+        reasoning: "先看构建日志，再定位失败阶段。",
+      }],
+      conversation: { title: "构建排查", titleSource: "user", turnIndex: 1 },
+    }))
+
+    const assistant = requests[0]!.messages.find(message => message.role === "assistant")
+    expect(assistant).toMatchObject({ reasoning: "先看构建日志，再定位失败阶段。" })
+  })
+
+  it("keeps reasoning bytes inside the history payload budget", () => {
+    const bounded = boundHistoryMessages([{
+      turnIndex: 0,
+      user: "检查这个构建",
+      assistant: "构建失败在测试阶段。",
+      reasoning: "思".repeat(200_000),
+    }], 128 * 1024)
+
+    const assistant = bounded.find(message => message.role === "assistant")
+    const reasoning = assistant?.role === "assistant" ? assistant.reasoning ?? "" : ""
+    expect(reasoning.length).toBeGreaterThan(0)
+    expect(Buffer.byteLength(JSON.stringify(bounded), "utf8")).toBeGreaterThan(1024)
+    expect(payloadBytes(bounded)).toBeLessThanOrEqual(128 * 1024)
+  })
+
   it("keeps the system prefix and Provider tool order independent from LRU order", async () => {
     const requests: ModelRequest[] = []
     const runtime = new ModelRuntime(capturingProvider(requests), testRegistry({
@@ -191,7 +224,7 @@ function runtimeInput(overrides: Partial<AssistantModelInput> = {}): AssistantMo
     history: [],
     conversation: { title: "标题", titleSource: "user", turnIndex: 0 },
     promptVersion: "system-v4",
-    reasoningSummary: "",
+    reasoning: "",
     answer: "",
     toolCalls: [],
     continuationMessages: [],
@@ -208,7 +241,8 @@ function serialized(messages: ModelMessage[]): string {
 function payloadBytes(messages: ModelMessage[]): number {
   return messages.reduce((total, message) => total
     + Buffer.byteLength(message.content, "utf8")
-    + (message.role === "assistant" && message.toolCalls ? Buffer.byteLength(JSON.stringify(message.toolCalls), "utf8") : 0), 0)
+    + (message.role === "assistant" && message.toolCalls ? Buffer.byteLength(JSON.stringify(message.toolCalls), "utf8") : 0)
+    + (message.role === "assistant" && message.reasoning ? Buffer.byteLength(message.reasoning, "utf8") : 0), 0)
 }
 
 function parseTurnEnvelope(message: ModelMessage): Record<string, unknown> {

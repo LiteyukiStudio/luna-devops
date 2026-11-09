@@ -5,7 +5,7 @@ import type { Config } from "./config.js"
 import type { AIModelSnapshot, ActorContext, Run, RunEvent } from "./domain.js"
 import { RunStateConflictError, type Repository } from "./persistence/repository.js"
 import type { RemoteConfigSource } from "./provider/config-client.js"
-import { createConfiguredProvider } from "./provider/managed.js"
+import { createConfiguredProvider, providerDialect } from "./provider/managed.js"
 import { redact } from "./redaction.js"
 import type { ToolOrchestrator } from "./tools/orchestrator.js"
 import { presentEventForRun, presentTimeline } from "./timeline-presenter.js"
@@ -108,6 +108,7 @@ export function buildServer(input: BuildServerDependencies): FastifyInstance {
       return {
         status: health.ok ? "available" : "unavailable",
         configVersion: config.version,
+        providerDialect: providerDialect(config),
         capabilities: provider.capabilities(),
         ...(health.requestId ? { providerRequestId: health.requestId } : {}),
       }

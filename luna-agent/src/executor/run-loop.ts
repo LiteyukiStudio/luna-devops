@@ -205,7 +205,7 @@ export class RunLoop {
           history: executionInput.history,
           conversation: toolState.conversation,
           promptVersion: run.promptVersion,
-          reasoningSummary: "",
+          reasoning: "",
           answer: "",
           toolCalls: [],
           continuationMessages: toolState.continuationMessages,
@@ -225,7 +225,7 @@ export class RunLoop {
         if (action.type === "fail") throw new Error(action.errorCode)
         if (action.type === "repair") {
           protocolRepairCount += 1
-          if (result.answer.trim()) toolState.continuationMessages.push({ role: "assistant", content: result.answer })
+          if (result.answer.trim()) toolState.continuationMessages.push({ role: "assistant", content: result.answer, reasoning: result.reasoning })
           toolState.continuationMessages.push({ role: "system", content: protocolRepairInstruction })
           continue
         }
@@ -249,6 +249,7 @@ export class RunLoop {
           executionInput,
           runtimeSettings,
           answer: result.answer,
+          reasoning: result.reasoning,
           calls,
           signal,
         }, toolState)
