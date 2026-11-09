@@ -271,7 +271,7 @@ describe("OpenAIChatCompletionsProvider official usage", () => {
 })
 
 describe("DeepSeekChatCompletionsProvider adapter", () => {
-  it("echoes reasoning_content on every assistant message and never fabricates one", async () => {
+  it("echoes reasoning_content on every assistant message without inventing a chain of thought", async () => {
     const fetchMock = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({
       id: "deepseek_1", model: "deepseek-chat", choices: [{ message: { content: "done" } }],
       usage: { prompt_tokens: 2, completion_tokens: 1, total_tokens: 3 },
@@ -289,10 +289,12 @@ describe("DeepSeekChatCompletionsProvider adapter", () => {
     const body = requestBody(fetchMock)
     expect(body).toMatchObject({ max_tokens: 100 })
     expect(body).not.toHaveProperty("max_completion_tokens")
-    expect((body.messages as Array<Record<string, unknown>>).filter(message => message.role === "assistant")).toEqual([
-      expect.objectContaining({ reasoning_content: "先读取构建记录" }),
-      expect.objectContaining({ content: "已完成", reasoning_content: "" }),
-    ])
+    const assistantMessages = (body.messages as Array<Record<string, unknown>>).filter(message => message.role === "assistant")
+    expect(assistantMessages[0]).toMatchObject({ reasoning_content: "先读取构建记录" })
+    expect(assistantMessages[1]).toMatchObject({ content: "已完成" })
+    // 网关不回传思维链时字段仍必须非空，否则会被上游当作缺失；占位不复制正文。
+    expect(String(assistantMessages[1]?.reasoning_content)).not.toBe("")
+    expect(String(assistantMessages[1]?.reasoning_content)).not.toBe("已完成")
   })
 
   it("maps non-streaming prompt_cache_hit_tokens into the normalized cache-read field", async () => {

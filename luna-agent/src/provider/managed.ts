@@ -77,20 +77,21 @@ function resolveModel(config: RemoteProviderConfig, request: ModelRequest): Remo
 
 /**
  * Provider 请求方言。它是唯一决定“是否需要回传 reasoning_content、max_tokens 字段、
- * 渠道亲和与 prompt 缓存键”的事实源；自动识别只覆盖官方 DeepSeek 端点，
- * 网关隐藏上游地址时必须由 `ai.provider.compatibility` 显式选择。
+ * 渠道亲和与 prompt 缓存键”的事实源。
+ * 显式配置优先；自动模式先看官方端点，再看模型名（网关隐藏上游地址时唯一的可用信号）。
  */
 export type ProviderDialect = "openai" | "deepseek"
 
-export function providerDialect(config: RemoteProviderConfig): ProviderDialect {
+export function providerDialect(config: RemoteProviderConfig, modelName?: string): ProviderDialect {
   const configured = config.provider.providerCompatibility
   if (configured === "deepseek") return "deepseek"
   if (configured === "openai") return "openai"
-  return isDeepSeekEndpoint(config.provider.baseUrl) ? "deepseek" : "openai"
+  if (isDeepSeekEndpoint(config.provider.baseUrl)) return "deepseek"
+  return modelName && isDeepSeekModelName(modelName) ? "deepseek" : "openai"
 }
 
 export function createConfiguredProvider(config: RemoteProviderConfig, modelName: string): ModelProvider {
-  const dialect = providerDialect(config)
+  const dialect = providerDialect(config, modelName)
   const Provider = dialect === "deepseek"
     ? DeepSeekChatCompletionsProvider
     : OpenAIChatCompletionsProvider
@@ -118,6 +119,15 @@ function isDeepSeekEndpoint(baseUrl: string): boolean {
     return hostname === "deepseek.com" || hostname.endsWith(".deepseek.com")
   }
   catch { return false }
+}
+
+/**
+ * 网关隐藏上游地址时的模型名嗅探：`deepseek-flash`、`deepseek/deepseek-chat`、
+ * `deepseek-ai/DeepSeek-V3.2` 等命名都指向 DeepSeek 方言。只用于自动模式，
+ * 显式选择 OpenAI 兼容仍可关掉回传。
+ */
+function isDeepSeekModelName(modelName: string): boolean {
+  return /(?:^|[^a-z0-9])deepseek(?:$|[^a-z0-9])/i.test(modelName.trim())
 }
 
 function isOfficialOpenAIEndpoint(baseUrl: string): boolean {

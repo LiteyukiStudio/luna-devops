@@ -71,7 +71,7 @@ const settings = {
     apiKey: 'API Key',
     apiKeyHint: '시크릿은 플랫폼에서 암호화 저장되고 편집 시 다시 표시되지 않습니다.',
     providerCompatibility: 'Provider 호환 유형',
-    providerCompatibilityHint: 'Agent가 사용할 요청 및 사용량 어댑터를 선택합니다. 자동 모드는 공식 DeepSeek 호스트 이름만 감지하므로 게이트웨이가 업스트림 주소를 숨기면 명시적으로 선택하세요.',
+    providerCompatibilityHint: 'Agent가 사용할 요청 및 사용량 어댑터를 선택합니다. 자동 모드는 공식 DeepSeek 호스트 이름을 먼저 확인하고 다음으로 모델 이름에서 DeepSeek 계열을 판별하므로, 게이트웨이가 여러 벤더를 중계할 때는 자동으로 두면 됩니다.',
     providerCompatibilityAuto: '자동 감지',
     providerCompatibilityOpenAI: 'OpenAI 호환',
     providerCompatibilityDeepSeek: 'DeepSeek 호환',

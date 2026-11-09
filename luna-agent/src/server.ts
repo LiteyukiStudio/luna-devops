@@ -108,7 +108,7 @@ export function buildServer(input: BuildServerDependencies): FastifyInstance {
       return {
         status: health.ok ? "available" : "unavailable",
         configVersion: config.version,
-        providerDialect: providerDialect(config),
+        providerDialect: providerDialect(config, selectedModel.name),
         capabilities: provider.capabilities(),
         ...(health.requestId ? { providerRequestId: health.requestId } : {}),
       }

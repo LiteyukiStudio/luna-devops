@@ -71,7 +71,7 @@ const settings = {
     apiKey: 'API Key',
     apiKeyHint: '金鑰由平臺加密儲存，編輯時不回顯。',
     providerCompatibility: 'Provider 相容類型',
-    providerCompatibilityHint: '選擇 Agent 使用的請求與用量配接器。自動模式只識別官方 DeepSeek 位址；閘道隱藏上游位址時應明確選擇。',
+    providerCompatibilityHint: '選擇 Agent 使用的請求與用量配接器。自動模式先識別官方 DeepSeek 位址，再依模型名稱識別 DeepSeek 系列；閘道混合代理多個廠商時保持自動識別即可。',
     providerCompatibilityAuto: '自動識別',
     providerCompatibilityOpenAI: 'OpenAI 相容',
     providerCompatibilityDeepSeek: 'DeepSeek 相容',

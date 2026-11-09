@@ -155,14 +155,17 @@ AI 助手不是悬浮在控制台上的通用聊天机器人。它理解用户�
 
 ### 4.2 Provider 协议方言与思维链回传
 
-- `ai.provider.compatibility` 是请求方言的唯一事实源：`auto` 只识别官方 DeepSeek 端点，
-  网关隐藏上游地址时必须显式选择；`providerDialect()` 是代码内的唯一解析入口，Provider 连接测试
-  会回报实际生效的方言，避免"适配器没生效"被误判为上游故障。
+- 请求方言按"显式配置 → 官方 DeepSeek 端点 → 模型名"解析，`providerDialect(config, modelName)`
+  是唯一入口：`auto` 在网关隐藏上游地址时按模型名识别 DeepSeek 系列，混合代理的网关无需逐渠道配置；
+  Provider 连接测试回报首个模型实际生效的方言。Agent 每 30 秒拉取一次配置，方言变更只影响之后
+  新开始的 Run（Run 在 claim 时冻结快照），配置版本变化会写一条 `agent.provider_config.updated`。
 - 协议消息的 `reasoning` 字段保存该轮推理原文，只有需要回传思维链的方言写入请求；OpenAI 口径从
   构造上不产生该字段，也不会把响应里的 `reasoning_content` 当作协议字段解释。
 - DeepSeek 思考模式默认开启，携带 `tools` 的请求必须回传每一轮 assistant 的完整
   `reasoning_content`（含没有工具调用的轮次），缺失即 400。同一 Run 内存续跑直接携带模型原文，
-  审批或进程中断后的恢复从已脱敏的思考条目重建，确实无记录时发送空串占位，不伪造思维链。
+  审批或进程中断后的恢复从已脱敏的思考条目重建；网关不回传推理原文时发送固定非空占位（部分网关
+  的 DTO 会把空串当缺省丢弃），不把正文伪装成思维链。上游拒绝原因以脱敏截断的形式写入
+  `provider.error.message` 日志字段。
 - 推理原文与正文、工具结果一样受历史/续跑字节预算约束，并计入 `gen_ai.output.messages` 的
   reasoning 部分；不重复进入输入消息的遥测内容。
 

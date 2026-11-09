@@ -105,8 +105,16 @@ export class RemoteConfigSnapshot implements RemoteConfigSource {
   }
 
   private async refreshOnce(): Promise<RemoteProviderConfig> {
+    const previousVersion = this.currentSnapshot?.config.version
     const candidate = await this.fetchCandidate()
     this.currentSnapshot = candidate
+    // 方言配置变更只能在下一次拉取后生效；写入事件才能在报障时对时。
+    if (previousVersion !== undefined && previousVersion !== candidate.config.version) {
+      telemetryLog("agent.provider_config.updated", "info", {
+        "luna.provider.compatibility": candidate.config.provider.providerCompatibility,
+        "luna.provider.configured": candidate.config.provider.configured,
+      })
+    }
     for (const listener of this.listeners) listener(candidate.config, candidate.catalog)
     return candidate.config
   }

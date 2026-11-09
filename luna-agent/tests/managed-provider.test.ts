@@ -33,17 +33,27 @@ describe("ManagedProvider", () => {
   })
 
   it.each([
-    ["official DeepSeek auto mode", "https://api.deepseek.com/v1", "auto", "auto", "deepseek"],
-    ["unknown gateway auto mode", "https://gateway.example/v1", "auto", "auto", "openai"],
-    ["gateway without explicit dialect", "https://gateway.example/v1/", "openai", "auto", "openai"],
-    ["explicit DeepSeek dialect", "https://gateway.example/v1", "deepseek", "auto", "deepseek"],
-    ["explicit OpenAI dialect on the official host", "https://api.deepseek.com/v1", "openai", "auto", "openai"],
-  ] as const)("resolves the provider dialect explicitly for %s", (_name, baseUrl, providerCompatibility, promptCacheKeyMode, expected) => {
+    ["official DeepSeek endpoint", "https://api.deepseek.com/v1", "auto", "model-a", "deepseek"],
+    ["unknown gateway with a neutral model name", "https://gateway.example/v1", "auto", "model-a", "openai"],
+    ["gateway exposing a DeepSeek model", "https://gateway.example/v1", "auto", "deepseek-flash", "deepseek"],
+    ["gateway exposing a namespaced DeepSeek model", "https://gateway.example/v1", "auto", "deepseek-ai/DeepSeek-V3.2", "deepseek"],
+    ["gateway exposing a non-DeepSeek model", "https://gateway.example/v1", "auto", "kimi-k3", "openai"],
+    ["explicit OpenAI dialect on a DeepSeek model", "https://gateway.example/v1/", "openai", "deepseek-flash", "openai"],
+    ["explicit DeepSeek dialect on any model", "https://gateway.example/v1", "deepseek", "kimi-k3", "deepseek"],
+    ["explicit OpenAI dialect on the official host", "https://api.deepseek.com/v1", "openai", "deepseek-chat", "openai"],
+  ] as const)("resolves the provider dialect for %s", (_name, baseUrl, providerCompatibility, modelName, expected) => {
     const config = configForModels()
     expect(providerDialect({
       ...config,
-      provider: { ...config.provider, baseUrl, providerCompatibility, promptCacheKeyMode },
-    })).toBe(expected)
+      provider: { ...config.provider, baseUrl, providerCompatibility },
+    }, modelName)).toBe(expected)
+  })
+
+  it("picks the adapter per model on a mixed gateway", () => {
+    const config = configForModels()
+    const gateway = { ...config, provider: { ...config.provider, baseUrl: "https://gateway.example/v1" } }
+    expect(createConfiguredProvider(gateway, "deepseek-flash")).toBeInstanceOf(DeepSeekChatCompletionsProvider)
+    expect(createConfiguredProvider(gateway, "kimi-k3")).toBeInstanceOf(OpenAIChatCompletionsProvider)
   })
 
   it.each([

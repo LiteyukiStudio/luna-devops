@@ -71,7 +71,7 @@ const settings = {
     apiKey: 'API Key',
     apiKeyHint: '密钥由平台加密保存，编辑时不回显。',
     providerCompatibility: 'Provider 兼容类型',
-    providerCompatibilityHint: '选择 Agent 使用的请求和用量适配器。自动模式只识别官方 DeepSeek 地址；网关隐藏上游地址时应显式选择。',
+    providerCompatibilityHint: '选择 Agent 使用的请求和用量适配器。自动模式先识别官方 DeepSeek 地址，再按模型名识别 DeepSeek 系列；网关混合代理多个厂商时保持自动识别即可。',
     providerCompatibilityAuto: '自动识别',
     providerCompatibilityOpenAI: 'OpenAI 兼容',
     providerCompatibilityDeepSeek: 'DeepSeek 兼容',

@@ -80,10 +80,12 @@ DeepSeek 官方缓存无需该请求字段，DeepSeek 适配器即使选择“�
 
 DeepSeek 的思考模式默认开启。只要请求携带 `tools`，上游就要求把此前每一轮 assistant 的 `reasoning_content` 原样带回，包括没有发生工具调用的轮次；缺失时返回 HTTP 400（`The reasoning_content in the thinking mode must be passed back to the API.`）。
 
-Luna DevOps 只在 **Provider 兼容类型** 为“DeepSeek 兼容”时回传该字段：
+Luna DevOps 在 **Provider 兼容类型** 解析为 DeepSeek 方言时回传该字段：
 
-- 直连 `*.deepseek.com` 时由自动识别选中，无需额外配置。
-- 经 New API 等网关接入时，网关隐藏了上游地址，自动识别只能落到“OpenAI 兼容”。此时多步工具调用会在第二轮子请求或后续会话轮次被上游拒绝，必须在 **Provider 兼容类型** 显式选择“DeepSeek 兼容”。
+- 自动识别先看 `*.deepseek.com` 官方地址，再看模型名（如 `deepseek-flash`、`deepseek-ai/DeepSeek-V3.2`）；网关隐藏上游地址时依靠模型名即可选中 DeepSeek 方言，无需逐渠道配置。
+- 同一网关混合代理多个厂商时保持“自动识别”：DeepSeek 系列走 DeepSeek 方言，其他模型走 OpenAI 兼容。
+- 只有模型名不含 DeepSeek 线索、但上游确实要求回传时才需要显式选择“DeepSeek 兼容”；显式选择会作用于该渠道的全部模型。
+- 保存配置后，Agent 在下一次拉取配置（最长约 30 秒）后才对新 Run 生效；已在本轮运行的 Run 继续使用开始时的快照。
 - 回传的推理原文来自已脱敏的思考条目：同一 Run 内存续跑直接携带模型原文，审批或进程中断后的恢复从思考条目重建；确实没有记录时以空串占位，保证字段存在，但不会伪造思维链。
 
 ## 验证结果

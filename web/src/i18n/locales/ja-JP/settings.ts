@@ -71,7 +71,7 @@ const settings = {
     apiKey: 'API Key',
     apiKeyHint: 'シークレットはプラットフォームで暗号化保存され、編集時に再表示されません。',
     providerCompatibility: 'Provider 互換タイプ',
-    providerCompatibilityHint: 'Agent が使用するリクエストと使用量のアダプターを選択します。自動モードは公式 DeepSeek ホスト名のみを検出するため、ゲートウェイが上流アドレスを隠す場合は明示的に選択してください。',
+    providerCompatibilityHint: 'Agent が使用するリクエストと使用量のアダプターを選択します。自動モードは公式 DeepSeek ホスト名を優先し、次にモデル名から DeepSeek 系を判定するため、ゲートウェイが複数ベンダーを中継する場合は自動のままで構いません。',
     providerCompatibilityAuto: '自動検出',
     providerCompatibilityOpenAI: 'OpenAI 互換',
     providerCompatibilityDeepSeek: 'DeepSeek 互換',

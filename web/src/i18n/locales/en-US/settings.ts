@@ -71,7 +71,7 @@ const settings = {
     apiKey: 'API key',
     apiKeyHint: 'The key is encrypted by the platform and is never displayed when editing.',
     providerCompatibility: 'Provider compatibility',
-    providerCompatibilityHint: 'Select the request and usage adapter. Automatic mode detects only official DeepSeek hostnames; choose a type explicitly when a gateway hides the upstream address.',
+    providerCompatibilityHint: 'Select the request and usage adapter. Automatic mode detects official DeepSeek hostnames first, then DeepSeek-family model names; keep it on automatic when a gateway proxies several vendors.',
     providerCompatibilityAuto: 'Automatic detection',
     providerCompatibilityOpenAI: 'OpenAI-compatible',
     providerCompatibilityDeepSeek: 'DeepSeek-compatible',

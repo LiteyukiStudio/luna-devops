@@ -39,7 +39,7 @@ const rateLimitCodes = new Set(["rate_limit_exceeded", "requests_rate_limit_exce
 const timeoutCodes = new Set(["request_timeout", "timeout"])
 const unavailableCodes = new Set(["server_error", "service_unavailable", "overloaded"])
 
-export function parseProviderErrorBody(value: unknown): { code?: string, type?: string, param?: string } {
+export function parseProviderErrorBody(value: unknown): { code?: string, type?: string, param?: string, message?: string } {
   const parsed = providerErrorBodySchema.safeParse(value)
   if (!parsed.success) return {}
   const error = parsed.data.error
@@ -47,6 +47,7 @@ export function parseProviderErrorBody(value: unknown): { code?: string, type?: 
     ...(error.code !== undefined ? { code: String(error.code) } : {}),
     ...(error.type ? { type: error.type } : {}),
     ...(error.param ? { param: error.param } : {}),
+    ...(error.message ? { message: error.message } : {}),
   }
 }
 

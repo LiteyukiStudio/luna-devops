@@ -80,10 +80,12 @@ DeepSeek's official cache does not require this request field, and the DeepSeek 
 
 DeepSeek thinking mode is enabled by default. Whenever a request carries `tools`, the upstream API requires the `reasoning_content` of every earlier assistant turn to be sent back verbatim, including turns without tool calls. A missing field returns HTTP 400 (`The reasoning_content in the thinking mode must be passed back to the API.`).
 
-Luna DevOps sends that field only when **Provider compatibility** is **DeepSeek-compatible**:
+Luna DevOps sends that field whenever **Provider compatibility** resolves to the DeepSeek dialect:
 
-- A direct `*.deepseek.com` endpoint is detected automatically; no extra configuration is needed.
-- Behind New API or another gateway the leaf hostname is hidden, so automatic detection can only resolve to **OpenAI-compatible**. Multi-step tool calls are then rejected by the upstream on the second sub-request or on later conversation turns, and you must select **DeepSeek-compatible** explicitly.
+- Automatic mode checks for an official `*.deepseek.com` endpoint first, then the model name (for example `deepseek-flash` or `deepseek-ai/DeepSeek-V3.2`). Behind a gateway that hides the leaf hostname the model name alone selects the DeepSeek dialect, with no per-channel configuration.
+- Keep automatic mode when one gateway proxies several vendors: DeepSeek models use the DeepSeek dialect and other models stay OpenAI-compatible.
+- Select **DeepSeek-compatible** explicitly only when the model name carries no DeepSeek hint but the upstream still requires the field; the explicit choice applies to every model on that channel.
+- After saving, Agent applies the change to new runs on its next configuration fetch (at most about 30 seconds). A run already in flight keeps the snapshot it started with.
 - The replayed reasoning comes from redacted thinking items: in-memory Run continuations carry the model output directly, while recovery after an approval or a process interruption rebuilds it from those items. A step with no record sends an empty string so the field is present, without inventing a chain of thought.
 
 ## Verify the result

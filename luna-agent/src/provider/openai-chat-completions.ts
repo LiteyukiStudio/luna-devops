@@ -2,6 +2,7 @@ import type { Attributes, Span } from "@opentelemetry/api"
 import { createHash } from "node:crypto"
 import { trace } from "@opentelemetry/api"
 import { z } from "zod"
+import { redact } from "../redaction.js"
 import { genAIClientTokenUsageAttributes, genAIInputMessages, genAIModelSpan, genAIOutputMessages, genAIToolDefinitions } from "../genai-semconv.js"
 import { agentMetrics, clientSpanOptions, errorDiagnostic, recordAIContent, telemetryLog, withSpan, withSpanStream } from "../telemetry.js"
 import { mapProviderError, parseProviderErrorBody, ProviderRequestError } from "./provider-error.js"
@@ -394,7 +395,10 @@ export class OpenAIChatCompletionsProvider implements ModelProvider {
         })
         telemetryLog("agent.provider.request_failed", "warn", {
           operation: stream ? "agent.provider.chat_stream" : "agent.provider.chat_complete", outcome: "failed",
-          "http.response.status_code": response.status, "provider.error.code": detail.code ?? "unknown", ...errorDiagnostic(error, code),
+          "http.response.status_code": response.status, "provider.error.code": detail.code ?? "unknown",
+          // 上游拒绝原因才能定位方言/契约问题；截断并脱敏，不进入面向用户的错误文案。
+          ...(detail.message ? { "provider.error.message": redact(detail.message).slice(0, 200) } : {}),
+          ...errorDiagnostic(error, code),
         })
         throw error
       }
