@@ -92,6 +92,7 @@ const errors = {
     internal_error: '部署配置处理失败，请稍后重试。',
   },
   deployment_target: {
+    image_repository_claimed: '目标镜像仓库已被其它项目空间使用，请换一个仓库路径。',
     service_account_invalid: 'ServiceAccount 配置无效，请检查后重试。',
     replicas_invalid: '副本数必须为 0 或正整数。',
     build_concurrency_policy_invalid: '构建并发策略只能是按顺序排队、取消进行中的旧构建或并行执行。',
@@ -129,6 +130,7 @@ const errors = {
     transaction_invalid_amount: '余额调整金额必须是非零数字',
   },
   build: {
+    image_repository_claimed: '目标镜像仓库已被其它项目空间使用。请修改部署配置的目标镜像仓库后重试。',
     registry_push_credential_required: '目标镜像站缺少当前项目空间可用的推送凭据。请在镜像站凭据管理中配置“推送”或“推送与拉取”凭据后重试。',
     variable_set_unavailable: '变量和密钥集不可用或无权访问，请重新选择。',
   },

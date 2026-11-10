@@ -120,6 +120,19 @@ func RepositoryWithoutRegistryHost(registry model.ArtifactRegistry, repository s
 	return repository
 }
 
+// RepositoryReferences 返回同一镜像站仓库在部署配置和构建记录中可能出现的写法（带或不带镜像站主机）。
+func RepositoryReferences(registry model.ArtifactRegistry, repository string) []string {
+	bare := RepositoryWithoutRegistryHost(registry, repository)
+	if bare == "" {
+		return nil
+	}
+	references := []string{bare}
+	if host := RegistryImageHost(registry.Endpoint); host != "" && !hasRegistryHost(bare) {
+		references = append(references, strings.TrimRight(host, "/")+"/"+bare)
+	}
+	return references
+}
+
 func BuildImageNamePrefix(registry model.ArtifactRegistry, repository string) string {
 	repository = strings.Trim(strings.TrimSpace(repository), "/")
 	if repository == "" {

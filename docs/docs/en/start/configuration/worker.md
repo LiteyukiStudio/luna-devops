@@ -49,8 +49,7 @@ When running from source, Worker reads these variables from the root `.env`. Doc
 | --- | --- | --- |
 | `BUILD_JOB_TIMEOUT_SECONDS` | `1800` | Sets the default build-job execution timeout used when a build has no timeout of its own; use a positive number of seconds. Builds past it are marked as timed out. |
 | `BUILD_JOB_TTL_SECONDS` | `3600` | Sets how long completed build jobs remain; use a non-negative number of seconds. |
-| `BUILD_CACHE_ENABLED` | `false` | Controls whether BuildKit Registry cache is read and written; use `true` or `false`. |
-| `BUILD_CACHE_TAG` | `buildcache` | Sets the Registry cache tag; use a valid OCI image tag. |
+| `BUILD_CACHE_ENABLED` | `false` | Controls whether BuildKit Registry cache is read and written; use `true` or `false`. When enabled, the cache is written to the `buildcache` tag of the target image repository, so the push credential must be allowed to overwrite that tag. Builds that use build secrets only cache layers already present in the final image; cache read or write failures do not affect the build result. |
 | `BUILD_PRIVATE_EGRESS_PORTS` | `443` | Limits ports used to reach private targets; use comma-separated ports from `1` to `65535`. |
 | `BUILD_BLOCKED_EGRESS_CIDRS` | Empty | Adds networks that builds cannot reach; use comma-separated CIDRs. |
 

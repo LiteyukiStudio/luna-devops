@@ -136,6 +136,9 @@ func (h *Handlers) deploymentTargetFromInput(ctx *gin.Context, user model.User, 
 	if !ok {
 		return model.DeploymentTarget{}, nil, runtimeapi.RuntimeSecretMutationInput{}, false
 	}
+	if sourceType == "repository" && !h.ensureTargetImageRepositoryAvailable(ctx, app.ProjectID, targetRegistryID, targetRepository) {
+		return model.DeploymentTarget{}, nil, runtimeapi.RuntimeSecretMutationInput{}, false
+	}
 	publicEnvironment, secretMutation, ok := runtimeapi.NormalizeEnvironmentVariables(ctx, input.EnvironmentVariables)
 	if !ok {
 		return model.DeploymentTarget{}, nil, runtimeapi.RuntimeSecretMutationInput{}, false

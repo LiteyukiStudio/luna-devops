@@ -16,7 +16,6 @@ data:
   BUILD_JOB_TIMEOUT_SECONDS: {{ .Values.worker.buildJobTimeoutSeconds | quote }}
   BUILD_JOB_TTL_SECONDS: {{ .Values.worker.buildJobTtlSeconds | quote }}
   BUILD_CACHE_ENABLED: {{ .Values.worker.buildCacheEnabled | quote }}
-  BUILD_CACHE_TAG: {{ .Values.worker.buildCacheTag | quote }}
   BUILD_PRIVATE_EGRESS_CIDRS: {{ .Values.worker.buildPrivateEgressCidrs | quote }}
   BUILD_PRIVATE_EGRESS_PORTS: {{ .Values.worker.buildPrivateEgressPorts | quote }}
   BUILD_BLOCKED_EGRESS_CIDRS: {{ .Values.worker.buildBlockedEgressCidrs | quote }}

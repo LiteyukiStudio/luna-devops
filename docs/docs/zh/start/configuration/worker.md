@@ -49,8 +49,7 @@
 | --- | --- | --- |
 | `BUILD_JOB_TIMEOUT_SECONDS` | `1800` | 设置构建 Job 的默认执行超时，构建未单独设置超时时使用；填写正整数秒数。超时的构建标记为“已超时”。 |
 | `BUILD_JOB_TTL_SECONDS` | `3600` | 设置完成后保留构建 Job 的时间；填写非负整数秒数。 |
-| `BUILD_CACHE_ENABLED` | `false` | 控制是否读写 BuildKit Registry 缓存；可填 `true` 或 `false`。 |
-| `BUILD_CACHE_TAG` | `buildcache` | 设置 Registry 缓存使用的标签；填写合法 OCI 镜像标签。 |
+| `BUILD_CACHE_ENABLED` | `false` | 控制是否读写 BuildKit Registry 缓存；可填 `true` 或 `false`。启用后缓存写入目标镜像仓库的 `buildcache` Tag，需要推送凭据允许覆盖该 Tag。使用了构建密钥的构建只缓存最终镜像已有的层；缓存读写失败不影响构建结果。 |
 | `BUILD_PRIVATE_EGRESS_PORTS` | `443` | 限制构建访问私网目标的端口；填写逗号分隔的 `1`–`65535` 端口。 |
 | `BUILD_BLOCKED_EGRESS_CIDRS` | 空 | 追加构建禁止访问的网段；填写逗号分隔的 CIDR。 |
 

@@ -13,6 +13,8 @@ An image pushed by a source build has three parts: `<registry host>/<repository 
 
 Credential templates apply only while a deploy config's target image is empty or still the platform default. A target image you edited is kept as is. Changing a credential template does not rewrite existing deploy configs.
 
+A repository path on a registry belongs to one project space. If deploy configs or builds of another project space already used it, saving a deploy config returns `deployment_target.image_repository_claimed` and starting a build returns `build.image_repository_claimed`. Applications and deploy configs in the same project space can share a repository.
+
 ## Repository path template variables
 
 Default template: `{registryNamespace}/{projectIdentifier}-{appIdentifier}`. Variables can be written as `{name}` or `${name}`; both forms are equivalent.
@@ -67,6 +69,8 @@ These forms are case-sensitive, and spaces must match the table exactly. Forms n
 
 The rendered tag is then normalized: each run of characters outside `A-Z a-z 0-9 _ . -` becomes one `-`, leading and trailing `.` and `-` are removed, and the result is cut to 128 characters. An empty result becomes `latest`.
 
+`buildcache` is reserved for the platform build cache: a build whose tag renders to `buildcache` fails before pushing, and a `buildcache` tag in the registry is not offered as a release image.
+
 **Example**: branch `feature/login`, commit `1234567890abcdef…`:
 
 | Target image | Pushed image |
@@ -86,4 +90,6 @@ A credential's **Image tag template** generates the default tag for new deploy c
 - **The repository path contains `{...}`**: the repository template has a typo or an unknown variable. Unknown variables are kept as is and the push fails. Fix the variable name, save the credential, and restore the default target image in the deploy config.
 - **DockerHub rejects the push**: the first path segment is not a user or organization you can push to. Change the template to `your-user/{projectIdentifier}-{appIdentifier}`.
 - **`{target}` renders as `app`**: the deploy config name contains only non-ASCII characters or symbols, so normalization leaves nothing. Use `{stage}`, or include letters or digits in the name.
+- **Saving a deploy config reports that the repository is used by another project space**: choose a different repository path, for example one that includes this project space identifier. To share an image, build it in the project space that already owns the repository.
+- **The build log reports `image tag "buildcache" is reserved`**: the rendered tag equals the reserved cache tag, for example `{branch}` used as the tag while building a branch named `buildcache`. Change the tag template and retry.
 - **The image shown during a build differs from the final one**: before a build finishes the platform shows an estimate. After success, the actually pushed image is authoritative.

@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/LiteyukiStudio/devops/internal/builder"
 	"github.com/LiteyukiStudio/devops/internal/security"
 )
 
@@ -97,7 +98,7 @@ func TestListRegistryTagsLimitsRequest(t *testing.T) {
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"name": "team/web",
-			"tags": []string{"latest", "v1"},
+			"tags": []string{"latest", builder.RegistryCacheTag, "v1"},
 		})
 	}))
 	defer server.Close()
@@ -107,6 +108,6 @@ func TestListRegistryTagsLimitsRequest(t *testing.T) {
 		t.Fatalf("ListTags() error = %v", err)
 	}
 	if len(result.Items) != 2 || result.Items[0].Name != "latest" || result.Items[1].Name != "v1" {
-		t.Fatalf("Items = %#v, want latest and v1", result.Items)
+		t.Fatalf("Items = %#v, want latest and v1 without the build cache tag", result.Items)
 	}
 }

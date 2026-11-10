@@ -3,6 +3,10 @@ package builder
 const (
 	ResultMarkerPrefix = "::luna-devops-build-result::"
 
+	// RegistryCacheTag 是 BuildKit Registry 缓存在目标镜像仓库中占用的保留 Tag。
+	// 执行器拒绝推送同名镜像 Tag，发布候选列表也据此过滤缓存清单。
+	RegistryCacheTag = "buildcache"
+
 	hookPhasePrePull   = "prePull"
 	hookPhasePostPull  = "postPull"
 	hookPhasePreBuild  = "preBuild"
@@ -59,7 +63,9 @@ type BuildPayload struct {
 	BuildDirectory     string            `json:"buildDirectory"`
 	BuildArgs          map[string]string `json:"buildArgs"`
 	Env                map[string]string `json:"env"`
-	Hooks              []HookPayload     `json:"hooks"`
+	// ContainsSecrets 表示 Env 中含有解析出的构建密钥；此时 Registry 缓存只导出最终镜像已有的层。
+	ContainsSecrets bool          `json:"containsSecrets"`
+	Hooks           []HookPayload `json:"hooks"`
 }
 
 type HookPayload struct {

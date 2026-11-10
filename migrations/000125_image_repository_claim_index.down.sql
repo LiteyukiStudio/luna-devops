@@ -1,0 +1,1 @@
+DROP INDEX IF EXISTS idx_build_runs_target_registry_repository;

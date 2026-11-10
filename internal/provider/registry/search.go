@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/LiteyukiStudio/devops/internal/builder"
 	"github.com/LiteyukiStudio/devops/internal/security"
 )
 
@@ -64,6 +65,14 @@ func ListTags(parent context.Context, provider, endpointText, repository string,
 	if limit > 50 {
 		limit = 50
 	}
+	result, err := listProviderTags(parent, provider, endpointText, repository, limit, policy, credential)
+	if err != nil {
+		return result, err
+	}
+	return withoutBuildCacheTag(result), nil
+}
+
+func listProviderTags(parent context.Context, provider, endpointText, repository string, limit int, policy security.EgressPolicy, credential Credential) (TagSearchResult, error) {
 	switch strings.TrimSpace(provider) {
 	case "dockerhub":
 		return listDockerHubTags(parent, repository, limit, policy)
@@ -76,6 +85,22 @@ func ListTags(parent context.Context, provider, endpointText, repository string,
 	default:
 		return listRegistryTags(parent, endpointText, repository, limit, policy, credential)
 	}
+}
+
+// withoutBuildCacheTag 去掉平台 BuildKit 缓存占用的保留 Tag：它指向缓存清单而不是可运行镜像，不能被选为部署镜像。
+func withoutBuildCacheTag(result TagSearchResult) TagSearchResult {
+	items := make([]TagItem, 0, len(result.Items))
+	for _, item := range result.Items {
+		if strings.TrimSpace(item.Name) == builder.RegistryCacheTag {
+			if result.Total > 0 {
+				result.Total--
+			}
+			continue
+		}
+		items = append(items, item)
+	}
+	result.Items = items
+	return result
 }
 
 func searchDockerHubRepositories(parent context.Context, namespace, query string, page, pageSize int, policy security.EgressPolicy) (RepositorySearchResult, error) {

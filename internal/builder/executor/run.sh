@@ -218,6 +218,13 @@ if [ -n "${IMAGE_NAME_PREFIX:-}" ]; then
 fi
 export_luna_devops_build_context
 
+# --- reserved-cache-tag:begin ---
+if [ "${IMAGE_REF##*:}" = "$CACHE_TAG" ]; then
+  echo "image tag \"$CACHE_TAG\" is reserved for the build cache; change the target image tag" >&2
+  exit 1
+fi
+# --- reserved-cache-tag:end ---
+
 run_hooks "preBuild" "${PRE_BUILD_HOOK_IDS:-}"
 
 set --
@@ -240,15 +247,22 @@ for key in ${BUILD_ARG_KEYS:-}; do
 done
 IFS="$OLDIFS"
 
+# --- registry-cache-args:begin ---
 if [ "${CACHE_ENABLED:-false}" = "true" ]; then
-  cache_tag="${CACHE_TAG:-buildcache}"
   cache_repository="${IMAGE_REF%:*}"
   if [ -n "$cache_repository" ] && [ "$cache_repository" != "$IMAGE_REF" ]; then
-    cache_ref="${cache_repository}:$cache_tag"
+    cache_ref="${cache_repository}:$CACHE_TAG"
+    # mode=max 会导出中间阶段的层；含构建密钥时只导出最终镜像已有的层，避免密钥随缓存外泄。
+    cache_mode="max"
+    if [ "${BUILD_CONTAINS_SECRETS:-false}" = "true" ]; then
+      cache_mode="min"
+    fi
+    # 缓存是加速手段：读写失败不能让已推送的镜像被判为构建失败。
     set -- "$@" --import-cache "type=registry,ref=$cache_ref"
-    set -- "$@" --export-cache "type=registry,ref=$cache_ref,mode=max"
+    set -- "$@" --export-cache "type=registry,ref=$cache_ref,mode=$cache_mode,image-manifest=true,oci-mediatypes=true,ignore-error=true"
   fi
 fi
+# --- registry-cache-args:end ---
 
 mkdir -p "$HOME/.docker"
 AUTH="$(printf "%s:%s" "$REGISTRY_USERNAME" "$REGISTRY_PASSWORD" | base64 | tr -d "\n")"

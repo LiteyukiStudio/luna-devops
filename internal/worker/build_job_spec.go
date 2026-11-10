@@ -19,7 +19,7 @@ func (r *Runner) startBuildJob(ctx context.Context, client kubernetes.Interface,
 	if err := ensureBuildJobServiceAccount(ctx, client, namespace); err != nil {
 		return err
 	}
-	secret := buildJobSecret(secretName, task, r.buildCacheEnabled, r.buildCacheTag)
+	secret := buildJobSecret(secretName, task, r.buildCacheEnabled)
 	secrets := client.CoreV1().Secrets(namespace)
 	if _, err := secrets.Create(ctx, secret, metav1.CreateOptions{}); err != nil {
 		if !apierrors.IsAlreadyExists(err) {
@@ -36,7 +36,7 @@ func (r *Runner) startBuildJob(ctx context.Context, client kubernetes.Interface,
 		_ = secrets.Delete(context.WithoutCancel(ctx), secretName, metav1.DeleteOptions{})
 	}
 	timeoutSeconds := effectiveBuildTimeoutSeconds(run.BuildTimeoutSeconds, r.buildJobTimeoutSeconds)
-	job := buildJobSpec(jobName, secretName, run, task, r.buildExecutorImage, r.buildCacheEnabled, r.buildCacheTag, timeoutSeconds, r.buildJobTTLSeconds)
+	job := buildJobSpec(jobName, secretName, run, task, r.buildExecutorImage, r.buildCacheEnabled, timeoutSeconds, r.buildJobTTLSeconds)
 	jobs := client.BatchV1().Jobs(namespace)
 	if _, err := jobs.Create(ctx, job, metav1.CreateOptions{}); err != nil {
 		if !apierrors.IsAlreadyExists(err) {
@@ -104,7 +104,7 @@ func buildJobBaseLabels() map[string]string {
 		kubeprovider.ScopeLabel:         buildJobScope,
 	}
 }
-func buildJobSpec(jobName string, secretName string, run model.BuildRun, task builder.Task, image string, cacheEnabled bool, cacheTag string, timeoutSeconds int64, ttlSeconds int64) *batchv1.Job {
+func buildJobSpec(jobName string, secretName string, run model.BuildRun, task builder.Task, image string, cacheEnabled bool, timeoutSeconds int64, ttlSeconds int64) *batchv1.Job {
 	backoffLimit := int32(0)
 	ttl := int32(ttlSeconds)
 	activeDeadlineSeconds := timeoutSeconds
@@ -137,7 +137,7 @@ func buildJobSpec(jobName string, secretName string, run model.BuildRun, task bu
 		{Name: "BUILDKITD_FLAGS", Value: "--oci-worker-no-process-sandbox"},
 	}
 	resources := buildJobResourceRequirements(run)
-	for key := range buildJobSecret("", task, cacheEnabled, cacheTag).StringData {
+	for key := range buildJobSecret("", task, cacheEnabled).StringData {
 		if strings.HasPrefix(key, "env-") {
 			env = append(env, corev1.EnvVar{
 				Name: strings.TrimPrefix(key, "env-"),

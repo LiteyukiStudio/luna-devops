@@ -92,6 +92,7 @@ const errors = {
     internal_error: 'The deploy config operation failed. Try again later.',
   },
   deployment_target: {
+    image_repository_claimed: 'The target image repository is already used by another project space. Choose a different repository path.',
     service_account_invalid: 'The ServiceAccount configuration is invalid. Check it and try again.',
     replicas_invalid: 'Replicas must be zero or a positive integer.',
     build_concurrency_policy_invalid: 'Build concurrency must be queue, cancel in-progress builds, or parallel.',
@@ -129,6 +130,7 @@ const errors = {
     transaction_invalid_amount: 'Balance adjustment amount must be a non-zero number',
   },
   build: {
+    image_repository_claimed: 'The target image repository is already used by another project space. Change the target image repository of the deployment target, then retry.',
     registry_push_credential_required: 'The target registry has no push credential available to this project space. Configure a Push or Push and pull credential, then retry.',
     variable_set_unavailable: 'The variable and secret set is unavailable or cannot be accessed. Select it again.',
   },

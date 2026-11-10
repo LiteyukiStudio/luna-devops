@@ -3068,7 +3068,11 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/DeploymentTarget" }
         "400": { $ref: "#/components/responses/BadRequest" }
-        "409": { $ref: "#/components/responses/Conflict" }
+        "409":
+          description: The request conflicts with the current durable state. Stable code `deployment_target.image_repository_claimed` means the target image repository on the selected registry is already used by another project space.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
 
   /api/v1/projects/{projectId}/applications/{applicationId}/deployment-targets/{targetId}:
     put:
@@ -3105,7 +3109,11 @@ paths:
               schema: { $ref: "#/components/schemas/DeploymentTarget" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
-        "409": { $ref: "#/components/responses/Conflict" }
+        "409":
+          description: The request conflicts with the current durable state. Stable code `deployment_target.image_repository_claimed` means the target image repository on the selected registry is already used by another project space.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
         "502":
           description: The runtime cluster rejected or could not apply the replica change.
           content:
@@ -7504,7 +7512,7 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
-          description: The target registry lacks a push-capable credential, or the Idempotency-Key was reused with different parameters. Stable codes are `build.registry_push_credential_required` and `request.idempotency_conflict`.
+          description: The target registry lacks a push-capable credential, the target image repository on that registry is already used by another project space, or the Idempotency-Key was reused with different parameters. Stable codes are `build.registry_push_credential_required`, `build.image_repository_claimed` and `request.idempotency_conflict`.
           content:
             application/json:
               schema:
@@ -7631,7 +7639,7 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
-          description: The target registry lacks a push-capable credential, or the Idempotency-Key was reused with different parameters. Stable codes are `build.registry_push_credential_required` and `request.idempotency_conflict`.
+          description: The target registry lacks a push-capable credential, the target image repository on that registry is already used by another project space, or the Idempotency-Key was reused with different parameters. Stable codes are `build.registry_push_credential_required`, `build.image_repository_claimed` and `request.idempotency_conflict`.
           content:
             application/json:
               schema:
@@ -12682,6 +12690,7 @@ components:
         - deployment.runtime_secret_files_invalid
         - deployment.stage_invalid
         - deployment_target.image_ref_required
+        - deployment_target.image_repository_claimed
         - deployment_target.service_account_invalid
         - deployment_bundle.candidate_query_invalid
         - deployment_bundle.digest_mismatch

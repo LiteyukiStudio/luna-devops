@@ -92,6 +92,7 @@ const errors = {
     internal_error: 'デプロイ設定の処理に失敗しました。後ほど再試行してください。',
   },
   deployment_target: {
+    image_repository_claimed: 'ターゲットイメージリポジトリは別のプロジェクトスペースで使用されています。別のリポジトリパスを選択してください。',
     service_account_invalid: 'ServiceAccount 設定が無効です。確認して再試行してください。',
     replicas_invalid: 'レプリカ数は 0 以上の整数で指定してください。',
     build_concurrency_policy_invalid: 'ビルド同時実行ポリシーは、順番に待機、実行中の古いビルドをキャンセル、並列実行のいずれかである必要があります。',
@@ -129,6 +130,7 @@ const errors = {
     transaction_invalid_amount: '残高調整金額は非ゼロの数値である必要があります',
   },
   build: {
+    image_repository_claimed: 'ターゲットイメージリポジトリは別のプロジェクトスペースで使用されています。デプロイ設定のターゲットイメージリポジトリを変更してから再試行してください。',
     registry_push_credential_required: 'ターゲットレジストリに現在のプロジェクトスペースで利用可能なプッシュクレデンシャルがありません。レジストリクレデンシャル管理で「プッシュ」または「プッシュとプル」クレデンシャルを設定してから再試行してください。',
     variable_set_unavailable: '変数とシークレットセットが利用できないか、アクセス権限がありません。再選択してください。',
   },

@@ -61,7 +61,6 @@ type workerEnvironment struct {
 	BuildExecutorImage       string                  `env:"BUILD_EXECUTOR_IMAGE" envDefault:"moby/buildkit:v0.34.1-rootless"`
 	BuildEgressMode          string                  `env:"BUILD_EGRESS_MODE" envDefault:"restricted"`
 	BuildCacheEnabled        bool                    `env:"BUILD_CACHE_ENABLED" envDefault:"false"`
-	BuildCacheTag            string                  `env:"BUILD_CACHE_TAG" envDefault:"buildcache"`
 	BuildJobTimeoutSeconds   int                     `env:"BUILD_JOB_TIMEOUT_SECONDS" envDefault:"1800"`
 	BuildJobTTLSeconds       int                     `env:"BUILD_JOB_TTL_SECONDS" envDefault:"3600"`
 	BuildPrivateEgressCIDRs  string                  `env:"BUILD_PRIVATE_EGRESS_CIDRS"`

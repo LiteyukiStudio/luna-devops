@@ -9,6 +9,7 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/buildenv"
 	"github.com/LiteyukiStudio/devops/internal/buildtemplate"
 	"github.com/LiteyukiStudio/devops/internal/model"
+	"github.com/LiteyukiStudio/devops/internal/repository"
 	"github.com/gin-gonic/gin"
 )
 
@@ -19,7 +20,10 @@ type buildRunRequestError struct {
 	publicMessageKey string
 }
 
-const buildPushCredentialRequiredCode = "build.registry_push_credential_required"
+const (
+	buildPushCredentialRequiredCode = "build.registry_push_credential_required"
+	buildImageRepositoryClaimedCode = "build.image_repository_claimed"
+)
 
 func (e buildRunRequestError) Error() string {
 	return e.message
@@ -188,6 +192,13 @@ func (h *Handlers) prepareBuildRunRequest(user model.User, run *model.BuildRun, 
 	run.ImageRef = fallback(strings.TrimSpace(run.ImageRef), buildImageRef(registry, *run))
 	if !hasCredential {
 		return buildRunPublicConflict(buildPushCredentialRequiredCode, "目标镜像站缺少可用推送凭据")
+	}
+	claimed, err := repository.ImageRepositoryClaimedByOtherProject(ctx, h.dbWithContext(ctx), run.ProjectID, registry, run.TargetRepository)
+	if err != nil {
+		return buildRunRequestError{status: http.StatusInternalServerError, message: "目标镜像仓库占用检查失败"}
+	}
+	if claimed {
+		return buildRunPublicConflict(buildImageRepositoryClaimedCode, "目标镜像仓库已被其它项目空间使用")
 	}
 	if _, err := h.buildVariablesForRunByIDs(h.dbWithContext(ctx), user, run.ProjectID, buildVariableSetIDs(run.BuildVariableSetIDs), ctx); err != nil {
 		return buildRunBadRequest(err.Error())

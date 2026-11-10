@@ -92,6 +92,7 @@ const errors = {
     internal_error: '배포 구성 처리에 실패했습니다. 잠시 후 다시 시도하세요.',
   },
   deployment_target: {
+    image_repository_claimed: '대상 이미지 저장소를 다른 프로젝트 스페이스에서 사용 중입니다. 다른 저장소 경로를 선택하세요.',
     service_account_invalid: 'ServiceAccount 구성이 유효하지 않습니다. 확인 후 다시 시도하세요.',
     replicas_invalid: '복제본 수는 0 이상의 정수여야 합니다.',
     build_concurrency_policy_invalid: '빌드 동시 실행 정책은 순서대로 대기, 진행 중인 이전 빌드 취소, 병렬 실행 중 하나여야 합니다.',
@@ -129,6 +130,7 @@ const errors = {
     transaction_invalid_amount: '잔액 조정 금액은 0이 아닌 숫자여야 합니다',
   },
   build: {
+    image_repository_claimed: '대상 이미지 저장소를 다른 프로젝트 스페이스에서 사용 중입니다. 배포 구성의 대상 이미지 저장소를 변경한 후 다시 시도하세요.',
     registry_push_credential_required: '대상 레지스트리에 현재 프로젝트 스페이스에서 사용 가능한 푸시 자격 증명이 없습니다. 레지스트리 자격 증명 관리에서 "푸시" 또는 "푸시 및 풀" 자격 증명을 설정한 후 다시 시도하세요.',
     variable_set_unavailable: '변수와 시크릿 세트를 사용할 수 없거나 접근 권한이 없습니다. 다시 선택하세요.',
   },

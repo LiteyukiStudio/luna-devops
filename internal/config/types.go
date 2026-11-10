@@ -70,7 +70,6 @@ type WorkerConfig struct {
 	BuildExecutorImage          string
 	BuildEgressMode             string
 	BuildCacheEnabled           bool
-	BuildCacheTag               string
 	BuildJobTimeoutSeconds      int64
 	BuildJobTTLSeconds          int64
 	BuildPrivateEgressCIDRs     []string

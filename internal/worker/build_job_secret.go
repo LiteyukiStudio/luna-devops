@@ -8,7 +8,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-func buildJobSecret(name string, task builder.Task, cacheEnabled bool, cacheTag string) *corev1.Secret {
+func buildJobSecret(name string, task builder.Task, cacheEnabled bool) *corev1.Secret {
 	env := map[string]string{
 		"GIT_CLONE_URL":                 task.Repository.CloneURL,
 		"GIT_ACCESS_TOKEN":              task.Repository.AccessToken,
@@ -25,7 +25,8 @@ func buildJobSecret(name string, task builder.Task, cacheEnabled bool, cacheTag 
 		"BUILD_CONTEXT":                 builder.StringDefault(task.Build.BuildContext, "."),
 		"BUILD_DIRECTORY":               task.Build.BuildDirectory,
 		"CACHE_ENABLED":                 builder.BoolEnvValue(cacheEnabled),
-		"CACHE_TAG":                     builder.StringDefault(strings.TrimSpace(cacheTag), "buildcache"),
+		"CACHE_TAG":                     builder.RegistryCacheTag,
+		"BUILD_CONTAINS_SECRETS":        builder.BoolEnvValue(task.Build.ContainsSecrets),
 		"REGISTRY_ENDPOINT":             task.Registry.Endpoint,
 		"REGISTRY_USERNAME":             task.Registry.Username,
 		"REGISTRY_PASSWORD":             task.Registry.Password,

@@ -140,7 +140,6 @@ worker:
   buildJobTimeoutSeconds: 1800
   buildJobTtlSeconds: 3600
   buildCacheEnabled: false
-  buildCacheTag: buildcache
   buildPrivateEgressCidrs: ""
   buildPrivateEgressPorts: "443"
   buildBlockedEgressCidrs: ""

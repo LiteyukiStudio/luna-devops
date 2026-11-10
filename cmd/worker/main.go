@@ -106,7 +106,6 @@ func run(ctx context.Context, cfg worker.Config) error {
 		BuildExecutorImage:          cfg.BuildExecutorImage,
 		BuildEgressMode:             cfg.BuildEgressMode,
 		BuildCacheEnabled:           cfg.BuildCacheEnabled,
-		BuildCacheTag:               cfg.BuildCacheTag,
 		BuildJobTimeoutSeconds:      cfg.BuildJobTimeoutSeconds,
 		BuildJobTTLSeconds:          cfg.BuildJobTTLSeconds,
 		BuildPrivateEgressCIDRs:     cfg.BuildPrivateEgressCIDRs,

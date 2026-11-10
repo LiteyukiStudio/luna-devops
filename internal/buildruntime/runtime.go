@@ -128,6 +128,7 @@ func (r Resolver) ResolveBuildTask(ctx context.Context, tx *gorm.DB, run model.B
 				BuildDirectory:     run.BuildDirectory,
 				BuildArgs:          buildArgs,
 				Env:                buildEnv,
+				ContainsSecrets:    len(secretValues) > 0,
 				Hooks:              hooks,
 			},
 			Registry: builder.RegistryPayload{

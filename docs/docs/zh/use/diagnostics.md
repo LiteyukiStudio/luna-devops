@@ -19,6 +19,8 @@
 
 如果触发或重试构建时返回 `build.registry_push_credential_required`，本次构建尚未创建。请为该构建使用的目标镜像站新增或绑定一条当前用户或项目空间可见、用途为“推送”或“拉取与推送”的凭据，然后重试；修改分支、Dockerfile 或镜像名称不能解决凭据缺失。
 
+如果返回 `build.image_repository_claimed`，本次构建同样尚未创建：目标镜像仓库已被其它项目空间使用。请修改部署配置的目标镜像仓库，见[镜像仓库路径与 Tag 模板](../reference/image-templates)。
+
 ## 发布失败
 
 打开 Release 和部署日志，检查镜像是否存在、集群是否可访问、拉取凭据是否正确，以及端口、环境变量、Secret 和配置文件是否符合应用要求。

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/LiteyukiStudio/devops/internal/model"
+	"github.com/LiteyukiStudio/devops/internal/repository"
 	"github.com/gin-gonic/gin"
 )
 
@@ -107,4 +108,26 @@ func (h *Handlers) applyRegistryCredentialImageTemplate(ctx *gin.Context, user m
 		tag = buildStaticTargetImageTagForCredential(registry, credential, project, app, target)
 	}
 	return strings.Trim(strings.TrimSpace(repository), "/"), strings.TrimSpace(tag), true
+}
+
+// ensureTargetImageRepositoryAvailable 拒绝把构建目标指向其它项目空间已使用的镜像仓库。
+func (h *Handlers) ensureTargetImageRepositoryAvailable(ctx *gin.Context, projectID, registryID, targetRepository string) bool {
+	if strings.TrimSpace(registryID) == "" || strings.TrimSpace(targetRepository) == "" {
+		return true
+	}
+	var registry model.ArtifactRegistry
+	if err := h.dbFor(ctx).First(&registry, "id = ?", registryID).Error; err != nil {
+		writeError(ctx, http.StatusBadRequest, "目标镜像站不存在")
+		return false
+	}
+	claimed, err := repository.ImageRepositoryClaimedByOtherProject(ctx.Request.Context(), h.dbFor(ctx), projectID, registry, targetRepository)
+	if err != nil {
+		writeError(ctx, http.StatusInternalServerError, "目标镜像仓库占用检查失败")
+		return false
+	}
+	if claimed {
+		writeErrorCode(ctx, http.StatusConflict, "deployment_target.image_repository_claimed", "目标镜像仓库已被其它项目空间使用")
+		return false
+	}
+	return true
 }

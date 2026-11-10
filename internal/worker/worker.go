@@ -28,7 +28,6 @@ type Runner struct {
 	buildExecutorImage            string
 	buildEgressMode               string
 	buildCacheEnabled             bool
-	buildCacheTag                 string
 	buildJobTimeoutSeconds        int64
 	buildJobTTLSeconds            int64
 	buildPrivateEgressCIDRs       []string
@@ -65,7 +64,6 @@ type Options struct {
 	BuildExecutorImage          string
 	BuildEgressMode             string
 	BuildCacheEnabled           bool
-	BuildCacheTag               string
 	BuildJobTimeoutSeconds      int64
 	BuildJobTTLSeconds          int64
 	BuildPrivateEgressCIDRs     []string
@@ -168,7 +166,6 @@ func newRunner(db *gorm.DB, options Options) *Runner {
 		buildExecutorImage:          options.BuildExecutorImage,
 		buildEgressMode:             options.BuildEgressMode,
 		buildCacheEnabled:           options.BuildCacheEnabled,
-		buildCacheTag:               options.BuildCacheTag,
 		buildJobTimeoutSeconds:      options.BuildJobTimeoutSeconds,
 		buildJobTTLSeconds:          options.BuildJobTTLSeconds,
 		buildPrivateEgressCIDRs:     append([]string(nil), options.BuildPrivateEgressCIDRs...),

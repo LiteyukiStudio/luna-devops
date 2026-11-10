@@ -19,6 +19,8 @@ Open the build record and check:
 
 If starting or retrying a build returns `build.registry_push_credential_required`, no new BuildRun was created. Add or bind a credential for that build's target registry that is visible to the current user or project and has **push** or **push-pull** usage, then retry. Changing the branch, Dockerfile, or image name does not resolve a missing credential.
 
+If it returns `build.image_repository_claimed`, no new BuildRun was created either: the target image repository is already used by another project space. Change the deploy config's target image repository; see [Image repository paths and tag templates](../reference/image-templates).
+
 ## Release failures
 
 Open the release and deployment logs. Confirm that the image exists, the cluster is reachable, pull credentials are valid, and ports, environment variables, secrets, and configuration files match the application.

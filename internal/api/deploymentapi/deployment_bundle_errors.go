@@ -49,6 +49,7 @@ var deploymentBundleErrorCatalog = map[string]deploymentBundleErrorSpec{
 	"deployment.runtime_secret_files_invalid":             {Status: http.StatusInternalServerError, Message: "deployment runtime secret files could not be encoded"},
 	"deployment_target.service_account_invalid":           {Status: http.StatusBadRequest, Message: "deployment service account configuration is invalid"},
 	"deployment_target.image_ref_required":                {Status: http.StatusBadRequest, Message: "deployment bundle image reference is required"},
+	"deployment_target.image_repository_claimed":          {Status: http.StatusConflict, Message: "deployment bundle target image repository is used by another project space"},
 	"build_template.invalid":                              {Status: http.StatusBadRequest, Message: "deployment bundle build template configuration is invalid"},
 	"build_template.not_found":                            {Status: http.StatusBadRequest, Message: "deployment bundle build template is unavailable"},
 }

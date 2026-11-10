@@ -24,7 +24,6 @@ func buildWorker(raw workerEnvironment, shared Shared) (WorkerConfig, error) {
 		BuildExecutorImage:          strings.TrimSpace(raw.BuildExecutorImage),
 		BuildEgressMode:             strings.ToLower(strings.TrimSpace(raw.BuildEgressMode)),
 		BuildCacheEnabled:           raw.BuildCacheEnabled,
-		BuildCacheTag:               strings.TrimSpace(raw.BuildCacheTag),
 		BuildJobTimeoutSeconds:      int64(raw.BuildJobTimeoutSeconds),
 		BuildJobTTLSeconds:          int64(raw.BuildJobTTLSeconds),
 		DeployRolloutTimeoutSeconds: int64(raw.DeployRolloutTimeout),

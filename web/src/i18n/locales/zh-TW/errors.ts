@@ -92,6 +92,7 @@ const errors = {
     internal_error: '部署配置處理失敗，請稍後重試。',
   },
   deployment_target: {
+    image_repository_claimed: '目標映象倉庫已被其他專案空間使用，請換一個倉庫路徑。',
     service_account_invalid: 'ServiceAccount 配置無效，請檢查後重試。',
     replicas_invalid: '副本數必須為 0 或正整數。',
     build_concurrency_policy_invalid: '建置並行策略只能是依序排隊、取消進行中的舊建置或平行執行。',
@@ -129,6 +130,7 @@ const errors = {
     transaction_invalid_amount: '餘額調整金額必須是非零數字',
   },
   build: {
+    image_repository_claimed: '目標映象倉庫已被其他專案空間使用。請修改部署配置的目標映象倉庫後重試。',
     registry_push_credential_required: '目標映象站缺少當前專案空間可用的推送憑據。請在映象站憑據管理中配置“推送”或“推送與拉取”憑據後重試。',
     variable_set_unavailable: '變數和金鑰集不可用或無權訪問，請重新選擇。',
   },

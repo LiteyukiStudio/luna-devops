@@ -592,6 +592,7 @@ export const deploymentTargetErrorFields: Record<string, DeploymentTargetFieldNa
   'deployment_target.repository_binding_required': 'repositoryBindingId',
   'deployment_target.repository_binding_not_found': 'repositoryBindingId',
   'deployment_target.image_ref_required': 'imageRef',
+  'deployment_target.image_repository_claimed': 'targetImageRef',
   'deployment_target.replicas_invalid': 'replicas',
 }
 

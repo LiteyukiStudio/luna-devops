@@ -125,7 +125,7 @@ func TestNewRunnerUsesValidatedOptionsWithoutApplyingDefaults(t *testing.T) {
 		CertManagerClusterIssuer:    "letsencrypt-staging",
 		BuildExecutorImage:          "example.test/buildkit:latest",
 		BuildEgressMode:             "permissive",
-		BuildCacheTag:               "cache-v2",
+		BuildCacheEnabled:           true,
 		BuildJobTimeoutSeconds:      900,
 		BuildJobTTLSeconds:          0,
 		VolumeTransferMaxBytes:      1024,
@@ -135,7 +135,7 @@ func TestNewRunnerUsesValidatedOptionsWithoutApplyingDefaults(t *testing.T) {
 		runner.certManagerClusterIssuer != options.CertManagerClusterIssuer ||
 		runner.buildExecutorImage != options.BuildExecutorImage ||
 		runner.buildEgressMode != options.BuildEgressMode ||
-		runner.buildCacheTag != options.BuildCacheTag ||
+		runner.buildCacheEnabled != options.BuildCacheEnabled ||
 		runner.buildJobTimeoutSeconds != options.BuildJobTimeoutSeconds ||
 		runner.buildJobTTLSeconds != 0 ||
 		runner.volumeTransferMaxBytes != options.VolumeTransferMaxBytes {
@@ -587,7 +587,6 @@ func TestBuildJobSpecUsesRestrictedServiceAccountAndBuildScope(t *testing.T) {
 		builder.Task{ProjectID: "prj_demo", ApplicationID: "app_api", DeploymentTargetID: "dplt_api", BuildRunID: "brn_1", JobID: "bjb_1"},
 		"moby/buildkit:v0.34.1-rootless",
 		false,
-		"buildcache",
 		1800,
 		3600,
 	)
@@ -657,7 +656,6 @@ func TestBuildJobSecretSeparatesExplicitBuildArgs(t *testing.T) {
 			},
 		},
 		false,
-		"buildcache",
 	)
 
 	if secret.StringData["env-EMBED_WEB"] != "true" {
@@ -674,6 +672,20 @@ func TestBuildJobSecretSeparatesExplicitBuildArgs(t *testing.T) {
 	}
 }
 
+func TestBuildJobSecretPassesRegistryCachePolicy(t *testing.T) {
+	plain := buildJobSecret("build-secret", builder.Task{}, true)
+	if plain.StringData["env-CACHE_ENABLED"] != "true" || plain.StringData["env-CACHE_TAG"] != builder.RegistryCacheTag {
+		t.Fatalf("cache env = %q/%q", plain.StringData["env-CACHE_ENABLED"], plain.StringData["env-CACHE_TAG"])
+	}
+	if plain.StringData["env-BUILD_CONTAINS_SECRETS"] != "false" {
+		t.Fatalf("build without secrets reported secrets: %q", plain.StringData["env-BUILD_CONTAINS_SECRETS"])
+	}
+	withSecrets := buildJobSecret("build-secret", builder.Task{Build: builder.BuildPayload{ContainsSecrets: true}}, true)
+	if withSecrets.StringData["env-BUILD_CONTAINS_SECRETS"] != "true" {
+		t.Fatalf("build with secrets must downgrade cache export: %q", withSecrets.StringData["env-BUILD_CONTAINS_SECRETS"])
+	}
+}
+
 func TestBuildJobUsesRenderedTemplateDockerfile(t *testing.T) {
 	task := builder.Task{
 		Build: builder.BuildPayload{
@@ -682,7 +694,7 @@ func TestBuildJobUsesRenderedTemplateDockerfile(t *testing.T) {
 			TemplateDockerfile: "FROM scratch\n",
 		},
 	}
-	secret := buildJobSecret("build-secret", task, false, "buildcache")
+	secret := buildJobSecret("build-secret", task, false)
 	if secret.StringData["env-BUILD_DEFINITION_MODE"] != "template" {
 		t.Fatalf("BUILD_DEFINITION_MODE = %q", secret.StringData["env-BUILD_DEFINITION_MODE"])
 	}
@@ -690,7 +702,7 @@ func TestBuildJobUsesRenderedTemplateDockerfile(t *testing.T) {
 		t.Fatalf("template.Dockerfile = %q", secret.StringData["template.Dockerfile"])
 	}
 
-	spec := buildJobSpec("build-job", "build-secret", model.BuildRun{}, task, "executor", false, "buildcache", 1800, 3600)
+	spec := buildJobSpec("build-job", "build-secret", model.BuildRun{}, task, "executor", false, 1800, 3600)
 	found := false
 	for _, volume := range spec.Spec.Template.Spec.Volumes {
 		if volume.Name != "executor-files" || volume.Secret == nil {
@@ -729,7 +741,6 @@ func TestBuildJobSpecCopiesOnlyProjectedExecutorFiles(t *testing.T) {
 		},
 		"moby/buildkit:v0.34.1-rootless",
 		false,
-		"buildcache",
 		1800,
 		3600,
 	)

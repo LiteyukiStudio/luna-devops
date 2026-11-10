@@ -23,7 +23,7 @@ import (
 
 const (
 	baselineMigrationVersion = 103
-	latestMigrationVersion   = 124
+	latestMigrationVersion   = 125
 )
 
 func TestEmbeddedMigrationsContainExpectedFiles(t *testing.T) {
@@ -70,6 +70,8 @@ func TestEmbeddedMigrationsContainExpectedFiles(t *testing.T) {
 		"000123_build_run_source_commit_message.down.sql":            false,
 		"000124_build_job_current_step.up.sql":                       false,
 		"000124_build_job_current_step.down.sql":                     false,
+		"000125_image_repository_claim_index.up.sql":                 false,
+		"000125_image_repository_claim_index.down.sql":               false,
 	}
 	migrationCount := 0
 	for _, entry := range entries {
@@ -259,6 +261,7 @@ WHERE namespace.nspname = current_schema()
 	assertBuildJobStepProgressMigration(t, testDB, runner)
 	assertSingleColumnMigration(t, testDB, runner, 123, "build_runs", "source_commit_message")
 	assertSingleColumnMigration(t, testDB, runner, 124, "build_jobs", "current_step")
+	assertSingleIndexMigration(t, testDB, runner, 125, "build_runs", "idx_build_runs_target_registry_repository")
 	assertDirtyMigrationFailsClosed(t, testDB)
 }
 
@@ -369,6 +372,26 @@ func assertSingleColumnMigration(t *testing.T, db *gorm.DB, runner *migrate.Migr
 	}
 	if db.Migrator().HasColumn(table, column) {
 		t.Fatalf("migration %d rollback retained %s.%s", version, table, column)
+	}
+	if err := runner.Migrate(latestMigrationVersion); err != nil {
+		t.Fatalf("restore latest migrations after migration %d round trip: %v", version, err)
+	}
+	assertRunnerMigrationVersion(t, runner, latestMigrationVersion)
+}
+
+func assertSingleIndexMigration(t *testing.T, db *gorm.DB, runner *migrate.Migrate, version uint, table string, index string) {
+	t.Helper()
+	if err := runner.Migrate(version); err != nil && !errors.Is(err, migrate.ErrNoChange) {
+		t.Fatalf("apply migration %d: %v", version, err)
+	}
+	if !db.Migrator().HasIndex(table, index) {
+		t.Fatalf("migration %d did not add %s.%s", version, table, index)
+	}
+	if err := runner.Migrate(previousMigrationVersion(t, version)); err != nil {
+		t.Fatalf("roll back migration %d: %v", version, err)
+	}
+	if db.Migrator().HasIndex(table, index) {
+		t.Fatalf("migration %d rollback retained %s.%s", version, table, index)
 	}
 	if err := runner.Migrate(latestMigrationVersion); err != nil {
 		t.Fatalf("restore latest migrations after migration %d round trip: %v", version, err)
@@ -647,6 +670,7 @@ func assertFreshMigrationState(t *testing.T, db *gorm.DB) {
 		{name: "idx_platform_events_retention"},
 		{name: "idx_notification_deliveries_retention_terminal", fragments: []string{"WHERE (status = ANY"}},
 		{name: "idx_build_runs_retention_terminal"},
+		{name: "idx_build_runs_target_registry_repository"},
 		{name: "idx_release_logs_retention_parent"},
 		{name: "idx_releases_retention_terminal"},
 		{name: "idx_hook_run_logs_retention_parent"},
