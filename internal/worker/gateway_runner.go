@@ -134,10 +134,23 @@ func (r *Runner) ensureProjectNamespace(ctx context.Context, namespace string, p
 	if err := manager.EnsureNamespace(ctx, namespace, kubeprovider.ProjectNamespaceLabels(project.ID)); err != nil {
 		return err
 	}
+	buildPolicy := networkpolicy.BuildPolicyWithEgressControlsAndPorts(namespace, r.buildPrivateEgressCIDRs, r.buildPrivateEgressPorts, r.buildBlockedEgressCIDRs)
 	if r.buildEgressMode == "permissive" {
-		return manager.EnsureBuildPolicy(ctx, networkpolicy.PermissiveBuildPolicy(namespace))
+		buildPolicy = networkpolicy.PermissiveBuildPolicy(namespace)
 	}
-	return manager.EnsureBuildPolicy(ctx, networkpolicy.BuildPolicyWithEgressControlsAndPorts(namespace, r.buildPrivateEgressCIDRs, r.buildPrivateEgressPorts, r.buildBlockedEgressCIDRs))
+	if err := manager.EnsureBuildPolicy(ctx, buildPolicy); err != nil {
+		return err
+	}
+	// 工作负载创建前必须先完成项目隔离，不能先运行应用、后补策略。
+	cluster, err := r.runtimeClusterForDeploymentTarget(ctx, target)
+	if err != nil {
+		return err
+	}
+	nodeAddresses, err := manager.ClusterNodeAddresses(ctx)
+	if err != nil {
+		return err
+	}
+	return r.syncProjectNetworkPolicies(ctx, manager, cluster, project.ID, namespace, nodeAddresses)
 }
 
 func (r *Runner) applyGatewayAPIResources(ctx context.Context, route model.GatewayRoute, project model.Project, application model.Application, target model.DeploymentTarget, namespace string) error {

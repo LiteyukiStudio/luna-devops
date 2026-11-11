@@ -110,6 +110,12 @@ const errors = {
     resource_name_required: '请输入资源名称。',
   },
   runtime_cluster: {
+    network_blocked_cidrs_invalid: '额外拒绝出站网段格式无效：每行一个 CIDR，不能是 /0，最多 256 条。',
+    network_gateway_namespace_invalid: '网关控制器命名空间必须是合法的 Kubernetes 命名空间名称。',
+    network_policy_drifted: '部分项目空间的网络策略与平台期望不一致。',
+    network_policy_unavailable: '暂时无法读取集群的网络策略。',
+    network_policy_forbidden: '集群凭据无权读取网络策略、节点或命名空间。',
+    network_policy_timeout: '读取集群网络策略超时。',
     forbidden: '没有查看该运行集群资源的权限。',
     delete_in_progress: '运行集群正在删除中，请等待清理完成后再试。',
     cleanup_enqueue_failed: '运行集群清理任务入队失败，请稍后重试。',

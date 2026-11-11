@@ -49,6 +49,8 @@ type RuntimeCluster struct {
 	GatewayTrustedProxyCIDRs      string         `gorm:"column:gateway_trusted_proxy_cidrs;type:text;not null;default:''" json:"gatewayTrustedProxyCIDRs"`
 	GatewayDefaultRequestHeaders  string         `gorm:"type:text;not null;default:''" json:"gatewayDefaultRequestHeaders"`
 	GatewayDefaultResponseHeaders string         `gorm:"type:text;not null;default:''" json:"gatewayDefaultResponseHeaders"`
+	NetworkBlockedCIDRs           string         `gorm:"column:network_blocked_cidrs;type:text;not null;default:''" json:"networkBlockedCIDRs"`
+	NetworkGatewayNamespace       string         `gorm:"not null;default:''" json:"networkGatewayNamespace"`
 	DeleteStatus                  string         `gorm:"index;not null;default:active" json:"deleteStatus"`
 	DeleteMessage                 string         `gorm:"type:text;not null;default:''" json:"-"`
 	DeleteStartedAt               *time.Time     `json:"deleteStartedAt,omitempty"`

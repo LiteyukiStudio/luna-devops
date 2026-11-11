@@ -122,6 +122,9 @@ func (h *Handlers) UpdateRuntimeCluster(ctx *gin.Context) {
 	if !ok {
 		return
 	}
+	networkChanged := existing.NetworkBlockedCIDRs != next.NetworkBlockedCIDRs ||
+		existing.NetworkGatewayNamespace != next.NetworkGatewayNamespace ||
+		existing.GatewayNamespace != next.GatewayNamespace
 	existing.Name = next.Name
 	existing.Endpoint = next.Endpoint
 	existing.Scope = next.Scope
@@ -158,6 +161,8 @@ func (h *Handlers) UpdateRuntimeCluster(ctx *gin.Context) {
 	existing.GatewayWildcardCertSecretName = next.GatewayWildcardCertSecretName
 	existing.GatewayExternalTLSMode = next.GatewayExternalTLSMode
 	existing.GatewayForwardedHeadersMode = next.GatewayForwardedHeadersMode
+	existing.NetworkBlockedCIDRs = next.NetworkBlockedCIDRs
+	existing.NetworkGatewayNamespace = next.NetworkGatewayNamespace
 	existing.GatewayTrustedProxyCIDRs = next.GatewayTrustedProxyCIDRs
 	existing.GatewayDefaultRequestHeaders = next.GatewayDefaultRequestHeaders
 	existing.GatewayDefaultResponseHeaders = next.GatewayDefaultResponseHeaders
@@ -168,6 +173,10 @@ func (h *Handlers) UpdateRuntimeCluster(ctx *gin.Context) {
 		return
 	}
 	auditWithSafeMetadata(h, user.ID, "runtime_cluster.update", existing.ID, true, "", auditMetadata, ctx.Request.Context())
+	if networkChanged {
+		// 立即重新下发项目空间网络策略；入队失败时由 Worker 周期同步兜底。
+		h.host.EnqueueNetworkPolicyReconcile(ctx.Request.Context(), existing.ID)
+	}
 	existing, err := h.runtimeClusterResponseForUser(user, existing, ctx.Request.Context())
 	if err != nil {
 		writeProjectAuthorizationError(ctx, err)

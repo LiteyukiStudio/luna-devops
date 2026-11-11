@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"k8s.io/apimachinery/pkg/util/validation"
 	"net/http"
 	"net/netip"
 	"strings"
@@ -50,6 +51,16 @@ func (h *Handlers) runtimeClusterFromInput(ctx *gin.Context, user model.User, in
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return model.RuntimeCluster{}, false
 	}
+	networkBlockedCIDRs, err := normalizeNetworkBlockedCIDRs(input.NetworkBlockedCIDRs)
+	if err != nil {
+		writeErrorCode(ctx, http.StatusBadRequest, "runtime_cluster.network_blocked_cidrs_invalid", err.Error())
+		return model.RuntimeCluster{}, false
+	}
+	networkGatewayNamespace := strings.TrimSpace(input.NetworkGatewayNamespace)
+	if networkGatewayNamespace != "" && len(validation.IsDNS1123Label(networkGatewayNamespace)) > 0 {
+		writeErrorCode(ctx, http.StatusBadRequest, "runtime_cluster.network_gateway_namespace_invalid", "network gateway namespace must be a DNS-1123 label")
+		return model.RuntimeCluster{}, false
+	}
 	gatewayDomainSuffixes := runtimecluster.NormalizeGatewayDomainSuffixes(input.GatewayDomainSuffixes)
 	policy := runtimeClusterResourcePolicy(input)
 	if err := policy.Validate(); err != nil {
@@ -93,6 +104,8 @@ func (h *Handlers) runtimeClusterFromInput(ctx *gin.Context, user model.User, in
 		GatewayExternalTLSMode:        normalizeGatewayExternalTLSMode(input.GatewayExternalTLSMode),
 		GatewayForwardedHeadersMode:   normalizeGatewayForwardedHeadersMode(input.GatewayForwardedHeadersMode),
 		GatewayTrustedProxyCIDRs:      strings.TrimSpace(input.GatewayTrustedProxyCIDRs),
+		NetworkBlockedCIDRs:           networkBlockedCIDRs,
+		NetworkGatewayNamespace:       networkGatewayNamespace,
 		GatewayDefaultRequestHeaders:  encodeGatewayHeaderMap(requestHeaders),
 		GatewayDefaultResponseHeaders: encodeGatewayHeaderMap(responseHeaders),
 		CreatedBy:                     user.ID,
@@ -165,6 +178,8 @@ type runtimeClusterInput struct {
 	GatewayExternalTLSMode        string   `json:"gatewayExternalTLSMode"`
 	GatewayForwardedHeadersMode   string   `json:"gatewayForwardedHeadersMode"`
 	GatewayTrustedProxyCIDRs      string   `json:"gatewayTrustedProxyCIDRs"`
+	NetworkBlockedCIDRs           string   `json:"networkBlockedCIDRs"`
+	NetworkGatewayNamespace       string   `json:"networkGatewayNamespace"`
 	GatewayDefaultRequestHeaders  string   `json:"gatewayDefaultRequestHeaders"`
 	GatewayDefaultResponseHeaders string   `json:"gatewayDefaultResponseHeaders"`
 }
@@ -264,4 +279,34 @@ func validateTrustedProxyCIDRs(value string) error {
 		}
 	}
 	return nil
+}
+
+// normalizeNetworkBlockedCIDRs 校验管理员追加的出站拒绝网段：每行一个合法 CIDR，不能是 /0，规范化后去重。
+func normalizeNetworkBlockedCIDRs(value string) (string, error) {
+	seen := map[string]bool{}
+	result := []string{}
+	for _, item := range strings.FieldsFunc(value, func(char rune) bool {
+		return char == '\n' || char == ',' || char == ';'
+	}) {
+		item = strings.TrimSpace(item)
+		if item == "" {
+			continue
+		}
+		prefix, err := netip.ParsePrefix(item)
+		if err != nil {
+			return "", fmt.Errorf("blocked CIDR %q is invalid", item)
+		}
+		if prefix.Bits() == 0 {
+			return "", fmt.Errorf("blocked CIDR %q would block all egress", item)
+		}
+		normalized := prefix.Masked().String()
+		if !seen[normalized] {
+			seen[normalized] = true
+			result = append(result, normalized)
+		}
+	}
+	if len(result) > 256 {
+		return "", fmt.Errorf("at most 256 blocked CIDRs are allowed")
+	}
+	return strings.Join(result, "\n"), nil
 }

@@ -110,6 +110,12 @@ const errors = {
     resource_name_required: 'リソース名を入力してください。',
   },
   runtime_cluster: {
+    network_blocked_cidrs_invalid: '拒否する送信先 CIDR が無効です。1 行に 1 つ、/0 は不可、最大 256 件です。',
+    network_gateway_namespace_invalid: 'ゲートウェイコントローラーの名前空間は有効な Kubernetes 名前空間名である必要があります。',
+    network_policy_drifted: '一部のプロジェクトスペースのネットワークポリシーがプラットフォームの設定と異なります。',
+    network_policy_unavailable: '現在クラスターのネットワークポリシーを読み取れません。',
+    network_policy_forbidden: 'クラスターの認証情報にネットワークポリシー、ノード、名前空間の読み取り権限がありません。',
+    network_policy_timeout: 'クラスターのネットワークポリシーの読み取りがタイムアウトしました。',
     forbidden: 'このランタイムクラスターのリソースを表示する権限がありません。',
     delete_in_progress: 'ランタイムクラスターを削除中です。クリーンアップが完了するまで待ってから再試行してください。',
     cleanup_enqueue_failed: 'ランタイムクラスターのクリーンアップタスクをキューに追加できませんでした。後でもう一度試してください。',

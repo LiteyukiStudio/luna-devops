@@ -110,6 +110,12 @@ const errors = {
     resource_name_required: '請輸入資源名稱。',
   },
   runtime_cluster: {
+    network_blocked_cidrs_invalid: '額外拒絕出站網段格式無效：每行一個 CIDR，不能是 /0，最多 256 條。',
+    network_gateway_namespace_invalid: '閘道控制器命名空間必須是合法的 Kubernetes 命名空間名稱。',
+    network_policy_drifted: '部分專案空間的網路策略與平台期望不一致。',
+    network_policy_unavailable: '暫時無法讀取叢集的網路策略。',
+    network_policy_forbidden: '叢集憑證無權讀取網路策略、節點或命名空間。',
+    network_policy_timeout: '讀取叢集網路策略逾時。',
     forbidden: '沒有檢視該執行階段叢集資源的權限。',
     delete_in_progress: '執行集群正在刪除中，請等待清理完成後再試。',
     cleanup_enqueue_failed: '執行集群清理任務排入佇列失敗，請稍後重試。',

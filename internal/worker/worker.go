@@ -141,6 +141,7 @@ func registerTaskHandlers(mux *asynq.ServeMux, runner *Runner) {
 	mux.HandleFunc(tasks.TypeVolumeDelete, runner.withTaskContext((*Runner).handleVolumeDelete))
 	mux.HandleFunc(tasks.TypeVolumeReconcile, runner.withTaskContext((*Runner).handleVolumeReconcile))
 	mux.HandleFunc(tasks.TypeVolumeTransferCleanup, runner.withTaskContext((*Runner).handleVolumeTransferCleanup))
+	mux.HandleFunc(tasks.TypeNetworkPolicyReconcile, runner.withTaskContext((*Runner).handleNetworkPolicyReconcile))
 }
 
 func (r *Runner) withTaskContext(handler func(*Runner, context.Context, *asynq.Task) error) func(context.Context, *asynq.Task) error {

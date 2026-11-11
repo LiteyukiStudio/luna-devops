@@ -338,6 +338,8 @@ func PolicyForType(taskType string) EnqueuePolicy {
 		return EnqueuePolicy{Queue: QueueDeploy, MaxRetry: 5, Timeout: 2 * time.Hour, Retention: 24 * time.Hour, Unique: 24 * time.Hour}
 	case TypeVolumeReconcile:
 		return EnqueuePolicy{Queue: QueueLight, MaxRetry: 3, Timeout: 10 * time.Minute, Retention: 24 * time.Hour, Unique: time.Minute}
+	case TypeNetworkPolicyReconcile:
+		return EnqueuePolicy{Queue: QueueLight, MaxRetry: 3, Timeout: 10 * time.Minute, Retention: 24 * time.Hour, Unique: time.Minute}
 	case TypeVolumeTransferCleanup:
 		return EnqueuePolicy{Queue: QueueLight, MaxRetry: 3, Timeout: 15 * time.Minute, Retention: 24 * time.Hour, Unique: 5 * time.Minute}
 	default:

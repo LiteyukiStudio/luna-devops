@@ -110,6 +110,12 @@ const errors = {
     resource_name_required: 'Enter the resource name.',
   },
   runtime_cluster: {
+    network_blocked_cidrs_invalid: 'Blocked egress CIDRs are invalid: use one CIDR per line, no /0, at most 256 entries.',
+    network_gateway_namespace_invalid: 'The gateway controller namespace must be a valid Kubernetes namespace name.',
+    network_policy_drifted: 'Network policies in some project spaces differ from the platform configuration.',
+    network_policy_unavailable: 'Cluster network policies cannot be read right now.',
+    network_policy_forbidden: 'The cluster credential cannot read network policies, nodes, or namespaces.',
+    network_policy_timeout: 'Reading cluster network policies timed out.',
     forbidden: 'You do not have permission to view resources in this runtime cluster.',
     delete_in_progress: 'The runtime cluster is being deleted. Wait for cleanup to finish before trying again.',
     cleanup_enqueue_failed: 'The runtime cluster cleanup task could not be queued. Try again later.',
