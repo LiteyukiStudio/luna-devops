@@ -37,7 +37,12 @@ func periodicTaskSpecs() ([]periodicTaskSpec, error) {
 	if err != nil {
 		return nil, err
 	}
+	networkPolicyReconcileTask, err := tasks.NewNetworkPolicyReconcileTask(tasks.NetworkPolicyReconcilePayload{})
+	if err != nil {
+		return nil, err
+	}
 	return []periodicTaskSpec{
+		periodicTaskSpecWithPolicy("@every 5m", networkPolicyReconcileTask),
 		{Cron: "@every 5m", Task: gitRefreshTask, Queue: tasks.QueueLight, Timeout: 10 * time.Minute},
 		periodicTaskSpecWithPolicy("@every 5m", volumeReconcileTask),
 		periodicTaskSpecWithPolicy("@every 15m", volumeTransferCleanupTask),

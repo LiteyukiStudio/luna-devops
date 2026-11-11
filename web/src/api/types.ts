@@ -1595,6 +1595,8 @@ export interface RuntimeCluster {
   gatewayExternalTLSMode: 'none' | 'gateway' | 'upstream'
   gatewayForwardedHeadersMode: 'preserve' | 'overwrite' | 'none'
   gatewayTrustedProxyCIDRs: string
+  networkBlockedCIDRs: string
+  networkGatewayNamespace: string
   gatewayDefaultRequestHeaders: string
   gatewayDefaultResponseHeaders: string
   status: string
@@ -1605,6 +1607,16 @@ export interface RuntimeCluster {
   lastCheckedAt?: string | null
   createdBy: string
   createdAt: string
+}
+
+export interface RuntimeClusterNetworkPolicyObservation {
+  clusterId: string
+  status: 'ready' | 'degraded' | 'unavailable'
+  observationCode?: string
+  observedAt: string
+  namespaceCount: number
+  syncedCount: number
+  driftedCount: number
 }
 
 export type RuntimeClusterPressureLevel = 'idle' | 'light' | 'moderate' | 'heavy' | 'full' | 'unavailable'

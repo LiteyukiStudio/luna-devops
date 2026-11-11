@@ -29,6 +29,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"gorm.io/gorm"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -1270,6 +1271,22 @@ func (fakeNamespaceManager) ListManagedResources(context.Context, kubeprovider.R
 
 func (fakeNamespaceManager) DeleteManagedResource(context.Context, string, string, string) error {
 	return nil
+}
+
+func (fakeNamespaceManager) ClusterNodeAddresses(context.Context) ([]string, error) {
+	return []string{"192.168.31.20/32"}, nil
+}
+
+func (fakeNamespaceManager) ListProjectNamespaces(context.Context) (map[string]string, error) {
+	return map[string]string{}, nil
+}
+
+func (fakeNamespaceManager) SyncWorkloadNetworkPolicies(context.Context, string, []networkingv1.NetworkPolicy) error {
+	return nil
+}
+
+func (fakeNamespaceManager) WorkloadNetworkPolicyState(context.Context, string, []networkingv1.NetworkPolicy) (string, error) {
+	return kubeprovider.WorkloadNetworkPolicySynced, nil
 }
 
 type recordingNamespaceManager struct {

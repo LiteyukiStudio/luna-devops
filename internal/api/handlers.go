@@ -75,6 +75,7 @@ type taskEnqueuer interface {
 	EnqueueApplicationDelete(ctx context.Context, payload tasks.ApplicationDeletePayload) (*asynq.TaskInfo, error)
 	EnqueueResourceCleanup(ctx context.Context, payload tasks.ResourceCleanupPayload) (*asynq.TaskInfo, error)
 	EnqueueNotificationDeliver(ctx context.Context, payload tasks.NotificationDeliverPayload) (*asynq.TaskInfo, error)
+	EnqueueNetworkPolicyReconcile(ctx context.Context, payload tasks.NetworkPolicyReconcilePayload) (*asynq.TaskInfo, error)
 }
 
 func NewHandlers(db *gorm.DB, cfg Config) *Handlers {

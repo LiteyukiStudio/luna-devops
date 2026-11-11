@@ -1,4 +1,4 @@
-import type { ClusterResource, ClusterResourceEvent, ClusterResourceYAML, DeploymentTargetRuntimePodPage, PaginatedResponse, PaginationParams, Release, ReleaseImageCandidates, ReleaseLog, ReleaseRuntimeLog, ResultVisibility, RuntimeCluster, RuntimeClusterPressure, RuntimeClusterResourceCategory, RuntimeClusterResourceKind, RuntimeClusterResourceListParams } from '../types'
+import type { ClusterResource, ClusterResourceEvent, ClusterResourceYAML, DeploymentTargetRuntimePodPage, PaginatedResponse, PaginationParams, Release, ReleaseImageCandidates, ReleaseLog, ReleaseRuntimeLog, ResultVisibility, RuntimeCluster, RuntimeClusterNetworkPolicyObservation, RuntimeClusterPressure, RuntimeClusterResourceCategory, RuntimeClusterResourceKind, RuntimeClusterResourceListParams } from '../types'
 import { paginationQuery, paginationWithProjectQuery, request, runtimeClusterResourceListQuery } from '../core'
 import { selectionItems, selectionPageParams } from '../selection-page'
 
@@ -15,6 +15,8 @@ export const runtimeApi = {
       query.set('projectId', projectId)
     return request<{ items: RuntimeClusterPressure[] }>(`/runtime/clusters/pressure?${query.toString()}`).then(response => response.items)
   },
+  observeRuntimeClusterNetworkPolicies: (clusterId: string, signal?: AbortSignal) =>
+    request<RuntimeClusterNetworkPolicyObservation>(`/runtime/clusters/${clusterId}/network-policies`, { signal }),
   createRuntimeCluster: (payload: Omit<RuntimeCluster, 'id' | 'createdBy' | 'createdAt' | 'kubeconfigSet' | 'lastCheckedAt'> & { kubeconfig?: string }) =>
     request<RuntimeCluster>('/runtime/clusters', { method: 'POST', body: JSON.stringify(payload) }),
   updateRuntimeCluster: (clusterId: string, payload: Omit<RuntimeCluster, 'id' | 'createdBy' | 'createdAt' | 'kubeconfigSet' | 'lastCheckedAt'> & { kubeconfig?: string }) =>

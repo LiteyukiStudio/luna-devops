@@ -110,6 +110,12 @@ const errors = {
     resource_name_required: '리소스 이름을 입력하세요.',
   },
   runtime_cluster: {
+    network_blocked_cidrs_invalid: '차단할 아웃바운드 CIDR 형식이 잘못되었습니다. 한 줄에 하나, /0 불가, 최대 256개입니다.',
+    network_gateway_namespace_invalid: '게이트웨이 컨트롤러 네임스페이스는 올바른 Kubernetes 네임스페이스 이름이어야 합니다.',
+    network_policy_drifted: '일부 프로젝트 스페이스의 네트워크 정책이 플랫폼 설정과 다릅니다.',
+    network_policy_unavailable: '지금은 클러스터 네트워크 정책을 읽을 수 없습니다.',
+    network_policy_forbidden: '클러스터 자격 증명에 네트워크 정책, 노드, 네임스페이스 읽기 권한이 없습니다.',
+    network_policy_timeout: '클러스터 네트워크 정책 읽기 시간이 초과되었습니다.',
     forbidden: '이 런타임 클러스터의 리소스를 볼 권한이 없습니다.',
     delete_in_progress: '런타임 클러스터를 삭제하는 중입니다. 정리가 끝난 뒤 다시 시도하세요.',
     cleanup_enqueue_failed: '런타임 클러스터 정리 작업을 큐에 넣지 못했습니다. 잠시 후 다시 시도하세요.',

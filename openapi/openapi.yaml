@@ -4570,6 +4570,41 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+  /api/v1/runtime/clusters/{clusterId}/network-policies:
+    get:
+      operationId: observeRuntimeClusterNetworkPolicies
+      x-luna-cli:
+        requiredScopes: ["cluster:read"]
+      tags: [Runtime]
+      summary: Observe project network isolation on a runtime cluster
+      description: Compares the platform-managed NetworkPolicies in every active project namespace of the cluster with the policies rendered from current configuration. Only users who can manage the cluster may read it. The result is a live observation; drift is repaired by the Worker within its periodic reconcile.
+      x-luna-agent:
+        purpose: { zh: 实时检查运行集群中各项目空间的网络隔离策略是否与平台期望一致。, en: Check whether project network isolation policies on a runtime cluster match the platform's desired state. }
+        aliases: { zh: [查看集群网络隔离, 检查网络策略漂移, 项目空间隔离状态], en: [observe cluster network isolation, check network policy drift, project isolation status] }
+        avoidWhen: { zh: 排查单个应用之间的连通性时，应先查看服务引用诊断。, en: Use service binding diagnostics first when troubleshooting connectivity between two applications. }
+        preconditions: { zh: [先用 listRuntimeClusters 获取真实 clusterId, 当前用户需能维护该集群], en: [Resolve clusterId with listRuntimeClusters first, the caller must be able to manage the cluster] }
+        successEvidence: { zh: 返回已同步与漂移的项目空间数量；集群不可达时返回 unavailable 与 observationCode。, en: Returns synced and drifted namespace counts, or unavailable with an observationCode when the cluster is unreachable. }
+      parameters:
+        - name: clusterId
+          in: path
+          required: true
+          schema: { type: string, pattern: '^clu_' }
+      responses:
+        "200":
+          description: Live network isolation observation. Cache-Control is no-store.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RuntimeClusterNetworkPolicyObservation" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: The runtime cluster is not active (`runtime_cluster.not_active`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
   /api/v1/runtime/clusters/{clusterId}/resources:
     get:
       operationId: listRuntimeClusterResources
@@ -13353,6 +13388,12 @@ components:
         gatewayExternalTLSMode: { type: string, enum: [none, gateway, upstream] }
         gatewayForwardedHeadersMode: { type: string, enum: [preserve, overwrite, none] }
         gatewayTrustedProxyCIDRs: { type: string }
+        networkBlockedCIDRs:
+          type: string
+          description: Extra egress-denied CIDRs for project workloads on this cluster, one per line, on top of the platform-reserved private and special ranges. A /0 range is rejected (`runtime_cluster.network_blocked_cidrs_invalid`); at most 256 entries.
+        networkGatewayNamespace:
+          type: string
+          description: Namespace of the gateway controller pods allowed to reach project workloads. Empty uses gatewayNamespace. Must be a DNS-1123 label (`runtime_cluster.network_gateway_namespace_invalid`).
         gatewayDefaultRequestHeaders: { type: string }
         gatewayDefaultResponseHeaders: { type: string }
     RuntimeCluster:
@@ -13375,6 +13416,22 @@ components:
             createdBy: { type: string }
             createdAt: { type: string, format: date-time }
             updatedAt: { type: string, format: date-time }
+    RuntimeClusterNetworkPolicyObservation:
+      type: object
+      required: [clusterId, status, observedAt, namespaceCount, syncedCount, driftedCount]
+      properties:
+        clusterId: { type: string }
+        status:
+          type: string
+          enum: [ready, degraded, unavailable]
+          description: ready when every project namespace matches, degraded when any has drifted, unavailable when the cluster could not be read.
+        observationCode:
+          type: string
+          enum: [runtime_cluster.network_policy_drifted, runtime_cluster.network_policy_unavailable, runtime_cluster.network_policy_forbidden, runtime_cluster.network_policy_timeout, runtime_cluster.kubeconfig_not_configured, runtime_cluster.kubeconfig_unavailable, runtime_cluster.invalid_kubeconfig]
+        observedAt: { type: string, format: date-time }
+        namespaceCount: { type: integer, minimum: 0 }
+        syncedCount: { type: integer, minimum: 0 }
+        driftedCount: { type: integer, minimum: 0 }
     RuntimeClusterPressureLevel:
       type: string
       enum: [idle, light, moderate, heavy, full, unavailable]

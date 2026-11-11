@@ -23,7 +23,7 @@ import (
 
 const (
 	baselineMigrationVersion = 103
-	latestMigrationVersion   = 125
+	latestMigrationVersion   = 126
 )
 
 func TestEmbeddedMigrationsContainExpectedFiles(t *testing.T) {
@@ -72,6 +72,8 @@ func TestEmbeddedMigrationsContainExpectedFiles(t *testing.T) {
 		"000124_build_job_current_step.down.sql":                     false,
 		"000125_image_repository_claim_index.up.sql":                 false,
 		"000125_image_repository_claim_index.down.sql":               false,
+		"000126_runtime_cluster_network_policy.up.sql":               false,
+		"000126_runtime_cluster_network_policy.down.sql":             false,
 	}
 	migrationCount := 0
 	for _, entry := range entries {
@@ -262,6 +264,8 @@ WHERE namespace.nspname = current_schema()
 	assertSingleColumnMigration(t, testDB, runner, 123, "build_runs", "source_commit_message")
 	assertSingleColumnMigration(t, testDB, runner, 124, "build_jobs", "current_step")
 	assertSingleIndexMigration(t, testDB, runner, 125, "build_runs", "idx_build_runs_target_registry_repository")
+	assertSingleColumnMigration(t, testDB, runner, 126, "runtime_clusters", "network_blocked_cidrs")
+	assertSingleColumnMigration(t, testDB, runner, 126, "runtime_clusters", "network_gateway_namespace")
 	assertDirtyMigrationFailsClosed(t, testDB)
 }
 

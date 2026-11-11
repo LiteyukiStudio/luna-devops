@@ -131,3 +131,11 @@ func (h *Handlers) enqueueResourceCleanup(ctx context.Context, resourceType, res
 	_, err := h.taskClient.EnqueueResourceCleanup(ctx, payload)
 	return err == nil || errors.Is(err, asynq.ErrDuplicateTask)
 }
+
+func (h *Handlers) enqueueNetworkPolicyReconcile(ctx context.Context, clusterID string) bool {
+	if h.taskClient == nil {
+		return false
+	}
+	_, err := h.taskClient.EnqueueNetworkPolicyReconcile(ctx, tasks.NetworkPolicyReconcilePayload{RuntimeClusterID: clusterID})
+	return err == nil || errors.Is(err, asynq.ErrDuplicateTask)
+}

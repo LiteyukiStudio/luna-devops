@@ -76,6 +76,8 @@ const cluster: RuntimeCluster = {
   gatewayExternalTLSMode: 'none',
   gatewayForwardedHeadersMode: 'preserve',
   gatewayTrustedProxyCIDRs: '',
+  networkBlockedCIDRs: '',
+  networkGatewayNamespace: '',
   gatewayDefaultRequestHeaders: '',
   gatewayDefaultResponseHeaders: '',
   status: 'ready',

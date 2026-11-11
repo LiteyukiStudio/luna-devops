@@ -98,7 +98,7 @@ func PublicSourceEgressRulesWithBlocked(blockedCIDRs []string) []EgressRule {
 		{
 			To: []Peer{{
 				CIDR:   "0.0.0.0/0",
-				Except: appendCIDRs(reservedIPv4CIDRs(), filterCIDRsForFamily(blockedCIDRs, false)...),
+				Except: appendCIDRs(ReservedIPv4CIDRs(), filterCIDRsForFamily(blockedCIDRs, false)...),
 			}},
 			Ports: []Port{
 				{Protocol: "TCP", Number: 443},
@@ -108,7 +108,7 @@ func PublicSourceEgressRulesWithBlocked(blockedCIDRs []string) []EgressRule {
 		{
 			To: []Peer{{
 				CIDR:   "::/0",
-				Except: appendCIDRs(reservedIPv6CIDRs(), filterCIDRsForFamily(blockedCIDRs, true)...),
+				Except: appendCIDRs(ReservedIPv6CIDRs(), filterCIDRsForFamily(blockedCIDRs, true)...),
 			}},
 			Ports: []Port{
 				{Protocol: "TCP", Number: 443},
@@ -200,7 +200,7 @@ func containedBlockedCIDRs(cidr string, blockedCIDRs []string) []string {
 	return result
 }
 
-func reservedIPv4CIDRs() []string {
+func ReservedIPv4CIDRs() []string {
 	return []string{
 		"0.0.0.0/8",
 		"10.0.0.0/8",
@@ -219,7 +219,7 @@ func reservedIPv4CIDRs() []string {
 	}
 }
 
-func reservedIPv6CIDRs() []string {
+func ReservedIPv6CIDRs() []string {
 	return []string{
 		"::1/128",
 		"::/128",

@@ -1,0 +1,318 @@
+package kubernetes
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"net/netip"
+	"sort"
+	"strings"
+
+	networkingv1 "k8s.io/api/networking/v1"
+	apiequality "k8s.io/apimachinery/pkg/api/equality"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/validation"
+
+	"github.com/LiteyukiStudio/devops/internal/provider/networkpolicy"
+)
+
+const (
+	// WorkloadNetworkPolicyScope 标记平台为项目空间工作负载渲染的 NetworkPolicy 集合。
+	WorkloadNetworkPolicyScope  = "workload-network"
+	NetworkPolicyHashAnnotation = "luna.devops/policy-hash"
+
+	workloadIngressPolicyName = "luna-workload-ingress"
+	workloadEgressPolicyName  = "luna-workload-egress"
+	systemEgressPolicyPrefix  = "luna-system-egress-"
+	namespaceNameLabel        = "kubernetes.io/metadata.name"
+
+	WorkloadNetworkPolicySynced  = "synced"
+	WorkloadNetworkPolicyDrifted = "drifted"
+)
+
+// WorkloadNetworkPolicyInput 是项目空间 Namespace 网络隔离的全部期望输入。
+// 渲染是纯函数：相同输入总是得到相同的策略集合。
+type WorkloadNetworkPolicyInput struct {
+	Namespace        string
+	GatewayNamespace string
+	// BlockedCIDRs 是集群管理员在平台保留网段之外追加的出站拒绝网段。
+	BlockedCIDRs []string
+	// NodeAddresses 来自集群 Node 与 kube-apiserver Endpoint，出站拒绝、入站放行（宿主机网络组件）。
+	NodeAddresses []string
+	// TrustedDeploymentTargetIDs 是可信系统组件的部署配置，其 Pod 出站不受项目隔离限制。
+	TrustedDeploymentTargetIDs []string
+}
+
+func RenderWorkloadNetworkPolicies(input WorkloadNetworkPolicyInput) ([]networkingv1.NetworkPolicy, error) {
+	input.Namespace = strings.TrimSpace(input.Namespace)
+	input.GatewayNamespace = strings.TrimSpace(input.GatewayNamespace)
+	if errs := validation.IsDNS1123Label(input.Namespace); len(errs) > 0 {
+		return nil, fmt.Errorf("invalid project namespace %q: %s", input.Namespace, strings.Join(errs, "; "))
+	}
+	if errs := validation.IsDNS1123Label(input.GatewayNamespace); len(errs) > 0 {
+		return nil, fmt.Errorf("invalid gateway namespace %q: %s", input.GatewayNamespace, strings.Join(errs, "; "))
+	}
+	blocked, err := normalizeCIDRs(input.BlockedCIDRs)
+	if err != nil {
+		return nil, err
+	}
+	nodes, err := normalizeCIDRs(input.NodeAddresses)
+	if err != nil {
+		return nil, err
+	}
+	gatewayPeer := networkingv1.NetworkPolicyPeer{NamespaceSelector: &metav1.LabelSelector{MatchLabels: map[string]string{namespaceNameLabel: input.GatewayNamespace}}}
+	samePeer := networkingv1.NetworkPolicyPeer{PodSelector: &metav1.LabelSelector{}}
+
+	ingressFrom := []networkingv1.NetworkPolicyPeer{samePeer, gatewayPeer}
+	for _, cidr := range nodes {
+		ingressFrom = append(ingressFrom, networkingv1.NetworkPolicyPeer{IPBlock: &networkingv1.IPBlock{CIDR: cidr}})
+	}
+	ingress := workloadNetworkPolicy(input.Namespace, workloadIngressPolicyName, metav1.LabelSelector{}, networkingv1.NetworkPolicySpec{
+		PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeIngress},
+		Ingress:     []networkingv1.NetworkPolicyIngressRule{{From: ingressFrom}},
+	})
+
+	denied := append(append([]string(nil), blocked...), nodes...)
+	egressRules := []networkingv1.NetworkPolicyEgressRule{
+		{Ports: []networkingv1.NetworkPolicyPort{udpPort(53), tcpPort(53)}},
+		{To: []networkingv1.NetworkPolicyPeer{samePeer, gatewayPeer}},
+		{To: []networkingv1.NetworkPolicyPeer{
+			{IPBlock: &networkingv1.IPBlock{CIDR: "0.0.0.0/0", Except: exceptCIDRs(networkpolicy.ReservedIPv4CIDRs(), denied, false)}},
+			{IPBlock: &networkingv1.IPBlock{CIDR: "::/0", Except: exceptCIDRs(networkpolicy.ReservedIPv6CIDRs(), denied, true)}},
+		}},
+	}
+	// 构建与卷迁移 Pod 有各自更严格的出站策略；NetworkPolicy 放行规则取并集，不能再被工作负载策略选中。
+	workloadPods := metav1.LabelSelector{MatchExpressions: []metav1.LabelSelectorRequirement{{
+		Key: ScopeLabel, Operator: metav1.LabelSelectorOpNotIn, Values: []string{"build", volumeTransferScope},
+	}}}
+	egress := workloadNetworkPolicy(input.Namespace, workloadEgressPolicyName, workloadPods, networkingv1.NetworkPolicySpec{
+		PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeEgress},
+		Egress:      egressRules,
+	})
+
+	policies := []networkingv1.NetworkPolicy{ingress, egress}
+	for _, targetID := range sortedUnique(input.TrustedDeploymentTargetIDs) {
+		policies = append(policies, workloadNetworkPolicy(input.Namespace, systemEgressPolicyPrefix+shortHash(targetID),
+			metav1.LabelSelector{MatchLabels: map[string]string{DeploymentTargetIDLabel: targetID}},
+			networkingv1.NetworkPolicySpec{
+				PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeEgress},
+				Egress:      []networkingv1.NetworkPolicyEgressRule{{}},
+			}))
+	}
+	return policies, nil
+}
+
+func workloadNetworkPolicy(namespace, name string, selector metav1.LabelSelector, spec networkingv1.NetworkPolicySpec) networkingv1.NetworkPolicy {
+	spec.PodSelector = selector
+	return networkingv1.NetworkPolicy{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        name,
+			Namespace:   namespace,
+			Labels:      map[string]string{ManagedByLabel: ManagedByValue, ScopeLabel: WorkloadNetworkPolicyScope},
+			Annotations: map[string]string{NetworkPolicyHashAnnotation: networkPolicySpecHash(spec)},
+		},
+		Spec: spec,
+	}
+}
+
+// SyncWorkloadNetworkPolicies 以期望集合整体覆盖 Namespace 中的受管策略。
+// 先删除不再需要的受管策略（只会收紧），再创建或覆盖期望策略。
+func (c *Client) SyncWorkloadNetworkPolicies(ctx context.Context, namespace string, desired []networkingv1.NetworkPolicy) error {
+	policies := c.client.NetworkingV1().NetworkPolicies(namespace)
+	existing, err := c.managedWorkloadNetworkPolicies(ctx, namespace)
+	if err != nil {
+		return err
+	}
+	wanted := map[string]networkingv1.NetworkPolicy{}
+	for _, policy := range desired {
+		wanted[policy.Name] = policy
+	}
+	for name := range existing {
+		if _, ok := wanted[name]; ok {
+			continue
+		}
+		if err := policies.Delete(ctx, name, metav1.DeleteOptions{}); err != nil && !apierrors.IsNotFound(err) {
+			return err
+		}
+	}
+	for _, name := range sortedKeys(wanted) {
+		policy := wanted[name]
+		current, err := policies.Get(ctx, name, metav1.GetOptions{})
+		if apierrors.IsNotFound(err) {
+			if _, err := policies.Create(ctx, &policy, metav1.CreateOptions{}); err != nil {
+				return err
+			}
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		if workloadNetworkPolicyMatches(*current, policy) {
+			continue
+		}
+		current.Labels = mergeStringMaps(current.Labels, policy.Labels)
+		current.Annotations = mergeStringMaps(current.Annotations, policy.Annotations)
+		current.Spec = policy.Spec
+		if _, err := policies.Update(ctx, current, metav1.UpdateOptions{}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// WorkloadNetworkPolicyState 实时比对集群中的受管策略与期望集合。
+func (c *Client) WorkloadNetworkPolicyState(ctx context.Context, namespace string, desired []networkingv1.NetworkPolicy) (string, error) {
+	existing, err := c.managedWorkloadNetworkPolicies(ctx, namespace)
+	if err != nil {
+		return "", err
+	}
+	if len(existing) != len(desired) {
+		return WorkloadNetworkPolicyDrifted, nil
+	}
+	for _, policy := range desired {
+		current, ok := existing[policy.Name]
+		if !ok || !workloadNetworkPolicyMatches(current, policy) {
+			return WorkloadNetworkPolicyDrifted, nil
+		}
+	}
+	return WorkloadNetworkPolicySynced, nil
+}
+
+func (c *Client) managedWorkloadNetworkPolicies(ctx context.Context, namespace string) (map[string]networkingv1.NetworkPolicy, error) {
+	list, err := c.client.NetworkingV1().NetworkPolicies(namespace).List(ctx, metav1.ListOptions{
+		LabelSelector: ManagedByLabel + "=" + ManagedByValue + "," + ScopeLabel + "=" + WorkloadNetworkPolicyScope,
+	})
+	if err != nil {
+		return nil, err
+	}
+	result := make(map[string]networkingv1.NetworkPolicy, len(list.Items))
+	for _, item := range list.Items {
+		result[item.Name] = item
+	}
+	return result, nil
+}
+
+func workloadNetworkPolicyMatches(current, desired networkingv1.NetworkPolicy) bool {
+	return current.Labels[ScopeLabel] == WorkloadNetworkPolicyScope &&
+		current.Annotations[NetworkPolicyHashAnnotation] == desired.Annotations[NetworkPolicyHashAnnotation] &&
+		apiequality.Semantic.DeepEqual(current.Spec, desired.Spec)
+}
+
+// ClusterNodeAddresses 返回 Node InternalIP/ExternalIP 与 kube-apiserver Endpoint 地址（单地址 CIDR）。
+func (c *Client) ClusterNodeAddresses(ctx context.Context) ([]string, error) {
+	nodes, err := c.client.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	addresses := []string{}
+	for _, node := range nodes.Items {
+		for _, address := range node.Status.Addresses {
+			if address.Type == "InternalIP" || address.Type == "ExternalIP" {
+				addresses = append(addresses, address.Address)
+			}
+		}
+	}
+	endpoints, err := c.client.CoreV1().Endpoints("default").Get(ctx, "kubernetes", metav1.GetOptions{})
+	if err != nil && !apierrors.IsNotFound(err) {
+		return nil, err
+	}
+	if err == nil {
+		for _, subset := range endpoints.Subsets {
+			for _, address := range subset.Addresses {
+				addresses = append(addresses, address.IP)
+			}
+		}
+	}
+	result := make([]string, 0, len(addresses))
+	for _, value := range addresses {
+		addr, err := netip.ParseAddr(strings.TrimSpace(value))
+		if err != nil {
+			continue
+		}
+		result = append(result, netip.PrefixFrom(addr.Unmap(), addr.Unmap().BitLen()).String())
+	}
+	return sortedUnique(result), nil
+}
+
+// ListProjectNamespaces 返回平台创建的项目空间 Namespace 及其项目 ID。
+func (c *Client) ListProjectNamespaces(ctx context.Context) (map[string]string, error) {
+	list, err := c.client.CoreV1().Namespaces().List(ctx, metav1.ListOptions{
+		LabelSelector: ManagedByLabel + "=" + ManagedByValue + "," + ScopeLabel + "=project",
+	})
+	if err != nil {
+		return nil, err
+	}
+	result := make(map[string]string, len(list.Items))
+	for _, item := range list.Items {
+		if projectID := strings.TrimSpace(item.Labels[ProjectIDLabel]); projectID != "" && item.DeletionTimestamp == nil {
+			result[item.Name] = projectID
+		}
+	}
+	return result, nil
+}
+
+func normalizeCIDRs(values []string) ([]string, error) {
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		prefix, err := netip.ParsePrefix(value)
+		if err != nil {
+			return nil, fmt.Errorf("invalid CIDR %q: %w", value, err)
+		}
+		result = append(result, prefix.Masked().String())
+	}
+	return sortedUnique(result), nil
+}
+
+func exceptCIDRs(reserved []string, extra []string, ipv6 bool) []string {
+	result := []string{}
+	for _, value := range append(append([]string(nil), reserved...), extra...) {
+		prefix, err := netip.ParsePrefix(value)
+		if err != nil || prefix.Addr().Is6() != ipv6 || prefix.Bits() == 0 {
+			continue
+		}
+		result = append(result, prefix.Masked().String())
+	}
+	return sortedUnique(result)
+}
+
+func networkPolicySpecHash(spec networkingv1.NetworkPolicySpec) string {
+	content, _ := json.Marshal(spec)
+	sum := sha256.Sum256(content)
+	return hex.EncodeToString(sum[:])[:16]
+}
+
+func shortHash(value string) string {
+	sum := sha256.Sum256([]byte(value))
+	return hex.EncodeToString(sum[:])[:12]
+}
+
+func sortedUnique(values []string) []string {
+	seen := map[string]bool{}
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" || seen[value] {
+			continue
+		}
+		seen[value] = true
+		result = append(result, value)
+	}
+	sort.Strings(result)
+	return result
+}
+
+func sortedKeys[V any](values map[string]V) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
+}

@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Controller, useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import { api } from '@/api'
+import { api, ApiError } from '@/api'
 import { ControlledCheckboxField } from '@/components/common/checkbox-field'
 import { CodeEditor } from '@/components/common/code-editor'
 import { FormField as Field } from '@/components/common/form-field'
@@ -18,10 +18,16 @@ import { Textarea } from '@/components/ui/textarea'
 import { inspectKubeconfig, selectSingleKubeconfigContext } from '@/lib/kubeconfig'
 import { clusterResourcePolicySchema } from '../resources/cluster-resource-policy-schema'
 import { canInspectClusterKubeconfig, defaultGatewayPublicPort, formatGatewayDomainSuffixes, kubeconfigContextOptionLabel, normalizeFormPort, parseGatewayDomainSuffixes } from './cluster-helpers'
+import { ClusterNetworkPolicyStatus } from './cluster-network-policy-status'
 
 type ClusterForm = Omit<RuntimeCluster, 'gatewayDomainSuffixes' | 'id' | 'createdBy' | 'createdAt' | 'kubeconfigSet' | 'lastCheckedAt'> & {
   gatewayDomainSuffixesText: string
   kubeconfig?: string
+}
+
+const clusterNetworkErrorFields: Partial<Record<string, 'networkBlockedCIDRs' | 'networkGatewayNamespace'>> = {
+  'runtime_cluster.network_blocked_cidrs_invalid': 'networkBlockedCIDRs',
+  'runtime_cluster.network_gateway_namespace_invalid': 'networkGatewayNamespace',
 }
 
 const clusterDefaults: ClusterForm = {
@@ -52,6 +58,8 @@ const clusterDefaults: ClusterForm = {
   gatewayWildcardCertDomain: '',
   gatewayWildcardCertSecretName: '',
   gatewayTrustedProxyCIDRs: '',
+  networkBlockedCIDRs: '',
+  networkGatewayNamespace: '',
   maxConcurrentBuilds: 4,
   cpuRequestPercent: 10,
   memoryRequestPercent: 25,
@@ -127,7 +135,12 @@ export function ClusterFormDialog({ editingCluster, open, projects, user, onOpen
       onSaved()
       queryClient.invalidateQueries({ queryKey: ['runtime-clusters'] })
     },
-    onError: error => toast.error(error.message),
+    onError: (error) => {
+      const field = error instanceof ApiError ? clusterNetworkErrorFields[error.code] : undefined
+      if (field)
+        form.setError(field, { message: error.message })
+      toast.error(error.message)
+    },
   })
 
   function submitCluster(values: ClusterForm) {
@@ -332,6 +345,11 @@ export function ClusterFormDialog({ editingCluster, open, projects, user, onOpen
                   <Field hint={t('clustersPage.gatewayWildcardCertSecretNameHint')} label={t('clustersPage.gatewayWildcardCertSecretName')}><Input {...form.register('gatewayWildcardCertSecretName')} placeholder={t('clustersPage.gatewayWildcardCertSecretNamePlaceholder')} /></Field>
                 </div>
               </ProgressiveSection>
+              <ProgressiveSection description={t('clustersPage.networkIsolationDescription')} title={t('clustersPage.networkIsolation')}>
+                {editingCluster ? <ClusterNetworkPolicyStatus clusterId={editingCluster.id} /> : null}
+                <Field error={form.formState.errors.networkBlockedCIDRs?.message} hint={t('clustersPage.networkBlockedCIDRsHint')} label={t('clustersPage.networkBlockedCIDRs')}><Textarea {...form.register('networkBlockedCIDRs')} placeholder={t('clustersPage.networkBlockedCIDRsPlaceholder')} rows={3} /></Field>
+                <Field error={form.formState.errors.networkGatewayNamespace?.message} hint={t('clustersPage.networkGatewayNamespaceHint')} label={t('clustersPage.networkGatewayNamespace')}><Input {...form.register('networkGatewayNamespace')} placeholder={form.watch('gatewayNamespace') || 'kube-system'} /></Field>
+              </ProgressiveSection>
               <ProgressiveSection description={t('clustersPage.gatewayAdvancedDefaultsDescription')} title={t('clustersPage.gatewayAdvancedDefaults')}>
                 <Field hint={t('clustersPage.gatewayTrustedProxyCIDRsHint')} label={t('clustersPage.gatewayTrustedProxyCIDRs')}><Textarea {...form.register('gatewayTrustedProxyCIDRs')} placeholder={t('clustersPage.gatewayTrustedProxyCIDRsPlaceholder')} rows={3} /></Field>
                 <Field hint={t('clustersPage.gatewayDefaultRequestHeadersHint')} label={t('clustersPage.gatewayDefaultRequestHeaders')}><Textarea {...form.register('gatewayDefaultRequestHeaders')} placeholder={t('gatewayRoutesPage.headersPlaceholder')} rows={4} /></Field>
@@ -380,6 +398,8 @@ function formValuesFromCluster(cluster: RuntimeCluster): ClusterForm {
     gatewayWildcardCertDomain: cluster.gatewayWildcardCertDomain || '',
     gatewayWildcardCertSecretName: cluster.gatewayWildcardCertSecretName || '',
     gatewayTrustedProxyCIDRs: cluster.gatewayTrustedProxyCIDRs || '',
+    networkBlockedCIDRs: cluster.networkBlockedCIDRs || '',
+    networkGatewayNamespace: cluster.networkGatewayNamespace || '',
     maxConcurrentBuilds: cluster.maxConcurrentBuilds || 4,
     cpuRequestPercent: cluster.cpuRequestPercent ?? 10,
     memoryRequestPercent: cluster.memoryRequestPercent ?? 25,

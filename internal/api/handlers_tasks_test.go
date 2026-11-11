@@ -220,6 +220,7 @@ type fakeBuildTaskEnqueuer struct {
 	applicationDeletePayload tasks.ApplicationDeletePayload
 	applicationDeleteError   error
 	resourceCleanupPayload   tasks.ResourceCleanupPayload
+	networkPolicyPayloads    []tasks.NetworkPolicyReconcilePayload
 }
 
 func (f *fakeBuildTaskEnqueuer) EnqueueBuildRun(_ context.Context, payload tasks.BuildRunPayload) (*asynq.TaskInfo, error) {
@@ -249,5 +250,10 @@ func (f *fakeBuildTaskEnqueuer) EnqueueApplicationDelete(_ context.Context, payl
 
 func (f *fakeBuildTaskEnqueuer) EnqueueResourceCleanup(_ context.Context, payload tasks.ResourceCleanupPayload) (*asynq.TaskInfo, error) {
 	f.resourceCleanupPayload = payload
+	return &asynq.TaskInfo{}, nil
+}
+
+func (f *fakeBuildTaskEnqueuer) EnqueueNetworkPolicyReconcile(_ context.Context, payload tasks.NetworkPolicyReconcilePayload) (*asynq.TaskInfo, error) {
+	f.networkPolicyPayloads = append(f.networkPolicyPayloads, payload)
 	return &asynq.TaskInfo{}, nil
 }
