@@ -608,11 +608,12 @@ func reservedIPv4CIDRs() []string {
 	}
 }
 
+// reservedIPv6CIDRs 不包含 ::ffff:0:0/96：Kubernetes 拒绝 IPv4 映射写法的 CIDR，
+// 发往映射地址的流量实际是 IPv4 包，由 IPv4 规则约束；用户输入中的映射写法已在入口拒绝。
 func reservedIPv6CIDRs() []string {
 	return []string{
 		"::1/128",
 		"::/128",
-		"::ffff:0:0/96",
 		"64:ff9b:1::/48",
 		"2002::/16",
 		"64:ff9b::/96",
