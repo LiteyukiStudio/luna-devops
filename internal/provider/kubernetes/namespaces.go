@@ -100,7 +100,11 @@ func (c *Client) EnsureNamespace(ctx context.Context, name string, labels map[st
 				Labels: labels,
 			},
 		}, metav1.CreateOptions{})
-		return err
+		if !apierrors.IsAlreadyExists(err) {
+			return err
+		}
+		// 同一项目空间的多个发布可能并发创建命名空间；被抢先创建时按已存在处理，继续校验归属与标签。
+		existing, err = namespaces.Get(ctx, name, metav1.GetOptions{})
 	}
 	if err != nil {
 		return err

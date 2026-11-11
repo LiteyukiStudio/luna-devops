@@ -2,6 +2,7 @@ package kubernetes
 
 import (
 	"context"
+	"net/netip"
 	"slices"
 	"testing"
 
@@ -421,8 +422,24 @@ func TestParseNetworkCIDRRejectsIPv4MappedIPv6(t *testing.T) {
 	if _, err := RenderWorkloadNetworkPolicies(input); err == nil {
 		t.Fatal("renderer must reject IPv4-mapped blocked CIDRs")
 	}
-	if !slices.Contains(reservedIPv6CIDRs(), "::ffff:0:0/96") {
-		t.Fatal("IPv4-mapped IPv6 range must be reserved")
+	// Kubernetes 拒绝 IPv4 映射写法；渲染出的任何 CIDR 都不能使用它，否则整个命名空间的策略都无法下发。
+	policies, err := RenderWorkloadNetworkPolicies(testWorkloadPolicyInput())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, policy := range policies {
+		for _, rule := range policy.Spec.Egress {
+			for _, peer := range rule.To {
+				if peer.IPBlock == nil {
+					continue
+				}
+				for _, cidr := range append([]string{peer.IPBlock.CIDR}, peer.IPBlock.Except...) {
+					if prefix, err := netip.ParsePrefix(cidr); err != nil || prefix.Addr().Is4In6() {
+						t.Fatalf("policy %s renders a CIDR Kubernetes rejects: %s", policy.Name, cidr)
+					}
+				}
+			}
+		}
 	}
 }
 
@@ -458,5 +475,26 @@ func TestSyncAppliesDesiredBeforeDeletingStale(t *testing.T) {
 	updateAt, deleteAt := slices.Index(order, "update:"+workloadIngressPolicyName), slices.Index(order, "delete:"+dependencyIngressPolicyPrefix+shortHash("dt_web"))
 	if updateAt < 0 || deleteAt < 0 || updateAt > deleteAt {
 		t.Fatalf("stale policies must be deleted after desired ones are applied: %v", order)
+	}
+}
+
+func TestEnsureNamespaceToleratesConcurrentCreate(t *testing.T) {
+	clientset := fake.NewSimpleClientset()
+	labels := ProjectNamespaceLabels("prj_demo")
+	created := false
+	// 模拟另一个发布在本次 Get 之后抢先创建了同名命名空间。
+	clientset.PrependReactor("create", "namespaces", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		if created {
+			return false, nil, nil
+		}
+		created = true
+		namespace := action.(k8stesting.CreateAction).GetObject().(*corev1.Namespace).DeepCopy()
+		if err := clientset.Tracker().Create(corev1.SchemeGroupVersion.WithResource("namespaces"), namespace, ""); err != nil {
+			return true, nil, err
+		}
+		return true, nil, apierrors.NewAlreadyExists(corev1.Resource("namespaces"), namespace.Name)
+	})
+	if err := NewClientForInterface(clientset).EnsureNamespace(context.Background(), "prj-demo", labels); err != nil {
+		t.Fatalf("concurrent namespace creation must succeed, got %v", err)
 	}
 }
