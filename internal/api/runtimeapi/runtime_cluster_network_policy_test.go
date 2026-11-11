@@ -23,7 +23,7 @@ func TestNormalizeNetworkBlockedCIDRs(t *testing.T) {
 	if got != "203.0.113.0/24\n2001:db8::/48" {
 		t.Fatalf("normalized = %q", got)
 	}
-	for _, invalid := range []string{"0.0.0.0/0", "::/0", "192.168.31.1", "nope/8"} {
+	for _, invalid := range []string{"0.0.0.0/0", "::/0", "192.168.31.1", "nope/8", "::ffff:10.0.0.0/104"} {
 		if _, err := normalizeNetworkBlockedCIDRs(invalid); err == nil {
 			t.Fatalf("%q should be rejected", invalid)
 		}
@@ -82,7 +82,7 @@ func TestNormalizeBuildPrivateEgress(t *testing.T) {
 	if got, err := normalizeBuildPrivateEgressCIDRs("10.20.1.5/16"); err != nil || got != "10.20.0.0/16" {
 		t.Fatalf("cidrs = %q, %v", got, err)
 	}
-	for _, invalid := range []string{"0.0.0.0/0", "169.254.169.254/32", "100.100.100.200"} {
+	for _, invalid := range []string{"0.0.0.0/0", "169.254.169.254/32", "100.100.100.200", "::ffff:0.0.0.0/96"} {
 		if _, err := normalizeBuildPrivateEgressCIDRs(invalid); err == nil {
 			t.Fatalf("private egress %q must be rejected", invalid)
 		}

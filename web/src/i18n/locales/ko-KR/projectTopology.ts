@@ -198,8 +198,8 @@ const projectTopology = {
     egressModeHint: '인터넷 허용: 인터넷과 다른 애플리케이션의 접근 경로에 접근할 수 있습니다. 허용 목록만: 아래 주소만. 외부 연결 금지: 프로젝트 스페이스 내부와 클러스터 DNS만.',
     egressModes: { internet: '인터넷 허용', allowlist: '허용 목록만', none: '외부 연결 금지' },
     egressAllowlist: '아웃바운드 허용 목록',
-    egressAllowlistHint: '한 줄에 "CIDR 포트,포트". 포트를 생략하면 모든 포트, 최대 64개. 사설·예약 대역은 항상 차단되므로 지정할 수 없습니다.',
-    egressAllowlistPlaceholder: '203.0.113.0/24 443\n198.51.100.10/32',
+    egressAllowlistHint: '한 줄에 "CIDR 포트,포트". 포트를 지정하면 TCP만 허용하고, 생략하면 모든 포트와 프로토콜(UDP DNS, NTP 등)을 허용합니다. 최대 64개. 사설·예약 대역은 항상 차단되므로 지정할 수 없습니다.',
+    egressAllowlistPlaceholder: '1.1.1.1/32 443\n8.8.8.8/32',
   },
 }
 

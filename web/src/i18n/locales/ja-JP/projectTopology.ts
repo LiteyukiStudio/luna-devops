@@ -198,8 +198,8 @@ const projectTopology = {
     egressModeHint: 'インターネット許可: インターネットと他のアプリのアクセスエントリにアクセスできます。許可リストのみ: 下の宛先のみ。外部接続禁止: プロジェクトスペース内とクラスター DNS のみ。',
     egressModes: { internet: 'インターネット許可', allowlist: '許可リストのみ', none: '外部接続禁止' },
     egressAllowlist: '送信許可リスト',
-    egressAllowlistHint: '1 行に「CIDR ポート,ポート」。ポートを省略するとすべてのポート。最大 64 件。プライベート・予約レンジは常に拒否されるため指定できません。',
-    egressAllowlistPlaceholder: '203.0.113.0/24 443\n198.51.100.10/32',
+    egressAllowlistHint: '1 行に「CIDR ポート,ポート」。ポートを指定すると TCP のみ許可し、省略するとすべてのポートとプロトコル（UDP の DNS や NTP など）を許可します。最大 64 件。プライベート・予約レンジは常に拒否されるため指定できません。',
+    egressAllowlistPlaceholder: '1.1.1.1/32 443\n8.8.8.8/32',
   },
 }
 

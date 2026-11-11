@@ -198,8 +198,8 @@ const projectTopology = {
     egressModeHint: '允許公網：可以存取公網與其他應用的存取入口。僅白名單：只能存取下方列出的位址。禁止外連：只能存取專案空間內與叢集 DNS。',
     egressModes: { internet: '允許公網', allowlist: '僅白名單', none: '禁止外連' },
     egressAllowlist: '出站白名單',
-    egressAllowlistHint: '每行一條「CIDR 連接埠,連接埠」，省略連接埠表示全部連接埠；最多 64 條。私網與保留網段始終拒絕，不能寫在這裡。',
-    egressAllowlistPlaceholder: '203.0.113.0/24 443\n198.51.100.10/32',
+    egressAllowlistHint: '每行一條「CIDR 連接埠,連接埠」。寫了連接埠時只放行 TCP，省略連接埠表示全部連接埠和協定（例如 UDP 的 DNS、NTP）；最多 64 條。私網與保留網段始終拒絕，不能寫在這裡。',
+    egressAllowlistPlaceholder: '1.1.1.1/32 443\n8.8.8.8/32',
   },
 }
 

@@ -198,8 +198,8 @@ const projectTopology = {
     egressModeHint: '允许公网：可以访问公网与其他应用的访问入口。仅白名单：只能访问下方列出的地址。禁止外联：只能访问项目空间内与集群 DNS。',
     egressModes: { internet: '允许公网', allowlist: '仅白名单', none: '禁止外联' },
     egressAllowlist: '出站白名单',
-    egressAllowlistHint: '每行一条 “CIDR 端口,端口”，省略端口表示全部端口；最多 64 条。私网与保留网段始终拒绝，不能写在这里。',
-    egressAllowlistPlaceholder: '203.0.113.0/24 443\n198.51.100.10/32',
+    egressAllowlistHint: '每行一条 “CIDR 端口,端口”。写了端口时只放行 TCP，省略端口表示全部端口和协议（例如 UDP 的 DNS、NTP）；最多 64 条。私网与保留网段始终拒绝，不能写在这里。',
+    egressAllowlistPlaceholder: '1.1.1.1/32 443\n8.8.8.8/32',
   },
 }
 

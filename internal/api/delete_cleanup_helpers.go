@@ -136,7 +136,7 @@ func (h *Handlers) enqueueNetworkPolicyReconcile(ctx context.Context, clusterID 
 	if h.taskClient == nil {
 		return false
 	}
-	_, err := h.taskClient.EnqueueNetworkPolicyReconcile(ctx, tasks.NetworkPolicyReconcilePayload{RuntimeClusterID: clusterID})
+	_, err := h.taskClient.EnqueueNetworkPolicyReconcile(ctx, tasks.NetworkPolicyReconcilePayload{RuntimeClusterID: clusterID, RequestedAtUnixMicro: time.Now().UnixMicro()})
 	return err == nil || errors.Is(err, asynq.ErrDuplicateTask)
 }
 
@@ -152,6 +152,6 @@ func (h *Handlers) enqueueNetworkPolicyProjectReconcile(ctx context.Context, pro
 	if h.taskClient == nil {
 		return false
 	}
-	_, err := h.taskClient.EnqueueNetworkPolicyReconcile(ctx, tasks.NetworkPolicyReconcilePayload{ProjectID: projectID})
+	_, err := h.taskClient.EnqueueNetworkPolicyReconcile(ctx, tasks.NetworkPolicyReconcilePayload{ProjectID: projectID, RequestedAtUnixMicro: time.Now().UnixMicro()})
 	return err == nil || errors.Is(err, asynq.ErrDuplicateTask)
 }

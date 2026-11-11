@@ -520,7 +520,6 @@ const restartRequiredFields = [
   'priorityClassName',
   'serviceAnnotations',
   'serviceSessionAffinity',
-  'internalOnly',
   'autoScalingEnabled',
   'autoScalingMinReplicas',
   'autoScalingMaxReplicas',

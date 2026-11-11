@@ -13,6 +13,9 @@ import (
 
 var errDeploymentStageExists = errors.New("deployment stage already exists")
 
+// errDeploymentTargetInternalHasRoutes 在持有部署配置行锁时复核：与访问入口创建串行化，避免并发产生带访问入口的内部服务。
+var errDeploymentTargetInternalHasRoutes = errors.New("internal deployment target has gateway routes")
+
 // deploymentTargetAfterPersist 在部署配置写入后、事务提交前执行；返回错误会回滚整次保存。
 type deploymentTargetAfterPersist func(tx *gorm.DB, current model.DeploymentTarget) error
 
@@ -67,6 +70,15 @@ func (h *Handlers) persistDeploymentTargetWithAfterPersist(target model.Deployme
 				return err
 			}
 			target.SecretRefs = current.SecretRefs
+			if target.InternalOnly {
+				var routes int64
+				if err := tx.Model(&model.GatewayRoute{}).Where("deployment_target_id = ? and delete_status = ?", target.ID, "active").Count(&routes).Error; err != nil {
+					return err
+				}
+				if routes > 0 {
+					return errDeploymentTargetInternalHasRoutes
+				}
+			}
 			if err := tx.Save(&target).Error; err != nil {
 				return err
 			}

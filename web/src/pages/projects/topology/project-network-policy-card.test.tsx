@@ -33,13 +33,23 @@ describe('project network policy card', () => {
     const user = userEvent.setup()
     await user.selectOptions(await screen.findByLabelText('Ingress'), 'dependencies')
     await user.selectOptions(screen.getByLabelText('Egress'), 'allowlist')
-    await user.type(screen.getByLabelText('Egress allowlist'), '203.0.113.0/24 443')
+    await user.type(screen.getByLabelText('Egress allowlist'), '1.1.1.1/32 443')
     await user.click(screen.getByRole('button', { name: 'Save' }))
     await waitFor(() => expect(mocks.updateProjectNetworkPolicy).toHaveBeenCalledWith('prj_demo', {
       ingressMode: 'dependencies',
       egressMode: 'allowlist',
-      egressAllowlist: '203.0.113.0/24 443',
+      egressAllowlist: '1.1.1.1/32 443',
     }))
+  })
+
+  it('rejects malformed or IPv4-mapped allowlist entries before saving', async () => {
+    renderCard(true)
+    const user = userEvent.setup()
+    await user.selectOptions(await screen.findByLabelText('Egress'), 'allowlist')
+    await user.type(screen.getByLabelText('Egress allowlist'), '::ffff:0.0.0.0/96')
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+    expect(await screen.findByText(/egress allowlist is invalid/i)).toBeInTheDocument()
+    expect(mocks.updateProjectNetworkPolicy).not.toHaveBeenCalled()
   })
 
   it('is read-only without project management permission', async () => {

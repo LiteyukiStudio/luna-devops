@@ -13,6 +13,9 @@ const TypeNetworkPolicyReconcile = "network-policy:reconcile"
 type NetworkPolicyReconcilePayload struct {
 	RuntimeClusterID string `json:"runtimeClusterId,omitempty"`
 	ProjectID        string `json:"projectId,omitempty"`
+	// RequestedAtUnixMicro 区分配置变更触发的请求：asynq 的 Unique 锁在任务执行期间一直保留，
+	// 不带版本时执行中的旧任务会吞掉新变更，导致新配置要等周期同步才生效。
+	RequestedAtUnixMicro int64 `json:"requestedAtUnixMicro,omitempty"`
 }
 
 func NewNetworkPolicyReconcileTask(payload NetworkPolicyReconcilePayload) (*asynq.Task, error) {

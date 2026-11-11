@@ -57,10 +57,10 @@ By default, applications in a project space can reach each other, the gateway ca
 |  | Allowlist only | Only the addresses in the egress allowlist and routes are reachable |
 |  | None | Only applications in the project space and cluster DNS are reachable |
 
-The egress allowlist takes one `CIDR port,port` entry per line; omit ports to allow all ports; at most 64 entries, for example `203.0.113.0/24 443`. Private and reserved ranges are always denied and cannot be listed; contact a platform administrator when you need to reach an internal service.
+The egress allowlist takes one `CIDR port,port` entry per line, at most 64 entries, for example `1.1.1.1/32 443`. Listed ports are TCP only; omitting ports allows all ports and protocols, so leave ports out when you need UDP such as external DNS or NTP. Private and reserved ranges are always denied and cannot be listed; contact a platform administrator when you need to reach an internal service.
 
 Before switching to **Service bindings only**, make sure every call between applications has a service binding in the topology; undeclared calls fail immediately.
 
 ### Internal services
 
-For deployment targets that do not serve external traffic, such as databases, queues, or background workers, enable **Internal service** under the deployment target's **Advanced → Service**. Gateway traffic then cannot reach its Pods and it cannot have routes; delete existing routes first.
+For deployment targets that do not serve external traffic, such as databases, queues, or background workers, enable **Internal service** under the deployment target's **Advanced → Service**. Gateway traffic then cannot reach its Pods and it cannot have routes; delete existing routes first. This requires the gateway controller to run on the Pod network; with hostNetwork, gateway traffic arrives from node addresses and cannot be told apart.

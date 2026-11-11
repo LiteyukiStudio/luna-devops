@@ -2065,6 +2065,11 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "409":
+          description: The project space is being deleted (`project.delete_in_progress`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
         "403":
           $ref: "#/components/responses/Forbidden"
         "404":
@@ -13528,7 +13533,7 @@ components:
           description: internet allows the public internet; allowlist allows only egressAllowlist; none allows only the same project space and cluster DNS. Private, reserved, node, and metadata ranges stay denied in every mode.
         egressAllowlist:
           type: string
-          description: One entry per line as `CIDR [port,port]`; omitting ports allows all ports. At most 64 entries and 16 ports per entry; entries inside always-denied private or reserved ranges are rejected. Used only when egressMode is allowlist.
+          description: One entry per line as `CIDR [port,port]`; listed ports are TCP only, and omitting ports allows all ports and protocols. IPv4-mapped IPv6 notation is rejected. At most 64 entries and 16 ports per entry; entries inside always-denied private or reserved ranges are rejected. Used only when egressMode is allowlist.
     RuntimeClusterNetworkPolicyObservation:
       type: object
       required: [clusterId, status, observedAt, namespaceCount, syncedCount, driftedCount, enforcement]
