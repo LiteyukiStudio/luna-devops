@@ -2,6 +2,7 @@ package runtimecluster
 
 import (
 	"context"
+	"strconv"
 	"strings"
 
 	"gorm.io/gorm"
@@ -28,6 +29,22 @@ func NetworkGatewayPorts(cluster model.RuntimeCluster) []int {
 	for index, port := range ports {
 		if port <= 0 {
 			ports[index] = defaults[index]
+		}
+	}
+	return ports
+}
+
+const (
+	BuildEgressRestricted = "restricted"
+	BuildEgressPermissive = "permissive"
+)
+
+// BuildPrivateEgressPorts 解析构建私网镜像站放行端口（逗号或换行分隔），API 已保证格式合法。
+func BuildPrivateEgressPorts(raw string) []int {
+	ports := []int{}
+	for _, item := range strings.FieldsFunc(raw, func(char rune) bool { return char == ',' || char == '\n' }) {
+		if port, err := strconv.Atoi(strings.TrimSpace(item)); err == nil {
+			ports = append(ports, port)
 		}
 	}
 	return ports
@@ -60,5 +77,10 @@ func DesiredWorkloadNetworkPolicies(ctx context.Context, db *gorm.DB, cluster mo
 		BlockedCIDRs:               NetworkBlockedCIDRs(cluster.NetworkBlockedCIDRs),
 		NodeAddresses:              nodeAddresses,
 		TrustedDeploymentTargetIDs: trusted,
+		BuildEgress: kubeprovider.BuildEgressInput{
+			Permissive:   strings.TrimSpace(cluster.BuildEgressMode) == BuildEgressPermissive,
+			PrivateCIDRs: NetworkBlockedCIDRs(cluster.BuildPrivateEgressCIDRs),
+			PrivatePorts: BuildPrivateEgressPorts(cluster.BuildPrivateEgressPorts),
+		},
 	})
 }

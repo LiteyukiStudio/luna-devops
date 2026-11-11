@@ -58,10 +58,10 @@ assert_contains "$worker_secret_env_error" 'AI_INTERNAL_SECRET is managed by the
 
 api_worker_env_error="$tmp_dir/api-worker-env.err"
 if helm template luna-devops "$chart_dir" --namespace luna-devops \
-  --set-string api.extraEnv.BUILD_EGRESS_MODE=permissive > /dev/null 2> "$api_worker_env_error"; then
+  --set-string api.extraEnv.BUILD_JOB_TIMEOUT_SECONDS=60 > /dev/null 2> "$api_worker_env_error"; then
   fail 'api.extraEnv must not receive Worker-managed configuration'
 fi
-assert_contains "$api_worker_env_error" 'BUILD_EGRESS_MODE is managed by the chart and cannot be set through api.extraEnv' 'API accepts Worker-managed variables through extraEnv'
+assert_contains "$api_worker_env_error" 'BUILD_JOB_TIMEOUT_SECONDS is managed by the chart and cannot be set through api.extraEnv' 'API accepts Worker-managed variables through extraEnv'
 
 worker_api_env_error="$tmp_dir/worker-api-env.err"
 if helm template luna-devops "$chart_dir" --namespace luna-devops \
@@ -189,11 +189,12 @@ assert_contains "$api_config_render" '^  API_ADDR:' 'API_ADDR is missing from AP
 assert_contains "$api_config_render" '^  API_DB_MAX_OPEN_CONNS: "20"$' 'the API database-pool size is missing'
 assert_contains "$api_config_render" '^  API_DB_CONN_MAX_LIFETIME: "30m"$' 'the API database-pool lifetime is missing'
 assert_contains "$api_config_render" '^  AI_AGENT_BASE_URL:' 'the Agent URL is missing from API configuration'
-assert_not_contains "$api_config_render" 'WORKER_DB_|BUILD_EXECUTOR_IMAGE|BUILD_EGRESS_MODE|DEPLOY_ROLLOUT_TIMEOUT_SECONDS' 'Worker settings leaked into API configuration'
+assert_not_contains "$api_config_render" 'WORKER_DB_|BUILD_EXECUTOR_IMAGE|BUILD_JOB_TIMEOUT_SECONDS|DEPLOY_ROLLOUT_TIMEOUT_SECONDS' 'Worker settings leaked into API configuration'
 assert_contains "$worker_config_render" '^  WORKER_DB_MAX_OPEN_CONNS: "20"$' 'the Worker database-pool size is missing'
 assert_contains "$worker_config_render" '^  WORKER_DB_CONN_MAX_LIFETIME: "30m"$' 'the Worker database-pool lifetime is missing'
 assert_contains "$worker_config_render" '^  BUILD_EXECUTOR_IMAGE:' 'the build executor is missing from Worker configuration'
-assert_contains "$worker_config_render" '^  BUILD_EGRESS_MODE:' 'the build egress mode is missing from Worker configuration'
+assert_contains "$worker_config_render" '^  BUILD_JOB_TIMEOUT_SECONDS:' 'the build job timeout is missing from Worker configuration'
+assert_not_contains "$worker_config_render" 'BUILD_EGRESS_MODE|BUILD_PRIVATE_EGRESS|BUILD_BLOCKED_EGRESS' 'build egress moved to runtime cluster configuration'
 assert_not_contains "$worker_config_render" 'API_DB_|API_ADDR|APP_CORS_ORIGINS|TRUSTED_PROXY_CIDRS|AI_AGENT_' 'API settings leaked into Worker configuration'
 
 custom_database_render="$tmp_dir/custom-database-config.yaml"
@@ -256,13 +257,13 @@ api_worker_config_after="$tmp_dir/api-worker-config-after.yaml"
 worker_worker_config_before="$tmp_dir/worker-worker-config-before.yaml"
 worker_worker_config_after="$tmp_dir/worker-worker-config-after.yaml"
 helm template luna-devops "$chart_dir" --namespace luna-devops --values "$stable_rollout_values" \
-  --set worker.buildEgressMode=restricted --show-only templates/api-deployment.yaml > "$api_worker_config_before"
+  --set worker.buildJobTimeoutSeconds=1800 --show-only templates/api-deployment.yaml > "$api_worker_config_before"
 helm template luna-devops "$chart_dir" --namespace luna-devops --values "$stable_rollout_values" \
-  --set worker.buildEgressMode=permissive --show-only templates/api-deployment.yaml > "$api_worker_config_after"
+  --set worker.buildJobTimeoutSeconds=1801 --show-only templates/api-deployment.yaml > "$api_worker_config_after"
 helm template luna-devops "$chart_dir" --namespace luna-devops --values "$stable_rollout_values" \
-  --set worker.buildEgressMode=restricted --show-only templates/worker-deployment.yaml > "$worker_worker_config_before"
+  --set worker.buildJobTimeoutSeconds=1800 --show-only templates/worker-deployment.yaml > "$worker_worker_config_before"
 helm template luna-devops "$chart_dir" --namespace luna-devops --values "$stable_rollout_values" \
-  --set worker.buildEgressMode=permissive --show-only templates/worker-deployment.yaml > "$worker_worker_config_after"
+  --set worker.buildJobTimeoutSeconds=1801 --show-only templates/worker-deployment.yaml > "$worker_worker_config_after"
 cmp -s "$api_worker_config_before" "$api_worker_config_after" || fail 'a Worker-only configuration change restarted API'
 if cmp -s "$worker_worker_config_before" "$worker_worker_config_after"; then
   fail 'a Worker configuration change did not update the Worker pod template checksum'

@@ -13,7 +13,6 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/builder"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	kubeprovider "github.com/LiteyukiStudio/devops/internal/provider/kubernetes"
-	"github.com/LiteyukiStudio/devops/internal/provider/networkpolicy"
 	"github.com/LiteyukiStudio/devops/internal/redisconfig"
 	"github.com/LiteyukiStudio/devops/internal/resourcepolicy"
 	"github.com/LiteyukiStudio/devops/internal/tasks"
@@ -125,7 +124,6 @@ func TestNewRunnerUsesValidatedOptionsWithoutApplyingDefaults(t *testing.T) {
 		DeployRolloutTimeoutSeconds: 120,
 		CertManagerClusterIssuer:    "letsencrypt-staging",
 		BuildExecutorImage:          "example.test/buildkit:latest",
-		BuildEgressMode:             "permissive",
 		BuildCacheEnabled:           true,
 		BuildJobTimeoutSeconds:      900,
 		BuildJobTTLSeconds:          0,
@@ -135,7 +133,6 @@ func TestNewRunnerUsesValidatedOptionsWithoutApplyingDefaults(t *testing.T) {
 	if runner.deployRolloutTimeoutSeconds != options.DeployRolloutTimeoutSeconds ||
 		runner.certManagerClusterIssuer != options.CertManagerClusterIssuer ||
 		runner.buildExecutorImage != options.BuildExecutorImage ||
-		runner.buildEgressMode != options.BuildEgressMode ||
 		runner.buildCacheEnabled != options.BuildCacheEnabled ||
 		runner.buildJobTimeoutSeconds != options.BuildJobTimeoutSeconds ||
 		runner.buildJobTTLSeconds != 0 ||
@@ -1189,10 +1186,6 @@ func (fakeNamespaceManager) Ping(context.Context) error {
 	return nil
 }
 
-func (fakeNamespaceManager) EnsureBuildPolicy(context.Context, networkpolicy.BuildPolicy) error {
-	return nil
-}
-
 func (fakeNamespaceManager) ApplyApplicationResources(context.Context, kubeprovider.ApplicationResourcesSpec) error {
 	return nil
 }
@@ -1277,6 +1270,10 @@ func (fakeNamespaceManager) ClusterNodeAddresses(context.Context) ([]string, err
 	return []string{"192.168.31.20/32"}, nil
 }
 
+func (fakeNamespaceManager) ProbeNetworkPolicyEnforcement(context.Context, string, string) (kubeprovider.NetworkPolicyProbeResult, error) {
+	return kubeprovider.NetworkPolicyProbeResult{Enforcement: kubeprovider.NetworkPolicyEnforcementVerified}, nil
+}
+
 func (fakeNamespaceManager) ListProjectNamespaces(context.Context) (map[string]string, error) {
 	return map[string]string{}, nil
 }
@@ -1292,18 +1289,12 @@ func (fakeNamespaceManager) WorkloadNetworkPolicyState(context.Context, string, 
 type recordingNamespaceManager struct {
 	fakeNamespaceManager
 	deletions     []string
-	policies      []networkpolicy.BuildPolicy
 	replicaScales []int32
 	err           error
 }
 
 func (m *recordingNamespaceManager) DeleteManagedResource(_ context.Context, kind string, namespace string, name string) error {
 	m.deletions = append(m.deletions, kind+"/"+namespace+"/"+name)
-	return m.err
-}
-
-func (m *recordingNamespaceManager) EnsureBuildPolicy(_ context.Context, policy networkpolicy.BuildPolicy) error {
-	m.policies = append(m.policies, policy)
 	return m.err
 }
 
@@ -1326,86 +1317,6 @@ func TestScaleApplicationResourcesToLatestTarget(t *testing.T) {
 	}
 	if len(manager.replicaScales) != 1 {
 		t.Fatalf("unchanged replicas triggered scale: %#v", manager.replicaScales)
-	}
-}
-
-func TestEnsureProjectNamespaceDefaultsToRestrictedBuildEgressPolicy(t *testing.T) {
-	manager := &recordingNamespaceManager{}
-	runner := newDryRunWorkerTestRunner(t, Options{BuildEgressMode: "restricted"})
-	runner.kubernetesManagerFactory = func(model.DeploymentTarget) (kubeprovider.NamespaceManager, error) {
-		return manager, nil
-	}
-
-	if err := runner.ensureProjectNamespace(context.Background(), "ns-demo", model.Project{ID: "prj_demo"}, model.DeploymentTarget{}); err != nil {
-		t.Fatalf("ensureProjectNamespace returned error: %v", err)
-	}
-	if len(manager.policies) != 1 {
-		t.Fatalf("policies = %#v", manager.policies)
-	}
-	policy := manager.policies[0]
-	if policy.Name != "luna-build-egress" || policy.Namespace != "ns-demo" || policy.PodLabels[kubeprovider.ScopeLabel] != buildJobScope {
-		t.Fatalf("policy = %#v", policy)
-	}
-	if len(policy.Egress) != 3 {
-		t.Fatalf("expected dns and public HTTP(S) egress rules, got %#v", policy.Egress)
-	}
-	if len(policy.Egress[0].Ports) != 2 || policy.Egress[0].Ports[0].Number != 53 || policy.Egress[0].Ports[1].Number != 53 {
-		t.Fatalf("expected DNS egress rule, got %#v", policy.Egress[0])
-	}
-	for _, rule := range policy.Egress[1:] {
-		if len(rule.To) != 1 || len(rule.To[0].Except) == 0 {
-			t.Fatalf("expected restricted public egress rule, got %#v", rule)
-		}
-	}
-}
-
-func TestEnsureProjectNamespaceSupportsExplicitPermissiveBuildEgressPolicy(t *testing.T) {
-	manager := &recordingNamespaceManager{}
-	runner := newDryRunWorkerTestRunner(t, Options{BuildEgressMode: "permissive"})
-	runner.kubernetesManagerFactory = func(model.DeploymentTarget) (kubeprovider.NamespaceManager, error) {
-		return manager, nil
-	}
-
-	if err := runner.ensureProjectNamespace(context.Background(), "ns-demo", model.Project{ID: "prj_demo"}, model.DeploymentTarget{}); err != nil {
-		t.Fatalf("ensureProjectNamespace returned error: %v", err)
-	}
-	if len(manager.policies) != 1 {
-		t.Fatalf("policies = %#v", manager.policies)
-	}
-	policy := manager.policies[0]
-	if len(policy.Egress) != 1 || len(policy.Egress[0].To) != 0 || len(policy.Egress[0].Ports) != 0 {
-		t.Fatalf("expected permissive egress rule, got %#v", policy.Egress)
-	}
-}
-
-func TestEnsureProjectNamespaceAppliesRestrictedBuildEgressPolicy(t *testing.T) {
-	manager := &recordingNamespaceManager{}
-	runner := newDryRunWorkerTestRunner(t, Options{
-		BuildEgressMode:         "restricted",
-		BuildPrivateEgressCIDRs: []string{"10.20.0.0/16"},
-		BuildPrivateEgressPorts: []int{443, 5000},
-		BuildBlockedEgressCIDRs: []string{"169.254.169.254/32", "10.96.0.0/12"},
-	})
-	runner.kubernetesManagerFactory = func(model.DeploymentTarget) (kubeprovider.NamespaceManager, error) {
-		return manager, nil
-	}
-
-	if err := runner.ensureProjectNamespace(context.Background(), "ns-demo", model.Project{ID: "prj_demo"}, model.DeploymentTarget{}); err != nil {
-		t.Fatalf("ensureProjectNamespace returned error: %v", err)
-	}
-	if len(manager.policies) != 1 {
-		t.Fatalf("policies = %#v", manager.policies)
-	}
-	policy := manager.policies[0]
-	if policy.Name != "luna-build-egress" || policy.Namespace != "ns-demo" || policy.PodLabels[kubeprovider.ScopeLabel] != buildJobScope {
-		t.Fatalf("policy = %#v", policy)
-	}
-	if len(policy.Egress) < 4 {
-		t.Fatalf("expected dns, public, and private egress rules, got %#v", policy.Egress)
-	}
-	privateRule := policy.Egress[len(policy.Egress)-1]
-	if privateRule.To[0].CIDR != "10.20.0.0/16" || len(privateRule.Ports) != 2 || privateRule.Ports[0].Number != 443 || privateRule.Ports[1].Number != 5000 {
-		t.Fatalf("private egress rule = %#v", privateRule)
 	}
 }
 

@@ -1597,6 +1597,12 @@ export interface RuntimeCluster {
   gatewayTrustedProxyCIDRs: string
   networkBlockedCIDRs: string
   networkGatewayNamespace: string
+  buildEgressMode: 'restricted' | 'permissive'
+  buildPrivateEgressCIDRs: string
+  buildPrivateEgressPorts: string
+  networkPolicyEnforcement?: RuntimeClusterNetworkPolicyEnforcement
+  networkPolicyProbeCode?: string
+  networkPolicyProbedAt?: string | null
   gatewayDefaultRequestHeaders: string
   gatewayDefaultResponseHeaders: string
   status: string
@@ -1609,6 +1615,8 @@ export interface RuntimeCluster {
   createdAt: string
 }
 
+export type RuntimeClusterNetworkPolicyEnforcement = 'verified' | 'unsupported' | 'unknown'
+
 export interface RuntimeClusterNetworkPolicyObservation {
   clusterId: string
   status: 'ready' | 'degraded' | 'unavailable'
@@ -1617,6 +1625,9 @@ export interface RuntimeClusterNetworkPolicyObservation {
   namespaceCount: number
   syncedCount: number
   driftedCount: number
+  enforcement: RuntimeClusterNetworkPolicyEnforcement
+  enforcementCode?: string
+  probedAt?: string
 }
 
 export type RuntimeClusterPressureLevel = 'idle' | 'light' | 'moderate' | 'heavy' | 'full' | 'unavailable'

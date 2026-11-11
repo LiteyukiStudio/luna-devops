@@ -59,13 +59,9 @@ type apiEnvironment struct {
 type workerEnvironment struct {
 	Database                 databasePoolEnvironment `envPrefix:"WORKER_DB_"`
 	BuildExecutorImage       string                  `env:"BUILD_EXECUTOR_IMAGE" envDefault:"moby/buildkit:v0.34.1-rootless"`
-	BuildEgressMode          string                  `env:"BUILD_EGRESS_MODE" envDefault:"restricted"`
 	BuildCacheEnabled        bool                    `env:"BUILD_CACHE_ENABLED" envDefault:"false"`
 	BuildJobTimeoutSeconds   int                     `env:"BUILD_JOB_TIMEOUT_SECONDS" envDefault:"1800"`
 	BuildJobTTLSeconds       int                     `env:"BUILD_JOB_TTL_SECONDS" envDefault:"3600"`
-	BuildPrivateEgressCIDRs  string                  `env:"BUILD_PRIVATE_EGRESS_CIDRS"`
-	BuildPrivateEgressPorts  string                  `env:"BUILD_PRIVATE_EGRESS_PORTS" envDefault:"443"`
-	BuildBlockedEgressCIDRs  string                  `env:"BUILD_BLOCKED_EGRESS_CIDRS"`
 	DeployRolloutTimeout     int                     `env:"DEPLOY_ROLLOUT_TIMEOUT_SECONDS" envDefault:"600"`
 	CertManagerClusterIssuer string                  `env:"CERT_MANAGER_CLUSTER_ISSUER" envDefault:"letsencrypt-http01"`
 }

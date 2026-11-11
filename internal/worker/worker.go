@@ -26,13 +26,9 @@ type Runner struct {
 	certManagerClusterIssuer      string
 	publicBaseURL                 string
 	buildExecutorImage            string
-	buildEgressMode               string
 	buildCacheEnabled             bool
 	buildJobTimeoutSeconds        int64
 	buildJobTTLSeconds            int64
-	buildPrivateEgressCIDRs       []string
-	buildPrivateEgressPorts       []int
-	buildBlockedEgressCIDRs       []string
 	dnsResolver                   dnsprovider.Resolver
 	taskClient                    *tasks.Client
 	runAutomaticRetention         func(context.Context, time.Time) error
@@ -62,13 +58,9 @@ type Options struct {
 	PublicBaseURL               string
 	WorkerMetrics               *observability.WorkerMetrics
 	BuildExecutorImage          string
-	BuildEgressMode             string
 	BuildCacheEnabled           bool
 	BuildJobTimeoutSeconds      int64
 	BuildJobTTLSeconds          int64
-	BuildPrivateEgressCIDRs     []string
-	BuildPrivateEgressPorts     []int
-	BuildBlockedEgressCIDRs     []string
 	VolumeTransferJobImage      string
 	VolumeTransferMaxBytes      int64
 	SecretCodec                 secret.Codec
@@ -142,6 +134,7 @@ func registerTaskHandlers(mux *asynq.ServeMux, runner *Runner) {
 	mux.HandleFunc(tasks.TypeVolumeReconcile, runner.withTaskContext((*Runner).handleVolumeReconcile))
 	mux.HandleFunc(tasks.TypeVolumeTransferCleanup, runner.withTaskContext((*Runner).handleVolumeTransferCleanup))
 	mux.HandleFunc(tasks.TypeNetworkPolicyReconcile, runner.withTaskContext((*Runner).handleNetworkPolicyReconcile))
+	mux.HandleFunc(tasks.TypeNetworkPolicyProbe, runner.withTaskContext((*Runner).handleNetworkPolicyProbe))
 }
 
 func (r *Runner) withTaskContext(handler func(*Runner, context.Context, *asynq.Task) error) func(context.Context, *asynq.Task) error {
@@ -165,13 +158,9 @@ func newRunner(db *gorm.DB, options Options) *Runner {
 		certManagerClusterIssuer:    options.CertManagerClusterIssuer,
 		publicBaseURL:               strings.TrimRight(strings.TrimSpace(options.PublicBaseURL), "/"),
 		buildExecutorImage:          options.BuildExecutorImage,
-		buildEgressMode:             options.BuildEgressMode,
 		buildCacheEnabled:           options.BuildCacheEnabled,
 		buildJobTimeoutSeconds:      options.BuildJobTimeoutSeconds,
 		buildJobTTLSeconds:          options.BuildJobTTLSeconds,
-		buildPrivateEgressCIDRs:     append([]string(nil), options.BuildPrivateEgressCIDRs...),
-		buildPrivateEgressPorts:     append([]int(nil), options.BuildPrivateEgressPorts...),
-		buildBlockedEgressCIDRs:     append([]string(nil), options.BuildBlockedEgressCIDRs...),
 		dnsResolver:                 dnsprovider.NewNetResolver(),
 		workerMetrics:               options.WorkerMetrics,
 		runAutomaticRetention:       newAutomaticRetentionRunner(db),

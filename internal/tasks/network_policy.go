@@ -24,3 +24,22 @@ func (c *Client) EnqueueNetworkPolicyReconcile(ctx context.Context, payload Netw
 	}
 	return c.enqueueWithPolicy(ctx, task, PolicyForType(TypeNetworkPolicyReconcile))
 }
+
+const TypeNetworkPolicyProbe = "network-policy:probe"
+
+// NetworkPolicyProbePayload 指定要主动探测 NetworkPolicy 执行能力的集群；为空时探测全部活动集群。
+type NetworkPolicyProbePayload struct {
+	RuntimeClusterID string `json:"runtimeClusterId,omitempty"`
+}
+
+func NewNetworkPolicyProbeTask(payload NetworkPolicyProbePayload) (*asynq.Task, error) {
+	return marshalTask(TypeNetworkPolicyProbe, payload)
+}
+
+func (c *Client) EnqueueNetworkPolicyProbe(ctx context.Context, payload NetworkPolicyProbePayload) (*asynq.TaskInfo, error) {
+	task, err := NewNetworkPolicyProbeTask(payload)
+	if err != nil {
+		return nil, err
+	}
+	return c.enqueueWithPolicy(ctx, task, PolicyForType(TypeNetworkPolicyProbe))
+}

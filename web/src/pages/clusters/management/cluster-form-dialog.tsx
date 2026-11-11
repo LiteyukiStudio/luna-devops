@@ -25,9 +25,12 @@ type ClusterForm = Omit<RuntimeCluster, 'gatewayDomainSuffixes' | 'id' | 'create
   kubeconfig?: string
 }
 
-const clusterNetworkErrorFields: Partial<Record<string, 'networkBlockedCIDRs' | 'networkGatewayNamespace'>> = {
+const clusterNetworkErrorFields: Partial<Record<string, 'networkBlockedCIDRs' | 'networkGatewayNamespace' | 'buildEgressMode' | 'buildPrivateEgressCIDRs' | 'buildPrivateEgressPorts'>> = {
   'runtime_cluster.network_blocked_cidrs_invalid': 'networkBlockedCIDRs',
   'runtime_cluster.network_gateway_namespace_invalid': 'networkGatewayNamespace',
+  'runtime_cluster.build_egress_mode_invalid': 'buildEgressMode',
+  'runtime_cluster.build_private_egress_cidrs_invalid': 'buildPrivateEgressCIDRs',
+  'runtime_cluster.build_private_egress_ports_invalid': 'buildPrivateEgressPorts',
 }
 
 const clusterDefaults: ClusterForm = {
@@ -60,6 +63,9 @@ const clusterDefaults: ClusterForm = {
   gatewayTrustedProxyCIDRs: '',
   networkBlockedCIDRs: '',
   networkGatewayNamespace: '',
+  buildEgressMode: 'restricted',
+  buildPrivateEgressCIDRs: '',
+  buildPrivateEgressPorts: '443',
   maxConcurrentBuilds: 4,
   cpuRequestPercent: 10,
   memoryRequestPercent: 25,
@@ -349,6 +355,20 @@ export function ClusterFormDialog({ editingCluster, open, projects, user, onOpen
                 {editingCluster ? <ClusterNetworkPolicyStatus clusterId={editingCluster.id} /> : null}
                 <Field error={form.formState.errors.networkBlockedCIDRs?.message} hint={t('clustersPage.networkBlockedCIDRsHint')} label={t('clustersPage.networkBlockedCIDRs')}><Textarea {...form.register('networkBlockedCIDRs')} placeholder={t('clustersPage.networkBlockedCIDRsPlaceholder')} rows={3} /></Field>
                 <Field error={form.formState.errors.networkGatewayNamespace?.message} hint={t('clustersPage.networkGatewayNamespaceHint')} label={t('clustersPage.networkGatewayNamespace')}><Input {...form.register('networkGatewayNamespace')} placeholder={form.watch('gatewayNamespace') || 'kube-system'} /></Field>
+                <Field error={form.formState.errors.buildEgressMode?.message} hint={t('clustersPage.buildEgressModeHint')} label={t('clustersPage.buildEgressMode')}>
+                  <Select {...form.register('buildEgressMode')}>
+                    <option value="restricted">{t('clustersPage.buildEgressModeRestricted')}</option>
+                    <option value="permissive">{t('clustersPage.buildEgressModePermissive')}</option>
+                  </Select>
+                </Field>
+                {form.watch('buildEgressMode') === 'restricted'
+                  ? (
+                      <>
+                        <Field error={form.formState.errors.buildPrivateEgressCIDRs?.message} hint={t('clustersPage.buildPrivateEgressCIDRsHint')} label={t('clustersPage.buildPrivateEgressCIDRs')}><Textarea {...form.register('buildPrivateEgressCIDRs')} placeholder={t('clustersPage.buildPrivateEgressCIDRsPlaceholder')} rows={2} /></Field>
+                        <Field error={form.formState.errors.buildPrivateEgressPorts?.message} hint={t('clustersPage.buildPrivateEgressPortsHint')} label={t('clustersPage.buildPrivateEgressPorts')}><Input {...form.register('buildPrivateEgressPorts')} placeholder="443" /></Field>
+                      </>
+                    )
+                  : null}
               </ProgressiveSection>
               <ProgressiveSection description={t('clustersPage.gatewayAdvancedDefaultsDescription')} title={t('clustersPage.gatewayAdvancedDefaults')}>
                 <Field hint={t('clustersPage.gatewayTrustedProxyCIDRsHint')} label={t('clustersPage.gatewayTrustedProxyCIDRs')}><Textarea {...form.register('gatewayTrustedProxyCIDRs')} placeholder={t('clustersPage.gatewayTrustedProxyCIDRsPlaceholder')} rows={3} /></Field>
@@ -400,6 +420,9 @@ function formValuesFromCluster(cluster: RuntimeCluster): ClusterForm {
     gatewayTrustedProxyCIDRs: cluster.gatewayTrustedProxyCIDRs || '',
     networkBlockedCIDRs: cluster.networkBlockedCIDRs || '',
     networkGatewayNamespace: cluster.networkGatewayNamespace || '',
+    buildEgressMode: cluster.buildEgressMode || 'restricted',
+    buildPrivateEgressCIDRs: cluster.buildPrivateEgressCIDRs || '',
+    buildPrivateEgressPorts: cluster.buildPrivateEgressPorts || '443',
     maxConcurrentBuilds: cluster.maxConcurrentBuilds || 4,
     cpuRequestPercent: cluster.cpuRequestPercent ?? 10,
     memoryRequestPercent: cluster.memoryRequestPercent ?? 25,

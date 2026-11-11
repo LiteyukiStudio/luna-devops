@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/LiteyukiStudio/devops/internal/provider/networkpolicy"
-
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -20,8 +18,8 @@ import (
 type NamespaceManager interface {
 	Ping(ctx context.Context) error
 	EnsureNamespace(ctx context.Context, name string, labels map[string]string) error
-	EnsureBuildPolicy(ctx context.Context, policy networkpolicy.BuildPolicy) error
 	ClusterNodeAddresses(ctx context.Context) ([]string, error)
+	ProbeNetworkPolicyEnforcement(ctx context.Context, image string, clusterID string) (NetworkPolicyProbeResult, error)
 	ListProjectNamespaces(ctx context.Context) (map[string]string, error)
 	SyncWorkloadNetworkPolicies(ctx context.Context, namespace string, desired []networkingv1.NetworkPolicy) error
 	WorkloadNetworkPolicyState(ctx context.Context, namespace string, desired []networkingv1.NetworkPolicy) (string, error)

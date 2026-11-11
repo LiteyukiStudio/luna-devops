@@ -7,6 +7,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation"
 	"net/http"
 	"net/netip"
+	"strconv"
 	"strings"
 
 	"github.com/LiteyukiStudio/devops/internal/authz"
@@ -54,6 +55,24 @@ func (h *Handlers) runtimeClusterFromInput(ctx *gin.Context, user model.User, in
 	networkBlockedCIDRs, err := normalizeNetworkBlockedCIDRs(input.NetworkBlockedCIDRs)
 	if err != nil {
 		writeErrorCode(ctx, http.StatusBadRequest, "runtime_cluster.network_blocked_cidrs_invalid", err.Error())
+		return model.RuntimeCluster{}, false
+	}
+	buildEgressMode := strings.TrimSpace(input.BuildEgressMode)
+	if buildEgressMode == "" {
+		buildEgressMode = runtimecluster.BuildEgressRestricted
+	}
+	if buildEgressMode != runtimecluster.BuildEgressRestricted && buildEgressMode != runtimecluster.BuildEgressPermissive {
+		writeErrorCode(ctx, http.StatusBadRequest, "runtime_cluster.build_egress_mode_invalid", "build egress mode must be restricted or permissive")
+		return model.RuntimeCluster{}, false
+	}
+	buildPrivateEgressCIDRs, err := normalizeBuildPrivateEgressCIDRs(input.BuildPrivateEgressCIDRs)
+	if err != nil {
+		writeErrorCode(ctx, http.StatusBadRequest, "runtime_cluster.build_private_egress_cidrs_invalid", err.Error())
+		return model.RuntimeCluster{}, false
+	}
+	buildPrivateEgressPorts, err := normalizeBuildPrivateEgressPorts(input.BuildPrivateEgressPorts)
+	if err != nil {
+		writeErrorCode(ctx, http.StatusBadRequest, "runtime_cluster.build_private_egress_ports_invalid", err.Error())
 		return model.RuntimeCluster{}, false
 	}
 	networkGatewayNamespace := strings.TrimSpace(input.NetworkGatewayNamespace)
@@ -106,6 +125,9 @@ func (h *Handlers) runtimeClusterFromInput(ctx *gin.Context, user model.User, in
 		GatewayTrustedProxyCIDRs:      strings.TrimSpace(input.GatewayTrustedProxyCIDRs),
 		NetworkBlockedCIDRs:           networkBlockedCIDRs,
 		NetworkGatewayNamespace:       networkGatewayNamespace,
+		BuildEgressMode:               buildEgressMode,
+		BuildPrivateEgressCIDRs:       buildPrivateEgressCIDRs,
+		BuildPrivateEgressPorts:       buildPrivateEgressPorts,
 		GatewayDefaultRequestHeaders:  encodeGatewayHeaderMap(requestHeaders),
 		GatewayDefaultResponseHeaders: encodeGatewayHeaderMap(responseHeaders),
 		CreatedBy:                     user.ID,
@@ -180,6 +202,9 @@ type runtimeClusterInput struct {
 	GatewayTrustedProxyCIDRs      string   `json:"gatewayTrustedProxyCIDRs"`
 	NetworkBlockedCIDRs           string   `json:"networkBlockedCIDRs"`
 	NetworkGatewayNamespace       string   `json:"networkGatewayNamespace"`
+	BuildEgressMode               string   `json:"buildEgressMode"`
+	BuildPrivateEgressCIDRs       string   `json:"buildPrivateEgressCIDRs"`
+	BuildPrivateEgressPorts       string   `json:"buildPrivateEgressPorts"`
 	GatewayDefaultRequestHeaders  string   `json:"gatewayDefaultRequestHeaders"`
 	GatewayDefaultResponseHeaders string   `json:"gatewayDefaultResponseHeaders"`
 }
@@ -309,4 +334,36 @@ func normalizeNetworkBlockedCIDRs(value string) (string, error) {
 		return "", fmt.Errorf("at most 256 blocked CIDRs are allowed")
 	}
 	return strings.Join(result, "\n"), nil
+}
+
+// normalizeBuildPrivateEgressCIDRs 校验构建可访问的私网镜像站网段：每行一个合法 CIDR，不能是 /0，规范化后去重。
+func normalizeBuildPrivateEgressCIDRs(value string) (string, error) {
+	normalized, err := normalizeNetworkBlockedCIDRs(value)
+	if err != nil {
+		return "", fmt.Errorf("build private egress %w", err)
+	}
+	return normalized, nil
+}
+
+// normalizeBuildPrivateEgressPorts 校验私网镜像站放行端口：逗号或换行分隔的 1-65535 端口，最多 16 个；为空时为 443。
+func normalizeBuildPrivateEgressPorts(value string) (string, error) {
+	seen := map[int]bool{}
+	ports := []string{}
+	for _, item := range strings.FieldsFunc(value, func(char rune) bool { return char == ',' || char == '\n' || char == ' ' }) {
+		port, err := strconv.Atoi(strings.TrimSpace(item))
+		if err != nil || port < 1 || port > 65535 {
+			return "", fmt.Errorf("build private egress port %q is invalid", item)
+		}
+		if !seen[port] {
+			seen[port] = true
+			ports = append(ports, strconv.Itoa(port))
+		}
+	}
+	if len(ports) > 16 {
+		return "", fmt.Errorf("at most 16 build private egress ports are allowed")
+	}
+	if len(ports) == 0 {
+		return "443", nil
+	}
+	return strings.Join(ports, ","), nil
 }

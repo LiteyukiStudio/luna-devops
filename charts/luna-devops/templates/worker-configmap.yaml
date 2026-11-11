@@ -12,10 +12,6 @@ data:
   DEPLOY_ROLLOUT_TIMEOUT_SECONDS: {{ .Values.worker.deployRolloutTimeoutSeconds | quote }}
   CERT_MANAGER_CLUSTER_ISSUER: {{ .Values.worker.certManagerClusterIssuer | quote }}
   BUILD_EXECUTOR_IMAGE: {{ .Values.worker.buildExecutorImage | quote }}
-  BUILD_EGRESS_MODE: {{ .Values.worker.buildEgressMode | quote }}
   BUILD_JOB_TIMEOUT_SECONDS: {{ .Values.worker.buildJobTimeoutSeconds | quote }}
   BUILD_JOB_TTL_SECONDS: {{ .Values.worker.buildJobTtlSeconds | quote }}
   BUILD_CACHE_ENABLED: {{ .Values.worker.buildCacheEnabled | quote }}
-  BUILD_PRIVATE_EGRESS_CIDRS: {{ .Values.worker.buildPrivateEgressCidrs | quote }}
-  BUILD_PRIVATE_EGRESS_PORTS: {{ .Values.worker.buildPrivateEgressPorts | quote }}
-  BUILD_BLOCKED_EGRESS_CIDRS: {{ .Values.worker.buildBlockedEgressCidrs | quote }}

@@ -61,6 +61,7 @@ type Host interface {
 	EnqueueDeployRun(ctx context.Context, release model.Release) bool
 	EnqueueResourceCleanup(ctx context.Context, resourceType, resourceID, projectID, actorID string) bool
 	EnqueueNetworkPolicyReconcile(ctx context.Context, clusterID string) bool
+	EnqueueNetworkPolicyProbe(ctx context.Context, clusterID string) bool
 	ObserveDeploymentTarget(ctx context.Context, project model.Project, target model.DeploymentTarget) model.DeploymentTarget
 	MonitorContinuousAuthorization(ctx context.Context, binding projectapi.ContinuousAuthorizationBinding, authorizationAllowed func(context.Context, model.User) bool, revoke func()) (<-chan struct{}, bool)
 	ContinuousAuthorizationActive(ctx context.Context, binding projectapi.ContinuousAuthorizationBinding, authorizationAllowed func(context.Context, model.User) bool) bool

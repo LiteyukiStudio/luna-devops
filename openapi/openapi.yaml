@@ -4549,6 +4549,7 @@ paths:
       tags:
         - Runtime
       summary: Test Runtime Cluster
+      description: Checks the Kubernetes API connection. On success it also queues an asynchronous NetworkPolicy enforcement probe for the cluster (at most once per 10 minutes); read the result from observeRuntimeClusterNetworkPolicies.
       x-luna-agent:
         effect: read
       parameters:
@@ -13392,6 +13393,18 @@ components:
         networkGatewayNamespace:
           type: string
           description: Namespace of the gateway controller pods allowed to reach project workloads. Empty uses gatewayNamespace. Must be a DNS-1123 label (`runtime_cluster.network_gateway_namespace_invalid`).
+        buildEgressMode:
+          type: string
+          enum: [restricted, permissive]
+          default: restricted
+          description: Build pod egress on this cluster. restricted allows cluster DNS, public TCP 80/443 outside denied ranges, and buildPrivateEgressCIDRs on buildPrivateEgressPorts; permissive allows all egress (`runtime_cluster.build_egress_mode_invalid`).
+        buildPrivateEgressCIDRs:
+          type: string
+          description: Private registry CIDRs that restricted builds may reach, one per line; networkBlockedCIDRs and node addresses inside them stay denied. A /0 range is rejected; at most 256 entries (`runtime_cluster.build_private_egress_cidrs_invalid`).
+        buildPrivateEgressPorts:
+          type: string
+          default: "443"
+          description: Comma-separated TCP ports allowed to buildPrivateEgressCIDRs, 1-65535, at most 16; empty means 443 (`runtime_cluster.build_private_egress_ports_invalid`).
         gatewayDefaultRequestHeaders: { type: string }
         gatewayDefaultResponseHeaders: { type: string }
     RuntimeCluster:
@@ -13411,12 +13424,18 @@ components:
             status: { type: string }
             observationCode: { type: string }
             lastCheckedAt: { type: string, format: date-time }
+            networkPolicyEnforcement:
+              type: string
+              enum: [verified, unsupported, unknown]
+              description: Result of the latest active probe of whether the cluster network plugin enforces NetworkPolicy. Stored workflow result, not a live observation.
+            networkPolicyProbeCode: { type: string, description: Stable code explaining an unknown probe result. }
+            networkPolicyProbedAt: { type: string, format: date-time }
             createdBy: { type: string }
             createdAt: { type: string, format: date-time }
             updatedAt: { type: string, format: date-time }
     RuntimeClusterNetworkPolicyObservation:
       type: object
-      required: [clusterId, status, observedAt, namespaceCount, syncedCount, driftedCount]
+      required: [clusterId, status, observedAt, namespaceCount, syncedCount, driftedCount, enforcement]
       properties:
         clusterId: { type: string }
         status:
@@ -13430,6 +13449,14 @@ components:
         namespaceCount: { type: integer, minimum: 0 }
         syncedCount: { type: integer, minimum: 0 }
         driftedCount: { type: integer, minimum: 0 }
+        enforcement:
+          type: string
+          enum: [verified, unsupported, unknown]
+          description: Latest active probe result (stored workflow result, refreshed every 6 hours, after cluster creation, kubeconfig replacement, and a successful connection test). unsupported means policies are created but not enforced; deployments are not blocked.
+        enforcementCode:
+          type: string
+          enum: [runtime_cluster.network_policy_probe_image_missing, runtime_cluster.network_policy_probe_image_unavailable, runtime_cluster.network_policy_probe_pod_failed, runtime_cluster.network_policy_probe_unschedulable, runtime_cluster.network_policy_probe_baseline_failed, runtime_cluster.network_policy_probe_timeout, runtime_cluster.network_policy_probe_unavailable]
+        probedAt: { type: string, format: date-time }
     RuntimeClusterPressureLevel:
       type: string
       enum: [idle, light, moderate, heavy, full, unavailable]

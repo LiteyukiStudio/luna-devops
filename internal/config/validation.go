@@ -119,29 +119,6 @@ func splitList(raw string) []string {
 	return values
 }
 
-func parsePortList(key, raw string, fallback []int) ([]int, error) {
-	if strings.TrimSpace(raw) == "" {
-		return append([]int(nil), fallback...), nil
-	}
-	parts := strings.Split(raw, ",")
-	values := make([]int, 0, len(parts))
-	seen := map[int]bool{}
-	for _, part := range parts {
-		value, err := strconv.Atoi(strings.TrimSpace(part))
-		if err != nil || value < 1 || value > 65535 {
-			return nil, fmt.Errorf("%s must contain ports between 1 and 65535", key)
-		}
-		if !seen[value] {
-			seen[value] = true
-			values = append(values, value)
-		}
-	}
-	if len(values) == 0 {
-		return nil, fmt.Errorf("%s must contain at least one port", key)
-	}
-	return values, nil
-}
-
 func parseByteQuantity(key, raw string, fallback int64) (int64, error) {
 	value := strings.TrimSpace(raw)
 	if value == "" {

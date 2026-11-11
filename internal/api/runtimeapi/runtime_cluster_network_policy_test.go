@@ -65,3 +65,23 @@ func TestObserveWorkloadNetworkPoliciesComparesLiveState(t *testing.T) {
 		t.Fatalf("counts = %+v", response)
 	}
 }
+
+func TestNormalizeBuildPrivateEgress(t *testing.T) {
+	if got, err := normalizeBuildPrivateEgressPorts(""); err != nil || got != "443" {
+		t.Fatalf("empty ports = %q, %v", got, err)
+	}
+	if got, err := normalizeBuildPrivateEgressPorts("5000, 443\n5000"); err != nil || got != "5000,443" {
+		t.Fatalf("ports = %q, %v", got, err)
+	}
+	for _, invalid := range []string{"0", "65536", "http", "1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17"} {
+		if _, err := normalizeBuildPrivateEgressPorts(invalid); err == nil {
+			t.Fatalf("ports %q should be rejected", invalid)
+		}
+	}
+	if got, err := normalizeBuildPrivateEgressCIDRs("10.20.1.5/16"); err != nil || got != "10.20.0.0/16" {
+		t.Fatalf("cidrs = %q, %v", got, err)
+	}
+	if _, err := normalizeBuildPrivateEgressCIDRs("0.0.0.0/0"); err == nil {
+		t.Fatal("/0 private egress must be rejected")
+	}
+}

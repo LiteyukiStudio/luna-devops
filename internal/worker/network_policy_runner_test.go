@@ -54,8 +54,8 @@ func TestNetworkPolicyReconcileSyncsActiveProjectNamespaces(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(policies.Items) != 3 {
-		t.Fatalf("active namespace policies = %d, want ingress, egress and trusted system egress", len(policies.Items))
+	if len(policies.Items) != 4 {
+		t.Fatalf("active namespace policies = %d, want ingress, egress, build egress and trusted system egress", len(policies.Items))
 	}
 	for _, namespace := range []string{"prj-deleting", "spoofed"} {
 		list, _ := clientset.NetworkingV1().NetworkPolicies(namespace).List(t.Context(), metav1.ListOptions{})

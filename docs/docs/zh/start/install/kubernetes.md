@@ -192,7 +192,6 @@ ai:
 | `observability.otlpEndpoint` / `existingSecret` | 空 / 空 | 设置 API、Worker、Agent 共用的 OTLP/HTTP 地址与鉴权 Secret；分别填写 Collector URL 和包含 `headersKey` 的 Kubernetes Secret 名称。 |
 | `postgresql.enabled` / `externalDatabase.url` | `true` / 空 | 选择内置或外部 PostgreSQL；分别填写布尔值和 PostgreSQL 连接 URI。 |
 | `redis.enabled` / `externalRedis.url` | `true` / 空 | 选择内置或外部 Redis；分别填写布尔值和 `redis://` 或 `rediss://` URI。 |
-| `worker.buildEgressMode` | `restricted` | 设置构建网络出口策略；可填 `restricted` 或 `permissive`。 |
 
 ## 卸载
 
