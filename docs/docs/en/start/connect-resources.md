@@ -35,7 +35,7 @@ The platform applies managed NetworkPolicies in every project space namespace to
 - Ingress: only Pods in the same project space, the gateway controller namespace, and cluster nodes (kubelet probes and host-network components) can reach applications. Other project spaces cannot connect directly.
 - Egress: the same project space, the gateway listener ports, the public internet, and cluster DNS (Pods labeled `k8s-app=kube-dns` in `kube-system`; other DNS addresses such as NodeLocal DNS are not allowed) are allowed. Private and reserved ranges (such as `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `100.64.0.0/10`, `169.254.0.0/16`, and their IPv6 equivalents), cluster node addresses, and the Kubernetes API are denied.
 - To call an application in another project space, use its route domain through the gateway.
-- Build egress restrictions apply independently and are not widened by these rules.
+- Build Pods follow only the **Build egress** settings and are not widened by the application rules above.
 
 **Configuration** (edit cluster → Network isolation):
 
@@ -43,8 +43,13 @@ The platform applies managed NetworkPolicies in every project space namespace to
 | --- | --- | --- |
 | Additional blocked egress CIDRs | Added on top of the default denied ranges, such as a data center public range or the public address of a router or other private service | One CIDR per line; `/0` is rejected; at most 256 entries |
 | Gateway controller namespace | Namespace of the gateway controller Pods. Only traffic from here can enter project spaces | A Kubernetes namespace name; empty uses the gateway namespace |
+| Build egress | Egress scope of build Pods. Restricted allows only cluster DNS, public TCP 80/443, and the private registries below; Permissive is unrestricted and meant only for trusted build environments | Restricted (default) or Permissive |
+| Private registry CIDRs for builds | Allows in-cluster or internal registries in Restricted mode; denied ranges and node addresses inside them stay blocked | One CIDR per line; `/0` is rejected; at most 256 entries |
+| Private registry ports | Ports allowed to the ranges above | Comma-separated TCP ports `1`–`65535`, at most 16; empty means `443` |
 
 > If the gateway controller namespace is wrong, no route can reach any application. Confirm the namespace where the gateway controller Pods actually run before saving.
+
+The platform actively probes whether the cluster really enforces NetworkPolicy: it starts probe Pods from `BUILD_EXECUTOR_IMAGE` in a temporary namespace, confirms they can connect, then applies a deny policy and confirms the connection is blocked. The probe runs after a cluster is created, after its kubeconfig is replaced, after a successful connection test, and every 6 hours. **Enforcement** shows **Verified**, **Not enforced**, or **Unknown**. **Not enforced** means isolation rules are applied but have no effect; deployments are not blocked, and you need a network plugin that enforces policies. For **Unknown**, check image pulls and scheduling as indicated.
 
 After saving, the platform reapplies the policies immediately and compares them every 5 minutes; managed policies edited or deleted in the cluster are restored. When editing a cluster, **Isolation status** shows the live result: **Synced** means every project space matches the platform configuration, **Drifted** means some project spaces are waiting for automatic repair, and **Unavailable** means the cluster could not be read; check the cluster credential and connectivity as indicated.
 

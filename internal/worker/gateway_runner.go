@@ -11,7 +11,6 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/model"
 	dnsprovider "github.com/LiteyukiStudio/devops/internal/provider/dns"
 	kubeprovider "github.com/LiteyukiStudio/devops/internal/provider/kubernetes"
-	"github.com/LiteyukiStudio/devops/internal/provider/networkpolicy"
 	"github.com/LiteyukiStudio/devops/internal/tasks"
 	"github.com/LiteyukiStudio/devops/internal/telemetry"
 	"github.com/hibiken/asynq"
@@ -132,13 +131,6 @@ func (r *Runner) ensureProjectNamespace(ctx context.Context, namespace string, p
 		return err
 	}
 	if err := manager.EnsureNamespace(ctx, namespace, kubeprovider.ProjectNamespaceLabels(project.ID)); err != nil {
-		return err
-	}
-	buildPolicy := networkpolicy.BuildPolicyWithEgressControlsAndPorts(namespace, r.buildPrivateEgressCIDRs, r.buildPrivateEgressPorts, r.buildBlockedEgressCIDRs)
-	if r.buildEgressMode == "permissive" {
-		buildPolicy = networkpolicy.PermissiveBuildPolicy(namespace)
-	}
-	if err := manager.EnsureBuildPolicy(ctx, buildPolicy); err != nil {
 		return err
 	}
 	// 工作负载创建前必须先完成项目隔离，不能先运行应用、后补策略。

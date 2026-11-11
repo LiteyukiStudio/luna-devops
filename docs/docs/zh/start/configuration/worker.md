@@ -15,14 +15,11 @@
 | `LOG_COLOR` | `auto` | 控制 console 日志颜色；可填 `auto`、`always` 或 `never`，`NO_COLOR` 会强制关闭。 |
 | `LOG_LEVEL` | `info` | 设置日志级别；可填 `debug`、`info`、`warn` 或 `error`。 |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | 空 | 设置遥测数据接收端；填写 Collector 的 OTLP/HTTP URL。 |
-| `BUILD_EXECUTOR_IMAGE` | `moby/buildkit:v0.34.1-rootless` | 选择构建 Job 使用的 BuildKit；填写 OCI 镜像引用。 |
-| `BUILD_EGRESS_MODE`<sup>2</sup> | `restricted` | 设置构建网络出口策略；可填 `restricted` 或 `permissive`。 |
-| `BUILD_PRIVATE_EGRESS_CIDRS` | 空 | 放行构建访问的私网目标；填写逗号分隔的 CIDR。 |
+| `BUILD_EXECUTOR_IMAGE` | `moby/buildkit:v0.34.1-rootless` | 选择构建 Job 使用的 BuildKit；填写 OCI 镜像引用。该镜像也用于探测集群是否执行 NetworkPolicy。构建出站在集群的“网络隔离”中配置。 |
 | `DEPLOY_ROLLOUT_TIMEOUT_SECONDS` | `600` | 设置部署等待超时；填写正整数秒数。发布总时限为该值与 30 分钟中较大值的两倍，超时的发布会被标记为失败。 |
 | `CERT_MANAGER_CLUSTER_ISSUER` | `letsencrypt-http01` | 选择证书签发器；填写 Kubernetes ClusterIssuer 名称。 |
 
 1. 说明：API 与 Worker 必须使用同一个 `SECRET_ENCRYPTION_KEY`。
-2. 说明：`restricted` 默认阻止元数据地址和未放行的私网目标。
 
 ## 高级配置
 
@@ -50,8 +47,6 @@
 | `BUILD_JOB_TIMEOUT_SECONDS` | `1800` | 设置构建 Job 的默认执行超时，构建未单独设置超时时使用；填写正整数秒数。超时的构建标记为“已超时”。 |
 | `BUILD_JOB_TTL_SECONDS` | `3600` | 设置完成后保留构建 Job 的时间；填写非负整数秒数。 |
 | `BUILD_CACHE_ENABLED` | `false` | 控制是否读写 BuildKit Registry 缓存；可填 `true` 或 `false`。启用后缓存写入目标镜像仓库的 `buildcache` Tag，需要推送凭据允许覆盖该 Tag。使用了构建密钥的构建只缓存最终镜像已有的层；缓存读写失败不影响构建结果。 |
-| `BUILD_PRIVATE_EGRESS_PORTS` | `443` | 限制构建访问私网目标的端口；填写逗号分隔的 `1`–`65535` 端口。 |
-| `BUILD_BLOCKED_EGRESS_CIDRS` | 空 | 追加构建禁止访问的网段；填写逗号分隔的 CIDR。 |
 
 ### 数据卷导入与导出
 

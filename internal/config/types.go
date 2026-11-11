@@ -68,13 +68,9 @@ type WorkerConfig struct {
 	DatabaseConnMaxLifetime     time.Duration
 	DatabaseConnMaxIdleTime     time.Duration
 	BuildExecutorImage          string
-	BuildEgressMode             string
 	BuildCacheEnabled           bool
 	BuildJobTimeoutSeconds      int64
 	BuildJobTTLSeconds          int64
-	BuildPrivateEgressCIDRs     []string
-	BuildPrivateEgressPorts     []int
-	BuildBlockedEgressCIDRs     []string
 	DeployRolloutTimeoutSeconds int64
 	CertManagerClusterIssuer    string
 }

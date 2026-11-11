@@ -10,14 +10,14 @@ import (
 	"sort"
 	"strings"
 
+	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/client-go/util/retry"
-
-	"github.com/LiteyukiStudio/devops/internal/provider/networkpolicy"
 )
 
 const (
@@ -27,6 +27,8 @@ const (
 
 	workloadIngressPolicyName = "luna-workload-ingress"
 	workloadEgressPolicyName  = "luna-workload-egress"
+	buildEgressPolicyName     = "luna-build-egress"
+	buildPodScope             = "build"
 	systemEgressPolicyPrefix  = "luna-system-egress-"
 	namespaceNameLabel        = "kubernetes.io/metadata.name"
 
@@ -47,6 +49,15 @@ type WorkloadNetworkPolicyInput struct {
 	NodeAddresses []string
 	// TrustedDeploymentTargetIDs 是可信系统组件的部署配置，其 Pod 出站不受项目隔离限制。
 	TrustedDeploymentTargetIDs []string
+	// BuildEgress 是构建 Pod 的出站策略输入。
+	BuildEgress BuildEgressInput
+}
+
+// BuildEgressInput 描述构建 Pod 出站：受限模式只放行集群 DNS、公网 80/443 和管理员放行的私网镜像站。
+type BuildEgressInput struct {
+	Permissive   bool
+	PrivateCIDRs []string
+	PrivatePorts []int
 }
 
 func RenderWorkloadNetworkPolicies(input WorkloadNetworkPolicyInput) ([]networkingv1.NetworkPolicy, error) {
@@ -99,21 +110,25 @@ func RenderWorkloadNetworkPolicies(input WorkloadNetworkPolicyInput) ([]networki
 		{To: []networkingv1.NetworkPolicyPeer{samePeer}},
 		{To: []networkingv1.NetworkPolicyPeer{gatewayPeer}, Ports: gatewayPorts},
 		{To: []networkingv1.NetworkPolicyPeer{
-			{IPBlock: &networkingv1.IPBlock{CIDR: "0.0.0.0/0", Except: exceptCIDRs(networkpolicy.ReservedIPv4CIDRs(), denied, false)}},
-			{IPBlock: &networkingv1.IPBlock{CIDR: "::/0", Except: exceptCIDRs(networkpolicy.ReservedIPv6CIDRs(), denied, true)}},
+			{IPBlock: &networkingv1.IPBlock{CIDR: "0.0.0.0/0", Except: exceptCIDRs(reservedIPv4CIDRs(), denied, false)}},
+			{IPBlock: &networkingv1.IPBlock{CIDR: "::/0", Except: exceptCIDRs(reservedIPv6CIDRs(), denied, true)}},
 		}},
 	}
-	// 构建与卷迁移 Pod 有各自更严格的出站策略（luna-build-egress、卷迁移的拒绝全部出站策略）；
+	// 构建与卷迁移 Pod 有各自更严格的出站策略（下方的 luna-build-egress、卷迁移的拒绝全部出站策略）；
 	// NetworkPolicy 放行规则取并集，不能再被工作负载策略选中。
 	workloadPods := metav1.LabelSelector{MatchExpressions: []metav1.LabelSelectorRequirement{{
-		Key: ScopeLabel, Operator: metav1.LabelSelectorOpNotIn, Values: []string{"build", volumeTransferScope},
+		Key: ScopeLabel, Operator: metav1.LabelSelectorOpNotIn, Values: []string{buildPodScope, volumeTransferScope},
 	}}}
 	egress := workloadNetworkPolicy(input.Namespace, workloadEgressPolicyName, workloadPods, networkingv1.NetworkPolicySpec{
 		PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeEgress},
 		Egress:      egressRules,
 	})
 
-	policies := []networkingv1.NetworkPolicy{ingress, egress}
+	build, err := renderBuildEgressPolicy(input.Namespace, input.BuildEgress, clusterDNSPeer, denied)
+	if err != nil {
+		return nil, err
+	}
+	policies := []networkingv1.NetworkPolicy{ingress, egress, build}
 	for _, targetID := range sortedUnique(input.TrustedDeploymentTargetIDs) {
 		policies = append(policies, workloadNetworkPolicy(input.Namespace, systemEgressPolicyPrefix+shortHash(targetID),
 			metav1.LabelSelector{MatchLabels: map[string]string{DeploymentTargetIDLabel: targetID}},
@@ -123,6 +138,47 @@ func RenderWorkloadNetworkPolicies(input WorkloadNetworkPolicyInput) ([]networki
 			}))
 	}
 	return policies, nil
+}
+
+func renderBuildEgressPolicy(namespace string, input BuildEgressInput, clusterDNSPeer networkingv1.NetworkPolicyPeer, denied []string) (networkingv1.NetworkPolicy, error) {
+	selector := metav1.LabelSelector{MatchLabels: map[string]string{ScopeLabel: buildPodScope}}
+	spec := networkingv1.NetworkPolicySpec{PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeEgress}}
+	if input.Permissive {
+		spec.Egress = []networkingv1.NetworkPolicyEgressRule{{}}
+		return workloadNetworkPolicy(namespace, buildEgressPolicyName, selector, spec), nil
+	}
+	private, err := normalizeCIDRs(input.PrivateCIDRs)
+	if err != nil {
+		return networkingv1.NetworkPolicy{}, err
+	}
+	privatePorts := []networkingv1.NetworkPolicyPort{}
+	for _, port := range sortedUniquePorts(input.PrivatePorts) {
+		if port < 1 || port > 65535 {
+			return networkingv1.NetworkPolicy{}, fmt.Errorf("invalid build private egress port %d", port)
+		}
+		privatePorts = append(privatePorts, tcpPort(port))
+	}
+	if len(privatePorts) == 0 {
+		privatePorts = []networkingv1.NetworkPolicyPort{tcpPort(443)}
+	}
+	spec.Egress = []networkingv1.NetworkPolicyEgressRule{
+		{To: []networkingv1.NetworkPolicyPeer{clusterDNSPeer}, Ports: []networkingv1.NetworkPolicyPort{udpPort(53), tcpPort(53)}},
+		{
+			To: []networkingv1.NetworkPolicyPeer{
+				{IPBlock: &networkingv1.IPBlock{CIDR: "0.0.0.0/0", Except: exceptCIDRs(reservedIPv4CIDRs(), denied, false)}},
+				{IPBlock: &networkingv1.IPBlock{CIDR: "::/0", Except: exceptCIDRs(reservedIPv6CIDRs(), denied, true)}},
+			},
+			Ports: []networkingv1.NetworkPolicyPort{tcpPort(80), tcpPort(443)},
+		},
+	}
+	// 私网镜像站只放行指定端口；网段内的拒绝网段与节点地址仍然拒绝。
+	for _, cidr := range private {
+		spec.Egress = append(spec.Egress, networkingv1.NetworkPolicyEgressRule{
+			To:    []networkingv1.NetworkPolicyPeer{{IPBlock: &networkingv1.IPBlock{CIDR: cidr, Except: containedCIDRs(cidr, denied)}}},
+			Ports: privatePorts,
+		})
+	}
+	return workloadNetworkPolicy(namespace, buildEgressPolicyName, selector, spec), nil
 }
 
 func workloadNetworkPolicy(namespace, name string, selector metav1.LabelSelector, spec networkingv1.NetworkPolicySpec) networkingv1.NetworkPolicy {
@@ -336,6 +392,68 @@ func sortedUnique(values []string) []string {
 	}
 	sort.Strings(result)
 	return result
+}
+
+// containedCIDRs 返回严格落在 parent 内的网段，作为 IPBlock.Except（Kubernetes 要求 except 在 cidr 之内）。
+func containedCIDRs(parent string, values []string) []string {
+	parentPrefix, err := netip.ParsePrefix(parent)
+	if err != nil {
+		return nil
+	}
+	result := []string{}
+	for _, value := range values {
+		prefix, err := netip.ParsePrefix(value)
+		if err != nil || prefix.Addr().Is6() != parentPrefix.Addr().Is6() || prefix.Bits() <= parentPrefix.Bits() {
+			continue
+		}
+		if parentPrefix.Contains(prefix.Addr()) {
+			result = append(result, prefix.Masked().String())
+		}
+	}
+	return sortedUnique(result)
+}
+
+// reservedIPv4CIDRs 是工作负载与构建默认拒绝的私网与特殊用途网段。
+// 198.18.0.0/15 不在其中：fake-ip 代理会把公网域名解析到该网段。
+func reservedIPv4CIDRs() []string {
+	return []string{
+		"0.0.0.0/8",
+		"10.0.0.0/8",
+		"100.64.0.0/10",
+		"127.0.0.0/8",
+		"169.254.0.0/16",
+		"172.16.0.0/12",
+		"192.0.0.0/24",
+		"192.0.2.0/24",
+		"192.168.0.0/16",
+		"198.51.100.0/24",
+		"203.0.113.0/24",
+		"224.0.0.0/4",
+		"240.0.0.0/4",
+	}
+}
+
+func reservedIPv6CIDRs() []string {
+	return []string{
+		"::1/128",
+		"::/128",
+		"64:ff9b::/96",
+		"100::/64",
+		"2001:db8::/32",
+		"fc00::/7",
+		"fe80::/10",
+		"ff00::/8",
+	}
+}
+
+func tcpPort(port int) networkingv1.NetworkPolicyPort {
+	protocol := corev1.ProtocolTCP
+	return networkingv1.NetworkPolicyPort{Protocol: &protocol, Port: &intstr.IntOrString{Type: intstr.Int, IntVal: int32(port)}}
+}
+
+func udpPort(port int) networkingv1.NetworkPolicyPort {
+	protocol := corev1.ProtocolUDP
+	return networkingv1.NetworkPolicyPort{Protocol: &protocol, Port: &intstr.IntOrString{Type: intstr.Int, IntVal: int32(port)}}
 }
 
 func sortedUniquePorts(values []int) []int {

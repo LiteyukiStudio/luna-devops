@@ -31,6 +31,7 @@ describe('cluster network policy status', () => {
       namespaceCount: 3,
       syncedCount: 2,
       driftedCount: 1,
+      enforcement: 'verified',
     })
     renderStatus()
     expect(await screen.findByText('Drifted')).toBeInTheDocument()
@@ -47,10 +48,27 @@ describe('cluster network policy status', () => {
       namespaceCount: 0,
       syncedCount: 0,
       driftedCount: 0,
+      enforcement: 'unknown',
     })
     renderStatus()
     expect(await screen.findByText('Unavailable')).toBeInTheDocument()
     expect(screen.getByText('The cluster credential cannot read network policies, nodes, or namespaces.')).toBeInTheDocument()
+  })
+
+  it('warns when the cluster network plugin does not enforce policies', async () => {
+    mocks.observeRuntimeClusterNetworkPolicies.mockResolvedValue({
+      clusterId: 'clu_test',
+      status: 'ready',
+      observedAt: '2026-11-11T00:00:00Z',
+      namespaceCount: 1,
+      syncedCount: 1,
+      driftedCount: 0,
+      enforcement: 'unsupported',
+      probedAt: '2026-11-11T00:00:00Z',
+    })
+    renderStatus()
+    expect(await screen.findByText('Not enforced')).toBeInTheDocument()
+    expect(screen.getByText(/does not enforce NetworkPolicy/)).toBeInTheDocument()
   })
 
   it('treats a failed request as unavailable', async () => {

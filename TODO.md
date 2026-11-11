@@ -18,10 +18,8 @@
 
 ## 网络策略
 
-数据库保存期望配置，Kubernetes NetworkPolicy 只是确定性渲染的产物。项目隔离、默认拒绝私网/保留网段/节点/API、集群追加拒绝网段、整对象覆盖与清理残留、5 分钟周期修正和实时状态已上线；以下为剩余阶段。
+数据库保存期望配置，Kubernetes NetworkPolicy 只是确定性渲染的产物。项目隔离、默认拒绝私网/保留网段/节点/API、集群追加拒绝网段、构建出站按集群配置、CNI 主动探测（只提示不拦截）、整对象覆盖与清理残留、5 分钟周期修正和实时状态已上线；以下为剩余阶段。
 
-- [ ] 构建出站并入集群网络配置：删除 `BUILD_EGRESS_MODE` / `BUILD_*_EGRESS_*` Worker 变量，构建与应用共用集群拒绝列表；私有镜像站放行改由集群配置表达。
-- [ ] 集群探测 CNI 是否真正执行 NetworkPolicy，记录 `verified` / `unsupported`；`unsupported` 集群禁止多租户调度或仅作单租户集群，返回 `unavailable` 与稳定 `observationCode`，不以已创建策略对象冒充已隔离。
 - [ ] 平台控制面（API、PostgreSQL、Redis）不在私网时的显式硬底线；CNI 支持时评估改用 BaselineAdminNetworkPolicy。
 - [ ] 项目空间入站模式：`isolated`（默认）、`dependencies`（项目内也默认拒绝，只放行声明依赖的应用）、`cluster`（仅平台管理员可选）；集群配置声明允许租户选择的模式。
 - [ ] 项目空间出站模式：`internet`（默认）、`allowlist`（仅指定 CIDR/端口）、`none`（仅同项目 + DNS）。
@@ -32,11 +30,12 @@
 - [ ] 跨项目共享（入站模式 D）：提供方白名单 + 使用方声明依赖双向确认后，按平台受管 Namespace 标签放行。
 - [ ] 禁止 `hostNetwork`、NodePort、LoadBalancer Service 绕过策略（与 Pod Security 一并实施）。
 - [ ] 同步触发补强：配置变更经 outbox 投递（替代当前入队失败依赖周期兜底），节点变化由 informer 即时触发，漂移修正写审计；前端增加“同步中”状态。
-- [ ] 网络隔离上线说明：升级后部署需要集群凭据能读取 Node 与 `default/kubernetes` 端点并管理项目命名空间 NetworkPolicy；依赖其他命名空间服务或私网数据库的已有应用会被阻断，需在发布说明写明并给出排障路径。
+- [ ] 网络隔离上线说明（含构建出站从 `BUILD_EGRESS_MODE` / `BUILD_*_EGRESS_*` 迁到集群配置，升级后需在集群页重新填写）：升级后部署需要集群凭据能读取 Node 与 `default/kubernetes` 端点并管理项目命名空间 NetworkPolicy；依赖其他命名空间服务或私网数据库的已有应用会被阻断，需在发布说明写明并给出排障路径。
 - [ ] apiserver 地址改读 EndpointSlice（`Endpoints` 已弃用）。
 - [ ] 隔离状态接口与同步批量化：一次 List 全集群受管 NetworkPolicy、一次查询集群全部项目与系统组件，避免项目空间多时超时；同步时复用 List 结果，不再逐个 Get。
 - [ ] 集群配置变更入队被 Unique 去重时，若在途任务已读到旧配置，需等下一周期生效；随 outbox 改造一并消除该窗口。
 - [ ] 可信系统组件出站放行收窄到工作负载 Pod，排除同部署配置的 Hook Job Pod。
+- [ ] 集群 DNS 放行支持 NodeLocal DNS 等非 `kube-system/k8s-app=kube-dns` 的地址（集群配置项）。
 - [ ] 后续：出站例外组（多条规则打包授权给多个项目空间）、按域名出站（Cilium `toFQDNs` 或平台出站代理）、公网来源 IP 白名单（网关中间件实现）。
 
 ## 计费与配额

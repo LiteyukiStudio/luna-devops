@@ -193,7 +193,6 @@ root filesystem, and disabled ServiceAccount token remain enforced independently
 | `observability.otlpEndpoint` / `existingSecret` | Empty / empty | Sets the OTLP/HTTP endpoint and authentication Secret shared by API, Worker, and Agent; use a Collector URL and a Kubernetes Secret name containing `headersKey`. |
 | `postgresql.enabled` / `externalDatabase.url` | `true` / empty | Selects bundled or external PostgreSQL; use a boolean and a PostgreSQL connection URI. |
 | `redis.enabled` / `externalRedis.url` | `true` / empty | Selects bundled or external Redis; use a boolean and a `redis://` or `rediss://` URI. |
-| `worker.buildEgressMode` | `restricted` | Sets the build-network egress policy; use `restricted` or `permissive`. |
 
 ## Uninstall
 

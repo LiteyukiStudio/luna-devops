@@ -203,9 +203,6 @@ func TestEnvironmentDecoderReturnsSafeKeyedErrors(t *testing.T) {
 	if strings.Contains(err.Error(), secretValue) {
 		t.Fatalf("decoder error exposed raw value: %q", err)
 	}
-	if _, err := parsePortList("TEST_PORTS", "443,bad", []int{443}); err == nil {
-		t.Fatal("port parser accepted invalid input")
-	}
 }
 
 func TestEnvironmentDecoderRejectsDurationOverflow(t *testing.T) {

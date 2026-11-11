@@ -85,6 +85,7 @@ func (h *Handlers) CreateRuntimeCluster(ctx *gin.Context) {
 		return
 	}
 	auditWithSafeMetadata(h, user.ID, "runtime_cluster.create", cluster.ID, true, "", auditMetadata, ctx.Request.Context())
+	h.host.EnqueueNetworkPolicyProbe(ctx.Request.Context(), cluster.ID)
 	cluster, err := h.runtimeClusterResponseForUser(user, cluster, ctx.Request.Context())
 	if err != nil {
 		writeProjectAuthorizationError(ctx, err)
@@ -124,7 +125,12 @@ func (h *Handlers) UpdateRuntimeCluster(ctx *gin.Context) {
 	}
 	networkChanged := existing.NetworkBlockedCIDRs != next.NetworkBlockedCIDRs ||
 		existing.NetworkGatewayNamespace != next.NetworkGatewayNamespace ||
-		existing.GatewayNamespace != next.GatewayNamespace
+		existing.GatewayNamespace != next.GatewayNamespace ||
+		existing.GatewayHTTPListenerPort != next.GatewayHTTPListenerPort ||
+		existing.GatewayHTTPSListenerPort != next.GatewayHTTPSListenerPort ||
+		existing.BuildEgressMode != next.BuildEgressMode ||
+		existing.BuildPrivateEgressCIDRs != next.BuildPrivateEgressCIDRs ||
+		existing.BuildPrivateEgressPorts != next.BuildPrivateEgressPorts
 	existing.Name = next.Name
 	existing.Endpoint = next.Endpoint
 	existing.Scope = next.Scope
@@ -163,6 +169,9 @@ func (h *Handlers) UpdateRuntimeCluster(ctx *gin.Context) {
 	existing.GatewayForwardedHeadersMode = next.GatewayForwardedHeadersMode
 	existing.NetworkBlockedCIDRs = next.NetworkBlockedCIDRs
 	existing.NetworkGatewayNamespace = next.NetworkGatewayNamespace
+	existing.BuildEgressMode = next.BuildEgressMode
+	existing.BuildPrivateEgressCIDRs = next.BuildPrivateEgressCIDRs
+	existing.BuildPrivateEgressPorts = next.BuildPrivateEgressPorts
 	existing.GatewayTrustedProxyCIDRs = next.GatewayTrustedProxyCIDRs
 	existing.GatewayDefaultRequestHeaders = next.GatewayDefaultRequestHeaders
 	existing.GatewayDefaultResponseHeaders = next.GatewayDefaultResponseHeaders
@@ -176,6 +185,10 @@ func (h *Handlers) UpdateRuntimeCluster(ctx *gin.Context) {
 	if networkChanged {
 		// 立即重新下发项目空间网络策略；入队失败时由 Worker 周期同步兜底。
 		h.host.EnqueueNetworkPolicyReconcile(ctx.Request.Context(), existing.ID)
+	}
+	if strings.TrimSpace(input.Kubeconfig) != "" {
+		// 换了集群凭据可能换了集群，重新探测 NetworkPolicy 执行能力；失败时由周期探测兜底。
+		h.host.EnqueueNetworkPolicyProbe(ctx.Request.Context(), existing.ID)
 	}
 	existing, err := h.runtimeClusterResponseForUser(user, existing, ctx.Request.Context())
 	if err != nil {
@@ -324,6 +337,8 @@ func (h *Handlers) TestRuntimeCluster(ctx *gin.Context) {
 	case observation.StatusUnavailable:
 		writeErrorCode(ctx, http.StatusBadGateway, cluster.ObservationCode, "无法连接运行集群")
 	default:
+		// 连接正常时顺带重新探测 NetworkPolicy 执行能力；同一集群 10 分钟内只排队一次。
+		h.host.EnqueueNetworkPolicyProbe(ctx.Request.Context(), cluster.ID)
 		ctx.JSON(http.StatusOK, cluster)
 	}
 }

@@ -26,6 +26,10 @@ type runtimeClusterNetworkPolicyResponse struct {
 	NamespaceCount  int       `json:"namespaceCount"`
 	SyncedCount     int       `json:"syncedCount"`
 	DriftedCount    int       `json:"driftedCount"`
+	// 以下为最近一次主动探测的工作流结果（非实时），说明集群网络插件是否执行 NetworkPolicy。
+	Enforcement     string     `json:"enforcement"`
+	EnforcementCode string     `json:"enforcementCode,omitempty"`
+	ProbedAt        *time.Time `json:"probedAt,omitempty"`
 }
 
 type workloadNetworkPolicyObserver interface {
@@ -53,7 +57,11 @@ func (h *Handlers) ObserveRuntimeClusterNetworkPolicies(ctx *gin.Context) {
 	if !h.canManageScopedResourceByID(ctx, user, cluster.Scope, cluster.OwnerRef, scopedResourceRuntimeCluster, cluster.ID, "无权查看该运行集群的网络隔离状态") {
 		return
 	}
-	ctx.JSON(http.StatusOK, h.observeRuntimeClusterNetworkPolicies(ctx.Request.Context(), cluster))
+	response := h.observeRuntimeClusterNetworkPolicies(ctx.Request.Context(), cluster)
+	response.Enforcement = cluster.NetworkPolicyEnforcement
+	response.EnforcementCode = cluster.NetworkPolicyProbeCode
+	response.ProbedAt = cluster.NetworkPolicyProbedAt
+	ctx.JSON(http.StatusOK, response)
 }
 
 func (h *Handlers) observeRuntimeClusterNetworkPolicies(ctx context.Context, cluster model.RuntimeCluster) runtimeClusterNetworkPolicyResponse {

@@ -51,6 +51,12 @@ type RuntimeCluster struct {
 	GatewayDefaultResponseHeaders string         `gorm:"type:text;not null;default:''" json:"gatewayDefaultResponseHeaders"`
 	NetworkBlockedCIDRs           string         `gorm:"column:network_blocked_cidrs;type:text;not null;default:''" json:"networkBlockedCIDRs"`
 	NetworkGatewayNamespace       string         `gorm:"not null;default:''" json:"networkGatewayNamespace"`
+	BuildEgressMode               string         `gorm:"not null;default:restricted" json:"buildEgressMode"`
+	BuildPrivateEgressCIDRs       string         `gorm:"column:build_private_egress_cidrs;type:text;not null;default:''" json:"buildPrivateEgressCIDRs"`
+	BuildPrivateEgressPorts       string         `gorm:"type:text;not null;default:'443'" json:"buildPrivateEgressPorts"`
+	NetworkPolicyEnforcement      string         `gorm:"not null;default:unknown" json:"networkPolicyEnforcement"`
+	NetworkPolicyProbeCode        string         `gorm:"not null;default:''" json:"networkPolicyProbeCode,omitempty"`
+	NetworkPolicyProbedAt         *time.Time     `json:"networkPolicyProbedAt,omitempty"`
 	DeleteStatus                  string         `gorm:"index;not null;default:active" json:"deleteStatus"`
 	DeleteMessage                 string         `gorm:"type:text;not null;default:''" json:"-"`
 	DeleteStartedAt               *time.Time     `json:"deleteStartedAt,omitempty"`

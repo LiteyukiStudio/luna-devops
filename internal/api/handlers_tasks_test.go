@@ -213,14 +213,15 @@ current-context: local
 }
 
 type fakeBuildTaskEnqueuer struct {
-	buildPayload             tasks.BuildRunPayload
-	deployPayload            tasks.DeployRunPayload
-	gatewayPayload           tasks.GatewayApplyPayload
-	notificationPayload      tasks.NotificationDeliverPayload
-	applicationDeletePayload tasks.ApplicationDeletePayload
-	applicationDeleteError   error
-	resourceCleanupPayload   tasks.ResourceCleanupPayload
-	networkPolicyPayloads    []tasks.NetworkPolicyReconcilePayload
+	buildPayload               tasks.BuildRunPayload
+	deployPayload              tasks.DeployRunPayload
+	gatewayPayload             tasks.GatewayApplyPayload
+	notificationPayload        tasks.NotificationDeliverPayload
+	applicationDeletePayload   tasks.ApplicationDeletePayload
+	applicationDeleteError     error
+	resourceCleanupPayload     tasks.ResourceCleanupPayload
+	networkPolicyPayloads      []tasks.NetworkPolicyReconcilePayload
+	networkPolicyProbePayloads []tasks.NetworkPolicyProbePayload
 }
 
 func (f *fakeBuildTaskEnqueuer) EnqueueBuildRun(_ context.Context, payload tasks.BuildRunPayload) (*asynq.TaskInfo, error) {
@@ -255,5 +256,10 @@ func (f *fakeBuildTaskEnqueuer) EnqueueResourceCleanup(_ context.Context, payloa
 
 func (f *fakeBuildTaskEnqueuer) EnqueueNetworkPolicyReconcile(_ context.Context, payload tasks.NetworkPolicyReconcilePayload) (*asynq.TaskInfo, error) {
 	f.networkPolicyPayloads = append(f.networkPolicyPayloads, payload)
+	return &asynq.TaskInfo{}, nil
+}
+
+func (f *fakeBuildTaskEnqueuer) EnqueueNetworkPolicyProbe(_ context.Context, payload tasks.NetworkPolicyProbePayload) (*asynq.TaskInfo, error) {
+	f.networkPolicyProbePayloads = append(f.networkPolicyProbePayloads, payload)
 	return &asynq.TaskInfo{}, nil
 }

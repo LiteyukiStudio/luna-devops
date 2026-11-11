@@ -30,7 +30,7 @@ func TestRenderWorkloadNetworkPoliciesIsolatesProjectAndBlocksPrivateEgress(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(policies) != 3 {
+	if len(policies) != 4 {
 		t.Fatalf("policy count = %d", len(policies))
 	}
 	ingress := policies[0]
@@ -67,6 +67,9 @@ func TestRenderWorkloadNetworkPoliciesIsolatesProjectAndBlocksPrivateEgress(t *t
 		}
 	}
 	public := egress.Spec.Egress[3].To
+	if slices.Contains(public[0].IPBlock.Except, "198.18.0.0/15") {
+		t.Fatalf("198.18.0.0/15 must not be denied by default (fake-ip DNS resolves public names there)")
+	}
 	for _, want := range []string{"10.0.0.0/8", "169.254.0.0/16", "192.168.0.0/16", "203.0.113.7/32", "198.51.100.10/32"} {
 		if !slices.Contains(public[0].IPBlock.Except, want) {
 			t.Fatalf("IPv4 except missing %s: %v", want, public[0].IPBlock.Except)
@@ -80,7 +83,7 @@ func TestRenderWorkloadNetworkPoliciesIsolatesProjectAndBlocksPrivateEgress(t *t
 	if slices.Contains(public[0].IPBlock.Except, "2001:db8:1::/48") {
 		t.Fatalf("IPv4 except must not contain IPv6 ranges")
 	}
-	system := policies[2]
+	system := policies[3]
 	if system.Spec.PodSelector.MatchLabels[DeploymentTargetIDLabel] != "dt_probe" || len(system.Spec.Egress) != 1 || len(system.Spec.Egress[0].To) != 0 {
 		t.Fatalf("trusted system egress = %#v", system.Spec)
 	}
@@ -211,5 +214,67 @@ func TestSyncWorkloadNetworkPoliciesToleratesConcurrentCreate(t *testing.T) {
 	}
 	if state, _ := client.WorkloadNetworkPolicyState(context.Background(), "prj-demo", desired); state != WorkloadNetworkPolicySynced {
 		t.Fatalf("state after retry = %s", state)
+	}
+}
+
+func TestRenderBuildEgressPolicy(t *testing.T) {
+	input := testWorkloadPolicyInput()
+	input.BlockedCIDRs = []string{"10.20.5.0/24"}
+	input.NodeAddresses = []string{"10.20.0.10/32", "198.51.100.10/32"}
+	input.BuildEgress = BuildEgressInput{PrivateCIDRs: []string{"10.20.0.0/16"}, PrivatePorts: []int{5000, 443}}
+	policies, err := RenderWorkloadNetworkPolicies(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	build := policies[2]
+	if build.Name != buildEgressPolicyName || build.Spec.PodSelector.MatchLabels[ScopeLabel] != "build" || build.Labels[ScopeLabel] != WorkloadNetworkPolicyScope {
+		t.Fatalf("build policy identity = %#v", build.ObjectMeta)
+	}
+	rules := build.Spec.Egress
+	if len(rules) != 3 {
+		t.Fatalf("expected DNS, public HTTP(S) and private registry rules, got %#v", rules)
+	}
+	if rules[0].To[0].PodSelector.MatchLabels["k8s-app"] != "kube-dns" {
+		t.Fatalf("build DNS must target cluster DNS: %#v", rules[0])
+	}
+	if len(rules[1].Ports) != 2 || rules[1].Ports[0].Port.IntVal != 80 || rules[1].Ports[1].Port.IntVal != 443 {
+		t.Fatalf("public build egress must be HTTP(S) only: %#v", rules[1].Ports)
+	}
+	if !slices.Contains(rules[1].To[0].IPBlock.Except, "198.51.100.10/32") {
+		t.Fatalf("public build egress must deny node addresses: %v", rules[1].To[0].IPBlock.Except)
+	}
+	private := rules[2]
+	if private.To[0].IPBlock.CIDR != "10.20.0.0/16" || !slices.Equal(private.To[0].IPBlock.Except, []string{"10.20.0.10/32", "10.20.5.0/24"}) {
+		t.Fatalf("private registry rule must keep contained denied ranges: %#v", private.To[0].IPBlock)
+	}
+	if len(private.Ports) != 2 || private.Ports[0].Port.IntVal != 443 || private.Ports[1].Port.IntVal != 5000 {
+		t.Fatalf("private registry ports = %#v", private.Ports)
+	}
+
+	input.BuildEgress = BuildEgressInput{Permissive: true}
+	policies, err = RenderWorkloadNetworkPolicies(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if egress := policies[2].Spec.Egress; len(egress) != 1 || len(egress[0].To) != 0 {
+		t.Fatalf("permissive build egress must allow all: %#v", egress)
+	}
+}
+
+func TestSyncTakesOverLegacyBuildPolicy(t *testing.T) {
+	legacy := networkingv1.NetworkPolicy{ObjectMeta: metav1.ObjectMeta{
+		Name: buildEgressPolicyName, Namespace: "prj-demo",
+		Labels: map[string]string{ManagedByLabel: ManagedByValue, ScopeLabel: "build"},
+	}, Spec: networkingv1.NetworkPolicySpec{Egress: []networkingv1.NetworkPolicyEgressRule{{}}}}
+	client := NewClientForInterface(fake.NewSimpleClientset(&legacy))
+	desired, err := RenderWorkloadNetworkPolicies(testWorkloadPolicyInput())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := client.SyncWorkloadNetworkPolicies(context.Background(), "prj-demo", desired); err != nil {
+		t.Fatal(err)
+	}
+	if state, _ := client.WorkloadNetworkPolicyState(context.Background(), "prj-demo", desired); state != WorkloadNetworkPolicySynced {
+		t.Fatalf("legacy build policy must be taken over, state = %s", state)
 	}
 }

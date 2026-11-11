@@ -66,13 +66,9 @@ func TestDockerComposeApplicationEnvironmentAllowlist(t *testing.T) {
 		"AI_OBSERVABILITY_CAPTURE_CONTENT":        agentOnly("${AI_OBSERVABILITY_CAPTURE_CONTENT:-false}"),
 		"AI_OBSERVABILITY_CAPTURE_DATABASE_SPANS": agentOnly("${AI_OBSERVABILITY_CAPTURE_DATABASE_SPANS:-false}"),
 		"BUILD_EXECUTOR_IMAGE":                    workerOnly("${BUILD_EXECUTOR_IMAGE:-moby/buildkit:v0.34.1-rootless}"),
-		"BUILD_EGRESS_MODE":                       workerOnly("${BUILD_EGRESS_MODE:-restricted}"),
 		"BUILD_JOB_TIMEOUT_SECONDS":               workerOnly("${BUILD_JOB_TIMEOUT_SECONDS:-1800}"),
 		"BUILD_JOB_TTL_SECONDS":                   workerOnly("${BUILD_JOB_TTL_SECONDS:-3600}"),
 		"BUILD_CACHE_ENABLED":                     workerOnly("${BUILD_CACHE_ENABLED:-false}"),
-		"BUILD_PRIVATE_EGRESS_CIDRS":              workerOnly("${BUILD_PRIVATE_EGRESS_CIDRS:-}"),
-		"BUILD_PRIVATE_EGRESS_PORTS":              workerOnly("${BUILD_PRIVATE_EGRESS_PORTS:-443}"),
-		"BUILD_BLOCKED_EGRESS_CIDRS":              workerOnly("${BUILD_BLOCKED_EGRESS_CIDRS:-}"),
 		"DEPLOY_ROLLOUT_TIMEOUT_SECONDS":          workerOnly("${DEPLOY_ROLLOUT_TIMEOUT_SECONDS:-600}"),
 		"CERT_MANAGER_CLUSTER_ISSUER":             workerOnly("${CERT_MANAGER_CLUSTER_ISSUER:-letsencrypt-http01}"),
 		"VOLUME_TRANSFER_MAX_BYTES":               apiAndWorker("${VOLUME_TRANSFER_MAX_BYTES:-100Gi}"),
@@ -107,6 +103,10 @@ func TestDockerComposeApplicationEnvironmentAllowlist(t *testing.T) {
 	for _, removed := range []string{
 		"BOOTSTRAP_TOKEN",
 		"BUILD_CACHE_TAG",
+		"BUILD_EGRESS_MODE",
+		"BUILD_PRIVATE_EGRESS_CIDRS",
+		"BUILD_PRIVATE_EGRESS_PORTS",
+		"BUILD_BLOCKED_EGRESS_CIDRS",
 		"DB_MAX_OPEN_CONNS", "DB_MAX_IDLE_CONNS", "DB_CONN_MAX_LIFETIME", "DB_CONN_MAX_IDLE_TIME",
 	} {
 		for _, serviceName := range applicationServices {

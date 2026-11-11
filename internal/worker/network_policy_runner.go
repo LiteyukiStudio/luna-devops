@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/LiteyukiStudio/devops/internal/model"
 	kubeprovider "github.com/LiteyukiStudio/devops/internal/provider/kubernetes"
@@ -83,4 +84,52 @@ func (r *Runner) reconcileClusterNetworkPolicies(ctx context.Context, cluster mo
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// handleNetworkPolicyProbe 主动探测集群是否执行 NetworkPolicy，结果作为工作流结果写回集群。
+// 只记录结论供展示，不拦截部署。
+func (r *Runner) handleNetworkPolicyProbe(ctx context.Context, task *asynq.Task) error {
+	var payload tasks.NetworkPolicyProbePayload
+	if err := json.Unmarshal(task.Payload(), &payload); err != nil {
+		return fmt.Errorf("%w: invalid network policy probe payload", asynq.SkipRetry)
+	}
+	query := runtimecluster.ActiveScope(r.db.Model(&model.RuntimeCluster{}))
+	if clusterID := strings.TrimSpace(payload.RuntimeClusterID); clusterID != "" {
+		query = query.Where("id = ?", clusterID)
+	}
+	var clusters []model.RuntimeCluster
+	if err := query.Order("id asc").Find(&clusters).Error; err != nil {
+		return err
+	}
+	var errs []error
+	for _, cluster := range clusters {
+		if err := workerStage(ctx, "network_policy.probe_cluster", func(stageCtx context.Context) error {
+			return r.probeClusterNetworkPolicy(stageCtx, cluster)
+		}); err != nil {
+			errs = append(errs, fmt.Errorf("runtime cluster %s: %w", cluster.ID, err))
+		}
+	}
+	return errors.Join(errs...)
+}
+
+func (r *Runner) probeClusterNetworkPolicy(ctx context.Context, cluster model.RuntimeCluster) error {
+	result := kubeprovider.NetworkPolicyProbeResult{Enforcement: kubeprovider.NetworkPolicyEnforcementUnknown, Code: "runtime_cluster.network_policy_probe_unavailable"}
+	manager, probeErr := r.kubernetesManager(ctx, model.DeploymentTarget{ClusterID: cluster.ID})
+	if probeErr == nil {
+		probeCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+		var probed kubeprovider.NetworkPolicyProbeResult
+		probed, probeErr = manager.ProbeNetworkPolicyEnforcement(probeCtx, r.buildExecutorImage, cluster.ID)
+		cancel()
+		if probeErr == nil {
+			result = probed
+		}
+	}
+	now := time.Now().UTC()
+	saveErr := r.db.WithContext(ctx).Model(&model.RuntimeCluster{}).Where("id = ?", cluster.ID).Updates(map[string]any{
+		"network_policy_enforcement": result.Enforcement,
+		"network_policy_probe_code":  result.Code,
+		"network_policy_probed_at":   &now,
+	}).Error
+	// 结论已落库为 unknown；探测错误继续返回，让 Stage Span 记录失败原因。
+	return errors.Join(probeErr, saveErr)
 }

@@ -126,6 +126,10 @@ func (host domainHost) EnqueueResourceCleanup(ctx context.Context, resourceType,
 	return host.handlers.enqueueResourceCleanup(ctx, resourceType, resourceID, projectID, actorID)
 }
 
+func (host domainHost) EnqueueNetworkPolicyProbe(ctx context.Context, clusterID string) bool {
+	return host.handlers.enqueueNetworkPolicyProbe(ctx, clusterID)
+}
+
 func (host domainHost) EnqueueNetworkPolicyReconcile(ctx context.Context, clusterID string) bool {
 	return host.handlers.enqueueNetworkPolicyReconcile(ctx, clusterID)
 }
