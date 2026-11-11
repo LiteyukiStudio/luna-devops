@@ -1,12 +1,15 @@
 package worker
 
 import (
+	"sort"
 	"strings"
 
 	"github.com/LiteyukiStudio/devops/internal/builder"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
+
+const buildUserVarSecretPrefix = "var-"
 
 func buildJobSecret(name string, task builder.Task, cacheEnabled bool) *corev1.Secret {
 	env := map[string]string{
@@ -41,22 +44,25 @@ func buildJobSecret(name string, task builder.Task, cacheEnabled bool) *corev1.S
 	env["POST_BUILD_HOOK_IDS"] = strings.Join(hookIDsByPhase["postBuild"], ",")
 	env["PRE_PUSH_HOOK_IDS"] = strings.Join(hookIDsByPhase["prePush"], ",")
 	env["POST_PUSH_HOOK_IDS"] = strings.Join(hookIDsByPhase["postPush"], ",")
-	buildEnv := builder.NormalizedBuildEnv(task.Build.Env)
-	buildEnvKeys := make([]string, 0, len(buildEnv))
+	// 用户变量以文件交付，不进入执行器进程环境，避免覆盖 IMAGE_REF、GIT_CLONE_URL 等平台变量。
+	userVars := map[string]string{}
 	buildArgs := builder.NormalizedBuildEnv(task.Build.BuildArgs)
-	for key, value := range buildEnv {
+	buildEnvKeys := make([]string, 0, len(task.Build.Env))
+	for key, value := range builder.NormalizedBuildEnv(task.Build.Env) {
 		if _, overridden := buildArgs[key]; overridden {
 			continue
 		}
-		env[key] = value
+		userVars[key] = value
 		buildEnvKeys = append(buildEnvKeys, key)
 	}
-	env["BUILD_ENV_KEYS"] = strings.Join(buildEnvKeys, ",")
 	buildArgKeys := make([]string, 0, len(buildArgs))
 	for key, value := range buildArgs {
-		env[key] = value
+		userVars[key] = value
 		buildArgKeys = append(buildArgKeys, key)
 	}
+	sort.Strings(buildEnvKeys)
+	sort.Strings(buildArgKeys)
+	env["BUILD_ENV_KEYS"] = strings.Join(buildEnvKeys, ",")
 	env["BUILD_ARG_KEYS"] = strings.Join(buildArgKeys, ",")
 
 	data := map[string]string{"run.sh": builder.ExecutorScript()}
@@ -72,6 +78,9 @@ func buildJobSecret(name string, task builder.Task, cacheEnabled bool) *corev1.S
 	}
 	for key, value := range env {
 		data["env-"+key] = value
+	}
+	for key, value := range userVars {
+		data[buildUserVarSecretPrefix+key] = value
 	}
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{Name: name},

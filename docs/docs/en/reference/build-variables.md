@@ -62,7 +62,8 @@ Rules:
 - Names starting with `LITEYUKI_` are reserved by the platform and ignored.
 - When a Build Arg has the same name, the Build Arg value wins.
 - Build variable values do not render template variables; `${{ github.sha }}` is passed through literally.
-- Plain build variables are recorded in build records. Secret values are resolved only at build time, never returned, and masked in build logs.
+- Build variables are passed only as `build-arg` values and hook environment variables. They never change how the platform pulls, builds, or pushes; a name that matches a platform internal variable (such as `IMAGE_REF`) does not change the target image or source URL.
+- Plain build variables are recorded in build records. Secret values are resolved only at build time, never returned, and shown as `***` in build and hook logs.
 
 > Secrets are also passed as `build-arg`. Build args used by `RUN` instructions may appear in the image build history. Do not reference secrets in the final runtime stage; prefer using them in an intermediate stage of a multi-stage build.
 
@@ -91,6 +92,8 @@ Hook scripts are not template-rendered; read environment variables directly.
 | `LITEYUKI_IMAGE_REF` | Target image; from the before-build phase on, it is the final pushed image |
 
 Build variables, secrets, and Build Args are also available to build hooks as environment variables with the same names.
+
+> Build hooks run in the same container as the credentials the platform uses to pull source and push images, so scripts can read them. Credential and secret values appear as `***` in logs, but masking cannot stop a script from sending them elsewhere. Only let trusted members edit build hooks.
 
 **Deployment hooks** (before/after deployment) run as a separate Kubernetes Job using the released image and load the same plain and encrypted variables as the application container. They can read the variables above except `LITEYUKI_BUILD_JOB_ID`, plus:
 

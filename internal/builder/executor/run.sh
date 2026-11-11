@@ -58,6 +58,25 @@ hook_emit_complete() {
   printf "::luna-devops-hook-complete::%s::%s::%s::%s\n" "$hook_id" "$succeeded" "$exit_code" "$(b64_line "$message")"
 }
 
+# --- user-vars:begin ---
+# 用户构建变量以 /executor/vars/<KEY> 文件交付，只在 Hook 子进程中导出，不覆盖平台变量。
+user_var_value() {
+  cat "/executor/vars/$1" 2>/dev/null || true
+}
+
+export_user_vars() {
+  user_vars_ifs="$IFS"
+  IFS=","
+  for user_var_key in ${BUILD_ENV_KEYS:-} ${BUILD_ARG_KEYS:-}; do
+    if [ -z "$user_var_key" ]; then
+      continue
+    fi
+    export "$user_var_key=$(user_var_value "$user_var_key")"
+  done
+  IFS="$user_vars_ifs"
+}
+# --- user-vars:end ---
+
 run_hook() {
   hook_id="$1"
   meta="/workspace/hooks/${hook_id}.meta"
@@ -76,10 +95,10 @@ run_hook() {
   hook_emit_log "$hook_id" "开始执行 Hook: ${HOOK_NAME:-$hook_id}"
   set +e
   if command -v timeout >/dev/null 2>&1; then
-    output="$(timeout "${HOOK_TIMEOUT_SECONDS:-300}" "${HOOK_SHELL:-sh}" "$script" 2>&1)"
+    output="$(export_user_vars; timeout "${HOOK_TIMEOUT_SECONDS:-300}" "${HOOK_SHELL:-sh}" "$script" 2>&1)"
     exit_code=$?
   else
-    output="$("${HOOK_SHELL:-sh}" "$script" 2>&1)"
+    output="$(export_user_vars; "${HOOK_SHELL:-sh}" "$script" 2>&1)"
     exit_code=$?
   fi
   set -e
@@ -234,14 +253,14 @@ for key in ${BUILD_ENV_KEYS:-}; do
   if [ -z "$key" ]; then
     continue
   fi
-  eval "value=\${$key:-}"
+  value="$(user_var_value "$key")"
   set -- "$@" --opt "build-arg:${key}=${value}"
 done
 for key in ${BUILD_ARG_KEYS:-}; do
   if [ -z "$key" ]; then
     continue
   fi
-  eval "value=\${$key:-}"
+  value="$(user_var_value "$key")"
   value="$(render_template_value "$value")"
   set -- "$@" --opt "build-arg:${key}=${value}"
 done

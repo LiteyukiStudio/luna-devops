@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/url"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -309,7 +310,8 @@ func trimBuildLogContent(content string) string {
 	return content[len(content)-262144:]
 }
 
-const redactedLogValue = "[REDACTED]"
+// 与 GitHub Actions 一致，日志中的密钥值统一显示为 ***。
+const redactedLogValue = "***"
 
 type sensitiveLogPattern struct {
 	regex       *regexp.Regexp
@@ -336,10 +338,10 @@ func redactSensitiveLogContent(content string, sensitiveValues []string) string 
 func normalizedSensitiveLogValues(values []string) []string {
 	seen := map[string]bool{}
 	output := make([]string, 0, len(values)*3)
-	for _, value := range values {
+	add := func(value string) {
 		value = strings.TrimSpace(value)
 		if len(value) < 4 {
-			continue
+			return
 		}
 		for _, candidate := range []string{value, url.QueryEscape(value), url.PathEscape(value)} {
 			if candidate == "" || seen[candidate] {
@@ -349,5 +351,14 @@ func normalizedSensitiveLogValues(values []string) []string {
 			output = append(output, candidate)
 		}
 	}
+	for _, value := range values {
+		add(value)
+		// 日志按行写入，多行密钥（如私钥）需要逐行遮盖。
+		for _, line := range strings.Split(value, "\n") {
+			add(line)
+		}
+	}
+	// 先替换更长的值，避免较短的密钥先命中后残留长密钥的其余部分。
+	sort.SliceStable(output, func(i, j int) bool { return len(output[i]) > len(output[j]) })
 	return output
 }

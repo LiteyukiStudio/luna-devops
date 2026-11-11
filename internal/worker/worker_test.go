@@ -658,8 +658,8 @@ func TestBuildJobSecretSeparatesExplicitBuildArgs(t *testing.T) {
 		false,
 	)
 
-	if secret.StringData["env-EMBED_WEB"] != "true" {
-		t.Fatalf("expected explicit build arg to override env value, got %q", secret.StringData["env-EMBED_WEB"])
+	if secret.StringData["var-EMBED_WEB"] != "true" {
+		t.Fatalf("expected explicit build arg to override env value, got %q", secret.StringData["var-EMBED_WEB"])
 	}
 	if strings.Contains(secret.StringData["env-BUILD_ENV_KEYS"], "EMBED_WEB") {
 		t.Fatalf("BUILD_ENV_KEYS should not include overridden arg: %q", secret.StringData["env-BUILD_ENV_KEYS"])
@@ -669,6 +669,46 @@ func TestBuildJobSecretSeparatesExplicitBuildArgs(t *testing.T) {
 	}
 	if !strings.Contains(secret.StringData["env-BUILD_ARG_KEYS"], "EMBED_WEB") || !strings.Contains(secret.StringData["env-BUILD_ARG_KEYS"], "VERSION") {
 		t.Fatalf("BUILD_ARG_KEYS missing explicit args: %q", secret.StringData["env-BUILD_ARG_KEYS"])
+	}
+}
+
+func TestBuildJobUserVariablesCannotOverridePlatformEnv(t *testing.T) {
+	task := builder.Task{
+		Repository: builder.RepositoryPayload{CloneURL: "https://git.example.com/team/api.git"},
+		Registry:   builder.RegistryPayload{ImageRef: "registry.example.com/team/api:main"},
+		Build: builder.BuildPayload{
+			Env:       map[string]string{"GIT_CLONE_URL": "https://attacker.example.com/", "BUILD_CONTAINS_SECRETS": "false"},
+			BuildArgs: map[string]string{"IMAGE_REF": "registry.example.com/other/api:main"},
+		},
+	}
+	secret := buildJobSecret("build-secret", task, true)
+	if secret.StringData["env-GIT_CLONE_URL"] != task.Repository.CloneURL || secret.StringData["env-IMAGE_REF"] != task.Registry.ImageRef {
+		t.Fatalf("platform env overridden: clone=%q image=%q", secret.StringData["env-GIT_CLONE_URL"], secret.StringData["env-IMAGE_REF"])
+	}
+	if secret.StringData["var-IMAGE_REF"] != "registry.example.com/other/api:main" || secret.StringData["var-GIT_CLONE_URL"] != "https://attacker.example.com/" {
+		t.Fatalf("user variables should still be delivered as files: %#v", secret.StringData)
+	}
+
+	spec := buildJobSpec("build-job", "build-secret", model.BuildRun{}, task, "executor", true, 1800, 3600)
+	container := spec.Spec.Template.Spec.Containers[0]
+	envCount := map[string]int{}
+	for _, env := range container.Env {
+		envCount[env.Name]++
+		if env.ValueFrom != nil && strings.HasPrefix(env.ValueFrom.SecretKeyRef.Key, buildUserVarSecretPrefix) {
+			t.Fatalf("user variable %q leaked into executor env", env.ValueFrom.SecretKeyRef.Key)
+		}
+	}
+	for _, name := range []string{"GIT_CLONE_URL", "IMAGE_REF", "BUILD_CONTAINS_SECRETS"} {
+		if envCount[name] != 1 {
+			t.Fatalf("env %s count = %d, want 1", name, envCount[name])
+		}
+	}
+	paths := map[string]string{}
+	for _, item := range spec.Spec.Template.Spec.Volumes[2].Secret.Items {
+		paths[item.Key] = item.Path
+	}
+	if paths["var-IMAGE_REF"] != "vars/IMAGE_REF" || paths["var-GIT_CLONE_URL"] != "vars/GIT_CLONE_URL" {
+		t.Fatalf("user variable files not mounted: %#v", paths)
 	}
 }
 

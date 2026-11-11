@@ -138,6 +138,10 @@ func buildJobSpec(jobName string, secretName string, run model.BuildRun, task bu
 	}
 	resources := buildJobResourceRequirements(run)
 	for key := range buildJobSecret("", task, cacheEnabled).StringData {
+		if name, ok := strings.CutPrefix(key, buildUserVarSecretPrefix); ok {
+			items = append(items, corev1.KeyToPath{Key: key, Path: "vars/" + name})
+			continue
+		}
 		if strings.HasPrefix(key, "env-") {
 			env = append(env, corev1.EnvVar{
 				Name: strings.TrimPrefix(key, "env-"),

@@ -1,7 +1,9 @@
 package builder
 
 import (
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -62,5 +64,27 @@ func TestExecutorRejectsReservedCacheTag(t *testing.T) {
 	}
 	if output, err := runExecutorSection(t, section, "CACHE_TAG="+RegistryCacheTag, "IMAGE_REF=registry.example.com/team/api:"+RegistryCacheTag+"-v2"); err != nil {
 		t.Fatalf("similar tag should be accepted: %v\n%s", err, output)
+	}
+}
+
+func TestExecutorUserVarsStayInsideHookSubshell(t *testing.T) {
+	varsDir := t.TempDir()
+	for name, value := range map[string]string{"IMAGE_REF": "registry.example.com/other/api:main", "NODE_ENV": "production"} {
+		if err := os.WriteFile(filepath.Join(varsDir, name), []byte(value), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	section := strings.ReplaceAll(executorSection(t, "user-vars"), "/executor/vars", varsDir)
+	section += `
+hook_view="$(export_user_vars; printf '%s|%s' "$IMAGE_REF" "$NODE_ENV")"
+printf '%s\n%s|%s\n%s\n' "$hook_view" "$IMAGE_REF" "${NODE_ENV:-}" "$(user_var_value IMAGE_REF)"
+`
+	output, err := runExecutorSection(t, section, "IMAGE_REF=registry.example.com/team/api:main", "BUILD_ENV_KEYS=NODE_ENV", "BUILD_ARG_KEYS=IMAGE_REF")
+	if err != nil {
+		t.Fatalf("section failed: %v\n%s", err, output)
+	}
+	want := "registry.example.com/other/api:main|production\nregistry.example.com/team/api:main|\nregistry.example.com/other/api:main\n"
+	if strings.TrimRight(output, "\n")+"\n" != want {
+		t.Fatalf("user vars output = %q, want %q", output, want)
 	}
 }
