@@ -200,6 +200,12 @@ const projectTopology = {
     egressAllowlist: '出站白名单',
     egressAllowlistHint: '每行一条 “CIDR 端口,端口”。写了端口时只放行 TCP，省略端口表示全部端口和协议（例如 UDP 的 DNS、NTP）；最多 64 条。私网与保留网段始终拒绝，不能写在这里。',
     egressAllowlistPlaceholder: '1.1.1.1/32 443\n8.8.8.8/32',
+    exceptionsTitle: '平台授权的出站例外',
+    exceptionsDescription: '以下内网地址由平台管理员授权给本项目空间，在任何出站模式下都生效。',
+    exceptionProtocols: { tcp: 'TCP', udp: 'UDP', any: 'TCP/UDP' },
+    exceptionIncludesBuilds: '包含构建',
+    exceptionTargets: '{{count}} 个部署配置',
+    exceptionWholeProject: '整个项目空间',
   },
 }
 

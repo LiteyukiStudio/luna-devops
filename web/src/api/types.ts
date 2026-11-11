@@ -1619,10 +1619,51 @@ export interface RuntimeCluster {
 export type ProjectNetworkIngressMode = 'isolated' | 'dependencies'
 export type ProjectNetworkEgressMode = 'internet' | 'allowlist' | 'none'
 
-export interface ProjectNetworkPolicy {
+export type EgressExceptionProtocol = 'tcp' | 'udp' | 'any'
+
+export interface EgressExceptionGrant {
+  projectId: string
+  deploymentTargetIds: string[]
+  includeBuilds: boolean
+}
+
+export interface EgressExceptionPayload {
+  name: string
+  cidr: string
+  ports: string
+  protocol: EgressExceptionProtocol
+  reason: string
+  grants: EgressExceptionGrant[]
+}
+
+export interface EgressException extends EgressExceptionPayload {
+  id: string
+  runtimeClusterId: string
+  createdBy: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ProjectEgressException {
+  id: string
+  runtimeClusterId: string
+  name: string
+  cidr: string
+  ports: string
+  protocol: EgressExceptionProtocol
+  reason: string
+  deploymentTargetIds: string[]
+  includeBuilds: boolean
+}
+
+export interface ProjectNetworkPolicyPayload {
   ingressMode: ProjectNetworkIngressMode
   egressMode: ProjectNetworkEgressMode
   egressAllowlist: string
+}
+
+export interface ProjectNetworkPolicy extends ProjectNetworkPolicyPayload {
+  egressExceptions: ProjectEgressException[]
 }
 
 export type RuntimeClusterNetworkPolicyEnforcement = 'verified' | 'unsupported' | 'unknown'

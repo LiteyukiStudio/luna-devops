@@ -105,6 +105,7 @@ function actionCallbacks() {
   return {
     onDelete: vi.fn(),
     onEdit: vi.fn(),
+    onEgressExceptions: vi.fn(),
     onTest: vi.fn(),
   }
 }

@@ -8,6 +8,7 @@ import { toast } from 'sonner'
 import { api } from '@/api'
 import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { DataList } from '@/components/common/data-list'
+import { EgressExceptionWarning } from '@/components/common/egress-exception-warning'
 import { FormField as Field } from '@/components/common/form-field'
 import { ProgressiveSection } from '@/components/common/progressive-section'
 import { ResourceDeletionStatus } from '@/components/common/resource-deletion-status'
@@ -225,6 +226,7 @@ export function ApplicationGatewayPanel({ applicationId, applicationIdentifier, 
             <DialogTitle>{editingRoute ? t('gatewayRoutesPage.editRoute') : t('gatewayRoutesPage.createRoute')}</DialogTitle>
             <DialogDescription>{t('gatewayRoutesPage.routeDialogDescription')}</DialogDescription>
           </DialogHeader>
+          <EgressExceptionWarning context="route" projectId={projectId} />
           <form className="grid gap-3" onSubmit={form.handleSubmit(values => saveRoute.mutate(values))}>
             <ProgressiveSection
               defaultOpen

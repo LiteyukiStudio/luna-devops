@@ -24,11 +24,11 @@ describe('project network policy card', () => {
   beforeEach(async () => {
     vi.clearAllMocks()
     await i18next.changeLanguage('en-US')
-    mocks.getProjectNetworkPolicy.mockResolvedValue({ ingressMode: 'isolated', egressMode: 'internet', egressAllowlist: '' })
+    mocks.getProjectNetworkPolicy.mockResolvedValue({ ingressMode: 'isolated', egressMode: 'internet', egressAllowlist: '', egressExceptions: [] })
   })
 
   it('saves stricter modes with the allowlist', async () => {
-    mocks.updateProjectNetworkPolicy.mockImplementation((_projectId: string, payload: unknown) => Promise.resolve(payload))
+    mocks.updateProjectNetworkPolicy.mockImplementation((_projectId: string, payload: object) => Promise.resolve({ ...payload, egressExceptions: [] }))
     renderCard(true)
     const user = userEvent.setup()
     await user.selectOptions(await screen.findByLabelText('Ingress'), 'dependencies')
@@ -50,6 +50,18 @@ describe('project network policy card', () => {
     await user.click(screen.getByRole('button', { name: 'Save' }))
     expect(await screen.findByText(/egress allowlist is invalid/i)).toBeInTheDocument()
     expect(mocks.updateProjectNetworkPolicy).not.toHaveBeenCalled()
+  })
+
+  it('lists egress exceptions granted to the project', async () => {
+    mocks.getProjectNetworkPolicy.mockResolvedValue({
+      ingressMode: 'isolated',
+      egressMode: 'none',
+      egressAllowlist: '',
+      egressExceptions: [{ id: 'nex_db', runtimeClusterId: 'clu_a', name: 'Data center MySQL', cidr: '192.168.31.10/32', ports: '3306', protocol: 'tcp', reason: 'Billing database', deploymentTargetIds: ['dt_api'], includeBuilds: false }],
+    })
+    renderCard(false)
+    expect(await screen.findByText('Data center MySQL')).toBeInTheDocument()
+    expect(screen.getByText('192.168.31.10/32')).toBeInTheDocument()
   })
 
   it('is read-only without project management permission', async () => {

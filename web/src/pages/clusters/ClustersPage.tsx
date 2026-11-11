@@ -23,6 +23,9 @@ import { useClusterResources } from './resources/use-cluster-resources'
 
 const RESOURCE_TABS = ['namespaces', 'workloads', 'services', 'configs', 'storage']
 
+const ClusterEgressExceptionsDialog = lazy(() =>
+  import('./management/cluster-egress-exceptions-dialog').then(module => ({ default: module.ClusterEgressExceptionsDialog })),
+)
 const ClusterFormDialog = lazy(() =>
   import('./management/cluster-form-dialog').then(module => ({ default: module.ClusterFormDialog })),
 )
@@ -38,6 +41,7 @@ export function ClustersPage() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [dialogRevision, setDialogRevision] = useState(0)
   const [editingCluster, setEditingCluster] = useState<RuntimeCluster | null>(null)
+  const [exceptionsCluster, setExceptionsCluster] = useState<RuntimeCluster | null>(null)
   const [clusterToDelete, setClusterToDelete] = useState<RuntimeCluster | null>(null)
   const [clusterPage, setClusterPage] = useState(1)
   const [clusterPageSize, setClusterPageSize] = useState(10)
@@ -186,6 +190,7 @@ export function ClustersPage() {
             user={user}
             onDelete={setClusterToDelete}
             onEdit={openClusterDialog}
+            onEgressExceptions={setExceptionsCluster}
             onTest={clusterId => testCluster.mutate(clusterId)}
           />
         </TabsContent>
@@ -231,6 +236,15 @@ export function ClustersPage() {
               setDialogOpen(false)
               setEditingCluster(null)
             }}
+          />
+        </LazyDialogBoundary>
+      )}
+      {exceptionsCluster && (
+        <LazyDialogBoundary resetKey={`egress-${exceptionsCluster.id}`} onOpenChange={open => !open && setExceptionsCluster(null)}>
+          <ClusterEgressExceptionsDialog
+            cluster={exceptionsCluster}
+            projects={projects.data ?? []}
+            onOpenChange={open => !open && setExceptionsCluster(null)}
           />
         </LazyDialogBoundary>
       )}

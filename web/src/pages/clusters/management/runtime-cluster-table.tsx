@@ -1,6 +1,6 @@
 import type { CurrentUser, Project, RuntimeCluster, RuntimeClusterPressure } from '@/api'
 import type { DataListColumn } from '@/components/common/data-list'
-import { FlaskConical, MoreHorizontal, Pencil, Trash2 } from 'lucide-react'
+import { FlaskConical, MoreHorizontal, Pencil, ShieldCheck, Trash2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { DataList } from '@/components/common/data-list'
 import { RuntimeClusterPressureRings } from '@/components/common/runtime-cluster-pressure'
@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { canManageCluster, gatewayAccessSummary, scopeLabel } from './cluster-helpers'
 
-export function RuntimeClusterTable({ clusters, loading, pagination, pressureByClusterId, pressureLoading, projects, user, onDelete, onEdit, onTest }: {
+export function RuntimeClusterTable({ clusters, loading, pagination, pressureByClusterId, pressureLoading, projects, user, onDelete, onEdit, onEgressExceptions, onTest }: {
   clusters: RuntimeCluster[]
   loading: boolean
   pagination: {
@@ -27,6 +27,7 @@ export function RuntimeClusterTable({ clusters, loading, pagination, pressureByC
   onDelete: (cluster: RuntimeCluster) => void
   onEdit: (cluster: RuntimeCluster) => void
   onTest: (clusterId: string) => void
+  onEgressExceptions: (cluster: RuntimeCluster) => void
 }) {
   const { t } = useTranslation()
   const projectMap = Object.fromEntries(projects.map(project => [project.id, project]))
@@ -104,6 +105,10 @@ export function RuntimeClusterTable({ clusters, loading, pagination, pressureByC
                         <DropdownMenuItem onSelect={() => onEdit(item)}>
                           <Pencil className="size-4" />
                           {t('common.edit')}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onSelect={() => onEgressExceptions(item)}>
+                          <ShieldCheck className="size-4" />
+                          {t('clustersPage.egressExceptions.menu')}
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem variant="destructive" onSelect={() => onDelete(item)}>

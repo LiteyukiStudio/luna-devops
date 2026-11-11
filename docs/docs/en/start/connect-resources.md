@@ -51,6 +51,19 @@ The platform applies managed NetworkPolicies in every project space namespace to
 
 The platform actively probes whether the cluster really enforces NetworkPolicy: it starts probe Pods from `BUILD_EXECUTOR_IMAGE` in a temporary namespace, confirms they can connect, then applies a deny policy and confirms the connection is blocked. The probe runs after a cluster is created, after its kubeconfig is replaced, after a cluster maintainer passes a connection test, and every 6 hours; each cluster is probed at most once per 10 minutes. The cluster credential must be able to create and delete Namespaces, Pods, and NetworkPolicies; otherwise the result is **Unknown**. **Enforcement** shows **Verified**, **Not enforced**, or **Unknown**. **Not enforced** means isolation rules are applied but have no effect; deployments are not blocked, and you need a network plugin that enforces policies. For **Unknown**, check image pulls and scheduling as indicated.
 
+#### Egress exceptions
+
+When a project space needs to reach an internal service outside the cluster, such as a data-center database, a cluster maintainer can add a rule from **Egress exceptions** in the cluster actions menu:
+
+| Field | Meaning |
+| --- | --- |
+| Target CIDR | The range to allow; `/0` and a cloud metadata address itself are rejected, and metadata and node addresses inside the range stay denied |
+| Protocol and ports | TCP, UDP, or both; comma-separated ports, at most 16; empty allows every port of the protocol |
+| Approval reason | Required and recorded with the rule |
+| Grants | The project spaces that may use it, optionally narrowed to deployment targets; builds are excluded unless **Include builds** is selected |
+
+An exception applies only to the granted project spaces, in every project egress mode. Creating, changing, and deleting exceptions are audited and applied immediately. Project spaces holding exceptions show a warning when adding members or creating routes, and those audit entries record the exception count; make sure applications do not become proxies into the internal network.
+
 After saving, the platform reapplies the policies immediately and compares them every 5 minutes; managed policies edited or deleted in the cluster are restored. When editing a cluster, **Isolation status** shows the live result: **Synced** means every project space matches the platform configuration, **Drifted** means some project spaces are waiting for automatic repair, and **Unavailable** means the cluster could not be read; check the cluster credential and connectivity as indicated.
 
 Before deleting a cluster, migrate or remove every deployment that references it.

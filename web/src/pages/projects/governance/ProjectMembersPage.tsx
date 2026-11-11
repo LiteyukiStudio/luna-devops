@@ -12,6 +12,7 @@ import { z } from 'zod'
 import { api } from '@/api'
 import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { DataList } from '@/components/common/data-list'
+import { EgressExceptionWarning } from '@/components/common/egress-exception-warning'
 import { ErrorState } from '@/components/common/error-state'
 import { FormField as Field } from '@/components/common/form-field'
 import { SearchMultiSelect } from '@/components/common/search-select'
@@ -228,6 +229,7 @@ export function ProjectMembersPage({ embedded = false, projectId: projectIdProp,
             <DialogTitle>{t('projectMembers.addTitle')}</DialogTitle>
             <DialogDescription>{t('projectMembers.description')}</DialogDescription>
           </DialogHeader>
+          <EgressExceptionWarning context="member" projectId={projectId} />
           <form className="grid gap-3" onSubmit={form.handleSubmit(values => createMember.mutate(values))}>
             <Field hint={t('projectMembers.userSearchHint')} label={t('projectMembers.userSearch')} required>
               <SearchMultiSelect

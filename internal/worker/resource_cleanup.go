@@ -470,6 +470,10 @@ func (r *Runner) finishRuntimeClusterDelete(ctx context.Context, cluster model.R
 			Delete(&model.ScopedResourceProjectBinding{}).Error; err != nil {
 			return err
 		}
+		// 出站例外属于集群；授权随外键级联删除。
+		if err := tx.Where("runtime_cluster_id = ?", cluster.ID).Delete(&model.NetworkEgressException{}).Error; err != nil {
+			return err
+		}
 		if err := tx.Model(&model.RuntimeCluster{}).Where("id = ?", cluster.ID).Updates(map[string]any{
 			"delete_status": "deleted", "delete_message": "", "delete_finished_at": &finishedAt,
 			"kubeconfig_ref": "",
@@ -662,6 +666,10 @@ func markCleanupFailed(db *gorm.DB, model any, id string, err error) error {
 func (r *Runner) finishProjectDelete(project model.Project) error {
 	finishedAt := time.Now()
 	return r.db.Transaction(func(tx *gorm.DB) error {
+		// 已删除的项目空间不再持有出站例外授权。
+		if err := tx.Where("project_id = ?", project.ID).Delete(&model.NetworkEgressExceptionGrant{}).Error; err != nil {
+			return err
+		}
 		if err := tx.Where("project_id = ?", project.ID).Delete(&model.DeploymentVolumeMount{}).Error; err != nil {
 			return err
 		}

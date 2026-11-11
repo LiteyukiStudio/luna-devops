@@ -117,6 +117,9 @@ const errors = {
     resource_name_required: 'Enter the resource name.',
   },
   runtime_cluster: {
+    egress_exception_invalid: 'The egress exception is invalid: name 1–64 characters, reason required, CIDR not /0, IPv4-mapped, or a cloud metadata address, at most 16 ports.',
+    egress_exception_grant_invalid: 'The grant is invalid: the project space must exist and be able to use this cluster, and deployment targets must belong to it.',
+    egress_exception_not_found: 'The egress exception does not exist or was deleted.',
     network_blocked_cidrs_invalid: 'Blocked egress CIDRs are invalid: use one CIDR per line, no /0, at most 256 entries.',
     network_gateway_namespace_invalid: 'The gateway controller namespace must be a valid Kubernetes namespace name.',
     network_policy_drifted: 'Network policies in some project spaces differ from the platform configuration.',

@@ -117,6 +117,9 @@ const errors = {
     resource_name_required: '리소스 이름을 입력하세요.',
   },
   runtime_cluster: {
+    egress_exception_invalid: '아웃바운드 예외가 잘못되었습니다. 이름 1–64자, 사유 필수, CIDR은 /0·IPv4 매핑 형식·클라우드 메타데이터 주소 불가, 포트 최대 16개입니다.',
+    egress_exception_grant_invalid: '허용이 잘못되었습니다. 프로젝트 스페이스가 존재하고 이 클러스터를 사용할 수 있어야 하며, 배포 설정은 해당 프로젝트 스페이스에 속해야 합니다.',
+    egress_exception_not_found: '아웃바운드 예외가 없거나 삭제되었습니다.',
     network_blocked_cidrs_invalid: '차단할 아웃바운드 CIDR 형식이 잘못되었습니다. 한 줄에 하나, /0 불가, 최대 256개입니다.',
     network_gateway_namespace_invalid: '게이트웨이 컨트롤러 네임스페이스는 올바른 Kubernetes 네임스페이스 이름이어야 합니다.',
     network_policy_drifted: '일부 프로젝트 스페이스의 네트워크 정책이 플랫폼 설정과 다릅니다.',

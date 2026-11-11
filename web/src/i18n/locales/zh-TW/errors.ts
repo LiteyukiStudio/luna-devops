@@ -117,6 +117,9 @@ const errors = {
     resource_name_required: '請輸入資源名稱。',
   },
   runtime_cluster: {
+    egress_exception_invalid: '出站例外無效：名稱 1–64 字、理由必填，網段不能是 /0、IPv4 對應寫法或雲端中繼資料位址，連接埠最多 16 個。',
+    egress_exception_grant_invalid: '授權無效：專案空間必須存在且能使用此叢集，部署設定必須屬於對應專案空間。',
+    egress_exception_not_found: '出站例外不存在或已被刪除。',
     network_blocked_cidrs_invalid: '額外拒絕出站網段格式無效：每行一個 CIDR，不能是 /0，最多 256 條。',
     network_gateway_namespace_invalid: '閘道控制器命名空間必須是合法的 Kubernetes 命名空間名稱。',
     network_policy_drifted: '部分專案空間的網路策略與平台期望不一致。',

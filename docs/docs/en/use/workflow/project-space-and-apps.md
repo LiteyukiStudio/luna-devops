@@ -59,6 +59,8 @@ By default, applications in a project space can reach each other, the gateway ca
 
 The egress allowlist takes one `CIDR port,port` entry per line, at most 64 entries, for example `1.1.1.1/32 443`. Listed ports are TCP only; omitting ports allows all ports and protocols, so leave ports out when you need UDP such as external DNS or NTP. Private and reserved ranges are always denied and cannot be listed; contact a platform administrator when you need to reach an internal service.
 
+Platform administrators can grant egress exceptions that allow specific internal addresses; granted exceptions are listed under the **Network isolation** card and apply in every egress mode.
+
 Before switching to **Service bindings only**, make sure every call between applications has a service binding in the topology; undeclared calls fail immediately.
 
 ### Internal services
