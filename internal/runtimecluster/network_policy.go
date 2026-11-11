@@ -211,7 +211,11 @@ func DesiredWorkloadNetworkPolicies(ctx context.Context, db *gorm.DB, cluster mo
 // 读取失败时标为 unknown，不把失败当作“没有例外”。
 func EgressExceptionAuditMarker(db *gorm.DB, projectID string) string {
 	var count int64
-	if err := db.Table("network_egress_exception_grants").Where("project_id = ?", projectID).Count(&count).Error; err != nil {
+	// 只统计活动集群上的例外，删除中或已删除集群的残留不计入。
+	if err := db.Table("network_egress_exception_grants as g").
+		Joins("join network_egress_exceptions e on e.id = g.exception_id").
+		Joins("join runtime_clusters c on c.id = e.runtime_cluster_id and c.deleted_at is null and c.delete_status = ?", "active").
+		Where("g.project_id = ?", projectID).Count(&count).Error; err != nil {
 		return "egressExceptions=unknown"
 	}
 	return fmt.Sprintf("egressExceptions=%d", count)

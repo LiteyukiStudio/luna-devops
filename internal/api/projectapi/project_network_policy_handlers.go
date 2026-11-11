@@ -52,6 +52,7 @@ func projectEgressExceptions(db *gorm.DB, projectID string) ([]projectEgressExce
 	if err := db.Table("network_egress_exception_grants as g").
 		Select("e.id, e.runtime_cluster_id, e.name, e.cidr, e.ports, e.protocol, e.reason, g.deployment_target_ids, g.include_builds").
 		Joins("join network_egress_exceptions e on e.id = g.exception_id").
+		Joins("join runtime_clusters c on c.id = e.runtime_cluster_id and c.deleted_at is null and c.delete_status = ?", "active").
 		Where("g.project_id = ?", projectID).Order("e.name asc, e.id asc").Scan(&rows).Error; err != nil {
 		return nil, err
 	}

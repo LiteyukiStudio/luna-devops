@@ -117,7 +117,11 @@ const errors = {
     resource_name_required: '请输入资源名称。',
   },
   runtime_cluster: {
-    egress_exception_invalid: '出站例外无效：名称 1–64 字、理由必填，网段不能是 /0、IPv4 映射写法或云元数据地址，端口最多 16 个。',
+    egress_exception_name_invalid: '名称必须是 1–64 个字。',
+    egress_exception_reason_invalid: '审批理由必填，最多 500 个字。',
+    egress_exception_cidr_invalid: '目标网段无效：不能是 /0、IPv4 映射写法或云元数据地址。',
+    egress_exception_ports_invalid: '端口无效：使用 1–65535 的端口，最多 16 个。',
+    egress_exception_protocol_invalid: '协议只能是 TCP、UDP 或 TCP/UDP。',
     egress_exception_grant_invalid: '授权无效：项目空间必须存在且能使用该集群，部署配置必须属于对应项目空间。',
     egress_exception_not_found: '出站例外不存在或已被删除。',
     network_blocked_cidrs_invalid: '额外拒绝出站网段格式无效：每行一个 CIDR，不能是 /0，最多 256 条。',

@@ -117,7 +117,11 @@ const errors = {
     resource_name_required: 'リソース名を入力してください。',
   },
   runtime_cluster: {
-    egress_exception_invalid: '送信例外が無効です。名前は 1–64 文字、理由は必須、CIDR は /0・IPv4 マップ形式・クラウドのメタデータアドレス以外、ポートは最大 16 個です。',
+    egress_exception_name_invalid: '名前は 1–64 文字で入力してください。',
+    egress_exception_reason_invalid: '承認理由は必須で、最大 500 文字です。',
+    egress_exception_cidr_invalid: '宛先 CIDR が無効です。/0、IPv4 マップ形式、クラウドのメタデータアドレスは使用できません。',
+    egress_exception_ports_invalid: 'ポートが無効です。1–65535 のポートを最大 16 個まで指定してください。',
+    egress_exception_protocol_invalid: 'プロトコルは TCP、UDP、TCP/UDP のいずれかです。',
     egress_exception_grant_invalid: '許可が無効です。プロジェクトスペースが存在しこのクラスターを使用でき、デプロイ設定がそのプロジェクトスペースに属している必要があります。',
     egress_exception_not_found: '送信例外が存在しないか削除されています。',
     network_blocked_cidrs_invalid: '拒否する送信先 CIDR が無効です。1 行に 1 つ、/0 は不可、最大 256 件です。',

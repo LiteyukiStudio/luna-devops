@@ -40,14 +40,25 @@ func TestProjectEgressExceptionsReadsGrantedRules(t *testing.T) {
 	db := testdb.Open(t, testdb.Options{
 		SchemaPrefix: "project_egress_exception_view_test",
 		Migrate: func(db *gorm.DB) error {
-			return db.AutoMigrate(&model.NetworkEgressException{}, &model.NetworkEgressExceptionGrant{})
+			return db.AutoMigrate(&model.RuntimeCluster{}, &model.NetworkEgressException{}, &model.NetworkEgressExceptionGrant{})
 		},
 	})
 	now := time.Now()
 	exception := model.NetworkEgressException{ID: "nex_db", RuntimeClusterID: "clu_dc", Name: "db", CIDR: "192.168.31.10/32", Ports: "3306", Protocol: "tcp", Reason: "billing", CreatedAt: now, UpdatedAt: now,
 		Grants: []model.NetworkEgressExceptionGrant{{ID: "nexg_1", ProjectID: "prj_pay", DeploymentTargetIDs: "dt_api,dt_job", IncludeBuilds: true, CreatedAt: now}}}
-	if err := db.Create(&exception).Error; err != nil {
+	if err := db.Create(&model.RuntimeCluster{ID: "clu_dc", Name: "dc", Scope: "global"}).Error; err != nil {
 		t.Fatal(err)
+	}
+	// 删除中集群上的例外不应出现在项目视图中。
+	stale := model.NetworkEgressException{ID: "nex_stale", RuntimeClusterID: "clu_gone", Name: "stale", CIDR: "10.9.0.0/16", Protocol: "tcp", Reason: "old", CreatedAt: now, UpdatedAt: now,
+		Grants: []model.NetworkEgressExceptionGrant{{ID: "nexg_2", ProjectID: "prj_pay", CreatedAt: now}}}
+	if err := db.Create(&model.RuntimeCluster{ID: "clu_gone", Name: "gone", Scope: "global", DeleteStatus: "deleting"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	for _, value := range []*model.NetworkEgressException{&exception, &stale} {
+		if err := db.Create(value).Error; err != nil {
+			t.Fatal(err)
+		}
 	}
 	got, err := projectEgressExceptions(db, "prj_pay")
 	if err != nil {
