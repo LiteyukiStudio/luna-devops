@@ -208,6 +208,8 @@ const projectTopology = {
     exceptionWholeProject: '프로젝트 스페이스 전체',
   },
   networkShares: {
+    cluster: '클러스터',
+    consumerHidden: '수락 후 표시',
     title: '프로젝트 간 공유',
     description: '이 프로젝트 스페이스의 서비스를 다른 프로젝트 스페이스에 공개하거나, 공유받은 서비스를 사용합니다. 네트워크만 열며 자격 증명은 전달하지 않습니다. 양쪽이 같은 클러스터에 있고 상대가 수락한 뒤에 적용됩니다.',
     loadFailed: '공유를 불러오지 못했습니다. 새로고침 후 다시 시도하세요.',

@@ -2123,7 +2123,7 @@ paths:
         risk: high
       tags: [Projects]
       summary: Share a deployment target with another project space
-      description: Allows another project space to reach a deployment target of this project space. Takes effect only after the consumer accepts; when this project space holds egress exceptions on the target's cluster, a cluster maintainer must also approve. Changes are audited.
+      description: Allows another project space to reach the application Pods of a deployment target of this project space on the target's cluster. Takes effect only after the consumer accepts; while this project space holds egress exceptions on the target's cluster, a maintainer of that cluster must also approve. Changes are audited.
       x-luna-agent:
         purpose: { zh: 把本项目空间的一个部署配置开放给另一个项目空间访问。, en: Open a deployment target of this project space to another project space. }
         aliases: { zh: [跨项目共享, 添加允许访问来源, 共享服务给其他项目], en: [share service with project, add allowed source, cross-project share] }
@@ -2147,7 +2147,7 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/NetworkServiceShare" }
         "400":
-          description: Invalid target (`network_share.target_invalid`), consumer (`network_share.consumer_invalid`), or too many consumers (`network_share.limit_exceeded`).
+          description: Invalid target (`network_share.target_invalid`), consumer that does not exist or cannot use the target's cluster (`network_share.consumer_invalid`), or more than 50 consumers per target or 20 unaccepted shares per project space (`network_share.limit_exceeded`).
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
@@ -5008,7 +5008,7 @@ paths:
         requiredScopes: ["cluster:manage"]
       tags: [Runtime]
       summary: List network shares awaiting approval
-      description: Lists cross-project shares whose provider holds egress exceptions on this cluster and that a cluster maintainer has not approved yet.
+      description: Lists cross-project shares whose provider deployment target runs on this cluster, whose provider holds egress exceptions on this cluster, and that have not been approved for this cluster. Evaluated from the current state, so targets moved here or providers granted exceptions later appear again.
       x-luna-agent:
         purpose: { zh: 查看待集群维护者批准的跨项目共享。, en: List cross-project shares awaiting approval by a cluster maintainer. }
         aliases: { zh: [待批准的共享, 共享审批], en: [pending network share approvals, share approvals] }
@@ -5045,7 +5045,7 @@ paths:
         risk: high
       tags: [Runtime]
       summary: Approve a network share
-      description: Approves a share whose provider holds egress exceptions on this cluster, accepting the risk that the shared service relays access to those private addresses. Audited and reapplied immediately. Idempotent.
+      description: Approves a share whose provider holds egress exceptions on this cluster, accepting the risk that the shared service relays access to those private addresses. The approval applies only to this cluster. Audited and reapplied immediately.
       x-luna-agent:
         purpose: { zh: 批准持有出站例外的项目空间对外共享服务。, en: Approve a service share from a project space that holds egress exceptions. }
         aliases: { zh: [批准共享, 同意跨项目共享], en: [approve network share, approve cross-project share] }
@@ -5070,7 +5070,7 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
         "404":
-          description: The cluster or share does not exist, or the share does not need approval on this cluster (`runtime_cluster.not_found`, `network_share.not_found`).
+          description: The cluster or share does not exist, or the share does not currently need approval on this cluster, including when it is already approved (`runtime_cluster.not_found`, `network_share.not_found`).
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
@@ -13991,7 +13991,7 @@ components:
         consumerProjectIdentifier: { type: string, description: Identifier of another active project space. }
     NetworkServiceShare:
       type: object
-      required: [id, providerProjectId, providerProjectName, deploymentTargetId, deploymentTargetName, applicationName, consumerProjectId, consumerProjectName, address, status, approvalRequired, acceptedAt, approvedAt, createdAt]
+      required: [id, providerProjectId, providerProjectName, deploymentTargetId, deploymentTargetName, applicationName, runtimeClusterId, runtimeClusterName, consumerProjectId, consumerProjectName, address, status, approvalRequired, acceptedAt, approvedAt, createdAt]
       properties:
         id: { type: string, pattern: '^nss_' }
         providerProjectId: { type: string }
@@ -13999,14 +13999,16 @@ components:
         deploymentTargetId: { type: string }
         deploymentTargetName: { type: string }
         applicationName: { type: string }
+        runtimeClusterId: { type: string, description: Cluster the provider's deployment target currently runs on; the share applies only there. Empty when the target has no available cluster. }
+        runtimeClusterName: { type: string }
         consumerProjectId: { type: string }
-        consumerProjectName: { type: string }
+        consumerProjectName: { type: string, description: Empty until the consumer accepts. }
         address: { type: string, description: In-cluster host of the shared service; reachable only from workloads on the same cluster. Empty before the target is first deployed. }
         status:
           type: string
           enum: [pending_acceptance, pending_approval, active]
-          description: pending_acceptance waits for the consumer; pending_approval waits for a cluster maintainer because the provider holds egress exceptions.
-        approvalRequired: { type: boolean }
+          description: pending_acceptance waits for the consumer; pending_approval waits for a maintainer of the target's current cluster because the provider holds egress exceptions there.
+        approvalRequired: { type: boolean, description: Evaluated against the target's current cluster and the provider's current exceptions; an approval applies only to the cluster it was given on. }
         acceptedAt: { type: string, format: date-time, nullable: true }
         approvedAt: { type: string, format: date-time, nullable: true }
         createdAt: { type: string, format: date-time }

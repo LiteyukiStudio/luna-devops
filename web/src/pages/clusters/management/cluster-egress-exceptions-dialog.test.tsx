@@ -68,6 +68,8 @@ describe('cluster egress exceptions dialog', () => {
       deploymentTargetId: 'dplt_api',
       deploymentTargetName: 'prod',
       applicationName: 'pay-api',
+      runtimeClusterId: 'clu_dc',
+      runtimeClusterName: 'Data center',
       consumerProjectId: 'prj_web',
       consumerProjectName: 'Storefront',
       address: 'pay-api.payments.svc',

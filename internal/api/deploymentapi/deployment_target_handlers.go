@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -14,6 +15,7 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/resourceidentifier"
+	"github.com/LiteyukiStudio/devops/internal/runtimecluster"
 	"github.com/LiteyukiStudio/devops/internal/volume"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -254,6 +256,18 @@ func (h *Handlers) UpdateDeploymentTarget(ctx *gin.Context) {
 		h.auditWithContext(user.ID, "deployment_target.internal_only", target.ID, true, fmt.Sprintf("internalOnly=%t", target.InternalOnly), ctx.Request.Context())
 		// 内部服务决定网关能否访问该部署配置的 Pod，变化后立即重新下发网络策略。
 		h.host.EnqueueNetworkPolicyProjectReconcile(ctx.Request.Context(), project.ID)
+	}
+	if strings.TrimSpace(existing.ClusterID) != strings.TrimSpace(target.ClusterID) {
+		// 跨项目共享只在提供方部署配置所在集群渲染，换集群后双方都要在新旧集群重新下发，
+		// 新集群上是否需要批准也随之重新判断。
+		// 部署配置已保存：查询失败时记录并交给 5 分钟周期同步，不把已成功的更新报成失败。
+		peers, err := runtimecluster.SharePeerProjectIDs(h.dbFor(ctx), "deployment_target_id = ?", target.ID)
+		if err != nil {
+			slog.WarnContext(ctx.Request.Context(), "network share peers lookup failed", "event.name", "network_share.peer_lookup_failed", "error", err)
+		}
+		for _, projectID := range peers {
+			h.host.EnqueueNetworkPolicyProjectReconcile(ctx.Request.Context(), projectID)
+		}
 	}
 	target, _ = h.deploymentTargetWithHookBindings(target, ctx.Request.Context())
 	target = h.observeDeploymentTarget(ctx.Request.Context(), project, target)

@@ -1,9 +1,17 @@
 import type { CurrentUser, RuntimeCluster } from '@/api'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import i18next from '@/i18n'
 import { RuntimeClusterTable } from './runtime-cluster-table'
+
+const mocks = vi.hoisted(() => ({ listRuntimeClusterNetworkShareApprovals: vi.fn() }))
+
+vi.mock('@/api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/api')>()
+  return { ...actual, api: { ...actual.api, ...mocks } }
+})
 
 const originalMatchMedia = window.matchMedia
 
@@ -14,6 +22,7 @@ const platformAdmin = {
 
 beforeEach(async () => {
   await i18next.changeLanguage('en-US')
+  mocks.listRuntimeClusterNetworkShareApprovals.mockResolvedValue({ items: [], page: 1, pageSize: 1, sortBy: 'createdAt', sortOrder: 'desc', total: 0, totalPages: 0 })
 })
 
 afterEach(() => {
@@ -21,6 +30,15 @@ afterEach(() => {
 })
 
 describe('runtime cluster table', () => {
+  it('shows pending cross-project share approvals to cluster maintainers', async () => {
+    mocks.listRuntimeClusterNetworkShareApprovals.mockResolvedValue({ items: [], page: 1, pageSize: 1, sortBy: 'createdAt', sortOrder: 'desc', total: 2, totalPages: 2 })
+    const callbacks = actionCallbacks()
+    const cluster = runtimeCluster()
+    renderTable({ callbacks, clusters: [cluster] })
+    await userEvent.setup().click(await screen.findByRole('button', { name: /Shares awaiting approval: 2/ }))
+    expect(callbacks.onEgressExceptions).toHaveBeenCalledWith(cluster)
+  })
+
   it('uses one accessible actions menu and invokes every regular action', async () => {
     const user = userEvent.setup()
     const cluster = runtimeCluster()
@@ -80,24 +98,27 @@ function renderTable({
   callbacks?: ReturnType<typeof actionCallbacks>
   clusters?: RuntimeCluster[]
 } = {}) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
-    <RuntimeClusterTable
-      clusters={clusters}
-      loading={false}
-      pagination={{
-        page: 1,
-        pageSize: 10,
-        total: clusters.length,
-        totalPages: clusters.length > 0 ? 1 : 0,
-        onPageChange: vi.fn(),
-        onPageSizeChange: vi.fn(),
-      }}
-      pressureByClusterId={{}}
-      pressureLoading={false}
-      projects={[]}
-      user={platformAdmin}
-      {...callbacks}
-    />,
+    <QueryClientProvider client={client}>
+      <RuntimeClusterTable
+        clusters={clusters}
+        loading={false}
+        pagination={{
+          page: 1,
+          pageSize: 10,
+          total: clusters.length,
+          totalPages: clusters.length > 0 ? 1 : 0,
+          onPageChange: vi.fn(),
+          onPageSizeChange: vi.fn(),
+        }}
+        pressureByClusterId={{}}
+        pressureLoading={false}
+        projects={[]}
+        user={platformAdmin}
+        {...callbacks}
+      />
+    </QueryClientProvider>,
   )
 }
 

@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/model"
@@ -92,6 +94,9 @@ func TestNetworkShareLifecyclePostgres(t *testing.T) {
 			t.Fatalf("duplicate = %d %s", status, code)
 		}
 		assertSharePolicies(t, db, cluster, db1, web, false)
+		if body["consumerProjectName"] != "" {
+			t.Fatalf("consumer name must stay hidden before acceptance: %#v", body)
+		}
 		// 提供方不能替使用方确认。
 		recorder := egressExceptionRequest(t, project.AcceptProjectNetworkShare, provider, http.MethodPost, projectParams(db1.ID, shareID), "")
 		if recorder.Code != http.StatusNotFound {
@@ -105,6 +110,16 @@ func TestNetworkShareLifecyclePostgres(t *testing.T) {
 		recorder = egressExceptionRequest(t, project.ListProjectNetworkShares, consumer, http.MethodGet, projectParams(web.ID, ""), "")
 		if recorder.Code != http.StatusBadRequest {
 			t.Fatalf("missing direction must be rejected: %d", recorder.Code)
+		}
+		provided := listShares(t, project.ListProjectNetworkShares, provider, db1.ID, "provided")
+		if provided.Total != 1 || provided.Items[0].ConsumerProjectName != web.Name || provided.Items[0].RuntimeClusterName != cluster.Name {
+			t.Fatalf("provided = %#v", provided)
+		}
+		if consumed := listShares(t, project.ListProjectNetworkShares, consumer, web.ID, "consumed"); consumed.Total != 1 || consumed.Items[0].Address != "pg.share-db.svc" {
+			t.Fatalf("consumed = %#v", consumed)
+		}
+		if other := listShares(t, project.ListProjectNetworkShares, provider, db1.ID, "consumed"); other.Total != 0 {
+			t.Fatalf("provider has no consumed shares: %#v", other)
 		}
 	})
 
@@ -157,6 +172,87 @@ func TestNetworkShareLifecyclePostgres(t *testing.T) {
 			}
 		}
 	})
+
+	t.Run("approval follows the current cluster and current exceptions", func(t *testing.T) {
+		status, _, body := create(provider, db1.ID, "dplt_share_pg", "share-web")
+		if status != http.StatusCreated {
+			t.Fatalf("create = %d %#v", status, body)
+		}
+		live := body["id"].(string)
+		egressExceptionRequest(t, project.AcceptProjectNetworkShare, consumer, http.MethodPost, projectParams(web.ID, live), "")
+		assertSharePolicies(t, db, cluster, db1, web, true)
+
+		// 共享生效后提供方才获得例外：共享暂停，直到本集群维护者批准。
+		if err := db.Create(&model.NetworkEgressException{ID: "nex_share_db", RuntimeClusterID: cluster.ID, Name: "idc", CIDR: "10.8.0.0/16", Protocol: "tcp", Reason: "idc",
+			Grants: []model.NetworkEgressExceptionGrant{{ID: "nexg_share_db", ProjectID: db1.ID}}}).Error; err != nil {
+			t.Fatal(err)
+		}
+		assertSharePolicies(t, db, cluster, db1, web, false)
+		approve := func(clusterID string) int {
+			return egressExceptionRequest(t, runtime.ApproveRuntimeClusterNetworkShare, admin, http.MethodPost,
+				gin.Params{{Key: "clusterId", Value: clusterID}, {Key: "shareId", Value: live}}, "").Code
+		}
+		if code := approve(cluster.ID); code != http.StatusOK {
+			t.Fatalf("approve on default cluster = %d", code)
+		}
+		assertSharePolicies(t, db, cluster, db1, web, true)
+
+		// 部署配置迁到另一个持有例外的集群：原批准不再有效，原集群也不再渲染。
+		other := model.RuntimeCluster{ID: "clu_share_other", Name: "Other", Scope: "global"}
+		if err := db.Create(&other).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Create(&model.NetworkEgressException{ID: "nex_share_other", RuntimeClusterID: other.ID, Name: "idc2", CIDR: "10.7.0.0/16", Protocol: "tcp", Reason: "idc",
+			Grants: []model.NetworkEgressExceptionGrant{{ID: "nexg_share_other", ProjectID: db1.ID}}}).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Model(&model.DeploymentTarget{}).Where("id = ?", "dplt_share_pg").Update("cluster_id", other.ID).Error; err != nil {
+			t.Fatal(err)
+		}
+		assertSharePolicies(t, db, cluster, db1, web, false)
+		assertSharePolicies(t, db, other, db1, web, false)
+		listed := listShares(t, project.ListProjectNetworkShares, consumer, web.ID, "consumed")
+		for _, item := range listed.Items {
+			if item.ID == live && (item.Status != "pending_approval" || item.RuntimeClusterID != other.ID) {
+				t.Fatalf("moved share must need approval on the new cluster: %#v", item)
+			}
+		}
+		if code := approve(cluster.ID); code != http.StatusNotFound {
+			t.Fatalf("the old cluster can no longer approve the share: %d", code)
+		}
+		if code := approve(other.ID); code != http.StatusOK {
+			t.Fatalf("approve on new cluster = %d", code)
+		}
+		assertSharePolicies(t, db, other, db1, web, true)
+	})
+
+	t.Run("consumers must be able to use the cluster and providers cannot spam shares", func(t *testing.T) {
+		private := model.RuntimeCluster{ID: "clu_share_private", Name: "Private", Scope: "project"}
+		spam := model.Project{ID: "prj_share_spam", Identifier: "share-spam", Name: "Spam", KubernetesNamespace: "share-spam", DeleteStatus: "active"}
+		rows := []any{&private, &spam,
+			&model.ScopedResourceProjectBinding{ID: "srpb_share_private", ResourceType: "runtime_cluster", ResourceID: private.ID, ProjectID: spam.ID},
+			&model.ProjectMember{ID: "prjm_share_spam", ProjectID: spam.ID, UserID: provider.ID, Role: authz.ProjectRoleOwner},
+			&model.DeploymentTarget{ID: "dplt_share_private", ProjectID: spam.ID, ApplicationID: "app_share_private", Name: "prod", Stage: "prod", ClusterID: private.ID},
+			&model.DeploymentTarget{ID: "dplt_share_spam", ProjectID: spam.ID, ApplicationID: "app_share_spam", Name: "prod", Stage: "prod"},
+		}
+		for _, row := range rows {
+			if err := db.Create(row).Error; err != nil {
+				t.Fatal(err)
+			}
+		}
+		if status, code, _ := create(provider, spam.ID, "dplt_share_private", "share-web"); status != http.StatusBadRequest || code != "network_share.consumer_invalid" {
+			t.Fatalf("unbound consumer on project cluster = %d %s", status, code)
+		}
+		for index := 0; index < 20; index++ {
+			if err := db.Create(&model.NetworkServiceShare{ID: "nss_spam_" + string(rune('a'+index)), ProviderProjectID: spam.ID, DeploymentTargetID: "dplt_share_spam",
+				ConsumerProjectID: "prj_spam_" + string(rune('a'+index)), CreatedAt: time.Now(), UpdatedAt: time.Now()}).Error; err != nil {
+				t.Fatal(err)
+			}
+		}
+		if status, code, _ := create(provider, spam.ID, "dplt_share_spam", "share-web"); status != http.StatusBadRequest || code != "network_share.limit_exceeded" {
+			t.Fatalf("too many unaccepted shares = %d %s", status, code)
+		}
+	})
 }
 
 // assertSharePolicies 校验提供方与使用方渲染结果中是否包含共享放行策略。
@@ -191,4 +287,34 @@ func assertSharePolicies(t *testing.T, db *gorm.DB, cluster model.RuntimeCluster
 	if got := has(consumer, "luna-shared-egress-", provider.KubernetesNamespace); got != want {
 		t.Fatalf("consumer %s shared egress = %t, want %t", consumer.ID, got, want)
 	}
+}
+
+type shareListBody struct {
+	Total int64 `json:"total"`
+	Items []struct {
+		ID                  string `json:"id"`
+		Status              string `json:"status"`
+		Address             string `json:"address"`
+		ConsumerProjectName string `json:"consumerProjectName"`
+		RuntimeClusterID    string `json:"runtimeClusterId"`
+		RuntimeClusterName  string `json:"runtimeClusterName"`
+	} `json:"items"`
+}
+
+func listShares(t *testing.T, handler gin.HandlerFunc, user model.User, projectID, direction string) shareListBody {
+	t.Helper()
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/api/v1/projects/"+projectID+"/network-shares?direction="+direction+"&page=1&pageSize=20", nil)
+	ctx.Params = gin.Params{{Key: "projectId", Value: projectID}}
+	ctx.Set(currentUserContextKey, user)
+	handler(ctx)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("list %s %s = %d %s", projectID, direction, recorder.Code, recorder.Body.String())
+	}
+	var body shareListBody
+	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	return body
 }

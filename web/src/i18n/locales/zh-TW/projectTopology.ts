@@ -208,6 +208,8 @@ const projectTopology = {
     exceptionWholeProject: '整個專案空間',
   },
   networkShares: {
+    cluster: '叢集',
+    consumerHidden: '待對方確認後顯示',
     title: '跨專案共享',
     description: '把本專案空間的服務開放給其他專案空間存取，或使用其他專案空間共享給你的服務。只打通網路，不傳遞憑證；雙方位於同一叢集時生效，對方確認後才會放行。',
     loadFailed: '共享載入失敗，請重新整理後再試。',

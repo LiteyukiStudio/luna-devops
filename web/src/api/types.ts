@@ -1684,6 +1684,9 @@ export interface NetworkServiceShare {
   deploymentTargetId: string
   deploymentTargetName: string
   applicationName: string
+  /** 提供方部署配置当前所在集群；双方都部署在这个集群时共享才可达。 */
+  runtimeClusterId: string
+  runtimeClusterName: string
   consumerProjectId: string
   consumerProjectName: string
   address: string

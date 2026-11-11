@@ -20,32 +20,33 @@ import (
 )
 
 type Runner struct {
-	db                            *gorm.DB
-	secrets                       secret.Store
-	deployRolloutTimeoutSeconds   int64
-	certManagerClusterIssuer      string
-	publicBaseURL                 string
-	buildExecutorImage            string
-	buildCacheEnabled             bool
-	buildJobTimeoutSeconds        int64
-	buildJobTTLSeconds            int64
-	dnsResolver                   dnsprovider.Resolver
-	taskClient                    *tasks.Client
-	runAutomaticRetention         func(context.Context, time.Time) error
-	namespaceFactory              func(kubeconfig string) (kubeprovider.NamespaceManager, error)
-	kubernetesManagerFactory      func(target model.DeploymentTarget) (kubeprovider.NamespaceManager, error)
-	projectVolumeProviderFactory  func(context.Context, string) (kubeprovider.ProjectVolumeProvider, error)
-	volumeTransferProviderFactory func(context.Context, string) (kubeprovider.VolumeTransferProvider, error)
-	volumeService                 volumeWorkerService
-	volumeTaskEnqueuer            volumeTaskEnqueuer
-	networkPolicyProbeEnqueuer    networkPolicyProbeEnqueuer
-	volumeTransferJobImage        string
-	volumeTransferMaxBytes        int64
-	workerMetrics                 *observability.WorkerMetrics
-	personalEmailSender           func(context.Context, string, notification.RenderedMessage) (notification.SendResult, error)
-	personalEmailCooldown         func(context.Context, *gorm.DB) (time.Duration, error)
-	enqueueEmailDigest            func(context.Context, tasks.NotificationEmailDigestPayload) (*asynq.TaskInfo, error)
-	notificationDeliveryEnqueuer  notification.DeliveryEnqueuer
+	db                             *gorm.DB
+	secrets                        secret.Store
+	deployRolloutTimeoutSeconds    int64
+	certManagerClusterIssuer       string
+	publicBaseURL                  string
+	buildExecutorImage             string
+	buildCacheEnabled              bool
+	buildJobTimeoutSeconds         int64
+	buildJobTTLSeconds             int64
+	dnsResolver                    dnsprovider.Resolver
+	taskClient                     *tasks.Client
+	runAutomaticRetention          func(context.Context, time.Time) error
+	namespaceFactory               func(kubeconfig string) (kubeprovider.NamespaceManager, error)
+	kubernetesManagerFactory       func(target model.DeploymentTarget) (kubeprovider.NamespaceManager, error)
+	projectVolumeProviderFactory   func(context.Context, string) (kubeprovider.ProjectVolumeProvider, error)
+	volumeTransferProviderFactory  func(context.Context, string) (kubeprovider.VolumeTransferProvider, error)
+	volumeService                  volumeWorkerService
+	volumeTaskEnqueuer             volumeTaskEnqueuer
+	networkPolicyProbeEnqueuer     networkPolicyProbeEnqueuer
+	networkPolicyReconcileEnqueuer networkPolicyReconcileEnqueuer
+	volumeTransferJobImage         string
+	volumeTransferMaxBytes         int64
+	workerMetrics                  *observability.WorkerMetrics
+	personalEmailSender            func(context.Context, string, notification.RenderedMessage) (notification.SendResult, error)
+	personalEmailCooldown          func(context.Context, *gorm.DB) (time.Duration, error)
+	enqueueEmailDigest             func(context.Context, tasks.NotificationEmailDigestPayload) (*asynq.TaskInfo, error)
+	notificationDeliveryEnqueuer   notification.DeliveryEnqueuer
 }
 
 const (
@@ -109,6 +110,7 @@ func RunWithRedis(redisOptions redisconfig.Options, db *gorm.DB, options Options
 	runner.notificationDeliveryEnqueuer = runner.taskClient
 	runner.volumeTaskEnqueuer = runner.taskClient
 	runner.networkPolicyProbeEnqueuer = runner.taskClient
+	runner.networkPolicyReconcileEnqueuer = runner.taskClient
 	defer runner.taskClient.Close()
 	go runner.syncBuildJobStatus(ctx)
 

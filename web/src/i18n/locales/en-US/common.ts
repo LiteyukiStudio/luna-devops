@@ -176,7 +176,7 @@ const common = {
     title: 'Private network egress exceptions granted to this project space: {{count}}',
     member: 'New members can reach the granted internal addresses by deploying applications. Make sure they are trusted.',
     route: 'Once a route is public, outside requests may reach the granted internal addresses through this project’s applications. Do not turn an application into an internal proxy.',
-    share: 'A shared service could relay the granted private network access to other project spaces, so the share takes effect only after a cluster maintainer approves it.',
+    share: 'This project space holds private network egress exceptions. If the selected deployment target’s cluster has one, the share takes effect only after that cluster’s maintainer approves it, because a shared service could relay that access to other project spaces.',
   },
 }
 

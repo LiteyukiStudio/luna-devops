@@ -57,6 +57,9 @@ func (c *Client) ProbeNetworkPolicyEnforcement(ctx context.Context, image string
 
 	// busybox nc -lk 不能可靠地接受多次连接，用循环保证每次探测都有监听。
 	server := networkPolicyProbePod(namespace, "server", image, labels, []string{"sh", "-c", fmt.Sprintf("while true; do nc -l -p %d </dev/null >/dev/null 2>&1; done", networkPolicyProbePort)})
+	if err := ValidatePodIsolation(server.Spec); err != nil {
+		return NetworkPolicyProbeResult{}, err
+	}
 	if _, err := c.client.CoreV1().Pods(namespace).Create(ctx, server, metav1.CreateOptions{}); err != nil {
 		return NetworkPolicyProbeResult{}, err
 	}
@@ -171,6 +174,9 @@ func (c *Client) waitNetworkPolicyProbeServer(ctx context.Context, namespace str
 // runNetworkPolicyProbeClient 返回客户端是否以 0 退出。
 func (c *Client) runNetworkPolicyProbeClient(ctx context.Context, namespace, role, image string, labels map[string]string, script string) (bool, string, error) {
 	pod := networkPolicyProbePod(namespace, role, image, labels, []string{"sh", "-c", script})
+	if err := ValidatePodIsolation(pod.Spec); err != nil {
+		return false, "", err
+	}
 	if _, err := c.client.CoreV1().Pods(namespace).Create(ctx, pod, metav1.CreateOptions{}); err != nil {
 		return false, "", err
 	}

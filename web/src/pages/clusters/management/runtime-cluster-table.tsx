@@ -1,7 +1,9 @@
 import type { CurrentUser, Project, RuntimeCluster, RuntimeClusterPressure } from '@/api'
 import type { DataListColumn } from '@/components/common/data-list'
-import { FlaskConical, MoreHorizontal, Pencil, ShieldCheck, Trash2 } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
+import { FlaskConical, MoreHorizontal, Pencil, ShieldAlert, ShieldCheck, Trash2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { api } from '@/api'
 import { DataList } from '@/components/common/data-list'
 import { RuntimeClusterPressureRings } from '@/components/common/runtime-cluster-pressure'
 import { StatusBadge, StatusValueBadge } from '@/components/common/status-badge'
@@ -41,6 +43,9 @@ export function RuntimeClusterTable({ clusters, loading, pagination, pressureByC
           <div className="flex min-w-0 items-center gap-2">
             <span className="truncate font-medium">{item.name}</span>
             {item.isDefault && <StatusBadge tone="info">{t('clustersPage.defaultCluster')}</StatusBadge>}
+            {canManageCluster(item, user?.id, user?.role) && (item.deleteStatus ?? 'active') === 'active'
+              ? <PendingShareApprovalsBadge cluster={item} onOpen={onEgressExceptions} />
+              : null}
           </div>
           <p className="mt-0.5 truncate text-xs text-muted-foreground">
             {scopeLabel(item, projectMap, t)}
@@ -142,5 +147,26 @@ export function RuntimeClusterTable({ clusters, loading, pagination, pressureByC
       }}
       rowKey={item => item.id}
     />
+  )
+}
+
+/** 集群维护者可见：有待批准的跨项目共享时提示数量，点击打开“出站例外”窗口处理。 */
+function PendingShareApprovalsBadge({ cluster, onOpen }: { cluster: RuntimeCluster, onOpen: (cluster: RuntimeCluster) => void }) {
+  const { t } = useTranslation()
+  // 与审批列表共用前缀，批准后一并失效刷新。
+  const approvals = useQuery({
+    queryKey: ['runtime-cluster-network-share-approvals', cluster.id, 'count'],
+    queryFn: () => api.listRuntimeClusterNetworkShareApprovals(cluster.id, { page: 1, pageSize: 1 }),
+  })
+  const count = approvals.data?.total ?? 0
+  if (count === 0)
+    return null
+  return (
+    <Button className="h-auto p-0" size="sm" variant="link" onClick={() => onOpen(cluster)}>
+      <StatusBadge tone="warning">
+        <ShieldAlert className="size-3" />
+        {t('clustersPage.shareApprovals.pendingCount', { count })}
+      </StatusBadge>
+    </Button>
   )
 }

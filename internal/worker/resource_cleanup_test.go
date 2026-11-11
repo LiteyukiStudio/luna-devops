@@ -203,7 +203,7 @@ func TestFinishProjectDeleteSoftDeletesRuntimeDesiredState(t *testing.T) {
 		}
 	}
 
-	if err := (&Runner{db: db}).finishProjectDelete(project); err != nil {
+	if err := (&Runner{db: db}).finishProjectDelete(context.Background(), project); err != nil {
 		t.Fatalf("finishProjectDelete() error = %v", err)
 	}
 

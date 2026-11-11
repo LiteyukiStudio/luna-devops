@@ -10,6 +10,7 @@ import (
 
 	"github.com/LiteyukiStudio/devops/internal/model"
 	kubeprovider "github.com/LiteyukiStudio/devops/internal/provider/kubernetes"
+	"github.com/LiteyukiStudio/devops/internal/runtimecluster"
 	"github.com/LiteyukiStudio/devops/internal/tasks"
 	"github.com/hibiken/asynq"
 	"gorm.io/gorm"
@@ -179,7 +180,8 @@ func (r *Runner) markApplicationDeleteFailed(ctx context.Context, applicationID,
 
 func (r *Runner) finishApplicationDelete(ctx context.Context, app model.Application) error {
 	finishedAt := time.Now()
-	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	var sharePeers []string
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := ensureApplicationHasNoIncomingBindings(tx, app); err != nil {
 			return err
 		}
@@ -194,9 +196,14 @@ func (r *Runner) finishApplicationDelete(ctx context.Context, app model.Applicat
 		if err := tx.Where("project_id = ? and application_id = ?", app.ProjectID, app.ID).Delete(&model.DeploymentTargetHookBinding{}).Error; err != nil {
 			return err
 		}
-		// 应用删除时其部署配置提供的跨项目共享一并删除。
-		if err := tx.Where("deployment_target_id in (?)", tx.Model(&model.DeploymentTarget{}).Select("id").Where("project_id = ? and application_id = ?", app.ProjectID, app.ID)).
-			Delete(&model.NetworkServiceShare{}).Error; err != nil {
+		// 应用删除时其部署配置提供的跨项目共享一并删除，提交后立即重新下发对端策略。
+		appTargets := tx.Model(&model.DeploymentTarget{}).Select("id").Where("project_id = ? and application_id = ?", app.ProjectID, app.ID)
+		peers, err := runtimecluster.SharePeerProjectIDs(tx, "deployment_target_id in (?)", appTargets)
+		if err != nil {
+			return err
+		}
+		sharePeers = peers
+		if err := tx.Where("deployment_target_id in (?)", appTargets).Delete(&model.NetworkServiceShare{}).Error; err != nil {
 			return err
 		}
 		if err := tx.Where("project_id = ? and application_id = ?", app.ProjectID, app.ID).Delete(&model.DeploymentTarget{}).Error; err != nil {
@@ -218,4 +225,9 @@ func (r *Runner) finishApplicationDelete(ctx context.Context, app model.Applicat
 		}
 		return tx.Delete(&app).Error
 	})
+	if err != nil {
+		return err
+	}
+	r.reconcileSharePeers(ctx, sharePeers, "")
+	return nil
 }

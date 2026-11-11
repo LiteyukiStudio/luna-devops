@@ -83,8 +83,12 @@ function ShareList({ canManage, direction, projectId }: { canManage: boolean, di
           {
             key: 'project',
             header: t(`projectTopology.networkShares.${direction}.project`),
-            render: share => direction === 'provided' ? share.consumerProjectName : share.providerProjectName,
+            // 使用方确认前服务端不回显使用方名称。
+            render: share => direction === 'provided'
+              ? share.consumerProjectName || <span className="text-muted-foreground">{t('projectTopology.networkShares.consumerHidden')}</span>
+              : share.providerProjectName,
           },
+          { key: 'cluster', header: t('projectTopology.networkShares.cluster'), render: share => share.runtimeClusterName || '-' },
           {
             key: 'status',
             header: t('common.status'),
@@ -191,11 +195,13 @@ function ShareFormDialog({ onOpenChange, onSaved, projectId }: { onOpenChange: (
   }), [t])
   const form = useForm<NetworkServiceSharePayload>({ resolver: zodResolver(schema), defaultValues: { deploymentTargetId: '', consumerProjectIdentifier: '' } })
   const topology = useQuery({ queryKey: ['project-topology', projectId, 'network-share-targets'], queryFn: () => api.getProjectTopology(projectId) })
-  const targetOptions = (topology.data?.nodes ?? []).flatMap(node => node.deploymentTargets.map(target => ({
-    label: `${node.name} / ${target.name}`,
-    value: target.id,
-    description: target.stage,
-  })))
+  // 删除中的部署配置不能共享。
+  const targets = (topology.data?.nodes ?? []).flatMap(node => node.deploymentTargets
+    .filter(target => ['', 'active', 'delete_failed'].includes(target.deleteStatus ?? ''))
+    .map(target => ({ ...target, label: `${node.name} / ${target.name}` })))
+  const targetOptions = targets.map(target => ({ label: target.label, value: target.id, description: target.stage }))
+  const selectedTargetId = form.watch('deploymentTargetId')
+  const selectedClusterId = targets.find(target => target.id === selectedTargetId)?.clusterId
   const save = useMutation({
     mutationFn: (values: NetworkServiceSharePayload) => api.createProjectNetworkShare(projectId, values),
     onSuccess: (share) => {
@@ -218,7 +224,7 @@ function ShareFormDialog({ onOpenChange, onSaved, projectId }: { onOpenChange: (
             <DialogTitle>{t('projectTopology.networkShares.createTitle')}</DialogTitle>
             <DialogDescription>{t('projectTopology.networkShares.createDescription')}</DialogDescription>
           </DialogHeader>
-          <EgressExceptionWarning context="share" projectId={projectId} />
+          <EgressExceptionWarning clusterId={selectedClusterId || undefined} context="share" projectId={projectId} />
           <FormField error={errors.deploymentTargetId?.message} label={t('projectTopology.networkShares.target')} required>
             <Controller
               control={form.control}

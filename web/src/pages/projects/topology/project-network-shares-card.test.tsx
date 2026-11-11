@@ -30,6 +30,8 @@ const share: NetworkServiceShare = {
   deploymentTargetId: 'dplt_auth',
   deploymentTargetName: 'prod',
   applicationName: 'auth-api',
+  runtimeClusterId: 'clu_a',
+  runtimeClusterName: 'Cluster A',
   consumerProjectId: 'prj_demo',
   consumerProjectName: 'Demo',
   address: 'auth-api.prj-auth.svc',
@@ -55,7 +57,10 @@ describe('project network shares card', () => {
     await i18next.changeLanguage('en-US')
     mocks.listProjectNetworkShares.mockImplementation((_projectId: string, direction: string) => Promise.resolve(page(direction === 'consumed' ? [share] : [])))
     mocks.getProjectNetworkPolicy.mockResolvedValue({ ingressMode: 'isolated', egressMode: 'internet', egressAllowlist: '', egressExceptions: [] })
-    mocks.getProjectTopology.mockResolvedValue({ nodes: [{ id: 'app_db', name: 'postgres', deploymentTargets: [{ id: 'dplt_db', name: 'prod', stage: 'prod' }] }], edges: [] })
+    mocks.getProjectTopology.mockResolvedValue({ nodes: [{ id: 'app_db', name: 'postgres', deploymentTargets: [
+      { id: 'dplt_db', name: 'prod', stage: 'prod', clusterId: 'clu_a', deleteStatus: 'active' },
+      { id: 'dplt_old', name: 'legacy', stage: 'legacy', clusterId: 'clu_a', deleteStatus: 'deleting' },
+    ] }], edges: [] })
   })
 
   it('accepts a service shared with the project and shows its in-cluster address', async () => {
@@ -74,10 +79,28 @@ describe('project network shares card', () => {
     await user.click(await screen.findByRole('button', { name: 'Share service' }))
     const dialog = await screen.findByRole('dialog')
     await user.click(within(dialog).getByRole('button', { name: 'Deployment target' }))
+    expect(screen.queryByRole('button', { name: /postgres \/ legacy/ })).not.toBeInTheDocument()
     await user.click(await screen.findByRole('button', { name: /postgres \/ prod/ }))
     await user.type(within(dialog).getByRole('textbox', { name: /^Consumer project space identifier/ }), 'web-team')
     await user.click(within(dialog).getByRole('button', { name: 'Share service' }))
     await waitFor(() => expect(mocks.createProjectNetworkShare).toHaveBeenCalledWith('prj_demo', { deploymentTargetId: 'dplt_db', consumerProjectIdentifier: 'web-team' }))
+  })
+
+  it('warns only about egress exceptions on the selected target cluster', async () => {
+    mocks.getProjectNetworkPolicy.mockResolvedValue({
+      ingressMode: 'isolated',
+      egressMode: 'internet',
+      egressAllowlist: '',
+      egressExceptions: [{ id: 'nex_b', runtimeClusterId: 'clu_b', name: 'idc', cidr: '10.0.0.0/24', ports: '', protocol: 'tcp', reason: 'r', deploymentTargetIds: [], includeBuilds: false }],
+    })
+    renderCard(true)
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: 'Share service' }))
+    // 未选部署配置时按全部例外提示。
+    expect(await screen.findByText(/egress exceptions granted to this project space: 1/i)).toBeInTheDocument()
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Deployment target' }))
+    await user.click(await screen.findByRole('button', { name: /postgres \/ prod/ }))
+    await waitFor(() => expect(screen.queryByText(/egress exceptions granted to this project space/i)).not.toBeInTheDocument())
   })
 
   it('hides management actions without project management permission', async () => {

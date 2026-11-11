@@ -14,6 +14,7 @@ export interface ProjectTopologyDeploymentTarget {
   stage: string
   clusterId: string
   enabled: boolean
+  deleteStatus: string
 }
 
 export interface ProjectTopologyNode {

@@ -243,6 +243,7 @@ const clustersPage = {
     providedShares: 'Shared services: {{count}}',
   },
   shareApprovals: {
+    pendingCount: 'Shares awaiting approval: {{count}}',
     title: 'Cross-project shares awaiting approval',
     description: 'These project spaces hold egress exceptions on this cluster, so their shared services could relay private network access to other project spaces. Approve only when the shared service will not relay that access.',
     provider: 'Provider',

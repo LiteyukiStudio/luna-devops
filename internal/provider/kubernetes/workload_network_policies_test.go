@@ -551,10 +551,14 @@ func TestRenderSharedServices(t *testing.T) {
 	if !ok || ingress.Spec.PodSelector.MatchLabels[DeploymentTargetIDLabel] != "dt_db" {
 		t.Fatalf("shared target must accept consumer namespaces: %#v", ingress.Spec.PodSelector)
 	}
+	// 提供方的构建、卷迁移与 Hook Pod 也带部署配置标签，不能被共享入站选中。
+	assertExcludesBuildAndHook(t, ingress.Spec.PodSelector, true)
 	from := ingress.Spec.Ingress[0].From
-	if len(from) != 1 || from[0].PodSelector != nil {
-		t.Fatalf("shared ingress must select whole consumer namespaces only: %#v", from)
+	if len(from) != 1 || from[0].PodSelector == nil {
+		t.Fatalf("shared ingress must narrow consumer pods: %#v", from)
 	}
+	// 使用方构建与卷迁移 Pod 不能访问共享服务；使用方 Hook 与应用同属发布内容，允许访问。
+	assertExcludesBuildAndHook(t, *from[0].PodSelector, false)
 	if expr := from[0].NamespaceSelector.MatchExpressions[0]; expr.Key != "kubernetes.io/metadata.name" || !slices.Equal(expr.Values, []string{"prj-api", "prj-web"}) {
 		t.Fatalf("consumer namespaces must be selected by the immutable name label: %#v", expr)
 	}
@@ -565,13 +569,12 @@ func TestRenderSharedServices(t *testing.T) {
 	if !ok {
 		t.Fatal("consumed shares must render egress even when the project egress mode is none")
 	}
-	if expr := egress.Spec.PodSelector.MatchExpressions; len(expr) != 1 || expr[0].Key != ScopeLabel || expr[0].Operator != metav1.LabelSelectorOpNotIn {
-		t.Fatalf("shared egress must exclude build and volume transfer pods: %#v", expr)
-	}
+	assertExcludesBuildAndHook(t, egress.Spec.PodSelector, false)
 	peer := egress.Spec.Egress[0].To[0]
 	if peer.NamespaceSelector.MatchLabels["kubernetes.io/metadata.name"] != "prj-auth" || peer.PodSelector.MatchLabels[DeploymentTargetIDLabel] != "dt_auth" {
 		t.Fatalf("shared egress must only reach the provider target pods: %#v", peer)
 	}
+	assertExcludesBuildAndHook(t, *peer.PodSelector, true)
 	count := 0
 	for name := range byName {
 		if len(name) > len(sharedEgressPolicyPrefix) && name[:len(sharedEgressPolicyPrefix)] == sharedEgressPolicyPrefix {
@@ -605,5 +608,22 @@ func TestEnsureNamespaceToleratesConcurrentCreate(t *testing.T) {
 	})
 	if err := NewClientForInterface(clientset).EnsureNamespace(context.Background(), "prj-demo", labels); err != nil {
 		t.Fatalf("concurrent namespace creation must succeed, got %v", err)
+	}
+}
+
+// assertExcludesBuildAndHook 校验选择器排除构建与卷迁移 Pod；excludeHooks 时还要求排除 Hook Pod。
+func assertExcludesBuildAndHook(t *testing.T, selector metav1.LabelSelector, excludeHooks bool) {
+	t.Helper()
+	build, hook := false, false
+	for _, expr := range selector.MatchExpressions {
+		if expr.Key == ScopeLabel && expr.Operator == metav1.LabelSelectorOpNotIn && slices.Contains(expr.Values, "build") && slices.Contains(expr.Values, volumeTransferScope) {
+			build = true
+		}
+		if expr.Key == HookRunIDLabel && expr.Operator == metav1.LabelSelectorOpDoesNotExist {
+			hook = true
+		}
+	}
+	if !build || hook != excludeHooks {
+		t.Fatalf("selector build excluded=%t hook excluded=%t (want hook excluded=%t): %#v", build, hook, excludeHooks, selector)
 	}
 }

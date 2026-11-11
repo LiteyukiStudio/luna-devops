@@ -22,7 +22,6 @@
 
 - [ ] 平台控制面（API、PostgreSQL、Redis）不在私网时的显式硬底线；CNI 支持时评估改用 BaselineAdminNetworkPolicy。
 - [ ] 构建 Pod 移出项目命名空间（需要 Unconfined seccomp/AppArmor）后，为项目命名空间启用 Pod Security `enforce=baseline`，作为平台生成 Pod 隔离校验之外的集群侧兜底。
-- [ ] 共享提供方部署配置迁移到另一个集群、且提供方在新集群持有出站例外时，重新要求集群维护者批准（当前只在创建共享时判断）。
 - [ ] 同步触发补强：配置变更经 outbox 投递（替代当前入队失败依赖周期兜底），节点变化由 informer 即时触发，漂移修正写审计；前端增加“同步中”状态。
 - [ ] 网络隔离上线说明（含构建出站从 `BUILD_EGRESS_MODE` / `BUILD_*_EGRESS_*` 迁到集群配置，升级后需在集群页重新填写）：升级后部署需要集群凭据能读取 Node 与 `default/kubernetes` 端点并管理项目命名空间 NetworkPolicy；依赖其他命名空间服务或私网数据库的已有应用会被阻断，需在发布说明写明并给出排障路径。
 - [ ] apiserver 地址改读 EndpointSlice（`Endpoints` 已弃用）。

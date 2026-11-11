@@ -243,6 +243,7 @@ const clustersPage = {
     providedShares: '对外共享 {{count}} 个服务',
   },
   shareApprovals: {
+    pendingCount: '共享待批准 {{count}}',
     title: '有跨项目共享等待批准',
     description: '以下项目空间持有本集群的出站例外，共享出去的服务可能把内网访问转给其他项目空间。确认共享服务不会转发内网访问后再批准。',
     provider: '提供方',

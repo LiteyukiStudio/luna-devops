@@ -279,7 +279,7 @@ WHERE namespace.nspname = current_schema()
 	assertSingleColumnMigration(t, testDB, runner, 128, "projects", "network_ingress_mode")
 	assertSingleColumnMigration(t, testDB, runner, 128, "deployment_targets", "internal_only")
 	assertSingleColumnMigration(t, testDB, runner, 129, "network_egress_exception_grants", "include_builds")
-	assertSingleColumnMigration(t, testDB, runner, 130, "network_service_shares", "approval_required")
+	assertSingleColumnMigration(t, testDB, runner, 130, "network_service_shares", "approved_runtime_cluster_id")
 	assertDirtyMigrationFailsClosed(t, testDB)
 }
 

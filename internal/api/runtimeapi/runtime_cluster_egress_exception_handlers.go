@@ -101,7 +101,12 @@ func (h *Handlers) ListRuntimeClusterEgressExceptions(ctx *gin.Context) {
 		writeError(ctx, http.StatusInternalServerError, "egress exception lookup failed")
 		return
 	}
-	ctx.JSON(http.StatusOK, paginatedResponse(h.egressExceptionResponses(ctx, exceptions), total, pagination))
+	items, err := h.egressExceptionResponses(ctx, cluster, exceptions)
+	if err != nil {
+		writeError(ctx, http.StatusInternalServerError, "egress exception lookup failed")
+		return
+	}
+	ctx.JSON(http.StatusOK, paginatedResponse(items, total, pagination))
 }
 
 func (h *Handlers) CreateRuntimeClusterEgressException(ctx *gin.Context) {
@@ -123,7 +128,7 @@ func (h *Handlers) CreateRuntimeClusterEgressException(ctx *gin.Context) {
 		return
 	}
 	h.finishEgressExceptionMutation(ctx, user, cluster, "create", exception)
-	ctx.JSON(http.StatusCreated, h.egressExceptionResponses(ctx, []model.NetworkEgressException{exception})[0])
+	h.writeEgressException(ctx, http.StatusCreated, cluster, exception)
 }
 
 func (h *Handlers) UpdateRuntimeClusterEgressException(ctx *gin.Context) {
@@ -171,7 +176,7 @@ func (h *Handlers) UpdateRuntimeClusterEgressException(ctx *gin.Context) {
 		return
 	}
 	h.finishEgressExceptionMutation(ctx, user, cluster, "update", exception)
-	ctx.JSON(http.StatusOK, h.egressExceptionResponses(ctx, []model.NetworkEgressException{exception})[0])
+	h.writeEgressException(ctx, http.StatusOK, cluster, exception)
 }
 
 func (h *Handlers) DeleteRuntimeClusterEgressException(ctx *gin.Context) {
@@ -274,32 +279,10 @@ func (h *Handlers) egressExceptionGrants(ctx *gin.Context, cluster model.Runtime
 	if len(inputs) > maxEgressExceptionGrants {
 		return invalid(fmt.Sprintf("at most %d grants are allowed", maxEgressExceptionGrants))
 	}
-	bound := map[string]bool{}
-	if cluster.Scope == "project" {
-		for _, projectID := range h.scopedResourceProjectIDs(scopedResourceRuntimeCluster, cluster.ID, ctx.Request.Context()) {
-			bound[projectID] = true
-		}
-	}
-	// 只能授权给实际能在该集群部署的项目空间：项目级集群看绑定，个人集群要求集群所有者是项目成员。
-	// 不存在、已删除与无权使用统一返回同一错误，避免借此探测项目 ID。
+	// 只能授权给实际能在该集群部署的项目空间。不存在、已删除与无权使用统一返回同一错误，避免借此探测项目 ID。
 	usable := func(projectID string) bool {
-		var project model.Project
-		if err := h.dbFor(ctx).Select("id", "delete_status").Where("id = ?", projectID).Take(&project).Error; err != nil || !model.DeleteStatusActive(project.DeleteStatus) {
-			return false
-		}
-		switch cluster.Scope {
-		case "global":
-			return true
-		case "project":
-			return bound[projectID]
-		case "user":
-			var members int64
-			if err := h.dbFor(ctx).Model(&model.ProjectMember{}).Where("project_id = ? and user_id = ?", projectID, cluster.OwnerRef).Count(&members).Error; err != nil {
-				return false
-			}
-			return members > 0
-		}
-		return false
+		ok, err := runtimecluster.ProjectCanDeployToCluster(h.dbFor(ctx), cluster, projectID)
+		return err == nil && ok
 	}
 	seen := map[string]bool{}
 	grants := make([]model.NetworkEgressExceptionGrant, 0, len(inputs))
@@ -331,7 +314,7 @@ func (h *Handlers) egressExceptionGrants(ctx *gin.Context, cluster model.Runtime
 }
 
 // egressExceptionResponses 附带授权项目空间的名称，界面不必加载全部项目空间来显示授权。
-func (h *Handlers) egressExceptionResponses(ctx *gin.Context, exceptions []model.NetworkEgressException) []egressExceptionResponse {
+func (h *Handlers) egressExceptionResponses(ctx *gin.Context, cluster model.RuntimeCluster, exceptions []model.NetworkEgressException) ([]egressExceptionResponse, error) {
 	projectIDs := []string{}
 	for _, exception := range exceptions {
 		for _, grant := range exception.Grants {
@@ -341,23 +324,30 @@ func (h *Handlers) egressExceptionResponses(ctx *gin.Context, exceptions []model
 	names := map[string]string{}
 	if len(projectIDs) > 0 {
 		var projects []model.Project
-		if err := h.dbFor(ctx).Select("id", "name").Where("id in ?", normalizeStringList(projectIDs)).Find(&projects).Error; err == nil {
-			for _, project := range projects {
-				names[project.ID] = project.Name
-			}
+		if err := h.dbFor(ctx).Select("id", "name").Where("id in ?", normalizeStringList(projectIDs)).Find(&projects).Error; err != nil {
+			return nil, err
+		}
+		for _, project := range projects {
+			names[project.ID] = project.Name
 		}
 	}
+	// 只统计提供方部署配置位于本集群的共享，其他集群的共享不会转发本集群的例外。
 	shares := map[string]int{}
 	if len(projectIDs) > 0 {
+		query, err := runtimecluster.ServiceSharesOnCluster(ctx.Request.Context(), h.dbFor(ctx), cluster)
+		if err != nil {
+			return nil, err
+		}
 		var counts []struct {
 			ProjectID string `gorm:"column:project_id"`
 			Count     int    `gorm:"column:count"`
 		}
-		if err := h.dbFor(ctx).Model(&model.NetworkServiceShare{}).Select("provider_project_id as project_id, count(*) as count").
-			Where("provider_project_id in ?", normalizeStringList(projectIDs)).Group("provider_project_id").Scan(&counts).Error; err == nil {
-			for _, row := range counts {
-				shares[row.ProjectID] = row.Count
-			}
+		if err := query.Select("s.provider_project_id as project_id, count(*) as count").
+			Where("s.provider_project_id in ?", normalizeStringList(projectIDs)).Group("s.provider_project_id").Scan(&counts).Error; err != nil {
+			return nil, err
+		}
+		for _, row := range counts {
+			shares[row.ProjectID] = row.Count
 		}
 	}
 	items := make([]egressExceptionResponse, 0, len(exceptions))
@@ -368,7 +358,16 @@ func (h *Handlers) egressExceptionResponses(ctx *gin.Context, exceptions []model
 		}
 		items = append(items, item)
 	}
-	return items
+	return items, nil
+}
+
+func (h *Handlers) writeEgressException(ctx *gin.Context, status int, cluster model.RuntimeCluster, exception model.NetworkEgressException) {
+	items, err := h.egressExceptionResponses(ctx, cluster, []model.NetworkEgressException{exception})
+	if err != nil {
+		writeError(ctx, http.StatusInternalServerError, "egress exception lookup failed")
+		return
+	}
+	ctx.JSON(status, items[0])
 }
 
 func egressExceptionResponseFrom(exception model.NetworkEgressException, projectNames map[string]string) egressExceptionResponse {
