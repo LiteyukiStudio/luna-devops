@@ -172,6 +172,11 @@ const common = {
     pageInfo: 'Page {{page}} / {{totalPages}}, {{total}} items',
     pageInfoWithUnit: 'Page {{page}} / {{totalPages}}, {{total}} {{unit}}',
   },
+  egressExceptionWarning: {
+    title: 'Private network egress exceptions granted to this project space: {{count}}',
+    member: 'New members can reach the granted internal addresses by deploying applications. Make sure they are trusted.',
+    route: 'Once a route is public, outside requests may reach the granted internal addresses through this project’s applications. Do not turn an application into an internal proxy.',
+  },
 }
 
 export default common

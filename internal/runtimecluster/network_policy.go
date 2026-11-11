@@ -88,6 +88,49 @@ func ParseEgressAllowlist(raw string) ([]kubeprovider.EgressAllowRule, error) {
 	return rules, nil
 }
 
+// grantedEgressExceptions 读取本集群授权给项目空间的出站例外。
+func grantedEgressExceptions(ctx context.Context, db *gorm.DB, clusterID string, projectID string) ([]kubeprovider.EgressException, error) {
+	// 显式列名：GORM 会把 CIDR、IDs 这类缩写推导成 c_id_r、i_ds，与真实列名不一致。
+	var rows []struct {
+		ID                  string `gorm:"column:id"`
+		CIDR                string `gorm:"column:cidr"`
+		Ports               string `gorm:"column:ports"`
+		Protocol            string `gorm:"column:protocol"`
+		DeploymentTargetIDs string `gorm:"column:deployment_target_ids"`
+		IncludeBuilds       bool   `gorm:"column:include_builds"`
+	}
+	if err := db.WithContext(ctx).Table("network_egress_exception_grants as g").
+		Select("e.id, e.cidr, e.ports, e.protocol, g.deployment_target_ids, g.include_builds").
+		Joins("join network_egress_exceptions e on e.id = g.exception_id").
+		Where("e.runtime_cluster_id = ? and g.project_id = ?", clusterID, projectID).
+		Order("e.id asc").Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	result := make([]kubeprovider.EgressException, 0, len(rows))
+	for _, row := range rows {
+		result = append(result, kubeprovider.EgressException{
+			ID:            row.ID,
+			CIDR:          row.CIDR,
+			Ports:         BuildPrivateEgressPorts(row.Ports),
+			Protocol:      row.Protocol,
+			TargetIDs:     SplitIDList(row.DeploymentTargetIDs),
+			IncludeBuilds: row.IncludeBuilds,
+		})
+	}
+	return result, nil
+}
+
+// SplitIDList 解析逗号分隔的 ID 列表。
+func SplitIDList(raw string) []string {
+	result := []string{}
+	for _, item := range strings.Split(raw, ",") {
+		if item = strings.TrimSpace(item); item != "" {
+			result = append(result, item)
+		}
+	}
+	return result
+}
+
 // NetworkBlockedCIDRs 解析管理员追加的出站拒绝网段（每行一个）。
 func NetworkBlockedCIDRs(raw string) []string {
 	result := []string{}
@@ -132,6 +175,10 @@ func DesiredWorkloadNetworkPolicies(ctx context.Context, db *gorm.DB, cluster mo
 	for _, binding := range bindings {
 		dependencies[binding.TargetDeploymentTargetID] = append(dependencies[binding.TargetDeploymentTargetID], binding.SourceDeploymentTargetID)
 	}
+	exceptions, err := grantedEgressExceptions(ctx, db, cluster.ID, projectID)
+	if err != nil {
+		return nil, err
+	}
 	var trusted []string
 	if err := db.WithContext(ctx).Model(&model.SystemComponentInstallation{}).
 		Where("runtime_cluster_id = ? and project_id = ? and namespace = ? and deployment_target_id <> ''", cluster.ID, projectID, namespace).
@@ -151,10 +198,21 @@ func DesiredWorkloadNetworkPolicies(ctx context.Context, db *gorm.DB, cluster mo
 		InternalTargetIDs:          internal,
 		EgressMode:                 project.NetworkEgressMode,
 		EgressAllowlist:            allowlist,
+		EgressExceptions:           exceptions,
 		BuildEgress: kubeprovider.BuildEgressInput{
 			Permissive:   strings.TrimSpace(cluster.BuildEgressMode) == BuildEgressPermissive,
 			PrivateCIDRs: NetworkBlockedCIDRs(cluster.BuildPrivateEgressCIDRs),
 			PrivatePorts: BuildPrivateEgressPorts(cluster.BuildPrivateEgressPorts),
 		},
 	})
+}
+
+// EgressExceptionAuditMarker 返回审计中的出站例外标记，供成员变更与访问入口审计标出防跳板风险；
+// 读取失败时标为 unknown，不把失败当作“没有例外”。
+func EgressExceptionAuditMarker(db *gorm.DB, projectID string) string {
+	var count int64
+	if err := db.Table("network_egress_exception_grants").Where("project_id = ?", projectID).Count(&count).Error; err != nil {
+		return "egressExceptions=unknown"
+	}
+	return fmt.Sprintf("egressExceptions=%d", count)
 }

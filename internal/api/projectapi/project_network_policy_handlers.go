@@ -11,6 +11,7 @@ import (
 	kubeprovider "github.com/LiteyukiStudio/devops/internal/provider/kubernetes"
 	"github.com/LiteyukiStudio/devops/internal/runtimecluster"
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 // projectNetworkPolicy 是项目空间网络模式；只能比集群默认更严格，因此项目管理员即可修改。
@@ -18,6 +19,50 @@ type projectNetworkPolicy struct {
 	IngressMode     string `json:"ingressMode"`
 	EgressMode      string `json:"egressMode"`
 	EgressAllowlist string `json:"egressAllowlist"`
+	// EgressExceptions 是平台管理员授权给本项目空间的出站例外，只读；忽略请求中的该字段。
+	EgressExceptions []projectEgressException `json:"egressExceptions"`
+}
+
+type projectEgressException struct {
+	ID                  string   `json:"id"`
+	RuntimeClusterID    string   `json:"runtimeClusterId"`
+	Name                string   `json:"name"`
+	CIDR                string   `json:"cidr"`
+	Ports               string   `json:"ports"`
+	Protocol            string   `json:"protocol"`
+	Reason              string   `json:"reason"`
+	DeploymentTargetIDs []string `json:"deploymentTargetIds"`
+	IncludeBuilds       bool     `json:"includeBuilds"`
+}
+
+// projectEgressExceptions 读取授权给项目空间的出站例外。
+func projectEgressExceptions(db *gorm.DB, projectID string) ([]projectEgressException, error) {
+	// 显式列名：GORM 会把 CIDR、IDs 这类缩写推导成 c_id_r、i_ds，与真实列名不一致。
+	var rows []struct {
+		ID                  string `gorm:"column:id"`
+		RuntimeClusterID    string `gorm:"column:runtime_cluster_id"`
+		Name                string `gorm:"column:name"`
+		CIDR                string `gorm:"column:cidr"`
+		Ports               string `gorm:"column:ports"`
+		Protocol            string `gorm:"column:protocol"`
+		Reason              string `gorm:"column:reason"`
+		DeploymentTargetIDs string `gorm:"column:deployment_target_ids"`
+		IncludeBuilds       bool   `gorm:"column:include_builds"`
+	}
+	if err := db.Table("network_egress_exception_grants as g").
+		Select("e.id, e.runtime_cluster_id, e.name, e.cidr, e.ports, e.protocol, e.reason, g.deployment_target_ids, g.include_builds").
+		Joins("join network_egress_exceptions e on e.id = g.exception_id").
+		Where("g.project_id = ?", projectID).Order("e.name asc, e.id asc").Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	result := make([]projectEgressException, 0, len(rows))
+	for _, row := range rows {
+		result = append(result, projectEgressException{
+			ID: row.ID, RuntimeClusterID: row.RuntimeClusterID, Name: row.Name, CIDR: row.CIDR, Ports: row.Ports,
+			Protocol: row.Protocol, Reason: row.Reason, DeploymentTargetIDs: runtimecluster.SplitIDList(row.DeploymentTargetIDs), IncludeBuilds: row.IncludeBuilds,
+		})
+	}
+	return result, nil
 }
 
 func (h *Handler) GetProjectNetworkPolicy(ctx *gin.Context) {
@@ -25,10 +70,16 @@ func (h *Handler) GetProjectNetworkPolicy(ctx *gin.Context) {
 	if !ok {
 		return
 	}
+	exceptions, err := projectEgressExceptions(h.dbFor(ctx), project.ID)
+	if err != nil {
+		writeError(ctx, http.StatusInternalServerError, "egress exception lookup failed")
+		return
+	}
 	ctx.JSON(http.StatusOK, projectNetworkPolicy{
-		IngressMode:     project.NetworkIngressMode,
-		EgressMode:      project.NetworkEgressMode,
-		EgressAllowlist: project.NetworkEgressAllowlist,
+		IngressMode:      project.NetworkIngressMode,
+		EgressMode:       project.NetworkEgressMode,
+		EgressAllowlist:  project.NetworkEgressAllowlist,
+		EgressExceptions: exceptions,
 	})
 }
 
@@ -77,7 +128,12 @@ func (h *Handler) UpdateProjectNetworkPolicy(ctx *gin.Context) {
 	h.auditWithContext(user.ID, "project.network_policy.update", project.ID, true,
 		fmt.Sprintf("ingress=%s egress=%s allowlistEntries=%d", input.IngressMode, input.EgressMode, entries), ctx.Request.Context())
 	h.host.EnqueueNetworkPolicyProjectReconcile(ctx.Request.Context(), project.ID)
-	ctx.JSON(http.StatusOK, projectNetworkPolicy{IngressMode: input.IngressMode, EgressMode: input.EgressMode, EgressAllowlist: allowlist})
+	exceptions, err := projectEgressExceptions(h.dbFor(ctx), project.ID)
+	if err != nil {
+		writeError(ctx, http.StatusInternalServerError, "egress exception lookup failed")
+		return
+	}
+	ctx.JSON(http.StatusOK, projectNetworkPolicy{IngressMode: input.IngressMode, EgressMode: input.EgressMode, EgressAllowlist: allowlist, EgressExceptions: exceptions})
 }
 
 // normalizeEgressAllowlist 校验并规范化出站白名单；整体落在平台始终拒绝的网段内的条目不可能生效，直接拒绝。

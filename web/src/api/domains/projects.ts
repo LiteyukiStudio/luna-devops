@@ -1,4 +1,4 @@
-import type { AppTemplate, AppTemplateInstallPayload, AppTemplateInstallResponse, AppTemplateSummary, BillingDeploymentSpend, BillingLedgerEntry, BillingListParams, BillingPeriodParams, BillingRateRule, BillingRateRulePayload, BillingSummary, BillingUsageRecord, BillingWalletTransactionPayload, GatewayTrafficStatus, InboxActionRequest, PaginatedResponse, PaginationParams, Project, ProjectListParams, ProjectMember, ProjectMemberCandidate, ProjectNetworkPolicy, ProjectOverview, ProjectPin, ResultVisibility, SystemComponentInstallPayload, SystemComponentInstallResponse } from '../types'
+import type { AppTemplate, AppTemplateInstallPayload, AppTemplateInstallResponse, AppTemplateSummary, BillingDeploymentSpend, BillingLedgerEntry, BillingListParams, BillingPeriodParams, BillingRateRule, BillingRateRulePayload, BillingSummary, BillingUsageRecord, BillingWalletTransactionPayload, GatewayTrafficStatus, InboxActionRequest, PaginatedResponse, PaginationParams, Project, ProjectListParams, ProjectMember, ProjectMemberCandidate, ProjectNetworkPolicy, ProjectNetworkPolicyPayload, ProjectOverview, ProjectPin, ResultVisibility, SystemComponentInstallPayload, SystemComponentInstallResponse } from '../types'
 import { billingQuery, billingSummaryQuery, paginationQuery, request } from '../core'
 import { selectionItems, selectionPageParams } from '../selection-page'
 
@@ -39,7 +39,7 @@ export const projectsApi = {
   getProject: (projectId: string) => request<Project>(`/projects/${projectId}`),
   getProjectNetworkPolicy: (projectId: string, signal?: AbortSignal) =>
     request<ProjectNetworkPolicy>(`/projects/${projectId}/network-policy`, { signal }),
-  updateProjectNetworkPolicy: (projectId: string, payload: ProjectNetworkPolicy) =>
+  updateProjectNetworkPolicy: (projectId: string, payload: ProjectNetworkPolicyPayload) =>
     request<ProjectNetworkPolicy>(`/projects/${projectId}/network-policy`, { method: 'PUT', body: JSON.stringify(payload) }),
   getProjectOverview: (projectId: string) => request<ProjectOverview>(`/projects/${projectId}/overview`),
   updateProject: (projectId: string, payload: Pick<Project, 'identifier' | 'name' | 'description' | 'maxConcurrentBuilds' | 'webConsoleEnabled'>) =>

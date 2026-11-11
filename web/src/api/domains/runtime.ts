@@ -1,4 +1,4 @@
-import type { ClusterResource, ClusterResourceEvent, ClusterResourceYAML, DeploymentTargetRuntimePodPage, PaginatedResponse, PaginationParams, Release, ReleaseImageCandidates, ReleaseLog, ReleaseRuntimeLog, ResultVisibility, RuntimeCluster, RuntimeClusterNetworkPolicyObservation, RuntimeClusterPressure, RuntimeClusterResourceCategory, RuntimeClusterResourceKind, RuntimeClusterResourceListParams } from '../types'
+import type { ClusterResource, ClusterResourceEvent, ClusterResourceYAML, DeploymentTargetRuntimePodPage, EgressException, EgressExceptionPayload, PaginatedResponse, PaginationParams, Release, ReleaseImageCandidates, ReleaseLog, ReleaseRuntimeLog, ResultVisibility, RuntimeCluster, RuntimeClusterNetworkPolicyObservation, RuntimeClusterPressure, RuntimeClusterResourceCategory, RuntimeClusterResourceKind, RuntimeClusterResourceListParams } from '../types'
 import { paginationQuery, paginationWithProjectQuery, request, runtimeClusterResourceListQuery } from '../core'
 import { selectionItems, selectionPageParams } from '../selection-page'
 
@@ -17,6 +17,14 @@ export const runtimeApi = {
   },
   observeRuntimeClusterNetworkPolicies: (clusterId: string, signal?: AbortSignal) =>
     request<RuntimeClusterNetworkPolicyObservation>(`/runtime/clusters/${clusterId}/network-policies`, { signal }),
+  listRuntimeClusterEgressExceptions: (clusterId: string, params: PaginationParams) =>
+    request<PaginatedResponse<EgressException>>(`/runtime/clusters/${clusterId}/egress-exceptions?${paginationQuery(params)}`),
+  createRuntimeClusterEgressException: (clusterId: string, payload: EgressExceptionPayload) =>
+    request<EgressException>(`/runtime/clusters/${clusterId}/egress-exceptions`, { method: 'POST', body: JSON.stringify(payload) }),
+  updateRuntimeClusterEgressException: (clusterId: string, exceptionId: string, payload: EgressExceptionPayload) =>
+    request<EgressException>(`/runtime/clusters/${clusterId}/egress-exceptions/${exceptionId}`, { method: 'PUT', body: JSON.stringify(payload) }),
+  deleteRuntimeClusterEgressException: (clusterId: string, exceptionId: string) =>
+    request<void>(`/runtime/clusters/${clusterId}/egress-exceptions/${exceptionId}`, { method: 'DELETE' }),
   createRuntimeCluster: (payload: Omit<RuntimeCluster, 'id' | 'createdBy' | 'createdAt' | 'kubeconfigSet' | 'lastCheckedAt'> & { kubeconfig?: string }) =>
     request<RuntimeCluster>('/runtime/clusters', { method: 'POST', body: JSON.stringify(payload) }),
   updateRuntimeCluster: (clusterId: string, payload: Omit<RuntimeCluster, 'id' | 'createdBy' | 'createdAt' | 'kubeconfigSet' | 'lastCheckedAt'> & { kubeconfig?: string }) =>

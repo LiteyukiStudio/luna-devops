@@ -200,6 +200,12 @@ const projectTopology = {
     egressAllowlist: '아웃바운드 허용 목록',
     egressAllowlistHint: '한 줄에 "CIDR 포트,포트". 포트를 지정하면 TCP만 허용하고, 생략하면 모든 포트와 프로토콜(UDP DNS, NTP 등)을 허용합니다. 최대 64개. 사설·예약 대역은 항상 차단되므로 지정할 수 없습니다.',
     egressAllowlistPlaceholder: '1.1.1.1/32 443\n8.8.8.8/32',
+    exceptionsTitle: '플랫폼이 허용한 아웃바운드 예외',
+    exceptionsDescription: '아래 내부 주소는 플랫폼 관리자가 이 프로젝트 스페이스에 허용한 것으로, 모든 아웃바운드 모드에서 적용됩니다.',
+    exceptionProtocols: { tcp: 'TCP', udp: 'UDP', any: 'TCP/UDP' },
+    exceptionIncludesBuilds: '빌드 포함',
+    exceptionTargets: '배포 설정: {{count}}개',
+    exceptionWholeProject: '프로젝트 스페이스 전체',
   },
 }
 

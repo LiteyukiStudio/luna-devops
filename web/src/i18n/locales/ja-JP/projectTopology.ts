@@ -200,6 +200,12 @@ const projectTopology = {
     egressAllowlist: '送信許可リスト',
     egressAllowlistHint: '1 行に「CIDR ポート,ポート」。ポートを指定すると TCP のみ許可し、省略するとすべてのポートとプロトコル（UDP の DNS や NTP など）を許可します。最大 64 件。プライベート・予約レンジは常に拒否されるため指定できません。',
     egressAllowlistPlaceholder: '1.1.1.1/32 443\n8.8.8.8/32',
+    exceptionsTitle: 'プラットフォームが許可した送信例外',
+    exceptionsDescription: '以下の内部アドレスはプラットフォーム管理者がこのプロジェクトスペースに許可したもので、どの送信モードでも有効です。',
+    exceptionProtocols: { tcp: 'TCP', udp: 'UDP', any: 'TCP/UDP' },
+    exceptionIncludesBuilds: 'ビルドを含む',
+    exceptionTargets: 'デプロイ設定: {{count}} 件',
+    exceptionWholeProject: 'プロジェクトスペース全体',
   },
 }
 

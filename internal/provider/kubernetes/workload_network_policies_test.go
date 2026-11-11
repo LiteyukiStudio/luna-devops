@@ -478,6 +478,61 @@ func TestSyncAppliesDesiredBeforeDeletingStale(t *testing.T) {
 	}
 }
 
+func TestRenderEgressExceptions(t *testing.T) {
+	input := testWorkloadPolicyInput()
+	input.EgressMode = NetworkEgressNone
+	input.NodeAddresses = []string{"192.168.31.20/32"}
+	input.EgressExceptions = []EgressException{
+		{ID: "nex_db", CIDR: "192.168.31.0/24", Ports: []int{3306}, Protocol: EgressExceptionProtocolTCP, TargetIDs: []string{"dt_api"}, IncludeBuilds: true},
+		{ID: "nex_dns", CIDR: "10.10.0.53/32", Protocol: EgressExceptionProtocolAny},
+		{ID: "nex_node", CIDR: "192.168.31.20/32", Protocol: EgressExceptionProtocolTCP},
+		{ID: "nex_linklocal", CIDR: "169.254.0.0/16", Ports: []int{80}, Protocol: EgressExceptionProtocolUDP},
+		{ID: "nex_meta", CIDR: "169.254.169.254/32", Protocol: EgressExceptionProtocolTCP},
+	}
+	policies, err := RenderWorkloadNetworkPolicies(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byName := map[string]networkingv1.NetworkPolicy{}
+	for _, policy := range policies {
+		byName[policy.Name] = policy
+	}
+	db, ok := byName[egressExceptionPolicyPrefix+shortHash("nex_db")]
+	if !ok {
+		t.Fatal("granted exception must render even when the project egress mode is none")
+	}
+	expr := db.Spec.PodSelector.MatchExpressions
+	if len(expr) != 2 || expr[0].Key != ScopeLabel || expr[1].Key != DeploymentTargetIDLabel || !slices.Equal(expr[1].Values, []string{"dt_api"}) {
+		t.Fatalf("narrowed exception must select only the target workload pods: %#v", expr)
+	}
+	block := db.Spec.Egress[0].To[0].IPBlock
+	if block.CIDR != "192.168.31.0/24" || !slices.Contains(block.Except, "192.168.31.20/32") {
+		t.Fatalf("node addresses inside an exception must stay denied: %#v", block)
+	}
+	if ports := db.Spec.Egress[0].Ports; len(ports) != 1 || *ports[0].Protocol != "TCP" || ports[0].Port.IntVal != 3306 {
+		t.Fatalf("exception ports = %#v", ports)
+	}
+	build, ok := byName[buildEgressExceptionPolicyPrefix+shortHash("nex_db")]
+	if !ok || build.Spec.PodSelector.MatchLabels[ScopeLabel] != "build" || build.Spec.PodSelector.MatchExpressions[0].Values[0] != "dt_api" {
+		t.Fatalf("includeBuilds must render a build-pod exception narrowed to the target: %#v", build.Spec.PodSelector)
+	}
+	if _, ok := byName[buildEgressExceptionPolicyPrefix+shortHash("nex_dns")]; ok {
+		t.Fatal("exceptions without includeBuilds must not reach build pods")
+	}
+	if ports := byName[egressExceptionPolicyPrefix+shortHash("nex_dns")].Spec.Egress[0].Ports; len(ports) != 0 {
+		t.Fatalf("protocol any without ports allows every port and protocol, got %#v", ports)
+	}
+	linkLocal := byName[egressExceptionPolicyPrefix+shortHash("nex_linklocal")].Spec.Egress[0]
+	if !slices.Contains(linkLocal.To[0].IPBlock.Except, "169.254.169.254/32") || *linkLocal.Ports[0].Protocol != "UDP" {
+		t.Fatalf("metadata inside an exception range must stay denied: %#v", linkLocal)
+	}
+	for _, id := range []string{"nex_node", "nex_meta"} {
+		if _, ok := byName[egressExceptionPolicyPrefix+shortHash(id)]; ok {
+			t.Fatalf("exception %s inside a node or metadata range must not render", id)
+		}
+	}
+}
+
 func TestEnsureNamespaceToleratesConcurrentCreate(t *testing.T) {
 	clientset := fake.NewSimpleClientset()
 	labels := ProjectNamespaceLabels("prj_demo")

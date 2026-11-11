@@ -200,6 +200,12 @@ const projectTopology = {
     egressAllowlist: 'Egress allowlist',
     egressAllowlistHint: 'One `CIDR port,port` per line. Listed ports are TCP only; omit ports to allow all ports and protocols (for example UDP DNS or NTP). At most 64 entries. Private and reserved ranges are always denied and cannot be listed.',
     egressAllowlistPlaceholder: '1.1.1.1/32 443\n8.8.8.8/32',
+    exceptionsTitle: 'Egress exceptions granted by the platform',
+    exceptionsDescription: 'Platform administrators granted these internal addresses to this project space. They apply in every egress mode.',
+    exceptionProtocols: { tcp: 'TCP', udp: 'UDP', any: 'TCP/UDP' },
+    exceptionIncludesBuilds: 'Includes builds',
+    exceptionTargets: 'Deployment targets: {{count}}',
+    exceptionWholeProject: 'Whole project space',
   },
 }
 

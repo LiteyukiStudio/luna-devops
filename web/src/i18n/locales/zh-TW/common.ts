@@ -172,6 +172,11 @@ const common = {
     pageInfo: '第 {{page}} / {{totalPages}} 頁，共 {{total}} 條',
     pageInfoWithUnit: '第 {{page}} / {{totalPages}} 頁，共 {{total}} {{unit}}',
   },
+  egressExceptionWarning: {
+    title: '此專案空間持有 {{count}} 條內網出站例外',
+    member: '新成員可以透過部署應用存取平台授權的內網位址。請確認對方可信。',
+    route: '對外開放存取入口後，外部請求可能經由本專案的應用觸及授權的內網位址，請避免把應用變成內網代理。',
+  },
 }
 
 export default common

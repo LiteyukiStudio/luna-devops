@@ -1,4 +1,4 @@
-import type { ProjectNetworkPolicy } from '@/api'
+import type { ProjectEgressException, ProjectNetworkPolicy, ProjectNetworkPolicyPayload } from '@/api'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useMemo } from 'react'
@@ -9,6 +9,7 @@ import { z } from 'zod'
 import { api, ApiError } from '@/api'
 import { ErrorState } from '@/components/common/error-state'
 import { FormField } from '@/components/common/form-field'
+import { StatusBadge } from '@/components/common/status-badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { NativeSelect } from '@/components/ui/native-select'
@@ -52,7 +53,43 @@ export function ProjectNetworkPolicyCard({ canManage, projectId }: { canManage: 
         ? <ErrorState title={t('projectTopology.networkPolicy.loadFailed')} retrying={policy.isFetching} onRetry={() => void policy.refetch()} />
         : null}
       {policy.data ? <ProjectNetworkPolicyForm canManage={canManage} initial={policy.data} projectId={projectId} /> : null}
+      {policy.data && policy.data.egressExceptions.length > 0 ? <ProjectEgressExceptionList exceptions={policy.data.egressExceptions} /> : null}
     </Card>
+  )
+}
+
+/** 平台授权给本项目空间的出站例外，只读；所有出站模式下都生效。 */
+function ProjectEgressExceptionList({ exceptions }: { exceptions: ProjectEgressException[] }) {
+  const { t } = useTranslation()
+  return (
+    <div className="grid gap-2 border-t border-border pt-4">
+      <div className="grid gap-1">
+        <h3 className="text-sm font-semibold">{t('projectTopology.networkPolicy.exceptionsTitle')}</h3>
+        <p className="text-sm text-muted-foreground">{t('projectTopology.networkPolicy.exceptionsDescription')}</p>
+      </div>
+      <ul className="grid gap-2">
+        {exceptions.map(exception => (
+          <li key={exception.id} className="grid gap-1 rounded-control border border-border p-3 text-sm">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="font-medium">{exception.name}</span>
+              <span className="font-mono text-xs">{exception.cidr}</span>
+              <StatusBadge>
+                {t(`projectTopology.networkPolicy.exceptionProtocols.${exception.protocol}`)}
+                {exception.ports ? ` ${exception.ports}` : ''}
+              </StatusBadge>
+              {exception.includeBuilds ? <StatusBadge tone="warning">{t('projectTopology.networkPolicy.exceptionIncludesBuilds')}</StatusBadge> : null}
+            </div>
+            <p className="text-muted-foreground">
+              {exception.deploymentTargetIds.length > 0
+                ? t('projectTopology.networkPolicy.exceptionTargets', { count: exception.deploymentTargetIds.length })
+                : t('projectTopology.networkPolicy.exceptionWholeProject')}
+              {' · '}
+              {exception.reason}
+            </p>
+          </li>
+        ))}
+      </ul>
+    </div>
   )
 }
 
@@ -60,12 +97,12 @@ function ProjectNetworkPolicyForm({ canManage, initial, projectId }: { canManage
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const schema = useMemo(() => networkPolicySchema(t('errors.project.network_egress_allowlist_invalid')), [t])
-  const form = useForm<NetworkPolicyForm>({ resolver: zodResolver(schema), defaultValues: initial })
+  const form = useForm<NetworkPolicyForm>({ resolver: zodResolver(schema), defaultValues: { ingressMode: initial.ingressMode, egressMode: initial.egressMode, egressAllowlist: initial.egressAllowlist } })
   const save = useMutation({
-    mutationFn: (values: ProjectNetworkPolicy) => api.updateProjectNetworkPolicy(projectId, values),
+    mutationFn: (values: ProjectNetworkPolicyPayload) => api.updateProjectNetworkPolicy(projectId, values),
     onSuccess: (saved) => {
       queryClient.setQueryData(['project-network-policy', projectId], saved)
-      form.reset(saved)
+      form.reset({ ingressMode: saved.ingressMode, egressMode: saved.egressMode, egressAllowlist: saved.egressAllowlist })
       toast.success(t('projectTopology.networkPolicy.saved'))
     },
     onError: (error) => {

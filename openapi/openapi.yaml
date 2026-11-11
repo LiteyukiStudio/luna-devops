@@ -4674,6 +4674,171 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
 
+  /api/v1/runtime/clusters/{clusterId}/egress-exceptions:
+    get:
+      operationId: listRuntimeClusterEgressExceptions
+      x-luna-cli:
+        requiredScopes: ["cluster:manage"]
+      tags: [Runtime]
+      summary: List runtime cluster egress exceptions
+      description: Lists the cluster-level egress exceptions and the project spaces they are granted to. Only users who can manage the cluster may read them.
+      x-luna-agent:
+        purpose: { zh: 查看运行集群的出站例外规则及其授权的项目空间。, en: List egress exception rules of a runtime cluster and the project spaces they are granted to. }
+        aliases: { zh: [查看出站例外, 查看内网放行规则], en: [list egress exceptions, list private network grants] }
+        avoidWhen: { zh: 项目成员查看本项目的例外时使用 getProjectNetworkPolicy。, en: Project members should use getProjectNetworkPolicy to see exceptions granted to their project. }
+        preconditions: { zh: [先用 listRuntimeClusters 获取真实 clusterId, 当前用户需能维护该集群], en: [Resolve clusterId with listRuntimeClusters first, the caller must be able to manage the cluster] }
+        successEvidence: { zh: 返回分页的例外规则与授权。, en: Returns paginated exception rules with their grants. }
+        effect: read
+      parameters:
+        - name: clusterId
+          in: path
+          required: true
+          schema: { type: string, pattern: '^clu_' }
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - name: sortBy
+          in: query
+          schema:
+            type: string
+            enum: [name, createdAt]
+            default: createdAt
+        - $ref: "#/components/parameters/SortOrder"
+      responses:
+        "200":
+          description: Paginated egress exceptions.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PaginatedEgressExceptions" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      operationId: createRuntimeClusterEgressException
+      x-luna-cli:
+        requiredScopes: ["cluster:manage"]
+      tags: [Runtime]
+      summary: Create a runtime cluster egress exception
+      description: Allows the granted project spaces (optionally narrowed to deployment targets) to reach a range the platform denies by default, such as a data-center service. Cloud metadata, node, and Kubernetes API addresses stay denied. Exceptions apply regardless of the project egress mode. Changes are audited and reapplied immediately.
+      x-luna-agent:
+        purpose: { zh: 为指定项目空间放行集群外的内网地址。, en: Allow selected project spaces to reach an internal address outside the cluster. }
+        aliases: { zh: [添加出站例外, 放行内网服务, 授权内网访问], en: [create egress exception, allow internal service, grant private network access] }
+        avoidWhen: { zh: 放行公网地址时让项目空间使用出站白名单。, en: Use the project egress allowlist for public addresses. }
+        preconditions: { zh: [当前用户需能维护该集群, 提供审批理由与真实 projectId], en: [The caller must be able to manage the cluster, provide a reason and authoritative projectId values] }
+        successEvidence: { zh: 返回创建的例外；Worker 随后重新下发网络策略。, en: Returns the created exception; the Worker then reapplies network policies. }
+        effect: write
+        verification:
+          - { operationId: listRuntimeClusterEgressExceptions, family: resource, idFrom: argument.clusterId, collection: true, readIdArgument: clusterId }
+      parameters:
+        - name: clusterId
+          in: path
+          required: true
+          schema: { type: string, pattern: '^clu_' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EgressExceptionInput" }
+      responses:
+        "201":
+          description: Created egress exception.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EgressException" }
+        "400":
+          description: Invalid rule (`runtime_cluster.egress_exception_invalid`) or grant (`runtime_cluster.egress_exception_grant_invalid`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/runtime/clusters/{clusterId}/egress-exceptions/{exceptionId}:
+    put:
+      operationId: updateRuntimeClusterEgressException
+      x-luna-cli:
+        requiredScopes: ["cluster:manage"]
+      tags: [Runtime]
+      summary: Update a runtime cluster egress exception
+      description: Replaces the rule and all of its grants. Changes are audited and reapplied immediately.
+      x-luna-agent:
+        purpose: { zh: 修改出站例外规则或其授权的项目空间。, en: Change an egress exception rule or the project spaces it is granted to. }
+        aliases: { zh: [修改出站例外, 调整内网放行授权], en: [update egress exception, change private network grant] }
+        avoidWhen: { zh: 不知道 exceptionId 时先列出例外。, en: List exceptions first when exceptionId is unknown. }
+        preconditions: { zh: [提供真实 clusterId 与 exceptionId, 提交完整的规则与授权], en: [Provide authoritative clusterId and exceptionId, submit the complete rule and grants] }
+        successEvidence: { zh: 返回更新后的例外。, en: Returns the updated exception. }
+        effect: write
+        verification:
+          - { operationId: listRuntimeClusterEgressExceptions, family: resource, idFrom: argument.clusterId, collection: true, readIdArgument: clusterId }
+      parameters:
+        - name: clusterId
+          in: path
+          required: true
+          schema: { type: string, pattern: '^clu_' }
+        - name: exceptionId
+          in: path
+          required: true
+          schema: { type: string, pattern: '^nex_' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EgressExceptionInput" }
+      responses:
+        "200":
+          description: Updated egress exception.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EgressException" }
+        "400":
+          description: Invalid rule (`runtime_cluster.egress_exception_invalid`) or grant (`runtime_cluster.egress_exception_grant_invalid`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: The cluster or exception does not exist (`runtime_cluster.not_found`, `runtime_cluster.egress_exception_not_found`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+    delete:
+      operationId: deleteRuntimeClusterEgressException
+      x-luna-cli:
+        requiredScopes: ["cluster:manage"]
+      tags: [Runtime]
+      summary: Delete a runtime cluster egress exception
+      description: Removes the rule and its grants; the affected project spaces lose access immediately after the Worker reapplies policies.
+      x-luna-agent:
+        purpose: { zh: 撤销出站例外规则。, en: Revoke an egress exception rule. }
+        aliases: { zh: [删除出站例外, 撤销内网放行], en: [delete egress exception, revoke private network access] }
+        avoidWhen: { zh: 只想收回部分项目空间的授权时使用更新。, en: Use update to revoke only some project spaces. }
+        preconditions: { zh: [提供真实 clusterId 与 exceptionId], en: [Provide authoritative clusterId and exceptionId] }
+        successEvidence: { zh: 返回 204。, en: Returns 204. }
+        effect: write
+        verification:
+          - { operationId: listRuntimeClusterEgressExceptions, family: resource, idFrom: argument.clusterId, collection: true, readIdArgument: clusterId }
+      parameters:
+        - name: clusterId
+          in: path
+          required: true
+          schema: { type: string, pattern: '^clu_' }
+        - name: exceptionId
+          in: path
+          required: true
+          schema: { type: string, pattern: '^nex_' }
+      responses:
+        "204":
+          description: Deleted.
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: The cluster or exception does not exist (`runtime_cluster.not_found`, `runtime_cluster.egress_exception_not_found`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
   /api/v1/runtime/clusters/{clusterId}/resources:
     get:
       operationId: listRuntimeClusterResources
@@ -13519,6 +13684,67 @@ components:
             createdBy: { type: string }
             createdAt: { type: string, format: date-time }
             updatedAt: { type: string, format: date-time }
+    EgressExceptionGrant:
+      type: object
+      required: [projectId, deploymentTargetIds, includeBuilds]
+      properties:
+        projectId: { type: string }
+        deploymentTargetIds:
+          type: array
+          maxItems: 50
+          items: { type: string }
+          description: Narrows the grant to these deployment targets of the project; empty grants the whole project space.
+        includeBuilds: { type: boolean, description: Also allow build Pods of the granted scope. }
+    EgressExceptionInput:
+      type: object
+      required: [name, cidr, protocol, reason, grants]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 64 }
+        cidr: { type: string, description: "IPv4 or IPv6 CIDR; /0, IPv4-mapped IPv6, and a cloud metadata address itself are rejected. Node and metadata addresses inside the range stay denied." }
+        ports: { type: string, description: "Comma-separated ports 1-65535, at most 16; empty allows every port of the protocol." }
+        protocol: { type: string, enum: [tcp, udp, any], description: any with no ports allows every port and protocol. }
+        reason: { type: string, minLength: 1, maxLength: 500, description: Approval reason recorded with the rule. }
+        grants:
+          type: array
+          maxItems: 200
+          items: { $ref: "#/components/schemas/EgressExceptionGrant" }
+    EgressException:
+      allOf:
+        - $ref: "#/components/schemas/EgressExceptionInput"
+        - type: object
+          required: [id, runtimeClusterId, createdBy, createdAt, updatedAt]
+          properties:
+            id: { type: string, pattern: '^nex_' }
+            runtimeClusterId: { type: string }
+            createdBy: { type: string }
+            createdAt: { type: string, format: date-time }
+            updatedAt: { type: string, format: date-time }
+    PaginatedEgressExceptions:
+      type: object
+      required: [items, page, pageSize, sortBy, sortOrder, total, totalPages]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/EgressException" }
+        page: { type: integer, minimum: 1 }
+        pageSize: { type: integer, minimum: 1, maximum: 100 }
+        sortBy: { type: string }
+        sortOrder: { type: string, enum: [asc, desc] }
+        total: { type: integer, format: int64, minimum: 0 }
+        totalPages: { type: integer, minimum: 0 }
+    ProjectEgressException:
+      type: object
+      required: [id, runtimeClusterId, name, cidr, ports, protocol, reason, deploymentTargetIds, includeBuilds]
+      properties:
+        id: { type: string }
+        runtimeClusterId: { type: string }
+        name: { type: string }
+        cidr: { type: string }
+        ports: { type: string }
+        protocol: { type: string, enum: [tcp, udp, any] }
+        reason: { type: string }
+        deploymentTargetIds: { type: array, items: { type: string } }
+        includeBuilds: { type: boolean }
     ProjectNetworkPolicy:
       type: object
       required: [ingressMode, egressMode, egressAllowlist]
@@ -13534,6 +13760,11 @@ components:
         egressAllowlist:
           type: string
           description: One entry per line as `CIDR [port,port]`; listed ports are TCP only, and omitting ports allows all ports and protocols. IPv4-mapped IPv6 notation is rejected. At most 64 entries and 16 ports per entry; entries inside always-denied private or reserved ranges are rejected. Used only when egressMode is allowlist.
+        egressExceptions:
+          type: array
+          readOnly: true
+          description: Egress exceptions granted to this project space by cluster maintainers. They apply in every egress mode. Ignored in requests.
+          items: { $ref: "#/components/schemas/ProjectEgressException" }
     RuntimeClusterNetworkPolicyObservation:
       type: object
       required: [clusterId, status, observedAt, namespaceCount, syncedCount, driftedCount, enforcement]

@@ -159,6 +159,8 @@ func TestFinishProjectDeleteSoftDeletesRuntimeDesiredState(t *testing.T) {
 				&model.DeploymentTarget{},
 				&model.ProjectVolume{},
 				&model.DeploymentVolumeMount{},
+				&model.NetworkEgressException{},
+				&model.NetworkEgressExceptionGrant{},
 			)
 		},
 	})

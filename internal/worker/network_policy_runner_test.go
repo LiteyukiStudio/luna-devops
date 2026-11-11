@@ -22,7 +22,7 @@ func TestNetworkPolicyReconcileSyncsActiveProjectNamespaces(t *testing.T) {
 	db := testdb.Open(t, testdb.Options{
 		SchemaPrefix: "network_policy_reconcile_test",
 		Migrate: func(db *gorm.DB) error {
-			return db.AutoMigrate(&model.RuntimeCluster{}, &model.Project{}, &model.SystemComponentInstallation{}, &model.DeploymentTarget{}, &model.ServiceBinding{})
+			return db.AutoMigrate(&model.RuntimeCluster{}, &model.Project{}, &model.SystemComponentInstallation{}, &model.DeploymentTarget{}, &model.ServiceBinding{}, &model.NetworkEgressException{}, &model.NetworkEgressExceptionGrant{})
 		},
 	})
 	cluster := model.RuntimeCluster{ID: "rc_net", Name: "net", Scope: "global", GatewayNamespace: "traefik", NetworkBlockedCIDRs: "203.0.113.0/24"}
@@ -152,7 +152,7 @@ func TestProjectScopedReconcileAppliesDependenciesMode(t *testing.T) {
 	db := testdb.Open(t, testdb.Options{
 		SchemaPrefix: "network_policy_project_reconcile_test",
 		Migrate: func(db *gorm.DB) error {
-			return db.AutoMigrate(&model.RuntimeCluster{}, &model.Project{}, &model.SystemComponentInstallation{}, &model.DeploymentTarget{}, &model.ServiceBinding{})
+			return db.AutoMigrate(&model.RuntimeCluster{}, &model.Project{}, &model.SystemComponentInstallation{}, &model.DeploymentTarget{}, &model.ServiceBinding{}, &model.NetworkEgressException{}, &model.NetworkEgressExceptionGrant{})
 		},
 	})
 	cluster := model.RuntimeCluster{ID: "rc_dep", Name: "dep", Scope: "global", GatewayNamespace: "traefik"}
@@ -185,5 +185,45 @@ func TestProjectScopedReconcileAppliesDependenciesMode(t *testing.T) {
 	}
 	if others, _ := clientset.NetworkingV1().NetworkPolicies(other.KubernetesNamespace).List(t.Context(), metav1.ListOptions{}); len(others.Items) != 0 {
 		t.Fatalf("project-scoped reconcile must not touch other projects, got %d", len(others.Items))
+	}
+}
+
+func TestReconcileRendersGrantedEgressException(t *testing.T) {
+	db := testdb.Open(t, testdb.Options{
+		SchemaPrefix: "network_policy_exception_reconcile_test",
+		Migrate: func(db *gorm.DB) error {
+			return db.AutoMigrate(&model.RuntimeCluster{}, &model.Project{}, &model.SystemComponentInstallation{}, &model.DeploymentTarget{}, &model.ServiceBinding{}, &model.NetworkEgressException{}, &model.NetworkEgressExceptionGrant{})
+		},
+	})
+	cluster := model.RuntimeCluster{ID: "rc_ex", Name: "ex", Scope: "global", GatewayNamespace: "traefik"}
+	project := model.Project{ID: "prj_ex", Name: "ex", Identifier: "ex", KubernetesNamespace: "prj-ex", DeleteStatus: "active", NetworkEgressMode: "none"}
+	now := time.Now()
+	exception := model.NetworkEgressException{ID: "nex_db", RuntimeClusterID: cluster.ID, Name: "db", CIDR: "192.168.31.10/32", Ports: "3306", Protocol: "tcp", Reason: "billing", CreatedAt: now, UpdatedAt: now,
+		Grants: []model.NetworkEgressExceptionGrant{{ID: "nexg_1", ProjectID: project.ID, DeploymentTargetIDs: "dt_api", CreatedAt: now}}}
+	for _, value := range []any{&cluster, &project, &exception} {
+		if err := db.Create(value).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	clientset := fake.NewSimpleClientset(&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: project.KubernetesNamespace, Labels: kubeprovider.ProjectNamespaceLabels(project.ID)}})
+	manager := kubeprovider.NewClientForInterface(clientset)
+	runner := &Runner{db: db, kubernetesManagerFactory: func(model.DeploymentTarget) (kubeprovider.NamespaceManager, error) { return manager, nil }}
+	task, _ := tasks.NewNetworkPolicyReconcileTask(tasks.NetworkPolicyReconcilePayload{ProjectID: project.ID})
+	if err := runner.handleNetworkPolicyReconcile(t.Context(), task); err != nil {
+		t.Fatal(err)
+	}
+	policies, _ := clientset.NetworkingV1().NetworkPolicies(project.KubernetesNamespace).List(t.Context(), metav1.ListOptions{})
+	found := false
+	for _, policy := range policies.Items {
+		for _, rule := range policy.Spec.Egress {
+			for _, peer := range rule.To {
+				if peer.IPBlock != nil && peer.IPBlock.CIDR == "192.168.31.10/32" {
+					found = true
+				}
+			}
+		}
+	}
+	if !found {
+		t.Fatal("granted egress exception must be rendered from the database")
 	}
 }

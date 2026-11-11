@@ -3,6 +3,7 @@ package gatewayapi
 import (
 	"context"
 	"errors"
+	"github.com/LiteyukiStudio/devops/internal/runtimecluster"
 	"net/http"
 	"strings"
 
@@ -102,6 +103,8 @@ func (h *Handlers) CreateGatewayRoute(ctx *gin.Context) {
 		writeError(ctx, http.StatusServiceUnavailable, "网关任务投递失败，请稍后重试")
 		return
 	}
+	// 持有出站例外的项目空间对外开放入口时可能成为内网跳板，审计中标出例外数量。
+	h.auditWithContext(user.ID, "gateway_route.create", route.ID, true, runtimecluster.EgressExceptionAuditMarker(h.dbFor(ctx), project.ID), ctx.Request.Context())
 	route.Status = "progressing"
 	route.ObservationCode = "gateway_route.apply_queued"
 	ctx.JSON(http.StatusCreated, route)

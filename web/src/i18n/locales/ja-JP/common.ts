@@ -172,6 +172,11 @@ const common = {
     pageInfo: '{{page}} / {{totalPages}} ページ、全 {{total}} 件',
     pageInfoWithUnit: '{{page}} / {{totalPages}} ページ、全 {{total}} {{unit}}',
   },
+  egressExceptionWarning: {
+    title: 'このプロジェクトスペースの内部ネットワーク送信例外: {{count}} 件',
+    member: '新しいメンバーはアプリをデプロイして、許可された内部アドレスにアクセスできます。信頼できる相手か確認してください。',
+    route: 'アクセスエントリを公開すると、外部リクエストがこのプロジェクトのアプリ経由で許可された内部アドレスに届く可能性があります。アプリを内部プロキシにしないでください。',
+  },
 }
 
 export default common

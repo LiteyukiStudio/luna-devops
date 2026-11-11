@@ -172,6 +172,11 @@ const common = {
     pageInfo: '{{page}} / {{totalPages}}페이지, 총 {{total}}개',
     pageInfoWithUnit: '{{page}} / {{totalPages}}페이지, 총 {{total}} {{unit}}',
   },
+  egressExceptionWarning: {
+    title: '이 프로젝트 스페이스의 내부망 아웃바운드 예외: {{count}}개',
+    member: '새 멤버는 애플리케이션을 배포해 허용된 내부 주소에 접근할 수 있습니다. 신뢰할 수 있는지 확인하세요.',
+    route: '접근 경로를 공개하면 외부 요청이 이 프로젝트의 애플리케이션을 거쳐 허용된 내부 주소에 닿을 수 있습니다. 애플리케이션을 내부 프록시로 만들지 마세요.',
+  },
 }
 
 export default common

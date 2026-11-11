@@ -23,7 +23,7 @@ import (
 
 const (
 	baselineMigrationVersion = 103
-	latestMigrationVersion   = 128
+	latestMigrationVersion   = 129
 )
 
 func TestEmbeddedMigrationsContainExpectedFiles(t *testing.T) {
@@ -78,6 +78,8 @@ func TestEmbeddedMigrationsContainExpectedFiles(t *testing.T) {
 		"000127_runtime_cluster_build_egress_probe.down.sql":         false,
 		"000128_project_network_modes.up.sql":                        false,
 		"000128_project_network_modes.down.sql":                      false,
+		"000129_network_egress_exceptions.up.sql":                    false,
+		"000129_network_egress_exceptions.down.sql":                  false,
 	}
 	migrationCount := 0
 	for _, entry := range entries {
@@ -274,6 +276,7 @@ WHERE namespace.nspname = current_schema()
 	assertSingleColumnMigration(t, testDB, runner, 127, "runtime_clusters", "network_policy_enforcement")
 	assertSingleColumnMigration(t, testDB, runner, 128, "projects", "network_ingress_mode")
 	assertSingleColumnMigration(t, testDB, runner, 128, "deployment_targets", "internal_only")
+	assertSingleColumnMigration(t, testDB, runner, 129, "network_egress_exception_grants", "include_builds")
 	assertDirtyMigrationFailsClosed(t, testDB)
 }
 

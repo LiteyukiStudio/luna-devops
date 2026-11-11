@@ -3,6 +3,7 @@ package projectapi
 import (
 	"context"
 	"errors"
+	"github.com/LiteyukiStudio/devops/internal/runtimecluster"
 	"net/http"
 	"strconv"
 	"strings"
@@ -481,7 +482,7 @@ func (h *Handler) CreateProjectMember(ctx *gin.Context) {
 		writeErrorCode(ctx, http.StatusInternalServerError, "inbox.operation_failed", "project member notification failed")
 		return
 	}
-	h.auditWithContext(actor.ID, "project_member.create", member.ID, true, member.Role, ctx.Request.Context())
+	h.auditWithContext(actor.ID, "project_member.create", member.ID, true, member.Role+" "+runtimecluster.EgressExceptionAuditMarker(h.dbFor(ctx), member.ProjectID), ctx.Request.Context())
 	defaultInboxBroker.Notify(targetUser.ID, "")
 	ctx.JSON(http.StatusCreated, projectMemberResponse{
 		ID:        member.ID,

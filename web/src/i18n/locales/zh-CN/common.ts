@@ -176,6 +176,11 @@ const common = {
     pageInfo: '第 {{page}} / {{totalPages}} 页，共 {{total}} 条',
     pageInfoWithUnit: '第 {{page}} / {{totalPages}} 页，共 {{total}} {{unit}}',
   },
+  egressExceptionWarning: {
+    title: '该项目空间持有 {{count}} 条内网出站例外',
+    member: '新成员可以通过部署应用访问平台授权的内网地址。请确认对方可信。',
+    route: '对外开放访问入口后，外部请求可能经由本项目的应用触达授权的内网地址，请避免把应用变成内网代理。',
+  },
 }
 
 export default common

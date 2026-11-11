@@ -25,14 +25,16 @@ const (
 	WorkloadNetworkPolicyScope  = "workload-network"
 	NetworkPolicyHashAnnotation = "luna.devops/policy-hash"
 
-	workloadIngressPolicyName     = "luna-workload-ingress"
-	workloadEgressPolicyName      = "luna-workload-egress"
-	buildEgressPolicyName         = "luna-build-egress"
-	gatewayIngressPolicyName      = "luna-gateway-ingress"
-	dependencyIngressPolicyPrefix = "luna-dependency-ingress-"
-	buildPodScope                 = "build"
-	systemEgressPolicyPrefix      = "luna-system-egress-"
-	namespaceNameLabel            = "kubernetes.io/metadata.name"
+	workloadIngressPolicyName        = "luna-workload-ingress"
+	workloadEgressPolicyName         = "luna-workload-egress"
+	buildEgressPolicyName            = "luna-build-egress"
+	gatewayIngressPolicyName         = "luna-gateway-ingress"
+	egressExceptionPolicyPrefix      = "luna-egress-exception-"
+	buildEgressExceptionPolicyPrefix = "luna-build-egress-exception-"
+	dependencyIngressPolicyPrefix    = "luna-dependency-ingress-"
+	buildPodScope                    = "build"
+	systemEgressPolicyPrefix         = "luna-system-egress-"
+	namespaceNameLabel               = "kubernetes.io/metadata.name"
 
 	WorkloadNetworkPolicySynced  = "synced"
 	WorkloadNetworkPolicyDrifted = "drifted"
@@ -63,7 +65,25 @@ type WorkloadNetworkPolicyInput struct {
 	// EgressMode：internet 放行公网；allowlist 只放行 EgressAllowlist；none 只允许同项目空间与集群 DNS。
 	EgressMode      string
 	EgressAllowlist []EgressAllowRule
+	// EgressExceptions 是管理员授权给本项目空间的集群级出站例外，始终生效，不受项目出站模式影响。
+	EgressExceptions []EgressException
 }
+
+// EgressException 是渲染一条出站例外所需的输入；TargetIDs 为空表示整个项目空间的工作负载。
+type EgressException struct {
+	ID            string
+	CIDR          string
+	Ports         []int
+	Protocol      string
+	TargetIDs     []string
+	IncludeBuilds bool
+}
+
+const (
+	EgressExceptionProtocolTCP = "tcp"
+	EgressExceptionProtocolUDP = "udp"
+	EgressExceptionProtocolAny = "any"
+)
 
 // EgressAllowRule 是项目空间出站白名单的一条：CIDR 与可选端口（为空表示全部端口）。
 type EgressAllowRule struct {
@@ -194,6 +214,12 @@ func RenderWorkloadNetworkPolicies(input WorkloadNetworkPolicyInput) ([]networki
 				Egress:      []networkingv1.NetworkPolicyEgressRule{{}},
 			}))
 	}
+	exceptionPolicies, err := renderEgressExceptions(input.Namespace, input.EgressExceptions, nodes)
+	if err != nil {
+		return nil, err
+	}
+	policies = append(policies, exceptionPolicies...)
+
 	gatewayPods := metav1.LabelSelector{}
 	if internal := sortedUnique(input.InternalTargetIDs); len(internal) > 0 {
 		gatewayPods.MatchExpressions = []metav1.LabelSelectorRequirement{{Key: DeploymentTargetIDLabel, Operator: metav1.LabelSelectorOpNotIn, Values: internal}}
@@ -218,6 +244,77 @@ func RenderWorkloadNetworkPolicies(input WorkloadNetworkPolicyInput) ([]networki
 		}
 	}
 	return policies, nil
+}
+
+// renderEgressExceptions 为每条授权渲染工作负载（以及按需的构建）出站放行。云元数据与节点地址是平台硬底线：
+// 网段内包含它们时排除，网段整体落在它们之内时不下发该条例外。
+func renderEgressExceptions(namespace string, exceptions []EgressException, nodes []string) ([]networkingv1.NetworkPolicy, error) {
+	hardFloor := append(append([]string(nil), cloudMetadataCIDRs()...), nodes...)
+	policies := []networkingv1.NetworkPolicy{}
+	for _, exception := range exceptions {
+		prefix, err := ParseNetworkCIDR(exception.CIDR)
+		if err != nil || prefix.Bits() == 0 {
+			return nil, fmt.Errorf("invalid egress exception CIDR %q", exception.CIDR)
+		}
+		cidr := prefix.String()
+		if cidrWithinAny(prefix, hardFloor) {
+			continue
+		}
+		ports, err := exceptionPorts(exception.Ports, exception.Protocol)
+		if err != nil {
+			return nil, err
+		}
+		rule := networkingv1.NetworkPolicyEgressRule{
+			To:    []networkingv1.NetworkPolicyPeer{{IPBlock: &networkingv1.IPBlock{CIDR: cidr, Except: containedCIDRs(cidr, hardFloor)}}},
+			Ports: ports,
+		}
+		spec := networkingv1.NetworkPolicySpec{PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeEgress}, Egress: []networkingv1.NetworkPolicyEgressRule{rule}}
+		targets := sortedUnique(exception.TargetIDs)
+		workloadSelector := metav1.LabelSelector{MatchExpressions: []metav1.LabelSelectorRequirement{{
+			Key: ScopeLabel, Operator: metav1.LabelSelectorOpNotIn, Values: []string{buildPodScope, volumeTransferScope},
+		}}}
+		buildSelector := metav1.LabelSelector{MatchLabels: map[string]string{ScopeLabel: buildPodScope}}
+		if len(targets) > 0 {
+			narrow := metav1.LabelSelectorRequirement{Key: DeploymentTargetIDLabel, Operator: metav1.LabelSelectorOpIn, Values: targets}
+			workloadSelector.MatchExpressions = append(workloadSelector.MatchExpressions, narrow)
+			buildSelector.MatchExpressions = []metav1.LabelSelectorRequirement{narrow}
+		}
+		policies = append(policies, workloadNetworkPolicy(namespace, egressExceptionPolicyPrefix+shortHash(exception.ID), workloadSelector, spec))
+		if exception.IncludeBuilds {
+			policies = append(policies, workloadNetworkPolicy(namespace, buildEgressExceptionPolicyPrefix+shortHash(exception.ID), buildSelector, spec))
+		}
+	}
+	return policies, nil
+}
+
+// exceptionPorts 按协议渲染端口；未写端口时放行该协议的全部端口，any 且未写端口时放行全部端口和协议。
+func exceptionPorts(values []int, protocol string) ([]networkingv1.NetworkPolicyPort, error) {
+	var protocols []corev1.Protocol
+	switch protocol {
+	case EgressExceptionProtocolTCP:
+		protocols = []corev1.Protocol{corev1.ProtocolTCP}
+	case EgressExceptionProtocolUDP:
+		protocols = []corev1.Protocol{corev1.ProtocolUDP}
+	case EgressExceptionProtocolAny:
+		protocols = []corev1.Protocol{corev1.ProtocolTCP, corev1.ProtocolUDP}
+	default:
+		return nil, fmt.Errorf("invalid egress exception protocol %q", protocol)
+	}
+	ports := []networkingv1.NetworkPolicyPort{}
+	for _, port := range sortedUniquePorts(values) {
+		if port < 1 || port > 65535 {
+			return nil, fmt.Errorf("invalid egress exception port %d", port)
+		}
+		for _, value := range protocols {
+			value := value
+			ports = append(ports, networkingv1.NetworkPolicyPort{Protocol: &value, Port: &intstr.IntOrString{Type: intstr.Int, IntVal: int32(port)}})
+		}
+	}
+	if len(ports) == 0 && protocol != EgressExceptionProtocolAny {
+		value := protocols[0]
+		ports = append(ports, networkingv1.NetworkPolicyPort{Protocol: &value})
+	}
+	return ports, nil
 }
 
 // renderEgressAllowlist 渲染项目空间出站白名单。整段落在拒绝网段内的条目本就被拒绝，直接跳过；
