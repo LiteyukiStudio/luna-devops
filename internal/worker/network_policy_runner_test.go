@@ -1,13 +1,16 @@
 package worker
 
 import (
+	"context"
 	"testing"
+	"time"
 
 	"github.com/LiteyukiStudio/devops/internal/model"
 	kubeprovider "github.com/LiteyukiStudio/devops/internal/provider/kubernetes"
 	"github.com/LiteyukiStudio/devops/internal/runtimecluster"
 	"github.com/LiteyukiStudio/devops/internal/tasks"
 	"github.com/LiteyukiStudio/devops/internal/testdb"
+	"github.com/hibiken/asynq"
 	"gorm.io/gorm"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
@@ -79,4 +82,68 @@ func (r *Runner) desiredPoliciesForTest(t *testing.T, manager kubeprovider.Names
 		return nil, err
 	}
 	return runtimecluster.DesiredWorkloadNetworkPolicies(t.Context(), r.db, cluster, project.ID, project.KubernetesNamespace, nodes)
+}
+
+type recordingProbeEnqueuer struct {
+	payloads []tasks.NetworkPolicyProbePayload
+}
+
+func (e *recordingProbeEnqueuer) EnqueueNetworkPolicyProbe(_ context.Context, payload tasks.NetworkPolicyProbePayload) (*asynq.TaskInfo, error) {
+	e.payloads = append(e.payloads, payload)
+	return &asynq.TaskInfo{}, nil
+}
+
+type countingProbeManager struct {
+	fakeNamespaceManager
+	probes int
+}
+
+func (m *countingProbeManager) ProbeNetworkPolicyEnforcement(context.Context, string, string) (kubeprovider.NetworkPolicyProbeResult, error) {
+	m.probes++
+	return kubeprovider.NetworkPolicyProbeResult{Enforcement: kubeprovider.NetworkPolicyEnforcementUnsupported}, nil
+}
+
+func TestNetworkPolicyProbeFansOutAndRespectsCooldown(t *testing.T) {
+	db := testdb.Open(t, testdb.Options{
+		SchemaPrefix: "network_policy_probe_test",
+		Migrate: func(db *gorm.DB) error {
+			return db.AutoMigrate(&model.RuntimeCluster{})
+		},
+	})
+	recent := time.Now().Add(-time.Minute)
+	for _, cluster := range []model.RuntimeCluster{
+		{ID: "rc_fresh", Name: "fresh", Scope: "global"},
+		{ID: "rc_recent", Name: "recent", Scope: "global", NetworkPolicyProbedAt: &recent},
+	} {
+		if err := db.Create(&cluster).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	enqueuer := &recordingProbeEnqueuer{}
+	manager := &countingProbeManager{}
+	runner := &Runner{db: db, networkPolicyProbeEnqueuer: enqueuer, kubernetesManagerFactory: func(model.DeploymentTarget) (kubeprovider.NamespaceManager, error) { return manager, nil }}
+
+	fanOut, _ := tasks.NewNetworkPolicyProbeTask(tasks.NetworkPolicyProbePayload{})
+	if err := runner.handleNetworkPolicyProbe(t.Context(), fanOut); err != nil {
+		t.Fatal(err)
+	}
+	if len(enqueuer.payloads) != 2 || manager.probes != 0 {
+		t.Fatalf("periodic task must enqueue one probe per cluster without probing inline: %#v, probes=%d", enqueuer.payloads, manager.probes)
+	}
+	for _, clusterID := range []string{"rc_fresh", "rc_recent"} {
+		task, _ := tasks.NewNetworkPolicyProbeTask(tasks.NetworkPolicyProbePayload{RuntimeClusterID: clusterID})
+		if err := runner.handleNetworkPolicyProbe(t.Context(), task); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if manager.probes != 1 {
+		t.Fatalf("recently probed cluster must be skipped, probes = %d", manager.probes)
+	}
+	var fresh model.RuntimeCluster
+	if err := db.First(&fresh, "id = ?", "rc_fresh").Error; err != nil {
+		t.Fatal(err)
+	}
+	if fresh.NetworkPolicyEnforcement != kubeprovider.NetworkPolicyEnforcementUnsupported || fresh.NetworkPolicyProbedAt == nil {
+		t.Fatalf("probe result not stored: %#v", fresh)
+	}
 }

@@ -131,7 +131,14 @@ func RenderWorkloadNetworkPolicies(input WorkloadNetworkPolicyInput) ([]networki
 	policies := []networkingv1.NetworkPolicy{ingress, egress, build}
 	for _, targetID := range sortedUnique(input.TrustedDeploymentTargetIDs) {
 		policies = append(policies, workloadNetworkPolicy(input.Namespace, systemEgressPolicyPrefix+shortHash(targetID),
-			metav1.LabelSelector{MatchLabels: map[string]string{DeploymentTargetIDLabel: targetID}},
+			// 只选中系统组件的工作负载 Pod：同部署配置的构建 Pod 与 Hook Job Pod 不享受全放行。
+			metav1.LabelSelector{
+				MatchLabels: map[string]string{DeploymentTargetIDLabel: targetID},
+				MatchExpressions: []metav1.LabelSelectorRequirement{
+					{Key: ScopeLabel, Operator: metav1.LabelSelectorOpNotIn, Values: []string{buildPodScope, volumeTransferScope}},
+					{Key: HookRunIDLabel, Operator: metav1.LabelSelectorOpDoesNotExist},
+				},
+			},
 			networkingv1.NetworkPolicySpec{
 				PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeEgress},
 				Egress:      []networkingv1.NetworkPolicyEgressRule{{}},
@@ -171,10 +178,14 @@ func renderBuildEgressPolicy(namespace string, input BuildEgressInput, clusterDN
 			Ports: []networkingv1.NetworkPolicyPort{tcpPort(80), tcpPort(443)},
 		},
 	}
-	// 私网镜像站只放行指定端口；网段内的拒绝网段与节点地址仍然拒绝。
+	// 私网镜像站只放行指定端口；网段内的拒绝网段、节点地址与云元数据地址仍然拒绝。
+	privateDenied := append(append([]string(nil), denied...), cloudMetadataCIDRs()...)
 	for _, cidr := range private {
+		if covered := metadataExactlyCovered(cidr); covered != "" {
+			return networkingv1.NetworkPolicy{}, fmt.Errorf("build private egress CIDR %s covers cloud metadata address %s", cidr, covered)
+		}
 		spec.Egress = append(spec.Egress, networkingv1.NetworkPolicyEgressRule{
-			To:    []networkingv1.NetworkPolicyPeer{{IPBlock: &networkingv1.IPBlock{CIDR: cidr, Except: containedCIDRs(cidr, denied)}}},
+			To:    []networkingv1.NetworkPolicyPeer{{IPBlock: &networkingv1.IPBlock{CIDR: cidr, Except: containedCIDRs(cidr, privateDenied)}}},
 			Ports: privatePorts,
 		})
 	}
@@ -411,6 +422,23 @@ func containedCIDRs(parent string, values []string) []string {
 		}
 	}
 	return sortedUnique(result)
+}
+
+// CloudMetadataCIDRs 是云主机元数据服务地址，任何放行规则都不能覆盖。
+func CloudMetadataCIDRs() []string { return cloudMetadataCIDRs() }
+
+func cloudMetadataCIDRs() []string {
+	return []string{"100.100.100.200/32", "169.254.169.254/32", "fd00:ec2::254/128"}
+}
+
+// metadataExactlyCovered 返回与 cidr 完全相同的元数据地址：IPBlock.Except 必须严格小于 cidr，无法排除自身。
+func metadataExactlyCovered(cidr string) string {
+	for _, value := range cloudMetadataCIDRs() {
+		if value == cidr {
+			return value
+		}
+	}
+	return ""
 }
 
 // reservedIPv4CIDRs 是工作负载与构建默认拒绝的私网与特殊用途网段。

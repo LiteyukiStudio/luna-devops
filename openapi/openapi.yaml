@@ -4549,9 +4549,9 @@ paths:
       tags:
         - Runtime
       summary: Test Runtime Cluster
-      description: Checks the Kubernetes API connection. On success it also queues an asynchronous NetworkPolicy enforcement probe for the cluster (at most once per 10 minutes); read the result from observeRuntimeClusterNetworkPolicies.
+      description: Checks the Kubernetes API connection. When the caller can manage the cluster and the connection succeeds, it also queues an asynchronous NetworkPolicy enforcement probe that creates short-lived probe Pods in a temporary namespace; the Worker skips clusters probed within the last 10 minutes. Read the result from observeRuntimeClusterNetworkPolicies.
       x-luna-agent:
-        effect: read
+        effect: execute
       parameters:
         - name: clusterId
           in: path

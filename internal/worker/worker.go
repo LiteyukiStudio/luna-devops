@@ -38,6 +38,7 @@ type Runner struct {
 	volumeTransferProviderFactory func(context.Context, string) (kubeprovider.VolumeTransferProvider, error)
 	volumeService                 volumeWorkerService
 	volumeTaskEnqueuer            volumeTaskEnqueuer
+	networkPolicyProbeEnqueuer    networkPolicyProbeEnqueuer
 	volumeTransferJobImage        string
 	volumeTransferMaxBytes        int64
 	workerMetrics                 *observability.WorkerMetrics
@@ -107,6 +108,7 @@ func RunWithRedis(redisOptions redisconfig.Options, db *gorm.DB, options Options
 	runner.taskClient = tasks.NewClientWithRedis(redisOptions)
 	runner.notificationDeliveryEnqueuer = runner.taskClient
 	runner.volumeTaskEnqueuer = runner.taskClient
+	runner.networkPolicyProbeEnqueuer = runner.taskClient
 	defer runner.taskClient.Close()
 	go runner.syncBuildJobStatus(ctx)
 

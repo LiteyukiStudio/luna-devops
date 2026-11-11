@@ -117,7 +117,7 @@ const errors = {
     network_policy_forbidden: 'クラスターの認証情報にネットワークポリシー、ノード、名前空間の読み取り権限がありません。',
     network_policy_timeout: 'クラスターのネットワークポリシーの読み取りがタイムアウトしました。',
     build_egress_mode_invalid: 'ビルドの送信は「制限」または「全許可」である必要があります。',
-    build_private_egress_cidrs_invalid: 'プライベートレジストリ CIDR が無効です。1 行に 1 つ、/0 は不可、最大 256 件です。',
+    build_private_egress_cidrs_invalid: 'プライベートレジストリ CIDR が無効です。1 行に 1 つ、/0 やクラウドのメタデータアドレスそのものは不可、最大 256 件です。',
     build_private_egress_ports_invalid: 'プライベートレジストリのポートが無効です。1–65535 のポートを最大 16 個まで指定してください。',
     network_policy_probe_image_missing: 'Worker にビルド実行イメージが設定されていないため確認できません。',
     network_policy_probe_image_unavailable: 'クラスターがビルド実行イメージを取得できないため確認できません。',

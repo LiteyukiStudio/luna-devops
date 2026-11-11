@@ -78,8 +78,8 @@ func (h *Handlers) CreateRuntimeCluster(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	auditMetadata := runtimeClusterSafeAuditMetadata(cluster, strings.TrimSpace(input.Kubeconfig) != "")
-	if err := h.saveRuntimeClusterWithDefault(cluster, ctx.Request.Context()); err != nil {
+	auditMetadata := runtimeClusterSafeAuditMetadata(model.RuntimeCluster{}, cluster, strings.TrimSpace(input.Kubeconfig) != "")
+	if err := h.saveRuntimeClusterWithDefault(cluster, false, ctx.Request.Context()); err != nil {
 		auditWithSafeMetadata(h, user.ID, "runtime_cluster.create", cluster.ID, false, runtimeClusterPersistenceAuditMessage(err), auditMetadata, ctx.Request.Context())
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
@@ -122,6 +122,14 @@ func (h *Handlers) UpdateRuntimeCluster(ctx *gin.Context) {
 	next, ok := h.runtimeClusterFromInput(ctx, user, input, existing.ID)
 	if !ok {
 		return
+	}
+	previous := existing
+	kubeconfigReplaced := strings.TrimSpace(input.Kubeconfig) != ""
+	if kubeconfigReplaced {
+		// 换了凭据可能换了集群，旧的探测结论不再可信。
+		existing.NetworkPolicyEnforcement = kubeprovider.NetworkPolicyEnforcementUnknown
+		existing.NetworkPolicyProbeCode = ""
+		existing.NetworkPolicyProbedAt = nil
 	}
 	networkChanged := existing.NetworkBlockedCIDRs != next.NetworkBlockedCIDRs ||
 		existing.NetworkGatewayNamespace != next.NetworkGatewayNamespace ||
@@ -175,8 +183,8 @@ func (h *Handlers) UpdateRuntimeCluster(ctx *gin.Context) {
 	existing.GatewayTrustedProxyCIDRs = next.GatewayTrustedProxyCIDRs
 	existing.GatewayDefaultRequestHeaders = next.GatewayDefaultRequestHeaders
 	existing.GatewayDefaultResponseHeaders = next.GatewayDefaultResponseHeaders
-	auditMetadata := runtimeClusterSafeAuditMetadata(existing, strings.TrimSpace(input.Kubeconfig) != "")
-	if err := h.saveRuntimeClusterWithDefault(existing, ctx.Request.Context()); err != nil {
+	auditMetadata := runtimeClusterSafeAuditMetadata(previous, existing, kubeconfigReplaced)
+	if err := h.saveRuntimeClusterWithDefault(existing, kubeconfigReplaced, ctx.Request.Context()); err != nil {
 		auditWithSafeMetadata(h, user.ID, "runtime_cluster.update", existing.ID, false, runtimeClusterPersistenceAuditMessage(err), auditMetadata, ctx.Request.Context())
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
@@ -186,7 +194,7 @@ func (h *Handlers) UpdateRuntimeCluster(ctx *gin.Context) {
 		// 立即重新下发项目空间网络策略；入队失败时由 Worker 周期同步兜底。
 		h.host.EnqueueNetworkPolicyReconcile(ctx.Request.Context(), existing.ID)
 	}
-	if strings.TrimSpace(input.Kubeconfig) != "" {
+	if kubeconfigReplaced {
 		// 换了集群凭据可能换了集群，重新探测 NetworkPolicy 执行能力；失败时由周期探测兜底。
 		h.host.EnqueueNetworkPolicyProbe(ctx.Request.Context(), existing.ID)
 	}
@@ -225,10 +233,14 @@ func applyRuntimeClusterSearch(ctx *gin.Context, query *gorm.DB, user model.User
 		pattern, user.ID, scopedResourceRuntimeCluster, user.ID, managePolicy.AllowedRoles, pattern)
 }
 
-func runtimeClusterSafeAuditMetadata(cluster model.RuntimeCluster, kubeconfigUpdated bool) runtimeClusterAuditMetadata {
+func runtimeClusterSafeAuditMetadata(previous, cluster model.RuntimeCluster, kubeconfigUpdated bool) runtimeClusterAuditMetadata {
 	return runtimeClusterAuditMetadata{
 		Scope: cluster.Scope, IsDefault: cluster.IsDefault,
 		ProjectCount: len(normalizeStringList(cluster.ProjectIDs)), KubeconfigUpdated: kubeconfigUpdated,
+		BuildEgressMode: cluster.BuildEgressMode,
+		BuildPrivateEgressChanged: previous.BuildPrivateEgressCIDRs != cluster.BuildPrivateEgressCIDRs ||
+			previous.BuildPrivateEgressPorts != cluster.BuildPrivateEgressPorts,
+		NetworkBlockedChanged: previous.NetworkBlockedCIDRs != cluster.NetworkBlockedCIDRs,
 	}
 }
 
@@ -337,8 +349,10 @@ func (h *Handlers) TestRuntimeCluster(ctx *gin.Context) {
 	case observation.StatusUnavailable:
 		writeErrorCode(ctx, http.StatusBadGateway, cluster.ObservationCode, "无法连接运行集群")
 	default:
-		// 连接正常时顺带重新探测 NetworkPolicy 执行能力；同一集群 10 分钟内只排队一次。
-		h.host.EnqueueNetworkPolicyProbe(ctx.Request.Context(), cluster.ID)
+		// 连接正常时，集群维护者顺带重新探测 NetworkPolicy 执行能力；Worker 对同一集群 10 分钟内只探测一次。
+		if canManage, err := h.canInspectScopedResourceConfigByID(user, cluster.Scope, cluster.OwnerRef, scopedResourceRuntimeCluster, cluster.ID, ctx.Request.Context()); err == nil && canManage {
+			h.host.EnqueueNetworkPolicyProbe(ctx.Request.Context(), cluster.ID)
+		}
 		ctx.JSON(http.StatusOK, cluster)
 	}
 }

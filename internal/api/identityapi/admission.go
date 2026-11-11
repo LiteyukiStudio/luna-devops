@@ -192,6 +192,10 @@ type runtimeClusterAuditMetadata struct {
 	IsDefault         bool   `json:"isDefault"`
 	ProjectCount      int    `json:"projectCount"`
 	KubeconfigUpdated bool   `json:"kubeconfigUpdated"`
+	// 构建出站属于安全敏感配置；只记录模式与私网放行是否变化，不记录具体网段。
+	BuildEgressMode           string `json:"buildEgressMode"`
+	BuildPrivateEgressChanged bool   `json:"buildPrivateEgressChanged"`
+	NetworkBlockedChanged     bool   `json:"networkBlockedChanged"`
 }
 
 type RuntimeClusterAuditMetadata = runtimeClusterAuditMetadata
