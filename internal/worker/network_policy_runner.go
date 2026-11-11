@@ -12,6 +12,7 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/runtimecluster"
 	"github.com/LiteyukiStudio/devops/internal/tasks"
 	"github.com/hibiken/asynq"
+	"gorm.io/gorm"
 )
 
 // syncProjectNetworkPolicies 按数据库期望配置与集群实时节点地址覆盖项目 Namespace 的受管网络策略。
@@ -67,7 +68,11 @@ func (r *Runner) reconcileClusterNetworkPolicies(ctx context.Context, cluster mo
 		var project model.Project
 		if err := r.db.WithContext(ctx).Select("id", "kubernetes_namespace", "delete_status").
 			Where("id = ? and kubernetes_namespace = ?", projectID, namespace).Take(&project).Error; err != nil {
-			// 数据库中已不存在的项目空间由资源清理流程处理，这里不为其渲染策略。
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				// 数据库中已不存在的项目空间由资源清理流程处理，这里不为其渲染策略。
+				continue
+			}
+			errs = append(errs, fmt.Errorf("namespace %s: %w", namespace, err))
 			continue
 		}
 		if !model.DeleteStatusActive(project.DeleteStatus) {

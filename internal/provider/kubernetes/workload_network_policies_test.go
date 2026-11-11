@@ -7,14 +7,18 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/fake"
+	k8stesting "k8s.io/client-go/testing"
 )
 
 func testWorkloadPolicyInput() WorkloadNetworkPolicyInput {
 	return WorkloadNetworkPolicyInput{
 		Namespace:                  "prj-demo",
 		GatewayNamespace:           "kube-system",
+		GatewayPorts:               []int{8443, 8080, 8080},
 		BlockedCIDRs:               []string{"203.0.113.7/32", "2001:db8:1::/48"},
 		NodeAddresses:              []string{"198.51.100.10/32"},
 		TrustedDeploymentTargetIDs: []string{"dt_probe"},
@@ -49,7 +53,20 @@ func TestRenderWorkloadNetworkPoliciesIsolatesProjectAndBlocksPrivateEgress(t *t
 	if len(expr) != 1 || expr[0].Operator != metav1.LabelSelectorOpNotIn || !slices.Equal(expr[0].Values, []string{"build", volumeTransferScope}) {
 		t.Fatalf("egress policy must exclude build and volume transfer pods: %#v", expr)
 	}
-	public := egress.Spec.Egress[2].To
+	dns := egress.Spec.Egress[0]
+	if len(dns.To) != 1 || dns.To[0].PodSelector.MatchLabels["k8s-app"] != "kube-dns" || dns.To[0].NamespaceSelector.MatchLabels[namespaceNameLabel] != "kube-system" {
+		t.Fatalf("DNS egress must target cluster DNS only: %#v", dns)
+	}
+	gateway := egress.Spec.Egress[2]
+	if len(gateway.Ports) != 2 || gateway.Ports[0].Port.IntVal != 8080 || gateway.Ports[1].Port.IntVal != 8443 {
+		t.Fatalf("gateway egress must be limited to listener ports: %#v", gateway.Ports)
+	}
+	for _, rule := range egress.Spec.Egress {
+		if len(rule.To) == 0 {
+			t.Fatalf("egress rule without destination allows every address: %#v", rule)
+		}
+	}
+	public := egress.Spec.Egress[3].To
 	for _, want := range []string{"10.0.0.0/8", "169.254.0.0/16", "192.168.0.0/16", "203.0.113.7/32", "198.51.100.10/32"} {
 		if !slices.Contains(public[0].IPBlock.Except, want) {
 			t.Fatalf("IPv4 except missing %s: %v", want, public[0].IPBlock.Except)
@@ -84,6 +101,11 @@ func TestRenderWorkloadNetworkPoliciesRejectsInvalidInput(t *testing.T) {
 	input.GatewayNamespace = ""
 	if _, err := RenderWorkloadNetworkPolicies(input); err == nil {
 		t.Fatal("missing gateway namespace should fail")
+	}
+	input = testWorkloadPolicyInput()
+	input.GatewayPorts = nil
+	if _, err := RenderWorkloadNetworkPolicies(input); err == nil {
+		t.Fatal("missing gateway ports should fail")
 	}
 }
 
@@ -130,7 +152,7 @@ func TestSyncWorkloadNetworkPoliciesRepairsDriftAndRemovesStale(t *testing.T) {
 		t.Fatal(err)
 	}
 	repaired, _ := policies.Get(ctx, workloadEgressPolicyName, metav1.GetOptions{})
-	if len(repaired.Spec.Egress) != 3 {
+	if len(repaired.Spec.Egress) != 4 {
 		t.Fatalf("drift not repaired: %#v", repaired.Spec.Egress)
 	}
 }
@@ -160,5 +182,34 @@ func TestClusterNodeAddressesAndProjectNamespaces(t *testing.T) {
 	}
 	if len(namespaces) != 1 || namespaces["prj-demo"] != "prj_demo" {
 		t.Fatalf("project namespaces = %v", namespaces)
+	}
+}
+
+func TestSyncWorkloadNetworkPoliciesToleratesConcurrentCreate(t *testing.T) {
+	clientset := fake.NewSimpleClientset()
+	created := false
+	// 模拟另一个同步者在本次 Get 之后抢先创建同名策略。
+	clientset.PrependReactor("create", "networkpolicies", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		if created {
+			return false, nil, nil
+		}
+		created = true
+		policy := action.(k8stesting.CreateAction).GetObject().(*networkingv1.NetworkPolicy).DeepCopy()
+		policy.Spec.Egress = []networkingv1.NetworkPolicyEgressRule{{}}
+		if err := clientset.Tracker().Create(networkingv1.SchemeGroupVersion.WithResource("networkpolicies"), policy, policy.Namespace); err != nil {
+			return true, nil, err
+		}
+		return true, nil, apierrors.NewAlreadyExists(networkingv1.Resource("networkpolicies"), policy.Name)
+	})
+	client := NewClientForInterface(clientset)
+	desired, err := RenderWorkloadNetworkPolicies(testWorkloadPolicyInput())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := client.SyncWorkloadNetworkPolicies(context.Background(), "prj-demo", desired); err != nil {
+		t.Fatalf("concurrent create must be retried, got %v", err)
+	}
+	if state, _ := client.WorkloadNetworkPolicyState(context.Background(), "prj-demo", desired); state != WorkloadNetworkPolicySynced {
+		t.Fatalf("state after retry = %s", state)
 	}
 }

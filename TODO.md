@@ -32,6 +32,11 @@
 - [ ] 跨项目共享（入站模式 D）：提供方白名单 + 使用方声明依赖双向确认后，按平台受管 Namespace 标签放行。
 - [ ] 禁止 `hostNetwork`、NodePort、LoadBalancer Service 绕过策略（与 Pod Security 一并实施）。
 - [ ] 同步触发补强：配置变更经 outbox 投递（替代当前入队失败依赖周期兜底），节点变化由 informer 即时触发，漂移修正写审计；前端增加“同步中”状态。
+- [ ] 网络隔离上线说明：升级后部署需要集群凭据能读取 Node 与 `default/kubernetes` 端点并管理项目命名空间 NetworkPolicy；依赖其他命名空间服务或私网数据库的已有应用会被阻断，需在发布说明写明并给出排障路径。
+- [ ] apiserver 地址改读 EndpointSlice（`Endpoints` 已弃用）。
+- [ ] 隔离状态接口与同步批量化：一次 List 全集群受管 NetworkPolicy、一次查询集群全部项目与系统组件，避免项目空间多时超时；同步时复用 List 结果，不再逐个 Get。
+- [ ] 集群配置变更入队被 Unique 去重时，若在途任务已读到旧配置，需等下一周期生效；随 outbox 改造一并消除该窗口。
+- [ ] 可信系统组件出站放行收窄到工作负载 Pod，排除同部署配置的 Hook Job Pod。
 - [ ] 后续：出站例外组（多条规则打包授权给多个项目空间）、按域名出站（Cilium `toFQDNs` 或平台出站代理）、公网来源 IP 白名单（网关中间件实现）。
 
 ## 计费与配额

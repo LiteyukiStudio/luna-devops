@@ -40,13 +40,14 @@ func (h *Handlers) ObserveRuntimeClusterNetworkPolicies(ctx *gin.Context) {
 	if !ok {
 		return
 	}
+	// 只查活动集群：不存在与删除中统一返回 404，鉴权前不暴露集群状态。
 	var cluster model.RuntimeCluster
-	if err := h.dbFor(ctx).First(&cluster, "id = ?", ctx.Param("clusterId")).Error; err != nil {
-		writeErrorCode(ctx, http.StatusNotFound, "runtime_cluster.not_found", "runtime cluster not found")
-		return
-	}
-	if !runtimecluster.IsActive(cluster) {
-		writeErrorCode(ctx, http.StatusConflict, "runtime_cluster.not_active", "runtime cluster is not active")
+	if err := runtimecluster.ActiveScope(h.dbFor(ctx)).Model(&model.RuntimeCluster{}).Where("id = ?", ctx.Param("clusterId")).Take(&cluster).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			writeErrorCode(ctx, http.StatusNotFound, "runtime_cluster.not_found", "runtime cluster not found")
+			return
+		}
+		writeError(ctx, http.StatusInternalServerError, "runtime cluster lookup failed")
 		return
 	}
 	if !h.canManageScopedResourceByID(ctx, user, cluster.Scope, cluster.OwnerRef, scopedResourceRuntimeCluster, cluster.ID, "无权查看该运行集群的网络隔离状态") {

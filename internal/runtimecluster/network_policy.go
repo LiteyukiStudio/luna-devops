@@ -21,6 +21,18 @@ func NetworkGatewayNamespace(cluster model.RuntimeCluster) string {
 	return "kube-system"
 }
 
+// NetworkGatewayPorts 是网关监听端口（与 Worker 渲染 Gateway 时的默认值一致）。
+func NetworkGatewayPorts(cluster model.RuntimeCluster) []int {
+	ports := []int{cluster.GatewayHTTPListenerPort, cluster.GatewayHTTPSListenerPort}
+	defaults := []int{8080, 8443}
+	for index, port := range ports {
+		if port <= 0 {
+			ports[index] = defaults[index]
+		}
+	}
+	return ports
+}
+
 // NetworkBlockedCIDRs 解析管理员追加的出站拒绝网段（每行一个）。
 func NetworkBlockedCIDRs(raw string) []string {
 	result := []string{}
@@ -44,6 +56,7 @@ func DesiredWorkloadNetworkPolicies(ctx context.Context, db *gorm.DB, cluster mo
 	return kubeprovider.RenderWorkloadNetworkPolicies(kubeprovider.WorkloadNetworkPolicyInput{
 		Namespace:                  namespace,
 		GatewayNamespace:           NetworkGatewayNamespace(cluster),
+		GatewayPorts:               NetworkGatewayPorts(cluster),
 		BlockedCIDRs:               NetworkBlockedCIDRs(cluster.NetworkBlockedCIDRs),
 		NodeAddresses:              nodeAddresses,
 		TrustedDeploymentTargetIDs: trusted,
