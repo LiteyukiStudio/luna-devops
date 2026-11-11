@@ -3,6 +3,7 @@ package deploymentapi
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -245,6 +246,11 @@ func (h *Handlers) UpdateDeploymentTarget(ctx *gin.Context) {
 		h.auditWithContext(user.ID, "deployment_target.scale", target.ID, true, message, ctx.Request.Context())
 	}
 	h.auditDeploymentVolumeMountChanges(ctx.Request.Context(), user.ID, target, changes)
+	if existing.InternalOnly != target.InternalOnly {
+		h.auditWithContext(user.ID, "deployment_target.internal_only", target.ID, true, fmt.Sprintf("internalOnly=%t", target.InternalOnly), ctx.Request.Context())
+		// 内部服务决定网关能否访问该部署配置的 Pod，变化后立即重新下发网络策略。
+		h.host.EnqueueNetworkPolicyProjectReconcile(ctx.Request.Context(), project.ID)
+	}
 	target, _ = h.deploymentTargetWithHookBindings(target, ctx.Request.Context())
 	target = h.observeDeploymentTarget(ctx.Request.Context(), project, target)
 	mountsByTarget, err := h.deploymentTargetVolumeMountsByTarget(ctx.Request.Context(), []model.DeploymentTarget{target})

@@ -25,12 +25,14 @@ const (
 	WorkloadNetworkPolicyScope  = "workload-network"
 	NetworkPolicyHashAnnotation = "luna.devops/policy-hash"
 
-	workloadIngressPolicyName = "luna-workload-ingress"
-	workloadEgressPolicyName  = "luna-workload-egress"
-	buildEgressPolicyName     = "luna-build-egress"
-	buildPodScope             = "build"
-	systemEgressPolicyPrefix  = "luna-system-egress-"
-	namespaceNameLabel        = "kubernetes.io/metadata.name"
+	workloadIngressPolicyName     = "luna-workload-ingress"
+	workloadEgressPolicyName      = "luna-workload-egress"
+	buildEgressPolicyName         = "luna-build-egress"
+	gatewayIngressPolicyName      = "luna-gateway-ingress"
+	dependencyIngressPolicyPrefix = "luna-dependency-ingress-"
+	buildPodScope                 = "build"
+	systemEgressPolicyPrefix      = "luna-system-egress-"
+	namespaceNameLabel            = "kubernetes.io/metadata.name"
 
 	WorkloadNetworkPolicySynced  = "synced"
 	WorkloadNetworkPolicyDrifted = "drifted"
@@ -51,7 +53,31 @@ type WorkloadNetworkPolicyInput struct {
 	TrustedDeploymentTargetIDs []string
 	// BuildEgress 是构建 Pod 的出站策略输入。
 	BuildEgress BuildEgressInput
+	// IngressMode：isolated 允许同项目空间互访；dependencies 只放行服务引用声明的来源与同一部署配置的副本之间。
+	IngressMode string
+	// DeploymentTargetIDs 是项目空间全部部署配置；Dependencies 为目标部署配置到其服务引用来源的映射。
+	DeploymentTargetIDs []string
+	Dependencies        map[string][]string
+	// InternalTargetIDs 是“内部服务”部署配置，其 Pod 不接受网关流量。
+	InternalTargetIDs []string
+	// EgressMode：internet 放行公网；allowlist 只放行 EgressAllowlist；none 只允许同项目空间与集群 DNS。
+	EgressMode      string
+	EgressAllowlist []EgressAllowRule
 }
+
+// EgressAllowRule 是项目空间出站白名单的一条：CIDR 与可选端口（为空表示全部端口）。
+type EgressAllowRule struct {
+	CIDR  string
+	Ports []int
+}
+
+const (
+	NetworkIngressIsolated     = "isolated"
+	NetworkIngressDependencies = "dependencies"
+	NetworkEgressInternet      = "internet"
+	NetworkEgressAllowlist     = "allowlist"
+	NetworkEgressNone          = "none"
+)
 
 // BuildEgressInput 描述构建 Pod 出站：受限模式只放行集群 DNS、公网 80/443 和管理员放行的私网镜像站。
 type BuildEgressInput struct {
@@ -90,13 +116,26 @@ func RenderWorkloadNetworkPolicies(input WorkloadNetworkPolicyInput) ([]networki
 	gatewayPeer := networkingv1.NetworkPolicyPeer{NamespaceSelector: &metav1.LabelSelector{MatchLabels: map[string]string{namespaceNameLabel: input.GatewayNamespace}}}
 	samePeer := networkingv1.NetworkPolicyPeer{PodSelector: &metav1.LabelSelector{}}
 
-	ingressFrom := []networkingv1.NetworkPolicyPeer{samePeer, gatewayPeer}
+	ingressMode := firstNonEmpty(input.IngressMode, NetworkIngressIsolated)
+	egressMode := firstNonEmpty(input.EgressMode, NetworkEgressInternet)
+	if ingressMode != NetworkIngressIsolated && ingressMode != NetworkIngressDependencies {
+		return nil, fmt.Errorf("invalid ingress mode %q", ingressMode)
+	}
+	if egressMode != NetworkEgressInternet && egressMode != NetworkEgressAllowlist && egressMode != NetworkEgressNone {
+		return nil, fmt.Errorf("invalid egress mode %q", egressMode)
+	}
+
+	// 宿主机网络组件（kubelet 探针、apiserver proxy）始终可达；同项目空间互访只在 isolated 模式整体放行。
+	ingressFrom := []networkingv1.NetworkPolicyPeer{}
+	if ingressMode == NetworkIngressIsolated {
+		ingressFrom = append(ingressFrom, samePeer)
+	}
 	for _, cidr := range nodes {
 		ingressFrom = append(ingressFrom, networkingv1.NetworkPolicyPeer{IPBlock: &networkingv1.IPBlock{CIDR: cidr}})
 	}
 	ingress := workloadNetworkPolicy(input.Namespace, workloadIngressPolicyName, metav1.LabelSelector{}, networkingv1.NetworkPolicySpec{
 		PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeIngress},
-		Ingress:     []networkingv1.NetworkPolicyIngressRule{{From: ingressFrom}},
+		Ingress:     ingressRulesFrom(ingressFrom),
 	})
 
 	denied := append(append([]string(nil), blocked...), nodes...)
@@ -108,11 +147,22 @@ func RenderWorkloadNetworkPolicies(input WorkloadNetworkPolicyInput) ([]networki
 	egressRules := []networkingv1.NetworkPolicyEgressRule{
 		{To: []networkingv1.NetworkPolicyPeer{clusterDNSPeer}, Ports: []networkingv1.NetworkPolicyPort{udpPort(53), tcpPort(53)}},
 		{To: []networkingv1.NetworkPolicyPeer{samePeer}},
-		{To: []networkingv1.NetworkPolicyPeer{gatewayPeer}, Ports: gatewayPorts},
-		{To: []networkingv1.NetworkPolicyPeer{
-			{IPBlock: &networkingv1.IPBlock{CIDR: "0.0.0.0/0", Except: exceptCIDRs(reservedIPv4CIDRs(), denied, false)}},
-			{IPBlock: &networkingv1.IPBlock{CIDR: "::/0", Except: exceptCIDRs(reservedIPv6CIDRs(), denied, true)}},
-		}},
+	}
+	switch egressMode {
+	case NetworkEgressInternet:
+		egressRules = append(egressRules,
+			networkingv1.NetworkPolicyEgressRule{To: []networkingv1.NetworkPolicyPeer{gatewayPeer}, Ports: gatewayPorts},
+			networkingv1.NetworkPolicyEgressRule{To: []networkingv1.NetworkPolicyPeer{
+				{IPBlock: &networkingv1.IPBlock{CIDR: "0.0.0.0/0", Except: exceptCIDRs(reservedIPv4CIDRs(), denied, false)}},
+				{IPBlock: &networkingv1.IPBlock{CIDR: "::/0", Except: exceptCIDRs(reservedIPv6CIDRs(), denied, true)}},
+			}})
+	case NetworkEgressAllowlist:
+		egressRules = append(egressRules, networkingv1.NetworkPolicyEgressRule{To: []networkingv1.NetworkPolicyPeer{gatewayPeer}, Ports: gatewayPorts})
+		allowRules, err := renderEgressAllowlist(input.EgressAllowlist, denied)
+		if err != nil {
+			return nil, err
+		}
+		egressRules = append(egressRules, allowRules...)
 	}
 	// 构建与卷迁移 Pod 有各自更严格的出站策略（下方的 luna-build-egress、卷迁移的拒绝全部出站策略）；
 	// NetworkPolicy 放行规则取并集，不能再被工作负载策略选中。
@@ -144,7 +194,90 @@ func RenderWorkloadNetworkPolicies(input WorkloadNetworkPolicyInput) ([]networki
 				Egress:      []networkingv1.NetworkPolicyEgressRule{{}},
 			}))
 	}
+	gatewayPods := metav1.LabelSelector{}
+	if internal := sortedUnique(input.InternalTargetIDs); len(internal) > 0 {
+		gatewayPods.MatchExpressions = []metav1.LabelSelectorRequirement{{Key: DeploymentTargetIDLabel, Operator: metav1.LabelSelectorOpNotIn, Values: internal}}
+	}
+	policies = append(policies, workloadNetworkPolicy(input.Namespace, gatewayIngressPolicyName, gatewayPods, networkingv1.NetworkPolicySpec{
+		PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeIngress},
+		Ingress:     []networkingv1.NetworkPolicyIngressRule{{From: []networkingv1.NetworkPolicyPeer{gatewayPeer}}},
+	}))
+	if ingressMode == NetworkIngressDependencies {
+		for _, targetID := range sortedUnique(input.DeploymentTargetIDs) {
+			sources := sortedUnique(append([]string{targetID}, input.Dependencies[targetID]...))
+			policies = append(policies, workloadNetworkPolicy(input.Namespace, dependencyIngressPolicyPrefix+shortHash(targetID),
+				metav1.LabelSelector{MatchLabels: map[string]string{DeploymentTargetIDLabel: targetID}},
+				networkingv1.NetworkPolicySpec{
+					PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeIngress},
+					Ingress: []networkingv1.NetworkPolicyIngressRule{{From: []networkingv1.NetworkPolicyPeer{{
+						PodSelector: &metav1.LabelSelector{MatchExpressions: []metav1.LabelSelectorRequirement{{
+							Key: DeploymentTargetIDLabel, Operator: metav1.LabelSelectorOpIn, Values: sources,
+						}}},
+					}}}},
+				}))
+		}
+	}
 	return policies, nil
+}
+
+// renderEgressAllowlist 渲染项目空间出站白名单。整段落在拒绝网段内的条目本就被拒绝，直接跳过；
+// 其余条目排除其中的保留网段、拒绝网段、节点地址与云元数据地址。
+func renderEgressAllowlist(rules []EgressAllowRule, denied []string) ([]networkingv1.NetworkPolicyEgressRule, error) {
+	blocked := append(append(append([]string(nil), reservedIPv4CIDRs()...), reservedIPv6CIDRs()...), denied...)
+	blocked = append(blocked, cloudMetadataCIDRs()...)
+	result := []networkingv1.NetworkPolicyEgressRule{}
+	for _, rule := range rules {
+		prefix, err := netip.ParsePrefix(strings.TrimSpace(rule.CIDR))
+		if err != nil {
+			return nil, fmt.Errorf("invalid egress allowlist CIDR %q: %w", rule.CIDR, err)
+		}
+		cidr := prefix.Masked().String()
+		if cidrWithinAny(prefix.Masked(), blocked) {
+			continue
+		}
+		ports := []networkingv1.NetworkPolicyPort{}
+		for _, port := range sortedUniquePorts(rule.Ports) {
+			if port < 1 || port > 65535 {
+				return nil, fmt.Errorf("invalid egress allowlist port %d", port)
+			}
+			ports = append(ports, tcpPort(port))
+		}
+		result = append(result, networkingv1.NetworkPolicyEgressRule{
+			To:    []networkingv1.NetworkPolicyPeer{{IPBlock: &networkingv1.IPBlock{CIDR: cidr, Except: containedCIDRs(cidr, blocked)}}},
+			Ports: ports,
+		})
+	}
+	return result, nil
+}
+
+// ingressRulesFrom 把来源列表包装成入站规则。from 为空的规则在 Kubernetes 中表示允许所有来源，
+// 因此没有来源时不生成规则（等价于拒绝全部入站）。
+func ingressRulesFrom(from []networkingv1.NetworkPolicyPeer) []networkingv1.NetworkPolicyIngressRule {
+	if len(from) == 0 {
+		return nil
+	}
+	return []networkingv1.NetworkPolicyIngressRule{{From: from}}
+}
+
+// WithinPlatformDeniedRange 判断网段是否整体落在平台始终拒绝的私网、保留或元数据网段内；
+// 这类出站白名单条目不可能生效，API 应直接拒绝。
+func WithinPlatformDeniedRange(prefix netip.Prefix) bool {
+	denied := append(append(reservedIPv4CIDRs(), reservedIPv6CIDRs()...), cloudMetadataCIDRs()...)
+	return cidrWithinAny(prefix.Masked(), denied)
+}
+
+// cidrWithinAny 判断 prefix 是否整体落在任一网段内（含相等）。
+func cidrWithinAny(prefix netip.Prefix, values []string) bool {
+	for _, value := range values {
+		parent, err := netip.ParsePrefix(value)
+		if err != nil || parent.Addr().Is6() != prefix.Addr().Is6() {
+			continue
+		}
+		if parent.Bits() <= prefix.Bits() && parent.Contains(prefix.Addr()) {
+			return true
+		}
+	}
+	return false
 }
 
 func renderBuildEgressPolicy(namespace string, input BuildEgressInput, clusterDNSPeer networkingv1.NetworkPolicyPeer, denied []string) (networkingv1.NetworkPolicy, error) {

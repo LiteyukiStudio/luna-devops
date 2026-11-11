@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { NativeSelect } from '@/components/ui/native-select'
 import { Textarea } from '@/components/ui/textarea'
-import { EditorGroup } from '../deployment-target-editor-fields'
+import { EditorGroup, SwitchField } from '../deployment-target-editor-fields'
 import { useFieldError } from '../deployment-target-editor-utils'
 import { maxServicePorts } from '../deployment-target-form'
 
@@ -48,7 +48,7 @@ export function ServicePortsFields() {
   )
 }
 
-/** 高级分区中的 Service 选项：会话亲和与注解。 */
+/** 高级分区中的 Service 选项：会话亲和、注解与内部服务。 */
 export function ServiceAdvancedFields() {
   const { t } = useTranslation()
   const { register } = useFormContext<DeploymentTargetFormValues>()
@@ -65,6 +65,7 @@ export function ServiceAdvancedFields() {
       <FormField error={annotationsError} hint={t('deploymentsPage.serviceAnnotationsHint')} label={t('deploymentsPage.serviceAnnotations')}>
         <Textarea {...register('serviceAnnotations')} className="min-h-20 font-mono text-sm" placeholder={t('deploymentTargetEditor.examplePlaceholder', { value: t('deploymentsPage.serviceAnnotationsPlaceholder') })} />
       </FormField>
+      <SwitchField description={t('deploymentsPage.internalOnlyHint')} label={t('deploymentsPage.internalOnly')} name="internalOnly" />
     </div>
   )
 }

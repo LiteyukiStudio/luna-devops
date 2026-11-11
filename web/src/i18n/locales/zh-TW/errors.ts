@@ -37,6 +37,9 @@ const errors = {
     mode_incompatible: '專案資料卷模式與該模板不相容，請選擇匹配的檔案系統卷或塊裝置卷。',
   },
   project: {
+    network_ingress_mode_invalid: '入站模式只能是專案內互通或依服務參照放行。',
+    network_egress_mode_invalid: '出站模式只能是允許公網、僅白名單或禁止外連。',
+    network_egress_allowlist_invalid: '出站白名單無效：每行「CIDR 連接埠,連接埠」，連接埠可省略；不能是 /0 或始終拒絕的私網、保留網段；最多 64 條。',
     delete_in_progress: '專案空間正在刪除中，請等待資源清理完成。',
     identifier_exists: '專案空間標識已存在。',
     identifier_delete_in_progress: '同標識專案空間正在刪除，資源清理完成後才能複用。',
@@ -91,7 +94,11 @@ const errors = {
     export_failed: '部署配置匯出失敗，請稍後重試。',
     internal_error: '部署配置處理失敗，請稍後重試。',
   },
+  gateway_route: {
+    target_internal: '此部署設定是內部服務，不能建立存取入口。',
+  },
   deployment_target: {
+    internal_has_routes: '此部署設定還有存取入口，請先刪除存取入口再設為內部服務。',
     image_repository_claimed: '目標映象倉庫已被其他專案空間使用，請換一個倉庫路徑。',
     service_account_invalid: 'ServiceAccount 配置無效，請檢查後重試。',
     replicas_invalid: '副本數必須為 0 或正整數。',

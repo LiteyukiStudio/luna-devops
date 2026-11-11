@@ -18,6 +18,7 @@ type deploymentTargetResponse struct {
 	Stage                     string                               `json:"stage"`
 	KubernetesName            string                               `json:"kubernetesName"`
 	ClusterID                 string                               `json:"clusterId"`
+	InternalOnly              bool                                 `json:"internalOnly"`
 	EffectiveClusterID        string                               `json:"effectiveClusterId"`
 	WorkloadType              string                               `json:"workloadType"`
 	Replicas                  int                                  `json:"replicas"`
@@ -144,6 +145,7 @@ func deploymentTargetResponseFromModel(target model.DeploymentTarget, mounts ...
 		RunAsGroup:                strings.TrimSpace(target.RunAsGroup),
 		FSGroup:                   strings.TrimSpace(target.FSGroup),
 		FSGroupChangePolicy:       normalizeFSGroupChangePolicy(target.FSGroupChangePolicy),
+		InternalOnly:              target.InternalOnly,
 		ReadOnlyRootFilesystem:    target.ReadOnlyRootFilesystem,
 		CapabilityDrop:            target.CapabilityDrop,
 		NodeSelector:              target.NodeSelector,
@@ -231,6 +233,7 @@ type deploymentTargetInput struct {
 	Name                         string                             `json:"name"`
 	Stage                        string                             `json:"stage"`
 	ClusterID                    string                             `json:"clusterId"`
+	InternalOnly                 bool                               `json:"internalOnly"`
 	Namespace                    string                             `json:"namespace"`
 	WorkloadType                 string                             `json:"workloadType"`
 	Replicas                     *int                               `json:"replicas"`

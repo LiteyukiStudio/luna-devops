@@ -131,3 +131,18 @@ func (h *Handlers) ensureTargetImageRepositoryAvailable(ctx *gin.Context, projec
 	}
 	return true
 }
+
+// ensureTargetHasNoGatewayRoutes 拒绝把仍有访问入口的部署配置设为内部服务：内部服务不接受网关流量，
+// 已有访问入口会全部失效。需要先删除访问入口。
+func (h *Handlers) ensureTargetHasNoGatewayRoutes(ctx *gin.Context, targetID string) bool {
+	var count int64
+	if err := h.dbFor(ctx).Model(&model.GatewayRoute{}).Where("deployment_target_id = ? and delete_status = ?", targetID, "active").Count(&count).Error; err != nil {
+		writeError(ctx, http.StatusInternalServerError, "gateway route lookup failed")
+		return false
+	}
+	if count > 0 {
+		writeErrorCode(ctx, http.StatusConflict, "deployment_target.internal_has_routes", "remove the gateway routes of this deployment target before making it internal")
+		return false
+	}
+	return true
+}

@@ -59,6 +59,7 @@ const (
 )
 
 type Host interface {
+	EnqueueNetworkPolicyProjectReconcile(ctx context.Context, projectID string) bool
 	DBFor(ctx *gin.Context) *gorm.DB
 	DBWithContext(ctx context.Context) *gorm.DB
 	AuthorizeProject(ctx *gin.Context, action authz.Action) (model.User, model.Project, bool)

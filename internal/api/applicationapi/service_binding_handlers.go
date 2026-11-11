@@ -51,6 +51,8 @@ func (h *Handlers) CreateServiceBinding(ctx *gin.Context) {
 	}
 	h.auditWithContext(user.ID, "service_binding.create", binding.ID, true, binding.SourceDeploymentTargetID, ctx.Request.Context())
 	h.emitServiceBindingEvent(ctx.Request.Context(), user, project, binding, "created", notification.SeverityInfo)
+	// 依赖入站模式下服务引用决定谁能访问谁，变化后立即重新下发网络策略。
+	h.host.EnqueueNetworkPolicyProjectReconcile(ctx.Request.Context(), project.ID)
 	ctx.JSON(http.StatusCreated, serviceBindingMutationResponseFor(binding))
 }
 
@@ -72,6 +74,8 @@ func (h *Handlers) UpdateServiceBinding(ctx *gin.Context) {
 	}
 	h.auditWithContext(user.ID, "service_binding.update", binding.ID, true, binding.SourceDeploymentTargetID, ctx.Request.Context())
 	h.emitServiceBindingEvent(ctx.Request.Context(), user, project, binding, "updated", notification.SeverityInfo)
+	// 依赖入站模式下服务引用决定谁能访问谁，变化后立即重新下发网络策略。
+	h.host.EnqueueNetworkPolicyProjectReconcile(ctx.Request.Context(), project.ID)
 	ctx.JSON(http.StatusOK, serviceBindingMutationResponseFor(binding))
 }
 
@@ -89,6 +93,8 @@ func (h *Handlers) DeleteServiceBinding(ctx *gin.Context) {
 	}
 	h.auditWithContext(user.ID, "service_binding.delete", binding.ID, true, binding.SourceDeploymentTargetID, ctx.Request.Context())
 	h.emitServiceBindingEvent(ctx.Request.Context(), user, project, binding, "deleted", notification.SeverityInfo)
+	// 依赖入站模式下服务引用决定谁能访问谁，变化后立即重新下发网络策略。
+	h.host.EnqueueNetworkPolicyProjectReconcile(ctx.Request.Context(), project.ID)
 	ctx.JSON(http.StatusOK, deletedServiceBindingMutationResponse(binding))
 }
 

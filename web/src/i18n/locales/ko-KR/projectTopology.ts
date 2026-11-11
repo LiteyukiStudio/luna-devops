@@ -186,6 +186,21 @@ const projectTopology = {
     portInvalid: '포트는 1에서 65535 사이의 정수여야 합니다',
     descriptionTooLong: '관계 비고는 최대 500자입니다',
   },
+  networkPolicy: {
+    title: '네트워크 격리',
+    description: '클러스터 기본값보다 엄격하게만 설정할 수 있습니다. 저장하면 네트워크 정책을 즉시 다시 적용하며, 사설·예약 주소, 노드, Kubernetes API는 항상 차단됩니다.',
+    loadFailed: '네트워크 모드를 불러오지 못했습니다. 새로고침 후 다시 시도하세요.',
+    saved: '네트워크 모드를 저장했습니다. 정책을 적용하는 중입니다',
+    ingressMode: '인바운드',
+    ingressModeHint: '프로젝트 내 상호 접근: 프로젝트 스페이스의 애플리케이션끼리 접근할 수 있습니다. 서비스 참조 기반 허용: 애플리케이션은 자신의 복제본과 자신을 참조하는 애플리케이션의 접근만 받습니다. 두 모드 모두 게이트웨이는 내부 서비스가 아닌 애플리케이션에 접근할 수 있습니다.',
+    ingressModes: { isolated: '프로젝트 내 상호 접근', dependencies: '서비스 참조 기반 허용' },
+    egressMode: '아웃바운드',
+    egressModeHint: '인터넷 허용: 인터넷과 다른 애플리케이션의 접근 경로에 접근할 수 있습니다. 허용 목록만: 아래 주소만. 외부 연결 금지: 프로젝트 스페이스 내부와 클러스터 DNS만.',
+    egressModes: { internet: '인터넷 허용', allowlist: '허용 목록만', none: '외부 연결 금지' },
+    egressAllowlist: '아웃바운드 허용 목록',
+    egressAllowlistHint: '한 줄에 "CIDR 포트,포트". 포트를 생략하면 모든 포트, 최대 64개. 사설·예약 대역은 항상 차단되므로 지정할 수 없습니다.',
+    egressAllowlistPlaceholder: '203.0.113.0/24 443\n198.51.100.10/32',
+  },
 }
 
 export default projectTopology

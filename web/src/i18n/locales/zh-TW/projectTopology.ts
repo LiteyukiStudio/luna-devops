@@ -186,6 +186,21 @@ const projectTopology = {
     portInvalid: '埠必須是 1 到 65535 的整數',
     descriptionTooLong: '關係備註最多 500 個字元',
   },
+  networkPolicy: {
+    title: '網路隔離',
+    description: '只能比叢集預設更嚴格。儲存後平台會立即重新下發網路策略；私網、保留位址、節點與 Kubernetes API 始終拒絕。',
+    loadFailed: '網路模式載入失敗，請重新整理後再試。',
+    saved: '網路模式已儲存，策略正在下發',
+    ingressMode: '入站',
+    ingressModeHint: '專案內互通：專案空間內的應用可以互相存取。依服務參照放行：應用只接受自己的副本和參照了它的應用存取。兩種模式下閘道都可以存取非內部服務。',
+    ingressModes: { isolated: '專案內互通', dependencies: '依服務參照放行' },
+    egressMode: '出站',
+    egressModeHint: '允許公網：可以存取公網與其他應用的存取入口。僅白名單：只能存取下方列出的位址。禁止外連：只能存取專案空間內與叢集 DNS。',
+    egressModes: { internet: '允許公網', allowlist: '僅白名單', none: '禁止外連' },
+    egressAllowlist: '出站白名單',
+    egressAllowlistHint: '每行一條「CIDR 連接埠,連接埠」，省略連接埠表示全部連接埠；最多 64 條。私網與保留網段始終拒絕，不能寫在這裡。',
+    egressAllowlistPlaceholder: '203.0.113.0/24 443\n198.51.100.10/32',
+  },
 }
 
 export default projectTopology

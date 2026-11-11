@@ -186,6 +186,21 @@ const projectTopology = {
     portInvalid: 'ポートは 1 から 65535 の整数である必要があります',
     descriptionTooLong: '関係備考は最大 500 文字です',
   },
+  networkPolicy: {
+    title: 'ネットワーク分離',
+    description: 'クラスターの既定より厳しい設定のみ可能です。保存するとすぐにネットワークポリシーを再適用します。プライベート・予約アドレス、ノード、Kubernetes API は常に拒否されます。',
+    loadFailed: 'ネットワークモードを読み込めませんでした。再読み込みしてください。',
+    saved: 'ネットワークモードを保存しました。ポリシーを適用しています',
+    ingressMode: '受信',
+    ingressModeHint: 'プロジェクト内で相互通信: プロジェクトスペース内のアプリは互いにアクセスできます。サービス参照で許可: アプリは自身のレプリカと、自身を参照するアプリからのみ受け付けます。どちらのモードでもゲートウェイは内部サービス以外にアクセスできます。',
+    ingressModes: { isolated: 'プロジェクト内で相互通信', dependencies: 'サービス参照で許可' },
+    egressMode: '送信',
+    egressModeHint: 'インターネット許可: インターネットと他のアプリのアクセスエントリにアクセスできます。許可リストのみ: 下の宛先のみ。外部接続禁止: プロジェクトスペース内とクラスター DNS のみ。',
+    egressModes: { internet: 'インターネット許可', allowlist: '許可リストのみ', none: '外部接続禁止' },
+    egressAllowlist: '送信許可リスト',
+    egressAllowlistHint: '1 行に「CIDR ポート,ポート」。ポートを省略するとすべてのポート。最大 64 件。プライベート・予約レンジは常に拒否されるため指定できません。',
+    egressAllowlistPlaceholder: '203.0.113.0/24 443\n198.51.100.10/32',
+  },
 }
 
 export default projectTopology

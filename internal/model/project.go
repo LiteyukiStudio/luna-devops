@@ -7,25 +7,28 @@ import (
 )
 
 type Project struct {
-	ID                  string         `gorm:"primaryKey" json:"id"`
-	Identifier          string         `gorm:"column:identifier;uniqueIndex:idx_projects_identifier_active,where:deleted_at IS NULL;not null" json:"identifier"`
-	KubernetesNamespace string         `gorm:"not null;default:''" json:"kubernetesNamespace"`
-	Name                string         `gorm:"not null" json:"name"`
-	Description         string         `json:"description"`
-	MaxConcurrentBuilds int            `gorm:"not null;default:2" json:"maxConcurrentBuilds"`
-	WebConsoleEnabled   bool           `gorm:"not null;default:true" json:"webConsoleEnabled"`
-	BillingOwnerUserID  string         `gorm:"index;not null;default:''" json:"billingOwnerUserId"`
-	SystemKey           string         `gorm:"index;not null;default:''" json:"systemKey"`
-	DeleteStatus        string         `gorm:"index;not null;default:active" json:"deleteStatus"`
-	DeleteMessage       string         `gorm:"type:text;not null;default:''" json:"deleteMessage"`
-	DeleteStartedAt     *time.Time     `json:"deleteStartedAt"`
-	DeleteFinishedAt    *time.Time     `json:"deleteFinishedAt"`
-	DashboardOrder      int            `gorm:"->;column:dashboard_order;-:migration" json:"dashboardOrder"`
-	LastUsedAt          *time.Time     `gorm:"->;column:last_used_at;-:migration" json:"lastUsedAt"`
-	UseCount            int            `gorm:"->;column:use_count;-:migration" json:"useCount"`
-	CreatedAt           time.Time      `json:"createdAt"`
-	UpdatedAt           time.Time      `json:"updatedAt"`
-	DeletedAt           gorm.DeletedAt `gorm:"index" json:"-"`
+	ID                     string         `gorm:"primaryKey" json:"id"`
+	Identifier             string         `gorm:"column:identifier;uniqueIndex:idx_projects_identifier_active,where:deleted_at IS NULL;not null" json:"identifier"`
+	KubernetesNamespace    string         `gorm:"not null;default:''" json:"kubernetesNamespace"`
+	Name                   string         `gorm:"not null" json:"name"`
+	Description            string         `json:"description"`
+	MaxConcurrentBuilds    int            `gorm:"not null;default:2" json:"maxConcurrentBuilds"`
+	WebConsoleEnabled      bool           `gorm:"not null;default:true" json:"webConsoleEnabled"`
+	BillingOwnerUserID     string         `gorm:"index;not null;default:''" json:"billingOwnerUserId"`
+	SystemKey              string         `gorm:"index;not null;default:''" json:"systemKey"`
+	NetworkIngressMode     string         `gorm:"not null;default:isolated" json:"networkIngressMode"`
+	NetworkEgressMode      string         `gorm:"not null;default:internet" json:"networkEgressMode"`
+	NetworkEgressAllowlist string         `gorm:"type:text;not null;default:''" json:"networkEgressAllowlist"`
+	DeleteStatus           string         `gorm:"index;not null;default:active" json:"deleteStatus"`
+	DeleteMessage          string         `gorm:"type:text;not null;default:''" json:"deleteMessage"`
+	DeleteStartedAt        *time.Time     `json:"deleteStartedAt"`
+	DeleteFinishedAt       *time.Time     `json:"deleteFinishedAt"`
+	DashboardOrder         int            `gorm:"->;column:dashboard_order;-:migration" json:"dashboardOrder"`
+	LastUsedAt             *time.Time     `gorm:"->;column:last_used_at;-:migration" json:"lastUsedAt"`
+	UseCount               int            `gorm:"->;column:use_count;-:migration" json:"useCount"`
+	CreatedAt              time.Time      `json:"createdAt"`
+	UpdatedAt              time.Time      `json:"updatedAt"`
+	DeletedAt              gorm.DeletedAt `gorm:"index" json:"-"`
 }
 
 type ProjectMember struct {

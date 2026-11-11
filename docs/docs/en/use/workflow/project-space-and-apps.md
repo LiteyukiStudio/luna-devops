@@ -44,3 +44,23 @@ The application organizes the service. Configure its code repository, image, por
 If another application still references this application through a service relation, deletion is rejected before any runtime resource is removed; delete or disable those relations in the topology first. Relations between deployment targets of the same application do not block deletion. An application that is being deleted cannot become the target of a new service relation.
 
 Deletion always ends as **Deleted** or **Delete failed**. When it fails, the application list shows the reason, such as a remaining service relation, a runtime cleanup failure, or a deletion task that could not be queued. Resolve the cause and delete the application again.
+
+## Configure network isolation
+
+By default, applications in a project space can reach each other, the gateway can reach applications, and applications can reach the public internet. Other project spaces, private and reserved addresses, cluster nodes, and the Kubernetes API are always unreachable. When you need stricter isolation, a project space admin can tighten it under **Topology → Network isolation**; saving reapplies the network policies immediately.
+
+| Setting | Value | Effect |
+| --- | --- | --- |
+| Ingress | Project-wide (default) | Applications in the project space can reach each other |
+|  | Service bindings only | Each deployment target accepts only its own replicas and deployment targets that bind to it in the topology; applications without a service binding cannot reach each other |
+| Egress | Internet (default) | The public internet and other applications' routes are reachable |
+|  | Allowlist only | Only the addresses in the egress allowlist and routes are reachable |
+|  | None | Only applications in the project space and cluster DNS are reachable |
+
+The egress allowlist takes one `CIDR port,port` entry per line; omit ports to allow all ports; at most 64 entries, for example `203.0.113.0/24 443`. Private and reserved ranges are always denied and cannot be listed; contact a platform administrator when you need to reach an internal service.
+
+Before switching to **Service bindings only**, make sure every call between applications has a service binding in the topology; undeclared calls fail immediately.
+
+### Internal services
+
+For deployment targets that do not serve external traffic, such as databases, queues, or background workers, enable **Internal service** under the deployment target's **Advanced → Service**. Gateway traffic then cannot reach its Pods and it cannot have routes; delete existing routes first.

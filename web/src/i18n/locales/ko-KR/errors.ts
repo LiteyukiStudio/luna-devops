@@ -37,6 +37,9 @@ const errors = {
     mode_incompatible: '프로젝트 데이터 볼륨 모드가 이 템플릿과 호환되지 않습니다. 알맞은 파일 시스템 또는 블록 볼륨을 선택하세요.',
   },
   project: {
+    network_ingress_mode_invalid: '인바운드 모드는 프로젝트 내 상호 접근 또는 서비스 참조 기반 허용이어야 합니다.',
+    network_egress_mode_invalid: '아웃바운드 모드는 인터넷 허용, 허용 목록만, 외부 연결 금지 중 하나여야 합니다.',
+    network_egress_allowlist_invalid: '아웃바운드 허용 목록이 잘못되었습니다. 한 줄에 "CIDR 포트,포트"(포트 생략 가능), /0이나 항상 차단되는 사설·예약 대역 불가, 최대 64개입니다.',
     delete_in_progress: '프로젝트 스페이스를 삭제하는 중입니다. 리소스 정리가 끝날 때까지 기다리세요.',
     identifier_exists: '프로젝트 스페이스 식별자가 이미 존재합니다.',
     identifier_delete_in_progress: '같은 식별자의 프로젝트 스페이스를 삭제 중입니다. 리소스 정리 완료 후 재사용할 수 있습니다.',
@@ -91,7 +94,11 @@ const errors = {
     export_failed: '배포 구성 낚수하기에 실패했습니다. 잠시 후 다시 시도하세요.',
     internal_error: '배포 구성 처리에 실패했습니다. 잠시 후 다시 시도하세요.',
   },
+  gateway_route: {
+    target_internal: '이 배포 설정은 내부 서비스이므로 접근 경로를 만들 수 없습니다.',
+  },
   deployment_target: {
+    internal_has_routes: '이 배포 설정에 아직 접근 경로가 있습니다. 먼저 삭제한 뒤 내부 서비스로 설정하세요.',
     image_repository_claimed: '대상 이미지 저장소를 다른 프로젝트 스페이스에서 사용 중입니다. 다른 저장소 경로를 선택하세요.',
     service_account_invalid: 'ServiceAccount 구성이 유효하지 않습니다. 확인 후 다시 시도하세요.',
     replicas_invalid: '복제본 수는 0 이상의 정수여야 합니다.',

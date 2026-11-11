@@ -53,6 +53,7 @@ type Host interface {
 	MarkDeploymentTargetGatewayRoutesDeleteFailed(db *gorm.DB, target model.DeploymentTarget, message string) error
 	IsResourceDeleteAlreadyStarted(err error) bool
 	EnqueueResourceCleanup(ctx context.Context, resourceType, resourceID, projectID, actorID string) bool
+	EnqueueNetworkPolicyProjectReconcile(ctx context.Context, projectID string) bool
 	RuntimeClusterForProjectUse(ctx *gin.Context, user model.User, projectID, clusterID string) (model.RuntimeCluster, bool)
 	RuntimeSecretFilesFromInput(ctx *gin.Context, user model.User, ownerID, value string, existing map[string]string) (map[string]string, bool)
 	RuntimeClusterForDeploymentTarget(ctx *gin.Context, target model.DeploymentTarget) (model.RuntimeCluster, bool)
