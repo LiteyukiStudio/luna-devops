@@ -155,6 +155,10 @@ func (c *Client) waitNetworkPolicyProbeServer(ctx context.Context, namespace str
 		if code := networkPolicyProbePodFailure(pod); code != "" {
 			return "", code, nil
 		}
+		// RestartPolicy=Never：命令无法启动或服务端退出时 Pod 直接终止，不能等到超时。
+		if pod.Status.Phase == corev1.PodFailed || pod.Status.Phase == corev1.PodSucceeded {
+			return "", "runtime_cluster.network_policy_probe_pod_failed", nil
+		}
 		if pod.Status.Phase == corev1.PodRunning && pod.Status.PodIP != "" {
 			return pod.Status.PodIP, "", nil
 		}

@@ -117,7 +117,7 @@ const errors = {
     network_policy_forbidden: '叢集憑證無權讀取網路策略、節點或命名空間。',
     network_policy_timeout: '讀取叢集網路策略逾時。',
     build_egress_mode_invalid: '建置出站模式只能是受限或完全放行。',
-    build_private_egress_cidrs_invalid: '私網映像站網段格式無效：每行一個 CIDR，不能是 /0，最多 256 條。',
+    build_private_egress_cidrs_invalid: '私網映像站網段格式無效：每行一個 CIDR，不能是 /0 或雲端主機中繼資料位址本身，最多 256 條。',
     build_private_egress_ports_invalid: '私網映像站連接埠無效：使用 1–65535 的連接埠，最多 16 個。',
     network_policy_probe_image_missing: 'Worker 未設定建置執行器映像，無法探測。',
     network_policy_probe_image_unavailable: '叢集無法拉取建置執行器映像，無法探測。',

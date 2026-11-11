@@ -278,3 +278,36 @@ func TestSyncTakesOverLegacyBuildPolicy(t *testing.T) {
 		t.Fatalf("legacy build policy must be taken over, state = %s", state)
 	}
 }
+
+func TestBuildPrivateEgressAlwaysExcludesCloudMetadata(t *testing.T) {
+	input := testWorkloadPolicyInput()
+	input.BuildEgress = BuildEgressInput{PrivateCIDRs: []string{"169.254.0.0/16", "100.64.0.0/10", "fd00::/8"}, PrivatePorts: []int{80}}
+	policies, err := RenderWorkloadNetworkPolicies(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{"169.254.0.0/16": "169.254.169.254/32", "100.64.0.0/10": "100.100.100.200/32", "fd00::/8": "fd00:ec2::254/128"}
+	for _, rule := range policies[2].Spec.Egress[2:] {
+		block := rule.To[0].IPBlock
+		if !slices.Contains(block.Except, want[block.CIDR]) {
+			t.Fatalf("private rule %s must exclude metadata %s: %v", block.CIDR, want[block.CIDR], block.Except)
+		}
+	}
+	input.BuildEgress = BuildEgressInput{PrivateCIDRs: []string{"169.254.169.254/32"}}
+	if _, err := RenderWorkloadNetworkPolicies(input); err == nil {
+		t.Fatal("a private rule equal to a metadata address must fail closed")
+	}
+}
+
+func TestTrustedSystemEgressExcludesBuildAndHookPods(t *testing.T) {
+	policies, err := RenderWorkloadNetworkPolicies(testWorkloadPolicyInput())
+	if err != nil {
+		t.Fatal(err)
+	}
+	selector := policies[3].Spec.PodSelector
+	if len(selector.MatchExpressions) != 2 ||
+		selector.MatchExpressions[0].Key != ScopeLabel || !slices.Contains(selector.MatchExpressions[0].Values, "build") ||
+		selector.MatchExpressions[1].Key != HookRunIDLabel || selector.MatchExpressions[1].Operator != metav1.LabelSelectorOpDoesNotExist {
+		t.Fatalf("trusted system egress selector = %#v", selector)
+	}
+}

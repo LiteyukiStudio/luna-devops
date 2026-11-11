@@ -117,7 +117,7 @@ const errors = {
     network_policy_forbidden: '클러스터 자격 증명에 네트워크 정책, 노드, 네임스페이스 읽기 권한이 없습니다.',
     network_policy_timeout: '클러스터 네트워크 정책 읽기 시간이 초과되었습니다.',
     build_egress_mode_invalid: '빌드 아웃바운드는 제한 또는 전체 허용이어야 합니다.',
-    build_private_egress_cidrs_invalid: '사설 레지스트리 CIDR 형식이 잘못되었습니다. 한 줄에 하나, /0 불가, 최대 256개입니다.',
+    build_private_egress_cidrs_invalid: '사설 레지스트리 CIDR 형식이 잘못되었습니다. 한 줄에 하나, /0이나 클라우드 메타데이터 주소 자체는 불가, 최대 256개입니다.',
     build_private_egress_ports_invalid: '사설 레지스트리 포트가 잘못되었습니다. 1–65535 포트를 최대 16개까지 사용하세요.',
     network_policy_probe_image_missing: 'Worker에 빌드 실행 이미지가 설정되지 않아 확인할 수 없습니다.',
     network_policy_probe_image_unavailable: '클러스터가 빌드 실행 이미지를 가져올 수 없어 확인할 수 없습니다.',

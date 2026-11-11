@@ -117,7 +117,7 @@ const errors = {
     network_policy_forbidden: 'The cluster credential cannot read network policies, nodes, or namespaces.',
     network_policy_timeout: 'Reading cluster network policies timed out.',
     build_egress_mode_invalid: 'Build egress must be restricted or permissive.',
-    build_private_egress_cidrs_invalid: 'Private registry CIDRs are invalid: use one CIDR per line, no /0, at most 256 entries.',
+    build_private_egress_cidrs_invalid: 'Private registry CIDRs are invalid: use one CIDR per line, not /0 or a cloud metadata address itself, at most 256 entries.',
     build_private_egress_ports_invalid: 'Private registry ports are invalid: use ports 1–65535, at most 16.',
     network_policy_probe_image_missing: 'The Worker has no build executor image configured, so the probe cannot run.',
     network_policy_probe_image_unavailable: 'The cluster cannot pull the build executor image, so the probe cannot run.',

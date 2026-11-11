@@ -34,7 +34,6 @@
 - [ ] apiserver 地址改读 EndpointSlice（`Endpoints` 已弃用）。
 - [ ] 隔离状态接口与同步批量化：一次 List 全集群受管 NetworkPolicy、一次查询集群全部项目与系统组件，避免项目空间多时超时；同步时复用 List 结果，不再逐个 Get。
 - [ ] 集群配置变更入队被 Unique 去重时，若在途任务已读到旧配置，需等下一周期生效；随 outbox 改造一并消除该窗口。
-- [ ] 可信系统组件出站放行收窄到工作负载 Pod，排除同部署配置的 Hook Job Pod。
 - [ ] 集群 DNS 放行支持 NodeLocal DNS 等非 `kube-system/k8s-app=kube-dns` 的地址（集群配置项）。
 - [ ] 后续：出站例外组（多条规则打包授权给多个项目空间）、按域名出站（Cilium `toFQDNs` 或平台出站代理）、公网来源 IP 白名单（网关中间件实现）。
 

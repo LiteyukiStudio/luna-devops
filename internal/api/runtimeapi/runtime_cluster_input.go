@@ -142,13 +142,22 @@ func flattenKubeconfig(kubeconfig string) (string, error) {
 	return output, nil
 }
 
-func (h *Handlers) saveRuntimeClusterWithDefault(cluster model.RuntimeCluster, ctx context.Context) error {
+func (h *Handlers) saveRuntimeClusterWithDefault(cluster model.RuntimeCluster, resetProbe bool, ctx context.Context) error {
 	return h.dbWithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		return h.saveRuntimeClusterWithDefaultTx(tx, cluster)
+		return h.saveRuntimeClusterWithDefaultTx(tx, cluster, resetProbe)
 	})
 }
 
-func (h *Handlers) saveRuntimeClusterWithDefaultTx(tx *gorm.DB, cluster model.RuntimeCluster) error {
+// saveRuntimeClusterWithDefaultTx 保存集群配置。探测结论由 Worker 写入，普通保存不得用请求开始时读到的旧值覆盖；
+// 只有替换 kubeconfig 时才随保存把结论重置为 unknown。
+func saveRuntimeClusterRecord(tx *gorm.DB, cluster model.RuntimeCluster, resetProbe bool) error {
+	if !resetProbe {
+		tx = tx.Omit("network_policy_enforcement", "network_policy_probe_code", "network_policy_probed_at")
+	}
+	return tx.Save(&cluster).Error
+}
+
+func (h *Handlers) saveRuntimeClusterWithDefaultTx(tx *gorm.DB, cluster model.RuntimeCluster, resetProbe bool) error {
 	if cluster.IsDefault {
 		if cluster.Scope != "global" {
 			return errors.New("只有全局运行集群可以设为默认集群")
@@ -159,7 +168,7 @@ func (h *Handlers) saveRuntimeClusterWithDefaultTx(tx *gorm.DB, cluster model.Ru
 	} else if cluster.Scope != "global" {
 		cluster.IsDefault = false
 	}
-	if err := tx.Save(&cluster).Error; err != nil {
+	if err := saveRuntimeClusterRecord(tx, cluster, resetProbe); err != nil {
 		return err
 	}
 	return h.replaceScopedResourceProjectBindings(tx, scopedResourceRuntimeCluster, cluster.ID, sortedProjectIDs(cluster.ProjectIDs), nil)
@@ -308,8 +317,34 @@ func validateTrustedProxyCIDRs(value string) error {
 
 // normalizeNetworkBlockedCIDRs 校验管理员追加的出站拒绝网段：每行一个合法 CIDR，不能是 /0，规范化后去重。
 func normalizeNetworkBlockedCIDRs(value string) (string, error) {
-	seen := map[string]bool{}
-	result := []string{}
+	prefixes, err := parseCIDRLines(value, "blocked")
+	if err != nil {
+		return "", err
+	}
+	return joinPrefixes(prefixes), nil
+}
+
+// normalizeBuildPrivateEgressCIDRs 校验构建可访问的私网镜像站网段：每行一个合法 CIDR，不能是 /0，
+// 不能恰好是云主机元数据地址，规范化后去重。
+func normalizeBuildPrivateEgressCIDRs(value string) (string, error) {
+	prefixes, err := parseCIDRLines(value, "build private egress")
+	if err != nil {
+		return "", err
+	}
+	for _, prefix := range prefixes {
+		for _, metadata := range kubeprovider.CloudMetadataCIDRs() {
+			// 包含元数据地址的网段由渲染器排除元数据地址；网段恰好等于元数据地址时无法排除，直接拒绝。
+			if prefix == netip.MustParsePrefix(metadata) {
+				return "", fmt.Errorf("build private egress CIDR %q is a cloud metadata address", prefix.String())
+			}
+		}
+	}
+	return joinPrefixes(prefixes), nil
+}
+
+func parseCIDRLines(value string, kind string) ([]netip.Prefix, error) {
+	seen := map[netip.Prefix]bool{}
+	result := []netip.Prefix{}
 	for _, item := range strings.FieldsFunc(value, func(char rune) bool {
 		return char == '\n' || char == ',' || char == ';'
 	}) {
@@ -319,30 +354,29 @@ func normalizeNetworkBlockedCIDRs(value string) (string, error) {
 		}
 		prefix, err := netip.ParsePrefix(item)
 		if err != nil {
-			return "", fmt.Errorf("blocked CIDR %q is invalid", item)
+			return nil, fmt.Errorf("%s CIDR %q is invalid", kind, item)
 		}
 		if prefix.Bits() == 0 {
-			return "", fmt.Errorf("blocked CIDR %q would block all egress", item)
+			return nil, fmt.Errorf("%s CIDR %q must not be /0", kind, item)
 		}
-		normalized := prefix.Masked().String()
-		if !seen[normalized] {
-			seen[normalized] = true
-			result = append(result, normalized)
+		prefix = prefix.Masked()
+		if !seen[prefix] {
+			seen[prefix] = true
+			result = append(result, prefix)
 		}
 	}
 	if len(result) > 256 {
-		return "", fmt.Errorf("at most 256 blocked CIDRs are allowed")
+		return nil, fmt.Errorf("at most 256 %s CIDRs are allowed", kind)
 	}
-	return strings.Join(result, "\n"), nil
+	return result, nil
 }
 
-// normalizeBuildPrivateEgressCIDRs 校验构建可访问的私网镜像站网段：每行一个合法 CIDR，不能是 /0，规范化后去重。
-func normalizeBuildPrivateEgressCIDRs(value string) (string, error) {
-	normalized, err := normalizeNetworkBlockedCIDRs(value)
-	if err != nil {
-		return "", fmt.Errorf("build private egress %w", err)
+func joinPrefixes(prefixes []netip.Prefix) string {
+	values := make([]string, 0, len(prefixes))
+	for _, prefix := range prefixes {
+		values = append(values, prefix.String())
 	}
-	return normalized, nil
+	return strings.Join(values, "\n")
 }
 
 // normalizeBuildPrivateEgressPorts 校验私网镜像站放行端口：逗号或换行分隔的 1-65535 端口，最多 16 个；为空时为 443。

@@ -117,7 +117,7 @@ const errors = {
     network_policy_forbidden: '集群凭据无权读取网络策略、节点或命名空间。',
     network_policy_timeout: '读取集群网络策略超时。',
     build_egress_mode_invalid: '构建出站模式只能是受限或完全放行。',
-    build_private_egress_cidrs_invalid: '私网镜像站网段格式无效：每行一个 CIDR，不能是 /0，最多 256 条。',
+    build_private_egress_cidrs_invalid: '私网镜像站网段格式无效：每行一个 CIDR，不能是 /0 或云主机元数据地址本身，最多 256 条。',
     build_private_egress_ports_invalid: '私网镜像站端口无效：使用 1–65535 的端口，最多 16 个。',
     network_policy_probe_image_missing: 'Worker 未配置构建执行器镜像，无法探测。',
     network_policy_probe_image_unavailable: '集群无法拉取构建执行器镜像，无法探测。',

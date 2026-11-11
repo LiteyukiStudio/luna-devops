@@ -86,27 +86,51 @@ func (r *Runner) reconcileClusterNetworkPolicies(ctx context.Context, cluster mo
 	return errors.Join(errs...)
 }
 
-// handleNetworkPolicyProbe 主动探测集群是否执行 NetworkPolicy，结果作为工作流结果写回集群。
-// 只记录结论供展示，不拦截部署。
+type networkPolicyProbeEnqueuer interface {
+	EnqueueNetworkPolicyProbe(ctx context.Context, payload tasks.NetworkPolicyProbePayload) (*asynq.TaskInfo, error)
+}
+
+// networkPolicyProbeCooldown 防止连接测试等入口在短时间内反复在集群中创建探测 Pod。
+const networkPolicyProbeCooldown = 10 * time.Minute
+
+// handleNetworkPolicyProbe 主动探测集群是否执行 NetworkPolicy，结果作为工作流结果写回集群，只供展示，不拦截部署。
+// 未指定集群的周期任务只按集群分别入队，避免一个慢集群拖垮其他集群的探测。
 func (r *Runner) handleNetworkPolicyProbe(ctx context.Context, task *asynq.Task) error {
 	var payload tasks.NetworkPolicyProbePayload
 	if err := json.Unmarshal(task.Payload(), &payload); err != nil {
 		return fmt.Errorf("%w: invalid network policy probe payload", asynq.SkipRetry)
 	}
-	query := runtimecluster.ActiveScope(r.db.Model(&model.RuntimeCluster{}))
-	if clusterID := strings.TrimSpace(payload.RuntimeClusterID); clusterID != "" {
-		query = query.Where("id = ?", clusterID)
+	clusterID := strings.TrimSpace(payload.RuntimeClusterID)
+	if clusterID == "" {
+		return r.enqueueNetworkPolicyProbes(ctx)
 	}
-	var clusters []model.RuntimeCluster
-	if err := query.Order("id asc").Find(&clusters).Error; err != nil {
+	var cluster model.RuntimeCluster
+	if err := runtimecluster.ActiveScope(r.db.Model(&model.RuntimeCluster{})).Where("id = ?", clusterID).Take(&cluster).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		return err
+	}
+	if cluster.NetworkPolicyProbedAt != nil && time.Since(*cluster.NetworkPolicyProbedAt) < networkPolicyProbeCooldown {
+		return nil
+	}
+	return workerStage(ctx, "network_policy.probe_cluster", func(stageCtx context.Context) error {
+		return r.probeClusterNetworkPolicy(stageCtx, cluster)
+	})
+}
+
+func (r *Runner) enqueueNetworkPolicyProbes(ctx context.Context) error {
+	if r.networkPolicyProbeEnqueuer == nil {
+		return errors.New("network policy probe enqueuer is not configured")
+	}
+	var clusterIDs []string
+	if err := runtimecluster.ActiveScope(r.db.Model(&model.RuntimeCluster{})).Order("id asc").Pluck("id", &clusterIDs).Error; err != nil {
 		return err
 	}
 	var errs []error
-	for _, cluster := range clusters {
-		if err := workerStage(ctx, "network_policy.probe_cluster", func(stageCtx context.Context) error {
-			return r.probeClusterNetworkPolicy(stageCtx, cluster)
-		}); err != nil {
-			errs = append(errs, fmt.Errorf("runtime cluster %s: %w", cluster.ID, err))
+	for _, clusterID := range clusterIDs {
+		if _, err := r.networkPolicyProbeEnqueuer.EnqueueNetworkPolicyProbe(ctx, tasks.NetworkPolicyProbePayload{RuntimeClusterID: clusterID}); err != nil && !errors.Is(err, asynq.ErrDuplicateTask) {
+			errs = append(errs, fmt.Errorf("runtime cluster %s: %w", clusterID, err))
 		}
 	}
 	return errors.Join(errs...)
