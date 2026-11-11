@@ -198,8 +198,8 @@ const projectTopology = {
     egressModeHint: 'Internet: the public internet and other applications’ routes are reachable. Allowlist: only the addresses below. None: only the project space and cluster DNS.',
     egressModes: { internet: 'Internet', allowlist: 'Allowlist only', none: 'None' },
     egressAllowlist: 'Egress allowlist',
-    egressAllowlistHint: 'One `CIDR port,port` per line; omit ports to allow all ports; at most 64 entries. Private and reserved ranges are always denied and cannot be listed.',
-    egressAllowlistPlaceholder: '203.0.113.0/24 443\n198.51.100.10/32',
+    egressAllowlistHint: 'One `CIDR port,port` per line. Listed ports are TCP only; omit ports to allow all ports and protocols (for example UDP DNS or NTP). At most 64 entries. Private and reserved ranges are always denied and cannot be listed.',
+    egressAllowlistPlaceholder: '1.1.1.1/32 443\n8.8.8.8/32',
   },
 }
 

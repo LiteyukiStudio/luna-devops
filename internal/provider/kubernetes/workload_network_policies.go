@@ -227,12 +227,12 @@ func renderEgressAllowlist(rules []EgressAllowRule, denied []string) ([]networki
 	blocked = append(blocked, cloudMetadataCIDRs()...)
 	result := []networkingv1.NetworkPolicyEgressRule{}
 	for _, rule := range rules {
-		prefix, err := netip.ParsePrefix(strings.TrimSpace(rule.CIDR))
+		prefix, err := ParseNetworkCIDR(rule.CIDR)
 		if err != nil {
 			return nil, fmt.Errorf("invalid egress allowlist CIDR %q: %w", rule.CIDR, err)
 		}
-		cidr := prefix.Masked().String()
-		if cidrWithinAny(prefix.Masked(), blocked) {
+		cidr := prefix.String()
+		if cidrWithinAny(prefix, blocked) {
 			continue
 		}
 		ports := []networkingv1.NetworkPolicyPort{}
@@ -339,9 +339,9 @@ func workloadNetworkPolicy(namespace, name string, selector metav1.LabelSelector
 }
 
 // SyncWorkloadNetworkPolicies 以期望集合整体覆盖 Namespace 中的受管策略。
-// 先删除不再需要的受管策略（只会收紧），再创建或覆盖期望策略。
+// 先创建或覆盖期望策略，再删除不再需要的受管策略：模式切换时新旧放行规则短暂并存（取并集），
+// 不会出现两者都不在的断流窗口。
 func (c *Client) SyncWorkloadNetworkPolicies(ctx context.Context, namespace string, desired []networkingv1.NetworkPolicy) error {
-	policies := c.client.NetworkingV1().NetworkPolicies(namespace)
 	existing, err := c.managedWorkloadNetworkPolicies(ctx, namespace)
 	if err != nil {
 		return err
@@ -350,20 +350,21 @@ func (c *Client) SyncWorkloadNetworkPolicies(ctx context.Context, namespace stri
 	for _, policy := range desired {
 		wanted[policy.Name] = policy
 	}
-	for name := range existing {
-		if _, ok := wanted[name]; ok {
-			continue
-		}
-		if err := policies.Delete(ctx, name, metav1.DeleteOptions{}); err != nil && !apierrors.IsNotFound(err) {
-			return err
-		}
-	}
 	for _, name := range sortedKeys(wanted) {
 		policy := wanted[name]
 		// 部署、构建、网关下发与周期修正可能并发同步同一 Namespace：创建撞上已存在或更新冲突时重读后重试。
 		if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 			return applyWorkloadNetworkPolicy(ctx, c, namespace, policy)
 		}); err != nil {
+			return err
+		}
+	}
+	policies := c.client.NetworkingV1().NetworkPolicies(namespace)
+	for _, name := range sortedKeys(existing) {
+		if _, ok := wanted[name]; ok {
+			continue
+		}
+		if err := policies.Delete(ctx, name, metav1.DeleteOptions{}); err != nil && !apierrors.IsNotFound(err) {
 			return err
 		}
 	}
@@ -484,6 +485,19 @@ func (c *Client) ListProjectNamespaces(ctx context.Context) (map[string]string, 
 	return result, nil
 }
 
+// ParseNetworkCIDR 解析网络策略使用的 CIDR。拒绝 IPv4 映射的 IPv6 写法（如 ::ffff:0.0.0.0/96）：
+// Kubernetes 与多数 CNI 会把它当作 IPv4 网段处理，从而绕过只按 IPv6 比较的保留网段排除。
+func ParseNetworkCIDR(value string) (netip.Prefix, error) {
+	prefix, err := netip.ParsePrefix(strings.TrimSpace(value))
+	if err != nil {
+		return netip.Prefix{}, err
+	}
+	if prefix.Addr().Is4In6() || prefix.Addr().Zone() != "" {
+		return netip.Prefix{}, fmt.Errorf("CIDR %q must be written as plain IPv4 or IPv6", value)
+	}
+	return prefix.Masked(), nil
+}
+
 func normalizeCIDRs(values []string) ([]string, error) {
 	result := make([]string, 0, len(values))
 	for _, value := range values {
@@ -491,11 +505,11 @@ func normalizeCIDRs(values []string) ([]string, error) {
 		if value == "" {
 			continue
 		}
-		prefix, err := netip.ParsePrefix(value)
+		prefix, err := ParseNetworkCIDR(value)
 		if err != nil {
 			return nil, fmt.Errorf("invalid CIDR %q: %w", value, err)
 		}
-		result = append(result, prefix.Masked().String())
+		result = append(result, prefix.String())
 	}
 	return sortedUnique(result), nil
 }
@@ -598,6 +612,9 @@ func reservedIPv6CIDRs() []string {
 	return []string{
 		"::1/128",
 		"::/128",
+		"::ffff:0:0/96",
+		"64:ff9b:1::/48",
+		"2002::/16",
 		"64:ff9b::/96",
 		"100::/64",
 		"2001:db8::/32",

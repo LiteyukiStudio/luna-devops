@@ -352,7 +352,7 @@ func parseCIDRLines(value string, kind string) ([]netip.Prefix, error) {
 		if item == "" {
 			continue
 		}
-		prefix, err := netip.ParsePrefix(item)
+		prefix, err := kubeprovider.ParseNetworkCIDR(item)
 		if err != nil {
 			return nil, fmt.Errorf("%s CIDR %q is invalid", kind, item)
 		}

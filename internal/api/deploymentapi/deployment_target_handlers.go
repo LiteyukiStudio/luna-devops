@@ -216,6 +216,10 @@ func (h *Handlers) UpdateDeploymentTarget(ctx *gin.Context) {
 		scaleOutcome.workloadFound, scaleErr = h.scaleDeploymentTargetReplicas(ctx.Request.Context(), project, current, target.Replicas)
 		return scaleErr
 	}, ctx.Request.Context())
+	if errors.Is(err, errDeploymentTargetInternalHasRoutes) {
+		writeErrorCode(ctx, http.StatusConflict, "deployment_target.internal_has_routes", "remove the gateway routes of this deployment target before making it internal")
+		return
+	}
 	if writeDeploymentTargetSecretError(ctx, err) {
 		return
 	}

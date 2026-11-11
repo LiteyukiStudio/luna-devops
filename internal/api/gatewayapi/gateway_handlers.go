@@ -2,6 +2,7 @@ package gatewayapi
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 func (h *Handlers) ListGatewayRoutes(ctx *gin.Context) {
@@ -88,7 +90,11 @@ func (h *Handlers) CreateGatewayRoute(ctx *gin.Context) {
 		h.writeGatewayRuntimeClusterError(ctx, err)
 		return
 	}
-	if err := h.dbFor(ctx).Create(&route).Error; err != nil {
+	if err := persistGatewayRouteForTarget(h.dbFor(ctx), func(tx *gorm.DB) error { return tx.Create(&route).Error }, route.DeploymentTargetID); err != nil {
+		if errors.Is(err, errGatewayRouteTargetInternal) {
+			writeErrorCode(ctx, http.StatusConflict, "gateway_route.target_internal", "the deployment target is internal and cannot have gateway routes")
+			return
+		}
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -155,7 +161,11 @@ func (h *Handlers) UpdateGatewayRoute(ctx *gin.Context) {
 	route.BackendWeight = next.BackendWeight
 	route.HostnameAliases = next.HostnameAliases
 	route.AccessURL = next.AccessURL
-	if err := h.dbFor(ctx).Save(&route).Error; err != nil {
+	if err := persistGatewayRouteForTarget(h.dbFor(ctx), func(tx *gorm.DB) error { return tx.Save(&route).Error }, route.DeploymentTargetID); err != nil {
+		if errors.Is(err, errGatewayRouteTargetInternal) {
+			writeErrorCode(ctx, http.StatusConflict, "gateway_route.target_internal", "the deployment target is internal and cannot have gateway routes")
+			return
+		}
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -213,4 +223,21 @@ func (h *Handlers) findGatewayRoute(ctx *gin.Context) (model.GatewayRoute, bool)
 
 func (h *Handlers) enqueueGatewayApply(ctx context.Context, route model.GatewayRoute, actorID string) bool {
 	return h.host.EnqueueGatewayApply(ctx, route, strings.TrimSpace(actorID))
+}
+
+var errGatewayRouteTargetInternal = errors.New("gateway route target is internal")
+
+// persistGatewayRouteForTarget 在部署配置行锁内复核“内部服务”后写入访问入口，
+// 与部署配置开启内部服务时的复核串行化，避免并发产生带访问入口的内部服务。
+func persistGatewayRouteForTarget(db *gorm.DB, write func(tx *gorm.DB) error, targetID string) error {
+	return db.Transaction(func(tx *gorm.DB) error {
+		var target model.DeploymentTarget
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id", "internal_only").First(&target, "id = ?", targetID).Error; err != nil {
+			return err
+		}
+		if target.InternalOnly {
+			return errGatewayRouteTargetInternal
+		}
+		return write(tx)
+	})
 }

@@ -3,7 +3,6 @@ package runtimecluster
 import (
 	"context"
 	"fmt"
-	"net/netip"
 	"strconv"
 	"strings"
 
@@ -64,11 +63,11 @@ func ParseEgressAllowlist(raw string) ([]kubeprovider.EgressAllowRule, error) {
 		if len(fields) > 2 {
 			return nil, fmt.Errorf("egress allowlist line %q must be `CIDR [ports]`", strings.TrimSpace(line))
 		}
-		prefix, err := netip.ParsePrefix(fields[0])
+		prefix, err := kubeprovider.ParseNetworkCIDR(fields[0])
 		if err != nil || prefix.Bits() == 0 {
 			return nil, fmt.Errorf("egress allowlist CIDR %q is invalid", fields[0])
 		}
-		rule := kubeprovider.EgressAllowRule{CIDR: prefix.Masked().String()}
+		rule := kubeprovider.EgressAllowRule{CIDR: prefix.String()}
 		if len(fields) == 2 {
 			for _, item := range strings.Split(fields[1], ",") {
 				port, err := strconv.Atoi(strings.TrimSpace(item))

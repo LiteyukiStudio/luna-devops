@@ -1,24 +1,41 @@
 import type { ProjectNetworkPolicy } from '@/api'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMemo } from 'react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { z } from 'zod'
 import { api, ApiError } from '@/api'
+import { ErrorState } from '@/components/common/error-state'
 import { FormField } from '@/components/common/form-field'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { NativeSelect } from '@/components/ui/native-select'
+import { Skeleton } from '@/components/ui/skeleton'
 import { Textarea } from '@/components/ui/textarea'
 
-const networkPolicySchema = z.object({
-  ingressMode: z.enum(['isolated', 'dependencies']),
-  egressMode: z.enum(['internet', 'allowlist', 'none']),
-  egressAllowlist: z.string(),
-})
+const allowlistLine = /^(?<cidr>[0-9a-f.:]+\/\d{1,3})(?:\s+(?<ports>\d{1,5}(?:,\d{1,5})*))?$/i
 
-type NetworkPolicyForm = z.infer<typeof networkPolicySchema>
+/** 出站白名单的格式校验：每行 `CIDR [端口,端口]`。网段是否落在保留范围内由服务端判断。 */
+function allowlistFormatValid(value: string) {
+  return value.split('\n').map(line => line.trim()).filter(Boolean).every((line) => {
+    const match = allowlistLine.exec(line)
+    if (!match?.groups || match.groups.cidr.toLowerCase().includes('::ffff:'))
+      return false
+    return (match.groups.ports ?? '').split(',').filter(Boolean).every(port => Number(port) >= 1 && Number(port) <= 65535)
+  })
+}
+
+function networkPolicySchema(invalidAllowlist: string) {
+  return z.object({
+    ingressMode: z.enum(['isolated', 'dependencies']),
+    egressMode: z.enum(['internet', 'allowlist', 'none']),
+    egressAllowlist: z.string().refine(allowlistFormatValid, invalidAllowlist),
+  })
+}
+
+type NetworkPolicyForm = z.infer<ReturnType<typeof networkPolicySchema>>
 
 /** 项目空间网络模式：只能比集群默认更严格，保存后由 Worker 重新下发网络策略。 */
 export function ProjectNetworkPolicyCard({ canManage, projectId }: { canManage: boolean, projectId: string }) {
@@ -30,7 +47,10 @@ export function ProjectNetworkPolicyCard({ canManage, projectId }: { canManage: 
         <h2 className="text-base font-semibold">{t('projectTopology.networkPolicy.title')}</h2>
         <p className="text-sm text-muted-foreground">{t('projectTopology.networkPolicy.description')}</p>
       </div>
-      {policy.isError ? <p className="text-sm text-destructive">{t('projectTopology.networkPolicy.loadFailed')}</p> : null}
+      {policy.isPending ? <Skeleton className="h-24 w-full" /> : null}
+      {policy.isError
+        ? <ErrorState title={t('projectTopology.networkPolicy.loadFailed')} retrying={policy.isFetching} onRetry={() => void policy.refetch()} />
+        : null}
       {policy.data ? <ProjectNetworkPolicyForm canManage={canManage} initial={policy.data} projectId={projectId} /> : null}
     </Card>
   )
@@ -39,7 +59,8 @@ export function ProjectNetworkPolicyCard({ canManage, projectId }: { canManage: 
 function ProjectNetworkPolicyForm({ canManage, initial, projectId }: { canManage: boolean, initial: ProjectNetworkPolicy, projectId: string }) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
-  const form = useForm<NetworkPolicyForm>({ resolver: zodResolver(networkPolicySchema), defaultValues: initial })
+  const schema = useMemo(() => networkPolicySchema(t('errors.project.network_egress_allowlist_invalid')), [t])
+  const form = useForm<NetworkPolicyForm>({ resolver: zodResolver(schema), defaultValues: initial })
   const save = useMutation({
     mutationFn: (values: ProjectNetworkPolicy) => api.updateProjectNetworkPolicy(projectId, values),
     onSuccess: (saved) => {

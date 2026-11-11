@@ -14,6 +14,10 @@ func TestNormalizeEgressAllowlist(t *testing.T) {
 		"1.1.1.0/24 0",
 		"1.1.1.0/24 443 extra",
 		"not-a-cidr",
+		// IPv4 映射的 IPv6 会被 Kubernetes 当作 IPv4 网段，必须拒绝。
+		"::ffff:0.0.0.0/96",
+		"::ffff:169.254.169.254/128",
+		"::ffff:1.1.1.1/128 443",
 	} {
 		if _, err := normalizeEgressAllowlist(invalid); err == nil {
 			t.Fatalf("allowlist %q must be rejected", invalid)

@@ -400,3 +400,63 @@ func TestRenderEgressModes(t *testing.T) {
 		t.Fatal("unknown egress mode must fail")
 	}
 }
+
+func TestParseNetworkCIDRRejectsIPv4MappedIPv6(t *testing.T) {
+	for _, value := range []string{"::ffff:0.0.0.0/96", "::ffff:10.0.0.0/104", "::ffff:169.254.169.254/128", "fe80::1%eth0/64"} {
+		if _, err := ParseNetworkCIDR(value); err == nil {
+			t.Fatalf("%s must be rejected", value)
+		}
+	}
+	if prefix, err := ParseNetworkCIDR(" 2606:4700::1/32 "); err != nil || prefix.String() != "2606:4700::/32" {
+		t.Fatalf("plain IPv6 = %v, %v", prefix, err)
+	}
+	input := testWorkloadPolicyInput()
+	input.EgressMode = NetworkEgressAllowlist
+	input.EgressAllowlist = []EgressAllowRule{{CIDR: "::ffff:0.0.0.0/96"}}
+	if _, err := RenderWorkloadNetworkPolicies(input); err == nil {
+		t.Fatal("renderer must fail closed on an IPv4-mapped allowlist entry")
+	}
+	input = testWorkloadPolicyInput()
+	input.BlockedCIDRs = []string{"::ffff:10.0.0.0/104"}
+	if _, err := RenderWorkloadNetworkPolicies(input); err == nil {
+		t.Fatal("renderer must reject IPv4-mapped blocked CIDRs")
+	}
+	if !slices.Contains(reservedIPv6CIDRs(), "::ffff:0:0/96") {
+		t.Fatal("IPv4-mapped IPv6 range must be reserved")
+	}
+}
+
+func TestSyncAppliesDesiredBeforeDeletingStale(t *testing.T) {
+	clientset := fake.NewSimpleClientset()
+	client := NewClientForInterface(clientset)
+	ctx := context.Background()
+	strict := testWorkloadPolicyInput()
+	strict.IngressMode = NetworkIngressDependencies
+	strict.DeploymentTargetIDs = []string{"dt_web"}
+	desired, err := RenderWorkloadNetworkPolicies(strict)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := client.SyncWorkloadNetworkPolicies(ctx, "prj-demo", desired); err != nil {
+		t.Fatal(err)
+	}
+	var order []string
+	clientset.PrependReactor("*", "networkpolicies", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		switch typed := action.(type) {
+		case k8stesting.UpdateAction:
+			order = append(order, "update:"+typed.GetObject().(*networkingv1.NetworkPolicy).Name)
+		case k8stesting.DeleteAction:
+			order = append(order, "delete:"+typed.GetName())
+		}
+		return false, nil, nil
+	})
+	// 切回项目内互通：必须先把同项目放行写回 luna-workload-ingress，再删除依赖入站策略，避免断流。
+	isolated, _ := RenderWorkloadNetworkPolicies(testWorkloadPolicyInput())
+	if err := client.SyncWorkloadNetworkPolicies(ctx, "prj-demo", isolated); err != nil {
+		t.Fatal(err)
+	}
+	updateAt, deleteAt := slices.Index(order, "update:"+workloadIngressPolicyName), slices.Index(order, "delete:"+dependencyIngressPolicyPrefix+shortHash("dt_web"))
+	if updateAt < 0 || deleteAt < 0 || updateAt > deleteAt {
+		t.Fatalf("stale policies must be deleted after desired ones are applied: %v", order)
+	}
+}
