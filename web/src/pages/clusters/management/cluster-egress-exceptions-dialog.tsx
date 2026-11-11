@@ -1,4 +1,4 @@
-import type { EgressException, Project, RuntimeCluster } from '@/api'
+import type { EgressException, RuntimeCluster } from '@/api'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Pencil, Plus, Trash2 } from 'lucide-react'
 import { useState } from 'react'
@@ -13,9 +13,8 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { ClusterEgressExceptionFormDialog } from './cluster-egress-exception-form-dialog'
 
 /** 集群出站例外：只有集群维护者可见，用于放行平台默认拒绝的内网地址并授权给指定项目空间。 */
-export function ClusterEgressExceptionsDialog({ cluster, projects, onOpenChange }: {
+export function ClusterEgressExceptionsDialog({ cluster, onOpenChange }: {
   cluster: RuntimeCluster
-  projects: Project[]
   onOpenChange: (open: boolean) => void
 }) {
   const { t } = useTranslation()
@@ -38,7 +37,6 @@ export function ClusterEgressExceptionsDialog({ cluster, projects, onOpenChange 
     },
     onError: error => toast.error(error.message),
   })
-  const projectName = (projectId: string) => projects.find(project => project.id === projectId)?.name ?? projectId
 
   return (
     <Dialog open onOpenChange={onOpenChange}>
@@ -67,7 +65,7 @@ export function ClusterEgressExceptionsDialog({ cluster, projects, onOpenChange 
               key: 'grants',
               header: t('clustersPage.egressExceptions.grants'),
               render: item => item.grants.length > 0
-                ? item.grants.map(grant => projectName(grant.projectId)).join(', ')
+                ? item.grants.map(grant => grant.projectName || grant.projectId).join(', ')
                 : <span className="text-muted-foreground">{t('clustersPage.egressExceptions.noGrants')}</span>,
             },
             {
@@ -118,7 +116,6 @@ export function ClusterEgressExceptionsDialog({ cluster, projects, onOpenChange 
                 key={editing === 'new' ? 'new' : editing.id}
                 cluster={cluster}
                 exception={editing === 'new' ? null : editing}
-                projects={projects}
                 onOpenChange={open => !open && setEditing(null)}
                 onSaved={() => {
                   setEditing(null)

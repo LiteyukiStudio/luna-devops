@@ -176,6 +176,7 @@ func (h *Handlers) UpdateGatewayRoute(ctx *gin.Context) {
 		writeError(ctx, http.StatusServiceUnavailable, "网关任务投递失败，请稍后重试")
 		return
 	}
+	h.auditWithContext(user.ID, "gateway_route.update", route.ID, true, runtimecluster.EgressExceptionAuditMarker(h.dbFor(ctx), project.ID), ctx.Request.Context())
 	route.Status = "progressing"
 	route.ObservationCode = "gateway_route.apply_queued"
 	ctx.JSON(http.StatusOK, route)

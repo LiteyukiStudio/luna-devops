@@ -243,7 +243,6 @@ export function ClustersPage() {
         <LazyDialogBoundary resetKey={`egress-${exceptionsCluster.id}`} onOpenChange={open => !open && setExceptionsCluster(null)}>
           <ClusterEgressExceptionsDialog
             cluster={exceptionsCluster}
-            projects={projects.data ?? []}
             onOpenChange={open => !open && setExceptionsCluster(null)}
           />
         </LazyDialogBoundary>

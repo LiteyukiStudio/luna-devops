@@ -4717,6 +4717,7 @@ paths:
       operationId: createRuntimeClusterEgressException
       x-luna-cli:
         requiredScopes: ["cluster:manage"]
+        risk: high
       tags: [Runtime]
       summary: Create a runtime cluster egress exception
       description: Allows the granted project spaces (optionally narrowed to deployment targets) to reach a range the platform denies by default, such as a data-center service. Cloud metadata, node, and Kubernetes API addresses stay denied. Exceptions apply regardless of the project egress mode. Changes are audited and reapplied immediately.
@@ -4746,7 +4747,7 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/EgressException" }
         "400":
-          description: Invalid rule (`runtime_cluster.egress_exception_invalid`) or grant (`runtime_cluster.egress_exception_grant_invalid`).
+          description: Invalid field (`runtime_cluster.egress_exception_name_invalid`, `runtime_cluster.egress_exception_reason_invalid`, `runtime_cluster.egress_exception_cidr_invalid`, `runtime_cluster.egress_exception_ports_invalid`, `runtime_cluster.egress_exception_protocol_invalid`) or grant (`runtime_cluster.egress_exception_grant_invalid`; granted projects must be able to deploy to the cluster).
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
@@ -4759,6 +4760,7 @@ paths:
       operationId: updateRuntimeClusterEgressException
       x-luna-cli:
         requiredScopes: ["cluster:manage"]
+        risk: high
       tags: [Runtime]
       summary: Update a runtime cluster egress exception
       description: Replaces the rule and all of its grants. Changes are audited and reapplied immediately.
@@ -4792,7 +4794,7 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/EgressException" }
         "400":
-          description: Invalid rule (`runtime_cluster.egress_exception_invalid`) or grant (`runtime_cluster.egress_exception_grant_invalid`).
+          description: Invalid field (`runtime_cluster.egress_exception_name_invalid`, `runtime_cluster.egress_exception_reason_invalid`, `runtime_cluster.egress_exception_cidr_invalid`, `runtime_cluster.egress_exception_ports_invalid`, `runtime_cluster.egress_exception_protocol_invalid`) or grant (`runtime_cluster.egress_exception_grant_invalid`; granted projects must be able to deploy to the cluster).
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
@@ -13688,7 +13690,7 @@ components:
       type: object
       required: [projectId, deploymentTargetIds, includeBuilds]
       properties:
-        projectId: { type: string }
+        projectId: { type: string, description: "Must be able to deploy to the cluster: any active project for global clusters, bound projects for project clusters, projects the owner belongs to for personal clusters." }
         deploymentTargetIds:
           type: array
           maxItems: 50
@@ -13699,7 +13701,7 @@ components:
       type: object
       required: [name, cidr, protocol, reason, grants]
       properties:
-        name: { type: string, minLength: 1, maxLength: 64 }
+        name: { type: string, minLength: 1, maxLength: 64, description: Length counted in characters. }
         cidr: { type: string, description: "IPv4 or IPv6 CIDR; /0, IPv4-mapped IPv6, and a cloud metadata address itself are rejected. Node and metadata addresses inside the range stay denied." }
         ports: { type: string, description: "Comma-separated ports 1-65535, at most 16; empty allows every port of the protocol." }
         protocol: { type: string, enum: [tcp, udp, any], description: any with no ports allows every port and protocol. }
@@ -13714,6 +13716,15 @@ components:
         - type: object
           required: [id, runtimeClusterId, createdBy, createdAt, updatedAt]
           properties:
+            grants:
+              type: array
+              items:
+                allOf:
+                  - $ref: "#/components/schemas/EgressExceptionGrant"
+                  - type: object
+                    required: [projectName]
+                    properties:
+                      projectName: { type: string, description: Empty when the project space no longer exists. }
             id: { type: string, pattern: '^nex_' }
             runtimeClusterId: { type: string }
             createdBy: { type: string }

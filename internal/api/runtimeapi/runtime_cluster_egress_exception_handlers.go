@@ -7,6 +7,7 @@ import (
 	"net/netip"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/model"
@@ -38,6 +39,7 @@ type egressExceptionInput struct {
 
 type egressExceptionGrantResponse struct {
 	ProjectID           string   `json:"projectId"`
+	ProjectName         string   `json:"projectName"`
 	DeploymentTargetIDs []string `json:"deploymentTargetIds"`
 	IncludeBuilds       bool     `json:"includeBuilds"`
 }
@@ -97,11 +99,7 @@ func (h *Handlers) ListRuntimeClusterEgressExceptions(ctx *gin.Context) {
 		writeError(ctx, http.StatusInternalServerError, "egress exception lookup failed")
 		return
 	}
-	items := make([]egressExceptionResponse, 0, len(exceptions))
-	for _, exception := range exceptions {
-		items = append(items, egressExceptionResponseFrom(exception))
-	}
-	ctx.JSON(http.StatusOK, paginatedResponse(items, total, pagination))
+	ctx.JSON(http.StatusOK, paginatedResponse(h.egressExceptionResponses(ctx, exceptions), total, pagination))
 }
 
 func (h *Handlers) CreateRuntimeClusterEgressException(ctx *gin.Context) {
@@ -123,7 +121,7 @@ func (h *Handlers) CreateRuntimeClusterEgressException(ctx *gin.Context) {
 		return
 	}
 	h.finishEgressExceptionMutation(ctx, user, cluster, "create", exception)
-	ctx.JSON(http.StatusCreated, egressExceptionResponseFrom(exception))
+	ctx.JSON(http.StatusCreated, h.egressExceptionResponses(ctx, []model.NetworkEgressException{exception})[0])
 }
 
 func (h *Handlers) UpdateRuntimeClusterEgressException(ctx *gin.Context) {
@@ -144,16 +142,34 @@ func (h *Handlers) UpdateRuntimeClusterEgressException(ctx *gin.Context) {
 		return
 	}
 	if err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
+		// 用 Updates 并检查影响行数：并发删除后不能像 Save 那样回退为插入而“复活”例外。
+		result := tx.Model(&model.NetworkEgressException{}).Where("id = ? and runtime_cluster_id = ?", exception.ID, cluster.ID).Updates(map[string]any{
+			"name": exception.Name, "cidr": exception.CIDR, "ports": exception.Ports, "protocol": exception.Protocol,
+			"reason": exception.Reason, "updated_at": exception.UpdatedAt,
+		})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return gorm.ErrRecordNotFound
+		}
 		if err := tx.Where("exception_id = ?", exception.ID).Delete(&model.NetworkEgressExceptionGrant{}).Error; err != nil {
 			return err
 		}
-		return tx.Session(&gorm.Session{FullSaveAssociations: true}).Save(&exception).Error
+		if len(exception.Grants) == 0 {
+			return nil
+		}
+		return tx.Create(&exception.Grants).Error
 	}); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			writeErrorCode(ctx, http.StatusNotFound, "runtime_cluster.egress_exception_not_found", "egress exception not found")
+			return
+		}
 		writeError(ctx, http.StatusInternalServerError, "egress exception save failed")
 		return
 	}
 	h.finishEgressExceptionMutation(ctx, user, cluster, "update", exception)
-	ctx.JSON(http.StatusOK, egressExceptionResponseFrom(exception))
+	ctx.JSON(http.StatusOK, h.egressExceptionResponses(ctx, []model.NetworkEgressException{exception})[0])
 }
 
 func (h *Handlers) DeleteRuntimeClusterEgressException(ctx *gin.Context) {
@@ -201,25 +217,27 @@ func (h *Handlers) finishEgressExceptionMutation(ctx *gin.Context, user model.Us
 // applyEgressExceptionInput 校验并写入例外规则与授权：网段不能是 /0、IPv4 映射写法或云元数据地址本身；
 // 理由必填；授权的项目空间必须能使用该集群，收窄的部署配置必须属于对应项目空间。
 func (h *Handlers) applyEgressExceptionInput(ctx *gin.Context, cluster model.RuntimeCluster, exception *model.NetworkEgressException, input egressExceptionInput) bool {
-	invalid := func(detail string) bool {
-		writeErrorCode(ctx, http.StatusBadRequest, "runtime_cluster.egress_exception_invalid", detail)
+	// 每类字段使用独立错误码，前端据此把错误标到对应字段上。
+	invalid := func(code, detail string) bool {
+		writeErrorCode(ctx, http.StatusBadRequest, "runtime_cluster.egress_exception_"+code+"_invalid", detail)
 		return false
 	}
 	name := strings.TrimSpace(input.Name)
 	reason := strings.TrimSpace(input.Reason)
-	if name == "" || len(name) > 64 {
-		return invalid("name must be 1-64 characters")
+	// 长度按字符计算，与前端校验和文案“1–64 字”一致。
+	if count := utf8.RuneCountInString(name); count == 0 || count > 64 {
+		return invalid("name", "name must be 1-64 characters")
 	}
-	if reason == "" || len(reason) > 500 {
-		return invalid("reason must be 1-500 characters")
+	if count := utf8.RuneCountInString(reason); count == 0 || count > 500 {
+		return invalid("reason", "reason must be 1-500 characters")
 	}
 	prefix, err := kubeprovider.ParseNetworkCIDR(input.CIDR)
 	if err != nil || prefix.Bits() == 0 {
-		return invalid("cidr must be a valid IPv4 or IPv6 CIDR other than /0")
+		return invalid("cidr", "cidr must be a valid IPv4 or IPv6 CIDR other than /0")
 	}
 	for _, metadata := range kubeprovider.CloudMetadataCIDRs() {
 		if prefix == netip.MustParsePrefix(metadata) {
-			return invalid("cidr must not be a cloud metadata address")
+			return invalid("cidr", "cidr must not be a cloud metadata address")
 		}
 	}
 	// 未写端口表示该协议的全部端口；写了端口时复用私网镜像站端口的校验规则（最多 16 个）。
@@ -227,7 +245,7 @@ func (h *Handlers) applyEgressExceptionInput(ctx *gin.Context, cluster model.Run
 	if strings.TrimSpace(input.Ports) != "" {
 		normalized, err := normalizeBuildPrivateEgressPorts(input.Ports)
 		if err != nil {
-			return invalid(err.Error())
+			return invalid("ports", err.Error())
 		}
 		ports = normalized
 	}
@@ -235,7 +253,7 @@ func (h *Handlers) applyEgressExceptionInput(ctx *gin.Context, cluster model.Run
 	switch protocol {
 	case kubeprovider.EgressExceptionProtocolTCP, kubeprovider.EgressExceptionProtocolUDP, kubeprovider.EgressExceptionProtocolAny:
 	default:
-		return invalid("protocol must be tcp, udp or any")
+		return invalid("protocol", "protocol must be tcp, udp or any")
 	}
 	grants, ok := h.egressExceptionGrants(ctx, cluster, exception.ID, input.Grants)
 	if !ok {
@@ -260,6 +278,27 @@ func (h *Handlers) egressExceptionGrants(ctx *gin.Context, cluster model.Runtime
 			bound[projectID] = true
 		}
 	}
+	// 只能授权给实际能在该集群部署的项目空间：项目级集群看绑定，个人集群要求集群所有者是项目成员。
+	// 不存在、已删除与无权使用统一返回同一错误，避免借此探测项目 ID。
+	usable := func(projectID string) bool {
+		var project model.Project
+		if err := h.dbFor(ctx).Select("id", "delete_status").Where("id = ?", projectID).Take(&project).Error; err != nil || !model.DeleteStatusActive(project.DeleteStatus) {
+			return false
+		}
+		switch cluster.Scope {
+		case "global":
+			return true
+		case "project":
+			return bound[projectID]
+		case "user":
+			var members int64
+			if err := h.dbFor(ctx).Model(&model.ProjectMember{}).Where("project_id = ? and user_id = ?", projectID, cluster.OwnerRef).Count(&members).Error; err != nil {
+				return false
+			}
+			return members > 0
+		}
+		return false
+	}
 	seen := map[string]bool{}
 	grants := make([]model.NetworkEgressExceptionGrant, 0, len(inputs))
 	for _, input := range inputs {
@@ -268,12 +307,8 @@ func (h *Handlers) egressExceptionGrants(ctx *gin.Context, cluster model.Runtime
 			return invalid("each grant needs a distinct projectId")
 		}
 		seen[projectID] = true
-		var project model.Project
-		if err := h.dbFor(ctx).Select("id", "delete_status").Where("id = ?", projectID).Take(&project).Error; err != nil || !model.DeleteStatusActive(project.DeleteStatus) {
-			return invalid(fmt.Sprintf("project %s is not an active project space", projectID))
-		}
-		if cluster.Scope == "project" && !bound[projectID] {
-			return invalid(fmt.Sprintf("project %s cannot use this runtime cluster", projectID))
+		if !usable(projectID) {
+			return invalid(fmt.Sprintf("project %s is unavailable for this runtime cluster", projectID))
 		}
 		targets := normalizeStringList(input.DeploymentTargetIDs)
 		if len(targets) > maxEgressExceptionTarget {
@@ -293,11 +328,36 @@ func (h *Handlers) egressExceptionGrants(ctx *gin.Context, cluster model.Runtime
 	return grants, true
 }
 
-func egressExceptionResponseFrom(exception model.NetworkEgressException) egressExceptionResponse {
+// egressExceptionResponses 附带授权项目空间的名称，界面不必加载全部项目空间来显示授权。
+func (h *Handlers) egressExceptionResponses(ctx *gin.Context, exceptions []model.NetworkEgressException) []egressExceptionResponse {
+	projectIDs := []string{}
+	for _, exception := range exceptions {
+		for _, grant := range exception.Grants {
+			projectIDs = append(projectIDs, grant.ProjectID)
+		}
+	}
+	names := map[string]string{}
+	if len(projectIDs) > 0 {
+		var projects []model.Project
+		if err := h.dbFor(ctx).Select("id", "name").Where("id in ?", normalizeStringList(projectIDs)).Find(&projects).Error; err == nil {
+			for _, project := range projects {
+				names[project.ID] = project.Name
+			}
+		}
+	}
+	items := make([]egressExceptionResponse, 0, len(exceptions))
+	for _, exception := range exceptions {
+		items = append(items, egressExceptionResponseFrom(exception, names))
+	}
+	return items
+}
+
+func egressExceptionResponseFrom(exception model.NetworkEgressException, projectNames map[string]string) egressExceptionResponse {
 	grants := make([]egressExceptionGrantResponse, 0, len(exception.Grants))
 	for _, grant := range exception.Grants {
 		grants = append(grants, egressExceptionGrantResponse{
-			ProjectID: grant.ProjectID, DeploymentTargetIDs: runtimecluster.SplitIDList(grant.DeploymentTargetIDs), IncludeBuilds: grant.IncludeBuilds,
+			ProjectID: grant.ProjectID, ProjectName: projectNames[grant.ProjectID],
+			DeploymentTargetIDs: runtimecluster.SplitIDList(grant.DeploymentTargetIDs), IncludeBuilds: grant.IncludeBuilds,
 		})
 	}
 	return egressExceptionResponse{

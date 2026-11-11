@@ -1636,7 +1636,8 @@ export interface EgressExceptionPayload {
   grants: EgressExceptionGrant[]
 }
 
-export interface EgressException extends EgressExceptionPayload {
+export interface EgressException extends Omit<EgressExceptionPayload, 'grants'> {
+  grants: Array<EgressExceptionGrant & { projectName: string }>
   id: string
   runtimeClusterId: string
   createdBy: string

@@ -62,7 +62,7 @@ When a project space needs to reach an internal service outside the cluster, suc
 | Approval reason | Required and recorded with the rule |
 | Grants | The project spaces that may use it, optionally narrowed to deployment targets; builds are excluded unless **Include builds** is selected |
 
-An exception applies only to the granted project spaces, in every project egress mode. Creating, changing, and deleting exceptions are audited and applied immediately. Project spaces holding exceptions show a warning when adding members or creating routes, and those audit entries record the exception count; make sure applications do not become proxies into the internal network.
+An exception applies only to the granted project spaces, in every project egress mode. When an exception covers the node network, a newly joined node is excluded only after the next periodic sync (within 5 minutes), so keep exceptions no wider than the actual service. Creating, changing, and deleting exceptions are audited and applied immediately. Project spaces holding exceptions show a warning when adding members or creating routes, and those audit entries record the exception count; make sure applications do not become proxies into the internal network.
 
 After saving, the platform reapplies the policies immediately and compares them every 5 minutes; managed policies edited or deleted in the cluster are restored. When editing a cluster, **Isolation status** shows the live result: **Synced** means every project space matches the platform configuration, **Drifted** means some project spaces are waiting for automatic repair, and **Unavailable** means the cluster could not be read; check the cluster credential and connectivity as indicated.
 

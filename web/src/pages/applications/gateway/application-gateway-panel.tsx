@@ -226,7 +226,7 @@ export function ApplicationGatewayPanel({ applicationId, applicationIdentifier, 
             <DialogTitle>{editingRoute ? t('gatewayRoutesPage.editRoute') : t('gatewayRoutesPage.createRoute')}</DialogTitle>
             <DialogDescription>{t('gatewayRoutesPage.routeDialogDescription')}</DialogDescription>
           </DialogHeader>
-          <EgressExceptionWarning context="route" projectId={projectId} />
+          {editingRoute ? null : <EgressExceptionWarning context="route" projectId={projectId} />}
           <form className="grid gap-3" onSubmit={form.handleSubmit(values => saveRoute.mutate(values))}>
             <ProgressiveSection
               defaultOpen

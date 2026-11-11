@@ -621,3 +621,16 @@ func TestDisabledOperationsAlwaysExplainWhy(t *testing.T) {
 		}
 	}
 }
+
+func TestEgressExceptionWritesRequireApproval(t *testing.T) {
+	// 出站例外会把项目空间放行到集群外的内网，Agent 修改必须经人工审批。
+	for _, operationID := range []string{"createRuntimeClusterEgressException", "updateRuntimeClusterEgressException", "deleteRuntimeClusterEgressException"} {
+		operation, ok := PlatformOperation(operationID)
+		if !ok {
+			t.Fatalf("missing %s", operationID)
+		}
+		if !operation.RequiresApproval {
+			t.Errorf("%s must require approval", operationID)
+		}
+	}
+}

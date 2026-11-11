@@ -544,7 +544,8 @@ func (h *Handler) UpdateProjectMember(ctx *gin.Context) {
 		writeErrorCode(ctx, http.StatusInternalServerError, "inbox.operation_failed", "project member notification failed")
 		return
 	}
-	h.auditWithContext(user.ID, "project_member.update", member.ID, true, member.Role, ctx.Request.Context())
+	// 角色提升同样扩大可触达内网的范围，审计中标出项目持有的出站例外数量。
+	h.auditWithContext(user.ID, "project_member.update", member.ID, true, member.Role+" "+runtimecluster.EgressExceptionAuditMarker(h.dbFor(ctx), member.ProjectID), ctx.Request.Context())
 	defaultInboxBroker.Notify(member.UserID, "")
 	ctx.JSON(http.StatusOK, member)
 }
