@@ -1,6 +1,6 @@
 import type { RuntimeCluster } from '@/api'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { TooltipProvider } from '@/components/ui/tooltip'
@@ -8,11 +8,13 @@ import i18next from '@/i18n'
 import { ClusterEgressExceptionsDialog } from './cluster-egress-exceptions-dialog'
 
 const mocks = vi.hoisted(() => ({
+  approveRuntimeClusterNetworkShare: vi.fn(),
   createRuntimeClusterEgressException: vi.fn(),
   deleteRuntimeClusterEgressException: vi.fn(),
   getProjectTopology: vi.fn(),
   listProjectsPage: vi.fn(),
   listRuntimeClusterEgressExceptions: vi.fn(),
+  listRuntimeClusterNetworkShareApprovals: vi.fn(),
 }))
 
 vi.mock('@/api', async (importOriginal) => {
@@ -42,6 +44,47 @@ describe('cluster egress exceptions dialog', () => {
     await i18next.changeLanguage('en-US')
     mocks.getProjectTopology.mockResolvedValue({ generatedAt: '', nodes: [], edges: [], warnings: [] })
     mocks.listProjectsPage.mockResolvedValue(page([{ id: 'prj_pay', name: 'Payments', identifier: 'payments' }]))
+    mocks.listRuntimeClusterNetworkShareApprovals.mockResolvedValue(page([]))
+  })
+
+  it('approves cross-project shares from project spaces holding exceptions', async () => {
+    mocks.listRuntimeClusterEgressExceptions.mockResolvedValue(page([{
+      id: 'nex_db',
+      runtimeClusterId: 'clu_dc',
+      name: 'Billing MySQL',
+      cidr: '192.168.31.10/32',
+      ports: '3306',
+      protocol: 'tcp',
+      reason: 'Billing',
+      grants: [{ projectId: 'prj_pay', projectName: 'Payments', deploymentTargetIds: [], includeBuilds: false, providedShares: 1 }],
+      createdBy: 'usr',
+      createdAt: '',
+      updatedAt: '',
+    }]))
+    mocks.listRuntimeClusterNetworkShareApprovals.mockResolvedValue(page([{
+      id: 'nss_pay',
+      providerProjectId: 'prj_pay',
+      providerProjectName: 'Payments',
+      deploymentTargetId: 'dplt_api',
+      deploymentTargetName: 'prod',
+      applicationName: 'pay-api',
+      consumerProjectId: 'prj_web',
+      consumerProjectName: 'Storefront',
+      address: 'pay-api.payments.svc',
+      status: 'pending_approval',
+      approvalRequired: true,
+      acceptedAt: '',
+      approvedAt: null,
+      createdAt: '',
+    }]))
+    mocks.approveRuntimeClusterNetworkShare.mockResolvedValue({})
+    renderDialog()
+    expect(await screen.findByText('Shared services: 1')).toBeInTheDocument()
+    expect(await screen.findByText('Storefront')).toBeInTheDocument()
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Approve' }))
+    await user.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Approve' }))
+    await waitFor(() => expect(mocks.approveRuntimeClusterNetworkShare).toHaveBeenCalledWith('clu_dc', 'nss_pay'))
   })
 
   it('lists exceptions with their granted project spaces', async () => {

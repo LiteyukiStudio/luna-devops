@@ -42,6 +42,8 @@ type egressExceptionGrantResponse struct {
 	ProjectName         string   `json:"projectName"`
 	DeploymentTargetIDs []string `json:"deploymentTargetIds"`
 	IncludeBuilds       bool     `json:"includeBuilds"`
+	// ProvidedShares 是该项目空间对外提供的跨项目共享数，用于提示例外可能被共享服务当作跳板。
+	ProvidedShares int `json:"providedShares"`
 }
 
 type egressExceptionResponse struct {
@@ -345,9 +347,26 @@ func (h *Handlers) egressExceptionResponses(ctx *gin.Context, exceptions []model
 			}
 		}
 	}
+	shares := map[string]int{}
+	if len(projectIDs) > 0 {
+		var counts []struct {
+			ProjectID string `gorm:"column:project_id"`
+			Count     int    `gorm:"column:count"`
+		}
+		if err := h.dbFor(ctx).Model(&model.NetworkServiceShare{}).Select("provider_project_id as project_id, count(*) as count").
+			Where("provider_project_id in ?", normalizeStringList(projectIDs)).Group("provider_project_id").Scan(&counts).Error; err == nil {
+			for _, row := range counts {
+				shares[row.ProjectID] = row.Count
+			}
+		}
+	}
 	items := make([]egressExceptionResponse, 0, len(exceptions))
 	for _, exception := range exceptions {
-		items = append(items, egressExceptionResponseFrom(exception, names))
+		item := egressExceptionResponseFrom(exception, names)
+		for index := range item.Grants {
+			item.Grants[index].ProvidedShares = shares[item.Grants[index].ProjectID]
+		}
+		items = append(items, item)
 	}
 	return items
 }

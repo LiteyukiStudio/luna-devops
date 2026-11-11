@@ -197,6 +197,14 @@ const errors = {
     not_found: 'The resource does not exist or has been deleted',
     conflict: 'The resource state has changed. Refresh and try again',
   },
+  network_share: {
+    direction_invalid: 'The share direction is invalid.',
+    target_invalid: 'Choose an available deployment target of this project space.',
+    consumer_invalid: 'The consumer must be another active project space. Check the project space identifier.',
+    limit_exceeded: 'A deployment target can be shared with at most 50 project spaces.',
+    duplicate: 'This deployment target is already shared with that project space.',
+    not_found: 'The share does not exist or has been revoked.',
+  },
   network: {
     failed: 'Cannot connect to the platform backend. Check the local service, network proxy, or VPN settings.',
   },

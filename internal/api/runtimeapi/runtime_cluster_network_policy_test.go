@@ -34,7 +34,7 @@ func TestObserveWorkloadNetworkPoliciesComparesLiveState(t *testing.T) {
 	db := testdb.Open(t, testdb.Options{
 		SchemaPrefix: "runtime_cluster_network_policy_test",
 		Migrate: func(db *gorm.DB) error {
-			return db.AutoMigrate(&model.Project{}, &model.SystemComponentInstallation{}, &model.DeploymentTarget{}, &model.ServiceBinding{}, &model.NetworkEgressException{}, &model.NetworkEgressExceptionGrant{})
+			return db.AutoMigrate(&model.RuntimeCluster{}, &model.Project{}, &model.SystemComponentInstallation{}, &model.DeploymentTarget{}, &model.ServiceBinding{}, &model.NetworkEgressException{}, &model.NetworkEgressExceptionGrant{}, &model.NetworkServiceShare{})
 		},
 	})
 	cluster := model.RuntimeCluster{ID: "rc_net", GatewayNamespace: "traefik"}

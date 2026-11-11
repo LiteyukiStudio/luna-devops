@@ -533,6 +533,60 @@ func TestRenderEgressExceptions(t *testing.T) {
 	}
 }
 
+func TestRenderSharedServices(t *testing.T) {
+	input := testWorkloadPolicyInput()
+	input.IngressMode = NetworkIngressDependencies
+	input.EgressMode = NetworkEgressNone
+	input.SharedIngress = map[string][]string{"dt_db": {"prj-web", "prj-api", "prj-web"}, "dt_empty": nil}
+	input.SharedEgress = []SharedService{{Namespace: "prj-auth", TargetID: "dt_auth"}, {Namespace: "prj-auth", TargetID: "dt_auth"}}
+	policies, err := RenderWorkloadNetworkPolicies(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byName := map[string]networkingv1.NetworkPolicy{}
+	for _, policy := range policies {
+		byName[policy.Name] = policy
+	}
+	ingress, ok := byName[sharedIngressPolicyPrefix+shortHash("dt_db")]
+	if !ok || ingress.Spec.PodSelector.MatchLabels[DeploymentTargetIDLabel] != "dt_db" {
+		t.Fatalf("shared target must accept consumer namespaces: %#v", ingress.Spec.PodSelector)
+	}
+	from := ingress.Spec.Ingress[0].From
+	if len(from) != 1 || from[0].PodSelector != nil {
+		t.Fatalf("shared ingress must select whole consumer namespaces only: %#v", from)
+	}
+	if expr := from[0].NamespaceSelector.MatchExpressions[0]; expr.Key != "kubernetes.io/metadata.name" || !slices.Equal(expr.Values, []string{"prj-api", "prj-web"}) {
+		t.Fatalf("consumer namespaces must be selected by the immutable name label: %#v", expr)
+	}
+	if _, ok := byName[sharedIngressPolicyPrefix+shortHash("dt_empty")]; ok {
+		t.Fatal("a target without consumers must not render an ingress policy")
+	}
+	egress, ok := byName[sharedEgressPolicyPrefix+shortHash("prj-auth/dt_auth")]
+	if !ok {
+		t.Fatal("consumed shares must render egress even when the project egress mode is none")
+	}
+	if expr := egress.Spec.PodSelector.MatchExpressions; len(expr) != 1 || expr[0].Key != ScopeLabel || expr[0].Operator != metav1.LabelSelectorOpNotIn {
+		t.Fatalf("shared egress must exclude build and volume transfer pods: %#v", expr)
+	}
+	peer := egress.Spec.Egress[0].To[0]
+	if peer.NamespaceSelector.MatchLabels["kubernetes.io/metadata.name"] != "prj-auth" || peer.PodSelector.MatchLabels[DeploymentTargetIDLabel] != "dt_auth" {
+		t.Fatalf("shared egress must only reach the provider target pods: %#v", peer)
+	}
+	count := 0
+	for name := range byName {
+		if len(name) > len(sharedEgressPolicyPrefix) && name[:len(sharedEgressPolicyPrefix)] == sharedEgressPolicyPrefix {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Fatalf("duplicate consumed shares must render once, got %d", count)
+	}
+	input.SharedEgress = []SharedService{{Namespace: "Bad_NS", TargetID: "dt"}}
+	if _, err := RenderWorkloadNetworkPolicies(input); err == nil {
+		t.Fatal("invalid provider namespace must be rejected")
+	}
+}
+
 func TestEnsureNamespaceToleratesConcurrentCreate(t *testing.T) {
 	clientset := fake.NewSimpleClientset()
 	labels := ProjectNamespaceLabels("prj_demo")

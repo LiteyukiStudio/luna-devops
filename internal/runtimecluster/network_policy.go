@@ -179,6 +179,10 @@ func DesiredWorkloadNetworkPolicies(ctx context.Context, db *gorm.DB, cluster mo
 	if err != nil {
 		return nil, err
 	}
+	sharedIngress, sharedEgress, err := sharedServicePolicies(ctx, db, cluster, projectID)
+	if err != nil {
+		return nil, err
+	}
 	var trusted []string
 	if err := db.WithContext(ctx).Model(&model.SystemComponentInstallation{}).
 		Where("runtime_cluster_id = ? and project_id = ? and namespace = ? and deployment_target_id <> ''", cluster.ID, projectID, namespace).
@@ -199,6 +203,8 @@ func DesiredWorkloadNetworkPolicies(ctx context.Context, db *gorm.DB, cluster mo
 		EgressMode:                 project.NetworkEgressMode,
 		EgressAllowlist:            allowlist,
 		EgressExceptions:           exceptions,
+		SharedIngress:              sharedIngress,
+		SharedEgress:               sharedEgress,
 		BuildEgress: kubeprovider.BuildEgressInput{
 			Permissive:   strings.TrimSpace(cluster.BuildEgressMode) == BuildEgressPermissive,
 			PrivateCIDRs: NetworkBlockedCIDRs(cluster.BuildPrivateEgressCIDRs),

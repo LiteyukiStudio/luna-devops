@@ -40,7 +40,7 @@ func TestProjectEgressExceptionsReadsGrantedRules(t *testing.T) {
 	db := testdb.Open(t, testdb.Options{
 		SchemaPrefix: "project_egress_exception_view_test",
 		Migrate: func(db *gorm.DB) error {
-			return db.AutoMigrate(&model.RuntimeCluster{}, &model.NetworkEgressException{}, &model.NetworkEgressExceptionGrant{})
+			return db.AutoMigrate(&model.RuntimeCluster{}, &model.NetworkEgressException{}, &model.NetworkEgressExceptionGrant{}, &model.NetworkServiceShare{})
 		},
 	})
 	now := time.Now()

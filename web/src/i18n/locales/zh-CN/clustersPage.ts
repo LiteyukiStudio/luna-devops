@@ -240,6 +240,20 @@ const clustersPage = {
     wholeProject: '整个项目空间',
     includeBuilds: '包含构建',
     removeGrant: '移除授权',
+    providedShares: '对外共享 {{count}} 个服务',
+  },
+  shareApprovals: {
+    title: '有跨项目共享等待批准',
+    description: '以下项目空间持有本集群的出站例外，共享出去的服务可能把内网访问转给其他项目空间。确认共享服务不会转发内网访问后再批准。',
+    provider: '提供方',
+    service: '服务',
+    consumer: '使用方',
+    approve: '批准',
+    approved: '已批准，策略正在下发',
+    emptyTitle: '没有待批准的共享',
+    loadFailed: '待批准的共享加载失败',
+    confirmTitle: '批准跨项目共享',
+    confirmDescription: '批准后，“{{consumer}}”可以访问“{{provider}}”共享的服务。该操作会写入审计。',
   },
 }
 

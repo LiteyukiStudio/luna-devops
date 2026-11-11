@@ -21,7 +21,7 @@ func openApplicationDeleteTestDB(t *testing.T, prefix string) *gorm.DB {
 		Migrate: func(db *gorm.DB) error {
 			return db.AutoMigrate(
 				&model.Project{}, &model.RuntimeCluster{}, &model.Application{}, &model.DeploymentTarget{},
-				&model.DeploymentVolumeMount{}, &model.ServiceBinding{}, &model.ProjectTopologyEdge{},
+				&model.DeploymentVolumeMount{}, &model.ServiceBinding{}, &model.ProjectTopologyEdge{}, &model.NetworkServiceShare{},
 				&model.DeploymentTargetHookBinding{}, &model.GatewayRoute{}, &model.RepositoryBinding{},
 			)
 		},

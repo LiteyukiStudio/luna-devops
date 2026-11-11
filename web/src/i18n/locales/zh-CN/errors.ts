@@ -197,6 +197,14 @@ const errors = {
     not_found: '资源不存在或已被删除',
     conflict: '资源状态冲突，请刷新后重试',
   },
+  network_share: {
+    direction_invalid: '共享方向无效。',
+    target_invalid: '请选择本项目空间内可用的部署配置。',
+    consumer_invalid: '使用方必须是另一个有效的项目空间，请核对项目空间标识。',
+    limit_exceeded: '一个部署配置最多共享给 50 个项目空间。',
+    duplicate: '该部署配置已共享给这个项目空间。',
+    not_found: '共享不存在或已被撤销。',
+  },
   network: {
     failed: '无法连接到平台后端，请检查本地服务、网络代理或 VPN 设置。',
   },

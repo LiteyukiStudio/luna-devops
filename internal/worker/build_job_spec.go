@@ -37,6 +37,10 @@ func (r *Runner) startBuildJob(ctx context.Context, client kubernetes.Interface,
 	}
 	timeoutSeconds := effectiveBuildTimeoutSeconds(run.BuildTimeoutSeconds, r.buildJobTimeoutSeconds)
 	job := buildJobSpec(jobName, secretName, run, task, r.buildExecutorImage, r.buildCacheEnabled, timeoutSeconds, r.buildJobTTLSeconds)
+	if err := kubeprovider.ValidatePodIsolation(job.Spec.Template.Spec); err != nil {
+		cleanupSecret()
+		return err
+	}
 	jobs := client.BatchV1().Jobs(namespace)
 	if _, err := jobs.Create(ctx, job, metav1.CreateOptions{}); err != nil {
 		if !apierrors.IsAlreadyExists(err) {

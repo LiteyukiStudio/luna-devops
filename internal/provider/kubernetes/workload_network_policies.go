@@ -32,6 +32,8 @@ const (
 	egressExceptionPolicyPrefix      = "luna-egress-exception-"
 	buildEgressExceptionPolicyPrefix = "luna-build-egress-exception-"
 	dependencyIngressPolicyPrefix    = "luna-dependency-ingress-"
+	sharedIngressPolicyPrefix        = "luna-shared-ingress-"
+	sharedEgressPolicyPrefix         = "luna-shared-egress-"
 	buildPodScope                    = "build"
 	systemEgressPolicyPrefix         = "luna-system-egress-"
 	namespaceNameLabel               = "kubernetes.io/metadata.name"
@@ -67,6 +69,16 @@ type WorkloadNetworkPolicyInput struct {
 	EgressAllowlist []EgressAllowRule
 	// EgressExceptions 是管理员授权给本项目空间的集群级出站例外，始终生效，不受项目出站模式影响。
 	EgressExceptions []EgressException
+	// SharedIngress 是本项目空间作为提供方已生效的跨项目共享：部署配置 ID 到可访问它的使用方 Namespace。
+	SharedIngress map[string][]string
+	// SharedEgress 是本项目空间作为使用方已生效的跨项目共享，不受项目出站模式影响。
+	SharedEgress []SharedService
+}
+
+// SharedService 是另一个项目空间共享给本项目空间的部署配置。
+type SharedService struct {
+	Namespace string
+	TargetID  string
 }
 
 // EgressException 是渲染一条出站例外所需的输入；TargetIDs 为空表示整个项目空间的工作负载。
@@ -228,6 +240,11 @@ func RenderWorkloadNetworkPolicies(input WorkloadNetworkPolicyInput) ([]networki
 		PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeIngress},
 		Ingress:     []networkingv1.NetworkPolicyIngressRule{{From: []networkingv1.NetworkPolicyPeer{gatewayPeer}}},
 	}))
+	shared, err := renderSharedServices(input.Namespace, input.SharedIngress, input.SharedEgress)
+	if err != nil {
+		return nil, err
+	}
+	policies = append(policies, shared...)
 	if ingressMode == NetworkIngressDependencies {
 		for _, targetID := range sortedUnique(input.DeploymentTargetIDs) {
 			sources := sortedUnique(append([]string{targetID}, input.Dependencies[targetID]...))
@@ -242,6 +259,65 @@ func RenderWorkloadNetworkPolicies(input WorkloadNetworkPolicyInput) ([]networki
 					}}}},
 				}))
 		}
+	}
+	return policies, nil
+}
+
+// renderSharedServices 渲染跨项目共享的两侧放行：提供方部署配置的 Pod 接受使用方 Namespace 的入站，
+// 使用方工作负载 Pod（不含构建与卷迁移）可出站访问提供方部署配置的 Pod。Namespace 只按 Kubernetes
+// 自动写入、租户无法修改的 kubernetes.io/metadata.name 标签选择。
+func renderSharedServices(namespace string, ingress map[string][]string, egress []SharedService) ([]networkingv1.NetworkPolicy, error) {
+	policies := []networkingv1.NetworkPolicy{}
+	targetIDs := make([]string, 0, len(ingress))
+	for targetID := range ingress {
+		targetIDs = append(targetIDs, targetID)
+	}
+	for _, targetID := range sortedUnique(targetIDs) {
+		consumers := sortedUnique(ingress[targetID])
+		if len(consumers) == 0 {
+			continue
+		}
+		for _, consumer := range consumers {
+			if errs := validation.IsDNS1123Label(consumer); len(errs) > 0 {
+				return nil, fmt.Errorf("invalid shared service consumer namespace %q", consumer)
+			}
+		}
+		policies = append(policies, workloadNetworkPolicy(namespace, sharedIngressPolicyPrefix+shortHash(targetID),
+			metav1.LabelSelector{MatchLabels: map[string]string{DeploymentTargetIDLabel: targetID}},
+			networkingv1.NetworkPolicySpec{
+				PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeIngress},
+				Ingress: []networkingv1.NetworkPolicyIngressRule{{From: []networkingv1.NetworkPolicyPeer{{
+					NamespaceSelector: &metav1.LabelSelector{MatchExpressions: []metav1.LabelSelectorRequirement{{
+						Key: namespaceNameLabel, Operator: metav1.LabelSelectorOpIn, Values: consumers,
+					}}},
+				}}}},
+			}))
+	}
+	seen := map[string]bool{}
+	egress = append([]SharedService(nil), egress...)
+	sort.Slice(egress, func(i, j int) bool {
+		return egress[i].Namespace+"/"+egress[i].TargetID < egress[j].Namespace+"/"+egress[j].TargetID
+	})
+	for _, service := range egress {
+		key := service.Namespace + "/" + service.TargetID
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		if errs := validation.IsDNS1123Label(service.Namespace); len(errs) > 0 {
+			return nil, fmt.Errorf("invalid shared service provider namespace %q", service.Namespace)
+		}
+		policies = append(policies, workloadNetworkPolicy(namespace, sharedEgressPolicyPrefix+shortHash(key),
+			metav1.LabelSelector{MatchExpressions: []metav1.LabelSelectorRequirement{{
+				Key: ScopeLabel, Operator: metav1.LabelSelectorOpNotIn, Values: []string{buildPodScope, volumeTransferScope},
+			}}},
+			networkingv1.NetworkPolicySpec{
+				PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeEgress},
+				Egress: []networkingv1.NetworkPolicyEgressRule{{To: []networkingv1.NetworkPolicyPeer{{
+					NamespaceSelector: &metav1.LabelSelector{MatchLabels: map[string]string{namespaceNameLabel: service.Namespace}},
+					PodSelector:       &metav1.LabelSelector{MatchLabels: map[string]string{DeploymentTargetIDLabel: service.TargetID}},
+				}}}},
+			}))
 	}
 	return policies, nil
 }

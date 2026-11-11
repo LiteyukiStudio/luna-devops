@@ -1,4 +1,4 @@
-import type { AppTemplate, AppTemplateInstallPayload, AppTemplateInstallResponse, AppTemplateSummary, BillingDeploymentSpend, BillingLedgerEntry, BillingListParams, BillingPeriodParams, BillingRateRule, BillingRateRulePayload, BillingSummary, BillingUsageRecord, BillingWalletTransactionPayload, GatewayTrafficStatus, InboxActionRequest, PaginatedResponse, PaginationParams, Project, ProjectListParams, ProjectMember, ProjectMemberCandidate, ProjectNetworkPolicy, ProjectNetworkPolicyPayload, ProjectOverview, ProjectPin, ResultVisibility, SystemComponentInstallPayload, SystemComponentInstallResponse } from '../types'
+import type { AppTemplate, AppTemplateInstallPayload, AppTemplateInstallResponse, AppTemplateSummary, BillingDeploymentSpend, BillingLedgerEntry, BillingListParams, BillingPeriodParams, BillingRateRule, BillingRateRulePayload, BillingSummary, BillingUsageRecord, BillingWalletTransactionPayload, GatewayTrafficStatus, InboxActionRequest, NetworkServiceShare, NetworkServiceShareDirection, NetworkServiceSharePayload, PaginatedResponse, PaginationParams, Project, ProjectListParams, ProjectMember, ProjectMemberCandidate, ProjectNetworkPolicy, ProjectNetworkPolicyPayload, ProjectOverview, ProjectPin, ResultVisibility, SystemComponentInstallPayload, SystemComponentInstallResponse } from '../types'
 import { billingQuery, billingSummaryQuery, paginationQuery, request } from '../core'
 import { selectionItems, selectionPageParams } from '../selection-page'
 
@@ -41,6 +41,14 @@ export const projectsApi = {
     request<ProjectNetworkPolicy>(`/projects/${projectId}/network-policy`, { signal }),
   updateProjectNetworkPolicy: (projectId: string, payload: ProjectNetworkPolicyPayload) =>
     request<ProjectNetworkPolicy>(`/projects/${projectId}/network-policy`, { method: 'PUT', body: JSON.stringify(payload) }),
+  listProjectNetworkShares: (projectId: string, direction: NetworkServiceShareDirection, params: PaginationParams) =>
+    request<PaginatedResponse<NetworkServiceShare>>(`/projects/${projectId}/network-shares?direction=${direction}&${paginationQuery(params)}`),
+  createProjectNetworkShare: (projectId: string, payload: NetworkServiceSharePayload) =>
+    request<NetworkServiceShare>(`/projects/${projectId}/network-shares`, { method: 'POST', body: JSON.stringify(payload) }),
+  acceptProjectNetworkShare: (projectId: string, shareId: string) =>
+    request<NetworkServiceShare>(`/projects/${projectId}/network-shares/${shareId}/accept`, { method: 'POST' }),
+  deleteProjectNetworkShare: (projectId: string, shareId: string) =>
+    request<void>(`/projects/${projectId}/network-shares/${shareId}`, { method: 'DELETE' }),
   getProjectOverview: (projectId: string) => request<ProjectOverview>(`/projects/${projectId}/overview`),
   updateProject: (projectId: string, payload: Pick<Project, 'identifier' | 'name' | 'description' | 'maxConcurrentBuilds' | 'webConsoleEnabled'>) =>
     request<Project>(`/projects/${projectId}`, { method: 'PUT', body: JSON.stringify(payload) }),

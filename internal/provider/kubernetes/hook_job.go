@@ -88,6 +88,9 @@ func (c *Client) RunHookJob(ctx context.Context, spec HookJobSpec) (HookJobResul
 			},
 		},
 	}
+	if err := ValidatePodIsolation(job.Spec.Template.Spec); err != nil {
+		return HookJobResult{}, err
+	}
 	_ = c.client.BatchV1().Jobs(spec.Namespace).Delete(ctx, spec.Name, metav1.DeleteOptions{})
 	createdJob, err := c.client.BatchV1().Jobs(spec.Namespace).Create(ctx, job, metav1.CreateOptions{})
 	if err != nil {

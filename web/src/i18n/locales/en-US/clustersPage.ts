@@ -240,6 +240,20 @@ const clustersPage = {
     wholeProject: 'Whole project space',
     includeBuilds: 'Include builds',
     removeGrant: 'Remove grant',
+    providedShares: 'Shared services: {{count}}',
+  },
+  shareApprovals: {
+    title: 'Cross-project shares awaiting approval',
+    description: 'These project spaces hold egress exceptions on this cluster, so their shared services could relay private network access to other project spaces. Approve only when the shared service will not relay that access.',
+    provider: 'Provider',
+    service: 'Service',
+    consumer: 'Consumer',
+    approve: 'Approve',
+    approved: 'Approved. Applying policies.',
+    emptyTitle: 'No shares awaiting approval',
+    loadFailed: 'Failed to load shares awaiting approval',
+    confirmTitle: 'Approve cross-project share',
+    confirmDescription: '"{{consumer}}" will be able to reach the service shared by "{{provider}}". This action is audited.',
   },
 }
 

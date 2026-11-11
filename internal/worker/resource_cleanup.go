@@ -670,6 +670,10 @@ func (r *Runner) finishProjectDelete(project model.Project) error {
 		if err := tx.Where("project_id = ?", project.ID).Delete(&model.NetworkEgressExceptionGrant{}).Error; err != nil {
 			return err
 		}
+		// 已删除的项目空间不再提供或使用跨项目共享。
+		if err := tx.Where("provider_project_id = ? or consumer_project_id = ?", project.ID, project.ID).Delete(&model.NetworkServiceShare{}).Error; err != nil {
+			return err
+		}
 		if err := tx.Where("project_id = ?", project.ID).Delete(&model.DeploymentVolumeMount{}).Error; err != nil {
 			return err
 		}
@@ -719,6 +723,9 @@ func (r *Runner) finishDeploymentTargetDelete(ctx context.Context, target model.
 		}
 		if err := tx.Where("source_deployment_target_id = ? or target_deployment_target_id = ?", target.ID, target.ID).
 			Delete(&model.ProjectTopologyEdge{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("deployment_target_id = ?", target.ID).Delete(&model.NetworkServiceShare{}).Error; err != nil {
 			return err
 		}
 		if err := tx.Where("target_id = ?", target.ID).Delete(&model.DeploymentTargetHookBinding{}).Error; err != nil {

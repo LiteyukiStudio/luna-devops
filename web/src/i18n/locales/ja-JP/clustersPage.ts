@@ -240,6 +240,20 @@ const clustersPage = {
     wholeProject: 'プロジェクトスペース全体',
     includeBuilds: 'ビルドを含む',
     removeGrant: '許可を削除',
+    providedShares: '{{count}} 件のサービスを共有中',
+  },
+  shareApprovals: {
+    title: '承認待ちのプロジェクト間共有があります',
+    description: '次のプロジェクトスペースはこのクラスターの送信例外を持っているため、共有したサービスが内部ネットワークへのアクセスを他のプロジェクトスペースに中継する可能性があります。中継しないことを確認してから承認してください。',
+    provider: '提供側',
+    service: 'サービス',
+    consumer: '利用側',
+    approve: '承認',
+    approved: '承認しました。ポリシーを適用しています',
+    emptyTitle: '承認待ちの共有はありません',
+    loadFailed: '承認待ちの共有の読み込みに失敗しました',
+    confirmTitle: 'プロジェクト間共有を承認',
+    confirmDescription: '承認すると「{{consumer}}」は「{{provider}}」が共有したサービスにアクセスできます。この操作は監査に記録されます。',
   },
 }
 

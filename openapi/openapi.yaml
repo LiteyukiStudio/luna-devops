@@ -2074,6 +2074,166 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+  /api/v1/projects/{projectId}/network-shares:
+    get:
+      operationId: listProjectNetworkShares
+      x-luna-cli:
+        requiredScopes: ["project:read"]
+      tags: [Projects]
+      summary: List cross-project network shares
+      description: Lists deployment targets this project space shares with other project spaces (direction=provided) or that other project spaces share with it (direction=consumed). Shares only open the network; no credentials are injected.
+      x-luna-agent:
+        purpose: { zh: 查看项目空间对外提供或可以使用的跨项目共享服务。, en: List cross-project shared services a project space provides or can use. }
+        aliases: { zh: [查看跨项目共享, 查看共享服务, 查看允许访问来源], en: [list network shares, list shared services, list allowed sources] }
+        avoidWhen: { zh: 同一项目空间内的应用互访使用服务引用。, en: Use service bindings for access between applications of the same project space. }
+        preconditions: { zh: [提供真实 projectId, 指定 direction 为 provided 或 consumed], en: [Provide an authoritative projectId, set direction to provided or consumed] }
+        successEvidence: { zh: 返回分页的共享及其状态与集群内访问地址。, en: Returns paginated shares with their status and in-cluster address. }
+        effect: read
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - name: direction
+          in: query
+          required: true
+          schema: { type: string, enum: [provided, consumed] }
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - name: sortBy
+          in: query
+          schema: { type: string, enum: [createdAt], default: createdAt }
+        - $ref: "#/components/parameters/SortOrder"
+      responses:
+        "200":
+          description: Paginated network shares.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PaginatedNetworkServiceShares" }
+        "400":
+          description: Invalid direction (`network_share.direction_invalid`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      operationId: createProjectNetworkShare
+      x-luna-cli:
+        requiredScopes: ["project:write"]
+        risk: high
+      tags: [Projects]
+      summary: Share a deployment target with another project space
+      description: Allows another project space to reach a deployment target of this project space. Takes effect only after the consumer accepts; when this project space holds egress exceptions on the target's cluster, a cluster maintainer must also approve. Changes are audited.
+      x-luna-agent:
+        purpose: { zh: 把本项目空间的一个部署配置开放给另一个项目空间访问。, en: Open a deployment target of this project space to another project space. }
+        aliases: { zh: [跨项目共享, 添加允许访问来源, 共享服务给其他项目], en: [share service with project, add allowed source, cross-project share] }
+        avoidWhen: { zh: 同一项目空间内的访问使用服务引用；不要用来放行内网地址。, en: Use service bindings within one project space; do not use to allow private network addresses. }
+        preconditions: { zh: [提供真实 projectId 与部署配置 ID, 向使用方确认其项目空间标识], en: [Provide an authoritative projectId and deploymentTargetId, confirm the consumer project identifier with its owners] }
+        successEvidence: { zh: 返回共享，状态为待使用方确认。, en: Returns the share in pending_acceptance status. }
+        effect: write
+        verification:
+          - { operationId: listProjectNetworkShares, family: resource, idFrom: argument.projectId, collection: true, readIdArgument: projectId }
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NetworkServiceShareInput" }
+      responses:
+        "201":
+          description: Created share.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NetworkServiceShare" }
+        "400":
+          description: Invalid target (`network_share.target_invalid`), consumer (`network_share.consumer_invalid`), or too many consumers (`network_share.limit_exceeded`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Already shared with that project space (`network_share.duplicate`) or the project space is being deleted (`project.delete_in_progress`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+  /api/v1/projects/{projectId}/network-shares/{shareId}/accept:
+    post:
+      operationId: acceptProjectNetworkShare
+      x-luna-cli:
+        requiredScopes: ["project:write"]
+        risk: high
+      tags: [Projects]
+      summary: Accept a shared service
+      description: Called by the consumer project space to start using a service shared with it; both sides' NetworkPolicies are then reapplied. Idempotent.
+      x-luna-agent:
+        purpose: { zh: 使用方确认使用其他项目空间共享的服务。, en: Accept a service shared by another project space. }
+        aliases: { zh: [确认共享, 使用共享服务, 声明跨项目依赖], en: [accept network share, use shared service, declare cross-project dependency] }
+        avoidWhen: { zh: 提供方项目空间不能调用。, en: The provider project space cannot call it. }
+        preconditions: { zh: [projectId 是使用方项目空间, 先用 listProjectNetworkShares 获取 shareId], en: [projectId is the consumer project space, resolve shareId with listProjectNetworkShares first] }
+        successEvidence: { zh: 返回共享，状态为已生效或待集群维护者批准。, en: Returns the share as active or pending_approval. }
+        effect: write
+        verification:
+          - { operationId: listProjectNetworkShares, family: resource, idFrom: argument.projectId, collection: true, readIdArgument: projectId }
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/NetworkShareId"
+      responses:
+        "200":
+          description: Accepted share.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NetworkServiceShare" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: The project space or share does not exist (`network_share.not_found`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "409":
+          description: The project space is being deleted (`project.delete_in_progress`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+  /api/v1/projects/{projectId}/network-shares/{shareId}:
+    delete:
+      operationId: deleteProjectNetworkShare
+      x-luna-cli:
+        requiredScopes: ["project:write"]
+      tags: [Projects]
+      summary: Revoke or leave a network share
+      description: The provider revokes the share or the consumer stops using it; both sides lose access after the Worker reapplies policies.
+      x-luna-agent:
+        purpose: { zh: 撤销或退出跨项目共享。, en: Revoke or leave a cross-project share. }
+        aliases: { zh: [撤销共享, 取消使用共享服务, 移除允许访问来源], en: [revoke network share, stop using shared service, remove allowed source] }
+        avoidWhen: { zh: 不知道 shareId 时先列出共享。, en: List shares first when shareId is unknown. }
+        preconditions: { zh: [projectId 是提供方或使用方项目空间, 提供真实 shareId], en: [projectId is the provider or consumer project space, provide an authoritative shareId] }
+        successEvidence: { zh: 返回 204。, en: Returns 204. }
+        effect: write
+        verification:
+          - { operationId: listProjectNetworkShares, family: resource, idFrom: argument.projectId, collection: true, readIdArgument: projectId }
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/NetworkShareId"
+      responses:
+        "204":
+          description: Deleted.
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: The project space or share does not exist (`network_share.not_found`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "409":
+          description: The project space is being deleted (`project.delete_in_progress`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
   /api/v1/projects/{projectId}/overview:
     get:
       operationId: getProjectOverview
@@ -4837,6 +4997,80 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           description: The cluster or exception does not exist (`runtime_cluster.not_found`, `runtime_cluster.egress_exception_not_found`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /api/v1/runtime/clusters/{clusterId}/network-share-approvals:
+    get:
+      operationId: listRuntimeClusterNetworkShareApprovals
+      x-luna-cli:
+        requiredScopes: ["cluster:manage"]
+      tags: [Runtime]
+      summary: List network shares awaiting approval
+      description: Lists cross-project shares whose provider holds egress exceptions on this cluster and that a cluster maintainer has not approved yet.
+      x-luna-agent:
+        purpose: { zh: 查看待集群维护者批准的跨项目共享。, en: List cross-project shares awaiting approval by a cluster maintainer. }
+        aliases: { zh: [待批准的共享, 共享审批], en: [pending network share approvals, share approvals] }
+        avoidWhen: { zh: 项目成员查看本项目共享时使用 listProjectNetworkShares。, en: Project members should use listProjectNetworkShares. }
+        preconditions: { zh: [先用 listRuntimeClusters 获取真实 clusterId, 当前用户需能维护该集群], en: [Resolve clusterId with listRuntimeClusters first, the caller must be able to manage the cluster] }
+        successEvidence: { zh: 返回分页的待批准共享。, en: Returns paginated shares awaiting approval. }
+        effect: read
+      parameters:
+        - name: clusterId
+          in: path
+          required: true
+          schema: { type: string, pattern: '^clu_' }
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - name: sortBy
+          in: query
+          schema: { type: string, enum: [createdAt], default: createdAt }
+        - $ref: "#/components/parameters/SortOrder"
+      responses:
+        "200":
+          description: Paginated shares awaiting approval.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PaginatedNetworkServiceShares" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/runtime/clusters/{clusterId}/network-share-approvals/{shareId}/approve:
+    post:
+      operationId: approveRuntimeClusterNetworkShare
+      x-luna-cli:
+        requiredScopes: ["cluster:manage"]
+        risk: high
+      tags: [Runtime]
+      summary: Approve a network share
+      description: Approves a share whose provider holds egress exceptions on this cluster, accepting the risk that the shared service relays access to those private addresses. Audited and reapplied immediately. Idempotent.
+      x-luna-agent:
+        purpose: { zh: 批准持有出站例外的项目空间对外共享服务。, en: Approve a service share from a project space that holds egress exceptions. }
+        aliases: { zh: [批准共享, 同意跨项目共享], en: [approve network share, approve cross-project share] }
+        avoidWhen: { zh: 不确定共享服务不会转发内网访问时不要批准。, en: Do not approve unless the shared service will not relay private network access. }
+        preconditions: { zh: [提供真实 clusterId 与 shareId, 当前用户需能维护该集群], en: [Provide authoritative clusterId and shareId, the caller must be able to manage the cluster] }
+        successEvidence: { zh: 返回已批准的共享。, en: Returns the approved share. }
+        effect: write
+        verification:
+          - { operationId: listRuntimeClusterNetworkShareApprovals, family: resource, idFrom: argument.clusterId, collection: true, readIdArgument: clusterId }
+      parameters:
+        - name: clusterId
+          in: path
+          required: true
+          schema: { type: string, pattern: '^clu_' }
+        - $ref: "#/components/parameters/NetworkShareId"
+      responses:
+        "200":
+          description: Approved share.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NetworkServiceShare" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: The cluster or share does not exist, or the share does not need approval on this cluster (`runtime_cluster.not_found`, `network_share.not_found`).
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
@@ -10017,6 +10251,11 @@ components:
       schema:
         type: string
         maxLength: 200
+    NetworkShareId:
+      name: shareId
+      in: path
+      required: true
+      schema: { type: string, pattern: '^nss_' }
     ProjectId:
       name: projectId
       in: path
@@ -13722,9 +13961,10 @@ components:
                 allOf:
                   - $ref: "#/components/schemas/EgressExceptionGrant"
                   - type: object
-                    required: [projectName]
+                    required: [projectName, providedShares]
                     properties:
                       projectName: { type: string, description: Empty when the project space no longer exists. }
+                      providedShares: { type: integer, minimum: 0, description: Number of cross-project shares the project space provides; shared services could relay access to the exception. }
             id: { type: string, pattern: '^nex_' }
             runtimeClusterId: { type: string }
             createdBy: { type: string }
@@ -13737,6 +13977,46 @@ components:
         items:
           type: array
           items: { $ref: "#/components/schemas/EgressException" }
+        page: { type: integer, minimum: 1 }
+        pageSize: { type: integer, minimum: 1, maximum: 100 }
+        sortBy: { type: string }
+        sortOrder: { type: string, enum: [asc, desc] }
+        total: { type: integer, format: int64, minimum: 0 }
+        totalPages: { type: integer, minimum: 0 }
+    NetworkServiceShareInput:
+      type: object
+      required: [deploymentTargetId, consumerProjectIdentifier]
+      properties:
+        deploymentTargetId: { type: string, description: An active deployment target of this project space. }
+        consumerProjectIdentifier: { type: string, description: Identifier of another active project space. }
+    NetworkServiceShare:
+      type: object
+      required: [id, providerProjectId, providerProjectName, deploymentTargetId, deploymentTargetName, applicationName, consumerProjectId, consumerProjectName, address, status, approvalRequired, acceptedAt, approvedAt, createdAt]
+      properties:
+        id: { type: string, pattern: '^nss_' }
+        providerProjectId: { type: string }
+        providerProjectName: { type: string }
+        deploymentTargetId: { type: string }
+        deploymentTargetName: { type: string }
+        applicationName: { type: string }
+        consumerProjectId: { type: string }
+        consumerProjectName: { type: string }
+        address: { type: string, description: In-cluster host of the shared service; reachable only from workloads on the same cluster. Empty before the target is first deployed. }
+        status:
+          type: string
+          enum: [pending_acceptance, pending_approval, active]
+          description: pending_acceptance waits for the consumer; pending_approval waits for a cluster maintainer because the provider holds egress exceptions.
+        approvalRequired: { type: boolean }
+        acceptedAt: { type: string, format: date-time, nullable: true }
+        approvedAt: { type: string, format: date-time, nullable: true }
+        createdAt: { type: string, format: date-time }
+    PaginatedNetworkServiceShares:
+      type: object
+      required: [items, page, pageSize, sortBy, sortOrder, total, totalPages]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/NetworkServiceShare" }
         page: { type: integer, minimum: 1 }
         pageSize: { type: integer, minimum: 1, maximum: 100 }
         sortBy: { type: string }

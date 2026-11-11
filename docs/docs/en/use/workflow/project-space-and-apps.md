@@ -63,6 +63,16 @@ Platform administrators can grant egress exceptions that allow specific internal
 
 Before switching to **Service bindings only**, make sure every call between applications has a service binding in the topology; undeclared calls fail immediately.
 
+### Cross-project sharing
+
+When another project space needs to reach a service in this project space directly, such as a shared database or an authentication service, use **Topology → Cross-project sharing**. Sharing only opens the network; credentials are not passed, so provide connection credentials separately.
+
+1. A provider project space admin clicks **Share service**, chooses a deployment target, and enters the consumer's project space identifier (not its name).
+2. A consumer project space admin clicks **Accept** under **Services shared with this project space**.
+3. When the status is **Active**, consumer applications reach the service in the cluster at the address shown in the list (`<service>.<namespace>.svc`).
+
+A share works in every ingress and egress mode on both sides, but only for consumer applications, not builds, and both sides must run on the same cluster. A deployment target can be shared with at most 50 project spaces. When the provider holds egress exceptions granted by the platform, the status stays at **Awaiting maintainer approval** until a cluster maintainer approves it. After the provider revokes the share or the consumer leaves it, access stops immediately; the provider must share again to restore it. Creating, accepting, approving, and revoking are audited.
+
 ### Internal services
 
 For deployment targets that do not serve external traffic, such as databases, queues, or background workers, enable **Internal service** under the deployment target's **Advanced → Service**. Gateway traffic then cannot reach its Pods and it cannot have routes; delete existing routes first. This requires the gateway controller to run on the Pod network; with hostNetwork, gateway traffic arrives from node addresses and cannot be told apart.
