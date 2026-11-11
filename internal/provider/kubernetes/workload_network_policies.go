@@ -15,6 +15,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/validation"
+	"k8s.io/client-go/util/retry"
 
 	"github.com/LiteyukiStudio/devops/internal/provider/networkpolicy"
 )
@@ -38,6 +39,8 @@ const (
 type WorkloadNetworkPolicyInput struct {
 	Namespace        string
 	GatewayNamespace string
+	// GatewayPorts 是网关控制器接收流量的端口；租户 Pod 回环访问网关只放行这些端口。
+	GatewayPorts []int
 	// BlockedCIDRs 是集群管理员在平台保留网段之外追加的出站拒绝网段。
 	BlockedCIDRs []string
 	// NodeAddresses 来自集群 Node 与 kube-apiserver Endpoint，出站拒绝、入站放行（宿主机网络组件）。
@@ -63,6 +66,16 @@ func RenderWorkloadNetworkPolicies(input WorkloadNetworkPolicyInput) ([]networki
 	if err != nil {
 		return nil, err
 	}
+	gatewayPorts := []networkingv1.NetworkPolicyPort{}
+	for _, port := range sortedUniquePorts(input.GatewayPorts) {
+		if port < 1 || port > 65535 {
+			return nil, fmt.Errorf("invalid gateway port %d", port)
+		}
+		gatewayPorts = append(gatewayPorts, tcpPort(port))
+	}
+	if len(gatewayPorts) == 0 {
+		return nil, fmt.Errorf("gateway ports are required")
+	}
 	gatewayPeer := networkingv1.NetworkPolicyPeer{NamespaceSelector: &metav1.LabelSelector{MatchLabels: map[string]string{namespaceNameLabel: input.GatewayNamespace}}}
 	samePeer := networkingv1.NetworkPolicyPeer{PodSelector: &metav1.LabelSelector{}}
 
@@ -76,15 +89,22 @@ func RenderWorkloadNetworkPolicies(input WorkloadNetworkPolicyInput) ([]networki
 	})
 
 	denied := append(append([]string(nil), blocked...), nodes...)
+	// DNS 只放行集群 DNS，避免任意地址的 53 端口绕过拒绝网段。
+	clusterDNSPeer := networkingv1.NetworkPolicyPeer{
+		NamespaceSelector: &metav1.LabelSelector{MatchLabels: map[string]string{namespaceNameLabel: "kube-system"}},
+		PodSelector:       &metav1.LabelSelector{MatchLabels: map[string]string{"k8s-app": "kube-dns"}},
+	}
 	egressRules := []networkingv1.NetworkPolicyEgressRule{
-		{Ports: []networkingv1.NetworkPolicyPort{udpPort(53), tcpPort(53)}},
-		{To: []networkingv1.NetworkPolicyPeer{samePeer, gatewayPeer}},
+		{To: []networkingv1.NetworkPolicyPeer{clusterDNSPeer}, Ports: []networkingv1.NetworkPolicyPort{udpPort(53), tcpPort(53)}},
+		{To: []networkingv1.NetworkPolicyPeer{samePeer}},
+		{To: []networkingv1.NetworkPolicyPeer{gatewayPeer}, Ports: gatewayPorts},
 		{To: []networkingv1.NetworkPolicyPeer{
 			{IPBlock: &networkingv1.IPBlock{CIDR: "0.0.0.0/0", Except: exceptCIDRs(networkpolicy.ReservedIPv4CIDRs(), denied, false)}},
 			{IPBlock: &networkingv1.IPBlock{CIDR: "::/0", Except: exceptCIDRs(networkpolicy.ReservedIPv6CIDRs(), denied, true)}},
 		}},
 	}
-	// 构建与卷迁移 Pod 有各自更严格的出站策略；NetworkPolicy 放行规则取并集，不能再被工作负载策略选中。
+	// 构建与卷迁移 Pod 有各自更严格的出站策略（luna-build-egress、卷迁移的拒绝全部出站策略）；
+	// NetworkPolicy 放行规则取并集，不能再被工作负载策略选中。
 	workloadPods := metav1.LabelSelector{MatchExpressions: []metav1.LabelSelectorRequirement{{
 		Key: ScopeLabel, Operator: metav1.LabelSelectorOpNotIn, Values: []string{"build", volumeTransferScope},
 	}}}
@@ -140,27 +160,37 @@ func (c *Client) SyncWorkloadNetworkPolicies(ctx context.Context, namespace stri
 	}
 	for _, name := range sortedKeys(wanted) {
 		policy := wanted[name]
-		current, err := policies.Get(ctx, name, metav1.GetOptions{})
-		if apierrors.IsNotFound(err) {
-			if _, err := policies.Create(ctx, &policy, metav1.CreateOptions{}); err != nil {
-				return err
-			}
-			continue
-		}
-		if err != nil {
-			return err
-		}
-		if workloadNetworkPolicyMatches(*current, policy) {
-			continue
-		}
-		current.Labels = mergeStringMaps(current.Labels, policy.Labels)
-		current.Annotations = mergeStringMaps(current.Annotations, policy.Annotations)
-		current.Spec = policy.Spec
-		if _, err := policies.Update(ctx, current, metav1.UpdateOptions{}); err != nil {
+		// 部署、构建、网关下发与周期修正可能并发同步同一 Namespace：创建撞上已存在或更新冲突时重读后重试。
+		if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+			return applyWorkloadNetworkPolicy(ctx, c, namespace, policy)
+		}); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func applyWorkloadNetworkPolicy(ctx context.Context, c *Client, namespace string, policy networkingv1.NetworkPolicy) error {
+	policies := c.client.NetworkingV1().NetworkPolicies(namespace)
+	current, err := policies.Get(ctx, policy.Name, metav1.GetOptions{})
+	if apierrors.IsNotFound(err) {
+		_, err = policies.Create(ctx, &policy, metav1.CreateOptions{})
+		if apierrors.IsAlreadyExists(err) {
+			return apierrors.NewConflict(networkingv1.Resource("networkpolicies"), policy.Name, err)
+		}
+		return err
+	}
+	if err != nil {
+		return err
+	}
+	if workloadNetworkPolicyMatches(*current, policy) {
+		return nil
+	}
+	current.Labels = mergeStringMaps(current.Labels, policy.Labels)
+	current.Annotations = mergeStringMaps(current.Annotations, policy.Annotations)
+	current.Spec = policy.Spec
+	_, err = policies.Update(ctx, current, metav1.UpdateOptions{})
+	return err
 }
 
 // WorkloadNetworkPolicyState 实时比对集群中的受管策略与期望集合。
@@ -305,6 +335,19 @@ func sortedUnique(values []string) []string {
 		result = append(result, value)
 	}
 	sort.Strings(result)
+	return result
+}
+
+func sortedUniquePorts(values []int) []int {
+	seen := map[int]bool{}
+	result := make([]int, 0, len(values))
+	for _, value := range values {
+		if !seen[value] {
+			seen[value] = true
+			result = append(result, value)
+		}
+	}
+	sort.Ints(result)
 	return result
 }
 

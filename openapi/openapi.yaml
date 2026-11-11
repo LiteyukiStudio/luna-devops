@@ -4598,9 +4598,7 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
         "404":
-          $ref: "#/components/responses/NotFound"
-        "409":
-          description: The runtime cluster is not active (`runtime_cluster.not_active`).
+          description: The runtime cluster does not exist or is being deleted (`runtime_cluster.not_found`).
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }

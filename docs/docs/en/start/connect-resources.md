@@ -33,7 +33,7 @@ The platform applies managed NetworkPolicies in every project space namespace to
 **Behavior**:
 
 - Ingress: only Pods in the same project space, the gateway controller namespace, and cluster nodes (kubelet probes and host-network components) can reach applications. Other project spaces cannot connect directly.
-- Egress: the same project space, the gateway, and the public internet are allowed, and DNS is unrestricted. Private and reserved ranges (such as `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `100.64.0.0/10`, `169.254.0.0/16`, and their IPv6 equivalents), cluster node addresses, and the Kubernetes API are denied.
+- Egress: the same project space, the gateway listener ports, the public internet, and cluster DNS (Pods labeled `k8s-app=kube-dns` in `kube-system`; other DNS addresses such as NodeLocal DNS are not allowed) are allowed. Private and reserved ranges (such as `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `100.64.0.0/10`, `169.254.0.0/16`, and their IPv6 equivalents), cluster node addresses, and the Kubernetes API are denied.
 - To call an application in another project space, use its route domain through the gateway.
 - Build egress restrictions apply independently and are not widened by these rules.
 
