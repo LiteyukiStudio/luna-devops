@@ -1632,3 +1632,11 @@ func TestGitAccountDueForWorkerRefreshSkipsAfterSuccessfulRefresh(t *testing.T) 
 		t.Fatal("expected refreshed account to be skipped on replay")
 	}
 }
+
+func TestBuildJobPodStaysIsolated(t *testing.T) {
+	// 构建 Pod 需要 Unconfined seccomp/AppArmor，但不得共享宿主机命名空间、端口或路径。
+	spec := buildJobSpec("build-job", "build-secret", model.BuildRun{}, builder.Task{}, "executor", true, 1800, 3600)
+	if err := kubeprovider.ValidatePodIsolation(spec.Spec.Template.Spec); err != nil {
+		t.Fatal(err)
+	}
+}

@@ -634,3 +634,16 @@ func TestEgressExceptionWritesRequireApproval(t *testing.T) {
 		}
 	}
 }
+
+func TestNetworkShareWritesRequireApproval(t *testing.T) {
+	// 跨项目共享会打通两个项目空间的网络，Agent 发起、确认、批准与撤销都必须经人工审批。
+	for _, operationID := range []string{"createProjectNetworkShare", "acceptProjectNetworkShare", "deleteProjectNetworkShare", "approveRuntimeClusterNetworkShare"} {
+		operation, ok := PlatformOperation(operationID)
+		if !ok {
+			t.Fatalf("missing %s", operationID)
+		}
+		if !operation.RequiresApproval {
+			t.Errorf("%s must require approval", operationID)
+		}
+	}
+}

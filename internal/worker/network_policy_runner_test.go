@@ -22,7 +22,7 @@ func TestNetworkPolicyReconcileSyncsActiveProjectNamespaces(t *testing.T) {
 	db := testdb.Open(t, testdb.Options{
 		SchemaPrefix: "network_policy_reconcile_test",
 		Migrate: func(db *gorm.DB) error {
-			return db.AutoMigrate(&model.RuntimeCluster{}, &model.Project{}, &model.SystemComponentInstallation{}, &model.DeploymentTarget{}, &model.ServiceBinding{}, &model.NetworkEgressException{}, &model.NetworkEgressExceptionGrant{})
+			return db.AutoMigrate(&model.RuntimeCluster{}, &model.Project{}, &model.SystemComponentInstallation{}, &model.DeploymentTarget{}, &model.ServiceBinding{}, &model.NetworkEgressException{}, &model.NetworkEgressExceptionGrant{}, &model.NetworkServiceShare{})
 		},
 	})
 	cluster := model.RuntimeCluster{ID: "rc_net", Name: "net", Scope: "global", GatewayNamespace: "traefik", NetworkBlockedCIDRs: "203.0.113.0/24"}
@@ -152,7 +152,7 @@ func TestProjectScopedReconcileAppliesDependenciesMode(t *testing.T) {
 	db := testdb.Open(t, testdb.Options{
 		SchemaPrefix: "network_policy_project_reconcile_test",
 		Migrate: func(db *gorm.DB) error {
-			return db.AutoMigrate(&model.RuntimeCluster{}, &model.Project{}, &model.SystemComponentInstallation{}, &model.DeploymentTarget{}, &model.ServiceBinding{}, &model.NetworkEgressException{}, &model.NetworkEgressExceptionGrant{})
+			return db.AutoMigrate(&model.RuntimeCluster{}, &model.Project{}, &model.SystemComponentInstallation{}, &model.DeploymentTarget{}, &model.ServiceBinding{}, &model.NetworkEgressException{}, &model.NetworkEgressExceptionGrant{}, &model.NetworkServiceShare{})
 		},
 	})
 	cluster := model.RuntimeCluster{ID: "rc_dep", Name: "dep", Scope: "global", GatewayNamespace: "traefik"}
@@ -192,7 +192,7 @@ func TestReconcileRendersGrantedEgressException(t *testing.T) {
 	db := testdb.Open(t, testdb.Options{
 		SchemaPrefix: "network_policy_exception_reconcile_test",
 		Migrate: func(db *gorm.DB) error {
-			return db.AutoMigrate(&model.RuntimeCluster{}, &model.Project{}, &model.SystemComponentInstallation{}, &model.DeploymentTarget{}, &model.ServiceBinding{}, &model.NetworkEgressException{}, &model.NetworkEgressExceptionGrant{})
+			return db.AutoMigrate(&model.RuntimeCluster{}, &model.Project{}, &model.SystemComponentInstallation{}, &model.DeploymentTarget{}, &model.ServiceBinding{}, &model.NetworkEgressException{}, &model.NetworkEgressExceptionGrant{}, &model.NetworkServiceShare{})
 		},
 	})
 	cluster := model.RuntimeCluster{ID: "rc_ex", Name: "ex", Scope: "global", GatewayNamespace: "traefik"}

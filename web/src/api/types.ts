@@ -1637,7 +1637,8 @@ export interface EgressExceptionPayload {
 }
 
 export interface EgressException extends Omit<EgressExceptionPayload, 'grants'> {
-  grants: Array<EgressExceptionGrant & { projectName: string }>
+  /** providedShares 是该项目空间对外提供的跨项目共享数，大于 0 时例外可能被共享服务当作跳板。 */
+  grants: Array<EgressExceptionGrant & { projectName: string, providedShares: number }>
   id: string
   runtimeClusterId: string
   createdBy: string
@@ -1665,6 +1666,32 @@ export interface ProjectNetworkPolicyPayload {
 
 export interface ProjectNetworkPolicy extends ProjectNetworkPolicyPayload {
   egressExceptions: ProjectEgressException[]
+}
+
+export type NetworkServiceShareDirection = 'provided' | 'consumed'
+export type NetworkServiceShareStatus = 'pending_acceptance' | 'pending_approval' | 'active'
+
+export interface NetworkServiceSharePayload {
+  deploymentTargetId: string
+  consumerProjectIdentifier: string
+}
+
+/** 跨项目共享：提供方把一个部署配置开放给使用方项目空间，只打通网络，不注入凭据。 */
+export interface NetworkServiceShare {
+  id: string
+  providerProjectId: string
+  providerProjectName: string
+  deploymentTargetId: string
+  deploymentTargetName: string
+  applicationName: string
+  consumerProjectId: string
+  consumerProjectName: string
+  address: string
+  status: NetworkServiceShareStatus
+  approvalRequired: boolean
+  acceptedAt: string | null
+  approvedAt: string | null
+  createdAt: string
 }
 
 export type RuntimeClusterNetworkPolicyEnforcement = 'verified' | 'unsupported' | 'unknown'

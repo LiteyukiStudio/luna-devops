@@ -194,6 +194,11 @@ func (r *Runner) finishApplicationDelete(ctx context.Context, app model.Applicat
 		if err := tx.Where("project_id = ? and application_id = ?", app.ProjectID, app.ID).Delete(&model.DeploymentTargetHookBinding{}).Error; err != nil {
 			return err
 		}
+		// 应用删除时其部署配置提供的跨项目共享一并删除。
+		if err := tx.Where("deployment_target_id in (?)", tx.Model(&model.DeploymentTarget{}).Select("id").Where("project_id = ? and application_id = ?", app.ProjectID, app.ID)).
+			Delete(&model.NetworkServiceShare{}).Error; err != nil {
+			return err
+		}
 		if err := tx.Where("project_id = ? and application_id = ?", app.ProjectID, app.ID).Delete(&model.DeploymentTarget{}).Error; err != nil {
 			return err
 		}

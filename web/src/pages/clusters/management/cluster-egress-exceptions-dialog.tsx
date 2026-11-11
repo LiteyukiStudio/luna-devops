@@ -11,6 +11,7 @@ import { StatusBadge } from '@/components/common/status-badge'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { ClusterEgressExceptionFormDialog } from './cluster-egress-exception-form-dialog'
+import { ClusterNetworkShareApprovals } from './cluster-network-share-approvals'
 
 /** 集群出站例外：只有集群维护者可见，用于放行平台默认拒绝的内网地址并授权给指定项目空间。 */
 export function ClusterEgressExceptionsDialog({ cluster, onOpenChange }: {
@@ -45,6 +46,7 @@ export function ClusterEgressExceptionsDialog({ cluster, onOpenChange }: {
           <DialogTitle>{t('clustersPage.egressExceptions.title', { name: cluster.name })}</DialogTitle>
           <DialogDescription>{t('clustersPage.egressExceptions.description')}</DialogDescription>
         </DialogHeader>
+        <ClusterNetworkShareApprovals cluster={cluster} />
         <DataList
           columns={[
             { key: 'name', header: t('clustersPage.egressExceptions.name'), render: item => <span className="font-medium">{item.name}</span> },
@@ -65,7 +67,17 @@ export function ClusterEgressExceptionsDialog({ cluster, onOpenChange }: {
               key: 'grants',
               header: t('clustersPage.egressExceptions.grants'),
               render: item => item.grants.length > 0
-                ? item.grants.map(grant => grant.projectName || grant.projectId).join(', ')
+                ? (
+                    <span className="flex flex-wrap items-center gap-1">
+                      {item.grants.map(grant => (
+                        <span key={grant.projectId} className="inline-flex items-center gap-1">
+                          {grant.projectName || grant.projectId}
+                          {/* 持有例外的项目空间对外共享服务时，共享服务可能把内网访问转给其他项目空间。 */}
+                          {grant.providedShares > 0 ? <StatusBadge tone="warning">{t('clustersPage.egressExceptions.providedShares', { count: grant.providedShares })}</StatusBadge> : null}
+                        </span>
+                      ))}
+                    </span>
+                  )
                 : <span className="text-muted-foreground">{t('clustersPage.egressExceptions.noGrants')}</span>,
             },
             {

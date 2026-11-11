@@ -34,7 +34,8 @@ The platform applies managed NetworkPolicies in every project space namespace to
 
 - Ingress: only Pods in the same project space, the gateway controller namespace, and cluster nodes (kubelet probes and host-network components) can reach applications. Other project spaces cannot connect directly.
 - Egress: the same project space, the gateway listener ports, the public internet, and cluster DNS (Pods labeled `k8s-app=kube-dns` in `kube-system`; other DNS addresses such as NodeLocal DNS are not allowed) are allowed. Private and reserved ranges (such as `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `100.64.0.0/10`, `169.254.0.0/16`, and their IPv6 equivalents), cluster node addresses, and the Kubernetes API are denied.
-- To call an application in another project space, use its route domain through the gateway.
+- To call an application in another project space, use its route domain through the gateway, or have that project space share the service through **Cross-project sharing**.
+- Pods created by the platform never use hostNetwork, hostPID, hostIPC, host ports, or host paths, and Services are ClusterIP only, so the rules above cannot be bypassed.
 - Build Pods follow only the **Build egress** settings and are not widened by the application rules above.
 
 **Configuration** (edit cluster → Network isolation):
@@ -63,6 +64,8 @@ When a project space needs to reach an internal service outside the cluster, suc
 | Grants | The project spaces that may use it, optionally narrowed to deployment targets; builds are excluded unless **Include builds** is selected |
 
 An exception applies only to the granted project spaces, in every project egress mode. When an exception covers the node network, a newly joined node is excluded only after the next periodic sync (within 5 minutes), so keep exceptions no wider than the actual service. Creating, changing, and deleting exceptions are audited and applied immediately. Project spaces holding exceptions show a warning when adding members or creating routes, and those audit entries record the exception count; make sure applications do not become proxies into the internal network.
+
+When a project space holding exceptions shares a service with other project spaces, the share takes effect only after a cluster maintainer approves it. Shares awaiting approval appear at the top of the **Egress exceptions** window; approve only when the shared service will not relay internal network access. The exception list marks project spaces that share services and shows the count. Shares that were already active stay active when the project space is granted an exception later.
 
 After saving, the platform reapplies the policies immediately and compares them every 5 minutes; managed policies edited or deleted in the cluster are restored. When editing a cluster, **Isolation status** shows the live result: **Synced** means every project space matches the platform configuration, **Drifted** means some project spaces are waiting for automatic repair, and **Unavailable** means the cluster could not be read; check the cluster credential and connectivity as indicated.
 

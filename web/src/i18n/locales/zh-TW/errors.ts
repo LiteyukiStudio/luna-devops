@@ -197,6 +197,14 @@ const errors = {
     not_found: '資源不存在或已被刪除',
     conflict: '資源狀態衝突，請重新整理後重試',
   },
+  network_share: {
+    direction_invalid: '共享方向無效。',
+    target_invalid: '請選擇本專案空間內可用的部署設定。',
+    consumer_invalid: '使用方必須是另一個有效的專案空間，請核對專案空間識別碼。',
+    limit_exceeded: '一個部署設定最多共享給 50 個專案空間。',
+    duplicate: '此部署設定已共享給這個專案空間。',
+    not_found: '共享不存在或已被撤銷。',
+  },
   network: {
     failed: '無法連線到平臺後端，請檢查本地服務、網路代理或 VPN 設定。',
   },

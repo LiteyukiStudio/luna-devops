@@ -38,6 +38,9 @@ func (c *Client) applyDeployment(ctx context.Context, spec ApplicationResourcesS
 		progressDeadlineSeconds = 600
 	}
 	template := applicationPodTemplate(spec, objectLabels, selectorLabels)
+	if err := ValidatePodIsolation(template.Spec); err != nil {
+		return nil, err
+	}
 	deployment := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{Name: spec.Name, Namespace: spec.Namespace, Labels: objectLabels},
 		Spec: appsv1.DeploymentSpec{
@@ -77,6 +80,9 @@ func (c *Client) applyStatefulSet(ctx context.Context, spec ApplicationResources
 			Selector:    &metav1.LabelSelector{MatchLabels: selectorLabels},
 			Template:    applicationPodTemplate(spec, objectLabels, selectorLabels),
 		},
+	}
+	if err := ValidatePodIsolation(statefulSet.Spec.Template.Spec); err != nil {
+		return nil, err
 	}
 	existing, err := c.client.AppsV1().StatefulSets(spec.Namespace).Get(ctx, spec.Name, metav1.GetOptions{})
 	if apierrors.IsNotFound(err) {

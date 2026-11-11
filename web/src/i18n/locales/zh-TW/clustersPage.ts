@@ -240,6 +240,20 @@ const clustersPage = {
     wholeProject: '整個專案空間',
     includeBuilds: '包含建置',
     removeGrant: '移除授權',
+    providedShares: '對外共享 {{count}} 個服務',
+  },
+  shareApprovals: {
+    title: '有跨專案共享等待核准',
+    description: '以下專案空間持有本叢集的出站例外，共享出去的服務可能把內網存取轉給其他專案空間。確認共享服務不會轉發內網存取後再核准。',
+    provider: '提供方',
+    service: '服務',
+    consumer: '使用方',
+    approve: '核准',
+    approved: '已核准，策略正在下發',
+    emptyTitle: '沒有待核准的共享',
+    loadFailed: '待核准的共享載入失敗',
+    confirmTitle: '核准跨專案共享',
+    confirmDescription: '核准後，「{{consumer}}」可以存取「{{provider}}」共享的服務。此操作會寫入稽核。',
   },
 }
 

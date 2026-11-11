@@ -188,6 +188,9 @@ func (c *Client) PrepareVolumeTransfer(ctx context.Context, spec VolumeTransferS
 	}
 	labels := volumeTransferLabels(spec, reference.PodName)
 	pod := volumeTransferPod(spec, reference.PodName, labels)
+	if err := ValidatePodIsolation(pod.Spec); err != nil {
+		return VolumeTransferReference{}, err
+	}
 	policy := volumeTransferDenyEgressPolicy(spec.Namespace, reference.NetworkPolicyName, labels)
 
 	pods := c.client.CoreV1().Pods(reference.Namespace)

@@ -37,6 +37,7 @@ const overviewValueLinkClassName = 'rounded-sm hover:text-primary-text hover:und
 const ApplicationsPage = lazy(() => import('@/pages/applications/ApplicationsPage').then(module => ({ default: module.ApplicationsPage })))
 const ProjectMembersPage = lazy(() => import('@/pages/projects/governance/ProjectMembersPage').then(module => ({ default: module.ProjectMembersPage })))
 const ProjectNetworkPolicyCard = lazy(() => import('@/pages/projects/topology/project-network-policy-card').then(module => ({ default: module.ProjectNetworkPolicyCard })))
+const ProjectNetworkSharesCard = lazy(() => import('@/pages/projects/topology/project-network-shares-card').then(module => ({ default: module.ProjectNetworkSharesCard })))
 const ProjectTopologyPanel = lazy(() => import('@/pages/projects/topology/project-topology-panel').then(module => ({ default: module.ProjectTopologyPanel })))
 const ProjectVolumesPage = lazy(() => import('@/pages/projects/volumes/ProjectVolumesPage'))
 
@@ -96,6 +97,7 @@ export function ProjectWorkspacePage() {
           <Suspense fallback={<ToolViewportSkeleton />}>
             <div className="grid gap-4">
               <ProjectNetworkPolicyCard key={`network-${projectId}`} canManage={canManageTopology} projectId={projectId} />
+              <ProjectNetworkSharesCard key={`network-shares-${projectId}`} canManage={canManageTopology} projectId={projectId} />
               <ProjectTopologyPanel
                 key={projectId}
                 applications={applications.data ?? []}
