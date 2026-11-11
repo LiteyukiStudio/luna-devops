@@ -243,6 +243,7 @@ const clustersPage = {
     providedShares: '對外共享 {{count}} 個服務',
   },
   shareApprovals: {
+    pendingCount: '共享待核准 {{count}}',
     title: '有跨專案共享等待核准',
     description: '以下專案空間持有本叢集的出站例外，共享出去的服務可能把內網存取轉給其他專案空間。確認共享服務不會轉發內網存取後再核准。',
     provider: '提供方',

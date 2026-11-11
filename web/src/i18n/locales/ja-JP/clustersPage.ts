@@ -243,6 +243,7 @@ const clustersPage = {
     providedShares: '{{count}} 件のサービスを共有中',
   },
   shareApprovals: {
+    pendingCount: '承認待ちの共有 {{count}}',
     title: '承認待ちのプロジェクト間共有があります',
     description: '次のプロジェクトスペースはこのクラスターの送信例外を持っているため、共有したサービスが内部ネットワークへのアクセスを他のプロジェクトスペースに中継する可能性があります。中継しないことを確認してから承認してください。',
     provider: '提供側',

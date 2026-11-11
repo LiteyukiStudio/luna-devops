@@ -1,8 +1,10 @@
 package worker
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 	"testing"
 	"time"
 
@@ -155,5 +157,75 @@ func TestApplicationDeleteIgnoresBindingsBetweenItsOwnTargets(t *testing.T) {
 	var remaining int64
 	if err := db.Model(&model.ServiceBinding{}).Where("target_application_id = ?", database.ID).Count(&remaining).Error; err != nil || remaining != 0 {
 		t.Fatalf("remaining bindings = %d, %v", remaining, err)
+	}
+}
+
+type recordingReconcileEnqueuer struct{ projects []string }
+
+func (e *recordingReconcileEnqueuer) EnqueueNetworkPolicyReconcile(_ context.Context, payload tasks.NetworkPolicyReconcilePayload) (*asynq.TaskInfo, error) {
+	e.projects = append(e.projects, payload.ProjectID)
+	return &asynq.TaskInfo{}, nil
+}
+
+// 删除应用、部署配置或项目空间时，相关共享随之删除，并立即重新下发对端项目空间的策略。
+func TestDeletesRemoveNetworkSharesAndResyncPeers(t *testing.T) {
+	db := openApplicationDeleteTestDB(t, "delete_network_shares_test")
+	if err := db.AutoMigrate(&model.ProjectVolume{}, &model.NetworkEgressException{}, &model.NetworkEgressExceptionGrant{}); err != nil {
+		t.Fatal(err)
+	}
+	seed := []any{
+		&model.Project{ID: "prj_share_provider", Identifier: "provider", Name: "Provider", DeleteStatus: "active"},
+		&model.Project{ID: "prj_share_consumer", Identifier: "consumer", Name: "Consumer", DeleteStatus: "deleting"},
+		&model.Application{ID: "app_share_db", ProjectID: "prj_share_provider", Identifier: "db", Name: "db"},
+		&model.Application{ID: "app_share_cache", ProjectID: "prj_share_provider", Identifier: "cache", Name: "cache"},
+		&model.DeploymentTarget{ID: "dplt_share_db", ProjectID: "prj_share_provider", ApplicationID: "app_share_db", Name: "prod", Stage: "prod"},
+		&model.DeploymentTarget{ID: "dplt_share_cache", ProjectID: "prj_share_provider", ApplicationID: "app_share_cache", Name: "prod", Stage: "prod"},
+		&model.DeploymentTarget{ID: "dplt_share_other", ProjectID: "prj_share_provider", ApplicationID: "app_share_cache", Name: "staging", Stage: "staging"},
+		&model.NetworkServiceShare{ID: "nss_db", ProviderProjectID: "prj_share_provider", DeploymentTargetID: "dplt_share_db", ConsumerProjectID: "prj_share_consumer"},
+		&model.NetworkServiceShare{ID: "nss_cache", ProviderProjectID: "prj_share_provider", DeploymentTargetID: "dplt_share_cache", ConsumerProjectID: "prj_share_consumer"},
+		&model.NetworkServiceShare{ID: "nss_other", ProviderProjectID: "prj_share_provider", DeploymentTargetID: "dplt_share_other", ConsumerProjectID: "prj_share_consumer"},
+	}
+	for _, row := range seed {
+		if err := db.Create(row).Error; err != nil {
+			t.Fatalf("seed %T: %v", row, err)
+		}
+	}
+	remaining := func() []string {
+		var ids []string
+		db.Model(&model.NetworkServiceShare{}).Order("id").Pluck("id", &ids)
+		return ids
+	}
+	enqueuer := &recordingReconcileEnqueuer{}
+	runner := &Runner{db: db, networkPolicyReconcileEnqueuer: enqueuer}
+	ctx := context.Background()
+
+	var target model.DeploymentTarget
+	db.First(&target, "id = ?", "dplt_share_other")
+	if err := runner.finishDeploymentTargetDelete(ctx, target); err != nil {
+		t.Fatal(err)
+	}
+	if got := remaining(); !slices.Equal(got, []string{"nss_cache", "nss_db"}) {
+		t.Fatalf("after target delete = %v", got)
+	}
+	var app model.Application
+	db.First(&app, "id = ?", "app_share_db")
+	if err := runner.finishApplicationDelete(ctx, app); err != nil {
+		t.Fatal(err)
+	}
+	if got := remaining(); !slices.Equal(got, []string{"nss_cache"}) {
+		t.Fatalf("after application delete = %v", got)
+	}
+	if !slices.Contains(enqueuer.projects, "prj_share_consumer") || !slices.Contains(enqueuer.projects, "prj_share_provider") {
+		t.Fatalf("both sides must be resynced, got %v", enqueuer.projects)
+	}
+	enqueuer.projects = nil
+	if err := runner.finishProjectDelete(ctx, model.Project{ID: "prj_share_consumer", DeleteStatus: "deleting"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := remaining(); len(got) != 0 {
+		t.Fatalf("after consumer project delete = %v", got)
+	}
+	if !slices.Equal(enqueuer.projects, []string{"prj_share_provider"}) {
+		t.Fatalf("only the surviving provider must be resynced, got %v", enqueuer.projects)
 	}
 }

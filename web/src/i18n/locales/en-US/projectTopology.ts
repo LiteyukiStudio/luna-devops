@@ -208,6 +208,8 @@ const projectTopology = {
     exceptionWholeProject: 'Whole project space',
   },
   networkShares: {
+    cluster: 'Cluster',
+    consumerHidden: 'Shown after acceptance',
     title: 'Cross-project sharing',
     description: 'Open services of this project space to other project spaces, or use services shared with you. Only the network is opened; no credentials are passed. Works when both sides run on the same cluster, after the other side accepts.',
     loadFailed: 'Failed to load shares. Refresh and try again.',

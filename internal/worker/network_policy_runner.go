@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -87,6 +88,28 @@ func (r *Runner) reconcileClusterNetworkPolicies(ctx context.Context, cluster mo
 		}
 	}
 	return errors.Join(errs...)
+}
+
+type networkPolicyReconcileEnqueuer interface {
+	EnqueueNetworkPolicyReconcile(ctx context.Context, payload tasks.NetworkPolicyReconcilePayload) (*asynq.TaskInfo, error)
+}
+
+// reconcileSharePeers 在共享随删除被移除后立即重新下发对端项目空间的策略，不等周期同步；
+// skip 是已删除、不再需要下发的项目空间。投递失败只记录，由 5 分钟周期同步兜底。
+func (r *Runner) reconcileSharePeers(ctx context.Context, projectIDs []string, skip string) {
+	if r.networkPolicyReconcileEnqueuer == nil {
+		return
+	}
+	for _, projectID := range projectIDs {
+		if projectID == skip {
+			continue
+		}
+		if _, err := r.networkPolicyReconcileEnqueuer.EnqueueNetworkPolicyReconcile(ctx, tasks.NetworkPolicyReconcilePayload{
+			ProjectID: projectID, RequestedAtUnixMicro: time.Now().UnixMicro(),
+		}); err != nil && !errors.Is(err, asynq.ErrDuplicateTask) {
+			slog.WarnContext(ctx, "network policy reconcile enqueue failed", "event.name", "network_policy.reconcile_enqueue_failed", "error", err)
+		}
+	}
 }
 
 type networkPolicyProbeEnqueuer interface {

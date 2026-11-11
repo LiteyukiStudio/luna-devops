@@ -183,7 +183,7 @@ func (r *Runner) cleanupProject(ctx context.Context, payload tasks.ResourceClean
 	if err := r.cleanupProjectNamespaces(ctx, project, payload.ActorID); err != nil {
 		return err
 	}
-	return r.finishProjectDelete(project)
+	return r.finishProjectDelete(ctx, project)
 }
 
 func (r *Runner) cleanupProjectNamespaces(ctx context.Context, project model.Project, actorID string) error {
@@ -663,14 +663,20 @@ func markCleanupFailed(db *gorm.DB, model any, id string, err error) error {
 	}).Error
 }
 
-func (r *Runner) finishProjectDelete(project model.Project) error {
+func (r *Runner) finishProjectDelete(ctx context.Context, project model.Project) error {
 	finishedAt := time.Now()
-	return r.db.Transaction(func(tx *gorm.DB) error {
+	var sharePeers []string
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// 已删除的项目空间不再持有出站例外授权。
 		if err := tx.Where("project_id = ?", project.ID).Delete(&model.NetworkEgressExceptionGrant{}).Error; err != nil {
 			return err
 		}
-		// 已删除的项目空间不再提供或使用跨项目共享。
+		// 已删除的项目空间不再提供或使用跨项目共享；对端策略在提交后立即重新下发。
+		peers, err := runtimecluster.SharePeerProjectIDs(tx, "provider_project_id = ? or consumer_project_id = ?", project.ID, project.ID)
+		if err != nil {
+			return err
+		}
+		sharePeers = peers
 		if err := tx.Where("provider_project_id = ? or consumer_project_id = ?", project.ID, project.ID).Delete(&model.NetworkServiceShare{}).Error; err != nil {
 			return err
 		}
@@ -709,11 +715,17 @@ func (r *Runner) finishProjectDelete(project model.Project) error {
 		}
 		return tx.Delete(&project).Error
 	})
+	if err != nil {
+		return err
+	}
+	r.reconcileSharePeers(ctx, sharePeers, project.ID)
+	return nil
 }
 
 func (r *Runner) finishDeploymentTargetDelete(ctx context.Context, target model.DeploymentTarget) error {
 	finishedAt := time.Now()
-	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	var sharePeers []string
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := ensureDeploymentTargetHasNoIncomingBindings(tx, target); err != nil {
 			return err
 		}
@@ -725,6 +737,11 @@ func (r *Runner) finishDeploymentTargetDelete(ctx context.Context, target model.
 			Delete(&model.ProjectTopologyEdge{}).Error; err != nil {
 			return err
 		}
+		peers, err := runtimecluster.SharePeerProjectIDs(tx, "deployment_target_id = ?", target.ID)
+		if err != nil {
+			return err
+		}
+		sharePeers = peers
 		if err := tx.Where("deployment_target_id = ?", target.ID).Delete(&model.NetworkServiceShare{}).Error; err != nil {
 			return err
 		}
@@ -753,6 +770,11 @@ func (r *Runner) finishDeploymentTargetDelete(ctx context.Context, target model.
 		}
 		return tx.Delete(&target).Error
 	})
+	if err != nil {
+		return err
+	}
+	r.reconcileSharePeers(ctx, sharePeers, "")
+	return nil
 }
 
 func (r *Runner) finishGatewayRouteDelete(route model.GatewayRoute) error {

@@ -208,6 +208,8 @@ const projectTopology = {
     exceptionWholeProject: 'プロジェクトスペース全体',
   },
   networkShares: {
+    cluster: 'クラスター',
+    consumerHidden: '承諾後に表示',
     title: 'プロジェクト間共有',
     description: 'このプロジェクトスペースのサービスを他のプロジェクトスペースに公開するか、共有されたサービスを利用します。ネットワークだけを開放し、認証情報は渡しません。双方が同じクラスターにあり、相手が承諾した後に有効になります。',
     loadFailed: '共有の読み込みに失敗しました。再読み込みしてください。',

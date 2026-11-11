@@ -263,10 +263,20 @@ func RenderWorkloadNetworkPolicies(input WorkloadNetworkPolicyInput) ([]networki
 	return policies, nil
 }
 
-// renderSharedServices 渲染跨项目共享的两侧放行：提供方部署配置的 Pod 接受使用方 Namespace 的入站，
-// 使用方工作负载 Pod（不含构建与卷迁移）可出站访问提供方部署配置的 Pod。Namespace 只按 Kubernetes
-// 自动写入、租户无法修改的 kubernetes.io/metadata.name 标签选择。
+// renderSharedServices 渲染跨项目共享的两侧放行：提供方部署配置的工作负载 Pod（不含构建、卷迁移与 Hook Pod，
+// 它们同样带部署配置标签）只接受使用方工作负载与 Hook Pod（不含构建与卷迁移）的入站；使用方同一范围的 Pod
+// 可出站访问提供方的这些 Pod。使用方 Hook 用于部署前迁移等场景，与应用同属发布内容，因此放行。
+// Namespace 只按 Kubernetes 自动写入、租户无法修改的 kubernetes.io/metadata.name 标签选择。
 func renderSharedServices(namespace string, ingress map[string][]string, egress []SharedService) ([]networkingv1.NetworkPolicy, error) {
+	notBuild := metav1.LabelSelectorRequirement{Key: ScopeLabel, Operator: metav1.LabelSelectorOpNotIn, Values: []string{buildPodScope, volumeTransferScope}}
+	// sharedTargetPods 只选中提供方部署配置的工作负载 Pod。
+	sharedTargetPods := func(targetID string) *metav1.LabelSelector {
+		return &metav1.LabelSelector{
+			MatchLabels:      map[string]string{DeploymentTargetIDLabel: targetID},
+			MatchExpressions: []metav1.LabelSelectorRequirement{notBuild, {Key: HookRunIDLabel, Operator: metav1.LabelSelectorOpDoesNotExist}},
+		}
+	}
+	consumerPods := metav1.LabelSelector{MatchExpressions: []metav1.LabelSelectorRequirement{notBuild}}
 	policies := []networkingv1.NetworkPolicy{}
 	targetIDs := make([]string, 0, len(ingress))
 	for targetID := range ingress {
@@ -282,14 +292,16 @@ func renderSharedServices(namespace string, ingress map[string][]string, egress 
 				return nil, fmt.Errorf("invalid shared service consumer namespace %q", consumer)
 			}
 		}
+		consumerPeerPods := consumerPods
 		policies = append(policies, workloadNetworkPolicy(namespace, sharedIngressPolicyPrefix+shortHash(targetID),
-			metav1.LabelSelector{MatchLabels: map[string]string{DeploymentTargetIDLabel: targetID}},
+			*sharedTargetPods(targetID),
 			networkingv1.NetworkPolicySpec{
 				PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeIngress},
 				Ingress: []networkingv1.NetworkPolicyIngressRule{{From: []networkingv1.NetworkPolicyPeer{{
 					NamespaceSelector: &metav1.LabelSelector{MatchExpressions: []metav1.LabelSelectorRequirement{{
 						Key: namespaceNameLabel, Operator: metav1.LabelSelectorOpIn, Values: consumers,
 					}}},
+					PodSelector: &consumerPeerPods,
 				}}}},
 			}))
 	}
@@ -308,14 +320,12 @@ func renderSharedServices(namespace string, ingress map[string][]string, egress 
 			return nil, fmt.Errorf("invalid shared service provider namespace %q", service.Namespace)
 		}
 		policies = append(policies, workloadNetworkPolicy(namespace, sharedEgressPolicyPrefix+shortHash(key),
-			metav1.LabelSelector{MatchExpressions: []metav1.LabelSelectorRequirement{{
-				Key: ScopeLabel, Operator: metav1.LabelSelectorOpNotIn, Values: []string{buildPodScope, volumeTransferScope},
-			}}},
+			consumerPods,
 			networkingv1.NetworkPolicySpec{
 				PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeEgress},
 				Egress: []networkingv1.NetworkPolicyEgressRule{{To: []networkingv1.NetworkPolicyPeer{{
 					NamespaceSelector: &metav1.LabelSelector{MatchLabels: map[string]string{namespaceNameLabel: service.Namespace}},
-					PodSelector:       &metav1.LabelSelector{MatchLabels: map[string]string{DeploymentTargetIDLabel: service.TargetID}},
+					PodSelector:       sharedTargetPods(service.TargetID),
 				}}}},
 			}))
 	}

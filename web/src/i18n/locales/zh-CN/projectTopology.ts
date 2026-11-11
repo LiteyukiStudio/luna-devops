@@ -208,6 +208,8 @@ const projectTopology = {
     exceptionWholeProject: '整个项目空间',
   },
   networkShares: {
+    cluster: '集群',
+    consumerHidden: '待对方确认后显示',
     title: '跨项目共享',
     description: '把本项目空间的服务开放给其他项目空间访问，或使用其他项目空间共享给你的服务。只打通网络，不传递凭据；双方位于同一集群时生效，对方确认后才会放行。',
     loadFailed: '共享加载失败，请刷新后重试。',

@@ -243,6 +243,7 @@ const clustersPage = {
     providedShares: '서비스 {{count}}개 공유 중',
   },
   shareApprovals: {
+    pendingCount: '승인 대기 공유 {{count}}',
     title: '승인을 기다리는 프로젝트 간 공유가 있습니다',
     description: '다음 프로젝트 스페이스는 이 클러스터의 아웃바운드 예외를 보유하고 있어, 공유한 서비스가 내부망 접근을 다른 프로젝트 스페이스로 중계할 수 있습니다. 중계하지 않는다는 것을 확인한 뒤 승인하세요.',
     provider: '제공 측',

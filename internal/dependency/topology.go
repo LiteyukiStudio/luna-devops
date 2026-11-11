@@ -38,6 +38,8 @@ type TopologyDeploymentTarget struct {
 	Stage     string `json:"stage"`
 	ClusterID string `json:"clusterId"`
 	Enabled   bool   `json:"enabled"`
+	// DeleteStatus 让选择部署配置的界面排除删除中的部署配置。
+	DeleteStatus string `json:"deleteStatus"`
 }
 
 type TopologyLink struct {
@@ -93,7 +95,7 @@ func (service *Service) ProjectTopology(ctx context.Context, projectID string, f
 			continue
 		}
 		targetsByApplication[target.ApplicationID] = append(targetsByApplication[target.ApplicationID], TopologyDeploymentTarget{
-			ID: target.ID, Name: target.Name, Stage: target.Stage, ClusterID: target.ClusterID, Enabled: target.Enabled,
+			ID: target.ID, Name: target.Name, Stage: target.Stage, ClusterID: target.ClusterID, Enabled: target.Enabled, DeleteStatus: target.DeleteStatus,
 		})
 	}
 
