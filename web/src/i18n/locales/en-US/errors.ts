@@ -37,6 +37,9 @@ const errors = {
     mode_incompatible: 'The project volume mode is not compatible with this template. Select a matching filesystem or block volume.',
   },
   project: {
+    network_ingress_mode_invalid: 'Ingress must be project-wide or service-binding based.',
+    network_egress_mode_invalid: 'Egress must be internet, allowlist only, or none.',
+    network_egress_allowlist_invalid: 'The egress allowlist is invalid: one `CIDR port,port` per line, ports optional; no /0 or always-denied private or reserved ranges; at most 64 entries.',
     delete_in_progress: 'This project space is being deleted. Wait for resource cleanup to finish.',
     identifier_exists: 'A project space with this identifier already exists.',
     identifier_delete_in_progress: 'A project space with this identifier is being deleted. Wait for cleanup before reusing it.',
@@ -91,7 +94,11 @@ const errors = {
     export_failed: 'The deploy config could not be exported. Try again later.',
     internal_error: 'The deploy config operation failed. Try again later.',
   },
+  gateway_route: {
+    target_internal: 'This deployment target is internal and cannot have routes.',
+  },
   deployment_target: {
+    internal_has_routes: 'This deployment target still has routes. Delete them before making it internal.',
     image_repository_claimed: 'The target image repository is already used by another project space. Choose a different repository path.',
     service_account_invalid: 'The ServiceAccount configuration is invalid. Check it and try again.',
     replicas_invalid: 'Replicas must be zero or a positive integer.',

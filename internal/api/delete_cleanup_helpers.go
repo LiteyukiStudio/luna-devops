@@ -147,3 +147,11 @@ func (h *Handlers) enqueueNetworkPolicyProbe(ctx context.Context, clusterID stri
 	_, err := h.taskClient.EnqueueNetworkPolicyProbe(ctx, tasks.NetworkPolicyProbePayload{RuntimeClusterID: clusterID})
 	return err == nil || errors.Is(err, asynq.ErrDuplicateTask)
 }
+
+func (h *Handlers) enqueueNetworkPolicyProjectReconcile(ctx context.Context, projectID string) bool {
+	if h.taskClient == nil {
+		return false
+	}
+	_, err := h.taskClient.EnqueueNetworkPolicyReconcile(ctx, tasks.NetworkPolicyReconcilePayload{ProjectID: projectID})
+	return err == nil || errors.Is(err, asynq.ErrDuplicateTask)
+}

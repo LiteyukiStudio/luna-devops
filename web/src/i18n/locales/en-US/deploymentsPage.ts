@@ -326,6 +326,8 @@ const deploymentsPage = {
   topologySpreadConstraintsPlaceholder: '[{"maxSkew":1,"topologyKey":"kubernetes.io/hostname","whenUnsatisfiable":"ScheduleAnyway","labelSelector":{"matchLabels":{}}}]',
   serviceSessionAffinity: 'Session affinity',
   serviceSessionAffinityHint: 'Default is None. ClientIP tries to keep the same client on the same backend.',
+  internalOnly: 'Internal service',
+  internalOnlyHint: 'Only the project space can reach it. Gateway traffic cannot reach it and it cannot have routes; delete existing routes first.',
   serviceAnnotations: 'Service annotations',
   serviceAnnotationsHint: 'Supports a JSON object or KEY=VALUE lines, commonly used for cloud load balancer settings.',
   serviceAnnotationsPlaceholder: 'service.beta.kubernetes.io/aws-load-balancer-type=nlb',

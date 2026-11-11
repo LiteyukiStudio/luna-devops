@@ -37,6 +37,9 @@ const errors = {
     mode_incompatible: 'プロジェクトデータボリュームのモードがこのテンプレートと互換性がありません。適合するファイルシステムまたはブロックボリュームを選択してください。',
   },
   project: {
+    network_ingress_mode_invalid: '受信モードは「プロジェクト内で相互通信」または「サービス参照で許可」のいずれかです。',
+    network_egress_mode_invalid: '送信モードは「インターネット許可」「許可リストのみ」「外部接続禁止」のいずれかです。',
+    network_egress_allowlist_invalid: '送信許可リストが無効です。1 行に「CIDR ポート,ポート」（ポートは省略可）。/0 や常に拒否されるプライベート・予約レンジは不可、最大 64 件です。',
     delete_in_progress: 'プロジェクトスペースを削除中です。リソースのクリーンアップが完了するまでお待ちください。',
     identifier_exists: 'プロジェクトスペース識別子が既に存在します。',
     identifier_delete_in_progress: '同じ識別子のプロジェクトスペースを削除中です。リソースクリーンアップ完了後に再利用できます。',
@@ -91,7 +94,11 @@ const errors = {
     export_failed: 'デプロイ設定のエクスポートに失敗しました。後ほど再試行してください。',
     internal_error: 'デプロイ設定の処理に失敗しました。後ほど再試行してください。',
   },
+  gateway_route: {
+    target_internal: 'このデプロイ設定は内部サービスのため、アクセスエントリを作成できません。',
+  },
   deployment_target: {
+    internal_has_routes: 'このデプロイ設定にはアクセスエントリがあります。削除してから内部サービスにしてください。',
     image_repository_claimed: 'ターゲットイメージリポジトリは別のプロジェクトスペースで使用されています。別のリポジトリパスを選択してください。',
     service_account_invalid: 'ServiceAccount 設定が無効です。確認して再試行してください。',
     replicas_invalid: 'レプリカ数は 0 以上の整数で指定してください。',

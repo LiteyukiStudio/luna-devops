@@ -326,6 +326,8 @@ const deploymentsPage = {
   topologySpreadConstraintsPlaceholder: '[{"maxSkew":1,"topologyKey":"kubernetes.io/hostname","whenUnsatisfiable":"ScheduleAnyway","labelSelector":{"matchLabels":{}}}]',
   serviceSessionAffinity: 'セッションアフィニティ',
   serviceSessionAffinityHint: 'デフォルトは None。ClientIP は同じクライアントをできるだけ同じバックエンドに転送します。',
+  internalOnly: '内部サービス',
+  internalOnlyHint: 'プロジェクトスペース内からのみアクセスできます。ゲートウェイの通信は届かず、アクセスエントリも作成できません。既存のエントリは先に削除してください。',
   serviceAnnotations: 'Service アノテーション',
   serviceAnnotationsHint: 'JSON オブジェクトまたは KEY=VALUE 複数行テキストをサポートし、クラウドプロバイダーのロードバランサー設定に一般的に使用されます。',
   serviceAnnotationsPlaceholder: 'service.beta.kubernetes.io/aws-load-balancer-type=nlb',

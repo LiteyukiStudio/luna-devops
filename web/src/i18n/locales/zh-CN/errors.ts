@@ -37,6 +37,9 @@ const errors = {
     mode_incompatible: '项目数据卷模式与该模板不兼容，请选择匹配的文件系统卷或块设备卷。',
   },
   project: {
+    network_ingress_mode_invalid: '入站模式只能是项目内互通或按服务引用放行。',
+    network_egress_mode_invalid: '出站模式只能是允许公网、仅白名单或禁止外联。',
+    network_egress_allowlist_invalid: '出站白名单无效：每行 “CIDR 端口,端口”，端口可省略；不能是 /0 或始终拒绝的私网、保留网段；最多 64 条。',
     delete_in_progress: '项目空间正在删除中，请等待资源清理完成。',
     identifier_exists: '项目空间标识已存在。',
     identifier_delete_in_progress: '同标识项目空间正在删除，资源清理完成后才能复用。',
@@ -91,7 +94,11 @@ const errors = {
     export_failed: '部署配置导出失败，请稍后重试。',
     internal_error: '部署配置处理失败，请稍后重试。',
   },
+  gateway_route: {
+    target_internal: '该部署配置是内部服务，不能创建访问入口。',
+  },
   deployment_target: {
+    internal_has_routes: '该部署配置还有访问入口，请先删除访问入口再设为内部服务。',
     image_repository_claimed: '目标镜像仓库已被其它项目空间使用，请换一个仓库路径。',
     service_account_invalid: 'ServiceAccount 配置无效，请检查后重试。',
     replicas_invalid: '副本数必须为 0 或正整数。',

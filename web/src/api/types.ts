@@ -1316,6 +1316,7 @@ export interface DeploymentTarget {
   fsGroup: string
   fsGroupChangePolicy: '' | 'OnRootMismatch' | 'Always' | string
   readOnlyRootFilesystem: boolean
+  internalOnly?: boolean
   capabilityDrop: string
   nodeSelector: string
   tolerations: string
@@ -1613,6 +1614,15 @@ export interface RuntimeCluster {
   lastCheckedAt?: string | null
   createdBy: string
   createdAt: string
+}
+
+export type ProjectNetworkIngressMode = 'isolated' | 'dependencies'
+export type ProjectNetworkEgressMode = 'internet' | 'allowlist' | 'none'
+
+export interface ProjectNetworkPolicy {
+  ingressMode: ProjectNetworkIngressMode
+  egressMode: ProjectNetworkEgressMode
+  egressAllowlist: string
 }
 
 export type RuntimeClusterNetworkPolicyEnforcement = 'verified' | 'unsupported' | 'unknown'

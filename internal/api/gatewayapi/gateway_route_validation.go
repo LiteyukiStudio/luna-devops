@@ -56,6 +56,11 @@ func (h *Handlers) gatewayRouteFromInput(ctx *gin.Context, project model.Project
 	if !ok {
 		return model.GatewayRoute{}, false
 	}
+	if target.InternalOnly {
+		// 内部服务的 Pod 不接受网关流量，访问入口不会生效。
+		writeErrorCode(ctx, http.StatusConflict, "gateway_route.target_internal", "the deployment target is internal and cannot have gateway routes")
+		return model.GatewayRoute{}, false
+	}
 	domainSuffix, ok := h.gatewayRouteDomainSuffix(ctx, input.DomainSuffix, cluster)
 	if !ok {
 		return model.GatewayRoute{}, false

@@ -22,7 +22,7 @@ func TestNetworkPolicyReconcileSyncsActiveProjectNamespaces(t *testing.T) {
 	db := testdb.Open(t, testdb.Options{
 		SchemaPrefix: "network_policy_reconcile_test",
 		Migrate: func(db *gorm.DB) error {
-			return db.AutoMigrate(&model.RuntimeCluster{}, &model.Project{}, &model.SystemComponentInstallation{})
+			return db.AutoMigrate(&model.RuntimeCluster{}, &model.Project{}, &model.SystemComponentInstallation{}, &model.DeploymentTarget{}, &model.ServiceBinding{})
 		},
 	})
 	cluster := model.RuntimeCluster{ID: "rc_net", Name: "net", Scope: "global", GatewayNamespace: "traefik", NetworkBlockedCIDRs: "203.0.113.0/24"}
@@ -57,8 +57,8 @@ func TestNetworkPolicyReconcileSyncsActiveProjectNamespaces(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(policies.Items) != 4 {
-		t.Fatalf("active namespace policies = %d, want ingress, egress, build egress and trusted system egress", len(policies.Items))
+	if len(policies.Items) != 5 {
+		t.Fatalf("active namespace policies = %d, want ingress, egress, build egress, trusted system egress and gateway ingress", len(policies.Items))
 	}
 	for _, namespace := range []string{"prj-deleting", "spoofed"} {
 		list, _ := clientset.NetworkingV1().NetworkPolicies(namespace).List(t.Context(), metav1.ListOptions{})
@@ -145,5 +145,45 @@ func TestNetworkPolicyProbeFansOutAndRespectsCooldown(t *testing.T) {
 	}
 	if fresh.NetworkPolicyEnforcement != kubeprovider.NetworkPolicyEnforcementUnsupported || fresh.NetworkPolicyProbedAt == nil {
 		t.Fatalf("probe result not stored: %#v", fresh)
+	}
+}
+
+func TestProjectScopedReconcileAppliesDependenciesMode(t *testing.T) {
+	db := testdb.Open(t, testdb.Options{
+		SchemaPrefix: "network_policy_project_reconcile_test",
+		Migrate: func(db *gorm.DB) error {
+			return db.AutoMigrate(&model.RuntimeCluster{}, &model.Project{}, &model.SystemComponentInstallation{}, &model.DeploymentTarget{}, &model.ServiceBinding{})
+		},
+	})
+	cluster := model.RuntimeCluster{ID: "rc_dep", Name: "dep", Scope: "global", GatewayNamespace: "traefik"}
+	strict := model.Project{ID: "prj_strict", Name: "strict", Identifier: "strict", KubernetesNamespace: "prj-strict", DeleteStatus: "active", NetworkIngressMode: "dependencies", NetworkEgressMode: "none"}
+	other := model.Project{ID: "prj_other", Name: "other", Identifier: "other", KubernetesNamespace: "prj-other", DeleteStatus: "active"}
+	for _, value := range []any{&cluster, &strict, &other,
+		&model.DeploymentTarget{ID: "dt_web", ProjectID: strict.ID, ApplicationID: "app_web", Name: "web", Stage: "prod"},
+		&model.DeploymentTarget{ID: "dt_db", ProjectID: strict.ID, ApplicationID: "app_db", Name: "db", Stage: "prod", InternalOnly: true},
+		&model.ServiceBinding{ID: "sb_web_db", ProjectID: strict.ID, SourceApplicationID: "app_web", SourceDeploymentTargetID: "dt_web",
+			TargetApplicationID: "app_db", TargetDeploymentTargetID: "dt_db", TargetPortName: "pg", TargetPort: 5432, Protocol: "tcp", InjectionMode: "env", Enabled: true, CreatedBy: "usr"},
+	} {
+		if err := db.Create(value).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	clientset := fake.NewSimpleClientset(
+		&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: strict.KubernetesNamespace, Labels: kubeprovider.ProjectNamespaceLabels(strict.ID)}},
+		&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: other.KubernetesNamespace, Labels: kubeprovider.ProjectNamespaceLabels(other.ID)}},
+	)
+	manager := kubeprovider.NewClientForInterface(clientset)
+	runner := &Runner{db: db, kubernetesManagerFactory: func(model.DeploymentTarget) (kubeprovider.NamespaceManager, error) { return manager, nil }}
+	task, _ := tasks.NewNetworkPolicyReconcileTask(tasks.NetworkPolicyReconcilePayload{ProjectID: strict.ID})
+	if err := runner.handleNetworkPolicyReconcile(t.Context(), task); err != nil {
+		t.Fatal(err)
+	}
+	policies, _ := clientset.NetworkingV1().NetworkPolicies(strict.KubernetesNamespace).List(t.Context(), metav1.ListOptions{})
+	// ingress、egress、build、gateway ingress 加两个部署配置各自的依赖入站策略。
+	if len(policies.Items) != 6 {
+		t.Fatalf("strict namespace policies = %d", len(policies.Items))
+	}
+	if others, _ := clientset.NetworkingV1().NetworkPolicies(other.KubernetesNamespace).List(t.Context(), metav1.ListOptions{}); len(others.Items) != 0 {
+		t.Fatalf("project-scoped reconcile must not touch other projects, got %d", len(others.Items))
 	}
 }

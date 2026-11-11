@@ -30,7 +30,7 @@ func TestRenderWorkloadNetworkPoliciesIsolatesProjectAndBlocksPrivateEgress(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(policies) != 4 {
+	if len(policies) != 5 {
 		t.Fatalf("policy count = %d", len(policies))
 	}
 	ingress := policies[0]
@@ -41,11 +41,12 @@ func TestRenderWorkloadNetworkPoliciesIsolatesProjectAndBlocksPrivateEgress(t *t
 	if from[0].PodSelector == nil || from[0].NamespaceSelector != nil {
 		t.Fatalf("first ingress peer must be same namespace: %#v", from[0])
 	}
-	if from[1].NamespaceSelector.MatchLabels[namespaceNameLabel] != "kube-system" {
-		t.Fatalf("gateway peer = %#v", from[1])
+	if from[1].IPBlock == nil || from[1].IPBlock.CIDR != "198.51.100.10/32" {
+		t.Fatalf("node ingress peer = %#v", from[1])
 	}
-	if from[2].IPBlock == nil || from[2].IPBlock.CIDR != "198.51.100.10/32" {
-		t.Fatalf("node ingress peer = %#v", from[2])
+	gatewayIngress := policies[4]
+	if gatewayIngress.Name != gatewayIngressPolicyName || gatewayIngress.Spec.Ingress[0].From[0].NamespaceSelector.MatchLabels[namespaceNameLabel] != "kube-system" {
+		t.Fatalf("gateway ingress policy = %#v", gatewayIngress.Spec)
 	}
 
 	egress := policies[1]
@@ -309,5 +310,93 @@ func TestTrustedSystemEgressExcludesBuildAndHookPods(t *testing.T) {
 		selector.MatchExpressions[0].Key != ScopeLabel || !slices.Contains(selector.MatchExpressions[0].Values, "build") ||
 		selector.MatchExpressions[1].Key != HookRunIDLabel || selector.MatchExpressions[1].Operator != metav1.LabelSelectorOpDoesNotExist {
 		t.Fatalf("trusted system egress selector = %#v", selector)
+	}
+}
+
+func TestRenderDependenciesIngressAndInternalTargets(t *testing.T) {
+	input := testWorkloadPolicyInput()
+	input.IngressMode = NetworkIngressDependencies
+	input.DeploymentTargetIDs = []string{"dt_web", "dt_db"}
+	input.Dependencies = map[string][]string{"dt_db": {"dt_web"}}
+	input.InternalTargetIDs = []string{"dt_db"}
+	policies, err := RenderWorkloadNetworkPolicies(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byName := map[string]networkingv1.NetworkPolicy{}
+	for _, policy := range policies {
+		byName[policy.Name] = policy
+	}
+	base := byName[workloadIngressPolicyName]
+	for _, peer := range base.Spec.Ingress[0].From {
+		if peer.PodSelector != nil {
+			t.Fatalf("dependencies mode must not allow the whole namespace: %#v", base.Spec.Ingress)
+		}
+	}
+	db := byName[dependencyIngressPolicyPrefix+shortHash("dt_db")]
+	if db.Spec.PodSelector.MatchLabels[DeploymentTargetIDLabel] != "dt_db" ||
+		!slices.Equal(db.Spec.Ingress[0].From[0].PodSelector.MatchExpressions[0].Values, []string{"dt_db", "dt_web"}) {
+		t.Fatalf("db must accept only itself and its service binding source: %#v", db.Spec)
+	}
+	web := byName[dependencyIngressPolicyPrefix+shortHash("dt_web")]
+	if !slices.Equal(web.Spec.Ingress[0].From[0].PodSelector.MatchExpressions[0].Values, []string{"dt_web"}) {
+		t.Fatalf("web without bindings must accept only its own replicas: %#v", web.Spec)
+	}
+	gateway := byName[gatewayIngressPolicyName]
+	expr := gateway.Spec.PodSelector.MatchExpressions
+	if len(expr) != 1 || expr[0].Operator != metav1.LabelSelectorOpNotIn || !slices.Equal(expr[0].Values, []string{"dt_db"}) {
+		t.Fatalf("internal targets must not accept gateway traffic: %#v", gateway.Spec.PodSelector)
+	}
+}
+
+func TestRenderDependenciesWithoutNodesDeniesInsteadOfAllowingAll(t *testing.T) {
+	input := testWorkloadPolicyInput()
+	input.IngressMode = NetworkIngressDependencies
+	input.NodeAddresses = nil
+	policies, err := RenderWorkloadNetworkPolicies(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rules := policies[0].Spec.Ingress; len(rules) != 0 {
+		t.Fatalf("an ingress rule without sources would allow everyone: %#v", rules)
+	}
+}
+
+func TestRenderEgressModes(t *testing.T) {
+	input := testWorkloadPolicyInput()
+	input.EgressMode = NetworkEgressNone
+	policies, err := RenderWorkloadNetworkPolicies(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rules := policies[1].Spec.Egress; len(rules) != 2 {
+		t.Fatalf("none mode must allow only cluster DNS and the same namespace: %#v", rules)
+	}
+
+	input.EgressMode = NetworkEgressAllowlist
+	input.EgressAllowlist = []EgressAllowRule{
+		{CIDR: "1.1.1.0/24", Ports: []int{443}},
+		{CIDR: "10.1.0.0/16"},
+		{CIDR: "0.0.0.0/1"},
+	}
+	policies, err = RenderWorkloadNetworkPolicies(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rules := policies[1].Spec.Egress
+	if len(rules) != 5 {
+		t.Fatalf("allowlist mode = DNS, same namespace, gateway and two public entries, got %#v", rules)
+	}
+	if rules[3].To[0].IPBlock.CIDR != "1.1.1.0/24" || len(rules[3].Ports) != 1 || rules[3].Ports[0].Port.IntVal != 443 {
+		t.Fatalf("allowlist entry = %#v", rules[3])
+	}
+	wide := rules[4].To[0].IPBlock
+	if wide.CIDR != "0.0.0.0/1" || !slices.Contains(wide.Except, "10.0.0.0/8") || !slices.Contains(wide.Except, "100.100.100.200/32") || len(rules[4].Ports) != 0 {
+		t.Fatalf("wide allowlist entry must exclude private and metadata ranges: %#v", rules[4])
+	}
+
+	input.EgressMode = "everything"
+	if _, err := RenderWorkloadNetworkPolicies(input); err == nil {
+		t.Fatal("unknown egress mode must fail")
 	}
 }

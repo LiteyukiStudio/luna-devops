@@ -2004,6 +2004,71 @@ paths:
         "204":
           description: Project deletion accepted and queued for asynchronous resource cleanup.
 
+  /api/v1/projects/{projectId}/network-policy:
+    get:
+      operationId: getProjectNetworkPolicy
+      x-luna-cli:
+        requiredScopes: ["project:read"]
+      tags: [Projects]
+      summary: Get project network policy
+      description: Returns the project space ingress and egress modes. Modes only tighten the cluster defaults.
+      x-luna-agent:
+        purpose: { zh: 读取项目空间的入站与出站网络模式。, en: Read the ingress and egress network modes of a project space. }
+        aliases: { zh: [查看项目网络模式, 查看项目网络隔离], en: [get project network policy, project network isolation] }
+        avoidWhen: { zh: 查询集群级网络隔离状态时使用 observeRuntimeClusterNetworkPolicies。, en: Use observeRuntimeClusterNetworkPolicies for cluster-level isolation status. }
+        preconditions: { zh: [提供真实 projectId], en: [Provide an authoritative projectId] }
+        successEvidence: { zh: 返回入站模式、出站模式与出站白名单。, en: Returns the ingress mode, egress mode, and egress allowlist. }
+        effect: read
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      responses:
+        "200":
+          description: Project network policy.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProjectNetworkPolicy" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      operationId: updateProjectNetworkPolicy
+      x-luna-cli:
+        requiredScopes: ["project:write"]
+      tags: [Projects]
+      summary: Update project network policy
+      description: Sets the project space ingress and egress modes and reapplies its NetworkPolicies on every cluster. Requires project management permission.
+      x-luna-agent:
+        purpose: { zh: 收紧项目空间的入站或出站网络模式。, en: Tighten the ingress or egress network mode of a project space. }
+        aliases: { zh: [修改项目网络模式, 设置出站白名单, 限制项目出站], en: [update project network policy, set egress allowlist, restrict project egress] }
+        avoidWhen: { zh: 需要放行内网地址时不要使用，项目空间模式只能比集群默认更严格。, en: Do not use to allow private addresses; project modes only tighten cluster defaults. }
+        preconditions: { zh: [提供真实 projectId 与完整的三项配置], en: [Provide an authoritative projectId and all three settings] }
+        successEvidence: { zh: 返回保存后的网络模式；策略随后由 Worker 下发。, en: Returns the saved modes; the Worker then reapplies the policies. }
+        effect: write
+        verification:
+          - { operationId: getProjectNetworkPolicy, family: resource, idFrom: argument.projectId, readIdArgument: projectId }
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ProjectNetworkPolicy" }
+      responses:
+        "200":
+          description: Saved project network policy.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProjectNetworkPolicy" }
+        "400":
+          description: Invalid mode or allowlist (`project.network_ingress_mode_invalid`, `project.network_egress_mode_invalid`, `project.network_egress_allowlist_invalid`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
   /api/v1/projects/{projectId}/overview:
     get:
       operationId: getProjectOverview
@@ -3069,7 +3134,7 @@ paths:
               schema: { $ref: "#/components/schemas/DeploymentTarget" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "409":
-          description: The request conflicts with the current durable state. Stable code `deployment_target.image_repository_claimed` means the target image repository on the selected registry is already used by another project space.
+          description: The request conflicts with the current durable state. Stable code `deployment_target.image_repository_claimed` means the target image repository on the selected registry is already used by another project space. Stable code `deployment_target.internal_has_routes` means the deployment target is marked internal while it still has gateway routes.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
@@ -3110,7 +3175,7 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409":
-          description: The request conflicts with the current durable state. Stable code `deployment_target.image_repository_claimed` means the target image repository on the selected registry is already used by another project space.
+          description: The request conflicts with the current durable state. Stable code `deployment_target.image_repository_claimed` means the target image repository on the selected registry is already used by another project space. Stable code `deployment_target.internal_has_routes` means the deployment target is marked internal while it still has gateway routes.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
@@ -8372,6 +8437,11 @@ paths:
                 $ref: "#/components/schemas/AgentGatewayRouteResult"
         "400":
           $ref: "#/components/responses/BadRequest"
+        "409":
+          description: The deployment target is internal (`gateway_route.target_internal`); internal targets do not accept gateway traffic.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
         "403":
           $ref: "#/components/responses/Forbidden"
         "404":
@@ -8452,6 +8522,11 @@ paths:
                 $ref: "#/components/schemas/BusinessObject"
         "400":
           $ref: "#/components/responses/BadRequest"
+        "409":
+          description: The deployment target is internal (`gateway_route.target_internal`); internal targets do not accept gateway traffic.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
         "403":
           $ref: "#/components/responses/Forbidden"
         "404":
@@ -12127,6 +12202,10 @@ components:
         clusterId:
           type: string
           description: Runtime cluster ID available to the project. Empty selects the platform default cluster.
+        internalOnly:
+          type: boolean
+          default: false
+          description: Internal service. Its Pods do not accept gateway traffic and the target cannot have gateway routes; enabling it while routes exist fails with `deployment_target.internal_has_routes`.
         workloadType:
           type: string
           enum: [Deployment, StatefulSet]
@@ -12425,6 +12504,7 @@ components:
         clusterId:
           type: string
           description: Explicitly selected runtime cluster; empty selects the platform default.
+        internalOnly: { type: boolean, description: Internal service; does not accept gateway traffic. }
         effectiveClusterId:
           type: string
           description: Runtime cluster the target resolves to for this request. An explicit clusterId must reference an active cluster; an empty clusterId resolves to the active global default cluster, or the earliest created active global cluster when none is marked default. Project or user scoped clusters are never implicit. Empty when no active cluster applies; clients must use this field instead of inferring a default.
@@ -12725,6 +12805,7 @@ components:
         - deployment.stage_invalid
         - deployment_target.image_ref_required
         - deployment_target.image_repository_claimed
+        - deployment_target.internal_has_routes
         - deployment_target.service_account_invalid
         - deployment_bundle.candidate_query_invalid
         - deployment_bundle.digest_mismatch
@@ -13433,6 +13514,21 @@ components:
             createdBy: { type: string }
             createdAt: { type: string, format: date-time }
             updatedAt: { type: string, format: date-time }
+    ProjectNetworkPolicy:
+      type: object
+      required: [ingressMode, egressMode, egressAllowlist]
+      properties:
+        ingressMode:
+          type: string
+          enum: [isolated, dependencies]
+          description: isolated allows traffic between all workloads of the project space; dependencies allows a deployment target only from its own replicas and from the sources of its service bindings. Gateway and node traffic are allowed in both modes.
+        egressMode:
+          type: string
+          enum: [internet, allowlist, none]
+          description: internet allows the public internet; allowlist allows only egressAllowlist; none allows only the same project space and cluster DNS. Private, reserved, node, and metadata ranges stay denied in every mode.
+        egressAllowlist:
+          type: string
+          description: One entry per line as `CIDR [port,port]`; omitting ports allows all ports. At most 64 entries and 16 ports per entry; entries inside always-denied private or reserved ranges are rejected. Used only when egressMode is allowlist.
     RuntimeClusterNetworkPolicyObservation:
       type: object
       required: [clusterId, status, observedAt, namespaceCount, syncedCount, driftedCount, enforcement]

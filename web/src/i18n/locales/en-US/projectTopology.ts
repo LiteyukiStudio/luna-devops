@@ -186,6 +186,21 @@ const projectTopology = {
     portInvalid: 'Port must be an integer from 1 to 65535',
     descriptionTooLong: 'Relation notes can contain at most 500 characters',
   },
+  networkPolicy: {
+    title: 'Network isolation',
+    description: 'These settings can only be stricter than the cluster defaults. Saving reapplies network policies immediately; private and reserved addresses, nodes, and the Kubernetes API are always denied.',
+    loadFailed: 'Network modes could not be loaded. Refresh and try again.',
+    saved: 'Network modes saved; policies are being applied',
+    ingressMode: 'Ingress',
+    ingressModeHint: 'Project-wide: applications in the project space can reach each other. Service bindings: an application accepts only its own replicas and applications that bind to it. In both modes the gateway can reach non-internal services.',
+    ingressModes: { isolated: 'Project-wide', dependencies: 'Service bindings only' },
+    egressMode: 'Egress',
+    egressModeHint: 'Internet: the public internet and other applications’ routes are reachable. Allowlist: only the addresses below. None: only the project space and cluster DNS.',
+    egressModes: { internet: 'Internet', allowlist: 'Allowlist only', none: 'None' },
+    egressAllowlist: 'Egress allowlist',
+    egressAllowlistHint: 'One `CIDR port,port` per line; omit ports to allow all ports; at most 64 entries. Private and reserved ranges are always denied and cannot be listed.',
+    egressAllowlistPlaceholder: '203.0.113.0/24 443\n198.51.100.10/32',
+  },
 }
 
 export default projectTopology

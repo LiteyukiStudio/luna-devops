@@ -247,6 +247,8 @@ func NewRouterWithStaticFSAndMetricsConfig(db *gorm.DB, staticFS fs.FS, httpMetr
 		v1.GET("/projects/:projectId", domains.project.GetProject)
 		v1.GET("/projects/:projectId/overview", domains.project.GetProjectOverview)
 		v1.PUT("/projects/:projectId", domains.project.UpdateProject)
+		v1.GET("/projects/:projectId/network-policy", domains.project.GetProjectNetworkPolicy)
+		v1.PUT("/projects/:projectId/network-policy", domains.project.UpdateProjectNetworkPolicy)
 		v1.DELETE("/projects/:projectId", domains.project.DeleteProject)
 		v1.GET("/projects/:projectId/runtime-config-sets", domains.runtime.ListProjectRuntimeConfigSets)
 		v1.POST("/projects/:projectId/runtime-config-sets", domains.runtime.CreateProjectRuntimeConfigSet)

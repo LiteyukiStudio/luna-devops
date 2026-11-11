@@ -50,6 +50,7 @@ var deploymentBundleErrorCatalog = map[string]deploymentBundleErrorSpec{
 	"deployment_target.service_account_invalid":           {Status: http.StatusBadRequest, Message: "deployment service account configuration is invalid"},
 	"deployment_target.image_ref_required":                {Status: http.StatusBadRequest, Message: "deployment bundle image reference is required"},
 	"deployment_target.image_repository_claimed":          {Status: http.StatusConflict, Message: "deployment bundle target image repository is used by another project space"},
+	"deployment_target.internal_has_routes":               {Status: http.StatusConflict, Message: "deployment bundle internal target still has gateway routes"},
 	"build_template.invalid":                              {Status: http.StatusBadRequest, Message: "deployment bundle build template configuration is invalid"},
 	"build_template.not_found":                            {Status: http.StatusBadRequest, Message: "deployment bundle build template is unavailable"},
 }

@@ -139,6 +139,9 @@ func (h *Handlers) deploymentTargetFromInput(ctx *gin.Context, user model.User, 
 	if sourceType == "repository" && !h.ensureTargetImageRepositoryAvailable(ctx, app.ProjectID, targetRegistryID, targetRepository) {
 		return model.DeploymentTarget{}, nil, runtimeapi.RuntimeSecretMutationInput{}, false
 	}
+	if input.InternalOnly && !h.ensureTargetHasNoGatewayRoutes(ctx, targetID) {
+		return model.DeploymentTarget{}, nil, runtimeapi.RuntimeSecretMutationInput{}, false
+	}
 	publicEnvironment, secretMutation, ok := runtimeapi.NormalizeEnvironmentVariables(ctx, input.EnvironmentVariables)
 	if !ok {
 		return model.DeploymentTarget{}, nil, runtimeapi.RuntimeSecretMutationInput{}, false
@@ -179,6 +182,7 @@ func (h *Handlers) deploymentTargetFromInput(ctx *gin.Context, user model.User, 
 		Stage:                        stage,
 		KubernetesName:               kubernetesName,
 		ClusterID:                    clusterID,
+		InternalOnly:                 input.InternalOnly,
 		WorkloadType:                 normalizeWorkloadType(input.WorkloadType),
 		Replicas:                     replicas,
 		CPURequest:                   runtimeCPURequest,

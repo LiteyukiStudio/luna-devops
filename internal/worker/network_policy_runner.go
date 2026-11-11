@@ -43,7 +43,7 @@ func (r *Runner) handleNetworkPolicyReconcile(ctx context.Context, task *asynq.T
 	var errs []error
 	for _, cluster := range clusters {
 		if err := workerStage(ctx, "network_policy.reconcile_cluster", func(stageCtx context.Context) error {
-			return r.reconcileClusterNetworkPolicies(stageCtx, cluster)
+			return r.reconcileClusterNetworkPolicies(stageCtx, cluster, strings.TrimSpace(payload.ProjectID))
 		}); err != nil {
 			errs = append(errs, fmt.Errorf("runtime cluster %s: %w", cluster.ID, err))
 		}
@@ -51,7 +51,7 @@ func (r *Runner) handleNetworkPolicyReconcile(ctx context.Context, task *asynq.T
 	return errors.Join(errs...)
 }
 
-func (r *Runner) reconcileClusterNetworkPolicies(ctx context.Context, cluster model.RuntimeCluster) error {
+func (r *Runner) reconcileClusterNetworkPolicies(ctx context.Context, cluster model.RuntimeCluster, onlyProjectID string) error {
 	manager, err := r.kubernetesManager(ctx, model.DeploymentTarget{ClusterID: cluster.ID})
 	if err != nil {
 		return err
@@ -66,6 +66,9 @@ func (r *Runner) reconcileClusterNetworkPolicies(ctx context.Context, cluster mo
 	}
 	var errs []error
 	for namespace, projectID := range namespaces {
+		if onlyProjectID != "" && projectID != onlyProjectID {
+			continue
+		}
 		var project model.Project
 		if err := r.db.WithContext(ctx).Select("id", "kubernetes_namespace", "delete_status").
 			Where("id = ? and kubernetes_namespace = ?", projectID, namespace).Take(&project).Error; err != nil {

@@ -8,9 +8,11 @@ import (
 
 const TypeNetworkPolicyReconcile = "network-policy:reconcile"
 
-// NetworkPolicyReconcilePayload 指定要重新下发项目空间网络策略的集群；为空时覆盖全部活动集群。
+// NetworkPolicyReconcilePayload 限定重新下发的范围：RuntimeClusterID 为空时覆盖全部活动集群，
+// ProjectID 非空时只处理该项目空间的命名空间。
 type NetworkPolicyReconcilePayload struct {
 	RuntimeClusterID string `json:"runtimeClusterId,omitempty"`
+	ProjectID        string `json:"projectId,omitempty"`
 }
 
 func NewNetworkPolicyReconcileTask(payload NetworkPolicyReconcilePayload) (*asynq.Task, error) {

@@ -97,6 +97,7 @@ export function createDeploymentTargetFormSchema(t: TFunction) {
       appProtocol: z.string().trim().max(253, t('deploymentTargetEditor.validation.maxLength', { max: 253 })),
     })).min(1, message.required).max(maxServicePorts, t('deploymentTargetEditor.validation.portsMax', { max: maxServicePorts })),
     serviceSessionAffinity: z.enum(['', 'None', 'ClientIP']),
+    internalOnly: z.boolean(),
     serviceAnnotations: keyValueOrJson,
     runtimeConfigRefs: z.array(z.object({ setId: z.string(), mode: z.enum(['live', 'snapshot']) })),
     environmentVariables: z.array(z.object({
@@ -269,6 +270,7 @@ export function emptyDeploymentTargetFormValues(): DeploymentTargetFormValues {
     autoScalingBehavior: '',
     servicePorts: [{ name: 'http', port: 8080, appProtocol: '' }],
     serviceSessionAffinity: '',
+    internalOnly: false,
     serviceAnnotations: '',
     runtimeConfigRefs: [],
     environmentVariables: [],
@@ -354,6 +356,7 @@ export function deploymentTargetToFormValues(target: DeploymentTarget, buildEnvi
       ? target.servicePorts.map(port => ({ name: port.name, port: port.port, appProtocol: port.appProtocol ?? '' }))
       : defaults.servicePorts,
     serviceSessionAffinity: oneOf(target.serviceSessionAffinity, ['', 'None', 'ClientIP'] as const, ''),
+    internalOnly: target.internalOnly ?? false,
     serviceAnnotations: target.serviceAnnotations,
     runtimeConfigRefs: (target.runtimeConfigRefs ?? []).map(ref => ({ setId: ref.setId, mode: ref.mode })),
     environmentVariables: (target.environmentVariables ?? []).map(variable => ({
@@ -443,6 +446,7 @@ export function deploymentTargetFormToPayload(values: DeploymentTargetFormValues
     autoScalingBehavior: values.autoScalingBehavior.trim(),
     servicePorts: values.servicePorts.map(port => ({ name: port.name.trim(), port: port.port, appProtocol: port.appProtocol.trim() })),
     serviceSessionAffinity: values.serviceSessionAffinity,
+    internalOnly: values.internalOnly,
     serviceAnnotations: values.serviceAnnotations.trim(),
     runtimeConfigRefs: values.runtimeConfigRefs,
     environmentVariables: environmentRowsToPayload(values.environmentVariables),
@@ -516,6 +520,7 @@ const restartRequiredFields = [
   'priorityClassName',
   'serviceAnnotations',
   'serviceSessionAffinity',
+  'internalOnly',
   'autoScalingEnabled',
   'autoScalingMinReplicas',
   'autoScalingMaxReplicas',
@@ -553,7 +558,7 @@ export const deploymentTargetAdvancedItemFields: Record<DeploymentTargetAdvanced
   build: ['buildDirectory', 'buildArgs', 'buildCpuRequest', 'buildMemoryRequest', 'buildTimeoutMinutes', 'buildVariables', 'buildSecrets'],
   workload: ['workloadType', 'autoScalingBehavior'],
   container: ['imagePullPolicy', 'containerCommand', 'containerArgs', 'lifecycle', 'readinessProbe', 'livenessProbe', 'startupProbe'],
-  service: ['serviceSessionAffinity', 'serviceAnnotations'],
+  service: ['serviceSessionAffinity', 'serviceAnnotations', 'internalOnly'],
   files: ['configFiles', 'secretFiles'],
   hooks: ['buildHooksEnabled', 'buildHookBindings'],
   webConsole: ['webConsoleEnabled'],
@@ -593,6 +598,7 @@ export const deploymentTargetErrorFields: Record<string, DeploymentTargetFieldNa
   'deployment_target.repository_binding_not_found': 'repositoryBindingId',
   'deployment_target.image_ref_required': 'imageRef',
   'deployment_target.image_repository_claimed': 'targetImageRef',
+  'deployment_target.internal_has_routes': 'internalOnly',
   'deployment_target.replicas_invalid': 'replicas',
 }
 

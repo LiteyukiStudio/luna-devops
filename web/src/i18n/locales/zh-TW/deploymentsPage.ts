@@ -326,6 +326,8 @@ const deploymentsPage = {
   topologySpreadConstraintsPlaceholder: '[{"maxSkew":1,"topologyKey":"kubernetes.io/hostname","whenUnsatisfiable":"ScheduleAnyway","labelSelector":{"matchLabels":{}}}]',
   serviceSessionAffinity: '會話親和',
   serviceSessionAffinityHint: '預設 None。ClientIP 會把同一客戶端儘量轉發到同一後端。',
+  internalOnly: '內部服務',
+  internalOnlyHint: '開啟後只允許專案空間內存取，閘道流量無法到達，也不能建立存取入口。已有存取入口時需要先刪除。',
   serviceAnnotations: 'Service 註解',
   serviceAnnotationsHint: '支援 JSON 物件或 KEY=VALUE 多行文字，常用於雲廠商負載均衡配置。',
   serviceAnnotationsPlaceholder: 'service.beta.kubernetes.io/aws-load-balancer-type=nlb',

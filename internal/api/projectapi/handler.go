@@ -30,6 +30,7 @@ type Host interface {
 	EnsurePlatformSystemProject(user model.User, ctx context.Context) (model.Project, error)
 	AIConversationProjectID(ctx *gin.Context) string
 	EnqueueResourceCleanup(ctx context.Context, resourceType, resourceID, projectID, actorID string) bool
+	EnqueueNetworkPolicyProjectReconcile(ctx context.Context, projectID string) bool
 	AuditWithContext(userID, action, resource string, success bool, message string, ctx context.Context)
 	ProjectIDsForUser(ctx context.Context, userID string) []string
 	ProjectHasAnotherOwner(ctx context.Context, projectID, memberID string) bool

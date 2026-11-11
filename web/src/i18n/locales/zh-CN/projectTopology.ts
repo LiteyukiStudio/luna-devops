@@ -186,6 +186,21 @@ const projectTopology = {
     portInvalid: '端口必须是 1 到 65535 的整数',
     descriptionTooLong: '关系备注最多 500 个字符',
   },
+  networkPolicy: {
+    title: '网络隔离',
+    description: '只能比集群默认更严格。保存后平台会立即重新下发网络策略；私网、保留地址、节点与 Kubernetes API 始终拒绝。',
+    loadFailed: '网络模式加载失败，请刷新后重试。',
+    saved: '网络模式已保存，策略正在下发',
+    ingressMode: '入站',
+    ingressModeHint: '项目内互通：项目空间内的应用可以互相访问。按服务引用放行：应用只接受自己的副本和引用了它的应用访问。两种模式下网关都可以访问非内部服务。',
+    ingressModes: { isolated: '项目内互通', dependencies: '按服务引用放行' },
+    egressMode: '出站',
+    egressModeHint: '允许公网：可以访问公网与其他应用的访问入口。仅白名单：只能访问下方列出的地址。禁止外联：只能访问项目空间内与集群 DNS。',
+    egressModes: { internet: '允许公网', allowlist: '仅白名单', none: '禁止外联' },
+    egressAllowlist: '出站白名单',
+    egressAllowlistHint: '每行一条 “CIDR 端口,端口”，省略端口表示全部端口；最多 64 条。私网与保留网段始终拒绝，不能写在这里。',
+    egressAllowlistPlaceholder: '203.0.113.0/24 443\n198.51.100.10/32',
+  },
 }
 
 export default projectTopology

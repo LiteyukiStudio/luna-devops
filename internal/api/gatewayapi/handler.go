@@ -25,6 +25,7 @@ type Host interface {
 	MarkResourceDeleting(tx *gorm.DB, resource any, resourceID string) error
 	MarkResourceDeleteFailed(db *gorm.DB, resource any, resourceID, message string) error
 	EnqueueResourceCleanup(ctx context.Context, resourceType, resourceID, projectID, actorID string) bool
+	EnqueueNetworkPolicyProjectReconcile(ctx context.Context, projectID string) bool
 	EnqueueGatewayApply(ctx context.Context, route model.GatewayRoute, actorID string) bool
 	AuditWithContext(userID, action, resource string, success bool, message string, ctx context.Context)
 	ProjectMemberActionAllowed(ctx *gin.Context, projectID, userID string, action authz.Action) (bool, bool)

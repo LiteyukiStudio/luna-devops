@@ -126,6 +126,12 @@ func (host domainHost) EnqueueResourceCleanup(ctx context.Context, resourceType,
 	return host.handlers.enqueueResourceCleanup(ctx, resourceType, resourceID, projectID, actorID)
 }
 
+// EnqueueNetworkPolicyProjectReconcile 在项目网络模式、内部服务或服务引用变化后立即重新下发该项目的网络策略；
+// 入队失败时由 Worker 周期同步兜底。
+func (host domainHost) EnqueueNetworkPolicyProjectReconcile(ctx context.Context, projectID string) bool {
+	return host.handlers.enqueueNetworkPolicyProjectReconcile(ctx, projectID)
+}
+
 func (host domainHost) EnqueueNetworkPolicyProbe(ctx context.Context, clusterID string) bool {
 	return host.handlers.enqueueNetworkPolicyProbe(ctx, clusterID)
 }

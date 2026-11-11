@@ -188,6 +188,7 @@ function advancedFieldLabels(t: TFunction): Partial<Record<DeploymentTargetField
     livenessProbe: t('deploymentsPage.livenessProbe'),
     startupProbe: t('deploymentsPage.startupProbe'),
     serviceSessionAffinity: t('deploymentsPage.serviceSessionAffinity'),
+    internalOnly: t('deploymentsPage.internalOnly'),
     serviceAnnotations: t('deploymentsPage.serviceAnnotations'),
     configFiles: t('deploymentsPage.runtimeConfigFiles'),
     secretFiles: t('deploymentsPage.runtimeSecretFiles'),
