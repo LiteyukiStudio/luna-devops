@@ -506,8 +506,8 @@ func TestRenderEgressExceptions(t *testing.T) {
 		t.Fatalf("narrowed exception must select only the target workload pods: %#v", expr)
 	}
 	block := db.Spec.Egress[0].To[0].IPBlock
-	if block.CIDR != "192.168.31.0/24" || !slices.Contains(block.Except, "192.168.31.20/32") {
-		t.Fatalf("node addresses inside an exception must stay denied: %#v", block)
+	if block.CIDR != "192.168.31.0/24" || slices.Contains(block.Except, "192.168.31.20/32") {
+		t.Fatalf("node addresses inside an exception must stay allowed: %#v", block)
 	}
 	if ports := db.Spec.Egress[0].Ports; len(ports) != 1 || *ports[0].Protocol != "TCP" || ports[0].Port.IntVal != 3306 {
 		t.Fatalf("exception ports = %#v", ports)
@@ -526,10 +526,13 @@ func TestRenderEgressExceptions(t *testing.T) {
 	if !slices.Contains(linkLocal.To[0].IPBlock.Except, "169.254.169.254/32") || *linkLocal.Ports[0].Protocol != "UDP" {
 		t.Fatalf("metadata inside an exception range must stay denied: %#v", linkLocal)
 	}
-	for _, id := range []string{"nex_node", "nex_meta"} {
-		if _, ok := byName[egressExceptionPolicyPrefix+shortHash(id)]; ok {
-			t.Fatalf("exception %s inside a node or metadata range must not render", id)
-		}
+	// 例外命中节点地址本身时照常下发；只有云元数据地址仍被跳过。
+	node, ok := byName[egressExceptionPolicyPrefix+shortHash("nex_node")]
+	if !ok || node.Spec.Egress[0].To[0].IPBlock.CIDR != "192.168.31.20/32" || len(node.Spec.Egress[0].To[0].IPBlock.Except) != 0 {
+		t.Fatalf("an exception equal to a node address must render without exclusions: %#v", node.Spec.Egress)
+	}
+	if _, ok := byName[egressExceptionPolicyPrefix+shortHash("nex_meta")]; ok {
+		t.Fatal("an exception equal to a metadata address must not render")
 	}
 }
 

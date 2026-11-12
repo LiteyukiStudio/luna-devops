@@ -223,7 +223,7 @@ const clustersPage = {
     deleteDescription: '삭제하면 허용되었던 프로젝트 스페이스는 "{{name}}"의 주소에 더 이상 접근할 수 없습니다.',
     protocols: { tcp: 'TCP', udp: 'UDP', any: 'TCP/UDP' },
     cidr: '대상 CIDR',
-    cidrHint: '192.168.31.10/32 같은 CIDR. /0이나 클라우드 메타데이터 주소는 불가하며, 범위 안의 노드 주소는 계속 차단됩니다.',
+    cidrHint: '192.168.31.10/32 같은 CIDR. /0이나 클라우드 메타데이터 주소는 불가하며, 범위 안의 클라우드 메타데이터는 계속 차단되지만 클러스터 노드 주소는 허용됩니다.',
     protocol: '프로토콜',
     ports: '포트',
     portsHint: '쉼표로 구분, 최대 16개. 비워 두면 해당 프로토콜의 모든 포트입니다.',

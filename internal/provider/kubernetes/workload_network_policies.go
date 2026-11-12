@@ -226,7 +226,7 @@ func RenderWorkloadNetworkPolicies(input WorkloadNetworkPolicyInput) ([]networki
 				Egress:      []networkingv1.NetworkPolicyEgressRule{{}},
 			}))
 	}
-	exceptionPolicies, err := renderEgressExceptions(input.Namespace, input.EgressExceptions, nodes)
+	exceptionPolicies, err := renderEgressExceptions(input.Namespace, input.EgressExceptions)
 	if err != nil {
 		return nil, err
 	}
@@ -332,10 +332,11 @@ func renderSharedServices(namespace string, ingress map[string][]string, egress 
 	return policies, nil
 }
 
-// renderEgressExceptions 为每条授权渲染工作负载（以及按需的构建）出站放行。云元数据与节点地址是平台硬底线：
-// 网段内包含它们时排除，网段整体落在它们之内时不下发该条例外。
-func renderEgressExceptions(namespace string, exceptions []EgressException, nodes []string) ([]networkingv1.NetworkPolicy, error) {
-	hardFloor := append(append([]string(nil), cloudMetadataCIDRs()...), nodes...)
+// renderEgressExceptions 为每条授权渲染工作负载（以及按需的构建）出站放行。云元数据地址是平台硬底线：
+// 网段内包含它时排除，网段整体落在它之内时不下发该条例外。集群节点地址不做特殊处理：例外命中即放行，
+// 包括节点上宿主机监听的端口，由集群维护者显式授权并写入审计。
+func renderEgressExceptions(namespace string, exceptions []EgressException) ([]networkingv1.NetworkPolicy, error) {
+	hardFloor := cloudMetadataCIDRs()
 	policies := []networkingv1.NetworkPolicy{}
 	for _, exception := range exceptions {
 		prefix, err := ParseNetworkCIDR(exception.CIDR)

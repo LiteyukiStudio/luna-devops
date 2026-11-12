@@ -223,7 +223,7 @@ const clustersPage = {
     deleteDescription: 'After deletion, the granted project spaces can no longer reach the addresses of “{{name}}”.',
     protocols: { tcp: 'TCP', udp: 'UDP', any: 'TCP/UDP' },
     cidr: 'Target CIDR',
-    cidrHint: 'A CIDR such as 192.168.31.10/32. It cannot be /0 or a cloud metadata address; node addresses inside it stay denied.',
+    cidrHint: 'A CIDR such as 192.168.31.10/32. It cannot be /0 or a cloud metadata address; cloud metadata inside it stays denied, while cluster node addresses are allowed.',
     protocol: 'Protocol',
     ports: 'Ports',
     portsHint: 'Comma-separated, at most 16. Empty allows every port of the protocol.',

@@ -223,7 +223,7 @@ const clustersPage = {
     deleteDescription: '删除后，被授权的项目空间将无法再访问“{{name}}”的地址。',
     protocols: { tcp: 'TCP', udp: 'UDP', any: 'TCP/UDP' },
     cidr: '目标网段',
-    cidrHint: 'CIDR，例如 192.168.31.10/32。不能是 /0 或云元数据地址；网段内的节点地址仍然拒绝。',
+    cidrHint: 'CIDR，例如 192.168.31.10/32。不能是 /0 或云元数据地址；网段内的云元数据始终拒绝，集群节点地址会被放行。',
     protocol: '协议',
     ports: '端口',
     portsHint: '逗号分隔，最多 16 个；留空表示该协议的全部端口。',
