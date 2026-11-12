@@ -701,12 +701,51 @@ func TestBuildJobUserVariablesCannotOverridePlatformEnv(t *testing.T) {
 			t.Fatalf("env %s count = %d, want 1", name, envCount[name])
 		}
 	}
+	for _, name := range []string{"HTTP_PROXY", "HTTPS_PROXY"} {
+		if envCount[name] != 0 {
+			t.Fatalf("proxy variable %s must not leak without being configured", name)
+		}
+	}
 	paths := map[string]string{}
 	for _, item := range spec.Spec.Template.Spec.Volumes[2].Secret.Items {
 		paths[item.Key] = item.Path
 	}
 	if paths["var-IMAGE_REF"] != "vars/IMAGE_REF" || paths["var-GIT_CLONE_URL"] != "vars/GIT_CLONE_URL" {
 		t.Fatalf("user variable files not mounted: %#v", paths)
+	}
+}
+
+func TestBuildJobProxyVariablesReachExecutorEnv(t *testing.T) {
+	task := builder.Task{
+		Build: builder.BuildPayload{
+			Env:       map[string]string{"HTTPS_PROXY": "http://proxy:secret@192.168.31.231:7897", "NODE_ENV": "production"},
+			BuildArgs: map[string]string{"NO_PROXY": "registry.internal"},
+		},
+	}
+	secret := buildJobSecret("build-secret", task, true)
+	for _, key := range []string{"HTTPS_PROXY", "NO_PROXY"} {
+		if secret.StringData["env-"+key] == "" {
+			t.Fatalf("proxy variable %s must reach the executor process env", key)
+		}
+		if secret.StringData["var-"+key] == "" {
+			t.Fatalf("proxy variable %s must still be delivered as a build-arg file", key)
+		}
+	}
+	if secret.StringData["env-NODE_ENV"] != "" {
+		t.Fatal("non-proxy user variable must stay out of the executor process env")
+	}
+
+	spec := buildJobSpec("build-job", "build-secret", model.BuildRun{}, task, "executor", true, 1800, 3600)
+	found := map[string]bool{}
+	for _, env := range spec.Spec.Template.Spec.Containers[0].Env {
+		if env.ValueFrom != nil && env.ValueFrom.SecretKeyRef != nil {
+			found[env.ValueFrom.SecretKeyRef.Key] = true
+		}
+	}
+	for _, key := range []string{"env-HTTPS_PROXY", "env-NO_PROXY"} {
+		if !found[key] {
+			t.Fatalf("executor container env missing %s: %#v", key, found)
+		}
 	}
 }
 

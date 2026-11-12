@@ -63,6 +63,7 @@ Rules:
 - When a Build Arg has the same name, the Build Arg value wins.
 - Build variable values do not render template variables; `${{ github.sha }}` is passed through literally.
 - Build variables are passed only as `build-arg` values and hook environment variables. They never change how the platform pulls, builds, or pushes; a name that matches a platform internal variable (such as `IMAGE_REF`) does not change the target image or source URL.
+- `HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY`, and their lowercase forms are the exception: in addition to `build-arg`, they also enter the build executor's process environment so BuildKit uses the proxy when pulling base images, reaching registries, and pushing the result.
 - Plain build variables are recorded in build records. Secret values are resolved only at build time, never returned, and shown as `***` in build and hook logs.
 
 > Secrets are also passed as `build-arg`. Build args used by `RUN` instructions may appear in the image build history. Do not reference secrets in the final runtime stage; prefer using them in an intermediate stage of a multi-stage build.

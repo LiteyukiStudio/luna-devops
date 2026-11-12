@@ -11,6 +11,18 @@ import (
 
 const buildUserVarSecretPrefix = "var-"
 
+// buildProxyEnvKeys 是允许进入执行器进程环境的用户变量。BuildKit 守护进程拉取基础镜像与访问镜像站时
+// 只读取进程环境，build-arg 与 /executor/vars 文件对这部分流量无效；其余用户变量仍以文件交付，
+// 避免覆盖 IMAGE_REF、GIT_CLONE_URL 等平台变量。
+var buildProxyEnvKeys = map[string]bool{
+	"HTTP_PROXY":  true,
+	"HTTPS_PROXY": true,
+	"NO_PROXY":    true,
+	"http_proxy":  true,
+	"https_proxy": true,
+	"no_proxy":    true,
+}
+
 func buildJobSecret(name string, task builder.Task, cacheEnabled bool) *corev1.Secret {
 	env := map[string]string{
 		"GIT_CLONE_URL":                 task.Repository.CloneURL,
@@ -44,7 +56,8 @@ func buildJobSecret(name string, task builder.Task, cacheEnabled bool) *corev1.S
 	env["POST_BUILD_HOOK_IDS"] = strings.Join(hookIDsByPhase["postBuild"], ",")
 	env["PRE_PUSH_HOOK_IDS"] = strings.Join(hookIDsByPhase["prePush"], ",")
 	env["POST_PUSH_HOOK_IDS"] = strings.Join(hookIDsByPhase["postPush"], ",")
-	// 用户变量以文件交付，不进入执行器进程环境，避免覆盖 IMAGE_REF、GIT_CLONE_URL 等平台变量。
+	// 用户变量以文件交付，不进入执行器进程环境，避免覆盖 IMAGE_REF、GIT_CLONE_URL 等平台变量；
+	// 代理类变量例外，见下。
 	userVars := map[string]string{}
 	buildArgs := builder.NormalizedBuildEnv(task.Build.BuildArgs)
 	buildEnvKeys := make([]string, 0, len(task.Build.Env))
@@ -62,6 +75,12 @@ func buildJobSecret(name string, task builder.Task, cacheEnabled bool) *corev1.S
 	}
 	sort.Strings(buildEnvKeys)
 	sort.Strings(buildArgKeys)
+	// 代理变量同时进入执行器进程环境，让 BuildKit 拉取、推送镜像与访问 registry 时走代理。
+	for key, value := range userVars {
+		if buildProxyEnvKeys[key] {
+			env[key] = value
+		}
+	}
 	env["BUILD_ENV_KEYS"] = strings.Join(buildEnvKeys, ",")
 	env["BUILD_ARG_KEYS"] = strings.Join(buildArgKeys, ",")
 
