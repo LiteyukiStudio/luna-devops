@@ -223,7 +223,7 @@ const clustersPage = {
     deleteDescription: '刪除後，被授權的專案空間將無法再存取「{{name}}」的位址。',
     protocols: { tcp: 'TCP', udp: 'UDP', any: 'TCP/UDP' },
     cidr: '目標網段',
-    cidrHint: 'CIDR，例如 192.168.31.10/32。不能是 /0 或雲端中繼資料位址；網段內的節點位址仍然拒絕。',
+    cidrHint: 'CIDR，例如 192.168.31.10/32。不能是 /0 或雲端中繼資料位址；網段內的雲端中繼資料始終拒絕，叢集節點位址會被放行。',
     protocol: '協定',
     ports: '連接埠',
     portsHint: '逗號分隔，最多 16 個；留空表示該協定的全部連接埠。',

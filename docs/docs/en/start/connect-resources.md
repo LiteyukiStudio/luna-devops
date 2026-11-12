@@ -58,12 +58,12 @@ When a project space needs to reach an internal service outside the cluster, suc
 
 | Field | Meaning |
 | --- | --- |
-| Target CIDR | The range to allow; `/0` and a cloud metadata address itself are rejected, and metadata and node addresses inside the range stay denied |
+| Target CIDR | The range to allow; `/0` and a cloud metadata address itself are rejected. Cloud metadata inside the range stays denied; cluster node addresses inside the range are allowed, which grants access to whatever the host listens on at those ports |
 | Protocol and ports | TCP, UDP, or both; comma-separated ports, at most 16; empty allows every port of the protocol |
 | Approval reason | Required and recorded with the rule |
 | Grants | The project spaces that may use it, optionally narrowed to deployment targets; builds are excluded unless **Include builds** is selected |
 
-An exception applies only to the granted project spaces, in every project egress mode. When an exception covers the node network, a newly joined node is excluded only after the next periodic sync (within 5 minutes), so keep exceptions no wider than the actual service. Creating, changing, and deleting exceptions are audited and applied immediately. Project spaces holding exceptions show a warning when adding members or creating routes, and those audit entries record the exception count; make sure applications do not become proxies into the internal network.
+An exception applies only to the granted project spaces, in every project egress mode. When an exception covers cluster node addresses, services the host listens on at those addresses and ports also open up to the granted project spaces, so list only the ports you need, never allow control-plane ports such as `6443` or `10250`, and do not leave ports empty. Creating, changing, and deleting exceptions are audited and applied immediately. Project spaces holding exceptions show a warning when adding members or creating routes, and those audit entries record the exception count; make sure applications do not become proxies into the internal network.
 
 When a project space holds exceptions on a cluster, its cross-project shares on that cluster take effect only after a cluster maintainer approves them. The cluster list shows how many shares await approval, and they appear at the top of the **Egress exceptions** window; approve only when the shared service will not relay internal network access. The exception list marks project spaces that share services on this cluster and shows the count. Granting an exception to a project space that already shares services pauses those shares until they are approved; an approval applies only to the current cluster.
 
