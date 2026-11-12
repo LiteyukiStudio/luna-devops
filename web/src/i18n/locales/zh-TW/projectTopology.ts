@@ -188,7 +188,7 @@ const projectTopology = {
   },
   networkPolicy: {
     title: '網路隔離',
-    description: '只能比叢集預設更嚴格。儲存後平台會立即重新下發網路策略；私網、保留位址、節點與 Kubernetes API 始終拒絕。',
+    description: '只能比叢集預設更嚴格。儲存後平台會立即重新下發網路策略；私網、保留位址與叢集追加的拒絕網段始終拒絕。',
     loadFailed: '網路模式載入失敗，請重新整理後再試。',
     saved: '網路模式已儲存，策略正在下發',
     ingressMode: '入站',

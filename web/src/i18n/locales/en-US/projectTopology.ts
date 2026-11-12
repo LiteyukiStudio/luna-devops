@@ -188,7 +188,7 @@ const projectTopology = {
   },
   networkPolicy: {
     title: 'Network isolation',
-    description: 'These settings can only be stricter than the cluster defaults. Saving reapplies network policies immediately; private and reserved addresses, nodes, and the Kubernetes API are always denied.',
+    description: 'These settings can only be stricter than the cluster defaults. Saving reapplies network policies immediately; private and reserved addresses and the ranges added by the cluster are always denied.',
     loadFailed: 'Network modes could not be loaded. Refresh and try again.',
     saved: 'Network modes saved; policies are being applied',
     ingressMode: 'Ingress',

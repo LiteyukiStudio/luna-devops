@@ -72,10 +72,14 @@ func TestRenderWorkloadNetworkPoliciesIsolatesProjectAndBlocksPrivateEgress(t *t
 	if slices.Contains(public[0].IPBlock.Except, "198.18.0.0/15") {
 		t.Fatalf("198.18.0.0/15 must not be denied by default (fake-ip DNS resolves public names there)")
 	}
-	for _, want := range []string{"10.0.0.0/8", "169.254.0.0/16", "192.168.0.0/16", "203.0.113.7/32", "198.51.100.10/32"} {
+	for _, want := range []string{"10.0.0.0/8", "169.254.0.0/16", "192.168.0.0/16", "203.0.113.7/32"} {
 		if !slices.Contains(public[0].IPBlock.Except, want) {
 			t.Fatalf("IPv4 except missing %s: %v", want, public[0].IPBlock.Except)
 		}
+	}
+	// 节点地址不再默认拒绝：宿主机上的数据库与内网服务必须能被项目空间访问。
+	if slices.Contains(public[0].IPBlock.Except, "198.51.100.10/32") {
+		t.Fatalf("node addresses must not be denied by default: %v", public[0].IPBlock.Except)
 	}
 	for _, want := range []string{"fc00::/7", "2001:db8:1::/48"} {
 		if !slices.Contains(public[1].IPBlock.Except, want) {
@@ -242,11 +246,11 @@ func TestRenderBuildEgressPolicy(t *testing.T) {
 	if len(rules[1].Ports) != 2 || rules[1].Ports[0].Port.IntVal != 80 || rules[1].Ports[1].Port.IntVal != 443 {
 		t.Fatalf("public build egress must be HTTP(S) only: %#v", rules[1].Ports)
 	}
-	if !slices.Contains(rules[1].To[0].IPBlock.Except, "198.51.100.10/32") {
-		t.Fatalf("public build egress must deny node addresses: %v", rules[1].To[0].IPBlock.Except)
+	if slices.Contains(rules[1].To[0].IPBlock.Except, "198.51.100.10/32") {
+		t.Fatalf("public build egress must not deny node addresses: %v", rules[1].To[0].IPBlock.Except)
 	}
 	private := rules[2]
-	if private.To[0].IPBlock.CIDR != "10.20.0.0/16" || !slices.Equal(private.To[0].IPBlock.Except, []string{"10.20.0.10/32", "10.20.5.0/24"}) {
+	if private.To[0].IPBlock.CIDR != "10.20.0.0/16" || !slices.Equal(private.To[0].IPBlock.Except, []string{"10.20.5.0/24"}) {
 		t.Fatalf("private registry rule must keep contained denied ranges: %#v", private.To[0].IPBlock)
 	}
 	if len(private.Ports) != 2 || private.Ports[0].Port.IntVal != 443 || private.Ports[1].Port.IntVal != 5000 {

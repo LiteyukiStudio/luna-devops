@@ -188,7 +188,7 @@ const projectTopology = {
   },
   networkPolicy: {
     title: '网络隔离',
-    description: '只能比集群默认更严格。保存后平台会立即重新下发网络策略；私网、保留地址、节点与 Kubernetes API 始终拒绝。',
+    description: '只能比集群默认更严格。保存后平台会立即重新下发网络策略；私网、保留地址与集群追加的拒绝网段始终拒绝。',
     loadFailed: '网络模式加载失败，请刷新后重试。',
     saved: '网络模式已保存，策略正在下发',
     ingressMode: '入站',

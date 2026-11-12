@@ -51,7 +51,8 @@ type WorkloadNetworkPolicyInput struct {
 	GatewayPorts []int
 	// BlockedCIDRs 是集群管理员在平台保留网段之外追加的出站拒绝网段。
 	BlockedCIDRs []string
-	// NodeAddresses 来自集群 Node 与 kube-apiserver Endpoint，出站拒绝、入站放行（宿主机网络组件）。
+	// NodeAddresses 来自集群 Node 与 kube-apiserver Endpoint，仅用于入站放行（kubelet 探针、宿主机网络组件）；
+	// 出站不再单独拒绝节点地址，需要时由集群维护者用追加拒绝网段或出站例外约束。
 	NodeAddresses []string
 	// TrustedDeploymentTargetIDs 是可信系统组件的部署配置，其 Pod 出站不受项目隔离限制。
 	TrustedDeploymentTargetIDs []string
@@ -170,7 +171,9 @@ func RenderWorkloadNetworkPolicies(input WorkloadNetworkPolicyInput) ([]networki
 		Ingress:     ingressRulesFrom(ingressFrom),
 	})
 
-	denied := append(append([]string(nil), blocked...), nodes...)
+	// 出站只拒绝平台保留网段与集群追加的拒绝网段；节点地址不再默认拒绝，否则宿主机上的数据库、
+	// 内网服务对任何项目都不可达（例外规则在 kube-router 的本机投递路径上不生效）。
+	denied := blocked
 	// DNS 只放行集群 DNS，避免任意地址的 53 端口绕过拒绝网段。
 	clusterDNSPeer := networkingv1.NetworkPolicyPeer{
 		NamespaceSelector: &metav1.LabelSelector{MatchLabels: map[string]string{namespaceNameLabel: "kube-system"}},

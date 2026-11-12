@@ -33,7 +33,7 @@ The platform applies managed NetworkPolicies in every project space namespace to
 **Behavior**:
 
 - Ingress: only Pods in the same project space, the gateway controller namespace, and cluster nodes (kubelet probes and host-network components) can reach applications. Other project spaces cannot connect directly.
-- Egress: the same project space, the gateway listener ports, the public internet, and cluster DNS (Pods labeled `k8s-app=kube-dns` in `kube-system`; other DNS addresses such as NodeLocal DNS are not allowed) are allowed. Private and reserved ranges (such as `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `100.64.0.0/10`, `169.254.0.0/16`, and their IPv6 equivalents), cluster node addresses, and the Kubernetes API are denied.
+- Egress: the same project space, the gateway listener ports, the public internet, and cluster DNS (Pods labeled `k8s-app=kube-dns` in `kube-system`; other DNS addresses such as NodeLocal DNS are not allowed) are allowed. Private and reserved ranges (such as `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `100.64.0.0/10`, `169.254.0.0/16`, and their IPv6 equivalents) are denied. Cluster node addresses are not denied by default, so services the host listens on at node addresses (including `6443` and `10250`) are reachable from project spaces; to tighten this you can only add the whole node address to **Extra denied egress ranges**, which rejects every service on that node (policies cannot deny individual ports).
 - To call an application in another project space, use its route domain through the gateway, or have that project space share the service through **Cross-project sharing**.
 - Pods created by the platform never use hostNetwork, hostPID, hostIPC, host ports, or host paths, and Services are ClusterIP only, so the rules above cannot be bypassed.
 - Build Pods follow only the **Build egress** settings and are not widened by the application rules above.
@@ -45,7 +45,7 @@ The platform applies managed NetworkPolicies in every project space namespace to
 | Additional blocked egress CIDRs | Added on top of the default denied ranges, such as a data center public range or the public address of a router or other private service | One CIDR per line; `/0` is rejected; at most 256 entries |
 | Gateway controller namespace | Namespace of the gateway controller Pods. Only traffic from here can enter project spaces | A Kubernetes namespace name; empty uses the gateway namespace |
 | Build egress | Egress scope of build Pods. Restricted allows only cluster DNS, public TCP 80/443, and the private registries below; Permissive is unrestricted and meant only for trusted build environments | Restricted (default) or Permissive |
-| Private registry CIDRs for builds | Allows in-cluster or internal registries in Restricted mode; denied ranges, node addresses, and cloud metadata addresses inside them stay blocked | One CIDR per line; `/0` and a metadata address itself are rejected; at most 256 entries |
+| Private registry CIDRs for builds | Allows in-cluster or internal registries in Restricted mode; denied ranges and cloud metadata addresses inside them stay blocked | One CIDR per line; `/0` and a metadata address itself are rejected; at most 256 entries |
 | Private registry ports | Ports allowed to the ranges above | Comma-separated TCP ports `1`–`65535`, at most 16; empty means `443` |
 
 > The gateway controller must run on the Pod network (not hostNetwork); otherwise gateway traffic arrives from node addresses and internal services cannot be told apart. If the gateway controller namespace is wrong, no route can reach any application. Confirm the namespace where the gateway controller Pods actually run before saving.
@@ -58,12 +58,12 @@ When a project space needs to reach an internal service outside the cluster, suc
 
 | Field | Meaning |
 | --- | --- |
-| Target CIDR | The range to allow; `/0` and a cloud metadata address itself are rejected. Cloud metadata inside the range stays denied; cluster node addresses inside the range are allowed, which grants access to whatever the host listens on at those ports |
+| Target CIDR | The range to allow; `/0` and a cloud metadata address itself are rejected, and metadata inside the range stays denied |
 | Protocol and ports | TCP, UDP, or both; comma-separated ports, at most 16; empty allows every port of the protocol |
 | Approval reason | Required and recorded with the rule |
 | Grants | The project spaces that may use it, optionally narrowed to deployment targets; builds are excluded unless **Include builds** is selected |
 
-An exception applies only to the granted project spaces, in every project egress mode. When an exception covers cluster node addresses, services the host listens on at those addresses and ports also open up to the granted project spaces, so list only the ports you need, never allow control-plane ports such as `6443` or `10250`, and do not leave ports empty. Creating, changing, and deleting exceptions are audited and applied immediately. Project spaces holding exceptions show a warning when adding members or creating routes, and those audit entries record the exception count; make sure applications do not become proxies into the internal network.
+An exception applies only to the granted project spaces, in every project egress mode. Cloud metadata addresses cannot be covered by an exception. Creating, changing, and deleting exceptions are audited and applied immediately. Project spaces holding exceptions show a warning when adding members or creating routes, and those audit entries record the exception count; make sure applications do not become proxies into the internal network.
 
 When a project space holds exceptions on a cluster, its cross-project shares on that cluster take effect only after a cluster maintainer approves them. The cluster list shows how many shares await approval, and they appear at the top of the **Egress exceptions** window; approve only when the shared service will not relay internal network access. The exception list marks project spaces that share services on this cluster and shows the count. Granting an exception to a project space that already shares services pauses those shares until they are approved; an approval applies only to the current cluster.
 
