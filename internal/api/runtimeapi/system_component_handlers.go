@@ -30,7 +30,7 @@ type systemComponentInstallInput struct {
 	Namespace         string `json:"namespace"`
 	Mode              string `json:"mode"`
 	Image             string `json:"image"`
-	ProvisionAccess   bool   `json:"provisionAccess"`
+	ProvisionAccess   *bool  `json:"provisionAccess"`
 	APIBaseURL        string `json:"apiBaseUrl"`
 	TraefikMetricsURL string `json:"traefikMetricsUrl"`
 }
@@ -140,7 +140,11 @@ func (h *Handlers) InstallSystemAppTemplate(ctx *gin.Context) {
 		return
 	}
 
-	plan, ok := h.systemComponentApplicationPlan(ctx, user, platformProject, cluster, template, componentID, mode, string(configJSON), apiBaseURL, traefikMetricsURL, reportToken, strings.TrimSpace(input.Image), input.ProvisionAccess)
+	provisionAccess := true
+	if input.ProvisionAccess != nil {
+		provisionAccess = *input.ProvisionAccess
+	}
+	plan, ok := h.systemComponentApplicationPlan(ctx, user, platformProject, cluster, template, componentID, mode, string(configJSON), apiBaseURL, traefikMetricsURL, reportToken, strings.TrimSpace(input.Image), provisionAccess)
 	if !ok {
 		return
 	}
@@ -216,27 +220,43 @@ func (h *Handlers) systemComponentApplicationPlan(ctx *gin.Context, user model.U
 		serviceAccountName = "luna-gateway-traffic-probe"
 		automountToken = "true"
 	}
+	defaultTargetName := "cluster-" + clusterSuffix
+	defaultKubernetesName := resourceidentifier.DeploymentTargetName(applicationIdentifier, "system-"+clusterSuffix)
+	defaultServicePorts := model.EncodeDeploymentServicePorts([]model.DeploymentServicePort{{Name: "metrics", Port: fallbackInt(template.ServicePort, 9090)}}, fallbackInt(template.ServicePort, 9090))
+	defaultImageRef := firstNonEmpty(template.Image, "liteyukistudio/devops-gateway-traffic-probe:nightly")
 	target := model.DeploymentTarget{
-		ID:             id.New("dplt"),
-		ProjectID:      project.ID,
-		ApplicationID:  application.ID,
-		Name:           "cluster-" + h.host.ShortID(cluster.ID),
-		Stage:          systemStage,
-		KubernetesName: resourceidentifier.DeploymentTargetName(applicationIdentifier, "system-"+clusterSuffix),
-		ClusterID:      cluster.ID,
-		Replicas:       1,
-		CPURequest:     firstNonEmpty(template.DefaultCPU, "100m"),
-		MemoryRequest:  firstNonEmpty(template.DefaultMemory, "128Mi"),
-		ServicePorts:   model.EncodeDeploymentServicePorts([]model.DeploymentServicePort{{Name: "metrics", Port: fallbackInt(template.ServicePort, 9090)}}, fallbackInt(template.ServicePort, 9090)),
-		SourceType:     "image",
+		ID:                       id.New("dplt"),
+		ProjectID:                project.ID,
+		ApplicationID:            application.ID,
+		Name:                     defaultTargetName,
+		Stage:                    systemStage,
+		KubernetesName:           defaultKubernetesName,
+		ClusterID:                cluster.ID,
+		WorkloadType:             "Deployment",
+		Replicas:                 1,
+		CPURequest:               firstNonEmpty(template.DefaultCPU, "100m"),
+		MemoryRequest:            firstNonEmpty(template.DefaultMemory, "128Mi"),
+		AllowPrivilegeEscalation: "false",
+		ServiceType:              "ClusterIP",
+		AutoScalingMinReplicas:   1,
+		AutoScalingMaxReplicas:   1,
+		ServicePorts:             defaultServicePorts,
+		SourceType:               "image",
+		BuildDefinitionMode:      "repository_dockerfile",
+		BuildTemplateValues:      "{}",
+		DockerfilePath:           "Dockerfile",
+		BuildContext:             ".",
 		// Users may override the probe image; always pull so mutable tags such as
 		// nightly are re-resolved instead of served from a stale node cache.
-		ImageRef:                     firstNonEmpty(imageOverride, template.Image, "liteyukistudio/devops-gateway-traffic-probe:nightly"),
+		ImageRef:                     firstNonEmpty(imageOverride, defaultImageRef),
 		ImagePullPolicy:              "Always",
 		BuildCPURequest:              model.DefaultBuildCPURequest,
 		BuildMemoryRequest:           model.DefaultBuildMemoryRequest,
 		BuildTimeoutSeconds:          1800,
+		BuildHooksEnabled:            true,
+		BuildConcurrencyPolicy:       model.BuildConcurrencyQueue,
 		EnvVars:                      systemComponentProbeEnv(cluster, componentID, mode, apiBaseURL, traefikMetricsURL),
+		DataMountPath:                "/data",
 		Enabled:                      true,
 		DeleteStatus:                 "active",
 		ServiceAccountName:           serviceAccountName,
@@ -244,10 +264,50 @@ func (h *Handlers) systemComponentApplicationPlan(ctx *gin.Context, user model.U
 		CreatedBy:                    user.ID,
 	}
 	var existingTarget model.DeploymentTarget
-	if err := h.dbFor(ctx).First(&existingTarget, "project_id = ? and application_id = ? and name = ? and deleted_at is null", project.ID, application.ID, target.Name).Error; err == nil {
-		target.ID = existingTarget.ID
-		target.KubernetesName = firstNonEmpty(existingTarget.KubernetesName, target.KubernetesName)
-		target.CreatedAt = existingTarget.CreatedAt
+	if err := h.dbFor(ctx).First(&existingTarget, "project_id = ? and application_id = ? and (stage = ? or name = ?) and deleted_at is null", project.ID, application.ID, systemStage, defaultTargetName).Error; err == nil {
+		target = existingTarget
+		target.ProjectID = project.ID
+		target.ApplicationID = application.ID
+		target.Name = firstNonEmpty(existingTarget.Name, defaultTargetName)
+		target.Stage = firstNonEmpty(existingTarget.Stage, systemStage)
+		target.KubernetesName = firstNonEmpty(existingTarget.KubernetesName, defaultKubernetesName)
+		target.ClusterID = cluster.ID
+		target.WorkloadType = firstNonEmpty(existingTarget.WorkloadType, "Deployment")
+		if target.Replicas < 1 {
+			target.Replicas = 1
+		}
+		target.CPURequest = firstNonEmpty(existingTarget.CPURequest, template.DefaultCPU, "100m")
+		target.MemoryRequest = firstNonEmpty(existingTarget.MemoryRequest, template.DefaultMemory, "128Mi")
+		target.AllowPrivilegeEscalation = firstNonEmpty(existingTarget.AllowPrivilegeEscalation, "false")
+		target.ServiceType = firstNonEmpty(existingTarget.ServiceType, "ClusterIP")
+		if target.AutoScalingMinReplicas < 1 {
+			target.AutoScalingMinReplicas = 1
+		}
+		if target.AutoScalingMaxReplicas < target.AutoScalingMinReplicas {
+			target.AutoScalingMaxReplicas = target.AutoScalingMinReplicas
+		}
+		target.ServicePorts = defaultServicePorts
+		target.SourceType = "image"
+		target.BuildDefinitionMode = firstNonEmpty(existingTarget.BuildDefinitionMode, "repository_dockerfile")
+		target.BuildTemplateValues = firstNonEmpty(existingTarget.BuildTemplateValues, "{}")
+		target.DockerfilePath = firstNonEmpty(existingTarget.DockerfilePath, "Dockerfile")
+		target.BuildContext = firstNonEmpty(existingTarget.BuildContext, ".")
+		target.ImageRef = firstNonEmpty(imageOverride, existingTarget.ImageRef, defaultImageRef)
+		target.ImagePullPolicy = "Always"
+		target.BuildCPURequest = firstNonEmpty(existingTarget.BuildCPURequest, model.DefaultBuildCPURequest)
+		target.BuildMemoryRequest = firstNonEmpty(existingTarget.BuildMemoryRequest, model.DefaultBuildMemoryRequest)
+		if target.BuildTimeoutSeconds <= 0 {
+			target.BuildTimeoutSeconds = 1800
+		}
+		target.BuildConcurrencyPolicy = firstNonEmpty(existingTarget.BuildConcurrencyPolicy, model.BuildConcurrencyQueue)
+		target.EnvVars = systemComponentProbeEnv(cluster, componentID, mode, apiBaseURL, traefikMetricsURL)
+		target.DataMountPath = firstNonEmpty(existingTarget.DataMountPath, "/data")
+		target.Enabled = true
+		target.DeleteStatus = "active"
+		target.DeleteMessage = ""
+		target.DeleteCode = ""
+		target.ServiceAccountName = serviceAccountName
+		target.AutomountServiceAccountToken = automountToken
 		target.CreatedBy = firstNonEmpty(existingTarget.CreatedBy, user.ID)
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
@@ -276,6 +336,7 @@ func (h *Handlers) systemComponentApplicationPlan(ctx *gin.Context, user model.U
 		ApplicationID:      application.ID,
 		DeploymentTargetID: target.ID,
 		ImageRef:           target.ImageRef,
+		ForceImagePull:     true,
 		Type:               "deploy",
 		Status:             "pending",
 		Message:            "system component install",

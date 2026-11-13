@@ -15016,6 +15016,8 @@ components:
         clusterId: { type: string }
         namespace: { type: string }
         mode: { type: string }
+        image: { type: string }
+        provisionAccess: { type: boolean }
         apiBaseUrl: { type: string, format: uri }
         traefikMetricsUrl: { type: string, format: uri }
     NotificationChannelInput:

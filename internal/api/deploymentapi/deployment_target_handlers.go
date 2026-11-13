@@ -195,6 +195,14 @@ func (h *Handlers) UpdateDeploymentTarget(ctx *gin.Context) {
 	// through the public-stage normalizer used by create requests.
 	target.Stage = existing.Stage
 	target.SecretRefs = existing.SecretRefs
+	preserveSystemIdentity, ok := h.shouldPreserveSystemComponentServiceAccount(ctx, project, existing, target.ClusterID)
+	if !ok {
+		return
+	}
+	if preserveSystemIdentity {
+		target.ServiceAccountName = existing.ServiceAccountName
+		target.AutomountServiceAccountToken = existing.AutomountServiceAccountToken
+	}
 	existingBuildEnvironment, err := h.findBuildEnvironmentConfig(h.dbFor(ctx), model.BuildEnvironmentScopeDeployment, target.ID)
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
@@ -277,6 +285,33 @@ func (h *Handlers) UpdateDeploymentTarget(ctx *gin.Context) {
 		return
 	}
 	ctx.JSON(http.StatusOK, deploymentTargetResponseFromModel(target, mountsByTarget[target.ID]))
+}
+
+func (h *Handlers) shouldPreserveSystemComponentServiceAccount(ctx *gin.Context, project model.Project, existing model.DeploymentTarget, nextClusterID string) (bool, bool) {
+	if strings.TrimSpace(project.SystemKey) != "platform" || strings.TrimSpace(existing.ServiceAccountName) == "" {
+		return false, true
+	}
+	clusterID := strings.TrimSpace(nextClusterID)
+	if clusterID == "" || clusterID != strings.TrimSpace(existing.ClusterID) {
+		return false, true
+	}
+	var installation model.SystemComponentInstallation
+	err := h.dbFor(ctx).First(
+		&installation,
+		"project_id = ? and application_id = ? and deployment_target_id = ? and runtime_cluster_id = ?",
+		project.ID,
+		existing.ApplicationID,
+		existing.ID,
+		clusterID,
+	).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return false, true
+	}
+	if err != nil {
+		writeError(ctx, http.StatusInternalServerError, err.Error())
+		return false, false
+	}
+	return true, true
 }
 
 func (h *Handlers) ensureDeploymentStageAvailable(ctx *gin.Context, applicationID, stage, excludeTargetID string) bool {

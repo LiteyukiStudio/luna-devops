@@ -67,8 +67,11 @@ const (
 
 func projectBalanceDenialCode(db *gorm.DB, projectID string) (string, error) {
 	var project model.Project
-	if err := db.Select("billing_owner_user_id").First(&project, "id = ?", projectID).Error; err != nil {
+	if err := db.Select("billing_owner_user_id", "system_key").First(&project, "id = ?", projectID).Error; err != nil {
 		return "", err
+	}
+	if strings.TrimSpace(project.SystemKey) != "" {
+		return "", nil
 	}
 	ownerID := strings.TrimSpace(project.BillingOwnerUserID)
 	if ownerID == "" {

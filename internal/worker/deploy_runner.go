@@ -203,9 +203,9 @@ func (r *Runner) failDeployStage(ctx context.Context, release model.Release, cod
 }
 
 // ensurePlatformApplicationDependencies provisions ServiceAccount/RBAC only for
-// a release linked to a trusted system-component installation plan.
+// a release targeting a trusted system-component installation in the platform project.
 func (r *Runner) ensurePlatformApplicationDependencies(ctx context.Context, release model.Release, project model.Project, application model.Application, target model.DeploymentTarget, namespace string) error {
-	serviceAccountName, err := r.trustedPlatformApplicationServiceAccount(ctx, release, target, namespace)
+	serviceAccountName, err := r.trustedPlatformApplicationServiceAccount(ctx, project, release, target, namespace)
 	if err != nil {
 		return err
 	}
@@ -223,15 +223,21 @@ func (r *Runner) ensurePlatformApplicationDependencies(ctx context.Context, rele
 	})
 }
 
-func (r *Runner) trustedPlatformApplicationServiceAccount(ctx context.Context, release model.Release, target model.DeploymentTarget, namespace string) (string, error) {
+func (r *Runner) trustedPlatformApplicationServiceAccount(ctx context.Context, project model.Project, release model.Release, target model.DeploymentTarget, namespace string) (string, error) {
 	requested := strings.TrimSpace(target.ServiceAccountName)
 	if requested == "" {
 		return "", nil
 	}
+	if strings.TrimSpace(project.SystemKey) != "platform" ||
+		strings.TrimSpace(release.ProjectID) != strings.TrimSpace(project.ID) ||
+		strings.TrimSpace(target.ProjectID) != strings.TrimSpace(project.ID) ||
+		strings.TrimSpace(release.ApplicationID) != strings.TrimSpace(target.ApplicationID) {
+		return "", fmt.Errorf("deployment service account is not authorized by a trusted system component plan")
+	}
 	var installation model.SystemComponentInstallation
 	err := r.db.WithContext(ctx).First(&installation,
-		"release_id = ? and project_id = ? and application_id = ? and deployment_target_id = ? and runtime_cluster_id = ?",
-		release.ID, release.ProjectID, release.ApplicationID, target.ID, target.ClusterID,
+		"project_id = ? and application_id = ? and deployment_target_id = ? and runtime_cluster_id = ?",
+		project.ID, target.ApplicationID, target.ID, target.ClusterID,
 	).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return "", fmt.Errorf("deployment service account is not authorized by a trusted system component plan")
@@ -251,14 +257,22 @@ func (r *Runner) markSystemComponentDeployment(ctx context.Context, release mode
 	if strings.TrimSpace(release.ID) == "" {
 		return
 	}
-	_ = r.db.WithContext(ctx).Model(&model.SystemComponentInstallation{}).
-		Where("release_id = ?", release.ID).
-		Updates(map[string]any{
-			"status":     status,
-			"message":    strings.TrimSpace(message),
-			"last_error": systemComponentLastError(status, message),
-			"updated_at": time.Now(),
-		}).Error
+	query := r.db.WithContext(ctx).Model(&model.SystemComponentInstallation{})
+	if strings.TrimSpace(release.DeploymentTargetID) != "" {
+		query = query.Where(
+			"release_id = ? or (project_id = ? and application_id = ? and deployment_target_id = ?)",
+			release.ID, release.ProjectID, release.ApplicationID, release.DeploymentTargetID,
+		)
+	} else {
+		query = query.Where("release_id = ?", release.ID)
+	}
+	_ = query.Updates(map[string]any{
+		"release_id": release.ID,
+		"status":     status,
+		"message":    strings.TrimSpace(message),
+		"last_error": systemComponentLastError(status, message),
+		"updated_at": time.Now(),
+	}).Error
 }
 
 func systemComponentLastError(status string, message string) string {
@@ -350,7 +364,7 @@ func (r *Runner) applicationResourcesManagerAndSpec(ctx context.Context, release
 	if err != nil {
 		return nil, kubeprovider.ApplicationResourcesSpec{}, err
 	}
-	trustedServiceAccount, err := r.trustedPlatformApplicationServiceAccount(ctx, release, deploymentTarget, namespace)
+	trustedServiceAccount, err := r.trustedPlatformApplicationServiceAccount(ctx, project, release, deploymentTarget, namespace)
 	if err != nil {
 		return nil, kubeprovider.ApplicationResourcesSpec{}, err
 	}
