@@ -493,7 +493,7 @@ func (h *Handler) CreateNotificationRule(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	if err := h.dbFor(ctx).Create(&rule).Error; err != nil {
+	if err := createNotificationRule(h.dbFor(ctx), &rule); err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -807,6 +807,34 @@ func (h *Handler) NotificationRuleFromInput(ctx *gin.Context, input Notification
 		}
 	}
 	return rule, true
+}
+
+func createNotificationRule(db *gorm.DB, rule *model.NotificationRule) error {
+	wantMaxReminders := rule.MaxReminders
+	wantNotifyOnRecovery := rule.NotifyOnRecovery
+	wantEnabled := rule.Enabled
+	return db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(rule).Error; err != nil {
+			return err
+		}
+		updates := map[string]any{}
+		if rule.MaxReminders != wantMaxReminders {
+			updates["max_reminders"] = wantMaxReminders
+			rule.MaxReminders = wantMaxReminders
+		}
+		if rule.NotifyOnRecovery != wantNotifyOnRecovery {
+			updates["notify_on_recovery"] = wantNotifyOnRecovery
+			rule.NotifyOnRecovery = wantNotifyOnRecovery
+		}
+		if rule.Enabled != wantEnabled {
+			updates["enabled"] = wantEnabled
+			rule.Enabled = wantEnabled
+		}
+		if len(updates) == 0 {
+			return nil
+		}
+		return tx.Model(&model.NotificationRule{}).Where("id = ?", rule.ID).Updates(updates).Error
+	})
 }
 
 func normalizedNotificationRuleValues(values []string) []string {

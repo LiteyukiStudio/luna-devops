@@ -134,8 +134,15 @@ func (h *Handler) CreateScopedNotificationChannel(ctx *gin.Context) {
 		if validateErr := validateNotificationChannel(ctx.Request.Context(), channel, resolver); validateErr != nil {
 			return errChannelValidation{err: validateErr}
 		}
+		wantEnabled := channel.Enabled
 		if createErr := tx.Create(&channel).Error; createErr != nil {
 			return createErr
+		}
+		if channel.Enabled != wantEnabled {
+			if updateErr := tx.Model(&model.NotificationChannel{}).Where("id = ?", channel.ID).Update("enabled", wantEnabled).Error; updateErr != nil {
+				return updateErr
+			}
+			channel.Enabled = wantEnabled
 		}
 		if scope == "project" {
 			return h.host.ReplaceScopedResourceProjectBindings(tx, notification.ScopedResourceChannelType, channel.ID, projectIDs, nil)
@@ -632,7 +639,7 @@ func (h *Handler) CreateProjectNotificationRule(ctx *gin.Context) {
 	if !h.validateProjectRuleScopeReferences(ctx, project.ID, rule.FilterJSON) {
 		return
 	}
-	if err := h.dbFor(ctx).Create(&rule).Error; err != nil {
+	if err := createNotificationRule(h.dbFor(ctx), &rule); err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
