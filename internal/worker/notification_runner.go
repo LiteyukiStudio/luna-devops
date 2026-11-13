@@ -143,6 +143,19 @@ func (r *Runner) handleNotificationDeliver(ctx context.Context, task *asynq.Task
 			return fmt.Errorf("%w: %v", asynq.SkipRetry, err)
 		}
 	}
+	renderLocale := strings.TrimSpace(event.Locale)
+	renderTimeZone := strings.TrimSpace(delivery.TimeZone)
+	if !personalDelivery && strings.TrimSpace(delivery.RuleID) != "" {
+		var rule model.NotificationRule
+		if err := db.First(&rule, "id = ?", strings.TrimSpace(delivery.RuleID)).Error; err == nil {
+			if strings.TrimSpace(rule.Locale) != "" {
+				renderLocale = strings.TrimSpace(rule.Locale)
+			}
+			if renderTimeZone == "" && strings.TrimSpace(rule.TimeZone) != "" {
+				renderTimeZone = strings.TrimSpace(rule.TimeZone)
+			}
+		}
+	}
 	template := notification.Template{}
 	if delivery.RecipientUserID == "" && delivery.TemplateID != "" {
 		var modelTemplate model.NotificationTemplate
@@ -151,7 +164,7 @@ func (r *Runner) handleNotificationDeliver(ctx context.Context, task *asynq.Task
 		}
 	}
 	if template == (notification.Template{}) {
-		template = notification.TemplateFromModel(notification.DefaultTemplateForChannel(channel, event, event.Locale))
+		template = notification.TemplateFromModel(notification.DefaultTemplateForChannel(channel, event, renderLocale))
 	}
 	registry := notification.DefaultRegistry()
 	adapter, err := registry.Adapter(channel.AdapterKind)
@@ -161,8 +174,19 @@ func (r *Runner) handleNotificationDeliver(ctx context.Context, task *asynq.Task
 		}
 		return fmt.Errorf("%w: %v", asynq.SkipRetry, err)
 	}
+	effectiveConfigRaw := json.RawMessage(channel.ConfigJSON)
+	var smtpOverride notification.ChannelTargetOverride
+	if channel.AdapterKind == notification.AdapterKindSMTP {
+		smtpOverride = notification.DecodeChannelTargetOverride(delivery.TargetOverrideJSON)
+		if overridden, _, overrideErr := notification.ApplySMTPTargetOverride(effectiveConfigRaw, smtpOverride); overrideErr == nil {
+			effectiveConfigRaw = overridden
+		}
+	}
+	egressPolicy := notification.EgressPolicyForScope(effectiveNotificationChannelScope(channel))
 	message, err := workerStageValue(ctx, "notification.render", func(stageCtx context.Context) (notification.RenderedMessage, error) {
-		return adapter.Render(stageCtx, event, template, json.RawMessage(channel.ConfigJSON), json.RawMessage(channel.SecretRefsJSON), r.secrets, event.Locale)
+		stageCtx = notification.WithEgressPolicy(stageCtx, egressPolicy)
+		stageCtx = notification.WithTimeZone(stageCtx, renderTimeZone)
+		return adapter.Render(stageCtx, event, template, effectiveConfigRaw, json.RawMessage(channel.SecretRefsJSON), r.secrets, renderLocale)
 	})
 	if err != nil {
 		if _, updateErr := markNotificationDeliveryLeaseFailed(db, lease, notificationDeliveryErrorForStorage(delivery, "notification.personal_webhook_render_failed", err), time.Since(startedAt), "", ""); updateErr != nil {
@@ -170,9 +194,11 @@ func (r *Runner) handleNotificationDeliver(ctx context.Context, task *asynq.Task
 		}
 		return fmt.Errorf("%w: %v", asynq.SkipRetry, err)
 	}
-	requestSnapshot := r.notificationRequestSnapshot(ctx, message, channel.SecretRefsJSON)
+	requestSnapshot := r.notificationRequestSnapshotWithTargets(ctx, message, channel, effectiveConfigRaw, personalDelivery)
 	result, err := workerStageValue(ctx, "notification.send", func(stageCtx context.Context) (notification.SendResult, error) {
-		return adapter.Send(stageCtx, json.RawMessage(channel.ConfigJSON), json.RawMessage(channel.SecretRefsJSON), message, r.secrets)
+		stageCtx = notification.WithEgressPolicy(stageCtx, egressPolicy)
+		stageCtx = notification.WithTimeZone(stageCtx, renderTimeZone)
+		return adapter.Send(stageCtx, effectiveConfigRaw, json.RawMessage(channel.SecretRefsJSON), message, r.secrets)
 	})
 	if err != nil {
 		storedErr := notificationDeliveryErrorForStorage(delivery, "notification.personal_webhook_send_failed", err)
@@ -707,6 +733,13 @@ func notificationSendErrorShouldSkipRetry(result notification.SendResult, err er
 		errors.Is(err, platformmail.ErrInvalidRecipient)
 }
 
+func effectiveNotificationChannelScope(channel model.NotificationChannel) string {
+	if strings.TrimSpace(channel.OwnerUserID) != "" {
+		return "user"
+	}
+	return notification.NormalizeChannelScope(channel.Scope)
+}
+
 func (r *Runner) notificationRequestSnapshot(ctx context.Context, message notification.RenderedMessage, secretRefsJSON string) string {
 	redactor := notificationRedactor(ctx, r.secrets, secretRefsJSON)
 	snapshot := map[string]any{
@@ -714,6 +747,37 @@ func (r *Runner) notificationRequestSnapshot(ctx context.Context, message notifi
 		"url":     redactor(message.URL),
 		"headers": redactStringMap(message.Headers, redactor),
 		"subject": message.Subject,
+	}
+	data, _ := json.Marshal(snapshot)
+	return string(data)
+}
+
+func (r *Runner) notificationRequestSnapshotWithTargets(
+	ctx context.Context,
+	message notification.RenderedMessage,
+	channel model.NotificationChannel,
+	effectiveConfig json.RawMessage,
+	personalDelivery bool,
+) string {
+	redactor := notificationRedactor(ctx, r.secrets, channel.SecretRefsJSON)
+	snapshot := map[string]any{
+		"method":  message.Method,
+		"url":     redactor(message.URL),
+		"headers": redactStringMap(message.Headers, redactor),
+		"subject": message.Subject,
+	}
+	if !personalDelivery && channel.AdapterKind == notification.AdapterKindSMTP {
+		if cfg, err := notification.ParseSMTPConfigForValidation(effectiveConfig); err == nil {
+			if len(cfg.To) > 0 {
+				snapshot["to"] = cfg.To
+			}
+			if len(cfg.Cc) > 0 {
+				snapshot["cc"] = cfg.Cc
+			}
+			if strings.TrimSpace(cfg.From) != "" {
+				snapshot["from"] = cfg.From
+			}
+		}
 	}
 	data, _ := json.Marshal(snapshot)
 	return string(data)

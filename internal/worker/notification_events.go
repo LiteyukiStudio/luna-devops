@@ -16,7 +16,11 @@ import (
 )
 
 func (r *Runner) emitNotificationEvent(ctx context.Context, event notification.Event) {
-	if _, err := (notification.Service{DB: r.db, Enqueuer: r.taskClient}).Emit(ctx, event); err != nil {
+	enqueuer := notification.DeliveryEnqueuer(r.taskClient)
+	if r.notificationDeliveryEnqueuer != nil {
+		enqueuer = r.notificationDeliveryEnqueuer
+	}
+	if _, err := (notification.Service{DB: r.db, Enqueuer: enqueuer}).Emit(ctx, event); err != nil {
 		telemetry.RecordError(ctx, "notification.event_emit_failed", err,
 			slog.String("notification.event_type", event.Type))
 	}

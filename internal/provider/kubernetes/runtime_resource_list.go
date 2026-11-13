@@ -260,6 +260,11 @@ func deploymentSnapshot(item appsv1.Deployment) ResourceSnapshot {
 		status = "scaled-to-zero"
 	} else if desired > 0 && item.Status.ObservedGeneration >= item.Generation && item.Status.ReadyReplicas >= desired && item.Status.AvailableReplicas >= desired {
 		status = "ready"
+	} else if desired > 0 {
+		evaluated := deploymentStatusSnapshot(&item)
+		if evaluated.Phase == DeploymentFailed || evaluated.ReplicaFailure || evaluated.RolloutSettled {
+			status = "degraded"
+		}
 	}
 	return snapshotFromMeta("Deployment", item.ObjectMeta, "", status, fmt.Sprintf("ready %d/%d", item.Status.ReadyReplicas, desired))
 }
@@ -274,6 +279,10 @@ func statefulSetSnapshot(item appsv1.StatefulSet) ResourceSnapshot {
 		status = "scaled-to-zero"
 	} else if desired > 0 && item.Status.ObservedGeneration >= item.Generation && item.Status.ReadyReplicas >= desired {
 		status = "ready"
+	} else if desired > 0 && item.Status.ObservedGeneration >= item.Generation &&
+		item.Status.UpdatedReplicas >= desired &&
+		(item.Status.UpdateRevision == "" || item.Status.CurrentRevision == item.Status.UpdateRevision) {
+		status = "degraded"
 	}
 	return snapshotFromMeta("StatefulSet", item.ObjectMeta, "", status, fmt.Sprintf("ready %d/%d", item.Status.ReadyReplicas, desired))
 }
@@ -291,14 +300,8 @@ func firstNonNilInt32(value *int32, fallbackValue int32) int32 {
 }
 
 func podSnapshot(item corev1.Pod) ResourceSnapshot {
-	ready := 0
-	for _, condition := range item.Status.Conditions {
-		if condition.Type == corev1.PodReady && condition.Status == corev1.ConditionTrue {
-			ready = 1
-			break
-		}
-	}
-	return snapshotFromMeta("Pod", item.ObjectMeta, "", item.Status.Phase, podSummary(item, ready))
+	diag := buildRuntimePodSnapshot(item)
+	return snapshotFromMeta("Pod", item.ObjectMeta, "", diag.Status, podSummary(item, diag))
 }
 
 func serviceSnapshot(item corev1.Service) ResourceSnapshot {
@@ -515,14 +518,29 @@ func isManagedResource(labels map[string]string) bool {
 	return labels[ManagedByLabel] == ManagedByValue
 }
 
-func podSummary(item corev1.Pod, ready int) string {
-	parts := []string{fmt.Sprintf("ready %d/1", ready)}
+func podSummary(item corev1.Pod, diag RuntimePodSnapshot) string {
+	parts := []string{fmt.Sprintf("ready %d/%d", diag.ReadyContainers, diag.TotalContainers)}
+	if diag.RestartCount > 0 {
+		parts = append(parts, fmt.Sprintf("restarts %d", diag.RestartCount))
+	}
+	for _, status := range item.Status.InitContainerStatuses {
+		switch {
+		case status.State.Waiting != nil && status.State.Waiting.Reason != "PodInitializing":
+			parts = append(parts, strings.TrimSpace("init "+status.Name+" waiting: "+firstNonEmpty(status.State.Waiting.Reason, status.State.Waiting.Message)))
+		case status.State.Terminated != nil && status.State.Terminated.ExitCode != 0:
+			parts = append(parts, fmt.Sprintf("init %s terminated: %s (exit %d)", status.Name, firstNonEmpty(status.State.Terminated.Reason, "Error"), status.State.Terminated.ExitCode))
+		}
+	}
 	for _, status := range item.Status.ContainerStatuses {
 		switch {
 		case status.State.Waiting != nil:
-			parts = append(parts, strings.TrimSpace(status.Name+" waiting: "+firstNonEmpty(status.State.Waiting.Reason, status.State.Waiting.Message)))
+			detail := firstNonEmpty(status.State.Waiting.Reason, status.State.Waiting.Message)
+			if status.LastTerminationState.Terminated != nil {
+				detail = fmt.Sprintf("%s (last %s exit %d)", detail, firstNonEmpty(status.LastTerminationState.Terminated.Reason, "Error"), status.LastTerminationState.Terminated.ExitCode)
+			}
+			parts = append(parts, strings.TrimSpace(status.Name+" waiting: "+detail))
 		case status.State.Terminated != nil:
-			parts = append(parts, strings.TrimSpace(status.Name+" terminated: "+firstNonEmpty(status.State.Terminated.Reason, status.State.Terminated.Message)))
+			parts = append(parts, fmt.Sprintf("%s terminated: %s (exit %d)", status.Name, firstNonEmpty(status.State.Terminated.Reason, "Exited"), status.State.Terminated.ExitCode))
 		case !status.Ready:
 			parts = append(parts, status.Name+" not ready")
 		}

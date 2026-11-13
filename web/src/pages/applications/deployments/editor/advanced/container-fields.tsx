@@ -1,16 +1,19 @@
 import type { DeploymentTargetFormValues } from '../deployment-target-form'
-import { useFormContext } from 'react-hook-form'
+import { useFormContext, useWatch } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { FormField } from '@/components/common/form-field'
 import { NativeSelect } from '@/components/ui/native-select'
 import { Textarea } from '@/components/ui/textarea'
 import { JsonField } from '../deployment-target-editor-fields'
 import { useFieldError } from '../deployment-target-editor-utils'
+import { ProbeFieldEditor } from './probe-field-editor'
 
 /** 容器启动与健康检查：覆盖镜像拉取策略、启动命令、生命周期钩子和探针。 */
 export function ContainerFields() {
   const { t } = useTranslation()
-  const { register } = useFormContext<DeploymentTargetFormValues>()
+  const { control, register } = useFormContext<DeploymentTargetFormValues>()
+  const servicePorts = useWatch({ control, name: 'servicePorts' })
+  const defaultPort = Number(servicePorts?.[0]?.port) || 8080
   const commandError = useFieldError('containerCommand')
   const argsError = useFieldError('containerArgs')
 
@@ -34,9 +37,9 @@ export function ContainerFields() {
         </FormField>
       </div>
       <JsonField hint={t('deploymentsPage.lifecycleHint')} label={t('deploymentsPage.lifecycle')} name="lifecycle" placeholder={t('deploymentsPage.lifecyclePlaceholder')} />
-      <JsonField hint={t('deploymentsPage.readinessProbeHint')} label={t('deploymentsPage.readinessProbe')} name="readinessProbe" placeholder={t('deploymentsPage.probePlaceholder')} />
-      <JsonField hint={t('deploymentsPage.livenessProbeHint')} label={t('deploymentsPage.livenessProbe')} name="livenessProbe" placeholder={t('deploymentsPage.probePlaceholder')} />
-      <JsonField hint={t('deploymentsPage.startupProbeHint')} label={t('deploymentsPage.startupProbe')} name="startupProbe" placeholder={t('deploymentsPage.probePlaceholder')} />
+      <ProbeFieldEditor defaultPort={defaultPort} hint={t('deploymentsPage.readinessProbeHint')} label={t('deploymentsPage.readinessProbe')} name="readinessProbe" placeholder={t('deploymentsPage.probePlaceholder')} />
+      <ProbeFieldEditor defaultPort={defaultPort} hint={t('deploymentsPage.livenessProbeHint')} label={t('deploymentsPage.livenessProbe')} name="livenessProbe" placeholder={t('deploymentsPage.probePlaceholder')} />
+      <ProbeFieldEditor defaultPort={defaultPort} hint={t('deploymentsPage.startupProbeHint')} label={t('deploymentsPage.startupProbe')} name="startupProbe" placeholder={t('deploymentsPage.probePlaceholder')} />
     </>
   )
 }

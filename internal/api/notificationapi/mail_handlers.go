@@ -3,6 +3,7 @@ package notificationapi
 import (
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/notification"
@@ -108,9 +109,12 @@ func (h *Handler) TestPlatformMailSettings(ctx *gin.Context) {
 		writeErrorCode(ctx, http.StatusBadRequest, "mail.recipient_invalid", err.Error())
 		return
 	}
-	message := notification.RenderedMessage{
-		Subject: "Luna DevOps test email",
-		Body:    "This test email confirms that the Luna DevOps platform mail service is configured correctly.",
+	message, err := notification.RenderEventEmail(notification.TestEvent(time.Now()), user.Language, notification.DefaultTimeZone)
+	if err != nil {
+		message = notification.RenderedMessage{
+			Subject: "Luna DevOps test email",
+			Body:    "This test email confirms that the Luna DevOps platform mail service is configured correctly.",
+		}
 	}
 	_, err = platformmail.Send(ctx.Request.Context(), h.dbFor(ctx), h.secrets(), recipient, message)
 	if err != nil {

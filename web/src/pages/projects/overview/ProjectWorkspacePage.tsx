@@ -38,6 +38,7 @@ const ApplicationsPage = lazy(() => import('@/pages/applications/ApplicationsPag
 const ProjectMembersPage = lazy(() => import('@/pages/projects/governance/ProjectMembersPage').then(module => ({ default: module.ProjectMembersPage })))
 const ProjectNetworkPolicyCard = lazy(() => import('@/pages/projects/topology/project-network-policy-card').then(module => ({ default: module.ProjectNetworkPolicyCard })))
 const ProjectNetworkSharesCard = lazy(() => import('@/pages/projects/topology/project-network-shares-card').then(module => ({ default: module.ProjectNetworkSharesCard })))
+const ProjectNotificationsPanel = lazy(() => import('@/pages/projects/notifications/ProjectNotificationsPanel').then(module => ({ default: module.ProjectNotificationsPanel })))
 const ProjectTopologyPanel = lazy(() => import('@/pages/projects/topology/project-topology-panel').then(module => ({ default: module.ProjectTopologyPanel })))
 const ProjectVolumesPage = lazy(() => import('@/pages/projects/volumes/ProjectVolumesPage'))
 
@@ -105,6 +106,16 @@ export function ProjectWorkspacePage() {
                 projectId={projectId}
               />
             </div>
+          </Suspense>
+        )
+      case 'notifications':
+        return (
+          <Suspense fallback={<ToolViewportSkeleton />}>
+            <ProjectNotificationsPanel
+              key={`notifications-${projectId}`}
+              currentUserActions={currentUserActions}
+              projectId={projectId}
+            />
           </Suspense>
         )
       default:

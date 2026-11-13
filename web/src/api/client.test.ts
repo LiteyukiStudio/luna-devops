@@ -136,4 +136,19 @@ describe('api client', () => {
     expect(Object.fromEntries(podsUrl.searchParams)).toEqual({ page: '1', pageSize: '100', sortBy: 'recommended', search: 'api', releaseId: 'rel-1' })
     expect(String(fetchMock.mock.calls[1]?.[0])).toContain('/releases/rel-1/runtime-logs?pod=api-a&tailLines=500')
   })
+
+  it('supports deployment target events and previous crash log parameters', async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockImplementation(async () => jsonResponse({ items: [], page: 1, pageSize: 20, sortBy: 'lastSeen', sortOrder: 'desc', total: 0, totalPages: 0, status: 'ready', observationCode: 'deployment_target.events_ready', observedAt: '2026-09-06T00:00:00Z' }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await api.listDeploymentTargetEvents('project-1', 'app-1', 'target-1', { pageSize: 20, type: 'Warning' })
+    await api.getReleaseRuntimeLogs('project-1', 'rel-1', { pod: 'api-a', previous: true, timestamps: true, tailLines: 200 })
+    await api.getDeploymentTargetRuntimeLogs('project-1', 'app-1', 'target-1', { preferAbnormal: true, previous: true, tailLines: 200 })
+
+    const eventsUrl = new URL(String(fetchMock.mock.calls[0]?.[0]), window.location.origin)
+    expect(eventsUrl.pathname).toMatch(/\/projects\/project-1\/applications\/app-1\/deployment-targets\/target-1\/events$/)
+    expect(Object.fromEntries(eventsUrl.searchParams)).toEqual({ page: '1', pageSize: '20', sortBy: 'lastSeen', sortOrder: 'desc', type: 'Warning' })
+    expect(String(fetchMock.mock.calls[1]?.[0])).toContain('/releases/rel-1/runtime-logs?pod=api-a&tailLines=200&previous=true&timestamps=true')
+    expect(String(fetchMock.mock.calls[2]?.[0])).toContain('/deployment-targets/target-1/runtime-logs?tailLines=200&previous=true&preferAbnormal=true')
+  })
 })

@@ -7,8 +7,10 @@ import (
 	"strings"
 
 	transportapi "github.com/LiteyukiStudio/devops/internal/api/transport"
+	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/inbox"
 	"github.com/LiteyukiStudio/devops/internal/model"
+	"github.com/LiteyukiStudio/devops/internal/notification"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
@@ -38,8 +40,18 @@ type Host interface {
 	DBWithContext(ctx context.Context) *gorm.DB
 	CurrentUser(ctx *gin.Context) (model.User, bool)
 	RequirePlatformAdmin(ctx *gin.Context) bool
+	AuthorizeProject(ctx *gin.Context, action authz.Action) (model.User, model.Project, bool)
+	AuthorizeProjectByID(ctx *gin.Context, projectID string, action authz.Action) (model.User, model.Project, bool)
+	EnsureProjectCanMutate(ctx *gin.Context, project model.Project) bool
+	ProjectRoleActionAllowed(ctx context.Context, user model.User, projectID string, action authz.Action) (bool, error)
+	ProjectIDsForUser(ctx context.Context, userID string) []string
+	ReplaceScopedResourceProjectBindings(tx *gorm.DB, resourceType, resourceID string, projectIDs, defaultProjectIDs []string) error
+	ScopedResourceProjectIDs(resourceType, resourceID string, ctx context.Context) []string
+	ScopedResourceProjectIDMap(resourceType string, resourceIDs []string, ctx context.Context) map[string][]string
+	WriteProjectAuthorizationError(ctx *gin.Context, err error)
 	AuditWithContext(userID, action, resource string, success bool, message string, ctx context.Context)
 	Secrets() SecretStore
+	DeliveryEnqueuer() notification.DeliveryEnqueuer
 	NormalizeRegistrationEmail(value string) (string, error)
 	AllowPersonalNotificationTest(ctx *gin.Context, userID string) bool
 	InboxService() InboxService

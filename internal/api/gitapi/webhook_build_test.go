@@ -8,6 +8,7 @@ import (
 
 	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/model"
+	"github.com/LiteyukiStudio/devops/internal/notification"
 	"github.com/LiteyukiStudio/devops/internal/testdb"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -46,13 +47,28 @@ func (h *webhookBuildTestHost) QueueBuildRun(_ context.Context, _ model.User, ru
 	h.queued++
 	return run, h.db.Create(&run).Error
 }
+func (h *webhookBuildTestHost) DeliveryEnqueuer() notification.DeliveryEnqueuer { return nil }
+func (h *webhookBuildTestHost) PublicBaseURL() string                           { return "https://devops.example.test" }
 
 func openWebhookBuildDB(t *testing.T, projectDeleteStatus string) (*gorm.DB, model.RepositoryBinding) {
 	t.Helper()
 	db := testdb.Open(t, testdb.Options{
 		SchemaPrefix: "webhook_build_test",
 		Migrate: func(db *gorm.DB) error {
-			return db.AutoMigrate(&model.User{}, &model.Project{}, &model.GitAccount{}, &model.DeploymentTarget{}, &model.BuildRun{}, &model.PlatformEvent{})
+			return db.AutoMigrate(
+				&model.User{},
+				&model.Project{},
+				&model.Application{},
+				&model.GitAccount{},
+				&model.DeploymentTarget{},
+				&model.BuildRun{},
+				&model.PlatformEvent{},
+				&model.ScopedResourceProjectBinding{},
+				&model.NotificationChannel{},
+				&model.NotificationRule{},
+				&model.NotificationDelivery{},
+				&model.UserNotificationPreference{},
+			)
 		},
 	})
 	binding := model.RepositoryBinding{ID: "rpb_hook", ProjectID: "prj_hook", ApplicationID: "app_hook", GitAccountID: "gac_hook"}

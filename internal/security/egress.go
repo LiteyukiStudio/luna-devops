@@ -112,6 +112,14 @@ func NewHTTPClientWithProxy(policy EgressPolicy, timeout time.Duration, proxyURL
 	return telemetry.InstrumentHTTPClient(&http.Client{Timeout: timeout, Transport: transport})
 }
 
+func (p EgressPolicy) DialContext(ctx context.Context, network, address string, timeout time.Duration) (net.Conn, error) {
+	if timeout <= 0 {
+		timeout = 15 * time.Second
+	}
+	dialer := &net.Dialer{Timeout: timeout}
+	return dialContextWithPolicy(ctx, network, address, p, net.DefaultResolver.LookupIPAddr, dialer.DialContext)
+}
+
 type lookupIPAddrFunc func(context.Context, string) ([]net.IPAddr, error)
 type dialContextFunc func(context.Context, string, string) (net.Conn, error)
 

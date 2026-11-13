@@ -16,27 +16,49 @@ const (
 )
 
 type Event struct {
-	ID                  string                `json:"id"`
-	Type                string                `json:"type"`
-	Severity            string                `json:"severity"`
-	Locale              string                `json:"locale"`
-	Project             EntityRef             `json:"project"`
-	Application         EntityRef             `json:"application"`
-	DeploymentTarget    EntityRef             `json:"deploymentTarget"`
-	Build               BuildContext          `json:"build"`
-	Release             ReleaseContext        `json:"release"`
-	Hook                HookContext           `json:"hook"`
-	Gateway             GatewayContext        `json:"gateway"`
-	Certificate         CertificateContext    `json:"certificate"`
-	ServiceBinding      ServiceBindingContext `json:"serviceBinding"`
-	Actor               ActorContext          `json:"actor"`
-	ResourceOwnerUserID string                `json:"resourceOwnerUserId"`
-	Links               map[string]string     `json:"links"`
-	CorrelationID       string                `json:"correlationId"`
-	TraceID             string                `json:"traceId"`
-	DedupKey            string                `json:"-"`
-	OccurredAt          time.Time             `json:"occurredAt"`
-	Message             string                `json:"message"`
+	ID                  string                 `json:"id"`
+	Type                string                 `json:"type"`
+	Severity            string                 `json:"severity"`
+	Locale              string                 `json:"locale"`
+	Project             EntityRef              `json:"project"`
+	Application         EntityRef              `json:"application"`
+	DeploymentTarget    EntityRef              `json:"deploymentTarget"`
+	Build               BuildContext           `json:"build"`
+	Release             ReleaseContext         `json:"release"`
+	Hook                HookContext            `json:"hook"`
+	Gateway             GatewayContext         `json:"gateway"`
+	Certificate         CertificateContext     `json:"certificate"`
+	Runtime             RuntimeIncidentContext `json:"runtime"`
+	ServiceBinding      ServiceBindingContext  `json:"serviceBinding"`
+	Actor               ActorContext           `json:"actor"`
+	ResourceOwnerUserID string                 `json:"resourceOwnerUserId"`
+	EligibleRuleIDs     []string               `json:"eligibleRuleIds,omitempty"`
+	Links               map[string]string      `json:"links"`
+	CorrelationID       string                 `json:"correlationId"`
+	TraceID             string                 `json:"traceId"`
+	DedupKey            string                 `json:"-"`
+	OccurredAt          time.Time              `json:"occurredAt"`
+	Message             string                 `json:"message"`
+}
+
+type RuntimeIncidentContext struct {
+	IncidentID       string     `json:"incidentId,omitempty"`
+	IncidentKind     string     `json:"incidentKind,omitempty"`
+	PodName          string     `json:"podName,omitempty"`
+	ContainerName    string     `json:"containerName,omitempty"`
+	Reason           string     `json:"reason,omitempty"`
+	ExitCode         *int32     `json:"exitCode,omitempty"`
+	RestartCount     int32      `json:"restartCount,omitempty"`
+	OOMKilled        bool       `json:"oomKilled,omitempty"`
+	ReadyReplicas    int32      `json:"readyReplicas,omitempty"`
+	DesiredReplicas  int32      `json:"desiredReplicas,omitempty"`
+	IsReminder       bool       `json:"isReminder,omitempty"`
+	ReminderCount    int        `json:"reminderCount,omitempty"`
+	FirstDetectedAt  *time.Time `json:"firstDetectedAt,omitempty"`
+	ResolvedAt       *time.Time `json:"resolvedAt,omitempty"`
+	DurationSeconds  int64      `json:"durationSeconds,omitempty"`
+	Summary          string     `json:"summary,omitempty"`
+	DiagnosticDetail string     `json:"diagnosticDetail,omitempty"`
 }
 
 type ServiceBindingContext struct {

@@ -26,6 +26,7 @@ const accessTokens = {
     image: '镜像',
     billing: '账单',
     event: '事件',
+    notification: '通知',
     user: '用户',
     ...{ 'agent-observability': 'Agent 可观测' },
     system: '系统管理',
@@ -90,6 +91,10 @@ const accessTokens = {
     },
     event: {
       read: '读取事件',
+    },
+    notification: {
+      read: '读取通知配置与投递记录',
+      write: '管理通知渠道、规则与重投递',
     },
     user: {
       read: '读取用户信息',
@@ -170,6 +175,10 @@ const accessTokens = {
     },
     event: {
       read: '读取当前用户有权访问的项目空间事件。',
+    },
+    notification: {
+      read: '读取当前用户可访问的通知渠道、规则与投递记录（不含敏感凭据）。',
+      write: '创建、更新、绑定或测试空间级通知渠道与规则，以及重试失败投递。',
     },
     user: {
       read: '读取当前用户基础信息。',

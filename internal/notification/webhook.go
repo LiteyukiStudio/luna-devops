@@ -3,10 +3,15 @@ package notification
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -20,14 +25,27 @@ type WebhookConfig struct {
 	URL                  string            `json:"url"`
 	Headers              map[string]string `json:"headers"`
 	Timeout              int               `json:"timeoutSeconds"`
+	SigningMode          string            `json:"signingMode,omitempty"`
 	TestJSONBodyTemplate string            `json:"testJsonBodyTemplate"`
+}
+
+type WebhookBusinessError struct {
+	Code    int64
+	Message string
+}
+
+func (e *WebhookBusinessError) Error() string {
+	if strings.TrimSpace(e.Message) != "" {
+		return fmt.Sprintf("webhook returned error code %d: %s", e.Code, strings.TrimSpace(e.Message))
+	}
+	return fmt.Sprintf("webhook returned error code %d", e.Code)
 }
 
 func (WebhookAdapter) Kind() string {
 	return AdapterKindWebhook
 }
 
-func (adapter WebhookAdapter) Validate(_ context.Context, config json.RawMessage, _ SecretResolver) error {
+func (adapter WebhookAdapter) Validate(ctx context.Context, config json.RawMessage, _ SecretResolver) error {
 	cfg, err := parseWebhookConfig(config)
 	if err != nil {
 		return err
@@ -41,7 +59,7 @@ func (adapter WebhookAdapter) Validate(_ context.Context, config json.RawMessage
 		}
 		return nil
 	}
-	_, err = security.PublicEgressPolicy().ValidateURL(cfg.URL)
+	_, err = EgressPolicyFromContext(ctx).ValidateURL(cfg.URL)
 	return err
 }
 
@@ -51,7 +69,8 @@ func (WebhookAdapter) Render(ctx context.Context, event Event, tpl Template, con
 		return RenderedMessage{}, err
 	}
 	secretValues := resolveSecretMap(ctx, secrets, secretResolver)
-	message, err := renderMessage(event, tpl, secretValues)
+	timeZone := TimeZoneFromContext(ctx)
+	message, err := renderMessageWithTimeZone(event, tpl, secretValues, timeZone)
 	if err != nil {
 		return RenderedMessage{}, err
 	}
@@ -82,13 +101,13 @@ func (WebhookAdapter) Render(ctx context.Context, event Event, tpl Template, con
 	if !allowedWebhookMethod(message.Method) {
 		return RenderedMessage{}, fmt.Errorf("webhook method %q is not allowed", message.Method)
 	}
-	if _, err := security.PublicEgressPolicy().ValidateURL(message.URL); err != nil {
+	if _, err := EgressPolicyFromContext(ctx).ValidateURL(message.URL); err != nil {
 		return RenderedMessage{}, err
 	}
 	return message, nil
 }
 
-func (adapter WebhookAdapter) Send(ctx context.Context, config json.RawMessage, _ json.RawMessage, message RenderedMessage, _ SecretResolver) (SendResult, error) {
+func (adapter WebhookAdapter) Send(ctx context.Context, config json.RawMessage, secrets json.RawMessage, message RenderedMessage, secretResolver SecretResolver) (SendResult, error) {
 	cfg, err := parseWebhookConfig(config)
 	if err != nil {
 		return SendResult{}, err
@@ -100,16 +119,27 @@ func (adapter WebhookAdapter) Send(ctx context.Context, config json.RawMessage, 
 	if len(message.JSON) == 0 {
 		return SendResult{}, fmt.Errorf("webhook json body is required")
 	}
+	policy := EgressPolicyFromContext(ctx)
 	rawURL := firstNonEmpty(message.URL, cfg.URL)
-	parsedURL, err := security.PublicEgressPolicy().ValidateURL(rawURL)
+	parsedURL, err := policy.ValidateURL(rawURL)
 	if err != nil {
 		return SendResult{}, err
 	}
+
+	payloadJSON := message.JSON
+	secretValues := resolveSecretMap(ctx, secrets, secretResolver)
+	if signSecret := strings.TrimSpace(secretValues["SignSecret"]); signSecret != "" {
+		parsedURL, payloadJSON, err = applyWebhookSignature(parsedURL, payloadJSON, cfg.SigningMode, signSecret, time.Now())
+		if err != nil {
+			return SendResult{}, err
+		}
+	}
+
 	timeout := time.Duration(cfg.Timeout) * time.Second
 	if timeout <= 0 {
 		timeout = 15 * time.Second
 	}
-	req, err := http.NewRequestWithContext(ctx, method, parsedURL.String(), bytes.NewReader(message.JSON))
+	req, err := http.NewRequestWithContext(ctx, method, parsedURL.String(), bytes.NewReader(payloadJSON))
 	if err != nil {
 		return SendResult{}, err
 	}
@@ -128,7 +158,7 @@ func (adapter WebhookAdapter) Send(ctx context.Context, config json.RawMessage, 
 		}
 		req.Header.Set(key, value)
 	}
-	client := newWebhookHTTPClient(timeout)
+	client := newWebhookHTTPClientWithPolicy(policy, timeout)
 	resp, err := client.Do(req)
 	if err != nil {
 		return SendResult{}, err
@@ -138,15 +168,116 @@ func (adapter WebhookAdapter) Send(ctx context.Context, config json.RawMessage, 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return SendResult{StatusCode: resp.StatusCode, ResponseSnippet: snippet}, fmt.Errorf("webhook returned status %d", resp.StatusCode)
 	}
+	if bizErr := webhookResponseBusinessError(snippet); bizErr != nil {
+		return SendResult{StatusCode: resp.StatusCode, ResponseSnippet: snippet}, bizErr
+	}
 	return SendResult{StatusCode: resp.StatusCode, ResponseSnippet: snippet}, nil
 }
 
 func newWebhookHTTPClient(timeout time.Duration) *http.Client {
-	client := security.NewHTTPClient(security.PublicEgressPolicy(), timeout)
+	return newWebhookHTTPClientWithPolicy(security.PublicEgressPolicy(), timeout)
+}
+
+func newWebhookHTTPClientWithPolicy(policy security.EgressPolicy, timeout time.Duration) *http.Client {
+	client := security.NewHTTPClient(policy, timeout)
 	client.CheckRedirect = func(_ *http.Request, _ []*http.Request) error {
 		return http.ErrUseLastResponse
 	}
 	return client
+}
+
+func applyWebhookSignature(parsedURL *url.URL, payloadJSON []byte, signingMode string, signSecret string, now time.Time) (*url.URL, []byte, error) {
+	mode := resolveWebhookSigningMode(signingMode, parsedURL.Hostname())
+	switch mode {
+	case "feishu":
+		signedPayload, err := signFeishuWebhookPayload(payloadJSON, signSecret, now.Unix())
+		if err != nil {
+			return nil, nil, err
+		}
+		return parsedURL, signedPayload, nil
+	case "dingtalk":
+		clonedURL := *parsedURL
+		query := clonedURL.Query()
+		timestampMillis := now.UnixMilli()
+		stringToSign := fmt.Sprintf("%d\n%s", timestampMillis, signSecret)
+		mac := hmac.New(sha256.New, []byte(signSecret))
+		_, _ = mac.Write([]byte(stringToSign))
+		signature := base64.StdEncoding.EncodeToString(mac.Sum(nil))
+		query.Set("timestamp", strconv.FormatInt(timestampMillis, 10))
+		query.Set("sign", signature)
+		clonedURL.RawQuery = query.Encode()
+		return &clonedURL, payloadJSON, nil
+	default:
+		return parsedURL, payloadJSON, nil
+	}
+}
+
+func resolveWebhookSigningMode(explicitMode string, hostname string) string {
+	switch strings.ToLower(strings.TrimSpace(explicitMode)) {
+	case "feishu", "lark":
+		return "feishu"
+	case "dingtalk":
+		return "dingtalk"
+	}
+	host := strings.ToLower(strings.TrimSpace(hostname))
+	switch {
+	case host == "open.feishu.cn" || strings.HasSuffix(host, ".feishu.cn") ||
+		host == "open.larksuite.com" || strings.HasSuffix(host, ".larksuite.com") ||
+		host == "open.larkoffice.com" || strings.HasSuffix(host, ".larkoffice.com"):
+		return "feishu"
+	case host == "oapi.dingtalk.com" || strings.HasSuffix(host, ".dingtalk.com"):
+		return "dingtalk"
+	default:
+		return ""
+	}
+}
+
+func signFeishuWebhookPayload(payloadJSON []byte, signSecret string, timestampUnix int64) ([]byte, error) {
+	var body map[string]any
+	if err := json.Unmarshal(payloadJSON, &body); err != nil {
+		return nil, fmt.Errorf("feishu signed payload must be a json object: %w", err)
+	}
+	stringToSign := fmt.Sprintf("%d\n%s", timestampUnix, signSecret)
+	mac := hmac.New(sha256.New, []byte(stringToSign))
+	body["timestamp"] = strconv.FormatInt(timestampUnix, 10)
+	body["sign"] = base64.StdEncoding.EncodeToString(mac.Sum(nil))
+	return json.Marshal(body)
+}
+
+func webhookResponseBusinessError(snippet string) error {
+	trimmed := strings.TrimSpace(snippet)
+	if trimmed == "" || !strings.HasPrefix(trimmed, "{") {
+		return nil
+	}
+	decoder := json.NewDecoder(strings.NewReader(trimmed))
+	decoder.UseNumber()
+	var payload map[string]any
+	if err := decoder.Decode(&payload); err != nil {
+		return nil
+	}
+	for _, key := range []string{"code", "errcode", "StatusCode"} {
+		rawCode, exists := payload[key]
+		if !exists {
+			continue
+		}
+		num, ok := rawCode.(json.Number)
+		if !ok {
+			continue
+		}
+		code, err := num.Int64()
+		if err != nil || code == 0 {
+			continue
+		}
+		message := ""
+		for _, msgKey := range []string{"msg", "errmsg", "message", "StatusMessage"} {
+			if text, ok := payload[msgKey].(string); ok && strings.TrimSpace(text) != "" {
+				message = strings.TrimSpace(text)
+				break
+			}
+		}
+		return &WebhookBusinessError{Code: code, Message: message}
+	}
+	return nil
 }
 
 func (adapter WebhookAdapter) Test(ctx context.Context, config json.RawMessage, secrets json.RawMessage, resolver SecretResolver) error {
@@ -174,6 +305,7 @@ func parseWebhookConfig(raw json.RawMessage) (WebhookConfig, error) {
 	}
 	cfg.Method = normalizeWebhookMethod(cfg.Method)
 	cfg.URL = strings.TrimSpace(cfg.URL)
+	cfg.SigningMode = strings.ToLower(strings.TrimSpace(cfg.SigningMode))
 	if cfg.Headers == nil {
 		cfg.Headers = map[string]string{}
 	}

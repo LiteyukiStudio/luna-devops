@@ -6,7 +6,7 @@ import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/rea
 import { useEffect, useImperativeHandle, useMemo, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import { api } from '@/api'
 import { ConfirmDialog } from '@/components/common/confirm-dialog'
@@ -38,8 +38,15 @@ type ConfirmOperation
     | { kind: 'rollback', release: Release, rollbackTo: Release, target: DeploymentTarget }
 
 interface LogTarget {
+  pod?: string
+  previous?: boolean
   release: Release
   view: 'deployment' | 'runtime'
+}
+
+interface ConsoleTarget {
+  pod?: string
+  release: Release
 }
 
 export function ApplicationDeploymentsPanel({ applicationId, buildRuns, deploymentTargets, listState, projectId, projectWebConsoleEnabled, ref, releases, routes, runtimeSummary }: {
@@ -56,12 +63,17 @@ export function ApplicationDeploymentsPanel({ applicationId, buildRuns, deployme
   runtimeSummary?: ApplicationDeploymentSummary
 }) {
   const { t } = useTranslation()
+  const location = useLocation()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const hashParams = useMemo(() => new URLSearchParams(location.hash.replace(/^#/, '')), [location.hash])
+  const hashTargetId = hashParams.get('targetId')?.trim() ?? ''
+  const hashReleaseId = hashParams.get('releaseId')?.trim() ?? ''
+  const [dismissedHashReleaseId, setDismissedHashReleaseId] = useState('')
   const [dialogOpen, setDialogOpen] = useState(false)
   const [bundleImportOpen, setBundleImportOpen] = useState(false)
   const [logTarget, setLogTarget] = useState<LogTarget | null>(null)
-  const [consoleRelease, setConsoleRelease] = useState<Release | null>(null)
+  const [consoleTarget, setConsoleTarget] = useState<ConsoleTarget | null>(null)
   const [targetToDelete, setTargetToDelete] = useState<DeploymentTarget | null>(null)
   const [deleteConfirmation, setDeleteConfirmation] = useState('')
   const [confirmOperation, setConfirmOperation] = useState<ConfirmOperation | null>(null)
@@ -259,15 +271,22 @@ export function ApplicationDeploymentsPanel({ applicationId, buildRuns, deployme
   const confirmCopy = confirmOperation ? operationConfirmCopy(confirmOperation, t) : null
   const deleteConfirmationTarget = targetToDelete?.name ?? ''
   const deleteConfirmationMatches = Boolean(deleteConfirmationTarget) && deleteConfirmation === deleteConfirmationTarget
-  const logRelease = logTarget ? releases.find(release => release.id === logTarget.release.id) ?? logTarget.release : null
+  const hashRelease = hashReleaseId && dismissedHashReleaseId !== hashReleaseId
+    ? releases.find(release => release.id === hashReleaseId) ?? null
+    : null
+  const activeLogTarget: LogTarget | null = logTarget ?? (hashRelease ? { release: hashRelease, view: 'deployment' } : null)
+  const logRelease = activeLogTarget ? releases.find(release => release.id === activeLogTarget.release.id) ?? activeLogTarget.release : null
+  const initialDetailTargetId = hashTargetId || (hashRelease?.deploymentTargetId ?? '')
   return (
     <div className="grid min-w-0 max-w-full gap-4">
       <ApplicationDeploymentTargetsList
+        key={initialDetailTargetId || 'targets'}
         applicationId={applicationId}
         cancelReleasePending={cancelRelease.isPending}
         createReleasePending={createRelease.isPending}
         deletePending={deleteTarget.isPending}
         deployableBuildRuns={deployableBuildRuns}
+        initialDetailTargetId={initialDetailTargetId || undefined}
         items={deploymentRows}
         listState={listState}
         operationPending={operationPending}
@@ -278,7 +297,7 @@ export function ApplicationDeploymentsPanel({ applicationId, buildRuns, deployme
           setDeleteConfirmation('')
         }}
         onCancelRelease={setReleaseToCancel}
-        onOpenConsole={setConsoleRelease}
+        onOpenConsole={(release, pod) => setConsoleTarget({ pod, release })}
         onOpenReleaseDialog={openReleaseDialog}
         onEditTarget={openTargetEditor}
         onPullLatestImageDeploy={target => setConfirmOperation({ kind: 'pullLatest', target })}
@@ -287,7 +306,12 @@ export function ApplicationDeploymentsPanel({ applicationId, buildRuns, deployme
           if (item.release && item.rollbackTo)
             setConfirmOperation({ kind: 'rollback', release: item.release, rollbackTo: item.rollbackTo, target: item.target })
         }}
-        onViewLogs={release => setLogTarget({ release, view: 'deployment' })}
+        onViewLogs={(release, options) => setLogTarget({
+          pod: options?.pod,
+          previous: options?.previous,
+          release,
+          view: options?.view ?? 'deployment',
+        })}
       />
       <DeferredDeploymentBundleImportDialog
         applicationId={applicationId}
@@ -311,20 +335,28 @@ export function ApplicationDeploymentsPanel({ applicationId, buildRuns, deployme
         onOpenChange={setDialogOpen}
         onSubmit={values => createRelease.mutate(values)}
       />
-      {logTarget && logRelease && (
+      {activeLogTarget && logRelease && (
         <ApplicationReleaseLogsPanel
-          key={`${logRelease.id}-${logTarget.view}`}
-          initialView={logTarget.view}
+          key={`${logRelease.id}-${activeLogTarget.view}-${activeLogTarget.pod ?? ''}-${String(activeLogTarget.previous ?? false)}`}
+          initialPod={activeLogTarget.pod}
+          initialPrevious={activeLogTarget.previous}
+          initialView={activeLogTarget.view}
           projectId={projectId}
           release={logRelease}
-          onClose={() => setLogTarget(null)}
+          onClose={() => {
+            setLogTarget(null)
+            if (hashReleaseId)
+              setDismissedHashReleaseId(hashReleaseId)
+          }}
         />
       )}
-      {consoleRelease && (
+      {consoleTarget && (
         <ApplicationWebConsolePanel
+          key={`${consoleTarget.release.id}-${consoleTarget.pod ?? ''}`}
+          initialPod={consoleTarget.pod}
           projectId={projectId}
-          release={consoleRelease}
-          onClose={() => setConsoleRelease(null)}
+          release={consoleTarget.release}
+          onClose={() => setConsoleTarget(null)}
         />
       )}
       <ConfirmDialog

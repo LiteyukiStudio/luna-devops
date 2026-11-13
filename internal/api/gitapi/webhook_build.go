@@ -9,7 +9,7 @@ import (
 	transportapi "github.com/LiteyukiStudio/devops/internal/api/transport"
 	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/model"
-	"github.com/LiteyukiStudio/devops/internal/platformevent"
+	"github.com/LiteyukiStudio/devops/internal/notification"
 	"github.com/LiteyukiStudio/devops/internal/telemetry"
 	"github.com/gin-gonic/gin"
 )
@@ -206,18 +206,52 @@ func (h *Handlers) rejectWebhookBuild(ctx *gin.Context, result *webhookBuildTrig
 		dedupKey = webhookBuildIdempotencyKey(binding.ID, deliveryID, target.ID) + ":rejected"
 	}
 	requestCtx := ctx.Request.Context()
-	if _, _, err := (platformevent.Service{DB: h.dbFor(ctx)}).Record(requestCtx, platformevent.RecordInput{
-		Type:               webhookRejectedEventType,
-		Severity:           "warning",
-		ProjectID:          binding.ProjectID,
-		ApplicationID:      binding.ApplicationID,
-		DeploymentTargetID: target.ID,
-		ResourceType:       "repository_binding",
-		ResourceID:         binding.ID,
-		ActorID:            actor.ID,
-		Message:            code,
-		Detail:             map[string]string{"code": code, "deploymentTargetId": target.ID},
-		DedupKey:           dedupKey,
+	db := h.dbFor(ctx)
+	var project model.Project
+	_ = db.Select("id", "name", "identifier").First(&project, "id = ?", binding.ProjectID).Error
+	var application model.Application
+	_ = db.Select("id", "name", "identifier").First(&application, "id = ?", binding.ApplicationID).Error
+	links := map[string]string{}
+	if baseURL := strings.TrimRight(strings.TrimSpace(h.host.PublicBaseURL()), "/"); baseURL != "" && binding.ProjectID != "" && binding.ApplicationID != "" {
+		links["primary"] = baseURL + "/projects/" + binding.ProjectID + "/applications/" + binding.ApplicationID + "?tab=builds"
+	}
+	ownerUserID := strings.TrimSpace(target.CreatedBy)
+	if ownerUserID == "" {
+		ownerUserID = actor.ID
+	}
+	if _, err := (notification.Service{DB: db, Enqueuer: h.host.DeliveryEnqueuer()}).Emit(requestCtx, notification.Event{
+		Type:     webhookRejectedEventType,
+		Severity: notification.SeverityWarning,
+		Project: notification.EntityRef{
+			ID:         binding.ProjectID,
+			Name:       project.Name,
+			Identifier: project.Identifier,
+		},
+		Application: notification.EntityRef{
+			ID:         binding.ApplicationID,
+			Name:       application.Name,
+			Identifier: application.Identifier,
+		},
+		DeploymentTarget: notification.EntityRef{
+			ID:         target.ID,
+			Name:       target.Name,
+			Identifier: target.KubernetesName,
+		},
+		Build: notification.BuildContext{
+			ID:      binding.ID,
+			Status:  "webhook_rejected",
+			Message: code,
+		},
+		Actor: notification.ActorContext{
+			ID:    actor.ID,
+			Name:  h.host.BuildRunActorName(actor),
+			Email: actor.Email,
+		},
+		ResourceOwnerUserID: ownerUserID,
+		CorrelationID:       binding.ID,
+		DedupKey:            dedupKey,
+		Links:               links,
+		Message:             code,
 	}); err != nil {
 		telemetry.RecordError(requestCtx, "git.webhook_rejection_event_failed", err)
 	}

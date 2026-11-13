@@ -85,6 +85,109 @@ func TestPersonalWebhookPresetsExcludeUserControlledDestinations(t *testing.T) {
 	}
 }
 
+func TestFeishuInteractiveCardRendersSemanticColorsAndDiagnostics(t *testing.T) {
+	exit137 := int32(137)
+	cases := []struct {
+		name      string
+		event     Event
+		locale    string
+		wantColor string
+		wantText  string
+	}{
+		{
+			name: "runtime oom error red",
+			event: Event{
+				Type:             "runtime.pod_oom_killed",
+				Severity:         SeverityError,
+				Project:          EntityRef{Name: "轻雪空间"},
+				Application:      EntityRef{Name: "OpenList"},
+				DeploymentTarget: EntityRef{Name: "生产环境"},
+				Runtime: RuntimeIncidentContext{
+					PodName:          "openlist-7d8f9-abc",
+					ContainerName:    "app",
+					Reason:           "OOMKilled",
+					ExitCode:         &exit137,
+					RestartCount:     5,
+					ReadyReplicas:    0,
+					DesiredReplicas:  2,
+					DiagnosticDetail: "Container exceeded memory limit (512Mi)",
+				},
+				Links:      map[string]string{"primary": "https://devops.example.com/projects/prj_1/applications/app_1?tab=deployments#targetId=dplt_1"},
+				OccurredAt: time.Date(2026, 8, 28, 8, 0, 0, 0, time.UTC),
+				Message:    "Pod openlist-7d8f9-abc 因 OOMKilled 被终止",
+			},
+			locale:    "zh",
+			wantColor: "red",
+			wantText:  "ExitCode: 137",
+		},
+		{
+			name: "runtime recovered green",
+			event: Event{
+				Type:             "runtime.recovered",
+				Severity:         SeverityInfo,
+				Project:          EntityRef{Name: "轻雪空间"},
+				Application:      EntityRef{Name: "OpenList"},
+				DeploymentTarget: EntityRef{Name: "生产环境"},
+				Runtime: RuntimeIncidentContext{
+					ReadyReplicas:   2,
+					DesiredReplicas: 2,
+					DurationSeconds: 185,
+				},
+				OccurredAt: time.Date(2026, 8, 28, 8, 3, 5, 0, time.UTC),
+				Message:    "工作负载已恢复正常",
+			},
+			locale:    "zh",
+			wantColor: "green",
+			wantText:  "185s",
+		},
+		{
+			name:      "test notification blue",
+			event:     TestEvent(time.Date(2026, 8, 28, 8, 0, 0, 0, time.UTC)),
+			locale:    "en",
+			wantColor: "blue",
+			wantText:  "View Details",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := WithTimeZone(context.Background(), "Asia/Shanghai")
+			msg, err := (WebhookAdapter{}).Render(ctx, tc.event, Template{
+				JSON: feishuInteractiveTemplate(tc.locale),
+			}, json.RawMessage(`{"method":"POST","url":"https://open.feishu.cn/open-apis/bot/v2/hook/test"}`), nil, nil, tc.locale)
+			if err != nil {
+				t.Fatalf("Render() error = %v", err)
+			}
+			var decoded feishuInteractiveEnvelope
+			if err := json.Unmarshal(msg.JSON, &decoded); err != nil {
+				t.Fatalf("Unmarshal card JSON: %v\n%s", err, msg.JSON)
+			}
+			if decoded.MsgType != "interactive" {
+				t.Fatalf("msg_type = %q, want interactive", decoded.MsgType)
+			}
+			if decoded.Card.Header.Template != tc.wantColor {
+				t.Fatalf("header.template = %q, want %q", decoded.Card.Header.Template, tc.wantColor)
+			}
+			if !json.Valid(msg.JSON) || !containsSubstring(string(msg.JSON), tc.wantText) {
+				t.Fatalf("card JSON missing %q:\n%s", tc.wantText, msg.JSON)
+			}
+		})
+	}
+}
+
+func containsSubstring(haystack, needle string) bool {
+	return len(needle) == 0 || (len(haystack) >= len(needle) && (haystack == needle || indexOfSubstring(haystack, needle) >= 0))
+}
+
+func indexOfSubstring(s, sub string) int {
+	for i := 0; i+len(sub) <= len(s); i++ {
+		if s[i:i+len(sub)] == sub {
+			return i
+		}
+	}
+	return -1
+}
+
 func presetSecretFixtures(fields []string) (json.RawMessage, StaticSecretResolver) {
 	secretRefs := map[string]string{}
 	resolver := StaticSecretResolver{}

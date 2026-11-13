@@ -15,6 +15,28 @@ export interface InternalServiceEndpointValue {
   serviceName: string
 }
 
+const abnormalPodStatuses = new Set([
+  'oom-killed',
+  'crash-loop-back-off',
+  'image-pull-back-off',
+  'err-image-pull',
+  'create-container-config-error',
+  'create-container-error',
+  'init-error',
+  'unschedulable',
+  'evicted',
+  'failed',
+])
+
+const observationCodeStatusMap: Record<string, string> = {
+  'runtime.oom_killed': 'oom-killed',
+  'runtime.crash_loop_back_off': 'crash-loop-back-off',
+  'runtime.image_pull_back_off': 'image-pull-back-off',
+  'runtime.container_config_error': 'create-container-config-error',
+  'runtime.unschedulable': 'unschedulable',
+  'runtime.evicted': 'evicted',
+}
+
 export function buildDeploymentRuntimeStatus(
   target: DeploymentTarget,
   runtimeCluster: RuntimeCluster | undefined,
@@ -25,7 +47,7 @@ export function buildDeploymentRuntimeStatus(
   // 生效集群只取后端统一解析结果，前端不推断默认集群。
   const clusterId = target.effectiveClusterId
   const clusterName = runtimeCluster?.name
-  const observedValue = normalizeDeploymentRuntimeStatus(target.status)
+  const observedValue = resolveObservedTargetStatus(target)
   const statusValue = (fallback: string) => observedValue === 'unknown' ? fallback : observedValue
   if (!clusterId)
     return { clusterName, podCount: 0, summary: '', value: statusValue('not-configured') }
@@ -41,17 +63,29 @@ export function buildDeploymentRuntimeStatus(
     return { clusterName, podCount: 0, summary: '', value: statusValue('not-found') }
 
   const podStatus = aggregatePodRuntimeStatus(pods)
-  if (podStatus)
-    return { clusterName, ...podStatus, value: statusValue(podStatus.value) }
+  if (podStatus) {
+    const resolvedPodValue = observedValue === 'disabled' || observedValue === 'scaled-to-zero'
+      ? observedValue
+      : abnormalPodStatuses.has(podStatus.value)
+        ? podStatus.value
+        : statusValue(podStatus.value)
+    return { clusterName, ...podStatus, value: resolvedPodValue }
+  }
 
   const workload = workloads[0]
   if (!workload)
     return { clusterName, podCount: 0, summary: '', value: observedValue }
+  const normalizedWorkload = normalizeDeploymentRuntimeStatus(workload.status)
+  const resolvedWorkloadValue = observedValue === 'disabled' || observedValue === 'scaled-to-zero'
+    ? observedValue
+    : normalizedWorkload === 'degraded'
+      ? 'degraded'
+      : statusValue(normalizedWorkload)
   return {
     clusterName,
     podCount: 0,
     summary: workload.summary,
-    value: statusValue(normalizeDeploymentRuntimeStatus(workload.status)),
+    value: resolvedWorkloadValue,
   }
 }
 
@@ -78,21 +112,30 @@ function aggregatePodRuntimeStatus(pods: ClusterResource[]): Omit<DeploymentRunt
     value: normalizePodRuntimeStatus(pod),
   }))
   const priority = [
+    'oom-killed',
     'crash-loop-back-off',
     'image-pull-back-off',
     'err-image-pull',
     'create-container-config-error',
     'create-container-error',
+    'init-error',
+    'unschedulable',
+    'evicted',
     'failed',
     'pending',
     'container-creating',
     'not-ready',
+    'terminating',
     'running',
     'ready',
     'succeeded',
     'unknown',
   ]
-  const selected = [...details].sort((left, right) => priority.indexOf(left.value) - priority.indexOf(right.value))[0]
+  const rank = (value: string) => {
+    const index = priority.indexOf(value)
+    return index === -1 ? priority.length : index
+  }
+  const selected = [...details].sort((left, right) => rank(left.value) - rank(right.value))[0]
   return {
     podCount: pods.length,
     summary: selected?.pod.summary || '',
@@ -100,32 +143,58 @@ function aggregatePodRuntimeStatus(pods: ClusterResource[]): Omit<DeploymentRunt
   }
 }
 
+const allContainersReadyPattern = /\bready (\d+)\/\1\b/i
+
 function normalizePodRuntimeStatus(pod: ClusterResource) {
   const status = pod.status.trim().toLowerCase()
   const summary = pod.summary.trim().toLowerCase()
-  if (summary.includes('crashloopbackoff'))
+  if (status === 'oom-killed' || summary.includes('oomkilled'))
+    return 'oom-killed'
+  if (status === 'crash-loop-back-off' || summary.includes('crashloopbackoff'))
     return 'crash-loop-back-off'
-  if (summary.includes('imagepullbackoff'))
+  if (status === 'image-pull-back-off' || summary.includes('imagepullbackoff'))
     return 'image-pull-back-off'
-  if (summary.includes('errimagepull'))
+  if (status === 'err-image-pull' || summary.includes('errimagepull'))
     return 'err-image-pull'
-  if (summary.includes('createcontainerconfigerror'))
+  if (status === 'create-container-config-error' || summary.includes('createcontainerconfigerror'))
     return 'create-container-config-error'
-  if (summary.includes('createcontainererror'))
+  if (status === 'create-container-error' || summary.includes('createcontainererror'))
     return 'create-container-error'
-  if (summary.includes('containercreating'))
+  if (status === 'init-error' || summary.startsWith('init:'))
+    return 'init-error'
+  if (status === 'unschedulable' || summary.includes('unschedulable'))
+    return 'unschedulable'
+  if (status === 'evicted' || summary.includes('evicted'))
+    return 'evicted'
+  if (status === 'container-creating' || summary.includes('containercreating'))
     return 'container-creating'
+  if (status === 'terminating')
+    return 'terminating'
+  if (status === 'ready')
+    return 'ready'
+  if (status === 'not-ready')
+    return 'not-ready'
   if (status === 'failed')
     return 'failed'
   if (status === 'succeeded')
     return 'succeeded'
   if (status === 'pending')
     return 'pending'
-  if (status === 'running' && summary.includes('ready 1/1'))
+  if (status === 'running' && allContainersReadyPattern.test(summary))
     return 'ready'
   if (status === 'running')
     return 'not-ready'
   return status || 'unknown'
+}
+
+function resolveObservedTargetStatus(target: DeploymentTarget) {
+  const base = normalizeDeploymentRuntimeStatus(target.status)
+  if (base === 'degraded' && target.observationCode) {
+    const mapped = observationCodeStatusMap[target.observationCode]
+    if (mapped)
+      return mapped
+  }
+  return base
 }
 
 function normalizeDeploymentRuntimeStatus(status: string) {
@@ -134,6 +203,8 @@ function normalizeDeploymentRuntimeStatus(status: string) {
     return 'ready'
   if (value === 'progressing')
     return 'progressing'
+  if (value === 'degraded')
+    return 'degraded'
   if (value === 'scaled-to-zero')
     return 'scaled-to-zero'
   if (value === 'failed')

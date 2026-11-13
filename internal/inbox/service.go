@@ -101,6 +101,106 @@ func (s *Service) Publish(ctx context.Context, input PublishInput) (message mode
 	return existing, false, nil
 }
 
+// PublishOrUpdate inserts a new inbox message or updates the existing row
+// sharing (recipient_user_id, dedup_key) in-place so repeated reminders or
+// recovery transitions coalesce into a single thread rather than flooding rows.
+func (s *Service) PublishOrUpdate(ctx context.Context, input PublishInput, markUnread bool) (message model.InboxMessage, created bool, err error) {
+	ctx, end := telemetry.StartOperation(ctx, "inbox", "publish_or_update",
+		attribute.String("inbox.category", strings.TrimSpace(input.Category)),
+		attribute.String("inbox.priority", strings.TrimSpace(input.Priority)),
+	)
+	defer func() {
+		if err != nil {
+			telemetry.RecordError(ctx, "inbox.message.publish_or_update_failed", err,
+				slog.String("inbox.category", strings.TrimSpace(input.Category)),
+			)
+		}
+		end(err)
+	}()
+
+	message, err = newMessage(input)
+	if err != nil {
+		return model.InboxMessage{}, false, err
+	}
+	if s == nil || s.db == nil {
+		return model.InboxMessage{}, false, ErrInvalidInput
+	}
+	result := s.db.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&message)
+	if result.Error != nil {
+		return model.InboxMessage{}, false, result.Error
+	}
+	if result.RowsAffected > 0 {
+		return message, true, nil
+	}
+	if message.DedupKey == nil {
+		return model.InboxMessage{}, false, errors.New("inbox message insert did not affect a row")
+	}
+
+	now := time.Now()
+	updates := map[string]any{
+		"type":        message.Type,
+		"category":    message.Category,
+		"priority":    message.Priority,
+		"title_key":   message.TitleKey,
+		"content_key": message.ContentKey,
+		"params_json": message.ParamsJSON,
+		"deep_link":   message.DeepLink,
+		"group_key":   message.GroupKey,
+		"archived_at": nil,
+		"updated_at":  now,
+	}
+	if markUnread {
+		updates["read_at"] = nil
+	}
+	if updateErr := s.db.WithContext(ctx).Model(&model.InboxMessage{}).
+		Where("recipient_user_id = ? AND dedup_key = ?", message.RecipientUserID, *message.DedupKey).
+		Updates(updates).Error; updateErr != nil {
+		return model.InboxMessage{}, false, updateErr
+	}
+	var existing model.InboxMessage
+	if queryErr := s.db.WithContext(ctx).
+		Where("recipient_user_id = ? AND dedup_key = ?", message.RecipientUserID, *message.DedupKey).
+		First(&existing).Error; queryErr != nil {
+		return model.InboxMessage{}, false, queryErr
+	}
+	return existing, false, nil
+}
+
+// PublishCoalescedToProjectRoles fans out or updates a coalesced inbox message
+// for every active project member holding one of the target roles.
+func (s *Service) PublishCoalescedToProjectRoles(ctx context.Context, projectID string, roles []string, input PublishInput, markUnread bool) error {
+	projectID = strings.TrimSpace(projectID)
+	if s == nil || s.db == nil || projectID == "" || len(roles) == 0 {
+		return nil
+	}
+	var members []model.ProjectMember
+	if err := s.db.WithContext(ctx).
+		Select("user_id").
+		Where("project_id = ? AND role IN ?", projectID, roles).
+		Find(&members).Error; err != nil {
+		return err
+	}
+	seen := make(map[string]struct{}, len(members))
+	var errs []error
+	for _, member := range members {
+		uid := strings.TrimSpace(member.UserID)
+		if uid == "" {
+			continue
+		}
+		if _, ok := seen[uid]; ok {
+			continue
+		}
+		seen[uid] = struct{}{}
+		memberInput := input
+		memberInput.RecipientUserID = uid
+		memberInput.ProjectID = projectID
+		if _, _, err := s.PublishOrUpdate(ctx, memberInput, markUnread); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
+}
+
 func (s *Service) CreateActionRequest(ctx context.Context, input CreateActionRequestInput) (request model.InboxActionRequest, err error) {
 	ctx, end := telemetry.StartOperation(ctx, "inbox", "create_action_request")
 	defer func() {

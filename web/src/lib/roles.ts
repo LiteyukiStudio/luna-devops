@@ -38,6 +38,8 @@ export const ProjectAction = {
   ProjectWrite: 'project:write',
   ProjectManage: 'project:manage',
   ProjectOwnerOnly: 'project:owner_only',
+  NotificationRead: 'notification:read',
+  NotificationManage: 'notification:manage',
   DeploymentUpdate: 'deployment:update',
   VolumeWrite: 'volume:write',
   VolumeImport: 'volume:import',

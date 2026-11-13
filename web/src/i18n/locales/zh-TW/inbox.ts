@@ -61,6 +61,12 @@ export default {
       billingTransferRejected: { title: '計費歸屬轉移已拒絕', content: '{{recipientName}} 拒絕了「{{projectName}}」的計費歸屬轉移請求。' },
       billingTransferCancelled: { title: '計費歸屬轉移已取消', content: '「{{projectName}}」的成員或計費歸屬已變化，原轉移請求不再有效。' },
       systemAnnouncement: { title: '平臺公告', content: '{{message}}' },
+      runtimeOomKilled: { title: '容器記憶體溢位 (OOMKilled)' },
+      runtimeCrashLoop: { title: '容器崩潰重啟迴圈 (CrashLoopBackOff)' },
+      runtimeStartFailed: { title: '執行個體啟動失敗' },
+      runtimeDegraded: { title: '工作負載副本就緒異常' },
+      runtimeAnomaly: { content: '「{{projectName}}」中的 {{applicationName}}（{{targetName}}）偵測到執行異常：{{reason}}（就緒副本 {{readyReplicas}}/{{desiredReplicas}}）。' },
+      runtimeRecovered: { title: '執行狀態已恢復', content: '「{{projectName}}」中的 {{applicationName}}（{{targetName}}）已恢復正常執行（故障持續 {{durationSeconds}} 秒）。' },
     },
   },
 }

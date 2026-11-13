@@ -17,9 +17,13 @@ export function statusToneFor(value: string): StatusTone {
       return 'success'
     case 'failed':
     case 'error':
+    case 'oom-killed':
     case 'crash-loop-back-off':
     case 'create-container-config-error':
     case 'create-container-error':
+    case 'init-error':
+    case 'unschedulable':
+    case 'evicted':
     case 'delete_failed':
     case 'err-image-pull':
     case 'image-pull-back-off':
@@ -35,6 +39,7 @@ export function statusToneFor(value: string): StatusTone {
     case 'degraded':
     case 'checking':
     case 'container-creating':
+    case 'terminating':
     case 'pending':
     case 'preparing':
     case 'progressing':

@@ -23,7 +23,7 @@ import (
 
 const (
 	baselineMigrationVersion = 103
-	latestMigrationVersion   = 130
+	latestMigrationVersion   = 131
 )
 
 func TestEmbeddedMigrationsContainExpectedFiles(t *testing.T) {
@@ -82,6 +82,8 @@ func TestEmbeddedMigrationsContainExpectedFiles(t *testing.T) {
 		"000129_network_egress_exceptions.down.sql":                  false,
 		"000130_network_service_shares.up.sql":                       false,
 		"000130_network_service_shares.down.sql":                     false,
+		"000131_notification_scopes_and_runtime_alerts.up.sql":       false,
+		"000131_notification_scopes_and_runtime_alerts.down.sql":     false,
 	}
 	migrationCount := 0
 	for _, entry := range entries {
@@ -280,6 +282,9 @@ WHERE namespace.nspname = current_schema()
 	assertSingleColumnMigration(t, testDB, runner, 128, "deployment_targets", "internal_only")
 	assertSingleColumnMigration(t, testDB, runner, 129, "network_egress_exception_grants", "include_builds")
 	assertSingleColumnMigration(t, testDB, runner, 130, "network_service_shares", "approved_runtime_cluster_id")
+	assertSingleColumnMigration(t, testDB, runner, 131, "notification_channels", "scope")
+	assertSingleColumnMigration(t, testDB, runner, 131, "notification_rules", "channel_targets_json")
+	assertSingleColumnMigration(t, testDB, runner, 131, "runtime_alert_incidents", "incident_kind")
 	assertDirtyMigrationFailsClosed(t, testDB)
 }
 
@@ -1005,6 +1010,7 @@ func assertStableModelMigrationCoverage(t *testing.T, db *gorm.DB) {
 		&model.NotificationTemplate{},
 		&model.NotificationRule{},
 		&model.NotificationDelivery{},
+		&model.RuntimeAlertIncident{},
 		&model.PlatformEvent{},
 		&model.InboxActionRequest{},
 		&model.InboxMessage{},

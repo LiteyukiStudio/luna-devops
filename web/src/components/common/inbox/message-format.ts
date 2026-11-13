@@ -10,6 +10,11 @@ const titleCatalog: Record<string, string> = {
   'inbox.messages.project.billingOwnerTransfer.rejected.title': 'inbox.catalog.billingTransferRejected.title',
   'inbox.messages.project.billingOwnerTransfer.cancelled.title': 'inbox.catalog.billingTransferCancelled.title',
   'inbox.system.announcement.title': 'inbox.catalog.systemAnnouncement.title',
+  'inbox.runtime.oomKilled.title': 'inbox.catalog.runtimeOomKilled.title',
+  'inbox.runtime.crashLoop.title': 'inbox.catalog.runtimeCrashLoop.title',
+  'inbox.runtime.startFailed.title': 'inbox.catalog.runtimeStartFailed.title',
+  'inbox.runtime.degraded.title': 'inbox.catalog.runtimeDegraded.title',
+  'inbox.runtime.recovered.title': 'inbox.catalog.runtimeRecovered.title',
 }
 
 const contentCatalog: Record<string, string> = {
@@ -21,6 +26,8 @@ const contentCatalog: Record<string, string> = {
   'inbox.messages.project.billingOwnerTransfer.rejected.content': 'inbox.catalog.billingTransferRejected.content',
   'inbox.messages.project.billingOwnerTransfer.cancelled.content': 'inbox.catalog.billingTransferCancelled.content',
   'inbox.system.announcement.content': 'inbox.catalog.systemAnnouncement.content',
+  'inbox.runtime.anomaly.body': 'inbox.catalog.runtimeAnomaly.content',
+  'inbox.runtime.recovered.body': 'inbox.catalog.runtimeRecovered.content',
 }
 
 export function inboxMessageText(message: InboxMessage, t: TFunction) {

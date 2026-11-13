@@ -71,6 +71,9 @@ var scopeCatalog = []scopeDefinition{
 	scopeDef(ActionBillingAdjust, "billing", false, false, true),
 	scopeDef(ActionEventRead, "event", true, true, true),
 
+	scopeDef(ActionNotificationRead, "notification", true, true, true),
+	scopeDef(ActionNotificationManage, "notification", false, false, true),
+
 	scopeDef(ActionDashboardRead, "dashboard", true, true, true),
 	scopeDef(ActionAgentObservabilityRead, "agent-observability", true, false, false),
 	scopeDef(ActionDataRetentionRead, "retention", false, false, false),

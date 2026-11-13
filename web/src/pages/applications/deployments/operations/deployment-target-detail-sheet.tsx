@@ -1,4 +1,5 @@
 import type { DeploymentTargetRow } from './application-deployment-targets-list'
+import type { Release } from '@/api'
 import { Gauge, Network, Package } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { CopyableHoverText } from '@/components/common/copyable-hover-text'
@@ -11,11 +12,22 @@ import { AccessUrlLink } from '@/pages/applications/gateway/access-url-link'
 import { gatewayRouteAccessUrl } from '@/pages/applications/gateway/gateway-route-url'
 import { DeploymentRuntimeSpec, DeploymentRuntimeStatusIndicator } from './application-deployment-runtime'
 import { DeploymentTargetMetricsCell } from './application-deployment-target-metrics-cell'
+import { DeploymentTargetRuntimeDiagnostics } from './deployment-target-runtime-diagnostics'
 
-export function DeploymentTargetDetailSheet({ applicationId, item, onOpenChange, open, projectId }: {
+export function DeploymentTargetDetailSheet({
+  applicationId,
+  item,
+  onOpenChange,
+  onOpenPodConsole,
+  onViewPodLogs,
+  open,
+  projectId,
+}: {
   applicationId: string
   item?: DeploymentTargetRow
   onOpenChange: (open: boolean) => void
+  onOpenPodConsole?: (release: Release, pod: string) => void
+  onViewPodLogs?: (release: Release, pod: string, previous: boolean) => void
   open: boolean
   projectId: string
 }) {
@@ -30,25 +42,49 @@ export function DeploymentTargetDetailSheet({ applicationId, item, onOpenChange,
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="w-[min(96vw,44rem)] max-w-none gap-0 overflow-y-auto p-0 sm:max-w-none" side="right">
+      <SheetContent className="w-[min(96vw,48rem)] max-w-none gap-0 overflow-y-auto p-0 sm:max-w-none" side="right">
         <SheetHeader className="border-b border-border p-6 pr-14">
           <SheetTitle>{target?.name ?? t('deploymentsPage.deploymentDetails')}</SheetTitle>
           <SheetDescription>{`${stage} · ${cluster} · ${namespace}`}</SheetDescription>
         </SheetHeader>
         {item && target && (
           <div className="grid gap-4 p-6">
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-              <DeploymentRuntimeStatusIndicator
-                availableReplicas={target.availableReplicas}
-                deployed={Boolean(release)}
-                desiredReplicas={target.desiredReplicas}
-                readyReplicas={target.readyReplicas}
-                status={item.runtimeStatus}
-              />
-              {release && <StatusValueBadge labelKeyPrefix="buildsPage.statuses" value={release.status} />}
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-control border border-border bg-surface-subtle/50 px-3.5 py-2.5 text-xs">
+              <div className="flex items-center gap-2">
+                <span className="text-muted-foreground">{t('deploymentsPage.runtimeStatus')}</span>
+                <DeploymentRuntimeStatusIndicator
+                  availableReplicas={target.availableReplicas}
+                  deployed={item.deployed}
+                  desiredReplicas={target.desiredReplicas}
+                  readyReplicas={target.readyReplicas}
+                  status={item.runtimeStatus}
+                />
+              </div>
+              {release && (
+                <div className="flex items-center gap-2">
+                  <span className="text-muted-foreground">{t('deploymentsPage.latestReleaseStatus')}</span>
+                  <StatusValueBadge labelKeyPrefix="buildsPage.statuses" value={release.status} />
+                </div>
+              )}
               {!target.enabled && <StatusValueBadge value="disabled" />}
-              <DeploymentRuntimeSpec target={target} />
+              <div className="ml-auto">
+                <DeploymentRuntimeSpec target={target} />
+              </div>
             </div>
+
+            {open && (
+              <DeploymentTargetRuntimeDiagnostics
+                applicationId={applicationId}
+                deployed={item.deployed}
+                enabled={target.enabled}
+                projectId={projectId}
+                release={release}
+                targetId={target.id}
+                webConsoleEnabled={item.webConsoleEnabled}
+                onOpenPodConsole={onOpenPodConsole}
+                onViewPodLogs={onViewPodLogs}
+              />
+            )}
 
             <Section
               description={t('deploymentsPage.accessAddressesDescription')}

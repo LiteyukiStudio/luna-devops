@@ -17,6 +17,7 @@ const nav = {
     sharedConfig: '공유 설정',
     volumes: '데이터 볼륨',
     members: '멤버',
+    notifications: '알림',
     topology: '서비스 관계',
   },
   commandPalette: {

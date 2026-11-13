@@ -9,6 +9,7 @@ const root = {
   appTemplates: '앱 마켓',
   registries: '레지스트리',
   clusters: '클리스터 리소스',
+  notificationChannels: '알림 채널',
   billing: '청구',
   builds: '빌드',
   deployments: '배포',

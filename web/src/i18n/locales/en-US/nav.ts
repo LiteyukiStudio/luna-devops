@@ -17,6 +17,7 @@ const nav = {
     sharedConfig: 'Shared config',
     volumes: 'Volumes',
     members: 'Members',
+    notifications: 'Notifications',
     topology: 'Service relations',
   },
   commandPalette: {

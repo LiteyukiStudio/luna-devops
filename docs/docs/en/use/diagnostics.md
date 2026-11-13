@@ -25,7 +25,11 @@ If it returns `build.image_repository_claimed`, no new BuildRun was created eith
 
 Open the release and deployment logs. Confirm that the image exists, the cluster is reachable, pull credentials are valid, and ports, environment variables, secrets, and configuration files match the application.
 
-For an unready application, inspect workload events and container logs to distinguish image pulls, startup failures, health checks, and resource exhaustion.
+When an application is unready or restarting repeatedly, open the deployment target's **Runtime health details** drawer for structured diagnostics:
+
+- **Replica failure reasons and exit codes**: Inspect each container's waiting or last termination reason (`OOMKilled`, `CrashLoopBackOff`, `ImagePullBackOff`, `CreateContainerConfigError`), exit code (such as `137`), and last termination timestamp.
+- **Probe settings and Warning events**: Review liveness/readiness probe endpoints and recent Kubernetes Warning events with occurrence counts and timestamps.
+- **Previous crashed container logs**: Enable **Previous crashed container logs** in the **Runtime logs** toolbar to read the stack trace from the terminated container instance even after Kubernetes restarts it.
 
 When a deployment has several replicas, runtime logs and the Web Console connect to one replica at a time. The default **Automatic** option prefers a ready replica of the current release. To inspect a specific replica, such as one that is restarting or not ready, choose it in the **Replica** list. The list shows each replica's readiness, restart count, and whether it belongs to this release or another one. If the selected replica is recreated or scaled away, the page asks you to choose again instead of switching replicas silently. In the CLI, add `pod=<pod name>` to `luna deployment exec` or `luna release exec` to choose a replica.
 

@@ -3622,7 +3622,7 @@ paths:
         - $ref: "#/components/parameters/Search"
         - name: sortBy
           in: query
-          schema: { type: string, enum: [recommended, name, createdAt], default: recommended }
+          schema: { type: string, enum: [recommended, name, createdAt, restartCount], default: recommended }
         - $ref: "#/components/parameters/SortOrder"
       responses:
         "200":
@@ -3633,6 +3633,110 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/v1/projects/{projectId}/applications/{applicationId}/deployment-targets/{targetId}/events:
+    get:
+      operationId: listDeploymentTargetEvents
+      x-luna-cli:
+        requiredScopes: ["deployment:read"]
+      tags: [Deployments]
+      summary: List live Kubernetes events of a deployment target
+      description: >-
+        Returns a no-store point-in-time Kubernetes observation of Events belonging to
+        the deployment target's workload, owned ReplicaSets, HPA, and runtime Pods.
+        When the cluster cannot be read, returns `status=unavailable` with a stable `observationCode`.
+      x-luna-agent:
+        purpose: { zh: 查看部署目标关联工作负载与运行副本的近期 Kubernetes 事件（探针失败、镜像拉取错误、挂载报错、驱逐、调度失败等）。, en: List recent Kubernetes Events for a deployment target's workload and pods to diagnose probe, image pull, mount, eviction, or scheduling failures. }
+        aliases: { zh: [查看部署事件, 查看 K8s Events, 排查启动失败事件, 查看告警事件], en: [list deployment events, inspect kubernetes events, diagnose pod events] }
+        avoidWhen: { zh: 需要查看应用标准输出或崩溃进程输出时应使用运行日志接口。, en: Use runtime logs when inspecting container stdout/stderr output. }
+        preconditions: { zh: [提供真实 projectId、applicationId 和 targetId], en: [Provide projectId, applicationId, and targetId] }
+        successEvidence: { zh: 返回按最近发生时间排序的集群事件列表及观测状态。, en: Returns recent Kubernetes events sorted by lastSeen along with observation status. }
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/ApplicationId"
+        - $ref: "#/components/parameters/TargetId"
+        - name: type
+          in: query
+          required: false
+          description: Filter by Kubernetes event type (`Warning` or `Normal`).
+          schema: { type: string, enum: [Warning, Normal] }
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - $ref: "#/components/parameters/Search"
+        - name: sortBy
+          in: query
+          schema: { type: string, enum: [lastSeen, firstSeen, count, reason], default: lastSeen }
+        - $ref: "#/components/parameters/SortOrder"
+      responses:
+        "200":
+          description: Paginated live deployment-target Kubernetes event observation.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DeploymentTargetEventPage" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/v1/projects/{projectId}/applications/{applicationId}/deployment-targets/{targetId}/runtime-logs:
+    get:
+      operationId: getDeploymentTargetRuntimeLogs
+      x-luna-cli:
+        requiredScopes: ["deployment:read"]
+      tags: [Deployments]
+      summary: Get live or previous container logs of a deployment target
+      description: >-
+        Reads live or `--previous` crashed container logs (including InitContainers)
+        directly from Kubernetes for the deployment target. Defaults to abnormal/restarting
+        replicas when `pod` is omitted.
+      x-luna-agent:
+        purpose: { zh: 读取部署目标当前容器或上次崩溃容器（previous=true）的实时输出日志，支持多容器与 InitContainer。, en: Read current or previous crashed container logs of a deployment target, supporting multi-container and init containers. }
+        aliases: { zh: [查看部署运行日志, 查看上次崩溃日志, 查看容器遗言日志, 读取 Pod 日志], en: [get deployment runtime logs, read previous crashed container logs, pod logs] }
+        avoidWhen: { zh: 需要查看集群调度或探针事件时使用部署事件列表。, en: Use deployment target events for scheduling, mount, or probe events. }
+        preconditions: { zh: [提供真实 projectId、applicationId 和 targetId], en: [Provide projectId, applicationId, and targetId] }
+        successEvidence: { zh: 返回目标 Pod、容器名及对应的日志正文。, en: Returns the selected pod, container name, and log content. }
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/ApplicationId"
+        - $ref: "#/components/parameters/TargetId"
+        - name: pod
+          in: query
+          required: false
+          schema: { type: string }
+        - name: container
+          in: query
+          required: false
+          schema: { type: string }
+        - name: releaseId
+          in: query
+          required: false
+          schema: { type: string }
+        - name: tailLines
+          in: query
+          required: false
+          schema: { type: integer, format: int32, minimum: 1, maximum: 5000, default: 500 }
+        - name: previous
+          in: query
+          required: false
+          description: Read logs from the previous terminated/crashed container instance (`kubectl logs --previous`).
+          schema: { type: boolean }
+        - name: timestamps
+          in: query
+          required: false
+          schema: { type: boolean }
+        - name: preferAbnormal
+          in: query
+          required: false
+          schema: { type: boolean }
+      responses:
+        "200":
+          description: Container runtime log output.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RuntimePodLogsResult" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
 
   /api/v1/projects/{projectId}/applications/{applicationId}/deployment-targets/{targetId}/terminal/authorize:
     post:
@@ -5741,11 +5845,17 @@ paths:
         - name: eventType
           in: query
           schema: { type: string }
+        - name: channelId
+          in: query
+          schema: { type: string }
+        - name: eventId
+          in: query
+          schema: { type: string }
         - $ref: "#/components/parameters/Page"
         - $ref: "#/components/parameters/PageSize"
         - name: sortBy
           in: query
-          schema: { type: string, enum: [createdAt, status, eventType], default: createdAt }
+          schema: { type: string, enum: [createdAt, queuedAt, finishedAt, durationMillis, status, eventType], default: createdAt }
         - $ref: "#/components/parameters/SortOrder"
       responses:
         "200":
@@ -5753,6 +5863,44 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/PaginatedNotificationDeliveries" }
+  /api/v1/me/notification-deliveries/{deliveryId}/retry:
+    post:
+      operationId: retryMyNotificationDelivery
+      tags: [Notifications]
+      summary: Retry my notification delivery
+      description: Re-queues a personal notification delivery owned by the current user.
+      x-luna-agent:
+        aliases: { zh: [重试我的通知投递, 重新发送个人通知], en: [retry my notification delivery, redeliver personal notification] }
+        purpose: { zh: 对当前用户自己的失败或取消通知投递重新入队发送。, en: Re-queue a failed or canceled personal notification delivery owned by the current user. }
+        avoidWhen: { zh: 投递仍在排队或发送中时无需重试。, en: Do not retry when the delivery is still queued or sending. }
+        preconditions: { zh: [deliveryId 来自 listMyNotificationDeliveries], en: [deliveryId came from listMyNotificationDeliveries] }
+        successEvidence: { zh: 返回重新入队后的投递记录且状态变为 queued。, en: Returns the re-queued delivery record with status queued. }
+        effect: async
+        verification:
+          - { operationId: listMyNotificationDeliveries, family: resource, idFrom: argument.deliveryId, collection: true, statusField: status, pendingStatuses: [queued, sending, retrying], successStatuses: [sent], failureStatuses: [failed, canceled] }
+      x-luna-cli:
+        command: notification.delivery.retry-mine
+        classification: business-command
+        risk: medium
+        requiredScopes: ["user:write"]
+        agentAllowed: true
+      parameters:
+        - name: deliveryId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Personal notification delivery re-queued.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NotificationDelivery" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
   /api/v1/notifications/presets:
     get:
       operationId: listNotificationPresets
@@ -5828,6 +5976,12 @@ paths:
         preconditions: { zh: [当前用户具有通知配置读取权限], en: [The current user can read notification configuration] }
         successEvidence: { zh: 返回分页通知渠道列表。, en: Returns a paginated notification channel list. }
       parameters:
+        - name: scope
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [global, project]
         - name: search
           in: query
           required: false
@@ -5971,13 +6125,19 @@ paths:
           required: true
           schema:
             type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NotificationChannelTestInput"
       responses:
         "200":
           description: Successful business response.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/BusinessObject"
+                $ref: "#/components/schemas/NotificationTestResult"
         "400":
           $ref: "#/components/responses/BadRequest"
         "403":
@@ -6280,6 +6440,26 @@ paths:
           required: false
           schema:
             type: string
+        - name: channelId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: ruleId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: eventId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: projectId
+          in: query
+          required: false
+          schema:
+            type: string
         - name: page
           in: query
           required: false
@@ -6294,7 +6474,7 @@ paths:
             format: int32
         - name: sortBy
           in: query
-          schema: { type: string, enum: [createdAt, status, eventType], default: createdAt }
+          schema: { type: string, enum: [createdAt, queuedAt, finishedAt, durationMillis, status, eventType], default: createdAt }
         - $ref: "#/components/parameters/SortOrder"
       responses:
         "200":
@@ -6302,13 +6482,321 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/PaginatedBusinessObjects"
+                $ref: "#/components/schemas/PaginatedNotificationDeliveries"
         "400":
           $ref: "#/components/responses/BadRequest"
         "403":
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+  /api/v1/notifications/deliveries/{deliveryId}/retry:
+    post:
+      operationId: retryNotificationDelivery
+      tags: [Notifications]
+      summary: Retry notification delivery
+      description: Re-queues a shared or project notification delivery as a platform administrator.
+      x-luna-agent:
+        aliases: { zh: [重试共享通知投递, 管理员重发通知], en: [retry shared notification delivery, admin redeliver notification] }
+        purpose: { zh: 平台管理员对失败或取消的通知投递重新入队发送。, en: Re-queue a failed or canceled notification delivery as a platform administrator. }
+        avoidWhen: { zh: 投递仍在排队或发送中时不要重复触发。, en: Do not trigger retry while the delivery is still queued or sending. }
+        preconditions: { zh: [deliveryId 来自 listNotificationDeliveries], en: [deliveryId came from listNotificationDeliveries] }
+        successEvidence: { zh: 返回重新入队后的投递记录且状态变为 queued。, en: Returns the re-queued delivery record with status queued. }
+        effect: async
+        verification:
+          - { operationId: listNotificationDeliveries, family: resource, idFrom: argument.deliveryId, collection: true, statusField: status, pendingStatuses: [queued, sending, retrying], successStatuses: [sent], failureStatuses: [failed, canceled] }
+      x-luna-cli:
+        command: notification.delivery.retry
+        classification: business-command
+        risk: medium
+        requiredScopes: ["config:write"]
+        agentAllowed: true
+      parameters:
+        - name: deliveryId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Notification delivery re-queued.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NotificationDelivery" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /api/v1/notification-channels/presets:
+    get:
+      operationId: listScopedNotificationPresets
+      tags: [Notifications]
+      summary: List scoped notification presets
+      description: Lists built-in Webhook presets (Feishu, Lark, DingTalk, WeCom, Slack, Discord) available for project and global notification channels.
+      x-luna-agent:
+        aliases: { zh: [查看通知渠道预设, 列出项目飞书企微钉钉预设], en: [list scoped notification presets, list project webhook presets] }
+        purpose: { zh: 列出项目空间或全局通知渠道可用的内置 Webhook 预设及凭据字段定义。, en: List built-in Webhook presets and secret field declarations for project or global notification channels. }
+        avoidWhen: { zh: 查看已创建的通知渠道列表时使用 listScopedNotificationChannels。, en: Use listScopedNotificationChannels when listing existing channels. }
+        preconditions: { zh: [当前用户已登录], en: [The current user is signed in] }
+        successEvidence: { zh: 返回内置通知预设数组。, en: Returns the built-in notification preset array. }
+      x-luna-cli:
+        command: notification.channel.presets
+        classification: business-command
+        risk: low
+        requiredScopes: ["notification:read"]
+        agentAllowed: true
+      responses:
+        "200":
+          description: Built-in notification presets.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/NotificationPreset" }
+  /api/v1/notification-channels:
+    get:
+      operationId: listScopedNotificationChannels
+      tags: [Notifications]
+      summary: List scoped notification channels
+      description: Lists cross-space and global notification channels visible to the current user across accessible project spaces.
+      x-luna-agent:
+        aliases: { zh: [列出跨空间通知渠道, 查看项目可用通知渠道, 集成通知渠道列表], en: [list scoped notification channels, list cross-space notification channels] }
+        purpose: { zh: 分页查看当前用户在可访问项目空间下可见的跨空间与全局通知渠道。, en: List cross-space and global notification channels visible across accessible projects. }
+        avoidWhen: { zh: 查看个人通知渠道时使用 listMyNotificationChannels。, en: Use listMyNotificationChannels for personal notification channels. }
+        preconditions: { zh: [当前用户具有通知读取权限], en: [The current user has notification read permission] }
+        successEvidence: { zh: 返回带作用范围与可管理标记的分页通知渠道列表。, en: Returns paginated notification channels with scope and manageability flags. }
+      x-luna-cli:
+        command: notification.channel.list-scoped
+        classification: business-command
+        risk: low
+        requiredScopes: ["notification:read"]
+        agentAllowed: true
+      parameters:
+        - name: projectId
+          in: query
+          required: false
+          schema: { type: string }
+        - name: scope
+          in: query
+          required: false
+          schema: { type: string, enum: [global, project] }
+        - name: search
+          in: query
+          required: false
+          schema: { type: string }
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - name: sortBy
+          in: query
+          schema: { type: string, enum: [createdAt, updatedAt, name, adapter], default: createdAt }
+        - $ref: "#/components/parameters/SortOrder"
+      responses:
+        "200":
+          description: Paginated scoped notification channels.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PaginatedNotificationChannels" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      operationId: createScopedNotificationChannel
+      tags: [Notifications]
+      summary: Create scoped notification channel
+      description: Creates a project-scoped notification channel bound to one or more owned project spaces (or a global channel for platform admins).
+      x-luna-agent:
+        aliases: { zh: [创建项目通知渠道, 新建跨空间 Webhook 或 SMTP 渠道], en: [create project notification channel, create cross-space webhook or smtp channel] }
+        purpose: { zh: 创建绑定到一个或多个所属项目空间的 Webhook 或自建 SMTP 通知渠道。, en: Create a Webhook or custom SMTP notification channel bound to one or more owned project spaces. }
+        avoidWhen: { zh: 创建仅自己接收的个人通知渠道时使用 createMyNotificationChannel。, en: Use createMyNotificationChannel for personal notification channels. }
+        preconditions: { zh: [当前用户是目标项目空间的 Owner 或平台管理员], en: [The current user is Owner of all target project spaces or a platform administrator] }
+        successEvidence: { zh: 返回 201 及新创建的通知渠道对象。, en: Returns 201 with the created notification channel. }
+        requiresApproval: true
+        effect: write
+        verification:
+          - { operationId: listScopedNotificationChannels, family: resource, idFrom: result.id, collection: true }
+      x-luna-cli:
+        command: notification.channel.create-scoped
+        classification: business-command
+        risk: high
+        requiredScopes: ["notification:manage"]
+        agentAllowed: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NotificationChannelInput" }
+      responses:
+        "201":
+          description: Created scoped notification channel.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NotificationChannel" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /api/v1/notification-channels/{channelId}:
+    put:
+      operationId: updateScopedNotificationChannel
+      tags: [Notifications]
+      summary: Update scoped notification channel
+      description: Updates a scoped notification channel and its project bindings. Requires Project Owner permission on all bound projects.
+      x-luna-agent:
+        aliases: { zh: [更新项目通知渠道, 修改跨空间通知渠道绑定], en: [update scoped notification channel, update cross-space channel bindings] }
+        purpose: { zh: 更新跨空间通知渠道配置、凭据或绑定项目列表（需拥有全部已绑定与目标项目空间的 Owner 权限）。, en: Update a scoped notification channel's configuration, secrets, or bound project spaces. }
+        avoidWhen: { zh: 仅需将共享渠道从单个项目解绑时使用 unbindProjectNotificationChannel。, en: Use unbindProjectNotificationChannel to detach a shared channel from one project. }
+        preconditions: { zh: [channelId 来自 listScopedNotificationChannels, 当前用户是全部关联项目的 Owner 或平台管理员], en: [channelId came from listScopedNotificationChannels, The current user is Owner of all bound projects or a platform administrator] }
+        successEvidence: { zh: 返回更新后的通知渠道对象。, en: Returns the updated notification channel. }
+        requiresApproval: true
+        effect: write
+        verification:
+          - { operationId: listScopedNotificationChannels, family: resource, idFrom: argument.channelId, collection: true }
+      x-luna-cli:
+        command: notification.channel.update-scoped
+        classification: business-command
+        risk: high
+        requiredScopes: ["notification:manage"]
+        agentAllowed: true
+      parameters:
+        - $ref: "#/components/parameters/NotificationChannelId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NotificationChannelInput" }
+      responses:
+        "200":
+          description: Updated scoped notification channel.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NotificationChannel" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      operationId: deleteScopedNotificationChannel
+      tags: [Notifications]
+      summary: Delete scoped notification channel
+      description: Deletes an unreferenced scoped notification channel when the caller is Owner of all bound project spaces.
+      x-luna-agent:
+        aliases: { zh: [删除项目通知渠道, 删除跨空间通知渠道], en: [delete scoped notification channel, delete project notification channel] }
+        purpose: { zh: 删除未被任何通知规则引用的跨空间通知渠道。, en: Delete an unreferenced scoped notification channel. }
+        avoidWhen: { zh: 渠道仍被规则引用或仅需暂停发送时，应先修改规则或禁用渠道。, en: Update referencing rules or disable the channel instead when still referenced or temporarily pausing. }
+        preconditions: { zh: [channelId 来自 listScopedNotificationChannels, 渠道未被规则引用], en: [channelId came from listScopedNotificationChannels, Channel is not referenced by rules] }
+        successEvidence: { zh: 返回 204，后续列表不再包含该渠道。, en: Returns 204 and subsequent lists omit the channel. }
+        requiresApproval: true
+        effect: write
+        verification:
+          - { operationId: listScopedNotificationChannels, family: resource, idFrom: argument.channelId, collection: true, expect: absent }
+      x-luna-cli:
+        command: notification.channel.delete-scoped
+        classification: business-command
+        risk: high
+        requiredScopes: ["notification:manage"]
+        agentAllowed: true
+      parameters:
+        - $ref: "#/components/parameters/NotificationChannelId"
+      responses:
+        "204":
+          description: Scoped notification channel deleted.
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /api/v1/notification-channels/{channelId}/test:
+    post:
+      operationId: testScopedNotificationChannel
+      tags: [Notifications]
+      summary: Test scoped notification channel
+      description: Sends one real test message through a saved project or global notification channel.
+      x-luna-agent:
+        aliases: { zh: [测试项目通知渠道, 发送跨空间通知测试], en: [test scoped notification channel, send project channel test] }
+        purpose: { zh: 通过已保存的项目空间或全局通知渠道发送一条真实测试消息。, en: Send one real test message through a saved project or global notification channel. }
+        avoidWhen: { zh: 测试尚未保存的表单草稿配置时使用 testDraftScopedNotificationChannel。, en: Use testDraftScopedNotificationChannel when testing unsaved draft settings. }
+        preconditions: { zh: [channelId 来自 listScopedNotificationChannels, 已获得发送测试消息确认], en: [channelId came from listScopedNotificationChannels, Test transmission is confirmed] }
+        successEvidence: { zh: 目标接收端成功受理测试消息并返回 ok。, en: Destination accepts the test message and returns ok. }
+        requiresApproval: true
+        effect: read
+      x-luna-cli:
+        command: notification.channel.test-scoped
+        classification: business-command
+        risk: high
+        requiredScopes: ["notification:manage"]
+        agentAllowed: true
+      parameters:
+        - $ref: "#/components/parameters/NotificationChannelId"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NotificationChannelTestInput" }
+      responses:
+        "200":
+          description: Test message accepted.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NotificationTestResult" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "502":
+          description: Destination rejected the test or was unreachable (`notification.channel_test_failed`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+  /api/v1/notification-channels/test-draft:
+    post:
+      operationId: testDraftScopedNotificationChannel
+      tags: [Notifications]
+      summary: Test draft notification channel
+      description: Tests an unsaved Webhook or SMTP notification channel configuration directly without persisting secrets.
+      x-luna-agent:
+        aliases: { zh: [测试未保存的通知渠道草稿, 预检 SMTP 或 Webhook 配置], en: [test draft notification channel, preflight smtp or webhook channel] }
+        purpose: { zh: 在不落库保存的情况下直接验证 Webhook 或自建 SMTP 通知渠道草稿连通性。, en: Test an unsaved Webhook or custom SMTP channel configuration without persisting it. }
+        avoidWhen: { zh: 渠道已保存且未改动配置时使用 testScopedNotificationChannel。, en: Use testScopedNotificationChannel when testing an already saved channel. }
+        preconditions: { zh: [当前用户至少是一个项目空间的 Owner 或平台管理员, 已获得发送测试消息确认], en: [The current user is Owner of at least one project space or a platform administrator, Test transmission is confirmed] }
+        successEvidence: { zh: 目标服务接受草稿测试消息并返回 ok。, en: Destination accepts the draft test message and returns ok. }
+        requiresApproval: true
+        effect: read
+      x-luna-cli:
+        command: notification.channel.test-draft
+        classification: business-command
+        risk: high
+        requiredScopes: ["notification:manage"]
+        agentAllowed: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NotificationDraftTestInput" }
+      responses:
+        "200":
+          description: Draft test message accepted.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NotificationTestResult" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "502":
+          description: Destination rejected the draft test or was unreachable (`notification.channel_test_failed`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
   /api/v1/inbox:
     get:
       operationId: listInboxMessages
@@ -7814,6 +8302,370 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+  /api/v1/projects/{projectId}/notifications/channels:
+    get:
+      operationId: listProjectNotificationChannels
+      tags: [Notifications]
+      summary: List project notification channels
+      description: Lists notification channels bound to or available in the specified project space, with sensitive credentials and private recipients redacted for non-Owners.
+      x-luna-agent:
+        aliases: { zh: [查看项目空间通知渠道, 列出空间已绑定通知渠道], en: [list project notification channels, view workspace notification channels] }
+        purpose: { zh: 分页查看指定项目空间下可用的通知渠道及投递健康状态。, en: List notification channels available in a project space and their latest delivery health. }
+        avoidWhen: { zh: 查看通知发送历史时使用 listProjectNotificationDeliveries。, en: Use listProjectNotificationDeliveries when inspecting delivery history. }
+        preconditions: { zh: [projectId 来自 listProjects, 当前用户具有该项目通知读取权限], en: [projectId came from listProjects, The current user has notification read permission on the project] }
+        successEvidence: { zh: 返回该项目空间可见的分页通知渠道列表。, en: Returns paginated notification channels visible to the project space. }
+      x-luna-cli:
+        command: project.notification-channel.list
+        classification: business-command
+        risk: low
+        requiredScopes: ["notification:read"]
+        agentAllowed: true
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - name: search
+          in: query
+          required: false
+          schema: { type: string }
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - name: sortBy
+          in: query
+          schema: { type: string, enum: [createdAt, updatedAt, name, adapter], default: createdAt }
+        - $ref: "#/components/parameters/SortOrder"
+      responses:
+        "200":
+          description: Project space notification channels.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PaginatedNotificationChannels" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/projects/{projectId}/notifications/channels/{channelId}/bind:
+    post:
+      operationId: bindProjectNotificationChannel
+      tags: [Notifications]
+      summary: Bind notification channel to project
+      description: Binds an existing project-scoped notification channel to another project space when the caller is Owner of all already-bound and target project spaces.
+      x-luna-agent:
+        aliases: { zh: [绑定通知渠道到项目空间, 跨空间复用通知渠道], en: [bind notification channel to project, reuse notification channel across projects] }
+        purpose: { zh: 将已有跨空间通知渠道复用绑定到当前项目空间。, en: Bind an existing reusable notification channel to the target project space. }
+        avoidWhen: { zh: 新建全新通知渠道时使用 createScopedNotificationChannel。, en: Use createScopedNotificationChannel when creating a brand-new channel. }
+        preconditions: { zh: [projectId 来自 listProjects, channelId 来自 listScopedNotificationChannels, 当前用户是原绑定项目与目标项目的 Owner], en: [projectId came from listProjects, channelId came from listScopedNotificationChannels, Caller is Owner of both existing and target projects] }
+        successEvidence: { zh: 返回更新后的渠道且 projectIds 包含当前 projectId。, en: Returns the channel with projectIds containing projectId. }
+        requiresApproval: true
+        effect: write
+        verification:
+          - { operationId: listProjectNotificationChannels, family: resource, idFrom: argument.channelId, collection: true }
+      x-luna-cli:
+        command: project.notification-channel.bind
+        classification: business-command
+        risk: high
+        requiredScopes: ["notification:manage"]
+        agentAllowed: true
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/NotificationChannelId"
+      responses:
+        "200":
+          description: Channel bound to project.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NotificationChannel" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/projects/{projectId}/notifications/channels/{channelId}/unbind:
+    post:
+      operationId: unbindProjectNotificationChannel
+      tags: [Notifications]
+      summary: Unbind notification channel from project
+      description: Detaches a shared notification channel from a project space owned by the caller without mutating shared credentials. Fails if rules in this project still reference the channel or if this is the channel's last bound project.
+      x-luna-agent:
+        aliases: { zh: [从项目空间解绑通知渠道, 移除空间复用的通知渠道], en: [unbind notification channel from project, detach shared channel from project] }
+        purpose: { zh: 将跨空间复用的通知渠道从当前项目空间解绑。, en: Detach a shared notification channel from the current project space. }
+        avoidWhen: { zh: 渠道仅绑定当前唯一项目且需彻底移除时使用 deleteScopedNotificationChannel。, en: Use deleteScopedNotificationChannel when deleting a channel bound only to this project. }
+        preconditions: { zh: [projectId 来自 listProjects, channelId 来自 listProjectNotificationChannels, 当前项目无规则引用该渠道], en: [projectId came from listProjects, channelId came from listProjectNotificationChannels, No project rule references the channel] }
+        successEvidence: { zh: 返回 204，当前项目的通知渠道列表不再包含该渠道。, en: Returns 204 and project channel list no longer includes the channel. }
+        requiresApproval: true
+        effect: write
+        verification:
+          - { operationId: listProjectNotificationChannels, family: resource, idFrom: argument.channelId, collection: true, expect: absent }
+      x-luna-cli:
+        command: project.notification-channel.unbind
+        classification: business-command
+        risk: high
+        requiredScopes: ["notification:manage"]
+        agentAllowed: true
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/NotificationChannelId"
+      responses:
+        "204":
+          description: Channel detached from project.
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /api/v1/projects/{projectId}/notifications/rules:
+    get:
+      operationId: listProjectNotificationRules
+      tags: [Notifications]
+      summary: List project notification rules
+      description: Lists notification routing and runtime alert rules belonging to the project space.
+      x-luna-agent:
+        aliases: { zh: [查看项目通知规则, 列出空间告警订阅规则], en: [list project notification rules, view workspace alert rules] }
+        purpose: { zh: 分页列出指定项目空间下的通知订阅与运行态告警规则。, en: List notification subscription and runtime alert rules in a project space. }
+        avoidWhen: { zh: 查看通知实际发送记录时使用 listProjectNotificationDeliveries。, en: Use listProjectNotificationDeliveries when checking actual deliveries. }
+        preconditions: { zh: [projectId 来自 listProjects], en: [projectId came from listProjects] }
+        successEvidence: { zh: 返回该项目空间的分页通知规则列表。, en: Returns paginated notification rules for the project space. }
+      x-luna-cli:
+        command: project.notification-rule.list
+        classification: business-command
+        risk: low
+        requiredScopes: ["notification:read"]
+        agentAllowed: true
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - name: search
+          in: query
+          required: false
+          schema: { type: string }
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - name: sortBy
+          in: query
+          schema: { type: string, enum: [createdAt, updatedAt, name], default: createdAt }
+        - $ref: "#/components/parameters/SortOrder"
+      responses:
+        "200":
+          description: Paginated project notification rules.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PaginatedNotificationRules" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      operationId: createProjectNotificationRule
+      tags: [Notifications]
+      summary: Create project notification rule
+      description: Creates a notification rule pinned to the project space, including optional per-channel SMTP recipient overrides and runtime alert reminder policy.
+      x-luna-agent:
+        aliases: { zh: [创建项目通知规则, 新增空间运行告警订阅], en: [create project notification rule, add workspace alert subscription] }
+        purpose: { zh: 在项目空间下创建通知与运行态异常告警规则（仅空间 Owner 可写）。, en: Create a notification and runtime alert rule within a project space (Project Owner only). }
+        avoidWhen: { zh: 尚未为项目配置或绑定通知渠道时应先创建渠道。, en: Create or bind a notification channel first if none exists for the project. }
+        preconditions: { zh: [projectId 来自 listProjects, channelIds 来自 listProjectNotificationChannels, 当前用户是项目 Owner], en: [projectId came from listProjects, channelIds came from listProjectNotificationChannels, Caller is Project Owner] }
+        successEvidence: { zh: 返回 201 及新创建的项目通知规则。, en: Returns 201 with the created project notification rule. }
+        effect: write
+        verification:
+          - { operationId: listProjectNotificationRules, family: resource, idFrom: result.id, collection: true }
+      x-luna-cli:
+        command: project.notification-rule.create
+        classification: business-command
+        risk: medium
+        requiredScopes: ["notification:manage"]
+        agentAllowed: true
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ProjectNotificationRuleInput" }
+      responses:
+        "201":
+          description: Created project notification rule.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NotificationRule" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/projects/{projectId}/notifications/rules/{ruleId}:
+    put:
+      operationId: updateProjectNotificationRule
+      tags: [Notifications]
+      summary: Update project notification rule
+      description: Updates an existing notification rule in the project space.
+      x-luna-agent:
+        aliases: { zh: [更新项目通知规则, 修改空间告警频控与收件人], en: [update project notification rule, edit workspace alert throttling and recipients] }
+        purpose: { zh: 更新项目空间通知规则的事件范围、收件人覆盖或重复提醒策略。, en: Update event types, recipient overrides, or reminder settings of a project notification rule. }
+        avoidWhen: { zh: 需要彻底移除规则时使用 deleteProjectNotificationRule。, en: Use deleteProjectNotificationRule when permanently deleting the rule. }
+        preconditions: { zh: [projectId 来自 listProjects, ruleId 来自 listProjectNotificationRules, 当前用户是项目 Owner], en: [projectId came from listProjects, ruleId came from listProjectNotificationRules, Caller is Project Owner] }
+        successEvidence: { zh: 返回更新后的项目通知规则。, en: Returns the updated project notification rule. }
+        effect: write
+        verification:
+          - { operationId: listProjectNotificationRules, family: resource, idFrom: argument.ruleId, collection: true }
+      x-luna-cli:
+        command: project.notification-rule.update
+        classification: business-command
+        risk: medium
+        requiredScopes: ["notification:manage"]
+        agentAllowed: true
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - name: ruleId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ProjectNotificationRuleInput" }
+      responses:
+        "200":
+          description: Updated project notification rule.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NotificationRule" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      operationId: deleteProjectNotificationRule
+      tags: [Notifications]
+      summary: Delete project notification rule
+      description: Deletes a notification rule belonging to the project space.
+      x-luna-agent:
+        aliases: { zh: [删除项目通知规则, 移除空间告警规则], en: [delete project notification rule, remove workspace alert rule] }
+        purpose: { zh: 删除项目空间下的通知规则。, en: Delete a notification rule in the project space. }
+        avoidWhen: { zh: 仅临时暂停告警时可将规则更新为禁用。, en: Disable the rule instead when only pausing notifications temporarily. }
+        preconditions: { zh: [projectId 来自 listProjects, ruleId 来自 listProjectNotificationRules, 当前用户是项目 Owner], en: [projectId came from listProjects, ruleId came from listProjectNotificationRules, Caller is Project Owner] }
+        successEvidence: { zh: 返回 204，后续规则列表不再包含该规则。, en: Returns 204 and subsequent lists omit the rule. }
+        effect: write
+        verification:
+          - { operationId: listProjectNotificationRules, family: resource, idFrom: argument.ruleId, collection: true, expect: absent }
+      x-luna-cli:
+        command: project.notification-rule.delete
+        classification: business-command
+        risk: medium
+        requiredScopes: ["notification:manage"]
+        agentAllowed: true
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - name: ruleId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "204":
+          description: Project notification rule deleted.
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/projects/{projectId}/notifications/deliveries:
+    get:
+      operationId: listProjectNotificationDeliveries
+      tags: [Notifications]
+      summary: List project notification deliveries
+      description: Lists notification delivery attempts for events in the project space, including timestamps, attempt count, duration, and failure diagnostics.
+      x-luna-agent:
+        aliases: { zh: [查看项目通知投递记录, 排查空间通知发送失败原因], en: [list project notification deliveries, inspect workspace notification failures] }
+        purpose: { zh: 分页查询项目空间的通知投递历史、耗时、尝试次数及失败诊断信息。, en: Query notification delivery history, latency, attempts, and failure diagnostics for a project space. }
+        avoidWhen: { zh: 查看通知规则配置时使用 listProjectNotificationRules。, en: Use listProjectNotificationRules when inspecting rule configuration. }
+        preconditions: { zh: [projectId 来自 listProjects], en: [projectId came from listProjects] }
+        successEvidence: { zh: 返回带时间戳与状态的分页通知投递记录。, en: Returns paginated notification deliveries with timestamps and statuses. }
+      x-luna-cli:
+        command: project.notification-delivery.list
+        classification: business-command
+        risk: low
+        requiredScopes: ["notification:read"]
+        agentAllowed: true
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - name: status
+          in: query
+          required: false
+          schema: { type: string }
+        - name: eventType
+          in: query
+          required: false
+          schema: { type: string }
+        - name: channelId
+          in: query
+          required: false
+          schema: { type: string }
+        - name: ruleId
+          in: query
+          required: false
+          schema: { type: string }
+        - name: eventId
+          in: query
+          required: false
+          schema: { type: string }
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - name: sortBy
+          in: query
+          schema: { type: string, enum: [createdAt, queuedAt, finishedAt, durationMillis, status, eventType], default: createdAt }
+        - $ref: "#/components/parameters/SortOrder"
+      responses:
+        "200":
+          description: Paginated project notification deliveries.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PaginatedNotificationDeliveries" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/projects/{projectId}/notifications/deliveries/{deliveryId}/retry:
+    post:
+      operationId: retryProjectNotificationDelivery
+      tags: [Notifications]
+      summary: Retry project notification delivery
+      description: Manually re-queues a failed or canceled notification delivery in the project space (Project Owner only).
+      x-luna-agent:
+        aliases: { zh: [重试项目通知投递, 手动重发空间失败通知], en: [retry project notification delivery, redeliver workspace failed notification] }
+        purpose: { zh: 手动重新投递项目空间下失败或已取消的通知记录。, en: Manually re-queue a failed or canceled notification delivery in the project space. }
+        avoidWhen: { zh: 投递处于排队或发送中时无需重试。, en: Do not retry while the delivery is queued or sending. }
+        preconditions: { zh: [projectId 来自 listProjects, deliveryId 来自 listProjectNotificationDeliveries, 当前用户是项目 Owner], en: [projectId came from listProjects, deliveryId came from listProjectNotificationDeliveries, Caller is Project Owner] }
+        successEvidence: { zh: 返回重新入队后的投递记录且状态变为 queued。, en: Returns the re-queued delivery with status queued. }
+        effect: async
+        verification:
+          - { operationId: listProjectNotificationDeliveries, family: resource, idFrom: argument.deliveryId, collection: true, statusField: status, pendingStatuses: [queued, sending, retrying], successStatuses: [sent], failureStatuses: [failed, canceled] }
+      x-luna-cli:
+        command: project.notification-delivery.retry
+        classification: business-command
+        risk: medium
+        requiredScopes: ["notification:manage"]
+        agentAllowed: true
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - name: deliveryId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Project notification delivery re-queued.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NotificationDelivery" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
   /api/v1/projects/{projectId}/applications/{applicationId}/deployment-targets/{targetId}/restart:
     post:
       operationId: restartDeploymentTarget
@@ -8529,13 +9381,26 @@ paths:
           required: false
           description: Runtime pod of this deployment target to connect. Omit to let the platform select one; an unknown pod is rejected instead of falling back.
           schema: { type: string }
+        - name: previous
+          in: query
+          required: false
+          description: Read logs from the previous terminated/crashed container instance (`kubectl logs --previous`).
+          schema: { type: boolean }
+        - name: timestamps
+          in: query
+          required: false
+          schema: { type: boolean }
+        - name: preferAbnormal
+          in: query
+          required: false
+          schema: { type: boolean }
       responses:
         "200":
           description: Successful business response.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/BusinessObject"
+                $ref: "#/components/schemas/RuntimePodLogsResult"
         "400":
           $ref: "#/components/responses/BadRequest"
         "403":
@@ -10366,6 +11231,12 @@ components:
             $ref: "#/components/schemas/ErrorResponse"
     ServiceUnavailable:
       description: A required storage or external provider dependency is temporarily unavailable.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    TooManyRequests:
+      description: Rate limit exceeded for the current principal.
       content:
         application/json:
           schema:
@@ -14149,10 +15020,17 @@ components:
         traefikMetricsUrl: { type: string, format: uri }
     NotificationChannelInput:
       type: object
-      required: [name, adapterKind]
+      additionalProperties: false
+      required: [name]
       properties:
-        name: { type: string, minLength: 1 }
-        adapterKind: { type: string }
+        name: { type: string, minLength: 1, maxLength: 160 }
+        scope: { type: string, enum: [global, project] }
+        projectIds:
+          type: array
+          uniqueItems: true
+          items: { type: string, minLength: 1 }
+        presetId: { type: string }
+        adapterKind: { type: string, enum: [webhook, smtp] }
         config:
           type: object
           additionalProperties: true
@@ -14162,6 +15040,32 @@ components:
           x-luna-sensitive: true
           additionalProperties: { type: string }
         enabled: { type: boolean }
+    NotificationChannelTestInput:
+      type: object
+      additionalProperties: false
+      properties:
+        testRecipient:
+          type: string
+          format: email
+    NotificationDraftTestInput:
+      type: object
+      additionalProperties: false
+      properties:
+        channelId: { type: string }
+        scope: { type: string, enum: [global, project] }
+        presetId: { type: string }
+        adapterKind: { type: string, enum: [webhook, smtp] }
+        config:
+          type: object
+          additionalProperties: true
+        secrets:
+          type: object
+          writeOnly: true
+          x-luna-sensitive: true
+          additionalProperties: { type: string }
+        testRecipient:
+          type: string
+          format: email
     PersonalNotificationChannelCreateInput:
       type: object
       additionalProperties: false
@@ -14205,10 +15109,10 @@ components:
         eventTypes:
           type: array
           uniqueItems: true
-          maxItems: 6
+          maxItems: 16
           items:
             type: string
-            enum: [build.failed, release.failed, hook.failed, gateway.apply_failed, certificate.failed, certificate.expired]
+            enum: [build.failed, build.webhook_rejected, release.failed, runtime.pod_oom_killed, runtime.pod_crash_loop, runtime.pod_start_failed, runtime.workload_degraded, runtime.recovered, hook.failed, gateway.apply_failed, certificate.failed, certificate.expired]
     UserNotificationPreferenceInput:
       type: object
       additionalProperties: false
@@ -14220,10 +15124,10 @@ components:
         eventTypes:
           type: array
           uniqueItems: true
-          maxItems: 6
+          maxItems: 16
           items:
             type: string
-            enum: [build.failed, release.failed, hook.failed, gateway.apply_failed, certificate.failed, certificate.expired]
+            enum: [build.failed, build.webhook_rejected, release.failed, runtime.pod_oom_killed, runtime.pod_crash_loop, runtime.pod_start_failed, runtime.workload_degraded, runtime.recovered, hook.failed, gateway.apply_failed, certificate.failed, certificate.expired]
     NotificationPreset:
       type: object
       additionalProperties: false
@@ -14238,13 +15142,22 @@ components:
         secretFields:
           type: array
           items: { type: string }
+        optionalSecretFields:
+          type: array
+          items: { type: string }
     NotificationChannel:
       type: object
       additionalProperties: true
       required: [id, ownerUserId, name, adapterKind, config, secretSet, enabled, createdAt, updatedAt]
       properties:
         id: { type: string, pattern: '^nch_' }
+        scope: { type: string, enum: [global, project, user] }
+        ownerRef: { type: string }
         ownerUserId: { type: string }
+        projectIds:
+          type: array
+          items: { type: string }
+        presetId: { type: string }
         name: { type: string }
         adapterKind: { type: string }
         config:
@@ -14253,6 +15166,7 @@ components:
         secretSet:
           type: object
           additionalProperties: { type: boolean }
+        canManage: { type: boolean }
         enabled: { type: boolean }
         lastDeliveryStatus: { type: string }
         lastDeliveryError: { type: string }
@@ -14270,12 +15184,23 @@ components:
         eventType: { type: string }
         severity: { type: string }
         channelId: { type: string }
+        channelName: { type: string }
+        ruleId: { type: string }
+        ruleName: { type: string }
+        templateId: { type: string }
+        applicationId: { type: string }
+        applicationName: { type: string }
         adapterKind: { type: string }
         recipientUserId: { type: string }
+        recipientSummary: { type: string }
+        timeZone: { type: string }
         status: { type: string }
         attemptCount: { type: integer }
+        maxAttempts: { type: integer }
         durationMillis: { type: integer, format: int64 }
         errorMessage: { type: string }
+        requestSnapshot: { type: string }
+        responseSnippet: { type: string }
         queuedAt: { type: string, format: date-time }
         startedAt: { type: string, format: date-time, nullable: true }
         finishedAt: { type: string, format: date-time, nullable: true }
@@ -14332,6 +15257,18 @@ components:
         bodyTemplate: { type: string }
         jsonBodyTemplate: { type: string }
         enabled: { type: boolean }
+    NotificationRuleChannelTarget:
+      type: object
+      additionalProperties: false
+      properties:
+        to:
+          type: array
+          uniqueItems: true
+          items: { type: string, format: email }
+        cc:
+          type: array
+          uniqueItems: true
+          items: { type: string, format: email }
     NotificationRuleInput:
       type: object
       additionalProperties: false
@@ -14350,9 +15287,105 @@ components:
           minItems: 1
           uniqueItems: true
           items: { type: string, minLength: 1 }
+        channelTargets:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/NotificationRuleChannelTarget"
         templateId: { type: string }
         locale: { type: string }
+        timeZone: { type: string }
+        remindIntervalMinutes: { type: integer, minimum: 5, maximum: 10080 }
+        maxReminders: { type: integer, minimum: 0, maximum: 100 }
+        notifyOnRecovery: { type: boolean }
         enabled: { type: boolean }
+    ProjectNotificationRuleFilter:
+      type: object
+      additionalProperties: false
+      properties:
+        scope:
+          type: string
+          enum: [projects]
+        projectIds:
+          type: array
+          uniqueItems: true
+          items: { type: string, minLength: 1 }
+        severities:
+          type: array
+          uniqueItems: true
+          items: { type: string, enum: [info, warning, error] }
+        applicationIds:
+          type: array
+          uniqueItems: true
+          items: { type: string, minLength: 1 }
+        deploymentTargetIds:
+          type: array
+          uniqueItems: true
+          items: { type: string, minLength: 1 }
+    ProjectNotificationRuleInput:
+      type: object
+      additionalProperties: false
+      required: [name, eventTypes, channelIds]
+      properties:
+        name: { type: string, minLength: 1 }
+        eventTypes:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { type: string, minLength: 1 }
+        filter:
+          $ref: "#/components/schemas/ProjectNotificationRuleFilter"
+        channelIds:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { type: string, minLength: 1 }
+        channelTargets:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/NotificationRuleChannelTarget"
+        templateId: { type: string }
+        locale: { type: string }
+        timeZone: { type: string }
+        remindIntervalMinutes: { type: integer, minimum: 5, maximum: 10080 }
+        maxReminders: { type: integer, minimum: 0, maximum: 100 }
+        notifyOnRecovery: { type: boolean }
+        enabled: { type: boolean }
+    NotificationRule:
+      type: object
+      additionalProperties: true
+      required: [id, name, eventTypesJson, filterJson, channelIdsJson, locale, enabled, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        projectId: { type: string }
+        name: { type: string }
+        eventTypesJson: { type: string }
+        filterJson: { type: string }
+        channelIdsJson: { type: string }
+        channelTargetsJson: { type: string }
+        templateId: { type: string }
+        locale: { type: string }
+        timeZone: { type: string }
+        remindIntervalMinutes: { type: integer }
+        maxReminders: { type: integer }
+        notifyOnRecovery: { type: boolean }
+        enabled: { type: boolean }
+        createdBy: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    PaginatedNotificationRules:
+      type: object
+      additionalProperties: false
+      required: [items, page, pageSize, sortBy, sortOrder, total, totalPages]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/NotificationRule" }
+        page: { type: integer, minimum: 1 }
+        pageSize: { type: integer, minimum: 1, maximum: 100 }
+        sortBy: { type: string }
+        sortOrder: { type: string, enum: [asc, desc] }
+        total: { type: integer, format: int64, minimum: 0 }
+        totalPages: { type: integer, minimum: 0 }
     NotificationRuleFilter:
       type: object
       additionalProperties: false
@@ -14720,18 +15753,72 @@ components:
         createdBy: { type: string }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
+    RuntimeContainerStateSnapshot:
+      type: object
+      additionalProperties: false
+      required: [state]
+      properties:
+        state: { type: string, enum: [running, waiting, terminated, unknown] }
+        reason: { type: string }
+        message: { type: string }
+        exitCode: { type: integer, format: int32 }
+        signal: { type: integer, format: int32 }
+        startedAt: { type: string, format: date-time }
+        finishedAt: { type: string, format: date-time }
+    RuntimeContainerTerminationSnapshot:
+      type: object
+      additionalProperties: false
+      required: [exitCode]
+      properties:
+        reason: { type: string }
+        message: { type: string }
+        exitCode: { type: integer, format: int32 }
+        signal: { type: integer, format: int32 }
+        startedAt: { type: string, format: date-time }
+        finishedAt: { type: string, format: date-time }
+    RuntimeContainerStatusSnapshot:
+      type: object
+      additionalProperties: false
+      required: [name, image, init, ready, restartCount, currentState]
+      properties:
+        name: { type: string }
+        image: { type: string }
+        init: { type: boolean }
+        ready: { type: boolean }
+        restartCount: { type: integer, format: int32, minimum: 0 }
+        currentState: { $ref: "#/components/schemas/RuntimeContainerStateSnapshot" }
+        lastTermination: { $ref: "#/components/schemas/RuntimeContainerTerminationSnapshot" }
+    RuntimePodConditionSnapshot:
+      type: object
+      additionalProperties: false
+      required: [type, status]
+      properties:
+        type: { type: string }
+        status: { type: string }
+        reason: { type: string }
+        message: { type: string }
+        lastTransitionTime: { type: string, format: date-time }
     DeploymentTargetRuntimePod:
       type: object
       additionalProperties: false
-      required: [name, phase, ready, terminating, restartCount, releaseId, containers, createdAt]
+      required: [name, phase, status, ready, readyContainers, totalContainers, terminating, restartCount, releaseId, containers, initContainers, containerStatuses, conditions, createdAt]
       properties:
         name: { type: string }
         phase: { type: string, description: Kubernetes pod phase. }
+        status: { type: string, description: Authoritative Pod diagnostic status key (for example ready, crash-loop-back-off, oom-killed, image-pull-back-off, not-ready). }
         ready: { type: boolean }
+        readyContainers: { type: integer, format: int32, minimum: 0 }
+        totalContainers: { type: integer, format: int32, minimum: 0 }
         terminating: { type: boolean }
         restartCount: { type: integer, minimum: 0, description: Sum of container restarts. }
         releaseId: { type: string, description: Release that created this pod; empty when unknown. }
+        nodeName: { type: string }
+        reason: { type: string }
+        message: { type: string }
         containers: { type: array, items: { type: string } }
+        initContainers: { type: array, items: { type: string } }
+        containerStatuses: { type: array, items: { $ref: "#/components/schemas/RuntimeContainerStatusSnapshot" } }
+        conditions: { type: array, items: { $ref: "#/components/schemas/RuntimePodConditionSnapshot" } }
         createdAt: { type: string, format: date-time }
     DeploymentTargetRuntimePodPage:
       type: object
@@ -14741,13 +15828,52 @@ components:
         items: { type: array, items: { $ref: "#/components/schemas/DeploymentTargetRuntimePod" } }
         page: { type: integer, minimum: 1 }
         pageSize: { type: integer, minimum: 1, maximum: 100 }
-        sortBy: { type: string, enum: [recommended, name, createdAt] }
+        sortBy: { type: string, enum: [recommended, name, createdAt, restartCount] }
         sortOrder: { type: string, enum: [asc, desc] }
         total: { type: integer, minimum: 0 }
         totalPages: { type: integer, minimum: 0 }
         status: { type: string, enum: [ready, unavailable] }
         observationCode: { type: string, enum: [deployment_target.runtime_pods_ready, deployment_target.runtime_pods_unavailable] }
         observedAt: { type: string, format: date-time }
+    DeploymentTargetEvent:
+      type: object
+      additionalProperties: false
+      required: [id, type, reason, message, source, count, firstSeen, lastSeen, involvedKind, involvedName]
+      properties:
+        id: { type: string }
+        type: { type: string }
+        reason: { type: string }
+        message: { type: string }
+        source: { type: string }
+        count: { type: integer, format: int32, minimum: 0 }
+        firstSeen: { type: string, format: date-time }
+        lastSeen: { type: string, format: date-time }
+        involvedKind: { type: string }
+        involvedName: { type: string }
+    DeploymentTargetEventPage:
+      type: object
+      additionalProperties: false
+      required: [items, page, pageSize, sortBy, sortOrder, total, totalPages, status, observationCode, observedAt]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/DeploymentTargetEvent" } }
+        page: { type: integer, minimum: 1 }
+        pageSize: { type: integer, minimum: 1, maximum: 100 }
+        sortBy: { type: string, enum: [lastSeen, firstSeen, count, reason] }
+        sortOrder: { type: string, enum: [asc, desc] }
+        total: { type: integer, minimum: 0 }
+        totalPages: { type: integer, minimum: 0 }
+        status: { type: string, enum: [ready, unavailable] }
+        observationCode: { type: string }
+        observedAt: { type: string, format: date-time }
+    RuntimePodLogsResult:
+      type: object
+      additionalProperties: false
+      required: [pod, container, previous, content]
+      properties:
+        pod: { type: string }
+        container: { type: string }
+        previous: { type: boolean }
+        content: { type: string }
     ReleaseRuntimeExecInput:
       type: object
       additionalProperties: false

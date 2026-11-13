@@ -19,17 +19,34 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-var defaultFailureEventTypes = []string{"build.failed", "release.failed", "hook.failed", "gateway.apply_failed", "certificate.failed", "certificate.expired"}
+var defaultFailureEventTypes = []string{
+	"build.failed",
+	"build.webhook_rejected",
+	"release.failed",
+	"runtime.pod_oom_killed",
+	"runtime.pod_crash_loop",
+	"runtime.pod_start_failed",
+	"runtime.workload_degraded",
+	"runtime.recovered",
+	"hook.failed",
+	"gateway.apply_failed",
+	"certificate.failed",
+	"certificate.expired",
+}
 
 const (
 	UserEmailChannelID                = "notification:user-email"
+	ScopedResourceChannelType         = "notification_channel"
 	NotificationFanoutStatusPending   = "pending"
 	NotificationFanoutStatusCompleted = "completed"
 	DeliveryEnqueueFailedCode         = "notification.delivery_enqueue_failed"
 	PersonalDeliveryEnqueueFailedCode = "notification.personal_delivery_enqueue_failed"
 )
 
-var ErrEventNotMaterializable = errors.New("platform event is not a notification fanout event")
+var (
+	ErrEventNotMaterializable = errors.New("platform event is not a notification fanout event")
+	ErrDeliveryActive         = errors.New("notification delivery is currently active")
+)
 
 type DeliveryEnqueuer interface {
 	EnqueueNotificationDeliver(ctx context.Context, payload tasks.NotificationDeliverPayload) (*asynq.TaskInfo, error)
@@ -41,11 +58,13 @@ type Service struct {
 }
 
 type deliveryTarget struct {
-	ChannelID       string
-	AdapterKind     string
-	RuleID          string
-	TemplateID      string
-	RecipientUserID string
+	ChannelID          string
+	AdapterKind        string
+	RuleID             string
+	TemplateID         string
+	RecipientUserID    string
+	TargetOverrideJSON string
+	TimeZone           string
 }
 
 func DefaultFailureEventTypes() []string {
@@ -74,8 +93,12 @@ func (s Service) Emit(ctx context.Context, event Event) ([]model.NotificationDel
 		}
 	}
 	resourceType, resourceID := platformevent.ResourceForType(event.Type, event.Build.ID, event.Release.ID, event.Hook.ID, event.Gateway.ID, event.Certificate.RouteID)
-	if platformevent.CategoryForType(event.Type) == "service_binding" {
+	if event.Type == "build.webhook_rejected" {
+		resourceType, resourceID = "repository_binding", event.Build.ID
+	} else if platformevent.CategoryForType(event.Type) == "service_binding" {
 		resourceType, resourceID = "service_binding", event.ServiceBinding.ID
+	} else if platformevent.CategoryForType(event.Type) == "runtime" && resourceID == "" {
+		resourceType, resourceID = "deployment_target", firstNonEmptyString(event.DeploymentTarget.ID, event.Runtime.IncidentID)
 	}
 	recordInput := platformevent.RecordInput{
 		ID:                  event.ID,
@@ -222,33 +245,65 @@ func (s Service) sharedDeliveryTargets(ctx context.Context, db *gorm.DB, event E
 	var rules []model.NotificationRule
 	query := db.Where("enabled = ?", true)
 	if strings.TrimSpace(event.Project.ID) != "" {
-		query = query.Where("project_id in ?", []string{"", event.Project.ID})
+		// Order project-specific rules first so project locale/timezone/template preferences take precedence.
+		query = query.Where("project_id in ?", []string{"", event.Project.ID}).Order("CASE WHEN project_id <> '' THEN 0 ELSE 1 END, created_at asc")
 	} else {
-		query = query.Where("project_id = ?", "")
+		query = query.Where("project_id = ?", "").Order("created_at asc")
 	}
-	if err := query.Order("created_at asc").Find(&rules).Error; err != nil {
+	if err := query.Find(&rules).Error; err != nil {
 		return nil, err
 	}
 
 	targets := make([]deliveryTarget, 0)
-	seenChannels := map[string]bool{}
+	targetIndexByChannel := map[string]int{}
 	for _, rule := range rules {
-		if !ruleMatchesEvent(rule, event) {
+		if !RuleMatchesEvent(rule, event) {
 			continue
 		}
 		channelIDs := decodeStringList(rule.ChannelIDsJSON)
 		if len(channelIDs) == 0 {
 			continue
 		}
+		channelTargets, _ := DecodeChannelTargets([]byte(rule.ChannelTargetsJSON))
 		var channels []model.NotificationChannel
 		if err := db.Where("id in ? and enabled = ? and owner_user_id = ?", channelIDs, true, "").Find(&channels).Error; err != nil {
 			return nil, err
 		}
+		boundProjectChannels := map[string]bool{}
+		if strings.TrimSpace(rule.ProjectID) != "" {
+			var bindings []model.ScopedResourceProjectBinding
+			if err := db.Where(
+				"resource_type = ? and project_id = ? and resource_id in ?",
+				ScopedResourceChannelType,
+				strings.TrimSpace(rule.ProjectID),
+				channelIDs,
+			).Find(&bindings).Error; err != nil {
+				return nil, err
+			}
+			for _, binding := range bindings {
+				boundProjectChannels[binding.ResourceID] = true
+			}
+		}
 		for _, channel := range channels {
-			if seenChannels[channel.ID] {
+			if !channelEligibleForRule(channel, rule.ProjectID, boundProjectChannels) {
 				continue
 			}
-			seenChannels[channel.ID] = true
+			override := effectiveChannelTargetOverride(channel, channelTargets[channel.ID])
+			if channel.AdapterKind == AdapterKindSMTP {
+				if _, recipients, err := ApplySMTPTargetOverride(json.RawMessage(channel.ConfigJSON), override); err != nil || len(recipients) == 0 {
+					continue
+				}
+			}
+			if existingIdx, exists := targetIndexByChannel[channel.ID]; exists {
+				if channel.AdapterKind == AdapterKindSMTP {
+					merged := MergeChannelTargetOverride(
+						DecodeChannelTargetOverride(targets[existingIdx].TargetOverrideJSON),
+						override,
+					)
+					targets[existingIdx].TargetOverrideJSON = EncodeChannelTargetOverride(merged)
+				}
+				continue
+			}
 			template := model.NotificationTemplate{}
 			templateID := strings.TrimSpace(rule.TemplateID)
 			if templateID != "" {
@@ -257,15 +312,62 @@ func (s Service) sharedDeliveryTargets(ctx context.Context, db *gorm.DB, event E
 			if template.ID == "" {
 				templateID = ""
 			}
+			targetIndexByChannel[channel.ID] = len(targets)
 			targets = append(targets, deliveryTarget{
-				ChannelID:   channel.ID,
-				AdapterKind: channel.AdapterKind,
-				RuleID:      rule.ID,
-				TemplateID:  templateID,
+				ChannelID:          channel.ID,
+				AdapterKind:        channel.AdapterKind,
+				RuleID:             rule.ID,
+				TemplateID:         templateID,
+				TargetOverrideJSON: EncodeChannelTargetOverride(override),
+				TimeZone:           NormalizeTimeZone(rule.TimeZone),
 			})
 		}
 	}
 	return targets, nil
+}
+
+func channelEligibleForRule(channel model.NotificationChannel, ruleProjectID string, boundProjectChannels map[string]bool) bool {
+	if strings.TrimSpace(channel.OwnerUserID) != "" {
+		return false
+	}
+	scope := NormalizeChannelScope(channel.Scope)
+	ruleProjectID = strings.TrimSpace(ruleProjectID)
+	switch scope {
+	case "global":
+		return true
+	case "project":
+		if ruleProjectID == "" {
+			return false
+		}
+		if boundProjectChannels[channel.ID] {
+			return true
+		}
+		// Backward-compatible fallback if legacy project_id was populated directly on channel.
+		return strings.TrimSpace(channel.ProjectID) == ruleProjectID
+	default:
+		return false
+	}
+}
+
+func effectiveChannelTargetOverride(channel model.NotificationChannel, ruleOverride ChannelTargetOverride) ChannelTargetOverride {
+	if channel.AdapterKind != AdapterKindSMTP {
+		return ChannelTargetOverride{}
+	}
+	cfg, err := ParseSMTPConfigForValidation(json.RawMessage(channel.ConfigJSON))
+	if err != nil {
+		return ruleOverride
+	}
+	effective := ChannelTargetOverride{
+		To: cfg.To,
+		Cc: cfg.Cc,
+	}
+	if len(ruleOverride.To) > 0 {
+		effective.To = ruleOverride.To
+	}
+	if len(ruleOverride.Cc) > 0 {
+		effective.Cc = ruleOverride.Cc
+	}
+	return effective
 }
 
 func (s Service) personalDeliveryTargets(ctx context.Context, db *gorm.DB, event model.PlatformEvent) ([]deliveryTarget, error) {
@@ -311,23 +413,25 @@ func (s Service) personalDeliveryTargets(ctx context.Context, db *gorm.DB, event
 func persistDelivery(db *gorm.DB, event Event, eventData []byte, storedEvent model.PlatformEvent, target deliveryTarget) (model.NotificationDelivery, bool, error) {
 	now := time.Now()
 	delivery := model.NotificationDelivery{
-		ID:              id.New("ndl"),
-		ProjectID:       event.Project.ID,
-		RecipientUserID: target.RecipientUserID,
-		EventID:         event.ID,
-		EventType:       event.Type,
-		Severity:        event.Severity,
-		ChannelID:       target.ChannelID,
-		AdapterKind:     target.AdapterKind,
-		RuleID:          target.RuleID,
-		TemplateID:      target.TemplateID,
-		EventJSON:       string(eventData),
-		Traceparent:     storedEvent.FanoutTraceparent,
-		Tracestate:      storedEvent.FanoutTracestate,
-		Status:          "pending",
-		QueuedAt:        now,
-		CreatedAt:       now,
-		UpdatedAt:       now,
+		ID:                 id.New("ndl"),
+		ProjectID:          event.Project.ID,
+		RecipientUserID:    target.RecipientUserID,
+		EventID:            event.ID,
+		EventType:          event.Type,
+		Severity:           event.Severity,
+		ChannelID:          target.ChannelID,
+		AdapterKind:        target.AdapterKind,
+		RuleID:             target.RuleID,
+		TemplateID:         target.TemplateID,
+		TargetOverrideJSON: firstNonEmptyString(target.TargetOverrideJSON, "{}"),
+		TimeZone:           target.TimeZone,
+		EventJSON:          string(eventData),
+		Traceparent:        storedEvent.FanoutTraceparent,
+		Tracestate:         storedEvent.FanoutTracestate,
+		Status:             "pending",
+		QueuedAt:           now,
+		CreatedAt:          now,
+		UpdatedAt:          now,
 	}
 	result := db.Clauses(clause.OnConflict{
 		Columns: []clause.Column{
@@ -432,19 +536,106 @@ func normalizeEvent(event Event) Event {
 	return event
 }
 
+func RuleMatchesEvent(rule model.NotificationRule, event Event) bool {
+	if !rule.Enabled {
+		return false
+	}
+	return ruleMatchesEvent(rule, event)
+}
+
 func ruleMatchesEvent(rule model.NotificationRule, event Event) bool {
+	if len(event.EligibleRuleIDs) > 0 && !containsString(event.EligibleRuleIDs, rule.ID) {
+		return false
+	}
 	eventTypes := decodeStringList(rule.EventTypesJSON)
-	if len(eventTypes) == 0 || !containsString(eventTypes, event.Type) {
+	if len(eventTypes) == 0 {
+		return false
+	}
+	eventTypeMatched := containsString(eventTypes, event.Type)
+	if !eventTypeMatched && event.Type == "runtime.recovered" && rule.NotifyOnRecovery && strings.TrimSpace(event.Runtime.IncidentKind) != "" {
+		eventTypeMatched = containsString(eventTypes, event.Runtime.IncidentKind)
+	}
+	if !eventTypeMatched {
 		return false
 	}
 	filter, err := DecodeRuleFilter([]byte(rule.FilterJSON))
 	if err != nil {
 		return false
 	}
+	if strings.TrimSpace(rule.ProjectID) != "" {
+		if strings.TrimSpace(event.Project.ID) != strings.TrimSpace(rule.ProjectID) {
+			return false
+		}
+		return stringListMatches(filter.Severities, event.Severity) &&
+			stringListMatches(filter.ApplicationIDs, event.Application.ID) &&
+			stringListMatches(filter.DeploymentTargetIDs, event.DeploymentTarget.ID)
+	}
 	projectMatches := filter.Scope == RuleScopeAll || containsString(filter.ProjectIDs, event.Project.ID)
 	return projectMatches && stringListMatches(filter.Severities, event.Severity) &&
 		stringListMatches(filter.ApplicationIDs, event.Application.ID) &&
 		stringListMatches(filter.DeploymentTargetIDs, event.DeploymentTarget.ID)
+}
+
+func (s Service) RetryDelivery(ctx context.Context, deliveryID string) (model.NotificationDelivery, error) {
+	if s.DB == nil {
+		return model.NotificationDelivery{}, errors.New("notification database is unavailable")
+	}
+	db := s.DB.WithContext(ctx)
+	var delivery model.NotificationDelivery
+	now := time.Now()
+	err := db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&delivery, "id = ?", strings.TrimSpace(deliveryID)).Error; err != nil {
+			return err
+		}
+		if delivery.Status == "sending" {
+			staleBefore := now.Add(-tasks.PolicyForType(tasks.TypeNotificationDeliver).Timeout)
+			if delivery.StartedAt != nil && delivery.StartedAt.After(staleBefore) {
+				return ErrDeliveryActive
+			}
+		}
+		traceContext := telemetry.InjectMap(ctx)
+		updates := map[string]any{
+			"status":        "pending",
+			"attempt_count": 0,
+			"error_message": "",
+			"queued_at":     now,
+			"started_at":    nil,
+			"finished_at":   nil,
+			"updated_at":    now,
+		}
+		if tp := strings.TrimSpace(traceContext["traceparent"]); tp != "" {
+			updates["traceparent"] = tp
+			updates["tracestate"] = traceContext["tracestate"]
+			delivery.Traceparent = tp
+			delivery.Tracestate = traceContext["tracestate"]
+		}
+		if err := tx.Model(&model.NotificationDelivery{}).Where("id = ?", delivery.ID).Updates(updates).Error; err != nil {
+			return err
+		}
+		delivery.Status = "pending"
+		delivery.AttemptCount = 0
+		delivery.ErrorMessage = ""
+		delivery.QueuedAt = now
+		delivery.StartedAt = nil
+		delivery.FinishedAt = nil
+		delivery.UpdatedAt = now
+		return nil
+	})
+	if err != nil {
+		return model.NotificationDelivery{}, err
+	}
+	_ = s.EnqueueDeliveries(ctx, []model.NotificationDelivery{delivery})
+	_ = db.First(&delivery, "id = ?", delivery.ID).Error
+	return delivery, nil
+}
+
+func firstNonEmptyString(values ...string) string {
+	for _, value := range values {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
 }
 
 func DefaultTemplateFor(adapterKind string, eventType string, locale string) model.NotificationTemplate {

@@ -26,6 +26,7 @@ const accessTokens = {
     image: 'イメージ',
     billing: '請求',
     event: 'イベント',
+    notification: '通知',
     user: 'ユーザー',
     ...{ 'agent-observability': 'Agent オブザーバビリティ' },
     system: 'システム管理',
@@ -90,6 +91,10 @@ const accessTokens = {
     },
     event: {
       read: 'イベントを読み取る',
+    },
+    notification: {
+      read: '通知設定と配信履歴を読み取る',
+      write: '通知チャネル、ルール、再配信を管理',
     },
     user: {
       read: 'ユーザー情報を読み取る',
@@ -170,6 +175,10 @@ const accessTokens = {
     },
     event: {
       read: '現在のユーザーがアクセス権限を持つプロジェクトスペースイベントを読み取ります。',
+    },
+    notification: {
+      read: '機密クレデンシャルを除き、アクセス可能な通知チャネル、ルール、配信履歴を読み取ります。',
+      write: 'スコープ付き通知チャネルとルールの作成・更新・バインド・テスト、および配信の再試行を行います。',
     },
     user: {
       read: '現在のユーザーの基本情報を読み取ります。',

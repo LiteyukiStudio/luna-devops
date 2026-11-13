@@ -1,12 +1,11 @@
 import type { DeploymentTargetRuntimePod, Release } from '@/api'
 import type { SearchSelectOption } from '@/components/common/search-select'
-import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { api } from '@/api'
 import { SearchSelect } from '@/components/common/search-select'
-import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
-import { WORKFLOW_STATUS_REFETCH_INTERVAL_MS } from '@/lib/polling'
+import { useReleaseRuntimePods } from './use-release-runtime-pods'
+
+const normalPodStatuses = new Set(['ready', 'not-ready', 'terminating', 'running', ''])
 
 /** 发布运行日志与终端共用的副本选择器；空值表示由平台自动选择（优先当前发布）。 */
 export function RuntimePodSelect({
@@ -22,13 +21,7 @@ export function RuntimePodSelect({
 }) {
   const { t } = useTranslation()
   const [search, setSearch] = useState('')
-  const pods = useQuery({
-    ...liveObservationQueryPolicy,
-    queryKey: ['deployment-target-runtime-pods', projectId, release.applicationId, release.deploymentTargetId, release.id, search],
-    queryFn: ({ signal }) => api.listDeploymentTargetRuntimePods(projectId, release.applicationId, release.deploymentTargetId, { releaseId: release.id, search }, signal),
-    enabled: Boolean(projectId && release.applicationId && release.deploymentTargetId),
-    refetchInterval: WORKFLOW_STATUS_REFETCH_INTERVAL_MS,
-  })
+  const pods = useReleaseRuntimePods(projectId, release, search)
   const page = pods.data
   const observed = page?.status === 'ready'
   const items = observed ? page.items : []
@@ -63,11 +56,18 @@ export function RuntimePodSelect({
 }
 
 function runtimePodDescription(pod: DeploymentTargetRuntimePod, releaseId: string, t: (key: string, options?: Record<string, unknown>) => string) {
-  return [
+  const parts = [
     pod.terminating
       ? t('deploymentsPage.runtimePodTerminating')
       : t(pod.ready ? 'deploymentsPage.runtimePodReady' : 'deploymentsPage.runtimePodNotReady'),
+  ]
+  const podStatus = (pod.status ?? '').trim()
+  if (!normalPodStatuses.has(podStatus)) {
+    parts.push(t(`deploymentsPage.runtimeStatuses.${podStatus}`, { defaultValue: podStatus }))
+  }
+  parts.push(
     t('deploymentsPage.runtimePodRestarts', { count: pod.restartCount }),
     t(pod.releaseId === releaseId ? 'deploymentsPage.runtimePodCurrentRelease' : 'deploymentsPage.runtimePodOtherRelease'),
-  ].join(' · ')
+  )
+  return parts.join(' · ')
 }

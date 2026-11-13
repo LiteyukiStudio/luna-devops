@@ -61,6 +61,12 @@ export default {
       billingTransferRejected: { title: 'Billing ownership transfer rejected', content: '{{recipientName}} rejected the billing ownership transfer for “{{projectName}}”.' },
       billingTransferCancelled: { title: 'Billing ownership transfer cancelled', content: 'The members or billing owner of “{{projectName}}” changed, so the previous transfer request is no longer valid.' },
       systemAnnouncement: { title: 'Platform announcement', content: '{{message}}' },
+      runtimeOomKilled: { title: 'Container OOMKilled' },
+      runtimeCrashLoop: { title: 'Container CrashLoopBackOff' },
+      runtimeStartFailed: { title: 'Pod startup failed' },
+      runtimeDegraded: { title: 'Workload degraded' },
+      runtimeAnomaly: { content: '{{applicationName}} ({{targetName}}) in “{{projectName}}” encountered a runtime issue: {{reason}} ({{readyReplicas}}/{{desiredReplicas}} ready).' },
+      runtimeRecovered: { title: 'Runtime recovered', content: '{{applicationName}} ({{targetName}}) in “{{projectName}}” is healthy again (duration: {{durationSeconds}}s).' },
     },
   },
 }

@@ -8,8 +8,12 @@ import (
 
 type NotificationChannel struct {
 	ID                 string         `gorm:"primaryKey" json:"id"`
+	Scope              string         `gorm:"index:idx_notification_channels_scope_owner_ref;not null;default:'global'" json:"scope"`
+	OwnerRef           string         `gorm:"index:idx_notification_channels_scope_owner_ref;not null;default:''" json:"ownerRef"`
 	ProjectID          string         `gorm:"index;not null;default:''" json:"projectId"`
+	ProjectIDs         []string       `gorm:"-" json:"projectIds,omitempty"`
 	OwnerUserID        string         `gorm:"index;not null;default:''" json:"ownerUserId"`
+	PresetID           string         `gorm:"not null;default:''" json:"presetId"`
 	Name               string         `gorm:"not null" json:"name"`
 	AdapterKind        string         `gorm:"index;not null" json:"adapterKind"`
 	ConfigJSON         string         `gorm:"type:jsonb;not null;default:'{}'" json:"configJson"`
@@ -42,46 +46,56 @@ type NotificationTemplate struct {
 }
 
 type NotificationRule struct {
-	ID             string         `gorm:"primaryKey" json:"id"`
-	ProjectID      string         `gorm:"index;not null;default:''" json:"projectId"`
-	Name           string         `gorm:"not null" json:"name"`
-	EventTypesJSON string         `gorm:"type:jsonb;not null;default:'[]'" json:"eventTypesJson"`
-	FilterJSON     string         `gorm:"type:jsonb;not null;default:'{}'" json:"filterJson"`
-	ChannelIDsJSON string         `gorm:"type:jsonb;not null;default:'[]'" json:"channelIdsJson"`
-	TemplateID     string         `gorm:"index;not null;default:''" json:"templateId"`
-	Locale         string         `gorm:"not null;default:''" json:"locale"`
-	Enabled        bool           `gorm:"not null;default:true" json:"enabled"`
-	CreatedBy      string         `json:"createdBy"`
-	CreatedAt      time.Time      `json:"createdAt"`
-	UpdatedAt      time.Time      `json:"updatedAt"`
-	DeletedAt      gorm.DeletedAt `gorm:"index" json:"-"`
+	ID                    string         `gorm:"primaryKey" json:"id"`
+	ProjectID             string         `gorm:"index;not null;default:''" json:"projectId"`
+	Name                  string         `gorm:"not null" json:"name"`
+	EventTypesJSON        string         `gorm:"type:jsonb;not null;default:'[]'" json:"eventTypesJson"`
+	FilterJSON            string         `gorm:"type:jsonb;not null;default:'{}'" json:"filterJson"`
+	ChannelIDsJSON        string         `gorm:"type:jsonb;not null;default:'[]'" json:"channelIdsJson"`
+	ChannelTargetsJSON    string         `gorm:"type:jsonb;not null;default:'{}'" json:"channelTargetsJson"`
+	TemplateID            string         `gorm:"index;not null;default:''" json:"templateId"`
+	Locale                string         `gorm:"not null;default:''" json:"locale"`
+	TimeZone              string         `gorm:"not null;default:'Asia/Shanghai'" json:"timeZone"`
+	RemindIntervalMinutes int            `gorm:"not null;default:60" json:"remindIntervalMinutes"`
+	MaxReminders          int            `gorm:"not null;default:3" json:"maxReminders"`
+	NotifyOnRecovery      bool           `gorm:"not null;default:true" json:"notifyOnRecovery"`
+	Enabled               bool           `gorm:"not null;default:true" json:"enabled"`
+	CreatedBy             string         `json:"createdBy"`
+	CreatedAt             time.Time      `json:"createdAt"`
+	UpdatedAt             time.Time      `json:"updatedAt"`
+	DeletedAt             gorm.DeletedAt `gorm:"index" json:"-"`
 }
 
 type NotificationDelivery struct {
-	ID              string     `gorm:"primaryKey" json:"id"`
-	ProjectID       string     `gorm:"index;not null;default:''" json:"projectId"`
-	RecipientUserID string     `gorm:"index;not null;default:'';uniqueIndex:idx_notification_deliveries_event_channel_recipient" json:"recipientUserId"`
-	EventID         string     `gorm:"index;not null;uniqueIndex:idx_notification_deliveries_event_channel_recipient" json:"eventId"`
-	EventType       string     `gorm:"index;not null" json:"eventType"`
-	Severity        string     `gorm:"index;not null;default:''" json:"severity"`
-	ChannelID       string     `gorm:"index;not null;uniqueIndex:idx_notification_deliveries_event_channel_recipient" json:"channelId"`
-	AdapterKind     string     `gorm:"index;not null" json:"adapterKind"`
-	RuleID          string     `gorm:"index;not null;default:''" json:"ruleId"`
-	TemplateID      string     `gorm:"index;not null;default:''" json:"templateId"`
-	EventJSON       string     `gorm:"type:jsonb;not null;default:'{}'" json:"eventJson"`
-	Traceparent     string     `gorm:"type:text;not null;default:''" json:"-"`
-	Tracestate      string     `gorm:"type:text;not null;default:''" json:"-"`
-	Status          string     `gorm:"index;not null;default:pending" json:"status"`
-	AttemptCount    int        `gorm:"not null;default:0" json:"attemptCount"`
-	DurationMillis  int64      `gorm:"not null;default:0" json:"durationMillis"`
-	ErrorMessage    string     `gorm:"type:text;not null;default:''" json:"errorMessage"`
-	RequestSnapshot string     `gorm:"type:jsonb;not null;default:'{}'" json:"requestSnapshot"`
-	ResponseSnippet string     `gorm:"type:text;not null;default:''" json:"responseSnippet"`
-	QueuedAt        time.Time  `json:"queuedAt"`
-	StartedAt       *time.Time `json:"startedAt"`
-	FinishedAt      *time.Time `json:"finishedAt"`
-	CreatedAt       time.Time  `json:"createdAt"`
-	UpdatedAt       time.Time  `json:"updatedAt"`
+	ID                 string     `gorm:"primaryKey" json:"id"`
+	ProjectID          string     `gorm:"index;not null;default:''" json:"projectId"`
+	RecipientUserID    string     `gorm:"index;not null;default:'';uniqueIndex:idx_notification_deliveries_event_channel_recipient" json:"recipientUserId"`
+	EventID            string     `gorm:"index;not null;uniqueIndex:idx_notification_deliveries_event_channel_recipient" json:"eventId"`
+	EventType          string     `gorm:"index;not null" json:"eventType"`
+	Severity           string     `gorm:"index;not null;default:''" json:"severity"`
+	ChannelID          string     `gorm:"index;not null;uniqueIndex:idx_notification_deliveries_event_channel_recipient" json:"channelId"`
+	ChannelName        string     `gorm:"-" json:"channelName,omitempty"`
+	RecipientSummary   string     `gorm:"-" json:"recipientSummary,omitempty"`
+	AdapterKind        string     `gorm:"index;not null" json:"adapterKind"`
+	RuleID             string     `gorm:"index;not null;default:''" json:"ruleId"`
+	RuleName           string     `gorm:"-" json:"ruleName,omitempty"`
+	TemplateID         string     `gorm:"index;not null;default:''" json:"templateId"`
+	TargetOverrideJSON string     `gorm:"type:jsonb;not null;default:'{}'" json:"targetOverrideJson"`
+	TimeZone           string     `gorm:"not null;default:''" json:"timeZone"`
+	EventJSON          string     `gorm:"type:jsonb;not null;default:'{}'" json:"eventJson"`
+	Traceparent        string     `gorm:"type:text;not null;default:''" json:"-"`
+	Tracestate         string     `gorm:"type:text;not null;default:''" json:"-"`
+	Status             string     `gorm:"index;not null;default:pending" json:"status"`
+	AttemptCount       int        `gorm:"not null;default:0" json:"attemptCount"`
+	DurationMillis     int64      `gorm:"not null;default:0" json:"durationMillis"`
+	ErrorMessage       string     `gorm:"type:text;not null;default:''" json:"errorMessage"`
+	RequestSnapshot    string     `gorm:"type:jsonb;not null;default:'{}'" json:"requestSnapshot"`
+	ResponseSnippet    string     `gorm:"type:text;not null;default:''" json:"responseSnippet"`
+	QueuedAt           time.Time  `json:"queuedAt"`
+	StartedAt          *time.Time `json:"startedAt"`
+	FinishedAt         *time.Time `json:"finishedAt"`
+	CreatedAt          time.Time  `json:"createdAt"`
+	UpdatedAt          time.Time  `json:"updatedAt"`
 }
 
 type UserNotificationPreference struct {

@@ -11,6 +11,7 @@ import (
 
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/notification"
+	"github.com/LiteyukiStudio/devops/internal/security"
 	"gorm.io/gorm"
 )
 
@@ -149,7 +150,7 @@ func Send(
 	if err != nil {
 		return notification.SendResult{}, err
 	}
-	return (notification.SMTPAdapter{}).Send(ctx, raw, nil, message, secretResolver)
+	return (notification.SMTPAdapter{}).Send(notification.WithEgressPolicy(ctx, security.AdminEgressPolicy()), raw, nil, message, secretResolver)
 }
 
 func smtpConfig(settings model.PlatformMailSettings, recipient string) (notification.SMTPConfig, error) {

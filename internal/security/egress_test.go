@@ -26,6 +26,11 @@ func TestPublicEgressPolicyBlocksPrivateAndSpecialIPs(t *testing.T) {
 			t.Fatalf("%s should be blocked, got %v", target, err)
 		}
 	}
+	for _, tcpTarget := range []string{"127.0.0.1:587", "10.0.0.1:465", "169.254.169.254:25", "[::1]:587"} {
+		if _, err := policy.DialContext(context.Background(), "tcp", tcpTarget, 0); !errors.Is(err, ErrBlockedByPolicy) {
+			t.Fatalf("DialContext(%s) should be blocked, got %v", tcpTarget, err)
+		}
+	}
 }
 
 func TestAdminEgressPolicyAllowsPrivateIPs(t *testing.T) {

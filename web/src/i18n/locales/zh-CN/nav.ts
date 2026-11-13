@@ -17,6 +17,7 @@ const nav = {
     sharedConfig: '共享配置',
     volumes: '数据卷',
     members: '成员',
+    notifications: '通知',
     topology: '服务关系',
   },
   commandPalette: {

@@ -542,13 +542,18 @@ export interface GatewayTrafficStatus {
 
 export interface NotificationChannel {
   id: string
+  scope?: 'global' | 'project' | 'user' | string
+  ownerRef?: string
   projectId: string
+  projectIds?: string[]
   ownerUserId: string
+  presetId?: string
   name: string
   adapterKind: 'webhook' | 'smtp' | string
   configJson: string
   config?: unknown
   secretSet?: Record<string, boolean>
+  canManage?: boolean
   enabled: boolean
   lastDeliveryStatus: string
   lastDeliveryError: string
@@ -556,6 +561,11 @@ export interface NotificationChannel {
   createdBy: string
   createdAt: string
   updatedAt: string
+}
+
+export interface NotificationChannelTargetOverride {
+  to?: string[]
+  cc?: string[]
 }
 
 export interface NotificationTemplate {
@@ -592,8 +602,13 @@ export interface NotificationRule {
   eventTypesJson: string
   filterJson: string
   channelIdsJson: string
+  channelTargetsJson?: string
   templateId: string
   locale: string
+  timeZone?: string
+  remindIntervalMinutes?: number
+  maxReminders?: number
+  notifyOnRecovery?: boolean
   enabled: boolean
   createdBy: string
   createdAt: string
@@ -608,9 +623,15 @@ export interface NotificationDelivery {
   eventType: string
   severity: string
   channelId: string
+  channelName?: string
+  recipientSummary?: string
   adapterKind: string
   ruleId: string
+  ruleName?: string
   templateId: string
+  targetOverrideJson?: string
+  timeZone?: string
+  eventJson?: string
   status: string
   attemptCount: number
   durationMillis: number
@@ -632,6 +653,7 @@ export interface NotificationPreset {
   configTemplate: string
   jsonBodyTemplate: string
   secretFields: string[]
+  optionalSecretFields?: string[]
 }
 
 export interface MailSettings {
@@ -650,7 +672,7 @@ export interface MyNotificationPreferences {
   eventTypes: string[]
 }
 
-export type MyNotificationPreset = Pick<NotificationPreset, 'id' | 'name' | 'description' | 'secretFields'>
+export type MyNotificationPreset = Pick<NotificationPreset, 'id' | 'name' | 'description' | 'secretFields' | 'optionalSecretFields'>
 
 export interface MyNotificationChannelCreatePayload {
   name: string
@@ -668,6 +690,7 @@ export interface MyNotificationChannelUpdatePayload {
 export interface MyNotificationChannel {
   id: string
   ownerUserId: string
+  presetId?: string
   name: string
   adapterKind: 'webhook'
   config: Record<string, unknown>
@@ -698,6 +721,7 @@ export interface PlatformEventSnapshot {
   actor?: { id: string, name: string, email: string }
   build?: Record<string, unknown>
   release?: Record<string, unknown>
+  runtime?: Record<string, unknown>
   hook?: Record<string, unknown>
   gateway?: Record<string, unknown>
   certificate?: Record<string, unknown>
@@ -824,12 +848,39 @@ export interface PlatformEventListParams extends PaginationParams {
   dateTo?: string
 }
 
+export interface NotificationChannelListParams extends PaginationParams {
+  projectId?: string
+  scope?: 'global' | 'project' | string
+}
+
+export interface NotificationDeliveryListParams extends PaginationParams {
+  status?: string
+  eventType?: string
+  channelId?: string
+  ruleId?: string
+  eventId?: string
+  projectId?: string
+}
+
 export interface NotificationChannelPayload {
   name: string
+  scope?: 'global' | 'project'
+  projectIds?: string[]
+  presetId?: string
   adapterKind: string
-  config: unknown
+  config?: unknown
   secrets?: Record<string, string>
   enabled: boolean
+}
+
+export interface NotificationChannelDraftTestPayload {
+  channelId?: string
+  scope?: 'global' | 'project'
+  presetId?: string
+  adapterKind: string
+  config?: unknown
+  secrets?: Record<string, string>
+  testRecipient?: string
 }
 
 export interface NotificationTemplatePayload {
@@ -848,8 +899,13 @@ export interface NotificationRulePayload {
   eventTypes: string[]
   filter: NotificationRuleFilter
   channelIds: string[]
-  templateId: string
-  locale: string
+  channelTargets?: Record<string, NotificationChannelTargetOverride>
+  templateId?: string
+  locale?: string
+  timeZone?: string
+  remindIntervalMinutes?: number
+  maxReminders?: number
+  notifyOnRecovery?: boolean
   enabled: boolean
 }
 
@@ -1830,22 +1886,88 @@ export interface ReleaseLog {
 export interface ReleaseRuntimeLog {
   pod: string
   container: string
+  previous?: boolean
   content: string
+}
+
+export interface RuntimeContainerStateSnapshot {
+  state: 'running' | 'waiting' | 'terminated' | 'unknown'
+  reason?: string
+  message?: string
+  exitCode?: number
+  signal?: number
+  startedAt?: string
+  finishedAt?: string
+}
+
+export interface RuntimeContainerTerminationSnapshot {
+  reason?: string
+  message?: string
+  exitCode: number
+  signal?: number
+  startedAt?: string
+  finishedAt?: string
+}
+
+export interface RuntimeContainerStatusSnapshot {
+  name: string
+  image: string
+  init: boolean
+  ready: boolean
+  restartCount: number
+  currentState: RuntimeContainerStateSnapshot
+  lastTermination?: RuntimeContainerTerminationSnapshot
+}
+
+export interface RuntimePodConditionSnapshot {
+  type: string
+  status: string
+  reason?: string
+  message?: string
+  lastTransitionTime?: string
 }
 
 /** 部署配置运行副本的实时观测，按平台默认选择顺序返回。 */
 export interface DeploymentTargetRuntimePod {
   name: string
   phase: string
+  status?: string
   ready: boolean
+  readyContainers?: number
+  totalContainers?: number
   terminating: boolean
   restartCount: number
   releaseId: string
+  nodeName?: string
+  reason?: string
+  message?: string
   containers: string[]
+  initContainers?: string[]
+  containerStatuses?: RuntimeContainerStatusSnapshot[]
+  conditions?: RuntimePodConditionSnapshot[]
   createdAt: string
 }
 
 export interface DeploymentTargetRuntimePodPage extends PaginatedResponse<DeploymentTargetRuntimePod> {
+  status: 'ready' | 'unavailable'
+  observationCode: string
+  observedAt: string
+}
+
+export interface DeploymentTargetEvent {
+  id: string
+  type: string
+  reason: string
+  message: string
+  source: string
+  count: number
+  firstSeen: string
+  lastSeen: string
+  involvedKind: string
+  involvedName: string
+}
+
+export interface DeploymentTargetEventPage extends PaginatedResponse<DeploymentTargetEvent> {
   status: 'ready' | 'unavailable'
   observationCode: string
   observedAt: string

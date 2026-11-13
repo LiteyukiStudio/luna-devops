@@ -28,6 +28,13 @@ type DeploymentSnapshot struct {
 	UpdatedReplicas   int32
 	ReadyReplicas     int32
 	AvailableReplicas int32
+	// RolloutSettled is true when the current generation's rollout has already
+	// converged (NewReplicaSetAvailable / current revision reached), so any
+	// missing Ready/Available replicas indicate post-rollout runtime degradation
+	// rather than an active rollout in progress.
+	RolloutSettled bool
+	// ReplicaFailure is true when Kubernetes reports DeploymentReplicaFailure=True.
+	ReplicaFailure bool
 	// Resources is the per-replica envelope rendered into the current Pod template.
 	Resources  PodTemplateResources
 	ObservedAt time.Time
@@ -75,6 +82,17 @@ func deploymentStatusSnapshot(deployment *appsv1.Deployment) DeploymentSnapshot 
 		ObservedAt:        time.Now().UTC(),
 	}
 
+	if deployment.Status.ObservedGeneration >= deployment.Generation {
+		for _, condition := range deployment.Status.Conditions {
+			if condition.Type == appsv1.DeploymentProgressing && condition.Status == corev1.ConditionTrue && condition.Reason == "NewReplicaSetAvailable" {
+				snapshot.RolloutSettled = true
+			}
+			if condition.Type == appsv1.DeploymentReplicaFailure && condition.Status == corev1.ConditionTrue {
+				snapshot.ReplicaFailure = true
+			}
+		}
+	}
+
 	if desired > 0 {
 		for _, condition := range deployment.Status.Conditions {
 			if condition.Type == appsv1.DeploymentProgressing && condition.Status == corev1.ConditionFalse && condition.Reason == "ProgressDeadlineExceeded" {
@@ -98,6 +116,7 @@ func deploymentStatusSnapshot(deployment *appsv1.Deployment) DeploymentSnapshot 
 	}
 	if deployment.Status.ObservedGeneration >= deployment.Generation && replicasReady {
 		snapshot.Phase = DeploymentSucceeded
+		snapshot.RolloutSettled = true
 		snapshot.Message = "Deployment rollout completed"
 		for _, condition := range deployment.Status.Conditions {
 			if condition.Type == appsv1.DeploymentAvailable && condition.Status == corev1.ConditionTrue {
@@ -118,6 +137,9 @@ func (c *Client) getStatefulSetSnapshot(ctx context.Context, namespace, name str
 	if statefulSet.Spec.Replicas != nil {
 		desired = *statefulSet.Spec.Replicas
 	}
+	revisionSettled := statefulSet.Status.ObservedGeneration >= statefulSet.Generation &&
+		statefulSet.Status.UpdatedReplicas >= desired &&
+		(statefulSet.Status.UpdateRevision == "" || statefulSet.Status.CurrentRevision == statefulSet.Status.UpdateRevision)
 	snapshot := DeploymentSnapshot{
 		Phase:             DeploymentRunning,
 		Message:           fmt.Sprintf("StatefulSet rollout 进行中：updated=%d ready=%d available=%d desired=%d", statefulSet.Status.UpdatedReplicas, statefulSet.Status.ReadyReplicas, statefulSet.Status.AvailableReplicas, desired),
@@ -126,6 +148,7 @@ func (c *Client) getStatefulSetSnapshot(ctx context.Context, namespace, name str
 		UpdatedReplicas:   statefulSet.Status.UpdatedReplicas,
 		ReadyReplicas:     statefulSet.Status.ReadyReplicas,
 		AvailableReplicas: statefulSet.Status.AvailableReplicas,
+		RolloutSettled:    revisionSettled,
 		Resources:         podTemplateResources(statefulSet.Spec.Template),
 		ReleaseID:         statefulSet.Spec.Template.Annotations[ReleaseIDLabel],
 		ObservedAt:        time.Now().UTC(),
@@ -142,6 +165,7 @@ func (c *Client) getStatefulSetSnapshot(ctx context.Context, namespace, name str
 	}
 	if statefulSet.Status.ObservedGeneration >= statefulSet.Generation && replicasReady {
 		snapshot.Phase = DeploymentSucceeded
+		snapshot.RolloutSettled = true
 		snapshot.Message = "StatefulSet rollout completed"
 	}
 	return snapshot, nil

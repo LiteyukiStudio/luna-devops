@@ -9,6 +9,7 @@ const root = {
   appTemplates: 'App Marketplace',
   registries: 'Registries',
   clusters: 'Cluster Resources',
+  notificationChannels: 'Notification Channels',
   billing: 'Billing',
   builds: 'Builds',
   deployments: 'Deployments',

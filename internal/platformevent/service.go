@@ -152,9 +152,9 @@ func StatusForType(eventType string) string {
 	switch result {
 	case "queued", "started", "pending", "created", "updated":
 		return StatusInProgress
-	case "succeeded", "applied", "issued", "renewed":
+	case "succeeded", "applied", "issued", "renewed", "recovered":
 		return StatusSucceeded
-	case "failed", "apply_failed", "expired", "webhook_rejected":
+	case "failed", "apply_failed", "expired", "webhook_rejected", "pod_oom_killed", "pod_crash_loop", "pod_start_failed", "workload_degraded":
 		return StatusFailed
 	case "canceled":
 		return StatusCanceled

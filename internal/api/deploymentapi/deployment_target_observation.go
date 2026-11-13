@@ -89,7 +89,7 @@ func (h *Handlers) observeDeploymentTargetWorkload(ctx context.Context, project 
 	namespace := runtimeProjectNamespace(project)
 	probeCtx, cancel := context.WithTimeout(ctx, deploymentTargetObservationTimeout)
 	defer cancel()
-	snapshot, err := client.GetWorkloadSnapshot(probeCtx, namespace, target.KubernetesName, normalizeWorkloadType(target.WorkloadType))
+	observed, err := client.ObserveWorkloadRuntime(probeCtx, namespace, target.ID, target.KubernetesName, normalizeWorkloadType(target.WorkloadType))
 	switch {
 	case apierrors.IsNotFound(err):
 		target.Status = observation.StatusNotFound
@@ -99,11 +99,12 @@ func (h *Handlers) observeDeploymentTargetWorkload(ctx context.Context, project 
 		return unavailableDeploymentTarget(target, "deployment_target.workload_unavailable")
 	}
 
-	target.DesiredReplicas = snapshot.DesiredReplicas
-	target.UpdatedReplicas = snapshot.UpdatedReplicas
-	target.ReadyReplicas = snapshot.ReadyReplicas
-	target.AvailableReplicas = snapshot.AvailableReplicas
-	target.Status = deploymentObservationFromSnapshot(snapshot)
+	target.DesiredReplicas = observed.Workload.DesiredReplicas
+	target.UpdatedReplicas = observed.Workload.UpdatedReplicas
+	target.ReadyReplicas = observed.Workload.ReadyReplicas
+	target.AvailableReplicas = observed.Workload.AvailableReplicas
+	target.Status = observed.Status
+	target.ObservationCode = observed.ObservationCode
 	return target
 }
 

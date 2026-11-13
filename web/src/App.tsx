@@ -7,7 +7,7 @@ import { TooltipProvider } from './components/ui/tooltip'
 import { loadTranslationBundles } from './i18n'
 
 const AppLayout = lazyTranslated(() => import('./layouts/AppLayout'), 'AppLayout', ['nav', 'inbox', 'accountPage', 'aiAssistant', 'projectSpaces', 'apps'])
-const AccountPage = lazyTranslated(() => import('./pages/settings/account/AccountPage'), 'AccountPage', ['accountPage', 'accessTokens', 'settings', 'usersPage'])
+const AccountPage = lazyTranslated(() => import('./pages/settings/account/AccountPage'), 'AccountPage', ['accountPage', 'accessTokens', 'settings', 'usersPage', 'notificationsPage', 'eventsPage'])
 const AppTemplatesPage = lazyTranslated(() => import('./pages/app-templates/AppTemplatesPage'), 'AppTemplatesPage', ['appTemplatesPage', 'deploymentsPage', 'projectSpaces', 'projectVolumes'])
 const ApplicationConfigPage = lazyTranslated(() => import('./pages/applications/ApplicationConfigPage'), 'ApplicationConfigPage', ['apps', 'buildTemplates', 'buildsPage', 'deploymentsPage', 'gatewayRoutesPage', 'repositories', 'runtimeConfigSets', 'runtimeConfigFilesEditor', 'clustersPage', 'billingPage', 'projectHooks', 'codeRepositoriesView', 'projectVolumes'])
 const AuthProvidersPage = lazyTranslated(() => import('./pages/settings/identity/AuthProvidersPage'), 'AuthProvidersPage', ['authProvidersPage', 'settings', 'usersPage'])
@@ -17,15 +17,16 @@ const CodeRepositoriesPage = lazyTranslated(() => import('./pages/code-repositor
 const DashboardPage = lazyTranslated(() => import('./pages/dashboard/DashboardPage'), 'DashboardPage', ['dashboardPage', 'registriesPage', 'clustersPage', 'eventsPage', 'projectSpaces'])
 const DeploymentTargetEditorPage = lazyTranslated(() => import('./pages/applications/deployments/editor/DeploymentTargetEditorPage'), 'DeploymentTargetEditorPage', ['apps', 'buildTemplates', 'buildsPage', 'deploymentsPage', 'deploymentTargetEditor', 'repositories', 'runtimeConfigSets', 'runtimeConfigFilesEditor', 'clustersPage', 'billingPage', 'projectHooks', 'codeRepositoriesView', 'projectVolumes'])
 const EventsPage = lazyTranslated(() => import('./pages/events/EventsPage'), 'EventsPage', ['eventsPage'])
+const IntegrationNotificationChannelsPage = lazyTranslated(() => import('./pages/notifications/IntegrationNotificationChannelsPage'), 'IntegrationNotificationChannelsPage', ['notificationsPage', 'eventsPage', 'projectSpaces'])
 const LoginPage = lazyNamed(() => import('./pages/login/LoginPage'), 'LoginPage')
 const InboxPage = lazyTranslated(() => import('./pages/inbox/InboxPage'), 'InboxPage', ['inbox', 'eventsPage'])
 const RegisterPage = lazyTranslated(() => import('./pages/login/RegisterPage'), 'RegisterPage', ['usersPage'])
-const NotificationsPage = lazyTranslated(() => import('./pages/settings/notifications/NotificationsPage'), 'NotificationsPage', ['notificationsPage', 'settings'])
+const NotificationsPage = lazyTranslated(() => import('./pages/settings/notifications/NotificationsPage'), 'NotificationsPage', ['notificationsPage', 'settings', 'eventsPage', 'projectSpaces'])
 const OAuthAuthorizePage = lazyNamed(() => import('./pages/oauth/OAuthAuthorizePage'), 'OAuthAuthorizePage')
 const OAuthDevicePage = lazyNamed(() => import('./pages/oauth/OAuthDevicePage'), 'OAuthDevicePage')
 const OperationsDashboardPage = lazyTranslated(() => import('./pages/settings/operations/OperationsDashboardPage'), 'OperationsDashboardPage', ['operationsDashboardPage', 'settings'])
 const ProjectsPage = lazyTranslated(() => import('./pages/projects/overview/ProjectsPage'), 'ProjectsPage', ['projectSpaces'])
-const ProjectWorkspacePage = lazyTranslated(() => import('./pages/projects/overview/ProjectWorkspacePage'), 'ProjectWorkspacePage', ['projectSpaces', 'apps', 'buildsPage', 'runtimeConfigSets', 'projectHooks', 'projectMembers', 'projectVolumes', 'projectTopology', 'deploymentsPage', 'gatewayRoutesPage', 'billingPage', 'eventsPage', 'runtimeConfigFilesEditor'])
+const ProjectWorkspacePage = lazyTranslated(() => import('./pages/projects/overview/ProjectWorkspacePage'), 'ProjectWorkspacePage', ['projectSpaces', 'apps', 'buildsPage', 'runtimeConfigSets', 'projectHooks', 'projectMembers', 'projectVolumes', 'projectTopology', 'deploymentsPage', 'gatewayRoutesPage', 'billingPage', 'eventsPage', 'runtimeConfigFilesEditor', 'notificationsPage'])
 const RegistriesPage = lazyTranslated(() => import('./pages/registries/RegistriesPage'), 'RegistriesPage', ['registriesPage', 'projectSpaces'])
 const SiteSettingsPage = lazyTranslated(() => import('./pages/settings/site/SiteSettingsPage'), 'SiteSettingsPage', ['settings', 'buildsPage'])
 const UsersPage = lazyTranslated(() => import('./pages/settings/identity/UsersPage'), 'UsersPage', ['usersPage', 'settings'])
@@ -58,6 +59,7 @@ export default function App() {
             <Route path="/code-repositories" element={<CodeRepositoriesPage />} />
             <Route path="/registries" element={<RegistriesPage />} />
             <Route path="/clusters" element={<ClustersPage />} />
+            <Route path="/notification-channels" element={<IntegrationNotificationChannelsPage />} />
             <Route path="/billing" element={<BillingPage />} />
             <Route path="/settings/account" element={<AccountPage />} />
             <Route path="/settings/auth-providers" element={<AuthProvidersPage />} />

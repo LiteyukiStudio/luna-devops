@@ -1,11 +1,29 @@
 import type { DeploymentTargetRow } from './application-deployment-targets-list'
 import type { DeploymentTarget, GatewayRoute, Release } from '@/api'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
+import { api } from '@/api'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { ApplicationDeploymentTargetsList } from './application-deployment-targets-list'
 import '@/i18n'
+
+vi.mock('./application-deployment-target-metrics-cell', () => ({
+  DeploymentTargetMetricsCell: () => <span>-</span>,
+}))
+
+vi.mock('@/api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/api')>()
+  return {
+    ...actual,
+    api: {
+      ...actual.api,
+      listDeploymentTargetEvents: vi.fn(),
+      listDeploymentTargetRuntimePods: vi.fn(),
+    },
+  }
+})
 
 const deploymentTarget = {
   applicationId: 'app_1',
@@ -48,31 +66,37 @@ const release = {
   type: 'deploy',
 } satisfies Release
 
-function renderList(items: DeploymentTargetRow[] = [], handlers: { onCancelRelease?: (release: Release) => void, onViewLogs?: (release: Release) => void } = {}) {
+function renderList(items: DeploymentTargetRow[] = [], handlers: {
+  onCancelRelease?: (release: Release) => void
+  onViewLogs?: (release: Release, options?: { view?: 'deployment' | 'runtime', pod?: string, previous?: boolean }) => void
+} = {}) {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
-    <TooltipProvider>
-      <ApplicationDeploymentTargetsList
-        applicationId="app_1"
-        cancelReleasePending={false}
-        createReleasePending={false}
-        deletePending={false}
-        deployableBuildRuns={[]}
-        items={items}
-        listState={{ loading: false }}
-        operationPending={{}}
-        projectId="prj_1"
-        onCreateTarget={vi.fn()}
-        onCancelRelease={handlers.onCancelRelease ?? vi.fn()}
-        onDeleteTarget={vi.fn()}
-        onOpenConsole={vi.fn()}
-        onOpenReleaseDialog={vi.fn()}
-        onEditTarget={vi.fn()}
-        onPullLatestImageDeploy={vi.fn()}
-        onRestart={vi.fn()}
-        onRollback={vi.fn()}
-        onViewLogs={handlers.onViewLogs ?? vi.fn()}
-      />
-    </TooltipProvider>,
+    <QueryClientProvider client={queryClient}>
+      <TooltipProvider>
+        <ApplicationDeploymentTargetsList
+          applicationId="app_1"
+          cancelReleasePending={false}
+          createReleasePending={false}
+          deletePending={false}
+          deployableBuildRuns={[]}
+          items={items}
+          listState={{ loading: false }}
+          operationPending={{}}
+          projectId="prj_1"
+          onCreateTarget={vi.fn()}
+          onCancelRelease={handlers.onCancelRelease ?? vi.fn()}
+          onDeleteTarget={vi.fn()}
+          onOpenConsole={vi.fn()}
+          onOpenReleaseDialog={vi.fn()}
+          onEditTarget={vi.fn()}
+          onPullLatestImageDeploy={vi.fn()}
+          onRestart={vi.fn()}
+          onRollback={vi.fn()}
+          onViewLogs={handlers.onViewLogs ?? vi.fn()}
+        />
+      </TooltipProvider>
+    </QueryClientProvider>,
   )
 }
 
@@ -205,5 +229,93 @@ describe('application deployment targets behavior', () => {
     await user.click(screen.getAllByLabelText('More actions for deploy config app-dev')[0])
     await screen.findByRole('menuitem', { name: 'View details' })
     expect(screen.queryByRole('menuitem', { name: 'Cancel release' })).not.toBeInTheDocument()
+  })
+
+  it('displays live OOMKilled pod diagnostics, cluster warning events, and jumps to previous crash logs', async () => {
+    const user = userEvent.setup()
+    const onViewLogs = vi.fn()
+    vi.mocked(api.listDeploymentTargetRuntimePods).mockResolvedValue({
+      items: [
+        {
+          name: 'app-dev-7f9c8-oom',
+          phase: 'Running',
+          status: 'oom-killed',
+          ready: false,
+          readyContainers: 0,
+          totalContainers: 1,
+          terminating: false,
+          restartCount: 5,
+          releaseId: 'release_1',
+          nodeName: 'node-a',
+          containers: ['app'],
+          containerStatuses: [
+            {
+              name: 'app',
+              image: 'registry.example/app:v1',
+              init: false,
+              ready: false,
+              restartCount: 5,
+              currentState: { state: 'waiting', reason: 'CrashLoopBackOff', message: 'back-off 2m40s restarting failed container' },
+              lastTermination: { reason: 'OOMKilled', exitCode: 137, finishedAt: '2026-09-06T01:02:00Z' },
+            },
+          ],
+          createdAt: '2026-09-06T00:00:00Z',
+        },
+      ],
+      page: 1,
+      pageSize: 100,
+      sortBy: 'restartCount',
+      sortOrder: 'desc',
+      total: 1,
+      totalPages: 1,
+      status: 'ready',
+      observationCode: 'deployment_target.runtime_pods_ready',
+      observedAt: '2026-09-06T01:03:00Z',
+    })
+    vi.mocked(api.listDeploymentTargetEvents).mockResolvedValue({
+      items: [
+        {
+          id: 'evt_pod_1',
+          involvedKind: 'Pod',
+          involvedName: 'app-dev-7f9c8-oom',
+          type: 'Warning',
+          reason: 'BackOff',
+          source: 'kubelet',
+          message: 'Back-off restarting failed container app in pod app-dev-7f9c8-oom',
+          count: 12,
+          firstSeen: '2026-09-06T00:50:00Z',
+          lastSeen: '2026-09-06T01:02:30Z',
+        },
+      ],
+      page: 1,
+      pageSize: 20,
+      sortBy: 'lastSeen',
+      sortOrder: 'desc',
+      total: 1,
+      totalPages: 1,
+      status: 'ready',
+      observationCode: 'deployment_target.events_ready',
+      observedAt: '2026-09-06T01:03:00Z',
+    })
+
+    renderList([{
+      deployed: true,
+      release,
+      routes: [],
+      runtimeStatus: { podCount: 1, summary: 'OOMKilled (Exit 137)', value: 'oom-killed' },
+      target: { ...deploymentTarget, enabled: true },
+      webConsoleEnabled: false,
+    }], { onViewLogs })
+
+    await user.click(screen.getAllByRole('button', { name: 'More actions for deploy config app-dev' })[0])
+    await user.click(await screen.findByRole('menuitem', { name: 'View details' }))
+
+    const dialog = await screen.findByRole('dialog')
+    expect(await within(dialog).findByText('app-dev-7f9c8-oom')).toBeInTheDocument()
+    expect(within(dialog).getByText(/Exit 137/)).toBeInTheDocument()
+    expect(await within(dialog).findByText(/Back-off restarting failed container/)).toBeInTheDocument()
+
+    await user.click(within(dialog).getByRole('button', { name: 'Previous crash logs' }))
+    expect(onViewLogs).toHaveBeenCalledWith(release, { pod: 'app-dev-7f9c8-oom', previous: true, view: 'runtime' })
   })
 })

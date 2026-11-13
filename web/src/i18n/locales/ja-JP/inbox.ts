@@ -61,6 +61,12 @@ export default {
       billingTransferRejected: { title: '請求帰属の移転が拒否されました', content: '{{recipientName}} が「{{projectName}}」の請求帰属移転リクエストを拒否しました。' },
       billingTransferCancelled: { title: '請求帰属の移転がキャンセルされました', content: '「{{projectName}}」のメンバーまたは請求帰属が変更されたため、元の移転リクエストは無効になりました。' },
       systemAnnouncement: { title: 'プラットフォーム公告', content: '{{message}}' },
+      runtimeOomKilled: { title: 'コンテナメモリ不足終了 (OOMKilled)' },
+      runtimeCrashLoop: { title: 'コンテナクラッシュループ (CrashLoopBackOff)' },
+      runtimeStartFailed: { title: 'Pod の起動に失敗しました' },
+      runtimeDegraded: { title: 'ワークロード劣化' },
+      runtimeAnomaly: { content: '「{{projectName}}」の {{applicationName}}（{{targetName}}）で実行異常を検出しました：{{reason}}（Ready レプリカ {{readyReplicas}}/{{desiredReplicas}}）。' },
+      runtimeRecovered: { title: '実行状態が復旧しました', content: '「{{projectName}}」の {{applicationName}}（{{targetName}}）は正常に復旧しました（継続 {{durationSeconds}} 秒）。' },
     },
   },
 }

@@ -4,7 +4,7 @@ import type { DataListColumn } from '@/components/common/data-list'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import i18next from 'i18next'
-import { FlaskConical, MoreHorizontal, Pencil, Plus, Trash2 } from 'lucide-react'
+import { FlaskConical, MoreHorizontal, Pencil, Plus, RotateCw, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { Controller, useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
@@ -27,12 +27,19 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { NativeSelect } from '@/components/ui/native-select'
-import { Textarea } from '@/components/ui/textarea'
+import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
+import { NotificationDeliveryDetailSheet } from '@/pages/notifications/notification-delivery-detail-sheet'
 import { SettingsTabSaveButton } from '@/pages/settings/settings-tab-save-button'
 
 const pageSize = 10
 const failureEventTypes = [
+  'runtime.pod_oom_killed',
+  'runtime.pod_crash_loop',
+  'runtime.pod_start_failed',
+  'runtime.workload_degraded',
+  'runtime.recovered',
   'build.failed',
+  'build.webhook_rejected',
   'release.failed',
   'hook.failed',
   'gateway.apply_failed',
@@ -48,7 +55,8 @@ const preferenceSchema = z.object({
 const channelSchema = z.object({
   name: z.string().trim().min(1, { error: () => i18next.t('accountPage.notifications.channelNameRequired') }),
   presetId: z.string(),
-  secretText: z.string(),
+  webhookUrl: z.string(),
+  signSecret: z.string(),
   enabled: z.boolean(),
 })
 
@@ -66,14 +74,17 @@ export function AccountNotificationsPanel() {
   const [deliveryPage, setDeliveryPage] = useState(1)
   const [channelDialog, setChannelDialog] = useState<{ channel?: MyNotificationChannel } | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<MyNotificationChannel | null>(null)
+  const [selectedDeliveryId, setSelectedDeliveryId] = useState<string | null>(null)
 
   const preferences = useQuery({ queryKey: ['my-notification-preferences'], queryFn: api.getMyNotificationPreferences })
   const presets = useQuery({ queryKey: ['my-notification-presets'], queryFn: api.listMyNotificationPresets })
   const channels = useQuery({
+    ...liveObservationQueryPolicy,
     queryKey: ['my-notification-channels', channelPage],
     queryFn: () => api.listMyNotificationChannels({ page: channelPage, pageSize, sortBy: 'createdAt', sortOrder: 'desc' }),
   })
   const deliveries = useQuery({
+    ...liveObservationQueryPolicy,
     queryKey: ['my-notification-deliveries', deliveryPage],
     queryFn: () => api.listMyNotificationDeliveries({ page: deliveryPage, pageSize, sortBy: 'createdAt', sortOrder: 'desc' }),
   })
@@ -87,6 +98,11 @@ export function AccountNotificationsPanel() {
     if (preferences.data)
       preferenceForm.reset(preferences.data)
   }, [preferenceForm, preferences.data])
+
+  const selectedDelivery = useMemo(
+    () => (deliveries.data?.items ?? []).find(item => item.id === selectedDeliveryId) ?? null,
+    [deliveries.data?.items, selectedDeliveryId],
+  )
 
   const savePreferences = useMutation({
     mutationFn: api.updateMyNotificationPreferences,
@@ -123,6 +139,14 @@ export function AccountNotificationsPanel() {
       void queryClient.invalidateQueries({ queryKey: ['my-notification-channels'] })
       void queryClient.invalidateQueries({ queryKey: ['my-notification-deliveries'] })
       toast.success(t('accountPage.notifications.testSent'))
+    },
+    onError: error => toast.error(error.message),
+  })
+  const retryDelivery = useMutation({
+    mutationFn: (delivery: NotificationDelivery) => api.retryMyNotificationDelivery(delivery.id),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['my-notification-deliveries'] })
+      toast.success(t('notificationsPage.retryQueued'))
     },
     onError: error => toast.error(error.message),
   })
@@ -179,12 +203,74 @@ export function AccountNotificationsPanel() {
       ),
     },
   ], [t, testChannel])
+
   const deliveryColumns = useMemo<DataListColumn<NotificationDelivery>[]>(() => [
-    { key: 'eventType', header: t('accountPage.notifications.eventType'), width: 'primary', render: item => <span className="font-medium">{eventTypeLabel(item.eventType, t)}</span> },
+    {
+      key: 'eventType',
+      header: t('accountPage.notifications.eventType'),
+      width: 'primary',
+      render: item => (
+        <div className="min-w-0">
+          <p className="truncate font-medium">{eventTypeLabel(item.eventType, t)}</p>
+          <p className="mt-0.5 truncate text-xs text-muted-foreground">
+            {item.channelName || item.recipientSummary || '-'}
+          </p>
+        </div>
+      ),
+    },
     { key: 'status', header: t('common.status'), width: 'status', render: item => <StatusValueBadge value={item.status} /> },
-    { key: 'attemptCount', header: t('accountPage.notifications.attempts'), width: 'number', render: item => item.attemptCount },
-    { key: 'createdAt', header: t('accountPage.notifications.deliveredAt'), width: 'compact', render: item => formatSmartDateTime(item.finishedAt ?? item.createdAt, t) },
-  ], [t])
+    {
+      key: 'attemptCount',
+      header: t('accountPage.notifications.attempts'),
+      width: 'compact',
+      render: item => (
+        <span className="tabular-nums text-xs text-muted-foreground">
+          {t('notificationsPage.attemptsOfMax', { count: item.attemptCount })}
+        </span>
+      ),
+    },
+    {
+      key: 'createdAt',
+      header: t('accountPage.notifications.deliveredAt'),
+      width: 'compact',
+      render: item => (
+        <div className="min-w-0">
+          <p className="truncate text-xs text-foreground">{formatSmartDateTime(item.finishedAt ?? item.queuedAt ?? item.createdAt, t)}</p>
+          <p className="mt-0.5 truncate tabular-nums text-xs text-muted-foreground">
+            {item.durationMillis > 0 ? t('notificationsPage.durationMs', { ms: item.durationMillis }) : '-'}
+          </p>
+        </div>
+      ),
+    },
+    {
+      key: 'actions',
+      header: t('common.actions'),
+      sticky: 'right',
+      width: 'actions',
+      className: 'text-right',
+      render: (item) => {
+        const active = item.status === 'pending' || item.status === 'sending'
+        return (
+          <div className="flex justify-end">
+            <Button
+              aria-label={t('notificationsPage.retryDelivery')}
+              disabled={retryDelivery.isPending || active}
+              size="sm"
+              type="button"
+              variant="ghost"
+              onClick={(event) => {
+                event.stopPropagation()
+                retryDelivery.mutate(item)
+              }}
+            >
+              <RotateCw className="size-3.5" />
+              <span className="sr-only sm:not-sr-only">{t('notificationsPage.retryDelivery')}</span>
+            </Button>
+          </div>
+        )
+      },
+    },
+  ], [retryDelivery, t])
 
   if (preferences.isError)
     return <ErrorState title={t('accountPage.notifications.loadFailedTitle')} description={t('accountPage.notifications.loadFailedDescription')} />
@@ -279,12 +365,14 @@ export function AccountNotificationsPanel() {
                 loading={deliveries.isLoading}
                 pagination={pageFor(deliveries.data, deliveryPage, setDeliveryPage, t)}
                 rowKey={item => item.id}
+                onRowClick={item => setSelectedDeliveryId(item.id)}
               />
             )}
       </Section>
 
       {channelDialog && (
         <ChannelDialog
+          key={channelDialog.channel?.id ?? 'new-personal-channel'}
           channel={channelDialog.channel}
           presets={presets.data ?? []}
           saving={saveChannel.isPending}
@@ -292,6 +380,15 @@ export function AccountNotificationsPanel() {
           onSave={request => saveChannel.mutate(request)}
         />
       )}
+
+      <NotificationDeliveryDetailSheet
+        canRetry
+        delivery={selectedDelivery}
+        retrying={retryDelivery.isPending}
+        onClose={() => setSelectedDeliveryId(null)}
+        onRetry={delivery => retryDelivery.mutate(delivery)}
+      />
+
       <ConfirmDialog
         description={t('accountPage.notifications.deleteConfirmDescription', { name: deleteTarget?.name ?? '' })}
         open={Boolean(deleteTarget)}
@@ -319,10 +416,18 @@ function ChannelDialog({ channel, presets, saving, onClose, onSave }: {
   })
   const presetId = form.watch('presetId')
   const selectedPreset = presets.find(item => item.id === presetId)
-  const secretFields = selectedPreset?.secretFields ?? Object.keys(channel?.secretSet ?? {})
+  const supportsSignSecret = Boolean(
+    selectedPreset?.optionalSecretFields?.includes('signSecret')
+    || channel?.secretSet?.signSecret,
+  )
 
   const submit = (values: ChannelForm) => {
-    const secrets = parseSecretLines(values.secretText)
+    const secrets: Record<string, string> = {}
+    if (values.webhookUrl.trim())
+      secrets.webhookUrl = values.webhookUrl.trim()
+    if (values.signSecret.trim())
+      secrets.signSecret = values.signSecret.trim()
+
     if (!channel && !selectedPreset) {
       toast.error(t('accountPage.notifications.presetRequired'))
       return
@@ -361,7 +466,8 @@ function ChannelDialog({ channel, presets, saving, onClose, onSave }: {
                   value={presetId}
                   onChange={(event) => {
                     form.setValue('presetId', event.target.value, { shouldDirty: true, shouldValidate: true })
-                    form.setValue('secretText', '', { shouldDirty: true })
+                    form.setValue('webhookUrl', '', { shouldDirty: true })
+                    form.setValue('signSecret', '', { shouldDirty: true })
                   }}
                 >
                   {presets.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
@@ -370,16 +476,29 @@ function ChannelDialog({ channel, presets, saving, onClose, onSave }: {
             )}
           </div>
           <Field
-            hint={channel ? t('accountPage.notifications.secretEditHint') : t('accountPage.notifications.secretHint')}
-            label={t('accountPage.notifications.secrets')}
-            required={!channel && secretFields.length > 0}
+            hint={channel ? t('accountPage.notifications.webhookUrlEditHint') : undefined}
+            label={t('accountPage.notifications.webhookUrl')}
+            required={!channel}
           >
-            <Textarea
-              {...form.register('secretText')}
-              className="min-h-24 font-mono text-sm"
-              placeholder={secretFields.map(field => `${field}=`).join('\n')}
+            <Input
+              {...form.register('webhookUrl')}
+              autoComplete="off"
+              placeholder="https://"
+              type="url"
             />
           </Field>
+          {supportsSignSecret && (
+            <Field
+              hint={t('accountPage.notifications.signSecretHint')}
+              label={t('accountPage.notifications.signSecret')}
+            >
+              <Input
+                {...form.register('signSecret')}
+                autoComplete="new-password"
+                type="password"
+              />
+            </Field>
+          )}
           <Controller
             control={form.control}
             name="enabled"
@@ -405,11 +524,12 @@ function SectionTitle({ description, title }: { description: string, title: stri
 }
 
 function channelFormValues(channel: MyNotificationChannel | undefined, presets: MyNotificationPreset[]): ChannelForm {
-  const preset = presets[0]
+  const presetId = channel?.presetId || presets[0]?.id || ''
   return {
     name: channel?.name ?? '',
-    presetId: preset?.id ?? '',
-    secretText: '',
+    presetId,
+    webhookUrl: '',
+    signSecret: '',
     enabled: channel?.enabled ?? true,
   }
 }
@@ -417,20 +537,19 @@ function channelFormValues(channel: MyNotificationChannel | undefined, presets: 
 function eventTypeLabel(eventType: string, t: TFunction) {
   switch (eventType) {
     case 'build.failed': return t('accountPage.notifications.events.buildFailed')
+    case 'build.webhook_rejected': return t('accountPage.notifications.events.buildWebhookRejected')
     case 'release.failed': return t('accountPage.notifications.events.releaseFailed')
+    case 'runtime.pod_oom_killed': return t('accountPage.notifications.events.runtimePodOomKilled')
+    case 'runtime.pod_crash_loop': return t('accountPage.notifications.events.runtimePodCrashLoop')
+    case 'runtime.pod_start_failed': return t('accountPage.notifications.events.runtimePodStartFailed')
+    case 'runtime.workload_degraded': return t('accountPage.notifications.events.runtimeWorkloadDegraded')
+    case 'runtime.recovered': return t('accountPage.notifications.events.runtimeRecovered')
     case 'hook.failed': return t('accountPage.notifications.events.hookFailed')
     case 'gateway.apply_failed': return t('accountPage.notifications.events.gatewayApplyFailed')
     case 'certificate.failed': return t('accountPage.notifications.events.certificateFailed')
     case 'certificate.expired': return t('accountPage.notifications.events.certificateExpired')
     default: return eventType
   }
-}
-
-function parseSecretLines(value: string) {
-  return Object.fromEntries(value.split('\n').map((line) => {
-    const index = line.indexOf('=')
-    return index < 0 ? ['', ''] : [line.slice(0, index).trim(), line.slice(index + 1).trim()]
-  }).filter(([key, secret]) => key && secret))
 }
 
 function pageFor(

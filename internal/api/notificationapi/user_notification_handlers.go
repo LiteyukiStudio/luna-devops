@@ -165,14 +165,17 @@ func (h *Handler) CreateMyNotificationChannel(ctx *gin.Context) {
 		writeErrorCode(ctx, http.StatusBadRequest, "notification.preset_not_found", "notification preset not found")
 		return
 	}
-	secrets, secretErrorCode := personalNotificationPresetSecrets(input.Secrets, preset.SecretFields)
+	secrets, secretErrorCode := personalNotificationPresetSecretsWithOptional(input.Secrets, preset.SecretFields, preset.OptionalSecretFields)
 	if secretErrorCode != "" {
 		writeErrorCode(ctx, http.StatusBadRequest, secretErrorCode, "notification preset secrets are invalid")
 		return
 	}
 	channel := model.NotificationChannel{
 		ID:          id.New("nch"),
+		Scope:       "user",
+		OwnerRef:    user.ID,
 		OwnerUserID: user.ID,
+		PresetID:    preset.ID,
 		Name:        strings.TrimSpace(input.Name),
 		AdapterKind: preset.AdapterKind,
 		ConfigJSON:  preset.ConfigTemplate,
@@ -246,7 +249,11 @@ func (h *Handler) UpdateMyNotificationChannel(ctx *gin.Context) {
 		if err := query.First(&channel, "id = ?", strings.TrimSpace(ctx.Param("channelId"))).Error; err != nil {
 			return err
 		}
-		secrets, code := personalNotificationExistingSecrets(input.Secrets, channel.SecretRefsJSON)
+		var optionalFields []string
+		if preset, ok := personalNotificationPreset(channel.PresetID); ok {
+			optionalFields = preset.OptionalSecretFields
+		}
+		secrets, code := personalNotificationExistingSecretsWithOptional(input.Secrets, channel.SecretRefsJSON, optionalFields)
 		if code != "" {
 			secretErrorCode = code
 			return errPersonalNotificationSecretsInvalid
@@ -340,7 +347,8 @@ func (h *Handler) TestMyNotificationChannel(ctx *gin.Context) {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
-	if err := adapter.Test(ctx.Request.Context(), []byte(channel.ConfigJSON), []byte(channel.SecretRefsJSON), h.secrets()); err != nil {
+	testCtx := notification.WithEgressPolicy(ctx.Request.Context(), notification.EgressPolicyForScope("user"))
+	if err := adapter.Test(testCtx, []byte(channel.ConfigJSON), []byte(channel.SecretRefsJSON), h.secrets()); err != nil {
 		h.WritePersonalNotificationTestFailure(ctx, user.ID, channel.ID, err)
 		return
 	}
@@ -355,6 +363,7 @@ func (h *Handler) WritePersonalNotificationTestFailure(ctx *gin.Context, userID,
 }
 
 func (h *Handler) ListMyNotificationDeliveries(ctx *gin.Context) {
+	markLiveObservationResponse(ctx)
 	user, ok := h.currentUser(ctx)
 	if !ok {
 		return
@@ -367,6 +376,12 @@ func (h *Handler) ListMyNotificationDeliveries(ctx *gin.Context) {
 	if eventType := strings.TrimSpace(ctx.Query("eventType")); eventType != "" {
 		query = query.Where("event_type = ?", eventType)
 	}
+	if channelID := strings.TrimSpace(ctx.Query("channelId")); channelID != "" {
+		query = query.Where("channel_id = ?", channelID)
+	}
+	if eventID := strings.TrimSpace(ctx.Query("eventId")); eventID != "" {
+		query = query.Where("event_id = ?", eventID)
+	}
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
@@ -374,14 +389,45 @@ func (h *Handler) ListMyNotificationDeliveries(ctx *gin.Context) {
 	}
 	var deliveries []model.NotificationDelivery
 	if err := query.Order(orderByClause(pagination, map[string]string{
-		"createdAt": "created_at",
-		"status":    "status",
-		"eventType": "event_type",
+		"createdAt":      "created_at",
+		"queuedAt":       "queued_at",
+		"finishedAt":     "finished_at",
+		"durationMillis": "duration_millis",
+		"status":         "status",
+		"eventType":      "event_type",
 	}, "created_at desc")).Limit(pagination.PageSize).Offset(pagination.Offset()).Find(&deliveries).Error; err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
+	h.enrichPersonalNotificationDeliveries(deliveries, user, ctx.Request.Context())
 	ctx.JSON(http.StatusOK, paginatedResponse(deliveries, total, pagination))
+}
+
+func (h *Handler) RetryMyNotificationDelivery(ctx *gin.Context) {
+	user, ok := h.currentUser(ctx)
+	if !ok {
+		return
+	}
+	deliveryID := strings.TrimSpace(ctx.Param("deliveryId"))
+	var existing model.NotificationDelivery
+	if err := personalNotificationDeliveries(h.dbFor(ctx), user.ID).First(&existing, "id = ?", deliveryID).Error; err != nil {
+		writeError(ctx, http.StatusNotFound, "notification delivery not found")
+		return
+	}
+	svc := notification.Service{DB: h.dbFor(ctx), Enqueuer: h.host.DeliveryEnqueuer()}
+	retried, err := svc.RetryDelivery(ctx.Request.Context(), existing.ID)
+	if errors.Is(err, notification.ErrDeliveryActive) {
+		writeErrorCode(ctx, http.StatusConflict, "notification.delivery_active", err.Error())
+		return
+	}
+	if err != nil {
+		writeError(ctx, http.StatusInternalServerError, err.Error())
+		return
+	}
+	items := []model.NotificationDelivery{retried}
+	h.enrichPersonalNotificationDeliveries(items, user, ctx.Request.Context())
+	h.auditWithContext(user.ID, "notification.personal_delivery.retry", retried.ID, true, "", ctx.Request.Context())
+	ctx.JSON(http.StatusOK, items[0])
 }
 
 func myNotificationPreferenceResponse(preference model.UserNotificationPreference) userNotificationPreferenceResponse {
@@ -420,8 +466,15 @@ func personalNotificationPreset(presetID string) (notification.WebhookPreset, bo
 }
 
 func personalNotificationPresetSecrets(values map[string]string, required []string) (map[string]string, string) {
-	allowed := make(map[string]bool, len(required))
+	return personalNotificationPresetSecretsWithOptional(values, required, nil)
+}
+
+func personalNotificationPresetSecretsWithOptional(values map[string]string, required []string, optional []string) (map[string]string, string) {
+	allowed := make(map[string]bool, len(required)+len(optional))
 	for _, field := range required {
+		allowed[field] = true
+	}
+	for _, field := range optional {
 		allowed[field] = true
 	}
 	for field := range values {
@@ -429,7 +482,7 @@ func personalNotificationPresetSecrets(values map[string]string, required []stri
 			return nil, "notification.secret_field_invalid"
 		}
 	}
-	secrets := make(map[string]string, len(required))
+	secrets := make(map[string]string, len(required)+len(optional))
 	for _, field := range required {
 		value := strings.TrimSpace(values[field])
 		if value == "" {
@@ -440,18 +493,37 @@ func personalNotificationPresetSecrets(values map[string]string, required []stri
 		}
 		secrets[field] = value
 	}
+	for _, field := range optional {
+		if value := strings.TrimSpace(values[field]); value != "" {
+			if utf8.RuneCountInString(value) > personalNotificationSecretMaxLength {
+				return nil, "notification.secret_too_long"
+			}
+			secrets[field] = value
+		}
+	}
 	return secrets, ""
 }
 
 func personalNotificationExistingSecrets(values map[string]string, existingRefsJSON string) (map[string]string, string) {
+	return personalNotificationExistingSecretsWithOptional(values, existingRefsJSON, nil)
+}
+
+func personalNotificationExistingSecretsWithOptional(values map[string]string, existingRefsJSON string, optional []string) (map[string]string, string) {
 	existing := decodeStringMap(existingRefsJSON)
+	allowed := make(map[string]bool, len(existing)+len(optional))
+	for field := range existing {
+		allowed[field] = true
+	}
+	for _, field := range optional {
+		allowed[field] = true
+	}
 	for field := range values {
-		if _, allowed := existing[field]; !allowed {
+		if !allowed[field] {
 			return nil, "notification.secret_field_invalid"
 		}
 	}
-	secrets := make(map[string]string, len(existing))
-	for field := range existing {
+	secrets := make(map[string]string, len(allowed))
+	for field := range allowed {
 		if value := strings.TrimSpace(values[field]); value != "" {
 			if utf8.RuneCountInString(value) > personalNotificationSecretMaxLength {
 				return nil, "notification.secret_too_long"

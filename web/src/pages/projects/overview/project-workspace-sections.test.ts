@@ -9,11 +9,13 @@ import {
 
 describe('project workspace sections', () => {
   it('starts with the overview as the default landing section, followed by applications', () => {
-    expect(projectWorkspaceSections.map(section => section.value)).toEqual(['overview', 'apps', 'shared-config', 'volumes', 'members', 'topology'])
+    expect(projectWorkspaceSections.map(section => section.value)).toEqual(['overview', 'apps', 'shared-config', 'volumes', 'members', 'topology', 'notifications'])
     expect(normalizeProjectWorkspaceSection(null)).toBe('overview')
     expect(normalizeProjectWorkspaceSection('unknown')).toBe('overview')
+    expect(normalizeProjectWorkspaceSection('notifications')).toBe('notifications')
     expect(projectWorkspaceSectionPath('prj 1', 'overview')).toBe('/projects/prj%201')
     expect(projectWorkspaceSectionPath('prj_1', 'apps')).toBe('/projects/prj_1?tab=apps')
+    expect(projectWorkspaceSectionPath('prj_1', 'notifications')).toBe('/projects/prj_1?tab=notifications')
   })
 
   it('maps the former build variable, runtime config and hook sections to the shared config tabs', () => {

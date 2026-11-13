@@ -28,11 +28,17 @@ func TestSMTPAdapterValidatesConfig(t *testing.T) {
 	}
 }
 
-func TestSMTPAdapterRequiresRecipient(t *testing.T) {
+func TestSMTPAdapterAllowsReusableSenderAccountAndRequiresRecipientOnSend(t *testing.T) {
 	adapter := SMTPAdapter{}
-	err := adapter.Validate(context.Background(), json.RawMessage(`{"host":"smtp.example.com","from":"devops@example.com"}`), nil)
-	if err == nil {
-		t.Fatal("expected missing recipient to fail")
+	reusableAccount := json.RawMessage(`{"host":"smtp.example.com","from":"devops@example.com"}`)
+	if err := adapter.Validate(context.Background(), reusableAccount, nil); err != nil {
+		t.Fatalf("expected reusable SMTP sender account to validate without default recipient, got: %v", err)
+	}
+	if _, err := adapter.Send(context.Background(), reusableAccount, nil, RenderedMessage{Subject: "test", Body: "body"}, nil); err == nil {
+		t.Fatal("expected Send without effective recipient to fail")
+	}
+	if err := adapter.Validate(context.Background(), json.RawMessage(`{"host":"127.0.0.1","from":"devops@example.com"}`), nil); err == nil {
+		t.Fatal("expected PublicEgressPolicy to block loopback SMTP host by default")
 	}
 }
 
@@ -53,6 +59,44 @@ func TestSMTPAdapterRendersSubjectAndBody(t *testing.T) {
 	}
 	if message.Subject != "[error] release.failed" || message.Body != "rollout failed" {
 		t.Fatalf("message = %#v", message)
+	}
+}
+
+func TestSMTPAdapterRendersRichHTMLMultipartForDefaultTemplateWithTimeZone(t *testing.T) {
+	adapter := SMTPAdapter{}
+	exit137 := int32(137)
+	event := Event{
+		Type:             "runtime.pod_oom_killed",
+		Severity:         SeverityError,
+		Project:          EntityRef{Name: "轻雪空间"},
+		Application:      EntityRef{Name: "OpenList"},
+		DeploymentTarget: EntityRef{Name: "生产环境"},
+		Runtime: RuntimeIncidentContext{
+			PodName:          "openlist-abc",
+			ContainerName:    "app",
+			Reason:           "OOMKilled",
+			ExitCode:         &exit137,
+			RestartCount:     4,
+			DiagnosticDetail: "Killed due to cgroup memory limit",
+		},
+		Links:      map[string]string{"primary": "https://devops.example.com/projects/p1/applications/a1?tab=deployments#targetId=t1"},
+		OccurredAt: time.Date(2026, 8, 28, 2, 30, 0, 0, time.UTC),
+		Message:    "容器超出内存限制被终止",
+	}
+	defaultTpl := TemplateFromModel(DefaultTemplateFor(AdapterKindSMTP, event.Type, "zh-CN"))
+	ctx := WithTimeZone(context.Background(), "Asia/Shanghai")
+	message, err := adapter.Render(ctx, event, defaultTpl, nil, nil, nil, "zh-CN")
+	if err != nil {
+		t.Fatalf("Render returned error: %v", err)
+	}
+	if !strings.Contains(message.Subject, "OOMKilled") || !strings.Contains(message.Subject, "OpenList") {
+		t.Fatalf("unexpected subject: %q", message.Subject)
+	}
+	if !strings.Contains(message.HTMLBody, "2026-08-28 10:30:00 CST") {
+		t.Fatalf("expected Asia/Shanghai formatted timestamp in HTMLBody:\n%s", message.HTMLBody)
+	}
+	if !strings.Contains(message.HTMLBody, "ExitCode: 137") || !strings.Contains(message.Body, "ExitCode: 137") {
+		t.Fatalf("expected diagnostic exit code in HTML and text body")
 	}
 }
 

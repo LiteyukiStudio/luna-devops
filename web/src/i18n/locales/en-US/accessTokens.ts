@@ -31,6 +31,7 @@ const accessTokens = {
     image: 'Images',
     billing: 'Billing',
     event: 'Events',
+    notification: 'Notifications',
     user: 'Users',
     ...{ 'agent-observability': 'Agent observability' },
     system: 'System',
@@ -95,6 +96,10 @@ const accessTokens = {
     },
     event: {
       read: 'Read events',
+    },
+    notification: {
+      read: 'Read notification configs and deliveries',
+      write: 'Manage notification channels, rules, and retries',
     },
     user: {
       read: 'Read users',
@@ -175,6 +180,10 @@ const accessTokens = {
     },
     event: {
       read: 'Read events from project spaces available to the current user.',
+    },
+    notification: {
+      read: 'Read notification channels, rules, and delivery records without exposing secrets.',
+      write: 'Create, update, bind, or test scoped notification channels and rules, and retry deliveries.',
     },
     user: {
       read: 'Read current user metadata.',

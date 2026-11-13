@@ -407,4 +407,28 @@ describe('deployment target editor', () => {
     expect(await screen.findByText('Repository binding not found')).toBeInTheDocument()
     expect(screen.getByRole('combobox', { name: /Code repository/ })).toHaveAttribute('aria-invalid', 'true')
   })
+
+  it('serializes structured HTTP readiness probes into Kubernetes Probe JSON', async () => {
+    const user = userEvent.setup()
+    renderEditor({ values: { name: 'dev' } })
+
+    await user.click(within(screen.getByRole('navigation', { name: 'Deploy config sections' })).getByRole('link', { name: /Advanced/ }))
+    await user.click(screen.getByRole('button', { name: /Container startup and health checks/ }))
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Readiness probe' }), 'httpGet')
+    const pathInput = screen.getByRole('textbox', { name: 'Path' })
+    await user.clear(pathInput)
+    await user.type(pathInput, '/readyz')
+    await user.click(screen.getByRole('button', { name: 'Create deploy config' }))
+
+    expect(await screen.findByText('deployments list')).toBeInTheDocument()
+    expect(api.createDeploymentTarget).toHaveBeenCalledWith('prj_1', 'app_1', expect.objectContaining({
+      readinessProbe: JSON.stringify({
+        httpGet: { path: '/readyz', port: 8080 },
+        initialDelaySeconds: 5,
+        periodSeconds: 10,
+        timeoutSeconds: 3,
+        failureThreshold: 3,
+      }),
+    }))
+  })
 })

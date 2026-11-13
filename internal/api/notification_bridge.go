@@ -9,6 +9,7 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/api/notificationapi"
 	transportapi "github.com/LiteyukiStudio/devops/internal/api/transport"
 	"github.com/LiteyukiStudio/devops/internal/model"
+	"github.com/LiteyukiStudio/devops/internal/notification"
 	"github.com/gin-gonic/gin"
 )
 
@@ -18,6 +19,10 @@ type notificationHost struct {
 
 func (host notificationHost) Secrets() notificationapi.SecretStore {
 	return host.handlers.secrets
+}
+
+func (host notificationHost) DeliveryEnqueuer() notification.DeliveryEnqueuer {
+	return host.handlers.taskClient
 }
 
 func (host notificationHost) NormalizeRegistrationEmail(value string) (string, error) {

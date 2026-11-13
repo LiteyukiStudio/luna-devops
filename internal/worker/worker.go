@@ -34,6 +34,7 @@ type Runner struct {
 	runAutomaticRetention          func(context.Context, time.Time) error
 	namespaceFactory               func(kubeconfig string) (kubeprovider.NamespaceManager, error)
 	kubernetesManagerFactory       func(target model.DeploymentTarget) (kubeprovider.NamespaceManager, error)
+	runtimeObserverFactory         func(ctx context.Context, target model.DeploymentTarget) (runtimeWorkloadObserver, error)
 	projectVolumeProviderFactory   func(context.Context, string) (kubeprovider.ProjectVolumeProvider, error)
 	volumeTransferProviderFactory  func(context.Context, string) (kubeprovider.VolumeTransferProvider, error)
 	volumeService                  volumeWorkerService

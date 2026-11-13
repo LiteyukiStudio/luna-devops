@@ -97,3 +97,44 @@ type webhookRoundTripFunc func(*http.Request) (*http.Response, error)
 func (run webhookRoundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {
 	return run(request)
 }
+
+func TestWebhookSignatureAndBusinessErrorDetection(t *testing.T) {
+	now := time.Unix(1700000000, 0)
+	feishuURL, err := EgressPolicyFromContext(context.Background()).ValidateURL("https://open.feishu.cn/open-apis/bot/v2/hook/token")
+	if err != nil {
+		t.Fatalf("ValidateURL error: %v", err)
+	}
+	_, signedPayload, err := applyWebhookSignature(feishuURL, []byte(`{"msg_type":"interactive"}`), "feishu", "sec_123", now)
+	if err != nil {
+		t.Fatalf("applyWebhookSignature feishu error: %v", err)
+	}
+	var feishuBody map[string]any
+	if err := json.Unmarshal(signedPayload, &feishuBody); err != nil {
+		t.Fatalf("unmarshal signed feishu payload: %v", err)
+	}
+	if feishuBody["timestamp"] != "1700000000" || feishuBody["sign"] == "" {
+		t.Fatalf("unexpected feishu signed body: %#v", feishuBody)
+	}
+
+	dingtalkURL, err := EgressPolicyFromContext(context.Background()).ValidateURL("https://oapi.dingtalk.com/robot/send?access_token=abc")
+	if err != nil {
+		t.Fatalf("ValidateURL dingtalk error: %v", err)
+	}
+	signedDingtalkURL, _, err := applyWebhookSignature(dingtalkURL, []byte(`{"msgtype":"markdown"}`), "dingtalk", "SEC_abc", now)
+	if err != nil {
+		t.Fatalf("applyWebhookSignature dingtalk error: %v", err)
+	}
+	if signedDingtalkURL.Query().Get("timestamp") == "" || signedDingtalkURL.Query().Get("sign") == "" {
+		t.Fatalf("expected dingtalk query signature, got %s", signedDingtalkURL.String())
+	}
+
+	if err := webhookResponseBusinessError(`{"code":0,"msg":"success"}`); err != nil {
+		t.Fatalf("expected code 0 to succeed, got %v", err)
+	}
+	if err := webhookResponseBusinessError(`{"code":19021,"msg":"sign match fail"}`); err == nil {
+		t.Fatal("expected feishu code 19021 to fail")
+	}
+	if err := webhookResponseBusinessError(`{"errcode":310000,"errmsg":"keywords not in content"}`); err == nil {
+		t.Fatal("expected dingtalk errcode 310000 to fail")
+	}
+}

@@ -31,6 +31,43 @@ func (h *Handlers) GetReleaseRuntimeLogs(ctx *gin.Context) {
 	if !ok {
 		return
 	}
+	h.serveRuntimePodLogs(ctx, client, namespace, target.ID, release.ID, parseBoolQuery(ctx.Query("preferAbnormal")))
+}
+
+func (h *Handlers) GetDeploymentTargetRuntimeLogs(ctx *gin.Context) {
+	markLiveObservationResponse(ctx)
+	_, project, ok := h.authorizeProject(ctx, authz.ActionDeploymentRead)
+	if !ok {
+		return
+	}
+	app, ok := h.findApplication(ctx)
+	if !ok {
+		return
+	}
+	var target model.DeploymentTarget
+	if err := h.dbFor(ctx).First(&target, "id = ? and project_id = ? and application_id = ?", ctx.Param("targetId"), project.ID, app.ID).Error; err != nil {
+		writeError(ctx, http.StatusNotFound, "deployment target not found")
+		return
+	}
+	client, namespace, _, ok := h.runtimeClientForDeploymentTarget(ctx, project, target)
+	if !ok {
+		return
+	}
+	preferAbnormal := true
+	if raw := strings.TrimSpace(ctx.Query("preferAbnormal")); raw != "" {
+		preferAbnormal = parseBoolQuery(raw)
+	}
+	h.serveRuntimePodLogs(ctx, client, namespace, target.ID, strings.TrimSpace(ctx.Query("releaseId")), preferAbnormal)
+}
+
+func (h *Handlers) serveRuntimePodLogs(
+	ctx *gin.Context,
+	client *kubeprovider.Client,
+	namespace string,
+	deploymentTargetID string,
+	preferredReleaseID string,
+	preferAbnormal bool,
+) {
 	tailLines := int64(500)
 	if value := strings.TrimSpace(ctx.Query("tailLines")); value != "" {
 		if parsed, err := strconv.ParseInt(value, 10, 64); err == nil && parsed > 0 && parsed <= 5000 {
@@ -42,12 +79,15 @@ func (h *Handlers) GetReleaseRuntimeLogs(ctx *gin.Context) {
 	result, err := client.RuntimePodLogs(requestCtx, kubeprovider.RuntimePodLogsOptions{
 		RuntimePodSelection: kubeprovider.RuntimePodSelection{
 			Namespace:          namespace,
-			DeploymentTargetID: target.ID,
+			DeploymentTargetID: deploymentTargetID,
 			Pod:                strings.TrimSpace(ctx.Query("pod")),
-			PreferredReleaseID: release.ID,
+			PreferredReleaseID: preferredReleaseID,
+			PreferAbnormal:     preferAbnormal,
 			Container:          strings.TrimSpace(ctx.Query("container")),
 		},
-		TailLines: tailLines,
+		TailLines:  tailLines,
+		Previous:   parseBoolQuery(ctx.Query("previous")),
+		Timestamps: parseBoolQuery(ctx.Query("timestamps")),
 	})
 	if errors.Is(err, kubeprovider.ErrRuntimePodNotFound) {
 		writeRuntimePodNotFound(ctx)
@@ -57,11 +97,24 @@ func (h *Handlers) GetReleaseRuntimeLogs(ctx *gin.Context) {
 		writeErrorCode(ctx, http.StatusConflict, "runtime.container_not_started", "runtime container has not started; no logs are available yet")
 		return
 	}
+	if errors.Is(err, kubeprovider.ErrRuntimePreviousLogNotFound) {
+		writeErrorCode(ctx, http.StatusConflict, "runtime.previous_log_not_found", "runtime container has no previous terminated logs")
+		return
+	}
 	if err != nil {
 		writeError(ctx, http.StatusBadGateway, err.Error())
 		return
 	}
 	ctx.JSON(http.StatusOK, result)
+}
+
+func parseBoolQuery(raw string) bool {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "1", "true", "yes":
+		return true
+	default:
+		return false
+	}
 }
 
 func (h *Handlers) ExecReleaseRuntimeCommand(ctx *gin.Context) {

@@ -44,6 +44,49 @@ describe('deployment runtime status', () => {
     expect(status.value).toBe('not-configured')
     expect(status.podCount).toBe(0)
   })
+
+  it('surfaces abnormal pod failure states instead of masking them with progressing or degraded', () => {
+    const target = {
+      clusterId: cluster.id,
+      effectiveClusterId: cluster.id,
+      id: 'target-1',
+      observationCode: 'runtime.oom_killed',
+      status: 'degraded',
+    } as DeploymentTarget
+    const oomPod = {
+      deploymentTargetId: target.id,
+      kind: 'Pod',
+      status: 'oom-killed',
+      summary: 'OOMKilled (exit 137) · Ready 0/1 · Restarts 4',
+    } as ClusterResource
+    const healthyPod = {
+      deploymentTargetId: target.id,
+      kind: 'Pod',
+      status: 'ready',
+      summary: 'Ready 2/2',
+    } as ClusterResource
+
+    const status = buildDeploymentRuntimeStatus(target, cluster, { [cluster.id]: [healthyPod, oomPod] }, {}, {})
+
+    expect(status.value).toBe('oom-killed')
+    expect(status.summary).toContain('OOMKilled')
+    expect(replicaIndicatorState(status.value)).toBe('failure')
+  })
+
+  it('surfaces crash-looping pods even during an active rollout', () => {
+    const target = { clusterId: cluster.id, effectiveClusterId: cluster.id, id: 'target-1', status: 'progressing' } as DeploymentTarget
+    const crashPod = {
+      deploymentTargetId: target.id,
+      kind: 'Pod',
+      status: 'Running',
+      summary: 'CrashLoopBackOff · Restarts 5',
+    } as ClusterResource
+
+    const status = buildDeploymentRuntimeStatus(target, cluster, { [cluster.id]: [crashPod] }, {}, {})
+
+    expect(status.value).toBe('crash-loop-back-off')
+    expect(replicaIndicatorState(status.value)).toBe('failure')
+  })
 })
 
 describe('effective replica state', () => {

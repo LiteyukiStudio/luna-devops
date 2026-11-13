@@ -9,6 +9,7 @@ import (
 	transportapi "github.com/LiteyukiStudio/devops/internal/api/transport"
 	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/model"
+	"github.com/LiteyukiStudio/devops/internal/notification"
 	projectservice "github.com/LiteyukiStudio/devops/internal/project"
 	"github.com/LiteyukiStudio/devops/internal/secret"
 	"github.com/LiteyukiStudio/devops/internal/security"
@@ -66,6 +67,7 @@ type Host interface {
 	BuildRunActorName(user model.User) string
 	ProjectRoleActionAllowed(ctx context.Context, user model.User, projectID string, action authz.Action) (bool, error)
 	NewBuildBillingDenialCode(ctx context.Context, projectID string) (string, error)
+	DeliveryEnqueuer() notification.DeliveryEnqueuer
 }
 
 type Handler struct {

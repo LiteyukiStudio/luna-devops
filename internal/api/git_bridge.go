@@ -9,6 +9,7 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/api/buildapi"
 	"github.com/LiteyukiStudio/devops/internal/api/gitapi"
 	"github.com/LiteyukiStudio/devops/internal/model"
+	"github.com/LiteyukiStudio/devops/internal/notification"
 	gitprovider "github.com/LiteyukiStudio/devops/internal/provider/git"
 	"github.com/gin-gonic/gin"
 )
@@ -47,6 +48,10 @@ func (host gitHost) BuildRunActorName(user model.User) string {
 
 func (host gitHost) NewBuildBillingDenialCode(ctx context.Context, projectID string) (string, error) {
 	return host.handlers.domains.billing.NewBuildDenialCode(ctx, projectID)
+}
+
+func (host gitHost) DeliveryEnqueuer() notification.DeliveryEnqueuer {
+	return host.handlers.taskClient
 }
 
 type gitOAuthStateStoreAdapter struct {

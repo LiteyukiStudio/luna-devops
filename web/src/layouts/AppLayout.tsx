@@ -85,6 +85,7 @@ const navSections: NavSection[] = [
       { to: '/code-repositories', labelKey: 'codeRepositories', icon: GitBranch },
       { to: '/registries', labelKey: 'registries', icon: Container },
       { to: '/clusters', labelKey: 'clusters', icon: Server },
+      { to: '/notification-channels', labelKey: 'notificationChannels', icon: Bell },
     ],
   },
   {
@@ -113,6 +114,7 @@ const pageMetaRules = [
   { match: (pathname: string) => pathname === '/code-repositories', titleKey: 'codeRepositories' },
   { match: (pathname: string) => pathname === '/registries', titleKey: 'registries' },
   { match: (pathname: string) => pathname === '/clusters', titleKey: 'clusters' },
+  { match: (pathname: string) => pathname === '/notification-channels', titleKey: 'notificationChannels' },
   { match: (pathname: string) => pathname === '/billing', titleKey: 'billing' },
   { match: (pathname: string) => pathname === '/settings/account', titleKey: 'account' },
   { match: (pathname: string) => pathname === '/settings/auth-providers', titleKey: 'authProvidersPage.title' },

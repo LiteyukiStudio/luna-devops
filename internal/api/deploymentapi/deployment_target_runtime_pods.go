@@ -16,9 +16,10 @@ import (
 
 // recommended 为平台默认选择顺序：指定发布优先，其次就绪、运行中、创建时间从新到旧；desc 表示优先级高的在前。
 var deploymentTargetRuntimePodSortFields = map[string]string{
-	"recommended": "recommended",
-	"name":        "name",
-	"createdAt":   "createdAt",
+	"recommended":  "recommended",
+	"name":         "name",
+	"createdAt":    "createdAt",
+	"restartCount": "restartCount",
 }
 
 type deploymentTargetRuntimePodsResponse struct {
@@ -82,6 +83,16 @@ func sortRuntimePodSnapshots(pods []kubeprovider.RuntimePodSnapshot, pagination 
 	case "createdAt":
 		slices.SortStableFunc(pods, func(left, right kubeprovider.RuntimePodSnapshot) int {
 			return left.CreatedAt.Compare(right.CreatedAt)
+		})
+	case "restartCount":
+		slices.SortStableFunc(pods, func(left, right kubeprovider.RuntimePodSnapshot) int {
+			if left.RestartCount < right.RestartCount {
+				return -1
+			}
+			if left.RestartCount > right.RestartCount {
+				return 1
+			}
+			return strings.Compare(left.Name, right.Name)
 		})
 	default:
 		if pagination.SortOrder == "asc" {

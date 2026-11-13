@@ -48,7 +48,14 @@ export function platformEventResourcePath(event: Pick<PlatformEvent, 'applicatio
       return resourceId ? buildRunPath({ applicationId, id: resourceId, projectId }) : applicationPath(projectId, applicationId, 'builds')
     case 'repository_binding':
       return applicationPath(projectId, applicationId, 'builds')
+    case 'deployment_target':
+      return resourceId
+        ? applicationPath(projectId, applicationId, 'deployments', { targetId: resourceId })
+        : applicationPath(projectId, applicationId, 'deployments')
     case 'release':
+      return resourceId
+        ? applicationPath(projectId, applicationId, 'deployments', { releaseId: resourceId })
+        : applicationPath(projectId, applicationId, 'deployments')
     case 'hook':
       return applicationPath(projectId, applicationId, 'deployments')
     case 'gateway':

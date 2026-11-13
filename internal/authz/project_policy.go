@@ -48,6 +48,9 @@ var projectPolicies = map[Action]ProjectPolicy{
 	ActionBillingRead:   policy(ProjectRoleOwner, ProjectRoleAdmin),
 	ActionBillingAdjust: policy(ProjectRoleOwner),
 
+	ActionNotificationRead:   policy(ProjectRoleOwner, ProjectRoleAdmin, ProjectRoleDeveloper),
+	ActionNotificationManage: policy(ProjectRoleOwner),
+
 	ActionGitRead:  policy(ProjectRoleOwner, ProjectRoleAdmin, ProjectRoleDeveloper, ProjectRoleViewer),
 	ActionGitWrite: policy(ProjectRoleOwner, ProjectRoleAdmin, ProjectRoleDeveloper),
 

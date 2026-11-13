@@ -1,7 +1,7 @@
 import type { LucideIcon } from 'lucide-react'
-import { Boxes, HardDrive, LayoutDashboard, Network, SlidersHorizontal, Users } from 'lucide-react'
+import { Bell, Boxes, HardDrive, LayoutDashboard, Network, SlidersHorizontal, Users } from 'lucide-react'
 
-export type ProjectWorkspaceSection = 'overview' | 'apps' | 'shared-config' | 'volumes' | 'members' | 'topology'
+export type ProjectWorkspaceSection = 'overview' | 'apps' | 'shared-config' | 'volumes' | 'members' | 'topology' | 'notifications'
 
 /** “共享配置”分区内的 Tab；值沿用原独立分区的 `?tab=`，旧链接可一一映射。 */
 export type ProjectSharedConfigTab = 'build-variables' | 'runtime-configs' | 'hooks'
@@ -16,6 +16,7 @@ export const projectWorkspaceSections: { icon: LucideIcon, labelKey: string, val
   { icon: HardDrive, labelKey: 'nav.projectSections.volumes', value: 'volumes' },
   { icon: Users, labelKey: 'nav.projectSections.members', value: 'members' },
   { icon: Network, labelKey: 'nav.projectSections.topology', value: 'topology' },
+  { icon: Bell, labelKey: 'nav.projectSections.notifications', value: 'notifications' },
 ]
 
 export const projectSharedConfigTabs: readonly ProjectSharedConfigTab[] = ['build-variables', 'runtime-configs', 'hooks']

@@ -26,6 +26,7 @@ const accessTokens = {
     image: '이미지',
     billing: '청구',
     event: '이벤트',
+    notification: '알림',
     user: '사용자',
     ...{ 'agent-observability': 'Agent 관측' },
     system: '시스템 관리',
@@ -90,6 +91,10 @@ const accessTokens = {
     },
     event: {
       read: '이벤트 읽기',
+    },
+    notification: {
+      read: '알림 설정 및 발송 기록 읽기',
+      write: '알림 채널, 규칙 및 재발송 관리',
     },
     user: {
       read: '사용자 정보 읽기',
@@ -170,6 +175,10 @@ const accessTokens = {
     },
     event: {
       read: '현재 사용자가 접근 권한을 가진 프로젝트 스페이스 이벤트를 읽습니다.',
+    },
+    notification: {
+      read: '민감한 자격 증명을 제외하고 접근 가능한 알림 채널, 규칙 및 발송 기록을 읽습니다.',
+      write: '프로젝트 알림 채널과 규칙을 생성, 수정, 바인딩 또는 테스트하고 실패한 발송을 재시도합니다.',
     },
     user: {
       read: '현재 사용자의 기본 정보를 읽습니다.',

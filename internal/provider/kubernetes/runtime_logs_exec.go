@@ -131,14 +131,22 @@ func (c *Client) RuntimeMetrics(ctx context.Context, options RuntimeMetricsOptio
 }
 
 func (c *Client) RuntimePodLogs(ctx context.Context, options RuntimePodLogsOptions) (RuntimePodLogsResult, error) {
-	pod, container, err := c.runtimePod(ctx, options.RuntimePodSelection)
+	pod, container, err := c.runtimePodForLogs(ctx, options)
 	if err != nil {
 		return RuntimePodLogsResult{}, err
 	}
-	if containerNeverStarted(pod, container) {
+	if options.Previous {
+		if !containerHasPreviousLog(pod, container) {
+			return RuntimePodLogsResult{}, ErrRuntimePreviousLogNotFound
+		}
+	} else if containerNeverStarted(pod, container) {
 		return RuntimePodLogsResult{}, ErrRuntimeContainerNotStarted
 	}
-	logOptions := &corev1.PodLogOptions{Container: container}
+	logOptions := &corev1.PodLogOptions{
+		Container:  container,
+		Previous:   options.Previous,
+		Timestamps: options.Timestamps,
+	}
 	if options.TailLines > 0 {
 		logOptions.TailLines = &options.TailLines
 	}
@@ -151,7 +159,12 @@ func (c *Client) RuntimePodLogs(ctx context.Context, options RuntimePodLogsOptio
 	if err != nil {
 		return RuntimePodLogsResult{}, err
 	}
-	return RuntimePodLogsResult{Pod: pod.Name, Container: container, Content: string(content)}, nil
+	return RuntimePodLogsResult{
+		Pod:       pod.Name,
+		Container: container,
+		Previous:  options.Previous,
+		Content:   string(content),
+	}, nil
 }
 
 func (c *Client) RuntimeExec(ctx context.Context, options RuntimeExecOptions) (RuntimeExecResult, error) {
@@ -330,6 +343,9 @@ var ErrRuntimePodNotFound = errors.New("runtime pod not found")
 // ErrRuntimeContainerNotStarted 表示所选副本的容器从未启动过（拉取镜像失败、创建中等），没有可读取的日志。
 var ErrRuntimeContainerNotStarted = errors.New("runtime container has not started")
 
+// ErrRuntimePreviousLogNotFound 表示所选容器没有上一次退出/崩溃实例的日志可读。
+var ErrRuntimePreviousLogNotFound = errors.New("runtime container has no previous terminated logs")
+
 // RuntimePods 读取部署配置当前的运行副本：当前发布优先，其次就绪、运行中，最后按创建时间从新到旧。
 func (c *Client) RuntimePods(ctx context.Context, namespace string, deploymentTargetID string, preferredReleaseID string) ([]RuntimePodSnapshot, error) {
 	pods, err := c.listRuntimePods(ctx, namespace, deploymentTargetID)
@@ -344,7 +360,38 @@ func (c *Client) RuntimePods(ctx context.Context, namespace string, deploymentTa
 	return items, nil
 }
 
+func (c *Client) runtimePodForLogs(ctx context.Context, options RuntimePodLogsOptions) (corev1.Pod, string, error) {
+	selection := options.RuntimePodSelection
+	if strings.TrimSpace(selection.Pod) != "" || !options.Previous {
+		return c.runtimePodWithContainerScope(ctx, selection, true)
+	}
+	// 请求 previous 日志且未显式指定 Pod 时，优先定位存在上次终止记录的副本。
+	pods, err := c.listRuntimePods(ctx, selection.Namespace, selection.DeploymentTargetID)
+	if err != nil {
+		return corev1.Pod{}, "", err
+	}
+	if len(pods) == 0 {
+		return corev1.Pod{}, "", ErrRuntimePodNotFound
+	}
+	sortRuntimePodsWithOptions(pods, selection.PreferredReleaseID, true)
+	for _, candidate := range pods {
+		selectedContainer, selErr := selectPodContainerWithInit(candidate, selection.Container, true)
+		if selErr == nil && containerHasPreviousLog(candidate, selectedContainer) {
+			return candidate, selectedContainer, nil
+		}
+	}
+	selectedContainer, err := selectPodContainerWithInit(pods[0], selection.Container, true)
+	if err != nil {
+		return corev1.Pod{}, "", err
+	}
+	return pods[0], selectedContainer, nil
+}
+
 func (c *Client) runtimePod(ctx context.Context, selection RuntimePodSelection) (corev1.Pod, string, error) {
+	return c.runtimePodWithContainerScope(ctx, selection, false)
+}
+
+func (c *Client) runtimePodWithContainerScope(ctx context.Context, selection RuntimePodSelection, allowInit bool) (corev1.Pod, string, error) {
 	namespace := strings.TrimSpace(selection.Namespace)
 	deploymentTargetID := strings.TrimSpace(selection.DeploymentTargetID)
 	if namespace == "" {
@@ -364,7 +411,7 @@ func (c *Client) runtimePod(ctx context.Context, selection RuntimePodSelection) 
 		if !isRuntimePodOf(*pod, deploymentTargetID) {
 			return corev1.Pod{}, "", ErrRuntimePodNotFound
 		}
-		selectedContainer, err := selectPodContainer(*pod, selection.Container)
+		selectedContainer, err := selectPodContainerWithInit(*pod, selection.Container, allowInit)
 		if err != nil {
 			return corev1.Pod{}, "", err
 		}
@@ -377,8 +424,8 @@ func (c *Client) runtimePod(ctx context.Context, selection RuntimePodSelection) 
 	if len(pods) == 0 {
 		return corev1.Pod{}, "", ErrRuntimePodNotFound
 	}
-	sortRuntimePods(pods, selection.PreferredReleaseID)
-	selectedContainer, err := selectPodContainer(pods[0], selection.Container)
+	sortRuntimePodsWithOptions(pods, selection.PreferredReleaseID, selection.PreferAbnormal)
+	selectedContainer, err := selectPodContainerWithInit(pods[0], selection.Container, allowInit)
 	if err != nil {
 		return corev1.Pod{}, "", err
 	}
@@ -423,6 +470,10 @@ func isRuntimePodOf(pod corev1.Pod, deploymentTargetID string) bool {
 }
 
 func sortRuntimePods(pods []corev1.Pod, preferredReleaseID string) {
+	sortRuntimePodsWithOptions(pods, preferredReleaseID, false)
+}
+
+func sortRuntimePodsWithOptions(pods []corev1.Pod, preferredReleaseID string, preferAbnormal bool) {
 	preferredReleaseID = strings.TrimSpace(preferredReleaseID)
 	sort.SliceStable(pods, func(left, right int) bool {
 		if preferredReleaseID != "" {
@@ -430,6 +481,18 @@ func sortRuntimePods(pods []corev1.Pod, preferredReleaseID string) {
 			rightPreferred := pods[right].Labels[ReleaseIDLabel] == preferredReleaseID
 			if leftPreferred != rightPreferred {
 				return leftPreferred
+			}
+		}
+		if preferAbnormal {
+			leftDiag := buildRuntimePodSnapshot(pods[left])
+			rightDiag := buildRuntimePodSnapshot(pods[right])
+			leftAbnormal := !leftDiag.Terminating && (IsAbnormalPodStatus(leftDiag.Status) || leftDiag.RestartCount > 0)
+			rightAbnormal := !rightDiag.Terminating && (IsAbnormalPodStatus(rightDiag.Status) || rightDiag.RestartCount > 0)
+			if leftAbnormal != rightAbnormal {
+				return leftAbnormal
+			}
+			if leftDiag.RestartCount != rightDiag.RestartCount {
+				return leftDiag.RestartCount > rightDiag.RestartCount
 			}
 		}
 		leftReady := podReady(pods[left])
@@ -447,24 +510,7 @@ func sortRuntimePods(pods []corev1.Pod, preferredReleaseID string) {
 }
 
 func runtimePodSnapshot(pod corev1.Pod) RuntimePodSnapshot {
-	var restartCount int32
-	for _, status := range pod.Status.ContainerStatuses {
-		restartCount += status.RestartCount
-	}
-	containers := make([]string, 0, len(pod.Spec.Containers))
-	for _, container := range pod.Spec.Containers {
-		containers = append(containers, container.Name)
-	}
-	return RuntimePodSnapshot{
-		Name:         pod.Name,
-		Phase:        string(pod.Status.Phase),
-		Ready:        podReady(pod),
-		Terminating:  pod.DeletionTimestamp != nil,
-		RestartCount: restartCount,
-		ReleaseID:    pod.Labels[ReleaseIDLabel],
-		Containers:   containers,
-		CreatedAt:    pod.CreationTimestamp.Time,
-	}
+	return buildRuntimePodSnapshot(pod)
 }
 
 // containerNeverStarted 判断容器是否仍在首次等待（未运行过也未退出过）；崩溃重启过的容器仍有上次输出可读。
@@ -475,13 +521,41 @@ func containerNeverStarted(pod corev1.Pod, container string) bool {
 		}
 		return status.State.Waiting != nil && status.RestartCount == 0 && status.LastTerminationState.Terminated == nil
 	}
+	for _, status := range pod.Status.InitContainerStatuses {
+		if status.Name != container {
+			continue
+		}
+		return status.State.Waiting != nil && status.RestartCount == 0 && status.LastTerminationState.Terminated == nil
+	}
+	return false
+}
+
+func containerHasPreviousLog(pod corev1.Pod, container string) bool {
+	for _, status := range pod.Status.ContainerStatuses {
+		if status.Name == container {
+			return status.LastTerminationState.Terminated != nil || status.RestartCount > 0
+		}
+	}
+	for _, status := range pod.Status.InitContainerStatuses {
+		if status.Name == container {
+			return status.LastTerminationState.Terminated != nil || status.RestartCount > 0
+		}
+	}
 	return false
 }
 
 func selectPodContainer(pod corev1.Pod, container string) (string, error) {
+	return selectPodContainerWithInit(pod, container, false)
+}
+
+func selectPodContainerWithInit(pod corev1.Pod, container string, allowInit bool) (string, error) {
 	selectedContainer := strings.TrimSpace(container)
-	if selectedContainer == "" && len(pod.Spec.Containers) > 0 {
-		selectedContainer = pod.Spec.Containers[0].Name
+	if selectedContainer == "" {
+		if len(pod.Spec.Containers) > 0 {
+			selectedContainer = pod.Spec.Containers[0].Name
+		} else if allowInit && len(pod.Spec.InitContainers) > 0 {
+			selectedContainer = pod.Spec.InitContainers[0].Name
+		}
 	}
 	if selectedContainer == "" {
 		return "", fmt.Errorf("runtime container not found")
@@ -489,6 +563,13 @@ func selectPodContainer(pod corev1.Pod, container string) (string, error) {
 	for _, item := range pod.Spec.Containers {
 		if item.Name == selectedContainer {
 			return selectedContainer, nil
+		}
+	}
+	if allowInit {
+		for _, item := range pod.Spec.InitContainers {
+			if item.Name == selectedContainer {
+				return selectedContainer, nil
+			}
 		}
 	}
 	return "", fmt.Errorf("runtime container %q not found", selectedContainer)

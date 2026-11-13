@@ -167,7 +167,12 @@ func (r *Runner) handleSyncStatus(ctx context.Context, task *asynq.Task) error {
 	if err := workerStage(ctx, "runtime.sync_releases", r.syncReleaseRuntimeStatus); err != nil {
 		return err
 	}
-	return workerStage(ctx, "cleanup.recover_stale", r.recoverStaleResourceCleanups)
+	if err := workerStage(ctx, "cleanup.recover_stale", r.recoverStaleResourceCleanups); err != nil {
+		return err
+	}
+	_ = workerStage(ctx, "runtime.patrol_workloads", r.patrolRuntimeWorkloads)
+	_ = workerStage(ctx, "gateway.patrol_certificates", r.patrolGatewayCertificates)
+	return nil
 }
 
 // releaseWorkflowTimeout is the total deadline of one release measured from

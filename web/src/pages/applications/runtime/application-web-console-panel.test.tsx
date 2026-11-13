@@ -40,8 +40,8 @@ describe('application web console panel', () => {
     await i18next.changeLanguage('en-US')
     vi.mocked(api.listDeploymentTargetRuntimePods).mockResolvedValue({
       items: [
-        { name: 'api-7f9c-a', phase: 'Running', ready: true, terminating: false, restartCount: 0, releaseId: 'rel_123', containers: ['app'], createdAt: '2026-09-06T00:00:00Z' },
-        { name: 'api-7f9c-b', phase: 'Running', ready: false, terminating: false, restartCount: 4, releaseId: 'rel_old', containers: ['app'], createdAt: '2026-09-05T00:00:00Z' },
+        { name: 'api-7f9c-a', phase: 'Running', ready: true, terminating: false, restartCount: 0, releaseId: 'rel_123', containers: ['app', 'worker'], createdAt: '2026-09-06T00:00:00Z' },
+        { name: 'api-7f9c-b', phase: 'Running', ready: false, terminating: false, restartCount: 4, releaseId: 'rel_old', containers: ['app', 'worker'], createdAt: '2026-09-05T00:00:00Z' },
       ],
       page: 1,
       pageSize: 100,
@@ -69,7 +69,8 @@ describe('application web console panel', () => {
     const command = screen.getByRole('group', { name: 'CLI command' })
     expect(command).toHaveTextContent(`luna deployment exec server=${window.location.origin} projectId=prj_123 applicationId=app_456 targetId=dplt_789`)
 
-    fireEvent.change(screen.getByRole('textbox', { name: 'Container' }), { target: { value: 'worker' } })
+    const containerSelect = await screen.findByRole('combobox', { name: 'Container' })
+    await userEvent.selectOptions(containerSelect, 'worker')
     expect(command).toHaveTextContent(`luna deployment exec server=${window.location.origin} projectId=prj_123 applicationId=app_456 targetId=dplt_789 container=worker`)
 
     await userEvent.click(screen.getByRole('button', { name: 'Replica' }))

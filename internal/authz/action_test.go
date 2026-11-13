@@ -33,6 +33,22 @@ func TestProjectRoleAllowsAction(t *testing.T) {
 			t.Fatalf("expected developer and viewer to be blocked from %s", action)
 		}
 	}
+	for _, role := range []string{ProjectRoleOwner, ProjectRoleAdmin, ProjectRoleDeveloper} {
+		if !ProjectRoleAllows(role, ActionNotificationRead) {
+			t.Fatalf("expected project %s to read notifications", role)
+		}
+	}
+	if ProjectRoleAllows(ProjectRoleViewer, ActionNotificationRead) {
+		t.Fatal("expected viewer to be blocked from notification read")
+	}
+	if !ProjectRoleAllows(ProjectRoleOwner, ActionNotificationManage) {
+		t.Fatal("expected owner to manage project notifications")
+	}
+	for _, role := range []string{ProjectRoleAdmin, ProjectRoleDeveloper, ProjectRoleViewer} {
+		if ProjectRoleAllows(role, ActionNotificationManage) {
+			t.Fatalf("expected project %s to be blocked from notification manage", role)
+		}
+	}
 }
 
 func TestAccessTokenScopeRules(t *testing.T) {

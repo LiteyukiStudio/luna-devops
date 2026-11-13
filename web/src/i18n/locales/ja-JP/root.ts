@@ -9,6 +9,7 @@ const root = {
   appTemplates: 'アプリマーケット',
   registries: 'レジストリ',
   clusters: 'クラスターリソース',
+  notificationChannels: '通知チャネル',
   billing: '請求',
   builds: 'ビルド',
   deployments: 'デプロイ',

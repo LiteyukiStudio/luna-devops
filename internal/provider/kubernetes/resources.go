@@ -64,17 +64,22 @@ type RuntimePodSelection struct {
 	Pod string
 	// PreferredReleaseID 在未指定 Pod 时优先选择属于该发布的副本。
 	PreferredReleaseID string
-	Container          string
+	// PreferAbnormal 在未指定 Pod 时优先选择处于异常/重启中的副本用于排障。
+	PreferAbnormal bool
+	Container      string
 }
 
 type RuntimePodLogsOptions struct {
 	RuntimePodSelection
-	TailLines int64
+	TailLines  int64
+	Previous   bool
+	Timestamps bool
 }
 
 type RuntimePodLogsResult struct {
 	Pod       string `json:"pod"`
 	Container string `json:"container"`
+	Previous  bool   `json:"previous"`
 	Content   string `json:"content"`
 }
 
@@ -102,14 +107,23 @@ type RuntimeTerminalOptions struct {
 
 // RuntimePodSnapshot 是部署配置运行副本的实时观测，只用于响应，不落库。
 type RuntimePodSnapshot struct {
-	Name         string    `json:"name"`
-	Phase        string    `json:"phase"`
-	Ready        bool      `json:"ready"`
-	Terminating  bool      `json:"terminating"`
-	RestartCount int32     `json:"restartCount"`
-	ReleaseID    string    `json:"releaseId"`
-	Containers   []string  `json:"containers"`
-	CreatedAt    time.Time `json:"createdAt"`
+	Name              string                           `json:"name"`
+	Phase             string                           `json:"phase"`
+	Status            string                           `json:"status"`
+	Ready             bool                             `json:"ready"`
+	ReadyContainers   int32                            `json:"readyContainers"`
+	TotalContainers   int32                            `json:"totalContainers"`
+	Terminating       bool                             `json:"terminating"`
+	RestartCount      int32                            `json:"restartCount"`
+	ReleaseID         string                           `json:"releaseId"`
+	NodeName          string                           `json:"nodeName,omitempty"`
+	Reason            string                           `json:"reason,omitempty"`
+	Message           string                           `json:"message,omitempty"`
+	Containers        []string                         `json:"containers"`
+	InitContainers    []string                         `json:"initContainers"`
+	ContainerStatuses []RuntimeContainerStatusSnapshot `json:"containerStatuses"`
+	Conditions        []RuntimePodConditionSnapshot    `json:"conditions"`
+	CreatedAt         time.Time                        `json:"createdAt"`
 }
 
 type RuntimeTerminalResult struct {

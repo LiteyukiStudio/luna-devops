@@ -13,7 +13,8 @@ describe('resource routes', () => {
   it.each([
     ['build', '/projects/prj_1/apps/app_1?tab=builds#buildRunId=res_1'],
     ['repository_binding', '/projects/prj_1/apps/app_1?tab=builds'],
-    ['release', '/projects/prj_1/apps/app_1?tab=deployments'],
+    ['deployment_target', '/projects/prj_1/apps/app_1?tab=deployments#targetId=res_1'],
+    ['release', '/projects/prj_1/apps/app_1?tab=deployments#releaseId=res_1'],
     ['hook', '/projects/prj_1/apps/app_1?tab=deployments'],
     ['gateway', '/projects/prj_1/apps/app_1?tab=gateway'],
     ['certificate', '/projects/prj_1/apps/app_1?tab=gateway'],

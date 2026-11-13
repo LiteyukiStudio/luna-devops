@@ -42,8 +42,11 @@ func (SMTPAdapter) Kind() string {
 }
 
 func (SMTPAdapter) Validate(ctx context.Context, config json.RawMessage, secretResolver SecretResolver) error {
-	cfg, err := parseSMTPConfig(config)
+	cfg, err := parseSMTPConfig(config, false)
 	if err != nil {
+		return err
+	}
+	if err := EgressPolicyFromContext(ctx).ValidateHostPort(cfg.Host, cfg.Port); err != nil {
 		return err
 	}
 	if cfg.password(ctx, secretResolver) == "" && cfg.Username != "" {
@@ -52,13 +55,23 @@ func (SMTPAdapter) Validate(ctx context.Context, config json.RawMessage, secretR
 	return nil
 }
 
-func (SMTPAdapter) Render(ctx context.Context, event Event, tpl Template, _ json.RawMessage, secrets json.RawMessage, secretResolver SecretResolver, _ string) (RenderedMessage, error) {
-	return renderMessage(event, tpl, resolveSecretMap(ctx, secrets, secretResolver))
+func (SMTPAdapter) Render(ctx context.Context, event Event, tpl Template, _ json.RawMessage, secrets json.RawMessage, secretResolver SecretResolver, locale string) (RenderedMessage, error) {
+	timeZone := TimeZoneFromContext(ctx)
+	defaultModel := DefaultTemplateFor(AdapterKindSMTP, event.Type, locale)
+	isDefault := (strings.TrimSpace(tpl.Subject) == "" && strings.TrimSpace(tpl.Body) == "" && strings.TrimSpace(tpl.JSON) == "") ||
+		(tpl.Subject == defaultModel.SubjectTemplate && tpl.Body == defaultModel.BodyTemplate && strings.TrimSpace(tpl.JSON) == "")
+	if isDefault {
+		return RenderEventEmail(event, firstNonEmptyString(locale, event.Locale, "zh-CN"), timeZone)
+	}
+	return renderMessageWithTimeZone(event, tpl, resolveSecretMap(ctx, secrets, secretResolver), timeZone)
 }
 
 func (adapter SMTPAdapter) Send(ctx context.Context, config json.RawMessage, _ json.RawMessage, message RenderedMessage, secretResolver SecretResolver) (SendResult, error) {
-	cfg, err := parseSMTPConfig(config)
+	cfg, err := parseSMTPConfig(config, true)
 	if err != nil {
+		return SendResult{}, err
+	}
+	if err := EgressPolicyFromContext(ctx).ValidateHostPort(cfg.Host, cfg.Port); err != nil {
 		return SendResult{}, err
 	}
 	if strings.TrimSpace(message.Subject) == "" {
@@ -78,9 +91,22 @@ func (adapter SMTPAdapter) Send(ctx context.Context, config json.RawMessage, _ j
 }
 
 func (adapter SMTPAdapter) Test(ctx context.Context, config json.RawMessage, secrets json.RawMessage, resolver SecretResolver) error {
+	cfg, err := parseSMTPConfig(config, false)
+	if err != nil {
+		return err
+	}
+	if len(cfg.To) == 0 && len(cfg.Cc) == 0 && len(cfg.Bcc) == 0 {
+		if fallbackRecipient := TestRecipientFromContext(ctx); fallbackRecipient != "" {
+			overridden, _, overrideErr := ApplySMTPTargetOverride(config, ChannelTargetOverride{To: []string{fallbackRecipient}})
+			if overrideErr != nil {
+				return overrideErr
+			}
+			config = overridden
+		}
+	}
 	event := TestEvent(time.Now())
 	template := DefaultTemplateFor(AdapterKindSMTP, event.Type, event.Locale)
-	message, err := adapter.Render(ctx, event, TemplateFromModel(template), config, secrets, resolver, "")
+	message, err := adapter.Render(ctx, event, TemplateFromModel(template), config, secrets, resolver, event.Locale)
 	if err != nil {
 		return err
 	}
@@ -88,7 +114,7 @@ func (adapter SMTPAdapter) Test(ctx context.Context, config json.RawMessage, sec
 	return err
 }
 
-func parseSMTPConfig(raw json.RawMessage) (SMTPConfig, error) {
+func parseSMTPConfig(raw json.RawMessage, requireRecipients bool) (SMTPConfig, error) {
 	var cfg SMTPConfig
 	if err := json.Unmarshal(raw, &cfg); err != nil {
 		return SMTPConfig{}, err
@@ -99,6 +125,9 @@ func parseSMTPConfig(raw json.RawMessage) (SMTPConfig, error) {
 	cfg.From = strings.TrimSpace(cfg.From)
 	if cfg.Port <= 0 {
 		cfg.Port = 587
+	}
+	if cfg.Port > 65535 {
+		return SMTPConfig{}, fmt.Errorf("smtp port must be between 1 and 65535")
 	}
 	if cfg.Security == "" {
 		cfg.Security = "starttls"
@@ -112,14 +141,19 @@ func parseSMTPConfig(raw json.RawMessage) (SMTPConfig, error) {
 	if _, err := mail.ParseAddress(cfg.From); err != nil {
 		return SMTPConfig{}, fmt.Errorf("smtp from is invalid: %w", err)
 	}
-	recipients := append(append([]string{}, cfg.To...), append(cfg.Cc, cfg.Bcc...)...)
-	if len(recipients) == 0 {
-		return SMTPConfig{}, fmt.Errorf("smtp recipient is required")
+	var err error
+	if cfg.To, err = normalizeEmailAddressList(cfg.To); err != nil {
+		return SMTPConfig{}, fmt.Errorf("smtp recipient is invalid: %w", err)
 	}
-	for _, recipient := range recipients {
-		if _, err := mail.ParseAddress(strings.TrimSpace(recipient)); err != nil {
-			return SMTPConfig{}, fmt.Errorf("smtp recipient is invalid: %w", err)
-		}
+	if cfg.Cc, err = normalizeEmailAddressList(cfg.Cc); err != nil {
+		return SMTPConfig{}, fmt.Errorf("smtp cc is invalid: %w", err)
+	}
+	if cfg.Bcc, err = normalizeEmailAddressList(cfg.Bcc); err != nil {
+		return SMTPConfig{}, fmt.Errorf("smtp bcc is invalid: %w", err)
+	}
+	recipients := append(append([]string{}, cfg.To...), append(cfg.Cc, cfg.Bcc...)...)
+	if requireRecipients && len(recipients) == 0 {
+		return SMTPConfig{}, fmt.Errorf("smtp recipient is required")
 	}
 	switch cfg.Security {
 	case "none", "starttls", "tls":
@@ -127,6 +161,10 @@ func parseSMTPConfig(raw json.RawMessage) (SMTPConfig, error) {
 		return SMTPConfig{}, fmt.Errorf("smtp security must be none, starttls, or tls")
 	}
 	return cfg, nil
+}
+
+func ParseSMTPConfigForValidation(raw json.RawMessage) (SMTPConfig, error) {
+	return parseSMTPConfig(raw, false)
 }
 
 func (cfg SMTPConfig) password(ctx context.Context, resolver SecretResolver) string {
@@ -152,16 +190,19 @@ func sendSMTP(ctx context.Context, cfg SMTPConfig, message RenderedMessage, reso
 
 func sendSMTPMessage(ctx context.Context, cfg SMTPConfig, message RenderedMessage, resolver SecretResolver, timeout time.Duration) error {
 	address := net.JoinHostPort(cfg.Host, strconv.Itoa(cfg.Port))
-	dialer := net.Dialer{Timeout: timeout}
-	var conn net.Conn
-	var err error
-	if cfg.Security == "tls" {
-		conn, err = tls.DialWithDialer(&dialer, "tcp", address, &tls.Config{ServerName: cfg.Host, MinVersion: tls.VersionTLS12})
-	} else {
-		conn, err = dialer.DialContext(ctx, "tcp", address)
-	}
+	policy := EgressPolicyFromContext(ctx)
+	rawConn, err := policy.DialContext(ctx, "tcp", address, timeout)
 	if err != nil {
 		return err
+	}
+	conn := rawConn
+	if cfg.Security == "tls" {
+		tlsConn := tls.Client(rawConn, &tls.Config{ServerName: cfg.Host, MinVersion: tls.VersionTLS12})
+		if err := tlsConn.HandshakeContext(ctx); err != nil {
+			_ = rawConn.Close()
+			return err
+		}
+		conn = tlsConn
 	}
 	defer conn.Close()
 	client, err := smtp.NewClient(conn, cfg.Host)
@@ -192,7 +233,11 @@ func sendSMTPMessage(ctx context.Context, cfg SMTPConfig, message RenderedMessag
 	}
 	recipients := append(append([]string{}, cfg.To...), append(cfg.Cc, cfg.Bcc...)...)
 	for _, recipient := range recipients {
-		if err := client.Rcpt(strings.TrimSpace(recipient)); err != nil {
+		parsedRecipient, err := mail.ParseAddress(strings.TrimSpace(recipient))
+		if err != nil {
+			return err
+		}
+		if err := client.Rcpt(parsedRecipient.Address); err != nil {
 			return err
 		}
 	}

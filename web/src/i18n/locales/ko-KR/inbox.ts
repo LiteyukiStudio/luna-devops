@@ -61,6 +61,12 @@ export default {
       billingTransferRejected: { title: '청구 귀속 이전이 거부되었습니다', content: '{{recipientName}}님이 「{{projectName}}」의 청구 귀속 이전 요청을 거부했습니다.' },
       billingTransferCancelled: { title: '청구 귀속 이전이 취소되었습니다', content: '「{{projectName}}」의 멤버 또는 청구 귀속이 변경되어 원래 이전 요청이 더 이상 유효하지 않습니다.' },
       systemAnnouncement: { title: '플랫폼 공지', content: '{{message}}' },
+      runtimeOomKilled: { title: '컨테이너 메모리 부족 종료 (OOMKilled)' },
+      runtimeCrashLoop: { title: '컨테이너 크래시 루프 (CrashLoopBackOff)' },
+      runtimeStartFailed: { title: 'Pod 시작 실패' },
+      runtimeDegraded: { title: '워크로드 상태 저하' },
+      runtimeAnomaly: { content: '「{{projectName}}」의 {{applicationName}}({{targetName}})에서 런타임 이상이 감지되었습니다: {{reason}} (준비 레플리카 {{readyReplicas}}/{{desiredReplicas}}).' },
+      runtimeRecovered: { title: '런타임 상태 복구됨', content: '「{{projectName}}」의 {{applicationName}}({{targetName}})이 정상 복구되었습니다 (지속 {{durationSeconds}}초).' },
     },
   },
 }

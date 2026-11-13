@@ -16,7 +16,7 @@ func TestDefaultTemplateForChannelUsesWebhookPresetBody(t *testing.T) {
 
 	tpl := DefaultTemplateForChannel(channel, Event{Type: "build.failed"}, "")
 
-	if !strings.Contains(tpl.JSONBodyTemplate, `"msg_type": "post"`) {
+	if !strings.Contains(tpl.JSONBodyTemplate, `feishuCard`) {
 		t.Fatalf("template did not use preset body: %s", tpl.JSONBodyTemplate)
 	}
 	if strings.Contains(tpl.JSONBodyTemplate, `"text": "[{{.Event.Severity}}]`) {

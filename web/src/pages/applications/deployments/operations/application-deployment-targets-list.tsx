@@ -63,12 +63,12 @@ interface DeploymentTargetRowActions {
   onDeleteTarget: (target: DeploymentTarget) => void
   onEditTarget: (target: DeploymentTarget) => void
   onExportTarget: (target: DeploymentTarget) => void
-  onOpenConsole: (release: Release) => void
+  onOpenConsole: (release: Release, pod?: string) => void
   onOpenReleaseDialog: (deploymentTargetId: string) => void
   onPullLatestImageDeploy: (target: DeploymentTarget) => void
   onRestart: (target: DeploymentTarget) => void
   onRollback: (item: DeploymentTargetRow) => void
-  onViewLogs: (release: Release) => void
+  onViewLogs: (release: Release, options?: { view?: 'deployment' | 'runtime', pod?: string, previous?: boolean }) => void
 }
 
 export function ApplicationDeploymentTargetsList({
@@ -77,6 +77,7 @@ export function ApplicationDeploymentTargetsList({
   createReleasePending,
   deletePending,
   deployableBuildRuns,
+  initialDetailTargetId,
   items,
   listState,
   onCreateTarget,
@@ -93,6 +94,7 @@ export function ApplicationDeploymentTargetsList({
   projectId,
 }: Omit<DeploymentTargetRowActions, 'onExportTarget'> & {
   applicationId: string
+  initialDetailTargetId?: string
   items: DeploymentTargetRow[]
   listState: DeploymentListState
   onCreateTarget: () => void
@@ -100,7 +102,7 @@ export function ApplicationDeploymentTargetsList({
 }) {
   const { t } = useTranslation()
   const [exportPendingId, setExportPendingId] = useState('')
-  const [detailTargetId, setDetailTargetId] = useState('')
+  const [detailTargetId, setDetailTargetId] = useState(initialDetailTargetId ?? '')
   const detailItem = items.find(item => item.target.id === detailTargetId)
 
   const exportTarget = async (target: DeploymentTarget) => {
@@ -219,6 +221,14 @@ export function ApplicationDeploymentTargetsList({
         onOpenChange={(open) => {
           if (!open)
             setDetailTargetId('')
+        }}
+        onOpenPodConsole={(release, pod) => {
+          setDetailTargetId('')
+          onOpenConsole(release, pod)
+        }}
+        onViewPodLogs={(release, pod, previous) => {
+          setDetailTargetId('')
+          onViewLogs(release, { pod, previous, view: 'runtime' })
         }}
       />
     </div>

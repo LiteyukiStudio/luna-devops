@@ -59,6 +59,9 @@ const (
 	ActionBillingAdjust Action = "billing:write"
 	ActionEventRead     Action = "event:read"
 
+	ActionNotificationRead   Action = "notification:read"
+	ActionNotificationManage Action = "notification:manage"
+
 	ActionDashboardRead          Action = "dashboard:read"
 	ActionAgentObservabilityRead Action = "agent-observability:read"
 	ActionDataRetentionRead      Action = "retention:read"

@@ -1,7 +1,6 @@
 import type { LucideIcon } from 'lucide-react'
 import type { ReactNode } from 'react'
 import type { ApplicationTopologyEdge, ApplicationTopologyNode } from '@/api'
-import type { StatusTone } from '@/components/common/status-tone'
 import type { TopologyCategory, TopologyGraphEdge, TopologyGraphLegend, TopologyGraphNode } from '@/components/common/topology-graph'
 import { useQuery } from '@tanstack/react-query'
 import { Box, Boxes, Database, FileCog, Gauge, HardDrive, KeyRound, Layers, Network, RefreshCw, Route, Waypoints } from 'lucide-react'
@@ -21,6 +20,7 @@ import { Card } from '@/components/ui/card'
 import { NativeSelect } from '@/components/ui/native-select'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
+import { toneForResourceStatus } from './application-topology-utils'
 
 const topologyRefetchIntervalMs = 30_000
 const dependencyKinds = new Set(['ConfigMap', 'Secret', 'PersistentVolumeClaim', 'HorizontalPodAutoscaler'])
@@ -181,18 +181,6 @@ const kindIcons: Record<string, LucideIcon> = {
   Secret: KeyRound,
   PersistentVolumeClaim: HardDrive,
   HorizontalPodAutoscaler: Gauge,
-}
-
-/** Kubernetes 资源状态是自由文本（Running、Programmed、CrashLoopBackOff…），按关键词归入语义 tone。 */
-function toneForResourceStatus(status: string): StatusTone {
-  const normalized = status.toLowerCase()
-  if (normalized.includes('fail') || normalized.includes('error') || normalized.includes('backoff'))
-    return 'danger'
-  if (normalized.includes('ready') || normalized.includes('running') || normalized.includes('programmed'))
-    return 'success'
-  if (normalized.includes('pending') || normalized.includes('progress'))
-    return 'warning'
-  return 'neutral'
 }
 
 /** 配置、存储与伸缩是依赖关系，用虚线与流量/归属关系区分。 */

@@ -3,13 +3,14 @@ package notification
 import "encoding/json"
 
 type WebhookPreset struct {
-	ID               string   `json:"id"`
-	Name             string   `json:"name"`
-	Description      string   `json:"description"`
-	AdapterKind      string   `json:"adapterKind"`
-	ConfigTemplate   string   `json:"configTemplate"`
-	JSONBodyTemplate string   `json:"jsonBodyTemplate"`
-	SecretFields     []string `json:"secretFields"`
+	ID                   string   `json:"id"`
+	Name                 string   `json:"name"`
+	Description          string   `json:"description"`
+	AdapterKind          string   `json:"adapterKind"`
+	ConfigTemplate       string   `json:"configTemplate"`
+	JSONBodyTemplate     string   `json:"jsonBodyTemplate"`
+	SecretFields         []string `json:"secretFields"`
+	OptionalSecretFields []string `json:"optionalSecretFields,omitempty"`
 }
 
 func WebhookPresets() []WebhookPreset {
@@ -17,24 +18,26 @@ func WebhookPresets() []WebhookPreset {
 		{
 			ID:          "feishu-bot",
 			Name:        "Feishu Bot",
-			Description: "Feishu custom bot webhook with rich post content.",
+			Description: "Feishu custom bot webhook with interactive card content and optional signature verification.",
 			AdapterKind: AdapterKindWebhook,
-			ConfigTemplate: webhookPresetConfig("POST", "https://open.feishu.cn/open-apis/bot/v2/hook/{{.Secrets.WebhookToken}}", map[string]string{
+			ConfigTemplate: webhookPresetConfigWithSigning("POST", "https://open.feishu.cn/open-apis/bot/v2/hook/{{.Secrets.WebhookToken}}", map[string]string{
 				"Content-Type": "application/json",
-			}, feishuPostTemplate("zh_cn", "zh", "详情链接", "打开详情")),
-			JSONBodyTemplate: feishuPostTemplate("zh_cn", "zh", "详情链接", "打开详情"),
-			SecretFields:     []string{"WebhookToken"},
+			}, "feishu", feishuInteractiveTemplate("zh")),
+			JSONBodyTemplate:     feishuInteractiveTemplate("zh"),
+			SecretFields:         []string{"WebhookToken"},
+			OptionalSecretFields: []string{"SignSecret"},
 		},
 		{
 			ID:          "lark-bot",
 			Name:        "Lark Bot",
-			Description: "Lark custom bot webhook with rich post content.",
+			Description: "Lark custom bot webhook with interactive card content and optional signature verification.",
 			AdapterKind: AdapterKindWebhook,
-			ConfigTemplate: webhookPresetConfig("POST", "https://open.larksuite.com/open-apis/bot/v2/hook/{{.Secrets.WebhookToken}}", map[string]string{
+			ConfigTemplate: webhookPresetConfigWithSigning("POST", "https://open.larksuite.com/open-apis/bot/v2/hook/{{.Secrets.WebhookToken}}", map[string]string{
 				"Content-Type": "application/json",
-			}, feishuPostTemplate("en_us", "en", "Detail link", "Open details")),
-			JSONBodyTemplate: feishuPostTemplate("en_us", "en", "Detail link", "Open details"),
-			SecretFields:     []string{"WebhookToken"},
+			}, "feishu", feishuInteractiveTemplate("en")),
+			JSONBodyTemplate:     feishuInteractiveTemplate("en"),
+			SecretFields:         []string{"WebhookToken"},
+			OptionalSecretFields: []string{"SignSecret"},
 		},
 		{
 			ID:          "wecom-bot",
@@ -62,13 +65,14 @@ func WebhookPresets() []WebhookPreset {
 		{
 			ID:          "dingtalk-bot",
 			Name:        "DingTalk Bot",
-			Description: "DingTalk custom robot webhook with markdown content. Signed robots are not supported by this preset.",
+			Description: "DingTalk custom robot webhook with markdown content and optional signature verification.",
 			AdapterKind: AdapterKindWebhook,
-			ConfigTemplate: webhookPresetConfig("POST", "https://oapi.dingtalk.com/robot/send?access_token={{.Secrets.AccessToken}}", map[string]string{
+			ConfigTemplate: webhookPresetConfigWithSigning("POST", "https://oapi.dingtalk.com/robot/send?access_token={{.Secrets.AccessToken}}", map[string]string{
 				"Content-Type": "application/json",
-			}, dingtalkMarkdownTemplate),
-			JSONBodyTemplate: dingtalkMarkdownTemplate,
-			SecretFields:     []string{"AccessToken"},
+			}, "dingtalk", dingtalkMarkdownTemplate),
+			JSONBodyTemplate:     dingtalkMarkdownTemplate,
+			SecretFields:         []string{"AccessToken"},
+			OptionalSecretFields: []string{"SignSecret"},
 		},
 		{
 			ID:          "slack-webhook",
@@ -109,40 +113,23 @@ func PersonalWebhookPresets() []WebhookPreset {
 }
 
 func webhookPresetConfig(method string, url string, headers map[string]string, testJSONBodyTemplate string) string {
+	return webhookPresetConfigWithSigning(method, url, headers, "", testJSONBodyTemplate)
+}
+
+func webhookPresetConfigWithSigning(method string, url string, headers map[string]string, signingMode string, testJSONBodyTemplate string) string {
 	data, _ := json.MarshalIndent(WebhookConfig{
 		Method:               method,
 		URL:                  url,
 		Headers:              headers,
 		Timeout:              15,
+		SigningMode:          signingMode,
 		TestJSONBodyTemplate: testJSONBodyTemplate,
 	}, "", "  ")
 	return string(data)
 }
 
-func feishuPostTemplate(locale string, detailsLocale string, detailLabel string, openDetailsLabel string) string {
-	return `{
-  "msg_type": "post",
-  "content": {
-    "post": {
-      "` + locale + `": {
-        "title": {{json (detailsTitle .Event)}},
-        "content": [
-          [
-            {"tag": "text", "text": {{json (details .Event "` + detailsLocale + `")}}}
-          ],
-          [
-            {"tag": "text", "text": "` + detailLabel + `: "},
-            {{if (link .Event.Links "primary")}}
-            {"tag": "a", "text": "` + openDetailsLabel + `", "href": {{json (link .Event.Links "primary")}}}
-            {{else}}
-            {"tag": "text", "text": "-"}
-            {{end}}
-          ]
-        ]
-      }
-    }
-  }
-}`
+func feishuInteractiveTemplate(locale string) string {
+	return `{{feishuCard .Event "` + locale + `"}}`
 }
 
 const wecomMarkdownTemplate = `{

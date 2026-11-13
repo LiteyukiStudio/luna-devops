@@ -441,6 +441,7 @@ export function EventsPage() {
         event={selectedEvent.data}
         loading={selectedEvent.isLoading}
         open={Boolean(selectedEventId)}
+        platformAdmin={platformAdmin}
         onOpenChange={open => !open && setSelectedEventId('')}
       />
     </>
@@ -490,11 +491,18 @@ function EventResource({ event }: { event: PlatformEvent }) {
   )
 }
 
-function EventDetailSheet({ event, loading, onOpenChange, open }: { event?: PlatformEvent, loading: boolean, onOpenChange: (open: boolean) => void, open: boolean }) {
+function EventDetailSheet({ event, loading, onOpenChange, open, platformAdmin }: { event?: PlatformEvent, loading: boolean, onOpenChange: (open: boolean) => void, open: boolean, platformAdmin: boolean }) {
   const { t } = useTranslation()
   const detail = event?.detail ?? {}
   const links = event?.links ?? {}
   const resourcePath = event ? platformEventResourcePath(event) : null
+  const deliveriesPath = event && event.deliveryCount > 0
+    ? event.projectId
+      ? `/projects/${encodeURIComponent(event.projectId)}?tab=notifications&subtab=deliveries&eventId=${encodeURIComponent(event.id)}`
+      : platformAdmin
+        ? `/settings/notifications?tab=deliveries&eventId=${encodeURIComponent(event.id)}`
+        : null
+    : null
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent className="w-full overflow-y-auto sm:max-w-xl">
@@ -533,7 +541,19 @@ function EventDetailSheet({ event, loading, onOpenChange, open }: { event?: Plat
               <DetailRow label={t('eventsPage.details.eventId')} value={event.id} mono />
               <DetailRow label={t('eventsPage.details.resourceRef')} value={[event.resourceType, event.resourceId].filter(Boolean).join(' / ')} mono />
               <DetailRow label={t('eventsPage.details.correlationId')} value={event.correlationId} mono />
-              <DetailRow label={t('eventsPage.details.notificationDeliveries')} value={String(event.deliveryCount)} />
+              <div className="grid gap-1 sm:grid-cols-[9rem_minmax(0,1fr)] sm:gap-3">
+                <dt className="text-xs text-muted-foreground">{t('eventsPage.details.notificationDeliveries')}</dt>
+                <dd className="min-w-0 text-sm">
+                  {deliveriesPath
+                    ? (
+                        <Link className="inline-flex items-center gap-1 font-medium text-primary underline-offset-4 hover:underline" to={deliveriesPath}>
+                          {t('eventsPage.details.viewDeliveries', { count: event.deliveryCount })}
+                          <ArrowRight className="size-3.5" />
+                        </Link>
+                      )
+                    : String(event.deliveryCount)}
+                </dd>
+              </div>
             </DetailSection>
             <EventSpecificDetails detail={detail} />
             {Object.keys(links).length > 0 && (
@@ -559,7 +579,7 @@ function EventDetailSheet({ event, loading, onOpenChange, open }: { event?: Plat
 
 function EventSpecificDetails({ detail }: { detail: PlatformEventSnapshot }) {
   const { t } = useTranslation()
-  const context = detail.build || detail.release || detail.hook || detail.certificate || detail.gateway
+  const context = detail.runtime || detail.build || detail.release || detail.hook || detail.certificate || detail.gateway
   if (!context)
     return null
   const entries = Object.entries(context).filter(([, value]) => value !== '' && value !== null && value !== undefined)

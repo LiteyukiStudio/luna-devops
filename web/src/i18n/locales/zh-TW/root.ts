@@ -9,6 +9,7 @@ const root = {
   appTemplates: '應用市場',
   registries: '映象站',
   clusters: '叢集資源',
+  notificationChannels: '通知渠道',
   billing: '賬單',
   builds: '構建',
   deployments: '部署',

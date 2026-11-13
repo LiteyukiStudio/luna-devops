@@ -27,6 +27,7 @@ var resourceNameResolvers = map[string]resourceNameResolver{
 	"project":            resolveProjectNames,
 	"build":              resolveBuildRunNames,
 	"release":            resolveReleaseNames,
+	"deployment_target":  resolveDeploymentTargetNames,
 	"hook":               resolveHookRunNames,
 	"gateway":            resolveGatewayRouteNames,
 	"certificate":        resolveGatewayRouteNames,
@@ -229,6 +230,20 @@ func resolveRepositoryBindingNames(db *gorm.DB, ids []string) ([]resourceNameRow
 			name = owner + "/" + repo
 		}
 		rows = append(rows, resourceNameRow{ID: binding.ID, ProjectID: binding.ProjectID, Name: name})
+	}
+	return rows, nil
+}
+
+func resolveDeploymentTargetNames(db *gorm.DB, ids []string) ([]resourceNameRow, error) {
+	var targets []model.DeploymentTarget
+	if err := db.Select("id", "project_id", "name").Where("id in ?", ids).Find(&targets).Error; err != nil {
+		return nil, err
+	}
+	rows := make([]resourceNameRow, 0, len(targets))
+	for _, target := range targets {
+		if name := strings.TrimSpace(target.Name); name != "" {
+			rows = append(rows, resourceNameRow{ID: target.ID, ProjectID: target.ProjectID, Name: name})
+		}
 	}
 	return rows, nil
 }

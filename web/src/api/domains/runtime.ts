@@ -1,4 +1,4 @@
-import type { ClusterResource, ClusterResourceEvent, ClusterResourceYAML, DeploymentTargetRuntimePodPage, EgressException, EgressExceptionPayload, NetworkServiceShare, PaginatedResponse, PaginationParams, Release, ReleaseImageCandidates, ReleaseLog, ReleaseRuntimeLog, ResultVisibility, RuntimeCluster, RuntimeClusterNetworkPolicyObservation, RuntimeClusterPressure, RuntimeClusterResourceCategory, RuntimeClusterResourceKind, RuntimeClusterResourceListParams } from '../types'
+import type { ClusterResource, ClusterResourceEvent, ClusterResourceYAML, DeploymentTargetEventPage, DeploymentTargetRuntimePodPage, EgressException, EgressExceptionPayload, NetworkServiceShare, PaginatedResponse, PaginationParams, Release, ReleaseImageCandidates, ReleaseLog, ReleaseRuntimeLog, ResultVisibility, RuntimeCluster, RuntimeClusterNetworkPolicyObservation, RuntimeClusterPressure, RuntimeClusterResourceCategory, RuntimeClusterResourceKind, RuntimeClusterResourceListParams } from '../types'
 import { paginationQuery, paginationWithProjectQuery, request, runtimeClusterResourceListQuery } from '../core'
 import { selectionItems, selectionPageParams } from '../selection-page'
 
@@ -78,13 +78,49 @@ export const runtimeApi = {
     request<Release>(`/projects/${projectId}/releases`, { method: 'POST', body: JSON.stringify(payload) }),
   getReleaseLogs: (projectId: string, releaseId: string, signal?: AbortSignal) =>
     request<ReleaseLog>(`/projects/${projectId}/releases/${releaseId}/logs`, { signal }),
-  listDeploymentTargetRuntimePods: (projectId: string, applicationId: string, targetId: string, params: { releaseId?: string, search?: string } = {}, signal?: AbortSignal) => {
-    const search = new URLSearchParams(paginationQuery({ ...selectionPageParams, sortBy: 'recommended', search: params.search?.trim() }))
+  listDeploymentTargetRuntimePods: (projectId: string, applicationId: string, targetId: string, params: { releaseId?: string, search?: string, sortBy?: 'recommended' | 'name' | 'createdAt' | 'restartCount', sortOrder?: 'asc' | 'desc' } = {}, signal?: AbortSignal) => {
+    const search = new URLSearchParams(paginationQuery({
+      ...selectionPageParams,
+      sortBy: params.sortBy ?? 'recommended',
+      sortOrder: params.sortOrder,
+      search: params.search?.trim(),
+    }))
     if (params.releaseId)
       search.set('releaseId', params.releaseId)
     return request<DeploymentTargetRuntimePodPage>(`/projects/${projectId}/applications/${applicationId}/deployment-targets/${targetId}/pods?${search.toString()}`, { signal })
   },
-  getReleaseRuntimeLogs: (projectId: string, releaseId: string, params: { pod?: string, container?: string, tailLines?: number } = {}, signal?: AbortSignal) => {
+  listDeploymentTargetEvents: (projectId: string, applicationId: string, targetId: string, params: { type?: 'Warning' | 'Normal', search?: string, page?: number, pageSize?: number } = {}, signal?: AbortSignal) => {
+    const search = new URLSearchParams(paginationQuery({
+      page: params.page ?? 1,
+      pageSize: params.pageSize ?? 50,
+      sortBy: 'lastSeen',
+      sortOrder: 'desc',
+      search: params.search?.trim(),
+    }))
+    if (params.type)
+      search.set('type', params.type)
+    return request<DeploymentTargetEventPage>(`/projects/${projectId}/applications/${applicationId}/deployment-targets/${targetId}/events?${search.toString()}`, { signal })
+  },
+  getDeploymentTargetRuntimeLogs: (projectId: string, applicationId: string, targetId: string, params: { pod?: string, container?: string, releaseId?: string, tailLines?: number, previous?: boolean, timestamps?: boolean, preferAbnormal?: boolean } = {}, signal?: AbortSignal) => {
+    const search = new URLSearchParams()
+    if (params.pod)
+      search.set('pod', params.pod)
+    if (params.container)
+      search.set('container', params.container)
+    if (params.releaseId)
+      search.set('releaseId', params.releaseId)
+    if (params.tailLines)
+      search.set('tailLines', String(params.tailLines))
+    if (params.previous)
+      search.set('previous', 'true')
+    if (params.timestamps)
+      search.set('timestamps', 'true')
+    if (params.preferAbnormal !== undefined)
+      search.set('preferAbnormal', params.preferAbnormal ? 'true' : 'false')
+    const query = search.toString()
+    return request<ReleaseRuntimeLog>(`/projects/${projectId}/applications/${applicationId}/deployment-targets/${targetId}/runtime-logs${query ? `?${query}` : ''}`, { signal })
+  },
+  getReleaseRuntimeLogs: (projectId: string, releaseId: string, params: { pod?: string, container?: string, tailLines?: number, previous?: boolean, timestamps?: boolean, preferAbnormal?: boolean } = {}, signal?: AbortSignal) => {
     const search = new URLSearchParams()
     if (params.pod)
       search.set('pod', params.pod)
@@ -92,6 +128,12 @@ export const runtimeApi = {
       search.set('container', params.container)
     if (params.tailLines)
       search.set('tailLines', String(params.tailLines))
+    if (params.previous)
+      search.set('previous', 'true')
+    if (params.timestamps)
+      search.set('timestamps', 'true')
+    if (params.preferAbnormal)
+      search.set('preferAbnormal', 'true')
     const query = search.toString()
     return request<ReleaseRuntimeLog>(`/projects/${projectId}/releases/${releaseId}/runtime-logs${query ? `?${query}` : ''}`, { signal })
   },

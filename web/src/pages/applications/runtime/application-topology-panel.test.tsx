@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { api } from '@/api'
 import i18next from '@/i18n'
 import { ApplicationTopologyPanel } from './application-topology-panel'
+import { toneForResourceStatus } from './application-topology-utils'
 
 vi.mock('@/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/api')>()
@@ -66,5 +67,15 @@ describe('application topology panel', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: 'Dependencies' }))
     expect(await screen.findByLabelText('web-config, ConfigMap, status Unknown')).toBeInTheDocument()
+  })
+
+  it('classifies degraded, OOM, and not-ready topology statuses without false green tones', () => {
+    expect(toneForResourceStatus('not-ready')).toBe('warning')
+    expect(toneForResourceStatus('terminating')).toBe('warning')
+    expect(toneForResourceStatus('oom-killed')).toBe('danger')
+    expect(toneForResourceStatus('crash-loop-back-off')).toBe('danger')
+    expect(toneForResourceStatus('degraded')).toBe('danger')
+    expect(toneForResourceStatus('unschedulable')).toBe('danger')
+    expect(toneForResourceStatus('ready')).toBe('success')
   })
 })

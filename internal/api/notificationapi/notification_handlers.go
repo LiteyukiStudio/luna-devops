@@ -3,6 +3,7 @@ package notificationapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -17,10 +18,17 @@ import (
 
 type notificationChannelInput struct {
 	Name        string            `json:"name"`
+	Scope       string            `json:"scope"`
+	ProjectIDs  []string          `json:"projectIds"`
+	PresetID    string            `json:"presetId"`
 	AdapterKind string            `json:"adapterKind"`
 	Config      json.RawMessage   `json:"config"`
 	Secrets     map[string]string `json:"secrets"`
 	Enabled     *bool             `json:"enabled"`
+}
+
+type notificationChannelTestInput struct {
+	TestRecipient string `json:"testRecipient"`
 }
 
 type notificationTemplateInput struct {
@@ -35,13 +43,18 @@ type notificationTemplateInput struct {
 }
 
 type NotificationRuleInput struct {
-	Name       string          `json:"name"`
-	EventTypes []string        `json:"eventTypes"`
-	Filter     json.RawMessage `json:"filter"`
-	ChannelIDs []string        `json:"channelIds"`
-	TemplateID string          `json:"templateId"`
-	Locale     string          `json:"locale"`
-	Enabled    *bool           `json:"enabled"`
+	Name                  string          `json:"name"`
+	EventTypes            []string        `json:"eventTypes"`
+	Filter                json.RawMessage `json:"filter"`
+	ChannelIDs            []string        `json:"channelIds"`
+	ChannelTargets        json.RawMessage `json:"channelTargets"`
+	TemplateID            string          `json:"templateId"`
+	Locale                string          `json:"locale"`
+	TimeZone              string          `json:"timeZone"`
+	RemindIntervalMinutes *int            `json:"remindIntervalMinutes"`
+	MaxReminders          *int            `json:"maxReminders"`
+	NotifyOnRecovery      *bool           `json:"notifyOnRecovery"`
+	Enabled               *bool           `json:"enabled"`
 }
 
 type notificationPresetChannelInput struct {
@@ -54,6 +67,7 @@ type notificationChannelResponse struct {
 	model.NotificationChannel
 	Config    any             `json:"config"`
 	SecretSet map[string]bool `json:"secretSet"`
+	CanManage bool            `json:"canManage"`
 }
 
 func (h *Handler) ListNotificationPresets(ctx *gin.Context) {
@@ -71,6 +85,9 @@ func (h *Handler) ListNotificationChannels(ctx *gin.Context) {
 	pagination := paginationFromQuery(ctx)
 	var total int64
 	query := h.dbFor(ctx).Model(&model.NotificationChannel{}).Where("owner_user_id = ?", "")
+	if scopeFilter := strings.TrimSpace(ctx.Query("scope")); scopeFilter != "" {
+		query = query.Where("scope = ?", notification.NormalizeChannelScope(scopeFilter))
+	}
 	if search := strings.TrimSpace(ctx.Query("search")); search != "" {
 		query = query.Where("name ILIKE ? or adapter_kind ILIKE ?", "%"+search+"%", "%"+search+"%")
 	}
@@ -92,7 +109,8 @@ func (h *Handler) ListNotificationChannels(ctx *gin.Context) {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
-	ctx.JSON(http.StatusOK, paginatedResponse(notificationChannelResponses(channels), total, pagination))
+	h.populateChannelProjectIDs(channels, ctx.Request.Context())
+	ctx.JSON(http.StatusOK, paginatedResponse(notificationChannelResponsesWithManage(channels, true, true), total, pagination))
 }
 
 func (h *Handler) CreateNotificationChannel(ctx *gin.Context) {
@@ -108,16 +126,19 @@ func (h *Handler) CreateNotificationChannel(ctx *gin.Context) {
 	if !bindJSON(ctx, &input) {
 		return
 	}
-	channel, ok := h.notificationChannelFromInput(ctx, user, input, model.NotificationChannel{ID: id.New("nch"), OwnerUserID: ""})
+	channel, ok := h.notificationChannelFromInput(ctx, user, input, model.NotificationChannel{ID: id.New("nch"), Scope: "global", OwnerUserID: ""})
 	if !ok {
 		return
 	}
+	channel.Scope = "global"
 	if err := h.dbFor(ctx).Create(&channel).Error; err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
 	h.auditWithContext(user.ID, "notification.channel.create", channel.ID, true, "", ctx.Request.Context())
-	ctx.JSON(http.StatusCreated, notificationChannelResponseFor(channel))
+	resp := notificationChannelResponseFor(channel)
+	resp.CanManage = true
+	ctx.JSON(http.StatusCreated, resp)
 }
 
 func (h *Handler) UpdateNotificationChannel(ctx *gin.Context) {
@@ -186,7 +207,11 @@ func (h *Handler) TestNotificationChannel(ctx *gin.Context) {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
-	if err := adapter.Test(ctx.Request.Context(), json.RawMessage(channel.ConfigJSON), json.RawMessage(channel.SecretRefsJSON), h.secrets()); err != nil {
+	testCtx := notification.WithEgressPolicy(ctx.Request.Context(), notification.EgressPolicyForScope(channel.Scope))
+	if recipient := h.resolveTestRecipient(ctx, user); recipient != "" {
+		testCtx = notification.WithTestRecipient(testCtx, recipient)
+	}
+	if err := adapter.Test(testCtx, json.RawMessage(channel.ConfigJSON), json.RawMessage(channel.SecretRefsJSON), h.secrets()); err != nil {
 		h.auditWithContext(user.ID, "notification.channel.test", channel.ID, false, err.Error(), ctx.Request.Context())
 		writeError(ctx, http.StatusBadGateway, err.Error())
 		return
@@ -275,6 +300,11 @@ func (h *Handler) CreateNotificationChannelFromPreset(ctx *gin.Context) {
 		}
 		secretRefs[field] = h.secrets().StoreContext(ctx.Request.Context(), value, user.ID, "notification_channel:preset:"+preset.ID+":"+field)
 	}
+	for _, field := range preset.OptionalSecretFields {
+		if value := strings.TrimSpace(input.Secrets[field]); value != "" {
+			secretRefs[field] = h.secrets().StoreContext(ctx.Request.Context(), value, user.ID, "notification_channel:preset:"+preset.ID+":"+field)
+		}
+	}
 	secretRefsRaw := mustJSON(secretRefs)
 	enabled := true
 	if input.Enabled != nil {
@@ -282,6 +312,8 @@ func (h *Handler) CreateNotificationChannelFromPreset(ctx *gin.Context) {
 	}
 	channel := model.NotificationChannel{
 		ID:             id.New("nch"),
+		Scope:          "global",
+		PresetID:       preset.ID,
 		OwnerUserID:    "",
 		Name:           firstNonEmpty(input.Name, preset.Name),
 		AdapterKind:    preset.AdapterKind,
@@ -424,7 +456,10 @@ func (h *Handler) ListNotificationRules(ctx *gin.Context) {
 	}
 	pagination := paginationFromQuery(ctx)
 	var total int64
-	query := h.dbFor(ctx).Model(&model.NotificationRule{})
+	query := h.dbFor(ctx).Model(&model.NotificationRule{}).Where("project_id = ?", "")
+	if search := strings.TrimSpace(ctx.Query("search")); search != "" {
+		query = query.Where("name ILIKE ?", "%"+search+"%")
+	}
 	if err := query.Count(&total).Error; err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
@@ -514,6 +549,7 @@ func (h *Handler) DeleteNotificationRule(ctx *gin.Context) {
 }
 
 func (h *Handler) ListNotificationDeliveries(ctx *gin.Context) {
+	markLiveObservationResponse(ctx)
 	if !h.requirePlatformAdmin(ctx) {
 		return
 	}
@@ -526,20 +562,67 @@ func (h *Handler) ListNotificationDeliveries(ctx *gin.Context) {
 	if eventType := strings.TrimSpace(ctx.Query("eventType")); eventType != "" {
 		query = query.Where("event_type = ?", eventType)
 	}
+	if channelID := strings.TrimSpace(ctx.Query("channelId")); channelID != "" {
+		query = query.Where("channel_id = ?", channelID)
+	}
+	if ruleID := strings.TrimSpace(ctx.Query("ruleId")); ruleID != "" {
+		query = query.Where("rule_id = ?", ruleID)
+	}
+	if eventID := strings.TrimSpace(ctx.Query("eventId")); eventID != "" {
+		query = query.Where("event_id = ?", eventID)
+	}
+	if projectID := strings.TrimSpace(ctx.Query("projectId")); projectID != "" {
+		query = query.Where("project_id = ?", projectID)
+	}
 	if err := query.Count(&total).Error; err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
 	var deliveries []model.NotificationDelivery
 	if err := query.Order(orderByClause(pagination, map[string]string{
-		"createdAt": "created_at",
-		"status":    "status",
-		"eventType": "event_type",
+		"createdAt":      "created_at",
+		"queuedAt":       "queued_at",
+		"finishedAt":     "finished_at",
+		"durationMillis": "duration_millis",
+		"status":         "status",
+		"eventType":      "event_type",
 	}, "created_at desc")).Limit(pagination.PageSize).Offset(pagination.Offset()).Find(&deliveries).Error; err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
+	h.enrichNotificationDeliveries(deliveries, true, ctx.Request.Context())
 	ctx.JSON(http.StatusOK, paginatedResponse(deliveries, total, pagination))
+}
+
+func (h *Handler) RetryNotificationDelivery(ctx *gin.Context) {
+	user, ok := h.currentUser(ctx)
+	if !ok {
+		return
+	}
+	if user.Role != authz.PlatformRoleAdmin {
+		writeErrorKey(ctx, http.StatusForbidden, user.Language, "config.admin.required")
+		return
+	}
+	deliveryID := strings.TrimSpace(ctx.Param("deliveryId"))
+	var existing model.NotificationDelivery
+	if err := h.dbFor(ctx).First(&existing, "id = ? and recipient_user_id = ?", deliveryID, "").Error; err != nil {
+		writeError(ctx, http.StatusNotFound, "notification delivery not found")
+		return
+	}
+	svc := notification.Service{DB: h.dbFor(ctx), Enqueuer: h.host.DeliveryEnqueuer()}
+	retried, err := svc.RetryDelivery(ctx.Request.Context(), existing.ID)
+	if errors.Is(err, notification.ErrDeliveryActive) {
+		writeErrorCode(ctx, http.StatusConflict, "notification.delivery_active", err.Error())
+		return
+	}
+	if err != nil {
+		writeError(ctx, http.StatusInternalServerError, err.Error())
+		return
+	}
+	items := []model.NotificationDelivery{retried}
+	h.enrichNotificationDeliveries(items, true, ctx.Request.Context())
+	h.auditWithContext(user.ID, "notification.delivery.retry", retried.ID, true, "", ctx.Request.Context())
+	ctx.JSON(http.StatusOK, items[0])
 }
 
 func (h *Handler) notificationChannelFromInput(ctx *gin.Context, user model.User, input notificationChannelInput, channel model.NotificationChannel) (model.NotificationChannel, bool) {
@@ -591,9 +674,22 @@ func notificationTemplateFromInput(ctx *gin.Context, input notificationTemplateI
 }
 
 func (h *Handler) NotificationRuleFromInput(ctx *gin.Context, input NotificationRuleInput, rule model.NotificationRule) (model.NotificationRule, bool) {
-	filter, err := notification.DecodeRuleFilter(input.Filter)
+	filterInput := input.Filter
+	if strings.TrimSpace(rule.ProjectID) != "" {
+		filterInput = normalizeProjectRuleFilterJSON(filterInput, rule.ProjectID)
+	}
+	filter, err := notification.DecodeRuleFilter(filterInput)
 	if err != nil {
 		writeErrorCode(ctx, http.StatusBadRequest, "notification.rule_filter_invalid", err.Error())
+		return model.NotificationRule{}, false
+	}
+	if strings.TrimSpace(rule.ProjectID) != "" {
+		filter.Scope = notification.RuleScopeProjects
+		filter.ProjectIDs = []string{strings.TrimSpace(rule.ProjectID)}
+	}
+	channelTargets, err := notification.DecodeChannelTargets(input.ChannelTargets)
+	if err != nil {
+		writeErrorCode(ctx, http.StatusBadRequest, "notification.rule_targets_invalid", err.Error())
 		return model.NotificationRule{}, false
 	}
 	eventTypes := normalizedNotificationRuleValues(input.EventTypes)
@@ -606,8 +702,46 @@ func (h *Handler) NotificationRuleFromInput(ctx *gin.Context, input Notification
 		return model.NotificationRule{}, false
 	}
 	rule.ChannelIDsJSON = notification.EncodeStringList(channelIDs)
+	rule.ChannelTargetsJSON, err = notification.EncodeChannelTargets(channelTargets)
+	if err != nil {
+		writeErrorCode(ctx, http.StatusBadRequest, "notification.rule_targets_invalid", err.Error())
+		return model.NotificationRule{}, false
+	}
 	rule.TemplateID = strings.TrimSpace(input.TemplateID)
 	rule.Locale = strings.TrimSpace(input.Locale)
+	timeZoneInput := strings.TrimSpace(input.TimeZone)
+	if timeZoneInput == "" {
+		timeZoneInput = firstNonEmpty(rule.TimeZone, notification.DefaultTimeZone)
+	}
+	validatedTimeZone, err := notification.ValidateTimeZone(timeZoneInput)
+	if err != nil {
+		writeErrorCode(ctx, http.StatusBadRequest, "notification.rule_timezone_invalid", err.Error())
+		return model.NotificationRule{}, false
+	}
+	rule.TimeZone = validatedTimeZone
+	if input.RemindIntervalMinutes != nil {
+		if *input.RemindIntervalMinutes < 0 || *input.RemindIntervalMinutes > 10080 {
+			writeErrorCode(ctx, http.StatusBadRequest, "notification.rule_throttle_invalid", "remindIntervalMinutes must be between 0 and 10080")
+			return model.NotificationRule{}, false
+		}
+		rule.RemindIntervalMinutes = *input.RemindIntervalMinutes
+	} else if rule.CreatedAt.IsZero() && rule.RemindIntervalMinutes == 0 {
+		rule.RemindIntervalMinutes = 60
+	}
+	if input.MaxReminders != nil {
+		if *input.MaxReminders < 0 || *input.MaxReminders > 100 {
+			writeErrorCode(ctx, http.StatusBadRequest, "notification.rule_throttle_invalid", "maxReminders must be between 0 and 100")
+			return model.NotificationRule{}, false
+		}
+		rule.MaxReminders = *input.MaxReminders
+	} else if rule.CreatedAt.IsZero() && rule.MaxReminders == 0 {
+		rule.MaxReminders = 3
+	}
+	if input.NotifyOnRecovery != nil {
+		rule.NotifyOnRecovery = *input.NotifyOnRecovery
+	} else if rule.CreatedAt.IsZero() {
+		rule.NotifyOnRecovery = true
+	}
 	if input.Enabled != nil {
 		rule.Enabled = *input.Enabled
 	} else if rule.ID != "" && rule.CreatedAt.IsZero() {
@@ -628,14 +762,49 @@ func (h *Handler) NotificationRuleFromInput(ctx *gin.Context, input Notification
 			return model.NotificationRule{}, false
 		}
 	}
-	var count int64
-	if err := h.dbFor(ctx).Model(&model.NotificationChannel{}).Where("id in ? and owner_user_id = ?", channelIDs, "").Count(&count).Error; err != nil {
+	var channels []model.NotificationChannel
+	if err := h.dbFor(ctx).Where("id in ? and owner_user_id = ?", channelIDs, "").Find(&channels).Error; err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return model.NotificationRule{}, false
 	}
-	if count != int64(len(channelIDs)) {
+	if len(channels) != len(channelIDs) {
 		writeErrorCode(ctx, http.StatusBadRequest, "notification.channel_not_found", "notification channel not found")
 		return model.NotificationRule{}, false
+	}
+	boundProjectChannels := map[string]bool{}
+	if strings.TrimSpace(rule.ProjectID) != "" {
+		var bindings []model.ScopedResourceProjectBinding
+		if err := h.dbFor(ctx).Where(
+			"resource_type = ? and project_id = ? and resource_id in ?",
+			notification.ScopedResourceChannelType,
+			strings.TrimSpace(rule.ProjectID),
+			channelIDs,
+		).Find(&bindings).Error; err != nil {
+			writeError(ctx, http.StatusInternalServerError, err.Error())
+			return model.NotificationRule{}, false
+		}
+		for _, binding := range bindings {
+			boundProjectChannels[binding.ResourceID] = true
+		}
+	}
+	for _, channel := range channels {
+		scope := notification.NormalizeChannelScope(channel.Scope)
+		if strings.TrimSpace(rule.ProjectID) == "" {
+			if scope != "global" {
+				writeErrorCode(ctx, http.StatusBadRequest, "notification.channel_not_found", "global notification rules can only use global channels")
+				return model.NotificationRule{}, false
+			}
+		} else if scope != "global" && !(scope == "project" && (boundProjectChannels[channel.ID] || strings.TrimSpace(channel.ProjectID) == strings.TrimSpace(rule.ProjectID))) {
+			writeErrorCode(ctx, http.StatusBadRequest, "notification.channel_not_found", "notification channel is not bound to this project space")
+			return model.NotificationRule{}, false
+		}
+		if channel.AdapterKind == notification.AdapterKindSMTP {
+			override := channelTargets[channel.ID]
+			if _, recipients, applyErr := notification.ApplySMTPTargetOverride(json.RawMessage(channel.ConfigJSON), override); applyErr != nil || len(recipients) == 0 {
+				writeErrorCode(ctx, http.StatusBadRequest, "notification.smtp_recipient_required", "smtp channel requires at least one recipient on channel or rule")
+				return model.NotificationRule{}, false
+			}
+		}
 	}
 	return rule, true
 }
@@ -662,7 +831,12 @@ func validateNotificationChannel(ctx context.Context, channel model.Notification
 	if err != nil {
 		return err
 	}
-	return adapter.Validate(ctx, json.RawMessage(channel.ConfigJSON), resolver)
+	scope := channel.Scope
+	if strings.TrimSpace(channel.OwnerUserID) != "" {
+		scope = "user"
+	}
+	validateCtx := notification.WithEgressPolicy(ctx, notification.EgressPolicyForScope(scope))
+	return adapter.Validate(validateCtx, json.RawMessage(channel.ConfigJSON), resolver)
 }
 
 func (h *Handler) captureNotificationSecrets(ctx context.Context, user model.User, channelID string, adapterKind string, configRaw json.RawMessage, secretValues map[string]string, existing map[string]string) (json.RawMessage, map[string]string) {
@@ -693,15 +867,25 @@ func (h *Handler) captureNotificationSecrets(ctx context.Context, user model.Use
 }
 
 func notificationChannelResponses(channels []model.NotificationChannel) []notificationChannelResponse {
+	return notificationChannelResponsesWithManage(channels, false, true)
+}
+
+func notificationChannelResponsesWithManage(channels []model.NotificationChannel, canManage bool, includeRecipients bool) []notificationChannelResponse {
 	responses := make([]notificationChannelResponse, 0, len(channels))
 	for _, channel := range channels {
-		responses = append(responses, notificationChannelResponseFor(channel))
+		resp := notificationChannelResponseForWithPrivacy(channel, includeRecipients)
+		resp.CanManage = canManage
+		responses = append(responses, resp)
 	}
 	return responses
 }
 
 func notificationChannelResponseFor(channel model.NotificationChannel) notificationChannelResponse {
-	config := sanitizeNotificationConfig(channel.ConfigJSON)
+	return notificationChannelResponseForWithPrivacy(channel, true)
+}
+
+func notificationChannelResponseForWithPrivacy(channel model.NotificationChannel, includeSensitiveConfig bool) notificationChannelResponse {
+	config := sanitizeNotificationConfigWithPrivacy(channel.ConfigJSON, includeSensitiveConfig)
 	sanitizedConfigJSON := mustJSON(config)
 	channel.ConfigJSON = sanitizedConfigJSON
 	return notificationChannelResponse{
@@ -712,6 +896,10 @@ func notificationChannelResponseFor(channel model.NotificationChannel) notificat
 }
 
 func sanitizeNotificationConfig(raw string) any {
+	return sanitizeNotificationConfigWithPrivacy(raw, true)
+}
+
+func sanitizeNotificationConfigWithPrivacy(raw string, includeSensitiveConfig bool) any {
 	value, ok := decodeJSONValue(raw).(map[string]any)
 	if !ok {
 		return map[string]any{}
@@ -720,6 +908,13 @@ func sanitizeNotificationConfig(raw string) any {
 		normalized := strings.ToLower(key)
 		if strings.Contains(normalized, "password") || strings.Contains(normalized, "secret") || strings.Contains(normalized, "token") {
 			delete(value, key)
+			continue
+		}
+		if !includeSensitiveConfig {
+			switch normalized {
+			case "to", "cc", "bcc", "username", "url", "headers", "testjsonbodytemplate":
+				delete(value, key)
+			}
 		}
 	}
 	return value

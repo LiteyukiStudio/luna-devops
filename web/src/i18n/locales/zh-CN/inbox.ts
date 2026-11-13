@@ -61,6 +61,12 @@ export default {
       billingTransferRejected: { title: '计费归属转移已拒绝', content: '{{recipientName}} 拒绝了「{{projectName}}」的计费归属转移请求。' },
       billingTransferCancelled: { title: '计费归属转移已取消', content: '「{{projectName}}」的成员或计费归属已变化，原转移请求不再有效。' },
       systemAnnouncement: { title: '平台公告', content: '{{message}}' },
+      runtimeOomKilled: { title: '容器内存溢出 (OOMKilled)' },
+      runtimeCrashLoop: { title: '容器崩溃重启循环 (CrashLoopBackOff)' },
+      runtimeStartFailed: { title: '实例启动失败' },
+      runtimeDegraded: { title: '工作负载副本就绪异常' },
+      runtimeAnomaly: { content: '「{{projectName}}」中的 {{applicationName}}（{{targetName}}）检测到运行异常：{{reason}}（就绪副本 {{readyReplicas}}/{{desiredReplicas}}）。' },
+      runtimeRecovered: { title: '运行状态已恢复', content: '「{{projectName}}」中的 {{applicationName}}（{{targetName}}）已恢复正常运行（故障持续 {{durationSeconds}} 秒）。' },
     },
   },
 }

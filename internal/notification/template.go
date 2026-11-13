@@ -12,6 +12,10 @@ import (
 const maxRenderedTemplateBytes = 64 * 1024
 
 func renderTemplate(name string, source string, data any) (string, error) {
+	return renderTemplateWithTimeZone(name, source, data, "")
+}
+
+func renderTemplateWithTimeZone(name string, source string, data any, timeZone string) (string, error) {
 	source = strings.TrimSpace(source)
 	if source == "" {
 		return "", nil
@@ -20,10 +24,15 @@ func renderTemplate(name string, source string, data any) (string, error) {
 		"default":      templateDefault,
 		"details":      templateDetails,
 		"detailsTitle": templateDetailsTitle,
-		"json":         templateJSON,
-		"link":         templateLink,
-		"time":         templateTime,
-		"truncate":     templateTruncate,
+		"feishuCard": func(event Event, locale string) (string, error) {
+			return renderFeishuInteractiveCardJSON(event, locale, timeZone)
+		},
+		"json": templateJSON,
+		"link": templateLink,
+		"time": func(value any, layout string) string {
+			return templateTimeInZone(value, layout, timeZone)
+		},
+		"truncate": templateTruncate,
 	}).Option("missingkey=error").Parse(source)
 	if err != nil {
 		return "", err
@@ -39,16 +48,20 @@ func renderTemplate(name string, source string, data any) (string, error) {
 }
 
 func renderMessage(event Event, tpl Template, secrets map[string]string) (RenderedMessage, error) {
+	return renderMessageWithTimeZone(event, tpl, secrets, "")
+}
+
+func renderMessageWithTimeZone(event Event, tpl Template, secrets map[string]string, timeZone string) (RenderedMessage, error) {
 	data := templateData{Event: event, Secrets: secrets}
-	subject, err := renderTemplate("subject", tpl.Subject, data)
+	subject, err := renderTemplateWithTimeZone("subject", tpl.Subject, data, timeZone)
 	if err != nil {
 		return RenderedMessage{}, fmt.Errorf("render subject: %w", err)
 	}
-	body, err := renderTemplate("body", tpl.Body, data)
+	body, err := renderTemplateWithTimeZone("body", tpl.Body, data, timeZone)
 	if err != nil {
 		return RenderedMessage{}, fmt.Errorf("render body: %w", err)
 	}
-	jsonBody, err := renderTemplate("json", tpl.JSON, data)
+	jsonBody, err := renderTemplateWithTimeZone("json", tpl.JSON, data, timeZone)
 	if err != nil {
 		return RenderedMessage{}, fmt.Errorf("render json: %w", err)
 	}
@@ -290,23 +303,31 @@ func templateJSON(value any) (string, error) {
 }
 
 func templateTime(value any, layout string) string {
+	return templateTimeInZone(value, layout, "")
+}
+
+func templateTimeInZone(value any, layout string, timeZone string) string {
 	if layout == "" {
 		layout = time.RFC3339
 	}
+	var ts time.Time
 	switch item := value.(type) {
 	case time.Time:
-		if item.IsZero() {
-			return ""
-		}
-		return item.Format(layout)
+		ts = item
 	case *time.Time:
-		if item == nil || item.IsZero() {
-			return ""
+		if item != nil {
+			ts = *item
 		}
-		return item.Format(layout)
 	default:
 		return ""
 	}
+	if ts.IsZero() {
+		return ""
+	}
+	if strings.TrimSpace(timeZone) != "" {
+		return FormatTimeInZoneLayout(ts, timeZone, layout)
+	}
+	return ts.Format(layout)
 }
 
 func templateTruncate(value any, max int) string {

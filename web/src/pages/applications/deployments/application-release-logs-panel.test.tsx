@@ -161,4 +161,23 @@ describe('application release logs panel', () => {
     })
     expect(getReleaseRuntimeLogs.mock.calls.length).toBeGreaterThanOrEqual(2)
   })
+
+  it('supports switching to previous crash logs and handles missing previous logs', async () => {
+    const user = userEvent.setup()
+    renderPanel()
+
+    await user.click(screen.getByRole('tab', { name: 'Runtime logs' }))
+    expect(await screen.findByText('server ready')).toBeInTheDocument()
+
+    getReleaseRuntimeLogs.mockResolvedValueOnce({ pod: 'app-def', container: 'app', content: 'fatal error: out of memory', previous: true })
+    await user.click(screen.getByRole('button', { name: 'View previous crash logs' }))
+
+    expect(await screen.findByText('fatal error: out of memory')).toBeInTheDocument()
+    expect(getReleaseRuntimeLogs).toHaveBeenLastCalledWith('prj_123', release.id, { pod: 'app-def', previous: true, tailLines: 500 }, expect.any(AbortSignal))
+
+    getReleaseRuntimeLogs.mockRejectedValueOnce(new ApiError('previous log not found', { code: 'runtime.previous_log_not_found', path: '/runtime-logs', status: 409 }))
+    await user.click(screen.getByRole('button', { name: 'Timestamps' }))
+
+    expect(await screen.findByText('No previous crash logs were found for this container.')).toBeInTheDocument()
+  })
 })
