@@ -855,7 +855,16 @@ func (h *Handler) captureNotificationSecrets(ctx context.Context, user model.Use
 		existing[key] = h.secrets().StoreContext(ctx, value, user.ID, "notification_channel:"+channelID+":"+key)
 	}
 	if adapterKind == notification.AdapterKindSMTP {
-		if ref := strings.TrimSpace(existing["password"]); ref != "" {
+		ref := strings.TrimSpace(existing["password"])
+		if ref == "" {
+			for key, candidate := range existing {
+				if strings.EqualFold(key, "password") && strings.TrimSpace(candidate) != "" {
+					ref = strings.TrimSpace(candidate)
+					break
+				}
+			}
+		}
+		if ref != "" {
 			config["passwordRef"] = ref
 		}
 	}

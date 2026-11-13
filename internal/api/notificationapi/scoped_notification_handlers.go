@@ -118,16 +118,19 @@ func (h *Handler) CreateScopedNotificationChannel(ctx *gin.Context) {
 
 	err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
 		secretRefs := map[string]string{}
+		refOverlay := make(map[string]string, len(secretValues)*2)
 		for key, value := range secretValues {
+			refOverlay[key] = value
 			ref, storeErr := h.secrets().StoreContextWithDB(ctx.Request.Context(), tx, value, user.ID, "notification_channel:"+channel.ID+":"+key)
 			if storeErr != nil {
 				return storeErr
 			}
 			secretRefs[key] = ref
+			refOverlay[ref] = value
 		}
 		channel.ConfigJSON = attachSMTPPasswordRef(channel.AdapterKind, channel.ConfigJSON, secretRefs)
 		channel.SecretRefsJSON = mustJSON(secretRefs)
-		resolver := staticOverlaySecretResolver{overlay: secretValues, fallback: h.secrets()}
+		resolver := staticOverlaySecretResolver{overlay: refOverlay, fallback: h.secrets()}
 		if validateErr := validateNotificationChannel(ctx.Request.Context(), channel, resolver); validateErr != nil {
 			return errChannelValidation{err: validateErr}
 		}
@@ -195,7 +198,9 @@ func (h *Handler) UpdateScopedNotificationChannel(ctx *gin.Context) {
 
 	err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
 		secretRefs := decodeStringMap(existing.SecretRefsJSON)
+		refOverlay := make(map[string]string, len(secretValues)*2)
 		for key, value := range secretValues {
+			refOverlay[key] = value
 			resource := "notification_channel:" + updated.ID + ":" + key
 			newRef, storeErr := h.secrets().StoreContextWithDB(ctx.Request.Context(), tx, value, user.ID, resource)
 			if storeErr != nil {
@@ -203,6 +208,7 @@ func (h *Handler) UpdateScopedNotificationChannel(ctx *gin.Context) {
 			}
 			oldRef := secretRefs[key]
 			secretRefs[key] = newRef
+			refOverlay[newRef] = value
 			if strings.TrimSpace(oldRef) != "" {
 				if delErr := h.secrets().DeleteRefContextWithDB(ctx.Request.Context(), tx, oldRef, resource); delErr != nil {
 					return delErr
@@ -211,7 +217,7 @@ func (h *Handler) UpdateScopedNotificationChannel(ctx *gin.Context) {
 		}
 		updated.ConfigJSON = attachSMTPPasswordRef(updated.AdapterKind, updated.ConfigJSON, secretRefs)
 		updated.SecretRefsJSON = mustJSON(secretRefs)
-		resolver := staticOverlaySecretResolver{overlay: secretValues, fallback: h.secrets()}
+		resolver := staticOverlaySecretResolver{overlay: refOverlay, fallback: h.secrets()}
 		if validateErr := validateNotificationChannel(ctx.Request.Context(), updated, resolver); validateErr != nil {
 			return errChannelValidation{err: validateErr}
 		}
@@ -535,6 +541,10 @@ func (h *Handler) UnbindProjectNotificationChannel(ctx *gin.Context) {
 		writeError(ctx, http.StatusNotFound, "notification channel is not bound to this project space")
 		return
 	}
+	if len(remaining) == 0 {
+		writeErrorCode(ctx, http.StatusConflict, "notification.project_required", "cannot unbind the last bound project space; delete the notification channel instead")
+		return
+	}
 
 	var projectRules []model.NotificationRule
 	if err := h.dbFor(ctx).Where("project_id = ?", project.ID).Find(&projectRules).Error; err != nil {
@@ -551,22 +561,7 @@ func (h *Handler) UnbindProjectNotificationChannel(ctx *gin.Context) {
 	}
 
 	err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
-		if bindErr := h.host.ReplaceScopedResourceProjectBindings(tx, notification.ScopedResourceChannelType, channel.ID, remaining, nil); bindErr != nil {
-			return bindErr
-		}
-		if len(remaining) == 0 {
-			for key, ref := range decodeStringMap(channel.SecretRefsJSON) {
-				if strings.TrimSpace(ref) == "" {
-					continue
-				}
-				resource := "notification_channel:" + channel.ID + ":" + key
-				if delErr := h.secrets().DeleteRefContextWithDB(ctx.Request.Context(), tx, ref, resource); delErr != nil {
-					return delErr
-				}
-			}
-			return tx.Delete(&channel).Error
-		}
-		return nil
+		return h.host.ReplaceScopedResourceProjectBindings(tx, notification.ScopedResourceChannelType, channel.ID, remaining, nil)
 	})
 	if err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
@@ -1021,6 +1016,16 @@ func (h *Handler) prepareScopedNotificationChannel(
 			delete(configMap, "password")
 			if marshaled, err := json.Marshal(configMap); err == nil {
 				configRaw = marshaled
+			}
+		}
+		if channel.AdapterKind == notification.AdapterKindSMTP {
+			for key, value := range secretValues {
+				if strings.EqualFold(key, "password") && key != "password" {
+					if strings.TrimSpace(secretValues["password"]) == "" {
+						secretValues["password"] = value
+					}
+					delete(secretValues, key)
+				}
 			}
 		}
 		channel.ConfigJSON = string(configRaw)

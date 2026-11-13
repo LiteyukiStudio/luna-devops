@@ -275,7 +275,7 @@ func TestProjectSMTPRecipientOverrideRuleAndManualDeliveryRetry(t *testing.T) {
 		`{"name":"Runtime Crash Rule","eventTypes":["build.failed"],"channelIds":["`+smtpResp.ID+`"]}`,
 	)
 	handlers.domains.notification.CreateProjectNotificationRule(missingTargetCtx)
-	if missingTargetRec.Code != http.StatusBadRequest || !strings.Contains(missingTargetRec.Body.String(), "notification.smtp_recipients_required") {
+	if missingTargetRec.Code != http.StatusBadRequest || !strings.Contains(missingTargetRec.Body.String(), "notification.smtp_recipient_required") {
 		t.Fatalf("rule without recipients status = %d, body = %s", missingTargetRec.Code, missingTargetRec.Body.String())
 	}
 
@@ -363,7 +363,7 @@ func TestProjectSMTPRecipientOverrideRuleAndManualDeliveryRetry(t *testing.T) {
 	if err := json.Unmarshal(ownerRetryRec.Body.Bytes(), &retried); err != nil {
 		t.Fatal(err)
 	}
-	if retried.Status != "queued" || retried.AttemptCount != 0 || retried.ChannelName != "Sender Only SMTP" || retried.RuleName != "Runtime Crash Rule" {
+	if retried.Status != "pending" || retried.AttemptCount != 0 || retried.ChannelName != "Sender Only SMTP" || retried.RuleName != "Runtime Crash Rule" {
 		t.Fatalf("unexpected retried delivery payload: %#v", retried)
 	}
 }

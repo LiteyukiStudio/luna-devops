@@ -497,7 +497,7 @@ export function ProjectNotificationsPanel({
                       {t('common.edit')}
                     </DropdownMenuItem>
                   )}
-                  {isProjectScope && (
+                  {isProjectScope && (item.projectIds?.length ?? 1) > 1 && (
                     <DropdownMenuItem onSelect={() => setUnbindTarget(item)}>
                       <Unlink className="size-4" />
                       {t('notificationsPage.unbindChannel')}
