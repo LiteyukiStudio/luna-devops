@@ -31,7 +31,7 @@ describe('account menu', () => {
     await i18next.changeLanguage('zh-CN')
   })
 
-  it('shows identity, account and help destinations from the avatar', async () => {
+  it('shows identity and personal account destinations without external resource links', async () => {
     const interaction = userEvent.setup()
     renderAccountMenu()
 
@@ -41,8 +41,8 @@ describe('account menu', () => {
     expect(screen.getByText('snowykami@example.com')).toBeVisible()
     expect(screen.getByRole('menuitem', { name: '账号' })).toHaveAttribute('href', '/settings/account')
     expect(screen.getByRole('menuitem', { name: '账单' })).toHaveAttribute('href', '/billing')
-    expect(screen.getByRole('menuitem', { name: 'GitHub 仓库' })).toHaveAttribute('href', 'https://github.com/LiteyukiStudio/luna-devops')
-    expect(screen.getByRole('menuitem', { name: '文档' })).toHaveAttribute('href', 'https://luna-devops.liteyuki.org')
+    expect(screen.queryByRole('menuitem', { name: 'GitHub 仓库' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: '文档' })).not.toBeInTheDocument()
     expect(screen.getByRole('menuitem', { name: '退出' })).toBeInTheDocument()
   })
 

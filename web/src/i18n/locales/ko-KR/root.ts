@@ -24,6 +24,7 @@ const root = {
   login: '로그인',
   logout: '로그아웃',
   accountMenu: '계정 메뉴',
+  helpMenu: '도움말 및 리소스',
   githubRepository: 'GitHub 리포지토리',
   documentation: '문서',
   logoutConfirmTitle: '로그아웃하시겠습니까?',

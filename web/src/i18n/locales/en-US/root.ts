@@ -24,6 +24,7 @@ const root = {
   login: 'Login',
   logout: 'Logout',
   accountMenu: 'Account menu',
+  helpMenu: 'Help & resources',
   githubRepository: 'GitHub repository',
   documentation: 'Documentation',
   logoutConfirmTitle: 'Log out of Luna DevOps?',

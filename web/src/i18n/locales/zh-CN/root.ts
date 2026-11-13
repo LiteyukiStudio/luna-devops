@@ -24,6 +24,7 @@ const root = {
   login: '登录',
   logout: '退出',
   accountMenu: '账号菜单',
+  helpMenu: '帮助与资源',
   githubRepository: 'GitHub 仓库',
   documentation: '文档',
   logoutConfirmTitle: '确认退出登录？',

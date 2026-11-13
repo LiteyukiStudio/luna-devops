@@ -1,5 +1,5 @@
 import type { CurrentUser } from '@/api'
-import { BookOpen, CircleUserRound, CreditCard, EllipsisVertical, GitFork, LogOut } from 'lucide-react'
+import { CircleUserRound, CreditCard, EllipsisVertical, LogOut } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
@@ -15,12 +15,9 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 
-const GITHUB_REPOSITORY_URL = 'https://github.com/LiteyukiStudio/luna-devops'
-const DOCUMENTATION_URL = 'https://luna-devops.liteyuki.org'
-
 /**
- * 全局顶栏的账号入口。
- * 触发器只展示头像，菜单集中承载当前账号信息、账号设置、帮助入口和退出确认。
+ * 个人账号菜单入口。
+ * 触发器展示头像或侧栏底部用户卡片，菜单集中承载当前账号信息、账号设置、账单和退出确认。
  */
 export function AccountMenu({
   user,
@@ -85,18 +82,6 @@ export function AccountMenu({
               <CreditCard />
               <span>{t('billing')}</span>
             </Link>
-          </DropdownMenuItem>
-          <DropdownMenuItem asChild>
-            <a href={GITHUB_REPOSITORY_URL} rel="noreferrer" target="_blank">
-              <GitFork />
-              <span>{t('githubRepository')}</span>
-            </a>
-          </DropdownMenuItem>
-          <DropdownMenuItem asChild>
-            <a href={DOCUMENTATION_URL} rel="noreferrer" target="_blank">
-              <BookOpen />
-              <span>{t('documentation')}</span>
-            </a>
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem variant="destructive" onSelect={() => setLogoutConfirmOpen(true)}>
