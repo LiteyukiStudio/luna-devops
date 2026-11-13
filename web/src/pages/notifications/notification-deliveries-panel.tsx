@@ -1,6 +1,6 @@
 import type { NotificationChannel, NotificationDelivery, PaginatedResponse } from '@/api'
 import type { DataListColumn } from '@/components/common/data-list'
-import { RotateCw, X } from 'lucide-react'
+import { RotateCw, SearchX, Send, X } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { DataList } from '@/components/common/data-list'
@@ -21,36 +21,42 @@ export function NotificationDeliveriesPanel({
   channelFilter,
   channels = [],
   data,
+  error = false,
   eventIdFilter = '',
   eventTypeFilter,
   framed = true,
   loading = false,
   page,
   retrying = false,
+  retryingLoad = false,
   statusFilter,
   onChannelFilterChange,
   onClearEventIdFilter,
   onEventTypeFilterChange,
   onPageChange,
   onRetry,
+  onRetryLoad,
   onStatusFilterChange,
 }: {
   canRetry?: boolean
   channelFilter: string
   channels?: NotificationChannel[]
   data?: PaginatedResponse<NotificationDelivery>
+  error?: boolean
   eventIdFilter?: string
   eventTypeFilter: string
   framed?: boolean
   loading?: boolean
   page: number
   retrying?: boolean
+  retryingLoad?: boolean
   statusFilter: string
   onChannelFilterChange: (channelId: string) => void
   onClearEventIdFilter?: () => void
   onEventTypeFilterChange: (eventType: string) => void
   onPageChange: (page: number) => void
   onRetry?: (delivery: NotificationDelivery) => void
+  onRetryLoad?: () => void
   onStatusFilterChange: (status: string) => void
 }) {
   const { t } = useTranslation()
@@ -199,18 +205,30 @@ export function NotificationDeliveriesPanel({
               </Button>
             )
           : undefined}
+        emptyDescription={hasActiveFilters ? t('notificationsPage.emptyFilteredDeliveriesDescription') : t('notificationsPage.emptyDeliveriesDescription')}
+        emptyIcon={hasActiveFilters ? <SearchX className="size-5" /> : <Send className="size-5" />}
         emptyMode={hasActiveFilters ? 'filtered' : 'actionable'}
         emptyTitle={hasActiveFilters ? t('notificationsPage.emptyFilteredDeliveries') : t('notificationsPage.emptyDeliveries')}
+        error={error
+          ? {
+              description: t('notificationsPage.loadFailedDescription'),
+              retrying: retryingLoad,
+              title: t('notificationsPage.loadFailedTitle'),
+              onRetry: onRetryLoad,
+            }
+          : undefined}
         framed={framed}
         items={items}
         loading={loading}
         pagination={pagination}
+        rowActionLabel={() => t('notificationsPage.deliveryDetailTitle')}
         rowKey={item => item.id}
         toolbar={(
-          <div className="flex flex-wrap items-center gap-2">
+          <>
             <Select
               aria-label={t('common.status')}
-              className="h-8 w-auto min-w-32 text-xs"
+              className="text-xs"
+              containerClassName="w-full @lg/data-list:w-36"
               value={statusFilter}
               onChange={(event) => {
                 onStatusFilterChange(event.target.value)
@@ -226,7 +244,8 @@ export function NotificationDeliveriesPanel({
 
             <Select
               aria-label={t('notificationsPage.eventType')}
-              className="h-8 w-auto min-w-44 text-xs"
+              className="text-xs"
+              containerClassName="w-full @lg/data-list:w-52"
               value={eventTypeFilter}
               onChange={(event) => {
                 onEventTypeFilterChange(event.target.value)
@@ -245,22 +264,22 @@ export function NotificationDeliveriesPanel({
               ))}
             </Select>
 
-            {channels.length > 0 && (
-              <Select
-                aria-label={t('notificationsPage.channels')}
-                className="h-8 w-auto min-w-40 text-xs"
-                value={channelFilter}
-                onChange={(event) => {
-                  onChannelFilterChange(event.target.value)
-                  onPageChange(1)
-                }}
-              >
-                <option value="">{t('notificationsPage.allChannels')}</option>
-                {channels.map(channel => (
-                  <option key={channel.id} value={channel.id}>{channel.name}</option>
-                ))}
-              </Select>
-            )}
+            <Select
+              aria-label={t('notificationsPage.channels')}
+              className="text-xs"
+              containerClassName="w-full @lg/data-list:w-44"
+              disabled={channels.length === 0 && !channelFilter}
+              value={channelFilter}
+              onChange={(event) => {
+                onChannelFilterChange(event.target.value)
+                onPageChange(1)
+              }}
+            >
+              <option value="">{t('notificationsPage.allChannels')}</option>
+              {channels.map(channel => (
+                <option key={channel.id} value={channel.id}>{channel.name}</option>
+              ))}
+            </Select>
 
             {eventIdFilter && (
               <StatusBadge tone="info">
@@ -288,7 +307,7 @@ export function NotificationDeliveriesPanel({
                 {t('notificationsPage.clearFilters')}
               </Button>
             )}
-          </div>
+          </>
         )}
         onRowClick={item => setSelectedDeliveryId(item.id)}
       />

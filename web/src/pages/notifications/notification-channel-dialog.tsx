@@ -1,8 +1,9 @@
+import type { ReactNode } from 'react'
 import type { NotificationChannelMode } from './notification-models'
 import type { NotificationChannel, NotificationChannelPayload, NotificationPreset, Project } from '@/api'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation } from '@tanstack/react-query'
-import { FlaskConical } from 'lucide-react'
+import { Bot, FlaskConical, Mail, Webhook } from 'lucide-react'
 import { Controller, useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -16,6 +17,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from '@/components/ui/input'
 import { NativeSelect as Select } from '@/components/ui/native-select'
 import { Textarea } from '@/components/ui/textarea'
+import { cn } from '@/lib/utils'
 import {
   buildChannelDraftTestPayload,
   buildScopedChannelPayload,
@@ -139,53 +141,85 @@ function NotificationChannelDialogBody({
       </DialogHeader>
       <form className="grid gap-4" onSubmit={submit}>
         <div className="grid gap-4 md:grid-cols-2">
-          <Field label={t('notificationsPage.channelMode')}>
-            <Select
-              disabled={Boolean(channel)}
-              value={values.mode}
-              onChange={(event) => {
-                const nextMode = event.target.value as NotificationChannelMode
-                form.setValue('mode', nextMode, { shouldDirty: true, shouldValidate: true })
-              }}
-            >
-              {presets.length > 0 && <option value="preset">{t('notificationsPage.modePreset')}</option>}
-              <option value="webhook">{t('notificationsPage.modeWebhook')}</option>
-              <option value="smtp">{t('notificationsPage.modeSmtp')}</option>
-            </Select>
-          </Field>
-
-          {allowGlobalScope
+          {channel
             ? (
-                <Field label={t('notificationsPage.scope')}>
+                <Field label={t('notificationsPage.channelMode')}>
                   <Select
-                    value={values.scope}
+                    disabled
+                    value={values.mode}
                     onChange={(event) => {
-                      const nextScope = event.target.value === 'global' ? 'global' : 'project'
-                      form.setValue('scope', nextScope, { shouldDirty: true, shouldValidate: true })
+                      const nextMode = event.target.value as NotificationChannelMode
+                      form.setValue('mode', nextMode, { shouldDirty: true, shouldValidate: true })
                     }}
                   >
-                    <option value="global">{t('notificationsPage.scopeGlobal')}</option>
-                    <option value="project">{t('notificationsPage.scopeProject')}</option>
+                    {presets.length > 0 && <option value="preset">{t('notificationsPage.modePreset')}</option>}
+                    <option value="webhook">{t('notificationsPage.modeWebhook')}</option>
+                    <option value="smtp">{t('notificationsPage.modeSmtp')}</option>
                   </Select>
                 </Field>
               )
             : (
-                <Field label={t('notificationsPage.name')} required={values.mode !== 'preset'}>
-                  <Input
-                    {...form.register('name')}
-                    placeholder={values.mode === 'preset' ? selectedPreset?.name : undefined}
-                  />
+                <Field className="md:col-span-2" label={t('notificationsPage.channelMode')}>
+                  <div
+                    aria-label={t('notificationsPage.channelMode')}
+                    className={cn(
+                      'grid gap-2.5',
+                      presets.length > 0 ? 'sm:grid-cols-3' : 'sm:grid-cols-2',
+                    )}
+                    role="radiogroup"
+                  >
+                    {presets.length > 0 && (
+                      <ChannelModeCard
+                        checked={values.mode === 'preset'}
+                        hint={t('notificationsPage.modePresetHint')}
+                        icon={<Bot className="size-4" />}
+                        title={t('notificationsPage.modePresetShort')}
+                        onSelect={() => form.setValue('mode', 'preset', { shouldDirty: true, shouldValidate: true })}
+                      />
+                    )}
+                    <ChannelModeCard
+                      checked={values.mode === 'webhook'}
+                      hint={t('notificationsPage.modeWebhookHint')}
+                      icon={<Webhook className="size-4" />}
+                      title={t('notificationsPage.modeWebhook')}
+                      onSelect={() => form.setValue('mode', 'webhook', { shouldDirty: true, shouldValidate: true })}
+                    />
+                    <ChannelModeCard
+                      checked={values.mode === 'smtp'}
+                      hint={t('notificationsPage.modeSmtpHint')}
+                      icon={<Mail className="size-4" />}
+                      title={t('notificationsPage.modeSmtpShort')}
+                      onSelect={() => form.setValue('mode', 'smtp', { shouldDirty: true, shouldValidate: true })}
+                    />
+                  </div>
                 </Field>
               )}
 
           {allowGlobalScope && (
-            <Field className="md:col-span-2" label={t('notificationsPage.name')} required={values.mode !== 'preset'}>
-              <Input
-                {...form.register('name')}
-                placeholder={values.mode === 'preset' ? selectedPreset?.name : undefined}
-              />
+            <Field label={t('notificationsPage.scope')}>
+              <Select
+                value={values.scope}
+                onChange={(event) => {
+                  const nextScope = event.target.value === 'global' ? 'global' : 'project'
+                  form.setValue('scope', nextScope, { shouldDirty: true, shouldValidate: true })
+                }}
+              >
+                <option value="global">{t('notificationsPage.scopeGlobal')}</option>
+                <option value="project">{t('notificationsPage.scopeProject')}</option>
+              </Select>
             </Field>
           )}
+
+          <Field
+            className={cn((allowGlobalScope && channel) || (!allowGlobalScope && !channel) ? 'md:col-span-2' : undefined)}
+            label={t('notificationsPage.name')}
+            required={values.mode !== 'preset'}
+          >
+            <Input
+              {...form.register('name')}
+              placeholder={values.mode === 'preset' ? selectedPreset?.name : undefined}
+            />
+          </Field>
 
           {values.scope === 'project' && (
             <Field
@@ -411,5 +445,44 @@ function NotificationChannelDialogBody({
         </DialogFooter>
       </form>
     </DialogContent>
+  )
+}
+
+function ChannelModeCard({
+  checked,
+  hint,
+  icon,
+  title,
+  onSelect,
+}: {
+  checked: boolean
+  hint: string
+  icon: ReactNode
+  title: string
+  onSelect: () => void
+}) {
+  return (
+    <button
+      aria-checked={checked}
+      className={cn(
+        'flex flex-col items-start gap-1 rounded-control border p-3 text-left transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
+        checked
+          ? 'border-primary bg-primary-subtle/50 text-foreground'
+          : 'border-border bg-surface hover:bg-surface-subtle/70 text-foreground',
+      )}
+      role="radio"
+      type="button"
+      onClick={onSelect}
+    >
+      <span className="flex items-center gap-2 text-sm font-medium">
+        <span className={cn('shrink-0', checked ? 'text-primary' : 'text-muted-foreground')}>
+          {icon}
+        </span>
+        <span>{title}</span>
+      </span>
+      <span className="text-xs leading-relaxed text-muted-foreground">
+        {hint}
+      </span>
+    </button>
   )
 }

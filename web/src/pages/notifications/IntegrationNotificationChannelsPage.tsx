@@ -2,7 +2,7 @@ import type { NotificationChannelMode } from './notification-models'
 import type { NotificationChannel, NotificationChannelPayload } from '@/api'
 import type { DataListColumn } from '@/components/common/data-list'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Bell, FlaskConical, MoreHorizontal, Pencil, Plus, Trash2 } from 'lucide-react'
+import { FlaskConical, MoreHorizontal, Pencil, Plus, RefreshCw, SearchX, Trash2, Webhook } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -22,6 +22,7 @@ import { Input } from '@/components/ui/input'
 import { NativeSelect as Select } from '@/components/ui/native-select'
 import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
 import { isPlatformAdmin } from '@/lib/roles'
+import { cn } from '@/lib/utils'
 import { NotificationChannelDialog } from './notification-channel-dialog'
 import { NOTIFICATION_PAGE_SIZE } from './notification-models'
 
@@ -113,6 +114,13 @@ export function IntegrationNotificationChannelsPage() {
   })
 
   const canCreate = canViewAll || (projects.data?.length ?? 0) > 0
+  const hasFilters = Boolean(search.trim()) || scopeFilter !== 'all'
+
+  const clearFilters = () => {
+    setSearch('')
+    setScopeFilter('all')
+    setPage(1)
+  }
 
   const columns = useMemo<DataListColumn<NotificationChannel>[]>(() => [
     {
@@ -261,23 +269,45 @@ export function IntegrationNotificationChannelsPage() {
   return (
     <PageShell>
       <PageChromeHeading description={t('notificationsPage.channelsPageDescription')} title={t('notificationChannels')} />
-      {canCreate && (
-        <PageChromeTools>
-          <Button type="button" variant="outline" onClick={() => setDialogState({ mode: 'preset' })}>
-            <Bell className="size-4" />
-            {t('notificationsPage.fromPreset')}
-          </Button>
-          <Button type="button" onClick={() => setDialogState({ mode: 'smtp' })}>
+      <PageChromeTools>
+        <Button
+          disabled={channels.isFetching}
+          type="button"
+          variant="outline"
+          onClick={() => void channels.refetch()}
+        >
+          <RefreshCw className={cn('size-4', channels.isFetching && 'animate-spin')} />
+          {t('common.refresh')}
+        </Button>
+        {canCreate && (
+          <Button type="button" onClick={() => setDialogState({ mode: 'preset' })}>
             <Plus className="size-4" />
             {t('notificationsPage.createChannel')}
           </Button>
-        </PageChromeTools>
-      )}
+        )}
+      </PageChromeTools>
 
       <DataList
         columns={columns}
-        emptyDescription={t('notificationsPage.emptyChannelsDescription')}
-        emptyTitle={t('notificationsPage.emptyChannels')}
+        emptyActions={hasFilters
+          ? (
+              <Button size="sm" type="button" variant="outline" onClick={clearFilters}>
+                {t('notificationsPage.clearFilters')}
+              </Button>
+            )
+          : undefined}
+        emptyDescription={hasFilters ? t('notificationsPage.emptyFilteredChannelsDescription') : t('notificationsPage.emptyChannelsDescription')}
+        emptyIcon={hasFilters ? <SearchX className="size-5" /> : <Webhook className="size-5" />}
+        emptyMode={hasFilters ? 'filtered' : 'actionable'}
+        emptyTitle={hasFilters ? t('notificationsPage.emptyFilteredChannels') : t('notificationsPage.emptyChannels')}
+        error={channels.isError
+          ? {
+              description: t('notificationsPage.loadFailedDescription'),
+              retrying: channels.isFetching,
+              title: t('notificationsPage.loadFailedTitle'),
+              onRetry: () => void channels.refetch(),
+            }
+          : undefined}
         items={channels.data?.items ?? []}
         loading={channels.isLoading}
         pagination={pagination}
@@ -291,19 +321,27 @@ export function IntegrationNotificationChannelsPage() {
           },
         }}
         toolbar={(
-          <Select
-            aria-label={t('notificationsPage.scope')}
-            className="h-8 w-auto min-w-36 text-xs"
-            value={scopeFilter}
-            onChange={(event) => {
-              setScopeFilter(event.target.value as 'all' | 'project' | 'global')
-              setPage(1)
-            }}
-          >
-            <option value="all">{t('notificationsPage.allScopes')}</option>
-            <option value="project">{t('notificationsPage.scopeProject')}</option>
-            <option value="global">{t('notificationsPage.scopeGlobal')}</option>
-          </Select>
+          <>
+            <Select
+              aria-label={t('notificationsPage.scope')}
+              className="text-xs"
+              containerClassName="w-full @lg/data-list:w-40"
+              value={scopeFilter}
+              onChange={(event) => {
+                setScopeFilter(event.target.value as 'all' | 'project' | 'global')
+                setPage(1)
+              }}
+            >
+              <option value="all">{t('notificationsPage.allScopes')}</option>
+              <option value="project">{t('notificationsPage.scopeProject')}</option>
+              <option value="global">{t('notificationsPage.scopeGlobal')}</option>
+            </Select>
+            {hasFilters && (
+              <Button className="h-8 text-xs" size="sm" type="button" variant="ghost" onClick={clearFilters}>
+                {t('notificationsPage.clearFilters')}
+              </Button>
+            )}
+          </>
         )}
       />
 

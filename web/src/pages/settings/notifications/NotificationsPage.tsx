@@ -11,7 +11,7 @@ import type { DataListColumn } from '@/components/common/data-list'
 import type { NotificationChannelMode } from '@/pages/notifications/notification-models'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Bell, FlaskConical, MoreHorizontal, Pencil, Plus, Trash2 } from 'lucide-react'
+import { Bell, FileCode2, FlaskConical, MoreHorizontal, Pencil, Plus, RefreshCw, Trash2, Webhook } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
@@ -32,6 +32,7 @@ import { NativeSelect as Select } from '@/components/ui/native-select'
 import { TabsContent } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
+import { cn } from '@/lib/utils'
 import { NotificationChannelDialog } from '@/pages/notifications/notification-channel-dialog'
 import { NotificationDeliveriesPanel } from '@/pages/notifications/notification-deliveries-panel'
 import {
@@ -434,6 +435,17 @@ export function NotificationsPage() {
                 {t('notificationsPage.createRule')}
               </Button>
             )}
+            {activeTab === 'deliveries' && (
+              <Button
+                disabled={deliveries.isFetching}
+                type="button"
+                variant="outline"
+                onClick={() => void deliveries.refetch()}
+              >
+                <RefreshCw className={cn('size-4', deliveries.isFetching && 'animate-spin')} />
+                {t('common.refresh')}
+              </Button>
+            )}
           </>
         )}
         value={activeTab}
@@ -443,7 +455,16 @@ export function NotificationsPage() {
           <DataList
             columns={channelColumns}
             emptyDescription={t('notificationsPage.emptyChannelsDescription')}
+            emptyIcon={<Webhook className="size-5" />}
             emptyTitle={t('notificationsPage.emptyChannels')}
+            error={channels.isError
+              ? {
+                  description: t('notificationsPage.loadFailedDescription'),
+                  retrying: channels.isFetching,
+                  title: t('notificationsPage.loadFailedTitle'),
+                  onRetry: () => void channels.refetch(),
+                }
+              : undefined}
             items={channels.data?.items ?? []}
             loading={channels.isLoading}
             pagination={pagination(channels.data, channelPage, setChannelPage, t)}
@@ -453,7 +474,16 @@ export function NotificationsPage() {
         <TabsContent value="templates">
           <DataList
             columns={templateColumns}
+            emptyIcon={<FileCode2 className="size-5" />}
             emptyTitle={t('notificationsPage.emptyTemplates')}
+            error={templates.isError
+              ? {
+                  description: t('notificationsPage.loadFailedDescription'),
+                  retrying: templates.isFetching,
+                  title: t('notificationsPage.loadFailedTitle'),
+                  onRetry: () => void templates.refetch(),
+                }
+              : undefined}
             items={templates.data?.items ?? []}
             loading={templates.isLoading}
             pagination={pagination(templates.data, templatePage, setTemplatePage, t)}
@@ -464,7 +494,16 @@ export function NotificationsPage() {
           <DataList
             columns={ruleColumns}
             emptyDescription={t('notificationsPage.emptyRulesDescription')}
+            emptyIcon={<Bell className="size-5" />}
             emptyTitle={t('notificationsPage.emptyRules')}
+            error={rules.isError
+              ? {
+                  description: t('notificationsPage.loadFailedDescription'),
+                  retrying: rules.isFetching,
+                  title: t('notificationsPage.loadFailedTitle'),
+                  onRetry: () => void rules.refetch(),
+                }
+              : undefined}
             items={rules.data?.items ?? []}
             loading={rules.isLoading}
             pagination={pagination(rules.data, rulePage, setRulePage, t)}
@@ -477,17 +516,20 @@ export function NotificationsPage() {
             channelFilter={deliveryChannelId}
             channels={channelOptions.data?.items ?? []}
             data={deliveries.data}
+            error={deliveries.isError}
             eventIdFilter={eventIdFilter}
             eventTypeFilter={deliveryEventType}
             loading={deliveries.isLoading}
             page={deliveryPage}
             retrying={retryDelivery.isPending}
+            retryingLoad={deliveries.isFetching}
             statusFilter={deliveryStatus}
             onChannelFilterChange={setDeliveryChannelId}
             onClearEventIdFilter={clearEventIdFilter}
             onEventTypeFilterChange={setDeliveryEventType}
             onPageChange={setDeliveryPage}
             onRetry={delivery => retryDelivery.mutate(delivery)}
+            onRetryLoad={() => void deliveries.refetch()}
             onStatusFilterChange={setDeliveryStatus}
           />
         </TabsContent>

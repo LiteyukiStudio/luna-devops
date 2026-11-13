@@ -2,7 +2,7 @@ import type { NotificationChannel, NotificationChannelPayload, NotificationDeliv
 import type { DataListColumn } from '@/components/common/data-list'
 import type { NotificationChannelMode } from '@/pages/notifications/notification-models'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Bell, FlaskConical, Link2, MoreHorizontal, Pencil, Plus, Trash2, Unlink } from 'lucide-react'
+import { Bell, FlaskConical, Info, Link2, MoreHorizontal, Pencil, Plus, RefreshCw, Trash2, Unlink, Webhook } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useSearchParams } from 'react-router-dom'
@@ -25,6 +25,7 @@ import { NativeSelect as Select } from '@/components/ui/native-select'
 import { TabsContent } from '@/components/ui/tabs'
 import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
 import { isPlatformAdmin, ProjectAction, projectActionAllowed } from '@/lib/roles'
+import { cn } from '@/lib/utils'
 import { NotificationChannelDialog } from '@/pages/notifications/notification-channel-dialog'
 import { NotificationDeliveriesPanel } from '@/pages/notifications/notification-deliveries-panel'
 import {
@@ -532,46 +533,58 @@ export function ProjectNotificationsPanel({
     )
   }
 
-  const tools = canManage
-    ? (
+  const hasAvailableChannels = (channelOptions.data?.items.length ?? 0) > 0
+
+  const tools = (
+    <>
+      {canManage && activeTab === 'rules' && (
+        <Button type="button" onClick={() => setRuleDialog({})}>
+          <Plus className="size-4" />
+          {t('notificationsPage.createRule')}
+        </Button>
+      )}
+      {canManage && activeTab === 'channels' && (
         <>
-          {activeTab === 'rules' && (
-            <Button type="button" onClick={() => setRuleDialog({})}>
-              <Plus className="size-4" />
-              {t('notificationsPage.createRule')}
-            </Button>
-          )}
-          {activeTab === 'channels' && (
-            <>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => {
-                  setSelectedBindChannelId('')
-                  setBindDialogOpen(true)
-                }}
-              >
-                <Link2 className="size-4" />
-                {t('notificationsPage.bindExistingChannel')}
-              </Button>
-              <Button type="button" onClick={() => setChannelDialog({ mode: 'preset' })}>
-                <Plus className="size-4" />
-                {t('notificationsPage.createChannel')}
-              </Button>
-            </>
-          )}
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              setSelectedBindChannelId('')
+              setBindDialogOpen(true)
+            }}
+          >
+            <Link2 className="size-4" />
+            {t('notificationsPage.bindExistingChannel')}
+          </Button>
+          <Button type="button" onClick={() => setChannelDialog({ mode: 'preset' })}>
+            <Plus className="size-4" />
+            {t('notificationsPage.createChannel')}
+          </Button>
         </>
-      )
-    : undefined
+      )}
+      {activeTab === 'deliveries' && (
+        <Button
+          disabled={deliveries.isFetching}
+          type="button"
+          variant="outline"
+          onClick={() => void deliveries.refetch()}
+        >
+          <RefreshCw className={cn('size-4', deliveries.isFetching && 'animate-spin')} />
+          {t('common.refresh')}
+        </Button>
+      )}
+    </>
+  )
 
   return (
     <div className="grid gap-4">
-      <p className="text-sm text-muted-foreground">
-        {t('notificationsPage.projectNotificationsDescription')}
-      </p>
       {!canManage && (
-        <div className="rounded-container border border-border bg-surface-subtle/70 px-4 py-3 text-sm text-muted-foreground" role="status">
-          {t('notificationsPage.projectReadOnlyHint')}
+        <div
+          className="flex items-center gap-2.5 rounded-control border border-border bg-surface-subtle/60 px-3.5 py-2.5 text-xs text-muted-foreground"
+          role="status"
+        >
+          <Info className="size-4 shrink-0 text-muted-foreground" />
+          <span>{t('notificationsPage.projectReadOnlyHint')}</span>
         </div>
       )}
 
@@ -589,8 +602,24 @@ export function ProjectNotificationsPanel({
         <TabsContent value="rules">
           <DataList
             columns={ruleColumns}
+            emptyActions={canManage && !channelOptions.isLoading && !hasAvailableChannels
+              ? (
+                  <Button size="sm" type="button" variant="outline" onClick={() => changeTab('channels')}>
+                    {t('notificationsPage.setupChannelFirst')}
+                  </Button>
+                )
+              : undefined}
             emptyDescription={t('notificationsPage.emptyRulesDescription')}
+            emptyIcon={<Bell className="size-5" />}
             emptyTitle={t('notificationsPage.emptyRules')}
+            error={rules.isError
+              ? {
+                  description: t('notificationsPage.loadFailedDescription'),
+                  retrying: rules.isFetching,
+                  title: t('notificationsPage.loadFailedTitle'),
+                  onRetry: () => void rules.refetch(),
+                }
+              : undefined}
             items={rules.data?.items ?? []}
             loading={rules.isLoading}
             pagination={pageFor(rules.data, rulePage, setRulePage, t)}
@@ -602,7 +631,16 @@ export function ProjectNotificationsPanel({
           <DataList
             columns={channelColumns}
             emptyDescription={t('notificationsPage.emptyChannelsDescription')}
+            emptyIcon={<Webhook className="size-5" />}
             emptyTitle={t('notificationsPage.emptyChannels')}
+            error={channels.isError
+              ? {
+                  description: t('notificationsPage.loadFailedDescription'),
+                  retrying: channels.isFetching,
+                  title: t('notificationsPage.loadFailedTitle'),
+                  onRetry: () => void channels.refetch(),
+                }
+              : undefined}
             items={channels.data?.items ?? []}
             loading={channels.isLoading}
             pagination={pageFor(channels.data, channelPage, setChannelPage, t)}
@@ -616,17 +654,20 @@ export function ProjectNotificationsPanel({
             channelFilter={deliveryChannelId}
             channels={channelOptions.data?.items ?? []}
             data={deliveries.data}
+            error={deliveries.isError}
             eventIdFilter={eventIdFilter}
             eventTypeFilter={deliveryEventType}
             loading={deliveries.isLoading}
             page={deliveryPage}
             retrying={retryDelivery.isPending}
+            retryingLoad={deliveries.isFetching}
             statusFilter={deliveryStatus}
             onChannelFilterChange={setDeliveryChannelId}
             onClearEventIdFilter={clearEventIdFilter}
             onEventTypeFilterChange={setDeliveryEventType}
             onPageChange={setDeliveryPage}
             onRetry={delivery => retryDelivery.mutate(delivery)}
+            onRetryLoad={() => void deliveries.refetch()}
             onStatusFilterChange={setDeliveryStatus}
           />
         </TabsContent>

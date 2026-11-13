@@ -55,6 +55,8 @@ describe('project notifications panel', () => {
         name: 'Feishu Bot',
         adapterKind: 'webhook',
         description: 'Feishu interactive card bot',
+        secretFields: ['webhookUrl'],
+        optionalSecretFields: ['signSecret'],
       },
     ])
     mocks.listProjects.mockResolvedValue([
@@ -237,6 +239,27 @@ describe('project notifications panel', () => {
 
     await user.click(within(drawer).getByRole('button', { name: i18next.t('notificationsPage.retryDelivery') }))
     await waitFor(() => expect(mocks.retryProjectNotificationDelivery).toHaveBeenCalledWith('prj_1', 'ndv_oom'))
+  })
+
+  it('guides owners to configure channels first when no channels are bound and supports switching channel mode cards', async () => {
+    const user = userEvent.setup()
+    mocks.listProjectNotificationChannels.mockResolvedValue(page([]))
+
+    renderPanel({
+      currentUserActions: ['notification:read', 'notification:manage'],
+    })
+
+    const setupButton = await screen.findByRole('button', { name: i18next.t('notificationsPage.setupChannelFirst') })
+    await user.click(setupButton)
+
+    const createChannelButton = await screen.findByRole('button', { name: i18next.t('notificationsPage.createChannel') })
+    await user.click(createChannelButton)
+
+    const dialog = await screen.findByRole('dialog', { name: i18next.t('notificationsPage.channelDialog') })
+    const smtpCard = within(dialog).getByRole('radio', { name: new RegExp(i18next.t('notificationsPage.modeSmtpShort')) })
+    await user.click(smtpCard)
+    expect(smtpCard).toHaveAttribute('aria-checked', 'true')
+    expect(within(dialog).getByPlaceholderText('smtp.example.com')).toBeInTheDocument()
   })
 })
 
