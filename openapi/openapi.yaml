@@ -1849,6 +1849,69 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
 
+  /api/v1/search:
+    get:
+      operationId: searchPlatformResources
+      tags: [Dashboard]
+      summary: Search DevOps resources across accessible project spaces and platform metadata
+      description: Searches projects, applications, deployment targets, gateway routes, repository bindings, volumes, shared configuration sets, notification channels, runtime clusters, artifact registries, and (by resource ID, commit SHA, or explicit type filter) build runs, releases, and users within the caller's RBAC and token scopes. Defaults to related visibility; platform administrators may explicitly request visibility=all.
+      x-luna-agent:
+        aliases:
+          zh: [全局搜索资源, 跨项目搜索应用与域名, 按域名或镜像反查应用, 按资源ID或提交哈希查找]
+          en: [global resource search, cross-project search, find app by domain or image, lookup resource by ID or commit SHA]
+        purpose: { zh: 在不预知 projectId 或 applicationId 时，跨当前用户可见空间按名称、标识符、域名、镜像、仓库、PVC、资源 ID 或 Commit SHA 统一检索平台资源定位信息。, en: Search across accessible project spaces and platform metadata by name, identifier, hostname, image reference, repository, PVC claim, resource ID, or commit SHA when projectId or applicationId is not yet known. }
+        avoidWhen: { zh: 已知明确资源 ID 且需要读取完整运行态或配置详情时应调用对应 get* 详情工具；不要在普通定位查询中对非管理员使用 visibility=all。, en: Call the resource-specific get* detail tool when the authoritative ID is already known and full live or desired details are needed; do not pass visibility=all for non-administrators. }
+        preconditions: { zh: [当前用户已登录且具有对应资源读取权限, visibility=all 仅由平台管理员显式使用], en: [The current user is signed in with read access to matching resource categories, visibility=all is explicitly used only by platform administrators] }
+        successEvidence: { zh: 返回匹配资源的精确定位标识（含 type、id、projectId、applicationId 与 related 标记）。, en: Returns matching resource locators including type, id, projectId, applicationId, and related flag. }
+      x-luna-cli:
+        command: search.query
+        classification: business-command
+        risk: low
+        requiredScopes: ["project:read"]
+      parameters:
+        - name: q
+          in: query
+          required: true
+          description: Search query string (1-160 characters). Supports optional inline category prefixes such as `app:`, `host:`, `deploy:`, `proj:`, `repo:`, `vol:`, `cluster:`, `registry:`, `notify:`, `config:`, `build:`, `release:`, and `user:`.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 160
+        - name: types
+          in: query
+          description: Optional filter restricting search to one or more resource types (repeated or comma-separated).
+          schema:
+            type: array
+            items: { $ref: "#/components/schemas/SearchResourceType" }
+        - name: limitPerType
+          in: query
+          description: Maximum number of matched items returned per resource category.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 20
+            default: 6
+        - $ref: "#/components/parameters/Visibility"
+      responses:
+        "200":
+          description: Unified metadata search results scoped to the caller's permissions and token scopes.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SearchResponse"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401":
+          description: Authentication is required.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "500":
+          description: Search execution failed (`search.load_failed`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
   /api/v1/projects:
     get:
       operationId: listProjects
@@ -16047,3 +16110,49 @@ components:
         sortOrder: { type: string, enum: [asc, desc] }
         total: { type: integer, minimum: 0 }
         totalPages: { type: integer, minimum: 0 }
+    SearchResourceType:
+      type: string
+      enum:
+        - project
+        - application
+        - deployment_target
+        - gateway_route
+        - repository_binding
+        - project_volume
+        - runtime_config_set
+        - build_variable_set
+        - notification_channel
+        - runtime_cluster
+        - artifact_registry
+        - build_run
+        - release
+        - user
+    SearchResultItem:
+      type: object
+      additionalProperties: false
+      required: [type, id, title, related, updatedAt]
+      properties:
+        type: { $ref: "#/components/schemas/SearchResourceType" }
+        id: { type: string }
+        title: { type: string }
+        subtitle: { type: string }
+        identifier: { type: string }
+        scope: { type: string }
+        status: { type: string }
+        related: { type: boolean }
+        projectId: { type: string }
+        projectName: { type: string }
+        projectIdentifier: { type: string }
+        applicationId: { type: string }
+        applicationName: { type: string }
+        updatedAt: { type: string, format: date-time }
+    SearchResponse:
+      type: object
+      additionalProperties: false
+      required: [query, visibility, items]
+      properties:
+        query: { type: string }
+        visibility: { type: string, enum: [related, all] }
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/SearchResultItem" }

@@ -13,6 +13,7 @@ import { oauthApi } from './domains/oauth'
 import { projectsApi } from './domains/projects'
 import { registriesApi } from './domains/registries'
 import { runtimeApi } from './domains/runtime'
+import { searchApi } from './domains/search'
 import { topologyApi } from './domains/topology'
 import { volumesApi } from './domains/volumes'
 
@@ -31,6 +32,7 @@ type ApiClient = typeof aiApi
   & typeof projectsApi
   & typeof registriesApi
   & typeof runtimeApi
+  & typeof searchApi
   & typeof topologyApi
   & typeof volumesApi
 
@@ -50,6 +52,7 @@ export const api = {
   ...projectsApi,
   ...registriesApi,
   ...runtimeApi,
+  ...searchApi,
   ...topologyApi,
   ...volumesApi,
 } satisfies ApiClient

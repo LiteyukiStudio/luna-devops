@@ -25,11 +25,6 @@ type projectHost struct {
 	domainHost
 }
 
-func (host projectHost) AIConversationProjectID(ctx *gin.Context) string {
-	actor, _ := ctx.Request.Context().Value(aiPlatformActorContextKey{}).(aiPlatformActor)
-	return actor.ProjectID
-}
-
 func (host projectHost) VolumeTransferEnabled() bool {
 	return host.handlers.volumeTransferEnabled
 }

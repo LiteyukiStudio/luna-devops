@@ -42,6 +42,19 @@ func (domainHost) CurrentAccessTokenFromContext(ctx *gin.Context) (model.AccessT
 	return currentAccessTokenFromContext(ctx)
 }
 
+func (domainHost) RequestAllowsScope(ctx *gin.Context, required string) bool {
+	token, ok := currentAccessTokenFromContext(ctx)
+	if !ok {
+		return true
+	}
+	return authz.AccessTokenAllows(token.Scope, required)
+}
+
+func (domainHost) AIConversationProjectID(ctx *gin.Context) string {
+	actor, _ := ctx.Request.Context().Value(aiPlatformActorContextKey{}).(aiPlatformActor)
+	return actor.ProjectID
+}
+
 func (domainHost) RequestUsesBearerToken(ctx *gin.Context) bool {
 	return requestUsesBearerToken(ctx)
 }

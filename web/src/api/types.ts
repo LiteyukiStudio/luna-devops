@@ -2461,3 +2461,49 @@ export interface DataRetentionResult {
 export interface DataRetentionResultResponse {
   items: DataRetentionResult[]
 }
+
+export type SearchResourceType
+  = | 'project'
+    | 'application'
+    | 'deployment_target'
+    | 'gateway_route'
+    | 'repository_binding'
+    | 'project_volume'
+    | 'runtime_config_set'
+    | 'build_variable_set'
+    | 'notification_channel'
+    | 'runtime_cluster'
+    | 'artifact_registry'
+    | 'build_run'
+    | 'release'
+    | 'user'
+
+export interface SearchResultItem {
+  type: SearchResourceType
+  id: string
+  title: string
+  subtitle?: string
+  identifier?: string
+  scope?: string
+  status?: string
+  related: boolean
+  projectId?: string
+  projectName?: string
+  projectIdentifier?: string
+  applicationId?: string
+  applicationName?: string
+  updatedAt: string
+}
+
+export interface SearchResponse {
+  query: string
+  visibility: ResultVisibility
+  items: SearchResultItem[]
+}
+
+export interface SearchQueryParams {
+  q: string
+  types?: SearchResourceType[]
+  limitPerType?: number
+  visibility?: ResultVisibility
+}

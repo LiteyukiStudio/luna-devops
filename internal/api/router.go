@@ -250,6 +250,7 @@ func NewRouterWithStaticFSAndMetricsConfig(db *gorm.DB, staticFS fs.FS, httpMetr
 		v1.GET("/events/catalog", domains.platform.ListPlatformEventCatalog)
 		v1.GET("/events/:eventId", domains.platform.GetPlatformEvent)
 		v1.GET("/dashboard", domains.platform.GetDashboard)
+		v1.GET("/search", domains.platform.SearchGlobal)
 
 		v1.GET("/app-templates", domains.application.ListAppTemplates)
 		v1.GET("/app-templates/:templateId", domains.application.GetAppTemplate)

@@ -17,6 +17,8 @@ type Host interface {
 	DBFor(ctx *gin.Context) *gorm.DB
 	DBWithContext(ctx context.Context) *gorm.DB
 	CurrentUser(ctx *gin.Context) (model.User, bool)
+	RequestAllowsScope(ctx *gin.Context, required string) bool
+	AIConversationProjectID(ctx *gin.Context) string
 	ResolveListVisibility(ctx *gin.Context, user model.User) (projectservice.ListVisibility, bool)
 	ProjectIDsForUser(ctx context.Context, userID string) []string
 	EnsurePlatformSystemProject(user model.User, ctx context.Context) (model.Project, error)
@@ -44,6 +46,12 @@ func (h *Handler) dbWithContext(ctx context.Context) *gorm.DB {
 }
 func (h *Handler) currentUser(ctx *gin.Context) (model.User, bool) {
 	return h.host.CurrentUser(ctx)
+}
+func (h *Handler) requestAllowsScope(ctx *gin.Context, required string) bool {
+	return h.host.RequestAllowsScope(ctx, required)
+}
+func (h *Handler) aiConversationProjectID(ctx *gin.Context) string {
+	return h.host.AIConversationProjectID(ctx)
 }
 func (h *Handler) resolveListVisibility(ctx *gin.Context, user model.User) (projectservice.ListVisibility, bool) {
 	return h.host.ResolveListVisibility(ctx, user)

@@ -69,6 +69,9 @@ export function startAPIRequestSpan(method: string, path: string) {
       recordSpanError(span, error)
       span.end()
     },
+    cancel() {
+      span.end()
+    },
   }
 }
 

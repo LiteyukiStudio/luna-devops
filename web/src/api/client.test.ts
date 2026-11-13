@@ -57,8 +57,9 @@ describe('api client', () => {
     await api.listAllRegistryCredentialsPage({ page: 1, pageSize: 20, visibility: 'all' })
     await api.listContainerImages({ page: 1, pageSize: 20, visibility: 'all' })
     await api.listBuildVariableSets(undefined, 'all')
+    await api.searchPlatformResources({ q: 'alpha', visibility: 'all' })
 
-    expect(fetchMock).toHaveBeenCalledTimes(12)
+    expect(fetchMock).toHaveBeenCalledTimes(13)
     for (const [input] of fetchMock.mock.calls) {
       const url = new URL(String(input), 'https://luna.devops.local')
       expect(url.searchParams.get('visibility'), url.pathname).toBe('all')

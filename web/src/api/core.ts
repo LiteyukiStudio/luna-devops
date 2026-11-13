@@ -205,6 +205,10 @@ async function requestOnce<T>(path: string, options?: RequestInit): Promise<T> {
     })
   }
   catch (error) {
+    if (requestOptions.signal?.aborted) {
+      telemetry.cancel()
+      throw error
+    }
     telemetry.fail(error)
     throw apiNetworkError(path, error)
   }
